@@ -4,7 +4,7 @@ package core
 
 type ZArray struct {
 	_i map[ZInt]ZVal
-	_s map[string]ZVal // we cast that to string so it can be used as map key
+	_s map[ZString]ZVal // we cast that to string so it can be used as map key
 }
 
 func (a *ZArray) GetType() ZType {
