@@ -8,7 +8,9 @@ func lexPhp(l *Lexer) lexState {
 		case ' ', '\r', '\n', '\t', '\f':
 			l.acceptRun(" \r\n\t\f")
 			l.emit(T_WHITESPACE)
-		case '(', ')', ',', '{', '}', ';':
+		case '(':
+			return lexPhpPossibleCast
+		case ')', ',', '{', '}', ';':
 			l.advance(1)
 			l.emit(ItemSingleChar)
 		case '$':

@@ -20,6 +20,16 @@ type Lexer struct {
 
 	sLine, sChar int // start line/char
 	cLine, cChar int // current line/char
+
+	state []*lexerState
+}
+
+type lexerState struct {
+	start, pos int
+	width      int
+
+	sLine, sChar int // start line/char
+	cLine, cChar int // current line/char
 }
 
 func NewLexer(i []byte) *Lexer {
@@ -33,6 +43,30 @@ func NewLexer(i []byte) *Lexer {
 	go res.run()
 
 	return res
+}
+
+func (l *Lexer) pushState() {
+	s := &lexerState{
+		start: l.start,
+		pos:   l.pos,
+		width: l.width,
+		sLine: l.sLine,
+		sChar: l.sChar,
+		cLine: l.cLine,
+		cChar: l.cChar,
+	}
+
+	l.state = append(l.state, s)
+}
+
+func (l *Lexer) popState() {
+	s := l.state[len(l.state)-1]
+	l.state = l.state[:len(l.state)-1]
+
+	l.start, l.pos = s.start, s.pos
+	l.width = s.width
+	l.sLine, l.sChar = s.sLine, s.sChar
+	l.cLine, l.cChar = s.cLine, l.cChar
 }
 
 func (l *Lexer) NextItem() (*Item, error) {
@@ -73,6 +107,7 @@ func (l *Lexer) emit(t ItemType) {
 	l.items <- &Item{t, l.input[l.start:l.pos], l.sLine, l.sChar}
 	l.start = l.pos
 	l.sLine, l.sChar = l.cLine, l.cChar
+	l.state = nil
 }
 
 func (l *Lexer) next() rune {
@@ -161,15 +196,16 @@ func (l *Lexer) acceptUntil(s string) {
 	}
 }
 
-func (l *Lexer) acceptPhpLabel() bool {
+func (l *Lexer) acceptPhpLabel() string {
 	// accept a php label, first char is _ or alpha, next chars are are alphanumeric or _
+	labelStart := l.pos
 	c := l.next()
 	switch {
 	case 'a' <= c && c <= 'z', 'A' <= c && c <= 'Z', c == '_', 0x7f <= c:
 	default:
 		l.backup()
 		// we didn't read a single char
-		return false
+		return ""
 	}
 
 	for {
@@ -178,7 +214,7 @@ func (l *Lexer) acceptPhpLabel() bool {
 		case 'a' <= c && c <= 'z', 'A' <= c && c <= 'Z', '0' <= c && c <= '9', c == '_', 0x7f <= c:
 		default:
 			l.backup()
-			return true
+			return l.input[labelStart:l.pos]
 		}
 	}
 }

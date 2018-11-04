@@ -83,7 +83,7 @@ var phpMagicKeywords = map[string]ItemType{
 
 func lexPhpVariable(l *Lexer) lexState {
 	l.advance(1) // '$' (already confirmed)
-	if !l.acceptPhpLabel() {
+	if l.acceptPhpLabel() == "" {
 		l.emit(ItemSingleChar)
 		return lexPhp
 	}
@@ -93,14 +93,14 @@ func lexPhpVariable(l *Lexer) lexState {
 }
 
 func lexPhpString(l *Lexer) lexState {
-	l.acceptPhpLabel()
+	lbl := l.acceptPhpLabel()
 
 	// check for phpMagicKeywords
-	if v, ok := phpMagicKeywords[strings.ToLower(l.value())]; ok {
+	if v, ok := phpMagicKeywords[strings.ToLower(lbl)]; ok {
 		l.emit(v)
 		return lexPhp
 	}
-	if v, ok := phpMagicKeywords[l.value()]; ok {
+	if v, ok := phpMagicKeywords[lbl]; ok {
 		l.emit(v)
 		return lexPhp
 	}
