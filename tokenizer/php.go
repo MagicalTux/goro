@@ -13,6 +13,8 @@ func lexPhp(l *Lexer) lexState {
 			l.emit(ItemSingleChar)
 		case '$':
 			return lexPhpVariable
+		case '#':
+			return lexPhpEolComment
 		default:
 			// check for potential label start
 			switch {

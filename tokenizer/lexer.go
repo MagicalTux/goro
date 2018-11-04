@@ -115,6 +115,11 @@ func (l *Lexer) acceptRun(valid string) {
 	l.backup()
 }
 
+func (l *Lexer) acceptUntil(s string) {
+	for strings.IndexRune(s, l.next()) == -1 {
+	}
+}
+
 func (l *Lexer) acceptPhpLabel() bool {
 	// accept a php label, first char is _ or alpha, next chars are are alphanumeric or _
 	c := l.next()
