@@ -19,7 +19,7 @@ func lexText(l *Lexer) lexState {
 	if l.pos > l.start {
 		l.emit(T_INLINE_HTML)
 	}
-	l.emit(T_EOF)
+	l.emit(itemEOF)
 	return nil
 }
 

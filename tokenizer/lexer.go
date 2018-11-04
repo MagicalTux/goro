@@ -1,7 +1,9 @@
 package tokenizer
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"unicode/utf8"
 )
@@ -14,7 +16,7 @@ type Lexer struct {
 	input      string
 	start, pos int
 	width      int
-	items      chan *item
+	items      chan *Item
 
 	sLine, sChar int // start line/char
 	cLine, cChar int // current line/char
@@ -23,7 +25,7 @@ type Lexer struct {
 func NewLexer(i []byte) *Lexer {
 	res := &Lexer{
 		input: string(i),
-		items: make(chan *item, 2),
+		items: make(chan *Item, 2),
 		sLine: 1,
 		cLine: 1,
 	}
@@ -33,13 +35,19 @@ func NewLexer(i []byte) *Lexer {
 	return res
 }
 
-func (l *Lexer) NextItem() (ItemType, string) {
+func (l *Lexer) NextItem() (*Item, error) {
 	i := <-l.items
 	if i == nil {
 		// mh?
-		return ItemError, "unable to read from lexer"
+		return nil, io.EOF
 	}
-	return i.t, i.data
+	if i.Type == itemError {
+		return nil, errors.New(i.Data)
+	}
+	if i.Type == itemEOF {
+		return nil, io.EOF
+	}
+	return i, nil
 }
 
 func (l *Lexer) hasPrefix(s string) bool {
@@ -62,7 +70,7 @@ func (l *Lexer) value() string {
 }
 
 func (l *Lexer) emit(t ItemType) {
-	l.items <- &item{t, l.input[l.start:l.pos]}
+	l.items <- &Item{t, l.input[l.start:l.pos], l.sLine, l.sChar}
 	l.start = l.pos
 	l.sLine, l.sChar = l.cLine, l.cChar
 }
@@ -176,9 +184,10 @@ func (l *Lexer) acceptPhpLabel() bool {
 }
 
 func (l *Lexer) error(format string, args ...interface{}) lexState {
-	l.items <- &item{
-		ItemError,
+	l.items <- &Item{
+		itemError,
 		fmt.Sprintf(format, args...),
+		l.sLine, l.sChar,
 	}
 	return nil
 }

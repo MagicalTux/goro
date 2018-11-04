@@ -1,7 +1,7 @@
 package core
 
 import (
-	"errors"
+	"io"
 	"io/ioutil"
 	"log"
 	"os"
@@ -34,15 +34,15 @@ func (ctx *Context) RunFile(fn string) error {
 
 	// test
 	for {
-		x, v := t.NextItem()
-		if x == tokenizer.T_EOF {
-			break
-		}
-		if x == tokenizer.ItemError {
-			return errors.New(v)
+		i, err := t.NextItem()
+		if err != nil {
+			if err == io.EOF {
+				return nil
+			}
+			return err
 		}
 
-		log.Printf("got token %s %q", x, v)
+		log.Printf("%d: %s %q", i.Line, i.Type, i.Data)
 	}
 
 	return nil

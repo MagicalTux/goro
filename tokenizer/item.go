@@ -4,46 +4,47 @@ package tokenizer
 type ItemType int
 
 const (
-	ItemError                  ItemType = iota
-	ItemSingleChar                      // : ;, ., >, !, { } etc...
-	T_ABSTRACT                          // "abstract"
-	T_AND_EQUAL                         // "&="
-	T_ARRAY                             // array(...
-	T_ARRAY_CAST                        // "(array)"
-	T_AS                                // "as"
-	T_BAD_CHARACTER                     // anything below ASCII 32 except \t (0x09), \n (0x0a) and \r (0x0d)
-	T_BOOLEAN_AND                       // "&&"
-	T_BOOLEAN_OR                        // "||"
-	T_BOOL_CAST                         // "(bool)" or "(boolean)"
-	T_BREAK                             // "break"
-	T_CALLABLE                          // "callable"
-	T_CASE                              // "case"
-	T_CATCH                             // "catch"
-	T_CLASS                             // "class"
-	T_CLASS_C                           // "__CLASS__"
-	T_CLONE                             // "clone"
-	T_CLOSE_TAG                         // ?> or %>
-	T_COALESCE                          // "??"
-	T_COMMENT                           // // # or /* */
-	T_CONCAT_EQUAL                      // .=
-	T_CONST                             // const
-	T_CONSTANT_ENCAPSED_STRING          // string in single or double quotes
-	T_CONTINUE                          // continue
-	T_CURLY_OPEN                        // {$ (in double quote strings) see http://php.net/manual/en/language.types.string.php#language.types.string.parsing.complex
-	T_DEC                               // "--"
-	T_DECLARE                           // "declare"
-	T_DEFAULT                           // "default"
-	T_DIR                               // "__DIR__"
-	T_DIV_EQUAL                         // "/="
-	T_DOC_COMMENT                       // /** */ comments
-	T_DO                                // "do"
-	T_DOLLAR_OPEN_CURLY_BRACES          // ${ see http://php.net/manual/en/language.types.string.php#language.types.string.parsing.complex
-	T_DOUBLE_ARROW                      // =>
-	T_DOUBLE_CAST                       // (real), (double), (float)
-	T_PAAMAYIM_NEKUDOTAYIM              // "::"
-	T_ECHO                              // "echo"
-	T_ELLIPSIS                          // ...
-	T_ELSE                              // else
+	itemError ItemType = iota
+	itemEOF
+	ItemSingleChar             // : ;, ., >, !, { } etc...
+	T_ABSTRACT                 // "abstract"
+	T_AND_EQUAL                // "&="
+	T_ARRAY                    // array(...
+	T_ARRAY_CAST               // "(array)"
+	T_AS                       // "as"
+	T_BAD_CHARACTER            // anything below ASCII 32 except \t (0x09), \n (0x0a) and \r (0x0d)
+	T_BOOLEAN_AND              // "&&"
+	T_BOOLEAN_OR               // "||"
+	T_BOOL_CAST                // "(bool)" or "(boolean)"
+	T_BREAK                    // "break"
+	T_CALLABLE                 // "callable"
+	T_CASE                     // "case"
+	T_CATCH                    // "catch"
+	T_CLASS                    // "class"
+	T_CLASS_C                  // "__CLASS__"
+	T_CLONE                    // "clone"
+	T_CLOSE_TAG                // ?> or %>
+	T_COALESCE                 // "??"
+	T_COMMENT                  // // # or /* */
+	T_CONCAT_EQUAL             // .=
+	T_CONST                    // const
+	T_CONSTANT_ENCAPSED_STRING // string in single or double quotes
+	T_CONTINUE                 // continue
+	T_CURLY_OPEN               // {$ (in double quote strings) see http://php.net/manual/en/language.types.string.php#language.types.string.parsing.complex
+	T_DEC                      // "--"
+	T_DECLARE                  // "declare"
+	T_DEFAULT                  // "default"
+	T_DIR                      // "__DIR__"
+	T_DIV_EQUAL                // "/="
+	T_DOC_COMMENT              // /** */ comments
+	T_DO                       // "do"
+	T_DOLLAR_OPEN_CURLY_BRACES // ${ see http://php.net/manual/en/language.types.string.php#language.types.string.parsing.complex
+	T_DOUBLE_ARROW             // =>
+	T_DOUBLE_CAST              // (real), (double), (float)
+	T_PAAMAYIM_NEKUDOTAYIM     // "::"
+	T_ECHO                     // "echo"
+	T_ELLIPSIS                 // ...
+	T_ELSE                     // else
 	T_ELSEIF
 	T_EMPTY                   // empty()
 	T_ENCAPSED_AND_WHITESPACE // ?
@@ -140,10 +141,10 @@ const (
 	T_YIELD_FROM
 	T_DNUMBER
 	T_LNUMBER
-	T_EOF
 )
 
-type item struct {
-	t    ItemType
-	data string
+type Item struct {
+	Type       ItemType
+	Data       string
+	Line, Char int
 }

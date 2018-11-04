@@ -29,7 +29,7 @@ func lexPhp(l *Lexer) lexState {
 		case '\'':
 			return lexPhpConstantString
 		case eof:
-			l.emit(T_EOF)
+			l.emit(itemEOF)
 			return nil
 		default:
 			// check for potential label start
