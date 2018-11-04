@@ -37,6 +37,14 @@ func (l *Lexer) NextItem() (ItemType, string) {
 	return i.t, i.data
 }
 
+func (l *Lexer) hasPrefix(s string) bool {
+	if len(s) > len(l.input)-l.pos {
+		return false
+	}
+
+	return l.input[l.pos:l.pos+len(s)] == s
+}
+
 func (l *Lexer) run() {
 	for state := lexText; state != nil; {
 		state = state(l)
@@ -79,6 +87,13 @@ func (l *Lexer) peek() rune {
 	}
 	r, _ := utf8.DecodeRuneInString(l.input[l.pos:])
 	return r
+}
+
+func (l *Lexer) peekString(ln int) string {
+	if l.pos+ln >= len(l.input) {
+		return ""
+	}
+	return l.input[l.pos : l.pos+ln]
 }
 
 func (l *Lexer) advance(c int) {

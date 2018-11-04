@@ -8,13 +8,29 @@ func lexPhp(l *Lexer) lexState {
 		case ' ', '\r', '\n', '\t', '\f':
 			l.acceptRun(" \r\n\t\f")
 			l.emit(T_WHITESPACE)
-		case '(', ')', ',', '{', '}':
+		case '(', ')', ',', '{', '}', ';':
 			l.advance(1)
 			l.emit(ItemSingleChar)
 		case '$':
 			return lexPhpVariable
 		case '#':
 			return lexPhpEolComment
+		case '/':
+			// check if // or /* (comments)
+			if l.hasPrefix("//") {
+				return lexPhpEolComment
+			}
+			if l.hasPrefix("/*") {
+				return lexPhpBlockComment
+			}
+			return lexPhpOperator
+		case '*', '+', '-', '&', '|', '^', '?', '.', '<', '>', '=', ':':
+			return lexPhpOperator
+		case '\'':
+			return lexPhpConstantString
+		case eof:
+			l.emit(T_EOF)
+			return nil
 		default:
 			// check for potential label start
 			switch {
