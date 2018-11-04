@@ -5,8 +5,8 @@ func lexPhp(l *Lexer) lexState {
 	for {
 		c := l.peek()
 		switch c {
-		case ' ', '\r', '\n', '\t', '\f':
-			l.acceptRun(" \r\n\t\f")
+		case ' ', '\r', '\n', '\t':
+			l.acceptRun(" \r\n\t")
 			l.emit(T_WHITESPACE)
 		case '(':
 			return lexPhpPossibleCast
@@ -30,6 +30,9 @@ func lexPhp(l *Lexer) lexState {
 			return lexPhpOperator
 		case '\'':
 			return lexPhpConstantString
+		case '\\': // T_NS_SEPARATOR
+			l.advance(1)
+			l.emit(T_NS_SEPARATOR)
 		case eof:
 			l.emit(itemEOF)
 			return nil

@@ -5,6 +5,7 @@ var lexPhpOps = map[string]ItemType{
 	"&&":  T_BOOLEAN_AND,
 	"||":  T_BOOLEAN_OR,
 	"??":  T_COALESCE,
+	"?>":  T_CLOSE_TAG,
 	".=":  T_CONCAT_EQUAL,
 	"--":  T_DEC,
 	"++":  T_INC,
@@ -46,6 +47,10 @@ func lexPhpOperator(l *Lexer) lexState {
 	if t, ok := lexPhpOps[l.peekString(2)]; ok {
 		l.advance(2)
 		l.emit(t)
+		if t == T_CLOSE_TAG {
+			// falling back to HTML mode
+			return lexText
+		}
 		return lexPhp
 	}
 

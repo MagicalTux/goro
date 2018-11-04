@@ -98,6 +98,10 @@ func lexPhpString(l *Lexer) lexState {
 	// check for phpMagicKeywords
 	if v, ok := phpMagicKeywords[strings.ToLower(lbl)]; ok {
 		l.emit(v)
+		if v == T_HALT_COMPILER {
+			l.emit(itemEOF)
+			return nil
+		}
 		return lexPhp
 	}
 	if v, ok := phpMagicKeywords[lbl]; ok {

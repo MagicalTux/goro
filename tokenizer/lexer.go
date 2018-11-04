@@ -178,11 +178,11 @@ func (l *Lexer) acceptFixed(s string) bool {
 }
 
 func (l *Lexer) acceptSpace() bool {
-	return l.accept(" \t\f\r\n")
+	return l.accept(" \t\r\n")
 }
 
 func (l *Lexer) acceptSpaces() {
-	l.acceptRun(" \t\f\r\n")
+	l.acceptRun(" \t\r\n")
 }
 
 func (l *Lexer) acceptRun(valid string) {
