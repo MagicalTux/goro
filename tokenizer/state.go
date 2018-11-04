@@ -1,70 +1,15 @@
 package tokenizer
 
-import "strings"
-
-type lexState func(l *Lexer) lexState
-
-func lexText(l *Lexer) lexState {
+func lexPhp(l *Lexer) lexState {
+	// let's try to find out what we are dealing with
 	for {
-		if strings.HasPrefix(l.input[l.pos:], "<?") {
-			if l.pos > l.start {
-				l.emit(T_INLINE_HTML)
-			}
-			return lexPhpOpen
-		}
-		if l.next() == eof {
-			break
-		}
-	}
-
-	// reached eof
-	if l.pos > l.start {
-		l.emit(T_INLINE_HTML)
-	}
-	l.emit(T_EOF)
-	return nil
-}
-
-func lexPhpOpen(l *Lexer) lexState {
-	return nil // TODO
-}
-
-func lexNumber(l Lexer) lexState {
-	// optional leading sign
-	l.accept("+-")
-	digits := "0123456789"
-	allowDecimal := true
-	t := T_LNUMBER
-	if l.accept("0") {
-		allowDecimal = false
-		// can be octal or hexa
-		if l.accept("xX") {
-			// hex
-			digits = "0123456789abcdefABCDEF"
-		} else {
-			// octal
-			digits = "01234567"
+		c := l.peek()
+		switch c {
+		case ' ', '\r', '\n', '\t', '\f':
+			l.acceptRun(" \r\n\t\f")
+			l.emit(T_WHITESPACE)
+		default:
+			return l.error("unexpected character %c", c)
 		}
 	}
-	l.acceptRun(digits)
-
-	if allowDecimal {
-		if l.accept(".") {
-			l.acceptRun(digits)
-			t = T_DNUMBER
-		}
-		if l.accept("eE") {
-			l.accept("+-")
-			l.acceptRun(digits)
-			t = T_DNUMBER
-		}
-	}
-
-	// next thing mustn't be alphanumeric
-	if isAlphaNumeric(l.peek()) {
-		l.next()
-		return l.error("bad number syntax")
-	}
-	l.emit(t)
-	return nil // TODO
 }

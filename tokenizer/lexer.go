@@ -9,22 +9,33 @@ import (
 
 const eof = rune(-1)
 
+type lexState func(l *Lexer) lexState
+
 type Lexer struct {
 	input      string
 	start, pos int
 	width      int
-	items      chan interface{}
+	items      chan *item
 }
 
 func NewLexer(i []byte) *Lexer {
 	res := &Lexer{
 		input: string(i),
-		items: make(chan interface{}, 2),
+		items: make(chan *item, 2),
 	}
 
 	go res.run()
 
 	return res
+}
+
+func (l *Lexer) NextItem() (ItemType, string) {
+	i := <-l.items
+	if i == nil {
+		// mh?
+		return ItemError, "unable to read from lexer"
+	}
+	return i.t, i.data
 }
 
 func (l *Lexer) run() {
@@ -74,6 +85,24 @@ func (l *Lexer) accept(valid string) bool {
 	}
 	l.backup()
 	return false
+}
+
+func (l *Lexer) acceptFixed(s string) bool {
+	if !strings.HasPrefix(l.input[l.pos:], s) {
+		return false
+	}
+	l.pos += len(s)
+	return true
+}
+
+func (l *Lexer) acceptSpace() bool {
+	switch l.next() {
+	case ' ', '\t', '\f', '\r', '\n':
+		return true
+	default:
+		l.backup()
+		return false
+	}
 }
 
 func (l *Lexer) acceptRun(valid string) {

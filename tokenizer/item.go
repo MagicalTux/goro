@@ -5,6 +5,7 @@ type ItemType int
 
 const (
 	ItemError                  ItemType = iota
+	ItemSingleChar                      // : ;, ., >, !, { } etc...
 	T_ABSTRACT                          // "abstract"
 	T_AND_EQUAL                         // "&="
 	T_ARRAY                             // array(...
