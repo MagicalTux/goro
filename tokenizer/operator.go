@@ -41,7 +41,7 @@ func lexPhpOperator(l *Lexer) lexState {
 	if t, ok := lexPhpOps[l.peekString(3)]; ok {
 		l.advance(3)
 		l.emit(t)
-		return lexPhp
+		return l.base
 	}
 
 	if t, ok := lexPhpOps[l.peekString(2)]; ok {
@@ -51,13 +51,14 @@ func lexPhpOperator(l *Lexer) lexState {
 			l.accept("\r")
 			l.accept("\n")
 			l.emit(t)
-			return lexText
+			l.pop()
+			return l.base
 		}
 		l.emit(t)
-		return lexPhp
+		return l.base
 	}
 
 	l.advance(1)
 	l.emit(ItemSingleChar)
-	return lexPhp
+	return l.base
 }

@@ -20,25 +20,25 @@ func lexPhpPossibleCast(l *Lexer) lexState {
 	switch strings.ToLower(typ) {
 	case "int", "integer":
 		l.emit(T_INT_CAST)
-		return lexPhp
+		return l.base
 	case "bool", "boolean":
 		l.emit(T_BOOL_CAST)
-		return lexPhp
+		return l.base
 	case "float", "double", "real":
 		l.emit(T_DOUBLE_CAST)
-		return lexPhp
+		return l.base
 	case "string":
 		l.emit(T_STRING_CAST)
-		return lexPhp
+		return l.base
 	case "array":
 		l.emit(T_ARRAY_CAST)
-		return lexPhp
+		return l.base
 	case "object":
 		l.emit(T_OBJECT_CAST)
-		return lexPhp
+		return l.base
 	case "unset":
 		l.emit(T_UNSET_CAST)
-		return lexPhp
+		return l.base
 	}
 
 	l.popState()

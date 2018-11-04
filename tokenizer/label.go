@@ -85,11 +85,11 @@ func lexPhpVariable(l *Lexer) lexState {
 	l.advance(1) // '$' (already confirmed)
 	if l.acceptPhpLabel() == "" {
 		l.emit(ItemSingleChar)
-		return lexPhp
+		return l.base
 	}
 
 	l.emit(T_VARIABLE)
-	return lexPhp
+	return l.base
 }
 
 func lexPhpString(l *Lexer) lexState {
@@ -102,13 +102,13 @@ func lexPhpString(l *Lexer) lexState {
 			l.emit(itemEOF)
 			return nil
 		}
-		return lexPhp
+		return l.base
 	}
 	if v, ok := phpMagicKeywords[lbl]; ok {
 		l.emit(v)
-		return lexPhp
+		return l.base
 	}
 
 	l.emit(T_STRING)
-	return lexPhp
+	return l.base
 }

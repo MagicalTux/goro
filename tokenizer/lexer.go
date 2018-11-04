@@ -17,12 +17,14 @@ type Lexer struct {
 	start, pos int
 	width      int
 	items      chan *Item
+	base       lexState
 
 	sLine, sChar int // start line/char
 	cLine, cChar int // current line/char
 	pLine, pChar int // previous line/char (for backup)
 
-	state []*lexerState
+	baseStack []lexState
+	state     []*lexerState
 }
 
 type lexerState struct {
@@ -45,6 +47,16 @@ func NewLexer(i []byte) *Lexer {
 	go res.run()
 
 	return res
+}
+
+func (l *Lexer) push(s lexState) {
+	l.baseStack = append(l.baseStack, l.base)
+	l.base = s
+}
+
+func (l *Lexer) pop() {
+	l.base = l.baseStack[len(l.baseStack)-1]
+	l.baseStack = l.baseStack[:len(l.baseStack)-1]
 }
 
 func (l *Lexer) pushState() {
@@ -98,7 +110,8 @@ func (l *Lexer) hasPrefix(s string) bool {
 }
 
 func (l *Lexer) run() {
-	for state := lexText; state != nil; {
+	l.push(lexText)
+	for state := l.base; state != nil; {
 		state = state(l)
 	}
 	close(l.items)

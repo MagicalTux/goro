@@ -10,7 +10,7 @@ func lexPhpStringConst(l *Lexer) lexState {
 		if c == st_type {
 			// end of string
 			l.emit(T_CONSTANT_ENCAPSED_STRING)
-			return lexPhp
+			return l.base
 		}
 
 		if c == '\\' {
@@ -42,7 +42,7 @@ func lexPhpStringWhitespace(l *Lexer) lexState {
 			l.emit(T_ENCAPSED_AND_WHITESPACE)
 			l.next() // "
 			l.emit(ItemSingleChar)
-			return lexPhp
+			return l.base
 		case '\\':
 			// advance (ignore) one
 			l.next()
