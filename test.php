@@ -11,3 +11,4 @@ function toString($s): string {
 }
 
 echo 'hello world';
+?>

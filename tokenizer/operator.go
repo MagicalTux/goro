@@ -46,11 +46,14 @@ func lexPhpOperator(l *Lexer) lexState {
 
 	if t, ok := lexPhpOps[l.peekString(2)]; ok {
 		l.advance(2)
-		l.emit(t)
 		if t == T_CLOSE_TAG {
-			// falling back to HTML mode
+			// falling back to HTML mode - make linebreak part of closing tag
+			l.accept("\r")
+			l.accept("\n")
+			l.emit(t)
 			return lexText
 		}
+		l.emit(t)
 		return lexPhp
 	}
 
