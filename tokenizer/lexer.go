@@ -2,7 +2,6 @@ package tokenizer
 
 import (
 	"fmt"
-	"log"
 	"strings"
 	"unicode/utf8"
 )
@@ -45,8 +44,11 @@ func (l *Lexer) run() {
 	close(l.items)
 }
 
+func (l *Lexer) value() string {
+	return l.input[l.start:l.pos]
+}
+
 func (l *Lexer) emit(t ItemType) {
-	log.Printf("emit %s", t)
 	l.items <- &item{t, l.input[l.start:l.pos]}
 	l.start = l.pos
 }
@@ -79,6 +81,10 @@ func (l *Lexer) peek() rune {
 	return r
 }
 
+func (l *Lexer) advance(c int) {
+	l.pos += c
+}
+
 func (l *Lexer) accept(valid string) bool {
 	if strings.IndexRune(valid, l.next()) >= 0 {
 		return true
@@ -96,19 +102,39 @@ func (l *Lexer) acceptFixed(s string) bool {
 }
 
 func (l *Lexer) acceptSpace() bool {
-	switch l.next() {
-	case ' ', '\t', '\f', '\r', '\n':
-		return true
-	default:
-		l.backup()
-		return false
-	}
+	return l.accept(" \t\f\r\n")
+}
+
+func (l *Lexer) acceptSpaces() {
+	l.acceptRun(" \t\f\r\n")
 }
 
 func (l *Lexer) acceptRun(valid string) {
 	for strings.IndexRune(valid, l.next()) >= 0 {
 	}
 	l.backup()
+}
+
+func (l *Lexer) acceptPhpLabel() bool {
+	// accept a php label, first char is _ or alpha, next chars are are alphanumeric or _
+	c := l.next()
+	switch {
+	case 'a' <= c && c <= 'z', 'A' <= c && c <= 'Z', c == '_', 0x7f <= c:
+	default:
+		l.backup()
+		// we didn't read a single char
+		return false
+	}
+
+	for {
+		c := l.next()
+		switch {
+		case 'a' <= c && c <= 'z', 'A' <= c && c <= 'Z', '0' <= c && c <= '9', c == '_', 0x7f <= c:
+		default:
+			l.backup()
+			return true
+		}
+	}
 }
 
 func (l *Lexer) error(format string, args ...interface{}) lexState {
