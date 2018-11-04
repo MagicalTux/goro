@@ -1,6 +1,8 @@
 package tokenizer
 
 import (
+	"fmt"
+	"log"
 	"strings"
 	"unicode/utf8"
 )
@@ -33,6 +35,7 @@ func (l *Lexer) run() {
 }
 
 func (l *Lexer) emit(t ItemType) {
+	log.Printf("emit %s", t)
 	l.items <- &item{t, l.input[l.start:l.pos]}
 	l.start = l.pos
 }
@@ -77,4 +80,12 @@ func (l *Lexer) acceptRun(valid string) {
 	for strings.IndexRune(valid, l.next()) >= 0 {
 	}
 	l.backup()
+}
+
+func (l *Lexer) error(format string, args ...interface{}) lexState {
+	l.items <- &item{
+		ItemError,
+		fmt.Sprintf(format, args...),
+	}
+	return nil
 }
