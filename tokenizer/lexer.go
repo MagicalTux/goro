@@ -20,6 +20,7 @@ type Lexer struct {
 
 	sLine, sChar int // start line/char
 	cLine, cChar int // current line/char
+	pLine, pChar int // previous line/char (for backup)
 
 	state []*lexerState
 }
@@ -30,6 +31,7 @@ type lexerState struct {
 
 	sLine, sChar int // start line/char
 	cLine, cChar int // current line/char
+	pLine, pChar int // previous line/char (for backup)
 }
 
 func NewLexer(i []byte) *Lexer {
@@ -54,6 +56,8 @@ func (l *Lexer) pushState() {
 		sChar: l.sChar,
 		cLine: l.cLine,
 		cChar: l.cChar,
+		pLine: l.pLine,
+		pChar: l.pChar,
 	}
 
 	l.state = append(l.state, s)
@@ -66,7 +70,8 @@ func (l *Lexer) popState() {
 	l.start, l.pos = s.start, s.pos
 	l.width = s.width
 	l.sLine, l.sChar = s.sLine, s.sChar
-	l.cLine, l.cChar = s.cLine, l.cChar
+	l.cLine, l.cChar = s.cLine, s.cChar
+	l.pLine, l.pChar = s.pLine, s.pChar
 }
 
 func (l *Lexer) NextItem() (*Item, error) {
@@ -118,6 +123,7 @@ func (l *Lexer) next() rune {
 	var r rune
 	r, l.width = utf8.DecodeRuneInString(l.input[l.pos:])
 	l.pos += l.width
+	l.pLine, l.pChar = l.cLine, l.cChar
 	l.cChar += 1 // char counts in characters, not in bytes
 	if r == '\n' {
 		l.cLine += 1
@@ -133,7 +139,7 @@ func (l *Lexer) ignore() {
 
 func (l *Lexer) backup() {
 	l.pos -= l.width
-	l.cChar -= 1 // could end at pos -1 (unlikely)
+	l.cLine, l.cChar = l.pLine, l.pChar
 	l.width = 0
 }
 

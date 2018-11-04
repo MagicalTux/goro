@@ -26,6 +26,7 @@ func lexText(l *Lexer) lexState {
 func lexPhpOpen(l *Lexer) lexState {
 	l.advance(2)
 	if l.peek() == '=' {
+		l.next()
 		l.emit(T_OPEN_TAG_WITH_ECHO)
 		return lexPhp
 	}
