@@ -8,7 +8,7 @@ func lexText(l *Lexer) lexState {
 	for {
 		if strings.HasPrefix(l.input[l.pos:], "<?") {
 			if l.pos > l.start {
-				l.emit(ItemText)
+				l.emit(T_INLINE_HTML)
 			}
 			return lexPhpOpen
 		}
@@ -19,9 +19,9 @@ func lexText(l *Lexer) lexState {
 
 	// reached eof
 	if l.pos > l.start {
-		l.emit(ItemText)
+		l.emit(T_INLINE_HTML)
 	}
-	l.emit(ItemEOF)
+	l.emit(T_EOF)
 	return nil
 }
 
