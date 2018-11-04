@@ -1,6 +1,8 @@
 package tokenizer
 
-func lexPhpConstantString(l *Lexer) lexState {
+func lexPhpStringConst(l *Lexer) lexState {
+	l.pushState()
+
 	st_type := l.next() // " or '
 
 	for {
@@ -13,8 +15,49 @@ func lexPhpConstantString(l *Lexer) lexState {
 
 		if c == '\\' {
 			// advance (ignore) one
-			l.advance(1)
+			l.next()
 			continue
+		}
+
+		if st_type == '"' && c == '$' {
+			// need to switch to whitespace variation
+			l.popState()
+			return lexPhpStringWhitespace
+		}
+	}
+}
+
+func lexPhpStringWhitespace(l *Lexer) lexState {
+	// starts with "
+	l.next()
+	l.emit(ItemSingleChar)
+
+	for {
+		c := l.next()
+
+		switch c {
+		case '"':
+			// end of string
+			l.backup()
+			l.emit(T_ENCAPSED_AND_WHITESPACE)
+			l.next() // "
+			l.emit(ItemSingleChar)
+			return lexPhp
+		case '\\':
+			// advance (ignore) one
+			l.next()
+		case '$':
+			// this is a variable
+			l.backup()
+			if l.pos > l.start {
+				l.emit(T_ENCAPSED_AND_WHITESPACE)
+			}
+			l.next() // $
+			if l.acceptPhpLabel() == "" {
+				l.emit(ItemSingleChar)
+			} else {
+				l.emit(T_VARIABLE)
+			}
 		}
 	}
 }

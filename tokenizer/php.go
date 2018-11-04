@@ -29,7 +29,9 @@ func lexPhp(l *Lexer) lexState {
 		case '*', '+', '-', '&', '|', '^', '?', '.', '<', '>', '=', ':':
 			return lexPhpOperator
 		case '\'':
-			return lexPhpConstantString
+			return lexPhpStringConst
+		case '"':
+			return lexPhpStringConst
 		case '\\': // T_NS_SEPARATOR
 			l.advance(1)
 			l.emit(T_NS_SEPARATOR)
