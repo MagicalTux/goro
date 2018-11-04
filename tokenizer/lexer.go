@@ -15,12 +15,17 @@ type Lexer struct {
 	start, pos int
 	width      int
 	items      chan *item
+
+	sLine, sChar int // start line/char
+	cLine, cChar int // current line/char
 }
 
 func NewLexer(i []byte) *Lexer {
 	res := &Lexer{
 		input: string(i),
 		items: make(chan *item, 2),
+		sLine: 1,
+		cLine: 1,
 	}
 
 	go res.run()
@@ -59,6 +64,7 @@ func (l *Lexer) value() string {
 func (l *Lexer) emit(t ItemType) {
 	l.items <- &item{t, l.input[l.start:l.pos]}
 	l.start = l.pos
+	l.sLine, l.sChar = l.cLine, l.cChar
 }
 
 func (l *Lexer) next() rune {
@@ -69,15 +75,22 @@ func (l *Lexer) next() rune {
 	var r rune
 	r, l.width = utf8.DecodeRuneInString(l.input[l.pos:])
 	l.pos += l.width
+	l.cChar += 1 // char counts in characters, not in bytes
+	if r == '\n' {
+		l.cLine += 1
+		l.cChar = 0
+	}
 	return r
 }
 
 func (l *Lexer) ignore() {
 	l.start = l.pos
+	l.sLine, l.sChar = l.cLine, l.cChar
 }
 
 func (l *Lexer) backup() {
 	l.pos -= l.width
+	l.cChar -= 1 // could end at pos -1 (unlikely)
 	l.width = 0
 }
 
@@ -97,7 +110,12 @@ func (l *Lexer) peekString(ln int) string {
 }
 
 func (l *Lexer) advance(c int) {
-	l.pos += c
+	for i := 0; i < c; i += 1 {
+		// we do that for two purposes:
+		// 1. correctly skip utf-8 characters
+		// 2. detect linebreaks so we count these correctly
+		l.next()
+	}
 }
 
 func (l *Lexer) accept(valid string) bool {
@@ -109,10 +127,10 @@ func (l *Lexer) accept(valid string) bool {
 }
 
 func (l *Lexer) acceptFixed(s string) bool {
-	if !strings.HasPrefix(l.input[l.pos:], s) {
+	if !l.hasPrefix(s) {
 		return false
 	}
-	l.pos += len(s)
+	l.advance(len([]rune(s))) // CL 108985 (May 2018, for Go 1.11)
 	return true
 }
 
