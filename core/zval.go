@@ -1,5 +1,9 @@
 package core
 
-type ZVal interface {
+type Val interface {
 	GetType() ZType
+}
+
+type ZVal struct {
+	v Val
 }

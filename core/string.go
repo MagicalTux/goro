@@ -1,6 +1,6 @@
 package core
 
-type ZString []byte
+type ZString string
 
 func (z ZString) GetType() ZType {
 	return ZtString
