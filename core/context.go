@@ -2,9 +2,7 @@ package core
 
 import (
 	"context"
-	"io"
 	"io/ioutil"
-	"log"
 	"os"
 
 	"git.atonline.com/tristantech/gophp/core/tokenizer"
@@ -36,18 +34,9 @@ func (ctx *Context) RunFile(fn string) error {
 	// tokenize
 	t := tokenizer.NewLexer(b)
 
-	// test
-	for {
-		i, err := t.NextItem()
-		if err != nil {
-			if err == io.EOF {
-				return nil
-			}
-			return err
-		}
+	// compile
+	c := compile(t)
 
-		log.Printf("%d: %s %q", i.Line, i.Type, i.Data)
-	}
-
-	return nil
+	_, err = c.run(ctx)
+	return err
 }
