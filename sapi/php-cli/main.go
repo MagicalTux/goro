@@ -9,10 +9,12 @@ import (
 )
 
 func main() {
-	ctx := core.NewContext(context.Background())
-	if len(os.Args) == 1 {
+	p := core.NewProcess()
+	ctx := core.NewContext(context.Background(), p)
+	if len(os.Args) == 2 {
 		if err := ctx.RunFile(os.Args[1]); err != nil {
 			log.Printf("failed to run test file: %s", err)
+			os.Exit(1)
 		}
 	}
 }
