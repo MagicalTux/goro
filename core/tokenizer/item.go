@@ -1,5 +1,7 @@
 package tokenizer
 
+import "fmt"
+
 //go:generate stringer -type=ItemType
 type ItemType int
 
@@ -147,4 +149,13 @@ type Item struct {
 	Type       ItemType
 	Data       string
 	Line, Char int
+}
+
+func (i *Item) Errorf(format string, arg ...interface{}) error {
+	e := fmt.Sprintf(format, arg...)
+	return fmt.Errorf("%s in ? on line %d", e, i.Line)
+}
+
+func (i *Item) Unexpected() error {
+	return i.Errorf("Unexpected %s", i.Type)
 }

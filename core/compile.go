@@ -1,27 +1,19 @@
 package core
 
-import (
-	"errors"
-	"io"
-	"log"
-
-	"git.atonline.com/tristantech/gophp/core/tokenizer"
-)
+import "git.atonline.com/tristantech/gophp/core/tokenizer"
 
 type compileCtx struct {
 	t *tokenizer.Lexer
-}
 
-var itemTypeHandler = map[tokenizer.ItemType]func(i *tokenizer.Item, c *compileCtx) (runnable, error){
-	tokenizer.T_OPEN_TAG:    compileIgnore,
-	tokenizer.T_INLINE_HTML: compileInlineHtml,
-}
-
-func compileIgnore(i *tokenizer.Item, c *compileCtx) (runnable, error) {
-	return nil, nil
+	next *tokenizer.Item
+	last *tokenizer.Item
 }
 
 func (c *compileCtx) NextItem() (*tokenizer.Item, error) {
+	if c.next != nil {
+		c.last, c.next = c.next, nil
+		return c.last, nil
+	}
 	for {
 		i, err := c.t.NextItem()
 
@@ -33,9 +25,14 @@ func (c *compileCtx) NextItem() (*tokenizer.Item, error) {
 		case tokenizer.T_WHITESPACE:
 		case tokenizer.T_COMMENT:
 		default:
+			c.last = i
 			return i, err
 		}
 	}
+}
+
+func (c *compileCtx) backup() {
+	c.next, c.last = c.last, nil
 }
 
 func compile(t *tokenizer.Lexer) runnable {
@@ -43,30 +40,9 @@ func compile(t *tokenizer.Lexer) runnable {
 		t: t,
 	}
 
-	var res runnables
-
-	for {
-		i, err := c.NextItem()
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			return phperror{err}
-		}
-
-		h, ok := itemTypeHandler[i.Type]
-		if !ok {
-			log.Printf("Unsupported: %d: %s %q", i.Line, i.Type, i.Data)
-			continue
-		}
-
-		r, err := h(i, c)
-		if err != nil {
-			return phperror{err}
-		}
-
-		res = append(res, r)
+	r, err := compileBase(nil, c)
+	if err != nil {
+		return phperror{err}
 	}
-
-	return phperror{errors.New("todo")}
+	return r
 }

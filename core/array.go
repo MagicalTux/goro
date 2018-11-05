@@ -1,11 +1,10 @@
 package core
 
-// php arrays work with two values
+// php arrays work with two kind of keys
 
-type ZArray struct {
-	_i map[ZInt]ZVal
-	_s map[ZString]ZVal // we cast that to string so it can be used as map key
-}
+// we store values in _d with a regular index
+
+type ZArray ZHashTable
 
 func (a *ZArray) GetType() ZType {
 	return ZtArray
