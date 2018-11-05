@@ -30,6 +30,10 @@ func lexPhpStringWhitespace(l *Lexer) lexState {
 		c := l.peek()
 
 		switch c {
+		case eof:
+			l.emit(T_ENCAPSED_AND_WHITESPACE)
+			l.error("unexpected eof in string")
+			return nil
 		case '"':
 			// end of string
 			if l.pos > l.start {

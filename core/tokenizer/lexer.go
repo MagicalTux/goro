@@ -119,17 +119,25 @@ func (l *Lexer) next() rune {
 func (l *Lexer) ignore() {
 	l.start = l.pos
 	l.sLine, l.sChar = l.cLine, l.cChar
+	l.output.Reset()
 }
 
 func (l *Lexer) backup() {
+	// update buffers
+	l.input.UnreadRune()
+	tmp := l.output.String()
+	tmp = tmp[:len(tmp)-l.width] // remove
+	l.output.Reset()
+	l.output.WriteString(tmp)
+
 	l.pos -= l.width
 	l.cLine, l.cChar = l.pLine, l.pChar
 	l.width = 0
 }
 
 func (l *Lexer) peek() rune {
-	s, err := l.input.Peek(utf8.UTFMax)
-	if err == io.EOF {
+	s, _ := l.input.Peek(utf8.UTFMax)
+	if len(s) == 0 {
 		return eof
 	}
 	r, _ := utf8.DecodeRune(s)

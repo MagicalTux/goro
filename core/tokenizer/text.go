@@ -11,6 +11,9 @@ func lexText(l *Lexer) lexState {
 		if l.next() == eof {
 			break
 		}
+		if l.output.Len() >= 8192 {
+			l.emit(T_INLINE_HTML)
+		}
 	}
 
 	// reached eof

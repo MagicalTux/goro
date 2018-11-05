@@ -45,8 +45,10 @@ func lexPhpPossibleCast(l *Lexer) lexState {
 		l.write(sp)
 		l.emit(T_WHITESPACE)
 	}
-	l.write(typ)
-	l.emit(labelType(typ))
+	if typ != "" {
+		l.write(typ)
+		l.emit(labelType(typ))
+	}
 	if sp2 != "" {
 		l.write(sp2)
 		l.emit(T_WHITESPACE)

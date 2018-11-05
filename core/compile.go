@@ -2,7 +2,6 @@ package core
 
 import (
 	"errors"
-	"fmt"
 	"io"
 	"log"
 
@@ -35,7 +34,7 @@ func compile(t *tokenizer.Lexer) runnable {
 			// passthru
 			res = append(res, runInlineHtml(i.Data))
 		default:
-			return phperror{fmt.Errorf("unexpected token %s", i.Type)}
+			//return phperror{fmt.Errorf("unexpected token %s", i.Type)}
 		}
 
 		log.Printf("%d: %s %q", i.Line, i.Type, i.Data)
