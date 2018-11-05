@@ -1,6 +1,7 @@
 package tokenizer
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"io"
@@ -13,32 +14,24 @@ const eof = rune(-1)
 type lexState func(l *Lexer) lexState
 
 type Lexer struct {
-	input      string
+	input      *bufio.Reader
 	start, pos int
 	width      int
 	items      chan *Item
 	base       lexState
+
+	output strings.Builder
 
 	sLine, sChar int // start line/char
 	cLine, cChar int // current line/char
 	pLine, pChar int // previous line/char (for backup)
 
 	baseStack []lexState
-	state     []*lexerState
 }
 
-type lexerState struct {
-	start, pos int
-	width      int
-
-	sLine, sChar int // start line/char
-	cLine, cChar int // current line/char
-	pLine, pChar int // previous line/char (for backup)
-}
-
-func NewLexer(i []byte) *Lexer {
+func NewLexer(i io.Reader) *Lexer {
 	res := &Lexer{
-		input: string(i),
+		input: bufio.NewReader(i),
 		items: make(chan *Item, 2),
 		sLine: 1,
 		cLine: 1,
@@ -59,31 +52,8 @@ func (l *Lexer) pop() {
 	l.baseStack = l.baseStack[:len(l.baseStack)-1]
 }
 
-func (l *Lexer) pushState() {
-	s := &lexerState{
-		start: l.start,
-		pos:   l.pos,
-		width: l.width,
-		sLine: l.sLine,
-		sChar: l.sChar,
-		cLine: l.cLine,
-		cChar: l.cChar,
-		pLine: l.pLine,
-		pChar: l.pChar,
-	}
-
-	l.state = append(l.state, s)
-}
-
-func (l *Lexer) popState() {
-	s := l.state[len(l.state)-1]
-	l.state = l.state[:len(l.state)-1]
-
-	l.start, l.pos = s.start, s.pos
-	l.width = s.width
-	l.sLine, l.sChar = s.sLine, s.sChar
-	l.cLine, l.cChar = s.cLine, s.cChar
-	l.pLine, l.pChar = s.pLine, s.pChar
+func (l *Lexer) write(s string) (int, error) {
+	return l.output.Write([]byte(s))
 }
 
 func (l *Lexer) NextItem() (*Item, error) {
@@ -102,11 +72,8 @@ func (l *Lexer) NextItem() (*Item, error) {
 }
 
 func (l *Lexer) hasPrefix(s string) bool {
-	if len(s) > len(l.input)-l.pos {
-		return false
-	}
-
-	return l.input[l.pos:l.pos+len(s)] == s
+	v, _ := l.input.Peek(len(s))
+	return string(v) == s
 }
 
 func (l *Lexer) run() {
@@ -117,26 +84,30 @@ func (l *Lexer) run() {
 	close(l.items)
 }
 
-func (l *Lexer) value() string {
-	return l.input[l.start:l.pos]
-}
+//func (l *Lexer) value() string {
+//	return l.output.String()
+//}
 
 func (l *Lexer) emit(t ItemType) {
-	l.items <- &Item{t, l.input[l.start:l.pos], l.sLine, l.sChar}
+	l.items <- &Item{t, l.output.String(), l.sLine, l.sChar}
 	l.start = l.pos
 	l.sLine, l.sChar = l.cLine, l.cChar
-	l.state = nil
+	l.output.Reset()
 }
 
 func (l *Lexer) next() rune {
-	if l.pos >= len(l.input) {
-		l.width = 0
-		return eof
-	}
 	var r rune
-	r, l.width = utf8.DecodeRuneInString(l.input[l.pos:])
+	var err error
+	r, l.width, err = l.input.ReadRune()
+	if err != nil {
+		if err == io.EOF {
+			return eof
+		}
+		panic(err) // TODO FIXME
+	}
 	l.pos += l.width
 	l.pLine, l.pChar = l.cLine, l.cChar
+	l.output.WriteRune(r)
 	l.cChar += 1 // char counts in characters, not in bytes
 	if r == '\n' {
 		l.cLine += 1
@@ -157,18 +128,17 @@ func (l *Lexer) backup() {
 }
 
 func (l *Lexer) peek() rune {
-	if l.pos >= len(l.input) {
+	s, err := l.input.Peek(utf8.UTFMax)
+	if err == io.EOF {
 		return eof
 	}
-	r, _ := utf8.DecodeRuneInString(l.input[l.pos:])
+	r, _ := utf8.DecodeRune(s)
 	return r
 }
 
 func (l *Lexer) peekString(ln int) string {
-	if l.pos+ln >= len(l.input) {
-		return ""
-	}
-	return l.input[l.pos : l.pos+ln]
+	s, _ := l.input.Peek(ln)
+	return string(s)
 }
 
 func (l *Lexer) advance(c int) {
@@ -200,14 +170,21 @@ func (l *Lexer) acceptSpace() bool {
 	return l.accept(" \t\r\n")
 }
 
-func (l *Lexer) acceptSpaces() {
-	l.acceptRun(" \t\r\n")
+func (l *Lexer) acceptSpaces() string {
+	return l.acceptRun(" \t\r\n")
 }
 
-func (l *Lexer) acceptRun(valid string) {
-	for strings.IndexRune(valid, l.next()) >= 0 {
+func (l *Lexer) acceptRun(valid string) string {
+	b := &strings.Builder{}
+	for {
+		v := l.next()
+		if strings.IndexRune(valid, v) >= 0 {
+			b.WriteRune(v)
+			continue
+		}
+		l.backup()
+		return b.String()
 	}
-	l.backup()
 }
 
 func (l *Lexer) acceptUntil(s string) {
@@ -215,9 +192,28 @@ func (l *Lexer) acceptUntil(s string) {
 	}
 }
 
+func (l *Lexer) acceptUntilFixed(s string) {
+	var p int
+	s2 := []rune(s)
+	for {
+		if p >= len(s2) {
+			return // ok
+		}
+		c := l.next()
+		if c == eof {
+			return
+		}
+		if rune(c) == s2[p] {
+			p += 1
+		} else {
+			p = 0
+		}
+	}
+}
+
 func (l *Lexer) acceptPhpLabel() string {
 	// accept a php label, first char is _ or alpha, next chars are are alphanumeric or _
-	labelStart := l.pos
+	labelStart := l.output.Len()
 	c := l.next()
 	switch {
 	case 'a' <= c && c <= 'z', 'A' <= c && c <= 'Z', c == '_', 0x7f <= c:
@@ -233,7 +229,7 @@ func (l *Lexer) acceptPhpLabel() string {
 		case 'a' <= c && c <= 'z', 'A' <= c && c <= 'Z', '0' <= c && c <= '9', c == '_', 0x7f <= c:
 		default:
 			l.backup()
-			return l.input[labelStart:l.pos]
+			return l.output.String()[labelStart:]
 		}
 	}
 }

@@ -2,22 +2,35 @@ package core
 
 import (
 	"context"
-	"io/ioutil"
+	"io"
 	"os"
 
 	"git.atonline.com/tristantech/gophp/core/tokenizer"
 )
 
-type Context struct {
+type Context interface {
+	context.Context
+	io.Writer
+
+	RunFile(string) error
+}
+
+type phpContext struct {
 	context.Context
 	p *Process
+
+	out io.Writer
 }
 
-func NewContext(ctx context.Context, p *Process) *Context {
-	return &Context{ctx, p}
+func NewContext(ctx context.Context, p *Process) Context {
+	return &phpContext{
+		Context: ctx,
+		p:       p,
+		out:     os.Stdout,
+	}
 }
 
-func (ctx *Context) RunFile(fn string) error {
+func (ctx *phpContext) RunFile(fn string) error {
 	f, err := os.Open(fn)
 	if err != nil {
 		return err
@@ -25,18 +38,16 @@ func (ctx *Context) RunFile(fn string) error {
 
 	defer f.Close()
 
-	// read whole file
-	b, err := ioutil.ReadAll(f)
-	if err != nil {
-		return err
-	}
-
 	// tokenize
-	t := tokenizer.NewLexer(b)
+	t := tokenizer.NewLexer(f)
 
 	// compile
 	c := compile(t)
 
 	_, err = c.run(ctx)
 	return err
+}
+
+func (ctx *phpContext) Write(v []byte) (int, error) {
+	return ctx.out.Write(v)
 }

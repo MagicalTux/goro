@@ -1,9 +1,13 @@
 package tokenizer
 
 func lexPhpStringConst(l *Lexer) lexState {
-	l.pushState()
-
 	st_type := l.next() // " or '
+	if st_type == '"' {
+		// too lazy to work this out, let's switch to the other lexer
+		l.emit(ItemSingleChar)
+		l.push(lexPhpStringWhitespace)
+		return l.base
+	}
 
 	for {
 		c := l.next()
@@ -17,15 +21,6 @@ func lexPhpStringConst(l *Lexer) lexState {
 			// advance (ignore) one
 			l.next()
 			continue
-		}
-
-		if st_type == '"' && c == '$' {
-			// need to switch to whitespace variation
-			l.popState()
-			l.next()
-			l.emit(ItemSingleChar)
-			l.push(lexPhpStringWhitespace)
-			return l.base
 		}
 	}
 }

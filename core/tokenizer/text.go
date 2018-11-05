@@ -1,10 +1,8 @@
 package tokenizer
 
-import "strings"
-
 func lexText(l *Lexer) lexState {
 	for {
-		if strings.HasPrefix(l.input[l.pos:], "<?") {
+		if l.hasPrefix("<?") {
 			if l.pos > l.start {
 				l.emit(T_INLINE_HTML)
 			}

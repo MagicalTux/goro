@@ -92,23 +92,25 @@ func lexPhpVariable(l *Lexer) lexState {
 	return l.base
 }
 
-func lexPhpString(l *Lexer) lexState {
-	lbl := l.acceptPhpLabel()
-
+func labelType(lbl string) ItemType {
 	// check for phpMagicKeywords
 	if v, ok := phpMagicKeywords[strings.ToLower(lbl)]; ok {
-		l.emit(v)
-		if v == T_HALT_COMPILER {
-			l.emit(itemEOF)
-			return nil
-		}
-		return l.base
+		return v
 	}
 	if v, ok := phpMagicKeywords[lbl]; ok {
-		l.emit(v)
-		return l.base
+		return v
 	}
+	return T_STRING
+}
 
-	l.emit(T_STRING)
+func lexPhpString(l *Lexer) lexState {
+	lbl := l.acceptPhpLabel()
+	t := labelType(lbl)
+
+	l.emit(t)
+	if t == T_HALT_COMPILER {
+		l.emit(itemEOF)
+		return nil
+	}
 	return l.base
 }
