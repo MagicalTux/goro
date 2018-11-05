@@ -157,5 +157,8 @@ func (i *Item) Errorf(format string, arg ...interface{}) error {
 }
 
 func (i *Item) Unexpected() error {
+	if i.Type == ItemSingleChar {
+		return i.Errorf("Unexpected %q", []rune(i.Data)[0])
+	}
 	return i.Errorf("Unexpected %s", i.Type)
 }
