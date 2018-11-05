@@ -9,7 +9,8 @@ import (
 
 func main() {
 	// by default, run script test.php
-	ctx := core.NewContext(context.Background())
+	p := core.NewProcess()
+	ctx := core.NewContext(context.Background(), p)
 	if err := ctx.RunFile("test.php"); err != nil {
 		log.Printf("failed to run test file: %s", err)
 	}

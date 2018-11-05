@@ -12,10 +12,11 @@ import (
 
 type Context struct {
 	context.Context
+	p *Process
 }
 
-func NewContext(ctx context.Context) *Context {
-	return &Context{ctx}
+func NewContext(ctx context.Context, p *Process) *Context {
+	return &Context{ctx, p}
 }
 
 func (ctx *Context) RunFile(fn string) error {
