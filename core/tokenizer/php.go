@@ -41,6 +41,8 @@ func lexPhp(l *Lexer) lexState {
 		default:
 			// check for potential label start
 			switch {
+			case '0' <= c && c <= '9':
+				return lexNumber
 			case 'a' <= c && c <= 'z', 'A' <= c && c <= 'Z', c == '_', 0x7f <= c:
 				return lexPhpString
 			}

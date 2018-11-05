@@ -1,6 +1,6 @@
 package tokenizer
 
-func lexNumber(l Lexer) lexState {
+func lexNumber(l *Lexer) lexState {
 	// optional leading sign
 	l.accept("+-")
 	digits := "0123456789"
@@ -37,5 +37,5 @@ func lexNumber(l Lexer) lexState {
 		return l.error("bad number syntax")
 	}
 	l.emit(t)
-	return nil // TODO
+	return l.base
 }
