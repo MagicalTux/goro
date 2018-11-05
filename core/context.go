@@ -6,7 +6,7 @@ import (
 	"log"
 	"os"
 
-	"git.atonline.com/tristantech/gophp/tokenizer"
+	"git.atonline.com/tristantech/gophp/core/tokenizer"
 )
 
 type Context struct{}
