@@ -15,6 +15,7 @@ type lexState func(l *Lexer) lexState
 
 type Lexer struct {
 	input      *bufio.Reader
+	fn         string
 	start, pos int
 	width      int
 	items      chan *Item
@@ -29,9 +30,10 @@ type Lexer struct {
 	baseStack []lexState
 }
 
-func NewLexer(i io.Reader) *Lexer {
+func NewLexer(i io.Reader, fn string) *Lexer {
 	res := &Lexer{
 		input: bufio.NewReader(i),
+		fn:    fn, // filename, for position information
 		items: make(chan *Item, 2),
 		sLine: 1,
 		cLine: 1,
@@ -89,7 +91,7 @@ func (l *Lexer) run() {
 //}
 
 func (l *Lexer) emit(t ItemType) {
-	l.items <- &Item{t, l.output.String(), l.sLine, l.sChar}
+	l.items <- &Item{t, l.output.String(), l.fn, l.sLine, l.sChar}
 	l.start = l.pos
 	l.sLine, l.sChar = l.cLine, l.cChar
 	l.output.Reset()
@@ -246,6 +248,7 @@ func (l *Lexer) error(format string, args ...interface{}) lexState {
 	l.items <- &Item{
 		itemError,
 		fmt.Sprintf(format, args...),
+		l.fn,
 		l.sLine, l.sChar,
 	}
 	return nil

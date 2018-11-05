@@ -148,17 +148,18 @@ const (
 type Item struct {
 	Type       ItemType
 	Data       string
+	Filename   string
 	Line, Char int
 }
 
 func (i *Item) Errorf(format string, arg ...interface{}) error {
 	e := fmt.Sprintf(format, arg...)
-	return fmt.Errorf("%s in ? on line %d", e, i.Line)
+	return fmt.Errorf("%s in %s on line %d", e, i.Filename, i.Line)
 }
 
 func (i *Item) Unexpected() error {
 	if i.Type == ItemSingleChar {
-		return i.Errorf("Unexpected %q", []rune(i.Data)[0])
+		return i.Errorf("syntax error, unexpected %q", []rune(i.Data)[0])
 	}
-	return i.Errorf("Unexpected %s", i.Type)
+	return i.Errorf("syntax error, unexpected %s", i.Type)
 }
