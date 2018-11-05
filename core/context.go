@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"io"
 	"io/ioutil"
 	"log"
@@ -9,10 +10,12 @@ import (
 	"git.atonline.com/tristantech/gophp/core/tokenizer"
 )
 
-type Context struct{}
+type Context struct {
+	context.Context
+}
 
-func NewContext() *Context {
-	return &Context{}
+func NewContext(ctx context.Context) *Context {
+	return &Context{ctx}
 }
 
 func (ctx *Context) RunFile(fn string) error {
