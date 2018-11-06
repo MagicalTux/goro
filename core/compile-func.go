@@ -29,7 +29,7 @@ func (r *runnableFunction) run(ctx Context) (l *ZVal, err error) {
 }
 
 func (r *runnableFunctionCall) run(ctx Context) (l *ZVal, err error) {
-	return nil, errors.New("todo")
+	return nil, errors.New("todo call function")
 }
 
 func compileFunction(i *tokenizer.Item, c *compileCtx) (runnable, error) {

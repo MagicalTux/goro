@@ -2,7 +2,6 @@ package core
 
 import (
 	"io"
-	"log"
 
 	"git.atonline.com/tristantech/gophp/core/tokenizer"
 )
@@ -52,7 +51,7 @@ func compileBase(i *tokenizer.Item, c *compileCtx) (runnable, error) {
 			return res, err
 		}
 
-		log.Printf("compileBase: %s:%d %s %q", i.Filename, i.Line, i.Type, i.Data)
+		//log.Printf("compileBase: %s:%d %s %q", i.Filename, i.Line, i.Type, i.Data)
 		var h *compileFuncCb
 		var ok bool
 

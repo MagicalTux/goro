@@ -46,3 +46,8 @@ func (g *Global) RunFile(fn string) error {
 func (g *Global) Write(v []byte) (int, error) {
 	return g.out.Write(v)
 }
+
+func (g *Global) GetVariable(name string) (*ZVal, error) {
+	// TODO
+	return nil, nil
+}
