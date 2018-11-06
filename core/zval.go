@@ -11,3 +11,13 @@ type ZVal struct {
 func (z *ZVal) run(ctx Context) (*ZVal, error) {
 	return z, nil
 }
+
+func (z *ZVal) IsNull() bool {
+	if z == nil {
+		return true
+	}
+	if z.v == nil {
+		return true
+	}
+	return false
+}
