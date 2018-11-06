@@ -1,6 +1,10 @@
 package tokenizer
 
-import "fmt"
+import (
+	"fmt"
+	"path"
+	"runtime"
+)
 
 //go:generate stringer -type=ItemType
 type ItemType int
@@ -157,9 +161,14 @@ func (i *Item) Errorf(format string, arg ...interface{}) error {
 	return fmt.Errorf("%s in %s on line %d", e, i.Filename, i.Line)
 }
 
-func (i *Item) Unexpected() error {
+func (i *Item) String() string {
 	if i.Type == ItemSingleChar {
-		return i.Errorf("syntax error, unexpected %q", []rune(i.Data)[0])
+		return fmt.Sprintf("%q", []rune(i.Data)[0])
 	}
-	return i.Errorf("syntax error, unexpected %s", i.Type)
+	return i.Type.String()
+}
+
+func (i *Item) Unexpected() error {
+	_, f, l, _ := runtime.Caller(1)
+	return i.Errorf("syntax error from %s:%d, unexpected %s", path.Base(f), l, i)
 }

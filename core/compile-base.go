@@ -63,23 +63,36 @@ func compileBase(i *tokenizer.Item, c *compileCtx) (runnable, error) {
 			if r != nil {
 				res = append(res, r)
 			}
-			continue
+		} else {
+			// is it a token?
+			h, ok := itemTypeHandler[i.Type]
+			if !ok {
+				log.Printf("Unsupported: %d: %s %q", i.Line, i.Type, i.Data)
+				continue
+			}
+
+			r, err := h(i, c)
+			if err != nil {
+				return res, err
+			}
+
+			if r != nil {
+				res = append(res, r)
+			}
 		}
 
-		// is it a token?
-		h, ok := itemTypeHandler[i.Type]
-		if !ok {
-			log.Printf("Unsupported: %d: %s %q", i.Line, i.Type, i.Data)
-			continue
-		}
-
-		r, err := h(i, c)
+		// check for ';'
+		i, err = c.NextItem()
 		if err != nil {
+			if err == io.EOF {
+				break
+			}
 			return res, err
 		}
 
-		if r != nil {
-			res = append(res, r)
+		if i.Type != tokenizer.ItemSingleChar || i.Data != ";" {
+			// expecting a ';' after a var
+			return nil, i.Unexpected()
 		}
 	}
 
