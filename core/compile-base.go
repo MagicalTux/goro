@@ -12,7 +12,7 @@ var itemSingleHandler map[rune]func(i *tokenizer.Item, c *compileCtx) (runnable,
 
 func init() {
 	itemTypeHandler = map[tokenizer.ItemType]func(i *tokenizer.Item, c *compileCtx) (runnable, error){
-		tokenizer.T_OPEN_TAG:    compileIgnore,
+		tokenizer.T_OPEN_TAG:    nil,
 		tokenizer.T_INLINE_HTML: compileInlineHtml,
 		tokenizer.T_FUNCTION:    compileFunction,
 		tokenizer.T_RETURN:      compileReturn,
@@ -41,6 +41,8 @@ func compileBase(i *tokenizer.Item, c *compileCtx) (runnable, error) {
 			return res, err
 		}
 
+		log.Printf("compileBase: %s:%d %s %q", i.Filename, i.Line, i.Type, i.Data)
+
 		// is it a single char item?
 		if i.Type == tokenizer.ItemSingleChar {
 			ch := []rune(i.Data)[0]
@@ -52,9 +54,13 @@ func compileBase(i *tokenizer.Item, c *compileCtx) (runnable, error) {
 
 			h, ok := itemSingleHandler[ch]
 			if !ok {
-				log.Printf("Unsupported: %d: %s %q", i.Line, i.Type, i.Data)
+				return nil, i.Unexpected()
+			}
+			if h == nil {
+				// ignore this tag
 				continue
 			}
+
 			r, err := h(i, c)
 			if err != nil {
 				return res, err
@@ -67,7 +73,10 @@ func compileBase(i *tokenizer.Item, c *compileCtx) (runnable, error) {
 			// is it a token?
 			h, ok := itemTypeHandler[i.Type]
 			if !ok {
-				log.Printf("Unsupported: %d: %s %q", i.Line, i.Type, i.Data)
+				return nil, i.Unexpected()
+			}
+			if h == nil {
+				// ignore this tag
 				continue
 			}
 
@@ -100,6 +109,16 @@ func compileBase(i *tokenizer.Item, c *compileCtx) (runnable, error) {
 }
 
 func compileReturn(i *tokenizer.Item, c *compileCtx) (runnable, error) {
+	i, err := c.NextItem()
+	c.backup()
+	if err != nil {
+		return &runReturn{}, err
+	}
+
+	if i.Type == tokenizer.ItemSingleChar && i.Data == ";" {
+		return &runReturn{}, err
+	}
+
 	v, err := compileExpr(c)
 	if err != nil {
 		return nil, err

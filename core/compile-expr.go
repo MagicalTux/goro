@@ -53,6 +53,10 @@ func compileExpr(c *compileCtx) (runnable, error) {
 
 			// TODO: math priority
 			return &runOperator{op: i.Data, a: v, b: t_v}, nil
+		case ';':
+			c.backup()
+			// just a value
+			return v, nil
 		}
 	case tokenizer.T_AND_EQUAL, tokenizer.T_BOOLEAN_AND, tokenizer.T_BOOLEAN_OR, tokenizer.T_CONCAT_EQUAL, tokenizer.T_DIV_EQUAL: // etc... FIXME TODO
 		// what follows is also an expression
