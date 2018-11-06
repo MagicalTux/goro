@@ -13,9 +13,11 @@ var itemSingleHandler map[rune]func(i *tokenizer.Item, c *compileCtx) (runnable,
 func init() {
 	itemTypeHandler = map[tokenizer.ItemType]func(i *tokenizer.Item, c *compileCtx) (runnable, error){
 		tokenizer.T_OPEN_TAG:    nil,
+		tokenizer.T_CLOSE_TAG:   nil,
 		tokenizer.T_INLINE_HTML: compileInlineHtml,
 		tokenizer.T_FUNCTION:    compileFunction,
 		tokenizer.T_RETURN:      compileReturn,
+		tokenizer.T_VARIABLE:    compileExpr,
 	}
 
 	itemSingleHandler = map[rune]func(i *tokenizer.Item, c *compileCtx) (runnable, error){
@@ -42,6 +44,8 @@ func compileBase(i *tokenizer.Item, c *compileCtx) (runnable, error) {
 		}
 
 		log.Printf("compileBase: %s:%d %s %q", i.Filename, i.Line, i.Type, i.Data)
+		var h func(i *tokenizer.Item, c *compileCtx) (runnable, error)
+		var ok bool
 
 		// is it a single char item?
 		if i.Type == tokenizer.ItemSingleChar {
@@ -52,42 +56,26 @@ func compileBase(i *tokenizer.Item, c *compileCtx) (runnable, error) {
 				return res, nil
 			}
 
-			h, ok := itemSingleHandler[ch]
-			if !ok {
-				return nil, i.Unexpected()
-			}
-			if h == nil {
-				// ignore this tag
-				continue
-			}
-
-			r, err := h(i, c)
-			if err != nil {
-				return res, err
-			}
-
-			if r != nil {
-				res = append(res, r)
-			}
+			h, ok = itemSingleHandler[ch]
 		} else {
 			// is it a token?
-			h, ok := itemTypeHandler[i.Type]
-			if !ok {
-				return nil, i.Unexpected()
-			}
-			if h == nil {
-				// ignore this tag
-				continue
-			}
+			h, ok = itemTypeHandler[i.Type]
+		}
+		if !ok {
+			return nil, i.Unexpected()
+		}
+		if h == nil {
+			// ignore this tag
+			continue
+		}
 
-			r, err := h(i, c)
-			if err != nil {
-				return res, err
-			}
+		r, err := h(i, c)
+		if err != nil {
+			return res, err
+		}
 
-			if r != nil {
-				res = append(res, r)
-			}
+		if r != nil {
+			res = append(res, r)
 		}
 
 		// check for ';'
@@ -119,7 +107,7 @@ func compileReturn(i *tokenizer.Item, c *compileCtx) (runnable, error) {
 		return &runReturn{}, err
 	}
 
-	v, err := compileExpr(c)
+	v, err := compileExpr(nil, c)
 	if err != nil {
 		return nil, err
 	}

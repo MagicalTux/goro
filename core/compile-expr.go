@@ -19,12 +19,15 @@ func (r runVariable) run(ctx Context) (*ZVal, error) {
 	return &ZVal{ZString("TODO:" + r)}, nil
 }
 
-func compileExpr(c *compileCtx) (runnable, error) {
+func compileExpr(i *tokenizer.Item, c *compileCtx) (runnable, error) {
 	var v runnable
+	var err error
 
-	i, err := c.NextItem()
-	if err != nil {
-		return nil, err
+	if i == nil {
+		i, err = c.NextItem()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	switch i.Type {
@@ -44,9 +47,9 @@ func compileExpr(c *compileCtx) (runnable, error) {
 	case tokenizer.ItemSingleChar:
 		ch := []rune(i.Data)[0]
 		switch ch {
-		case '+', '-', '/', '*': // TODO list
+		case '+', '-', '/', '*', '=': // TODO list
 			// what follows is also an expression
-			t_v, err := compileExpr(c)
+			t_v, err := compileExpr(nil, c)
 			if err != nil {
 				return nil, err
 			}
@@ -60,7 +63,7 @@ func compileExpr(c *compileCtx) (runnable, error) {
 		}
 	case tokenizer.T_AND_EQUAL, tokenizer.T_BOOLEAN_AND, tokenizer.T_BOOLEAN_OR, tokenizer.T_CONCAT_EQUAL, tokenizer.T_DIV_EQUAL: // etc... FIXME TODO
 		// what follows is also an expression
-		t_v, err := compileExpr(c)
+		t_v, err := compileExpr(nil, c)
 		if err != nil {
 			return nil, err
 		}
