@@ -2,6 +2,7 @@ package core
 
 import (
 	"errors"
+	"strconv"
 
 	"git.atonline.com/tristantech/gophp/core/tokenizer"
 )
@@ -33,6 +34,35 @@ func compileExpr(i *tokenizer.Item, c *compileCtx) (runnable, error) {
 	switch i.Type {
 	case tokenizer.T_VARIABLE:
 		v = runVariable(i.Data[1:])
+	case tokenizer.T_LNUMBER:
+		v, err := strconv.ParseInt(i.Data, 0, 64)
+		return &ZVal{ZInt(v)}, err
+	case tokenizer.T_STRING:
+		// if next is '(' this is a function call
+		t_next, err := c.NextItem()
+		if err != nil {
+			return nil, err
+		}
+		c.backup()
+		switch t_next.Type {
+		case tokenizer.ItemSingleChar:
+			switch []rune(t_next.Data)[0] {
+			case '(':
+				args, err := compileFuncPassedArgs(c)
+				if err != nil {
+					return nil, err
+				}
+				return &runnableFunctionCall{i.Data, args}, nil
+			}
+		}
+	case tokenizer.ItemSingleChar:
+		ch := []rune(i.Data)[0]
+		switch ch {
+		case '"':
+			return compileQuoteEncapsed(i, c)
+		default:
+			return nil, i.Unexpected()
+		}
 	default:
 		return nil, i.Unexpected()
 	}

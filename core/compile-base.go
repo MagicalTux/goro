@@ -7,21 +7,30 @@ import (
 	"git.atonline.com/tristantech/gophp/core/tokenizer"
 )
 
-var itemTypeHandler map[tokenizer.ItemType]func(i *tokenizer.Item, c *compileCtx) (runnable, error)
-var itemSingleHandler map[rune]func(i *tokenizer.Item, c *compileCtx) (runnable, error)
+type compileFunc func(i *tokenizer.Item, c *compileCtx) (runnable, error)
+
+type compileFuncCb struct {
+	f    compileFunc
+	skip bool
+}
+
+var itemTypeHandler map[tokenizer.ItemType]*compileFuncCb
+var itemSingleHandler map[rune]*compileFuncCb
 
 func init() {
-	itemTypeHandler = map[tokenizer.ItemType]func(i *tokenizer.Item, c *compileCtx) (runnable, error){
+	itemTypeHandler = map[tokenizer.ItemType]*compileFuncCb{
 		tokenizer.T_OPEN_TAG:    nil,
 		tokenizer.T_CLOSE_TAG:   nil,
-		tokenizer.T_INLINE_HTML: compileInlineHtml,
-		tokenizer.T_FUNCTION:    compileFunction,
-		tokenizer.T_RETURN:      compileReturn,
-		tokenizer.T_VARIABLE:    compileExpr,
+		tokenizer.T_INLINE_HTML: &compileFuncCb{f: compileInlineHtml},
+		tokenizer.T_FUNCTION:    &compileFuncCb{f: compileFunction, skip: true},
+		tokenizer.T_RETURN:      &compileFuncCb{f: compileReturn},
+		tokenizer.T_VARIABLE:    &compileFuncCb{f: compileExpr},
+		tokenizer.T_ECHO:        &compileFuncCb{f: compileSpecialFuncCall},
 	}
 
-	itemSingleHandler = map[rune]func(i *tokenizer.Item, c *compileCtx) (runnable, error){
-		'{': compileBase,
+	itemSingleHandler = map[rune]*compileFuncCb{
+		'{': &compileFuncCb{f: compileBase, skip: true},
+		';': nil,
 		//'}': return compileBase (hidden)
 	}
 }
@@ -44,7 +53,7 @@ func compileBase(i *tokenizer.Item, c *compileCtx) (runnable, error) {
 		}
 
 		log.Printf("compileBase: %s:%d %s %q", i.Filename, i.Line, i.Type, i.Data)
-		var h func(i *tokenizer.Item, c *compileCtx) (runnable, error)
+		var h *compileFuncCb
 		var ok bool
 
 		// is it a single char item?
@@ -69,13 +78,17 @@ func compileBase(i *tokenizer.Item, c *compileCtx) (runnable, error) {
 			continue
 		}
 
-		r, err := h(i, c)
+		r, err := h.f(i, c)
 		if err != nil {
 			return res, err
 		}
 
 		if r != nil {
 			res = append(res, r)
+		}
+
+		if h.skip {
+			continue
 		}
 
 		// check for ';'

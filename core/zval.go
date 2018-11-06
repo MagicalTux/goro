@@ -7,3 +7,7 @@ type Val interface {
 type ZVal struct {
 	v Val
 }
+
+func (z *ZVal) run(ctx Context) (*ZVal, error) {
+	return z, nil
+}
