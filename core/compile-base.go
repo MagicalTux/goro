@@ -99,7 +99,7 @@ func compileBase(i *tokenizer.Item, c *compileCtx) (runnable, error) {
 			return res, err
 		}
 
-		if i.Type != tokenizer.ItemSingleChar || i.Data != ";" {
+		if !i.IsSingle(';') {
 			// expecting a ';' after a var
 			return nil, i.Unexpected()
 		}
@@ -115,7 +115,7 @@ func compileReturn(i *tokenizer.Item, c *compileCtx) (runnable, error) {
 		return &runReturn{}, err
 	}
 
-	if i.Type == tokenizer.ItemSingleChar && i.Data == ";" {
+	if i.IsSingle(';') {
 		return &runReturn{}, err
 	}
 

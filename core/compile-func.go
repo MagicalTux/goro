@@ -57,7 +57,7 @@ func compileFunctionWithName(name string, c *compileCtx) (runnable, error) {
 		return nil, err
 	}
 
-	if i.Type != tokenizer.ItemSingleChar || i.Data != "{" {
+	if !i.IsSingle('{') {
 		return nil, i.Unexpected()
 	}
 
@@ -80,7 +80,7 @@ func compileFunctionArgs(c *compileCtx) (res []*funcArg, err error) {
 		return nil, err
 	}
 
-	if i.Type != tokenizer.ItemSingleChar || i.Data != "(" {
+	if !i.IsSingle('(') {
 		return nil, i.Unexpected()
 	}
 
@@ -89,7 +89,7 @@ func compileFunctionArgs(c *compileCtx) (res []*funcArg, err error) {
 		return nil, err
 	}
 
-	if i.Type == tokenizer.ItemSingleChar && i.Data == ")" {
+	if i.IsSingle(')') {
 		return
 	}
 
@@ -109,7 +109,7 @@ func compileFunctionArgs(c *compileCtx) (res []*funcArg, err error) {
 			return nil, err
 		}
 
-		if i.Type == tokenizer.ItemSingleChar && i.Data == "," {
+		if i.IsSingle(',') {
 			// read and parse next argument
 			i, err = c.NextItem()
 			if err != nil {
@@ -118,11 +118,11 @@ func compileFunctionArgs(c *compileCtx) (res []*funcArg, err error) {
 			continue
 		}
 
-		if i.Type == tokenizer.ItemSingleChar && i.Data == ")" {
+		if i.IsSingle(')') {
 			return // end of arguments
 		}
 
-		if i.Type == tokenizer.ItemSingleChar && i.Data != "=" {
+		if !i.IsSingle('=') {
 			return nil, i.Unexpected()
 		}
 
