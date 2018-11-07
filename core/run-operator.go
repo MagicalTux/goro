@@ -37,7 +37,13 @@ func (r *runOperator) run(ctx Context) (*ZVal, error) {
 	}
 
 	if a.v.GetType() != b.v.GetType() {
-		return nil, errors.New("todo operator type mismatch")
+		if a.v.GetType() == ZtFloat || b.v.GetType() == ZtFloat {
+			a, _ = a.As(ctx, ZtFloat)
+			b, _ = b.As(ctx, ZtFloat)
+		} else {
+			a, _ = a.As(ctx, ZtInt)
+			b, _ = b.As(ctx, ZtInt)
+		}
 	}
 
 	switch r.op {
@@ -45,6 +51,9 @@ func (r *runOperator) run(ctx Context) (*ZVal, error) {
 		switch a.v.GetType() {
 		case ZtInt:
 			r := &ZVal{a.v.(ZInt) + b.v.(ZInt)}
+			return r, nil
+		case ZtFloat:
+			r := &ZVal{a.v.(ZFloat) + b.v.(ZFloat)}
 			return r, nil
 		default:
 			return nil, errors.New("todo operator type unsupported")

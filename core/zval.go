@@ -35,6 +35,7 @@ func (z *ZVal) IsNull() bool {
 }
 
 func (z *ZVal) String() string {
+	//Typically, use z.As(ctx, ZtString)
 	switch n := z.v.(type) {
 	case nil:
 		return ""
@@ -57,10 +58,9 @@ func (z *ZVal) String() string {
 	case ZtArray:
 		return "Array"
 	case ZtObject:
-		// TODO call __toString()
-		return "" // fatal error if no __toString() method
+		return "Object"
 	case ZtResource:
-		return "Resource id #" // TODO
+		return "Resource"
 	default:
 		return fmt.Sprintf("Unknown[%T]", z.v)
 	}
