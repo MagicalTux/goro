@@ -1,0 +1,4 @@
+016+ 
+017+ Warning: unlink(): open_basedir restriction in effect. File(/tmp/php-7.2.10/tests/security/test/ok/symlink.txt) is not within the allowed path(s): (.) in /tmp/php-7.2.10/tests/security/open_basedir_linkinfo.php on line 26
+018+ bool(false)
+016- bool(true)

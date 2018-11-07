@@ -1,0 +1,40 @@
+
+---- EXPECTED OUTPUT
+*** Testing open_basedir configuration [linkinfo] ***
+bool(true)
+bool(true)
+bool(true)
+bool(true)
+bool(true)
+int(%d)
+int(%d)
+int(%d)
+int(%d)
+int(%d)
+
+Warning: symlink(): open_basedir restriction in effect. File(%s/test/bad/bad.txt) is not within the allowed path(s): (.) in %s on line %d
+bool(false)
+int(%d)
+bool(true)
+*** Finished testing open_basedir configuration [linkinfo] ***
+---- ACTUAL OUTPUT
+*** Testing open_basedir configuration [linkinfo] ***
+bool(true)
+bool(true)
+bool(true)
+bool(true)
+bool(true)
+int(64768)
+int(64768)
+int(64768)
+int(64768)
+int(64768)
+
+Warning: symlink(): open_basedir restriction in effect. File(/tmp/php-7.2.10/tests/security/test/bad/bad.txt) is not within the allowed path(s): (.) in /tmp/php-7.2.10/tests/security/open_basedir_linkinfo.php on line 24
+bool(false)
+int(64768)
+
+Warning: unlink(): open_basedir restriction in effect. File(/tmp/php-7.2.10/tests/security/test/ok/symlink.txt) is not within the allowed path(s): (.) in /tmp/php-7.2.10/tests/security/open_basedir_linkinfo.php on line 26
+bool(false)
+*** Finished testing open_basedir configuration [linkinfo] ***
+---- FAILED

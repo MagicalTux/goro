@@ -20,7 +20,7 @@ func init() {
 	itemTypeHandler = map[tokenizer.ItemType]*compileFuncCb{
 		tokenizer.T_OPEN_TAG:    nil,
 		tokenizer.T_CLOSE_TAG:   nil,
-		tokenizer.T_INLINE_HTML: &compileFuncCb{f: compileInlineHtml},
+		tokenizer.T_INLINE_HTML: &compileFuncCb{f: compileInlineHtml, skip: true},
 		tokenizer.T_FUNCTION:    &compileFuncCb{f: compileFunction, skip: true},
 		tokenizer.T_RETURN:      &compileFuncCb{f: compileReturn},
 		tokenizer.T_VARIABLE:    &compileFuncCb{f: compileExpr},
