@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 )
 
 func (z *ZVal) As(ctx Context, t ZType) (*ZVal, error) {
@@ -26,7 +27,8 @@ func (z *ZVal) As(ctx Context, t ZType) (*ZVal, error) {
 				return &ZVal{ZInt(0)}, nil
 			}
 		default:
-			i, _ := strconv.ParseInt(z.String(), 0, 64)
+			s, _ := z.As(ctx, ZtString)
+			i, _ := strconv.ParseInt(string(s.v.(ZString)), 0, 64)
 			return &ZVal{ZInt(i)}, nil
 		}
 	case ZtFloat:
@@ -40,7 +42,8 @@ func (z *ZVal) As(ctx Context, t ZType) (*ZVal, error) {
 				return &ZVal{ZFloat(0)}, nil
 			}
 		default:
-			i, _ := strconv.ParseFloat(z.String(), 64)
+			s, _ := z.As(ctx, ZtString)
+			i, _ := strconv.ParseFloat(string(s.v.(ZString)), 64)
 			return &ZVal{ZFloat(i)}, nil
 		}
 	case ZtString:
@@ -76,4 +79,22 @@ func (z *ZVal) As(ctx Context, t ZType) (*ZVal, error) {
 	}
 
 	return nil, errors.New("todo")
+}
+
+func (z *ZVal) AsNumeric(ctx Context) (*ZVal, error) {
+	switch n := z.v.(type) {
+	case ZInt:
+		return z, nil
+	case ZFloat:
+		return z, nil
+	case ZString:
+		if strings.IndexAny(string(n), ".eE") >= 0 {
+			// this is likely a float
+			return z.As(ctx, ZtFloat)
+		} else {
+			return z.As(ctx, ZtInt)
+		}
+	default:
+		return z.As(ctx, ZtInt)
+	}
 }

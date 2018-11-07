@@ -37,6 +37,9 @@ func (r *runOperator) run(ctx Context) (*ZVal, error) {
 	}
 
 	if a.v.GetType() != b.v.GetType() {
+		a, _ = a.AsNumeric(ctx)
+		b, _ = b.AsNumeric(ctx)
+
 		if a.v.GetType() == ZtFloat || b.v.GetType() == ZtFloat {
 			a, _ = a.As(ctx, ZtFloat)
 			b, _ = b.As(ctx, ZtFloat)
