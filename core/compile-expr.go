@@ -40,6 +40,9 @@ func compileExpr(i *tokenizer.Item, c *compileCtx) (runnable, error) {
 	case tokenizer.T_LNUMBER:
 		v, err := strconv.ParseInt(i.Data, 0, 64)
 		return &ZVal{ZInt(v)}, err
+	case tokenizer.T_DNUMBER:
+		v, err := strconv.ParseFloat(i.Data, 64)
+		return &ZVal{ZFloat(v)}, err
 	case tokenizer.T_STRING:
 		// if next is '(' this is a function call
 		t_next, err := c.NextItem()

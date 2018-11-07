@@ -29,3 +29,7 @@ func (z ZString) GetType() ZType {
 func (z ZInt) GetType() ZType {
 	return ZtInt
 }
+
+func (z ZFloat) GetType() ZType {
+	return ZtFloat
+}
