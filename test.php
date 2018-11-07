@@ -7,4 +7,4 @@ function test($a, $b) {
 }
 
 $test = test(4, "3.2");
-echo "This is a $test\n";
+echo 'This is a ' . $test . "\n";

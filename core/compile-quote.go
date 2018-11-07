@@ -2,9 +2,48 @@ package core
 
 import (
 	"bytes"
+	"errors"
 
 	"git.atonline.com/tristantech/gophp/core/tokenizer"
 )
+
+func compileQuoteConstant(i *tokenizer.Item, c *compileCtx) (runnable, error) {
+	// i.Data is a string such as 'a string' (quotes included)
+
+	if i.Data[0] != '\'' {
+		return nil, errors.New("malformed string")
+	}
+	if i.Data[len(i.Data)-1] != '\'' {
+		return nil, errors.New("malformed string")
+	}
+
+	in := i.Data[1 : len(i.Data)-1]
+	b := &bytes.Buffer{}
+	l := len(in)
+
+	for i := 0; i < l; i++ {
+		c := in[i]
+		if c != '\\' {
+			b.WriteByte(c)
+			continue
+		}
+		i += 1
+		if i >= l {
+			b.WriteByte(c)
+			break
+		}
+		c = in[i]
+		switch c {
+		case '\\', '\'':
+			b.WriteByte(c)
+		default:
+			b.WriteByte('\\')
+			b.WriteByte(c)
+		}
+	}
+
+	return &ZVal{ZString(b.String())}, nil
+}
 
 func compileQuoteEncapsed(i *tokenizer.Item, c *compileCtx) (runnable, error) {
 	// i == '"'

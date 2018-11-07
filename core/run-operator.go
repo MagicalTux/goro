@@ -36,6 +36,13 @@ func (r *runOperator) run(ctx Context) (*ZVal, error) {
 		return nil, err
 	}
 
+	switch r.op {
+	case ".":
+		a, _ = a.As(ctx, ZtString)
+		b, _ = b.As(ctx, ZtString)
+		return &ZVal{ZString(string(a.v.(ZString)) + string(b.v.(ZString)))}, nil
+	}
+
 	if a.v.GetType() != b.v.GetType() {
 		a, _ = a.AsNumeric(ctx)
 		b, _ = b.AsNumeric(ctx)

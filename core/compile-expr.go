@@ -61,11 +61,19 @@ func compileExpr(i *tokenizer.Item, c *compileCtx) (runnable, error) {
 				return &runnableFunctionCall{i.Data, args}, nil
 			}
 		}
+	case tokenizer.T_CONSTANT_ENCAPSED_STRING:
+		v, err = compileQuoteConstant(i, c)
+		if err != nil {
+			return nil, err
+		}
 	case tokenizer.ItemSingleChar:
 		ch := []rune(i.Data)[0]
 		switch ch {
 		case '"':
-			return compileQuoteEncapsed(i, c)
+			v, err = compileQuoteEncapsed(i, c)
+			if err != nil {
+				return nil, err
+			}
 		default:
 			return nil, i.Unexpected()
 		}
@@ -83,7 +91,7 @@ func compileExpr(i *tokenizer.Item, c *compileCtx) (runnable, error) {
 	case tokenizer.ItemSingleChar:
 		ch := []rune(i.Data)[0]
 		switch ch {
-		case '+', '-', '/', '*', '=': // TODO list
+		case '+', '-', '/', '*', '=', '.': // TODO list
 			// what follows is also an expression
 			t_v, err := compileExpr(nil, c)
 			if err != nil {
@@ -108,5 +116,7 @@ func compileExpr(i *tokenizer.Item, c *compileCtx) (runnable, error) {
 		return &runOperator{op: i.Data, a: v, b: t_v}, nil
 	}
 
-	return v, i.Unexpected()
+	// unknown?
+	c.backup()
+	return v, nil
 }
