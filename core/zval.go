@@ -25,7 +25,15 @@ func (z *ZVal) IsNull() bool {
 }
 
 func (z *ZVal) String() string {
-	switch z.v.GetType() {
+	switch n := z.v.(type) {
+	case nil:
+		return ""
+	case ZBool:
+		if n {
+			return "1"
+		} else {
+			return ""
+		}
 	default:
 		return fmt.Sprintf("%+v", z.v)
 	}
