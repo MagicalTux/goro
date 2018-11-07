@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"strings"
 
@@ -22,13 +21,21 @@ type Global struct {
 }
 
 func NewGlobal(ctx context.Context, p *Process) *Global {
-	return &Global{
+	res := &Global{
 		Context: ctx,
 		p:       p,
 		out:     os.Stdout,
 
 		globalFuncs: make(map[string]Callable),
 	}
+
+	// import global funcs from ext
+	for _, e := range globalExtMap {
+		for k, v := range e.Functions {
+			res.globalFuncs[k] = v
+		}
+	}
+	return res
 }
 
 func (g *Global) RunFile(fn string) error {
@@ -65,7 +72,6 @@ func (g *Global) SetVariable(name string, v *ZVal) error {
 }
 
 func (g *Global) RegisterFunction(name string, f Callable) error {
-	log.Printf("reg function %s", name)
 	name = strings.ToLower(name)
 	if _, exists := g.globalFuncs[name]; exists {
 		return errors.New("duplicate function name in declaration")

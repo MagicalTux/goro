@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"git.atonline.com/tristantech/gophp/core"
+	_ "git.atonline.com/tristantech/gophp/ext/standard"
 )
 
 func main() {

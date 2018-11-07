@@ -1,5 +1,7 @@
 package core
 
+import "fmt"
+
 type Val interface {
 	GetType() ZType
 }
@@ -20,4 +22,11 @@ func (z *ZVal) IsNull() bool {
 		return true
 	}
 	return false
+}
+
+func (z *ZVal) String() string {
+	switch z.v.GetType() {
+	default:
+		return fmt.Sprintf("%+v", z.v)
+	}
 }

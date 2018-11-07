@@ -5,7 +5,7 @@ import "git.atonline.com/tristantech/gophp/core/tokenizer"
 func compileQuoteEncapsed(i *tokenizer.Item, c *compileCtx) (runnable, error) {
 	// i == '"'
 
-	var res runnables
+	var res runConcat
 	var err error
 
 	for {
