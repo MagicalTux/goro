@@ -6,16 +6,9 @@ import (
 	"git.atonline.com/tristantech/gophp/core/tokenizer"
 )
 
-type funcArg struct {
-	varName      string
-	required     bool
-	defaultValue runnable
-}
-
 type runnableFunction struct {
-	name string
-	args []*funcArg
-	code runnable
+	name    string
+	closure *ZClosure
 }
 
 type runnableFunctionCall struct {
@@ -25,11 +18,25 @@ type runnableFunctionCall struct {
 
 func (r *runnableFunction) run(ctx Context) (l *ZVal, err error) {
 	// TODO: create new variables local context, set collected arguments, and run
-	return r.code.run(ctx)
+	return &ZVal{r.closure}, nil
 }
 
 func (r *runnableFunctionCall) run(ctx Context) (l *ZVal, err error) {
-	return nil, errors.New("todo call function")
+	// grab function
+	f, err := ctx.GetFunction(r.name)
+	if err != nil {
+		return nil, err
+	}
+	// collect args
+	f_arg := make([]*ZVal, len(r.args))
+	for i, a := range r.args {
+		f_arg[i], err = a.run(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return f.Call(ctx, f_arg)
 }
 
 func compileFunction(i *tokenizer.Item, c *compileCtx) (runnable, error) {
@@ -133,7 +140,6 @@ func compileFunctionWithName(name string, c *compileCtx) (runnable, error) {
 		return nil, i.Unexpected()
 	}
 
-	_ = args
 	body, err := compileBase(nil, c)
 	if err != nil {
 		return nil, err
@@ -141,8 +147,10 @@ func compileFunctionWithName(name string, c *compileCtx) (runnable, error) {
 
 	return &runnableFunction{
 		name: name,
-		args: args,
-		code: body,
+		closure: &ZClosure{
+			args: args,
+			code: body,
+		},
 	}, nil
 }
 
@@ -175,6 +183,8 @@ func compileFunctionArgs(c *compileCtx) (res []*funcArg, err error) {
 		arg := &funcArg{}
 		arg.varName = i.Data[1:] // skip $
 		arg.required = true      // typically
+
+		res = append(res, arg)
 
 		i, err = c.NextItem()
 		if err != nil {

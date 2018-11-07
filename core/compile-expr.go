@@ -1,8 +1,6 @@
 package core
 
 import (
-	"errors"
-	"log"
 	"strconv"
 
 	"git.atonline.com/tristantech/gophp/core/tokenizer"
@@ -19,6 +17,10 @@ type runVariable string
 
 func (r runVariable) run(ctx Context) (*ZVal, error) {
 	return ctx.GetVariable(string(r))
+}
+
+func (r runVariable) WriteValue(ctx Context, value *ZVal) error {
+	return ctx.SetVariable(string(r), value)
 }
 
 func compileExpr(i *tokenizer.Item, c *compileCtx) (runnable, error) {
@@ -104,24 +106,4 @@ func compileExpr(i *tokenizer.Item, c *compileCtx) (runnable, error) {
 	}
 
 	return v, i.Unexpected()
-}
-
-type runOperator struct {
-	op string
-
-	a, b runnable
-}
-
-func (r *runOperator) run(ctx Context) (*ZVal, error) {
-	a, err := r.a.run(ctx)
-	if err != nil {
-		return nil, err
-	}
-	b, err := r.b.run(ctx)
-	if err != nil {
-		return nil, err
-	}
-	// TODO
-	log.Printf("operator %s %s %s", r.op, a, b)
-	return nil, errors.New("todo operator")
 }

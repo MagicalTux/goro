@@ -29,6 +29,7 @@ func init() {
 
 	itemSingleHandler = map[rune]*compileFuncCb{
 		'{': &compileFuncCb{f: compileBase, skip: true},
+		'(': &compileFuncCb{f: compileExpr, skip: true},
 		';': nil,
 		//'}': return compileBase (hidden)
 	}
