@@ -1,5 +1,7 @@
 package core
 
+import "sync"
+
 type hashTableVal struct {
 	prev, next *hashTableVal
 	v          *ZVal
@@ -7,6 +9,7 @@ type hashTableVal struct {
 
 type ZHashTable struct {
 	first, last *hashTableVal
+	lock        sync.RWMutex
 
 	_idx_s map[ZString]*hashTableVal
 	_idx_i map[ZInt]*hashTableVal
@@ -20,6 +23,9 @@ func NewHashTable() *ZHashTable {
 }
 
 func (z *ZHashTable) GetString(k string) *ZVal {
+	z.lock.RLock()
+	defer z.lock.RUnlock()
+
 	t, ok := z._idx_s[ZString(k)]
 	if !ok {
 		return nil
@@ -28,6 +34,9 @@ func (z *ZHashTable) GetString(k string) *ZVal {
 }
 
 func (z *ZHashTable) SetString(k string, v *ZVal) error {
+	z.lock.Lock()
+	defer z.lock.Unlock()
+
 	t, ok := z._idx_s[ZString(k)]
 	if ok {
 		t.v = v
