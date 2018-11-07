@@ -1,10 +1,6 @@
 package core
 
-import (
-	"io"
-
-	"git.atonline.com/tristantech/gophp/core/tokenizer"
-)
+import "git.atonline.com/tristantech/gophp/core/tokenizer"
 
 type compileFunc func(i *tokenizer.Item, c *compileCtx) (runnable, error)
 
@@ -22,6 +18,7 @@ func init() {
 		tokenizer.T_CLOSE_TAG:   nil,
 		tokenizer.T_INLINE_HTML: &compileFuncCb{f: compileInlineHtml, skip: true},
 		tokenizer.T_FUNCTION:    &compileFuncCb{f: compileFunction, skip: true},
+		tokenizer.T_IF:          &compileFuncCb{f: compileIf, skip: true},
 		tokenizer.T_RETURN:      &compileFuncCb{f: compileReturn},
 		tokenizer.T_VARIABLE:    &compileFuncCb{f: compileExpr},
 		tokenizer.T_ECHO:        &compileFuncCb{f: compileSpecialFuncCall},
@@ -46,67 +43,64 @@ func compileBase(i *tokenizer.Item, c *compileCtx) (runnable, error) {
 	for {
 		i, err := c.NextItem()
 		if err != nil {
-			if err == io.EOF {
-				break
-			}
 			return res, err
 		}
-
-		//log.Printf("compileBase: %s:%d %s %q", i.Filename, i.Line, i.Type, i.Data)
-		var h *compileFuncCb
-		var ok bool
-
-		// is it a single char item?
-		if i.Type == tokenizer.ItemSingleChar {
-			ch := []rune(i.Data)[0]
-
-			if ch == '}' {
-				// end of block
-				return res, nil
-			}
-
-			h, ok = itemSingleHandler[ch]
-		} else {
-			// is it a token?
-			h, ok = itemTypeHandler[i.Type]
-		}
-		if !ok {
-			return nil, i.Unexpected()
-		}
-		if h == nil {
-			// ignore this tag
-			continue
+		if i.IsSingle('}') {
+			return res, nil
 		}
 
-		r, err := h.f(i, c)
+		t, err := compileBaseSingle(i, c)
+		if t != nil {
+			res = append(res, t)
+		}
 		if err != nil {
 			return res, err
-		}
-
-		if r != nil {
-			res = append(res, r)
-		}
-
-		if h.skip {
-			continue
-		}
-
-		// check for ';'
-		i, err = c.NextItem()
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			return res, err
-		}
-
-		if !i.IsSingle(';') {
-			// expecting a ';' after a var
-			return nil, i.Unexpected()
 		}
 	}
-
 	return res, nil
+}
+
+func compileBaseSingle(i *tokenizer.Item, c *compileCtx) (runnable, error) {
+	//log.Printf("compileBase: %s:%d %s %q", i.Filename, i.Line, i.Type, i.Data)
+	var h *compileFuncCb
+	var ok bool
+
+	// is it a single char item?
+	if i.Type == tokenizer.ItemSingleChar {
+		ch := []rune(i.Data)[0]
+		h, ok = itemSingleHandler[ch]
+	} else {
+		// is it a token?
+		h, ok = itemTypeHandler[i.Type]
+	}
+	if !ok {
+		return nil, i.Unexpected()
+	}
+	if h == nil {
+		// ignore this tag
+		return nil, nil
+	}
+
+	r, err := h.f(i, c)
+	if err != nil {
+		return nil, err
+	}
+
+	if h.skip {
+		return r, nil
+	}
+
+	// check for ';'
+	i, err = c.NextItem()
+	if err != nil {
+		return r, err
+	}
+
+	if !i.IsSingle(';') {
+		// expecting a ';' after a var
+		return nil, i.Unexpected()
+	}
+	return r, nil
 }
 
 func compileReturn(i *tokenizer.Item, c *compileCtx) (runnable, error) {

@@ -1,6 +1,10 @@
 package core
 
-import "git.atonline.com/tristantech/gophp/core/tokenizer"
+import (
+	"io"
+
+	"git.atonline.com/tristantech/gophp/core/tokenizer"
+)
 
 type compileCtx struct {
 	Context
@@ -44,7 +48,7 @@ func compile(parent Context, t *tokenizer.Lexer) runnable {
 	}
 
 	r, err := compileBase(nil, c)
-	if err != nil {
+	if err != nil && err != io.EOF {
 		return phperror{err}
 	}
 
