@@ -1,16 +1,18 @@
 package tokenizer
 
-import "strings"
+import (
+	"strings"
+)
 
 func lexPhpPossibleCast(l *Lexer) lexState {
 	// possible (string) etc
 
 	l.next() // "("
-	sp := l.acceptSpaces()
+	l.acceptSpaces()
 
 	typ := l.acceptPhpLabel()
 
-	sp2 := l.acceptSpaces()
+	l.acceptSpaces()
 	if l.accept(")") {
 
 		switch strings.ToLower(typ) {
@@ -38,20 +40,9 @@ func lexPhpPossibleCast(l *Lexer) lexState {
 		}
 	}
 
-	l.ignore() // flush buffer, rebuild cast operator as regular thing
-	l.write("(")
+	l.reset() // return to initial state
+	l.next()  // "("
 	l.emit(ItemSingleChar)
-	if sp != "" {
-		l.write(sp)
-		l.emit(T_WHITESPACE)
-	}
-	if typ != "" {
-		l.write(typ)
-		l.emit(labelType(typ))
-	}
-	if sp2 != "" {
-		l.write(sp2)
-		l.emit(T_WHITESPACE)
-	}
+
 	return l.base
 }

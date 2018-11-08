@@ -26,7 +26,7 @@ func lexPhp(l *Lexer) lexState {
 				return lexPhpBlockComment
 			}
 			return lexPhpOperator
-		case '*', '+', '-', '&', '|', '^', '?', '.', '<', '>', '=', ':', '!':
+		case '*', '+', '-', '&', '|', '^', '?', '.', '<', '>', '=', ':', '!', '@':
 			if l.hasPrefix("<<<") {
 				return lexPhpHeredoc
 			}

@@ -142,7 +142,7 @@ func (l *Lexer) reset() {
 	if len(l.inputRst) == 0 {
 		l.inputRst = tmp
 	} else {
-		l.inputRst = append(l.inputRst, tmp...)
+		l.inputRst = append(tmp, l.inputRst...)
 	}
 
 	l.output.Reset()

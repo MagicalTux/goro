@@ -59,7 +59,7 @@ func compileExpr(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 				if err != nil {
 					return nil, err
 				}
-				return &runnableFunctionCall{ZString(i.Data), args}, nil
+				v = &runnableFunctionCall{ZString(i.Data), args}
 			}
 		}
 	case tokenizer.T_CONSTANT_ENCAPSED_STRING:
