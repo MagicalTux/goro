@@ -15,7 +15,6 @@ func compileTernaryOp(v Runnable, c *compileCtx) (Runnable, error) {
 		yes = v
 		v = &runOperator{op: "!==", a: v, b: &ZVal{nil}}
 	} else {
-		c.backup()
 		yes, err = compileExpr(i, c)
 		if err != nil {
 			return nil, err

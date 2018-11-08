@@ -64,16 +64,22 @@ func compileIf(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 	if err != nil {
 		return r, err
 	}
-	// check for else (TODO check elseif)
-	if i.Type != tokenizer.T_ELSE {
-		c.backup()
-		return r, nil
-	}
 
-	// parse else
-	r.no, err = compileBaseSingle(nil, c)
-	if err != nil {
-		return nil, err
+	// check for else (TODO check elseif)
+	switch i.Type {
+	case tokenizer.T_ELSEIF:
+		r.no, err = compileIf(nil, c)
+		if err != nil {
+			return nil, err
+		}
+	case tokenizer.T_ELSE:
+		// parse else
+		r.no, err = compileBaseSingle(nil, c)
+		if err != nil {
+			return nil, err
+		}
+	default:
+		c.backup()
 	}
 
 	return r, nil

@@ -107,6 +107,19 @@ func compileExpr(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 			if err != nil {
 				return nil, err
 			}
+		case '(':
+			// sub-expr
+			v, err = compileExpr(nil, c)
+			if err != nil {
+				return nil, err
+			}
+			i, err = c.NextItem()
+			if err != nil {
+				return nil, err
+			}
+			if !i.IsSingle(')') {
+				return nil, i.Unexpected()
+			}
 		default:
 			return nil, i.Unexpected()
 		}
