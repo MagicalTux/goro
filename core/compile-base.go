@@ -27,6 +27,7 @@ func init() {
 		tokenizer.T_ISSET:       &compileFuncCb{f: compileSpecialFuncCall},
 		tokenizer.T_EMPTY:       &compileFuncCb{f: compileSpecialFuncCall},
 		tokenizer.T_EVAL:        &compileFuncCb{f: compileSpecialFuncCall},
+		tokenizer.T_GLOBAL:      &compileFuncCb{f: compileGlobal},
 		tokenizer.T_STRING:      &compileFuncCb{f: compileExpr},
 	}
 
