@@ -15,7 +15,7 @@ import (
 
 type runVariable string
 
-func (r runVariable) run(ctx Context) (*ZVal, error) {
+func (r runVariable) Run(ctx Context) (*ZVal, error) {
 	return ctx.GetVariable(ZString(r))
 }
 
@@ -23,8 +23,8 @@ func (r runVariable) WriteValue(ctx Context, value *ZVal) error {
 	return ctx.SetVariable(ZString(r), value)
 }
 
-func compileExpr(i *tokenizer.Item, c *compileCtx) (runnable, error) {
-	var v runnable
+func compileExpr(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
+	var v Runnable
 	var err error
 
 	if i == nil {

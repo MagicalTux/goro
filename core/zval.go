@@ -20,7 +20,7 @@ func (z *ZVal) GetType() ZType {
 	return z.v.GetType()
 }
 
-func (z *ZVal) run(ctx Context) (*ZVal, error) {
+func (z *ZVal) Run(ctx Context) (*ZVal, error) {
 	return z, nil
 }
 

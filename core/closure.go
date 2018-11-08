@@ -7,12 +7,12 @@ import (
 type funcArg struct {
 	varName      ZString
 	required     bool
-	defaultValue runnable
+	defaultValue Runnable
 }
 
 type ZClosure struct {
 	args []*funcArg
-	code runnable
+	code Runnable
 }
 
 func (z *ZClosure) GetType() ZType {
@@ -30,7 +30,7 @@ func (z *ZClosure) Call(parent Context, args []*ZVal) (*ZVal, error) {
 				return nil, errors.New("Uncaught ArgumentCountError: Too few arguments to function toto()")
 			}
 			if a.defaultValue != nil {
-				args[i], err = a.defaultValue.run(ctx)
+				args[i], err = a.defaultValue.Run(ctx)
 				if err != nil {
 					return nil, err
 				}
@@ -42,5 +42,5 @@ func (z *ZClosure) Call(parent Context, args []*ZVal) (*ZVal, error) {
 	}
 
 	// call function in that context
-	return z.code.run(ctx)
+	return z.code.Run(ctx)
 }

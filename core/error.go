@@ -4,6 +4,6 @@ type phperror struct {
 	e error
 }
 
-func (e phperror) run(ctx Context) (*ZVal, error) {
+func (e phperror) Run(ctx Context) (*ZVal, error) {
 	return nil, e.e
 }

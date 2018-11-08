@@ -7,7 +7,7 @@ import (
 	"git.atonline.com/tristantech/gophp/core/tokenizer"
 )
 
-func compileQuoteConstant(i *tokenizer.Item, c *compileCtx) (runnable, error) {
+func compileQuoteConstant(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 	// i.Data is a string such as 'a string' (quotes included)
 
 	if i.Data[0] != '\'' {
@@ -45,7 +45,7 @@ func compileQuoteConstant(i *tokenizer.Item, c *compileCtx) (runnable, error) {
 	return &ZVal{ZString(b.String())}, nil
 }
 
-func compileQuoteEncapsed(i *tokenizer.Item, c *compileCtx) (runnable, error) {
+func compileQuoteEncapsed(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 	// i == '"'
 
 	var res runConcat

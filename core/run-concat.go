@@ -1,13 +1,13 @@
 package core
 
-type runConcat []runnable
+type runConcat []Runnable
 
-func (r runConcat) run(ctx Context) (l *ZVal, err error) {
+func (r runConcat) Run(ctx Context) (l *ZVal, err error) {
 	res := ""
 	var t *ZVal
 
 	for _, v := range r {
-		t, err = v.run(ctx)
+		t, err = v.Run(ctx)
 		if err != nil {
 			return
 		}

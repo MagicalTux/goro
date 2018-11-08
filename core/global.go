@@ -52,7 +52,7 @@ func (g *Global) RunFile(fn string) error {
 	// compile
 	c := compile(ctx, t)
 
-	_, err = c.run(ctx)
+	_, err = c.Run(ctx)
 	return err
 }
 

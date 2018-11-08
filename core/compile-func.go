@@ -13,15 +13,15 @@ type runnableFunction struct {
 
 type runnableFunctionCall struct {
 	name ZString
-	args []runnable
+	args []Runnable
 }
 
-func (r *runnableFunction) run(ctx Context) (l *ZVal, err error) {
+func (r *runnableFunction) Run(ctx Context) (l *ZVal, err error) {
 	// TODO: create new variables local context, set collected arguments, and run
 	return &ZVal{r.closure}, nil
 }
 
-func (r *runnableFunctionCall) run(ctx Context) (l *ZVal, err error) {
+func (r *runnableFunctionCall) Run(ctx Context) (l *ZVal, err error) {
 	// grab function
 	f, err := ctx.GetFunction(r.name)
 	if err != nil {
@@ -30,7 +30,7 @@ func (r *runnableFunctionCall) run(ctx Context) (l *ZVal, err error) {
 	// collect args
 	f_arg := make([]*ZVal, len(r.args))
 	for i, a := range r.args {
-		f_arg[i], err = a.run(ctx)
+		f_arg[i], err = a.Run(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -39,7 +39,7 @@ func (r *runnableFunctionCall) run(ctx Context) (l *ZVal, err error) {
 	return f.Call(ctx, f_arg)
 }
 
-func compileFunction(i *tokenizer.Item, c *compileCtx) (runnable, error) {
+func compileFunction(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 	// typically T_FUNCTION is followed by:
 	// - a name and parameters → this is a regular function
 	// - directly parameters → this is a lambda function
@@ -64,7 +64,7 @@ func compileFunction(i *tokenizer.Item, c *compileCtx) (runnable, error) {
 	return nil, i.Unexpected()
 }
 
-func compileSpecialFuncCall(i *tokenizer.Item, c *compileCtx) (runnable, error) {
+func compileSpecialFuncCall(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 	// special function call that comes without (), so as a keyword. Example: echo, die, etc
 	has_open := false
 	fn_name := ZString(i.Data)
@@ -90,11 +90,11 @@ func compileSpecialFuncCall(i *tokenizer.Item, c *compileCtx) (runnable, error) 
 		}
 	}
 
-	var args []runnable
+	var args []Runnable
 
 	// parse passed arguments
 	for {
-		var a runnable
+		var a Runnable
 		a, err = compileExpr(i, c)
 		if err != nil {
 			return nil, err
@@ -127,7 +127,7 @@ func compileSpecialFuncCall(i *tokenizer.Item, c *compileCtx) (runnable, error) 
 	}
 }
 
-func compileFunctionWithName(name ZString, c *compileCtx) (runnable, error) {
+func compileFunctionWithName(name ZString, c *compileCtx) (Runnable, error) {
 	var err error
 	args, err := compileFunctionArgs(c)
 
@@ -213,7 +213,7 @@ func compileFunctionArgs(c *compileCtx) (res []*funcArg, err error) {
 	}
 }
 
-func compileFuncPassedArgs(c *compileCtx) (res []runnable, err error) {
+func compileFuncPassedArgs(c *compileCtx) (res []Runnable, err error) {
 	i, err := c.NextItem()
 	if err != nil {
 		return nil, err
@@ -234,7 +234,7 @@ func compileFuncPassedArgs(c *compileCtx) (res []runnable, err error) {
 
 	// parse passed arguments
 	for {
-		var a runnable
+		var a Runnable
 		a, err = compileExpr(i, c)
 		if err != nil {
 			return nil, err

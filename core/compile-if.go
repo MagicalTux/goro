@@ -7,26 +7,26 @@ import (
 )
 
 type runnableIf struct {
-	cond runnable
-	yes  runnable
-	no   runnable
+	cond Runnable
+	yes  Runnable
+	no   Runnable
 }
 
-func (r *runnableIf) run(ctx Context) (l *ZVal, err error) {
-	t, err := r.cond.run(ctx)
+func (r *runnableIf) Run(ctx Context) (l *ZVal, err error) {
+	t, err := r.cond.Run(ctx)
 	if err != nil {
 		return nil, err
 	}
 	t, _ = t.As(ctx, ZtBool)
 
 	if t.v.(ZBool) {
-		return r.yes.run(ctx)
+		return r.yes.Run(ctx)
 	} else {
-		return r.no.run(ctx)
+		return r.no.Run(ctx)
 	}
 }
 
-func compileIf(i *tokenizer.Item, c *compileCtx) (runnable, error) {
+func compileIf(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 	// T_IF (expression) ...? else ...?
 	return nil, errors.New("todo compileIf")
 }

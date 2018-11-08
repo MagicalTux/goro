@@ -2,7 +2,7 @@ package core
 
 import "git.atonline.com/tristantech/gophp/core/tokenizer"
 
-type compileFunc func(i *tokenizer.Item, c *compileCtx) (runnable, error)
+type compileFunc func(i *tokenizer.Item, c *compileCtx) (Runnable, error)
 
 type compileFuncCb struct {
 	f    compileFunc
@@ -33,12 +33,12 @@ func init() {
 }
 
 // compileIgnore will ignore a given token
-func compileIgnore(i *tokenizer.Item, c *compileCtx) (runnable, error) {
+func compileIgnore(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 	return nil, nil
 }
 
-func compileBase(i *tokenizer.Item, c *compileCtx) (runnable, error) {
-	var res runnables
+func compileBase(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
+	var res Runnables
 
 	for {
 		i, err := c.NextItem()
@@ -60,7 +60,7 @@ func compileBase(i *tokenizer.Item, c *compileCtx) (runnable, error) {
 	return res, nil
 }
 
-func compileBaseSingle(i *tokenizer.Item, c *compileCtx) (runnable, error) {
+func compileBaseSingle(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 	//log.Printf("compileBase: %s:%d %s %q", i.Filename, i.Line, i.Type, i.Data)
 	var h *compileFuncCb
 	var ok bool
@@ -103,7 +103,7 @@ func compileBaseSingle(i *tokenizer.Item, c *compileCtx) (runnable, error) {
 	return r, nil
 }
 
-func compileReturn(i *tokenizer.Item, c *compileCtx) (runnable, error) {
+func compileReturn(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 	i, err := c.NextItem()
 	c.backup()
 	if err != nil {
@@ -123,9 +123,9 @@ func compileReturn(i *tokenizer.Item, c *compileCtx) (runnable, error) {
 }
 
 type runReturn struct {
-	v runnable
+	v Runnable
 }
 
-func (r *runReturn) run(ctx Context) (*ZVal, error) {
-	return r.v.run(ctx) // TODO
+func (r *runReturn) Run(ctx Context) (*ZVal, error) {
+	return r.v.Run(ctx) // TODO
 }

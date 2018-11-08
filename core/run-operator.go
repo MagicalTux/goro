@@ -9,10 +9,10 @@ import (
 type runOperator struct {
 	op string
 
-	a, b runnable
+	a, b Runnable
 }
 
-func (r *runOperator) run(ctx Context) (*ZVal, error) {
+func (r *runOperator) Run(ctx Context) (*ZVal, error) {
 	switch r.op {
 	case "=":
 		// left needs to be something that can be a reference ("write context")
@@ -20,18 +20,18 @@ func (r *runOperator) run(ctx Context) (*ZVal, error) {
 		if !ok {
 			return nil, fmt.Errorf("Can't use %T value in write context", r.a)
 		}
-		b, err := r.b.run(ctx)
+		b, err := r.b.Run(ctx)
 		if err != nil {
 			return nil, err
 		}
 		return b, a.WriteValue(ctx, b)
 	}
 
-	a, err := r.a.run(ctx)
+	a, err := r.a.Run(ctx)
 	if err != nil {
 		return nil, err
 	}
-	b, err := r.b.run(ctx)
+	b, err := r.b.Run(ctx)
 	if err != nil {
 		return nil, err
 	}

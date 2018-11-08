@@ -41,7 +41,7 @@ func (c *compileCtx) backup() {
 	c.next, c.last = c.last, nil
 }
 
-func compile(parent Context, t *tokenizer.Lexer) runnable {
+func compile(parent Context, t *tokenizer.Lexer) Runnable {
 	c := &compileCtx{
 		Context: parent,
 		t:       t,
@@ -52,7 +52,7 @@ func compile(parent Context, t *tokenizer.Lexer) runnable {
 		return phperror{err}
 	}
 
-	if list, ok := r.(runnables); ok {
+	if list, ok := r.(Runnables); ok {
 		// check for any function
 		for _, elem := range list {
 			switch obj := elem.(type) {
