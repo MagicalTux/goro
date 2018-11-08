@@ -9,13 +9,13 @@ type Context interface {
 	context.Context
 	io.Writer
 
+	GetGlobal() *Global
+
 	GetFunction(name ZString) (Callable, error)
 	RegisterFunction(name ZString, f Callable) error
 
 	GetVariable(name ZString) (*ZVal, error)
 	SetVariable(name ZString, v *ZVal) error
-
-	GetConstant(name ZString) (*ZVal, error)
 }
 
 type phpContext struct {

@@ -50,7 +50,7 @@ func (g *Global) RunFile(fn string) error {
 
 	ctx := NewContext(g)
 	// compile
-	c := compile(ctx, t)
+	c := Compile(ctx, t)
 
 	_, err = c.Run(ctx)
 	return err
@@ -58,6 +58,10 @@ func (g *Global) RunFile(fn string) error {
 
 func (g *Global) Write(v []byte) (int, error) {
 	return g.out.Write(v)
+}
+
+func (g *Global) GetGlobal() *Global {
+	return g
 }
 
 func (g *Global) GetVariable(name ZString) (*ZVal, error) {

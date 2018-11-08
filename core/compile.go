@@ -41,7 +41,7 @@ func (c *compileCtx) backup() {
 	c.next, c.last = c.last, nil
 }
 
-func compile(parent Context, t *tokenizer.Lexer) Runnable {
+func Compile(parent Context, t *tokenizer.Lexer) Runnable {
 	c := &compileCtx{
 		Context: parent,
 		t:       t,

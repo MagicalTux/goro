@@ -40,7 +40,21 @@ func NewLexer(i io.Reader, fn string) *Lexer {
 		cLine: 1,
 	}
 
-	go res.run()
+	go res.run(lexText)
+
+	return res
+}
+
+func NewLexerPhp(i io.Reader, fn string) *Lexer {
+	res := &Lexer{
+		input: bufio.NewReader(i),
+		fn:    fn, // filename, for position information
+		items: make(chan *Item, 2),
+		sLine: 1,
+		cLine: 1,
+	}
+
+	go res.run(lexPhp)
 
 	return res
 }
@@ -79,17 +93,13 @@ func (l *Lexer) hasPrefix(s string) bool {
 	return string(v) == s
 }
 
-func (l *Lexer) run() {
-	l.push(lexText)
-	for state := l.base; state != nil; {
+func (l *Lexer) run(state lexState) {
+	l.push(state)
+	for state = l.base; state != nil; {
 		state = state(l)
 	}
 	close(l.items)
 }
-
-//func (l *Lexer) value() string {
-//	return l.output.String()
-//}
 
 func (l *Lexer) emit(t ItemType) {
 	l.items <- &Item{t, l.output.String(), l.fn, l.sLine, l.sChar}
