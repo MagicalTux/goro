@@ -4,7 +4,9 @@ import "sync"
 
 type hashTableVal struct {
 	prev, next *hashTableVal
+	k          Val
 	v          *ZVal
+	deleted    bool
 }
 
 type ZHashTable struct {
@@ -21,6 +23,10 @@ func NewHashTable() *ZHashTable {
 		_idx_s: make(map[ZString]*hashTableVal),
 		_idx_i: make(map[ZInt]*hashTableVal),
 	}
+}
+
+func (z *ZHashTable) GetIterator() ZIterator {
+	return &zhashtableIterator{z, z.first}
 }
 
 func (z *ZHashTable) GetString(k ZString) *ZVal {
@@ -44,7 +50,7 @@ func (z *ZHashTable) SetString(k ZString, v *ZVal) error {
 		return nil
 	}
 	// append
-	nt := &hashTableVal{v: v}
+	nt := &hashTableVal{k: k, v: v}
 	z._idx_s[k] = nt
 	if z.last == nil {
 		z.first = nt
@@ -78,7 +84,7 @@ func (z *ZHashTable) SetInt(k ZInt, v *ZVal) error {
 		return nil
 	}
 	// append
-	nt := &hashTableVal{v: v}
+	nt := &hashTableVal{k: k, v: v}
 	z._idx_i[k] = nt
 	if z.last == nil {
 		z.first = nt
@@ -103,7 +109,7 @@ func (z *ZHashTable) Append(v *ZVal) error {
 		}
 	}
 
-	nt := &hashTableVal{v: v}
+	nt := &hashTableVal{k: z.inc, v: v}
 	z._idx_i[z.inc] = nt
 	z.inc += 1
 

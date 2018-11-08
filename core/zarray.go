@@ -19,6 +19,18 @@ type ZArrayAccess interface {
 	OffsetSet(key, value *ZVal) error
 }
 
+type ZIterable interface {
+	GetIterator() ZIterator
+}
+
+type ZIterator interface {
+	Current(ctx Context) *ZVal
+	Key(ctx Context) *ZVal
+	Next(ctx Context)
+	Rewind(ctx Context)
+	Valid(ctx Context) bool
+}
+
 // php array will use integer keys for integer values and integer-looking strings
 func getArrayKeyValue(s *ZVal) (ZInt, ZString, bool) {
 	switch s.GetType() {
