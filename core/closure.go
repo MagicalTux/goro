@@ -5,7 +5,7 @@ import (
 )
 
 type funcArg struct {
-	varName      string
+	varName      ZString
 	required     bool
 	defaultValue runnable
 }

@@ -16,11 +16,11 @@ import (
 type runVariable string
 
 func (r runVariable) run(ctx Context) (*ZVal, error) {
-	return ctx.GetVariable(string(r))
+	return ctx.GetVariable(ZString(r))
 }
 
 func (r runVariable) WriteValue(ctx Context, value *ZVal) error {
-	return ctx.SetVariable(string(r), value)
+	return ctx.SetVariable(ZString(r), value)
 }
 
 func compileExpr(i *tokenizer.Item, c *compileCtx) (runnable, error) {
@@ -58,7 +58,7 @@ func compileExpr(i *tokenizer.Item, c *compileCtx) (runnable, error) {
 				if err != nil {
 					return nil, err
 				}
-				return &runnableFunctionCall{i.Data, args}, nil
+				return &runnableFunctionCall{ZString(i.Data), args}, nil
 			}
 		}
 	case tokenizer.T_CONSTANT_ENCAPSED_STRING:

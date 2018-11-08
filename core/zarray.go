@@ -7,11 +7,12 @@ import "strconv"
 // we store values in _d with a regular index
 
 type ZArray struct {
-	h *ZHashTable
+	h      *ZHashTable
+	IsCopy bool // if true, write attempts will cause a copy of the object to be made (copy on write)
 }
 
 // php array will use integer keys for integer values and integer-looking strings
-func getKeyValue(s *ZVal) (ZInt, ZString, bool) {
+func getArrayKeyValue(s *ZVal) (ZInt, ZString, bool) {
 	switch s.GetType() {
 	case ZtInt:
 		return s.v.(ZInt), "", true
@@ -34,4 +35,17 @@ func getKeyValue(s *ZVal) (ZInt, ZString, bool) {
 
 func (a *ZArray) GetType() ZType {
 	return ZtArray
+}
+
+func (a *ZArray) OffsetSet(key, value *ZVal) (*ZVal, error) {
+	zi, zs, isint := getArrayKeyValue(key)
+
+	var err error
+	if isint {
+		err = a.h.SetInt(zi, value)
+	} else {
+		err = a.h.SetString(zs, value)
+	}
+
+	return value, err
 }

@@ -7,12 +7,12 @@ import (
 )
 
 type runnableFunction struct {
-	name    string
+	name    ZString
 	closure *ZClosure
 }
 
 type runnableFunctionCall struct {
-	name string
+	name ZString
 	args []runnable
 }
 
@@ -52,7 +52,7 @@ func compileFunction(i *tokenizer.Item, c *compileCtx) (runnable, error) {
 	switch i.Type {
 	case tokenizer.T_STRING:
 		// regular function definition
-		return compileFunctionWithName(i.Data, c)
+		return compileFunctionWithName(ZString(i.Data), c)
 	case tokenizer.ItemSingleChar:
 		if i.Data == "(" {
 			// function with no name is lambda
@@ -67,7 +67,7 @@ func compileFunction(i *tokenizer.Item, c *compileCtx) (runnable, error) {
 func compileSpecialFuncCall(i *tokenizer.Item, c *compileCtx) (runnable, error) {
 	// special function call that comes without (), so as a keyword. Example: echo, die, etc
 	has_open := false
-	fn_name := i.Data
+	fn_name := ZString(i.Data)
 
 	i, err := c.NextItem()
 	if err != nil {
@@ -127,7 +127,7 @@ func compileSpecialFuncCall(i *tokenizer.Item, c *compileCtx) (runnable, error) 
 	}
 }
 
-func compileFunctionWithName(name string, c *compileCtx) (runnable, error) {
+func compileFunctionWithName(name ZString, c *compileCtx) (runnable, error) {
 	var err error
 	args, err := compileFunctionArgs(c)
 
@@ -181,8 +181,8 @@ func compileFunctionArgs(c *compileCtx) (res []*funcArg, err error) {
 		}
 
 		arg := &funcArg{}
-		arg.varName = i.Data[1:] // skip $
-		arg.required = true      // typically
+		arg.varName = ZString(i.Data[1:]) // skip $
+		arg.required = true               // typically
 
 		res = append(res, arg)
 

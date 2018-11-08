@@ -9,11 +9,11 @@ type Context interface {
 	context.Context
 	io.Writer
 
-	GetFunction(name string) (Callable, error)
-	RegisterFunction(name string, f Callable) error
+	GetFunction(name ZString) (Callable, error)
+	RegisterFunction(name ZString, f Callable) error
 
-	GetVariable(name string) (*ZVal, error)
-	SetVariable(name string, v *ZVal) error
+	GetVariable(name ZString) (*ZVal, error)
+	SetVariable(name ZString, v *ZVal) error
 }
 
 type phpContext struct {
@@ -29,10 +29,10 @@ func NewContext(parent Context) Context {
 	}
 }
 
-func (c *phpContext) GetVariable(name string) (*ZVal, error) {
+func (c *phpContext) GetVariable(name ZString) (*ZVal, error) {
 	return c.h.GetString(name), nil
 }
 
-func (c *phpContext) SetVariable(name string, v *ZVal) error {
+func (c *phpContext) SetVariable(name ZString, v *ZVal) error {
 	return c.h.SetString(name, v)
 }
