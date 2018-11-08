@@ -125,6 +125,8 @@ func compileExpr(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 
 			// TODO: math priority
 			return &runOperator{op: i.Data, a: v, b: t_v}, nil
+		case '?':
+			return compileTernaryOp(v, c)
 		case '(':
 			// this is a function call of whatever is before
 			c.backup()
