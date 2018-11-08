@@ -14,5 +14,14 @@ func (r runConstant) Run(ctx Context) (l *ZVal, err error) {
 		return &ZVal{ZBool(false)}, nil
 	}
 
-	return ctx.GetConstant(ZString(r))
+	z, err := ctx.GetConstant(ZString(r))
+	if err != nil {
+		return nil, err
+	}
+
+	if z == nil {
+		// TODO issue warning Use of undefined constant tata - assumed 'tata' (this will throw an Error in a future version of PHP)
+		return &ZVal{ZString(r)}, nil
+	}
+	return z, nil
 }
