@@ -191,11 +191,12 @@ func operatorCompare(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 	}
 
 	if ia != nil || ib != nil {
+		// if either part is a numeric, force the other one as numeric too and go through comparison
 		if ia == nil {
-			ia = a
+			ia, _ = a.AsNumeric(ctx)
 		}
 		if ib == nil {
-			ib = b
+			ib, _ = b.AsNumeric(ctx)
 		}
 
 		// perform numeric comparison
