@@ -18,6 +18,7 @@ func init() {
 		tokenizer.T_CLOSE_TAG:   nil,
 		tokenizer.T_INLINE_HTML: &compileFuncCb{f: compileInlineHtml, skip: true},
 		tokenizer.T_FUNCTION:    &compileFuncCb{f: compileFunction, skip: true},
+		tokenizer.T_WHILE:       &compileFuncCb{f: compileWhile, skip: true},
 		tokenizer.T_IF:          &compileFuncCb{f: compileIf, skip: true},
 		tokenizer.T_RETURN:      &compileFuncCb{f: compileReturn},
 		tokenizer.T_VARIABLE:    &compileFuncCb{f: compileExpr},

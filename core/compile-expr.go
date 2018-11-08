@@ -122,7 +122,7 @@ func compileExpr(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 			// just a value
 			return v, nil
 		}
-	case tokenizer.T_AND_EQUAL, tokenizer.T_BOOLEAN_AND, tokenizer.T_BOOLEAN_OR, tokenizer.T_CONCAT_EQUAL, tokenizer.T_DIV_EQUAL, tokenizer.T_IS_EQUAL: // etc... FIXME TODO
+	case tokenizer.T_AND_EQUAL, tokenizer.T_BOOLEAN_AND, tokenizer.T_BOOLEAN_OR, tokenizer.T_CONCAT_EQUAL, tokenizer.T_DIV_EQUAL, tokenizer.T_IS_EQUAL, tokenizer.T_MINUS_EQUAL: // etc... FIXME TODO
 		// what follows is also an expression
 		t_v, err := compileExpr(nil, c)
 		if err != nil {
