@@ -92,7 +92,15 @@ func compileExpr(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 			return nil, i.Unexpected()
 		}
 	default:
-		return nil, i.Unexpected()
+		h, ok := itemTypeHandler[i.Type]
+		if ok && h != nil {
+			v, err = h.f(i, c)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			return nil, i.Unexpected()
+		}
 	}
 
 	// load operator, if any
@@ -117,6 +125,14 @@ func compileExpr(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 
 			// TODO: math priority
 			return &runOperator{op: i.Data, a: v, b: t_v}, nil
+		case '(':
+			// this is a function call of whatever is before
+			c.backup()
+			args, err := compileFuncPassedArgs(c)
+			if err != nil {
+				return nil, err
+			}
+			return &runnableFunctionCallRef{v, args}, nil
 		case ';':
 			c.backup()
 			// just a value

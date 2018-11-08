@@ -16,6 +16,11 @@ type runnableFunctionCall struct {
 	args []Runnable
 }
 
+type runnableFunctionCallRef struct {
+	name Runnable
+	args []Runnable
+}
+
 func (r *runnableFunction) Run(ctx Context) (l *ZVal, err error) {
 	// TODO: create new variables local context, set collected arguments, and run
 	return &ZVal{r.closure}, nil
@@ -27,6 +32,39 @@ func (r *runnableFunctionCall) Run(ctx Context) (l *ZVal, err error) {
 	if err != nil {
 		return nil, err
 	}
+	// collect args
+	f_arg := make([]*ZVal, len(r.args))
+	for i, a := range r.args {
+		f_arg[i], err = a.Run(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return f.Call(ctx, f_arg)
+}
+
+func (r *runnableFunctionCallRef) Run(ctx Context) (l *ZVal, err error) {
+	v, err := r.name.Run(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var f Callable
+	var ok bool
+
+	if f, ok = v.v.(Callable); !ok {
+		v, err = v.As(ctx, ZtString)
+		if err != nil {
+			return nil, err
+		}
+		// grab function
+		f, err = ctx.GetFunction(v.v.(ZString))
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	// collect args
 	f_arg := make([]*ZVal, len(r.args))
 	for i, a := range r.args {

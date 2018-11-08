@@ -24,6 +24,7 @@ func init() {
 		tokenizer.T_VARIABLE:    &compileFuncCb{f: compileExpr},
 		tokenizer.T_ECHO:        &compileFuncCb{f: compileSpecialFuncCall},
 		tokenizer.T_EXIT:        &compileFuncCb{f: compileSpecialFuncCall},
+		tokenizer.T_ISSET:       &compileFuncCb{f: compileSpecialFuncCall},
 		tokenizer.T_STRING:      &compileFuncCb{f: compileExpr},
 	}
 
