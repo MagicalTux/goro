@@ -68,6 +68,28 @@ func (r *runOperator) Run(ctx Context) (*ZVal, error) {
 		default:
 			return nil, errors.New("todo operator type unsupported")
 		}
+	case "<":
+		switch a.v.GetType() {
+		case ZtInt:
+			r := &ZVal{ZBool(a.v.(ZInt) < b.v.(ZInt))}
+			return r, nil
+		case ZtFloat:
+			r := &ZVal{ZBool(a.v.(ZFloat) < b.v.(ZFloat))}
+			return r, nil
+		default:
+			return nil, errors.New("todo operator type unsupported")
+		}
+	case ">":
+		switch a.v.GetType() {
+		case ZtInt:
+			r := &ZVal{ZBool(a.v.(ZInt) > b.v.(ZInt))}
+			return r, nil
+		case ZtFloat:
+			r := &ZVal{ZBool(a.v.(ZFloat) > b.v.(ZFloat))}
+			return r, nil
+		default:
+			return nil, errors.New("todo operator type unsupported")
+		}
 	}
 	// TODO
 	log.Printf("operator %s %s %s", r.op, a, b)

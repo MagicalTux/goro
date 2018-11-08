@@ -66,6 +66,14 @@ func compileBaseSingle(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 	var h *compileFuncCb
 	var ok bool
 
+	if i == nil {
+		var err error
+		i, err = c.NextItem()
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	// is it a single char item?
 	if i.Type == tokenizer.ItemSingleChar {
 		ch := []rune(i.Data)[0]

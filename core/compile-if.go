@@ -1,8 +1,6 @@
 package core
 
 import (
-	"errors"
-
 	"git.atonline.com/tristantech/gophp/core/tokenizer"
 )
 
@@ -28,5 +26,52 @@ func (r *runnableIf) Run(ctx Context) (l *ZVal, err error) {
 
 func compileIf(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 	// T_IF (expression) ...? else ...?
-	return nil, errors.New("todo compileIf")
+
+	// parse if expression
+	i, err := c.NextItem()
+	if err != nil {
+		return nil, err
+	}
+	if !i.IsSingle('(') {
+		return nil, i.Unexpected()
+	}
+
+	r := &runnableIf{}
+	r.cond, err = compileExpr(nil, c)
+	if err != nil {
+		return nil, err
+	}
+
+	// check for )
+	i, err = c.NextItem()
+	if err != nil {
+		return nil, err
+	}
+	if !i.IsSingle(')') {
+		return nil, i.Unexpected()
+	}
+
+	// parse expression
+	r.yes, err = compileBaseSingle(nil, c)
+	if err != nil {
+		return nil, err
+	}
+
+	i, err = c.NextItem()
+	if err != nil {
+		return r, err
+	}
+	// check for else (TODO check elseif)
+	if i.Type != tokenizer.T_ELSE {
+		c.backup()
+		return r, nil
+	}
+
+	// parse else
+	r.no, err = compileBaseSingle(nil, c)
+	if err != nil {
+		return nil, err
+	}
+
+	return r, nil
 }
