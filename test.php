@@ -10,9 +10,9 @@ $test = test(4, "3.2");
 echo 'This is a ' . $test . "\n";
 var_dump($test);
 
-if ($test > 5) {
-	echo "Test is >5 \n";
-} else {
-	echo "Test is not over five\n";
-}
+$v = <<<EOF
+This is heredoc [$test]!
+EOF;
+
+var_dump($v);
 

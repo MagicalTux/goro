@@ -52,6 +52,7 @@ func lexPhpStringWhitespace(l *Lexer) lexState {
 			if l.pos > l.start {
 				l.emit(T_ENCAPSED_AND_WHITESPACE)
 			}
+			// meh :(
 			return lexPhpVariable
 		default:
 			l.next()

@@ -27,6 +27,9 @@ func lexPhp(l *Lexer) lexState {
 			}
 			return lexPhpOperator
 		case '*', '+', '-', '&', '|', '^', '?', '.', '<', '>', '=', ':', '!':
+			if l.hasPrefix("<<<") {
+				return lexPhpHeredoc
+			}
 			return lexPhpOperator
 		case '\'':
 			return lexPhpStringConst

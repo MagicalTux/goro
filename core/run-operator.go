@@ -185,7 +185,7 @@ func operatorCompare(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 	case ZtString:
 		if a.v.(ZString).LooksInt() {
 			ia, _ = a.As(ctx, ZtInt)
-		} else if a.v.(ZString).LooksFloat() {
+		} else if a.v.(ZString).IsNumeric() {
 			ia, _ = a.As(ctx, ZtFloat)
 		}
 	}
@@ -196,7 +196,7 @@ func operatorCompare(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 	case ZtString:
 		if b.v.(ZString).LooksInt() {
 			ib, _ = b.As(ctx, ZtInt)
-		} else if b.v.(ZString).LooksFloat() {
+		} else if b.v.(ZString).IsNumeric() {
 			ib, _ = b.As(ctx, ZtFloat)
 		}
 	}

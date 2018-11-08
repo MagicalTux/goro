@@ -33,7 +33,6 @@ var lexPhpOps = map[string]ItemType{
 	"<<=": T_SL_EQUAL,
 	">>":  T_SR,
 	">>=": T_SR_EQUAL,
-	"<<<": T_START_HEREDOC, // TODO
 	"^=":  T_XOR_EQUAL,
 }
 

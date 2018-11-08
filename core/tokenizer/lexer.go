@@ -21,7 +21,8 @@ type Lexer struct {
 	items      chan *Item
 	base       lexState
 
-	output strings.Builder
+	inputRst []byte
+	output   strings.Builder
 
 	sLine, sChar int // start line/char
 	cLine, cChar int // current line/char
@@ -74,7 +75,7 @@ func (l *Lexer) NextItem() (*Item, error) {
 }
 
 func (l *Lexer) hasPrefix(s string) bool {
-	v, _ := l.input.Peek(len(s))
+	v := l.peekString(len(s))
 	return string(v) == s
 }
 
@@ -100,13 +101,24 @@ func (l *Lexer) emit(t ItemType) {
 func (l *Lexer) next() rune {
 	var r rune
 	var err error
-	r, l.width, err = l.input.ReadRune()
-	if err != nil {
-		if err == io.EOF {
-			return eof
+
+	if len(l.inputRst) > 0 {
+		r, l.width = utf8.DecodeRune(l.inputRst)
+		if l.width == len(l.inputRst) {
+			l.inputRst = nil
+		} else {
+			l.inputRst = l.inputRst[l.width:]
 		}
-		panic(err) // TODO FIXME
+	} else {
+		r, l.width, err = l.input.ReadRune()
+		if err != nil {
+			if err == io.EOF {
+				return eof
+			}
+			panic(err) // TODO FIXME
+		}
 	}
+
 	l.pos += l.width
 	l.pLine, l.pChar = l.cLine, l.cChar
 	l.output.WriteRune(r)
@@ -124,13 +136,33 @@ func (l *Lexer) ignore() {
 	l.output.Reset()
 }
 
+func (l *Lexer) reset() {
+	tmp := []byte(l.output.String())
+
+	if len(l.inputRst) == 0 {
+		l.inputRst = tmp
+	} else {
+		l.inputRst = append(l.inputRst, tmp...)
+	}
+
+	l.output.Reset()
+	l.pos -= len(tmp)
+	l.cLine, l.cChar = l.sLine, l.sChar
+}
+
 func (l *Lexer) backup() {
+	if l.width == 0 {
+		return // fail
+	}
+
 	// update buffers
-	l.input.UnreadRune()
 	tmp := l.output.String()
-	tmp = tmp[:len(tmp)-l.width] // remove
+	r := []byte(tmp[len(tmp)-l.width:]) // removed char
+	tmp = tmp[:len(tmp)-l.width]        // remove
 	l.output.Reset()
 	l.output.WriteString(tmp)
+
+	l.inputRst = append(l.inputRst, r...)
 
 	l.pos -= l.width
 	l.cLine, l.cChar = l.pLine, l.pChar
@@ -138,7 +170,7 @@ func (l *Lexer) backup() {
 }
 
 func (l *Lexer) peek() rune {
-	s, _ := l.input.Peek(utf8.UTFMax)
+	s := []byte(l.peekString(utf8.UTFMax))
 	if len(s) == 0 {
 		return eof
 	}
@@ -147,6 +179,14 @@ func (l *Lexer) peek() rune {
 }
 
 func (l *Lexer) peekString(ln int) string {
+	if len(l.inputRst) > 0 {
+		if len(l.inputRst) >= ln {
+			return string(l.inputRst[:ln])
+		}
+		res := l.inputRst
+		s, _ := l.input.Peek(ln - len(res))
+		return string(append(res, s...))
+	}
 	s, _ := l.input.Peek(ln)
 	return string(s)
 }

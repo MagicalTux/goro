@@ -24,7 +24,7 @@ func (s ZString) LooksInt() bool {
 	return true
 }
 
-func (s ZString) LooksFloat() bool {
+func (s ZString) IsNumeric() bool {
 	var gotDot, gotE, first bool
 	if len(s) == 0 {
 		return false

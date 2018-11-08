@@ -45,6 +45,32 @@ func compileQuoteConstant(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 	return &ZVal{ZString(b.String())}, nil
 }
 
+func compileQuoteHeredoc(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
+	// i == T_START_HEREDOC
+	var res runConcat
+	var err error
+
+	for {
+		i, err = c.NextItem()
+		if err != nil {
+			return nil, err
+		}
+
+		_ = res
+		switch i.Type {
+		case tokenizer.T_ENCAPSED_AND_WHITESPACE:
+			res = append(res, &ZVal{unescapePhpQuotedString(i.Data)})
+		case tokenizer.T_VARIABLE:
+			res = append(res, runVariable(i.Data[1:]))
+		case tokenizer.T_END_HEREDOC:
+			// end of quote
+			return res, nil
+		default:
+			return nil, i.Unexpected()
+		}
+	}
+}
+
 func compileQuoteEncapsed(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 	// i == '"'
 
