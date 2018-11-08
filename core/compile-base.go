@@ -22,6 +22,7 @@ func init() {
 		tokenizer.T_RETURN:      &compileFuncCb{f: compileReturn},
 		tokenizer.T_VARIABLE:    &compileFuncCb{f: compileExpr},
 		tokenizer.T_ECHO:        &compileFuncCb{f: compileSpecialFuncCall},
+		tokenizer.T_STRING:      &compileFuncCb{f: compileExpr},
 	}
 
 	itemSingleHandler = map[rune]*compileFuncCb{

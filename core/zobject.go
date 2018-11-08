@@ -3,7 +3,7 @@ package core
 import "errors"
 
 type ZClass struct {
-	name ZString
+	Name ZString
 }
 
 type ZObject struct {

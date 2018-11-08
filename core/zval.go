@@ -65,3 +65,7 @@ func (z *ZVal) String() string {
 		return fmt.Sprintf("Unknown[%T]", z.v)
 	}
 }
+
+func (z *ZVal) Value() interface{} {
+	return z.v
+}
