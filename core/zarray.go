@@ -20,7 +20,7 @@ type ZArrayAccess interface {
 }
 
 type ZIterable interface {
-	GetIterator() ZIterator
+	NewIterator() ZIterator
 }
 
 type ZIterator interface {
@@ -29,6 +29,10 @@ type ZIterator interface {
 	Next(ctx Context)
 	Rewind(ctx Context)
 	Valid(ctx Context) bool
+}
+
+type ZCountable interface {
+	Count(ctx Context) ZInt
 }
 
 // php array will use integer keys for integer values and integer-looking strings
@@ -91,4 +95,12 @@ func (a *ZArray) OffsetSet(key, value *ZVal) error {
 	}
 
 	return err
+}
+
+func (a *ZArray) NewIterator() ZIterator {
+	return a.h.NewIterator()
+}
+
+func (a *ZArray) Count(ctx Context) ZInt {
+	return a.h.count
 }

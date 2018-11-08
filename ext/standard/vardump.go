@@ -8,28 +8,42 @@ import (
 
 func stdFuncVarDump(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 	for _, z := range args {
-		doVarDump(ctx, z)
+		doVarDump(ctx, z, "")
 	}
 	return nil, nil
 }
 
-func doVarDump(ctx core.Context, z *core.ZVal) {
+func doVarDump(ctx core.Context, z *core.ZVal, linePfx string) {
 	switch z.GetType() {
 	case core.ZtNull:
-		ctx.Write([]byte("NULL\n"))
+		fmt.Fprintf(ctx, "%sNULL\n", linePfx)
 	case core.ZtBool:
 		if z.Value().(core.ZBool) {
-			ctx.Write([]byte("bool(true)\n"))
+			fmt.Fprintf(ctx, "%sbool(true)\n", linePfx)
 		} else {
-			ctx.Write([]byte("bool(false)\n"))
+			fmt.Fprintf(ctx, "%sbool(false)\n", linePfx)
 		}
 	case core.ZtInt:
-		fmt.Fprintf(ctx, "int(%d)\n", z.Value())
+		fmt.Fprintf(ctx, "%sint(%d)\n", linePfx, z.Value())
 	case core.ZtFloat:
-		fmt.Fprintf(ctx, "float(%g)\n", z.Value())
+		fmt.Fprintf(ctx, "%sfloat(%g)\n", linePfx, z.Value())
 	case core.ZtString:
 		s := z.Value().(core.ZString)
-		fmt.Fprintf(ctx, "string(%d) \"%s\"\n", len(s), s)
+		fmt.Fprintf(ctx, "%sstring(%d) \"%s\"\n", linePfx, len(s), s)
+	case core.ZtArray:
+		c := z.Value().(core.ZCountable).Count(ctx)
+		fmt.Fprintf(ctx, "%sarray(%d) {\n", linePfx, c)
+		localPfx := linePfx + "  "
+		it := z.NewIterator()
+		for {
+			if !it.Valid(ctx) {
+				break
+			}
+			fmt.Fprintf(ctx, "%s[%s]=>\n", localPfx, it.Key(ctx))
+			doVarDump(ctx, it.Current(ctx), localPfx)
+			it.Next(ctx)
+		}
+		fmt.Fprintf(ctx, "%s}\n", linePfx)
 	default:
 		fmt.Fprintf(ctx, "Unknown[%T]:%+v\n", z.Value(), z.Value())
 	}

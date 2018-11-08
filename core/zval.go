@@ -76,3 +76,10 @@ func (z *ZVal) Array() ZArrayAccess {
 	}
 	return nil
 }
+
+func (z *ZVal) NewIterator() ZIterator {
+	if r, ok := z.v.(ZIterable); ok {
+		return r.NewIterator()
+	}
+	return nil
+}
