@@ -10,6 +10,4 @@ $test = test(4, "3.2");
 echo 'This is a ' . $test . "\n";
 var_dump($test);
 
-eval('var_dump($test);');
-var_dump(eval('return $test;'));
-
+$environment = isset($_ENV) ? $_ENV : array();
