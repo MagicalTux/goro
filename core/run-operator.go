@@ -190,7 +190,14 @@ func operatorCompare(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 		}
 	}
 
-	if ia != nil && ib != nil {
+	if ia != nil || ib != nil {
+		if ia == nil {
+			ia = a
+		}
+		if ib == nil {
+			ib = b
+		}
+
 		// perform numeric comparison
 		if ia.GetType() != ib.GetType() {
 			// normalize type - at this point as both are numeric, it means either is a float. Make them both float
