@@ -48,6 +48,7 @@ func (ac *runArrayAccess) Run(ctx Context) (*ZVal, error) {
 	}
 
 	switch v.GetType() {
+	case ZtString:
 	case ZtArray:
 	case ZtObject:
 	default:
@@ -55,11 +56,6 @@ func (ac *runArrayAccess) Run(ctx Context) (*ZVal, error) {
 		if err != nil {
 			return nil, err
 		}
-	}
-
-	array, ok := v.v.(ZArrayAccess)
-	if !ok {
-		return nil, errors.New("Cannot use object of type ?? as array") // TODO
 	}
 
 	offset, err := ac.offset.Run(ctx)
@@ -85,8 +81,83 @@ func (ac *runArrayAccess) Run(ctx Context) (*ZVal, error) {
 		offset, err = offset.As(ctx, ZtString)
 	}
 
+	if v.GetType() == ZtString {
+		if offset.GetType() != ZtInt {
+			// PHP Warning:  Illegal string offset 'abc'
+			offset, err = offset.As(ctx, ZtInt)
+			if err != nil {
+				return nil, err
+			}
+		}
+		str := v.String()
+		iofft := int(offset.Value().(ZInt))
+
+		if iofft < 0 || iofft >= len(str) {
+			// PHP Notice:  Uninitialized string offset: 3
+			return &ZVal{ZString("")}, nil
+		}
+
+		return &ZVal{ZString([]byte{str[iofft]})}, nil
+	}
+
+	array := v.Array()
+	if array == nil {
+		return nil, errors.New("Cannot use object of type ?? as array") // TODO
+	}
+
 	// OK...
 	return array.OffsetGet(offset)
+}
+
+func (ac *runArrayAccess) WriteValue(ctx Context, value *ZVal) error {
+	v, err := ac.value.Run(ctx)
+	if err != nil {
+		return err
+	}
+
+	switch v.GetType() {
+	case ZtArray:
+	case ZtObject:
+	default:
+		err = v.CastTo(ctx, ZtArray)
+		if err != nil {
+			return err
+		}
+		if wr, ok := ac.value.(Writable); ok {
+			wr.WriteValue(ctx, v)
+		}
+	}
+
+	array := v.Array()
+	if array == nil {
+		return errors.New("Cannot use object of type ?? as array") // TODO
+	}
+
+	offset, err := ac.offset.Run(ctx)
+	if err != nil {
+		return err
+	}
+
+	switch offset.GetType() {
+	case ZtResource, ZtFloat:
+		offset, err = offset.As(ctx, ZtInt)
+		if err != nil {
+			return err
+		}
+	case ZtString:
+	case ZtInt:
+	case ZtObject:
+		// check if has __toString
+		fallthrough
+	case ZtArray:
+		// Trigger: Illegal offset type
+		fallthrough
+	default:
+		offset, err = offset.As(ctx, ZtString)
+	}
+
+	// OK...
+	return array.OffsetSet(offset, value)
 }
 
 func compileArray(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
@@ -185,6 +256,7 @@ func compileArrayAccess(v Runnable, c *compileCtx) (Runnable, error) {
 		return nil, i.Unexpected()
 	}
 
+	// don't really need this loop anymore?
 	for {
 		offt, err := compileExpr(nil, c)
 		if err != nil {
@@ -210,8 +282,7 @@ func compileArrayAccess(v Runnable, c *compileCtx) (Runnable, error) {
 		if i.IsSingle('[') {
 			continue
 		}
-		c.backup()
 
-		return v, nil
+		return compilePostExpr(v, i, c)
 	}
 }

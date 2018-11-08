@@ -130,6 +130,10 @@ func compileExpr(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 		}
 	}
 
+	return compilePostExpr(v, i, c)
+}
+
+func compilePostExpr(v Runnable, i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 	// can be any kind of glue (operators, etc)
 	switch i.Type {
 	case tokenizer.ItemSingleChar:

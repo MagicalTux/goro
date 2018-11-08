@@ -95,6 +95,15 @@ func (z *ZVal) As(ctx Context, t ZType) (*ZVal, error) {
 		default:
 			return &ZVal{ZString(fmt.Sprintf("Unknown[%T]", z.v))}, nil
 		}
+	case ZtArray:
+		switch z.v.(type) {
+		case nil:
+			return &ZVal{NewZArray()}, nil
+		default:
+			a := NewZArray()
+			a.OffsetSet(nil, z)
+			return &ZVal{a}, nil
+		}
 	}
 
 	return nil, fmt.Errorf("todo %s => %s", z.v.GetType(), t)

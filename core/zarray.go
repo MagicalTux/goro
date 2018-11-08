@@ -16,7 +16,7 @@ type ZArray struct {
 
 type ZArrayAccess interface {
 	OffsetGet(key *ZVal) (*ZVal, error)
-	OffsetSet(key, value *ZVal) (*ZVal, error)
+	OffsetSet(key, value *ZVal) error
 }
 
 // php array will use integer keys for integer values and integer-looking strings
@@ -63,10 +63,10 @@ func (a *ZArray) OffsetGet(key *ZVal) (*ZVal, error) {
 	}
 }
 
-func (a *ZArray) OffsetSet(key, value *ZVal) (*ZVal, error) {
+func (a *ZArray) OffsetSet(key, value *ZVal) error {
 	if key == nil || key.GetType() == ZtNull {
 		err := a.h.Append(value)
-		return value, err
+		return err
 	}
 
 	zi, zs, isint := getArrayKeyValue(key)
@@ -78,5 +78,5 @@ func (a *ZArray) OffsetSet(key, value *ZVal) (*ZVal, error) {
 		err = a.h.SetString(zs, value)
 	}
 
-	return value, err
+	return err
 }

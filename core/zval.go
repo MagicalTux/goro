@@ -69,3 +69,10 @@ func (z *ZVal) String() string {
 func (z *ZVal) Value() interface{} {
 	return z.v
 }
+
+func (z *ZVal) Array() ZArrayAccess {
+	if r, ok := z.v.(ZArrayAccess); ok {
+		return r
+	}
+	return nil
+}
