@@ -79,3 +79,30 @@ func (z *ZHashTable) SetInt(k ZInt, v *ZVal) error {
 	z.last = nt
 	return nil
 }
+
+func (z *ZHashTable) Append(v *ZVal) error {
+	z.lock.Lock()
+	defer z.lock.Unlock()
+
+	for {
+		if _, ok := z._idx_i[z.inc]; ok {
+			z.inc += 1
+		} else {
+			break
+		}
+	}
+
+	nt := &hashTableVal{v: v}
+	z._idx_i[z.inc] = nt
+	z.inc += 1
+
+	if z.last == nil {
+		z.first = nt
+		z.last = nt
+		return nil
+	}
+	z.last.next = nt
+	nt.prev = z.last
+	z.last = nt
+	return nil
+}

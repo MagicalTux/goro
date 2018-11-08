@@ -33,11 +33,20 @@ func getArrayKeyValue(s *ZVal) (ZInt, ZString, bool) {
 	return 0, ZString(str), false
 }
 
+func NewZArray() *ZArray {
+	return &ZArray{h: NewHashTable()}
+}
+
 func (a *ZArray) GetType() ZType {
 	return ZtArray
 }
 
 func (a *ZArray) OffsetSet(key, value *ZVal) (*ZVal, error) {
+	if key == nil || key.GetType() == ZtNull {
+		err := a.h.Append(value)
+		return value, err
+	}
+
 	zi, zs, isint := getArrayKeyValue(key)
 
 	var err error

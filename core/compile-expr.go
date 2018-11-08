@@ -93,7 +93,15 @@ func compileExpr(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 		case '@':
 			// this is a silent operator
 			// TODO: we should encase result from compileExpr into a "silencer"
-			return compileExpr(nil, c)
+			v, err = compileExpr(nil, c)
+			if err != nil {
+				return nil, err
+			}
+		case '[':
+			v, err = compileArray(i, c)
+			if err != nil {
+				return nil, err
+			}
 		default:
 			return nil, i.Unexpected()
 		}
