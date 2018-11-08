@@ -13,6 +13,7 @@ const (
 	ZtResource
 )
 
+// scalar stuff
 type ZBool bool
 type ZInt int64
 type ZFloat float64
@@ -32,4 +33,8 @@ func (z ZInt) GetType() ZType {
 
 func (z ZFloat) GetType() ZType {
 	return ZtFloat
+}
+
+func ZStr(s string) *ZVal {
+	return &ZVal{ZString(s)}
 }
