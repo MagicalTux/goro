@@ -11,5 +11,5 @@ echo 'This is a ' . $test . "\n";
 var_dump($test);
 
 $x = array(1 => 2, 3 => 4);
-var_dump($x);
+var_dump($x[1]);
 

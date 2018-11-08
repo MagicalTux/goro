@@ -6,6 +6,15 @@ import (
 	"strings"
 )
 
+func (z *ZVal) CastTo(ctx Context, t ZType) error {
+	z2, err := z.As(ctx, t)
+	if err != nil {
+		return err
+	}
+	z.v = z2.v
+	return nil
+}
+
 func (z *ZVal) As(ctx Context, t ZType) (*ZVal, error) {
 	if z.GetType() == t {
 		// nothing to do

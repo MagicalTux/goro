@@ -57,6 +57,17 @@ func (z *ZHashTable) SetString(k ZString, v *ZVal) error {
 	return nil
 }
 
+func (z *ZHashTable) GetInt(k ZInt) *ZVal {
+	z.lock.RLock()
+	defer z.lock.RUnlock()
+
+	t, ok := z._idx_i[k]
+	if !ok {
+		return nil
+	}
+	return t.v
+}
+
 func (z *ZHashTable) SetInt(k ZInt, v *ZVal) error {
 	z.lock.Lock()
 	defer z.lock.Unlock()

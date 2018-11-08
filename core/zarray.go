@@ -1,6 +1,9 @@
 package core
 
-import "strconv"
+import (
+	"errors"
+	"strconv"
+)
 
 // php arrays work with two kind of keys
 
@@ -9,6 +12,11 @@ import "strconv"
 type ZArray struct {
 	h      *ZHashTable
 	IsCopy bool // if true, write attempts will cause a copy of the object to be made (copy on write)
+}
+
+type ZArrayAccess interface {
+	OffsetGet(key *ZVal) (*ZVal, error)
+	OffsetSet(key, value *ZVal) (*ZVal, error)
 }
 
 // php array will use integer keys for integer values and integer-looking strings
@@ -39,6 +47,20 @@ func NewZArray() *ZArray {
 
 func (a *ZArray) GetType() ZType {
 	return ZtArray
+}
+
+func (a *ZArray) OffsetGet(key *ZVal) (*ZVal, error) {
+	if key == nil || key.GetType() == ZtNull {
+		return nil, errors.New("Cannot use [] for reading")
+	}
+
+	zi, zs, isint := getArrayKeyValue(key)
+
+	if isint {
+		return a.h.GetInt(zi), nil
+	} else {
+		return a.h.GetString(zs), nil
+	}
 }
 
 func (a *ZArray) OffsetSet(key, value *ZVal) (*ZVal, error) {

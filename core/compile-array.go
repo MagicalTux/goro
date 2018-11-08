@@ -1,6 +1,10 @@
 package core
 
-import "git.atonline.com/tristantech/gophp/core/tokenizer"
+import (
+	"errors"
+
+	"git.atonline.com/tristantech/gophp/core/tokenizer"
+)
 
 type arrayEntry struct {
 	k, v Runnable
@@ -30,6 +34,59 @@ func (a runArray) Run(ctx Context) (*ZVal, error) {
 	}
 
 	return &ZVal{array}, nil
+}
+
+type runArrayAccess struct {
+	value  Runnable
+	offset Runnable
+}
+
+func (ac *runArrayAccess) Run(ctx Context) (*ZVal, error) {
+	v, err := ac.value.Run(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	switch v.GetType() {
+	case ZtArray:
+	case ZtObject:
+	default:
+		v, err = v.As(ctx, ZtArray)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	array, ok := v.v.(ZArrayAccess)
+	if !ok {
+		return nil, errors.New("Cannot use object of type ?? as array") // TODO
+	}
+
+	offset, err := ac.offset.Run(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	switch offset.GetType() {
+	case ZtResource, ZtFloat:
+		offset, err = offset.As(ctx, ZtInt)
+		if err != nil {
+			return nil, err
+		}
+	case ZtString:
+	case ZtInt:
+	case ZtObject:
+		// check if has __toString
+		fallthrough
+	case ZtArray:
+		// Trigger: Illegal offset type
+		fallthrough
+	default:
+		offset, err = offset.As(ctx, ZtString)
+	}
+
+	// OK...
+	return array.OffsetGet(offset)
 }
 
 func compileArray(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
@@ -115,4 +172,46 @@ func compileArray(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 	}
 
 	return res, nil
+}
+
+func compileArrayAccess(v Runnable, c *compileCtx) (Runnable, error) {
+	// we got a [
+	i, err := c.NextItem()
+	if err != nil {
+		return nil, err
+	}
+
+	if !i.IsSingle('[') {
+		return nil, i.Unexpected()
+	}
+
+	for {
+		offt, err := compileExpr(nil, c)
+		if err != nil {
+			return nil, err
+		}
+
+		i, err = c.NextItem()
+		if err != nil {
+			return nil, err
+		}
+
+		if !i.IsSingle(']') {
+			return nil, i.Unexpected()
+		}
+
+		v = &runArrayAccess{value: v, offset: offt}
+
+		i, err = c.NextItem()
+		if err != nil {
+			return nil, err
+		}
+
+		if i.IsSingle('[') {
+			continue
+		}
+		c.backup()
+
+		return v, nil
+	}
 }

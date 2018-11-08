@@ -154,6 +154,9 @@ func compileExpr(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 				return nil, err
 			}
 			return &runnableFunctionCallRef{v, args}, nil
+		case '[':
+			c.backup()
+			return compileArrayAccess(v, c)
 		case ';':
 			c.backup()
 			// just a value
