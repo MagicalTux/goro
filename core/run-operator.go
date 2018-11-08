@@ -36,6 +36,7 @@ var operatorList = map[string]*operatorInternalDetails{
 	">=": &operatorInternalDetails{op: operatorCompare},
 	"==": &operatorInternalDetails{op: operatorCompare},
 	"!=": &operatorInternalDetails{op: operatorCompare},
+	"!":  &operatorInternalDetails{op: operatorNot},
 }
 
 func (r *runOperator) Run(ctx Context) (*ZVal, error) {
@@ -98,6 +99,12 @@ func operatorAppend(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 	b, _ = b.As(ctx, ZtString)
 
 	return &ZVal{a.v.(ZString) + b.v.(ZString)}, nil
+}
+
+func operatorNot(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
+	b, _ = b.As(ctx, ZtBool)
+
+	return &ZVal{!b.v.(ZBool)}, nil
 }
 
 func operatorMath(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
