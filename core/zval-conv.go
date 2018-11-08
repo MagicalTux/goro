@@ -1,7 +1,6 @@
 package core
 
 import (
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -16,6 +15,17 @@ func (z *ZVal) As(ctx Context, t ZType) (*ZVal, error) {
 	switch t {
 	case ZtNull:
 		return &ZVal{nil}, nil
+	case ZtBool:
+		switch n := z.v.(type) {
+		case nil:
+			return &ZVal{ZBool(false)}, nil
+		case ZInt:
+			return &ZVal{ZBool(n != 0)}, nil
+		case ZFloat:
+			return &ZVal{ZBool(n != 0)}, nil
+		case ZString:
+			return &ZVal{ZBool(n != "" && n != "0")}, nil
+		}
 	case ZtInt:
 		switch n := z.v.(type) {
 		case ZFloat:
@@ -78,7 +88,7 @@ func (z *ZVal) As(ctx Context, t ZType) (*ZVal, error) {
 		}
 	}
 
-	return nil, errors.New("todo")
+	return nil, fmt.Errorf("todo %s => %s", z.v.GetType(), t)
 }
 
 func (z *ZVal) AsNumeric(ctx Context) (*ZVal, error) {

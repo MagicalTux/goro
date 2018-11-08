@@ -15,7 +15,10 @@ func (r *runnableIf) Run(ctx Context) (l *ZVal, err error) {
 	if err != nil {
 		return nil, err
 	}
-	t, _ = t.As(ctx, ZtBool)
+	t, err = t.As(ctx, ZtBool)
+	if err != nil {
+		return nil, err
+	}
 
 	if t.v.(ZBool) {
 		return r.yes.Run(ctx)

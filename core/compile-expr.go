@@ -26,6 +26,7 @@ func (r runVariable) WriteValue(ctx Context, value *ZVal) error {
 func compileExpr(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 	var v Runnable
 	var err error
+	var is_operator bool
 
 	if i == nil {
 		i, err = c.NextItem()
@@ -74,6 +75,10 @@ func compileExpr(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 			if err != nil {
 				return nil, err
 			}
+		case '!':
+			// this is an operator
+			v = nil
+			is_operator = true
 		default:
 			return nil, i.Unexpected()
 		}
@@ -81,9 +86,12 @@ func compileExpr(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 		return nil, i.Unexpected()
 	}
 
-	i, err = c.NextItem()
-	if err != nil {
-		return v, err
+	// load operator, if any
+	if !is_operator {
+		i, err = c.NextItem()
+		if err != nil {
+			return v, err
+		}
 	}
 
 	// can be any kind of glue (operators, etc)
@@ -91,7 +99,7 @@ func compileExpr(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 	case tokenizer.ItemSingleChar:
 		ch := []rune(i.Data)[0]
 		switch ch {
-		case '+', '-', '/', '*', '=', '.', '<', '>': // TODO list
+		case '+', '-', '/', '*', '=', '.', '<', '>', '!': // TODO list
 			// what follows is also an expression
 			t_v, err := compileExpr(nil, c)
 			if err != nil {

@@ -38,3 +38,26 @@ func (z ZFloat) GetType() ZType {
 func ZStr(s string) *ZVal {
 	return &ZVal{ZString(s)}
 }
+
+func (zt ZType) String() string {
+	switch zt {
+	case ZtNull:
+		return "NULL"
+	case ZtBool:
+		return "boolean"
+	case ZtInt:
+		return "integer"
+	case ZtFloat:
+		return "double"
+	case ZtString:
+		return "string"
+	case ZtArray:
+		return "array"
+	case ZtObject:
+		return "object"
+	case ZtResource:
+		return "resource"
+	default:
+		return "?"
+	}
+}
