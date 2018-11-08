@@ -4,6 +4,7 @@ import "strings"
 
 var phpMagicKeywords = map[string]ItemType{
 	"abstract":        T_ABSTRACT,
+	"array":           T_ARRAY,
 	"as":              T_AS,
 	"break":           T_BREAK,
 	"callable":        T_CALLABLE,

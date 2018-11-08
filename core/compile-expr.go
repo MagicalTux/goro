@@ -78,6 +78,11 @@ func compileExpr(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 		if err != nil {
 			return nil, err
 		}
+	case tokenizer.T_ARRAY:
+		v, err = compileArray(i, c)
+		if err != nil {
+			return nil, err
+		}
 	case tokenizer.ItemSingleChar:
 		ch := []rune(i.Data)[0]
 		switch ch {
