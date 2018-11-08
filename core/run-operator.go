@@ -54,7 +54,10 @@ func (r *runOperator) Run(ctx Context) (*ZVal, error) {
 		if err != nil {
 			return nil, err
 		}
+	} else {
+		a = &ZVal{nil}
 	}
+
 	b, err = r.b.Run(ctx)
 	if err != nil {
 		return nil, err
@@ -65,7 +68,7 @@ func (r *runOperator) Run(ctx Context) (*ZVal, error) {
 		b, _ = b.AsNumeric(ctx)
 
 		// normalize types
-		if a.v.GetType() == ZtFloat || b.v.GetType() == ZtFloat {
+		if a.GetType() == ZtFloat || b.GetType() == ZtFloat {
 			a, _ = a.As(ctx, ZtFloat)
 			b, _ = b.As(ctx, ZtFloat)
 		} else {

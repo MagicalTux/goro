@@ -8,6 +8,7 @@ import (
 
 type runnableFunction struct {
 	name    ZString
+	use     []ZString
 	closure *ZClosure
 }
 
@@ -22,8 +23,16 @@ type runnableFunctionCallRef struct {
 }
 
 func (r *runnableFunction) Run(ctx Context) (l *ZVal, err error) {
-	// TODO: create new variables local context, set collected arguments, and run
-	return &ZVal{r.closure}, nil
+	c := r.closure.dup()
+	// collect use vars
+	for _, s := range r.use {
+		z, err := ctx.GetVariable(s)
+		if err != nil {
+			return nil, err
+		}
+		c.use = append(c.use, &funcUse{s, z})
+	}
+	return &ZVal{c}, nil
 }
 
 func (r *runnableFunctionCall) Run(ctx Context) (l *ZVal, err error) {
@@ -167,11 +176,25 @@ func compileSpecialFuncCall(i *tokenizer.Item, c *compileCtx) (Runnable, error) 
 
 func compileFunctionWithName(name ZString, c *compileCtx) (Runnable, error) {
 	var err error
+	var use []ZString
 	args, err := compileFunctionArgs(c)
 
 	i, err := c.NextItem()
 	if err != nil {
 		return nil, err
+	}
+
+	if i.Type == tokenizer.T_USE && name == "" {
+		// anonymous function variables
+		use, err = compileFunctionUse(c)
+		if err != nil {
+			return nil, err
+		}
+
+		i, err = c.NextItem()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if !i.IsSingle('{') {
@@ -185,6 +208,7 @@ func compileFunctionWithName(name ZString, c *compileCtx) (Runnable, error) {
 
 	return &runnableFunction{
 		name: name,
+		use:  use,
 		closure: &ZClosure{
 			args: args,
 			code: body,
@@ -248,6 +272,56 @@ func compileFunctionArgs(c *compileCtx) (res []*funcArg, err error) {
 
 		// what follows is an expression, a default value of sorts
 		return nil, errors.New("function arg default value TODO") // TODO FIXME
+	}
+}
+
+func compileFunctionUse(c *compileCtx) (res []ZString, err error) {
+	i, err := c.NextItem()
+	if err != nil {
+		return nil, err
+	}
+
+	if !i.IsSingle('(') {
+		return nil, i.Unexpected()
+	}
+
+	i, err = c.NextItem()
+	if err != nil {
+		return nil, err
+	}
+
+	if i.IsSingle(')') {
+		return
+	}
+
+	// parse arguments
+	for {
+		// in a function delcaration, we must have a T_VARIABLE now
+		if i.Type != tokenizer.T_VARIABLE {
+			return nil, i.Unexpected()
+		}
+
+		res = append(res, ZString(i.Data[1:])) // skip $
+
+		i, err = c.NextItem()
+		if err != nil {
+			return nil, err
+		}
+
+		if i.IsSingle(',') {
+			// read and parse next argument
+			i, err = c.NextItem()
+			if err != nil {
+				return nil, err
+			}
+			continue
+		}
+
+		if i.IsSingle(')') {
+			return // end of arguments
+		}
+
+		return nil, i.Unexpected()
 	}
 }
 

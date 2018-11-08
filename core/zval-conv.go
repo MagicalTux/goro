@@ -7,7 +7,7 @@ import (
 )
 
 func (z *ZVal) As(ctx Context, t ZType) (*ZVal, error) {
-	if z.v.GetType() == t {
+	if z.GetType() == t {
 		// nothing to do
 		return z, nil
 	}
@@ -92,6 +92,9 @@ func (z *ZVal) As(ctx Context, t ZType) (*ZVal, error) {
 }
 
 func (z *ZVal) AsNumeric(ctx Context) (*ZVal, error) {
+	if z == nil {
+		return &ZVal{nil}, nil
+	}
 	switch n := z.v.(type) {
 	case ZInt:
 		return z, nil

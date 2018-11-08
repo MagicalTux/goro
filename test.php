@@ -10,8 +10,8 @@ $test = test(4, "3.2");
 echo 'This is a ' . $test . "\n";
 var_dump($test);
 
-$c = function() {
-	return 42;
+$c = function() use ($test) {
+	return $test/2;
 };
 
 var_dump($c);

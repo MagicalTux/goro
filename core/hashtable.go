@@ -10,6 +10,7 @@ type hashTableVal struct {
 type ZHashTable struct {
 	first, last *hashTableVal
 	lock        sync.RWMutex
+	inc         ZInt
 
 	_idx_s map[ZString]*hashTableVal
 	_idx_i map[ZInt]*hashTableVal
