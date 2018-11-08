@@ -10,5 +10,5 @@ $test = test(4, "3.2");
 echo 'This is a ' . $test . "\n";
 var_dump($test);
 
-$x = [1 => 2, 3 => 4];
+$x = [1 => 2, 3 => 4, 5 => [6 => 7, 8 => 9]];
 var_dump($x);
