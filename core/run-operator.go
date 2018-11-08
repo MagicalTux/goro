@@ -21,17 +21,21 @@ type operatorInternalDetails struct {
 var operatorList = map[string]*operatorInternalDetails{
 	"=":  &operatorInternalDetails{write: true, skipA: true},
 	".=": &operatorInternalDetails{write: true, op: operatorAppend},
-	"/=": &operatorInternalDetails{write: true, numeric: true},
-	"*=": &operatorInternalDetails{write: true, numeric: true},
-	"-=": &operatorInternalDetails{write: true, numeric: true},
+	"/=": &operatorInternalDetails{write: true, numeric: true, op: operatorMath},
+	"*=": &operatorInternalDetails{write: true, numeric: true, op: operatorMath},
+	"-=": &operatorInternalDetails{write: true, numeric: true, op: operatorMath},
 	"+=": &operatorInternalDetails{write: true, numeric: true, op: operatorMath},
 	".":  &operatorInternalDetails{op: operatorAppend},
 	"+":  &operatorInternalDetails{numeric: true, op: operatorMath},
-	"-":  &operatorInternalDetails{numeric: true},
-	"/":  &operatorInternalDetails{numeric: true},
-	"*":  &operatorInternalDetails{numeric: true},
+	"-":  &operatorInternalDetails{numeric: true, op: operatorMath},
+	"/":  &operatorInternalDetails{numeric: true, op: operatorMath},
+	"*":  &operatorInternalDetails{numeric: true, op: operatorMath},
 	"<":  &operatorInternalDetails{op: operatorCompare},
 	">":  &operatorInternalDetails{op: operatorCompare},
+	"<=": &operatorInternalDetails{op: operatorCompare},
+	">=": &operatorInternalDetails{op: operatorCompare},
+	"==": &operatorInternalDetails{op: operatorCompare},
+	"!=": &operatorInternalDetails{op: operatorCompare},
 }
 
 func (r *runOperator) Run(ctx Context) (*ZVal, error) {
@@ -292,12 +296,25 @@ func operatorCompare(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 	var res bool
 
 	switch a.v.GetType() {
-	case ZtInt:
-		r := &ZVal{ZBool(a.v.(ZInt) < b.v.(ZInt))}
-		return r, nil
-	case ZtFloat:
-		r := &ZVal{ZBool(a.v.(ZFloat) < b.v.(ZFloat))}
-		return r, nil
+	case ZtString:
+		av := a.v.(ZString)
+		bv := b.v.(ZString)
+		switch op {
+		case "<":
+			res = av < bv
+		case ">":
+			res = av > bv
+		case "<=":
+			res = av <= bv
+		case ">=":
+			res = av >= bv
+		case "==":
+			res = av == bv
+		case "!=":
+			res = av != bv
+		default:
+			return nil, fmt.Errorf("unsupported operator %s", op)
+		}
 	default:
 		return nil, errors.New("todo operator type unsupported")
 	}
