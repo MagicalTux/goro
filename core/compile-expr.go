@@ -51,6 +51,7 @@ func compileExpr(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 			return nil, err
 		}
 		c.backup()
+		gotSomething := false
 		switch t_next.Type {
 		case tokenizer.ItemSingleChar:
 			switch []rune(t_next.Data)[0] {
@@ -60,7 +61,12 @@ func compileExpr(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 					return nil, err
 				}
 				v = &runnableFunctionCall{ZString(i.Data), args}
+				gotSomething = true
 			}
+		}
+		if !gotSomething {
+			// it's a constant
+			v = runConstant(i.Data)
 		}
 	case tokenizer.T_CONSTANT_ENCAPSED_STRING:
 		v, err = compileQuoteConstant(i, c)

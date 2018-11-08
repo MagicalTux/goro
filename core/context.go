@@ -14,6 +14,8 @@ type Context interface {
 
 	GetVariable(name ZString) (*ZVal, error)
 	SetVariable(name ZString, v *ZVal) error
+
+	GetConstant(name ZString) (*ZVal, error)
 }
 
 type phpContext struct {

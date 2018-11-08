@@ -85,3 +85,7 @@ func (g *Global) GetFunction(name ZString) (Callable, error) {
 	}
 	return nil, fmt.Errorf("Call to undefined function %s", name)
 }
+
+func (g *Global) GetConstant(name ZString) (*ZVal, error) {
+	return nil, nil // TODO
+}
