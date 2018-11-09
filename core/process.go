@@ -1,13 +1,39 @@
 package core
 
-import "net/http"
+import (
+	"net/http"
+	"net/url"
+	"os"
 
-type Process struct{}
+	"git.atonline.com/tristantech/gophp/core/stream"
+)
 
-func NewProcess() *Process {
-	return &Process{}
+type Process struct {
+	fHandler map[string]stream.Handler
 }
 
-func (p *Process) Handler(path string) http.Handler {
+func NewProcess() *Process {
+	res := &Process{
+		fHandler: make(map[string]stream.Handler),
+	}
+	res.fHandler["file"], _ = stream.NewFileHandler("/")
+	return res
+}
+
+func (p *Process) Open(u *url.URL) (*stream.Stream, error) {
+	s := u.Scheme
+	if s == "" {
+		s = "file"
+	}
+
+	h, ok := p.fHandler[s]
+	if !ok {
+		return nil, os.ErrInvalid
+	}
+
+	return h.Open(u)
+}
+
+func (p *Process) Handler(docroot string) http.Handler {
 	return nil // TODO
 }

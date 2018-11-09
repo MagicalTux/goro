@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"time"
 
@@ -42,7 +43,12 @@ func NewGlobal(ctx context.Context, p *Process) *Global {
 }
 
 func (g *Global) RunFile(fn string) error {
-	f, err := os.Open(fn)
+	u, err := url.Parse(fn)
+	if err != nil {
+		return err
+	}
+
+	f, err := g.p.Open(u)
 	if err != nil {
 		return err
 	}

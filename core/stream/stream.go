@@ -3,6 +3,7 @@ package stream
 import (
 	"errors"
 	"io"
+	"runtime"
 )
 
 var ErrNotSupported = errors.New("stream: method or operation not supported")
@@ -11,8 +12,14 @@ type Stream struct {
 	f interface{}
 }
 
+func streamFinalizer(s *Stream) {
+	s.Close()
+}
+
 func NewStream(f interface{}) *Stream {
-	return &Stream{f}
+	res := &Stream{f}
+	runtime.SetFinalizer(res, streamFinalizer)
+	return res
 }
 
 func (s *Stream) Read(p []byte) (int, error) {

@@ -1,5 +1,7 @@
 package stream
 
-type FileSystem interface {
-	Open(name string) (*Stream, error)
+import "net/url"
+
+type Handler interface {
+	Open(path *url.URL) (*Stream, error)
 }
