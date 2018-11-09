@@ -6,13 +6,16 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	"git.atonline.com/tristantech/gophp/core/tokenizer"
 )
 
 type Global struct {
 	context.Context
-	p *Process
+
+	p     *Process
+	start time.Time
 
 	globalFuncs map[ZString]Callable
 
@@ -24,6 +27,7 @@ func NewGlobal(ctx context.Context, p *Process) *Global {
 		Context: ctx,
 		p:       p,
 		out:     os.Stdout,
+		start:   time.Now(),
 
 		globalFuncs: make(map[ZString]Callable),
 	}
