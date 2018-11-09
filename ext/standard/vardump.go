@@ -39,7 +39,12 @@ func doVarDump(ctx core.Context, z *core.ZVal, linePfx string) {
 			if !it.Valid(ctx) {
 				break
 			}
-			fmt.Fprintf(ctx, "%s[%s]=>\n", localPfx, it.Key(ctx))
+			k := it.Key(ctx)
+			if k.GetType() == core.ZtInt {
+				fmt.Fprintf(ctx, "%s[%s]=>\n", localPfx, k)
+			} else {
+				fmt.Fprintf(ctx, "%s[\"%s\"]=>\n", localPfx, k)
+			}
 			doVarDump(ctx, it.Current(ctx), localPfx)
 			it.Next(ctx)
 		}
