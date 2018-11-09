@@ -2,10 +2,6 @@ package core
 
 import "errors"
 
-type ZClass struct {
-	Name ZString
-}
-
 type ZObject struct {
 	h     *ZHashTable
 	class *ZClass

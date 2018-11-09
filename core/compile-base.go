@@ -21,6 +21,7 @@ func init() {
 		tokenizer.T_WHILE:       &compileFuncCb{f: compileWhile, skip: true},
 		tokenizer.T_FOREACH:     &compileFuncCb{f: compileForeach, skip: true},
 		tokenizer.T_IF:          &compileFuncCb{f: compileIf, skip: true},
+		tokenizer.T_CLASS:       &compileFuncCb{f: compileClass, skip: true},
 		tokenizer.T_RETURN:      &compileFuncCb{f: compileReturn},
 		tokenizer.T_VARIABLE:    &compileFuncCb{f: compileExpr},
 		tokenizer.T_ECHO:        &compileFuncCb{f: compileSpecialFuncCall},
