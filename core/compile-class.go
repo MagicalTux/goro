@@ -16,61 +16,14 @@ type ZClass struct {
 func compileClass(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 	class := &ZClass{l: MakeLoc(i.Loc())}
 
-	i, err := c.NextItem()
+	err := class.parseClassLine(c)
 	if err != nil {
 		return nil, err
 	}
-
-	if i.Type != tokenizer.T_STRING {
-		return nil, i.Unexpected()
-	}
-
-	class.Name = ZString(i.Data)
 
 	i, err = c.NextItem()
 	if err != nil {
 		return nil, err
-	}
-
-	if i.Type == tokenizer.T_EXTENDS {
-		// can only extend one class
-		class.Extends, err = compileReadClassIdentifier(c)
-		if err != nil {
-			return nil, err
-		}
-
-		i, err = c.NextItem()
-		if err != nil {
-			return nil, err
-		}
-	}
-	if i.Type == tokenizer.T_IMPLEMENTS {
-		// can implement many classes
-		for {
-			impl, err := compileReadClassIdentifier(c)
-			if err != nil {
-				return nil, err
-			}
-
-			class.Implements = append(class.Implements, impl)
-
-			// read next
-			i, err = c.NextItem()
-			if err != nil {
-				return nil, err
-			}
-
-			if i.IsSingle(',') {
-				// there's more
-				i, err = c.NextItem()
-				if err != nil {
-					return nil, err
-				}
-
-				continue
-			}
-			break
-		}
 	}
 
 	if !i.IsSingle('{') {
@@ -86,6 +39,69 @@ func compileClass(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 	}
 
 	return nil, errors.New("class todo")
+}
+
+func (class *ZClass) parseClassLine(c *compileCtx) error {
+	i, err := c.NextItem()
+	if err != nil {
+		return err
+	}
+
+	if i.Type != tokenizer.T_STRING {
+		return i.Unexpected()
+	}
+
+	class.Name = ZString(i.Data)
+
+	i, err = c.NextItem()
+	if err != nil {
+		return err
+	}
+
+	if i.Type == tokenizer.T_EXTENDS {
+		// can only extend one class
+		class.Extends, err = compileReadClassIdentifier(c)
+		if err != nil {
+			return err
+		}
+
+		i, err = c.NextItem()
+		if err != nil {
+			return err
+		}
+	}
+	if i.Type == tokenizer.T_IMPLEMENTS {
+		// can implement many classes
+		for {
+			impl, err := compileReadClassIdentifier(c)
+			if err != nil {
+				return err
+			}
+
+			class.Implements = append(class.Implements, impl)
+
+			// read next
+			i, err = c.NextItem()
+			if err != nil {
+				return err
+			}
+
+			if i.IsSingle(',') {
+				// there's more
+				i, err = c.NextItem()
+				if err != nil {
+					return err
+				}
+
+				continue
+			}
+			break
+		}
+	}
+
+	c.backup()
+
+	return nil
 }
 
 func compileReadClassIdentifier(c *compileCtx) (ZString, error) {
