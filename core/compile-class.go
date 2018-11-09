@@ -77,6 +77,14 @@ func compileClass(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 		return nil, i.Unexpected()
 	}
 
+	for {
+		i, err := c.NextItem()
+		if err != nil {
+			return nil, err
+		}
+		return nil, i.Unexpected()
+	}
+
 	return nil, errors.New("class todo")
 }
 
