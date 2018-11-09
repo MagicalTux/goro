@@ -78,7 +78,7 @@ func (f *fileHandler) localPath(name string) (string, string, error) {
 }
 
 func (f *fileHandler) Open(p *url.URL) (*Stream, error) {
-	fname, _, err := f.localPath(p.Path)
+	fname, name, err := f.localPath(p.Path)
 	if err != nil {
 		return nil, err
 	}
@@ -88,7 +88,14 @@ func (f *fileHandler) Open(p *url.URL) (*Stream, error) {
 		return nil, err
 	}
 
-	return NewStream(res), nil
+	s := NewStream(res)
+	s.SetAttr("wrapper_type", "plainfile")
+	s.SetAttr("stream_type", "Go")
+	s.SetAttr("mode", "r")
+	s.SetAttr("seekable", true)
+	s.SetAttr("uri", name)
+
+	return s, nil
 }
 
 func (f *fileHandler) Chdir(p string) error {

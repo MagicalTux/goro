@@ -33,7 +33,7 @@ func lexPhp(l *Lexer) lexState {
 				return lexPhpHeredoc
 			}
 			return lexPhpOperator
-		case '\'':
+		case '\'', '`':
 			return lexPhpStringConst
 		case '"':
 			return lexPhpStringConst

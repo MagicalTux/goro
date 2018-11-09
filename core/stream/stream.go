@@ -9,7 +9,8 @@ import (
 var ErrNotSupported = errors.New("stream: method or operation not supported")
 
 type Stream struct {
-	f interface{}
+	f    interface{}
+	attr map[string]interface{}
 }
 
 func streamFinalizer(s *Stream) {
@@ -17,7 +18,7 @@ func streamFinalizer(s *Stream) {
 }
 
 func NewStream(f interface{}) *Stream {
-	res := &Stream{f}
+	res := &Stream{f: f}
 	runtime.SetFinalizer(res, streamFinalizer)
 	return res
 }
@@ -63,5 +64,29 @@ func (s *Stream) Close() error {
 		return cl.Close()
 	}
 	// do not fail if no close
+	return nil
+}
+
+func (s *Stream) SetAttr(k string, v interface{}) {
+	if s.attr == nil {
+		s.attr = make(map[string]interface{})
+	}
+	s.attr[k] = v
+}
+
+type AttrStream interface {
+	Attr(v interface{}) interface{}
+}
+
+func (s *Stream) Attr(v interface{}) interface{} {
+	if str, ok := v.(string); ok && s.attr != nil {
+		if v, ok2 := s.attr[str]; ok2 {
+			return v
+		}
+	}
+	if a, ok := s.f.(AttrStream); ok {
+		return a.Attr(v)
+	}
+	// return nil
 	return nil
 }

@@ -6,15 +6,38 @@ import (
 	"git.atonline.com/tristantech/gophp/core/tokenizer"
 )
 
+type ZClassAttr int
+
+const (
+	ZClassPublic ZClassAttr = 1 << iota
+	ZClassProtected
+	ZClassPrivate
+	ZClassStatic
+	ZClassAbstract
+	ZClassFinal
+)
+
+type ZClassProp struct {
+	VarName ZString
+	Default *ZVal
+}
+
 type ZClass struct {
-	Name       ZString
-	Extends    ZString
-	Implements []ZString
-	l          *Loc
+	Name ZString
+	l    *Loc
+
+	Extends     ZString
+	Implements  []ZString
+	Const       map[ZString]ZString
+	Props       []*ZClassProp
+	StaticProps *ZHashTable
 }
 
 func compileClass(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
-	class := &ZClass{l: MakeLoc(i.Loc())}
+	class := &ZClass{
+		l:           MakeLoc(i.Loc()),
+		StaticProps: NewHashTable(),
+	}
 
 	err := class.parseClassLine(c)
 	if err != nil {

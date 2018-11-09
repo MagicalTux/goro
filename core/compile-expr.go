@@ -1,6 +1,7 @@
 package core
 
 import (
+	"path"
 	"strconv"
 
 	"git.atonline.com/tristantech/gophp/core/tokenizer"
@@ -94,6 +95,8 @@ func compileExpr(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 		}
 	case tokenizer.T_LINE:
 		v = &runZVal{ZInt(l.Line), l}
+	case tokenizer.T_DIR:
+		v = &runZVal{ZString(path.Dir(l.Filename)), l}
 	case tokenizer.ItemSingleChar:
 		ch := []rune(i.Data)[0]
 		switch ch {

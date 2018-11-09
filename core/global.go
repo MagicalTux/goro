@@ -55,6 +55,11 @@ func (g *Global) RunFile(fn string) error {
 
 	defer f.Close()
 
+	// grab full path of file if possible
+	if fn2, ok := f.Attr("uri").(string); ok {
+		fn = fn2
+	}
+
 	// tokenize
 	t := tokenizer.NewLexer(f, fn)
 
