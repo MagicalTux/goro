@@ -8,9 +8,13 @@ interface t {
 } // */
 
 $php = "/usr/bin/php";
-define('TESTED_PHP_VERSION', `$php -n -r "echo PHP_VERSION;"`);
+//define('TESTED_PHP_VERSION', `$php -n -r "echo PHP_VERSION;"`);
 
-var_dump(TESTED_PHP_VERSION);
+//var_dump(TESTED_PHP_VERSION);
+function toto() {
+	return [__DIR__, __FILE__, __LINE__];
+}
+var_dump(toto());
 
 /*
 class testclass extends \stdclass implements JsonSerializable, t {

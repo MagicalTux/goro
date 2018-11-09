@@ -105,6 +105,7 @@ func compileFunction(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 	// typically T_FUNCTION is followed by:
 	// - a name and parameters → this is a regular function
 	// - directly parameters → this is a lambda function
+	l := MakeLoc(i.Loc())
 
 	i, err := c.NextItem()
 	if err != nil {
@@ -114,12 +115,12 @@ func compileFunction(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 	switch i.Type {
 	case tokenizer.T_STRING:
 		// regular function definition
-		return compileFunctionWithName(ZString(i.Data), c)
+		return compileFunctionWithName(ZString(i.Data), c, l)
 	case tokenizer.ItemSingleChar:
 		if i.Data == "(" {
 			// function with no name is lambda
 			c.backup()
-			return compileFunctionWithName("", c)
+			return compileFunctionWithName("", c, l)
 		}
 	}
 
@@ -190,7 +191,7 @@ func compileSpecialFuncCall(i *tokenizer.Item, c *compileCtx) (Runnable, error) 
 	}
 }
 
-func compileFunctionWithName(name ZString, c *compileCtx) (Runnable, error) {
+func compileFunctionWithName(name ZString, c *compileCtx, l *Loc) (Runnable, error) {
 	var err error
 	var use []ZString
 	args, err := compileFunctionArgs(c)
@@ -226,9 +227,12 @@ func compileFunctionWithName(name ZString, c *compileCtx) (Runnable, error) {
 		name: name,
 		use:  use,
 		closure: &ZClosure{
-			args: args,
-			code: body,
+			args:  args,
+			code:  body,
+			start: l,
+			// TODO populate end
 		},
+		l: l,
 	}, nil
 }
 

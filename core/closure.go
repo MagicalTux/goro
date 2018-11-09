@@ -16,9 +16,11 @@ type funcUse struct {
 }
 
 type ZClosure struct {
-	args []*funcArg
-	use  []*funcUse
-	code Runnable
+	args  []*funcArg
+	use   []*funcUse
+	code  Runnable
+	start *Loc
+	end   *Loc
 }
 
 func (z *ZClosure) GetType() ZType {

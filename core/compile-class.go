@@ -9,12 +9,18 @@ import (
 type ZClassAttr int
 
 const (
-	ZClassPublic ZClassAttr = 1 << iota
-	ZClassProtected
-	ZClassPrivate
-	ZClassStatic
-	ZClassAbstract
-	ZClassFinal
+	// would use 1 << iota but those values come from php, so making them constants is more appropriate
+	ZClassStatic      ZClassAttr = 1
+	ZClassAbstract               = 2
+	ZClassFinalMethod            = 4
+	// 8
+	ZClassImplicitAbstract = 16
+	ZClassExplicitAbstract = 32
+	ZClassFinal            = 64
+	// 128
+	ZClassPublic    = 256
+	ZClassProtected = 512
+	ZClassPrivate   = 1024
 )
 
 type ZClassProp struct {
