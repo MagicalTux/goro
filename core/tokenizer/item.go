@@ -176,3 +176,7 @@ func (i *Item) Unexpected() error {
 	_, f, l, _ := runtime.Caller(1)
 	return i.Errorf("syntax error from %s:%d, unexpected %s", path.Base(f), l, i)
 }
+
+func (i *Item) Loc() (string, int, int) {
+	return i.Filename, i.Line, i.Char
+}

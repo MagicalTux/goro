@@ -152,7 +152,7 @@ func compilePostExpr(v Runnable, i *tokenizer.Item, c *compileCtx) (Runnable, er
 	case tokenizer.ItemSingleChar:
 		ch := []rune(i.Data)[0]
 		switch ch {
-		case '+', '-', '/', '*', '=', '.', '<', '>', '!': // TODO list
+		case '+', '-', '/', '*', '=', '.', '<', '>', '!', '|', '^', '&': // TODO list
 			// what follows is also an expression
 			t_v, err := compileExpr(nil, c)
 			if err != nil {

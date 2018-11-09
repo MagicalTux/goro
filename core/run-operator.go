@@ -30,6 +30,9 @@ var operatorList = map[string]*operatorInternalDetails{
 	"-":  &operatorInternalDetails{numeric: true, op: operatorMath},
 	"/":  &operatorInternalDetails{numeric: true, op: operatorMath},
 	"*":  &operatorInternalDetails{numeric: true, op: operatorMath},
+	"|":  &operatorInternalDetails{numeric: true, op: operatorMathLogic},
+	"^":  &operatorInternalDetails{numeric: true, op: operatorMathLogic},
+	"&":  &operatorInternalDetails{numeric: true, op: operatorMathLogic},
 	"<":  &operatorInternalDetails{op: operatorCompare},
 	">":  &operatorInternalDetails{op: operatorCompare},
 	"<=": &operatorInternalDetails{op: operatorCompare},
@@ -142,6 +145,34 @@ func operatorMath(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 			res = a.v.(ZFloat) * b.v.(ZFloat)
 		}
 		return &ZVal{res}, nil
+	default:
+		return nil, errors.New("todo operator type unsupported")
+	}
+}
+
+func operatorMathLogic(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
+	if op[len(op)-1] == '=' {
+		op = op[:len(op)-1]
+	}
+
+	switch a.v.GetType() {
+	case ZtInt:
+		var res ZInt
+		switch op {
+		case "|":
+			res = a.v.(ZInt) | b.v.(ZInt)
+		case "^":
+			res = a.v.(ZInt) ^ b.v.(ZInt)
+		case "&":
+			res = a.v.(ZInt) & b.v.(ZInt)
+		}
+		return &ZVal{res}, nil
+	case ZtFloat:
+		// need to convert to int
+		a, _ = a.As(ctx, ZtInt)
+		b, _ = b.As(ctx, ZtInt)
+		return operatorMathLogic(ctx, op, a, b)
+	// TODO ZtString
 	default:
 		return nil, errors.New("todo operator type unsupported")
 	}
