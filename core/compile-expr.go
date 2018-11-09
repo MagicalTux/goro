@@ -13,14 +13,21 @@ import (
 // "a string with a $var"
 // $a + $b
 
-type runVariable string
-
-func (r runVariable) Run(ctx Context) (*ZVal, error) {
-	return ctx.GetVariable(ZString(r))
+type runVariable struct {
+	v ZString
+	l *Loc
 }
 
-func (r runVariable) WriteValue(ctx Context, value *ZVal) error {
-	return ctx.SetVariable(ZString(r), value)
+func (r *runVariable) Run(ctx Context) (*ZVal, error) {
+	return ctx.GetVariable(r.v)
+}
+
+func (r *runVariable) WriteValue(ctx Context, value *ZVal) error {
+	return ctx.SetVariable(r.v, value)
+}
+
+func (r *runVariable) Loc() *Loc {
+	return r.l
 }
 
 func compileExpr(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
@@ -35,15 +42,17 @@ func compileExpr(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 		}
 	}
 
+	l := MakeLoc(i.Loc())
+
 	switch i.Type {
 	case tokenizer.T_VARIABLE:
-		v = runVariable(i.Data[1:])
+		v = &runVariable{ZString(i.Data[1:]), MakeLoc(i.Loc())}
 	case tokenizer.T_LNUMBER:
 		v, err := strconv.ParseInt(i.Data, 0, 64)
-		return &ZVal{ZInt(v)}, err
+		return &runZVal{ZInt(v), MakeLoc(i.Loc())}, err
 	case tokenizer.T_DNUMBER:
 		v, err := strconv.ParseFloat(i.Data, 64)
-		return &ZVal{ZFloat(v)}, err
+		return &runZVal{ZFloat(v), MakeLoc(i.Loc())}, err
 	case tokenizer.T_STRING:
 		// if next is '(' this is a function call
 		t_next, err := c.NextItem()
@@ -60,13 +69,13 @@ func compileExpr(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 				if err != nil {
 					return nil, err
 				}
-				v = &runnableFunctionCall{ZString(i.Data), args}
+				v = &runnableFunctionCall{ZString(i.Data), args, l}
 				gotSomething = true
 			}
 		}
 		if !gotSomething {
 			// it's a constant
-			v = runConstant(i.Data)
+			v = &runConstant{i.Data, l}
 		}
 	case tokenizer.T_CONSTANT_ENCAPSED_STRING:
 		v, err = compileQuoteConstant(i, c)
@@ -147,6 +156,7 @@ func compileExpr(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 }
 
 func compilePostExpr(v Runnable, i *tokenizer.Item, c *compileCtx) (Runnable, error) {
+	l := MakeLoc(i.Loc())
 	// can be any kind of glue (operators, etc)
 	switch i.Type {
 	case tokenizer.ItemSingleChar:
@@ -160,7 +170,7 @@ func compilePostExpr(v Runnable, i *tokenizer.Item, c *compileCtx) (Runnable, er
 			}
 
 			// TODO: math priority
-			return &runOperator{op: i.Data, a: v, b: t_v}, nil
+			return &runOperator{op: i.Data, a: v, b: t_v, l: l}, nil
 		case '?':
 			return compileTernaryOp(v, c)
 		case '(':
@@ -170,7 +180,7 @@ func compilePostExpr(v Runnable, i *tokenizer.Item, c *compileCtx) (Runnable, er
 			if err != nil {
 				return nil, err
 			}
-			return &runnableFunctionCallRef{v, args}, nil
+			return &runnableFunctionCallRef{v, args, l}, nil
 		case '[':
 			c.backup()
 			return compileArrayAccess(v, c)

@@ -2,11 +2,14 @@ package core
 
 import "git.atonline.com/tristantech/gophp/core/tokenizer"
 
-type runGlobal []ZString
+type runGlobal struct {
+	vars []ZString
+	l    *Loc
+}
 
-func (g runGlobal) Run(ctx Context) (*ZVal, error) {
+func (g *runGlobal) Run(ctx Context) (*ZVal, error) {
 	glob := ctx.GetGlobal()
-	for _, k := range g {
+	for _, k := range g.vars {
 		v, err := glob.GetVariable(k)
 		if err != nil {
 			return nil, err
@@ -19,13 +22,17 @@ func (g runGlobal) Run(ctx Context) (*ZVal, error) {
 	return nil, nil
 }
 
+func (g *runGlobal) Loc() *Loc {
+	return g.l
+}
+
 func compileGlobal(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 	// global $var, $var, $var, ...
 	var err error
 
 	// TODO check we are in a function/etc?
 
-	var g runGlobal
+	g := &runGlobal{l: MakeLoc(i.Loc())}
 
 	// parse passed arguments
 	for {
@@ -37,7 +44,7 @@ func compileGlobal(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 			return nil, i.Unexpected()
 		}
 
-		g = append(g, ZString(i.Data[1:]))
+		g.vars = append(g.vars, ZString(i.Data[1:]))
 
 		i, err = c.NextItem()
 

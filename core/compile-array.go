@@ -10,13 +10,16 @@ type arrayEntry struct {
 	k, v Runnable
 }
 
-type runArray []*arrayEntry
+type runArray struct {
+	e []*arrayEntry
+	l *Loc
+}
 
 func (a runArray) Run(ctx Context) (*ZVal, error) {
 	var err error
 	array := NewZArray()
 
-	for _, e := range a {
+	for _, e := range a.e {
 		var k, v *ZVal
 
 		if e.k != nil {
@@ -36,9 +39,14 @@ func (a runArray) Run(ctx Context) (*ZVal, error) {
 	return &ZVal{array}, nil
 }
 
+func (a *runArray) Loc() *Loc {
+	return a.l
+}
+
 type runArrayAccess struct {
 	value  Runnable
 	offset Runnable
+	l      *Loc
 }
 
 func (ac *runArrayAccess) Run(ctx Context) (*ZVal, error) {
@@ -109,6 +117,10 @@ func (ac *runArrayAccess) Run(ctx Context) (*ZVal, error) {
 	return array.OffsetGet(offset)
 }
 
+func (a *runArrayAccess) Loc() *Loc {
+	return a.l
+}
+
 func (ac *runArrayAccess) WriteValue(ctx Context, value *ZVal) error {
 	v, err := ac.value.Run(ctx)
 	if err != nil {
@@ -161,7 +173,7 @@ func (ac *runArrayAccess) WriteValue(ctx Context, value *ZVal) error {
 }
 
 func compileArray(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
-	var res runArray
+	res := &runArray{l: MakeLoc(i.Loc())}
 
 	array_type := '?'
 
@@ -203,12 +215,12 @@ func compileArray(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 		}
 
 		if i.IsSingle(',') {
-			res = append(res, &arrayEntry{v: k})
+			res.e = append(res.e, &arrayEntry{v: k})
 			continue
 		}
 
 		if i.IsSingle(array_type) {
-			res = append(res, &arrayEntry{v: k})
+			res.e = append(res.e, &arrayEntry{v: k})
 			break
 		}
 
@@ -223,7 +235,7 @@ func compileArray(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 			return nil, err
 		}
 
-		res = append(res, &arrayEntry{k: k, v: v})
+		res.e = append(res.e, &arrayEntry{k: k, v: v})
 
 		i, err = c.NextItem()
 		if err != nil {
@@ -256,6 +268,8 @@ func compileArrayAccess(v Runnable, c *compileCtx) (Runnable, error) {
 		return nil, i.Unexpected()
 	}
 
+	l := MakeLoc(i.Loc())
+
 	// don't really need this loop anymore?
 	for {
 		offt, err := compileExpr(nil, c)
@@ -272,7 +286,7 @@ func compileArrayAccess(v Runnable, c *compileCtx) (Runnable, error) {
 			return nil, i.Unexpected()
 		}
 
-		v = &runArrayAccess{value: v, offset: offt}
+		v = &runArrayAccess{value: v, offset: offt, l: l}
 
 		i, err = c.NextItem()
 		if err != nil {

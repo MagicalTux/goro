@@ -123,11 +123,13 @@ func compileReturn(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 	i, err := c.NextItem()
 	c.backup()
 	if err != nil {
-		return &runReturn{}, err
+		return nil, err
 	}
 
+	l := MakeLoc(i.Loc())
+
 	if i.IsSingle(';') {
-		return &runReturn{}, err
+		return &runReturn{}, i.Unexpected()
 	}
 
 	v, err := compileExpr(nil, c)
@@ -135,13 +137,18 @@ func compileReturn(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 		return nil, err
 	}
 
-	return &runReturn{v}, nil
+	return &runReturn{v, l}, nil
 }
 
 type runReturn struct {
 	v Runnable
+	l *Loc
 }
 
 func (r *runReturn) Run(ctx Context) (*ZVal, error) {
 	return r.v.Run(ctx) // TODO
+}
+
+func (r *runReturn) Loc() *Loc {
+	return r.l
 }

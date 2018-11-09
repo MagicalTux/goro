@@ -13,6 +13,11 @@ type ZVal struct {
 	v Val
 }
 
+type runZVal struct {
+	v Val
+	l *Loc
+}
+
 func (z *ZVal) GetType() ZType {
 	if z.v == nil {
 		return ZtNull
@@ -20,8 +25,12 @@ func (z *ZVal) GetType() ZType {
 	return z.v.GetType()
 }
 
-func (z *ZVal) Run(ctx Context) (*ZVal, error) {
-	return z, nil
+func (z *runZVal) Run(ctx Context) (*ZVal, error) {
+	return &ZVal{z.v}, nil
+}
+
+func (z *runZVal) Loc() *Loc {
+	return z.l
 }
 
 func (z *ZVal) IsNull() bool {

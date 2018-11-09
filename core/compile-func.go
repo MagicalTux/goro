@@ -10,16 +10,31 @@ type runnableFunction struct {
 	name    ZString
 	use     []ZString
 	closure *ZClosure
+	l       *Loc
 }
 
 type runnableFunctionCall struct {
 	name ZString
 	args []Runnable
+	l    *Loc
 }
 
 type runnableFunctionCallRef struct {
 	name Runnable
 	args []Runnable
+	l    *Loc
+}
+
+func (r *runnableFunction) Loc() *Loc {
+	return r.l
+}
+
+func (r *runnableFunctionCall) Loc() *Loc {
+	return r.l
+}
+
+func (r *runnableFunctionCallRef) Loc() *Loc {
+	return r.l
 }
 
 func (r *runnableFunction) Run(ctx Context) (l *ZVal, err error) {
@@ -115,6 +130,7 @@ func compileSpecialFuncCall(i *tokenizer.Item, c *compileCtx) (Runnable, error) 
 	// special function call that comes without (), so as a keyword. Example: echo, die, etc
 	has_open := false
 	fn_name := ZString(i.Data)
+	l := MakeLoc(i.Loc())
 
 	i, err := c.NextItem()
 	if err != nil {
@@ -129,11 +145,11 @@ func compileSpecialFuncCall(i *tokenizer.Item, c *compileCtx) (Runnable, error) 
 		}
 
 		if i.IsSingle(')') {
-			return &runnableFunctionCall{fn_name, nil}, nil
+			return &runnableFunctionCall{fn_name, nil, l}, nil
 		}
 		if i.IsSingle(';') {
 			c.backup()
-			return &runnableFunctionCall{fn_name, nil}, nil
+			return &runnableFunctionCall{fn_name, nil, l}, nil
 		}
 	}
 
@@ -163,11 +179,11 @@ func compileSpecialFuncCall(i *tokenizer.Item, c *compileCtx) (Runnable, error) 
 			continue
 		}
 		if has_open && i.IsSingle(')') {
-			return &runnableFunctionCall{fn_name, args}, nil
+			return &runnableFunctionCall{fn_name, args, l}, nil
 		}
 		if !has_open && i.IsSingle(';') {
 			c.backup()
-			return &runnableFunctionCall{fn_name, args}, nil
+			return &runnableFunctionCall{fn_name, args, l}, nil
 		}
 
 		return nil, i.Unexpected()

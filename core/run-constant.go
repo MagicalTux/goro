@@ -2,10 +2,17 @@ package core
 
 import "strings"
 
-type runConstant string
+type runConstant struct {
+	c string
+	l *Loc
+}
 
-func (r runConstant) Run(ctx Context) (l *ZVal, err error) {
-	switch strings.ToLower(string(r)) {
+func (r *runConstant) Loc() *Loc {
+	r.l
+}
+
+func (r *runConstant) Run(ctx Context) (l *ZVal, err error) {
+	switch strings.ToLower(string(r.c)) {
 	case "null":
 		return &ZVal{nil}, nil
 	case "true":

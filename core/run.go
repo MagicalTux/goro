@@ -2,6 +2,7 @@ package core
 
 type Runnable interface {
 	Run(Context) (*ZVal, error)
+	Loc() *Loc
 }
 
 type Writable interface {
@@ -22,4 +23,11 @@ func (r Runnables) Run(ctx Context) (l *ZVal, err error) {
 		}
 	}
 	return
+}
+
+func (r Runnables) Loc() *Loc {
+	if len(r) == 0 {
+		return nil
+	}
+	return r[0].Loc()
 }

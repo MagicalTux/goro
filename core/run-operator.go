@@ -9,6 +9,7 @@ type runOperator struct {
 	op string
 
 	a, b Runnable
+	l    *Loc
 }
 
 type operatorInternalDetails struct {
@@ -40,6 +41,10 @@ var operatorList = map[string]*operatorInternalDetails{
 	"==": &operatorInternalDetails{op: operatorCompare},
 	"!=": &operatorInternalDetails{op: operatorCompare},
 	"!":  &operatorInternalDetails{op: operatorNot},
+}
+
+func (r *runOperator) Loc() *Loc {
+	return r.l
 }
 
 func (r *runOperator) Run(ctx Context) (*ZVal, error) {
