@@ -5,6 +5,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"syscall"
 )
 
 type fileHandler struct {
@@ -52,9 +53,7 @@ func NewFileHandler(root string) (Handler, error) {
 	return fh, nil
 }
 
-func (f *fileHandler) Open(p *url.URL) (*Stream, error) {
-	name := p.Path
-
+func (f *fileHandler) localPath(name string) (string, string, error) {
 	if !path.IsAbs(name) {
 		name = path.Join(f.cwd, name)
 	}
@@ -66,13 +65,22 @@ func (f *fileHandler) Open(p *url.URL) (*Stream, error) {
 	// resolve symlinks
 	fname, err := filepath.EvalSymlinks(fname)
 	if err != nil {
-		return nil, err
+		return "", "", err
 	}
 
 	// check if OK
 	if fname[:len(f.root)] != f.root {
 		// not ok
-		return nil, os.ErrNotExist
+		return "", "", os.ErrNotExist
+	}
+
+	return fname, name, nil
+}
+
+func (f *fileHandler) Open(p *url.URL) (*Stream, error) {
+	fname, _, err := f.localPath(p.Path)
+	if err != nil {
+		return nil, err
 	}
 
 	res, err := os.Open(fname)
@@ -81,4 +89,23 @@ func (f *fileHandler) Open(p *url.URL) (*Stream, error) {
 	}
 
 	return NewStream(res), nil
+}
+
+func (f *fileHandler) Chdir(p string) error {
+	fname, name, err := f.localPath(p)
+	if err != nil {
+		return err
+	}
+
+	s, err := os.Lstat(fname)
+	if err != nil {
+		return err
+	}
+
+	if !s.IsDir() {
+		return &os.PathError{"chdir", p, syscall.ENOTDIR}
+	}
+
+	f.cwd = name
+	return nil
 }
