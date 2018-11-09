@@ -92,6 +92,8 @@ func compileExpr(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 		if err != nil {
 			return nil, err
 		}
+	case tokenizer.T_LINE:
+		v = &runZVal{ZInt(l.Line), l}
 	case tokenizer.ItemSingleChar:
 		ch := []rune(i.Data)[0]
 		switch ch {
