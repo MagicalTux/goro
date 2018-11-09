@@ -17,6 +17,7 @@ func NewProcess() *Process {
 		fHandler: make(map[string]stream.Handler),
 	}
 	res.fHandler["file"], _ = stream.NewFileHandler("/")
+	res.fHandler["php"] = stream.PhpHandler()
 	return res
 }
 
