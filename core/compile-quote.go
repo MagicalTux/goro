@@ -72,7 +72,7 @@ func compileQuoteHeredoc(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 	}
 }
 
-func compileQuoteEncapsed(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
+func compileQuoteEncapsed(i *tokenizer.Item, c *compileCtx, q rune) (Runnable, error) {
 	// i == '"'
 
 	var res runConcat
@@ -92,7 +92,7 @@ func compileQuoteEncapsed(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 			res = append(res, &runVariable{ZString(i.Data[1:]), MakeLoc(i.Loc())})
 		case tokenizer.ItemSingleChar:
 			switch []rune(i.Data)[0] {
-			case '"':
+			case q:
 				// end of quote
 				return res, nil
 			}

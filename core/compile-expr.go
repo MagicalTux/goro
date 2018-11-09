@@ -101,10 +101,16 @@ func compileExpr(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 		ch := []rune(i.Data)[0]
 		switch ch {
 		case '"':
-			v, err = compileQuoteEncapsed(i, c)
+			v, err = compileQuoteEncapsed(i, c, '"')
 			if err != nil {
 				return nil, err
 			}
+		case '`':
+			v, err = compileQuoteEncapsed(i, c, '`')
+			if err != nil {
+				return nil, err
+			}
+			v = &runnableFunctionCall{"shell_exec", []Runnable{v}, l}
 		case '!':
 			// this is an operator
 			v = nil
@@ -194,7 +200,7 @@ func compilePostExpr(v Runnable, i *tokenizer.Item, c *compileCtx) (Runnable, er
 			// just a value
 			return v, nil
 		}
-	case tokenizer.T_AND_EQUAL, tokenizer.T_BOOLEAN_AND, tokenizer.T_BOOLEAN_OR, tokenizer.T_CONCAT_EQUAL, tokenizer.T_DIV_EQUAL, tokenizer.T_IS_EQUAL, tokenizer.T_MINUS_EQUAL: // etc... FIXME TODO
+	case tokenizer.T_AND_EQUAL, tokenizer.T_BOOLEAN_AND, tokenizer.T_BOOLEAN_OR, tokenizer.T_CONCAT_EQUAL, tokenizer.T_DIV_EQUAL, tokenizer.T_IS_EQUAL, tokenizer.T_IS_NOT_EQUAL, tokenizer.T_MINUS_EQUAL: // etc... FIXME TODO
 		// what follows is also an expression
 		t_v, err := compileExpr(nil, c)
 		if err != nil {
