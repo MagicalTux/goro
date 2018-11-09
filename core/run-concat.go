@@ -16,3 +16,11 @@ func (r runConcat) Run(ctx Context) (l *ZVal, err error) {
 	l = &ZVal{ZString(res)}
 	return
 }
+
+func (r runConcat) Loc() *Loc {
+	if len(r) == 0 {
+		return nil
+	}
+
+	return r[0].Loc()
+}

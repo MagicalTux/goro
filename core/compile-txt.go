@@ -12,3 +12,7 @@ func (s runInlineHtml) Run(ctx Context) (*ZVal, error) {
 	_, err := ctx.Write([]byte(s))
 	return nil, err
 }
+
+func (s runInlineHtml) Loc() *Loc {
+	return nil
+}

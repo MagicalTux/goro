@@ -49,7 +49,7 @@ func Compile(parent Context, t *tokenizer.Lexer) Runnable {
 
 	r, err := compileBase(nil, c)
 	if err != nil && err != io.EOF {
-		return phperror{err}
+		return &phperror{err, nil}
 	}
 
 	if list, ok := r.(Runnables); ok {
@@ -60,7 +60,7 @@ func Compile(parent Context, t *tokenizer.Lexer) Runnable {
 				if obj.name != "" {
 					err := c.RegisterFunction(obj.name, obj.closure)
 					if err != nil {
-						return phperror{err}
+						return &phperror{err, obj.Loc()}
 					}
 				}
 			}

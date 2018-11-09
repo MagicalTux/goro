@@ -8,7 +8,7 @@ type runConstant struct {
 }
 
 func (r *runConstant) Loc() *Loc {
-	r.l
+	return r.l
 }
 
 func (r *runConstant) Run(ctx Context) (l *ZVal, err error) {
@@ -21,14 +21,14 @@ func (r *runConstant) Run(ctx Context) (l *ZVal, err error) {
 		return &ZVal{ZBool(false)}, nil
 	}
 
-	z, err := ctx.GetGlobal().GetConstant(ZString(r))
+	z, err := ctx.GetGlobal().GetConstant(ZString(r.c))
 	if err != nil {
 		return nil, err
 	}
 
 	if z == nil {
 		// TODO issue warning Use of undefined constant tata - assumed 'tata' (this will throw an Error in a future version of PHP)
-		return &ZVal{ZString(r)}, nil
+		return &ZVal{ZString(r.c)}, nil
 	}
 	return z, nil
 }

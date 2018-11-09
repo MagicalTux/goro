@@ -20,6 +20,7 @@ func compileQuoteConstant(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 	in := i.Data[1 : len(i.Data)-1]
 	b := &bytes.Buffer{}
 	l := len(in)
+	loc := MakeLoc(i.Loc())
 
 	for i := 0; i < l; i++ {
 		c := in[i]
@@ -42,7 +43,7 @@ func compileQuoteConstant(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 		}
 	}
 
-	return &ZVal{ZString(b.String())}, nil
+	return &runZVal{ZString(b.String()), loc}, nil
 }
 
 func compileQuoteHeredoc(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
@@ -59,9 +60,9 @@ func compileQuoteHeredoc(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 		_ = res
 		switch i.Type {
 		case tokenizer.T_ENCAPSED_AND_WHITESPACE:
-			res = append(res, &ZVal{unescapePhpQuotedString(i.Data)})
+			res = append(res, &runZVal{unescapePhpQuotedString(i.Data), MakeLoc(i.Loc())})
 		case tokenizer.T_VARIABLE:
-			res = append(res, runVariable(i.Data[1:]))
+			res = append(res, &runVariable{ZString(i.Data[1:]), MakeLoc(i.Loc())})
 		case tokenizer.T_END_HEREDOC:
 			// end of quote
 			return res, nil
@@ -86,9 +87,9 @@ func compileQuoteEncapsed(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 		_ = res
 		switch i.Type {
 		case tokenizer.T_ENCAPSED_AND_WHITESPACE:
-			res = append(res, &ZVal{unescapePhpQuotedString(i.Data)})
+			res = append(res, &runZVal{unescapePhpQuotedString(i.Data), MakeLoc(i.Loc())})
 		case tokenizer.T_VARIABLE:
-			res = append(res, runVariable(i.Data[1:]))
+			res = append(res, &runVariable{ZString(i.Data[1:]), MakeLoc(i.Loc())})
 		case tokenizer.ItemSingleChar:
 			switch []rune(i.Data)[0] {
 			case '"':

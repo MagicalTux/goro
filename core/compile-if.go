@@ -8,6 +8,7 @@ type runnableIf struct {
 	cond Runnable
 	yes  Runnable
 	no   Runnable
+	l    *Loc
 }
 
 func (r *runnableIf) Run(ctx Context) (l *ZVal, err error) {
@@ -27,6 +28,10 @@ func (r *runnableIf) Run(ctx Context) (l *ZVal, err error) {
 	}
 }
 
+func (r *runnableIf) Loc() *Loc {
+	return r.l
+}
+
 func compileIf(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 	// T_IF (expression) ...? else ...?
 
@@ -39,7 +44,7 @@ func compileIf(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 		return nil, i.Unexpected()
 	}
 
-	r := &runnableIf{}
+	r := &runnableIf{l: MakeLoc(i.Loc())}
 	r.cond, err = compileExpr(nil, c)
 	if err != nil {
 		return nil, err
@@ -65,7 +70,7 @@ func compileIf(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 		return r, err
 	}
 
-	// check for else (TODO check elseif)
+	// check for else or elseif
 	switch i.Type {
 	case tokenizer.T_ELSEIF:
 		r.no, err = compileIf(nil, c)

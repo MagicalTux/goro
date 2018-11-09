@@ -7,6 +7,7 @@ import (
 type runnableWhile struct {
 	cond Runnable
 	code Runnable
+	l    *Loc
 }
 
 func (r *runnableWhile) Run(ctx Context) (l *ZVal, err error) {
@@ -34,8 +35,13 @@ func (r *runnableWhile) Run(ctx Context) (l *ZVal, err error) {
 	return nil, nil
 }
 
+func (r *runnableWhile) Loc() *Loc {
+	return r.l
+}
+
 func compileWhile(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 	// T_WHILE (expression) ...?
+	l := MakeLoc(i.Loc())
 
 	// parse while expression
 	i, err := c.NextItem()
@@ -46,7 +52,7 @@ func compileWhile(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 		return nil, i.Unexpected()
 	}
 
-	r := &runnableWhile{}
+	r := &runnableWhile{l: l}
 	r.cond, err = compileExpr(nil, c)
 	if err != nil {
 		return nil, err
