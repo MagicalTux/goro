@@ -7,6 +7,7 @@ import (
 )
 
 type ZClassAttr int
+type ZObjectAttr int
 
 const (
 	// would use 1 << iota but those values come from php, so making them constants is more appropriate
@@ -21,30 +22,30 @@ const (
 	ZClassAnonBound                   = 0x200
 	ZClassInherited                   = 0x400
 
-	ZAttrStatic         = ZClassStatic
-	ZAttrAbstract       = ZClassAbstract
-	ZAttrFinal          = 0x004 // final method, not the same value as ZClassFinal
-	ZAttrPublic         = 0x100
-	ZAttrProtected      = 0x200
-	ZAttrPrivate        = 0x400
-	ZAttrAccess         = ZAttrPublic | ZAttrProtected | ZAttrPrivate
-	ZAttrImplicitPublic = 0x1000 // method without flag
-	ZAttrCtor           = 0x2000
-	ZAttrDtor           = 0x4000
-	ZAttrUserArgInfo    = 0x80    // method flag used by Closure::__invoke()
-	ZAttrAllowStatic    = 0x10000 // method flag (bc only), any method that has this flag can be used statically and non statically.
-	ZAttrShadow         = 0x20000 // shadow of parent's private method/property
-	ZAttrDeprecated     = 0x40000 // deprecation flag
-	ZAttrClosure        = 0x100000
-	ZAttrFakeClosure    = 0x40
-	ZAttrGenerator      = 0x800000
-	ZAttrViaTrampoline  = 0x200000           // call through user function trampoline. e.g. __call, __callstatic
-	ZAttrViaHandler     = ZAttrViaTrampoline // call through internal function handler. e.g. Closure::invoke()
-	ZAttrVariadic       = 0x1000000
-	ZAttrReturnRef      = 0x4000000
-	ZAttrUseGuard       = 0x1000000  // class has magic methods __get/__set/__unset/__isset that use guards
-	ZAttrHasTypeHints   = 0x10000000 // function has typed arguments
-	ZAttrHasReturnType  = 0x40000000 // Function has a return type (or class has such non-private function)
+	ZAttrStatic         ZObjectAttr = ZObjectAttr(ZClassStatic)
+	ZAttrAbstract                   = ZObjectAttr(ZClassAbstract)
+	ZAttrFinal                      = 0x004 // final method, not the same value as ZClassFinal
+	ZAttrPublic                     = 0x100
+	ZAttrProtected                  = 0x200
+	ZAttrPrivate                    = 0x400
+	ZAttrAccess                     = ZAttrPublic | ZAttrProtected | ZAttrPrivate
+	ZAttrImplicitPublic             = 0x1000 // method without flag
+	ZAttrCtor                       = 0x2000
+	ZAttrDtor                       = 0x4000
+	ZAttrUserArgInfo                = 0x80    // method flag used by Closure::__invoke()
+	ZAttrAllowStatic                = 0x10000 // method flag (bc only), any method that has this flag can be used statically and non statically.
+	ZAttrShadow                     = 0x20000 // shadow of parent's private method/property
+	ZAttrDeprecated                 = 0x40000 // deprecation flag
+	ZAttrClosure                    = 0x100000
+	ZAttrFakeClosure                = 0x40
+	ZAttrGenerator                  = 0x800000
+	ZAttrViaTrampoline              = 0x200000           // call through user function trampoline. e.g. __call, __callstatic
+	ZAttrViaHandler                 = ZAttrViaTrampoline // call through internal function handler. e.g. Closure::invoke()
+	ZAttrVariadic                   = 0x1000000
+	ZAttrReturnRef                  = 0x4000000
+	ZAttrUseGuard                   = 0x1000000  // class has magic methods __get/__set/__unset/__isset that use guards
+	ZAttrHasTypeHints               = 0x10000000 // function has typed arguments
+	ZAttrHasReturnType              = 0x40000000 // Function has a return type (or class has such non-private function)
 )
 
 type ZClassProp struct {
@@ -66,7 +67,7 @@ type ZClass struct {
 
 func compileClass(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 	var attr ZClassAttr
-	err := attr.parseClass(c)
+	err := attr.parse(c)
 	if err != nil {
 		return nil, err
 	}
@@ -92,6 +93,8 @@ func compileClass(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 	}
 
 	for {
+		var attr ZObjectAttr
+
 		i, err := c.NextItem()
 		if err != nil {
 			return nil, err
@@ -105,7 +108,7 @@ func compileClass(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 		c.backup()
 
 		attr = 0
-		attr.parseMethod(c)
+		attr.parse(c)
 
 		switch i.Type {
 		case tokenizer.T_FUNCTION:
@@ -129,7 +132,7 @@ func compileClass(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 	return nil, errors.New("class todo")
 }
 
-func (a *ZClassAttr) parseClass(c *compileCtx) error {
+func (a *ZClassAttr) parse(c *compileCtx) error {
 	// parse class attributes (abstract or final)
 	for {
 		i, err := c.NextItem()
@@ -155,7 +158,7 @@ func (a *ZClassAttr) parseClass(c *compileCtx) error {
 	}
 }
 
-func (a *ZClassAttr) parseMethod(c *compileCtx) error {
+func (a *ZObjectAttr) parse(c *compileCtx) error {
 	// parse method attributes (public/protected/private, abstract or final)
 	for {
 		i, err := c.NextItem()
