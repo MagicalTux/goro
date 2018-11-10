@@ -16,6 +16,10 @@ const (
 	ZClassImplicitAbstract            = 0x010 // for classes
 	ZClassExplicitAbstract            = 0x020 // for classes
 	ZClassFinal                       = 0x040 // class attribute (not method)
+	ZClassTrait                       = 0x80
+	ZClassAnon                        = 0x100
+	ZClassAnonBound                   = 0x200
+	ZClassInherited                   = 0x400
 
 	ZAttrStatic         = ZClassStatic
 	ZAttrAbstract       = ZClassAbstract
