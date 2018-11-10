@@ -56,9 +56,9 @@ func Compile(parent Context, t *tokenizer.Lexer) Runnable {
 		// check for any function
 		for _, elem := range list {
 			switch obj := elem.(type) {
-			case *runnableFunction:
+			case *ZClosure:
 				if obj.name != "" {
-					err := c.RegisterFunction(obj.name, obj.closure)
+					err := c.RegisterFunction(obj.name, obj)
 					if err != nil {
 						return &phperror{err, obj.Loc()}
 					}

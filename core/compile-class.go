@@ -88,12 +88,36 @@ func compileClass(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 	}
 
 	for {
-		attr = 0
-		attr.parseMethod(c)
-
 		i, err := c.NextItem()
 		if err != nil {
 			return nil, err
+		}
+
+		if i.IsSingle('}') {
+			// end of class
+			break
+		}
+		l := MakeLoc(i.Loc())
+		c.backup()
+
+		attr = 0
+		attr.parseMethod(c)
+
+		switch i.Type {
+		case tokenizer.T_FUNCTION:
+			// next must be a string (method name)
+			i, err := c.NextItem()
+			if err != nil {
+				return nil, err
+			}
+
+			if i.Type != tokenizer.T_STRING {
+				return nil, i.Unexpected()
+			}
+
+			f, err := compileFunctionWithName(ZString(i.Data), c, l)
+			// TODO
+			_ = f
 		}
 		return nil, i.Unexpected()
 	}

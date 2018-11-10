@@ -16,6 +16,7 @@ type funcUse struct {
 }
 
 type ZClosure struct {
+	name  ZString
 	args  []*funcArg
 	use   []*funcUse
 	code  Runnable
@@ -25,6 +26,23 @@ type ZClosure struct {
 
 func (z *ZClosure) GetType() ZType {
 	return ZtObject
+}
+
+func (closure *ZClosure) Run(ctx Context) (l *ZVal, err error) {
+	c := closure.dup()
+	// collect use vars
+	for _, s := range c.use {
+		z, err := ctx.GetVariable(s.varName)
+		if err != nil {
+			return nil, err
+		}
+		s.value = z
+	}
+	return &ZVal{c}, nil
+}
+
+func (z *ZClosure) Loc() *Loc {
+	return z.start
 }
 
 func (z *ZClosure) Call(parent Context, args []*ZVal) (*ZVal, error) {

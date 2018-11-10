@@ -6,13 +6,6 @@ import (
 	"git.atonline.com/tristantech/gophp/core/tokenizer"
 )
 
-type runnableFunction struct {
-	name    ZString
-	use     []ZString
-	closure *ZClosure
-	l       *Loc
-}
-
 type runnableFunctionCall struct {
 	name ZString
 	args []Runnable
@@ -25,29 +18,12 @@ type runnableFunctionCallRef struct {
 	l    *Loc
 }
 
-func (r *runnableFunction) Loc() *Loc {
-	return r.l
-}
-
 func (r *runnableFunctionCall) Loc() *Loc {
 	return r.l
 }
 
 func (r *runnableFunctionCallRef) Loc() *Loc {
 	return r.l
-}
-
-func (r *runnableFunction) Run(ctx Context) (l *ZVal, err error) {
-	c := r.closure.dup()
-	// collect use vars
-	for _, s := range r.use {
-		z, err := ctx.GetVariable(s)
-		if err != nil {
-			return nil, err
-		}
-		c.use = append(c.use, &funcUse{s, z})
-	}
-	return &ZVal{c}, nil
 }
 
 func (r *runnableFunctionCall) Run(ctx Context) (l *ZVal, err error) {
@@ -193,7 +169,7 @@ func compileSpecialFuncCall(i *tokenizer.Item, c *compileCtx) (Runnable, error) 
 
 func compileFunctionWithName(name ZString, c *compileCtx, l *Loc) (Runnable, error) {
 	var err error
-	var use []ZString
+	var use []*funcUse
 	args, err := compileFunctionArgs(c)
 
 	i, err := c.NextItem()
@@ -223,16 +199,13 @@ func compileFunctionWithName(name ZString, c *compileCtx, l *Loc) (Runnable, err
 		return nil, err
 	}
 
-	return &runnableFunction{
-		name: name,
-		use:  use,
-		closure: &ZClosure{
-			args:  args,
-			code:  body,
-			start: l,
-			// TODO populate end
-		},
-		l: l,
+	return &ZClosure{
+		name:  name,
+		use:   use,
+		args:  args,
+		code:  body,
+		start: l,
+		// TODO populate end
 	}, nil
 }
 
@@ -295,7 +268,7 @@ func compileFunctionArgs(c *compileCtx) (res []*funcArg, err error) {
 	}
 }
 
-func compileFunctionUse(c *compileCtx) (res []ZString, err error) {
+func compileFunctionUse(c *compileCtx) (res []*funcUse, err error) {
 	i, err := c.NextItem()
 	if err != nil {
 		return nil, err
@@ -321,7 +294,7 @@ func compileFunctionUse(c *compileCtx) (res []ZString, err error) {
 			return nil, i.Unexpected()
 		}
 
-		res = append(res, ZString(i.Data[1:])) // skip $
+		res = append(res, &funcUse{varName: ZString(i.Data[1:])}) // skip $
 
 		i, err = c.NextItem()
 		if err != nil {
