@@ -16,8 +16,9 @@ function toto() {
 }
 var_dump(toto());
 
-/*
-class testclass extends \stdclass implements JsonSerializable, t {
+class testclass extends \stdclass implements JsonSerializable {
+	var $foo;
+
 	public static function test($a, $b) {
 		return $a + $b;
 	}
