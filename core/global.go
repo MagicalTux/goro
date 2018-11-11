@@ -14,6 +14,7 @@ type Global struct {
 
 	p     *Process
 	start time.Time
+	root  *phpContext
 
 	globalFuncs   map[ZString]Callable
 	globalClasses map[ZString]*ZClass // TODO replace *ZClass with a nice interface
@@ -33,6 +34,10 @@ func NewGlobal(ctx context.Context, p *Process) *Global {
 		globalClasses: make(map[ZString]*ZClass),
 		constant:      make(map[ZString]*ZVal),
 	}
+	res.root = &phpContext{
+		Context: res,
+		h:       NewHashTable(),
+	}
 
 	for k, v := range p.defaultConstants {
 		res.constant[k] = v
@@ -48,8 +53,7 @@ func NewGlobal(ctx context.Context, p *Process) *Global {
 }
 
 func (g *Global) RunFile(fn string) error {
-	ctx := NewContext(g)
-	_, err := ctx.Include(ZString(fn))
+	_, err := g.root.Include(ZString(fn))
 
 	return err
 }
@@ -67,18 +71,22 @@ func (g *Global) GetConfig(name ZString, def *ZVal) *ZVal {
 	return def
 }
 
-func (g *Global) GetVariable(name ZString) (*ZVal, error) {
-	// TODO
-	return nil, nil
+func (g *Global) OffsetGet(ctx Context, name *ZVal) (*ZVal, error) {
+	switch name.AsString(ctx) {
+	case "GLOBALS":
+		// return GLOBALS as root hash table in a referenced array
+		return (&ZVal{g.root}).Ref(), nil
+	}
+	return g.root.OffsetGet(ctx, name)
 }
 
-func (g *Global) SetVariable(name ZString, v *ZVal) error {
+func (g *Global) OffsetSet(ctx Context, name, v *ZVal) error {
 	// TODO
 	return nil
 }
 
 func (g *Global) Include(name ZString) (*ZVal, error) {
-	return nil, errors.New("Include can only be called within a context")
+	return g.root.Include(name)
 }
 
 func (g *Global) RegisterFunction(name ZString, f Callable) error {

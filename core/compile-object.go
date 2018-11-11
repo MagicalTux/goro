@@ -86,7 +86,7 @@ func (r *runObjectFunc) Run(ctx Context) (*ZVal, error) {
 	if op[0] == '$' {
 		// variable
 		var opz *ZVal
-		opz, err = ctx.GetVariable(op[1:])
+		opz, err = ctx.OffsetGet(ctx, op[1:].ZVal())
 		if err != nil {
 			return nil, err
 		}
@@ -132,7 +132,7 @@ func (r *runObjectVar) Run(ctx Context) (*ZVal, error) {
 	var offt *ZVal
 	if r.varName[0] == '$' {
 		// variable
-		offt, err = ctx.GetVariable(r.varName[1:])
+		offt, err = ctx.OffsetGet(ctx, r.varName[1:].ZVal())
 		if err != nil {
 			return nil, err
 		}
@@ -161,7 +161,7 @@ func (r *runObjectVar) WriteValue(ctx Context, value *ZVal) error {
 	var offt *ZVal
 	if r.varName[0] == '$' {
 		// variable
-		offt, err = ctx.GetVariable(r.varName[1:])
+		offt, err = ctx.OffsetGet(ctx, r.varName[1:].ZVal())
 		if err != nil {
 			return err
 		}

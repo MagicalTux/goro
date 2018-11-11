@@ -118,7 +118,7 @@ func (ac *runArrayAccess) Run(ctx Context) (*ZVal, error) {
 	}
 
 	// OK...
-	return array.OffsetGet(offset)
+	return array.OffsetGet(ctx, offset)
 }
 
 func (a *runArrayAccess) Loc() *Loc {
@@ -151,7 +151,7 @@ func (ac *runArrayAccess) WriteValue(ctx Context, value *ZVal) error {
 
 	if ac.offset == nil {
 		// append
-		return array.OffsetSet(nil, value)
+		return array.OffsetSet(ctx, nil, value)
 	}
 
 	offset, err := ac.offset.Run(ctx)
@@ -178,7 +178,7 @@ func (ac *runArrayAccess) WriteValue(ctx Context, value *ZVal) error {
 	}
 
 	// OK...
-	return array.OffsetSet(offset, value)
+	return array.OffsetSet(ctx, offset, value)
 }
 
 func compileArray(i *tokenizer.Item, c *compileCtx) (Runnable, error) {

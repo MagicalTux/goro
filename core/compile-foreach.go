@@ -26,9 +26,9 @@ func (r *runnableForeach) Run(ctx Context) (l *ZVal, err error) {
 		}
 
 		if r.k != "" {
-			ctx.SetVariable(r.k, it.Key(ctx))
+			ctx.OffsetSet(ctx, r.k.ZVal(), it.Key(ctx))
 		}
-		ctx.SetVariable(r.v, it.Current(ctx))
+		ctx.OffsetSet(ctx, r.v.ZVal(), it.Current(ctx))
 
 		_, err := r.code.Run(ctx)
 		if err != nil {

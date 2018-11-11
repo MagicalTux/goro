@@ -98,6 +98,14 @@ func (z *ZVal) AsInt(ctx Context) ZInt {
 	return r.Value().(ZInt)
 }
 
+func (z *ZVal) AsString(ctx Context) ZString {
+	r, err := z.As(ctx, ZtString)
+	if err != nil {
+		return ""
+	}
+	return r.Value().(ZString)
+}
+
 func (z *ZVal) String() string {
 	//Typically, use z.As(ctx, ZtString)
 	switch n := z.Value().(type) {

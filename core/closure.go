@@ -51,7 +51,7 @@ func (closure *ZClosure) Run(ctx Context) (l *ZVal, err error) {
 	c := closure.dup()
 	// collect use vars
 	for _, s := range c.use {
-		z, err := ctx.GetVariable(s.varName)
+		z, err := ctx.OffsetGet(ctx, s.varName.ZVal())
 		if err != nil {
 			return nil, err
 		}
@@ -70,7 +70,7 @@ func (z *ZClosure) Call(ctx Context, args []*ZVal) (*ZVal, error) {
 
 	// set use vars
 	for _, u := range z.use {
-		ctx.SetVariable(u.varName, u.value)
+		ctx.OffsetSet(ctx, u.varName.ZVal(), u.value)
 	}
 
 	// set args in new context
@@ -93,9 +93,9 @@ func (z *ZClosure) Call(ctx Context, args []*ZVal) (*ZVal, error) {
 			}
 		}
 		if a.ref {
-			ctx.SetVariable(a.varName, args[i].Ref())
+			ctx.OffsetSet(ctx, a.varName.ZVal(), args[i].Ref())
 		} else {
-			ctx.SetVariable(a.varName, args[i].Dup())
+			ctx.OffsetSet(ctx, a.varName.ZVal(), args[i].Dup())
 		}
 	}
 

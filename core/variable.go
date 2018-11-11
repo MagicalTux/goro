@@ -6,12 +6,12 @@ type runVariable struct {
 }
 
 func (r *runVariable) Run(ctx Context) (*ZVal, error) {
-	res, err := ctx.GetVariable(r.v)
+	res, err := ctx.OffsetGet(ctx, r.v.ZVal())
 	return res, err
 }
 
 func (r *runVariable) WriteValue(ctx Context, value *ZVal) error {
-	err := ctx.SetVariable(r.v, value.Dup())
+	err := ctx.OffsetSet(ctx, r.v.ZVal(), value.Dup())
 	if err != nil {
 		return r.l.Error(err)
 	}
