@@ -57,7 +57,7 @@ func (z *ZVal) String() string {
 	case ZInt:
 		return strconv.FormatInt(int64(n), 10)
 	case ZFloat:
-		return strconv.FormatFloat(float64(n), 'g', -1, 64)
+		return strconv.FormatFloat(float64(n), 'G', -1, 64)
 	case ZString:
 		return string(n)
 	}

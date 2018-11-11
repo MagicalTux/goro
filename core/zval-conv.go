@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 )
@@ -78,7 +79,15 @@ func (z *ZVal) As(ctx Context, t ZType) (*ZVal, error) {
 		case ZInt:
 			return &ZVal{ZString(strconv.FormatInt(int64(n), 10))}, nil
 		case ZFloat:
-			return &ZVal{ZString(strconv.FormatFloat(float64(n), 'g', -1, 64))}, nil
+			if math.IsInf(float64(n), 0) {
+				// need to check if +inf or -inf
+				if math.IsInf(float64(n), 1) {
+					return &ZVal{ZString("INF")}, nil
+				} else {
+					return &ZVal{ZString("-INF")}, nil
+				}
+			}
+			return &ZVal{ZString(strconv.FormatFloat(float64(n), 'G', -1, 64))}, nil
 		case ZString:
 			return &ZVal{ZString(string(n))}, nil
 		}

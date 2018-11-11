@@ -26,7 +26,8 @@ func doVarDump(ctx core.Context, z *core.ZVal, linePfx string) {
 	case core.ZtInt:
 		fmt.Fprintf(ctx, "%sint(%d)\n", linePfx, z.Value())
 	case core.ZtFloat:
-		fmt.Fprintf(ctx, "%sfloat(%g)\n", linePfx, z.Value())
+		z2, _ := z.As(ctx, core.ZtString)
+		fmt.Fprintf(ctx, "%sfloat(%s)\n", linePfx, z2)
 	case core.ZtString:
 		s := z.Value().(core.ZString)
 		fmt.Fprintf(ctx, "%sstring(%d) \"%s\"\n", linePfx, len(s), s)

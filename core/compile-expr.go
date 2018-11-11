@@ -51,14 +51,20 @@ func compileExpr(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 		return compilePostExpr(v, nil, c)
 	case tokenizer.T_LNUMBER:
 		v, err := strconv.ParseInt(i.Data, 0, 64)
-		if err != nil {
-			return compilePostExpr(&runZVal{ZString(i.Data), l}, nil, c)
+		if err == nil {
+			return compilePostExpr(&runZVal{ZInt(v), l}, nil, c)
 		}
-		return compilePostExpr(&runZVal{ZInt(v), l}, nil, c)
+		// if ParseInt failed, try to parse as float (value too large?)
+		fallthrough
 	case tokenizer.T_DNUMBER:
 		v, err := strconv.ParseFloat(i.Data, 64)
 		if err != nil {
-			return compilePostExpr(&runZVal{ZString(i.Data), l}, nil, c)
+			errv := err.(*strconv.NumError)
+			if errv.Err == strconv.ErrRange {
+				// v is inf
+				return compilePostExpr(&runZVal{ZFloat(v), l}, nil, c)
+			}
+			return nil, err
 		}
 		return compilePostExpr(&runZVal{ZFloat(v), l}, nil, c)
 	case tokenizer.T_STRING:
