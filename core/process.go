@@ -50,3 +50,7 @@ func (p *Process) populateConstants() {
 	}
 
 }
+
+func (p *Process) SetConstant(name, value ZString) {
+	p.defaultConstants[name] = value.ZVal()
+}

@@ -26,11 +26,20 @@ func (r *runnableForeach) Run(ctx Context) (l *ZVal, err error) {
 		}
 
 		if r.k != "" {
-			ctx.OffsetSet(ctx, r.k.ZVal(), it.Key(ctx))
+			k, err := it.Key(ctx)
+			if err != nil {
+				return nil, err
+			}
+			ctx.OffsetSet(ctx, r.k.ZVal(), k)
 		}
-		ctx.OffsetSet(ctx, r.v.ZVal(), it.Current(ctx))
 
-		_, err := r.code.Run(ctx)
+		v, err := it.Current(ctx)
+		if err != nil {
+			return nil, err
+		}
+		ctx.OffsetSet(ctx, r.v.ZVal(), v)
+
+		_, err = r.code.Run(ctx)
 		if err != nil {
 			e := r.l.Error(err)
 			switch e.t {

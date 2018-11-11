@@ -9,12 +9,15 @@ import (
 //> func void var_dump ( mixed $expression [, mixed $... ] )
 func stdFuncVarDump(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 	for _, z := range args {
-		doVarDump(ctx, z, "")
+		err := doVarDump(ctx, z, "")
+		if err != nil {
+			return nil, err
+		}
 	}
 	return nil, nil
 }
 
-func doVarDump(ctx core.Context, z *core.ZVal, linePfx string) {
+func doVarDump(ctx core.Context, z *core.ZVal, linePfx string) error {
 	switch z.GetType() {
 	case core.ZtNull:
 		fmt.Fprintf(ctx, "%sNULL\n", linePfx)
@@ -41,17 +44,25 @@ func doVarDump(ctx core.Context, z *core.ZVal, linePfx string) {
 			if !it.Valid(ctx) {
 				break
 			}
-			k := it.Key(ctx)
+			k, err := it.Key(ctx)
+			if err != nil {
+				return err
+			}
 			if k.GetType() == core.ZtInt {
 				fmt.Fprintf(ctx, "%s[%s]=>\n", localPfx, k)
 			} else {
 				fmt.Fprintf(ctx, "%s[\"%s\"]=>\n", localPfx, k)
 			}
-			doVarDump(ctx, it.Current(ctx), localPfx)
+			v, err := it.Current(ctx)
+			if err != nil {
+				return err
+			}
+			doVarDump(ctx, v, localPfx)
 			it.Next(ctx)
 		}
 		fmt.Fprintf(ctx, "%s}\n", linePfx)
 	default:
 		fmt.Fprintf(ctx, "Unknown[%T]:%+v\n", z.Value(), z.Value())
 	}
+	return nil
 }

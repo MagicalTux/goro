@@ -12,6 +12,7 @@ import (
 
 func main() {
 	p := core.NewProcess()
+	p.SetConstant("PHP_SAPI", "fpm")
 
 	l, err := net.Listen("unix", "/tmp/php-fpm.sock")
 	if err != nil {

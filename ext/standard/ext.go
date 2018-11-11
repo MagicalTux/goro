@@ -21,6 +21,7 @@ func init() {
 			"usleep":                   &core.ExtFunction{Func: stdFuncUsleep, Args: []*core.ExtFunctionArg{}},          // misc.go:78
 			"exit":                     &core.ExtFunction{Func: exit, Args: []*core.ExtFunctionArg{}},                   // misc.go:91
 			"var_dump":                 &core.ExtFunction{Func: stdFuncVarDump, Args: []*core.ExtFunctionArg{}},         // vardump.go:9
+			"str_replace":              &core.ExtFunction{Func: stdStrReplace, Args: []*core.ExtFunctionArg{}},          // strings.go:9
 			"echo":                     &core.ExtFunction{Func: stdFuncEcho, Args: []*core.ExtFunctionArg{}},            // echo.go:5
 			"gc_collect_cycles":        &core.ExtFunction{Func: stdFuncGcCollectCycles, Args: []*core.ExtFunctionArg{}}, // gc.go:5
 			"gc_disable":               &core.ExtFunction{Func: stdFuncGcDisable, Args: []*core.ExtFunctionArg{}},       // gc.go:11
@@ -46,7 +47,9 @@ func init() {
 			"dl":                       &core.ExtFunction{Func: stdFuncDl, Args: []*core.ExtFunctionArg{}},              // base.go:11
 			"extension_loaded":         &core.ExtFunction{Func: stdFunc, Args: []*core.ExtFunctionArg{}},                // base.go:16
 			"phpversion":               &core.ExtFunction{Func: stdFuncPhpVersion, Args: []*core.ExtFunctionArg{}},      // base.go:26
-			"get_cfg_var":              &core.ExtFunction{Func: stdFuncGetCfgVar, Args: []*core.ExtFunctionArg{}},       // base.go:45
+			"zend_version":             &core.ExtFunction{Func: stdFuncZendVersion, Args: []*core.ExtFunctionArg{}},     // base.go:45
+			"function_exists":          &core.ExtFunction{Func: stdFuncFuncExists, Args: []*core.ExtFunctionArg{}},      // base.go:50
+			"get_cfg_var":              &core.ExtFunction{Func: stdFuncGetCfgVar, Args: []*core.ExtFunctionArg{}},       // base.go:62
 		},
 		Constants: map[core.ZString]*core.ZVal{
 			"INF":                 core.ZFloat(math.Inf(0)).ZVal(),            // math.go:10

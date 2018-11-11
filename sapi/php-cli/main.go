@@ -12,6 +12,7 @@ import (
 
 func main() {
 	p := core.NewProcess()
+	p.SetConstant("PHP_SAPI", "cli")
 	ctx := core.NewGlobal(context.Background(), p)
 	if len(os.Args) == 2 {
 		if err := ctx.RunFile(os.Args[1]); err != nil {

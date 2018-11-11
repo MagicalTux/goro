@@ -24,10 +24,10 @@ type ZIterable interface {
 }
 
 type ZIterator interface {
-	Current(ctx Context) *ZVal
-	Key(ctx Context) *ZVal
-	Next(ctx Context)
-	Rewind(ctx Context)
+	Current(ctx Context) (*ZVal, error)
+	Key(ctx Context) (*ZVal, error)
+	Next(ctx Context) error
+	Rewind(ctx Context) error
 	Valid(ctx Context) bool
 }
 

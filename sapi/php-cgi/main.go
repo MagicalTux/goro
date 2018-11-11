@@ -11,6 +11,7 @@ import (
 
 func main() {
 	p := core.NewProcess()
+	p.SetConstant("PHP_SAPI", "cgi")
 	err := cgi.Serve(p.Handler("."))
 	if err != nil {
 		log.Fatalf("failed to serve: %s", err)
