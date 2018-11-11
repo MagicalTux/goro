@@ -15,7 +15,8 @@ func init() {
 			"var_dump":   &core.ExtFunction{Func: stdFuncVarDump, Args: []*core.ExtFunctionArg{}},    // vardump.go:9
 			"eval":       &core.ExtFunction{Func: stdFuncEval, Args: []*core.ExtFunctionArg{}},       // eval.go:11
 			"echo":       &core.ExtFunction{Func: stdFuncEcho, Args: []*core.ExtFunctionArg{}},       // echo.go:5
-			"phpversion": &core.ExtFunction{Func: stdFuncPhpVersion, Args: []*core.ExtFunctionArg{}}, // base.go:7
+			"dl":         &core.ExtFunction{Func: stdFuncDl, Args: []*core.ExtFunctionArg{}},         // base.go:11
+			"phpversion": &core.ExtFunction{Func: stdFuncPhpVersion, Args: []*core.ExtFunctionArg{}}, // base.go:16
 		},
 		Constants: map[core.ZString]*core.ZVal{
 			"INF":                 core.ZFloat(math.Inf(0)).ZVal(),            // math.go:4
@@ -41,7 +42,7 @@ func init() {
 			"PHP_ROUND_HALF_EVEN": core.ZInt(3).ZVal(),                        // math.go:25
 			"PHP_ROUND_HALF_ODD":  core.ZInt(4).ZVal(),                        // math.go:26
 			"M_PHI":               core.ZFloat(math.Phi).ZVal(),               // math.go:28
-			"PHP_VERSION":         core.ZString(core.VERSION).ZVal(),          // base.go:5
+			"PHP_VERSION":         core.ZString(core.VERSION).ZVal(),          // base.go:9
 		},
 	})
 }
