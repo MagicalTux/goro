@@ -43,6 +43,10 @@ func (z *ZClosure) ZVal() *ZVal {
 }
 
 func (closure *ZClosure) Run(ctx Context) (l *ZVal, err error) {
+	if closure.name != "" {
+		// register function
+		return nil, ctx.GetGlobal().RegisterFunction(closure.name, closure)
+	}
 	c := closure.dup()
 	// collect use vars
 	for _, s := range c.use {

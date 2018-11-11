@@ -7,6 +7,15 @@ type Loc struct {
 	Line, Char int
 }
 
+func (l *Loc) Loc() *Loc {
+	return l
+}
+
+func (l *Loc) Run(ctx Context) (*ZVal, error) {
+	// just a checkpoint, do nothing
+	return nil, nil
+}
+
 func MakeLoc(Filename string, Line, Char int) *Loc {
 	return &Loc{Filename, Line, Char}
 }

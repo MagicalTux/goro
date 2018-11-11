@@ -54,14 +54,23 @@ func Compile(parent Context, t *tokenizer.Lexer) Runnable {
 
 	if list, ok := r.(Runnables); ok {
 		// check for any function
-		for _, elem := range list {
+		for i, elem := range list {
 			switch obj := elem.(type) {
 			case *ZClosure:
 				if obj.name != "" {
-					err := c.RegisterFunction(obj.name, obj)
+					err := c.GetGlobal().RegisterFunction(obj.name, obj)
 					if err != nil {
 						return obj.Loc().Error(err)
 					}
+					list[i] = obj.Loc()
+				}
+			case *ZClass:
+				if obj.Name != "" {
+					err := c.GetGlobal().RegisterClass(obj.Name, obj)
+					if err != nil {
+						return obj.Loc().Error(err)
+					}
+					list[i] = obj.Loc()
 				}
 			}
 		}

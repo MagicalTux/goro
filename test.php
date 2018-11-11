@@ -1,11 +1,9 @@
 <?php
 
-$array = array(
-	'this',
-	'is',
-	'for',
-	'nobody',
-);
-$array[] = 'ya!';
+function hi() {
+	return 'low';
+}
 
-var_dump($array);
+
+var_dump(hi());
+
