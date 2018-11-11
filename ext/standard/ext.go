@@ -23,6 +23,7 @@ func init() {
 			"dl":                &core.ExtFunction{Func: stdFuncDl, Args: []*core.ExtFunctionArg{}},              // base.go:11
 			"extension_loaded":  &core.ExtFunction{Func: stdFunc, Args: []*core.ExtFunctionArg{}},                // base.go:16
 			"phpversion":        &core.ExtFunction{Func: stdFuncPhpVersion, Args: []*core.ExtFunctionArg{}},      // base.go:26
+			"get_cfg_var":       &core.ExtFunction{Func: stdFuncGetCfgVar, Args: []*core.ExtFunctionArg{}},       // base.go:31
 		},
 		Constants: map[core.ZString]*core.ZVal{
 			"INF":                 core.ZFloat(math.Inf(0)).ZVal(),            // math.go:4

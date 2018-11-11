@@ -27,3 +27,13 @@ func stdFunc(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 func stdFuncPhpVersion(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 	return core.ZString(core.VERSION).ZVal(), nil
 }
+
+//> func mixed get_cfg_var ( string $option )
+func stdFuncGetCfgVar(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
+	var v core.ZString
+	_, err := core.Expand(ctx, args, &v)
+	if err != nil {
+		return nil, err
+	}
+	return ctx.GetGlobal().GetConfig(v, core.ZNull{}.ZVal()), nil
+}
