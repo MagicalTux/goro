@@ -8,6 +8,7 @@ var (
 type Ext struct {
 	Name      string
 	Functions map[string]*ExtFunction
+	Constants map[ZString]*ZVal
 }
 
 type ExtFunction struct {

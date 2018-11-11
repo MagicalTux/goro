@@ -31,8 +31,16 @@ func (z ZInt) GetType() ZType {
 	return ZtInt
 }
 
+func (z ZInt) ZVal() *ZVal {
+	return &ZVal{z}
+}
+
 func (z ZFloat) GetType() ZType {
 	return ZtFloat
+}
+
+func (z ZFloat) ZVal() *ZVal {
+	return &ZVal{z}
 }
 
 func ZStr(s string) *ZVal {

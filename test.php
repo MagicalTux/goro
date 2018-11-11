@@ -12,7 +12,7 @@ $php = "/usr/bin/php";
 
 //var_dump(TESTED_PHP_VERSION);
 function toto() {
-	return [__DIR__, __FILE__, __LINE__];
+	return array(__DIR__, __FILE__, __LINE__);
 }
 var_dump(toto());
 
@@ -32,3 +32,5 @@ echo 'This is a ' . $test . "\n";
 var_dump($test);
 var_dump((string)$test);
 
+
+var_dump(M_PI);

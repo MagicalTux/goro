@@ -9,15 +9,18 @@ import (
 )
 
 type Process struct {
-	fHandler map[string]stream.Handler
+	fHandler         map[string]stream.Handler
+	defaultConstants map[ZString]*ZVal
 }
 
 func NewProcess() *Process {
 	res := &Process{
-		fHandler: make(map[string]stream.Handler),
+		fHandler:         make(map[string]stream.Handler),
+		defaultConstants: make(map[ZString]*ZVal),
 	}
 	res.fHandler["file"], _ = stream.NewFileHandler("/")
 	res.fHandler["php"] = stream.PhpHandler()
+	res.populateConstants()
 	return res
 }
 
@@ -37,4 +40,13 @@ func (p *Process) Open(u *url.URL) (*stream.Stream, error) {
 
 func (p *Process) Handler(docroot string) http.Handler {
 	return nil // TODO
+}
+
+func (p *Process) populateConstants() {
+	for _, e := range globalExtMap {
+		for k, v := range e.Constants {
+			p.defaultConstants[k] = v
+		}
+	}
+
 }

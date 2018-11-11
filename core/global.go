@@ -20,6 +20,7 @@ type Global struct {
 
 	globalFuncs   map[ZString]Callable
 	globalClasses map[ZString]*ZClass // TODO replace *ZClass with a nice interface
+	constant      map[ZString]*ZVal
 
 	out io.Writer
 }
@@ -33,6 +34,11 @@ func NewGlobal(ctx context.Context, p *Process) *Global {
 
 		globalFuncs:   make(map[ZString]Callable),
 		globalClasses: make(map[ZString]*ZClass),
+		constant:      make(map[ZString]*ZVal),
+	}
+
+	for k, v := range p.defaultConstants {
+		res.constant[k] = v
 	}
 
 	// import global funcs from ext
@@ -108,7 +114,10 @@ func (g *Global) GetFunction(name ZString) (Callable, error) {
 }
 
 func (g *Global) GetConstant(name ZString) (*ZVal, error) {
-	return nil, nil // TODO
+	if v, ok := g.constant[name]; ok {
+		return v, nil
+	}
+	return nil, nil
 }
 
 func (g *Global) GetClass(name ZString) (*ZClass, error) {
