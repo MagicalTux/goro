@@ -16,7 +16,7 @@ func stdFuncDl(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 //> func bool extension_loaded ( string $name )
 func stdFunc(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 	var name string
-	_, err := core.ParseParameters(ctx, args, "s", &name)
+	_, err := core.Expand(ctx, args, &name)
 	if err != nil {
 		return nil, err
 	}

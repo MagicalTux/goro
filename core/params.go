@@ -1,6 +1,9 @@
 package core
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
 
 func ParseParameters(ctx Context, args []*ZVal, spec string, out ...interface{}) (int, error) {
 	arg_no := 0
@@ -108,4 +111,50 @@ func ParseParameters(ctx Context, args []*ZVal, spec string, out ...interface{})
 		}
 	}
 	return arg_no, nil
+}
+
+func Expand(ctx Context, args []*ZVal, out ...interface{}) (int, error) {
+	for i, v := range out {
+		switch tgt := v.(type) {
+		case *bool:
+			if len(args) < i {
+				return i, errors.New("missing required argument")
+			}
+			s, err := args[i].As(ctx, ZtBool)
+			if err != nil {
+				return i, err
+			}
+			*tgt = bool(s.v.(ZBool))
+		case *ZBool:
+			if len(args) < i {
+				return i, errors.New("missing required argument")
+			}
+			s, err := args[i].As(ctx, ZtBool)
+			if err != nil {
+				return i, err
+			}
+			*tgt = s.v.(ZBool)
+		case *string:
+			if len(args) < i {
+				return i, errors.New("missing required argument")
+			}
+			s, err := args[i].As(ctx, ZtString)
+			if err != nil {
+				return i, err
+			}
+			*tgt = string(s.v.(ZString))
+		case *ZString:
+			if len(args) < i {
+				return i, errors.New("missing required argument")
+			}
+			s, err := args[i].As(ctx, ZtString)
+			if err != nil {
+				return i, err
+			}
+			*tgt = s.v.(ZString)
+		default:
+			return i, fmt.Errorf("unsupported target type %T", v)
+		}
+	}
+	return len(out), nil
 }
