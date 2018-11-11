@@ -12,12 +12,17 @@ func init() {
 	core.RegisterExt(&core.Ext{
 		Name: "standard",
 		Functions: map[string]*core.ExtFunction{
-			"var_dump":         &core.ExtFunction{Func: stdFuncVarDump, Args: []*core.ExtFunctionArg{}},    // vardump.go:9
-			"eval":             &core.ExtFunction{Func: stdFuncEval, Args: []*core.ExtFunctionArg{}},       // eval.go:11
-			"echo":             &core.ExtFunction{Func: stdFuncEcho, Args: []*core.ExtFunctionArg{}},       // echo.go:5
-			"dl":               &core.ExtFunction{Func: stdFuncDl, Args: []*core.ExtFunctionArg{}},         // base.go:11
-			"extension_loaded": &core.ExtFunction{Func: stdFunc, Args: []*core.ExtFunctionArg{}},           // base.go:16
-			"phpversion":       &core.ExtFunction{Func: stdFuncPhpVersion, Args: []*core.ExtFunctionArg{}}, // base.go:26
+			"var_dump":          &core.ExtFunction{Func: stdFuncVarDump, Args: []*core.ExtFunctionArg{}},         // vardump.go:9
+			"eval":              &core.ExtFunction{Func: stdFuncEval, Args: []*core.ExtFunctionArg{}},            // eval.go:11
+			"echo":              &core.ExtFunction{Func: stdFuncEcho, Args: []*core.ExtFunctionArg{}},            // echo.go:5
+			"gc_collect_cycles": &core.ExtFunction{Func: stdFuncGcCollectCycles, Args: []*core.ExtFunctionArg{}}, // gc.go:5
+			"gc_disable":        &core.ExtFunction{Func: stdFuncGcDisable, Args: []*core.ExtFunctionArg{}},       // gc.go:11
+			"gc_enable":         &core.ExtFunction{Func: stdFuncGcEnable, Args: []*core.ExtFunctionArg{}},        // gc.go:16
+			"gc_enabled":        &core.ExtFunction{Func: stdFuncGcEnabled, Args: []*core.ExtFunctionArg{}},       // gc.go:21
+			"gc_mem_caches":     &core.ExtFunction{Func: stdFuncGcMemCaches, Args: []*core.ExtFunctionArg{}},     // gc.go:26
+			"dl":                &core.ExtFunction{Func: stdFuncDl, Args: []*core.ExtFunctionArg{}},              // base.go:11
+			"extension_loaded":  &core.ExtFunction{Func: stdFunc, Args: []*core.ExtFunctionArg{}},                // base.go:16
+			"phpversion":        &core.ExtFunction{Func: stdFuncPhpVersion, Args: []*core.ExtFunctionArg{}},      // base.go:26
 		},
 		Constants: map[core.ZString]*core.ZVal{
 			"INF":                 core.ZFloat(math.Inf(0)).ZVal(),            // math.go:4
