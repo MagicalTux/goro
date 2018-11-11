@@ -8,6 +8,12 @@ type ZClassProp struct {
 	Modifiers ZObjectAttr
 }
 
+type ZClassMethod struct {
+	Name      ZString
+	Modifiers ZObjectAttr
+	Method    Callable
+}
+
 type ZClass struct {
 	Name ZString
 	l    *Loc
@@ -17,6 +23,7 @@ type ZClass struct {
 	Implements  []ZString
 	Const       map[ZString]ZString
 	Props       []*ZClassProp
+	Methods     map[ZString]*ZClassMethod
 	StaticProps *ZHashTable
 }
 
@@ -31,6 +38,7 @@ func compileClass(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 		l:           MakeLoc(i.Loc()),
 		StaticProps: NewHashTable(),
 		attr:        attr,
+		Methods:     make(map[ZString]*ZClassMethod),
 	}
 
 	err = class.parseClassLine(c)
@@ -112,8 +120,10 @@ func compileClass(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 			}
 
 			f, err := compileFunctionWithName(ZString(i.Data), c, l)
-			// TODO
-			_ = f
+
+			// register method
+			method := &ZClassMethod{Name: ZString(i.Data), Modifiers: attr, Method: f}
+			class.Methods[method.Name.ToLower()] = method
 		default:
 			return nil, i.Unexpected()
 		}

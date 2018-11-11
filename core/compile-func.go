@@ -45,23 +45,25 @@ func (r *runnableFunctionCall) Run(ctx Context) (l *ZVal, err error) {
 }
 
 func (r *runnableFunctionCallRef) Run(ctx Context) (l *ZVal, err error) {
-	v, err := r.name.Run(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	var f Callable
 	var ok bool
 
-	if f, ok = v.v.(Callable); !ok {
-		v, err = v.As(ctx, ZtString)
+	if f, ok = r.name.(Callable); !ok {
+		v, err := r.name.Run(ctx)
 		if err != nil {
 			return nil, err
 		}
-		// grab function
-		f, err = ctx.GetFunction(v.v.(ZString))
-		if err != nil {
-			return nil, err
+
+		if f, ok = v.v.(Callable); !ok {
+			v, err = v.As(ctx, ZtString)
+			if err != nil {
+				return nil, err
+			}
+			// grab function
+			f, err = ctx.GetFunction(v.v.(ZString))
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -167,7 +169,7 @@ func compileSpecialFuncCall(i *tokenizer.Item, c *compileCtx) (Runnable, error) 
 	}
 }
 
-func compileFunctionWithName(name ZString, c *compileCtx, l *Loc) (Runnable, error) {
+func compileFunctionWithName(name ZString, c *compileCtx, l *Loc) (*ZClosure, error) {
 	var err error
 	var use []*funcUse
 	args, err := compileFunctionArgs(c)

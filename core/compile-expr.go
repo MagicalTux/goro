@@ -35,7 +35,6 @@ func (r *runVariable) Loc() *Loc {
 func compileExpr(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 	var v Runnable
 	var err error
-	var is_operator bool
 
 	if i == nil {
 		i, err = c.NextItem()
@@ -65,9 +64,28 @@ func compileExpr(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 		gotSomething := false
 		switch t_next.Type {
 		case tokenizer.T_PAAMAYIM_NEKUDOTAYIM:
-			// this is a static method class
-			// if v is "parent", "static" or "self" it might not actually be a static call
-			return nil, errors.New("todo class static call")
+			// this is a static method call or a static variable access
+
+			// nb: if i.Data is "parent", "static" or "self" it might not actually be a static call
+			switch i.Data {
+			case "parent", "static", "self":
+				return nil, errors.New("todo class special call")
+			default:
+				className := ZString(i.Data)
+				c.NextItem()          // T_PAAMAYIM_NEKUDOTAYIM
+				i, err = c.NextItem() // actual value, a T_VARIABLE (if var) or a T_STRING
+
+				switch i.Type {
+				case tokenizer.T_VARIABLE:
+					v = &runClassStaticVarRef{className, ZString(i.Data[1:]), l}
+					return compilePostExpr(v, nil, c)
+				case tokenizer.T_STRING:
+					v = &runClassStaticObjRef{className, ZString(i.Data), l}
+					return compilePostExpr(v, nil, c)
+				default:
+					return nil, i.Unexpected()
+				}
+			}
 		case tokenizer.ItemSingleChar:
 			switch []rune(t_next.Data)[0] {
 			case '(':
@@ -119,9 +137,8 @@ func compileExpr(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 			}
 			v = &runnableFunctionCall{"shell_exec", []Runnable{v}, l}
 		case '!':
-			// this is an operator
-			v = nil
-			is_operator = true
+			// this is an operator, let compilePostExpr() deal with it
+			return compilePostExpr(nil, i, c)
 		case '@':
 			// this is a silent operator
 			// TODO: we should encase result from compileExpr into a "silencer"
@@ -162,18 +179,17 @@ func compileExpr(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 		}
 	}
 
-	// load operator, if any
-	if !is_operator {
-		i, err = c.NextItem()
-		if err != nil {
-			return v, err
-		}
-	}
-
-	return compilePostExpr(v, i, c)
+	return compilePostExpr(v, nil, c)
 }
 
 func compilePostExpr(v Runnable, i *tokenizer.Item, c *compileCtx) (Runnable, error) {
+	if i == nil {
+		var err error
+		i, err = c.NextItem()
+		if err != nil {
+			return nil, err
+		}
+	}
 	l := MakeLoc(i.Loc())
 	// can be any kind of glue (operators, etc)
 	switch i.Type {

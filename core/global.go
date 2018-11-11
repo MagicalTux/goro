@@ -111,6 +111,13 @@ func (g *Global) GetConstant(name ZString) (*ZVal, error) {
 	return nil, nil // TODO
 }
 
+func (g *Global) GetClass(name ZString) (*ZClass, error) {
+	if c, ok := g.globalClasses[name.ToLower()]; ok {
+		return c, nil
+	}
+	return nil, fmt.Errorf("Class '%s' not found", name)
+}
+
 func (g *Global) RegisterClass(name ZString, c *ZClass) error {
 	name = name.ToLower()
 	if _, ok := g.globalClasses[name]; ok {
