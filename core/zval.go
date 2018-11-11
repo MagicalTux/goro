@@ -38,6 +38,7 @@ func (z *ZVal) ZVal() *ZVal {
 }
 
 func (z *ZVal) Dup() *ZVal {
+	// TODO duplicate contents if array
 	return &ZVal{z.v}
 }
 

@@ -1,12 +1,9 @@
 <?php
 
-function test(&$var) {
-	$var = 'this is working';
+class foo {
+	function bar($a) {
+		return $a + 1;
+	}
 }
 
-$s = 'hello world';
-var_dump($s);
-
-test($s);
-
-var_dump($s);
+var_dump(foo::bar(41));

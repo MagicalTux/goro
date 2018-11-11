@@ -111,13 +111,13 @@ func operatorAppend(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 	a, _ = a.As(ctx, ZtString)
 	b, _ = b.As(ctx, ZtString)
 
-	return &ZVal{a.v.(ZString) + b.v.(ZString)}, nil
+	return &ZVal{a.Value().(ZString) + b.Value().(ZString)}, nil
 }
 
 func operatorNot(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 	b, _ = b.As(ctx, ZtBool)
 
-	return &ZVal{!b.v.(ZBool)}, nil
+	return &ZVal{!b.Value().(ZBool)}, nil
 }
 
 func operatorMath(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
@@ -125,31 +125,31 @@ func operatorMath(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 		op = op[:len(op)-1]
 	}
 
-	switch a.v.GetType() {
+	switch a.Value().GetType() {
 	case ZtInt:
 		var res ZInt
 		switch op {
 		case "+":
-			res = a.v.(ZInt) + b.v.(ZInt)
+			res = a.Value().(ZInt) + b.Value().(ZInt)
 		case "-":
-			res = a.v.(ZInt) - b.v.(ZInt)
+			res = a.Value().(ZInt) - b.Value().(ZInt)
 		case "/":
-			res = a.v.(ZInt) / b.v.(ZInt)
+			res = a.Value().(ZInt) / b.Value().(ZInt)
 		case "*":
-			res = a.v.(ZInt) * b.v.(ZInt)
+			res = a.Value().(ZInt) * b.Value().(ZInt)
 		}
 		return &ZVal{res}, nil
 	case ZtFloat:
 		var res ZFloat
 		switch op {
 		case "+":
-			res = a.v.(ZFloat) + b.v.(ZFloat)
+			res = a.Value().(ZFloat) + b.Value().(ZFloat)
 		case "-":
-			res = a.v.(ZFloat) - b.v.(ZFloat)
+			res = a.Value().(ZFloat) - b.Value().(ZFloat)
 		case "/":
-			res = a.v.(ZFloat) / b.v.(ZFloat)
+			res = a.Value().(ZFloat) / b.Value().(ZFloat)
 		case "*":
-			res = a.v.(ZFloat) * b.v.(ZFloat)
+			res = a.Value().(ZFloat) * b.Value().(ZFloat)
 		}
 		return &ZVal{res}, nil
 	default:
@@ -173,16 +173,16 @@ func operatorMathLogic(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 		op = op[:len(op)-1]
 	}
 
-	switch a.v.GetType() {
+	switch a.Value().GetType() {
 	case ZtInt:
 		var res ZInt
 		switch op {
 		case "|":
-			res = a.v.(ZInt) | b.v.(ZInt)
+			res = a.Value().(ZInt) | b.Value().(ZInt)
 		case "^":
-			res = a.v.(ZInt) ^ b.v.(ZInt)
+			res = a.Value().(ZInt) ^ b.Value().(ZInt)
 		case "&":
-			res = a.v.(ZInt) & b.v.(ZInt)
+			res = a.Value().(ZInt) & b.Value().(ZInt)
 		}
 		return &ZVal{res}, nil
 	case ZtFloat:
@@ -208,13 +208,13 @@ func operatorCompareStrict(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 	case ZtNull:
 		res = true
 	case ZtBool:
-		res = a.v.(ZBool) == b.v.(ZBool)
+		res = a.Value().(ZBool) == b.Value().(ZBool)
 	case ZtInt:
-		res = a.v.(ZInt) == b.v.(ZInt)
+		res = a.Value().(ZInt) == b.Value().(ZInt)
 	case ZtFloat:
-		res = a.v.(ZFloat) == b.v.(ZFloat)
+		res = a.Value().(ZFloat) == b.Value().(ZFloat)
 	case ZtString:
-		res = a.v.(ZString) == b.v.(ZString)
+		res = a.Value().(ZString) == b.Value().(ZString)
 	default:
 		return nil, errors.New("unsupported compare type")
 	}
@@ -235,9 +235,9 @@ func operatorCompare(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 	case ZtInt, ZtFloat:
 		ia = a
 	case ZtString:
-		if a.v.(ZString).LooksInt() {
+		if a.Value().(ZString).LooksInt() {
 			ia, _ = a.As(ctx, ZtInt)
-		} else if a.v.(ZString).IsNumeric() {
+		} else if a.Value().(ZString).IsNumeric() {
 			ia, _ = a.As(ctx, ZtFloat)
 		}
 	}
@@ -246,9 +246,9 @@ func operatorCompare(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 	case ZtInt, ZtFloat:
 		ib = b
 	case ZtString:
-		if b.v.(ZString).LooksInt() {
+		if b.Value().(ZString).LooksInt() {
 			ib, _ = b.As(ctx, ZtInt)
-		} else if b.v.(ZString).IsNumeric() {
+		} else if b.Value().(ZString).IsNumeric() {
 			ib, _ = b.As(ctx, ZtFloat)
 		}
 	}
@@ -274,34 +274,34 @@ func operatorCompare(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 		case ZtInt:
 			switch op {
 			case "<":
-				res = ia.v.(ZInt) < ib.v.(ZInt)
+				res = ia.Value().(ZInt) < ib.Value().(ZInt)
 			case ">":
-				res = ia.v.(ZInt) > ib.v.(ZInt)
+				res = ia.Value().(ZInt) > ib.Value().(ZInt)
 			case "<=":
-				res = ia.v.(ZInt) <= ib.v.(ZInt)
+				res = ia.Value().(ZInt) <= ib.Value().(ZInt)
 			case ">=":
-				res = ia.v.(ZInt) >= ib.v.(ZInt)
+				res = ia.Value().(ZInt) >= ib.Value().(ZInt)
 			case "==":
-				res = ia.v.(ZInt) == ib.v.(ZInt)
+				res = ia.Value().(ZInt) == ib.Value().(ZInt)
 			case "!=":
-				res = ia.v.(ZInt) != ib.v.(ZInt)
+				res = ia.Value().(ZInt) != ib.Value().(ZInt)
 			default:
 				return nil, fmt.Errorf("unsupported operator %s", op)
 			}
 		case ZtFloat:
 			switch op {
 			case "<":
-				res = ia.v.(ZFloat) < ib.v.(ZFloat)
+				res = ia.Value().(ZFloat) < ib.Value().(ZFloat)
 			case ">":
-				res = ia.v.(ZFloat) > ib.v.(ZFloat)
+				res = ia.Value().(ZFloat) > ib.Value().(ZFloat)
 			case "<=":
-				res = ia.v.(ZFloat) <= ib.v.(ZFloat)
+				res = ia.Value().(ZFloat) <= ib.Value().(ZFloat)
 			case ">=":
-				res = ia.v.(ZFloat) >= ib.v.(ZFloat)
+				res = ia.Value().(ZFloat) >= ib.Value().(ZFloat)
 			case "==":
-				res = ia.v.(ZFloat) == ib.v.(ZFloat)
+				res = ia.Value().(ZFloat) == ib.Value().(ZFloat)
 			case "!=":
-				res = ia.v.(ZFloat) != ib.v.(ZFloat)
+				res = ia.Value().(ZFloat) != ib.Value().(ZFloat)
 			default:
 				return nil, fmt.Errorf("unsupported operator %s", op)
 			}
@@ -316,12 +316,12 @@ func operatorCompare(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 		b, _ = b.As(ctx, ZtBool)
 		var res bool
 		var ab, bb int
-		if a.v.(ZBool) {
+		if a.Value().(ZBool) {
 			ab = 1
 		} else {
 			ab = 0
 		}
-		if b.v.(ZBool) {
+		if b.Value().(ZBool) {
 			bb = 1
 		} else {
 			bb = 0
@@ -354,10 +354,10 @@ func operatorCompare(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 
 	var res bool
 
-	switch a.v.GetType() {
+	switch a.Value().GetType() {
 	case ZtString:
-		av := a.v.(ZString)
-		bv := b.v.(ZString)
+		av := a.Value().(ZString)
+		bv := b.Value().(ZString)
 		switch op {
 		case "<":
 			res = av < bv
