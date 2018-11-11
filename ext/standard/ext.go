@@ -34,6 +34,15 @@ func init() {
 			"asinh":                    &core.ExtFunction{Func: mathAsinh, Args: []*core.ExtFunctionArg{}},              // math.go:97
 			"atan2":                    &core.ExtFunction{Func: mathAtan2, Args: []*core.ExtFunctionArg{}},              // math.go:108
 			"atan":                     &core.ExtFunction{Func: mathAtan, Args: []*core.ExtFunctionArg{}},               // math.go:119
+			"atanh":                    &core.ExtFunction{Func: mathAtanh, Args: []*core.ExtFunctionArg{}},              // math.go:130
+			"cos":                      &core.ExtFunction{Func: mathCos, Args: []*core.ExtFunctionArg{}},                // math.go:141
+			"cosh":                     &core.ExtFunction{Func: mathCosh, Args: []*core.ExtFunctionArg{}},               // math.go:152
+			"deg2rad":                  &core.ExtFunction{Func: mathDeg2rad, Args: []*core.ExtFunctionArg{}},            // math.go:163
+			"exp":                      &core.ExtFunction{Func: mathExp, Args: []*core.ExtFunctionArg{}},                // math.go:174
+			"expm1":                    &core.ExtFunction{Func: mathExpm1, Args: []*core.ExtFunctionArg{}},              // math.go:185
+			"fmod":                     &core.ExtFunction{Func: mathFmod, Args: []*core.ExtFunctionArg{}},               // math.go:196
+			"hypot":                    &core.ExtFunction{Func: mathHypot, Args: []*core.ExtFunctionArg{}},              // math.go:207
+			"pi":                       &core.ExtFunction{Func: mathPi, Args: []*core.ExtFunctionArg{}},                 // math.go:218
 			"dl":                       &core.ExtFunction{Func: stdFuncDl, Args: []*core.ExtFunctionArg{}},              // base.go:11
 			"extension_loaded":         &core.ExtFunction{Func: stdFunc, Args: []*core.ExtFunctionArg{}},                // base.go:16
 			"phpversion":               &core.ExtFunction{Func: stdFuncPhpVersion, Args: []*core.ExtFunctionArg{}},      // base.go:26

@@ -126,3 +126,96 @@ func mathAtan(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 
 	return core.ZFloat(math.Atan(float64(x))).ZVal(), nil
 }
+
+//> func float atanh ( float $arg )
+func mathAtanh(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
+	var x core.ZFloat
+	_, err := core.Expand(ctx, args, &x)
+	if err != nil {
+		return nil, err
+	}
+
+	return core.ZFloat(math.Atanh(float64(x))).ZVal(), nil
+}
+
+//> func float cos ( float $arg )
+func mathCos(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
+	var x core.ZFloat
+	_, err := core.Expand(ctx, args, &x)
+	if err != nil {
+		return nil, err
+	}
+
+	return core.ZFloat(math.Cos(float64(x))).ZVal(), nil
+}
+
+//> func float cosh ( float $arg )
+func mathCosh(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
+	var x core.ZFloat
+	_, err := core.Expand(ctx, args, &x)
+	if err != nil {
+		return nil, err
+	}
+
+	return core.ZFloat(math.Cosh(float64(x))).ZVal(), nil
+}
+
+//> func float deg2rad ( float $number )
+func mathDeg2rad(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
+	var x core.ZFloat
+	_, err := core.Expand(ctx, args, &x)
+	if err != nil {
+		return nil, err
+	}
+
+	return (x / 180 * math.Pi).ZVal(), nil
+}
+
+//> func float exp ( float $arg )
+func mathExp(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
+	var x core.ZFloat
+	_, err := core.Expand(ctx, args, &x)
+	if err != nil {
+		return nil, err
+	}
+
+	return core.ZFloat(math.Exp(float64(x))).ZVal(), nil
+}
+
+//> func float expm1 ( float $arg )
+func mathExpm1(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
+	var x core.ZFloat
+	_, err := core.Expand(ctx, args, &x)
+	if err != nil {
+		return nil, err
+	}
+
+	return core.ZFloat(math.Expm1(float64(x))).ZVal(), nil
+}
+
+//> func float fmod ( float $x , float $y )
+func mathFmod(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
+	var x, y core.ZFloat
+	_, err := core.Expand(ctx, args, &x, &y)
+	if err != nil {
+		return nil, err
+	}
+
+	return core.ZFloat(math.Mod(float64(x), float64(y))).ZVal(), nil
+}
+
+//> func float hypot ( float $x , float $y )
+func mathHypot(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
+	var x, y core.ZFloat
+	_, err := core.Expand(ctx, args, &x, &y)
+	if err != nil {
+		return nil, err
+	}
+
+	return core.ZFloat(math.Hypot(float64(x), float64(y))).ZVal(), nil
+}
+
+//> func float pi ( void )
+func mathPi(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
+	return core.ZFloat(math.Pi).ZVal(), nil
+}
