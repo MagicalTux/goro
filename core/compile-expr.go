@@ -47,13 +47,20 @@ func compileExpr(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 
 	switch i.Type {
 	case tokenizer.T_VARIABLE:
-		v = &runVariable{ZString(i.Data[1:]), MakeLoc(i.Loc())}
+		v = &runVariable{ZString(i.Data[1:]), l}
+		return compilePostExpr(v, nil, c)
 	case tokenizer.T_LNUMBER:
 		v, err := strconv.ParseInt(i.Data, 0, 64)
-		return &runZVal{ZInt(v), MakeLoc(i.Loc())}, err
+		if err != nil {
+			return compilePostExpr(&runZVal{ZString(i.Data), l}, nil, c)
+		}
+		return compilePostExpr(&runZVal{ZInt(v), l}, nil, c)
 	case tokenizer.T_DNUMBER:
 		v, err := strconv.ParseFloat(i.Data, 64)
-		return &runZVal{ZFloat(v), MakeLoc(i.Loc())}, err
+		if err != nil {
+			return compilePostExpr(&runZVal{ZString(i.Data), l}, nil, c)
+		}
+		return compilePostExpr(&runZVal{ZFloat(v), l}, nil, c)
 	case tokenizer.T_STRING:
 		// if next is '(' this is a function call
 		t_next, err := c.NextItem()
