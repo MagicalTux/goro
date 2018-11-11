@@ -253,8 +253,6 @@ func compilePostExpr(v Runnable, i *tokenizer.Item, c *compileCtx) (Runnable, er
 
 		// TODO math priority
 		return &runOperator{op: i.Data, a: v, b: t_v}, nil
-	default:
-		return nil, i.Unexpected()
 	}
 
 	// unknown?
