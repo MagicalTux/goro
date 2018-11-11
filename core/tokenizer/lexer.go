@@ -162,7 +162,7 @@ func (l *Lexer) reset() {
 
 func (l *Lexer) backup() {
 	if l.width == 0 {
-		return // fail
+		panic("lexer backup called without a previous read")
 	}
 
 	// update buffers
@@ -172,7 +172,7 @@ func (l *Lexer) backup() {
 	l.output.Reset()
 	l.output.WriteString(tmp)
 
-	l.inputRst = append(l.inputRst, r...)
+	l.inputRst = append(r, l.inputRst...)
 
 	l.pos -= l.width
 	l.cLine, l.cChar = l.pLine, l.pChar
@@ -238,6 +238,9 @@ func (l *Lexer) acceptRun(valid string) string {
 	b := &strings.Builder{}
 	for {
 		v := l.next()
+		if v == eof {
+			return b.String()
+		}
 		if strings.IndexRune(valid, v) >= 0 {
 			b.WriteRune(v)
 			continue

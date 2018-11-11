@@ -1,3 +1,3 @@
 <?php
 
-var_dump(-M_PI * M_E);
+var_dump( phpversion());

@@ -1,8 +1,6 @@
 package tokenizer
 
-import (
-	"strings"
-)
+import "strings"
 
 func lexPhpPossibleCast(l *Lexer) lexState {
 	// possible (string) etc

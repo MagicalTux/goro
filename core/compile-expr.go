@@ -276,6 +276,8 @@ func compilePostExpr(v Runnable, i *tokenizer.Item, c *compileCtx) (Runnable, er
 		tokenizer.T_IS_NOT_EQUAL,
 		tokenizer.T_IS_IDENTICAL,
 		tokenizer.T_IS_NOT_IDENTICAL,
+		tokenizer.T_IS_GREATER_OR_EQUAL,
+		tokenizer.T_IS_SMALLER_OR_EQUAL,
 		tokenizer.T_LOGICAL_AND,
 		tokenizer.T_LOGICAL_XOR,
 		tokenizer.T_LOGICAL_OR: // etc... FIXME TODO

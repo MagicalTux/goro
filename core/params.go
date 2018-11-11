@@ -48,7 +48,7 @@ func Expand(ctx Context, args []*ZVal, out ...interface{}) (int, error) {
 		}
 		if rv.Type().Elem().Kind() == reflect.Ptr {
 			// pointer of pointer → optional argument
-			if len(args) < i {
+			if len(args) <= i {
 				// end of argments
 				return i, nil
 			}

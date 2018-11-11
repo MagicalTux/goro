@@ -29,6 +29,7 @@ func init() {
 		tokenizer.T_ECHO:        &compileFuncCb{f: compileSpecialFuncCall},
 		tokenizer.T_EXIT:        &compileFuncCb{f: compileSpecialFuncCall},
 		tokenizer.T_ISSET:       &compileFuncCb{f: compileSpecialFuncCall},
+		tokenizer.T_UNSET:       &compileFuncCb{f: compileSpecialFuncCall},
 		tokenizer.T_EMPTY:       &compileFuncCb{f: compileSpecialFuncCall},
 		tokenizer.T_EVAL:        &compileFuncCb{f: compileSpecialFuncCall},
 		tokenizer.T_GLOBAL:      &compileFuncCb{f: compileGlobal},
@@ -135,7 +136,7 @@ func compileReturn(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 	l := MakeLoc(i.Loc())
 
 	if i.IsSingle(';') {
-		return &runReturn{}, i.Unexpected()
+		return &runReturn{nil, l}, nil // return nothing
 	}
 
 	v, err := compileExpr(nil, c)
