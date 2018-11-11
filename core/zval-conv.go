@@ -3,7 +3,6 @@ package core
 import (
 	"fmt"
 	"strconv"
-	"strings"
 )
 
 func (z *ZVal) CastTo(ctx Context, t ZType) error {
@@ -59,12 +58,12 @@ func (z *ZVal) AsNumeric(ctx Context) (*ZVal, error) {
 	case ZFloat:
 		return z, nil
 	case ZString:
-		if strings.IndexAny(string(n), ".eE") >= 0 {
-			// this is likely a float
-			return z.As(ctx, ZtFloat)
-		} else {
-			return z.As(ctx, ZtInt)
+		v1, err := strconv.ParseInt(string(n), 10, 64)
+		if err == nil {
+			return ZInt(v1).ZVal(), nil
 		}
+		// fallback to float
+		return z.As(ctx, ZtFloat)
 	default:
 		return z.As(ctx, ZtInt)
 	}
@@ -96,6 +95,14 @@ func (z *ZVal) AsInt(ctx Context) ZInt {
 		return 0
 	}
 	return r.Value().(ZInt)
+}
+
+func (z *ZVal) AsFloat(ctx Context) ZFloat {
+	r, err := z.As(ctx, ZtFloat)
+	if err != nil {
+		return 0
+	}
+	return r.Value().(ZFloat)
 }
 
 func (z *ZVal) AsString(ctx Context) ZString {

@@ -1,5 +1,11 @@
 package standard
 
+import (
+	"math"
+
+	"github.com/MagicalTux/gophp/core"
+)
+
 // from: http://php.net/manual/en/math.constants.php
 //> const INF:                 core.ZFloat(math.Inf(0)) // positive infinite
 //> const NAN:                 core.ZFloat(math.NaN())
@@ -26,3 +32,31 @@ package standard
 //> const PHP_ROUND_HALF_ODD:  core.ZInt(4)                        // Round halves to odd numbers
 
 //> const M_PHI: core.ZFloat(math.Phi) // specific to this implementation of PHP
+
+//> func number abs ( mixed $number )
+func mathAbs(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
+	var z *core.ZVal
+	_, err := core.Expand(ctx, args)
+	if err != nil {
+		return nil, err
+	}
+
+	z, err = z.AsNumeric(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	switch z.GetType() {
+	case core.ZtInt:
+		i := z.AsInt(ctx)
+		if i < 0 {
+			return (-i).ZVal(), nil
+		} else {
+			return i.ZVal(), nil
+		}
+	case core.ZtFloat:
+		return core.ZFloat(math.Abs(float64(z.AsFloat(ctx)))).ZVal(), nil
+	default:
+		return core.ZNull{}.ZVal(), nil
+	}
+}

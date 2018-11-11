@@ -28,6 +28,13 @@ func (z *ZVal) Store(ctx Context, out interface{}) error {
 		}
 		*tgt = s.Value().(ZInt)
 		return nil
+	case *ZFloat:
+		s, err := z.As(ctx, ZtFloat)
+		if err != nil {
+			return err
+		}
+		*tgt = s.Value().(ZFloat)
+		return nil
 	case *string:
 		s, err := z.As(ctx, ZtString)
 		if err != nil {
