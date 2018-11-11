@@ -75,6 +75,19 @@ func stdFuncSleep(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 	return core.ZInt(0).ZVal(), nil
 }
 
+//> func int usleep ( int $seconds )
+func stdFuncUsleep(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
+	var t core.ZInt
+	_, err := core.Expand(ctx, args, &t)
+	if err != nil {
+		return nil, err
+	}
+
+	time.Sleep(time.Duration(t) * time.Microsecond)
+
+	return nil, nil
+}
+
 //> func void exit ([ string|int $status ] )
 func exit(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 	var ext **core.ZVal

@@ -18,7 +18,8 @@ func init() {
 			"eval":                     &core.ExtFunction{Func: stdFuncEval, Args: []*core.ExtFunctionArg{}},            // misc.go:23
 			"hrtime":                   &core.ExtFunction{Func: stdFuncHrTime, Args: []*core.ExtFunctionArg{}},          // misc.go:43
 			"sleep":                    &core.ExtFunction{Func: stdFuncSleep, Args: []*core.ExtFunctionArg{}},           // misc.go:65
-			"exit":                     &core.ExtFunction{Func: exit, Args: []*core.ExtFunctionArg{}},                   // misc.go:78
+			"usleep":                   &core.ExtFunction{Func: stdFuncUsleep, Args: []*core.ExtFunctionArg{}},          // misc.go:78
+			"exit":                     &core.ExtFunction{Func: exit, Args: []*core.ExtFunctionArg{}},                   // misc.go:91
 			"var_dump":                 &core.ExtFunction{Func: stdFuncVarDump, Args: []*core.ExtFunctionArg{}},         // vardump.go:9
 			"echo":                     &core.ExtFunction{Func: stdFuncEcho, Args: []*core.ExtFunctionArg{}},            // echo.go:5
 			"gc_collect_cycles":        &core.ExtFunction{Func: stdFuncGcCollectCycles, Args: []*core.ExtFunctionArg{}}, // gc.go:5
