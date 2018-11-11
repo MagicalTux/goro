@@ -2,8 +2,6 @@ package core
 
 import (
 	"fmt"
-	"math"
-	"strconv"
 	"strings"
 )
 
@@ -21,98 +19,17 @@ func (z *ZVal) As(ctx Context, t ZType) (*ZVal, error) {
 		// nothing to do
 		return z, nil
 	}
+	if t == ZtNull {
+		// cast to NULL can only result into null
+		return &ZVal{ZNull{}}, nil
+	}
 
-	switch t {
-	case ZtNull:
-		return &ZVal{nil}, nil
-	case ZtBool:
-		switch n := z.v.(type) {
-		case nil:
-			return &ZVal{ZBool(false)}, nil
-		case ZInt:
-			return &ZVal{ZBool(n != 0)}, nil
-		case ZFloat:
-			return &ZVal{ZBool(n != 0)}, nil
-		case ZString:
-			return &ZVal{ZBool(n != "" && n != "0")}, nil
-		}
-	case ZtInt:
-		switch n := z.v.(type) {
-		case ZFloat:
-			return &ZVal{ZInt(n)}, nil
-		case ZBool:
-			if n {
-				return &ZVal{ZInt(1)}, nil
-			} else {
-				return &ZVal{ZInt(0)}, nil
-			}
-		default:
-			s, _ := z.As(ctx, ZtString)
-			i, _ := strconv.ParseInt(string(s.v.(ZString)), 0, 64)
-			return &ZVal{ZInt(i)}, nil
-		}
-	case ZtFloat:
-		switch n := z.v.(type) {
-		case ZInt:
-			return &ZVal{ZFloat(n)}, nil
-		case ZBool:
-			if n {
-				return &ZVal{ZFloat(1)}, nil
-			} else {
-				return &ZVal{ZFloat(0)}, nil
-			}
-		default:
-			s, _ := z.As(ctx, ZtString)
-			i, _ := strconv.ParseFloat(string(s.v.(ZString)), 64)
-			return &ZVal{ZFloat(i)}, nil
-		}
-	case ZtString:
-		switch n := z.v.(type) {
-		case nil:
-			return &ZVal{ZString("")}, nil
-		case ZBool:
-			if n {
-				return &ZVal{ZString("1")}, nil
-			} else {
-				return &ZVal{ZString("")}, nil
-			}
-		case ZInt:
-			return &ZVal{ZString(strconv.FormatInt(int64(n), 10))}, nil
-		case ZFloat:
-			if math.IsInf(float64(n), 0) {
-				// need to check if +inf or -inf
-				if math.IsInf(float64(n), 1) {
-					return &ZVal{ZString("INF")}, nil
-				} else {
-					return &ZVal{ZString("-INF")}, nil
-				}
-			}
-			return &ZVal{ZString(strconv.FormatFloat(float64(n), 'G', -1, 64))}, nil
-		case ZString:
-			return &ZVal{ZString(string(n))}, nil
-		}
-		switch z.GetType() {
-		case ZtNull:
-			return &ZVal{ZString("")}, nil
-		case ZtArray:
-			return &ZVal{ZString("Array")}, nil
-		case ZtObject:
-			// TODO call __toString()
-			return &ZVal{ZString("")}, nil // fatal error if no __toString() method
-		case ZtResource:
-			return &ZVal{ZString("Resource id #")}, nil // TODO
-		default:
-			return &ZVal{ZString(fmt.Sprintf("Unknown[%T]", z.v))}, nil
-		}
-	case ZtArray:
-		switch z.v.(type) {
-		case nil:
-			return &ZVal{NewZArray()}, nil
-		default:
-			a := NewZArray()
-			a.OffsetSet(nil, z)
-			return &ZVal{a}, nil
-		}
+	v, err := z.v.As(ctx, t)
+	if err != nil {
+		return nil, err
+	}
+	if v != nil {
+		return &ZVal{v}, nil
 	}
 
 	return nil, fmt.Errorf("todo %s => %s", z.v.GetType(), t)

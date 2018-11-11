@@ -28,6 +28,20 @@ func (z *ZClosure) GetType() ZType {
 	return ZtObject
 }
 
+func (z *ZClosure) As(ctx Context, t ZType) (Val, error) {
+	switch t {
+	case ZtObject:
+		return z, nil
+	case ZtBool:
+		return ZBool(true), nil
+	}
+	return nil, nil
+}
+
+func (z *ZClosure) ZVal() *ZVal {
+	return &ZVal{z}
+}
+
 func (closure *ZClosure) Run(ctx Context) (l *ZVal, err error) {
 	c := closure.dup()
 	// collect use vars

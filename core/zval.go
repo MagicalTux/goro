@@ -7,6 +7,8 @@ import (
 
 type Val interface {
 	GetType() ZType
+	ZVal() *ZVal
+	As(ctx Context, t ZType) (Val, error)
 }
 
 type ZVal struct {
@@ -41,6 +43,15 @@ func (z *ZVal) IsNull() bool {
 		return true
 	}
 	return false
+}
+
+func (z *ZVal) AsInt(ctx Context) ZInt {
+	// simple method for quick conversion
+	r, err := z.As(ctx, ZtInt)
+	if err != nil {
+		return 0
+	}
+	return r.v.(ZInt)
 }
 
 func (z *ZVal) String() string {

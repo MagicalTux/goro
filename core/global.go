@@ -87,6 +87,11 @@ func (g *Global) GetGlobal() *Global {
 	return g
 }
 
+func (g *Global) GetConfig(name ZString, def *ZVal) *ZVal {
+	// TODO
+	return def
+}
+
 func (g *Global) GetVariable(name ZString) (*ZVal, error) {
 	// TODO
 	return nil, nil

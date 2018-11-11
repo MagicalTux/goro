@@ -65,6 +65,25 @@ func (a *ZArray) GetType() ZType {
 	return ZtArray
 }
 
+func (a *ZArray) ZVal() *ZVal {
+	return &ZVal{a}
+}
+
+func (a *ZArray) As(ctx Context, t ZType) (Val, error) {
+	switch t {
+	case ZtBool, ZtInt, ZtFloat:
+		if a.h.count > 0 {
+			return ZBool(true).As(ctx, t)
+		} else {
+			return ZBool(false).As(ctx, t)
+		}
+	case ZtString:
+		// TODO emit warning "Array to string conversion"
+		return ZString("Array"), nil
+	}
+	return nil, nil
+}
+
 func (a *ZArray) OffsetGet(key *ZVal) (*ZVal, error) {
 	if key == nil || key.GetType() == ZtNull {
 		return nil, errors.New("Cannot use [] for reading")
