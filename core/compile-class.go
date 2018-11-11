@@ -1,14 +1,11 @@
 package core
 
-import (
-	"errors"
-
-	"git.atonline.com/tristantech/gophp/core/tokenizer"
-)
+import "git.atonline.com/tristantech/gophp/core/tokenizer"
 
 type ZClassProp struct {
-	VarName ZString
-	Default *ZVal
+	VarName   ZString
+	Default   *ZVal
+	Modifiers ZObjectAttr
 }
 
 type ZClass struct {
@@ -77,6 +74,7 @@ func compileClass(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 		switch i.Type {
 		case tokenizer.T_VAR:
 			// class variable, with possible default value
+			prop := &ZClassProp{Modifiers: attr}
 			i, err := c.NextItem()
 			if err != nil {
 				return nil, err
@@ -84,7 +82,24 @@ func compileClass(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 			if i.Type != tokenizer.T_VARIABLE {
 				return nil, i.Unexpected()
 			}
-			return nil, i.Unexpected()
+			prop.VarName = ZString(i.Data[1:])
+
+			// check for default value
+			i, err = c.NextItem()
+			if err != nil {
+				return nil, err
+			}
+
+			if i.IsSingle('=') {
+				// TODO
+				return nil, i.Unexpected()
+			}
+
+			if !i.IsSingle(';') {
+				return nil, i.Unexpected()
+			}
+
+			class.Props = append(class.Props, prop)
 		case tokenizer.T_FUNCTION:
 			// next must be a string (method name)
 			i, err := c.NextItem()
@@ -99,11 +114,12 @@ func compileClass(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 			f, err := compileFunctionWithName(ZString(i.Data), c, l)
 			// TODO
 			_ = f
+		default:
+			return nil, i.Unexpected()
 		}
-		return nil, i.Unexpected()
 	}
 
-	return nil, errors.New("class todo")
+	return class, nil
 }
 
 func (class *ZClass) parseClassLine(c *compileCtx) error {
@@ -201,4 +217,12 @@ func compileReadClassIdentifier(c *compileCtx) (ZString, error) {
 		c.backup()
 		return res, nil
 	}
+}
+
+func (c *ZClass) Run(ctx Context) (*ZVal, error) {
+	return nil, ctx.GetGlobal().RegisterClass(c.Name, c)
+}
+
+func (c *ZClass) Loc() *Loc {
+	return c.l
 }

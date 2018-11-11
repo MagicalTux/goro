@@ -18,7 +18,8 @@ type Global struct {
 	p     *Process
 	start time.Time
 
-	globalFuncs map[ZString]Callable
+	globalFuncs   map[ZString]Callable
+	globalClasses map[ZString]*ZClass // TODO replace *ZClass with a nice interface
 
 	out io.Writer
 }
@@ -30,7 +31,8 @@ func NewGlobal(ctx context.Context, p *Process) *Global {
 		out:     os.Stdout,
 		start:   time.Now(),
 
-		globalFuncs: make(map[ZString]Callable),
+		globalFuncs:   make(map[ZString]Callable),
+		globalClasses: make(map[ZString]*ZClass),
 	}
 
 	// import global funcs from ext
@@ -107,4 +109,13 @@ func (g *Global) GetFunction(name ZString) (Callable, error) {
 
 func (g *Global) GetConstant(name ZString) (*ZVal, error) {
 	return nil, nil // TODO
+}
+
+func (g *Global) RegisterClass(name ZString, c *ZClass) error {
+	name = name.ToLower()
+	if _, ok := g.globalClasses[name]; ok {
+		return fmt.Errorf("Cannot declare class %s, because the name is already in use", name)
+	}
+	g.globalClasses[name] = c
+	return nil
 }

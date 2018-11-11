@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	"path"
 	"strconv"
 
@@ -63,6 +64,10 @@ func compileExpr(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 		c.backup()
 		gotSomething := false
 		switch t_next.Type {
+		case tokenizer.T_PAAMAYIM_NEKUDOTAYIM:
+			// this is a static method class
+			// if v is "parent", "static" or "self" it might not actually be a static call
+			return nil, errors.New("todo class static call")
 		case tokenizer.ItemSingleChar:
 			switch []rune(t_next.Data)[0] {
 			case '(':
