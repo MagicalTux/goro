@@ -36,7 +36,7 @@ func (z *ZHashTable) GetString(k ZString) *ZVal {
 
 	t, ok := z._idx_s[k]
 	if !ok {
-		return nil
+		return &ZVal{ZNull{}}
 	}
 	return t.v
 }
@@ -71,7 +71,7 @@ func (z *ZHashTable) GetInt(k ZInt) *ZVal {
 
 	t, ok := z._idx_i[k]
 	if !ok {
-		return nil
+		return &ZVal{ZNull{}}
 	}
 	return t.v
 }

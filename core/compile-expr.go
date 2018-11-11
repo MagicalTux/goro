@@ -143,6 +143,20 @@ func compileExpr(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 		}
 
 		return spawnRunCast(i.Type, t_v, l)
+	case tokenizer.T_INC:
+		t_v, err := compileExpr(nil, c)
+		if err != nil {
+			return nil, err
+		}
+
+		return &runIncDec{inc: true, v: t_v, l: l, post: false}, nil
+	case tokenizer.T_DEC:
+		t_v, err := compileExpr(nil, c)
+		if err != nil {
+			return nil, err
+		}
+
+		return &runIncDec{inc: false, v: t_v, l: l, post: false}, nil
 	case tokenizer.ItemSingleChar:
 		ch := []rune(i.Data)[0]
 		switch ch {
@@ -244,6 +258,12 @@ func compilePostExpr(v Runnable, i *tokenizer.Item, c *compileCtx) (Runnable, er
 			// just a value
 			return v, nil
 		}
+	case tokenizer.T_INC:
+		// v followed by inc
+		return &runIncDec{inc: true, v: v, l: l, post: true}, nil
+	case tokenizer.T_DEC:
+		// v followed by dec
+		return &runIncDec{inc: false, v: v, l: l, post: true}, nil
 	case tokenizer.T_AND_EQUAL, tokenizer.T_BOOLEAN_AND, tokenizer.T_BOOLEAN_OR, tokenizer.T_CONCAT_EQUAL, tokenizer.T_DIV_EQUAL, tokenizer.T_IS_EQUAL, tokenizer.T_IS_NOT_EQUAL, tokenizer.T_MINUS_EQUAL: // etc... FIXME TODO
 		// what follows is also an expression
 		t_v, err := compileExpr(nil, c)

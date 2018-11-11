@@ -1,5 +1,7 @@
 package core
 
+import "fmt"
+
 type Loc struct {
 	Filename   string
 	Line, Char int
@@ -19,4 +21,8 @@ func (l *Loc) Error(e error) *PhpError {
 	default:
 		return &PhpError{e, l, PhpErrorFatal}
 	}
+}
+
+func (l *Loc) Errorf(f string, arg ...interface{}) *PhpError {
+	return &PhpError{fmt.Errorf(f, arg...), l, PhpErrorFatal}
 }

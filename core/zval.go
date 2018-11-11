@@ -45,6 +45,15 @@ func (z *ZVal) IsNull() bool {
 	return false
 }
 
+func (z *ZVal) AsBool(ctx Context) ZBool {
+	// simple method for quick conversion
+	r, err := z.As(ctx, ZtBool)
+	if err != nil {
+		return false
+	}
+	return r.v.(ZBool)
+}
+
 func (z *ZVal) AsInt(ctx Context) ZInt {
 	// simple method for quick conversion
 	r, err := z.As(ctx, ZtInt)
