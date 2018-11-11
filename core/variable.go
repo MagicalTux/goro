@@ -11,7 +11,11 @@ func (r *runVariable) Run(ctx Context) (*ZVal, error) {
 }
 
 func (r *runVariable) WriteValue(ctx Context, value *ZVal) error {
-	return ctx.SetVariable(r.v, value.Dup())
+	err := ctx.SetVariable(r.v, value.Dup())
+	if err != nil {
+		return r.l.Error(err)
+	}
+	return nil
 }
 
 func (r *runVariable) Loc() *Loc {

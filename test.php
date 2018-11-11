@@ -1,7 +1,9 @@
 <?php
 
 class foo {
-	function bar($a) {
+	var $x = 'hi';
+
+	public function bar($a) {
 		var_dump($this);
 		return $a + 1;
 	}
@@ -9,4 +11,5 @@ class foo {
 
 $foo = new foo();
 var_dump($foo->bar(41));
+var_dump($foo->x);
 

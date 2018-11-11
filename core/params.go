@@ -12,35 +12,35 @@ func (z *ZVal) Store(ctx Context, out interface{}) error {
 		if err != nil {
 			return err
 		}
-		*tgt = bool(s.v.(ZBool))
+		*tgt = bool(s.Value().(ZBool))
 		return nil
 	case *ZBool:
 		s, err := z.As(ctx, ZtBool)
 		if err != nil {
 			return err
 		}
-		*tgt = s.v.(ZBool)
+		*tgt = s.Value().(ZBool)
 		return nil
 	case *ZInt:
 		s, err := z.As(ctx, ZtInt)
 		if err != nil {
 			return err
 		}
-		*tgt = s.v.(ZInt)
+		*tgt = s.Value().(ZInt)
 		return nil
 	case *string:
 		s, err := z.As(ctx, ZtString)
 		if err != nil {
 			return err
 		}
-		*tgt = string(s.v.(ZString))
+		*tgt = string(s.Value().(ZString))
 		return nil
 	case *ZString:
 		s, err := z.As(ctx, ZtString)
 		if err != nil {
 			return err
 		}
-		*tgt = s.v.(ZString)
+		*tgt = s.Value().(ZString)
 		return nil
 	case **ZVal:
 		// as is

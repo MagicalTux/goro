@@ -95,12 +95,12 @@ func (z *ZVal) AsInt(ctx Context) ZInt {
 	if err != nil {
 		return 0
 	}
-	return r.v.(ZInt)
+	return r.Value().(ZInt)
 }
 
 func (z *ZVal) String() string {
 	//Typically, use z.As(ctx, ZtString)
-	switch n := z.v.(type) {
+	switch n := z.Value().(type) {
 	case nil:
 		return ""
 	case ZBool:

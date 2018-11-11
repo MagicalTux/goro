@@ -4,7 +4,7 @@ import "git.atonline.com/tristantech/gophp/core/tokenizer"
 
 type ZClassProp struct {
 	VarName   ZString
-	Default   *ZVal
+	Default   Runnable
 	Modifiers ZObjectAttr
 }
 
@@ -99,8 +99,16 @@ func compileClass(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 			}
 
 			if i.IsSingle('=') {
-				// TODO
-				return nil, i.Unexpected()
+				// parse default value for class variable
+				prop.Default, err = compileExpr(nil, c)
+				if err != nil {
+					return nil, err
+				}
+
+				i, err = c.NextItem()
+				if err != nil {
+					return nil, err
+				}
 			}
 
 			if !i.IsSingle(';') {

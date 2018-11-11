@@ -21,7 +21,7 @@ func (r *runnableIf) Run(ctx Context) (l *ZVal, err error) {
 		return nil, err
 	}
 
-	if t.v.(ZBool) {
+	if t.Value().(ZBool) {
 		return r.yes.Run(ctx)
 	} else if r.no != nil {
 		return r.no.Run(ctx)
