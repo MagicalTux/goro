@@ -29,7 +29,7 @@ func (z *ZClosure) GetType() ZType {
 	return ZtObject
 }
 
-func (z *ZClosure) As(ctx Context, t ZType) (Val, error) {
+func (z *ZClosure) AsVal(ctx Context, t ZType) (Val, error) {
 	switch t {
 	case ZtObject:
 		return z, nil

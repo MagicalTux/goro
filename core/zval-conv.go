@@ -15,6 +15,11 @@ func (z *ZVal) CastTo(ctx Context, t ZType) error {
 }
 
 func (z *ZVal) As(ctx Context, t ZType) (*ZVal, error) {
+	r, err := z.AsVal(ctx, t)
+	return &ZVal{r}, err
+}
+
+func (z *ZVal) AsVal(ctx Context, t ZType) (Val, error) {
 	if z.GetType() == t {
 		// nothing to do
 		return z, nil
@@ -25,14 +30,14 @@ func (z *ZVal) As(ctx Context, t ZType) (*ZVal, error) {
 	}
 
 	if z == nil || z.v == nil {
-		v, err := ZNull{}.As(ctx, t)
+		v, err := ZNull{}.AsVal(ctx, t)
 		if err != nil {
 			return nil, err
 		}
 		return v.ZVal(), nil
 	}
 
-	v, err := z.v.As(ctx, t)
+	v, err := z.v.AsVal(ctx, t)
 	if err != nil {
 		return nil, err
 	}

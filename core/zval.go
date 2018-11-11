@@ -8,7 +8,7 @@ import (
 type Val interface {
 	GetType() ZType
 	ZVal() *ZVal
-	As(ctx Context, t ZType) (Val, error)
+	AsVal(ctx Context, t ZType) (Val, error)
 }
 
 type ZVal struct {
@@ -36,6 +36,10 @@ func (z *runZVal) Run(ctx Context) (*ZVal, error) {
 
 func (z *runZVal) Loc() *Loc {
 	return z.l
+}
+
+func (z *ZVal) ZVal() *ZVal {
+	return z
 }
 
 func (z *ZVal) IsNull() bool {
@@ -99,6 +103,9 @@ func (z *ZVal) String() string {
 }
 
 func (z *ZVal) Value() Val {
+	if sz, ok := z.v.(*ZVal); ok {
+		return sz.Value()
+	}
 	return z.v
 }
 

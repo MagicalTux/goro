@@ -30,7 +30,7 @@ func (z ZNull) ZVal() *ZVal {
 	return &ZVal{nil}
 }
 
-func (z ZNull) As(ctx Context, t ZType) (Val, error) {
+func (z ZNull) AsVal(ctx Context, t ZType) (Val, error) {
 	switch t {
 	case ZtNull:
 		return ZNull{}, nil
@@ -53,7 +53,7 @@ func (z ZBool) GetType() ZType {
 	return ZtBool
 }
 
-func (z ZBool) As(ctx Context, t ZType) (Val, error) {
+func (z ZBool) AsVal(ctx Context, t ZType) (Val, error) {
 	switch t {
 	case ZtNull:
 		return ZNull{}, nil
@@ -87,7 +87,7 @@ func (z ZString) ZVal() *ZVal {
 	return &ZVal{z}
 }
 
-func (z ZString) As(ctx Context, t ZType) (Val, error) {
+func (z ZString) AsVal(ctx Context, t ZType) (Val, error) {
 	switch t {
 	case ZtBool:
 		return ZBool(z != "" && z != "0"), nil
@@ -111,7 +111,7 @@ func (z ZInt) ZVal() *ZVal {
 	return &ZVal{z}
 }
 
-func (z ZInt) As(ctx Context, t ZType) (Val, error) {
+func (z ZInt) AsVal(ctx Context, t ZType) (Val, error) {
 	switch t {
 	case ZtBool:
 		return ZBool(z != 0), nil
@@ -133,7 +133,7 @@ func (z ZFloat) ZVal() *ZVal {
 	return &ZVal{z}
 }
 
-func (z ZFloat) As(ctx Context, t ZType) (Val, error) {
+func (z ZFloat) AsVal(ctx Context, t ZType) (Val, error) {
 	switch t {
 	case ZtBool:
 		return ZBool(z != 0), nil

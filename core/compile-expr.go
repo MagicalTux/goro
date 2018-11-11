@@ -15,23 +15,6 @@ import (
 // "a string with a $var"
 // $a + $b
 
-type runVariable struct {
-	v ZString
-	l *Loc
-}
-
-func (r *runVariable) Run(ctx Context) (*ZVal, error) {
-	return ctx.GetVariable(r.v)
-}
-
-func (r *runVariable) WriteValue(ctx Context, value *ZVal) error {
-	return ctx.SetVariable(r.v, value)
-}
-
-func (r *runVariable) Loc() *Loc {
-	return r.l
-}
-
 func compileExpr(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 	var v Runnable
 	var err error
@@ -199,6 +182,14 @@ func compileExpr(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 			if !i.IsSingle(')') {
 				return nil, i.Unexpected()
 			}
+		case '&':
+			// get ref of something
+			v, err = compileExpr(nil, c)
+			if err != nil {
+				return nil, err
+			}
+
+			return compilePostExpr(&runRef{v, l}, nil, c)
 		default:
 			return nil, i.Unexpected()
 		}

@@ -69,13 +69,13 @@ func (a *ZArray) ZVal() *ZVal {
 	return &ZVal{a}
 }
 
-func (a *ZArray) As(ctx Context, t ZType) (Val, error) {
+func (a *ZArray) AsVal(ctx Context, t ZType) (Val, error) {
 	switch t {
 	case ZtBool, ZtInt, ZtFloat:
 		if a.h.count > 0 {
-			return ZBool(true).As(ctx, t)
+			return ZBool(true).AsVal(ctx, t)
 		} else {
-			return ZBool(false).As(ctx, t)
+			return ZBool(false).AsVal(ctx, t)
 		}
 	case ZtString:
 		// TODO emit warning "Array to string conversion"
