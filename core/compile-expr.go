@@ -264,7 +264,22 @@ func compilePostExpr(v Runnable, i *tokenizer.Item, c *compileCtx) (Runnable, er
 	case tokenizer.T_DEC:
 		// v followed by dec
 		return &runIncDec{inc: false, v: v, l: l, post: true}, nil
-	case tokenizer.T_AND_EQUAL, tokenizer.T_BOOLEAN_AND, tokenizer.T_BOOLEAN_OR, tokenizer.T_CONCAT_EQUAL, tokenizer.T_DIV_EQUAL, tokenizer.T_IS_EQUAL, tokenizer.T_IS_NOT_EQUAL, tokenizer.T_MINUS_EQUAL, tokenizer.T_IS_IDENTICAL, tokenizer.T_IS_NOT_IDENTICAL: // etc... FIXME TODO
+	case tokenizer.T_AND_EQUAL,
+		tokenizer.T_BOOLEAN_AND,
+		tokenizer.T_BOOLEAN_OR,
+		tokenizer.T_CONCAT_EQUAL,
+		tokenizer.T_PLUS_EQUAL,
+		tokenizer.T_MINUS_EQUAL,
+		tokenizer.T_MUL_EQUAL,
+		tokenizer.T_DIV_EQUAL,
+		tokenizer.T_IS_EQUAL,
+		tokenizer.T_IS_NOT_EQUAL,
+		tokenizer.T_IS_IDENTICAL,
+		tokenizer.T_IS_NOT_IDENTICAL,
+		tokenizer.T_LOGICAL_AND,
+		tokenizer.T_LOGICAL_XOR,
+		tokenizer.T_LOGICAL_OR: // etc... FIXME TODO
+
 		// what follows is also an expression
 		t_v, err := compileExpr(nil, c)
 		if err != nil {
