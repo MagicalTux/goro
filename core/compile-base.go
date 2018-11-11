@@ -37,6 +37,7 @@ func init() {
 		tokenizer.T_STRING:      &compileFuncCb{f: compileExpr},
 		tokenizer.T_CONTINUE:    &compileFuncCb{f: compileContinue},
 		tokenizer.T_BREAK:       &compileFuncCb{f: compileBreak},
+		tokenizer.T_NEW:         &compileFuncCb{f: compileNew},
 	}
 
 	itemSingleHandler = map[rune]*compileFuncCb{

@@ -64,8 +64,8 @@ func (z *ZClosure) Loc() *Loc {
 	return z.start
 }
 
-func (z *ZClosure) Call(parent Context, args []*ZVal) (*ZVal, error) {
-	ctx := NewContext(parent) // function context
+func (z *ZClosure) Call(ctx Context, args []*ZVal) (*ZVal, error) {
+	// typically, we run from a clean context
 	var err error
 
 	// set use vars

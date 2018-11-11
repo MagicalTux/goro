@@ -13,6 +13,10 @@ type Callable interface {
 	Call(ctx Context, args []*ZVal) (*ZVal, error)
 }
 
+type ObjectCallable interface {
+	CallMethod(method ZString, ctx Context, args []*ZVal) (*ZVal, error)
+}
+
 type Runnables []Runnable
 
 func (r Runnables) Run(ctx Context) (l *ZVal, err error) {

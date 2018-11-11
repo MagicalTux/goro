@@ -37,7 +37,7 @@ func (r *runnableFunctionCall) Run(ctx Context) (l *ZVal, err error) {
 		}
 	}
 
-	return f.Call(ctx, f_arg)
+	return f.Call(NewContext(ctx), f_arg)
 }
 
 func (r *runnableFunctionCallRef) Run(ctx Context) (l *ZVal, err error) {
@@ -72,7 +72,7 @@ func (r *runnableFunctionCallRef) Run(ctx Context) (l *ZVal, err error) {
 		}
 	}
 
-	return f.Call(ctx, f_arg)
+	return f.Call(NewContext(ctx), f_arg)
 }
 
 func compileFunction(i *tokenizer.Item, c *compileCtx) (Runnable, error) {

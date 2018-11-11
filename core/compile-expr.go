@@ -14,6 +14,7 @@ import (
 // "a string"
 // "a string with a $var"
 // $a + $b
+// etc...
 
 func compileExpr(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 	var v Runnable
@@ -255,6 +256,8 @@ func compilePostExpr(v Runnable, i *tokenizer.Item, c *compileCtx) (Runnable, er
 	case tokenizer.T_DEC:
 		// v followed by dec
 		return compilePostExpr(&runIncDec{inc: false, v: v, l: l, post: true}, nil, c)
+	case tokenizer.T_OBJECT_OPERATOR:
+		return compileObjectOperator(v, i, c)
 	case tokenizer.T_AND_EQUAL,
 		tokenizer.T_BOOLEAN_AND,
 		tokenizer.T_BOOLEAN_OR,
