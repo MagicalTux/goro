@@ -21,6 +21,8 @@ In order to run php code as cli:
 
 This is still a very early implementation and most of the core is missing.
 
+Right now, running PHP's own tests would require pcre, so it is not possible to run the tests yet.
+
 ## Syntax
 
 * Error reporting needs to be done
