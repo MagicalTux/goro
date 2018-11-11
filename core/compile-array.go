@@ -145,6 +145,11 @@ func (ac *runArrayAccess) WriteValue(ctx Context, value *ZVal) error {
 		return errors.New("Cannot use object of type ?? as array") // TODO
 	}
 
+	if ac.offset == nil {
+		// append
+		return array.OffsetSet(nil, value)
+	}
+
 	offset, err := ac.offset.Run(ctx)
 	if err != nil {
 		return err
@@ -270,33 +275,37 @@ func compileArrayAccess(v Runnable, c *compileCtx) (Runnable, error) {
 
 	l := MakeLoc(i.Loc())
 
-	// don't really need this loop anymore?
-	for {
-		offt, err := compileExpr(nil, c)
-		if err != nil {
-			return nil, err
-		}
-
-		i, err = c.NextItem()
-		if err != nil {
-			return nil, err
-		}
-
-		if !i.IsSingle(']') {
-			return nil, i.Unexpected()
-		}
-
-		v = &runArrayAccess{value: v, offset: offt, l: l}
-
-		i, err = c.NextItem()
-		if err != nil {
-			return nil, err
-		}
-
-		if i.IsSingle('[') {
-			continue
-		}
-
-		return compilePostExpr(v, i, c)
+	i, err = c.NextItem()
+	if err != nil {
+		return nil, err
 	}
+	if i.IsSingle(']') {
+		v = &runArrayAccess{value: v, offset: nil, l: l}
+		return compilePostExpr(v, nil, c)
+	}
+	c.backup()
+
+	// don't really need this loop anymore?
+	offt, err := compileExpr(nil, c)
+	if err != nil {
+		return nil, err
+	}
+
+	i, err = c.NextItem()
+	if err != nil {
+		return nil, err
+	}
+
+	if !i.IsSingle(']') {
+		return nil, i.Unexpected()
+	}
+
+	v = &runArrayAccess{value: v, offset: offt, l: l}
+
+	i, err = c.NextItem()
+	if err != nil {
+		return nil, err
+	}
+
+	return compilePostExpr(v, i, c)
 }
