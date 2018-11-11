@@ -6,6 +6,7 @@ import (
 	"git.atonline.com/tristantech/gophp/core"
 )
 
+//> func void var_dump ( mixed $expression [, mixed $... ] )
 func stdFuncVarDump(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 	for _, z := range args {
 		doVarDump(ctx, z, "")

@@ -32,5 +32,5 @@ echo 'This is a ' . $test . "\n";
 var_dump($test);
 var_dump((string)$test);
 
-
-var_dump(M_PI);
+var_dump(phpversion());
+var_dump(PHP_VERSION);

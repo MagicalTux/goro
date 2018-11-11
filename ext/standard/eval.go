@@ -8,6 +8,7 @@ import (
 	"git.atonline.com/tristantech/gophp/core/tokenizer"
 )
 
+//> func mixed eval ( string $code )
 func stdFuncEval(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 	if len(args) != 1 {
 		return nil, errors.New("eval() requires 1 argument")
