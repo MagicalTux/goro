@@ -1,9 +1,3 @@
 <?php
 
-function hi($p = "hello world") {
-	return $p;
-}
-
-
-var_dump(hi("nope"));
-
+var_dump(-M_PI * M_E);

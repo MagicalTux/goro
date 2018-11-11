@@ -171,7 +171,7 @@ func compileExpr(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 				return nil, err
 			}
 			v = &runnableFunctionCall{"shell_exec", []Runnable{v}, l}
-		case '!':
+		case '!', '-':
 			// this is an operator, let compilePostExpr() deal with it
 			return compilePostExpr(nil, i, c)
 		case '@':

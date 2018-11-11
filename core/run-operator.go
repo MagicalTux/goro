@@ -57,18 +57,18 @@ func (r *runOperator) Run(ctx Context) (*ZVal, error) {
 	}
 
 	// read a and b
-	if !op.skipA {
+	if r.a != nil {
 		a, err = r.a.Run(ctx)
 		if err != nil {
 			return nil, err
 		}
-	} else {
-		a = &ZVal{nil}
 	}
 
-	b, err = r.b.Run(ctx)
-	if err != nil {
-		return nil, err
+	if r.b != nil {
+		b, err = r.b.Run(ctx)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if op.numeric {
