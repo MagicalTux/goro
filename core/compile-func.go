@@ -112,6 +112,11 @@ func compileSpecialFuncCall(i *tokenizer.Item, c *compileCtx) (Runnable, error) 
 		return nil, err
 	}
 
+	if i.IsSingle(';') {
+		c.backup()
+		return &runnableFunctionCall{fn_name, nil, l}, nil
+	}
+
 	if i.IsSingle('(') {
 		has_open = true
 		i, err = c.NextItem()

@@ -72,12 +72,19 @@ func (g *Global) GetConfig(name ZString, def *ZVal) *ZVal {
 }
 
 func (g *Global) OffsetGet(ctx Context, name *ZVal) (*ZVal, error) {
+	name, err := name.As(ctx, ZtString)
+	if err != nil {
+		return nil, err
+	}
+
 	switch name.AsString(ctx) {
 	case "GLOBALS":
 		// return GLOBALS as root hash table in a referenced array
 		return (&ZVal{g.root}).Ref(), nil
 	}
-	return g.root.OffsetGet(ctx, name)
+
+	// handle superglobals by using root context, avoid looping
+	return g.root.h.GetString(name.AsString(ctx)), nil
 }
 
 func (g *Global) OffsetSet(ctx Context, name, v *ZVal) error {

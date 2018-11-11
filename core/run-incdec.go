@@ -21,6 +21,7 @@ func (r *runIncDec) Run(ctx Context) (*ZVal, error) {
 	if err != nil {
 		return nil, r.l.Error(err)
 	}
+	v = v.Dup()
 
 	v, err = v.AsNumeric(ctx)
 	if err != nil {
@@ -46,9 +47,11 @@ func (r *runIncDec) Run(ctx Context) (*ZVal, error) {
 	}
 
 	if r.post {
+		// return original value
 		w.WriteValue(ctx, res.ZVal())
 		return v, nil
 	} else {
+		// return updated value
 		v = res.ZVal()
 		w.WriteValue(ctx, v)
 		return v, nil

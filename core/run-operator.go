@@ -3,6 +3,7 @@ package core
 import (
 	"errors"
 	"fmt"
+	"math"
 )
 
 type runOperator struct {
@@ -20,29 +21,36 @@ type operatorInternalDetails struct {
 }
 
 var operatorList = map[string]*operatorInternalDetails{
-	"=":  &operatorInternalDetails{write: true, skipA: true},
-	".=": &operatorInternalDetails{write: true, op: operatorAppend},
-	"/=": &operatorInternalDetails{write: true, numeric: true, op: operatorMath},
-	"*=": &operatorInternalDetails{write: true, numeric: true, op: operatorMath},
-	"-=": &operatorInternalDetails{write: true, numeric: true, op: operatorMath},
-	"+=": &operatorInternalDetails{write: true, numeric: true, op: operatorMath},
-	".":  &operatorInternalDetails{op: operatorAppend},
-	"+":  &operatorInternalDetails{numeric: true, op: operatorMath},
-	"-":  &operatorInternalDetails{numeric: true, op: operatorMath},
-	"/":  &operatorInternalDetails{numeric: true, op: operatorMath},
-	"*":  &operatorInternalDetails{numeric: true, op: operatorMath},
-	"|":  &operatorInternalDetails{numeric: true, op: operatorMathLogic},
-	"^":  &operatorInternalDetails{numeric: true, op: operatorMathLogic},
-	"&":  &operatorInternalDetails{numeric: true, op: operatorMathLogic},
-	"<":  &operatorInternalDetails{op: operatorCompare},
-	">":  &operatorInternalDetails{op: operatorCompare},
-	"<=": &operatorInternalDetails{op: operatorCompare},
-	">=": &operatorInternalDetails{op: operatorCompare},
-	"==": &operatorInternalDetails{op: operatorCompare},
-	"!=": &operatorInternalDetails{op: operatorCompare},
-	"!":  &operatorInternalDetails{op: operatorNot},
-	"&&": &operatorInternalDetails{op: operatorBoolLogic},
-	"||": &operatorInternalDetails{op: operatorBoolLogic},
+	"=":   &operatorInternalDetails{write: true, skipA: true},
+	".=":  &operatorInternalDetails{write: true, op: operatorAppend},
+	"/=":  &operatorInternalDetails{write: true, numeric: true, op: operatorMath},
+	"*=":  &operatorInternalDetails{write: true, numeric: true, op: operatorMath},
+	"-=":  &operatorInternalDetails{write: true, numeric: true, op: operatorMath},
+	"+=":  &operatorInternalDetails{write: true, numeric: true, op: operatorMath},
+	".":   &operatorInternalDetails{op: operatorAppend},
+	"+":   &operatorInternalDetails{numeric: true, op: operatorMath},
+	"-":   &operatorInternalDetails{numeric: true, op: operatorMath},
+	"/":   &operatorInternalDetails{numeric: true, op: operatorMath},
+	"*":   &operatorInternalDetails{numeric: true, op: operatorMath},
+	"**":  &operatorInternalDetails{numeric: true, op: operatorMath},
+	"|":   &operatorInternalDetails{numeric: true, op: operatorMathLogic},
+	"^":   &operatorInternalDetails{numeric: true, op: operatorMathLogic},
+	"&":   &operatorInternalDetails{numeric: true, op: operatorMathLogic},
+	"%":   &operatorInternalDetails{numeric: true, op: operatorMathLogic},
+	"~":   &operatorInternalDetails{numeric: true, op: operatorMathLogic},
+	"<<":  &operatorInternalDetails{numeric: true, op: operatorMathLogic},
+	">>":  &operatorInternalDetails{numeric: true, op: operatorMathLogic},
+	"<<=": &operatorInternalDetails{write: true, numeric: true, op: operatorMathLogic},
+	">>=": &operatorInternalDetails{write: true, numeric: true, op: operatorMathLogic},
+	"<":   &operatorInternalDetails{op: operatorCompare},
+	">":   &operatorInternalDetails{op: operatorCompare},
+	"<=":  &operatorInternalDetails{op: operatorCompare},
+	">=":  &operatorInternalDetails{op: operatorCompare},
+	"==":  &operatorInternalDetails{op: operatorCompare},
+	"!=":  &operatorInternalDetails{op: operatorCompare},
+	"!":   &operatorInternalDetails{op: operatorNot},
+	"&&":  &operatorInternalDetails{op: operatorBoolLogic},
+	"||":  &operatorInternalDetails{op: operatorBoolLogic},
 }
 
 func (r *runOperator) Loc() *Loc {
@@ -127,7 +135,7 @@ func operatorMath(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 
 	switch a.Value().GetType() {
 	case ZtInt:
-		var res ZInt
+		var res Val
 		switch op {
 		case "+":
 			res = a.Value().(ZInt) + b.Value().(ZInt)
@@ -137,6 +145,8 @@ func operatorMath(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 			res = a.Value().(ZInt) / b.Value().(ZInt)
 		case "*":
 			res = a.Value().(ZInt) * b.Value().(ZInt)
+		case "**":
+			res = ZFloat(math.Pow(float64(a.Value().(ZInt)), float64(b.Value().(ZInt))))
 		}
 		return &ZVal{res}, nil
 	case ZtFloat:
@@ -150,6 +160,8 @@ func operatorMath(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 			res = a.Value().(ZFloat) / b.Value().(ZFloat)
 		case "*":
 			res = a.Value().(ZFloat) * b.Value().(ZFloat)
+		case "**":
+			res = ZFloat(math.Pow(float64(a.Value().(ZFloat)), float64(b.Value().(ZFloat))))
 		}
 		return &ZVal{res}, nil
 	default:
@@ -183,6 +195,16 @@ func operatorMathLogic(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 			res = a.Value().(ZInt) ^ b.Value().(ZInt)
 		case "&":
 			res = a.Value().(ZInt) & b.Value().(ZInt)
+		case "%":
+			res = a.Value().(ZInt) % b.Value().(ZInt)
+		case "~":
+			res = ^b.Value().(ZInt)
+		case "<<":
+			// TODO error check on negative b
+			res = a.Value().(ZInt) << uint(b.Value().(ZInt))
+		case ">>":
+			// TODO error check on negative b
+			res = a.Value().(ZInt) >> uint(b.Value().(ZInt))
 		}
 		return &ZVal{res}, nil
 	case ZtFloat:

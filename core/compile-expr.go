@@ -155,7 +155,7 @@ func compileExpr(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 				return nil, err
 			}
 			v = &runnableFunctionCall{"shell_exec", []Runnable{v}, l}
-		case '!', '-':
+		case '!', '+', '-', '~':
 			// this is an operator, let compilePostExpr() deal with it
 			return compilePostExpr(nil, i, c)
 		case '@':
@@ -223,7 +223,7 @@ func compilePostExpr(v Runnable, i *tokenizer.Item, c *compileCtx) (Runnable, er
 	case tokenizer.ItemSingleChar:
 		ch := []rune(i.Data)[0]
 		switch ch {
-		case '+', '-', '/', '*', '=', '.', '<', '>', '!', '|', '^', '&': // TODO list
+		case '+', '-', '/', '*', '=', '.', '<', '>', '!', '|', '^', '&', '%', '~': // TODO list
 			// what follows is also an expression
 			t_v, err := compileExpr(nil, c)
 			if err != nil {
@@ -259,6 +259,7 @@ func compilePostExpr(v Runnable, i *tokenizer.Item, c *compileCtx) (Runnable, er
 	case tokenizer.T_OBJECT_OPERATOR:
 		return compileObjectOperator(v, i, c)
 	case tokenizer.T_AND_EQUAL,
+		tokenizer.T_POW,
 		tokenizer.T_BOOLEAN_AND,
 		tokenizer.T_BOOLEAN_OR,
 		tokenizer.T_CONCAT_EQUAL,
@@ -274,6 +275,10 @@ func compilePostExpr(v Runnable, i *tokenizer.Item, c *compileCtx) (Runnable, er
 		tokenizer.T_IS_SMALLER_OR_EQUAL,
 		tokenizer.T_LOGICAL_AND,
 		tokenizer.T_LOGICAL_XOR,
+		tokenizer.T_SL,
+		tokenizer.T_SR,
+		tokenizer.T_SL_EQUAL,
+		tokenizer.T_SR_EQUAL,
 		tokenizer.T_LOGICAL_OR: // etc... FIXME TODO
 
 		// what follows is also an expression
