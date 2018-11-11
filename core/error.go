@@ -2,6 +2,15 @@ package core
 
 import "fmt"
 
+type PhpErrorType int
+
+const (
+	PhpErrorFatal = iota
+	PhpThrow
+	PhpBreak
+	PhpContinue
+)
+
 type PhpError struct {
 	e error
 	l *Loc
