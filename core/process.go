@@ -39,7 +39,7 @@ func (p *Process) Open(u *url.URL) (*stream.Stream, error) {
 }
 
 func (p *Process) Handler(docroot string) http.Handler {
-	return nil // TODO
+	return &phpWebHandler{root: docroot, p: p}
 }
 
 func (p *Process) populateConstants() {

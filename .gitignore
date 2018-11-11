@@ -1,6 +1,7 @@
 /gophp
 /sapi/php-cli/php-cli
 /sapi/php-cgi/php-cgi
+/sapi/php-httpd/php-httpd
 
 # for vim
 .*.swp

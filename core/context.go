@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net/url"
+
+	"git.atonline.com/tristantech/gophp/core/tokenizer"
 )
 
 type Context interface {
@@ -19,6 +22,8 @@ type Context interface {
 	SetVariable(name ZString, v *ZVal) error
 
 	GetConfig(name ZString, def *ZVal) *ZVal
+
+	Include(fn ZString) (*ZVal, error)
 }
 
 type phpContext struct {
@@ -58,4 +63,40 @@ func (c *phpContext) SetVariable(name ZString, v *ZVal) error {
 		return errors.New("Cannot re-assign $this")
 	}
 	return c.h.SetString(name, v)
+}
+
+func (ctx *phpContext) Include(_fn ZString) (*ZVal, error) {
+	fn := string(_fn)
+	u, err := url.Parse(fn)
+	if err != nil {
+		return nil, err
+	}
+
+	f, err := ctx.GetGlobal().p.Open(u)
+	if err != nil {
+		return nil, err
+	}
+
+	defer f.Close()
+
+	// grab full path of file if possible
+	if fn2, ok := f.Attr("uri").(string); ok {
+		fn = fn2
+	}
+
+	// tokenize
+	t := tokenizer.NewLexer(f, fn)
+
+	// compile
+	c := Compile(ctx, t)
+
+	var z *ZVal
+	z, err = c.Run(ctx)
+	if e, ok := err.(*PhpError); ok {
+		switch e.t {
+		case PhpExit:
+			return z, nil
+		}
+	}
+	return z, err
 }

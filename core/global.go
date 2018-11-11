@@ -5,11 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/url"
 	"os"
 	"time"
-
-	"git.atonline.com/tristantech/gophp/core/tokenizer"
 )
 
 type Global struct {
@@ -51,37 +48,9 @@ func NewGlobal(ctx context.Context, p *Process) *Global {
 }
 
 func (g *Global) RunFile(fn string) error {
-	u, err := url.Parse(fn)
-	if err != nil {
-		return err
-	}
-
-	f, err := g.p.Open(u)
-	if err != nil {
-		return err
-	}
-
-	defer f.Close()
-
-	// grab full path of file if possible
-	if fn2, ok := f.Attr("uri").(string); ok {
-		fn = fn2
-	}
-
-	// tokenize
-	t := tokenizer.NewLexer(f, fn)
-
 	ctx := NewContext(g)
-	// compile
-	c := Compile(ctx, t)
+	_, err := ctx.Include(ZString(fn))
 
-	_, err = c.Run(ctx)
-	if e, ok := err.(*PhpError); ok {
-		switch e.t {
-		case PhpExit:
-			return nil
-		}
-	}
 	return err
 }
 
@@ -106,6 +75,10 @@ func (g *Global) GetVariable(name ZString) (*ZVal, error) {
 func (g *Global) SetVariable(name ZString, v *ZVal) error {
 	// TODO
 	return nil
+}
+
+func (g *Global) Include(name ZString) (*ZVal, error) {
+	return nil, errors.New("Include can only be called within a context")
 }
 
 func (g *Global) RegisterFunction(name ZString, f Callable) error {
