@@ -74,11 +74,15 @@ func (z *ZClosure) Call(parent Context, args []*ZVal) (*ZVal, error) {
 
 	// set args in new context
 	for i, a := range z.args {
-		if args[i] == nil {
+		if len(args) <= i || args[i] == nil {
 			if a.required {
 				return nil, errors.New("Uncaught ArgumentCountError: Too few arguments to function toto()")
 			}
 			if a.defaultValue != nil {
+				if len(args) == i {
+					// need to append to args
+					args = append(args, nil)
+				}
 				args[i], err = a.defaultValue.Run(ctx)
 				if err != nil {
 					return nil, err

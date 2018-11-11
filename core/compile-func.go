@@ -1,10 +1,6 @@
 package core
 
-import (
-	"errors"
-
-	"git.atonline.com/tristantech/gophp/core/tokenizer"
-)
+import "git.atonline.com/tristantech/gophp/core/tokenizer"
 
 type runnableFunctionCall struct {
 	name ZString
@@ -173,6 +169,9 @@ func compileFunctionWithName(name ZString, c *compileCtx, l *Loc) (*ZClosure, er
 	var err error
 	var use []*funcUse
 	args, err := compileFunctionArgs(c)
+	if err != nil {
+		return nil, err
+	}
 
 	i, err := c.NextItem()
 	if err != nil {
@@ -248,6 +247,20 @@ func compileFunctionArgs(c *compileCtx) (res []*funcArg, err error) {
 			return nil, err
 		}
 
+		if i.IsSingle('=') {
+			// we have a default value
+			arg.defaultValue, err = compileExpr(nil, c)
+			if err != nil {
+				return nil, err
+			}
+			arg.required = false
+
+			i, err = c.NextItem()
+			if err != nil {
+				return nil, err
+			}
+		}
+
 		if i.IsSingle(',') {
 			// read and parse next argument
 			i, err = c.NextItem()
@@ -261,12 +274,7 @@ func compileFunctionArgs(c *compileCtx) (res []*funcArg, err error) {
 			return // end of arguments
 		}
 
-		if !i.IsSingle('=') {
-			return nil, i.Unexpected()
-		}
-
-		// what follows is an expression, a default value of sorts
-		return nil, errors.New("function arg default value TODO") // TODO FIXME
+		return nil, i.Unexpected()
 	}
 }
 

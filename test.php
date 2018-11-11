@@ -1,9 +1,9 @@
 <?php
 
-function hi() {
-	return 'low';
+function hi($p = "hello world") {
+	return $p;
 }
 
 
-var_dump(hi());
+var_dump(hi("nope"));
 
