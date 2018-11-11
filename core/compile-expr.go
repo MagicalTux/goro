@@ -135,6 +135,14 @@ func compileExpr(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 		v = &runZVal{ZInt(l.Line), l}
 	case tokenizer.T_DIR:
 		v = &runZVal{ZString(path.Dir(l.Filename)), l}
+	case tokenizer.T_BOOL_CAST, tokenizer.T_INT_CAST, tokenizer.T_ARRAY_CAST, tokenizer.T_DOUBLE_CAST, tokenizer.T_OBJECT_CAST, tokenizer.T_STRING_CAST:
+		// perform a cast operation on the following (note: v is null)
+		t_v, err := compileExpr(nil, c)
+		if err != nil {
+			return nil, err
+		}
+
+		return spawnRunCast(i.Type, t_v, l)
 	case tokenizer.ItemSingleChar:
 		ch := []rune(i.Data)[0]
 		switch ch {
@@ -245,6 +253,8 @@ func compilePostExpr(v Runnable, i *tokenizer.Item, c *compileCtx) (Runnable, er
 
 		// TODO math priority
 		return &runOperator{op: i.Data, a: v, b: t_v}, nil
+	default:
+		return nil, i.Unexpected()
 	}
 
 	// unknown?

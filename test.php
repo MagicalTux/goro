@@ -30,8 +30,5 @@ class testclass extends \stdclass implements JsonSerializable {
 $test = testclass::test(4, "3.2");
 echo 'This is a ' . $test . "\n";
 var_dump($test);
+var_dump((string)$test);
 
-var_dump(__LINE__); //  */
-
-var_dump(4541564654856168418648186468548618634864867486486486748674861867468374685);
-var_dump(456489498e484);
