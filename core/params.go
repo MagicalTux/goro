@@ -35,6 +35,10 @@ func (z *ZVal) Store(ctx Context, out interface{}) error {
 		}
 		*tgt = s.v.(ZString)
 		return nil
+	case **ZVal:
+		// as is
+		*tgt = z
+		return nil
 	default:
 		return fmt.Errorf("unsupported target type %T", out)
 	}
