@@ -39,9 +39,24 @@ This is still a very early implementation and most of the core is missing.
 
 ## Extensions
 
-### Standard
-
-Partial implementation.
+| Extension  | Status | Notes                                          |
+|------------|--------|------------------------------------------------|
+| standard   |     5% | a lot of work remaining                        |
+| ctype      |   100% |                                                |
+| pcre       |        | might need to use cgo                          |
+| gmp        |        | Use math/big ?                                 |
+| date       |        |                                                |
+| hash       |        |                                                |
+| iconv      |        |                                                |
+| json       |        | Need custom impl to support php arrays         |
+| mbstring   |        |                                                |
+| mcrypt     |        |                                                |
+| mysqli     |        |                                                |
+| openssl    |        | using crypto packages                          |
+| Reflection |        |                                                |
+| session    |        |                                                |
+| tokenizer  |        | already in core/tokenizer, needs to be exposed |
+| xml*       |        |                                                |
 
 # Contributing
 
