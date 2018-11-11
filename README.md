@@ -57,6 +57,7 @@ This is still a very early implementation and most of the core is missing.
 | session    |        |                                                |
 | tokenizer  |        | already in core/tokenizer, needs to be exposed |
 | xml*       |        |                                                |
+| gd         |        | without gd                                     |
 
 # Contributing
 
