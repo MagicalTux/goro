@@ -6,17 +6,19 @@ type runVariable struct {
 }
 
 func (r *runVariable) Run(ctx Context) (*ZVal, error) {
-	return ctx.GetVariable(r.v)
+	res, err := ctx.GetVariable(r.v)
+	return res, err
 }
 
 func (r *runVariable) WriteValue(ctx Context, value *ZVal) error {
-	return ctx.SetVariable(r.v, value)
+	return ctx.SetVariable(r.v, value.Dup())
 }
 
 func (r *runVariable) Loc() *Loc {
 	return r.l
 }
 
+// reference to an existing [something]
 type runRef struct {
 	v Runnable
 	l *Loc
@@ -31,5 +33,6 @@ func (r *runRef) Run(ctx Context) (*ZVal, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &ZVal{z}, nil
+	// embed zval into another zval
+	return z.Ref(), nil
 }

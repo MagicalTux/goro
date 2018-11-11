@@ -47,7 +47,7 @@ func (z *ZHashTable) SetString(k ZString, v *ZVal) error {
 
 	t, ok := z._idx_s[k]
 	if ok {
-		t.v.v = v.v
+		t.v.Set(v)
 		return nil
 	}
 	// append
@@ -82,7 +82,7 @@ func (z *ZHashTable) SetInt(k ZInt, v *ZVal) error {
 
 	t, ok := z._idx_i[k]
 	if ok {
-		t.v.v = v.v
+		t.v.Set(v)
 		return nil
 	}
 	// append
