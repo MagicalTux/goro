@@ -7,6 +7,7 @@ var (
 
 type Ext struct {
 	Name      string
+	Version   string
 	Functions map[string]*ExtFunction
 	Constants map[ZString]*ZVal
 }
@@ -32,4 +33,12 @@ func RegisterExt(e *Ext) {
 func HasExt(name string) bool {
 	_, res := globalExtMap[name]
 	return res
+}
+
+func GetExt(name string) *Ext {
+	v, ok := globalExtMap[name]
+	if ok {
+		return v
+	}
+	return nil
 }

@@ -25,6 +25,20 @@ func stdFunc(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 
 //> func string phpversion ([ string $extension ] )
 func stdFuncPhpVersion(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
+	var ext *string
+	_, err := core.Expand(ctx, args, &ext)
+	if err != nil {
+		return nil, err
+	}
+
+	if ext != nil {
+		e := core.GetExt(*ext)
+		if e == nil {
+			return core.ZBool(false).ZVal(), nil
+		}
+		return core.ZString(e.Version).ZVal(), nil
+	}
+
 	return core.ZString(core.VERSION).ZVal(), nil
 }
 
