@@ -86,7 +86,7 @@ func (z *ZVal) String() string {
 	}
 }
 
-func (z *ZVal) Value() interface{} {
+func (z *ZVal) Value() Val {
 	return z.v
 }
 

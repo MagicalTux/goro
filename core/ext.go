@@ -28,3 +28,8 @@ type ExtFunctionArg struct {
 func RegisterExt(e *Ext) {
 	globalExtMap[e.Name] = e
 }
+
+func HasExt(name string) bool {
+	_, res := globalExtMap[name]
+	return res
+}
