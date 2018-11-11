@@ -36,7 +36,7 @@ import (
 //> func number abs ( mixed $number )
 func mathAbs(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 	var z *core.ZVal
-	_, err := core.Expand(ctx, args)
+	_, err := core.Expand(ctx, args, &z)
 	if err != nil {
 		return nil, err
 	}
@@ -59,4 +59,70 @@ func mathAbs(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 	default:
 		return core.ZNull{}.ZVal(), nil
 	}
+}
+
+//> func float acos ( float $arg )
+func mathAcos(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
+	var f core.ZFloat
+	_, err := core.Expand(ctx, args, &f)
+	if err != nil {
+		return nil, err
+	}
+
+	return core.ZFloat(math.Acos(float64(f))).ZVal(), nil
+}
+
+//> func float acosh ( float $arg )
+func mathACosh(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
+	var f core.ZFloat
+	_, err := core.Expand(ctx, args, &f)
+	if err != nil {
+		return nil, err
+	}
+
+	return core.ZFloat(math.Acosh(float64(f))).ZVal(), nil
+}
+
+//> func float asin ( float $arg )
+func mathAsin(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
+	var f core.ZFloat
+	_, err := core.Expand(ctx, args, &f)
+	if err != nil {
+		return nil, err
+	}
+
+	return core.ZFloat(math.Asin(float64(f))).ZVal(), nil
+}
+
+//> func float asinh ( float $arg )
+func mathAsinh(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
+	var f core.ZFloat
+	_, err := core.Expand(ctx, args, &f)
+	if err != nil {
+		return nil, err
+	}
+
+	return core.ZFloat(math.Asinh(float64(f))).ZVal(), nil
+}
+
+//> func float atan2 ( float $y , float $x )
+func mathAtan2(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
+	var y, x core.ZFloat
+	_, err := core.Expand(ctx, args, &y, &x)
+	if err != nil {
+		return nil, err
+	}
+
+	return core.ZFloat(math.Atan2(float64(y), float64(x))).ZVal(), nil
+}
+
+//> func float atan ( float $arg )
+func mathAtan(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
+	var x core.ZFloat
+	_, err := core.Expand(ctx, args, &x)
+	if err != nil {
+		return nil, err
+	}
+
+	return core.ZFloat(math.Atan(float64(x))).ZVal(), nil
 }

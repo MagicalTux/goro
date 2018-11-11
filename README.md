@@ -23,6 +23,7 @@ This is still a very early implementation and most of the core is missing.
 
 ## Syntax
 
+* Error reporting needs to be done
 * Class and object implementation is still very early. Access checks are missing. Class inheritance, etc are missing
 * Traits are missing
 * Operator precedence is yet to be implemented (see http://php.net/manual/en/language.operators.precedence.php )

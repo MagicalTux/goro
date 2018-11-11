@@ -28,6 +28,12 @@ func init() {
 			"gc_enabled":               &core.ExtFunction{Func: stdFuncGcEnabled, Args: []*core.ExtFunctionArg{}},       // gc.go:21
 			"gc_mem_caches":            &core.ExtFunction{Func: stdFuncGcMemCaches, Args: []*core.ExtFunctionArg{}},     // gc.go:26
 			"abs":                      &core.ExtFunction{Func: mathAbs, Args: []*core.ExtFunctionArg{}},                // math.go:36
+			"acos":                     &core.ExtFunction{Func: mathAcos, Args: []*core.ExtFunctionArg{}},               // math.go:64
+			"acosh":                    &core.ExtFunction{Func: mathACosh, Args: []*core.ExtFunctionArg{}},              // math.go:75
+			"asin":                     &core.ExtFunction{Func: mathAsin, Args: []*core.ExtFunctionArg{}},               // math.go:86
+			"asinh":                    &core.ExtFunction{Func: mathAsinh, Args: []*core.ExtFunctionArg{}},              // math.go:97
+			"atan2":                    &core.ExtFunction{Func: mathAtan2, Args: []*core.ExtFunctionArg{}},              // math.go:108
+			"atan":                     &core.ExtFunction{Func: mathAtan, Args: []*core.ExtFunctionArg{}},               // math.go:119
 			"dl":                       &core.ExtFunction{Func: stdFuncDl, Args: []*core.ExtFunctionArg{}},              // base.go:11
 			"extension_loaded":         &core.ExtFunction{Func: stdFunc, Args: []*core.ExtFunctionArg{}},                // base.go:16
 			"phpversion":               &core.ExtFunction{Func: stdFuncPhpVersion, Args: []*core.ExtFunctionArg{}},      // base.go:26
