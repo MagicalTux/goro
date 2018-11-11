@@ -14,10 +14,12 @@ func init() {
 		Functions: map[string]*core.ExtFunction{
 			"get_magic_quotes_gpc":     &core.ExtFunction{Func: getMagicQuotesGpc, Args: []*core.ExtFunctionArg{}},      // deprecated.go:5
 			"get_magic_quotes_runtime": &core.ExtFunction{Func: getMagicQuotesRuntime, Args: []*core.ExtFunctionArg{}},  // deprecated.go:10
-			"constant":                 &core.ExtFunction{Func: constant, Args: []*core.ExtFunctionArg{}},               // misc.go:5
-			"exit":                     &core.ExtFunction{Func: exit, Args: []*core.ExtFunctionArg{}},                   // misc.go:16
+			"constant":                 &core.ExtFunction{Func: constant, Args: []*core.ExtFunctionArg{}},               // misc.go:12
+			"eval":                     &core.ExtFunction{Func: stdFuncEval, Args: []*core.ExtFunctionArg{}},            // misc.go:23
+			"hrtime":                   &core.ExtFunction{Func: stdFuncHrTime, Args: []*core.ExtFunctionArg{}},          // misc.go:43
+			"sleep":                    &core.ExtFunction{Func: stdFuncSleep, Args: []*core.ExtFunctionArg{}},           // misc.go:65
+			"exit":                     &core.ExtFunction{Func: exit, Args: []*core.ExtFunctionArg{}},                   // misc.go:78
 			"var_dump":                 &core.ExtFunction{Func: stdFuncVarDump, Args: []*core.ExtFunctionArg{}},         // vardump.go:9
-			"eval":                     &core.ExtFunction{Func: stdFuncEval, Args: []*core.ExtFunctionArg{}},            // eval.go:11
 			"echo":                     &core.ExtFunction{Func: stdFuncEcho, Args: []*core.ExtFunctionArg{}},            // echo.go:5
 			"gc_collect_cycles":        &core.ExtFunction{Func: stdFuncGcCollectCycles, Args: []*core.ExtFunctionArg{}}, // gc.go:5
 			"gc_disable":               &core.ExtFunction{Func: stdFuncGcDisable, Args: []*core.ExtFunctionArg{}},       // gc.go:11

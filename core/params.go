@@ -21,6 +21,13 @@ func (z *ZVal) Store(ctx Context, out interface{}) error {
 		}
 		*tgt = s.v.(ZBool)
 		return nil
+	case *ZInt:
+		s, err := z.As(ctx, ZtInt)
+		if err != nil {
+			return err
+		}
+		*tgt = s.v.(ZInt)
+		return nil
 	case *string:
 		s, err := z.As(ctx, ZtString)
 		if err != nil {
