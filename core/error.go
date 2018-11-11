@@ -14,6 +14,7 @@ const (
 type PhpError struct {
 	e error
 	l *Loc
+	t PhpErrorType
 }
 
 func (e *PhpError) Run(ctx Context) (*ZVal, error) {

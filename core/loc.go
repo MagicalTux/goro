@@ -17,6 +17,6 @@ func (l *Loc) Error(e error) *PhpError {
 		}
 		return err
 	default:
-		return &PhpError{e, l}
+		return &PhpError{e, l, PhpErrorFatal}
 	}
 }

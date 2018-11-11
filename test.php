@@ -1,7 +1,13 @@
 <?php
 
 $array = array(
-	'foo' => 'bar',
+	'this',
+	'is',
+	'for',
+	'nobody',
 );
 
-var_dump($array);
+foreach($array as $v) {
+	var_dump($v);
+	if ($v == 'for') break;
+}

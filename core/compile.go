@@ -49,7 +49,7 @@ func Compile(parent Context, t *tokenizer.Lexer) Runnable {
 
 	r, err := compileBase(nil, c)
 	if err != nil && err != io.EOF {
-		return &PhpError{err, nil}
+		return &PhpError{err, nil, PhpErrorFatal}
 	}
 
 	if list, ok := r.(Runnables); ok {

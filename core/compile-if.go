@@ -23,8 +23,10 @@ func (r *runnableIf) Run(ctx Context) (l *ZVal, err error) {
 
 	if t.v.(ZBool) {
 		return r.yes.Run(ctx)
-	} else {
+	} else if r.no != nil {
 		return r.no.Run(ctx)
+	} else {
+		return nil, nil
 	}
 }
 
