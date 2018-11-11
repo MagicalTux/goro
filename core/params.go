@@ -57,7 +57,7 @@ func Expand(ctx Context, args []*ZVal, out ...interface{}) (int, error) {
 		if rv.Kind() != reflect.Ptr {
 			panic("expand requires arguments to be pointers")
 		}
-		if rv.Type().Elem().Kind() == reflect.Ptr {
+		if rv.Type().Elem().Kind() == reflect.Ptr && rv.Type().Elem() != reflect.TypeOf(&ZVal{}) {
 			// pointer of pointer → optional argument
 			if len(args) <= i {
 				// end of argments

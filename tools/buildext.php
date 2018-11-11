@@ -115,7 +115,5 @@ while(($ext = readdir($dh)) !== false) {
 
 	// rename
 	rename('ext/'.$ext.'/ext.go~', 'ext/'.$ext.'/ext.go');
-
-	exit;
 }
 

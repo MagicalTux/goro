@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/MagicalTux/gophp/core"
+	_ "github.com/MagicalTux/gophp/ext/ctype"
 	_ "github.com/MagicalTux/gophp/ext/standard"
 )
 

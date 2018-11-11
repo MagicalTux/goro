@@ -20,4 +20,9 @@ http:
 	make sapi/php-httpd/php-httpd
 	./sapi/php-httpd/php-httpd
 
-.PHONY: test http
+buildext:
+	$(RM) sapi/php-cli/php-cli
+	make sapi/php-cli/php-cli
+	./sapi/php-cli/php-cli tools/buildext.php
+
+.PHONY: test http buildext
