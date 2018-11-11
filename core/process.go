@@ -5,7 +5,7 @@ import (
 	"net/url"
 	"os"
 
-	"git.atonline.com/tristantech/gophp/core/stream"
+	"github.com/MagicalTux/gophp/core/stream"
 )
 
 type Process struct {

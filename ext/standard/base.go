@@ -3,7 +3,7 @@ package standard
 import (
 	"errors"
 
-	"git.atonline.com/tristantech/gophp/core"
+	"github.com/MagicalTux/gophp/core"
 )
 
 //> const PHP_VERSION: core.ZString(core.VERSION) // version of PHP

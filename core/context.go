@@ -6,7 +6,7 @@ import (
 	"io"
 	"net/url"
 
-	"git.atonline.com/tristantech/gophp/core/tokenizer"
+	"github.com/MagicalTux/gophp/core/tokenizer"
 )
 
 type Context interface {

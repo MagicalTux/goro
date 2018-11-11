@@ -3,7 +3,7 @@ package standard
 import (
 	"fmt"
 
-	"git.atonline.com/tristantech/gophp/core"
+	"github.com/MagicalTux/gophp/core"
 )
 
 //> func void var_dump ( mixed $expression [, mixed $... ] )

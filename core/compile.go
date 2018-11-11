@@ -3,7 +3,7 @@ package core
 import (
 	"io"
 
-	"git.atonline.com/tristantech/gophp/core/tokenizer"
+	"github.com/MagicalTux/gophp/core/tokenizer"
 )
 
 type compileCtx struct {

@@ -3,7 +3,7 @@ package core
 import (
 	"fmt"
 
-	"git.atonline.com/tristantech/gophp/core/tokenizer"
+	"github.com/MagicalTux/gophp/core/tokenizer"
 )
 
 type runCast struct {

@@ -91,7 +91,7 @@ while(($ext = readdir($dh)) !== false) {
 
 	$fp = fopen('ext/'.$ext.'/ext.go~', 'w');
 	fwrite($fp, 'package '.$ext."\n\n");
-	fwrite($fp, "import \"git.atonline.com/tristantech/gophp/core\"\n\n"); // other imports will be handled automatically at build time
+	fwrite($fp, "import \"github.com/MagicalTux/gophp/core\"\n\n"); // other imports will be handled automatically at build time
 	fwrite($fp, "// WARNING: This file is auto-generated. DO NOT EDIT\n\n");
 	fwrite($fp, "func init() {\n");
 	fwrite($fp, "\tcore.RegisterExt(&core.Ext{\n");

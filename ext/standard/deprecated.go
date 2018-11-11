@@ -1,6 +1,6 @@
 package standard
 
-import "git.atonline.com/tristantech/gophp/core"
+import "github.com/MagicalTux/gophp/core"
 
 //> func bool get_magic_quotes_gpc ( void )
 func getMagicQuotesGpc(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {

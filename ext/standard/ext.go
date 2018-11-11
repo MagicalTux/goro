@@ -3,7 +3,7 @@ package standard
 import (
 	"math"
 
-	"git.atonline.com/tristantech/gophp/core"
+	"github.com/MagicalTux/gophp/core"
 )
 
 // WARNING: This file is auto-generated. DO NOT EDIT

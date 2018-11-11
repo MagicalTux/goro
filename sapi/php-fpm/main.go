@@ -5,8 +5,8 @@ import (
 	"net"
 	"net/http/fcgi"
 
-	"git.atonline.com/tristantech/gophp/core"
-	_ "git.atonline.com/tristantech/gophp/ext/standard"
+	"github.com/MagicalTux/gophp/core"
+	_ "github.com/MagicalTux/gophp/ext/standard"
 )
 
 func main() {

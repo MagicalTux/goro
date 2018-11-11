@@ -1,6 +1,6 @@
 package core
 
-import "git.atonline.com/tristantech/gophp/core/tokenizer"
+import "github.com/MagicalTux/gophp/core/tokenizer"
 
 type runnableFunctionCall struct {
 	name ZString

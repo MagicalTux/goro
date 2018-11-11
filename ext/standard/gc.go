@@ -1,6 +1,6 @@
 package standard
 
-import "git.atonline.com/tristantech/gophp/core"
+import "github.com/MagicalTux/gophp/core"
 
 //> func int gc_collect_cycles ( void )
 func stdFuncGcCollectCycles(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {

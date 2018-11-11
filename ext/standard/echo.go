@@ -1,6 +1,6 @@
 package standard
 
-import "git.atonline.com/tristantech/gophp/core"
+import "github.com/MagicalTux/gophp/core"
 
 //> func void echo ( string $arg1 [, string $... ] )
 func stdFuncEcho(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
