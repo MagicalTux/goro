@@ -28,10 +28,10 @@ func (l *Loc) Error(e error) *PhpError {
 		}
 		return err
 	default:
-		return &PhpError{e, l, PhpErrorFatal}
+		return &PhpError{e: e, l: l, t: PhpErrorFatal}
 	}
 }
 
 func (l *Loc) Errorf(f string, arg ...interface{}) *PhpError {
-	return &PhpError{fmt.Errorf(f, arg...), l, PhpErrorFatal}
+	return &PhpError{e: fmt.Errorf(f, arg...), l: l, t: PhpErrorFatal}
 }

@@ -24,7 +24,7 @@ func (z *ZVal) As(ctx Context, t ZType) (*ZVal, error) {
 		return &ZVal{ZNull{}}, nil
 	}
 
-	if z.v == nil {
+	if z == nil || z.v == nil {
 		v, err := ZNull{}.As(ctx, t)
 		if err != nil {
 			return nil, err

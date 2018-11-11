@@ -9,12 +9,15 @@ const (
 	PhpThrow
 	PhpBreak
 	PhpContinue
+	PhpExit
 )
 
 type PhpError struct {
 	e error
 	l *Loc
 	t PhpErrorType
+
+	intv ZInt
 }
 
 func (e *PhpError) Run(ctx Context) (*ZVal, error) {
@@ -30,4 +33,8 @@ func (e *PhpError) Error() string {
 		return e.e.Error()
 	}
 	return fmt.Sprintf("%s in %s on line %d", e.e, e.l.Filename, e.l.Line)
+}
+
+func ExitError(retcode ZInt) *PhpError {
+	return &PhpError{t: PhpExit, intv: retcode}
 }

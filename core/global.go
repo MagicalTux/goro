@@ -76,6 +76,12 @@ func (g *Global) RunFile(fn string) error {
 	c := Compile(ctx, t)
 
 	_, err = c.Run(ctx)
+	if e, ok := err.(*PhpError); ok {
+		switch e.t {
+		case PhpExit:
+			return nil
+		}
+	}
 	return err
 }
 

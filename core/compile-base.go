@@ -16,6 +16,7 @@ func init() {
 	itemTypeHandler = map[tokenizer.ItemType]*compileFuncCb{
 		tokenizer.T_OPEN_TAG:    nil,
 		tokenizer.T_CLOSE_TAG:   nil,
+		tokenizer.T_DOC_COMMENT: nil, // TODO
 		tokenizer.T_INLINE_HTML: &compileFuncCb{f: compileInlineHtml, skip: true},
 		tokenizer.T_FUNCTION:    &compileFuncCb{f: compileFunction, skip: true},
 		tokenizer.T_WHILE:       &compileFuncCb{f: compileWhile, skip: true},

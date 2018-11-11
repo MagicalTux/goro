@@ -21,6 +21,9 @@ type runZVal struct {
 }
 
 func (z *ZVal) GetType() ZType {
+	if z == nil {
+		return ZtNull
+	}
 	if z.v == nil {
 		return ZtNull
 	}
