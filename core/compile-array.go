@@ -100,6 +100,10 @@ func (ac *runArrayAccess) Run(ctx Context) (*ZVal, error) {
 		str := v.String()
 		iofft := int(offset.Value().(ZInt))
 
+		if iofft < 0 {
+			iofft = len(str) + iofft
+		}
+
 		if iofft < 0 || iofft >= len(str) {
 			// PHP Notice:  Uninitialized string offset: 3
 			return &ZVal{ZString("")}, nil
@@ -269,7 +273,17 @@ func compileArrayAccess(v Runnable, c *compileCtx) (Runnable, error) {
 		return nil, err
 	}
 
-	if !i.IsSingle('[') {
+	if i.Type != tokenizer.ItemSingleChar {
+		return nil, i.Unexpected()
+	}
+
+	var endc rune
+	switch i.Data {
+	case "[":
+		endc = ']'
+	case "{":
+		endc = '}'
+	default:
 		return nil, i.Unexpected()
 	}
 
@@ -279,7 +293,7 @@ func compileArrayAccess(v Runnable, c *compileCtx) (Runnable, error) {
 	if err != nil {
 		return nil, err
 	}
-	if i.IsSingle(']') {
+	if i.IsSingle(endc) {
 		v = &runArrayAccess{value: v, offset: nil, l: l}
 		return compilePostExpr(v, nil, c)
 	}
@@ -296,7 +310,7 @@ func compileArrayAccess(v Runnable, c *compileCtx) (Runnable, error) {
 		return nil, err
 	}
 
-	if !i.IsSingle(']') {
+	if !i.IsSingle(endc) {
 		return nil, i.Unexpected()
 	}
 

@@ -15,6 +15,20 @@ type compileCtx struct {
 	last *tokenizer.Item
 }
 
+func (c *compileCtx) ExpectSingle(r rune) error {
+	// read one item, check if rune, if not fallback & return error
+	i, err := c.NextItem()
+	if err != nil {
+		return err
+	}
+
+	if !i.IsSingle(r) {
+		c.backup()
+		return i.Unexpected()
+	}
+	return nil
+}
+
 func (c *compileCtx) NextItem() (*tokenizer.Item, error) {
 	if c.next != nil {
 		c.last, c.next = c.next, nil

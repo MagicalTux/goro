@@ -231,6 +231,14 @@ func compileFunctionArgs(c *compileCtx) (res []*funcArg, err error) {
 
 	// parse arguments
 	for {
+		ref := false
+		if i.IsSingle('&') {
+			ref = true
+			i, err = c.NextItem()
+			if err != nil {
+				return
+			}
+		}
 		// in a function delcaration, we must have a T_VARIABLE now
 		if i.Type != tokenizer.T_VARIABLE {
 			return nil, i.Unexpected()
@@ -238,7 +246,8 @@ func compileFunctionArgs(c *compileCtx) (res []*funcArg, err error) {
 
 		arg := &funcArg{}
 		arg.varName = ZString(i.Data[1:]) // skip $
-		arg.required = true               // typically
+		arg.ref = ref
+		arg.required = true // typically
 
 		res = append(res, arg)
 

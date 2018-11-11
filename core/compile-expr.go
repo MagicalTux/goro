@@ -149,14 +149,14 @@ func compileExpr(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 			return nil, err
 		}
 
-		return &runIncDec{inc: true, v: t_v, l: l, post: false}, nil
+		v = &runIncDec{inc: true, v: t_v, l: l, post: false}
 	case tokenizer.T_DEC:
 		t_v, err := compileExpr(nil, c)
 		if err != nil {
 			return nil, err
 		}
 
-		return &runIncDec{inc: false, v: t_v, l: l, post: false}, nil
+		v = &runIncDec{inc: false, v: t_v, l: l, post: false}
 	case tokenizer.ItemSingleChar:
 		ch := []rune(i.Data)[0]
 		switch ch {
@@ -250,7 +250,7 @@ func compilePostExpr(v Runnable, i *tokenizer.Item, c *compileCtx) (Runnable, er
 				return nil, err
 			}
 			return &runnableFunctionCallRef{v, args, l}, nil
-		case '[':
+		case '[', '{':
 			c.backup()
 			return compileArrayAccess(v, c)
 		case ';':
@@ -260,10 +260,10 @@ func compilePostExpr(v Runnable, i *tokenizer.Item, c *compileCtx) (Runnable, er
 		}
 	case tokenizer.T_INC:
 		// v followed by inc
-		return &runIncDec{inc: true, v: v, l: l, post: true}, nil
+		return compilePostExpr(&runIncDec{inc: true, v: v, l: l, post: true}, nil, c)
 	case tokenizer.T_DEC:
 		// v followed by dec
-		return &runIncDec{inc: false, v: v, l: l, post: true}, nil
+		return compilePostExpr(&runIncDec{inc: false, v: v, l: l, post: true}, nil, c)
 	case tokenizer.T_AND_EQUAL,
 		tokenizer.T_BOOLEAN_AND,
 		tokenizer.T_BOOLEAN_OR,

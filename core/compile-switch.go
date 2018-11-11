@@ -65,22 +65,19 @@ func compileSwitch(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 	sw := &runSwitch{l: MakeLoc(i.Loc())}
 
 	// we expect a {
-	i, err := c.NextItem()
-	if err != nil {
-		return nil, err
-	}
-	if !i.IsSingle('(') {
-		return nil, i.Unexpected()
-	}
-
-	sw.cond, err = compileExpr(i, c)
-	i, err = c.NextItem()
+	err := c.ExpectSingle('(')
 	if err != nil {
 		return nil, err
 	}
 
-	if !i.IsSingle('{') {
-		return nil, i.Unexpected()
+	sw.cond, err = compileExpr(nil, c)
+	err = c.ExpectSingle(')')
+	if err != nil {
+		return nil, err
+	}
+	err = c.ExpectSingle('{')
+	if err != nil {
+		return nil, err
 	}
 
 	i, err = c.NextItem()

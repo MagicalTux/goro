@@ -41,6 +41,8 @@ var operatorList = map[string]*operatorInternalDetails{
 	"==": &operatorInternalDetails{op: operatorCompare},
 	"!=": &operatorInternalDetails{op: operatorCompare},
 	"!":  &operatorInternalDetails{op: operatorNot},
+	"&&": &operatorInternalDetails{op: operatorBoolLogic},
+	"||": &operatorInternalDetails{op: operatorBoolLogic},
 }
 
 func (r *runOperator) Loc() *Loc {
@@ -53,7 +55,7 @@ func (r *runOperator) Run(ctx Context) (*ZVal, error) {
 
 	op, ok := operatorList[r.op]
 	if !ok {
-		return nil, errors.New("unknown operator")
+		return nil, r.l.Errorf("unknown operator %s", r.op)
 	}
 
 	// read a and b
@@ -152,6 +154,17 @@ func operatorMath(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 		return &ZVal{res}, nil
 	default:
 		return nil, errors.New("todo operator type unsupported")
+	}
+}
+
+func operatorBoolLogic(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
+	switch op {
+	case "&&":
+		return (a.AsBool(ctx) && b.AsBool(ctx)).ZVal(), nil
+	case "||":
+		return (a.AsBool(ctx) || b.AsBool(ctx)).ZVal(), nil
+	default:
+		return nil, errors.New("todo operator unsupported")
 	}
 }
 
