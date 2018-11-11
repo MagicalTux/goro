@@ -1,17 +1,12 @@
 <?php
 
+function test(&$var) {
+	$var = 'this is working';
+}
+
 $s = 'hello world';
-$x = &$s;
+var_dump($s);
 
-var_dump($s, $x);
-echo "\n";
+test($s);
 
-$s = "nope";
-
-var_dump($s, $x);
-echo "\n";
-
-$x = "really";
-
-var_dump($s, $x);
-
+var_dump($s);

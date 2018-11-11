@@ -92,7 +92,11 @@ func (z *ZClosure) Call(parent Context, args []*ZVal) (*ZVal, error) {
 				continue
 			}
 		}
-		ctx.SetVariable(a.varName, args[i])
+		if a.ref {
+			ctx.SetVariable(a.varName, args[i].Ref())
+		} else {
+			ctx.SetVariable(a.varName, args[i].Dup())
+		}
 	}
 
 	// call function in that context
