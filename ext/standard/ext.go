@@ -21,6 +21,7 @@ func init() {
 			"usleep":                   &core.ExtFunction{Func: stdFuncUsleep, Args: []*core.ExtFunctionArg{}},          // misc.go:78
 			"exit":                     &core.ExtFunction{Func: exit, Args: []*core.ExtFunctionArg{}},                   // misc.go:91
 			"var_dump":                 &core.ExtFunction{Func: stdFuncVarDump, Args: []*core.ExtFunctionArg{}},         // vardump.go:9
+			"php_uname":                &core.ExtFunction{Func: fncUname, Args: []*core.ExtFunctionArg{}},               // uname_linux.go:22
 			"str_replace":              &core.ExtFunction{Func: stdStrReplace, Args: []*core.ExtFunctionArg{}},          // strings.go:9
 			"echo":                     &core.ExtFunction{Func: stdFuncEcho, Args: []*core.ExtFunctionArg{}},            // echo.go:5
 			"gc_collect_cycles":        &core.ExtFunction{Func: stdFuncGcCollectCycles, Args: []*core.ExtFunctionArg{}}, // gc.go:5
