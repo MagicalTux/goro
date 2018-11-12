@@ -61,6 +61,40 @@ func doVarDump(ctx core.Context, z *core.ZVal, linePfx string) error {
 			it.Next(ctx)
 		}
 		fmt.Fprintf(ctx, "%s}\n", linePfx)
+	case core.ZtObject:
+		v := z.Value()
+		if obj, ok := v.(*core.ZObject); ok {
+			fmt.Fprintf(ctx, "%sobject(%s) (%d) {\n", linePfx, obj.Class.Name, obj.Count(ctx))
+		} else if c, ok := v.(core.ZCountable); ok {
+			fmt.Fprintf(ctx, "%sobject(?) (%d) {\n", linePfx, c.Count(ctx))
+		} else {
+			fmt.Fprintf(ctx, "%sobject(?) (#) {\n", linePfx)
+		}
+		localPfx := linePfx + "  "
+		it := z.NewIterator()
+		if it != nil {
+			for {
+				if !it.Valid(ctx) {
+					break
+				}
+				k, err := it.Key(ctx)
+				if err != nil {
+					return err
+				}
+				if k.GetType() == core.ZtInt {
+					fmt.Fprintf(ctx, "%s[%s]=>\n", localPfx, k)
+				} else {
+					fmt.Fprintf(ctx, "%s[\"%s\"]=>\n", localPfx, k)
+				}
+				v, err := it.Current(ctx)
+				if err != nil {
+					return err
+				}
+				doVarDump(ctx, v, localPfx)
+				it.Next(ctx)
+			}
+		}
+		fmt.Fprintf(ctx, "%s}\n", linePfx)
 	default:
 		fmt.Fprintf(ctx, "Unknown[%T]:%+v\n", z.Value(), z.Value())
 	}

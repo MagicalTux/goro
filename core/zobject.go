@@ -12,7 +12,7 @@ type ZObjectAccess interface {
 
 type ZObject struct {
 	h     *ZHashTable
-	class *ZClass
+	Class *ZClass
 }
 
 func (z *ZObject) ZVal() *ZVal {
@@ -33,7 +33,7 @@ func (z *ZObject) AsVal(ctx Context, t ZType) (Val, error) {
 }
 
 func NewZObject(ctx Context, c *ZClass) (*ZObject, error) {
-	n := &ZObject{h: NewHashTable(), class: c}
+	n := &ZObject{h: NewHashTable(), Class: c}
 
 	// initialize object variables with default values
 	for _, p := range c.Props {
@@ -59,9 +59,9 @@ func (o *ZObject) OffsetSet(key, value *ZVal) (*ZVal, error) {
 
 func (o *ZObject) CallMethod(method ZString, ctx Context, args []*ZVal) (*ZVal, error) {
 	ctx = NewContextWithObject(ctx, o)
-	m, ok := o.class.Methods[method.ToLower()]
+	m, ok := o.Class.Methods[method.ToLower()]
 	if !ok {
-		return nil, fmt.Errorf("Call to undefined method %s::%s()", o.class.Name, method)
+		return nil, fmt.Errorf("Call to undefined method %s::%s()", o.Class.Name, method)
 	}
 
 	return m.Method.Call(ctx, args)
@@ -85,4 +85,12 @@ func (o *ZObject) ObjectSet(ctx Context, key, value *ZVal) error {
 	}
 
 	return o.h.SetString(key.Value().(ZString), value)
+}
+
+func (o *ZObject) NewIterator() ZIterator {
+	return o.h.NewIterator()
+}
+
+func (a *ZObject) Count(ctx Context) ZInt {
+	return a.h.count
 }
