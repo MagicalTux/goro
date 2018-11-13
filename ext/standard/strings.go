@@ -120,8 +120,73 @@ func doStrReplace(ctx core.Context, subject core.ZString, search, replace *core.
 				it1.Next(ctx)
 				it2.Next(ctx)
 			}
+
+			return subject, nil
 		}
+
+		var err error
+		replace, err = replace.As(ctx, core.ZtString)
+		if err != nil {
+			return subject, err
+		}
+
+		to_b := []byte(replace.AsString(ctx))
+
+		it1 := search.NewIterator()
+
+		for {
+			if !it1.Valid(ctx) {
+				// end of source,
+				return subject, nil
+			}
+			from, err := it1.Current(ctx)
+			if err != nil {
+				return subject, err
+			}
+
+			from, err = from.As(ctx, core.ZtString)
+			if err != nil {
+				return subject, err
+			}
+
+			from_b := []byte(from.AsString(ctx))
+
+			cnt := bytes.Count([]byte(subject), from_b)
+			if cnt == 0 {
+				// nothing to replace, skip
+				it1.Next(ctx)
+				continue
+			}
+
+			subject = core.ZString(bytes.Replace([]byte(subject), from_b, to_b, cnt))
+			*count += core.ZInt(cnt)
+
+			it1.Next(ctx)
+		}
+
+		return subject, nil
 	}
 
-	return "todo", nil
+	search, err := search.As(ctx, core.ZtString)
+	if err != nil {
+		return subject, err
+	}
+
+	from_b := []byte(search.AsString(ctx))
+
+	cnt := bytes.Count([]byte(subject), from_b)
+	if cnt == 0 {
+		return subject, nil
+	}
+
+	replace, err = replace.As(ctx, core.ZtString)
+	if err != nil {
+		return subject, err
+	}
+
+	to_b := []byte(replace.AsString(ctx))
+	subject = core.ZString(bytes.Replace([]byte(subject), from_b, to_b, cnt))
+	*count += core.ZInt(cnt)
+
+	return subject, err
 }
