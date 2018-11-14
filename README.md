@@ -45,7 +45,7 @@ Right now, running PHP's own tests would require pcre, so it is not possible to 
 |------------|--------|------------------------------------------------|
 | standard   |     5% | a lot of work remaining                        |
 | ctype      |   100% |                                                |
-| pcre       |        | might need to use cgo                          |
+| pcre       |     5% | might need to use cgo                          |
 | gmp        |        | Use math/big ?                                 |
 | date       |        |                                                |
 | hash       |        |                                                |

@@ -1,9 +1,12 @@
 package core
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 )
+
+var ErrNotEnoughArguments = errors.New("Too few arguments")
 
 func (z *ZVal) Store(ctx Context, out interface{}) error {
 	switch tgt := out.(type) {
@@ -66,13 +69,19 @@ func Expand(ctx Context, args []*ZVal, out ...interface{}) (int, error) {
 		}
 		if rv.Type().Elem().Kind() == reflect.Ptr && rv.Type().Elem() != reflect.TypeOf(&ZVal{}) {
 			// pointer of pointer → optional argument
-			if len(args) <= i {
-				// end of argments
-				return i, nil
-			}
 			newv := reflect.New(rv.Type().Elem().Elem())
 			rv.Elem().Set(newv)
 			v = newv.Interface()
+			if len(args) <= i {
+				// end of argments
+				continue
+			}
+		}
+		if len(args) <= i {
+			// not enough arguments, such errors in PHP can be returned as either:
+			// Uncaught ArgumentCountError: Too few arguments to function toto(), 0 passed
+			// x() expects at least 2 parameters, 0 given
+			return i, ErrNotEnoughArguments
 		}
 
 		err := args[i].Store(ctx, v)
