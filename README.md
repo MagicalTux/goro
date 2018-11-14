@@ -23,6 +23,10 @@ This is still a very early implementation and most of the core is missing.
 
 Right now, running PHP's own tests would require pcre, so it is not possible to run the tests yet.
 
+## TODO
+
+* Fix arguments passed by reference → PHP, when a non-existing variable is passed by reference, will set it to NULL in the appropriate context and pass it as a reference.
+
 ## Syntax
 
 * Error reporting needs to be done

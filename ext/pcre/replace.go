@@ -108,8 +108,12 @@ func doPregReplace(ctx core.Context, pattern, replacement, subject *core.ZVal, l
 		return nil, err
 	}
 
+	repl := string(replacement.AsString(ctx))
+
+	// check repl for backreferences (\1 or $1 type of thing)
+
 	// TODO handle limit & count
-	res := regexp.ReplaceAllString(string(subject.AsString(ctx)), string(replacement.AsString(ctx)), 0)
+	res := regexp.ReplaceAllString(string(subject.AsString(ctx)), repl, 0)
 
 	return core.ZString(res).ZVal(), nil
 }
