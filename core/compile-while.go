@@ -21,7 +21,7 @@ func (r *runnableWhile) Run(ctx Context) (l *ZVal, err error) {
 			return nil, err
 		}
 
-		if !t.v.(ZBool) {
+		if !t.Value().(ZBool) {
 			break
 		}
 

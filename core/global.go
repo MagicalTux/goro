@@ -52,6 +52,10 @@ func NewGlobal(ctx context.Context, p *Process) *Global {
 	return res
 }
 
+func (g *Global) SetOutput(w io.Writer) {
+	g.out = w
+}
+
 func (g *Global) RunFile(fn string) error {
 	_, err := g.root.Include(ZString(fn))
 

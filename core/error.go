@@ -30,6 +30,9 @@ func (e *PhpError) Loc() *Loc {
 
 func (e *PhpError) Error() string {
 	if e.l == nil {
+		if e.e == nil {
+			return "Unknown error"
+		}
 		return e.e.Error()
 	}
 	return fmt.Sprintf("%s in %s on line %d", e.e, e.l.Filename, e.l.Line)

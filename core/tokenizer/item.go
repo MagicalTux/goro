@@ -172,6 +172,11 @@ func (i *Item) IsSingle(r rune) bool {
 	return i.Type == ItemSingleChar && []rune(i.Data)[0] == r
 }
 
+func (i *Item) IsExpressionEnd() bool {
+	// T_CLOSE_TAG is acceptable to end an expression
+	return i.IsSingle(';') || i.Type == T_CLOSE_TAG
+}
+
 func (i *Item) Unexpected() error {
 	_, f, l, _ := runtime.Caller(1)
 	return i.Errorf("syntax error from %s:%d, unexpected %s", path.Base(f), l, i)

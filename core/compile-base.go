@@ -121,7 +121,7 @@ func compileBaseSingle(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 		return r, err
 	}
 
-	if !i.IsSingle(';') {
+	if !i.IsExpressionEnd() {
 		// expecting a ';' after a var
 		return nil, i.Unexpected()
 	}

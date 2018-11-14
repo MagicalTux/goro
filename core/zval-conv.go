@@ -85,7 +85,7 @@ func (z *ZVal) AsBool(ctx Context) ZBool {
 	if err != nil {
 		return false
 	}
-	return r.v.(ZBool)
+	return r.Value().(ZBool)
 }
 
 func (z *ZVal) AsInt(ctx Context) ZInt {

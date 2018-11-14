@@ -161,7 +161,7 @@ func compileSpecialFuncCall(i *tokenizer.Item, c *compileCtx) (Runnable, error) 
 		if has_open && i.IsSingle(')') {
 			return &runnableFunctionCall{fn_name, args, l}, nil
 		}
-		if !has_open && i.IsSingle(';') {
+		if !has_open && i.IsExpressionEnd() {
 			c.backup()
 			return &runnableFunctionCall{fn_name, args, l}, nil
 		}
