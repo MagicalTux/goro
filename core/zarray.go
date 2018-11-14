@@ -3,6 +3,8 @@ package core
 import (
 	"errors"
 	"strconv"
+
+	"github.com/MagicalTux/gophp/core/util"
 )
 
 // php arrays work with two kind of keys
@@ -43,7 +45,7 @@ func getArrayKeyValue(s *ZVal) (ZInt, ZString, bool) {
 	}
 
 	str := s.String()
-	if CtypeDigit(str) {
+	if util.CtypeDigit(str) {
 		i, err := strconv.ParseInt(str, 10, 64)
 		if err == nil {
 			// check if converting back results in same value

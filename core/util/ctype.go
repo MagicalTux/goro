@@ -1,4 +1,4 @@
-package core
+package util
 
 // some functions useful for various things
 
