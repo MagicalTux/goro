@@ -8,11 +8,13 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/MagicalTux/gophp/core"
 	"github.com/MagicalTux/gophp/core/tokenizer"
+	"github.com/andreyvit/diff"
 )
 
 type phptest struct {
@@ -47,7 +49,7 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		exp := bytes.TrimSpace(b.Bytes())
 
 		if bytes.Compare(out, exp) != 0 {
-			return fmt.Errorf("output not as expected!\nExpected: %s\nGot: %s", exp, out)
+			return fmt.Errorf("output not as expected!\n%s", diff.LineDiff(string(exp), string(out)))
 		}
 		return nil
 	default:
@@ -74,6 +76,7 @@ func runTest(t *testing.T, path string) (p *phptest, err error) {
 	p.p.SetConstant("PHP_SAPI", "test")
 	p.g = core.NewGlobal(context.Background(), p.p)
 	p.g.SetOutput(p.output)
+	r := regexp.MustCompile("^--([A-Z]+)--$")
 
 	for {
 		lin, err := p.reader.ReadString('\n')
@@ -85,7 +88,9 @@ func runTest(t *testing.T, path string) (p *phptest, err error) {
 		}
 		if strings.HasPrefix(lin, "--") {
 			lin_trimmed := strings.TrimRight(lin, "\r\n")
-			if strings.HasSuffix(lin_trimmed[2:], "--") {
+
+			if sub := r.FindSubmatch([]byte(lin_trimmed)); sub != nil {
+				thing := string(sub[1])
 				// start of a new thing?
 				if b != nil {
 					err := p.handlePart(part, b)
@@ -93,7 +98,6 @@ func runTest(t *testing.T, path string) (p *phptest, err error) {
 						return p, err
 					}
 				}
-				thing := lin_trimmed[2 : len(lin_trimmed)-2]
 				b = &bytes.Buffer{}
 				part = thing
 				continue
