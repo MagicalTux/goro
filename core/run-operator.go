@@ -142,7 +142,11 @@ func operatorMath(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 		case "-":
 			res = a.Value().(ZInt) - b.Value().(ZInt)
 		case "/":
-			res = a.Value().(ZInt) / b.Value().(ZInt)
+			bv := b.Value().(ZInt)
+			if bv == 0 {
+				return nil, errors.New("Division by zero")
+			}
+			res = a.Value().(ZInt) / bv
 		case "*":
 			res = a.Value().(ZInt) * b.Value().(ZInt)
 		case "**":
