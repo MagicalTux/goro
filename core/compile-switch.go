@@ -31,18 +31,20 @@ func (r *runSwitch) Run(ctx Context) (*ZVal, error) {
 
 	for _, bl := range r.blocks {
 		if !run {
-			// check cond
-			z, err := bl.cond.Run(ctx)
-			if err != nil {
-				return nil, err
-			}
+			// check cond (if nil, this is a default option)
+			if bl.cond != nil {
+				z, err := bl.cond.Run(ctx)
+				if err != nil {
+					return nil, err
+				}
 
-			v, err := operatorCompare(ctx, "==", cond, z)
-			if err != nil {
-				return nil, err
-			}
-			if !v.AsBool(ctx) {
-				continue
+				v, err := operatorCompare(ctx, "==", cond, z)
+				if err != nil {
+					return nil, err
+				}
+				if !v.AsBool(ctx) {
+					continue
+				}
 			}
 			run = true
 		}

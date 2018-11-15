@@ -11,9 +11,7 @@ sapi/php-httpd/php-httpd:
 	make -C sapi/php-httpd
 
 test:
-	$(RM) sapi/php-cli/php-cli
-	make sapi/php-cli/php-cli
-	TEST_PHP_EXECUTABLE=sapi/php-cli/php-cli ./sapi/php-cli/php-cli test/php-7.2.10/run-tests.php
+	go test
 
 http:
 	$(RM) sapi/php-httpd/php-httpd

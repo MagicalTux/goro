@@ -35,3 +35,7 @@ func (l *Loc) Error(e error) *PhpError {
 func (l *Loc) Errorf(f string, arg ...interface{}) *PhpError {
 	return &PhpError{e: fmt.Errorf(f, arg...), l: l, t: PhpErrorFatal}
 }
+
+func (l *Loc) String() string {
+	return fmt.Sprintf("at %s on line %d", l.Filename, l.Line)
+}
