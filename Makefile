@@ -25,4 +25,7 @@ buildext:
 	make sapi/php-cli/php-cli
 	./sapi/php-cli/php-cli tools/buildext.php
 
-.PHONY: test http buildext
+deps:
+	go get -v -t .
+
+.PHONY: test http buildext deps

@@ -56,6 +56,10 @@ func (g *Global) SetOutput(w io.Writer) {
 	g.out = w
 }
 
+func (g *Global) Root() Context {
+	return g.root
+}
+
 func (g *Global) RunFile(fn string) error {
 	_, err := g.root.Include(ZString(fn))
 

@@ -39,7 +39,7 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 	case "FILE":
 		// pass data to the engine
 		t := tokenizer.NewLexer(b, p.path)
-		ctx := core.NewContext(p.g)
+		ctx := p.g.Root()
 		c := core.Compile(ctx, t)
 		_, err := c.Run(ctx)
 		return err
