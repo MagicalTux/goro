@@ -82,7 +82,6 @@ func compileClass(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 		switch i.Type {
 		case tokenizer.T_VAR:
 			// class variable, with possible default value
-			prop := &ZClassProp{Modifiers: attr}
 			i, err := c.NextItem()
 			if err != nil {
 				return nil, err
@@ -90,6 +89,9 @@ func compileClass(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 			if i.Type != tokenizer.T_VARIABLE {
 				return nil, i.Unexpected()
 			}
+			fallthrough
+		case tokenizer.T_VARIABLE:
+			prop := &ZClassProp{Modifiers: attr}
 			prop.VarName = ZString(i.Data[1:])
 
 			// check for default value

@@ -30,6 +30,14 @@ type phptest struct {
 	t *testing.T
 }
 
+type skipError struct{}
+
+func (s skipError) Error() string {
+	return "test skipped"
+}
+
+var skipTest skipError
+
 func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 	switch part {
 	case "TEST":
@@ -50,6 +58,20 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 
 		if bytes.Compare(out, exp) != 0 {
 			return fmt.Errorf("output not as expected!\n%s", diff.LineDiff(string(exp), string(out)))
+		}
+		return nil
+	case "SKIPIF":
+		t := tokenizer.NewLexer(b, p.path)
+		ctx := core.NewGlobal(context.Background(), p.p)
+		output := &bytes.Buffer{}
+		ctx.SetOutput(output)
+		c := core.Compile(ctx, t)
+		_, err := c.Run(ctx)
+		if err != nil {
+			return err
+		}
+		if bytes.HasPrefix(output.Bytes(), []byte("skip ")) {
+			return skipTest
 		}
 		return nil
 	default:
@@ -131,6 +153,9 @@ func TestPhp(t *testing.T) {
 
 		p, err := runTest(t, path)
 		if err != nil {
+			if err == skipTest {
+				return nil
+			}
 			t.Errorf("Error in %s: %s", p.name, err.Error())
 		}
 		return nil

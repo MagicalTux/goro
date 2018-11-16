@@ -51,6 +51,9 @@ func (z *ZVal) Ref() *ZVal {
 }
 
 func (z *ZVal) Value() Val {
+	if z == nil {
+		return nil
+	}
 	if sz, ok := z.v.(*ZVal); ok {
 		return sz.Value()
 	}

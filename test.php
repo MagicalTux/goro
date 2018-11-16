@@ -2,7 +2,7 @@
 
 $test = 'This is a test';
 
-var_dump(preg_replace('/This ([^ ]+) /', 'That really \\1 not much of ', $test));
+var_dump(preg_replace('/This ([^ ]+) /', 'That really \\1 not much $1 of ', $test));
 
 exit;
 

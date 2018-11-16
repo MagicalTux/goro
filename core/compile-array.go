@@ -66,6 +66,10 @@ func (ac *runArrayAccess) Run(ctx Context) (*ZVal, error) {
 		}
 	}
 
+	if ac.offset == nil {
+		return nil, nil // FIXME PHP Fatal error:  Cannot use [] for reading
+	}
+
 	offset, err := ac.offset.Run(ctx)
 	if err != nil {
 		return nil, err

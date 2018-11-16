@@ -108,12 +108,22 @@ func doPregReplace(ctx core.Context, pattern, replacement, subject *core.ZVal, l
 		return nil, err
 	}
 
-	repl := string(replacement.AsString(ctx))
+	repl := []byte(replacement.AsString(ctx))
+
+	in := []byte(subject.AsString(ctx))
+	m := regexp.Matcher(in, 0) // TODO flags
+	var r []byte
+
+	for m.Matches() {
+		loc := m.Index()
+		r = append(r, in[:loc[0]]...)
+		r = append(r, pcreExpand(m.Extract(), repl)...) // TODO expand repl
+		in = in[loc[1]:]
+		m.Match(in, 0) // TODO flags
+	}
+	r = append(r, in...)
 
 	// check repl for backreferences (\1 or $1 type of thing)
 
-	// TODO handle limit & count
-	res := regexp.ReplaceAllString(string(subject.AsString(ctx)), repl, 0)
-
-	return core.ZString(res).ZVal(), nil
+	return core.ZString(r).ZVal(), nil
 }
