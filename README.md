@@ -62,6 +62,33 @@ Right now, running PHP's own tests would require pcre, so it is not possible to 
 | xml*       |        |                                                |
 | gd         |        | without gd                                     |
 
+# Concepts
+
+## Process
+
+A process object will typically be created only once in a runtime environment,
+and is used to keep some objects cached, as well as global stream wrapper
+resources. Persistant connections, run time cache, etc are stored at the
+Process level.
+
+## GlobalCache (optional)
+
+A special global status intermediate between Process and Global that causes
+declarations of classes and functions to be kept between scripts, typically
+useful when using an autoloader.
+
+## Global
+
+When a request is received or execution of a script is requested, a new Global
+context is created. The global context contains runtime level details such as
+global variables, declared functions, classes, constants, etc.
+
+## Context
+
+Context is a local context, such as within a running function etc. Global has
+a root context, and each function call causes instantiation of a new context
+so that variables space is kept separated.
+
 # Contributing
 
 Right now, code for extensions is the most needed part.

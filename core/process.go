@@ -14,6 +14,8 @@ type Process struct {
 	environ          []string
 }
 
+// NewProcess instanciates a new instance of Process, which represents a
+// running PHP process.
 func NewProcess() *Process {
 	res := &Process{
 		fHandler:         make(map[string]stream.Handler),
@@ -26,6 +28,8 @@ func NewProcess() *Process {
 	return res
 }
 
+// Open opens a file using PHP stream wrappers and returns a handler to said
+// file.
 func (p *Process) Open(u *url.URL) (*stream.Stream, error) {
 	s := u.Scheme
 	if s == "" {
@@ -40,6 +44,8 @@ func (p *Process) Open(u *url.URL) (*stream.Stream, error) {
 	return h.Open(u)
 }
 
+// Hander returns a http.Handler object suitable for use with golang standard
+// http servers and similar.
 func (p *Process) Handler(docroot string) http.Handler {
 	return &phpWebHandler{root: docroot, p: p}
 }
@@ -53,6 +59,7 @@ func (p *Process) populateConstants() {
 
 }
 
+// SetConstant sets a global constant, typically used to set PHP_SAPI.
 func (p *Process) SetConstant(name, value ZString) {
 	p.defaultConstants[name] = value.ZVal()
 }
