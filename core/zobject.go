@@ -13,6 +13,9 @@ type ZObjectAccess interface {
 type ZObject struct {
 	h     *ZHashTable
 	Class *ZClass
+
+	// for use with custom extension objects
+	Opaque map[*ZClass]interface{}
 }
 
 func (z *ZObject) ZVal() *ZVal {
@@ -21,6 +24,17 @@ func (z *ZObject) ZVal() *ZVal {
 
 func (z *ZObject) GetType() ZType {
 	return ZtObject
+}
+
+func (z *ZObject) GetOpaque(c *ZClass) interface{} {
+	if z.Opaque == nil {
+		return nil
+	}
+	v, ok := z.Opaque[c]
+	if !ok {
+		return nil
+	}
+	return v
 }
 
 func (z *ZObject) AsVal(ctx Context, t ZType) (Val, error) {
@@ -34,22 +48,27 @@ func (z *ZObject) AsVal(ctx Context, t ZType) (Val, error) {
 
 func NewZObject(ctx Context, c *ZClass) (*ZObject, error) {
 	n := &ZObject{h: NewHashTable(), Class: c}
+	return n, n.init(ctx)
+}
 
+func NewZObjectOpaque(ctx Context, c *ZClass, v interface{}) (*ZObject, error) {
+	n := &ZObject{h: NewHashTable(), Class: c, Opaque: map[*ZClass]interface{}{c: v}}
+	return n, n.init(ctx)
+}
+
+func (o *ZObject) init(ctx Context) error {
 	// initialize object variables with default values
-	for _, p := range c.Props {
+	for _, p := range o.Class.Props {
 		if p.Default == nil {
 			continue
 		}
 		z, err := p.Default.Run(ctx)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		n.h.SetString(p.VarName, z)
+		o.h.SetString(p.VarName, z)
 	}
-
-	// constructor call is done separately
-
-	return n, nil
+	return nil
 }
 
 func (o *ZObject) OffsetSet(key, value *ZVal) (*ZVal, error) {

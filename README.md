@@ -45,12 +45,11 @@ Right now, running PHP's own tests would require pcre, so it is not possible to 
 | Extension  | Status | Notes                                          |
 |------------|--------|------------------------------------------------|
 | standard   |     5% | a lot of work remaining                        |
-| ctype      |   100% |                                                |
 | pcre       |     5% | might need to use cgo                          |
-| gmp        |        | Use math/big ?                                 |
+| gmp        |     1% | Using math/big                                 |
 | date       |        |                                                |
 | hash       |        |                                                |
-| iconv      |        |                                                |
+| iconv      |        | using golang.org/x/text/transform              |
 | json       |        | Need custom impl to support php arrays         |
 | mbstring   |        |                                                |
 | mcrypt     |        |                                                |
@@ -61,6 +60,7 @@ Right now, running PHP's own tests would require pcre, so it is not possible to 
 | tokenizer  |        | already in core/tokenizer, needs to be exposed |
 | xml*       |        |                                                |
 | gd         |        | without gd                                     |
+| ctype      |   100% |                                                |
 
 # Concepts
 

@@ -69,13 +69,14 @@ func Expand(ctx Context, args []*ZVal, out ...interface{}) (int, error) {
 		}
 		if rv.Type().Elem().Kind() == reflect.Ptr && rv.Type().Elem() != reflect.TypeOf(&ZVal{}) {
 			// pointer of pointer → optional argument
-			newv := reflect.New(rv.Type().Elem().Elem())
-			rv.Elem().Set(newv)
-			v = newv.Interface()
 			if len(args) <= i {
 				// end of argments
 				continue
 			}
+			// we have an argument → instanciate and update v to point to the subvalue
+			newv := reflect.New(rv.Type().Elem().Elem())
+			rv.Elem().Set(newv)
+			v = newv.Interface()
 		}
 		if len(args) <= i {
 			// not enough arguments, such errors in PHP can be returned as either:

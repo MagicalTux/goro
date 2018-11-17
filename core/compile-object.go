@@ -44,6 +44,8 @@ func (r *runNewObject) Run(ctx Context) (*ZVal, error) {
 		return nil, err
 	}
 
+	// TODO call class constructor
+
 	return z.ZVal(), nil
 }
 

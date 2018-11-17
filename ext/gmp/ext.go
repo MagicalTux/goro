@@ -1,0 +1,19 @@
+package gmp
+
+import "github.com/MagicalTux/gophp/core"
+
+// WARNING: This file is auto-generated. DO NOT EDIT
+
+func init() {
+	core.RegisterExt(&core.Ext{
+		Name: "gmp",
+		Classes: []*core.ZClass{
+			GMP,
+		},
+		Functions: map[string]*core.ExtFunction{
+			"gmp_init":   &core.ExtFunction{Func: gmpInit, Args: []*core.ExtFunctionArg{}},
+			"gmp_strval": &core.ExtFunction{Func: gmpStrval, Args: []*core.ExtFunctionArg{}},
+		},
+		Constants: map[core.ZString]*core.ZVal{},
+	})
+}
