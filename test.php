@@ -1,8 +1,10 @@
 <?php
 
-$test = 'This is a test';
+$a=27; $b=3; $c=3; $d=$a/$b/$c; echo $d."\n";
 
-var_dump(preg_replace('/This ([^ ]+) /', 'That really \\1 not much $1 of ', $test));
+var_dump(27/3/3);
+var_dump(1 + 2 * 3);
+var_dump(2 * 3 + 1);
 
 exit;
 

@@ -14,7 +14,7 @@ func compileTernaryOp(v Runnable, c *compileCtx) (Runnable, error) {
 		yes = v
 	} else if i.IsSingle('?') {
 		yes = v
-		v = &runOperator{op: "!==", a: v, b: &runZVal{nil, l}, l: l}
+		v, _ = spawnOperator("!==", v, &runZVal{nil, l}, l)
 	} else {
 		yes, err = compileExpr(i, c)
 		if err != nil {

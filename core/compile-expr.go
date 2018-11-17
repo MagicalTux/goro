@@ -231,7 +231,7 @@ func compilePostExpr(v Runnable, i *tokenizer.Item, c *compileCtx) (Runnable, er
 			}
 
 			// TODO: math priority
-			return &runOperator{op: i.Data, a: v, b: t_v, l: l}, nil
+			return spawnOperator(i.Data, v, t_v, l)
 		case '?':
 			return compileTernaryOp(v, c)
 		case '(':
@@ -288,7 +288,7 @@ func compilePostExpr(v Runnable, i *tokenizer.Item, c *compileCtx) (Runnable, er
 		}
 
 		// TODO math priority
-		return &runOperator{op: i.Data, a: v, b: t_v}, nil
+		return spawnOperator(i.Data, v, t_v, l)
 	}
 
 	// unknown?

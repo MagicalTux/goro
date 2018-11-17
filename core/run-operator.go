@@ -3,11 +3,13 @@ package core
 import (
 	"errors"
 	"fmt"
+	"log"
 	"math"
 )
 
 type runOperator struct {
-	op string
+	op  string
+	opD *operatorInternalDetails
 
 	a, b Runnable
 	l    *Loc
@@ -18,43 +20,76 @@ type operatorInternalDetails struct {
 	numeric bool
 	skipA   bool
 	op      func(ctx Context, op string, a, b *ZVal) (*ZVal, error)
+	pri     int
 }
 
+// ++ -- cast @ pri=11
+// ?: pri=24
 var operatorList = map[string]*operatorInternalDetails{
-	"=":   &operatorInternalDetails{write: true, skipA: true},
-	".=":  &operatorInternalDetails{write: true, op: operatorAppend},
-	"/=":  &operatorInternalDetails{write: true, numeric: true, op: operatorMath},
-	"*=":  &operatorInternalDetails{write: true, numeric: true, op: operatorMath},
-	"-=":  &operatorInternalDetails{write: true, numeric: true, op: operatorMath},
-	"+=":  &operatorInternalDetails{write: true, numeric: true, op: operatorMath},
-	".":   &operatorInternalDetails{op: operatorAppend},
-	"+":   &operatorInternalDetails{numeric: true, op: operatorMath},
-	"-":   &operatorInternalDetails{numeric: true, op: operatorMath},
-	"/":   &operatorInternalDetails{numeric: true, op: operatorMath},
-	"*":   &operatorInternalDetails{numeric: true, op: operatorMath},
-	"**":  &operatorInternalDetails{numeric: true, op: operatorMath},
-	"|":   &operatorInternalDetails{numeric: true, op: operatorMathLogic},
-	"^":   &operatorInternalDetails{numeric: true, op: operatorMathLogic},
-	"&":   &operatorInternalDetails{numeric: true, op: operatorMathLogic},
-	"%":   &operatorInternalDetails{numeric: true, op: operatorMathLogic},
-	"~":   &operatorInternalDetails{numeric: true, op: operatorMathLogic},
-	"<<":  &operatorInternalDetails{numeric: true, op: operatorMathLogic},
-	">>":  &operatorInternalDetails{numeric: true, op: operatorMathLogic},
-	"<<=": &operatorInternalDetails{write: true, numeric: true, op: operatorMathLogic},
-	">>=": &operatorInternalDetails{write: true, numeric: true, op: operatorMathLogic},
-	"<":   &operatorInternalDetails{op: operatorCompare},
-	">":   &operatorInternalDetails{op: operatorCompare},
-	"<=":  &operatorInternalDetails{op: operatorCompare},
-	">=":  &operatorInternalDetails{op: operatorCompare},
-	"==":  &operatorInternalDetails{op: operatorCompare},
-	"!=":  &operatorInternalDetails{op: operatorCompare},
-	"!":   &operatorInternalDetails{op: operatorNot},
-	"&&":  &operatorInternalDetails{op: operatorBoolLogic},
-	"||":  &operatorInternalDetails{op: operatorBoolLogic},
+	"=":   &operatorInternalDetails{write: true, skipA: true, pri: 25},
+	".=":  &operatorInternalDetails{write: true, op: operatorAppend, pri: 25},
+	"/=":  &operatorInternalDetails{write: true, numeric: true, op: operatorMath, pri: 25},
+	"*=":  &operatorInternalDetails{write: true, numeric: true, op: operatorMath, pri: 25},
+	"**=": &operatorInternalDetails{write: true, numeric: true, op: operatorMath, pri: 25},
+	"-=":  &operatorInternalDetails{write: true, numeric: true, op: operatorMath, pri: 25},
+	"+=":  &operatorInternalDetails{write: true, numeric: true, op: operatorMath, pri: 25},
+	".":   &operatorInternalDetails{op: operatorAppend, pri: 14},
+	"+":   &operatorInternalDetails{numeric: true, op: operatorMath, pri: 14},
+	"-":   &operatorInternalDetails{numeric: true, op: operatorMath, pri: 14},
+	"/":   &operatorInternalDetails{numeric: true, op: operatorMath, pri: 13},
+	"*":   &operatorInternalDetails{numeric: true, op: operatorMath, pri: 13},
+	"**":  &operatorInternalDetails{numeric: true, op: operatorMath, pri: 10},
+	"|=":  &operatorInternalDetails{write: true, numeric: true, op: operatorMathLogic, pri: 25},
+	"^=":  &operatorInternalDetails{write: true, numeric: true, op: operatorMathLogic, pri: 25},
+	"&=":  &operatorInternalDetails{write: true, numeric: true, op: operatorMathLogic, pri: 25},
+	"%=":  &operatorInternalDetails{write: true, numeric: true, op: operatorMathLogic, pri: 25},
+	"|":   &operatorInternalDetails{numeric: true, op: operatorMathLogic, pri: 20},
+	"^":   &operatorInternalDetails{numeric: true, op: operatorMathLogic, pri: 19},
+	"&":   &operatorInternalDetails{numeric: true, op: operatorMathLogic, pri: 18},
+	"%":   &operatorInternalDetails{numeric: true, op: operatorMathLogic, pri: 13},
+	"~":   &operatorInternalDetails{numeric: true, op: operatorMathLogic, pri: 11},
+	"<<":  &operatorInternalDetails{numeric: true, op: operatorMathLogic, pri: 15},
+	">>":  &operatorInternalDetails{numeric: true, op: operatorMathLogic, pri: 15},
+	"and": &operatorInternalDetails{numeric: true, op: operatorMathLogic, pri: 26},
+	"xor": &operatorInternalDetails{numeric: true, op: operatorMathLogic, pri: 27},
+	"ro":  &operatorInternalDetails{numeric: true, op: operatorMathLogic, pri: 28},
+	"<<=": &operatorInternalDetails{write: true, numeric: true, op: operatorMathLogic, pri: 25},
+	">>=": &operatorInternalDetails{write: true, numeric: true, op: operatorMathLogic, pri: 25},
+	"<":   &operatorInternalDetails{op: operatorCompare, pri: 16},
+	">":   &operatorInternalDetails{op: operatorCompare, pri: 16},
+	"<=":  &operatorInternalDetails{op: operatorCompare, pri: 16},
+	">=":  &operatorInternalDetails{op: operatorCompare, pri: 16},
+	"==":  &operatorInternalDetails{op: operatorCompare, pri: 17},
+	"===": &operatorInternalDetails{op: operatorCompare, pri: 17},
+	"!=":  &operatorInternalDetails{op: operatorCompare, pri: 17},
+	"<>":  &operatorInternalDetails{op: operatorCompare, pri: 17},
+	"<=>": &operatorInternalDetails{op: operatorCompare, pri: 17},
+	"!==": &operatorInternalDetails{op: operatorCompare, pri: 17},
+	"!":   &operatorInternalDetails{op: operatorNot, pri: 12},
+	"&&":  &operatorInternalDetails{op: operatorBoolLogic, pri: 21},
+	"||":  &operatorInternalDetails{op: operatorBoolLogic, pri: 22},
+	"??":  &operatorInternalDetails{pri: 23},
 }
 
 func (r *runOperator) Loc() *Loc {
 	return r.l
+}
+
+func spawnOperator(op string, a, b Runnable, l *Loc) (Runnable, error) {
+	opD, ok := operatorList[op]
+	if !ok {
+		return nil, l.Errorf("invalid operator %s", op)
+	}
+	log.Printf("spawn op %s, a=%#v b=%#v", op, a, b)
+	if rop, isop := b.(*runOperator); isop {
+		log.Printf("compare priority %s(%d) vs %s(%d)", op, opD.pri, rop.op, rop.opD.pri)
+		if opD.pri <= rop.opD.pri {
+			log.Printf("need swap")
+			rop.b, _ = spawnOperator(op, a, rop.b, l)
+			return rop, nil
+		}
+	}
+	return &runOperator{op: op, opD: opD, a: a, b: b, l: l}, nil
 }
 
 func (r *runOperator) Run(ctx Context) (*ZVal, error) {
