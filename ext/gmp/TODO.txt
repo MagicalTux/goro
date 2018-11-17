@@ -18,7 +18,6 @@ gmp_jacobi
 gmp_legendre
 gmp_mod
 gmp_mul
-gmp_neg
 gmp_nextprime
 gmp_or
 gmp_perfect_square
