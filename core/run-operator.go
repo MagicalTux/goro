@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"math"
 )
 
@@ -102,13 +101,10 @@ func spawnOperator(op string, a, b Runnable, l *Loc) (Runnable, error) {
 	if !ok {
 		return nil, l.Errorf("invalid operator %s", op)
 	}
-	log.Printf("spawn op %s, a=%s b=%s", op, debugDump(a), debugDump(b))
-	if rop, isop := b.(*runOperator); isop {
-		log.Printf("compare priority %s(%d) vs %s(%d)", op, opD.pri, rop.op, rop.opD.pri)
-		if opD.pri <= rop.opD.pri {
-			log.Printf("need swap")
-			rop.a = &runOperator{op: op, opD: opD, a: a, b: rop.a, l: l}
-			log.Printf("result=%s", debugDump(rop))
+	if rop, isop := a.(*runOperator); isop {
+		if opD.pri < rop.opD.pri {
+			// need to swap values
+			rop.b = &runOperator{op: op, opD: opD, a: rop.b, b: b, l: l}
 			return rop, nil
 		}
 	}
@@ -119,10 +115,7 @@ func (r *runOperator) Run(ctx Context) (*ZVal, error) {
 	var a, b, res *ZVal
 	var err error
 
-	op, ok := operatorList[r.op]
-	if !ok {
-		return nil, r.l.Errorf("unknown operator %s", r.op)
-	}
+	op := r.opD
 
 	// read a and b
 	if r.a != nil {

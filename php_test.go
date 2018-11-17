@@ -143,6 +143,10 @@ func runTest(t *testing.T, path string) (p *phptest, err error) {
 
 func TestPhp(t *testing.T) {
 	// run all tests in "test"
+	count := 0
+	pass := 0
+	skip := 0
+	fail := 0
 	filepath.Walk("test", func(path string, info os.FileInfo, err error) error {
 		if !info.Mode().IsRegular() {
 			return err
@@ -151,13 +155,20 @@ func TestPhp(t *testing.T) {
 			return err
 		}
 
+		count += 1
 		p, err := runTest(t, path)
 		if err != nil {
 			if err == skipTest {
+				skip += 1
 				return nil
 			}
+			fail += 1
 			t.Errorf("Error in %s: %s", p.name, err.Error())
+		} else {
+			pass += 1
 		}
 		return nil
 	})
+
+	t.Logf("Total of %d tests, %d passed, %d skipped and %d failed", count, pass, skip, fail)
 }

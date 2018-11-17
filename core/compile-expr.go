@@ -17,7 +17,25 @@ import (
 // etc...
 
 func compileExpr(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
-	var v Runnable
+	res, err := compileOneExpr(i, c)
+	if err != nil {
+		return nil, err
+	}
+
+	for {
+		sr, err := compilePostExpr(res, nil, c)
+		if err != nil {
+			return nil, err
+		}
+		if sr == nil {
+			return res, nil
+		}
+		res = sr
+	}
+}
+
+func compileOneExpr(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
+	// fetch only one expression, without any operator or anything
 	var err error
 
 	if i == nil {
@@ -31,12 +49,11 @@ func compileExpr(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 
 	switch i.Type {
 	case tokenizer.T_VARIABLE:
-		v = &runVariable{ZString(i.Data[1:]), l}
-		return compilePostExpr(v, nil, c)
+		return &runVariable{ZString(i.Data[1:]), l}, nil
 	case tokenizer.T_LNUMBER:
 		v, err := strconv.ParseInt(i.Data, 0, 64)
 		if err == nil {
-			return compilePostExpr(&runZVal{ZInt(v), l}, nil, c)
+			return &runZVal{ZInt(v), l}, nil
 		}
 		// if ParseInt failed, try to parse as float (value too large?)
 		fallthrough
@@ -46,11 +63,11 @@ func compileExpr(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 			errv := err.(*strconv.NumError)
 			if errv.Err == strconv.ErrRange {
 				// v is inf
-				return compilePostExpr(&runZVal{ZFloat(v), l}, nil, c)
+				return &runZVal{ZFloat(v), l}, nil
 			}
 			return nil, err
 		}
-		return compilePostExpr(&runZVal{ZFloat(v), l}, nil, c)
+		return &runZVal{ZFloat(v), l}, nil
 	case tokenizer.T_STRING:
 		// if next is '(' this is a function call
 		t_next, err := c.NextItem()
@@ -58,7 +75,7 @@ func compileExpr(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 			return nil, err
 		}
 		c.backup()
-		gotSomething := false
+
 		switch t_next.Type {
 		case tokenizer.T_PAAMAYIM_NEKUDOTAYIM:
 			// this is a static method call or a static variable access
@@ -74,11 +91,9 @@ func compileExpr(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 
 				switch i.Type {
 				case tokenizer.T_VARIABLE:
-					v = &runClassStaticVarRef{className, ZString(i.Data[1:]), l}
-					return compilePostExpr(v, nil, c)
+					return &runClassStaticVarRef{className, ZString(i.Data[1:]), l}, nil
 				case tokenizer.T_STRING:
-					v = &runClassStaticObjRef{className, ZString(i.Data), l}
-					return compilePostExpr(v, nil, c)
+					return &runClassStaticObjRef{className, ZString(i.Data), l}, nil
 				default:
 					return nil, i.Unexpected()
 				}
@@ -90,89 +105,69 @@ func compileExpr(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 				if err != nil {
 					return nil, err
 				}
-				v = &runnableFunctionCall{ZString(i.Data), args, l}
-				gotSomething = true
+				return &runnableFunctionCall{ZString(i.Data), args, l}, nil
 			}
 		}
-		if !gotSomething {
-			// it's a constant
-			v = &runConstant{i.Data, l}
-		}
+		// so it's a constant
+		return &runConstant{i.Data, l}, nil
 	case tokenizer.T_CONSTANT_ENCAPSED_STRING:
-		v, err = compileQuoteConstant(i, c)
-		if err != nil {
-			return nil, err
-		}
+		return compileQuoteConstant(i, c)
 	case tokenizer.T_START_HEREDOC:
-		v, err = compileQuoteHeredoc(i, c)
-		if err != nil {
-			return nil, err
-		}
+		return compileQuoteHeredoc(i, c)
 	case tokenizer.T_ARRAY:
-		v, err = compileArray(i, c)
-		if err != nil {
-			return nil, err
-		}
+		return compileArray(i, c)
 	case tokenizer.T_FILE:
-		v = &runZVal{ZString(l.Filename), l}
+		return &runZVal{ZString(l.Filename), l}, nil
 	case tokenizer.T_LINE:
-		v = &runZVal{ZInt(l.Line), l}
+		return &runZVal{ZInt(l.Line), l}, nil
 	case tokenizer.T_DIR:
-		v = &runZVal{ZString(path.Dir(l.Filename)), l}
+		return &runZVal{ZString(path.Dir(l.Filename)), l}, nil
 	case tokenizer.T_BOOL_CAST, tokenizer.T_INT_CAST, tokenizer.T_ARRAY_CAST, tokenizer.T_DOUBLE_CAST, tokenizer.T_OBJECT_CAST, tokenizer.T_STRING_CAST:
 		// perform a cast operation on the following (note: v is null)
-		t_v, err := compileExpr(nil, c)
+		//TODO make this an operator for appropriate operator precedence
+		t_v, err := compileOneExpr(nil, c)
 		if err != nil {
 			return nil, err
 		}
 
 		return spawnRunCast(i.Type, t_v, l)
 	case tokenizer.T_INC:
-		t_v, err := compileExpr(nil, c)
+		t_v, err := compileOneExpr(nil, c)
 		if err != nil {
 			return nil, err
 		}
 
-		v = &runIncDec{inc: true, v: t_v, l: l, post: false}
+		return &runIncDec{inc: true, v: t_v, l: l, post: false}, nil
 	case tokenizer.T_DEC:
-		t_v, err := compileExpr(nil, c)
+		t_v, err := compileOneExpr(nil, c)
 		if err != nil {
 			return nil, err
 		}
 
-		v = &runIncDec{inc: false, v: t_v, l: l, post: false}
+		return &runIncDec{inc: false, v: t_v, l: l, post: false}, nil
 	case tokenizer.ItemSingleChar:
 		ch := []rune(i.Data)[0]
 		switch ch {
 		case '"':
-			v, err = compileQuoteEncapsed(i, c, '"')
-			if err != nil {
-				return nil, err
-			}
+			return compileQuoteEncapsed(i, c, '"')
 		case '`':
-			v, err = compileQuoteEncapsed(i, c, '`')
+			v, err := compileQuoteEncapsed(i, c, '`')
 			if err != nil {
 				return nil, err
 			}
-			v = &runnableFunctionCall{"shell_exec", []Runnable{v}, l}
+			return &runnableFunctionCall{"shell_exec", []Runnable{v}, l}, nil
 		case '!', '+', '-', '~':
 			// this is an operator, let compilePostExpr() deal with it
 			return compilePostExpr(nil, i, c)
 		case '@':
 			// this is a silent operator
 			// TODO: we should encase result from compileExpr into a "silencer"
-			v, err = compileExpr(nil, c)
-			if err != nil {
-				return nil, err
-			}
+			return compileOneExpr(nil, c)
 		case '[':
-			v, err = compileArray(i, c)
-			if err != nil {
-				return nil, err
-			}
+			return compileArray(i, c)
 		case '(':
 			// sub-expr
-			v, err = compileExpr(nil, c)
+			v, err := compileExpr(nil, c)
 			if err != nil {
 				return nil, err
 			}
@@ -183,9 +178,10 @@ func compileExpr(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 			if !i.IsSingle(')') {
 				return nil, i.Unexpected()
 			}
+			return v, err
 		case '&':
 			// get ref of something
-			v, err = compileExpr(nil, c)
+			v, err := compileOneExpr(nil, c)
 			if err != nil {
 				return nil, err
 			}
@@ -197,16 +193,12 @@ func compileExpr(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 	default:
 		h, ok := itemTypeHandler[i.Type]
 		if ok && h != nil {
-			v, err = h.f(i, c)
-			if err != nil {
-				return nil, err
-			}
+			return h.f(i, c)
 		} else {
 			return nil, i.Unexpected()
 		}
 	}
-
-	return compilePostExpr(v, nil, c)
+	return nil, i.Unexpected()
 }
 
 func compilePostExpr(v Runnable, i *tokenizer.Item, c *compileCtx) (Runnable, error) {
@@ -225,7 +217,7 @@ func compilePostExpr(v Runnable, i *tokenizer.Item, c *compileCtx) (Runnable, er
 		switch ch {
 		case '+', '-', '/', '*', '=', '.', '<', '>', '!', '|', '^', '&', '%', '~': // TODO list
 			// what follows is also an expression
-			t_v, err := compileExpr(nil, c)
+			t_v, err := compileOneExpr(nil, c)
 			if err != nil {
 				return nil, err
 			}
@@ -248,7 +240,7 @@ func compilePostExpr(v Runnable, i *tokenizer.Item, c *compileCtx) (Runnable, er
 		case ';':
 			c.backup()
 			// just a value
-			return v, nil
+			return nil, nil
 		}
 	case tokenizer.T_INC:
 		// v followed by inc
@@ -282,7 +274,7 @@ func compilePostExpr(v Runnable, i *tokenizer.Item, c *compileCtx) (Runnable, er
 		tokenizer.T_LOGICAL_OR: // etc... FIXME TODO
 
 		// what follows is also an expression
-		t_v, err := compileExpr(nil, c)
+		t_v, err := compileOneExpr(nil, c)
 		if err != nil {
 			return nil, err
 		}
@@ -293,5 +285,5 @@ func compilePostExpr(v Runnable, i *tokenizer.Item, c *compileCtx) (Runnable, er
 
 	// unknown?
 	c.backup()
-	return v, nil
+	return nil, nil
 }
