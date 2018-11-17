@@ -170,5 +170,5 @@ func TestPhp(t *testing.T) {
 		return nil
 	})
 
-	t.Logf("Total of %d tests, %d passed, %d skipped and %d failed", count, pass, skip, fail)
+	t.Logf("Total of %d tests, %d passed (%01.2f%% success), %d skipped and %d failed", count, pass, float64(pass)*100/float64(count-skip), skip, fail)
 }

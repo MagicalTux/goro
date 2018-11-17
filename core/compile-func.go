@@ -116,7 +116,7 @@ func (r *runnableFunctionCallRef) Run(ctx Context) (l *ZVal, err error) {
 				return nil, err
 			}
 			// grab function
-			f, err = ctx.GetFunction(v.v.(ZString))
+			f, err = ctx.GetFunction(v.Value().(ZString))
 			if err != nil {
 				return nil, err
 			}
