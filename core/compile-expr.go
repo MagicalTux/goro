@@ -186,7 +186,7 @@ func compileOneExpr(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 				return nil, err
 			}
 
-			return compilePostExpr(&runRef{v, l}, nil, c)
+			return &runRef{v, l}, nil
 		default:
 			return nil, i.Unexpected()
 		}

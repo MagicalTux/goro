@@ -1,7 +1,6 @@
 package core
 
 import (
-	"errors"
 	"io"
 
 	"github.com/MagicalTux/gophp/core/tokenizer"
@@ -34,7 +33,7 @@ func (a runArray) Run(ctx Context) (*ZVal, error) {
 			return nil, err
 		}
 
-		array.OffsetSet(k, v)
+		array.OffsetSet(ctx, k, v)
 	}
 
 	return &ZVal{array}, nil
@@ -163,7 +162,7 @@ func (ac *runArrayAccess) Run(ctx Context) (*ZVal, error) {
 
 	array := v.Array()
 	if array == nil {
-		return nil, errors.New("Cannot use object of type ?? as array") // TODO
+		return nil, ac.l.Errorf("Cannot use object of type %s as array", v.GetType())
 	}
 
 	// OK...
@@ -195,7 +194,7 @@ func (ac *runArrayAccess) WriteValue(ctx Context, value *ZVal) error {
 
 	array := v.Array()
 	if array == nil {
-		return errors.New("Cannot use object of type ?? as array") // TODO
+		return ac.l.Errorf("Cannot use object of type %s as array", v.GetType())
 	}
 
 	if ac.offset == nil {

@@ -86,7 +86,7 @@ func (a *ZArray) AsVal(ctx Context, t ZType) (Val, error) {
 	return nil, nil
 }
 
-func (a *ZArray) OffsetGet(key *ZVal) (*ZVal, error) {
+func (a *ZArray) OffsetGet(ctx Context, key *ZVal) (*ZVal, error) {
 	if key == nil || key.GetType() == ZtNull {
 		return nil, errors.New("Cannot use [] for reading")
 	}
@@ -100,7 +100,7 @@ func (a *ZArray) OffsetGet(key *ZVal) (*ZVal, error) {
 	}
 }
 
-func (a *ZArray) OffsetSet(key, value *ZVal) error {
+func (a *ZArray) OffsetSet(ctx Context, key, value *ZVal) error {
 	if key == nil || key.GetType() == ZtNull {
 		err := a.h.Append(value)
 		return err

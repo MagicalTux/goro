@@ -146,7 +146,7 @@ func (z *ZVal) String() string {
 }
 
 func (z *ZVal) Array() ZArrayAccess {
-	if r, ok := z.v.(ZArrayAccess); ok {
+	if r, ok := z.Value().(ZArrayAccess); ok {
 		return r
 	}
 	return nil

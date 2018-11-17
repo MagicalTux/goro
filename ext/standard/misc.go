@@ -57,8 +57,8 @@ func stdFuncHrTime(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 
 	t := time.Now()
 	r := core.NewZArray()
-	r.OffsetSet(nil, core.ZInt(t.Unix()).ZVal())
-	r.OffsetSet(nil, core.ZInt(t.Nanosecond()).ZVal())
+	r.OffsetSet(ctx, nil, core.ZInt(t.Unix()).ZVal())
+	r.OffsetSet(ctx, nil, core.ZInt(t.Nanosecond()).ZVal())
 	return r.ZVal(), nil
 }
 

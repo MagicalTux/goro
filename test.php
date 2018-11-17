@@ -1,17 +1,5 @@
 <?php
 
-$a=27; $b=3; $c=3; $d=$a/$b/$c; echo $d."\n";
-
-var_dump(27/3/3);
-var_dump(1 + 2 * 3);
-var_dump(2 * 3 + 1);
-
-var_dump(1+2+3*4+5*6+7+8*9*10+5-4-8-8+9-15+9/7*3/9-6+9);
-
-
-
-exit;
-
 // Provides: <body text='black'>
 $bodytag = str_replace("%body%", "black", "<body text='%body%'>");
 var_dump($bodytag);
