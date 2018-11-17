@@ -201,7 +201,13 @@ func operatorMath(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 			if bv == 0 {
 				return nil, errors.New("Division by zero")
 			}
-			res = a.Value().(ZInt) / bv
+			av := a.Value().(ZInt)
+			if av%bv != 0 {
+				// this is not goign to be a int result
+				res = ZFloat(av) / ZFloat(bv)
+			} else {
+				res = a.Value().(ZInt) / bv
+			}
 		case "*":
 			res = a.Value().(ZInt) * b.Value().(ZInt)
 		case "**":
