@@ -244,10 +244,10 @@ func compilePostExpr(v Runnable, i *tokenizer.Item, c *compileCtx) (Runnable, er
 		}
 	case tokenizer.T_INC:
 		// v followed by inc
-		return compilePostExpr(&runIncDec{inc: true, v: v, l: l, post: true}, nil, c)
+		return &runIncDec{inc: true, v: v, l: l, post: true}, nil
 	case tokenizer.T_DEC:
 		// v followed by dec
-		return compilePostExpr(&runIncDec{inc: false, v: v, l: l, post: true}, nil, c)
+		return &runIncDec{inc: false, v: v, l: l, post: true}, nil
 	case tokenizer.T_OBJECT_OPERATOR:
 		return compileObjectOperator(v, i, c)
 	case tokenizer.T_AND_EQUAL,

@@ -80,17 +80,21 @@ func (r *runOperator) Dump(w io.Writer) error {
 	if err != nil {
 		return err
 	}
-	err = r.a.Dump(w)
-	if err != nil {
-		return err
+	if r.a != nil {
+		err = r.a.Dump(w)
+		if err != nil {
+			return err
+		}
 	}
 	_, err = w.Write([]byte(r.op))
 	if err != nil {
 		return err
 	}
-	err = r.b.Dump(w)
-	if err != nil {
-		return err
+	if r.b != nil {
+		err = r.b.Dump(w)
+		if err != nil {
+			return err
+		}
 	}
 	_, err = w.Write([]byte{')'})
 	return err

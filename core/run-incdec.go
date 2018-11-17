@@ -1,6 +1,8 @@
 package core
 
-import "io"
+import (
+	"io"
+)
 
 type runIncDec struct {
 	inc  bool // if true: increase
@@ -50,7 +52,9 @@ func (r *runIncDec) Run(ctx Context) (*ZVal, error) {
 	if err != nil {
 		return nil, r.l.Error(err)
 	}
+
 	v = v.Dup()
+	original := v
 
 	v, err = v.AsNumeric(ctx)
 	if err != nil {
@@ -58,7 +62,7 @@ func (r *runIncDec) Run(ctx Context) (*ZVal, error) {
 	}
 
 	var res Val
-	switch n := v.v.(type) {
+	switch n := v.Value().(type) {
 	case ZInt:
 		if r.inc {
 			res = n + 1
@@ -78,7 +82,7 @@ func (r *runIncDec) Run(ctx Context) (*ZVal, error) {
 	if r.post {
 		// return original value
 		w.WriteValue(ctx, res.ZVal())
-		return v, nil
+		return original, nil
 	} else {
 		// return updated value
 		v = res.ZVal()
