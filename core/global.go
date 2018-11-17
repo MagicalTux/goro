@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"time"
 )
@@ -15,6 +16,7 @@ type Global struct {
 	p     *Process
 	start time.Time
 	root  *phpContext
+	req   *http.Request
 
 	globalFuncs   map[ZString]Callable
 	globalClasses map[ZString]*ZClass // TODO replace *ZClass with a nice interface
@@ -28,28 +30,49 @@ func NewGlobal(ctx context.Context, p *Process) *Global {
 		Context: ctx,
 		p:       p,
 		out:     os.Stdout,
-		start:   time.Now(),
-
-		globalFuncs:   make(map[ZString]Callable),
-		globalClasses: make(map[ZString]*ZClass),
-		constant:      make(map[ZString]*ZVal),
 	}
-	res.root = &phpContext{
-		Context: res,
+	res.init()
+	return res
+}
+
+func NewGlobalReq(req *http.Request, p *Process) *Global {
+	res := &Global{
+		Context: req.Context(),
+		req:     req,
+		p:       p,
+		out:     os.Stdout,
+	}
+	res.init()
+	return res
+}
+
+func (g *Global) init() {
+	g.start = time.Now()
+	g.globalFuncs = make(map[ZString]Callable)
+	g.globalClasses = make(map[ZString]*ZClass)
+	g.constant = make(map[ZString]*ZVal)
+
+	// prepare root context
+	g.root = &phpContext{
+		Context: g,
 		h:       NewHashTable(),
 	}
 
-	for k, v := range p.defaultConstants {
-		res.constant[k] = v
+	// fill constants from process
+	for k, v := range g.p.defaultConstants {
+		g.constant[k] = v
 	}
 
 	// import global funcs from ext
 	for _, e := range globalExtMap {
 		for k, v := range e.Functions {
-			res.globalFuncs[ZString(k)] = v
+			g.globalFuncs[ZString(k)] = v
 		}
 	}
-	return res
+
+	// initialize superglobals
+
+	// TODO
 }
 
 func (g *Global) SetOutput(w io.Writer) {

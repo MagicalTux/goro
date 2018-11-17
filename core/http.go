@@ -38,7 +38,7 @@ func (p *phpWebHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// make a new global env
-	g := NewGlobal(req.Context(), p.p)
+	g := NewGlobalReq(req, p.p)
 	g.out = w
 
 	ctx := NewContext(g)
