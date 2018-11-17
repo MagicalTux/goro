@@ -23,6 +23,7 @@ func init() {
 			"atan":                     &core.ExtFunction{Func: mathAtan, Args: []*core.ExtFunctionArg{}},
 			"atan2":                    &core.ExtFunction{Func: mathAtan2, Args: []*core.ExtFunctionArg{}},
 			"atanh":                    &core.ExtFunction{Func: mathAtanh, Args: []*core.ExtFunctionArg{}},
+			"bin2hex":                  &core.ExtFunction{Func: fncBin2hex, Args: []*core.ExtFunctionArg{}},
 			"constant":                 &core.ExtFunction{Func: constant, Args: []*core.ExtFunctionArg{}},
 			"cos":                      &core.ExtFunction{Func: mathCos, Args: []*core.ExtFunctionArg{}},
 			"cosh":                     &core.ExtFunction{Func: mathCosh, Args: []*core.ExtFunctionArg{}},

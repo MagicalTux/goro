@@ -132,6 +132,8 @@ func unescapePhpQuotedString(in string) ZString {
 			t.WriteByte('\r')
 		case '"', '\\':
 			t.WriteByte(c)
+		case '0', '1', '2', '3', '4', '5', '6', '7':
+			t.WriteByte(c - '0')
 		// TODO: handle \x##
 		default:
 			t.WriteByte('\\')
