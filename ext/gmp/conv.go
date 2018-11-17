@@ -35,7 +35,7 @@ func readInt(ctx core.Context, v *core.ZVal) (*big.Int, error) {
 		i = &big.Int{}
 		_, ok := i.SetString(string(v.AsString(ctx)), 0)
 		if !ok {
-			return nil, errors.New("failed to parse integer")
+			return nil, errors.New("Unable to convert variable to GMP - string is not an integer")
 		}
 		return i, nil
 	}

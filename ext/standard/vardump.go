@@ -18,26 +18,31 @@ func stdFuncVarDump(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 }
 
 func doVarDump(ctx core.Context, z *core.ZVal, linePfx string) error {
+	var isRef string
+	if z.IsRef() {
+		isRef = "&"
+	}
+
 	switch z.GetType() {
 	case core.ZtNull:
-		fmt.Fprintf(ctx, "%sNULL\n", linePfx)
+		fmt.Fprintf(ctx, "%s%sNULL\n", linePfx, isRef)
 	case core.ZtBool:
 		if z.Value().(core.ZBool) {
-			fmt.Fprintf(ctx, "%sbool(true)\n", linePfx)
+			fmt.Fprintf(ctx, "%s%sbool(true)\n", linePfx, isRef)
 		} else {
-			fmt.Fprintf(ctx, "%sbool(false)\n", linePfx)
+			fmt.Fprintf(ctx, "%s%sbool(false)\n", linePfx, isRef)
 		}
 	case core.ZtInt:
-		fmt.Fprintf(ctx, "%sint(%d)\n", linePfx, z.Value())
+		fmt.Fprintf(ctx, "%s%sint(%d)\n", linePfx, isRef, z.Value())
 	case core.ZtFloat:
 		z2, _ := z.As(ctx, core.ZtString)
-		fmt.Fprintf(ctx, "%sfloat(%s)\n", linePfx, z2)
+		fmt.Fprintf(ctx, "%s%sfloat(%s)\n", linePfx, isRef, z2)
 	case core.ZtString:
 		s := z.Value().(core.ZString)
-		fmt.Fprintf(ctx, "%sstring(%d) \"%s\"\n", linePfx, len(s), s)
+		fmt.Fprintf(ctx, "%s%sstring(%d) \"%s\"\n", linePfx, isRef, len(s), s)
 	case core.ZtArray:
 		c := z.Value().(core.ZCountable).Count(ctx)
-		fmt.Fprintf(ctx, "%sarray(%d) {\n", linePfx, c)
+		fmt.Fprintf(ctx, "%s%sarray(%d) {\n", linePfx, isRef, c)
 		localPfx := linePfx + "  "
 		it := z.NewIterator()
 		for {
@@ -64,11 +69,11 @@ func doVarDump(ctx core.Context, z *core.ZVal, linePfx string) error {
 	case core.ZtObject:
 		v := z.Value()
 		if obj, ok := v.(*core.ZObject); ok {
-			fmt.Fprintf(ctx, "%sobject(%s) (%d) {\n", linePfx, obj.Class.Name, obj.Count(ctx))
+			fmt.Fprintf(ctx, "%s%sobject(%s) (%d) {\n", linePfx, isRef, obj.Class.Name, obj.Count(ctx))
 		} else if c, ok := v.(core.ZCountable); ok {
-			fmt.Fprintf(ctx, "%sobject(?) (%d) {\n", linePfx, c.Count(ctx))
+			fmt.Fprintf(ctx, "%s%sobject(?) (%d) {\n", linePfx, isRef, c.Count(ctx))
 		} else {
-			fmt.Fprintf(ctx, "%sobject(?) (#) {\n", linePfx)
+			fmt.Fprintf(ctx, "%s%sobject(?) (#) {\n", linePfx, isRef)
 		}
 		localPfx := linePfx + "  "
 		it := z.NewIterator()
