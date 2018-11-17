@@ -2,6 +2,7 @@ package standard
 
 import (
 	"fmt"
+	"unsafe"
 
 	"github.com/MagicalTux/gophp/core"
 )
@@ -9,7 +10,7 @@ import (
 //> func void var_dump ( mixed $expression [, mixed $... ] )
 func stdFuncVarDump(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 	for _, z := range args {
-		err := doVarDump(ctx, z, "")
+		err := doVarDump(ctx, z, "", nil)
 		if err != nil {
 			return nil, err
 		}
@@ -17,10 +18,22 @@ func stdFuncVarDump(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 	return nil, nil
 }
 
-func doVarDump(ctx core.Context, z *core.ZVal, linePfx string) error {
+func doVarDump(ctx core.Context, z *core.ZVal, linePfx string, recurs map[uintptr]bool) error {
 	var isRef string
 	if z.IsRef() {
 		isRef = "&"
+	}
+
+	if recurs == nil {
+		recurs = make(map[uintptr]bool)
+	}
+
+	v := uintptr(unsafe.Pointer(z))
+	if _, n := recurs[v]; n {
+		fmt.Fprintf(ctx, "%s*RECURSION*\n", linePfx)
+		return nil
+	} else {
+		recurs[v] = true
 	}
 
 	switch z.GetType() {
@@ -62,7 +75,7 @@ func doVarDump(ctx core.Context, z *core.ZVal, linePfx string) error {
 			if err != nil {
 				return err
 			}
-			doVarDump(ctx, v, localPfx)
+			doVarDump(ctx, v, localPfx, recurs)
 			it.Next(ctx)
 		}
 		fmt.Fprintf(ctx, "%s}\n", linePfx)
@@ -95,7 +108,7 @@ func doVarDump(ctx core.Context, z *core.ZVal, linePfx string) error {
 				if err != nil {
 					return err
 				}
-				doVarDump(ctx, v, localPfx)
+				doVarDump(ctx, v, localPfx, recurs)
 				it.Next(ctx)
 			}
 		}

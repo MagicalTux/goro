@@ -174,7 +174,7 @@ func operatorAppend(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 	a, _ = a.As(ctx, ZtString)
 	b, _ = b.As(ctx, ZtString)
 
-	return &ZVal{a.Value().(ZString) + b.Value().(ZString)}, nil
+	return &ZVal{a.AsString(ctx) + b.AsString(ctx)}, nil
 }
 
 func operatorNot(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
