@@ -11,12 +11,14 @@ import (
 type Process struct {
 	fHandler         map[string]stream.Handler
 	defaultConstants map[ZString]*ZVal
+	environ          []string
 }
 
 func NewProcess() *Process {
 	res := &Process{
 		fHandler:         make(map[string]stream.Handler),
 		defaultConstants: make(map[ZString]*ZVal),
+		environ:          os.Environ(),
 	}
 	res.fHandler["file"], _ = stream.NewFileHandler("/")
 	res.fHandler["php"] = stream.PhpHandler()

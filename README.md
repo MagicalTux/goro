@@ -26,22 +26,19 @@ Right now, running PHP's own tests would require pcre, so it is not possible to 
 ## TODO
 
 * Fix arguments passed by reference → PHP, when a non-existing variable is passed by reference, will set it to NULL in the appropriate context and pass it as a reference.
-
-## Syntax
-
-* Error reporting needs to be done
+* Error reporting, lower level of errors (warnings, etc)
+* php.ini handling
 * Class and object implementation is still very early. Access checks are missing. Class inheritance, etc are missing
-* Traits are missing
-* Operator precedence is yet to be implemented (see http://php.net/manual/en/language.operators.precedence.php )
+* Traits
 * do-while structure
 * break/continue needs improvement/fixing
-* declare still missing
-* include/require missing
-* goto missing
-* namespaces are missing too
-* Exception throwing missing
-* generators are missing
-* predefined superglobals are missing...
+* declare
+* include/require
+* goto
+* namespaces
+* Exception throwing
+* generators
+* predefined superglobals
 
 ## Extensions
 
