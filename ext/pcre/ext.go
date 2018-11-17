@@ -8,7 +8,8 @@ func init() {
 	core.RegisterExt(&core.Ext{
 		Name: "pcre",
 		Functions: map[string]*core.ExtFunction{
-			"preg_replace": &core.ExtFunction{Func: pregReplace, Args: []*core.ExtFunctionArg{}}, // replace.go:6
+			"preg_quote":   &core.ExtFunction{Func: pregQuote, Args: []*core.ExtFunctionArg{}},
+			"preg_replace": &core.ExtFunction{Func: pregReplace, Args: []*core.ExtFunctionArg{}},
 		},
 		Constants: map[core.ZString]*core.ZVal{},
 	})

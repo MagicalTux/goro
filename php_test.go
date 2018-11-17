@@ -44,6 +44,9 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		testName := strings.TrimSpace(b.String())
 		p.name += ": " + testName
 		return nil
+	case "CREDITS":
+		// is there something we should do with this?
+		return nil
 	case "FILE":
 		// pass data to the engine
 		t := tokenizer.NewLexer(b, p.path)
@@ -68,7 +71,13 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		c := core.Compile(ctx, t)
 		_, err := c.Run(ctx)
 		if err != nil {
-			return err
+			if e, ok := err.(*core.PhpError); ok {
+				if !e.IsExit() {
+					return err
+				}
+			} else {
+				return err
+			}
 		}
 		if bytes.HasPrefix(output.Bytes(), []byte("skip ")) {
 			return skipTest

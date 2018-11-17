@@ -68,3 +68,8 @@ func stdFuncGetCfgVar(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 	}
 	return ctx.GetGlobal().GetConfig(v, core.ZNull{}.ZVal()), nil
 }
+
+//> func string php_sapi_name ( void )
+func stdFuncSapiName(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
+	return ctx.GetGlobal().GetConstant("PHP_SAPI")
+}

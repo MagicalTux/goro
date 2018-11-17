@@ -98,15 +98,17 @@ while(($ext = readdir($dh)) !== false) {
 	fwrite($fp, "\t\tName: \"".addslashes($ext)."\",\n"); // addslashes not quite equivalent to go's %q
 
 	fwrite($fp, "\t\tFunctions: map[string]*core.ExtFunction{\n");
+	ksort($functions);
 	foreach($functions as $func => $info) {
 		// sample args: Args: []*core.ExtFunctionArg{&core.ExtFunctionArg{ArgName: "output"}, &core.ExtFunctionArg{ArgName: "...", Optional: true}}
-		fwrite($fp, "\t\t\t\"".addslashes($func)."\": &core.ExtFunction{Func: ".$info['val'].", Args: []*core.ExtFunctionArg{}}, // ".$info['where']."\n"); // TODO args
+		fwrite($fp, "\t\t\t\"".addslashes($func)."\": &core.ExtFunction{Func: ".$info['val'].", Args: []*core.ExtFunctionArg{}},\n"); // TODO args
 	}
 	fwrite($fp, "\t\t},\n");
 
 	fwrite($fp, "\t\tConstants: map[core.ZString]*core.ZVal{\n");
+	ksort($constants);
 	foreach($constants as $const => $info) {
-		fwrite($fp, "\t\t\t\"".addslashes($const)."\": ".$info['val'].".ZVal(), // ".$info['where']."\n");
+		fwrite($fp, "\t\t\t\"".addslashes($const)."\": ".$info['val'].".ZVal(),\n");
 	}
 	fwrite($fp, "\t\t},\n");
 	fwrite($fp, "\t})\n");

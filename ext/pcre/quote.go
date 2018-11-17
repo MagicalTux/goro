@@ -6,7 +6,7 @@ import (
 	"github.com/MagicalTux/gophp/core"
 )
 
-//> string preg_quote ( string $str [, string $delimiter = NULL ] )
+//> func string preg_quote ( string $str [, string $delimiter = NULL ] )
 func pregQuote(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 	// this version won't accept UTF-8 characters as delimiter. If this is an issue, replace loop below to use string()
 	var str core.ZString

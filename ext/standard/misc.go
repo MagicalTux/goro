@@ -88,6 +88,11 @@ func stdFuncUsleep(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 	return nil, nil
 }
 
+//> func void die ([ string|int $status ] )
+func die(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
+	return exit(ctx, args)
+}
+
 //> func void exit ([ string|int $status ] )
 func exit(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 	var ext **core.ZVal

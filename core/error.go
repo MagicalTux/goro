@@ -51,7 +51,7 @@ func (e *PhpError) Dump(w io.Writer) error {
 func (e *PhpError) Error() string {
 	if e.l == nil {
 		if e.e == nil {
-			return "Unknown error"
+			return "Unknown error " + debugDump(e)
 		}
 		return e.e.Error()
 	}
@@ -60,4 +60,8 @@ func (e *PhpError) Error() string {
 
 func ExitError(retcode ZInt) *PhpError {
 	return &PhpError{t: PhpExit, intv: retcode}
+}
+
+func (e *PhpError) IsExit() bool {
+	return e.t == PhpExit
 }
