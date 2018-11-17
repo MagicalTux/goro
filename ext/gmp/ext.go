@@ -11,7 +11,9 @@ func init() {
 			GMP,
 		},
 		Functions: map[string]*core.ExtFunction{
+			"gmp_cmp":    &core.ExtFunction{Func: gmpCmp, Args: []*core.ExtFunctionArg{}},
 			"gmp_init":   &core.ExtFunction{Func: gmpInit, Args: []*core.ExtFunctionArg{}},
+			"gmp_intval": &core.ExtFunction{Func: gmpIntval, Args: []*core.ExtFunctionArg{}},
 			"gmp_strval": &core.ExtFunction{Func: gmpStrval, Args: []*core.ExtFunctionArg{}},
 		},
 		Constants: map[core.ZString]*core.ZVal{},
