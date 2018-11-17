@@ -47,7 +47,7 @@ func (r *runNewObject) Run(ctx Context) (*ZVal, error) {
 	return z.ZVal(), nil
 }
 
-func compileNew(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
+func compileNew(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	// next should be either:
 	// T_CLASS (anonymous class)
 	// string (name of a class)
@@ -65,10 +65,21 @@ func compileNew(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 
 	n.obj = ZString(i.Data)
 
+	i, err = c.NextItem()
+	if err != nil {
+		return nil, err
+	}
+	c.backup()
+
+	if !i.IsSingle('(') {
+		// no arguments to new
+		return n, nil
+	}
+
 	// read constructor args
 	n.newArg, err = compileFuncPassedArgs(c)
 
-	return n, nil
+	return n, err
 }
 
 type runObjectFunc struct {
@@ -218,7 +229,7 @@ func (r *runObjectVar) WriteValue(ctx Context, value *ZVal) error {
 	return objI.ObjectSet(ctx, offt, value)
 }
 
-func compileObjectOperator(v Runnable, i *tokenizer.Item, c *compileCtx) (Runnable, error) {
+func compileObjectOperator(v Runnable, i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	// call a method or get a variable on an object
 	l := MakeLoc(i.Loc())
 

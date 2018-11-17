@@ -66,7 +66,7 @@ func (r *runnableWhile) Dump(w io.Writer) error {
 	return err
 }
 
-func compileWhile(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
+func compileWhile(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	// T_WHILE (expression) ...?
 	l := MakeLoc(i.Loc())
 

@@ -229,7 +229,7 @@ func (ac *runArrayAccess) WriteValue(ctx Context, value *ZVal) error {
 	return array.OffsetSet(ctx, offset, value)
 }
 
-func compileArray(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
+func compileArray(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	res := &runArray{l: MakeLoc(i.Loc())}
 
 	array_type := '?'
@@ -314,7 +314,7 @@ func compileArray(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 	return res, nil
 }
 
-func compileArrayAccess(v Runnable, c *compileCtx) (Runnable, error) {
+func compileArrayAccess(v Runnable, c compileCtx) (Runnable, error) {
 	// we got a [
 	i, err := c.NextItem()
 	if err != nil {

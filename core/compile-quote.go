@@ -7,7 +7,7 @@ import (
 	"github.com/MagicalTux/gophp/core/tokenizer"
 )
 
-func compileQuoteConstant(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
+func compileQuoteConstant(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	// i.Data is a string such as 'a string' (quotes included)
 
 	if i.Data[0] != '\'' {
@@ -46,7 +46,7 @@ func compileQuoteConstant(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 	return &runZVal{ZString(b.String()), loc}, nil
 }
 
-func compileQuoteHeredoc(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
+func compileQuoteHeredoc(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	// i == T_START_HEREDOC
 	var res runConcat
 	var err error
@@ -72,7 +72,7 @@ func compileQuoteHeredoc(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 	}
 }
 
-func compileQuoteEncapsed(i *tokenizer.Item, c *compileCtx, q rune) (Runnable, error) {
+func compileQuoteEncapsed(i *tokenizer.Item, c compileCtx, q rune) (Runnable, error) {
 	// i == '"'
 
 	var res runConcat

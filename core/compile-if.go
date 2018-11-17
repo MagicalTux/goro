@@ -67,7 +67,7 @@ func (r *runnableIf) Dump(w io.Writer) error {
 	return err
 }
 
-func compileIf(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
+func compileIf(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	// T_IF (expression) ...? else ...?
 
 	// parse if expression

@@ -65,10 +65,13 @@ func (g *Global) init() {
 		g.constant[k] = v
 	}
 
-	// import global funcs from ext
+	// import global funcs & classes from ext
 	for _, e := range globalExtMap {
 		for k, v := range e.Functions {
 			g.globalFuncs[ZString(k)] = v
+		}
+		for _, c := range e.Classes {
+			g.globalClasses[c.Name.ToLower()] = c
 		}
 	}
 

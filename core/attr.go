@@ -48,7 +48,7 @@ const (
 	ZAttrHasReturnType              = 0x40000000 // Function has a return type (or class has such non-private function)
 )
 
-func (a *ZClassAttr) parse(c *compileCtx) error {
+func (a *ZClassAttr) parse(c compileCtx) error {
 	// parse class attributes (abstract or final)
 	for {
 		i, err := c.NextItem()
@@ -74,7 +74,7 @@ func (a *ZClassAttr) parse(c *compileCtx) error {
 	}
 }
 
-func (a *ZObjectAttr) parse(c *compileCtx) error {
+func (a *ZObjectAttr) parse(c compileCtx) error {
 	// parse method attributes (public/protected/private, abstract or final)
 	for {
 		i, err := c.NextItem()

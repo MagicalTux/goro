@@ -1,6 +1,6 @@
 package core
 
-func compileTernaryOp(v Runnable, c *compileCtx) (Runnable, error) {
+func compileTernaryOp(v Runnable, c compileCtx) (Runnable, error) {
 	// v contains the first part, we already have read the ? too
 	i, err := c.NextItem()
 	if err != nil {

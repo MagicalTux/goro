@@ -68,6 +68,9 @@ func (c *phpContext) OffsetGet(ctx Context, name *ZVal) (*ZVal, error) {
 
 	switch name.AsString(ctx) {
 	case "this":
+		if c.this == nil {
+			return nil, nil
+		}
 		return c.this.ZVal(), nil
 	case "GLOBALS", "_SERVER", "_GET", "_POST", "_FILES", "_COOKIE", "_SESSION", "_REQUEST", "_ENV":
 		return c.GetGlobal().OffsetGet(ctx, name)

@@ -10,6 +10,7 @@ type Ext struct {
 	Version   string
 	Functions map[string]*ExtFunction
 	Constants map[ZString]*ZVal
+	Classes   []*ZClass
 }
 
 type ExtFunction struct {

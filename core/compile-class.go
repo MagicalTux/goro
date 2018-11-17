@@ -24,6 +24,8 @@ type ZClass struct {
 	l    *Loc
 	attr ZClassAttr
 
+	Parent *ZClass
+
 	Extends     ZString
 	Implements  []ZString
 	Const       map[ZString]ZString
@@ -32,7 +34,16 @@ type ZClass struct {
 	StaticProps *ZHashTable
 }
 
-func compileClass(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
+type zclassCompileCtx struct {
+	compileCtx
+	class *ZClass
+}
+
+func (z *zclassCompileCtx) getClass() *ZClass {
+	return z.class
+}
+
+func compileClass(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	var attr ZClassAttr
 	err := attr.parse(c)
 	if err != nil {
@@ -45,6 +56,8 @@ func compileClass(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 		attr:        attr,
 		Methods:     make(map[ZString]*ZClassMethod),
 	}
+
+	c = &zclassCompileCtx{c, class}
 
 	err = class.parseClassLine(c)
 	if err != nil {
@@ -135,6 +148,9 @@ func compileClass(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 			}
 
 			f, err := compileFunctionWithName(ZString(i.Data), c, l)
+			if err != nil {
+				return nil, err
+			}
 
 			// register method
 			method := &ZClassMethod{Name: ZString(i.Data), Modifiers: attr, Method: f}
@@ -147,7 +163,7 @@ func compileClass(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 	return class, nil
 }
 
-func (class *ZClass) parseClassLine(c *compileCtx) error {
+func (class *ZClass) parseClassLine(c compileCtx) error {
 	i, err := c.NextItem()
 	if err != nil {
 		return err
@@ -210,7 +226,7 @@ func (class *ZClass) parseClassLine(c *compileCtx) error {
 	return nil
 }
 
-func compileReadClassIdentifier(c *compileCtx) (ZString, error) {
+func compileReadClassIdentifier(c compileCtx) (ZString, error) {
 	var res ZString
 
 	for {

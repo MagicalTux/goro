@@ -6,7 +6,7 @@ import (
 	"github.com/MagicalTux/gophp/core/tokenizer"
 )
 
-type compileFunc func(i *tokenizer.Item, c *compileCtx) (Runnable, error)
+type compileFunc func(i *tokenizer.Item, c compileCtx) (Runnable, error)
 
 type compileFuncCb struct {
 	f    compileFunc
@@ -55,11 +55,11 @@ func init() {
 }
 
 // compileIgnore will ignore a given token
-func compileIgnore(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
+func compileIgnore(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	return nil, nil
 }
 
-func compileBase(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
+func compileBase(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	var res Runnables
 
 	for {
@@ -82,7 +82,7 @@ func compileBase(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 	return res, nil
 }
 
-func compileBaseSingle(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
+func compileBaseSingle(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	//log.Printf("compileBase: %s:%d %s %q", i.Filename, i.Line, i.Type, i.Data)
 	var h *compileFuncCb
 	var ok bool
@@ -133,7 +133,7 @@ func compileBaseSingle(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 	return r, nil
 }
 
-func compileReturn(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
+func compileReturn(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	i, err := c.NextItem()
 	c.backup()
 	if err != nil {

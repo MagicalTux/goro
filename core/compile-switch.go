@@ -110,7 +110,7 @@ func (r *runSwitch) Run(ctx Context) (*ZVal, error) {
 	return nil, nil
 }
 
-func compileSwitch(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
+func compileSwitch(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	sw := &runSwitch{l: MakeLoc(i.Loc())}
 
 	// we expect a {

@@ -7,12 +7,12 @@ import (
 	"github.com/MagicalTux/gophp/core/tokenizer"
 )
 
-func compileBreak(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
+func compileBreak(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	// return this as a runtime element and not a compile time error so switch and loops will catch it
 	return &PhpError{errors.New("'break' not in the 'loop' or 'switch' context"), MakeLoc(i.Loc()), PhpBreak, 1}, nil
 }
 
-func compileContinue(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
+func compileContinue(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	// return this as a runtime element and not a compile time error so switch and loops will catch it
 	return &PhpError{errors.New("'continue' not in the 'loop' context"), MakeLoc(i.Loc()), PhpContinue, 1}, nil
 }
@@ -105,7 +105,7 @@ func (r *runnableFor) Dump(w io.Writer) error {
 	return err
 }
 
-func compileForSub(c *compileCtx, final rune) (res Runnables, err error) {
+func compileForSub(c compileCtx, final rune) (res Runnables, err error) {
 	var r Runnable
 
 	i, err := c.NextItem()
@@ -135,7 +135,7 @@ func compileForSub(c *compileCtx, final rune) (res Runnables, err error) {
 	}
 }
 
-func compileFor(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
+func compileFor(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	// T_FOREACH (expression T_AS T_VARIABLE [=> T_VARIABLE]) ...?
 	l := MakeLoc(i.Loc())
 

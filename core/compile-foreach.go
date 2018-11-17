@@ -94,7 +94,7 @@ func (r *runnableForeach) Dump(w io.Writer) error {
 	return err
 }
 
-func compileForeach(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
+func compileForeach(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	// T_FOREACH (expression T_AS T_VARIABLE [=> T_VARIABLE]) ...?
 	l := MakeLoc(i.Loc())
 

@@ -6,7 +6,14 @@ import (
 	"github.com/MagicalTux/gophp/core/tokenizer"
 )
 
-type compileCtx struct {
+type compileCtx interface {
+	ExpectSingle(r rune) error
+	NextItem() (*tokenizer.Item, error)
+	backup()
+	getClass() *ZClass
+}
+
+type compileRootCtx struct {
 	Context
 
 	t *tokenizer.Lexer
@@ -15,7 +22,7 @@ type compileCtx struct {
 	last *tokenizer.Item
 }
 
-func (c *compileCtx) ExpectSingle(r rune) error {
+func (c *compileRootCtx) ExpectSingle(r rune) error {
 	// read one item, check if rune, if not fallback & return error
 	i, err := c.NextItem()
 	if err != nil {
@@ -29,7 +36,11 @@ func (c *compileCtx) ExpectSingle(r rune) error {
 	return nil
 }
 
-func (c *compileCtx) NextItem() (*tokenizer.Item, error) {
+func (c *compileRootCtx) getClass() *ZClass {
+	return nil
+}
+
+func (c *compileRootCtx) NextItem() (*tokenizer.Item, error) {
 	if c.next != nil {
 		c.last, c.next = c.next, nil
 		return c.last, nil
@@ -51,12 +62,12 @@ func (c *compileCtx) NextItem() (*tokenizer.Item, error) {
 	}
 }
 
-func (c *compileCtx) backup() {
+func (c *compileRootCtx) backup() {
 	c.next, c.last = c.last, nil
 }
 
 func Compile(parent Context, t *tokenizer.Lexer) Runnable {
-	c := &compileCtx{
+	c := &compileRootCtx{
 		Context: parent,
 		t:       t,
 	}

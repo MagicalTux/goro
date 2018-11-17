@@ -6,7 +6,8 @@ import "github.com/MagicalTux/gophp/core"
 
 func init() {
 	core.RegisterExt(&core.Ext{
-		Name: "ctype",
+		Name:    "ctype",
+		Classes: []*core.ZClass{},
 		Functions: map[string]*core.ExtFunction{
 			"ctype_alnum":  &core.ExtFunction{Func: ctypeAlnum, Args: []*core.ExtFunctionArg{}},
 			"ctype_alpha":  &core.ExtFunction{Func: ctypeAlpha, Args: []*core.ExtFunctionArg{}},

@@ -10,6 +10,7 @@ while(($ext = readdir($dh)) !== false) {
 
 	$constants = [];
 	$functions = [];
+	$classes = [];
 
 	// gather files in ext
 	$dh2 = opendir('ext/'.$ext);
@@ -81,6 +82,14 @@ while(($ext = readdir($dh)) !== false) {
 					$functions[strtolower($func)] = ['val' => null, 'where' => $f.':'.$lineno];
 					$function_pending = strtolower($func);
 					break;
+				case 'class':
+					// lin is: <class name> (should be a variable with this name)
+					$pos = strpos($lin, '//');
+					if ($pos !== false) {
+						$lin = trim(substr($lin, 0, $pos));
+					}
+					$classes[$lin] = ['class' => $lin, 'where' => $f.':'.$lineno];
+					break;
 				default:
 					die("failed to parse $code $lin (unknown code)\n");
 			}
@@ -96,6 +105,13 @@ while(($ext = readdir($dh)) !== false) {
 	fwrite($fp, "func init() {\n");
 	fwrite($fp, "\tcore.RegisterExt(&core.Ext{\n");
 	fwrite($fp, "\t\tName: \"".addslashes($ext)."\",\n"); // addslashes not quite equivalent to go's %q
+
+	fwrite($fp, "\t\tClasses: []*core.ZClass{\n");
+	ksort($classes);
+	foreach($classes as $class => $info) {
+		fwrite($fp, "\t\t\t".$class.",\n");
+	}
+	fwrite($fp, "\t\t},\n");
 
 	fwrite($fp, "\t\tFunctions: map[string]*core.ExtFunction{\n");
 	ksort($functions);

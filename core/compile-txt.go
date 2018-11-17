@@ -8,7 +8,7 @@ import (
 
 type runInlineHtml string
 
-func compileInlineHtml(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
+func compileInlineHtml(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	return runInlineHtml(i.Data), nil
 }
 

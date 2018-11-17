@@ -16,7 +16,7 @@ import (
 // $a + $b
 // etc...
 
-func compileExpr(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
+func compileExpr(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	res, err := compileOneExpr(i, c)
 	if err != nil {
 		return nil, err
@@ -34,7 +34,7 @@ func compileExpr(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 	}
 }
 
-func compileOneExpr(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
+func compileOneExpr(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	// fetch only one expression, without any operator or anything
 	var err error
 
@@ -82,8 +82,23 @@ func compileOneExpr(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 
 			// nb: if i.Data is "parent", "static" or "self" it might not actually be a static call
 			switch i.Data {
-			case "parent", "static", "self":
+			case "static":
 				return nil, errors.New("todo class special call")
+			case "parent", "self":
+				class := c.getClass()
+				if class == nil {
+					return nil, l.Errorf("Cannot access %s:: when no class scope is active", i.Data)
+				}
+				switch i.Data {
+				case "self":
+					i.Data = string(class.Name)
+				case "parent":
+					if class.Parent == nil {
+						return nil, l.Errorf("Cannot access parent:: when current class scope has no parent")
+					}
+					i.Data = string(class.Parent.Name)
+				}
+				fallthrough
 			default:
 				className := ZString(i.Data)
 				c.NextItem()          // T_PAAMAYIM_NEKUDOTAYIM
@@ -201,7 +216,7 @@ func compileOneExpr(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 	return nil, i.Unexpected()
 }
 
-func compilePostExpr(v Runnable, i *tokenizer.Item, c *compileCtx) (Runnable, error) {
+func compilePostExpr(v Runnable, i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	if i == nil {
 		var err error
 		i, err = c.NextItem()

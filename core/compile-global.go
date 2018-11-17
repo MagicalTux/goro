@@ -53,7 +53,7 @@ func (g *runGlobal) Dump(w io.Writer) error {
 	return nil
 }
 
-func compileGlobal(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
+func compileGlobal(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	// global $var, $var, $var, ...
 	var err error
 

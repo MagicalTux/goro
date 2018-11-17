@@ -6,7 +6,8 @@ import "github.com/MagicalTux/gophp/core"
 
 func init() {
 	core.RegisterExt(&core.Ext{
-		Name: "pcre",
+		Name:    "pcre",
+		Classes: []*core.ZClass{},
 		Functions: map[string]*core.ExtFunction{
 			"preg_quote":   &core.ExtFunction{Func: pregQuote, Args: []*core.ExtFunctionArg{}},
 			"preg_replace": &core.ExtFunction{Func: pregReplace, Args: []*core.ExtFunctionArg{}},

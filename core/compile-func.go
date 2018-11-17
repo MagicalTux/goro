@@ -135,7 +135,7 @@ func (r *runnableFunctionCallRef) Run(ctx Context) (l *ZVal, err error) {
 	return f.Call(NewContext(ctx), f_arg)
 }
 
-func compileFunction(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
+func compileFunction(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	// typically T_FUNCTION is followed by:
 	// - a name and parameters → this is a regular function
 	// - directly parameters → this is a lambda function
@@ -161,7 +161,7 @@ func compileFunction(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 	return nil, i.Unexpected()
 }
 
-func compileSpecialFuncCall(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
+func compileSpecialFuncCall(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	// special function call that comes without (), so as a keyword. Example: echo, die, etc
 	has_open := false
 	fn_name := ZString(i.Data)
@@ -230,7 +230,7 @@ func compileSpecialFuncCall(i *tokenizer.Item, c *compileCtx) (Runnable, error) 
 	}
 }
 
-func compileFunctionWithName(name ZString, c *compileCtx, l *Loc) (*ZClosure, error) {
+func compileFunctionWithName(name ZString, c compileCtx, l *Loc) (*ZClosure, error) {
 	var err error
 	var use []*funcUse
 	args, err := compileFunctionArgs(c)
@@ -275,7 +275,7 @@ func compileFunctionWithName(name ZString, c *compileCtx, l *Loc) (*ZClosure, er
 	}, nil
 }
 
-func compileFunctionArgs(c *compileCtx) (res []*funcArg, err error) {
+func compileFunctionArgs(c compileCtx) (res []*funcArg, err error) {
 	i, err := c.NextItem()
 	if err != nil {
 		return nil, err
@@ -352,7 +352,7 @@ func compileFunctionArgs(c *compileCtx) (res []*funcArg, err error) {
 	}
 }
 
-func compileFunctionUse(c *compileCtx) (res []*funcUse, err error) {
+func compileFunctionUse(c compileCtx) (res []*funcUse, err error) {
 	i, err := c.NextItem()
 	if err != nil {
 		return nil, err
@@ -402,7 +402,7 @@ func compileFunctionUse(c *compileCtx) (res []*funcUse, err error) {
 	}
 }
 
-func compileFuncPassedArgs(c *compileCtx) (res []Runnable, err error) {
+func compileFuncPassedArgs(c compileCtx) (res []Runnable, err error) {
 	i, err := c.NextItem()
 	if err != nil {
 		return nil, err
