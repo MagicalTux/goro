@@ -1,7 +1,10 @@
 package core
 
+import "io"
+
 type Runnable interface {
 	Run(Context) (*ZVal, error)
+	Dump(io.Writer) error
 	Loc() *Loc
 }
 
@@ -34,4 +37,17 @@ func (r Runnables) Loc() *Loc {
 		return nil
 	}
 	return r[0].Loc()
+}
+
+func (r Runnables) Dump(w io.Writer) error {
+	for _, s := range r {
+		err := s.Dump(w)
+		if err != nil {
+			return err
+		}
+		_, err = w.Write([]byte(";"))
+		if err != nil {
+			return err
+		}
+	}
 }

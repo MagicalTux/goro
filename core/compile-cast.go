@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"io"
 
 	"github.com/MagicalTux/gophp/core/tokenizer"
 )
@@ -41,4 +42,12 @@ func (r *runCast) Run(ctx Context) (*ZVal, error) {
 
 func (r *runCast) Loc() *Loc {
 	return r.l
+}
+
+func (r *runCast) Dump(w io.Writer) error {
+	_, err := fmt.Fprintf(w, "(%s)", r.t.String())
+	if err != nil {
+		return err
+	}
+	return r.v.Dump(w)
 }

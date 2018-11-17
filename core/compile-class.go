@@ -1,6 +1,11 @@
 package core
 
-import "github.com/MagicalTux/gophp/core/tokenizer"
+import (
+	"fmt"
+	"io"
+
+	"github.com/MagicalTux/gophp/core/tokenizer"
+)
 
 type ZClassProp struct {
 	VarName   ZString
@@ -245,4 +250,14 @@ func (c *ZClass) Run(ctx Context) (*ZVal, error) {
 
 func (c *ZClass) Loc() *Loc {
 	return c.l
+}
+
+func (c *ZClass) Dump(w io.Writer) error {
+	_, err := fmt.Fprintf(w, "%sclass %s {", c.attr, c.Name)
+	if err != nil {
+		return err
+	}
+	// TODO
+	_, err = fmt.Fprintf(w, "TODO }")
+	return err
 }

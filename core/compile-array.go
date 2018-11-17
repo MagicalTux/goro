@@ -2,6 +2,7 @@ package core
 
 import (
 	"errors"
+	"io"
 
 	"github.com/MagicalTux/gophp/core/tokenizer"
 )
@@ -43,10 +44,54 @@ func (a *runArray) Loc() *Loc {
 	return a.l
 }
 
+func (a runArray) Dump(w io.Writer) error {
+	_, err := w.Write([]byte{'['})
+	if err != nil {
+		return err
+	}
+	for _, s := range a.e {
+		if s.k != nil {
+			err = s.k.Dump(w)
+			if err != nil {
+				return err
+			}
+			_, err = w.Write([]byte("=>"))
+			if err != nil {
+				return err
+			}
+		}
+		err = s.v.Dump(w)
+		if err != nil {
+			return err
+		}
+	}
+	_, err = w.Write([]byte{'}'})
+	return err
+}
+
 type runArrayAccess struct {
 	value  Runnable
 	offset Runnable
 	l      *Loc
+}
+
+func (r *runArrayAccess) Dump(w io.Writer) error {
+	err := r.value.Dump(w)
+	if err != nil {
+		return err
+	}
+	_, err = w.Write([]byte{'['})
+	if err != nil {
+		return err
+	}
+	if r.offset != nil {
+		err = r.offset.Dump(w)
+		if err != nil {
+			return err
+		}
+	}
+	_, err = w.Write([]byte{']'})
+	return err
 }
 
 func (ac *runArrayAccess) Run(ctx Context) (*ZVal, error) {

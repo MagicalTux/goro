@@ -1,6 +1,10 @@
 package core
 
-import "github.com/MagicalTux/gophp/core/tokenizer"
+import (
+	"io"
+
+	"github.com/MagicalTux/gophp/core/tokenizer"
+)
 
 type compileFunc func(i *tokenizer.Item, c *compileCtx) (Runnable, error)
 
@@ -161,4 +165,12 @@ func (r *runReturn) Run(ctx Context) (*ZVal, error) {
 
 func (r *runReturn) Loc() *Loc {
 	return r.l
+}
+
+func (r *runReturn) Dump(w io.Writer) error {
+	_, err := w.Write([]byte("return "))
+	if err != nil {
+		return err
+	}
+	return r.v.Dump(w)
 }
