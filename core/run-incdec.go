@@ -1,5 +1,7 @@
 package core
 
+import "io"
+
 type runIncDec struct {
 	inc  bool // if true: increase
 	post bool // if true, return value before execution
@@ -9,6 +11,33 @@ type runIncDec struct {
 
 func (r *runIncDec) Loc() *Loc {
 	return r.l
+}
+
+func (r *runIncDec) Dump(w io.Writer) error {
+	var err error
+
+	if r.post {
+		err = r.v.Dump(w)
+		if err != nil {
+			return err
+		}
+		if r.inc {
+			_, err = w.Write([]byte("++"))
+		} else {
+			_, err = w.Write([]byte("--"))
+		}
+		return err
+	} else {
+		if r.inc {
+			_, err = w.Write([]byte("++"))
+		} else {
+			_, err = w.Write([]byte("--"))
+		}
+		if err != nil {
+			return err
+		}
+		return r.v.Dump(w)
+	}
 }
 
 func (r *runIncDec) Run(ctx Context) (*ZVal, error) {

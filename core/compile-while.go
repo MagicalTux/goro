@@ -1,6 +1,8 @@
 package core
 
 import (
+	"io"
+
 	"github.com/MagicalTux/gophp/core/tokenizer"
 )
 
@@ -37,6 +39,31 @@ func (r *runnableWhile) Run(ctx Context) (l *ZVal, err error) {
 
 func (r *runnableWhile) Loc() *Loc {
 	return r.l
+}
+
+func (r *runnableWhile) Dump(w io.Writer) error {
+	_, err := w.Write([]byte("while ("))
+	if err != nil {
+		return err
+	}
+	err = r.cond.Dump(w)
+	if err != nil {
+		return err
+	}
+	if r.code == nil {
+		_, err = w.Write([]byte{')', ';'})
+		return err
+	}
+	_, err = w.Write([]byte(") {"))
+	if err != nil {
+		return err
+	}
+	err = r.code.Dump(w)
+	if err != nil {
+		return err
+	}
+	_, err = w.Write([]byte{'}'})
+	return err
 }
 
 func compileWhile(i *tokenizer.Item, c *compileCtx) (Runnable, error) {

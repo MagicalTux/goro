@@ -2,6 +2,7 @@ package core
 
 import (
 	"errors"
+	"io"
 )
 
 type funcArg struct {
@@ -58,6 +59,74 @@ func (closure *ZClosure) Run(ctx Context) (l *ZVal, err error) {
 		s.value = z
 	}
 	return &ZVal{c}, nil
+}
+
+func (c *ZClosure) Dump(w io.Writer) error {
+	_, err := w.Write([]byte("function"))
+	if c.name != "" {
+		_, err = w.Write([]byte{' '})
+		if err != nil {
+			return err
+		}
+		_, err = w.Write([]byte(c.name))
+		if err != nil {
+			return err
+		}
+	}
+	_, err = w.Write([]byte{'('})
+	if err != nil {
+		return err
+	}
+	first := true
+	for _, a := range c.args {
+		if !first {
+			_, err = w.Write([]byte{','})
+			if err != nil {
+				return err
+			}
+		}
+		first = false
+		if a.ref {
+			_, err = w.Write([]byte{'&'})
+			if err != nil {
+				return err
+			}
+		}
+		_, err = w.Write([]byte{'$'})
+		if err != nil {
+			return err
+		}
+		_, err = w.Write([]byte(a.varName))
+		if err != nil {
+			return err
+		}
+		if a.defaultValue != nil {
+			_, err = w.Write([]byte{'='})
+			if err != nil {
+				return err
+			}
+			err = a.defaultValue.Dump(w)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	if c.use != nil {
+		// TODO use
+	}
+
+	_, err = w.Write([]byte{'{'})
+	if err != nil {
+		return err
+	}
+
+	err = c.code.Dump(w)
+	if err != nil {
+		return err
+	}
+	_, err = w.Write([]byte{'}'})
+	return err
 }
 
 func (z *ZClosure) Loc() *Loc {

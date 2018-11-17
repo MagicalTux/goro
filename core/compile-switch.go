@@ -1,6 +1,10 @@
 package core
 
-import "github.com/MagicalTux/gophp/core/tokenizer"
+import (
+	"io"
+
+	"github.com/MagicalTux/gophp/core/tokenizer"
+)
 
 // TODO find ways to optimize switch
 
@@ -19,6 +23,49 @@ type runSwitch struct {
 
 func (r *runSwitch) Loc() *Loc {
 	return r.l
+}
+
+func (r runSwitch) Dump(w io.Writer) error {
+	_, err := w.Write([]byte("switch ("))
+	if err != nil {
+		return err
+	}
+	err = r.cond.Dump(w)
+	if err != nil {
+		return err
+	}
+	_, err = w.Write([]byte(") {"))
+	if err != nil {
+		return err
+	}
+
+	for _, c := range r.blocks {
+		if c.cond == nil {
+			_, err = w.Write([]byte("default:"))
+			if err != nil {
+				return err
+			}
+		} else {
+			_, err = w.Write([]byte("case "))
+			if err != nil {
+				return err
+			}
+			err = c.cond.Dump(w)
+			if err != nil {
+				return err
+			}
+			_, err = w.Write([]byte{':'})
+			if err != nil {
+				return err
+			}
+		}
+		err = c.code.Dump(w)
+		if err != nil {
+			return err
+		}
+	}
+	_, err = w.Write([]byte{'}'})
+	return err
 }
 
 func (r *runSwitch) Run(ctx Context) (*ZVal, error) {

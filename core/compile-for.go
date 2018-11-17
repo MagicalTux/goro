@@ -2,6 +2,7 @@ package core
 
 import (
 	"errors"
+	"io"
 
 	"github.com/MagicalTux/gophp/core/tokenizer"
 )
@@ -65,6 +66,43 @@ func (r *runnableFor) Run(ctx Context) (l *ZVal, err error) {
 
 func (r *runnableFor) Loc() *Loc {
 	return r.l
+}
+
+func (r *runnableFor) Dump(w io.Writer) error {
+	_, err := w.Write([]byte("for("))
+	if err != nil {
+		return err
+	}
+	err = r.start.DumpWith(w, []byte{','})
+	if err != nil {
+		return err
+	}
+	_, err = w.Write([]byte{';'})
+	if err != nil {
+		return err
+	}
+	err = r.cond.DumpWith(w, []byte{','})
+	if err != nil {
+		return err
+	}
+	_, err = w.Write([]byte{';'})
+	if err != nil {
+		return err
+	}
+	err = r.each.DumpWith(w, []byte{','})
+	if err != nil {
+		return err
+	}
+	_, err = w.Write([]byte(") {"))
+	if err != nil {
+		return err
+	}
+	err = r.code.Dump(w)
+	if err != nil {
+		return err
+	}
+	_, err = w.Write([]byte{'}'})
+	return err
 }
 
 func compileForSub(c *compileCtx, final rune) (res Runnables, err error) {

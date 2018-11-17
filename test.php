@@ -6,6 +6,8 @@ var_dump(27/3/3);
 var_dump(1 + 2 * 3);
 var_dump(2 * 3 + 1);
 
+var_dump(1+2+3*4+5*6+7+8*9);
+
 exit;
 
 // Provides: <body text='black'>

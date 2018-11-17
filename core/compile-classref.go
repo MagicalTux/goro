@@ -3,6 +3,7 @@ package core
 import (
 	"errors"
 	"fmt"
+	"io"
 )
 
 // when classname::$something is used
@@ -21,6 +22,11 @@ func (r *runClassStaticVarRef) WriteValue(ctx Context, value *ZVal) error {
 
 func (r *runClassStaticVarRef) Loc() *Loc {
 	return r.l
+}
+
+func (r *runClassStaticVarRef) Dump(w io.Writer) error {
+	_, err := fmt.Fprintf(w, "%s::$%s", r.className, r.varName)
+	return err
 }
 
 // when classname::something is used
@@ -51,4 +57,9 @@ func (r *runClassStaticObjRef) Call(ctx Context, args []*ZVal) (*ZVal, error) {
 
 func (r *runClassStaticObjRef) Loc() *Loc {
 	return r.l
+}
+
+func (r *runClassStaticObjRef) Dump(w io.Writer) error {
+	_, err := fmt.Fprintf(w, "%s::%s", r.className, r.objName)
+	return err
 }

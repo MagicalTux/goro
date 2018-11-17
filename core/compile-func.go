@@ -1,6 +1,10 @@
 package core
 
-import "github.com/MagicalTux/gophp/core/tokenizer"
+import (
+	"io"
+
+	"github.com/MagicalTux/gophp/core/tokenizer"
+)
 
 type runnableFunctionCall struct {
 	name ZString
@@ -18,8 +22,64 @@ func (r *runnableFunctionCall) Loc() *Loc {
 	return r.l
 }
 
+func (r *runnableFunctionCall) Dump(w io.Writer) error {
+	_, err := w.Write([]byte(r.name))
+	if err != nil {
+		return err
+	}
+	_, err = w.Write([]byte{'('})
+	if err != nil {
+		return err
+	}
+	// args
+	first := true
+	for _, a := range r.args {
+		if !first {
+			_, err = w.Write([]byte{','})
+			if err != nil {
+				return err
+			}
+		}
+		first = false
+		err = a.Dump(w)
+		if err != nil {
+			return err
+		}
+	}
+	_, err = w.Write([]byte{')'})
+	return err
+}
+
 func (r *runnableFunctionCallRef) Loc() *Loc {
 	return r.l
+}
+
+func (r *runnableFunctionCallRef) Dump(w io.Writer) error {
+	err := r.name.Dump(w)
+	if err != nil {
+		return err
+	}
+	_, err = w.Write([]byte{'('})
+	if err != nil {
+		return err
+	}
+	// args
+	first := true
+	for _, a := range r.args {
+		if !first {
+			_, err = w.Write([]byte{','})
+			if err != nil {
+				return err
+			}
+		}
+		first = false
+		err = a.Dump(w)
+		if err != nil {
+			return err
+		}
+	}
+	_, err = w.Write([]byte{')'})
+	return err
 }
 
 func (r *runnableFunctionCall) Run(ctx Context) (l *ZVal, err error) {

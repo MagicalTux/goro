@@ -1,5 +1,7 @@
 package core
 
+import "io"
+
 type runVariable struct {
 	v ZString
 	l *Loc
@@ -22,6 +24,15 @@ func (r *runVariable) Loc() *Loc {
 	return r.l
 }
 
+func (r *runVariable) Dump(w io.Writer) error {
+	_, err := w.Write([]byte{'$'})
+	if err != nil {
+		return err
+	}
+	_, err = w.Write([]byte(r.v))
+	return err
+}
+
 // reference to an existing [something]
 type runRef struct {
 	v Runnable
@@ -39,4 +50,12 @@ func (r *runRef) Run(ctx Context) (*ZVal, error) {
 	}
 	// embed zval into another zval
 	return z.Ref(), nil
+}
+
+func (r *runRef) Dump(w io.Writer) error {
+	_, err := w.Write([]byte{'&'})
+	if err != nil {
+		return err
+	}
+	return r.v.Dump(w)
 }

@@ -1,6 +1,9 @@
 package core
 
-import "fmt"
+import (
+	"fmt"
+	"io"
+)
 
 type PhpErrorType int
 
@@ -26,6 +29,23 @@ func (e *PhpError) Run(ctx Context) (*ZVal, error) {
 
 func (e *PhpError) Loc() *Loc {
 	return e.l
+}
+
+func (e *PhpError) Dump(w io.Writer) error {
+	switch e.t {
+	case PhpBreak:
+		_, err := w.Write([]byte("break"))
+		return err
+	case PhpContinue:
+		_, err := w.Write([]byte("continue"))
+		return err
+	case PhpExit:
+		_, err := fmt.Fprintf(w, "exit(%d)", e.intv)
+		return err
+	default:
+		_, err := fmt.Fprintf(w, "TODO") // TODO
+		return err
+	}
 }
 
 func (e *PhpError) Error() string {

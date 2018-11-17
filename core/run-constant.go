@@ -1,6 +1,9 @@
 package core
 
-import "strings"
+import (
+	"io"
+	"strings"
+)
 
 type runConstant struct {
 	c string
@@ -9,6 +12,11 @@ type runConstant struct {
 
 func (r *runConstant) Loc() *Loc {
 	return r.l
+}
+
+func (r *runConstant) Dump(w io.Writer) error {
+	_, err := w.Write([]byte(r.c))
+	return err
 }
 
 func (r *runConstant) Run(ctx Context) (l *ZVal, err error) {

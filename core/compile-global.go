@@ -1,6 +1,10 @@
 package core
 
-import "github.com/MagicalTux/gophp/core/tokenizer"
+import (
+	"io"
+
+	"github.com/MagicalTux/gophp/core/tokenizer"
+)
 
 type runGlobal struct {
 	vars []ZString
@@ -24,6 +28,29 @@ func (g *runGlobal) Run(ctx Context) (*ZVal, error) {
 
 func (g *runGlobal) Loc() *Loc {
 	return g.l
+}
+
+func (g *runGlobal) Dump(w io.Writer) error {
+	_, err := w.Write([]byte("global "))
+	first := true
+	for _, v := range g.vars {
+		if !first {
+			_, err = w.Write([]byte{','})
+			if err != nil {
+				return err
+			}
+		}
+		first = false
+		_, err = w.Write([]byte{'$'})
+		if err != nil {
+			return err
+		}
+		_, err = w.Write([]byte(v))
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func compileGlobal(i *tokenizer.Item, c *compileCtx) (Runnable, error) {

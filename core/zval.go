@@ -1,5 +1,10 @@
 package core
 
+import (
+	"fmt"
+	"io"
+)
+
 type Val interface {
 	GetType() ZType
 	ZVal() *ZVal
@@ -31,6 +36,12 @@ func (z *runZVal) Run(ctx Context) (*ZVal, error) {
 
 func (z *runZVal) Loc() *Loc {
 	return z.l
+}
+
+func (z *runZVal) Dump(w io.Writer) error {
+	// TODO
+	_, err := fmt.Fprintf(w, "%#v", z.v)
+	return err
 }
 
 func (z *ZVal) ZVal() *ZVal {

@@ -1,6 +1,11 @@
 package core
 
-import "github.com/MagicalTux/gophp/core/tokenizer"
+import (
+	"fmt"
+	"io"
+
+	"github.com/MagicalTux/gophp/core/tokenizer"
+)
 
 type runnableForeach struct {
 	src  Runnable
@@ -58,6 +63,35 @@ func (r *runnableForeach) Run(ctx Context) (l *ZVal, err error) {
 
 func (r *runnableForeach) Loc() *Loc {
 	return r.l
+}
+
+func (r *runnableForeach) Dump(w io.Writer) error {
+	_, err := w.Write([]byte("foreach("))
+	if err != nil {
+		return err
+	}
+	err = r.src.Dump(w)
+	if err != nil {
+		return err
+	}
+	_, err = w.Write([]byte(" as "))
+	if err != nil {
+		return err
+	}
+	if r.k == "" {
+		_, err = fmt.Fprintf(w, "$%s) {", r.v)
+	} else {
+		_, err = fmt.Fprintf(w, "$%s => $%s) {", r.k, r.v)
+	}
+	if err != nil {
+		return err
+	}
+	err = r.code.Dump(w)
+	if err != nil {
+		return err
+	}
+	_, err = w.Write([]byte{'}'})
+	return err
 }
 
 func compileForeach(i *tokenizer.Item, c *compileCtx) (Runnable, error) {

@@ -1,6 +1,9 @@
 package core
 
-import "fmt"
+import (
+	"fmt"
+	"io"
+)
 
 type Loc struct {
 	Filename   string
@@ -14,6 +17,10 @@ func (l *Loc) Loc() *Loc {
 func (l *Loc) Run(ctx Context) (*ZVal, error) {
 	// just a checkpoint, do nothing
 	return nil, nil
+}
+
+func (l *Loc) Dump(w io.Writer) error {
+	return nil
 }
 
 func MakeLoc(Filename string, Line, Char int) *Loc {

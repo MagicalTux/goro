@@ -3,6 +3,7 @@ package core
 import (
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"math"
 )
@@ -75,17 +76,39 @@ func (r *runOperator) Loc() *Loc {
 	return r.l
 }
 
+func (r *runOperator) Dump(w io.Writer) error {
+	_, err := w.Write([]byte{'('})
+	if err != nil {
+		return err
+	}
+	err = r.a.Dump(w)
+	if err != nil {
+		return err
+	}
+	_, err = w.Write([]byte(r.op))
+	if err != nil {
+		return err
+	}
+	err = r.b.Dump(w)
+	if err != nil {
+		return err
+	}
+	_, err = w.Write([]byte{')'})
+	return err
+}
+
 func spawnOperator(op string, a, b Runnable, l *Loc) (Runnable, error) {
 	opD, ok := operatorList[op]
 	if !ok {
 		return nil, l.Errorf("invalid operator %s", op)
 	}
-	log.Printf("spawn op %s, a=%#v b=%#v", op, a, b)
+	log.Printf("spawn op %s, a=%s b=%s", op, debugDump(a), debugDump(b))
 	if rop, isop := b.(*runOperator); isop {
 		log.Printf("compare priority %s(%d) vs %s(%d)", op, opD.pri, rop.op, rop.opD.pri)
 		if opD.pri <= rop.opD.pri {
 			log.Printf("need swap")
-			rop.b, _ = spawnOperator(op, a, rop.b, l)
+			rop.a = &runOperator{op: op, opD: opD, a: a, b: rop.a, l: l}
+			log.Printf("result=%s", debugDump(rop))
 			return rop, nil
 		}
 	}

@@ -2,6 +2,8 @@ package core
 
 import (
 	"errors"
+	"fmt"
+	"io"
 
 	"github.com/MagicalTux/gophp/core/tokenizer"
 )
@@ -9,12 +11,27 @@ import (
 type runNewObject struct {
 	obj    ZString
 	cl     Runnable // for anonymous
-	newArg []*funcArg
+	newArg Runnables
 	l      *Loc
 }
 
 func (r *runNewObject) Loc() *Loc {
 	return r.l
+}
+
+func (r *runNewObject) Dump(w io.Writer) error {
+	_, err := fmt.Fprintf(w, "new %s(", r.obj)
+	if err != nil {
+		return err
+	}
+
+	// newargs
+	err = r.newArg.DumpWith(w, []byte{','})
+	if err != nil {
+		return err
+	}
+	_, err = w.Write([]byte{')'})
+	return err
 }
 
 func (r *runNewObject) Run(ctx Context) (*ZVal, error) {
@@ -49,7 +66,7 @@ func compileNew(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 	n.obj = ZString(i.Data)
 
 	// read constructor args
-	n.newArg, err = compileFunctionArgs(c)
+	n.newArg, err = compileFuncPassedArgs(c)
 
 	return n, nil
 }
@@ -57,7 +74,7 @@ func compileNew(i *tokenizer.Item, c *compileCtx) (Runnable, error) {
 type runObjectFunc struct {
 	ref  Runnable
 	op   ZString
-	args []Runnable
+	args Runnables
 	l    *Loc
 }
 
@@ -73,6 +90,34 @@ func (r *runObjectFunc) Loc() *Loc {
 
 func (r *runObjectVar) Loc() *Loc {
 	return r.l
+}
+
+func (r *runObjectFunc) Dump(w io.Writer) error {
+	err := r.ref.Dump(w)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(w, "->%s(", r.op)
+	if err != nil {
+		return err
+	}
+
+	err = r.args.DumpWith(w, []byte{','})
+	if err != nil {
+		return err
+	}
+
+	_, err = w.Write([]byte{')'})
+	return err
+}
+
+func (r *runObjectVar) Dump(w io.Writer) error {
+	err := r.ref.Dump(w)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(w, "->%s", r.varName)
+	return err
 }
 
 func (r *runObjectFunc) Run(ctx Context) (*ZVal, error) {

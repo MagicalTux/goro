@@ -40,14 +40,19 @@ func (r Runnables) Loc() *Loc {
 }
 
 func (r Runnables) Dump(w io.Writer) error {
+	return r.DumpWith(w, []byte{';'})
+}
+
+func (r Runnables) DumpWith(w io.Writer, sep []byte) error {
 	for _, s := range r {
 		err := s.Dump(w)
 		if err != nil {
 			return err
 		}
-		_, err = w.Write([]byte(";"))
+		_, err = w.Write(sep)
 		if err != nil {
 			return err
 		}
 	}
+	return nil
 }
