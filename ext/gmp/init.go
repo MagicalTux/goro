@@ -45,10 +45,5 @@ func gmpInit(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 		}
 	}
 
-	z, err := core.NewZObjectOpaque(ctx, GMP, i)
-	if err != nil {
-		return nil, err
-	}
-
-	return z.ZVal(), nil
+	return returnInt(ctx, i)
 }

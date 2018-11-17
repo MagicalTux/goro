@@ -1,4 +1,3 @@
-gmp_abs
 gmp_add
 gmp_and
 gmp_binomial

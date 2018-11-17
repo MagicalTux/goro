@@ -40,3 +40,12 @@ func readInt(ctx core.Context, v *core.ZVal) (*big.Int, error) {
 		return i, nil
 	}
 }
+
+func returnInt(ctx core.Context, i *big.Int) (*core.ZVal, error) {
+	z, err := core.NewZObjectOpaque(ctx, GMP, i)
+	if err != nil {
+		return nil, err
+	}
+
+	return z.ZVal(), nil
+}
