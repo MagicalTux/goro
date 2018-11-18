@@ -24,6 +24,7 @@ func init() {
 		tokenizer.T_INLINE_HTML: &compileFuncCb{f: compileInlineHtml, skip: true},
 		tokenizer.T_FUNCTION:    &compileFuncCb{f: compileFunction, skip: true},
 		tokenizer.T_WHILE:       &compileFuncCb{f: compileWhile, skip: true},
+		tokenizer.T_DO:          &compileFuncCb{f: compileDoWhile},
 		tokenizer.T_FOR:         &compileFuncCb{f: compileFor, skip: true},
 		tokenizer.T_FOREACH:     &compileFuncCb{f: compileForeach, skip: true},
 		tokenizer.T_SWITCH:      &compileFuncCb{f: compileSwitch, skip: true},

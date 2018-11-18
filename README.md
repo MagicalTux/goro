@@ -30,7 +30,6 @@ Right now, running PHP's own tests would require pcre, so it is not possible to 
 * php.ini handling
 * Class and object implementation is still very early. Access checks are missing. Class inheritance, etc are missing
 * Traits
-* do-while structure
 * break/continue needs improvement/fixing
 * declare
 * include/require
