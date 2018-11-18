@@ -20,6 +20,7 @@ func init() {
 			"gmp_neg":    &core.ExtFunction{Func: gmpNeg, Args: []*core.ExtFunctionArg{}},
 			"gmp_setbit": &core.ExtFunction{Func: gmpSetbit, Args: []*core.ExtFunctionArg{}},
 			"gmp_strval": &core.ExtFunction{Func: gmpStrval, Args: []*core.ExtFunctionArg{}},
+			"gmp_sub":    &core.ExtFunction{Func: gmpSub, Args: []*core.ExtFunctionArg{}},
 		},
 		Constants: map[core.ZString]*core.ZVal{},
 	})

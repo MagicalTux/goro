@@ -35,6 +35,5 @@ gmp_scan1
 gmp_sign
 gmp_sqrt
 gmp_sqrtrem
-gmp_sub
 gmp_testbit
 gmp_xor
