@@ -5,23 +5,31 @@
 $dh = opendir('ext');
 if (!$dh) die("could not open dir\n");
 
+process_ext('core', 'Core', 'ext-core.go');
+
 while(($ext = readdir($dh)) !== false) {
 	if (($ext == '.') || ($ext == '..')) continue;
+
+	process_ext('ext/'.$ext, $ext);
+}
+
+function process_ext($path, $ext, $output = 'ext.go') {
+	echo $ext.' ('.$path.')'."\n";
 
 	$constants = [];
 	$functions = [];
 	$classes = [];
 
 	// gather files in ext
-	$dh2 = opendir('ext/'.$ext);
+	$dh2 = opendir($path);
 	if (!$dh2) die("could not open dir for $ext\n");
 
 	while(($f = readdir($dh2)) !== false) {
 		if (($f == '.') || ($f == '..')) continue;
-		if ($f == 'ext.go') continue; // skip
+		if ($f == $output) continue; // skip
 		if (substr($f, -3) != '.go') continue; // skip non .go files
 
-		$fp = fopen('ext/'.$ext.'/'.$f, 'r');
+		$fp = fopen($path.'/'.$f, 'r');
 		if (!$fp) die("failed to open $f\n");
 
 		$lineno = 0;
@@ -98,30 +106,36 @@ while(($ext = readdir($dh)) !== false) {
 		if (!is_null($function_pending)) die("failed to find implementation of $function_pending");
 	}
 
-	$fp = fopen('ext/'.$ext.'/ext.go~', 'w');
-	fwrite($fp, 'package '.$ext."\n\n");
+	$fp = fopen($path.'/'.$output.'~', 'w');
+	if ($ext == 'Core') {
+		fwrite($fp, 'package core'."\n\n");
+		$prefix = '';
+	} else {
+		fwrite($fp, 'package '.$ext."\n\n");
+		$prefix = 'core.';
+	}
 	fwrite($fp, "import \"github.com/MagicalTux/gophp/core\"\n\n"); // other imports will be handled automatically at build time
 	fwrite($fp, "// WARNING: This file is auto-generated. DO NOT EDIT\n\n");
 	fwrite($fp, "func init() {\n");
-	fwrite($fp, "\tcore.RegisterExt(&core.Ext{\n");
+	fwrite($fp, "\t${prefix}RegisterExt(&${prefix}Ext{\n");
 	fwrite($fp, "\t\tName: \"".addslashes($ext)."\",\n"); // addslashes not quite equivalent to go's %q
 
-	fwrite($fp, "\t\tClasses: []*core.ZClass{\n");
+	fwrite($fp, "\t\tClasses: []*${prefix}ZClass{\n");
 	ksort($classes);
 	foreach($classes as $class => $info) {
 		fwrite($fp, "\t\t\t".$class.",\n");
 	}
 	fwrite($fp, "\t\t},\n");
 
-	fwrite($fp, "\t\tFunctions: map[string]*core.ExtFunction{\n");
+	fwrite($fp, "\t\tFunctions: map[string]*${prefix}ExtFunction{\n");
 	ksort($functions);
 	foreach($functions as $func => $info) {
 		// sample args: Args: []*core.ExtFunctionArg{&core.ExtFunctionArg{ArgName: "output"}, &core.ExtFunctionArg{ArgName: "...", Optional: true}}
-		fwrite($fp, "\t\t\t\"".addslashes($func)."\": &core.ExtFunction{Func: ".$info['val'].", Args: []*core.ExtFunctionArg{}},\n"); // TODO args
+		fwrite($fp, "\t\t\t\"".addslashes($func)."\": &${prefix}ExtFunction{Func: ".$info['val'].", Args: []*${prefix}ExtFunctionArg{}},\n"); // TODO args
 	}
 	fwrite($fp, "\t\t},\n");
 
-	fwrite($fp, "\t\tConstants: map[core.ZString]*core.ZVal{\n");
+	fwrite($fp, "\t\tConstants: map[${prefix}ZString]*${prefix}ZVal{\n");
 	ksort($constants);
 	foreach($constants as $const => $info) {
 		fwrite($fp, "\t\t\t\"".addslashes($const)."\": ".$info['val'].".ZVal(),\n");
@@ -132,6 +146,6 @@ while(($ext = readdir($dh)) !== false) {
 	fclose($fp);
 
 	// rename
-	rename('ext/'.$ext.'/ext.go~', 'ext/'.$ext.'/ext.go');
+	rename($path.'/'.$output.'~', $path.'/'.$output);
 }
 

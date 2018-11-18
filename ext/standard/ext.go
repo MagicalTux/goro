@@ -10,10 +10,8 @@ import (
 
 func init() {
 	core.RegisterExt(&core.Ext{
-		Name: "standard",
-		Classes: []*core.ZClass{
-			stdClass,
-		},
+		Name:    "standard",
+		Classes: []*core.ZClass{},
 		Functions: map[string]*core.ExtFunction{
 			"abs":                      &core.ExtFunction{Func: mathAbs, Args: []*core.ExtFunctionArg{}},
 			"acos":                     &core.ExtFunction{Func: mathAcos, Args: []*core.ExtFunctionArg{}},
