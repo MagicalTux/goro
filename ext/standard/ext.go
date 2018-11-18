@@ -82,7 +82,6 @@ func init() {
 			"PHP_ROUND_HALF_EVEN": core.ZInt(3).ZVal(),
 			"PHP_ROUND_HALF_ODD":  core.ZInt(4).ZVal(),
 			"PHP_ROUND_HALF_UP":   core.ZInt(1).ZVal(),
-			"PHP_VERSION":         core.ZString(core.VERSION).ZVal(),
 		},
 	})
 }
