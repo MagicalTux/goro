@@ -47,3 +47,17 @@ func (e *PhpError) IsExit() bool {
 	_, r := e.e.(*PhpExit)
 	return r
 }
+
+func filterError(err error) error {
+	// check for stuff like PhpExit and filter out
+	switch e := err.(type) {
+	case *PhpExit:
+		return nil
+	case *PhpError:
+		switch e.e.(type) {
+		case *PhpExit:
+			return nil
+		}
+	}
+	return err
+}

@@ -90,8 +90,7 @@ func (g *Global) Root() Context {
 
 func (g *Global) RunFile(fn string) error {
 	_, err := g.root.Include(ZString(fn))
-
-	return err
+	return filterError(err)
 }
 
 func (g *Global) Write(v []byte) (int, error) {

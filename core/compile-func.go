@@ -18,6 +18,10 @@ type runnableFunctionCallRef struct {
 	l    *Loc
 }
 
+type funcGetArgs interface {
+	getArgs() []*funcArg
+}
+
 func (r *runnableFunctionCall) Loc() *Loc {
 	return r.l
 }
@@ -88,12 +92,22 @@ func (r *runnableFunctionCall) Run(ctx Context) (l *ZVal, err error) {
 	if err != nil {
 		return nil, err
 	}
+
+	var func_args []*funcArg
+	if c, ok := f.(funcGetArgs); ok {
+		func_args = c.getArgs()
+	}
+
 	// collect args
+	// use func_args to check if any arg is a ref and needs to be passed as such
 	f_arg := make([]*ZVal, len(r.args))
 	for i, a := range r.args {
 		f_arg[i], err = a.Run(ctx)
 		if err != nil {
 			return nil, err
+		}
+		if i < len(func_args) && func_args[i].ref {
+			f_arg[i] = f_arg[i].Ref()
 		}
 	}
 
