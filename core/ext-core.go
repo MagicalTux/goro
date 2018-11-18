@@ -13,7 +13,10 @@ func init() {
 		Classes: []*ZClass{
 			stdClass,
 		},
-		Functions: map[string]*ExtFunction{},
+		Functions: map[string]*ExtFunction{
+			"phpversion":   &ExtFunction{Func: stdFuncPhpVersion, Args: []*ExtFunctionArg{}},
+			"zend_version": &ExtFunction{Func: stdFuncZendVersion, Args: []*ExtFunctionArg{}},
+		},
 		Constants: map[ZString]*ZVal{
 			"DEFAULT_INCLUDE_PATH": ZString(".:").ZVal(),
 			"FALSE":                ZBool(false).ZVal(),

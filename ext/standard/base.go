@@ -21,30 +21,6 @@ func stdFunc(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 	return core.ZBool(core.HasExt(name)).ZVal(), nil
 }
 
-//> func string phpversion ([ string $extension ] )
-func stdFuncPhpVersion(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
-	var ext *string
-	_, err := core.Expand(ctx, args, &ext)
-	if err != nil {
-		return nil, err
-	}
-
-	if ext != nil {
-		e := core.GetExt(*ext)
-		if e == nil {
-			return core.ZBool(false).ZVal(), nil
-		}
-		return core.ZString(e.Version).ZVal(), nil
-	}
-
-	return core.ZString(core.VERSION).ZVal(), nil
-}
-
-//> func string zend_version ( void )
-func stdFuncZendVersion(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
-	return core.ZString("3.2.0").ZVal(), nil
-}
-
 //> func bool function_exists ( string $function_name )
 func stdFuncFuncExists(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 	var fname core.ZString
