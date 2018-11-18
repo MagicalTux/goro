@@ -1,9 +1,6 @@
 package core
 
-import (
-	"fmt"
-	"io"
-)
+import "fmt"
 
 type PhpErrorType int
 
@@ -29,28 +26,16 @@ const (
 type PhpError struct {
 	e error
 	l *Loc
-
-	intv ZInt
-	obj  *ZObject // if PhpThrow
-}
-
-func (e *PhpError) Run(ctx Context) (*ZVal, error) {
-	return nil, e
 }
 
 func (e *PhpError) Loc() *Loc {
 	return e.l
 }
 
-func (e *PhpError) Dump(w io.Writer) error {
-	_, err := fmt.Fprintf(w, "TODO") // TODO
-	return err
-}
-
 func (e *PhpError) Error() string {
 	if e.l == nil {
 		if e.e == nil {
-			return "Unknown error " + debugDump(e)
+			return "Unknown error"
 		}
 		return e.e.Error()
 	}
