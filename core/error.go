@@ -21,6 +21,7 @@ type PhpError struct {
 	t PhpErrorType
 
 	intv ZInt
+	obj  *ZObject // if PhpThrow
 }
 
 func (e *PhpError) Run(ctx Context) (*ZVal, error) {
