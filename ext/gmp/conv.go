@@ -21,7 +21,7 @@ func readInt(ctx core.Context, v *core.ZVal) (*big.Int, error) {
 		return i, nil
 	case core.ZtObject:
 		obj, ok := v.Value().(*core.ZObject)
-		if ok && obj.Class == GMP {
+		if ok && obj.Class == GMP { // TODO check via instanceof (to be created)
 			// this is a gmp object
 			i = obj.GetOpaque(GMP).(*big.Int)
 			return i, nil
@@ -39,6 +39,18 @@ func readInt(ctx core.Context, v *core.ZVal) (*big.Int, error) {
 		}
 		return i, nil
 	}
+}
+
+func writeInt(ctx core.Context, v *core.ZVal, i *big.Int) error {
+	switch v.GetType() {
+	case core.ZtObject:
+		obj, ok := v.Value().(*core.ZObject)
+		if ok && obj.Class == GMP { // TODO check via instanceof (to be created)
+			obj.SetOpaque(GMP, i)
+			return nil
+		}
+	}
+	return errors.New("expected parameter to be GMP")
 }
 
 func returnInt(ctx core.Context, i *big.Int) (*core.ZVal, error) {

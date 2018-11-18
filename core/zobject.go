@@ -37,6 +37,13 @@ func (z *ZObject) GetOpaque(c *ZClass) interface{} {
 	return v
 }
 
+func (z *ZObject) SetOpaque(c *ZClass, v interface{}) {
+	if z.Opaque == nil {
+		z.Opaque = make(map[*ZClass]interface{})
+	}
+	z.Opaque[c] = v
+}
+
 func (z *ZObject) AsVal(ctx Context, t ZType) (Val, error) {
 	switch t {
 	case ZtString:

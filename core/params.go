@@ -52,6 +52,26 @@ func (z *ZVal) Store(ctx Context, out interface{}) error {
 		}
 		*tgt = s.Value().(ZString)
 		return nil
+	case **ZObject:
+		s, err := z.As(ctx, ZtObject)
+		if err != nil {
+			return err
+		}
+		obj, ok := s.Value().(*ZObject)
+		if !ok {
+			return fmt.Errorf("expected parameter to be object, %s given", z.GetType())
+		}
+		if *tgt != nil {
+			if (*tgt).Class != nil {
+				// check implements
+				if (*tgt).Class != obj.Class {
+					// TODO fix parameter #
+					return fmt.Errorf("expects parameter %d to be %s, %s given", 1, (*tgt).Class.Name, z.GetType())
+				}
+			}
+		}
+		*tgt = obj
+		return nil
 	case **ZVal:
 		// as is
 		*tgt = z
@@ -67,16 +87,22 @@ func Expand(ctx Context, args []*ZVal, out ...interface{}) (int, error) {
 		if rv.Kind() != reflect.Ptr {
 			panic("expand requires arguments to be pointers")
 		}
-		if rv.Type().Elem().Kind() == reflect.Ptr && rv.Type().Elem() != reflect.TypeOf(&ZVal{}) {
-			// pointer of pointer → optional argument
-			if len(args) <= i {
-				// end of argments
-				continue
+		if rv.Type().Elem().Kind() == reflect.Ptr {
+			switch rv.Type().Elem() {
+			// these are expected to be pointers
+			case reflect.TypeOf(&ZVal{}):
+			case reflect.TypeOf(&ZObject{}):
+			default:
+				// pointer of pointer → optional argument
+				if len(args) <= i {
+					// end of argments
+					continue
+				}
+				// we have an argument → instanciate and update v to point to the subvalue
+				newv := reflect.New(rv.Type().Elem().Elem())
+				rv.Elem().Set(newv)
+				v = newv.Interface()
 			}
-			// we have an argument → instanciate and update v to point to the subvalue
-			newv := reflect.New(rv.Type().Elem().Elem())
-			rv.Elem().Set(newv)
-			v = newv.Interface()
 		}
 		if len(args) <= i {
 			// not enough arguments, such errors in PHP can be returned as either:

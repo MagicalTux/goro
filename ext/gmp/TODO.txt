@@ -1,6 +1,5 @@
 gmp_and
 gmp_binomial
-gmp_clrbit
 gmp_com
 gmp_div_q
 gmp_div_qr
@@ -33,7 +32,6 @@ gmp_root
 gmp_rootrem
 gmp_scan0
 gmp_scan1
-gmp_setbit
 gmp_sign
 gmp_sqrt
 gmp_sqrtrem
