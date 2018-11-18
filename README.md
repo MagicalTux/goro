@@ -39,6 +39,7 @@ Right now, running PHP's own tests would require pcre, so it is not possible to 
 * Exception throwing
 * generators
 * predefined superglobals
+* implement Complex (curly) variable syntax (see: http://php.net/manual/en/language.types.string.php#language.types.string.parsing.complex )
 
 ## Extensions
 
