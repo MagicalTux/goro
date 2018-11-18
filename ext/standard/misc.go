@@ -35,7 +35,10 @@ func stdFuncEval(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 	// tokenize
 	t := tokenizer.NewLexerPhp(bytes.NewReader([]byte(z.Value().(core.ZString))), "-")
 
-	c := core.Compile(ctx, t)
+	c, err := core.Compile(ctx, t)
+	if err != nil {
+		return nil, err
+	}
 
 	return c.Run(ctx)
 }

@@ -51,8 +51,11 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		// pass data to the engine
 		t := tokenizer.NewLexer(b, p.path)
 		ctx := p.g.Root()
-		c := core.Compile(ctx, t)
-		_, err := c.Run(ctx)
+		c, err := core.Compile(ctx, t)
+		if err != nil {
+			return err
+		}
+		_, err = c.Run(ctx)
 		return err
 	case "EXPECT":
 		// compare p.output with b
@@ -68,8 +71,11 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		ctx := core.NewGlobal(context.Background(), p.p)
 		output := &bytes.Buffer{}
 		ctx.SetOutput(output)
-		c := core.Compile(ctx, t)
-		_, err := c.Run(ctx)
+		c, err := core.Compile(ctx, t)
+		if err != nil {
+			return err
+		}
+		_, err = c.Run(ctx)
 		if err != nil {
 			if e, ok := err.(*core.PhpError); ok {
 				if !e.IsExit() {

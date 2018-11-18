@@ -114,7 +114,10 @@ func (ctx *phpContext) Include(_fn ZString) (*ZVal, error) {
 	t := tokenizer.NewLexer(f, fn)
 
 	// compile
-	c := Compile(ctx, t)
+	c, err := Compile(ctx, t)
+	if err != nil {
+		return nil, err
+	}
 
 	var z *ZVal
 	z, err = c.Run(ctx)

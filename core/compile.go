@@ -66,7 +66,7 @@ func (c *compileRootCtx) backup() {
 	c.next, c.last = c.last, nil
 }
 
-func Compile(parent Context, t *tokenizer.Lexer) Runnable {
+func Compile(parent Context, t *tokenizer.Lexer) (Runnable, error) {
 	c := &compileRootCtx{
 		Context: parent,
 		t:       t,
@@ -74,7 +74,7 @@ func Compile(parent Context, t *tokenizer.Lexer) Runnable {
 
 	r, err := compileBase(nil, c)
 	if err != nil && err != io.EOF {
-		return &PhpError{e: err, t: PhpErrorFatal}
+		return nil, err
 	}
 
 	if list, ok := r.(Runnables); ok {
@@ -85,7 +85,7 @@ func Compile(parent Context, t *tokenizer.Lexer) Runnable {
 				if obj.name != "" {
 					err := c.GetGlobal().RegisterFunction(obj.name, obj)
 					if err != nil {
-						return obj.Loc().Error(err)
+						return nil, obj.Loc().Error(err)
 					}
 					list[i] = obj.Loc()
 				}
@@ -93,7 +93,7 @@ func Compile(parent Context, t *tokenizer.Lexer) Runnable {
 				if obj.Name != "" {
 					err := c.GetGlobal().RegisterClass(obj.Name, obj)
 					if err != nil {
-						return obj.Loc().Error(err)
+						return nil, obj.Loc().Error(err)
 					}
 					list[i] = obj.Loc()
 				}
@@ -101,5 +101,5 @@ func Compile(parent Context, t *tokenizer.Lexer) Runnable {
 		}
 	}
 
-	return r
+	return r, nil
 }
