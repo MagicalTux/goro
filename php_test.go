@@ -89,6 +89,12 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 			return skipTest
 		}
 		return nil
+	case "INI", "POST", "EXPECTF", "EXTENSIONS":
+		// TODO
+		return skipTest
+	case "XFAIL":
+		// TODO but safe to ignore
+		return nil
 	default:
 		return fmt.Errorf("unhandled part type %s for test", part)
 	}

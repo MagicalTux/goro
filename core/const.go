@@ -17,4 +17,4 @@ package core
 //> const PHP_FLOAT_DIG: ZInt(15)
 //> const PHP_FLOAT_EPSILON: ZFloat(2.220446049250313e-16)
 //> const PHP_FLOAT_MAX: ZFloat(math.MaxFloat64)
-//> const PHP_FLOAT_MIN: ZFloat(2.2250738585072E-308)
+//> const PHP_FLOAT_MIN: ZFloat(math.SmallestNonzeroFloat64)

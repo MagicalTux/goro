@@ -27,7 +27,7 @@ func init() {
 			"PHP_FLOAT_DIG":        ZInt(15).ZVal(),
 			"PHP_FLOAT_EPSILON":    ZFloat(2.220446049250313e-16).ZVal(),
 			"PHP_FLOAT_MAX":        ZFloat(math.MaxFloat64).ZVal(),
-			"PHP_FLOAT_MIN":        ZFloat(2.2250738585072E-308).ZVal(),
+			"PHP_FLOAT_MIN":        ZFloat(math.SmallestNonzeroFloat64).ZVal(),
 			"PHP_INT_MAX":          ZInt(math.MaxInt64).ZVal(),
 			"PHP_INT_MIN":          ZInt(math.MinInt64).ZVal(),
 			"PHP_INT_SIZE":         ZInt(8).ZVal(),
