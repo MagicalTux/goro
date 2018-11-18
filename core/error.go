@@ -5,20 +5,37 @@ import (
 	"io"
 )
 
+type PhpInternalErrorType int
 type PhpErrorType int
 
 const (
-	PhpErrorFatal = iota
+	PhpErrorFatal PhpInternalErrorType = iota
 	PhpThrow
-	PhpBreak
-	PhpContinue
-	PhpExit
+)
+
+const (
+	E_ERROR PhpErrorType = 1 << iota
+	E_WARNING
+	E_PARSE
+	E_NOTICE
+	E_CORE_ERROR
+	E_CORE_WARNING
+	E_COMPILE_ERROR
+	E_COMPILE_WARNING
+	E_USER_ERROR
+	E_USER_WARNING
+	E_USER_NOTICE
+	E_STRICT
+	E_RECOVERABLE_ERROR
+	E_DEPRECATED
+	E_USER_DEPRECATED
+	E_ALL PhpErrorType = (1 << iota) - 1
 )
 
 type PhpError struct {
 	e error
 	l *Loc
-	t PhpErrorType
+	t PhpInternalErrorType
 
 	intv ZInt
 	obj  *ZObject // if PhpThrow
@@ -34,15 +51,6 @@ func (e *PhpError) Loc() *Loc {
 
 func (e *PhpError) Dump(w io.Writer) error {
 	switch e.t {
-	case PhpBreak:
-		_, err := w.Write([]byte("break"))
-		return err
-	case PhpContinue:
-		_, err := w.Write([]byte("continue"))
-		return err
-	case PhpExit:
-		_, err := fmt.Fprintf(w, "exit(%d)", e.intv)
-		return err
 	default:
 		_, err := fmt.Fprintf(w, "TODO") // TODO
 		return err
@@ -59,10 +67,7 @@ func (e *PhpError) Error() string {
 	return fmt.Sprintf("%s in %s on line %d", e.e, e.l.Filename, e.l.Line)
 }
 
-func ExitError(retcode ZInt) *PhpError {
-	return &PhpError{t: PhpExit, intv: retcode}
-}
-
 func (e *PhpError) IsExit() bool {
-	return e.t == PhpExit
+	_, r := e.e.(*PhpExit)
+	return r
 }

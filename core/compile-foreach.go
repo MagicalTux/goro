@@ -47,10 +47,10 @@ func (r *runnableForeach) Run(ctx Context) (l *ZVal, err error) {
 		_, err = r.code.Run(ctx)
 		if err != nil {
 			e := r.l.Error(err)
-			switch e.t {
-			case PhpBreak:
+			switch e.e.(type) {
+			case *PhpBreak:
 				return nil, nil
-			case PhpContinue:
+			case *PhpContinue:
 				it.Next(ctx)
 				continue
 			}

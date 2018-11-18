@@ -1,7 +1,6 @@
 package core
 
 import (
-	"errors"
 	"io"
 
 	"github.com/MagicalTux/gophp/core/tokenizer"
@@ -9,12 +8,12 @@ import (
 
 func compileBreak(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	// return this as a runtime element and not a compile time error so switch and loops will catch it
-	return &PhpError{e: errors.New("'break' not in the 'loop' or 'switch' context"), l: MakeLoc(i.Loc()), t: PhpBreak, intv: 1}, nil
+	return &PhpBreak{l: MakeLoc(i.Loc()), intv: 1}, nil
 }
 
 func compileContinue(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	// return this as a runtime element and not a compile time error so switch and loops will catch it
-	return &PhpError{e: errors.New("'continue' not in the 'loop' context"), l: MakeLoc(i.Loc()), t: PhpContinue, intv: 1}, nil
+	return &PhpContinue{l: MakeLoc(i.Loc()), intv: 1}, nil
 }
 
 type runnableFor struct {
@@ -46,10 +45,10 @@ func (r *runnableFor) Run(ctx Context) (l *ZVal, err error) {
 		_, err = r.code.Run(ctx)
 		if err != nil {
 			e := r.l.Error(err)
-			switch e.t {
-			case PhpBreak:
+			switch e.e.(type) {
+			case *PhpBreak:
 				return nil, nil
-			case PhpContinue:
+			case *PhpContinue:
 			default:
 				return nil, e
 			}

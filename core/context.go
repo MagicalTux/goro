@@ -119,8 +119,8 @@ func (ctx *phpContext) Include(_fn ZString) (*ZVal, error) {
 	var z *ZVal
 	z, err = c.Run(ctx)
 	if e, ok := err.(*PhpError); ok {
-		switch e.t {
-		case PhpExit:
+		switch e.e.(type) {
+		case *PhpExit:
 			return z, nil
 		}
 	}
