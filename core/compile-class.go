@@ -1,38 +1,6 @@
 package core
 
-import (
-	"fmt"
-	"io"
-
-	"github.com/MagicalTux/gophp/core/tokenizer"
-)
-
-type ZClassProp struct {
-	VarName   ZString
-	Default   Runnable
-	Modifiers ZObjectAttr
-}
-
-type ZClassMethod struct {
-	Name      ZString
-	Modifiers ZObjectAttr
-	Method    Callable
-}
-
-type ZClass struct {
-	Name ZString
-	l    *Loc
-	attr ZClassAttr
-
-	Parent *ZClass
-
-	Extends     ZString
-	Implements  []ZString
-	Const       map[ZString]ZString
-	Props       []*ZClassProp
-	Methods     map[ZString]*ZClassMethod
-	StaticProps *ZHashTable
-}
+import "github.com/MagicalTux/gophp/core/tokenizer"
 
 type zclassCompileCtx struct {
 	compileCtx
@@ -182,7 +150,7 @@ func (class *ZClass) parseClassLine(c compileCtx) error {
 
 	if i.Type == tokenizer.T_EXTENDS {
 		// can only extend one class
-		class.Extends, err = compileReadClassIdentifier(c)
+		class.ExtendsStr, err = compileReadClassIdentifier(c)
 		if err != nil {
 			return err
 		}
@@ -200,7 +168,7 @@ func (class *ZClass) parseClassLine(c compileCtx) error {
 				return err
 			}
 
-			class.Implements = append(class.Implements, impl)
+			class.ImplementsStr = append(class.ImplementsStr, impl)
 
 			// read next
 			i, err = c.NextItem()
@@ -258,22 +226,4 @@ func compileReadClassIdentifier(c compileCtx) (ZString, error) {
 		c.backup()
 		return res, nil
 	}
-}
-
-func (c *ZClass) Run(ctx Context) (*ZVal, error) {
-	return nil, ctx.GetGlobal().RegisterClass(c.Name, c)
-}
-
-func (c *ZClass) Loc() *Loc {
-	return c.l
-}
-
-func (c *ZClass) Dump(w io.Writer) error {
-	_, err := fmt.Fprintf(w, "%sclass %s {", c.attr, c.Name)
-	if err != nil {
-		return err
-	}
-	// TODO
-	_, err = fmt.Fprintf(w, "TODO }")
-	return err
 }

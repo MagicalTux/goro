@@ -62,6 +62,9 @@ func (z *ZVal) Ref() *ZVal {
 }
 
 func (z *ZVal) IsRef() bool {
+	if z == nil {
+		return false
+	}
 	_, isRef := z.v.(*ZVal)
 	return isRef
 }
