@@ -162,7 +162,7 @@ func (ac *runArrayAccess) Run(ctx Context) (*ZVal, error) {
 
 	array := v.Array()
 	if array == nil {
-		return nil, ac.l.Errorf("Cannot use object of type %s as array", v.GetType())
+		return nil, ac.l.Errorf(ctx, E_WARNING, "Cannot use object of type %s as array", v.GetType())
 	}
 
 	// OK...
@@ -194,7 +194,7 @@ func (ac *runArrayAccess) WriteValue(ctx Context, value *ZVal) error {
 
 	array := v.Array()
 	if array == nil {
-		return ac.l.Errorf("Cannot use object of type %s as array", v.GetType())
+		return ac.l.Errorf(ctx, E_WARNING, "Cannot use object of type %s as array", v.GetType())
 	}
 
 	if ac.offset == nil {

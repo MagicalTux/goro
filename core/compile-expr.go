@@ -87,14 +87,14 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 			case "parent", "self":
 				class := c.getClass()
 				if class == nil {
-					return nil, l.Errorf("Cannot access %s:: when no class scope is active", i.Data)
+					return nil, l.Errorf(nil, E_PARSE, "Cannot access %s:: when no class scope is active", i.Data)
 				}
 				switch i.Data {
 				case "self":
 					i.Data = string(class.Name)
 				case "parent":
 					if class.Parent == nil {
-						return nil, l.Errorf("Cannot access parent:: when current class scope has no parent")
+						return nil, l.Errorf(nil, E_PARSE, "Cannot access parent:: when current class scope has no parent")
 					}
 					i.Data = string(class.Parent.Name)
 				}

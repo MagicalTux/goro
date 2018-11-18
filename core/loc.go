@@ -28,6 +28,7 @@ func MakeLoc(Filename string, Line, Char int) *Loc {
 }
 
 func (l *Loc) Error(e error) *PhpError {
+	// fill location if missing
 	switch err := e.(type) {
 	case *PhpError:
 		if err.l == nil {
@@ -35,11 +36,11 @@ func (l *Loc) Error(e error) *PhpError {
 		}
 		return err
 	default:
-		return &PhpError{e: e, l: l}
+		return &PhpError{e: e, code: E_ERROR, l: l}
 	}
 }
 
-func (l *Loc) Errorf(f string, arg ...interface{}) *PhpError {
+func (l *Loc) Errorf(ctx Context, code PhpErrorType, f string, arg ...interface{}) *PhpError {
 	return &PhpError{e: fmt.Errorf(f, arg...), l: l}
 }
 

@@ -24,8 +24,9 @@ const (
 )
 
 type PhpError struct {
-	e error
-	l *Loc
+	e    error
+	code PhpErrorType
+	l    *Loc
 }
 
 func (e *PhpError) Loc() *Loc {

@@ -103,7 +103,7 @@ func (r *runOperator) Dump(w io.Writer) error {
 func spawnOperator(op string, a, b Runnable, l *Loc) (Runnable, error) {
 	opD, ok := operatorList[op]
 	if !ok {
-		return nil, l.Errorf("invalid operator %s", op)
+		return nil, l.Errorf(nil, E_PARSE, "invalid operator %s", op)
 	}
 	if rop, isop := a.(*runOperator); isop {
 		if opD.pri < rop.opD.pri {

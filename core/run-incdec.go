@@ -45,7 +45,7 @@ func (r *runIncDec) Dump(w io.Writer) error {
 func (r *runIncDec) Run(ctx Context) (*ZVal, error) {
 	w, ok := r.v.(Writable)
 	if !ok {
-		return nil, r.Loc().Errorf("invalid operator for value")
+		return nil, r.Loc().Errorf(ctx, E_WARNING, "invalid operator for value")
 	}
 
 	v, err := r.v.Run(ctx)
@@ -76,7 +76,7 @@ func (r *runIncDec) Run(ctx Context) (*ZVal, error) {
 			res = n - 1
 		}
 	default:
-		return nil, r.l.Errorf("could not handle type %T", v.v)
+		return nil, r.l.Errorf(ctx, E_WARNING, "could not handle type %T", v.v)
 	}
 
 	if r.post {
