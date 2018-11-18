@@ -46,7 +46,7 @@ Right now, running PHP's own tests would require pcre, so it is not possible to 
 |------------|--------|------------------------------------------------|
 | standard   |     5% | a lot of work remaining                        |
 | pcre       |     5% | might need to use cgo                          |
-| gmp        |     1% | Using math/big                                 |
+| gmp        |    20% | Using math/big                                 |
 | date       |        |                                                |
 | hash       |        |                                                |
 | iconv      |        | using golang.org/x/text/transform              |
