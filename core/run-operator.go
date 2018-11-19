@@ -288,9 +288,14 @@ func operatorMathLogic(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 				a, b = b, a
 			}
 			// a is longer than b
-			newb := make([]byte, len(a))
-			copy(newb, b)
-			b = newb
+			switch op {
+			case "|": // make b longer in this case
+				newb := make([]byte, len(a))
+				copy(newb, b)
+				b = newb
+			default:
+				a = a[:len(b)]
+			}
 		}
 
 		switch op {
