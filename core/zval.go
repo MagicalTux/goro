@@ -51,7 +51,7 @@ func (z *ZVal) ZVal() *ZVal {
 func (z *ZVal) Dup() *ZVal {
 	switch v := z.v.(type) {
 	case *ZVal:
-		return &ZVal{v.v}
+		return v.v.ZVal()
 		// TODO duplicate contents if array
 	default:
 		return &ZVal{z.v}

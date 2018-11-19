@@ -213,6 +213,53 @@ func doInc(v *ZVal, inc bool) error {
 		}
 		v.Set(n.ZVal())
 		return nil
+	case ZtString:
+		s := v.Value().(ZString)
+		// first, check if potentially numeric
+		if s.IsNumeric() {
+			if x, err := s.AsNumeric(); err == nil {
+				v.Set(x.ZVal())
+				return doInc(v, inc)
+			}
+		}
+		// do string increment...
+		var c byte
+		n := []byte(s)
+
+		for i := len(n) - 1; i >= 0; i-- {
+			c = n[i]
+			if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') {
+				if c == 'z' {
+					n[i] = 'a'
+					continue
+				}
+				if c == 'Z' {
+					n[i] = 'A'
+					continue
+				}
+				if c == '9' {
+					n[i] = '0'
+					continue
+				}
+				n[i] = c + 1
+				v.Set(ZString(n).ZVal())
+				return nil
+			}
+			v.Set(ZString(n).ZVal())
+			return nil
+		}
+
+		switch c {
+		case '9':
+			v.Set(("1" + ZString(n)).ZVal())
+			return nil
+		case 'z':
+			v.Set(("a" + ZString(n)).ZVal())
+			return nil
+		case 'Z':
+			v.Set(("A" + ZString(n)).ZVal())
+			return nil
+		}
 	}
 	return errors.New("unsupported type for increment operator")
 }

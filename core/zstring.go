@@ -37,7 +37,7 @@ func (s ZString) IsNumeric() bool {
 	}
 	first = true
 	for _, c := range s {
-		if first && c == ' ' {
+		if first && unicode.IsSpace(c) {
 			continue
 		}
 		if first && (c == '+' || c == '-') {
