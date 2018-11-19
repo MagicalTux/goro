@@ -58,12 +58,8 @@ func (z *ZVal) AsNumeric(ctx Context) (*ZVal, error) {
 	case ZFloat:
 		return z, nil
 	case ZString:
-		v1, err := strconv.ParseInt(string(n), 10, 64)
-		if err == nil {
-			return ZInt(v1).ZVal(), nil
-		}
-		// fallback to float
-		return z.As(ctx, ZtFloat)
+		v, _ := n.AsNumeric()
+		return v.ZVal(), nil
 	default:
 		return z.As(ctx, ZtInt)
 	}

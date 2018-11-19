@@ -160,15 +160,26 @@ func compileFunction(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 		return nil, err
 	}
 
+	rref := false
+	if i.IsSingle('&') {
+		// this is a ref return function
+		rref = true
+
+		i, err = c.NextItem()
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	switch i.Type {
 	case tokenizer.T_STRING:
 		// regular function definition
-		return compileFunctionWithName(ZString(i.Data), c, l)
+		return compileFunctionWithName(ZString(i.Data), c, l, rref)
 	case tokenizer.ItemSingleChar:
 		if i.Data == "(" {
 			// function with no name is lambda
 			c.backup()
-			return compileFunctionWithName("", c, l)
+			return compileFunctionWithName("", c, l, rref)
 		}
 	}
 
@@ -244,7 +255,7 @@ func compileSpecialFuncCall(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	}
 }
 
-func compileFunctionWithName(name ZString, c compileCtx, l *Loc) (*ZClosure, error) {
+func compileFunctionWithName(name ZString, c compileCtx, l *Loc, rref bool) (*ZClosure, error) {
 	var err error
 	var use []*funcUse
 	args, err := compileFunctionArgs(c)
@@ -286,6 +297,7 @@ func compileFunctionWithName(name ZString, c compileCtx, l *Loc) (*ZClosure, err
 		code:  body,
 		start: l,
 		// TODO populate end
+		rref: rref,
 	}, nil
 }
 

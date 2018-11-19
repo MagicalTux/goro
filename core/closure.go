@@ -24,6 +24,7 @@ type ZClosure struct {
 	code  Runnable
 	start *Loc
 	end   *Loc
+	rref  bool // return ref?
 }
 
 func (z *ZClosure) GetType() ZType {
@@ -173,7 +174,11 @@ func (z *ZClosure) Call(ctx Context, args []*ZVal) (*ZVal, error) {
 	}
 
 	// call function in that context
-	return z.code.Run(ctx)
+	r, err := z.code.Run(ctx)
+	if z.rref && r != nil {
+		r = r.Ref()
+	}
+	return r, err
 }
 
 func (z *ZClosure) dup() *ZClosure {

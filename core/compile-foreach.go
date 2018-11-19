@@ -35,14 +35,14 @@ func (r *runnableForeach) Run(ctx Context) (l *ZVal, err error) {
 			if err != nil {
 				return nil, err
 			}
-			ctx.OffsetSet(ctx, r.k.ZVal(), k)
+			ctx.OffsetSet(ctx, r.k.ZVal(), k.Dup())
 		}
 
 		v, err := it.Current(ctx)
 		if err != nil {
 			return nil, err
 		}
-		ctx.OffsetSet(ctx, r.v.ZVal(), v)
+		ctx.OffsetSet(ctx, r.v.ZVal(), v.Dup())
 
 		_, err = r.code.Run(ctx)
 		if err != nil {

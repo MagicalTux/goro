@@ -111,11 +111,20 @@ func compileClass(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 				return nil, err
 			}
 
+			rref := false
+			if i.IsSingle('&') {
+				rref = true
+				i, err = c.NextItem()
+				if err != nil {
+					return nil, err
+				}
+			}
+
 			if i.Type != tokenizer.T_STRING {
 				return nil, i.Unexpected()
 			}
 
-			f, err := compileFunctionWithName(ZString(i.Data), c, l)
+			f, err := compileFunctionWithName(ZString(i.Data), c, l, rref)
 			if err != nil {
 				return nil, err
 			}

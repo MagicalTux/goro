@@ -1,6 +1,8 @@
 package core
 
-import "strconv"
+import (
+	"strconv"
+)
 
 type ZType int
 
