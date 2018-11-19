@@ -23,7 +23,7 @@ type operatorInternalDetails struct {
 	pri     int
 }
 
-// ++ -- cast @ pri=11
+// cast @ pri=11
 // ?: pri=24
 var operatorList = map[string]*operatorInternalDetails{
 	"=":   &operatorInternalDetails{write: true, skipA: true, pri: 25},
@@ -69,6 +69,16 @@ var operatorList = map[string]*operatorInternalDetails{
 	"&&":  &operatorInternalDetails{op: operatorBoolLogic, pri: 21},
 	"||":  &operatorInternalDetails{op: operatorBoolLogic, pri: 22},
 	"??":  &operatorInternalDetails{pri: 23},
+	"++":  &operatorInternalDetails{op: operatorIncDec, pri: 11},
+	"--":  &operatorInternalDetails{op: operatorIncDec, pri: 11},
+
+	// cast operators
+	"(bool)":   &operatorInternalDetails{op: func(ctx Context, op string, a, b *ZVal) (*ZVal, error) { return b.As(ctx, ZtBool) }, pri: 11},
+	"(int)":    &operatorInternalDetails{op: func(ctx Context, op string, a, b *ZVal) (*ZVal, error) { return b.As(ctx, ZtInt) }, pri: 11},
+	"(double)": &operatorInternalDetails{op: func(ctx Context, op string, a, b *ZVal) (*ZVal, error) { return b.As(ctx, ZtFloat) }, pri: 11},
+	"(array)":  &operatorInternalDetails{op: func(ctx Context, op string, a, b *ZVal) (*ZVal, error) { return b.As(ctx, ZtArray) }, pri: 11},
+	"(object)": &operatorInternalDetails{op: func(ctx Context, op string, a, b *ZVal) (*ZVal, error) { return b.As(ctx, ZtObject) }, pri: 11},
+	"(string)": &operatorInternalDetails{op: func(ctx Context, op string, a, b *ZVal) (*ZVal, error) { return b.As(ctx, ZtString) }, pri: 11},
 }
 
 func (r *runOperator) Loc() *Loc {
@@ -181,6 +191,43 @@ func operatorNot(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 	b, _ = b.As(ctx, ZtBool)
 
 	return &ZVal{!b.Value().(ZBool)}, nil
+}
+
+func doInc(v *ZVal, inc bool) error {
+	switch v.GetType() {
+	case ZtInt:
+		n := v.Value().(ZInt)
+		if inc {
+			n += 1
+		} else {
+			n -= 1
+		}
+		v.Set(n.ZVal())
+		return nil
+	case ZtFloat:
+		n := v.Value().(ZFloat)
+		if inc {
+			n += 1
+		} else {
+			n -= 1
+		}
+		v.Set(n.ZVal())
+		return nil
+	}
+	return errors.New("unsupported type for increment operator")
+}
+
+func operatorIncDec(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
+	inc := op == "++"
+
+	if a != nil {
+		// post mode
+		orig := a.Dup()
+		return orig, doInc(a, inc)
+	} else {
+		// pre mode
+		return b, doInc(b, inc)
+	}
 }
 
 func operatorMath(ctx Context, op string, a, b *ZVal) (*ZVal, error) {

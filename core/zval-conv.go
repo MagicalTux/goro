@@ -42,7 +42,7 @@ func (z *ZVal) AsVal(ctx Context, t ZType) (Val, error) {
 		return nil, err
 	}
 	if v != nil {
-		return &ZVal{v}, nil
+		return v, nil
 	}
 
 	return nil, fmt.Errorf("todo %s => %s", z.v.GetType(), t)

@@ -139,27 +139,31 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 		return &runZVal{ZString(path.Dir(l.Filename)), l}, nil
 	case tokenizer.T_BOOL_CAST, tokenizer.T_INT_CAST, tokenizer.T_ARRAY_CAST, tokenizer.T_DOUBLE_CAST, tokenizer.T_OBJECT_CAST, tokenizer.T_STRING_CAST:
 		// perform a cast operation on the following (note: v is null)
-		//TODO make this an operator for appropriate operator precedence
+		var op string
+		switch i.Type {
+		case tokenizer.T_BOOL_CAST:
+			op = "(bool)"
+		case tokenizer.T_INT_CAST:
+			op = "(int)"
+		case tokenizer.T_ARRAY_CAST:
+			op = "(array)"
+		case tokenizer.T_DOUBLE_CAST:
+			op = "(double)"
+		case tokenizer.T_OBJECT_CAST:
+			op = "(object)"
+		case tokenizer.T_STRING_CAST:
+			op = "(string)"
+		}
+
+		// make this an operator for appropriate operator precedence
 		t_v, err := compileOneExpr(nil, c)
 		if err != nil {
 			return nil, err
 		}
-
-		return spawnRunCast(i.Type, t_v, l)
-	case tokenizer.T_INC:
-		t_v, err := compileOneExpr(nil, c)
-		if err != nil {
-			return nil, err
-		}
-
-		return &runIncDec{inc: true, v: t_v, l: l, post: false}, nil
-	case tokenizer.T_DEC:
-		t_v, err := compileOneExpr(nil, c)
-		if err != nil {
-			return nil, err
-		}
-
-		return &runIncDec{inc: false, v: t_v, l: l, post: false}, nil
+		return spawnOperator(op, nil, t_v, l)
+	case tokenizer.T_INC, tokenizer.T_DEC:
+		// this is an operator, let compilePostExpr() deal with it
+		return compilePostExpr(nil, i, c)
 	case tokenizer.ItemSingleChar:
 		ch := []rune(i.Data)[0]
 		switch ch {
@@ -257,12 +261,17 @@ func compilePostExpr(v Runnable, i *tokenizer.Item, c compileCtx) (Runnable, err
 			// just a value
 			return nil, nil
 		}
-	case tokenizer.T_INC:
-		// v followed by inc
-		return &runIncDec{inc: true, v: v, l: l, post: true}, nil
-	case tokenizer.T_DEC:
-		// v followed by dec
-		return &runIncDec{inc: false, v: v, l: l, post: true}, nil
+	case tokenizer.T_INC, tokenizer.T_DEC:
+		if v == nil {
+			// what follows is also an expression
+			t_v, err := compileOneExpr(nil, c)
+			if err != nil {
+				return nil, err
+			}
+			return spawnOperator(i.Data, nil, t_v, l)
+		} else {
+			return spawnOperator(i.Data, v, nil, l)
+		}
 	case tokenizer.T_OBJECT_OPERATOR:
 		return compileObjectOperator(v, i, c)
 	case tokenizer.T_AND_EQUAL,
@@ -294,7 +303,6 @@ func compilePostExpr(v Runnable, i *tokenizer.Item, c compileCtx) (Runnable, err
 			return nil, err
 		}
 
-		// TODO math priority
 		return spawnOperator(i.Data, v, t_v, l)
 	}
 
