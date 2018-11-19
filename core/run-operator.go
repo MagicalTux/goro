@@ -195,6 +195,13 @@ func operatorNot(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 
 func doInc(v *ZVal, inc bool) error {
 	switch v.GetType() {
+	case ZtNull:
+		if inc {
+			v.Set(ZInt(1).ZVal())
+		}
+		return nil
+	case ZtBool:
+		return nil
 	case ZtInt:
 		n := v.Value().(ZInt)
 		if inc {
@@ -222,6 +229,12 @@ func doInc(v *ZVal, inc bool) error {
 				return doInc(v, inc)
 			}
 		}
+
+		if !inc {
+			// strings can only be incremented
+			return nil
+		}
+
 		// do string increment...
 		var c byte
 		n := []byte(s)
