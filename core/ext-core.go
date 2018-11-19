@@ -14,9 +14,10 @@ func init() {
 			stdClass,
 		},
 		Functions: map[string]*ExtFunction{
-			"phpversion":   &ExtFunction{Func: stdFuncPhpVersion, Args: []*ExtFunctionArg{}},
-			"strlen":       &ExtFunction{Func: fncStrlen, Args: []*ExtFunctionArg{}},
-			"zend_version": &ExtFunction{Func: stdFuncZendVersion, Args: []*ExtFunctionArg{}},
+			"error_reporting": &ExtFunction{Func: fncErrorReporting, Args: []*ExtFunctionArg{}},
+			"phpversion":      &ExtFunction{Func: stdFuncPhpVersion, Args: []*ExtFunctionArg{}},
+			"strlen":          &ExtFunction{Func: fncStrlen, Args: []*ExtFunctionArg{}},
+			"zend_version":    &ExtFunction{Func: stdFuncZendVersion, Args: []*ExtFunctionArg{}},
 		},
 		Constants: map[ZString]*ZVal{
 			"DEFAULT_INCLUDE_PATH": ZString(".:").ZVal(),

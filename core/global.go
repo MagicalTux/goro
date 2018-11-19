@@ -101,6 +101,11 @@ func (g *Global) GetGlobal() *Global {
 	return g
 }
 
+func (g *Global) SetLocalConfig(name ZString, val *ZVal) error {
+	// TODO
+	return nil
+}
+
 func (g *Global) GetConfig(name ZString, def *ZVal) *ZVal {
 	// TODO
 	return def
