@@ -205,8 +205,16 @@ func doInc(v *ZVal, inc bool) error {
 	case ZtInt:
 		n := v.Value().(ZInt)
 		if inc {
+			if n == math.MaxInt64 {
+				v.Set((ZFloat(n) + 1).ZVal())
+				return nil
+			}
 			n += 1
 		} else {
+			if n == math.MinInt64 {
+				v.Set((ZFloat(n) - 1).ZVal())
+				return nil
+			}
 			n -= 1
 		}
 		v.Set(n.ZVal())
@@ -329,7 +337,18 @@ func operatorMath(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 				res = a / b
 			}
 		case "*":
-			res = a * b
+			if a == 0 || b == 0 {
+				res = ZInt(0)
+				break
+			}
+			c := a * b
+			// do overflow check (golang has no good way to perform this, so checking if c/b=a will have to do)
+			if ((c < 0) == ((a < 0) != (b < 0))) && (c/b == a) {
+				res = c
+			} else {
+				// do this as float
+				res = ZFloat(a) * ZFloat(b)
+			}
 		case "**":
 			res = ZFloat(math.Pow(float64(a), float64(b)))
 		}
