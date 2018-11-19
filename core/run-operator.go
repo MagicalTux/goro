@@ -43,11 +43,11 @@ var operatorList = map[string]*operatorInternalDetails{
 	"^=":  &operatorInternalDetails{write: true, numeric: true, op: operatorMathLogic, pri: 25},
 	"&=":  &operatorInternalDetails{write: true, numeric: true, op: operatorMathLogic, pri: 25},
 	"%=":  &operatorInternalDetails{write: true, numeric: true, op: operatorMathLogic, pri: 25},
-	"|":   &operatorInternalDetails{numeric: true, op: operatorMathLogic, pri: 20},
-	"^":   &operatorInternalDetails{numeric: true, op: operatorMathLogic, pri: 19},
-	"&":   &operatorInternalDetails{numeric: true, op: operatorMathLogic, pri: 18},
+	"|":   &operatorInternalDetails{op: operatorMathLogic, pri: 20},
+	"^":   &operatorInternalDetails{op: operatorMathLogic, pri: 19},
+	"&":   &operatorInternalDetails{op: operatorMathLogic, pri: 18},
 	"%":   &operatorInternalDetails{numeric: true, op: operatorMathLogic, pri: 13},
-	"~":   &operatorInternalDetails{numeric: true, op: operatorMathLogic, pri: 11},
+	"~":   &operatorInternalDetails{op: operatorMathLogic, pri: 11},
 	"<<":  &operatorInternalDetails{numeric: true, op: operatorMathLogic, pri: 15},
 	">>":  &operatorInternalDetails{numeric: true, op: operatorMathLogic, pri: 15},
 	"and": &operatorInternalDetails{numeric: true, op: operatorMathLogic, pri: 26},
@@ -249,6 +249,9 @@ func operatorMathLogic(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 	if op[len(op)-1] == '=' {
 		op = op[:len(op)-1]
 	}
+	if a == nil {
+		a = b
+	}
 
 	switch a.Value().GetType() {
 	case ZtInt:
@@ -277,7 +280,41 @@ func operatorMathLogic(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 		a, _ = a.As(ctx, ZtInt)
 		b, _ = b.As(ctx, ZtInt)
 		return operatorMathLogic(ctx, op, a, b)
-	// TODO ZtString
+	case ZtString:
+		a := []byte(a.Value().(ZString))
+		b := []byte(b.Value().(ZString))
+		if len(a) != len(b) {
+			if len(a) < len(b) {
+				a, b = b, a
+			}
+			// a is longer than b
+			newb := make([]byte, len(a))
+			copy(newb, b)
+			b = newb
+		}
+
+		switch op {
+		case "|":
+			for i := 0; i < len(a); i++ {
+				a[i] |= b[i]
+			}
+		case "^":
+			for i := 0; i < len(a); i++ {
+				a[i] ^= b[i]
+			}
+		case "&":
+			for i := 0; i < len(a); i++ {
+				a[i] &= b[i]
+			}
+		case "~":
+			for i := 0; i < len(a); i++ {
+				b[i] = ^b[i]
+			}
+			a = b
+		default:
+			return nil, errors.New("todo operator unsupported on strings")
+		}
+		return &ZVal{ZString(a)}, nil
 	default:
 		return nil, errors.New("todo operator type unsupported")
 	}
