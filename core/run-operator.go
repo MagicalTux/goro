@@ -298,27 +298,40 @@ func operatorMath(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 	switch a.Value().GetType() {
 	case ZtInt:
 		var res Val
+		a := a.Value().(ZInt)
+		b := b.Value().(ZInt)
+
 		switch op {
 		case "+":
-			res = a.Value().(ZInt) + b.Value().(ZInt)
+			c := a + b
+			if (c > a) == (b > 0) {
+				res = c
+			} else {
+				// overflow
+				res = ZFloat(a) + ZFloat(b)
+			}
 		case "-":
-			res = a.Value().(ZInt) - b.Value().(ZInt)
+			c := a - b
+			if (c < a) == (b > 0) {
+				res = c
+			} else {
+				// overflow
+				res = ZFloat(a) - ZFloat(b)
+			}
 		case "/":
-			bv := b.Value().(ZInt)
-			if bv == 0 {
+			if b == 0 {
 				return nil, errors.New("Division by zero")
 			}
-			av := a.Value().(ZInt)
-			if av%bv != 0 {
+			if a%b != 0 {
 				// this is not goign to be a int result
-				res = ZFloat(av) / ZFloat(bv)
+				res = ZFloat(a) / ZFloat(b)
 			} else {
-				res = a.Value().(ZInt) / bv
+				res = a / b
 			}
 		case "*":
-			res = a.Value().(ZInt) * b.Value().(ZInt)
+			res = a * b
 		case "**":
-			res = ZFloat(math.Pow(float64(a.Value().(ZInt)), float64(b.Value().(ZInt))))
+			res = ZFloat(math.Pow(float64(a), float64(b)))
 		}
 		return &ZVal{res}, nil
 	case ZtFloat:
@@ -362,6 +375,7 @@ func operatorMathLogic(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 
 	switch a.Value().GetType() {
 	case ZtInt:
+		b, _ = b.As(ctx, ZtInt)
 		var res ZInt
 		switch op {
 		case "|":

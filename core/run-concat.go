@@ -13,6 +13,10 @@ func (r runConcat) Run(ctx Context) (l *ZVal, err error) {
 		if err != nil {
 			return
 		}
+		t, err = t.As(ctx, ZtString)
+		if err != nil {
+			return
+		}
 		res = res + t.String()
 	}
 	l = &ZVal{ZString(res)}
