@@ -3,6 +3,8 @@ package core
 import (
 	"bytes"
 	"errors"
+	"strconv"
+	"strings"
 
 	"github.com/MagicalTux/gophp/core/tokenizer"
 )
@@ -104,22 +106,21 @@ func compileQuoteEncapsed(i *tokenizer.Item, c compileCtx, q rune) (Runnable, er
 
 func unescapePhpQuotedString(in string) ZString {
 	t := &bytes.Buffer{}
-	l := len(in)
 
-	for i := 0; i < l; i++ {
-		c := in[i]
-		if c != '\\' {
-			t.WriteByte(c)
+	for len(in) > 0 {
+		if in[0] != '\\' {
+			t.WriteByte(in[0])
+			in = in[1:]
 			continue
 		}
-		i += 1
-		if i >= l {
-			t.WriteByte('\\')
+		if len(in) == 1 {
+			// end of string
+			t.WriteByte(in[0])
 			break
 		}
-		c = in[i]
+		in = in[1:]
 
-		switch c {
+		switch in[0] {
 		case 't':
 			t.WriteByte('\t')
 		case 'n':
@@ -131,14 +132,49 @@ func unescapePhpQuotedString(in string) ZString {
 		case 'r':
 			t.WriteByte('\r')
 		case '"', '\\':
-			t.WriteByte(c)
+			t.WriteByte(in[0])
 		case '0', '1', '2', '3', '4', '5', '6', '7':
-			t.WriteByte(c - '0')
-		// TODO: handle \x##
+			t.WriteByte(in[0] - '0')
+		case 'x':
+			if len(in) < 3 {
+				t.WriteByte('\\')
+				t.WriteByte(in[0])
+				break
+			}
+			i, err := strconv.ParseUint(in[1:3], 16, 8)
+			if err != nil {
+				t.WriteByte('\\')
+				t.WriteByte(in[0])
+				break
+			}
+			t.WriteByte(byte(i))
+			in = in[2:]
+		case 'u':
+			if len(in) < 3 || in[1] != '{' {
+				// too short
+				t.WriteByte('\\')
+				t.WriteByte(in[0])
+				break
+			}
+			pos := strings.IndexByte(in, '}')
+			if pos == -1 {
+				t.WriteByte('\\')
+				t.WriteByte(in[0])
+				break
+			}
+			i, err := strconv.ParseUint(in[2:pos], 16, 64)
+			if err != nil {
+				t.WriteByte('\\')
+				t.WriteByte(in[0])
+				break
+			}
+			t.WriteRune(rune(i))
+			in = in[pos:]
 		default:
 			t.WriteByte('\\')
-			t.WriteByte(c)
+			t.WriteByte(in[0])
 		}
+		in = in[1:]
 	}
 
 	return ZString(t.String())
