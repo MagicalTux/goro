@@ -1,19 +1,53 @@
 package core
 
 import (
+	"errors"
 	"io"
+	"strconv"
 
 	"github.com/MagicalTux/gophp/core/tokenizer"
 )
 
 func compileBreak(i *tokenizer.Item, c compileCtx) (Runnable, error) {
+	// check if followed by digit
+	intv := int64(1)
+
+	i, err := c.NextItem()
+	if i.Type == tokenizer.T_LNUMBER {
+		intv, err = strconv.ParseInt(i.Data, 0, 64)
+		if err != nil {
+			return nil, err
+		}
+		if intv <= 0 {
+			return nil, errors.New("'break' operator accepts only positive numbers")
+		}
+	} else {
+		c.backup()
+	}
+
 	// return this as a runtime element and not a compile time error so switch and loops will catch it
-	return &PhpBreak{l: MakeLoc(i.Loc()), intv: 1}, nil
+	return &PhpBreak{l: MakeLoc(i.Loc()), intv: ZInt(intv)}, nil
 }
 
 func compileContinue(i *tokenizer.Item, c compileCtx) (Runnable, error) {
+	// check if followed by digit
+	intv := int64(1)
+
+	i, err := c.NextItem()
+	if i.Type == tokenizer.T_LNUMBER {
+		intv, err = strconv.ParseInt(i.Data, 0, 64)
+		if err != nil {
+			return nil, err
+		}
+		if intv <= 0 {
+			return nil, errors.New("'continue' operator accepts only positive numbers")
+		}
+	} else {
+		c.backup()
+	}
+
 	// return this as a runtime element and not a compile time error so switch and loops will catch it
-	return &PhpContinue{l: MakeLoc(i.Loc()), intv: 1}, nil
+	return &PhpContinue{l: MakeLoc(i.Loc()), intv: ZInt(intv)}, nil
 }
 
 type runnableFor struct {
@@ -45,10 +79,18 @@ func (r *runnableFor) Run(ctx Context) (l *ZVal, err error) {
 		_, err = r.code.Run(ctx)
 		if err != nil {
 			e := r.l.Error(err)
-			switch e.e.(type) {
+			switch br := e.e.(type) {
 			case *PhpBreak:
+				if br.intv > 1 {
+					br.intv -= 1
+					return nil, br
+				}
 				return nil, nil
 			case *PhpContinue:
+				if br.intv > 1 {
+					br.intv -= 1
+					return nil, br
+				}
 			default:
 				return nil, e
 			}
