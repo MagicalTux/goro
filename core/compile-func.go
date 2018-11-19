@@ -428,7 +428,7 @@ func compileFunctionUse(c compileCtx) (res []*funcUse, err error) {
 	}
 }
 
-func compileFuncPassedArgs(c compileCtx) (res []Runnable, err error) {
+func compileFuncPassedArgs(c compileCtx) (res Runnables, err error) {
 	i, err := c.NextItem()
 	if err != nil {
 		return nil, err

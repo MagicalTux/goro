@@ -65,6 +65,33 @@ func (z *ZHashTable) SetString(k ZString, v *ZVal) error {
 	return nil
 }
 
+func (z *ZHashTable) UnsetString(k ZString) error {
+	z.lock.Lock()
+	defer z.lock.Unlock()
+
+	t, ok := z._idx_s[k]
+	if !ok {
+		return nil
+	}
+	// remove
+	z.count -= 1
+	delete(z._idx_s, k)
+
+	if z.first == t {
+		z.first = t.next
+	}
+	if z.last == t {
+		z.last = t.prev
+	}
+	if t.prev != nil {
+		t.prev.next = t.next
+	}
+	if t.next != nil {
+		t.next.prev = t.prev
+	}
+	return nil
+}
+
 func (z *ZHashTable) GetInt(k ZInt) *ZVal {
 	z.lock.RLock()
 	defer z.lock.RUnlock()

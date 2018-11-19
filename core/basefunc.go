@@ -25,3 +25,23 @@ func fncErrorReporting(ctx Context, args []*ZVal) (*ZVal, error) {
 
 	return ctx.GetConfig("error_reporting", ZInt(0).ZVal()), nil
 }
+
+//> func bool define ( string $name , mixed $value )
+func fncDefine(ctx Context, args []*ZVal) (*ZVal, error) {
+	var name ZString
+	var value *ZVal
+	_, err := Expand(ctx, args, &name, &value)
+	if err != nil {
+		return nil, err
+	}
+
+	g := ctx.GetGlobal()
+
+	if _, ok := g.constant[name]; ok {
+		// TODO trigger notice: Constant %s already defined
+		return ZBool(false).ZVal(), nil
+	}
+
+	g.constant[name] = value
+	return ZBool(true).ZVal(), nil
+}

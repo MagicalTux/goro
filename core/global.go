@@ -128,8 +128,31 @@ func (g *Global) OffsetGet(ctx Context, name *ZVal) (*ZVal, error) {
 }
 
 func (g *Global) OffsetSet(ctx Context, name, v *ZVal) error {
-	// TODO
-	return nil
+	name, err := name.As(ctx, ZtString)
+	if err != nil {
+		return err
+	}
+
+	// handle superglobals by using root context, avoid looping
+	return g.root.h.SetString(name.AsString(ctx), v)
+}
+
+func (g *Global) OffsetUnset(ctx Context, name *ZVal) error {
+	name, err := name.As(ctx, ZtString)
+	if err != nil {
+		return err
+	}
+
+	// handle superglobals by using root context, avoid looping
+	return g.root.h.UnsetString(name.AsString(ctx))
+}
+
+func (g *Global) Count(ctx Context) ZInt {
+	return g.root.h.count
+}
+
+func (g *Global) NewIterator() ZIterator {
+	return g.root.h.NewIterator()
 }
 
 func (g *Global) Include(name ZString) (*ZVal, error) {

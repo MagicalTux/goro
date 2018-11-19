@@ -12,6 +12,8 @@ import (
 type Context interface {
 	context.Context
 	ZArrayAccess
+	ZCountable
+	ZIterable
 	io.Writer
 
 	GetGlobal() *Global
@@ -89,6 +91,27 @@ func (c *phpContext) OffsetSet(ctx Context, name, v *ZVal) error {
 		return errors.New("Cannot re-assign $this")
 	}
 	return c.h.SetString(name.AsString(ctx), v)
+}
+
+func (c *phpContext) OffsetUnset(ctx Context, name *ZVal) error {
+	name, err := name.As(ctx, ZtString)
+	if err != nil {
+		return err
+	}
+
+	switch name.AsString(ctx) {
+	case "this":
+		return errors.New("Cannot unset $this")
+	}
+	return c.h.UnsetString(name.AsString(ctx))
+}
+
+func (c *phpContext) Count(ctx Context) ZInt {
+	return c.h.count
+}
+
+func (c *phpContext) NewIterator() ZIterator {
+	return c.h.NewIterator()
 }
 
 func (ctx *phpContext) Include(_fn ZString) (*ZVal, error) {

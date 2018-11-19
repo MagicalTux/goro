@@ -13,7 +13,12 @@ func (r *runVariable) Run(ctx Context) (*ZVal, error) {
 }
 
 func (r *runVariable) WriteValue(ctx Context, value *ZVal) error {
-	err := ctx.OffsetSet(ctx, r.v.ZVal(), value.Dup())
+	var err error
+	if value == nil {
+		err = ctx.OffsetUnset(ctx, r.v.ZVal())
+	} else {
+		err = ctx.OffsetSet(ctx, r.v.ZVal(), value.Dup())
+	}
 	if err != nil {
 		return r.l.Error(err)
 	}

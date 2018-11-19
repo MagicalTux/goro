@@ -19,6 +19,7 @@ type ZArray struct {
 type ZArrayAccess interface {
 	OffsetGet(ctx Context, key *ZVal) (*ZVal, error)
 	OffsetSet(ctx Context, key, value *ZVal) error
+	OffsetUnset(ctx Context, key *ZVal) error
 }
 
 type ZIterable interface {
