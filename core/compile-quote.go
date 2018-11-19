@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/MagicalTux/gophp/core/tokenizer"
 )
@@ -168,7 +169,13 @@ func unescapePhpQuotedString(in string) ZString {
 				t.WriteByte(in[0])
 				break
 			}
-			t.WriteRune(rune(i))
+			if i >= surrogateMin && i <= surrogateMax {
+				// Surrogate pairs are non-well-formed UTF-8 - however, it is sometimes useful
+				// to be able to produce these (e.g. CESU-8 handling)
+				t.Write(utf8EncodeRune(rune(i)))
+			} else {
+				t.WriteRune(rune(i))
+			}
 			in = in[pos:]
 		default:
 			t.WriteByte('\\')
@@ -178,4 +185,56 @@ func unescapePhpQuotedString(in string) ZString {
 	}
 
 	return ZString(t.String())
+}
+
+// code from encoding/utf8 so we can encode surrogate values (required by PHP tests)
+// not really optimized as writing directly to the bytes.Buffer would be better...
+const (
+	t1 = 0x00 // 0000 0000
+	tx = 0x80 // 1000 0000
+	t2 = 0xC0 // 1100 0000
+	t3 = 0xE0 // 1110 0000
+	t4 = 0xF0 // 1111 0000
+	t5 = 0xF8 // 1111 1000
+
+	maskx = 0x3F // 0011 1111
+	mask2 = 0x1F // 0001 1111
+	mask3 = 0x0F // 0000 1111
+	mask4 = 0x07 // 0000 0111
+
+	rune1Max = 1<<7 - 1
+	rune2Max = 1<<11 - 1
+	rune3Max = 1<<16 - 1
+
+	surrogateMin = 0xD800
+	surrogateMax = 0xDFFF
+)
+
+func utf8EncodeRune(r rune) []byte {
+	// Negative values are erroneous. Making it unsigned addresses the problem.
+	switch i := uint32(r); {
+	case i <= rune1Max:
+		return []byte{byte(r)}
+	case i <= rune2Max:
+		return []byte{
+			t2 | byte(r>>6),
+			tx | byte(r)&maskx,
+		}
+	case i > utf8.MaxRune:
+		r = utf8.RuneError
+		fallthrough
+	case i <= rune3Max:
+		return []byte{
+			t3 | byte(r>>12),
+			tx | byte(r>>6)&maskx,
+			tx | byte(r)&maskx,
+		}
+	default:
+		return []byte{
+			t4 | byte(r>>18),
+			tx | byte(r>>12)&maskx,
+			tx | byte(r>>6)&maskx,
+			tx | byte(r)&maskx,
+		}
+	}
 }
