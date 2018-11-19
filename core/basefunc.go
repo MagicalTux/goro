@@ -1,5 +1,7 @@
 package core
 
+import "errors"
+
 //> func int strlen ( string $string )
 func fncStrlen(ctx Context, args []*ZVal) (*ZVal, error) {
 	var s ZString
@@ -44,4 +46,25 @@ func fncDefine(ctx Context, args []*ZVal) (*ZVal, error) {
 
 	g.constant[name] = value
 	return ZBool(true).ZVal(), nil
+}
+
+//> func int count ( mixed $array_or_countable [, int $mode = COUNT_NORMAL ] )
+func fncCount(ctx Context, args []*ZVal) (*ZVal, error) {
+	var countable *ZVal
+	var mode *ZInt
+	_, err := Expand(ctx, args, &countable, &mode)
+	if err != nil {
+		return nil, err
+	}
+
+	if mode != nil {
+		return nil, errors.New("todo recursive count")
+	}
+
+	if v, ok := countable.Value().(ZCountable); ok {
+		return v.Count(ctx).ZVal(), nil
+	}
+
+	// make this a warning
+	return ZInt(1).ZVal(), errors.New("count(): Parameter must be an array or an object that implements Countable")
 }

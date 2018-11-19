@@ -282,7 +282,7 @@ func doInc(v *ZVal, inc bool) error {
 			return nil
 		}
 	}
-	return errors.New("unsupported type for increment operator")
+	return fmt.Errorf("unsupported type for increment operator %s", v.GetType())
 }
 
 func operatorIncDec(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
@@ -369,7 +369,7 @@ func operatorMath(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 		}
 		return &ZVal{res}, nil
 	default:
-		return nil, errors.New("todo operator type unsupported")
+		return nil, fmt.Errorf("todo operator type unsupported %s", a.GetType())
 	}
 }
 
@@ -380,7 +380,7 @@ func operatorBoolLogic(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 	case "||":
 		return (a.AsBool(ctx) || b.AsBool(ctx)).ZVal(), nil
 	default:
-		return nil, errors.New("todo operator unsupported")
+		return nil, fmt.Errorf("todo operator unsupported %s", op)
 	}
 }
 
@@ -461,7 +461,7 @@ func operatorMathLogic(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 		}
 		return &ZVal{ZString(a)}, nil
 	default:
-		return nil, errors.New("todo operator type unsupported")
+		return nil, fmt.Errorf("todo operator type unsupported: %s", a.GetType())
 	}
 }
 
@@ -485,7 +485,7 @@ func operatorCompareStrict(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 	case ZtString:
 		res = a.Value().(ZString) == b.Value().(ZString)
 	default:
-		return nil, errors.New("unsupported compare type")
+		return nil, fmt.Errorf("unsupported compare type %s", a.GetType())
 	}
 
 	if op == "!==" {
@@ -552,7 +552,7 @@ func operatorCompare(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 				res = ia.Value().(ZInt) >= ib.Value().(ZInt)
 			case "==":
 				res = ia.Value().(ZInt) == ib.Value().(ZInt)
-			case "!=":
+			case "!=", "<>":
 				res = ia.Value().(ZInt) != ib.Value().(ZInt)
 			default:
 				return nil, fmt.Errorf("unsupported operator %s", op)
@@ -569,7 +569,7 @@ func operatorCompare(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 				res = ia.Value().(ZFloat) >= ib.Value().(ZFloat)
 			case "==":
 				res = ia.Value().(ZFloat) == ib.Value().(ZFloat)
-			case "!=":
+			case "!=", "<>":
 				res = ia.Value().(ZFloat) != ib.Value().(ZFloat)
 			default:
 				return nil, fmt.Errorf("unsupported operator %s", op)
@@ -607,7 +607,7 @@ func operatorCompare(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 			res = ab >= bb
 		case "==":
 			res = ab == bb
-		case "!=":
+		case "!=", "<>":
 			res = ab != bb
 		default:
 			return nil, fmt.Errorf("unsupported operator %s", op)
@@ -638,7 +638,7 @@ func operatorCompare(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 			res = av >= bv
 		case "==":
 			res = av == bv
-		case "!=":
+		case "!=", "<>":
 			res = av != bv
 		default:
 			return nil, fmt.Errorf("unsupported operator %s", op)

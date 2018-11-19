@@ -14,6 +14,7 @@ func init() {
 			stdClass,
 		},
 		Functions: map[string]*ExtFunction{
+			"count":           &ExtFunction{Func: fncCount, Args: []*ExtFunctionArg{}},
 			"define":          &ExtFunction{Func: fncDefine, Args: []*ExtFunctionArg{}},
 			"error_reporting": &ExtFunction{Func: fncErrorReporting, Args: []*ExtFunctionArg{}},
 			"phpversion":      &ExtFunction{Func: stdFuncPhpVersion, Args: []*ExtFunctionArg{}},

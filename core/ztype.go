@@ -97,8 +97,15 @@ func (z ZString) AsVal(ctx Context, t ZType) (Val, error) {
 		i, _ := strconv.ParseInt(string(z), 10, 64)
 		return ZInt(i), nil
 	case ZtFloat:
-		f, _ := strconv.ParseFloat(string(z), 64)
-		return ZFloat(f), nil
+		v, _ := z.AsNumeric()
+		switch v := v.(type) {
+		case ZInt:
+			return ZFloat(v), nil
+		case ZFloat:
+			return v, nil
+		default:
+			return nil, nil
+		}
 	case ZtString:
 		return z, nil
 	}

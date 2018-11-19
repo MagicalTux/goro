@@ -285,6 +285,7 @@ func compilePostExpr(v Runnable, i *tokenizer.Item, c compileCtx) (Runnable, err
 		tokenizer.T_DIV_EQUAL,
 		tokenizer.T_IS_EQUAL,
 		tokenizer.T_IS_NOT_EQUAL,
+		tokenizer.T_SPACESHIP,
 		tokenizer.T_IS_IDENTICAL,
 		tokenizer.T_IS_NOT_IDENTICAL,
 		tokenizer.T_IS_GREATER_OR_EQUAL,
