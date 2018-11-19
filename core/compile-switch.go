@@ -100,8 +100,17 @@ func (r *runSwitch) Run(ctx Context) (*ZVal, error) {
 		if err != nil {
 			e := r.l.Error(err)
 			err = e
-			switch e.e.(type) {
-			case *PhpBreak, *PhpContinue:
+			switch br := e.e.(type) {
+			case *PhpBreak:
+				if br.intv > 1 {
+					br.intv -= 1
+					return nil, br
+				}
+			case *PhpContinue:
+				if br.intv > 1 {
+					br.intv -= 1
+					return nil, br
+				}
 			default:
 				return nil, err
 			}
