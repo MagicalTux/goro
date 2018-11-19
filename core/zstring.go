@@ -69,7 +69,7 @@ func (z ZString) AsNumeric() (Val, error) {
 	var l int
 
 	for {
-		if len(z) <= 1 {
+		if len(z) < 1 {
 			return ZInt(0), errors.New("no numeric value")
 		}
 		r, l = utf8.DecodeRuneInString(string(z))
