@@ -17,6 +17,9 @@ import (
 	"github.com/andreyvit/diff"
 )
 
+// Currently focusing on lang tests, change variable to run other tests
+const TestsPath = "test/php-7.2.10/tests/lang/"
+
 type phptest struct {
 	f      *os.File
 	reader *bufio.Reader
@@ -163,7 +166,7 @@ func TestPhp(t *testing.T) {
 	pass := 0
 	skip := 0
 	fail := 0
-	filepath.Walk("test", func(path string, info os.FileInfo, err error) error {
+	filepath.Walk(TestsPath, func(path string, info os.FileInfo, err error) error {
 		if !info.Mode().IsRegular() {
 			return err
 		}
