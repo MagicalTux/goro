@@ -15,6 +15,7 @@ func init() {
 		},
 		Functions: map[string]*ExtFunction{
 			"phpversion":   &ExtFunction{Func: stdFuncPhpVersion, Args: []*ExtFunctionArg{}},
+			"strlen":       &ExtFunction{Func: fncStrlen, Args: []*ExtFunctionArg{}},
 			"zend_version": &ExtFunction{Func: stdFuncZendVersion, Args: []*ExtFunctionArg{}},
 		},
 		Constants: map[ZString]*ZVal{

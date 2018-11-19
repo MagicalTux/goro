@@ -56,7 +56,7 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 			return err
 		}
 		_, err = c.Run(ctx)
-		return err
+		return core.FilterError(err)
 	case "EXPECT":
 		// compare p.output with b
 		out := bytes.TrimSpace(p.output.Bytes())
@@ -76,14 +76,9 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 			return err
 		}
 		_, err = c.Run(ctx)
+		err = core.FilterError(err)
 		if err != nil {
-			if e, ok := err.(*core.PhpError); ok {
-				if !e.IsExit() {
-					return err
-				}
-			} else {
-				return err
-			}
+			return err
 		}
 		if bytes.HasPrefix(output.Bytes(), []byte("skip ")) {
 			return skipTest
