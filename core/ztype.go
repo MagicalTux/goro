@@ -73,6 +73,12 @@ func (z ZBool) AsVal(ctx Context, t ZType) (Val, error) {
 		} else {
 			return ZFloat(0), nil
 		}
+	case ZtString:
+		if z {
+			return ZString("1"), nil
+		} else {
+			return ZString(""), nil
+		}
 	}
 	return nil, nil
 }

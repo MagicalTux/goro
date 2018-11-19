@@ -538,45 +538,55 @@ func operatorCompare(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 			ib, _ = ib.As(ctx, ZtFloat)
 		}
 
-		var res bool
+		var res Val
 		switch ia.GetType() {
 		case ZtInt:
+			ia := ia.Value().(ZInt)
+			ib := ib.Value().(ZInt)
 			switch op {
 			case "<":
-				res = ia.Value().(ZInt) < ib.Value().(ZInt)
+				res = ZBool(ia < ib)
 			case ">":
-				res = ia.Value().(ZInt) > ib.Value().(ZInt)
+				res = ZBool(ia > ib)
 			case "<=":
-				res = ia.Value().(ZInt) <= ib.Value().(ZInt)
+				res = ZBool(ia <= ib)
 			case ">=":
-				res = ia.Value().(ZInt) >= ib.Value().(ZInt)
+				res = ZBool(ia >= ib)
 			case "==":
-				res = ia.Value().(ZInt) == ib.Value().(ZInt)
+				res = ZBool(ia == ib)
 			case "!=", "<>":
-				res = ia.Value().(ZInt) != ib.Value().(ZInt)
+				res = ZBool(ia != ib)
+			case "<=>":
+				if ia < ib {
+					res = ZInt(-1)
+				} else if ia > ib {
+					res = ZInt(1)
+				} else {
+					res = ZInt(0)
+				}
 			default:
 				return nil, fmt.Errorf("unsupported operator %s", op)
 			}
 		case ZtFloat:
 			switch op {
 			case "<":
-				res = ia.Value().(ZFloat) < ib.Value().(ZFloat)
+				res = ZBool(ia.Value().(ZFloat) < ib.Value().(ZFloat))
 			case ">":
-				res = ia.Value().(ZFloat) > ib.Value().(ZFloat)
+				res = ZBool(ia.Value().(ZFloat) > ib.Value().(ZFloat))
 			case "<=":
-				res = ia.Value().(ZFloat) <= ib.Value().(ZFloat)
+				res = ZBool(ia.Value().(ZFloat) <= ib.Value().(ZFloat))
 			case ">=":
-				res = ia.Value().(ZFloat) >= ib.Value().(ZFloat)
+				res = ZBool(ia.Value().(ZFloat) >= ib.Value().(ZFloat))
 			case "==":
-				res = ia.Value().(ZFloat) == ib.Value().(ZFloat)
+				res = ZBool(ia.Value().(ZFloat) == ib.Value().(ZFloat))
 			case "!=", "<>":
-				res = ia.Value().(ZFloat) != ib.Value().(ZFloat)
+				res = ZBool(ia.Value().(ZFloat) != ib.Value().(ZFloat))
 			default:
 				return nil, fmt.Errorf("unsupported operator %s", op)
 			}
 		}
 
-		return &ZVal{ZBool(res)}, nil
+		return res.ZVal(), nil
 	}
 
 	if a.GetType() == ZtBool || b.GetType() == ZtBool {
@@ -644,7 +654,7 @@ func operatorCompare(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 			return nil, fmt.Errorf("unsupported operator %s", op)
 		}
 	default:
-		return nil, errors.New("todo operator type unsupported")
+		return nil, fmt.Errorf("todo operator type unsupported %s", a.GetType())
 	}
 
 	return &ZVal{ZBool(res)}, nil
