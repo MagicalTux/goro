@@ -256,5 +256,5 @@ func compileObjectOperator(v Runnable, i *tokenizer.Item, c compileCtx) (Runnabl
 		return v, err
 	}
 
-	return compilePostExpr(&runObjectVar{ref: v, varName: op, l: l}, nil, c)
+	return &runObjectVar{ref: v, varName: op, l: l}, nil
 }

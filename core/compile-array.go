@@ -64,7 +64,7 @@ func (a runArray) Dump(w io.Writer) error {
 			return err
 		}
 	}
-	_, err = w.Write([]byte{'}'})
+	_, err = w.Write([]byte{']'})
 	return err
 }
 
@@ -343,7 +343,7 @@ func compileArrayAccess(v Runnable, c compileCtx) (Runnable, error) {
 	}
 	if i.IsSingle(endc) {
 		v = &runArrayAccess{value: v, offset: nil, l: l}
-		return compilePostExpr(v, nil, c)
+		return v, nil
 	}
 	c.backup()
 
@@ -364,10 +364,5 @@ func compileArrayAccess(v Runnable, c compileCtx) (Runnable, error) {
 
 	v = &runArrayAccess{value: v, offset: offt, l: l}
 
-	i, err = c.NextItem()
-	if err != nil {
-		return nil, err
-	}
-
-	return compilePostExpr(v, i, c)
+	return v, nil
 }
