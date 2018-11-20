@@ -26,6 +26,7 @@ type Global struct {
 	constant      map[ZString]*ZVal
 	environ       []string
 	fHandler      map[string]stream.Handler
+	included      map[ZString]bool // included files (used for require_once, etc)
 
 	out io.Writer
 }
@@ -57,6 +58,7 @@ func (g *Global) init() {
 	g.globalClasses = make(map[ZString]*ZClass)
 	g.constant = make(map[ZString]*ZVal)
 	g.fHandler = make(map[string]stream.Handler)
+	g.included = make(map[ZString]bool)
 
 	// prepare root context
 	g.root = &RootContext{
@@ -97,7 +99,7 @@ func (g *Global) Root() *RootContext {
 }
 
 func (g *Global) RunFile(fn string) error {
-	_, err := g.root.Include(g.root, ZString(fn))
+	_, err := g.Include(g.root, ZString(fn))
 	return FilterError(err)
 }
 

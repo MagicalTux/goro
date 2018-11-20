@@ -3,8 +3,6 @@ package core
 import (
 	"context"
 	"errors"
-
-	"github.com/MagicalTux/gophp/core/tokenizer"
 )
 
 type RootContext struct {
@@ -95,31 +93,6 @@ func (c *RootContext) Count(ctx Context) ZInt {
 
 func (c *RootContext) NewIterator() ZIterator {
 	return c.h.NewIterator()
-}
-
-func (c *RootContext) Include(ctx Context, fn ZString) (*ZVal, error) {
-	f, err := ctx.Global().Open(fn)
-	if err != nil {
-		return nil, err
-	}
-
-	defer f.Close()
-
-	// grab full path of file if possible
-	if fn2, ok := f.Attr("uri").(string); ok {
-		fn = ZString(fn2)
-	}
-
-	// tokenize
-	t := tokenizer.NewLexer(f, string(fn))
-
-	// compile
-	code, err := Compile(ctx, t)
-	if err != nil {
-		return nil, err
-	}
-
-	return code.Run(ctx)
 }
 
 func (c *RootContext) GetConfig(name ZString, def *ZVal) *ZVal {
