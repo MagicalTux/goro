@@ -94,32 +94,91 @@ func compileIf(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 		return nil, i.Unexpected()
 	}
 
-	// parse expression
-	r.yes, err = compileBaseSingle(nil, c)
+	// check for next if ':'
+	i, err = c.NextItem()
 	if err != nil {
 		return nil, err
 	}
-
-	i, err = c.NextItem()
-	if err != nil {
-		return r, err
-	}
-
-	// check for else or elseif
-	switch i.Type {
-	case tokenizer.T_ELSEIF:
-		r.no, err = compileIf(nil, c)
+	if i.IsSingle(':') {
+		// parse expression until endif
+		// See: http://php.net/manual/en/control-structures.alternative-syntax.php
+		r.yes, err = compileBase(nil, c)
 		if err != nil {
 			return nil, err
 		}
-	case tokenizer.T_ELSE:
-		// parse else
-		r.no, err = compileBaseSingle(nil, c)
+
+		i, err = c.NextItem()
 		if err != nil {
-			return nil, err
+			return r, err
 		}
-	default:
+
+		switch i.Type {
+		case tokenizer.T_ELSEIF:
+			r.no, err = compileIf(nil, c)
+			if err != nil {
+				return nil, err
+			}
+		case tokenizer.T_ELSE:
+			i, err = c.NextItem()
+			if err != nil {
+				return r, err
+			}
+			if !i.IsSingle(':') {
+				return nil, i.Unexpected()
+			}
+			r.no, err = compileBase(nil, c)
+
+			// then we should be getting a endif
+			i, err = c.NextItem()
+			if err != nil {
+				return r, err
+			}
+			if i.Type != tokenizer.T_ENDIF {
+				return nil, i.Unexpected()
+			}
+			fallthrough
+		case tokenizer.T_ENDIF:
+			// end of if
+			i, err = c.NextItem()
+			if err != nil {
+				return r, err
+			}
+			if !i.IsSingle(';') {
+				return nil, i.Unexpected()
+			}
+		default:
+			return nil, i.Unexpected()
+		}
+	} else {
 		c.backup()
+
+		// parse expression normally
+		r.yes, err = compileBaseSingle(nil, c)
+		if err != nil {
+			return nil, err
+		}
+
+		i, err = c.NextItem()
+		if err != nil {
+			return r, err
+		}
+
+		// check for else or elseif
+		switch i.Type {
+		case tokenizer.T_ELSEIF:
+			r.no, err = compileIf(nil, c)
+			if err != nil {
+				return nil, err
+			}
+		case tokenizer.T_ELSE:
+			// parse else
+			r.no, err = compileBaseSingle(nil, c)
+			if err != nil {
+				return nil, err
+			}
+		default:
+			c.backup()
+		}
 	}
 
 	return r, nil

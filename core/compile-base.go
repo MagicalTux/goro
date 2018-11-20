@@ -76,6 +76,12 @@ func compileBase(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 		if i.IsSingle('}') {
 			return res, nil
 		}
+		switch i.Type {
+		case tokenizer.T_ENDIF, tokenizer.T_ELSE, tokenizer.T_ELSEIF:
+			// end of block, but need to backup one for caller to check
+			c.backup()
+			return res, nil
+		}
 
 		t, err := compileBaseSingle(i, c)
 		if t != nil {
