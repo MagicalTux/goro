@@ -77,6 +77,7 @@ func (z *ZVal) IsRef() bool {
 
 func (z *ZVal) Value() Val {
 	if z == nil {
+		panic("nil zval")
 		return nil
 	}
 	if sz, ok := z.v.(*ZVal); ok {

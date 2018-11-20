@@ -10,6 +10,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"runtime/debug"
 	"strings"
 	"testing"
 
@@ -19,7 +20,7 @@ import (
 )
 
 // Currently focusing on lang tests, change variable to run other tests
-const TestsPath = "test/php-7.2.10/tests/lang/"
+const TestsPath = "test"
 
 type phptest struct {
 	f      *os.File
@@ -101,6 +102,12 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 
 func runTest(t *testing.T, fpath string) (p *phptest, err error) {
 	p = &phptest{t: t, output: &bytes.Buffer{}, name: fpath, path: fpath}
+
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("failed to run: %s\n%s", r, debug.Stack())
+		}
+	}()
 
 	// read & parse test file
 	p.f, err = os.Open(fpath)
