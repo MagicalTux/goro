@@ -14,6 +14,7 @@ type Context interface {
 
 	Global() *Global
 	Root() *RootContext
+	Parent(n int) Context
 
 	GetConfig(name ZString, def *ZVal) *ZVal
 

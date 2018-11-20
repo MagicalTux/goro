@@ -152,3 +152,7 @@ func (c *RootContext) Call(ctx Context, f Callable, args []Runnable, this *ZObje
 
 	return f.Call(callCtx, callCtx.args)
 }
+
+func (c *RootContext) Parent(n int) Context {
+	return nil
+}

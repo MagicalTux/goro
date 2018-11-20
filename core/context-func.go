@@ -110,3 +110,11 @@ func (ctx *FuncContext) Include(_fn ZString) (*ZVal, error) {
 
 	return c.Run(ctx)
 }
+
+func (ctx *FuncContext) Parent(n int) Context {
+	if n <= 1 {
+		return ctx.Context
+	} else {
+		return ctx.Context.Parent(n - 1)
+	}
+}
