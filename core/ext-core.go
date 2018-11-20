@@ -17,6 +17,7 @@ func init() {
 			"count":           &ExtFunction{Func: fncCount, Args: []*ExtFunctionArg{}},
 			"define":          &ExtFunction{Func: fncDefine, Args: []*ExtFunctionArg{}},
 			"error_reporting": &ExtFunction{Func: fncErrorReporting, Args: []*ExtFunctionArg{}},
+			"func_get_args":   &ExtFunction{Func: fncFuncGetArgs, Args: []*ExtFunctionArg{}},
 			"phpversion":      &ExtFunction{Func: stdFuncPhpVersion, Args: []*ExtFunctionArg{}},
 			"strlen":          &ExtFunction{Func: fncStrlen, Args: []*ExtFunctionArg{}},
 			"zend_version":    &ExtFunction{Func: stdFuncZendVersion, Args: []*ExtFunctionArg{}},
