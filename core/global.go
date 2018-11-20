@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -118,22 +117,6 @@ func (g *Global) SetLocalConfig(name ZString, val *ZVal) error {
 func (g *Global) GetConfig(name ZString, def *ZVal) *ZVal {
 	// TODO
 	return def
-}
-
-// Open opens a file using PHP stream wrappers and returns a handler to said
-// file.
-func (g *Global) Open(u *url.URL) (*stream.Stream, error) {
-	s := u.Scheme
-	if s == "" {
-		s = "file"
-	}
-
-	h, ok := g.fHandler[s]
-	if !ok {
-		return nil, os.ErrInvalid
-	}
-
-	return h.Open(u)
 }
 
 func (g *Global) OffsetGet(ctx Context, name *ZVal) (*ZVal, error) {

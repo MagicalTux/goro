@@ -2,7 +2,6 @@ package core
 
 import (
 	"net/http"
-	"net/url"
 	"path"
 	"strings"
 	"time"
@@ -19,14 +18,12 @@ func (p *phpWebHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		full += "index.php"
 	}
 
-	u, _ := url.Parse(full)
-
 	// make a new global env
 	g := NewGlobalReq(req, p.p)
 	g.out = w
 
 	// check if full exists
-	fp, err := g.Open(u)
+	fp, err := g.Open(ZString(full))
 	if err != nil {
 		// likely not found. TODO check if dir. If dir, send redirect
 		http.NotFound(w, req)

@@ -3,7 +3,6 @@ package core
 import (
 	"context"
 	"errors"
-	"net/url"
 
 	"github.com/MagicalTux/gophp/core/tokenizer"
 )
@@ -98,14 +97,8 @@ func (c *RootContext) NewIterator() ZIterator {
 	return c.h.NewIterator()
 }
 
-func (c *RootContext) Include(ctx Context, _fn ZString) (*ZVal, error) {
-	fn := string(_fn)
-	u, err := url.Parse(fn)
-	if err != nil {
-		return nil, err
-	}
-
-	f, err := ctx.Global().Open(u)
+func (c *RootContext) Include(ctx Context, fn ZString) (*ZVal, error) {
+	f, err := ctx.Global().Open(fn)
 	if err != nil {
 		return nil, err
 	}
@@ -114,11 +107,11 @@ func (c *RootContext) Include(ctx Context, _fn ZString) (*ZVal, error) {
 
 	// grab full path of file if possible
 	if fn2, ok := f.Attr("uri").(string); ok {
-		fn = fn2
+		fn = ZString(fn2)
 	}
 
 	// tokenize
-	t := tokenizer.NewLexer(f, fn)
+	t := tokenizer.NewLexer(f, string(fn))
 
 	// compile
 	code, err := Compile(ctx, t)
