@@ -3,6 +3,7 @@ package core
 import (
 	"fmt"
 	"io"
+	"strings"
 )
 
 type ZClassProp struct {
@@ -28,9 +29,11 @@ type ZClass struct {
 	ExtendsStr    ZString
 	ImplementsStr []ZString
 
+	Constructor *ZClassMethod
+
 	Extends     *ZClass
 	Implements  []*ZClass
-	Const       map[ZString]ZString
+	Const       map[ZString]ZString // class constants
 	Props       []*ZClassProp
 	Methods     map[ZString]*ZClassMethod
 	StaticProps *ZHashTable
@@ -53,4 +56,13 @@ func (c *ZClass) Dump(w io.Writer) error {
 	// TODO
 	_, err = fmt.Fprintf(w, "TODO }")
 	return err
+}
+
+func (c *ZClass) BaseName() ZString {
+	// rturn class name without namespaces/etc
+	pos := strings.LastIndexByte(string(c.Name), '\\')
+	if pos == -1 {
+		return c.Name
+	}
+	return c.Name[pos+1:]
 }

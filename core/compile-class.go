@@ -131,6 +131,11 @@ func compileClass(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 
 			// register method
 			method := &ZClassMethod{Name: ZString(i.Data), Modifiers: attr, Method: f}
+
+			if x := method.Name.ToLower(); x == class.BaseName().ToLower() || x == "__construct" {
+				//if class.Constructor != nil {
+				class.Constructor = method
+			}
 			class.Methods[method.Name.ToLower()] = method
 		default:
 			return nil, i.Unexpected()
