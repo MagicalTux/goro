@@ -6,6 +6,11 @@ import (
 	"github.com/MagicalTux/gophp/core/tokenizer"
 )
 
+type PhpReturn struct {
+	l *Loc
+	v *ZVal
+}
+
 func compileReturn(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	i, err := c.NextItem()
 	c.backup()
@@ -33,7 +38,11 @@ type runReturn struct {
 }
 
 func (r *runReturn) Run(ctx Context) (*ZVal, error) {
-	return r.v.Run(ctx)
+	ret, err := r.v.Run(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return nil, &PhpReturn{l: r.l, v: ret}
 }
 
 func (r *runReturn) Loc() *Loc {
@@ -46,4 +55,24 @@ func (r *runReturn) Dump(w io.Writer) error {
 		return err
 	}
 	return r.v.Dump(w)
+}
+
+func (r *PhpReturn) Error() string {
+	return "You shouldn't see this - return not caught"
+}
+
+func CatchReturn(v *ZVal, err error) (*ZVal, error) {
+	if err == nil {
+		return v, err
+	}
+	switch err := err.(type) {
+	case *PhpReturn:
+		return err.v, nil
+	case *PhpError:
+		switch err := err.e.(type) {
+		case *PhpReturn:
+			return err.v, nil
+		}
+	}
+	return v, err
 }

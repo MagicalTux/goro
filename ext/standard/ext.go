@@ -29,7 +29,6 @@ func init() {
 			"deg2rad":                  &core.ExtFunction{Func: mathDeg2rad, Args: []*core.ExtFunctionArg{}},
 			"die":                      &core.ExtFunction{Func: die, Args: []*core.ExtFunctionArg{}},
 			"dl":                       &core.ExtFunction{Func: stdFuncDl, Args: []*core.ExtFunctionArg{}},
-			"echo":                     &core.ExtFunction{Func: stdFuncEcho, Args: []*core.ExtFunctionArg{}},
 			"eval":                     &core.ExtFunction{Func: stdFuncEval, Args: []*core.ExtFunctionArg{}},
 			"exit":                     &core.ExtFunction{Func: exit, Args: []*core.ExtFunctionArg{}},
 			"exp":                      &core.ExtFunction{Func: mathExp, Args: []*core.ExtFunctionArg{}},

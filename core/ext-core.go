@@ -16,6 +16,7 @@ func init() {
 		Functions: map[string]*ExtFunction{
 			"count":           &ExtFunction{Func: fncCount, Args: []*ExtFunctionArg{}},
 			"define":          &ExtFunction{Func: fncDefine, Args: []*ExtFunctionArg{}},
+			"echo":            &ExtFunction{Func: stdFuncEcho, Args: []*ExtFunctionArg{}},
 			"error_reporting": &ExtFunction{Func: fncErrorReporting, Args: []*ExtFunctionArg{}},
 			"func_get_arg":    &ExtFunction{Func: fncFuncGetArg, Args: []*ExtFunctionArg{}},
 			"func_get_args":   &ExtFunction{Func: fncFuncGetArgs, Args: []*ExtFunctionArg{}},
@@ -23,6 +24,7 @@ func init() {
 			"include":         &ExtFunction{Func: fncInclude, Args: []*ExtFunctionArg{}},
 			"include_once":    &ExtFunction{Func: fncIncludeOnce, Args: []*ExtFunctionArg{}},
 			"phpversion":      &ExtFunction{Func: stdFuncPhpVersion, Args: []*ExtFunctionArg{}},
+			"print":           &ExtFunction{Func: fncPrint, Args: []*ExtFunctionArg{}},
 			"require":         &ExtFunction{Func: fncRequire, Args: []*ExtFunctionArg{}},
 			"require_once":    &ExtFunction{Func: fncRequireOnce, Args: []*ExtFunctionArg{}},
 			"strlen":          &ExtFunction{Func: fncStrlen, Args: []*ExtFunctionArg{}},

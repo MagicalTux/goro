@@ -37,7 +37,7 @@ func (c *Global) Include(ctx Context, fn ZString) (*ZVal, error) {
 		return nil, err
 	}
 
-	return code.Run(ctx)
+	return CatchReturn(code.Run(ctx))
 }
 
 //> func mixed require (string filename)
@@ -74,7 +74,7 @@ func (c *Global) Require(ctx Context, fn ZString) (*ZVal, error) {
 		return nil, err
 	}
 
-	return code.Run(ctx)
+	return CatchReturn(code.Run(ctx))
 }
 
 //> func mixed include_once (string filename)
@@ -117,7 +117,7 @@ func (c *Global) IncludeOnce(ctx Context, fn ZString) (*ZVal, error) {
 		return nil, err
 	}
 
-	return code.Run(ctx)
+	return CatchReturn(code.Run(ctx))
 }
 
 //> func mixed require_once (string filename)
@@ -158,5 +158,5 @@ func (c *Global) RequireOnce(ctx Context, fn ZString) (*ZVal, error) {
 		return nil, err
 	}
 
-	return code.Run(ctx)
+	return CatchReturn(code.Run(ctx))
 }
