@@ -51,6 +51,7 @@ func init() {
 			"php_sapi_name":            &core.ExtFunction{Func: stdFuncSapiName, Args: []*core.ExtFunctionArg{}},
 			"php_uname":                &core.ExtFunction{Func: fncUname, Args: []*core.ExtFunctionArg{}},
 			"pi":                       &core.ExtFunction{Func: mathPi, Args: []*core.ExtFunctionArg{}},
+			"print_r":                  &core.ExtFunction{Func: fncPrintR, Args: []*core.ExtFunctionArg{}},
 			"putenv":                   &core.ExtFunction{Func: putenv, Args: []*core.ExtFunctionArg{}},
 			"rawurlencode":             &core.ExtFunction{Func: fncRawurlencode, Args: []*core.ExtFunctionArg{}},
 			"sleep":                    &core.ExtFunction{Func: stdFuncSleep, Args: []*core.ExtFunctionArg{}},
