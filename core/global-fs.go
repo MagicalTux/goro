@@ -42,3 +42,18 @@ func (g *Global) Chdir(d ZString) error {
 
 	return chd.Chdir(string(d))
 }
+
+func (g *Global) Getwd() ZString {
+	// use file handler for chdir by default
+	h, ok := g.fHandler["file"]
+	if !ok {
+		return ""
+	}
+
+	chd, ok := h.(stream.Chdir)
+	if !ok {
+		return ""
+	}
+
+	return ZString(chd.Getwd())
+}

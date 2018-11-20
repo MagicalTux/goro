@@ -44,6 +44,7 @@ func init() {
 			"get_cfg_var":              &core.ExtFunction{Func: stdFuncGetCfgVar, Args: []*core.ExtFunctionArg{}},
 			"get_magic_quotes_gpc":     &core.ExtFunction{Func: getMagicQuotesGpc, Args: []*core.ExtFunctionArg{}},
 			"get_magic_quotes_runtime": &core.ExtFunction{Func: getMagicQuotesRuntime, Args: []*core.ExtFunctionArg{}},
+			"getcwd":                   &core.ExtFunction{Func: fncGetcwd, Args: []*core.ExtFunctionArg{}},
 			"getenv":                   &core.ExtFunction{Func: getenv, Args: []*core.ExtFunctionArg{}},
 			"hrtime":                   &core.ExtFunction{Func: stdFuncHrTime, Args: []*core.ExtFunctionArg{}},
 			"hypot":                    &core.ExtFunction{Func: mathHypot, Args: []*core.ExtFunctionArg{}},
