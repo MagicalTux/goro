@@ -16,7 +16,7 @@ func getenv(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 		return nil, err
 	}
 
-	v, ok := ctx.GetGlobal().Getenv(string(varname))
+	v, ok := ctx.Global().Getenv(string(varname))
 	if !ok {
 		return core.ZBool(false).ZVal(), nil
 	}
@@ -35,9 +35,9 @@ func putenv(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 	pos := strings.IndexByte(setting, '=')
 	if pos == -1 {
 		// unset
-		ctx.GetGlobal().Unsetenv(setting)
+		ctx.Global().Unsetenv(setting)
 	} else {
-		ctx.GetGlobal().Setenv(setting[:pos], setting[pos+1:])
+		ctx.Global().Setenv(setting[:pos], setting[pos+1:])
 	}
 	return core.ZBool(true).ZVal(), nil
 }

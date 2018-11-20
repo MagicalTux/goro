@@ -83,7 +83,7 @@ func Compile(parent Context, t *tokenizer.Lexer) (Runnable, error) {
 			switch obj := elem.(type) {
 			case *ZClosure:
 				if obj.name != "" {
-					err := c.GetGlobal().RegisterFunction(obj.name, obj)
+					err := c.Global().RegisterFunction(obj.name, obj)
 					if err != nil {
 						return nil, obj.Loc().Error(err)
 					}
@@ -91,7 +91,7 @@ func Compile(parent Context, t *tokenizer.Lexer) (Runnable, error) {
 				}
 			case *ZClass:
 				if obj.Name != "" {
-					err := c.GetGlobal().RegisterClass(obj.Name, obj)
+					err := c.Global().RegisterClass(obj.Name, obj)
 					if err != nil {
 						return nil, obj.Loc().Error(err)
 					}

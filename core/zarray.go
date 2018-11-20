@@ -83,6 +83,8 @@ func (a *ZArray) AsVal(ctx Context, t ZType) (Val, error) {
 	case ZtString:
 		// TODO emit warning "Array to string conversion"
 		return ZString("Array"), nil
+	case ZtArray:
+		return a, nil
 	}
 	return nil, nil
 }

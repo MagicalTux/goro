@@ -12,7 +12,7 @@ type runGlobal struct {
 }
 
 func (g *runGlobal) Run(ctx Context) (*ZVal, error) {
-	glob := ctx.GetGlobal()
+	glob := ctx.Global()
 	for _, k := range g.vars {
 		v, err := glob.OffsetGet(ctx, k.ZVal())
 		if err != nil {

@@ -88,7 +88,7 @@ func (r *runnableFunctionCallRef) Dump(w io.Writer) error {
 
 func (r *runnableFunctionCall) Run(ctx Context) (l *ZVal, err error) {
 	// grab function
-	f, err := ctx.GetFunction(r.name)
+	f, err := ctx.Global().GetFunction(r.name)
 	if err != nil {
 		return nil, err
 	}
@@ -130,7 +130,7 @@ func (r *runnableFunctionCallRef) Run(ctx Context) (l *ZVal, err error) {
 				return nil, err
 			}
 			// grab function
-			f, err = ctx.GetFunction(v.Value().(ZString))
+			f, err = ctx.Global().GetFunction(v.Value().(ZString))
 			if err != nil {
 				return nil, err
 			}

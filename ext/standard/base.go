@@ -29,7 +29,7 @@ func stdFuncFuncExists(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) 
 		return nil, err
 	}
 
-	f, _ := ctx.GetGlobal().GetFunction(fname)
+	f, _ := ctx.Global().GetFunction(fname)
 	return core.ZBool(f != nil).ZVal(), nil
 }
 
@@ -40,10 +40,10 @@ func stdFuncGetCfgVar(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 	if err != nil {
 		return nil, err
 	}
-	return ctx.GetGlobal().GetConfig(v, core.ZNull{}.ZVal()), nil
+	return ctx.Global().GetConfig(v, core.ZNull{}.ZVal()), nil
 }
 
 //> func string php_sapi_name ( void )
 func stdFuncSapiName(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
-	return ctx.GetGlobal().GetConstant("PHP_SAPI")
+	return ctx.Global().GetConstant("PHP_SAPI")
 }

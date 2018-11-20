@@ -22,7 +22,7 @@ func fncErrorReporting(ctx Context, args []*ZVal) (*ZVal, error) {
 	}
 
 	if level != nil {
-		ctx.GetGlobal().SetLocalConfig("error_reporting", (*level).ZVal())
+		ctx.Global().SetLocalConfig("error_reporting", (*level).ZVal())
 	}
 
 	return ctx.GetConfig("error_reporting", ZInt(0).ZVal()), nil
@@ -37,7 +37,7 @@ func fncDefine(ctx Context, args []*ZVal) (*ZVal, error) {
 		return nil, err
 	}
 
-	g := ctx.GetGlobal()
+	g := ctx.Global()
 
 	if _, ok := g.constant[name]; ok {
 		// TODO trigger notice: Constant %s already defined

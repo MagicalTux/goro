@@ -38,7 +38,7 @@ type ZClass struct {
 
 func (c *ZClass) Run(ctx Context) (*ZVal, error) {
 	// TODO resolve extendstr/implementsstr
-	return nil, ctx.GetGlobal().RegisterClass(c.Name, c)
+	return nil, ctx.Global().RegisterClass(c.Name, c)
 }
 
 func (c *ZClass) Loc() *Loc {

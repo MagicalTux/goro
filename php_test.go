@@ -71,14 +71,14 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		return nil
 	case "SKIPIF":
 		t := tokenizer.NewLexer(b, p.path)
-		ctx := core.NewGlobal(context.Background(), p.p)
+		g := core.NewGlobal(context.Background(), p.p)
 		output := &bytes.Buffer{}
-		ctx.SetOutput(output)
-		c, err := core.Compile(ctx, t)
+		g.SetOutput(output)
+		c, err := core.Compile(g.Root(), t)
 		if err != nil {
 			return err
 		}
-		_, err = c.Run(ctx)
+		_, err = c.Run(g.Root())
 		err = core.FilterError(err)
 		if err != nil {
 			return err

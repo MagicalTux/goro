@@ -41,7 +41,7 @@ func (p *phpWebHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	g := NewGlobalReq(req, p.p)
 	g.out = w
 
-	ctx := NewContext(g)
+	ctx := g.Root()
 
 	// include file
 	ctx.Include(ZString(full))

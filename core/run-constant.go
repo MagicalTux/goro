@@ -29,7 +29,7 @@ func (r *runConstant) Run(ctx Context) (l *ZVal, err error) {
 		return &ZVal{ZBool(false)}, nil
 	}
 
-	z, err := ctx.GetGlobal().GetConstant(ZString(r.c))
+	z, err := ctx.Global().GetConstant(ZString(r.c))
 	if err != nil {
 		return nil, err
 	}

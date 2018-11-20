@@ -16,7 +16,7 @@ type Global struct {
 
 	p     *Process
 	start time.Time
-	root  *phpContext
+	root  *RootContext
 	req   *http.Request
 
 	globalFuncs   map[ZString]Callable
@@ -55,8 +55,9 @@ func (g *Global) init() {
 	g.constant = make(map[ZString]*ZVal)
 
 	// prepare root context
-	g.root = &phpContext{
+	g.root = &RootContext{
 		Context: g,
+		g:       g,
 		h:       NewHashTable(),
 	}
 

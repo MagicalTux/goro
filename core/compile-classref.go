@@ -42,7 +42,7 @@ func (r *runClassStaticObjRef) Run(ctx Context) (*ZVal, error) {
 
 func (r *runClassStaticObjRef) Call(ctx Context, args []*ZVal) (*ZVal, error) {
 	// first, fetch class object
-	class, err := ctx.GetGlobal().GetClass(r.className)
+	class, err := ctx.Global().GetClass(r.className)
 	if err != nil {
 		return nil, err
 	}

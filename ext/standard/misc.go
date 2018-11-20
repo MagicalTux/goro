@@ -17,7 +17,7 @@ func constant(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 		return nil, err
 	}
 
-	return ctx.GetGlobal().GetConstant(name)
+	return ctx.Global().GetConstant(name)
 }
 
 //> func mixed eval ( string $code )
