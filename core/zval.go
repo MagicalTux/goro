@@ -49,10 +49,10 @@ func (z *ZVal) ZVal() *ZVal {
 }
 
 func (z *ZVal) Dup() *ZVal {
+	// TODO duplicate contents if array
 	switch v := z.v.(type) {
 	case *ZVal:
-		return v.v.ZVal()
-		// TODO duplicate contents if array
+		return &ZVal{v.v}
 	default:
 		return &ZVal{z.v}
 	}
@@ -86,12 +86,6 @@ func (z *ZVal) Value() Val {
 
 func (z *ZVal) Set(nz *ZVal) {
 	// set value of this zval to given zval
-	if _, isRef := nz.v.(*ZVal); isRef {
-		// update this ref
-		z.v = nz
-		return
-	}
-
 	if rz, isRef := z.v.(*ZVal); isRef {
 		rz.Set(nz)
 		return

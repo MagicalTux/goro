@@ -23,7 +23,7 @@ func (r *runStaticVar) Loc() *Loc {
 }
 
 func (r *runStaticVar) Dump(w io.Writer) error {
-	_, err := w.Write([]byte("global "))
+	_, err := w.Write([]byte("static "))
 	if err != nil {
 		return err
 	}
@@ -71,6 +71,7 @@ func (r *runStaticVar) Run(ctx Context) (*ZVal, error) {
 				}
 			}
 		}
+		ctx.OffsetUnset(ctx, v.varName.ZVal())
 		ctx.OffsetSet(ctx, v.varName.ZVal(), v.z)
 	}
 	return nil, nil
