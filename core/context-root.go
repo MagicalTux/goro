@@ -36,6 +36,20 @@ func (c *RootContext) Root() *RootContext {
 	return c
 }
 
+func (c *RootContext) OffsetExists(ctx Context, name *ZVal) (bool, error) {
+	name, err := name.As(ctx, ZtString)
+	if err != nil {
+		return false, err
+	}
+
+	switch name.AsString(ctx) {
+	case "GLOBALS":
+		return true, nil
+	}
+
+	return c.h.HasString(name.AsString(ctx)), nil
+}
+
 func (c *RootContext) OffsetGet(ctx Context, name *ZVal) (*ZVal, error) {
 	name, err := name.As(ctx, ZtString)
 	if err != nil {

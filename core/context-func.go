@@ -28,6 +28,26 @@ func (c *FuncContext) ZVal() *ZVal {
 	return (&ZVal{c}).Ref()
 }
 
+func (c *FuncContext) OffsetExists(ctx Context, name *ZVal) (bool, error) {
+	name, err := name.As(ctx, ZtString)
+	if err != nil {
+		return false, err
+	}
+
+	switch name.AsString(ctx) {
+	case "this":
+		if c.this == nil {
+			return false, nil
+		}
+		return true, nil
+	case "GLOBALS":
+		return true, nil
+	case "_SERVER", "_GET", "_POST", "_FILES", "_COOKIE", "_SESSION", "_REQUEST", "_ENV":
+		return c.Root().OffsetExists(ctx, name)
+	}
+	return c.h.HasString(name.AsString(ctx)), nil
+}
+
 func (c *FuncContext) OffsetGet(ctx Context, name *ZVal) (*ZVal, error) {
 	name, err := name.As(ctx, ZtString)
 	if err != nil {

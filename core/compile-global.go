@@ -12,12 +12,22 @@ type runGlobal struct {
 }
 
 func (g *runGlobal) Run(ctx Context) (*ZVal, error) {
-	glob := ctx.Global()
+	var err error
+	var v *ZVal
+
+	glob := ctx.Root()
 	for _, k := range g.vars {
-		v, err := glob.OffsetGet(ctx, k.ZVal())
-		if err != nil {
-			return nil, err
+		if ok, _ := glob.OffsetExists(ctx, k.ZVal()); !ok {
+			// need to create it
+			v = ZNull{}.ZVal()
+			glob.OffsetSet(ctx, k.ZVal(), v)
+		} else {
+			v, err = glob.OffsetGet(ctx, k.ZVal())
+			if err != nil {
+				return nil, err
+			}
 		}
+
 		err = ctx.OffsetSet(ctx, k.ZVal(), v)
 		if err != nil {
 			return nil, err

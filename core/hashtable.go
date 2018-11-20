@@ -41,6 +41,14 @@ func (z *ZHashTable) GetString(k ZString) *ZVal {
 	return t.v
 }
 
+func (z *ZHashTable) HasString(k ZString) bool {
+	z.lock.RLock()
+	defer z.lock.RUnlock()
+
+	_, ok := z._idx_s[k]
+	return ok
+}
+
 func (z *ZHashTable) SetString(k ZString, v *ZVal) error {
 	z.lock.Lock()
 	defer z.lock.Unlock()
