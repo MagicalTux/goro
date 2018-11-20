@@ -1,0 +1,130 @@
+package core
+
+import (
+	"fmt"
+	"io"
+
+	"github.com/MagicalTux/gophp/core/tokenizer"
+)
+
+type staticVarInfo struct {
+	varName ZString
+	def     Runnable
+	z       *ZVal
+}
+
+type runStaticVar struct {
+	vars []*staticVarInfo
+	l    *Loc
+}
+
+func (r *runStaticVar) Loc() *Loc {
+	return r.l
+}
+
+func (r *runStaticVar) Dump(w io.Writer) error {
+	_, err := w.Write([]byte("global "))
+	if err != nil {
+		return err
+	}
+
+	first := true
+	for _, v := range r.vars {
+		if !first {
+			_, err = w.Write([]byte(", "))
+			if err != nil {
+				return err
+			}
+		}
+		first = false
+
+		if v.def != nil {
+			_, err = fmt.Fprintf(w, "$%s = ", v.varName)
+			if err != nil {
+				return err
+			}
+			err = v.def.Dump(w)
+			if err != nil {
+				return err
+			}
+		} else {
+			_, err = fmt.Fprintf(w, "$%s", v.varName)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (r *runStaticVar) Run(ctx Context) (*ZVal, error) {
+	// set vars in ctx
+	for _, v := range r.vars {
+		if v.z == nil {
+			if v.def == nil {
+				v.z = ZNull{}.ZVal()
+			} else {
+				var err error
+				v.z, err = v.def.Run(ctx)
+				if err != nil {
+					return nil, err
+				}
+			}
+		}
+		ctx.OffsetSet(ctx, v.varName.ZVal(), v.z)
+	}
+	return nil, nil
+}
+
+func compileStaticVar(i *tokenizer.Item, c compileCtx) (Runnable, error) {
+	r := &runStaticVar{l: MakeLoc(i.Loc())}
+
+	// static $var [= value] [, $var [= value]] ...
+	// static followed by T_PAAMAYIM_NEKUDOTAYIM means a static call (compiling is handled separately)
+
+	for {
+		i, err := c.NextItem()
+		if err != nil {
+			return nil, err
+		}
+
+		if i.Type != tokenizer.T_VARIABLE {
+			return nil, i.Unexpected()
+		}
+		stv := &staticVarInfo{varName: ZString(i.Data[1:])}
+
+		// parse default value, if any
+		i, err = c.NextItem()
+		if err != nil {
+			return nil, err
+		}
+
+		if i.IsSingle('=') {
+			// default value!
+			r, err := compileExpr(nil, c)
+			if err != nil {
+				return nil, err
+			}
+			stv.def = r
+
+			i, err = c.NextItem()
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		r.vars = append(r.vars, stv)
+
+		if i.IsSingle(',') {
+			// there's more!
+			continue
+		}
+
+		if i.IsSingle(';') {
+			c.backup()
+			return r, nil
+		}
+
+		return nil, i.Unexpected()
+	}
+}
