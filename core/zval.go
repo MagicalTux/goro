@@ -85,7 +85,13 @@ func (z *ZVal) Value() Val {
 }
 
 func (z *ZVal) Set(nz *ZVal) {
-	// set value of this zval to given zval
+	if _, isRef := z.v.(*ZVal); isRef {
+		// simple set, keep reference alive
+		z.v = nz.v
+		return
+	}
+
+	// set value of this zval's target to given zval
 	if rz, isRef := z.v.(*ZVal); isRef {
 		rz.Set(nz)
 		return

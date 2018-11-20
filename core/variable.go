@@ -17,7 +17,7 @@ func (r *runVariable) WriteValue(ctx Context, value *ZVal) error {
 	if value == nil {
 		err = ctx.OffsetUnset(ctx, r.v.ZVal())
 	} else {
-		err = ctx.OffsetSet(ctx, r.v.ZVal(), value.Dup())
+		err = ctx.OffsetSet(ctx, r.v.ZVal(), value)
 	}
 	if err != nil {
 		return r.l.Error(err)
