@@ -47,3 +47,15 @@ func stdFuncGetCfgVar(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 func stdFuncSapiName(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 	return ctx.Global().GetConstant("PHP_SAPI")
 }
+
+//> func string gettype ( mixed $var )
+func fncGettype(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
+	var v *core.ZVal
+	_, err := core.Expand(ctx, args, &v)
+	if err != nil {
+		return nil, err
+	}
+
+	t := v.GetType()
+	return core.ZString(t.String()).ZVal(), nil
+}

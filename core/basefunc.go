@@ -48,6 +48,21 @@ func fncDefine(ctx Context, args []*ZVal) (*ZVal, error) {
 	return ZBool(true).ZVal(), nil
 }
 
+//> func bool defined ( string $name )
+func fncDefined(ctx Context, args []*ZVal) (*ZVal, error) {
+	var name ZString
+	_, err := Expand(ctx, args, &name)
+	if err != nil {
+		return nil, err
+	}
+
+	g := ctx.Global()
+
+	_, ok := g.constant[name]
+
+	return ZBool(ok).ZVal(), nil
+}
+
 //> func int count ( mixed $array_or_countable [, int $mode = COUNT_NORMAL ] )
 func fncCount(ctx Context, args []*ZVal) (*ZVal, error) {
 	var countable *ZVal

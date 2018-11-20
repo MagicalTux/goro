@@ -46,6 +46,7 @@ func init() {
 			"get_magic_quotes_runtime": &core.ExtFunction{Func: getMagicQuotesRuntime, Args: []*core.ExtFunctionArg{}},
 			"getcwd":                   &core.ExtFunction{Func: fncGetcwd, Args: []*core.ExtFunctionArg{}},
 			"getenv":                   &core.ExtFunction{Func: getenv, Args: []*core.ExtFunctionArg{}},
+			"gettype":                  &core.ExtFunction{Func: fncGettype, Args: []*core.ExtFunctionArg{}},
 			"hrtime":                   &core.ExtFunction{Func: stdFuncHrTime, Args: []*core.ExtFunctionArg{}},
 			"hypot":                    &core.ExtFunction{Func: mathHypot, Args: []*core.ExtFunctionArg{}},
 			"php_sapi_name":            &core.ExtFunction{Func: stdFuncSapiName, Args: []*core.ExtFunctionArg{}},

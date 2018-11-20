@@ -56,7 +56,7 @@ func doPrintR(ctx core.Context, z *core.ZVal, linePfx string, recurs map[uintptr
 
 	switch z.GetType() {
 	case core.ZtArray:
-		fmt.Fprintf(ctx, "%s%sArray\n(\n", linePfx, isRef)
+		fmt.Fprintf(ctx, "%sArray\n%s(\n", isRef, linePfx)
 		localPfx := linePfx + "    "
 		it := z.NewIterator()
 		for {
@@ -72,7 +72,7 @@ func doPrintR(ctx core.Context, z *core.ZVal, linePfx string, recurs map[uintptr
 			if err != nil {
 				return err
 			}
-			doPrintR(ctx, v, localPfx, recurs)
+			doPrintR(ctx, v, localPfx+"    ", recurs)
 			ctx.Write([]byte{'\n'})
 			it.Next(ctx)
 		}
