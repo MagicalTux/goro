@@ -155,22 +155,18 @@ func (r *runObjectFunc) Run(ctx Context) (*ZVal, error) {
 		op = opz.Value().(ZString)
 	}
 
-	objI, ok := obj.Value().(ObjectCallable)
+	objI, ok := obj.Value().(*ZObject)
 	if !ok {
 		return nil, errors.New("variable is not an object, cannot call method")
 	}
 
-	args := make([]*ZVal, len(r.args))
-
-	for i, subr := range r.args {
-		args[i], err = subr.Run(ctx)
-		if err != nil {
-			return nil, err
-		}
+	// execute call
+	m, err := objI.GetMethod(op, ctx)
+	if err != nil {
+		return nil, err
 	}
 
-	// execute call
-	return objI.CallMethod(op, ctx, args)
+	return ctx.Call(ctx, m, r.args, objI)
 }
 
 func (r *runObjectVar) Run(ctx Context) (*ZVal, error) {

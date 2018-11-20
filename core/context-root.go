@@ -122,3 +122,33 @@ func (c *RootContext) GetConfig(name ZString, def *ZVal) *ZVal {
 func (c *RootContext) Write(v []byte) (int, error) {
 	return c.g.Write(v)
 }
+
+// perform call in new context
+func (c *RootContext) Call(ctx Context, f Callable, args []Runnable, this *ZObject) (*ZVal, error) {
+	callCtx := &FuncContext{
+		Context: ctx,
+		h:       NewHashTable(),
+		this:    this,
+	}
+
+	var func_args []*funcArg
+	if c, ok := f.(funcGetArgs); ok {
+		func_args = c.getArgs()
+	}
+
+	// collect args
+	// use func_args to check if any arg is a ref and needs to be passed as such
+	var err error
+	callCtx.args = make([]*ZVal, len(args))
+	for i, a := range args {
+		callCtx.args[i], err = a.Run(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if i < len(func_args) && func_args[i].ref {
+			callCtx.args[i] = callCtx.args[i].Ref()
+		}
+	}
+
+	return f.Call(callCtx, callCtx.args)
+}

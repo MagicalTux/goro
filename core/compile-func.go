@@ -93,25 +93,7 @@ func (r *runnableFunctionCall) Run(ctx Context) (l *ZVal, err error) {
 		return nil, err
 	}
 
-	var func_args []*funcArg
-	if c, ok := f.(funcGetArgs); ok {
-		func_args = c.getArgs()
-	}
-
-	// collect args
-	// use func_args to check if any arg is a ref and needs to be passed as such
-	f_arg := make([]*ZVal, len(r.args))
-	for i, a := range r.args {
-		f_arg[i], err = a.Run(ctx)
-		if err != nil {
-			return nil, err
-		}
-		if i < len(func_args) && func_args[i].ref {
-			f_arg[i] = f_arg[i].Ref()
-		}
-	}
-
-	return f.Call(NewContext(ctx), f_arg)
+	return ctx.Call(ctx, f, r.args, nil)
 }
 
 func (r *runnableFunctionCallRef) Run(ctx Context) (l *ZVal, err error) {
@@ -137,16 +119,7 @@ func (r *runnableFunctionCallRef) Run(ctx Context) (l *ZVal, err error) {
 		}
 	}
 
-	// collect args
-	f_arg := make([]*ZVal, len(r.args))
-	for i, a := range r.args {
-		f_arg[i], err = a.Run(ctx)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return f.Call(NewContext(ctx), f_arg)
+	return ctx.Call(ctx, f, r.args, nil)
 }
 
 func compileFunction(i *tokenizer.Item, c compileCtx) (Runnable, error) {

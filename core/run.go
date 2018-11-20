@@ -17,7 +17,7 @@ type Callable interface {
 }
 
 type ObjectCallable interface {
-	CallMethod(method ZString, ctx Context, args []*ZVal) (*ZVal, error)
+	GetMethod(method ZString, ctx Context, args []*ZVal) (*ZVal, error)
 }
 
 type Runnables []Runnable

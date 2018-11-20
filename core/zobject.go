@@ -83,14 +83,13 @@ func (o *ZObject) OffsetSet(key, value *ZVal) (*ZVal, error) {
 	return nil, errors.New("Cannot use object of type stdClass as array")
 }
 
-func (o *ZObject) CallMethod(method ZString, ctx Context, args []*ZVal) (*ZVal, error) {
-	ctx = NewContextWithObject(ctx, o)
+func (o *ZObject) GetMethod(method ZString, ctx Context) (Callable, error) {
 	m, ok := o.Class.Methods[method.ToLower()]
 	if !ok {
 		return nil, fmt.Errorf("Call to undefined method %s::%s()", o.Class.Name, method)
 	}
-
-	return m.Method.Call(ctx, args)
+	// TODO check method access
+	return m.Method, nil
 }
 
 func (o *ZObject) ObjectGet(ctx Context, key *ZVal) (*ZVal, error) {

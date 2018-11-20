@@ -18,4 +18,6 @@ type Context interface {
 	GetConfig(name ZString, def *ZVal) *ZVal
 
 	Include(fn ZString) (*ZVal, error)
+
+	Call(ctx Context, f Callable, args []Runnable, this *ZObject) (*ZVal, error)
 }

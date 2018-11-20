@@ -12,22 +12,7 @@ type FuncContext struct {
 
 	h    *ZHashTable
 	this *ZObject
-}
-
-func NewContext(parent Context) Context {
-	return &FuncContext{
-		Context: parent,
-		h:       NewHashTable(),
-	}
-}
-
-func NewContextWithObject(parent Context, this *ZObject) Context {
-	return &FuncContext{
-		Context: parent,
-		h:       NewHashTable(),
-		this:    this,
-	}
-	//ctx.SetVariable("this", o.ZVal())
+	args []*ZVal
 }
 
 func (c *FuncContext) AsVal(ctx Context, t ZType) (Val, error) {
