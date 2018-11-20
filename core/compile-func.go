@@ -295,9 +295,40 @@ func compileFunctionArgs(c compileCtx) (res []*funcArg, err error) {
 
 	// parse arguments
 	for {
-		ref := false
+		arg := &funcArg{}
+		arg.required = true // typically
+
+		if i.Type == tokenizer.T_STRING {
+			// this is a function parameter type hint
+			hint := i.Data
+
+			for {
+				i, err = c.NextItem()
+				if err != nil {
+					return nil, err
+				}
+
+				if i.Type != tokenizer.T_NS_SEPARATOR {
+					break
+				}
+
+				// going to be a ns there!
+				i, err = c.NextItem()
+				if err != nil {
+					return nil, err
+				}
+				if i.Type != tokenizer.T_STRING {
+					// ending with a ns_separator?
+					return nil, i.Unexpected()
+				}
+				hint = hint + "\\" + i.Data
+			}
+
+			arg.hint = ParseTypeHint(ZString(hint))
+		}
+
 		if i.IsSingle('&') {
-			ref = true
+			arg.ref = true
 			i, err = c.NextItem()
 			if err != nil {
 				return
@@ -308,10 +339,7 @@ func compileFunctionArgs(c compileCtx) (res []*funcArg, err error) {
 			return nil, i.Unexpected()
 		}
 
-		arg := &funcArg{}
 		arg.varName = ZString(i.Data[1:]) // skip $
-		arg.ref = ref
-		arg.required = true // typically
 
 		res = append(res, arg)
 

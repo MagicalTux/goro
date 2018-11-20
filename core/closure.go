@@ -10,6 +10,7 @@ type funcArg struct {
 	ref          bool
 	required     bool
 	defaultValue Runnable
+	hint         *TypeHint
 }
 
 type funcUse struct {
