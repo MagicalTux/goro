@@ -161,6 +161,8 @@ func (c *RootContext) Call(ctx Context, f Callable, args []Runnable, this *ZObje
 		}
 		if i < len(func_args) && func_args[i].ref {
 			callCtx.args[i] = callCtx.args[i].Ref()
+		} else {
+			callCtx.args[i] = callCtx.args[i].Dup()
 		}
 	}
 
