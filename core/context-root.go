@@ -98,14 +98,14 @@ func (c *RootContext) NewIterator() ZIterator {
 	return c.h.NewIterator()
 }
 
-func (ctx *RootContext) Include(_fn ZString) (*ZVal, error) {
+func (c *RootContext) Include(ctx Context, _fn ZString) (*ZVal, error) {
 	fn := string(_fn)
 	u, err := url.Parse(fn)
 	if err != nil {
 		return nil, err
 	}
 
-	f, err := ctx.Global().p.Open(u)
+	f, err := ctx.Global().Open(u)
 	if err != nil {
 		return nil, err
 	}
@@ -121,12 +121,12 @@ func (ctx *RootContext) Include(_fn ZString) (*ZVal, error) {
 	t := tokenizer.NewLexer(f, fn)
 
 	// compile
-	c, err := Compile(ctx, t)
+	code, err := Compile(ctx, t)
 	if err != nil {
 		return nil, err
 	}
 
-	return c.Run(ctx)
+	return code.Run(ctx)
 }
 
 func (c *RootContext) GetConfig(name ZString, def *ZVal) *ZVal {

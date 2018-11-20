@@ -116,3 +116,7 @@ func (f *fileHandler) Chdir(p string) error {
 	f.cwd = name
 	return nil
 }
+
+func (f *fileHandler) Getwd() string {
+	return f.cwd
+}

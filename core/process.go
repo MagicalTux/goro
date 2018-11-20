@@ -2,14 +2,10 @@ package core
 
 import (
 	"net/http"
-	"net/url"
 	"os"
-
-	"github.com/MagicalTux/gophp/core/stream"
 )
 
 type Process struct {
-	fHandler         map[string]stream.Handler
 	defaultConstants map[ZString]*ZVal
 	environ          []string
 }
@@ -18,30 +14,11 @@ type Process struct {
 // running PHP process.
 func NewProcess() *Process {
 	res := &Process{
-		fHandler:         make(map[string]stream.Handler),
 		defaultConstants: make(map[ZString]*ZVal),
 		environ:          os.Environ(),
 	}
-	res.fHandler["file"], _ = stream.NewFileHandler("/")
-	res.fHandler["php"] = stream.PhpHandler()
 	res.populateConstants()
 	return res
-}
-
-// Open opens a file using PHP stream wrappers and returns a handler to said
-// file.
-func (p *Process) Open(u *url.URL) (*stream.Stream, error) {
-	s := u.Scheme
-	if s == "" {
-		s = "file"
-	}
-
-	h, ok := p.fHandler[s]
-	if !ok {
-		return nil, os.ErrInvalid
-	}
-
-	return h.Open(u)
 }
 
 // Hander returns a http.Handler object suitable for use with golang standard

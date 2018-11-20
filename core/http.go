@@ -21,8 +21,12 @@ func (p *phpWebHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	u, _ := url.Parse(full)
 
+	// make a new global env
+	g := NewGlobalReq(req, p.p)
+	g.out = w
+
 	// check if full exists
-	fp, err := p.p.Open(u)
+	fp, err := g.Open(u)
 	if err != nil {
 		// likely not found. TODO check if dir. If dir, send redirect
 		http.NotFound(w, req)
@@ -37,12 +41,6 @@ func (p *phpWebHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	// make a new global env
-	g := NewGlobalReq(req, p.p)
-	g.out = w
-
-	ctx := g.Root()
-
 	// include file
-	ctx.Include(ZString(full))
+	g.Root().Include(g.Root(), ZString(full))
 }

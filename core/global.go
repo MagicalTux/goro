@@ -6,9 +6,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/MagicalTux/gophp/core/stream"
 )
 
 type Global struct {
@@ -23,6 +26,7 @@ type Global struct {
 	globalClasses map[ZString]*ZClass // TODO replace *ZClass with a nice interface
 	constant      map[ZString]*ZVal
 	environ       []string
+	fHandler      map[string]stream.Handler
 
 	out io.Writer
 }
@@ -53,6 +57,7 @@ func (g *Global) init() {
 	g.globalFuncs = make(map[ZString]Callable)
 	g.globalClasses = make(map[ZString]*ZClass)
 	g.constant = make(map[ZString]*ZVal)
+	g.fHandler = make(map[string]stream.Handler)
 
 	// prepare root context
 	g.root = &RootContext{
@@ -60,6 +65,9 @@ func (g *Global) init() {
 		g:       g,
 		h:       NewHashTable(),
 	}
+
+	g.fHandler["file"], _ = stream.NewFileHandler("/")
+	g.fHandler["php"] = stream.PhpHandler()
 
 	// fill constants from process
 	for k, v := range g.p.defaultConstants {
@@ -85,12 +93,12 @@ func (g *Global) SetOutput(w io.Writer) {
 	g.out = w
 }
 
-func (g *Global) Root() Context {
+func (g *Global) Root() *RootContext {
 	return g.root
 }
 
 func (g *Global) RunFile(fn string) error {
-	_, err := g.root.Include(ZString(fn))
+	_, err := g.root.Include(g.root, ZString(fn))
 	return FilterError(err)
 }
 
@@ -110,6 +118,22 @@ func (g *Global) SetLocalConfig(name ZString, val *ZVal) error {
 func (g *Global) GetConfig(name ZString, def *ZVal) *ZVal {
 	// TODO
 	return def
+}
+
+// Open opens a file using PHP stream wrappers and returns a handler to said
+// file.
+func (g *Global) Open(u *url.URL) (*stream.Stream, error) {
+	s := u.Scheme
+	if s == "" {
+		s = "file"
+	}
+
+	h, ok := g.fHandler[s]
+	if !ok {
+		return nil, os.ErrInvalid
+	}
+
+	return h.Open(u)
 }
 
 func (g *Global) OffsetGet(ctx Context, name *ZVal) (*ZVal, error) {
@@ -154,10 +178,6 @@ func (g *Global) Count(ctx Context) ZInt {
 
 func (g *Global) NewIterator() ZIterator {
 	return g.root.h.NewIterator()
-}
-
-func (g *Global) Include(name ZString) (*ZVal, error) {
-	return g.root.Include(name)
 }
 
 func (g *Global) RegisterFunction(name ZString, f Callable) error {
