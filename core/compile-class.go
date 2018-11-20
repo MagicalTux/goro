@@ -23,6 +23,7 @@ func compileClass(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 		StaticProps: NewHashTable(),
 		attr:        attr,
 		Methods:     make(map[ZString]*ZClassMethod),
+		Const:       make(map[ZString]Runnable),
 	}
 
 	c = &zclassCompileCtx{c, class}
@@ -104,6 +105,42 @@ func compileClass(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 			}
 
 			class.Props = append(class.Props, prop)
+		case tokenizer.T_CONST:
+			// const K = V
+			// get const name
+			i, err = c.NextItem()
+			if err != nil {
+				return nil, err
+			}
+			if i.Type != tokenizer.T_STRING {
+				return nil, i.Unexpected()
+			}
+			constName := i.Data
+
+			// =
+			i, err = c.NextItem()
+			if err != nil {
+				return nil, err
+			}
+			if !i.IsSingle('=') {
+				return nil, i.Unexpected()
+			}
+
+			var v Runnable
+			v, err = compileExpr(nil, c)
+			if err != nil {
+				return nil, err
+			}
+
+			i, err = c.NextItem()
+			if err != nil {
+				return nil, err
+			}
+			if !i.IsSingle(';') {
+				return nil, i.Unexpected()
+			}
+
+			class.Const[ZString(constName)] = v
 		case tokenizer.T_FUNCTION:
 			// next must be a string (method name)
 			i, err := c.NextItem()

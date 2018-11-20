@@ -80,13 +80,11 @@ func doPrintR(ctx core.Context, z *core.ZVal, linePfx string, recurs map[uintptr
 	case core.ZtObject:
 		v := z.Value()
 		if obj, ok := v.(*core.ZObject); ok {
-			fmt.Fprintf(ctx, "%s%sobject(%s) (%d) {\n", linePfx, isRef, obj.Class.Name, obj.Count(ctx))
-		} else if c, ok := v.(core.ZCountable); ok {
-			fmt.Fprintf(ctx, "%s%sobject(?) (%d) {\n", linePfx, isRef, c.Count(ctx))
+			fmt.Fprintf(ctx, "%s%s Object\n%s(\n", isRef, obj.Class.Name, linePfx)
 		} else {
-			fmt.Fprintf(ctx, "%s%sobject(?) (#) {\n", linePfx, isRef)
+			fmt.Fprintf(ctx, "%s? object(?)\n%s(\n", isRef, linePfx)
 		}
-		localPfx := linePfx + "  "
+		localPfx := linePfx + "    "
 		it := z.NewIterator()
 		if it != nil {
 			for {
@@ -102,11 +100,11 @@ func doPrintR(ctx core.Context, z *core.ZVal, linePfx string, recurs map[uintptr
 				if err != nil {
 					return err
 				}
-				doPrintR(ctx, v, localPfx, recurs)
+				doPrintR(ctx, v, localPfx+"    ", recurs)
 				it.Next(ctx)
 			}
 		}
-		fmt.Fprintf(ctx, "%s}\n", linePfx)
+		fmt.Fprintf(ctx, "%s)\n", linePfx)
 	default:
 		z, _ = z.As(ctx, core.ZtString)
 		fmt.Fprintf(ctx, "%s", z)

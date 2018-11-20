@@ -33,7 +33,7 @@ type ZClass struct {
 
 	Extends     *ZClass
 	Implements  []*ZClass
-	Const       map[ZString]ZString // class constants
+	Const       map[ZString]Runnable // class constants
 	Props       []*ZClassProp
 	Methods     map[ZString]*ZClassMethod
 	StaticProps *ZHashTable
