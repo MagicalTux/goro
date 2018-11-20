@@ -7,9 +7,11 @@ import (
 	"github.com/MagicalTux/gophp/core/stream"
 )
 
+type OpenContext int
+
 // Open opens a file using PHP stream wrappers and returns a handler to said
 // file.
-func (g *Global) Open(fn ZString) (*stream.Stream, error) {
+func (g *Global) Open(fn ZString, isInclude bool) (*stream.Stream, error) {
 	u, err := url.Parse(string(fn))
 	if err != nil {
 		return nil, err

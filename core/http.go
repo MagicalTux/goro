@@ -23,7 +23,7 @@ func (p *phpWebHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	g.out = w
 
 	// check if full exists
-	fp, err := g.Open(ZString(full))
+	fp, err := g.Open(ZString(full), false)
 	if err != nil {
 		// likely not found. TODO check if dir. If dir, send redirect
 		http.NotFound(w, req)

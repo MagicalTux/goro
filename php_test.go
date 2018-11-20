@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -98,11 +99,11 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 	}
 }
 
-func runTest(t *testing.T, path string) (p *phptest, err error) {
-	p = &phptest{t: t, output: &bytes.Buffer{}, name: path, path: path}
+func runTest(t *testing.T, fpath string) (p *phptest, err error) {
+	p = &phptest{t: t, output: &bytes.Buffer{}, name: fpath, path: fpath}
 
 	// read & parse test file
-	p.f, err = os.Open(path)
+	p.f, err = os.Open(fpath)
 	if err != nil {
 		return
 	}
@@ -117,6 +118,7 @@ func runTest(t *testing.T, path string) (p *phptest, err error) {
 	p.p.SetConstant("PHP_SAPI", "test")
 	p.g = core.NewGlobal(context.Background(), p.p)
 	p.g.SetOutput(p.output)
+	p.g.Chdir(core.ZString(path.Dir(fpath))) // chdir execution to path
 	r := regexp.MustCompile("^--([A-Z]+)--$")
 
 	for {
@@ -146,7 +148,7 @@ func runTest(t *testing.T, path string) (p *phptest, err error) {
 		}
 
 		if b == nil {
-			return p, fmt.Errorf("malformed test file %s", path)
+			return p, fmt.Errorf("malformed test file %s", fpath)
 		}
 		b.Write([]byte(lin))
 	}
