@@ -12,5 +12,8 @@ func NewBufContext(ctx Context, b io.Writer) Context {
 }
 
 func (b *BufContext) Write(d []byte) (int, error) {
+	if b.b == nil {
+		return len(d), nil
+	}
 	return b.b.Write(d)
 }
