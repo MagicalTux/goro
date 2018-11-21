@@ -227,3 +227,10 @@ func (g *Global) Close() error {
 		}
 	}
 }
+
+func (g *Global) Flush() {
+	// flush io (not buffers)
+	if f, ok := g.out.(http.Flusher); ok {
+		f.Flush()
+	}
+}

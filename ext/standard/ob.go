@@ -124,3 +124,21 @@ func fncObGetFlush(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 
 	return data, buf.Flush()
 }
+
+//> func void ob_implicit_flush ([ int $flag = 1 ] )
+func fncObImplicitFlush(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
+	var v *core.ZInt
+	_, err := core.Expand(ctx, args, &v)
+	if err != nil {
+		return nil, err
+	}
+
+	buf := ctx.Global().Buffer()
+	if buf == nil {
+		return core.ZNULL, nil
+	}
+
+	buf.ImplicitFlush = (v == nil) || (*v != 0)
+
+	return core.ZNULL, nil
+}
