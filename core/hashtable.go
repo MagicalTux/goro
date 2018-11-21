@@ -135,6 +135,41 @@ func (z *ZHashTable) SetInt(k ZInt, v *ZVal) error {
 	return nil
 }
 
+func (z *ZHashTable) UnsetInt(k ZInt) error {
+	z.lock.Lock()
+	defer z.lock.Unlock()
+
+	t, ok := z._idx_i[k]
+	if !ok {
+		return nil
+	}
+	// remove
+	z.count -= 1
+	delete(z._idx_i, k)
+
+	if z.first == t {
+		z.first = t.next
+	}
+	if z.last == t {
+		z.last = t.prev
+	}
+	if t.prev != nil {
+		t.prev.next = t.next
+	}
+	if t.next != nil {
+		t.next.prev = t.prev
+	}
+	return nil
+}
+
+func (z *ZHashTable) HasInt(k ZInt) bool {
+	z.lock.RLock()
+	defer z.lock.RUnlock()
+
+	_, ok := z._idx_i[k]
+	return ok
+}
+
 func (z *ZHashTable) Append(v *ZVal) error {
 	z.lock.Lock()
 	defer z.lock.Unlock()

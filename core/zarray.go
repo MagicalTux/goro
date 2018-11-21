@@ -122,6 +122,33 @@ func (a *ZArray) OffsetSet(ctx Context, key, value *ZVal) error {
 	return err
 }
 
+func (a *ZArray) OffsetUnset(ctx Context, key *ZVal) error {
+	if key == nil || key.GetType() == ZtNull {
+		return errors.New("Cannot use [] for unset")
+	}
+
+	zi, zs, isint := getArrayKeyValue(key)
+	if isint {
+		return a.h.UnsetInt(zi)
+	} else {
+		return a.h.UnsetString(zs)
+	}
+}
+
+func (a *ZArray) OffsetExists(ctx Context, key *ZVal) (bool, error) {
+	if key == nil || key.GetType() == ZtNull {
+		return false, errors.New("Cannot use [] for isset")
+	}
+
+	zi, zs, isint := getArrayKeyValue(key)
+
+	if isint {
+		return a.h.HasInt(zi), nil
+	} else {
+		return a.h.HasString(zs), nil
+	}
+}
+
 func (a *ZArray) NewIterator() ZIterator {
 	return a.h.NewIterator()
 }
