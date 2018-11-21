@@ -29,10 +29,11 @@ const (
 //> const PHP_OUTPUT_HANDLER_STDFLAGS: ZInt(BufferCleanable|BufferFlushable|BufferRemovable)
 
 type Buffer struct {
-	w     io.Writer
-	b     []byte
-	g     *Global
-	level int
+	w       io.Writer
+	b       []byte
+	g       *Global
+	level   int
+	started bool
 
 	ImplicitFlush bool
 	ChunkSize     int
@@ -60,47 +61,67 @@ func makeBuffer(g *Global, w io.Writer) *Buffer {
 	}
 }
 
-func (b *Buffer) Write(d []byte) (int, error) {
+func (b *Buffer) add(d []byte, flag int) error {
+	if b.CB == nil {
+		if len(d) == 0 {
+			return nil
+		}
+		b.b = append(b.b, d...)
+		return nil
+	}
+
+	// pass d through output buffer callback
+	args := []*ZVal{ZString(d).ZVal(), ZInt(flag).ZVal()}
+	ctx := WithConfig(b.g.Root(), "ob_in_handler", ZBool(true).ZVal())
+	r, err := ctx.CallZVal(ctx, b.CB, args, nil)
+	if err != nil {
+		return err
+	}
+	r, err = r.As(b.g.Root(), ZtString)
+	if err != nil {
+		return err
+	}
+	d = []byte(r.AsString(b.g.Root()))
+
+	if len(d) == 0 {
+		return nil
+	}
+
 	b.b = append(b.b, d...)
+	return nil
+}
+
+func (b *Buffer) Write(d []byte) (int, error) {
+	olen := len(d)
+
+	flag := BufferWrite | BufferFlush
+	if !b.started {
+		b.started = true
+		flag |= BufferStart
+	}
+	b.add(d, flag)
+
 	// should we flush
 	if b.ImplicitFlush {
-		return len(d), b.Flush()
+		return olen, b.Flush()
 	} else if (b.ChunkSize != 0) && (len(b.b) >= b.ChunkSize) {
-		return len(d), b.Flush()
+		return olen, b.Flush()
 	}
-	return len(d), nil
+	return olen, nil
 }
 
 func (b *Buffer) Flush() error {
 	// perform flush
-	buf := b.b
-	b.b = nil
-
-	if (b.CB != nil) && (len(buf) > 0) {
-		// pass b through output buffer callback
-		args := []*ZVal{ZString(buf).ZVal(), ZInt(BufferWrite | BufferFlush).ZVal()}
-		ctx := WithConfig(b.g.Root(), "ob_in_handler", ZBool(true).ZVal())
-		r, err := ctx.CallZVal(ctx, b.CB, args, nil)
-		if err != nil {
-			return err
-		}
-		r, err = r.As(b.g.Root(), ZtString)
-		if err != nil {
-			return err
-		}
-		buf = []byte(r.AsString(b.g.Root()))
-	}
-
 	for {
-		if len(buf) == 0 {
+		if len(b.b) == 0 {
 			return nil
 		}
 
-		n, err := b.w.Write(buf)
-		if n == len(buf) {
-			buf = nil // do not keep buffer as to allow garbage collector
+		n, err := b.w.Write(b.b)
+		if n == len(b.b) {
+			b.b = nil // do not keep buffer as to allow garbage collector
 		} else if n > 0 {
-			buf = buf[n:]
+			b.b = b.b[n:]
 		}
 		if err != nil {
 			return err
@@ -112,41 +133,17 @@ func (b *Buffer) Close() error {
 	if b.g.buf != b {
 		return errors.New("this buffer cannot be closed, not on top of stack")
 	}
+
+	flag := BufferFinal
+	if !b.started {
+		b.started = true
+		flag |= BufferStart
+	}
+	b.add(nil, flag)
+
 	err := b.Flush()
 	if err != nil {
 		return err
-	}
-
-	// announce close
-	if b.CB != nil {
-		// pass b through output buffer callback
-		args := []*ZVal{ZString("").ZVal(), ZInt(BufferFinal).ZVal()}
-		ctx := WithConfig(b.g.Root(), "ob_in_handler", ZBool(true).ZVal())
-		r, err := ctx.CallZVal(ctx, b.CB, args, nil)
-		if err != nil {
-			return err
-		}
-		r, err = r.As(b.g.Root(), ZtString)
-		if err != nil {
-			return err
-		}
-		buf := []byte(r.AsString(b.g.Root()))
-
-		for {
-			if len(buf) == 0 {
-				break
-			}
-
-			n, err := b.w.Write(buf)
-			if n == len(buf) {
-				break
-			} else if n > 0 {
-				buf = buf[n:]
-			}
-			if err != nil {
-				return err
-			}
-		}
 	}
 
 	// get parent
