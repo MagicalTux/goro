@@ -137,6 +137,12 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 		return &runZVal{ZInt(l.Line), l}, nil
 	case tokenizer.T_DIR:
 		return &runZVal{ZString(path.Dir(l.Filename)), l}, nil
+	case tokenizer.T_CLASS:
+		class := c.getClass()
+		if class == nil {
+			return nil, errors.New("__CLASS__ outside of a class")
+		}
+		return &runZVal{class.Name, l}, nil
 	case tokenizer.T_BOOL_CAST, tokenizer.T_INT_CAST, tokenizer.T_ARRAY_CAST, tokenizer.T_DOUBLE_CAST, tokenizer.T_OBJECT_CAST, tokenizer.T_STRING_CAST:
 		// perform a cast operation on the following (note: v is null)
 		var op string
