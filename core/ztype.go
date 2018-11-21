@@ -17,6 +17,9 @@ const (
 	ZtResource
 )
 
+// global NULL for easy call
+var ZNULL = &ZVal{ZNull{}}
+
 // scalar stuff
 type ZNull struct{}
 type ZBool bool

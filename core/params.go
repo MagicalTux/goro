@@ -52,6 +52,13 @@ func (z *ZVal) Store(ctx Context, out interface{}) error {
 		}
 		*tgt = s.Value().(ZString)
 		return nil
+	case *Callable:
+		s, err := SpawnCallable(ctx, z)
+		if err != nil {
+			return err
+		}
+		*tgt = s
+		return nil
 	case **ZObject:
 		s, err := z.As(ctx, ZtObject)
 		if err != nil {

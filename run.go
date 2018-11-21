@@ -21,4 +21,8 @@ func main() {
 		log.Printf("failed to run test file: %s", err)
 		os.Exit(1)
 	}
+	if err := ctx.Close(); err != nil {
+		log.Printf("failed to close: %s", err)
+		os.Exit(1)
+	}
 }

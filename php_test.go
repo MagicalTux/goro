@@ -61,6 +61,7 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 			return err
 		}
 		_, err = c.Run(ctx)
+		p.g.Close()
 		return core.FilterError(err)
 	case "EXPECT":
 		// compare p.output with b
