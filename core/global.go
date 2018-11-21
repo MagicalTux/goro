@@ -112,7 +112,11 @@ func (g *Global) Root() *RootContext {
 
 func (g *Global) RunFile(fn string) error {
 	_, err := g.Include(g.root, ZString(fn))
-	return FilterError(err)
+	err = FilterError(err)
+	if err != nil {
+		return err
+	}
+	return g.Close()
 }
 
 func (g *Global) Write(v []byte) (int, error) {
