@@ -7,14 +7,15 @@ func lexNumber(l *Lexer) lexState {
 	allowDecimal := true
 	t := T_LNUMBER
 	if l.accept("0") {
-		allowDecimal = false
 		// can be octal or hexa
 		if l.accept("xX") {
 			// hex
 			digits = "0123456789abcdefABCDEF"
-		} else {
+			allowDecimal = false
+		} else if l.peek() != '.' {
 			// octal
 			digits = "01234567"
+			allowDecimal = false
 		}
 	}
 	l.acceptRun(digits)
