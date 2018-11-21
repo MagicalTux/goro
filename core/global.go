@@ -29,6 +29,7 @@ type Global struct {
 	included      map[ZString]bool // included files (used for require_once, etc)
 
 	out io.Writer
+	buf *Buffer
 }
 
 func NewGlobal(ctx context.Context, p *Process) *Global {
@@ -50,6 +51,13 @@ func NewGlobalReq(req *http.Request, p *Process) *Global {
 	}
 	res.init()
 	return res
+}
+
+func (g *Global) AppendBuffer() *Buffer {
+	b := makeBuffer(g, g.out)
+	g.out = b
+	g.buf = b
+	return b
 }
 
 func (g *Global) init() {
@@ -92,6 +100,7 @@ func (g *Global) init() {
 
 func (g *Global) SetOutput(w io.Writer) {
 	g.out = w
+	g.buf = nil
 }
 
 func (g *Global) Root() *RootContext {

@@ -135,6 +135,17 @@ func (c *RootContext) Call(ctx Context, f Callable, args []Runnable, this *ZObje
 	return CatchReturn(f.Call(callCtx, callCtx.args))
 }
 
+func (c *RootContext) CallZVal(ctx Context, f Callable, args []*ZVal, this *ZObject) (*ZVal, error) {
+	callCtx := &FuncContext{
+		Context: ctx,
+		h:       NewHashTable(),
+		this:    this,
+		args:    args,
+	}
+
+	return CatchReturn(f.Call(callCtx, args))
+}
+
 func (c *RootContext) Parent(n int) Context {
 	return nil
 }
