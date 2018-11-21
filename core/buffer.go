@@ -75,8 +75,25 @@ func (b *Buffer) Write(d []byte) (int, error) {
 
 func (b *Buffer) Flush() error {
 	// perform flush
+	buf := b.b
+	b.b = nil
+
+	if (b.CB != nil) && (len(buf) > 0) {
+		// pass b through output buffer callback
+		args := []*ZVal{ZString(buf).ZVal(), ZInt(BufferWrite | BufferFlush).ZVal()}
+		r, err := b.g.Root().CallZVal(b.g.Root(), b.CB, args, nil)
+		if err != nil {
+			return err
+		}
+		r, err = r.As(b.g.Root(), ZtString)
+		if err != nil {
+			return err
+		}
+		buf = []byte(r.AsString(b.g.Root()))
+	}
+
 	for {
-		if len(b.b) == 0 {
+		if len(buf) == 0 {
 			// nothing to send, flush underlying buffer if needed
 			if f, ok := b.w.(Flusher); ok {
 				return f.Flush()
@@ -88,8 +105,6 @@ func (b *Buffer) Flush() error {
 			}
 			return nil
 		}
-
-		// TODO check for b.CB
 
 		n, err := b.w.Write(b.b)
 		if n == len(b.b) {
