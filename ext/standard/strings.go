@@ -211,3 +211,14 @@ func fncStrRot13(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 
 	return core.ZString(obuf).ZVal(), nil
 }
+
+//> func string strtolower ( string $string )
+func fncStrToLower(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
+	var s core.ZString
+	_, err := core.Expand(ctx, args, &s)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.ToLower().ZVal(), nil
+}

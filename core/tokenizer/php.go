@@ -26,7 +26,14 @@ func lexPhp(l *Lexer) lexState {
 				return lexPhpBlockComment
 			}
 			return lexPhpOperator
-		case '*', '+', '-', '&', '|', '^', '?', '.', '>', '=', ':', '!', '@', '[', ']', '%', '~':
+		case '*', '+', '-', '&', '|', '^', '?', '>', '=', ':', '!', '@', '[', ']', '%', '~':
+			return lexPhpOperator
+		case '.':
+			v := l.peekString(2)
+			if len(v) == 2 && v[1] >= '0' && v[1] <= '9' {
+				return lexNumber
+			}
+			// if immediately followed by a number, this is actually a DNUMBER
 			return lexPhpOperator
 		case '<':
 			if l.hasPrefix("<<<") {
