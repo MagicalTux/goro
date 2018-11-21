@@ -3,7 +3,6 @@ package core
 import (
 	"errors"
 	"io"
-	"net/http"
 )
 
 const (
@@ -94,15 +93,6 @@ func (b *Buffer) Flush() error {
 
 	for {
 		if len(buf) == 0 {
-			// nothing to send, flush underlying buffer if needed
-			if f, ok := b.w.(Flusher); ok {
-				return f.Flush()
-			}
-			// also check for http.Flusher(), almost same as us except returns no error
-			if f, ok := b.w.(http.Flusher); ok {
-				f.Flush()
-				return nil
-			}
 			return nil
 		}
 
@@ -175,4 +165,12 @@ func (b *Buffer) Close() error {
 
 func (b *Buffer) Clean() {
 	b.b = nil
+}
+
+func (b *Buffer) Level() int {
+	return b.level
+}
+
+func (b *Buffer) Get() []byte {
+	return b.b
 }

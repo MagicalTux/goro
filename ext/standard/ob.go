@@ -77,3 +77,50 @@ func fncObEndFlush(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 
 	return core.ZBool(true).ZVal(), buf.Close()
 }
+
+//> func int ob_get_level ( void )
+func fncObGetLevel(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
+	buf := ctx.Global().Buffer()
+	if buf == nil {
+		return core.ZInt(0).ZVal(), nil
+	}
+
+	return core.ZInt(buf.Level()).ZVal(), buf.Close()
+}
+
+//> func string ob_get_clean ( void )
+func fncObGetClean(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
+	buf := ctx.Global().Buffer()
+	if buf == nil {
+		return core.ZBool(false).ZVal(), nil
+	}
+
+	data := core.ZString(buf.Get()).ZVal()
+	buf.Clean()
+
+	return data, nil
+}
+
+//> func string ob_get_contents ( void )
+func fncObGetContents(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
+	buf := ctx.Global().Buffer()
+	if buf == nil {
+		return core.ZBool(false).ZVal(), nil
+	}
+
+	data := core.ZString(buf.Get()).ZVal()
+
+	return data, nil
+}
+
+//> func string ob_get_flush ( void )
+func fncObGetFlush(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
+	buf := ctx.Global().Buffer()
+	if buf == nil {
+		return core.ZBool(false).ZVal(), nil
+	}
+
+	data := core.ZString(buf.Get()).ZVal()
+
+	return data, buf.Flush()
+}
