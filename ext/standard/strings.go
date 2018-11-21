@@ -190,3 +190,24 @@ func doStrReplace(ctx core.Context, subject core.ZString, search, replace *core.
 
 	return subject, err
 }
+
+//> func string str_rot13 ( string $str )
+func fncStrRot13(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
+	var s core.ZString
+	_, err := core.Expand(ctx, args, &s)
+	if err != nil {
+		return nil, err
+	}
+
+	obuf := make([]byte, len(s))
+	for i, v := range []byte(s) {
+		if v >= 'a' && v <= 'z' {
+			v = 'a' + ((v - 'a' + 13) % 26)
+		} else if v >= 'A' && v <= 'Z' {
+			v = 'A' + ((v - 'A' + 13) % 26)
+		}
+		obuf[i] = v
+	}
+
+	return core.ZString(obuf).ZVal(), nil
+}

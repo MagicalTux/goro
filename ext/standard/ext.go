@@ -70,6 +70,7 @@ func init() {
 			"rawurlencode":             &core.ExtFunction{Func: fncRawurlencode, Args: []*core.ExtFunctionArg{}},
 			"sleep":                    &core.ExtFunction{Func: stdFuncSleep, Args: []*core.ExtFunctionArg{}},
 			"str_replace":              &core.ExtFunction{Func: stdStrReplace, Args: []*core.ExtFunctionArg{}},
+			"str_rot13":                &core.ExtFunction{Func: fncStrRot13, Args: []*core.ExtFunctionArg{}},
 			"strval":                   &core.ExtFunction{Func: fncStrval, Args: []*core.ExtFunctionArg{}},
 			"urlencode":                &core.ExtFunction{Func: fncUrlencode, Args: []*core.ExtFunctionArg{}},
 			"usleep":                   &core.ExtFunction{Func: stdFuncUsleep, Args: []*core.ExtFunctionArg{}},
