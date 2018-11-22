@@ -13,11 +13,31 @@ type runClassStaticVarRef struct {
 }
 
 func (r *runClassStaticVarRef) Run(ctx Context) (*ZVal, error) {
-	return nil, errors.New("todo fetch var from class")
+	class, err := ctx.Global().GetClass(r.className)
+	if err != nil {
+		return nil, err
+	}
+
+	p, err := class.getStaticProps(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return p.GetString(r.varName), nil
 }
 
 func (r *runClassStaticVarRef) WriteValue(ctx Context, value *ZVal) error {
-	return errors.New("todo set class static value")
+	class, err := ctx.Global().GetClass(r.className)
+	if err != nil {
+		return err
+	}
+
+	p, err := class.getStaticProps(ctx)
+	if err != nil {
+		return err
+	}
+
+	return p.SetString(r.varName, value)
 }
 
 func (r *runClassStaticVarRef) Loc() *Loc {

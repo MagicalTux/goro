@@ -66,3 +66,25 @@ func (c *ZClass) BaseName() ZString {
 	}
 	return c.Name[pos+1:]
 }
+
+func (c *ZClass) getStaticProps(ctx Context) (*ZHashTable, error) {
+	if c.StaticProps == nil {
+		c.StaticProps = NewHashTable()
+		for _, p := range c.Props {
+			if !p.Modifiers.IsStatic() {
+				continue
+			}
+			if p.Default == nil {
+				c.StaticProps.SetString(p.VarName, ZNULL.Dup())
+				continue
+			}
+			v, err := p.Default.Run(ctx)
+			if err != nil {
+				c.StaticProps = nil
+				return nil, err
+			}
+			c.StaticProps.SetString(p.VarName, v)
+		}
+	}
+	return c.StaticProps, nil
+}

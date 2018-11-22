@@ -48,6 +48,34 @@ const (
 	ZAttrHasReturnType              = 0x40000000 // Function has a return type (or class has such non-private function)
 )
 
+func (a ZClassAttr) Has(c ZClassAttr) bool {
+	return a&c == c
+}
+
+func (a ZObjectAttr) Has(c ZObjectAttr) bool {
+	return a&c == c
+}
+
+func (a ZObjectAttr) IsStatic() bool {
+	return a.Has(ZAttrStatic)
+}
+
+func (a ZObjectAttr) Access() ZObjectAttr {
+	return a & ZAttrAccess
+}
+
+func (a ZObjectAttr) IsPublic() bool {
+	return a.Access() == ZAttrPublic
+}
+
+func (a ZObjectAttr) IsProtected() bool {
+	return a.Access() == ZAttrProtected
+}
+
+func (a ZObjectAttr) IsPrivate() bool {
+	return a.Access() == ZAttrPrivate
+}
+
 func (a *ZClassAttr) parse(c compileCtx) error {
 	// parse class attributes (abstract or final)
 	for {

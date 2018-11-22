@@ -19,11 +19,10 @@ func compileClass(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	}
 
 	class := &ZClass{
-		l:           MakeLoc(i.Loc()),
-		StaticProps: NewHashTable(),
-		attr:        attr,
-		Methods:     make(map[ZString]*ZClassMethod),
-		Const:       make(map[ZString]Runnable),
+		l:       MakeLoc(i.Loc()),
+		attr:    attr,
+		Methods: make(map[ZString]*ZClassMethod),
+		Const:   make(map[ZString]Runnable),
 	}
 
 	c = &zclassCompileCtx{c, class}
