@@ -13,7 +13,7 @@ type runClassStaticVarRef struct {
 }
 
 func (r *runClassStaticVarRef) Run(ctx Context) (*ZVal, error) {
-	class, err := ctx.Global().GetClass(r.className)
+	class, err := ctx.Global().GetClass(ctx, r.className)
 	if err != nil {
 		return nil, err
 	}
@@ -27,7 +27,7 @@ func (r *runClassStaticVarRef) Run(ctx Context) (*ZVal, error) {
 }
 
 func (r *runClassStaticVarRef) WriteValue(ctx Context, value *ZVal) error {
-	class, err := ctx.Global().GetClass(r.className)
+	class, err := ctx.Global().GetClass(ctx, r.className)
 	if err != nil {
 		return err
 	}
@@ -61,8 +61,9 @@ func (r *runClassStaticObjRef) Run(ctx Context) (*ZVal, error) {
 }
 
 func (r *runClassStaticObjRef) Call(ctx Context, args []*ZVal) (*ZVal, error) {
+	ctx = ctx.Parent(1) // go back one level
 	// first, fetch class object
-	class, err := ctx.Global().GetClass(r.className)
+	class, err := ctx.Global().GetClass(ctx, r.className)
 	if err != nil {
 		return nil, err
 	}
@@ -72,7 +73,7 @@ func (r *runClassStaticObjRef) Call(ctx Context, args []*ZVal) (*ZVal, error) {
 		return nil, fmt.Errorf("Call to undefined method %s::%s()", r.className, r.objName)
 	}
 
-	return method.Method.Call(ctx, args)
+	return ctx.CallZVal(ctx, method.Method, args, ctx.This())
 }
 
 func (r *runClassStaticObjRef) Loc() *Loc {

@@ -33,6 +33,14 @@ func (c *RootContext) Root() *RootContext {
 	return c
 }
 
+func (c *RootContext) Func() *FuncContext {
+	return nil
+}
+
+func (c *RootContext) This() *ZObject {
+	return nil
+}
+
 func (c *RootContext) OffsetExists(ctx Context, name *ZVal) (bool, error) {
 	name, err := name.As(ctx, ZtString)
 	if err != nil {

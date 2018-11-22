@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"time"
@@ -204,7 +205,42 @@ func (g *Global) GetConstant(name ZString) (*ZVal, error) {
 	return nil, nil
 }
 
-func (g *Global) GetClass(name ZString) (*ZClass, error) {
+func (g *Global) GetClass(ctx Context, name ZString) (*ZClass, error) {
+	switch name {
+	case "self":
+		// check for func
+		f := ctx.Func()
+		if f == nil {
+			return nil, errors.New("Cannot access self:: when no method scope is active")
+		}
+		cfunc, ok := f.c.(*ZClosure)
+		if !ok || cfunc.class == nil {
+			log.Printf("cfunc=%#v", f.c)
+			return nil, errors.New("Cannot access self:: when no class scope is active")
+		}
+		return cfunc.class, nil
+	case "parent":
+		// check for func
+		f := ctx.Func()
+		if f == nil {
+			return nil, errors.New("Cannot access parent:: when no method scope is active")
+		}
+		cfunc, ok := f.c.(*ZClosure)
+		if !ok || cfunc.class == nil {
+			return nil, errors.New("Cannot access parent:: when no class scope is active")
+		}
+		if cfunc.class.Parent == nil {
+			return nil, errors.New("Cannot access parent:: when current class scope has no parent")
+		}
+		return cfunc.class.Parent, nil
+	case "static":
+		// check for func
+		f := ctx.Func()
+		if f == nil || f.this == nil {
+			return nil, errors.New("Cannot access static:: when no class scope is active")
+		}
+		return f.this.Class, nil
+	}
 	if c, ok := g.globalClasses[name.ToLower()]; ok {
 		return c, nil
 	}

@@ -26,6 +26,17 @@ func (c *FuncContext) ZVal() *ZVal {
 	return (&ZVal{c}).Ref()
 }
 
+func (c *FuncContext) Func() *FuncContext {
+	return c
+}
+
+func (c *FuncContext) This() *ZObject {
+	if c.this != nil {
+		return c.this
+	}
+	return c.Context.This()
+}
+
 func (c *FuncContext) OffsetExists(ctx Context, name *ZVal) (bool, error) {
 	name, err := name.As(ctx, ZtString)
 	if err != nil {

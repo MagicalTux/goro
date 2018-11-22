@@ -82,23 +82,6 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 
 			// nb: if i.Data is "parent", "static" or "self" it might not actually be a static call
 			switch i.Data {
-			case "static":
-				return nil, errors.New("todo class special call")
-			case "parent", "self":
-				class := c.getClass()
-				if class == nil {
-					return nil, l.Errorf(nil, E_COMPILE_ERROR, "Cannot access %s:: when no class scope is active", i.Data)
-				}
-				switch i.Data {
-				case "self":
-					i.Data = string(class.Name)
-				case "parent":
-					if class.Parent == nil {
-						return nil, l.Errorf(nil, E_COMPILE_ERROR, "Cannot access parent:: when current class scope has no parent")
-					}
-					i.Data = string(class.Parent.Name)
-				}
-				fallthrough
 			default:
 				className := ZString(i.Data)
 				c.NextItem()          // T_PAAMAYIM_NEKUDOTAYIM

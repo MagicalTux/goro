@@ -35,7 +35,7 @@ func (r *runNewObject) Dump(w io.Writer) error {
 }
 
 func (r *runNewObject) Run(ctx Context) (*ZVal, error) {
-	class, err := ctx.Global().GetClass(r.obj)
+	class, err := ctx.Global().GetClass(ctx, r.obj)
 	if err != nil {
 		return nil, err
 	}
