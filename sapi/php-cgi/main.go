@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"net/http/cgi"
+	"os"
 
 	"github.com/MagicalTux/gophp/core"
 	_ "github.com/MagicalTux/gophp/ext/ctype"
@@ -13,6 +14,7 @@ import (
 
 func main() {
 	p := core.NewProcess("cgi")
+	p.CommandLine(os.Args)
 	err := cgi.Serve(p.Handler("."))
 	if err != nil {
 		log.Fatalf("failed to serve: %s", err)

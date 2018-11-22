@@ -14,6 +14,7 @@ import (
 
 func main() {
 	p := core.NewProcess("cli")
+	p.CommandLine(os.Args)
 	ctx := core.NewGlobal(context.Background(), p)
 	if len(os.Args) == 2 {
 		if err := ctx.RunFile(os.Args[1]); err != nil {

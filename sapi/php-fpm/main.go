@@ -4,6 +4,7 @@ import (
 	"log"
 	"net"
 	"net/http/fcgi"
+	"os"
 
 	"github.com/MagicalTux/gophp/core"
 	_ "github.com/MagicalTux/gophp/ext/ctype"
@@ -14,6 +15,7 @@ import (
 
 func main() {
 	p := core.NewProcess("fpm")
+	p.CommandLine(os.Args)
 
 	l, err := net.Listen("unix", "/tmp/php-fpm.sock")
 	if err != nil {

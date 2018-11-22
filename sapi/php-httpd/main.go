@@ -4,6 +4,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 
 	"github.com/MagicalTux/gophp/core"
 	_ "github.com/MagicalTux/gophp/ext/ctype"
@@ -14,6 +15,7 @@ import (
 
 func main() {
 	p := core.NewProcess("httpd")
+	p.CommandLine(os.Args)
 
 	l, err := net.Listen("tcp", ":8080")
 	if err != nil {
