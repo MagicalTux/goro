@@ -589,6 +589,10 @@ func operatorCompare(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 		return res.ZVal(), nil
 	}
 
+	if a.GetType() == ZtNull || b.GetType() == ZtNull {
+		return ZBool(true).ZVal(), nil
+	}
+
 	if a.GetType() == ZtBool || b.GetType() == ZtBool {
 		// comparing any value to bool will cause a cast to bool
 		a, _ = a.As(ctx, ZtBool)

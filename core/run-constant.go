@@ -22,11 +22,11 @@ func (r *runConstant) Dump(w io.Writer) error {
 func (r *runConstant) Run(ctx Context) (l *ZVal, err error) {
 	switch strings.ToLower(string(r.c)) {
 	case "null":
-		return &ZVal{nil}, nil
+		return ZNull{}.ZVal(), nil
 	case "true":
-		return &ZVal{ZBool(true)}, nil
+		return ZBool(true).ZVal(), nil
 	case "false":
-		return &ZVal{ZBool(false)}, nil
+		return ZBool(false).ZVal(), nil
 	}
 
 	z, err := ctx.Global().GetConstant(ZString(r.c))
