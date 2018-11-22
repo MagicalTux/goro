@@ -77,33 +77,47 @@ func compileClass(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 			}
 			fallthrough
 		case tokenizer.T_VARIABLE:
-			prop := &ZClassProp{Modifiers: attr}
-			prop.VarName = ZString(i.Data[1:])
+			for {
+				prop := &ZClassProp{Modifiers: attr}
+				prop.VarName = ZString(i.Data[1:])
 
-			// check for default value
-			i, err = c.NextItem()
-			if err != nil {
-				return nil, err
-			}
-
-			if i.IsSingle('=') {
-				// parse default value for class variable
-				prop.Default, err = compileExpr(nil, c)
-				if err != nil {
-					return nil, err
-				}
-
+				// check for default value
 				i, err = c.NextItem()
 				if err != nil {
 					return nil, err
 				}
-			}
 
-			if !i.IsSingle(';') {
+				if i.IsSingle('=') {
+					// parse default value for class variable
+					prop.Default, err = compileExpr(nil, c)
+					if err != nil {
+						return nil, err
+					}
+
+					i, err = c.NextItem()
+					if err != nil {
+						return nil, err
+					}
+				}
+
+				class.Props = append(class.Props, prop)
+				if i.IsSingle(';') {
+					break
+				}
+				if i.IsSingle(',') {
+					i, err = c.NextItem()
+					if err != nil {
+						return nil, err
+					}
+
+					if i.Type != tokenizer.T_VARIABLE {
+						return nil, i.Unexpected()
+					}
+					continue
+				}
+
 				return nil, i.Unexpected()
 			}
-
-			class.Props = append(class.Props, prop)
 		case tokenizer.T_CONST:
 			// const K = V
 			// get const name
