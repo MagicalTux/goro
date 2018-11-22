@@ -10,6 +10,7 @@ type FuncContext struct {
 	h    *ZHashTable
 	this *ZObject
 	args []*ZVal
+	c    Callable // called object (this function itself)
 }
 
 func (c *FuncContext) AsVal(ctx Context, t ZType) (Val, error) {

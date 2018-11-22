@@ -23,6 +23,7 @@ type ZClosure struct {
 	args  []*funcArg
 	use   []*funcUse
 	code  Runnable
+	class *ZClass // class in which this closure was defined (for parent:: and self::)
 	start *Loc
 	end   *Loc
 	rref  bool // return ref?

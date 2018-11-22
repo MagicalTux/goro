@@ -164,6 +164,7 @@ func compileClass(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 			if err != nil {
 				return nil, err
 			}
+			f.class = class
 
 			// register method
 			method := &ZClassMethod{Name: ZString(i.Data), Modifiers: attr, Method: f}

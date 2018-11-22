@@ -109,6 +109,7 @@ func (c *RootContext) Call(ctx Context, f Callable, args []Runnable, this *ZObje
 		Context: ctx,
 		h:       NewHashTable(),
 		this:    this,
+		c:       f,
 	}
 
 	var func_args []*funcArg
@@ -141,6 +142,7 @@ func (c *RootContext) CallZVal(ctx Context, f Callable, args []*ZVal, this *ZObj
 		h:       NewHashTable(),
 		this:    this,
 		args:    args,
+		c:       f,
 	}
 
 	return CatchReturn(f.Call(callCtx, args))
