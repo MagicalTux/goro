@@ -1,5 +1,7 @@
 package core
 
+import "github.com/MagicalTux/gophp/core/tokenizer"
+
 func compileTernaryOp(v Runnable, c compileCtx) (Runnable, error) {
 	// v contains the first part, we already have read the ? too
 	i, err := c.NextItem()
@@ -14,7 +16,7 @@ func compileTernaryOp(v Runnable, c compileCtx) (Runnable, error) {
 		yes = v
 	} else if i.IsSingle('?') {
 		yes = v
-		v, _ = spawnOperator("!==", v, &runZVal{nil, l}, l)
+		v, _ = spawnOperator(tokenizer.T_IS_NOT_IDENTICAL, v, &runZVal{nil, l}, l)
 	} else {
 		yes, err = compileExpr(i, c)
 		if err != nil {

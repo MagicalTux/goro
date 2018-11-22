@@ -85,7 +85,7 @@ func (r *runSwitch) Run(ctx Context) (*ZVal, error) {
 					return nil, err
 				}
 
-				v, err := operatorCompare(ctx, "==", cond, z)
+				v, err := operatorCompare(ctx, tokenizer.T_IS_EQUAL, cond, z)
 				if err != nil {
 					return nil, err
 				}

@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"io"
 	"math"
+
+	"github.com/MagicalTux/gophp/core/tokenizer"
 )
 
 type runOperator struct {
-	op  string
+	op  tokenizer.ItemType
 	opD *operatorInternalDetails
 
 	a, b Runnable
@@ -19,66 +21,65 @@ type operatorInternalDetails struct {
 	write   bool
 	numeric bool
 	skipA   bool
-	op      func(ctx Context, op string, a, b *ZVal) (*ZVal, error)
+	op      func(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, error)
 	pri     int
 }
 
 // ?: pri=24
-var operatorList = map[string]*operatorInternalDetails{
-	"=":   &operatorInternalDetails{write: true, skipA: true, pri: 25},
-	".=":  &operatorInternalDetails{write: true, op: operatorAppend, pri: 25},
-	"/=":  &operatorInternalDetails{write: true, numeric: true, op: operatorMath, pri: 25},
-	"*=":  &operatorInternalDetails{write: true, numeric: true, op: operatorMath, pri: 25},
-	"**=": &operatorInternalDetails{write: true, numeric: true, op: operatorMath, pri: 25},
-	"-=":  &operatorInternalDetails{write: true, numeric: true, op: operatorMath, pri: 25},
-	"+=":  &operatorInternalDetails{write: true, numeric: true, op: operatorMath, pri: 25},
-	".":   &operatorInternalDetails{op: operatorAppend, pri: 14},
-	"+":   &operatorInternalDetails{numeric: true, op: operatorMath, pri: 14},
-	"-":   &operatorInternalDetails{numeric: true, op: operatorMath, pri: 14},
-	"/":   &operatorInternalDetails{numeric: true, op: operatorMath, pri: 13},
-	"*":   &operatorInternalDetails{numeric: true, op: operatorMath, pri: 13},
-	"**":  &operatorInternalDetails{numeric: true, op: operatorMath, pri: 10},
-	"|=":  &operatorInternalDetails{write: true, numeric: true, op: operatorMathLogic, pri: 25},
-	"^=":  &operatorInternalDetails{write: true, numeric: true, op: operatorMathLogic, pri: 25},
-	"&=":  &operatorInternalDetails{write: true, numeric: true, op: operatorMathLogic, pri: 25},
-	"%=":  &operatorInternalDetails{write: true, numeric: true, op: operatorMathLogic, pri: 25},
-	"|":   &operatorInternalDetails{op: operatorMathLogic, pri: 20},
-	"^":   &operatorInternalDetails{op: operatorMathLogic, pri: 19},
-	"&":   &operatorInternalDetails{op: operatorMathLogic, pri: 18},
-	"%":   &operatorInternalDetails{numeric: true, op: operatorMathLogic, pri: 13},
-	"~":   &operatorInternalDetails{op: operatorMathLogic, pri: 11},
-	"<<":  &operatorInternalDetails{numeric: true, op: operatorMathLogic, pri: 15},
-	">>":  &operatorInternalDetails{numeric: true, op: operatorMathLogic, pri: 15},
-	"and": &operatorInternalDetails{numeric: true, op: operatorMathLogic, pri: 26},
-	"xor": &operatorInternalDetails{numeric: true, op: operatorMathLogic, pri: 27},
-	"ro":  &operatorInternalDetails{numeric: true, op: operatorMathLogic, pri: 28},
-	"<<=": &operatorInternalDetails{write: true, numeric: true, op: operatorMathLogic, pri: 25},
-	">>=": &operatorInternalDetails{write: true, numeric: true, op: operatorMathLogic, pri: 25},
-	"<":   &operatorInternalDetails{op: operatorCompare, pri: 16},
-	">":   &operatorInternalDetails{op: operatorCompare, pri: 16},
-	"<=":  &operatorInternalDetails{op: operatorCompare, pri: 16},
-	">=":  &operatorInternalDetails{op: operatorCompare, pri: 16},
-	"==":  &operatorInternalDetails{op: operatorCompare, pri: 17},
-	"===": &operatorInternalDetails{op: operatorCompareStrict, pri: 17},
-	"!=":  &operatorInternalDetails{op: operatorCompare, pri: 17},
-	"<>":  &operatorInternalDetails{op: operatorCompare, pri: 17},
-	"<=>": &operatorInternalDetails{op: operatorCompare, pri: 17},
-	"!==": &operatorInternalDetails{op: operatorCompareStrict, pri: 17},
-	"!":   &operatorInternalDetails{op: operatorNot, pri: 12},
-	"&&":  &operatorInternalDetails{op: operatorBoolLogic, pri: 21},
-	"||":  &operatorInternalDetails{op: operatorBoolLogic, pri: 22},
-	"??":  &operatorInternalDetails{pri: 23},
-	"++":  &operatorInternalDetails{op: operatorIncDec, pri: 11},
-	"--":  &operatorInternalDetails{op: operatorIncDec, pri: 11},
-	"@":   &operatorInternalDetails{pri: 11}, // TODO
+var operatorList = map[tokenizer.ItemType]*operatorInternalDetails{
+	tokenizer.ItemSingleChar('='):   &operatorInternalDetails{write: true, skipA: true, pri: 25},
+	tokenizer.T_CONCAT_EQUAL:        &operatorInternalDetails{write: true, op: operatorAppend, pri: 25},
+	tokenizer.T_DIV_EQUAL:           &operatorInternalDetails{write: true, numeric: true, op: operatorMath, pri: 25},
+	tokenizer.T_MUL_EQUAL:           &operatorInternalDetails{write: true, numeric: true, op: operatorMath, pri: 25},
+	tokenizer.T_POW_EQUAL:           &operatorInternalDetails{write: true, numeric: true, op: operatorMath, pri: 25},
+	tokenizer.T_MINUS_EQUAL:         &operatorInternalDetails{write: true, numeric: true, op: operatorMath, pri: 25},
+	tokenizer.T_PLUS_EQUAL:          &operatorInternalDetails{write: true, numeric: true, op: operatorMath, pri: 25},
+	tokenizer.ItemSingleChar('.'):   &operatorInternalDetails{op: operatorAppend, pri: 14},
+	tokenizer.ItemSingleChar('+'):   &operatorInternalDetails{numeric: true, op: operatorMath, pri: 14},
+	tokenizer.ItemSingleChar('-'):   &operatorInternalDetails{numeric: true, op: operatorMath, pri: 14},
+	tokenizer.ItemSingleChar('/'):   &operatorInternalDetails{numeric: true, op: operatorMath, pri: 13},
+	tokenizer.ItemSingleChar('*'):   &operatorInternalDetails{numeric: true, op: operatorMath, pri: 13},
+	tokenizer.T_POW:                 &operatorInternalDetails{numeric: true, op: operatorMath, pri: 10},
+	tokenizer.T_OR_EQUAL:            &operatorInternalDetails{write: true, numeric: true, op: operatorMathLogic, pri: 25},
+	tokenizer.T_XOR_EQUAL:           &operatorInternalDetails{write: true, numeric: true, op: operatorMathLogic, pri: 25},
+	tokenizer.T_AND_EQUAL:           &operatorInternalDetails{write: true, numeric: true, op: operatorMathLogic, pri: 25},
+	tokenizer.T_MOD_EQUAL:           &operatorInternalDetails{write: true, numeric: true, op: operatorMathLogic, pri: 25},
+	tokenizer.ItemSingleChar('|'):   &operatorInternalDetails{op: operatorMathLogic, pri: 20},
+	tokenizer.ItemSingleChar('^'):   &operatorInternalDetails{op: operatorMathLogic, pri: 19},
+	tokenizer.ItemSingleChar('&'):   &operatorInternalDetails{op: operatorMathLogic, pri: 18},
+	tokenizer.ItemSingleChar('%'):   &operatorInternalDetails{numeric: true, op: operatorMathLogic, pri: 13},
+	tokenizer.ItemSingleChar('~'):   &operatorInternalDetails{op: operatorMathLogic, pri: 11},
+	tokenizer.T_SL:                  &operatorInternalDetails{numeric: true, op: operatorMathLogic, pri: 15},
+	tokenizer.T_SR:                  &operatorInternalDetails{numeric: true, op: operatorMathLogic, pri: 15},
+	tokenizer.T_LOGICAL_AND:         &operatorInternalDetails{numeric: true, op: operatorMathLogic, pri: 26},
+	tokenizer.T_LOGICAL_XOR:         &operatorInternalDetails{numeric: true, op: operatorMathLogic, pri: 27},
+	tokenizer.T_LOGICAL_OR:          &operatorInternalDetails{numeric: true, op: operatorMathLogic, pri: 28},
+	tokenizer.T_SL_EQUAL:            &operatorInternalDetails{write: true, numeric: true, op: operatorMathLogic, pri: 25},
+	tokenizer.T_SR_EQUAL:            &operatorInternalDetails{write: true, numeric: true, op: operatorMathLogic, pri: 25},
+	tokenizer.ItemSingleChar('<'):   &operatorInternalDetails{op: operatorCompare, pri: 16},
+	tokenizer.ItemSingleChar('>'):   &operatorInternalDetails{op: operatorCompare, pri: 16},
+	tokenizer.T_IS_SMALLER_OR_EQUAL: &operatorInternalDetails{op: operatorCompare, pri: 16},
+	tokenizer.T_IS_GREATER_OR_EQUAL: &operatorInternalDetails{op: operatorCompare, pri: 16},
+	tokenizer.T_IS_EQUAL:            &operatorInternalDetails{op: operatorCompare, pri: 17},
+	tokenizer.T_IS_IDENTICAL:        &operatorInternalDetails{op: operatorCompareStrict, pri: 17},
+	tokenizer.T_IS_NOT_EQUAL:        &operatorInternalDetails{op: operatorCompare, pri: 17},
+	tokenizer.T_SPACESHIP:           &operatorInternalDetails{op: operatorCompare, pri: 17},
+	tokenizer.T_IS_NOT_IDENTICAL:    &operatorInternalDetails{op: operatorCompareStrict, pri: 17},
+	tokenizer.ItemSingleChar('!'):   &operatorInternalDetails{op: operatorNot, pri: 12},
+	tokenizer.T_BOOLEAN_AND:         &operatorInternalDetails{op: operatorBoolLogic, pri: 21},
+	tokenizer.T_BOOLEAN_OR:          &operatorInternalDetails{op: operatorBoolLogic, pri: 22},
+	tokenizer.T_COALESCE:            &operatorInternalDetails{pri: 23}, // TODO
+	tokenizer.T_INC:                 &operatorInternalDetails{op: operatorIncDec, pri: 11},
+	tokenizer.T_DEC:                 &operatorInternalDetails{op: operatorIncDec, pri: 11},
+	tokenizer.ItemSingleChar('@'):   &operatorInternalDetails{pri: 11}, // TODO
 
 	// cast operators
-	"(bool)":   &operatorInternalDetails{op: func(ctx Context, op string, a, b *ZVal) (*ZVal, error) { return b.As(ctx, ZtBool) }, pri: 11},
-	"(int)":    &operatorInternalDetails{op: func(ctx Context, op string, a, b *ZVal) (*ZVal, error) { return b.As(ctx, ZtInt) }, pri: 11},
-	"(double)": &operatorInternalDetails{op: func(ctx Context, op string, a, b *ZVal) (*ZVal, error) { return b.As(ctx, ZtFloat) }, pri: 11},
-	"(array)":  &operatorInternalDetails{op: func(ctx Context, op string, a, b *ZVal) (*ZVal, error) { return b.As(ctx, ZtArray) }, pri: 11},
-	"(object)": &operatorInternalDetails{op: func(ctx Context, op string, a, b *ZVal) (*ZVal, error) { return b.As(ctx, ZtObject) }, pri: 11},
-	"(string)": &operatorInternalDetails{op: func(ctx Context, op string, a, b *ZVal) (*ZVal, error) { return b.As(ctx, ZtString) }, pri: 11},
+	tokenizer.T_BOOL_CAST:   &operatorInternalDetails{op: func(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, error) { return b.As(ctx, ZtBool) }, pri: 11},
+	tokenizer.T_INT_CAST:    &operatorInternalDetails{op: func(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, error) { return b.As(ctx, ZtInt) }, pri: 11},
+	tokenizer.T_DOUBLE_CAST: &operatorInternalDetails{op: func(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, error) { return b.As(ctx, ZtFloat) }, pri: 11},
+	tokenizer.T_ARRAY_CAST:  &operatorInternalDetails{op: func(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, error) { return b.As(ctx, ZtArray) }, pri: 11},
+	tokenizer.T_OBJECT_CAST: &operatorInternalDetails{op: func(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, error) { return b.As(ctx, ZtObject) }, pri: 11},
+	tokenizer.T_STRING_CAST: &operatorInternalDetails{op: func(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, error) { return b.As(ctx, ZtString) }, pri: 11},
 }
 
 func (r *runOperator) Loc() *Loc {
@@ -96,7 +97,7 @@ func (r *runOperator) Dump(w io.Writer) error {
 			return err
 		}
 	}
-	_, err = w.Write([]byte(r.op))
+	_, err = w.Write([]byte(r.op.String())) // TODO fixme
 	if err != nil {
 		return err
 	}
@@ -110,7 +111,7 @@ func (r *runOperator) Dump(w io.Writer) error {
 	return err
 }
 
-func spawnOperator(op string, a, b Runnable, l *Loc) (Runnable, error) {
+func spawnOperator(op tokenizer.ItemType, a, b Runnable, l *Loc) (Runnable, error) {
 	opD, ok := operatorList[op]
 	if !ok {
 		return nil, l.Errorf(nil, E_COMPILE_ERROR, "invalid operator %s", op)
@@ -142,7 +143,7 @@ func (r *runOperator) Run(ctx Context) (*ZVal, error) {
 
 	op := r.opD
 
-	if r.op == "@" {
+	if r.op == tokenizer.ItemSingleChar('@') {
 		// silence errors
 		ctx = WithConfig(ctx, "error_reporting", ZInt(0).ZVal())
 	}
@@ -196,14 +197,14 @@ func (r *runOperator) Run(ctx Context) (*ZVal, error) {
 	return res, nil
 }
 
-func operatorAppend(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
+func operatorAppend(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, error) {
 	a, _ = a.As(ctx, ZtString)
 	b, _ = b.As(ctx, ZtString)
 
 	return &ZVal{a.AsString(ctx) + b.AsString(ctx)}, nil
 }
 
-func operatorNot(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
+func operatorNot(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, error) {
 	b, _ = b.As(ctx, ZtBool)
 
 	return &ZVal{!b.Value().(ZBool)}, nil
@@ -301,8 +302,8 @@ func doInc(v *ZVal, inc bool) error {
 	return fmt.Errorf("unsupported type for increment operator %s", v.GetType())
 }
 
-func operatorIncDec(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
-	inc := op == "++"
+func operatorIncDec(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, error) {
+	inc := op == tokenizer.T_INC
 
 	if a != nil {
 		// post mode
@@ -314,11 +315,7 @@ func operatorIncDec(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 	}
 }
 
-func operatorMath(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
-	if op[len(op)-1] == '=' {
-		op = op[:len(op)-1]
-	}
-
+func operatorMath(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, error) {
 	switch a.Value().GetType() {
 	case ZtInt:
 		var res Val
@@ -326,7 +323,7 @@ func operatorMath(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 		b := b.Value().(ZInt)
 
 		switch op {
-		case "+":
+		case tokenizer.T_PLUS_EQUAL, tokenizer.ItemSingleChar('+'):
 			c := a + b
 			if (c > a) == (b > 0) {
 				res = c
@@ -334,7 +331,7 @@ func operatorMath(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 				// overflow
 				res = ZFloat(a) + ZFloat(b)
 			}
-		case "-":
+		case tokenizer.T_MINUS_EQUAL, tokenizer.ItemSingleChar('-'):
 			c := a - b
 			if (c < a) == (b > 0) {
 				res = c
@@ -342,7 +339,7 @@ func operatorMath(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 				// overflow
 				res = ZFloat(a) - ZFloat(b)
 			}
-		case "/":
+		case tokenizer.T_DIV_EQUAL, tokenizer.ItemSingleChar('/'):
 			if b == 0 {
 				return nil, errors.New("Division by zero")
 			}
@@ -352,7 +349,7 @@ func operatorMath(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 			} else {
 				res = a / b
 			}
-		case "*":
+		case tokenizer.T_MUL_EQUAL, tokenizer.ItemSingleChar('*'):
 			if a == 0 || b == 0 {
 				res = ZInt(0)
 				break
@@ -365,22 +362,22 @@ func operatorMath(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 				// do this as float
 				res = ZFloat(a) * ZFloat(b)
 			}
-		case "**":
+		case tokenizer.T_POW, tokenizer.T_POW_EQUAL:
 			res = ZFloat(math.Pow(float64(a), float64(b)))
 		}
 		return &ZVal{res}, nil
 	case ZtFloat:
 		var res ZFloat
 		switch op {
-		case "+":
+		case tokenizer.T_PLUS_EQUAL, tokenizer.ItemSingleChar('+'):
 			res = a.Value().(ZFloat) + b.Value().(ZFloat)
-		case "-":
+		case tokenizer.T_MINUS_EQUAL, tokenizer.ItemSingleChar('-'):
 			res = a.Value().(ZFloat) - b.Value().(ZFloat)
-		case "/":
+		case tokenizer.T_DIV_EQUAL, tokenizer.ItemSingleChar('/'):
 			res = a.Value().(ZFloat) / b.Value().(ZFloat)
-		case "*":
+		case tokenizer.T_MUL_EQUAL, tokenizer.ItemSingleChar('*'):
 			res = a.Value().(ZFloat) * b.Value().(ZFloat)
-		case "**":
+		case tokenizer.T_POW, tokenizer.T_POW_EQUAL:
 			res = ZFloat(math.Pow(float64(a.Value().(ZFloat)), float64(b.Value().(ZFloat))))
 		}
 		return &ZVal{res}, nil
@@ -389,21 +386,18 @@ func operatorMath(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 	}
 }
 
-func operatorBoolLogic(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
+func operatorBoolLogic(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, error) {
 	switch op {
-	case "&&":
+	case tokenizer.T_BOOLEAN_AND:
 		return (a.AsBool(ctx) && b.AsBool(ctx)).ZVal(), nil
-	case "||":
+	case tokenizer.T_BOOLEAN_OR:
 		return (a.AsBool(ctx) || b.AsBool(ctx)).ZVal(), nil
 	default:
 		return nil, fmt.Errorf("todo operator unsupported %s", op)
 	}
 }
 
-func operatorMathLogic(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
-	if op[len(op)-1] == '=' {
-		op = op[:len(op)-1]
-	}
+func operatorMathLogic(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, error) {
 	if a == nil {
 		a = b
 	}
@@ -413,20 +407,20 @@ func operatorMathLogic(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 		b, _ = b.As(ctx, ZtInt)
 		var res ZInt
 		switch op {
-		case "|":
+		case tokenizer.ItemSingleChar('|'), tokenizer.T_OR_EQUAL:
 			res = a.Value().(ZInt) | b.Value().(ZInt)
-		case "^":
+		case tokenizer.ItemSingleChar('^'), tokenizer.T_XOR_EQUAL:
 			res = a.Value().(ZInt) ^ b.Value().(ZInt)
-		case "&":
+		case tokenizer.ItemSingleChar('&'), tokenizer.T_AND_EQUAL:
 			res = a.Value().(ZInt) & b.Value().(ZInt)
-		case "%":
+		case tokenizer.ItemSingleChar('%'), tokenizer.T_MOD_EQUAL:
 			res = a.Value().(ZInt) % b.Value().(ZInt)
-		case "~":
+		case tokenizer.ItemSingleChar('~'):
 			res = ^b.Value().(ZInt)
-		case "<<":
+		case tokenizer.T_SL, tokenizer.T_SL_EQUAL:
 			// TODO error check on negative b
 			res = a.Value().(ZInt) << uint(b.Value().(ZInt))
-		case ">>":
+		case tokenizer.T_SR, tokenizer.T_SR_EQUAL:
 			// TODO error check on negative b
 			res = a.Value().(ZInt) >> uint(b.Value().(ZInt))
 		}
@@ -445,7 +439,7 @@ func operatorMathLogic(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 			}
 			// a is longer than b
 			switch op {
-			case "|": // make b longer in this case
+			case tokenizer.ItemSingleChar('|'), tokenizer.T_OR_EQUAL: // make b longer in this case
 				newb := make([]byte, len(a))
 				copy(newb, b)
 				b = newb
@@ -455,19 +449,19 @@ func operatorMathLogic(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 		}
 
 		switch op {
-		case "|":
+		case tokenizer.ItemSingleChar('|'), tokenizer.T_OR_EQUAL:
 			for i := 0; i < len(a); i++ {
 				a[i] |= b[i]
 			}
-		case "^":
+		case tokenizer.ItemSingleChar('^'), tokenizer.T_XOR_EQUAL:
 			for i := 0; i < len(a); i++ {
 				a[i] ^= b[i]
 			}
-		case "&":
+		case tokenizer.ItemSingleChar('&'), tokenizer.T_AND_EQUAL:
 			for i := 0; i < len(a); i++ {
 				a[i] &= b[i]
 			}
-		case "~":
+		case tokenizer.ItemSingleChar('~'):
 			for i := 0; i < len(a); i++ {
 				b[i] = ^b[i]
 			}
@@ -481,7 +475,7 @@ func operatorMathLogic(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 	}
 }
 
-func operatorCompareStrict(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
+func operatorCompareStrict(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, error) {
 	if a.GetType() != b.GetType() {
 		// not same type → false
 		return &ZVal{ZBool(false)}, nil
@@ -504,14 +498,14 @@ func operatorCompareStrict(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 		return nil, fmt.Errorf("unsupported compare type %s", a.GetType())
 	}
 
-	if op == "!==" {
+	if op == tokenizer.T_IS_NOT_IDENTICAL {
 		res = !res
 	}
 
 	return &ZVal{ZBool(res)}, nil
 }
 
-func operatorCompare(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
+func operatorCompare(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, error) {
 	// operator compare (< > <= >= == === != !== <=>) involve a lot of dark magic in php, unless both values are of the same type (and even so)
 	// loose comparison will convert number-y looking strings into numbers, etc
 	var ia, ib *ZVal
@@ -560,19 +554,19 @@ func operatorCompare(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 			ia := ia.Value().(ZInt)
 			ib := ib.Value().(ZInt)
 			switch op {
-			case "<":
+			case tokenizer.ItemSingleChar('<'):
 				res = ZBool(ia < ib)
-			case ">":
+			case tokenizer.ItemSingleChar('>'):
 				res = ZBool(ia > ib)
-			case "<=":
+			case tokenizer.T_IS_SMALLER_OR_EQUAL:
 				res = ZBool(ia <= ib)
-			case ">=":
+			case tokenizer.T_IS_GREATER_OR_EQUAL:
 				res = ZBool(ia >= ib)
-			case "==":
+			case tokenizer.T_IS_EQUAL:
 				res = ZBool(ia == ib)
-			case "!=", "<>":
+			case tokenizer.T_IS_NOT_EQUAL:
 				res = ZBool(ia != ib)
-			case "<=>":
+			case tokenizer.T_SPACESHIP:
 				if ia < ib {
 					res = ZInt(-1)
 				} else if ia > ib {
@@ -585,17 +579,17 @@ func operatorCompare(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 			}
 		case ZtFloat:
 			switch op {
-			case "<":
+			case tokenizer.ItemSingleChar('<'):
 				res = ZBool(ia.Value().(ZFloat) < ib.Value().(ZFloat))
-			case ">":
+			case tokenizer.ItemSingleChar('>'):
 				res = ZBool(ia.Value().(ZFloat) > ib.Value().(ZFloat))
-			case "<=":
+			case tokenizer.T_IS_SMALLER_OR_EQUAL:
 				res = ZBool(ia.Value().(ZFloat) <= ib.Value().(ZFloat))
-			case ">=":
+			case tokenizer.T_IS_GREATER_OR_EQUAL:
 				res = ZBool(ia.Value().(ZFloat) >= ib.Value().(ZFloat))
-			case "==":
+			case tokenizer.T_IS_EQUAL:
 				res = ZBool(ia.Value().(ZFloat) == ib.Value().(ZFloat))
-			case "!=", "<>":
+			case tokenizer.T_IS_NOT_EQUAL:
 				res = ZBool(ia.Value().(ZFloat) != ib.Value().(ZFloat))
 			default:
 				return nil, fmt.Errorf("unsupported operator %s", op)
@@ -627,17 +621,17 @@ func operatorCompare(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 		}
 
 		switch op {
-		case "<":
+		case tokenizer.ItemSingleChar('<'):
 			res = ab < bb
-		case ">":
+		case tokenizer.ItemSingleChar('>'):
 			res = ab > bb
-		case "<=":
+		case tokenizer.T_IS_SMALLER_OR_EQUAL:
 			res = ab <= bb
-		case ">=":
+		case tokenizer.T_IS_GREATER_OR_EQUAL:
 			res = ab >= bb
-		case "==":
+		case tokenizer.T_IS_EQUAL:
 			res = ab == bb
-		case "!=", "<>":
+		case tokenizer.T_IS_NOT_EQUAL:
 			res = ab != bb
 		default:
 			return nil, fmt.Errorf("unsupported operator %s", op)
@@ -658,17 +652,17 @@ func operatorCompare(ctx Context, op string, a, b *ZVal) (*ZVal, error) {
 		av := a.Value().(ZString)
 		bv := b.Value().(ZString)
 		switch op {
-		case "<":
+		case tokenizer.ItemSingleChar('<'):
 			res = av < bv
-		case ">":
+		case tokenizer.ItemSingleChar('>'):
 			res = av > bv
-		case "<=":
+		case tokenizer.T_IS_SMALLER_OR_EQUAL:
 			res = av <= bv
-		case ">=":
+		case tokenizer.T_IS_GREATER_OR_EQUAL:
 			res = av >= bv
-		case "==":
+		case tokenizer.T_IS_EQUAL:
 			res = av == bv
-		case "!=", "<>":
+		case tokenizer.T_IS_NOT_EQUAL:
 			res = av != bv
 		default:
 			return nil, fmt.Errorf("unsupported operator %s", op)
