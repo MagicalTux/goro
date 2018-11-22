@@ -42,8 +42,14 @@ type ZCountable interface {
 // php array will use integer keys for integer values and integer-looking strings
 func getArrayKeyValue(s *ZVal) (ZInt, ZString, bool) {
 	switch s.GetType() {
+	case ZtBool:
+		if s.Value().(ZBool) {
+			return ZInt(1), "", true
+		} else {
+			return ZInt(0), "", true
+		}
 	case ZtInt:
-		return s.v.(ZInt), "", true
+		return s.Value().(ZInt), "", true
 	}
 
 	str := s.String()
