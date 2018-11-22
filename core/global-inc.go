@@ -1,6 +1,10 @@
 package core
 
-import "github.com/MagicalTux/gophp/core/tokenizer"
+import (
+	"log"
+
+	"github.com/MagicalTux/gophp/core/tokenizer"
+)
 
 //> func mixed include (string filename)
 func fncInclude(ctx Context, args []*ZVal) (*ZVal, error) {
@@ -73,6 +77,8 @@ func (c *Global) Require(ctx Context, fn ZString) (*ZVal, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	log.Printf("about to run: %s", debugDump(code))
 
 	return CatchReturn(code.Run(ctx))
 }

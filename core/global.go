@@ -112,7 +112,7 @@ func (g *Global) Root() *RootContext {
 }
 
 func (g *Global) RunFile(fn string) error {
-	_, err := g.Include(g.root, ZString(fn))
+	_, err := g.Require(g.root, ZString(fn))
 	err = FilterError(err)
 	if err != nil {
 		return err

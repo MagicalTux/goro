@@ -70,6 +70,18 @@ func (r *runClassStaticObjRef) Call(ctx Context, args []*ZVal) (*ZVal, error) {
 
 	method, ok := class.Methods[r.objName.ToLower()]
 	if !ok {
+		method, ok = class.Methods["__callStatic"]
+		if ok {
+			// found __call method
+			a := NewZArray()
+			callArgs := []*ZVal{r.objName.ZVal(), a.ZVal()}
+
+			for _, sub := range args {
+				a.OffsetSet(ctx, nil, sub)
+			}
+
+			return ctx.CallZVal(ctx, method.Method, callArgs, ctx.This())
+		}
 		return nil, fmt.Errorf("Call to undefined method %s::%s()", r.className, r.objName)
 	}
 

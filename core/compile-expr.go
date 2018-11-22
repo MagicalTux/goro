@@ -34,6 +34,27 @@ func compileExpr(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	}
 }
 
+func compileOpExpr(i *tokenizer.Item, c compileCtx) (Runnable, error) {
+	res, err := compileOneExpr(i, c)
+	if err != nil {
+		return nil, err
+	}
+
+	for {
+		sr, err := compilePostExpr(res, nil, c)
+		if err != nil {
+			return nil, err
+		}
+		if sr == nil {
+			return res, nil
+		}
+		if _, ok := sr.(*runOperator); ok {
+			return sr, nil
+		}
+		res = sr
+	}
+}
+
 func compileOneExpr(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	// fetch only one expression, without any operator or anything
 	var err error
@@ -164,13 +185,9 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 				return nil, err
 			}
 			return &runnableFunctionCall{"shell_exec", []Runnable{v}, l}, nil
-		case '!', '+', '-', '~':
+		case '!', '+', '-', '~', '@':
 			// this is an operator, let compilePostExpr() deal with it
 			return compilePostExpr(nil, i, c)
-		case '@':
-			// this is a silent operator
-			// TODO: we should encase result from compileExpr into a "silencer"
-			return compileOneExpr(nil, c)
 		case '[':
 			return compileArray(i, c)
 		case '(':
@@ -189,6 +206,7 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 			return v, err
 		case '&':
 			// get ref of something
+			// TODO make this operator?
 			v, err := compileOneExpr(nil, c)
 			if err != nil {
 				return nil, err
@@ -223,7 +241,7 @@ func compilePostExpr(v Runnable, i *tokenizer.Item, c compileCtx) (Runnable, err
 	case tokenizer.ItemSingleChar:
 		ch := []rune(i.Data)[0]
 		switch ch {
-		case '+', '-', '/', '*', '=', '.', '<', '>', '!', '|', '^', '&', '%', '~': // TODO list
+		case '+', '-', '/', '*', '=', '.', '<', '>', '!', '|', '^', '&', '%', '~', '@': // TODO list
 			// what follows is also an expression
 			t_v, err := compileOneExpr(nil, c)
 			if err != nil {

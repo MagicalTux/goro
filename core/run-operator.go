@@ -23,7 +23,6 @@ type operatorInternalDetails struct {
 	pri     int
 }
 
-// cast @ pri=11
 // ?: pri=24
 var operatorList = map[string]*operatorInternalDetails{
 	"=":   &operatorInternalDetails{write: true, skipA: true, pri: 25},
@@ -71,6 +70,7 @@ var operatorList = map[string]*operatorInternalDetails{
 	"??":  &operatorInternalDetails{pri: 23},
 	"++":  &operatorInternalDetails{op: operatorIncDec, pri: 11},
 	"--":  &operatorInternalDetails{op: operatorIncDec, pri: 11},
+	"@":   &operatorInternalDetails{pri: 11}, // TODO
 
 	// cast operators
 	"(bool)":   &operatorInternalDetails{op: func(ctx Context, op string, a, b *ZVal) (*ZVal, error) { return b.As(ctx, ZtBool) }, pri: 11},
@@ -130,6 +130,11 @@ func (r *runOperator) Run(ctx Context) (*ZVal, error) {
 	var err error
 
 	op := r.opD
+
+	if r.op == "@" {
+		// silence errors
+		ctx = WithConfig(ctx, "error_reporting", ZInt(0).ZVal())
+	}
 
 	// read a and b
 	if r.a != nil {

@@ -86,6 +86,10 @@ func (o *ZObject) OffsetSet(key, value *ZVal) (*ZVal, error) {
 func (o *ZObject) GetMethod(method ZString, ctx Context) (Callable, error) {
 	m, ok := o.Class.Methods[method.ToLower()]
 	if !ok {
+		m, ok = o.Class.Methods["__call"]
+		if ok {
+			return &callCatcher{method, m.Method}, nil
+		}
 		return nil, fmt.Errorf("Call to undefined method %s::%s()", o.Class.Name, method)
 	}
 	// TODO check method access
