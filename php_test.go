@@ -122,8 +122,7 @@ func runTest(t *testing.T, fpath string) (p *phptest, err error) {
 	var part string
 
 	// prepare env
-	p.p = core.NewProcess()
-	p.p.SetConstant("PHP_SAPI", "test")
+	p.p = core.NewProcess("test")
 	p.g = core.NewGlobal(context.Background(), p.p)
 	p.g.SetOutput(p.output)
 	p.g.Chdir(core.ZString(path.Dir(fpath))) // chdir execution to path

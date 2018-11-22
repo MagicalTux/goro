@@ -1,6 +1,7 @@
 package core
 
 import (
+	"io"
 	"net/http"
 	"os"
 )
@@ -8,16 +9,21 @@ import (
 type Process struct {
 	defaultConstants map[ZString]*ZVal
 	environ          []string
+	defaultOut       io.Writer
+	defaultErr       io.Writer
 }
 
 // NewProcess instanciates a new instance of Process, which represents a
 // running PHP process.
-func NewProcess() *Process {
+func NewProcess(sapi string) *Process {
 	res := &Process{
 		defaultConstants: make(map[ZString]*ZVal),
 		environ:          os.Environ(),
+		defaultOut:       os.Stdout,
+		defaultErr:       os.Stderr,
 	}
 	res.populateConstants()
+	res.SetConstant("PHP_SAPI", ZString(sapi))
 	return res
 }
 
@@ -39,4 +45,18 @@ func (p *Process) populateConstants() {
 // SetConstant sets a global constant, typically used to set PHP_SAPI.
 func (p *Process) SetConstant(name, value ZString) {
 	p.defaultConstants[name] = value.ZVal()
+}
+
+// CommandLine will parse arguments from the command line and configure the
+// process accordingly. If nil is passed, then the actual command line will be
+// parsed. In case of error, messages will be sent to stderr by default.
+func (p *Process) CommandLine(args []string) error {
+	if args == nil {
+		args = os.Args
+	}
+
+	// initially planned to use golang "flag" package, but not exactly suitable for PHP arguments...
+	// TODO
+
+	return nil
 }

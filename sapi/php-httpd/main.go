@@ -13,8 +13,7 @@ import (
 )
 
 func main() {
-	p := core.NewProcess()
-	p.SetConstant("PHP_SAPI", "httpd")
+	p := core.NewProcess("httpd")
 
 	l, err := net.Listen("tcp", ":8080")
 	if err != nil {
