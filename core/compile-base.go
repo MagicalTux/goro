@@ -106,7 +106,7 @@ func compileBaseSingle(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	}
 
 	// is it a single char item?
-	if i.Type == tokenizer.ItemSingleChar {
+	if ch := i.Rune(); ch > 0 {
 		ch := []rune(i.Data)[0]
 		h, ok = itemSingleHandler[ch]
 	} else {

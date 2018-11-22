@@ -321,15 +321,11 @@ func compileArrayAccess(v Runnable, c compileCtx) (Runnable, error) {
 		return nil, err
 	}
 
-	if i.Type != tokenizer.ItemSingleChar {
-		return nil, i.Unexpected()
-	}
-
 	var endc rune
-	switch i.Data {
-	case "[":
+	switch i.Rune() {
+	case '[':
 		endc = ']'
-	case "{":
+	case '{':
 		endc = '}'
 	default:
 		return nil, i.Unexpected()

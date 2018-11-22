@@ -12,7 +12,6 @@ type ItemType int
 const (
 	itemError ItemType = iota
 	itemEOF
-	ItemSingleChar             // : ;, ., >, !, { } etc...
 	T_ABSTRACT                 // "abstract"
 	T_AND_EQUAL                // "&="
 	T_ARRAY                    // array(...
@@ -147,6 +146,7 @@ const (
 	T_YIELD_FROM
 	T_DNUMBER
 	T_LNUMBER
+	itemMax
 )
 
 type Item struct {
@@ -162,14 +162,24 @@ func (i *Item) Errorf(format string, arg ...interface{}) error {
 }
 
 func (i *Item) String() string {
-	if i.Type == ItemSingleChar {
-		return fmt.Sprintf("%q", []rune(i.Data)[0])
+	if i.Type > itemMax {
+		return string([]rune{'\'', rune(i.Type - itemMax), '\''})
 	}
 	return i.Type.String()
 }
 
+func (i *Item) Rune() rune {
+	if i.Type < itemMax {
+		return rune(0)
+	}
+	return rune(i.Type - itemMax)
+}
+
 func (i *Item) IsSingle(r rune) bool {
-	return i.Type == ItemSingleChar && []rune(i.Data)[0] == r
+	if i.Type < itemMax {
+		return false
+	}
+	return i.Type == ItemType(r)+itemMax
 }
 
 func (i *Item) IsExpressionEnd() bool {
@@ -184,4 +194,8 @@ func (i *Item) Unexpected() error {
 
 func (i *Item) Loc() (string, int, int) {
 	return i.Filename, i.Line, i.Char
+}
+
+func ItemSingleChar(r rune) ItemType {
+	return ItemType(r) + itemMax
 }

@@ -40,7 +40,7 @@ func lexPhpPossibleCast(l *Lexer) lexState {
 
 	l.reset() // return to initial state
 	l.next()  // "("
-	l.emit(ItemSingleChar)
+	l.emit(ItemSingleChar('('))
 
 	return l.base
 }

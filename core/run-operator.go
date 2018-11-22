@@ -119,10 +119,21 @@ func spawnOperator(op string, a, b Runnable, l *Loc) (Runnable, error) {
 		if opD.pri < rop.opD.pri {
 			// need to swap values
 			rop.b = &runOperator{op: op, opD: opD, a: rop.b, b: b, l: l}
+			//log.Printf("did swap, res = %s", debugDump(rop))
 			return rop, nil
 		}
 	}
-	return &runOperator{op: op, opD: opD, a: a, b: b, l: l}, nil
+	if rop, isop := b.(*runOperator); isop {
+		if opD.pri < rop.opD.pri {
+			// need to swap values
+			rop.a = &runOperator{op: op, opD: opD, a: rop.a, b: a, l: l}
+			//log.Printf("did swap b, res = %s", debugDump(rop))
+			return rop, nil
+		}
+	}
+	final := &runOperator{op: op, opD: opD, a: a, b: b, l: l}
+	//log.Printf("spawn operator: %s", debugDump(final))
+	return final, nil
 }
 
 func (r *runOperator) Run(ctx Context) (*ZVal, error) {

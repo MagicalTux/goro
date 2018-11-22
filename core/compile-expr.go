@@ -2,6 +2,7 @@ package core
 
 import (
 	"errors"
+	"log"
 	"path"
 	"strconv"
 
@@ -41,15 +42,16 @@ func compileOpExpr(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	}
 
 	for {
+		if _, ok := res.(*runOperator); ok {
+			log.Printf("ret: %s", debugDump(res))
+			return res, nil
+		}
 		sr, err := compilePostExpr(res, nil, c)
 		if err != nil {
 			return nil, err
 		}
 		if sr == nil {
 			return res, nil
-		}
-		if _, ok := sr.(*runOperator); ok {
-			return sr, nil
 		}
 		res = sr
 	}
@@ -117,15 +119,12 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 					return nil, i.Unexpected()
 				}
 			}
-		case tokenizer.ItemSingleChar:
-			switch []rune(t_next.Data)[0] {
-			case '(':
-				args, err := compileFuncPassedArgs(c)
-				if err != nil {
-					return nil, err
-				}
-				return &runnableFunctionCall{ZString(i.Data), args, l}, nil
+		case tokenizer.ItemSingleChar('('):
+			args, err := compileFuncPassedArgs(c)
+			if err != nil {
+				return nil, err
 			}
+			return &runnableFunctionCall{ZString(i.Data), args, l}, nil
 		}
 		// so it's a constant
 		return &runConstant{i.Data, l}, nil
@@ -174,48 +173,42 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	case tokenizer.T_INC, tokenizer.T_DEC:
 		// this is an operator, let compilePostExpr() deal with it
 		return compilePostExpr(nil, i, c)
-	case tokenizer.ItemSingleChar:
-		ch := []rune(i.Data)[0]
-		switch ch {
-		case '"':
-			return compileQuoteEncapsed(i, c, '"')
-		case '`':
-			v, err := compileQuoteEncapsed(i, c, '`')
-			if err != nil {
-				return nil, err
-			}
-			return &runnableFunctionCall{"shell_exec", []Runnable{v}, l}, nil
-		case '!', '+', '-', '~', '@':
-			// this is an operator, let compilePostExpr() deal with it
-			return compilePostExpr(nil, i, c)
-		case '[':
-			return compileArray(i, c)
-		case '(':
-			// sub-expr
-			v, err := compileExpr(nil, c)
-			if err != nil {
-				return nil, err
-			}
-			i, err = c.NextItem()
-			if err != nil {
-				return nil, err
-			}
-			if !i.IsSingle(')') {
-				return nil, i.Unexpected()
-			}
-			return v, err
-		case '&':
-			// get ref of something
-			// TODO make this operator?
-			v, err := compileOneExpr(nil, c)
-			if err != nil {
-				return nil, err
-			}
-
-			return &runRef{v, l}, nil
-		default:
+	case tokenizer.ItemSingleChar('"'):
+		return compileQuoteEncapsed(i, c, '"')
+	case tokenizer.ItemSingleChar('`'):
+		v, err := compileQuoteEncapsed(i, c, '`')
+		if err != nil {
+			return nil, err
+		}
+		return &runnableFunctionCall{"shell_exec", []Runnable{v}, l}, nil
+	case tokenizer.ItemSingleChar('!'), tokenizer.ItemSingleChar('+'), tokenizer.ItemSingleChar('-'), tokenizer.ItemSingleChar('~'), tokenizer.ItemSingleChar('@'):
+		// this is an operator, let compilePostExpr() deal with it
+		return compilePostExpr(nil, i, c)
+	case tokenizer.ItemSingleChar('['):
+		return compileArray(i, c)
+	case tokenizer.ItemSingleChar('('):
+		// sub-expr
+		v, err := compileExpr(nil, c)
+		if err != nil {
+			return nil, err
+		}
+		i, err = c.NextItem()
+		if err != nil {
+			return nil, err
+		}
+		if !i.IsSingle(')') {
 			return nil, i.Unexpected()
 		}
+		return v, err
+	case tokenizer.ItemSingleChar('&'):
+		// get ref of something
+		// TODO make this operator?
+		v, err := compileOneExpr(nil, c)
+		if err != nil {
+			return nil, err
+		}
+
+		return &runRef{v, l}, nil
 	default:
 		h, ok := itemTypeHandler[i.Type]
 		if ok && h != nil {
@@ -238,36 +231,32 @@ func compilePostExpr(v Runnable, i *tokenizer.Item, c compileCtx) (Runnable, err
 	l := MakeLoc(i.Loc())
 	// can be any kind of glue (operators, etc)
 	switch i.Type {
-	case tokenizer.ItemSingleChar:
-		ch := []rune(i.Data)[0]
-		switch ch {
-		case '+', '-', '/', '*', '=', '.', '<', '>', '!', '|', '^', '&', '%', '~', '@': // TODO list
-			// what follows is also an expression
-			t_v, err := compileOneExpr(nil, c)
-			if err != nil {
-				return nil, err
-			}
-
-			// TODO: math priority
-			return spawnOperator(i.Data, v, t_v, l)
-		case '?':
-			return compileTernaryOp(v, c)
-		case '(':
-			// this is a function call of whatever is before
-			c.backup()
-			args, err := compileFuncPassedArgs(c)
-			if err != nil {
-				return nil, err
-			}
-			return &runnableFunctionCallRef{v, args, l}, nil
-		case '[', '{':
-			c.backup()
-			return compileArrayAccess(v, c)
-		case ';':
-			c.backup()
-			// just a value
-			return nil, nil
+	case tokenizer.ItemSingleChar('+'), tokenizer.ItemSingleChar('-'), tokenizer.ItemSingleChar('/'), tokenizer.ItemSingleChar('*'), tokenizer.ItemSingleChar('='), tokenizer.ItemSingleChar('.'), tokenizer.ItemSingleChar('<'), tokenizer.ItemSingleChar('>'), tokenizer.ItemSingleChar('!'), tokenizer.ItemSingleChar('|'), tokenizer.ItemSingleChar('^'), tokenizer.ItemSingleChar('&'), tokenizer.ItemSingleChar('%'), tokenizer.ItemSingleChar('~'), tokenizer.ItemSingleChar('@'): // TODO list
+		// what follows is also an expression
+		t_v, err := compileOneExpr(nil, c)
+		if err != nil {
+			return nil, err
 		}
+
+		// TODO: math priority
+		return spawnOperator(i.Data, v, t_v, l)
+	case tokenizer.ItemSingleChar('?'):
+		return compileTernaryOp(v, c)
+	case tokenizer.ItemSingleChar('('):
+		// this is a function call of whatever is before
+		c.backup()
+		args, err := compileFuncPassedArgs(c)
+		if err != nil {
+			return nil, err
+		}
+		return &runnableFunctionCallRef{v, args, l}, nil
+	case tokenizer.ItemSingleChar('['), tokenizer.ItemSingleChar('{'):
+		c.backup()
+		return compileArrayAccess(v, c)
+	case tokenizer.ItemSingleChar(';'):
+		c.backup()
+		// just a value
+		return nil, nil
 	case tokenizer.T_INC, tokenizer.T_DEC:
 		if v == nil {
 			// what follows is also an expression

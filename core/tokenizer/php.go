@@ -11,8 +11,7 @@ func lexPhp(l *Lexer) lexState {
 		case '(':
 			return lexPhpPossibleCast
 		case ')', ',', '{', '}', ';':
-			l.next()
-			l.emit(ItemSingleChar)
+			l.emit(ItemSingleChar(l.next()))
 		case '$':
 			return lexPhpVariable
 		case '#':

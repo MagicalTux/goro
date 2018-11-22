@@ -148,12 +148,10 @@ func compileFunction(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	case tokenizer.T_STRING:
 		// regular function definition
 		return compileFunctionWithName(ZString(i.Data), c, l, rref)
-	case tokenizer.ItemSingleChar:
-		if i.Data == "(" {
-			// function with no name is lambda
-			c.backup()
-			return compileFunctionWithName("", c, l, rref)
-		}
+	case tokenizer.ItemSingleChar('('):
+		// function with no name is lambda
+		c.backup()
+		return compileFunctionWithName("", c, l, rref)
 	}
 
 	return nil, i.Unexpected()
