@@ -11,6 +11,7 @@ type compileCtx interface {
 	NextItem() (*tokenizer.Item, error)
 	backup()
 	getClass() *ZClass
+	peekType() tokenizer.ItemType
 }
 
 type compileRootCtx struct {
@@ -38,6 +39,19 @@ func (c *compileRootCtx) ExpectSingle(r rune) error {
 
 func (c *compileRootCtx) getClass() *ZClass {
 	return nil
+}
+
+func (c *compileRootCtx) peekType() tokenizer.ItemType {
+	if c.next != nil {
+		return c.next.Type
+	}
+
+	n, err := c.NextItem()
+	if err != nil {
+		return -1
+	}
+	c.backup()
+	return n.Type
 }
 
 func (c *compileRootCtx) NextItem() (*tokenizer.Item, error) {

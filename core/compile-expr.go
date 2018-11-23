@@ -2,7 +2,6 @@ package core
 
 import (
 	"errors"
-	"log"
 	"path"
 	"strconv"
 
@@ -42,8 +41,7 @@ func compileOpExpr(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	}
 
 	for {
-		if _, ok := res.(*runOperator); ok {
-			log.Printf("ret: %s", debugDump(res))
+		if isOperator(c.peekType()) {
 			return res, nil
 		}
 		sr, err := compilePostExpr(res, nil, c)
@@ -149,7 +147,7 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	case tokenizer.T_BOOL_CAST, tokenizer.T_INT_CAST, tokenizer.T_ARRAY_CAST, tokenizer.T_DOUBLE_CAST, tokenizer.T_OBJECT_CAST, tokenizer.T_STRING_CAST:
 		// perform a cast operation on the following (note: v is null)
 		// make this an operator for appropriate operator precedence
-		t_v, err := compileOneExpr(nil, c)
+		t_v, err := compileOpExpr(nil, c)
 		if err != nil {
 			return nil, err
 		}
@@ -187,7 +185,7 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	case tokenizer.ItemSingleChar('&'):
 		// get ref of something
 		// TODO make this operator?
-		v, err := compileOneExpr(nil, c)
+		v, err := compileOpExpr(nil, c)
 		if err != nil {
 			return nil, err
 		}
@@ -236,7 +234,7 @@ func compilePostExpr(v Runnable, i *tokenizer.Item, c compileCtx) (Runnable, err
 	case tokenizer.T_INC, tokenizer.T_DEC:
 		if v == nil {
 			// what follows is also an expression
-			t_v, err := compileOneExpr(nil, c)
+			t_v, err := compileOpExpr(nil, c)
 			if err != nil {
 				return nil, err
 			}
@@ -249,7 +247,7 @@ func compilePostExpr(v Runnable, i *tokenizer.Item, c compileCtx) (Runnable, err
 	default:
 		if isOperator(i.Type) {
 			// what follows should be an expression
-			t_v, err := compileOneExpr(nil, c)
+			t_v, err := compileOpExpr(nil, c)
 			if err != nil {
 				return nil, err
 			}
