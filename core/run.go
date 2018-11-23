@@ -56,3 +56,28 @@ func (r Runnables) DumpWith(w io.Writer, sep []byte) error {
 	}
 	return nil
 }
+
+type runParentheses struct {
+	r Runnable
+}
+
+func (r *runParentheses) Loc() *Loc {
+	return r.r.Loc()
+}
+
+func (r *runParentheses) Dump(w io.Writer) error {
+	_, err := w.Write([]byte{'('})
+	if err != nil {
+		return err
+	}
+	err = r.r.Dump(w)
+	if err != nil {
+		return err
+	}
+	_, err = w.Write([]byte{')'})
+	return err
+}
+
+func (r *runParentheses) Run(ctx Context) (*ZVal, error) {
+	return r.r.Run(ctx)
+}

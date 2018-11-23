@@ -181,7 +181,8 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 		if !i.IsSingle(')') {
 			return nil, i.Unexpected()
 		}
-		return v, err
+		// put the expr into a container to avoid
+		return &runParentheses{v}, err
 	case tokenizer.ItemSingleChar('&'):
 		// get ref of something
 		// TODO make this operator?

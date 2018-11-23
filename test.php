@@ -3,8 +3,10 @@
 $a = 1;
 $b = 2;
 $c = 3;
-var_dump($d=$a/$b*$c);
+var_dump($d=$a+$b*$c);
 var_dump($d);
+
+var_dump(1+2*3);
 exit;
 
 // Provides: 2

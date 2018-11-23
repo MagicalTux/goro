@@ -117,23 +117,22 @@ func (r *runOperator) Dump(w io.Writer) error {
 }
 
 func spawnOperator(op tokenizer.ItemType, a, b Runnable, l *Loc) (Runnable, error) {
+	var err error
 	opD, ok := operatorList[op]
 	if !ok {
 		return nil, l.Errorf(nil, E_COMPILE_ERROR, "invalid operator %s", op)
 	}
+
+	//log.Printf("spawn operator %s %s %s", debugDump(a), op.Name(), debugDump(b))
 	if rop, isop := a.(*runOperator); isop {
 		if opD.pri < rop.opD.pri {
-			// need to swap values
-			rop.b = &runOperator{op: op, opD: opD, a: rop.b, b: b, l: l}
-			//log.Printf("did swap, res = %s", debugDump(rop))
-			return rop, nil
-		}
-	}
-	if rop, isop := b.(*runOperator); isop {
-		if opD.pri < rop.opD.pri {
-			// need to swap values
-			rop.a = &runOperator{op: op, opD: opD, a: rop.a, b: a, l: l}
-			//log.Printf("did swap b, res = %s", debugDump(rop))
+			// need to go down one level values
+			rop.b, err = spawnOperator(op, rop.b, b, l)
+			if err != nil {
+				return nil, err
+			}
+			//rop.b = &runOperator{op: op, opD: opD, a: rop.b, b: b, l: l}
+			//log.Printf("did swap(a), res = %s", debugDump(rop))
 			return rop, nil
 		}
 	}
