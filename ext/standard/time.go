@@ -26,3 +26,8 @@ func fncMicrotime(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 	r := fmt.Sprintf("%0.8f %d", float64(t.Nanosecond())/1e9, t.Unix())
 	return core.ZString(r).ZVal(), nil
 }
+
+//> func int time ( void )
+func fncTime(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
+	return core.ZInt(time.Now().Unix()).ZVal(), nil
+}
