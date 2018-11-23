@@ -603,7 +603,7 @@ func operatorCompare(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, err
 		return res.ZVal(), nil
 	}
 
-	if a.GetType() == ZtNull || b.GetType() == ZtNull {
+	if a.GetType() == ZtNull && b.GetType() == ZtNull {
 		return ZBool(true).ZVal(), nil
 	}
 

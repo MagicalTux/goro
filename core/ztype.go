@@ -90,37 +90,6 @@ func (z ZBool) ZVal() *ZVal {
 	return &ZVal{z}
 }
 
-func (z ZString) GetType() ZType {
-	return ZtString
-}
-
-func (z ZString) ZVal() *ZVal {
-	return &ZVal{z}
-}
-
-func (z ZString) AsVal(ctx Context, t ZType) (Val, error) {
-	switch t {
-	case ZtBool:
-		return ZBool(z != "" && z != "0"), nil
-	case ZtInt:
-		i, _ := strconv.ParseInt(string(z), 10, 64)
-		return ZInt(i), nil
-	case ZtFloat:
-		v, _ := z.AsNumeric()
-		switch v := v.(type) {
-		case ZInt:
-			return ZFloat(v), nil
-		case ZFloat:
-			return v, nil
-		default:
-			return nil, nil
-		}
-	case ZtString:
-		return z, nil
-	}
-	return nil, nil
-}
-
 func (z ZInt) GetType() ZType {
 	return ZtInt
 }
