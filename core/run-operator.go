@@ -86,6 +86,11 @@ func (r *runOperator) Loc() *Loc {
 	return r.l
 }
 
+func isOperator(t tokenizer.ItemType) bool {
+	_, ok := operatorList[t]
+	return ok
+}
+
 func (r *runOperator) Dump(w io.Writer) error {
 	_, err := w.Write([]byte{'('})
 	if err != nil {

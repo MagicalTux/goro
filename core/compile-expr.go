@@ -212,18 +212,10 @@ func compilePostExpr(v Runnable, i *tokenizer.Item, c compileCtx) (Runnable, err
 			return nil, err
 		}
 	}
+
 	l := MakeLoc(i.Loc())
 	// can be any kind of glue (operators, etc)
 	switch i.Type {
-	case tokenizer.ItemSingleChar('+'), tokenizer.ItemSingleChar('-'), tokenizer.ItemSingleChar('/'), tokenizer.ItemSingleChar('*'), tokenizer.ItemSingleChar('='), tokenizer.ItemSingleChar('.'), tokenizer.ItemSingleChar('<'), tokenizer.ItemSingleChar('>'), tokenizer.ItemSingleChar('!'), tokenizer.ItemSingleChar('|'), tokenizer.ItemSingleChar('^'), tokenizer.ItemSingleChar('&'), tokenizer.ItemSingleChar('%'), tokenizer.ItemSingleChar('~'), tokenizer.ItemSingleChar('@'): // TODO list
-		// what follows is also an expression
-		t_v, err := compileOneExpr(nil, c)
-		if err != nil {
-			return nil, err
-		}
-
-		// TODO: math priority
-		return spawnOperator(i.Type, v, t_v, l)
 	case tokenizer.ItemSingleChar('?'):
 		return compileTernaryOp(v, c)
 	case tokenizer.ItemSingleChar('('):
@@ -254,37 +246,16 @@ func compilePostExpr(v Runnable, i *tokenizer.Item, c compileCtx) (Runnable, err
 		}
 	case tokenizer.T_OBJECT_OPERATOR:
 		return compileObjectOperator(v, i, c)
-	case tokenizer.T_AND_EQUAL,
-		tokenizer.T_POW,
-		tokenizer.T_BOOLEAN_AND,
-		tokenizer.T_BOOLEAN_OR,
-		tokenizer.T_CONCAT_EQUAL,
-		tokenizer.T_PLUS_EQUAL,
-		tokenizer.T_MINUS_EQUAL,
-		tokenizer.T_MUL_EQUAL,
-		tokenizer.T_DIV_EQUAL,
-		tokenizer.T_IS_EQUAL,
-		tokenizer.T_IS_NOT_EQUAL,
-		tokenizer.T_SPACESHIP,
-		tokenizer.T_IS_IDENTICAL,
-		tokenizer.T_IS_NOT_IDENTICAL,
-		tokenizer.T_IS_GREATER_OR_EQUAL,
-		tokenizer.T_IS_SMALLER_OR_EQUAL,
-		tokenizer.T_LOGICAL_AND,
-		tokenizer.T_LOGICAL_XOR,
-		tokenizer.T_SL,
-		tokenizer.T_SR,
-		tokenizer.T_SL_EQUAL,
-		tokenizer.T_SR_EQUAL,
-		tokenizer.T_LOGICAL_OR: // etc... FIXME TODO
+	default:
+		if isOperator(i.Type) {
+			// what follows should be an expression
+			t_v, err := compileOneExpr(nil, c)
+			if err != nil {
+				return nil, err
+			}
 
-		// what follows is also an expression
-		t_v, err := compileOneExpr(nil, c)
-		if err != nil {
-			return nil, err
+			return spawnOperator(i.Type, v, t_v, l)
 		}
-
-		return spawnOperator(i.Type, v, t_v, l)
 	}
 
 	// unknown?
