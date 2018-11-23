@@ -1,7 +1,6 @@
 package core
 
 import (
-	"errors"
 	"fmt"
 	"io"
 )
@@ -56,8 +55,17 @@ type runClassStaticObjRef struct {
 }
 
 func (r *runClassStaticObjRef) Run(ctx Context) (*ZVal, error) {
-	// attempt to fetch a constant under that name
-	return nil, errors.New("todo class fetch constant")
+	class, err := ctx.Global().GetClass(ctx, r.className)
+	if err != nil {
+		return nil, err
+	}
+
+	v, ok := class.Const[r.objName]
+	if !ok {
+		return ZNull{}.ZVal(), nil
+	}
+
+	return v.Run(ctx)
 }
 
 func (r *runClassStaticObjRef) Call(ctx Context, args []*ZVal) (*ZVal, error) {
