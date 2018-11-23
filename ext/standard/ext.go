@@ -29,6 +29,7 @@ func init() {
 			"cosh":                     &core.ExtFunction{Func: mathCosh, Args: []*core.ExtFunctionArg{}},
 			"deg2rad":                  &core.ExtFunction{Func: mathDeg2rad, Args: []*core.ExtFunctionArg{}},
 			"die":                      &core.ExtFunction{Func: die, Args: []*core.ExtFunctionArg{}},
+			"dirname":                  &core.ExtFunction{Func: fncDirname, Args: []*core.ExtFunctionArg{}},
 			"dl":                       &core.ExtFunction{Func: stdFuncDl, Args: []*core.ExtFunctionArg{}},
 			"doubleval":                &core.ExtFunction{Func: fncDoubleval, Args: []*core.ExtFunctionArg{}},
 			"eval":                     &core.ExtFunction{Func: stdFuncEval, Args: []*core.ExtFunctionArg{}},
