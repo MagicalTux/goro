@@ -482,7 +482,7 @@ func operatorMathLogic(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, e
 func operatorCompareStrict(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, error) {
 	if a.GetType() != b.GetType() {
 		// not same type → false
-		return &ZVal{ZBool(false)}, nil
+		return &ZVal{ZBool(op != tokenizer.T_IS_IDENTICAL)}, nil
 	}
 
 	var res bool
