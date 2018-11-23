@@ -45,7 +45,7 @@ func (z *runZVal) Dump(w io.Writer) error {
 }
 
 func (z *ZVal) ZVal() *ZVal {
-	return z
+	return &ZVal{z.v}
 }
 
 func (z *ZVal) Dup() *ZVal {

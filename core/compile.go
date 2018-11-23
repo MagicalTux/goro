@@ -86,7 +86,7 @@ func Compile(parent Context, t *tokenizer.Lexer) (Runnable, error) {
 		t:       t,
 	}
 
-	r, err := compileBase(nil, c)
+	r, err := compileBaseUntil(nil, c, tokenizer.T_EOF)
 	if err != nil && err != io.EOF {
 		return nil, err
 	}

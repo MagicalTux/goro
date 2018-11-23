@@ -77,13 +77,10 @@ func (l *Lexer) NextItem() (*Item, error) {
 	i := <-l.items
 	if i == nil {
 		// mh?
-		return nil, io.EOF
+		return &Item{Type: T_EOF}, nil
 	}
 	if i.Type == itemError {
 		return nil, errors.New(i.Data)
-	}
-	if i.Type == itemEOF {
-		return nil, io.EOF
 	}
 	return i, nil
 }

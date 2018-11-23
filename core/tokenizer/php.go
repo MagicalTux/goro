@@ -47,7 +47,7 @@ func lexPhp(l *Lexer) lexState {
 			l.next()
 			l.emit(T_NS_SEPARATOR)
 		case eof:
-			l.emit(itemEOF)
+			l.emit(T_EOF)
 			return nil
 		default:
 			// check for potential label start

@@ -26,6 +26,13 @@ func doVarDump(ctx core.Context, z *core.ZVal, linePfx string, recurs map[uintpt
 
 	if recurs == nil {
 		recurs = make(map[uintptr]bool)
+	} else {
+		// duplicate
+		n := make(map[uintptr]bool)
+		for k, v := range recurs {
+			n[k] = v
+		}
+		recurs = n
 	}
 
 	v := uintptr(unsafe.Pointer(z))

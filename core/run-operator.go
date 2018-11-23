@@ -195,7 +195,7 @@ func (r *runOperator) Run(ctx Context) (*ZVal, error) {
 		if !ok {
 			return nil, fmt.Errorf("Can't use %#v value in write context", r.a)
 		}
-		return res, w.WriteValue(ctx, res)
+		return res, w.WriteValue(ctx, res.ZVal())
 	}
 
 	return res, nil

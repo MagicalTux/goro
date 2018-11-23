@@ -11,7 +11,7 @@ type ItemType int
 
 const (
 	itemError ItemType = iota
-	itemEOF
+	T_EOF
 	T_ABSTRACT                 // "abstract"
 	T_AND_EQUAL                // "&="
 	T_ARRAY                    // array(...
