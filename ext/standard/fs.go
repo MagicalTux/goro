@@ -2,7 +2,6 @@ package standard
 
 import (
 	"path"
-	"strings"
 
 	"github.com/MagicalTux/gophp/core"
 )
@@ -16,7 +15,15 @@ func fncDirname(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 		return nil, err
 	}
 
-	p = strings.TrimRight(p, "/") // to get something similar to php
+	for {
+		if len(p) == 1 {
+			break
+		}
+		if p[len(p)-1] != '/' {
+			break
+		}
+		p = p[:len(p)-1]
+	}
 
 	if lvl == nil {
 		return core.ZString(path.Dir(p)).ZVal(), nil
