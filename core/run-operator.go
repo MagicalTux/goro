@@ -27,28 +27,28 @@ type operatorInternalDetails struct {
 
 // ?: pri=24
 var operatorList = map[tokenizer.ItemType]*operatorInternalDetails{
-	tokenizer.ItemSingleChar('='):   &operatorInternalDetails{write: true, skipA: true, pri: 25},
+	tokenizer.Rune('='):             &operatorInternalDetails{write: true, skipA: true, pri: 25},
 	tokenizer.T_CONCAT_EQUAL:        &operatorInternalDetails{write: true, op: operatorAppend, pri: 25},
 	tokenizer.T_DIV_EQUAL:           &operatorInternalDetails{write: true, numeric: true, op: operatorMath, pri: 25},
 	tokenizer.T_MUL_EQUAL:           &operatorInternalDetails{write: true, numeric: true, op: operatorMath, pri: 25},
 	tokenizer.T_POW_EQUAL:           &operatorInternalDetails{write: true, numeric: true, op: operatorMath, pri: 25},
 	tokenizer.T_MINUS_EQUAL:         &operatorInternalDetails{write: true, numeric: true, op: operatorMath, pri: 25},
 	tokenizer.T_PLUS_EQUAL:          &operatorInternalDetails{write: true, numeric: true, op: operatorMath, pri: 25},
-	tokenizer.ItemSingleChar('.'):   &operatorInternalDetails{op: operatorAppend, pri: 14},
-	tokenizer.ItemSingleChar('+'):   &operatorInternalDetails{numeric: true, op: operatorMath, pri: 14},
-	tokenizer.ItemSingleChar('-'):   &operatorInternalDetails{numeric: true, op: operatorMath, pri: 14},
-	tokenizer.ItemSingleChar('/'):   &operatorInternalDetails{numeric: true, op: operatorMath, pri: 13},
-	tokenizer.ItemSingleChar('*'):   &operatorInternalDetails{numeric: true, op: operatorMath, pri: 13},
+	tokenizer.Rune('.'):             &operatorInternalDetails{op: operatorAppend, pri: 14},
+	tokenizer.Rune('+'):             &operatorInternalDetails{numeric: true, op: operatorMath, pri: 14},
+	tokenizer.Rune('-'):             &operatorInternalDetails{numeric: true, op: operatorMath, pri: 14},
+	tokenizer.Rune('/'):             &operatorInternalDetails{numeric: true, op: operatorMath, pri: 13},
+	tokenizer.Rune('*'):             &operatorInternalDetails{numeric: true, op: operatorMath, pri: 13},
 	tokenizer.T_POW:                 &operatorInternalDetails{numeric: true, op: operatorMath, pri: 10},
 	tokenizer.T_OR_EQUAL:            &operatorInternalDetails{write: true, numeric: true, op: operatorMathLogic, pri: 25},
 	tokenizer.T_XOR_EQUAL:           &operatorInternalDetails{write: true, numeric: true, op: operatorMathLogic, pri: 25},
 	tokenizer.T_AND_EQUAL:           &operatorInternalDetails{write: true, numeric: true, op: operatorMathLogic, pri: 25},
 	tokenizer.T_MOD_EQUAL:           &operatorInternalDetails{write: true, numeric: true, op: operatorMathLogic, pri: 25},
-	tokenizer.ItemSingleChar('|'):   &operatorInternalDetails{op: operatorMathLogic, pri: 20},
-	tokenizer.ItemSingleChar('^'):   &operatorInternalDetails{op: operatorMathLogic, pri: 19},
-	tokenizer.ItemSingleChar('&'):   &operatorInternalDetails{op: operatorMathLogic, pri: 18},
-	tokenizer.ItemSingleChar('%'):   &operatorInternalDetails{numeric: true, op: operatorMathLogic, pri: 13},
-	tokenizer.ItemSingleChar('~'):   &operatorInternalDetails{op: operatorMathLogic, pri: 11},
+	tokenizer.Rune('|'):             &operatorInternalDetails{op: operatorMathLogic, pri: 20},
+	tokenizer.Rune('^'):             &operatorInternalDetails{op: operatorMathLogic, pri: 19},
+	tokenizer.Rune('&'):             &operatorInternalDetails{op: operatorMathLogic, pri: 18},
+	tokenizer.Rune('%'):             &operatorInternalDetails{numeric: true, op: operatorMathLogic, pri: 13},
+	tokenizer.Rune('~'):             &operatorInternalDetails{op: operatorMathLogic, pri: 11},
 	tokenizer.T_SL:                  &operatorInternalDetails{numeric: true, op: operatorMathLogic, pri: 15},
 	tokenizer.T_SR:                  &operatorInternalDetails{numeric: true, op: operatorMathLogic, pri: 15},
 	tokenizer.T_LOGICAL_AND:         &operatorInternalDetails{numeric: true, op: operatorMathLogic, pri: 26},
@@ -56,8 +56,8 @@ var operatorList = map[tokenizer.ItemType]*operatorInternalDetails{
 	tokenizer.T_LOGICAL_OR:          &operatorInternalDetails{numeric: true, op: operatorMathLogic, pri: 28},
 	tokenizer.T_SL_EQUAL:            &operatorInternalDetails{write: true, numeric: true, op: operatorMathLogic, pri: 25},
 	tokenizer.T_SR_EQUAL:            &operatorInternalDetails{write: true, numeric: true, op: operatorMathLogic, pri: 25},
-	tokenizer.ItemSingleChar('<'):   &operatorInternalDetails{op: operatorCompare, pri: 16},
-	tokenizer.ItemSingleChar('>'):   &operatorInternalDetails{op: operatorCompare, pri: 16},
+	tokenizer.Rune('<'):             &operatorInternalDetails{op: operatorCompare, pri: 16},
+	tokenizer.Rune('>'):             &operatorInternalDetails{op: operatorCompare, pri: 16},
 	tokenizer.T_IS_SMALLER_OR_EQUAL: &operatorInternalDetails{op: operatorCompare, pri: 16},
 	tokenizer.T_IS_GREATER_OR_EQUAL: &operatorInternalDetails{op: operatorCompare, pri: 16},
 	tokenizer.T_IS_EQUAL:            &operatorInternalDetails{op: operatorCompare, pri: 17},
@@ -65,13 +65,13 @@ var operatorList = map[tokenizer.ItemType]*operatorInternalDetails{
 	tokenizer.T_IS_NOT_EQUAL:        &operatorInternalDetails{op: operatorCompare, pri: 17},
 	tokenizer.T_SPACESHIP:           &operatorInternalDetails{op: operatorCompare, pri: 17},
 	tokenizer.T_IS_NOT_IDENTICAL:    &operatorInternalDetails{op: operatorCompareStrict, pri: 17},
-	tokenizer.ItemSingleChar('!'):   &operatorInternalDetails{op: operatorNot, pri: 12},
+	tokenizer.Rune('!'):             &operatorInternalDetails{op: operatorNot, pri: 12},
 	tokenizer.T_BOOLEAN_AND:         &operatorInternalDetails{op: operatorBoolLogic, pri: 21},
 	tokenizer.T_BOOLEAN_OR:          &operatorInternalDetails{op: operatorBoolLogic, pri: 22},
 	tokenizer.T_COALESCE:            &operatorInternalDetails{pri: 23}, // TODO
 	tokenizer.T_INC:                 &operatorInternalDetails{op: operatorIncDec, pri: 11},
 	tokenizer.T_DEC:                 &operatorInternalDetails{op: operatorIncDec, pri: 11},
-	tokenizer.ItemSingleChar('@'):   &operatorInternalDetails{pri: 11}, // TODO
+	tokenizer.Rune('@'):             &operatorInternalDetails{pri: 11}, // TODO
 
 	// cast operators
 	tokenizer.T_BOOL_CAST:   &operatorInternalDetails{op: func(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, error) { return b.As(ctx, ZtBool) }, pri: 11},
@@ -147,7 +147,7 @@ func (r *runOperator) Run(ctx Context) (*ZVal, error) {
 
 	op := r.opD
 
-	if r.op == tokenizer.ItemSingleChar('@') {
+	if r.op == tokenizer.Rune('@') {
 		// silence errors
 		ctx = WithConfig(ctx, "error_reporting", ZInt(0).ZVal())
 	}
@@ -327,7 +327,7 @@ func operatorMath(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, error)
 		b := b.Value().(ZInt)
 
 		switch op {
-		case tokenizer.T_PLUS_EQUAL, tokenizer.ItemSingleChar('+'):
+		case tokenizer.T_PLUS_EQUAL, tokenizer.Rune('+'):
 			c := a + b
 			if (c > a) == (b > 0) {
 				res = c
@@ -335,7 +335,7 @@ func operatorMath(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, error)
 				// overflow
 				res = ZFloat(a) + ZFloat(b)
 			}
-		case tokenizer.T_MINUS_EQUAL, tokenizer.ItemSingleChar('-'):
+		case tokenizer.T_MINUS_EQUAL, tokenizer.Rune('-'):
 			c := a - b
 			if (c < a) == (b > 0) {
 				res = c
@@ -343,7 +343,7 @@ func operatorMath(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, error)
 				// overflow
 				res = ZFloat(a) - ZFloat(b)
 			}
-		case tokenizer.T_DIV_EQUAL, tokenizer.ItemSingleChar('/'):
+		case tokenizer.T_DIV_EQUAL, tokenizer.Rune('/'):
 			if b == 0 {
 				return nil, errors.New("Division by zero")
 			}
@@ -353,7 +353,7 @@ func operatorMath(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, error)
 			} else {
 				res = a / b
 			}
-		case tokenizer.T_MUL_EQUAL, tokenizer.ItemSingleChar('*'):
+		case tokenizer.T_MUL_EQUAL, tokenizer.Rune('*'):
 			if a == 0 || b == 0 {
 				res = ZInt(0)
 				break
@@ -373,13 +373,13 @@ func operatorMath(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, error)
 	case ZtFloat:
 		var res ZFloat
 		switch op {
-		case tokenizer.T_PLUS_EQUAL, tokenizer.ItemSingleChar('+'):
+		case tokenizer.T_PLUS_EQUAL, tokenizer.Rune('+'):
 			res = a.Value().(ZFloat) + b.Value().(ZFloat)
-		case tokenizer.T_MINUS_EQUAL, tokenizer.ItemSingleChar('-'):
+		case tokenizer.T_MINUS_EQUAL, tokenizer.Rune('-'):
 			res = a.Value().(ZFloat) - b.Value().(ZFloat)
-		case tokenizer.T_DIV_EQUAL, tokenizer.ItemSingleChar('/'):
+		case tokenizer.T_DIV_EQUAL, tokenizer.Rune('/'):
 			res = a.Value().(ZFloat) / b.Value().(ZFloat)
-		case tokenizer.T_MUL_EQUAL, tokenizer.ItemSingleChar('*'):
+		case tokenizer.T_MUL_EQUAL, tokenizer.Rune('*'):
 			res = a.Value().(ZFloat) * b.Value().(ZFloat)
 		case tokenizer.T_POW, tokenizer.T_POW_EQUAL:
 			res = ZFloat(math.Pow(float64(a.Value().(ZFloat)), float64(b.Value().(ZFloat))))
@@ -411,15 +411,15 @@ func operatorMathLogic(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, e
 		b, _ = b.As(ctx, ZtInt)
 		var res ZInt
 		switch op {
-		case tokenizer.ItemSingleChar('|'), tokenizer.T_OR_EQUAL:
+		case tokenizer.Rune('|'), tokenizer.T_OR_EQUAL:
 			res = a.Value().(ZInt) | b.Value().(ZInt)
-		case tokenizer.ItemSingleChar('^'), tokenizer.T_XOR_EQUAL:
+		case tokenizer.Rune('^'), tokenizer.T_XOR_EQUAL:
 			res = a.Value().(ZInt) ^ b.Value().(ZInt)
-		case tokenizer.ItemSingleChar('&'), tokenizer.T_AND_EQUAL:
+		case tokenizer.Rune('&'), tokenizer.T_AND_EQUAL:
 			res = a.Value().(ZInt) & b.Value().(ZInt)
-		case tokenizer.ItemSingleChar('%'), tokenizer.T_MOD_EQUAL:
+		case tokenizer.Rune('%'), tokenizer.T_MOD_EQUAL:
 			res = a.Value().(ZInt) % b.Value().(ZInt)
-		case tokenizer.ItemSingleChar('~'):
+		case tokenizer.Rune('~'):
 			res = ^b.Value().(ZInt)
 		case tokenizer.T_SL, tokenizer.T_SL_EQUAL:
 			// TODO error check on negative b
@@ -443,7 +443,7 @@ func operatorMathLogic(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, e
 			}
 			// a is longer than b
 			switch op {
-			case tokenizer.ItemSingleChar('|'), tokenizer.T_OR_EQUAL: // make b longer in this case
+			case tokenizer.Rune('|'), tokenizer.T_OR_EQUAL: // make b longer in this case
 				newb := make([]byte, len(a))
 				copy(newb, b)
 				b = newb
@@ -453,19 +453,19 @@ func operatorMathLogic(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, e
 		}
 
 		switch op {
-		case tokenizer.ItemSingleChar('|'), tokenizer.T_OR_EQUAL:
+		case tokenizer.Rune('|'), tokenizer.T_OR_EQUAL:
 			for i := 0; i < len(a); i++ {
 				a[i] |= b[i]
 			}
-		case tokenizer.ItemSingleChar('^'), tokenizer.T_XOR_EQUAL:
+		case tokenizer.Rune('^'), tokenizer.T_XOR_EQUAL:
 			for i := 0; i < len(a); i++ {
 				a[i] ^= b[i]
 			}
-		case tokenizer.ItemSingleChar('&'), tokenizer.T_AND_EQUAL:
+		case tokenizer.Rune('&'), tokenizer.T_AND_EQUAL:
 			for i := 0; i < len(a); i++ {
 				a[i] &= b[i]
 			}
-		case tokenizer.ItemSingleChar('~'):
+		case tokenizer.Rune('~'):
 			for i := 0; i < len(a); i++ {
 				b[i] = ^b[i]
 			}
@@ -558,9 +558,9 @@ func operatorCompare(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, err
 			ia := ia.Value().(ZInt)
 			ib := ib.Value().(ZInt)
 			switch op {
-			case tokenizer.ItemSingleChar('<'):
+			case tokenizer.Rune('<'):
 				res = ZBool(ia < ib)
-			case tokenizer.ItemSingleChar('>'):
+			case tokenizer.Rune('>'):
 				res = ZBool(ia > ib)
 			case tokenizer.T_IS_SMALLER_OR_EQUAL:
 				res = ZBool(ia <= ib)
@@ -583,9 +583,9 @@ func operatorCompare(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, err
 			}
 		case ZtFloat:
 			switch op {
-			case tokenizer.ItemSingleChar('<'):
+			case tokenizer.Rune('<'):
 				res = ZBool(ia.Value().(ZFloat) < ib.Value().(ZFloat))
-			case tokenizer.ItemSingleChar('>'):
+			case tokenizer.Rune('>'):
 				res = ZBool(ia.Value().(ZFloat) > ib.Value().(ZFloat))
 			case tokenizer.T_IS_SMALLER_OR_EQUAL:
 				res = ZBool(ia.Value().(ZFloat) <= ib.Value().(ZFloat))
@@ -625,9 +625,9 @@ func operatorCompare(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, err
 		}
 
 		switch op {
-		case tokenizer.ItemSingleChar('<'):
+		case tokenizer.Rune('<'):
 			res = ab < bb
-		case tokenizer.ItemSingleChar('>'):
+		case tokenizer.Rune('>'):
 			res = ab > bb
 		case tokenizer.T_IS_SMALLER_OR_EQUAL:
 			res = ab <= bb
@@ -656,9 +656,9 @@ func operatorCompare(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, err
 		av := a.Value().(ZString)
 		bv := b.Value().(ZString)
 		switch op {
-		case tokenizer.ItemSingleChar('<'):
+		case tokenizer.Rune('<'):
 			res = av < bv
-		case tokenizer.ItemSingleChar('>'):
+		case tokenizer.Rune('>'):
 			res = av > bv
 		case tokenizer.T_IS_SMALLER_OR_EQUAL:
 			res = av <= bv

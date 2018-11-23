@@ -57,6 +57,6 @@ func lexPhpOperator(l *Lexer) lexState {
 		return l.base
 	}
 
-	l.emit(ItemSingleChar(l.next()))
+	l.emit(Rune(l.next()))
 	return l.base
 }

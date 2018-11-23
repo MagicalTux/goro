@@ -167,16 +167,20 @@ func (i *Item) String() string {
 
 func (i ItemType) Name() string {
 	if i > itemMax {
-		return string([]rune{'\'', rune(i - itemMax), '\''})
+		return string([]rune{'\'', i.Rune(), '\''})
 	}
 	return i.String()
 }
 
 func (i *Item) Rune() rune {
-	if i.Type < itemMax {
+	return i.Type.Rune()
+}
+
+func (i ItemType) Rune() rune {
+	if i < itemMax {
 		return rune(0)
 	}
-	return rune(i.Type - itemMax)
+	return rune(i - itemMax)
 }
 
 func (i *Item) IsSingle(r rune) bool {
@@ -200,6 +204,6 @@ func (i *Item) Loc() (string, int, int) {
 	return i.Filename, i.Line, i.Char
 }
 
-func ItemSingleChar(r rune) ItemType {
+func Rune(r rune) ItemType {
 	return ItemType(r) + itemMax
 }

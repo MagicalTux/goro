@@ -93,7 +93,7 @@ func compileQuoteEncapsed(i *tokenizer.Item, c compileCtx, q rune) (Runnable, er
 			res = append(res, &runZVal{unescapePhpQuotedString(i.Data), MakeLoc(i.Loc())})
 		case tokenizer.T_VARIABLE:
 			res = append(res, &runVariable{ZString(i.Data[1:]), MakeLoc(i.Loc())})
-		case tokenizer.ItemSingleChar(q):
+		case tokenizer.Rune(q):
 			// end of quote
 			return res, nil
 		default:

@@ -85,7 +85,7 @@ var phpMagicKeywords = map[string]ItemType{
 func lexPhpVariable(l *Lexer) lexState {
 	l.advance(1) // '$' (already confirmed)
 	if l.acceptPhpLabel() == "" {
-		l.emit(ItemSingleChar('$'))
+		l.emit(Rune('$'))
 		return l.base
 	}
 

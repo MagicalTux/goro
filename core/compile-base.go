@@ -15,41 +15,41 @@ var itemTypeHandler map[tokenizer.ItemType]*compileFuncCb
 
 func init() {
 	itemTypeHandler = map[tokenizer.ItemType]*compileFuncCb{
-		tokenizer.T_OPEN_TAG:          nil,
-		tokenizer.T_CLOSE_TAG:         nil,
-		tokenizer.T_DOC_COMMENT:       nil, // TODO
-		tokenizer.T_INLINE_HTML:       &compileFuncCb{f: compileInlineHtml, skip: true},
-		tokenizer.T_FUNCTION:          &compileFuncCb{f: compileFunction, skip: true},
-		tokenizer.T_WHILE:             &compileFuncCb{f: compileWhile, skip: true},
-		tokenizer.T_DO:                &compileFuncCb{f: compileDoWhile},
-		tokenizer.T_FOR:               &compileFuncCb{f: compileFor, skip: true},
-		tokenizer.T_FOREACH:           &compileFuncCb{f: compileForeach, skip: true},
-		tokenizer.T_SWITCH:            &compileFuncCb{f: compileSwitch, skip: true},
-		tokenizer.T_IF:                &compileFuncCb{f: compileIf, skip: true},
-		tokenizer.T_CLASS:             &compileFuncCb{f: compileClass, skip: true},
-		tokenizer.T_STATIC:            &compileFuncCb{f: compileStaticVar},
-		tokenizer.T_RETURN:            &compileFuncCb{f: compileReturn},
-		tokenizer.T_VARIABLE:          &compileFuncCb{f: compileExpr},
-		tokenizer.T_ECHO:              &compileFuncCb{f: compileSpecialFuncCall},
-		tokenizer.T_PRINT:             &compileFuncCb{f: compileSpecialFuncCall},
-		tokenizer.T_EXIT:              &compileFuncCb{f: compileSpecialFuncCall},
-		tokenizer.T_ISSET:             &compileFuncCb{f: compileSpecialFuncCall},
-		tokenizer.T_UNSET:             &compileFuncCb{f: compileUnset},
-		tokenizer.T_EMPTY:             &compileFuncCb{f: compileSpecialFuncCall},
-		tokenizer.T_EVAL:              &compileFuncCb{f: compileSpecialFuncCall},
-		tokenizer.T_INCLUDE:           &compileFuncCb{f: compileSpecialFuncCall},
-		tokenizer.T_REQUIRE:           &compileFuncCb{f: compileSpecialFuncCall},
-		tokenizer.T_INCLUDE_ONCE:      &compileFuncCb{f: compileSpecialFuncCall},
-		tokenizer.T_REQUIRE_ONCE:      &compileFuncCb{f: compileSpecialFuncCall},
-		tokenizer.T_GLOBAL:            &compileFuncCb{f: compileGlobal},
-		tokenizer.T_STRING:            &compileFuncCb{f: compileExpr},
-		tokenizer.T_CONTINUE:          &compileFuncCb{f: compileContinue},
-		tokenizer.T_BREAK:             &compileFuncCb{f: compileBreak},
-		tokenizer.T_NEW:               &compileFuncCb{f: compileNew},
-		tokenizer.ItemSingleChar('{'): &compileFuncCb{f: compileBase, skip: true},
-		tokenizer.ItemSingleChar('('): &compileFuncCb{f: compileExpr},
-		tokenizer.ItemSingleChar('@'): &compileFuncCb{f: compileExpr},
-		tokenizer.ItemSingleChar(';'): nil,
+		tokenizer.T_OPEN_TAG:     nil,
+		tokenizer.T_CLOSE_TAG:    nil,
+		tokenizer.T_DOC_COMMENT:  nil, // TODO
+		tokenizer.T_INLINE_HTML:  &compileFuncCb{f: compileInlineHtml, skip: true},
+		tokenizer.T_FUNCTION:     &compileFuncCb{f: compileFunction, skip: true},
+		tokenizer.T_WHILE:        &compileFuncCb{f: compileWhile, skip: true},
+		tokenizer.T_DO:           &compileFuncCb{f: compileDoWhile},
+		tokenizer.T_FOR:          &compileFuncCb{f: compileFor, skip: true},
+		tokenizer.T_FOREACH:      &compileFuncCb{f: compileForeach, skip: true},
+		tokenizer.T_SWITCH:       &compileFuncCb{f: compileSwitch, skip: true},
+		tokenizer.T_IF:           &compileFuncCb{f: compileIf, skip: true},
+		tokenizer.T_CLASS:        &compileFuncCb{f: compileClass, skip: true},
+		tokenizer.T_STATIC:       &compileFuncCb{f: compileStaticVar},
+		tokenizer.T_RETURN:       &compileFuncCb{f: compileReturn},
+		tokenizer.T_VARIABLE:     &compileFuncCb{f: compileExpr},
+		tokenizer.T_ECHO:         &compileFuncCb{f: compileSpecialFuncCall},
+		tokenizer.T_PRINT:        &compileFuncCb{f: compileSpecialFuncCall},
+		tokenizer.T_EXIT:         &compileFuncCb{f: compileSpecialFuncCall},
+		tokenizer.T_ISSET:        &compileFuncCb{f: compileSpecialFuncCall},
+		tokenizer.T_UNSET:        &compileFuncCb{f: compileUnset},
+		tokenizer.T_EMPTY:        &compileFuncCb{f: compileSpecialFuncCall},
+		tokenizer.T_EVAL:         &compileFuncCb{f: compileSpecialFuncCall},
+		tokenizer.T_INCLUDE:      &compileFuncCb{f: compileSpecialFuncCall},
+		tokenizer.T_REQUIRE:      &compileFuncCb{f: compileSpecialFuncCall},
+		tokenizer.T_INCLUDE_ONCE: &compileFuncCb{f: compileSpecialFuncCall},
+		tokenizer.T_REQUIRE_ONCE: &compileFuncCb{f: compileSpecialFuncCall},
+		tokenizer.T_GLOBAL:       &compileFuncCb{f: compileGlobal},
+		tokenizer.T_STRING:       &compileFuncCb{f: compileExpr},
+		tokenizer.T_CONTINUE:     &compileFuncCb{f: compileContinue},
+		tokenizer.T_BREAK:        &compileFuncCb{f: compileBreak},
+		tokenizer.T_NEW:          &compileFuncCb{f: compileNew},
+		tokenizer.Rune('{'):      &compileFuncCb{f: compileBase, skip: true},
+		tokenizer.Rune('('):      &compileFuncCb{f: compileExpr},
+		tokenizer.Rune('@'):      &compileFuncCb{f: compileExpr},
+		tokenizer.Rune(';'):      nil,
 		// '}': return compileBase (hidden)
 	}
 }
@@ -60,7 +60,7 @@ func compileIgnore(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 }
 
 func compileBase(i *tokenizer.Item, c compileCtx) (Runnable, error) {
-	return compileBaseUntil(i, c, tokenizer.ItemSingleChar('}'))
+	return compileBaseUntil(i, c, tokenizer.Rune('}'))
 }
 
 func compileBaseUntil(i *tokenizer.Item, c compileCtx, until tokenizer.ItemType) (Runnable, error) {

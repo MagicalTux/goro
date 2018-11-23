@@ -117,7 +117,7 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 					return nil, i.Unexpected()
 				}
 			}
-		case tokenizer.ItemSingleChar('('):
+		case tokenizer.Rune('('):
 			args, err := compileFuncPassedArgs(c)
 			if err != nil {
 				return nil, err
@@ -155,20 +155,20 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	case tokenizer.T_INC, tokenizer.T_DEC:
 		// this is an operator, let compilePostExpr() deal with it
 		return compilePostExpr(nil, i, c)
-	case tokenizer.ItemSingleChar('"'):
+	case tokenizer.Rune('"'):
 		return compileQuoteEncapsed(i, c, '"')
-	case tokenizer.ItemSingleChar('`'):
+	case tokenizer.Rune('`'):
 		v, err := compileQuoteEncapsed(i, c, '`')
 		if err != nil {
 			return nil, err
 		}
 		return &runnableFunctionCall{"shell_exec", []Runnable{v}, l}, nil
-	case tokenizer.ItemSingleChar('!'), tokenizer.ItemSingleChar('+'), tokenizer.ItemSingleChar('-'), tokenizer.ItemSingleChar('~'), tokenizer.ItemSingleChar('@'):
+	case tokenizer.Rune('!'), tokenizer.Rune('+'), tokenizer.Rune('-'), tokenizer.Rune('~'), tokenizer.Rune('@'):
 		// this is an operator, let compilePostExpr() deal with it
 		return compilePostExpr(nil, i, c)
-	case tokenizer.ItemSingleChar('['):
+	case tokenizer.Rune('['):
 		return compileArray(i, c)
-	case tokenizer.ItemSingleChar('('):
+	case tokenizer.Rune('('):
 		// sub-expr
 		v, err := compileExpr(nil, c)
 		if err != nil {
@@ -183,7 +183,7 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 		}
 		// put the expr into a container to avoid
 		return &runParentheses{v}, err
-	case tokenizer.ItemSingleChar('&'):
+	case tokenizer.Rune('&'):
 		// get ref of something
 		// TODO make this operator?
 		v, err := compileOpExpr(nil, c)
@@ -215,9 +215,9 @@ func compilePostExpr(v Runnable, i *tokenizer.Item, c compileCtx) (Runnable, err
 	l := MakeLoc(i.Loc())
 	// can be any kind of glue (operators, etc)
 	switch i.Type {
-	case tokenizer.ItemSingleChar('?'):
+	case tokenizer.Rune('?'):
 		return compileTernaryOp(v, c)
-	case tokenizer.ItemSingleChar('('):
+	case tokenizer.Rune('('):
 		// this is a function call of whatever is before
 		c.backup()
 		args, err := compileFuncPassedArgs(c)
@@ -225,10 +225,10 @@ func compilePostExpr(v Runnable, i *tokenizer.Item, c compileCtx) (Runnable, err
 			return nil, err
 		}
 		return &runnableFunctionCallRef{v, args, l}, nil
-	case tokenizer.ItemSingleChar('['), tokenizer.ItemSingleChar('{'):
+	case tokenizer.Rune('['), tokenizer.Rune('{'):
 		c.backup()
 		return compileArrayAccess(v, c)
-	case tokenizer.ItemSingleChar(';'):
+	case tokenizer.Rune(';'):
 		c.backup()
 		// just a value
 		return nil, nil

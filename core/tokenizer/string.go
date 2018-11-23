@@ -4,12 +4,12 @@ func lexPhpStringConst(l *Lexer) lexState {
 	st_type := l.next() // " or '
 	if st_type == '"' {
 		// too lazy to work this out, let's switch to the other lexer
-		l.emit(ItemSingleChar('"'))
+		l.emit(Rune('"'))
 		l.push(lexPhpStringWhitespace)
 		return l.base
 	}
 	if st_type == '`' {
-		l.emit(ItemSingleChar('`'))
+		l.emit(Rune('`'))
 		l.push(lexPhpStringWhitespaceBack)
 		return l.base
 	}
@@ -45,7 +45,7 @@ func lexPhpStringWhitespace(l *Lexer) lexState {
 				l.emit(T_ENCAPSED_AND_WHITESPACE)
 			}
 			l.next() // "
-			l.emit(ItemSingleChar(c))
+			l.emit(Rune(c))
 			l.pop() // return to previous context
 			return l.base
 		case '\\':
@@ -80,7 +80,7 @@ func lexPhpStringWhitespaceBack(l *Lexer) lexState {
 				l.emit(T_ENCAPSED_AND_WHITESPACE)
 			}
 			l.next() // `
-			l.emit(ItemSingleChar('`'))
+			l.emit(Rune('`'))
 			l.pop() // return to previous context
 			return l.base
 		case '\\':
