@@ -162,10 +162,14 @@ func (i *Item) Errorf(format string, arg ...interface{}) error {
 }
 
 func (i *Item) String() string {
-	if i.Type > itemMax {
-		return string([]rune{'\'', rune(i.Type - itemMax), '\''})
+	return i.Type.Name()
+}
+
+func (i ItemType) Name() string {
+	if i > itemMax {
+		return string([]rune{'\'', rune(i - itemMax), '\''})
 	}
-	return i.Type.String()
+	return i.String()
 }
 
 func (i *Item) Rune() rune {

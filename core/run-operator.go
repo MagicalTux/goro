@@ -97,7 +97,7 @@ func (r *runOperator) Dump(w io.Writer) error {
 			return err
 		}
 	}
-	_, err = w.Write([]byte(r.op.String())) // TODO fixme
+	_, err = w.Write([]byte(r.op.Name())) // TODO fixme
 	if err != nil {
 		return err
 	}
