@@ -48,6 +48,16 @@ func (z *ZVal) ZVal() *ZVal {
 	return &ZVal{z.v}
 }
 
+func (z *ZVal) Nude() *ZVal {
+	// return nude value
+	switch v := z.v.(type) {
+	case *ZVal:
+		return v.Nude()
+	default:
+		return z
+	}
+}
+
 func (z *ZVal) Dup() *ZVal {
 	switch v := z.v.(type) {
 	case *ZVal:

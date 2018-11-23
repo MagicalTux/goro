@@ -33,7 +33,7 @@ func (a runArray) Run(ctx Context) (*ZVal, error) {
 			return nil, err
 		}
 
-		array.OffsetSet(ctx, k, v)
+		array.OffsetSet(ctx, k, v.ZVal())
 	}
 
 	return &ZVal{array}, nil

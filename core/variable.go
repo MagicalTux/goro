@@ -9,7 +9,7 @@ type runVariable struct {
 
 func (r *runVariable) Run(ctx Context) (*ZVal, error) {
 	res, err := ctx.OffsetGet(ctx, r.v.ZVal())
-	return res, err
+	return res.Nude(), err
 }
 
 func (r *runVariable) WriteValue(ctx Context, value *ZVal) error {
