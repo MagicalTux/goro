@@ -171,7 +171,7 @@ func (z *ZClosure) Call(ctx Context, args []*ZVal) (*ZVal, error) {
 		if args[i].IsRef() {
 			ctx.OffsetSet(ctx, a.varName.ZVal(), args[i].Ref())
 		} else {
-			ctx.OffsetSet(ctx, a.varName.ZVal(), args[i].Dup())
+			ctx.OffsetSet(ctx, a.varName.ZVal(), args[i].Nude())
 		}
 	}
 
