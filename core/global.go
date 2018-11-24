@@ -229,10 +229,10 @@ func (g *Global) GetClass(ctx Context, name ZString) (*ZClass, error) {
 		if !ok || cfunc.class == nil {
 			return nil, errors.New("Cannot access parent:: when no class scope is active")
 		}
-		if cfunc.class.Parent == nil {
+		if cfunc.class.Extends == nil {
 			return nil, errors.New("Cannot access parent:: when current class scope has no parent")
 		}
-		return cfunc.class.Parent, nil
+		return cfunc.class.Extends, nil
 	case "static":
 		// check for func
 		f := ctx.Func()

@@ -23,8 +23,6 @@ type ZClass struct {
 	l    *Loc
 	attr ZClassAttr
 
-	Parent *ZClass
-
 	// string value of extend & implement (used previous to lookup)
 	ExtendsStr    ZString
 	ImplementsStr []ZString
