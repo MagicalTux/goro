@@ -6,7 +6,8 @@ import "github.com/MagicalTux/gophp/core"
 
 func init() {
 	core.RegisterExt(&core.Ext{
-		Name: "gmp",
+		Name:    "gmp",
+		Version: core.VERSION,
 		Classes: []*core.ZClass{
 			GMP,
 		},

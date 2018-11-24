@@ -9,7 +9,8 @@ import (
 
 func init() {
 	RegisterExt(&Ext{
-		Name: "Core",
+		Name:    "Core",
+		Version: VERSION,
 		Classes: []*ZClass{
 			stdClass,
 		},

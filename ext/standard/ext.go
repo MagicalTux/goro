@@ -11,6 +11,7 @@ import (
 func init() {
 	core.RegisterExt(&core.Ext{
 		Name:    "standard",
+		Version: core.VERSION,
 		Classes: []*core.ZClass{},
 		Functions: map[string]*core.ExtFunction{
 			"abs":                      &core.ExtFunction{Func: mathAbs, Args: []*core.ExtFunctionArg{}},
