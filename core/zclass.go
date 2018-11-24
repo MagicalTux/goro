@@ -8,7 +8,7 @@ import (
 
 type ZClassProp struct {
 	VarName   ZString
-	Default   Runnable
+	Default   Val
 	Modifiers ZObjectAttr
 }
 
@@ -33,7 +33,7 @@ type ZClass struct {
 
 	Extends     *ZClass
 	Implements  []*ZClass
-	Const       map[ZString]Runnable // class constants
+	Const       map[ZString]Val // class constants
 	Props       []*ZClassProp
 	Methods     map[ZString]*ZClassMethod
 	StaticProps *ZHashTable
@@ -78,12 +78,7 @@ func (c *ZClass) getStaticProps(ctx Context) (*ZHashTable, error) {
 				c.StaticProps.SetString(p.VarName, ZNULL.Dup())
 				continue
 			}
-			v, err := p.Default.Run(ctx)
-			if err != nil {
-				c.StaticProps = nil
-				return nil, err
-			}
-			c.StaticProps.SetString(p.VarName, v)
+			c.StaticProps.SetString(p.VarName, p.Default.ZVal())
 		}
 	}
 	return c.StaticProps, nil

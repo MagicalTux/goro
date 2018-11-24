@@ -69,11 +69,7 @@ func (o *ZObject) init(ctx Context) error {
 		if p.Default == nil {
 			continue
 		}
-		z, err := p.Default.Run(ctx)
-		if err != nil {
-			return err
-		}
-		o.h.SetString(p.VarName, z)
+		o.h.SetString(p.VarName, p.Default.ZVal())
 	}
 	return nil
 }

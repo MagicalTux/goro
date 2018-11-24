@@ -65,7 +65,7 @@ func (r *runClassStaticObjRef) Run(ctx Context) (*ZVal, error) {
 		return ZNull{}.ZVal(), nil
 	}
 
-	return v.Run(ctx)
+	return v.ZVal(), nil
 }
 
 func (r *runClassStaticObjRef) Call(ctx Context, args []*ZVal) (*ZVal, error) {

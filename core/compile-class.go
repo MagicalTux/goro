@@ -22,7 +22,7 @@ func compileClass(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 		l:       MakeLoc(i.Loc()),
 		attr:    attr,
 		Methods: make(map[ZString]*ZClassMethod),
-		Const:   make(map[ZString]Runnable),
+		Const:   make(map[ZString]Val),
 	}
 
 	c = &zclassCompileCtx{c, class}
@@ -88,11 +88,16 @@ func compileClass(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 				}
 
 				if i.IsSingle('=') {
-					// parse default value for class variable
-					prop.Default, err = compileExpr(nil, c)
+					r, err := compileExpr(nil, c)
 					if err != nil {
 						return nil, err
 					}
+					z, err := r.Run(c)
+					if err != nil {
+						return nil, err
+					}
+					// parse default value for class variable
+					prop.Default = z.Value()
 
 					i, err = c.NextItem()
 					if err != nil {
@@ -153,7 +158,12 @@ func compileClass(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 				return nil, i.Unexpected()
 			}
 
-			class.Const[ZString(constName)] = v
+			z, err := v.Run(c)
+			if err != nil {
+				return nil, err
+			}
+
+			class.Const[ZString(constName)] = z.Value()
 		case tokenizer.T_FUNCTION:
 			// next must be a string (method name)
 			i, err := c.NextItem()

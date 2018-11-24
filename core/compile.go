@@ -7,6 +7,8 @@ import (
 )
 
 type compileCtx interface {
+	Context
+
 	ExpectSingle(r rune) error
 	NextItem() (*tokenizer.Item, error)
 	backup()
