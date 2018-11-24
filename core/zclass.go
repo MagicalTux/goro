@@ -38,8 +38,34 @@ type ZClass struct {
 }
 
 func (c *ZClass) Run(ctx Context) (*ZVal, error) {
-	// TODO resolve extendstr/implementsstr
+	err := c.compile(ctx)
+	if err != nil {
+		return nil, err
+	}
 	return nil, ctx.Global().RegisterClass(c.Name, c)
+}
+
+func (c *ZClass) compile(ctx Context) error {
+	for k, v := range c.Const {
+		if r, ok := v.(*compileDelayed); ok {
+			z, err := r.Run(ctx)
+			if err != nil {
+				return err
+			}
+			c.Const[k] = z.Value()
+		}
+	}
+	for _, p := range c.Props {
+		if r, ok := p.Default.(*compileDelayed); ok {
+			z, err := r.Run(ctx)
+			if err != nil {
+				return err
+			}
+			p.Default = z.Value()
+		}
+	}
+	// TODO resolve extendstr/implementsstr
+	return nil
 }
 
 func (c *ZClass) Loc() *Loc {

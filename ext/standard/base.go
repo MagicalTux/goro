@@ -29,7 +29,7 @@ func stdFuncFuncExists(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) 
 		return nil, err
 	}
 
-	f, _ := ctx.Global().GetFunction(fname)
+	f, _ := ctx.Global().GetFunction(ctx, fname)
 	return core.ZBool(f != nil).ZVal(), nil
 }
 

@@ -13,6 +13,11 @@ import (
 	"github.com/MagicalTux/gophp/core/stream"
 )
 
+type globalLazyOffset struct {
+	r Runnables
+	p int
+}
+
 type Global struct {
 	context.Context
 
@@ -27,6 +32,9 @@ type Global struct {
 	environ       []string
 	fHandler      map[string]stream.Handler
 	included      map[ZString]bool // included files (used for require_once, etc)
+
+	globalLazyFunc  map[ZString]*globalLazyOffset
+	globalLazyClass map[ZString]*globalLazyOffset
 
 	out io.Writer
 	buf *Buffer
@@ -71,6 +79,8 @@ func (g *Global) init() {
 	g.constant = make(map[ZString]*ZVal)
 	g.fHandler = make(map[string]stream.Handler)
 	g.included = make(map[ZString]bool)
+	g.globalLazyFunc = make(map[ZString]*globalLazyOffset)
+	g.globalLazyClass = make(map[ZString]*globalLazyOffset)
 
 	// prepare root context
 	g.root = &RootContext{
@@ -188,12 +198,23 @@ func (g *Global) RegisterFunction(name ZString, f Callable) error {
 		return errors.New("duplicate function name in declaration")
 	}
 	g.globalFuncs[name] = f
+	delete(g.globalLazyFunc, name)
 	return nil
 }
 
-func (g *Global) GetFunction(name ZString) (Callable, error) {
+func (g *Global) GetFunction(ctx Context, name ZString) (Callable, error) {
 	if f, ok := g.globalFuncs[name.ToLower()]; ok {
 		return f, nil
+	}
+	if f, ok := g.globalLazyFunc[name.ToLower()]; ok {
+		_, err := f.r[f.p].Run(ctx)
+		if err != nil {
+			return nil, err
+		}
+		f.r[f.p] = f.r[f.p].Loc() // remove function declaration from tree now that his as been run
+		if f, ok := g.globalFuncs[name.ToLower()]; ok {
+			return f, nil
+		}
 	}
 	return nil, fmt.Errorf("Call to undefined function %s", name)
 }
@@ -253,6 +274,7 @@ func (g *Global) RegisterClass(name ZString, c *ZClass) error {
 		return fmt.Errorf("Cannot declare class %s, because the name is already in use", name)
 	}
 	g.globalClasses[name] = c
+	delete(g.globalLazyClass, name)
 	return nil
 }
 
@@ -273,4 +295,12 @@ func (g *Global) Flush() {
 	if f, ok := g.out.(http.Flusher); ok {
 		f.Flush()
 	}
+}
+
+func (g *Global) RegisterLazyFunc(name ZString, r Runnables, p int) {
+	g.globalLazyFunc[name.ToLower()] = &globalLazyOffset{r, p}
+}
+
+func (g *Global) RegisterLazyClass(name ZString, r Runnables, p int) {
+	g.globalLazyClass[name.ToLower()] = &globalLazyOffset{r, p}
 }

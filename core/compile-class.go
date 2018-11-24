@@ -92,12 +92,8 @@ func compileClass(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 					if err != nil {
 						return nil, err
 					}
-					z, err := r.Run(c)
-					if err != nil {
-						return nil, err
-					}
 					// parse default value for class variable
-					prop.Default = z.Value()
+					prop.Default = &compileDelayed{r}
 
 					i, err = c.NextItem()
 					if err != nil {
@@ -158,12 +154,7 @@ func compileClass(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 				return nil, i.Unexpected()
 			}
 
-			z, err := v.Run(c)
-			if err != nil {
-				return nil, err
-			}
-
-			class.Const[ZString(constName)] = z.Value()
+			class.Const[ZString(constName)] = &compileDelayed{v}
 		case tokenizer.T_FUNCTION:
 			// next must be a string (method name)
 			i, err := c.NextItem()

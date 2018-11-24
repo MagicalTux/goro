@@ -7,7 +7,7 @@ func SpawnCallable(ctx Context, v *ZVal) (Callable, error) {
 	case ZtString:
 		// name of a method
 		s := v.Value().(ZString)
-		return ctx.Global().GetFunction(s)
+		return ctx.Global().GetFunction(ctx, s)
 		// TODO handle ZtObject (call __invoke, handle closures too)
 		// TODO handle ZtArray (object, method, or class_name, method)
 	default:

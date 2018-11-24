@@ -2,6 +2,7 @@ package core
 
 import (
 	"errors"
+	"fmt"
 	"io"
 )
 
@@ -9,7 +10,7 @@ type funcArg struct {
 	varName      ZString
 	ref          bool
 	required     bool
-	defaultValue Runnable
+	defaultValue Val
 	hint         *TypeHint
 }
 
@@ -48,6 +49,10 @@ func (z *ZClosure) ZVal() *ZVal {
 }
 
 func (closure *ZClosure) Run(ctx Context) (l *ZVal, err error) {
+	err = closure.compile(ctx)
+	if err != nil {
+		return nil, err
+	}
 	if closure.name != "" {
 		// register function
 		return nil, ctx.Global().RegisterFunction(closure.name, closure)
@@ -62,6 +67,19 @@ func (closure *ZClosure) Run(ctx Context) (l *ZVal, err error) {
 		s.value = z
 	}
 	return &ZVal{c}, nil
+}
+
+func (c *ZClosure) compile(ctx Context) error {
+	for _, a := range c.args {
+		if r, ok := a.defaultValue.(*compileDelayed); ok {
+			z, err := r.Run(ctx)
+			if err != nil {
+				return err
+			}
+			a.defaultValue = z.Value()
+		}
+	}
+	return nil
 }
 
 func (c *ZClosure) Dump(w io.Writer) error {
@@ -108,7 +126,7 @@ func (c *ZClosure) Dump(w io.Writer) error {
 			if err != nil {
 				return err
 			}
-			err = a.defaultValue.Dump(w)
+			_, err = fmt.Fprintf(w, "%#v", a.defaultValue) // TODO
 			if err != nil {
 				return err
 			}
@@ -160,10 +178,7 @@ func (z *ZClosure) Call(ctx Context, args []*ZVal) (*ZVal, error) {
 					// need to append to args
 					args = append(args, nil)
 				}
-				args[i], err = a.defaultValue.Run(ctx)
-				if err != nil {
-					return nil, err
-				}
+				args[i] = a.defaultValue.ZVal()
 			} else {
 				continue
 			}

@@ -99,19 +99,12 @@ func Compile(parent Context, t *tokenizer.Lexer) (Runnable, error) {
 			switch obj := elem.(type) {
 			case *ZClosure:
 				if obj.name != "" {
-					err := c.Global().RegisterFunction(obj.name, obj)
-					if err != nil {
-						return nil, obj.Loc().Error(err)
-					}
-					list[i] = obj.Loc()
+					c.Global().RegisterLazyFunc(obj.name, list, i)
 				}
 			case *ZClass:
+				// TODO first index classes by name, instanciate in right order
 				if obj.Name != "" {
-					err := c.Global().RegisterClass(obj.Name, obj)
-					if err != nil {
-						return nil, obj.Loc().Error(err)
-					}
-					list[i] = obj.Loc()
+					c.Global().RegisterLazyClass(obj.Name, list, i)
 				}
 			}
 		}

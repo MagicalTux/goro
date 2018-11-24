@@ -88,7 +88,7 @@ func (r *runnableFunctionCallRef) Dump(w io.Writer) error {
 
 func (r *runnableFunctionCall) Run(ctx Context) (l *ZVal, err error) {
 	// grab function
-	f, err := ctx.Global().GetFunction(r.name)
+	f, err := ctx.Global().GetFunction(ctx, r.name)
 	if err != nil {
 		return nil, err
 	}
@@ -112,7 +112,7 @@ func (r *runnableFunctionCallRef) Run(ctx Context) (l *ZVal, err error) {
 				return nil, err
 			}
 			// grab function
-			f, err = ctx.Global().GetFunction(v.Value().(ZString))
+			f, err = ctx.Global().GetFunction(ctx, v.Value().(ZString))
 			if err != nil {
 				return nil, err
 			}
@@ -348,10 +348,11 @@ func compileFunctionArgs(c compileCtx) (res []*funcArg, err error) {
 
 		if i.IsSingle('=') {
 			// we have a default value
-			arg.defaultValue, err = compileExpr(nil, c)
+			r, err := compileExpr(nil, c)
 			if err != nil {
 				return nil, err
 			}
+			arg.defaultValue = &compileDelayed{r}
 			arg.required = false
 
 			i, err = c.NextItem()
