@@ -38,11 +38,11 @@ type ZClass struct {
 }
 
 func (c *ZClass) Run(ctx Context) (*ZVal, error) {
-	err := c.compile(ctx)
+	err := ctx.Global().RegisterClass(c.Name, c)
 	if err != nil {
 		return nil, err
 	}
-	return nil, ctx.Global().RegisterClass(c.Name, c)
+	return nil, c.compile(ctx)
 }
 
 func (c *ZClass) compile(ctx Context) error {
