@@ -25,6 +25,10 @@ type compileRootCtx struct {
 	last *tokenizer.Item
 }
 
+type compilable interface {
+	compile(ctx Context) error
+}
+
 func (c *compileRootCtx) ExpectSingle(r rune) error {
 	// read one item, check if rune, if not fallback & return error
 	i, err := c.NextItem()

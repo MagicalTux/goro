@@ -64,6 +64,14 @@ func (c *ZClass) compile(ctx Context) error {
 			p.Default = z.Value()
 		}
 	}
+	for _, m := range c.Methods {
+		if c, ok := m.Method.(compilable); ok {
+			err := c.compile(ctx)
+			if err != nil {
+				return err
+			}
+		}
+	}
 	// TODO resolve extendstr/implementsstr
 	return nil
 }
