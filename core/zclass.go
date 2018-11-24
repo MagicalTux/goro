@@ -46,6 +46,23 @@ func (c *ZClass) Run(ctx Context) (*ZVal, error) {
 }
 
 func (c *ZClass) compile(ctx Context) error {
+	if c.ExtendsStr != "" {
+		// need to lookup extend
+		subc, err := ctx.Global().GetClass(ctx, c.ExtendsStr)
+		if err != nil {
+			return err
+		}
+		c.Extends = subc
+		// TODO check recursivity
+
+		// need to import methods
+		for n, m := range c.Extends.Methods {
+			if _, gotit := c.Methods[n]; !gotit {
+				c.Methods[n] = m
+			}
+		}
+	}
+
 	for k, v := range c.Const {
 		if r, ok := v.(*compileDelayed); ok {
 			z, err := r.Run(ctx)
