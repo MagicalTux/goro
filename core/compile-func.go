@@ -228,11 +228,21 @@ func compileSpecialFuncCall(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 
 func compileFunctionWithName(name ZString, c compileCtx, l *Loc, rref bool) (*ZClosure, error) {
 	var err error
-	var use []*funcUse
+
+	zc := &ZClosure{
+		name:  name,
+		start: l,
+		// TODO populate end
+		rref: rref,
+	}
+
+	c = &zclosureCompileCtx{c, zc}
+
 	args, err := compileFunctionArgs(c)
 	if err != nil {
 		return nil, err
 	}
+	zc.args = args
 
 	i, err := c.NextItem()
 	if err != nil {
@@ -241,7 +251,7 @@ func compileFunctionWithName(name ZString, c compileCtx, l *Loc, rref bool) (*ZC
 
 	if i.Type == tokenizer.T_USE && name == "" {
 		// anonymous function variables
-		use, err = compileFunctionUse(c)
+		zc.use, err = compileFunctionUse(c)
 		if err != nil {
 			return nil, err
 		}
@@ -256,20 +266,12 @@ func compileFunctionWithName(name ZString, c compileCtx, l *Loc, rref bool) (*ZC
 		return nil, i.Unexpected()
 	}
 
-	body, err := compileBase(nil, c)
+	zc.code, err = compileBase(nil, c)
 	if err != nil {
 		return nil, err
 	}
 
-	return &ZClosure{
-		name:  name,
-		use:   use,
-		args:  args,
-		code:  body,
-		start: l,
-		// TODO populate end
-		rref: rref,
-	}, nil
+	return zc, nil
 }
 
 func compileFunctionArgs(c compileCtx) (res []*funcArg, err error) {

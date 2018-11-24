@@ -6,6 +6,15 @@ import (
 	"io"
 )
 
+type zclosureCompileCtx struct {
+	compileCtx
+	closure *ZClosure
+}
+
+func (z *zclosureCompileCtx) getFunc() *ZClosure {
+	return z.closure
+}
+
 type funcArg struct {
 	varName      ZString
 	ref          bool

@@ -13,6 +13,7 @@ type compileCtx interface {
 	NextItem() (*tokenizer.Item, error)
 	backup()
 	getClass() *ZClass
+	getFunc() *ZClosure
 	peekType() tokenizer.ItemType
 }
 
@@ -44,6 +45,10 @@ func (c *compileRootCtx) ExpectSingle(r rune) error {
 }
 
 func (c *compileRootCtx) getClass() *ZClass {
+	return nil
+}
+
+func (c *compileRootCtx) getFunc() *ZClosure {
 	return nil
 }
 

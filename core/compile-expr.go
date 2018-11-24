@@ -2,6 +2,7 @@ package core
 
 import (
 	"errors"
+	"fmt"
 	"path"
 	"strconv"
 
@@ -144,6 +145,14 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 			return nil, errors.New("__CLASS__ outside of a class")
 		}
 		return &runZVal{class.Name, l}, nil
+	case tokenizer.T_METHOD_C:
+		class := c.getClass()
+		f := c.getFunc()
+		if class == nil || f == nil {
+			return &runZVal{ZString(""), l}, nil
+		}
+
+		return &runZVal{ZString(fmt.Sprintf("%s::%s", class.Name, f.name)), l}, nil
 	case tokenizer.T_BOOL_CAST, tokenizer.T_INT_CAST, tokenizer.T_ARRAY_CAST, tokenizer.T_DOUBLE_CAST, tokenizer.T_OBJECT_CAST, tokenizer.T_STRING_CAST:
 		// perform a cast operation on the following (note: v is null)
 		// make this an operator for appropriate operator precedence
