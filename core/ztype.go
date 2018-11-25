@@ -108,6 +108,10 @@ func (z ZInt) AsVal(ctx Context, t ZType) (Val, error) {
 		return ZFloat(z), nil
 	case ZtString:
 		return ZString(strconv.FormatInt(int64(z), 10)), nil
+	case ZtArray:
+		r := NewZArray()
+		r.OffsetSet(ctx, nil, z.ZVal())
+		return r, nil
 	}
 	return nil, nil
 }

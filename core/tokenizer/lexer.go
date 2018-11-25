@@ -90,6 +90,11 @@ func (l *Lexer) hasPrefix(s string) bool {
 	return string(v) == s
 }
 
+func (l *Lexer) hasPrefixI(s string) bool {
+	v := l.peekString(len(s))
+	return strings.ToLower(string(v)) == strings.ToLower(s)
+}
+
 func (l *Lexer) run(state lexState) {
 	l.push(state)
 	for state = l.base; state != nil; {
@@ -217,6 +222,14 @@ func (l *Lexer) accept(valid string) bool {
 
 func (l *Lexer) acceptFixed(s string) bool {
 	if !l.hasPrefix(s) {
+		return false
+	}
+	l.advance(len([]rune(s))) // CL 108985 (May 2018, for Go 1.11)
+	return true
+}
+
+func (l *Lexer) acceptFixedI(s string) bool {
+	if !l.hasPrefixI(s) {
 		return false
 	}
 	l.advance(len([]rune(s))) // CL 108985 (May 2018, for Go 1.11)

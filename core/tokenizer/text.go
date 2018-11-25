@@ -32,7 +32,7 @@ func lexPhpOpen(l *Lexer) lexState {
 		l.push(lexPhp)
 		return l.base
 	}
-	l.acceptFixed("php")
+	l.acceptFixedI("php")
 	if !l.acceptSpace() {
 		return l.error("php tag should be followed by a whitespace")
 	}

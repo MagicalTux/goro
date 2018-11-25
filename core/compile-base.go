@@ -110,7 +110,12 @@ func compileBaseSingle(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	// is it a single char item?
 	h, ok = itemTypeHandler[i.Type]
 	if !ok {
-		return nil, i.Unexpected()
+		_, ok = operatorList[i.Type]
+		if ok {
+			h = &compileFuncCb{f: compileExpr}
+		} else {
+			return nil, i.Unexpected()
+		}
 	}
 	if h == nil {
 		// ignore this tag
