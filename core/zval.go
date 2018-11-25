@@ -44,8 +44,15 @@ func (z *runZVal) Dump(w io.Writer) error {
 	return err
 }
 
+// ZVal will make a copy of a given zval without actually copying memory
 func (z *ZVal) ZVal() *ZVal {
-	return &ZVal{z.v}
+	switch a := z.v.(type) {
+	case *ZArray:
+		// special case
+		return a.Dup().ZVal()
+	default:
+		return a.ZVal()
+	}
 }
 
 func (z *ZVal) Nude() *ZVal {

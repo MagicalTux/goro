@@ -80,6 +80,10 @@ func (a *ZArray) ZVal() *ZVal {
 	return &ZVal{a}
 }
 
+func (a *ZArray) Dup() *ZArray {
+	return &ZArray{h: a.h.Dup()}
+}
+
 func (a *ZArray) AsVal(ctx Context, t ZType) (Val, error) {
 	switch t {
 	case ZtBool, ZtInt, ZtFloat:
