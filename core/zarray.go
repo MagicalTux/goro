@@ -172,3 +172,8 @@ func (a *ZArray) MergeArray(b *ZArray) error {
 	// copy values from b to a
 	return a.h.MergeTable(b.h)
 }
+
+func (a *ZArray) MergeTable(h *ZHashTable) error {
+	// copy values from b to a
+	return a.h.MergeTable(h)
+}

@@ -79,6 +79,17 @@ func (z *ZVal) Store(ctx Context, out interface{}) error {
 		}
 		*tgt = obj
 		return nil
+	case **ZArray:
+		s, err := z.As(ctx, ZtArray)
+		if err != nil {
+			return err
+		}
+		ar, ok := s.Value().(*ZArray)
+		if !ok {
+			return fmt.Errorf("expected parameter to be array, %s given", z.GetType())
+		}
+		*tgt = ar
+		return nil
 	case **ZVal:
 		// as is
 		*tgt = z
@@ -99,6 +110,7 @@ func Expand(ctx Context, args []*ZVal, out ...interface{}) (int, error) {
 			// these are expected to be pointers
 			case reflect.TypeOf(&ZVal{}):
 			case reflect.TypeOf(&ZObject{}):
+			case reflect.TypeOf(&ZArray{}):
 			default:
 				// pointer of pointer → optional argument
 				if len(args) <= i {

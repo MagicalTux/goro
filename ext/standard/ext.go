@@ -17,6 +17,7 @@ func init() {
 			"abs":                      &core.ExtFunction{Func: mathAbs, Args: []*core.ExtFunctionArg{}},
 			"acos":                     &core.ExtFunction{Func: mathAcos, Args: []*core.ExtFunctionArg{}},
 			"acosh":                    &core.ExtFunction{Func: mathACosh, Args: []*core.ExtFunctionArg{}},
+			"array_merge":              &core.ExtFunction{Func: fncArrayMerge, Args: []*core.ExtFunctionArg{}},
 			"asin":                     &core.ExtFunction{Func: mathAsin, Args: []*core.ExtFunctionArg{}},
 			"asinh":                    &core.ExtFunction{Func: mathAsinh, Args: []*core.ExtFunctionArg{}},
 			"atan":                     &core.ExtFunction{Func: mathAtan, Args: []*core.ExtFunctionArg{}},

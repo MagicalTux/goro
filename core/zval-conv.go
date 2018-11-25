@@ -148,6 +148,19 @@ func (z *ZVal) Array() ZArrayAccess {
 	return nil
 }
 
+func (z *ZVal) HashTable() *ZHashTable {
+	switch v := z.v.(type) {
+	case *ZVal:
+		return v.HashTable()
+	case *ZArray:
+		return v.h
+	case *ZObject:
+		return v.h
+	default:
+		return nil
+	}
+}
+
 func (z *ZVal) NewIterator() ZIterator {
 	if r, ok := z.v.(ZIterable); ok {
 		return r.NewIterator()
