@@ -124,7 +124,7 @@ func (c *ZClass) getStaticProps(ctx Context) (*ZHashTable, error) {
 				continue
 			}
 			if p.Default == nil {
-				c.StaticProps.SetString(p.VarName, ZNULL.Dup())
+				c.StaticProps.SetString(p.VarName, ZNULL.ZVal())
 				continue
 			}
 			c.StaticProps.SetString(p.VarName, p.Default.ZVal())

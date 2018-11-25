@@ -18,7 +18,7 @@ const (
 )
 
 // global NULL for easy call
-var ZNULL = &ZVal{ZNull{}}
+var ZNULL = ZNull{}
 
 // scalar stuff
 type ZNull struct{}

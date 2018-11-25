@@ -63,5 +63,5 @@ func fncGettype(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 //> func void flush ( void )
 func fncFlush(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 	ctx.Global().Flush()
-	return core.ZNULL, nil
+	return core.ZNULL.ZVal(), nil
 }

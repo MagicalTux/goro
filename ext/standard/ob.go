@@ -41,20 +41,20 @@ func fncObStart(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 func fncObFlush(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 	buf := ctx.Global().Buffer()
 	if buf != nil {
-		return core.ZNULL, buf.Flush()
+		return core.ZNULL.ZVal(), buf.Flush()
 	}
-	return core.ZNULL, nil
+	return core.ZNULL.ZVal(), nil
 }
 
 //> func void ob_clean ( void )
 func fncObClean(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 	buf := ctx.Global().Buffer()
 	if buf == nil {
-		return core.ZNULL, nil
+		return core.ZNULL.ZVal(), nil
 	}
 
 	buf.Clean()
-	return core.ZNULL, nil
+	return core.ZNULL.ZVal(), nil
 }
 
 //> func bool ob_end_clean ( void )
@@ -135,10 +135,10 @@ func fncObImplicitFlush(ctx core.Context, args []*core.ZVal) (*core.ZVal, error)
 
 	buf := ctx.Global().Buffer()
 	if buf == nil {
-		return core.ZNULL, nil
+		return core.ZNULL.ZVal(), nil
 	}
 
 	buf.ImplicitFlush = (v == nil) || (*v != 0)
 
-	return core.ZNULL, nil
+	return core.ZNULL.ZVal(), nil
 }
