@@ -29,7 +29,7 @@ type Global struct {
 	globalFuncs   map[ZString]Callable
 	globalClasses map[ZString]*ZClass // TODO replace *ZClass with a nice interface
 	constant      map[ZString]*ZVal
-	environ       []string
+	environ       *ZHashTable
 	fHandler      map[string]stream.Handler
 	included      map[ZString]bool // included files (used for require_once, etc)
 
@@ -107,7 +107,40 @@ func (g *Global) init() {
 		}
 	}
 
+	// get env from process
+	g.environ = g.p.environ.Dup()
+
+	g.doGPC()
+}
+
+func (g *Global) doGPC() {
 	// initialize superglobals
+	get := NewZArray()
+	p := NewZArray()
+	c := NewZArray()
+	r := NewZArray()
+	s := NewZArray()
+	e := NewZArray() // initialize empty
+	f := NewZArray()
+
+	order := g.GetConfig("variables_order", ZString("EGPCS").ZVal()).String()
+
+	for _, l := range order {
+		switch l {
+		case 'e', 'E':
+			e = &ZArray{h: g.environ}
+			s.MergeArray(e)
+			// TODO...
+		}
+	}
+	g.root.h.SetString("_GET", get.ZVal())
+	g.root.h.SetString("_POST", p.ZVal())
+	g.root.h.SetString("_COOKIE", c.ZVal())
+	g.root.h.SetString("_REQUEST", r.ZVal())
+	g.root.h.SetString("_SERVER", s.ZVal())
+	g.root.h.SetString("_ENV", e.ZVal())
+	g.root.h.SetString("_FILES", f.ZVal())
+	// _SESSION will only be set if a session is initialized
 
 	// TODO
 }

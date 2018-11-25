@@ -12,8 +12,7 @@ import (
 // we store values in _d with a regular index
 
 type ZArray struct {
-	h      *ZHashTable
-	IsCopy bool // if true, write attempts will cause a copy of the object to be made (copy on write)
+	h *ZHashTable
 }
 
 type ZArrayAccess interface {
@@ -163,4 +162,9 @@ func (a *ZArray) NewIterator() ZIterator {
 
 func (a *ZArray) Count(ctx Context) ZInt {
 	return a.h.count
+}
+
+func (a *ZArray) MergeArray(b *ZArray) error {
+	// copy values from b to a
+	return a.h.MergeTable(b.h)
 }

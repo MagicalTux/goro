@@ -1,62 +1,15 @@
 package core
 
-import "strings"
-
 func (g *Global) Getenv(key string) (string, bool) {
 	// locate env
-	env := g.environ
-	if env == nil {
-		env = g.p.environ
-	}
-	pfx := key + "="
-
-	for _, s := range env {
-		if strings.HasPrefix(s, pfx) {
-			return s[len(pfx):], true
-		}
-	}
-	return "", false
+	r, ok := g.environ.GetStringB(ZString(key))
+	return r.String(), ok
 }
 
 func (g *Global) Setenv(key, value string) error {
-	if g.environ == nil {
-		// if no environ for this global, copy from process
-		g.environ = make([]string, len(g.p.environ))
-		for k, v := range g.p.environ {
-			g.environ[k] = v
-		}
-	}
-	// lookup if it exists
-	pfx := key + "="
-	for i, s := range g.environ {
-		if strings.HasPrefix(s, pfx) {
-			// hit
-			g.environ[i] = pfx + value
-			return nil
-		}
-	}
-
-	// no hit
-	g.environ = append(g.environ, pfx+value)
-	return nil
+	return g.environ.SetString(ZString(key), ZString(value).ZVal())
 }
 
 func (g *Global) Unsetenv(key string) error {
-	if g.environ == nil {
-		// if no environ for this global, copy from process
-		g.environ = make([]string, len(g.p.environ))
-		for k, v := range g.p.environ {
-			g.environ[k] = v
-		}
-	}
-	// lookup if it exists
-	pfx := key + "="
-
-	for i, s := range g.environ {
-		if strings.HasPrefix(s, pfx) {
-			g.environ = append(g.environ[:i], g.environ[i+1:]...)
-			return nil
-		}
-	}
-	return nil
+	return g.environ.UnsetString(ZString(key))
 }

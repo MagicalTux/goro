@@ -14,7 +14,7 @@ type FuncContext struct {
 }
 
 func (c *FuncContext) AsVal(ctx Context, t ZType) (Val, error) {
-	a := &ZArray{c.h, false}
+	a := &ZArray{h: c.h}
 	return a.AsVal(ctx, t)
 }
 

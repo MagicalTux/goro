@@ -8,7 +8,7 @@ import (
 
 type Process struct {
 	defaultConstants map[ZString]*ZVal
-	environ          []string
+	environ          *ZHashTable
 	defaultOut       io.Writer
 	defaultErr       io.Writer
 }
@@ -18,7 +18,7 @@ type Process struct {
 func NewProcess(sapi string) *Process {
 	res := &Process{
 		defaultConstants: make(map[ZString]*ZVal),
-		environ:          os.Environ(),
+		environ:          importEnv(os.Environ()),
 		defaultOut:       os.Stdout,
 		defaultErr:       os.Stderr,
 	}
@@ -59,4 +59,18 @@ func (p *Process) CommandLine(args []string) error {
 	// TODO
 
 	return nil
+}
+
+// importEnv will copy an env type value (list of strings) as a hashtable
+func importEnv(e []string) *ZHashTable {
+	zt := NewHashTable()
+
+	for _, s := range e {
+		p := strings.IndexByte(s, '=')
+		if p != -1 {
+			zt.SetString(ZString(s[:p]), ZString(s[p+1:]).ZVal())
+		}
+	}
+
+	return zt
 }
