@@ -24,6 +24,9 @@ buildext:
 	./sapi/php-cli/php-cli tools/buildext.php
 
 deps:
+	go get -v .
+
+testdeps:
 	go get -v -t .
 
-.PHONY: test http buildext deps
+.PHONY: test http buildext testdeps deps
