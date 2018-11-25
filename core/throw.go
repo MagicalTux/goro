@@ -5,7 +5,7 @@ type PhpThrow struct {
 }
 
 func (e *PhpThrow) Error() string {
-	return "Exception thrown"
+	return "Uncaught Exception: ..." //TODO
 }
 
 func Throw(o *ZObject) error {
