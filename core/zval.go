@@ -58,6 +58,7 @@ func (z *ZVal) ZVal() *ZVal {
 	}
 }
 
+// Returns actual zval, dropping status of reference
 func (z *ZVal) Nude() *ZVal {
 	// return nude value
 	switch v := z.v.(type) {

@@ -72,6 +72,8 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	switch i.Type {
 	case tokenizer.T_VARIABLE:
 		return &runVariable{ZString(i.Data[1:]), l}, nil
+	case tokenizer.Rune('$'):
+		return compileRunVariableRef(nil, c, l)
 	case tokenizer.T_LNUMBER:
 		v, err := strconv.ParseInt(i.Data, 0, 64)
 		if err == nil {
