@@ -35,6 +35,9 @@ type ZClass struct {
 	Props       []*ZClassProp
 	Methods     map[ZString]*ZClassMethod
 	StaticProps *ZHashTable
+
+	// class specific handlers
+	Callable
 }
 
 func (c *ZClass) Run(ctx Context) (*ZVal, error) {

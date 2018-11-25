@@ -12,6 +12,7 @@ func init() {
 		Name:    "Core",
 		Version: VERSION,
 		Classes: []*ZClass{
+			Closure,
 			Exception,
 			Throwable,
 			stdClass,

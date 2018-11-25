@@ -39,6 +39,11 @@ type ZClosure struct {
 	rref  bool // return ref?
 }
 
+//> class Closure
+var Closure = &ZClass{
+	Name: "Closure",
+}
+
 func (z *ZClosure) GetType() ZType {
 	return ZtObject
 }

@@ -1,5 +1,9 @@
 <?php
 
+$a = function($x) { return $x+1; };
+var_dump($a);
+exit;
+
 $a = 1;
 $b = 2;
 $c = 3;
