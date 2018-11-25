@@ -32,7 +32,7 @@ func (z ZNull) GetType() ZType {
 }
 
 func (z ZNull) ZVal() *ZVal {
-	return &ZVal{nil}
+	return &ZVal{ZNull{}}
 }
 
 func (z ZNull) AsVal(ctx Context, t ZType) (Val, error) {

@@ -46,6 +46,9 @@ func (z *runZVal) Dump(w io.Writer) error {
 
 // ZVal will make a copy of a given zval without actually copying memory
 func (z *ZVal) ZVal() *ZVal {
+	if z.v == nil {
+		panic("nil zval!")
+	}
 	switch a := z.v.(type) {
 	case *ZArray:
 		// special case
@@ -76,12 +79,12 @@ func (z *ZVal) Dup() *ZVal {
 	}
 }
 
-// Ref returns a reference to this zval
+// Ref returns a reference to this zval while making it itself a ref
 func (z *ZVal) Ref() *ZVal {
-	if _, isRef := z.v.(*ZVal); isRef {
-		return z
+	if _, isRef := z.v.(*ZVal); !isRef {
+		z.v = &ZVal{z.v}
 	}
-	return &ZVal{z}
+	return &ZVal{z.v}
 }
 
 func (z *ZVal) IsRef() bool {

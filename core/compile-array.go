@@ -36,7 +36,7 @@ func (a runArray) Run(ctx Context) (*ZVal, error) {
 		array.OffsetSet(ctx, k, v.ZVal())
 	}
 
-	return &ZVal{array}, nil
+	return array.ZVal(), nil
 }
 
 func (a *runArray) Loc() *Loc {
