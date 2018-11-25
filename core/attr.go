@@ -3,7 +3,7 @@ package core
 import (
 	"errors"
 
-	"github.com/MagicalTux/gophp/core/tokenizer"
+	"github.com/MagicalTux/goro/core/tokenizer"
 )
 
 type ZClassAttr int

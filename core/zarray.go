@@ -4,7 +4,7 @@ import (
 	"errors"
 	"strconv"
 
-	"github.com/MagicalTux/gophp/core/util"
+	"github.com/MagicalTux/goro/core/util"
 )
 
 // php arrays work with two kind of keys

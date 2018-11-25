@@ -3,7 +3,7 @@ package standard
 import (
 	"encoding/hex"
 
-	"github.com/MagicalTux/gophp/core"
+	"github.com/MagicalTux/goro/core"
 )
 
 //> func string bin2hex ( string $str )

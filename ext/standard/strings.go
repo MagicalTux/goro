@@ -3,7 +3,7 @@ package standard
 import (
 	"bytes"
 
-	"github.com/MagicalTux/gophp/core"
+	"github.com/MagicalTux/goro/core"
 )
 
 //> func mixed str_replace ( mixed $search , mixed $replace , mixed $subject [, int &$count ] )

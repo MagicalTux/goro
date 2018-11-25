@@ -3,7 +3,7 @@ package gmp
 import (
 	"math/big"
 
-	"github.com/MagicalTux/gophp/core"
+	"github.com/MagicalTux/goro/core"
 )
 
 //> func GMP gmp_add ( GMP $a , GMP $b )

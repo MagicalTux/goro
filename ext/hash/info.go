@@ -1,6 +1,6 @@
 package hash
 
-import "github.com/MagicalTux/gophp/core"
+import "github.com/MagicalTux/goro/core"
 
 //> func array hash_algos ( void )
 func fncHashAlgos(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {

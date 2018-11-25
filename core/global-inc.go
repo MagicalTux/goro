@@ -3,7 +3,7 @@ package core
 import (
 	"log"
 
-	"github.com/MagicalTux/gophp/core/tokenizer"
+	"github.com/MagicalTux/goro/core/tokenizer"
 )
 
 //> func mixed include (string filename)

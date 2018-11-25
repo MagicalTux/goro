@@ -3,7 +3,7 @@ package gmp
 import (
 	"math/big"
 
-	"github.com/MagicalTux/gophp/core"
+	"github.com/MagicalTux/goro/core"
 )
 
 //> func void gmp_setbit ( GMP $a , int $index [, bool $bit_on = TRUE ] )

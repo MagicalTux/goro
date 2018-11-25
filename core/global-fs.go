@@ -4,7 +4,7 @@ import (
 	"net/url"
 	"os"
 
-	"github.com/MagicalTux/gophp/core/stream"
+	"github.com/MagicalTux/goro/core/stream"
 )
 
 type OpenContext int

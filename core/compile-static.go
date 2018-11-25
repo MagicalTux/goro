@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/MagicalTux/gophp/core/tokenizer"
+	"github.com/MagicalTux/goro/core/tokenizer"
 )
 
 type staticVarInfo struct {

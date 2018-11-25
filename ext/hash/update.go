@@ -3,7 +3,7 @@ package hash
 import (
 	gohash "hash"
 
-	"github.com/MagicalTux/gophp/core"
+	"github.com/MagicalTux/goro/core"
 )
 
 //> func bool hash_update ( HashContext $context , string $data )

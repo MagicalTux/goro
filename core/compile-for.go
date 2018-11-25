@@ -5,7 +5,7 @@ import (
 	"io"
 	"strconv"
 
-	"github.com/MagicalTux/gophp/core/tokenizer"
+	"github.com/MagicalTux/goro/core/tokenizer"
 )
 
 func compileBreak(i *tokenizer.Item, c compileCtx) (Runnable, error) {

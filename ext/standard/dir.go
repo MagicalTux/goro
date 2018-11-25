@@ -1,6 +1,6 @@
 package standard
 
-import "github.com/MagicalTux/gophp/core"
+import "github.com/MagicalTux/goro/core"
 
 //> func string getcwd ( void )
 func fncGetcwd(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {

@@ -3,7 +3,7 @@ package standard
 import (
 	"errors"
 
-	"github.com/MagicalTux/gophp/core"
+	"github.com/MagicalTux/goro/core"
 )
 
 //> func bool dl ( string $library )

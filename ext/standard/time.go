@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/MagicalTux/gophp/core"
+	"github.com/MagicalTux/goro/core"
 )
 
 //> func mixed microtime ([ bool $get_as_float = FALSE ] )

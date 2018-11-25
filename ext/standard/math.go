@@ -3,7 +3,7 @@ package standard
 import (
 	"math"
 
-	"github.com/MagicalTux/gophp/core"
+	"github.com/MagicalTux/goro/core"
 )
 
 // from: http://php.net/manual/en/math.constants.php

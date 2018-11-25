@@ -114,7 +114,7 @@ function process_ext($path, $ext, $output = 'ext.go') {
 		fwrite($fp, 'package '.$ext."\n\n");
 		$prefix = 'core.';
 	}
-	fwrite($fp, "import \"github.com/MagicalTux/gophp/core\"\n\n"); // other imports will be handled automatically at build time
+	fwrite($fp, "import \"github.com/MagicalTux/goro/core\"\n\n"); // other imports will be handled automatically at build time
 	fwrite($fp, "// WARNING: This file is auto-generated. DO NOT EDIT\n\n");
 	fwrite($fp, "func init() {\n");
 	fwrite($fp, "\t${prefix}RegisterExt(&${prefix}Ext{\n");

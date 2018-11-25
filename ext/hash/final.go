@@ -4,7 +4,7 @@ import (
 	"encoding/hex"
 	gohash "hash"
 
-	"github.com/MagicalTux/gophp/core"
+	"github.com/MagicalTux/goro/core"
 )
 
 //> func string hash_final ( HashContext $context [, bool $raw_output = FALSE ] )

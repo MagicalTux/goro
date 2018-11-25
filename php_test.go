@@ -14,8 +14,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MagicalTux/gophp/core"
-	"github.com/MagicalTux/gophp/core/tokenizer"
+	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/tokenizer"
 	"github.com/andreyvit/diff"
 )
 

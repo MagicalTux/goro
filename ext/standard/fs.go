@@ -3,7 +3,7 @@ package standard
 import (
 	"path"
 
-	"github.com/MagicalTux/gophp/core"
+	"github.com/MagicalTux/goro/core"
 )
 
 //> func string dirname ( string $path [, int $levels = 1 ] )

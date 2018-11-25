@@ -1,6 +1,6 @@
 package standard
 
-import "github.com/MagicalTux/gophp/core"
+import "github.com/MagicalTux/goro/core"
 
 //> func array array_merge ( array $array1 [, array $... ] )
 func fncArrayMerge(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {

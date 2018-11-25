@@ -1,6 +1,6 @@
 package core
 
-import "github.com/MagicalTux/gophp/core/tokenizer"
+import "github.com/MagicalTux/goro/core/tokenizer"
 
 func compileTernaryOp(v Runnable, c compileCtx) (Runnable, error) {
 	// v contains the first part, we already have read the ? too

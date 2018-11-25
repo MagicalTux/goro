@@ -7,7 +7,7 @@ import (
 	"os"
 	"runtime"
 
-	"github.com/MagicalTux/gophp/core"
+	"github.com/MagicalTux/goro/core"
 )
 
 // this is an approximate estimation of php_uname()

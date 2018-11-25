@@ -7,7 +7,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/MagicalTux/gophp/core/tokenizer"
+	"github.com/MagicalTux/goro/core/tokenizer"
 )
 
 func compileQuoteConstant(i *tokenizer.Item, c compileCtx) (Runnable, error) {

@@ -4,7 +4,7 @@ import (
 	"errors"
 	"math/big"
 
-	"github.com/MagicalTux/gophp/core"
+	"github.com/MagicalTux/goro/core"
 )
 
 func readInt(ctx core.Context, v *core.ZVal) (*big.Int, error) {

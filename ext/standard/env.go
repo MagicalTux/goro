@@ -3,7 +3,7 @@ package standard
 import (
 	"strings"
 
-	"github.com/MagicalTux/gophp/core"
+	"github.com/MagicalTux/goro/core"
 )
 
 //> func string getenv ( string $varname [, bool $local_only = FALSE ] )

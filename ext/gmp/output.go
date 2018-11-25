@@ -1,6 +1,6 @@
 package gmp
 
-import "github.com/MagicalTux/gophp/core"
+import "github.com/MagicalTux/goro/core"
 
 //> func string gmp_strval ( GMP $gmpnumber [, int $base = 10 ] )
 func gmpStrval(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {

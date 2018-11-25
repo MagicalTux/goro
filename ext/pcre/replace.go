@@ -5,7 +5,7 @@ import (
 	"log"
 	"unicode/utf8"
 
-	"github.com/MagicalTux/gophp/core"
+	"github.com/MagicalTux/goro/core"
 	gopcre "github.com/gijsbers/go-pcre"
 )
 

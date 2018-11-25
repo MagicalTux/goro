@@ -6,7 +6,7 @@ import (
 	"fmt"
 	gohash "hash"
 
-	"github.com/MagicalTux/gophp/core"
+	"github.com/MagicalTux/goro/core"
 )
 
 //> const HASH_HMAC: core.ZInt(1)

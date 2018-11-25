@@ -5,7 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 
-	"github.com/MagicalTux/gophp/core"
+	"github.com/MagicalTux/goro/core"
 )
 
 //> func string hash_hmac ( string $algo , string $data , string $key [, bool $raw_output = FALSE ] )

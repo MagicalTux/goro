@@ -1,8 +1,8 @@
 package ctype
 
 import (
-	"github.com/MagicalTux/gophp/core"
-	"github.com/MagicalTux/gophp/core/util"
+	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/util"
 )
 
 // simple implementation of ctype methods

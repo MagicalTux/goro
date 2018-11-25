@@ -1,6 +1,6 @@
 package standard
 
-import "github.com/MagicalTux/gophp/core"
+import "github.com/MagicalTux/goro/core"
 
 //> func bool boolval ( mixed $var )
 func fncBoolval(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {

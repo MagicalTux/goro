@@ -1,6 +1,6 @@
 package gmp
 
-import "github.com/MagicalTux/gophp/core"
+import "github.com/MagicalTux/goro/core"
 
 //> func int gmp_cmp ( GMP $a , GMP $b )
 func gmpCmp(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {

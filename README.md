@@ -1,6 +1,6 @@
-# PHP in Go
+# Goro
 
-This is an implementation of PHP, written in pure Go.
+This is an implementation of PHP, written in pure Go (as much as possible, right now pcre doesn't exist in pure go and require usage of libpcre).
 
 ## Why?
 
@@ -15,7 +15,7 @@ That's a good question. PHP is a nice language but is having trouble keeping up 
 
 In order to run php code as cli:
 
-	go get github.com/MagicalTux/gophp/sapi/php-cli
+	go get github.com/MagicalTux/goro/sapi/php-cli
 
 # Status
 
@@ -25,7 +25,6 @@ Right now, running PHP's own tests would require pcre, so it is not possible to 
 
 ## TODO
 
-* Rename project in compliance with PHP license (need to think of something cool)
 * Fix arguments passed by reference for builtin methods
 * Error reporting, lower level of errors (warnings, etc)
 * php.ini handling

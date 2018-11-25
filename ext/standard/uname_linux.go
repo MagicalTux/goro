@@ -5,7 +5,7 @@ package standard
 import (
 	"syscall"
 
-	"github.com/MagicalTux/gophp/core"
+	"github.com/MagicalTux/goro/core"
 )
 
 func fncUnameHelperToString(v [65]int8) core.ZString {

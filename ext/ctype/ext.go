@@ -1,6 +1,6 @@
 package ctype
 
-import "github.com/MagicalTux/gophp/core"
+import "github.com/MagicalTux/goro/core"
 
 // WARNING: This file is auto-generated. DO NOT EDIT
 

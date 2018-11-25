@@ -1,7 +1,7 @@
 package core
 
 import (
-	"github.com/MagicalTux/gophp/core/tokenizer"
+	"github.com/MagicalTux/goro/core/tokenizer"
 )
 
 type compileFunc func(i *tokenizer.Item, c compileCtx) (Runnable, error)

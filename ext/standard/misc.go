@@ -5,8 +5,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/MagicalTux/gophp/core"
-	"github.com/MagicalTux/gophp/core/tokenizer"
+	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/tokenizer"
 )
 
 //> func mixed constant ( string $name )

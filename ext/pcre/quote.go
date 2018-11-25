@@ -3,7 +3,7 @@ package pcre
 import (
 	"strings"
 
-	"github.com/MagicalTux/gophp/core"
+	"github.com/MagicalTux/goro/core"
 )
 
 //> func string preg_quote ( string $str [, string $delimiter = NULL ] )

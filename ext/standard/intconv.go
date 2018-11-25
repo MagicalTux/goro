@@ -3,7 +3,7 @@ package standard
 import (
 	"strconv"
 
-	"github.com/MagicalTux/gophp/core"
+	"github.com/MagicalTux/goro/core"
 )
 
 //> func string dechex ( int $number )

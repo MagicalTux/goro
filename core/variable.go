@@ -3,7 +3,7 @@ package core
 import (
 	"io"
 
-	"github.com/MagicalTux/gophp/core/tokenizer"
+	"github.com/MagicalTux/goro/core/tokenizer"
 )
 
 type runVariable struct {

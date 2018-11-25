@@ -1,6 +1,6 @@
 package hash
 
-import "github.com/MagicalTux/gophp/core"
+import "github.com/MagicalTux/goro/core"
 
 //> class HashContext
 var HashContext = &core.ZClass{

@@ -10,7 +10,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/MagicalTux/gophp/core/stream"
+	"github.com/MagicalTux/goro/core/stream"
 )
 
 type globalLazyOffset struct {

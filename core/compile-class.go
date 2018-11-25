@@ -1,6 +1,6 @@
 package core
 
-import "github.com/MagicalTux/gophp/core/tokenizer"
+import "github.com/MagicalTux/goro/core/tokenizer"
 
 type zclassCompileCtx struct {
 	compileCtx

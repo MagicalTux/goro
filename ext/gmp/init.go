@@ -4,7 +4,7 @@ import (
 	"errors"
 	"math/big"
 
-	"github.com/MagicalTux/gophp/core"
+	"github.com/MagicalTux/goro/core"
 )
 
 //> func GMP gmp_init ( mixed $number [, int $base = 0 ] )

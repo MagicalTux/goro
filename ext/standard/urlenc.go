@@ -3,7 +3,7 @@ package standard
 import (
 	"net/url"
 
-	"github.com/MagicalTux/gophp/core"
+	"github.com/MagicalTux/goro/core"
 )
 
 //> func string urlencode ( string $str )
