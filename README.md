@@ -51,7 +51,7 @@ Right now, running PHP's own tests would require pcre, so it is not possible to 
 | pcre       |     5% | might need to use cgo                          |
 | gmp        |    20% | Using math/big                                 |
 | date       |        |                                                |
-| hash       |    15% |                                                |
+| hash       |    50% |                                                |
 | iconv      |        | using golang.org/x/text/transform              |
 | json       |        | Need custom impl to support php arrays         |
 | mbstring   |        |                                                |

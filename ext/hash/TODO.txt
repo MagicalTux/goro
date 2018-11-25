@@ -1,0 +1,6 @@
+hash_copy
+hash_file
+hash_hmac_algos
+hash_hmac_file
+hash_update_file
+hash_update_stream
