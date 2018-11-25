@@ -13,3 +13,15 @@ func Throw(o *ZObject) error {
 	err := &PhpThrow{obj: o}
 	return err
 }
+
+//> class Throwable
+var Throwable = &ZClass{
+	Name: "Throwable",
+	// need abstract methods:
+	// getMessage getCode getFile getLine getTrace getPrevious getTraceAsString __toString
+}
+
+//> class Exception
+var Exception = &ZClass{
+	Name: "Exception",
+}

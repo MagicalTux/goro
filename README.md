@@ -26,16 +26,19 @@ Right now, running PHP's own tests would require pcre, so it is not possible to 
 ## TODO
 
 * Rename project in compliance with PHP license (need to think of something cool)
-* Fix arguments passed by reference → PHP, when a non-existing variable is passed by reference, will set it to NULL in the appropriate context and pass it as a reference.
+* Fix arguments passed by reference for builtin methods
 * Error reporting, lower level of errors (warnings, etc)
 * php.ini handling
 * Class and object implementation is still very early. Access checks are missing. Class inheritance, etc are missing
-* Traits
+ * Class abstract
+ * Builtin class methods
+ * Interfaces
+ * Exception throwing
+ * Traits
 * break/continue needs improvement/fixing
 * declare
-* goto
+* goto ?
 * namespaces
-* Exception throwing
 * generators
 * predefined superglobals
 * implement Complex (curly) variable syntax (see: http://php.net/manual/en/language.types.string.php#language.types.string.parsing.complex )
@@ -48,7 +51,7 @@ Right now, running PHP's own tests would require pcre, so it is not possible to 
 | pcre       |     5% | might need to use cgo                          |
 | gmp        |    20% | Using math/big                                 |
 | date       |        |                                                |
-| hash       |        |                                                |
+| hash       |    15% |                                                |
 | iconv      |        | using golang.org/x/text/transform              |
 | json       |        | Need custom impl to support php arrays         |
 | mbstring   |        |                                                |

@@ -8,6 +8,7 @@ import (
 	"github.com/MagicalTux/gophp/core"
 	_ "github.com/MagicalTux/gophp/ext/ctype"
 	_ "github.com/MagicalTux/gophp/ext/gmp"
+	_ "github.com/MagicalTux/gophp/ext/hash"
 	_ "github.com/MagicalTux/gophp/ext/pcre"
 	_ "github.com/MagicalTux/gophp/ext/standard"
 )

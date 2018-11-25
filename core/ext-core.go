@@ -12,6 +12,8 @@ func init() {
 		Name:    "Core",
 		Version: VERSION,
 		Classes: []*ZClass{
+			Exception,
+			Throwable,
 			stdClass,
 		},
 		Functions: map[string]*ExtFunction{
