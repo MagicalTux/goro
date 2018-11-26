@@ -72,17 +72,17 @@ func (b *Buffer) add(d []byte, flag int) error {
 
 	// pass d through output buffer callback
 	args := []*ZVal{ZString(d).ZVal(), ZInt(flag).ZVal()}
-	ctx := WithConfig(b.g.Root(), "ob_in_handler", ZBool(true).ZVal())
+	ctx := WithConfig(b.g, "ob_in_handler", ZBool(true).ZVal())
 	ctx = NewBufContext(ctx, nil)
 	r, err := ctx.CallZVal(ctx, b.CB, args, nil)
 	if err != nil {
 		return err
 	}
-	r, err = r.As(b.g.Root(), ZtString)
+	r, err = r.As(b.g, ZtString)
 	if err != nil {
 		return err
 	}
-	d = []byte(r.AsString(b.g.Root()))
+	d = []byte(r.AsString(b.g))
 
 	if len(d) == 0 {
 		return nil

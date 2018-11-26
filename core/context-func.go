@@ -52,7 +52,7 @@ func (c *FuncContext) OffsetExists(ctx Context, name *ZVal) (bool, error) {
 	case "GLOBALS":
 		return true, nil
 	case "_SERVER", "_GET", "_POST", "_FILES", "_COOKIE", "_SESSION", "_REQUEST", "_ENV":
-		return c.Root().OffsetExists(ctx, name)
+		return c.Global().OffsetExists(ctx, name)
 	}
 	return c.h.HasString(name.AsString(ctx)), nil
 }
@@ -70,7 +70,7 @@ func (c *FuncContext) OffsetGet(ctx Context, name *ZVal) (*ZVal, error) {
 		}
 		return c.this.ZVal(), nil
 	case "GLOBALS", "_SERVER", "_GET", "_POST", "_FILES", "_COOKIE", "_SESSION", "_REQUEST", "_ENV":
-		return c.Root().OffsetGet(ctx, name)
+		return c.Global().OffsetGet(ctx, name)
 	}
 	return c.h.GetString(name.AsString(ctx)), nil
 }

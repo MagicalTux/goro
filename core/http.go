@@ -39,6 +39,6 @@ func (p *phpWebHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// include file
-	g.Include(g.Root(), ZString(full))
+	g.Include(g, ZString(full))
 	g.Close()
 }

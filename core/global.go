@@ -23,8 +23,9 @@ type Global struct {
 
 	p     *Process
 	start time.Time
-	root  *RootContext
 	req   *http.Request
+	h     *ZHashTable
+	l     *Loc
 
 	globalFuncs   map[ZString]Callable
 	globalClasses map[ZString]*ZClass // TODO replace *ZClass with a nice interface
@@ -73,7 +74,10 @@ func (g *Global) Buffer() *Buffer {
 }
 
 func (g *Global) init() {
+	// initialize variables & memory for global context
 	g.start = time.Now()
+	g.h = NewHashTable()
+	g.l = &Loc{Filename: "unknown", Line: 1}
 	g.globalFuncs = make(map[ZString]Callable)
 	g.globalClasses = make(map[ZString]*ZClass)
 	g.constant = make(map[ZString]*ZVal)
@@ -81,13 +85,6 @@ func (g *Global) init() {
 	g.included = make(map[ZString]bool)
 	g.globalLazyFunc = make(map[ZString]*globalLazyOffset)
 	g.globalLazyClass = make(map[ZString]*globalLazyOffset)
-
-	// prepare root context
-	g.root = &RootContext{
-		Context: g,
-		g:       g,
-		h:       NewHashTable(),
-	}
 
 	g.fHandler["file"], _ = stream.NewFileHandler("/")
 	g.fHandler["php"] = stream.PhpHandler()
@@ -133,13 +130,13 @@ func (g *Global) doGPC() {
 			// TODO...
 		}
 	}
-	g.root.h.SetString("_GET", get.ZVal())
-	g.root.h.SetString("_POST", p.ZVal())
-	g.root.h.SetString("_COOKIE", c.ZVal())
-	g.root.h.SetString("_REQUEST", r.ZVal())
-	g.root.h.SetString("_SERVER", s.ZVal())
-	g.root.h.SetString("_ENV", e.ZVal())
-	g.root.h.SetString("_FILES", f.ZVal())
+	g.h.SetString("_GET", get.ZVal())
+	g.h.SetString("_POST", p.ZVal())
+	g.h.SetString("_COOKIE", c.ZVal())
+	g.h.SetString("_REQUEST", r.ZVal())
+	g.h.SetString("_SERVER", s.ZVal())
+	g.h.SetString("_ENV", e.ZVal())
+	g.h.SetString("_FILES", f.ZVal())
 	// _SESSION will only be set if a session is initialized
 
 	// TODO
@@ -150,12 +147,8 @@ func (g *Global) SetOutput(w io.Writer) {
 	g.buf = nil
 }
 
-func (g *Global) Root() *RootContext {
-	return g.root
-}
-
 func (g *Global) RunFile(fn string) error {
-	_, err := g.Require(g.root, ZString(fn))
+	_, err := g.Require(g, ZString(fn))
 	err = FilterError(err)
 	if err != nil {
 		return err
@@ -181,48 +174,21 @@ func (g *Global) GetConfig(name ZString, def *ZVal) *ZVal {
 	return def
 }
 
-func (g *Global) OffsetGet(ctx Context, name *ZVal) (*ZVal, error) {
-	name, err := name.As(ctx, ZtString)
-	if err != nil {
-		return nil, err
-	}
-
-	switch name.AsString(ctx) {
-	case "GLOBALS":
-		// return GLOBALS as root hash table in a referenced array
-		return (&ZVal{g.root}).Ref(), nil
-	}
-
-	// handle superglobals by using root context, avoid looping
-	return g.root.h.GetString(name.AsString(ctx)), nil
+func (g *Global) Tick(ctx Context, l *Loc) error {
+	g.l = l
+	return nil
 }
 
-func (g *Global) OffsetSet(ctx Context, name, v *ZVal) error {
-	name, err := name.As(ctx, ZtString)
-	if err != nil {
-		return err
-	}
-
-	// handle superglobals by using root context, avoid looping
-	return g.root.h.SetString(name.AsString(ctx), v)
+func (g *Global) Loc() *Loc {
+	return g.l
 }
 
-func (g *Global) OffsetUnset(ctx Context, name *ZVal) error {
-	name, err := name.As(ctx, ZtString)
-	if err != nil {
-		return err
-	}
-
-	// handle superglobals by using root context, avoid looping
-	return g.root.h.UnsetString(name.AsString(ctx))
+func (g *Global) Func() *FuncContext {
+	return nil
 }
 
-func (g *Global) Count(ctx Context) ZInt {
-	return g.root.h.count
-}
-
-func (g *Global) NewIterator() ZIterator {
-	return g.root.h.NewIterator()
+func (g *Global) This() *ZObject {
+	return nil
 }
 
 func (g *Global) RegisterFunction(name ZString, f Callable) error {
@@ -346,4 +312,8 @@ func (g *Global) RegisterLazyFunc(name ZString, r Runnables, p int) {
 
 func (g *Global) RegisterLazyClass(name ZString, r Runnables, p int) {
 	g.globalLazyClass[name.ToLower()] = &globalLazyOffset{r, p}
+}
+
+func (g *Global) Global() *Global {
+	return g
 }

@@ -20,7 +20,7 @@ func (g *runGlobal) Run(ctx Context) (*ZVal, error) {
 		return nil, err
 	}
 
-	glob := ctx.Root()
+	glob := ctx.Global()
 	for _, k := range g.vars {
 		if ok, _ := glob.OffsetExists(ctx, k.ZVal()); !ok {
 			// need to create it

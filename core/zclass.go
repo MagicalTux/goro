@@ -97,8 +97,9 @@ func (c *ZClass) compile(ctx Context) error {
 	return nil
 }
 
-func (c *ZClass) Loc() *Loc {
-	return c.l
+func (c *ZClass) InstanceOf(subc *ZClass) bool {
+	_, r := c.parents[subc]
+	return r
 }
 
 func (c *ZClass) Dump(w io.Writer) error {

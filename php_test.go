@@ -55,12 +55,11 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 	case "FILE":
 		// pass data to the engine
 		t := tokenizer.NewLexer(b, p.path)
-		ctx := p.g.Root()
-		c, err := core.Compile(ctx, t)
+		c, err := core.Compile(p.g, t)
 		if err != nil {
 			return err
 		}
-		_, err = c.Run(ctx)
+		_, err = c.Run(p.g)
 		p.g.Close()
 		return core.FilterError(err)
 	case "EXPECT":
@@ -77,11 +76,11 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		g := core.NewGlobal(context.Background(), p.p)
 		output := &bytes.Buffer{}
 		g.SetOutput(output)
-		c, err := core.Compile(g.Root(), t)
+		c, err := core.Compile(g, t)
 		if err != nil {
 			return err
 		}
-		_, err = c.Run(g.Root())
+		_, err = c.Run(g)
 		err = core.FilterError(err)
 		if err != nil {
 			return err

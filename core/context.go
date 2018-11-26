@@ -13,7 +13,6 @@ type Context interface {
 	io.Writer
 
 	Global() *Global
-	Root() *RootContext
 	Func() *FuncContext
 	Parent(n int) Context
 	This() *ZObject
