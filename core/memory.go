@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"io"
 	"sync"
 )
 
@@ -19,6 +20,10 @@ func (m *MemMgr) Alloc(ctx Context, s uint64) error {
 	m.l.Lock()
 	defer m.l.Unlock()
 
+	return m.internalAlloc(s)
+}
+
+func (m *MemMgr) internalAlloc(s uint64) error {
 	if m.limit == 0 {
 		// no limit
 		m.cur = m.cur + s // we don't check for overflow
@@ -37,4 +42,37 @@ func (m *MemMgr) Alloc(ctx Context, s uint64) error {
 	m.cur += s
 
 	return nil
+}
+
+func (m *MemMgr) Copy(dst io.Writer, src io.Reader) (written int64, err error) {
+	// io.Copy but with memory limit checks
+	buf := make([]byte, 32*1024)
+	for {
+		nr, er := src.Read(buf)
+		if nr > 0 {
+			nw, ew := dst.Write(buf[:nr])
+			if nw > 0 {
+				written += int64(nw)
+			}
+			if em := m.internalAlloc(uint64(nw)); em != nil {
+				err = em
+				break
+			}
+			if ew != nil {
+				err = ew
+				break
+			}
+			if nr != nw {
+				err = io.ErrShortWrite
+				break
+			}
+		}
+		if er != nil {
+			if er != io.EOF {
+				err = er
+			}
+			break
+		}
+	}
+	return
 }

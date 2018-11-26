@@ -4,4 +4,5 @@ The idea is to be compatible with most scripts written for PHP while taking adva
 
 # Differences
 
-* In this version, echo is a function. All special function calling keywords (echo, exit, die, etc) are actually just calling functions under the same name.
+* In this version, echo is a function. Most special function calling keywords (echo, exit, die, etc) are actually just calling functions under the same name.
+* Object destructors are never called

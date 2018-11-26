@@ -6,6 +6,8 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path"
 	"path/filepath"
@@ -20,7 +22,7 @@ import (
 )
 
 // Currently focusing on lang tests, change variable to run other tests
-const TestsPath = "test/php-7.2.10/tests/lang/"
+const TestsPath = "test/php-7.2.10/tests/basic/"
 
 type phptest struct {
 	f      *os.File
@@ -28,9 +30,9 @@ type phptest struct {
 	output *bytes.Buffer
 	name   string
 	path   string
+	req    *http.Request
 
 	p *core.Process
-	g *core.Global
 
 	t *testing.T
 }
@@ -52,15 +54,27 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 	case "CREDITS":
 		// is there something we should do with this?
 		return nil
+	case "GET":
+		p.req.URL.RawQuery = strings.TrimRight(b.String(), "\r\n")
+		return nil
+	case "POST":
+		// we need a new request with the post data
+		p.req = httptest.NewRequest("POST", "/"+path.Base(p.path), bytes.NewBuffer(bytes.TrimRight(b.Bytes(), "\r\n")))
+		p.req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		return nil
 	case "FILE":
 		// pass data to the engine
+		g := core.NewGlobalReq(p.req, p.p)
+		g.SetOutput(p.output)
+		g.Chdir(core.ZString(path.Dir(p.path))) // chdir execution to path
+
 		t := tokenizer.NewLexer(b, p.path)
-		c, err := core.Compile(p.g, t)
+		c, err := core.Compile(g, t)
 		if err != nil {
 			return err
 		}
-		_, err = c.Run(p.g)
-		p.g.Close()
+		_, err = c.Run(g)
+		g.Close()
 		return core.FilterError(err)
 	case "EXPECT":
 		// compare p.output with b
@@ -89,7 +103,7 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 			return skipTest
 		}
 		return nil
-	case "INI", "POST", "EXPECTF", "EXTENSIONS":
+	case "INI", "EXPECTF", "EXTENSIONS":
 		// TODO
 		return skipTest
 	case "XFAIL":
@@ -122,9 +136,7 @@ func runTest(t *testing.T, fpath string) (p *phptest, err error) {
 
 	// prepare env
 	p.p = core.NewProcess("test")
-	p.g = core.NewGlobal(context.Background(), p.p)
-	p.g.SetOutput(p.output)
-	p.g.Chdir(core.ZString(path.Dir(fpath))) // chdir execution to path
+	p.req = httptest.NewRequest("GET", "/"+path.Base(fpath), nil)
 	r := regexp.MustCompile("^--([A-Z]+)--$")
 
 	for {
