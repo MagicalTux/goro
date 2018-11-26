@@ -22,13 +22,14 @@ type Global struct {
 	context.Context
 
 	p        *Process
-	start    time.Time
+	start    time.Time // time at which this request started
 	req      *http.Request
 	h        *ZHashTable
 	l        *Loc
 	mem      *MemMgr
 	deadline time.Time
 
+	// this is the actual environment (defined functions, classes, etc)
 	globalFuncs   map[ZString]Callable
 	globalClasses map[ZString]*ZClass // TODO replace *ZClass with a nice interface
 	constant      map[ZString]*ZVal
@@ -147,6 +148,10 @@ func (g *Global) doGPC() {
 				}
 				r.MergeArray(get)
 			}
+		case 's', 'S':
+			// SERVER
+			s.OffsetSet(g, ZString("REQUEST_TIME").ZVal(), ZInt(g.start.Unix()).ZVal())
+			s.OffsetSet(g, ZString("REQUEST_TIME_FLOAT").ZVal(), ZFloat(float64(g.start.UnixNano())/1e9).ZVal())
 			// TODO...
 		}
 	}

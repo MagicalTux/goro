@@ -10,10 +10,11 @@ This is an implementation of PHP, written in pure Go (as much as possible, right
 
 That's a good question. PHP is a nice language but is having trouble keeping up with modern languages. This implementation, while far from finished, as purpose to allow a few things from within PHP:
 
-* Usage of goroutines, go channels, etc
-* Better caching of compiled code
+* Usage of goroutines, go channels, etc from within PHP
+* Better caching of compiled code by allowing sharing of compiled or live objects (classes, objects, etc) between running PHP scripts
 * Use Go's memory management within PHP
-* Ability to run functions or code sandboxed (including filesystem)
+* Ability to run functions or code sandboxed (including filesystem) to limit security risks
+* Easily call the PHP engine from Go to execute pieces of PHP code (user provided or legacy)
 
 # Install
 
