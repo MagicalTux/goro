@@ -2,6 +2,7 @@ package tokenizer
 
 import (
 	"bufio"
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -22,7 +23,7 @@ type Lexer struct {
 	base       lexState
 
 	inputRst []byte
-	output   strings.Builder
+	output   bytes.Buffer
 
 	sLine, sChar int // start line/char
 	cLine, cChar int // current line/char
