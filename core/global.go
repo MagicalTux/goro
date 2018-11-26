@@ -26,6 +26,7 @@ type Global struct {
 	req   *http.Request
 	h     *ZHashTable
 	l     *Loc
+	mem   *MemMgr
 
 	globalFuncs   map[ZString]Callable
 	globalClasses map[ZString]*ZClass // TODO replace *ZClass with a nice interface
@@ -85,6 +86,7 @@ func (g *Global) init() {
 	g.included = make(map[ZString]bool)
 	g.globalLazyFunc = make(map[ZString]*globalLazyOffset)
 	g.globalLazyClass = make(map[ZString]*globalLazyOffset)
+	g.mem = NewMemMgr(32 * 1024 * 1024) // limit in bytes TODO read memory_limit from process (.ini file)
 
 	g.fHandler["file"], _ = stream.NewFileHandler("/")
 	g.fHandler["php"] = stream.PhpHandler()
@@ -175,6 +177,7 @@ func (g *Global) GetConfig(name ZString, def *ZVal) *ZVal {
 }
 
 func (g *Global) Tick(ctx Context, l *Loc) error {
+	// TODO check run deadline, context cancellation and memory limit
 	g.l = l
 	return nil
 }
@@ -316,4 +319,8 @@ func (g *Global) RegisterLazyClass(name ZString, r Runnables, p int) {
 
 func (g *Global) Global() *Global {
 	return g
+}
+
+func (g *Global) MemAlloc(ctx Context, s uint64) error {
+	return g.mem.Alloc(ctx, s)
 }

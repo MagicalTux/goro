@@ -18,6 +18,7 @@ type Context interface {
 	This() *ZObject
 	Loc() *Loc
 	Tick(ctx Context, l *Loc) error
+	MemAlloc(ctx Context, s uint64) error
 
 	GetConfig(name ZString, def *ZVal) *ZVal
 
