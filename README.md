@@ -71,8 +71,8 @@ The following needs to be done before we can call this an alpha version.
 | tokenizer  |        | already in core/tokenizer, needs to be exposed |
 | xml...     |        |                                                |
 | gd         |        | without gd                                     |
-| bz2        |     5% |                                                |
-| gzip       |     5% |                                                |
+| bz2        |     1% |                                                |
+| zlib       |        |                                                |
 | ctype      |   100% |                                                |
 
 # Concepts
