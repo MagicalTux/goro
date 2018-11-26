@@ -117,6 +117,21 @@ func (a *ZClassAttr) parse(c compileCtx) error {
 	}
 }
 
+func (a ZClassAttr) String() string {
+	var r []byte
+	if a.Has(ZClassAbstract) {
+		r = append(r, []byte(" abstract")...)
+	}
+	if a.Has(ZClassFinal) {
+		r = append(r, []byte(" final")...)
+	}
+
+	if r == nil {
+		return ""
+	}
+	return string(r[1:])
+}
+
 func (a *ZObjectAttr) parse(c compileCtx) error {
 	// parse method attributes (public/protected/private, abstract or final)
 	for {

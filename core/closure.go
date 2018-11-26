@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 )
 
 type zclosureCompileCtx struct {
@@ -208,7 +209,7 @@ func (z *ZClosure) Call(ctx Context, args []*ZVal) (*ZVal, error) {
 	}
 
 	// call function in that context
-	r, err := z.code.Run(ctx)
+	r, err := CatchReturn(z.code.Run(ctx))
 	if z.rref && r != nil {
 		r = r.Ref()
 	}
