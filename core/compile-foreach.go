@@ -26,6 +26,11 @@ func (r *runnableForeach) Run(ctx Context) (l *ZVal, err error) {
 	}
 
 	for {
+		err = ctx.Tick(ctx, r.l)
+		if err != nil {
+			return nil, err
+		}
+
 		if !it.Valid(ctx) {
 			break
 		}
@@ -67,10 +72,6 @@ func (r *runnableForeach) Run(ctx Context) (l *ZVal, err error) {
 		it.Next(ctx)
 	}
 	return nil, nil
-}
-
-func (r *runnableForeach) Loc() *Loc {
-	return r.l
 }
 
 func (r *runnableForeach) Dump(w io.Writer) error {

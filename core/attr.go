@@ -6,6 +6,7 @@ import (
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
 
+type ZClassType int
 type ZClassAttr int
 type ZObjectAttr int
 
@@ -21,6 +22,12 @@ const (
 	ZClassAnon                        = 0x100
 	ZClassAnonBound                   = 0x200
 	ZClassInherited                   = 0x400
+
+	ZClassTypeImplicitAbstract ZClassType = 0x10
+	ZClassTypeExplicitAbstract            = 0x20
+	ZClassTypeInterface                   = 0x40
+	ZClassTypeTrait                       = 0x80
+	ZClassTypeAnon                        = 0x100
 
 	ZAttrStatic         ZObjectAttr = ZObjectAttr(ZClassStatic)
 	ZAttrAbstract                   = ZObjectAttr(ZClassAbstract)
@@ -50,6 +57,14 @@ const (
 
 func (a ZClassAttr) Has(c ZClassAttr) bool {
 	return a&c == c
+}
+
+func (a ZClassType) Has(c ZClassType) bool {
+	return a&c == c
+}
+
+func (a ZClassType) IsInterface() bool {
+	return a.Has(ZClassTypeInterface)
 }
 
 func (a ZObjectAttr) Has(c ZObjectAttr) bool {

@@ -145,6 +145,11 @@ func (r *runOperator) Run(ctx Context) (*ZVal, error) {
 	var a, b, res *ZVal
 	var err error
 
+	err = ctx.Tick(ctx, r.l)
+	if err != nil {
+		return nil, err
+	}
+
 	op := r.opD
 
 	if r.op == tokenizer.Rune('@') {

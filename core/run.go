@@ -5,7 +5,6 @@ import "io"
 type Runnable interface {
 	Run(Context) (*ZVal, error)
 	Dump(io.Writer) error
-	Loc() *Loc
 }
 
 type Writable interface {
@@ -32,13 +31,6 @@ func (r Runnables) Run(ctx Context) (l *ZVal, err error) {
 	return
 }
 
-func (r Runnables) Loc() *Loc {
-	if len(r) == 0 {
-		return nil
-	}
-	return r[0].Loc()
-}
-
 func (r Runnables) Dump(w io.Writer) error {
 	return r.DumpWith(w, []byte{';'})
 }
@@ -59,10 +51,6 @@ func (r Runnables) DumpWith(w io.Writer, sep []byte) error {
 
 type runParentheses struct {
 	r Runnable
-}
-
-func (r *runParentheses) Loc() *Loc {
-	return r.r.Loc()
 }
 
 func (r *runParentheses) Dump(w io.Writer) error {

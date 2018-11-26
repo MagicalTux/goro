@@ -87,6 +87,10 @@ func (r *runnableFunctionCallRef) Dump(w io.Writer) error {
 }
 
 func (r *runnableFunctionCall) Run(ctx Context) (l *ZVal, err error) {
+	err = ctx.Tick(ctx, r.l)
+	if err != nil {
+		return nil, err
+	}
 	// grab function
 	f, err := ctx.Global().GetFunction(ctx, r.name)
 	if err != nil {
@@ -99,6 +103,11 @@ func (r *runnableFunctionCall) Run(ctx Context) (l *ZVal, err error) {
 func (r *runnableFunctionCallRef) Run(ctx Context) (l *ZVal, err error) {
 	var f Callable
 	var ok bool
+
+	err = ctx.Tick(ctx, r.l)
+	if err != nil {
+		return nil, err
+	}
 
 	if f, ok = r.name.(Callable); !ok {
 		v, err := r.name.Run(ctx)

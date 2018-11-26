@@ -51,8 +51,16 @@ func compileRunVariableRef(i *tokenizer.Item, c compileCtx, l *Loc) (Runnable, e
 }
 
 func (r *runVariable) Run(ctx Context) (*ZVal, error) {
+	err := ctx.Tick(ctx, r.l)
+	if err != nil {
+		return nil, err
+	}
+
 	res, err := ctx.OffsetGet(ctx, r.v.ZVal())
-	return res.Nude(), err
+	if err != nil {
+		return nil, err
+	}
+	return res.Nude(), nil
 }
 
 func (r *runVariable) WriteValue(ctx Context, value *ZVal) error {

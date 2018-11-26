@@ -21,14 +21,14 @@ type ZClassMethod struct {
 type ZClass struct {
 	Name ZString
 	l    *Loc
+	Type ZClassType
 	attr ZClassAttr
 
 	// string value of extend & implement (used previous to lookup)
 	ExtendsStr    ZString
 	ImplementsStr []ZString
 
-	Constructor *ZClassMethod
-
+	parents     map[*ZClass]*ZClass // all parents, extends & implements
 	Extends     *ZClass
 	Implements  []*ZClass
 	Const       map[ZString]Val // class constants
@@ -37,6 +37,7 @@ type ZClass struct {
 	StaticProps *ZHashTable
 
 	// class specific handlers
+	Constructor  *ZClassMethod
 	HandleInvoke func(ctx Context, o *ZObject, args []Runnable) (*ZVal, error)
 }
 

@@ -10,6 +10,7 @@ type RootContext struct {
 
 	h *ZHashTable
 	g *Global
+	l *Loc
 }
 
 func (c *RootContext) AsVal(ctx Context, t ZType) (Val, error) {
@@ -105,6 +106,18 @@ func (c *RootContext) NewIterator() ZIterator {
 
 func (c *RootContext) GetConfig(name ZString, def *ZVal) *ZVal {
 	return c.g.GetConfig(name, def)
+}
+
+func (c *RootContext) Loc() *Loc {
+	if c.l == nil {
+		return &Loc{Filename: "Unknown", Line: 1}
+	}
+	return c.l
+}
+
+func (c *RootContext) Tick(ctx Context, l *Loc) error {
+	c.l = l
+	return nil
 }
 
 func (c *RootContext) Write(v []byte) (int, error) {

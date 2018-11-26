@@ -15,6 +15,11 @@ func (g *runGlobal) Run(ctx Context) (*ZVal, error) {
 	var err error
 	var v *ZVal
 
+	err = ctx.Tick(ctx, g.l)
+	if err != nil {
+		return nil, err
+	}
+
 	glob := ctx.Root()
 	for _, k := range g.vars {
 		if ok, _ := glob.OffsetExists(ctx, k.ZVal()); !ok {
@@ -34,10 +39,6 @@ func (g *runGlobal) Run(ctx Context) (*ZVal, error) {
 		}
 	}
 	return nil, nil
-}
-
-func (g *runGlobal) Loc() *Loc {
-	return g.l
 }
 
 func (g *runGlobal) Dump(w io.Writer) error {

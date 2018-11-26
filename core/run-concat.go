@@ -23,14 +23,6 @@ func (r runConcat) Run(ctx Context) (l *ZVal, err error) {
 	return
 }
 
-func (r runConcat) Loc() *Loc {
-	if len(r) == 0 {
-		return nil
-	}
-
-	return r[0].Loc()
-}
-
 func (r runConcat) Dump(w io.Writer) error {
 	return r.DumpWith(w, []byte{'.'})
 }

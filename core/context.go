@@ -17,6 +17,8 @@ type Context interface {
 	Func() *FuncContext
 	Parent(n int) Context
 	This() *ZObject
+	Loc() *Loc
+	Tick(ctx Context, l *Loc) error
 
 	GetConfig(name ZString, def *ZVal) *ZVal
 

@@ -244,7 +244,7 @@ func (g *Global) GetFunction(ctx Context, name ZString) (Callable, error) {
 		if err != nil {
 			return nil, err
 		}
-		f.r[f.p] = f.r[f.p].Loc() // remove function declaration from tree now that his as been run
+		f.r[f.p] = RunNull{} // remove function declaration from tree now that his as been run
 		if f, ok := g.globalFuncs[name.ToLower()]; ok {
 			return f, nil
 		}
@@ -303,7 +303,7 @@ func (g *Global) GetClass(ctx Context, name ZString) (*ZClass, error) {
 		if err != nil {
 			return nil, err
 		}
-		r.r[r.p] = r.r[r.p].Loc() // remove function declaration from tree now that his as been run
+		r.r[r.p] = RunNull{} // remove function declaration from tree now that his as been run
 		if c, ok := g.globalClasses[name.ToLower()]; ok {
 			return c, nil
 		}

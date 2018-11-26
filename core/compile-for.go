@@ -67,6 +67,11 @@ func (r *runnableFor) Run(ctx Context) (l *ZVal, err error) {
 	}
 
 	for {
+		err = ctx.Tick(ctx, r.l)
+		if err != nil {
+			return nil, err
+		}
+
 		// execute cond
 		z, err := r.cond.Run(ctx)
 		if err != nil {
