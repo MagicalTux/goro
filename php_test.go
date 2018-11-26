@@ -22,7 +22,7 @@ import (
 )
 
 // Currently focusing on lang tests, change variable to run other tests
-const TestsPath = "test/php-7.2.10/tests/basic/"
+const TestsPath = "test"
 
 type phptest struct {
 	f      *os.File
