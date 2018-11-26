@@ -106,6 +106,10 @@ func (r *runnableFunctionCallRef) Run(ctx Context) (l *ZVal, err error) {
 			return nil, err
 		}
 
+		if f, ok := v.v.(*ZObject); ok && f.Class.HandleInvoke != nil {
+			return f.Class.HandleInvoke(ctx, f, r.args)
+		}
+
 		if f, ok = v.v.(Callable); !ok {
 			v, err = v.As(ctx, ZtString)
 			if err != nil {
@@ -147,11 +151,19 @@ func compileFunction(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	switch i.Type {
 	case tokenizer.T_STRING:
 		// regular function definition
-		return compileFunctionWithName(ZString(i.Data), c, l, rref)
+		f, err := compileFunctionWithName(ZString(i.Data), c, l, rref)
+		if err != nil {
+			return nil, err
+		}
+		return f, nil
 	case tokenizer.Rune('('):
 		// function with no name is lambda
 		c.backup()
-		return compileFunctionWithName("", c, l, rref)
+		f, err := compileFunctionWithName("", c, l, rref)
+		if err != nil {
+			return nil, err
+		}
+		return f, nil
 	}
 
 	return nil, i.Unexpected()

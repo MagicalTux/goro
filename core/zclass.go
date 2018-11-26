@@ -37,7 +37,7 @@ type ZClass struct {
 	StaticProps *ZHashTable
 
 	// class specific handlers
-	Callable
+	HandleInvoke func(ctx Context, o *ZObject, args []Runnable) (*ZVal, error)
 }
 
 func (c *ZClass) Run(ctx Context) (*ZVal, error) {

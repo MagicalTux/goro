@@ -2,6 +2,7 @@
 
 $a = function($x) { return $x+1; };
 var_dump($a);
+var_dump($a(41));
 exit;
 
 $a = 1;

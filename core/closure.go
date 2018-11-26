@@ -44,34 +44,37 @@ var Closure = &ZClass{
 	Name: "Closure",
 }
 
-func (z *ZClosure) GetType() ZType {
-	return ZtObject
-}
-
-func (z *ZClosure) AsVal(ctx Context, t ZType) (Val, error) {
-	switch t {
-	case ZtObject:
-		return z, nil
-	case ZtBool:
-		return ZBool(true), nil
+func init() {
+	// put this here to avoid initialization loop problem
+	Closure.HandleInvoke = func(ctx Context, o *ZObject, args []Runnable) (*ZVal, error) {
+		z := o.GetOpaque(Closure).(*ZClosure)
+		return ctx.Call(ctx, z, args, o)
 	}
-	return nil, nil
 }
 
-func (z *ZClosure) ZVal() *ZVal {
-	return &ZVal{z}
-}
-
-func (closure *ZClosure) Run(ctx Context) (l *ZVal, err error) {
-	err = closure.compile(ctx)
+func (z *ZClosure) Spawn(ctx Context) (*ZVal, error) {
+	o, err := NewZObjectOpaque(ctx, Closure, z)
 	if err != nil {
 		return nil, err
 	}
+	return o.ZVal(), nil
+}
+
+func (closure *ZClosure) Run(ctx Context) (l *ZVal, err error) {
 	if closure.name != "" {
 		// register function
+		err = closure.compile(ctx)
+		if err != nil {
+			return nil, err
+		}
 		return nil, ctx.Global().RegisterFunction(closure.name, closure)
 	}
 	c := closure.dup()
+	// run compile after dup so we re-fetch default vars each time
+	err = c.compile(ctx)
+	if err != nil {
+		return nil, err
+	}
 	// collect use vars
 	for _, s := range c.use {
 		z, err := ctx.OffsetGet(ctx, s.varName.ZVal())
@@ -80,7 +83,7 @@ func (closure *ZClosure) Run(ctx Context) (l *ZVal, err error) {
 		}
 		s.value = z
 	}
-	return &ZVal{c}, nil
+	return c.Spawn(ctx)
 }
 
 func (c *ZClosure) compile(ctx Context) error {

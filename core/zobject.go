@@ -50,7 +50,7 @@ func (z *ZObject) AsVal(ctx Context, t ZType) (Val, error) {
 		// check for __toString() method
 	}
 
-	return nil, errors.New("failed to convert object to %s")
+	return nil, fmt.Errorf("failed to convert object to %s", t)
 }
 
 func NewZObject(ctx Context, c *ZClass) (*ZObject, error) {
