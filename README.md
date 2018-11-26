@@ -1,5 +1,9 @@
 # Goro
 
+[![Build Status](https://travis-ci.org/MagicalTux/goro.svg)](https://travis-ci.org/MagicalTux/goro)
+[![GoDoc](https://godoc.org/github.com/MagicalTux/goro/core?status.svg)](https://godoc.org/github.com/MagicalTux/goro)
+[![Telegram](https://img.shields.io/badge/chat-telegram-blue.svg?logo=telegram&logoColor=white)](https://t.me/gorophp)
+
 This is an implementation of PHP, written in pure Go (as much as possible, right now pcre doesn't exist in pure go and require usage of libpcre).
 
 ## Why?
@@ -18,9 +22,6 @@ In order to run php code as cli:
 	go get github.com/MagicalTux/goro/sapi/php-cli
 
 # Status
-
-[![Build Status](https://travis-ci.org/MagicalTux/goro.svg)](https://travis-ci.org/MagicalTux/goro)
-[![GoDoc](https://godoc.org/github.com/MagicalTux/goro/core?status.svg)](https://godoc.org/github.com/MagicalTux/goro)
 
 This is still a very early implementation and most of the core is missing.
 
