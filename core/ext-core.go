@@ -12,9 +12,14 @@ func init() {
 		Name:    "Core",
 		Version: VERSION,
 		Classes: []*ZClass{
+			ArrayAccess,
 			Closure,
 			Exception,
+			Iterator,
+			IteratorAggregate,
+			Serializable,
 			Throwable,
+			Traversable,
 			stdClass,
 		},
 		Functions: map[string]*ExtFunction{
