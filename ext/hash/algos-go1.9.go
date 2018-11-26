@@ -1,4 +1,5 @@
 // +build go1.9
+
 package hash
 
 import "golang.org/x/crypto/ripemd160"
