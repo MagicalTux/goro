@@ -23,6 +23,8 @@ func init() {
 			"atan":                     &core.ExtFunction{Func: mathAtan, Args: []*core.ExtFunctionArg{}},
 			"atan2":                    &core.ExtFunction{Func: mathAtan2, Args: []*core.ExtFunctionArg{}},
 			"atanh":                    &core.ExtFunction{Func: mathAtanh, Args: []*core.ExtFunctionArg{}},
+			"base64_decode":            &core.ExtFunction{Func: fncBase64Decode, Args: []*core.ExtFunctionArg{}},
+			"base64_encode":            &core.ExtFunction{Func: fncBase64Encode, Args: []*core.ExtFunctionArg{}},
 			"bin2hex":                  &core.ExtFunction{Func: fncBin2hex, Args: []*core.ExtFunctionArg{}},
 			"boolval":                  &core.ExtFunction{Func: fncBoolval, Args: []*core.ExtFunctionArg{}},
 			"chdir":                    &core.ExtFunction{Func: fncChdir, Args: []*core.ExtFunctionArg{}},

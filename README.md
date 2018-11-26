@@ -35,13 +35,14 @@ The following needs to be done before we can call this an alpha version.
 * Fix arguments passed by reference for builtin methods
 * Error reporting, lower level of errors (warnings, etc)
 * php.ini handling
+* Streams & filesystem support
 * command line flags handling
 * Class and object implementation is still very early. Access checks are missing. Class inheritance, etc are missing
- * Class abstract
- * Builtin class methods
- * Interfaces
- * Exception throwing
- * Traits
+  * Class abstract
+  * Builtin class methods
+  * Interfaces
+  * Exception throwing
+  * Traits
 * break/continue needs improvement/fixing
 * declare
 * goto ?
@@ -68,8 +69,10 @@ The following needs to be done before we can call this an alpha version.
 | Reflection |        |                                                |
 | session    |        |                                                |
 | tokenizer  |        | already in core/tokenizer, needs to be exposed |
-| xml*       |        |                                                |
+| xml...     |        |                                                |
 | gd         |        | without gd                                     |
+| bz2        |     5% |                                                |
+| gzip       |     5% |                                                |
 | ctype      |   100% |                                                |
 
 # Concepts
@@ -101,7 +104,7 @@ so that variables space is kept separated.
 
 # Contributing
 
-Right now, code for extensions is the most needed part.
+A lot of work is needed. The most important part is improving the documentation, followed by improving support of core features (see TODO in this file), and implement individual functions from the various PHP extensions.
 
 Writing an extension is simple. Create a directory in ext, write code prefixed with a magic function defining comment and run the tools/buildext.php script to generate bindings/etc. Add your newly created extension to the main.go of each sapi to enable it by default.
 

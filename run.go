@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/MagicalTux/goro/core"
+	_ "github.com/MagicalTux/goro/ext/bz2"
 	_ "github.com/MagicalTux/goro/ext/ctype"
 	_ "github.com/MagicalTux/goro/ext/date"
 	_ "github.com/MagicalTux/goro/ext/gmp"
