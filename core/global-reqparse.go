@@ -46,7 +46,7 @@ func (g *Global) parsePost(p, f *ZArray) error {
 		if !ok {
 			return errors.New("http: POST form-data missing boundary")
 		}
-		read := multipart.NewReader(g.req.Body, boundary)
+		read := multipart.NewReader(io.LimitReader(g.req.Body, 64*1024*1024), boundary) // max 64MB body size, TODO use php.ini to set this value
 
 		for {
 			part, err := read.NextPart()
