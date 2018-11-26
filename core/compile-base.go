@@ -91,7 +91,6 @@ func compileBaseUntil(i *tokenizer.Item, c compileCtx, until tokenizer.ItemType)
 			return res, err
 		}
 	}
-	return res, nil
 }
 
 func compileBaseSingle(i *tokenizer.Item, c compileCtx) (Runnable, error) {

@@ -110,7 +110,7 @@ func (f *fileHandler) Chdir(p string) error {
 	}
 
 	if !s.IsDir() {
-		return &os.PathError{"chdir", p, syscall.ENOTDIR}
+		return &os.PathError{Op: "chdir", Path: p, Err: syscall.ENOTDIR}
 	}
 
 	f.cwd = name

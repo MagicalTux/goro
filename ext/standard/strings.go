@@ -120,8 +120,6 @@ func doStrReplace(ctx core.Context, subject core.ZString, search, replace *core.
 				it1.Next(ctx)
 				it2.Next(ctx)
 			}
-
-			return subject, nil
 		}
 
 		var err error
@@ -163,8 +161,6 @@ func doStrReplace(ctx core.Context, subject core.ZString, search, replace *core.
 
 			it1.Next(ctx)
 		}
-
-		return subject, nil
 	}
 
 	search, err := search.As(ctx, core.ZtString)
