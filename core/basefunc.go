@@ -1,6 +1,9 @@
 package core
 
-import "errors"
+import (
+	"errors"
+	"strings"
+)
 
 //> func int strlen ( string $string )
 func fncStrlen(ctx Context, args []*ZVal) (*ZVal, error) {
@@ -82,4 +85,16 @@ func fncCount(ctx Context, args []*ZVal) (*ZVal, error) {
 
 	// make this a warning
 	return ZInt(1).ZVal(), errors.New("count(): Parameter must be an array or an object that implements Countable")
+}
+
+//> func int strcmp ( string $str1 , string $str2 )
+func fncStrcmp(ctx Context, args []*ZVal) (*ZVal, error) {
+	var a, b ZString
+	_, err := Expand(ctx, args, &a, &b)
+	if err != nil {
+		return nil, err
+	}
+
+	r := strings.Compare(string(a), string(b))
+	return ZInt(r).ZVal(), nil
 }

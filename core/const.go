@@ -15,6 +15,7 @@ package core
 //> const PHP_INT_SIZE: ZInt(8)
 // standard values
 //> const PHP_FD_SETSIZE: ZInt(1024)
+//> const PHP_MAXPATHLEN: ZInt(4096)
 //> const PHP_FLOAT_DIG: ZInt(15)
 //> const PHP_FLOAT_EPSILON: ZFloat(2.220446049250313e-16)
 //> const PHP_FLOAT_MAX: ZFloat(math.MaxFloat64)
