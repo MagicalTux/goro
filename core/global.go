@@ -196,11 +196,7 @@ func (g *Global) parsePost(p, f *ZArray) error {
 		if err != nil {
 			return err
 		}
-		vs, err := url.ParseQuery(string(b))
-		if err != nil {
-			return err
-		}
-		return setUrlValuesToArray(g, vs, p)
+		return parseQueryToArray(g, string(b), p)
 	case ct == "multipart/form-data": //, "multipart/mixed": // should we allow mixed?
 		boundary, ok := params["boundary"]
 		if !ok {
@@ -274,18 +270,6 @@ func parseQueryFragmentToArray(ctx Context, f string, a *ZArray) error {
 	return setUrlValueToArray(ctx, k, ZString(f), a)
 }
 
-func setUrlValuesToArray(ctx Context, vs url.Values, a *ZArray) error {
-	for k, s := range vs {
-		for _, v := range s {
-			err := setUrlValueToArray(ctx, k, ZString(v), a)
-			if err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
 func setUrlValueToArray(ctx Context, k string, v Val, a *ZArray) error {
 	p := strings.IndexByte(k, '[')
 	if p == -1 {
@@ -297,28 +281,8 @@ func setUrlValueToArray(ctx Context, k string, v Val, a *ZArray) error {
 		return errors.New("invalid key")
 	}
 
-	var n *ZArray
+	n := a
 	zk := ZString(k[:p]).ZVal()
-
-	if has, err := a.OffsetExists(ctx, zk); err != nil {
-		return err
-	} else if has {
-		z, err := a.OffsetGet(ctx, zk)
-		if err != nil {
-			return err
-		}
-		z, err = z.As(ctx, ZtArray)
-		if err != nil {
-			return err
-		}
-		n = z.Value().(*ZArray)
-	} else {
-		n = NewZArray()
-		err = a.OffsetSet(ctx, zk, n.ZVal())
-		if err != nil {
-			return err
-		}
-	}
 
 	// loop through what remains of k
 	k = k[p:]
@@ -336,24 +300,16 @@ func setUrlValueToArray(ctx Context, k string, v Val, a *ZArray) error {
 		if p == -1 {
 			break // php will ignore data after last bracket
 		}
-		if p == 0 {
-			// append
+
+		// use zk
+		if zk == nil {
 			xn := NewZArray()
-			n.OffsetSet(ctx, nil, xn.ZVal())
+			err := n.OffsetSet(ctx, zk, xn.ZVal())
+			if err != nil {
+				return err
+			}
 			n = xn
-			k = k[1:]
-			continue
-		}
-
-		zk = ZString(k[:p]).ZVal()
-		k = k[p+1:]
-
-		if len(k) == 0 {
-			// perform set
-			break
-		}
-
-		if has, err := n.OffsetExists(ctx, zk); err != nil {
+		} else if has, err := n.OffsetExists(ctx, zk); err != nil {
 			return err
 		} else if has {
 			z, err := n.OffsetGet(ctx, zk)
@@ -371,7 +327,18 @@ func setUrlValueToArray(ctx Context, k string, v Val, a *ZArray) error {
 			if err != nil {
 				return err
 			}
+			n = xn
 		}
+
+		// update zk
+		if p == 0 {
+			zk = nil
+			k = k[1:]
+			continue
+		}
+
+		zk = ZString(k[:p]).ZVal()
+		k = k[p+1:]
 	}
 	return n.OffsetSet(ctx, zk, v.ZVal())
 }
