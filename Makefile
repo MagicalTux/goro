@@ -31,4 +31,13 @@ deps:
 testdeps:
 	go get -v -t .
 
-.PHONY: test http buildext sapi testdeps deps
+travis:
+	# get deps
+	go get -v -t .
+	go build -v
+	make -C sapi/php-cgi
+	make -C sapi/php-cli
+	make -C sapi/php-fpm
+	make -C sapi/php-httpd
+
+.PHONY: test http buildext sapi testdeps deps travis

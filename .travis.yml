@@ -1,6 +1,6 @@
 language: go
 sudo: false
-script: make testdeps test
+script: make travis
 go:
   - "1.8"
   - "1.10"
