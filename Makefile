@@ -10,6 +10,8 @@ sapi/php-cli/php-cli:
 sapi/php-httpd/php-httpd:
 	make -C sapi/php-httpd
 
+sapi: sapi/php-cli/php-cli sapi/php-httpd/php-httpd
+
 test:
 	go test
 
@@ -29,4 +31,4 @@ deps:
 testdeps:
 	go get -v -t .
 
-.PHONY: test http buildext testdeps deps
+.PHONY: test http buildext sapi testdeps deps

@@ -37,6 +37,7 @@ func init() {
 		},
 		Constants: map[ZString]*ZVal{
 			"DEFAULT_INCLUDE_PATH":         ZString(".:").ZVal(),
+			"DIRECTORY_SEPARATOR":          ZString("/").ZVal(),
 			"FALSE":                        ZBool(false).ZVal(),
 			"NULL":                         ZNull{}.ZVal(),
 			"PHP_EOL":                      ZString("\n").ZVal(),

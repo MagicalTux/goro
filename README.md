@@ -29,9 +29,12 @@ Right now, running PHP's own tests would require pcre, so it is not possible to 
 
 ## TODO
 
+The following needs to be done before we can call this an alpha version.
+
 * Fix arguments passed by reference for builtin methods
 * Error reporting, lower level of errors (warnings, etc)
 * php.ini handling
+* command line flags handling
 * Class and object implementation is still very early. Access checks are missing. Class inheritance, etc are missing
  * Class abstract
  * Builtin class methods
@@ -53,7 +56,7 @@ Right now, running PHP's own tests would require pcre, so it is not possible to 
 | standard   |     5% | a lot of work remaining                        |
 | pcre       |     5% | might need to use cgo                          |
 | gmp        |    20% | Using math/big                                 |
-| date       |        |                                                |
+| date       |     1% |                                                |
 | hash       |    50% |                                                |
 | iconv      |        | using golang.org/x/text/transform              |
 | json       |        | Need custom impl to support php arrays         |
