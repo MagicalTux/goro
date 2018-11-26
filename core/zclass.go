@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -50,14 +51,19 @@ func (c *ZClass) Run(ctx Context) (*ZVal, error) {
 }
 
 func (c *ZClass) compile(ctx Context) error {
+	c.parents = make(map[*ZClass]*ZClass)
+
 	if c.ExtendsStr != "" {
 		// need to lookup extend
 		subc, err := ctx.Global().GetClass(ctx, c.ExtendsStr)
 		if err != nil {
 			return err
 		}
+		if _, found := c.parents[subc]; found {
+			return errors.New("class extends loop found")
+		}
 		c.Extends = subc
-		// TODO check recursivity
+		c.parents[subc] = subc
 
 		// need to import methods
 		for n, m := range c.Extends.Methods {
