@@ -8,7 +8,7 @@ This is an implementation of PHP, written in pure Go (as much as possible, right
 
 ## Why?
 
-That's a good question. PHP is a nice language but is having trouble keeping up with modern languages. This implementation, while far from finished, as purpose to allow a few things from within PHP:
+That's a good question. PHP is a nice language but is having trouble keeping up with modern languages. This implementation, while far from finished, is trying to make a number of things possible:
 
 * Usage of goroutines, go channels, etc from within PHP
 * Better caching of compiled code by allowing sharing of compiled or live objects (classes, objects, etc) between running PHP scripts
