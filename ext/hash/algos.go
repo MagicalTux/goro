@@ -13,7 +13,6 @@ import (
 
 	"github.com/MagicalTux/goro/core"
 	"golang.org/x/crypto/md4"
-	"golang.org/x/crypto/ripemd160"
 	"golang.org/x/crypto/sha3"
 )
 
@@ -27,7 +26,6 @@ var algos = map[core.ZString]func() gohash.Hash{
 	"sha512":     sha512.New,
 	"sha512/224": sha512.New512_224,
 	"sha512/256": sha512.New512_256,
-	"ripemd160":  ripemd160.New,
 	"sha3-224":   sha3.New224,
 	"sha3-256":   sha3.New256,
 	"sha3-384":   sha3.New384,
