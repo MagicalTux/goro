@@ -246,7 +246,7 @@ func (l *Lexer) acceptSpaces() string {
 }
 
 func (l *Lexer) acceptRun(valid string) string {
-	b := &strings.Builder{}
+	b := &bytes.Buffer{}
 	for {
 		v := l.next()
 		if v == eof {
