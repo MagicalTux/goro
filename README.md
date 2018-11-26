@@ -55,12 +55,13 @@ The following needs to be done before we can call this an alpha version.
 | Extension  | Status | Notes                                          |
 |------------|--------|------------------------------------------------|
 | standard   |     5% | a lot of work remaining                        |
-| pcre       |     5% | might need to use cgo                          |
+| pcre       |     5% | currently using cgo version of libpcre         |
 | gmp        |    20% | Using math/big                                 |
 | date       |     1% |                                                |
 | hash       |    50% |                                                |
 | iconv      |        | using golang.org/x/text/transform              |
 | json       |        | Need custom impl to support php arrays         |
+| curl       |        | using net/http                                 |
 | mbstring   |        |                                                |
 | mcrypt     |        |                                                |
 | mysqli     |        |                                                |
