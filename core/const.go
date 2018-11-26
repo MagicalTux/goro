@@ -8,6 +8,7 @@ package core
 //> const ZEND_THREAD_SAFE: ZBool(true) // consider things thread safe
 //> const PHP_ZTS: ZInt(1)
 //> const DEFAULT_INCLUDE_PATH: ZString(".:")
+//> const DIRECTORY_SEPARATOR ZString("/")
 //> const PHP_EOL: ZString("\n")
 //> const PHP_INT_MAX: ZInt(math.MaxInt64)
 //> const PHP_INT_MIN: ZInt(math.MinInt64)

@@ -21,12 +21,13 @@ type globalLazyOffset struct {
 type Global struct {
 	context.Context
 
-	p     *Process
-	start time.Time
-	req   *http.Request
-	h     *ZHashTable
-	l     *Loc
-	mem   *MemMgr
+	p        *Process
+	start    time.Time
+	req      *http.Request
+	h        *ZHashTable
+	l        *Loc
+	mem      *MemMgr
+	deadline time.Time
 
 	globalFuncs   map[ZString]Callable
 	globalClasses map[ZString]*ZClass // TODO replace *ZClass with a nice interface
@@ -86,7 +87,8 @@ func (g *Global) init() {
 	g.included = make(map[ZString]bool)
 	g.globalLazyFunc = make(map[ZString]*globalLazyOffset)
 	g.globalLazyClass = make(map[ZString]*globalLazyOffset)
-	g.mem = NewMemMgr(32 * 1024 * 1024) // limit in bytes TODO read memory_limit from process (.ini file)
+	g.mem = NewMemMgr(32 * 1024 * 1024)        // limit in bytes TODO read memory_limit from process (.ini file)
+	g.deadline = g.start.Add(30 * time.Second) // deadline
 
 	g.fHandler["file"], _ = stream.NewFileHandler("/")
 	g.fHandler["php"] = stream.PhpHandler()
@@ -162,10 +164,6 @@ func (g *Global) Write(v []byte) (int, error) {
 	return g.out.Write(v)
 }
 
-func (g *Global) GetGlobal() *Global {
-	return g
-}
-
 func (g *Global) SetLocalConfig(name ZString, val *ZVal) error {
 	// TODO
 	return nil
@@ -178,8 +176,19 @@ func (g *Global) GetConfig(name ZString, def *ZVal) *ZVal {
 
 func (g *Global) Tick(ctx Context, l *Loc) error {
 	// TODO check run deadline, context cancellation and memory limit
+	if time.Until(g.deadline) <= 0 {
+		return errors.New("Maximum execution time of TODO second exceeded") // TODO
+	}
 	g.l = l
 	return nil
+}
+
+func (g *Global) Deadline() (deadline time.Time, ok bool) {
+	return g.deadline, true
+}
+
+func (g *Global) SetDeadline(t time.Time) {
+	g.deadline = t
 }
 
 func (g *Global) Loc() *Loc {

@@ -91,6 +91,7 @@ func init() {
 			"print_r":                  &core.ExtFunction{Func: fncPrintR, Args: []*core.ExtFunctionArg{}},
 			"putenv":                   &core.ExtFunction{Func: putenv, Args: []*core.ExtFunctionArg{}},
 			"rawurlencode":             &core.ExtFunction{Func: fncRawurlencode, Args: []*core.ExtFunctionArg{}},
+			"set_time_limit":           &core.ExtFunction{Func: fncSetTimeLimit, Args: []*core.ExtFunctionArg{}},
 			"sleep":                    &core.ExtFunction{Func: stdFuncSleep, Args: []*core.ExtFunctionArg{}},
 			"str_replace":              &core.ExtFunction{Func: stdStrReplace, Args: []*core.ExtFunctionArg{}},
 			"str_rot13":                &core.ExtFunction{Func: fncStrRot13, Args: []*core.ExtFunctionArg{}},
