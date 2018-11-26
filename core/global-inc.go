@@ -8,6 +8,7 @@ import (
 
 //> func mixed include (string filename)
 func fncInclude(ctx Context, args []*ZVal) (*ZVal, error) {
+	ctx = ctx.Parent(1)
 	var fn ZString
 	_, err := Expand(ctx, args, &fn)
 	if err != nil {
@@ -46,6 +47,7 @@ func (c *Global) Include(ctx Context, fn ZString) (*ZVal, error) {
 
 //> func mixed require (string filename)
 func fncRequire(ctx Context, args []*ZVal) (*ZVal, error) {
+	ctx = ctx.Parent(1)
 	var fn ZString
 	_, err := Expand(ctx, args, &fn)
 	if err != nil {
@@ -85,6 +87,7 @@ func (c *Global) Require(ctx Context, fn ZString) (*ZVal, error) {
 
 //> func mixed include_once (string filename)
 func fncIncludeOnce(ctx Context, args []*ZVal) (*ZVal, error) {
+	ctx = ctx.Parent(1)
 	var fn ZString
 	_, err := Expand(ctx, args, &fn)
 	if err != nil {
@@ -128,6 +131,7 @@ func (c *Global) IncludeOnce(ctx Context, fn ZString) (*ZVal, error) {
 
 //> func mixed require_once (string filename)
 func fncRequireOnce(ctx Context, args []*ZVal) (*ZVal, error) {
+	ctx = ctx.Parent(1)
 	var fn ZString
 	_, err := Expand(ctx, args, &fn)
 	if err != nil {
