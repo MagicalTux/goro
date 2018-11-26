@@ -38,8 +38,6 @@ var algos = map[core.ZString]func() gohash.Hash{
 	"fnv1a32":    hash32W(fnv.New32a).New,
 	"fnv164":     hash64W(fnv.New64).New,
 	"fnv1a64":    hash64W(fnv.New64a).New,
-	"fnv1128":    fnv.New128,
-	"fnv1a128":   fnv.New128a,
 }
 
 // for types returning hash.Hash32 types, wrap them so they return hash.Hash
