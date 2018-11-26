@@ -48,6 +48,7 @@ The following needs to be done before we can call this an alpha version.
 * generators
 * predefined superglobals
 * implement Complex (curly) variable syntax (see: http://php.net/manual/en/language.types.string.php#language.types.string.parsing.complex )
+* Allow process to run in containers on linux (see https://github.com/lizrice/containers-from-scratch - would be useful to create a play interface for goro)
 
 ## Extensions
 
