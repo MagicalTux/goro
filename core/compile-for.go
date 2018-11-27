@@ -87,13 +87,13 @@ func (r *runnableFor) Run(ctx Context) (l *ZVal, err error) {
 			switch br := e.e.(type) {
 			case *PhpBreak:
 				if br.intv > 1 {
-					br.intv -= 1
+					br.intv--
 					return nil, br
 				}
 				return nil, nil
 			case *PhpContinue:
 				if br.intv > 1 {
-					br.intv -= 1
+					br.intv--
 					return nil, br
 				}
 			default:

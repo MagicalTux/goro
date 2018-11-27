@@ -128,7 +128,7 @@ func (l *Lexer) next() rune {
 			if err == io.EOF {
 				return eof
 			}
-			panic(err) // TODO FIXME
+			return eof // TODO FIXME error reporting?
 		}
 	}
 

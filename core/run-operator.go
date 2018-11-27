@@ -235,22 +235,22 @@ func doInc(v *ZVal, inc bool) error {
 				v.Set((ZFloat(n) + 1).ZVal())
 				return nil
 			}
-			n += 1
+			n++
 		} else {
 			if n == math.MinInt64 {
 				v.Set((ZFloat(n) - 1).ZVal())
 				return nil
 			}
-			n -= 1
+			n--
 		}
 		v.Set(n.ZVal())
 		return nil
 	case ZtFloat:
 		n := v.Value().(ZFloat)
 		if inc {
-			n += 1
+			n++
 		} else {
-			n -= 1
+			n--
 		}
 		v.Set(n.ZVal())
 		return nil

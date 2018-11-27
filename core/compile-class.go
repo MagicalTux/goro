@@ -25,6 +25,14 @@ func compileClass(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 		Const:   make(map[ZString]Val),
 	}
 
+	switch i.Type {
+	case tokenizer.T_CLASS:
+	case tokenizer.T_INTERFACE:
+		class.Type = ZClassTypeInterface
+	default:
+		return nil, i.Unexpected()
+	}
+
 	c = &zclassCompileCtx{c, class}
 
 	err = class.parseClassLine(c)
