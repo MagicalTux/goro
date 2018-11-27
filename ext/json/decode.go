@@ -1,7 +1,6 @@
 package json
 
 import (
-	"errors"
 	"io"
 	"strconv"
 	"strings"
@@ -39,18 +38,23 @@ func fncJsonDecode(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 	// TODO check if reader was fully consumed, return ErrSyntax if not
 }
 
-func jsonDecodeAny(ctx core.Context, r *strings.Reader, depth int, opt JsonDecOpt) (*core.ZVal, error) {
-	var b rune
-	var err error
-
+// nextRune returns the next non-space rune
+func nextRune(r *strings.Reader) (rune, error) {
 	for {
-		b, _, err = r.ReadRune()
+		r, _, err := r.ReadRune()
 		if err != nil {
-			return nil, err
+			return r, err
 		}
-		if !unicode.IsSpace(b) {
-			break
+		if !unicode.IsSpace(r) {
+			return r, nil
 		}
+	}
+}
+
+func jsonDecodeAny(ctx core.Context, r *strings.Reader, depth int, opt JsonDecOpt) (*core.ZVal, error) {
+	b, err := nextRune(r)
+	if err != nil {
+		return nil, err
 	}
 	// unread right after reading, we only want to know what we are reading
 	r.UnreadRune()
@@ -75,12 +79,130 @@ func jsonDecodeAny(ctx core.Context, r *strings.Reader, depth int, opt JsonDecOp
 	}
 }
 
-func jsonDecodeArray(ctx core.Context, r *strings.Reader, depth int, opt JsonDecOpt) (*core.ZVal, error) {
-	return nil, errors.New("TODO")
+func jsonDecodeObject(ctx core.Context, r *strings.Reader, depth int, opt JsonDecOpt) (*core.ZVal, error) {
+	depth -= 1
+	if depth <= 0 {
+		return nil, ErrDepth
+	}
+
+	b, err := nextRune(r)
+	if err != nil {
+		return nil, err
+	}
+	if b != '{' {
+		return nil, ErrSyntax
+	}
+
+	var set func(ctx core.Context, k, v *core.ZVal) error
+	var final *core.ZVal
+
+	if opt&ObjectAsArray == ObjectAsArray {
+		a := core.NewZArray()
+		set = a.OffsetSet
+		final = a.ZVal()
+	} else {
+		o, err := core.NewZObject(ctx, nil) // nil means stdClass
+		if err != nil {
+			// should never happen for stdClass
+			return nil, err
+		}
+		set = o.ObjectSet
+		final = o.ZVal()
+	}
+
+	for {
+		// remove spaces and check for empty objects
+		b, err = nextRune(r)
+		if err != nil {
+			return nil, err
+		}
+		if b == '}' {
+			return final, nil
+		}
+		r.UnreadRune()
+
+		k, err := jsonDecodeString(ctx, r, depth, opt)
+		if err != nil {
+			return nil, err
+		}
+
+		b, err = nextRune(r)
+		if err != nil {
+			return nil, err
+		}
+		if b != ':' {
+			return nil, ErrSyntax
+		}
+
+		z, err := jsonDecodeAny(ctx, r, depth, opt)
+		if err != nil {
+			return nil, err
+		}
+		err = set(ctx, k, z)
+		if err != nil {
+			return nil, err
+		}
+
+		b, err = nextRune(r)
+		if err != nil {
+			return nil, err
+		}
+		if b == ',' {
+			continue
+		}
+		if b == '}' {
+			return final, nil
+		}
+	}
 }
 
-func jsonDecodeObject(ctx core.Context, r *strings.Reader, depth int, opt JsonDecOpt) (*core.ZVal, error) {
-	return nil, errors.New("TODO")
+func jsonDecodeArray(ctx core.Context, r *strings.Reader, depth int, opt JsonDecOpt) (*core.ZVal, error) {
+	depth -= 1
+	if depth <= 0 {
+		return nil, ErrDepth
+	}
+
+	b, err := nextRune(r)
+	if err != nil {
+		return nil, err
+	}
+	if b != '[' {
+		return nil, ErrSyntax
+	}
+
+	a := core.NewZArray()
+
+	for {
+		// remove spaces and check for empty arrays/etc
+		b, err = nextRune(r)
+		if err != nil {
+			return nil, err
+		}
+		if b == ']' {
+			return a.ZVal(), nil
+		}
+		r.UnreadRune()
+
+		z, err := jsonDecodeAny(ctx, r, depth, opt)
+		if err != nil {
+			return nil, err
+		}
+		err = a.OffsetSet(ctx, nil, z)
+		if err != nil {
+			return nil, err
+		}
+
+		b, err = nextRune(r)
+		if err != nil {
+			return nil, err
+		}
+		if b == ',' {
+			continue
+		}
+		if b == ']' {
+			return a.ZVal(), nil
+		}
+	}
 }
 
 func jsonDecodeString(ctx core.Context, r *strings.Reader, depth int, opt JsonDecOpt) (*core.ZVal, error) {

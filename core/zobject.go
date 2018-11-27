@@ -54,6 +54,9 @@ func (z *ZObject) AsVal(ctx Context, t ZType) (Val, error) {
 }
 
 func NewZObject(ctx Context, c *ZClass) (*ZObject, error) {
+	if c == nil {
+		c = stdClass
+	}
 	n := &ZObject{h: NewHashTable(), Class: c}
 	return n, n.init(ctx)
 }
