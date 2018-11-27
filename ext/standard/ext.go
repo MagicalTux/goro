@@ -90,6 +90,7 @@ func init() {
 			"rawurlencode":             &core.ExtFunction{Func: fncRawurlencode, Args: []*core.ExtFunctionArg{}},
 			"set_time_limit":           &core.ExtFunction{Func: fncSetTimeLimit, Args: []*core.ExtFunctionArg{}},
 			"sleep":                    &core.ExtFunction{Func: stdFuncSleep, Args: []*core.ExtFunctionArg{}},
+			"sprintf":                  &core.ExtFunction{Func: fncSprintf, Args: []*core.ExtFunctionArg{}},
 			"str_replace":              &core.ExtFunction{Func: stdStrReplace, Args: []*core.ExtFunctionArg{}},
 			"str_rot13":                &core.ExtFunction{Func: fncStrRot13, Args: []*core.ExtFunctionArg{}},
 			"strtolower":               &core.ExtFunction{Func: fncStrToLower, Args: []*core.ExtFunctionArg{}},
