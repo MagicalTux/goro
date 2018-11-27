@@ -11,6 +11,7 @@ import (
 	_ "github.com/MagicalTux/goro/ext/date"
 	_ "github.com/MagicalTux/goro/ext/gmp"
 	_ "github.com/MagicalTux/goro/ext/hash"
+	_ "github.com/MagicalTux/goro/ext/json"
 	_ "github.com/MagicalTux/goro/ext/pcre"
 	_ "github.com/MagicalTux/goro/ext/standard"
 )

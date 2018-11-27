@@ -101,6 +101,10 @@ func (a *ZArray) AsVal(ctx Context, t ZType) (Val, error) {
 	return nil, nil
 }
 
+func (a *ZArray) HasStringKeys() bool {
+	return a.h.HasStringKeys()
+}
+
 func (a *ZArray) OffsetGet(ctx Context, key *ZVal) (*ZVal, error) {
 	if key == nil || key.GetType() == ZtNull {
 		return nil, errors.New("Cannot use [] for reading")

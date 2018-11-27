@@ -345,3 +345,7 @@ func (z *ZHashTable) MergeTable(b *ZHashTable) error {
 	}
 	return nil
 }
+
+func (z ZHashTable) HasStringKeys() bool {
+	return len(z._idx_s) > 0
+}
