@@ -52,28 +52,34 @@ The following needs to be done before we can call this an alpha version.
 
 ## Extensions
 
+Sorted by priority.
+
 | Extension  | Status | Notes                                          |
 |------------|--------|------------------------------------------------|
 | standard   |     5% | a lot of work remaining                        |
-| pcre       |     5% | currently using cgo version of libpcre         |
-| gmp        |    20% | Using math/big                                 |
-| date       |     1% |                                                |
-| hash       |    50% |                                                |
-| iconv      |        | using golang.org/x/text/transform              |
 | json       |        | Need custom impl to support php arrays         |
+| pcre       |     5% | currently using cgo version of libpcre         |
+| session    |        |                                                |
+| date       |     1% |                                                |
+| SPL        |        |                                                |
+| iconv      |        | using golang.org/x/text/transform              |
 | curl       |        | using net/http                                 |
+| hash       |    50% |                                                |
+| mysqli     |        |                                                |
+| gmp        |    20% | Using math/big                                 |
 | mbstring   |        |                                                |
 | mcrypt     |        |                                                |
-| mysqli     |        |                                                |
 | openssl    |        | using crypto packages                          |
 | Reflection |        |                                                |
-| session    |        |                                                |
 | tokenizer  |        | already in core/tokenizer, needs to be exposed |
 | xml...     |        |                                                |
 | gd         |        | without gd                                     |
 | bz2        |     1% |                                                |
 | zlib       |        |                                                |
+| calendar   |        |                                                |
+| Phar       |        |                                                |
 | ctype      |   100% |                                                |
+| sockets    |        |                                                |
 
 # Concepts
 
