@@ -57,7 +57,7 @@ Sorted by priority.
 | Extension  | Status | Notes                                          |
 |------------|--------|------------------------------------------------|
 | standard   |     5% | a lot of work remaining                        |
-| json       |        | Need custom impl to support php arrays         |
+| json       |    33% | Need custom impl to support php arrays         |
 | pcre       |     5% | currently using cgo version of libpcre         |
 | session    |        |                                                |
 | date       |     1% |                                                |
