@@ -12,6 +12,7 @@ func init() {
 			JsonSerializable,
 		},
 		Functions: map[string]*core.ExtFunction{
+			"json_decode": &core.ExtFunction{Func: fncJsonDecode, Args: []*core.ExtFunctionArg{}},
 			"json_encode": &core.ExtFunction{Func: fncJsonEncode, Args: []*core.ExtFunctionArg{}},
 		},
 		Constants: map[core.ZString]*core.ZVal{

@@ -162,7 +162,7 @@ func (z *ZVal) HashTable() *ZHashTable {
 }
 
 func (z *ZVal) NewIterator() ZIterator {
-	if r, ok := z.v.(ZIterable); ok {
+	if r, ok := z.Value().(ZIterable); ok {
 		return r.NewIterator()
 	}
 	return nil

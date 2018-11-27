@@ -19,10 +19,14 @@ const (
 	UnescapedEOL
 )
 
-const (
-	ObjectAsArray = 1 << iota
-	BigintAsString
+type JsonDecOpt int
 
+const (
+	ObjectAsArray JsonDecOpt = 1 << iota
+	BigintAsString
+)
+
+const (
 	InvalidUtf8Ignore     = 0x100000
 	InvalidUtf8Substitute = 0x200000
 )

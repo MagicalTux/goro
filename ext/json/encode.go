@@ -61,6 +61,13 @@ func appendJsonEncode(ctx core.Context, r []byte, v *core.ZVal, opt JsonEncOpt, 
 			// append as array
 			return appendJsonArray(ctx, r, a.NewIterator(), opt, depth)
 		}
+	case core.ZtObject:
+		// TODO check for JsonSerializable
+		it := v.NewIterator()
+		if it == nil {
+			return r, ErrUnsupportedType
+		}
+		return appendJsonObject(ctx, r, it, opt, depth)
 	default:
 		return r, ErrUnsupportedType
 	}
