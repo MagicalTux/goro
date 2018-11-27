@@ -114,3 +114,4 @@ A lot of work is needed. The most important part is improving the documentation,
 
 Writing an extension is simple. Create a directory in ext, write code prefixed with a magic function defining comment and run the tools/buildext.php script to generate bindings/etc. Add your newly created extension to the main.go of each sapi to enable it by default.
 
+Before contributing, please [https://t.me/gorophp](join the telegram group) and/or create an issue on github in order to discuss and find out which parts you can work on and how to proceed.
