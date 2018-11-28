@@ -82,10 +82,10 @@ func (z *ZVal) Dup() *ZVal {
 
 // Ref returns a reference to this zval while making it itself a ref
 func (z *ZVal) Ref() *ZVal {
-	if _, isRef := z.v.(*ZVal); !isRef {
-		z.v = &ZVal{z.v}
+	if _, isRef := z.v.(*ZVal); isRef {
+		return z
 	}
-	return &ZVal{z.v}
+	return &ZVal{z}
 }
 
 func (z *ZVal) IsRef() bool {
