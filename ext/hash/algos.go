@@ -30,7 +30,6 @@ var algos = map[core.ZString]func() gohash.Hash{
 	"sha3-256":   sha3.New256,
 	"sha3-384":   sha3.New384,
 	"sha3-512":   sha3.New512,
-	"keccak256":  sha3.NewLegacyKeccak256, // ?
 	"adler32":    hash32W(adler32.New).New,
 	"crc32":      crc32New,
 	"crc32b":     hash32W(crc32.NewIEEE).New,
