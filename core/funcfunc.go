@@ -1,11 +1,15 @@
 package core
 
-import "errors"
+import (
+	"errors"
+
+	"github.com/MagicalTux/goro/core/phpv"
+)
 
 // Function handling Functions
 
 //> func array func_get_args ( void )
-func fncFuncGetArgs(ctx Context, args []*ZVal) (*ZVal, error) {
+func fncFuncGetArgs(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	// no params
 
 	// go back one context
@@ -14,7 +18,7 @@ func fncFuncGetArgs(ctx Context, args []*ZVal) (*ZVal, error) {
 		return nil, errors.New("func_get_args():  Called from the global scope - no function context")
 	}
 
-	r := NewZArray()
+	r := phpv.NewZArray()
 
 	for _, v := range c.args {
 		r.OffsetSet(ctx, nil, v)
@@ -24,19 +28,19 @@ func fncFuncGetArgs(ctx Context, args []*ZVal) (*ZVal, error) {
 }
 
 //> func int func_num_args ( void )
-func fncFuncNumArgs(ctx Context, args []*ZVal) (*ZVal, error) {
+func fncFuncNumArgs(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	// go back one context
 	c, ok := ctx.Parent(1).(*FuncContext)
 	if !ok {
 		return nil, errors.New("func_num_args():  Called from the global scope - no function context")
 	}
 
-	return ZInt(len(c.args)).ZVal(), nil
+	return phpv.ZInt(len(c.args)).ZVal(), nil
 }
 
 //> func mixed func_get_arg ( int $arg_num )
-func fncFuncGetArg(ctx Context, args []*ZVal) (*ZVal, error) {
-	var argNum ZInt
+func fncFuncGetArg(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var argNum phpv.ZInt
 	_, err := Expand(ctx, args, &argNum)
 	if err != nil {
 		return nil, err
@@ -48,8 +52,8 @@ func fncFuncGetArg(ctx Context, args []*ZVal) (*ZVal, error) {
 		return nil, errors.New("func_get_arg():  Called from the global scope - no function context")
 	}
 
-	if argNum < 0 || argNum >= ZInt(len(c.args)) {
-		return ZNull{}.ZVal(), nil
+	if argNum < 0 || argNum >= phpv.ZInt(len(c.args)) {
+		return phpv.ZNull{}.ZVal(), nil
 	}
 
 	return c.args[argNum], nil

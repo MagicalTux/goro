@@ -3,22 +3,23 @@ package core
 import (
 	"io"
 
+	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
 
 type PhpReturn struct {
-	l *Loc
-	v *ZVal
+	l *phpv.Loc
+	v *phpv.ZVal
 }
 
-func compileReturn(i *tokenizer.Item, c compileCtx) (Runnable, error) {
+func compileReturn(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	i, err := c.NextItem()
 	c.backup()
 	if err != nil {
 		return nil, err
 	}
 
-	l := MakeLoc(i.Loc())
+	l := phpv.MakeLoc(i.Loc())
 
 	if i.IsSingle(';') {
 		return &runReturn{nil, l}, nil // return nothing
@@ -33,20 +34,16 @@ func compileReturn(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 }
 
 type runReturn struct {
-	v Runnable
-	l *Loc
+	v phpv.Runnable
+	l *phpv.Loc
 }
 
-func (r *runReturn) Run(ctx Context) (*ZVal, error) {
+func (r *runReturn) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	ret, err := r.v.Run(ctx)
 	if err != nil {
 		return nil, err
 	}
 	return nil, &PhpReturn{l: r.l, v: ret}
-}
-
-func (r *runReturn) Loc() *Loc {
-	return r.l
 }
 
 func (r *runReturn) Dump(w io.Writer) error {
@@ -61,15 +58,15 @@ func (r *PhpReturn) Error() string {
 	return "You shouldn't see this - return not caught"
 }
 
-func CatchReturn(v *ZVal, err error) (*ZVal, error) {
+func CatchReturn(v *phpv.ZVal, err error) (*phpv.ZVal, error) {
 	if err == nil {
 		return v, err
 	}
 	switch err := err.(type) {
 	case *PhpReturn:
 		return err.v, nil
-	case *PhpError:
-		switch err := err.e.(type) {
+	case *phpv.PhpError:
+		switch err := err.Err.(type) {
 		case *PhpReturn:
 			return err.v, nil
 		}

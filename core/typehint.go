@@ -1,32 +1,34 @@
 package core
 
+import "github.com/MagicalTux/goro/core/phpv"
+
 type TypeHint struct {
-	t ZType
-	s ZString // class name, or special value such as "self", "iterable". If t=ZtObject but s="" then any object is ok
-	c *ZClass // looked up class, if any
+	t phpv.ZType
+	s phpv.ZString // class name, or special value such as "self", "iterable". If t=phpv.ZtObject but s="" then any object is ok
+	c *ZClass      // looked up class, if any
 }
 
-func ParseTypeHint(s ZString) *TypeHint {
+func ParseTypeHint(s phpv.ZString) *TypeHint {
 	switch s.ToLower() {
 	case "self":
-		return &TypeHint{t: ZtObject, s: "self"}
+		return &TypeHint{t: phpv.ZtObject, s: "self"}
 	case "iterable":
-		return &TypeHint{t: ZtObject, s: "iterable"}
+		return &TypeHint{t: phpv.ZtObject, s: "iterable"}
 	case "object":
-		return &TypeHint{t: ZtObject}
+		return &TypeHint{t: phpv.ZtObject}
 	case "array":
-		return &TypeHint{t: ZtArray}
+		return &TypeHint{t: phpv.ZtArray}
 	case "callable":
-		return &TypeHint{t: ZtObject, s: "callable"}
+		return &TypeHint{t: phpv.ZtObject, s: "callable"}
 	case "bool":
-		return &TypeHint{t: ZtBool}
+		return &TypeHint{t: phpv.ZtBool}
 	case "float":
-		return &TypeHint{t: ZtFloat}
+		return &TypeHint{t: phpv.ZtFloat}
 	case "int":
-		return &TypeHint{t: ZtInt}
+		return &TypeHint{t: phpv.ZtInt}
 	case "string":
-		return &TypeHint{t: ZtString}
+		return &TypeHint{t: phpv.ZtString}
 	default:
-		return &TypeHint{t: ZtObject, s: s}
+		return &TypeHint{t: phpv.ZtObject, s: s}
 	}
 }

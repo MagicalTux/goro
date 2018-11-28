@@ -5,11 +5,13 @@ import (
 	"net/http"
 	"os"
 	"strings"
+
+	"github.com/MagicalTux/goro/core/phpv"
 )
 
 type Process struct {
-	defaultConstants map[ZString]*ZVal
-	environ          *ZHashTable
+	defaultConstants map[phpv.ZString]*phpv.ZVal
+	environ          *phpv.ZHashTable
 	defaultOut       io.Writer
 	defaultErr       io.Writer
 }
@@ -18,13 +20,13 @@ type Process struct {
 // running PHP process.
 func NewProcess(sapi string) *Process {
 	res := &Process{
-		defaultConstants: make(map[ZString]*ZVal),
+		defaultConstants: make(map[phpv.ZString]*phpv.ZVal),
 		environ:          importEnv(os.Environ()),
 		defaultOut:       os.Stdout,
 		defaultErr:       os.Stderr,
 	}
 	res.populateConstants()
-	res.SetConstant("PHP_SAPI", ZString(sapi))
+	res.SetConstant("PHP_SAPI", phpv.ZString(sapi))
 	return res
 }
 
@@ -44,7 +46,7 @@ func (p *Process) populateConstants() {
 }
 
 // SetConstant sets a global constant, typically used to set PHP_SAPI.
-func (p *Process) SetConstant(name, value ZString) {
+func (p *Process) SetConstant(name, value phpv.ZString) {
 	p.defaultConstants[name] = value.ZVal()
 }
 
@@ -63,13 +65,13 @@ func (p *Process) CommandLine(args []string) error {
 }
 
 // importEnv will copy an env type value (list of strings) as a hashtable
-func importEnv(e []string) *ZHashTable {
-	zt := NewHashTable()
+func importEnv(e []string) *phpv.ZHashTable {
+	zt := phpv.NewHashTable()
 
 	for _, s := range e {
 		p := strings.IndexByte(s, '=')
 		if p != -1 {
-			zt.SetString(ZString(s[:p]), ZString(s[p+1:]).ZVal())
+			zt.SetString(phpv.ZString(s[:p]), phpv.ZString(s[p+1:]).ZVal())
 		}
 	}
 

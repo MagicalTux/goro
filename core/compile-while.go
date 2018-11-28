@@ -3,27 +3,28 @@ package core
 import (
 	"io"
 
+	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
 
 type runnableWhile struct {
-	cond Runnable
-	code Runnable
-	l    *Loc
+	cond phpv.Runnable
+	code phpv.Runnable
+	l    *phpv.Loc
 }
 
-func (r *runnableWhile) Run(ctx Context) (l *ZVal, err error) {
+func (r *runnableWhile) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 	for {
 		t, err := r.cond.Run(ctx)
 		if err != nil {
 			return nil, err
 		}
-		t, err = t.As(ctx, ZtBool)
+		t, err = t.As(ctx, phpv.ZtBool)
 		if err != nil {
 			return nil, err
 		}
 
-		if !t.Value().(ZBool) {
+		if !t.Value().(phpv.ZBool) {
 			break
 		}
 
@@ -35,10 +36,6 @@ func (r *runnableWhile) Run(ctx Context) (l *ZVal, err error) {
 		}
 	}
 	return nil, nil
-}
-
-func (r *runnableWhile) Loc() *Loc {
-	return r.l
 }
 
 func (r *runnableWhile) Dump(w io.Writer) error {
@@ -66,9 +63,9 @@ func (r *runnableWhile) Dump(w io.Writer) error {
 	return err
 }
 
-func compileWhile(i *tokenizer.Item, c compileCtx) (Runnable, error) {
+func compileWhile(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	// T_WHILE (expression) ...?
-	l := MakeLoc(i.Loc())
+	l := phpv.MakeLoc(i.Loc())
 
 	// parse while expression
 	i, err := c.NextItem()

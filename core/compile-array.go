@@ -3,24 +3,25 @@ package core
 import (
 	"io"
 
+	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
 
 type arrayEntry struct {
-	k, v Runnable
+	k, v phpv.Runnable
 }
 
 type runArray struct {
 	e []*arrayEntry
-	l *Loc
+	l *phpv.Loc
 }
 
-func (a runArray) Run(ctx Context) (*ZVal, error) {
+func (a runArray) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	var err error
-	array := NewZArray()
+	array := phpv.NewZArray()
 
 	for _, e := range a.e {
-		var k, v *ZVal
+		var k, v *phpv.ZVal
 
 		if e.k != nil {
 			k, err = e.k.Run(ctx)
@@ -39,7 +40,7 @@ func (a runArray) Run(ctx Context) (*ZVal, error) {
 	return array.ZVal(), nil
 }
 
-func (a *runArray) Loc() *Loc {
+func (a *runArray) Loc() *phpv.Loc {
 	return a.l
 }
 
@@ -69,9 +70,9 @@ func (a runArray) Dump(w io.Writer) error {
 }
 
 type runArrayAccess struct {
-	value  Runnable
-	offset Runnable
-	l      *Loc
+	value  phpv.Runnable
+	offset phpv.Runnable
+	l      *phpv.Loc
 }
 
 func (r *runArrayAccess) Dump(w io.Writer) error {
@@ -93,18 +94,18 @@ func (r *runArrayAccess) Dump(w io.Writer) error {
 	return err
 }
 
-func (ac *runArrayAccess) Run(ctx Context) (*ZVal, error) {
+func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	v, err := ac.value.Run(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	switch v.GetType() {
-	case ZtString:
-	case ZtArray:
-	case ZtObject:
+	case phpv.ZtString:
+	case phpv.ZtArray:
+	case phpv.ZtObject:
 	default:
-		v, err = v.As(ctx, ZtArray)
+		v, err = v.As(ctx, phpv.ZtArray)
 		if err != nil {
 			return nil, err
 		}
@@ -120,33 +121,33 @@ func (ac *runArrayAccess) Run(ctx Context) (*ZVal, error) {
 	}
 
 	switch offset.GetType() {
-	case ZtResource, ZtFloat:
-		offset, err = offset.As(ctx, ZtInt)
+	case phpv.ZtResource, phpv.ZtFloat:
+		offset, err = offset.As(ctx, phpv.ZtInt)
 		if err != nil {
 			return nil, err
 		}
-	case ZtString:
-	case ZtInt:
-	case ZtObject:
+	case phpv.ZtString:
+	case phpv.ZtInt:
+	case phpv.ZtObject:
 		// check if has __toString
 		fallthrough
-	case ZtArray:
+	case phpv.ZtArray:
 		// Trigger: Illegal offset type
 		fallthrough
 	default:
-		offset, err = offset.As(ctx, ZtString)
+		offset, err = offset.As(ctx, phpv.ZtString)
 	}
 
-	if v.GetType() == ZtString {
-		if offset.GetType() != ZtInt {
+	if v.GetType() == phpv.ZtString {
+		if offset.GetType() != phpv.ZtInt {
 			// PHP Warning:  Illegal string offset 'abc'
-			offset, err = offset.As(ctx, ZtInt)
+			offset, err = offset.As(ctx, phpv.ZtInt)
 			if err != nil {
 				return nil, err
 			}
 		}
 		str := v.String()
-		iofft := int(offset.Value().(ZInt))
+		iofft := int(offset.Value().(phpv.ZInt))
 
 		if iofft < 0 {
 			iofft = len(str) + iofft
@@ -154,47 +155,47 @@ func (ac *runArrayAccess) Run(ctx Context) (*ZVal, error) {
 
 		if iofft < 0 || iofft >= len(str) {
 			// PHP Notice:  Uninitialized string offset: 3
-			return &ZVal{ZString("")}, nil
+			return phpv.ZString("").ZVal(), nil
 		}
 
-		return &ZVal{ZString([]byte{str[iofft]})}, nil
+		return phpv.ZString([]byte{str[iofft]}).ZVal(), nil
 	}
 
 	array := v.Array()
 	if array == nil {
-		return nil, ac.l.Errorf(ctx, E_WARNING, "Cannot use object of type %s as array", v.GetType())
+		return nil, ac.l.Errorf(ctx, phpv.E_WARNING, "Cannot use object of type %s as array", v.GetType())
 	}
 
 	// OK...
 	return array.OffsetGet(ctx, offset)
 }
 
-func (a *runArrayAccess) Loc() *Loc {
+func (a *runArrayAccess) Loc() *phpv.Loc {
 	return a.l
 }
 
-func (ac *runArrayAccess) WriteValue(ctx Context, value *ZVal) error {
+func (ac *runArrayAccess) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 	v, err := ac.value.Run(ctx)
 	if err != nil {
 		return err
 	}
 
 	switch v.GetType() {
-	case ZtArray:
-	case ZtObject:
+	case phpv.ZtArray:
+	case phpv.ZtObject:
 	default:
-		err = v.CastTo(ctx, ZtArray)
+		err = v.CastTo(ctx, phpv.ZtArray)
 		if err != nil {
 			return err
 		}
-		if wr, ok := ac.value.(Writable); ok {
+		if wr, ok := ac.value.(phpv.Writable); ok {
 			wr.WriteValue(ctx, v)
 		}
 	}
 
 	array := v.Array()
 	if array == nil {
-		return ac.l.Errorf(ctx, E_WARNING, "Cannot use object of type %s as array", v.GetType())
+		return ac.l.Errorf(ctx, phpv.E_WARNING, "Cannot use object of type %s as array", v.GetType())
 	}
 
 	if ac.offset == nil {
@@ -208,29 +209,29 @@ func (ac *runArrayAccess) WriteValue(ctx Context, value *ZVal) error {
 	}
 
 	switch offset.GetType() {
-	case ZtResource, ZtFloat:
-		offset, err = offset.As(ctx, ZtInt)
+	case phpv.ZtResource, phpv.ZtFloat:
+		offset, err = offset.As(ctx, phpv.ZtInt)
 		if err != nil {
 			return err
 		}
-	case ZtString:
-	case ZtInt:
-	case ZtObject:
+	case phpv.ZtString:
+	case phpv.ZtInt:
+	case phpv.ZtObject:
 		// check if has __toString
 		fallthrough
-	case ZtArray:
+	case phpv.ZtArray:
 		// Trigger: Illegal offset type
 		fallthrough
 	default:
-		offset, err = offset.As(ctx, ZtString)
+		offset, err = offset.As(ctx, phpv.ZtString)
 	}
 
 	// OK...
 	return array.OffsetSet(ctx, offset, value)
 }
 
-func compileArray(i *tokenizer.Item, c compileCtx) (Runnable, error) {
-	res := &runArray{l: MakeLoc(i.Loc())}
+func compileArray(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
+	res := &runArray{l: phpv.MakeLoc(i.Loc())}
 
 	array_type := '?'
 
@@ -260,7 +261,7 @@ func compileArray(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 			break
 		}
 
-		var k Runnable
+		var k phpv.Runnable
 		k, err = compileExpr(i, c)
 		if err != nil {
 			return nil, err
@@ -286,7 +287,7 @@ func compileArray(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 		}
 
 		// ok we got a value now
-		var v Runnable
+		var v phpv.Runnable
 		v, err = compileExpr(nil, c)
 		if err != nil {
 			return nil, err
@@ -314,7 +315,7 @@ func compileArray(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	return res, nil
 }
 
-func compileArrayAccess(v Runnable, c compileCtx) (Runnable, error) {
+func compileArrayAccess(v phpv.Runnable, c compileCtx) (phpv.Runnable, error) {
 	// we got a [
 	i, err := c.NextItem()
 	if err != nil {
@@ -331,7 +332,7 @@ func compileArrayAccess(v Runnable, c compileCtx) (Runnable, error) {
 		return nil, i.Unexpected()
 	}
 
-	l := MakeLoc(i.Loc())
+	l := phpv.MakeLoc(i.Loc())
 
 	i, err = c.NextItem()
 	if err != nil {

@@ -5,57 +5,59 @@ import (
 	"fmt"
 	"io"
 	"strings"
+
+	"github.com/MagicalTux/goro/core/phpv"
 )
 
 type ZClassProp struct {
-	VarName   ZString
-	Default   Val
+	VarName   phpv.ZString
+	Default   phpv.Val
 	Modifiers ZObjectAttr
 }
 
 type ZClassMethod struct {
-	Name      ZString
+	Name      phpv.ZString
 	Modifiers ZObjectAttr
-	Method    Callable
+	Method    phpv.Callable
 }
 
 type ZClass struct {
-	Name ZString
-	l    *Loc
+	Name phpv.ZString
+	l    *phpv.Loc
 	Type ZClassType
 	attr ZClassAttr
 
 	// string value of extend & implement (used previous to lookup)
-	ExtendsStr    ZString
-	ImplementsStr []ZString
+	ExtendsStr    phpv.ZString
+	ImplementsStr []phpv.ZString
 
 	parents     map[*ZClass]*ZClass // all parents, extends & implements
 	Extends     *ZClass
 	Implements  []*ZClass
-	Const       map[ZString]Val // class constants
+	Const       map[phpv.ZString]phpv.Val // class constants
 	Props       []*ZClassProp
-	Methods     map[ZString]*ZClassMethod
-	StaticProps *ZHashTable
+	Methods     map[phpv.ZString]*ZClassMethod
+	StaticProps *phpv.ZHashTable
 
 	// class specific handlers
 	Constructor  *ZClassMethod
-	HandleInvoke func(ctx Context, o *ZObject, args []Runnable) (*ZVal, error)
+	HandleInvoke func(ctx phpv.Context, o *ZObject, args []phpv.Runnable) (*phpv.ZVal, error)
 }
 
-func (c *ZClass) Run(ctx Context) (*ZVal, error) {
-	err := ctx.Global().RegisterClass(c.Name, c)
+func (c *ZClass) Run(ctx phpv.Context) (*phpv.ZVal, error) {
+	err := ctx.Global().(*Global).RegisterClass(c.Name, c)
 	if err != nil {
 		return nil, err
 	}
 	return nil, c.compile(ctx)
 }
 
-func (c *ZClass) compile(ctx Context) error {
+func (c *ZClass) compile(ctx phpv.Context) error {
 	c.parents = make(map[*ZClass]*ZClass)
 
 	if c.ExtendsStr != "" {
 		// need to lookup extend
-		subc, err := ctx.Global().GetClass(ctx, c.ExtendsStr)
+		subc, err := ctx.Global().(*Global).GetClass(ctx, c.ExtendsStr)
 		if err != nil {
 			return err
 		}
@@ -118,7 +120,7 @@ func (c *ZClass) Dump(w io.Writer) error {
 	return err
 }
 
-func (c *ZClass) BaseName() ZString {
+func (c *ZClass) BaseName() phpv.ZString {
 	// rturn class name without namespaces/etc
 	pos := strings.LastIndexByte(string(c.Name), '\\')
 	if pos == -1 {
@@ -127,15 +129,15 @@ func (c *ZClass) BaseName() ZString {
 	return c.Name[pos+1:]
 }
 
-func (c *ZClass) getStaticProps(ctx Context) (*ZHashTable, error) {
+func (c *ZClass) getStaticProps(ctx phpv.Context) (*phpv.ZHashTable, error) {
 	if c.StaticProps == nil {
-		c.StaticProps = NewHashTable()
+		c.StaticProps = phpv.NewHashTable()
 		for _, p := range c.Props {
 			if !p.Modifiers.IsStatic() {
 				continue
 			}
 			if p.Default == nil {
-				c.StaticProps.SetString(p.VarName, ZNULL.ZVal())
+				c.StaticProps.SetString(p.VarName, phpv.ZNULL.ZVal())
 				continue
 			}
 			c.StaticProps.SetString(p.VarName, p.Default.ZVal())

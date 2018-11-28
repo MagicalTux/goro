@@ -4,13 +4,14 @@ import (
 	"time"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/strftime"
 )
 
 //> func string strftime ( string $format [, int $timestamp = time() ] )
-func fncStrftime(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
-	var f core.ZString
-	var ts *core.ZInt
+func fncStrftime(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var f phpv.ZString
+	var ts *phpv.ZInt
 	_, err := core.Expand(ctx, args, &f, &ts)
 	if err != nil {
 		return nil, err
@@ -24,5 +25,5 @@ func fncStrftime(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 	}
 
 	// TODO support locales, timezones, etc
-	return core.ZString(strftime.EnFormat(string(f), t)).ZVal(), nil
+	return phpv.ZString(strftime.EnFormat(string(f), t)).ZVal(), nil
 }

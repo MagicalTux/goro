@@ -5,12 +5,13 @@ import (
 	"math/big"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpv"
 )
 
 //> func GMP gmp_init ( mixed $number [, int $base = 0 ] )
-func gmpInit(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
-	var num *core.ZVal
-	var base *core.ZInt
+func gmpInit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var num *phpv.ZVal
+	var base *phpv.ZInt
 
 	_, err := core.Expand(ctx, args, &num, &base)
 	if err != nil {
@@ -20,14 +21,14 @@ func gmpInit(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 	var i *big.Int
 
 	switch num.GetType() {
-	case core.ZtNull, core.ZtBool, core.ZtInt, core.ZtFloat:
-		num, err = num.As(ctx, core.ZtInt)
+	case phpv.ZtNull, phpv.ZtBool, phpv.ZtInt, phpv.ZtFloat:
+		num, err = num.As(ctx, phpv.ZtInt)
 		if err != nil {
 			return nil, err
 		}
-		i = big.NewInt(int64(num.Value().(core.ZInt)))
+		i = big.NewInt(int64(num.Value().(phpv.ZInt)))
 	default:
-		num, err = num.As(ctx, core.ZtString)
+		num, err = num.As(ctx, phpv.ZtString)
 		if err != nil {
 			return nil, err
 		}

@@ -1,4 +1,4 @@
-package core
+package phpv
 
 import "sync"
 
@@ -348,4 +348,12 @@ func (z *ZHashTable) MergeTable(b *ZHashTable) error {
 
 func (z ZHashTable) HasStringKeys() bool {
 	return len(z._idx_s) > 0
+}
+
+func (z *ZHashTable) Array() *ZArray {
+	return &ZArray{h: z}
+}
+
+func (z *ZHashTable) Count() ZInt {
+	return z.count
 }

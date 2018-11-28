@@ -2,43 +2,45 @@ package core
 
 import (
 	"errors"
+
+	"github.com/MagicalTux/goro/core/phpv"
 )
 
 type FuncContext struct {
-	Context
+	phpv.Context
 
-	h    *ZHashTable
+	h    *phpv.ZHashTable
 	this *ZObject
-	args []*ZVal
-	c    Callable // called object (this function itself)
+	args []*phpv.ZVal
+	c    phpv.Callable // called object (this function itself)
 }
 
-func (c *FuncContext) AsVal(ctx Context, t ZType) (Val, error) {
-	a := &ZArray{h: c.h}
+func (c *FuncContext) AsVal(ctx phpv.Context, t phpv.ZType) (phpv.Val, error) {
+	a := c.h.Array()
 	return a.AsVal(ctx, t)
 }
 
-func (c *FuncContext) GetType() ZType {
-	return ZtArray
+func (c *FuncContext) GetType() phpv.ZType {
+	return phpv.ZtArray
 }
 
-func (c *FuncContext) ZVal() *ZVal {
-	return (&ZVal{c}).Ref()
+func (c *FuncContext) ZVal() *phpv.ZVal {
+	return c.ZVal().Ref()
 }
 
-func (c *FuncContext) Func() *FuncContext {
+func (c *FuncContext) Func() phpv.Context {
 	return c
 }
 
-func (c *FuncContext) This() *ZObject {
+func (c *FuncContext) This() phpv.Val {
 	if c.this != nil {
 		return c.this
 	}
 	return c.Context.This()
 }
 
-func (c *FuncContext) OffsetExists(ctx Context, name *ZVal) (bool, error) {
-	name, err := name.As(ctx, ZtString)
+func (c *FuncContext) OffsetExists(ctx phpv.Context, name *phpv.ZVal) (bool, error) {
+	name, err := name.As(ctx, phpv.ZtString)
 	if err != nil {
 		return false, err
 	}
@@ -57,8 +59,8 @@ func (c *FuncContext) OffsetExists(ctx Context, name *ZVal) (bool, error) {
 	return c.h.HasString(name.AsString(ctx)), nil
 }
 
-func (c *FuncContext) OffsetGet(ctx Context, name *ZVal) (*ZVal, error) {
-	name, err := name.As(ctx, ZtString)
+func (c *FuncContext) OffsetGet(ctx phpv.Context, name *phpv.ZVal) (*phpv.ZVal, error) {
+	name, err := name.As(ctx, phpv.ZtString)
 	if err != nil {
 		return nil, err
 	}
@@ -75,8 +77,8 @@ func (c *FuncContext) OffsetGet(ctx Context, name *ZVal) (*ZVal, error) {
 	return c.h.GetString(name.AsString(ctx)), nil
 }
 
-func (c *FuncContext) OffsetSet(ctx Context, name, v *ZVal) error {
-	name, err := name.As(ctx, ZtString)
+func (c *FuncContext) OffsetSet(ctx phpv.Context, name, v *phpv.ZVal) error {
+	name, err := name.As(ctx, phpv.ZtString)
 	if err != nil {
 		return err
 	}
@@ -88,8 +90,8 @@ func (c *FuncContext) OffsetSet(ctx Context, name, v *ZVal) error {
 	return c.h.SetString(name.AsString(ctx), v)
 }
 
-func (c *FuncContext) OffsetUnset(ctx Context, name *ZVal) error {
-	name, err := name.As(ctx, ZtString)
+func (c *FuncContext) OffsetUnset(ctx phpv.Context, name *phpv.ZVal) error {
+	name, err := name.As(ctx, phpv.ZtString)
 	if err != nil {
 		return err
 	}
@@ -101,15 +103,15 @@ func (c *FuncContext) OffsetUnset(ctx Context, name *ZVal) error {
 	return c.h.UnsetString(name.AsString(ctx))
 }
 
-func (c *FuncContext) Count(ctx Context) ZInt {
-	return c.h.count
+func (c *FuncContext) Count(ctx phpv.Context) phpv.ZInt {
+	return c.h.Count()
 }
 
-func (c *FuncContext) NewIterator() ZIterator {
+func (c *FuncContext) NewIterator() phpv.ZIterator {
 	return c.h.NewIterator()
 }
 
-func (ctx *FuncContext) Parent(n int) Context {
+func (ctx *FuncContext) Parent(n int) phpv.Context {
 	if n <= 1 {
 		return ctx.Context
 	} else {

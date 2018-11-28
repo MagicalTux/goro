@@ -1,10 +1,13 @@
 package standard
 
-import "github.com/MagicalTux/goro/core"
+import (
+	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpv"
+)
 
 //> func array array_merge ( array $array1 [, array $... ] )
-func fncArrayMerge(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
-	var a *core.ZArray
+func fncArrayMerge(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var a *phpv.ZArray
 	_, err := core.Expand(ctx, args, &a)
 	if err != nil {
 		return nil, err
@@ -12,7 +15,7 @@ func fncArrayMerge(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 	a = a.Dup() // make sure we do a copy of array
 
 	for i := 1; i < len(args); i++ {
-		b, err := args[i].As(ctx, core.ZtArray)
+		b, err := args[i].As(ctx, phpv.ZtArray)
 		if err != nil {
 			return nil, err
 		}

@@ -3,20 +3,21 @@ package core
 import (
 	"io"
 
+	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
 
 type runVariable struct {
-	v ZString
-	l *Loc
+	v phpv.ZString
+	l *phpv.Loc
 }
 
 type runVariableRef struct {
-	v Runnable
-	l *Loc
+	v phpv.Runnable
+	l *phpv.Loc
 }
 
-func compileRunVariableRef(i *tokenizer.Item, c compileCtx, l *Loc) (Runnable, error) {
+func compileRunVariableRef(i *tokenizer.Item, c compileCtx, l *phpv.Loc) (phpv.Runnable, error) {
 	r := &runVariableRef{l: l}
 	var err error
 
@@ -50,7 +51,7 @@ func compileRunVariableRef(i *tokenizer.Item, c compileCtx, l *Loc) (Runnable, e
 	return r, nil
 }
 
-func (r *runVariable) Run(ctx Context) (*ZVal, error) {
+func (r *runVariable) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	err := ctx.Tick(ctx, r.l)
 	if err != nil {
 		return nil, err
@@ -63,7 +64,7 @@ func (r *runVariable) Run(ctx Context) (*ZVal, error) {
 	return res.Nude(), nil
 }
 
-func (r *runVariable) WriteValue(ctx Context, value *ZVal) error {
+func (r *runVariable) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 	var err error
 	if value == nil {
 		err = ctx.OffsetUnset(ctx, r.v.ZVal())
@@ -74,10 +75,6 @@ func (r *runVariable) WriteValue(ctx Context, value *ZVal) error {
 		return r.l.Error(err)
 	}
 	return nil
-}
-
-func (r *runVariable) Loc() *Loc {
-	return r.l
 }
 
 func (r *runVariable) Dump(w io.Writer) error {
@@ -102,11 +99,7 @@ func (r *runVariableRef) Dump(w io.Writer) error {
 	return err
 }
 
-func (r *runVariableRef) Loc() *Loc {
-	return r.l
-}
-
-func (r *runVariableRef) Run(ctx Context) (*ZVal, error) {
+func (r *runVariableRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	v, err := r.v.Run(ctx)
 	if err != nil {
 		return nil, err
@@ -118,7 +111,7 @@ func (r *runVariableRef) Run(ctx Context) (*ZVal, error) {
 	return v, err
 }
 
-func (r *runVariableRef) WriteValue(ctx Context, value *ZVal) error {
+func (r *runVariableRef) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 	var err error
 	v, err := r.v.Run(ctx)
 	if err != nil {
@@ -138,15 +131,11 @@ func (r *runVariableRef) WriteValue(ctx Context, value *ZVal) error {
 
 // reference to an existing [something]
 type runRef struct {
-	v Runnable
-	l *Loc
+	v phpv.Runnable
+	l *phpv.Loc
 }
 
-func (r *runRef) Loc() *Loc {
-	return r.l
-}
-
-func (r *runRef) Run(ctx Context) (*ZVal, error) {
+func (r *runRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	z, err := r.v.Run(ctx)
 	if err != nil {
 		return nil, err

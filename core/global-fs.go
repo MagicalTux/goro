@@ -4,6 +4,7 @@ import (
 	"net/url"
 	"os"
 
+	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/stream"
 )
 
@@ -11,7 +12,7 @@ type OpenContext int
 
 // Open opens a file using PHP stream wrappers and returns a handler to said
 // file.
-func (g *Global) Open(fn ZString, isInclude bool) (*stream.Stream, error) {
+func (g *Global) Open(fn phpv.ZString, isInclude bool) (*stream.Stream, error) {
 	u, err := url.Parse(string(fn))
 	if err != nil {
 		return nil, err
@@ -30,7 +31,7 @@ func (g *Global) Open(fn ZString, isInclude bool) (*stream.Stream, error) {
 	return h.Open(u)
 }
 
-func (g *Global) Chdir(d ZString) error {
+func (g *Global) Chdir(d phpv.ZString) error {
 	// use file handler for chdir by default
 	h, ok := g.fHandler["file"]
 	if !ok {
@@ -45,7 +46,7 @@ func (g *Global) Chdir(d ZString) error {
 	return chd.Chdir(string(d))
 }
 
-func (g *Global) Getwd() ZString {
+func (g *Global) Getwd() phpv.ZString {
 	// use file handler for chdir by default
 	h, ok := g.fHandler["file"]
 	if !ok {
@@ -57,5 +58,5 @@ func (g *Global) Getwd() ZString {
 		return ""
 	}
 
-	return ZString(chd.Getwd())
+	return phpv.ZString(chd.Getwd())
 }

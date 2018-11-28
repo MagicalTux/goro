@@ -1,8 +1,12 @@
 package core
 
-import "bytes"
+import (
+	"bytes"
 
-func debugDump(v Runnable) string {
+	"github.com/MagicalTux/goro/core/phpv"
+)
+
+func debugDump(v phpv.Runnable) string {
 	if v == nil {
 		return "<NULL>"
 	}

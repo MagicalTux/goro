@@ -1,10 +1,11 @@
 package core
 
 import (
+	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
 
-type compileFunc func(i *tokenizer.Item, c compileCtx) (Runnable, error)
+type compileFunc func(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error)
 
 type compileFuncCb struct {
 	f    compileFunc
@@ -58,15 +59,15 @@ func init() {
 }
 
 // compileIgnore will ignore a given token
-func compileIgnore(i *tokenizer.Item, c compileCtx) (Runnable, error) {
+func compileIgnore(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	return nil, nil
 }
 
-func compileBase(i *tokenizer.Item, c compileCtx) (Runnable, error) {
+func compileBase(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	return compileBaseUntil(i, c, tokenizer.Rune('}'))
 }
 
-func compileBaseUntil(i *tokenizer.Item, c compileCtx, until tokenizer.ItemType) (Runnable, error) {
+func compileBaseUntil(i *tokenizer.Item, c compileCtx, until tokenizer.ItemType) (phpv.Runnable, error) {
 	var res Runnables
 
 	for {
@@ -94,7 +95,7 @@ func compileBaseUntil(i *tokenizer.Item, c compileCtx, until tokenizer.ItemType)
 	}
 }
 
-func compileBaseSingle(i *tokenizer.Item, c compileCtx) (Runnable, error) {
+func compileBaseSingle(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	//log.Printf("compileBase: %s:%d %s %q", i.Filename, i.Line, i.Type, i.Data)
 	var h *compileFuncCb
 	var ok bool

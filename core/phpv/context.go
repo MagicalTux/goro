@@ -1,4 +1,4 @@
-package core
+package phpv
 
 import (
 	"context"
@@ -12,16 +12,16 @@ type Context interface {
 	ZIterable
 	io.Writer
 
-	Global() *Global
-	Func() *FuncContext
+	Global() Context
+	Func() Context
 	Parent(n int) Context
-	This() *ZObject
+	This() Val
 	Loc() *Loc
 	Tick(ctx Context, l *Loc) error
 	MemAlloc(ctx Context, s uint64) error
 
 	GetConfig(name ZString, def *ZVal) *ZVal
 
-	Call(ctx Context, f Callable, args []Runnable, this *ZObject) (*ZVal, error)
-	CallZVal(ctx Context, f Callable, args []*ZVal, this *ZObject) (*ZVal, error)
+	Call(ctx Context, f Callable, args []Runnable, this Val) (*ZVal, error)
+	CallZVal(ctx Context, f Callable, args []*ZVal, this Val) (*ZVal, error)
 }

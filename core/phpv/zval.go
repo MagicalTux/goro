@@ -1,9 +1,4 @@
-package core
-
-import (
-	"fmt"
-	"io"
-)
+package phpv
 
 type Val interface {
 	GetType() ZType
@@ -13,11 +8,6 @@ type Val interface {
 
 type ZVal struct {
 	v Val
-}
-
-type runZVal struct {
-	v Val
-	l *Loc
 }
 
 func (z *ZVal) GetType() ZType {
@@ -30,18 +20,8 @@ func (z *ZVal) GetType() ZType {
 	return z.v.GetType()
 }
 
-func (z *runZVal) Run(ctx Context) (*ZVal, error) {
-	return &ZVal{z.v}, nil
-}
-
-func (z *runZVal) Loc() *Loc {
-	return z.l
-}
-
-func (z *runZVal) Dump(w io.Writer) error {
-	// TODO
-	_, err := fmt.Fprintf(w, "%#v", z.v)
-	return err
+func MakeZVal(v Val) *ZVal {
+	return &ZVal{v}
 }
 
 // ZVal will make a copy of a given zval without actually copying memory

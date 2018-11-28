@@ -5,10 +5,11 @@ import (
 	"io"
 	"strconv"
 
+	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
 
-func compileBreak(i *tokenizer.Item, c compileCtx) (Runnable, error) {
+func compileBreak(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	// check if followed by digit
 	intv := int64(1)
 
@@ -26,10 +27,10 @@ func compileBreak(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	}
 
 	// return this as a runtime element and not a compile time error so switch and loops will catch it
-	return &PhpBreak{l: MakeLoc(i.Loc()), intv: ZInt(intv)}, nil
+	return &PhpBreak{phpv.MakeLoc(i.Loc()), phpv.ZInt(intv)}, nil
 }
 
-func compileContinue(i *tokenizer.Item, c compileCtx) (Runnable, error) {
+func compileContinue(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	// check if followed by digit
 	intv := int64(1)
 
@@ -47,7 +48,7 @@ func compileContinue(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	}
 
 	// return this as a runtime element and not a compile time error so switch and loops will catch it
-	return &PhpContinue{l: MakeLoc(i.Loc()), intv: ZInt(intv)}, nil
+	return &PhpContinue{phpv.MakeLoc(i.Loc()), phpv.ZInt(intv)}, nil
 }
 
 type runnableFor struct {
@@ -56,11 +57,11 @@ type runnableFor struct {
 	// also, expressions can be separated by comma
 	start, cond, each Runnables
 
-	code Runnable
-	l    *Loc
+	code phpv.Runnable
+	l    *phpv.Loc
 }
 
-func (r *runnableFor) Run(ctx Context) (l *ZVal, err error) {
+func (r *runnableFor) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 	_, err = r.start.Run(ctx)
 	if err != nil {
 		return nil, err
@@ -84,7 +85,7 @@ func (r *runnableFor) Run(ctx Context) (l *ZVal, err error) {
 		_, err = r.code.Run(ctx)
 		if err != nil {
 			e := r.l.Error(err)
-			switch br := e.e.(type) {
+			switch br := e.Err.(type) {
 			case *PhpBreak:
 				if br.intv > 1 {
 					br.intv--
@@ -110,7 +111,7 @@ func (r *runnableFor) Run(ctx Context) (l *ZVal, err error) {
 	return nil, nil
 }
 
-func (r *runnableFor) Loc() *Loc {
+func (r *runnableFor) Loc() *phpv.Loc {
 	return r.l
 }
 
@@ -152,7 +153,7 @@ func (r *runnableFor) Dump(w io.Writer) error {
 }
 
 func compileForSub(c compileCtx, final rune) (res Runnables, err error) {
-	var r Runnable
+	var r phpv.Runnable
 
 	i, err := c.NextItem()
 	if i.IsSingle(final) {
@@ -181,9 +182,9 @@ func compileForSub(c compileCtx, final rune) (res Runnables, err error) {
 	}
 }
 
-func compileFor(i *tokenizer.Item, c compileCtx) (Runnable, error) {
+func compileFor(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	// T_FOREACH (expression T_AS T_VARIABLE [=> T_VARIABLE]) ...?
-	l := MakeLoc(i.Loc())
+	l := phpv.MakeLoc(i.Loc())
 
 	// parse while expression
 	i, err := c.NextItem()

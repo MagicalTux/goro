@@ -4,11 +4,12 @@ import (
 	"math/big"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpv"
 )
 
 //> func GMP gmp_add ( GMP $a , GMP $b )
-func gmpAdd(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
-	var a, b *core.ZVal
+func gmpAdd(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var a, b *phpv.ZVal
 
 	_, err := core.Expand(ctx, args, &a, &b)
 	if err != nil {
@@ -31,8 +32,8 @@ func gmpAdd(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 }
 
 //> func GMP gmp_sub ( GMP $a , GMP $b )
-func gmpSub(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
-	var a, b *core.ZVal
+func gmpSub(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var a, b *phpv.ZVal
 
 	_, err := core.Expand(ctx, args, &a, &b)
 	if err != nil {

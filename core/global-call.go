@@ -1,12 +1,16 @@
 package core
 
+import "github.com/MagicalTux/goro/core/phpv"
+
 // perform call in new context
-func (c *Global) Call(ctx Context, f Callable, args []Runnable, this *ZObject) (*ZVal, error) {
+func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, this phpv.Val) (*phpv.ZVal, error) {
 	callCtx := &FuncContext{
 		Context: ctx,
-		h:       NewHashTable(),
-		this:    this,
+		h:       phpv.NewHashTable(),
 		c:       f,
+	}
+	if this != nil {
+		callCtx.this = this.(*ZObject)
 	}
 
 	var func_args []*funcArg
@@ -17,7 +21,7 @@ func (c *Global) Call(ctx Context, f Callable, args []Runnable, this *ZObject) (
 	// collect args
 	// use func_args to check if any arg is a ref and needs to be passed as such
 	var err error
-	callCtx.args = make([]*ZVal, len(args))
+	callCtx.args = make([]*phpv.ZVal, len(args))
 	for i, a := range args {
 		callCtx.args[i], err = a.Run(ctx)
 		if err != nil {
@@ -33,18 +37,20 @@ func (c *Global) Call(ctx Context, f Callable, args []Runnable, this *ZObject) (
 	return CatchReturn(f.Call(callCtx, callCtx.args))
 }
 
-func (c *Global) CallZVal(ctx Context, f Callable, args []*ZVal, this *ZObject) (*ZVal, error) {
+func (c *Global) CallZVal(ctx phpv.Context, f phpv.Callable, args []*phpv.ZVal, this phpv.Val) (*phpv.ZVal, error) {
 	callCtx := &FuncContext{
 		Context: ctx,
-		h:       NewHashTable(),
-		this:    this,
+		h:       phpv.NewHashTable(),
 		args:    args,
 		c:       f,
+	}
+	if this != nil {
+		callCtx.this = this.(*ZObject)
 	}
 
 	return CatchReturn(f.Call(callCtx, args))
 }
 
-func (c *Global) Parent(n int) Context {
+func (c *Global) Parent(n int) phpv.Context {
 	return nil
 }

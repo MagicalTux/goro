@@ -3,11 +3,12 @@ package core
 import (
 	"io"
 
+	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
 
 type compileCtx interface {
-	Context
+	phpv.Context
 
 	ExpectSingle(r rune) error
 	NextItem() (*tokenizer.Item, error)
@@ -18,7 +19,7 @@ type compileCtx interface {
 }
 
 type compileRootCtx struct {
-	Context
+	phpv.Context
 
 	t *tokenizer.Lexer
 
@@ -27,7 +28,7 @@ type compileRootCtx struct {
 }
 
 type compilable interface {
-	compile(ctx Context) error
+	compile(ctx phpv.Context) error
 }
 
 func (c *compileRootCtx) ExpectSingle(r rune) error {
@@ -91,7 +92,7 @@ func (c *compileRootCtx) backup() {
 	c.next, c.last = c.last, nil
 }
 
-func Compile(parent Context, t *tokenizer.Lexer) (Runnable, error) {
+func Compile(parent phpv.Context, t *tokenizer.Lexer) (phpv.Runnable, error) {
 	c := &compileRootCtx{
 		Context: parent,
 		t:       t,
@@ -108,12 +109,12 @@ func Compile(parent Context, t *tokenizer.Lexer) (Runnable, error) {
 			switch obj := elem.(type) {
 			case *ZClosure:
 				if obj.name != "" {
-					c.Global().RegisterLazyFunc(obj.name, list, i)
+					c.Global().(*Global).RegisterLazyFunc(obj.name, list, i)
 				}
 			case *ZClass:
 				// TODO first index classes by name, instanciate in right order
 				if obj.Name != "" {
-					c.Global().RegisterLazyClass(obj.Name, list, i)
+					c.Global().(*Global).RegisterLazyClass(obj.Name, list, i)
 				}
 			}
 		}

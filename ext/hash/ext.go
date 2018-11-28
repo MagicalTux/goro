@@ -1,6 +1,9 @@
 package hash
 
-import "github.com/MagicalTux/goro/core"
+import (
+	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpv"
+)
 
 // WARNING: This file is auto-generated. DO NOT EDIT
 
@@ -22,8 +25,8 @@ func init() {
 			"hash_pbkdf2": &core.ExtFunction{Func: fncHashPbkdf2, Args: []*core.ExtFunctionArg{}},
 			"hash_update": &core.ExtFunction{Func: fncHashUpdate, Args: []*core.ExtFunctionArg{}},
 		},
-		Constants: map[core.ZString]*core.ZVal{
-			"HASH_HMAC": core.ZInt(1).ZVal(),
+		Constants: map[phpv.ZString]*phpv.ZVal{
+			"HASH_HMAC": phpv.ZInt(1).ZVal(),
 		},
 	})
 }

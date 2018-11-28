@@ -4,26 +4,27 @@ import (
 	"net/url"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpv"
 )
 
 //> func string urlencode ( string $str )
-func fncUrlencode(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
+func fncUrlencode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var u string
 	_, err := core.Expand(ctx, args, &u)
 	if err != nil {
 		return nil, err
 	}
 
-	return core.ZString(url.QueryEscape(u)).ZVal(), nil
+	return phpv.ZString(url.QueryEscape(u)).ZVal(), nil
 }
 
 //> func string rawurlencode ( string $str )
-func fncRawurlencode(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
+func fncRawurlencode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var u string
 	_, err := core.Expand(ctx, args, &u)
 	if err != nil {
 		return nil, err
 	}
 
-	return core.ZString(url.PathEscape(u)).ZVal(), nil
+	return phpv.ZString(url.PathEscape(u)).ZVal(), nil
 }

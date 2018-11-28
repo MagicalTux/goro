@@ -3,22 +3,19 @@ package core
 import (
 	"io"
 
+	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
 
 type runInlineHtml string
 
-func compileInlineHtml(i *tokenizer.Item, c compileCtx) (Runnable, error) {
+func compileInlineHtml(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	return runInlineHtml(i.Data), nil
 }
 
-func (s runInlineHtml) Run(ctx Context) (*ZVal, error) {
+func (s runInlineHtml) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	_, err := ctx.Write([]byte(s))
 	return nil, err
-}
-
-func (s runInlineHtml) Loc() *Loc {
-	return nil
 }
 
 func (s runInlineHtml) Dump(w io.Writer) error {

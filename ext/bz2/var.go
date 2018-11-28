@@ -6,14 +6,15 @@ import (
 	"io/ioutil"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpv"
 )
 
 // operations on local variables
 
 //> func mixed bzdecompress ( string $source [, int $small = 0 ] )
-func fncBzDecompress(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
-	var src core.ZString
-	var small *core.ZInt
+func fncBzDecompress(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var src phpv.ZString
+	var small *phpv.ZInt
 
 	_, err := core.Expand(ctx, args, &src, &small)
 	if err != nil {
@@ -29,5 +30,5 @@ func fncBzDecompress(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 	}
 	err = ctx.MemAlloc(ctx, uint64(len(b)))
 
-	return core.ZString(b).ZVal(), err
+	return phpv.ZString(b).ZVal(), err
 }

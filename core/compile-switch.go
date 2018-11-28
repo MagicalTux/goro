@@ -3,26 +3,23 @@ package core
 import (
 	"io"
 
+	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
 
 // TODO find ways to optimize switch
 
 type runSwitchBlock struct {
-	cond Runnable // condition for run (nil = default)
+	cond phpv.Runnable // condition for run (nil = default)
 	code Runnables
-	l    *Loc
+	l    *phpv.Loc
 }
 
 type runSwitch struct {
 	blocks []*runSwitchBlock
 	def    *runSwitchBlock
-	cond   Runnable
-	l      *Loc
-}
-
-func (r *runSwitch) Loc() *Loc {
-	return r.l
+	cond   phpv.Runnable
+	l      *phpv.Loc
 }
 
 func (r runSwitch) Dump(w io.Writer) error {
@@ -68,7 +65,7 @@ func (r runSwitch) Dump(w io.Writer) error {
 	return err
 }
 
-func (r *runSwitch) Run(ctx Context) (*ZVal, error) {
+func (r *runSwitch) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	cond, err := r.cond.Run(ctx)
 	if err != nil {
 		return nil, err
@@ -100,7 +97,7 @@ func (r *runSwitch) Run(ctx Context) (*ZVal, error) {
 		if err != nil {
 			e := r.l.Error(err)
 			err = e
-			switch br := e.e.(type) {
+			switch br := e.Err.(type) {
 			case *PhpBreak:
 				if br.intv > 1 {
 					br.intv -= 1
@@ -121,8 +118,8 @@ func (r *runSwitch) Run(ctx Context) (*ZVal, error) {
 	return nil, nil
 }
 
-func compileSwitch(i *tokenizer.Item, c compileCtx) (Runnable, error) {
-	sw := &runSwitch{l: MakeLoc(i.Loc())}
+func compileSwitch(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
+	sw := &runSwitch{l: phpv.MakeLoc(i.Loc())}
 
 	// we expect a {
 	err := c.ExpectSingle('(')

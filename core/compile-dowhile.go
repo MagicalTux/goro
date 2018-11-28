@@ -3,16 +3,17 @@ package core
 import (
 	"io"
 
+	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
 
 type runnableDoWhile struct {
-	cond Runnable
-	code Runnable
-	l    *Loc
+	cond phpv.Runnable
+	code phpv.Runnable
+	l    *phpv.Loc
 }
 
-func (r *runnableDoWhile) Run(ctx Context) (l *ZVal, err error) {
+func (r *runnableDoWhile) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 	for {
 		_, err = r.code.Run(ctx)
 		if err != nil {
@@ -23,19 +24,19 @@ func (r *runnableDoWhile) Run(ctx Context) (l *ZVal, err error) {
 		if err != nil {
 			return nil, err
 		}
-		t, err = t.As(ctx, ZtBool)
+		t, err = t.As(ctx, phpv.ZtBool)
 		if err != nil {
 			return nil, err
 		}
 
-		if !t.Value().(ZBool) {
+		if !t.Value().(phpv.ZBool) {
 			break
 		}
 	}
 	return nil, nil
 }
 
-func (r *runnableDoWhile) Loc() *Loc {
+func (r *runnableDoWhile) Loc() *phpv.Loc {
 	return r.l
 }
 
@@ -60,11 +61,11 @@ func (r *runnableDoWhile) Dump(w io.Writer) error {
 	return err
 }
 
-func compileDoWhile(i *tokenizer.Item, c compileCtx) (Runnable, error) {
+func compileDoWhile(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	var err error
 
 	// T_DO ... T_WHILE (cond)
-	r := &runnableDoWhile{l: MakeLoc(i.Loc())}
+	r := &runnableDoWhile{l: phpv.MakeLoc(i.Loc())}
 
 	// parse code
 	r.code, err = compileBaseSingle(nil, c)

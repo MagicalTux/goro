@@ -1,10 +1,13 @@
 package standard
 
-import "github.com/MagicalTux/goro/core"
+import (
+	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpv"
+)
 
 //> func string sprintf ( string $format [, mixed $args [, mixed $... ]] )
-func fncSprintf(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
-	var fmt core.ZString
+func fncSprintf(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var fmt phpv.ZString
 	n, err := core.Expand(ctx, args, &fmt)
 	if err != nil {
 		return nil, err

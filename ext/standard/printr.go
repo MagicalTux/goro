@@ -6,12 +6,13 @@ import (
 	"unsafe"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpv"
 )
 
 //> func mixed print_r ( mixed $expression [, bool $return = FALSE ] )
-func fncPrintR(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
-	var expr *core.ZVal
-	var ret *core.ZBool
+func fncPrintR(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var expr *phpv.ZVal
+	var ret *phpv.ZBool
 	var b *bytes.Buffer
 
 	_, err := core.Expand(ctx, args, &expr, &ret)
@@ -31,12 +32,12 @@ func fncPrintR(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 	}
 
 	if b != nil {
-		return core.ZString(b.String()).ZVal(), nil
+		return phpv.ZString(b.String()).ZVal(), nil
 	}
-	return core.ZBool(true).ZVal(), nil
+	return phpv.ZBool(true).ZVal(), nil
 }
 
-func doPrintR(ctx core.Context, z *core.ZVal, linePfx string, recurs map[uintptr]bool) error {
+func doPrintR(ctx phpv.Context, z *phpv.ZVal, linePfx string, recurs map[uintptr]bool) error {
 	var isRef string
 	if z.IsRef() {
 		isRef = "&"
@@ -55,7 +56,7 @@ func doPrintR(ctx core.Context, z *core.ZVal, linePfx string, recurs map[uintptr
 	}
 
 	switch z.GetType() {
-	case core.ZtArray:
+	case phpv.ZtArray:
 		fmt.Fprintf(ctx, "%sArray\n%s(\n", isRef, linePfx)
 		localPfx := linePfx + "    "
 		it := z.NewIterator()
@@ -77,7 +78,7 @@ func doPrintR(ctx core.Context, z *core.ZVal, linePfx string, recurs map[uintptr
 			it.Next(ctx)
 		}
 		fmt.Fprintf(ctx, "%s)\n", linePfx)
-	case core.ZtObject:
+	case phpv.ZtObject:
 		v := z.Value()
 		if obj, ok := v.(*core.ZObject); ok {
 			fmt.Fprintf(ctx, "%s%s Object\n%s(\n", isRef, obj.Class.Name, linePfx)
@@ -106,7 +107,7 @@ func doPrintR(ctx core.Context, z *core.ZVal, linePfx string, recurs map[uintptr
 		}
 		fmt.Fprintf(ctx, "%s)\n", linePfx)
 	default:
-		z, _ = z.As(ctx, core.ZtString)
+		z, _ = z.As(ctx, phpv.ZtString)
 		fmt.Fprintf(ctx, "%s", z)
 	}
 	return nil

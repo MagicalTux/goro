@@ -1,6 +1,9 @@
 package pcre
 
-import "github.com/MagicalTux/goro/core"
+import (
+	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpv"
+)
 
 // WARNING: This file is auto-generated. DO NOT EDIT
 
@@ -13,6 +16,6 @@ func init() {
 			"preg_quote":   &core.ExtFunction{Func: pregQuote, Args: []*core.ExtFunctionArg{}},
 			"preg_replace": &core.ExtFunction{Func: pregReplace, Args: []*core.ExtFunctionArg{}},
 		},
-		Constants: map[core.ZString]*core.ZVal{},
+		Constants: map[phpv.ZString]*phpv.ZVal{},
 	})
 }

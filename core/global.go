@@ -10,6 +10,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/stream"
 )
 
@@ -24,21 +25,21 @@ type Global struct {
 	p        *Process
 	start    time.Time // time at which this request started
 	req      *http.Request
-	h        *ZHashTable
-	l        *Loc
+	h        *phpv.ZHashTable
+	l        *phpv.Loc
 	mem      *MemMgr
 	deadline time.Time
 
 	// this is the actual environment (defined functions, classes, etc)
-	globalFuncs   map[ZString]Callable
-	globalClasses map[ZString]*ZClass // TODO replace *ZClass with a nice interface
-	constant      map[ZString]*ZVal
-	environ       *ZHashTable
+	globalFuncs   map[phpv.ZString]phpv.Callable
+	globalClasses map[phpv.ZString]*ZClass // TODO replace *ZClass with a nice interface
+	constant      map[phpv.ZString]*phpv.ZVal
+	environ       *phpv.ZHashTable
 	fHandler      map[string]stream.Handler
-	included      map[ZString]bool // included files (used for require_once, etc)
+	included      map[phpv.ZString]bool // included files (used for require_once, etc)
 
-	globalLazyFunc  map[ZString]*globalLazyOffset
-	globalLazyClass map[ZString]*globalLazyOffset
+	globalLazyFunc  map[phpv.ZString]*globalLazyOffset
+	globalLazyClass map[phpv.ZString]*globalLazyOffset
 
 	out io.Writer
 	buf *Buffer
@@ -79,15 +80,15 @@ func (g *Global) Buffer() *Buffer {
 func (g *Global) init() {
 	// initialize variables & memory for global context
 	g.start = time.Now()
-	g.h = NewHashTable()
-	g.l = &Loc{Filename: "unknown", Line: 1}
-	g.globalFuncs = make(map[ZString]Callable)
-	g.globalClasses = make(map[ZString]*ZClass)
-	g.constant = make(map[ZString]*ZVal)
+	g.h = phpv.NewHashTable()
+	g.l = &phpv.Loc{Filename: "unknown", Line: 1}
+	g.globalFuncs = make(map[phpv.ZString]phpv.Callable)
+	g.globalClasses = make(map[phpv.ZString]*ZClass)
+	g.constant = make(map[phpv.ZString]*phpv.ZVal)
 	g.fHandler = make(map[string]stream.Handler)
-	g.included = make(map[ZString]bool)
-	g.globalLazyFunc = make(map[ZString]*globalLazyOffset)
-	g.globalLazyClass = make(map[ZString]*globalLazyOffset)
+	g.included = make(map[phpv.ZString]bool)
+	g.globalLazyFunc = make(map[phpv.ZString]*globalLazyOffset)
+	g.globalLazyClass = make(map[phpv.ZString]*globalLazyOffset)
 	g.mem = NewMemMgr(32 * 1024 * 1024)        // limit in bytes TODO read memory_limit from process (.ini file)
 	g.deadline = g.start.Add(30 * time.Second) // deadline
 
@@ -102,7 +103,7 @@ func (g *Global) init() {
 	// import global funcs & classes from ext
 	for _, e := range globalExtMap {
 		for k, v := range e.Functions {
-			g.globalFuncs[ZString(k)] = v
+			g.globalFuncs[phpv.ZString(k)] = v
 		}
 		for _, c := range e.Classes {
 			g.globalClasses[c.Name.ToLower()] = c
@@ -117,21 +118,20 @@ func (g *Global) init() {
 
 func (g *Global) doGPC() {
 	// initialize superglobals
-	get := NewZArray()
-	p := NewZArray()
-	c := NewZArray()
-	r := NewZArray()
-	s := NewZArray()
-	e := NewZArray() // initialize empty
-	f := NewZArray()
+	get := phpv.NewZArray()
+	p := phpv.NewZArray()
+	c := phpv.NewZArray()
+	r := phpv.NewZArray()
+	s := phpv.NewZArray()
+	e := phpv.NewZArray() // initialize empty
+	f := phpv.NewZArray()
 
-	order := g.GetConfig("variables_order", ZString("EGPCS").ZVal()).String()
+	order := g.GetConfig("variables_order", phpv.ZString("EGPCS").ZVal()).String()
 
 	for _, l := range order {
 		switch l {
 		case 'e', 'E':
-			e = &ZArray{h: g.environ}
-			s.MergeArray(e)
+			s.MergeTable(g.environ)
 		case 'p', 'P':
 			if g.req != nil && g.req.Method == "POST" {
 				err := g.parsePost(p, f)
@@ -150,8 +150,8 @@ func (g *Global) doGPC() {
 			}
 		case 's', 'S':
 			// SERVER
-			s.OffsetSet(g, ZString("REQUEST_TIME").ZVal(), ZInt(g.start.Unix()).ZVal())
-			s.OffsetSet(g, ZString("REQUEST_TIME_FLOAT").ZVal(), ZFloat(float64(g.start.UnixNano())/1e9).ZVal())
+			s.OffsetSet(g, phpv.ZString("REQUEST_TIME").ZVal(), phpv.ZInt(g.start.Unix()).ZVal())
+			s.OffsetSet(g, phpv.ZString("REQUEST_TIME_FLOAT").ZVal(), phpv.ZFloat(float64(g.start.UnixNano())/1e9).ZVal())
 			// TODO...
 		}
 	}
@@ -174,8 +174,8 @@ func (g *Global) SetOutput(w io.Writer) {
 }
 
 func (g *Global) RunFile(fn string) error {
-	_, err := g.Require(g, ZString(fn))
-	err = FilterError(err)
+	_, err := g.Require(g, phpv.ZString(fn))
+	err = phpv.FilterError(err)
 	if err != nil {
 		return err
 	}
@@ -186,17 +186,17 @@ func (g *Global) Write(v []byte) (int, error) {
 	return g.out.Write(v)
 }
 
-func (g *Global) SetLocalConfig(name ZString, val *ZVal) error {
+func (g *Global) SetLocalConfig(name phpv.ZString, val *phpv.ZVal) error {
 	// TODO
 	return nil
 }
 
-func (g *Global) GetConfig(name ZString, def *ZVal) *ZVal {
+func (g *Global) GetConfig(name phpv.ZString, def *phpv.ZVal) *phpv.ZVal {
 	// TODO
 	return def
 }
 
-func (g *Global) Tick(ctx Context, l *Loc) error {
+func (g *Global) Tick(ctx phpv.Context, l *phpv.Loc) error {
 	// TODO check run deadline, context cancellation and memory limit
 	if time.Until(g.deadline) <= 0 {
 		return errors.New("Maximum execution time of TODO second exceeded") // TODO
@@ -213,19 +213,19 @@ func (g *Global) SetDeadline(t time.Time) {
 	g.deadline = t
 }
 
-func (g *Global) Loc() *Loc {
+func (g *Global) Loc() *phpv.Loc {
 	return g.l
 }
 
-func (g *Global) Func() *FuncContext {
+func (g *Global) Func() phpv.Context {
 	return nil
 }
 
-func (g *Global) This() *ZObject {
+func (g *Global) This() phpv.Val {
 	return nil
 }
 
-func (g *Global) RegisterFunction(name ZString, f Callable) error {
+func (g *Global) RegisterFunction(name phpv.ZString, f phpv.Callable) error {
 	name = name.ToLower()
 	if _, exists := g.globalFuncs[name]; exists {
 		return errors.New("duplicate function name in declaration")
@@ -235,7 +235,7 @@ func (g *Global) RegisterFunction(name ZString, f Callable) error {
 	return nil
 }
 
-func (g *Global) GetFunction(ctx Context, name ZString) (Callable, error) {
+func (g *Global) GetFunction(ctx phpv.Context, name phpv.ZString) (phpv.Callable, error) {
 	if f, ok := g.globalFuncs[name.ToLower()]; ok {
 		return f, nil
 	}
@@ -252,18 +252,18 @@ func (g *Global) GetFunction(ctx Context, name ZString) (Callable, error) {
 	return nil, fmt.Errorf("Call to undefined function %s", name)
 }
 
-func (g *Global) GetConstant(name ZString) (*ZVal, error) {
+func (g *Global) GetConstant(name phpv.ZString) (*phpv.ZVal, error) {
 	if v, ok := g.constant[name]; ok {
 		return v, nil
 	}
 	return nil, nil
 }
 
-func (g *Global) GetClass(ctx Context, name ZString) (*ZClass, error) {
+func (g *Global) GetClass(ctx phpv.Context, name phpv.ZString) (*ZClass, error) {
 	switch name {
 	case "self":
 		// check for func
-		f := ctx.Func()
+		f := ctx.Func().(*FuncContext)
 		if f == nil {
 			return nil, errors.New("Cannot access self:: when no method scope is active")
 		}
@@ -275,7 +275,7 @@ func (g *Global) GetClass(ctx Context, name ZString) (*ZClass, error) {
 		return cfunc.class, nil
 	case "parent":
 		// check for func
-		f := ctx.Func()
+		f := ctx.Func().(*FuncContext)
 		if f == nil {
 			return nil, errors.New("Cannot access parent:: when no method scope is active")
 		}
@@ -289,7 +289,7 @@ func (g *Global) GetClass(ctx Context, name ZString) (*ZClass, error) {
 		return cfunc.class.Extends, nil
 	case "static":
 		// check for func
-		f := ctx.Func()
+		f := ctx.Func().(*FuncContext)
 		if f == nil || f.this == nil {
 			return nil, errors.New("Cannot access static:: when no class scope is active")
 		}
@@ -311,7 +311,7 @@ func (g *Global) GetClass(ctx Context, name ZString) (*ZClass, error) {
 	return nil, fmt.Errorf("Class '%s' not found", name)
 }
 
-func (g *Global) RegisterClass(name ZString, c *ZClass) error {
+func (g *Global) RegisterClass(name phpv.ZString, c *ZClass) error {
 	name = name.ToLower()
 	if _, ok := g.globalClasses[name]; ok {
 		return fmt.Errorf("Cannot declare class %s, because the name is already in use", name)
@@ -340,18 +340,18 @@ func (g *Global) Flush() {
 	}
 }
 
-func (g *Global) RegisterLazyFunc(name ZString, r Runnables, p int) {
+func (g *Global) RegisterLazyFunc(name phpv.ZString, r Runnables, p int) {
 	g.globalLazyFunc[name.ToLower()] = &globalLazyOffset{r, p}
 }
 
-func (g *Global) RegisterLazyClass(name ZString, r Runnables, p int) {
+func (g *Global) RegisterLazyClass(name phpv.ZString, r Runnables, p int) {
 	g.globalLazyClass[name.ToLower()] = &globalLazyOffset{r, p}
 }
 
-func (g *Global) Global() *Global {
+func (g *Global) Global() phpv.Context {
 	return g
 }
 
-func (g *Global) MemAlloc(ctx Context, s uint64) error {
+func (g *Global) MemAlloc(ctx phpv.Context, s uint64) error {
 	return g.mem.Alloc(ctx, s)
 }

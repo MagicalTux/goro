@@ -6,21 +6,22 @@ import (
 	"syscall"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpv"
 )
 
-func fncUnameHelperToString(v [65]int8) core.ZString {
+func fncUnameHelperToString(v [65]int8) phpv.ZString {
 	out := make([]byte, len(v))
 	for i := 0; i < len(v); i++ {
 		if v[i] == 0 {
-			return core.ZString(out[:i-1])
+			return phpv.ZString(out[:i-1])
 		}
 		out[i] = byte(v[i])
 	}
-	return core.ZString(out)
+	return phpv.ZString(out)
 }
 
 //> func string php_uname ([ string $mode = "a" ] )
-func fncUname(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
+func fncUname(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var arg string
 	_, err := core.Expand(ctx, args, &arg)
 	if err != nil {

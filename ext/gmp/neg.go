@@ -4,11 +4,12 @@ import (
 	"math/big"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpv"
 )
 
 //> func GMP gmp_neg ( GMP $a )
-func gmpNeg(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
-	var a *core.ZVal
+func gmpNeg(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var a *phpv.ZVal
 
 	_, err := core.Expand(ctx, args, &a)
 	if err != nil {

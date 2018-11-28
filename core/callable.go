@@ -1,13 +1,17 @@
 package core
 
-import "errors"
+import (
+	"errors"
 
-func SpawnCallable(ctx Context, v *ZVal) (Callable, error) {
+	"github.com/MagicalTux/goro/core/phpv"
+)
+
+func SpawnCallable(ctx phpv.Context, v *phpv.ZVal) (phpv.Callable, error) {
 	switch v.GetType() {
-	case ZtString:
+	case phpv.ZtString:
 		// name of a method
-		s := v.Value().(ZString)
-		return ctx.Global().GetFunction(ctx, s)
+		s := v.Value().(phpv.ZString)
+		return ctx.Global().(*Global).GetFunction(ctx, s)
 		// TODO handle ZtObject (call __invoke, handle closures too)
 		// TODO handle ZtArray (object, method, or class_name, method)
 	default:
@@ -17,16 +21,16 @@ func SpawnCallable(ctx Context, v *ZVal) (Callable, error) {
 }
 
 type callCatcher struct {
-	name   ZString
-	target Callable
+	name   phpv.ZString
+	target phpv.Callable
 }
 
-func (c *callCatcher) Call(ctx Context, args []*ZVal) (*ZVal, error) {
-	a := NewZArray()
+func (c *callCatcher) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	a := phpv.NewZArray()
 	for _, sub := range args {
 		a.OffsetSet(ctx, nil, sub)
 	}
-	rArgs := []*ZVal{c.name.ZVal(), a.ZVal()}
+	rArgs := []*phpv.ZVal{c.name.ZVal(), a.ZVal()}
 
 	return c.target.Call(ctx, rArgs)
 }

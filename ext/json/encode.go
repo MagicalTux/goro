@@ -5,14 +5,15 @@ import (
 	"unicode/utf8"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpv"
 )
 
 var hex = "0123456789abcdef"
 
 //> func string json_encode ( mixed $value [, int $options = 0 [, int $depth = 512 ]] )
-func fncJsonEncode(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
-	var v *core.ZVal
-	var opt, depth *core.ZInt
+func fncJsonEncode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var v *phpv.ZVal
+	var opt, depth *phpv.ZInt
 	_, err := core.Expand(ctx, args, &v, &opt, &depth)
 	if err != nil {
 		return nil, err
@@ -31,29 +32,29 @@ func fncJsonEncode(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 
 	r, err = appendJsonEncode(ctx, r, v, o, d)
 
-	return core.ZString(r).ZVal(), err
+	return phpv.ZString(r).ZVal(), err
 }
 
-func appendJsonEncode(ctx core.Context, r []byte, v *core.ZVal, opt JsonEncOpt, depth int) ([]byte, error) {
+func appendJsonEncode(ctx phpv.Context, r []byte, v *phpv.ZVal, opt JsonEncOpt, depth int) ([]byte, error) {
 	switch v.GetType() {
-	case core.ZtNull:
+	case phpv.ZtNull:
 		return append(r, []byte("null")...), nil
-	case core.ZtBool:
-		if v.Value().(core.ZBool) {
+	case phpv.ZtBool:
+		if v.Value().(phpv.ZBool) {
 			return append(r, []byte("true")...), nil
 		} else {
 			return append(r, []byte("false")...), nil
 		}
-	case core.ZtInt:
-		s := strconv.FormatInt(int64(v.Value().(core.ZInt)), 10)
+	case phpv.ZtInt:
+		s := strconv.FormatInt(int64(v.Value().(phpv.ZInt)), 10)
 		return append(r, []byte(s)...), nil
-	case core.ZtFloat:
-		s := strconv.FormatFloat(float64(v.Value().(core.ZFloat)), 'g', -1, 64)
+	case phpv.ZtFloat:
+		s := strconv.FormatFloat(float64(v.Value().(phpv.ZFloat)), 'g', -1, 64)
 		return append(r, []byte(s)...), nil
-	case core.ZtString:
-		return appendJsonString(r, string(v.Value().(core.ZString)), opt)
-	case core.ZtArray:
-		a := v.Value().(*core.ZArray)
+	case phpv.ZtString:
+		return appendJsonString(r, string(v.Value().(phpv.ZString)), opt)
+	case phpv.ZtArray:
+		a := v.Value().(*phpv.ZArray)
 		if a.HasStringKeys() {
 			// append as object
 			return appendJsonObject(ctx, r, a.NewIterator(), opt, depth)
@@ -61,7 +62,7 @@ func appendJsonEncode(ctx core.Context, r []byte, v *core.ZVal, opt JsonEncOpt, 
 			// append as array
 			return appendJsonArray(ctx, r, a.NewIterator(), opt, depth)
 		}
-	case core.ZtObject:
+	case phpv.ZtObject:
 		// TODO check for JsonSerializable
 		it := v.NewIterator()
 		if it == nil {
@@ -73,7 +74,7 @@ func appendJsonEncode(ctx core.Context, r []byte, v *core.ZVal, opt JsonEncOpt, 
 	}
 }
 
-func appendJsonArray(ctx core.Context, r []byte, it core.ZIterator, opt JsonEncOpt, depth int) ([]byte, error) {
+func appendJsonArray(ctx phpv.Context, r []byte, it phpv.ZIterator, opt JsonEncOpt, depth int) ([]byte, error) {
 	depth = depth - 1
 	if depth <= 0 {
 		return r, ErrDepth
@@ -101,7 +102,7 @@ func appendJsonArray(ctx core.Context, r []byte, it core.ZIterator, opt JsonEncO
 	return r, nil
 }
 
-func appendJsonObject(ctx core.Context, r []byte, it core.ZIterator, opt JsonEncOpt, depth int) ([]byte, error) {
+func appendJsonObject(ctx phpv.Context, r []byte, it phpv.ZIterator, opt JsonEncOpt, depth int) ([]byte, error) {
 	depth = depth - 1
 	if depth <= 0 {
 		return r, ErrDepth
@@ -114,7 +115,7 @@ func appendJsonObject(ctx core.Context, r []byte, it core.ZIterator, opt JsonEnc
 		if err != nil {
 			return r, err
 		}
-		k, err = k.As(ctx, core.ZtString)
+		k, err = k.As(ctx, phpv.ZtString)
 		if err != nil {
 			return r, err
 		}
@@ -129,7 +130,7 @@ func appendJsonObject(ctx core.Context, r []byte, it core.ZIterator, opt JsonEnc
 		}
 		first = false
 
-		r, err = appendJsonString(r, string(k.Value().(core.ZString)), opt)
+		r, err = appendJsonString(r, string(k.Value().(phpv.ZString)), opt)
 		if err != nil {
 			return r, err
 		}

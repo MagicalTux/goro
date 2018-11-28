@@ -5,6 +5,8 @@ import (
 	"path"
 	"strings"
 	"time"
+
+	"github.com/MagicalTux/goro/core/phpv"
 )
 
 type phpWebHandler struct {
@@ -23,7 +25,7 @@ func (p *phpWebHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	g.out = w
 
 	// check if full exists
-	fp, err := g.Open(ZString(full), false)
+	fp, err := g.Open(phpv.ZString(full), false)
 	if err != nil {
 		// likely not found. TODO check if dir. If dir, send redirect
 		http.NotFound(w, req)
@@ -39,6 +41,6 @@ func (p *phpWebHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// include file
-	g.Include(g, ZString(full))
+	g.Include(g, phpv.ZString(full))
 	g.Close()
 }

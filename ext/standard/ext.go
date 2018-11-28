@@ -4,6 +4,7 @@ import (
 	"math"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpv"
 )
 
 // WARNING: This file is auto-generated. DO NOT EDIT
@@ -100,30 +101,30 @@ func init() {
 			"usleep":                   &core.ExtFunction{Func: stdFuncUsleep, Args: []*core.ExtFunctionArg{}},
 			"var_dump":                 &core.ExtFunction{Func: stdFuncVarDump, Args: []*core.ExtFunctionArg{}},
 		},
-		Constants: map[core.ZString]*core.ZVal{
-			"INF":                 core.ZFloat(math.Inf(0)).ZVal(),
-			"M_1_PI":              core.ZFloat(1 / math.Pi).ZVal(),
-			"M_2_PI":              core.ZFloat(2 / math.Pi).ZVal(),
-			"M_2_SQRTPI":          core.ZFloat(2 / math.Sqrt(math.Pi)).ZVal(),
-			"M_E":                 core.ZFloat(math.E).ZVal(),
-			"M_EULER":             core.ZFloat(0.57721566490153286061).ZVal(),
-			"M_LN2":               core.ZFloat(math.Ln2).ZVal(),
-			"M_LNPI":              core.ZFloat(math.Log(math.Pi)).ZVal(),
-			"M_LOG10E":            core.ZFloat(math.Log10E).ZVal(),
-			"M_LOG2E":             core.ZFloat(math.Log2E).ZVal(),
-			"M_PHI":               core.ZFloat(math.Phi).ZVal(),
-			"M_PI":                core.ZFloat(math.Pi).ZVal(),
-			"M_PI_2":              core.ZFloat(math.Pi / 2).ZVal(),
-			"M_PI_4":              core.ZFloat(math.Pi / 4).ZVal(),
-			"M_SQRT1_2":           core.ZFloat(1 / math.Sqrt(2)).ZVal(),
-			"M_SQRT2":             core.ZFloat(math.Sqrt(2)).ZVal(),
-			"M_SQRT3":             core.ZFloat(math.Sqrt(3)).ZVal(),
-			"M_SQRTPI":            core.ZFloat(math.Sqrt(math.Pi)).ZVal(),
-			"NAN":                 core.ZFloat(math.NaN()).ZVal(),
-			"PHP_ROUND_HALF_DOWN": core.ZInt(2).ZVal(),
-			"PHP_ROUND_HALF_EVEN": core.ZInt(3).ZVal(),
-			"PHP_ROUND_HALF_ODD":  core.ZInt(4).ZVal(),
-			"PHP_ROUND_HALF_UP":   core.ZInt(1).ZVal(),
+		Constants: map[phpv.ZString]*phpv.ZVal{
+			"INF":                 phpv.ZFloat(math.Inf(0)).ZVal(),
+			"M_1_PI":              phpv.ZFloat(1 / math.Pi).ZVal(),
+			"M_2_PI":              phpv.ZFloat(2 / math.Pi).ZVal(),
+			"M_2_SQRTPI":          phpv.ZFloat(2 / math.Sqrt(math.Pi)).ZVal(),
+			"M_E":                 phpv.ZFloat(math.E).ZVal(),
+			"M_EULER":             phpv.ZFloat(0.57721566490153286061).ZVal(),
+			"M_LN2":               phpv.ZFloat(math.Ln2).ZVal(),
+			"M_LNPI":              phpv.ZFloat(math.Log(math.Pi)).ZVal(),
+			"M_LOG10E":            phpv.ZFloat(math.Log10E).ZVal(),
+			"M_LOG2E":             phpv.ZFloat(math.Log2E).ZVal(),
+			"M_PHI":               phpv.ZFloat(math.Phi).ZVal(),
+			"M_PI":                phpv.ZFloat(math.Pi).ZVal(),
+			"M_PI_2":              phpv.ZFloat(math.Pi / 2).ZVal(),
+			"M_PI_4":              phpv.ZFloat(math.Pi / 4).ZVal(),
+			"M_SQRT1_2":           phpv.ZFloat(1 / math.Sqrt(2)).ZVal(),
+			"M_SQRT2":             phpv.ZFloat(math.Sqrt(2)).ZVal(),
+			"M_SQRT3":             phpv.ZFloat(math.Sqrt(3)).ZVal(),
+			"M_SQRTPI":            phpv.ZFloat(math.Sqrt(math.Pi)).ZVal(),
+			"NAN":                 phpv.ZFloat(math.NaN()).ZVal(),
+			"PHP_ROUND_HALF_DOWN": phpv.ZInt(2).ZVal(),
+			"PHP_ROUND_HALF_EVEN": phpv.ZInt(3).ZVal(),
+			"PHP_ROUND_HALF_ODD":  phpv.ZInt(4).ZVal(),
+			"PHP_ROUND_HALF_UP":   phpv.ZInt(1).ZVal(),
 		},
 	})
 }

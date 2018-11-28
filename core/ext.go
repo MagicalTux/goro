@@ -1,24 +1,26 @@
 package core
 
+import "github.com/MagicalTux/goro/core/phpv"
+
 var (
-	globalExtMap  map[string]*Ext     = make(map[string]*Ext)
-	globalFuncMap map[string]Callable = make(map[string]Callable)
+	globalExtMap  map[string]*Ext          = make(map[string]*Ext)
+	globalFuncMap map[string]phpv.Callable = make(map[string]phpv.Callable)
 )
 
 type Ext struct {
 	Name      string
 	Version   string
 	Functions map[string]*ExtFunction
-	Constants map[ZString]*ZVal
+	Constants map[phpv.ZString]*phpv.ZVal
 	Classes   []*ZClass
 }
 
 type ExtFunction struct {
-	Func func(ctx Context, args []*ZVal) (*ZVal, error)
+	Func func(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	Args []*ExtFunctionArg
 }
 
-func (e *ExtFunction) Call(ctx Context, args []*ZVal) (*ZVal, error) {
+func (e *ExtFunction) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return e.Func(ctx, args)
 }
 

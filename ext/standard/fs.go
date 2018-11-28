@@ -4,12 +4,13 @@ import (
 	"path"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpv"
 )
 
 //> func string dirname ( string $path [, int $levels = 1 ] )
-func fncDirname(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
+func fncDirname(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var p string
-	var lvl *core.ZInt
+	var lvl *phpv.ZInt
 	_, err := core.Expand(ctx, args, &p, &lvl)
 	if err != nil {
 		return nil, err
@@ -26,11 +27,11 @@ func fncDirname(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 	}
 
 	if lvl == nil {
-		return core.ZString(path.Dir(p)).ZVal(), nil
+		return phpv.ZString(path.Dir(p)).ZVal(), nil
 	}
 
-	for i := core.ZInt(0); i < *lvl; i++ {
+	for i := phpv.ZInt(0); i < *lvl; i++ {
 		p = path.Dir(p)
 	}
-	return core.ZString(p).ZVal(), nil
+	return phpv.ZString(p).ZVal(), nil
 }

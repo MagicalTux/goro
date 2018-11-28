@@ -17,6 +17,7 @@ import (
 	"testing"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
 	"github.com/andreyvit/diff"
 )
@@ -66,7 +67,7 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		// pass data to the engine
 		g := core.NewGlobalReq(p.req, p.p)
 		g.SetOutput(p.output)
-		g.Chdir(core.ZString(path.Dir(p.path))) // chdir execution to path
+		g.Chdir(phpv.ZString(path.Dir(p.path))) // chdir execution to path
 
 		t := tokenizer.NewLexer(b, p.path)
 		c, err := core.Compile(g, t)
@@ -75,7 +76,7 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		}
 		_, err = c.Run(g)
 		g.Close()
-		return core.FilterError(err)
+		return phpv.FilterError(err)
 	case "EXPECT":
 		// compare p.output with b
 		out := bytes.TrimSpace(p.output.Bytes())
@@ -95,7 +96,7 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 			return err
 		}
 		_, err = c.Run(g)
-		err = core.FilterError(err)
+		err = phpv.FilterError(err)
 		if err != nil {
 			return err
 		}

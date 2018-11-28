@@ -6,14 +6,15 @@ import (
 	"unicode/utf8"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpv"
 	gopcre "github.com/gijsbers/go-pcre"
 )
 
 //> func mixed preg_replace ( mixed $pattern , mixed $replacement , mixed $subject [, int $limit = -1 [, int &$count ]] )
-func pregReplace(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
-	var pattern, replacement, subject *core.ZVal
-	var limit *core.ZInt
-	var count *core.ZInt
+func pregReplace(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var pattern, replacement, subject *phpv.ZVal
+	var limit *phpv.ZInt
+	var count *phpv.ZInt
 
 	_, err := core.Expand(ctx, args, &pattern, &replacement, &subject, &limit, &count)
 	if err != nil {
@@ -21,11 +22,11 @@ func pregReplace(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 	}
 
 	if limit == nil {
-		limit = new(core.ZInt)
+		limit = new(phpv.ZInt)
 		*limit = -1
 	}
 	if count == nil {
-		count = new(core.ZInt)
+		count = new(phpv.ZInt)
 	}
 
 	return doPregReplace(ctx, pattern, replacement, subject, *limit, count)
@@ -97,8 +98,8 @@ func prepareRegexp(pattern string) (gopcre.Regexp, error) {
 	return gopcre.Compile(pattern, 0) // TODO
 }
 
-func doPregReplace(ctx core.Context, pattern, replacement, subject *core.ZVal, limit core.ZInt, count *core.ZInt) (*core.ZVal, error) {
-	pattern, err := pattern.As(ctx, core.ZtString)
+func doPregReplace(ctx phpv.Context, pattern, replacement, subject *phpv.ZVal, limit phpv.ZInt, count *phpv.ZInt) (*phpv.ZVal, error) {
+	pattern, err := pattern.As(ctx, phpv.ZtString)
 	if err != nil {
 		return nil, err
 	}
@@ -125,5 +126,5 @@ func doPregReplace(ctx core.Context, pattern, replacement, subject *core.ZVal, l
 
 	// check repl for backreferences (\1 or $1 type of thing)
 
-	return core.ZString(r).ZVal(), nil
+	return phpv.ZString(r).ZVal(), nil
 }

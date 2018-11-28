@@ -4,28 +4,29 @@ import (
 	"strings"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpv"
 )
 
 //> func string getenv ( string $varname [, bool $local_only = FALSE ] )
-func getenv(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
-	var varname core.ZString
-	var local_only *core.ZBool
+func getenv(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var varname phpv.ZString
+	var local_only *phpv.ZBool
 
 	_, err := core.Expand(ctx, args, &varname, &local_only)
 	if err != nil {
 		return nil, err
 	}
 
-	v, ok := ctx.Global().Getenv(string(varname))
+	v, ok := ctx.Global().(*core.Global).Getenv(string(varname))
 	if !ok {
-		return core.ZBool(false).ZVal(), nil
+		return phpv.ZBool(false).ZVal(), nil
 	}
 
-	return core.ZString(v).ZVal(), nil
+	return phpv.ZString(v).ZVal(), nil
 }
 
 //> func bool putenv ( string $setting )
-func putenv(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
+func putenv(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var setting string
 	_, err := core.Expand(ctx, args, &setting)
 	if err != nil {
@@ -35,9 +36,9 @@ func putenv(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 	pos := strings.IndexByte(setting, '=')
 	if pos == -1 {
 		// unset
-		ctx.Global().Unsetenv(setting)
+		ctx.Global().(*core.Global).Unsetenv(setting)
 	} else {
-		ctx.Global().Setenv(setting[:pos], setting[pos+1:])
+		ctx.Global().(*core.Global).Setenv(setting[:pos], setting[pos+1:])
 	}
-	return core.ZBool(true).ZVal(), nil
+	return phpv.ZBool(true).ZVal(), nil
 }

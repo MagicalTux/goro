@@ -1,10 +1,12 @@
 package hash
 
-import "github.com/MagicalTux/goro/core"
+import (
+	"github.com/MagicalTux/goro/core/phpv"
+)
 
 //> func array hash_algos ( void )
-func fncHashAlgos(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
-	a := core.NewZArray()
+func fncHashAlgos(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	a := phpv.NewZArray()
 
 	for n := range algos {
 		a.OffsetSet(ctx, nil, n.ZVal())

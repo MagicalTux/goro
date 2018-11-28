@@ -4,12 +4,13 @@ import (
 	"bytes"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpv"
 )
 
 //> func mixed str_replace ( mixed $search , mixed $replace , mixed $subject [, int &$count ] )
-func stdStrReplace(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
-	var search, replace, subject *core.ZVal
-	var count *core.ZInt
+func stdStrReplace(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var search, replace, subject *phpv.ZVal
+	var count *phpv.ZInt
 
 	_, err := core.Expand(ctx, args, &search, &replace, &subject, &count)
 	if err != nil {
@@ -18,10 +19,10 @@ func stdStrReplace(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 
 	if count == nil {
 		// avoid crash
-		count = new(core.ZInt)
+		count = new(phpv.ZInt)
 	}
 
-	if subject.GetType() == core.ZtArray {
+	if subject.GetType() == phpv.ZtArray {
 		res := subject.Dup()
 		it := res.NewIterator()
 
@@ -35,12 +36,12 @@ func stdStrReplace(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 				return nil, err
 			}
 
-			err = v.CastTo(ctx, core.ZtString)
+			err = v.CastTo(ctx, phpv.ZtString)
 			if err != nil {
 				return nil, err
 			}
 
-			vs := v.Value().(core.ZString)
+			vs := v.Value().(phpv.ZString)
 
 			vs, err = doStrReplace(ctx, vs, search, replace, count)
 			if err != nil {
@@ -54,12 +55,12 @@ func stdStrReplace(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 		return res, nil
 	}
 
-	subject, err = subject.As(ctx, core.ZtString)
+	subject, err = subject.As(ctx, phpv.ZtString)
 	if err != nil {
 		return nil, err
 	}
 
-	vs := subject.Value().(core.ZString)
+	vs := subject.Value().(phpv.ZString)
 
 	vs, err = doStrReplace(ctx, vs, search, replace, count)
 	if err != nil {
@@ -69,9 +70,9 @@ func stdStrReplace(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 	return vs.ZVal(), nil
 }
 
-func doStrReplace(ctx core.Context, subject core.ZString, search, replace *core.ZVal, count *core.ZInt) (core.ZString, error) {
-	if search.GetType() == core.ZtArray {
-		if replace.GetType() == core.ZtArray {
+func doStrReplace(ctx phpv.Context, subject phpv.ZString, search, replace *phpv.ZVal, count *phpv.ZInt) (phpv.ZString, error) {
+	if search.GetType() == phpv.ZtArray {
+		if replace.GetType() == phpv.ZtArray {
 			it1 := search.NewIterator()
 			it2 := replace.NewIterator()
 
@@ -85,7 +86,7 @@ func doStrReplace(ctx core.Context, subject core.ZString, search, replace *core.
 					return subject, err
 				}
 
-				from, err = from.As(ctx, core.ZtString)
+				from, err = from.As(ctx, phpv.ZtString)
 				if err != nil {
 					return subject, err
 				}
@@ -100,7 +101,7 @@ func doStrReplace(ctx core.Context, subject core.ZString, search, replace *core.
 					continue
 				}
 
-				var to *core.ZVal
+				var to *phpv.ZVal
 				if it2.Valid(ctx) {
 					to, err = it2.Current(ctx)
 					if err != nil {
@@ -108,14 +109,14 @@ func doStrReplace(ctx core.Context, subject core.ZString, search, replace *core.
 					}
 				}
 
-				to, err = to.As(ctx, core.ZtString)
+				to, err = to.As(ctx, phpv.ZtString)
 				if err != nil {
 					return subject, err
 				}
 
 				to_b := []byte(to.AsString(ctx))
-				subject = core.ZString(bytes.Replace([]byte(subject), from_b, to_b, cnt))
-				*count += core.ZInt(cnt)
+				subject = phpv.ZString(bytes.Replace([]byte(subject), from_b, to_b, cnt))
+				*count += phpv.ZInt(cnt)
 
 				it1.Next(ctx)
 				it2.Next(ctx)
@@ -123,7 +124,7 @@ func doStrReplace(ctx core.Context, subject core.ZString, search, replace *core.
 		}
 
 		var err error
-		replace, err = replace.As(ctx, core.ZtString)
+		replace, err = replace.As(ctx, phpv.ZtString)
 		if err != nil {
 			return subject, err
 		}
@@ -142,7 +143,7 @@ func doStrReplace(ctx core.Context, subject core.ZString, search, replace *core.
 				return subject, err
 			}
 
-			from, err = from.As(ctx, core.ZtString)
+			from, err = from.As(ctx, phpv.ZtString)
 			if err != nil {
 				return subject, err
 			}
@@ -156,14 +157,14 @@ func doStrReplace(ctx core.Context, subject core.ZString, search, replace *core.
 				continue
 			}
 
-			subject = core.ZString(bytes.Replace([]byte(subject), from_b, to_b, cnt))
-			*count += core.ZInt(cnt)
+			subject = phpv.ZString(bytes.Replace([]byte(subject), from_b, to_b, cnt))
+			*count += phpv.ZInt(cnt)
 
 			it1.Next(ctx)
 		}
 	}
 
-	search, err := search.As(ctx, core.ZtString)
+	search, err := search.As(ctx, phpv.ZtString)
 	if err != nil {
 		return subject, err
 	}
@@ -175,21 +176,21 @@ func doStrReplace(ctx core.Context, subject core.ZString, search, replace *core.
 		return subject, nil
 	}
 
-	replace, err = replace.As(ctx, core.ZtString)
+	replace, err = replace.As(ctx, phpv.ZtString)
 	if err != nil {
 		return subject, err
 	}
 
 	to_b := []byte(replace.AsString(ctx))
-	subject = core.ZString(bytes.Replace([]byte(subject), from_b, to_b, cnt))
-	*count += core.ZInt(cnt)
+	subject = phpv.ZString(bytes.Replace([]byte(subject), from_b, to_b, cnt))
+	*count += phpv.ZInt(cnt)
 
 	return subject, err
 }
 
 //> func string str_rot13 ( string $str )
-func fncStrRot13(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
-	var s core.ZString
+func fncStrRot13(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var s phpv.ZString
 	_, err := core.Expand(ctx, args, &s)
 	if err != nil {
 		return nil, err
@@ -205,12 +206,12 @@ func fncStrRot13(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 		obuf[i] = v
 	}
 
-	return core.ZString(obuf).ZVal(), nil
+	return phpv.ZString(obuf).ZVal(), nil
 }
 
 //> func string strtolower ( string $string )
-func fncStrToLower(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
-	var s core.ZString
+func fncStrToLower(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var s phpv.ZString
 	_, err := core.Expand(ctx, args, &s)
 	if err != nil {
 		return nil, err

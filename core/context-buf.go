@@ -1,13 +1,17 @@
 package core
 
-import "io"
+import (
+	"io"
+
+	"github.com/MagicalTux/goro/core/phpv"
+)
 
 type BufContext struct {
-	Context
+	phpv.Context
 	b io.Writer
 }
 
-func NewBufContext(ctx Context, b io.Writer) Context {
+func NewBufContext(ctx phpv.Context, b io.Writer) phpv.Context {
 	return &BufContext{ctx, b}
 }
 

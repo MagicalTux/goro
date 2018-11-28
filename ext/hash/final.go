@@ -5,12 +5,13 @@ import (
 	gohash "hash"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpv"
 )
 
 //> func string hash_final ( HashContext $context [, bool $raw_output = FALSE ] )
-func fncHashFinal(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
+func fncHashFinal(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	obj := &core.ZObject{Class: HashContext}
-	var raw *core.ZBool
+	var raw *phpv.ZBool
 
 	_, err := core.Expand(ctx, args, &obj, &raw)
 	if err != nil {
@@ -22,9 +23,9 @@ func fncHashFinal(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 
 	if raw != nil && *raw {
 		// return as raw
-		return core.ZString(r).ZVal(), nil
+		return phpv.ZString(r).ZVal(), nil
 	}
 
 	// convert to hex
-	return core.ZString(hex.EncodeToString(r)).ZVal(), nil
+	return phpv.ZString(hex.EncodeToString(r)).ZVal(), nil
 }

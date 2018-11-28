@@ -1,25 +1,29 @@
 package core
 
-import "io"
+import (
+	"io"
 
-type runConcat []Runnable
+	"github.com/MagicalTux/goro/core/phpv"
+)
 
-func (r runConcat) Run(ctx Context) (l *ZVal, err error) {
+type runConcat []phpv.Runnable
+
+func (r runConcat) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 	res := ""
-	var t *ZVal
+	var t *phpv.ZVal
 
 	for _, v := range r {
 		t, err = v.Run(ctx)
 		if err != nil {
 			return
 		}
-		t, err = t.As(ctx, ZtString)
+		t, err = t.As(ctx, phpv.ZtString)
 		if err != nil {
 			return
 		}
 		res = res + t.String()
 	}
-	l = &ZVal{ZString(res)}
+	l = phpv.ZString(res).ZVal()
 	return
 }
 

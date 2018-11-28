@@ -1,6 +1,9 @@
 package core
 
-import "github.com/MagicalTux/goro/core/tokenizer"
+import (
+	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/MagicalTux/goro/core/tokenizer"
+)
 
 type zclassCompileCtx struct {
 	compileCtx
@@ -11,7 +14,7 @@ func (z *zclassCompileCtx) getClass() *ZClass {
 	return z.class
 }
 
-func compileClass(i *tokenizer.Item, c compileCtx) (Runnable, error) {
+func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	var attr ZClassAttr
 	err := attr.parse(c)
 	if err != nil {
@@ -19,10 +22,10 @@ func compileClass(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	}
 
 	class := &ZClass{
-		l:       MakeLoc(i.Loc()),
+		l:       phpv.MakeLoc(i.Loc()),
 		attr:    attr,
-		Methods: make(map[ZString]*ZClassMethod),
-		Const:   make(map[ZString]Val),
+		Methods: make(map[phpv.ZString]*ZClassMethod),
+		Const:   make(map[phpv.ZString]phpv.Val),
 	}
 
 	switch i.Type {
@@ -60,7 +63,7 @@ func compileClass(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 			// end of class
 			break
 		}
-		l := MakeLoc(i.Loc())
+		l := phpv.MakeLoc(i.Loc())
 		c.backup()
 
 		// parse attrs if any
@@ -87,7 +90,7 @@ func compileClass(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 		case tokenizer.T_VARIABLE:
 			for {
 				prop := &ZClassProp{Modifiers: attr}
-				prop.VarName = ZString(i.Data[1:])
+				prop.VarName = phpv.ZString(i.Data[1:])
 
 				// check for default value
 				i, err = c.NextItem()
@@ -148,7 +151,7 @@ func compileClass(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 				return nil, i.Unexpected()
 			}
 
-			var v Runnable
+			var v phpv.Runnable
 			v, err = compileExpr(nil, c)
 			if err != nil {
 				return nil, err
@@ -162,7 +165,7 @@ func compileClass(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 				return nil, i.Unexpected()
 			}
 
-			class.Const[ZString(constName)] = &compileDelayed{v}
+			class.Const[phpv.ZString(constName)] = &compileDelayed{v}
 		case tokenizer.T_FUNCTION:
 			// next must be a string (method name)
 			i, err := c.NextItem()
@@ -183,14 +186,14 @@ func compileClass(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 				return nil, i.Unexpected()
 			}
 
-			f, err := compileFunctionWithName(ZString(i.Data), c, l, rref)
+			f, err := compileFunctionWithName(phpv.ZString(i.Data), c, l, rref)
 			if err != nil {
 				return nil, err
 			}
 			f.class = class
 
 			// register method
-			method := &ZClassMethod{Name: ZString(i.Data), Modifiers: attr, Method: f}
+			method := &ZClassMethod{Name: phpv.ZString(i.Data), Modifiers: attr, Method: f}
 
 			if x := method.Name.ToLower(); x == class.BaseName().ToLower() || x == "__construct" {
 				//if class.Constructor != nil {
@@ -215,7 +218,7 @@ func (class *ZClass) parseClassLine(c compileCtx) error {
 		return i.Unexpected()
 	}
 
-	class.Name = ZString(i.Data)
+	class.Name = phpv.ZString(i.Data)
 
 	i, err = c.NextItem()
 	if err != nil {
@@ -268,8 +271,8 @@ func (class *ZClass) parseClassLine(c compileCtx) error {
 	return nil
 }
 
-func compileReadClassIdentifier(c compileCtx) (ZString, error) {
-	var res ZString
+func compileReadClassIdentifier(c compileCtx) (phpv.ZString, error) {
+	var res phpv.ZString
 
 	for {
 		i, err := c.NextItem()
@@ -289,11 +292,11 @@ func compileReadClassIdentifier(c compileCtx) (ZString, error) {
 			if i.Type != tokenizer.T_STRING {
 				return res, i.Unexpected()
 			}
-			res += ZString(i.Data)
+			res += phpv.ZString(i.Data)
 			continue
 		}
 		if i.Type == tokenizer.T_STRING {
-			res += ZString(i.Data)
+			res += phpv.ZString(i.Data)
 			continue
 		}
 

@@ -1,6 +1,9 @@
 package ctype
 
-import "github.com/MagicalTux/goro/core"
+import (
+	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpv"
+)
 
 // WARNING: This file is auto-generated. DO NOT EDIT
 
@@ -22,6 +25,6 @@ func init() {
 			"ctype_upper":  &core.ExtFunction{Func: ctypeUpper, Args: []*core.ExtFunctionArg{}},
 			"ctype_xdigit": &core.ExtFunction{Func: ctypeXdigit, Args: []*core.ExtFunctionArg{}},
 		},
-		Constants: map[core.ZString]*core.ZVal{},
+		Constants: map[phpv.ZString]*phpv.ZVal{},
 	})
 }

@@ -5,18 +5,15 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
 
 type runNewObject struct {
-	obj    ZString
-	cl     Runnable // for anonymous
+	obj    phpv.ZString
+	cl     phpv.Runnable // for anonymous
 	newArg Runnables
-	l      *Loc
-}
-
-func (r *runNewObject) Loc() *Loc {
-	return r.l
+	l      *phpv.Loc
 }
 
 func (r *runNewObject) Dump(w io.Writer) error {
@@ -34,8 +31,8 @@ func (r *runNewObject) Dump(w io.Writer) error {
 	return err
 }
 
-func (r *runNewObject) Run(ctx Context) (*ZVal, error) {
-	class, err := ctx.Global().GetClass(ctx, r.obj)
+func (r *runNewObject) Run(ctx phpv.Context) (*phpv.ZVal, error) {
+	class, err := ctx.Global().(*Global).GetClass(ctx, r.obj)
 	if err != nil {
 		return nil, err
 	}
@@ -55,12 +52,12 @@ func (r *runNewObject) Run(ctx Context) (*ZVal, error) {
 	return z.ZVal(), nil
 }
 
-func compileNew(i *tokenizer.Item, c compileCtx) (Runnable, error) {
+func compileNew(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	// next should be either:
 	// T_CLASS (anonymous class)
 	// string (name of a class)
 
-	n := &runNewObject{l: MakeLoc(i.Loc())}
+	n := &runNewObject{l: phpv.MakeLoc(i.Loc())}
 
 	i, err := c.NextItem()
 	if err != nil {
@@ -71,7 +68,7 @@ func compileNew(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 		return nil, i.Unexpected()
 	}
 
-	n.obj = ZString(i.Data)
+	n.obj = phpv.ZString(i.Data)
 
 	i, err = c.NextItem()
 	if err != nil {
@@ -91,24 +88,16 @@ func compileNew(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 }
 
 type runObjectFunc struct {
-	ref  Runnable
-	op   ZString
+	ref  phpv.Runnable
+	op   phpv.ZString
 	args Runnables
-	l    *Loc
+	l    *phpv.Loc
 }
 
 type runObjectVar struct {
-	ref     Runnable
-	varName ZString
-	l       *Loc
-}
-
-func (r *runObjectFunc) Loc() *Loc {
-	return r.l
-}
-
-func (r *runObjectVar) Loc() *Loc {
-	return r.l
+	ref     phpv.Runnable
+	varName phpv.ZString
+	l       *phpv.Loc
 }
 
 func (r *runObjectFunc) Dump(w io.Writer) error {
@@ -139,7 +128,7 @@ func (r *runObjectVar) Dump(w io.Writer) error {
 	return err
 }
 
-func (r *runObjectFunc) Run(ctx Context) (*ZVal, error) {
+func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	// fetch object
 	obj, err := r.ref.Run(ctx)
 	if err != nil {
@@ -149,16 +138,16 @@ func (r *runObjectFunc) Run(ctx Context) (*ZVal, error) {
 	op := r.op
 	if op[0] == '$' {
 		// variable
-		var opz *ZVal
+		var opz *phpv.ZVal
 		opz, err = ctx.OffsetGet(ctx, op[1:].ZVal())
 		if err != nil {
 			return nil, err
 		}
-		opz, err = opz.As(ctx, ZtString)
+		opz, err = opz.As(ctx, phpv.ZtString)
 		if err != nil {
 			return nil, err
 		}
-		op = opz.Value().(ZString)
+		op = opz.Value().(phpv.ZString)
 	}
 
 	objI, ok := obj.Value().(*ZObject)
@@ -175,7 +164,7 @@ func (r *runObjectFunc) Run(ctx Context) (*ZVal, error) {
 	return ctx.Call(ctx, m, r.args, objI)
 }
 
-func (r *runObjectVar) Run(ctx Context) (*ZVal, error) {
+func (r *runObjectVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	// fetch object property
 	obj, err := r.ref.Run(ctx)
 	if err != nil {
@@ -189,7 +178,7 @@ func (r *runObjectVar) Run(ctx Context) (*ZVal, error) {
 	}
 
 	// offset get
-	var offt *ZVal
+	var offt *phpv.ZVal
 	if r.varName[0] == '$' {
 		// variable
 		offt, err = ctx.OffsetGet(ctx, r.varName[1:].ZVal())
@@ -204,7 +193,7 @@ func (r *runObjectVar) Run(ctx Context) (*ZVal, error) {
 	return objI.ObjectGet(ctx, offt)
 }
 
-func (r *runObjectVar) WriteValue(ctx Context, value *ZVal) error {
+func (r *runObjectVar) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 	// write object property
 	obj, err := r.ref.Run(ctx)
 	if err != nil {
@@ -218,7 +207,7 @@ func (r *runObjectVar) WriteValue(ctx Context, value *ZVal) error {
 	}
 
 	// offset set
-	var offt *ZVal
+	var offt *phpv.ZVal
 	if r.varName[0] == '$' {
 		// variable
 		offt, err = ctx.OffsetGet(ctx, r.varName[1:].ZVal())
@@ -233,9 +222,9 @@ func (r *runObjectVar) WriteValue(ctx Context, value *ZVal) error {
 	return objI.ObjectSet(ctx, offt, value)
 }
 
-func compileObjectOperator(v Runnable, i *tokenizer.Item, c compileCtx) (Runnable, error) {
+func compileObjectOperator(v phpv.Runnable, i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	// call a method or get a variable on an object
-	l := MakeLoc(i.Loc())
+	l := phpv.MakeLoc(i.Loc())
 
 	i, err := c.NextItem()
 	if err != nil {
@@ -245,7 +234,7 @@ func compileObjectOperator(v Runnable, i *tokenizer.Item, c compileCtx) (Runnabl
 	if i.Type != tokenizer.T_STRING && i.Type != tokenizer.T_VARIABLE {
 		return nil, i.Unexpected()
 	}
-	op := ZString(i.Data)
+	op := phpv.ZString(i.Data)
 
 	i, err = c.NextItem()
 	if err != nil {

@@ -4,22 +4,19 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
 
 type staticVarInfo struct {
-	varName ZString
-	def     Runnable
-	z       *ZVal
+	varName phpv.ZString
+	def     phpv.Runnable
+	z       *phpv.ZVal
 }
 
 type runStaticVar struct {
 	vars []*staticVarInfo
-	l    *Loc
-}
-
-func (r *runStaticVar) Loc() *Loc {
-	return r.l
+	l    *phpv.Loc
 }
 
 func (r *runStaticVar) Dump(w io.Writer) error {
@@ -57,12 +54,12 @@ func (r *runStaticVar) Dump(w io.Writer) error {
 	return nil
 }
 
-func (r *runStaticVar) Run(ctx Context) (*ZVal, error) {
+func (r *runStaticVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	// set vars in ctx
 	for _, v := range r.vars {
 		if v.z == nil {
 			if v.def == nil {
-				v.z = ZNull{}.ZVal()
+				v.z = phpv.ZNull{}.ZVal()
 			} else {
 				var err error
 				v.z, err = v.def.Run(ctx)
@@ -77,8 +74,8 @@ func (r *runStaticVar) Run(ctx Context) (*ZVal, error) {
 	return nil, nil
 }
 
-func compileStaticVar(i *tokenizer.Item, c compileCtx) (Runnable, error) {
-	r := &runStaticVar{l: MakeLoc(i.Loc())}
+func compileStaticVar(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
+	r := &runStaticVar{l: phpv.MakeLoc(i.Loc())}
 
 	// static $var [= value] [, $var [= value]] ...
 	// static followed by T_PAAMAYIM_NEKUDOTAYIM means a static call (compiling is handled separately)
@@ -92,7 +89,7 @@ func compileStaticVar(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 		if i.Type != tokenizer.T_VARIABLE {
 			return nil, i.Unexpected()
 		}
-		stv := &staticVarInfo{varName: ZString(i.Data[1:])}
+		stv := &staticVarInfo{varName: phpv.ZString(i.Data[1:])}
 
 		// parse default value, if any
 		i, err = c.NextItem()

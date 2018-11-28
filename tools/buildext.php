@@ -136,7 +136,7 @@ function process_ext($path, $ext, $output = 'ext.go') {
 	}
 	fwrite($fp, "\t\t},\n");
 
-	fwrite($fp, "\t\tConstants: map[${prefix}ZString]*${prefix}ZVal{\n");
+	fwrite($fp, "\t\tConstants: map[phpv.ZString]*phpv.ZVal{\n");
 	ksort($constants);
 	foreach($constants as $const => $info) {
 		fwrite($fp, "\t\t\t\"".addslashes($const)."\": ".$info['val'].".ZVal(),\n");

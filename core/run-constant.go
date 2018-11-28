@@ -3,15 +3,13 @@ package core
 import (
 	"io"
 	"strings"
+
+	"github.com/MagicalTux/goro/core/phpv"
 )
 
 type runConstant struct {
 	c string
-	l *Loc
-}
-
-func (r *runConstant) Loc() *Loc {
-	return r.l
+	l *phpv.Loc
 }
 
 func (r *runConstant) Dump(w io.Writer) error {
@@ -19,24 +17,24 @@ func (r *runConstant) Dump(w io.Writer) error {
 	return err
 }
 
-func (r *runConstant) Run(ctx Context) (l *ZVal, err error) {
+func (r *runConstant) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 	switch strings.ToLower(string(r.c)) {
 	case "null":
-		return ZNull{}.ZVal(), nil
+		return phpv.ZNull{}.ZVal(), nil
 	case "true":
-		return ZBool(true).ZVal(), nil
+		return phpv.ZBool(true).ZVal(), nil
 	case "false":
-		return ZBool(false).ZVal(), nil
+		return phpv.ZBool(false).ZVal(), nil
 	}
 
-	z, err := ctx.Global().GetConstant(ZString(r.c))
+	z, err := ctx.Global().(*Global).GetConstant(phpv.ZString(r.c))
 	if err != nil {
 		return nil, err
 	}
 
 	if z == nil {
 		// TODO issue warning Use of undefined constant tata - assumed 'tata' (this will throw an Error in a future version of PHP)
-		return &ZVal{ZString(r.c)}, nil
+		return phpv.ZString(r.c).ZVal(), nil
 	}
 	return z, nil
 }

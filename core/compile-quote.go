@@ -7,10 +7,11 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
 
-func compileQuoteConstant(i *tokenizer.Item, c compileCtx) (Runnable, error) {
+func compileQuoteConstant(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	// i.Data is a string such as 'a string' (quotes included)
 
 	if i.Data[0] != '\'' {
@@ -23,7 +24,7 @@ func compileQuoteConstant(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	in := i.Data[1 : len(i.Data)-1]
 	b := &bytes.Buffer{}
 	l := len(in)
-	loc := MakeLoc(i.Loc())
+	loc := phpv.MakeLoc(i.Loc())
 
 	for i := 0; i < l; i++ {
 		c := in[i]
@@ -46,10 +47,10 @@ func compileQuoteConstant(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 		}
 	}
 
-	return &runZVal{ZString(b.String()), loc}, nil
+	return &runZVal{phpv.ZString(b.String()), loc}, nil
 }
 
-func compileQuoteHeredoc(i *tokenizer.Item, c compileCtx) (Runnable, error) {
+func compileQuoteHeredoc(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	// i == T_START_HEREDOC
 	var res runConcat
 	var err error
@@ -63,9 +64,9 @@ func compileQuoteHeredoc(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 		_ = res
 		switch i.Type {
 		case tokenizer.T_ENCAPSED_AND_WHITESPACE:
-			res = append(res, &runZVal{unescapePhpQuotedString(i.Data), MakeLoc(i.Loc())})
+			res = append(res, &runZVal{unescapePhpQuotedString(i.Data), phpv.MakeLoc(i.Loc())})
 		case tokenizer.T_VARIABLE:
-			res = append(res, &runVariable{ZString(i.Data[1:]), MakeLoc(i.Loc())})
+			res = append(res, &runVariable{phpv.ZString(i.Data[1:]), phpv.MakeLoc(i.Loc())})
 		case tokenizer.T_END_HEREDOC:
 			// end of quote
 			return res, nil
@@ -75,7 +76,7 @@ func compileQuoteHeredoc(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	}
 }
 
-func compileQuoteEncapsed(i *tokenizer.Item, c compileCtx, q rune) (Runnable, error) {
+func compileQuoteEncapsed(i *tokenizer.Item, c compileCtx, q rune) (phpv.Runnable, error) {
 	// i == '"'
 
 	var res runConcat
@@ -90,9 +91,9 @@ func compileQuoteEncapsed(i *tokenizer.Item, c compileCtx, q rune) (Runnable, er
 		_ = res
 		switch i.Type {
 		case tokenizer.T_ENCAPSED_AND_WHITESPACE:
-			res = append(res, &runZVal{unescapePhpQuotedString(i.Data), MakeLoc(i.Loc())})
+			res = append(res, &runZVal{unescapePhpQuotedString(i.Data), phpv.MakeLoc(i.Loc())})
 		case tokenizer.T_VARIABLE:
-			res = append(res, &runVariable{ZString(i.Data[1:]), MakeLoc(i.Loc())})
+			res = append(res, &runVariable{phpv.ZString(i.Data[1:]), phpv.MakeLoc(i.Loc())})
 		case tokenizer.Rune(q):
 			// end of quote
 			return res, nil
@@ -102,7 +103,7 @@ func compileQuoteEncapsed(i *tokenizer.Item, c compileCtx, q rune) (Runnable, er
 	}
 }
 
-func unescapePhpQuotedString(in string) ZString {
+func unescapePhpQuotedString(in string) phpv.ZString {
 	t := &bytes.Buffer{}
 
 	for len(in) > 0 {
@@ -181,7 +182,7 @@ func unescapePhpQuotedString(in string) ZString {
 		in = in[1:]
 	}
 
-	return ZString(t.String())
+	return phpv.ZString(t.String())
 }
 
 // code from encoding/utf8 so we can encode surrogate values (required by PHP tests)

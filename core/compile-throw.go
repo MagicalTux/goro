@@ -4,16 +4,13 @@ import (
 	"errors"
 	"io"
 
+	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
 
 type runnableThrow struct {
-	v Runnable
-	l *Loc
-}
-
-func (r *runnableThrow) Loc() *Loc {
-	return r.l
+	v phpv.Runnable
+	l *phpv.Loc
 }
 
 func (r *runnableThrow) Dump(w io.Writer) error {
@@ -24,7 +21,7 @@ func (r *runnableThrow) Dump(w io.Writer) error {
 	return r.v.Dump(w)
 }
 
-func (r *runnableThrow) Run(ctx Context) (l *ZVal, err error) {
+func (r *runnableThrow) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 	v, err := r.v.Run(ctx)
 	if err != nil {
 		return nil, err
@@ -36,9 +33,9 @@ func (r *runnableThrow) Run(ctx Context) (l *ZVal, err error) {
 	return nil, &PhpThrow{o}
 }
 
-func compileThrow(i *tokenizer.Item, c compileCtx) (Runnable, error) {
+func compileThrow(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	var err error
-	un := &runnableThrow{l: MakeLoc(i.Loc())}
+	un := &runnableThrow{l: phpv.MakeLoc(i.Loc())}
 	un.v, err = compileExpr(nil, c)
 	return un, err
 }

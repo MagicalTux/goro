@@ -3,73 +3,75 @@ package core
 import (
 	"errors"
 	"strings"
+
+	"github.com/MagicalTux/goro/core/phpv"
 )
 
 //> func int strlen ( string $string )
-func fncStrlen(ctx Context, args []*ZVal) (*ZVal, error) {
-	var s ZString
+func fncStrlen(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var s phpv.ZString
 	_, err := Expand(ctx, args, &s)
 	if err != nil {
 		return nil, err
 	}
 
-	return ZInt(len(s)).ZVal(), nil
+	return phpv.ZInt(len(s)).ZVal(), nil
 }
 
 //> func int error_reporting ([ int $level ] )
-func fncErrorReporting(ctx Context, args []*ZVal) (*ZVal, error) {
-	var level *ZInt
+func fncErrorReporting(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var level *phpv.ZInt
 	_, err := Expand(ctx, args, &level)
 	if err != nil {
 		return nil, err
 	}
 
 	if level != nil {
-		ctx.Global().SetLocalConfig("error_reporting", (*level).ZVal())
+		ctx.Global().(*Global).SetLocalConfig("error_reporting", (*level).ZVal())
 	}
 
-	return ctx.GetConfig("error_reporting", ZInt(0).ZVal()), nil
+	return ctx.GetConfig("error_reporting", phpv.ZInt(0).ZVal()), nil
 }
 
 //> func bool define ( string $name , mixed $value )
-func fncDefine(ctx Context, args []*ZVal) (*ZVal, error) {
-	var name ZString
-	var value *ZVal
+func fncDefine(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var name phpv.ZString
+	var value *phpv.ZVal
 	_, err := Expand(ctx, args, &name, &value)
 	if err != nil {
 		return nil, err
 	}
 
-	g := ctx.Global()
+	g := ctx.Global().(*Global)
 
 	if _, ok := g.constant[name]; ok {
 		// TODO trigger notice: Constant %s already defined
-		return ZBool(false).ZVal(), nil
+		return phpv.ZBool(false).ZVal(), nil
 	}
 
 	g.constant[name] = value
-	return ZBool(true).ZVal(), nil
+	return phpv.ZBool(true).ZVal(), nil
 }
 
 //> func bool defined ( string $name )
-func fncDefined(ctx Context, args []*ZVal) (*ZVal, error) {
-	var name ZString
+func fncDefined(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var name phpv.ZString
 	_, err := Expand(ctx, args, &name)
 	if err != nil {
 		return nil, err
 	}
 
-	g := ctx.Global()
+	g := ctx.Global().(*Global)
 
 	_, ok := g.constant[name]
 
-	return ZBool(ok).ZVal(), nil
+	return phpv.ZBool(ok).ZVal(), nil
 }
 
 //> func int count ( mixed $array_or_countable [, int $mode = COUNT_NORMAL ] )
-func fncCount(ctx Context, args []*ZVal) (*ZVal, error) {
-	var countable *ZVal
-	var mode *ZInt
+func fncCount(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var countable *phpv.ZVal
+	var mode *phpv.ZInt
 	_, err := Expand(ctx, args, &countable, &mode)
 	if err != nil {
 		return nil, err
@@ -79,22 +81,22 @@ func fncCount(ctx Context, args []*ZVal) (*ZVal, error) {
 		return nil, errors.New("todo recursive count")
 	}
 
-	if v, ok := countable.Value().(ZCountable); ok {
+	if v, ok := countable.Value().(phpv.ZCountable); ok {
 		return v.Count(ctx).ZVal(), nil
 	}
 
 	// make this a warning
-	return ZInt(1).ZVal(), errors.New("count(): Parameter must be an array or an object that implements Countable")
+	return phpv.ZInt(1).ZVal(), errors.New("count(): Parameter must be an array or an object that implements Countable")
 }
 
 //> func int strcmp ( string $str1 , string $str2 )
-func fncStrcmp(ctx Context, args []*ZVal) (*ZVal, error) {
-	var a, b ZString
+func fncStrcmp(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var a, b phpv.ZString
 	_, err := Expand(ctx, args, &a, &b)
 	if err != nil {
 		return nil, err
 	}
 
 	r := strings.Compare(string(a), string(b))
-	return ZInt(r).ZVal(), nil
+	return phpv.ZInt(r).ZVal(), nil
 }

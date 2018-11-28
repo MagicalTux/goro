@@ -3,6 +3,8 @@ package core
 import (
 	"errors"
 	"io"
+
+	"github.com/MagicalTux/goro/core/phpv"
 )
 
 const (
@@ -16,17 +18,17 @@ const (
 	BufferRemovable
 )
 
-//> const PHP_OUTPUT_HANDLER_START: ZInt(BufferStart)
-//> const PHP_OUTPUT_HANDLER_WRITE: ZInt(BufferWrite)
-//> const PHP_OUTPUT_HANDLER_FLUSH: ZInt(BufferFlush)
-//> const PHP_OUTPUT_HANDLER_CLEAN: ZInt(BufferClean)
-//> const PHP_OUTPUT_HANDLER_FINAL: ZInt(BufferFinal)
-//> const PHP_OUTPUT_HANDLER_CONT: ZInt(BufferWrite)
-//> const PHP_OUTPUT_HANDLER_END: ZInt(BufferFinal)
-//> const PHP_OUTPUT_HANDLER_CLEANABLE: ZInt(BufferCleanable)
-//> const PHP_OUTPUT_HANDLER_FLUSHABLE: ZInt(BufferFlushable)
-//> const PHP_OUTPUT_HANDLER_REMOVABLE: ZInt(BufferRemovable)
-//> const PHP_OUTPUT_HANDLER_STDFLAGS: ZInt(BufferCleanable|BufferFlushable|BufferRemovable)
+//> const PHP_OUTPUT_HANDLER_START: phpv.ZInt(BufferStart)
+//> const PHP_OUTPUT_HANDLER_WRITE: phpv.ZInt(BufferWrite)
+//> const PHP_OUTPUT_HANDLER_FLUSH: phpv.ZInt(BufferFlush)
+//> const PHP_OUTPUT_HANDLER_CLEAN: phpv.ZInt(BufferClean)
+//> const PHP_OUTPUT_HANDLER_FINAL: phpv.ZInt(BufferFinal)
+//> const PHP_OUTPUT_HANDLER_CONT: phpv.ZInt(BufferWrite)
+//> const PHP_OUTPUT_HANDLER_END: phpv.ZInt(BufferFinal)
+//> const PHP_OUTPUT_HANDLER_CLEANABLE: phpv.ZInt(BufferCleanable)
+//> const PHP_OUTPUT_HANDLER_FLUSHABLE: phpv.ZInt(BufferFlushable)
+//> const PHP_OUTPUT_HANDLER_REMOVABLE: phpv.ZInt(BufferRemovable)
+//> const PHP_OUTPUT_HANDLER_STDFLAGS: phpv.ZInt(BufferCleanable|BufferFlushable|BufferRemovable)
 
 type Buffer struct {
 	w       io.Writer
@@ -37,7 +39,7 @@ type Buffer struct {
 
 	ImplicitFlush bool
 	ChunkSize     int
-	CB            Callable
+	CB            phpv.Callable
 }
 
 type Flusher interface {
@@ -71,14 +73,14 @@ func (b *Buffer) add(d []byte, flag int) error {
 	}
 
 	// pass d through output buffer callback
-	args := []*ZVal{ZString(d).ZVal(), ZInt(flag).ZVal()}
-	ctx := WithConfig(b.g, "ob_in_handler", ZBool(true).ZVal())
+	args := []*phpv.ZVal{phpv.ZString(d).ZVal(), phpv.ZInt(flag).ZVal()}
+	ctx := WithConfig(b.g, "ob_in_handler", phpv.ZBool(true).ZVal())
 	ctx = NewBufContext(ctx, nil)
 	r, err := ctx.CallZVal(ctx, b.CB, args, nil)
 	if err != nil {
 		return err
 	}
-	r, err = r.As(b.g, ZtString)
+	r, err = r.As(b.g, phpv.ZtString)
 	if err != nil {
 		return err
 	}

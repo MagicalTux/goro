@@ -1,16 +1,19 @@
 package core
 
-import "github.com/MagicalTux/goro/core/tokenizer"
+import (
+	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/MagicalTux/goro/core/tokenizer"
+)
 
-func compileTernaryOp(v Runnable, c compileCtx) (Runnable, error) {
+func compileTernaryOp(v phpv.Runnable, c compileCtx) (phpv.Runnable, error) {
 	// v contains the first part, we already have read the ? too
 	i, err := c.NextItem()
 	if err != nil {
 		return nil, err
 	}
 
-	var yes, no Runnable
-	l := MakeLoc(i.Loc())
+	var yes, no phpv.Runnable
+	l := phpv.MakeLoc(i.Loc())
 
 	if i.IsSingle(':') {
 		yes = v

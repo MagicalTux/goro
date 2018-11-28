@@ -3,16 +3,18 @@ package core
 import (
 	"fmt"
 	"io"
+
+	"github.com/MagicalTux/goro/core/phpv"
 )
 
 // when classname::$something is used
 type runClassStaticVarRef struct {
-	className, varName ZString
-	l                  *Loc
+	className, varName phpv.ZString
+	l                  *phpv.Loc
 }
 
-func (r *runClassStaticVarRef) Run(ctx Context) (*ZVal, error) {
-	class, err := ctx.Global().GetClass(ctx, r.className)
+func (r *runClassStaticVarRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
+	class, err := ctx.Global().(*Global).GetClass(ctx, r.className)
 	if err != nil {
 		return nil, err
 	}
@@ -25,8 +27,8 @@ func (r *runClassStaticVarRef) Run(ctx Context) (*ZVal, error) {
 	return p.GetString(r.varName), nil
 }
 
-func (r *runClassStaticVarRef) WriteValue(ctx Context, value *ZVal) error {
-	class, err := ctx.Global().GetClass(ctx, r.className)
+func (r *runClassStaticVarRef) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
+	class, err := ctx.Global().(*Global).GetClass(ctx, r.className)
 	if err != nil {
 		return err
 	}
@@ -39,7 +41,7 @@ func (r *runClassStaticVarRef) WriteValue(ctx Context, value *ZVal) error {
 	return p.SetString(r.varName, value)
 }
 
-func (r *runClassStaticVarRef) Loc() *Loc {
+func (r *runClassStaticVarRef) Loc() *phpv.Loc {
 	return r.l
 }
 
@@ -50,28 +52,28 @@ func (r *runClassStaticVarRef) Dump(w io.Writer) error {
 
 // when classname::something is used
 type runClassStaticObjRef struct {
-	className, objName ZString
-	l                  *Loc
+	className, objName phpv.ZString
+	l                  *phpv.Loc
 }
 
-func (r *runClassStaticObjRef) Run(ctx Context) (*ZVal, error) {
-	class, err := ctx.Global().GetClass(ctx, r.className)
+func (r *runClassStaticObjRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
+	class, err := ctx.Global().(*Global).GetClass(ctx, r.className)
 	if err != nil {
 		return nil, err
 	}
 
 	v, ok := class.Const[r.objName]
 	if !ok {
-		return ZNull{}.ZVal(), nil
+		return phpv.ZNull{}.ZVal(), nil
 	}
 
 	return v.ZVal(), nil
 }
 
-func (r *runClassStaticObjRef) Call(ctx Context, args []*ZVal) (*ZVal, error) {
+func (r *runClassStaticObjRef) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	ctx = ctx.Parent(1) // go back one level
 	// first, fetch class object
-	class, err := ctx.Global().GetClass(ctx, r.className)
+	class, err := ctx.Global().(*Global).GetClass(ctx, r.className)
 	if err != nil {
 		return nil, err
 	}
@@ -81,8 +83,8 @@ func (r *runClassStaticObjRef) Call(ctx Context, args []*ZVal) (*ZVal, error) {
 		method, ok = class.Methods["__callStatic"]
 		if ok {
 			// found __call method
-			a := NewZArray()
-			callArgs := []*ZVal{r.objName.ZVal(), a.ZVal()}
+			a := phpv.NewZArray()
+			callArgs := []*phpv.ZVal{r.objName.ZVal(), a.ZVal()}
 
 			for _, sub := range args {
 				a.OffsetSet(ctx, nil, sub)
@@ -96,7 +98,7 @@ func (r *runClassStaticObjRef) Call(ctx Context, args []*ZVal) (*ZVal, error) {
 	return ctx.CallZVal(ctx, method.Method, args, ctx.This())
 }
 
-func (r *runClassStaticObjRef) Loc() *Loc {
+func (r *runClassStaticObjRef) Loc() *phpv.Loc {
 	return r.l
 }
 

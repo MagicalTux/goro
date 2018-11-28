@@ -1,27 +1,14 @@
 package core
 
-import "io"
+import (
+	"io"
 
-type Runnable interface {
-	Run(Context) (*ZVal, error)
-	Dump(io.Writer) error
-}
+	"github.com/MagicalTux/goro/core/phpv"
+)
 
-type Writable interface {
-	WriteValue(ctx Context, value *ZVal) error
-}
+type Runnables []phpv.Runnable
 
-type Callable interface {
-	Call(ctx Context, args []*ZVal) (*ZVal, error)
-}
-
-type ObjectCallable interface {
-	GetMethod(method ZString, ctx Context, args []*ZVal) (*ZVal, error)
-}
-
-type Runnables []Runnable
-
-func (r Runnables) Run(ctx Context) (l *ZVal, err error) {
+func (r Runnables) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 	for _, v := range r {
 		l, err = v.Run(ctx)
 		if err != nil {
@@ -50,7 +37,7 @@ func (r Runnables) DumpWith(w io.Writer, sep []byte) error {
 }
 
 type runParentheses struct {
-	r Runnable
+	r phpv.Runnable
 }
 
 func (r *runParentheses) Dump(w io.Writer) error {
@@ -66,6 +53,6 @@ func (r *runParentheses) Dump(w io.Writer) error {
 	return err
 }
 
-func (r *runParentheses) Run(ctx Context) (*ZVal, error) {
+func (r *runParentheses) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	return r.r.Run(ctx)
 }

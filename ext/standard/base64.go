@@ -5,11 +5,12 @@ import (
 	"strings"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpv"
 )
 
 //> func string base64_encode ( string $data )
-func fncBase64Encode(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
-	var s core.ZString
+func fncBase64Encode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var s phpv.ZString
 	_, err := core.Expand(ctx, args, &s)
 	if err != nil {
 		return nil, err
@@ -21,13 +22,13 @@ func fncBase64Encode(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 	}
 
 	r := base64.StdEncoding.EncodeToString([]byte(s))
-	return core.ZString(r).ZVal(), nil
+	return phpv.ZString(r).ZVal(), nil
 }
 
 //> func string base64_decode ( string $data [, bool $strict = FALSE ] )
-func fncBase64Decode(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
-	var s core.ZString
-	var strict *core.ZBool
+func fncBase64Decode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var s phpv.ZString
+	var strict *phpv.ZBool
 	_, err := core.Expand(ctx, args, &s, &strict)
 
 	err = ctx.MemAlloc(ctx, uint64(base64.StdEncoding.DecodedLen(len(s))))
@@ -41,7 +42,7 @@ func fncBase64Decode(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 		if err != nil {
 			return nil, err
 		}
-		return core.ZString(r).ZVal(), nil
+		return phpv.ZString(r).ZVal(), nil
 	}
 
 	// non strict mode
@@ -50,5 +51,5 @@ func fncBase64Decode(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 	if err != nil {
 		return nil, err
 	}
-	return core.ZString(r).ZVal(), nil
+	return phpv.ZString(r).ZVal(), nil
 }

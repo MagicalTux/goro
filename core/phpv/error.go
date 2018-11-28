@@ -1,4 +1,4 @@
-package core
+package phpv
 
 import "fmt"
 
@@ -24,8 +24,8 @@ const (
 )
 
 type PhpError struct {
-	e    error
-	code PhpErrorType
+	Err  error
+	Code PhpErrorType
 	l    *Loc
 }
 
@@ -35,16 +35,16 @@ func (e *PhpError) Loc() *Loc {
 
 func (e *PhpError) Error() string {
 	if e.l == nil {
-		if e.e == nil {
+		if e.Err == nil {
 			return "Unknown error"
 		}
-		return e.e.Error()
+		return e.Err.Error()
 	}
-	return fmt.Sprintf("%s in %s on line %d", e.e, e.l.Filename, e.l.Line)
+	return fmt.Sprintf("%s in %s on line %d", e.Err, e.l.Filename, e.l.Line)
 }
 
 func (e *PhpError) IsExit() bool {
-	_, r := e.e.(*PhpExit)
+	_, r := e.Err.(*PhpExit)
 	return r
 }
 
@@ -54,7 +54,7 @@ func FilterError(err error) error {
 	case *PhpExit:
 		return nil
 	case *PhpError:
-		switch e.e.(type) {
+		switch e.Err.(type) {
 		case *PhpExit:
 			return nil
 		}

@@ -1,54 +1,57 @@
 package standard
 
-import "github.com/MagicalTux/goro/core"
+import (
+	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpv"
+)
 
 //> func bool boolval ( mixed $var )
-func fncBoolval(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
-	var v *core.ZVal
+func fncBoolval(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var v *phpv.ZVal
 	_, err := core.Expand(ctx, args, &v)
 	if err != nil {
 		return nil, err
 	}
 
-	return v.As(ctx, core.ZtBool)
+	return v.As(ctx, phpv.ZtBool)
 }
 
 //> func float doubleval ( mixed $var )
-func fncDoubleval(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
+func fncDoubleval(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return fncFloatval(ctx, args)
 }
 
 //> func float floatval ( mixed $var )
-func fncFloatval(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
-	var v *core.ZVal
+func fncFloatval(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var v *phpv.ZVal
 	_, err := core.Expand(ctx, args, &v)
 	if err != nil {
 		return nil, err
 	}
 
-	return v.As(ctx, core.ZtFloat)
+	return v.As(ctx, phpv.ZtFloat)
 }
 
 //> func int intval ( mixed $var [, int $base = 10 ] )
-func fncIntval(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
-	var v *core.ZVal
-	var base *core.ZInt
+func fncIntval(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var v *phpv.ZVal
+	var base *phpv.ZInt
 	_, err := core.Expand(ctx, args, &v, &base)
 	if err != nil {
 		return nil, err
 	}
 
 	// TODO handle base
-	return v.As(ctx, core.ZtInt)
+	return v.As(ctx, phpv.ZtInt)
 }
 
 //> func string strval ( mixed $var )
-func fncStrval(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
-	var v *core.ZVal
+func fncStrval(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var v *phpv.ZVal
 	_, err := core.Expand(ctx, args, &v)
 	if err != nil {
 		return nil, err
 	}
 
-	return v.As(ctx, core.ZtString)
+	return v.As(ctx, phpv.ZtString)
 }

@@ -5,17 +5,18 @@ import (
 	"fmt"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpv"
 	"golang.org/x/crypto/pbkdf2"
 )
 
 //> func string hash_pbkdf2 ( string $algo , string $password , string $salt , int $iterations [, int $length = 0 [, bool $raw_output = FALSE ]] )
-func fncHashPbkdf2(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
-	var algo core.ZString
-	var password core.ZString
-	var salt core.ZString
-	var iter core.ZInt
-	var l *core.ZInt
-	var raw *core.ZBool
+func fncHashPbkdf2(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var algo phpv.ZString
+	var password phpv.ZString
+	var salt phpv.ZString
+	var iter phpv.ZInt
+	var l *phpv.ZInt
+	var raw *phpv.ZBool
 
 	_, err := core.Expand(ctx, args, &algo, &password, &salt, &iter, &l, &raw)
 	if err != nil {
@@ -39,9 +40,9 @@ func fncHashPbkdf2(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 
 	if raw != nil && *raw {
 		// return as raw
-		return core.ZString(r).ZVal(), nil
+		return phpv.ZString(r).ZVal(), nil
 	}
 
 	// convert to hex, cut to "length" because PHP implementation is weird
-	return core.ZString(hex.EncodeToString(r))[:length].ZVal(), nil
+	return phpv.ZString(hex.EncodeToString(r))[:length].ZVal(), nil
 }

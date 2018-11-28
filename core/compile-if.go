@@ -3,37 +3,34 @@ package core
 import (
 	"io"
 
+	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
 
 type runnableIf struct {
-	cond Runnable
-	yes  Runnable
-	no   Runnable
-	l    *Loc
+	cond phpv.Runnable
+	yes  phpv.Runnable
+	no   phpv.Runnable
+	l    *phpv.Loc
 }
 
-func (r *runnableIf) Run(ctx Context) (l *ZVal, err error) {
+func (r *runnableIf) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 	t, err := r.cond.Run(ctx)
 	if err != nil {
 		return nil, err
 	}
-	t, err = t.As(ctx, ZtBool)
+	t, err = t.As(ctx, phpv.ZtBool)
 	if err != nil {
 		return nil, err
 	}
 
-	if t.Value().(ZBool) {
+	if t.Value().(phpv.ZBool) {
 		return r.yes.Run(ctx)
 	} else if r.no != nil {
 		return r.no.Run(ctx)
 	} else {
 		return nil, nil
 	}
-}
-
-func (r *runnableIf) Loc() *Loc {
-	return r.l
 }
 
 func (r *runnableIf) Dump(w io.Writer) error {
@@ -67,7 +64,7 @@ func (r *runnableIf) Dump(w io.Writer) error {
 	return err
 }
 
-func compileIf(i *tokenizer.Item, c compileCtx) (Runnable, error) {
+func compileIf(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	// T_IF (expression) ...? else ...?
 
 	// parse if expression
@@ -79,7 +76,7 @@ func compileIf(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 		return nil, i.Unexpected()
 	}
 
-	r := &runnableIf{l: MakeLoc(i.Loc())}
+	r := &runnableIf{l: phpv.MakeLoc(i.Loc())}
 	r.cond, err = compileExpr(nil, c)
 	if err != nil {
 		return nil, err

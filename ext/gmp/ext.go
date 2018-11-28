@@ -1,6 +1,9 @@
 package gmp
 
-import "github.com/MagicalTux/goro/core"
+import (
+	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpv"
+)
 
 // WARNING: This file is auto-generated. DO NOT EDIT
 
@@ -23,6 +26,6 @@ func init() {
 			"gmp_strval": &core.ExtFunction{Func: gmpStrval, Args: []*core.ExtFunctionArg{}},
 			"gmp_sub":    &core.ExtFunction{Func: gmpSub, Args: []*core.ExtFunctionArg{}},
 		},
-		Constants: map[core.ZString]*core.ZVal{},
+		Constants: map[phpv.ZString]*phpv.ZVal{},
 	})
 }

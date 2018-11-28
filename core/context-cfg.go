@@ -1,17 +1,19 @@
 package core
 
-type cfgContext struct {
-	Context
+import "github.com/MagicalTux/goro/core/phpv"
 
-	k ZString
-	v *ZVal
+type cfgContext struct {
+	phpv.Context
+
+	k phpv.ZString
+	v *phpv.ZVal
 }
 
-func WithConfig(parent Context, name ZString, v *ZVal) Context {
+func WithConfig(parent phpv.Context, name phpv.ZString, v *phpv.ZVal) phpv.Context {
 	return &cfgContext{parent, name, v}
 }
 
-func (c *cfgContext) GetConfig(name ZString, def *ZVal) *ZVal {
+func (c *cfgContext) GetConfig(name phpv.ZString, def *phpv.ZVal) *phpv.ZVal {
 	if name == c.k {
 		return c.v
 	}

@@ -11,12 +11,12 @@ import (
 	"hash/crc32"
 	"hash/fnv"
 
-	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpv"
 	"golang.org/x/crypto/md4"
 	"golang.org/x/crypto/sha3"
 )
 
-var algos = map[core.ZString]func() gohash.Hash{
+var algos = map[phpv.ZString]func() gohash.Hash{
 	"md4":        md4.New,
 	"md5":        md5.New,
 	"sha1":       sha1.New,

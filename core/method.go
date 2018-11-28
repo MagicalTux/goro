@@ -1,14 +1,18 @@
 package core
 
-import "errors"
+import (
+	"errors"
 
-type NativeMethod func(ctx Context, this *ZObject, args []*ZVal) (*ZVal, error)
+	"github.com/MagicalTux/goro/core/phpv"
+)
 
-func (m NativeMethod) Call(ctx Context, args []*ZVal) (*ZVal, error) {
+type NativeMethod func(ctx phpv.Context, this *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error)
+
+func (m NativeMethod) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	this := ctx.This()
 	if this == nil {
 		return nil, errors.New("Non-static method cannot be called statically")
 	}
 
-	return m(ctx, this, args)
+	return m(ctx, this.(*ZObject), args)
 }

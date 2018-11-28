@@ -4,10 +4,11 @@ import (
 	"encoding/hex"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpv"
 )
 
 //> func string bin2hex ( string $str )
-func fncBin2hex(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
+func fncBin2hex(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var s string
 
 	_, err := core.Expand(ctx, args, &s)
@@ -15,5 +16,5 @@ func fncBin2hex(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 		return nil, err
 	}
 
-	return core.ZString(hex.EncodeToString([]byte(s))).ZVal(), nil
+	return phpv.ZString(hex.EncodeToString([]byte(s))).ZVal(), nil
 }

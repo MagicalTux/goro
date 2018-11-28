@@ -1,11 +1,14 @@
 package gmp
 
-import "github.com/MagicalTux/goro/core"
+import (
+	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpv"
+)
 
 //> func string gmp_strval ( GMP $gmpnumber [, int $base = 10 ] )
-func gmpStrval(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
-	var gmpnum *core.ZVal
-	var base *core.ZInt
+func gmpStrval(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var gmpnum *phpv.ZVal
+	var base *phpv.ZInt
 
 	_, err := core.Expand(ctx, args, &gmpnum, &base)
 	if err != nil {
@@ -18,16 +21,16 @@ func gmpStrval(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 	}
 
 	if base == nil {
-		base = new(core.ZInt)
+		base = new(phpv.ZInt)
 		*base = 10
 	}
 
-	return core.ZString(i.Text(int(*base))).ZVal(), nil
+	return phpv.ZString(i.Text(int(*base))).ZVal(), nil
 }
 
 //> func int gmp_intval ( GMP $gmpnumber )
-func gmpIntval(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
-	var gmpnum *core.ZVal
+func gmpIntval(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var gmpnum *phpv.ZVal
 
 	_, err := core.Expand(ctx, args, &gmpnum)
 	if err != nil {
@@ -39,5 +42,5 @@ func gmpIntval(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 		return nil, err
 	}
 
-	return core.ZInt(i.Int64()).ZVal(), nil
+	return phpv.ZInt(i.Int64()).ZVal(), nil
 }

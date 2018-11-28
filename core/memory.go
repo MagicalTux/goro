@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"io"
 	"sync"
+
+	"github.com/MagicalTux/goro/core/phpv"
 )
 
 type MemMgr struct {
@@ -16,7 +18,7 @@ func NewMemMgr(limit uint64) *MemMgr {
 	return &MemMgr{limit: limit}
 }
 
-func (m *MemMgr) Alloc(ctx Context, s uint64) error {
+func (m *MemMgr) Alloc(ctx phpv.Context, s uint64) error {
 	m.l.Lock()
 	defer m.l.Unlock()
 

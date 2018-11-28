@@ -1,9 +1,13 @@
 package core
 
-import "errors"
+import (
+	"errors"
 
-func (c *Global) OffsetExists(ctx Context, name *ZVal) (bool, error) {
-	name, err := name.As(ctx, ZtString)
+	"github.com/MagicalTux/goro/core/phpv"
+)
+
+func (c *Global) OffsetExists(ctx phpv.Context, name *phpv.ZVal) (bool, error) {
+	name, err := name.As(ctx, phpv.ZtString)
 	if err != nil {
 		return false, err
 	}
@@ -16,21 +20,21 @@ func (c *Global) OffsetExists(ctx Context, name *ZVal) (bool, error) {
 	return c.h.HasString(name.AsString(ctx)), nil
 }
 
-func (c *Global) OffsetGet(ctx Context, name *ZVal) (*ZVal, error) {
-	name, err := name.As(ctx, ZtString)
+func (c *Global) OffsetGet(ctx phpv.Context, name *phpv.ZVal) (*phpv.ZVal, error) {
+	name, err := name.As(ctx, phpv.ZtString)
 	if err != nil {
 		return nil, err
 	}
 
 	switch name.AsString(ctx) {
 	case "GLOBALS":
-		return (&ZArray{h: c.h}).ZVal(), nil
+		return c.h.Array().ZVal(), nil
 	}
 	return c.h.GetString(name.AsString(ctx)), nil
 }
 
-func (c *Global) OffsetSet(ctx Context, name, v *ZVal) error {
-	name, err := name.As(ctx, ZtString)
+func (c *Global) OffsetSet(ctx phpv.Context, name, v *phpv.ZVal) error {
+	name, err := name.As(ctx, phpv.ZtString)
 	if err != nil {
 		return err
 	}
@@ -42,8 +46,8 @@ func (c *Global) OffsetSet(ctx Context, name, v *ZVal) error {
 	return c.h.SetString(name.AsString(ctx), v)
 }
 
-func (c *Global) OffsetUnset(ctx Context, name *ZVal) error {
-	name, err := name.As(ctx, ZtString)
+func (c *Global) OffsetUnset(ctx phpv.Context, name *phpv.ZVal) error {
+	name, err := name.As(ctx, phpv.ZtString)
 	if err != nil {
 		return err
 	}
@@ -55,10 +59,10 @@ func (c *Global) OffsetUnset(ctx Context, name *ZVal) error {
 	return c.h.UnsetString(name.AsString(ctx))
 }
 
-func (c *Global) Count(ctx Context) ZInt {
-	return c.h.count
+func (c *Global) Count(ctx phpv.Context) phpv.ZInt {
+	return c.h.Count()
 }
 
-func (c *Global) NewIterator() ZIterator {
+func (c *Global) NewIterator() phpv.ZIterator {
 	return c.h.NewIterator()
 }

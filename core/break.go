@@ -1,22 +1,22 @@
 package core
 
-import "io"
+import (
+	"io"
+
+	"github.com/MagicalTux/goro/core/phpv"
+)
 
 type PhpBreak struct {
-	l    *Loc
-	intv ZInt
+	l    *phpv.Loc
+	intv phpv.ZInt
 }
 
-func (b *PhpBreak) Run(ctx Context) (*ZVal, error) {
+func (b *PhpBreak) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	return nil, b
 }
 
 func (b *PhpBreak) Error() string {
 	return "'break' not in the 'loop' or 'switch' context"
-}
-
-func (b *PhpBreak) Loc() *Loc {
-	return b.l
 }
 
 func (b *PhpBreak) Dump(w io.Writer) error {
@@ -25,20 +25,16 @@ func (b *PhpBreak) Dump(w io.Writer) error {
 }
 
 type PhpContinue struct {
-	l    *Loc
-	intv ZInt
+	l    *phpv.Loc
+	intv phpv.ZInt
 }
 
-func (c *PhpContinue) Run(ctx Context) (*ZVal, error) {
+func (c *PhpContinue) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	return nil, c
 }
 
 func (c *PhpContinue) Error() string {
 	return "'continue' not in the 'loop' context"
-}
-
-func (c *PhpContinue) Loc() *Loc {
-	return c.l
 }
 
 func (c *PhpContinue) Dump(w io.Writer) error {

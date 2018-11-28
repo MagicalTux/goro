@@ -6,13 +6,14 @@ import (
 	"fmt"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpv"
 )
 
 //> func string hash ( string $algo , string $data [, bool $raw_output = FALSE ] )
-func fncHash(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
-	var algo core.ZString
-	var data core.ZString
-	var raw *core.ZBool
+func fncHash(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var algo phpv.ZString
+	var data phpv.ZString
+	var raw *phpv.ZBool
 
 	_, err := core.Expand(ctx, args, &algo, &data, &raw)
 	if err != nil {
@@ -34,16 +35,16 @@ func fncHash(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 
 	if raw != nil && *raw {
 		// return as raw
-		return core.ZString(r).ZVal(), nil
+		return phpv.ZString(r).ZVal(), nil
 	}
 
 	// convert to hex
-	return core.ZString(hex.EncodeToString(r)).ZVal(), nil
+	return phpv.ZString(hex.EncodeToString(r)).ZVal(), nil
 }
 
 //> func bool hash_equals ( string $known_string , string $user_string )
-func fncHashEquals(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
-	var known, user core.ZString
+func fncHashEquals(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var known, user phpv.ZString
 
 	_, err := core.Expand(ctx, args, &known, &user)
 	if err != nil {
@@ -52,5 +53,5 @@ func fncHashEquals(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 
 	r := subtle.ConstantTimeCompare([]byte(known), []byte(user))
 
-	return core.ZBool(r == 1).ZVal(), nil
+	return phpv.ZBool(r == 1).ZVal(), nil
 }

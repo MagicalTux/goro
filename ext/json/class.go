@@ -1,6 +1,8 @@
 package json
 
-import "github.com/MagicalTux/goro/core"
+import (
+	"github.com/MagicalTux/goro/core"
+)
 
 //> class JsonSerializable
 var JsonSerializable = &core.ZClass{

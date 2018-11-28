@@ -3,23 +3,24 @@ package core
 import (
 	"log"
 
+	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
 
 //> func mixed include (string filename)
-func fncInclude(ctx Context, args []*ZVal) (*ZVal, error) {
+func fncInclude(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	ctx = ctx.Parent(1)
-	var fn ZString
+	var fn phpv.ZString
 	_, err := Expand(ctx, args, &fn)
 	if err != nil {
 		return nil, err
 	}
 
-	return ctx.Global().Include(ctx, fn)
+	return ctx.Global().(*Global).Include(ctx, fn)
 }
 
-func (c *Global) Include(ctx Context, fn ZString) (*ZVal, error) {
-	f, err := ctx.Global().Open(fn, true)
+func (c *Global) Include(ctx phpv.Context, fn phpv.ZString) (*phpv.ZVal, error) {
+	f, err := ctx.Global().(*Global).Open(fn, true)
 	if err != nil {
 		// include → do not fail if file could not be open (TODO issue warning)
 		return nil, nil
@@ -29,7 +30,7 @@ func (c *Global) Include(ctx Context, fn ZString) (*ZVal, error) {
 
 	// grab full path of file if possible
 	if fn2, ok := f.Attr("uri").(string); ok {
-		fn = ZString(fn2)
+		fn = phpv.ZString(fn2)
 	}
 	c.included[fn] = true
 
@@ -46,19 +47,19 @@ func (c *Global) Include(ctx Context, fn ZString) (*ZVal, error) {
 }
 
 //> func mixed require (string filename)
-func fncRequire(ctx Context, args []*ZVal) (*ZVal, error) {
+func fncRequire(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	ctx = ctx.Parent(1)
-	var fn ZString
+	var fn phpv.ZString
 	_, err := Expand(ctx, args, &fn)
 	if err != nil {
 		return nil, err
 	}
 
-	return ctx.Global().Require(ctx, fn)
+	return ctx.Global().(*Global).Require(ctx, fn)
 }
 
-func (c *Global) Require(ctx Context, fn ZString) (*ZVal, error) {
-	f, err := ctx.Global().Open(fn, true)
+func (c *Global) Require(ctx phpv.Context, fn phpv.ZString) (*phpv.ZVal, error) {
+	f, err := ctx.Global().(*Global).Open(fn, true)
 	if err != nil {
 		return nil, err
 	}
@@ -67,7 +68,7 @@ func (c *Global) Require(ctx Context, fn ZString) (*ZVal, error) {
 
 	// grab full path of file if possible
 	if fn2, ok := f.Attr("uri").(string); ok {
-		fn = ZString(fn2)
+		fn = phpv.ZString(fn2)
 	}
 	c.included[fn] = true
 
@@ -86,19 +87,19 @@ func (c *Global) Require(ctx Context, fn ZString) (*ZVal, error) {
 }
 
 //> func mixed include_once (string filename)
-func fncIncludeOnce(ctx Context, args []*ZVal) (*ZVal, error) {
+func fncIncludeOnce(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	ctx = ctx.Parent(1)
-	var fn ZString
+	var fn phpv.ZString
 	_, err := Expand(ctx, args, &fn)
 	if err != nil {
 		return nil, err
 	}
 
-	return ctx.Global().IncludeOnce(ctx, fn)
+	return ctx.Global().(*Global).IncludeOnce(ctx, fn)
 }
 
-func (c *Global) IncludeOnce(ctx Context, fn ZString) (*ZVal, error) {
-	f, err := ctx.Global().Open(fn, true)
+func (c *Global) IncludeOnce(ctx phpv.Context, fn phpv.ZString) (*phpv.ZVal, error) {
+	f, err := ctx.Global().(*Global).Open(fn, true)
 	if err != nil {
 		// include → do not fail if file could not be open (TODO issue warning)
 		return nil, nil
@@ -108,7 +109,7 @@ func (c *Global) IncludeOnce(ctx Context, fn ZString) (*ZVal, error) {
 
 	// grab full path of file if possible
 	if fn2, ok := f.Attr("uri").(string); ok {
-		fn = ZString(fn2)
+		fn = phpv.ZString(fn2)
 	}
 
 	if _, ok := c.included[fn]; ok {
@@ -130,19 +131,19 @@ func (c *Global) IncludeOnce(ctx Context, fn ZString) (*ZVal, error) {
 }
 
 //> func mixed require_once (string filename)
-func fncRequireOnce(ctx Context, args []*ZVal) (*ZVal, error) {
+func fncRequireOnce(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	ctx = ctx.Parent(1)
-	var fn ZString
+	var fn phpv.ZString
 	_, err := Expand(ctx, args, &fn)
 	if err != nil {
 		return nil, err
 	}
 
-	return ctx.Global().RequireOnce(ctx, fn)
+	return ctx.Global().(*Global).RequireOnce(ctx, fn)
 }
 
-func (c *Global) RequireOnce(ctx Context, fn ZString) (*ZVal, error) {
-	f, err := ctx.Global().Open(fn, true)
+func (c *Global) RequireOnce(ctx phpv.Context, fn phpv.ZString) (*phpv.ZVal, error) {
+	f, err := ctx.Global().(*Global).Open(fn, true)
 	if err != nil {
 		return nil, err
 	}
@@ -151,7 +152,7 @@ func (c *Global) RequireOnce(ctx Context, fn ZString) (*ZVal, error) {
 
 	// grab full path of file if possible
 	if fn2, ok := f.Attr("uri").(string); ok {
-		fn = ZString(fn2)
+		fn = phpv.ZString(fn2)
 	}
 	if _, ok := c.included[fn]; ok {
 		// do not include file

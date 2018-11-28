@@ -1,10 +1,13 @@
 package gmp
 
-import "github.com/MagicalTux/goro/core"
+import (
+	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpv"
+)
 
 //> func int gmp_cmp ( GMP $a , GMP $b )
-func gmpCmp(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
-	var a, b *core.ZVal
+func gmpCmp(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var a, b *phpv.ZVal
 	_, err := core.Expand(ctx, args, &a, &b)
 	if err != nil {
 		return nil, err
@@ -19,5 +22,5 @@ func gmpCmp(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
 		return nil, err
 	}
 
-	return core.ZInt(ia.Cmp(ib)).ZVal(), nil
+	return phpv.ZInt(ia.Cmp(ib)).ZVal(), nil
 }

@@ -7,15 +7,16 @@ import (
 	gohash "hash"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpv"
 )
 
-//> const HASH_HMAC: core.ZInt(1)
+//> const HASH_HMAC: phpv.ZInt(1)
 
 //> func HashContext hash_init ( string $algo [, int $options = 0 [, string $key = NULL ]] )
-func fncHashInit(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
-	var algo core.ZString
-	var opt *core.ZInt
-	var key *core.ZString
+func fncHashInit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var algo phpv.ZString
+	var opt *phpv.ZInt
+	var key *phpv.ZString
 
 	_, err := core.Expand(ctx, args, &algo, &opt, &key)
 	if err != nil {

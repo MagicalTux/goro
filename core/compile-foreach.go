@@ -4,17 +4,18 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
 
 type runnableForeach struct {
-	src  Runnable
-	code Runnable
-	k, v ZString
-	l    *Loc
+	src  phpv.Runnable
+	code phpv.Runnable
+	k, v phpv.ZString
+	l    *phpv.Loc
 }
 
-func (r *runnableForeach) Run(ctx Context) (l *ZVal, err error) {
+func (r *runnableForeach) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 	z, err := r.src.Run(ctx)
 	if err != nil {
 		return nil, err
@@ -52,7 +53,7 @@ func (r *runnableForeach) Run(ctx Context) (l *ZVal, err error) {
 		_, err = r.code.Run(ctx)
 		if err != nil {
 			e := r.l.Error(err)
-			switch br := e.e.(type) {
+			switch br := e.Err.(type) {
 			case *PhpBreak:
 				if br.intv > 1 {
 					br.intv -= 1
@@ -103,9 +104,9 @@ func (r *runnableForeach) Dump(w io.Writer) error {
 	return err
 }
 
-func compileForeach(i *tokenizer.Item, c compileCtx) (Runnable, error) {
+func compileForeach(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	// T_FOREACH (expression T_AS T_VARIABLE [=> T_VARIABLE]) ...?
-	l := MakeLoc(i.Loc())
+	l := phpv.MakeLoc(i.Loc())
 
 	// parse while expression
 	i, err := c.NextItem()
@@ -141,7 +142,7 @@ func compileForeach(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	}
 
 	// store in r.k or r.v ?
-	varName := ZString(i.Data[1:]) // remove $
+	varName := phpv.ZString(i.Data[1:]) // remove $
 
 	// check for ) or =>
 	i, err = c.NextItem()
@@ -162,7 +163,7 @@ func compileForeach(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 			return nil, i.Unexpected()
 		}
 
-		r.v = ZString(i.Data[1:]) // remove $
+		r.v = phpv.ZString(i.Data[1:]) // remove $
 
 		i, err = c.NextItem()
 		if err != nil {

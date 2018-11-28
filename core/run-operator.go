@@ -6,6 +6,7 @@ import (
 	"io"
 	"math"
 
+	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
 
@@ -13,15 +14,15 @@ type runOperator struct {
 	op  tokenizer.ItemType
 	opD *operatorInternalDetails
 
-	a, b Runnable
-	l    *Loc
+	a, b phpv.Runnable
+	l    *phpv.Loc
 }
 
 type operatorInternalDetails struct {
 	write   bool
 	numeric bool
 	skipA   bool
-	op      func(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, error)
+	op      func(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*phpv.ZVal, error)
 	pri     int
 }
 
@@ -74,16 +75,24 @@ var operatorList = map[tokenizer.ItemType]*operatorInternalDetails{
 	tokenizer.Rune('@'):             &operatorInternalDetails{pri: 11}, // TODO
 
 	// cast operators
-	tokenizer.T_BOOL_CAST:   &operatorInternalDetails{op: func(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, error) { return b.As(ctx, ZtBool) }, pri: 11},
-	tokenizer.T_INT_CAST:    &operatorInternalDetails{op: func(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, error) { return b.As(ctx, ZtInt) }, pri: 11},
-	tokenizer.T_DOUBLE_CAST: &operatorInternalDetails{op: func(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, error) { return b.As(ctx, ZtFloat) }, pri: 11},
-	tokenizer.T_ARRAY_CAST:  &operatorInternalDetails{op: func(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, error) { return b.As(ctx, ZtArray) }, pri: 11},
-	tokenizer.T_OBJECT_CAST: &operatorInternalDetails{op: func(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, error) { return b.As(ctx, ZtObject) }, pri: 11},
-	tokenizer.T_STRING_CAST: &operatorInternalDetails{op: func(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, error) { return b.As(ctx, ZtString) }, pri: 11},
-}
-
-func (r *runOperator) Loc() *Loc {
-	return r.l
+	tokenizer.T_BOOL_CAST: &operatorInternalDetails{op: func(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*phpv.ZVal, error) {
+		return b.As(ctx, phpv.ZtBool)
+	}, pri: 11},
+	tokenizer.T_INT_CAST: &operatorInternalDetails{op: func(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*phpv.ZVal, error) {
+		return b.As(ctx, phpv.ZtInt)
+	}, pri: 11},
+	tokenizer.T_DOUBLE_CAST: &operatorInternalDetails{op: func(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*phpv.ZVal, error) {
+		return b.As(ctx, phpv.ZtFloat)
+	}, pri: 11},
+	tokenizer.T_ARRAY_CAST: &operatorInternalDetails{op: func(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*phpv.ZVal, error) {
+		return b.As(ctx, phpv.ZtArray)
+	}, pri: 11},
+	tokenizer.T_OBJECT_CAST: &operatorInternalDetails{op: func(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*phpv.ZVal, error) {
+		return b.As(ctx, phpv.ZtObject)
+	}, pri: 11},
+	tokenizer.T_STRING_CAST: &operatorInternalDetails{op: func(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*phpv.ZVal, error) {
+		return b.As(ctx, phpv.ZtString)
+	}, pri: 11},
 }
 
 func isOperator(t tokenizer.ItemType) bool {
@@ -116,11 +125,11 @@ func (r *runOperator) Dump(w io.Writer) error {
 	return err
 }
 
-func spawnOperator(op tokenizer.ItemType, a, b Runnable, l *Loc) (Runnable, error) {
+func spawnOperator(op tokenizer.ItemType, a, b phpv.Runnable, l *phpv.Loc) (phpv.Runnable, error) {
 	var err error
 	opD, ok := operatorList[op]
 	if !ok {
-		return nil, l.Errorf(nil, E_COMPILE_ERROR, "invalid operator %s", op)
+		return nil, l.Errorf(nil, phpv.E_COMPILE_ERROR, "invalid operator %s", op)
 	}
 
 	//log.Printf("spawn operator %s %s %s", debugDump(a), op.Name(), debugDump(b))
@@ -141,8 +150,8 @@ func spawnOperator(op tokenizer.ItemType, a, b Runnable, l *Loc) (Runnable, erro
 	return final, nil
 }
 
-func (r *runOperator) Run(ctx Context) (*ZVal, error) {
-	var a, b, res *ZVal
+func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
+	var a, b, res *phpv.ZVal
 	var err error
 
 	err = ctx.Tick(ctx, r.l)
@@ -154,7 +163,7 @@ func (r *runOperator) Run(ctx Context) (*ZVal, error) {
 
 	if r.op == tokenizer.Rune('@') {
 		// silence errors
-		ctx = WithConfig(ctx, "error_reporting", ZInt(0).ZVal())
+		ctx = WithConfig(ctx, "error_reporting", phpv.ZInt(0).ZVal())
 	}
 
 	// read a and b
@@ -177,12 +186,12 @@ func (r *runOperator) Run(ctx Context) (*ZVal, error) {
 		b, _ = b.AsNumeric(ctx)
 
 		// normalize types
-		if a.GetType() == ZtFloat || b.GetType() == ZtFloat {
-			a, _ = a.As(ctx, ZtFloat)
-			b, _ = b.As(ctx, ZtFloat)
+		if a.GetType() == phpv.ZtFloat || b.GetType() == phpv.ZtFloat {
+			a, _ = a.As(ctx, phpv.ZtFloat)
+			b, _ = b.As(ctx, phpv.ZtFloat)
 		} else {
-			a, _ = a.As(ctx, ZtInt)
-			b, _ = b.As(ctx, ZtInt)
+			a, _ = a.As(ctx, phpv.ZtInt)
+			b, _ = b.As(ctx, phpv.ZtInt)
 		}
 	}
 
@@ -196,7 +205,7 @@ func (r *runOperator) Run(ctx Context) (*ZVal, error) {
 	}
 
 	if op.write {
-		w, ok := r.a.(Writable)
+		w, ok := r.a.(phpv.Writable)
 		if !ok {
 			return nil, fmt.Errorf("Can't use %#v value in write context", r.a)
 		}
@@ -206,47 +215,47 @@ func (r *runOperator) Run(ctx Context) (*ZVal, error) {
 	return res, nil
 }
 
-func operatorAppend(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, error) {
-	a, _ = a.As(ctx, ZtString)
-	b, _ = b.As(ctx, ZtString)
+func operatorAppend(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*phpv.ZVal, error) {
+	a, _ = a.As(ctx, phpv.ZtString)
+	b, _ = b.As(ctx, phpv.ZtString)
 
-	return &ZVal{a.AsString(ctx) + b.AsString(ctx)}, nil
+	return (a.AsString(ctx) + b.AsString(ctx)).ZVal(), nil
 }
 
-func operatorNot(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, error) {
-	b, _ = b.As(ctx, ZtBool)
+func operatorNot(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*phpv.ZVal, error) {
+	b, _ = b.As(ctx, phpv.ZtBool)
 
-	return &ZVal{!b.Value().(ZBool)}, nil
+	return (!b.Value().(phpv.ZBool)).ZVal(), nil
 }
 
-func doInc(v *ZVal, inc bool) error {
+func doInc(v *phpv.ZVal, inc bool) error {
 	switch v.GetType() {
-	case ZtNull:
+	case phpv.ZtNull:
 		if inc {
-			v.Set(ZInt(1).ZVal())
+			v.Set(phpv.ZInt(1).ZVal())
 		}
 		return nil
-	case ZtBool:
+	case phpv.ZtBool:
 		return nil
-	case ZtInt:
-		n := v.Value().(ZInt)
+	case phpv.ZtInt:
+		n := v.Value().(phpv.ZInt)
 		if inc {
 			if n == math.MaxInt64 {
-				v.Set((ZFloat(n) + 1).ZVal())
+				v.Set((phpv.ZFloat(n) + 1).ZVal())
 				return nil
 			}
 			n++
 		} else {
 			if n == math.MinInt64 {
-				v.Set((ZFloat(n) - 1).ZVal())
+				v.Set((phpv.ZFloat(n) - 1).ZVal())
 				return nil
 			}
 			n--
 		}
 		v.Set(n.ZVal())
 		return nil
-	case ZtFloat:
-		n := v.Value().(ZFloat)
+	case phpv.ZtFloat:
+		n := v.Value().(phpv.ZFloat)
 		if inc {
 			n++
 		} else {
@@ -254,8 +263,8 @@ func doInc(v *ZVal, inc bool) error {
 		}
 		v.Set(n.ZVal())
 		return nil
-	case ZtString:
-		s := v.Value().(ZString)
+	case phpv.ZtString:
+		s := v.Value().(phpv.ZString)
 		// first, check if potentially numeric
 		if s.IsNumeric() {
 			if x, err := s.AsNumeric(); err == nil {
@@ -289,29 +298,29 @@ func doInc(v *ZVal, inc bool) error {
 					continue
 				}
 				n[i] = c + 1
-				v.Set(ZString(n).ZVal())
+				v.Set(phpv.ZString(n).ZVal())
 				return nil
 			}
-			v.Set(ZString(n).ZVal())
+			v.Set(phpv.ZString(n).ZVal())
 			return nil
 		}
 
 		switch c {
 		case '9':
-			v.Set(("1" + ZString(n)).ZVal())
+			v.Set(("1" + phpv.ZString(n)).ZVal())
 			return nil
 		case 'z':
-			v.Set(("a" + ZString(n)).ZVal())
+			v.Set(("a" + phpv.ZString(n)).ZVal())
 			return nil
 		case 'Z':
-			v.Set(("A" + ZString(n)).ZVal())
+			v.Set(("A" + phpv.ZString(n)).ZVal())
 			return nil
 		}
 	}
 	return fmt.Errorf("unsupported type for increment operator %s", v.GetType())
 }
 
-func operatorIncDec(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, error) {
+func operatorIncDec(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*phpv.ZVal, error) {
 	inc := op == tokenizer.T_INC
 
 	if a != nil {
@@ -324,12 +333,12 @@ func operatorIncDec(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, erro
 	}
 }
 
-func operatorMath(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, error) {
+func operatorMath(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*phpv.ZVal, error) {
 	switch a.Value().GetType() {
-	case ZtInt:
-		var res Val
-		a := a.Value().(ZInt)
-		b := b.Value().(ZInt)
+	case phpv.ZtInt:
+		var res phpv.Val
+		a := a.Value().(phpv.ZInt)
+		b := b.Value().(phpv.ZInt)
 
 		switch op {
 		case tokenizer.T_PLUS_EQUAL, tokenizer.Rune('+'):
@@ -338,7 +347,7 @@ func operatorMath(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, error)
 				res = c
 			} else {
 				// overflow
-				res = ZFloat(a) + ZFloat(b)
+				res = phpv.ZFloat(a) + phpv.ZFloat(b)
 			}
 		case tokenizer.T_MINUS_EQUAL, tokenizer.Rune('-'):
 			c := a - b
@@ -346,7 +355,7 @@ func operatorMath(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, error)
 				res = c
 			} else {
 				// overflow
-				res = ZFloat(a) - ZFloat(b)
+				res = phpv.ZFloat(a) - phpv.ZFloat(b)
 			}
 		case tokenizer.T_DIV_EQUAL, tokenizer.Rune('/'):
 			if b == 0 {
@@ -354,13 +363,13 @@ func operatorMath(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, error)
 			}
 			if a%b != 0 {
 				// this is not goign to be a int result
-				res = ZFloat(a) / ZFloat(b)
+				res = phpv.ZFloat(a) / phpv.ZFloat(b)
 			} else {
 				res = a / b
 			}
 		case tokenizer.T_MUL_EQUAL, tokenizer.Rune('*'):
 			if a == 0 || b == 0 {
-				res = ZInt(0)
+				res = phpv.ZInt(0)
 				break
 			}
 			c := a * b
@@ -369,33 +378,33 @@ func operatorMath(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, error)
 				res = c
 			} else {
 				// do this as float
-				res = ZFloat(a) * ZFloat(b)
+				res = phpv.ZFloat(a) * phpv.ZFloat(b)
 			}
 		case tokenizer.T_POW, tokenizer.T_POW_EQUAL:
-			res = ZFloat(math.Pow(float64(a), float64(b)))
+			res = phpv.ZFloat(math.Pow(float64(a), float64(b)))
 		}
-		return &ZVal{res}, nil
-	case ZtFloat:
-		var res ZFloat
+		return res.ZVal(), nil
+	case phpv.ZtFloat:
+		var res phpv.ZFloat
 		switch op {
 		case tokenizer.T_PLUS_EQUAL, tokenizer.Rune('+'):
-			res = a.Value().(ZFloat) + b.Value().(ZFloat)
+			res = a.Value().(phpv.ZFloat) + b.Value().(phpv.ZFloat)
 		case tokenizer.T_MINUS_EQUAL, tokenizer.Rune('-'):
-			res = a.Value().(ZFloat) - b.Value().(ZFloat)
+			res = a.Value().(phpv.ZFloat) - b.Value().(phpv.ZFloat)
 		case tokenizer.T_DIV_EQUAL, tokenizer.Rune('/'):
-			res = a.Value().(ZFloat) / b.Value().(ZFloat)
+			res = a.Value().(phpv.ZFloat) / b.Value().(phpv.ZFloat)
 		case tokenizer.T_MUL_EQUAL, tokenizer.Rune('*'):
-			res = a.Value().(ZFloat) * b.Value().(ZFloat)
+			res = a.Value().(phpv.ZFloat) * b.Value().(phpv.ZFloat)
 		case tokenizer.T_POW, tokenizer.T_POW_EQUAL:
-			res = ZFloat(math.Pow(float64(a.Value().(ZFloat)), float64(b.Value().(ZFloat))))
+			res = phpv.ZFloat(math.Pow(float64(a.Value().(phpv.ZFloat)), float64(b.Value().(phpv.ZFloat))))
 		}
-		return &ZVal{res}, nil
+		return res.ZVal(), nil
 	default:
 		return nil, fmt.Errorf("todo operator type unsupported %s", a.GetType())
 	}
 }
 
-func operatorBoolLogic(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, error) {
+func operatorBoolLogic(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*phpv.ZVal, error) {
 	switch op {
 	case tokenizer.T_BOOLEAN_AND:
 		return (a.AsBool(ctx) && b.AsBool(ctx)).ZVal(), nil
@@ -406,42 +415,42 @@ func operatorBoolLogic(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, e
 	}
 }
 
-func operatorMathLogic(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, error) {
+func operatorMathLogic(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*phpv.ZVal, error) {
 	if a == nil {
 		a = b
 	}
 
 	switch a.Value().GetType() {
-	case ZtInt:
-		b, _ = b.As(ctx, ZtInt)
-		var res ZInt
+	case phpv.ZtInt:
+		b, _ = b.As(ctx, phpv.ZtInt)
+		var res phpv.ZInt
 		switch op {
 		case tokenizer.Rune('|'), tokenizer.T_OR_EQUAL:
-			res = a.Value().(ZInt) | b.Value().(ZInt)
+			res = a.Value().(phpv.ZInt) | b.Value().(phpv.ZInt)
 		case tokenizer.Rune('^'), tokenizer.T_XOR_EQUAL:
-			res = a.Value().(ZInt) ^ b.Value().(ZInt)
+			res = a.Value().(phpv.ZInt) ^ b.Value().(phpv.ZInt)
 		case tokenizer.Rune('&'), tokenizer.T_AND_EQUAL:
-			res = a.Value().(ZInt) & b.Value().(ZInt)
+			res = a.Value().(phpv.ZInt) & b.Value().(phpv.ZInt)
 		case tokenizer.Rune('%'), tokenizer.T_MOD_EQUAL:
-			res = a.Value().(ZInt) % b.Value().(ZInt)
+			res = a.Value().(phpv.ZInt) % b.Value().(phpv.ZInt)
 		case tokenizer.Rune('~'):
-			res = ^b.Value().(ZInt)
+			res = ^b.Value().(phpv.ZInt)
 		case tokenizer.T_SL, tokenizer.T_SL_EQUAL:
 			// TODO error check on negative b
-			res = a.Value().(ZInt) << uint(b.Value().(ZInt))
+			res = a.Value().(phpv.ZInt) << uint(b.Value().(phpv.ZInt))
 		case tokenizer.T_SR, tokenizer.T_SR_EQUAL:
 			// TODO error check on negative b
-			res = a.Value().(ZInt) >> uint(b.Value().(ZInt))
+			res = a.Value().(phpv.ZInt) >> uint(b.Value().(phpv.ZInt))
 		}
-		return &ZVal{res}, nil
-	case ZtFloat:
+		return res.ZVal(), nil
+	case phpv.ZtFloat:
 		// need to convert to int
-		a, _ = a.As(ctx, ZtInt)
-		b, _ = b.As(ctx, ZtInt)
+		a, _ = a.As(ctx, phpv.ZtInt)
+		b, _ = b.As(ctx, phpv.ZtInt)
 		return operatorMathLogic(ctx, op, a, b)
-	case ZtString:
-		a := []byte(a.Value().(ZString))
-		b := []byte(b.Value().(ZString))
+	case phpv.ZtString:
+		a := []byte(a.Value().(phpv.ZString))
+		b := []byte(b.Value().(phpv.ZString))
 		if len(a) != len(b) {
 			if len(a) < len(b) {
 				a, b = b, a
@@ -478,31 +487,31 @@ func operatorMathLogic(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, e
 		default:
 			return nil, errors.New("todo operator unsupported on strings")
 		}
-		return &ZVal{ZString(a)}, nil
+		return phpv.ZString(a).ZVal(), nil
 	default:
 		return nil, fmt.Errorf("todo operator type unsupported: %s", a.GetType())
 	}
 }
 
-func operatorCompareStrict(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, error) {
+func operatorCompareStrict(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*phpv.ZVal, error) {
 	if a.GetType() != b.GetType() {
 		// not same type → false
-		return &ZVal{ZBool(op != tokenizer.T_IS_IDENTICAL)}, nil
+		return phpv.ZBool(op != tokenizer.T_IS_IDENTICAL).ZVal(), nil
 	}
 
 	var res bool
 
 	switch a.GetType() {
-	case ZtNull:
+	case phpv.ZtNull:
 		res = true
-	case ZtBool:
-		res = a.Value().(ZBool) == b.Value().(ZBool)
-	case ZtInt:
-		res = a.Value().(ZInt) == b.Value().(ZInt)
-	case ZtFloat:
-		res = a.Value().(ZFloat) == b.Value().(ZFloat)
-	case ZtString:
-		res = a.Value().(ZString) == b.Value().(ZString)
+	case phpv.ZtBool:
+		res = a.Value().(phpv.ZBool) == b.Value().(phpv.ZBool)
+	case phpv.ZtInt:
+		res = a.Value().(phpv.ZInt) == b.Value().(phpv.ZInt)
+	case phpv.ZtFloat:
+		res = a.Value().(phpv.ZFloat) == b.Value().(phpv.ZFloat)
+	case phpv.ZtString:
+		res = a.Value().(phpv.ZString) == b.Value().(phpv.ZString)
 	default:
 		return nil, fmt.Errorf("unsupported compare type %s", a.GetType())
 	}
@@ -511,33 +520,33 @@ func operatorCompareStrict(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVa
 		res = !res
 	}
 
-	return &ZVal{ZBool(res)}, nil
+	return phpv.ZBool(res).ZVal(), nil
 }
 
-func operatorCompare(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, error) {
+func operatorCompare(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*phpv.ZVal, error) {
 	// operator compare (< > <= >= == === != !== <=>) involve a lot of dark magic in php, unless both values are of the same type (and even so)
 	// loose comparison will convert number-y looking strings into numbers, etc
-	var ia, ib *ZVal
+	var ia, ib *phpv.ZVal
 
 	switch a.GetType() {
-	case ZtInt, ZtFloat:
+	case phpv.ZtInt, phpv.ZtFloat:
 		ia = a
-	case ZtString:
-		if a.Value().(ZString).LooksInt() {
-			ia, _ = a.As(ctx, ZtInt)
-		} else if a.Value().(ZString).IsNumeric() {
-			ia, _ = a.As(ctx, ZtFloat)
+	case phpv.ZtString:
+		if a.Value().(phpv.ZString).LooksInt() {
+			ia, _ = a.As(ctx, phpv.ZtInt)
+		} else if a.Value().(phpv.ZString).IsNumeric() {
+			ia, _ = a.As(ctx, phpv.ZtFloat)
 		}
 	}
 
 	switch b.GetType() {
-	case ZtInt, ZtFloat:
+	case phpv.ZtInt, phpv.ZtFloat:
 		ib = b
-	case ZtString:
-		if b.Value().(ZString).LooksInt() {
-			ib, _ = b.As(ctx, ZtInt)
-		} else if b.Value().(ZString).IsNumeric() {
-			ib, _ = b.As(ctx, ZtFloat)
+	case phpv.ZtString:
+		if b.Value().(phpv.ZString).LooksInt() {
+			ib, _ = b.As(ctx, phpv.ZtInt)
+		} else if b.Value().(phpv.ZString).IsNumeric() {
+			ib, _ = b.As(ctx, phpv.ZtFloat)
 		}
 	}
 
@@ -553,53 +562,53 @@ func operatorCompare(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, err
 		// perform numeric comparison
 		if ia.GetType() != ib.GetType() {
 			// normalize type - at this point as both are numeric, it means either is a float. Make them both float
-			ia, _ = ia.As(ctx, ZtFloat)
-			ib, _ = ib.As(ctx, ZtFloat)
+			ia, _ = ia.As(ctx, phpv.ZtFloat)
+			ib, _ = ib.As(ctx, phpv.ZtFloat)
 		}
 
-		var res Val
+		var res phpv.Val
 		switch ia.GetType() {
-		case ZtInt:
-			ia := ia.Value().(ZInt)
-			ib := ib.Value().(ZInt)
+		case phpv.ZtInt:
+			ia := ia.Value().(phpv.ZInt)
+			ib := ib.Value().(phpv.ZInt)
 			switch op {
 			case tokenizer.Rune('<'):
-				res = ZBool(ia < ib)
+				res = phpv.ZBool(ia < ib)
 			case tokenizer.Rune('>'):
-				res = ZBool(ia > ib)
+				res = phpv.ZBool(ia > ib)
 			case tokenizer.T_IS_SMALLER_OR_EQUAL:
-				res = ZBool(ia <= ib)
+				res = phpv.ZBool(ia <= ib)
 			case tokenizer.T_IS_GREATER_OR_EQUAL:
-				res = ZBool(ia >= ib)
+				res = phpv.ZBool(ia >= ib)
 			case tokenizer.T_IS_EQUAL:
-				res = ZBool(ia == ib)
+				res = phpv.ZBool(ia == ib)
 			case tokenizer.T_IS_NOT_EQUAL:
-				res = ZBool(ia != ib)
+				res = phpv.ZBool(ia != ib)
 			case tokenizer.T_SPACESHIP:
 				if ia < ib {
-					res = ZInt(-1)
+					res = phpv.ZInt(-1)
 				} else if ia > ib {
-					res = ZInt(1)
+					res = phpv.ZInt(1)
 				} else {
-					res = ZInt(0)
+					res = phpv.ZInt(0)
 				}
 			default:
 				return nil, fmt.Errorf("unsupported operator %s", op)
 			}
-		case ZtFloat:
+		case phpv.ZtFloat:
 			switch op {
 			case tokenizer.Rune('<'):
-				res = ZBool(ia.Value().(ZFloat) < ib.Value().(ZFloat))
+				res = phpv.ZBool(ia.Value().(phpv.ZFloat) < ib.Value().(phpv.ZFloat))
 			case tokenizer.Rune('>'):
-				res = ZBool(ia.Value().(ZFloat) > ib.Value().(ZFloat))
+				res = phpv.ZBool(ia.Value().(phpv.ZFloat) > ib.Value().(phpv.ZFloat))
 			case tokenizer.T_IS_SMALLER_OR_EQUAL:
-				res = ZBool(ia.Value().(ZFloat) <= ib.Value().(ZFloat))
+				res = phpv.ZBool(ia.Value().(phpv.ZFloat) <= ib.Value().(phpv.ZFloat))
 			case tokenizer.T_IS_GREATER_OR_EQUAL:
-				res = ZBool(ia.Value().(ZFloat) >= ib.Value().(ZFloat))
+				res = phpv.ZBool(ia.Value().(phpv.ZFloat) >= ib.Value().(phpv.ZFloat))
 			case tokenizer.T_IS_EQUAL:
-				res = ZBool(ia.Value().(ZFloat) == ib.Value().(ZFloat))
+				res = phpv.ZBool(ia.Value().(phpv.ZFloat) == ib.Value().(phpv.ZFloat))
 			case tokenizer.T_IS_NOT_EQUAL:
-				res = ZBool(ia.Value().(ZFloat) != ib.Value().(ZFloat))
+				res = phpv.ZBool(ia.Value().(phpv.ZFloat) != ib.Value().(phpv.ZFloat))
 			default:
 				return nil, fmt.Errorf("unsupported operator %s", op)
 			}
@@ -608,22 +617,22 @@ func operatorCompare(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, err
 		return res.ZVal(), nil
 	}
 
-	if a.GetType() == ZtNull && b.GetType() == ZtNull {
-		return ZBool(true).ZVal(), nil
+	if a.GetType() == phpv.ZtNull && b.GetType() == phpv.ZtNull {
+		return phpv.ZBool(true).ZVal(), nil
 	}
 
-	if a.GetType() == ZtBool || b.GetType() == ZtBool {
+	if a.GetType() == phpv.ZtBool || b.GetType() == phpv.ZtBool {
 		// comparing any value to bool will cause a cast to bool
-		a, _ = a.As(ctx, ZtBool)
-		b, _ = b.As(ctx, ZtBool)
+		a, _ = a.As(ctx, phpv.ZtBool)
+		b, _ = b.As(ctx, phpv.ZtBool)
 		var res bool
 		var ab, bb int
-		if a.Value().(ZBool) {
+		if a.Value().(phpv.ZBool) {
 			ab = 1
 		} else {
 			ab = 0
 		}
-		if b.Value().(ZBool) {
+		if b.Value().(phpv.ZBool) {
 			bb = 1
 		} else {
 			bb = 0
@@ -646,20 +655,20 @@ func operatorCompare(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, err
 			return nil, fmt.Errorf("unsupported operator %s", op)
 		}
 
-		return &ZVal{ZBool(res)}, nil
+		return phpv.ZBool(res).ZVal(), nil
 	}
 
 	// non numeric comparison
 	if a.GetType() != b.GetType() {
-		return &ZVal{ZBool(false)}, nil
+		return phpv.ZBool(false).ZVal(), nil
 	}
 
 	var res bool
 
 	switch a.Value().GetType() {
-	case ZtString:
-		av := a.Value().(ZString)
-		bv := b.Value().(ZString)
+	case phpv.ZtString:
+		av := a.Value().(phpv.ZString)
+		bv := b.Value().(phpv.ZString)
 		switch op {
 		case tokenizer.Rune('<'):
 			res = av < bv
@@ -680,5 +689,5 @@ func operatorCompare(ctx Context, op tokenizer.ItemType, a, b *ZVal) (*ZVal, err
 		return nil, fmt.Errorf("todo operator type unsupported %s", a.GetType())
 	}
 
-	return &ZVal{ZBool(res)}, nil
+	return phpv.ZBool(res).ZVal(), nil
 }

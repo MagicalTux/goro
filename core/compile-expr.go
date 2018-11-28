@@ -6,6 +6,7 @@ import (
 	"path"
 	"strconv"
 
+	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
 
@@ -17,7 +18,7 @@ import (
 // $a + $b
 // etc...
 
-func compileExpr(i *tokenizer.Item, c compileCtx) (Runnable, error) {
+func compileExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	res, err := compileOneExpr(i, c)
 	if err != nil {
 		return nil, err
@@ -35,7 +36,7 @@ func compileExpr(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	}
 }
 
-func compileOpExpr(i *tokenizer.Item, c compileCtx) (Runnable, error) {
+func compileOpExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	res, err := compileOneExpr(i, c)
 	if err != nil {
 		return nil, err
@@ -56,7 +57,7 @@ func compileOpExpr(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	}
 }
 
-func compileOneExpr(i *tokenizer.Item, c compileCtx) (Runnable, error) {
+func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	// fetch only one expression, without any operator or anything
 	var err error
 
@@ -67,17 +68,17 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 		}
 	}
 
-	l := MakeLoc(i.Loc())
+	l := phpv.MakeLoc(i.Loc())
 
 	switch i.Type {
 	case tokenizer.T_VARIABLE:
-		return &runVariable{ZString(i.Data[1:]), l}, nil
+		return &runVariable{phpv.ZString(i.Data[1:]), l}, nil
 	case tokenizer.Rune('$'):
 		return compileRunVariableRef(nil, c, l)
 	case tokenizer.T_LNUMBER:
 		v, err := strconv.ParseInt(i.Data, 0, 64)
 		if err == nil {
-			return &runZVal{ZInt(v), l}, nil
+			return &runZVal{phpv.ZInt(v), l}, nil
 		}
 		// if ParseInt failed, try to parse as float (value too large?)
 		fallthrough
@@ -87,11 +88,11 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 			errv := err.(*strconv.NumError)
 			if errv.Err == strconv.ErrRange {
 				// v is inf
-				return &runZVal{ZFloat(v), l}, nil
+				return &runZVal{phpv.ZFloat(v), l}, nil
 			}
 			return nil, err
 		}
-		return &runZVal{ZFloat(v), l}, nil
+		return &runZVal{phpv.ZFloat(v), l}, nil
 	case tokenizer.T_STRING:
 		// if next is '(' this is a function call
 		t_next, err := c.NextItem()
@@ -107,15 +108,15 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 			// nb: if i.Data is "parent", "static" or "self" it might not actually be a static call
 			switch i.Data {
 			default:
-				className := ZString(i.Data)
+				className := phpv.ZString(i.Data)
 				c.NextItem()          // T_PAAMAYIM_NEKUDOTAYIM
 				i, err = c.NextItem() // actual value, a T_VARIABLE (if var) or a T_STRING
 
 				switch i.Type {
 				case tokenizer.T_VARIABLE:
-					return &runClassStaticVarRef{className, ZString(i.Data[1:]), l}, nil
+					return &runClassStaticVarRef{className, phpv.ZString(i.Data[1:]), l}, nil
 				case tokenizer.T_STRING:
-					return &runClassStaticObjRef{className, ZString(i.Data), l}, nil
+					return &runClassStaticObjRef{className, phpv.ZString(i.Data), l}, nil
 				default:
 					return nil, i.Unexpected()
 				}
@@ -125,7 +126,7 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 			if err != nil {
 				return nil, err
 			}
-			return &runnableFunctionCall{ZString(i.Data), args, l}, nil
+			return &runnableFunctionCall{phpv.ZString(i.Data), args, l}, nil
 		}
 		// so it's a constant
 		return &runConstant{i.Data, l}, nil
@@ -136,11 +137,11 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	case tokenizer.T_ARRAY:
 		return compileArray(i, c)
 	case tokenizer.T_FILE:
-		return &runZVal{ZString(l.Filename), l}, nil
+		return &runZVal{phpv.ZString(l.Filename), l}, nil
 	case tokenizer.T_LINE:
-		return &runZVal{ZInt(l.Line), l}, nil
+		return &runZVal{phpv.ZInt(l.Line), l}, nil
 	case tokenizer.T_DIR:
-		return &runZVal{ZString(path.Dir(l.Filename)), l}, nil
+		return &runZVal{phpv.ZString(path.Dir(l.Filename)), l}, nil
 	case tokenizer.T_CLASS:
 		class := c.getClass()
 		if class == nil {
@@ -151,10 +152,10 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 		class := c.getClass()
 		f := c.getFunc()
 		if class == nil || f == nil {
-			return &runZVal{ZString(""), l}, nil
+			return &runZVal{phpv.ZString(""), l}, nil
 		}
 
-		return &runZVal{ZString(fmt.Sprintf("%s::%s", class.Name, f.name)), l}, nil
+		return &runZVal{phpv.ZString(fmt.Sprintf("%s::%s", class.Name, f.name)), l}, nil
 	case tokenizer.T_BOOL_CAST, tokenizer.T_INT_CAST, tokenizer.T_ARRAY_CAST, tokenizer.T_DOUBLE_CAST, tokenizer.T_OBJECT_CAST, tokenizer.T_STRING_CAST:
 		// perform a cast operation on the following (note: v is null)
 		// make this an operator for appropriate operator precedence
@@ -173,7 +174,7 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 		if err != nil {
 			return nil, err
 		}
-		return &runnableFunctionCall{"shell_exec", []Runnable{v}, l}, nil
+		return &runnableFunctionCall{"shell_exec", []phpv.Runnable{v}, l}, nil
 	case tokenizer.Rune('!'), tokenizer.Rune('+'), tokenizer.Rune('-'), tokenizer.Rune('~'), tokenizer.Rune('@'):
 		// this is an operator, let compilePostExpr() deal with it
 		return compilePostExpr(nil, i, c)
@@ -213,7 +214,7 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	}
 }
 
-func compilePostExpr(v Runnable, i *tokenizer.Item, c compileCtx) (Runnable, error) {
+func compilePostExpr(v phpv.Runnable, i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	if i == nil {
 		var err error
 		i, err = c.NextItem()
@@ -222,7 +223,7 @@ func compilePostExpr(v Runnable, i *tokenizer.Item, c compileCtx) (Runnable, err
 		}
 	}
 
-	l := MakeLoc(i.Loc())
+	l := phpv.MakeLoc(i.Loc())
 	// can be any kind of glue (operators, etc)
 	switch i.Type {
 	case tokenizer.Rune('?'):

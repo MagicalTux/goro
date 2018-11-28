@@ -9,11 +9,13 @@ import (
 	"mime/multipart"
 	"net/url"
 	"strings"
+
+	"github.com/MagicalTux/goro/core/phpv"
 )
 
 //functions for parsing request, including GET, POST, etc
 
-func (g *Global) parsePost(p, f *ZArray) error {
+func (g *Global) parsePost(p, f *phpv.ZArray) error {
 	if g.req.Body == nil {
 		return errors.New("missing form body")
 	}
@@ -75,7 +77,7 @@ func (g *Global) parsePost(p, f *ZArray) error {
 				return err
 			}
 
-			err = setUrlValueToArray(g, k, ZString(b.Bytes()), p)
+			err = setUrlValueToArray(g, k, phpv.ZString(b.Bytes()), p)
 			if err != nil {
 				return err
 			}
@@ -87,7 +89,7 @@ func (g *Global) parsePost(p, f *ZArray) error {
 }
 
 // ParseQueryToArray will parse a given query string into a ZArray with PHP parsing rules
-func ParseQueryToArray(ctx Context, q string, a *ZArray) error {
+func ParseQueryToArray(ctx phpv.Context, q string, a *phpv.ZArray) error {
 	// parse this ourselves instead of using url.Values so we can keep the order right
 	for len(q) > 0 {
 		p := strings.IndexByte(q, '&')
@@ -104,22 +106,22 @@ func ParseQueryToArray(ctx Context, q string, a *ZArray) error {
 	return nil
 }
 
-func parseQueryFragmentToArray(ctx Context, f string, a *ZArray) error {
+func parseQueryFragmentToArray(ctx phpv.Context, f string, a *phpv.ZArray) error {
 	p := strings.IndexByte(f, '=')
 	if p == -1 {
 		f, _ = url.QueryUnescape(f) // ignore errors
-		return setUrlValueToArray(ctx, f, ZNULL, a)
+		return setUrlValueToArray(ctx, f, phpv.ZNULL, a)
 	}
 	k, _ := url.QueryUnescape(f[:p])
 	f, _ = url.QueryUnescape(f[p+1:])
-	return setUrlValueToArray(ctx, k, ZString(f), a)
+	return setUrlValueToArray(ctx, k, phpv.ZString(f), a)
 }
 
-func setUrlValueToArray(ctx Context, k string, v Val, a *ZArray) error {
+func setUrlValueToArray(ctx phpv.Context, k string, v phpv.Val, a *phpv.ZArray) error {
 	p := strings.IndexByte(k, '[')
 	if p == -1 {
 		// simple
-		return a.OffsetSet(ctx, ZString(k).ZVal(), v.ZVal())
+		return a.OffsetSet(ctx, phpv.ZString(k).ZVal(), v.ZVal())
 	}
 	if p == 0 {
 		// failure
@@ -127,7 +129,7 @@ func setUrlValueToArray(ctx Context, k string, v Val, a *ZArray) error {
 	}
 
 	n := a
-	zk := ZString(k[:p]).ZVal()
+	zk := phpv.ZString(k[:p]).ZVal()
 
 	// loop through what remains of k
 	k = k[p:]
@@ -148,7 +150,7 @@ func setUrlValueToArray(ctx Context, k string, v Val, a *ZArray) error {
 
 		// use zk
 		if zk == nil {
-			xn := NewZArray()
+			xn := phpv.NewZArray()
 			err := n.OffsetSet(ctx, zk, xn.ZVal())
 			if err != nil {
 				return err
@@ -161,13 +163,13 @@ func setUrlValueToArray(ctx Context, k string, v Val, a *ZArray) error {
 			if err != nil {
 				return err
 			}
-			z, err = z.As(ctx, ZtArray)
+			z, err = z.As(ctx, phpv.ZtArray)
 			if err != nil {
 				return err
 			}
-			n = z.Value().(*ZArray)
+			n = z.Value().(*phpv.ZArray)
 		} else {
-			xn := NewZArray()
+			xn := phpv.NewZArray()
 			err = n.OffsetSet(ctx, zk, xn.ZVal())
 			if err != nil {
 				return err
@@ -182,7 +184,7 @@ func setUrlValueToArray(ctx Context, k string, v Val, a *ZArray) error {
 			continue
 		}
 
-		zk = ZString(k[:p]).ZVal()
+		zk = phpv.ZString(k[:p]).ZVal()
 		k = k[p+1:]
 	}
 	return n.OffsetSet(ctx, zk, v.ZVal())

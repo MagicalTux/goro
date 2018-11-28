@@ -1,24 +1,27 @@
 package standard
 
-import "github.com/MagicalTux/goro/core"
+import (
+	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpv"
+)
 
 //> func string getcwd ( void )
-func fncGetcwd(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
-	cwd := ctx.Global().Getwd()
+func fncGetcwd(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	cwd := ctx.Global().(*core.Global).Getwd()
 	if cwd == "" {
-		return core.ZBool(false).ZVal(), nil
+		return phpv.ZBool(false).ZVal(), nil
 	}
 
 	return cwd.ZVal(), nil
 }
 
 //> func bool chdir ( string $directory )
-func fncChdir(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
-	var p core.ZString
+func fncChdir(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var p phpv.ZString
 	_, err := core.Expand(ctx, args, &p)
 	if err != nil {
 		return nil, err
 	}
 
-	return nil, ctx.Global().Chdir(p)
+	return nil, ctx.Global().(*core.Global).Chdir(p)
 }

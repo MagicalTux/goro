@@ -4,55 +4,57 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+
+	"github.com/MagicalTux/goro/core/phpv"
 )
 
 var ErrNotEnoughArguments = errors.New("Too few arguments")
 
-func (z *ZVal) Store(ctx Context, out interface{}) error {
+func zvalStore(ctx phpv.Context, z *phpv.ZVal, out interface{}) error {
 	switch tgt := out.(type) {
 	case *bool:
-		s, err := z.As(ctx, ZtBool)
+		s, err := z.As(ctx, phpv.ZtBool)
 		if err != nil {
 			return err
 		}
-		*tgt = bool(s.Value().(ZBool))
+		*tgt = bool(s.Value().(phpv.ZBool))
 		return nil
-	case *ZBool:
-		s, err := z.As(ctx, ZtBool)
+	case *phpv.ZBool:
+		s, err := z.As(ctx, phpv.ZtBool)
 		if err != nil {
 			return err
 		}
-		*tgt = s.Value().(ZBool)
+		*tgt = s.Value().(phpv.ZBool)
 		return nil
-	case *ZInt:
-		s, err := z.As(ctx, ZtInt)
+	case *phpv.ZInt:
+		s, err := z.As(ctx, phpv.ZtInt)
 		if err != nil {
 			return err
 		}
-		*tgt = s.Value().(ZInt)
+		*tgt = s.Value().(phpv.ZInt)
 		return nil
-	case *ZFloat:
-		s, err := z.As(ctx, ZtFloat)
+	case *phpv.ZFloat:
+		s, err := z.As(ctx, phpv.ZtFloat)
 		if err != nil {
 			return err
 		}
-		*tgt = s.Value().(ZFloat)
+		*tgt = s.Value().(phpv.ZFloat)
 		return nil
 	case *string:
-		s, err := z.As(ctx, ZtString)
+		s, err := z.As(ctx, phpv.ZtString)
 		if err != nil {
 			return err
 		}
-		*tgt = string(s.Value().(ZString))
+		*tgt = string(s.Value().(phpv.ZString))
 		return nil
-	case *ZString:
-		s, err := z.As(ctx, ZtString)
+	case *phpv.ZString:
+		s, err := z.As(ctx, phpv.ZtString)
 		if err != nil {
 			return err
 		}
-		*tgt = s.Value().(ZString)
+		*tgt = s.Value().(phpv.ZString)
 		return nil
-	case *Callable:
+	case *phpv.Callable:
 		s, err := SpawnCallable(ctx, z)
 		if err != nil {
 			return err
@@ -60,7 +62,7 @@ func (z *ZVal) Store(ctx Context, out interface{}) error {
 		*tgt = s
 		return nil
 	case **ZObject:
-		s, err := z.As(ctx, ZtObject)
+		s, err := z.As(ctx, phpv.ZtObject)
 		if err != nil {
 			return err
 		}
@@ -79,18 +81,18 @@ func (z *ZVal) Store(ctx Context, out interface{}) error {
 		}
 		*tgt = obj
 		return nil
-	case **ZArray:
-		s, err := z.As(ctx, ZtArray)
+	case **phpv.ZArray:
+		s, err := z.As(ctx, phpv.ZtArray)
 		if err != nil {
 			return err
 		}
-		ar, ok := s.Value().(*ZArray)
+		ar, ok := s.Value().(*phpv.ZArray)
 		if !ok {
 			return fmt.Errorf("expected parameter to be array, %s given", z.GetType())
 		}
 		*tgt = ar
 		return nil
-	case **ZVal:
+	case **phpv.ZVal:
 		// as is
 		*tgt = z
 		return nil
@@ -99,7 +101,7 @@ func (z *ZVal) Store(ctx Context, out interface{}) error {
 	}
 }
 
-func Expand(ctx Context, args []*ZVal, out ...interface{}) (int, error) {
+func Expand(ctx phpv.Context, args []*phpv.ZVal, out ...interface{}) (int, error) {
 	for i, v := range out {
 		rv := reflect.ValueOf(v)
 		if rv.Kind() != reflect.Ptr {
@@ -108,9 +110,9 @@ func Expand(ctx Context, args []*ZVal, out ...interface{}) (int, error) {
 		if rv.Type().Elem().Kind() == reflect.Ptr {
 			switch rv.Type().Elem() {
 			// these are expected to be pointers
-			case reflect.TypeOf(&ZVal{}):
+			case reflect.TypeOf(&phpv.ZVal{}):
 			case reflect.TypeOf(&ZObject{}):
-			case reflect.TypeOf(&ZArray{}):
+			case reflect.TypeOf(&phpv.ZArray{}):
 			default:
 				// pointer of pointer → optional argument
 				if len(args) <= i {
@@ -130,7 +132,7 @@ func Expand(ctx Context, args []*ZVal, out ...interface{}) (int, error) {
 			return i, ErrNotEnoughArguments
 		}
 
-		err := args[i].Store(ctx, v)
+		err := zvalStore(ctx, args[i], v)
 		if err != nil {
 			return i, err
 		}

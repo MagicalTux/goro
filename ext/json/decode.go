@@ -8,13 +8,14 @@ import (
 	"unicode/utf8"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpv"
 )
 
 //> func mixed json_decode ( string $json [, bool $assoc = FALSE [, int $depth = 512 [, int $options = 0 ]]] )
-func fncJsonDecode(ctx core.Context, args []*core.ZVal) (*core.ZVal, error) {
-	var json core.ZString
-	var assoc *core.ZBool
-	var depth, opt *core.ZInt
+func fncJsonDecode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var json phpv.ZString
+	var assoc *phpv.ZBool
+	var depth, opt *phpv.ZInt
 
 	_, err := core.Expand(ctx, args, &json, &assoc, &depth, &opt)
 	if err != nil {
@@ -51,7 +52,7 @@ func nextRune(r *strings.Reader) (rune, error) {
 	}
 }
 
-func jsonDecodeAny(ctx core.Context, r *strings.Reader, depth int, opt JsonDecOpt) (*core.ZVal, error) {
+func jsonDecodeAny(ctx phpv.Context, r *strings.Reader, depth int, opt JsonDecOpt) (*phpv.ZVal, error) {
 	b, err := nextRune(r)
 	if err != nil {
 		return nil, err
@@ -69,17 +70,17 @@ func jsonDecodeAny(ctx core.Context, r *strings.Reader, depth int, opt JsonDecOp
 	case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '-':
 		return jsonDecodeNumeric(ctx, r, depth, opt)
 	case 't', 'T':
-		return jsonDecodeExpectValue(ctx, r, "true", core.ZBool(true), depth, opt)
+		return jsonDecodeExpectValue(ctx, r, "true", phpv.ZBool(true), depth, opt)
 	case 'f', 'F':
-		return jsonDecodeExpectValue(ctx, r, "false", core.ZBool(false), depth, opt)
+		return jsonDecodeExpectValue(ctx, r, "false", phpv.ZBool(false), depth, opt)
 	case 'n', 'N':
-		return jsonDecodeExpectValue(ctx, r, "null", core.ZNULL, depth, opt)
+		return jsonDecodeExpectValue(ctx, r, "null", phpv.ZNULL, depth, opt)
 	default:
 		return nil, ErrSyntax
 	}
 }
 
-func jsonDecodeObject(ctx core.Context, r *strings.Reader, depth int, opt JsonDecOpt) (*core.ZVal, error) {
+func jsonDecodeObject(ctx phpv.Context, r *strings.Reader, depth int, opt JsonDecOpt) (*phpv.ZVal, error) {
 	depth -= 1
 	if depth <= 0 {
 		return nil, ErrDepth
@@ -93,11 +94,11 @@ func jsonDecodeObject(ctx core.Context, r *strings.Reader, depth int, opt JsonDe
 		return nil, ErrSyntax
 	}
 
-	var set func(ctx core.Context, k, v *core.ZVal) error
-	var final *core.ZVal
+	var set func(ctx phpv.Context, k, v *phpv.ZVal) error
+	var final *phpv.ZVal
 
 	if opt&ObjectAsArray == ObjectAsArray {
-		a := core.NewZArray()
+		a := phpv.NewZArray()
 		set = a.OffsetSet
 		final = a.ZVal()
 	} else {
@@ -156,7 +157,7 @@ func jsonDecodeObject(ctx core.Context, r *strings.Reader, depth int, opt JsonDe
 	}
 }
 
-func jsonDecodeArray(ctx core.Context, r *strings.Reader, depth int, opt JsonDecOpt) (*core.ZVal, error) {
+func jsonDecodeArray(ctx phpv.Context, r *strings.Reader, depth int, opt JsonDecOpt) (*phpv.ZVal, error) {
 	depth -= 1
 	if depth <= 0 {
 		return nil, ErrDepth
@@ -170,7 +171,7 @@ func jsonDecodeArray(ctx core.Context, r *strings.Reader, depth int, opt JsonDec
 		return nil, ErrSyntax
 	}
 
-	a := core.NewZArray()
+	a := phpv.NewZArray()
 
 	for {
 		// remove spaces and check for empty arrays/etc
@@ -205,7 +206,7 @@ func jsonDecodeArray(ctx core.Context, r *strings.Reader, depth int, opt JsonDec
 	}
 }
 
-func jsonDecodeString(ctx core.Context, r *strings.Reader, depth int, opt JsonDecOpt) (*core.ZVal, error) {
+func jsonDecodeString(ctx phpv.Context, r *strings.Reader, depth int, opt JsonDecOpt) (*phpv.ZVal, error) {
 	b, err := r.ReadByte()
 	if err != nil {
 		return nil, err
@@ -223,7 +224,7 @@ func jsonDecodeString(ctx core.Context, r *strings.Reader, depth int, opt JsonDe
 		}
 		if c == '"' {
 			// end of string
-			return core.ZString(buf).ZVal(), nil
+			return phpv.ZString(buf).ZVal(), nil
 		}
 
 		if c != '\\' {
@@ -264,7 +265,7 @@ func jsonDecodeString(ctx core.Context, r *strings.Reader, depth int, opt JsonDe
 	}
 }
 
-func jsonDecodeNumeric(ctx core.Context, r *strings.Reader, depth int, opt JsonDecOpt) (*core.ZVal, error) {
+func jsonDecodeNumeric(ctx phpv.Context, r *strings.Reader, depth int, opt JsonDecOpt) (*phpv.ZVal, error) {
 	// we have a numeric value, read it
 	var buf []byte
 
@@ -325,11 +326,11 @@ func jsonDecodeNumeric(ctx core.Context, r *strings.Reader, depth int, opt JsonD
 		// int value
 		v, err := strconv.ParseInt(string(buf), 10, 64)
 		if err == nil {
-			return core.ZInt(v).ZVal(), nil
+			return phpv.ZInt(v).ZVal(), nil
 		}
 		// too large? check if BigintAsString is set
 		if opt&BigintAsString == BigintAsString {
-			return core.ZString(buf).ZVal(), nil
+			return phpv.ZString(buf).ZVal(), nil
 		}
 		// if not set, attempt to parse as float
 	}
@@ -338,10 +339,10 @@ func jsonDecodeNumeric(ctx core.Context, r *strings.Reader, depth int, opt JsonD
 	if err != nil {
 		return nil, err
 	}
-	return core.ZFloat(v).ZVal(), nil
+	return phpv.ZFloat(v).ZVal(), nil
 }
 
-func jsonDecodeExpectValue(ctx core.Context, r *strings.Reader, expect string, value core.Val, depth int, opt JsonDecOpt) (*core.ZVal, error) {
+func jsonDecodeExpectValue(ctx phpv.Context, r *strings.Reader, expect string, value phpv.Val, depth int, opt JsonDecOpt) (*phpv.ZVal, error) {
 	b := make([]byte, len(expect))
 	_, err := r.Read(b)
 	if err != nil {

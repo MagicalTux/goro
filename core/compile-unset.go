@@ -4,16 +4,13 @@ import (
 	"errors"
 	"io"
 
+	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
 
 type runnableUnset struct {
 	args Runnables
-	l    *Loc
-}
-
-func (r *runnableUnset) Loc() *Loc {
-	return r.l
+	l    *phpv.Loc
 }
 
 func (r *runnableUnset) Dump(w io.Writer) error {
@@ -29,9 +26,9 @@ func (r *runnableUnset) Dump(w io.Writer) error {
 	return err
 }
 
-func (r *runnableUnset) Run(ctx Context) (l *ZVal, err error) {
+func (r *runnableUnset) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 	for _, v := range r.args {
-		if x, ok := v.(Writable); ok {
+		if x, ok := v.(phpv.Writable); ok {
 			x.WriteValue(ctx, nil)
 		} else {
 			return nil, errors.New("unable to unset value")
@@ -40,9 +37,9 @@ func (r *runnableUnset) Run(ctx Context) (l *ZVal, err error) {
 	return nil, nil
 }
 
-func compileUnset(i *tokenizer.Item, c compileCtx) (Runnable, error) {
+func compileUnset(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	var err error
-	un := &runnableUnset{l: MakeLoc(i.Loc())}
+	un := &runnableUnset{l: phpv.MakeLoc(i.Loc())}
 	un.args, err = compileFuncPassedArgs(c)
 	return un, err
 }

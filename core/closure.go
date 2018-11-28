@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+
+	"github.com/MagicalTux/goro/core/phpv"
 )
 
 type zclosureCompileCtx struct {
@@ -16,26 +18,26 @@ func (z *zclosureCompileCtx) getFunc() *ZClosure {
 }
 
 type funcArg struct {
-	varName      ZString
+	varName      phpv.ZString
 	ref          bool
 	required     bool
-	defaultValue Val
+	defaultValue phpv.Val
 	hint         *TypeHint
 }
 
 type funcUse struct {
-	varName ZString
-	value   *ZVal
+	varName phpv.ZString
+	value   *phpv.ZVal
 }
 
 type ZClosure struct {
-	name  ZString
+	name  phpv.ZString
 	args  []*funcArg
 	use   []*funcUse
-	code  Runnable
+	code  phpv.Runnable
 	class *ZClass // class in which this closure was defined (for parent:: and self::)
-	start *Loc
-	end   *Loc
+	start *phpv.Loc
+	end   *phpv.Loc
 	rref  bool // return ref?
 }
 
@@ -46,13 +48,13 @@ var Closure = &ZClass{
 
 func init() {
 	// put this here to avoid initialization loop problem
-	Closure.HandleInvoke = func(ctx Context, o *ZObject, args []Runnable) (*ZVal, error) {
+	Closure.HandleInvoke = func(ctx phpv.Context, o *ZObject, args []phpv.Runnable) (*phpv.ZVal, error) {
 		z := o.GetOpaque(Closure).(*ZClosure)
 		return ctx.Call(ctx, z, args, o)
 	}
 }
 
-func (z *ZClosure) Spawn(ctx Context) (*ZVal, error) {
+func (z *ZClosure) Spawn(ctx phpv.Context) (*phpv.ZVal, error) {
 	o, err := NewZObjectOpaque(ctx, Closure, z)
 	if err != nil {
 		return nil, err
@@ -60,14 +62,14 @@ func (z *ZClosure) Spawn(ctx Context) (*ZVal, error) {
 	return o.ZVal(), nil
 }
 
-func (closure *ZClosure) Run(ctx Context) (l *ZVal, err error) {
+func (closure *ZClosure) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 	if closure.name != "" {
 		// register function
 		err = closure.compile(ctx)
 		if err != nil {
 			return nil, err
 		}
-		return nil, ctx.Global().RegisterFunction(closure.name, closure)
+		return nil, ctx.Global().(*Global).RegisterFunction(closure.name, closure)
 	}
 	c := closure.dup()
 	// run compile after dup so we re-fetch default vars each time
@@ -86,7 +88,7 @@ func (closure *ZClosure) Run(ctx Context) (l *ZVal, err error) {
 	return c.Spawn(ctx)
 }
 
-func (c *ZClosure) compile(ctx Context) error {
+func (c *ZClosure) compile(ctx phpv.Context) error {
 	for _, a := range c.args {
 		if r, ok := a.defaultValue.(*compileDelayed); ok {
 			z, err := r.Run(ctx)
@@ -167,7 +169,7 @@ func (c *ZClosure) Dump(w io.Writer) error {
 	return err
 }
 
-func (z *ZClosure) Loc() *Loc {
+func (z *ZClosure) Loc() *phpv.Loc {
 	return z.start
 }
 
@@ -175,7 +177,7 @@ func (z *ZClosure) getArgs() []*funcArg {
 	return z.args
 }
 
-func (z *ZClosure) Call(ctx Context, args []*ZVal) (*ZVal, error) {
+func (z *ZClosure) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	// typically, we run from a clean context
 	var err error
 

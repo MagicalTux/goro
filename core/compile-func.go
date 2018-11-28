@@ -3,27 +3,24 @@ package core
 import (
 	"io"
 
+	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
 
 type runnableFunctionCall struct {
-	name ZString
-	args []Runnable
-	l    *Loc
+	name phpv.ZString
+	args []phpv.Runnable
+	l    *phpv.Loc
 }
 
 type runnableFunctionCallRef struct {
-	name Runnable
-	args []Runnable
-	l    *Loc
+	name phpv.Runnable
+	args []phpv.Runnable
+	l    *phpv.Loc
 }
 
 type funcGetArgs interface {
 	getArgs() []*funcArg
-}
-
-func (r *runnableFunctionCall) Loc() *Loc {
-	return r.l
 }
 
 func (r *runnableFunctionCall) Dump(w io.Writer) error {
@@ -54,10 +51,6 @@ func (r *runnableFunctionCall) Dump(w io.Writer) error {
 	return err
 }
 
-func (r *runnableFunctionCallRef) Loc() *Loc {
-	return r.l
-}
-
 func (r *runnableFunctionCallRef) Dump(w io.Writer) error {
 	err := r.name.Dump(w)
 	if err != nil {
@@ -86,13 +79,13 @@ func (r *runnableFunctionCallRef) Dump(w io.Writer) error {
 	return err
 }
 
-func (r *runnableFunctionCall) Run(ctx Context) (l *ZVal, err error) {
+func (r *runnableFunctionCall) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 	err = ctx.Tick(ctx, r.l)
 	if err != nil {
 		return nil, err
 	}
 	// grab function
-	f, err := ctx.Global().GetFunction(ctx, r.name)
+	f, err := ctx.Global().(*Global).GetFunction(ctx, r.name)
 	if err != nil {
 		return nil, err
 	}
@@ -100,8 +93,8 @@ func (r *runnableFunctionCall) Run(ctx Context) (l *ZVal, err error) {
 	return ctx.Call(ctx, f, r.args, nil)
 }
 
-func (r *runnableFunctionCallRef) Run(ctx Context) (l *ZVal, err error) {
-	var f Callable
+func (r *runnableFunctionCallRef) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
+	var f phpv.Callable
 	var ok bool
 
 	err = ctx.Tick(ctx, r.l)
@@ -109,23 +102,23 @@ func (r *runnableFunctionCallRef) Run(ctx Context) (l *ZVal, err error) {
 		return nil, err
 	}
 
-	if f, ok = r.name.(Callable); !ok {
+	if f, ok = r.name.(phpv.Callable); !ok {
 		v, err := r.name.Run(ctx)
 		if err != nil {
 			return nil, err
 		}
 
-		if f, ok := v.v.(*ZObject); ok && f.Class.HandleInvoke != nil {
+		if f, ok := v.Value().(*ZObject); ok && f.Class.HandleInvoke != nil {
 			return f.Class.HandleInvoke(ctx, f, r.args)
 		}
 
-		if f, ok = v.v.(Callable); !ok {
-			v, err = v.As(ctx, ZtString)
+		if f, ok = v.Value().(phpv.Callable); !ok {
+			v, err = v.As(ctx, phpv.ZtString)
 			if err != nil {
 				return nil, err
 			}
 			// grab function
-			f, err = ctx.Global().GetFunction(ctx, v.Value().(ZString))
+			f, err = ctx.Global().(*Global).GetFunction(ctx, v.Value().(phpv.ZString))
 			if err != nil {
 				return nil, err
 			}
@@ -135,11 +128,11 @@ func (r *runnableFunctionCallRef) Run(ctx Context) (l *ZVal, err error) {
 	return ctx.Call(ctx, f, r.args, nil)
 }
 
-func compileFunction(i *tokenizer.Item, c compileCtx) (Runnable, error) {
+func compileFunction(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	// typically T_FUNCTION is followed by:
 	// - a name and parameters → this is a regular function
 	// - directly parameters → this is a lambda function
-	l := MakeLoc(i.Loc())
+	l := phpv.MakeLoc(i.Loc())
 
 	i, err := c.NextItem()
 	if err != nil {
@@ -160,7 +153,7 @@ func compileFunction(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	switch i.Type {
 	case tokenizer.T_STRING:
 		// regular function definition
-		f, err := compileFunctionWithName(ZString(i.Data), c, l, rref)
+		f, err := compileFunctionWithName(phpv.ZString(i.Data), c, l, rref)
 		if err != nil {
 			return nil, err
 		}
@@ -178,11 +171,11 @@ func compileFunction(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	return nil, i.Unexpected()
 }
 
-func compileSpecialFuncCall(i *tokenizer.Item, c compileCtx) (Runnable, error) {
+func compileSpecialFuncCall(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	// special function call that comes without (), so as a keyword. Example: echo, die, etc
 	has_open := false
-	fn_name := ZString(i.Data)
-	l := MakeLoc(i.Loc())
+	fn_name := phpv.ZString(i.Data)
+	l := phpv.MakeLoc(i.Loc())
 
 	i, err := c.NextItem()
 	if err != nil {
@@ -210,11 +203,11 @@ func compileSpecialFuncCall(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 		}
 	}
 
-	var args []Runnable
+	var args []phpv.Runnable
 
 	// parse passed arguments
 	for {
-		var a Runnable
+		var a phpv.Runnable
 		a, err = compileExpr(i, c)
 		if err != nil {
 			return nil, err
@@ -247,7 +240,7 @@ func compileSpecialFuncCall(i *tokenizer.Item, c compileCtx) (Runnable, error) {
 	}
 }
 
-func compileFunctionWithName(name ZString, c compileCtx, l *Loc, rref bool) (*ZClosure, error) {
+func compileFunctionWithName(name phpv.ZString, c compileCtx, l *phpv.Loc, rref bool) (*ZClosure, error) {
 	var err error
 
 	zc := &ZClosure{
@@ -345,7 +338,7 @@ func compileFunctionArgs(c compileCtx) (res []*funcArg, err error) {
 				hint = hint + "\\" + i.Data
 			}
 
-			arg.hint = ParseTypeHint(ZString(hint))
+			arg.hint = ParseTypeHint(phpv.ZString(hint))
 		}
 
 		if i.IsSingle('&') {
@@ -360,7 +353,7 @@ func compileFunctionArgs(c compileCtx) (res []*funcArg, err error) {
 			return nil, i.Unexpected()
 		}
 
-		arg.varName = ZString(i.Data[1:]) // skip $
+		arg.varName = phpv.ZString(i.Data[1:]) // skip $
 
 		res = append(res, arg)
 
@@ -427,7 +420,7 @@ func compileFunctionUse(c compileCtx) (res []*funcUse, err error) {
 			return nil, i.Unexpected()
 		}
 
-		res = append(res, &funcUse{varName: ZString(i.Data[1:])}) // skip $
+		res = append(res, &funcUse{varName: phpv.ZString(i.Data[1:])}) // skip $
 
 		i, err = c.NextItem()
 		if err != nil {
@@ -472,7 +465,7 @@ func compileFuncPassedArgs(c compileCtx) (res Runnables, err error) {
 
 	// parse passed arguments
 	for {
-		var a Runnable
+		var a phpv.Runnable
 		a, err = compileExpr(i, c)
 		if err != nil {
 			return nil, err

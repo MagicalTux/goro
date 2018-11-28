@@ -5,21 +5,22 @@ import (
 	"math/big"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpv"
 )
 
-func readInt(ctx core.Context, v *core.ZVal) (*big.Int, error) {
+func readInt(ctx phpv.Context, v *phpv.ZVal) (*big.Int, error) {
 	var i *big.Int
 	var err error
 
 	switch v.GetType() {
-	case core.ZtNull, core.ZtBool, core.ZtInt, core.ZtFloat:
-		v, err = v.As(ctx, core.ZtInt)
+	case phpv.ZtNull, phpv.ZtBool, phpv.ZtInt, phpv.ZtFloat:
+		v, err = v.As(ctx, phpv.ZtInt)
 		if err != nil {
 			return nil, err
 		}
-		i = big.NewInt(int64(v.Value().(core.ZInt)))
+		i = big.NewInt(int64(v.Value().(phpv.ZInt)))
 		return i, nil
-	case core.ZtObject:
+	case phpv.ZtObject:
 		obj, ok := v.Value().(*core.ZObject)
 		if ok && obj.Class == GMP { // TODO check via instanceof (to be created)
 			// this is a gmp object
@@ -28,7 +29,7 @@ func readInt(ctx core.Context, v *core.ZVal) (*big.Int, error) {
 		}
 		fallthrough
 	default:
-		v, err = v.As(ctx, core.ZtString)
+		v, err = v.As(ctx, phpv.ZtString)
 		if err != nil {
 			return nil, err
 		}
@@ -41,9 +42,9 @@ func readInt(ctx core.Context, v *core.ZVal) (*big.Int, error) {
 	}
 }
 
-func writeInt(ctx core.Context, v *core.ZVal, i *big.Int) error {
+func writeInt(ctx phpv.Context, v *phpv.ZVal, i *big.Int) error {
 	switch v.GetType() {
-	case core.ZtObject:
+	case phpv.ZtObject:
 		obj, ok := v.Value().(*core.ZObject)
 		if ok && obj.Class == GMP { // TODO check via instanceof (to be created)
 			obj.SetOpaque(GMP, i)
@@ -53,7 +54,7 @@ func writeInt(ctx core.Context, v *core.ZVal, i *big.Int) error {
 	return errors.New("expected parameter to be GMP")
 }
 
-func returnInt(ctx core.Context, i *big.Int) (*core.ZVal, error) {
+func returnInt(ctx phpv.Context, i *big.Int) (*phpv.ZVal, error) {
 	z, err := core.NewZObjectOpaque(ctx, GMP, i)
 	if err != nil {
 		return nil, err
