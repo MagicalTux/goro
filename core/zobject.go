@@ -124,3 +124,7 @@ func (o *ZObject) NewIterator() phpv.ZIterator {
 func (a *ZObject) Count(ctx phpv.Context) phpv.ZInt {
 	return a.h.Count()
 }
+
+func (a *ZObject) HashTable() *phpv.ZHashTable {
+	return a.h
+}

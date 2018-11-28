@@ -87,6 +87,9 @@ func (z *ZVal) Value() Val {
 }
 
 func (z *ZVal) Set(nz *ZVal) {
+	if nz == nil {
+		panic("nil zval")
+	}
 	if _, isRef := nz.v.(*ZVal); isRef {
 		// simple set, keep reference alive
 		z.v = nz.v
