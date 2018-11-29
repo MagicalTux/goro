@@ -26,6 +26,6 @@ func init() {
 			"gmp_strval": &core.ExtFunction{Func: gmpStrval, Args: []*core.ExtFunctionArg{}},
 			"gmp_sub":    &core.ExtFunction{Func: gmpSub, Args: []*core.ExtFunctionArg{}},
 		},
-		Constants: map[phpv.ZString]*phpv.ZVal{},
+		Constants: map[phpv.ZString]phpv.Val{},
 	})
 }

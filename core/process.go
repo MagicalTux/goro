@@ -10,7 +10,7 @@ import (
 )
 
 type Process struct {
-	defaultConstants map[phpv.ZString]*phpv.ZVal
+	defaultConstants map[phpv.ZString]phpv.Val
 	environ          *phpv.ZHashTable
 	defaultOut       io.Writer
 	defaultErr       io.Writer
@@ -20,7 +20,7 @@ type Process struct {
 // running PHP process.
 func NewProcess(sapi string) *Process {
 	res := &Process{
-		defaultConstants: make(map[phpv.ZString]*phpv.ZVal),
+		defaultConstants: make(map[phpv.ZString]phpv.Val),
 		environ:          importEnv(os.Environ()),
 		defaultOut:       os.Stdout,
 		defaultErr:       os.Stderr,

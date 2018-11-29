@@ -15,6 +15,6 @@ func init() {
 		Functions: map[string]*core.ExtFunction{
 			"bzdecompress": &core.ExtFunction{Func: fncBzDecompress, Args: []*core.ExtFunctionArg{}},
 		},
-		Constants: map[phpv.ZString]*phpv.ZVal{},
+		Constants: map[phpv.ZString]phpv.Val{},
 	})
 }

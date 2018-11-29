@@ -25,6 +25,6 @@ func init() {
 			"ctype_upper":  &core.ExtFunction{Func: ctypeUpper, Args: []*core.ExtFunctionArg{}},
 			"ctype_xdigit": &core.ExtFunction{Func: ctypeXdigit, Args: []*core.ExtFunctionArg{}},
 		},
-		Constants: map[phpv.ZString]*phpv.ZVal{},
+		Constants: map[phpv.ZString]phpv.Val{},
 	})
 }

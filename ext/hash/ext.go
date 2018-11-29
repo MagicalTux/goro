@@ -25,8 +25,8 @@ func init() {
 			"hash_pbkdf2": &core.ExtFunction{Func: fncHashPbkdf2, Args: []*core.ExtFunctionArg{}},
 			"hash_update": &core.ExtFunction{Func: fncHashUpdate, Args: []*core.ExtFunctionArg{}},
 		},
-		Constants: map[phpv.ZString]*phpv.ZVal{
-			"HASH_HMAC": phpv.ZInt(1).ZVal(),
+		Constants: map[phpv.ZString]phpv.Val{
+			"HASH_HMAC": phpv.ZInt(1),
 		},
 	})
 }

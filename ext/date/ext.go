@@ -15,6 +15,6 @@ func init() {
 		Functions: map[string]*core.ExtFunction{
 			"strftime": &core.ExtFunction{Func: fncStrftime, Args: []*core.ExtFunctionArg{}},
 		},
-		Constants: map[phpv.ZString]*phpv.ZVal{},
+		Constants: map[phpv.ZString]phpv.Val{},
 	})
 }

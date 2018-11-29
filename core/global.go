@@ -33,7 +33,7 @@ type Global struct {
 	// this is the actual environment (defined functions, classes, etc)
 	globalFuncs   map[phpv.ZString]phpv.Callable
 	globalClasses map[phpv.ZString]*ZClass // TODO replace *ZClass with a nice interface
-	constant      map[phpv.ZString]*phpv.ZVal
+	constant      map[phpv.ZString]phpv.Val
 	environ       *phpv.ZHashTable
 	fHandler      map[string]stream.Handler
 	included      map[phpv.ZString]bool // included files (used for require_once, etc)
@@ -84,7 +84,7 @@ func (g *Global) init() {
 	g.l = &phpv.Loc{Filename: "unknown", Line: 1}
 	g.globalFuncs = make(map[phpv.ZString]phpv.Callable)
 	g.globalClasses = make(map[phpv.ZString]*ZClass)
-	g.constant = make(map[phpv.ZString]*phpv.ZVal)
+	g.constant = make(map[phpv.ZString]phpv.Val)
 	g.fHandler = make(map[string]stream.Handler)
 	g.included = make(map[phpv.ZString]bool)
 	g.globalLazyFunc = make(map[phpv.ZString]*globalLazyOffset)
@@ -254,7 +254,7 @@ func (g *Global) GetFunction(ctx phpv.Context, name phpv.ZString) (phpv.Callable
 
 func (g *Global) GetConstant(name phpv.ZString) (*phpv.ZVal, error) {
 	if v, ok := g.constant[name]; ok {
-		return v, nil
+		return v.ZVal(), nil
 	}
 	return nil, nil
 }

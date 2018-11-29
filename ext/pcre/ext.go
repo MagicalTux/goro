@@ -16,6 +16,6 @@ func init() {
 			"preg_quote":   &core.ExtFunction{Func: pregQuote, Args: []*core.ExtFunctionArg{}},
 			"preg_replace": &core.ExtFunction{Func: pregReplace, Args: []*core.ExtFunctionArg{}},
 		},
-		Constants: map[phpv.ZString]*phpv.ZVal{},
+		Constants: map[phpv.ZString]phpv.Val{},
 	})
 }

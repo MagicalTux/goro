@@ -11,7 +11,7 @@ type Ext struct {
 	Name      string
 	Version   string
 	Functions map[string]*ExtFunction
-	Constants map[phpv.ZString]*phpv.ZVal
+	Constants map[phpv.ZString]phpv.Val
 	Classes   []*ZClass
 }
 
