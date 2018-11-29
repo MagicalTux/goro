@@ -231,7 +231,7 @@ func (ac *runArrayAccess) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 }
 
 func compileArray(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
-	res := &runArray{l: phpv.MakeLoc(i.Loc())}
+	res := &runArray{l: i.Loc()}
 
 	array_type := '?'
 
@@ -332,7 +332,7 @@ func compileArrayAccess(v phpv.Runnable, c compileCtx) (phpv.Runnable, error) {
 		return nil, i.Unexpected()
 	}
 
-	l := phpv.MakeLoc(i.Loc())
+	l := i.Loc()
 
 	i, err = c.NextItem()
 	if err != nil {

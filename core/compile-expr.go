@@ -68,7 +68,7 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		}
 	}
 
-	l := phpv.MakeLoc(i.Loc())
+	l := i.Loc()
 
 	switch i.Type {
 	case tokenizer.T_VARIABLE:
@@ -223,7 +223,7 @@ func compilePostExpr(v phpv.Runnable, i *tokenizer.Item, c compileCtx) (phpv.Run
 		}
 	}
 
-	l := phpv.MakeLoc(i.Loc())
+	l := i.Loc()
 	// can be any kind of glue (operators, etc)
 	switch i.Type {
 	case tokenizer.Rune('?'):

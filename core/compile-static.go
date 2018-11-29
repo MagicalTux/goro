@@ -75,7 +75,7 @@ func (r *runStaticVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 }
 
 func compileStaticVar(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
-	r := &runStaticVar{l: phpv.MakeLoc(i.Loc())}
+	r := &runStaticVar{l: i.Loc()}
 
 	// static $var [= value] [, $var [= value]] ...
 	// static followed by T_PAAMAYIM_NEKUDOTAYIM means a static call (compiling is handled separately)

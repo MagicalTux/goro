@@ -39,7 +39,7 @@ func (r *runnableUnset) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 
 func compileUnset(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	var err error
-	un := &runnableUnset{l: phpv.MakeLoc(i.Loc())}
+	un := &runnableUnset{l: i.Loc()}
 	un.args, err = compileFuncPassedArgs(c)
 	return un, err
 }

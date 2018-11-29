@@ -13,7 +13,7 @@ func compileTernaryOp(v phpv.Runnable, c compileCtx) (phpv.Runnable, error) {
 	}
 
 	var yes, no phpv.Runnable
-	l := phpv.MakeLoc(i.Loc())
+	l := i.Loc()
 
 	if i.IsSingle(':') {
 		yes = v

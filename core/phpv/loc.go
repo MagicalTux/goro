@@ -23,10 +23,6 @@ func (l *Loc) Dump(w io.Writer) error {
 	return nil
 }
 
-func MakeLoc(Filename string, Line, Char int) *Loc {
-	return &Loc{Filename, Line, Char}
-}
-
 func (l *Loc) Error(e error) *PhpError {
 	// fill location if missing
 	switch err := e.(type) {

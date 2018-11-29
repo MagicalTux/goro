@@ -132,7 +132,7 @@ func compileFunction(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	// typically T_FUNCTION is followed by:
 	// - a name and parameters → this is a regular function
 	// - directly parameters → this is a lambda function
-	l := phpv.MakeLoc(i.Loc())
+	l := i.Loc()
 
 	i, err := c.NextItem()
 	if err != nil {
@@ -175,7 +175,7 @@ func compileSpecialFuncCall(i *tokenizer.Item, c compileCtx) (phpv.Runnable, err
 	// special function call that comes without (), so as a keyword. Example: echo, die, etc
 	has_open := false
 	fn_name := phpv.ZString(i.Data)
-	l := phpv.MakeLoc(i.Loc())
+	l := i.Loc()
 
 	i, err := c.NextItem()
 	if err != nil {

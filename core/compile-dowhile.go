@@ -65,7 +65,7 @@ func compileDoWhile(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	var err error
 
 	// T_DO ... T_WHILE (cond)
-	r := &runnableDoWhile{l: phpv.MakeLoc(i.Loc())}
+	r := &runnableDoWhile{l: i.Loc()}
 
 	// parse code
 	r.code, err = compileBaseSingle(nil, c)

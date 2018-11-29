@@ -76,7 +76,7 @@ func compileIf(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		return nil, i.Unexpected()
 	}
 
-	r := &runnableIf{l: phpv.MakeLoc(i.Loc())}
+	r := &runnableIf{l: i.Loc()}
 	r.cond, err = compileExpr(nil, c)
 	if err != nil {
 		return nil, err

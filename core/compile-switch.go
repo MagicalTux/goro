@@ -119,7 +119,7 @@ func (r *runSwitch) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 }
 
 func compileSwitch(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
-	sw := &runSwitch{l: phpv.MakeLoc(i.Loc())}
+	sw := &runSwitch{l: i.Loc()}
 
 	// we expect a {
 	err := c.ExpectSingle('(')

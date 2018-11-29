@@ -65,7 +65,7 @@ func (r *runnableWhile) Dump(w io.Writer) error {
 
 func compileWhile(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	// T_WHILE (expression) ...?
-	l := phpv.MakeLoc(i.Loc())
+	l := i.Loc()
 
 	// parse while expression
 	i, err := c.NextItem()

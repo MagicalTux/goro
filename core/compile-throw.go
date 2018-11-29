@@ -35,7 +35,7 @@ func (r *runnableThrow) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 
 func compileThrow(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	var err error
-	un := &runnableThrow{l: phpv.MakeLoc(i.Loc())}
+	un := &runnableThrow{l: i.Loc()}
 	un.v, err = compileExpr(nil, c)
 	return un, err
 }

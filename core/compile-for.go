@@ -27,7 +27,7 @@ func compileBreak(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	}
 
 	// return this as a runtime element and not a compile time error so switch and loops will catch it
-	return &PhpBreak{phpv.MakeLoc(i.Loc()), phpv.ZInt(intv)}, nil
+	return &PhpBreak{i.Loc(), phpv.ZInt(intv)}, nil
 }
 
 func compileContinue(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
@@ -48,7 +48,7 @@ func compileContinue(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	}
 
 	// return this as a runtime element and not a compile time error so switch and loops will catch it
-	return &PhpContinue{phpv.MakeLoc(i.Loc()), phpv.ZInt(intv)}, nil
+	return &PhpContinue{i.Loc(), phpv.ZInt(intv)}, nil
 }
 
 type runnableFor struct {
@@ -184,7 +184,7 @@ func compileForSub(c compileCtx, final rune) (res Runnables, err error) {
 
 func compileFor(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	// T_FOREACH (expression T_AS T_VARIABLE [=> T_VARIABLE]) ...?
-	l := phpv.MakeLoc(i.Loc())
+	l := i.Loc()
 
 	// parse while expression
 	i, err := c.NextItem()

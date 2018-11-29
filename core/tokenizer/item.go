@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"path"
 	"runtime"
+
+	"github.com/MagicalTux/goro/core/phpv"
 )
 
 //go:generate stringer -type=ItemType
@@ -200,8 +202,8 @@ func (i *Item) Unexpected() error {
 	return i.Errorf("syntax error from %s:%d, unexpected %s", path.Base(f), l, i)
 }
 
-func (i *Item) Loc() (string, int, int) {
-	return i.Filename, i.Line, i.Char
+func (i *Item) Loc() *phpv.Loc {
+	return &phpv.Loc{i.Filename, i.Line, i.Char}
 }
 
 func Rune(r rune) ItemType {

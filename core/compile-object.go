@@ -57,7 +57,7 @@ func compileNew(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	// T_CLASS (anonymous class)
 	// string (name of a class)
 
-	n := &runNewObject{l: phpv.MakeLoc(i.Loc())}
+	n := &runNewObject{l: i.Loc()}
 
 	i, err := c.NextItem()
 	if err != nil {
@@ -224,7 +224,7 @@ func (r *runObjectVar) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 
 func compileObjectOperator(v phpv.Runnable, i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	// call a method or get a variable on an object
-	l := phpv.MakeLoc(i.Loc())
+	l := i.Loc()
 
 	i, err := c.NextItem()
 	if err != nil {

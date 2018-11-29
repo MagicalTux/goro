@@ -19,7 +19,7 @@ func compileReturn(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		return nil, err
 	}
 
-	l := phpv.MakeLoc(i.Loc())
+	l := i.Loc()
 
 	if i.IsSingle(';') {
 		return &runReturn{nil, l}, nil // return nothing

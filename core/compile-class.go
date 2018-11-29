@@ -22,7 +22,7 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	}
 
 	class := &ZClass{
-		l:       phpv.MakeLoc(i.Loc()),
+		l:       i.Loc(),
 		attr:    attr,
 		Methods: make(map[phpv.ZString]*ZClassMethod),
 		Const:   make(map[phpv.ZString]phpv.Val),
@@ -63,7 +63,7 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			// end of class
 			break
 		}
-		l := phpv.MakeLoc(i.Loc())
+		l := i.Loc()
 		c.backup()
 
 		// parse attrs if any

@@ -106,7 +106,7 @@ func (r *runnableForeach) Dump(w io.Writer) error {
 
 func compileForeach(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	// T_FOREACH (expression T_AS T_VARIABLE [=> T_VARIABLE]) ...?
-	l := phpv.MakeLoc(i.Loc())
+	l := i.Loc()
 
 	// parse while expression
 	i, err := c.NextItem()

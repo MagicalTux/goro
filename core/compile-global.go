@@ -71,7 +71,7 @@ func compileGlobal(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 
 	// TODO check we are in a function/etc?
 
-	g := &runGlobal{l: phpv.MakeLoc(i.Loc())}
+	g := &runGlobal{l: i.Loc()}
 
 	// parse passed arguments
 	for {
