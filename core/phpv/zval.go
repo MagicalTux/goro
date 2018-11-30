@@ -1,13 +1,17 @@
 package phpv
 
+// Val is a basic value of any PHP kind: null, bool, int, float, string, array, resource or object.
 type Val interface {
-	GetType() ZType
-	ZVal() *ZVal
-	Value() Val
-	AsVal(ctx Context, t ZType) (Val, error)
-	String() string
+	GetType() ZType                          // GetType returns the type of the value
+	ZVal() *ZVal                             // ZVal returns a ZVal pointing to this value
+	Value() Val                              // Value returns the raw value, in case it was in a ZVal
+	AsVal(ctx Context, t ZType) (Val, error) // AsVal converts the value to another type
+	String() string // String should only be used on ZtString values
 }
 
+// ZVal is a pointer to a value, that can be used as a Val, a reference, etc.
+//
+// Eventually, ZVal will only be used for references.
 type ZVal struct {
 	v Val
 }
