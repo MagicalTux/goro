@@ -21,13 +21,13 @@ func getArrayKeyValue(s Val) (ZInt, ZString, bool) {
 	case ZtNull:
 		return ZInt(0), "", true
 	case ZtBool:
-		if s.(ZBool) {
+		if s.Value().(ZBool) {
 			return ZInt(1), "", true
 		} else {
 			return ZInt(0), "", true
 		}
 	case ZtInt:
-		return s.(ZInt), "", true
+		return s.Value().(ZInt), "", true
 	case ZtString:
 		str := s.String()
 		if util.CtypeDigit(str) {
