@@ -1,6 +1,7 @@
 package phpctx
 
 import (
+	"log"
 	"net/http"
 	"path"
 	"strings"
@@ -16,8 +17,8 @@ type phpWebHandler struct {
 
 func (p *phpWebHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	full := path.Join(p.root, path.Clean(req.URL.Path))
-	if full[len(full)-1] == '/' {
-		full += "index.php"
+	if req.URL.Path[len(req.URL.Path)-1] == '/' {
+		full += "/index.php"
 	}
 
 	// make a new global env
@@ -28,6 +29,8 @@ func (p *phpWebHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	fp, err := g.Open(phpv.ZString(full), false)
 	if err != nil {
 		// likely not found. TODO check if dir. If dir, send redirect
+		log.Printf("[php] Handling HTTP request for %s: Not Found", req.URL.Path)
+
 		http.NotFound(w, req)
 		return
 	}
@@ -36,11 +39,18 @@ func (p *phpWebHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	// check if php
 	if !strings.HasSuffix(full, ".php") {
 		// normal file, just serve it
+		log.Printf("[php] Handling HTTP request for %s: Static file", req.URL.Path)
+
 		http.ServeContent(w, req, "", time.Time{}, fp)
 		return
 	}
 
+	log.Printf("[php] Handling HTTP request for %s", req.URL.Path)
+
 	// include file
-	g.Include(g, phpv.ZString(full))
+	_, err = g.Include(g, phpv.ZString(full))
 	g.Close()
+	if err != nil {
+		log.Printf("[php] Request failed: %s", err)
+	}
 }

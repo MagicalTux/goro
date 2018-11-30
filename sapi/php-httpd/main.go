@@ -25,7 +25,15 @@ func main() {
 		log.Fatalf("failed to listen: %s", err)
 	}
 
-	err = http.Serve(l, p.Handler("."))
+	log.Printf("[php-httpd] Listening on %s", l.Addr())
+
+	path := "."
+
+	if len(os.Args) == 2 {
+		path = os.Args[1]
+	}
+
+	err = http.Serve(l, p.Handler(path))
 	if err != nil {
 		log.Fatalf("failed to serve: %s", err)
 	}
