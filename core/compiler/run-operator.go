@@ -450,6 +450,7 @@ func operatorMathLogic(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal)
 		b, _ = b.As(ctx, phpv.ZtInt)
 		return operatorMathLogic(ctx, op, a, b)
 	case phpv.ZtString:
+		b, _ = b.As(ctx, phpv.ZtString) // force b to be string
 		a := []byte(a.Value().(phpv.ZString))
 		b := []byte(b.Value().(phpv.ZString))
 		if len(a) != len(b) {

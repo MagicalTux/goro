@@ -6,7 +6,7 @@ type Val interface {
 	ZVal() *ZVal                             // ZVal returns a ZVal pointing to this value
 	Value() Val                              // Value returns the raw value, in case it was in a ZVal
 	AsVal(ctx Context, t ZType) (Val, error) // AsVal converts the value to another type
-	String() string // String should only be used on ZtString values
+	String() string                          // String should only be used on ZtString values
 }
 
 // ZVal is a pointer to a value, that can be used as a Val, a reference, etc.
