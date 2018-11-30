@@ -5,7 +5,7 @@ import (
 	"net/http/cgi"
 	"os"
 
-	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpctx"
 	_ "github.com/MagicalTux/goro/ext/ctype"
 	_ "github.com/MagicalTux/goro/ext/date"
 	_ "github.com/MagicalTux/goro/ext/gmp"
@@ -16,7 +16,7 @@ import (
 )
 
 func main() {
-	p := core.NewProcess("cgi")
+	p := phpctx.NewProcess("cgi")
 	p.CommandLine(os.Args)
 	err := cgi.Serve(p.Handler("."))
 	if err != nil {

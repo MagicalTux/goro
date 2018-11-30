@@ -6,7 +6,7 @@ import (
 	"net/http/fcgi"
 	"os"
 
-	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpctx"
 	_ "github.com/MagicalTux/goro/ext/ctype"
 	_ "github.com/MagicalTux/goro/ext/date"
 	_ "github.com/MagicalTux/goro/ext/gmp"
@@ -17,7 +17,7 @@ import (
 )
 
 func main() {
-	p := core.NewProcess("fpm")
+	p := phpctx.NewProcess("fpm")
 	p.CommandLine(os.Args)
 
 	l, err := net.Listen("unix", "/tmp/php-fpm.sock")

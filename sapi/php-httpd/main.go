@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpctx"
 	_ "github.com/MagicalTux/goro/ext/ctype"
 	_ "github.com/MagicalTux/goro/ext/date"
 	_ "github.com/MagicalTux/goro/ext/gmp"
@@ -17,7 +17,7 @@ import (
 )
 
 func main() {
-	p := core.NewProcess("httpd")
+	p := phpctx.NewProcess("httpd")
 	p.CommandLine(os.Args)
 
 	l, err := net.Listen("tcp", ":8080")
