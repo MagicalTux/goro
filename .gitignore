@@ -3,6 +3,8 @@
 /sapi/php-fpm/php-fpm
 /sapi/php-cgi/php-cgi
 /sapi/php-httpd/php-httpd
+/test/wordpress/
+/test/wordpress.tar.gz
 
 # for vim
 .*.swp
