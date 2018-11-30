@@ -17,7 +17,7 @@ func getenv(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	v, ok := ctx.Global().(*core.Global).Getenv(string(varname))
+	v, ok := ctx.Global().Getenv(string(varname))
 	if !ok {
 		return phpv.ZBool(false).ZVal(), nil
 	}
@@ -36,9 +36,9 @@ func putenv(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	pos := strings.IndexByte(setting, '=')
 	if pos == -1 {
 		// unset
-		ctx.Global().(*core.Global).Unsetenv(setting)
+		ctx.Global().Unsetenv(setting)
 	} else {
-		ctx.Global().(*core.Global).Setenv(setting[:pos], setting[pos+1:])
+		ctx.Global().Setenv(setting[:pos], setting[pos+1:])
 	}
 	return phpv.ZBool(true).ZVal(), nil
 }

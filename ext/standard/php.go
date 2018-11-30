@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpctx"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -15,6 +16,6 @@ func fncSetTimeLimit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	ctx.Global().(*core.Global).SetDeadline(time.Now().Add(time.Duration(d) * time.Second))
+	ctx.Global().(*phpctx.Global).SetDeadline(time.Now().Add(time.Duration(d) * time.Second))
 	return phpv.ZNULL.ZVal(), nil
 }

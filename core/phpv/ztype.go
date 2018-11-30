@@ -54,6 +54,10 @@ func (z ZNull) AsVal(ctx Context, t ZType) (Val, error) {
 	return nil, nil
 }
 
+func (z ZNull) Value() Val {
+	return z
+}
+
 func (z ZBool) GetType() ZType {
 	return ZtBool
 }
@@ -90,6 +94,18 @@ func (z ZBool) ZVal() *ZVal {
 	return &ZVal{z}
 }
 
+func (z ZBool) String() string {
+	if z {
+		return "1"
+	} else {
+		return ""
+	}
+}
+
+func (z ZBool) Value() Val {
+	return z
+}
+
 func (z ZInt) GetType() ZType {
 	return ZtInt
 }
@@ -116,6 +132,15 @@ func (z ZInt) AsVal(ctx Context, t ZType) (Val, error) {
 	return nil, nil
 }
 
+func (v ZInt) String() string {
+	s := strconv.FormatInt(int64(v), 10)
+	return s
+}
+
+func (v ZInt) Value() Val {
+	return v
+}
+
 func (z ZFloat) GetType() ZType {
 	return ZtFloat
 }
@@ -139,8 +164,13 @@ func (z ZFloat) AsVal(ctx Context, t ZType) (Val, error) {
 	return nil, nil
 }
 
-func ZStr(s string) *ZVal {
-	return &ZVal{ZString(s)}
+func (v ZFloat) String() string {
+	s := strconv.FormatFloat(float64(v), 'f', -1, 64)
+	return s
+}
+
+func (v ZFloat) Value() Val {
+	return v
 }
 
 func (zt ZType) String() string {

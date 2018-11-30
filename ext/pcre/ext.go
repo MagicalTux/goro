@@ -2,19 +2,20 @@ package pcre
 
 import (
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpctx"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
 // WARNING: This file is auto-generated. DO NOT EDIT
 
 func init() {
-	core.RegisterExt(&core.Ext{
+	phpctx.RegisterExt(&phpctx.Ext{
 		Name:    "pcre",
 		Version: core.VERSION,
-		Classes: []*core.ZClass{},
-		Functions: map[string]*core.ExtFunction{
-			"preg_quote":   &core.ExtFunction{Func: pregQuote, Args: []*core.ExtFunctionArg{}},
-			"preg_replace": &core.ExtFunction{Func: pregReplace, Args: []*core.ExtFunctionArg{}},
+		Classes: []phpv.ZClass{},
+		Functions: map[string]*phpctx.ExtFunction{
+			"preg_quote":   &phpctx.ExtFunction{Func: pregQuote, Args: []*phpctx.ExtFunctionArg{}},
+			"preg_replace": &phpctx.ExtFunction{Func: pregReplace, Args: []*phpctx.ExtFunctionArg{}},
 		},
 		Constants: map[phpv.ZString]phpv.Val{},
 	})

@@ -7,6 +7,7 @@ import (
 	gohash "hash"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -44,7 +45,7 @@ func fncHashInit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		h = algN()
 	}
 
-	z, err := core.NewZObjectOpaque(ctx, HashContext, h)
+	z, err := phpobj.NewZObjectOpaque(ctx, HashContext, h)
 	if err != nil {
 		return nil, err
 	}

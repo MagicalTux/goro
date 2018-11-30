@@ -16,7 +16,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/compiler"
+	"github.com/MagicalTux/goro/core/phpctx"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
 	"github.com/andreyvit/diff"
@@ -33,7 +34,7 @@ type phptest struct {
 	path   string
 	req    *http.Request
 
-	p *core.Process
+	p *phpctx.Process
 
 	t *testing.T
 }
@@ -65,12 +66,12 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		return nil
 	case "FILE":
 		// pass data to the engine
-		g := core.NewGlobalReq(p.req, p.p)
+		g := phpctx.NewGlobalReq(p.req, p.p)
 		g.SetOutput(p.output)
 		g.Chdir(phpv.ZString(path.Dir(p.path))) // chdir execution to path
 
 		t := tokenizer.NewLexer(b, p.path)
-		c, err := core.Compile(g, t)
+		c, err := compiler.Compile(g, t)
 		if err != nil {
 			return err
 		}
@@ -88,10 +89,10 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		return nil
 	case "SKIPIF":
 		t := tokenizer.NewLexer(b, p.path)
-		g := core.NewGlobal(context.Background(), p.p)
+		g := phpctx.NewGlobal(context.Background(), p.p)
 		output := &bytes.Buffer{}
 		g.SetOutput(output)
-		c, err := core.Compile(g, t)
+		c, err := compiler.Compile(g, t)
 		if err != nil {
 			return err
 		}
@@ -136,7 +137,7 @@ func runTest(t *testing.T, fpath string) (p *phptest, err error) {
 	var part string
 
 	// prepare env
-	p.p = core.NewProcess("test")
+	p.p = phpctx.NewProcess("test")
 	p.req = httptest.NewRequest("GET", "/"+path.Base(fpath), nil)
 	r := regexp.MustCompile("^--([A-Z]+)--$")
 

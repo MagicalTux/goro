@@ -4,7 +4,7 @@ import (
 	"errors"
 	"math/big"
 
-	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -21,7 +21,7 @@ func readInt(ctx phpv.Context, v *phpv.ZVal) (*big.Int, error) {
 		i = big.NewInt(int64(v.Value().(phpv.ZInt)))
 		return i, nil
 	case phpv.ZtObject:
-		obj, ok := v.Value().(*core.ZObject)
+		obj, ok := v.Value().(*phpobj.ZObject)
 		if ok && obj.Class == GMP { // TODO check via instanceof (to be created)
 			// this is a gmp object
 			i = obj.GetOpaque(GMP).(*big.Int)
@@ -45,7 +45,7 @@ func readInt(ctx phpv.Context, v *phpv.ZVal) (*big.Int, error) {
 func writeInt(ctx phpv.Context, v *phpv.ZVal, i *big.Int) error {
 	switch v.GetType() {
 	case phpv.ZtObject:
-		obj, ok := v.Value().(*core.ZObject)
+		obj, ok := v.Value().(*phpobj.ZObject)
 		if ok && obj.Class == GMP { // TODO check via instanceof (to be created)
 			obj.SetOpaque(GMP, i)
 			return nil
@@ -55,7 +55,7 @@ func writeInt(ctx phpv.Context, v *phpv.ZVal, i *big.Int) error {
 }
 
 func returnInt(ctx phpv.Context, i *big.Int) (*phpv.ZVal, error) {
-	z, err := core.NewZObjectOpaque(ctx, GMP, i)
+	z, err := phpobj.NewZObjectOpaque(ctx, GMP, i)
 	if err != nil {
 		return nil, err
 	}

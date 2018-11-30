@@ -16,37 +16,45 @@ type ZArray struct {
 }
 
 // php array will use integer keys for integer values and integer-looking strings
-func getArrayKeyValue(s *ZVal) (ZInt, ZString, bool) {
+func getArrayKeyValue(s Val) (ZInt, ZString, bool) {
 	switch s.GetType() {
 	case ZtNull:
 		return ZInt(0), "", true
 	case ZtBool:
-		if s.Value().(ZBool) {
+		if s.(ZBool) {
 			return ZInt(1), "", true
 		} else {
 			return ZInt(0), "", true
 		}
 	case ZtInt:
-		return s.Value().(ZInt), "", true
-	}
-
-	str := s.String()
-	if util.CtypeDigit(str) {
-		i, err := strconv.ParseInt(str, 10, 64)
-		if err == nil {
-			// check if converting back results in same value
-			s2 := strconv.FormatInt(i, 10)
-			if str == s2 {
-				// ok, we can use zint
-				return ZInt(i), "", true
+		return s.(ZInt), "", true
+	case ZtString:
+		str := s.String()
+		if util.CtypeDigit(str) {
+			i, err := strconv.ParseInt(str, 10, 64)
+			if err == nil {
+				// check if converting back results in same value
+				s2 := strconv.FormatInt(i, 10)
+				if str == s2 {
+					// ok, we can use zint
+					return ZInt(i), "", true
+				}
 			}
 		}
+
+		return 0, ZString(str), false
+	default:
+		return 0, "", false
 	}
-	return 0, ZString(str), false
+
 }
 
 func NewZArray() *ZArray {
 	return &ZArray{h: NewHashTable()}
+}
+
+func (a *ZArray) String() string {
+	return "Array"
 }
 
 func (a *ZArray) GetType() ZType {
@@ -82,7 +90,7 @@ func (a *ZArray) HasStringKeys() bool {
 	return a.h.HasStringKeys()
 }
 
-func (a *ZArray) OffsetGet(ctx Context, key *ZVal) (*ZVal, error) {
+func (a *ZArray) OffsetGet(ctx Context, key Val) (*ZVal, error) {
 	if key == nil || key.GetType() == ZtNull {
 		return nil, errors.New("Cannot use [] for reading")
 	}
@@ -96,7 +104,7 @@ func (a *ZArray) OffsetGet(ctx Context, key *ZVal) (*ZVal, error) {
 	}
 }
 
-func (a *ZArray) OffsetSet(ctx Context, key, value *ZVal) error {
+func (a *ZArray) OffsetSet(ctx Context, key Val, value *ZVal) error {
 	if key == nil || key.GetType() == ZtNull {
 		err := a.h.Append(value)
 		return err
@@ -114,7 +122,7 @@ func (a *ZArray) OffsetSet(ctx Context, key, value *ZVal) error {
 	return err
 }
 
-func (a *ZArray) OffsetUnset(ctx Context, key *ZVal) error {
+func (a *ZArray) OffsetUnset(ctx Context, key Val) error {
 	if key == nil || key.GetType() == ZtNull {
 		return errors.New("Cannot use [] for unset")
 	}
@@ -127,7 +135,7 @@ func (a *ZArray) OffsetUnset(ctx Context, key *ZVal) error {
 	}
 }
 
-func (a *ZArray) OffsetExists(ctx Context, key *ZVal) (bool, error) {
+func (a *ZArray) OffsetExists(ctx Context, key Val) (bool, error) {
 	if key == nil || key.GetType() == ZtNull {
 		return false, errors.New("Cannot use [] for isset")
 	}
@@ -161,4 +169,8 @@ func (a *ZArray) MergeTable(h *ZHashTable) error {
 
 func (a *ZArray) HashTable() *ZHashTable {
 	return a.h
+}
+
+func (a *ZArray) Value() Val {
+	return a
 }

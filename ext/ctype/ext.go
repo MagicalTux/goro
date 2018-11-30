@@ -2,28 +2,29 @@ package ctype
 
 import (
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpctx"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
 // WARNING: This file is auto-generated. DO NOT EDIT
 
 func init() {
-	core.RegisterExt(&core.Ext{
+	phpctx.RegisterExt(&phpctx.Ext{
 		Name:    "ctype",
 		Version: core.VERSION,
-		Classes: []*core.ZClass{},
-		Functions: map[string]*core.ExtFunction{
-			"ctype_alnum":  &core.ExtFunction{Func: ctypeAlnum, Args: []*core.ExtFunctionArg{}},
-			"ctype_alpha":  &core.ExtFunction{Func: ctypeAlpha, Args: []*core.ExtFunctionArg{}},
-			"ctype_cntrl":  &core.ExtFunction{Func: ctypeCntrl, Args: []*core.ExtFunctionArg{}},
-			"ctype_digit":  &core.ExtFunction{Func: ctypeDigit, Args: []*core.ExtFunctionArg{}},
-			"ctype_graph":  &core.ExtFunction{Func: ctypeGraph, Args: []*core.ExtFunctionArg{}},
-			"ctype_lower":  &core.ExtFunction{Func: ctypeLower, Args: []*core.ExtFunctionArg{}},
-			"ctype_print":  &core.ExtFunction{Func: ctypePrint, Args: []*core.ExtFunctionArg{}},
-			"ctype_punct":  &core.ExtFunction{Func: ctypePunct, Args: []*core.ExtFunctionArg{}},
-			"ctype_space":  &core.ExtFunction{Func: ctypeSpace, Args: []*core.ExtFunctionArg{}},
-			"ctype_upper":  &core.ExtFunction{Func: ctypeUpper, Args: []*core.ExtFunctionArg{}},
-			"ctype_xdigit": &core.ExtFunction{Func: ctypeXdigit, Args: []*core.ExtFunctionArg{}},
+		Classes: []phpv.ZClass{},
+		Functions: map[string]*phpctx.ExtFunction{
+			"ctype_alnum":  &phpctx.ExtFunction{Func: ctypeAlnum, Args: []*phpctx.ExtFunctionArg{}},
+			"ctype_alpha":  &phpctx.ExtFunction{Func: ctypeAlpha, Args: []*phpctx.ExtFunctionArg{}},
+			"ctype_cntrl":  &phpctx.ExtFunction{Func: ctypeCntrl, Args: []*phpctx.ExtFunctionArg{}},
+			"ctype_digit":  &phpctx.ExtFunction{Func: ctypeDigit, Args: []*phpctx.ExtFunctionArg{}},
+			"ctype_graph":  &phpctx.ExtFunction{Func: ctypeGraph, Args: []*phpctx.ExtFunctionArg{}},
+			"ctype_lower":  &phpctx.ExtFunction{Func: ctypeLower, Args: []*phpctx.ExtFunctionArg{}},
+			"ctype_print":  &phpctx.ExtFunction{Func: ctypePrint, Args: []*phpctx.ExtFunctionArg{}},
+			"ctype_punct":  &phpctx.ExtFunction{Func: ctypePunct, Args: []*phpctx.ExtFunctionArg{}},
+			"ctype_space":  &phpctx.ExtFunction{Func: ctypeSpace, Args: []*phpctx.ExtFunctionArg{}},
+			"ctype_upper":  &phpctx.ExtFunction{Func: ctypeUpper, Args: []*phpctx.ExtFunctionArg{}},
+			"ctype_xdigit": &phpctx.ExtFunction{Func: ctypeXdigit, Args: []*phpctx.ExtFunctionArg{}},
 		},
 		Constants: map[phpv.ZString]phpv.Val{},
 	})

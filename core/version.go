@@ -1,6 +1,9 @@
 package core
 
-import "github.com/MagicalTux/goro/core/phpv"
+import (
+	"github.com/MagicalTux/goro/core/phpctx"
+	"github.com/MagicalTux/goro/core/phpv"
+)
 
 // php targetted version
 const VERSION = "7.3.0"
@@ -21,7 +24,7 @@ func stdFuncPhpVersion(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 	}
 
 	if ext != nil {
-		e := GetExt(*ext)
+		e := phpctx.GetExt(*ext)
 		if e == nil {
 			return phpv.ZBool(false).ZVal(), nil
 		}

@@ -3,10 +3,10 @@ package phpv
 import "io"
 
 type ZArrayAccess interface {
-	OffsetGet(ctx Context, key *ZVal) (*ZVal, error)
-	OffsetSet(ctx Context, key, value *ZVal) error
-	OffsetUnset(ctx Context, key *ZVal) error
-	OffsetExists(ctx Context, key *ZVal) (bool, error)
+	OffsetGet(ctx Context, key Val) (*ZVal, error)
+	OffsetSet(ctx Context, key Val, value *ZVal) error
+	OffsetUnset(ctx Context, key Val) error
+	OffsetExists(ctx Context, key Val) (bool, error)
 }
 
 type ZIterable interface {

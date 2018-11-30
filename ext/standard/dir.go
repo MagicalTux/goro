@@ -7,7 +7,7 @@ import (
 
 //> func string getcwd ( void )
 func fncGetcwd(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	cwd := ctx.Global().(*core.Global).Getwd()
+	cwd := ctx.Global().Getwd()
 	if cwd == "" {
 		return phpv.ZBool(false).ZVal(), nil
 	}
@@ -23,5 +23,5 @@ func fncChdir(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	return nil, ctx.Global().(*core.Global).Chdir(p)
+	return nil, ctx.Global().Chdir(p)
 }

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/compiler"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
@@ -18,7 +19,12 @@ func constant(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	return ctx.Global().(*core.Global).GetConstant(name)
+	k, ok := ctx.Global().ConstantGet(name)
+	if !ok {
+		// TODO trigger notice: constant not found
+		return phpv.ZNULL.ZVal(), nil
+	}
+	return k.ZVal(), nil
 }
 
 //> func mixed eval ( string $code )
@@ -36,7 +42,7 @@ func stdFuncEval(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	// tokenize
 	t := tokenizer.NewLexerPhp(bytes.NewReader([]byte(z.Value().(phpv.ZString))), "-")
 
-	c, err := core.Compile(ctx, t)
+	c, err := compiler.Compile(ctx, t)
 	if err != nil {
 		return nil, err
 	}

@@ -6,6 +6,8 @@ import (
 	"unsafe"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpctx"
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -23,7 +25,7 @@ func fncPrintR(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if ret != nil && *ret {
 		// use buffer
 		b = &bytes.Buffer{}
-		ctx = core.NewBufContext(ctx, b) // grab output
+		ctx = phpctx.NewBufContext(ctx, b) // grab output
 	}
 
 	err = doPrintR(ctx, expr, "", nil)
@@ -80,8 +82,8 @@ func doPrintR(ctx phpv.Context, z *phpv.ZVal, linePfx string, recurs map[uintptr
 		fmt.Fprintf(ctx, "%s)\n", linePfx)
 	case phpv.ZtObject:
 		v := z.Value()
-		if obj, ok := v.(*core.ZObject); ok {
-			fmt.Fprintf(ctx, "%s%s Object\n%s(\n", isRef, obj.Class.Name, linePfx)
+		if obj, ok := v.(*phpobj.ZObject); ok {
+			fmt.Fprintf(ctx, "%s%s Object\n%s(\n", isRef, obj.Class.GetName(), linePfx)
 		} else {
 			fmt.Fprintf(ctx, "%s? object(?)\n%s(\n", isRef, linePfx)
 		}

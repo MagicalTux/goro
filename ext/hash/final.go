@@ -5,12 +5,13 @@ import (
 	gohash "hash"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
 //> func string hash_final ( HashContext $context [, bool $raw_output = FALSE ] )
 func fncHashFinal(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	obj := &core.ZObject{Class: HashContext}
+	obj := &phpobj.ZObject{Class: HashContext}
 	var raw *phpv.ZBool
 
 	_, err := core.Expand(ctx, args, &obj, &raw)

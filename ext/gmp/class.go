@@ -1,8 +1,10 @@
 package gmp
 
-import "github.com/MagicalTux/goro/core"
+import (
+	"github.com/MagicalTux/goro/core/phpobj"
+)
 
 //> class GMP
-var GMP = &core.ZClass{
+var GMP = &phpobj.ZClass{
 	Name: "GMP",
 }

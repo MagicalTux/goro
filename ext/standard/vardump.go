@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"unsafe"
 
-	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -89,8 +89,8 @@ func doVarDump(ctx phpv.Context, z *phpv.ZVal, linePfx string, recurs map[uintpt
 		fmt.Fprintf(ctx, "%s}\n", linePfx)
 	case phpv.ZtObject:
 		v := z.Value()
-		if obj, ok := v.(*core.ZObject); ok {
-			fmt.Fprintf(ctx, "%s%sobject(%s) (%d) {\n", linePfx, isRef, obj.Class.Name, obj.Count(ctx))
+		if obj, ok := v.(*phpobj.ZObject); ok {
+			fmt.Fprintf(ctx, "%s%sobject(%s) (%d) {\n", linePfx, isRef, obj.Class.GetName(), obj.Count(ctx))
 		} else if c, ok := v.(phpv.ZCountable); ok {
 			fmt.Fprintf(ctx, "%s%sobject(?) (%d) {\n", linePfx, isRef, c.Count(ctx))
 		} else {

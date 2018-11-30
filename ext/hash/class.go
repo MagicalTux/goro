@@ -1,8 +1,8 @@
 package hash
 
-import "github.com/MagicalTux/goro/core"
+import "github.com/MagicalTux/goro/core/phpobj"
 
 //> class HashContext
-var HashContext = &core.ZClass{
+var HashContext = &phpobj.ZClass{
 	Name: "HashContext",
 }

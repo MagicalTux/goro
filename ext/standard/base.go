@@ -4,6 +4,7 @@ import (
 	"errors"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpctx"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -19,7 +20,7 @@ func stdFunc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if err != nil {
 		return nil, err
 	}
-	return phpv.ZBool(core.HasExt(name)).ZVal(), nil
+	return phpv.ZBool(phpctx.HasExt(name)).ZVal(), nil
 }
 
 //> func bool function_exists ( string $function_name )
@@ -30,7 +31,7 @@ func stdFuncFuncExists(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 		return nil, err
 	}
 
-	f, _ := ctx.Global().(*core.Global).GetFunction(ctx, fname)
+	f, _ := ctx.Global().GetFunction(ctx, fname)
 	return phpv.ZBool(f != nil).ZVal(), nil
 }
 
@@ -41,12 +42,16 @@ func stdFuncGetCfgVar(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if err != nil {
 		return nil, err
 	}
-	return ctx.Global().(*core.Global).GetConfig(v, phpv.ZNull{}.ZVal()), nil
+	return ctx.Global().GetConfig(v, phpv.ZNull{}.ZVal()), nil
 }
 
 //> func string php_sapi_name ( void )
 func stdFuncSapiName(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	return ctx.Global().(*core.Global).GetConstant("PHP_SAPI")
+	v, ok := ctx.Global().ConstantGet("PHP_SAPI")
+	if !ok {
+		return phpv.ZString("php").ZVal(), nil
+	}
+	return v.ZVal(), nil
 }
 
 //> func string gettype ( mixed $var )
@@ -63,6 +68,6 @@ func fncGettype(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 //> func void flush ( void )
 func fncFlush(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	ctx.Global().(*core.Global).Flush()
+	ctx.Global().Flush()
 	return phpv.ZNULL.ZVal(), nil
 }

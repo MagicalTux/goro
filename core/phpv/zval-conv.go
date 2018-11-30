@@ -22,11 +22,11 @@ func (z *ZVal) As(ctx Context, t ZType) (*ZVal, error) {
 func (z *ZVal) AsVal(ctx Context, t ZType) (Val, error) {
 	if z.GetType() == t {
 		// nothing to do
-		return z, nil
+		return z.Value(), nil
 	}
 	if t == ZtNull {
 		// cast to NULL can only result into null
-		return &ZVal{ZNull{}}, nil
+		return ZNull{}, nil
 	}
 
 	if z == nil || z.v == nil {
@@ -34,7 +34,7 @@ func (z *ZVal) AsVal(ctx Context, t ZType) (Val, error) {
 		if err != nil {
 			return nil, err
 		}
-		return v.ZVal(), nil
+		return v, nil
 	}
 
 	v, err := z.v.AsVal(ctx, t)
@@ -107,6 +107,10 @@ func (z *ZVal) AsString(ctx Context) ZString {
 		return ""
 	}
 	return r.Value().(ZString)
+}
+
+func (v ZNull) String() string {
+	return ""
 }
 
 func (z *ZVal) String() string {

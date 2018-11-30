@@ -117,22 +117,22 @@ function process_ext($path, $ext, $output = 'ext.go') {
 	fwrite($fp, "import \"github.com/MagicalTux/goro/core\"\n\n"); // other imports will be handled automatically at build time
 	fwrite($fp, "// WARNING: This file is auto-generated. DO NOT EDIT\n\n");
 	fwrite($fp, "func init() {\n");
-	fwrite($fp, "\t${prefix}RegisterExt(&${prefix}Ext{\n");
+	fwrite($fp, "\tphpctx.RegisterExt(&phpctx.Ext{\n");
 	fwrite($fp, "\t\tName: \"".addslashes($ext)."\",\n"); // addslashes not quite equivalent to go's %q
 	fwrite($fp, "\t\tVersion: ${prefix}VERSION,\n");
 
-	fwrite($fp, "\t\tClasses: []*${prefix}ZClass{\n");
+	fwrite($fp, "\t\tClasses: []phpv.ZClass{\n");
 	ksort($classes);
 	foreach($classes as $class => $info) {
 		fwrite($fp, "\t\t\t".$class.",\n");
 	}
 	fwrite($fp, "\t\t},\n");
 
-	fwrite($fp, "\t\tFunctions: map[string]*${prefix}ExtFunction{\n");
+	fwrite($fp, "\t\tFunctions: map[string]*phpctx.ExtFunction{\n");
 	ksort($functions);
 	foreach($functions as $func => $info) {
 		// sample args: Args: []*core.ExtFunctionArg{&core.ExtFunctionArg{ArgName: "output"}, &core.ExtFunctionArg{ArgName: "...", Optional: true}}
-		fwrite($fp, "\t\t\t\"".addslashes($func)."\": &${prefix}ExtFunction{Func: ".$info['val'].", Args: []*${prefix}ExtFunctionArg{}},\n"); // TODO args
+		fwrite($fp, "\t\t\t\"".addslashes($func)."\": &phpctx.ExtFunction{Func: ".$info['val'].", Args: []*phpctx.ExtFunctionArg{}},\n"); // TODO args
 	}
 	fwrite($fp, "\t\t},\n");
 

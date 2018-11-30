@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -94,7 +95,7 @@ func jsonDecodeObject(ctx phpv.Context, r *strings.Reader, depth int, opt JsonDe
 		return nil, ErrSyntax
 	}
 
-	var set func(ctx phpv.Context, k, v *phpv.ZVal) error
+	var set func(ctx phpv.Context, k phpv.Val, v *phpv.ZVal) error
 	var final *phpv.ZVal
 
 	if opt&ObjectAsArray == ObjectAsArray {
@@ -102,7 +103,7 @@ func jsonDecodeObject(ctx phpv.Context, r *strings.Reader, depth int, opt JsonDe
 		set = a.OffsetSet
 		final = a.ZVal()
 	} else {
-		o, err := core.NewZObject(ctx, nil) // nil means stdClass
+		o, err := phpobj.NewZObject(ctx, nil) // nil means stdClass
 		if err != nil {
 			// should never happen for stdClass
 			return nil, err

@@ -2,21 +2,22 @@ package json
 
 import (
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpctx"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
 // WARNING: This file is auto-generated. DO NOT EDIT
 
 func init() {
-	core.RegisterExt(&core.Ext{
+	phpctx.RegisterExt(&phpctx.Ext{
 		Name:    "json",
 		Version: core.VERSION,
-		Classes: []*core.ZClass{
+		Classes: []phpv.ZClass{
 			JsonSerializable,
 		},
-		Functions: map[string]*core.ExtFunction{
-			"json_decode": &core.ExtFunction{Func: fncJsonDecode, Args: []*core.ExtFunctionArg{}},
-			"json_encode": &core.ExtFunction{Func: fncJsonEncode, Args: []*core.ExtFunctionArg{}},
+		Functions: map[string]*phpctx.ExtFunction{
+			"json_decode": &phpctx.ExtFunction{Func: fncJsonDecode, Args: []*phpctx.ExtFunctionArg{}},
+			"json_encode": &phpctx.ExtFunction{Func: fncJsonEncode, Args: []*phpctx.ExtFunctionArg{}},
 		},
 		Constants: map[phpv.ZString]phpv.Val{
 			"JSON_BIGINT_AS_STRING":            phpv.ZInt(BigintAsString),

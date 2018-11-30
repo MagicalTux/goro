@@ -27,7 +27,7 @@ func fncErrorReporting(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 	}
 
 	if level != nil {
-		ctx.Global().(*Global).SetLocalConfig("error_reporting", (*level).ZVal())
+		ctx.Global().SetLocalConfig("error_reporting", (*level).ZVal())
 	}
 
 	return ctx.GetConfig("error_reporting", phpv.ZInt(0).ZVal()), nil
@@ -42,14 +42,14 @@ func fncDefine(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	g := ctx.Global().(*Global)
+	g := ctx.Global()
 
-	if _, ok := g.constant[name]; ok {
+	ok := g.ConstantSet(name, value.Value())
+	if !ok {
 		// TODO trigger notice: Constant %s already defined
 		return phpv.ZBool(false).ZVal(), nil
 	}
 
-	g.constant[name] = value
 	return phpv.ZBool(true).ZVal(), nil
 }
 
@@ -61,9 +61,9 @@ func fncDefined(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	g := ctx.Global().(*Global)
+	g := ctx.Global()
 
-	_, ok := g.constant[name]
+	_, ok := g.ConstantGet(name)
 
 	return phpv.ZBool(ok).ZVal(), nil
 }

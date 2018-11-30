@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -61,12 +62,12 @@ func zvalStore(ctx phpv.Context, z *phpv.ZVal, out interface{}) error {
 		}
 		*tgt = s
 		return nil
-	case **ZObject:
+	case **phpobj.ZObject:
 		s, err := z.As(ctx, phpv.ZtObject)
 		if err != nil {
 			return err
 		}
-		obj, ok := s.Value().(*ZObject)
+		obj, ok := s.Value().(*phpobj.ZObject)
 		if !ok {
 			return fmt.Errorf("expected parameter to be object, %s given", z.GetType())
 		}
@@ -75,7 +76,7 @@ func zvalStore(ctx phpv.Context, z *phpv.ZVal, out interface{}) error {
 				// check implements
 				if (*tgt).Class != obj.Class {
 					// TODO fix parameter #
-					return fmt.Errorf("expects parameter %d to be %s, %s given", 1, (*tgt).Class.Name, z.GetType())
+					return fmt.Errorf("expects parameter %d to be %s, %s given", 1, (*tgt).Class.GetName(), z.GetType())
 				}
 			}
 		}
@@ -111,7 +112,7 @@ func Expand(ctx phpv.Context, args []*phpv.ZVal, out ...interface{}) (int, error
 			switch rv.Type().Elem() {
 			// these are expected to be pointers
 			case reflect.TypeOf(&phpv.ZVal{}):
-			case reflect.TypeOf(&ZObject{}):
+			case reflect.TypeOf(&phpobj.ZObject{}):
 			case reflect.TypeOf(&phpv.ZArray{}):
 			default:
 				// pointer of pointer → optional argument

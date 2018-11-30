@@ -5,7 +5,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpctx"
 	_ "github.com/MagicalTux/goro/ext/bz2"
 	_ "github.com/MagicalTux/goro/ext/ctype"
 	_ "github.com/MagicalTux/goro/ext/date"
@@ -18,9 +18,9 @@ import (
 
 func main() {
 	// by default, run script test.php
-	p := core.NewProcess("cli")
+	p := phpctx.NewProcess("cli")
 	p.CommandLine(os.Args)
-	ctx := core.NewGlobal(context.Background(), p)
+	ctx := phpctx.NewGlobal(context.Background(), p)
 	if err := ctx.RunFile("test.php"); err != nil {
 		log.Printf("failed to run test file: %s", err)
 		os.Exit(1)

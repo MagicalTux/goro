@@ -4,6 +4,7 @@ import (
 	"errors"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpctx"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -23,7 +24,7 @@ func fncObStart(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, errors.New("ob_start(): Cannot use output buffering in output buffering display handlers")
 	}
 
-	b := ctx.Global().(*core.Global).AppendBuffer()
+	b := ctx.Global().(*phpctx.Global).AppendBuffer()
 
 	if outputCallback != nil {
 		b.CB = *outputCallback
@@ -40,7 +41,7 @@ func fncObStart(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 //> func void ob_flush ( void )
 func fncObFlush(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	buf := ctx.Global().(*core.Global).Buffer()
+	buf := ctx.Global().(*phpctx.Global).Buffer()
 	if buf != nil {
 		return phpv.ZNULL.ZVal(), buf.Flush()
 	}
@@ -49,7 +50,7 @@ func fncObFlush(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 //> func void ob_clean ( void )
 func fncObClean(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	buf := ctx.Global().(*core.Global).Buffer()
+	buf := ctx.Global().(*phpctx.Global).Buffer()
 	if buf == nil {
 		return phpv.ZNULL.ZVal(), nil
 	}
@@ -60,7 +61,7 @@ func fncObClean(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 //> func bool ob_end_clean ( void )
 func fncObEndClean(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	buf := ctx.Global().(*core.Global).Buffer()
+	buf := ctx.Global().(*phpctx.Global).Buffer()
 	if buf == nil {
 		return phpv.ZBool(false).ZVal(), nil
 	}
@@ -71,7 +72,7 @@ func fncObEndClean(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 //> func bool ob_end_flush ( void )
 func fncObEndFlush(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	buf := ctx.Global().(*core.Global).Buffer()
+	buf := ctx.Global().(*phpctx.Global).Buffer()
 	if buf == nil {
 		return phpv.ZBool(false).ZVal(), nil
 	}
@@ -81,7 +82,7 @@ func fncObEndFlush(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 //> func int ob_get_level ( void )
 func fncObGetLevel(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	buf := ctx.Global().(*core.Global).Buffer()
+	buf := ctx.Global().(*phpctx.Global).Buffer()
 	if buf == nil {
 		return phpv.ZInt(0).ZVal(), nil
 	}
@@ -91,7 +92,7 @@ func fncObGetLevel(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 //> func string ob_get_clean ( void )
 func fncObGetClean(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	buf := ctx.Global().(*core.Global).Buffer()
+	buf := ctx.Global().(*phpctx.Global).Buffer()
 	if buf == nil {
 		return phpv.ZBool(false).ZVal(), nil
 	}
@@ -104,7 +105,7 @@ func fncObGetClean(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 //> func string ob_get_contents ( void )
 func fncObGetContents(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	buf := ctx.Global().(*core.Global).Buffer()
+	buf := ctx.Global().(*phpctx.Global).Buffer()
 	if buf == nil {
 		return phpv.ZBool(false).ZVal(), nil
 	}
@@ -116,7 +117,7 @@ func fncObGetContents(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 //> func string ob_get_flush ( void )
 func fncObGetFlush(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	buf := ctx.Global().(*core.Global).Buffer()
+	buf := ctx.Global().(*phpctx.Global).Buffer()
 	if buf == nil {
 		return phpv.ZBool(false).ZVal(), nil
 	}
@@ -134,7 +135,7 @@ func fncObImplicitFlush(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 		return nil, err
 	}
 
-	buf := ctx.Global().(*core.Global).Buffer()
+	buf := ctx.Global().(*phpctx.Global).Buffer()
 	if buf == nil {
 		return phpv.ZNULL.ZVal(), nil
 	}

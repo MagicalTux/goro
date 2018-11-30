@@ -3,7 +3,9 @@ package phpv
 type Val interface {
 	GetType() ZType
 	ZVal() *ZVal
+	Value() Val
 	AsVal(ctx Context, t ZType) (Val, error)
+	String() string
 }
 
 type ZVal struct {

@@ -168,3 +168,15 @@ func (z ZString) AsNumeric() (Val, error) {
 
 	return ZInt(0), err
 }
+
+func (v ZString) String() string {
+	return string(v)
+}
+
+func ZStr(s string) *ZVal {
+	return &ZVal{ZString(s)}
+}
+
+func (v ZString) Value() Val {
+	return v
+}
