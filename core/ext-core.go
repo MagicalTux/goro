@@ -32,6 +32,7 @@ func init() {
 			"define":            &phpctx.ExtFunction{Func: fncDefine, Args: []*phpctx.ExtFunctionArg{}},
 			"defined":           &phpctx.ExtFunction{Func: fncDefined, Args: []*phpctx.ExtFunctionArg{}},
 			"echo":              &phpctx.ExtFunction{Func: stdFuncEcho, Args: []*phpctx.ExtFunctionArg{}},
+			"empty":             &phpctx.ExtFunction{Func: fncEmpty, Args: []*phpctx.ExtFunctionArg{}},
 			"error_reporting":   &phpctx.ExtFunction{Func: fncErrorReporting, Args: []*phpctx.ExtFunctionArg{}},
 			"func_get_arg":      &phpctx.ExtFunction{Func: fncFuncGetArg, Args: []*phpctx.ExtFunctionArg{}},
 			"func_get_args":     &phpctx.ExtFunction{Func: fncFuncGetArgs, Args: []*phpctx.ExtFunctionArg{}},

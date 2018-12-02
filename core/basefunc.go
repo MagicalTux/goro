@@ -100,3 +100,30 @@ func fncStrcmp(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	r := strings.Compare(string(a), string(b))
 	return phpv.ZInt(r).ZVal(), nil
 }
+
+//> func bool empty ( mixed $var )
+func fncEmpty(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var v *phpv.ZVal
+	_, err := Expand(ctx, args, &v)
+	if err != nil {
+		return nil, err
+	}
+
+	switch v.GetType() {
+	case phpv.ZtNull:
+		return phpv.ZBool(true).ZVal(), nil
+	case phpv.ZtBool:
+		return phpv.ZBool(v.Value().(phpv.ZBool) == false).ZVal(), nil
+	case phpv.ZtInt:
+		return phpv.ZBool(v.Value().(phpv.ZInt) == 0).ZVal(), nil
+	case phpv.ZtFloat:
+		return phpv.ZBool(v.Value().(phpv.ZFloat) == 0).ZVal(), nil
+	case phpv.ZtString:
+		s := v.Value().(phpv.ZString)
+		return phpv.ZBool(s == "" || s == "0").ZVal(), nil
+	case phpv.ZtArray:
+		s := v.Value().(*phpv.ZArray)
+		return phpv.ZBool(s.Count(ctx) == 0).ZVal(), nil
+	}
+	return phpv.ZBool(false).ZVal(), nil // unsupported type
+}
