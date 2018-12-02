@@ -15,7 +15,7 @@ type runClassStaticVarRef struct {
 }
 
 func (r *runClassStaticVarRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
-	class, err := ctx.Global().GetClass(ctx, r.className)
+	class, err := ctx.Global().GetClass(ctx, r.className, true)
 	if err != nil {
 		return nil, err
 	}
@@ -29,7 +29,7 @@ func (r *runClassStaticVarRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 }
 
 func (r *runClassStaticVarRef) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
-	class, err := ctx.Global().GetClass(ctx, r.className)
+	class, err := ctx.Global().GetClass(ctx, r.className, true)
 	if err != nil {
 		return err
 	}
@@ -58,7 +58,7 @@ type runClassStaticObjRef struct {
 }
 
 func (r *runClassStaticObjRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
-	class, err := ctx.Global().GetClass(ctx, r.className)
+	class, err := ctx.Global().GetClass(ctx, r.className, true)
 	if err != nil {
 		return nil, err
 	}
@@ -74,7 +74,7 @@ func (r *runClassStaticObjRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 func (r *runClassStaticObjRef) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	ctx = ctx.Parent(1) // go back one level
 	// first, fetch class object
-	class, err := ctx.Global().GetClass(ctx, r.className)
+	class, err := ctx.Global().GetClass(ctx, r.className, true)
 	if err != nil {
 		return nil, err
 	}

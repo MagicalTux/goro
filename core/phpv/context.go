@@ -37,7 +37,7 @@ type GlobalContext interface {
 	GetFunction(ctx Context, name ZString) (Callable, error)
 
 	RegisterClass(name ZString, c ZClass) error
-	GetClass(ctx Context, name ZString) (ZClass, error)
+	GetClass(ctx Context, name ZString, autoload bool) (ZClass, error)
 	SetLocalConfig(name ZString, val *ZVal) error
 
 	ConstantSet(k ZString, v Val) bool

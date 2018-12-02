@@ -256,6 +256,8 @@ func compilePostExpr(v phpv.Runnable, i *tokenizer.Item, c compileCtx) (phpv.Run
 		}
 	case tokenizer.T_OBJECT_OPERATOR:
 		return compileObjectOperator(v, i, c)
+	case tokenizer.T_INSTANCEOF:
+		return compileInstanceOf(v, i, c)
 	default:
 		if isOperator(i.Type) {
 			// what follows should be an expression

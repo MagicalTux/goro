@@ -268,7 +268,7 @@ func (g *Global) ConstantSet(k phpv.ZString, v phpv.Val) bool {
 	return true
 }
 
-func (g *Global) GetClass(ctx phpv.Context, name phpv.ZString) (phpv.ZClass, error) {
+func (g *Global) GetClass(ctx phpv.Context, name phpv.ZString, autoload bool) (phpv.ZClass, error) {
 	switch name {
 	case "self":
 		// check for func
@@ -317,6 +317,7 @@ func (g *Global) GetClass(ctx phpv.Context, name phpv.ZString) (phpv.ZClass, err
 			return c, nil
 		}
 	}
+	// TODO if autoload { do autoload }
 	return nil, fmt.Errorf("Class '%s' not found", name)
 }
 

@@ -33,7 +33,7 @@ func (r *runNewObject) Dump(w io.Writer) error {
 }
 
 func (r *runNewObject) Run(ctx phpv.Context) (*phpv.ZVal, error) {
-	class, err := ctx.Global().GetClass(ctx, r.obj)
+	class, err := ctx.Global().GetClass(ctx, r.obj, true)
 	if err != nil {
 		return nil, err
 	}
@@ -57,19 +57,11 @@ func compileNew(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	// next should be either:
 	// T_CLASS (anonymous class)
 	// string (name of a class)
+	var err error
 
 	n := &runNewObject{l: i.Loc()}
 
-	i, err := c.NextItem()
-	if err != nil {
-		return nil, err
-	}
-
-	if i.Type != tokenizer.T_STRING {
-		return nil, i.Unexpected()
-	}
-
-	n.obj = phpv.ZString(i.Data)
+	n.obj, err = compileClassName(c)
 
 	i, err = c.NextItem()
 	if err != nil {
@@ -253,4 +245,38 @@ func compileObjectOperator(v phpv.Runnable, i *tokenizer.Item, c compileCtx) (ph
 	}
 
 	return &runObjectVar{ref: v, varName: op, l: l}, nil
+}
+
+func compileClassName(c compileCtx) (phpv.ZString, error) {
+	var r phpv.ZString
+
+	i, err := c.NextItem()
+	if err != nil {
+		return r, err
+	}
+
+	if i.Type == tokenizer.T_NS_SEPARATOR {
+		r = "\\"
+		i, err = c.NextItem()
+		if err != nil {
+			return r, err
+		}
+	}
+
+	for {
+		if i.Type != tokenizer.T_STRING {
+			return r, i.Unexpected()
+		}
+
+		r = r + phpv.ZString(i.Data)
+
+		i, err = c.NextItem()
+		switch i.Type {
+		case tokenizer.T_NS_SEPARATOR:
+			r = r + "\\"
+		default:
+			c.backup()
+			return r, nil
+		}
+	}
 }

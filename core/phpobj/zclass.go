@@ -48,7 +48,7 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 
 	if c.ExtendsStr != "" {
 		// need to lookup extend
-		subc, err := ctx.Global().GetClass(ctx, c.ExtendsStr)
+		subc, err := ctx.Global().GetClass(ctx, c.ExtendsStr, true)
 		if err != nil {
 			return err
 		}
@@ -97,6 +97,9 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 }
 
 func (c *ZClass) InstanceOf(subc phpv.ZClass) bool {
+	if subc == c {
+		return true
+	}
 	_, r := c.parents[subc]
 	return r
 }
