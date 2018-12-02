@@ -98,6 +98,40 @@ func (f *fileHandler) Open(p *url.URL) (*Stream, error) {
 	return s, nil
 }
 
+func (f *fileHandler) Exists(p *url.URL) (bool, error) {
+	fname, _, err := f.localPath(p.Path)
+	if err != nil {
+		return false, err
+	}
+
+	_, err = os.Lstat(fname)
+	if err != nil {
+		if err == os.ErrNotExist {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+func (f *fileHandler) Stat(p *url.URL) (os.FileInfo, error) {
+	fname, _, err := f.localPath(p.Path)
+	if err != nil {
+		return nil, err
+	}
+
+	return os.Stat(fname) // TODO use Lstat instead, and resolve link locally
+}
+
+func (f *fileHandler) Lstat(p *url.URL) (os.FileInfo, error) {
+	fname, _, err := f.localPath(p.Path)
+	if err != nil {
+		return nil, err
+	}
+
+	return os.Lstat(fname) // TODO use Lstat instead, and resolve link locally
+}
+
 func (f *fileHandler) Chdir(p string) error {
 	fname, name, err := f.localPath(p)
 	if err != nil {

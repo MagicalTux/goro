@@ -3,6 +3,7 @@ package stream
 import (
 	"errors"
 	"io"
+	"os"
 	"runtime"
 )
 
@@ -89,4 +90,28 @@ func (s *Stream) Attr(v interface{}) interface{} {
 	}
 	// return nil
 	return nil
+}
+
+func (s *Stream) Stat() (os.FileInfo, error) {
+	if f, ok := s.f.(Stater); ok {
+		return f.Stat()
+	}
+
+	return nil, ErrNotSupported
+}
+
+func (s *Stream) Flush() error {
+	if f, ok := s.f.(Flusher); ok {
+		return f.Flush()
+	}
+
+	return nil // if Flush is not supported, it usually means there is nothing to flush, so no error
+}
+
+func (s *Stream) Sync() error {
+	if f, ok := s.f.(Syncer); ok {
+		return f.Sync()
+	}
+
+	return nil // if no Sync, no need to sync, probably
 }

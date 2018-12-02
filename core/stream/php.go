@@ -31,3 +31,21 @@ func (h *phpHandler) Open(p *url.URL) (*Stream, error) {
 		return nil, os.ErrNotExist
 	}
 }
+
+func (h *phpHandler) Exists(p *url.URL) (bool, error) {
+	switch p.Path {
+	case "stdin", "stdout", "stderr":
+		return true, nil
+	case "memory", "temp":
+		return true, nil
+	}
+	return false, nil
+}
+
+func (f *phpHandler) Stat(p *url.URL) (os.FileInfo, error) {
+	return nil, ErrNotSupported
+}
+
+func (f *phpHandler) Lstat(p *url.URL) (os.FileInfo, error) {
+	return nil, ErrNotSupported
+}
