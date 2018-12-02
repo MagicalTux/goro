@@ -49,6 +49,7 @@ func init() {
 		tokenizer.T_CONTINUE:     &compileFuncCb{f: compileContinue},
 		tokenizer.T_BREAK:        &compileFuncCb{f: compileBreak},
 		tokenizer.T_NEW:          &compileFuncCb{f: compileNew},
+		tokenizer.T_CLONE:        &compileFuncCb{f: compileClone},
 		tokenizer.Rune('{'):      &compileFuncCb{f: compileBase, skip: true},
 		tokenizer.Rune('('):      &compileFuncCb{f: compileExpr},
 		tokenizer.Rune('@'):      &compileFuncCb{f: compileExpr},

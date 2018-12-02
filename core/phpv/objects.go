@@ -41,4 +41,5 @@ type ZObject interface {
 	GetClass() ZClass
 	NewIterator() ZIterator
 	HashTable() *ZHashTable
+	Clone() (ZObject, error)
 }

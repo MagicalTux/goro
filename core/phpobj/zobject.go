@@ -58,6 +58,20 @@ func NewZObject(ctx phpv.Context, c phpv.ZClass) (*ZObject, error) {
 	return n, n.init(ctx)
 }
 
+func (z *ZObject) Clone() (phpv.ZObject, error) {
+	if len(z.Opaque) != 0 {
+		// TODO allow clone callbacks
+		return nil, errors.New("object cannot be cloned")
+	}
+
+	n := &ZObject{
+		Class: z.Class,
+		h:     z.h.Dup(), // copy on write
+	}
+
+	return n, nil
+}
+
 func NewZObjectOpaque(ctx phpv.Context, c phpv.ZClass, v interface{}) (*ZObject, error) {
 	n := &ZObject{h: phpv.NewHashTable(), Class: c, Opaque: map[phpv.ZClass]interface{}{c: v}}
 	return n, n.init(ctx)

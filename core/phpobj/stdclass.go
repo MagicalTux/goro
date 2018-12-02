@@ -2,7 +2,7 @@ package phpobj
 
 import "github.com/MagicalTux/goro/core/phpv"
 
-//> class stdClass
+//> class StdClass
 var StdClass = &ZClass{
 	Name: "stdClass",
 }

@@ -20,24 +20,29 @@ function process_ext($path, $ext, $output = 'ext.go') {
 	$functions = [];
 	$classes = [];
 
-	// gather files in ext
-	$dh2 = opendir($path);
-	if (!$dh2) die("could not open dir for $ext\n");
+	$it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($path));
 
-	while(($f = readdir($dh2)) !== false) {
+	foreach($it as $f => $finfo) {
 		if (($f == '.') || ($f == '..')) continue;
 		if ($f == $output) continue; // skip
 		if (substr($f, -3) != '.go') continue; // skip non .go files
+		if (!$finfo->isFile()) continue;
 
-		$fp = fopen($path.'/'.$f, 'r');
+		$fp = fopen($f, 'r');
 		if (!$fp) die("failed to open $f\n");
 
 		$lineno = 0;
 		$function_pending = NULL;
+		$package = NULL;
 
 		while(!feof($fp)) {
 			$lineno += 1;
 			$lin = fgets($fp);
+			if (substr($lin, 0, 8) == 'package ') {
+				// we're going to assume no comment after this
+				$package = trim(substr($lin, 8));
+				continue;
+			}
 			if ((substr($lin, 0, 5) == 'func ') && (!is_null($function_pending))) {
 				// we have a function name
 				$lin = substr($lin, 5);
@@ -68,7 +73,7 @@ function process_ext($path, $ext, $output = 'ext.go') {
 					}
 					$const = trim(substr($lin, 0, $pos));
 					$val = trim(substr($lin, $pos+1));
-					$constants[$const] = ['val' => $val, 'where' => $f.':'.$lineno];
+					$constants[$const] = ['pkg' => $package, 'val' => $val, 'where' => $f.':'.$lineno];
 					break;
 				case 'func':
 					// $lin is: <return_type> <function_name> ( <arguments> )
@@ -87,7 +92,7 @@ function process_ext($path, $ext, $output = 'ext.go') {
 					$lin = trim(substr($lin, $pos+1));
 
 					// TODO args
-					$functions[strtolower($func)] = ['val' => null, 'where' => $f.':'.$lineno];
+					$functions[strtolower($func)] = ['pkg' => $package, 'val' => null, 'where' => $f.':'.$lineno];
 					$function_pending = strtolower($func);
 					break;
 				case 'class':
@@ -96,7 +101,7 @@ function process_ext($path, $ext, $output = 'ext.go') {
 					if ($pos !== false) {
 						$lin = trim(substr($lin, 0, $pos));
 					}
-					$classes[$lin] = ['class' => $lin, 'where' => $f.':'.$lineno];
+					$classes[$lin] = ['pkg' => $package, 'class' => $lin, 'where' => $f.':'.$lineno];
 					break;
 				default:
 					die("failed to parse $code $lin (unknown code)\n");
@@ -124,6 +129,7 @@ function process_ext($path, $ext, $output = 'ext.go') {
 	fwrite($fp, "\t\tClasses: []phpv.ZClass{\n");
 	ksort($classes);
 	foreach($classes as $class => $info) {
+		if ($info['pkg'] != $ext) $class = $info['pkg'].'.'.$class;
 		fwrite($fp, "\t\t\t".$class.",\n");
 	}
 	fwrite($fp, "\t\t},\n");
