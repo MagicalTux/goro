@@ -47,6 +47,7 @@ type GlobalContext interface {
 	RegisterLazyClass(name ZString, r Runnables, p int)
 
 	Open(fn ZString, isInclude bool) (*stream.Stream, error)
+	Exists(fn ZString) (bool, error)
 	Chdir(d ZString) error
 	Getwd() ZString
 

@@ -35,3 +35,19 @@ func fncDirname(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 	return phpv.ZString(p).ZVal(), nil
 }
+
+//> func bool file_exists ( string $filename )
+func fncFileExists(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var filename phpv.ZString
+	_, err := core.Expand(ctx, args, &filename)
+	if err != nil {
+		return nil, err
+	}
+
+	r, err := ctx.Global().Exists(filename)
+	if err != nil {
+		return nil, err
+	}
+
+	return phpv.ZBool(r).ZVal(), nil
+}

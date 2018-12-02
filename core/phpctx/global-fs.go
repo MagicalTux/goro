@@ -10,12 +10,10 @@ import (
 
 type OpenContext int
 
-// Open opens a file using PHP stream wrappers and returns a handler to said
-// file.
-func (g *Global) Open(fn phpv.ZString, isInclude bool) (*stream.Stream, error) {
+func (g *Global) getHandler(fn phpv.ZString) (stream.Handler, *url.URL, error) {
 	u, err := url.Parse(string(fn))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	s := u.Scheme
@@ -25,10 +23,30 @@ func (g *Global) Open(fn phpv.ZString, isInclude bool) (*stream.Stream, error) {
 
 	h, ok := g.fHandler[s]
 	if !ok {
-		return nil, os.ErrInvalid
+		return nil, u, os.ErrInvalid
+	}
+
+	return h, u, nil
+}
+
+// Open opens a file using PHP stream wrappers and returns a handler to said
+// file.
+func (g *Global) Open(fn phpv.ZString, isInclude bool) (*stream.Stream, error) {
+	h, u, err := g.getHandler(fn)
+	if err != nil {
+		return nil, err
 	}
 
 	return h.Open(u)
+}
+
+func (g *Global) Exists(fn phpv.ZString) (bool, error) {
+	h, u, err := g.getHandler(fn)
+	if err != nil {
+		return false, err
+	}
+
+	return h.Exists(u)
 }
 
 func (g *Global) Chdir(d phpv.ZString) error {

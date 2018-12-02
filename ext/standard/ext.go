@@ -46,6 +46,7 @@ func init() {
 			"exp":                      &phpctx.ExtFunction{Func: mathExp, Args: []*phpctx.ExtFunctionArg{}},
 			"expm1":                    &phpctx.ExtFunction{Func: mathExpm1, Args: []*phpctx.ExtFunctionArg{}},
 			"extension_loaded":         &phpctx.ExtFunction{Func: stdFunc, Args: []*phpctx.ExtFunctionArg{}},
+			"file_exists":              &phpctx.ExtFunction{Func: fncFileExists, Args: []*phpctx.ExtFunctionArg{}},
 			"floatval":                 &phpctx.ExtFunction{Func: fncFloatval, Args: []*phpctx.ExtFunctionArg{}},
 			"flush":                    &phpctx.ExtFunction{Func: fncFlush, Args: []*phpctx.ExtFunctionArg{}},
 			"fmod":                     &phpctx.ExtFunction{Func: mathFmod, Args: []*phpctx.ExtFunctionArg{}},

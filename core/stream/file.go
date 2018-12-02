@@ -63,9 +63,14 @@ func (f *fileHandler) localPath(name string) (string, string, error) {
 	fname := filepath.Join(f.root, filepath.FromSlash(name))
 
 	// resolve symlinks
-	fname, err := filepath.EvalSymlinks(fname)
+	fname2, err := filepath.EvalSymlinks(fname)
 	if err != nil {
-		return "", "", err
+		if !os.IsNotExist(err) {
+			// this might be about creating a file, so no error if not exists
+			return "", "", err
+		}
+	} else {
+		fname = fname2
 	}
 
 	// check if OK
@@ -106,7 +111,7 @@ func (f *fileHandler) Exists(p *url.URL) (bool, error) {
 
 	_, err = os.Lstat(fname)
 	if err != nil {
-		if err == os.ErrNotExist {
+		if os.IsNotExist(err) {
 			return false, nil
 		}
 		return false, err
