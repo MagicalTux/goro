@@ -5,7 +5,7 @@ import (
 
 	"github.com/MagicalTux/goro/core"
 	"github.com/MagicalTux/goro/core/phpv"
-	"github.com/MagicalTux/strftime"
+	"github.com/KarpelesLab/strftime"
 )
 
 //> func string strftime ( string $format [, int $timestamp = time() ] )
