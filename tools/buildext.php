@@ -53,7 +53,7 @@ function process_ext($path, $ext, $output = 'ext.go') {
 				$function_pending = NULL;
 				continue;
 			}
-			if (substr($lin, 0, 4) != '//> ') continue;
+			if ((substr($lin, 0, 5) != '// > ') && (substr($lin, 0, 4) != '//> ')) continue;
 			$lin = trim(substr($lin, 4));
 			$pos = strpos($lin, ' ');
 			if ($pos === false) die("failed to parse $lin\n");
