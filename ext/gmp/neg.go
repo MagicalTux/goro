@@ -7,7 +7,7 @@ import (
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
-//> func GMP gmp_neg ( GMP $a )
+// > func GMP gmp_neg ( GMP $a )
 func gmpNeg(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var a *phpv.ZVal
 

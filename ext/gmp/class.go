@@ -4,7 +4,7 @@ import (
 	"github.com/MagicalTux/goro/core/phpobj"
 )
 
-//> class GMP
+// > class GMP
 var GMP = &phpobj.ZClass{
 	Name: "GMP",
 }

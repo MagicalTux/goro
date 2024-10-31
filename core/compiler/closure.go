@@ -21,7 +21,7 @@ type ZClosure struct {
 	rref  bool // return ref?
 }
 
-//> class Closure
+// > class Closure
 var Closure = &phpobj.ZClass{
 	Name: "Closure",
 	H:    &phpv.ZClassHandlers{},

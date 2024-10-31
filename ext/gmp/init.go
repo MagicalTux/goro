@@ -8,7 +8,7 @@ import (
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
-//> func GMP gmp_init ( mixed $number [, int $base = 0 ] )
+// > func GMP gmp_init ( mixed $number [, int $base = 0 ] )
 func gmpInit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var num *phpv.ZVal
 	var base *phpv.ZInt

@@ -8,7 +8,7 @@ import (
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
-//> func string base64_encode ( string $data )
+// > func string base64_encode ( string $data )
 func fncBase64Encode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var s phpv.ZString
 	_, err := core.Expand(ctx, args, &s)
@@ -25,7 +25,7 @@ func fncBase64Encode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZString(r).ZVal(), nil
 }
 
-//> func string base64_decode ( string $data [, bool $strict = FALSE ] )
+// > func string base64_decode ( string $data [, bool $strict = FALSE ] )
 func fncBase64Decode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var s phpv.ZString
 	var strict *phpv.ZBool

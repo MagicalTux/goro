@@ -7,7 +7,7 @@ import (
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
-//> func string getenv ( string $varname [, bool $local_only = FALSE ] )
+// > func string getenv ( string $varname [, bool $local_only = FALSE ] )
 func getenv(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var varname phpv.ZString
 	var local_only *phpv.ZBool
@@ -25,7 +25,7 @@ func getenv(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZString(v).ZVal(), nil
 }
 
-//> func bool putenv ( string $setting )
+// > func bool putenv ( string $setting )
 func putenv(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var setting string
 	_, err := core.Expand(ctx, args, &setting)

@@ -9,7 +9,7 @@ import (
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
-//> func string hash_hmac ( string $algo , string $data , string $key [, bool $raw_output = FALSE ] )
+// > func string hash_hmac ( string $algo , string $data , string $key [, bool $raw_output = FALSE ] )
 func fncHashHmac(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var algo phpv.ZString
 	var data phpv.ZString

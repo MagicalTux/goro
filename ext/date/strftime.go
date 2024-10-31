@@ -3,12 +3,12 @@ package date
 import (
 	"time"
 
+	"github.com/KarpelesLab/strftime"
 	"github.com/MagicalTux/goro/core"
 	"github.com/MagicalTux/goro/core/phpv"
-	"github.com/MagicalTux/strftime"
 )
 
-//> func string strftime ( string $format [, int $timestamp = time() ] )
+// > func string strftime ( string $format [, int $timestamp = time() ] )
 func fncStrftime(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var f phpv.ZString
 	var ts *phpv.ZInt

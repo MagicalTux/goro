@@ -7,7 +7,7 @@ import (
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
-//> func GMP gmp_abs ( GMP $a )
+// > func GMP gmp_abs ( GMP $a )
 func gmpAbs(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var gmpnum *phpv.ZVal
 

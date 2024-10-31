@@ -7,7 +7,7 @@ import (
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
-//> func GMP gmp_add ( GMP $a , GMP $b )
+// > func GMP gmp_add ( GMP $a , GMP $b )
 func gmpAdd(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var a, b *phpv.ZVal
 
@@ -31,7 +31,7 @@ func gmpAdd(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return returnInt(ctx, r)
 }
 
-//> func GMP gmp_sub ( GMP $a , GMP $b )
+// > func GMP gmp_sub ( GMP $a , GMP $b )
 func gmpSub(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var a, b *phpv.ZVal
 

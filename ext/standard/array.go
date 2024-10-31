@@ -5,7 +5,7 @@ import (
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
-//> func array array_merge ( array $array1 [, array $... ] )
+// > func array array_merge ( array $array1 [, array $... ] )
 func fncArrayMerge(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var a *phpv.ZArray
 	_, err := core.Expand(ctx, args, &a)

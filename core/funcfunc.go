@@ -9,7 +9,7 @@ import (
 
 // Function handling Functions
 
-//> func array func_get_args ( void )
+// > func array func_get_args ( void )
 func fncFuncGetArgs(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	// no params
 
@@ -28,7 +28,7 @@ func fncFuncGetArgs(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return r.ZVal(), nil
 }
 
-//> func int func_num_args ( void )
+// > func int func_num_args ( void )
 func fncFuncNumArgs(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	// go back one context
 	c, ok := ctx.Parent(1).(*phpctx.FuncContext)
@@ -39,7 +39,7 @@ func fncFuncNumArgs(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZInt(len(c.Args)).ZVal(), nil
 }
 
-//> func mixed func_get_arg ( int $arg_num )
+// > func mixed func_get_arg ( int $arg_num )
 func fncFuncGetArg(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var argNum phpv.ZInt
 	_, err := Expand(ctx, args, &argNum)

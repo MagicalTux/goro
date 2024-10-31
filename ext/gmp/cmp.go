@@ -5,7 +5,7 @@ import (
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
-//> func int gmp_cmp ( GMP $a , GMP $b )
+// > func int gmp_cmp ( GMP $a , GMP $b )
 func gmpCmp(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var a, b *phpv.ZVal
 	_, err := core.Expand(ctx, args, &a, &b)

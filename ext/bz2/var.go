@@ -11,7 +11,7 @@ import (
 
 // operations on local variables
 
-//> func mixed bzdecompress ( string $source [, int $small = 0 ] )
+// > func mixed bzdecompress ( string $source [, int $small = 0 ] )
 func fncBzDecompress(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var src phpv.ZString
 	var small *phpv.ZInt

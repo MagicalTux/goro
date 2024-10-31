@@ -8,7 +8,7 @@ import (
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
-//> func void gmp_setbit ( GMP $a , int $index [, bool $bit_on = TRUE ] )
+// > func void gmp_setbit ( GMP $a , int $index [, bool $bit_on = TRUE ] )
 func gmpSetbit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	a := &phpobj.ZObject{Class: GMP}
 	var index phpv.ZInt
@@ -36,7 +36,7 @@ func gmpSetbit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return nil, nil
 }
 
-//> func void gmp_clrbit ( GMP $a , int $index )
+// > func void gmp_clrbit ( GMP $a , int $index )
 func gmpClrbit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	a := &phpobj.ZObject{Class: GMP}
 	var index phpv.ZInt

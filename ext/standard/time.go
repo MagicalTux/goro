@@ -8,7 +8,7 @@ import (
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
-//> func mixed microtime ([ bool $get_as_float = FALSE ] )
+// > func mixed microtime ([ bool $get_as_float = FALSE ] )
 func fncMicrotime(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var asFloat *phpv.ZBool
 	_, err := core.Expand(ctx, args, &asFloat)
@@ -28,7 +28,7 @@ func fncMicrotime(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZString(r).ZVal(), nil
 }
 
-//> func int time ( void )
+// > func int time ( void )
 func fncTime(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZInt(time.Now().Unix()).ZVal(), nil
 }

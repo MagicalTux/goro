@@ -10,7 +10,7 @@ import (
 	gopcre "github.com/gijsbers/go-pcre"
 )
 
-//> func mixed preg_replace ( mixed $pattern , mixed $replacement , mixed $subject [, int $limit = -1 [, int &$count ]] )
+// > func mixed preg_replace ( mixed $pattern , mixed $replacement , mixed $subject [, int $limit = -1 [, int &$count ]] )
 func pregReplace(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var pattern, replacement, subject *phpv.ZVal
 	var limit *phpv.ZInt

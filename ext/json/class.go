@@ -5,7 +5,7 @@ import (
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
-//> class JsonSerializable
+// > class JsonSerializable
 var JsonSerializable = &phpobj.ZClass{
 	Type: phpv.ZClassTypeInterface,
 	Name: "JsonSerializable",

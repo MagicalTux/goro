@@ -13,7 +13,7 @@ import (
 
 //> const HASH_HMAC: phpv.ZInt(1)
 
-//> func HashContext hash_init ( string $algo [, int $options = 0 [, string $key = NULL ]] )
+// > func HashContext hash_init ( string $algo [, int $options = 0 [, string $key = NULL ]] )
 func fncHashInit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var algo phpv.ZString
 	var opt *phpv.ZInt

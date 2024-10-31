@@ -8,7 +8,7 @@ import (
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
-//> func bool set_time_limit ( int $seconds )
+// > func bool set_time_limit ( int $seconds )
 func fncSetTimeLimit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var d phpv.ZInt
 	_, err := core.Expand(ctx, args, &d)

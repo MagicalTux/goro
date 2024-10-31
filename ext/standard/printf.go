@@ -5,7 +5,7 @@ import (
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
-//> func string sprintf ( string $format [, mixed $args [, mixed $... ]] )
+// > func string sprintf ( string $format [, mixed $args [, mixed $... ]] )
 func fncSprintf(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var fmt phpv.ZString
 	n, err := core.Expand(ctx, args, &fmt)

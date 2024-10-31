@@ -29,7 +29,7 @@ func ctypeArg(ctx phpv.Context, args []*phpv.ZVal) (string, error) {
 	return string(v.Value().(phpv.ZString)), nil
 }
 
-//> func bool ctype_alnum ( string $text )
+// > func bool ctype_alnum ( string $text )
 func ctypeAlnum(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	v, err := ctypeArg(ctx, args)
 	if err != nil {
@@ -39,7 +39,7 @@ func ctypeAlnum(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZBool(util.CtypeAlnum(v)).ZVal(), nil
 }
 
-//> func bool ctype_alpha ( string $text )
+// > func bool ctype_alpha ( string $text )
 func ctypeAlpha(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	v, err := ctypeArg(ctx, args)
 	if err != nil {
@@ -49,7 +49,7 @@ func ctypeAlpha(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZBool(util.CtypeAlpha(v)).ZVal(), nil
 }
 
-//> func bool ctype_cntrl ( string $text )
+// > func bool ctype_cntrl ( string $text )
 func ctypeCntrl(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	v, err := ctypeArg(ctx, args)
 	if err != nil {
@@ -59,7 +59,7 @@ func ctypeCntrl(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZBool(util.CtypeCntrl(v)).ZVal(), nil
 }
 
-//> func bool ctype_digit ( string $text )
+// > func bool ctype_digit ( string $text )
 func ctypeDigit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	v, err := ctypeArg(ctx, args)
 	if err != nil {
@@ -69,7 +69,7 @@ func ctypeDigit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZBool(util.CtypeDigit(v)).ZVal(), nil
 }
 
-//> func bool ctype_graph ( string $text )
+// > func bool ctype_graph ( string $text )
 func ctypeGraph(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	v, err := ctypeArg(ctx, args)
 	if err != nil {
@@ -79,7 +79,7 @@ func ctypeGraph(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZBool(util.CtypeGraph(v)).ZVal(), nil
 }
 
-//> func bool ctype_lower ( string $text )
+// > func bool ctype_lower ( string $text )
 func ctypeLower(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	v, err := ctypeArg(ctx, args)
 	if err != nil {
@@ -89,7 +89,7 @@ func ctypeLower(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZBool(util.CtypeLower(v)).ZVal(), nil
 }
 
-//> func bool ctype_print ( string $text )
+// > func bool ctype_print ( string $text )
 func ctypePrint(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	v, err := ctypeArg(ctx, args)
 	if err != nil {
@@ -99,7 +99,7 @@ func ctypePrint(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZBool(util.CtypePrint(v)).ZVal(), nil
 }
 
-//> func bool ctype_punct ( string $text )
+// > func bool ctype_punct ( string $text )
 func ctypePunct(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	v, err := ctypeArg(ctx, args)
 	if err != nil {
@@ -109,7 +109,7 @@ func ctypePunct(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZBool(util.CtypePunct(v)).ZVal(), nil
 }
 
-//> func bool ctype_space ( string $text )
+// > func bool ctype_space ( string $text )
 func ctypeSpace(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	v, err := ctypeArg(ctx, args)
 	if err != nil {
@@ -119,7 +119,7 @@ func ctypeSpace(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZBool(util.CtypeSpace(v)).ZVal(), nil
 }
 
-//> func bool ctype_upper ( string $text )
+// > func bool ctype_upper ( string $text )
 func ctypeUpper(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	v, err := ctypeArg(ctx, args)
 	if err != nil {
@@ -129,7 +129,7 @@ func ctypeUpper(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZBool(util.CtypeUpper(v)).ZVal(), nil
 }
 
-//> func bool ctype_xdigit ( string $text )
+// > func bool ctype_xdigit ( string $text )
 func ctypeXdigit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	v, err := ctypeArg(ctx, args)
 	if err != nil {

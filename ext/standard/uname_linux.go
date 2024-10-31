@@ -1,3 +1,4 @@
+//go:build linux
 // +build linux
 
 package standard
@@ -20,7 +21,7 @@ func fncUnameHelperToString(v [65]int8) phpv.ZString {
 	return phpv.ZString(out)
 }
 
-//> func string php_uname ([ string $mode = "a" ] )
+// > func string php_uname ([ string $mode = "a" ] )
 func fncUname(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var arg string
 	_, err := core.Expand(ctx, args, &arg)

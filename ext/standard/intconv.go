@@ -7,7 +7,7 @@ import (
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
-//> func string dechex ( int $number )
+// > func string dechex ( int $number )
 func fncDechex(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var v phpv.ZInt
 	_, err := core.Expand(ctx, args, &v)
@@ -19,7 +19,7 @@ func fncDechex(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZString(s).ZVal(), nil
 }
 
-//> func string decoct ( int $number )
+// > func string decoct ( int $number )
 func fncDecoct(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var v phpv.ZInt
 	_, err := core.Expand(ctx, args, &v)
@@ -31,7 +31,7 @@ func fncDecoct(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZString(s).ZVal(), nil
 }
 
-//> func string decbin ( int $number )
+// > func string decbin ( int $number )
 func fncDecbin(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var v phpv.ZInt
 	_, err := core.Expand(ctx, args, &v)

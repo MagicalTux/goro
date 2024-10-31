@@ -5,7 +5,7 @@ import (
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
-//> func string gmp_strval ( GMP $gmpnumber [, int $base = 10 ] )
+// > func string gmp_strval ( GMP $gmpnumber [, int $base = 10 ] )
 func gmpStrval(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var gmpnum *phpv.ZVal
 	var base *phpv.ZInt
@@ -28,7 +28,7 @@ func gmpStrval(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZString(i.Text(int(*base))).ZVal(), nil
 }
 
-//> func int gmp_intval ( GMP $gmpnumber )
+// > func int gmp_intval ( GMP $gmpnumber )
 func gmpIntval(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var gmpnum *phpv.ZVal
 

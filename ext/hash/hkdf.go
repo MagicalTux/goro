@@ -9,7 +9,7 @@ import (
 	"golang.org/x/crypto/hkdf"
 )
 
-//> func string hash_hkdf ( string $algo , string $ikm [, int $length = 0 [, string $info = '' [, string $salt = '' ]]] )
+// > func string hash_hkdf ( string $algo , string $ikm [, int $length = 0 [, string $info = ” [, string $salt = ” ]]] )
 func fncHashHkdf(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var algo phpv.ZString
 	var ikm phpv.ZString

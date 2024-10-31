@@ -9,7 +9,7 @@ import (
 	"golang.org/x/crypto/pbkdf2"
 )
 
-//> func string hash_pbkdf2 ( string $algo , string $password , string $salt , int $iterations [, int $length = 0 [, bool $raw_output = FALSE ]] )
+// > func string hash_pbkdf2 ( string $algo , string $password , string $salt , int $iterations [, int $length = 0 [, bool $raw_output = FALSE ]] )
 func fncHashPbkdf2(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var algo phpv.ZString
 	var password phpv.ZString

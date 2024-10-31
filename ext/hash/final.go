@@ -9,7 +9,7 @@ import (
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
-//> func string hash_final ( HashContext $context [, bool $raw_output = FALSE ] )
+// > func string hash_final ( HashContext $context [, bool $raw_output = FALSE ] )
 func fncHashFinal(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	obj := &phpobj.ZObject{Class: HashContext}
 	var raw *phpv.ZBool

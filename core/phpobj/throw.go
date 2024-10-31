@@ -8,7 +8,7 @@ func Throw(o *ZObject) error {
 	return err
 }
 
-//> class Throwable
+// > class Throwable
 var Throwable = &ZClass{
 	Name: "Throwable",
 	// need abstract methods:

@@ -7,7 +7,7 @@ import (
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
-//> func string dirname ( string $path [, int $levels = 1 ] )
+// > func string dirname ( string $path [, int $levels = 1 ] )
 func fncDirname(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var p string
 	var lvl *phpv.ZInt
@@ -36,7 +36,7 @@ func fncDirname(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZString(p).ZVal(), nil
 }
 
-//> func bool file_exists ( string $filename )
+// > func bool file_exists ( string $filename )
 func fncFileExists(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var filename phpv.ZString
 	_, err := core.Expand(ctx, args, &filename)

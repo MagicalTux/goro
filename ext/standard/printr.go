@@ -11,7 +11,7 @@ import (
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
-//> func mixed print_r ( mixed $expression [, bool $return = FALSE ] )
+// > func mixed print_r ( mixed $expression [, bool $return = FALSE ] )
 func fncPrintR(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var expr *phpv.ZVal
 	var ret *phpv.ZBool

@@ -8,7 +8,7 @@ import (
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
-//> func bool hash_update ( HashContext $context , string $data )
+// > func bool hash_update ( HashContext $context , string $data )
 func fncHashUpdate(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	obj := &phpobj.ZObject{Class: HashContext}
 	var data phpv.ZString

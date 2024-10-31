@@ -7,7 +7,7 @@ import (
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
-//> func string bin2hex ( string $str )
+// > func string bin2hex ( string $str )
 func fncBin2hex(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var s string
 

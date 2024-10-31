@@ -7,7 +7,7 @@ import (
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
-//> func mixed str_replace ( mixed $search , mixed $replace , mixed $subject [, int &$count ] )
+// > func mixed str_replace ( mixed $search , mixed $replace , mixed $subject [, int &$count ] )
 func stdStrReplace(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var search, replace, subject *phpv.ZVal
 	var count *phpv.ZInt
@@ -188,7 +188,7 @@ func doStrReplace(ctx phpv.Context, subject phpv.ZString, search, replace *phpv.
 	return subject, err
 }
 
-//> func string str_rot13 ( string $str )
+// > func string str_rot13 ( string $str )
 func fncStrRot13(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var s phpv.ZString
 	_, err := core.Expand(ctx, args, &s)
@@ -209,7 +209,7 @@ func fncStrRot13(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZString(obuf).ZVal(), nil
 }
 
-//> func string strtolower ( string $string )
+// > func string strtolower ( string $string )
 func fncStrToLower(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var s phpv.ZString
 	_, err := core.Expand(ctx, args, &s)

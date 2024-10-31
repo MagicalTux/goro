@@ -5,7 +5,7 @@ import (
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
-//> class Exception
+// > class Exception
 var Exception = &ZClass{
 	Name:       "Exception",
 	Implements: []*ZClass{Throwable},

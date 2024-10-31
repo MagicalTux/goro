@@ -7,7 +7,7 @@ import (
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
-//> func int strlen ( string $string )
+// > func int strlen ( string $string )
 func fncStrlen(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var s phpv.ZString
 	_, err := Expand(ctx, args, &s)
@@ -18,7 +18,7 @@ func fncStrlen(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZInt(len(s)).ZVal(), nil
 }
 
-//> func int error_reporting ([ int $level ] )
+// > func int error_reporting ([ int $level ] )
 func fncErrorReporting(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var level *phpv.ZInt
 	_, err := Expand(ctx, args, &level)
@@ -33,7 +33,7 @@ func fncErrorReporting(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 	return ctx.GetConfig("error_reporting", phpv.ZInt(0).ZVal()), nil
 }
 
-//> func bool define ( string $name , mixed $value )
+// > func bool define ( string $name , mixed $value )
 func fncDefine(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var name phpv.ZString
 	var value *phpv.ZVal
@@ -53,7 +53,7 @@ func fncDefine(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZBool(true).ZVal(), nil
 }
 
-//> func bool defined ( string $name )
+// > func bool defined ( string $name )
 func fncDefined(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var name phpv.ZString
 	_, err := Expand(ctx, args, &name)
@@ -68,7 +68,7 @@ func fncDefined(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZBool(ok).ZVal(), nil
 }
 
-//> func int count ( mixed $array_or_countable [, int $mode = COUNT_NORMAL ] )
+// > func int count ( mixed $array_or_countable [, int $mode = COUNT_NORMAL ] )
 func fncCount(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var countable *phpv.ZVal
 	var mode *phpv.ZInt
@@ -89,7 +89,7 @@ func fncCount(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZInt(1).ZVal(), errors.New("count(): Parameter must be an array or an object that implements Countable")
 }
 
-//> func int strcmp ( string $str1 , string $str2 )
+// > func int strcmp ( string $str1 , string $str2 )
 func fncStrcmp(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var a, b phpv.ZString
 	_, err := Expand(ctx, args, &a, &b)
@@ -101,7 +101,7 @@ func fncStrcmp(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZInt(r).ZVal(), nil
 }
 
-//> func bool empty ( mixed $var )
+// > func bool empty ( mixed $var )
 func fncEmpty(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var v *phpv.ZVal
 	_, err := Expand(ctx, args, &v)

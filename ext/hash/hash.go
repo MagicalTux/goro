@@ -9,7 +9,7 @@ import (
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
-//> func string hash ( string $algo , string $data [, bool $raw_output = FALSE ] )
+// > func string hash ( string $algo , string $data [, bool $raw_output = FALSE ] )
 func fncHash(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var algo phpv.ZString
 	var data phpv.ZString
@@ -42,7 +42,7 @@ func fncHash(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZString(hex.EncodeToString(r)).ZVal(), nil
 }
 
-//> func bool hash_equals ( string $known_string , string $user_string )
+// > func bool hash_equals ( string $known_string , string $user_string )
 func fncHashEquals(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var known, user phpv.ZString
 

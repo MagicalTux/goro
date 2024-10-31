@@ -12,7 +12,7 @@ import (
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
-//> func mixed json_decode ( string $json [, bool $assoc = FALSE [, int $depth = 512 [, int $options = 0 ]]] )
+// > func mixed json_decode ( string $json [, bool $assoc = FALSE [, int $depth = 512 [, int $options = 0 ]]] )
 func fncJsonDecode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var json phpv.ZString
 	var assoc *phpv.ZBool

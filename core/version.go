@@ -15,7 +15,7 @@ const VERSION = "7.3.0"
 //> const PHP_EXTRA_VERSION: phpv.ZString("")
 //> const PHP_VERSION_ID: phpv.ZInt(70300)
 
-//> func string phpversion ([ string $extension ] )
+// > func string phpversion ([ string $extension ] )
 func stdFuncPhpVersion(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var ext *string
 	_, err := Expand(ctx, args, &ext)
@@ -34,7 +34,7 @@ func stdFuncPhpVersion(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 	return phpv.ZString(VERSION).ZVal(), nil
 }
 
-//> func string zend_version ( void )
+// > func string zend_version ( void )
 func stdFuncZendVersion(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZString("3.2.0").ZVal(), nil
 }

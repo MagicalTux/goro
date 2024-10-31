@@ -4,7 +4,7 @@ import (
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
-//> func array hash_algos ( void )
+// > func array hash_algos ( void )
 func fncHashAlgos(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	a := phpv.NewZArray()
 

@@ -7,7 +7,7 @@ import (
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
-//> func string preg_quote ( string $str [, string $delimiter = NULL ] )
+// > func string preg_quote ( string $str [, string $delimiter = NULL ] )
 func pregQuote(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	// this version won't accept UTF-8 characters as delimiter. If this is an issue, replace loop below to use string()
 	var str phpv.ZString

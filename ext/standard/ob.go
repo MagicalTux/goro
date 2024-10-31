@@ -10,7 +10,7 @@ import (
 
 // output buffering functions
 
-//> func bool ob_start ([ callable $output_callback = NULL [, int $chunk_size = 0 [, int $flags = PHP_OUTPUT_HANDLER_STDFLAGS ]]] )
+// > func bool ob_start ([ callable $output_callback = NULL [, int $chunk_size = 0 [, int $flags = PHP_OUTPUT_HANDLER_STDFLAGS ]]] )
 func fncObStart(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var outputCallback *phpv.Callable
 	var chunkSize *phpv.ZInt
@@ -39,7 +39,7 @@ func fncObStart(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZBool(true).ZVal(), nil
 }
 
-//> func void ob_flush ( void )
+// > func void ob_flush ( void )
 func fncObFlush(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	buf := ctx.Global().(*phpctx.Global).Buffer()
 	if buf != nil {
@@ -48,7 +48,7 @@ func fncObFlush(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZNULL.ZVal(), nil
 }
 
-//> func void ob_clean ( void )
+// > func void ob_clean ( void )
 func fncObClean(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	buf := ctx.Global().(*phpctx.Global).Buffer()
 	if buf == nil {
@@ -59,7 +59,7 @@ func fncObClean(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZNULL.ZVal(), nil
 }
 
-//> func bool ob_end_clean ( void )
+// > func bool ob_end_clean ( void )
 func fncObEndClean(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	buf := ctx.Global().(*phpctx.Global).Buffer()
 	if buf == nil {
@@ -70,7 +70,7 @@ func fncObEndClean(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZBool(true).ZVal(), buf.Close()
 }
 
-//> func bool ob_end_flush ( void )
+// > func bool ob_end_flush ( void )
 func fncObEndFlush(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	buf := ctx.Global().(*phpctx.Global).Buffer()
 	if buf == nil {
@@ -80,7 +80,7 @@ func fncObEndFlush(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZBool(true).ZVal(), buf.Close()
 }
 
-//> func int ob_get_level ( void )
+// > func int ob_get_level ( void )
 func fncObGetLevel(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	buf := ctx.Global().(*phpctx.Global).Buffer()
 	if buf == nil {
@@ -90,7 +90,7 @@ func fncObGetLevel(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZInt(buf.Level()).ZVal(), buf.Close()
 }
 
-//> func string ob_get_clean ( void )
+// > func string ob_get_clean ( void )
 func fncObGetClean(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	buf := ctx.Global().(*phpctx.Global).Buffer()
 	if buf == nil {
@@ -103,7 +103,7 @@ func fncObGetClean(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return data, nil
 }
 
-//> func string ob_get_contents ( void )
+// > func string ob_get_contents ( void )
 func fncObGetContents(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	buf := ctx.Global().(*phpctx.Global).Buffer()
 	if buf == nil {
@@ -115,7 +115,7 @@ func fncObGetContents(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return data, nil
 }
 
-//> func string ob_get_flush ( void )
+// > func string ob_get_flush ( void )
 func fncObGetFlush(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	buf := ctx.Global().(*phpctx.Global).Buffer()
 	if buf == nil {
@@ -127,7 +127,7 @@ func fncObGetFlush(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return data, buf.Flush()
 }
 
-//> func void ob_implicit_flush ([ int $flag = 1 ] )
+// > func void ob_implicit_flush ([ int $flag = 1 ] )
 func fncObImplicitFlush(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var v *phpv.ZInt
 	_, err := core.Expand(ctx, args, &v)

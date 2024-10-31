@@ -8,7 +8,7 @@ import (
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
-//> func void var_dump ( mixed $expression [, mixed $... ] )
+// > func void var_dump ( mixed $expression [, mixed $... ] )
 func stdFuncVarDump(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	for _, z := range args {
 		err := doVarDump(ctx, z, "", nil)

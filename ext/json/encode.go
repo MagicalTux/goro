@@ -10,7 +10,7 @@ import (
 
 var hex = "0123456789abcdef"
 
-//> func string json_encode ( mixed $value [, int $options = 0 [, int $depth = 512 ]] )
+// > func string json_encode ( mixed $value [, int $options = 0 [, int $depth = 512 ]] )
 func fncJsonEncode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var v *phpv.ZVal
 	var opt, depth *phpv.ZInt
