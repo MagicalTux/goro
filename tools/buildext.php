@@ -124,7 +124,7 @@ function process_ext($path, $ext, $output = 'ext.go') {
 	fwrite($fp, "func init() {\n");
 	fwrite($fp, "\tphpctx.RegisterExt(&phpctx.Ext{\n");
 	fwrite($fp, "\t\tName: \"".addslashes($ext)."\",\n"); // addslashes not quite equivalent to go's %q
-	fwrite($fp, "\t\tVersion: ${prefix}VERSION,\n");
+	fwrite($fp, "\t\tVersion: ".$prefix."VERSION,\n");
 
 	fwrite($fp, "\t\tClasses: []phpv.ZClass{\n");
 	ksort($classes);

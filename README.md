@@ -2,7 +2,7 @@
 
 [![Build Status](https://travis-ci.org/MagicalTux/goro.svg)](https://travis-ci.org/MagicalTux/goro)
 [![GoDoc](https://godoc.org/github.com/MagicalTux/goro/core?status.svg)](https://godoc.org/github.com/MagicalTux/goro)
-[![Telegram](https://img.shields.io/badge/chat-telegram-blue.svg?logo=telegram&logoColor=white)](https://t.me/gorophp)
+[![Telegram](https://img.shields.io/badge/chat-telegram-blue.svg?logo=telegram&logoColor=white)](https://t.me/goro_php)
 
 This is an implementation of PHP, written in pure Go (as much as possible, right now pcre doesn't exist in pure go and require usage of libpcre).
 
