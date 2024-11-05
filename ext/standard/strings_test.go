@@ -82,12 +82,7 @@ func testOutput(fn phpFunc, args ...any) {
 	ret := testRun(fn, args...)
 	switch ret.GetType() {
 	case phpv.ZtArray:
-		it := ret.NewIterator()
-		print("[")
-		for ; it.Valid(g); it.Next(g) {
-			fmt.Printf("%v => %v  ", must(it.Key(g)), must(it.Current(g)))
-		}
-		println("]")
+		stdFuncVarDump(g, phpArgs(ret))
 	default:
 		s := fmt.Sprintf("%+v", ret)
 		fmt.Printf("《%s》len=%v\n", s, len(s))
@@ -161,4 +156,49 @@ func TestStrFunctions(t *testing.T) {
 	testOutput(fncStrNumberFormat, 89.12345, 0)
 	testOutput(fncStrNumberFormat, 9.12345, 2)
 	testOutput(fncStrNumberFormat, 123456789.12345, 2, "#", "@")
+
+	println("# ord")
+	testOutput(fncStrOrd, "a")
+	testOutput(fncStrOrd, "A")
+	testOutput(fncStrOrd, "")
+	testOutput(fncStrOrd, "👍")
+
+	println("# parse_str")
+	testOutput(fncStrParseStr, "first=value&arr[]=foo+bar&arr[]=baz")
+	testOutput(fncStrParseStr, "first[]=value&arr[]=foo+bar&arr[]=baz")
+	testOutput(fncStrParseStr, "first=value&first=value2&arr[]=foo+bar&arr[]=baz")
+	testOutput(fncStrParseStr, "")
+	testOutput(fncStrParseStr, "x")
+
+	println("# quote_meta")
+	testOutput(fncStrQuoteMeta, `quote these: .\()*?$`)
+
+	println("# sha1")
+	testOutput(fncStrSha1, `hello world`)
+	testOutput(fncStrSha1, `hello world`, true)
+
+	println("# sha1_file")
+	testOutput(fncStrSha1, `base.go`, false)
+	testOutput(fncStrSha1, `base.go`, true)
+
+	println("# str_contains")
+	testOutput(fncStrContains, "the widdle fox flew over the electric fence", "fox")
+	testOutput(fncStrContains, "the widdle fox flew over the electric fence", "little")
+
+	println("# str_ends_with")
+	testOutput(fncStrEndsWith, "aaabbb", "a")
+	testOutput(fncStrEndsWith, "aaabbb", "b")
+	testOutput(fncStrEndsWith, "aaabbb", "bb")
+
+	println(" #str_getcsv")
+	testOutput(fncStrGetCsv, `a,b,c,,d,`)
+	testOutput(fncStrGetCsv, `ab,  "bx",cx","de`)
+	testOutput(fncStrGetCsv, `xy,"ab,cd"`)
+	testOutput(fncStrGetCsv, `"ab,xy`)
+	testOutput(fncStrGetCsv, `\"ab,xy`)
+	testOutput(fncStrGetCsv, `ab,"xy\",we",ef`)
+	testOutput(fncStrGetCsv, ``)
+	testOutput(fncStrGetCsv, `x,`)
+	testOutput(fncStrGetCsv, `x,y`)
+	testOutput(fncStrGetCsv, `,`)
 }

@@ -3,11 +3,13 @@ package standard
 import (
 	"bytes"
 	"crypto/md5"
+	"crypto/sha1"
 	"errors"
 	"fmt"
 	"io"
 	"log"
 	"math"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -34,6 +36,19 @@ var (
 		"\n\r", "<br />\n\r",
 		"\r", "<br />",
 		"\n", "<br />",
+	)
+	quoteMetaReplacer = strings.NewReplacer(
+		`.`, `\.`,
+		`\`, `\\`,
+		`+`, `\+`,
+		`*`, `\*`,
+		`?`, `\?`,
+		`[`, `\[`,
+		`^`, `\^`,
+		`]`, `\]`,
+		`(`, `\(`,
+		`$`, `\$`,
+		`)`, `\)`,
 	)
 )
 
@@ -457,7 +472,7 @@ func fncStrNumberFormat(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 		x := int(n / math.Pow10(int(base)))
 
 		buf.WriteString(strconv.Itoa(x))
-		if int(base)%3 == 0  && base != 0{
+		if int(base)%3 == 0 && base != 0 {
 			buf.WriteString(thousandsSep)
 		}
 
@@ -475,6 +490,264 @@ func fncStrNumberFormat(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	}
 
 	return phpv.ZStr(buf.String()), nil
+}
+
+// > fun int ord(string $character)
+func fncStrOrd(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var ch phpv.ZString
+
+	_, err := core.Expand(ctx, args, &ch)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(ch) == 0 {
+		return phpv.ZInt(0).ZVal(), nil
+	}
+
+	fc := []byte(ch)[0]
+	return phpv.ZInt(int(fc)).ZVal(), nil
+}
+
+// > func void parse_str(string $string, array &$result)
+func fncStrParseStr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var str phpv.ZString
+	var arrayArg **phpv.ZArray
+
+	_, err := core.Expand(ctx, args, &str, &arrayArg)
+	if err != nil {
+		return nil, err
+	}
+
+	var array *phpv.ZArray
+	if arrayArg == nil {
+		array = phpv.NewZArray()
+	} else {
+		array = *arrayArg
+	}
+
+	u, err := url.Parse("?" + string(str))
+	if err != nil {
+		return nil, err
+	}
+
+	for k, v := range u.Query() {
+		if len(v) == 0 {
+			array.OffsetSet(ctx, phpv.ZStr(k), phpv.ZStr(""))
+			continue
+		}
+
+		bracketIndex := strings.Index(k, "[]")
+		if bracketIndex >= 0 {
+			// PHP removes [] and everything after it
+			// e.g. foo[]xyz=1 becomes foo => 1
+			k = k[0:bracketIndex]
+		}
+
+		if len(v) > 1 || bracketIndex >= 0 {
+			values := phpv.NewZArray()
+			for _, e := range v {
+				values.OffsetSet(ctx, nil, phpv.ZStr((e)))
+			}
+			array.OffsetSet(ctx, phpv.ZStr(k), values.ZVal())
+		} else {
+			array.OffsetSet(ctx, phpv.ZStr(k), phpv.ZStr(v[0]))
+		}
+	}
+
+	return array.ZVal(), nil
+}
+
+// > func string quotemeta( string $string )
+func fncStrQuoteMeta(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var str phpv.ZString
+
+	_, err := core.Expand(ctx, args, &str)
+	if err != nil {
+		return phpv.ZBool(false).ZVal(), err
+	}
+
+	result := quoteMetaReplacer.Replace(string(str))
+	return phpv.ZStr(result), nil
+
+}
+
+// > func string sha1( string $string, bool $binary = false )
+func fncStrSha1(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var str phpv.ZString
+	var binaryArg *phpv.ZBool
+
+	_, err := core.Expand(ctx, args, &str, &binaryArg)
+	if err != nil {
+		return nil, err
+	}
+
+	binary := false
+	if binaryArg != nil {
+		binary = bool(*binaryArg)
+	}
+
+	sum := sha1.Sum([]byte(str))
+
+	var result string
+	if binary {
+		result = string(sum[:])
+	} else {
+		result = fmt.Sprintf("%x", sum)
+	}
+
+	return phpv.ZStr(result), nil
+}
+
+// > func string|false sha1_file( string $filename, bool $binary = false )
+func fncStrSha1File(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var filename phpv.ZString
+	var binaryArg *phpv.ZBool
+
+	_, err := core.Expand(ctx, args, &filename, &binaryArg)
+	if err != nil {
+		return phpv.ZBool(false).ZVal(), err
+	}
+
+	binary := false
+	if binaryArg != nil {
+		binary = bool(*binaryArg)
+	}
+
+	f, err := os.Open(string(filename))
+	if err != nil {
+		return phpv.ZBool(false).ZVal(), err
+	}
+	defer f.Close()
+
+	h := sha1.New()
+	if _, err := io.Copy(h, f); err != nil {
+		log.Fatal(err)
+	}
+
+	sum := h.Sum(nil)
+
+	var result string
+	if binary {
+		result = string(sum[:])
+	} else {
+		result = fmt.Sprintf("%x", sum)
+	}
+
+	return phpv.ZStr(result), nil
+}
+
+// > func bool str_contains( (string $haystack, string $needle )
+func fncStrContains(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var haystack, needle phpv.ZString
+
+	_, err := core.Expand(ctx, args, &haystack, &needle)
+	if err != nil {
+		return phpv.ZBool(false).ZVal(), err
+	}
+
+	result := strings.Contains(string(haystack), string(needle))
+	return phpv.ZBool(result).ZVal(), nil
+}
+
+// > func bool str_ends_with(string $haystack, string $needle)
+func fncStrEndsWith(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var haystack, needle phpv.ZString
+
+	_, err := core.Expand(ctx, args, &haystack, &needle)
+	if err != nil {
+		return phpv.ZBool(false).ZVal(), err
+	}
+
+	result := strings.HasSuffix(string(haystack), string(needle))
+	return phpv.ZBool(result).ZVal(), nil
+}
+
+// > func array str_getcsv( string $string, string $separator = ",", string $enclosure = "\"", string $escape = "\\" )
+func fncStrGetCsv(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var str phpv.ZString
+	var sepArg, encArg, escArg *phpv.ZString
+
+	_, err := core.Expand(ctx, args, &str, &sepArg, &encArg, &escArg)
+	if err != nil {
+		return phpv.ZBool(false).ZVal(), err
+	}
+
+	if str == "" {
+		// return an array with only a NULL element
+		result := phpv.NewZArray()
+		result.OffsetSet(ctx, nil, nil)
+		return result.ZVal(), nil
+	}
+
+	sep := ","
+	enc := "\""
+	esc := "\\"
+
+	if sepArg != nil {
+		sep = string(*sepArg)
+	}
+	if encArg != nil {
+		enc = string(*encArg)
+	}
+	if escArg != nil {
+		esc = string(*escArg)
+	}
+
+	result := phpv.NewZArray()
+
+	var buf bytes.Buffer
+
+	escapeIndex := -1
+	skippedSpcs := 0
+	inserted := false
+	enclosed := false
+
+	// Not explicitly documented, but str_getcsv (weirdly) behaves as follows:
+	// - enclosure only applies right after comma, or at beginning of the string
+	//     so  'a,"b,c",d' == array('a', 'b,c', d)
+	//     but 'a,b",c",d' == array('a', 'b"','c"', d)
+	// - spaces before a valid enclosure is discarded
+	//     so  'a,  "b,c",d' == array('a', 'b,c', d)
+	//     but 'a,  b",c",d' == array('a', '  b"','c"', d)
+	// - if enclosure is not valid, it should be added as part of the string
+	// - it wasn't clearly stated, but escape only applies to enclosure, not to separators
+	//     so  'a,"b\",c",d' == array('a', 'b",c', d)
+	//     but 'a\,b,c,d' == array('a\', 'b', 'c', 'd')
+
+	for i, b := range []byte(str) {
+		ch := string(b)
+		if ch == sep && !enclosed {
+			result.OffsetSet(ctx, nil, phpv.ZStr(buf.String()))
+			buf.Reset()
+			inserted = false
+		} else if ch == enc && !inserted && escapeIndex != i {
+			enclosed = true
+			skippedSpcs = 0
+		} else if ch == enc && enclosed && escapeIndex != i {
+			enclosed = false
+		} else if ch == esc {
+			escapeIndex = i + 1
+		} else {
+			if !inserted && ch == " " {
+				skippedSpcs++
+			} else {
+				for i := 0; i < skippedSpcs; i++ {
+					buf.WriteRune(' ')
+				}
+				buf.WriteString(ch)
+				inserted = true
+				skippedSpcs = 0
+			}
+
+		}
+	}
+
+	if buf.Len() > 0 || !inserted {
+		result.OffsetSet(ctx, nil, phpv.ZStr(buf.String()))
+	}
+
+	return result.ZVal(), nil
 }
 
 // > func mixed str_replace ( mixed $search , mixed $replace , mixed $subject [, int &$count ] )
