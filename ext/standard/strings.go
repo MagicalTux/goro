@@ -20,7 +20,7 @@ var (
 	addSlashesReplacer = strings.NewReplacer(
 		`'`, `\'`,
 		`"`, `\"`,
-		`\`, `\\"`,
+		`\`, `\\`,
 		"\000", "\\\000",
 	)
 	nl2brReplacer = strings.NewReplacer(
@@ -80,16 +80,20 @@ func fncStrChunkSplit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	length := 76
 	sep := "\r\n"
 
-	if lengthArg != nil {
-		length = int(*lengthArg)
-	}
 	if sepArg != nil {
 		sep = string(*sepArg)
+	}
+	if lengthArg != nil {
+		length = int(*lengthArg)
+		if length <= 0 {
+			return nil, errors.New("Argument #2 ($length) must be greater than 0")
+		}
 	}
 
 	var buf bytes.Buffer
 	for index := 0; index < len(str); {
-		s := str[index:min(len(str), length+1)]
+		j := min(len(str), index+length)
+		s := str[index:j]
 		buf.WriteString(s)
 		buf.WriteString(sep)
 		index += len(s)
@@ -101,14 +105,19 @@ func fncStrChunkSplit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // >  func array|string count_chars( string $string, int $mode = 0 )
 func fncStrCountChars(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var strArg phpv.ZString
-	var modeArg phpv.ZInt
+	var modeArg *phpv.ZInt
 
 	_, err := core.Expand(ctx, args, &strArg, &modeArg)
 	if err != nil {
 		return nil, err
 	}
 
-	switch modeArg {
+	mode := 0
+	if modeArg != nil {
+		mode = int(*modeArg)
+	}
+
+	switch mode {
 	case 0: // return an array with the byte-value as key and the frequency of every byte as value.
 		tally := make([]int, 256)
 		for _, n := range []byte(strArg) {
@@ -121,35 +130,38 @@ func fncStrCountChars(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return result.ZVal(), nil
 
 	case 1: // return same as 0 but only byte-values with a frequency greater than zero are listed.
-		tally := map[byte]int{}
+		tally := make([]int, 256)
 		for _, n := range []byte(strArg) {
 			tally[n]++
 		}
 
 		result := phpv.NewZArray()
-		for i, n := range tally {
+		for i := 0; i < 256; i++ {
+			n := tally[byte(i)]
 			if n > 0 {
 				k := phpv.ZInt(i).ZVal()
 				v := phpv.ZInt(n).ZVal()
 				result.OffsetSet(ctx, k, v)
 			}
 		}
+
 		return result.ZVal(), nil
 
 	case 2: // return same as 0 but only byte-values with a frequency equal to zero are listed.
-		tally := map[byte]int{}
+		tally := make([]int, 256)
 		for _, n := range []byte(strArg) {
 			tally[n]++
 		}
 
 		result := phpv.NewZArray()
-		for i, n := range tally {
-			if n == 0 {
-				k := phpv.ZInt(i).ZVal()
-				v := phpv.ZInt(n).ZVal()
+		for i := 0; i < 256; i++ {
+			if n := tally[byte(i)]; n == 0 {
+				k := phpv.ZInt(byte(i)).ZVal()
+				v := phpv.ZInt(0).ZVal()
 				result.OffsetSet(ctx, k, v)
 			}
 		}
+
 		return result.ZVal(), nil
 
 	case 3: // a string containing all unique characters is returned.
@@ -159,9 +171,9 @@ func fncStrCountChars(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		}
 
 		var buf bytes.Buffer
-		for _, n := range tally {
+		for i, n := range tally {
 			if n > 0 {
-				buf.WriteRune(rune(n))
+				buf.WriteByte(byte(i))
 			}
 		}
 		return phpv.ZStr(buf.String()), nil
@@ -173,9 +185,9 @@ func fncStrCountChars(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		}
 
 		var buf bytes.Buffer
-		for _, n := range tally {
+		for i, n := range tally {
 			if n == 0 {
-				buf.WriteRune(rune(n))
+				buf.WriteByte(byte(i))
 			}
 		}
 		return phpv.ZStr(buf.String()), nil
@@ -212,7 +224,7 @@ func fncStrExplode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	fields := strings.SplitN(string(str), string(sep), limit)
 	if limit < 0 {
 		// return all elements except the last -limit items
-		fields = fields[0 : len(str)+limit]
+		fields = fields[0:max(0, len(fields)+limit)]
 	}
 
 	result := phpv.NewZArray()
@@ -226,9 +238,9 @@ func fncStrExplode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // >  func string implode( string $separator, array $array )
 func fncStrImplode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var sep phpv.ZString
-	var array phpv.ZArray
+	var array *phpv.ZArray
 
-	_, err := core.Expand(ctx, args, &sep, &sep, &array)
+	_, err := core.Expand(ctx, args, &sep, &array)
 	if err != nil {
 		return nil, err
 	}
@@ -279,7 +291,7 @@ func fncStrLcFirst(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // > func string ltrim( string $string, string $characters = " \n\r\t\v\x00" )
 func fncStrLtrim(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var str phpv.ZString
-	var charsArg *phpv.ZVal
+	var charsArg *phpv.ZString
 
 	_, err := core.Expand(ctx, args, &str, &charsArg)
 	if err != nil {
@@ -288,7 +300,7 @@ func fncStrLtrim(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	chars := " \n\r\t\v\x00"
 	if charsArg != nil {
-		chars = string(charsArg.AsString(ctx))
+		chars = string(*charsArg)
 	}
 
 	result := strings.TrimLeft(string(str), chars)
@@ -298,16 +310,16 @@ func fncStrLtrim(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // > func string rtrim( string $string, string $characters = " \n\r\t\v\x00" )
 func fncStrRtrim(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var str phpv.ZString
-	var charsArg *phpv.ZVal
+	var charsArg *phpv.ZString
 
 	_, err := core.Expand(ctx, args, &str, &charsArg)
 	if err != nil {
 		return nil, err
 	}
 
-	chars := " \n\r\t\v\x00"
+	chars := " \n\r\t\v\000"
 	if charsArg != nil {
-		chars = string(charsArg.AsString(ctx))
+		chars = string(*charsArg)
 	}
 
 	result := strings.TrimRight(string(str), chars)
@@ -444,8 +456,8 @@ func fncStrNumberFormat(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 		base := math.Floor(math.Log10(n))
 		x := int(n / math.Pow10(int(base)))
 
-		buf.WriteString(string(x))
-		if int(base+1)%3 == 0 {
+		buf.WriteString(strconv.Itoa(x))
+		if int(base)%3 == 0  && base != 0{
 			buf.WriteString(thousandsSep)
 		}
 
@@ -457,7 +469,7 @@ func fncStrNumberFormat(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	}
 
 	if fac > 0 && decimals > 0 {
-		n := math.Ceil(fac * math.Pow10(decimals))
+		n := math.Round(fac * math.Pow10(decimals))
 		buf.WriteString(decimalSep)
 		buf.WriteString(strconv.Itoa(int(n)))
 	}
