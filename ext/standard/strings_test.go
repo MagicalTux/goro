@@ -239,11 +239,36 @@ func TestStrFunctions(t *testing.T) {
 	testOutput(fncStrWordCount, `one two three`, 1)
 	testOutput(fncStrWordCount, `one two three`, 2)
 	testOutput(fncStrWordCount, `one two three 112`, 2, "1")
+
+	println(" #strcasecmp")
+	testOutput(fncStrCaseCmp, `a`, `A`)
+	testOutput(fncStrCaseCmp, `a`, `Aa`)
+	testOutput(fncStrCaseCmp, `aAa`, `Aa`)
+	testOutput(fncStrCaseCmp, `aAa`, `b`)
+	testOutput(fncStrCaseCmp, `b`, `aaab`)
+	testOutput(fncStrCaseCmp, ``, ``)
+
+	println(" #strcoll")
+	testOutput(fncStrColl, `a`, `A`)
+	testOutput(fncStrColl, `a`, `Aa`)
+	testOutput(fncStrColl, `aAa`, `Aa`)
+	testOutput(fncStrColl, `aAa`, `b`)
+	testOutput(fncStrColl, `b`, `aaab`)
+	testOutput(fncStrColl, ``, ``)
+
+	println(" #substr")
+	testOutput(fncSubstr, `abcde`, -1, 1)
+	testOutput(fncSubstr, `abcde`, 1, -1)
+	testOutput(fncSubstr, `abcde`, 10000, 1000)
+
+	println(" #strcspn")
+	testOutput(fncStrCspn, `banana`, `a`)
+	testOutput(fncStrCspn, `banana`, `abcd`)
+	testOutput(fncStrCspn, `banana`, `z`)
+	testOutput(fncStrCspn, `abcdhelloabcd`, `a`, -9)
+	testOutput(fncStrCspn, `abcdhelloabcd`, `a`, -9, -5)
+
+	println(" #strstr")
+	testOutput(fncStrStr, `banana@gorilla.com`, `@`)
+	testOutput(fncStrStr, `banana@gorilla.com`, `@`, true)
 }
-
-
-
-
-
-
-

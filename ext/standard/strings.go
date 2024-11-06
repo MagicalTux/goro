@@ -12,6 +12,7 @@ import (
 	"math/rand/v2"
 	"net/url"
 	"os"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -994,6 +995,214 @@ func fncStrWordCount(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 }
 
+// > func int strcasecmp ( string $string1, string $string2 )
+func fncStrCaseCmp(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var str1, str2 phpv.ZString
+	_, err := core.Expand(ctx, args, &str1, &str2)
+	if err != nil {
+		return phpv.ZBool(false).ZVal(), err
+	}
+
+	result := 0
+	n1 := len(str1)
+	n2 := len(str2)
+	for i := 0; i < max(n1, n2); i++ {
+		if i >= n1 && i < n2 {
+			result = -1
+			break
+		}
+		if i >= n2 && i < n1 {
+			result = 1
+			break
+		}
+		c1 := bytesLowerCase(str1[i])
+		c2 := bytesLowerCase(str2[i])
+		if c1 < c2 {
+			result = -1
+			break
+		}
+		if c1 > c2 {
+			result = 1
+			break
+		}
+	}
+
+	return phpv.ZInt(result).ZVal(), nil
+}
+
+// > func int strcmp ( string $string1, string $string2 )
+func fncStrCmp(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var str1, str2 phpv.ZString
+	_, err := core.Expand(ctx, args, &str1, &str2)
+	if err != nil {
+		return phpv.ZBool(false).ZVal(), err
+	}
+
+	result := 0
+	n1 := len(str1)
+	n2 := len(str2)
+	for i := 0; i < max(n1, n2); i++ {
+		if i >= n1 && i < n2 {
+			result = -1
+			break
+		}
+		if i >= n2 && i < n1 {
+			result = 1
+			break
+		}
+		c1 := str1[i]
+		c2 := str2[i]
+		if c1 < c2 {
+			result = -1
+			break
+		}
+		if c1 > c2 {
+			result = 1
+			break
+		}
+	}
+
+	return phpv.ZInt(result).ZVal(), nil
+}
+
+// > func int strcoll ( string $string1, string $string2 )
+func fncStrColl(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var str1, str2 phpv.ZString
+	_, err := core.Expand(ctx, args, &str1, &str2)
+	if err != nil {
+		return phpv.ZBool(false).ZVal(), err
+	}
+
+	return phpv.ZInt(strings.Compare(string(str1), string(str2))).ZVal(), nil
+}
+
+// > func int strcspn (  string $string, string $characters, int $offset = 0, ?int $length = null )
+func fncStrCspn(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var strArg phpv.ZString
+	var charsArg phpv.ZString
+	var offsetArg *phpv.ZInt
+	var lengthArg *phpv.ZInt
+	_, err := core.Expand(ctx, args, &strArg, &charsArg, &offsetArg, &lengthArg)
+	if err != nil {
+		return phpv.ZBool(false).ZVal(), err
+	}
+
+	offset := 0
+	length := len(strArg)
+	if offsetArg != nil {
+		offset = int(*offsetArg)
+	}
+	if lengthArg != nil {
+		length = int(*lengthArg)
+	}
+
+	str := substr(string(strArg), offset, length)
+	chars := []byte(charsArg)
+
+	segmentLen := 0
+	for _, b := range []byte(str) {
+		if bytes.ContainsRune(chars, rune(b)) {
+			break
+		}
+		segmentLen++
+	}
+
+	return phpv.ZInt(segmentLen).ZVal(), nil
+}
+
+// > func string|false strstr ( string $haystack, string $needle, bool $before_needle = false )
+func fncStrStr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var haystackArg phpv.ZString
+	// TODO: maybe handle deprecated case where needle not a string
+	var needleArg phpv.ZString
+	var beforeArg *phpv.ZBool
+	_, err := core.Expand(ctx, args, &haystackArg, &needleArg, &beforeArg)
+	if err != nil {
+		return phpv.ZBool(false).ZVal(), err
+	}
+
+	haystack := []byte(haystackArg)
+	needle := []byte(needleArg)
+	beforeNeedle := false
+	if beforeArg != nil {
+		beforeNeedle = bool(*beforeArg)
+	}
+
+	i := bytes.Index(haystack, needle)
+	if i < 0 {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+
+	var result []byte
+	if beforeNeedle {
+		result = haystack[0:i]
+	} else {
+		result = haystack[i:]
+	}
+
+	return phpv.ZStr(string(result)), nil
+}
+
+// > func string strip_tags ( string $string, array|string|null $allowed_tags = null )
+func fncStripTags(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var str phpv.ZString
+	var allowedTagsArg *phpv.ZVal
+	_, err := core.Expand(ctx, args, &str, &allowedTagsArg)
+	if err != nil {
+		return phpv.ZBool(false).ZVal(), err
+	}
+
+	allowedTags := map[string]struct{}{}
+
+	if allowedTagsArg != nil {
+		switch allowedTagsArg.GetType() {
+		case phpv.ZtString:
+			s := string(allowedTagsArg.AsString(ctx))
+			re := regexp.MustCompile(`\<(\w*)>`)
+			for _, m := range re.FindAllStringSubmatch(s, -1) {
+				if len(m) < 2 {
+					continue
+				}
+				tag := m[1]
+				allowedTags[tag] = struct{}{}
+			}
+		case phpv.ZtArray:
+			it := allowedTagsArg.NewIterator()
+			for ; it.Valid(ctx); it.Next(ctx) {
+				item, err := it.Current(ctx)
+				if err != nil {
+					return nil, err
+				}
+				allowedTags[item.String()] = struct{}{}
+			}
+		}
+	}
+
+	// TODO:
+
+	return nil, nil
+}
+
+// > func string substr ( string $string, int $offset, ?int $length = null )
+func fncSubstr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var str phpv.ZString
+	var offsetArg phpv.ZInt
+	var lengthArg *phpv.ZInt
+	_, err := core.Expand(ctx, args, &str, &offsetArg, &lengthArg)
+	if err != nil {
+		return phpv.ZBool(false).ZVal(), err
+	}
+
+	offset := int(offsetArg)
+	length := len(str)
+	if lengthArg != nil {
+		length = int(*lengthArg)
+	}
+
+	result := substr(string(str), offset, length)
+	return phpv.ZStr(string(result)), nil
+}
+
 func strReplaceCommon(ctx phpv.Context, args []*phpv.ZVal, caseSensitive bool) (*phpv.ZVal, error) {
 	var search, replace, subject *phpv.ZVal
 	var count *phpv.ZInt
@@ -1253,4 +1462,29 @@ func bytesCount(s, sep []byte, caseSensitive bool) int {
 	}
 
 	return replaced
+}
+
+func substr(str string, offset, length int) string {
+	var start, end int
+	if offset < 0 {
+		start = max(0, len(str)+offset)
+	} else {
+		start = min(offset, len(str))
+	}
+	if length < 0 {
+		end = max(0, len(str)+length)
+	} else {
+		end = min(start+length, len(str))
+	}
+
+	if start == 0 && end == len(str) {
+		return str
+	}
+
+	var result []byte
+	if start <= end {
+		result = []byte(str)[start:end]
+	}
+
+	return string(result)
 }
