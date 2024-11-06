@@ -9,13 +9,25 @@ import (
 	"io"
 	"log"
 	"math"
+	"math/rand/v2"
 	"net/url"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/MagicalTux/goro/core"
 	"github.com/MagicalTux/goro/core/phpv"
+)
+
+// > const STR_PAD_LEFT:                 phpv.ZInt(0)
+// > const STR_PAD_RIGHT:                phpv.ZInt(1)
+// > const STR_PAD_BOTH:                 phpv.ZInt(2)
+const (
+	STR_PAD_LEFT = iota
+	STR_PAD_RIGHT
+	STR_PAD_BOTH
 )
 
 var (
@@ -760,10 +772,231 @@ func stdStrReplace(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return strReplaceCommon(ctx, args, true)
 }
 
+// > func string str_rot13 ( string $str )
+func fncStrRot13(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var s phpv.ZString
+	_, err := core.Expand(ctx, args, &s)
+	if err != nil {
+		return nil, err
+	}
+
+	obuf := make([]byte, len(s))
+	for i, v := range []byte(s) {
+		if v >= 'a' && v <= 'z' {
+			v = 'a' + ((v - 'a' + 13) % 26)
+		} else if v >= 'A' && v <= 'Z' {
+			v = 'A' + ((v - 'A' + 13) % 26)
+		}
+		obuf[i] = v
+	}
+
+	return phpv.ZString(obuf).ZVal(), nil
+}
+
+// > func string str_pad ( string $string, int $length, string $pad_string = " ", int $pad_type = STR_PAD_RIGHT )
+func fncStrPad(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var str phpv.ZString
+	var length phpv.ZInt
+	var padStrArg *phpv.ZString
+	var padTypeArg *phpv.ZInt
+	_, err := core.Expand(ctx, args, &str, &length, &padStrArg, &padTypeArg)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(str) >= int(length) {
+		return str.ZVal(), nil
+	}
+
+	padStr := " "
+	padType := STR_PAD_LEFT
+
+	if padStrArg != nil {
+		padStr = string(*padStrArg)
+	}
+	if padTypeArg != nil {
+		padType = int(*padTypeArg)
+	}
+
+	var buf bytes.Buffer
+	switch padType {
+	case STR_PAD_LEFT:
+		buf.WriteString(strings.Repeat(padStr, int(length)-len(str)))
+		buf.WriteString(string(str))
+	case STR_PAD_RIGHT:
+		buf.WriteString(string(str))
+		buf.WriteString(strings.Repeat(padStr, int(length)-len(str)))
+	case STR_PAD_BOTH:
+		n := (int(length) - len(str))
+		right := n / 2
+		if n&1 == 1 {
+			right++
+		}
+		left := n - right
+		buf.WriteString(strings.Repeat(padStr, left))
+		buf.WriteString(string(str))
+		buf.WriteString(strings.Repeat(padStr, right))
+	}
+
+	return phpv.ZStr(buf.String()), nil
+}
+
+// > func string str_repeat ( string $string, int $times )
+func fncStrRepeat(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var str phpv.ZString
+	var times phpv.ZInt
+	_, err := core.Expand(ctx, args, &str, &times)
+	if err != nil {
+		return nil, err
+	}
+
+	if times < 0 {
+		return nil, errors.New("Argument #2 ($times) must be greater than or equal to 0")
+	}
+
+	return phpv.ZStr(strings.Repeat(string(str), int(times))), nil
+}
+
+// > func string strtolower ( string $string )
+func fncStrToLower(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var s phpv.ZString
+	_, err := core.Expand(ctx, args, &s)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.ToLower().ZVal(), nil
+}
+
+// > func string str_shuffle ( string $string )
+func fncStrShuffle(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var str phpv.ZString
+	_, err := core.Expand(ctx, args, &str)
+	if err != nil {
+		return nil, err
+	}
+
+	chars := []byte(str)
+	sort.Slice(chars, func(i, j int) bool {
+		return rand.IntN(2) == 1
+	})
+
+	return phpv.ZStr(string(chars)), nil
+}
+
+// > func array str_split ( string $string, int $length = 1 )
+func fncStrSplit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var str phpv.ZString
+	var lengthArg *phpv.ZInt
+	_, err := core.Expand(ctx, args, &str, &lengthArg)
+	if err != nil {
+		return nil, err
+	}
+
+	length := 1
+	if lengthArg != nil {
+		length = int(*lengthArg)
+	}
+
+	if length < 1 {
+		return nil, errors.New("Argument #2 ($length) must be greater than 0")
+	}
+
+	result := phpv.NewZArray()
+	for i := 0; i < len(str); i += length {
+		sub := str[i:min(i+length, len(str))]
+		result.OffsetSet(ctx, nil, sub.ZVal())
+	}
+
+	return result.ZVal(), nil
+}
+
+// > func bool str_starts_with(string $haystack, string $needle)
+func fncStrStartsWith(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var haystack, needle phpv.ZString
+
+	_, err := core.Expand(ctx, args, &haystack, &needle)
+	if err != nil {
+		return phpv.ZBool(false).ZVal(), err
+	}
+
+	result := strings.HasPrefix(string(haystack), string(needle))
+	return phpv.ZBool(result).ZVal(), nil
+}
+
+// > func array|int str_word_count ( string $string, int $format = 0, ?string $characters = null )
+func fncStrWordCount(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var str phpv.ZString
+	var formatArg *phpv.ZInt
+	var charsArg *phpv.ZString
+	_, err := core.Expand(ctx, args, &str, &formatArg, &charsArg)
+	if err != nil {
+		return phpv.ZBool(false).ZVal(), err
+	}
+
+	format := 0
+	chars := ""
+
+	if formatArg != nil {
+		format = int(*formatArg)
+	}
+	if charsArg != nil {
+		chars = string(*charsArg)
+	}
+
+	switch format {
+	case 0:
+		wordCount := 0
+		inWord := false
+		for _, c := range str {
+			isWord := unicode.IsLetter(c) || strings.ContainsRune(chars, c)
+			if !inWord && isWord {
+				wordCount++
+			}
+			inWord = isWord
+		}
+		return phpv.ZInt(wordCount).ZVal(), nil
+
+	case 1:
+		fallthrough
+	case 2:
+		words := phpv.NewZArray()
+		inWord := false
+		j := 0
+		for i, c := range str {
+			isWord := unicode.IsLetter(c) || strings.ContainsRune(chars, c)
+
+			if isWord && !inWord {
+				j = i
+			} else if !isWord && inWord {
+				word := str[j:i]
+				if format == 2 {
+					words.OffsetSet(ctx, phpv.ZInt(j), word.ZVal())
+				} else {
+					words.OffsetSet(ctx, nil, word.ZVal())
+				}
+			}
+
+			inWord = isWord
+		}
+		if inWord {
+			word := str[j:]
+			if format == 2 {
+				words.OffsetSet(ctx, phpv.ZInt(j), word.ZVal())
+			} else {
+				words.OffsetSet(ctx, nil, word.ZVal())
+			}
+		}
+
+		return words.ZVal(), nil
+	default:
+		return nil, errors.New("Argument #2 ($format) must be a valid format value")
+	}
+}
+
 func strReplaceCommon(ctx phpv.Context, args []*phpv.ZVal, caseSensitive bool) (*phpv.ZVal, error) {
 	var search, replace, subject *phpv.ZVal
 	var count *phpv.ZInt
-
 	_, err := core.Expand(ctx, args, &search, &replace, &subject, &count)
 	if err != nil {
 		return nil, err
@@ -944,38 +1177,6 @@ func doStrReplace(
 	*count += phpv.ZInt(cnt)
 
 	return subject, err
-}
-
-// > func string str_rot13 ( string $str )
-func fncStrRot13(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	var s phpv.ZString
-	_, err := core.Expand(ctx, args, &s)
-	if err != nil {
-		return nil, err
-	}
-
-	obuf := make([]byte, len(s))
-	for i, v := range []byte(s) {
-		if v >= 'a' && v <= 'z' {
-			v = 'a' + ((v - 'a' + 13) % 26)
-		} else if v >= 'A' && v <= 'Z' {
-			v = 'A' + ((v - 'A' + 13) % 26)
-		}
-		obuf[i] = v
-	}
-
-	return phpv.ZString(obuf).ZVal(), nil
-}
-
-// > func string strtolower ( string $string )
-func fncStrToLower(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	var s phpv.ZString
-	_, err := core.Expand(ctx, args, &s)
-	if err != nil {
-		return nil, err
-	}
-
-	return s.ToLower().ZVal(), nil
 }
 
 func bytesReplace(s, old, new []byte, count int, caseSensitive bool) []byte {

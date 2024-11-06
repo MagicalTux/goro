@@ -210,6 +210,35 @@ func TestStrFunctions(t *testing.T) {
 	println(" #str_ireplace")
 	testOutput(stdStrIReplace, `cde`, `x`, `AbcdeF`)
 	testOutput(stdStrIReplace, `ef`, `x`, `AbcdeF`)
+
+	println(" #str_pad")
+	testOutput(fncStrPad, `fo`, 9, `x`)
+	testOutput(fncStrPad, `fo`, 9, `x`, STR_PAD_RIGHT)
+	testOutput(fncStrPad, `fo`, 9, `x`, STR_PAD_BOTH)
+
+	println(" #str_repeat")
+	testOutput(fncStrRepeat, `wa`, 5)
+	testOutput(fncStrRepeat, `wa`, 5)
+	testOutput(fncStrRepeat, `a`, 0)
+	testOutput(fncStrRepeat, `a`, 1)
+	// testOutput(fncStrRepeat, `a`, -1)
+
+	println(" #str_shuffle")
+	testOutput(fncStrShuffle, `abcdef`)
+
+	println(" #str_split")
+	testOutput(fncStrSplit, `abcdefghijk`, 1)
+	testOutput(fncStrSplit, `abcdefghijk`, 3)
+	testOutput(fncStrSplit, `abcdefghijk`, 100)
+
+	println(" #str_starts_with")
+	testOutput(fncStrStartsWith, `abcdefghijk`, `abc`)
+
+	println(" #str_word_count")
+	testOutput(fncStrWordCount, `one two three`)
+	testOutput(fncStrWordCount, `one two three`, 1)
+	testOutput(fncStrWordCount, `one two three`, 2)
+	testOutput(fncStrWordCount, `one two three 112`, 2, "1")
 }
 
 
