@@ -750,8 +750,17 @@ func fncStrGetCsv(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return result.ZVal(), nil
 }
 
+// > func mixed str_ireplace ( mixed $search , mixed $replace , mixed $subject [, int &$count ] )
+func stdStrIReplace(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	return strReplaceCommon(ctx, args, false)
+}
+
 // > func mixed str_replace ( mixed $search , mixed $replace , mixed $subject [, int &$count ] )
 func stdStrReplace(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	return strReplaceCommon(ctx, args, true)
+}
+
+func strReplaceCommon(ctx phpv.Context, args []*phpv.ZVal, caseSensitive bool) (*phpv.ZVal, error) {
 	var search, replace, subject *phpv.ZVal
 	var count *phpv.ZInt
 
@@ -786,7 +795,7 @@ func stdStrReplace(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 			vs := v.Value().(phpv.ZString)
 
-			vs, err = doStrReplace(ctx, vs, search, replace, count)
+			vs, err = doStrReplace(ctx, vs, search, replace, count, caseSensitive)
 			if err != nil {
 				return nil, err
 			}
@@ -805,7 +814,7 @@ func stdStrReplace(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	vs := subject.Value().(phpv.ZString)
 
-	vs, err = doStrReplace(ctx, vs, search, replace, count)
+	vs, err = doStrReplace(ctx, vs, search, replace, count, caseSensitive)
 	if err != nil {
 		return nil, err
 	}
@@ -813,7 +822,13 @@ func stdStrReplace(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return vs.ZVal(), nil
 }
 
-func doStrReplace(ctx phpv.Context, subject phpv.ZString, search, replace *phpv.ZVal, count *phpv.ZInt) (phpv.ZString, error) {
+func doStrReplace(
+	ctx phpv.Context,
+	subject phpv.ZString,
+	search, replace *phpv.ZVal,
+	count *phpv.ZInt,
+	caseSensitive bool,
+) (phpv.ZString, error) {
 	if search.GetType() == phpv.ZtArray {
 		if replace.GetType() == phpv.ZtArray {
 			it1 := search.NewIterator()
@@ -858,7 +873,7 @@ func doStrReplace(ctx phpv.Context, subject phpv.ZString, search, replace *phpv.
 				}
 
 				to_b := []byte(to.AsString(ctx))
-				subject = phpv.ZString(bytes.Replace([]byte(subject), from_b, to_b, cnt))
+				subject = phpv.ZString(bytesReplace([]byte(subject), from_b, to_b, cnt, caseSensitive))
 				*count += phpv.ZInt(cnt)
 
 				it1.Next(ctx)
@@ -900,7 +915,7 @@ func doStrReplace(ctx phpv.Context, subject phpv.ZString, search, replace *phpv.
 				continue
 			}
 
-			subject = phpv.ZString(bytes.Replace([]byte(subject), from_b, to_b, cnt))
+			subject = phpv.ZString(bytesReplace([]byte(subject), from_b, to_b, cnt, caseSensitive))
 			*count += phpv.ZInt(cnt)
 
 			it1.Next(ctx)
@@ -925,7 +940,7 @@ func doStrReplace(ctx phpv.Context, subject phpv.ZString, search, replace *phpv.
 	}
 
 	to_b := []byte(replace.AsString(ctx))
-	subject = phpv.ZString(bytes.Replace([]byte(subject), from_b, to_b, cnt))
+	subject = phpv.ZString(bytesReplace([]byte(subject), from_b, to_b, cnt, caseSensitive))
 	*count += phpv.ZInt(cnt)
 
 	return subject, err
@@ -961,4 +976,51 @@ func fncStrToLower(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	return s.ToLower().ZVal(), nil
+}
+
+func bytesReplace(s, old, new []byte, count int, caseSensitive bool) []byte {
+	if caseSensitive {
+		return bytes.Replace(s, old, new, count)
+	}
+
+	if len(s) == 0 || len(old) == 0 {
+		return s
+	}
+
+	replaced := 0
+	var buf bytes.Buffer
+	for i := 0; i < len(s)-len(old)+1; i++ {
+		println(">", string(s[i]))
+		if count > 0 && replaced >= count {
+			buf.Write(s[i:])
+			break
+		}
+
+		match := true
+		for j := 0; j < len(old); j++ {
+			c1 := byteLowerCase(s[i+j])
+			c2 := byteLowerCase(old[j])
+			if c1 != c2 {
+				match = false
+				break
+			}
+		}
+
+		if match {
+			buf.Write(new)
+			replaced++
+			i += len(old)-1
+		} else {
+			buf.WriteByte(s[i])
+		}
+	}
+
+	return buf.Bytes()
+}
+
+func byteLowerCase(b byte) byte {
+	if b < 0x41 || b > 0x5a {
+		return b
+	}
+	return b + 32
 }
