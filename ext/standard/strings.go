@@ -851,7 +851,7 @@ func doStrReplace(
 
 				from_b := []byte(from.AsString(ctx))
 
-				cnt := bytes.Count([]byte(subject), from_b)
+				cnt := bytesCount([]byte(subject), from_b, caseSensitive)
 				if cnt == 0 {
 					// nothing to replace, skip
 					it1.Next(ctx)
@@ -908,7 +908,7 @@ func doStrReplace(
 
 			from_b := []byte(from.AsString(ctx))
 
-			cnt := bytes.Count([]byte(subject), from_b)
+			cnt := bytesCount([]byte(subject), from_b, caseSensitive)
 			if cnt == 0 {
 				// nothing to replace, skip
 				it1.Next(ctx)
@@ -929,7 +929,7 @@ func doStrReplace(
 
 	from_b := []byte(search.AsString(ctx))
 
-	cnt := bytes.Count([]byte(subject), from_b)
+	cnt := bytesCount([]byte(subject), from_b, caseSensitive)
 	if cnt == 0 {
 		return subject, nil
 	}
@@ -990,7 +990,6 @@ func bytesReplace(s, old, new []byte, count int, caseSensitive bool) []byte {
 	replaced := 0
 	var buf bytes.Buffer
 	for i := 0; i < len(s)-len(old)+1; i++ {
-		println(">", string(s[i]))
 		if count > 0 && replaced >= count {
 			buf.Write(s[i:])
 			break
@@ -998,8 +997,8 @@ func bytesReplace(s, old, new []byte, count int, caseSensitive bool) []byte {
 
 		match := true
 		for j := 0; j < len(old); j++ {
-			c1 := byteLowerCase(s[i+j])
-			c2 := byteLowerCase(old[j])
+			c1 := bytesLowerCase(s[i+j])
+			c2 := bytesLowerCase(old[j])
 			if c1 != c2 {
 				match = false
 				break
@@ -1009,7 +1008,7 @@ func bytesReplace(s, old, new []byte, count int, caseSensitive bool) []byte {
 		if match {
 			buf.Write(new)
 			replaced++
-			i += len(old)-1
+			i += len(old) - 1
 		} else {
 			buf.WriteByte(s[i])
 		}
@@ -1018,9 +1017,39 @@ func bytesReplace(s, old, new []byte, count int, caseSensitive bool) []byte {
 	return buf.Bytes()
 }
 
-func byteLowerCase(b byte) byte {
+func bytesLowerCase(b byte) byte {
 	if b < 0x41 || b > 0x5a {
 		return b
 	}
 	return b + 32
+}
+
+func bytesCount(s, sep []byte, caseSensitive bool) int {
+	if caseSensitive {
+		return bytes.Count(s, sep)
+	}
+
+	if len(s) == 0 || len(sep) == 0 {
+		return 0
+	}
+
+	replaced := 0
+	for i := 0; i < len(s)-len(sep)+1; i++ {
+		match := true
+		for j := 0; j < len(sep); j++ {
+			c1 := bytesLowerCase(s[i+j])
+			c2 := bytesLowerCase(sep[j])
+			if c1 != c2 {
+				match = false
+				break
+			}
+		}
+
+		if match {
+			replaced++
+			i += len(sep) - 1
+		}
+	}
+
+	return replaced
 }

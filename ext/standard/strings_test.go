@@ -201,4 +201,20 @@ func TestStrFunctions(t *testing.T) {
 	testOutput(fncStrGetCsv, `x,`)
 	testOutput(fncStrGetCsv, `x,y`)
 	testOutput(fncStrGetCsv, `,`)
+
+	println(" #str_replace")
+	testOutput(stdStrReplace, `cde`, `x`, `AbcdeF`)
+	testOutput(stdStrReplace, `cde`, `x`, `AbCdeF`)
+	testOutput(stdStrReplace, `cdef`, `x`, `Abcdef`)
+
+	println(" #str_ireplace")
+	testOutput(stdStrIReplace, `cde`, `x`, `AbcdeF`)
+	testOutput(stdStrIReplace, `ef`, `x`, `AbcdeF`)
 }
+
+
+
+
+
+
+
