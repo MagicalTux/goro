@@ -10,6 +10,8 @@ import (
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
+var g = phpctx.NewGlobal(context.Background(), phpctx.NewProcess("test"))
+
 func must[T any](x T, err error) T {
 	if err != nil {
 		panic(err)
@@ -47,7 +49,6 @@ func phpArgs(args ...any) []*phpv.ZVal {
 }
 
 func phpArray(args ...any) *phpv.ZArray {
-	var g = phpctx.NewGlobal(context.Background(), phpctx.NewProcess("test"))
 	arr := phpv.NewZArray()
 	for _, arg := range args {
 		switch v := arg.(type) {
@@ -72,13 +73,11 @@ func phpArray(args ...any) *phpv.ZArray {
 }
 
 func testRun(fn phpFunc, args ...any) *phpv.ZVal {
-	var g = phpctx.NewGlobal(context.Background(), phpctx.NewProcess("test"))
 	val := must(fn(g, phpArgs(args...)))
 	return val
 }
 
-func testOutput(fn phpFunc, args ...any) {
-	var g = phpctx.NewGlobal(context.Background(), phpctx.NewProcess("test"))
+func testOutput(fn phpFunc, args ...any) *phpctx.Global {
 	ret := testRun(fn, args...)
 	switch ret.GetType() {
 	case phpv.ZtArray:
@@ -87,6 +86,7 @@ func testOutput(fn phpFunc, args ...any) {
 		s := fmt.Sprintf("%+v", ret)
 		fmt.Printf("《%s》len=%v\n", s, len(s))
 	}
+	return g
 }
 
 func TestStrFunctions(t *testing.T) {
@@ -271,4 +271,59 @@ func TestStrFunctions(t *testing.T) {
 	println(" #strstr")
 	testOutput(fncStrStr, `banana@gorilla.com`, `@`)
 	testOutput(fncStrStr, `banana@gorilla.com`, `@`, true)
+
+	println(" #strip_tags")
+	testOutput(fncStripTags, `>test`, `<p>`)
+	testOutput(fncStripTags, `<foo>test<p  blah><a><b>`, `<p><a>`)
+	testOutput(fncStripTags, `<hello><em>there`, phpArray("em"))
+
+	println(" #stripcslashes")
+	testOutput(fncStripCSlashes, `test \x6159 \1334 \' \" \z \w \x`)
+	testOutput(fncStripCSlashes, `\1`)
+	testOutput(fncStripCSlashes, `\0`)
+	testOutput(fncStripCSlashes, `I\'d have a coffee.\nNot a problem.`)
+
+	println(" #stripos")
+	testOutput(fncStrIPos, `abcdefab`, `ab`)
+	testOutput(fncStrIPos, `Abcdefab`, `ab`)
+	testOutput(fncStrIPos, `Abcdefab`, `aB`)
+	testOutput(fncStrIPos, `abcdefab`, `ab`, 3)
+	testOutput(fncStrIPos, `abcdefab`, `AB`, 3)
+	testOutput(fncStrIPos, `abcdefab`, `AB`, 10000)
+
+	println(" #strpos")
+	testOutput(fncStrPos, `abcdefab`, `ab`)
+	testOutput(fncStrPos, `Abcdefab`, `ab`)
+	testOutput(fncStrPos, `Abcdefab`, `aB`)
+	testOutput(fncStrPos, `abcdefab`, `ab`, 3)
+	testOutput(fncStrPos, `abcdefab`, `AB`, 3)
+	testOutput(fncStrPos, `abcdefab`, `AB`, 3, 1000)
+
+	println(" #stripslashes")
+	testOutput(fncStripSlashes, `foo\' \bar 000`)
+
+	println(" #stristr")
+	testOutput(fncStrIStr, `banana@gOrilla.com`, `@GO`)
+	testOutput(fncStrIStr, `banana@GOrilla.com`, `@Go`, true)
+
+	println(" #strnatcasecmp")
+	testOutput(fncStrNatCaseCmp, `Apple`, `Banana`)
+	testOutput(fncStrNatCaseCmp, `Banana`, `Apple`)
+	testOutput(fncStrNatCaseCmp, `apple`, `Apple`)
+
+	println(" #strpbrk")
+	testOutput(fncStrPbrk, `This is a Simple text.`, `mi`)
+	testOutput(fncStrPbrk, `This is a Simple text.`, `S`)
+
+	println(" #strrev")
+	testOutput(fncStrRev, ``)
+	testOutput(fncStrRev, `a`)
+	testOutput(fncStrRev, `ab`)
+	testOutput(fncStrRev, `abc`)
+	testOutput(fncStrRev, `abcdef`)
+	testOutput(fncStrRev, `:D 😭`)
+
+	// println(" #strtok")
+	// testOutput(fncStrtok, `abc/def`, `/`)
+	// testOutput(fncStrtok, ` `)
 }

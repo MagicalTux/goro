@@ -1111,6 +1111,40 @@ func fncStrCspn(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 }
 
 // > func string|false strstr ( string $haystack, string $needle, bool $before_needle = false )
+func fncStrIStr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var haystackArg phpv.ZString
+	// TODO: maybe handle deprecated case where needle not a string
+	var needleArg phpv.ZString
+	var beforeArg *phpv.ZBool
+	_, err := core.Expand(ctx, args, &haystackArg, &needleArg, &beforeArg)
+	if err != nil {
+		return phpv.ZBool(false).ZVal(), err
+	}
+
+	haystack := bytesLowerCaseArray([]byte(haystackArg))
+	needle := bytesLowerCaseArray([]byte(needleArg))
+
+	beforeNeedle := false
+	if beforeArg != nil {
+		beforeNeedle = bool(*beforeArg)
+	}
+
+	i := bytes.Index(haystack, needle)
+	if i < 0 {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+
+	var result []byte
+	if beforeNeedle {
+		result = []byte(haystackArg)[0:i]
+	} else {
+		result = []byte(haystackArg)[i:]
+	}
+
+	return phpv.ZStr(string(result)), nil
+}
+
+// > func string|false strstr ( string $haystack, string $needle, bool $before_needle = false )
 func fncStrStr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var haystackArg phpv.ZString
 	// TODO: maybe handle deprecated case where needle not a string
@@ -1146,7 +1180,7 @@ func fncStrStr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // > func string strip_tags ( string $string, array|string|null $allowed_tags = null )
 func fncStripTags(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var str phpv.ZString
-	var allowedTagsArg *phpv.ZVal
+	var allowedTagsArg **phpv.ZVal
 	_, err := core.Expand(ctx, args, &str, &allowedTagsArg)
 	if err != nil {
 		return phpv.ZBool(false).ZVal(), err
@@ -1155,9 +1189,10 @@ func fncStripTags(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	allowedTags := map[string]struct{}{}
 
 	if allowedTagsArg != nil {
-		switch allowedTagsArg.GetType() {
+		arg := *allowedTagsArg
+		switch arg.GetType() {
 		case phpv.ZtString:
-			s := string(allowedTagsArg.AsString(ctx))
+			s := string(arg.AsString(ctx))
 			re := regexp.MustCompile(`\<(\w*)>`)
 			for _, m := range re.FindAllStringSubmatch(s, -1) {
 				if len(m) < 2 {
@@ -1167,7 +1202,7 @@ func fncStripTags(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				allowedTags[tag] = struct{}{}
 			}
 		case phpv.ZtArray:
-			it := allowedTagsArg.NewIterator()
+			it := arg.NewIterator()
 			for ; it.Valid(ctx); it.Next(ctx) {
 				item, err := it.Current(ctx)
 				if err != nil {
@@ -1178,9 +1213,348 @@ func fncStripTags(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		}
 	}
 
-	// TODO:
+	// NOTE: This doesn't quite replicate the original
+	// strip_tag, as that one has more complex tag stripping state machine.
 
-	return nil, nil
+	tagIndex := -1
+	inTag := false
+	var buf bytes.Buffer
+	for i, c := range str {
+		if c == '<' {
+			inTag = true
+			tagIndex = i
+		} else if !inTag {
+			buf.WriteRune(c)
+		} else if c == '>' {
+			inTag = false
+			start := min(tagIndex+1, len(str)-1)
+			if str[start] == '/' {
+				start++
+			}
+			sub := string(str[start : i+1])
+			end := strings.IndexFunc(sub, isNotLetter)
+
+			tagName := sub[0:end]
+			_, includeTag := allowedTags[tagName]
+			if includeTag {
+				buf.Write([]byte(str[tagIndex : i+1]))
+			}
+		}
+	}
+
+	return phpv.ZStr(buf.String()), nil
+}
+
+// > func string stripcslashes ( string $string )
+func fncStripCSlashes(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var str phpv.ZString
+	_, err := core.Expand(ctx, args, &str)
+	if err != nil {
+		return phpv.ZBool(false).ZVal(), err
+	}
+
+	var buf bytes.Buffer
+	for i := 0; i < len(str); i++ {
+		if str[i] != '\\' {
+			buf.WriteByte(str[i])
+			continue
+		}
+
+		i++
+		if i >= len(str) {
+			break
+		}
+
+		hex := false
+		unescaped := true
+
+		switch str[i] {
+		case 'n':
+			buf.WriteString("\n")
+		case 'r':
+			buf.WriteString("\r")
+		case 'a':
+			buf.WriteString("\a")
+		case 't':
+			buf.WriteString("\t")
+		case 'v':
+			buf.WriteString("\v")
+		case 'b':
+			buf.WriteString("\b")
+		case 'f':
+			buf.WriteString("\f")
+		default:
+			unescaped = false
+		}
+
+		if unescaped {
+			continue
+		}
+
+		if str[i] == 'x' {
+			hex = true
+			i++
+			if i >= len(str) {
+				buf.WriteByte('x')
+				break
+			}
+		}
+
+		readNum := unicode.IsNumber(rune(str[i]))
+		if !readNum {
+			buf.WriteByte(str[i])
+		} else if readNum {
+			base := 8
+			length := 3
+			if hex {
+				base = 16
+				length = 2
+			}
+
+			j := i
+			for j-i <= length-1 && unicode.IsNumber(rune(str[j])) {
+				j++
+				if j >= len(str) {
+					break
+				}
+			}
+
+			if j > i {
+				n, err := strconv.ParseInt(string(str[i:j]), base, 8)
+				if err == nil {
+					buf.WriteByte(byte(n))
+				}
+				i = j - 1
+			}
+
+		}
+	}
+
+	return phpv.ZStr(buf.String()), nil
+}
+
+// > func int|false stripos(string $haystack, string $needle, int $offset = 0)
+func fncStrIPos(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var haystackArg, needleArg phpv.ZString
+	var offsetArg *phpv.ZInt
+	_, err := core.Expand(ctx, args, &haystackArg, &needleArg, &offsetArg)
+	if err != nil {
+		return phpv.ZBool(false).ZVal(), err
+	}
+
+	offset := 0
+	if offsetArg != nil {
+		offset = int(*offsetArg)
+	}
+
+	haystack := bytesLowerCaseArray([]byte(haystackArg))
+	needle := bytesLowerCaseArray([]byte(needleArg))
+
+	if offset >= len(haystack) {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	if offset > 0 {
+		haystack = haystack[offset:]
+	}
+
+	result := bytes.Index(haystack, needle)
+	if result < 0 {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	return phpv.ZInt(result + offset).ZVal(), nil
+}
+
+// > func int|false strpos(string $haystack, string $needle, int $offset = 0)
+func fncStrPos(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var haystackArg, needleArg phpv.ZString
+	var offsetArg *phpv.ZInt
+	_, err := core.Expand(ctx, args, &haystackArg, &needleArg, &offsetArg)
+	if err != nil {
+		return phpv.ZBool(false).ZVal(), err
+	}
+
+	offset := 0
+	if offsetArg != nil {
+		offset = int(*offsetArg)
+	}
+
+	haystack := []byte(haystackArg)
+	needle := []byte(needleArg)
+
+	if offset >= len(haystack) {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	if offset > 0 {
+		haystack = haystack[offset:]
+	}
+
+	result := bytes.Index(haystack, needle)
+	if result < 0 {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	return phpv.ZInt(result + offset).ZVal(), nil
+}
+
+// > func string stripslashes ( string $string )
+func fncStripSlashes(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var str phpv.ZString
+	_, err := core.Expand(ctx, args, &str)
+	if err != nil {
+		return phpv.ZBool(false).ZVal(), err
+	}
+	result := bytes.ReplaceAll([]byte(str), []byte(`\`), nil)
+	return phpv.ZStr(string(result)), nil
+}
+
+// > func int strnatcasecmp(string $string1, string $string2)
+func fncStrNatCaseCmp(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var string1, string2 phpv.ZString
+	_, err := core.Expand(ctx, args, &string1, &string2)
+	if err != nil {
+		return phpv.ZBool(false).ZVal(), err
+	}
+
+	result := natCmp([]byte(string1), []byte(string2), false)
+
+	return phpv.ZInt(result).ZVal(), nil
+}
+
+// > func int strnatcmp(string $string1, string $string2)
+func fncStrNatCmp(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var string1, string2 phpv.ZString
+	_, err := core.Expand(ctx, args, &string1, &string2)
+	if err != nil {
+		return phpv.ZBool(false).ZVal(), err
+	}
+
+	result := natCmp([]byte(string1), []byte(string2), true)
+
+	return phpv.ZInt(result).ZVal(), nil
+}
+
+// > func string|false strpbrk( string $string, string $characters )
+func fncStrPbrk(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var str, chars phpv.ZString
+	_, err := core.Expand(ctx, args, &str, &chars)
+	if err != nil {
+		return phpv.ZBool(false).ZVal(), err
+	}
+
+	i := bytes.IndexAny([]byte(str), string(chars))
+	if i < 0 {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+
+	return str[i:].ZVal(), nil
+}
+
+// > func string strrev( string $string )
+func fncStrRev(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var str phpv.ZString
+	_, err := core.Expand(ctx, args, &str)
+	if err != nil {
+		return phpv.ZBool(false).ZVal(), err
+	}
+
+	data := []byte(str)
+	for i := 0; i < len(data)/2; i++ {
+		j := len(data) - i - 1
+		c := data[i]
+		data[i] = data[j]
+		data[j] = c
+	}
+
+	return phpv.ZStr(string(data)), nil
+}
+
+const (
+	STRTOK_ARG phpv.ZInt = iota
+	STRTOK_LAST_INDEX
+)
+
+// > func string|false strtok( string $string, string $token )
+// > func string|false strtok( string $token )
+func fncStrtok(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var strArg phpv.ZString
+	var tokenArg *phpv.ZString
+	_, err := core.Expand(ctx, args, &strArg, &tokenArg)
+	if err != nil {
+		return phpv.ZBool(false).ZVal(), err
+	}
+
+	// TODO: use a global state for now instead of using context
+
+	index := 0
+	startIndex := 0
+	if ok, _ := ctx.OffsetExists(ctx, STRTOK_LAST_INDEX); ok {
+		val, err := ctx.OffsetGet(ctx, STRTOK_LAST_INDEX)
+		if err != nil {
+			return nil, err
+		}
+		if val.GetType() == phpv.ZtInt {
+			startIndex = int(val.AsInt(ctx))
+		}
+	}
+
+	var str string
+	var token string
+	if tokenArg != nil {
+		str = string(strArg)
+		token = string(*tokenArg)
+
+	} else {
+		token = string(str)
+
+		if ok, _ := ctx.OffsetExists(ctx, STRTOK_ARG); ok {
+			val, err := ctx.OffsetGet(ctx, STRTOK_ARG)
+			if err != nil {
+				return nil, err
+			}
+			if val.GetType() != phpv.ZtString {
+				return phpv.ZBool(false).ZVal(), nil
+			} else {
+				str = string(val.AsString(ctx))
+			}
+		}
+	}
+
+	strBytes := []byte(str)
+	tokenBytes := []byte(token)
+
+	// skip delimeters
+	for index = startIndex; index < len(strBytes); index++ {
+		if !bytes.ContainsRune(tokenBytes, rune(strBytes[index])) {
+			break
+		}
+	}
+	for ; index < len(strBytes); index++ {
+		if bytes.ContainsRune(tokenBytes, rune(strBytes[index])) {
+			break
+		}
+	}
+
+	if index >= len(strBytes) {
+		err = ctx.OffsetSet(ctx, STRTOK_LAST_INDEX, nil)
+		if err != nil {
+			return nil, err
+		}
+		err := ctx.OffsetSet(ctx, STRTOK_ARG, nil)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		err = ctx.OffsetSet(ctx, STRTOK_LAST_INDEX, phpv.ZInt(index).ZVal())
+		if err != nil {
+			return nil, err
+		}
+		err := ctx.OffsetSet(ctx, STRTOK_ARG, strArg.ZVal())
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	result := string(strBytes[startIndex:index])
+	return phpv.ZStr(result), nil
 }
 
 // > func string substr ( string $string, int $offset, ?int $length = null )
@@ -1388,6 +1762,7 @@ func doStrReplace(
 	return subject, err
 }
 
+// TODO: move to another file or package
 func bytesReplace(s, old, new []byte, count int, caseSensitive bool) []byte {
 	if caseSensitive {
 		return bytes.Replace(s, old, new, count)
@@ -1427,11 +1802,21 @@ func bytesReplace(s, old, new []byte, count int, caseSensitive bool) []byte {
 	return buf.Bytes()
 }
 
+func bytesUpperCase(b byte) byte {
+	return byte(unicode.ToUpper(rune(b)))
+}
+
 func bytesLowerCase(b byte) byte {
-	if b < 0x41 || b > 0x5a {
-		return b
+	return byte(unicode.ToLower(rune(b)))
+}
+
+func bytesLowerCaseArray(bs []byte) []byte {
+	var result []byte
+	for _, b := range bs {
+		b = bytesLowerCase(b)
+		result = append(result, b)
 	}
-	return b + 32
+	return result
 }
 
 func bytesCount(s, sep []byte, caseSensitive bool) int {
@@ -1487,4 +1872,161 @@ func substr(str string, offset, length int) string {
 	}
 
 	return string(result)
+}
+func isNotLetter(c rune) bool {
+	return !unicode.IsLetter(c)
+}
+
+// translated from sourcefrog's strnatcmp.c
+// https://github.com/sourcefrog/natsort/blob/master/strnatcmp.c
+func natCmp(a, b []byte, caseSensitive bool) int {
+	ai := 0
+	bi := 0
+	for {
+
+		var ca, cb byte = 0, 0
+		if ai < len(a) {
+			ca = a[ai]
+		}
+		if bi < len(b) {
+			cb = b[bi]
+		}
+
+		// skip over leading spaces or zeros
+		for unicode.IsSpace(rune(ca)) {
+			ai++
+			if ai < len(a) {
+				ca = a[ai]
+			} else {
+				ca = 0
+				break
+			}
+		}
+		for bi < len(b) && unicode.IsSpace(rune(cb)) {
+			bi++
+			if bi < len(b) {
+			} else {
+				cb = b[bi]
+				cb = 0
+				break
+			}
+		}
+
+		// process run of digits
+		if unicode.IsDigit(rune(ca)) && unicode.IsDigit(rune(cb)) {
+			fractional := ca == '0' || cb == '0'
+
+			if fractional {
+				result := natCmpLeft(a[ai:], b[bi:])
+				if result != 0 {
+					return result
+				}
+			} else {
+				result := natCmpRight(a[ai:], b[bi:])
+				if result != 0 {
+					return result
+				}
+			}
+		}
+
+		if ca == 0 && cb == 0 {
+			return 0
+		}
+
+		if !caseSensitive {
+			ca = bytesUpperCase(ca)
+			cb = bytesUpperCase(cb)
+		}
+
+		if ca < cb {
+			return -1
+		}
+		if ca > cb {
+			return +1
+		}
+
+		ai++
+		bi++
+	}
+}
+
+func natCmpRight(a, b []byte) int {
+	bias := 0
+
+	// The longest run of digits wins.  That aside, the greatest
+	// value wins, but we can'*t know that it will until we've scanned
+	// both numbers to know that they have the same magnitude, so we
+	// remember it in BIAS.
+	for i := range max(len(a), len(b)) {
+		var ca, cb byte
+		if i < len(a) {
+			ca = a[i]
+		}
+		if i < len(b) {
+			cb = b[i]
+		}
+
+		aDigit := unicode.IsDigit(rune(ca))
+		bDigit := unicode.IsDigit(rune(cb))
+
+		if !aDigit && !bDigit {
+			return bias
+		}
+		if !aDigit {
+			return -1
+		}
+		if !bDigit {
+			return +1
+		}
+
+		if ca < cb {
+			if bias == 0 {
+				bias = -1
+			}
+		} else if ca > cb {
+			if bias == 0 {
+				bias = +1
+			}
+		} else if ca == 0 && cb == 0 {
+			return bias
+		}
+	}
+
+	return 0
+}
+
+func natCmpLeft(a, b []byte) int {
+	// Compare two left-aligned numbers: the first to have a
+	// different value wins.
+	for i := range max(len(a), len(b)) {
+		var ca, cb byte
+		if i < len(a) {
+			ca = a[i]
+		}
+		if i < len(b) {
+			cb = b[i]
+		}
+
+		aDigit := unicode.IsDigit(rune(ca))
+		bDigit := unicode.IsDigit(rune(cb))
+
+		if !aDigit && !bDigit {
+			return 0
+		}
+		if !aDigit {
+			return -1
+		}
+		if !bDigit {
+			return +1
+		}
+
+		if ca < cb {
+			return -1
+		}
+		if ca > cb {
+			return +1
+		}
+	}
+
+	return 0
 }
