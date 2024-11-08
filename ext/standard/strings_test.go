@@ -331,4 +331,13 @@ func TestStrFunctions(t *testing.T) {
 	testOutput(fncStrtok, token)
 	testOutput(fncStrtok, token)
 	testOutput(fncStrtok, token)
+
+	println("# substr_compare")
+	testOutput(fncSubstrCompare, "abcde", "bc", 1, 2); // 0
+	testOutput(fncSubstrCompare, "abcde", "de", -2, 2); // 0
+	testOutput(fncSubstrCompare, "abcde", "bcg", 1, 2, false); // 0
+	testOutput(fncSubstrCompare, "abcde", "BC", 1, 2, true); // 0
+	testOutput(fncSubstrCompare, "abcde", "bc", 1, 3); // 1
+	testOutput(fncSubstrCompare, "abcde", "cd", 1, 2); // -1
+	testOutput(fncSubstrCompare, "abcde", "abc", 5, 1); // warning
 }

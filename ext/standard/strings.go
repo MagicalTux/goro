@@ -1003,30 +1003,7 @@ func fncStrCaseCmp(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZBool(false).ZVal(), err
 	}
 
-	result := 0
-	n1 := len(str1)
-	n2 := len(str2)
-	for i := 0; i < max(n1, n2); i++ {
-		if i >= n1 && i < n2 {
-			result = -1
-			break
-		}
-		if i >= n2 && i < n1 {
-			result = 1
-			break
-		}
-		c1 := bytesLowerCase(str1[i])
-		c2 := bytesLowerCase(str2[i])
-		if c1 < c2 {
-			result = -1
-			break
-		}
-		if c1 > c2 {
-			result = 1
-			break
-		}
-	}
-
+	result := strcmpCommon([]byte(str1), []byte(str2), false)
 	return phpv.ZInt(result).ZVal(), nil
 }
 
@@ -1038,30 +1015,7 @@ func fncStrCmp(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZBool(false).ZVal(), err
 	}
 
-	result := 0
-	n1 := len(str1)
-	n2 := len(str2)
-	for i := 0; i < max(n1, n2); i++ {
-		if i >= n1 && i < n2 {
-			result = -1
-			break
-		}
-		if i >= n2 && i < n1 {
-			result = 1
-			break
-		}
-		c1 := str1[i]
-		c2 := str2[i]
-		if c1 < c2 {
-			result = -1
-			break
-		}
-		if c1 > c2 {
-			result = 1
-			break
-		}
-	}
-
+	result := strcmpCommon([]byte(str1), []byte(str2), true)
 	return phpv.ZInt(result).ZVal(), nil
 }
 
@@ -1096,7 +1050,7 @@ func fncStrCspn(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		length = int(*lengthArg)
 	}
 
-	str := substr(string(strArg), offset, length)
+	str := substr([]byte(strArg), offset, length)
 	chars := []byte(charsArg)
 
 	segmentLen := 0
@@ -1550,8 +1504,49 @@ func fncSubstr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		length = int(*lengthArg)
 	}
 
-	result := substr(string(str), offset, length)
+	result := substr([]byte(str), offset, length)
 	return phpv.ZStr(string(result)), nil
+}
+
+// > func int substr_compare ( string $haystack, string $needle, int $offset, ?int $length = null, bool $case_insensitive = false )
+func fncSubstrCompare(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var haystackArg, needleArg phpv.ZString
+	var offsetArg phpv.ZInt
+	var lengthArg *phpv.ZInt
+	var caseInsensitiveArg *phpv.ZBool
+	_, err := core.Expand(ctx, args, &haystackArg, &needleArg, &offsetArg, &lengthArg, &caseInsensitiveArg)
+	if err != nil {
+		return phpv.ZBool(false).ZVal(), err
+	}
+
+	haystack := []byte(haystackArg)
+	needle := []byte(needleArg)
+	offset := int(offsetArg)
+	haystackLen := len(haystack)
+	needleLen := len(needle)
+	caseInsensitive := false
+
+	if lengthArg != nil {
+		haystackLen = int(*lengthArg)
+		needleLen = haystackLen
+	}
+	if caseInsensitiveArg != nil {
+		caseInsensitive = bool(*caseInsensitiveArg)
+	}
+
+	str1 := substr([]byte(haystack), offset, haystackLen)
+	str2 := substr([]byte(needle), 0, needleLen)
+	result := strcmpCommon(str1, str2, !caseInsensitive)
+
+	// strcmp returns the difference between two bytes
+	// so explicitly clamp it to -1 to 1
+	if result < 0 {
+		result = -1
+	} else if result > 0 {
+		result = 1
+	}
+
+	return phpv.ZInt(result).ZVal(), nil
 }
 
 func strReplaceCommon(ctx phpv.Context, args []*phpv.ZVal, caseSensitive bool) (*phpv.ZVal, error) {
@@ -1826,7 +1821,7 @@ func bytesCount(s, sep []byte, caseSensitive bool) int {
 	return replaced
 }
 
-func substr(str string, offset, length int) string {
+func substr(str []byte, offset, length int) []byte {
 	var start, end int
 	if offset < 0 {
 		start = max(0, len(str)+offset)
@@ -1845,10 +1840,10 @@ func substr(str string, offset, length int) string {
 
 	var result []byte
 	if start <= end {
-		result = []byte(str)[start:end]
+		result = str[start:end]
 	}
 
-	return string(result)
+	return result
 }
 func isNotLetter(c rune) bool {
 	return !unicode.IsLetter(c)
@@ -2005,5 +2000,30 @@ func natCmpLeft(a, b []byte) int {
 		}
 	}
 
+	return 0
+}
+
+func strcmpCommon(str1, str2 []byte, caseSensitive bool) int {
+	for i := 0; i < max(len(str1), len(str2)); i++ {
+		var c1, c2 byte
+		if i < len(str1) {
+			c1 = str1[i]
+		}
+		if i < len(str2) {
+			c2 = str2[i]
+		}
+
+		if !caseSensitive {
+			c1 = bytesLowerCase(c1)
+			c2 = bytesLowerCase(c2)
+		}
+
+		if c1 < c2 {
+			return int(c1) - int(c2)
+		}
+		if c1 > c2 {
+			return int(c1) - int(c2)
+		}
+	}
 	return 0
 }
