@@ -190,7 +190,7 @@ func TestStrFunctions(t *testing.T) {
 	testOutput(fncStrEndsWith, "aaabbb", "b")
 	testOutput(fncStrEndsWith, "aaabbb", "bb")
 
-	println(" #str_getcsv")
+	println("# str_getcsv")
 	testOutput(fncStrGetCsv, `a,b,c,,d,`)
 	testOutput(fncStrGetCsv, `ab,  "bx",cx","de`)
 	testOutput(fncStrGetCsv, `xy,"ab,cd"`)
@@ -202,53 +202,55 @@ func TestStrFunctions(t *testing.T) {
 	testOutput(fncStrGetCsv, `x,y`)
 	testOutput(fncStrGetCsv, `,`)
 
-	println(" #str_replace")
+	println("# str_replace")
 	testOutput(stdStrReplace, `cde`, `x`, `AbcdeF`)
 	testOutput(stdStrReplace, `cde`, `x`, `AbCdeF`)
 	testOutput(stdStrReplace, `cdef`, `x`, `Abcdef`)
 
-	println(" #str_ireplace")
+	println("# str_ireplace")
 	testOutput(stdStrIReplace, `cde`, `x`, `AbcdeF`)
 	testOutput(stdStrIReplace, `ef`, `x`, `AbcdeF`)
 
-	println(" #str_pad")
+	println("# str_pad")
 	testOutput(fncStrPad, `fo`, 9, `x`)
 	testOutput(fncStrPad, `fo`, 9, `x`, STR_PAD_RIGHT)
 	testOutput(fncStrPad, `fo`, 9, `x`, STR_PAD_BOTH)
 
-	println(" #str_repeat")
+	println("# str_repeat")
 	testOutput(fncStrRepeat, `wa`, 5)
 	testOutput(fncStrRepeat, `wa`, 5)
 	testOutput(fncStrRepeat, `a`, 0)
 	testOutput(fncStrRepeat, `a`, 1)
 	// testOutput(fncStrRepeat, `a`, -1)
 
-	println(" #str_shuffle")
+	println("# str_shuffle")
 	testOutput(fncStrShuffle, `abcdef`)
 
-	println(" #str_split")
+	println("# str_split")
 	testOutput(fncStrSplit, `abcdefghijk`, 1)
 	testOutput(fncStrSplit, `abcdefghijk`, 3)
 	testOutput(fncStrSplit, `abcdefghijk`, 100)
 
-	println(" #str_starts_with")
+	println("# str_starts_with")
 	testOutput(fncStrStartsWith, `abcdefghijk`, `abc`)
 
-	println(" #str_word_count")
+	println("# str_word_count")
 	testOutput(fncStrWordCount, `one two three`)
 	testOutput(fncStrWordCount, `one two three`, 1)
 	testOutput(fncStrWordCount, `one two three`, 2)
 	testOutput(fncStrWordCount, `one two three 112`, 2, "1")
 
-	println(" #strcasecmp")
-	testOutput(fncStrCaseCmp, `a`, `A`)
-	testOutput(fncStrCaseCmp, `a`, `Aa`)
-	testOutput(fncStrCaseCmp, `aAa`, `Aa`)
-	testOutput(fncStrCaseCmp, `aAa`, `b`)
-	testOutput(fncStrCaseCmp, `b`, `aaab`)
-	testOutput(fncStrCaseCmp, ``, ``)
+	println("# strcasecmp")
+	testOutput(fncStrCmp, `a`, `A`)
+	testOutput(fncStrCmp, `A`, `a`)
+	testOutput(fncStrCmp, `A`, `x`)
+	testOutput(fncStrCmp, `a`, `Aa`)
+	testOutput(fncStrCmp, `aAa`, `Aa`)
+	testOutput(fncStrCmp, `aAa`, `b`)
+	testOutput(fncStrCmp, `b`, `aaab`)
+	testOutput(fncStrCmp, ``, ``)
 
-	println(" #strcoll")
+	println("# strcoll")
 	testOutput(fncStrColl, `a`, `A`)
 	testOutput(fncStrColl, `a`, `Aa`)
 	testOutput(fncStrColl, `aAa`, `Aa`)
@@ -256,34 +258,34 @@ func TestStrFunctions(t *testing.T) {
 	testOutput(fncStrColl, `b`, `aaab`)
 	testOutput(fncStrColl, ``, ``)
 
-	println(" #substr")
+	println("# substr")
 	testOutput(fncSubstr, `abcde`, -1, 1)
 	testOutput(fncSubstr, `abcde`, 1, -1)
 	testOutput(fncSubstr, `abcde`, 10000, 1000)
 
-	println(" #strcspn")
+	println("# strcspn")
 	testOutput(fncStrCspn, `banana`, `a`)
 	testOutput(fncStrCspn, `banana`, `abcd`)
 	testOutput(fncStrCspn, `banana`, `z`)
 	testOutput(fncStrCspn, `abcdhelloabcd`, `a`, -9)
 	testOutput(fncStrCspn, `abcdhelloabcd`, `a`, -9, -5)
 
-	println(" #strstr")
+	println("# strstr")
 	testOutput(fncStrStr, `banana@gorilla.com`, `@`)
 	testOutput(fncStrStr, `banana@gorilla.com`, `@`, true)
 
-	println(" #strip_tags")
+	println("# strip_tags")
 	testOutput(fncStripTags, `>test`, `<p>`)
 	testOutput(fncStripTags, `<foo>test<p  blah><a><b>`, `<p><a>`)
 	testOutput(fncStripTags, `<hello><em>there`, phpArray("em"))
 
-	println(" #stripcslashes")
+	println("# stripcslashes")
 	testOutput(fncStripCSlashes, `test \x6159 \1334 \' \" \z \w \x`)
 	testOutput(fncStripCSlashes, `\1`)
 	testOutput(fncStripCSlashes, `\0`)
 	testOutput(fncStripCSlashes, `I\'d have a coffee.\nNot a problem.`)
 
-	println(" #stripos")
+	println("# stripos")
 	testOutput(fncStrIPos, `abcdefab`, `ab`)
 	testOutput(fncStrIPos, `Abcdefab`, `ab`)
 	testOutput(fncStrIPos, `Abcdefab`, `aB`)
@@ -291,7 +293,7 @@ func TestStrFunctions(t *testing.T) {
 	testOutput(fncStrIPos, `abcdefab`, `AB`, 3)
 	testOutput(fncStrIPos, `abcdefab`, `AB`, 10000)
 
-	println(" #strpos")
+	println("# strpos")
 	testOutput(fncStrPos, `abcdefab`, `ab`)
 	testOutput(fncStrPos, `Abcdefab`, `ab`)
 	testOutput(fncStrPos, `Abcdefab`, `aB`)
@@ -299,23 +301,23 @@ func TestStrFunctions(t *testing.T) {
 	testOutput(fncStrPos, `abcdefab`, `AB`, 3)
 	testOutput(fncStrPos, `abcdefab`, `AB`, 3, 1000)
 
-	println(" #stripslashes")
+	println("# stripslashes")
 	testOutput(fncStripSlashes, `foo\' \bar 000`)
 
-	println(" #stristr")
+	println("# stristr")
 	testOutput(fncStrIStr, `banana@gOrilla.com`, `@GO`)
 	testOutput(fncStrIStr, `banana@GOrilla.com`, `@Go`, true)
 
-	println(" #strnatcasecmp")
+	println("# strnatcasecmp")
 	testOutput(fncStrNatCaseCmp, `Apple`, `Banana`)
 	testOutput(fncStrNatCaseCmp, `Banana`, `Apple`)
 	testOutput(fncStrNatCaseCmp, `apple`, `Apple`)
 
-	println(" #strpbrk")
+	println("# strpbrk")
 	testOutput(fncStrPbrk, `This is a Simple text.`, `mi`)
 	testOutput(fncStrPbrk, `This is a Simple text.`, `S`)
 
-	println(" #strrev")
+	println("# strrev")
 	testOutput(fncStrRev, ``)
 	testOutput(fncStrRev, `a`)
 	testOutput(fncStrRev, `ab`)
@@ -323,7 +325,7 @@ func TestStrFunctions(t *testing.T) {
 	testOutput(fncStrRev, `abcdef`)
 	testOutput(fncStrRev, `:D 😭`)
 
-	println(" #strtok")
+	println("# strtok")
 	token := `/d`
 	testOutput(fncStrtok, `abc/def/ghi`, token)
 	testOutput(fncStrtok, token)
@@ -333,11 +335,27 @@ func TestStrFunctions(t *testing.T) {
 	testOutput(fncStrtok, token)
 
 	println("# substr_compare")
-	testOutput(fncSubstrCompare, "abcde", "bc", 1, 2); // 0
-	testOutput(fncSubstrCompare, "abcde", "de", -2, 2); // 0
-	testOutput(fncSubstrCompare, "abcde", "bcg", 1, 2, false); // 0
-	testOutput(fncSubstrCompare, "abcde", "BC", 1, 2, true); // 0
-	testOutput(fncSubstrCompare, "abcde", "bc", 1, 3); // 1
-	testOutput(fncSubstrCompare, "abcde", "cd", 1, 2); // -1
-	testOutput(fncSubstrCompare, "abcde", "abc", 5, 1); // warning
+	testOutput(fncSubstrCompare, "abcde", "bc", 1, 2)
+	testOutput(fncSubstrCompare, "abcde", "de", -2, 2)
+	testOutput(fncSubstrCompare, "abcde", "bcg", 1, 2, false)
+	testOutput(fncSubstrCompare, "abcde", "BC", 1, 2, true)
+	testOutput(fncSubstrCompare, "abcde", "bc", 1, 3)
+	testOutput(fncSubstrCompare, "abcde", "cd", 1, 2)
+	testOutput(fncSubstrCompare, "abcde", "abc", 5, 1)
+
+	println("# substr_count")
+	testOutput(fncSubstrCount, "abcde", "abc")
+	testOutput(fncSubstrCount, "abcdeabc", "abc")
+	testOutput(fncSubstrCount, "abcdeabc", "abcabc")
+	testOutput(fncSubstrCount, "abcabcabc", "abcabc")
+	// testOutput(fncSubstrCount, "a", ""); // error
+	testOutput(fncSubstrCount, "", "a")
+
+
+	println("# substr_replace")
+	testOutput(fncSubstrReplace, "abcdef", "XY", 1, 2)
+	testOutput(fncSubstrReplace, "abcdef", "XY", 1, -1)
+	testOutput(fncSubstrReplace, "abcdef", "XY", -2, -1)
+	testOutput(fncSubstrReplace, phpArray("abcdef", "qwerty"), "XY", 1)
+	testOutput(fncSubstrReplace, phpArray("abcdef", "qwerty"), phpArray("XY", "ZW"), 1)
 }

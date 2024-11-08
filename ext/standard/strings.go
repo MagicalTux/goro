@@ -869,6 +869,17 @@ func fncStrToLower(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return s.ToLower().ZVal(), nil
 }
 
+// > func string strtoupper ( string $string )
+func fncStrToUpper(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var s phpv.ZString
+	_, err := core.Expand(ctx, args, &s)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.ToUpper().ZVal(), nil
+}
+
 // > func string str_shuffle ( string $string )
 func fncStrShuffle(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var str phpv.ZString
@@ -1549,6 +1560,127 @@ func fncSubstrCompare(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZInt(result).ZVal(), nil
 }
 
+// > func int substr_cont ( string $haystack, string $needle, int $offset, ?int $length = null, bool $case_insensitive = false )
+func fncSubstrCount(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var haystackArg, needleArg phpv.ZString
+	var offsetArg *phpv.ZInt
+	var lengthArg *phpv.ZInt
+	var caseInsensitiveArg *phpv.ZBool
+	_, err := core.Expand(ctx, args, &haystackArg, &needleArg, &offsetArg, &lengthArg, &caseInsensitiveArg)
+	if err != nil {
+		return phpv.ZBool(false).ZVal(), err
+	}
+
+	if len(needleArg) == 0 {
+		return nil, errors.New("Argument #2 ($needle) cannot be empty")
+	}
+
+	haystack := []byte(haystackArg)
+	needle := []byte(needleArg)
+	offset := 0
+	length := len(haystack)
+	if offsetArg != nil {
+		offset = int(*offsetArg)
+	}
+	if lengthArg != nil {
+		length = int(*lengthArg)
+	}
+
+	count := 0
+	haystack = substr(haystack, offset, length)
+	for len(haystack) > 0 {
+		if bytes.Index(haystack, needle) == 0 {
+			count++
+			haystack = haystack[len(needle):]
+		} else {
+			haystack = haystack[1:]
+		}
+	}
+
+	return phpv.ZInt(count).ZVal(), nil
+}
+
+// > func mixed substr_replace ( mixed $string , mixed $replacement , mixed $start [, mixed $length ] )
+func fncSubstrReplace(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var inputArg, replacementArg *phpv.ZVal
+	var startArg phpv.ZInt
+	var lengthArg *phpv.ZInt
+	_, err := core.Expand(ctx, args, &inputArg, &replacementArg, &startArg, &lengthArg)
+	if err != nil {
+		return phpv.ZBool(false).ZVal(), err
+	}
+
+	var buf bytes.Buffer
+	start := int(startArg)
+
+	getReplacement := func(index int) ([]byte, error) {
+		var replacement []byte
+		if replacementArg.GetType() == phpv.ZtString {
+			replacement = []byte(replacementArg.AsString(ctx))
+		} else {
+			val, err := replacementArg.Array().OffsetGet(ctx, phpv.ZInt(index).Value())
+			if err != nil {
+				return nil, err
+			}
+			replacement = []byte(val.String())
+		}
+		return replacement, nil
+	}
+
+	if inputArg.GetType() == phpv.ZtString {
+		input := []byte(inputArg.AsString(ctx))
+		length := len(input)
+		if lengthArg != nil {
+			length = int(*lengthArg)
+		}
+
+		replacement, err := getReplacement(0)
+		if err != nil {
+			return nil, err
+		}
+
+		left, _, right := segment(input, start, length)
+		buf.Write(left)
+		buf.Write(replacement)
+		buf.Write(right)
+
+		return phpv.ZStr(buf.String()), nil
+	}
+
+	res := inputArg.Dup()
+
+	i := 0
+	it := res.NewIterator()
+	for ; it.Valid(ctx); it.Next(ctx) {
+		v, err := it.Current(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		input := []byte(v.String())
+		length := len(input)
+		if lengthArg != nil {
+			length = int(*lengthArg)
+		}
+
+		replacement, err := getReplacement(i)
+		if err != nil {
+			return nil, err
+		}
+
+		left, _, right := segment(input, start, length)
+		buf.Write(left)
+		buf.Write(replacement)
+		buf.Write(right)
+		v.Set(phpv.ZStr(buf.String()))
+		buf.Reset()
+
+		i++
+	}
+
+	return res, nil
+}
+
 func strReplaceCommon(ctx phpv.Context, args []*phpv.ZVal, caseSensitive bool) (*phpv.ZVal, error) {
 	var search, replace, subject *phpv.ZVal
 	var count *phpv.ZInt
@@ -1845,6 +1977,31 @@ func substr(str []byte, offset, length int) []byte {
 
 	return result
 }
+
+func segment(str []byte, offset, length int) ([]byte, []byte, []byte) {
+	var start, end int
+	if offset < 0 {
+		start = max(0, len(str)+offset)
+	} else {
+		start = min(offset, len(str))
+	}
+	if length < 0 {
+		end = max(0, len(str)+length)
+	} else {
+		end = min(start+length, len(str))
+	}
+
+	if start == 0 && end == len(str) {
+		return nil, str, nil
+	}
+
+	left := str[0:start]
+	mid := str[start:end]
+	right := str[end:]
+
+	return left, mid, right
+}
+
 func isNotLetter(c rune) bool {
 	return !unicode.IsLetter(c)
 }

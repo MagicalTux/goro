@@ -50,6 +50,10 @@ func (s ZString) ToLower() ZString {
 	return ZString(strings.ToLower(string(s)))
 }
 
+func (s ZString) ToUpper() ZString {
+	return ZString(strings.ToUpper(string(s)))
+}
+
 func (s ZString) LooksInt() bool {
 	var first bool
 	if len(s) == 0 {
