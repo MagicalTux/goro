@@ -323,7 +323,12 @@ func TestStrFunctions(t *testing.T) {
 	testOutput(fncStrRev, `abcdef`)
 	testOutput(fncStrRev, `:D 😭`)
 
-	// println(" #strtok")
-	// testOutput(fncStrtok, `abc/def`, `/`)
-	// testOutput(fncStrtok, ` `)
+	println(" #strtok")
+	token := `/d`
+	testOutput(fncStrtok, `abc/def/ghi`, token)
+	testOutput(fncStrtok, token)
+	testOutput(fncStrtok, token)
+	testOutput(fncStrtok, token)
+	testOutput(fncStrtok, token)
+	testOutput(fncStrtok, token)
 }

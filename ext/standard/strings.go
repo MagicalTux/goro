@@ -1472,6 +1472,17 @@ const (
 	STRTOK_LAST_INDEX
 )
 
+type strTokStateType struct {
+	lastString *phpv.ZString
+	lastIndex  int
+}
+
+// TODO: move to a context state instead of global state
+var strTokTempState = strTokStateType{
+	lastString: nil,
+	lastIndex:  -1,
+}
+
 // > func string|false strtok( string $string, string $token )
 // > func string|false strtok( string $token )
 func fncStrtok(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
@@ -1482,78 +1493,44 @@ func fncStrtok(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZBool(false).ZVal(), err
 	}
 
-	// TODO: use a global state for now instead of using context
-
 	index := 0
 	startIndex := 0
-	if ok, _ := ctx.OffsetExists(ctx, STRTOK_LAST_INDEX); ok {
-		val, err := ctx.OffsetGet(ctx, STRTOK_LAST_INDEX)
-		if err != nil {
-			return nil, err
-		}
-		if val.GetType() == phpv.ZtInt {
-			startIndex = int(val.AsInt(ctx))
-		}
-	}
-
-	var str string
-	var token string
+	var str []byte
+	var token []byte
 	if tokenArg != nil {
-		str = string(strArg)
-		token = string(*tokenArg)
-
+		str = []byte(strArg)
+		token = []byte(*tokenArg)
+		strTokTempState.lastString = &strArg
 	} else {
-		token = string(str)
-
-		if ok, _ := ctx.OffsetExists(ctx, STRTOK_ARG); ok {
-			val, err := ctx.OffsetGet(ctx, STRTOK_ARG)
-			if err != nil {
-				return nil, err
-			}
-			if val.GetType() != phpv.ZtString {
-				return phpv.ZBool(false).ZVal(), nil
-			} else {
-				str = string(val.AsString(ctx))
-			}
+		token = []byte(strArg)
+		if strTokTempState.lastString == nil {
+			println("WARN: Both arguments must be provided when starting tokenization")
+			return phpv.ZBool(false).ZVal(), nil
 		}
+		str = []byte(*strTokTempState.lastString)
+		startIndex = max(strTokTempState.lastIndex, 0)
 	}
 
-	strBytes := []byte(str)
-	tokenBytes := []byte(token)
-
-	// skip delimeters
-	for index = startIndex; index < len(strBytes); index++ {
-		if !bytes.ContainsRune(tokenBytes, rune(strBytes[index])) {
+	// skip token delimeters
+	for ; startIndex < len(str); startIndex++ {
+		if !bytes.ContainsRune(token, rune(str[startIndex])) {
 			break
 		}
 	}
-	for ; index < len(strBytes); index++ {
-		if bytes.ContainsRune(tokenBytes, rune(strBytes[index])) {
+	// read until token delimeter
+	for index = startIndex; index < len(str); index++ {
+		if bytes.ContainsRune(token, rune(str[index])) {
 			break
 		}
 	}
 
-	if index >= len(strBytes) {
-		err = ctx.OffsetSet(ctx, STRTOK_LAST_INDEX, nil)
-		if err != nil {
-			return nil, err
-		}
-		err := ctx.OffsetSet(ctx, STRTOK_ARG, nil)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		err = ctx.OffsetSet(ctx, STRTOK_LAST_INDEX, phpv.ZInt(index).ZVal())
-		if err != nil {
-			return nil, err
-		}
-		err := ctx.OffsetSet(ctx, STRTOK_ARG, strArg.ZVal())
-		if err != nil {
-			return nil, err
-		}
+	result := string(str[startIndex:index])
+
+	strTokTempState.lastIndex = index
+	if index >= len(str) && result == "" {
+		return phpv.ZBool(false).ZVal(), nil
 	}
 
-	result := string(strBytes[startIndex:index])
 	return phpv.ZStr(result), nil
 }
 
