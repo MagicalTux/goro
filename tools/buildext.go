@@ -37,7 +37,7 @@ func main() {
 	}
 
 	entries := []ExtEntry{
-		{dirname: "core", destfile: "core-ext.go"},
+		{dirname: "core", destfile: "ext-core.go"},
 	}
 	files, err := os.ReadDir("ext")
 	if err != nil {
@@ -97,15 +97,16 @@ import (%s)
 
 func init() {
 	phpctx.RegisterExt(&phpctx.Ext{
-		Name:     "standard",
-		Version:   %s,
-		Classes:   []phpv.ZClass{%s},
+		Name:    "%s",
+		Version: %s,
+		Classes: []phpv.ZClass{%s},
 		Functions: map[string]*phpctx.ExtFunction{%s},
 		Constants: map[phpv.ZString]phpv.Val{%s},
 	})
 }
 	`
-
+	pkg := path.Base(ext.Dirname)
+	extName := pkg
 	version := "VERSION"
 	importSet := map[string]struct{}{
 		// "github.com/MagicalTux/goro/core":        {},
@@ -116,6 +117,8 @@ func init() {
 	if ext.Dirname != "core" {
 		importSet["github.com/MagicalTux/goro/core"] = struct{}{}
 		version = "core.VERSION"
+	} else {
+		extName = "Core"
 	}
 
 	var buf bytes.Buffer
@@ -127,6 +130,12 @@ func init() {
 	if len(ext.Functions) > 0 {
 		buf.WriteRune('\n')
 	}
+
+	maxLen := 0
+	for _, phpIdent := range funcNames {
+		maxLen = max(maxLen, len(phpIdent))
+	}
+
 	for _, phpIdent := range funcNames {
 		decl := ext.Functions[phpIdent]
 		if decl.Package != ext.Dirname {
@@ -139,8 +148,9 @@ func init() {
 			goIdent = path.Base(decl.Package) + "." + goIdent
 		}
 
-		format := "\t\t\t" + `"%s": {Func: %s, Args: []*phpctx.ExtFunctionArg{}},` + "\n"
-		buf.WriteString(fmt.Sprintf(format, phpIdent, goIdent))
+		indent := strings.Repeat(" ", maxLen-len(phpIdent)+1)
+		format := "\t\t\t" + `"%s":%s{Func: %s, Args: []*phpctx.ExtFunctionArg{}},` + "\n"
+		buf.WriteString(fmt.Sprintf(format, phpIdent, indent, goIdent))
 	}
 	if len(ext.Functions) > 0 {
 		buf.WriteString("\t\t")
@@ -175,6 +185,10 @@ func init() {
 	if len(ext.Constants) > 0 {
 		buf.WriteRune('\n')
 	}
+	maxLen = 0
+	for _, constant := range constants {
+		maxLen = max(maxLen, len(constant))
+	}
 	for _, constant := range constants {
 		decl := ext.Constants[constant]
 		if decl.Package != ext.Dirname {
@@ -187,8 +201,9 @@ func init() {
 			goIdent = path.Base(decl.Package) + "." + goIdent
 		}
 
-		format := "\t\t\t" + `"%s": %s,` + "\n"
-		buf.WriteString(fmt.Sprintf(format, constant, goIdent))
+		indent := strings.Repeat(" ", maxLen-len(constant)+1)
+		format := "\t\t\t" + `"%s":%s%s,` + "\n"
+		buf.WriteString(fmt.Sprintf(format, constant, indent, goIdent))
 	}
 	if len(ext.Constants) > 0 {
 		buf.WriteString("\t\t")
@@ -211,14 +226,11 @@ func init() {
 		buf.WriteString(imp)
 		buf.WriteString("\"\n")
 	}
-	if len(importSet) > 0 {
-		buf.WriteRune('\n')
-	}
 	importStr = buf.String()
 	buf.Reset()
 
-	output := fmt.Sprintf(template, path.Base(ext.Dirname), importStr, version, classStr, functionStr, constantStr)
-	output = strings.TrimSpace(output)
+	output := fmt.Sprintf(template, pkg, importStr, extName, version, classStr, functionStr, constantStr)
+	output = strings.TrimSpace(output) + "\n"
 	w.Write([]byte(output))
 }
 
