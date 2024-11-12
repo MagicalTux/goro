@@ -1,6 +1,15 @@
 package core
 
+import (
+	"runtime"
+
+	"github.com/MagicalTux/goro/core/phpv"
+)
+
 // TODO improve these
 
-//> const PHP_OS: phpv.ZString(runtime.GOOS)
-//> const PHP_OS_FAMILY: phpv.ZString(runtime.GOOS)
+// > const
+const (
+	PHP_OS        = phpv.ZString(runtime.GOOS)
+	PHP_OS_FAMILY = phpv.ZString(runtime.GOOS)
+)

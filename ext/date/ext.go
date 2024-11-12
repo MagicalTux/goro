@@ -14,7 +14,7 @@ func init() {
 		Version: core.VERSION,
 		Classes: []phpv.ZClass{},
 		Functions: map[string]*phpctx.ExtFunction{
-			"strftime": &phpctx.ExtFunction{Func: fncStrftime, Args: []*phpctx.ExtFunctionArg{}},
+			"strftime": {Func: fncStrftime, Args: []*phpctx.ExtFunctionArg{}},
 		},
 		Constants: map[phpv.ZString]phpv.Val{},
 	})

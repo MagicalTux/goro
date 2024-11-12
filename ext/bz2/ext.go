@@ -14,7 +14,7 @@ func init() {
 		Version: core.VERSION,
 		Classes: []phpv.ZClass{},
 		Functions: map[string]*phpctx.ExtFunction{
-			"bzdecompress": &phpctx.ExtFunction{Func: fncBzDecompress, Args: []*phpctx.ExtFunctionArg{}},
+			"bzdecompress": {Func: fncBzDecompress, Args: []*phpctx.ExtFunctionArg{}},
 		},
 		Constants: map[phpv.ZString]phpv.Val{},
 	})

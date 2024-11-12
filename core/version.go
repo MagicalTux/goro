@@ -8,12 +8,15 @@ import (
 // php targetted version
 const VERSION = "7.3.0"
 
-//> const PHP_VERSION: phpv.ZString(VERSION) // version of PHP
-//> const PHP_MAJOR_VERSION: phpv.ZInt(7)
-//> const PHP_MINOR_VERSION: phpv.ZInt(3)
-//> const PHP_RELEASE_VERSION: phpv.ZInt(0)
-//> const PHP_EXTRA_VERSION: phpv.ZString("")
-//> const PHP_VERSION_ID: phpv.ZInt(70300)
+// > const
+const (
+	PHP_VERSION         = phpv.ZString(VERSION) // version of PHP
+	PHP_MAJOR_VERSION   = phpv.ZInt(7)
+	PHP_MINOR_VERSION   = phpv.ZInt(3)
+	PHP_RELEASE_VERSION = phpv.ZInt(0)
+	PHP_EXTRA_VERSION   = phpv.ZString("")
+	PHP_VERSION_ID      = phpv.ZInt(70300)
+)
 
 // > func string phpversion ([ string $extension ] )
 func stdFuncPhpVersion(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {

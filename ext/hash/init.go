@@ -11,7 +11,8 @@ import (
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
-//> const HASH_HMAC: phpv.ZInt(1)
+// > const
+const HASH_HMAC = phpv.ZInt(1)
 
 // > func HashContext hash_init ( string $algo [, int $options = 0 [, string $key = NULL ]] )
 func fncHashInit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {

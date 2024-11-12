@@ -1,5 +1,7 @@
 package json
 
+import "github.com/MagicalTux/goro/core/phpv"
+
 //go:generate stringer -type=JsonError,JsonEncOpt -output stringer.go
 
 type JsonEncOpt int
@@ -47,30 +49,33 @@ const (
 	ErrUtf16
 )
 
-//> const JSON_HEX_TAG: phpv.ZInt(HexTag)
-//> const JSON_HEX_AMP: phpv.ZInt(HexAmp)
-//> const JSON_HEX_APOS: phpv.ZInt(HexApos)
-//> const JSON_HEX_QUOT: phpv.ZInt(HexQuot)
-//> const JSON_FORCE_OBJECT: phpv.ZInt(ForceObject)
-//> const JSON_NUMERIC_CHECK: phpv.ZInt(NumericCheck)
-//> const JSON_UNESCAPED_SLASHES: phpv.ZInt(UnescapedSlashes)
-//> const JSON_PRETTY_PRINT: phpv.ZInt(PrettyPrint)
-//> const JSON_UNESCAPED_UNICODE: phpv.ZInt(UnescapedUnicode)
-//> const JSON_PARTIAL_OUTPUT_ON_ERROR: phpv.ZInt(PartialOutputOnError)
-//> const JSON_PRESERVE_ZERO_FRACTION: phpv.ZInt(PreserveZeroFraction)
-//> const JSON_UNESCAPED_LINE_TERMINATORS: phpv.ZInt(UnescapedEOL)
-//> const JSON_OBJECT_AS_ARRAY: phpv.ZInt(ObjectAsArray)
-//> const JSON_BIGINT_AS_STRING: phpv.ZInt(BigintAsString)
-//> const JSON_INVALID_UTF8_IGNORE: phpv.ZInt(InvalidUtf8Ignore)
-//> const JSON_INVALID_UTF8_SUBSTITUTE: phpv.ZInt(InvalidUtf8Substitute)
-//> const JSON_ERROR_NONE: phpv.ZInt(ErrNone)
-//> const JSON_ERROR_DEPTH: phpv.ZInt(ErrDepth)
-//> const JSON_ERROR_STATE_MISMATCH: phpv.ZInt(ErrStateMismatch)
-//> const JSON_ERROR_CTRL_CHAR: phpv.ZInt(ErrCtrlChar)
-//> const JSON_ERROR_SYNTAX: phpv.ZInt(ErrSyntax)
-//> const JSON_ERROR_UTF8: phpv.ZInt(ErrUtf8)
-//> const JSON_ERROR_RECURSION: phpv.ZInt(ErrRecursion)
-//> const JSON_ERROR_INF_OR_NAN: phpv.ZInt(ErrInfOrNan)
-//> const JSON_ERROR_UNSUPPORTED_TYPE: phpv.ZInt(ErrUnsupportedType)
-//> const JSON_ERROR_INVALID_PROPERTY_NAME: phpv.ZInt(ErrInvalidPropName)
-//> const JSON_ERROR_UTF16: phpv.ZInt(ErrUtf16)
+// > const
+const (
+	JSON_HEX_TAG                     = phpv.ZInt(HexTag)
+	JSON_HEX_AMP                     = phpv.ZInt(HexAmp)
+	JSON_HEX_APOS                    = phpv.ZInt(HexApos)
+	JSON_HEX_QUOT                    = phpv.ZInt(HexQuot)
+	JSON_FORCE_OBJECT                = phpv.ZInt(ForceObject)
+	JSON_NUMERIC_CHECK               = phpv.ZInt(NumericCheck)
+	JSON_UNESCAPED_SLASHES           = phpv.ZInt(UnescapedSlashes)
+	JSON_PRETTY_PRINT                = phpv.ZInt(PrettyPrint)
+	JSON_UNESCAPED_UNICODE           = phpv.ZInt(UnescapedUnicode)
+	JSON_PARTIAL_OUTPUT_ON_ERROR     = phpv.ZInt(PartialOutputOnError)
+	JSON_PRESERVE_ZERO_FRACTION      = phpv.ZInt(PreserveZeroFraction)
+	JSON_UNESCAPED_LINE_TERMINATORS  = phpv.ZInt(UnescapedEOL)
+	JSON_OBJECT_AS_ARRAY             = phpv.ZInt(ObjectAsArray)
+	JSON_BIGINT_AS_STRING            = phpv.ZInt(BigintAsString)
+	JSON_INVALID_UTF8_IGNORE         = phpv.ZInt(InvalidUtf8Ignore)
+	JSON_INVALID_UTF8_SUBSTITUTE     = phpv.ZInt(InvalidUtf8Substitute)
+	JSON_ERROR_NONE                  = phpv.ZInt(ErrNone)
+	JSON_ERROR_DEPTH                 = phpv.ZInt(ErrDepth)
+	JSON_ERROR_STATE_MISMATCH        = phpv.ZInt(ErrStateMismatch)
+	JSON_ERROR_CTRL_CHAR             = phpv.ZInt(ErrCtrlChar)
+	JSON_ERROR_SYNTAX                = phpv.ZInt(ErrSyntax)
+	JSON_ERROR_UTF8                  = phpv.ZInt(ErrUtf8)
+	JSON_ERROR_RECURSION             = phpv.ZInt(ErrRecursion)
+	JSON_ERROR_INF_OR_NAN            = phpv.ZInt(ErrInfOrNan)
+	JSON_ERROR_UNSUPPORTED_TYPE      = phpv.ZInt(ErrUnsupportedType)
+	JSON_ERROR_INVALID_PROPERTY_NAME = phpv.ZInt(ErrInvalidPropName)
+	JSON_ERROR_UTF16                 = phpv.ZInt(ErrUtf16)
+)

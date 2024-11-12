@@ -18,17 +18,22 @@ const (
 	BufferRemovable
 )
 
-//> const PHP_OUTPUT_HANDLER_START: phpv.ZInt(phpctx.BufferStart)
-//> const PHP_OUTPUT_HANDLER_WRITE: phpv.ZInt(phpctx.BufferWrite)
-//> const PHP_OUTPUT_HANDLER_FLUSH: phpv.ZInt(phpctx.BufferFlush)
-//> const PHP_OUTPUT_HANDLER_CLEAN: phpv.ZInt(phpctx.BufferClean)
-//> const PHP_OUTPUT_HANDLER_FINAL: phpv.ZInt(phpctx.BufferFinal)
-//> const PHP_OUTPUT_HANDLER_CONT: phpv.ZInt(phpctx.BufferWrite)
-//> const PHP_OUTPUT_HANDLER_END: phpv.ZInt(phpctx.BufferFinal)
-//> const PHP_OUTPUT_HANDLER_CLEANABLE: phpv.ZInt(phpctx.BufferCleanable)
-//> const PHP_OUTPUT_HANDLER_FLUSHABLE: phpv.ZInt(phpctx.BufferFlushable)
-//> const PHP_OUTPUT_HANDLER_REMOVABLE: phpv.ZInt(phpctx.BufferRemovable)
-//> const PHP_OUTPUT_HANDLER_STDFLAGS: phpv.ZInt(phpctx.BufferCleanable|phpctx.BufferFlushable|phpctx.BufferRemovable)
+// > const
+const (
+	PHP_OUTPUT_HANDLER_START     = phpv.ZInt(BufferStart)
+	PHP_OUTPUT_HANDLER_WRITE     = phpv.ZInt(BufferWrite)
+	PHP_OUTPUT_HANDLER_FLUSH     = phpv.ZInt(BufferFlush)
+	PHP_OUTPUT_HANDLER_CLEAN     = phpv.ZInt(BufferClean)
+	PHP_OUTPUT_HANDLER_FINAL     = phpv.ZInt(BufferFinal)
+	PHP_OUTPUT_HANDLER_CONT      = phpv.ZInt(BufferWrite)
+	PHP_OUTPUT_HANDLER_END       = phpv.ZInt(BufferFinal)
+	PHP_OUTPUT_HANDLER_CLEANABLE = phpv.ZInt(BufferCleanable)
+	PHP_OUTPUT_HANDLER_FLUSHABLE = phpv.ZInt(BufferFlushable)
+	PHP_OUTPUT_HANDLER_REMOVABLE = phpv.ZInt(BufferRemovable)
+)
+
+// > const
+var PHP_OUTPUT_HANDLER_STDFLAGS = phpv.ZInt(BufferCleanable | BufferFlushable | BufferRemovable)
 
 type Buffer struct {
 	w       io.Writer

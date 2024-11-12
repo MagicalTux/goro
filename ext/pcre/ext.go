@@ -14,8 +14,8 @@ func init() {
 		Version: core.VERSION,
 		Classes: []phpv.ZClass{},
 		Functions: map[string]*phpctx.ExtFunction{
-			"preg_quote":   &phpctx.ExtFunction{Func: pregQuote, Args: []*phpctx.ExtFunctionArg{}},
-			"preg_replace": &phpctx.ExtFunction{Func: pregReplace, Args: []*phpctx.ExtFunctionArg{}},
+			"preg_quote":   {Func: pregQuote, Args: []*phpctx.ExtFunctionArg{}},
+			"preg_replace": {Func: pregReplace, Args: []*phpctx.ExtFunctionArg{}},
 		},
 		Constants: map[phpv.ZString]phpv.Val{},
 	})

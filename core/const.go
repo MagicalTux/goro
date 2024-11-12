@@ -1,39 +1,49 @@
 package core
 
-// some constants
+import (
+	"math"
 
-//> const TRUE: phpv.ZBool(true)
-//> const FALSE: phpv.ZBool(false)
-//> const NULL: phpv.ZNull{}
-//> const ZEND_THREAD_SAFE: phpv.ZBool(true) // consider things thread safe
-//> const PHP_ZTS: phpv.ZInt(1)
-//> const DEFAULT_INCLUDE_PATH: phpv.ZString(".:")
-//> const DIRECTORY_SEPARATOR: phpv.ZString("/")
-//> const PHP_EOL: phpv.ZString("\n")
-//> const PHP_INT_MAX: phpv.ZInt(math.MaxInt64)
-//> const PHP_INT_MIN: phpv.ZInt(math.MinInt64)
-//> const PHP_INT_SIZE: phpv.ZInt(8)
-// standard values
-//> const PHP_FD_SETSIZE: phpv.ZInt(1024)
-//> const PHP_MAXPATHLEN: phpv.ZInt(4096)
-//> const PHP_FLOAT_DIG: phpv.ZInt(15)
-//> const PHP_FLOAT_EPSILON: phpv.ZFloat(2.220446049250313e-16)
-//> const PHP_FLOAT_MAX: phpv.ZFloat(math.MaxFloat64)
-//> const PHP_FLOAT_MIN: phpv.ZFloat(math.SmallestNonzeroFloat64)
+	"github.com/MagicalTux/goro/core/phpv"
+)
 
-//> const E_ERROR: phpv.ZInt(phpv.E_ERROR)
-//> const E_WARNING: phpv.ZInt(phpv.E_WARNING)
-//> const E_PARSE: phpv.ZInt(phpv.E_PARSE)
-//> const E_NOTICE: phpv.ZInt(phpv.E_NOTICE)
-//> const E_CORE_ERROR: phpv.ZInt(phpv.E_CORE_ERROR)
-//> const E_CORE_WARNING: phpv.ZInt(phpv.E_CORE_WARNING)
-//> const E_COMPILE_ERROR: phpv.ZInt(phpv.E_COMPILE_ERROR)
-//> const E_COMPILE_WARNING: phpv.ZInt(phpv.E_COMPILE_WARNING)
-//> const E_USER_ERROR: phpv.ZInt(phpv.E_USER_ERROR)
-//> const E_USER_WARNING: phpv.ZInt(phpv.E_USER_WARNING)
-//> const E_USER_NOTICE: phpv.ZInt(phpv.E_USER_NOTICE)
-//> const E_STRICT: phpv.ZInt(phpv.E_STRICT)
-//> const E_RECOVERABLphpv.E_ERROR: phpv.ZInt(phpv.E_RECOVERABLE_ERROR)
-//> const E_DEPRECATED: phpv.ZInt(phpv.E_DEPRECATED)
-//> const E_USER_DEPRECATED: phpv.ZInt(phpv.E_USER_DEPRECATED)
-//> const E_ALL: phpv.ZInt(phpv.E_ALL)
+// > const
+var NULL = phpv.ZNull{}
+
+// > const
+const (
+	TRUE                 = phpv.ZBool(true)
+	FALSE                = phpv.ZBool(false)
+	ZEND_THREAD_SAFE     = phpv.ZBool(true) // consider things thread safe
+	PHP_ZTS              = phpv.ZInt(1)
+	DEFAULT_INCLUDE_PATH = phpv.ZString(".:")
+	DIRECTORY_SEPARATOR  = phpv.ZString("/")
+	PHP_EOL              = phpv.ZString("\n")
+	PHP_INT_MAX          = phpv.ZInt(math.MaxInt64)
+	PHP_INT_MIN          = phpv.ZInt(math.MinInt64)
+	PHP_INT_SIZE         = phpv.ZInt(8)
+
+	// standard values
+	PHP_FD_SETSIZE    = phpv.ZInt(1024)
+	PHP_MAXPATHLEN    = phpv.ZInt(4096)
+	PHP_FLOAT_DIG     = phpv.ZInt(15)
+	PHP_FLOAT_EPSILON = phpv.ZFloat(2.220446049250313e-16)
+	PHP_FLOAT_MAX     = phpv.ZFloat(math.MaxFloat64)
+	PHP_FLOAT_MIN     = phpv.ZFloat(math.SmallestNonzeroFloat64)
+
+	E_ERROR             = phpv.ZInt(phpv.E_ERROR)
+	E_WARNING           = phpv.ZInt(phpv.E_WARNING)
+	E_PARSE             = phpv.ZInt(phpv.E_PARSE)
+	E_NOTICE            = phpv.ZInt(phpv.E_NOTICE)
+	E_CORE_ERROR        = phpv.ZInt(phpv.E_CORE_ERROR)
+	E_CORE_WARNING      = phpv.ZInt(phpv.E_CORE_WARNING)
+	E_COMPILE_ERROR     = phpv.ZInt(phpv.E_COMPILE_ERROR)
+	E_COMPILE_WARNING   = phpv.ZInt(phpv.E_COMPILE_WARNING)
+	E_USER_ERROR        = phpv.ZInt(phpv.E_USER_ERROR)
+	E_USER_WARNING      = phpv.ZInt(phpv.E_USER_WARNING)
+	E_USER_NOTICE       = phpv.ZInt(phpv.E_USER_NOTICE)
+	E_STRICT            = phpv.ZInt(phpv.E_STRICT)
+	E_RECOVERABLE_ERROR = phpv.ZInt(phpv.E_RECOVERABLE_ERROR)
+	E_DEPRECATED        = phpv.ZInt(phpv.E_DEPRECATED)
+	E_USER_DEPRECATED   = phpv.ZInt(phpv.E_USER_DEPRECATED)
+	E_ALL               = phpv.ZInt(phpv.E_ALL)
+)
