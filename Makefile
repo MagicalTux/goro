@@ -21,9 +21,7 @@ http:
 	./sapi/php-httpd/php-httpd
 
 buildext:
-	$(RM) sapi/php-cli/php-cli
-	make sapi/php-cli/php-cli
-	./sapi/php-cli/php-cli tools/buildext.php
+	go run tools/buildext.go
 
 deps:
 	go get -v .
