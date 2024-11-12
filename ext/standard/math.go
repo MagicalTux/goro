@@ -8,31 +8,34 @@ import (
 )
 
 // from: http://php.net/manual/en/math.constants.php
-//> const INF:                 phpv.ZFloat(math.Inf(0)) // positive infinite
-//> const NAN:                 phpv.ZFloat(math.NaN())
-//> const M_PI:                phpv.ZFloat(math.Pi)     // Pi
-//> const M_E:                 phpv.ZFloat(math.E)      // e
-//> const M_LOG2E:             phpv.ZFloat(math.Log2E)  // log_2 e
-//> const M_LOG10E:            phpv.ZFloat(math.Log10E) // log_10 e
-//> const M_LN2:               phpv.ZFloat(math.Ln2)    // log_e 2
-//> const M_PI_2:              phpv.ZFloat(math.Pi / 2)
-//> const M_PI_4:              phpv.ZFloat(math.Pi / 4)
-//> const M_1_PI:              phpv.ZFloat(1 / math.Pi)
-//> const M_2_PI:              phpv.ZFloat(2 / math.Pi)
-//> const M_SQRTPI:            phpv.ZFloat(math.Sqrt(math.Pi)) // PHP 5.2.0
-//> const M_2_SQRTPI:          phpv.ZFloat(2 / math.Sqrt(math.Pi))
-//> const M_SQRT2:             phpv.ZFloat(math.Sqrt(2))
-//> const M_SQRT3:             phpv.ZFloat(math.Sqrt(3)) // PHP 5.2.0
-//> const M_SQRT1_2:           phpv.ZFloat(1 / math.Sqrt(2))
-//> const M_LNPI:              phpv.ZFloat(math.Log(math.Pi))
-//> const M_EULER:             phpv.ZFloat(0.57721566490153286061) // Euler constant
+// > const
+var (
+	INF        = phpv.ZFloat(math.Inf(0)) // positive infinite
+	NAN        = phpv.ZFloat(math.NaN())
+	M_PI       = phpv.ZFloat(math.Pi)     // Pi
+	M_E        = phpv.ZFloat(math.E)      // e
+	M_LOG2E    = phpv.ZFloat(math.Log2E)  // log_2 e
+	M_LOG10E   = phpv.ZFloat(math.Log10E) // log_10 e
+	M_LN2      = phpv.ZFloat(math.Ln2)    // log_e 2
+	M_PI_2     = phpv.ZFloat(math.Pi / 2)
+	M_PI_4     = phpv.ZFloat(math.Pi / 4)
+	M_1_PI     = phpv.ZFloat(1 / math.Pi)
+	M_2_PI     = phpv.ZFloat(2 / math.Pi)
+	M_SQRTPI   = phpv.ZFloat(math.Sqrt(math.Pi)) // PHP 5.2.0
+	M_2_SQRTPI = phpv.ZFloat(2 / math.Sqrt(math.Pi))
+	M_SQRT2    = phpv.ZFloat(math.Sqrt(2))
+	M_SQRT3    = phpv.ZFloat(math.Sqrt(3)) // PHP 5.2.0
+	M_SQRT1_2  = phpv.ZFloat(1 / math.Sqrt(2))
+	M_LNPI     = phpv.ZFloat(math.Log(math.Pi))
+	M_EULER    = phpv.ZFloat(0.57721566490153286061) // Euler constant
 
-//> const PHP_ROUND_HALF_UP:   phpv.ZInt(1)                        // Round halves up
-//> const PHP_ROUND_HALF_DOWN: phpv.ZInt(2)                        // Round halves down
-//> const PHP_ROUND_HALF_EVEN: phpv.ZInt(3)                        // Round halves to even numbers
-//> const PHP_ROUND_HALF_ODD:  phpv.ZInt(4)                        // Round halves to odd numbers
+	PHP_ROUND_HALF_UP   = phpv.ZInt(1) // Round halves up
+	PHP_ROUND_HALF_DOWN = phpv.ZInt(2) // Round halves down
+	PHP_ROUND_HALF_EVEN = phpv.ZInt(3) // Round halves to even numbers
+	PHP_ROUND_HALF_ODD  = phpv.ZInt(4) // Round halves to odd numbers
 
-//> const M_PHI: phpv.ZFloat(math.Phi) // specific to this implementation of PHP
+	M_PHI = phpv.ZFloat(math.Phi) // specific to this implementation of PHP
+)
 
 // > func number abs ( mixed $number )
 func mathAbs(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {

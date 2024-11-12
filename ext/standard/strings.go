@@ -22,13 +22,11 @@ import (
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
-// > const STR_PAD_LEFT:                 phpv.ZInt(0)
-// > const STR_PAD_RIGHT:                phpv.ZInt(1)
-// > const STR_PAD_BOTH:                 phpv.ZInt(2)
-const (
-	STR_PAD_LEFT = iota
-	STR_PAD_RIGHT
-	STR_PAD_BOTH
+// > const
+var (
+	STR_PAD_LEFT  = phpv.ZInt(0)
+	STR_PAD_RIGHT = phpv.ZInt(1)
+	STR_PAD_BOTH  = phpv.ZInt(2)
 )
 
 var (
@@ -816,7 +814,7 @@ func fncStrPad(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		padStr = string(*padStrArg)
 	}
 	if padTypeArg != nil {
-		padType = int(*padTypeArg)
+		padType = *padTypeArg
 	}
 
 	var buf bytes.Buffer
