@@ -22,6 +22,8 @@ import (
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
+const trimChars = " \n\r\t\v\000\x0B"
+
 // > const
 var (
 	STR_PAD_LEFT  = phpv.ZInt(0)
@@ -314,7 +316,7 @@ func fncStrLcFirst(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 }
 
-// > func string ltrim( string $string, string $characters = " \n\r\t\v\x00" )
+// > func string ltrim ( string $str [, string $character_mask ] )
 func fncStrLtrim(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var str phpv.ZString
 	var charsArg *phpv.ZString
@@ -324,7 +326,7 @@ func fncStrLtrim(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	chars := " \n\r\t\v\x00"
+	chars := trimChars
 	if charsArg != nil {
 		chars = string(*charsArg)
 	}
@@ -333,7 +335,7 @@ func fncStrLtrim(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZString(result).ZVal(), nil
 }
 
-// > func string rtrim( string $string, string $characters = " \n\r\t\v\x00" )
+// > func string rtrim ( string $str [, string $character_mask ] )
 func fncStrRtrim(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var str phpv.ZString
 	var charsArg *phpv.ZString
@@ -343,12 +345,31 @@ func fncStrRtrim(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	chars := " \n\r\t\v\000"
+	chars := trimChars
 	if charsArg != nil {
 		chars = string(*charsArg)
 	}
 
 	result := strings.TrimRight(string(str), chars)
+	return phpv.ZString(result).ZVal(), nil
+}
+
+// > func string trim ( string $str [, string $character_mask ] )
+func fncStrTrim(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var str phpv.ZString
+	var charsArg *phpv.ZString
+
+	_, err := core.Expand(ctx, args, &str, &charsArg)
+	if err != nil {
+		return nil, err
+	}
+
+	chars := trimChars
+	if charsArg != nil {
+		chars = string(*charsArg)
+	}
+
+	result := strings.Trim(string(str), chars)
 	return phpv.ZString(result).ZVal(), nil
 }
 
@@ -1679,6 +1700,118 @@ func fncSubstrReplace(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return res, nil
 }
 
+// > func string wordwrap ( string $str [, int $width = 75 [, string $break = "\n" [, bool $cut = FALSE ]]] )
+func fncWordWrap(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var strArg phpv.ZString
+	var widthArg *phpv.ZInt
+	var breakStrArg *phpv.ZString
+	var cutArg *phpv.ZBool
+	_, err := core.Expand(ctx, args, &strArg, &widthArg, &breakStrArg, &cutArg)
+	if err != nil {
+		return phpv.ZBool(false).ZVal(), err
+	}
+
+	str := []byte(strArg)
+	width := 75
+	breakStr := "\n"
+	cut := false
+	if widthArg != nil {
+		width = int(*widthArg)
+	}
+	if breakStrArg != nil {
+		breakStr = string(*breakStrArg)
+	}
+	if cutArg != nil {
+		cut = bool(*cutArg)
+	}
+
+	// It wasn't explicitly defined, but word here means
+	// anything separated only by " " 0x20 (doesn't include other whitespaces)
+
+	// Beyond the seemingly simple wordwrap
+	// as described by the documentation, lies
+	// a really quirky, untuitive behaviour when
+	// it comes to edge cases, particularly with
+	// strings with erratic long sequences of whitespaces.
+	// This is the simplest implementation I could
+	// muster that faithfully reproduces the original
+	// wordwrap implementation. Modify or optimize
+	// at your own peril. Just kidding. Or not.
+	var buf bytes.Buffer
+	if cut {
+		i := 0
+		for i < len(str) {
+			j := min(i+width, len(str)-1)
+
+			for str[j] != ' ' && j > i {
+				j--
+			}
+
+			if i == j {
+				j = i + 1
+				for j < min(i+width, len(str)) && str[j] != ' ' {
+					j++
+				}
+				buf.Write(str[i:j])
+				if j < len(str)-1 {
+					buf.WriteString(breakStr)
+				}
+				i = j
+				continue
+			}
+
+			buf.Write(str[i:j])
+
+			if j >= len(str) {
+				break
+			}
+			if j < len(str)-1 {
+				buf.WriteString(breakStr)
+			}
+			i = j
+			if str[i] == ' ' {
+				i++
+			}
+		}
+	} else {
+		i := 0
+		lastBreak := -1
+		for i < len(str) {
+			j := min(i+width, len(str))
+			if j >= len(str) {
+				buf.Write(str[i:j])
+				break
+			}
+
+			for str[j] != ' ' && j > i {
+				j--
+			}
+
+			if i == j {
+				for j < len(str) && str[j] != ' ' {
+					j++
+				}
+			}
+
+			buf.Write(str[i:j])
+			if j >= len(str) {
+				break
+			}
+
+			if str[j] == ' ' && j-lastBreak > 1 {
+				buf.WriteString(breakStr)
+				lastBreak = j
+			} else {
+				buf.WriteByte(' ')
+			}
+
+			i = j + 1
+		}
+	}
+
+	return phpv.ZStr(buf.String()), nil
+}
+
 func strReplaceCommon(ctx phpv.Context, args []*phpv.ZVal, caseSensitive bool) (*phpv.ZVal, error) {
 	var search, replace, subject *phpv.ZVal
 	var count *phpv.ZInt
@@ -1951,51 +2084,51 @@ func bytesCount(s, sep []byte, caseSensitive bool) int {
 	return replaced
 }
 
-func substr(str []byte, offset, length int) []byte {
+func substr(strArg []byte, offset, length int) []byte {
 	var start, end int
 	if offset < 0 {
-		start = max(0, len(str)+offset)
+		start = max(0, len(strArg)+offset)
 	} else {
-		start = min(offset, len(str))
+		start = min(offset, len(strArg))
 	}
 	if length < 0 {
-		end = max(0, len(str)+length)
+		end = max(0, len(strArg)+length)
 	} else {
-		end = min(start+length, len(str))
+		end = min(start+length, len(strArg))
 	}
 
-	if start == 0 && end == len(str) {
-		return str
+	if start == 0 && end == len(strArg) {
+		return strArg
 	}
 
 	var result []byte
 	if start <= end {
-		result = str[start:end]
+		result = strArg[start:end]
 	}
 
 	return result
 }
 
-func segment(str []byte, offset, length int) ([]byte, []byte, []byte) {
+func segment(strArg []byte, offset, length int) ([]byte, []byte, []byte) {
 	var start, end int
 	if offset < 0 {
-		start = max(0, len(str)+offset)
+		start = max(0, len(strArg)+offset)
 	} else {
-		start = min(offset, len(str))
+		start = min(offset, len(strArg))
 	}
 	if length < 0 {
-		end = max(0, len(str)+length)
+		end = max(0, len(strArg)+length)
 	} else {
-		end = min(start+length, len(str))
+		end = min(start+length, len(strArg))
 	}
 
-	if start == 0 && end == len(str) {
-		return nil, str, nil
+	if start == 0 && end == len(strArg) {
+		return nil, strArg, nil
 	}
 
-	left := str[0:start]
-	mid := str[start:end]
-	right := str[end:]
+	left := strArg[0:start]
+	mid := strArg[start:end]
+	right := strArg[end:]
 
 	return left, mid, right
 }

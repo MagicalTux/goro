@@ -144,9 +144,11 @@ func init() {
 			"substr_cont":              {Func: fncSubstrCount, Args: []*phpctx.ExtFunctionArg{}},
 			"substr_replace":           {Func: fncSubstrReplace, Args: []*phpctx.ExtFunctionArg{}},
 			"time":                     {Func: fncTime, Args: []*phpctx.ExtFunctionArg{}},
+			"trim":                     {Func: fncStrTrim, Args: []*phpctx.ExtFunctionArg{}},
 			"urlencode":                {Func: fncUrlencode, Args: []*phpctx.ExtFunctionArg{}},
 			"usleep":                   {Func: stdFuncUsleep, Args: []*phpctx.ExtFunctionArg{}},
 			"var_dump":                 {Func: stdFuncVarDump, Args: []*phpctx.ExtFunctionArg{}},
+			"wordwrap":                 {Func: fncWordWrap, Args: []*phpctx.ExtFunctionArg{}},
 		},
 		Constants: map[phpv.ZString]phpv.Val{
 			"INF":                 INF,
