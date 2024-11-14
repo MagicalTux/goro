@@ -1700,6 +1700,64 @@ func fncSubstrReplace(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return res, nil
 }
 
+// > func string ucfirst ( string $str )
+func fncUcFirst(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var strArg phpv.ZString
+	_, err := core.Expand(ctx, args, &strArg)
+	if err != nil {
+		return phpv.ZBool(false).ZVal(), err
+	}
+
+	str := []rune(strArg)
+	var buf bytes.Buffer
+	if len(str) > 0 {
+		buf.WriteString(strings.ToUpper(string(str[0:1])))
+		buf.WriteString(string(str[1:]))
+	}
+
+	return phpv.ZStr(buf.String()), nil
+}
+
+// > func string ucwords ( string $str [, string $delimiters = " \t\r\n\f\v" ] )
+func fncUcWords(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var strArg phpv.ZString
+	var delimetersArg *phpv.ZString
+	_, err := core.Expand(ctx, args, &strArg, &delimetersArg)
+	if err != nil {
+		return phpv.ZBool(false).ZVal(), err
+	}
+
+	str := []byte(strArg)
+	delimeters := []byte(" \t\r\n\f\v")
+	if delimetersArg != nil {
+		delimeters = []byte(*delimetersArg)
+	}
+
+	i := 0
+	var buf bytes.Buffer
+
+	for i < len(str) {
+		// skip delimeters
+		for i < len(str) && bytes.ContainsRune(delimeters, rune(str[i])) {
+			buf.WriteByte(str[i])
+			i++
+		}
+
+		if i < len(str) {
+			buf.WriteRune(unicode.ToUpper(rune(str[i])))
+			i++
+		}
+
+		// word chars
+		for i < len(str) && !bytes.ContainsRune(delimeters, rune(str[i])) {
+			buf.WriteByte(str[i])
+			i++
+		}
+	}
+
+	return phpv.ZStr(buf.String()), nil
+}
+
 // > func string wordwrap ( string $str [, int $width = 75 [, string $break = "\n" [, bool $cut = FALSE ]]] )
 func fncWordWrap(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var strArg phpv.ZString
