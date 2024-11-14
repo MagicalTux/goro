@@ -65,7 +65,7 @@ var (
 	)
 )
 
-// > func string addcslashes( string $string, string $charlist )
+// > func string addcslashes ( string $string, string $charlist )
 func fncStrAddCSlashes(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var strArg phpv.ZString
 	var charlistArg phpv.ZString
@@ -117,7 +117,7 @@ func fncStrAddCSlashes(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 	return phpv.ZString(buf.String()).ZVal(), nil
 }
 
-// > func string addslashes( string $string )
+// > func string addslashes ( string $string )
 func fncStrAddSlashes(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var str phpv.ZString
 	_, err := core.Expand(ctx, args, &str)
@@ -129,8 +129,8 @@ func fncStrAddSlashes(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZString(result).ZVal(), nil
 }
 
-// > func string chr( int $codepoint )
-func fncStrChr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+// > func string chr ( int $codepoint )
+func fncChr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var codepoint phpv.ZInt
 
 	_, err := core.Expand(ctx, args, &codepoint)
@@ -143,7 +143,7 @@ func fncStrChr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZString(byte(codepoint)).ZVal(), nil
 }
 
-// > func string chunk_split( string $string, int $length = 76, string $separator = "\r\n" )
+// > func string chunk_split ( string $string, int $length = 76, string $separator = "\r\n" )
 func fncStrChunkSplit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var strArg phpv.ZString
 	var lengthArg *phpv.ZInt
@@ -180,7 +180,7 @@ func fncStrChunkSplit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZString(buf.String()).ZVal(), nil
 }
 
-// >  func array|string count_chars( string $string, int $mode = 0 )
+// >  func array|string count_chars ( string $string, int $mode = 0 )
 func fncStrCountChars(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var strArg phpv.ZString
 	var modeArg *phpv.ZInt
@@ -275,7 +275,7 @@ func fncStrCountChars(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 }
 
-// >  func array explode( string $separator, string $string, int $limit = PHP_INT_MAX )
+// >  func array explode ( string $separator, string $string, int $limit = PHP_INT_MAX )
 func fncStrExplode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var sep, str phpv.ZString
 	var limitArg *phpv.ZInt
@@ -313,7 +313,8 @@ func fncStrExplode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return result.ZVal(), nil
 }
 
-// >  func string implode( string $separator, array $array )
+// > func string implode ( string $separator, array $array )
+// > alias join
 func fncStrImplode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var sep phpv.ZString
 	var array *phpv.ZArray
@@ -343,7 +344,7 @@ func fncStrImplode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZStr(buf.String()), nil
 }
 
-// > func string lcfirst(string $string)
+// > func string lcfirst ( string $string )
 func fncStrLcFirst(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var str phpv.ZString
 
@@ -386,6 +387,7 @@ func fncStrLtrim(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 }
 
 // > func string rtrim ( string $str [, string $character_mask ] )
+// > alias chop
 func fncStrRtrim(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var str phpv.ZString
 	var charsArg *phpv.ZString
@@ -423,7 +425,7 @@ func fncStrTrim(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZString(result).ZVal(), nil
 }
 
-// > func string md5( string $string, bool $binary = false )
+// > func string md5 ( string $string, bool $binary = false )
 func fncStrMd5(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var str phpv.ZString
 	var binaryArg *phpv.ZBool
@@ -450,7 +452,7 @@ func fncStrMd5(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZStr(result), nil
 }
 
-// > func string|false md5_file( string $filename, bool $binary = false )
+// > func string|false md5_file ( string $filename, bool $binary = false )
 func fncStrMd5File(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var filename phpv.ZString
 	var binaryArg *phpv.ZBool
@@ -488,7 +490,7 @@ func fncStrMd5File(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZStr(result), nil
 }
 
-// > func string nl2br( string $string, bool $use_xhtml = true )
+// > func string nl2br ( string $string, bool $use_xhtml = true )
 func fncStrNewLine2Br(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var str phpv.ZString
 	var useXHTMLArg *phpv.ZBool
@@ -591,7 +593,7 @@ func fncStrOrd(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZInt(int(fc)).ZVal(), nil
 }
 
-// > func void parse_str(string $string, array &$result)
+// > func void parse_str ( string $string, array &$result )
 func fncStrParseStr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var str phpv.ZString
 	var arrayArg **phpv.ZArray
@@ -640,7 +642,7 @@ func fncStrParseStr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return array.ZVal(), nil
 }
 
-// > func string quotemeta( string $string )
+// > func string quotemeta ( string $string )
 func fncStrQuoteMeta(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var str phpv.ZString
 
@@ -654,7 +656,7 @@ func fncStrQuoteMeta(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 }
 
-// > func string sha1( string $string, bool $binary = false )
+// > func string sha1 ( string $string, bool $binary = false )
 func fncStrSha1(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var str phpv.ZString
 	var binaryArg *phpv.ZBool
@@ -681,7 +683,7 @@ func fncStrSha1(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZStr(result), nil
 }
 
-// > func string|false sha1_file( string $filename, bool $binary = false )
+// > func string|false sha1_file ( string $filename, bool $binary = false )
 func fncStrSha1File(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var filename phpv.ZString
 	var binaryArg *phpv.ZBool
@@ -719,7 +721,7 @@ func fncStrSha1File(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZStr(result), nil
 }
 
-// > func bool str_contains( (string $haystack, string $needle )
+// > func bool str_contains ( string $haystack, string $needle )
 func fncStrContains(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var haystack, needle phpv.ZString
 
@@ -732,7 +734,7 @@ func fncStrContains(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZBool(result).ZVal(), nil
 }
 
-// > func bool str_ends_with(string $haystack, string $needle)
+// > func bool str_ends_with ( string $haystack, string $needle )
 func fncStrEndsWith(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var haystack, needle phpv.ZString
 
@@ -745,7 +747,7 @@ func fncStrEndsWith(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZBool(result).ZVal(), nil
 }
 
-// > func array str_getcsv( string $string, string $separator = ",", string $enclosure = "\"", string $escape = "\\" )
+// > func array str_getcsv ( string $string, string $separator = ",", string $enclosure = "\"", string $escape = "\\" )
 func fncStrGetCsv(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var str phpv.ZString
 	var sepArg, encArg, escArg *phpv.ZString
@@ -992,7 +994,7 @@ func fncStrSplit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return result.ZVal(), nil
 }
 
-// > func bool str_starts_with(string $haystack, string $needle)
+// > func bool str_starts_with (string $haystack, string $needle)
 func fncStrStartsWith(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var haystack, needle phpv.ZString
 
@@ -1110,7 +1112,7 @@ func fncStrColl(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZInt(strings.Compare(string(str1), string(str2))).ZVal(), nil
 }
 
-// > func int strcspn (  string $string, string $characters, int $offset = 0, ?int $length = null )
+// > func int strcspn ( string $string, string $characters, int $offset = 0, ?int $length = null )
 func fncStrCspn(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var strArg phpv.ZString
 	var charsArg phpv.ZString
@@ -1144,7 +1146,7 @@ func fncStrCspn(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZInt(segmentLen).ZVal(), nil
 }
 
-// > func string|false strstr ( string $haystack, string $needle, bool $before_needle = false )
+// > func string|false stristr ( string $haystack, string $needle, bool $before_needle = false )
 func fncStrIStr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var haystackArg phpv.ZString
 	// TODO: maybe handle deprecated case where needle not a string
@@ -1179,6 +1181,7 @@ func fncStrIStr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 }
 
 // > func string|false strstr ( string $haystack, string $needle, bool $before_needle = false )
+// > alias strchr
 func fncStrStr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var haystackArg phpv.ZString
 	// TODO: maybe handle deprecated case where needle not a string
@@ -1290,7 +1293,7 @@ func fncStripCSlashes(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZStr(stripCSlashes(string(str))), nil
 }
 
-// > func int|false stripos(string $haystack, string $needle, int $offset = 0)
+// > func int|false stripos ( string $haystack, string $needle, int $offset = 0 )
 func fncStrIPos(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var haystackArg, needleArg phpv.ZString
 	var offsetArg *phpv.ZInt
@@ -1321,7 +1324,7 @@ func fncStrIPos(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZInt(result + offset).ZVal(), nil
 }
 
-// > func int|false strpos(string $haystack, string $needle, int $offset = 0)
+// > func int|false strpos ( string $haystack, string $needle, int $offset = 0 )
 func fncStrPos(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var haystackArg, needleArg phpv.ZString
 	var offsetArg *phpv.ZInt
@@ -1363,7 +1366,7 @@ func fncStripSlashes(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZStr(string(result)), nil
 }
 
-// > func int strnatcasecmp(string $string1, string $string2)
+// > func int strnatcasecmp ( string $string1, string $string2 )
 func fncStrNatCaseCmp(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var string1, string2 phpv.ZString
 	_, err := core.Expand(ctx, args, &string1, &string2)
@@ -1376,7 +1379,7 @@ func fncStrNatCaseCmp(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZInt(result).ZVal(), nil
 }
 
-// > func int strnatcmp(string $string1, string $string2)
+// > func int strnatcmp ( string $string1, string $string2 )
 func fncStrNatCmp(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var string1, string2 phpv.ZString
 	_, err := core.Expand(ctx, args, &string1, &string2)
@@ -1389,7 +1392,7 @@ func fncStrNatCmp(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZInt(result).ZVal(), nil
 }
 
-// > func string|false strpbrk( string $string, string $characters )
+// > func string|false strpbrk ( string $string, string $characters )
 func fncStrPbrk(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var str, chars phpv.ZString
 	_, err := core.Expand(ctx, args, &str, &chars)
@@ -1405,7 +1408,7 @@ func fncStrPbrk(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return str[i:].ZVal(), nil
 }
 
-// > func string strrev( string $string )
+// > func string strrev ( string $string )
 func fncStrRev(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var str phpv.ZString
 	_, err := core.Expand(ctx, args, &str)
@@ -1440,8 +1443,7 @@ var strTokTempState = strTokStateType{
 	lastIndex:  -1,
 }
 
-// > func string|false strtok( string $string, string $token )
-// > func string|false strtok( string $token )
+// > func string|false strtok ( string $string, string $token )
 func fncStrtok(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var strArg phpv.ZString
 	var tokenArg *phpv.ZString

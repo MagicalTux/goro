@@ -30,7 +30,8 @@ func init() {
 			"bin2hex":                  {Func: fncBin2hex, Args: []*phpctx.ExtFunctionArg{}},
 			"boolval":                  {Func: fncBoolval, Args: []*phpctx.ExtFunctionArg{}},
 			"chdir":                    {Func: fncChdir, Args: []*phpctx.ExtFunctionArg{}},
-			"chr":                      {Func: fncStrChr, Args: []*phpctx.ExtFunctionArg{}},
+			"chop":                     {Func: fncStrRtrim, Args: []*phpctx.ExtFunctionArg{}}, // alias
+			"chr":                      {Func: fncChr, Args: []*phpctx.ExtFunctionArg{}},
 			"chunk_split":              {Func: fncStrChunkSplit, Args: []*phpctx.ExtFunctionArg{}},
 			"constant":                 {Func: constant, Args: []*phpctx.ExtFunctionArg{}},
 			"cos":                      {Func: mathCos, Args: []*phpctx.ExtFunctionArg{}},
@@ -79,6 +80,7 @@ func init() {
 			"is_resource":              {Func: fncIsResource, Args: []*phpctx.ExtFunctionArg{}},
 			"is_scalar":                {Func: fncIsScalar, Args: []*phpctx.ExtFunctionArg{}},
 			"is_string":                {Func: fncIsString, Args: []*phpctx.ExtFunctionArg{}},
+			"join":                     {Func: fncStrImplode, Args: []*phpctx.ExtFunctionArg{}}, // alias
 			"lcfirst":                  {Func: fncStrLcFirst, Args: []*phpctx.ExtFunctionArg{}},
 			"ltrim":                    {Func: fncStrLtrim, Args: []*phpctx.ExtFunctionArg{}},
 			"md5":                      {Func: fncStrMd5, Args: []*phpctx.ExtFunctionArg{}},
@@ -124,6 +126,7 @@ func init() {
 			"str_starts_with":          {Func: fncStrStartsWith, Args: []*phpctx.ExtFunctionArg{}},
 			"str_word_count":           {Func: fncStrWordCount, Args: []*phpctx.ExtFunctionArg{}},
 			"strcasecmp":               {Func: fncStrCaseCmp, Args: []*phpctx.ExtFunctionArg{}},
+			"strchr":                   {Func: fncStrStr, Args: []*phpctx.ExtFunctionArg{}}, // alias
 			"strcmp":                   {Func: fncStrCmp, Args: []*phpctx.ExtFunctionArg{}},
 			"strcoll":                  {Func: fncStrColl, Args: []*phpctx.ExtFunctionArg{}},
 			"strcspn":                  {Func: fncStrCspn, Args: []*phpctx.ExtFunctionArg{}},
@@ -131,6 +134,7 @@ func init() {
 			"stripcslashes":            {Func: fncStripCSlashes, Args: []*phpctx.ExtFunctionArg{}},
 			"stripos":                  {Func: fncStrIPos, Args: []*phpctx.ExtFunctionArg{}},
 			"stripslashes":             {Func: fncStripSlashes, Args: []*phpctx.ExtFunctionArg{}},
+			"stristr":                  {Func: fncStrIStr, Args: []*phpctx.ExtFunctionArg{}},
 			"strnatcasecmp":            {Func: fncStrNatCaseCmp, Args: []*phpctx.ExtFunctionArg{}},
 			"strnatcmp":                {Func: fncStrNatCmp, Args: []*phpctx.ExtFunctionArg{}},
 			"strpbrk":                  {Func: fncStrPbrk, Args: []*phpctx.ExtFunctionArg{}},

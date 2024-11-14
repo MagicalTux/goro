@@ -20,6 +20,7 @@ type IdentiferMap struct {
 	GoIdent  string
 	PhpIdent string
 	Package  string
+	IsAlias  bool
 }
 
 type ExtData struct {
@@ -148,9 +149,13 @@ func init() {
 			goIdent = path.Base(decl.Package) + "." + goIdent
 		}
 
+		comment := ""
+		if decl.IsAlias {
+			comment = " // alias"
+		}
 		indent := strings.Repeat(" ", maxLen-len(phpIdent)+1)
-		format := "\t\t\t" + `"%s":%s{Func: %s, Args: []*phpctx.ExtFunctionArg{}},` + "\n"
-		buf.WriteString(fmt.Sprintf(format, phpIdent, indent, goIdent))
+		format := "\t\t\t" + `"%s":%s{Func: %s, Args: []*phpctx.ExtFunctionArg{}},%s` + "\n"
+		buf.WriteString(fmt.Sprintf(format, phpIdent, indent, goIdent, comment))
 	}
 	if len(ext.Functions) > 0 {
 		buf.WriteString("\t\t")
@@ -286,6 +291,23 @@ func processExtFile(filename string, ext *ExtData) {
 	}
 }
 
+func parseCommentDirective(s string) []string {
+	if !strings.HasPrefix(s, "//") {
+		return nil
+	}
+	s = strings.TrimLeft(s[2:], " \t")
+	if len(s) == 0 {
+		return nil
+	}
+	if s[0] != '>' {
+		return nil
+	}
+	s = strings.TrimLeft(s[1:], " \t")
+
+	re := regexp.MustCompile(`\s+`)
+	return re.Split(s, -1)
+}
+
 func parseFunctionSignature(s string) string {
 	re := regexp.MustCompile(`\/\/\s*>\s*func\s*[\w|]+\s*(\w*)\s*\(.*\)`)
 	matches := re.FindStringSubmatch(s)
@@ -345,19 +367,51 @@ func getPhpFunctions(f *ast.File, pkg string) map[string]IdentiferMap {
 			}
 
 			phpIdent := ""
+			nonWord := regexp.MustCompile(`[^a-zA-Z_0-9]`)
+			var aliases []string
 
 			for _, comment := range decl.Doc.List {
-				phpIdent = parseFunctionSignature(comment.Text)
-				if phpIdent != "" {
-					break
+				fields := parseCommentDirective(comment.Text)
+				if len(fields) == 0 {
+					continue
+				}
+				switch fields[0] {
+				case "func":
+					if len(fields) < 3 {
+						panic(fmt.Errorf("invalid func comment: %s", comment.Text))
+					}
+
+					phpIdent = fields[2]
+					if nonWord.MatchString(phpIdent) {
+						panic(fmt.Errorf("invalid func name: %s", phpIdent))
+					}
+
+				case "alias":
+					aliases = append(aliases, fields[1:]...)
 				}
 			}
 
 			if phpIdent != "" {
+				if _, ok := result[phpIdent]; ok {
+					panic(fmt.Errorf("function name is already used: %s", phpIdent))
+				}
+
 				result[phpIdent] = IdentiferMap{
 					GoIdent:  decl.Name.Name,
 					PhpIdent: phpIdent,
 					Package:  pkg,
+				}
+
+				for _, alias := range aliases {
+					if _, ok := result[alias]; ok {
+						panic(fmt.Errorf("function name is already used: %s", alias))
+					}
+					result[alias] = IdentiferMap{
+						GoIdent:  decl.Name.Name,
+						PhpIdent: alias,
+						Package:  pkg,
+						IsAlias:  true,
+					}
 				}
 			}
 
