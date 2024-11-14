@@ -17,6 +17,7 @@ func init() {
 			"abs":                      {Func: mathAbs, Args: []*phpctx.ExtFunctionArg{}},
 			"acos":                     {Func: mathAcos, Args: []*phpctx.ExtFunctionArg{}},
 			"acosh":                    {Func: mathACosh, Args: []*phpctx.ExtFunctionArg{}},
+			"addcslashes":              {Func: fncStrAddCSlashes, Args: []*phpctx.ExtFunctionArg{}},
 			"addslashes":               {Func: fncStrAddSlashes, Args: []*phpctx.ExtFunctionArg{}},
 			"array_merge":              {Func: fncArrayMerge, Args: []*phpctx.ExtFunctionArg{}},
 			"asin":                     {Func: mathAsin, Args: []*phpctx.ExtFunctionArg{}},

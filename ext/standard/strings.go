@@ -65,17 +65,67 @@ var (
 	)
 )
 
+// > func string addcslashes( string $string, string $charlist )
+func fncStrAddCSlashes(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var strArg phpv.ZString
+	var charlistArg phpv.ZString
+	_, err := core.Expand(ctx, args, &strArg, &charlistArg)
+	if err != nil {
+		return nil, err
+	}
+
+	str := []byte(strArg)
+	escaped := map[byte]struct{}{}
+
+	charlist := []byte(stripCSlashes(string(charlistArg)))
+	for i := 0; i < len(charlist); i++ {
+		c := charlist[i]
+
+		c2 := safeIndex(charlist, i+1)
+		c3 := safeIndex(charlist, i+2)
+		c4 := safeIndex(charlist, i+3, c)
+
+		if c2 == '.' && c3 == '.' {
+			if i+3 >= len(charlist) {
+				// TODO: show warning: addcslashes(): Invalid '..'-range, no character to the right of '..'
+				escaped['.'] = struct{}{}
+			}
+			if c4 < c {
+				// TODO: show warning: addcslashes(): Invalid '..'-range, no character to the right of '..'
+				escaped[c] = struct{}{}
+			} else {
+				for ch := c; ch <= c4; ch++ {
+					escaped[ch] = struct{}{}
+				}
+				i += 3
+			}
+
+		} else {
+			escaped[c] = struct{}{}
+		}
+	}
+
+	var buf bytes.Buffer
+	for _, c := range str {
+		if _, ok := escaped[c]; ok {
+			buf.Write(escapeByte(c))
+		} else {
+			buf.WriteByte(c)
+		}
+	}
+
+	return phpv.ZString(buf.String()).ZVal(), nil
+}
+
 // > func string addslashes( string $string )
 func fncStrAddSlashes(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var str phpv.ZString
-
 	_, err := core.Expand(ctx, args, &str)
 	if err != nil {
 		return nil, err
 	}
 
 	result := addSlashesReplacer.Replace(string(str))
-
 	return phpv.ZString(result).ZVal(), nil
 }
 
@@ -1237,84 +1287,7 @@ func fncStripCSlashes(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZBool(false).ZVal(), err
 	}
 
-	var buf bytes.Buffer
-	for i := 0; i < len(str); i++ {
-		if str[i] != '\\' {
-			buf.WriteByte(str[i])
-			continue
-		}
-
-		i++
-		if i >= len(str) {
-			break
-		}
-
-		hex := false
-		unescaped := true
-
-		switch str[i] {
-		case 'n':
-			buf.WriteString("\n")
-		case 'r':
-			buf.WriteString("\r")
-		case 'a':
-			buf.WriteString("\a")
-		case 't':
-			buf.WriteString("\t")
-		case 'v':
-			buf.WriteString("\v")
-		case 'b':
-			buf.WriteString("\b")
-		case 'f':
-			buf.WriteString("\f")
-		default:
-			unescaped = false
-		}
-
-		if unescaped {
-			continue
-		}
-
-		if str[i] == 'x' {
-			hex = true
-			i++
-			if i >= len(str) {
-				buf.WriteByte('x')
-				break
-			}
-		}
-
-		readNum := unicode.IsNumber(rune(str[i]))
-		if !readNum {
-			buf.WriteByte(str[i])
-		} else if readNum {
-			base := 8
-			length := 3
-			if hex {
-				base = 16
-				length = 2
-			}
-
-			j := i
-			for j-i <= length-1 && unicode.IsNumber(rune(str[j])) {
-				j++
-				if j >= len(str) {
-					break
-				}
-			}
-
-			if j > i {
-				n, err := strconv.ParseInt(string(str[i:j]), base, 8)
-				if err == nil {
-					buf.WriteByte(byte(n))
-				}
-				i = j - 1
-			}
-
-		}
-	}
-
-	return phpv.ZStr(buf.String()), nil
+	return phpv.ZStr(stripCSlashes(string(str))), nil
 }
 
 // > func int|false stripos(string $haystack, string $needle, int $offset = 0)
@@ -2372,4 +2345,116 @@ func strcmpCommon(str1, str2 []byte, caseSensitive bool) int {
 		}
 	}
 	return 0
+}
+
+func escapeByte(b byte) []byte {
+	switch b {
+	case '\n':
+		return []byte(`\n`)
+	case '\r':
+		return []byte(`\r`)
+	case '\a':
+		return []byte(`\a`)
+	case '\t':
+		return []byte(`\t`)
+	case '\v':
+		return []byte(`\v`)
+	case '\b':
+		return []byte(`\b`)
+	case '\f':
+		return []byte(`\f`)
+	}
+
+	return []byte{'\\', b}
+}
+
+func stripCSlashes(str string) string {
+	var buf bytes.Buffer
+	for i := 0; i < len(str); i++ {
+		if str[i] != '\\' {
+			buf.WriteByte(str[i])
+			continue
+		}
+
+		i++
+		if i >= len(str) {
+			break
+		}
+
+		hex := false
+		unescaped := true
+
+		switch str[i] {
+		case 'n':
+			buf.WriteString("\n")
+		case 'r':
+			buf.WriteString("\r")
+		case 'a':
+			buf.WriteString("\a")
+		case 't':
+			buf.WriteString("\t")
+		case 'v':
+			buf.WriteString("\v")
+		case 'b':
+			buf.WriteString("\b")
+		case 'f':
+			buf.WriteString("\f")
+		default:
+			unescaped = false
+		}
+
+		if unescaped {
+			continue
+		}
+
+		if str[i] == 'x' {
+			hex = true
+			i++
+			if i >= len(str) {
+				buf.WriteByte('x')
+				break
+			}
+		}
+
+		readNum := unicode.IsNumber(rune(str[i]))
+		if !readNum {
+			buf.WriteByte(str[i])
+		} else if readNum {
+			base := 8
+			length := 3
+			if hex {
+				base = 16
+				length = 2
+			}
+
+			j := i
+			for j-i <= length-1 && unicode.IsNumber(rune(str[j])) {
+				j++
+				if j >= len(str) {
+					break
+				}
+			}
+
+			if j > i {
+				n, err := strconv.ParseInt(string(str[i:j]), base, 8)
+				if err == nil {
+					buf.WriteByte(byte(n))
+				}
+				i = j - 1
+			}
+
+		}
+	}
+
+	return buf.String()
+}
+
+func safeIndex[T any](xs []T, index int, defaultVal ...T) T {
+	var x T
+	if index >= 0 && index < len(xs) {
+		x = xs[index]
+	} else if len(defaultVal) > 0 {
+		x = defaultVal[0]
+	}
+	return x
 }
