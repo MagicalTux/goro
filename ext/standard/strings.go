@@ -1224,6 +1224,31 @@ func fncStrStr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZStr(string(result)), nil
 }
 
+// > func string|false strrchr ( string $haystack, string $needle )
+func fncStrRChr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var haystackArg phpv.ZString
+	var needleArg phpv.ZString
+	_, err := core.Expand(ctx, args, &haystackArg, &needleArg)
+	if err != nil {
+		return phpv.ZBool(false).ZVal(), err
+	}
+
+	if len(needleArg) == 0 {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	haystack := []byte(haystackArg)
+	needle := []byte(needleArg)[0] // only the first char is needed
+
+	i := bytes.LastIndexByte(haystack, needle)
+	if i < 0 {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+
+	result := haystack[i:]
+	return phpv.ZStr(string(result)), nil
+}
+
 // > func string strip_tags ( string $string, array|string|null $allowed_tags = null )
 func fncStripTags(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var str phpv.ZString
