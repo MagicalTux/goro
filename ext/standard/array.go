@@ -1,9 +1,54 @@
 package standard
 
 import (
+	"errors"
+
 	"github.com/MagicalTux/goro/core"
 	"github.com/MagicalTux/goro/core/phpv"
 )
+
+// > func array array_combine ( array $keys , array $values )
+func fncArrayCombine(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var keys, values *phpv.ZArray
+	_, err := core.Expand(ctx, args, &keys, &values)
+	if err != nil {
+		return nil, err
+	}
+
+	if keys.Count(ctx) != values.Count(ctx) {
+		return nil, errors.New("Argument #1 ($keys) and argument #2 ($values) must have the same number of elements")
+	}
+
+	result := phpv.NewZArray()
+	keyIter := keys.NewIterator()
+	valIter := values.NewIterator()
+
+	for keyIter.Valid(ctx) && valIter.Valid(ctx) {
+		key, err := keyIter.Current(ctx)
+		if err != nil {
+			return nil, err
+		}
+		val, err := valIter.Current(ctx)
+		if err != nil {
+			return nil, err
+		}
+		err = result.OffsetSet(ctx, key, val)
+		if err != nil {
+			return nil, err
+		}
+
+		err = keyIter.Next(ctx)
+		if err != nil {
+			return nil, err
+		}
+		err = valIter.Next(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return result.ZVal(), nil
+}
 
 // > func array array_merge ( array $array1 [, array $... ] )
 func fncArrayMerge(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
@@ -90,6 +135,29 @@ func fncArrayKeyExists(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 
 }
 
+// > func array array_values ( array $array )
+func fncArrayValues(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var array *phpv.ZArray
+	_, err := core.Expand(ctx, args, &array)
+	if err != nil {
+		return nil, err
+	}
+
+	result := phpv.NewZArray()
+	iter := array.NewIterator()
+
+	for ; iter.Valid(ctx); iter.Next(ctx) {
+		val, err := iter.Current(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		result.OffsetSet(ctx, nil, val)
+	}
+
+	return result.ZVal(), nil
+}
+
 // > func array array_keys ( array $array , mixed $search_value [, bool $strict = FALSE ] )
 func fncArrayKeys(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var array *phpv.ZArray
@@ -133,4 +201,42 @@ func fncArrayKeys(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	return result.ZVal(), nil
+}
+
+// > func bool array_walk ( array &$array , callable $callback [, mixed $userdata = NULL ] )
+func fncArrayWalk(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var array *phpv.ZArray
+	var callback phpv.Callable
+	var userdata **phpv.ZVal
+	_, err := core.Expand(ctx, args, &array, &callback, &userdata)
+	if err != nil {
+		return nil, err
+	}
+
+	iter := array.NewIterator()
+
+	callbackArgs := make([]*phpv.ZVal, 2)
+	if userdata != nil {
+		callbackArgs = append(callbackArgs, *userdata)
+	}
+
+	// TODO: error if len(callbackArgs) is more than callback expects
+
+	for ; iter.Valid(ctx); iter.Next(ctx) {
+		val, err := iter.Current(ctx)
+		if err != nil {
+			return nil, err
+		}
+		key, err := iter.Key(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		callbackArgs[0] = val
+		callbackArgs[1] = key
+
+		callback.Call(ctx, callbackArgs)
+	}
+
+	return phpv.ZTrue.ZVal(), nil
 }

@@ -35,6 +35,34 @@ func stdFuncFuncExists(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 	return phpv.ZBool(f != nil).ZVal(), nil
 }
 
+// > func bool method_exists (  mixed $object , string $method_name )
+func stdFuncMethodExists(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var objectArg *phpv.ZVal
+	var methodName phpv.ZString
+	_, err := core.Expand(ctx, args, &objectArg, &methodName)
+	if err != nil {
+		return nil, err
+	}
+
+	var class phpv.ZClass
+	switch objectArg.GetType() {
+	case phpv.ZtString:
+		className := objectArg.AsString(ctx)
+		class, err = ctx.Global().GetClass(ctx, className, false)
+		if err != nil {
+			return phpv.ZFalse.ZVal(), nil
+		}
+	case phpv.ZtObject:
+		obj := objectArg.AsObject(ctx)
+		class = obj.GetClass()
+	default:
+		return nil, errors.New("Argument #1 ($object_or_class) must be of type object|string")
+	}
+	_, ok := class.GetMethod(methodName)
+
+	return phpv.ZBool(ok).ZVal(), nil
+}
+
 // > func mixed get_cfg_var ( string $option )
 func stdFuncGetCfgVar(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var v phpv.ZString
