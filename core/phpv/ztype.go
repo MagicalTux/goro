@@ -20,6 +20,9 @@ const (
 // global NULL for easy call
 var ZNULL = ZNull{}
 
+var ZFalse = ZBool(false)
+var ZTrue = ZBool(true)
+
 // scalar stuff
 type ZNull struct{}
 type ZBool bool
@@ -194,4 +197,8 @@ func (zt ZType) String() string {
 	default:
 		return "?"
 	}
+}
+
+func IsNull(val *ZVal) bool {
+	return val == nil || (*val).GetType() == ZtNull
 }

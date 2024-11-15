@@ -109,6 +109,22 @@ func (z *ZVal) AsString(ctx Context) ZString {
 	return r.Value().(ZString)
 }
 
+func (z *ZVal) AsArray(ctx Context) *ZArray {
+	r, err := z.As(ctx, ZtArray)
+	if err != nil {
+		return nil
+	}
+	return r.Value().(*ZArray)
+}
+
+func (z *ZVal) AsObject(ctx Context) ZObject {
+	r, err := z.As(ctx, ZtObject)
+	if err != nil {
+		return nil
+	}
+	return r.Value().(ZObject)
+}
+
 func (v ZNull) String() string {
 	return ""
 }
