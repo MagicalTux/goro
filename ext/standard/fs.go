@@ -66,6 +66,9 @@ func fncFileExists(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	r, err := ctx.Global().Exists(filename)
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return phpv.ZFalse.ZVal(), nil
+		}
 		return nil, err
 	}
 

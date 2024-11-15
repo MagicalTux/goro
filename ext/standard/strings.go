@@ -316,12 +316,23 @@ func fncStrExplode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // > func string implode ( string $separator, array $array )
 // > alias join
 func fncStrImplode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var arg1 *phpv.ZVal
+	var arg2 **phpv.ZVal
+
+	_, err := core.Expand(ctx, args, &arg1, &arg2)
+	if err != nil {
+		return nil, err
+	}
+
 	var sep phpv.ZString
 	var array *phpv.ZArray
 
-	_, err := core.Expand(ctx, args, &sep, &array)
-	if err != nil {
-		return nil, err
+	if arg2 != nil {
+		sep = arg1.AsString(ctx)
+		array = (*arg2).AsArray(ctx)
+	} else {
+		array = arg1.AsArray(ctx)
+		sep = phpv.ZString("")
 	}
 
 	var buf bytes.Buffer
@@ -1184,7 +1195,6 @@ func fncStrIStr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // > alias strchr
 func fncStrStr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var haystackArg phpv.ZString
-	// TODO: maybe handle deprecated case where needle not a string
 	var needleArg phpv.ZString
 	var beforeArg *phpv.ZBool
 	_, err := core.Expand(ctx, args, &haystackArg, &needleArg, &beforeArg)
@@ -1225,7 +1235,7 @@ func fncStripTags(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	allowedTags := map[string]struct{}{}
 
-	if allowedTagsArg != nil {
+	if allowedTagsArg != nil && !phpv.IsNull(*allowedTagsArg) {
 		arg := *allowedTagsArg
 		switch arg.GetType() {
 		case phpv.ZtString:

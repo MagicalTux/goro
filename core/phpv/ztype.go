@@ -199,6 +199,6 @@ func (zt ZType) String() string {
 	}
 }
 
-func IsNull(val *ZVal) bool {
-	return val == nil || (*val).GetType() == ZtNull
+func IsNull(val Val) bool {
+	return val == nil || val.GetType() == ZtNull
 }
