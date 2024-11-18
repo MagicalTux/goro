@@ -2,6 +2,7 @@ package phpv
 
 import (
 	"errors"
+	"iter"
 	"strconv"
 
 	"github.com/MagicalTux/goro/core/util"
@@ -146,6 +147,49 @@ func (a *ZArray) OffsetExists(ctx Context, key Val) (bool, error) {
 		return a.h.HasInt(zi), nil
 	} else {
 		return a.h.HasString(zs), nil
+	}
+}
+
+func (a *ZArray) IntKeys(ctx Context) []ZInt {
+	var keys []ZInt
+	for key := range a.Iterate(ctx) {
+		if key.GetType() == ZtInt {
+			keys = append(keys, key.AsInt(ctx))
+		}
+	}
+	return keys
+}
+
+func (a *ZArray) StringKeys(ctx Context) []ZString {
+	var keys []ZString
+	for key := range a.Iterate(ctx) {
+		if key.GetType() == ZtString {
+			keys = append(keys, key.AsString(ctx))
+		}
+	}
+	return keys
+}
+
+func (a *ZArray) ByteArrayKeys(ctx Context) [][]byte {
+	var keys [][]byte
+	for key := range a.Iterate(ctx) {
+		if key.GetType() == ZtString {
+			keys = append(keys, []byte(key.AsString(ctx)))
+		}
+	}
+	return keys
+}
+
+func (a *ZArray) Iterate(ctx Context) iter.Seq2[*ZVal, *ZVal] {
+	return func(yield func(*ZVal, *ZVal) bool) {
+		it := a.NewIterator()
+		for ; it.Valid(ctx); it.Next(ctx) {
+			key, _ := it.Key(ctx)
+			value, _ := it.Current(ctx)
+			if !yield(key, value) {
+				break
+			}
+		}
 	}
 }
 

@@ -156,6 +156,7 @@ func init() {
 			"strtok":                   {Func: fncStrtok, Args: []*phpctx.ExtFunctionArg{}},
 			"strtolower":               {Func: fncStrToLower, Args: []*phpctx.ExtFunctionArg{}},
 			"strtoupper":               {Func: fncStrToUpper, Args: []*phpctx.ExtFunctionArg{}},
+			"strtr":                    {Func: fncStrTr, Args: []*phpctx.ExtFunctionArg{}},
 			"strval":                   {Func: fncStrval, Args: []*phpctx.ExtFunctionArg{}},
 			"substr":                   {Func: fncSubstr, Args: []*phpctx.ExtFunctionArg{}},
 			"substr_compare":           {Func: fncSubstrCompare, Args: []*phpctx.ExtFunctionArg{}},

@@ -1249,6 +1249,86 @@ func fncStrRChr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZStr(string(result)), nil
 }
 
+// > func string strtr ( string $str , string $from , string $to )
+// > func string strtr ( string $str , array $replace_pairs )
+func fncStrTr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	nargs := len(args)
+	if nargs >= 3 {
+		var strArg phpv.ZString
+		var from phpv.ZString
+		var to phpv.ZString
+		_, err := core.Expand(ctx, args, &strArg, &from, &to)
+		if err != nil {
+			return phpv.ZBool(false).ZVal(), err
+		}
+
+		str := []byte(strArg)
+		replacer := map[byte]byte{}
+
+		for i := 0; i < min(len(from), len(to)); i++ {
+			replacer[from[i]] = to[i]
+		}
+
+		for i, c := range str {
+			if rc, ok := replacer[c]; ok {
+				str[i] = rc
+			}
+		}
+
+		return phpv.ZStr(string(str)), nil
+	} else if nargs >= 2 {
+		var strArg phpv.ZString
+		var replacePairs *phpv.ZArray
+		_, err := core.Expand(ctx, args, &strArg, &replacePairs)
+		if err != nil {
+			return phpv.ZBool(false).ZVal(), err
+		}
+
+		str := []byte(strArg)
+
+		// // The longest keys will be tried first, so sort by length
+		keys := replacePairs.ByteArrayKeys(ctx)
+		sort.Slice(keys, func(i, j int) bool {
+			if len(keys[i]) > len(keys[j]) {
+				return true
+			}
+			return false
+		})
+
+		// str will be only iterated only once,
+		// so previous replacement will not be overriden
+		// by other matches
+		var buf bytes.Buffer
+		for len(str) > 0 {
+			found := false
+			for _, key := range keys {
+				if !bytes.HasPrefix(str, key) {
+					continue
+				}
+
+				val, err := replacePairs.OffsetGet(ctx, phpv.ZString(key))
+				if err != nil {
+					return nil, err
+				}
+
+				replacement := []byte(val.String())
+				buf.Write(replacement)
+				str = str[len(key):]
+				found = true
+				break
+			}
+			if !found {
+				buf.WriteByte(str[0])
+				str = str[1:]
+			}
+		}
+
+		return phpv.ZStr(buf.String()), nil
+	}
+
+	return nil, fmt.Errorf("strtr() expects at least 2 arguments, %d given", nargs)
+}
+
 // > func string strip_tags ( string $string, array|string|null $allowed_tags = null )
 func fncStripTags(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var str phpv.ZString
