@@ -168,6 +168,7 @@ func init() {
 			"trim":                     {Func: fncStrTrim, Args: []*phpctx.ExtFunctionArg{}},
 			"ucfirst":                  {Func: fncUcFirst, Args: []*phpctx.ExtFunctionArg{}},
 			"ucwords":                  {Func: fncUcWords, Args: []*phpctx.ExtFunctionArg{}},
+			"uniqid":                   {Func: fncUniqId, Args: []*phpctx.ExtFunctionArg{}},
 			"urldecode":                {Func: fncUrldecode, Args: []*phpctx.ExtFunctionArg{}},
 			"urlencode":                {Func: fncUrlencode, Args: []*phpctx.ExtFunctionArg{}},
 			"usleep":                   {Func: stdFuncUsleep, Args: []*phpctx.ExtFunctionArg{}},
