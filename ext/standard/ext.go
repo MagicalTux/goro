@@ -34,6 +34,8 @@ func init() {
 			"base64_encode":            {Func: fncBase64Encode, Args: []*phpctx.ExtFunctionArg{}},
 			"bin2hex":                  {Func: fncBin2hex, Args: []*phpctx.ExtFunctionArg{}},
 			"boolval":                  {Func: fncBoolval, Args: []*phpctx.ExtFunctionArg{}},
+			"call_user_func":           {Func: fncCallUserFunc, Args: []*phpctx.ExtFunctionArg{}},
+			"call_user_func_array":     {Func: fncCallUserFuncArray, Args: []*phpctx.ExtFunctionArg{}},
 			"chdir":                    {Func: fncChdir, Args: []*phpctx.ExtFunctionArg{}},
 			"chop":                     {Func: fncStrRtrim, Args: []*phpctx.ExtFunctionArg{}}, // alias
 			"chr":                      {Func: fncChr, Args: []*phpctx.ExtFunctionArg{}},

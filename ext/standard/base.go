@@ -99,3 +99,26 @@ func fncFlush(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	ctx.Global().Flush()
 	return phpv.ZNULL.ZVal(), nil
 }
+
+// > func mixed call_user_func ( callable $callback [, mixed $... ] )
+func fncCallUserFunc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var callback phpv.Callable
+	_, err := core.Expand(ctx, args, &callback)
+	if err != nil {
+		return nil, err
+	}
+
+	return callback.Call(ctx, args[1:])
+}
+
+// > func mixed call_user_func_array ( callable $callback , array $param_arr )
+func fncCallUserFuncArray(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var callback phpv.Callable
+	var arrayArgs *phpv.ZArray
+	_, err := core.Expand(ctx, args, &callback, arrayArgs)
+	if err != nil {
+		return nil, err
+	}
+
+	return callback.Call(ctx, []*phpv.ZVal{arrayArgs.ZVal()})
+}
