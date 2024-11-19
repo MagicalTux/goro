@@ -49,9 +49,15 @@ func lexPhpStringWhitespace(l *Lexer) lexState {
 			l.pop() // return to previous context
 			return l.base
 		case '\\':
-			// advance (ignore) one
-			l.next() // \
-			l.next() // the escaped char
+			// handle case where "\$" == "$"
+			if l.peekString(2) == `\$` {
+				l.input.ReadRune() // skip \
+				l.next()
+			} else {
+				// advance (ignore) one
+				l.next() // \
+				l.next() // the escaped char
+			}
 		case '$':
 			// this is a variable
 			if l.pos > l.start {

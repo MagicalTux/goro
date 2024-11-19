@@ -88,7 +88,6 @@ func compileQuoteEncapsed(i *tokenizer.Item, c compileCtx, q rune) (phpv.Runnabl
 			return nil, err
 		}
 
-		_ = res
 		switch i.Type {
 		case tokenizer.T_ENCAPSED_AND_WHITESPACE:
 			res = append(res, &runZVal{unescapePhpQuotedString(i.Data), i.Loc()})
@@ -98,7 +97,12 @@ func compileQuoteEncapsed(i *tokenizer.Item, c compileCtx, q rune) (phpv.Runnabl
 			// end of quote
 			return res, nil
 		default:
-			return nil, i.Unexpected()
+			if i.Rune() == '$' {
+				// just add $ if it's not followed by a valid PHP label
+				res = append(res, &runZVal{phpv.ZString(i.Data), i.Loc()})
+			} else {
+				return nil, i.Unexpected()
+			}
 		}
 	}
 }
