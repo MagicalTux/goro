@@ -17,7 +17,7 @@ var lcgSeed struct {
 func init() {
 	// TODO: seed should be per goroutine/context
 	t := time.Now()
-	sec, usec := t.Unix(), t.Unix()%0x100000
+	sec, usec := t.Unix(), t.UnixMicro()%0x100000
 	lcgSeed.s1 = int32(sec ^ (usec << 11))
 	lcgSeed.s2 = int32(os.Getpid())
 }
@@ -68,7 +68,7 @@ func fncUniqId(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		uniqid = fmt.Sprintf("%s%08x%05x%.8F", prefix, sec, usec, combinedLcg())
 	} else {
 		t := time.Now()
-		sec, usec := t.Unix(), t.Unix()%0x100000
+		sec, usec := t.Unix(), t.UnixMicro()%0x100000
 		uniqid = fmt.Sprintf("%s%08x%05x", prefix, sec, usec)
 	}
 

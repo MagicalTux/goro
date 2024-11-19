@@ -1195,7 +1195,7 @@ func fncStrIStr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // > alias strchr
 func fncStrStr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var haystackArg phpv.ZString
-	var needleArg phpv.ZString
+	var needleArg *phpv.ZVal
 	var beforeArg *phpv.ZBool
 	_, err := core.Expand(ctx, args, &haystackArg, &needleArg, &beforeArg)
 	if err != nil {
@@ -1203,8 +1203,16 @@ func fncStrStr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	haystack := []byte(haystackArg)
-	needle := []byte(needleArg)
 	beforeNeedle := false
+	var needle []byte
+
+	if needleArg.GetType() == phpv.ZtInt {
+		n := byte(needleArg.AsInt(ctx))
+		needle = []byte{n}
+	} else {
+		needle = []byte(needleArg.AsString(ctx))
+	}
+
 	if beforeArg != nil {
 		beforeNeedle = bool(*beforeArg)
 	}
@@ -1227,18 +1235,24 @@ func fncStrStr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // > func string|false strrchr ( string $haystack, string $needle )
 func fncStrRChr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var haystackArg phpv.ZString
-	var needleArg phpv.ZString
+	var needleArg *phpv.ZVal
 	_, err := core.Expand(ctx, args, &haystackArg, &needleArg)
 	if err != nil {
 		return phpv.ZBool(false).ZVal(), err
 	}
 
-	if len(needleArg) == 0 {
-		return phpv.ZFalse.ZVal(), nil
-	}
-
 	haystack := []byte(haystackArg)
-	needle := []byte(needleArg)[0] // only the first char is needed
+	var needle byte
+
+	if needleArg.GetType() == phpv.ZtInt {
+		needle = byte(needleArg.AsInt(ctx))
+	} else {
+		s := []byte(needleArg.AsString(ctx))
+		if len(s) == 0 {
+			return phpv.ZFalse.ZVal(), nil
+		}
+		needle = s[0]
+	}
 
 	i := bytes.LastIndexByte(haystack, needle)
 	if i < 0 {
@@ -1600,7 +1614,7 @@ func fncStrtok(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	result := string(str[startIndex:index])
 
-	strTokTempState.lastIndex = index
+	strTokTempState.lastIndex = index + 1
 	if index >= len(str) && result == "" {
 		return phpv.ZBool(false).ZVal(), nil
 	}

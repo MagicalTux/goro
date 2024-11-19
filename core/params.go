@@ -48,6 +48,13 @@ func zvalStore(ctx phpv.Context, z *phpv.ZVal, out interface{}) error {
 		}
 		*tgt = string(s.Value().(phpv.ZString))
 		return nil
+	case *[]byte:
+		s, err := z.As(ctx, phpv.ZtString)
+		if err != nil {
+			return err
+		}
+		*tgt = []byte(s.Value().(phpv.ZString))
+		return nil
 	case *phpv.ZString:
 		s, err := z.As(ctx, phpv.ZtString)
 		if err != nil {
