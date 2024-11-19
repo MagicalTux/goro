@@ -143,6 +143,21 @@ func fncChr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZString(byte(codepoint)).ZVal(), nil
 }
 
+// > func int ord ( string $string )
+func fncOrd(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var str []byte
+
+	_, err := core.Expand(ctx, args, &str)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(str) == 0 {
+		return phpv.ZInt(0).ZVal(), nil
+	}
+	return phpv.ZInt(str[0]).ZVal(), nil
+}
+
 // > func string chunk_split ( string $string, int $length = 76, string $separator = "\r\n" )
 func fncStrChunkSplit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var strArg phpv.ZString
@@ -1100,6 +1115,21 @@ func fncStrCaseCmp(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZInt(result).ZVal(), nil
 }
 
+// > func int strncasecmp ( string $string1, string $string2 )
+func fncStrNCaseCmp(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var str1, str2 []byte
+	var length phpv.ZInt
+	_, err := core.Expand(ctx, args, &str1, &str2, &length)
+	if err != nil {
+		return phpv.ZBool(false).ZVal(), err
+	}
+
+	str1 = str1[0:min(int(length), len(str1))]
+	str2 = str2[0:min(int(length), len(str2))]
+	result := strcmpCommon(str1, str2, false)
+	return phpv.ZInt(result).ZVal(), nil
+}
+
 // > func int strcmp ( string $string1, string $string2 )
 func fncStrCmp(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var str1, str2 phpv.ZString
@@ -1455,20 +1485,19 @@ func fncStrIPos(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 // > func int|false strpos ( string $haystack, string $needle, int $offset = 0 )
 func fncStrPos(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	var haystackArg, needleArg phpv.ZString
+	var haystack, needle []byte
 	var offsetArg *phpv.ZInt
-	_, err := core.Expand(ctx, args, &haystackArg, &needleArg, &offsetArg)
+	_, err := core.Expand(ctx, args, &haystack, &needle, &offsetArg)
 	if err != nil {
 		return phpv.ZBool(false).ZVal(), err
 	}
+
+	// TODO: handle case where needle is int
 
 	offset := 0
 	if offsetArg != nil {
 		offset = int(*offsetArg)
 	}
-
-	haystack := []byte(haystackArg)
-	needle := []byte(needleArg)
 
 	if offset >= len(haystack) {
 		return phpv.ZBool(false).ZVal(), nil
@@ -1481,7 +1510,46 @@ func fncStrPos(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if result < 0 {
 		return phpv.ZBool(false).ZVal(), nil
 	}
+
 	return phpv.ZInt(result + offset).ZVal(), nil
+}
+
+// > func int|false strrpos ( string $haystack, string $needle, int $offset = 0 )
+func fncStrRPos(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var haystack, needle []byte
+	var offsetArg *phpv.ZInt
+	_, err := core.Expand(ctx, args, &haystack, &needle, &offsetArg)
+	if err != nil {
+		return phpv.ZBool(false).ZVal(), err
+	}
+
+	// TODO: handle case where needle is int
+
+	offset := 0
+	if offsetArg != nil {
+		offset = int(*offsetArg)
+	}
+
+	if offset >= len(haystack) {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	if offset >= 0 {
+		haystack = haystack[offset:]
+		result := bytes.LastIndex(haystack, needle)
+		if result < 0 {
+			return phpv.ZBool(false).ZVal(), nil
+		}
+
+		return phpv.ZInt(result + offset).ZVal(), nil
+	} else {
+		n := len(haystack) + offset
+		result := bytes.LastIndex(haystack[:n], needle)
+		if result < 0 {
+			return phpv.ZBool(false).ZVal(), nil
+		}
+
+		return phpv.ZInt(result).ZVal(), nil
+	}
 }
 
 // > func string stripslashes ( string $string )
