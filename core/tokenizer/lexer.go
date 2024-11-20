@@ -20,6 +20,7 @@ type Lexer struct {
 	start, pos int
 	width      int
 	items      chan *Item
+	prevItem   *Item
 	base       lexState
 
 	inputRst []byte
@@ -105,7 +106,9 @@ func (l *Lexer) run(state lexState) {
 }
 
 func (l *Lexer) emit(t ItemType) {
-	l.items <- &Item{t, l.output.String(), l.fn, l.sLine, l.sChar}
+	item := &Item{t, l.output.String(), l.fn, l.sLine, l.sChar}
+	l.items <- item
+	l.prevItem = item
 	l.start = l.pos
 	l.sLine, l.sChar = l.cLine, l.cChar
 	l.output.Reset()

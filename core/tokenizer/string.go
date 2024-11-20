@@ -50,7 +50,7 @@ func lexPhpStringWhitespace(l *Lexer) lexState {
 			return l.base
 		case '\\':
 			// handle case where "\$" == "$"
-			if l.peekString(2) == `\$` {
+			if l.hasPrefix(`\$`) {
 				l.input.ReadRune() // skip \
 				l.next()
 			} else {
@@ -65,10 +65,73 @@ func lexPhpStringWhitespace(l *Lexer) lexState {
 			}
 			// meh :(
 			return lexPhpVariable
+		case '{':
+			if l.hasPrefix(`{$`) {
+				if l.pos > l.start {
+					l.emit(T_ENCAPSED_AND_WHITESPACE)
+				}
+
+				l.next()
+				l.emit(Rune(c))
+				lexPhpVariable(l)
+				l.push(lexInterpolatedComplexVar)
+				return l.base
+			} else {
+				l.next()
+			}
 		default:
-			l.next()
+			if l.prevItem != nil && l.prevItem.Type == T_VARIABLE {
+				switch c {
+				case '-':
+					l.push(lexInterpolatedObjectOp)
+					return l.base
+				case '[':
+					l.push(lexInterpolatedArrayAccess)
+					return l.base
+				default:
+					l.next()
+				}
+			} else {
+				l.next()
+			}
 		}
 	}
+}
+
+func lexInterpolatedObjectOp(l *Lexer) lexState {
+	lexPhpOperator(l)
+	lexPhpString(l)
+	l.pop()
+	return l.base
+}
+
+func lexInterpolatedArrayAccess(l *Lexer) lexState {
+	lexPhpOperator(l)
+
+	c := l.peek()
+	switch {
+	case '0' <= c && c <= '9':
+		lexNumber(l)
+	case 'a' <= c && c <= 'z', 'A' <= c && c <= 'Z', c == '_', 0x7f <= c:
+		lexPhpString(l)
+	default:
+		return l.error("unexpected character %c", c)
+	}
+	lexPhpOperator(l)
+
+	l.pop()
+	return l.base
+}
+
+func lexInterpolatedComplexVar(l *Lexer) lexState {
+	c := l.peek()
+	if c == '}' {
+		l.emit(Rune(l.next()))
+		l.pop()
+		return l.base
+	}
+
+	return lexPhp(l)
 }
 
 func lexPhpStringWhitespaceBack(l *Lexer) lexState {

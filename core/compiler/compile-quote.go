@@ -92,19 +92,76 @@ func compileQuoteEncapsed(i *tokenizer.Item, c compileCtx, q rune) (phpv.Runnabl
 		case tokenizer.T_ENCAPSED_AND_WHITESPACE:
 			res = append(res, &runZVal{unescapePhpQuotedString(i.Data), i.Loc()})
 		case tokenizer.T_VARIABLE:
-			res = append(res, &runVariable{phpv.ZString(i.Data[1:]), i.Loc()})
+			var v phpv.Runnable = &runVariable{phpv.ZString(i.Data[1:]), i.Loc()}
+
+			i, err = c.NextItem()
+			if err != nil {
+				return nil, err
+			}
+
+			// check if there's a [] or -> after $var
+			switch i.Type {
+			case tokenizer.T_OBJECT_OPERATOR:
+				fallthrough
+			case tokenizer.Rune('['):
+				v, err = compilePostExpr(v, i, c)
+				if err != nil {
+					return nil, err
+				}
+				res = append(res, v)
+			default:
+				c.backup()
+				res = append(res, v)
+			}
+		case tokenizer.Rune('{'):
+			v, err := compileQuoteComplexExpr(c)
+			if err != nil {
+				return nil, err
+			}
+			res = append(res, v)
+
+		case tokenizer.Rune('$'):
+			// just add $ if it's not followed by a valid PHP label
+			res = append(res, &runZVal{phpv.ZString(i.Data), i.Loc()})
 		case tokenizer.Rune(q):
 			// end of quote
 			return res, nil
 		default:
-			if i.Rune() == '$' {
-				// just add $ if it's not followed by a valid PHP label
-				res = append(res, &runZVal{phpv.ZString(i.Data), i.Loc()})
-			} else {
-				return nil, i.Unexpected()
-			}
+			return nil, i.Unexpected()
 		}
 	}
+}
+
+func compileQuoteComplexExpr(c compileCtx) (phpv.Runnable, error) {
+	// currently at {
+	i, err := c.NextItem()
+	if err != nil {
+		return nil, err
+	}
+	if i.Type != tokenizer.T_VARIABLE {
+		return nil, i.Unexpected()
+	}
+
+	// similar to compileExpr, except this should start with a variable
+	var v phpv.Runnable = &runVariable{phpv.ZString(i.Data[1:]), i.Loc()}
+	for {
+		sr, err := compilePostExpr(v, nil, c)
+		if err != nil {
+			return nil, err
+		}
+		if sr == nil {
+			break
+		}
+		v = sr
+	}
+
+	i, err = c.NextItem()
+	if err != nil {
+		return nil, err
+	}
+
+	// currently at }
+	return v, err
 }
 
 func unescapePhpQuotedString(in string) phpv.ZString {
