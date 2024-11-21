@@ -1,16 +1,20 @@
 package tokenizer
 
+type stringLexer struct {
+	delimeter rune
+}
+
 func lexPhpStringConst(l *Lexer) lexState {
 	st_type := l.next() // " or '
 	if st_type == '"' {
 		// too lazy to work this out, let's switch to the other lexer
 		l.emit(Rune('"'))
-		l.push(lexPhpStringWhitespace)
+		l.push(stringLexer{'"'}.lexStringWhitespace)
 		return l.base
 	}
 	if st_type == '`' {
 		l.emit(Rune('`'))
-		l.push(lexPhpStringWhitespaceBack)
+		l.push(stringLexer{'`'}.lexStringWhitespace)
 		return l.base
 	}
 
@@ -30,7 +34,7 @@ func lexPhpStringConst(l *Lexer) lexState {
 	}
 }
 
-func lexPhpStringWhitespace(l *Lexer) lexState {
+func (sl stringLexer) lexStringWhitespace(l *Lexer) lexState {
 	for {
 		c := l.peek()
 
@@ -39,7 +43,7 @@ func lexPhpStringWhitespace(l *Lexer) lexState {
 			l.emit(T_ENCAPSED_AND_WHITESPACE)
 			l.error("unexpected eof in string")
 			return nil
-		case '"':
+		case sl.delimeter:
 			// end of string
 			if l.pos > l.start {
 				l.emit(T_ENCAPSED_AND_WHITESPACE)
@@ -132,39 +136,4 @@ func lexInterpolatedComplexVar(l *Lexer) lexState {
 	}
 
 	return lexPhp(l)
-}
-
-func lexPhpStringWhitespaceBack(l *Lexer) lexState {
-	for {
-		c := l.peek()
-
-		switch c {
-		case eof:
-			l.emit(T_ENCAPSED_AND_WHITESPACE)
-			l.error("unexpected eof in string")
-			return nil
-		case '`':
-			// end of string
-			if l.pos > l.start {
-				l.emit(T_ENCAPSED_AND_WHITESPACE)
-			}
-			l.next() // `
-			l.emit(Rune('`'))
-			l.pop() // return to previous context
-			return l.base
-		case '\\':
-			// advance (ignore) one
-			l.next() // \
-			l.next() // the escaped char
-		case '$':
-			// this is a variable
-			if l.pos > l.start {
-				l.emit(T_ENCAPSED_AND_WHITESPACE)
-			}
-			// meh :(
-			return lexPhpVariable
-		default:
-			l.next()
-		}
-	}
 }
