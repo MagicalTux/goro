@@ -20,6 +20,12 @@ func lexPhpHeredoc(l *Lexer) lexState {
 	}
 
 	l.emit(T_START_HEREDOC)
+	if l.hasPrefix(op) {
+		// handle case where heredoc is empty
+		l.advance(len(op))
+		l.emit(T_END_HEREDOC)
+		return l.base
+	}
 
 	op = "\n" + op
 
