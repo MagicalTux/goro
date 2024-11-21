@@ -31,21 +31,21 @@ type operatorInternalDetails struct {
 var operatorList = map[tokenizer.ItemType]*operatorInternalDetails{
 	tokenizer.Rune('='):             &operatorInternalDetails{write: true, skipA: true, pri: 25},
 	tokenizer.T_CONCAT_EQUAL:        &operatorInternalDetails{write: true, op: operatorAppend, pri: 25},
-	tokenizer.T_DIV_EQUAL:           &operatorInternalDetails{write: true, numeric: true, op: operatorMath, pri: 25},
-	tokenizer.T_MUL_EQUAL:           &operatorInternalDetails{write: true, numeric: true, op: operatorMath, pri: 25},
-	tokenizer.T_POW_EQUAL:           &operatorInternalDetails{write: true, numeric: true, op: operatorMath, pri: 25},
-	tokenizer.T_MINUS_EQUAL:         &operatorInternalDetails{write: true, numeric: true, op: operatorMath, pri: 25},
-	tokenizer.T_PLUS_EQUAL:          &operatorInternalDetails{write: true, numeric: true, op: operatorMath, pri: 25},
+	tokenizer.T_DIV_EQUAL:           &operatorInternalDetails{write: true, skipA: true, numeric: true, op: operatorMath, pri: 25},
+	tokenizer.T_MUL_EQUAL:           &operatorInternalDetails{write: true, skipA: true, numeric: true, op: operatorMath, pri: 25},
+	tokenizer.T_POW_EQUAL:           &operatorInternalDetails{write: true, skipA: true, numeric: true, op: operatorMath, pri: 25},
+	tokenizer.T_MINUS_EQUAL:         &operatorInternalDetails{write: true, skipA: true, numeric: true, op: operatorMath, pri: 25},
+	tokenizer.T_PLUS_EQUAL:          &operatorInternalDetails{write: true, skipA: true, numeric: true, op: operatorMath, pri: 25},
 	tokenizer.Rune('.'):             &operatorInternalDetails{op: operatorAppend, pri: 14},
 	tokenizer.Rune('+'):             &operatorInternalDetails{numeric: true, op: operatorMath, pri: 14},
 	tokenizer.Rune('-'):             &operatorInternalDetails{numeric: true, op: operatorMath, pri: 14},
 	tokenizer.Rune('/'):             &operatorInternalDetails{numeric: true, op: operatorMath, pri: 13},
 	tokenizer.Rune('*'):             &operatorInternalDetails{numeric: true, op: operatorMath, pri: 13},
-	tokenizer.T_POW:                 &operatorInternalDetails{numeric: true, op: operatorMath, pri: 10},
-	tokenizer.T_OR_EQUAL:            &operatorInternalDetails{write: true, numeric: true, op: operatorMathLogic, pri: 25},
-	tokenizer.T_XOR_EQUAL:           &operatorInternalDetails{write: true, numeric: true, op: operatorMathLogic, pri: 25},
-	tokenizer.T_AND_EQUAL:           &operatorInternalDetails{write: true, numeric: true, op: operatorMathLogic, pri: 25},
-	tokenizer.T_MOD_EQUAL:           &operatorInternalDetails{write: true, numeric: true, op: operatorMathLogic, pri: 25},
+	tokenizer.T_POW:                 &operatorInternalDetails{numeric: true, skipA: true, op: operatorMath, pri: 10},
+	tokenizer.T_OR_EQUAL:            &operatorInternalDetails{write: true, skipA: true, numeric: true, op: operatorMathLogic, pri: 25},
+	tokenizer.T_XOR_EQUAL:           &operatorInternalDetails{write: true, skipA: true, numeric: true, op: operatorMathLogic, pri: 25},
+	tokenizer.T_AND_EQUAL:           &operatorInternalDetails{write: true, skipA: true, numeric: true, op: operatorMathLogic, pri: 25},
+	tokenizer.T_MOD_EQUAL:           &operatorInternalDetails{write: true, skipA: true, numeric: true, op: operatorMathLogic, pri: 25},
 	tokenizer.Rune('|'):             &operatorInternalDetails{op: operatorMathLogic, pri: 20},
 	tokenizer.Rune('^'):             &operatorInternalDetails{op: operatorMathLogic, pri: 19},
 	tokenizer.Rune('&'):             &operatorInternalDetails{op: operatorMathLogic, pri: 18},
@@ -56,8 +56,8 @@ var operatorList = map[tokenizer.ItemType]*operatorInternalDetails{
 	tokenizer.T_LOGICAL_AND:         &operatorInternalDetails{numeric: true, op: operatorMathLogic, pri: 26},
 	tokenizer.T_LOGICAL_XOR:         &operatorInternalDetails{numeric: true, op: operatorMathLogic, pri: 27},
 	tokenizer.T_LOGICAL_OR:          &operatorInternalDetails{numeric: true, op: operatorMathLogic, pri: 28},
-	tokenizer.T_SL_EQUAL:            &operatorInternalDetails{write: true, numeric: true, op: operatorMathLogic, pri: 25},
-	tokenizer.T_SR_EQUAL:            &operatorInternalDetails{write: true, numeric: true, op: operatorMathLogic, pri: 25},
+	tokenizer.T_SL_EQUAL:            &operatorInternalDetails{write: true, skipA: true, numeric: true, op: operatorMathLogic, pri: 25},
+	tokenizer.T_SR_EQUAL:            &operatorInternalDetails{write: true, skipA: true, numeric: true, op: operatorMathLogic, pri: 25},
 	tokenizer.Rune('<'):             &operatorInternalDetails{op: operatorCompare, pri: 16},
 	tokenizer.Rune('>'):             &operatorInternalDetails{op: operatorCompare, pri: 16},
 	tokenizer.T_IS_SMALLER_OR_EQUAL: &operatorInternalDetails{op: operatorCompare, pri: 16},
@@ -70,7 +70,7 @@ var operatorList = map[tokenizer.ItemType]*operatorInternalDetails{
 	tokenizer.Rune('!'):             &operatorInternalDetails{op: operatorNot, pri: 12},
 	tokenizer.T_BOOLEAN_AND:         &operatorInternalDetails{op: operatorBoolLogic, pri: 21},
 	tokenizer.T_BOOLEAN_OR:          &operatorInternalDetails{op: operatorBoolLogic, pri: 22},
-	tokenizer.T_COALESCE:            &operatorInternalDetails{pri: 23}, // TODO
+	tokenizer.T_COALESCE:            &operatorInternalDetails{pri: 23, skipA: true}, // TODO
 	tokenizer.T_INC:                 &operatorInternalDetails{op: operatorIncDec, pri: 11},
 	tokenizer.T_DEC:                 &operatorInternalDetails{op: operatorIncDec, pri: 11},
 	tokenizer.Rune('@'):             &operatorInternalDetails{pri: 11}, // TODO
@@ -99,6 +99,12 @@ var operatorList = map[tokenizer.ItemType]*operatorInternalDetails{
 func isOperator(t tokenizer.ItemType) bool {
 	_, ok := operatorList[t]
 	return ok
+}
+func isRightAssociative(t tokenizer.ItemType) bool {
+	if op, ok := operatorList[t]; ok {
+		return op.skipA
+	}
+	return false
 }
 
 func (r *runOperator) Dump(w io.Writer) error {

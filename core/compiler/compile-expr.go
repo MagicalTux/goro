@@ -43,7 +43,7 @@ func compileOpExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	}
 
 	for {
-		if isOperator(c.peekType()) {
+		if isOperator(c.peekType()) && !isRightAssociative(c.peekType()) {
 			return res, nil
 		}
 		sr, err := compilePostExpr(res, nil, c)
