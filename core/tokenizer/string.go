@@ -78,7 +78,15 @@ func (sl stringLexer) lexStringWhitespace(l *Lexer) lexState {
 				l.push(lexInterpolatedComplexVar)
 				return l.base
 			} else {
-				return lexPhpVariable
+				lexPhpVariable(l)
+				switch c := l.peek(); c {
+				case '-':
+					l.push(lexInterpolatedObjectOp)
+					return l.base
+				case '[':
+					l.push(lexInterpolatedArrayAccess)
+					return l.base
+				}
 			}
 		case '{':
 			if l.hasPrefix(`{$`) {
@@ -95,20 +103,7 @@ func (sl stringLexer) lexStringWhitespace(l *Lexer) lexState {
 				l.next()
 			}
 		default:
-			if l.prevItem != nil && l.prevItem.Type == T_VARIABLE {
-				switch c {
-				case '-':
-					l.push(lexInterpolatedObjectOp)
-					return l.base
-				case '[':
-					l.push(lexInterpolatedArrayAccess)
-					return l.base
-				default:
-					l.next()
-				}
-			} else {
-				l.next()
-			}
+			l.next()
 		}
 	}
 }
@@ -123,15 +118,20 @@ func lexInterpolatedObjectOp(l *Lexer) lexState {
 func lexInterpolatedArrayAccess(l *Lexer) lexState {
 	lexPhpOperator(l)
 
-	c := l.peek()
-	switch {
-	case '0' <= c && c <= '9':
-		lexNumber(l)
-	case 'a' <= c && c <= 'z', 'A' <= c && c <= 'Z', c == '_', 0x7f <= c:
-		lexPhpString(l)
+	switch c := l.peek(); c {
+	case '$':
+		lexPhpVariable(l)
 	default:
-		return l.error("unexpected character %c", c)
+		switch {
+		case '0' <= c && c <= '9':
+			lexNumber(l)
+		case 'a' <= c && c <= 'z', 'A' <= c && c <= 'Z', c == '_', 0x7f <= c:
+			lexPhpString(l)
+		default:
+			return l.error("unexpected character %c", c)
+		}
 	}
+
 	lexPhpOperator(l)
 
 	l.pop()
