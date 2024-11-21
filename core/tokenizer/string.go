@@ -67,8 +67,19 @@ func (sl stringLexer) lexStringWhitespace(l *Lexer) lexState {
 			if l.pos > l.start {
 				l.emit(T_ENCAPSED_AND_WHITESPACE)
 			}
-			// meh :(
-			return lexPhpVariable
+
+			if l.hasPrefix(`${`) {
+				if l.pos > l.start {
+					l.emit(T_ENCAPSED_AND_WHITESPACE)
+				}
+				l.emit(Rune(l.next()))
+				l.emit(Rune(l.next()))
+
+				l.push(lexInterpolatedComplexVar)
+				return l.base
+			} else {
+				return lexPhpVariable
+			}
 		case '{':
 			if l.hasPrefix(`{$`) {
 				if l.pos > l.start {

@@ -121,8 +121,17 @@ func compileQuoteEncapsed(i *tokenizer.Item, c compileCtx, q rune) (phpv.Runnabl
 			res = append(res, v)
 
 		case tokenizer.Rune('$'):
-			// just add $ if it's not followed by a valid PHP label
-			res = append(res, &runZVal{phpv.ZString(i.Data), i.Loc()})
+			switch c.peekType() {
+			case tokenizer.Rune('{'):
+				v, err := compileOneExpr(i, c)
+				if err != nil {
+					return nil, err
+				}
+				res = append(res, v)
+			default:
+				// just add $ if it's not followed by a valid PHP label
+				res = append(res, &runZVal{phpv.ZString(i.Data), i.Loc()})
+			}
 		case tokenizer.Rune(q):
 			// end of quote
 			return res, nil
