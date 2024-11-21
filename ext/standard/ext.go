@@ -125,6 +125,7 @@ func init() {
 			"set_time_limit":           {Func: fncSetTimeLimit, Args: []*phpctx.ExtFunctionArg{}},
 			"sha1":                     {Func: fncStrSha1, Args: []*phpctx.ExtFunctionArg{}},
 			"sha1_file":                {Func: fncStrSha1File, Args: []*phpctx.ExtFunctionArg{}},
+			"shell_exec":               {Func: fncShellExec, Args: []*phpctx.ExtFunctionArg{}},
 			"sleep":                    {Func: stdFuncSleep, Args: []*phpctx.ExtFunctionArg{}},
 			"sprintf":                  {Func: fncSprintf, Args: []*phpctx.ExtFunctionArg{}},
 			"str_contains":             {Func: fncStrContains, Args: []*phpctx.ExtFunctionArg{}},
