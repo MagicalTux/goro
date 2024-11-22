@@ -1,7 +1,6 @@
 package compiler
 
 import (
-	"errors"
 	"io"
 
 	"github.com/MagicalTux/goro/core/phpv"
@@ -31,7 +30,7 @@ func (r *runnableUnset) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 		if x, ok := v.(phpv.Writable); ok {
 			x.WriteValue(ctx, nil)
 		} else {
-			return nil, errors.New("unable to unset value")
+			return nil, ctx.Errorf("unable to unset value")
 		}
 	}
 	return nil, nil

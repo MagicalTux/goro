@@ -1,7 +1,6 @@
 package compiler
 
 import (
-	"errors"
 	"io"
 
 	"github.com/MagicalTux/goro/core/phpv"
@@ -28,11 +27,11 @@ func (r *runnableClone) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 	}
 
 	if v.GetType() != phpv.ZtObject {
-		return nil, errors.New("__clone method called on non-object")
+		return nil, ctx.Errorf("__clone method called on non-object")
 	}
 
 	obj := v.Value().(phpv.ZObject)
-	obj, err = obj.Clone()
+	obj, err = obj.Clone(ctx)
 	if err != nil {
 		return nil, err
 	}

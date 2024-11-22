@@ -1,9 +1,6 @@
 package phpobj
 
 import (
-	"errors"
-	"fmt"
-
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -44,10 +41,12 @@ func (z *ZObject) SetOpaque(c phpv.ZClass, v interface{}) {
 func (z *ZObject) AsVal(ctx phpv.Context, t phpv.ZType) (phpv.Val, error) {
 	switch t {
 	case phpv.ZtString:
-		// check for __toString() method
+		if m, ok := z.Class.GetMethod("__tostring"); ok {
+			return m.Method.Call(ctx, nil)
+		}
 	}
 
-	return nil, fmt.Errorf("failed to convert object to %s", t)
+	return nil, ctx.Errorf("failed to convert object to %s", t)
 }
 
 func NewZObject(ctx phpv.Context, c phpv.ZClass) (*ZObject, error) {
@@ -58,10 +57,10 @@ func NewZObject(ctx phpv.Context, c phpv.ZClass) (*ZObject, error) {
 	return n, n.init(ctx)
 }
 
-func (z *ZObject) Clone() (phpv.ZObject, error) {
+func (z *ZObject) Clone(ctx phpv.Context) (phpv.ZObject, error) {
 	if len(z.Opaque) != 0 {
 		// TODO allow clone callbacks
-		return nil, errors.New("object cannot be cloned")
+		return nil, ctx.Errorf("object cannot be cloned")
 	}
 
 	n := &ZObject{
@@ -89,9 +88,9 @@ func (o *ZObject) init(ctx phpv.Context) error {
 	return nil
 }
 
-func (o *ZObject) OffsetSet(key, value *phpv.ZVal) (*phpv.ZVal, error) {
+func (o *ZObject) OffsetSet(ctx phpv.Context, key, value *phpv.ZVal) (*phpv.ZVal, error) {
 	// if extending ArrayAccess → todo
-	return nil, errors.New("Cannot use object of type stdClass as array")
+	return nil, ctx.Errorf("Cannot use object of type stdClass as array")
 }
 
 func (o *ZObject) GetMethod(method phpv.ZString, ctx phpv.Context) (phpv.Callable, error) {
@@ -102,7 +101,7 @@ func (o *ZObject) GetMethod(method phpv.ZString, ctx phpv.Context) (phpv.Callabl
 		if ok {
 			return &callCatcher{method, m.Method}, nil
 		}
-		return nil, fmt.Errorf("Call to undefined method %s::%s()", o.Class.GetName(), method)
+		return nil, ctx.Errorf("Call to undefined method %s::%s()", o.Class.GetName(), method)
 	}
 	// TODO check method access
 	return m.Method, nil

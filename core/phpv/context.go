@@ -22,6 +22,13 @@ type Context interface {
 	Tick(ctx Context, l *Loc) error
 	MemAlloc(ctx Context, s uint64) error
 
+	Errorf(format string, a ...any) error
+	Error(err error, t ...PhpErrorType) error
+	FuncErrorf(format string, a ...any) error
+	FuncError(err error, t ...PhpErrorType) error
+
+	GetFuncName() string
+
 	GetConfig(name ZString, def *ZVal) *ZVal
 
 	Call(ctx Context, f Callable, args []Runnable, this ZObject) (*ZVal, error)

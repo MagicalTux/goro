@@ -7,6 +7,10 @@ type callCatcher struct {
 	target phpv.Callable
 }
 
+func (c *callCatcher) Name() string {
+	return string(c.name)
+}
+
 func (c *callCatcher) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	a := phpv.NewZArray()
 	for _, sub := range args {

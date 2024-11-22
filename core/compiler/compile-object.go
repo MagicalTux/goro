@@ -1,7 +1,6 @@
 package compiler
 
 import (
-	"errors"
 	"fmt"
 	"io"
 
@@ -145,7 +144,7 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 
 	objI, ok := obj.Value().(*phpobj.ZObject)
 	if !ok {
-		return nil, errors.New("variable is not an object, cannot call method")
+		return nil, ctx.Errorf("variable is not an object, cannot call method")
 	}
 
 	// execute call
@@ -167,7 +166,7 @@ func (r *runObjectVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	objI, ok := obj.Value().(phpv.ZObjectAccess)
 	if !ok {
 		// TODO make this a warning
-		return nil, errors.New("variable is not an object, cannot fetch property")
+		return nil, ctx.Errorf("variable is not an object, cannot fetch property")
 	}
 
 	// offset get
@@ -196,7 +195,7 @@ func (r *runObjectVar) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 	objI, ok := obj.Value().(phpv.ZObjectAccess)
 	if !ok {
 		// TODO cast to object?
-		return errors.New("variable is not an object, cannot set property")
+		return ctx.Errorf("variable is not an object, cannot set property")
 	}
 
 	// offset set

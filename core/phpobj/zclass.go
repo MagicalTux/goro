@@ -1,7 +1,6 @@
 package phpobj
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -53,7 +52,7 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 			return err
 		}
 		if _, found := c.parents[subc]; found {
-			return errors.New("class extends loop found")
+			return ctx.Errorf("class extends loop found")
 		}
 		c.Extends = subc.(*ZClass)
 		c.parents[subc] = subc

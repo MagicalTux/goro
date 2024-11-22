@@ -38,6 +38,8 @@ type Global struct {
 	fHandler      map[string]stream.Handler
 	included      map[phpv.ZString]bool // included files (used for require_once, etc)
 
+	callStack []phpv.Callable
+
 	globalLazyFunc  map[phpv.ZString]*globalLazyOffset
 	globalLazyClass map[phpv.ZString]*globalLazyOffset
 
@@ -217,6 +219,32 @@ func (g *Global) Loc() *phpv.Loc {
 	return g.l
 }
 
+func (g *Global) Error(err error, t ...phpv.PhpErrorType) error {
+	return g.l.Error(err, t...)
+}
+
+func (g *Global) Errorf(format string, a ...any) error {
+	return g.l.Errorf(phpv.E_ERROR, format, a...)
+}
+
+func (g *Global) FuncError(err error, t ...phpv.PhpErrorType) error {
+	wrappedErr := g.l.Error(err, t...)
+	wrappedErr.FuncName = g.GetFuncName()
+	return err
+}
+func (g *Global) FuncErrorf(format string, a ...any) error {
+	err := g.l.Errorf(phpv.E_ERROR, format, a...)
+	err.FuncName = g.GetFuncName()
+	return err
+}
+
+func (g *Global) GetFuncName() string {
+	if len(g.callStack) > 0 {
+		return g.callStack[len(g.callStack)-1].Name()
+	}
+	return ""
+}
+
 func (g *Global) Func() phpv.FuncContext {
 	return nil
 }
@@ -228,7 +256,7 @@ func (g *Global) This() phpv.ZObject {
 func (g *Global) RegisterFunction(name phpv.ZString, f phpv.Callable) error {
 	name = name.ToLower()
 	if _, exists := g.globalFuncs[name]; exists {
-		return errors.New("duplicate function name in declaration")
+		return g.Errorf("duplicate function name in declaration")
 	}
 	g.globalFuncs[name] = f
 	delete(g.globalLazyFunc, name)
@@ -249,7 +277,8 @@ func (g *Global) GetFunction(ctx phpv.Context, name phpv.ZString) (phpv.Callable
 			return f, nil
 		}
 	}
-	return nil, fmt.Errorf("Call to undefined function %s", name)
+
+	return nil, g.Errorf("Call to undefined function %s", name)
 }
 
 func (g *Global) ConstantGet(name phpv.ZString) (phpv.Val, bool) {
@@ -274,33 +303,32 @@ func (g *Global) GetClass(ctx phpv.Context, name phpv.ZString, autoload bool) (p
 		// check for func
 		f := ctx.Func().(*FuncContext)
 		if f == nil {
-			return nil, errors.New("Cannot access self:: when no method scope is active")
+			return nil, ctx.Errorf("Cannot access self:: when no method scope is active")
 		}
 		cfunc, ok := f.c.(phpv.ZClosure)
 		if !ok || cfunc.GetClass() == nil {
-			log.Printf("cfunc=%#v", f.c)
-			return nil, errors.New("Cannot access self:: when no class scope is active")
+			return nil, ctx.Errorf("Cannot access self:: when no class scope is active")
 		}
 		return cfunc.GetClass(), nil
 	case "parent":
 		// check for func
 		f := ctx.Func().(*FuncContext)
 		if f == nil {
-			return nil, errors.New("Cannot access parent:: when no method scope is active")
+			return nil, ctx.Errorf("Cannot access parent:: when no method scope is active")
 		}
 		cfunc, ok := f.c.(phpv.ZClosure)
 		if !ok || cfunc.GetClass() == nil {
-			return nil, errors.New("Cannot access parent:: when no class scope is active")
+			return nil, ctx.Errorf("Cannot access parent:: when no class scope is active")
 		}
 		if cfunc.GetClass().GetParent() == nil {
-			return nil, errors.New("Cannot access parent:: when current class scope has no parent")
+			return nil, ctx.Errorf("Cannot access parent:: when current class scope has no parent")
 		}
 		return cfunc.GetClass().GetParent(), nil
 	case "static":
 		// check for func
 		f := ctx.Func().(*FuncContext)
 		if f == nil || f.this == nil {
-			return nil, errors.New("Cannot access static:: when no class scope is active")
+			return nil, ctx.Errorf("Cannot access static:: when no class scope is active")
 		}
 		return f.this.GetClass(), nil
 	}
@@ -318,7 +346,7 @@ func (g *Global) GetClass(ctx phpv.Context, name phpv.ZString, autoload bool) (p
 		}
 	}
 	// TODO if autoload { do autoload }
-	return nil, fmt.Errorf("Class '%s' not found", name)
+	return nil, ctx.Errorf("Class '%s' not found", name)
 }
 
 func (g *Global) RegisterClass(name phpv.ZString, c phpv.ZClass) error {

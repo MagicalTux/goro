@@ -1,7 +1,6 @@
 package compiler
 
 import (
-	"errors"
 	"fmt"
 	"io"
 
@@ -154,6 +153,13 @@ func (z *ZClosure) GetArgs() []*phpv.FuncArg {
 	return z.args
 }
 
+func (z *ZClosure) Name() string {
+	if z.name == "" {
+		return "anonymous"
+	}
+	return string(z.name)
+}
+
 func (z *ZClosure) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	// typically, we run from a clean context
 	var err error
@@ -167,7 +173,7 @@ func (z *ZClosure) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	for i, a := range z.args {
 		if len(args) <= i || args[i] == nil {
 			if a.Required {
-				return nil, errors.New("Uncaught ArgumentCountError: Too few arguments to function toto()")
+				return nil, ctx.Errorf("Uncaught ArgumentCountError: Too few arguments to function toto()")
 			}
 			if a.DefaultValue != nil {
 				if len(args) == i {

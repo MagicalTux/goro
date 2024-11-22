@@ -1,8 +1,6 @@
 package core
 
 import (
-	"errors"
-
 	"github.com/MagicalTux/goro/core/phpctx"
 	"github.com/MagicalTux/goro/core/phpv"
 )
@@ -16,7 +14,7 @@ func fncFuncGetArgs(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	// go back one context
 	c, ok := ctx.Parent(1).(*phpctx.FuncContext)
 	if !ok {
-		return nil, errors.New("func_get_args():  Called from the global scope - no function context")
+		return nil, ctx.FuncErrorf("Called from the global scope - no function context")
 	}
 
 	r := phpv.NewZArray()
@@ -33,7 +31,7 @@ func fncFuncNumArgs(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	// go back one context
 	c, ok := ctx.Parent(1).(*phpctx.FuncContext)
 	if !ok {
-		return nil, errors.New("func_num_args():  Called from the global scope - no function context")
+		return nil, ctx.FuncErrorf(" Called from the global scope - no function context")
 	}
 
 	return phpv.ZInt(len(c.Args)).ZVal(), nil
@@ -50,7 +48,7 @@ func fncFuncGetArg(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	// go back one context
 	c, ok := ctx.Parent(1).(*phpctx.FuncContext)
 	if !ok {
-		return nil, errors.New("func_get_arg():  Called from the global scope - no function context")
+		return nil, ctx.FuncErrorf("Called from the global scope - no function context")
 	}
 
 	if argNum < 0 || argNum >= phpv.ZInt(len(c.Args)) {

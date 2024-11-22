@@ -1,7 +1,6 @@
 package core
 
 import (
-	"errors"
 	"strings"
 
 	"github.com/MagicalTux/goro/core/phpv"
@@ -78,7 +77,7 @@ func fncCount(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	if mode != nil {
-		return nil, errors.New("todo recursive count")
+		return nil, ctx.Errorf("todo recursive count")
 	}
 
 	if v, ok := countable.Value().(phpv.ZCountable); ok {
@@ -86,7 +85,7 @@ func fncCount(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	// make this a warning
-	return phpv.ZInt(1).ZVal(), errors.New("count(): Parameter must be an array or an object that implements Countable")
+	return phpv.ZInt(1).ZVal(), ctx.Errorf("Parameter must be an array or an object that implements Countable")
 }
 
 // > func int strcmp ( string $str1 , string $str2 )

@@ -16,8 +16,13 @@ type Ext struct {
 }
 
 type ExtFunction struct {
+	name string
 	Func func(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	Args []*ExtFunctionArg
+}
+
+func (e *ExtFunction) Name() string {
+	return e.name
 }
 
 func (e *ExtFunction) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
@@ -31,6 +36,9 @@ type ExtFunctionArg struct {
 
 func RegisterExt(e *Ext) {
 	globalExtMap[e.Name] = e
+	for name, fn := range e.Functions {
+		fn.name = name
+	}
 }
 
 func HasExt(name string) bool {

@@ -1,8 +1,6 @@
 package compiler
 
 import (
-	"errors"
-	"fmt"
 	"io"
 	"math"
 
@@ -136,7 +134,7 @@ func spawnOperator(op tokenizer.ItemType, a, b phpv.Runnable, l *phpv.Loc) (phpv
 	var err error
 	opD, ok := operatorList[op]
 	if !ok {
-		return nil, l.Errorf(nil, phpv.E_COMPILE_ERROR, "invalid operator %s", op)
+		return nil, l.Errorf(phpv.E_COMPILE_ERROR, "invalid operator %s", op)
 	}
 
 	//log.Printf("spawn operator %s %s %s", debugDump(a), op.Name(), debugDump(b))
@@ -212,9 +210,10 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	}
 
 	if op.write {
+		// $a = ($b = 1234);
 		w, ok := r.a.(phpv.Writable)
 		if !ok {
-			return nil, fmt.Errorf("Can't use %#v value in write context", r.a)
+			return nil, ctx.Errorf("Can't use %#v value in write context", r.a)
 		}
 		return res, w.WriteValue(ctx, res.ZVal())
 	}
@@ -235,7 +234,7 @@ func operatorNot(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*php
 	return (!b.Value().(phpv.ZBool)).ZVal(), nil
 }
 
-func doInc(v *phpv.ZVal, inc bool) error {
+func doInc(ctx phpv.Context, v *phpv.ZVal, inc bool) error {
 	switch v.GetType() {
 	case phpv.ZtNull:
 		if inc {
@@ -276,7 +275,7 @@ func doInc(v *phpv.ZVal, inc bool) error {
 		if s.IsNumeric() {
 			if x, err := s.AsNumeric(); err == nil {
 				v.Set(x.ZVal())
-				return doInc(v, inc)
+				return doInc(ctx, v, inc)
 			}
 		}
 
@@ -324,7 +323,7 @@ func doInc(v *phpv.ZVal, inc bool) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("unsupported type for increment operator %s", v.GetType())
+	return ctx.Errorf("unsupported type for increment operator %s", v.GetType())
 }
 
 func operatorIncDec(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*phpv.ZVal, error) {
@@ -333,10 +332,10 @@ func operatorIncDec(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*
 	if a != nil {
 		// post mode
 		orig := a.Dup()
-		return orig, doInc(a, inc)
+		return orig, doInc(ctx, a, inc)
 	} else {
 		// pre mode
-		return b, doInc(b, inc)
+		return b, doInc(ctx, b, inc)
 	}
 }
 
@@ -366,7 +365,7 @@ func operatorMath(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*ph
 			}
 		case tokenizer.T_DIV_EQUAL, tokenizer.Rune('/'):
 			if b == 0 {
-				return nil, errors.New("Division by zero")
+				return nil, ctx.Errorf("Division by zero")
 			}
 			if a%b != 0 {
 				// this is not goign to be a int result
@@ -407,7 +406,7 @@ func operatorMath(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*ph
 		}
 		return res.ZVal(), nil
 	default:
-		return nil, fmt.Errorf("todo operator type unsupported %s", a.GetType())
+		return nil, ctx.Errorf("todo operator type unsupported %s", a.GetType())
 	}
 }
 
@@ -418,7 +417,7 @@ func operatorBoolLogic(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal)
 	case tokenizer.T_BOOLEAN_OR:
 		return (a.AsBool(ctx) || b.AsBool(ctx)).ZVal(), nil
 	default:
-		return nil, fmt.Errorf("todo operator unsupported %s", op)
+		return nil, ctx.Errorf("todo operator unsupported %s", op)
 	}
 }
 
@@ -493,11 +492,11 @@ func operatorMathLogic(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal)
 			}
 			a = b
 		default:
-			return nil, errors.New("todo operator unsupported on strings")
+			return nil, ctx.Errorf("todo operator unsupported on strings")
 		}
 		return phpv.ZString(a).ZVal(), nil
 	default:
-		return nil, fmt.Errorf("todo operator type unsupported: %s", a.GetType())
+		return nil, ctx.Errorf("todo operator type unsupported: %s", a.GetType())
 	}
 }
 
@@ -521,7 +520,7 @@ func operatorCompareStrict(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.Z
 	case phpv.ZtString:
 		res = a.Value().(phpv.ZString) == b.Value().(phpv.ZString)
 	default:
-		return nil, fmt.Errorf("unsupported compare type %s", a.GetType())
+		return nil, ctx.Errorf("unsupported compare type %s", a.GetType())
 	}
 
 	if op == tokenizer.T_IS_NOT_IDENTICAL {
@@ -601,7 +600,7 @@ func operatorCompare(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (
 					res = phpv.ZInt(0)
 				}
 			default:
-				return nil, fmt.Errorf("unsupported operator %s", op)
+				return nil, ctx.Errorf("unsupported operator %s", op)
 			}
 		case phpv.ZtFloat:
 			switch op {
@@ -618,7 +617,7 @@ func operatorCompare(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (
 			case tokenizer.T_IS_NOT_EQUAL:
 				res = phpv.ZBool(ia.Value().(phpv.ZFloat) != ib.Value().(phpv.ZFloat))
 			default:
-				return nil, fmt.Errorf("unsupported operator %s", op)
+				return nil, ctx.Errorf("unsupported operator %s", op)
 			}
 		}
 
@@ -660,7 +659,7 @@ func operatorCompare(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (
 		case tokenizer.T_IS_NOT_EQUAL:
 			res = ab != bb
 		default:
-			return nil, fmt.Errorf("unsupported operator %s", op)
+			return nil, ctx.Errorf("unsupported operator %s", op)
 		}
 
 		return phpv.ZBool(res).ZVal(), nil
@@ -691,10 +690,10 @@ func operatorCompare(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (
 		case tokenizer.T_IS_NOT_EQUAL:
 			res = av != bv
 		default:
-			return nil, fmt.Errorf("unsupported operator %s", op)
+			return nil, ctx.Errorf("unsupported operator %s", op)
 		}
 	default:
-		return nil, fmt.Errorf("todo operator type unsupported %s", a.GetType())
+		return nil, ctx.Errorf("todo operator type unsupported %s", a.GetType())
 	}
 
 	return phpv.ZBool(res).ZVal(), nil

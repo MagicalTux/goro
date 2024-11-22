@@ -1,7 +1,6 @@
 package compiler
 
 import (
-	"errors"
 	"io"
 	"strconv"
 
@@ -21,7 +20,7 @@ func compileBreak(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			return nil, err
 		}
 		if intv <= 0 {
-			return nil, errors.New("'break' operator accepts only positive numbers")
+			return nil, c.Errorf("'break' operator accepts only positive numbers")
 		}
 	} else {
 		c.backup()
@@ -42,7 +41,7 @@ func compileContinue(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			return nil, err
 		}
 		if intv <= 0 {
-			return nil, errors.New("'continue' operator accepts only positive numbers")
+			return nil, c.Errorf("'continue' operator accepts only positive numbers")
 		}
 	} else {
 		c.backup()

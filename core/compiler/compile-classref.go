@@ -93,7 +93,7 @@ func (r *runClassStaticObjRef) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.
 
 			return ctx.CallZVal(ctx, method.Method, callArgs, ctx.This())
 		}
-		return nil, fmt.Errorf("Call to undefined method %s::%s()", r.className, r.objName)
+		return nil, ctx.Errorf("Call to undefined method %s::%s()", r.className, r.objName)
 	}
 
 	return ctx.CallZVal(ctx, method.Method, args, ctx.This())

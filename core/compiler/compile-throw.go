@@ -1,7 +1,6 @@
 package compiler
 
 import (
-	"errors"
 	"io"
 
 	"github.com/MagicalTux/goro/core/phperr"
@@ -30,7 +29,7 @@ func (r *runnableThrow) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 	}
 	o, ok := v.Value().(*phpobj.ZObject)
 	if !ok {
-		return nil, errors.New("Can only throw objects")
+		return nil, ctx.Errorf("Can only throw objects")
 	}
 	return nil, &phperr.PhpThrow{o}
 }

@@ -2,7 +2,6 @@ package core
 
 import (
 	"errors"
-	"fmt"
 	"reflect"
 
 	"github.com/MagicalTux/goro/core/phpobj"
@@ -76,14 +75,13 @@ func zvalStore(ctx phpv.Context, z *phpv.ZVal, out interface{}) error {
 		}
 		obj, ok := s.Value().(*phpobj.ZObject)
 		if !ok {
-			return fmt.Errorf("expected parameter to be object, %s given", z.GetType())
+			return ctx.Errorf("expected parameter to be object, %s given", z.GetType())
 		}
 		if *tgt != nil {
 			if (*tgt).Class != nil {
 				// check implements
 				if (*tgt).Class != obj.Class {
-					// TODO fix parameter #
-					return fmt.Errorf("expects parameter %d to be %s, %s given", 1, (*tgt).Class.GetName(), z.GetType())
+					return ctx.Errorf("expects parameter %d to be %s, %s given", 1, (*tgt).Class.GetName(), z.GetType())
 				}
 			}
 		}
@@ -96,7 +94,7 @@ func zvalStore(ctx phpv.Context, z *phpv.ZVal, out interface{}) error {
 		}
 		ar, ok := s.Value().(*phpv.ZArray)
 		if !ok {
-			return fmt.Errorf("expected parameter to be array, %s given", z.GetType())
+			return ctx.Errorf("expected parameter to be array, %s given", z.GetType())
 		}
 		*tgt = ar
 		return nil
@@ -105,7 +103,7 @@ func zvalStore(ctx phpv.Context, z *phpv.ZVal, out interface{}) error {
 		*tgt = z
 		return nil
 	default:
-		return fmt.Errorf("unsupported target type %T", out)
+		return ctx.Errorf("unsupported target type %T", out)
 	}
 }
 
@@ -137,7 +135,7 @@ func Expand(ctx phpv.Context, args []*phpv.ZVal, out ...interface{}) (int, error
 			// not enough arguments, such errors in PHP can be returned as either:
 			// Uncaught ArgumentCountError: Too few arguments to function toto(), 0 passed
 			// x() expects at least 2 parameters, 0 given
-			return i, ErrNotEnoughArguments
+			return i, ctx.Error(ErrNotEnoughArguments)
 		}
 
 		err := zvalStore(ctx, args[i], v)

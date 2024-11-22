@@ -37,6 +37,11 @@ func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, t
 		}
 	}
 
+	c.callStack = append(c.callStack, f)
+	defer func() {
+		c.callStack = c.callStack[0 : len(c.callStack)-1]
+	}()
+
 	return phperr.CatchReturn(f.Call(callCtx, callCtx.Args))
 }
 

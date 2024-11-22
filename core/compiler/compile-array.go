@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"fmt"
 	"io"
 
 	"github.com/MagicalTux/goro/core/phpv"
@@ -163,7 +164,8 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 
 	array := v.Array()
 	if array == nil {
-		return nil, ac.l.Errorf(ctx, phpv.E_WARNING, "Cannot use object of type %s as array", v.GetType())
+		err := fmt.Errorf("Cannot use object of type %s as array", v.GetType())
+		return nil, ctx.Error(err, phpv.E_WARNING)
 	}
 
 	// OK...
@@ -195,7 +197,8 @@ func (ac *runArrayAccess) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 
 	array := v.Array()
 	if array == nil {
-		return ac.l.Errorf(ctx, phpv.E_WARNING, "Cannot use object of type %s as array", v.GetType())
+		err := fmt.Errorf("Cannot use object of type %s as array", v.GetType())
+		return ac.l.Error(err, phpv.E_WARNING)
 	}
 
 	if ac.offset == nil {

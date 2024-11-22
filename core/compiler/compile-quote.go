@@ -2,7 +2,6 @@ package compiler
 
 import (
 	"bytes"
-	"errors"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -15,10 +14,10 @@ func compileQuoteConstant(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error
 	// i.Data is a string such as 'a string' (quotes included)
 
 	if i.Data[0] != '\'' {
-		return nil, errors.New("malformed string")
+		return nil, c.Errorf("malformed string")
 	}
 	if i.Data[len(i.Data)-1] != '\'' {
-		return nil, errors.New("malformed string")
+		return nil, c.Errorf("malformed string")
 	}
 
 	in := i.Data[1 : len(i.Data)-1]

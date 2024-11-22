@@ -1,8 +1,6 @@
 package phpctx
 
 import (
-	"errors"
-
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -85,7 +83,7 @@ func (c *FuncContext) OffsetSet(ctx phpv.Context, name phpv.Val, v *phpv.ZVal) e
 
 	switch name.(phpv.ZString) {
 	case "this":
-		return errors.New("Cannot re-assign $this")
+		return ctx.Errorf("Cannot re-assign $this")
 	}
 	return c.h.SetString(name.(phpv.ZString), v)
 }
@@ -98,7 +96,7 @@ func (c *FuncContext) OffsetUnset(ctx phpv.Context, name phpv.Val) error {
 
 	switch name.(phpv.ZString) {
 	case "this":
-		return errors.New("Cannot unset $this")
+		return ctx.Errorf("Cannot unset $this")
 	}
 	return c.h.UnsetString(name.(phpv.ZString))
 }

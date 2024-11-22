@@ -3,7 +3,6 @@ package tokenizer
 import (
 	"bufio"
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -82,7 +81,7 @@ func (l *Lexer) NextItem() (*Item, error) {
 		return &Item{Type: T_EOF}, nil
 	}
 	if i.Type == itemError {
-		return nil, errors.New(i.Data)
+		return nil, i.Errorf(i.Data)
 	}
 	return i, nil
 }

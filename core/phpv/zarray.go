@@ -1,7 +1,6 @@
 package phpv
 
 import (
-	"errors"
 	"iter"
 	"strconv"
 
@@ -93,7 +92,7 @@ func (a *ZArray) HasStringKeys() bool {
 
 func (a *ZArray) OffsetGet(ctx Context, key Val) (*ZVal, error) {
 	if key == nil || key.GetType() == ZtNull {
-		return nil, errors.New("Cannot use [] for reading")
+		return nil, ctx.Errorf("Cannot use [] for reading")
 	}
 
 	zi, zs, isint := getArrayKeyValue(key)
@@ -125,7 +124,7 @@ func (a *ZArray) OffsetSet(ctx Context, key Val, value *ZVal) error {
 
 func (a *ZArray) OffsetUnset(ctx Context, key Val) error {
 	if key == nil || key.GetType() == ZtNull {
-		return errors.New("Cannot use [] for unset")
+		return ctx.Errorf("Cannot use [] for unset")
 	}
 
 	zi, zs, isint := getArrayKeyValue(key)
@@ -138,7 +137,7 @@ func (a *ZArray) OffsetUnset(ctx Context, key Val) error {
 
 func (a *ZArray) OffsetExists(ctx Context, key Val) (bool, error) {
 	if key == nil || key.GetType() == ZtNull {
-		return false, errors.New("Cannot use [] for isset")
+		return false, ctx.Errorf("Cannot use [] for isset")
 	}
 
 	zi, zs, isint := getArrayKeyValue(key)

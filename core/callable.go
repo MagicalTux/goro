@@ -1,7 +1,6 @@
 package core
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/MagicalTux/goro/core/compiler"
@@ -25,7 +24,7 @@ func SpawnCallable(ctx phpv.Context, v *phpv.ZVal) (phpv.Callable, error) {
 			}
 			member, ok := class.GetMethod(methodName.ToLower())
 			if !ok || !member.Modifiers.IsStatic() {
-				return nil, fmt.Errorf("Argument #1 ($callback) must be a valid callback, class MyClass does not have a method %q", methodName)
+				return nil, ctx.Errorf("Argument #1 ($callback) must be a valid callback, class MyClass does not have a method %q", methodName)
 			}
 
 			return member.Method, nil
@@ -45,10 +44,10 @@ func SpawnCallable(ctx phpv.Context, v *phpv.ZVal) (phpv.Callable, error) {
 		}
 
 		if obj.GetType() != phpv.ZtString && obj.GetType() != phpv.ZtObject {
-			return nil, fmt.Errorf("Argument #1 ($callback) must be a valid callback, first array member %q is not a valid class name or object", obj.GetType().String())
+			return nil, ctx.Errorf("Argument #1 ($callback) must be a valid callback, first array member %q is not a valid class name or object", obj.GetType().String())
 		}
 		if methodName.GetType() != phpv.ZtString {
-			return nil, fmt.Errorf("Argument #1 ($callback) must be a valid callback, second array member %q is not a valid method", obj.GetType().String())
+			return nil, ctx.Errorf("Argument #1 ($callback) must be a valid callback, second array member %q is not a valid method", obj.GetType().String())
 		}
 
 		var class phpv.ZClass
@@ -71,13 +70,13 @@ func SpawnCallable(ctx phpv.Context, v *phpv.ZVal) (phpv.Callable, error) {
 			if className == "parent" {
 				class = class.GetParent()
 			} else if className != "self" {
-				return nil, fmt.Errorf("Argument #1 ($callback) must be a valid callback, second array member %q is not a valid method", className)
+				return nil, ctx.Errorf("Argument #1 ($callback) must be a valid callback, second array member %q is not a valid method", className)
 			}
 		}
 
 		member, ok := class.GetMethod(name)
 		if !ok {
-			return nil, fmt.Errorf("Argument #1 ($callback) must be a valid callback, method not found: %q", methodName)
+			return nil, ctx.Errorf("Argument #1 ($callback) must be a valid callback, method not found: %q", methodName)
 		}
 
 		return (*member).Method, nil
@@ -94,6 +93,6 @@ func SpawnCallable(ctx phpv.Context, v *phpv.ZVal) (phpv.Callable, error) {
 
 		fallthrough
 	default:
-		return nil, fmt.Errorf("Argument passed must be callable, %q given", v.GetType().String())
+		return nil, ctx.Errorf("Argument passed must be callable, %q given", v.GetType().String())
 	}
 }

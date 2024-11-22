@@ -24,9 +24,10 @@ const (
 )
 
 type PhpError struct {
-	Err  error
-	Code PhpErrorType
-	l    *Loc
+	Err      error
+	FuncName string
+	Code     PhpErrorType
+	l        *Loc
 }
 
 func (e *PhpError) Loc() *Loc {
@@ -40,7 +41,11 @@ func (e *PhpError) Error() string {
 		}
 		return e.Err.Error()
 	}
-	return fmt.Sprintf("%s in %s on line %d", e.Err, e.l.Filename, e.l.Line)
+	var name string
+	if e.FuncName != "" {
+		name = e.FuncName + "(): "
+	}
+	return fmt.Sprintf("%s%s in %s on line %d", name, e.Err, e.l.Filename, e.l.Line)
 }
 
 func (e *PhpError) IsExit() bool {

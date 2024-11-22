@@ -1,7 +1,6 @@
 package compiler
 
 import (
-	"errors"
 	"fmt"
 	"path"
 	"strconv"
@@ -145,7 +144,7 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	case tokenizer.T_CLASS:
 		class := c.getClass()
 		if class == nil {
-			return nil, errors.New("__CLASS__ outside of a class")
+			return nil, c.Errorf("__CLASS__ outside of a class")
 		}
 		return &runZVal{class.Name, l}, nil
 	case tokenizer.T_METHOD_C:
