@@ -1,6 +1,8 @@
 package phpv
 
-import "sync"
+import (
+	"sync"
+)
 
 type hashTableVal struct {
 	prev, next *hashTableVal
@@ -65,9 +67,9 @@ func (z *ZHashTable) doCopy() error {
 		}
 		if first == nil {
 			first = nc
-			continue
+		} else {
+			nc.prev.next = nc
 		}
-		nc.prev.next = nc
 
 		switch k := nc.k.(type) {
 		case ZInt:
