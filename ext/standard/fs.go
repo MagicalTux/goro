@@ -5,6 +5,9 @@ import (
 	"io"
 	"os"
 	"path"
+	"path/filepath"
+	"regexp"
+	"strings"
 
 	"github.com/MagicalTux/goro/core"
 	"github.com/MagicalTux/goro/core/phpv"
@@ -56,6 +59,23 @@ func fncDirname(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZString(p).ZVal(), nil
 }
 
+// > func string basename ( string $path [, string $suffix] )
+func fncBasename(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var path string
+	var suffix *string
+	_, err := core.Expand(ctx, args, &path, &suffix)
+	if err != nil {
+		return nil, err
+	}
+
+	result := filepath.Base(path)
+	if suffix != nil {
+		result = strings.TrimSuffix(result, *suffix)
+	}
+
+	return phpv.ZString(result).ZVal(), nil
+}
+
 // > func bool file_exists ( string $filename )
 func fncFileExists(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var filename phpv.ZString
@@ -73,6 +93,29 @@ func fncFileExists(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	return phpv.ZBool(r).ZVal(), nil
+}
+
+// > func bool is_dir ( string $filename )
+func fncIsDir(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var filename phpv.ZString
+	_, err := core.Expand(ctx, args, &filename)
+	if err != nil {
+		return nil, err
+	}
+
+	r, err := ctx.Global().Open(filename, true)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return phpv.ZFalse.ZVal(), nil
+		}
+		return nil, err
+	}
+	stat, err := r.Stat()
+	if err != nil {
+		return nil, err
+	}
+
+	return phpv.ZBool(stat.IsDir()).ZVal(), nil
 }
 
 // > func bool is_file ( string $filename )
@@ -96,6 +139,104 @@ func fncIsFile(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	return phpv.ZBool(!stat.IsDir()).ZVal(), nil
+}
+
+// > func string realpath ( string $filename )
+func fncRealPath(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var filename string
+	_, err := core.Expand(ctx, args, &filename)
+	if err != nil {
+		return nil, err
+	}
+
+	if regexp.MustCompile(`$\w+:\/\/`).MatchString(filename) {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	_, err = os.Stat(filename)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return phpv.ZFalse.ZVal(), nil
+		}
+		return nil, err
+	}
+
+	filename, err = filepath.Abs(filename)
+	if err != nil {
+		return nil, err
+	}
+
+	return phpv.ZStr(filename), nil
+}
+
+// > func string unlink ( string $filename [, resource $context ] )
+func fncUnlink(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var filename string
+	var context **phpv.ZVal
+	_, err := core.Expand(ctx, args, &filename, &context)
+	if err != nil {
+		return nil, err
+	}
+
+	if context != nil {
+		return nil, ctx.Errorf("context resource is not yet supported, must be NULL")
+	}
+
+	stat, err := os.Stat(filename)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			ctx.Warn("No such file or directory")
+		} else {
+			ctx.Warn(err.Error())
+		}
+		return phpv.ZFalse.ZVal(), nil
+	}
+	if stat.IsDir() {
+		ctx.Warn("Is a directory")
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	if err := os.Remove(filename); err != nil {
+		ctx.Warn(err.Error())
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	return phpv.ZTrue.ZVal(), nil
+}
+
+// > func string rmdir ( string $dirname [, resource $context ] )
+func fncRmdir(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var dirname string
+	var context **phpv.ZVal
+	_, err := core.Expand(ctx, args, &dirname, &context)
+	if err != nil {
+		return nil, err
+	}
+
+	if context != nil {
+		return nil, ctx.Errorf("context resource is not yet supported, must be NULL")
+	}
+
+	stat, err := os.Stat(dirname)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			ctx.Warn("No such file or directory")
+		} else {
+			ctx.Warn(err.Error())
+		}
+		return phpv.ZFalse.ZVal(), nil
+	}
+	if !stat.IsDir() {
+		ctx.Warn("Not a directory")
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	if err := os.Remove(dirname); err != nil {
+		ctx.Warn(err.Error())
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	return phpv.ZTrue.ZVal(), nil
 }
 
 // > func bool file_get_contents ( string $filename [, bool $use_include_path = FALSE [, resource $context [, int $offset = 0 [, int $maxlen ]]]] )
