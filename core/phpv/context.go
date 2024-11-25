@@ -27,6 +27,9 @@ type Context interface {
 	FuncErrorf(format string, a ...any) error
 	FuncError(err error, t ...PhpErrorType) error
 
+	Warn(message string)
+	Warnf(format string, a ...any)
+
 	GetFuncName() string
 
 	GetConfig(name ZString, def *ZVal) *ZVal

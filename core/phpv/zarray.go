@@ -185,7 +185,7 @@ func (a *ZArray) Iterate(ctx Context) iter.Seq2[*ZVal, *ZVal] {
 		for ; it.Valid(ctx); it.Next(ctx) {
 			key, _ := it.Key(ctx)
 			value, _ := it.Current(ctx)
-			if !yield(key, value) {
+			if !yield(key.Dup(), value.Dup()) {
 				break
 			}
 		}

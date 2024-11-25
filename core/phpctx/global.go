@@ -230,12 +230,27 @@ func (g *Global) Errorf(format string, a ...any) error {
 func (g *Global) FuncError(err error, t ...phpv.PhpErrorType) error {
 	wrappedErr := g.l.Error(err, t...)
 	wrappedErr.FuncName = g.GetFuncName()
-	return err
+	return wrappedErr
 }
 func (g *Global) FuncErrorf(format string, a ...any) error {
 	err := g.l.Errorf(phpv.E_ERROR, format, a...)
 	err.FuncName = g.GetFuncName()
 	return err
+}
+
+func (g *Global) Warn(message string) {
+	funcName := g.GetFuncName()
+	loc := g.l.Loc()
+	output := fmt.Sprintf("Warning: %s(): %s in %s on line %d", funcName, message, loc.Filename, loc.Line)
+	g.Write([]byte(output))
+}
+
+func (g *Global) Warnf(format string, a ...any) {
+	funcName := g.GetFuncName()
+	loc := g.l.Loc()
+	message := fmt.Sprintf(format, a...)
+	output := fmt.Sprintf("Warning: %s(): %s in %s on line %d", funcName, message, loc.Filename, loc.Line)
+	g.Write([]byte(output))
 }
 
 func (g *Global) GetFuncName() string {

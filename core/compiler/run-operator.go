@@ -210,7 +210,6 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	}
 
 	if op.write {
-		// $a = ($b = 1234);
 		w, ok := r.a.(phpv.Writable)
 		if !ok {
 			return nil, ctx.Errorf("Can't use %#v value in write context", r.a)
