@@ -243,6 +243,7 @@ func (g *Global) Warn(message string) {
 	loc := g.l.Loc()
 	output := fmt.Sprintf("Warning: %s(): %s in %s on line %d", funcName, message, loc.Filename, loc.Line)
 	g.Write([]byte(output))
+	g.Write([]byte("\n"))
 }
 
 func (g *Global) Warnf(format string, a ...any) {
@@ -251,6 +252,7 @@ func (g *Global) Warnf(format string, a ...any) {
 	message := fmt.Sprintf(format, a...)
 	output := fmt.Sprintf("Warning: %s(): %s in %s on line %d", funcName, message, loc.Filename, loc.Line)
 	g.Write([]byte(output))
+	g.Write([]byte("\n"))
 }
 
 func (g *Global) GetFuncName() string {

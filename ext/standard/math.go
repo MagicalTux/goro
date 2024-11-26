@@ -223,3 +223,39 @@ func mathHypot(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 func mathPi(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZFloat(math.Pi).ZVal(), nil
 }
+
+// > func mixed max ( array $values )
+// > func mixed max ( mixed $value1 [, mixed $... ] )
+func mathMax(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var firstArg *phpv.ZVal
+	_, err := core.Expand(ctx, args, &firstArg)
+	if err != nil {
+		return nil, err
+	}
+
+	max := phpv.ZNULL.ZVal()
+	if len(args) == 1 && firstArg.GetType() == phpv.ZtArray {
+		array := firstArg.AsArray(ctx)
+		for _, v := range array.Iterate(ctx) {
+			cmp, err := core.Compare(ctx, max, v)
+			if err != nil {
+				return nil, ctx.Error(err)
+			}
+			if cmp < 0 {
+				max = v
+			}
+		}
+	} else {
+		for _, v := range args {
+			cmp, err := core.Compare(ctx, max, v)
+			if err != nil {
+				return nil, ctx.Error(err)
+			}
+			if cmp < 0 {
+				max = v
+			}
+		}
+	}
+
+	return max, nil
+}

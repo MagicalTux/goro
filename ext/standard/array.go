@@ -615,3 +615,33 @@ func fncArraySlice(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return result.ZVal(), nil
 
 }
+
+// > func mixed array_search ( mixed $needle , array $haystack [, bool $strict = FALSE ] )
+func fncArraySearch(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var needle *phpv.ZVal
+	var haystack *phpv.ZArray
+	var strict *phpv.ZBool
+
+	_, err := core.Expand(ctx, args, &needle, &haystack, &strict)
+	if err != nil {
+		return phpv.ZBool(false).ZVal(), err
+	}
+
+	if strict != nil && *strict {
+		for k, v := range haystack.Iterate(ctx) {
+			if v.GetType() == needle.GetType() && v.Value() == needle.Value() {
+				return k, nil
+			}
+		}
+	} else {
+		for k, v := range haystack.Iterate(ctx) {
+			match := v.GetType() == needle.GetType() && v.Value() == needle.Value()
+			match = match || v.String() == needle.String()
+			if match {
+				return k, nil
+			}
+		}
+	}
+
+	return phpv.ZFalse.ZVal(), nil
+}

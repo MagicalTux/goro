@@ -27,6 +27,7 @@ func init() {
 			"array_map":                {Func: fncArrayMap, Args: []*phpctx.ExtFunctionArg{}},
 			"array_merge":              {Func: fncArrayMerge, Args: []*phpctx.ExtFunctionArg{}},
 			"array_pop":                {Func: fncArrayPop, Args: []*phpctx.ExtFunctionArg{}},
+			"array_search":             {Func: fncArraySearch, Args: []*phpctx.ExtFunctionArg{}},
 			"array_shift":              {Func: fncArrayShift, Args: []*phpctx.ExtFunctionArg{}},
 			"array_slice":              {Func: fncArraySlice, Args: []*phpctx.ExtFunctionArg{}},
 			"array_unique":             {Func: fncArrayUnique, Args: []*phpctx.ExtFunctionArg{}},
@@ -103,6 +104,7 @@ func init() {
 			"join":                     {Func: fncStrImplode, Args: []*phpctx.ExtFunctionArg{}}, // alias
 			"lcfirst":                  {Func: fncStrLcFirst, Args: []*phpctx.ExtFunctionArg{}},
 			"ltrim":                    {Func: fncStrLtrim, Args: []*phpctx.ExtFunctionArg{}},
+			"max":                      {Func: mathMax, Args: []*phpctx.ExtFunctionArg{}},
 			"md5":                      {Func: fncStrMd5, Args: []*phpctx.ExtFunctionArg{}},
 			"md5_file":                 {Func: fncStrMd5File, Args: []*phpctx.ExtFunctionArg{}},
 			"method_exists":            {Func: stdFuncMethodExists, Args: []*phpctx.ExtFunctionArg{}},
