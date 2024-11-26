@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"strings"
 	"unsafe"
 
 	"github.com/MagicalTux/goro/core"
@@ -42,36 +43,36 @@ func doVarExport(ctx phpv.Context, w io.Writer, z *phpv.ZVal, linePfx string, re
 		recurs = n
 	}
 
-	v := uintptr(unsafe.Pointer(z))
-	if _, n := recurs[v]; n {
-		fmt.Fprintf(w, "%s*RECURSION*\n", linePfx)
+	p := uintptr(unsafe.Pointer(z))
+	if _, n := recurs[p]; n {
+		ctx.Warn("does not handle circular references")
+		fmt.Fprintf(w, "NULL")
 		return nil
-	} else {
-		recurs[v] = true
 	}
-
-	// TODO: improve formatting
 
 	switch z.GetType() {
 	case phpv.ZtNull:
-		fmt.Fprintf(w, "%sNULL", linePfx)
+		fmt.Fprintf(w, "NULL")
 	case phpv.ZtBool:
 		if z.Value().(phpv.ZBool) {
-			fmt.Fprintf(w, "%strue", linePfx)
+			fmt.Fprintf(w, "true")
 		} else {
-			fmt.Fprintf(w, "%sfalse", linePfx)
+			fmt.Fprintf(w, "false")
 		}
 	case phpv.ZtInt:
-		fmt.Fprintf(w, "%s%d", linePfx, z.Value())
+		fmt.Fprintf(w, "%d", z.Value())
 	case phpv.ZtFloat:
 		z2, _ := z.As(ctx, phpv.ZtString)
-		fmt.Fprintf(w, "%s%s", linePfx, z2)
+		fmt.Fprintf(w, "%s", z2)
 	case phpv.ZtString:
 		s := z.Value().(phpv.ZString)
-		fmt.Fprintf(w, "%s\"%s\"", linePfx, s)
+		fmt.Fprintf(w, "'%s'", strings.ReplaceAll(string(s), `'`, `\'`))
 	case phpv.ZtArray:
-		fmt.Fprintf(w, "%sarray(\n", linePfx)
-		localPfx := linePfx + " "
+		p := uintptr(unsafe.Pointer(z))
+		recurs[p] = true
+
+		fmt.Fprintf(w, "array(\n")
+		localPfx := linePfx + "  "
 		it := z.NewIterator()
 		for {
 			if !it.Valid(ctx) {
@@ -82,28 +83,32 @@ func doVarExport(ctx phpv.Context, w io.Writer, z *phpv.ZVal, linePfx string, re
 				return err
 			}
 			if k.GetType() == phpv.ZtInt {
-				fmt.Fprintf(w, "%s%s =>", localPfx, k)
+				fmt.Fprintf(w, "%s%s => ", localPfx, k)
 			} else {
-				fmt.Fprintf(w, "%s\"%s\" =>", localPfx, k)
+				fmt.Fprintf(w, "%s'%s' => ", localPfx, strings.ReplaceAll(k.String(), `'`, `\'`))
 			}
 			v, err := it.Current(ctx)
 			if err != nil {
 				return err
 			}
+
 			doVarExport(ctx, w, v, localPfx, recurs)
 			fmt.Fprintf(w, ",\n")
 			it.Next(ctx)
 		}
 		fmt.Fprintf(w, "%s)", linePfx)
 	case phpv.ZtObject:
+		p := uintptr(unsafe.Pointer(z))
+		recurs[p] = true
+
 		v := z.Value()
 		if obj, ok := v.(*phpobj.ZObject); ok {
-			// TODO: fix static methods, error call to undefined function
-			fmt.Fprintf(w, "%s%s::__set_state(array(\n", linePfx, obj.Class.GetName())
+			fmt.Fprintf(w, "\n%s%s::__set_state(array(\n", linePfx, obj.Class.GetName())
 		} else {
 			fmt.Fprintf(w, "%sarray(\n", linePfx)
 		}
-		localPfx := linePfx + " "
+
+		localPfx := linePfx + "  "
 		it := z.NewIterator()
 		if it != nil {
 			for {
@@ -115,23 +120,25 @@ func doVarExport(ctx phpv.Context, w io.Writer, z *phpv.ZVal, linePfx string, re
 					return err
 				}
 				if k.GetType() == phpv.ZtInt {
-					fmt.Fprintf(w, "%s%s=>\n", localPfx, k)
+					fmt.Fprintf(w, "%s%s => ", localPfx, k)
 				} else {
-					fmt.Fprintf(w, "%s\"%s\"=>\n", localPfx, k)
+					fmt.Fprintf(w, "%s'%s' => ", localPfx, strings.ReplaceAll(k.String(), `'`, `\'`))
 				}
 				v, err := it.Current(ctx)
 				if err != nil {
 					return err
 				}
+
 				doVarExport(ctx, w, v, localPfx, recurs)
+				fmt.Fprintf(w, ",\n")
 				it.Next(ctx)
 			}
 		}
 
 		if _, ok := v.(*phpobj.ZObject); ok {
-			fmt.Fprintf(w, "%s))\n", linePfx)
+			fmt.Fprintf(w, "%s))", linePfx)
 		} else {
-			fmt.Fprintf(w, "%s)\n", linePfx)
+			fmt.Fprintf(w, "%s)", linePfx)
 		}
 	default:
 		fmt.Fprintf(w, "// Unknown[%T]:%+v\n", z.Value(), z.Value())
