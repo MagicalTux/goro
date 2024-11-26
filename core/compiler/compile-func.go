@@ -92,14 +92,23 @@ func (r *runnableFunctionCall) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 
 func (r *runnableFunctionCallRef) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 	var f phpv.Callable
-	var ok bool
 
 	err = ctx.Tick(ctx, r.l)
 	if err != nil {
 		return nil, err
 	}
 
-	if f, ok = r.name.(phpv.Callable); !ok {
+	if classRef, ok := r.name.(*runClassStaticObjRef); ok {
+		class, err := ctx.Global().GetClass(ctx, classRef.className, false)
+		if err != nil {
+			return nil, err
+		}
+		method, ok := class.GetMethod(classRef.objName)
+		if !ok {
+			return nil, ctx.Errorf("Call to undefined method %s::%s()", classRef.className, classRef.objName)
+		}
+		f = method.Method
+	} else if f, ok = r.name.(phpv.Callable); !ok {
 		v, err := r.name.Run(ctx)
 		if err != nil {
 			return nil, err
