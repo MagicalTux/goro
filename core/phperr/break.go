@@ -1,6 +1,7 @@
 package phperr
 
 import (
+	"fmt"
 	"io"
 
 	"github.com/MagicalTux/goro/core/phpv"
@@ -16,7 +17,7 @@ func (b *PhpBreak) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 }
 
 func (b *PhpBreak) Error() string {
-	return "'break' not in the 'loop' or 'switch' context"
+	return fmt.Sprintf("'break' not in the 'loop' or 'switch' context in %s at line %d", b.L.Filename, b.L.Line)
 }
 
 func (b *PhpBreak) Dump(w io.Writer) error {
@@ -34,7 +35,7 @@ func (c *PhpContinue) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 }
 
 func (c *PhpContinue) Error() string {
-	return "'continue' not in the 'loop' context"
+	return fmt.Sprintf("'continue' not in the 'loop' context in %s at line %d", c.L.Filename, c.L.Line)
 }
 
 func (c *PhpContinue) Dump(w io.Writer) error {

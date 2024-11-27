@@ -3,6 +3,7 @@ package compiler
 import (
 	"io"
 
+	"github.com/MagicalTux/goro/core/phperr"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
@@ -31,7 +32,22 @@ func (r *runnableWhile) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 		if r.code != nil {
 			_, err = r.code.Run(ctx)
 			if err != nil {
-				return nil, err
+				e := r.l.Error(err)
+				switch br := e.Err.(type) {
+				case *phperr.PhpBreak:
+					if br.Intv > 1 {
+						br.Intv--
+						return nil, br
+					}
+					return nil, nil
+				case *phperr.PhpContinue:
+					if br.Intv > 1 {
+						br.Intv--
+						return nil, br
+					}
+				default:
+					return nil, e
+				}
 			}
 		}
 	}
