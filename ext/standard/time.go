@@ -32,3 +32,42 @@ func fncMicrotime(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 func fncTime(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZInt(time.Now().Unix()).ZVal(), nil
 }
+
+// > func int mktime ( [ int $hour = date("H") [, int $minute = date("i") [, int $second = date("s") [, int $month = date("n") [, int $day = date("j") [, int $year = date("Y") [, int $is_dst = -1 ]]]]]]] )
+func fncMkTime(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var hourArg, minArg, secArg, monthArg, dayArg, yearArg, dstArg *int
+	_, err := core.Expand(ctx, args, &hourArg, &minArg, &secArg, &monthArg, &dayArg, &yearArg, &dstArg)
+	if err != nil {
+		return nil, err
+	}
+
+	now := time.Now()
+	hour := now.Hour()
+	min := now.Minute()
+	sec := now.Second()
+	month := now.Month()
+	day := now.Day()
+	year := now.Year()
+
+	if hourArg != nil {
+		hour = *hourArg
+	}
+	if minArg != nil {
+		min = *minArg
+	}
+	if secArg != nil {
+		sec = *secArg
+	}
+	if monthArg != nil {
+		month = time.Month(*monthArg)
+	}
+	if dayArg != nil {
+		day = *dayArg
+	}
+	if yearArg != nil {
+		year = *yearArg
+	}
+
+	date := time.Date(year, month, day, hour, min, sec, 0, time.UTC)
+	return phpv.ZInt(date.Unix()).ZVal(), nil
+}

@@ -26,6 +26,13 @@ func zvalStore(ctx phpv.Context, z *phpv.ZVal, out interface{}) error {
 		}
 		*tgt = s.Value().(phpv.ZBool)
 		return nil
+	case *int:
+		s, err := z.As(ctx, phpv.ZtInt)
+		if err != nil {
+			return err
+		}
+		*tgt = int(s.Value().(phpv.ZInt))
+		return nil
 	case *phpv.ZInt:
 		s, err := z.As(ctx, phpv.ZtInt)
 		if err != nil {

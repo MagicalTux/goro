@@ -109,6 +109,7 @@ func init() {
 			"md5_file":                 {Func: fncStrMd5File, Args: []*phpctx.ExtFunctionArg{}},
 			"method_exists":            {Func: stdFuncMethodExists, Args: []*phpctx.ExtFunctionArg{}},
 			"microtime":                {Func: fncMicrotime, Args: []*phpctx.ExtFunctionArg{}},
+			"mktime":                   {Func: fncMkTime, Args: []*phpctx.ExtFunctionArg{}},
 			"nl2br":                    {Func: fncStrNewLine2Br, Args: []*phpctx.ExtFunctionArg{}},
 			"number_format":            {Func: fncStrNumberFormat, Args: []*phpctx.ExtFunctionArg{}},
 			"ob_clean":                 {Func: fncObClean, Args: []*phpctx.ExtFunctionArg{}},
