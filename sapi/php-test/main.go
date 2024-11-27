@@ -46,6 +46,9 @@ func main() {
 				panic(err)
 			}
 			for _, f := range files {
+				if filepath.Ext(f.Name()) != ".phpt" {
+					continue
+				}
 				if _, err := runTest(filepath.Join(fpath, f.Name())); err != nil {
 					log.Printf("failed to run file: %s", err)
 					os.Exit(1)
@@ -149,12 +152,14 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 }
 
 func runTest(fpath string) (p *phptest, err error) {
-	println("running file:", fpath)
+	fmt.Println("running file", fpath)
 	p = &phptest{output: &bytes.Buffer{}, name: fpath, path: fpath}
 
 	defer func() {
 		if r := recover(); r != nil {
-			err = fmt.Errorf("failed to run: %s\n%s", r, debug.Stack())
+			err = fmt.Errorf("\nfailed to run: %s\n%s", r, debug.Stack())
+		} else {
+			fmt.Println(fpath, "ok")
 		}
 	}()
 
@@ -190,7 +195,7 @@ func runTest(fpath string) (p *phptest, err error) {
 				// start of a new thing?
 				if b != nil {
 					err := p.handlePart(part, b)
-					if err != nil {
+					if err != nil && err != skipTest {
 						return p, err
 					}
 				}
@@ -207,7 +212,7 @@ func runTest(fpath string) (p *phptest, err error) {
 	}
 	if b != nil {
 		err := p.handlePart(part, b)
-		if err != nil {
+		if err != nil && err != skipTest {
 			return p, err
 		}
 	}
