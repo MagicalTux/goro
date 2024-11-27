@@ -6,12 +6,7 @@ import (
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
-func CompareObject(ctx phpv.Context, ao phpv.ZObject, b *phpv.ZVal) (int, error) {
-	if b.GetType() != phpv.ZtObject {
-		return -1, nil
-	}
-	bo := b.Value().(phpv.ZObject)
-
+func CompareObject(ctx phpv.Context, ao, bo phpv.ZObject) (int, error) {
 	if ao.GetClass() != bo.GetClass() {
 		return -1, nil
 	}
@@ -37,14 +32,14 @@ func CompareObject(ctx phpv.Context, ao phpv.ZObject, b *phpv.ZVal) (int, error)
 	return 0, nil
 }
 
-func CompareArray(ctx phpv.Context, aa *phpv.ZArray, b *phpv.ZVal) (int, error) {
-	if b.GetType() != phpv.ZtArray {
-		return -1, nil
-	}
-	ba := b.Value().(*phpv.ZArray)
-
-	if aa.Count(ctx) != ba.Count(ctx) {
-		return -1, nil
+func CompareArray(ctx phpv.Context, aa, ba *phpv.ZArray) (int, error) {
+	ac := aa.Count(ctx)
+	bc := ba.Count(ctx)
+	if ac != bc {
+		if ac < bc {
+			return -1, nil
+		}
+		return 1, nil
 	}
 
 	it := aa.NewIterator()
@@ -78,6 +73,20 @@ func CompareArray(ctx phpv.Context, aa *phpv.ZArray, b *phpv.ZVal) (int, error) 
 func Compare(ctx phpv.Context, a, b *phpv.ZVal) (int, error) {
 	// operator compare (< > <= >= == === != !== <=>) involve a lot of dark magic in php, unless both values are of the same type (and even so)
 	// loose comparison will convert number-y looking strings into numbers, etc
+	if a.GetType() == phpv.ZtArray {
+		if b.GetType() != phpv.ZtArray {
+			return 1, nil
+		}
+		return CompareArray(ctx, a.AsArray(ctx), b.AsArray(ctx))
+	}
+
+	if b.GetType() == phpv.ZtArray {
+		if a.GetType() != phpv.ZtArray {
+			return -1, nil
+		}
+		return CompareArray(ctx, b.AsArray(ctx), a.AsArray(ctx))
+	}
+
 	var ia, ib *phpv.ZVal
 
 	switch a.GetType() {
@@ -149,18 +158,17 @@ func Compare(ctx phpv.Context, a, b *phpv.ZVal) (int, error) {
 		return 0, nil
 	}
 
-	// TODO: fix
 	if a.GetType() == phpv.ZtBool || b.GetType() == phpv.ZtBool {
 		a, _ = a.As(ctx, phpv.ZtBool)
 		b, _ = b.As(ctx, phpv.ZtBool)
 
 		var ab, bb, res int
-		if a.Value().(phpv.ZBool) {
+		if val, ok := a.Value().(phpv.ZBool); ok && bool(val) {
 			ab = 1
 		} else {
 			ab = 0
 		}
-		if b.Value().(phpv.ZBool) {
+		if val, ok := b.Value().(phpv.ZBool); ok && bool(val) {
 			bb = 1
 		} else {
 			bb = 0
@@ -177,26 +185,24 @@ func Compare(ctx phpv.Context, a, b *phpv.ZVal) (int, error) {
 		return res, nil
 	}
 
-	// the param ordering here doesn't matter since
-	// CompareObject and CompareArray returns either -1 or 0
-	switch a.GetType() {
-	case phpv.ZtObject:
-		return CompareObject(ctx, a.AsObject(ctx), b)
-	case phpv.ZtArray:
-		return CompareArray(ctx, a.AsArray(ctx), b)
-	}
-	switch b.GetType() {
-	case phpv.ZtObject:
-		return CompareObject(ctx, b.AsObject(ctx), a)
-	case phpv.ZtArray:
-		return CompareArray(ctx, b.AsArray(ctx), a)
-	}
-
 	switch a.Value().GetType() {
 	case phpv.ZtString:
 		av := string(a.Value().(phpv.ZString))
 		bv := string(b.Value().(phpv.ZString))
 		return strings.Compare(av, bv), nil
+	}
+
+	if a.GetType() == phpv.ZtObject {
+		if b.GetType() != phpv.ZtObject {
+			return 1, nil
+		}
+		return CompareObject(ctx, a.AsObject(ctx), b.AsObject(ctx))
+	}
+	if b.GetType() == phpv.ZtObject {
+		if a.GetType() != phpv.ZtObject {
+			return -1, nil
+		}
+		return CompareObject(ctx, b.AsObject(ctx), a.AsObject(ctx))
 	}
 
 	return 0, nil

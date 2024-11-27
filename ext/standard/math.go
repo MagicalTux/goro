@@ -236,6 +236,13 @@ func mathMax(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	max := phpv.ZNULL.ZVal()
 	if len(args) == 1 && firstArg.GetType() == phpv.ZtArray {
 		array := firstArg.AsArray(ctx)
+		if array.Count(ctx) == 0 {
+			return max, nil
+		}
+		for _, v := range array.Iterate(ctx) {
+			max = v
+			break
+		}
 		for _, v := range array.Iterate(ctx) {
 			cmp, err := core.Compare(ctx, max, v)
 			if err != nil {
@@ -246,6 +253,7 @@ func mathMax(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			}
 		}
 	} else {
+		max = firstArg
 		for _, v := range args {
 			cmp, err := core.Compare(ctx, max, v)
 			if err != nil {
