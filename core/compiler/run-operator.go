@@ -572,6 +572,14 @@ func operatorCompare(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (
 			ib, _ = ib.As(ctx, phpv.ZtFloat)
 		}
 
+		// handle case where '' is compared to '0', so that '' < '0'
+		if a.GetType() == phpv.ZtString && a.Value().(phpv.ZString) == "" {
+			ia = phpv.ZInt(-1).ZVal()
+		}
+		if b.GetType() == phpv.ZtString && b.Value().(phpv.ZString) == "" {
+			ib = phpv.ZInt(-1).ZVal()
+		}
+
 		var res phpv.Val
 		switch ia.GetType() {
 		case phpv.ZtInt:
