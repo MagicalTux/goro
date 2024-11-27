@@ -44,6 +44,8 @@ func (z *ZObject) AsVal(ctx phpv.Context, t phpv.ZType) (phpv.Val, error) {
 		if m, ok := z.Class.GetMethod("__tostring"); ok {
 			return m.Method.Call(ctx, nil)
 		}
+	case phpv.ZtInt:
+		return phpv.ZInt(1), nil
 	}
 
 	return nil, ctx.Errorf("failed to convert object to %s", t)
