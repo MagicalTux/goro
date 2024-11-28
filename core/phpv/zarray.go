@@ -196,6 +196,11 @@ func (a *ZArray) Iterate(ctx Context) iter.Seq2[*ZVal, *ZVal] {
 	}
 }
 
+func (a *ZArray) Clear(ctx Context) error {
+	a.h.Clear()
+	return nil
+}
+
 func (a *ZArray) NewIterator() ZIterator {
 	return a.h.NewIterator()
 }
