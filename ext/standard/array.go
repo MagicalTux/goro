@@ -48,11 +48,11 @@ func fncArrayCombine(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			return nil, err
 		}
 
-		err = keyIter.Next(ctx)
+		_, err = keyIter.Next(ctx)
 		if err != nil {
 			return nil, err
 		}
-		err = valIter.Next(ctx)
+		_, err = valIter.Next(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -644,4 +644,115 @@ func fncArraySearch(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	return phpv.ZFalse.ZVal(), nil
+}
+
+// > func mixed key ( array $array )
+func fncArrayKey(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var array *phpv.ZArray
+	_, err := core.Expand(ctx, args, &array)
+	if err != nil {
+		return nil, ctx.Error(err)
+	}
+
+	key, err := array.MainIterator().Key(ctx)
+	if err != nil {
+		return nil, ctx.Error(err)
+	}
+	return key, nil
+}
+
+// > func mixed current ( array $array )
+// > alias pos
+func fncArrayCurrent(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var array *phpv.ZArray
+	_, err := core.Expand(ctx, args, &array)
+	if err != nil {
+		return nil, ctx.Error(err)
+	}
+
+	current, err := array.MainIterator().Current(ctx)
+	if err != nil {
+		return nil, ctx.Error(err)
+	}
+	return current, nil
+}
+
+// > func mixed next ( array $&array )
+func fncArrayNext(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var array *phpv.ZArray
+	_, err := core.Expand(ctx, args, &array)
+	if err != nil {
+		return nil, ctx.Error(err)
+	}
+
+	current, err := array.MainIterator().Next(ctx)
+	if err != nil {
+		return nil, ctx.Error(err)
+	}
+
+	if current == nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	return current, nil
+}
+
+// > func mixed prev ( array $&array )
+func fncArrayPrev(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var array *phpv.ZArray
+	_, err := core.Expand(ctx, args, &array)
+	if err != nil {
+		return nil, ctx.Error(err)
+	}
+
+	current, err := array.MainIterator().Prev(ctx)
+	if err != nil {
+		return nil, ctx.Error(err)
+	}
+	if current == nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+	return current, nil
+}
+
+// > func mixed reset ( array $&array )
+func fncArrayReset(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var array *phpv.ZArray
+	_, err := core.Expand(ctx, args, &array)
+	if err != nil {
+		return nil, ctx.Error(err)
+	}
+	if array.Count(ctx) == 0 {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	current, err := array.MainIterator().Reset(ctx)
+	if err != nil {
+		return nil, ctx.Error(err)
+	}
+	if current == nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+	return current, nil
+}
+
+// > func mixed end ( array $&array )
+func fncArrayEnd(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var array *phpv.ZArray
+	_, err := core.Expand(ctx, args, &array)
+	if err != nil {
+		return nil, ctx.Error(err)
+	}
+	if array.Count(ctx) == 0 {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	current, err := array.MainIterator().End(ctx)
+	if err != nil {
+		return nil, ctx.Error(err)
+	}
+	if current == nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+	return current, nil
 }

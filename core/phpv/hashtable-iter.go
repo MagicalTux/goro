@@ -21,18 +21,42 @@ func (z *zhashtableIterator) Key(ctx Context) (*ZVal, error) {
 	return &ZVal{z.cur.k}, nil
 }
 
-func (z *zhashtableIterator) Next(ctx Context) error {
+func (z *zhashtableIterator) Next(ctx Context) (*ZVal, error) {
 	if !z.Valid(ctx) {
-		return nil
+		return nil, nil
 	}
 
 	z.cur = z.cur.next
-	return nil
+	return z.Current(ctx)
 }
 
-func (z *zhashtableIterator) Rewind(ctx Context) error {
+func (z *zhashtableIterator) Prev(ctx Context) (*ZVal, error) {
+	for {
+		if z.cur == nil {
+			return nil, nil
+		}
+		if z.cur.deleted {
+			z.cur = z.cur.prev
+			continue
+		}
+		break
+	}
+
+	z.cur = z.cur.prev
+	if z.cur == nil {
+		return nil, nil
+	}
+	return z.cur.v, nil
+}
+
+func (z *zhashtableIterator) Reset(ctx Context) (*ZVal, error) {
 	z.cur = z.t.first
-	return nil
+	return z.Current(ctx)
+}
+
+func (z *zhashtableIterator) End(ctx Context) (*ZVal, error) {
+	z.cur = z.t.last
+	return z.Current(ctx)
 }
 
 func (z *zhashtableIterator) Valid(ctx Context) bool {

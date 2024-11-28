@@ -200,6 +200,10 @@ func (a *ZArray) NewIterator() ZIterator {
 	return a.h.NewIterator()
 }
 
+func (a *ZArray) MainIterator() ZIterator {
+	return a.h.mainIterator
+}
+
 func (a *ZArray) Count(ctx Context) ZInt {
 	return a.h.count
 }
