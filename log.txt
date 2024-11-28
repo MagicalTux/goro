@@ -1,0 +1,19 @@
+
+Thu Nov 28 07:41:47 PM PST 2024
+
+I implemented the following functions:
+key(), current(), next(), reset(), prev() and end()
+
+Each of this functions takes only an $array as a parameter,
+so it requires storing the state (current item, next item etc.)
+in the array itself, which the documentation 
+refer to as "internal pointer".
+
+There's already an existing hashtable iterator, so I
+just need to add a new field. Initially, I added
+it on ZArray, but it seems there's a bug where
+the deleted flag isn't assigned anywhere. There's
+also other complications, of which I could avoid
+if I just put the iterator in the hashtable instead.
+
+Then I implemented the sort() function.
