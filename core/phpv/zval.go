@@ -32,6 +32,9 @@ func MakeZVal(v Val) *ZVal {
 
 // ZVal will make a copy of a given zval without actually copying memory
 func (z *ZVal) ZVal() *ZVal {
+	if z.GetType() == ZtNull {
+		return z
+	}
 	if z.v == nil {
 		panic("nil zval!")
 	}
@@ -56,6 +59,10 @@ func (z *ZVal) Nude() *ZVal {
 }
 
 func (z *ZVal) Dup() *ZVal {
+	if z.GetType() == ZtNull {
+		return z
+	}
+
 	switch v := z.v.(type) {
 	case *ZVal:
 		// detach reference
