@@ -20,13 +20,17 @@ type ZHashTable struct {
 
 	_idx_s map[ZString]*hashTableVal
 	_idx_i map[ZInt]*hashTableVal
+
+	mainIterator *zhashtableIterator
 }
 
 func NewHashTable() *ZHashTable {
-	return &ZHashTable{
+	n := &ZHashTable{
 		_idx_s: make(map[ZString]*hashTableVal),
 		_idx_i: make(map[ZInt]*hashTableVal),
 	}
+	n.mainIterator = &zhashtableIterator{n, nil}
+	return n
 }
 
 func (z *ZHashTable) Dup() *ZHashTable {
@@ -46,6 +50,13 @@ func (z *ZHashTable) Dup() *ZHashTable {
 		_idx_s: z._idx_s,
 		_idx_i: z._idx_i,
 	}
+
+	cur := z.mainIterator.cur
+	if cur == nil {
+		cur = z.first
+	}
+	n.mainIterator = &zhashtableIterator{n, cur}
+
 	return n
 }
 
@@ -58,6 +69,9 @@ func (z *ZHashTable) doCopy() error {
 
 	for c := z.first; c != nil; c = c.next {
 		if c.deleted {
+			if z.mainIterator.cur == c {
+				z.mainIterator.cur = nil
+			}
 			continue
 		}
 		nc = &hashTableVal{
@@ -65,6 +79,11 @@ func (z *ZHashTable) doCopy() error {
 			v:    c.v.ZVal(),
 			prev: nc,
 		}
+
+		if z.mainIterator.cur == c {
+			z.mainIterator.cur = nc
+		}
+
 		if first == nil {
 			first = nc
 		} else {
@@ -168,6 +187,7 @@ func (z *ZHashTable) UnsetString(k ZString) error {
 	// remove
 	z.count -= 1
 	delete(z._idx_s, k)
+	t.deleted = true
 
 	if z.first == t {
 		z.first = t.next
@@ -238,6 +258,7 @@ func (z *ZHashTable) UnsetInt(k ZInt) error {
 	// remove
 	z.count -= 1
 	delete(z._idx_i, k)
+	t.deleted = true
 
 	if z.first == t {
 		z.first = t.next
