@@ -104,6 +104,20 @@ func (a *ZArray) OffsetGet(ctx Context, key Val) (*ZVal, error) {
 	}
 }
 
+func (a *ZArray) OffsetCheck(ctx Context, key Val) (*ZVal, bool, error) {
+	if key == nil || key.GetType() == ZtNull {
+		return nil, false, ctx.Errorf("Cannot use [] for reading")
+	}
+
+	zi, zs, isint := getArrayKeyValue(key)
+
+	if isint {
+		return a.h.GetInt(zi), a.h.HasInt(zi), nil
+	} else {
+		return a.h.GetString(zs), a.h.HasString(zs), nil
+	}
+}
+
 func (a *ZArray) OffsetSet(ctx Context, key Val, value *ZVal) error {
 	if value == nil {
 		return a.OffsetUnset(ctx, key)
@@ -198,6 +212,12 @@ func (a *ZArray) Iterate(ctx Context) iter.Seq2[*ZVal, *ZVal] {
 
 func (a *ZArray) Clear(ctx Context) error {
 	a.h.Clear()
+	return nil
+}
+
+// Similar to Clear, but still allows iteration over deleted items
+func (a *ZArray) Empty(ctx Context) error {
+	a.h.Empty()
 	return nil
 }
 

@@ -11,6 +11,12 @@ import (
 
 // > const
 const (
+	CASE_LOWER phpv.ZInt = 0
+	CASE_UPPER phpv.ZInt = 1
+)
+
+// > const
+const (
 	ARRAY_FILTER_USE_KEY  phpv.ZInt = 1
 	ARRAY_FILTER_USE_BOTH phpv.ZInt = 2
 )
@@ -482,6 +488,51 @@ func fncArrayShift(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return val.ZVal(), nil
 }
 
+// > func int array_unshift ( array &$array [, mixed $... ] )
+func fncArrayUnshift(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var array *phpv.ZArray
+	_, err := core.Expand(ctx, args, &array)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	it := array.NewIterator()
+	array.Empty(ctx)
+
+	index := 0
+	for i := 1; i < len(args); i++ {
+		array.OffsetSet(ctx, phpv.ZInt(index), args[i])
+		index++
+	}
+	for ; it.Valid(ctx); it.Next(ctx) {
+		key, _ := it.Key(ctx)
+		val, _ := it.Current(ctx)
+		if key.GetType() == phpv.ZtInt {
+			array.OffsetSet(ctx, phpv.ZInt(index), val)
+			index++
+		} else {
+			array.OffsetSet(ctx, key, val)
+		}
+	}
+
+	return phpv.ZInt(array.Count(ctx)).ZVal(), nil
+}
+
+// > func int array_push ( array &$array [, mixed $... ] )
+func fncArrayPush(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var array *phpv.ZArray
+	_, err := core.Expand(ctx, args, &array)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	for i := 1; i < len(args); i++ {
+		array.OffsetSet(ctx, nil, args[i])
+	}
+
+	return phpv.ZInt(array.Count(ctx)).ZVal(), nil
+}
+
 // > func mixed array_pop ( array &$array )
 func fncArrayPop(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) > 0 && args[0].GetType() != phpv.ZtArray {
@@ -767,6 +818,185 @@ func fncArrayEnd(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return current, nil
 }
 
+// > func array array_reverse ( array $array1 [, bool $preserve_keys = FALSE ] )
+func fncArrayReverse(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var array *phpv.ZArray
+	var preserveKeysArg *phpv.ZBool
+	_, err := core.Expand(ctx, args, &array, &preserveKeysArg)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	preserveKeys := false
+	if preserveKeysArg != nil {
+		preserveKeys = bool(*preserveKeysArg)
+	}
+
+	result := phpv.NewZArray()
+	it := array.NewIterator()
+	it.End(ctx)
+	i := 0
+	for it.Valid(ctx) {
+		k, _ := it.Key(ctx)
+		v, _ := it.Current(ctx)
+
+		if k.GetType() == phpv.ZtInt && !preserveKeys {
+			k = phpv.ZInt(i).ZVal()
+			result.OffsetSet(ctx, k, v)
+			i++
+		} else {
+			result.OffsetSet(ctx, k, v)
+		}
+
+		it.Prev(ctx)
+	}
+
+	return result.ZVal(), nil
+}
+
+// > func array array_change_key_case ( array $array1 [, int $case = CASE_LOWER ] )
+func fncArrayChangeKeyCase(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var array *phpv.ZArray
+	var keyCaseArg *phpv.ZInt
+	_, err := core.Expand(ctx, args, &array, &keyCaseArg)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	keyCase := deref(keyCaseArg, CASE_LOWER)
+
+	result := phpv.NewZArray()
+	for k, v := range array.Iterate(ctx) {
+		if k.GetType() == phpv.ZtString {
+			s := k.AsString(ctx)
+			changeCase := ifElse(keyCase == CASE_LOWER, s.ToLower, s.ToUpper)
+			k = changeCase().ZVal()
+		}
+		result.OffsetSet(ctx, k, v)
+	}
+
+	return result.ZVal(), nil
+}
+
+// > func array array_chunk ( array $array , int $size [, bool $preserve_keys = FALSE ] )
+func fncArrayChunk(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var array *phpv.ZArray
+	var size phpv.ZInt
+	var preserveKeysArg *phpv.ZBool
+	_, err := core.Expand(ctx, args, &array, &size, &preserveKeysArg)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	if size == 0 {
+		ctx.Warn("Size parameter expected to be greater than 0")
+		return phpv.ZNULL.ZVal(), nil
+	}
+
+	preserveKeys := deref(preserveKeysArg, false)
+
+	result := phpv.NewZArray()
+	current := phpv.NewZArray()
+	for k, v := range array.Iterate(ctx) {
+		if current.Count(ctx) >= size {
+			result.OffsetSet(ctx, nil, current.ZVal())
+			current = phpv.NewZArray()
+		}
+
+		if preserveKeys {
+			current.OffsetSet(ctx, k, v)
+		} else {
+			current.OffsetSet(ctx, nil, v)
+		}
+	}
+	if current.Count(ctx) > 0 {
+		result.OffsetSet(ctx, nil, current.ZVal())
+	}
+
+	return result.ZVal(), nil
+}
+
+// > func array array_column ( array $input , mixed $column_key [, mixed $index_key = NULL ] )
+func fncArrayColumn(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var array *phpv.ZArray
+	var columnKey phpv.ZString
+	var indexKeyArg *phpv.ZString
+	_, err := core.Expand(ctx, args, &array, &columnKey, &indexKeyArg)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	// result is an array of { row[indexKey] : row[columnKey], ... }
+	// where row = array[i]
+	// if row[indexKey] doesn't exist or non-numeric, use maxIndex+1 as key
+
+	result := phpv.NewZArray()
+	var maxIndex phpv.ZInt = -1
+	for _, item := range array.Iterate(ctx) {
+		if item.GetType() != phpv.ZtArray {
+			continue
+		}
+		row := item.AsArray(ctx)
+		if exists, _ := row.OffsetExists(ctx, columnKey); !exists {
+			continue
+		}
+		value, _ := row.OffsetGet(ctx, columnKey)
+
+		var key *phpv.ZVal
+		if indexKeyArg != nil {
+			indexKey := (*indexKeyArg).ZVal()
+			var index phpv.ZInt
+			if exists, _ := row.OffsetExists(ctx, indexKey); !exists {
+				index = phpv.ZInt(maxIndex + 1)
+				key = index.ZVal()
+			} else {
+				k, _ := row.OffsetGet(ctx, indexKey)
+				if k.GetType() == phpv.ZtInt {
+					index = k.AsInt(ctx)
+					key = index.ZVal()
+				} else {
+					key = k
+				}
+			}
+			if index > maxIndex {
+				maxIndex = index
+			}
+		}
+		result.OffsetSet(ctx, key, value)
+	}
+
+	return result.ZVal(), nil
+}
+
+// > func array array_count_values ( $array )
+func fncArrayCountValues(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var array *phpv.ZArray
+	_, err := core.Expand(ctx, args, &array)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	result := phpv.NewZArray()
+	for _, v := range array.Iterate(ctx) {
+		switch v.GetType() {
+		case phpv.ZtInt:
+		case phpv.ZtString:
+		default:
+			ctx.Warn("Can only count STRING and INTEGER values!")
+			continue
+		}
+
+		countVal, exists, _ := result.OffsetCheck(ctx, v)
+		if exists {
+			n := countVal.AsInt(ctx) + 1
+			result.OffsetSet(ctx, v, n.ZVal())
+		} else {
+			result.OffsetSet(ctx, v, phpv.ZInt(1).ZVal())
+		}
+	}
+	return result.ZVal(), nil
+}
+
 // > func bool sort ( array &$array [, int $sort_flags = SORT_REGULAR ] )
 func fncArraySort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var array *phpv.ZArray
@@ -812,6 +1042,54 @@ func fncArraySort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	for _, v := range values {
 		array.OffsetSet(ctx, nil, v)
+	}
+
+	return phpv.ZTrue.ZVal(), nil
+}
+
+// > func bool ksort ( array &$array [, int $sort_flags = SORT_REGULAR ] )
+func fncArrayKSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var array *phpv.ZArray
+	var sortFlagsArg *phpv.ZInt
+	_, err := core.Expand(ctx, args, &array, &sortFlagsArg)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	caseInsensitive := false
+	sortFlags := SORT_REGULAR
+
+	if sortFlagsArg != nil {
+		sortFlags = *sortFlagsArg
+		caseInsensitive = sortFlags&SORT_FLAG_CASE != 0
+		sortFlags &= ^SORT_FLAG_CASE
+	}
+
+	var keys []*phpv.ZVal
+	for k := range (array).Iterate(ctx) {
+		keys = append(keys, k)
+	}
+
+	sortBy := zValuesSorter{ctx, keys, caseInsensitive}
+	sortFn := sortBy.regular
+
+	switch sortFlags {
+	case SORT_STRING, SORT_LOCALE_STRING:
+		sortFn = sortBy.stringly
+	case SORT_NATURAL:
+		sortFn = sortBy.naturally
+	case SORT_NUMERIC:
+		sortFn = sortBy.numerically
+	case SORT_REGULAR:
+		sortFn = sortBy.regular
+	}
+
+	sort.Slice(keys, sortFn)
+
+	for _, k := range keys {
+		v, _ := array.OffsetGet(ctx, k)
+		array.OffsetUnset(ctx, k)
+		array.OffsetSet(ctx, k, v)
 	}
 
 	return phpv.ZTrue.ZVal(), nil

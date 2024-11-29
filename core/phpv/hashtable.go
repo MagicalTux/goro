@@ -80,6 +80,21 @@ func (z *ZHashTable) Clear() {
 	clear(z._idx_s)
 }
 
+// Similar to Clear, but doesn't set the deleted flag
+func (z *ZHashTable) Empty() {
+	z.lock.Lock()
+	defer z.lock.Unlock()
+
+	z.count = 0
+	z.inc = 0
+	z.first = nil
+	z.last = nil
+	z.mainIterator.cur = nil
+
+	clear(z._idx_i)
+	clear(z._idx_s)
+}
+
 func (z *ZHashTable) doCopy() error {
 	// called after z.lock has been locked and when z.cow is true
 	// this will copy all the elements from the array and return a new, modifiable array (and also re-generate both indexes)
