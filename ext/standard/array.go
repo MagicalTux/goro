@@ -2,8 +2,6 @@ package standard
 
 import (
 	"errors"
-	"sort"
-	"strings"
 
 	"github.com/MagicalTux/goro/core"
 	"github.com/MagicalTux/goro/core/phpv"
@@ -98,6 +96,29 @@ func fncArrayMerge(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	return a.ZVal(), nil
+}
+
+// > func array array_replace ( array $array1 [, array $... ] )
+func fncArrayReplace(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var array *phpv.ZArray
+	_, err := core.Expand(ctx, args, &array)
+	if err != nil {
+		return nil, err
+	}
+	result := array.Dup()
+
+	for i := 1; i < len(args); i++ {
+		b, err := args[i].As(ctx, phpv.ZtArray)
+		if err != nil {
+			return nil, err
+		}
+		for k, v := range b.AsArray(ctx).Iterate(ctx) {
+			result.OffsetSet(ctx, k, v)
+		}
+
+	}
+
+	return result.ZVal(), nil
 }
 
 // > func bool in_array ( mixed $needle , array $haystack [, bool $strict = FALSE ] )
@@ -997,133 +1018,174 @@ func fncArrayCountValues(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error
 	return result.ZVal(), nil
 }
 
-// > func bool sort ( array &$array [, int $sort_flags = SORT_REGULAR ] )
-func fncArraySort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	var array *phpv.ZArray
-	var sortFlagsArg *phpv.ZInt
-	_, err := core.Expand(ctx, args, &array, &sortFlagsArg)
+// > func array array_fill ( int $start_index , int $num , mixed $value )
+func fncArrayFill(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var startIndex, num phpv.ZInt
+	var fillValue *phpv.ZVal
+	_, err := core.Expand(ctx, args, &startIndex, &num, &fillValue)
 	if err != nil {
 		return nil, ctx.FuncError(err)
 	}
 
-	caseInsensitive := false
-	sortFlags := SORT_REGULAR
-
-	if sortFlagsArg != nil {
-		sortFlags = *sortFlagsArg
-		caseInsensitive = sortFlags&SORT_FLAG_CASE != 0
-		sortFlags &= ^SORT_FLAG_CASE
+	result := phpv.NewZArray()
+	for i := startIndex; i < startIndex+num; i++ {
+		result.OffsetSet(ctx, phpv.ZInt(i), fillValue)
 	}
-
-	var values []*phpv.ZVal
-	for _, v := range (array).Iterate(ctx) {
-		values = append(values, v)
-	}
-
-	sortBy := zValuesSorter{ctx, values, caseInsensitive}
-	sortFn := sortBy.regular
-
-	switch sortFlags {
-	case SORT_STRING, SORT_LOCALE_STRING:
-		sortFn = sortBy.stringly
-	case SORT_NATURAL:
-		sortFn = sortBy.naturally
-	case SORT_NUMERIC:
-		sortFn = sortBy.numerically
-	case SORT_REGULAR:
-		sortFn = sortBy.regular
-	}
-
-	sort.Slice(values, sortFn)
-
-	if err = array.Clear(ctx); err != nil {
-		return nil, err
-	}
-
-	for _, v := range values {
-		array.OffsetSet(ctx, nil, v)
-	}
-
-	return phpv.ZTrue.ZVal(), nil
+	return result.ZVal(), nil
 }
 
-// > func bool ksort ( array &$array [, int $sort_flags = SORT_REGULAR ] )
-func fncArrayKSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+// > func array array_fill_keys ( array $keys , mixed $value )
+func fncArrayFillKeys(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var array *phpv.ZArray
-	var sortFlagsArg *phpv.ZInt
-	_, err := core.Expand(ctx, args, &array, &sortFlagsArg)
+	var fillValue *phpv.ZVal
+	_, err := core.Expand(ctx, args, &array, &fillValue)
 	if err != nil {
 		return nil, ctx.FuncError(err)
 	}
 
-	caseInsensitive := false
-	sortFlags := SORT_REGULAR
-
-	if sortFlagsArg != nil {
-		sortFlags = *sortFlagsArg
-		caseInsensitive = sortFlags&SORT_FLAG_CASE != 0
-		sortFlags &= ^SORT_FLAG_CASE
+	result := phpv.NewZArray()
+	for _, v := range array.Iterate(ctx) {
+		result.OffsetSet(ctx, v, fillValue)
 	}
-
-	var keys []*phpv.ZVal
-	for k := range (array).Iterate(ctx) {
-		keys = append(keys, k)
-	}
-
-	sortBy := zValuesSorter{ctx, keys, caseInsensitive}
-	sortFn := sortBy.regular
-
-	switch sortFlags {
-	case SORT_STRING, SORT_LOCALE_STRING:
-		sortFn = sortBy.stringly
-	case SORT_NATURAL:
-		sortFn = sortBy.naturally
-	case SORT_NUMERIC:
-		sortFn = sortBy.numerically
-	case SORT_REGULAR:
-		sortFn = sortBy.regular
-	}
-
-	sort.Slice(keys, sortFn)
-
-	for _, k := range keys {
-		v, _ := array.OffsetGet(ctx, k)
-		array.OffsetUnset(ctx, k)
-		array.OffsetSet(ctx, k, v)
-	}
-
-	return phpv.ZTrue.ZVal(), nil
+	return result.ZVal(), nil
 }
 
-type zValuesSorter struct {
-	ctx             phpv.Context
-	values          []*phpv.ZVal
-	caseInsensitive bool
-}
-
-func (zv zValuesSorter) regular(i, j int) bool {
-	cmp, _ := core.Compare(zv.ctx, zv.values[i], zv.values[j])
-	return cmp < 0
-}
-
-func (zv zValuesSorter) numerically(i, j int) bool {
-	a := zv.values[i].AsInt(zv.ctx)
-	b := zv.values[j].AsInt(zv.ctx)
-	return a < b
-}
-
-func (zv zValuesSorter) stringly(i, j int) bool {
-	a := string(zv.values[i].AsString(zv.ctx))
-	b := string(zv.values[j].AsString(zv.ctx))
-	if zv.caseInsensitive {
-		a = strings.ToLower(a)
-		b = strings.ToLower(b)
+// > func array array_key_first ( array $keys )
+func fncArrayKeyFirst(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var array *phpv.ZArray
+	_, err := core.Expand(ctx, args, &array)
+	if err != nil {
+		return nil, ctx.FuncError(err)
 	}
-	return strings.Compare(a, b) < 0
+
+	for k := range array.Iterate(ctx) {
+		return k, nil
+	}
+
+	return phpv.ZNULL.ZVal(), nil
 }
 
-func (zv zValuesSorter) naturally(i, j int) bool {
-	a := []byte(zv.values[i].AsString(zv.ctx))
-	b := []byte(zv.values[j].AsString(zv.ctx))
-	return natCmp(a, b, !zv.caseInsensitive) < 0
+// > func array array_key_last ( array $keys )
+func fncArrayKeyLast(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var array *phpv.ZArray
+	_, err := core.Expand(ctx, args, &array)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	it := array.NewIterator()
+	_, err = it.End(ctx)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	k, err := it.Key(ctx)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	return k, nil
+}
+
+// > func array array_merge_recursive ( array $array1 [, array $... ] )
+func fncArrayMergeRecursive(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var array *phpv.ZArray
+	_, err := core.Expand(ctx, args, &array)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	result := phpv.NewZArray()
+	arrayRecursiveMerge(ctx, result, array)
+	for _, elem := range args[1:] {
+		arr, err := elem.As(ctx, phpv.ZtArray)
+		if err != nil {
+			return nil, ctx.FuncError(err)
+		}
+		arrayRecursiveMerge(ctx, result, arr.AsArray(ctx))
+	}
+
+	return result.ZVal(), nil
+}
+
+func arrayRecursiveMerge(ctx phpv.Context, result, array *phpv.ZArray) {
+	for k, v := range array.Iterate(ctx) {
+		if k.GetType() == phpv.ZtInt {
+			result.OffsetSet(ctx, nil, v)
+			continue
+		}
+
+		if v.GetType() == phpv.ZtArray {
+			var array *phpv.ZArray
+			cur, _ := result.OffsetGet(ctx, k)
+			if cur.GetType() != phpv.ZtArray {
+				array = phpv.NewZArray()
+				result.OffsetSet(ctx, k, array.ZVal())
+			} else {
+				array = cur.AsArray(ctx)
+			}
+
+			arrayRecursiveMerge(ctx, array, v.AsArray(ctx))
+			continue
+		}
+
+		if ok, _ := result.OffsetExists(ctx, k); ok {
+			cur, _ := result.OffsetGet(ctx, k)
+			if cur.GetType() != phpv.ZtArray {
+				array := phpv.NewZArray()
+				result.OffsetUnset(ctx, k)
+				array.OffsetSet(ctx, nil, cur)
+				array.OffsetSet(ctx, nil, v)
+				result.OffsetSet(ctx, k, array.ZVal())
+			} else {
+				array := cur.AsArray(ctx)
+				array.OffsetSet(ctx, nil, v)
+			}
+			continue
+		}
+
+		result.OffsetSet(ctx, k, v)
+	}
+}
+
+// > func array array_replace_recursive ( array $array1 [, array $... ] )
+func fncArrayReplaceRecursive(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var array *phpv.ZArray
+	_, err := core.Expand(ctx, args, &array)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	result := phpv.NewZArray()
+	arrayRecursiveReplace(ctx, result, array)
+	for _, elem := range args[1:] {
+		arr, err := elem.As(ctx, phpv.ZtArray)
+		if err != nil {
+			return nil, ctx.FuncError(err)
+		}
+		arrayRecursiveReplace(ctx, result, arr.AsArray(ctx))
+	}
+
+	return result.ZVal(), nil
+}
+
+
+func arrayRecursiveReplace(ctx phpv.Context, result, array *phpv.ZArray) {
+	for k, v := range array.Iterate(ctx) {
+		if v.GetType() == phpv.ZtArray {
+			var array *phpv.ZArray
+			cur, _ := result.OffsetGet(ctx, k)
+			if cur.GetType() != phpv.ZtArray {
+				array = phpv.NewZArray()
+				result.OffsetSet(ctx, k, array.ZVal())
+			} else {
+				array = cur.AsArray(ctx)
+			}
+
+			arrayRecursiveReplace(ctx, array, v.AsArray(ctx))
+			result.OffsetSet(ctx, k, array.ZVal())
+			continue
+		}
+		result.OffsetSet(ctx, k, v)
+	}
 }

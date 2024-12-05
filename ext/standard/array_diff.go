@@ -53,7 +53,6 @@ func fncArrayDiff(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 }
 
 // > func array array_udiff ( array $array1 , array $array2 [, array $... ], callable $value_compare_func )
-// > alias array_udiff_assoc
 func fncArrayUDiff(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var array *phpv.ZArray
 	_, err := core.Expand(ctx, args, &array)
@@ -130,6 +129,50 @@ func fncArrayUDiffAssoc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 		}
 		funcArgs[0] = v1
 		funcArgs[1] = v2
+		ret, err := valueCompareFunc.Call(ctx, funcArgs)
+		if err != nil {
+			return false, err
+		}
+
+		return ret.AsInt(ctx) == 0, nil
+	})
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	return result.ZVal(), nil
+}
+
+// > func array array_diff_ukey ( array $array1 , array $array2 [, array $... ], callable $key_compare_func )
+func fncArrayDiffUKey(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var array *phpv.ZArray
+	_, err := core.Expand(ctx, args, &array)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	if len(args) < 3 {
+		return nil, ctx.Errorf("at least 3 parameters are required, %d given", len(args))
+	}
+
+	lastArg := args[len(args)-1]
+	switch lastArg.GetType() {
+	case phpv.ZtString:
+	case phpv.ZtArray:
+	case phpv.ZtObject:
+	default:
+		return nil, ctx.FuncErrorf("expects parameter %d to be a valid callback, no array or string given", len(args)-1)
+	}
+
+	valueCompareFunc, err := core.SpawnCallable(ctx, lastArg)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+	funcArgs := make([]*phpv.ZVal, 2)
+	result := array.Dup()
+	err = arrayDiff(ctx, result, args[1:len(args)-1], func(k1, v1, k2, v2 *phpv.ZVal) (bool, error) {
+		funcArgs[0] = k1
+		funcArgs[1] = k2
 		ret, err := valueCompareFunc.Call(ctx, funcArgs)
 		if err != nil {
 			return false, err
