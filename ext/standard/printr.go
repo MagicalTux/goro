@@ -49,12 +49,15 @@ func doPrintR(ctx phpv.Context, z *phpv.ZVal, linePfx string, recurs map[uintptr
 		recurs = make(map[uintptr]bool)
 	}
 
-	v := uintptr(unsafe.Pointer(z))
-	if _, n := recurs[v]; n {
-		fmt.Fprintf(ctx, "%s*RECURSION*\n", linePfx)
-		return nil
-	} else {
-		recurs[v] = true
+	switch z.GetType() {
+	case phpv.ZtArray, phpv.ZtObject:
+		v := uintptr(unsafe.Pointer(z))
+		if _, n := recurs[v]; n {
+			fmt.Fprintf(ctx, "%s*RECURSION*\n", linePfx)
+			return nil
+		} else {
+			recurs[v] = true
+		}
 	}
 
 	switch z.GetType() {
