@@ -1189,3 +1189,57 @@ func arrayRecursiveReplace(ctx phpv.Context, result, array *phpv.ZArray) {
 		result.OffsetSet(ctx, k, v)
 	}
 }
+
+// > func array array_pad ( array $array , int $size , mixed $value )
+func fncArrayPad(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var array *phpv.ZArray
+	var size phpv.ZInt
+	var padValue *phpv.ZVal
+	_, err := core.Expand(ctx, args, &array, &size, &padValue)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	var result *phpv.ZArray
+	if size < 0 {
+		size = -size
+		result = phpv.NewZArray()
+		for i := 0; i < int(size)-int(array.Count(ctx)); i++ {
+			result.OffsetSet(ctx, nil, padValue)
+		}
+		for k, v := range array.Iterate(ctx) {
+			if k.GetType() == phpv.ZtInt {
+				result.OffsetSet(ctx, nil, v)
+			} else {
+				result.OffsetSet(ctx, k, v)
+			}
+		}
+	} else {
+		result = array.Dup()
+		for i := 0; i < int(size)-int(array.Count(ctx)); i++ {
+			result.OffsetSet(ctx, nil, padValue)
+		}
+	}
+
+	return result.ZVal(), nil
+}
+
+// > func array array_product ( array $array , int $size , mixed $value )
+func fncArrayProduct(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var array *phpv.ZArray
+	_, err := core.Expand(ctx, args, &array)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	product := 1
+	for _, v := range array.Iterate(ctx) {
+		if v.GetType() == phpv.ZtArray {
+			continue
+		}
+
+		product *= int(v.AsInt(ctx))
+	}
+
+	return phpv.ZInt(product).ZVal(), nil
+}
