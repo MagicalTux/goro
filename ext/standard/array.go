@@ -2,6 +2,8 @@ package standard
 
 import (
 	"errors"
+	"math/rand/v2"
+	"slices"
 
 	"github.com/MagicalTux/goro/core"
 	"github.com/MagicalTux/goro/core/phpv"
@@ -349,30 +351,54 @@ func fncArrayWalk(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	iter := array.NewIterator()
+	// TODO: error if len(callbackArgs) is more than callback expects
 
 	callbackArgs := make([]*phpv.ZVal, 2)
 	if userdata != nil {
 		callbackArgs = append(callbackArgs, *userdata)
 	}
 
-	// TODO: error if len(callbackArgs) is more than callback expects
-
-	for ; iter.Valid(ctx); iter.Next(ctx) {
-		val, err := iter.Current(ctx)
-		if err != nil {
-			return nil, err
-		}
-		key, err := iter.Key(ctx)
-		if err != nil {
-			return nil, err
-		}
-
-		callbackArgs[0] = val
-		callbackArgs[1] = key
-
+	for k, v := range array.Iterate(ctx) {
+		callbackArgs[0] = v
+		callbackArgs[1] = k
 		callback.Call(ctx, callbackArgs)
 	}
+
+	return phpv.ZTrue.ZVal(), nil
+}
+
+// > func bool array_walk_recursive ( array &$array , callable $callback [, mixed $userdata = NULL ] )
+func fncArrayWalkRecursive(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var array *phpv.ZArray
+	var callback phpv.Callable
+	var userdata **phpv.ZVal
+	_, err := core.Expand(ctx, args, &array, &callback, &userdata)
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO: error if len(callbackArgs) is more than callback expects
+
+	callbackArgs := make([]*phpv.ZVal, 2)
+	if userdata != nil {
+		callbackArgs = append(callbackArgs, *userdata)
+	}
+
+	var loop func(*phpv.ZArray)
+	loop = func(array *phpv.ZArray) {
+		for k, v := range array.Iterate(ctx) {
+			if v.GetType() == phpv.ZtArray {
+				loop(v.AsArray(ctx))
+				continue
+			}
+
+			callbackArgs[0] = v
+			callbackArgs[1] = k
+			callback.Call(ctx, callbackArgs)
+		}
+	}
+
+	loop(array)
 
 	return phpv.ZTrue.ZVal(), nil
 }
@@ -1169,7 +1195,6 @@ func fncArrayReplaceRecursive(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, 
 	return result.ZVal(), nil
 }
 
-
 func arrayRecursiveReplace(ctx phpv.Context, result, array *phpv.ZArray) {
 	for k, v := range array.Iterate(ctx) {
 		if v.GetType() == phpv.ZtArray {
@@ -1224,7 +1249,7 @@ func fncArrayPad(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return result.ZVal(), nil
 }
 
-// > func array array_product ( array $array , int $size , mixed $value )
+// > func number array_product ( array $array )
 func fncArrayProduct(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var array *phpv.ZArray
 	_, err := core.Expand(ctx, args, &array)
@@ -1232,14 +1257,96 @@ func fncArrayProduct(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, ctx.FuncError(err)
 	}
 
-	product := 1
+	var product phpv.ZFloat = 1
 	for _, v := range array.Iterate(ctx) {
 		if v.GetType() == phpv.ZtArray {
 			continue
 		}
 
-		product *= int(v.AsInt(ctx))
+		product *= v.AsFloat(ctx)
 	}
 
-	return phpv.ZInt(product).ZVal(), nil
+	return product.ZVal(), nil
+}
+
+// > func number array_sum ( array $array )
+func fncArraySum(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var array *phpv.ZArray
+	_, err := core.Expand(ctx, args, &array)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	var sum phpv.ZFloat = 0
+	for _, v := range array.Iterate(ctx) {
+		if v.GetType() == phpv.ZtArray {
+			continue
+		}
+
+		sum += v.AsFloat(ctx)
+	}
+
+	return sum.ZVal(), nil
+}
+
+// > func mixed array_rand ( array $array [, int $num = 1 ] )
+func fncArrayRand(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var array *phpv.ZArray
+	var numArg *phpv.ZInt
+	_, err := core.Expand(ctx, args, &array, &numArg)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	if array.Count(ctx) == 0 {
+		ctx.Warn("Array is empty")
+		return nil, nil
+	}
+
+	// TODO: use Mersenne Twister RNG for maximum compatibility
+
+	num := deref(numArg, 1)
+
+	if num == 1 {
+		i := rand.IntN(int(array.Count(ctx)))
+		return array.OffsetKeyAt(ctx, i)
+	}
+
+	result := phpv.NewZArray()
+	indices := rand.Perm(int(array.Count(ctx)))[:num]
+
+	i := 0
+	for k := range array.Iterate(ctx) {
+		if slices.Contains(indices, i) {
+			result.OffsetSet(ctx, nil, k)
+		}
+		i++
+	}
+
+	return result.ZVal(), nil
+}
+
+// > func mixed array_reduce ( array $array , callable $callback [, mixed $initial = NULL ] )
+func fncArrayReduce(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var array *phpv.ZArray
+	var callback phpv.Callable
+	var initialArg **phpv.ZVal
+	_, err := core.Expand(ctx, args, &array, &callback, &initialArg)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	accumulator := deref(initialArg, phpv.ZNULL.ZVal())
+
+	cbArgs := make([]*phpv.ZVal, 2)
+	for _, v := range array.Iterate(ctx) {
+		cbArgs[0] = accumulator
+		cbArgs[1] = v
+		accumulator, err = callback.Call(ctx, cbArgs)
+		if err != nil {
+			return nil, ctx.FuncError(err)
+		}
+	}
+
+	return accumulator, nil
 }

@@ -104,6 +104,17 @@ func (a *ZArray) OffsetGet(ctx Context, key Val) (*ZVal, error) {
 	}
 }
 
+func (a *ZArray) OffsetKeyAt(ctx Context, index int) (*ZVal, error) {
+	i := 0
+	for k := range a.Iterate(ctx) {
+		if i == index {
+			return k, nil
+		}
+		i++
+	}
+	return &ZVal{ZNull{}}, nil
+}
+
 func (a *ZArray) OffsetCheck(ctx Context, key Val) (*ZVal, bool, error) {
 	if key == nil || key.GetType() == ZtNull {
 		return nil, false, ctx.Errorf("Cannot use [] for reading")
