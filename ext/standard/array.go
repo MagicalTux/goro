@@ -1,8 +1,11 @@
 package standard
 
 import (
+	"bytes"
 	"errors"
+	"io"
 	"math/rand/v2"
+	"regexp"
 	"slices"
 
 	"github.com/MagicalTux/goro/core"
@@ -32,6 +35,19 @@ const (
 	SORT_NATURAL
 
 	SORT_FLAG_CASE phpv.ZInt = 8
+)
+
+// > const
+const (
+	EXTR_OVERWRITE phpv.ZInt = iota
+	EXTR_SKIP
+	EXTR_PREFIX_SAME
+	EXTR_PREFIX_ALL
+	EXTR_PREFIX_INVALID
+	EXTR_PREFIX_IF_EXISTS
+	EXTR_IF_EXISTS
+
+	EXTR_REFS phpv.ZInt = 0x100
 )
 
 // > func array array_combine ( array $keys , array $values )
@@ -1349,4 +1365,150 @@ func fncArrayReduce(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	return accumulator, nil
+}
+
+// > func mixed extract ( array &$array [, int $flags = EXTR_OVERWRITE [, string $prefix = NULL ]] )
+func fncArrayExtract(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var array *phpv.ZArray
+	var flagsArg *phpv.ZInt
+	var prefixArgs *phpv.ZString
+	_, err := core.Expand(ctx, args, &array, &flagsArg, &prefixArgs)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	parentCtx := ctx.Parent(1)
+	flags := deref(flagsArg, EXTR_OVERWRITE)
+	prefix := deref(prefixArgs, "")
+
+	switch flags {
+	case EXTR_PREFIX_SAME, EXTR_PREFIX_ALL, EXTR_PREFIX_INVALID, EXTR_PREFIX_IF_EXISTS:
+		if prefix == "" {
+			return nil, ctx.FuncErrorf("specified extract type requires the prefix parameter")
+		}
+	}
+
+	// TODO: handle EXTR_REFS
+	flags &= ^EXTR_REFS
+
+	for k, v := range array.Iterate(ctx) {
+		alreadyDefined, _ := parentCtx.OffsetExists(ctx, k)
+
+		var varName phpv.ZString = k.AsString(ctx)
+
+		if !containsInvalidChar(string(varName)) {
+			continue
+		}
+
+		invalidVarName := k.GetType() == phpv.ZtInt
+		if !invalidVarName && !regexp.MustCompile(`^[a-zA-Z_]`).MatchString(string(varName)) {
+			invalidVarName = true
+		}
+
+		switch flags {
+		case EXTR_OVERWRITE:
+			parentCtx.OffsetSet(parentCtx, k, v)
+		case EXTR_SKIP:
+			if !alreadyDefined {
+				parentCtx.OffsetSet(parentCtx, k, v)
+			}
+		case EXTR_PREFIX_SAME:
+			if alreadyDefined {
+				prefixed := prefix + "_" + k.AsString(ctx)
+				parentCtx.OffsetSet(parentCtx, prefixed, v)
+			} else {
+				parentCtx.OffsetSet(parentCtx, varName, v)
+			}
+		case EXTR_PREFIX_ALL:
+			prefixed := prefix + "_" + k.AsString(ctx)
+			parentCtx.OffsetSet(parentCtx, prefixed, v)
+		case EXTR_PREFIX_INVALID:
+			if invalidVarName {
+				prefixed := prefix + "_" + k.AsString(ctx)
+				parentCtx.OffsetSet(parentCtx, prefixed, v)
+			} else {
+				parentCtx.OffsetSet(parentCtx, varName, v)
+			}
+		case EXTR_IF_EXISTS:
+			if alreadyDefined {
+				parentCtx.OffsetSet(parentCtx, k, v)
+			}
+		case EXTR_PREFIX_IF_EXISTS:
+			if alreadyDefined {
+				prefixed := prefix + "_" + varName
+				parentCtx.OffsetSet(parentCtx, prefixed, v)
+			}
+		}
+	}
+
+	return nil, nil
+}
+
+// > func array compact ( mixed $varname1 [, mixed $... ] )
+func fncArrayCompact(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) == 0 {
+		ctx.Warn("expects at least 1 parameter, 0 given")
+		return nil, nil
+	}
+	parentCtx := ctx.Parent(1)
+	result := phpv.NewZArray()
+	for _, v := range args {
+		err := arrayRecursiveCompact(parentCtx, result, v)
+		if err != nil {
+			return nil, ctx.Error(err)
+		}
+	}
+	return result.ZVal(), nil
+}
+
+func arrayRecursiveCompact(ctx phpv.Context, result *phpv.ZArray, varName *phpv.ZVal) error {
+	switch varName.GetType() {
+	case phpv.ZtString:
+		if ok, _ := ctx.OffsetExists(ctx, varName); ok {
+			value, err := ctx.OffsetGet(ctx, varName)
+			if err != nil {
+				return err
+			}
+			result.OffsetSet(ctx, varName, value)
+		}
+	case phpv.ZtArray:
+		for _, varName := range varName.AsArray(ctx).Iterate(ctx) {
+			err := arrayRecursiveCompact(ctx, result, varName)
+			if err != nil {
+				return err
+			}
+		}
+	default:
+		// ignore other types
+	}
+
+	return nil
+}
+
+func containsInvalidChar(s string) bool {
+	if s == "" {
+		return false
+	}
+
+	buf := bytes.NewBufferString(s)
+
+	for {
+		c, err := buf.ReadByte()
+		if err == io.EOF {
+			break
+		}
+		switch {
+		case
+			'a' <= c && c <= 'z',
+			'A' <= c && c <= 'Z',
+			'0' <= c && c <= '9',
+			c == '_',
+			0x7f <= c:
+
+		default:
+			return false
+		}
+	}
+
+	return true
 }
