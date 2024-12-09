@@ -2,8 +2,15 @@ package core
 
 import (
 	"strings"
+	"unsafe"
 
 	"github.com/MagicalTux/goro/core/phpv"
+)
+
+// > const
+const (
+	COUNT_NORMAL phpv.ZInt = iota
+	COUNT_RECURSIVE
 )
 
 // > func int strlen ( string $string )
@@ -68,24 +75,54 @@ func fncDefined(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 }
 
 // > func int count ( mixed $array_or_countable [, int $mode = COUNT_NORMAL ] )
+// > alias sizeof
 func fncCount(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var countable *phpv.ZVal
-	var mode *phpv.ZInt
-	_, err := Expand(ctx, args, &countable, &mode)
+	var modeArg *phpv.ZInt
+	_, err := Expand(ctx, args, &countable, &modeArg)
 	if err != nil {
 		return nil, err
 	}
 
-	if mode != nil {
-		return nil, ctx.Errorf("todo recursive count")
+	mode := COUNT_NORMAL
+	if modeArg != nil {
+		mode = *modeArg
+	}
+
+	if mode == COUNT_RECURSIVE && countable.GetType() == phpv.ZtArray {
+		visisted := map[uintptr]struct{}{}
+		count := recursiveCount(ctx, countable.AsArray(ctx), visisted)
+		return phpv.ZInt(count).ZVal(), nil
 	}
 
 	if v, ok := countable.Value().(phpv.ZCountable); ok {
 		return v.Count(ctx).ZVal(), nil
 	}
 
-	// make this a warning
-	return phpv.ZInt(1).ZVal(), ctx.Errorf("Parameter must be an array or an object that implements Countable")
+	ctx.Warn("Parameter must be an array or an object that implements Countable")
+	return phpv.ZInt(1).ZVal(), nil
+}
+
+func recursiveCount(ctx phpv.Context, array *phpv.ZArray, visited map[uintptr]struct{}) int {
+	ptr := uintptr(unsafe.Pointer(array))
+	if _, seen := visited[ptr]; seen {
+		ctx.Warn("recursive loop detected while counting")
+		return 0
+	}
+
+	visited[ptr] = struct{}{}
+
+	count := 0
+	for _, elem := range array.Iterate(ctx) {
+		count++
+		if elem.GetType() == phpv.ZtArray {
+			count += recursiveCount(ctx, elem.AsArray(ctx), visited)
+		} else if v, ok := elem.Value().(phpv.ZCountable); ok {
+			count += int(v.Count(ctx))
+		}
+	}
+
+	return count
 }
 
 // > func int strcmp ( string $str1 , string $str2 )

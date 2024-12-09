@@ -45,11 +45,14 @@ func init() {
 			"print":             {Func: fncPrint, Args: []*phpctx.ExtFunctionArg{}},
 			"require":           {Func: fncRequire, Args: []*phpctx.ExtFunctionArg{}},
 			"require_once":      {Func: fncRequireOnce, Args: []*phpctx.ExtFunctionArg{}},
+			"sizeof":            {Func: fncCount, Args: []*phpctx.ExtFunctionArg{}}, // alias
 			"strcmp":            {Func: fncStrcmp, Args: []*phpctx.ExtFunctionArg{}},
 			"strlen":            {Func: fncStrlen, Args: []*phpctx.ExtFunctionArg{}},
 			"zend_version":      {Func: stdFuncZendVersion, Args: []*phpctx.ExtFunctionArg{}},
 		},
 		Constants: map[phpv.ZString]phpv.Val{
+			"COUNT_NORMAL":                 COUNT_NORMAL,
+			"COUNT_RECURSIVE":              COUNT_RECURSIVE,
 			"DEFAULT_INCLUDE_PATH":         DEFAULT_INCLUDE_PATH,
 			"DIRECTORY_SEPARATOR":          DIRECTORY_SEPARATOR,
 			"E_ALL":                        E_ALL,
