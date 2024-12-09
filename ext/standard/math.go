@@ -42,12 +42,12 @@ func mathAbs(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var z *phpv.ZVal
 	_, err := core.Expand(ctx, args, &z)
 	if err != nil {
-		return nil, err
+		return nil, ctx.FuncError(err)
 	}
 
 	z, err = z.AsNumeric(ctx)
 	if err != nil {
-		return nil, err
+		return nil, ctx.FuncError(err)
 	}
 
 	switch z.GetType() {
@@ -65,12 +65,112 @@ func mathAbs(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 }
 
+// > func number ceil ( mixed $number )
+func mathCeil(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var z *phpv.ZVal
+	_, err := core.Expand(ctx, args, &z)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	z, err = z.AsNumeric(ctx)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	i := float64(z.AsFloat(ctx))
+	return phpv.ZFloat(math.Ceil(i)).ZVal(), nil
+}
+
+// > func number floor ( mixed $number )
+func mathFloor(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var z *phpv.ZVal
+	_, err := core.Expand(ctx, args, &z)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	z, err = z.AsNumeric(ctx)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	i := float64(z.AsFloat(ctx))
+	return phpv.ZFloat(math.Floor(i)).ZVal(), nil
+}
+
+// > func number round ( float $val [, int $precision = 0 [, int $mode = PHP_ROUND_HALF_UP ]] )
+func mathRound(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var val *phpv.ZVal
+	var precisionArg *phpv.ZInt
+	var modeArg *phpv.ZInt
+	_, err := core.Expand(ctx, args, &val, &precisionArg, &modeArg)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	precision := deref(precisionArg, 0)
+	mode := deref(modeArg, PHP_ROUND_HALF_UP)
+
+	val, err = val.AsNumeric(ctx)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	shift := float64(1)
+	n := float64(val.AsFloat(ctx))
+
+	if precision != 0 {
+		shift = math.Pow10(int(precision))
+		n *= shift
+	}
+
+	t := math.Trunc(n)
+	d := math.Abs(n - t)
+	odd := math.Remainder(t, 2) != 0
+
+	roundUp := false
+
+	switch {
+	case d < 0.5:
+		roundUp = false
+	case d > 0.5:
+		roundUp = true
+	default:
+		switch mode {
+		case PHP_ROUND_HALF_UP:
+			roundUp = true
+		case PHP_ROUND_HALF_DOWN:
+			roundUp = false
+
+		case PHP_ROUND_HALF_ODD:
+			if !odd {
+				roundUp = true
+			}
+		case PHP_ROUND_HALF_EVEN:
+			if odd {
+				roundUp = true
+			}
+		}
+	}
+
+	if roundUp {
+		n = t + math.Copysign(1, n)
+	} else {
+		n = t
+	}
+
+	n /= shift
+
+	return phpv.ZFloat(n).ZVal(), nil
+}
+
 // > func float acos ( float $arg )
 func mathAcos(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var f phpv.ZFloat
 	_, err := core.Expand(ctx, args, &f)
 	if err != nil {
-		return nil, err
+		return nil, ctx.FuncError(err)
 	}
 
 	return phpv.ZFloat(math.Acos(float64(f))).ZVal(), nil
@@ -81,7 +181,7 @@ func mathACosh(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var f phpv.ZFloat
 	_, err := core.Expand(ctx, args, &f)
 	if err != nil {
-		return nil, err
+		return nil, ctx.FuncError(err)
 	}
 
 	return phpv.ZFloat(math.Acosh(float64(f))).ZVal(), nil
@@ -92,7 +192,7 @@ func mathAsin(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var f phpv.ZFloat
 	_, err := core.Expand(ctx, args, &f)
 	if err != nil {
-		return nil, err
+		return nil, ctx.FuncError(err)
 	}
 
 	return phpv.ZFloat(math.Asin(float64(f))).ZVal(), nil
@@ -103,7 +203,7 @@ func mathAsinh(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var f phpv.ZFloat
 	_, err := core.Expand(ctx, args, &f)
 	if err != nil {
-		return nil, err
+		return nil, ctx.FuncError(err)
 	}
 
 	return phpv.ZFloat(math.Asinh(float64(f))).ZVal(), nil
@@ -114,7 +214,7 @@ func mathAtan2(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var y, x phpv.ZFloat
 	_, err := core.Expand(ctx, args, &y, &x)
 	if err != nil {
-		return nil, err
+		return nil, ctx.FuncError(err)
 	}
 
 	return phpv.ZFloat(math.Atan2(float64(y), float64(x))).ZVal(), nil
@@ -125,7 +225,7 @@ func mathAtan(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var x phpv.ZFloat
 	_, err := core.Expand(ctx, args, &x)
 	if err != nil {
-		return nil, err
+		return nil, ctx.FuncError(err)
 	}
 
 	return phpv.ZFloat(math.Atan(float64(x))).ZVal(), nil
@@ -136,7 +236,7 @@ func mathAtanh(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var x phpv.ZFloat
 	_, err := core.Expand(ctx, args, &x)
 	if err != nil {
-		return nil, err
+		return nil, ctx.FuncError(err)
 	}
 
 	return phpv.ZFloat(math.Atanh(float64(x))).ZVal(), nil
@@ -147,7 +247,7 @@ func mathCos(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var x phpv.ZFloat
 	_, err := core.Expand(ctx, args, &x)
 	if err != nil {
-		return nil, err
+		return nil, ctx.FuncError(err)
 	}
 
 	return phpv.ZFloat(math.Cos(float64(x))).ZVal(), nil
@@ -158,7 +258,7 @@ func mathCosh(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var x phpv.ZFloat
 	_, err := core.Expand(ctx, args, &x)
 	if err != nil {
-		return nil, err
+		return nil, ctx.FuncError(err)
 	}
 
 	return phpv.ZFloat(math.Cosh(float64(x))).ZVal(), nil
@@ -169,10 +269,21 @@ func mathDeg2rad(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var x phpv.ZFloat
 	_, err := core.Expand(ctx, args, &x)
 	if err != nil {
-		return nil, err
+		return nil, ctx.FuncError(err)
 	}
 
 	return (x / 180 * math.Pi).ZVal(), nil
+}
+
+// > func float rad2deg ( float $number )
+func mathRad2Deg(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var x phpv.ZFloat
+	_, err := core.Expand(ctx, args, &x)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	return (x / math.Pi * 180).ZVal(), nil
 }
 
 // > func float exp ( float $arg )
@@ -180,7 +291,7 @@ func mathExp(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var x phpv.ZFloat
 	_, err := core.Expand(ctx, args, &x)
 	if err != nil {
-		return nil, err
+		return nil, ctx.FuncError(err)
 	}
 
 	return phpv.ZFloat(math.Exp(float64(x))).ZVal(), nil
@@ -191,7 +302,7 @@ func mathExpm1(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var x phpv.ZFloat
 	_, err := core.Expand(ctx, args, &x)
 	if err != nil {
-		return nil, err
+		return nil, ctx.FuncError(err)
 	}
 
 	return phpv.ZFloat(math.Expm1(float64(x))).ZVal(), nil
@@ -202,7 +313,7 @@ func mathFmod(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var x, y phpv.ZFloat
 	_, err := core.Expand(ctx, args, &x, &y)
 	if err != nil {
-		return nil, err
+		return nil, ctx.FuncError(err)
 	}
 
 	return phpv.ZFloat(math.Mod(float64(x), float64(y))).ZVal(), nil
@@ -213,7 +324,7 @@ func mathHypot(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var x, y phpv.ZFloat
 	_, err := core.Expand(ctx, args, &x, &y)
 	if err != nil {
-		return nil, err
+		return nil, ctx.FuncError(err)
 	}
 
 	return phpv.ZFloat(math.Hypot(float64(x), float64(y))).ZVal(), nil
@@ -230,7 +341,7 @@ func mathMax(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var firstArg *phpv.ZVal
 	_, err := core.Expand(ctx, args, &firstArg)
 	if err != nil {
-		return nil, err
+		return nil, ctx.FuncError(err)
 	}
 
 	max := phpv.ZNULL.ZVal()
@@ -267,3 +378,152 @@ func mathMax(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	return max, nil
 }
+
+// > func bool is_finite ( float $val )
+func mathIsFinite(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var val *phpv.ZVal
+	_, err := core.Expand(ctx, args, &val)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	val, err = val.AsNumeric(ctx)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	result := !math.IsInf(float64(val.AsFloat(ctx)), 0)
+	return phpv.ZBool(result).ZVal(), nil
+}
+
+// > func bool is_infinite ( float $val )
+func mathIsInfinite(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var val *phpv.ZVal
+	_, err := core.Expand(ctx, args, &val)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	val, err = val.AsNumeric(ctx)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	result := math.IsInf(float64(val.AsFloat(ctx)), 0)
+	return phpv.ZBool(result).ZVal(), nil
+}
+
+// > func bool is_nan ( float $val )
+func mathIsNaN(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var val *phpv.ZVal
+	_, err := core.Expand(ctx, args, &val)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	val, err = val.AsNumeric(ctx)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	result := math.IsNaN(float64(val.AsFloat(ctx)))
+	return phpv.ZBool(result).ZVal(), nil
+}
+
+// > func number pow ( number $base , number $exp )
+func mathPow(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var base, exp *phpv.ZVal
+	_, err := core.Expand(ctx, args, &base, &exp)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	base, err = base.AsNumeric(ctx)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+	exp, err = exp.AsNumeric(ctx)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	baseType := base.GetType()
+	extType := exp.GetType()
+
+	result := math.Pow(float64(base.AsFloat(ctx)), float64(exp.AsFloat(ctx)))
+
+	switch {
+	case baseType == phpv.ZtFloat, extType == phpv.ZtFloat:
+		return phpv.ZFloat(result).ZVal(), nil
+
+	}
+	return phpv.ZInt(result).ZVal(), nil
+}
+
+// > func number log ( float $arg [, float $base = M_E ] )
+func mathLog(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var val phpv.ZFloat
+	var baseArg *phpv.ZFloat
+	_, err := core.Expand(ctx, args, &val, &baseArg)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	if baseArg == nil {
+		return phpv.ZFloat(math.Log(float64(val))).ZVal(), nil
+	}
+
+	base := deref(baseArg, M_E)
+
+	result := math.Log(float64(val)) / math.Log(float64(base))
+	return phpv.ZFloat(result).ZVal(), nil
+}
+
+// > func number log10 ( float $arg )
+func mathLog10(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var val phpv.ZFloat
+	_, err := core.Expand(ctx, args, &val)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	result := math.Log10(float64(val))
+	return phpv.ZFloat(result).ZVal(), nil
+}
+
+// > func number log1p ( float $arg )
+func mathLog1P(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var val phpv.ZFloat
+	_, err := core.Expand(ctx, args, &val)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	result := math.Log1p(float64(val))
+	return phpv.ZFloat(result).ZVal(), nil
+}
+
+// > func number sqrt ( float $arg )
+func mathSqrt(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var val phpv.ZFloat
+	_, err := core.Expand(ctx, args, &val)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	result := math.Sqrt(float64(val))
+	return phpv.ZFloat(result).ZVal(), nil
+}
+
+// > func number intdiv ( int $dividend , int $divisor )
+func mathIntDiv(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var dividend, divisor phpv.ZInt
+	_, err := core.Expand(ctx, args, &dividend, &divisor)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	result := dividend / divisor
+	return phpv.ZInt(result).ZVal(), nil
+}
+
