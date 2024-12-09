@@ -98,6 +98,70 @@ func fncArrayUSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZTrue.ZVal(), nil
 }
 
+// > func bool uasort ( array &$array [, int $sort_flags = SORT_REGULAR ] )
+func fncArrayUASort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var array *phpv.ZArray
+	var compareFunc phpv.Callable
+	_, err := core.Expand(ctx, args, &array, &compareFunc)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	var entries []compareEntry
+	for k, v := range (array).Iterate(ctx) {
+		entries = append(entries, compareEntry{
+			item: v,
+			data: k,
+		})
+	}
+
+	err = arrayUSort(ctx, entries, compareFunc)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	for _, entry := range entries {
+		k := entry.data
+		v := entry.item
+		array.OffsetUnset(ctx, k)
+		array.OffsetSet(ctx, k, v)
+	}
+
+	return phpv.ZTrue.ZVal(), nil
+}
+
+// > func bool uksort ( array &$array [, int $sort_flags = SORT_REGULAR ] )
+func fncArrayUKSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var array *phpv.ZArray
+	var compareFunc phpv.Callable
+	_, err := core.Expand(ctx, args, &array, &compareFunc)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	var entries []compareEntry
+	for k, v := range (array).Iterate(ctx) {
+		entries = append(entries, compareEntry{
+			item: k,
+			data: v,
+		})
+	}
+
+	err = arrayUSort(ctx, entries, compareFunc)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	for _, entry := range entries {
+		k := entry.item
+		v := entry.data
+		array.OffsetUnset(ctx, k)
+		array.OffsetSet(ctx, k, v)
+	}
+
+	return phpv.ZTrue.ZVal(), nil
+}
+
 // > func bool ksort ( array &$array [, int $sort_flags = SORT_REGULAR ] )
 func fncArrayKSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var array *phpv.ZArray

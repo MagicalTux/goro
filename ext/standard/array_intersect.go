@@ -122,7 +122,7 @@ func fncArrayUIntersectAssoc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, e
 				continue
 			}
 			for k2, v2 := range arr.Iterate(ctx) {
-				if ok, _ := core.StrictEquals(ctx, k1, k2); !ok{
+				if ok, _ := core.StrictEquals(ctx, k1, k2); !ok {
 					continue
 				}
 				compareArgs[0] = v1
