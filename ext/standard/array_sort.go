@@ -367,7 +367,6 @@ func arraySort(ctx phpv.Context, entries []compareEntry, sortFlagsArg *phpv.ZInt
 
 func arrayUSort(ctx phpv.Context, entries []compareEntry, compare phpv.Callable) error {
 	var err error
-	// TODO: fix, items are being duplicated
 	sort.Slice(entries, func(i, j int) bool {
 		if err != nil {
 			return false

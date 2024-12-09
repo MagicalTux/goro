@@ -188,7 +188,7 @@ func (z *ZClosure) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 		if args[i].IsRef() {
 			ctx.OffsetSet(ctx, a.VarName.ZVal(), args[i].Ref())
 		} else {
-			ctx.OffsetSet(ctx, a.VarName.ZVal(), args[i].Nude())
+			ctx.OffsetSet(ctx, a.VarName.ZVal(), args[i].Nude().Dup())
 		}
 	}
 
