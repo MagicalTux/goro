@@ -9,6 +9,15 @@ func deref[T any](ptr *T, defValue T) T {
 	return *ptr
 }
 
+// safe-index, returns default(T) if out of bounds
+func idx[T any](xs []T, i int) T {
+	var x T
+	if i >=0 && i < len(xs) {
+		x = xs[i]
+	}
+	return x
+}
+
 func ifElse[T any](cond bool, consequence, alternative T) T {
 	if cond {
 		return consequence
