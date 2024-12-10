@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/MagicalTux/goro/core/random"
 	"github.com/MagicalTux/goro/core/stream"
 )
 
@@ -45,6 +46,8 @@ type Global struct {
 
 	out io.Writer
 	buf *Buffer
+
+	rand *random.State
 }
 
 func NewGlobal(ctx context.Context, p *Process) *Global {
@@ -52,6 +55,8 @@ func NewGlobal(ctx context.Context, p *Process) *Global {
 		Context: ctx,
 		p:       p,
 		out:     os.Stdout,
+
+		rand: random.New(),
 	}
 	res.init()
 	return res
@@ -409,4 +414,8 @@ func (g *Global) Global() phpv.GlobalContext {
 
 func (g *Global) MemAlloc(ctx phpv.Context, s uint64) error {
 	return g.mem.Alloc(ctx, s)
+}
+
+func (g *Global) Random() *random.State {
+	return g.rand
 }

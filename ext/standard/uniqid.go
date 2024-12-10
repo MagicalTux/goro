@@ -25,7 +25,8 @@ func fncUniqId(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if moreEntropyArg != nil && *moreEntropyArg {
 		t := time.Now()
 		sec, usec := t.Unix(), t.Unix()%0x100000
-		uniqid = fmt.Sprintf("%s%08x%05x%.8F", prefix, sec, usec, combinedLcg())
+		r := ctx.Global().Random()
+		uniqid = fmt.Sprintf("%s%08x%05x%.8F", prefix, sec, usec, r.Lcg.Next())
 	} else {
 		t := time.Now()
 		sec, usec := t.Unix(), t.UnixMicro()%0x100000

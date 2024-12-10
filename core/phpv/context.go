@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 
+	"github.com/MagicalTux/goro/core/random"
 	"github.com/MagicalTux/goro/core/stream"
 )
 
@@ -69,6 +70,8 @@ type GlobalContext interface {
 	Require(ctx Context, fn ZString) (*ZVal, error)
 	IncludeOnce(ctx Context, fn ZString) (*ZVal, error)
 	RequireOnce(ctx Context, fn ZString) (*ZVal, error)
+
+	Random() *random.State
 }
 
 type FuncContext interface {

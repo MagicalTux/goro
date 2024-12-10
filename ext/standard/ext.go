@@ -124,6 +124,7 @@ func init() {
 			"get_magic_quotes_runtime": {Func: getMagicQuotesRuntime, Args: []*phpctx.ExtFunctionArg{}},
 			"getcwd":                   {Func: fncGetcwd, Args: []*phpctx.ExtFunctionArg{}},
 			"getenv":                   {Func: getenv, Args: []*phpctx.ExtFunctionArg{}},
+			"getrandmax":               {Func: mathMtGetRandMax, Args: []*phpctx.ExtFunctionArg{}}, // alias
 			"gettype":                  {Func: fncGettype, Args: []*phpctx.ExtFunctionArg{}},
 			"hexdec":                   {Func: mathHexDec, Args: []*phpctx.ExtFunctionArg{}},
 			"hrtime":                   {Func: stdFuncHrTime, Args: []*phpctx.ExtFunctionArg{}},
@@ -167,6 +168,9 @@ func init() {
 			"method_exists":            {Func: stdFuncMethodExists, Args: []*phpctx.ExtFunctionArg{}},
 			"microtime":                {Func: fncMicrotime, Args: []*phpctx.ExtFunctionArg{}},
 			"mktime":                   {Func: fncMkTime, Args: []*phpctx.ExtFunctionArg{}},
+			"mt_getrandmax":            {Func: mathMtGetRandMax, Args: []*phpctx.ExtFunctionArg{}},
+			"mt_rand":                  {Func: mathMtRand, Args: []*phpctx.ExtFunctionArg{}},
+			"mt_srand":                 {Func: mathMtSRand, Args: []*phpctx.ExtFunctionArg{}},
 			"natcasesort":              {Func: fncArrayNatCaseSort, Args: []*phpctx.ExtFunctionArg{}},
 			"natsort":                  {Func: fncArrayNatSort, Args: []*phpctx.ExtFunctionArg{}},
 			"next":                     {Func: fncArrayNext, Args: []*phpctx.ExtFunctionArg{}},
@@ -196,6 +200,7 @@ func init() {
 			"putenv":                   {Func: putenv, Args: []*phpctx.ExtFunctionArg{}},
 			"quotemeta":                {Func: fncStrQuoteMeta, Args: []*phpctx.ExtFunctionArg{}},
 			"rad2deg":                  {Func: mathRad2Deg, Args: []*phpctx.ExtFunctionArg{}},
+			"rand":                     {Func: mathMtRand, Args: []*phpctx.ExtFunctionArg{}}, // alias
 			"range":                    {Func: fncRange, Args: []*phpctx.ExtFunctionArg{}},
 			"rawurldecode":             {Func: fncRawurldecode, Args: []*phpctx.ExtFunctionArg{}},
 			"rawurlencode":             {Func: fncRawurlencode, Args: []*phpctx.ExtFunctionArg{}},
@@ -213,6 +218,7 @@ func init() {
 			"sort":                     {Func: fncArraySort, Args: []*phpctx.ExtFunctionArg{}},
 			"sprintf":                  {Func: fncSprintf, Args: []*phpctx.ExtFunctionArg{}},
 			"sqrt":                     {Func: mathSqrt, Args: []*phpctx.ExtFunctionArg{}},
+			"srand":                    {Func: mathMtSRand, Args: []*phpctx.ExtFunctionArg{}}, // alias
 			"str_contains":             {Func: fncStrContains, Args: []*phpctx.ExtFunctionArg{}},
 			"str_ends_with":            {Func: fncStrEndsWith, Args: []*phpctx.ExtFunctionArg{}},
 			"str_getcsv":               {Func: fncStrGetCsv, Args: []*phpctx.ExtFunctionArg{}},
