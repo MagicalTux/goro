@@ -126,6 +126,7 @@ func init() {
 			"get_magic_quotes_runtime": {Func: getMagicQuotesRuntime, Args: []*phpctx.ExtFunctionArg{}},
 			"getcwd":                   {Func: fncGetcwd, Args: []*phpctx.ExtFunctionArg{}},
 			"getenv":                   {Func: getenv, Args: []*phpctx.ExtFunctionArg{}},
+			"getopt":                   {Func: fncGetOpt, Args: []*phpctx.ExtFunctionArg{}},
 			"getrandmax":               {Func: mathMtGetRandMax, Args: []*phpctx.ExtFunctionArg{}}, // alias
 			"gettype":                  {Func: fncGettype, Args: []*phpctx.ExtFunctionArg{}},
 			"hexdec":                   {Func: mathHexDec, Args: []*phpctx.ExtFunctionArg{}},
@@ -133,6 +134,8 @@ func init() {
 			"hypot":                    {Func: mathHypot, Args: []*phpctx.ExtFunctionArg{}},
 			"implode":                  {Func: fncStrImplode, Args: []*phpctx.ExtFunctionArg{}},
 			"in_array":                 {Func: fncInArray, Args: []*phpctx.ExtFunctionArg{}},
+			"inet_ntop":                {Func: fncInetNtop, Args: []*phpctx.ExtFunctionArg{}},
+			"inet_pton":                {Func: fncInetPton, Args: []*phpctx.ExtFunctionArg{}},
 			"intdiv":                   {Func: mathIntDiv, Args: []*phpctx.ExtFunctionArg{}},
 			"intval":                   {Func: fncIntval, Args: []*phpctx.ExtFunctionArg{}},
 			"is_array":                 {Func: fncIsArray, Args: []*phpctx.ExtFunctionArg{}},

@@ -2,6 +2,10 @@ package standard
 
 import (
 	"errors"
+	"net"
+	"os"
+	"strings"
+	"unicode"
 
 	"github.com/MagicalTux/goro/core"
 	"github.com/MagicalTux/goro/core/phpctx"
@@ -121,4 +125,207 @@ func fncCallUserFuncArray(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, erro
 	}
 
 	return callback.Call(ctx, []*phpv.ZVal{arrayArgs.ZVal()})
+}
+
+// > func string inet_ntop ( string $in_addr )
+func fncInetNtop(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var addr []byte
+	_, err := core.Expand(ctx, args, &addr)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(addr) != 4 && len(addr) != 16 {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	ip := net.IP(addr)
+	if ip == nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+	return phpv.ZStr(ip.String()), nil
+}
+
+// > func string inet_pton ( string $address )
+func fncInetPton(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var addr phpv.ZString
+	_, err := core.Expand(ctx, args, &addr)
+	if err != nil {
+		return nil, err
+	}
+
+	ip := net.ParseIP(string(addr)).To16()
+	if ip == nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+	if !strings.Contains(string(addr), "::") {
+		ip = ip.To4()
+	}
+
+	return phpv.ZStr(string(ip)), nil
+}
+
+// > func array getopt ( string $options [, array $longopts [, int &$optind ]] )
+func fncGetOpt(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var optionsArg phpv.ZString
+	var longOpts **phpv.ZArray
+	var optionIndex *phpv.ZInt
+	_, err := core.Expand(ctx, args, &optionsArg, &longOpts, &optionIndex)
+	if err != nil {
+		return nil, err
+	}
+
+	if optionIndex != nil {
+		// TODO: do this when pass by reference is working
+		return nil, ctx.Errorf("$optind is not yet implemented")
+	}
+
+	const (
+		argNoValue = iota
+		argRequired
+		argOptional
+	)
+
+	result := phpv.NewZArray()
+
+	options := []byte(optionsArg)
+
+	argNameMap := map[string]int{}
+	for i := 0; i < len(options); i++ {
+		c := rune(optionsArg[i])
+		if !unicode.IsLetter(c) && !unicode.IsDigit(c) {
+			return phpv.ZFalse.ZVal(), nil
+		}
+		if idx(options, i+1) != ':' {
+			argNameMap[string(c)] = argNoValue
+		} else {
+			if idx(options, i+2) == ':' {
+				argNameMap[string(c)] = argOptional
+				i++
+			} else {
+				argNameMap[string(c)] = argRequired
+			}
+			i++
+		}
+	}
+	if longOpts != nil {
+		for _, arg := range (*longOpts).Iterate(ctx) {
+			argName := string(arg.AsString(ctx))
+			argType := argNoValue
+			if strings.HasSuffix(argName, "::") {
+				argType = argOptional
+				argName = argName[:len(argName)-2]
+			} else if strings.HasSuffix(argName, ":") {
+				argName = argName[:len(argName)-1]
+				argType = argRequired
+			}
+			argNameMap[argName] = argType
+		}
+	}
+
+	for i := 0; i < len(os.Args); i++ {
+		arg := os.Args[i]
+
+		switch {
+		case strings.HasPrefix(arg, "--"):
+			arg = arg[2:]
+			var argName, argVal string
+			eqIndex := strings.Index(arg, "=")
+			if eqIndex >= 0 {
+				argName = arg[:eqIndex]
+				argVal = arg[eqIndex+1:]
+			} else {
+				argName = arg
+			}
+			argType, ok := argNameMap[argName]
+			if !ok {
+				continue
+			}
+
+			switch argType {
+			case argNoValue:
+				result.OffsetSet(ctx, phpv.ZStr(argName), phpv.ZFalse.ZVal())
+			case argRequired:
+				if argVal == "" && i < len(os.Args) {
+					i++
+					argVal = os.Args[i]
+				}
+				if argVal != "" {
+					result.OffsetSet(ctx, phpv.ZStr(argName), phpv.ZStr(argVal))
+				}
+			case argOptional:
+				if argVal != "" {
+					result.OffsetSet(ctx, phpv.ZStr(argName), phpv.ZStr(argVal))
+				} else {
+					result.OffsetSet(ctx, phpv.ZStr(argName), phpv.ZFalse.ZVal())
+				}
+			}
+
+		case strings.HasPrefix(arg, "-"):
+			arg = arg[1:]
+
+			for j := 0; j < len(arg); j++ {
+				c := string(arg[j])
+				argType, ok := argNameMap[string(c)]
+				if !ok {
+					continue
+				}
+				switch argType {
+				case argNoValue:
+					if ok, _ := result.OffsetExists(ctx, phpv.ZStr(c)); ok {
+						elem, _ := result.OffsetGet(ctx, phpv.ZStr(c))
+						if elem.GetType() == phpv.ZtArray {
+							elem.AsArray(ctx).OffsetSet(ctx, nil, phpv.ZFalse.ZVal())
+						} else {
+							array := phpv.NewZArray()
+							array.OffsetSet(ctx, nil, elem)
+							array.OffsetSet(ctx, nil, phpv.ZFalse.ZVal())
+							result.OffsetUnset(ctx, phpv.ZStr(c))
+							result.OffsetSet(ctx, phpv.ZStr(c), array.ZVal())
+						}
+					} else {
+						result.OffsetSet(ctx, phpv.ZStr(c), phpv.ZFalse.ZVal())
+					}
+				case argRequired:
+					j++
+					if idx([]byte(arg), j) == '=' {
+						j++
+					}
+					value := arg[j:]
+					if value == "" {
+						if i+1 < len(os.Args) {
+							// always get the following arg, even if it starts with -
+							// e.g.: -q -w must give -q="-w"
+							i++
+							value = string(os.Args[i])
+							result.OffsetSet(ctx, phpv.ZStr(c), phpv.ZStr(value))
+						}
+					} else {
+						result.OffsetSet(ctx, phpv.ZStr(c), phpv.ZStr(value))
+					}
+					j = len(arg)
+				case argOptional:
+					j++
+					hasEq := idx([]byte(arg), j) == '='
+					if hasEq {
+						j++
+					}
+					value := arg[j:]
+					if value == "" {
+						if hasEq {
+							// -a=  must give a="", not a=false
+							result.OffsetSet(ctx, phpv.ZStr(c), phpv.ZStr(""))
+						} else {
+							result.OffsetSet(ctx, phpv.ZStr(c), phpv.ZFalse.ZVal())
+						}
+					} else {
+						result.OffsetSet(ctx, phpv.ZStr(c), phpv.ZStr(value))
+					}
+					j = len(arg)
+				}
+			}
+		}
+	}
+
+	return result.ZVal(), nil
 }
