@@ -138,9 +138,8 @@ func fncChr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	codepoint &= 255
-
-	return phpv.ZString(byte(codepoint)).ZVal(), nil
+	b := uint8(codepoint)
+	return phpv.ZString([]byte{b}).ZVal(), nil
 }
 
 // > func int ord ( string $string )
