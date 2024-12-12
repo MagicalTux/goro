@@ -59,7 +59,7 @@ func fncArrayRSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	for _, v := range iterateBackwards(entries) {
+	for _, v := range core.IterateBackwards(entries) {
 		array.OffsetSet(ctx, nil, v.item)
 	}
 
@@ -210,7 +210,7 @@ func fncArrayKRSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	arraySort(ctx, entries, sortFlagsArg)
 
-	for _, entry := range iterateBackwards(entries) {
+	for _, entry := range core.IterateBackwards(entries) {
 		k := entry.item
 		v := entry.data
 		array.OffsetUnset(ctx, k)
@@ -268,7 +268,7 @@ func fncArrayARSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	arraySort(ctx, entries, sortFlagsArg)
 
-	for _, entry := range iterateBackwards(entries) {
+	for _, entry := range core.IterateBackwards(entries) {
 		k := entry.data
 		v := entry.item
 		array.OffsetUnset(ctx, k)

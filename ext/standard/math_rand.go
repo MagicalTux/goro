@@ -25,8 +25,8 @@ func mathMtRand(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	r := ctx.Global().Random()
 	if min != nil || max != nil {
-		a := int64(deref(min, phpv.ZInt(0)))
-		b := int64(deref(min, phpv.ZInt(math.MaxInt32)))
+		a := int64(core.Deref(min, phpv.ZInt(0)))
+		b := int64(core.Deref(min, phpv.ZInt(math.MaxInt32)))
 		n := a + r.Mt.Int64N(b-a)
 		return phpv.ZInt(n).ZVal(), nil
 	}

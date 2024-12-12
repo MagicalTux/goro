@@ -109,8 +109,8 @@ func mathRound(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, ctx.FuncError(err)
 	}
 
-	precision := deref(precisionArg, 0)
-	mode := deref(modeArg, PHP_ROUND_HALF_UP)
+	precision := core.Deref(precisionArg, 0)
+	mode := core.Deref(modeArg, PHP_ROUND_HALF_UP)
 
 	val, err = val.AsNumeric(ctx)
 	if err != nil {
@@ -473,7 +473,7 @@ func mathLog(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZFloat(math.Log(float64(val))).ZVal(), nil
 	}
 
-	base := deref(baseArg, M_E)
+	base := core.Deref(baseArg, M_E)
 
 	result := math.Log(float64(val)) / math.Log(float64(base))
 	return phpv.ZFloat(result).ZVal(), nil

@@ -33,9 +33,9 @@ func convertUuEncode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		total := 0
 		for k := 0; k < x; k += 3 {
 			var n int32
-			n |= int32(idx(data, k+0)) << 16
-			n |= int32(idx(data, k+1)) << 8
-			n |= int32(idx(data, k+2)) << 0
+			n |= int32(core.Idx(data, k+0)) << 16
+			n |= int32(core.Idx(data, k+1)) << 8
+			n |= int32(core.Idx(data, k+2)) << 0
 
 			for _, b := range []byte{
 				byte(n >> 18), byte(n >> 12),

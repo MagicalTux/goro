@@ -196,10 +196,10 @@ func fncGetOpt(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		if !unicode.IsLetter(c) && !unicode.IsDigit(c) {
 			return phpv.ZFalse.ZVal(), nil
 		}
-		if idx(options, i+1) != ':' {
+		if core.Idx(options, i+1) != ':' {
 			argNameMap[string(c)] = argNoValue
 		} else {
-			if idx(options, i+2) == ':' {
+			if core.Idx(options, i+2) == ':' {
 				argNameMap[string(c)] = argOptional
 				i++
 			} else {
@@ -288,7 +288,7 @@ func fncGetOpt(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 					}
 				case argRequired:
 					j++
-					if idx([]byte(arg), j) == '=' {
+					if core.Idx([]byte(arg), j) == '=' {
 						j++
 					}
 					value := arg[j:]
@@ -306,7 +306,7 @@ func fncGetOpt(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 					j = len(arg)
 				case argOptional:
 					j++
-					hasEq := idx([]byte(arg), j) == '='
+					hasEq := core.Idx([]byte(arg), j) == '='
 					if hasEq {
 						j++
 					}

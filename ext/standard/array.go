@@ -926,13 +926,13 @@ func fncArrayChangeKeyCase(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, err
 		return nil, ctx.FuncError(err)
 	}
 
-	keyCase := deref(keyCaseArg, CASE_LOWER)
+	keyCase := core.Deref(keyCaseArg, CASE_LOWER)
 
 	result := phpv.NewZArray()
 	for k, v := range array.Iterate(ctx) {
 		if k.GetType() == phpv.ZtString {
 			s := k.AsString(ctx)
-			changeCase := ifElse(keyCase == CASE_LOWER, s.ToLower, s.ToUpper)
+			changeCase := core.IfElse(keyCase == CASE_LOWER, s.ToLower, s.ToUpper)
 			k = changeCase().ZVal()
 		}
 		result.OffsetSet(ctx, k, v)
@@ -956,7 +956,7 @@ func fncArrayChunk(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZNULL.ZVal(), nil
 	}
 
-	preserveKeys := deref(preserveKeysArg, false)
+	preserveKeys := core.Deref(preserveKeysArg, false)
 
 	result := phpv.NewZArray()
 	current := phpv.NewZArray()
@@ -1321,7 +1321,7 @@ func fncArrayRand(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	// TODO: use Mersenne Twister RNG for maximum compatibility
 
-	num := deref(numArg, 1)
+	num := core.Deref(numArg, 1)
 
 	if num == 1 {
 		i := rand.IntN(int(array.Count(ctx)))
@@ -1352,7 +1352,7 @@ func fncArrayReduce(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, ctx.FuncError(err)
 	}
 
-	accumulator := deref(initialArg, phpv.ZNULL.ZVal())
+	accumulator := core.Deref(initialArg, phpv.ZNULL.ZVal())
 
 	cbArgs := make([]*phpv.ZVal, 2)
 	for _, v := range array.Iterate(ctx) {
@@ -1378,8 +1378,8 @@ func fncArrayExtract(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	parentCtx := ctx.Parent(1)
-	flags := deref(flagsArg, EXTR_OVERWRITE)
-	prefix := deref(prefixArgs, "")
+	flags := core.Deref(flagsArg, EXTR_OVERWRITE)
+	prefix := core.Deref(prefixArgs, "")
 
 	switch flags {
 	case EXTR_PREFIX_SAME, EXTR_PREFIX_ALL, EXTR_PREFIX_INVALID, EXTR_PREFIX_IF_EXISTS:
