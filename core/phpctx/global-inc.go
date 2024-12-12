@@ -2,6 +2,7 @@ package phpctx
 
 import (
 	"log"
+	"os"
 
 	"github.com/MagicalTux/goro/core/phperr"
 	"github.com/MagicalTux/goro/core/phpv"
@@ -9,6 +10,36 @@ import (
 )
 
 var Compile func(parent phpv.Context, t *tokenizer.Lexer) (phpv.Runnable, error)
+
+func (c *Global) DoString(ctx phpv.Context, strCode phpv.ZString) (*phpv.ZVal, error) {
+	f, err := os.CreateTemp("", "")
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = f.WriteString(`<?php ` + string(strCode))
+	if err != nil {
+		return nil, err
+	}
+
+	f.Sync()
+	f.Seek(0, 0)
+	defer func() {
+		f.Close()
+		os.Remove(f.Name())
+	}()
+
+	// tokenize
+	t := tokenizer.NewLexer(f, string(f.Name()))
+
+	// compile
+	code, err := Compile(ctx, t)
+	if err != nil {
+		return nil, err
+	}
+
+	return phperr.CatchReturn(code.Run(ctx))
+}
 
 func (c *Global) Include(ctx phpv.Context, fn phpv.ZString) (*phpv.ZVal, error) {
 	f, err := ctx.Global().Open(fn, true)

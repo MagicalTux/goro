@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"maps"
 	"net/http"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/MagicalTux/goro/core/phpv"
@@ -30,6 +32,7 @@ type Global struct {
 	l        *phpv.Loc
 	mem      *MemMgr
 	deadline time.Time
+	options  *Options
 
 	// this is the actual environment (defined functions, classes, etc)
 	globalFuncs   map[phpv.ZString]phpv.Callable
@@ -50,7 +53,7 @@ type Global struct {
 	rand *random.State
 }
 
-func NewGlobal(ctx context.Context, p *Process) *Global {
+func NewGlobal(ctx context.Context, p *Process, options ...*Options) *Global {
 	res := &Global{
 		Context: ctx,
 		p:       p,
@@ -58,7 +61,12 @@ func NewGlobal(ctx context.Context, p *Process) *Global {
 
 		rand: random.New(),
 	}
+	if len(options) > 0 {
+		res.options = options[0]
+	}
+
 	res.init()
+
 	return res
 }
 
@@ -414,6 +422,10 @@ func (g *Global) Global() phpv.GlobalContext {
 
 func (g *Global) MemAlloc(ctx phpv.Context, s uint64) error {
 	return g.mem.Alloc(ctx, s)
+}
+
+func (g *Global) GetLoadedExtensions() []string {
+	return slices.Collect(maps.Keys(globalExtMap))
 }
 
 func (g *Global) Random() *random.State {
