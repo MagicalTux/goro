@@ -71,6 +71,8 @@ type GlobalContext interface {
 	IncludeOnce(ctx Context, fn ZString) (*ZVal, error)
 	RequireOnce(ctx Context, fn ZString) (*ZVal, error)
 
+	GetLoadedExtensions() []string
+
 	Random() *random.State
 }
 

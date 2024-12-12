@@ -163,3 +163,22 @@ func fncEmpty(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 	return phpv.ZBool(false).ZVal(), nil // unsupported type
 }
+
+// > func array get_loaded_extensions ([ bool $zend_extensions = FALSE ])
+func fncLoadedExtensions(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var zendOnly *phpv.ZBool
+	_, err := Expand(ctx, args, &zendOnly)
+	if err != nil {
+		return nil, err
+	}
+
+	result := phpv.NewZArray()
+	if Deref(zendOnly, false) {
+		// TODO
+	} else {
+		for _, elem := range ctx.Global().GetLoadedExtensions() {
+			result.OffsetSet(ctx, nil, phpv.ZStr(elem))
+		}
+	}
+	return result.ZVal(), nil
+}
