@@ -62,7 +62,14 @@ func convertUuEncode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZStr(buf.String()), nil
 }
 
+func PHP_UU_DEC(b byte) byte {
+	return ((b - ' ') & 077)
+}
+
 // > func string convert_uudecode ( string $data )
+// To copy some of uudecode's weird error cases and accepted inputs,
+// this function is almost directly translated from uuencode.c
+// except the pointer arithmetic is replaced with regular integer indices.
 func convertUuDecode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var dataArg phpv.ZString
 	_, err := core.Expand(ctx, args, &dataArg)
@@ -74,36 +81,77 @@ func convertUuDecode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZFalse.ZVal(), nil
 	}
 
-	var buf bytes.Buffer
+	totalLen := 0
+	src := []byte(dataArg)
+	srcLen := len(src)
+	dest := make([]byte, int(math.Ceil(float64(srcLen)*0.75)))
+	p := 0
+	s := 0
+	e := srcLen
 
-	data := []byte(dataArg)
-	for len(data) > 0 {
-		count := int(data[0] - 32)
-		if count == 64 {
+	for s < e {
+		length := PHP_UU_DEC(src[s])
+		s++
+		if length == 0 {
 			break
 		}
 
-		count = int(math.Ceil(float64(count)/3) * 4)
-
-		// TODO: handle error casese
-
-		for k := 1; k <= count; k += 4 {
-			var n int32
-			n |= int32(idx(data, k+0)-32) % 64 << 18
-			n |= int32(idx(data, k+1)-32) % 64 << 12
-			n |= int32(idx(data, k+2)-32) % 64 << 06
-			n |= int32(idx(data, k+3)-32) % 64 << 00
-
-			for _, b := range []int32{n >> 16, n >> 8, n >> 0} {
-				if b != 64 {
-					buf.WriteByte(byte(b))
-				}
-			}
+		if int(length) > srcLen {
+			goto fail_err
 		}
 
-		// +2 to skip also the count and the newline
-		data = data[min(count+2, len(data)):]
+		totalLen += int(length)
+
+		var ee int
+		if length == 45 {
+			ee = s+60
+		} else {
+			ee = s+int(math.Floor(float64(length) * 1.33))
+		}
+
+		if ee > e {
+			goto fail_err
+		}
+
+		for s < ee {
+			if s+4 > e {
+				goto fail_err
+			}
+
+			dest[p] = PHP_UU_DEC(src[s])<<2 | PHP_UU_DEC(src[s+1])>>4
+			p++
+			dest[p] = PHP_UU_DEC(src[s+1])<<4 | PHP_UU_DEC(src[s+2])>>2
+			p++
+			dest[p] = PHP_UU_DEC(src[s+2])<<6 | PHP_UU_DEC(src[s+3])
+			p++
+
+			s += 4
+		}
+
+		if length < 45 {
+			break
+		}
+
+		// skip \n
+		s++
 	}
 
-	return phpv.ZStr(buf.String()), nil
+	if length := totalLen; length > p {
+		dest[p] = PHP_UU_DEC(src[s])<<2 | PHP_UU_DEC(src[s+1])>>4
+		p++
+		if length > 1 {
+			dest[p] = PHP_UU_DEC(src[s+1])<<4 | PHP_UU_DEC(src[s+2])>>2
+			p++
+			if length > 2 {
+				dest[p] = PHP_UU_DEC(src[s+2])<<6 | PHP_UU_DEC(src[s+3])
+				p++
+			}
+		}
+	}
+
+	return phpv.ZStr(string(dest[:totalLen])), nil
+
+fail_err:
+	ctx.Warn("The given parameter is not a valid uuencoded string")
+	return phpv.ZFalse.ZVal(), nil
 }
