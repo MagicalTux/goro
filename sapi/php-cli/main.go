@@ -6,6 +6,8 @@ import (
 	"log"
 	"os"
 
+	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/ini"
 	"github.com/MagicalTux/goro/core/phpctx"
 	"github.com/MagicalTux/goro/core/phpv"
 	_ "github.com/MagicalTux/goro/ext/ctype"
@@ -24,9 +26,12 @@ func main() {
 	if err != nil {
 		println(err.Error())
 	}
-	ctx := phpctx.NewGlobal(context.Background(), p, options)
+	ctx := phpctx.NewGlobal(context.Background(), p)
+	ctx.IniConfig = ini.NewWithDefaults(func(expr string) (*phpv.ZVal, error) {
+		return core.Eval(ctx, expr)
+	})
 
-	if options.RunCode != ""{
+	if options.RunCode != "" {
 		fmt.Printf("options: %+v\n", options)
 		_, err = ctx.DoString(ctx, phpv.ZString(options.RunCode))
 		if err != nil {
@@ -34,7 +39,21 @@ func main() {
 			os.Exit(-1)
 		}
 	}
-
+	if options.IniFile != "" {
+		file, err := os.Open(options.IniFile)
+		if err != nil {
+			println("error:", err.Error())
+			os.Exit(-1)
+		}
+		defer file.Close()
+		if err = ctx.IniConfig.Parse(file); err != nil {
+			println("error:", err.Error())
+			os.Exit(-1)
+		}
+	}
+	for k, v := range options.IniEntries {
+		ctx.SetLocalConfig(phpv.ZString(k), phpv.ZStr(v))
+	}
 
 	if len(args) >= 2 {
 		if err := ctx.RunFile(args[1]); err != nil {

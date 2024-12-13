@@ -20,6 +20,7 @@ type Process struct {
 type Options struct {
 	RunCode    string
 	NoIniFile  bool
+	IniFile    string
 	IniEntries map[string]string
 }
 
@@ -91,6 +92,10 @@ func (p *Process) CommandLine(args []string) ([]string, *Options, error) {
 			i++
 			value := idx(args, i)
 			options.IniEntries[arg] = value
+		case "-c", "--php-ini":
+			i++
+			value := idx(args, i)
+			options.IniFile = value
 		case "-n", "--no-php-ini":
 			options.NoIniFile = true
 

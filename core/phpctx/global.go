@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"iter"
 	"log"
 	"maps"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/MagicalTux/goro/core/ini"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/random"
 	"github.com/MagicalTux/goro/core/stream"
@@ -32,7 +34,8 @@ type Global struct {
 	l        *phpv.Loc
 	mem      *MemMgr
 	deadline time.Time
-	options  *Options
+
+	IniConfig *ini.Config
 
 	// this is the actual environment (defined functions, classes, etc)
 	globalFuncs   map[phpv.ZString]phpv.Callable
@@ -53,16 +56,13 @@ type Global struct {
 	rand *random.State
 }
 
-func NewGlobal(ctx context.Context, p *Process, options ...*Options) *Global {
+func NewGlobal(ctx context.Context, p *Process) *Global {
 	res := &Global{
 		Context: ctx,
 		p:       p,
 		out:     os.Stdout,
 
 		rand: random.New(),
-	}
-	if len(options) > 0 {
-		res.options = options[0]
 	}
 
 	res.init()
@@ -129,6 +129,7 @@ func (g *Global) init() {
 	g.environ = g.p.environ.Dup()
 
 	g.doGPC()
+
 }
 
 func (g *Global) doGPC() {
@@ -202,13 +203,32 @@ func (g *Global) Write(v []byte) (int, error) {
 }
 
 func (g *Global) SetLocalConfig(name phpv.ZString, val *phpv.ZVal) error {
-	// TODO
+	g.IniConfig.SetLocal(string(name), val.ZVal())
 	return nil
 }
 
 func (g *Global) GetConfig(name phpv.ZString, def *phpv.ZVal) *phpv.ZVal {
-	// TODO
+	if val, ok := g.IniConfig.Values[string(name)]; ok {
+		if val.Local != nil {
+			return val.Local
+		}
+		return val.Global
+	}
 	return def
+}
+
+func (g *Global) IterateConfig() iter.Seq2[string, phpv.IniValue] {
+	return func(yield func(key string, value phpv.IniValue) bool) {
+		for k, v := range g.IniConfig.Values {
+			proceed := yield(k, phpv.IniValue{
+				Global: v.Global,
+				Local:  v.Local,
+			})
+			if !proceed {
+				break
+			}
+		}
+	}
 }
 
 func (g *Global) Tick(ctx phpv.Context, l *phpv.Loc) error {

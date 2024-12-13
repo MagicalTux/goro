@@ -3,6 +3,7 @@ package phpv
 import (
 	"context"
 	"io"
+	"iter"
 
 	"github.com/MagicalTux/goro/core/random"
 	"github.com/MagicalTux/goro/core/stream"
@@ -39,6 +40,11 @@ type Context interface {
 	CallZVal(ctx Context, f Callable, args []*ZVal, this ZObject) (*ZVal, error)
 }
 
+type IniValue struct {
+	Global *ZVal
+	Local  *ZVal
+}
+
 type GlobalContext interface {
 	Context
 
@@ -49,7 +55,9 @@ type GlobalContext interface {
 
 	RegisterClass(name ZString, c ZClass) error
 	GetClass(ctx Context, name ZString, autoload bool) (ZClass, error)
-	SetLocalConfig(name ZString, val *ZVal) error
+
+	SetLocalConfig(name ZString, value *ZVal) error
+	IterateConfig() iter.Seq2[string, IniValue]
 
 	ConstantSet(k ZString, v Val) bool
 	ConstantGet(k ZString) (Val, bool)

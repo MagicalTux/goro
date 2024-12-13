@@ -1,30 +1,102 @@
-package core
+package ini
 
 import (
 	"bufio"
-	"errors"
 	"fmt"
 	"io"
 	"strings"
+
+	"github.com/MagicalTux/goro/core/phpv"
 )
 
-type Ini struct {
-	processSections bool // if false, everything will be in section "root"
+const (
+	PHP_INI_NONE = 0
+	PHP_INI_USER = 1 << iota
+	PHP_INI_PERDIR
+	PHP_INI_SYSTEM
+
+	PHP_INI_ALL = PHP_INI_USER | PHP_INI_PERDIR | PHP_INI_SYSTEM
+)
+
+type Value struct {
+	Global *phpv.ZVal
+	Local  *phpv.ZVal
 }
 
-type iniValue struct {
-	s, k, v string
+type Evaluator func(expr string) (*phpv.ZVal, error)
+
+type Config struct {
+	Values    map[string]*Value
+	evaluator Evaluator
 }
 
-func NewIni() *Ini {
-	return &Ini{}
+func NewEmpty(eval Evaluator) *Config {
+	return &Config{
+		Values:    map[string]*Value{},
+		evaluator: eval,
+	}
 }
 
-func (i *Ini) Parse(r io.Reader) error {
+func NewWithDefaults(eval Evaluator) *Config {
+	c := &Config{
+		Values:    map[string]*Value{},
+		evaluator: eval,
+	}
+	for varName, entry := range Defaults {
+		expr, err := c.eval(entry.RawDefault)
+		if err != nil {
+			panic(err)
+		}
+		c.Values[varName] = &Value{Global: expr}
+	}
+	return c
+}
+
+func (c *Config) Get(varName string) *phpv.ZVal {
+	if val, ok := c.Values[varName]; ok {
+		if val.Local != nil {
+			return val.Local
+		}
+		return val.Global
+	}
+	if val, ok := Defaults[varName]; ok {
+		val, err := c.eval(val.RawDefault)
+		if err != nil {
+			panic(err)
+		}
+		return val
+	}
+	return phpv.ZNULL.ZVal()
+}
+
+func (c *Config) SetLocal(varName string, val *phpv.ZVal) {
+	if _, ok := Defaults[varName]; !ok {
+		return
+	}
+	entry, ok := c.Values[varName]
+	if ok && entry != nil {
+		entry.Local = val
+	}
+
+}
+
+func (c *Config) eval(expr string) (*phpv.ZVal, error) {
+	switch expr {
+	case "1", "On", "True", "Yes":
+		return phpv.ZStr("1"), nil
+	case "0", "Off", "False", "No":
+		return phpv.ZStr("0"), nil
+	case "None", "":
+		return phpv.ZStr(""), nil
+	case "NULL", "null":
+		return phpv.ZNULL.ZVal(), nil
+	}
+	return c.evaluator(expr)
+}
+
+func (c *Config) Parse(r io.Reader) error {
 	buf := bufio.NewReader(r)
-	var s string // section
 	var lineNo int
-	var values []*iniValue
 
 	for {
 		lineNo += 1
@@ -59,7 +131,7 @@ func (i *Ini) Parse(r io.Reader) error {
 				return fmt.Errorf("ini: unable to parse section declaration on line %d", lineNo)
 			}
 
-			s = l[1 : len(l)-1]
+			// s = l[1 : len(l)-1]
 			continue
 		}
 
@@ -73,8 +145,15 @@ func (i *Ini) Parse(r io.Reader) error {
 		k := l[:pos]
 		l = l[pos+1:]
 
-		values = append(values, &iniValue{s, k, l})
+		expr, err := c.eval(l)
+		if err != nil {
+			return err
+		}
+		c.Values[k] = &Value{
+			Global: expr,
+		}
+
 	}
 
-	return errors.New("todo parse values")
+	return nil
 }
