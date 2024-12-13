@@ -112,6 +112,6 @@ so that variables space is kept separated.
 
 A lot of work is needed. The most important part is improving the documentation, followed by improving support of core features (see TODO in this file), and implement individual functions from the various PHP extensions.
 
-Writing an extension is simple. Create a directory in ext, write code prefixed with a magic function defining comment and run `go run tools/buildext.go` to generate bindings/etc. Add your newly created extension to the main.go of each sapi to enable it by default.
+Writing an extension is simple. Create a directory in ext, write code prefixed with a magic function defining comment and run `go run tools/buildext/buildext.go` to generate bindings/etc. Add your newly created extension to the main.go of each sapi to enable it by default.
 
 Before contributing, please [join the telegram group](https://t.me/gorophp) and/or create an issue on github in order to discuss and find out which parts you can work on and how to proceed.

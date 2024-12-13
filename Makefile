@@ -29,7 +29,7 @@ http:
 	./sapi/php-httpd/php-httpd
 
 buildext:
-	go run tools/buildext.go
+	go run tools/buildext/buildext.go
 
 deps:
 	go get -v .
