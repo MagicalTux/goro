@@ -27,7 +27,7 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		Attr:    attr,
 		Methods: make(map[phpv.ZString]*phpv.ZClassMethod),
 		Const:   make(map[phpv.ZString]phpv.Val),
-		H:    &phpv.ZClassHandlers{},
+		H:       &phpv.ZClassHandlers{},
 	}
 
 	switch i.Type {

@@ -10,12 +10,12 @@ type Lcg struct {
 	s2 int32
 }
 
-func NewLcg() *Lcg{
+func NewLcg() *Lcg {
 	t := time.Now()
 	sec, usec := t.Unix(), t.UnixMicro()%0x100000
 	return &Lcg{
-		s1 : int32(sec ^ (usec << 11)),
-		s2 : int32(os.Getpid()),
+		s1: int32(sec ^ (usec << 11)),
+		s2: int32(os.Getpid()),
 	}
 }
 

@@ -12,7 +12,7 @@ func Deref[T any](ptr *T, defValue T) T {
 // safe-index, returns default(T) if out of bounds
 func Idx[T any](xs []T, i int) T {
 	var x T
-	if i >=0 && i < len(xs) {
+	if i >= 0 && i < len(xs) {
 		x = xs[i]
 	}
 	return x

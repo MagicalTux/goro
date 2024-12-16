@@ -104,9 +104,9 @@ func convertUuDecode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 		var ee int
 		if length == 45 {
-			ee = s+60
+			ee = s + 60
 		} else {
-			ee = s+int(math.Floor(float64(length) * 1.33))
+			ee = s + int(math.Floor(float64(length)*1.33))
 		}
 
 		if ee > e {
