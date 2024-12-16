@@ -1,5 +1,10 @@
 package ini
 
+import (
+	"fmt"
+	"os"
+)
+
 type IniDirective struct {
 	RawDefault string
 	Mode       int
@@ -397,4 +402,15 @@ var Defaults = map[string]IniDirective{
 	"zlib.output_compression":               {`"0"`, INI_ALL},
 	"zlib.output_compression_level":         {`"-1"`, INI_ALL},
 	"zlib.output_handler":                   {`""`, INI_ALL},
+}
+
+func init() {
+	cwd, err := os.Getwd()
+	if err != nil {
+		panic("failed to get current directory: " + cwd)
+	}
+	Defaults["extension_dir"] = IniDirective{
+		RawDefault: fmt.Sprintf(`"%s"`, cwd),
+		Mode:       Defaults["extension_dir"].Mode,
+	}
 }
