@@ -54,7 +54,6 @@ func prepareRegexp(pattern string) (gopcre.Regexp, error) {
 	case '<':
 		end_delimiter = '>'
 	}
-	_ = delimiter
 
 	// find next instance of delimiter not prefixed by a \
 	var skip, found bool
