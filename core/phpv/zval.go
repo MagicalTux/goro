@@ -67,8 +67,9 @@ func (z *ZVal) Dup() *ZVal {
 	case *ZVal:
 		// detach reference
 		return v.Dup()
+	case *ZArray:
+		return (&ZArray{h: v.h.Dup()}).ZVal()
 	default:
-		// TODO duplicate contents if array
 		return &ZVal{z.v}
 	}
 }

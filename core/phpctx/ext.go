@@ -29,9 +29,22 @@ func (e *ExtFunction) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, err
 	return e.Func(ctx, args)
 }
 
+func (e *ExtFunction) GetArgs() []*phpv.FuncArg {
+	var args []*phpv.FuncArg
+	for _, arg := range e.Args {
+		args = append(args, &phpv.FuncArg{
+			VarName:  phpv.ZString(arg.ArgName),
+			Ref:      arg.Ref,
+			Required: !arg.Optional,
+		})
+	}
+	return args
+}
+
 type ExtFunctionArg struct {
 	ArgName  string // without the $ sign
-	Optional bool   // is this argument optional?
+	Ref      bool
+	Optional bool // is this argument optional?
 }
 
 func RegisterExt(e *Ext) {
