@@ -13,7 +13,6 @@ import (
 	"slices"
 	"time"
 
-	"github.com/MagicalTux/goro/core/ini"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/random"
 	"github.com/MagicalTux/goro/core/stream"
@@ -35,7 +34,7 @@ type Global struct {
 	mem      *MemMgr
 	deadline time.Time
 
-	IniConfig *ini.Config
+	IniConfig phpv.IniConfig
 
 	// this is the actual environment (defined functions, classes, etc)
 	globalFuncs   map[phpv.ZString]phpv.Callable
@@ -56,29 +55,58 @@ type Global struct {
 	rand *random.State
 }
 
-func NewGlobal(ctx context.Context, p *Process) *Global {
-	res := &Global{
-		Context: ctx,
-		p:       p,
-		out:     os.Stdout,
-
-		rand: random.New(),
-	}
-
+func NewGlobal(ctx context.Context, p *Process, config phpv.IniConfig) *Global {
+	res := createGlobal(p)
+	res.Context = ctx
+	res.IniConfig = config
 	res.init()
 
 	return res
 }
 
-func NewGlobalReq(req *http.Request, p *Process) *Global {
-	res := &Global{
-		Context: req.Context(),
-		req:     req,
-		p:       p,
-		out:     os.Stdout,
-	}
+func NewGlobalReq(req *http.Request, p *Process, config phpv.IniConfig) *Global {
+	res := createGlobal(p)
+	res.Context = req.Context()
+	res.IniConfig = config
+	res.req = req
 	res.init()
 	return res
+}
+
+func NewIniContext(config phpv.IniConfig) *Global {
+	p := NewProcess("ini")
+	res := createGlobal(p)
+	res.Context = context.Background()
+	res.IniConfig = config
+
+	for k, v := range res.p.defaultConstants {
+		res.constant[k] = v
+	}
+	return res
+}
+
+func createGlobal(p *Process) *Global {
+	g := &Global{
+		p:               p,
+		out:             os.Stdout,
+		rand:            random.New(),
+		start:           time.Now(),
+		h:               phpv.NewHashTable(),
+		l:               &phpv.Loc{Filename: "unknown", Line: 1},
+		globalFuncs:     make(map[phpv.ZString]phpv.Callable),
+		globalClasses:   make(map[phpv.ZString]phpv.ZClass),
+		constant:        make(map[phpv.ZString]phpv.Val),
+		fHandler:        make(map[string]stream.Handler),
+		included:        make(map[phpv.ZString]bool),
+		globalLazyFunc:  make(map[phpv.ZString]*globalLazyOffset),
+		globalLazyClass: make(map[phpv.ZString]*globalLazyOffset),
+		mem:             NewMemMgr(32 * 1024 * 1024), // limit in bytes TODO read memory_limit from process (.ini file)
+	}
+	g.deadline = g.start.Add(30 * time.Second) // deadline
+	g.fHandler["file"], _ = stream.NewFileHandler("/")
+	g.fHandler["php"] = stream.PhpHandler()
+
+	return g
 }
 
 func (g *Global) AppendBuffer() *Buffer {
@@ -93,23 +121,6 @@ func (g *Global) Buffer() *Buffer {
 }
 
 func (g *Global) init() {
-	// initialize variables & memory for global context
-	g.start = time.Now()
-	g.h = phpv.NewHashTable()
-	g.l = &phpv.Loc{Filename: "unknown", Line: 1}
-	g.globalFuncs = make(map[phpv.ZString]phpv.Callable)
-	g.globalClasses = make(map[phpv.ZString]phpv.ZClass)
-	g.constant = make(map[phpv.ZString]phpv.Val)
-	g.fHandler = make(map[string]stream.Handler)
-	g.included = make(map[phpv.ZString]bool)
-	g.globalLazyFunc = make(map[phpv.ZString]*globalLazyOffset)
-	g.globalLazyClass = make(map[phpv.ZString]*globalLazyOffset)
-	g.mem = NewMemMgr(32 * 1024 * 1024)        // limit in bytes TODO read memory_limit from process (.ini file)
-	g.deadline = g.start.Add(30 * time.Second) // deadline
-
-	g.fHandler["file"], _ = stream.NewFileHandler("/")
-	g.fHandler["php"] = stream.PhpHandler()
-
 	// fill constants from process
 	for k, v := range g.p.defaultConstants {
 		g.constant[k] = v
@@ -203,32 +214,26 @@ func (g *Global) Write(v []byte) (int, error) {
 }
 
 func (g *Global) SetLocalConfig(name phpv.ZString, val *phpv.ZVal) error {
-	g.IniConfig.SetLocal(string(name), val.ZVal())
+	g.IniConfig.SetLocal(name, val.ZVal())
 	return nil
 }
 
 func (g *Global) GetConfig(name phpv.ZString, def *phpv.ZVal) *phpv.ZVal {
-	if val, ok := g.IniConfig.Values[string(name)]; ok {
+	val := g.IniConfig.Get(name)
+	if val != nil {
 		if val.Local != nil {
 			return val.Local
 		}
-		return val.Global
+		if val.Global != nil {
+			return val.Global
+		}
+		return phpv.ZNULL.ZVal()
 	}
 	return def
 }
 
 func (g *Global) IterateConfig() iter.Seq2[string, phpv.IniValue] {
-	return func(yield func(key string, value phpv.IniValue) bool) {
-		for k, v := range g.IniConfig.Values {
-			proceed := yield(k, phpv.IniValue{
-				Global: v.Global,
-				Local:  v.Local,
-			})
-			if !proceed {
-				break
-			}
-		}
-	}
+	return g.IniConfig.IterateConfig()
 }
 
 func (g *Global) Tick(ctx phpv.Context, l *phpv.Loc) error {

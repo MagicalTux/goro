@@ -5,6 +5,7 @@ import (
 	"net/http/cgi"
 	"os"
 
+	"github.com/MagicalTux/goro/core/ini"
 	"github.com/MagicalTux/goro/core/phpctx"
 	_ "github.com/MagicalTux/goro/ext/ctype"
 	_ "github.com/MagicalTux/goro/ext/date"
@@ -18,7 +19,7 @@ import (
 func main() {
 	p := phpctx.NewProcess("cgi")
 	p.CommandLine(os.Args)
-	err := cgi.Serve(p.Handler("."))
+	err := cgi.Serve(p.Handler(".", ini.New()))
 	if err != nil {
 		log.Fatalf("failed to serve: %s", err)
 	}

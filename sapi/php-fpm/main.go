@@ -6,6 +6,7 @@ import (
 	"net/http/fcgi"
 	"os"
 
+	"github.com/MagicalTux/goro/core/ini"
 	"github.com/MagicalTux/goro/core/phpctx"
 	_ "github.com/MagicalTux/goro/ext/ctype"
 	_ "github.com/MagicalTux/goro/ext/date"
@@ -25,7 +26,7 @@ func main() {
 		log.Fatalf("failed to listne: %s", err)
 	}
 
-	err = fcgi.Serve(l, p.Handler("."))
+	err = fcgi.Serve(l, p.Handler(".", ini.New()))
 	if err != nil {
 		log.Fatalf("failed to serve: %s", err)
 	}

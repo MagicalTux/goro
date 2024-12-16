@@ -4,80 +4,75 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"iter"
 	"strings"
 
+	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpctx"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
 const (
-	PHP_INI_NONE = 0
-	PHP_INI_USER = 1 << iota
-	PHP_INI_PERDIR
-	PHP_INI_SYSTEM
+	INI_NONE = 0
+	INI_USER = 1 << iota
+	INI_PERDIR
+	INI_SYSTEM
 
-	PHP_INI_ALL = PHP_INI_USER | PHP_INI_PERDIR | PHP_INI_SYSTEM
+	INI_ALL = INI_USER | INI_PERDIR | INI_SYSTEM
 )
 
-type Value struct {
-	Global *phpv.ZVal
-	Local  *phpv.ZVal
-}
-
-type Evaluator func(expr string) (*phpv.ZVal, error)
-
 type Config struct {
-	Values    map[string]*Value
-	evaluator Evaluator
+	Values map[string]*phpv.IniValue
+	ctx    phpv.Context
 }
 
-func NewEmpty(eval Evaluator) *Config {
-	return &Config{
-		Values:    map[string]*Value{},
-		evaluator: eval,
-	}
-}
-
-func NewWithDefaults(eval Evaluator) *Config {
+func New() *Config {
+	var iniCtx = phpctx.NewIniContext(&Config{
+		Values: map[string]*phpv.IniValue{},
+	})
 	c := &Config{
-		Values:    map[string]*Value{},
-		evaluator: eval,
+		Values: map[string]*phpv.IniValue{},
+		ctx:    iniCtx,
 	}
 	for varName, entry := range Defaults {
 		expr, err := c.eval(entry.RawDefault)
 		if err != nil {
-			panic(err)
+			panic(fmt.Sprintf("failed to initialize ini default for %s: %s", varName, err))
 		}
-		c.Values[varName] = &Value{Global: expr}
+		c.Values[varName] = &phpv.IniValue{Global: expr}
 	}
 	return c
 }
 
-func (c *Config) Get(varName string) *phpv.ZVal {
-	if val, ok := c.Values[varName]; ok {
-		if val.Local != nil {
-			return val.Local
-		}
-		return val.Global
-	}
-	if val, ok := Defaults[varName]; ok {
-		val, err := c.eval(val.RawDefault)
-		if err != nil {
-			panic(err)
-		}
+func (c *Config) Get(varName phpv.ZString) *phpv.IniValue {
+	if val, ok := c.Values[string(varName)]; ok {
 		return val
 	}
-	return phpv.ZNULL.ZVal()
+	return nil
 }
 
-func (c *Config) SetLocal(varName string, val *phpv.ZVal) {
-	if _, ok := Defaults[varName]; !ok {
+func (c *Config) SetLocal(varName phpv.ZString, val *phpv.ZVal) {
+	if _, ok := Defaults[string(varName)]; !ok {
 		return
 	}
-	entry, ok := c.Values[varName]
+	entry, ok := c.Values[string(varName)]
 	if ok && entry != nil {
 		entry.Local = val
 	}
+}
 
+func (c *Config) IterateConfig() iter.Seq2[string, phpv.IniValue] {
+	return func(yield func(key string, value phpv.IniValue) bool) {
+		for k, v := range c.Values {
+			proceed := yield(k, phpv.IniValue{
+				Global: v.Global,
+				Local:  v.Local,
+			})
+			if !proceed {
+				break
+			}
+		}
+	}
 }
 
 func (c *Config) eval(expr string) (*phpv.ZVal, error) {
@@ -91,7 +86,7 @@ func (c *Config) eval(expr string) (*phpv.ZVal, error) {
 	case "NULL", "null":
 		return phpv.ZNULL.ZVal(), nil
 	}
-	return c.evaluator(expr)
+	return core.Eval(c.ctx, expr)
 }
 
 func (c *Config) Parse(r io.Reader) error {
@@ -149,7 +144,7 @@ func (c *Config) Parse(r io.Reader) error {
 		if err != nil {
 			return err
 		}
-		c.Values[k] = &Value{
+		c.Values[k] = &phpv.IniValue{
 			Global: expr,
 		}
 

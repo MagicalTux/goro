@@ -17,6 +17,7 @@ import (
 	"testing"
 
 	"github.com/MagicalTux/goro/core/compiler"
+	"github.com/MagicalTux/goro/core/ini"
 	"github.com/MagicalTux/goro/core/phpctx"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
@@ -66,7 +67,7 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		return nil
 	case "FILE":
 		// pass data to the engine
-		g := phpctx.NewGlobalReq(p.req, p.p)
+		g := phpctx.NewGlobalReq(p.req, p.p, ini.New())
 		g.SetOutput(p.output)
 		g.Chdir(phpv.ZString(path.Dir(p.path))) // chdir execution to path
 
@@ -89,7 +90,7 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		return nil
 	case "SKIPIF":
 		t := tokenizer.NewLexer(b, p.path)
-		g := phpctx.NewGlobal(context.Background(), p.p)
+		g := phpctx.NewGlobal(context.Background(), p.p, ini.New())
 		output := &bytes.Buffer{}
 		g.SetOutput(output)
 		c, err := compiler.Compile(g, t)

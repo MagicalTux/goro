@@ -191,7 +191,7 @@ func fncIniGet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	return phpv.ZStr(""), nil
+	return ctx.Global().GetConfig(varName, phpv.ZNULL.ZVal()), nil
 }
 
 // > func array ini_get_all ([ string $extension [, bool $details = TRUE ]] )

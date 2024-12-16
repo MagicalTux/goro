@@ -40,8 +40,8 @@ func NewProcess(sapi string) *Process {
 
 // Hander returns a http.Handler object suitable for use with golang standard
 // http servers and similar.
-func (p *Process) Handler(docroot string) http.Handler {
-	return &phpWebHandler{root: docroot, p: p}
+func (p *Process) Handler(docroot string, iniCfg phpv.IniConfig) http.Handler {
+	return &phpWebHandler{root: docroot, p: p, cfg: iniCfg}
 }
 
 func (p *Process) populateConstants() {

@@ -6,7 +6,6 @@ import (
 	"log"
 	"os"
 
-	"github.com/MagicalTux/goro/core"
 	"github.com/MagicalTux/goro/core/ini"
 	"github.com/MagicalTux/goro/core/phpctx"
 	"github.com/MagicalTux/goro/core/phpv"
@@ -24,12 +23,12 @@ func main() {
 
 	args, options, err := p.CommandLine(os.Args)
 	if err != nil {
-		println(err.Error())
+		println("error:", err.Error())
+		os.Exit(-1)
 	}
-	ctx := phpctx.NewGlobal(context.Background(), p)
-	ctx.IniConfig = ini.NewWithDefaults(func(expr string) (*phpv.ZVal, error) {
-		return core.Eval(ctx, expr)
-	})
+
+	cfg := ini.New()
+	ctx := phpctx.NewGlobal(context.Background(), p, cfg)
 
 	if options.RunCode != "" {
 		fmt.Printf("options: %+v\n", options)
@@ -46,7 +45,7 @@ func main() {
 			os.Exit(-1)
 		}
 		defer file.Close()
-		if err = ctx.IniConfig.Parse(file); err != nil {
+		if err = cfg.Parse(file); err != nil {
 			println("error:", err.Error())
 			os.Exit(-1)
 		}

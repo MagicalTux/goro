@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/MagicalTux/goro/core/ini"
 	"github.com/MagicalTux/goro/core/phpctx"
 	_ "github.com/MagicalTux/goro/ext/ctype"
 	_ "github.com/MagicalTux/goro/ext/date"
@@ -33,7 +34,7 @@ func main() {
 		path = os.Args[1]
 	}
 
-	err = http.Serve(l, p.Handler(path))
+	err = http.Serve(l, p.Handler(path, ini.New()))
 	if err != nil {
 		log.Fatalf("failed to serve: %s", err)
 	}

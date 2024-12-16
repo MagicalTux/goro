@@ -40,11 +40,6 @@ type Context interface {
 	CallZVal(ctx Context, f Callable, args []*ZVal, this ZObject) (*ZVal, error)
 }
 
-type IniValue struct {
-	Global *ZVal
-	Local  *ZVal
-}
-
 type GlobalContext interface {
 	Context
 
@@ -82,6 +77,17 @@ type GlobalContext interface {
 	GetLoadedExtensions() []string
 
 	Random() *random.State
+}
+
+type IniValue struct {
+	Global *ZVal
+	Local  *ZVal
+}
+
+type IniConfig interface {
+	Get(name ZString) *IniValue
+	SetLocal(name ZString, value *ZVal)
+	IterateConfig() iter.Seq2[string, IniValue]
 }
 
 type FuncContext interface {

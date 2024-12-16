@@ -13,6 +13,7 @@ import (
 type phpWebHandler struct {
 	root string
 	p    *Process
+	cfg  phpv.IniConfig
 }
 
 func (p *phpWebHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
@@ -22,7 +23,7 @@ func (p *phpWebHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// make a new global env
-	g := NewGlobalReq(req, p.p)
+	g := NewGlobalReq(req, p.p, p.cfg)
 	g.out = w
 
 	// check if full exists
