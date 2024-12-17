@@ -16,7 +16,7 @@ func (z *ZVal) CastTo(ctx Context, t ZType) error {
 
 func (z *ZVal) As(ctx Context, t ZType) (*ZVal, error) {
 	r, err := z.AsVal(ctx, t)
-	return &ZVal{r}, err
+	return NewZVal(r), err
 }
 
 func (z *ZVal) AsVal(ctx Context, t ZType) (Val, error) {
@@ -50,7 +50,7 @@ func (z *ZVal) AsVal(ctx Context, t ZType) (Val, error) {
 
 func (z *ZVal) AsNumeric(ctx Context) (*ZVal, error) {
 	if z == nil {
-		return &ZVal{nil}, nil
+		return NewZVal(nil), nil
 	}
 	switch n := z.v.(type) {
 	case ZInt:

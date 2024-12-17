@@ -62,7 +62,7 @@ func (a *ZArray) GetType() ZType {
 }
 
 func (a *ZArray) ZVal() *ZVal {
-	return &ZVal{a}
+	return NewZVal(a)
 }
 
 func (a *ZArray) Dup() *ZArray {
@@ -112,7 +112,7 @@ func (a *ZArray) OffsetKeyAt(ctx Context, index int) (*ZVal, error) {
 		}
 		i++
 	}
-	return &ZVal{ZNull{}}, nil
+	return NewZVal(ZNull{}), nil
 }
 
 func (a *ZArray) OffsetCheck(ctx Context, key Val) (*ZVal, bool, error) {

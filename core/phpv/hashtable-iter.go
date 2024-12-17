@@ -18,7 +18,7 @@ func (z *zhashtableIterator) Key(ctx Context) (*ZVal, error) {
 		return nil, nil
 	}
 
-	return &ZVal{z.cur.k}, nil
+	return NewZVal(z.cur.k), nil
 }
 
 func (z *zhashtableIterator) Next(ctx Context) (*ZVal, error) {

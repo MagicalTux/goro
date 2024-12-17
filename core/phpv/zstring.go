@@ -13,7 +13,7 @@ func (z ZString) GetType() ZType {
 }
 
 func (z ZString) ZVal() *ZVal {
-	return &ZVal{z}
+	return NewZVal(z)
 }
 
 func (z ZString) AsVal(ctx Context, t ZType) (Val, error) {
@@ -178,7 +178,7 @@ func (v ZString) String() string {
 }
 
 func ZStr(s string) *ZVal {
-	return &ZVal{ZString(s)}
+	return NewZVal(ZString(s))
 }
 
 func (v ZString) Value() Val {

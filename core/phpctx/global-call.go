@@ -30,15 +30,8 @@ func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, t
 		if err != nil {
 			return nil, err
 		}
+
 		if i < len(func_args) && func_args[i].Ref {
-			varName := func_args[i].VarName
-			if ok, _ := ctx.OffsetExists(ctx, varName); !ok {
-				if callCtx.Args[i].GetType() == phpv.ZtNull {
-					// TODO: instantiate callCtx.Args[i]
-					// callCtx.Args[i] = callCtx.Args[i].New()
-				}
-				ctx.OffsetSet(ctx, varName, callCtx.Args[i])
-			}
 			callCtx.Args[i] = callCtx.Args[i].Ref()
 		} else {
 			callCtx.Args[i] = callCtx.Args[i].Dup()

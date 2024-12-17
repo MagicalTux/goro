@@ -13,7 +13,12 @@ type Val interface {
 //
 // Eventually, ZVal will only be used for references.
 type ZVal struct {
-	v Val
+	v    Val
+	Name *ZString
+}
+
+func NewZVal(v Val) *ZVal {
+	return &ZVal{v: v}
 }
 
 func (z *ZVal) GetType() ZType {
@@ -27,7 +32,7 @@ func (z *ZVal) GetType() ZType {
 }
 
 func MakeZVal(v Val) *ZVal {
-	return &ZVal{v}
+	return NewZVal(v)
 }
 
 // ZVal will make a copy of a given zval without actually copying memory
@@ -70,7 +75,7 @@ func (z *ZVal) Dup() *ZVal {
 	case *ZArray:
 		return (&ZArray{h: v.h.Dup()}).ZVal()
 	default:
-		return &ZVal{z.v}
+		return NewZVal(z.v)
 	}
 }
 
@@ -79,7 +84,7 @@ func (z *ZVal) Ref() *ZVal {
 	if _, isRef := z.v.(*ZVal); isRef {
 		return z
 	}
-	return &ZVal{z}
+	return NewZVal(z)
 }
 
 func (z *ZVal) IsRef() bool {
@@ -98,6 +103,19 @@ func (z *ZVal) Value() Val {
 		return sz.Value()
 	}
 	return z.v
+}
+
+func (z *ZVal) GetName() ZString {
+	if z == nil {
+		panic("nil zval")
+	}
+	if z.Name != nil {
+		return *z.Name
+	}
+	if sz, ok := z.v.(*ZVal); ok {
+		return sz.GetName()
+	}
+	return ""
 }
 
 func (z *ZVal) Set(nz *ZVal) {

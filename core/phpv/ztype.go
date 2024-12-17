@@ -35,7 +35,7 @@ func (z ZNull) GetType() ZType {
 }
 
 func (z ZNull) ZVal() *ZVal {
-	return &ZVal{ZNull{}}
+	return NewZVal(ZNull{})
 }
 
 func (z ZNull) AsVal(ctx Context, t ZType) (Val, error) {
@@ -94,7 +94,7 @@ func (z ZBool) AsVal(ctx Context, t ZType) (Val, error) {
 }
 
 func (z ZBool) ZVal() *ZVal {
-	return &ZVal{z}
+	return NewZVal(z)
 }
 
 func (z ZBool) String() string {
@@ -114,7 +114,7 @@ func (z ZInt) GetType() ZType {
 }
 
 func (z ZInt) ZVal() *ZVal {
-	return &ZVal{z}
+	return NewZVal(z)
 }
 
 func (z ZInt) AsVal(ctx Context, t ZType) (Val, error) {
@@ -149,7 +149,7 @@ func (z ZFloat) GetType() ZType {
 }
 
 func (z ZFloat) ZVal() *ZVal {
-	return &ZVal{z}
+	return NewZVal(z)
 }
 
 func (z ZFloat) AsVal(ctx Context, t ZType) (Val, error) {

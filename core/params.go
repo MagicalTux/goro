@@ -10,107 +10,115 @@ import (
 
 var ErrNotEnoughArguments = errors.New("Too few arguments")
 
-func zvalStore(ctx phpv.Context, z *phpv.ZVal, out interface{}) error {
+func zvalStore(ctx phpv.Context, z *phpv.ZVal, out interface{}) (phpv.Val, error) {
 	switch tgt := out.(type) {
 	case *bool:
 		s, err := z.As(ctx, phpv.ZtBool)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		*tgt = bool(s.Value().(phpv.ZBool))
-		return nil
+		v := s.Value().(phpv.ZBool)
+		*tgt = bool(v)
+		return v, nil
 	case *phpv.ZBool:
 		s, err := z.As(ctx, phpv.ZtBool)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		*tgt = s.Value().(phpv.ZBool)
-		return nil
+		v := s.Value().(phpv.ZBool)
+		*tgt = v
+		return v, nil
 	case *int:
 		s, err := z.As(ctx, phpv.ZtInt)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		*tgt = int(s.Value().(phpv.ZInt))
-		return nil
+		v := s.Value().(phpv.ZInt)
+		*tgt = int(v)
+		return v, nil
 	case *phpv.ZInt:
 		s, err := z.As(ctx, phpv.ZtInt)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		*tgt = s.Value().(phpv.ZInt)
-		return nil
+		v := s.Value().(phpv.ZInt)
+		*tgt = v
+		return v, nil
 	case *phpv.ZFloat:
 		s, err := z.As(ctx, phpv.ZtFloat)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		*tgt = s.Value().(phpv.ZFloat)
-		return nil
+		v := s.Value().(phpv.ZFloat)
+		*tgt = v
+		return v, nil
 	case *string:
 		s, err := z.As(ctx, phpv.ZtString)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		*tgt = string(s.Value().(phpv.ZString))
-		return nil
+		v := s.Value().(phpv.ZString)
+		*tgt = string(v)
+		return v, nil
 	case *[]byte:
 		s, err := z.As(ctx, phpv.ZtString)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		*tgt = []byte(s.Value().(phpv.ZString))
-		return nil
+		v := s.Value().(phpv.ZString)
+		*tgt = []byte(v)
+		return v, nil
 	case *phpv.ZString:
 		s, err := z.As(ctx, phpv.ZtString)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		*tgt = s.Value().(phpv.ZString)
-		return nil
+		v := s.Value().(phpv.ZString)
+		*tgt = v
+		return v, nil
 	case *phpv.Callable:
 		s, err := SpawnCallable(ctx, z)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		*tgt = s
-		return nil
+		return nil, nil
 	case **phpobj.ZObject:
 		s, err := z.As(ctx, phpv.ZtObject)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		obj, ok := s.Value().(*phpobj.ZObject)
 		if !ok {
-			return ctx.Errorf("expected parameter to be object, %s given", z.GetType())
+			return nil, ctx.Errorf("expected parameter to be object, %s given", z.GetType())
 		}
 		if *tgt != nil {
 			if (*tgt).Class != nil {
 				// check implements
 				if (*tgt).Class != obj.Class {
-					return ctx.Errorf("expects parameter %d to be %s, %s given", 1, (*tgt).Class.GetName(), z.GetType())
+					return nil, ctx.Errorf("expects parameter %d to be %s, %s given", 1, (*tgt).Class.GetName(), z.GetType())
 				}
 			}
 		}
 		*tgt = obj
-		return nil
+		return obj, nil
 	case **phpv.ZArray:
 		s, err := z.As(ctx, phpv.ZtArray)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		ar, ok := s.Value().(*phpv.ZArray)
 		if !ok {
-			return ctx.Errorf("expected parameter to be array, %s given", z.GetType())
+			return nil, ctx.Errorf("expected parameter to be array, %s given", z.GetType())
 		}
 		*tgt = ar
-		return nil
+		return ar, nil
 	case **phpv.ZVal:
 		// as is
 		*tgt = z
-		return nil
+		return z, nil
 	default:
-		return ctx.Errorf("unsupported target type %T", out)
+		return nil, ctx.Errorf("unsupported target type %T", out)
 	}
 }
 
@@ -145,9 +153,15 @@ func Expand(ctx phpv.Context, args []*phpv.ZVal, out ...interface{}) (int, error
 			return i, ctx.Error(ErrNotEnoughArguments)
 		}
 
-		err := zvalStore(ctx, args[i], v)
+		outVal, err := zvalStore(ctx, args[i], v)
 		if err != nil {
 			return i, err
+		}
+
+		if !args[i].IsRef() {
+			// handle case foo($bar) where $bar is undefined
+			// and foo takes a reference
+			ctx.Parent(1).OffsetSet(ctx, args[i].GetName(), outVal.ZVal())
 		}
 	}
 	return len(out), nil

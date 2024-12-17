@@ -61,7 +61,9 @@ func (r *runVariable) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	if err != nil {
 		return nil, err
 	}
-	return res.Nude(), nil
+	v := res.Nude()
+	v.Name = &r.v
+	return v, nil
 }
 
 func (r *runVariable) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {

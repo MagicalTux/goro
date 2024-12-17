@@ -155,7 +155,7 @@ func (z *ZHashTable) GetString(k ZString) *ZVal {
 
 	t, ok := z._idx_s[k]
 	if !ok {
-		return &ZVal{ZNull{}}
+		return NewZVal(ZNull{})
 	}
 	return t.v
 }
@@ -166,7 +166,7 @@ func (z *ZHashTable) GetStringB(k ZString) (*ZVal, bool) {
 
 	t, ok := z._idx_s[k]
 	if !ok {
-		return &ZVal{ZNull{}}, false
+		return NewZVal(ZNull{}), false
 	}
 	return t.v, true
 }
@@ -245,7 +245,7 @@ func (z *ZHashTable) GetInt(k ZInt) *ZVal {
 
 	t, ok := z._idx_i[k]
 	if !ok {
-		return &ZVal{ZNull{}}
+		return NewZVal(ZNull{})
 	}
 	return t.v
 }
