@@ -15,6 +15,7 @@ func init() {
 		Classes: []phpv.ZClass{
 			GMP,
 		},
+		// Note: ExtFunctionArg is currently unused
 		Functions: map[string]*phpctx.ExtFunction{
 			"gmp_abs":    {Func: gmpAbs, Args: []*phpctx.ExtFunctionArg{}},
 			"gmp_add":    {Func: gmpAdd, Args: []*phpctx.ExtFunctionArg{}},

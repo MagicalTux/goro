@@ -13,6 +13,7 @@ func init() {
 		Name:    "bz2",
 		Version: core.VERSION,
 		Classes: []phpv.ZClass{},
+		// Note: ExtFunctionArg is currently unused
 		Functions: map[string]*phpctx.ExtFunction{
 			"bzdecompress": {Func: fncBzDecompress, Args: []*phpctx.ExtFunctionArg{}},
 		},

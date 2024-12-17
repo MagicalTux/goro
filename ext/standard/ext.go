@@ -13,6 +13,7 @@ func init() {
 		Name:    "standard",
 		Version: core.VERSION,
 		Classes: []phpv.ZClass{},
+		// Note: ExtFunctionArg is currently unused
 		Functions: map[string]*phpctx.ExtFunction{
 			"abs":                      {Func: mathAbs, Args: []*phpctx.ExtFunctionArg{}},
 			"acos":                     {Func: mathAcos, Args: []*phpctx.ExtFunctionArg{}},

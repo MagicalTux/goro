@@ -13,6 +13,7 @@ func init() {
 		Name:    "date",
 		Version: core.VERSION,
 		Classes: []phpv.ZClass{},
+		// Note: ExtFunctionArg is currently unused
 		Functions: map[string]*phpctx.ExtFunction{
 			"strftime": {Func: fncStrftime, Args: []*phpctx.ExtFunctionArg{}},
 		},

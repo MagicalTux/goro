@@ -101,6 +101,7 @@ func init() {
 		Name:    "%s",
 		Version: %s,
 		Classes: []phpv.ZClass{%s},
+		// Note: ExtFunctionArg is currently unused
 		Functions: map[string]*phpctx.ExtFunction{%s},
 		Constants: map[phpv.ZString]phpv.Val{%s},
 	})

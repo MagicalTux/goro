@@ -13,6 +13,7 @@ func init() {
 		Name:    "ctype",
 		Version: core.VERSION,
 		Classes: []phpv.ZClass{},
+		// Note: ExtFunctionArg is currently unused
 		Functions: map[string]*phpctx.ExtFunction{
 			"ctype_alnum":  {Func: ctypeAlnum, Args: []*phpctx.ExtFunctionArg{}},
 			"ctype_alpha":  {Func: ctypeAlpha, Args: []*phpctx.ExtFunctionArg{}},

@@ -10,7 +10,8 @@ func pregMatch(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var pattern, subject phpv.ZString
 	var matchesArg **phpv.ZArray
 	var flagsArg, offsetArg *phpv.ZInt
-	_, err := core.Expand(ctx, args, &pattern, &subject, &matchesArg, &flagsArg, &offsetArg)
+
+	_, err := core.Expand(ctx, args, &pattern, &subject, core.Ref(&matchesArg), &flagsArg, &offsetArg)
 	if err != nil {
 		return phpv.ZFalse.ZVal(), err
 	}

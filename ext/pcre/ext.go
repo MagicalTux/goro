@@ -13,12 +13,9 @@ func init() {
 		Name:    "pcre",
 		Version: core.VERSION,
 		Classes: []phpv.ZClass{},
+		// Note: ExtFunctionArg is currently unused
 		Functions: map[string]*phpctx.ExtFunction{
-			"preg_match":   {Func: pregMatch, Args: []*phpctx.ExtFunctionArg{
-				{ ArgName: "pattern" },
-				{ ArgName: "subject" },
-				{ ArgName: "matches", Optional: true, Ref: true },
-			}},
+			"preg_match":   {Func: pregMatch, Args: []*phpctx.ExtFunctionArg{}},
 			"preg_quote":   {Func: pregQuote, Args: []*phpctx.ExtFunctionArg{}},
 			"preg_replace": {Func: pregReplace, Args: []*phpctx.ExtFunctionArg{}},
 		},

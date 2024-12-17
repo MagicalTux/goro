@@ -10,6 +10,14 @@ import (
 
 var ErrNotEnoughArguments = errors.New("Too few arguments")
 
+type refParam struct {
+	v any
+}
+
+func Ref(p any) refParam {
+	return refParam{p}
+}
+
 func zvalStore(ctx phpv.Context, z *phpv.ZVal, out interface{}) (phpv.Val, error) {
 	switch tgt := out.(type) {
 	case *bool:
@@ -124,7 +132,13 @@ func zvalStore(ctx phpv.Context, z *phpv.ZVal, out interface{}) (phpv.Val, error
 
 func Expand(ctx phpv.Context, args []*phpv.ZVal, out ...interface{}) (int, error) {
 	for i, v := range out {
+		ref, isRef := v.(refParam)
+		if isRef {
+			v = ref.v
+		}
+
 		rv := reflect.ValueOf(v)
+
 		if rv.Kind() != reflect.Ptr {
 			panic("expand requires arguments to be pointers")
 		}
@@ -158,10 +172,14 @@ func Expand(ctx phpv.Context, args []*phpv.ZVal, out ...interface{}) (int, error
 			return i, err
 		}
 
-		if !args[i].IsRef() {
+		if isRef {
+			args[i] = args[i].Ref()
+
 			// handle case foo($bar) where $bar is undefined
 			// and foo takes a reference
 			ctx.Parent(1).OffsetSet(ctx, args[i].GetName(), outVal.ZVal())
+		} else {
+			args[i] = args[i].Dup()
 		}
 	}
 	return len(out), nil

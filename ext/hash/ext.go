@@ -15,6 +15,7 @@ func init() {
 		Classes: []phpv.ZClass{
 			HashContext,
 		},
+		// Note: ExtFunctionArg is currently unused
 		Functions: map[string]*phpctx.ExtFunction{
 			"hash":        {Func: fncHash, Args: []*phpctx.ExtFunctionArg{}},
 			"hash_algos":  {Func: fncHashAlgos, Args: []*phpctx.ExtFunctionArg{}},

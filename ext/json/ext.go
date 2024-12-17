@@ -15,6 +15,7 @@ func init() {
 		Classes: []phpv.ZClass{
 			JsonSerializable,
 		},
+		// Note: ExtFunctionArg is currently unused
 		Functions: map[string]*phpctx.ExtFunction{
 			"json_decode": {Func: fncJsonDecode, Args: []*phpctx.ExtFunctionArg{}},
 			"json_encode": {Func: fncJsonEncode, Args: []*phpctx.ExtFunctionArg{}},

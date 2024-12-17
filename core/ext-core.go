@@ -24,6 +24,7 @@ func init() {
 			phpobj.Throwable,
 			phpobj.Traversable,
 		},
+		// Note: ExtFunctionArg is currently unused
 		Functions: map[string]*phpctx.ExtFunction{
 			"count":                 {Func: fncCount, Args: []*phpctx.ExtFunctionArg{}},
 			"define":                {Func: fncDefine, Args: []*phpctx.ExtFunctionArg{}},
