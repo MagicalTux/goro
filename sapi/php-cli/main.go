@@ -21,11 +21,13 @@ import (
 func main() {
 	p := phpctx.NewProcess("cli")
 
-	args, options, err := p.CommandLine(os.Args)
+	err := p.CommandLine(os.Args)
 	if err != nil {
 		println("error:", err.Error())
 		os.Exit(-1)
 	}
+
+	options := p.Options
 
 	cfg := ini.New()
 	ctx := phpctx.NewGlobal(context.Background(), p, cfg)
@@ -54,8 +56,8 @@ func main() {
 		ctx.SetLocalConfig(phpv.ZString(k), phpv.ZStr(v))
 	}
 
-	if len(args) >= 2 {
-		if err := ctx.RunFile(args[1]); err != nil {
+	if p.ScriptFilename != "" {
+		if err := ctx.RunFile(p.ScriptFilename); err != nil {
 			log.Printf("failed to run file: %s", err)
 			os.Exit(1)
 		}

@@ -2,6 +2,7 @@ package phpctx
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -10,18 +11,22 @@ import (
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
+type ProcessOptions struct {
+	RunCode    string
+	NoIniFile  bool
+	IniFile    string
+	IniEntries map[string]string
+}
+
 type Process struct {
 	defaultConstants map[phpv.ZString]phpv.Val
 	environ          *phpv.ZHashTable
 	defaultOut       io.Writer
 	defaultErr       io.Writer
-}
 
-type Options struct {
-	RunCode    string
-	NoIniFile  bool
-	IniFile    string
-	IniEntries map[string]string
+	ScriptFilename string
+	Argv           []string
+	Options        *ProcessOptions
 }
 
 // NewProcess instanciates a new instance of Process, which represents a
@@ -61,37 +66,69 @@ func (p *Process) SetConstant(name, value phpv.ZString) {
 // CommandLine will parse arguments from the command line and configure the
 // process accordingly. If nil is passed, then the actual command line will be
 // parsed. In case of error, messages will be sent to stderr by default.
-func (p *Process) CommandLine(args []string) ([]string, *Options, error) {
+func (p *Process) CommandLine(args []string) error {
 	if args == nil {
 		args = os.Args
 	}
 
-	processedArgs := []string{}
-
-	options := &Options{
+	options := &ProcessOptions{
 		IniEntries: map[string]string{},
 	}
 
 	args = expandArgs(args)
-	for i := 0; i < len(args); i++ {
+
+	i := 1
+
+	for ; i < len(args); i++ {
 		arg := args[i]
 		if !strings.HasPrefix(arg, "-") {
-			processedArgs = append(processedArgs, arg)
-			continue
+			break
+		}
+		if arg == "--" {
+			i++
+			break
 		}
 
 		switch arg {
 		case "-r", "--run":
 			i++
 			code := idx(args, i)
+			if code == "" {
+				return errors.New("-r needs an argument")
+			}
 			if options.RunCode != "" {
-				return nil, nil, errors.New("You can use -r only once")
+				return errors.New("You can use -r only once")
 			}
 			options.RunCode = code
+
+		case "-f", "--file":
+			i++
+			filename := idx(args, i)
+			if filename == "" {
+				return errors.New("-f needs an argument")
+			}
+			if p.ScriptFilename != "" {
+				return errors.New("You can use -f only once")
+			}
+			p.ScriptFilename = filename
+
 		case "-d", "--define":
 			i++
 			value := idx(args, i)
-			options.IniEntries[arg] = value
+			if value == "" {
+				return errors.New("-f needs an argument")
+			}
+			fields := strings.Split(value, "=")
+			if len(fields) >= 2 {
+				key := strings.TrimSpace(fields[0])
+				value := strings.TrimSpace(fields[1])
+				options.IniEntries[key] = value
+			} else {
+				options.IniEntries[value] = "1"
+			}
+
+			// TODO: a flag can be specified more than once
+
 		case "-c", "--php-ini":
 			i++
 			value := idx(args, i)
@@ -99,11 +136,27 @@ func (p *Process) CommandLine(args []string) ([]string, *Options, error) {
 		case "-n", "--no-php-ini":
 			options.NoIniFile = true
 
+		default:
+			return fmt.Errorf("unknown flag: %s", arg)
+
 			// TODO: add more flags
 		}
 	}
 
-	return processedArgs, options, nil
+	if p.ScriptFilename != "" {
+		p.Argv = append(p.Argv, p.ScriptFilename)
+	}
+
+	if i < len(args) {
+		if p.ScriptFilename == "" {
+			p.ScriptFilename = args[i]
+		}
+		p.Argv = append(p.Argv, args[i:]...)
+	}
+
+	p.Options = options
+
+	return nil
 }
 
 // importEnv will copy an env type value (list of strings) as a hashtable

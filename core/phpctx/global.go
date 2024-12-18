@@ -179,6 +179,22 @@ func (g *Global) doGPC() {
 			// SERVER
 			s.OffsetSet(g, phpv.ZString("REQUEST_TIME").ZVal(), phpv.ZInt(g.start.Unix()).ZVal())
 			s.OffsetSet(g, phpv.ZString("REQUEST_TIME_FLOAT").ZVal(), phpv.ZFloat(float64(g.start.UnixNano())/1e9).ZVal())
+
+			args := phpv.NewZArray()
+			for _, elem := range g.p.Argv {
+				args.OffsetSet(g, nil, phpv.ZStr(elem))
+			}
+
+			argv := args.ZVal()
+			argc := args.Count(g).ZVal()
+			s.OffsetSet(g, phpv.ZString("argv"), argv)
+			s.OffsetSet(g, phpv.ZString("argc"), argc)
+
+			s.OffsetSet(g, phpv.ZString("PHP_SELF"), phpv.ZStr(g.p.ScriptFilename))
+
+			g.h.SetString("argv", argv)
+			g.h.SetString("argc", argc)
+
 			// TODO...
 		}
 	}
