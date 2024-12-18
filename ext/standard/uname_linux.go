@@ -23,18 +23,20 @@ func fncUnameHelperToString(v [65]int8) phpv.ZString {
 
 // > func string php_uname ([ string $mode = "a" ] )
 func fncUname(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	var arg string
-	_, err := core.Expand(ctx, args, &arg)
+	var modeArg *string
+	_, err := core.Expand(ctx, args, &modeArg)
 	if err != nil {
 		return nil, err
 	}
+
+	mode := core.Deref(modeArg, "a")
 
 	var name syscall.Utsname
 	if err := syscall.Uname(&name); err != nil {
 		return nil, err
 	}
 
-	switch arg {
+	switch mode {
 	case "s":
 		return fncUnameHelperToString(name.Sysname).ZVal(), nil
 	case "n":

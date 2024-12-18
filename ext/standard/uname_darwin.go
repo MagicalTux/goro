@@ -13,13 +13,15 @@ import (
 
 // this is an approximate estimation of php_uname()
 func fncUname(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	var arg string
-	_, err := core.Expand(ctx, args, &arg)
+	var modeArg *string
+	_, err := core.Expand(ctx, args, &modeArg)
 	if err != nil {
 		return nil, err
 	}
 
-	switch arg {
+	mode := core.Deref(modeArg, "a")
+
+	switch mode {
 	case "s":
 		return phpv.ZString("Darwin").ZVal(), nil
 	case "n":
