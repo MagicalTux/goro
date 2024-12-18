@@ -179,7 +179,6 @@ func compileFunction(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 
 func compileSpecialFuncCall(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	// special function call that comes without (), so as a keyword. Example: echo, die, etc
-	has_open := false
 	fn_name := phpv.ZString(i.Data)
 	l := i.Loc()
 
@@ -191,22 +190,6 @@ func compileSpecialFuncCall(i *tokenizer.Item, c compileCtx) (phpv.Runnable, err
 	if i.IsSingle(';') {
 		c.backup()
 		return &runnableFunctionCall{fn_name, nil, l}, nil
-	}
-
-	if i.IsSingle('(') {
-		has_open = true
-		i, err = c.NextItem()
-		if err != nil {
-			return nil, err
-		}
-
-		if i.IsSingle(')') {
-			return &runnableFunctionCall{fn_name, nil, l}, nil
-		}
-		if i.IsSingle(';') {
-			c.backup()
-			return &runnableFunctionCall{fn_name, nil, l}, nil
-		}
 	}
 
 	var args []phpv.Runnable
@@ -234,10 +217,7 @@ func compileSpecialFuncCall(i *tokenizer.Item, c compileCtx) (phpv.Runnable, err
 			}
 			continue
 		}
-		if has_open && i.IsSingle(')') {
-			return &runnableFunctionCall{fn_name, args, l}, nil
-		}
-		if !has_open && i.IsExpressionEnd() {
+		if i.IsExpressionEnd() {
 			c.backup()
 			return &runnableFunctionCall{fn_name, args, l}, nil
 		}
