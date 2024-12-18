@@ -449,6 +449,10 @@ func (g *Global) Flush() {
 	}
 }
 
+func (g *Global) Argv() []string {
+	return g.p.Argv
+}
+
 func (g *Global) RegisterLazyFunc(name phpv.ZString, r phpv.Runnables, p int) {
 	g.globalLazyFunc[name.ToLower()] = &globalLazyOffset{r, p}
 }

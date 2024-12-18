@@ -45,6 +45,8 @@ type GlobalContext interface {
 
 	Flush()
 
+	Argv() []string
+
 	RegisterFunction(name ZString, f Callable) error
 	GetFunction(ctx Context, name ZString) (Callable, error)
 

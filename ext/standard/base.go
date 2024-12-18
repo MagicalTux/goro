@@ -223,8 +223,9 @@ func fncGetOpt(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		}
 	}
 
-	for i := 0; i < len(os.Args); i++ {
-		arg := os.Args[i]
+	argv := ctx.Global().Argv()
+	for i := 0; i < len(argv); i++ {
+		arg := argv[i]
 
 		switch {
 		case strings.HasPrefix(arg, "--"):
