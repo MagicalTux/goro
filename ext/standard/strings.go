@@ -623,7 +623,7 @@ func fncStrParseStr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var str phpv.ZString
 	var arrayArg **phpv.ZArray
 
-	_, err := core.Expand(ctx, args, &str, &arrayArg)
+	_, err := core.Expand(ctx, args, &str, core.Ref(&arrayArg))
 	if err != nil {
 		return nil, err
 	}
@@ -2044,7 +2044,7 @@ func fncWordWrap(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 func strReplaceCommon(ctx phpv.Context, args []*phpv.ZVal, caseSensitive bool) (*phpv.ZVal, error) {
 	var search, replace, subject *phpv.ZVal
 	var count *phpv.ZInt
-	_, err := core.Expand(ctx, args, &search, &replace, &subject, &count)
+	_, err := core.Expand(ctx, args, &search, &replace, &subject, core.Ref(&count))
 	if err != nil {
 		return nil, err
 	}

@@ -164,7 +164,13 @@ func Expand(ctx phpv.Context, args []*phpv.ZVal, out ...interface{}) (int, error
 			// not enough arguments, such errors in PHP can be returned as either:
 			// Uncaught ArgumentCountError: Too few arguments to function toto(), 0 passed
 			// x() expects at least 2 parameters, 0 given
-			return i, ctx.Error(ErrNotEnoughArguments)
+			return i, ctx.FuncError(ErrNotEnoughArguments)
+		}
+
+		if isRef {
+			args[i] = args[i].Ref()
+		} else {
+			args[i] = args[i].Dup()
 		}
 
 		outVal, err := zvalStore(ctx, args[i], v)
@@ -173,13 +179,9 @@ func Expand(ctx phpv.Context, args []*phpv.ZVal, out ...interface{}) (int, error
 		}
 
 		if isRef {
-			args[i] = args[i].Ref()
-
 			// handle case foo($bar) where $bar is undefined
 			// and foo takes a reference
 			ctx.Parent(1).OffsetSet(ctx, args[i].GetName(), outVal.ZVal())
-		} else {
-			args[i] = args[i].Dup()
 		}
 	}
 	return len(out), nil

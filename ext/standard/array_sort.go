@@ -12,7 +12,7 @@ import (
 func fncArraySort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var array *phpv.ZArray
 	var sortFlagsArg *phpv.ZInt
-	_, err := core.Expand(ctx, args, &array, &sortFlagsArg)
+	_, err := core.Expand(ctx, args, core.Ref(&array), &sortFlagsArg)
 	if err != nil {
 		return nil, ctx.FuncError(err)
 	}
@@ -41,7 +41,7 @@ func fncArraySort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 func fncArrayRSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var array *phpv.ZArray
 	var sortFlagsArg *phpv.ZInt
-	_, err := core.Expand(ctx, args, &array, &sortFlagsArg)
+	_, err := core.Expand(ctx, args, core.Ref(&array), &sortFlagsArg)
 	if err != nil {
 		return nil, ctx.FuncError(err)
 	}
@@ -70,7 +70,7 @@ func fncArrayRSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 func fncArrayUSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var array *phpv.ZArray
 	var compareFunc phpv.Callable
-	_, err := core.Expand(ctx, args, &array, &compareFunc)
+	_, err := core.Expand(ctx, args, core.Ref(&array), &compareFunc)
 	if err != nil {
 		return nil, ctx.FuncError(err)
 	}
@@ -102,7 +102,7 @@ func fncArrayUSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 func fncArrayUASort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var array *phpv.ZArray
 	var compareFunc phpv.Callable
-	_, err := core.Expand(ctx, args, &array, &compareFunc)
+	_, err := core.Expand(ctx, args, core.Ref(&array), &compareFunc)
 	if err != nil {
 		return nil, ctx.FuncError(err)
 	}
@@ -134,7 +134,7 @@ func fncArrayUASort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 func fncArrayUKSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var array *phpv.ZArray
 	var compareFunc phpv.Callable
-	_, err := core.Expand(ctx, args, &array, &compareFunc)
+	_, err := core.Expand(ctx, args, core.Ref(&array), &compareFunc)
 	if err != nil {
 		return nil, ctx.FuncError(err)
 	}
@@ -166,7 +166,7 @@ func fncArrayUKSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 func fncArrayKSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var array *phpv.ZArray
 	var sortFlagsArg *phpv.ZInt
-	_, err := core.Expand(ctx, args, &array, &sortFlagsArg)
+	_, err := core.Expand(ctx, args, core.Ref(&array), &sortFlagsArg)
 	if err != nil {
 		return nil, ctx.FuncError(err)
 	}
@@ -195,7 +195,7 @@ func fncArrayKSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 func fncArrayKRSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var array *phpv.ZArray
 	var sortFlagsArg *phpv.ZInt
-	_, err := core.Expand(ctx, args, &array, &sortFlagsArg)
+	_, err := core.Expand(ctx, args, core.Ref(&array), &sortFlagsArg)
 	if err != nil {
 		return nil, ctx.FuncError(err)
 	}
@@ -224,7 +224,7 @@ func fncArrayKRSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 func fncArrayASort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var array *phpv.ZArray
 	var sortFlagsArg *phpv.ZInt
-	_, err := core.Expand(ctx, args, &array, &sortFlagsArg)
+	_, err := core.Expand(ctx, args, core.Ref(&array), &sortFlagsArg)
 	if err != nil {
 		return nil, ctx.FuncError(err)
 	}
@@ -253,7 +253,7 @@ func fncArrayASort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 func fncArrayARSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var array *phpv.ZArray
 	var sortFlagsArg *phpv.ZInt
-	_, err := core.Expand(ctx, args, &array, &sortFlagsArg)
+	_, err := core.Expand(ctx, args, core.Ref(&array), &sortFlagsArg)
 	if err != nil {
 		return nil, ctx.FuncError(err)
 	}
@@ -282,7 +282,7 @@ func fncArrayARSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 func fncArrayNatSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var array *phpv.ZArray
 	var sortFlagsArg *phpv.ZInt
-	_, err := core.Expand(ctx, args, &array, &sortFlagsArg)
+	_, err := core.Expand(ctx, args, core.Ref(&array), &sortFlagsArg)
 	if err != nil {
 		return nil, ctx.FuncError(err)
 	}
@@ -312,7 +312,7 @@ func fncArrayNatSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 func fncArrayNatCaseSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var array *phpv.ZArray
 	var sortFlagsArg *phpv.ZInt
-	_, err := core.Expand(ctx, args, &array, &sortFlagsArg)
+	_, err := core.Expand(ctx, args, core.Ref(&array), &sortFlagsArg)
 	if err != nil {
 		return nil, ctx.FuncError(err)
 	}

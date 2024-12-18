@@ -362,7 +362,7 @@ func fncArrayWalk(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var array *phpv.ZArray
 	var callback phpv.Callable
 	var userdata **phpv.ZVal
-	_, err := core.Expand(ctx, args, &array, &callback, &userdata)
+	_, err := core.Expand(ctx, args, core.Ref(&array), &callback, &userdata)
 	if err != nil {
 		return nil, err
 	}
@@ -388,7 +388,7 @@ func fncArrayWalkRecursive(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, err
 	var array *phpv.ZArray
 	var callback phpv.Callable
 	var userdata **phpv.ZVal
-	_, err := core.Expand(ctx, args, &array, &callback, &userdata)
+	_, err := core.Expand(ctx, args, core.Ref(&array), &callback, &userdata)
 	if err != nil {
 		return nil, err
 	}
@@ -528,7 +528,7 @@ func fncArrayShift(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	var array *phpv.ZArray
-	_, err := core.Expand(ctx, args, &array)
+	_, err := core.Expand(ctx, args, core.Ref(&array))
 	if err != nil {
 		return nil, ctx.FuncError(err)
 	}
@@ -554,7 +554,7 @@ func fncArrayShift(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // > func int array_unshift ( array &$array [, mixed $... ] )
 func fncArrayUnshift(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var array *phpv.ZArray
-	_, err := core.Expand(ctx, args, &array)
+	_, err := core.Expand(ctx, args, core.Ref(&array))
 	if err != nil {
 		return nil, ctx.FuncError(err)
 	}
@@ -604,7 +604,7 @@ func fncArrayPop(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	var array *phpv.ZArray
-	_, err := core.Expand(ctx, args, &array)
+	_, err := core.Expand(ctx, args, core.Ref(&array))
 	if err != nil {
 		return nil, ctx.FuncError(err)
 	}
@@ -801,10 +801,10 @@ func fncArrayCurrent(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return current, nil
 }
 
-// > func mixed next ( array $&array )
+// > func mixed next ( array &$array )
 func fncArrayNext(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var array *phpv.ZArray
-	_, err := core.Expand(ctx, args, &array)
+	_, err := core.Expand(ctx, args, core.Ref(&array))
 	if err != nil {
 		return nil, ctx.Error(err)
 	}
@@ -821,10 +821,10 @@ func fncArrayNext(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return current, nil
 }
 
-// > func mixed prev ( array $&array )
+// > func mixed prev ( array &$array )
 func fncArrayPrev(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var array *phpv.ZArray
-	_, err := core.Expand(ctx, args, &array)
+	_, err := core.Expand(ctx, args, core.Ref(&array))
 	if err != nil {
 		return nil, ctx.Error(err)
 	}
@@ -839,10 +839,10 @@ func fncArrayPrev(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return current, nil
 }
 
-// > func mixed reset ( array $&array )
+// > func mixed reset ( array &$array )
 func fncArrayReset(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var array *phpv.ZArray
-	_, err := core.Expand(ctx, args, &array)
+	_, err := core.Expand(ctx, args, core.Ref(&array))
 	if err != nil {
 		return nil, ctx.Error(err)
 	}
@@ -860,10 +860,10 @@ func fncArrayReset(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return current, nil
 }
 
-// > func mixed end ( array $&array )
+// > func mixed end ( array &$array )
 func fncArrayEnd(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var array *phpv.ZArray
-	_, err := core.Expand(ctx, args, &array)
+	_, err := core.Expand(ctx, args, core.Ref(&array))
 	if err != nil {
 		return nil, ctx.Error(err)
 	}
@@ -1372,7 +1372,7 @@ func fncArrayExtract(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var array *phpv.ZArray
 	var flagsArg *phpv.ZInt
 	var prefixArgs *phpv.ZString
-	_, err := core.Expand(ctx, args, &array, &flagsArg, &prefixArgs)
+	_, err := core.Expand(ctx, args, core.Ref(&array), &flagsArg, &prefixArgs)
 	if err != nil {
 		return nil, ctx.FuncError(err)
 	}
