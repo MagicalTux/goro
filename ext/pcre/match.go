@@ -8,10 +8,10 @@ import (
 // > func int preg_match ( string $pattern , string $subject [, array &$matches [, int $flags = 0 [, int $offset = 0 ]]] )
 func pregMatch(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var pattern, subject phpv.ZString
-	var matchesArg **phpv.ZArray
+	var matchesArg core.Ref[*phpv.ZArray]
 	var flagsArg, offsetArg *phpv.ZInt
 
-	_, err := core.Expand(ctx, args, &pattern, &subject, core.Ref(&matchesArg), &flagsArg, &offsetArg)
+	_, err := core.Expand(ctx, args, &pattern, &subject, &matchesArg, &flagsArg, &offsetArg)
 	if err != nil {
 		return phpv.ZFalse.ZVal(), err
 	}
@@ -39,9 +39,10 @@ func pregMatch(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZInt(0).ZVal(), nil
 	}
 
-	if matchesArg != nil {
+	if matchesArg.Value != nil {
+		matches := *matchesArg.Get()
 		for _, elem := range m.ExtractString() {
-			(*matchesArg).OffsetSet(ctx, nil, phpv.ZStr(elem))
+			matches.OffsetSet(ctx, nil, phpv.ZStr(elem))
 		}
 	}
 

@@ -621,18 +621,18 @@ func fncStrOrd(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // > func void parse_str ( string $string, array &$result )
 func fncStrParseStr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var str phpv.ZString
-	var arrayArg **phpv.ZArray
+	var arrayArg core.Ref[*phpv.ZArray]
 
-	_, err := core.Expand(ctx, args, &str, core.Ref(&arrayArg))
+	_, err := core.Expand(ctx, args, &str, &arrayArg)
 	if err != nil {
 		return nil, err
 	}
 
 	var array *phpv.ZArray
-	if arrayArg == nil {
+	if arrayArg.Value == nil {
 		array = phpv.NewZArray()
 	} else {
-		array = *arrayArg
+		array = arrayArg.Get()
 	}
 
 	u, err := url.Parse("?" + string(str))
@@ -2043,15 +2043,16 @@ func fncWordWrap(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 func strReplaceCommon(ctx phpv.Context, args []*phpv.ZVal, caseSensitive bool) (*phpv.ZVal, error) {
 	var search, replace, subject *phpv.ZVal
-	var count *phpv.ZInt
-	_, err := core.Expand(ctx, args, &search, &replace, &subject, core.Ref(&count))
+	var count core.Ref[*phpv.ZInt]
+	_, err := core.Expand(ctx, args, &search, &replace, &subject, &count)
 	if err != nil {
 		return nil, err
 	}
 
-	if count == nil {
+	if count.Value == nil {
 		// avoid crash
-		count = new(phpv.ZInt)
+		var n phpv.ZInt
+		count.Set(ctx, &n)
 	}
 
 	if subject.GetType() == phpv.ZtArray {
@@ -2106,7 +2107,7 @@ func doStrReplace(
 	ctx phpv.Context,
 	subject phpv.ZString,
 	search, replace *phpv.ZVal,
-	count *phpv.ZInt,
+	count core.Ref[*phpv.ZInt],
 	caseSensitive bool,
 ) (phpv.ZString, error) {
 	if search.GetType() == phpv.ZtArray {
@@ -2154,7 +2155,9 @@ func doStrReplace(
 
 				to_b := []byte(to.AsString(ctx))
 				subject = phpv.ZString(bytesReplace([]byte(subject), from_b, to_b, cnt, caseSensitive))
-				*count += phpv.ZInt(cnt)
+
+				n := phpv.ZInt(cnt)
+				count.Set(ctx, &n)
 
 				it1.Next(ctx)
 				it2.Next(ctx)
@@ -2196,7 +2199,9 @@ func doStrReplace(
 			}
 
 			subject = phpv.ZString(bytesReplace([]byte(subject), from_b, to_b, cnt, caseSensitive))
-			*count += phpv.ZInt(cnt)
+
+			n := phpv.ZInt(cnt)
+			count.Set(ctx, &n)
 
 			it1.Next(ctx)
 		}
@@ -2221,7 +2226,8 @@ func doStrReplace(
 
 	to_b := []byte(replace.AsString(ctx))
 	subject = phpv.ZString(bytesReplace([]byte(subject), from_b, to_b, cnt, caseSensitive))
-	*count += phpv.ZInt(cnt)
+	n := phpv.ZInt(cnt)
+	count.Set(ctx, &n)
 
 	return subject, err
 }

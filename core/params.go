@@ -10,12 +10,39 @@ import (
 
 var ErrNotEnoughArguments = errors.New("Too few arguments")
 
-type refParam struct {
-	v any
+type Referable interface {
+	refParamValue() any
+	setName(name phpv.ZString)
+	init()
 }
 
-func Ref(p any) refParam {
-	return refParam{p}
+type Ref[T phpv.Val] struct {
+	Value T
+	name  phpv.ZString
+}
+
+func (rp *Ref[T]) refParamValue() any {
+	return &rp.Value
+}
+
+func (rp *Ref[T]) setName(name phpv.ZString) {
+	rp.name = name
+}
+
+func (rp *Ref[T]) init() {
+	t := reflect.TypeFor[T]()
+	if t.Kind() == reflect.Pointer {
+		v := reflect.New(t.Elem())
+		rp.Value = v.Interface().(T)
+	}
+}
+
+func (rp *Ref[T]) Get() T {
+	return rp.Value
+}
+func (rp *Ref[T]) Set(ctx phpv.Context, value T) {
+	ctx.Parent(1).OffsetSet(ctx, rp.name, value.ZVal())
+	rp.Value = value
 }
 
 func zvalStore(ctx phpv.Context, z *phpv.ZVal, out interface{}) (phpv.Val, error) {
@@ -132,9 +159,14 @@ func zvalStore(ctx phpv.Context, z *phpv.ZVal, out interface{}) (phpv.Val, error
 
 func Expand(ctx phpv.Context, args []*phpv.ZVal, out ...interface{}) (int, error) {
 	for i, v := range out {
-		ref, isRef := v.(refParam)
+		reference, isRef := v.(Referable)
 		if isRef {
-			v = ref.v
+			if i < len(args) {
+				reference.init()
+				name := args[i].GetName()
+				reference.setName(name)
+			}
+			v = reference.refParamValue()
 		}
 
 		rv := reflect.ValueOf(v)
@@ -173,15 +205,18 @@ func Expand(ctx phpv.Context, args []*phpv.ZVal, out ...interface{}) (int, error
 			args[i] = args[i].Dup()
 		}
 
-		outVal, err := zvalStore(ctx, args[i], v)
+		out, err := zvalStore(ctx, args[i], v)
 		if err != nil {
-			return i, err
+			return i, ctx.FuncError(err)
 		}
 
 		if isRef {
 			// handle case foo($bar) where $bar is undefined
 			// and foo takes a reference
-			ctx.Parent(1).OffsetSet(ctx, args[i].GetName(), outVal.ZVal())
+			name := args[i].GetName()
+			outZVal := out.ZVal()
+			outZVal.Name = &name
+			ctx.Parent(1).OffsetSet(ctx, outZVal.Name, outZVal)
 		}
 	}
 	return len(out), nil

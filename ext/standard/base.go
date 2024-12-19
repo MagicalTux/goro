@@ -3,7 +3,6 @@ package standard
 import (
 	"errors"
 	"net"
-	"os"
 	"strings"
 	"unicode"
 
@@ -169,16 +168,13 @@ func fncInetPton(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 func fncGetOpt(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var optionsArg phpv.ZString
 	var longOpts **phpv.ZArray
-	var optionIndex *phpv.ZInt
+	var optionIndex core.Ref[*phpv.ZInt]
 	_, err := core.Expand(ctx, args, &optionsArg, &longOpts, &optionIndex)
 	if err != nil {
 		return nil, err
 	}
 
-	if optionIndex != nil {
-		// TODO: do this when pass by reference is working
-		return nil, ctx.Errorf("$optind is not yet implemented")
-	}
+	// TODO: create Optional type instead of double pointers for optional args
 
 	const (
 		argNoValue = iota
@@ -223,12 +219,17 @@ func fncGetOpt(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		}
 	}
 
+	i := 1
 	argv := ctx.Global().Argv()
-	for i := 0; i < len(argv); i++ {
+
+	for ; i < len(argv); i++ {
 		arg := argv[i]
 
-		switch {
-		case strings.HasPrefix(arg, "--"):
+		if !strings.HasPrefix(arg, "-") {
+			break
+		}
+
+		if strings.HasPrefix(arg, "--") {
 			arg = arg[2:]
 			var argName, argVal string
 			eqIndex := strings.Index(arg, "=")
@@ -247,9 +248,9 @@ func fncGetOpt(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			case argNoValue:
 				result.OffsetSet(ctx, phpv.ZStr(argName), phpv.ZFalse.ZVal())
 			case argRequired:
-				if argVal == "" && i < len(os.Args) {
+				if argVal == "" && i < len(argv) {
+					argVal = argv[i]
 					i++
-					argVal = os.Args[i]
 				}
 				if argVal != "" {
 					result.OffsetSet(ctx, phpv.ZStr(argName), phpv.ZStr(argVal))
@@ -261,8 +262,7 @@ func fncGetOpt(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 					result.OffsetSet(ctx, phpv.ZStr(argName), phpv.ZFalse.ZVal())
 				}
 			}
-
-		case strings.HasPrefix(arg, "-"):
+		} else {
 			arg = arg[1:]
 
 			for j := 0; j < len(arg); j++ {
@@ -294,11 +294,11 @@ func fncGetOpt(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 					}
 					value := arg[j:]
 					if value == "" {
-						if i+1 < len(os.Args) {
+						if i+1 < len(argv) {
 							// always get the following arg, even if it starts with -
 							// e.g.: -q -w must give -q="-w"
 							i++
-							value = string(os.Args[i])
+							value = string(argv[i])
 							result.OffsetSet(ctx, phpv.ZStr(c), phpv.ZStr(value))
 						}
 					} else {
@@ -326,6 +326,11 @@ func fncGetOpt(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				}
 			}
 		}
+	}
+
+	if optionIndex.Value != nil {
+		idx := phpv.ZInt(i)
+		optionIndex.Set(ctx, &idx)
 	}
 
 	return result.ZVal(), nil
