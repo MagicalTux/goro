@@ -10,7 +10,52 @@ import (
 
 var ErrNotEnoughArguments = errors.New("Too few arguments")
 
-type Referable interface {
+type optionable interface {
+	getOptionalValue() any
+}
+
+type Optional[T phpv.Val] struct {
+	value *T
+}
+
+func (o *Optional[T]) getOptionalValue() any {
+	if o.value == nil {
+		var empty T
+		o.value = &empty
+	}
+	return o.value
+}
+
+func (o *Optional[T]) Get() T {
+	var empty T
+	if o.value == nil {
+		return empty
+	}
+	return *o.value
+}
+
+func (o *Optional[T]) GetType() phpv.ZType {
+	return o.Get().GetType()
+}
+func (o *Optional[T]) ZVal() *phpv.ZVal {
+	return o.Get().ZVal()
+}
+func (o *Optional[T]) Value() phpv.Val {
+	return o.Get()
+}
+func (o *Optional[T]) AsVal(ctx phpv.Context, t phpv.ZType) (phpv.Val, error) {
+	return o.Get().AsVal(ctx, t)
+}
+
+func (o *Optional[T]) String() string {
+	return o.Get().String()
+}
+
+func (or *Optional[T]) HasArg() bool {
+	return or.value != nil
+}
+
+type referable interface {
 	refParamValue() any
 	setName(name phpv.ZString)
 	init()
@@ -40,9 +85,27 @@ func (rp *Ref[T]) init() {
 func (rp *Ref[T]) Get() T {
 	return rp.Value
 }
+
 func (rp *Ref[T]) Set(ctx phpv.Context, value T) {
 	ctx.Parent(1).OffsetSet(ctx, rp.name, value.ZVal())
 	rp.Value = value
+}
+
+type optionalReferable interface {
+	referable
+	setHasValue(bool)
+}
+type OptionalRef[T phpv.Val] struct {
+	Ref[T]
+	isSet bool
+}
+
+func (or *OptionalRef[T]) setHasValue(ok bool) {
+	or.isSet = ok
+}
+
+func (or *OptionalRef[T]) HasArg() bool {
+	return or.isSet
 }
 
 func zvalStore(ctx phpv.Context, z *phpv.ZVal, out interface{}) (phpv.Val, error) {
@@ -158,40 +221,64 @@ func zvalStore(ctx phpv.Context, z *phpv.ZVal, out interface{}) (phpv.Val, error
 }
 
 func Expand(ctx phpv.Context, args []*phpv.ZVal, out ...interface{}) (int, error) {
+loop:
 	for i, v := range out {
-		reference, isRef := v.(Referable)
-		if isRef {
+		isRef := false
+		switch r := v.(type) {
+		case optionalReferable:
+			if i >= len(args) {
+				continue loop
+			}
+			isRef = true
+			r.setHasValue(true)
+			name := args[i].GetName()
+			r.setName(name)
+			v = r.refParamValue()
+		case referable:
+			isRef = true
 			if i < len(args) {
-				reference.init()
+				r.init()
 				name := args[i].GetName()
-				reference.setName(name)
+				r.setName(name)
 			}
-			v = reference.refParamValue()
-		}
+			v = r.refParamValue()
+		case optionable:
+			if len(args) <= i {
+				// end of argments
+				continue
+			}
+			v = r.getOptionalValue()
+		default:
+			rv := reflect.ValueOf(v)
 
-		rv := reflect.ValueOf(v)
+			if rv.Kind() != reflect.Ptr {
+				panic("expand requires arguments to be pointers")
+			}
 
-		if rv.Kind() != reflect.Ptr {
-			panic("expand requires arguments to be pointers")
-		}
-		if rv.Type().Elem().Kind() == reflect.Ptr {
-			switch rv.Type().Elem() {
-			// these are expected to be pointers
-			case reflect.TypeOf(&phpv.ZVal{}):
-			case reflect.TypeOf(&phpobj.ZObject{}):
-			case reflect.TypeOf(&phpv.ZArray{}):
-			default:
-				// pointer of pointer → optional argument
-				if len(args) <= i {
-					// end of argments
-					continue
+			if rv.Type().Elem().Kind() == reflect.Ptr {
+				// TODO: remove instances of *blah with Optional[blah] then remove this part
+
+				switch rv.Type().Elem() {
+				// these are expected to be pointers
+				case reflect.TypeOf(&phpv.ZVal{}):
+				case reflect.TypeOf(&phpobj.ZObject{}):
+				case reflect.TypeOf(&phpv.ZArray{}):
+
+				default:
+					// pointer of pointer → optional argument
+					if len(args) <= i {
+						// end of argments
+						continue
+					}
+
+					// we have an argument → instanciate and update v to point to the subvalue
+					newv := reflect.New(rv.Type().Elem().Elem())
+					rv.Elem().Set(newv)
+					v = newv.Interface()
 				}
-				// we have an argument → instanciate and update v to point to the subvalue
-				newv := reflect.New(rv.Type().Elem().Elem())
-				rv.Elem().Set(newv)
-				v = newv.Interface()
 			}
 		}
+
 		if len(args) <= i {
 			// not enough arguments, such errors in PHP can be returned as either:
 			// Uncaught ArgumentCountError: Too few arguments to function toto(), 0 passed

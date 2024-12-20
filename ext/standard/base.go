@@ -168,13 +168,11 @@ func fncInetPton(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 func fncGetOpt(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var optionsArg phpv.ZString
 	var longOpts **phpv.ZArray
-	var optionIndex core.Ref[*phpv.ZInt]
+	var optionIndex core.OptionalRef[phpv.ZInt]
 	_, err := core.Expand(ctx, args, &optionsArg, &longOpts, &optionIndex)
 	if err != nil {
 		return nil, err
 	}
-
-	// TODO: create Optional type instead of double pointers for optional args
 
 	const (
 		argNoValue = iota
@@ -328,9 +326,8 @@ func fncGetOpt(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		}
 	}
 
-	if optionIndex.Value != nil {
-		idx := phpv.ZInt(i)
-		optionIndex.Set(ctx, &idx)
+	if optionIndex.HasArg() {
+		optionIndex.Set(ctx, phpv.ZInt(i))
 	}
 
 	return result.ZVal(), nil
