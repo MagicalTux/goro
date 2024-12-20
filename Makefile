@@ -7,12 +7,10 @@ all:
 sapi/php-cli/php-cli:
 	make -C sapi/php-cli
 
-cli: **.go
+php-cli: $(shell find -iname '*.go')
+	echo building cli
 	make buildext
 	go build -gcflags="all=-N -l" ./sapi/php-cli
-
-cli-run: cli
-	./sapi/php-cli/php-cli $(file)
 
 sapi/php-httpd/php-httpd:
 	make -C sapi/php-httpd
@@ -21,8 +19,6 @@ sapi: sapi/php-cli/php-cli sapi/php-httpd/php-httpd
 
 test:
 	go test
-testrun:
-	go run sapi/php-test/main.go $(file)
 
 http:
 	$(RM) sapi/php-httpd/php-httpd
