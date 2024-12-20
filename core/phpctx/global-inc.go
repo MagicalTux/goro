@@ -1,7 +1,6 @@
 package phpctx
 
 import (
-	"log"
 	"os"
 
 	"github.com/MagicalTux/goro/core/phperr"
@@ -90,8 +89,6 @@ func (c *Global) Require(ctx phpv.Context, fn phpv.ZString) (*phpv.ZVal, error) 
 	if err != nil {
 		return nil, err
 	}
-
-	log.Printf("about to run: %s", phpv.DebugDump(code))
 
 	return phperr.CatchReturn(code.Run(ctx))
 }

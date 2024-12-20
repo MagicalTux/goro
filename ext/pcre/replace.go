@@ -2,7 +2,6 @@ package pcre
 
 import (
 	"errors"
-	"log"
 	"unicode/utf8"
 
 	"github.com/MagicalTux/goro/core"
@@ -89,10 +88,7 @@ func prepareRegexp(pattern string) (gopcre.Regexp, error) {
 	if !found {
 		return gopcre.Regexp{}, errors.New("end delimiter missing from pattern")
 	}
-	mod := pattern[pos+d_len:]
 	pattern = pattern[:pos]
-
-	log.Printf("PCRE: pattern=%s modifier=%s", pattern, mod)
 
 	return gopcre.Compile(pattern, 0) // TODO
 }
