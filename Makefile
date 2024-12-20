@@ -8,7 +8,8 @@ sapi/php-cli/php-cli:
 	make -C sapi/php-cli
 
 cli: **.go
-	make -C sapi/php-cli
+	make buildext
+	go build -gcflags="all=-N -l" ./sapi/php-cli
 
 cli-run: cli
 	./sapi/php-cli/php-cli $(file)
