@@ -105,7 +105,7 @@ https://github.com/php/php-src/blob/master/run-tests.php
 This test runner still usable for the php-7 tests, but
 more improvements and features (such as colored output).
 
-To use the latest test runner, a php-8 must first be installed.
+To use the latest test runner, PHP-8 must first be installed.
 Then to run the basic tests, do the following:
 ```
 ./test/run-tests.php -p ./php-cli test/basic
@@ -115,9 +115,18 @@ it will use the official PHP, which is not what you want for testing purposes.
 The `test/basic` contains the all the basic tests. You can pick any other
 directories that contain tests.
 
+There's a helper script that allows you to omit -p:
+```
+./run-tests.sh test/basic
+# same as ./test/run-tests.php -p ./php-cli test/basic
+```
+
+To run run a specific test file and show how the test failed:
+```
+./run-tests.sh --show-all test/basic/strings/addslashes_basic.phpt
+```
+
 Use -h to show what options run-tests.php has:
 ```
-./test/run-tests.php -h
+./run-tests.sh -h
 ```
-
-
