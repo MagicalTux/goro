@@ -34,6 +34,13 @@ func (o *Optional[T]) Get() T {
 	return *o.value
 }
 
+func (o *Optional[T]) GetOrDefault(defaultVal T) T {
+	if o.value == nil {
+		return defaultVal
+	}
+	return *o.value
+}
+
 func (o *Optional[T]) GetType() phpv.ZType {
 	return o.Get().GetType()
 }
@@ -102,6 +109,13 @@ type OptionalRef[T phpv.Val] struct {
 
 func (or *OptionalRef[T]) setHasValue(ok bool) {
 	or.isSet = ok
+}
+
+func (or *OptionalRef[T]) GetOrDefault(defaultVal T) T {
+	if !or.isSet {
+		return defaultVal
+	}
+	return or.Value
 }
 
 func (or *OptionalRef[T]) HasArg() bool {
