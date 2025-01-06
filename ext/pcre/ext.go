@@ -3,6 +3,7 @@ package pcre
 import (
 	"github.com/MagicalTux/goro/core"
 	"github.com/MagicalTux/goro/core/phpctx"
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -12,7 +13,7 @@ func init() {
 	phpctx.RegisterExt(&phpctx.Ext{
 		Name:    "pcre",
 		Version: core.VERSION,
-		Classes: []phpv.ZClass{},
+		Classes: []*phpobj.ZClass{},
 		// Note: ExtFunctionArg is currently unused
 		Functions: map[string]*phpctx.ExtFunction{
 			"preg_match":   {Func: pregMatch, Args: []*phpctx.ExtFunctionArg{}},

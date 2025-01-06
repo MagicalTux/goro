@@ -3,6 +3,7 @@ package gmp
 import (
 	"github.com/MagicalTux/goro/core"
 	"github.com/MagicalTux/goro/core/phpctx"
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -12,7 +13,7 @@ func init() {
 	phpctx.RegisterExt(&phpctx.Ext{
 		Name:    "gmp",
 		Version: core.VERSION,
-		Classes: []phpv.ZClass{
+		Classes: []*phpobj.ZClass{
 			GMP,
 		},
 		// Note: ExtFunctionArg is currently unused

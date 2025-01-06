@@ -3,6 +3,7 @@ package hash
 import (
 	"github.com/MagicalTux/goro/core"
 	"github.com/MagicalTux/goro/core/phpctx"
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -12,7 +13,7 @@ func init() {
 	phpctx.RegisterExt(&phpctx.Ext{
 		Name:    "hash",
 		Version: core.VERSION,
-		Classes: []phpv.ZClass{
+		Classes: []*phpobj.ZClass{
 			HashContext,
 		},
 		// Note: ExtFunctionArg is currently unused

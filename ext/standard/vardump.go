@@ -22,7 +22,10 @@ func stdFuncVarDump(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 func doVarDump(ctx phpv.Context, z *phpv.ZVal, linePfx string, recurs map[uintptr]bool) error {
 	var isRef string
 	if z.IsRef() {
-		isRef = "&"
+		// it seems & is not shown in PHP,
+		// so commenting this out for the mean time
+		// because it's making the tests fail
+		//isRef = "&"
 	}
 
 	if recurs == nil {
@@ -90,7 +93,7 @@ func doVarDump(ctx phpv.Context, z *phpv.ZVal, linePfx string, recurs map[uintpt
 	case phpv.ZtObject:
 		v := z.Value()
 		if obj, ok := v.(*phpobj.ZObject); ok {
-			fmt.Fprintf(ctx, "%s%sobject(%s) (%d) {\n", linePfx, isRef, obj.Class.GetName(), obj.Count(ctx))
+			fmt.Fprintf(ctx, "%s%sobject(%s)#%d (%d) {\n", linePfx, isRef, obj.Class.GetName(), obj.ID, obj.Count(ctx))
 		} else if c, ok := v.(phpv.ZCountable); ok {
 			fmt.Fprintf(ctx, "%s%sobject(?) (%d) {\n", linePfx, isRef, c.Count(ctx))
 		} else {

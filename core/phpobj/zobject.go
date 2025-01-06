@@ -10,6 +10,7 @@ type ZObject struct {
 
 	// for use with custom extension objects
 	Opaque map[phpv.ZClass]interface{}
+	ID     int
 }
 
 func (z *ZObject) ZVal() *phpv.ZVal {
@@ -55,7 +56,7 @@ func NewZObject(ctx phpv.Context, c phpv.ZClass) (*ZObject, error) {
 	if c == nil {
 		c = StdClass
 	}
-	n := &ZObject{h: phpv.NewHashTable(), Class: c}
+	n := &ZObject{h: phpv.NewHashTable(), Class: c, ID: c.NextInstanceID()}
 	return n, n.init(ctx)
 }
 

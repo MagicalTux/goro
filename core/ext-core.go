@@ -13,7 +13,7 @@ func init() {
 	phpctx.RegisterExt(&phpctx.Ext{
 		Name:    "Core",
 		Version: VERSION,
-		Classes: []phpv.ZClass{
+		Classes: []*phpobj.ZClass{
 			phpobj.ArrayAccess,
 			compiler.Closure,
 			phpobj.Exception,

@@ -1,6 +1,7 @@
 package phpctx
 
 import "github.com/MagicalTux/goro/core/phpv"
+import "github.com/MagicalTux/goro/core/phpobj"
 
 var (
 	globalExtMap  map[string]*Ext          = make(map[string]*Ext)
@@ -12,7 +13,7 @@ type Ext struct {
 	Version   string
 	Functions map[string]*ExtFunction
 	Constants map[phpv.ZString]phpv.Val
-	Classes   []phpv.ZClass
+	Classes   []*phpobj.ZClass
 }
 
 type ExtFunction struct {

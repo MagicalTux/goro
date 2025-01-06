@@ -26,6 +26,8 @@ type ZClass struct {
 	Methods     map[phpv.ZString]*phpv.ZClassMethod
 	StaticProps *phpv.ZHashTable
 
+	nextIntanceID int
+
 	// class specific handlers
 	H *phpv.ZClassHandlers
 }
@@ -150,4 +152,10 @@ func (c *ZClass) Handlers() *phpv.ZClassHandlers {
 
 func (c *ZClass) GetParent() phpv.ZClass {
 	return c.Extends
+}
+
+func (c *ZClass) NextInstanceID() int {
+	c.nextIntanceID++
+	id := c.nextIntanceID
+	return id
 }

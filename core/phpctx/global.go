@@ -13,6 +13,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/random"
 	"github.com/MagicalTux/goro/core/stream"
@@ -38,7 +39,7 @@ type Global struct {
 
 	// this is the actual environment (defined functions, classes, etc)
 	globalFuncs   map[phpv.ZString]phpv.Callable
-	globalClasses map[phpv.ZString]phpv.ZClass // TODO replace *ZClass with a nice interface
+	globalClasses map[phpv.ZString]*phpobj.ZClass // TODO replace *ZClass with a nice interface
 	constant      map[phpv.ZString]phpv.Val
 	environ       *phpv.ZHashTable
 	fHandler      map[string]stream.Handler
@@ -94,7 +95,7 @@ func createGlobal(p *Process) *Global {
 		h:               phpv.NewHashTable(),
 		l:               &phpv.Loc{Filename: "unknown", Line: 1},
 		globalFuncs:     make(map[phpv.ZString]phpv.Callable),
-		globalClasses:   make(map[phpv.ZString]phpv.ZClass),
+		globalClasses:   make(map[phpv.ZString]*phpobj.ZClass),
 		constant:        make(map[phpv.ZString]phpv.Val),
 		fHandler:        make(map[string]stream.Handler),
 		included:        make(map[phpv.ZString]bool),
@@ -132,7 +133,10 @@ func (g *Global) init() {
 			g.globalFuncs[phpv.ZString(k)] = v
 		}
 		for _, c := range e.Classes {
-			g.globalClasses[c.GetName().ToLower()] = c
+			// copy c since class state (i.e. next instance id)
+			// should be per context global, and not Go global
+			classCopy := *c
+			g.globalClasses[c.GetName().ToLower()] = &classCopy
 		}
 	}
 
@@ -425,7 +429,7 @@ func (g *Global) RegisterClass(name phpv.ZString, c phpv.ZClass) error {
 	if _, ok := g.globalClasses[name]; ok {
 		return fmt.Errorf("Cannot declare class %s, because the name is already in use", name)
 	}
-	g.globalClasses[name] = c
+	g.globalClasses[name] = c.(*phpobj.ZClass)
 	delete(g.globalLazyClass, name)
 	return nil
 }

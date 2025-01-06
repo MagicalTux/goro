@@ -25,6 +25,7 @@ type ZClass interface {
 	GetMethod(name ZString) (*ZClassMethod, bool)
 	Handlers() *ZClassHandlers
 	GetParent() ZClass
+	NextInstanceID() int
 }
 
 type ZObjectAccess interface {
