@@ -17,6 +17,7 @@ type Ext struct {
 }
 
 type ExtFunction struct {
+	phpv.CallableVal
 	name string
 	Func func(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	Args []*ExtFunctionArg

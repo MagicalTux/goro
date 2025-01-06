@@ -10,6 +10,7 @@ import (
 )
 
 type ZClosure struct {
+	phpv.CallableVal
 	name  phpv.ZString
 	args  []*phpv.FuncArg
 	use   []*phpv.FuncUse

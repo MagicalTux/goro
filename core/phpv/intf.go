@@ -37,6 +37,7 @@ type Writable interface {
 }
 
 type Callable interface {
+	Val
 	Name() string
 	Call(ctx Context, args []*ZVal) (*ZVal, error)
 }

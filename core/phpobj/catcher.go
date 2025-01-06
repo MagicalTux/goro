@@ -1,8 +1,11 @@
 package phpobj
 
-import "github.com/MagicalTux/goro/core/phpv"
+import (
+	"github.com/MagicalTux/goro/core/phpv"
+)
 
 type callCatcher struct {
+	phpv.CallableVal
 	name   phpv.ZString
 	target phpv.Callable
 }

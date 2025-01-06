@@ -102,7 +102,7 @@ func (o *ZObject) GetMethod(method phpv.ZString, ctx phpv.Context) (phpv.Callabl
 	if !ok {
 		m, ok = class.Methods["__call"]
 		if ok {
-			return &callCatcher{method, m.Method}, nil
+			return &callCatcher{phpv.CallableVal{}, method, m.Method}, nil
 		}
 		return nil, ctx.Errorf("Call to undefined method %s::%s()", o.Class.GetName(), method)
 	}

@@ -1,6 +1,8 @@
 package phpobj
 
 import (
+	"errors"
+
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -15,4 +17,17 @@ func (m NativeMethod) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, err
 	}
 
 	return m(ctx, this.(*ZObject), args)
+}
+
+func (m NativeMethod) GetType() phpv.ZType { return phpv.ZtCallable }
+func (m NativeMethod) ZVal() *phpv.ZVal    { return phpv.NewZVal(m) }
+func (m NativeMethod) Value() phpv.Val     { return m }
+func (m NativeMethod) AsVal(ctx phpv.Context, t phpv.ZType) (phpv.Val, error) {
+	if t == phpv.ZtCallable {
+		return m, nil
+	}
+	return nil, errors.New("Cannot cast callables to other type")
+}
+func (m NativeMethod) String() string {
+	return "Callable"
 }

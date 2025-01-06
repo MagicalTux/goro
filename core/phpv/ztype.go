@@ -15,6 +15,7 @@ const (
 	ZtArray
 	ZtObject
 	ZtResource
+	ZtCallable
 )
 
 // global NULL for easy call
