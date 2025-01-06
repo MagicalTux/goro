@@ -7,9 +7,11 @@ import (
 	"math/rand/v2"
 	"regexp"
 	"slices"
+	"strconv"
 
 	"github.com/MagicalTux/goro/core"
 	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/MagicalTux/goro/core/util"
 )
 
 // > const
@@ -979,14 +981,70 @@ func fncArrayChunk(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return result.ZVal(), nil
 }
 
+func getArrayKeyValue(ctx phpv.Context, s *phpv.ZVal) (*phpv.ZVal, error) {
+	switch s.GetType() {
+	case phpv.ZtNull:
+		return phpv.ZInt(0).ZVal(), nil
+	case phpv.ZtBool:
+		if s.Value().(phpv.ZBool) {
+			return phpv.ZInt(1).ZVal(), nil
+		} else {
+			return phpv.ZInt(0).ZVal(), nil
+		}
+	case phpv.ZtFloat:
+		n := int(s.Value().(phpv.ZFloat))
+		return phpv.ZInt(n).ZVal(), nil
+	case phpv.ZtInt:
+		return s.Value().(phpv.ZInt).ZVal(), nil
+	case phpv.ZtObject:
+		var err error
+		s, err = s.As(ctx, phpv.ZtString)
+		if err != nil {
+			return nil, err
+		}
+		fallthrough
+	case phpv.ZtString:
+		str := s.String()
+		if util.CtypeDigit(str) {
+			i, err := strconv.ParseInt(str, 10, 64)
+			if err == nil {
+				// check if converting back results in same value
+				s2 := strconv.FormatInt(i, 10)
+				if str == s2 {
+					// ok, we can use zint
+					return phpv.ZInt(i).ZVal(), nil
+				}
+			}
+		}
+
+		return phpv.ZString(str).ZVal(), nil
+
+	default:
+		return phpv.ZString("").ZVal(), nil
+	}
+}
+
 // > func array array_column ( array $input , mixed $column_key [, mixed $index_key = NULL ] )
 func fncArrayColumn(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var array *phpv.ZArray
-	var columnKey phpv.ZString
-	var indexKeyArg *phpv.ZString
-	_, err := core.Expand(ctx, args, &array, &columnKey, &indexKeyArg)
+	var columnKeyArg *phpv.ZVal
+	var indexKeyArg core.Optional[*phpv.ZVal]
+	_, err := core.Expand(ctx, args, &array, &columnKeyArg, &indexKeyArg)
 	if err != nil {
 		return nil, ctx.FuncError(err)
+	}
+
+	columnKey, err := getArrayKeyValue(ctx, columnKeyArg)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	var indexKey *phpv.ZVal
+	if indexKeyArg.HasArg() {
+		indexKey, err = getArrayKeyValue(ctx, indexKeyArg.Get())
+		if err != nil {
+			return nil, ctx.FuncError(err)
+		}
 	}
 
 	// result is an array of { row[indexKey] : row[columnKey], ... }
@@ -1006,23 +1064,24 @@ func fncArrayColumn(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		value, _ := row.OffsetGet(ctx, columnKey)
 
 		var key *phpv.ZVal
-		if indexKeyArg != nil {
-			indexKey := (*indexKeyArg).ZVal()
-			var index phpv.ZInt
+		if indexKey != nil {
 			if exists, _ := row.OffsetExists(ctx, indexKey); !exists {
-				index = phpv.ZInt(maxIndex + 1)
+				index := phpv.ZInt(maxIndex + 1)
 				key = index.ZVal()
+				if index > maxIndex {
+					maxIndex = index
+				}
 			} else {
 				k, _ := row.OffsetGet(ctx, indexKey)
 				if k.GetType() == phpv.ZtInt {
-					index = k.AsInt(ctx)
+					index := k.AsInt(ctx)
 					key = index.ZVal()
+					if index > maxIndex {
+						maxIndex = index
+					}
 				} else {
 					key = k
 				}
-			}
-			if index > maxIndex {
-				maxIndex = index
 			}
 		}
 		result.OffsetSet(ctx, key, value)
