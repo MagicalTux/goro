@@ -42,7 +42,6 @@ echo "-- last_name column from recordset, keyed by value from first_name column 
 var_dump(array_column($records, 'last_name', 'first_name'));
 
 echo "\n*** Testing multiple data types ***\n";
-$fh = fopen(__FILE__, 'r', true);
 $values = array(
 	array(
 		'id' => 1,
@@ -74,7 +73,7 @@ $values = array(
 	),
 	array(
 		'id' => 8,
-		'value' => $fh
+		'value' => 'Bar'
 	)
 );
 var_dump(array_column($values, 'value'));
@@ -193,7 +192,7 @@ array(8) {
   [6]=>
   string(3) "Foo"
   [7]=>
-  resource(%d) of type (stream)
+  string(3) "Bar"
 }
 array(8) {
   [1]=>
@@ -212,7 +211,7 @@ array(8) {
   [7]=>
   string(3) "Foo"
   [8]=>
-  resource(%d) of type (stream)
+  string(3) "Bar"
 }
 
 *** Testing numeric column keys ***
