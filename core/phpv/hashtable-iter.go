@@ -13,6 +13,13 @@ func (z *zhashtableIterator) Current(ctx Context) (*ZVal, error) {
 	return z.cur.v, nil
 }
 
+func (z *zhashtableIterator) OmittedKey(ctx Context) bool {
+	if !z.Valid(ctx) {
+		return false
+	}
+	return z.cur.omittedKey
+}
+
 func (z *zhashtableIterator) Key(ctx Context) (*ZVal, error) {
 	if !z.Valid(ctx) {
 		return nil, nil

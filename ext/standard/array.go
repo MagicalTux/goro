@@ -10,6 +10,7 @@ import (
 	"strconv"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpctx"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/util"
 )
@@ -281,12 +282,34 @@ func fncArrayFlip(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	result := phpv.NewZArray()
 
-	for k, v := range array.Iterate(ctx) {
+	// array_flip behaves (maybe unexpectedly) in cases such as:
+	//  array_flip([1=>'one','two', 3=>'three', 4, "five"=>5])
+	//    equals to ['one'=>1, 'two'=>2, 'three'=>3, 4=>4, "five"=>5]
+	//       not to ['one'=>1, 'two'=>0, 'three'=>3, 4=>2, "five"=>5]
+	// so array_flip needs to know implicitly keyed values,
+	// and the last maxKey.
+	maxKey := phpv.ZInt(-1)
+
+	it := array.NewIterator()
+	for ; it.Valid(ctx); it.Next(ctx) {
+		k, _ := it.Key(ctx)
+		v, _ := it.Current(ctx)
+
 		switch v.GetType() {
 		case phpv.ZtInt, phpv.ZtString:
 		default:
 			ctx.Warn("Can only flip STRING and INTEGER values!")
 			continue
+		}
+
+		if k.GetType() == phpv.ZtInt {
+			n := k.AsInt(ctx)
+			if it.OmittedKey(ctx) {
+				k = (maxKey + 1).ZVal()
+				maxKey += 1
+			} else {
+				maxKey = max(maxKey, n)
+			}
 		}
 
 		result.OffsetSet(ctx, v, k)
@@ -295,19 +318,33 @@ func fncArrayFlip(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return result.ZVal(), nil
 }
 
-// > func array array_filter ( array $array [, callable $callback [, int $flag = 0 ]] )
-func fncArrayFilter(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	var array *phpv.ZArray
-	var callback phpv.Callable
-	var flagArg *phpv.ZInt
-	_, err := core.Expand(ctx, args, &array, &callback, &flagArg)
+func arrayFilterDefaultCallback(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var x *phpv.ZVal
+	_, err := core.Expand(ctx, args, &x)
 	if err != nil {
 		return nil, err
 	}
 
+	return x.AsBool(ctx).ZVal(), nil
+}
+
+// > func array array_filter ( array $array [, callable $callback [, int $flag = 0 ]] )
+func fncArrayFilter(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var array *phpv.ZArray
+	var callbackArg core.Optional[phpv.Callable]
+	var flagArg core.Optional[phpv.ZInt]
+	_, err := core.Expand(ctx, args, &array, &callbackArg, &flagArg)
+	if err != nil {
+		return nil, err
+	}
+
+	callback := callbackArg.GetOrDefault(&phpctx.ExtFunction{
+		Func: arrayFilterDefaultCallback,
+	})
+
 	var flag phpv.ZInt = 0
-	if flagArg != nil {
-		flag = *flagArg
+	if flagArg.HasArg() {
+		flag = flagArg.Get()
 	}
 
 	result := phpv.NewZArray()
