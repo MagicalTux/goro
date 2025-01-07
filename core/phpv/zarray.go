@@ -26,6 +26,9 @@ func getArrayKeyValue(s Val) (ZInt, ZString, bool) {
 		} else {
 			return ZInt(0), "", true
 		}
+	case ZtFloat:
+		n := s.Value().(ZFloat)
+		return ZInt(n), "", true
 	case ZtInt:
 		return s.Value().(ZInt), "", true
 	case ZtString:
