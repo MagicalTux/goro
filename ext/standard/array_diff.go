@@ -124,7 +124,7 @@ func fncArrayUDiffAssoc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	funcArgs := make([]*phpv.ZVal, 2)
 	result := array.Dup()
 	err = arrayDiff(ctx, result, args[1:len(args)-1], func(k1, v1, k2, v2 *phpv.ZVal) (bool, error) {
-		if k1.AsString(ctx) == k2.AsString(ctx) {
+		if k1.AsString(ctx) != k2.AsString(ctx) {
 			return false, nil
 		}
 		funcArgs[0] = v1
@@ -135,6 +135,77 @@ func fncArrayUDiffAssoc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 		}
 
 		return ret.AsInt(ctx) == 0, nil
+	})
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	return result.ZVal(), nil
+}
+
+// > func array array_udiff_uassoc ( array $array1 , array $array2 [, array $... ], callable $value_compare_func , callable $key_compare_func )
+func fncArrayUDiffUAssoc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var array *phpv.ZArray
+	_, err := core.Expand(ctx, args, &array)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	if len(args) < 3 {
+		return nil, ctx.Errorf("at least 3 parameters are required, %d given", len(args))
+	}
+
+	lastArg2 := args[len(args)-2]
+	lastArg1 := args[len(args)-1]
+
+	switch lastArg1.GetType() {
+	case phpv.ZtString:
+	case phpv.ZtArray:
+	case phpv.ZtObject:
+	default:
+		return nil, ctx.FuncErrorf("expects parameter %d to be a valid callback, no array or string given", len(args)-1)
+	}
+	switch lastArg2.GetType() {
+	case phpv.ZtString:
+	case phpv.ZtArray:
+	case phpv.ZtObject:
+	default:
+		return nil, ctx.FuncErrorf("expects parameter %d to be a valid callback, no array or string given", len(args)-2)
+	}
+
+	valueCompareFunc, err := core.SpawnCallable(ctx, lastArg2)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+	keyCompareFunc, err := core.SpawnCallable(ctx, lastArg1)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	funcArgs := make([]*phpv.ZVal, 2)
+	result := array.Dup()
+	err = arrayDiff(ctx, result, args[1:len(args)-2], func(k1, v1, k2, v2 *phpv.ZVal) (bool, error) {
+		funcArgs[0] = k1
+		funcArgs[1] = k2
+		ret, err := keyCompareFunc.Call(ctx, funcArgs)
+		if err != nil {
+			return false, err
+		}
+		if ret.AsInt(ctx) != 0 {
+			return false, nil
+		}
+
+		funcArgs[0] = v1
+		funcArgs[1] = v2
+		ret, err = valueCompareFunc.Call(ctx, funcArgs)
+		if err != nil {
+			return false, err
+		}
+		if ret.AsInt(ctx) != 0 {
+			return false, nil
+		}
+
+		return true, nil
 	})
 	if err != nil {
 		return nil, ctx.FuncError(err)

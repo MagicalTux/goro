@@ -19,22 +19,22 @@ func fncArrayIntersect(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 	}
 
 	result := phpv.NewZArray()
-	for i := 1; i < len(args); i++ {
-		val, err := args[i].As(ctx, phpv.ZtArray)
-		if err != nil {
-			return nil, ctx.FuncError(err)
+
+	for k1, v1 := range array.Iterate(ctx) {
+		include := true
+		for i := 1; i < len(args); i++ {
+			val, err := args[i].As(ctx, phpv.ZtArray)
+			if err != nil {
+				return nil, ctx.FuncError(err)
+			}
+			arr := val.AsArray(ctx)
+			if ok, _ := arr.OffsetContains(ctx, v1); !ok {
+				include = false
+				break
+			}
 		}
-		arr := val.AsArray(ctx)
-		for k1, v1 := range array.Iterate(ctx) {
-			if ok, _ := result.OffsetExists(ctx, k1); ok {
-				continue
-			}
-			for _, v2 := range arr.Iterate(ctx) {
-				if ok, _ := core.StrictEquals(ctx, v1, v2); !ok {
-					continue
-				}
-				result.OffsetSet(ctx, k1, v1)
-			}
+		if include {
+			result.OffsetSet(ctx, k1, v1)
 		}
 	}
 
@@ -222,25 +222,26 @@ func fncArrayIntersectAssoc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 	}
 
 	result := phpv.NewZArray()
-	for i := 1; i < len(args); i++ {
-		val, err := args[i].As(ctx, phpv.ZtArray)
-		if err != nil {
-			return nil, ctx.FuncError(err)
+
+	for k1, v1 := range array.Iterate(ctx) {
+		include := true
+		for i := 1; i < len(args); i++ {
+			val, err := args[i].As(ctx, phpv.ZtArray)
+			if err != nil {
+				return nil, ctx.FuncError(err)
+			}
+			arr := val.AsArray(ctx)
+			if ok, _ := arr.OffsetContains(ctx, v1); !ok {
+				include = false
+				break
+			}
+			if ok, _ := arr.OffsetExists(ctx, k1); !ok {
+				include = false
+				break
+			}
 		}
-		arr := val.AsArray(ctx)
-		for k1, v1 := range array.Iterate(ctx) {
-			if ok, _ := result.OffsetExists(ctx, k1); ok {
-				continue
-			}
-			for k2, v2 := range arr.Iterate(ctx) {
-				if ok, _ := core.StrictEquals(ctx, k1, k2); !ok {
-					continue
-				}
-				if ok, _ := core.StrictEquals(ctx, v1, v2); !ok {
-					continue
-				}
-				result.OffsetSet(ctx, k1, v1)
-			}
+		if include {
+			result.OffsetSet(ctx, k1, v1)
 		}
 	}
 

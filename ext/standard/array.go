@@ -7,6 +7,7 @@ import (
 	"math/rand/v2"
 	"regexp"
 	"slices"
+	"sort"
 	"strconv"
 
 	"github.com/MagicalTux/goro/core"
@@ -259,12 +260,7 @@ func fncArrayKeys(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			}
 		}
 	} else {
-		for ; iter.Valid(ctx); iter.Next(ctx) {
-			key, err := iter.Key(ctx)
-			if err != nil {
-				return nil, err
-			}
-
+		for key := range array.Iterate(ctx) {
 			result.OffsetSet(ctx, nil, key)
 		}
 	}
@@ -606,17 +602,17 @@ func fncArrayUnshift(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 // > func int array_push ( array &$array [, mixed $... ] )
 func fncArrayPush(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	var array *phpv.ZArray
+	var array core.Ref[*phpv.ZArray]
 	_, err := core.Expand(ctx, args, &array)
 	if err != nil {
 		return nil, ctx.FuncError(err)
 	}
 
 	for i := 1; i < len(args); i++ {
-		array.OffsetSet(ctx, nil, args[i])
+		array.Get().OffsetSet(ctx, nil, args[i])
 	}
 
-	return phpv.ZInt(array.Count(ctx)).ZVal(), nil
+	return phpv.ZInt(array.Get().Count(ctx)).ZVal(), nil
 }
 
 // > func mixed array_pop ( array &$array )
@@ -740,27 +736,32 @@ func fncArraySlice(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	result := phpv.NewZArray()
 
-	for key, val := range result.Iterate(ctx) {
-		if key.GetType() != phpv.ZtInt {
-			result.OffsetSet(ctx, key, val)
+	i := phpv.ZInt(-1)
+	j := phpv.ZInt(0)
+	for key, val := range array.Iterate(ctx) {
+		i++
+		if i < offset {
+			continue
 		}
-	}
+		if i >= end {
+			break
+		}
 
-	if preserveKeys {
-		for key := offset; key < end; key++ {
-			val, _ := array.OffsetGet(ctx, key)
+		switch key.GetType() {
+		case phpv.ZtInt:
+			if preserveKeys {
+				result.OffsetSet(ctx, key, val)
+			} else {
+				result.OffsetSet(ctx, phpv.ZInt(j), val)
+				j++
+			}
+		case phpv.ZtString:
 			result.OffsetSet(ctx, key, val)
 		}
-	} else {
-		for key := offset; key < end; key++ {
-			destKey := phpv.ZInt(key - offset)
-			val, _ := array.OffsetGet(ctx, key)
-			result.OffsetSet(ctx, destKey, val)
-		}
+
 	}
 
 	return result.ZVal(), nil
-
 }
 
 // > func mixed array_search ( mixed $needle , array $haystack [, bool $strict = FALSE ] )
@@ -1364,13 +1365,19 @@ func fncArraySum(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, ctx.FuncError(err)
 	}
 
+	floatResult := false
 	var sum phpv.ZFloat = 0
 	for _, v := range array.Iterate(ctx) {
 		if v.GetType() == phpv.ZtArray {
 			continue
 		}
 
+		floatResult = floatResult || v.GetType() == phpv.ZtFloat
 		sum += v.AsFloat(ctx)
+	}
+
+	if !floatResult {
+		return phpv.ZInt(sum).ZVal(), nil
 	}
 
 	return sum.ZVal(), nil
@@ -1582,4 +1589,34 @@ func containsInvalidChar(s string) bool {
 	}
 
 	return true
+}
+
+// > func mixed shuffle ( array &$array )
+func fncArrayShuffle(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var array core.Ref[*phpv.ZArray]
+	_, err := core.Expand(ctx, args, &array)
+	if err != nil {
+		return phpv.ZFalse.ZVal(), ctx.FuncError(err)
+	}
+
+	var values []*phpv.ZVal
+	for _, v := range array.Get().Iterate(ctx) {
+		values = append(values, v)
+	}
+	sort.Slice(values, func(_, _ int) bool {
+		return rand.IntN(2) == 1
+	})
+
+	array.Get().Clear(ctx)
+	for _, v := range values {
+		array.Get().OffsetSet(ctx, nil, v)
+	}
+
+	return phpv.ZTrue.ZVal(), nil
+}
+
+// TODO:
+// > func array array_splice ( array &$input , int $offset [, int $length = count($input) [, mixed $replacement = array() ]] )
+func fncArraySplice(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	return nil, nil
 }
