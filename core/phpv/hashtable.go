@@ -420,3 +420,16 @@ func (z *ZHashTable) Array() *ZArray {
 func (z *ZHashTable) Count() ZInt {
 	return z.count
 }
+
+// modifies all int indices such that the first one starts with zero
+func (z *ZHashTable) ResetIntKeys() {
+	i := 0
+	for c := z.first; c != nil; c = c.next {
+		if c.k.GetType() != ZtInt {
+			continue
+		}
+		c.k = ZInt(i)
+		i++
+	}
+	z.inc = ZInt(i)
+}

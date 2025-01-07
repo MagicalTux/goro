@@ -167,6 +167,15 @@ func (a *ZArray) OffsetUnset(ctx Context, key Val) error {
 	}
 }
 
+func (a *ZArray) OffsetContains(ctx Context, val Val) (bool, error) {
+	for _, v := range a.Iterate(ctx) {
+		if ok, _ := Equals(ctx, val.ZVal(), v); ok {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func (a *ZArray) OffsetExists(ctx Context, key Val) (bool, error) {
 	if key == nil || key.GetType() == ZtNull {
 		return false, ctx.Errorf("Cannot use [] for isset")
@@ -263,4 +272,9 @@ func (a *ZArray) HashTable() *ZHashTable {
 
 func (a *ZArray) Value() Val {
 	return a
+}
+
+func (a *ZArray) Reset(ctx Context) {
+	a.h.ResetIntKeys()
+	a.h.mainIterator.Reset(ctx)
 }

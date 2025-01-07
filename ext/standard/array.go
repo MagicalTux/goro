@@ -569,6 +569,8 @@ func fncArrayShift(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, ctx.Error(err)
 	}
 
+	array.Get().Reset(ctx)
+
 	return val.ZVal(), nil
 }
 
