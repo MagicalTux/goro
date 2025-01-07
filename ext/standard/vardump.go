@@ -99,28 +99,51 @@ func doVarDump(ctx phpv.Context, z *phpv.ZVal, linePfx string, recurs map[uintpt
 		} else {
 			fmt.Fprintf(ctx, "%s%sobject(?) (#) {\n", linePfx, isRef)
 		}
+
 		localPfx := linePfx + "  "
-		it := z.NewIterator()
-		if it != nil {
-			for {
-				if !it.Valid(ctx) {
-					break
+		if obj, ok := v.(*phpobj.ZObject); ok {
+			for _, prop := range obj.Class.(*phpobj.ZClass).Props {
+				suffix := ""
+				printed := false
+				if ok {
+					switch {
+					case prop.Modifiers.IsPrivate():
+						className := string(obj.Class.GetName())
+						suffix = `:"` + className + `":private`
+					case prop.Modifiers.IsProtected():
+						suffix = ":protected"
+					}
 				}
-				k, err := it.Key(ctx)
-				if err != nil {
-					return err
+				if !printed {
+					fmt.Fprintf(ctx, "%s[\"%s\"%s]=>\n", localPfx, prop.VarName, suffix)
 				}
-				if k.GetType() == phpv.ZtInt {
-					fmt.Fprintf(ctx, "%s[%s]=>\n", localPfx, k)
-				} else {
-					fmt.Fprintf(ctx, "%s[\"%s\"]=>\n", localPfx, k)
-				}
-				v, err := it.Current(ctx)
-				if err != nil {
-					return err
-				}
+
+				v := z.HashTable().GetString(prop.VarName)
 				doVarDump(ctx, v, localPfx, recurs)
-				it.Next(ctx)
+			}
+		} else {
+			it := z.NewIterator()
+			if it != nil {
+				for {
+					if !it.Valid(ctx) {
+						break
+					}
+					k, err := it.Key(ctx)
+					if err != nil {
+						return err
+					}
+					if k.GetType() == phpv.ZtInt {
+						fmt.Fprintf(ctx, "x%s[%s]=>\n", localPfx, k)
+					} else {
+						fmt.Fprintf(ctx, "%s[\"%s\"]=>\n", localPfx, k)
+					}
+					v, err := it.Current(ctx)
+					if err != nil {
+						return err
+					}
+					doVarDump(ctx, v, localPfx, recurs)
+					it.Next(ctx)
+				}
 			}
 		}
 		fmt.Fprintf(ctx, "%s}\n", linePfx)

@@ -22,6 +22,7 @@ type ZClass interface {
 	InstanceOf(subc ZClass) bool
 	BaseName() ZString
 	GetStaticProps(ctx Context) (*ZHashTable, error)
+	GetProp(name ZString) (*ZClassProp, bool)
 	GetMethod(name ZString) (*ZClassMethod, bool)
 	Handlers() *ZClassHandlers
 	GetParent() ZClass

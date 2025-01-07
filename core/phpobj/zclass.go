@@ -141,6 +141,15 @@ func (c *ZClass) GetStaticProps(ctx phpv.Context) (*phpv.ZHashTable, error) {
 	return c.StaticProps, nil
 }
 
+func (c *ZClass) GetProp(name phpv.ZString) (*phpv.ZClassProp, bool) {
+	for _, prop := range c.Props {
+		if prop.VarName == name {
+			return prop, true
+		}
+	}
+	return nil, false
+}
+
 func (c *ZClass) GetMethod(name phpv.ZString) (*phpv.ZClassMethod, bool) {
 	r, ok := c.Methods[name]
 	return r, ok
