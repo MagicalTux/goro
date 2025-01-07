@@ -9,13 +9,6 @@ type hashTableVal struct {
 	k          Val
 	v          *ZVal
 	deleted    bool
-
-	// ommitedKey is set to true when key is ommited.
-	// For instance, [1 => 'a', 'b', 9 => 'c'], 'b' here has an ommited key.
-	// Added specifically for array_flip because it needs to distinguish
-	// array entries with omitted keys. Not sure if it's useful for
-	// anything else.
-	omittedKey bool
 }
 
 type ZHashTable struct {
@@ -117,10 +110,9 @@ func (z *ZHashTable) doCopy() error {
 			continue
 		}
 		nc = &hashTableVal{
-			k:          c.k,
-			v:          c.v.ZVal(),
-			omittedKey: c.omittedKey,
-			prev:       nc,
+			k:    c.k,
+			v:    c.v.ZVal(),
+			prev: nc,
 		}
 
 		if z.mainIterator.cur == c {
@@ -274,6 +266,11 @@ func (z *ZHashTable) SetInt(k ZInt, v *ZVal) error {
 	// append
 	nt := &hashTableVal{k: k, v: v}
 	z.count += 1
+
+	if k > z.inc {
+		z.inc = k
+	}
+
 	z._idx_i[k] = nt
 	if z.last == nil {
 		z.first = nt
@@ -342,7 +339,7 @@ func (z *ZHashTable) Append(v *ZVal) error {
 		}
 	}
 
-	nt := &hashTableVal{k: z.inc, v: v, omittedKey: true}
+	nt := &hashTableVal{k: z.inc, v: v}
 	z._idx_i[z.inc] = nt
 	z.inc += 1
 	z.count += 1
@@ -374,10 +371,9 @@ func (z *ZHashTable) MergeTable(b *ZHashTable) error {
 			continue
 		}
 		nc := &hashTableVal{
-			prev:       z.last,
-			k:          c.k,
-			v:          c.v.ZVal(),
-			omittedKey: c.omittedKey,
+			prev: z.last,
+			k:    c.k,
+			v:    c.v.ZVal(),
 		}
 		// index value
 		switch k := nc.k.(type) {

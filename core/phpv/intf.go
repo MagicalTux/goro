@@ -16,7 +16,6 @@ type ZIterable interface {
 type ZIterator interface {
 	Current(ctx Context) (*ZVal, error)
 	Key(ctx Context) (*ZVal, error)
-	OmittedKey(ctx Context) bool
 	Next(ctx Context) (*ZVal, error)
 	Prev(ctx Context) (*ZVal, error)
 	Reset(ctx Context) (*ZVal, error)

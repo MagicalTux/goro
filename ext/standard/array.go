@@ -282,14 +282,6 @@ func fncArrayFlip(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	result := phpv.NewZArray()
 
-	// array_flip behaves (maybe unexpectedly) in cases such as:
-	//  array_flip([1=>'one','two', 3=>'three', 4, "five"=>5])
-	//    equals to ['one'=>1, 'two'=>2, 'three'=>3, 4=>4, "five"=>5]
-	//       not to ['one'=>1, 'two'=>0, 'three'=>3, 4=>2, "five"=>5]
-	// so array_flip needs to know implicitly keyed values,
-	// and the last maxKey.
-	maxKey := phpv.ZInt(-1)
-
 	it := array.NewIterator()
 	for ; it.Valid(ctx); it.Next(ctx) {
 		k, _ := it.Key(ctx)
@@ -300,16 +292,6 @@ func fncArrayFlip(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		default:
 			ctx.Warn("Can only flip STRING and INTEGER values!")
 			continue
-		}
-
-		if k.GetType() == phpv.ZtInt {
-			n := k.AsInt(ctx)
-			if it.OmittedKey(ctx) {
-				k = (maxKey + 1).ZVal()
-				maxKey += 1
-			} else {
-				maxKey = max(maxKey, n)
-			}
 		}
 
 		result.OffsetSet(ctx, v, k)
@@ -1089,7 +1071,6 @@ func fncArrayColumn(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	// if row[indexKey] doesn't exist or non-numeric, use maxIndex+1 as key
 
 	result := phpv.NewZArray()
-	var maxIndex phpv.ZInt = -1
 	for _, item := range array.Iterate(ctx) {
 		if item.GetType() != phpv.ZtArray {
 			continue
@@ -1103,19 +1084,11 @@ func fncArrayColumn(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		var key *phpv.ZVal
 		if indexKey != nil {
 			if exists, _ := row.OffsetExists(ctx, indexKey); !exists {
-				index := phpv.ZInt(maxIndex + 1)
-				key = index.ZVal()
-				if index > maxIndex {
-					maxIndex = index
-				}
 			} else {
 				k, _ := row.OffsetGet(ctx, indexKey)
 				if k.GetType() == phpv.ZtInt {
 					index := k.AsInt(ctx)
 					key = index.ZVal()
-					if index > maxIndex {
-						maxIndex = index
-					}
 				} else {
 					key = k
 				}
