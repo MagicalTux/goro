@@ -393,7 +393,7 @@ type zSortComparer struct {
 }
 
 func (zv zSortComparer) regular(i, j int) bool {
-	cmp, _ := core.Compare(zv.ctx, zv.values[i].item, zv.values[j].item)
+	cmp, _ := phpv.Compare(zv.ctx, zv.values[i].item, zv.values[j].item)
 	return cmp < 0
 }
 

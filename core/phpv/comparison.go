@@ -1,12 +1,8 @@
-package core
+package phpv
 
-import (
-	"strings"
+import "strings"
 
-	"github.com/MagicalTux/goro/core/phpv"
-)
-
-func CompareObject(ctx phpv.Context, ao, bo phpv.ZObject) (int, error) {
+func CompareObject(ctx Context, ao, bo ZObject) (int, error) {
 	if ao.GetClass() != bo.GetClass() {
 		return -1, nil
 	}
@@ -32,7 +28,7 @@ func CompareObject(ctx phpv.Context, ao, bo phpv.ZObject) (int, error) {
 	return 0, nil
 }
 
-func CompareArray(ctx phpv.Context, aa, ba *phpv.ZArray) (int, error) {
+func CompareArray(ctx Context, aa, ba *ZArray) (int, error) {
 	ac := aa.Count(ctx)
 	bc := ba.Count(ctx)
 	if ac != bc {
@@ -70,44 +66,44 @@ func CompareArray(ctx phpv.Context, aa, ba *phpv.ZArray) (int, error) {
 	return 0, nil
 }
 
-func Compare(ctx phpv.Context, a, b *phpv.ZVal) (int, error) {
+func Compare(ctx Context, a, b *ZVal) (int, error) {
 	// operator compare (< > <= >= == === != !== <=>) involve a lot of dark magic in php, unless both values are of the same type (and even so)
 	// loose comparison will convert number-y looking strings into numbers, etc
-	if a.GetType() == phpv.ZtArray {
-		if b.GetType() != phpv.ZtArray {
+	if a.GetType() == ZtArray {
+		if b.GetType() != ZtArray {
 			return 1, nil
 		}
 		return CompareArray(ctx, a.AsArray(ctx), b.AsArray(ctx))
 	}
 
-	if b.GetType() == phpv.ZtArray {
-		if a.GetType() != phpv.ZtArray {
+	if b.GetType() == ZtArray {
+		if a.GetType() != ZtArray {
 			return -1, nil
 		}
 		return CompareArray(ctx, b.AsArray(ctx), a.AsArray(ctx))
 	}
 
-	var ia, ib *phpv.ZVal
+	var ia, ib *ZVal
 
 	switch a.GetType() {
-	case phpv.ZtInt, phpv.ZtFloat:
+	case ZtInt, ZtFloat:
 		ia = a
-	case phpv.ZtString:
-		if a.Value().(phpv.ZString).LooksInt() {
-			ia, _ = a.As(ctx, phpv.ZtInt)
-		} else if a.Value().(phpv.ZString).IsNumeric() {
-			ia, _ = a.As(ctx, phpv.ZtFloat)
+	case ZtString:
+		if a.Value().(ZString).LooksInt() {
+			ia, _ = a.As(ctx, ZtInt)
+		} else if a.Value().(ZString).IsNumeric() {
+			ia, _ = a.As(ctx, ZtFloat)
 		}
 	}
 
 	switch b.GetType() {
-	case phpv.ZtInt, phpv.ZtFloat:
+	case ZtInt, ZtFloat:
 		ib = b
-	case phpv.ZtString:
-		if b.Value().(phpv.ZString).LooksInt() {
-			ib, _ = b.As(ctx, phpv.ZtInt)
-		} else if b.Value().(phpv.ZString).IsNumeric() {
-			ib, _ = b.As(ctx, phpv.ZtFloat)
+	case ZtString:
+		if b.Value().(ZString).LooksInt() {
+			ib, _ = b.As(ctx, ZtInt)
+		} else if b.Value().(ZString).IsNumeric() {
+			ib, _ = b.As(ctx, ZtFloat)
 		}
 	}
 
@@ -123,15 +119,15 @@ func Compare(ctx phpv.Context, a, b *phpv.ZVal) (int, error) {
 		// perform numeric comparison
 		if ia.GetType() != ib.GetType() {
 			// normalize type - at this point as both are numeric, it means either is a float. Make them both float
-			ia, _ = ia.As(ctx, phpv.ZtFloat)
-			ib, _ = ib.As(ctx, phpv.ZtFloat)
+			ia, _ = ia.As(ctx, ZtFloat)
+			ib, _ = ib.As(ctx, ZtFloat)
 		}
 
 		var res int
 		switch ia.GetType() {
-		case phpv.ZtFloat:
-			ia := ia.Value().(phpv.ZFloat)
-			ib := ib.Value().(phpv.ZFloat)
+		case ZtFloat:
+			ia := ia.Value().(ZFloat)
+			ib := ib.Value().(ZFloat)
 			if ia < ib {
 				res = -1
 			} else if ia > ib {
@@ -139,9 +135,9 @@ func Compare(ctx phpv.Context, a, b *phpv.ZVal) (int, error) {
 			} else {
 				res = 0
 			}
-		case phpv.ZtInt:
-			ia := ia.Value().(phpv.ZInt)
-			ib := ib.Value().(phpv.ZInt)
+		case ZtInt:
+			ia := ia.Value().(ZInt)
+			ib := ib.Value().(ZInt)
 			if ia < ib {
 				res = -1
 			} else if ia > ib {
@@ -154,21 +150,21 @@ func Compare(ctx phpv.Context, a, b *phpv.ZVal) (int, error) {
 		return res, nil
 	}
 
-	if a.GetType() == phpv.ZtNull && b.GetType() == phpv.ZtNull {
+	if a.GetType() == ZtNull && b.GetType() == ZtNull {
 		return 0, nil
 	}
 
-	if a.GetType() == phpv.ZtBool || b.GetType() == phpv.ZtBool {
-		a, _ = a.As(ctx, phpv.ZtBool)
-		b, _ = b.As(ctx, phpv.ZtBool)
+	if a.GetType() == ZtBool || b.GetType() == ZtBool {
+		a, _ = a.As(ctx, ZtBool)
+		b, _ = b.As(ctx, ZtBool)
 
 		var ab, bb, res int
-		if val, ok := a.Value().(phpv.ZBool); ok && bool(val) {
+		if val, ok := a.Value().(ZBool); ok && bool(val) {
 			ab = 1
 		} else {
 			ab = 0
 		}
-		if val, ok := b.Value().(phpv.ZBool); ok && bool(val) {
+		if val, ok := b.Value().(ZBool); ok && bool(val) {
 			bb = 1
 		} else {
 			bb = 0
@@ -186,20 +182,20 @@ func Compare(ctx phpv.Context, a, b *phpv.ZVal) (int, error) {
 	}
 
 	switch a.Value().GetType() {
-	case phpv.ZtString:
-		av := string(a.Value().(phpv.ZString))
-		bv := string(b.Value().(phpv.ZString))
+	case ZtString:
+		av := string(a.Value().(ZString))
+		bv := string(b.Value().(ZString))
 		return strings.Compare(av, bv), nil
 	}
 
-	if a.GetType() == phpv.ZtObject {
-		if b.GetType() != phpv.ZtObject {
+	if a.GetType() == ZtObject {
+		if b.GetType() != ZtObject {
 			return 1, nil
 		}
 		return CompareObject(ctx, a.AsObject(ctx), b.AsObject(ctx))
 	}
-	if b.GetType() == phpv.ZtObject {
-		if a.GetType() != phpv.ZtObject {
+	if b.GetType() == ZtObject {
+		if a.GetType() != ZtObject {
 			return -1, nil
 		}
 		return CompareObject(ctx, b.AsObject(ctx), a.AsObject(ctx))
@@ -208,7 +204,7 @@ func Compare(ctx phpv.Context, a, b *phpv.ZVal) (int, error) {
 	return 0, nil
 }
 
-func Equals(ctx phpv.Context, a, b *phpv.ZVal) (bool, error) {
+func Equals(ctx Context, a, b *ZVal) (bool, error) {
 	cmp, err := Compare(ctx, a, b)
 	if err != nil {
 		return false, err
@@ -216,7 +212,7 @@ func Equals(ctx phpv.Context, a, b *phpv.ZVal) (bool, error) {
 	return cmp == 0, nil
 }
 
-func StrictEquals(ctx phpv.Context, a, b *phpv.ZVal) (bool, error) {
+func StrictEquals(ctx Context, a, b *ZVal) (bool, error) {
 	if a.GetType() != b.GetType() {
 		return false, nil
 	}

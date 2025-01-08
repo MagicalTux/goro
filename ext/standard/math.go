@@ -355,7 +355,7 @@ func mathMax(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			break
 		}
 		for _, v := range array.Iterate(ctx) {
-			cmp, err := core.Compare(ctx, max, v)
+			cmp, err := phpv.Compare(ctx, max, v)
 			if err != nil {
 				return nil, ctx.Error(err)
 			}
@@ -366,7 +366,7 @@ func mathMax(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	} else {
 		max = firstArg
 		for _, v := range args {
-			cmp, err := core.Compare(ctx, max, v)
+			cmp, err := phpv.Compare(ctx, max, v)
 			if err != nil {
 				return nil, ctx.Error(err)
 			}
