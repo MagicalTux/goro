@@ -1,5 +1,7 @@
 package phpv
 
+import "iter"
+
 type zhashtableIterator struct {
 	t   *ZHashTable
 	cur *hashTableVal
@@ -69,5 +71,17 @@ func (z *zhashtableIterator) Valid(ctx Context) bool {
 			continue
 		}
 		return true
+	}
+}
+
+func (a *zhashtableIterator) Iterate(ctx Context) iter.Seq2[*ZVal, *ZVal] {
+	return func(yield func(*ZVal, *ZVal) bool) {
+		for ; a.Valid(ctx); a.Next(ctx) {
+			key, _ := a.Key(ctx)
+			value, _ := a.Current(ctx)
+			if !yield(key.Dup(), value.Dup()) {
+				break
+			}
+		}
 	}
 }

@@ -59,6 +59,7 @@ func init() {
 			"array_search":             {Func: fncArraySearch, Args: []*phpctx.ExtFunctionArg{}},
 			"array_shift":              {Func: fncArrayShift, Args: []*phpctx.ExtFunctionArg{}},
 			"array_slice":              {Func: fncArraySlice, Args: []*phpctx.ExtFunctionArg{}},
+			"array_splice":             {Func: fncArraySplice, Args: []*phpctx.ExtFunctionArg{}},
 			"array_sum":                {Func: fncArraySum, Args: []*phpctx.ExtFunctionArg{}},
 			"array_udiff":              {Func: fncArrayUDiff, Args: []*phpctx.ExtFunctionArg{}},
 			"array_udiff_assoc":        {Func: fncArrayUDiffAssoc, Args: []*phpctx.ExtFunctionArg{}},

@@ -1,6 +1,9 @@
 package phpv
 
-import "io"
+import (
+	"io"
+	"iter"
+)
 
 type ZArrayAccess interface {
 	OffsetGet(ctx Context, key Val) (*ZVal, error)
@@ -21,6 +24,7 @@ type ZIterator interface {
 	Reset(ctx Context) (*ZVal, error)
 	End(ctx Context) (*ZVal, error)
 	Valid(ctx Context) bool
+	Iterate(ctx Context) iter.Seq2[*ZVal, *ZVal]
 }
 
 type ZCountable interface {

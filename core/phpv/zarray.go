@@ -221,16 +221,7 @@ func (a *ZArray) ByteArrayKeys(ctx Context) [][]byte {
 }
 
 func (a *ZArray) Iterate(ctx Context) iter.Seq2[*ZVal, *ZVal] {
-	return func(yield func(*ZVal, *ZVal) bool) {
-		it := a.NewIterator()
-		for ; it.Valid(ctx); it.Next(ctx) {
-			key, _ := it.Key(ctx)
-			value, _ := it.Current(ctx)
-			if !yield(key.Dup(), value.Dup()) {
-				break
-			}
-		}
-	}
+	return a.h.NewIterator().Iterate(ctx)
 }
 
 func (a *ZArray) Clear(ctx Context) error {

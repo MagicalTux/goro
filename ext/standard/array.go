@@ -1615,8 +1615,78 @@ func fncArrayShuffle(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZTrue.ZVal(), nil
 }
 
-// TODO:
 // > func array array_splice ( array &$input , int $offset [, int $length = count($input) [, mixed $replacement = array() ]] )
 func fncArraySplice(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	return nil, nil
+	var array core.Ref[*phpv.ZArray]
+	var offset phpv.ZInt
+	var lengthArg core.Optional[phpv.ZInt]
+	var replacementArg core.Optional[*phpv.ZVal]
+	_, err := core.Expand(ctx, args, &array, &offset, &lengthArg, &replacementArg)
+	if err != nil {
+		return nil, ctx.Error(err)
+	}
+
+	arrayCount := array.Get().Count(ctx)
+	length := phpv.ZInt(arrayCount)
+	replacement := phpv.NewZArray()
+
+	if offset < 0 {
+		offset = arrayCount + offset
+	}
+	if lengthArg.HasArg() {
+		length = lengthArg.Get()
+		if length < 0 {
+			length = min(arrayCount+length, arrayCount)
+		} else {
+			length = min(offset+length, arrayCount)
+		}
+	}
+
+	if replacementArg.HasArg() {
+		if replacementArg.Get().GetType() == phpv.ZtArray {
+			arr := replacementArg.Get().AsArray(ctx)
+			for _, v := range arr.Iterate(ctx) {
+				replacement.OffsetSet(ctx, nil, v)
+			}
+		} else {
+			replacement.OffsetSet(ctx, nil, replacementArg.Get())
+		}
+	}
+
+	offset = max(offset, 0)
+	end := min(length, arrayCount)
+	result := phpv.NewZArray()
+
+	it := array.Get().NewIterator()
+	array.Get().Empty(ctx)
+
+	i := phpv.ZInt(-1)
+	j := phpv.ZInt(0)
+
+	for k, v := range it.Iterate(ctx) {
+		i++
+		if i < offset || (i >= end && offset != end) {
+			if k.GetType() == phpv.ZtInt {
+				array.Get().OffsetSet(ctx, j, v)
+				j++
+			} else {
+				array.Get().OffsetSet(ctx, k, v)
+			}
+		} else {
+			if i == offset {
+				for _, v := range replacement.Iterate(ctx) {
+					array.Get().OffsetSet(ctx, j, v)
+					j++
+				}
+			}
+			if offset == end {
+				array.Get().OffsetSet(ctx, nil, v)
+				j++
+			} else {
+				result.OffsetSet(ctx, nil, v)
+			}
+		}
+	}
+
+	return result.ZVal(), nil
 }
