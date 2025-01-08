@@ -822,6 +822,9 @@ func fncArrayCurrent(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if err != nil {
 		return nil, ctx.Error(err)
 	}
+	if current == nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
 	return current, nil
 }
 
@@ -903,6 +906,45 @@ func fncArrayEnd(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZFalse.ZVal(), nil
 	}
 	return current, nil
+}
+
+// > func mixed each ( array &$array )
+func fncArrayEach(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	// TODO: ctx.WarnDeprecated(blah)
+
+	var array core.Ref[*phpv.ZArray]
+	_, err := core.Expand(ctx, args, &array)
+	if err != nil {
+		return nil, ctx.Error(err)
+	}
+	if array.Get().Count(ctx) == 0 {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	current, err := array.Get().MainIterator().Current(ctx)
+	if err != nil {
+		return nil, ctx.Error(err)
+	}
+	if current == nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+	key, err := array.Get().MainIterator().Key(ctx)
+	if err != nil {
+		return nil, ctx.Error(err)
+	}
+
+	result := phpv.NewZArray()
+	result.OffsetSet(ctx, phpv.ZInt(1).ZVal(), current)
+	result.OffsetSet(ctx, phpv.ZStr("value"), current)
+	result.OffsetSet(ctx, phpv.ZInt(0).ZVal(), key)
+	result.OffsetSet(ctx, phpv.ZStr("key"), key)
+
+	_, err = array.Get().MainIterator().Next(ctx)
+	if err != nil {
+		return nil, ctx.Error(err)
+	}
+
+	return result.ZVal(), nil
 }
 
 // > func array array_reverse ( array $array1 [, bool $preserve_keys = FALSE ] )

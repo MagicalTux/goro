@@ -379,6 +379,50 @@ func mathMax(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return max, nil
 }
 
+// > func mixed min ( array $values )
+// > func mixed min ( mixed $value1 [, mixed $... ] )
+func mathMin(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var firstArg *phpv.ZVal
+	_, err := core.Expand(ctx, args, &firstArg)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	min := phpv.ZNULL.ZVal()
+	if len(args) == 1 && firstArg.GetType() == phpv.ZtArray {
+		array := firstArg.AsArray(ctx)
+		if array.Count(ctx) == 0 {
+			return min, nil
+		}
+		for _, v := range array.Iterate(ctx) {
+			min = v
+			break
+		}
+		for _, v := range array.Iterate(ctx) {
+			cmp, err := phpv.Compare(ctx, min, v)
+			if err != nil {
+				return nil, ctx.Error(err)
+			}
+			if cmp > 0 {
+				min = v
+			}
+		}
+	} else {
+		min = firstArg
+		for _, v := range args {
+			cmp, err := phpv.Compare(ctx, min, v)
+			if err != nil {
+				return nil, ctx.Error(err)
+			}
+			if cmp > 0 {
+				min = v
+			}
+		}
+	}
+
+	return min, nil
+}
+
 // > func bool is_finite ( float $val )
 func mathIsFinite(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var val *phpv.ZVal

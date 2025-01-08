@@ -51,7 +51,8 @@ func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, t
 			// Let the Go function decide whether to Dup() or Ref() the args
 			// since the parameter info (such as isReference) is not available.
 			// To mark a parameter as reference instead, do:
-			// core.Expand(ctx, args, &arg1, core.Ref(&arg))
+			// var arg3 core.Ref[phpv.ZInt]
+			// core.Expand(ctx, args, &arg1, &arg3)
 		}
 	}
 
