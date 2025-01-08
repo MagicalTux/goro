@@ -52,9 +52,6 @@ func (z *ZHashTable) Dup() *ZHashTable {
 	}
 
 	cur := z.mainIterator.cur
-	if cur == nil {
-		cur = z.first
-	}
 	n.mainIterator = &zhashtableIterator{n, cur}
 
 	return n
@@ -63,6 +60,10 @@ func (z *ZHashTable) Dup() *ZHashTable {
 func (z *ZHashTable) Clear() {
 	z.lock.Lock()
 	defer z.lock.Unlock()
+
+	if z.cow {
+		z.doCopy()
+	}
 
 	for _, v := range z._idx_i {
 		v.deleted = true
@@ -84,6 +85,10 @@ func (z *ZHashTable) Clear() {
 func (z *ZHashTable) Empty() {
 	z.lock.Lock()
 	defer z.lock.Unlock()
+
+	if z.cow {
+		z.doCopy()
+	}
 
 	z.count = 0
 	z.inc = 0
@@ -197,6 +202,7 @@ func (z *ZHashTable) SetString(k ZString, v *ZVal) error {
 	z.count += 1
 	z._idx_s[k] = nt
 	if z.last == nil {
+		z.mainIterator.cur = nt
 		z.first = nt
 		z.last = nt
 		return nil
@@ -273,6 +279,7 @@ func (z *ZHashTable) SetInt(k ZInt, v *ZVal) error {
 
 	z._idx_i[k] = nt
 	if z.last == nil {
+		z.mainIterator.cur = nt
 		z.first = nt
 		z.last = nt
 		return nil
@@ -345,6 +352,7 @@ func (z *ZHashTable) Append(v *ZVal) error {
 	z.count += 1
 
 	if z.last == nil {
+		z.mainIterator.cur = nt
 		z.first = nt
 		z.last = nt
 		return nil
