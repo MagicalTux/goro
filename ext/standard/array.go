@@ -189,6 +189,7 @@ func fncInArray(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 }
 
 // > func bool array_key_exists (  mixed $key , array $array )
+// > alias key_exists
 func fncArrayKeyExists(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var key *phpv.ZVal
 	var array *phpv.ZArray

@@ -24,7 +24,7 @@ func fncArraySort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		})
 	}
 
-	arraySort(ctx, entries, sortFlagsArg)
+	arraySort(ctx, entries, sortFlagsArg, false)
 
 	if err = array.Get().Clear(ctx); err != nil {
 		return nil, err
@@ -53,7 +53,7 @@ func fncArrayRSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		})
 	}
 
-	arraySort(ctx, entries, sortFlagsArg)
+	arraySort(ctx, entries, sortFlagsArg, true)
 
 	if err = array.Get().Clear(ctx); err != nil {
 		return nil, err
@@ -179,7 +179,7 @@ func fncArrayKSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		})
 	}
 
-	arraySort(ctx, entries, sortFlagsArg)
+	arraySort(ctx, entries, sortFlagsArg, false)
 
 	for _, entry := range entries {
 		k := entry.item
@@ -208,7 +208,7 @@ func fncArrayKRSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		})
 	}
 
-	arraySort(ctx, entries, sortFlagsArg)
+	arraySort(ctx, entries, sortFlagsArg, true)
 
 	for _, entry := range core.IterateBackwards(entries) {
 		k := entry.item
@@ -237,7 +237,7 @@ func fncArrayASort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		})
 	}
 
-	arraySort(ctx, entries, sortFlagsArg)
+	arraySort(ctx, entries, sortFlagsArg, false)
 
 	for _, entry := range entries {
 		k := entry.data
@@ -266,7 +266,7 @@ func fncArrayARSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		})
 	}
 
-	arraySort(ctx, entries, sortFlagsArg)
+	arraySort(ctx, entries, sortFlagsArg, true)
 
 	for _, entry := range core.IterateBackwards(entries) {
 		k := entry.data
@@ -296,7 +296,7 @@ func fncArrayNatSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	sortFlags := SORT_NATURAL
-	arraySort(ctx, entries, &sortFlags)
+	arraySort(ctx, entries, &sortFlags, false)
 
 	for _, entry := range entries {
 		k := entry.data
@@ -326,7 +326,7 @@ func fncArrayNatCaseSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error
 	}
 
 	sortFlags := SORT_NATURAL | SORT_FLAG_CASE
-	arraySort(ctx, entries, &sortFlags)
+	arraySort(ctx, entries, &sortFlags, false)
 
 	for _, entry := range entries {
 		k := entry.data
@@ -338,7 +338,7 @@ func fncArrayNatCaseSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error
 	return phpv.ZTrue.ZVal(), nil
 }
 
-func arraySort(ctx phpv.Context, entries []compareEntry, sortFlagsArg *phpv.ZInt) {
+func arraySort(ctx phpv.Context, entries []compareEntry, sortFlagsArg *phpv.ZInt, reversed bool) {
 	caseInsensitive := false
 	sortFlags := SORT_REGULAR
 
@@ -348,7 +348,7 @@ func arraySort(ctx phpv.Context, entries []compareEntry, sortFlagsArg *phpv.ZInt
 		sortFlags &= ^SORT_FLAG_CASE
 	}
 
-	sortBy := zSortComparer{ctx, entries, caseInsensitive}
+	sortBy := zSortComparer{ctx, entries, caseInsensitive, reversed}
 	sortFn := sortBy.regular
 
 	switch sortFlags {
@@ -383,13 +383,22 @@ func arrayUSort(ctx phpv.Context, entries []compareEntry, compare phpv.Callable)
 }
 
 type compareEntry struct {
+	// item is the one to be compared
+	// can be either the key or value
 	item *phpv.ZVal
+
+	// data is the supplementary info,
+	// if item is the key, then data is the value,
+	// if item is the value, then data is the key,
+	// this is needed to maintain index association
 	data *phpv.ZVal
 }
+
 type zSortComparer struct {
 	ctx             phpv.Context
 	values          []compareEntry
 	caseInsensitive bool
+	reversed        bool
 }
 
 func (zv zSortComparer) regular(i, j int) bool {
@@ -407,14 +416,29 @@ func (zv zSortComparer) stringly(i, j int) bool {
 	a := string(zv.values[i].item.AsString(zv.ctx))
 	b := string(zv.values[j].item.AsString(zv.ctx))
 	if zv.caseInsensitive {
-		a = strings.ToLower(a)
-		b = strings.ToLower(b)
+		// this is to handle cases where
+		// ["Orange", "orange"] is backwards,
+		// this fixes rsort, arsort and krsort
+		a = strings.ToUpper(a)
+		b = strings.ToUpper(b)
+		if a == b {
+			return zv.reversed
+		}
 	}
 	return strings.Compare(a, b) < 0
 }
 
 func (zv zSortComparer) naturally(i, j int) bool {
-	a := []byte(zv.values[i].item.AsString(zv.ctx))
-	b := []byte(zv.values[j].item.AsString(zv.ctx))
+	s1 := string(zv.values[i].item.AsString(zv.ctx))
+	s2 := string(zv.values[j].item.AsString(zv.ctx))
+	if zv.caseInsensitive {
+		s1 = strings.ToUpper(s1)
+		s2 = strings.ToUpper(s2)
+		if s1 == s2 {
+			return zv.reversed
+		}
+	}
+	a := []byte(s1)
+	b := []byte(s2)
 	return natCmp(a, b, !zv.caseInsensitive) < 0
 }

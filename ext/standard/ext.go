@@ -164,6 +164,7 @@ func init() {
 			"is_string":                {Func: fncIsString, Args: []*phpctx.ExtFunctionArg{}},
 			"join":                     {Func: fncStrImplode, Args: []*phpctx.ExtFunctionArg{}}, // alias
 			"key":                      {Func: fncArrayKey, Args: []*phpctx.ExtFunctionArg{}},
+			"key_exists":               {Func: fncArrayKeyExists, Args: []*phpctx.ExtFunctionArg{}}, // alias
 			"krsort":                   {Func: fncArrayKRSort, Args: []*phpctx.ExtFunctionArg{}},
 			"ksort":                    {Func: fncArrayKSort, Args: []*phpctx.ExtFunctionArg{}},
 			"lcfirst":                  {Func: fncStrLcFirst, Args: []*phpctx.ExtFunctionArg{}},
