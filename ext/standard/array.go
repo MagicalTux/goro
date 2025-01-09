@@ -116,6 +116,8 @@ func fncArrayMerge(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		}
 	}
 
+	a.Reset(ctx)
+
 	return a.ZVal(), nil
 }
 
