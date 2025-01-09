@@ -179,6 +179,18 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		}
 	}
 
+	// short-circuit evaluation
+	switch r.op {
+	case tokenizer.T_LOGICAL_AND, tokenizer.T_BOOLEAN_AND:
+		if !a.AsBool(ctx) {
+			return phpv.ZFalse.ZVal(), nil
+		}
+	case tokenizer.T_LOGICAL_OR, tokenizer.T_BOOLEAN_OR:
+		if a.AsBool(ctx) {
+			return phpv.ZTrue.ZVal(), nil
+		}
+	}
+
 	if r.b != nil {
 		b, err = r.b.Run(ctx)
 		if err != nil {
