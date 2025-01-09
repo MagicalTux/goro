@@ -53,7 +53,9 @@ func (z ZNull) AsVal(ctx Context, t ZType) (Val, error) {
 		return ZString(""), nil
 	case ZtArray:
 		return NewZArray(), nil
-		// TODO ZtObject
+	case ZtObject:
+		// TODO: cyclic dependency phpv -> phpobj
+		// return phpobj.NewZObject(ctx, phpobj.StdClass)
 	}
 	return nil, nil
 }
@@ -90,6 +92,10 @@ func (z ZBool) AsVal(ctx Context, t ZType) (Val, error) {
 		} else {
 			return ZString(""), nil
 		}
+	case ZtArray:
+		arr := NewZArray()
+		arr.OffsetSet(ctx, nil, z.ZVal())
+		return arr, nil
 	}
 	return nil, nil
 }
@@ -164,6 +170,10 @@ func (z ZFloat) AsVal(ctx Context, t ZType) (Val, error) {
 	case ZtString:
 		precision := int(ctx.GetConfig("precision", ZInt(14).ZVal()).AsInt(ctx))
 		return ZString(strconv.FormatFloat(float64(z), 'G', precision, 64)), nil
+	case ZtArray:
+		arr := NewZArray()
+		arr.OffsetSet(ctx, nil, z.ZVal())
+		return arr, nil
 	}
 	return nil, nil
 }

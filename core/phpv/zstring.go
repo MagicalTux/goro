@@ -42,6 +42,10 @@ func (z ZString) AsVal(ctx Context, t ZType) (Val, error) {
 		}
 	case ZtString:
 		return z, nil
+	case ZtArray:
+		arr := NewZArray()
+		arr.OffsetSet(ctx, ZInt(0), z.ZVal())
+		return arr, nil
 	}
 	return nil, nil
 }
