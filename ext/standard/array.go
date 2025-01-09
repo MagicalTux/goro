@@ -13,7 +13,6 @@ import (
 	"github.com/MagicalTux/goro/core"
 	"github.com/MagicalTux/goro/core/phpctx"
 	"github.com/MagicalTux/goro/core/phpv"
-	"github.com/MagicalTux/goro/core/util"
 )
 
 // > const
@@ -1070,7 +1069,7 @@ func getArrayKeyValue(ctx phpv.Context, s *phpv.ZVal) (*phpv.ZVal, error) {
 		fallthrough
 	case phpv.ZtString:
 		str := s.String()
-		if util.CtypeDigit(str) {
+		if phpv.ZString(str).LooksInt() {
 			i, err := strconv.ParseInt(str, 10, 64)
 			if err == nil {
 				// check if converting back results in same value

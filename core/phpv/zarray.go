@@ -3,8 +3,6 @@ package phpv
 import (
 	"iter"
 	"strconv"
-
-	"github.com/MagicalTux/goro/core/util"
 )
 
 // php arrays work with two kind of keys
@@ -33,7 +31,7 @@ func getArrayKeyValue(s Val) (ZInt, ZString, bool) {
 		return s.Value().(ZInt), "", true
 	case ZtString:
 		str := s.String()
-		if util.CtypeDigit(str) {
+		if ZString(str).LooksInt() {
 			i, err := strconv.ParseInt(str, 10, 64)
 			if err == nil {
 				// check if converting back results in same value

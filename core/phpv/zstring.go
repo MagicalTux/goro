@@ -61,7 +61,7 @@ func (s ZString) LooksInt() bool {
 	}
 	first = true
 	for _, c := range s {
-		if first && c == ' ' {
+		if first && (c == ' ' || c == '-') {
 			continue
 		}
 		if c < '0' || c > '9' {
