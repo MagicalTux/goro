@@ -11,7 +11,7 @@ import (
 // > func bool sort ( array &$array [, int $sort_flags = SORT_REGULAR ] )
 func fncArraySort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var array core.Ref[*phpv.ZArray]
-	var sortFlagsArg *phpv.ZInt
+	var sortFlagsArg core.Optional[phpv.ZInt]
 	_, err := core.Expand(ctx, args, &array, &sortFlagsArg)
 	if err != nil {
 		return nil, ctx.FuncError(err)
@@ -24,7 +24,7 @@ func fncArraySort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		})
 	}
 
-	arraySort(ctx, entries, sortFlagsArg, false)
+	arraySort(ctx, entries, sortFlagsArg.GetOrDefault(SORT_REGULAR), false)
 
 	if err = array.Get().Clear(ctx); err != nil {
 		return nil, err
@@ -40,7 +40,7 @@ func fncArraySort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // > func bool rsort ( array &$array [, int $sort_flags = SORT_REGULAR ] )
 func fncArrayRSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var array core.Ref[*phpv.ZArray]
-	var sortFlagsArg *phpv.ZInt
+	var sortFlagsArg core.Optional[phpv.ZInt]
 	_, err := core.Expand(ctx, args, &array, &sortFlagsArg)
 	if err != nil {
 		return nil, ctx.FuncError(err)
@@ -53,7 +53,7 @@ func fncArrayRSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		})
 	}
 
-	arraySort(ctx, entries, sortFlagsArg, true)
+	arraySort(ctx, entries, sortFlagsArg.GetOrDefault(SORT_REGULAR), true)
 
 	if err = array.Get().Clear(ctx); err != nil {
 		return nil, err
@@ -66,7 +66,7 @@ func fncArrayRSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZTrue.ZVal(), nil
 }
 
-// > func bool usort ( array &$array [, int $sort_flags = SORT_REGULAR ] )
+// > func bool usort ( array &$array , callable $value_compare_func )
 func fncArrayUSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var array core.Ref[*phpv.ZArray]
 	var compareFunc phpv.Callable
@@ -98,7 +98,7 @@ func fncArrayUSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZTrue.ZVal(), nil
 }
 
-// > func bool uasort ( array &$array [, int $sort_flags = SORT_REGULAR ] )
+// > func bool uasort ( array &$array , callable $value_compare_func )
 func fncArrayUASort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var array core.Ref[*phpv.ZArray]
 	var compareFunc phpv.Callable
@@ -130,7 +130,7 @@ func fncArrayUASort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZTrue.ZVal(), nil
 }
 
-// > func bool uksort ( array &$array [, int $sort_flags = SORT_REGULAR ] )
+// > func bool uksort ( array &$array , callable $key_compare_func )
 func fncArrayUKSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var array core.Ref[*phpv.ZArray]
 	var compareFunc phpv.Callable
@@ -165,7 +165,7 @@ func fncArrayUKSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // > func bool ksort ( array &$array [, int $sort_flags = SORT_REGULAR ] )
 func fncArrayKSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var array core.Ref[*phpv.ZArray]
-	var sortFlagsArg *phpv.ZInt
+	var sortFlagsArg core.Optional[phpv.ZInt]
 	_, err := core.Expand(ctx, args, &array, &sortFlagsArg)
 	if err != nil {
 		return nil, ctx.FuncError(err)
@@ -179,7 +179,7 @@ func fncArrayKSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		})
 	}
 
-	arraySort(ctx, entries, sortFlagsArg, false)
+	arraySort(ctx, entries, sortFlagsArg.GetOrDefault(SORT_REGULAR), false)
 
 	for _, entry := range entries {
 		k := entry.item
@@ -194,7 +194,7 @@ func fncArrayKSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // > func bool krsort ( array &$array [, int $sort_flags = SORT_REGULAR ] )
 func fncArrayKRSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var array core.Ref[*phpv.ZArray]
-	var sortFlagsArg *phpv.ZInt
+	var sortFlagsArg core.Optional[phpv.ZInt]
 	_, err := core.Expand(ctx, args, &array, &sortFlagsArg)
 	if err != nil {
 		return nil, ctx.FuncError(err)
@@ -208,7 +208,7 @@ func fncArrayKRSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		})
 	}
 
-	arraySort(ctx, entries, sortFlagsArg, true)
+	arraySort(ctx, entries, sortFlagsArg.GetOrDefault(SORT_REGULAR), true)
 
 	for _, entry := range core.IterateBackwards(entries) {
 		k := entry.item
@@ -223,7 +223,7 @@ func fncArrayKRSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // > func bool asort ( array &$array [, int $sort_flags = SORT_REGULAR ] )
 func fncArrayASort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var array core.Ref[*phpv.ZArray]
-	var sortFlagsArg *phpv.ZInt
+	var sortFlagsArg core.Optional[phpv.ZInt]
 	_, err := core.Expand(ctx, args, &array, &sortFlagsArg)
 	if err != nil {
 		return nil, ctx.FuncError(err)
@@ -237,7 +237,7 @@ func fncArrayASort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		})
 	}
 
-	arraySort(ctx, entries, sortFlagsArg, false)
+	arraySort(ctx, entries, sortFlagsArg.GetOrDefault(SORT_REGULAR), false)
 
 	for _, entry := range entries {
 		k := entry.data
@@ -252,7 +252,7 @@ func fncArrayASort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // > func bool arsort ( array &$array [, int $sort_flags = SORT_REGULAR ] )
 func fncArrayARSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var array core.Ref[*phpv.ZArray]
-	var sortFlagsArg *phpv.ZInt
+	var sortFlagsArg core.Optional[phpv.ZInt]
 	_, err := core.Expand(ctx, args, &array, &sortFlagsArg)
 	if err != nil {
 		return nil, ctx.FuncError(err)
@@ -266,7 +266,7 @@ func fncArrayARSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		})
 	}
 
-	arraySort(ctx, entries, sortFlagsArg, true)
+	arraySort(ctx, entries, sortFlagsArg.GetOrDefault(SORT_REGULAR), true)
 
 	for _, entry := range core.IterateBackwards(entries) {
 		k := entry.data
@@ -278,10 +278,10 @@ func fncArrayARSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZTrue.ZVal(), nil
 }
 
-// > func bool natsort ( array &$array [, int $sort_flags = SORT_REGULAR ] )
+// > func bool natsort ( array &$array )
 func fncArrayNatSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var array core.Ref[*phpv.ZArray]
-	var sortFlagsArg *phpv.ZInt
+	var sortFlagsArg core.Optional[phpv.ZInt]
 	_, err := core.Expand(ctx, args, &array, &sortFlagsArg)
 	if err != nil {
 		return nil, ctx.FuncError(err)
@@ -295,8 +295,7 @@ func fncArrayNatSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		})
 	}
 
-	sortFlags := SORT_NATURAL
-	arraySort(ctx, entries, &sortFlags, false)
+	arraySort(ctx, entries, SORT_NATURAL, false)
 
 	for _, entry := range entries {
 		k := entry.data
@@ -308,10 +307,10 @@ func fncArrayNatSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZTrue.ZVal(), nil
 }
 
-// > func bool natcasesort ( array &$array [, int $sort_flags = SORT_REGULAR ] )
+// > func bool natcasesort ( array &$array )
 func fncArrayNatCaseSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var array core.Ref[*phpv.ZArray]
-	var sortFlagsArg *phpv.ZInt
+	var sortFlagsArg core.Optional[phpv.ZInt]
 	_, err := core.Expand(ctx, args, &array, &sortFlagsArg)
 	if err != nil {
 		return nil, ctx.FuncError(err)
@@ -326,7 +325,7 @@ func fncArrayNatCaseSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error
 	}
 
 	sortFlags := SORT_NATURAL | SORT_FLAG_CASE
-	arraySort(ctx, entries, &sortFlags, false)
+	arraySort(ctx, entries, sortFlags, false)
 
 	for _, entry := range entries {
 		k := entry.data
@@ -338,15 +337,9 @@ func fncArrayNatCaseSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error
 	return phpv.ZTrue.ZVal(), nil
 }
 
-func arraySort(ctx phpv.Context, entries []compareEntry, sortFlagsArg *phpv.ZInt, reversed bool) {
-	caseInsensitive := false
-	sortFlags := SORT_REGULAR
-
-	if sortFlagsArg != nil {
-		sortFlags = *sortFlagsArg
-		caseInsensitive = sortFlags&SORT_FLAG_CASE != 0
-		sortFlags &= ^SORT_FLAG_CASE
-	}
+func arraySort(ctx phpv.Context, entries []compareEntry, sortFlags phpv.ZInt, reversed bool) {
+	caseInsensitive := sortFlags&SORT_FLAG_CASE != 0
+	sortFlags &= ^SORT_FLAG_CASE
 
 	sortBy := zSortComparer{ctx, entries, caseInsensitive, reversed}
 	sortFn := sortBy.regular
