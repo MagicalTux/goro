@@ -317,7 +317,10 @@ loop:
 			name := args[i].GetName()
 			outZVal := out.ZVal()
 			outZVal.Name = &name
-			ctx.Parent(1).OffsetSet(ctx, outZVal.Name, outZVal)
+			if name != "GLOBALS" {
+				// check if varname is not GLOBALS to avoid infinite loop
+				ctx.Parent(1).OffsetSet(ctx, outZVal.Name, outZVal)
+			}
 		}
 	}
 	return len(out), nil
