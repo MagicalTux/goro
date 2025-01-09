@@ -1,6 +1,7 @@
 package phpctx
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/random"
@@ -50,10 +52,13 @@ type Global struct {
 	globalLazyFunc  map[phpv.ZString]*globalLazyOffset
 	globalLazyClass map[phpv.ZString]*globalLazyOffset
 
-	out io.Writer
-	buf *Buffer
+	errOut io.Writer
+	out    io.Writer
+	buf    *Buffer
 
 	rand *random.State
+
+	shownDeprecated map[string]struct{}
 }
 
 func NewGlobal(ctx context.Context, p *Process, config phpv.IniConfig) *Global {
@@ -90,6 +95,7 @@ func createGlobal(p *Process) *Global {
 	g := &Global{
 		p:               p,
 		out:             os.Stdout,
+		errOut:          os.Stderr,
 		rand:            random.New(),
 		start:           time.Now(),
 		h:               phpv.NewHashTable(),
@@ -101,6 +107,7 @@ func createGlobal(p *Process) *Global {
 		included:        make(map[phpv.ZString]bool),
 		globalLazyFunc:  make(map[phpv.ZString]*globalLazyOffset),
 		globalLazyClass: make(map[phpv.ZString]*globalLazyOffset),
+		shownDeprecated: make(map[string]struct{}),
 		mem:             NewMemMgr(32 * 1024 * 1024), // limit in bytes TODO read memory_limit from process (.ini file)
 	}
 	g.deadline = g.start.Add(30 * time.Second) // deadline
@@ -233,6 +240,10 @@ func (g *Global) Write(v []byte) (int, error) {
 	return g.out.Write(v)
 }
 
+func (g *Global) writeErr(v []byte) (int, error) {
+	return g.errOut.Write(v)
+}
+
 func (g *Global) SetLocalConfig(name phpv.ZString, val *phpv.ZVal) error {
 	g.IniConfig.SetLocal(name, val.ZVal())
 	return nil
@@ -296,21 +307,76 @@ func (g *Global) FuncErrorf(format string, a ...any) error {
 	return err
 }
 
-func (g *Global) Warn(message string) {
-	funcName := g.GetFuncName()
-	loc := g.l.Loc()
-	output := fmt.Sprintf("Warning: %s(): %s in %s on line %d", funcName, message, loc.Filename, loc.Line)
-	g.Write([]byte(output))
-	g.Write([]byte("\n"))
+func (g *Global) Warn(format string, a ...any) {
+	a = append(a, logopt.ErrType(phpv.E_WARNING))
+	g.log(format, a...)
 }
 
-func (g *Global) Warnf(format string, a ...any) {
+func (g *Global) Notice(format string, a ...any) {
+	g.writeErr([]byte{'\n'})
+	a = append(a, logopt.ErrType(phpv.E_NOTICE))
+	g.log(format, a...)
+}
+
+func (g *Global) WarnDeprecated() {
+	funcName := g.GetFuncName()
+	if _, ok := g.shownDeprecated[funcName]; !ok {
+		g.writeErr([]byte{'\n'})
+		g.log("The %s() function is deprecated. This message will be suppressed on further calls", funcName, logopt.NoFuncName(true), logopt.ErrType(phpv.E_DEPRECATED))
+		g.shownDeprecated[funcName] = struct{}{}
+	}
+}
+
+func (g *Global) getLogArgs(args []any) (logopt.Data, []any) {
+	var fmtArgs []any
+	var option logopt.Data
+	for _, arg := range args {
+		switch t := arg.(type) {
+		case logopt.ErrType:
+			option.ErrType = int(t)
+		case logopt.NoFuncName:
+			option.NoFuncName = bool(t)
+		case logopt.NoLoc:
+			option.NoLoc = bool(t)
+		case logopt.Data:
+			option.ErrType = t.ErrType
+			option.NoFuncName = t.NoFuncName
+			option.NoLoc = t.NoLoc
+		default:
+			fmtArgs = append(fmtArgs, arg)
+		}
+	}
+	return option, fmtArgs
+}
+
+func (g *Global) log(format string, a ...any) {
 	funcName := g.GetFuncName()
 	loc := g.l.Loc()
-	message := fmt.Sprintf(format, a...)
-	output := fmt.Sprintf("Warning: %s(): %s in %s on line %d", funcName, message, loc.Filename, loc.Line)
-	g.Write([]byte(output))
-	g.Write([]byte("\n"))
+
+	option, fmtArgs := g.getLogArgs(a)
+
+	var output bytes.Buffer
+	switch option.ErrType {
+	case int(phpv.E_WARNING):
+		output.WriteString("Warning")
+	case int(phpv.E_NOTICE):
+		output.WriteString("Notice")
+	case int(phpv.E_DEPRECATED):
+		output.WriteString("Deprecated")
+	default:
+		output.WriteString("Info")
+	}
+	output.WriteString(": ")
+	if !option.NoFuncName {
+		output.WriteString(fmt.Sprintf("%s(): ", funcName))
+	}
+	output.WriteString(fmt.Sprintf(format, fmtArgs...))
+	if !option.NoLoc {
+		output.WriteString(fmt.Sprintf(" in %s on line %d", loc.Filename, loc.Line))
+	}
+
+	g.writeErr([]byte(output.String()))
+	g.writeErr([]byte("\n"))
 }
 
 func (g *Global) GetFuncName() string {

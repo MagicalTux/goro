@@ -540,7 +540,7 @@ func fncRange(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // > func mixed array_shift ( array &$array )
 func fncArrayShift(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) > 0 && args[0].GetType() != phpv.ZtArray {
-		ctx.Warnf("expects parameter 1 to be array, %s given", args[0].GetType())
+		ctx.Warn("expects parameter 1 to be array, %s given", args[0].GetType())
 		return phpv.ZNULL.ZVal(), nil
 	}
 
@@ -618,7 +618,7 @@ func fncArrayPush(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // > func mixed array_pop ( array &$array )
 func fncArrayPop(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) > 0 && args[0].GetType() != phpv.ZtArray {
-		ctx.Warnf("expects parameter 1 to be array, %s given", args[0].GetType())
+		ctx.Warn("expects parameter 1 to be array, %s given", args[0].GetType())
 		return phpv.ZNULL.ZVal(), nil
 	}
 
@@ -910,7 +910,7 @@ func fncArrayEnd(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 // > func mixed each ( array &$array )
 func fncArrayEach(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	// TODO: ctx.WarnDeprecated(blah)
+	ctx.WarnDeprecated()
 
 	var array core.Ref[*phpv.ZArray]
 	_, err := core.Expand(ctx, args, &array)
@@ -1590,6 +1590,8 @@ func arrayRecursiveCompact(ctx phpv.Context, result *phpv.ZArray, varName *phpv.
 				return err
 			}
 			result.OffsetSet(ctx, varName, value)
+		} else {
+			ctx.Notice("Undefined variable: %s", varName)
 		}
 	case phpv.ZtArray:
 		for _, varName := range varName.AsArray(ctx).Iterate(ctx) {

@@ -29,8 +29,15 @@ type Context interface {
 	FuncErrorf(format string, a ...any) error
 	FuncError(err error, t ...PhpErrorType) error
 
-	Warn(message string)
-	Warnf(format string, a ...any)
+	// In the following functions, args can also take logopt types:
+	// examples:
+	//   Warn("testing %d", 123, logopt.NoFuncName(true))
+	//   Notice("note %s", "asdf", logopt.NoLoc(true))
+	//   Notice("nope", logopt.Data{NoLoc: false})
+	Warn(format string, args ...any)
+	Notice(format string, args ...any)
+
+	WarnDeprecated()
 
 	GetFuncName() string
 
