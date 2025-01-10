@@ -9,12 +9,17 @@ func Deref[T any](ptr *T, defValue T) T {
 	return *ptr
 }
 
-// safe-index, returns default(T) if out of bounds
-func Idx[T any](xs []T, i int) T {
-	var x T
+// safe-index, returns defaultVal or default(T) if out of bounds
+func Idx[T any](xs []T, i int, defaultVal ...T) T {
 	if i >= 0 && i < len(xs) {
-		x = xs[i]
+		return xs[i]
 	}
+
+	if len(defaultVal) > 0 {
+		return defaultVal[0]
+	}
+
+	var x T
 	return x
 }
 
