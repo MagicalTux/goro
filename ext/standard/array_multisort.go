@@ -24,19 +24,19 @@ type ztable struct {
 func (t *ztable) CommitChanges(ctx phpv.Context) {
 	for j := 0; j < t.CountColumns(ctx); j++ {
 		numRows := t.CountRows(ctx)
-		overWritten := make([]*phpv.ZVal, numRows)
+		dup := t.columns[j].Dup()
+		t.columns[j].Clear(ctx)
 		for i := 0; i < numRows; i++ {
-			newVal := overWritten[t.indexMap[i]]
-			if newVal == nil {
-				_, newVal, _ = t.columns[j].OffsetAt(ctx, t.indexMap[i])
+			newKey, newVal, _ := dup.OffsetAt(ctx, t.indexMap[i])
+			if newKey.GetType() == phpv.ZtInt {
+				t.columns[j].OffsetSet(ctx, nil, newVal)
 			} else {
-				overWritten[t.indexMap[i]] = nil
+				t.columns[j].OffsetSet(ctx, newKey, newVal)
 			}
-			_, oldVal, _ := t.columns[j].OffsetAt(ctx, i)
-			overWritten[i] = oldVal
-			t.SetValue(ctx, j, i, newVal)
 		}
 	}
+
+	// resest indexMap
 	for i := range t.indexMap {
 		t.indexMap[i] = i
 	}
@@ -59,19 +59,11 @@ func (t *ztable) AddColumn(ctx phpv.Context, col *phpv.ZArray, flag, order phpv.
 	}
 }
 
-func (t *ztable) SetValue(ctx phpv.Context, col, row int, val *phpv.ZVal) {
-	t.columns[col].OffsetSetAt(ctx, row, val)
-}
-
 func (t *ztable) GetValue(ctx phpv.Context, col, row int) *phpv.ZVal {
 	i := t.indexMap[row]
 	_, v, _ := t.columns[col].OffsetAt(ctx, i)
 	return v
 }
-
-// TODO: must maintain key-value pair
-// func (t *Table) GetKeyValue(ctx phpv.Context, col, row int) (*phpv.ZVal, *phpv.ZVal) {
-//}
 
 func (t *ztable) CountRows(ctx phpv.Context) int {
 	if len(t.columns) > 0 {
@@ -116,8 +108,7 @@ func fncArrayMultiSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 		return phpv.ZFalse.ZVal(), ctx.FuncErrorf("Must be 1 length")
 	}
 
-	// TODO: PHP Warning:  array_multisort(): Array sizes are inconsistent
-
+	expectedRowSize := args[0].AsArray(ctx).Count(ctx)
 	table := &ztable{}
 
 	for i := 0; i < len(args); i++ {
@@ -125,8 +116,12 @@ func fncArrayMultiSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 		if arg.GetType() != phpv.ZtArray {
 			return phpv.ZFalse.ZVal(), ctx.FuncErrorf("array expected")
 		}
-
 		arr := arg.AsArray(ctx)
+		if arr.Count(ctx) != expectedRowSize {
+			ctx.Warn("Array sizes are inconsistent")
+			return phpv.ZFalse.ZVal(), nil
+		}
+
 		sortFlag := SORT_REGULAR
 		sortOrder := SORT_ASC
 		read := 0
@@ -157,7 +152,6 @@ func fncArrayMultiSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 			a := table.GetValue(ctx, j, i1)
 			b := table.GetValue(ctx, j, i2)
 			reversed := table.sortOrders[j] == SORT_DESC
-			// TODO: caseInsensitive
 
 			cmp := 0
 			switch table.sortFlags[j] {
@@ -170,7 +164,11 @@ func fncArrayMultiSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 				y := string(b.AsString(ctx))
 				cmp = strings.Compare(x, y)
 			case SORT_NATURAL:
-				// TODO:
+				s1 := string(a.AsString(ctx))
+				s2 := string(b.AsString(ctx))
+				a := []byte(s1)
+				b := []byte(s2)
+				return natCmp(a, b, false) < 0
 
 			default:
 				fallthrough
@@ -191,5 +189,5 @@ func fncArrayMultiSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 
 	table.CommitChanges(ctx)
 
-	return nil, nil
+	return phpv.ZTrue.ZVal(), nil
 }
