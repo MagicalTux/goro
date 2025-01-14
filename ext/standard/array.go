@@ -1593,7 +1593,8 @@ func arrayRecursiveCompact(ctx phpv.Context, result *phpv.ZArray, varName *phpv.
 			}
 			result.OffsetSet(ctx, varName, value)
 		} else {
-			ctx.Notice("Undefined variable: %s", varName)
+			// Shown only on php-7.3 and later
+			// ctx.Notice("Undefined variable: %s", varName)
 		}
 	case phpv.ZtArray:
 		for _, varName := range varName.AsArray(ctx).Iterate(ctx) {

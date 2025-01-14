@@ -127,17 +127,6 @@ func (a *ZArray) OffsetAt(ctx Context, index int) (*ZVal, *ZVal, error) {
 	return NewZVal(ZNull{}), NewZVal(ZNull{}), nil
 }
 
-func (a *ZArray) OffsetSetAt(ctx Context, index int, val *ZVal) {
-	i := 0
-	for k := range a.Iterate(ctx) {
-		if i == index {
-			a.OffsetSet(ctx, k, val)
-			return
-		}
-		i++
-	}
-}
-
 func (a *ZArray) OffsetCheck(ctx Context, key Val) (*ZVal, bool, error) {
 	if key == nil || key.GetType() == ZtNull {
 		return nil, false, ctx.Errorf("Cannot use [] for reading")
@@ -208,6 +197,15 @@ func (a *ZArray) OffsetExists(ctx Context, key Val) (bool, error) {
 	} else {
 		return a.h.HasString(zs), nil
 	}
+}
+
+func Every(ctx Context, array *ZArray, predicate func(*ZVal) bool) bool {
+	for _, x := range array.Iterate(ctx) {
+		if !predicate(x) {
+			return false
+		}
+	}
+	return true
 }
 
 func (a *ZArray) IntKeys(ctx Context) []ZInt {

@@ -5,6 +5,40 @@ import (
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
+type containsEntryArgs struct {
+	KeyEquals func(a, b *phpv.ZVal) bool
+	ValEquals func(a, b *phpv.ZVal) bool
+}
+
+func arrayContainsEntry(ctx phpv.Context, array *phpv.ZArray, key, val *phpv.ZVal, args containsEntryArgs) bool {
+	for k, v := range array.Iterate(ctx) {
+		foundKey := true
+		foundVal := true
+		if args.KeyEquals != nil {
+			foundKey = args.KeyEquals(key, k)
+		}
+		if args.ValEquals != nil {
+			foundVal = args.ValEquals(val, v)
+		}
+		if foundKey && foundVal {
+			return true
+		}
+	}
+	return false
+}
+
+func expandArrayArgs(ctx phpv.Context, args []*phpv.ZVal) ([]*phpv.ZArray, error) {
+	var result []*phpv.ZArray
+	for i := 0; i < len(args); i++ {
+		val, err := args[i].As(ctx, phpv.ZtArray)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, val.AsArray(ctx))
+	}
+	return result, nil
+}
+
 // > func array array_intersect ( array $array2 , array $array2 [, array $... ] )
 func fncArrayIntersect(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var array *phpv.ZArray
@@ -18,22 +52,18 @@ func fncArrayIntersect(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 		return nil, nil
 	}
 
+	otherArrays, err := expandArrayArgs(ctx, args[1:])
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
 	result := phpv.NewZArray()
 
 	for k1, v1 := range array.Iterate(ctx) {
-		include := true
-		for i := 1; i < len(args); i++ {
-			val, err := args[i].As(ctx, phpv.ZtArray)
-			if err != nil {
-				return nil, ctx.FuncError(err)
-			}
-			arr := val.AsArray(ctx)
-			if ok, _ := arr.OffsetContains(ctx, v1); !ok {
-				include = false
-				break
-			}
-		}
-		if include {
+		foundInAll := core.Every(otherArrays, func(arr *phpv.ZArray) bool {
+			found, _ := arr.OffsetContains(ctx, v1)
+			return found
+		})
+		if foundInAll {
 			result.OffsetSet(ctx, k1, v1)
 		}
 	}
@@ -60,30 +90,26 @@ func fncArrayUIntersect(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 		return nil, nil
 	}
 
-	compareArgs := make([]*phpv.ZVal, 2)
+	otherArrays, err := expandArrayArgs(ctx, args[1:len(args)-1])
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	containsArgs := containsEntryArgs{
+		ValEquals: func(a, b *phpv.ZVal) bool {
+			ret, _ := valueCompare.Call(ctx, []*phpv.ZVal{a, b})
+			return ret.AsInt(ctx) == 0
+		},
+	}
+
 	result := phpv.NewZArray()
-	for i := 1; i < len(args)-1; i++ {
-		val, err := args[i].As(ctx, phpv.ZtArray)
-		if err != nil {
-			return nil, ctx.FuncError(err)
-		}
-		arr := val.AsArray(ctx)
-		for k1, v1 := range array.Iterate(ctx) {
-			if ok, _ := result.OffsetExists(ctx, k1); ok {
-				continue
-			}
-			for _, v2 := range arr.Iterate(ctx) {
-				compareArgs[0] = v1
-				compareArgs[1] = v2
-				ret, err := valueCompare.Call(ctx, compareArgs)
-				if err != nil {
-					return nil, ctx.FuncError(err)
-				}
-				if ret.AsInt(ctx) != 0 {
-					continue
-				}
-				result.OffsetSet(ctx, k1, v1)
-			}
+	for k1, v1 := range array.Iterate(ctx) {
+		foundInAll := core.Every(otherArrays, func(arr *phpv.ZArray) bool {
+			found := arrayContainsEntry(ctx, arr, k1, v1, containsArgs)
+			return found
+		})
+		if foundInAll {
+			result.OffsetSet(ctx, k1, v1)
 		}
 	}
 
@@ -109,33 +135,30 @@ func fncArrayUIntersectAssoc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, e
 		return nil, nil
 	}
 
-	compareArgs := make([]*phpv.ZVal, 2)
+	otherArrays, err := expandArrayArgs(ctx, args[1:len(args)-1])
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	containsArgs := containsEntryArgs{
+		KeyEquals: func(a, b *phpv.ZVal) bool {
+			ok, _ := phpv.StrictEquals(ctx, a, b)
+			return ok
+		},
+		ValEquals: func(a, b *phpv.ZVal) bool {
+			ret, _ := valueCompare.Call(ctx, []*phpv.ZVal{a, b})
+			return ret.AsInt(ctx) == 0
+		},
+	}
+
 	result := phpv.NewZArray()
-	for i := 1; i < len(args)-1; i++ {
-		val, err := args[i].As(ctx, phpv.ZtArray)
-		if err != nil {
-			return nil, ctx.FuncError(err)
-		}
-		arr := val.AsArray(ctx)
-		for k1, v1 := range array.Iterate(ctx) {
-			if ok, _ := result.OffsetExists(ctx, k1); ok {
-				continue
-			}
-			for k2, v2 := range arr.Iterate(ctx) {
-				if ok, _ := phpv.StrictEquals(ctx, k1, k2); !ok {
-					continue
-				}
-				compareArgs[0] = v1
-				compareArgs[1] = v2
-				ret, err := valueCompare.Call(ctx, compareArgs)
-				if err != nil {
-					return nil, ctx.FuncError(err)
-				}
-				if ret.AsInt(ctx) != 0 {
-					continue
-				}
-				result.OffsetSet(ctx, k1, v1)
-			}
+	for k1, v1 := range array.Iterate(ctx) {
+		foundInAll := core.Every(otherArrays, func(arr *phpv.ZArray) bool {
+			found := arrayContainsEntry(ctx, arr, k1, v1, containsArgs)
+			return found
+		})
+		if foundInAll {
+			result.OffsetSet(ctx, k1, v1)
 		}
 	}
 
@@ -167,41 +190,30 @@ func fncArrayUIntersectUAssoc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, 
 		return nil, nil
 	}
 
-	compareArgs := make([]*phpv.ZVal, 2)
+	otherArrays, err := expandArrayArgs(ctx, args[1:len(args)-2])
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	containsArgs := containsEntryArgs{
+		KeyEquals: func(a, b *phpv.ZVal) bool {
+			ret, _ := keyCompare.Call(ctx, []*phpv.ZVal{a, b})
+			return ret.AsInt(ctx) == 0
+		},
+		ValEquals: func(a, b *phpv.ZVal) bool {
+			ret, _ := valueCompare.Call(ctx, []*phpv.ZVal{a, b})
+			return ret.AsInt(ctx) == 0
+		},
+	}
+
 	result := phpv.NewZArray()
-	for i := 1; i < len(args)-2; i++ {
-		val, err := args[i].As(ctx, phpv.ZtArray)
-		if err != nil {
-			return nil, ctx.FuncError(err)
-		}
-		arr := val.AsArray(ctx)
-		for k1, v1 := range array.Iterate(ctx) {
-			if ok, _ := result.OffsetExists(ctx, k1); ok {
-				continue
-			}
-			for k2, v2 := range arr.Iterate(ctx) {
-				compareArgs[0] = v1
-				compareArgs[1] = v2
-				ret, err := valueCompare.Call(ctx, compareArgs)
-				if err != nil {
-					return nil, ctx.FuncError(err)
-				}
-				if ret.AsInt(ctx) != 0 {
-					continue
-				}
-
-				compareArgs[0] = k1
-				compareArgs[1] = k2
-				ret, err = keyCompare.Call(ctx, compareArgs)
-				if err != nil {
-					return nil, ctx.FuncError(err)
-				}
-				if ret.AsInt(ctx) != 0 {
-					continue
-				}
-
-				result.OffsetSet(ctx, k1, v1)
-			}
+	for k1, v1 := range array.Iterate(ctx) {
+		foundInAll := core.Every(otherArrays, func(arr *phpv.ZArray) bool {
+			found := arrayContainsEntry(ctx, arr, k1, v1, containsArgs)
+			return found
+		})
+		if foundInAll {
+			result.OffsetSet(ctx, k1, v1)
 		}
 	}
 
@@ -221,26 +233,29 @@ func fncArrayIntersectAssoc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 		return nil, nil
 	}
 
+	otherArrays, err := expandArrayArgs(ctx, args[1:])
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
 	result := phpv.NewZArray()
+	containsArgs := containsEntryArgs{
+		KeyEquals: func(a, b *phpv.ZVal) bool {
+			ok, _ := phpv.StrictEquals(ctx, a, b)
+			return ok
+		},
+		ValEquals: func(a, b *phpv.ZVal) bool {
+			ok, _ := phpv.Equals(ctx, a, b)
+			return ok
+		},
+	}
 
 	for k1, v1 := range array.Iterate(ctx) {
-		include := true
-		for i := 1; i < len(args); i++ {
-			val, err := args[i].As(ctx, phpv.ZtArray)
-			if err != nil {
-				return nil, ctx.FuncError(err)
-			}
-			arr := val.AsArray(ctx)
-			if ok, _ := arr.OffsetContains(ctx, v1); !ok {
-				include = false
-				break
-			}
-			if ok, _ := arr.OffsetExists(ctx, k1); !ok {
-				include = false
-				break
-			}
-		}
-		if include {
+		foundInAll := core.Every(otherArrays, func(arr *phpv.ZArray) bool {
+			found := arrayContainsEntry(ctx, arr, k1, v1, containsArgs)
+			return found
+		})
+		if foundInAll {
 			result.OffsetSet(ctx, k1, v1)
 		}
 	}
@@ -267,36 +282,29 @@ func fncArrayIntersectUAssoc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, e
 		return nil, nil
 	}
 
+	otherArrays, err := expandArrayArgs(ctx, args[1:len(args)-1])
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
 	result := phpv.NewZArray()
+	containsArgs := containsEntryArgs{
+		KeyEquals: func(a, b *phpv.ZVal) bool {
+			ret, _ := keyCompare.Call(ctx, []*phpv.ZVal{a, b})
+			return ret.AsInt(ctx) == 0
+		},
+		ValEquals: func(a, b *phpv.ZVal) bool {
+			return a.AsString(ctx) == b.AsString(ctx)
+		},
+	}
 
-	compareArgs := make([]*phpv.ZVal, 2)
-	for i := 1; i < len(args)-1; i++ {
-		val, err := args[i].As(ctx, phpv.ZtArray)
-		if err != nil {
-			return nil, ctx.FuncError(err)
-		}
-		arr := val.AsArray(ctx)
-		for k1, v1 := range array.Iterate(ctx) {
-			if ok, _ := result.OffsetExists(ctx, k1); ok {
-				continue
-			}
-			for k2, v2 := range arr.Iterate(ctx) {
-
-				compareArgs[0] = k1
-				compareArgs[1] = k2
-				ret, err := keyCompare.Call(ctx, compareArgs)
-				if err != nil {
-					return nil, ctx.FuncError(err)
-				}
-				if v2.AsString(ctx) != v1.AsString(ctx) {
-					continue
-				}
-				if ret.AsInt(ctx) != 0 {
-					continue
-				}
-
-				result.OffsetSet(ctx, k1, v1)
-			}
+	for k1, v1 := range array.Iterate(ctx) {
+		foundInAll := core.Every(otherArrays, func(arr *phpv.ZArray) bool {
+			found := arrayContainsEntry(ctx, arr, k1, v1, containsArgs)
+			return found
+		})
+		if foundInAll {
+			result.OffsetSet(ctx, k1, v1)
 		}
 	}
 
@@ -311,28 +319,19 @@ func fncArrayIntersectKey(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, erro
 		return nil, ctx.FuncError(err)
 	}
 
-	if len(args) < 2 {
-		ctx.Warn("at least 2 parameters are required, %d given", len(args))
-		return nil, nil
+	otherArrays, err := expandArrayArgs(ctx, args[1:])
+	if err != nil {
+		return nil, ctx.FuncError(err)
 	}
 
 	result := phpv.NewZArray()
-	for i := 1; i < len(args); i++ {
-		val, err := args[i].As(ctx, phpv.ZtArray)
-		if err != nil {
-			return nil, ctx.FuncError(err)
-		}
-		arr := val.AsArray(ctx)
-		for k1, v1 := range array.Iterate(ctx) {
-			if ok, _ := result.OffsetExists(ctx, k1); ok {
-				continue
-			}
-			for k2 := range arr.Iterate(ctx) {
-
-				if ok, _ := phpv.StrictEquals(ctx, k2, k1); ok {
-					result.OffsetSet(ctx, k1, v1)
-				}
-			}
+	for k1, v1 := range array.Iterate(ctx) {
+		foundInAll := core.Every(otherArrays, func(arr *phpv.ZArray) bool {
+			found, _ := arr.OffsetExists(ctx, k1)
+			return found
+		})
+		if foundInAll {
+			result.OffsetSet(ctx, k1, v1)
 		}
 	}
 
@@ -358,32 +357,26 @@ func fncArrayIntersectUKey(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, err
 		return nil, nil
 	}
 
+	otherArrays, err := expandArrayArgs(ctx, args[1:])
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
 	result := phpv.NewZArray()
+	containsArgs := containsEntryArgs{
+		KeyEquals: func(a, b *phpv.ZVal) bool {
+			ret, _ := keyCompare.Call(ctx, []*phpv.ZVal{a, b})
+			return ret.AsInt(ctx) == 0
+		},
+	}
 
-	compareArgs := make([]*phpv.ZVal, 2)
-	for i := 1; i < len(args)-1; i++ {
-		val, err := args[i].As(ctx, phpv.ZtArray)
-		if err != nil {
-			return nil, ctx.FuncError(err)
-		}
-		arr := val.AsArray(ctx)
-		for k1, v1 := range array.Iterate(ctx) {
-			if ok, _ := result.OffsetExists(ctx, k1); ok {
-				continue
-			}
-			for k2 := range arr.Iterate(ctx) {
-				compareArgs[0] = k1
-				compareArgs[1] = k2
-				ret, err := keyCompare.Call(ctx, compareArgs)
-				if err != nil {
-					return nil, ctx.FuncError(err)
-				}
-				if ret.AsInt(ctx) != 0 {
-					continue
-				}
-
-				result.OffsetSet(ctx, k1, v1)
-			}
+	for k1, v1 := range array.Iterate(ctx) {
+		foundInAll := core.Every(otherArrays, func(arr *phpv.ZArray) bool {
+			found := arrayContainsEntry(ctx, arr, k1, v1, containsArgs)
+			return found
+		})
+		if foundInAll {
+			result.OffsetSet(ctx, k1, v1)
 		}
 	}
 
