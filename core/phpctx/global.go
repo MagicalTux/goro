@@ -52,9 +52,10 @@ type Global struct {
 	globalLazyFunc  map[phpv.ZString]*globalLazyOffset
 	globalLazyClass map[phpv.ZString]*globalLazyOffset
 
-	errOut io.Writer
-	out    io.Writer
-	buf    *Buffer
+	errOut      io.Writer
+	out         io.Writer
+	buf         *Buffer
+	lastOutChar byte
 
 	rand *random.State
 
@@ -237,6 +238,9 @@ func (g *Global) RunFile(fn string) error {
 }
 
 func (g *Global) Write(v []byte) (int, error) {
+	if len(v) > 0 {
+		g.lastOutChar = v[len(v)-1]
+	}
 	return g.out.Write(v)
 }
 
@@ -375,8 +379,12 @@ func (g *Global) log(format string, a ...any) {
 		output.WriteString(fmt.Sprintf(" in %s on line %d", loc.Filename, loc.Line))
 	}
 
-	g.writeErr([]byte(output.String()))
-	g.writeErr([]byte("\n"))
+	if g.lastOutChar != '\n' {
+		g.Write([]byte("\n"))
+	}
+
+	g.Write([]byte(output.String()))
+	g.Write([]byte("\n"))
 }
 
 func (g *Global) GetFuncName() string {
