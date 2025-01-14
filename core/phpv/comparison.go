@@ -107,6 +107,15 @@ func Compare(ctx Context, a, b *ZVal) (int, error) {
 		}
 	}
 
+	// if both are strings but only one is numeric, then do string comparison
+	// this handle cases that compare values like "a" and "9999"
+	aIsNonNumericString := a.GetType() == ZtString && ia == nil
+	bIsNonNumericString := b.GetType() == ZtString && ib == nil
+	if (aIsNonNumericString && ib != nil && b.GetType() != ZtInt) ||
+		(bIsNonNumericString && ia != nil && a.GetType() != ZtInt) {
+		goto CompareStrings
+	}
+
 	if ia != nil || ib != nil {
 		// if either part is a numeric, force the other one as numeric too and go through comparison
 		if ia == nil {
@@ -181,10 +190,11 @@ func Compare(ctx Context, a, b *ZVal) (int, error) {
 		return res, nil
 	}
 
+CompareStrings:
 	switch a.Value().GetType() {
 	case ZtString:
-		av := string(a.Value().(ZString))
-		bv := string(b.Value().(ZString))
+		av := string(a.AsString(ctx))
+		bv := string(b.AsString(ctx))
 		return strings.Compare(av, bv), nil
 	}
 

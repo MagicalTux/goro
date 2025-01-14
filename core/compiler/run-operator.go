@@ -568,6 +568,15 @@ func operatorCompare(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (
 		}
 	}
 
+	// if both are strings but only one is numeric, then do string comparison
+	// this handle cases such as "a" > "9999"
+	aIsNonNumericString := a.GetType() == phpv.ZtString && ia == nil
+	bIsNonNumericString := b.GetType() == phpv.ZtString && ib == nil
+	if (aIsNonNumericString && ib != nil && b.GetType() != phpv.ZtInt) ||
+		(bIsNonNumericString && ia != nil && a.GetType() != phpv.ZtInt) {
+		goto CompareStrings
+	}
+
 	if ia != nil || ib != nil {
 		// if either part is a numeric, force the other one as numeric too and go through comparison
 		if ia == nil {
@@ -689,12 +698,13 @@ func operatorCompare(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (
 		return phpv.ZBool(false).ZVal(), nil
 	}
 
+CompareStrings:
 	var res bool
 
 	switch a.Value().GetType() {
 	case phpv.ZtString:
-		av := a.Value().(phpv.ZString)
-		bv := b.Value().(phpv.ZString)
+		av := a.AsString(ctx)
+		bv := b.AsString(ctx)
 		switch op {
 		case tokenizer.Rune('<'):
 			res = av < bv
