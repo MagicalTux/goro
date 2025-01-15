@@ -82,23 +82,25 @@ func (r *runnableFor) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 			break
 		}
 
-		_, err = r.code.Run(ctx)
-		if err != nil {
-			e := r.l.Error(err)
-			switch br := e.Err.(type) {
-			case *phperr.PhpBreak:
-				if br.Intv > 1 {
-					br.Intv--
-					return nil, br
+		if r.code != nil {
+			_, err = r.code.Run(ctx)
+			if err != nil {
+				e := r.l.Error(err)
+				switch br := e.Err.(type) {
+				case *phperr.PhpBreak:
+					if br.Intv > 1 {
+						br.Intv--
+						return nil, br
+					}
+					return nil, nil
+				case *phperr.PhpContinue:
+					if br.Intv > 1 {
+						br.Intv--
+						return nil, br
+					}
+				default:
+					return nil, e
 				}
-				return nil, nil
-			case *phperr.PhpContinue:
-				if br.Intv > 1 {
-					br.Intv--
-					return nil, br
-				}
-			default:
-				return nil, e
 			}
 		}
 

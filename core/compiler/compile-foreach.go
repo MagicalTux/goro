@@ -51,26 +51,29 @@ func (r *runnableForeach) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 		}
 		ctx.OffsetSet(ctx, r.v.ZVal(), v.Dup())
 
-		_, err = r.code.Run(ctx)
-		if err != nil {
-			e := r.l.Error(err)
-			switch br := e.Err.(type) {
-			case *phperr.PhpBreak:
-				if br.Intv > 1 {
-					br.Intv -= 1
-					return nil, br
+		if r.code != nil {
+			_, err = r.code.Run(ctx)
+			if err != nil {
+				e := r.l.Error(err)
+				switch br := e.Err.(type) {
+				case *phperr.PhpBreak:
+					if br.Intv > 1 {
+						br.Intv -= 1
+						return nil, br
+					}
+					return nil, nil
+				case *phperr.PhpContinue:
+					if br.Intv > 1 {
+						br.Intv -= 1
+						return nil, br
+					}
+					it.Next(ctx)
+					continue
 				}
-				return nil, nil
-			case *phperr.PhpContinue:
-				if br.Intv > 1 {
-					br.Intv -= 1
-					return nil, br
-				}
-				it.Next(ctx)
-				continue
+				return nil, e
 			}
-			return nil, e
 		}
+
 		it.Next(ctx)
 	}
 	return nil, nil
