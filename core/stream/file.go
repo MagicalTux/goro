@@ -8,12 +8,13 @@ import (
 	"syscall"
 )
 
-type fileHandler struct {
-	cwd  string
-	root string
+// TODO: remove cwd state here
+type FileHandler struct {
+	Cwd  string
+	Root string
 }
 
-func NewFileHandler(root string) (Handler, error) {
+func NewFileHandler(root string) (*FileHandler, error) {
 	// make sure root is absolute
 	root, err := filepath.Abs(root)
 	if err != nil {
@@ -28,9 +29,9 @@ func NewFileHandler(root string) (Handler, error) {
 		root = root + string([]byte{filepath.Separator})
 	}
 
-	fh := &fileHandler{
-		root: root,
-		cwd:  "/",
+	fh := &FileHandler{
+		Root: root,
+		Cwd:  "/",
 	}
 
 	// try to get current working directory if within root
@@ -47,20 +48,20 @@ func NewFileHandler(root string) (Handler, error) {
 	if len(wd) >= len(root) && wd[:len(root)] == root {
 		localwd := filepath.Join("/", filepath.ToSlash(wd[len(root):]))
 		localwd = filepath.Clean(localwd)
-		fh.cwd = localwd
+		fh.Cwd = localwd
 	}
 
 	return fh, nil
 }
 
-func (f *fileHandler) localPath(name string) (string, string, error) {
+func (f *FileHandler) localPath(name string) (string, string, error) {
 	if !path.IsAbs(name) {
-		name = path.Join(f.cwd, name)
+		name = path.Join(f.Cwd, name)
 	}
 	name = path.Clean(name)
 
 	// go to fname
-	fname := filepath.Join(f.root, filepath.FromSlash(name))
+	fname := filepath.Join(f.Root, filepath.FromSlash(name))
 
 	// resolve symlinks
 	fname2, err := filepath.EvalSymlinks(fname)
@@ -74,7 +75,7 @@ func (f *fileHandler) localPath(name string) (string, string, error) {
 	}
 
 	// check if OK
-	if fname[:len(f.root)] != f.root {
+	if fname[:len(f.Root)] != f.Root {
 		// not ok
 		return "", "", os.ErrNotExist
 	}
@@ -82,12 +83,11 @@ func (f *fileHandler) localPath(name string) (string, string, error) {
 	return fname, name, nil
 }
 
-func (f *fileHandler) Open(p *url.URL) (*Stream, error) {
-	fname, name, err := f.localPath(p.Path)
+func (f *FileHandler) OpenFile(fname string) (*Stream, error) {
+	fname, name, err := f.localPath(fname)
 	if err != nil {
 		return nil, err
 	}
-
 	res, err := os.Open(fname)
 	if err != nil {
 		return nil, err
@@ -103,7 +103,11 @@ func (f *fileHandler) Open(p *url.URL) (*Stream, error) {
 	return s, nil
 }
 
-func (f *fileHandler) Exists(p *url.URL) (bool, error) {
+func (f *FileHandler) Open(p *url.URL) (*Stream, error) {
+	return f.OpenFile(p.Path)
+}
+
+func (f *FileHandler) Exists(p *url.URL) (bool, error) {
 	fname, _, err := f.localPath(p.Path)
 	if err != nil {
 		return false, err
@@ -119,7 +123,7 @@ func (f *fileHandler) Exists(p *url.URL) (bool, error) {
 	return true, nil
 }
 
-func (f *fileHandler) Stat(p *url.URL) (os.FileInfo, error) {
+func (f *FileHandler) Stat(p *url.URL) (os.FileInfo, error) {
 	fname, _, err := f.localPath(p.Path)
 	if err != nil {
 		return nil, err
@@ -128,7 +132,7 @@ func (f *fileHandler) Stat(p *url.URL) (os.FileInfo, error) {
 	return os.Stat(fname) // TODO use Lstat instead, and resolve link locally
 }
 
-func (f *fileHandler) Lstat(p *url.URL) (os.FileInfo, error) {
+func (f *FileHandler) Lstat(p *url.URL) (os.FileInfo, error) {
 	fname, _, err := f.localPath(p.Path)
 	if err != nil {
 		return nil, err
@@ -137,7 +141,7 @@ func (f *fileHandler) Lstat(p *url.URL) (os.FileInfo, error) {
 	return os.Lstat(fname) // TODO use Lstat instead, and resolve link locally
 }
 
-func (f *fileHandler) Chdir(p string) error {
+func (f *FileHandler) Chdir(p string) error {
 	fname, name, err := f.localPath(p)
 	if err != nil {
 		return err
@@ -152,10 +156,10 @@ func (f *fileHandler) Chdir(p string) error {
 		return &os.PathError{Op: "chdir", Path: p, Err: syscall.ENOTDIR}
 	}
 
-	f.cwd = name
+	f.Cwd = name
 	return nil
 }
 
-func (f *fileHandler) Getwd() string {
-	return f.cwd
+func (f *FileHandler) Getwd() string {
+	return f.Cwd
 }

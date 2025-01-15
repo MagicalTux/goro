@@ -44,8 +44,11 @@ type Global struct {
 	globalClasses map[phpv.ZString]*phpobj.ZClass // TODO replace *ZClass with a nice interface
 	constant      map[phpv.ZString]phpv.Val
 	environ       *phpv.ZHashTable
-	fHandler      map[string]stream.Handler
 	included      map[phpv.ZString]bool // included files (used for require_once, etc)
+	includePath   []string              // TODO: initialize
+
+	streamHandlers map[string]stream.Handler
+	fileHandler    *stream.FileHandler
 
 	callStack []phpv.Callable
 
@@ -104,16 +107,19 @@ func createGlobal(p *Process) *Global {
 		globalFuncs:     make(map[phpv.ZString]phpv.Callable),
 		globalClasses:   make(map[phpv.ZString]*phpobj.ZClass),
 		constant:        make(map[phpv.ZString]phpv.Val),
-		fHandler:        make(map[string]stream.Handler),
+		streamHandlers:  make(map[string]stream.Handler),
 		included:        make(map[phpv.ZString]bool),
 		globalLazyFunc:  make(map[phpv.ZString]*globalLazyOffset),
 		globalLazyClass: make(map[phpv.ZString]*globalLazyOffset),
 		shownDeprecated: make(map[string]struct{}),
 		mem:             NewMemMgr(32 * 1024 * 1024), // limit in bytes TODO read memory_limit from process (.ini file)
+
 	}
 	g.deadline = g.start.Add(30 * time.Second) // deadline
-	g.fHandler["file"], _ = stream.NewFileHandler("/")
-	g.fHandler["php"] = stream.PhpHandler()
+
+	g.fileHandler, _ = stream.NewFileHandler("/")
+	g.streamHandlers["file"] = g.fileHandler
+	g.streamHandlers["php"] = stream.PhpHandler()
 
 	return g
 }
@@ -537,6 +543,10 @@ func (g *Global) RegisterLazyFunc(name phpv.ZString, r phpv.Runnables, p int) {
 
 func (g *Global) RegisterLazyClass(name phpv.ZString, r phpv.Runnables, p int) {
 	g.globalLazyClass[name.ToLower()] = &globalLazyOffset{r, p}
+}
+
+func (g *Global) GetScriptFile() phpv.ZString {
+	return phpv.ZString(g.p.ScriptFilename)
 }
 
 func (g *Global) Global() phpv.GlobalContext {

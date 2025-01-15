@@ -1,12 +1,23 @@
 package phpctx
 
 import (
+	"errors"
 	"os"
 
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phperr"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
+
+type includeContext struct {
+	phpv.Context
+	scriptFilename phpv.ZString
+}
+
+func (ic *includeContext) GetScriptFile() phpv.ZString {
+	return ic.scriptFilename
+}
 
 var Compile func(parent phpv.Context, t *tokenizer.Lexer) (phpv.Runnable, error)
 
@@ -41,9 +52,18 @@ func (c *Global) DoString(ctx phpv.Context, strCode phpv.ZString) (*phpv.ZVal, e
 }
 
 func (c *Global) Include(ctx phpv.Context, fn phpv.ZString) (*phpv.ZVal, error) {
-	f, err := ctx.Global().Open(fn, true)
-	if err != nil {
-		// include → do not fail if file could not be open (TODO issue warning)
+	f, err := c.openForInclusion(ctx, fn)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, c.FuncError(err)
+	}
+
+	if f == nil {
+		ctx.Warn(
+			"%s(%s): failed to open stream: No such file or directory",
+			ctx.GetFuncName(),
+			string(fn),
+			logopt.NoFuncName(true),
+		)
 		return nil, nil
 	}
 
@@ -54,6 +74,11 @@ func (c *Global) Include(ctx phpv.Context, fn phpv.ZString) (*phpv.ZVal, error) 
 		fn = phpv.ZString(fn2)
 	}
 	c.included[fn] = true
+
+	ctx = &includeContext{
+		Context:        ctx,
+		scriptFilename: fn,
+	}
 
 	// tokenize
 	t := tokenizer.NewLexer(f, string(fn))
@@ -68,11 +93,10 @@ func (c *Global) Include(ctx phpv.Context, fn phpv.ZString) (*phpv.ZVal, error) 
 }
 
 func (c *Global) Require(ctx phpv.Context, fn phpv.ZString) (*phpv.ZVal, error) {
-	f, err := ctx.Global().Open(fn, true)
+	f, err := c.openForInclusion(ctx, fn)
 	if err != nil {
-		return nil, err
+		return nil, c.FuncError(err)
 	}
-
 	defer f.Close()
 
 	// grab full path of file if possible
@@ -94,9 +118,18 @@ func (c *Global) Require(ctx phpv.Context, fn phpv.ZString) (*phpv.ZVal, error) 
 }
 
 func (c *Global) IncludeOnce(ctx phpv.Context, fn phpv.ZString) (*phpv.ZVal, error) {
-	f, err := ctx.Global().Open(fn, true)
-	if err != nil {
-		// include → do not fail if file could not be open (TODO issue warning)
+	f, err := c.openForInclusion(ctx, fn)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, c.FuncError(err)
+	}
+
+	if f == nil {
+		ctx.Warn(
+			"%s(%s): failed to open stream: No such file or directory",
+			ctx.GetFuncName(),
+			string(fn),
+			logopt.NoFuncName(true),
+		)
 		return nil, nil
 	}
 
@@ -126,11 +159,10 @@ func (c *Global) IncludeOnce(ctx phpv.Context, fn phpv.ZString) (*phpv.ZVal, err
 }
 
 func (c *Global) RequireOnce(ctx phpv.Context, fn phpv.ZString) (*phpv.ZVal, error) {
-	f, err := ctx.Global().Open(fn, true)
+	f, err := c.openForInclusion(ctx, fn)
 	if err != nil {
-		return nil, err
+		return nil, c.FuncError(err)
 	}
-
 	defer f.Close()
 
 	// grab full path of file if possible
