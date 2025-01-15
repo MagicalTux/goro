@@ -8,11 +8,13 @@ import (
 )
 
 type PhpBreak struct {
-	L    *phpv.Loc
-	Intv phpv.ZInt
+	L       *phpv.Loc
+	Intv    phpv.ZInt
+	Initial phpv.ZInt
 }
 
 func (b *PhpBreak) Run(ctx phpv.Context) (*phpv.ZVal, error) {
+	b.Intv = b.Initial
 	return nil, b
 }
 
@@ -26,11 +28,13 @@ func (b *PhpBreak) Dump(w io.Writer) error {
 }
 
 type PhpContinue struct {
-	L    *phpv.Loc
-	Intv phpv.ZInt
+	L       *phpv.Loc
+	Intv    phpv.ZInt
+	Initial phpv.ZInt
 }
 
 func (c *PhpContinue) Run(ctx phpv.Context) (*phpv.ZVal, error) {
+	c.Intv = c.Initial
 	return nil, c
 }
 

@@ -27,7 +27,7 @@ func compileBreak(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	}
 
 	// return this as a runtime element and not a compile time error so switch and loops will catch it
-	return &phperr.PhpBreak{i.Loc(), phpv.ZInt(intv)}, nil
+	return &phperr.PhpBreak{L: i.Loc(), Intv: phpv.ZInt(intv), Initial: phpv.ZInt(intv)}, nil
 }
 
 func compileContinue(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
@@ -48,7 +48,7 @@ func compileContinue(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	}
 
 	// return this as a runtime element and not a compile time error so switch and loops will catch it
-	return &phperr.PhpContinue{i.Loc(), phpv.ZInt(intv)}, nil
+	return &phperr.PhpContinue{L: i.Loc(), Intv: phpv.ZInt(intv), Initial: phpv.ZInt(intv)}, nil
 }
 
 type runnableFor struct {
