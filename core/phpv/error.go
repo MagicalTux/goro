@@ -27,15 +27,11 @@ type PhpError struct {
 	Err      error
 	FuncName string
 	Code     PhpErrorType
-	l        *Loc
-}
-
-func (e *PhpError) Loc() *Loc {
-	return e.l
+	Loc      *Loc
 }
 
 func (e *PhpError) Error() string {
-	if e.l == nil {
+	if e.Loc == nil {
 		if e.Err == nil {
 			return "Unknown error"
 		}
@@ -45,7 +41,7 @@ func (e *PhpError) Error() string {
 	if e.FuncName != "" {
 		name = e.FuncName + "(): "
 	}
-	return fmt.Sprintf("%s%s in %s on line %d", name, e.Err, e.l.Filename, e.l.Line)
+	return fmt.Sprintf("%s%s in %s on line %d", name, e.Err, e.Loc.Filename, e.Loc.Line)
 }
 
 func (e *PhpError) IsExit() bool {

@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 
 	"github.com/MagicalTux/goro/core/ini"
@@ -58,7 +57,7 @@ func main() {
 
 	if p.ScriptFilename != "" {
 		if err := ctx.RunFile(p.ScriptFilename); err != nil {
-			log.Printf("failed to run file: %s", err)
+			ctx.Write([]byte(fmt.Sprintf("%s", err.Error())))
 			os.Exit(1)
 		}
 	}

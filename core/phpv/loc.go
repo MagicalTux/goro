@@ -31,17 +31,17 @@ func (l *Loc) Error(e error, codeArg ...PhpErrorType) *PhpError {
 	// fill location if missing
 	switch err := e.(type) {
 	case *PhpError:
-		if err.l == nil {
-			err.l = l
+		if err.Loc == nil {
+			err.Loc = l
 		}
 		return err
 	default:
-		return &PhpError{Err: e, Code: code, l: l}
+		return &PhpError{Err: e, Code: code, Loc: l}
 	}
 }
 
 func (l *Loc) Errorf(code PhpErrorType, f string, arg ...interface{}) *PhpError {
-	return &PhpError{Err: fmt.Errorf(f, arg...), l: l, Code: code}
+	return &PhpError{Err: fmt.Errorf(f, arg...), Loc: l, Code: code}
 }
 
 func (l *Loc) String() string {

@@ -2,8 +2,6 @@ package tokenizer
 
 import (
 	"fmt"
-	"path"
-	"runtime"
 
 	"github.com/MagicalTux/goro/core/phpv"
 )
@@ -198,8 +196,8 @@ func (i *Item) IsExpressionEnd() bool {
 }
 
 func (i *Item) Unexpected() error {
-	_, f, l, _ := runtime.Caller(1)
-	return i.Errorf("syntax error from %s:%d, unexpected %s", path.Base(f), l, i)
+	err := fmt.Errorf("Parse error: syntax error, unexpected %s", i)
+	return i.Loc().Error(err, phpv.E_PARSE)
 }
 
 func (i *Item) Loc() *phpv.Loc {

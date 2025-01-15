@@ -3,6 +3,7 @@ package standard
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/MagicalTux/goro/core"
@@ -44,7 +45,17 @@ func stdFuncEval(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	c, err := compiler.Compile(ctx, t)
 	if err != nil {
-		return nil, err
+		if phpErr, ok := err.(*phpv.PhpError); ok {
+			evalLoc := phpErr.Loc
+			return nil, fmt.Errorf(
+				"\n%s in %s(%d) : eval()'d code on line %d",
+				phpErr.Err.Error(),
+				ctx.Loc().Filename,
+				ctx.Loc().Line,
+				evalLoc.Line,
+			)
+		}
+		return nil, ctx.Error(err, phpv.E_PARSE)
 	}
 
 	return c.Run(ctx)
