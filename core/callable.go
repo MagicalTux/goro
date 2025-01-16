@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/MagicalTux/goro/core/compiler"
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -33,8 +34,11 @@ func SpawnCallable(ctx phpv.Context, v *phpv.ZVal) (phpv.Callable, error) {
 		return ctx.Global().GetFunction(ctx, s)
 
 	case phpv.ZtArray:
+		// array is either:
+		// - [$obj, "methodName"]
+		// - ["className", "methodName"]
 		array := v.Array()
-		obj, err := array.OffsetGet(ctx, phpv.ZInt(0))
+		firstArg, err := array.OffsetGet(ctx, phpv.ZInt(0))
 		if err != nil {
 			return nil, err
 		}
@@ -43,23 +47,32 @@ func SpawnCallable(ctx phpv.Context, v *phpv.ZVal) (phpv.Callable, error) {
 			return nil, err
 		}
 
-		if obj.GetType() != phpv.ZtString && obj.GetType() != phpv.ZtObject {
-			return nil, ctx.Errorf("Argument #1 ($callback) must be a valid callback, first array member %q is not a valid class name or object", obj.GetType().String())
+		switch firstArg.GetType() {
+		case phpv.ZtString, phpv.ZtObject:
+		default:
+			return nil, ctx.Errorf("Argument #1 ($callback) must be a valid callback, first array member %q is not a valid class name or object", firstArg.GetType().String())
 		}
 		if methodName.GetType() != phpv.ZtString {
-			return nil, ctx.Errorf("Argument #1 ($callback) must be a valid callback, second array member %q is not a valid method", obj.GetType().String())
+			return nil, ctx.Errorf("Argument #1 ($callback) must be a valid callback, second array member %q is not a valid method", firstArg.GetType().String())
 		}
 
 		var class phpv.ZClass
+		var instance phpv.ZObject
 
-		if obj.GetType() == phpv.ZtString {
-			class, err = ctx.Global().GetClass(ctx, obj.AsString(ctx), false)
+		if firstArg.GetType() == phpv.ZtString {
+			class, err := ctx.Global().GetClass(ctx, firstArg.AsString(ctx), false)
+			if err != nil {
+				return nil, err
+			}
+			instance, err = phpobj.NewZObject(ctx, class)
 			if err != nil {
 				return nil, err
 			}
 		} else {
-			class = obj.AsObject(ctx).GetClass()
+			instance = firstArg.AsObject(ctx)
 		}
+
+		class = instance.GetClass()
 
 		name := methodName.AsString(ctx).ToLower()
 		if index := strings.Index(string(name), "::"); index >= 0 {
@@ -79,12 +92,14 @@ func SpawnCallable(ctx phpv.Context, v *phpv.ZVal) (phpv.Callable, error) {
 			return nil, ctx.Errorf("Argument #1 ($callback) must be a valid callback, method not found: %q", methodName)
 		}
 
-		return (*member).Method, nil
+		method := phpv.Bind(member.Method, instance)
+		return method, nil
 
 	case phpv.ZtObject:
 		object := v.AsObject(ctx)
 		if f, ok := object.GetClass().GetMethod("__invoke"); ok {
-			return (*f).Method, nil
+			method := phpv.Bind(f.Method, object)
+			return method, nil
 		}
 
 		if z, ok := object.GetOpaque(compiler.Closure).(*compiler.ZClosure); ok {

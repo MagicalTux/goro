@@ -111,7 +111,7 @@ func fncCallUserFunc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	return callback.Call(ctx, args[1:])
+	return ctx.CallZVal(ctx, callback, args[1:], nil)
 }
 
 // > func mixed call_user_func_array ( callable $callback , array $param_arr )

@@ -16,6 +16,8 @@ type Context interface {
 	ZIterable
 	io.Writer
 
+	// return value of GetScriptFile will change depending on which
+	// currently include()'d or require()'d file is running
 	GetScriptFile() ZString
 
 	Global() GlobalContext

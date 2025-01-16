@@ -32,3 +32,12 @@ func (c CallableVal) AsVal(ctx Context, t ZType) (Val, error) {
 func (c CallableVal) String() string {
 	return "Callable"
 }
+
+type BoundedCallable struct {
+	Callable
+	This ZObject
+}
+
+func Bind(fn Callable, this ZObject) *BoundedCallable {
+	return &BoundedCallable{fn, this}
+}
