@@ -129,13 +129,28 @@ func compileSwitch(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	}
 
 	sw.cond, err = compileExpr(nil, c)
+	if err != nil {
+		return nil, err
+	}
 	err = c.ExpectSingle(')')
 	if err != nil {
 		return nil, err
 	}
-	err = c.ExpectSingle('{')
+
+	altForm := false
+
+	i, err = c.NextItem()
 	if err != nil {
 		return nil, err
+	}
+
+	switch i.Type {
+	case tokenizer.Rune('{'):
+	case tokenizer.Rune(':'):
+		altForm = true
+	default:
+		c.backup()
+		return nil, i.Unexpected()
 	}
 
 	i, err = c.NextItem()
@@ -144,7 +159,8 @@ func compileSwitch(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	}
 
 	for {
-		if i.IsSingle('}') {
+
+		if (altForm && i.Type == tokenizer.T_ENDSWITCH) || (!altForm && i.IsSingle('}')) {
 			break
 		}
 
@@ -176,9 +192,11 @@ func compileSwitch(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			if err != nil {
 				return sw, err
 			}
-			if i.IsSingle('}') {
+
+			if (altForm && i.Type == tokenizer.T_ENDSWITCH) || (!altForm && i.IsSingle('}')) {
 				break
 			}
+
 			if i.Type == tokenizer.T_CASE || i.Type == tokenizer.T_DEFAULT {
 				break
 			}

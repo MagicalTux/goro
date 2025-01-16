@@ -220,12 +220,30 @@ func compileFor(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	if i.IsSingle(';') {
 		return r, nil
 	}
+
+	altForm := i.IsSingle(':')
 	c.backup()
 
-	// parse code
 	r.code, err = compileBaseSingle(nil, c)
 	if err != nil {
 		return nil, err
+	}
+
+	if altForm {
+		i, err = c.NextItem()
+		if err != nil {
+			return nil, err
+		}
+		if i.Type != tokenizer.T_ENDFOR {
+			return nil, i.Unexpected()
+		}
+		i, err = c.NextItem()
+		if err != nil {
+			return nil, err
+		}
+		if !i.IsExpressionEnd() {
+			return nil, i.Unexpected()
+		}
 	}
 
 	return r, nil

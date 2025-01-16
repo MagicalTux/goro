@@ -51,6 +51,7 @@ func init() {
 		tokenizer.T_NEW:          &compileFuncCb{f: compileNew},
 		tokenizer.T_CLONE:        &compileFuncCb{f: compileClone},
 		tokenizer.Rune('{'):      &compileFuncCb{f: compileBase, skip: true},
+		tokenizer.Rune(':'):      &compileFuncCb{f: compileBaseUntilAltEnd, skip: true},
 		tokenizer.Rune('('):      &compileFuncCb{f: compileExpr},
 		tokenizer.Rune('@'):      &compileFuncCb{f: compileExpr},
 		tokenizer.Rune('$'):      &compileFuncCb{f: compileExpr},
@@ -66,6 +67,33 @@ func compileIgnore(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 
 func compileBase(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	return compileBaseUntil(i, c, tokenizer.Rune('}'))
+}
+
+// handle the blocks delimited with alternate syntax
+// https://www.php.net/manual/en/control-structures.alternative-syntax.php
+func compileBaseUntilAltEnd(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
+	var res phpv.Runnables
+
+	for {
+		i, err := c.NextItem()
+		if err != nil {
+			return res, err
+		}
+		switch i.Type {
+		case tokenizer.T_ENDFOR, tokenizer.T_ENDFOREACH, tokenizer.T_ENDWHILE:
+			// end of block, but need to backup one for caller to check
+			c.backup()
+			return res, nil
+		}
+
+		t, err := compileBaseSingle(i, c)
+		if t != nil {
+			res = append(res, t)
+		}
+		if err != nil {
+			return res, err
+		}
+	}
 }
 
 func compileBaseUntil(i *tokenizer.Item, c compileCtx, until tokenizer.ItemType) (phpv.Runnable, error) {
