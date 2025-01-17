@@ -368,7 +368,7 @@ func arrayUSort(ctx phpv.Context, entries []compareEntry, compare phpv.Callable)
 		b := entries[j].item
 
 		var ret *phpv.ZVal
-		ret, err = compare.Call(ctx, []*phpv.ZVal{a, b})
+		ret, err = ctx.CallZVal(ctx, compare, []*phpv.ZVal{a, b})
 		return ret.AsInt(ctx) < 0
 	})
 

@@ -123,7 +123,11 @@ func fncCallUserFuncArray(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, erro
 		return nil, err
 	}
 
-	return callback.Call(ctx, []*phpv.ZVal{arrayArgs.ZVal()})
+	var cbArgs []*phpv.ZVal
+	for _, v := range arrayArgs.Iterate(ctx) {
+		cbArgs = append(cbArgs, v)
+	}
+	return ctx.CallZVal(ctx, callback, cbArgs, nil)
 }
 
 // > func string inet_ntop ( string $in_addr )

@@ -335,7 +335,7 @@ func fncArrayFilter(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		for k, v := range array.Iterate(ctx) {
 			callbackArgs[0] = v
 			callbackArgs[1] = k
-			ok, err := callback.Call(ctx, callbackArgs)
+			ok, err := ctx.CallZVal(ctx, callback, callbackArgs)
 			if err != nil {
 				return nil, err
 			}
@@ -348,7 +348,7 @@ func fncArrayFilter(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		callbackArgs := make([]*phpv.ZVal, 1)
 		for k, v := range array.Iterate(ctx) {
 			callbackArgs[0] = k
-			ok, err := callback.Call(ctx, callbackArgs)
+			ok, err := ctx.CallZVal(ctx, callback, callbackArgs)
 			if err != nil {
 				return nil, err
 			}
@@ -361,7 +361,7 @@ func fncArrayFilter(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		callbackArgs := make([]*phpv.ZVal, 1)
 		for k, v := range array.Iterate(ctx) {
 			callbackArgs[0] = v
-			ok, err := callback.Call(ctx, []*phpv.ZVal{v})
+			ok, err := ctx.CallZVal(ctx, callback, []*phpv.ZVal{v})
 			if err != nil {
 				return nil, err
 			}
@@ -396,7 +396,7 @@ func fncArrayWalk(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	for k, v := range array.Get().Iterate(ctx) {
 		callbackArgs[0] = v
 		callbackArgs[1] = k
-		callback.Call(ctx, callbackArgs)
+		ctx.CallZVal(ctx, callback, callbackArgs)
 	}
 
 	return phpv.ZTrue.ZVal(), nil
@@ -429,7 +429,7 @@ func fncArrayWalkRecursive(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, err
 
 			callbackArgs[0] = v
 			callbackArgs[1] = k
-			callback.Call(ctx, callbackArgs)
+			ctx.CallZVal(ctx, callback, callbackArgs)
 		}
 	}
 
@@ -470,7 +470,7 @@ func fncArrayMap(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			}
 			args = append(args, val)
 		}
-		val, err := callback.Call(ctx, args)
+		val, err := ctx.CallZVal(ctx, callback, args)
 		if err != nil {
 			return nil, err
 		}
@@ -1480,7 +1480,7 @@ func fncArrayReduce(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	for _, v := range array.Iterate(ctx) {
 		cbArgs[0] = accumulator
 		cbArgs[1] = v
-		accumulator, err = callback.Call(ctx, cbArgs)
+		accumulator, err = ctx.CallZVal(ctx, callback, cbArgs)
 		if err != nil {
 			return nil, ctx.FuncError(err)
 		}

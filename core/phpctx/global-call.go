@@ -6,7 +6,7 @@ import (
 )
 
 // perform call in new context
-func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, this phpv.ZObject) (*phpv.ZVal, error) {
+func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, optionalThis ...phpv.ZObject) (*phpv.ZVal, error) {
 	var zArgs []*phpv.ZVal
 	for _, arg := range args {
 		val, err := arg.Run(ctx)
@@ -15,16 +15,20 @@ func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, t
 		}
 		zArgs = append(zArgs, val)
 	}
-	return c.CallZVal(ctx, f, zArgs, this)
+	return c.CallZVal(ctx, f, zArgs, optionalThis...)
 }
 
-func (c *Global) CallZVal(ctx phpv.Context, f phpv.Callable, args []*phpv.ZVal, this phpv.ZObject) (*phpv.ZVal, error) {
+func (c *Global) CallZVal(ctx phpv.Context, f phpv.Callable, args []*phpv.ZVal, optionalThis ...phpv.ZObject) (*phpv.ZVal, error) {
 	callCtx := &FuncContext{
 		Context: ctx,
 		h:       phpv.NewHashTable(),
 		c:       f,
 	}
 
+	var this phpv.ZObject
+	if len(optionalThis) > 0 {
+		this = optionalThis[0]
+	}
 	if this == nil {
 		if obj, ok := f.(*phpv.BoundedCallable); ok {
 			this = obj.This

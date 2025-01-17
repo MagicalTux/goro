@@ -47,8 +47,8 @@ type Context interface {
 
 	GetConfig(name ZString, def *ZVal) *ZVal
 
-	Call(ctx Context, f Callable, args []Runnable, this ZObject) (*ZVal, error)
-	CallZVal(ctx Context, f Callable, args []*ZVal, this ZObject) (*ZVal, error)
+	Call(ctx Context, f Callable, args []Runnable, this ...ZObject) (*ZVal, error)
+	CallZVal(ctx Context, f Callable, args []*ZVal, this ...ZObject) (*ZVal, error)
 }
 
 type GlobalContext interface {

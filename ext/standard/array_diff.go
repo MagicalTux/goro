@@ -82,7 +82,7 @@ func fncArrayUDiff(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	err = arrayDiff(ctx, result, args[1:len(args)-1], func(k1, v1, k2, v2 *phpv.ZVal) (bool, error) {
 		funcArgs[0] = v1
 		funcArgs[1] = v2
-		ret, err := valueCompareFunc.Call(ctx, funcArgs)
+		ret, err := ctx.CallZVal(ctx, valueCompareFunc, funcArgs)
 		if err != nil {
 			return false, err
 		}
@@ -129,7 +129,7 @@ func fncArrayUDiffAssoc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 		}
 		funcArgs[0] = v1
 		funcArgs[1] = v2
-		ret, err := valueCompareFunc.Call(ctx, funcArgs)
+		ret, err := ctx.CallZVal(ctx, valueCompareFunc, funcArgs)
 		if err != nil {
 			return false, err
 		}
@@ -187,7 +187,7 @@ func fncArrayUDiffUAssoc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error
 	err = arrayDiff(ctx, result, args[1:len(args)-2], func(k1, v1, k2, v2 *phpv.ZVal) (bool, error) {
 		funcArgs[0] = k1
 		funcArgs[1] = k2
-		ret, err := keyCompareFunc.Call(ctx, funcArgs)
+		ret, err := ctx.CallZVal(ctx, keyCompareFunc, funcArgs)
 		if err != nil {
 			return false, err
 		}
@@ -197,7 +197,7 @@ func fncArrayUDiffUAssoc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error
 
 		funcArgs[0] = v1
 		funcArgs[1] = v2
-		ret, err = valueCompareFunc.Call(ctx, funcArgs)
+		ret, err = ctx.CallZVal(ctx, valueCompareFunc, funcArgs)
 		if err != nil {
 			return false, err
 		}
@@ -244,7 +244,7 @@ func fncArrayDiffUKey(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	err = arrayDiff(ctx, result, args[1:len(args)-1], func(k1, v1, k2, v2 *phpv.ZVal) (bool, error) {
 		funcArgs[0] = k1
 		funcArgs[1] = k2
-		ret, err := valueCompareFunc.Call(ctx, funcArgs)
+		ret, err := ctx.CallZVal(ctx, valueCompareFunc, funcArgs)
 		if err != nil {
 			return false, err
 		}
@@ -292,7 +292,7 @@ func fncArrayDiffUAssoc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 
 		funcArgs[0] = k1
 		funcArgs[1] = k2
-		ret, err := valueCompareFunc.Call(ctx, funcArgs)
+		ret, err := ctx.CallZVal(ctx, valueCompareFunc, funcArgs)
 		if err != nil {
 			return false, err
 		}
