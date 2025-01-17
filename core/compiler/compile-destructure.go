@@ -34,6 +34,9 @@ func (zl *zList) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 	array := value.AsArray(ctx)
 
 	for k, v := range zl.elems.Iterate(ctx) {
+		if v == nil {
+			continue
+		}
 		val, _ := array.OffsetGet(ctx, k)
 		if subList, ok := v.Value().(*zList); ok {
 			err := subList.WriteValue(ctx, val)
@@ -78,9 +81,12 @@ func (rd *runDestructure) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 				return nil, err
 			}
 		}
-		v, err = e.v.Run(ctx)
-		if err != nil {
-			return nil, err
+
+		if e.v != nil {
+			v, err = e.v.Run(ctx)
+			if err != nil {
+				return nil, err
+			}
 		}
 
 		list.elems.OffsetSet(ctx, k, v.ZVal())
@@ -174,6 +180,12 @@ func compileDestructure(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) 
 
 		if i.IsSingle(')') {
 			break
+		}
+
+		if i.IsSingle(',') {
+			// empty slot is allowed: list($x,)
+			res.e = append(res.e, &destructureEntry{v: nil})
+			continue
 		}
 
 		isList := false
