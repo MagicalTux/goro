@@ -721,6 +721,46 @@ CompareStrings:
 		default:
 			return nil, ctx.Errorf("unsupported operator %s", op)
 		}
+	case phpv.ZtArray:
+		// Array with fewer members is smaller, if key from operand 1 is not found in operand 2
+		// then arrays are incomparable, otherwise - compare value by value
+		switch b.Value().GetType() {
+		case phpv.ZtArray:
+			arrA := a.AsArray(ctx)
+			arrB := b.AsArray(ctx)
+			switch op {
+			case tokenizer.Rune('>'):
+				res = arrA.Count(ctx) > arrB.Count(ctx)
+			case tokenizer.Rune('<'):
+				res = arrA.Count(ctx) < arrB.Count(ctx)
+			case tokenizer.T_IS_SMALLER_OR_EQUAL:
+				res = arrA.Count(ctx) < arrB.Count(ctx) || arrA.Equals(ctx, arrB)
+			case tokenizer.T_IS_GREATER_OR_EQUAL:
+				res = arrA.Count(ctx) > arrB.Count(ctx) || arrA.Equals(ctx, arrB)
+			case tokenizer.T_IS_EQUAL:
+				res = arrA.Equals(ctx, arrB)
+			case tokenizer.T_IS_NOT_EQUAL:
+				res = !arrA.Equals(ctx, arrB)
+			default:
+				return nil, ctx.Errorf("unsupported operator %s", op)
+			}
+		default:
+			// Array > not-Array
+			switch op {
+			case tokenizer.Rune('>'), tokenizer.T_IS_GREATER_OR_EQUAL:
+				res = true
+			case tokenizer.Rune('<'),
+				tokenizer.T_IS_SMALLER_OR_EQUAL,
+				tokenizer.T_IS_EQUAL, tokenizer.T_IS_NOT_EQUAL:
+				res = false
+			default:
+				return nil, ctx.Errorf("unsupported operator %s", op)
+			}
+
+		}
+
+	case phpv.ZtObject:
+		// TODO:
 	default:
 		return nil, ctx.Errorf("todo operator type unsupported %s", a.GetType())
 	}

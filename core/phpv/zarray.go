@@ -287,3 +287,21 @@ func (a *ZArray) Reset(ctx Context) {
 	a.h.ResetIntKeys()
 	a.h.mainIterator.Reset(ctx)
 }
+
+func (a *ZArray) Equals(ctx Context, b *ZArray) bool {
+	if a.Count(ctx) != b.Count(ctx) {
+		return false
+	}
+	for k, v1 := range a.Iterate(ctx) {
+		v2, found, _ := b.OffsetCheck(ctx, k)
+		if !found {
+			return false
+		}
+		equals, _ := Equals(ctx, v1, v2)
+		if !equals {
+			return false
+		}
+
+	}
+	return true
+}
