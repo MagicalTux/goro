@@ -43,24 +43,30 @@ func (z *ZVal) ZVal() *ZVal {
 	if z.v == nil {
 		panic("nil zval!")
 	}
+
+	var res *ZVal
 	switch a := z.v.(type) {
 	case *ZArray:
 		// special case
-		return a.Dup().ZVal()
+		res = a.Dup().ZVal()
 	default:
-		return a.ZVal()
+		res = a.ZVal()
 	}
+	res.Name = z.Name
+	return res
 }
 
 // Returns actual zval, dropping status of reference
 func (z *ZVal) Nude() *ZVal {
-	// return nude value
+	var res *ZVal
 	switch v := z.v.(type) {
 	case *ZVal:
-		return v.Nude()
+		res = v.Nude()
 	default:
-		return z
+		res = z
 	}
+	res.Name = z.Name
+	return res
 }
 
 func (z *ZVal) Dup() *ZVal {
@@ -68,15 +74,18 @@ func (z *ZVal) Dup() *ZVal {
 		return z
 	}
 
+	var res *ZVal
 	switch v := z.v.(type) {
 	case *ZVal:
 		// detach reference
-		return v.Dup()
+		res = v.Dup()
 	case *ZArray:
-		return (&ZArray{h: v.h.Dup()}).ZVal()
+		res = (&ZArray{h: v.h.Dup()}).ZVal()
 	default:
-		return NewZVal(z.v)
+		res = NewZVal(z.v)
 	}
+	res.Name = z.Name
+	return res
 }
 
 // Ref returns a reference to this zval while making it itself a ref
