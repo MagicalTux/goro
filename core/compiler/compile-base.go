@@ -50,6 +50,7 @@ func init() {
 		tokenizer.T_BREAK:        &compileFuncCb{f: compileBreak},
 		tokenizer.T_NEW:          &compileFuncCb{f: compileNew},
 		tokenizer.T_CLONE:        &compileFuncCb{f: compileClone},
+		tokenizer.T_LIST:         &compileFuncCb{f: compileBaseDestructure},
 		tokenizer.Rune('{'):      &compileFuncCb{f: compileBase, skip: true},
 		tokenizer.Rune(':'):      &compileFuncCb{f: compileBaseUntilAltEnd, skip: true},
 		tokenizer.Rune('('):      &compileFuncCb{f: compileExpr},
