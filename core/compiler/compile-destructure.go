@@ -33,11 +33,13 @@ func (zl *zList) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 	}
 	array := value.AsArray(ctx)
 
-	for k, v := range zl.elems.Iterate(ctx) {
+	i := -1
+	for _, v := range zl.elems.Iterate(ctx) {
+		i++
 		if v == nil {
 			continue
 		}
-		val, _ := array.OffsetGet(ctx, k)
+		val, _ := array.OffsetGet(ctx, phpv.ZInt(i))
 		if subList, ok := v.Value().(*zList); ok {
 			err := subList.WriteValue(ctx, val)
 			if err != nil {
@@ -50,7 +52,7 @@ func (zl *zList) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 			return ctx.Errorf("Assignments can only happen to writable values")
 		}
 
-		err := ctx.OffsetSet(ctx, v.GetName(), val)
+		err := ctx.OffsetSet(ctx, v.GetName(), val.Dup())
 		if err != nil {
 			return err
 		}

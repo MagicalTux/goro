@@ -142,10 +142,6 @@ func (a *ZArray) OffsetCheck(ctx Context, key Val) (*ZVal, bool, error) {
 }
 
 func (a *ZArray) OffsetSet(ctx Context, key Val, value *ZVal) error {
-	if value == nil {
-		return a.OffsetUnset(ctx, key)
-	}
-
 	if key == nil || key.GetType() == ZtNull {
 		err := a.h.Append(value)
 		return err
