@@ -56,6 +56,14 @@ func (z *zhashtableIterator) Reset(ctx Context) (*ZVal, error) {
 	return z.Current(ctx)
 }
 
+func (z *zhashtableIterator) ResetIfEnd(ctx Context) (*ZVal, error) {
+	if !z.Valid(ctx) {
+		z.cur = z.t.first
+		return z.Current(ctx)
+	}
+	return nil, nil
+}
+
 func (z *zhashtableIterator) End(ctx Context) (*ZVal, error) {
 	z.cur = z.t.last
 	return z.Current(ctx)

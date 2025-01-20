@@ -22,6 +22,7 @@ type ZIterator interface {
 	Next(ctx Context) (*ZVal, error)
 	Prev(ctx Context) (*ZVal, error)
 	Reset(ctx Context) (*ZVal, error)
+	ResetIfEnd(ctx Context) (*ZVal, error)
 	End(ctx Context) (*ZVal, error)
 	Valid(ctx Context) bool
 	Iterate(ctx Context) iter.Seq2[*ZVal, *ZVal]

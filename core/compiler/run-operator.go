@@ -226,6 +226,15 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		if !ok {
 			return nil, ctx.Errorf("Can't use %#v value in write context", r.a)
 		}
+
+		// The PHP documentation states that the array's internal
+		// pointer is reset when assigning to another variable
+		// AND the internal pointer is at the end.
+		// The following code handles that special case.
+		if res.GetType() == phpv.ZtArray {
+			res.AsArray(ctx).MainIterator().ResetIfEnd(ctx)
+		}
+
 		return res, w.WriteValue(ctx, res.ZVal())
 	}
 
