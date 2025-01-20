@@ -98,11 +98,21 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 }
 
 func (c *ZClass) InstanceOf(subc phpv.ZClass) bool {
+	if c == nil || subc == nil {
+		return false
+	}
 	if subc == c {
 		return true
 	}
-	_, r := c.parents[subc]
-	return r
+	_, ok := c.parents[subc]
+	if ok {
+		return true
+	}
+	parent := c.GetParent()
+	if parent == nil {
+		return false
+	}
+	return parent.InstanceOf(subc)
 }
 
 func (c *ZClass) Dump(w io.Writer) error {

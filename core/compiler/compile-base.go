@@ -29,6 +29,7 @@ func init() {
 		tokenizer.T_IF:           &compileFuncCb{f: compileIf, skip: true},
 		tokenizer.T_CLASS:        &compileFuncCb{f: compileClass, skip: true},
 		tokenizer.T_INTERFACE:    &compileFuncCb{f: compileClass, skip: true},
+		tokenizer.T_TRY:          &compileFuncCb{f: compileTry, skip: true},
 		tokenizer.T_STATIC:       &compileFuncCb{f: compileStaticVar},
 		tokenizer.T_RETURN:       &compileFuncCb{f: compileReturn},
 		tokenizer.T_VARIABLE:     &compileFuncCb{f: compileExpr},
