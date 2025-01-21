@@ -138,7 +138,7 @@ func compileCatch(i *tokenizer.Item, c compileCtx) (*runnableCatch, error) {
 		}
 	}
 
-	res.varname = phpv.ZString(i.Data)
+	res.varname = phpv.ZString(i.Data)[1:]
 
 	i, err = c.NextItem()
 	if err != nil {
