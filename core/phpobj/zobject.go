@@ -1,6 +1,8 @@
 package phpobj
 
 import (
+	"slices"
+
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -81,13 +83,23 @@ func NewZObjectOpaque(ctx phpv.Context, c phpv.ZClass, v interface{}) (*ZObject,
 
 func (o *ZObject) init(ctx phpv.Context) error {
 	// initialize object variables with default values
-	class := o.Class.(*ZClass)
-	for _, p := range class.Props {
-		if p.Default == nil {
-			continue
-		}
-		o.h.SetString(p.VarName, p.Default.ZVal())
+
+	class := o.GetClass().(*ZClass)
+	lineage := []*ZClass{}
+	for class != nil {
+		lineage = append(lineage, class)
+		class = class.GetParent().(*ZClass)
 	}
+
+	for _, class := range slices.Backward(lineage) {
+		for _, p := range class.Props {
+			if p.Default == nil {
+				continue
+			}
+			o.h.SetString(p.VarName, p.Default.ZVal())
+		}
+	}
+
 	return nil
 }
 
