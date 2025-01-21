@@ -93,42 +93,8 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		}
 		return &runZVal{phpv.ZFloat(v), l}, nil
 	case tokenizer.T_STRING:
-		// if next is '(' this is a function call
-		t_next, err := c.NextItem()
-		if err != nil {
-			return nil, err
-		}
-		c.backup()
-
-		switch t_next.Type {
-		case tokenizer.T_PAAMAYIM_NEKUDOTAYIM:
-			// this is a static method call or a static variable access
-
-			// nb: if i.Data is "parent", "static" or "self" it might not actually be a static call
-			switch i.Data {
-			default:
-				className := phpv.ZString(i.Data)
-				c.NextItem()          // T_PAAMAYIM_NEKUDOTAYIM
-				i, err = c.NextItem() // actual value, a T_VARIABLE (if var) or a T_STRING
-
-				switch i.Type {
-				case tokenizer.T_VARIABLE:
-					return &runClassStaticVarRef{className, phpv.ZString(i.Data[1:]), l}, nil
-				case tokenizer.T_STRING:
-					return &runClassStaticObjRef{className, phpv.ZString(i.Data), l}, nil
-				default:
-					return nil, i.Unexpected()
-				}
-			}
-		case tokenizer.Rune('('):
-			args, err := compileFuncPassedArgs(c)
-			if err != nil {
-				return nil, err
-			}
-			return &runnableFunctionCall{phpv.ZString(i.Data), args, l}, nil
-		}
-		// so it's a constant
 		return &runConstant{i.Data, l}, nil
+
 	case tokenizer.T_CONSTANT_ENCAPSED_STRING:
 		return compileQuoteConstant(i, c)
 	case tokenizer.T_START_HEREDOC:
@@ -255,6 +221,8 @@ func compilePostExpr(v phpv.Runnable, i *tokenizer.Item, c compileCtx) (phpv.Run
 		}
 	case tokenizer.T_OBJECT_OPERATOR:
 		return compileObjectOperator(v, i, c)
+	case tokenizer.T_PAAMAYIM_NEKUDOTAYIM:
+		return compilePaamayimNekudotayim(v, i, c)
 	case tokenizer.T_INSTANCEOF:
 		return compileInstanceOf(v, i, c)
 	default:

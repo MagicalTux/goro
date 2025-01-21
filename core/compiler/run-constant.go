@@ -1,9 +1,11 @@
 package compiler
 
 import (
+	"errors"
 	"io"
 	"strings"
 
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -25,6 +27,22 @@ func (r *runConstant) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 		return phpv.ZBool(true).ZVal(), nil
 	case "false":
 		return phpv.ZBool(false).ZVal(), nil
+	case "self":
+		if ctx.This() == nil {
+			return nil, errors.New("cannot access self:: when no class scope is active")
+		}
+		return ctx.This().ZVal(), nil
+	case "parent":
+		if ctx.This() == nil {
+			return nil, errors.New("cannot access parent:: when no class scope is active")
+		}
+		parentClass := ctx.This().GetClass().GetParent()
+
+		obj, err := phpobj.NewZObject(ctx, parentClass)
+		if err != nil {
+			return nil, err
+		}
+		return obj.ZVal(), nil
 	}
 
 	z, ok := ctx.Global().ConstantGet(phpv.ZString(r.c))

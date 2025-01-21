@@ -328,6 +328,12 @@ func (g *Global) Notice(format string, a ...any) {
 	g.log(format, a...)
 }
 
+func (g *Global) Deprecated(format string, a ...any) {
+	g.writeErr([]byte{'\n'})
+	a = append(a, logopt.ErrType(phpv.E_DEPRECATED))
+	g.log(format, a...)
+}
+
 func (g *Global) WarnDeprecated() {
 	funcName := g.GetFuncName()
 	if _, ok := g.shownDeprecated[funcName]; !ok {

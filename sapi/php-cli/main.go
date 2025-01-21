@@ -57,7 +57,7 @@ func main() {
 
 	if p.ScriptFilename != "" {
 		if err := ctx.RunFile(p.ScriptFilename); err != nil {
-			ctx.Write([]byte(fmt.Sprintf("%s", err.Error())))
+			ctx.Write([]byte(fmt.Sprintf("Uncaught Error: %s", err.Error())))
 			os.Exit(1)
 		}
 	}

@@ -161,6 +161,7 @@ func (c *ZClass) GetProp(name phpv.ZString) (*phpv.ZClassProp, bool) {
 }
 
 func (c *ZClass) GetMethod(name phpv.ZString) (*phpv.ZClassMethod, bool) {
+	name = name.ToLower()
 	r, ok := c.Methods[name]
 	return r, ok
 }

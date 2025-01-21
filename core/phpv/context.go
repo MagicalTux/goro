@@ -40,6 +40,7 @@ type Context interface {
 	//   Notice("nope", logopt.Data{NoLoc: false})
 	Warn(format string, args ...any)
 	Notice(format string, args ...any)
+	Deprecated(format string, args ...any)
 
 	WarnDeprecated()
 

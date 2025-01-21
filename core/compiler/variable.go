@@ -57,10 +57,19 @@ func (r *runVariable) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
+	varName := r.v.String()
+	if varName == "this" && ctx.This() == nil {
+		return nil, ctx.Errorf("Using $this when not in object context")
+	}
+
 	res, err := ctx.OffsetGet(ctx, r.v.ZVal())
 	if err != nil {
 		return nil, err
 	}
+	if res == nil {
+		return res, nil
+	}
+
 	v := res.Nude()
 	v.Name = &r.v
 	return v, nil

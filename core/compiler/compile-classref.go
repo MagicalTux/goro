@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"errors"
 	"fmt"
 	"io"
 
@@ -10,12 +11,28 @@ import (
 
 // when classname::$something is used
 type runClassStaticVarRef struct {
-	className, varName phpv.ZString
-	l                  *phpv.Loc
+	className phpv.Runnable
+	varName   phpv.ZString
+	l         *phpv.Loc
 }
 
 func (r *runClassStaticVarRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
-	class, err := ctx.Global().GetClass(ctx, r.className, true)
+	className, err := r.className.Run(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var class phpv.ZClass
+
+	switch className.GetType() {
+	case phpv.ZtObject:
+		class = className.AsObject(ctx).GetClass()
+	case phpv.ZtString:
+		class, err = ctx.Global().GetClass(ctx, className.AsString(ctx), true)
+	default:
+		return nil, errors.New("invalid method receiver type: " + className.GetName().String())
+	}
+
 	if err != nil {
 		return nil, err
 	}
@@ -29,7 +46,12 @@ func (r *runClassStaticVarRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 }
 
 func (r *runClassStaticVarRef) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
-	class, err := ctx.Global().GetClass(ctx, r.className, true)
+	className, err := r.className.Run(ctx)
+	if err != nil {
+		return err
+	}
+
+	class, err := ctx.Global().GetClass(ctx, className.AsString(ctx), true)
 	if err != nil {
 		return err
 	}
@@ -53,12 +75,28 @@ func (r *runClassStaticVarRef) Dump(w io.Writer) error {
 
 // when classname::something is used
 type runClassStaticObjRef struct {
-	className, objName phpv.ZString
-	l                  *phpv.Loc
+	className phpv.Runnable
+	objName   phpv.ZString
+	l         *phpv.Loc
 }
 
 func (r *runClassStaticObjRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
-	class, err := ctx.Global().GetClass(ctx, r.className, true)
+	className, err := r.className.Run(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var class phpv.ZClass
+
+	switch className.GetType() {
+	case phpv.ZtObject:
+		class = className.AsObject(ctx).GetClass()
+	case phpv.ZtString:
+		class, err = ctx.Global().GetClass(ctx, className.AsString(ctx), true)
+	default:
+		return nil, errors.New("invalid method receiver type: " + className.GetName().String())
+	}
+
 	if err != nil {
 		return nil, err
 	}
@@ -72,9 +110,14 @@ func (r *runClassStaticObjRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 }
 
 func (r *runClassStaticObjRef) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	className, err := r.className.Run(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	ctx = ctx.Parent(1) // go back one level
 	// first, fetch class object
-	class, err := ctx.Global().GetClass(ctx, r.className, true)
+	class, err := ctx.Global().GetClass(ctx, className.AsString(ctx), true)
 	if err != nil {
 		return nil, err
 	}

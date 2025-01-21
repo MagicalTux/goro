@@ -99,7 +99,12 @@ func (r *runnableFunctionCallRef) Run(ctx phpv.Context) (l *phpv.ZVal, err error
 	}
 
 	if classRef, ok := r.name.(*runClassStaticObjRef); ok {
-		class, err := ctx.Global().GetClass(ctx, classRef.className, false)
+		className, err := classRef.className.Run(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		class, err := ctx.Global().GetClass(ctx, className.AsString(ctx), false)
 		if err != nil {
 			return nil, err
 		}

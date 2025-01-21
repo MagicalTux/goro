@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
@@ -80,10 +81,11 @@ func compileNew(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 }
 
 type runObjectFunc struct {
-	ref  phpv.Runnable
-	op   phpv.ZString
-	args phpv.Runnables
-	l    *phpv.Loc
+	ref    phpv.Runnable
+	op     phpv.ZString
+	args   phpv.Runnables
+	l      *phpv.Loc
+	static bool
 }
 
 type runObjectVar struct {
@@ -142,18 +144,47 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		op = opz.Value().(phpv.ZString)
 	}
 
-	objI, ok := obj.Value().(*phpobj.ZObject)
-	if !ok {
+	var objI phpv.ZObject
+	var class phpv.ZClass
+	switch obj.GetType() {
+	case phpv.ZtObject:
+		objI = obj.Value().(*phpobj.ZObject)
+		class = objI.GetClass()
+	case phpv.ZtString:
+		className := obj.AsString(ctx)
+		class, err = ctx.Global().GetClass(ctx, className, true)
+		if err != nil {
+			return nil, err
+		}
+		if ctx.This() != nil {
+			// parent class names can be used in place of parent
+			// for example, if A extends B extends C,
+			// in A context, B::foo() == parent
+			// C::foo() is also allowed inside A, B or C
+			if ctx.This().GetClass().InstanceOf(class) {
+				objI = ctx.This()
+			}
+		}
+	default:
 		return nil, ctx.Errorf("variable is not an object, cannot call method")
 	}
 
 	// execute call
-	m, err := objI.GetMethod(op, ctx)
-	if err != nil {
-		return nil, err
+	m, ok := class.GetMethod(op)
+	if !ok {
+		return nil, ctx.Errorf("Call to undefine method %s:%s()", class.GetName(), op)
 	}
 
-	return ctx.Call(ctx, m, r.args, objI)
+	if ctx.This() == nil && r.static {
+		// :: is used outside of class context
+		if !m.Modifiers.IsStatic() {
+			ctx.Deprecated("Non-static method %s::%s() should not be called statically", class.GetName(), m.Name, logopt.NoFuncName(true))
+		}
+
+		return ctx.Call(ctx, m.Method, r.args, nil)
+	}
+
+	return ctx.Call(ctx, m.Method, r.args, objI)
 }
 
 func (r *runObjectVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {
@@ -212,6 +243,41 @@ func (r *runObjectVar) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 
 	// TODO Check access rights
 	return objI.ObjectSet(ctx, offt, value)
+}
+
+func compilePaamayimNekudotayim(v phpv.Runnable, i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
+	var err error
+	l := i.Loc()
+
+	i, err = c.NextItem()
+	if err != nil {
+		return nil, err
+	}
+	ident := phpv.ZString(i.Data)
+
+	switch i.Type {
+	default:
+		return nil, i.Unexpected()
+	case tokenizer.T_VARIABLE:
+		return &runClassStaticVarRef{v, ident[1:], l}, nil
+
+	case tokenizer.T_STRING:
+		i, err = c.NextItem()
+		if err != nil {
+			return nil, err
+		}
+
+		switch i.Type {
+		case tokenizer.Rune('('):
+			c.backup()
+			v := &runObjectFunc{ref: v, op: ident, l: l, static: true}
+			v.args, err = compileFuncPassedArgs(c)
+			return v, err
+		default:
+			c.backup()
+			return &runClassStaticObjRef{v, ident, l}, nil
+		}
+	}
 }
 
 func compileObjectOperator(v phpv.Runnable, i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
