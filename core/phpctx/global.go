@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/MagicalTux/goro/core/logopt"
+	"github.com/MagicalTux/goro/core/phperr"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/random"
@@ -63,6 +64,9 @@ type Global struct {
 	rand *random.State
 
 	shownDeprecated map[string]struct{}
+
+	userErrorHandler phpv.Callable
+	userErrorFilter  phpv.PhpErrorType
 }
 
 func NewGlobal(ctx context.Context, p *Process, config phpv.IniConfig) *Global {
@@ -382,11 +386,27 @@ func (g *Global) log(format string, a ...any) {
 	default:
 		output.WriteString("Info")
 	}
+
+	message := fmt.Sprintf(format, fmtArgs...)
+
+	err := phperr.HandleUserError(g, &phpv.PhpError{
+		Err:      errors.New(message),
+		FuncName: funcName,
+		Code:     phpv.PhpErrorType(option.ErrType),
+		Loc:      loc,
+	})
+
+	if exception, ok := err.(*phperr.PhpThrow); ok {
+		_ = exception
+		// TODO:
+		return
+	}
+
 	output.WriteString(": ")
 	if !option.NoFuncName {
 		output.WriteString(fmt.Sprintf("%s(): ", funcName))
 	}
-	output.WriteString(fmt.Sprintf(format, fmtArgs...))
+	output.WriteString(message)
 	if !option.NoLoc {
 		output.WriteString(fmt.Sprintf(" in %s on line %d", loc.Filename, loc.Line))
 	}
@@ -395,7 +415,7 @@ func (g *Global) log(format string, a ...any) {
 		g.Write([]byte("\n"))
 	}
 
-	g.Write([]byte(output.String()))
+	g.Write(output.Bytes())
 	g.Write([]byte("\n"))
 }
 
@@ -569,4 +589,13 @@ func (g *Global) GetLoadedExtensions() []string {
 
 func (g *Global) Random() *random.State {
 	return g.rand
+}
+
+func (g *Global) GetUserErrorHandler() (phpv.Callable, phpv.PhpErrorType) {
+	return g.userErrorHandler, g.userErrorFilter
+}
+
+func (g *Global) SetUserErrorHandler(handler phpv.Callable, filter phpv.PhpErrorType) {
+	g.userErrorHandler = handler
+	g.userErrorFilter = filter
 }

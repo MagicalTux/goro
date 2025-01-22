@@ -385,7 +385,8 @@ func operatorMath(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*ph
 			}
 		case tokenizer.T_DIV_EQUAL, tokenizer.Rune('/'):
 			if b == 0 {
-				return nil, ctx.Errorf("Division by zero")
+				ctx.Warn("Division by zero")
+				return phpv.ZFloat(math.Inf(1)).ZVal(), nil
 			}
 			if a%b != 0 {
 				// this is not goign to be a int result

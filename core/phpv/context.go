@@ -91,6 +91,9 @@ type GlobalContext interface {
 	GetLoadedExtensions() []string
 
 	Random() *random.State
+
+	GetUserErrorHandler() (Callable, PhpErrorType)
+	SetUserErrorHandler(Callable, PhpErrorType)
 }
 
 type IniValue struct {
