@@ -54,11 +54,27 @@ func (z *ZObject) AsVal(ctx phpv.Context, t phpv.ZType) (phpv.Val, error) {
 	return nil, ctx.Errorf("failed to convert object to %s", t)
 }
 
-func NewZObject(ctx phpv.Context, c phpv.ZClass) (*ZObject, error) {
+func NewZObject(ctx phpv.Context, c phpv.ZClass, args ...*phpv.ZVal) (*ZObject, error) {
 	if c == nil {
 		c = StdClass
 	}
+
 	n := &ZObject{h: phpv.NewHashTable(), Class: c, ID: c.NextInstanceID()}
+	var constructor phpv.Callable
+
+	if n.Class.Handlers() != nil && n.Class.Handlers().Constructor != nil {
+		constructor = n.Class.Handlers().Constructor.Method
+	} else if m, ok := n.Class.GetMethod("__construct"); ok {
+		constructor = m.Method
+	}
+
+	if constructor != nil {
+		_, err := ctx.CallZVal(ctx, constructor, args, n)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	return n, n.init(ctx)
 }
 

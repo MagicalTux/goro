@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	"github.com/MagicalTux/goro/core/compiler"
-	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -60,19 +59,14 @@ func SpawnCallable(ctx phpv.Context, v *phpv.ZVal) (phpv.Callable, error) {
 		var instance phpv.ZObject
 
 		if firstArg.GetType() == phpv.ZtString {
-			class, err := ctx.Global().GetClass(ctx, firstArg.AsString(ctx), false)
-			if err != nil {
-				return nil, err
-			}
-			instance, err = phpobj.NewZObject(ctx, class)
+			class, err = ctx.Global().GetClass(ctx, firstArg.AsString(ctx), false)
 			if err != nil {
 				return nil, err
 			}
 		} else {
 			instance = firstArg.AsObject(ctx)
+			class = instance.GetClass()
 		}
-
-		class = instance.GetClass()
 
 		name := methodName.AsString(ctx).ToLower()
 		if index := strings.Index(string(name), "::"); index >= 0 {

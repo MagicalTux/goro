@@ -37,17 +37,19 @@ func (r *runNewObject) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	if err != nil {
 		return nil, err
 	}
-	z, err := phpobj.NewZObject(ctx, class)
-	if err != nil {
-		return nil, err
-	}
 
-	// call class constructor
-	if class.Handlers() != nil && class.Handlers().Constructor != nil {
-		_, err = ctx.Call(ctx, class.Handlers().Constructor.Method, r.newArg, z)
+	var args []*phpv.ZVal
+	for _, r := range r.newArg {
+		arg, err := r.Run(ctx)
 		if err != nil {
 			return nil, err
 		}
+		args = append(args, arg)
+	}
+
+	z, err := phpobj.NewZObject(ctx, class, args...)
+	if err != nil {
+		return nil, err
 	}
 
 	return z.ZVal(), nil
@@ -62,6 +64,9 @@ func compileNew(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	n := &runNewObject{l: i.Loc()}
 
 	n.obj, err = compileClassName(c)
+	if err != nil {
+		return nil, err
+	}
 
 	i, err = c.NextItem()
 	if err != nil {
@@ -160,7 +165,7 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			// parent class names can be used in place of parent
 			// for example, if A extends B extends C,
 			// in A context, B::foo() == parent
-			// C::foo() is also allowed inside A, B or C
+			// C::foo() is also a non-static call inside A, B or C
 			if ctx.This().GetClass().InstanceOf(class) {
 				objI = ctx.This()
 			}
