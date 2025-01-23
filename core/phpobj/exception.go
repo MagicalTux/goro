@@ -9,8 +9,30 @@ import (
 var Exception = &ZClass{
 	Name:       "Exception",
 	Implements: []*ZClass{Throwable},
+	Props: []*phpv.ZClassProp{
+		{VarName: phpv.ZString("message"), Default: phpv.ZStr("A").ZVal(), Modifiers: phpv.ZAttrProtected},
+		{VarName: phpv.ZString("string"), Default: phpv.ZStr("").ZVal(), Modifiers: phpv.ZAttrPrivate},
+		{VarName: phpv.ZString("code"), Default: phpv.ZInt(0).ZVal(), Modifiers: phpv.ZAttrProtected},
+		{VarName: phpv.ZString("file"), Default: phpv.ZStr("").ZVal(), Modifiers: phpv.ZAttrProtected},
+		{VarName: phpv.ZString("line"), Default: phpv.ZInt(0).ZVal(), Modifiers: phpv.ZAttrProtected},
+		{VarName: phpv.ZString("trace"), Default: phpv.NewZArray().ZVal(), Modifiers: phpv.ZAttrPrivate},
+		{VarName: phpv.ZString("previous"), Default: phpv.ZNULL.ZVal(), Modifiers: phpv.ZAttrPrivate},
+	},
 	Methods: map[phpv.ZString]*phpv.ZClassMethod{
-		"__construct": &phpv.ZClassMethod{Name: "__construct", Method: NativeMethod(exceptionConstruct)},
+		"__construct": {Name: "__construct", Method: NativeMethod(exceptionConstruct)},
+		// to implement getTrace, I have to make a few modifications
+		// on CallZVal and FuncContext first
+
+		// TODO: add methods
+		// final public getMessage ( void ) : string
+		// final public getPrevious ( void ) : Throwable
+		// final public getCode ( void ) : mixed
+		// final public getFile ( void ) : string
+		// final public getLine ( void ) : int
+		// final public getTrace ( void ) : array
+		// final public getTraceAsString ( void ) : string
+		// public __toString ( void ) : string
+		// final private __clone ( void ) : void
 	},
 }
 
@@ -19,12 +41,6 @@ func SpawnException(ctx phpv.Context, l *phpv.Loc, msg phpv.ZString, code phpv.Z
 	if err != nil {
 		return nil, err
 	}
-
-	o.ObjectSet(ctx, phpv.ZString("message").ZVal(), msg.ZVal())
-	o.ObjectSet(ctx, phpv.ZString("code").ZVal(), code.ZVal())
-	o.ObjectSet(ctx, phpv.ZString("file").ZVal(), phpv.ZString(l.Filename).ZVal())
-	o.ObjectSet(ctx, phpv.ZString("line").ZVal(), phpv.ZInt(l.Line).ZVal())
-	o.ObjectSet(ctx, phpv.ZString("char").ZVal(), phpv.ZInt(l.Char).ZVal())
 
 	if prev != nil {
 		o.ObjectSet(ctx, phpv.ZString("previous").ZVal(), prev.ZVal())
@@ -37,7 +53,7 @@ func ThrowException(ctx phpv.Context, l *phpv.Loc, msg phpv.ZString, code phpv.Z
 	if err != nil {
 		return err
 	}
-	return &phperr.PhpThrow{o}
+	return &phperr.PhpThrow{Obj: o}
 }
 
 // public __construct ([ string $message = "" [, int $code = 0 [, Throwable $previous = NULL ]]] )

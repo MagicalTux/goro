@@ -62,6 +62,11 @@ func NewZObject(ctx phpv.Context, c phpv.ZClass, args ...*phpv.ZVal) (*ZObject, 
 	n := &ZObject{h: phpv.NewHashTable(), Class: c, ID: c.NextInstanceID()}
 	var constructor phpv.Callable
 
+	err := n.init(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	if n.Class.Handlers() != nil && n.Class.Handlers().Constructor != nil {
 		constructor = n.Class.Handlers().Constructor.Method
 	} else if m, ok := n.Class.GetMethod("__construct"); ok {
@@ -75,7 +80,7 @@ func NewZObject(ctx phpv.Context, c phpv.ZClass, args ...*phpv.ZVal) (*ZObject, 
 		}
 	}
 
-	return n, n.init(ctx)
+	return n, nil
 }
 
 func (z *ZObject) Clone(ctx phpv.Context) (phpv.ZObject, error) {
