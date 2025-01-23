@@ -11,6 +11,7 @@ import (
 
 	"github.com/MagicalTux/goro/core"
 	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/MagicalTux/goro/core/stream"
 )
 
 // > const
@@ -359,4 +360,82 @@ func fncFilePutContents(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	}
 
 	return phpv.ZInt(written).ZVal(), nil
+}
+
+// > func resource fopen (  string $filename , string $mode [, bool $use_include_path = FALSE [, resource $context ]] )
+func fncFileOpen(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var filename phpv.ZString
+	var mode phpv.ZString
+	var useIncludePathArg core.Optional[phpv.ZBool]
+	var contextResource core.OptionalRef[*phpv.ZVal]
+	_, err := core.Expand(ctx, args, &filename, &mode, &useIncludePathArg, &contextResource)
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO use mode
+
+	if useIncludePathArg.HasArg() {
+		// TODO: handle use_include_path
+		return nil, ctx.FuncErrorf("use_include_path is not yet supported, set to false")
+	}
+
+	if contextResource.Get() != nil {
+		return nil, ctx.FuncErrorf("context resource is not yet supported, set to NULL")
+	}
+
+	f, err := ctx.Global().Open(filename, true)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return phpv.ZFalse.ZVal(), ctx.Warn("%s(%s): failed to open stream: No such file or directory", ctx.GetFuncName(), filename)
+		}
+		return nil, ctx.Error(err)
+	}
+
+	return f.ZVal(), nil
+}
+
+// > func bool fclose ( resource $handle)
+func fncFileClose(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var handle phpv.Resource
+	_, err := core.Expand(ctx, args, &handle)
+	if err != nil {
+		return nil, err
+	}
+	if handle == nil {
+		return nil, nil
+	}
+
+	var file phpv.Stream
+	switch handle.GetResourceType() {
+	case phpv.ResourceStream:
+		if f, ok := handle.(*stream.Stream); ok {
+			file = f
+		}
+	}
+	if file == nil {
+		return nil, ctx.Errorf("cannot close resource, not a file")
+	}
+
+	err = file.Close()
+	if err != nil {
+		return nil, ctx.Error(err)
+	}
+
+	return nil, nil
+}
+
+// TODO: fread, fwrite, fgets, fstat, fseek
+
+// > func string get_resource_type ( resource $handle)
+func fncGetResourceType(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	// TODO: move to another file
+	var handle phpv.Resource
+	_, err := core.Expand(ctx, args, &handle)
+	if err != nil {
+		return nil, err
+	}
+
+	rtype := handle.GetResourceType().String()
+	return phpv.ZStr(rtype).ZVal(), nil
 }

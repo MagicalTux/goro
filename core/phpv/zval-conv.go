@@ -45,7 +45,9 @@ func (z *ZVal) AsVal(ctx Context, t ZType) (Val, error) {
 		return v, nil
 	}
 
-	return nil, fmt.Errorf("todo %s => %s", z.v.GetType(), t)
+	println(fmt.Errorf("todo %s => %s", z.v.GetType(), t))
+
+	return ZNULL, nil
 }
 
 func (z *ZVal) AsNumeric(ctx Context) (*ZVal, error) {

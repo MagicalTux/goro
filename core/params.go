@@ -122,7 +122,10 @@ func (or *OptionalRef[T]) HasArg() bool {
 	return or.isSet
 }
 
-func zvalStore(ctx phpv.Context, z *phpv.ZVal, out interface{}) (phpv.Val, error) {
+func zvalStore(ctx phpv.Context, i int, args []*phpv.ZVal, out interface{}) (phpv.Val, error) {
+	z := args[i]
+	paramNo := i + 1
+	name := ctx.GetFuncName()
 	switch tgt := out.(type) {
 	case *bool:
 		s, err := z.As(ctx, phpv.ZtBool)
@@ -194,7 +197,7 @@ func zvalStore(ctx phpv.Context, z *phpv.ZVal, out interface{}) (phpv.Val, error
 			return nil, err
 		}
 		*tgt = s
-		return nil, nil
+		return s, nil
 	case **phpobj.ZObject:
 		s, err := z.As(ctx, phpv.ZtObject)
 		if err != nil {
@@ -202,13 +205,13 @@ func zvalStore(ctx phpv.Context, z *phpv.ZVal, out interface{}) (phpv.Val, error
 		}
 		obj, ok := s.Value().(*phpobj.ZObject)
 		if !ok {
-			return nil, ctx.Errorf("expected parameter to be object, %s given", z.GetType())
+			return nil, ctx.Errorf("%s() expected parameter %d to be object, %s given", name, paramNo, z.GetType())
 		}
 		if *tgt != nil {
 			if (*tgt).Class != nil {
 				// check implements
 				if (*tgt).Class != obj.Class {
-					return nil, ctx.Errorf("expects parameter %d to be %s, %s given", 1, (*tgt).Class.GetName(), z.GetType())
+					return nil, ctx.Errorf("%s() expects parameter %d to be %s, %s given", name, paramNo, (*tgt).Class.GetName(), z.GetType())
 				}
 			}
 		}
@@ -221,10 +224,21 @@ func zvalStore(ctx phpv.Context, z *phpv.ZVal, out interface{}) (phpv.Val, error
 		}
 		ar, ok := s.Value().(*phpv.ZArray)
 		if !ok {
-			return nil, ctx.Errorf("expected parameter to be array, %s given", z.GetType())
+			return nil, ctx.Errorf("%s() expected parameter %d to be array, %s given", name, paramNo, z.GetType())
 		}
 		*tgt = ar
 		return ar, nil
+	case *phpv.Resource:
+		s, err := z.As(ctx, phpv.ZtResource)
+		if err != nil {
+			return nil, err
+		}
+		res, ok := s.Value().(phpv.Resource)
+		if !ok {
+			return nil, ctx.Errorf("%s() expected parameter %d to be resource, %s given", name, paramNo, z.GetType())
+		}
+		*tgt = res
+		return res, nil
 	case **phpv.ZVal:
 		// as is
 		*tgt = z
@@ -306,9 +320,9 @@ loop:
 			args[i] = args[i].Dup()
 		}
 
-		out, err := zvalStore(ctx, args[i], v)
+		out, err := zvalStore(ctx, i, args, v)
 		if err != nil {
-			return i, ctx.FuncError(err)
+			return i, ctx.Error(err)
 		}
 
 		if isRef {
