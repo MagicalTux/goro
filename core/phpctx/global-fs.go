@@ -33,18 +33,18 @@ func (g *Global) getHandler(fn phpv.ZString) (stream.Handler, *url.URL, error) {
 
 // Open opens a file using PHP stream wrappers and returns a handler to said
 // file.
-func (g *Global) Open(fn phpv.ZString, useIncludePath bool) (*stream.Stream, error) {
+func (g *Global) Open(fn phpv.ZString, useIncludePath bool) (phpv.Stream, error) {
 	h, u, err := g.getHandler(fn)
 	if err != nil {
 		return nil, err
 	}
 
 	f, err := h.Open(u)
-	if !errors.Is(err, os.ErrNotExist) {
-		return nil, err
-	}
 	if err == nil {
 		return f, nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return nil, err
 	}
 
 	// the docs didn't say if it should look in the

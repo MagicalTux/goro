@@ -6,12 +6,16 @@ import (
 	"path"
 	"path/filepath"
 	"syscall"
+
+	"github.com/MagicalTux/goro/core/phpv"
 )
 
 // TODO: remove cwd state here
 type FileHandler struct {
 	Cwd  string
 	Root string
+
+	nextID int
 }
 
 func NewFileHandler(root string) (*FileHandler, error) {
@@ -99,6 +103,10 @@ func (f *FileHandler) OpenFile(fname string) (*Stream, error) {
 	s.SetAttr("mode", "r")
 	s.SetAttr("seekable", true)
 	s.SetAttr("uri", name)
+
+	s.ResourceType = phpv.ResourceStream
+	s.ResourceID = f.nextID
+	f.nextID++
 
 	return s, nil
 }

@@ -5,6 +5,9 @@ import (
 	"io"
 	"os"
 	"runtime"
+
+	"github.com/MagicalTux/goro/core/phpobj"
+	"github.com/MagicalTux/goro/core/phpv"
 )
 
 var ErrNotSupported = errors.New("stream: method or operation not supported")
@@ -12,6 +15,9 @@ var ErrNotSupported = errors.New("stream: method or operation not supported")
 type Stream struct {
 	f    interface{}
 	attr map[string]interface{}
+
+	ResourceType phpv.ResourceType
+	ResourceID   int
 }
 
 func streamFinalizer(s *Stream) {
@@ -115,3 +121,43 @@ func (s *Stream) Sync() error {
 
 	return nil // if no Sync, no need to sync, probably
 }
+
+func (s *Stream) GetType() phpv.ZType {
+	return phpv.ZtResource
+}
+func (s *Stream) ZVal() *phpv.ZVal {
+	return phpv.NewZVal(s)
+}
+func (s *Stream) Value() phpv.Val {
+	return s
+}
+func (s *Stream) AsVal(ctx phpv.Context, t phpv.ZType) (phpv.Val, error) {
+	switch t {
+	case phpv.ZtResource:
+		return s, nil
+	case phpv.ZtBool:
+		return phpv.ZTrue.ZVal(), nil
+	case phpv.ZtInt:
+		return phpv.ZInt(s.ResourceID).ZVal(), nil
+	case phpv.ZtString:
+		return phpv.ZStr(s.String()), nil
+	case phpv.ZtArray:
+		arr := phpv.NewZArray()
+		arr.OffsetSet(ctx, nil, s.ZVal())
+		return arr, nil
+	case phpv.ZtObject:
+		obj, err := phpobj.NewZObject(ctx, phpobj.StdClass)
+		if err != nil {
+			return nil, err
+		}
+		obj.OffsetSet(ctx, phpv.ZStr("scalar"), s.ZVal())
+		return obj, nil
+	}
+	return nil, ctx.Errorf("cannot convert stream to %s", t.String())
+}
+func (s *Stream) String() string {
+	return "resource:" + s.GetResourceType().String()
+}
+
+func (s *Stream) GetResourceType() phpv.ResourceType { return s.ResourceType }
+func (s *Stream) GetResourceID() int                 { return s.ResourceID }

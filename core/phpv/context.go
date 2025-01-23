@@ -7,7 +7,6 @@ import (
 
 	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/random"
-	"github.com/MagicalTux/goro/core/stream"
 )
 
 type Context interface {
@@ -77,7 +76,7 @@ type GlobalContext interface {
 	RegisterLazyFunc(name ZString, r Runnables, p int)
 	RegisterLazyClass(name ZString, r Runnables, p int)
 
-	Open(fn ZString, useIncludePath bool) (*stream.Stream, error)
+	Open(fn ZString, useIncludePath bool) (Stream, error)
 	Exists(fn ZString) (bool, error)
 	Chdir(d ZString) error
 	Getwd() ZString
