@@ -5,6 +5,7 @@ import (
 	"io"
 	"iter"
 
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/random"
 	"github.com/MagicalTux/goro/core/stream"
 )
@@ -38,11 +39,13 @@ type Context interface {
 	//   Warn("testing %d", 123, logopt.NoFuncName(true))
 	//   Notice("note %s", "asdf", logopt.NoLoc(true))
 	//   Notice("nope", logopt.Data{NoLoc: false})
-	Warn(format string, args ...any)
-	Notice(format string, args ...any)
-	Deprecated(format string, args ...any)
+	Warn(format string, args ...any) error
+	Notice(format string, args ...any) error
+	Deprecated(format string, args ...any) error
 
-	WarnDeprecated()
+	LogError(err *PhpError, optionArg ...logopt.Data)
+
+	WarnDeprecated() error
 
 	GetFuncName() string
 

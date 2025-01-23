@@ -45,7 +45,9 @@ func doVarExport(ctx phpv.Context, w io.Writer, z *phpv.ZVal, linePfx string, re
 
 	p := uintptr(unsafe.Pointer(z))
 	if _, n := recurs[p]; n {
-		ctx.Warn("does not handle circular references")
+		if err := ctx.Warn("does not handle circular references"); err != nil {
+			return err
+		}
 		fmt.Fprintf(w, "NULL")
 		return nil
 	}

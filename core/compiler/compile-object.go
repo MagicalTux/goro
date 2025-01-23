@@ -183,7 +183,10 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	if ctx.This() == nil && r.static {
 		// :: is used outside of class context
 		if !m.Modifiers.IsStatic() {
-			ctx.Deprecated("Non-static method %s::%s() should not be called statically", class.GetName(), m.Name, logopt.NoFuncName(true))
+			err = ctx.Deprecated("Non-static method %s::%s() should not be called statically", class.GetName(), m.Name, logopt.NoFuncName(true))
+			if err != nil {
+				return nil, err
+			}
 		}
 
 		return ctx.Call(ctx, m.Method, r.args, nil)

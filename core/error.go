@@ -3,6 +3,7 @@ package core
 import (
 	"errors"
 
+	"github.com/MagicalTux/goro/core/phperr"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -16,13 +17,18 @@ func fncTriggerError(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	errorType := errorTypeArg.GetOrDefault(E_USER_NOTICE)
-	err = &phpv.PhpError{
-		Err:      errors.New(message.String()),
-		FuncName: ctx.GetFuncName(),
-		Code:     phpv.PhpErrorType(errorType),
-		Loc:      ctx.Loc(),
+	phpErr := &phpv.PhpError{
+		Err:  errors.New(message.String()),
+		Code: phpv.PhpErrorType(errorType),
+		Loc:  ctx.Loc(),
 	}
-	return nil, err
+	err = phperr.HandleUserError(ctx, phpErr)
+	if err != nil {
+		return nil, err
+	}
+
+	ctx.LogError(phpErr)
+	return nil, nil
 }
 
 // > func mixed set_error_handler ( callable $error_handler [, int $error_types = E_ALL | E_STRICT ] )

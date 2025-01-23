@@ -303,48 +303,61 @@ func (g *Global) Loc() *phpv.Loc {
 }
 
 func (g *Global) Error(err error, t ...phpv.PhpErrorType) error {
-	return g.l.Error(err, t...)
+	wrappedErr := g.l.Error(err, t...)
+	return phperr.HandleUserError(g, wrappedErr)
 }
 
 func (g *Global) Errorf(format string, a ...any) error {
-	return g.l.Errorf(phpv.E_ERROR, format, a...)
+	err := g.l.Errorf(phpv.E_ERROR, format, a...)
+	return phperr.HandleUserError(g, err)
 }
 
 func (g *Global) FuncError(err error, t ...phpv.PhpErrorType) error {
 	wrappedErr := g.l.Error(err, t...)
 	wrappedErr.FuncName = g.GetFuncName()
-	return wrappedErr
+	return phperr.HandleUserError(g, wrappedErr)
 }
 func (g *Global) FuncErrorf(format string, a ...any) error {
 	err := g.l.Errorf(phpv.E_ERROR, format, a...)
 	err.FuncName = g.GetFuncName()
+	return phperr.HandleUserError(g, err)
+}
+
+func (g *Global) Warn(format string, a ...any) error {
+	a = append(a, logopt.ErrType(phpv.E_WARNING))
+	return g.log(format, a...)
+}
+
+func (g *Global) Notice(format string, a ...any) error {
+	g.writeErr([]byte{'\n'})
+	a = append(a, logopt.ErrType(phpv.E_NOTICE))
+	return g.log(format, a...)
+}
+
+func (g *Global) Deprecated(format string, a ...any) error {
+	g.writeErr([]byte{'\n'})
+	a = append(a, logopt.ErrType(phpv.E_DEPRECATED))
+	err := g.log(format, a...)
+	if err == nil {
+		g.shownDeprecated[format] = struct{}{}
+	}
 	return err
 }
 
-func (g *Global) Warn(format string, a ...any) {
-	a = append(a, logopt.ErrType(phpv.E_WARNING))
-	g.log(format, a...)
-}
-
-func (g *Global) Notice(format string, a ...any) {
-	g.writeErr([]byte{'\n'})
-	a = append(a, logopt.ErrType(phpv.E_NOTICE))
-	g.log(format, a...)
-}
-
-func (g *Global) Deprecated(format string, a ...any) {
-	g.writeErr([]byte{'\n'})
-	a = append(a, logopt.ErrType(phpv.E_DEPRECATED))
-	g.log(format, a...)
-}
-
-func (g *Global) WarnDeprecated() {
+func (g *Global) WarnDeprecated() error {
 	funcName := g.GetFuncName()
 	if _, ok := g.shownDeprecated[funcName]; !ok {
 		g.writeErr([]byte{'\n'})
-		g.log("The %s() function is deprecated. This message will be suppressed on further calls", funcName, logopt.NoFuncName(true), logopt.ErrType(phpv.E_DEPRECATED))
-		g.shownDeprecated[funcName] = struct{}{}
+		err := g.log(
+			"The %s() function is deprecated. This message will be suppressed on further calls",
+			funcName, logopt.NoFuncName(true), logopt.ErrType(phpv.E_DEPRECATED),
+		)
+		if err == nil {
+			g.shownDeprecated[funcName] = struct{}{}
+		}
+		return err
 	}
+	return nil
 }
 
 func (g *Global) getLogArgs(args []any) (logopt.Data, []any) {
@@ -369,46 +382,53 @@ func (g *Global) getLogArgs(args []any) (logopt.Data, []any) {
 	return option, fmtArgs
 }
 
-func (g *Global) log(format string, a ...any) {
+func (g *Global) log(format string, a ...any) error {
 	funcName := g.GetFuncName()
 	loc := g.l.Loc()
-
 	option, fmtArgs := g.getLogArgs(a)
+	message := fmt.Sprintf(format, fmtArgs...)
+
+	phpErr := &phpv.PhpError{
+		Err:      errors.New(message),
+		FuncName: funcName,
+		Code:     phpv.PhpErrorType(option.ErrType),
+		Loc:      loc,
+	}
+
+	err := phperr.HandleUserError(g, phpErr)
+	if err != nil {
+		return err
+	}
+
+	g.LogError(phpErr, option)
+	return nil
+}
+
+func (g *Global) LogError(err *phpv.PhpError, optionArg ...logopt.Data) {
+	var option logopt.Data
+	if len(optionArg) > 0 {
+		option = optionArg[0]
+	}
 
 	var output bytes.Buffer
-	switch option.ErrType {
-	case int(phpv.E_WARNING):
+	switch err.Code {
+	case phpv.E_WARNING:
 		output.WriteString("Warning")
-	case int(phpv.E_NOTICE):
+	case phpv.E_NOTICE:
 		output.WriteString("Notice")
-	case int(phpv.E_DEPRECATED):
+	case phpv.E_DEPRECATED:
 		output.WriteString("Deprecated")
 	default:
 		output.WriteString("Info")
 	}
 
-	message := fmt.Sprintf(format, fmtArgs...)
-
-	err := phperr.HandleUserError(g, &phpv.PhpError{
-		Err:      errors.New(message),
-		FuncName: funcName,
-		Code:     phpv.PhpErrorType(option.ErrType),
-		Loc:      loc,
-	})
-
-	if exception, ok := err.(*phperr.PhpThrow); ok {
-		_ = exception
-		// TODO:
-		return
-	}
-
 	output.WriteString(": ")
-	if !option.NoFuncName {
-		output.WriteString(fmt.Sprintf("%s(): ", funcName))
+	if !option.NoFuncName && err.FuncName != "" {
+		output.WriteString(fmt.Sprintf("%s(): ", err.FuncName))
 	}
-	output.WriteString(message)
+	output.WriteString(err.Err.Error())
 	if !option.NoLoc {
-		output.WriteString(fmt.Sprintf(" in %s on line %d", loc.Filename, loc.Line))
+		output.WriteString(fmt.Sprintf(" in %s on line %d", err.Loc.Filename, err.Loc.Line))
 	}
 
 	if g.lastOutChar != '\n' {

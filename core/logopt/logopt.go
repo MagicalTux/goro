@@ -7,7 +7,7 @@ type NoFuncName bool
 type NoLoc bool
 
 type Data struct {
-	ErrType  int
+	ErrType    int
 	NoFuncName bool
-	NoLoc    bool
+	NoLoc      bool
 }

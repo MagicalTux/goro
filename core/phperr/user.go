@@ -7,6 +7,9 @@ func HandleUserError(ctx phpv.Context, err *phpv.PhpError) error {
 	errHandler, filterType := ctx.Global().GetUserErrorHandler()
 
 	if err.Code&filterType == 0 {
+		if err.IsNonFatal() {
+			return nil
+		}
 		return returnErr
 	}
 
@@ -20,9 +23,10 @@ func HandleUserError(ctx phpv.Context, err *phpv.PhpError) error {
 		proceed, err2 := ctx.CallZVal(ctx, errHandler, args)
 		if err2 != nil {
 			returnErr = err2
-		} else if proceed.AsBool(ctx) {
+		} else if bool(proceed.AsBool(ctx)) || err.IsNonFatal() {
 			returnErr = nil
 		}
 	}
+
 	return returnErr
 }

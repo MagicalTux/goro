@@ -58,13 +58,12 @@ func (c *Global) Include(ctx phpv.Context, fn phpv.ZString) (*phpv.ZVal, error) 
 	}
 
 	if f == nil {
-		ctx.Warn(
+		return nil, ctx.Warn(
 			"%s(%s): failed to open stream: No such file or directory",
 			ctx.GetFuncName(),
 			string(fn),
 			logopt.NoFuncName(true),
 		)
-		return nil, nil
 	}
 
 	defer f.Close()
@@ -124,13 +123,12 @@ func (c *Global) IncludeOnce(ctx phpv.Context, fn phpv.ZString) (*phpv.ZVal, err
 	}
 
 	if f == nil {
-		ctx.Warn(
+		return nil, ctx.Warn(
 			"%s(%s): failed to open stream: No such file or directory",
 			ctx.GetFuncName(),
 			string(fn),
 			logopt.NoFuncName(true),
 		)
-		return nil, nil
 	}
 
 	defer f.Close()

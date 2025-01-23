@@ -185,20 +185,18 @@ func fncUnlink(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	stat, err := os.Stat(filename)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			ctx.Warn("No such file or directory")
+			err = ctx.Warn("No such file or directory")
 		} else {
-			ctx.Warn(err.Error())
+			err = ctx.Warn(err.Error())
 		}
-		return phpv.ZFalse.ZVal(), nil
+		return phpv.ZFalse.ZVal(), err
 	}
 	if stat.IsDir() {
-		ctx.Warn("Is a directory")
-		return phpv.ZFalse.ZVal(), nil
+		return phpv.ZFalse.ZVal(), ctx.Warn("Is a directory")
 	}
 
 	if err := os.Remove(filename); err != nil {
-		ctx.Warn(err.Error())
-		return phpv.ZFalse.ZVal(), nil
+		return phpv.ZFalse.ZVal(), ctx.Warn(err.Error())
 	}
 
 	return phpv.ZTrue.ZVal(), nil
@@ -220,20 +218,18 @@ func fncRmdir(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	stat, err := os.Stat(dirname)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			ctx.Warn("No such file or directory")
+			err = ctx.Warn("No such file or directory")
 		} else {
-			ctx.Warn(err.Error())
+			err = ctx.Warn(err.Error())
 		}
-		return phpv.ZFalse.ZVal(), nil
+		return phpv.ZFalse.ZVal(), err
 	}
 	if !stat.IsDir() {
-		ctx.Warn("Not a directory")
-		return phpv.ZFalse.ZVal(), nil
+		return phpv.ZFalse.ZVal(), ctx.Warn("Not a directory")
 	}
 
 	if err := os.Remove(dirname); err != nil {
-		ctx.Warn(err.Error())
-		return phpv.ZFalse.ZVal(), nil
+		return phpv.ZFalse.ZVal(), ctx.Warn(err.Error())
 	}
 
 	return phpv.ZTrue.ZVal(), nil

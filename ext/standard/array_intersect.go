@@ -48,8 +48,7 @@ func fncArrayIntersect(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 	}
 
 	if len(args) < 2 {
-		ctx.Warn("at least 2 parameters are required, %d given", len(args))
-		return nil, nil
+		return nil, ctx.Warn("at least 2 parameters are required, %d given", len(args))
 	}
 
 	otherArrays, err := expandArrayArgs(ctx, args[1:])
@@ -80,14 +79,12 @@ func fncArrayUIntersect(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	}
 
 	if len(args) < 3 {
-		ctx.Warn("at least 3 parameters are required, %d given", len(args))
-		return nil, nil
+		return nil, ctx.Warn("at least 3 parameters are required, %d given", len(args))
 	}
 
 	valueCompare, err := core.SpawnCallable(ctx, args[len(args)-1])
 	if err != nil {
-		ctx.Warn("expects parameter 3 to be a valid callback, no array or string given")
-		return nil, nil
+		return nil, ctx.Warn("expects parameter 3 to be a valid callback, no array or string given")
 	}
 
 	otherArrays, err := expandArrayArgs(ctx, args[1:len(args)-1])
@@ -125,14 +122,12 @@ func fncArrayUIntersectAssoc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, e
 	}
 
 	if len(args) < 3 {
-		ctx.Warn("at least 3 parameters are required, %d given", len(args))
-		return nil, nil
+		return nil, ctx.Warn("at least 3 parameters are required, %d given", len(args))
 	}
 
 	valueCompare, err := core.SpawnCallable(ctx, args[len(args)-1])
 	if err != nil {
-		ctx.Warn("expects parameter 3 to be a valid callback, no array or string given")
-		return nil, nil
+		return nil, ctx.Warn("expects parameter 3 to be a valid callback, no array or string given")
 	}
 
 	otherArrays, err := expandArrayArgs(ctx, args[1:len(args)-1])
@@ -174,20 +169,17 @@ func fncArrayUIntersectUAssoc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, 
 	}
 
 	if len(args) < 4 {
-		ctx.Warn("at least 4 parameters are required, %d given", len(args))
-		return nil, nil
+		return nil, ctx.Warn("at least 4 parameters are required, %d given", len(args))
 	}
 
 	valueCompare, err := core.SpawnCallable(ctx, args[len(args)-2])
 	if err != nil {
-		ctx.Warn("expects parameter %d to be a valid callback, no array or string given", len(args)-2)
-		return nil, nil
+		return nil, ctx.Warn("expects parameter %d to be a valid callback, no array or string given", len(args)-2)
 	}
 
 	keyCompare, err := core.SpawnCallable(ctx, args[len(args)-1])
 	if err != nil {
-		ctx.Warn("expects parameter %d to be a valid callback, no array or string given", len(args)-1)
-		return nil, nil
+		return nil, ctx.Warn("expects parameter %d to be a valid callback, no array or string given", len(args)-1)
 	}
 
 	otherArrays, err := expandArrayArgs(ctx, args[1:len(args)-2])
@@ -229,8 +221,7 @@ func fncArrayIntersectAssoc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 	}
 
 	if len(args) < 2 {
-		ctx.Warn("at least 2 parameters are required, %d given", len(args))
-		return nil, nil
+		return nil, ctx.Warn("at least 2 parameters are required, %d given", len(args))
 	}
 
 	otherArrays, err := expandArrayArgs(ctx, args[1:])
@@ -272,14 +263,12 @@ func fncArrayIntersectUAssoc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, e
 	}
 
 	if len(args) < 3 {
-		ctx.Warn("at least 3 parameters are required, %d given", len(args))
-		return nil, nil
+		return nil, ctx.Warn("at least 3 parameters are required, %d given", len(args))
 	}
 
 	keyCompare, err := core.SpawnCallable(ctx, args[len(args)-1])
 	if err != nil {
-		ctx.Warn("expects parameter 3 to be a valid callback, no array or string given")
-		return nil, nil
+		return nil, ctx.Warn("expects parameter 3 to be a valid callback, no array or string given")
 	}
 
 	otherArrays, err := expandArrayArgs(ctx, args[1:len(args)-1])
@@ -347,14 +336,12 @@ func fncArrayIntersectUKey(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, err
 	}
 
 	if len(args) < 3 {
-		ctx.Warn("at least 3 parameters are required, %d given", len(args))
-		return nil, nil
+		return nil, ctx.Warn("at least 3 parameters are required, %d given", len(args))
 	}
 
 	keyCompare, err := core.SpawnCallable(ctx, args[len(args)-1])
 	if err != nil {
-		ctx.Warn("expects parameter 3 to be a valid callback, no array or string given")
-		return nil, nil
+		return nil, ctx.Warn("expects parameter 3 to be a valid callback, no array or string given")
 	}
 
 	otherArrays, err := expandArrayArgs(ctx, args[1:])

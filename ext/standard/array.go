@@ -288,7 +288,9 @@ func fncArrayFlip(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		switch v.GetType() {
 		case phpv.ZtInt, phpv.ZtString:
 		default:
-			ctx.Warn("Can only flip STRING and INTEGER values!")
+			if err = ctx.Warn("Can only flip STRING and INTEGER values!"); err != nil {
+				return nil, err
+			}
 			continue
 		}
 
@@ -542,8 +544,7 @@ func fncRange(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // > func mixed array_shift ( array &$array )
 func fncArrayShift(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) > 0 && args[0].GetType() != phpv.ZtArray {
-		ctx.Warn("expects parameter 1 to be array, %s given", args[0].GetType())
-		return phpv.ZNULL.ZVal(), nil
+		return phpv.ZNULL.ZVal(), ctx.Warn("expects parameter 1 to be array, %s given", args[0].GetType())
 	}
 
 	var array core.Ref[*phpv.ZArray]
@@ -620,8 +621,8 @@ func fncArrayPush(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // > func mixed array_pop ( array &$array )
 func fncArrayPop(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) > 0 && args[0].GetType() != phpv.ZtArray {
-		ctx.Warn("expects parameter 1 to be array, %s given", args[0].GetType())
-		return phpv.ZNULL.ZVal(), nil
+
+		return phpv.ZNULL.ZVal(), ctx.Warn("expects parameter 1 to be array, %s given", args[0].GetType())
 	}
 
 	var array core.Ref[*phpv.ZArray]
@@ -912,7 +913,9 @@ func fncArrayEnd(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 // > func mixed each ( array &$array )
 func fncArrayEach(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	ctx.WarnDeprecated()
+	if err := ctx.WarnDeprecated(); err != nil {
+		return nil, err
+	}
 
 	var array core.Ref[*phpv.ZArray]
 	_, err := core.Expand(ctx, args, &array)
@@ -1020,8 +1023,7 @@ func fncArrayChunk(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	if size == 0 {
-		ctx.Warn("Size parameter expected to be greater than 0")
-		return phpv.ZNULL.ZVal(), nil
+		return phpv.ZNULL.ZVal(), ctx.Warn("Size parameter expected to be greater than 0")
 	}
 
 	preserveKeys := core.Deref(preserveKeysArg, false)
@@ -1161,7 +1163,9 @@ func fncArrayCountValues(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error
 		case phpv.ZtInt:
 		case phpv.ZtString:
 		default:
-			ctx.Warn("Can only count STRING and INTEGER values!")
+			if err = ctx.Warn("Can only count STRING and INTEGER values!"); err != nil {
+				return nil, err
+			}
 			continue
 		}
 
@@ -1437,8 +1441,7 @@ func fncArrayRand(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	if array.Count(ctx) == 0 {
-		ctx.Warn("Array is empty")
-		return nil, nil
+		return nil, ctx.Warn("Array is empty")
 	}
 
 	// TODO: use Mersenne Twister RNG for maximum compatibility
@@ -1569,8 +1572,7 @@ func fncArrayExtract(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // > func array compact ( mixed $varname1 [, mixed $... ] )
 func fncArrayCompact(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) == 0 {
-		ctx.Warn("expects at least 1 parameter, 0 given")
-		return nil, nil
+		return nil, ctx.Warn("expects at least 1 parameter, 0 given")
 	}
 	parentCtx := ctx.Parent(1)
 	result := phpv.NewZArray()

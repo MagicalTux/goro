@@ -91,7 +91,10 @@ func fncCount(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	if mode == COUNT_RECURSIVE && countable.GetType() == phpv.ZtArray {
 		visisted := map[uintptr]struct{}{}
-		count := recursiveCount(ctx, countable.AsArray(ctx), visisted)
+		count, err := recursiveCount(ctx, countable.AsArray(ctx), visisted)
+		if err != nil {
+			return nil, ctx.FuncError(err)
+		}
 		return phpv.ZInt(count).ZVal(), nil
 	}
 
@@ -99,15 +102,20 @@ func fncCount(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return v.Count(ctx).ZVal(), nil
 	}
 
-	ctx.Warn("Parameter must be an array or an object that implements Countable")
+	if err := ctx.Warn("Parameter must be an array or an object that implements Countable"); err != nil {
+		return nil, err
+	}
 	return phpv.ZInt(1).ZVal(), nil
 }
 
-func recursiveCount(ctx phpv.Context, array *phpv.ZArray, visited map[uintptr]struct{}) int {
+func recursiveCount(ctx phpv.Context, array *phpv.ZArray, visited map[uintptr]struct{}) (int, error) {
+	var err error
 	ptr := uintptr(unsafe.Pointer(array))
 	if _, seen := visited[ptr]; seen {
-		ctx.Warn("recursive loop detected while counting")
-		return 0
+		if err = ctx.Warn("recursive loop detected while counting"); err != nil {
+			return 0, err
+		}
+		return 0, nil
 	}
 
 	visited[ptr] = struct{}{}
@@ -116,13 +124,17 @@ func recursiveCount(ctx phpv.Context, array *phpv.ZArray, visited map[uintptr]st
 	for _, elem := range array.Iterate(ctx) {
 		count++
 		if elem.GetType() == phpv.ZtArray {
-			count += recursiveCount(ctx, elem.AsArray(ctx), visited)
+			n, err := recursiveCount(ctx, elem.AsArray(ctx), visited)
+			if err != nil {
+				return 0, err
+			}
+			count += n
 		} else if v, ok := elem.Value().(phpv.ZCountable); ok {
 			count += int(v.Count(ctx))
 		}
 	}
 
-	return count
+	return count, nil
 }
 
 // > func int strcmp ( string $str1 , string $str2 )

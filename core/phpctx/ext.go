@@ -1,7 +1,9 @@
 package phpctx
 
-import "github.com/MagicalTux/goro/core/phpv"
-import "github.com/MagicalTux/goro/core/phpobj"
+import (
+	"github.com/MagicalTux/goro/core/phpobj"
+	"github.com/MagicalTux/goro/core/phpv"
+)
 
 var (
 	globalExtMap  map[string]*Ext          = make(map[string]*Ext)

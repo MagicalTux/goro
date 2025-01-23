@@ -70,14 +70,7 @@ func (c *Global) CallZVal(ctx phpv.Context, f phpv.Callable, args []*phpv.ZVal, 
 		c.callStack = c.callStack[0 : len(c.callStack)-1]
 	}()
 
-	result, err := phperr.CatchReturn(f.Call(callCtx, callCtx.Args))
-
-	phpErr, isPhpErr := err.(*phpv.PhpError)
-	if err != nil && isPhpErr {
-		err = phperr.HandleUserError(ctx, phpErr)
-	}
-
-	return result, err
+	return phperr.CatchReturn(f.Call(callCtx, callCtx.Args))
 }
 
 func (c *Global) Parent(n int) phpv.Context {
