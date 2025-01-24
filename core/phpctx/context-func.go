@@ -11,6 +11,11 @@ type FuncContext struct {
 	this phpv.ZObject
 	Args []*phpv.ZVal
 	c    phpv.Callable // called object (this function itself)
+
+	funcName   string
+	className  string
+	methodType string
+	loc        *phpv.Loc
 }
 
 func (c *FuncContext) AsVal(ctx phpv.Context, t phpv.ZType) (phpv.Val, error) {

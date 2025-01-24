@@ -46,7 +46,3 @@ type Callable interface {
 	Name() string
 	Call(ctx Context, args []*ZVal) (*ZVal, error)
 }
-
-type ObjectCallable interface {
-	GetMethod(method ZString, ctx Context, args []*ZVal) (*ZVal, error)
-}

@@ -9,6 +9,15 @@ import (
 	"github.com/MagicalTux/goro/core/random"
 )
 
+type StackTraceEntry struct {
+	FuncName   string
+	Filename   string
+	ClassName  string
+	MethodType string
+	Line       int
+	Args       []*ZVal
+}
+
 type Context interface {
 	context.Context
 	ZArrayAccess
@@ -52,6 +61,8 @@ type Context interface {
 
 	Call(ctx Context, f Callable, args []Runnable, this ...ZObject) (*ZVal, error)
 	CallZVal(ctx Context, f Callable, args []*ZVal, this ...ZObject) (*ZVal, error)
+
+	GetStackTrace(ctx Context) []*StackTraceEntry
 }
 
 type GlobalContext interface {

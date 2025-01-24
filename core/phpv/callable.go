@@ -38,6 +38,16 @@ type BoundedCallable struct {
 	This ZObject
 }
 
+type MethodCallable struct {
+	Callable
+	Class  ZClass
+	Static bool
+}
+
 func Bind(fn Callable, this ZObject) *BoundedCallable {
 	return &BoundedCallable{fn, this}
+}
+
+func BindClass(fn Callable, class ZClass, static bool) *MethodCallable {
+	return &MethodCallable{fn, class, static}
 }

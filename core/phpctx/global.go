@@ -51,8 +51,6 @@ type Global struct {
 	streamHandlers map[string]stream.Handler
 	fileHandler    *stream.FileHandler
 
-	callStack []phpv.Callable
-
 	globalLazyFunc  map[phpv.ZString]*globalLazyOffset
 	globalLazyClass map[phpv.ZString]*globalLazyOffset
 
@@ -67,6 +65,8 @@ type Global struct {
 
 	userErrorHandler phpv.Callable
 	userErrorFilter  phpv.PhpErrorType
+
+	currentFuncName string
 }
 
 func NewGlobal(ctx context.Context, p *Process, config phpv.IniConfig) *Global {
@@ -440,10 +440,8 @@ func (g *Global) LogError(err *phpv.PhpError, optionArg ...logopt.Data) {
 }
 
 func (g *Global) GetFuncName() string {
-	if len(g.callStack) > 0 {
-		return g.callStack[len(g.callStack)-1].Name()
-	}
-	return ""
+	// TODO: add ctx arg to avoid putting this state here
+	return g.currentFuncName
 }
 
 func (g *Global) Func() phpv.FuncContext {
@@ -618,4 +616,23 @@ func (g *Global) GetUserErrorHandler() (phpv.Callable, phpv.PhpErrorType) {
 func (g *Global) SetUserErrorHandler(handler phpv.Callable, filter phpv.PhpErrorType) {
 	g.userErrorHandler = handler
 	g.userErrorFilter = filter
+}
+
+func (g *Global) GetStackTrace(ctx phpv.Context) []*phpv.StackTraceEntry {
+	var context phpv.Context = ctx
+	var trace []*phpv.StackTraceEntry
+	for context != nil {
+		if fc, ok := context.(*FuncContext); ok {
+			trace = append(trace, &phpv.StackTraceEntry{
+				FuncName:   fc.funcName,
+				Filename:   fc.loc.Filename,
+				ClassName:  fc.className,
+				MethodType: fc.methodType,
+				Line:       fc.loc.Line,
+				Args:       fc.Args,
+			})
+		}
+		context = context.Parent(1)
+	}
+	return trace
 }

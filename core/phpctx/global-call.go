@@ -20,19 +20,34 @@ func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, o
 
 func (c *Global) CallZVal(ctx phpv.Context, f phpv.Callable, args []*phpv.ZVal, optionalThis ...phpv.ZObject) (*phpv.ZVal, error) {
 	callCtx := &FuncContext{
-		Context: ctx,
-		h:       phpv.NewHashTable(),
-		c:       f,
+		Context:  ctx,
+		h:        phpv.NewHashTable(),
+		c:        f,
+		funcName: f.Name(),
+		loc:      ctx.Loc(),
 	}
 
 	var this phpv.ZObject
 	if len(optionalThis) > 0 {
 		this = optionalThis[0]
 	}
+
 	if this == nil {
 		if obj, ok := f.(*phpv.BoundedCallable); ok {
 			this = obj.This
 		}
+	}
+
+	if m, ok := f.(*phpv.MethodCallable); ok {
+		callCtx.className = string(m.Class.GetName())
+		if m.Static {
+			callCtx.methodType = "::"
+		} else {
+			callCtx.methodType = "->"
+		}
+	} else if this != nil {
+		callCtx.className = this.GetClass().GetName().String()
+		callCtx.methodType = "->"
 	}
 
 	callCtx.this = this
@@ -65,9 +80,10 @@ func (c *Global) CallZVal(ctx phpv.Context, f phpv.Callable, args []*phpv.ZVal, 
 		callCtx.Args = args
 	}
 
-	c.callStack = append(c.callStack, f)
+	funcName := c.currentFuncName
+	c.currentFuncName = callCtx.funcName
 	defer func() {
-		c.callStack = c.callStack[0 : len(c.callStack)-1]
+		c.currentFuncName = funcName
 	}()
 
 	return phperr.CatchReturn(f.Call(callCtx, callCtx.Args))

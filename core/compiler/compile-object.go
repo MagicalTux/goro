@@ -174,13 +174,12 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		return nil, ctx.Errorf("variable is not an object, cannot call method")
 	}
 
-	// execute call
 	m, ok := class.GetMethod(op)
 	if !ok {
 		return nil, ctx.Errorf("Call to undefine method %s:%s()", class.GetName(), op)
 	}
 
-	if ctx.This() == nil && r.static {
+	if objI == nil && r.static {
 		// :: is used outside of class context
 		if !m.Modifiers.IsStatic() {
 			err = ctx.Deprecated("Non-static method %s::%s() should not be called statically", class.GetName(), m.Name, logopt.NoFuncName(true))
@@ -189,10 +188,12 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			}
 		}
 
-		return ctx.Call(ctx, m.Method, r.args, nil)
+		method := phpv.BindClass(m.Method, class, true)
+		return ctx.Call(ctx, method, r.args, nil)
 	}
 
-	return ctx.Call(ctx, m.Method, r.args, objI)
+	method := phpv.BindClass(m.Method, class, false)
+	return ctx.Call(ctx, method, r.args, objI)
 }
 
 func (r *runObjectVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {
