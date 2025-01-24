@@ -33,6 +33,7 @@ func (r *runNewObject) Dump(w io.Writer) error {
 }
 
 func (r *runNewObject) Run(ctx phpv.Context) (*phpv.ZVal, error) {
+	ctx.Tick(ctx, r.l)
 	class, err := ctx.Global().GetClass(ctx, r.obj, true)
 	if err != nil {
 		return nil, err
@@ -128,6 +129,7 @@ func (r *runObjectVar) Dump(w io.Writer) error {
 }
 
 func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
+	ctx.Tick(ctx, r.l)
 	// fetch object
 	obj, err := r.ref.Run(ctx)
 	if err != nil {
