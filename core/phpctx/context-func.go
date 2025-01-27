@@ -1,6 +1,8 @@
 package phpctx
 
 import (
+	"github.com/MagicalTux/goro/core/logopt"
+	"github.com/MagicalTux/goro/core/phperr"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -120,4 +122,64 @@ func (ctx *FuncContext) Parent(n int) phpv.Context {
 	} else {
 		return ctx.Context.Parent(n - 1)
 	}
+}
+
+func (ctx *FuncContext) GetFuncName() string {
+	return ctx.funcName
+}
+
+func (ctx *FuncContext) Error(err error, t ...phpv.PhpErrorType) error {
+	wrappedErr := ctx.Loc().Error(err, t...)
+	return phperr.HandleUserError(ctx, wrappedErr)
+}
+
+func (ctx *FuncContext) Errorf(format string, a ...any) error {
+	err := ctx.Loc().Errorf(phpv.E_ERROR, format, a...)
+	return phperr.HandleUserError(ctx, err)
+}
+
+func (ctx *FuncContext) FuncError(err error, t ...phpv.PhpErrorType) error {
+	wrappedErr := ctx.Loc().Error(err, t...)
+	wrappedErr.FuncName = ctx.GetFuncName()
+	return phperr.HandleUserError(ctx, wrappedErr)
+}
+func (ctx *FuncContext) FuncErrorf(format string, a ...any) error {
+	err := ctx.Loc().Errorf(phpv.E_ERROR, format, a...)
+	err.FuncName = ctx.GetFuncName()
+	return phperr.HandleUserError(ctx, err)
+}
+
+func (ctx *FuncContext) Warn(format string, a ...any) error {
+	a = append(a, logopt.ErrType(phpv.E_WARNING))
+	return logWarning(ctx, format, a...)
+}
+
+func (ctx *FuncContext) Notice(format string, a ...any) error {
+	ctx.Global().WriteErr([]byte{'\n'})
+	a = append(a, logopt.ErrType(phpv.E_NOTICE))
+	return logWarning(ctx, format, a...)
+}
+
+func (ctx *FuncContext) Deprecated(format string, a ...any) error {
+	ctx.Global().WriteErr([]byte{'\n'})
+	a = append(a, logopt.ErrType(phpv.E_DEPRECATED))
+	err := logWarning(ctx, format, a...)
+	if err == nil {
+		ctx.Global().ShownDeprecated(format)
+	}
+	return err
+}
+
+func (ctx *FuncContext) WarnDeprecated() error {
+	funcName := ctx.GetFuncName()
+	if ok := ctx.Global().ShownDeprecated(funcName); ok {
+		ctx.Global().WriteErr([]byte{'\n'})
+		err := logWarning(
+			ctx,
+			"The %s() function is deprecated. This message will be suppressed on further calls",
+			funcName, logopt.NoFuncName(true), logopt.ErrType(phpv.E_DEPRECATED),
+		)
+		return err
+	}
+	return nil
 }

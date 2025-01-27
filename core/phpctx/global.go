@@ -65,8 +65,6 @@ type Global struct {
 
 	userErrorHandler phpv.Callable
 	userErrorFilter  phpv.PhpErrorType
-
-	currentFuncName string
 }
 
 func NewGlobal(ctx context.Context, p *Process, config phpv.IniConfig) *Global {
@@ -254,7 +252,7 @@ func (g *Global) Write(v []byte) (int, error) {
 	return g.out.Write(v)
 }
 
-func (g *Global) writeErr(v []byte) (int, error) {
+func (g *Global) WriteErr(v []byte) (int, error) {
 	return g.errOut.Write(v)
 }
 
@@ -325,42 +323,40 @@ func (g *Global) FuncErrorf(format string, a ...any) error {
 
 func (g *Global) Warn(format string, a ...any) error {
 	a = append(a, logopt.ErrType(phpv.E_WARNING))
-	return g.log(format, a...)
+	return logWarning(g, format, a...)
 }
 
 func (g *Global) Notice(format string, a ...any) error {
-	g.writeErr([]byte{'\n'})
+	g.WriteErr([]byte{'\n'})
 	a = append(a, logopt.ErrType(phpv.E_NOTICE))
-	return g.log(format, a...)
+	return logWarning(g, format, a...)
 }
 
 func (g *Global) Deprecated(format string, a ...any) error {
-	g.writeErr([]byte{'\n'})
+	g.WriteErr([]byte{'\n'})
 	a = append(a, logopt.ErrType(phpv.E_DEPRECATED))
-	err := g.log(format, a...)
+	err := logWarning(g, format, a...)
 	if err == nil {
-		g.shownDeprecated[format] = struct{}{}
+		g.ShownDeprecated(format)
 	}
 	return err
 }
 
 func (g *Global) WarnDeprecated() error {
 	funcName := g.GetFuncName()
-	if _, ok := g.shownDeprecated[funcName]; !ok {
-		g.writeErr([]byte{'\n'})
-		err := g.log(
+	if ok := g.ShownDeprecated(funcName); ok {
+		g.WriteErr([]byte{'\n'})
+		err := logWarning(
+			g,
 			"The %s() function is deprecated. This message will be suppressed on further calls",
 			funcName, logopt.NoFuncName(true), logopt.ErrType(phpv.E_DEPRECATED),
 		)
-		if err == nil {
-			g.shownDeprecated[funcName] = struct{}{}
-		}
 		return err
 	}
 	return nil
 }
 
-func (g *Global) getLogArgs(args []any) (logopt.Data, []any) {
+func getLogArgs(args []any) (logopt.Data, []any) {
 	var fmtArgs []any
 	var option logopt.Data
 	for _, arg := range args {
@@ -382,10 +378,10 @@ func (g *Global) getLogArgs(args []any) (logopt.Data, []any) {
 	return option, fmtArgs
 }
 
-func (g *Global) log(format string, a ...any) error {
-	funcName := g.GetFuncName()
-	loc := g.l.Loc()
-	option, fmtArgs := g.getLogArgs(a)
+func logWarning(ctx phpv.Context, format string, a ...any) error {
+	funcName := ctx.GetFuncName()
+	loc := ctx.Loc()
+	option, fmtArgs := getLogArgs(a)
 	message := fmt.Sprintf(format, fmtArgs...)
 
 	phpErr := &phpv.PhpError{
@@ -395,12 +391,12 @@ func (g *Global) log(format string, a ...any) error {
 		Loc:      loc,
 	}
 
-	err := phperr.HandleUserError(g, phpErr)
+	err := phperr.HandleUserError(ctx, phpErr)
 	if err != nil {
 		return err
 	}
 
-	g.LogError(phpErr, option)
+	ctx.Global().LogError(phpErr, option)
 	return nil
 }
 
@@ -440,8 +436,7 @@ func (g *Global) LogError(err *phpv.PhpError, optionArg ...logopt.Data) {
 }
 
 func (g *Global) GetFuncName() string {
-	// TODO: add ctx arg to avoid putting this state here
-	return g.currentFuncName
+	return ""
 }
 
 func (g *Global) Func() phpv.FuncContext {
@@ -635,4 +630,10 @@ func (g *Global) GetStackTrace(ctx phpv.Context) []*phpv.StackTraceEntry {
 		context = context.Parent(1)
 	}
 	return trace
+}
+
+func (g *Global) ShownDeprecated(key string) bool {
+	_, exists := g.shownDeprecated[key]
+	g.shownDeprecated[key] = struct{}{}
+	return !exists
 }

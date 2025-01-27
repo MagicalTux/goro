@@ -107,6 +107,9 @@ type GlobalContext interface {
 
 	GetUserErrorHandler() (Callable, PhpErrorType)
 	SetUserErrorHandler(Callable, PhpErrorType)
+
+	WriteErr(p []byte) (n int, err error)
+	ShownDeprecated(key string) bool
 }
 
 type IniValue struct {

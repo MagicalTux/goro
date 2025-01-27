@@ -80,12 +80,6 @@ func (c *Global) CallZVal(ctx phpv.Context, f phpv.Callable, args []*phpv.ZVal, 
 		callCtx.Args = args
 	}
 
-	funcName := c.currentFuncName
-	c.currentFuncName = callCtx.funcName
-	defer func() {
-		c.currentFuncName = funcName
-	}()
-
 	return phperr.CatchReturn(f.Call(callCtx, callCtx.Args))
 }
 
