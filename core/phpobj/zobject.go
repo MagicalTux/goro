@@ -9,7 +9,9 @@ import (
 )
 
 type ZObject struct {
-	h     *phpv.ZHashTable
+	h          *phpv.ZHashTable
+	hasPrivate map[phpv.ZString]struct{}
+
 	Class phpv.ZClass
 
 	// for use with custom extension objects
@@ -61,7 +63,12 @@ func NewZObject(ctx phpv.Context, c phpv.ZClass, args ...*phpv.ZVal) (*ZObject, 
 		c = StdClass
 	}
 
-	n := &ZObject{h: phpv.NewHashTable(), Class: c, ID: c.NextInstanceID()}
+	n := &ZObject{
+		h:          phpv.NewHashTable(),
+		hasPrivate: make(map[phpv.ZString]struct{}),
+		Class:      c,
+		ID:         c.NextInstanceID(),
+	}
 	var constructor phpv.Callable
 
 	err := n.init(ctx)
@@ -120,6 +127,11 @@ func (o *ZObject) init(ctx phpv.Context) error {
 				continue
 			}
 			o.h.SetString(p.VarName, p.Default.ZVal())
+			if p.Modifiers.IsPrivate() {
+				k := getPrivatePropName(class, p.VarName)
+				o.h.SetString(k, p.Default.ZVal())
+				o.hasPrivate[p.VarName] = struct{}{}
+			}
 		}
 	}
 
@@ -170,6 +182,14 @@ func (o *ZObject) ObjectGet(ctx phpv.Context, key phpv.Val) (*phpv.ZVal, error) 
 		return nil, err
 	}
 
+	keyStr := key.(phpv.ZString)
+	if _, ok := o.hasPrivate[keyStr]; ok {
+		propName := getPrivatePropName(o.GetClass(), keyStr)
+		if o.h.HasString(propName) {
+			return o.h.GetString(propName), nil
+		}
+	}
+
 	return o.h.GetString(key.(phpv.ZString)), nil
 }
 
@@ -178,6 +198,14 @@ func (o *ZObject) ObjectSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) er
 	key, err = key.AsVal(ctx, phpv.ZtString)
 	if err != nil {
 		return err
+	}
+
+	keyStr := key.(phpv.ZString)
+	if _, ok := o.hasPrivate[keyStr]; ok {
+		propName := getPrivatePropName(o.GetClass(), keyStr)
+		if o.h.HasString(propName) {
+			return o.h.SetString(propName, value)
+		}
 	}
 
 	return o.h.SetString(key.(phpv.ZString), value)
@@ -205,4 +233,8 @@ func (a *ZObject) String() string {
 
 func (a *ZObject) Value() phpv.Val {
 	return a
+}
+
+func getPrivatePropName(class phpv.ZClass, name phpv.ZString) phpv.ZString {
+	return phpv.ZString(fmt.Sprintf("*%s:%s", class.GetName(), name))
 }
