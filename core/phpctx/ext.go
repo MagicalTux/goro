@@ -44,6 +44,11 @@ func RegisterExt(e *Ext) {
 	for name, fn := range e.Functions {
 		fn.name = name
 	}
+	for _, class := range e.Classes {
+		for _, m := range class.Methods {
+			m.Class = class
+		}
+	}
 }
 
 func HasExt(name string) bool {

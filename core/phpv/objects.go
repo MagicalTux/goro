@@ -10,6 +10,7 @@ type ZClassMethod struct {
 	Name      ZString
 	Modifiers ZObjectAttr
 	Method    Callable
+	Class     ZClass
 }
 
 type ZClassHandlers struct {
@@ -44,4 +45,6 @@ type ZObject interface {
 	NewIterator() ZIterator
 	HashTable() *ZHashTable
 	Clone(ctx Context) (ZObject, error)
+	GetParent() ZObject
+	GetKin(className string) ZObject
 }

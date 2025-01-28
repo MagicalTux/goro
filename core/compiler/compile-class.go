@@ -204,7 +204,12 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			f.(*ZClosure).class = class
 
 			// register method
-			method := &phpv.ZClassMethod{Name: phpv.ZString(i.Data), Modifiers: attr, Method: f}
+			method := &phpv.ZClassMethod{
+				Name:      phpv.ZString(i.Data),
+				Modifiers: attr,
+				Method:    f,
+				Class:     class,
+			}
 
 			if x := method.Name.ToLower(); x == class.BaseName().ToLower() || x == "__construct" {
 				//if class.Constructor != nil {

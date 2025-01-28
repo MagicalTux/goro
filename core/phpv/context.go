@@ -33,6 +33,7 @@ type Context interface {
 	Func() FuncContext
 	Parent(n int) Context
 	This() ZObject
+	Class() ZClass
 	Loc() *Loc
 	Tick(ctx Context, l *Loc) error
 	MemAlloc(ctx Context, s uint64) error

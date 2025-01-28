@@ -198,6 +198,25 @@ func zvalStore(ctx phpv.Context, i int, args []*phpv.ZVal, out interface{}) (php
 		}
 		*tgt = s
 		return s, nil
+	case *phpv.ZObject:
+		s, err := z.As(ctx, phpv.ZtObject)
+		if err != nil {
+			return nil, err
+		}
+		obj, ok := s.Value().(*phpobj.ZObject)
+		if !ok {
+			return nil, ctx.Errorf("%s() expected parameter %d to be object, %s given", name, paramNo, z.GetType())
+		}
+		if *tgt != nil {
+			if (*tgt).GetClass() != nil {
+				// check implements
+				if (*tgt).GetClass() != obj.Class {
+					return nil, ctx.Errorf("%s() expects parameter %d to be %s, %s given", name, paramNo, (*tgt).GetClass().GetName(), z.GetType())
+				}
+			}
+		}
+		*tgt = obj
+		return obj, nil
 	case **phpobj.ZObject:
 		s, err := z.As(ctx, phpv.ZtObject)
 		if err != nil {

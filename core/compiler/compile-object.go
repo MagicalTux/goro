@@ -155,47 +155,108 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	var class phpv.ZClass
 	switch obj.GetType() {
 	case phpv.ZtObject:
-		objI = obj.Value().(*phpobj.ZObject)
+		objI = obj.Value().(*phpobj.ZObject).Unwrap()
 		class = objI.GetClass()
 	case phpv.ZtString:
+		// object receiver is a string, so :: syntax was used
 		className := obj.AsString(ctx)
-		class, err = ctx.Global().GetClass(ctx, className, true)
-		if err != nil {
-			return nil, err
-		}
-		if ctx.This() != nil {
-			// parent class names can be used in place of parent
-			// for example, if A extends B extends C,
-			// in A context, B::foo() == parent
-			// C::foo() is also a non-static call inside A, B or C
-			if ctx.This().GetClass().InstanceOf(class) {
-				objI = ctx.This()
+
+		// :: can take the following as the receiver:
+		// - parent::method()
+		// - self::method()
+		// - ClassName::method() # where ClassName is any class name
+		//
+		// parent::method() and self::method() are not static calls.
+		// self::method() and $this->method() aren't the same.
+		// self:: will first search for the method starting with the class
+		// where self:: was referred to, and search upwards in the class heirarchy.
+		// $this-> will always start searching from the end of the inheritance chain.
+		//
+		// For example, given A extends B extends C,
+		// in B, self::foo() will first search for the method in B, then A.
+		// Whereas, in B, $this->foo() will first search for the method in C, B, then A.
+		//
+		//
+		// ClassName::method() may or may not be static call, depending on where
+		// it's called from.
+		// If it's called from outside the class context, then it's a static call.
+		// If ClassName is NOT part of the current inheritance chain, then it's also a static call.
+		// Otherwise, it's a non-static call.
+		//
+		// For example, given A extends B extends C,
+		// in B, A::foo() and C::foo() is a non-static call.
+		// Whereas, in or outside of B, D::foo() is a static call.
+
+		switch className {
+		case "self":
+			if ctx.This() == nil {
+				return nil, ctx.Errorf("Cannot access self:: when no method scope is active")
+			}
+			if ctx.This().GetClass() == nil {
+				return nil, ctx.Errorf("Cannot access self:: when no class scope is active")
+			}
+			objI = ctx.This()
+			class = objI.GetClass()
+
+		case "parent":
+			if ctx.This() == nil {
+				return nil, ctx.Errorf("Cannot access parent:: when no method scope is active")
+			}
+			if ctx.This().GetClass() == nil {
+				return nil, ctx.Errorf("Cannot access parent:: when no class scope is active")
+			}
+			if ctx.This().GetClass().GetParent() == nil {
+				return nil, ctx.Errorf("Cannot access parent:: when current class scope has no parent")
+			}
+			objI = ctx.This().GetParent()
+			class = objI.GetClass()
+
+		default:
+			nonStatic := false
+			if ctx.This() != nil {
+				kin := ctx.This().GetKin(string(className))
+				if kin != nil {
+					objI = kin
+					class = objI.GetClass()
+					nonStatic = true
+				}
+			}
+
+			if !nonStatic {
+				class, err = ctx.Global().GetClass(ctx, className, true)
+				if err != nil {
+					return nil, err
+				}
 			}
 		}
 	default:
 		return nil, ctx.Errorf("variable is not an object, cannot call method")
 	}
 
-	m, ok := class.GetMethod(op)
+	method, ok := class.GetMethod(op)
 	if !ok {
 		return nil, ctx.Errorf("Call to undefine method %s:%s()", class.GetName(), op)
 	}
 
+	if objI != nil {
+		objI = objI.GetKin(string(method.Class.GetName()))
+		class = method.Class
+	}
+
 	if objI == nil && r.static {
 		// :: is used outside of class context
-		if !m.Modifiers.IsStatic() {
-			err = ctx.Deprecated("Non-static method %s::%s() should not be called statically", class.GetName(), m.Name, logopt.NoFuncName(true))
+		if !method.Modifiers.IsStatic() {
+			err = ctx.Deprecated("Non-static method %s::%s() should not be called statically", class.GetName(), method.Name, logopt.NoFuncName(true))
 			if err != nil {
 				return nil, err
 			}
 		}
 
-		method := phpv.BindClass(m.Method, class, true)
-		return ctx.Call(ctx, method, r.args, nil)
+		m := phpv.BindClass(method.Method, class, false)
+		return ctx.Call(ctx, m, r.args, nil)
 	}
 
-	method := phpv.BindClass(m.Method, class, false)
-	return ctx.Call(ctx, method, r.args, objI)
+	return ctx.Call(ctx, method.Method, r.args, objI)
 }
 
 func (r *runObjectVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {

@@ -1,7 +1,6 @@
 package compiler
 
 import (
-	"errors"
 	"io"
 	"strings"
 
@@ -26,11 +25,6 @@ func (r *runConstant) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 		return phpv.ZBool(true).ZVal(), nil
 	case "false":
 		return phpv.ZBool(false).ZVal(), nil
-	case "self":
-		if ctx.This() == nil {
-			return nil, errors.New("cannot access self:: when no class scope is active")
-		}
-		return ctx.This().ZVal(), nil
 	}
 
 	z, ok := ctx.Global().ConstantGet(phpv.ZString(r.c))

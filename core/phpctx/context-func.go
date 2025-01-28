@@ -14,10 +14,10 @@ type FuncContext struct {
 	Args []*phpv.ZVal
 	c    phpv.Callable // called object (this function itself)
 
-	funcName   string
-	className  string
+	loc *phpv.Loc
+
+	class      phpv.ZClass
 	methodType string
-	loc        *phpv.Loc
 }
 
 func (c *FuncContext) AsVal(ctx phpv.Context, t phpv.ZType) (phpv.Val, error) {
@@ -38,10 +38,16 @@ func (c *FuncContext) Func() phpv.FuncContext {
 }
 
 func (c *FuncContext) This() phpv.ZObject {
-	if c.this != nil {
-		return c.this
+	return c.this
+}
+
+func (c *FuncContext) Class() phpv.ZClass {
+	// TODO: fix, must not be recursive, should be nil
+	// when outside of class
+	if c.class != nil {
+		return c.class
 	}
-	return c.Context.This()
+	return c.Context.Class()
 }
 
 func (c *FuncContext) OffsetExists(ctx phpv.Context, name phpv.Val) (bool, error) {
@@ -125,7 +131,7 @@ func (ctx *FuncContext) Parent(n int) phpv.Context {
 }
 
 func (ctx *FuncContext) GetFuncName() string {
-	return ctx.funcName
+	return ctx.c.Name()
 }
 
 func (ctx *FuncContext) Error(err error, t ...phpv.PhpErrorType) error {

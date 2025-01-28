@@ -12,7 +12,8 @@ type ZObject struct {
 	h          *phpv.ZHashTable
 	hasPrivate map[phpv.ZString]struct{}
 
-	Class phpv.ZClass
+	Class        phpv.ZClass
+	CurrentClass phpv.ZClass
 
 	// for use with custom extension objects
 	Opaque map[phpv.ZClass]interface{}
@@ -92,6 +93,47 @@ func NewZObject(ctx phpv.Context, c phpv.ZClass, args ...*phpv.ZVal) (*ZObject, 
 	return n, nil
 }
 
+func (z *ZObject) GetKin(className string) phpv.ZObject {
+	class := z.Class.(*ZClass)
+	for class != nil {
+		if class.GetName() == phpv.ZString(className) {
+			return z.new(class)
+		}
+		class = class.GetParent().(*ZClass)
+	}
+	return nil
+}
+
+func (z *ZObject) Unwrap() phpv.ZObject {
+	if z != nil {
+		return z.new(nil)
+	}
+	return z
+}
+
+func (z *ZObject) GetParent() phpv.ZObject {
+	class := z.GetClass().(*ZClass)
+	if z.CurrentClass != nil {
+		class = z.CurrentClass.(*ZClass)
+	}
+	parentClass := class.GetParent().(*ZClass)
+	if parentClass == nil {
+		return nil
+	}
+	return z.new(parentClass)
+}
+
+func (z *ZObject) new(class *ZClass) *ZObject {
+	return &ZObject{
+		h:            z.h,
+		hasPrivate:   z.hasPrivate,
+		Class:        z.Class,
+		CurrentClass: class,
+		Opaque:       z.Opaque,
+		ID:           z.ID,
+	}
+}
+
 func (z *ZObject) Clone(ctx phpv.Context) (phpv.ZObject, error) {
 	if len(z.Opaque) != 0 {
 		// TODO allow clone callbacks
@@ -162,7 +204,7 @@ func (o *ZObject) OffsetSet(ctx phpv.Context, key, value *phpv.ZVal) (*phpv.ZVal
 }
 
 func (o *ZObject) GetMethod(method phpv.ZString, ctx phpv.Context) (phpv.Callable, error) {
-	class := o.Class.(*ZClass)
+	class := o.GetClass().(*ZClass)
 	m, ok := class.Methods[method.ToLower()]
 	if !ok {
 		m, ok = class.Methods["__call"]
@@ -224,6 +266,9 @@ func (a *ZObject) HashTable() *phpv.ZHashTable {
 }
 
 func (a *ZObject) GetClass() phpv.ZClass {
+	if c, ok := a.CurrentClass.(*ZClass); ok && c != nil {
+		return a.CurrentClass
+	}
 	return a.Class
 }
 

@@ -20,11 +20,10 @@ func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, o
 
 func (c *Global) CallZVal(ctx phpv.Context, f phpv.Callable, args []*phpv.ZVal, optionalThis ...phpv.ZObject) (*phpv.ZVal, error) {
 	callCtx := &FuncContext{
-		Context:  ctx,
-		h:        phpv.NewHashTable(),
-		c:        f,
-		funcName: f.Name(),
-		loc:      ctx.Loc(),
+		Context: ctx,
+		h:       phpv.NewHashTable(),
+		c:       f,
+		loc:     ctx.Loc(),
 	}
 
 	var this phpv.ZObject
@@ -39,14 +38,14 @@ func (c *Global) CallZVal(ctx phpv.Context, f phpv.Callable, args []*phpv.ZVal, 
 	}
 
 	if m, ok := f.(*phpv.MethodCallable); ok {
-		callCtx.className = string(m.Class.GetName())
+		callCtx.class = m.Class
 		if m.Static {
 			callCtx.methodType = "::"
 		} else {
 			callCtx.methodType = "->"
 		}
 	} else if this != nil {
-		callCtx.className = this.GetClass().GetName().String()
+		callCtx.class = this.GetClass()
 		callCtx.methodType = "->"
 	}
 

@@ -446,6 +446,9 @@ func (g *Global) Func() phpv.FuncContext {
 func (g *Global) This() phpv.ZObject {
 	return nil
 }
+func (g *Global) Class() phpv.ZClass {
+	return nil
+}
 
 func (g *Global) RegisterFunction(name phpv.ZString, f phpv.Callable) error {
 	name = name.ToLower()
@@ -619,9 +622,9 @@ func (g *Global) GetStackTrace(ctx phpv.Context) []*phpv.StackTraceEntry {
 	for context != nil {
 		if fc, ok := context.(*FuncContext); ok {
 			trace = append(trace, &phpv.StackTraceEntry{
-				FuncName:   fc.funcName,
+				FuncName:   fc.GetFuncName(),
 				Filename:   fc.loc.Filename,
-				ClassName:  fc.className,
+				ClassName:  string(fc.class.GetName()),
 				MethodType: fc.methodType,
 				Line:       fc.loc.Line,
 				Args:       fc.Args,
