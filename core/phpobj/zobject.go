@@ -1,6 +1,8 @@
 package phpobj
 
 import (
+	"fmt"
+	"iter"
 	"slices"
 
 	"github.com/MagicalTux/goro/core/phpv"
@@ -122,6 +124,24 @@ func (o *ZObject) init(ctx phpv.Context) error {
 	}
 
 	return nil
+}
+
+func (o *ZObject) IterProps() iter.Seq[*phpv.ZClassProp] {
+	return o.yieldGetProps
+}
+
+func (o *ZObject) yieldGetProps(yield func(*phpv.ZClassProp) bool) {
+	shown := map[string]struct{}{}
+	class := o.GetClass().(*ZClass)
+	for class != nil {
+		for _, p := range class.Props {
+			if !yield(p) {
+				break
+			}
+			shown[p.VarName.String()] = struct{}{}
+		}
+		class = class.GetParent().(*ZClass)
+	}
 }
 
 func (o *ZObject) OffsetSet(ctx phpv.Context, key, value *phpv.ZVal) (*phpv.ZVal, error) {

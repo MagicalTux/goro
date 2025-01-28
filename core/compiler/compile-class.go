@@ -1,6 +1,8 @@
 package compiler
 
 import (
+	"slices"
+
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
@@ -132,6 +134,13 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 
 				return nil, i.Unexpected()
 			}
+			// sort props, show public first, then protected, then private
+			slices.SortStableFunc(class.Props, func(a, b *phpv.ZClassProp) int {
+				visibility := phpv.ZAttrPublic | phpv.ZAttrProtected | phpv.ZAttrPrivate
+				attrA := a.Modifiers & (phpv.ZObjectAttr(visibility))
+				attrB := b.Modifiers & (phpv.ZObjectAttr(visibility))
+				return int(attrA - attrB)
+			})
 		case tokenizer.T_CONST:
 			// const K = V
 			// get const name
