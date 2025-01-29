@@ -21,7 +21,8 @@ type ZClassHandlers struct {
 
 type ZClass interface {
 	GetName() ZString
-	InstanceOf(subc ZClass) bool
+	InstanceOf(parent ZClass) bool
+	Implements(intf ZClass) bool
 	BaseName() ZString
 	GetStaticProps(ctx Context) (*ZHashTable, error)
 	GetProp(name ZString) (*ZClassProp, bool)

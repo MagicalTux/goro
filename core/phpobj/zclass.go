@@ -18,13 +18,13 @@ type ZClass struct {
 	ExtendsStr    phpv.ZString
 	ImplementsStr []phpv.ZString
 
-	parents     map[*ZClass]*ZClass // all parents, extends & implements
-	Extends     *ZClass
-	Implements  []*ZClass
-	Const       map[phpv.ZString]phpv.Val // class constants
-	Props       []*phpv.ZClassProp
-	Methods     map[phpv.ZString]*phpv.ZClassMethod
-	StaticProps *phpv.ZHashTable
+	parents         map[*ZClass]*ZClass // all parents, extends & implements
+	Extends         *ZClass
+	Implementations []*ZClass
+	Const           map[phpv.ZString]phpv.Val // class constants
+	Props           []*phpv.ZClassProp
+	Methods         map[phpv.ZString]*phpv.ZClassMethod
+	StaticProps     *phpv.ZHashTable
 
 	nextIntanceID int
 
@@ -49,15 +49,15 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 
 	if c.ExtendsStr != "" {
 		// need to lookup extend
-		subc, err := ctx.Global().GetClass(ctx, c.ExtendsStr, true)
+		parent, err := ctx.Global().GetClass(ctx, c.ExtendsStr, true)
 		if err != nil {
 			return err
 		}
-		if _, found := c.parents[subc.(*ZClass)]; found {
+		if _, found := c.parents[parent.(*ZClass)]; found {
 			return ctx.Errorf("class extends loop found")
 		}
-		c.Extends = subc.(*ZClass)
-		c.parents[subc.(*ZClass)] = subc.(*ZClass)
+		c.Extends = parent.(*ZClass)
+		c.parents[parent.(*ZClass)] = parent.(*ZClass)
 
 		// need to import methods
 		for n, m := range c.Extends.Methods {
@@ -65,6 +65,13 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 				c.Methods[n] = m
 			}
 		}
+	}
+	for _, impl := range c.ImplementsStr {
+		intf, err := ctx.Global().GetClass(ctx, impl, true)
+		if err != nil {
+			return err
+		}
+		c.Implementations = append(c.Implementations, intf.(*ZClass))
 	}
 
 	for k, v := range c.Const {
@@ -101,22 +108,31 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 	return nil
 }
 
-func (c *ZClass) InstanceOf(subc phpv.ZClass) bool {
-	if c == nil || subc == nil {
+func (c *ZClass) InstanceOf(parentClass phpv.ZClass) bool {
+	if c == nil || parentClass == nil {
 		return false
 	}
-	if subc == c {
+	if parentClass == c {
 		return true
 	}
-	_, ok := c.parents[subc.(*ZClass)]
+	_, ok := c.parents[parentClass.(*ZClass)]
 	if ok {
 		return true
 	}
-	parent := c.GetParent()
-	if parent == nil {
-		return false
+	return false
+}
+
+func (c *ZClass) Implements(class phpv.ZClass) bool {
+	for _, intf := range c.Implementations {
+		if class == intf {
+			return true
+		}
 	}
-	return parent.InstanceOf(subc)
+	parent := c.GetParent().(*ZClass)
+	if parent != nil {
+		return parent.Implements(class)
+	}
+	return false
 }
 
 func (c *ZClass) Dump(w io.Writer) error {

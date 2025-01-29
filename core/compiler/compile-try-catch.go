@@ -60,8 +60,13 @@ func (rt *runnableTry) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		for _, c := range rt.catches {
 			var match bool
 			for _, className := range c.typeNames {
-				class, _ := ctx.Global().GetClass(ctx, className, false)
-				if class != nil && throwErr.Obj.GetClass().InstanceOf(class) {
+				class, err := ctx.Global().GetClass(ctx, className, false)
+				if err != nil {
+					return nil, err
+				}
+				subClass := throwErr.Obj.GetClass().InstanceOf(class)
+				implements := throwErr.Obj.GetClass().Implements(class)
+				if class != nil && (subClass || implements) {
 					match = true
 					break
 				}

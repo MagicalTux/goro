@@ -13,8 +13,8 @@ var Exception *ZClass
 
 func init() {
 	Exception = &ZClass{
-		Name:       "Exception",
-		Implements: []*ZClass{Throwable},
+		Name:            "Exception",
+		Implementations: []*ZClass{Throwable},
 		Props: []*phpv.ZClassProp{
 			{VarName: phpv.ZString("message"), Default: phpv.ZStr("").ZVal(), Modifiers: phpv.ZAttrProtected},
 			{VarName: phpv.ZString("string"), Default: phpv.ZStr("").ZVal(), Modifiers: phpv.ZAttrPrivate},

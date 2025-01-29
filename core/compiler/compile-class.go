@@ -277,7 +277,9 @@ func parseClassLine(class *phpobj.ZClass, c compileCtx) error {
 				return err
 			}
 
-			class.ImplementsStr = append(class.ImplementsStr, impl)
+			if impl != "" {
+				class.ImplementsStr = append(class.ImplementsStr, impl)
+			}
 
 			// read next
 			i, err = c.NextItem()
