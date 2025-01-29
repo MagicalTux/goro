@@ -197,11 +197,26 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 				return nil, i.Unexpected()
 			}
 
-			f, err := compileFunctionWithName(phpv.ZString(i.Data), c, l, rref)
-			if err != nil {
-				return nil, err
+			var f phpv.Callable
+
+			switch class.Type {
+			case phpv.ZClassTypeInterface:
+				f, err = compileFunctionWithName(phpv.ZString(i.Data), c, l, rref, true)
+				if err != nil {
+					return nil, err
+				}
+				f.(*ZClosure).class = class
+			default:
+				f, err = compileFunctionWithName(phpv.ZString(i.Data), c, l, rref)
+				if err != nil {
+					return nil, err
+				}
+				f.(*ZClosure).class = class
 			}
-			f.(*ZClosure).class = class
+
+			// an interface method with a body is not a parse error,
+			// so delay returning an error when code is ran
+			_, emptyBody := f.(*ZClosure).code.(phpv.RunNull)
 
 			// register method
 			method := &phpv.ZClassMethod{
@@ -209,6 +224,7 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 				Modifiers: attr,
 				Method:    f,
 				Class:     class,
+				Empty:     emptyBody,
 			}
 
 			if x := method.Name.ToLower(); x == class.BaseName().ToLower() || x == "__construct" {

@@ -86,6 +86,10 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 		}
 	}
 	for _, m := range c.Methods {
+		if c.Type == phpv.ZClassTypeInterface && !m.Empty {
+			// TODO: why is Loc not set here, probably missing a Tick()
+			return fmt.Errorf("Interface function Template::%s() cannot contain body", string(m.Name))
+		}
 		if c, ok := m.Method.(phpv.Compilable); ok {
 			err := c.Compile(ctx)
 			if err != nil {

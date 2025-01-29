@@ -11,6 +11,7 @@ type ZClassMethod struct {
 	Modifiers ZObjectAttr
 	Method    Callable
 	Class     ZClass
+	Empty     bool
 }
 
 type ZClassHandlers struct {

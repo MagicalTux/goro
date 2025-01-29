@@ -231,14 +231,13 @@ func compileSpecialFuncCall(i *tokenizer.Item, c compileCtx) (phpv.Runnable, err
 	}
 }
 
-func compileFunctionWithName(name phpv.ZString, c compileCtx, l *phpv.Loc, rref bool) (phpv.ZClosure, error) {
+func compileFunctionWithName(name phpv.ZString, c compileCtx, l *phpv.Loc, rref bool, optionalBody ...bool) (phpv.ZClosure, error) {
 	var err error
 
 	zc := &ZClosure{
 		name:  name,
 		start: l,
-		// TODO populate end
-		rref: rref,
+		rref:  rref,
 	}
 
 	c = &zclosureCompileCtx{c, zc}
@@ -268,6 +267,17 @@ func compileFunctionWithName(name phpv.ZString, c compileCtx, l *phpv.Loc, rref 
 	}
 
 	if !i.IsSingle('{') {
+		if len(optionalBody) > 0 && optionalBody[0] && i.IsSingle(';') {
+			i, err = c.NextItem()
+			if err != nil {
+				return nil, err
+			}
+			c.backup()
+			zc.end = i.Loc()
+			zc.code = phpv.RunNull{}
+			return zc, nil
+		}
+
 		return nil, i.Unexpected()
 	}
 
@@ -275,6 +285,13 @@ func compileFunctionWithName(name phpv.ZString, c compileCtx, l *phpv.Loc, rref 
 	if err != nil {
 		return nil, err
 	}
+
+	i, err = c.NextItem()
+	if err != nil {
+		return nil, err
+	}
+	c.backup()
+	zc.end = i.Loc()
 
 	return zc, nil
 }
