@@ -149,10 +149,13 @@ func (g *Global) init() {
 			g.globalFuncs[phpv.ZString(k)] = v
 		}
 		for _, c := range e.Classes {
+			// TODO: use class ID for comparing classes
+			// copying the class here will break class comparison
+			//
 			// copy c since class state (i.e. next instance id)
 			// should be per context global, and not Go global
-			classCopy := *c
-			g.globalClasses[c.GetName().ToLower()] = &classCopy
+			//classCopy := *c
+			g.globalClasses[c.GetName().ToLower()] = c
 		}
 	}
 
@@ -621,10 +624,14 @@ func (g *Global) GetStackTrace(ctx phpv.Context) []*phpv.StackTraceEntry {
 	var trace []*phpv.StackTraceEntry
 	for context != nil {
 		if fc, ok := context.(*FuncContext); ok {
+			var className string
+			if fc.class != nil {
+				className = string(fc.class.GetName())
+			}
 			trace = append(trace, &phpv.StackTraceEntry{
 				FuncName:   fc.GetFuncName(),
 				Filename:   fc.loc.Filename,
-				ClassName:  string(fc.class.GetName()),
+				ClassName:  className,
 				MethodType: fc.methodType,
 				Line:       fc.loc.Line,
 				Args:       fc.Args,

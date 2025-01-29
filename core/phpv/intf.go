@@ -46,3 +46,7 @@ type Callable interface {
 	Name() string
 	Call(ctx Context, args []*ZVal) (*ZVal, error)
 }
+
+type Cloneable interface {
+	Clone() any
+}

@@ -3,6 +3,7 @@ package phpobj
 import (
 	"fmt"
 	"iter"
+	"maps"
 	"slices"
 
 	"github.com/MagicalTux/goro/core/phpv"
@@ -50,7 +51,7 @@ func (z *ZObject) AsVal(ctx phpv.Context, t phpv.ZType) (phpv.Val, error) {
 	switch t {
 	case phpv.ZtString:
 		if m, ok := z.Class.GetMethod("__tostring"); ok {
-			return m.Method.Call(ctx, nil)
+			return ctx.CallZVal(ctx, m.Method, nil, z)
 		}
 	case phpv.ZtInt:
 		return phpv.ZInt(1), nil
@@ -69,6 +70,7 @@ func NewZObject(ctx phpv.Context, c phpv.ZClass, args ...*phpv.ZVal) (*ZObject, 
 		hasPrivate: make(map[phpv.ZString]struct{}),
 		Class:      c,
 		ID:         c.NextInstanceID(),
+		Opaque:     map[phpv.ZClass]interface{}{},
 	}
 	var constructor phpv.Callable
 
@@ -135,21 +137,36 @@ func (z *ZObject) new(class *ZClass) *ZObject {
 }
 
 func (z *ZObject) Clone(ctx phpv.Context) (phpv.ZObject, error) {
+	opaque := map[phpv.ZClass]any{}
 	if len(z.Opaque) != 0 {
-		// TODO allow clone callbacks
-		return nil, ctx.Errorf("object cannot be cloned")
+		for class, thing := range z.Opaque {
+			if cloneable, ok := thing.(phpv.Cloneable); ok {
+				thing = cloneable.Clone()
+			}
+			opaque[class] = thing
+		}
 	}
 
 	n := &ZObject{
-		Class: z.Class,
-		h:     z.h.Dup(), // copy on write
+		Class:        z.Class,
+		CurrentClass: z.CurrentClass,
+		h:            z.h.Dup(), // copy on write
+		hasPrivate:   maps.Clone(z.hasPrivate),
+		Opaque:       opaque,
+		ID:           z.Class.NextInstanceID(),
 	}
 
 	return n, nil
 }
 
 func NewZObjectOpaque(ctx phpv.Context, c phpv.ZClass, v interface{}) (*ZObject, error) {
-	n := &ZObject{h: phpv.NewHashTable(), Class: c, Opaque: map[phpv.ZClass]interface{}{c: v}}
+	n := &ZObject{
+		h:          phpv.NewHashTable(),
+		Class:      c,
+		Opaque:     map[phpv.ZClass]interface{}{c: v},
+		hasPrivate: make(map[phpv.ZString]struct{}),
+		ID:         c.NextInstanceID(),
+	}
 	return n, n.init(ctx)
 }
 

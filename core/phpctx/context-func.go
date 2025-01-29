@@ -42,12 +42,7 @@ func (c *FuncContext) This() phpv.ZObject {
 }
 
 func (c *FuncContext) Class() phpv.ZClass {
-	// TODO: fix, must not be recursive, should be nil
-	// when outside of class
-	if c.class != nil {
-		return c.class
-	}
-	return c.Context.Class()
+	return c.class
 }
 
 func (c *FuncContext) OffsetExists(ctx phpv.Context, name phpv.Val) (bool, error) {

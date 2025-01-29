@@ -18,7 +18,7 @@ type ZClass struct {
 	ExtendsStr    phpv.ZString
 	ImplementsStr []phpv.ZString
 
-	parents     map[phpv.ZClass]phpv.ZClass // all parents, extends & implements
+	parents     map[*ZClass]*ZClass // all parents, extends & implements
 	Extends     *ZClass
 	Implements  []*ZClass
 	Const       map[phpv.ZString]phpv.Val // class constants
@@ -45,7 +45,7 @@ func (c *ZClass) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 }
 
 func (c *ZClass) Compile(ctx phpv.Context) error {
-	c.parents = make(map[phpv.ZClass]phpv.ZClass)
+	c.parents = make(map[*ZClass]*ZClass)
 
 	if c.ExtendsStr != "" {
 		// need to lookup extend
@@ -53,11 +53,11 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 		if err != nil {
 			return err
 		}
-		if _, found := c.parents[subc]; found {
+		if _, found := c.parents[subc.(*ZClass)]; found {
 			return ctx.Errorf("class extends loop found")
 		}
 		c.Extends = subc.(*ZClass)
-		c.parents[subc] = subc
+		c.parents[subc.(*ZClass)] = subc.(*ZClass)
 
 		// need to import methods
 		for n, m := range c.Extends.Methods {
@@ -104,7 +104,7 @@ func (c *ZClass) InstanceOf(subc phpv.ZClass) bool {
 	if subc == c {
 		return true
 	}
-	_, ok := c.parents[subc]
+	_, ok := c.parents[subc.(*ZClass)]
 	if ok {
 		return true
 	}

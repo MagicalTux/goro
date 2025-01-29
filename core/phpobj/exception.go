@@ -9,63 +9,66 @@ import (
 )
 
 // > class Exception
-var Exception = &ZClass{
-	Name:       "Exception",
-	Implements: []*ZClass{Throwable},
-	Props: []*phpv.ZClassProp{
-		{VarName: phpv.ZString("message"), Default: phpv.ZStr("").ZVal(), Modifiers: phpv.ZAttrProtected},
-		{VarName: phpv.ZString("string"), Default: phpv.ZStr("").ZVal(), Modifiers: phpv.ZAttrPrivate},
-		{VarName: phpv.ZString("code"), Default: phpv.ZInt(0).ZVal(), Modifiers: phpv.ZAttrProtected},
-		{VarName: phpv.ZString("file"), Default: phpv.ZStr("").ZVal(), Modifiers: phpv.ZAttrProtected},
-		{VarName: phpv.ZString("line"), Default: phpv.ZInt(0).ZVal(), Modifiers: phpv.ZAttrProtected},
-		{VarName: phpv.ZString("trace"), Default: phpv.NewZArray().ZVal(), Modifiers: phpv.ZAttrPrivate},
-		{VarName: phpv.ZString("previous"), Default: phpv.ZNULL.ZVal(), Modifiers: phpv.ZAttrPrivate},
-	},
-	Methods: map[phpv.ZString]*phpv.ZClassMethod{
-		"__construct": {Name: "__construct", Method: NativeMethod(exceptionConstruct)},
+var Exception *ZClass
 
-		"getmessage": {Name: "getMessage", Method: NativeMethod(func(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-			return o.ObjectGet(ctx, phpv.ZStr("message"))
-		})},
-		"getprevious": {Name: "getPrevious", Method: NativeMethod(func(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-			return o.ObjectGet(ctx, phpv.ZStr("previous"))
-		})},
-		"getcode": {Name: "getCode", Method: NativeMethod(func(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-			return o.ObjectGet(ctx, phpv.ZStr("code"))
-		})},
-		"getfile": {Name: "getFile", Method: NativeMethod(func(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-			return o.ObjectGet(ctx, phpv.ZStr("file"))
-		})},
-		"getline": {Name: "getLine", Method: NativeMethod(func(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-			return o.ObjectGet(ctx, phpv.ZStr("line"))
-		})},
-		"gettrace": {Name: "getTrace", Method: NativeMethod(func(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-			return o.ObjectGet(ctx, phpv.ZStr("trace"))
-		})},
-		"gettraceasstring": {Name: "getTraceAsString", Method: NativeMethod(func(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-			return phpv.ZStr(getExceptionString(ctx)), nil
-		})},
-		"__tostring": {Name: "__toString", Method: NativeMethod(func(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-			filename := ctx.Loc().Filename
-			line := ctx.Loc().Line
-			top, _ := o.ObjectGet(ctx, phpv.ZStr("__top"))
-			if val, err := top.As(ctx, phpv.ZtArray); err == nil {
-				arr := val.AsArray(ctx)
-				temp, _ := arr.OffsetGet(ctx, phpv.ZStr("file"))
-				filename = string(temp.AsString(ctx))
-				temp, _ = arr.OffsetGet(ctx, phpv.ZStr("line"))
-				line = int(temp.AsInt(ctx))
-			}
+func init() {
+	Exception = &ZClass{
+		Name:       "Exception",
+		Implements: []*ZClass{Throwable},
+		Props: []*phpv.ZClassProp{
+			{VarName: phpv.ZString("message"), Default: phpv.ZStr("").ZVal(), Modifiers: phpv.ZAttrProtected},
+			{VarName: phpv.ZString("string"), Default: phpv.ZStr("").ZVal(), Modifiers: phpv.ZAttrPrivate},
+			{VarName: phpv.ZString("code"), Default: phpv.ZInt(0).ZVal(), Modifiers: phpv.ZAttrProtected},
+			{VarName: phpv.ZString("file"), Default: phpv.ZStr("").ZVal(), Modifiers: phpv.ZAttrProtected},
+			{VarName: phpv.ZString("line"), Default: phpv.ZInt(0).ZVal(), Modifiers: phpv.ZAttrProtected},
+			{VarName: phpv.ZString("trace"), Default: phpv.NewZArray().ZVal(), Modifiers: phpv.ZAttrPrivate},
+			{VarName: phpv.ZString("previous"), Default: phpv.ZNULL.ZVal(), Modifiers: phpv.ZAttrPrivate},
+		},
+		Methods: map[phpv.ZString]*phpv.ZClassMethod{
+			"__construct": {Name: "__construct", Method: NativeMethod(exceptionConstruct)},
 
-			var buf bytes.Buffer
-			buf.WriteString(fmt.Sprintf("Exception in %s:%d\n", filename, line))
-			buf.WriteString("Stack trace:\n")
-			buf.WriteString(getExceptionString(ctx))
-			return phpv.ZStr(buf.String()), nil
-		})},
+			"getmessage": {Name: "getMessage", Method: NativeMethod(func(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				return o.ObjectGet(ctx, phpv.ZStr("message"))
+			})},
+			"getprevious": {Name: "getPrevious", Method: NativeMethod(func(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				return o.ObjectGet(ctx, phpv.ZStr("previous"))
+			})},
+			"getcode": {Name: "getCode", Method: NativeMethod(func(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				return o.ObjectGet(ctx, phpv.ZStr("code"))
+			})},
+			"getfile": {Name: "getFile", Method: NativeMethod(func(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				return o.ObjectGet(ctx, phpv.ZStr("file"))
+			})},
+			"getline": {Name: "getLine", Method: NativeMethod(func(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				return o.ObjectGet(ctx, phpv.ZStr("line"))
+			})},
+			"gettrace": {Name: "getTrace", Method: NativeMethod(func(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				trace := o.GetOpaque(Exception).([]*phpv.StackTraceEntry)
+				return getExceptionTrace(ctx, trace).ZVal(), nil
+			})},
+			"gettraceasstring": {Name: "getTraceAsString", Method: NativeMethod(func(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				trace := o.GetOpaque(Exception).([]*phpv.StackTraceEntry)
+				return getExceptionString(ctx, trace).ZVal(), nil
+			})},
+			"__tostring": {Name: "__toString", Method: NativeMethod(func(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				trace := o.GetOpaque(Exception).([]*phpv.StackTraceEntry)
+				filename := ctx.Loc().Filename
+				line := ctx.Loc().Line
+				if len(trace) > 0 {
+					filename = trace[0].Filename
+					line = trace[0].Line
+				}
 
-		// TODO: final private __clone ( void ) : void
-	},
+				var buf bytes.Buffer
+				buf.WriteString(fmt.Sprintf("Exception in %s:%d\n", filename, line))
+				buf.WriteString("Stack trace:\n")
+				buf.WriteString(string(getExceptionString(ctx, trace)))
+				return phpv.ZStr(buf.String()), nil
+			})},
+
+			// TODO: final private __clone ( void ) : void
+		},
+	}
 }
 
 func SpawnException(ctx phpv.Context, l *phpv.Loc, msg phpv.ZString, code phpv.ZInt, prev *ZObject) (*ZObject, error) {
@@ -101,19 +104,31 @@ func exceptionConstruct(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.
 		o.ObjectSet(ctx, phpv.ZString("message").ZVal(), args[0])
 	}
 
-	trace := getExceptionTrace(ctx)
-	top, _ := trace.OffsetGet(ctx, phpv.ZInt(0))
-	trace.OffsetUnset(ctx, phpv.ZInt(0))
-	trace.Reset(ctx)
-	o.ObjectSet(ctx, phpv.ZStr("trace"), trace.ZVal())
-	o.ObjectSet(ctx, phpv.ZStr("__top"), top)
+	for {
+		// traverse parent contexts so that Exception
+		// constructors aren't included in the trace
+		if ctx.This() == nil {
+			break
+		}
+		if !ctx.This().GetClass().InstanceOf(Exception) {
+			break
+		}
+		parent := ctx.Parent(1)
+		if parent == nil {
+			break
+		}
+		ctx = parent
+	}
+
+	trace := ctx.GetStackTrace(ctx)
+	o.SetOpaque(Exception, trace)
 
 	return phpv.ZNULL.ZVal(), nil
 }
 
-func getExceptionTrace(ctx phpv.Context) *phpv.ZArray {
+func getExceptionTrace(ctx phpv.Context, stackTrace []*phpv.StackTraceEntry) *phpv.ZArray {
 	trace := phpv.NewZArray()
-	for _, e := range ctx.GetStackTrace(ctx) {
+	for _, e := range stackTrace {
 		args := phpv.NewZArray()
 		for _, arg := range e.Args {
 			args.OffsetSet(ctx, nil, arg)
@@ -134,11 +149,11 @@ func getExceptionTrace(ctx phpv.Context) *phpv.ZArray {
 	return trace
 }
 
-func getExceptionString(ctx phpv.Context) string {
+func getExceptionString(ctx phpv.Context, stackTrace []*phpv.StackTraceEntry) phpv.ZString {
 	var buf bytes.Buffer
 	var argsBuf bytes.Buffer
 	level := 0
-	for _, e := range ctx.GetStackTrace(ctx.Parent(1)) {
+	for _, e := range stackTrace {
 		argsBuf.Reset()
 		for i, arg := range e.Args {
 			argsBuf.WriteString(arg.String())
@@ -158,5 +173,5 @@ func getExceptionString(ctx phpv.Context) string {
 		level++
 	}
 	buf.WriteString(fmt.Sprintf("#%d {main}", level))
-	return buf.String()
+	return phpv.ZString(buf.String())
 }
