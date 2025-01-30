@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"errors"
 	"fmt"
 	"io"
 
@@ -12,8 +13,7 @@ import (
 type runnableForeach struct {
 	src  phpv.Runnable
 	code phpv.Runnable
-	lv   phpv.Runnable
-	k, v phpv.ZString
+	k, v phpv.Runnable
 	l    *phpv.Loc
 }
 
@@ -28,15 +28,6 @@ func (r *runnableForeach) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 		return nil, nil
 	}
 
-	var list *zList
-	if r.lv != nil {
-		val, err := r.lv.Run(ctx)
-		if err != nil {
-			return nil, err
-		}
-		list = val.Value().(*zList)
-	}
-
 	for {
 		err = ctx.Tick(ctx, r.l)
 		if err != nil {
@@ -47,12 +38,16 @@ func (r *runnableForeach) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 			break
 		}
 
-		if r.k != "" {
+		if r.k != nil {
 			k, err := it.Key(ctx)
 			if err != nil {
 				return nil, err
 			}
-			ctx.OffsetSet(ctx, r.k.ZVal(), k.Dup())
+			if w, ok := r.k.(phpv.Writable); !ok {
+				return nil, errors.New("foreach key must be writable")
+			} else {
+				w.WriteValue(ctx, k.Dup())
+			}
 		}
 
 		v, err := it.Current(ctx)
@@ -60,13 +55,10 @@ func (r *runnableForeach) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 			return nil, err
 		}
 
-		if list != nil {
-			err = list.WriteValue(ctx, v)
-			if err != nil {
-				return nil, err
-			}
+		if w, ok := r.v.(phpv.Writable); !ok {
+			return nil, errors.New("foreach value must be writable")
 		} else {
-			ctx.OffsetSet(ctx, r.v.ZVal(), v.Dup())
+			w.WriteValue(ctx, v.Dup())
 		}
 
 		if r.code != nil {
@@ -110,7 +102,7 @@ func (r *runnableForeach) Dump(w io.Writer) error {
 	if err != nil {
 		return err
 	}
-	if r.k == "" {
+	if r.k == nil {
 		_, err = fmt.Fprintf(w, "$%s) {", r.v)
 	} else {
 		_, err = fmt.Fprintf(w, "$%s => $%s) {", r.k, r.v)
@@ -124,6 +116,58 @@ func (r *runnableForeach) Dump(w io.Writer) error {
 	}
 	_, err = w.Write([]byte{'}'})
 	return err
+}
+
+func compileForeachExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
+	var err error
+	if i == nil {
+		i, err = c.NextItem()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	var res phpv.Runnable
+
+	// in addition to the list() and $varname,
+	// foreach key/val take any LHS expression, such as:
+	// - $x
+	// - $x['a'][0]
+	// - $obj->x
+	// - $obj->x->y
+	// - &$x
+	// - foo()[$x]
+	// The following are not parse errors, but still throws an error:
+	// - foo()
+	// - ""
+
+	switch i.Type {
+	case tokenizer.T_LIST:
+		res, err = compileDestructure(nil, c)
+		if err != nil {
+			return nil, err
+		}
+	case tokenizer.T_VARIABLE:
+		// store in r.k or r.v ?
+		res = &runVariable{phpv.ZString(i.Data[1:]), i.Loc()}
+		i2, err := c.NextItem()
+		if err != nil {
+			return nil, err
+		}
+		if !i2.IsSingle('[') {
+			c.backup()
+		} else {
+			res, err = compilePostExpr(res, i2, c)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+	default:
+		return nil, i.Unexpected()
+	}
+
+	return res, nil
 }
 
 func compileForeach(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
@@ -154,23 +198,9 @@ func compileForeach(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		return nil, i.Unexpected()
 	}
 
-	// check for T_VARIABLE or T_LIST
-	i, err = c.NextItem()
+	r.v, err = compileForeachExpr(nil, c)
 	if err != nil {
 		return nil, err
-	}
-
-	switch i.Type {
-	case tokenizer.T_LIST:
-		r.lv, err = compileDestructure(nil, c)
-		if err != nil {
-			return nil, err
-		}
-	case tokenizer.T_VARIABLE:
-		// store in r.k or r.v ?
-		r.v = phpv.ZString(i.Data[1:]) // remove $
-	default:
-		return nil, i.Unexpected()
 	}
 
 	// check for ) or =>
@@ -180,7 +210,7 @@ func compileForeach(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	}
 
 	if i.Type == tokenizer.T_DOUBLE_ARROW {
-		if r.lv != nil {
+		if _, ok := r.v.(*runDestructure); ok {
 			// foreach($arr as list(...) => $x) is invalid
 			return nil, i.Unexpected()
 		}
@@ -188,21 +218,9 @@ func compileForeach(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		// check for T_VARIABLE or T_LIST again
 		r.k = r.v
 
-		i, err = c.NextItem()
+		r.v, err = compileForeachExpr(nil, c)
 		if err != nil {
 			return nil, err
-		}
-
-		switch i.Type {
-		case tokenizer.T_LIST:
-			r.lv, err = compileDestructure(nil, c)
-			if err != nil {
-				return nil, err
-			}
-		case tokenizer.T_VARIABLE:
-			r.v = phpv.ZString(i.Data[1:])
-		default:
-			return nil, i.Unexpected()
 		}
 
 		i, err = c.NextItem()
