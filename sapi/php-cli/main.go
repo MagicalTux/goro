@@ -7,6 +7,7 @@ import (
 
 	"github.com/MagicalTux/goro/core/ini"
 	"github.com/MagicalTux/goro/core/phpctx"
+	"github.com/MagicalTux/goro/core/phperr"
 	"github.com/MagicalTux/goro/core/phpv"
 	_ "github.com/MagicalTux/goro/ext/ctype"
 	_ "github.com/MagicalTux/goro/ext/date"
@@ -57,7 +58,12 @@ func main() {
 
 	if p.ScriptFilename != "" {
 		if err := ctx.RunFile(p.ScriptFilename); err != nil {
-			ctx.Write([]byte(fmt.Sprintf("Uncaught Error: %s", err.Error())))
+			ctx.Write([]byte("\nFatal error: "))
+			if ex, ok := err.(*phperr.PhpThrow); ok {
+				ctx.Write([]byte(fmt.Sprintf(ex.ErrorTrace(ctx))))
+			} else {
+				ctx.Write([]byte(fmt.Sprintf("Uncaught Error: %s", err.Error())))
+			}
 			os.Exit(1)
 		}
 	}

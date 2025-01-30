@@ -83,7 +83,7 @@ func (r *runVariable) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 		err = ctx.OffsetSet(ctx, r.v.ZVal(), value)
 	}
 	if err != nil {
-		return r.l.Error(err)
+		return r.l.Error(ctx, err)
 	}
 	return nil
 }
@@ -135,7 +135,7 @@ func (r *runVariableRef) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 		err = ctx.OffsetSet(ctx, v, value)
 	}
 	if err != nil {
-		return r.l.Error(err)
+		return r.l.Error(ctx, err)
 	}
 	return nil
 }

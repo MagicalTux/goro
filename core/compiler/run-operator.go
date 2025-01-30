@@ -130,18 +130,18 @@ func (r *runOperator) Dump(w io.Writer) error {
 	return err
 }
 
-func spawnOperator(op tokenizer.ItemType, a, b phpv.Runnable, l *phpv.Loc) (phpv.Runnable, error) {
+func spawnOperator(ctx phpv.Context, op tokenizer.ItemType, a, b phpv.Runnable, l *phpv.Loc) (phpv.Runnable, error) {
 	var err error
 	opD, ok := operatorList[op]
 	if !ok {
-		return nil, l.Errorf(phpv.E_COMPILE_ERROR, "invalid operator %s", op)
+		return nil, l.Errorf(ctx, phpv.E_COMPILE_ERROR, "invalid operator %s", op)
 	}
 
 	//log.Printf("spawn operator %s %s %s", debugDump(a), op.Name(), debugDump(b))
 	if rop, isop := a.(*runOperator); isop {
 		if opD.pri < rop.opD.pri {
 			// need to go down one level values
-			rop.b, err = spawnOperator(op, rop.b, b, l)
+			rop.b, err = spawnOperator(ctx, op, rop.b, b, l)
 			if err != nil {
 				return nil, err
 			}

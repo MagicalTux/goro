@@ -198,7 +198,7 @@ func (ac *runArrayAccess) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 	array := v.Array()
 	if array == nil {
 		err := fmt.Errorf("Cannot use object of type %s as array", v.GetType())
-		return ac.l.Error(err, phpv.E_WARNING)
+		return ac.l.Error(ctx, err, phpv.E_WARNING)
 	}
 
 	if ac.offset == nil {

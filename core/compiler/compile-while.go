@@ -32,7 +32,7 @@ func (r *runnableWhile) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 		if r.code != nil {
 			_, err = r.code.Run(ctx)
 			if err != nil {
-				e := r.l.Error(err)
+				e := r.l.Error(ctx, err)
 				switch br := e.Err.(type) {
 				case *phperr.PhpBreak:
 					if br.Intv > 1 {

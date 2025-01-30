@@ -3,7 +3,6 @@ package compiler
 import (
 	"io"
 
-	"github.com/MagicalTux/goro/core/phperr"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
@@ -27,11 +26,7 @@ func (r *runnableThrow) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 	if err != nil {
 		return nil, err
 	}
-	o, ok := v.Value().(*phpobj.ZObject)
-	if !ok {
-		return nil, ctx.Errorf("Can only throw objects")
-	}
-	return nil, &phperr.PhpThrow{o}
+	return nil, phpobj.ThrowObject(ctx, v)
 }
 
 func compileThrow(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {

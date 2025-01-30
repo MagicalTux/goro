@@ -47,11 +47,11 @@ func init() {
 				return getExceptionTrace(ctx, trace).ZVal(), nil
 			})},
 			"gettraceasstring": {Name: "getTraceAsString", Method: NativeMethod(func(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				trace := o.GetOpaque(Exception).([]*phpv.StackTraceEntry)
-				return getExceptionString(ctx, trace).ZVal(), nil
+				trace := o.GetOpaque(Exception).(phpv.StackTrace)
+				return trace.String().ZVal(), nil
 			})},
 			"__tostring": {Name: "__toString", Method: NativeMethod(func(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				trace := o.GetOpaque(Exception).([]*phpv.StackTraceEntry)
+				trace := o.GetOpaque(Exception).(phpv.StackTrace)
 				filename := ctx.Loc().Filename
 				line := ctx.Loc().Line
 				if len(trace) > 0 {
@@ -62,7 +62,7 @@ func init() {
 				var buf bytes.Buffer
 				buf.WriteString(fmt.Sprintf("Exception in %s:%d\n", filename, line))
 				buf.WriteString("Stack trace:\n")
-				buf.WriteString(string(getExceptionString(ctx, trace)))
+				buf.WriteString(string(trace.String()))
 				return phpv.ZStr(buf.String()), nil
 			})},
 
@@ -126,7 +126,7 @@ func exceptionConstruct(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.
 	return phpv.ZNULL.ZVal(), nil
 }
 
-func getExceptionTrace(ctx phpv.Context, stackTrace []*phpv.StackTraceEntry) *phpv.ZArray {
+func getExceptionTrace(ctx phpv.Context, stackTrace phpv.StackTrace) *phpv.ZArray {
 	trace := phpv.NewZArray()
 	for _, e := range stackTrace {
 		args := phpv.NewZArray()
@@ -147,31 +147,4 @@ func getExceptionTrace(ctx phpv.Context, stackTrace []*phpv.StackTraceEntry) *ph
 		trace.OffsetSet(ctx, nil, item.ZVal())
 	}
 	return trace
-}
-
-func getExceptionString(ctx phpv.Context, stackTrace []*phpv.StackTraceEntry) phpv.ZString {
-	var buf bytes.Buffer
-	var argsBuf bytes.Buffer
-	level := 0
-	for _, e := range stackTrace {
-		argsBuf.Reset()
-		for i, arg := range e.Args {
-			argsBuf.WriteString(arg.String())
-			if i < len(e.Args)-1 {
-				argsBuf.WriteString(", ")
-			}
-		}
-		line := fmt.Sprintf(
-			"#%d %s(%d): %s(%s)\n",
-			level,
-			e.Filename,
-			e.Line,
-			e.FuncName,
-			argsBuf.String(),
-		)
-		buf.WriteString(line)
-		level++
-	}
-	buf.WriteString(fmt.Sprintf("#%d {main}", level))
-	return phpv.ZString(buf.String())
 }

@@ -23,7 +23,7 @@ func (l *Loc) Dump(w io.Writer) error {
 	return nil
 }
 
-func (l *Loc) Error(e error, codeArg ...PhpErrorType) *PhpError {
+func (l *Loc) Error(ctx Context, e error, codeArg ...PhpErrorType) *PhpError {
 	code := E_ERROR
 	if len(codeArg) > 0 {
 		code = codeArg[0]
@@ -36,12 +36,22 @@ func (l *Loc) Error(e error, codeArg ...PhpErrorType) *PhpError {
 		}
 		return err
 	default:
-		return &PhpError{Err: e, Code: code, Loc: l}
+		return &PhpError{
+			Err:  e,
+			Code: code, Loc: l,
+			PhpStackTrace: ctx.GetStackTrace(ctx),
+			GoStackTrace:  GetGoDebugTrace(),
+		}
 	}
 }
 
-func (l *Loc) Errorf(code PhpErrorType, f string, arg ...interface{}) *PhpError {
-	return &PhpError{Err: fmt.Errorf(f, arg...), Loc: l, Code: code}
+func (l *Loc) Errorf(ctx Context, code PhpErrorType, f string, arg ...interface{}) *PhpError {
+	return &PhpError{
+		Err: fmt.Errorf(f, arg...),
+		Loc: l, Code: code,
+		PhpStackTrace: ctx.GetStackTrace(ctx),
+		GoStackTrace:  GetGoDebugTrace(),
+	}
 }
 
 func (l *Loc) String() string {

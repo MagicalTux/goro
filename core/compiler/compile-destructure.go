@@ -156,7 +156,7 @@ func compileBaseDestructure(i *tokenizer.Item, c compileCtx) (phpv.Runnable, err
 		return nil, err
 	}
 
-	return spawnOperator(i.Type, lhs, rhs, i.Loc())
+	return spawnOperator(c, i.Type, lhs, rhs, i.Loc())
 }
 
 func compileDestructure(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {

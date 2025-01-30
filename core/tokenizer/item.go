@@ -197,7 +197,12 @@ func (i *Item) IsExpressionEnd() bool {
 
 func (i *Item) Unexpected() error {
 	err := fmt.Errorf("Parse error: syntax error, unexpected %s", i)
-	return i.Loc().Error(err, phpv.E_PARSE)
+	return &phpv.PhpError{
+		Err:          err,
+		Code:         phpv.E_PARSE,
+		Loc:          i.Loc(),
+		GoStackTrace: phpv.GetGoDebugTrace(),
+	}
 }
 
 func (i *Item) Loc() *phpv.Loc {

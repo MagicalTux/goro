@@ -96,7 +96,7 @@ func (r *runSwitch) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 
 		_, err = bl.code.Run(ctx)
 		if err != nil {
-			e := r.l.Error(err)
+			e := r.l.Error(ctx, err)
 			err = e
 			switch br := e.Err.(type) {
 			case *phperr.PhpBreak:

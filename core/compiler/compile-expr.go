@@ -128,7 +128,7 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		if err != nil {
 			return nil, err
 		}
-		return spawnOperator(i.Type, nil, t_v, l)
+		return spawnOperator(c, i.Type, nil, t_v, l)
 	case tokenizer.T_INC, tokenizer.T_DEC:
 		// this is an operator, let compilePostExpr() deal with it
 		return compilePostExpr(nil, i, c)
@@ -215,9 +215,9 @@ func compilePostExpr(v phpv.Runnable, i *tokenizer.Item, c compileCtx) (phpv.Run
 			if err != nil {
 				return nil, err
 			}
-			return spawnOperator(i.Type, nil, t_v, l)
+			return spawnOperator(c, i.Type, nil, t_v, l)
 		} else {
-			return spawnOperator(i.Type, v, nil, l)
+			return spawnOperator(c, i.Type, v, nil, l)
 		}
 	case tokenizer.T_OBJECT_OPERATOR:
 		return compileObjectOperator(v, i, c)
@@ -233,7 +233,7 @@ func compilePostExpr(v phpv.Runnable, i *tokenizer.Item, c compileCtx) (phpv.Run
 				return nil, err
 			}
 
-			return spawnOperator(i.Type, v, t_v, l)
+			return spawnOperator(c, i.Type, v, t_v, l)
 		}
 	}
 

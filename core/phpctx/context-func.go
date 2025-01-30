@@ -130,22 +130,22 @@ func (ctx *FuncContext) GetFuncName() string {
 }
 
 func (ctx *FuncContext) Error(err error, t ...phpv.PhpErrorType) error {
-	wrappedErr := ctx.Loc().Error(err, t...)
+	wrappedErr := ctx.Loc().Error(ctx, err, t...)
 	return phperr.HandleUserError(ctx, wrappedErr)
 }
 
 func (ctx *FuncContext) Errorf(format string, a ...any) error {
-	err := ctx.Loc().Errorf(phpv.E_ERROR, format, a...)
+	err := ctx.Loc().Errorf(ctx, phpv.E_ERROR, format, a...)
 	return phperr.HandleUserError(ctx, err)
 }
 
 func (ctx *FuncContext) FuncError(err error, t ...phpv.PhpErrorType) error {
-	wrappedErr := ctx.Loc().Error(err, t...)
+	wrappedErr := ctx.Loc().Error(ctx, err, t...)
 	wrappedErr.FuncName = ctx.GetFuncName()
 	return phperr.HandleUserError(ctx, wrappedErr)
 }
 func (ctx *FuncContext) FuncErrorf(format string, a ...any) error {
-	err := ctx.Loc().Errorf(phpv.E_ERROR, format, a...)
+	err := ctx.Loc().Errorf(ctx, phpv.E_ERROR, format, a...)
 	err.FuncName = ctx.GetFuncName()
 	return phperr.HandleUserError(ctx, err)
 }

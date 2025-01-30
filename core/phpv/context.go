@@ -9,15 +9,6 @@ import (
 	"github.com/MagicalTux/goro/core/random"
 )
 
-type StackTraceEntry struct {
-	FuncName   string
-	Filename   string
-	ClassName  string
-	MethodType string
-	Line       int
-	Args       []*ZVal
-}
-
 type Context interface {
 	context.Context
 	ZArrayAccess

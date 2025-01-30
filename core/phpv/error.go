@@ -1,6 +1,10 @@
 package phpv
 
-import "fmt"
+import (
+	"bytes"
+	"fmt"
+	"os"
+)
 
 type PhpErrorType int
 
@@ -28,6 +32,9 @@ type PhpError struct {
 	FuncName string
 	Code     PhpErrorType
 	Loc      *Loc
+
+	PhpStackTrace StackTrace
+	GoStackTrace  []byte
 }
 
 func (e *PhpError) CanBeUserHandled() bool {
@@ -59,7 +66,21 @@ func (e *PhpError) Error() string {
 	if e.FuncName != "" {
 		name = e.FuncName + "(): "
 	}
-	return fmt.Sprintf("%s%s in %s on line %d", name, e.Err, e.Loc.Filename, e.Loc.Line)
+
+	var buf bytes.Buffer
+	buf.WriteString(fmt.Sprintf("%s%s in %s:%d", name, e.Err, e.Loc.Filename, e.Loc.Line))
+	buf.WriteByte('\n')
+	buf.WriteString("Stack trace:")
+	buf.WriteByte('\n')
+	buf.WriteString(e.PhpStackTrace.String().String())
+	buf.WriteByte('\n')
+	buf.WriteString(fmt.Sprintf("  thrown in %s on line %d", e.Loc.Filename, e.Loc.Line))
+	if os.Getenv("DEBUG") != "" {
+		buf.WriteByte('\n')
+		buf.Write(e.GoStackTrace)
+	}
+
+	return buf.String()
 }
 
 func (e *PhpError) IsExit() bool {

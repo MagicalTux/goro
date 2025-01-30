@@ -304,22 +304,22 @@ func (g *Global) Loc() *phpv.Loc {
 }
 
 func (g *Global) Error(err error, t ...phpv.PhpErrorType) error {
-	wrappedErr := g.l.Error(err, t...)
+	wrappedErr := g.l.Error(g, err, t...)
 	return phperr.HandleUserError(g, wrappedErr)
 }
 
 func (g *Global) Errorf(format string, a ...any) error {
-	err := g.l.Errorf(phpv.E_ERROR, format, a...)
+	err := g.l.Errorf(g, phpv.E_ERROR, format, a...)
 	return phperr.HandleUserError(g, err)
 }
 
 func (g *Global) FuncError(err error, t ...phpv.PhpErrorType) error {
-	wrappedErr := g.l.Error(err, t...)
+	wrappedErr := g.l.Error(g, err, t...)
 	wrappedErr.FuncName = g.GetFuncName()
 	return phperr.HandleUserError(g, wrappedErr)
 }
 func (g *Global) FuncErrorf(format string, a ...any) error {
-	err := g.l.Errorf(phpv.E_ERROR, format, a...)
+	err := g.l.Errorf(g, phpv.E_ERROR, format, a...)
 	err.FuncName = g.GetFuncName()
 	return phperr.HandleUserError(g, err)
 }
