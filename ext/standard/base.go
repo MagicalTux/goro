@@ -336,3 +336,25 @@ func fncGetOpt(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	return result.ZVal(), nil
 }
+
+// > func string get_class ([ object $object ] )
+func stdGetClass(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var objectArg core.Optional[phpv.ZObject]
+	_, err := core.Expand(ctx, args, &objectArg)
+	if err != nil {
+		return nil, err
+	}
+
+	ctx = ctx.Parent(1)
+
+	object := objectArg.GetOrDefault(ctx.This())
+	if object == nil {
+		if ctx.Class() != nil {
+			return ctx.Class().GetName().ZVal(), nil
+		}
+
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	return object.GetClass().GetName().ZVal(), nil
+}

@@ -140,3 +140,27 @@ func exit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	ctx.Write([]byte(z.String()))
 	return nil, phpv.ExitError(0)
 }
+
+// > func void register_shutdown_function ( callable $callback [, mixed $... ]  )
+func registerShutdownFunction(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var callback phpv.Callable
+	_, err := core.Expand(ctx, args, &callback)
+	if err != nil {
+		return phpv.ZFalse.ZVal(), err
+	}
+
+	var callbackArgs []*phpv.ZVal
+	for _, arg := range args[1:] {
+		var cbArg *phpv.ZVal
+		_, err := core.Expand(ctx, []*phpv.ZVal{arg}, &cbArg)
+		if err != nil {
+			return nil, err
+		}
+		callbackArgs = append(callbackArgs, cbArg)
+	}
+
+	fn := phpv.Bind(callback, nil, callbackArgs...)
+	ctx.Global().RegisterShutdownFunction(fn)
+
+	return nil, nil
+}

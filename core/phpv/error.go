@@ -88,7 +88,7 @@ func (e *PhpError) IsExit() bool {
 	return r
 }
 
-func FilterError(err error) error {
+func FilterExitError(err error) error {
 	// check for stuff like PhpExit and filter out
 	switch e := err.(type) {
 	case *PhpExit:
@@ -100,4 +100,17 @@ func FilterError(err error) error {
 		}
 	}
 	return err
+}
+
+func IsExit(err error) bool {
+	switch e := err.(type) {
+	case *PhpExit:
+		return true
+	case *PhpError:
+		switch e.Err.(type) {
+		case *PhpExit:
+			return true
+		}
+	}
+	return false
 }

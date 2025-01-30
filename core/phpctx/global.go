@@ -43,6 +43,7 @@ type Global struct {
 	// this is the actual environment (defined functions, classes, etc)
 	globalFuncs   map[phpv.ZString]phpv.Callable
 	globalClasses map[phpv.ZString]*phpobj.ZClass // TODO replace *ZClass with a nice interface
+	shutdownFuncs []phpv.Callable
 	constant      map[phpv.ZString]phpv.Val
 	environ       *phpv.ZHashTable
 	included      map[phpv.ZString]bool // included files (used for require_once, etc)
@@ -241,10 +242,21 @@ func (g *Global) SetOutput(w io.Writer) {
 
 func (g *Global) RunFile(fn string) error {
 	_, err := g.Require(g, phpv.ZString(fn))
-	err = phpv.FilterError(err)
+	err = phpv.FilterExitError(err)
 	if err != nil {
 		return err
 	}
+
+	for _, fn := range g.shutdownFuncs {
+		_, err := g.CallZVal(g, fn, nil, nil)
+		if err != nil {
+			if phpv.IsExit(err) {
+				break
+			}
+			return err
+		}
+	}
+
 	return g.Close()
 }
 
@@ -461,6 +473,10 @@ func (g *Global) RegisterFunction(name phpv.ZString, f phpv.Callable) error {
 	g.globalFuncs[name] = f
 	delete(g.globalLazyFunc, name)
 	return nil
+}
+
+func (g *Global) RegisterShutdownFunction(f phpv.Callable) {
+	g.shutdownFuncs = append(g.shutdownFuncs, f)
 }
 
 func (g *Global) GetFunction(ctx phpv.Context, name phpv.ZString) (phpv.Callable, error) {

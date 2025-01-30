@@ -67,6 +67,8 @@ type GlobalContext interface {
 	RegisterFunction(name ZString, f Callable) error
 	GetFunction(ctx Context, name ZString) (Callable, error)
 
+	RegisterShutdownFunction(f Callable)
+
 	RegisterClass(name ZString, c ZClass) error
 	GetClass(ctx Context, name ZString, autoload bool) (ZClass, error)
 

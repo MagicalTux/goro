@@ -34,6 +34,8 @@ func (c *Global) CallZVal(ctx phpv.Context, f phpv.Callable, args []*phpv.ZVal, 
 	if this == nil {
 		if obj, ok := f.(*phpv.BoundedCallable); ok {
 			this = obj.This
+			args = append(obj.Args, args...)
+
 		}
 	}
 

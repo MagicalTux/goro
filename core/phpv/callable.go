@@ -36,6 +36,7 @@ func (c CallableVal) String() string {
 type BoundedCallable struct {
 	Callable
 	This ZObject
+	Args []*ZVal
 }
 
 type MethodCallable struct {
@@ -44,8 +45,8 @@ type MethodCallable struct {
 	Static bool
 }
 
-func Bind(fn Callable, this ZObject) *BoundedCallable {
-	return &BoundedCallable{fn, this}
+func Bind(fn Callable, this ZObject, args ...*ZVal) *BoundedCallable {
+	return &BoundedCallable{fn, this, args}
 }
 
 func BindClass(fn Callable, class ZClass, static bool) *MethodCallable {
