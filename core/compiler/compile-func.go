@@ -113,6 +113,27 @@ func (r *runnableFunctionCallRef) Run(ctx phpv.Context) (l *phpv.ZVal, err error
 			return nil, ctx.Errorf("Call to undefined method %s::%s()", classRef.className, classRef.objName)
 		}
 		f = method.Method
+	} else if classRef, ok := r.name.(*runClassStaticVarRef); ok {
+		className, err := classRef.className.Run(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		class, err := ctx.Global().GetClass(ctx, className.AsString(ctx), false)
+		if err != nil {
+			return nil, err
+		}
+
+		varnameVal, _ := ctx.OffsetGet(ctx, classRef.varName)
+		if varnameVal.GetType() != phpv.ZtString {
+			return nil, ctx.Errorf("Function name must be a string")
+		}
+		varname := varnameVal.AsString(ctx)
+		method, ok := class.GetMethod(varname)
+		if !ok {
+			return nil, ctx.Errorf("Call to undefined method %s::%s()", className.String(), varname)
+		}
+		f = method.Method
 	} else if f, ok = r.name.(phpv.Callable); !ok {
 		v, err := r.name.Run(ctx)
 		if err != nil {
