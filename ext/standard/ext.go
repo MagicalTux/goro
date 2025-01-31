@@ -96,6 +96,7 @@ func init() {
 			"chunk_split":                {Func: fncStrChunkSplit, Args: []*phpctx.ExtFunctionArg{}},
 			"compact":                    {Func: fncArrayCompact, Args: []*phpctx.ExtFunctionArg{}},
 			"constant":                   {Func: constant, Args: []*phpctx.ExtFunctionArg{}},
+			"convert_cyr_string":         {Func: fncCyrConvertString, Args: []*phpctx.ExtFunctionArg{}},
 			"convert_uudecode":           {Func: convertUuDecode, Args: []*phpctx.ExtFunctionArg{}},
 			"convert_uuencode":           {Func: convertUuEncode, Args: []*phpctx.ExtFunctionArg{}},
 			"cos":                        {Func: mathCos, Args: []*phpctx.ExtFunctionArg{}},
