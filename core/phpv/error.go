@@ -88,6 +88,14 @@ func (e *PhpError) IsExit() bool {
 	return r
 }
 
+func UnwrapError(err error) error {
+	switch e := err.(type) {
+	case *PhpError:
+		return e.Err
+	}
+	return err
+}
+
 func FilterExitError(err error) error {
 	// check for stuff like PhpExit and filter out
 	switch e := err.(type) {

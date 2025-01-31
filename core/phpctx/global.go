@@ -30,13 +30,15 @@ type globalLazyOffset struct {
 type Global struct {
 	context.Context
 
-	p        *Process
-	start    time.Time // time at which this request started
-	req      *http.Request
-	h        *phpv.ZHashTable
-	l        *phpv.Loc
-	mem      *MemMgr
-	deadline time.Time
+	p     *Process
+	start time.Time // time at which this request started
+	req   *http.Request
+	h     *phpv.ZHashTable
+	l     *phpv.Loc
+	mem   *MemMgr
+
+	deadline   time.Time
+	timerStart time.Time
 
 	IniConfig phpv.IniConfig
 
@@ -118,7 +120,7 @@ func createGlobal(p *Process) *Global {
 		mem:             NewMemMgr(32 * 1024 * 1024), // limit in bytes TODO read memory_limit from process (.ini file)
 
 	}
-	g.deadline = g.start.Add(30 * time.Second) // deadline
+	g.SetDeadline(g.start.Add(30 * time.Second))
 
 	g.fileHandler, _ = stream.NewFileHandler("/")
 	g.streamHandlers["file"] = g.fileHandler
@@ -243,17 +245,29 @@ func (g *Global) SetOutput(w io.Writer) {
 func (g *Global) RunFile(fn string) error {
 	_, err := g.Require(g, phpv.ZString(fn))
 	err = phpv.FilterExitError(err)
-	if err != nil {
+
+	switch innerErr := phpv.UnwrapError(err).(type) {
+	case *phpv.PhpExit:
+	case *phperr.PhpTimeout:
+		g.WriteErr([]byte(innerErr.String()))
+	default:
 		return err
 	}
 
-	for _, fn := range g.shutdownFuncs {
-		_, err := g.CallZVal(g, fn, nil, nil)
-		if err != nil {
-			if phpv.IsExit(err) {
-				break
+	if len(g.shutdownFuncs) > 0 {
+		g.ResetDeadline()
+		for _, fn := range g.shutdownFuncs {
+			_, err := g.CallZVal(g, fn, nil, nil)
+			if err != nil {
+				if phpv.IsExit(err) {
+					break
+				}
+				if timeout, ok := phpv.UnwrapError(err).(*phperr.PhpTimeout); ok {
+					g.WriteErr([]byte(timeout.String()))
+					break
+				}
+				return err
 			}
-			return err
 		}
 	}
 
@@ -297,7 +311,7 @@ func (g *Global) IterateConfig() iter.Seq2[string, phpv.IniValue] {
 func (g *Global) Tick(ctx phpv.Context, l *phpv.Loc) error {
 	// TODO check run deadline, context cancellation and memory limit
 	if time.Until(g.deadline) <= 0 {
-		return errors.New("Maximum execution time of TODO second exceeded") // TODO
+		return &phperr.PhpTimeout{L: g.l, Seconds: g.deadline.Second() - g.timerStart.Second()}
 	}
 	g.l = l
 	return nil
@@ -309,6 +323,13 @@ func (g *Global) Deadline() (deadline time.Time, ok bool) {
 
 func (g *Global) SetDeadline(t time.Time) {
 	g.deadline = t
+	g.timerStart = time.Now()
+}
+
+func (g *Global) ResetDeadline() {
+	duration := time.Duration(g.deadline.Second() - g.timerStart.Second())
+	g.timerStart = time.Now()
+	g.deadline = g.timerStart.Add(duration * time.Second)
 }
 
 func (g *Global) Loc() *phpv.Loc {
@@ -423,6 +444,8 @@ func (g *Global) LogError(err *phpv.PhpError, optionArg ...logopt.Data) {
 
 	var output bytes.Buffer
 	switch err.Code {
+	case phpv.E_ERROR:
+		output.WriteString("Fatal error")
 	case phpv.E_WARNING:
 		output.WriteString("Warning")
 	case phpv.E_NOTICE:

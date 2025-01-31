@@ -16,6 +16,9 @@ func fncSetTimeLimit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	ctx.Global().(*phpctx.Global).SetDeadline(time.Now().Add(time.Duration(d) * time.Second))
+	now := time.Now()
+	end := now.Add(time.Duration(d) * time.Second)
+
+	ctx.Global().(*phpctx.Global).SetDeadline(end)
 	return phpv.ZNULL.ZVal(), nil
 }
