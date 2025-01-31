@@ -3,6 +3,7 @@ package core
 import (
 	"bytes"
 	"strconv"
+	"strings"
 
 	"github.com/MagicalTux/goro/core/phpv"
 )
@@ -117,7 +118,7 @@ func Zprintf(ctx phpv.Context, fmt phpv.ZString, arg ...*phpv.ZVal) (*phpv.ZVal,
 			if err != nil {
 				return nil, err
 			}
-			r = strconv.AppendUint(r, uint64(v.Value().(phpv.ZInt)), 8)
+			r = strconv.AppendUint(r, uint64(v.Value().(phpv.ZInt)), 10)
 		case 'x':
 			// next arg is an int
 			v, err = v.As(ctx, phpv.ZtInt)
@@ -125,6 +126,16 @@ func Zprintf(ctx phpv.Context, fmt phpv.ZString, arg ...*phpv.ZVal) (*phpv.ZVal,
 				return nil, err
 			}
 			r = strconv.AppendInt(r, int64(v.Value().(phpv.ZInt)), 16)
+		case 'X':
+			// next arg is an int
+			v, err = v.As(ctx, phpv.ZtInt)
+			if err != nil {
+				return nil, err
+			}
+
+			s := strconv.FormatInt(int64(v.Value().(phpv.ZInt)), 16)
+			s = strings.ToUpper(s)
+			r = append(r, []byte(s)...)
 		}
 	}
 }
