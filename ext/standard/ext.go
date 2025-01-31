@@ -102,6 +102,7 @@ func init() {
 			"cos":                        {Func: mathCos, Args: []*phpctx.ExtFunctionArg{}},
 			"cosh":                       {Func: mathCosh, Args: []*phpctx.ExtFunctionArg{}},
 			"count_chars":                {Func: fncStrCountChars, Args: []*phpctx.ExtFunctionArg{}},
+			"crc32":                      {Func: fncStrCrc32, Args: []*phpctx.ExtFunctionArg{}},
 			"current":                    {Func: fncArrayCurrent, Args: []*phpctx.ExtFunctionArg{}},
 			"decbin":                     {Func: mathDecBin, Args: []*phpctx.ExtFunctionArg{}},
 			"dechex":                     {Func: mathDecHex, Args: []*phpctx.ExtFunctionArg{}},
