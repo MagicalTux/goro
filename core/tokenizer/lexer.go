@@ -264,7 +264,11 @@ func (l *Lexer) acceptRun(valid string) string {
 }
 
 func (l *Lexer) acceptUntil(s string) {
-	for strings.IndexRune(s, l.next()) == -1 {
+	for {
+		c := l.next()
+		if c == eof || strings.IndexRune(s, c) >= 0 {
+			break
+		}
 	}
 }
 
