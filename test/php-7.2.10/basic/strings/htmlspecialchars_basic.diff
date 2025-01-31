@@ -1,0 +1,42 @@
+     *** Testing htmlspecialchars() : basic functionality ***
+     Basic tests
+003- Test 1: abc&lt;&gt;&quot;&amp;
+004- Test 2: &amp;&amp;abc&lt;&gt;&quot;&amp;
+005- Test 3: a&gt;,\&lt;bc&lt;&gt;&quot;&amp;
+006- Test 4: a\'\'&amp;bc&lt;&gt;&quot;&amp;
+007- Test 5: &amp;amp;&amp;lt;
+008- Test 6: abc&lt;&gt;"&amp;
+009- Test 7: &amp;&amp;abc&lt;&gt;"&amp;
+010- Test 8: a&gt;,\&lt;bc&lt;&gt;"&amp;
+011- Test 9: a\'\'&amp;bc&lt;&gt;"&amp;
+012- Test 10: &amp;amp;&amp;lt;
+013- Test 11: abc&lt;&gt;&quot;&amp;
+014- Test 12: &amp;&amp;abc&lt;&gt;&quot;&amp;
+015- Test 13: a&gt;,\&lt;bc&lt;&gt;&quot;&amp;
+016- Test 14: a\'\'&amp;bc&lt;&gt;&quot;&amp;
+017- Test 15: &amp;amp;&amp;lt;
+018- Test 16: abc&lt;&gt;&quot;&amp;
+019- Test 17: &amp;&amp;abc&lt;&gt;&quot;&amp;
+020- Test 18: a&gt;,\&lt;bc&lt;&gt;&quot;&amp;
+021- Test 19: a\&#039;\&#039;&amp;bc&lt;&gt;&quot;&amp;
+022- Test 20: &amp;amp;&amp;lt;
+     
+024- Try with char set option - specify default ISO-8859-1
+025- Test 21: abc&lt;&gt;"&amp;
+026- Test 22: &amp;&amp;abc&lt;&gt;&quot;&amp;
+027- Test 23: a&gt;,\&lt;bc&lt;&gt;&quot;&amp;
+028- Test 24: &amp;amp;&amp;lt;
+029- 
+030- Try with double decode FALSE
+031- Test 25: &quot;&amp;xyz&gt;abc&quot;
+032- Test 26: &quot;&amp;123&lt;456&quot;
+033- Test 27: "300 &lt; 400"
+034- 
+035- Try with double decode TRUE
+036- Test 28: &amp;quot;&amp;amp;xyz&amp;gt;abc&amp;quot;
+037- Test 29: &amp;quot;&amp;amp;123&amp;lt;456&amp;quot;
+038- ===DONE===
+004+ Fatal error: Uncaught Error: Call to undefined function htmlspecialchars in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/htmlspecialchars_basic.php:15
+005+ Stack trace:
+006+ #0 {main}
+007+   thrown in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/htmlspecialchars_basic.php on line 15

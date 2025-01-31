@@ -1,0 +1,20 @@
+     *** Testing hebrev() : basic functionality ***
+002- string(109) ".The hebrev function converts logical Hebrew text to visual text
+003- .The function tries to avoid breaking words
+004- "
+005- string(109) "to visual text
+006- Hebrew text
+007- logical
+008- converts
+009- hebrev function
+010- .The
+011- breaking words
+012- tries to avoid
+013- .The function
+014- "
+015- ===DONE===
+002+ 
+003+ Fatal error: Uncaught Error: Call to undefined function hebrev in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/hebrev_basic.php:12
+004+ Stack trace:
+005+ #0 {main}
+006+   thrown in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/hebrev_basic.php on line 12

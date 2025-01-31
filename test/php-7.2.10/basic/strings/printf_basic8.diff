@@ -1,0 +1,15 @@
+--
+     int(2)
+     
+     -- Calling printf() with two arguments --
+012- 21 37777777431
+013- int(14)
+012+ 21 -347
+013+ int(7)
+     
+     -- Calling printf() with three arguments --
+016- 21 37777777431 567
+017- int(18)
+016+ 21 -347 567
+017+ int(11)
+     ===DONE===

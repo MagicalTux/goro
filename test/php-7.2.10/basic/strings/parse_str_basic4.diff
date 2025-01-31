@@ -1,0 +1,177 @@
+     Test string with badly formed strings
+002- NULL
+     array(2) {
+004-   ["arr_1"]=>
+003+   ["arr[1"]=>
+       string(3) "sid"
+006-   ["arr"]=>
+007-   array(1) {
+008-     [4]=>
+009-     string(4) "fred"
+010-   }
+005+   ["arr[4][2"]=>
+006+   string(4) "fred"
+     }
+012- NULL
+     array(2) {
+009+   ["arr[1"]=>
+010+   string(3) "sid"
+011+   ["arr[4][2"]=>
+012+   string(4) "fred"
+013+ }
+014+ array(4) {
+015+   ["arr[1"]=>
+016+   string(3) "sid"
+017+   ["arr[4][2"]=>
+018+   string(4) "fred"
+       ["arr1]"]=>
+       string(3) "sid"
+016-   ["arr"]=>
+017-   array(1) {
+018-     [4]=>
+019-     string(4) "fred"
+020-   }
+021+   ["arr[4]2]"]=>
+022+   string(4) "fred"
+     }
+022- NULL
+023- array(2) {
+024-   ["arr_one"]=>
+024+ array(4) {
+025+   ["arr[1"]=>
+       string(3) "sid"
+026-   ["arr"]=>
+027-   array(1) {
+028-     [4]=>
+029-     string(4) "fred"
+030-   }
+027+   ["arr[4][2"]=>
+028+   string(4) "fred"
+029+   ["arr1]"]=>
+030+   string(3) "sid"
+031+   ["arr[4]2]"]=>
+032+   string(4) "fred"
+     }
+034+ array(6) {
+035+   ["arr[1"]=>
+036+   string(3) "sid"
+037+   ["arr[4][2"]=>
+038+   string(4) "fred"
+039+   ["arr1]"]=>
+040+   string(3) "sid"
+041+   ["arr[4]2]"]=>
+042+   string(4) "fred"
+043+   ["arr[4][two"]=>
+044+   string(4) "fred"
+045+   ["arr[one"]=>
+046+   string(3) "sid"
+047+ }
+048+ array(6) {
+049+   ["arr[1"]=>
+050+   string(3) "sid"
+051+   ["arr[4][2"]=>
+052+   string(4) "fred"
+053+   ["arr1]"]=>
+054+   string(3) "sid"
+055+   ["arr[4]2]"]=>
+056+   string(4) "fred"
+057+   ["arr[4][two"]=>
+058+   string(4) "fred"
+059+   ["arr[one"]=>
+060+   string(3) "sid"
+061+ }
+     
+     Test string with badly formed % numbers
+034- NULL
+035- array(3) {
+064+ array(7) {
+065+   ["arr[1"]=>
+066+   string(3) "sid"
+067+   ["arr[4][2"]=>
+068+   string(4) "fred"
+069+   ["arr1]"]=>
+070+   string(3) "sid"
+071+   ["arr[4]2]"]=>
+072+   string(4) "fred"
+073+   ["arr[4][two"]=>
+074+   string(4) "fred"
+075+   ["arr[one"]=>
+076+   string(3) "sid"
+       ["first"]=>
+       string(1) "A"
+038-   ["second"]=>
+039-   string(2) "%a"
+040-   ["third"]=>
+041-   string(2) "%b"
+     }
+080+ array(7) {
+081+   ["arr[1"]=>
+082+   string(3) "sid"
+083+   ["arr[4][2"]=>
+084+   string(4) "fred"
+085+   ["arr1]"]=>
+086+   string(3) "sid"
+087+   ["arr[4]2]"]=>
+088+   string(4) "fred"
+089+   ["arr[4][two"]=>
+090+   string(4) "fred"
+091+   ["arr[one"]=>
+092+   string(3) "sid"
+093+   ["first"]=>
+094+   string(1) "A"
+095+ }
+     
+     Test string with non-binary safe name
+045- NULL
+046- array(1) {
+047-   ["arr_test"]=>
+048-   array(2) {
+049-     [1]=>
+050-     string(3) "sid"
+051-     [4]=>
+052-     array(1) {
+053-       ["two"]=>
+054-       string(4) "fred"
+055-     }
+056-   }
+098+ array(9) {
+099+   ["arr[1"]=>
+100+   string(3) "sid"
+101+   ["arr[4][2"]=>
+102+   string(4) "fred"
+103+   ["arr1]"]=>
+104+   string(3) "sid"
+105+   ["arr[4]2]"]=>
+106+   string(4) "fred"
+107+   ["arr[4][two"]=>
+108+   string(4) "fred"
+109+   ["arr[one"]=>
+110+   string(3) "sid"
+111+   ["first"]=>
+112+   string(1) "A"
+113+   ["arr test[4][two]"]=>
+114+   string(4) "fred"
+115+   ["arr.test[1]"]=>
+116+   string(3) "sid"
+117+ }
+118+ array(9) {
+119+   ["arr[1"]=>
+120+   string(3) "sid"
+121+   ["arr[4][2"]=>
+122+   string(4) "fred"
+123+   ["arr1]"]=>
+124+   string(3) "sid"
+125+   ["arr[4]2]"]=>
+126+   string(4) "fred"
+127+   ["arr[4][two"]=>
+128+   string(4) "fred"
+129+   ["arr[one"]=>
+130+   string(3) "sid"
+131+   ["first"]=>
+132+   string(1) "A"
+133+   ["arr test[4][two]"]=>
+134+   string(4) "fred"
+135+   ["arr.test[1]"]=>
+136+   string(3) "sid"
+     }
+     ===DONE===

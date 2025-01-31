@@ -1,0 +1,18 @@
+*** Testing printf() : basic functionality - using octal format ***
+
+-- Calling printf() with no arguments --
+format
+int(6)
+
+-- Calling printf() with one arguments --
+21
+int(2)
+
+-- Calling printf() with two arguments --
+21 -347
+int(7)
+
+-- Calling printf() with three arguments --
+21 -347 567
+int(11)
+===DONE===

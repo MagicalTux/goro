@@ -1,0 +1,46 @@
+
+---- EXPECTED OUTPUT
+*** Testing get_html_translation_table() : basic functionality ***
+-- with table = HTML_SPECIALCHARS & quote_style = ENT_COMPAT --
+array(4) {
+  ["&"]=>
+  string(5) "&amp;"
+  [">"]=>
+  string(4) "&gt;"
+  ["<"]=>
+  string(4) "&lt;"
+  ["""]=>
+  string(6) "&quot;"
+}
+-- with table = HTML_SPECIALCHARS & quote_style = ENT_QUOTES --
+array(5) {
+  ["'"]=>
+  string(6) "&#039;"
+  ["&"]=>
+  string(5) "&amp;"
+  [">"]=>
+  string(4) "&gt;"
+  ["<"]=>
+  string(4) "&lt;"
+  ["""]=>
+  string(6) "&quot;"
+}
+-- with table = HTML_SPECIALCHARS & quote_style = ENT_NOQUOTES --
+array(3) {
+  ["&"]=>
+  string(5) "&amp;"
+  [">"]=>
+  string(4) "&gt;"
+  ["<"]=>
+  string(4) "&lt;"
+}
+Done
+---- ACTUAL OUTPUT
+*** Testing get_html_translation_table() : basic functionality ***
+-- with table = HTML_SPECIALCHARS & quote_style = ENT_COMPAT --
+
+Fatal error: Uncaught Error: Call to undefined function get_html_translation_table in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/get_html_translation_table_basic3.php:15
+Stack trace:
+#0 {main}
+  thrown in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/get_html_translation_table_basic3.php on line 15
+---- FAILED

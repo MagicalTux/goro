@@ -1,0 +1,37 @@
+
+---- EXPECTED OUTPUT
+*** Testing hebrevc() : basic functionality ***
+string(239) ".The hebrevc function converts logical Hebrew text to visual text<br />
+) This function is similar to hebrev() with the difference that it converts newlines<br />
+<to '<br (<br />
+.'<br />
+.The function tries to avoid breaking words<br />
+"
+string(317) "to visual text<br />
+Hebrew text<br />
+logical<br />
+converts<br />
+function<br />
+.The hebrevc<br />
+newlines<br />
+it converts<br />
+difference that<br />
+with the<br />
+to hebrev()<br />
+is similar<br />
+) This function<br />
+<to '<br (<br />
+.'<br />
+breaking words<br />
+tries to avoid<br />
+.The function<br />
+"
+===DONE===
+---- ACTUAL OUTPUT
+*** Testing hebrevc() : basic functionality ***
+
+Fatal error: Uncaught Error: Call to undefined function hebrevc in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/hebrevc_basic.php:12
+Stack trace:
+#0 {main}
+  thrown in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/hebrevc_basic.php on line 12
+---- FAILED

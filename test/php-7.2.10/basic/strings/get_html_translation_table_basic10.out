@@ -1,0 +1,4 @@
+Fatal error: Uncaught Error: Call to undefined function get_html_translation_table in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/get_html_translation_table_basic10.php:6
+Stack trace:
+#0 {main}
+  thrown in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/get_html_translation_table_basic10.php on line 6

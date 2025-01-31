@@ -1,0 +1,8 @@
+001- bool(true)
+002- bool(true)
+003- bool(true)
+004- bool(true)
+001+ Fatal error: Uncaught Error: Call to undefined function hex2bin in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/hex2bin_basic.php:3
+002+ Stack trace:
+003+ #0 {main}
+004+   thrown in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/hex2bin_basic.php on line 3

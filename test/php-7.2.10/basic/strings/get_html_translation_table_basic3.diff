@@ -1,0 +1,40 @@
+     *** Testing get_html_translation_table() : basic functionality ***
+     -- with table = HTML_SPECIALCHARS & quote_style = ENT_COMPAT --
+003- array(4) {
+004-   ["&"]=>
+005-   string(5) "&amp;"
+006-   [">"]=>
+007-   string(4) "&gt;"
+008-   ["<"]=>
+009-   string(4) "&lt;"
+010-   ["""]=>
+011-   string(6) "&quot;"
+012- }
+013- -- with table = HTML_SPECIALCHARS & quote_style = ENT_QUOTES --
+014- array(5) {
+015-   ["'"]=>
+016-   string(6) "&#039;"
+017-   ["&"]=>
+018-   string(5) "&amp;"
+019-   [">"]=>
+020-   string(4) "&gt;"
+021-   ["<"]=>
+022-   string(4) "&lt;"
+023-   ["""]=>
+024-   string(6) "&quot;"
+025- }
+026- -- with table = HTML_SPECIALCHARS & quote_style = ENT_NOQUOTES --
+027- array(3) {
+028-   ["&"]=>
+029-   string(5) "&amp;"
+030-   [">"]=>
+031-   string(4) "&gt;"
+032-   ["<"]=>
+033-   string(4) "&lt;"
+034- }
+035- Done
+003+ 
+004+ Fatal error: Uncaught Error: Call to undefined function get_html_translation_table in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/get_html_translation_table_basic3.php:15
+005+ Stack trace:
+006+ #0 {main}
+007+   thrown in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/get_html_translation_table_basic3.php on line 15

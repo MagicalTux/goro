@@ -1,0 +1,15 @@
+
+---- EXPECTED OUTPUT
+*** Testing strspn() : basic functionality ***
+int(11)
+int(11)
+int(2)
+Done
+---- ACTUAL OUTPUT
+*** Testing strspn() : basic functionality ***
+
+Fatal error: Uncaught Error: Call to undefined function strspn in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/strspn_basic.php:23
+Stack trace:
+#0 {main}
+  thrown in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/strspn_basic.php on line 23
+---- FAILED

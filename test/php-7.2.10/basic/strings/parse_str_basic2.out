@@ -1,0 +1,10 @@
+*** Testing parse_str() : non-default arg_separator.input specified ***
+array(1) {
+  ["first"]=>
+  string(27) "val1/second=val2/third=val3"
+}
+array(1) {
+  ["first"]=>
+  string(27) "val1/second=val2/third=val3"
+}
+===DONE===

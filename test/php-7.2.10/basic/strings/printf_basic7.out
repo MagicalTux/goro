@@ -1,0 +1,18 @@
+*** Testing printf() : basic functionality - using unsigned format ***
+
+-- Calling printf() with no arguments --
+format
+int(6)
+
+-- Calling printf() with one arguments --
+1777777777777777775651
+int(22)
+
+-- Calling printf() with two arguments --
+1777777777777777775651 1777777777777773224571
+int(45)
+
+-- Calling printf() with three arguments --
+1777777777777777775651 1777777777777773224571 10744730
+int(54)
+===DONE===

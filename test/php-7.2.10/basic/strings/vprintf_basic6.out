@@ -1,0 +1,8 @@
+*** Testing vprintf() : basic functionality - using exponential format ***
+1.00000000000000e+03
+int(20)
+1.00000000000000e+03 2.00000000000000e+03
+int(41)
+1.00000000000000e+03 2.00000000000000e+03 3.00000000000000e+03
+int(62)
+===DONE===

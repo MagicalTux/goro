@@ -1,0 +1,271 @@
+     *** Testing get_html_translation_table() : basic functionality/Windows-1252 ***
+     -- with table = HTML_ENTITIES --
+003- array(125) {
+004-   ["Æ"]=>
+005-   string(7) "&AElig;"
+006-   ["Á"]=>
+007-   string(8) "&Aacute;"
+008-   ["Â"]=>
+009-   string(7) "&Acirc;"
+010-   ["À"]=>
+011-   string(8) "&Agrave;"
+012-   ["Å"]=>
+013-   string(7) "&Aring;"
+014-   ["Ã"]=>
+015-   string(8) "&Atilde;"
+016-   ["Ä"]=>
+017-   string(6) "&Auml;"
+018-   ["Ç"]=>
+019-   string(8) "&Ccedil;"
+020-   ["‡"]=>
+021-   string(8) "&Dagger;"
+022-   ["Ð"]=>
+023-   string(5) "&ETH;"
+024-   ["É"]=>
+025-   string(8) "&Eacute;"
+026-   ["Ê"]=>
+027-   string(7) "&Ecirc;"
+028-   ["È"]=>
+029-   string(8) "&Egrave;"
+030-   ["Ë"]=>
+031-   string(6) "&Euml;"
+032-   ["Í"]=>
+033-   string(8) "&Iacute;"
+034-   ["Î"]=>
+035-   string(7) "&Icirc;"
+036-   ["Ì"]=>
+037-   string(8) "&Igrave;"
+038-   ["Ï"]=>
+039-   string(6) "&Iuml;"
+040-   ["Ñ"]=>
+041-   string(8) "&Ntilde;"
+042-   ["Œ"]=>
+043-   string(7) "&OElig;"
+044-   ["Ó"]=>
+045-   string(8) "&Oacute;"
+046-   ["Ô"]=>
+047-   string(7) "&Ocirc;"
+048-   ["Ò"]=>
+049-   string(8) "&Ograve;"
+050-   ["Ø"]=>
+051-   string(8) "&Oslash;"
+052-   ["Õ"]=>
+053-   string(8) "&Otilde;"
+054-   ["Ö"]=>
+055-   string(6) "&Ouml;"
+056-   ["Š"]=>
+057-   string(8) "&Scaron;"
+058-   ["Þ"]=>
+059-   string(7) "&THORN;"
+060-   ["Ú"]=>
+061-   string(8) "&Uacute;"
+062-   ["Û"]=>
+063-   string(7) "&Ucirc;"
+064-   ["Ù"]=>
+065-   string(8) "&Ugrave;"
+066-   ["Ü"]=>
+067-   string(6) "&Uuml;"
+068-   ["Ý"]=>
+069-   string(8) "&Yacute;"
+070-   ["Ÿ"]=>
+071-   string(6) "&Yuml;"
+072-   ["á"]=>
+073-   string(8) "&aacute;"
+074-   ["â"]=>
+075-   string(7) "&acirc;"
+076-   ["´"]=>
+077-   string(7) "&acute;"
+078-   ["æ"]=>
+079-   string(7) "&aelig;"
+080-   ["à"]=>
+081-   string(8) "&agrave;"
+082-   ["&"]=>
+083-   string(5) "&amp;"
+084-   ["å"]=>
+085-   string(7) "&aring;"
+086-   ["ã"]=>
+087-   string(8) "&atilde;"
+088-   ["ä"]=>
+089-   string(6) "&auml;"
+090-   ["„"]=>
+091-   string(7) "&bdquo;"
+092-   ["¦"]=>
+093-   string(8) "&brvbar;"
+094-   ["•"]=>
+095-   string(6) "&bull;"
+096-   ["ç"]=>
+097-   string(8) "&ccedil;"
+098-   ["¸"]=>
+099-   string(7) "&cedil;"
+100-   ["¢"]=>
+101-   string(6) "&cent;"
+102-   ["ˆ"]=>
+103-   string(6) "&circ;"
+104-   ["©"]=>
+105-   string(6) "&copy;"
+106-   ["¤"]=>
+107-   string(8) "&curren;"
+108-   ["†"]=>
+109-   string(8) "&dagger;"
+110-   ["°"]=>
+111-   string(5) "&deg;"
+112-   ["÷"]=>
+113-   string(8) "&divide;"
+114-   ["é"]=>
+115-   string(8) "&eacute;"
+116-   ["ê"]=>
+117-   string(7) "&ecirc;"
+118-   ["è"]=>
+119-   string(8) "&egrave;"
+120-   ["ð"]=>
+121-   string(5) "&eth;"
+122-   ["ë"]=>
+123-   string(6) "&euml;"
+124-   ["€"]=>
+125-   string(6) "&euro;"
+126-   ["ƒ"]=>
+127-   string(6) "&fnof;"
+128-   ["½"]=>
+129-   string(8) "&frac12;"
+130-   ["¼"]=>
+131-   string(8) "&frac14;"
+132-   ["¾"]=>
+133-   string(8) "&frac34;"
+134-   [">"]=>
+135-   string(4) "&gt;"
+136-   ["…"]=>
+137-   string(8) "&hellip;"
+138-   ["í"]=>
+139-   string(8) "&iacute;"
+140-   ["î"]=>
+141-   string(7) "&icirc;"
+142-   ["¡"]=>
+143-   string(7) "&iexcl;"
+144-   ["ì"]=>
+145-   string(8) "&igrave;"
+146-   ["¿"]=>
+147-   string(8) "&iquest;"
+148-   ["ï"]=>
+149-   string(6) "&iuml;"
+150-   ["«"]=>
+151-   string(7) "&laquo;"
+152-   ["“"]=>
+153-   string(7) "&ldquo;"
+154-   ["‹"]=>
+155-   string(8) "&lsaquo;"
+156-   ["‘"]=>
+157-   string(7) "&lsquo;"
+158-   ["<"]=>
+159-   string(4) "&lt;"
+160-   ["¯"]=>
+161-   string(6) "&macr;"
+162-   ["—"]=>
+163-   string(7) "&mdash;"
+164-   ["µ"]=>
+165-   string(7) "&micro;"
+166-   ["·"]=>
+167-   string(8) "&middot;"
+168-   [" "]=>
+169-   string(6) "&nbsp;"
+170-   ["–"]=>
+171-   string(7) "&ndash;"
+172-   ["¬"]=>
+173-   string(5) "&not;"
+174-   ["ñ"]=>
+175-   string(8) "&ntilde;"
+176-   ["ó"]=>
+177-   string(8) "&oacute;"
+178-   ["ô"]=>
+179-   string(7) "&ocirc;"
+180-   ["œ"]=>
+181-   string(7) "&oelig;"
+182-   ["ò"]=>
+183-   string(8) "&ograve;"
+184-   ["ª"]=>
+185-   string(6) "&ordf;"
+186-   ["º"]=>
+187-   string(6) "&ordm;"
+188-   ["ø"]=>
+189-   string(8) "&oslash;"
+190-   ["õ"]=>
+191-   string(8) "&otilde;"
+192-   ["ö"]=>
+193-   string(6) "&ouml;"
+194-   ["¶"]=>
+195-   string(6) "&para;"
+196-   ["‰"]=>
+197-   string(8) "&permil;"
+198-   ["±"]=>
+199-   string(8) "&plusmn;"
+200-   ["£"]=>
+201-   string(7) "&pound;"
+202-   ["""]=>
+203-   string(6) "&quot;"
+204-   ["»"]=>
+205-   string(7) "&raquo;"
+206-   ["”"]=>
+207-   string(7) "&rdquo;"
+208-   ["®"]=>
+209-   string(5) "&reg;"
+210-   ["›"]=>
+211-   string(8) "&rsaquo;"
+212-   ["’"]=>
+213-   string(7) "&rsquo;"
+214-   ["‚"]=>
+215-   string(7) "&sbquo;"
+216-   ["š"]=>
+217-   string(8) "&scaron;"
+218-   ["§"]=>
+219-   string(6) "&sect;"
+220-   ["­"]=>
+221-   string(5) "&shy;"
+222-   ["¹"]=>
+223-   string(6) "&sup1;"
+224-   ["²"]=>
+225-   string(6) "&sup2;"
+226-   ["³"]=>
+227-   string(6) "&sup3;"
+228-   ["ß"]=>
+229-   string(7) "&szlig;"
+230-   ["þ"]=>
+231-   string(7) "&thorn;"
+232-   ["˜"]=>
+233-   string(7) "&tilde;"
+234-   ["×"]=>
+235-   string(7) "&times;"
+236-   ["™"]=>
+237-   string(7) "&trade;"
+238-   ["ú"]=>
+239-   string(8) "&uacute;"
+240-   ["û"]=>
+241-   string(7) "&ucirc;"
+242-   ["ù"]=>
+243-   string(8) "&ugrave;"
+244-   ["¨"]=>
+245-   string(5) "&uml;"
+246-   ["ü"]=>
+247-   string(6) "&uuml;"
+248-   ["ý"]=>
+249-   string(8) "&yacute;"
+250-   ["¥"]=>
+251-   string(5) "&yen;"
+252-   ["ÿ"]=>
+253-   string(6) "&yuml;"
+254- }
+255- -- with table = HTML_SPECIALCHARS --
+256- array(4) {
+257-   ["&"]=>
+258-   string(5) "&amp;"
+259-   [">"]=>
+260-   string(4) "&gt;"
+261-   ["<"]=>
+262-   string(4) "&lt;"
+263-   ["""]=>
+264-   string(6) "&quot;"
+265- }
+266- Done
+003+ 
+004+ Fatal error: Uncaught Error: Call to undefined function get_html_translation_table in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/get_html_translation_table_basic4.php:12
+005+ Stack trace:
+006+ #0 {main}
+007+   thrown in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/get_html_translation_table_basic4.php on line 12

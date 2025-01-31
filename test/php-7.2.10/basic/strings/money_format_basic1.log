@@ -1,0 +1,31 @@
+
+---- EXPECTED OUTPUT
+*** Testing money_format() : basic functionality***
+Format values with 14 positions, 8 digits to left, 2 to right using national format
+string
+string
+Format again but with ( for negative values
+string
+string
+Format with 0 for padding character
+string
+string
+Format again with * for padding character
+string
+string
+Format again but disable grouping character
+string
+string
+Format again suppress currency symbol
+string
+string
+===DONE===
+---- ACTUAL OUTPUT
+*** Testing money_format() : basic functionality***
+Format values with 14 positions, 8 digits to left, 2 to right using national format
+
+Fatal error: Uncaught Error: Call to undefined function money_format in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/money_format_basic1.php:20
+Stack trace:
+#0 {main}
+  thrown in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/money_format_basic1.php on line 20
+---- FAILED

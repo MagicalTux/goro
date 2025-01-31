@@ -1,0 +1,52 @@
+     *** Testing get_html_translation_table() : basic functionality/XML 1.0 ***
+     -- with table = HTML_ENTITIES, ENT_QUOTES --
+003- int(5)
+004- Array
+005- (
+006-     [&] => &amp;
+007-     ['] => &apos;
+008-     [>] => &gt;
+009-     [<] => &lt;
+010-     ["] => &quot;
+011- )
+012- -- with table = HTML_ENTITIES, ENT_COMPAT --
+013- int(4)
+014- -- with table = HTML_ENTITIES, ENT_NOQUOTES --
+015- int(3)
+016- -- with table = HTML_SPECIALCHARS, ENT_COMPAT --
+017- int(4)
+018- Array
+019- (
+020-     [&] => &amp;
+021-     [>] => &gt;
+022-     [<] => &lt;
+023-     ["] => &quot;
+024- )
+025- -- with table = HTML_SPECIALCHARS, ENT_QUOTES --
+026- array(5) {
+027-   ["&"]=>
+028-   string(5) "&amp;"
+029-   ["'"]=>
+030-   string(6) "&apos;"
+031-   [">"]=>
+032-   string(4) "&gt;"
+033-   ["<"]=>
+034-   string(4) "&lt;"
+035-   ["""]=>
+036-   string(6) "&quot;"
+037- }
+038- -- with table = HTML_SPECIALCHARS, ENT_NOQUOTES --
+039- array(3) {
+040-   ["&"]=>
+041-   string(5) "&amp;"
+042-   [">"]=>
+043-   string(4) "&gt;"
+044-   ["<"]=>
+045-   string(4) "&lt;"
+046- }
+047- Done
+003+ 
+004+ Fatal error: Uncaught Error: Call to undefined function get_html_translation_table in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/get_html_translation_table_basic8.php:6
+005+ Stack trace:
+006+ #0 {main}
+007+   thrown in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/get_html_translation_table_basic8.php on line 6

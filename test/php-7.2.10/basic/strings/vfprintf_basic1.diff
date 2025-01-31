@@ -1,0 +1,25 @@
+     *** Testing vfprintf() : basic functionality - using string format ***
+002- int(4)
+003- int(8)
+004- int(14)
+005- one
+006- one two
+007- one two three
+008- ===DONE===
+002+ Warning: fopen(): fopen(/home/ronald/proj/goro/test/php-7.2.10/basic/strings/vfprintf_basic1.txt): failed to open stream: No such file or directory in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/vfprintf_basic1.php on line 21
+003+ panic: runtime error: invalid memory address or nil pointer dereference
+004+ [signal SIGSEGV: segmentation violation code=0x1 addr=0x0 pc=0x6ae1bd]
+005+ 
+006+ goroutine 1 [running]:
+007+ github.com/MagicalTux/goro/core/compiler.(*runReturn).Run(0xc0002db920, {0x8bd028, 0xc000350000})
+008+ 	/home/ronald/proj/goro/core/compiler/compile-return.go:38 +0x5d
+009+ github.com/MagicalTux/goro/core/compiler.(*runnableIf).Run(0xc000251ac0, {0x8bd028, 0xc000350000})
+010+ 	/home/ronald/proj/goro/core/compiler/compile-if.go:28 +0x233
+011+ github.com/MagicalTux/goro/core/phpv.Runnables.Run({0xc000414000, 0x14, 0x20}, {0x8bd028, 0xc000350000})
+012+ 	/home/ronald/proj/goro/core/phpv/run.go:9 +0x103
+013+ github.com/MagicalTux/goro/core/phpctx.(*Global).Require(0xc000350000, {0x8bd028, 0xc000350000}, {0x7ffc531e1724, 0x48})
+014+ 	/home/ronald/proj/goro/core/phpctx/global-inc.go:116 +0x4da
+015+ github.com/MagicalTux/goro/core/phpctx.(*Global).RunFile(0xc000350000, {0x7ffc531e1724, 0x48})
+016+ 	/home/ronald/proj/goro/core/phpctx/global.go:246 +0x7f
+017+ main.main()
+018+ 	/home/ronald/proj/goro/sapi/php-cli/main.go:60 +0x6a9

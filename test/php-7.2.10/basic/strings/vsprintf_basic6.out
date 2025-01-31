@@ -1,0 +1,5 @@
+*** Testing vsprintf() : basic functionality - using exponential format ***
+string(20) "1.00000000000000e+03"
+string(41) "1.00000000000000e+03 2.00000000000000e+03"
+string(62) "1.00000000000000e+03 2.00000000000000e+03 3.00000000000000e+03"
+Done

@@ -1,0 +1,19 @@
+     ***Testing basic operations ***
+002- bool(false)
+003- bool(false)
+004- int(0)
+005- int(0)
+006- int(0)
+007- int(100)
+008- int(200)
+009- int(160)
+010- int(10)
+011- int(40)
+012- int(10)
+013- int(30)
+014- Done
+002+ 
+003+ Fatal error: Uncaught Error: Call to undefined function substr_count in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/substr_count_basic.php:4
+004+ Stack trace:
+005+ #0 {main}
+006+   thrown in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/substr_count_basic.php on line 4

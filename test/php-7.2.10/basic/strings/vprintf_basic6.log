@@ -1,0 +1,20 @@
+
+---- EXPECTED OUTPUT
+*** Testing vprintf() : basic functionality - using exponential format ***
+1.000000e+3
+int(11)
+1.000000e+3 2.000000e+3
+int(23)
+1.000000e+3 2.000000e+3 3.000000e+3
+int(35)
+===DONE===
+---- ACTUAL OUTPUT
+*** Testing vprintf() : basic functionality - using exponential format ***
+1.00000000000000e+03
+int(20)
+1.00000000000000e+03 2.00000000000000e+03
+int(41)
+1.00000000000000e+03 2.00000000000000e+03 3.00000000000000e+03
+int(62)
+===DONE===
+---- FAILED

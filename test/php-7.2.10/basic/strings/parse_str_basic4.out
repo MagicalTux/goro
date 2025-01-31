@@ -1,0 +1,138 @@
+Test string with badly formed strings
+array(2) {
+  ["arr[1"]=>
+  string(3) "sid"
+  ["arr[4][2"]=>
+  string(4) "fred"
+}
+array(2) {
+  ["arr[1"]=>
+  string(3) "sid"
+  ["arr[4][2"]=>
+  string(4) "fred"
+}
+array(4) {
+  ["arr[1"]=>
+  string(3) "sid"
+  ["arr[4][2"]=>
+  string(4) "fred"
+  ["arr1]"]=>
+  string(3) "sid"
+  ["arr[4]2]"]=>
+  string(4) "fred"
+}
+array(4) {
+  ["arr[1"]=>
+  string(3) "sid"
+  ["arr[4][2"]=>
+  string(4) "fred"
+  ["arr1]"]=>
+  string(3) "sid"
+  ["arr[4]2]"]=>
+  string(4) "fred"
+}
+array(6) {
+  ["arr[1"]=>
+  string(3) "sid"
+  ["arr[4][2"]=>
+  string(4) "fred"
+  ["arr1]"]=>
+  string(3) "sid"
+  ["arr[4]2]"]=>
+  string(4) "fred"
+  ["arr[4][two"]=>
+  string(4) "fred"
+  ["arr[one"]=>
+  string(3) "sid"
+}
+array(6) {
+  ["arr[1"]=>
+  string(3) "sid"
+  ["arr[4][2"]=>
+  string(4) "fred"
+  ["arr1]"]=>
+  string(3) "sid"
+  ["arr[4]2]"]=>
+  string(4) "fred"
+  ["arr[4][two"]=>
+  string(4) "fred"
+  ["arr[one"]=>
+  string(3) "sid"
+}
+
+Test string with badly formed % numbers
+array(7) {
+  ["arr[1"]=>
+  string(3) "sid"
+  ["arr[4][2"]=>
+  string(4) "fred"
+  ["arr1]"]=>
+  string(3) "sid"
+  ["arr[4]2]"]=>
+  string(4) "fred"
+  ["arr[4][two"]=>
+  string(4) "fred"
+  ["arr[one"]=>
+  string(3) "sid"
+  ["first"]=>
+  string(1) "A"
+}
+array(7) {
+  ["arr[1"]=>
+  string(3) "sid"
+  ["arr[4][2"]=>
+  string(4) "fred"
+  ["arr1]"]=>
+  string(3) "sid"
+  ["arr[4]2]"]=>
+  string(4) "fred"
+  ["arr[4][two"]=>
+  string(4) "fred"
+  ["arr[one"]=>
+  string(3) "sid"
+  ["first"]=>
+  string(1) "A"
+}
+
+Test string with non-binary safe name
+array(9) {
+  ["arr[1"]=>
+  string(3) "sid"
+  ["arr[4][2"]=>
+  string(4) "fred"
+  ["arr1]"]=>
+  string(3) "sid"
+  ["arr[4]2]"]=>
+  string(4) "fred"
+  ["arr[4][two"]=>
+  string(4) "fred"
+  ["arr[one"]=>
+  string(3) "sid"
+  ["first"]=>
+  string(1) "A"
+  ["arr test[4][two]"]=>
+  string(4) "fred"
+  ["arr.test[1]"]=>
+  string(3) "sid"
+}
+array(9) {
+  ["arr[1"]=>
+  string(3) "sid"
+  ["arr[4][2"]=>
+  string(4) "fred"
+  ["arr1]"]=>
+  string(3) "sid"
+  ["arr[4]2]"]=>
+  string(4) "fred"
+  ["arr[4][two"]=>
+  string(4) "fred"
+  ["arr[one"]=>
+  string(3) "sid"
+  ["first"]=>
+  string(1) "A"
+  ["arr test[4][two]"]=>
+  string(4) "fred"
+  ["arr.test[1]"]=>
+  string(3) "sid"
+}
+===DONE===

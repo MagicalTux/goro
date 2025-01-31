@@ -1,0 +1,300 @@
+     *** Testing get_html_translation_table() : basic functionality/XHTML 1.0 ***
+     -- with table = HTML_ENTITIES, ENT_QUOTES --
+003- int(253)
+004- Array
+005- (
+006-     ['] => &#039;
+007-     [Æ] => &AElig;
+008-     [Á] => &Aacute;
+009-     [Â] => &Acirc;
+010-     [À] => &Agrave;
+011-     [Α] => &Alpha;
+012-     [Å] => &Aring;
+013-     [Ã] => &Atilde;
+014-     [Ä] => &Auml;
+015-     [Β] => &Beta;
+016-     [Ç] => &Ccedil;
+017-     [Χ] => &Chi;
+018-     [‡] => &Dagger;
+019-     [Δ] => &Delta;
+020-     [Ð] => &ETH;
+021-     [É] => &Eacute;
+022-     [Ê] => &Ecirc;
+023-     [È] => &Egrave;
+024-     [Ε] => &Epsilon;
+025-     [Η] => &Eta;
+026-     [Ë] => &Euml;
+027-     [Γ] => &Gamma;
+028-     [Í] => &Iacute;
+029-     [Î] => &Icirc;
+030-     [Ì] => &Igrave;
+031-     [Ι] => &Iota;
+032-     [Ï] => &Iuml;
+033-     [Κ] => &Kappa;
+034-     [Λ] => &Lambda;
+035-     [Μ] => &Mu;
+036-     [Ñ] => &Ntilde;
+037-     [Ν] => &Nu;
+038-     [Œ] => &OElig;
+039-     [Ó] => &Oacute;
+040-     [Ô] => &Ocirc;
+041-     [Ò] => &Ograve;
+042-     [Ω] => &Omega;
+043-     [Ο] => &Omicron;
+044-     [Ø] => &Oslash;
+045-     [Õ] => &Otilde;
+046-     [Ö] => &Ouml;
+047-     [Φ] => &Phi;
+048-     [Π] => &Pi;
+049-     [″] => &Prime;
+050-     [Ψ] => &Psi;
+051-     [Ρ] => &Rho;
+052-     [Š] => &Scaron;
+053-     [Σ] => &Sigma;
+054-     [Þ] => &THORN;
+055-     [Τ] => &Tau;
+056-     [Θ] => &Theta;
+057-     [Ú] => &Uacute;
+058-     [Û] => &Ucirc;
+059-     [Ù] => &Ugrave;
+060-     [Υ] => &Upsilon;
+061-     [Ü] => &Uuml;
+062-     [Ξ] => &Xi;
+063-     [Ý] => &Yacute;
+064-     [Ÿ] => &Yuml;
+065-     [Ζ] => &Zeta;
+066-     [á] => &aacute;
+067-     [â] => &acirc;
+068-     [´] => &acute;
+069-     [æ] => &aelig;
+070-     [à] => &agrave;
+071-     [ℵ] => &alefsym;
+072-     [α] => &alpha;
+073-     [&] => &amp;
+074-     [∧] => &and;
+075-     [∠] => &ang;
+076-     [å] => &aring;
+077-     [≈] => &asymp;
+078-     [ã] => &atilde;
+079-     [ä] => &auml;
+080-     [„] => &bdquo;
+081-     [β] => &beta;
+082-     [¦] => &brvbar;
+083-     [•] => &bull;
+084-     [∩] => &cap;
+085-     [ç] => &ccedil;
+086-     [¸] => &cedil;
+087-     [¢] => &cent;
+088-     [χ] => &chi;
+089-     [ˆ] => &circ;
+090-     [♣] => &clubs;
+091-     [≅] => &cong;
+092-     [©] => &copy;
+093-     [↵] => &crarr;
+094-     [∪] => &cup;
+095-     [¤] => &curren;
+096-     [⇓] => &dArr;
+097-     [†] => &dagger;
+098-     [↓] => &darr;
+099-     [°] => &deg;
+100-     [δ] => &delta;
+101-     [♦] => &diams;
+102-     [÷] => &divide;
+103-     [é] => &eacute;
+104-     [ê] => &ecirc;
+105-     [è] => &egrave;
+106-     [∅] => &empty;
+107-     [ ] => &emsp;
+108-     [ ] => &ensp;
+109-     [ε] => &epsilon;
+110-     [≡] => &equiv;
+111-     [η] => &eta;
+112-     [ð] => &eth;
+113-     [ë] => &euml;
+114-     [€] => &euro;
+115-     [∃] => &exist;
+116-     [ƒ] => &fnof;
+117-     [∀] => &forall;
+118-     [½] => &frac12;
+119-     [¼] => &frac14;
+120-     [¾] => &frac34;
+121-     [⁄] => &frasl;
+122-     [γ] => &gamma;
+123-     [≥] => &ge;
+124-     [>] => &gt;
+125-     [⇔] => &hArr;
+126-     [↔] => &harr;
+127-     [♥] => &hearts;
+128-     […] => &hellip;
+129-     [í] => &iacute;
+130-     [î] => &icirc;
+131-     [¡] => &iexcl;
+132-     [ì] => &igrave;
+133-     [ℑ] => &image;
+134-     [∞] => &infin;
+135-     [∫] => &int;
+136-     [ι] => &iota;
+137-     [¿] => &iquest;
+138-     [∈] => &isin;
+139-     [ï] => &iuml;
+140-     [κ] => &kappa;
+141-     [⇐] => &lArr;
+142-     [λ] => &lambda;
+143-     [〈] => &lang;
+144-     [«] => &laquo;
+145-     [←] => &larr;
+146-     [⌈] => &lceil;
+147-     [“] => &ldquo;
+148-     [≤] => &le;
+149-     [⌊] => &lfloor;
+150-     [∗] => &lowast;
+151-     [◊] => &loz;
+152-     [‎] => &lrm;
+153-     [‹] => &lsaquo;
+154-     [‘] => &lsquo;
+155-     [<] => &lt;
+156-     [¯] => &macr;
+157-     [—] => &mdash;
+158-     [µ] => &micro;
+159-     [·] => &middot;
+160-     [−] => &minus;
+161-     [μ] => &mu;
+162-     [∇] => &nabla;
+163-     [ ] => &nbsp;
+164-     [–] => &ndash;
+165-     [≠] => &ne;
+166-     [∋] => &ni;
+167-     [¬] => &not;
+168-     [∉] => &notin;
+169-     [⊄] => &nsub;
+170-     [ñ] => &ntilde;
+171-     [ν] => &nu;
+172-     [ó] => &oacute;
+173-     [ô] => &ocirc;
+174-     [œ] => &oelig;
+175-     [ò] => &ograve;
+176-     [‾] => &oline;
+177-     [ω] => &omega;
+178-     [ο] => &omicron;
+179-     [⊕] => &oplus;
+180-     [∨] => &or;
+181-     [ª] => &ordf;
+182-     [º] => &ordm;
+183-     [ø] => &oslash;
+184-     [õ] => &otilde;
+185-     [⊗] => &otimes;
+186-     [ö] => &ouml;
+187-     [¶] => &para;
+188-     [∂] => &part;
+189-     [‰] => &permil;
+190-     [⊥] => &perp;
+191-     [φ] => &phi;
+192-     [π] => &pi;
+193-     [ϖ] => &piv;
+194-     [±] => &plusmn;
+195-     [£] => &pound;
+196-     [′] => &prime;
+197-     [∏] => &prod;
+198-     [∝] => &prop;
+199-     [ψ] => &psi;
+200-     ["] => &quot;
+201-     [⇒] => &rArr;
+202-     [√] => &radic;
+203-     [〉] => &rang;
+204-     [»] => &raquo;
+205-     [→] => &rarr;
+206-     [⌉] => &rceil;
+207-     [”] => &rdquo;
+208-     [ℜ] => &real;
+209-     [®] => &reg;
+210-     [⌋] => &rfloor;
+211-     [ρ] => &rho;
+212-     [‏] => &rlm;
+213-     [›] => &rsaquo;
+214-     [’] => &rsquo;
+215-     [‚] => &sbquo;
+216-     [š] => &scaron;
+217-     [⋅] => &sdot;
+218-     [§] => &sect;
+219-     [­] => &shy;
+220-     [σ] => &sigma;
+221-     [ς] => &sigmaf;
+222-     [∼] => &sim;
+223-     [♠] => &spades;
+224-     [⊂] => &sub;
+225-     [⊆] => &sube;
+226-     [∑] => &sum;
+227-     [¹] => &sup1;
+228-     [²] => &sup2;
+229-     [³] => &sup3;
+230-     [⊃] => &sup;
+231-     [⊇] => &supe;
+232-     [ß] => &szlig;
+233-     [τ] => &tau;
+234-     [∴] => &there4;
+235-     [θ] => &theta;
+236-     [ϑ] => &thetasym;
+237-     [ ] => &thinsp;
+238-     [þ] => &thorn;
+239-     [˜] => &tilde;
+240-     [×] => &times;
+241-     [™] => &trade;
+242-     [⇑] => &uArr;
+243-     [ú] => &uacute;
+244-     [↑] => &uarr;
+245-     [û] => &ucirc;
+246-     [ù] => &ugrave;
+247-     [¨] => &uml;
+248-     [ϒ] => &upsih;
+249-     [υ] => &upsilon;
+250-     [ü] => &uuml;
+251-     [℘] => &weierp;
+252-     [ξ] => &xi;
+253-     [ý] => &yacute;
+254-     [¥] => &yen;
+255-     [ÿ] => &yuml;
+256-     [ζ] => &zeta;
+257-     [‍] => &zwj;
+258-     [‌] => &zwnj;
+259- )
+260- -- with table = HTML_ENTITIES, ENT_COMPAT --
+261- int(252)
+262- -- with table = HTML_ENTITIES, ENT_NOQUOTES --
+263- int(251)
+264- -- with table = HTML_SPECIALCHARS, ENT_COMPAT --
+265- int(4)
+266- Array
+267- (
+268-     [&] => &amp;
+269-     [>] => &gt;
+270-     [<] => &lt;
+271-     ["] => &quot;
+272- )
+273- -- with table = HTML_SPECIALCHARS, ENT_QUOTES --
+274- array(5) {
+275-   ["&"]=>
+276-   string(5) "&amp;"
+277-   ["'"]=>
+278-   string(6) "&apos;"
+279-   [">"]=>
+280-   string(4) "&gt;"
+281-   ["<"]=>
+282-   string(4) "&lt;"
+283-   ["""]=>
+284-   string(6) "&quot;"
+285- }
+286- -- with table = HTML_SPECIALCHARS, ENT_NOQUOTES --
+287- array(3) {
+288-   ["&"]=>
+289-   string(5) "&amp;"
+290-   [">"]=>
+291-   string(4) "&gt;"
+292-   ["<"]=>
+293-   string(4) "&lt;"
+294- }
+295- Done
+003+ 
+004+ Fatal error: Uncaught Error: Call to undefined function get_html_translation_table in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/get_html_translation_table_basic7.php:7
+005+ Stack trace:
+006+ #0 {main}
+007+   thrown in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/get_html_translation_table_basic7.php on line 7

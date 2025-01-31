@@ -1,0 +1,36 @@
+
+---- EXPECTED OUTPUT
+*** Testing sscanf() : basic functionality -using exponential format ***
+
+-- Try sccanf() WITHOUT optional args --
+float(10.12345)
+float(10123.45)
+float(10123.45)
+float(-101234.5)
+float(10.12345)
+float(10123.45)
+float(10123.45)
+float(-101234.5)
+
+-- Try sccanf() WITH optional args --
+int(4)
+float(10.12345)
+float(10123.45)
+float(10123.45)
+float(-101234.5)
+int(4)
+float(10.12345)
+float(10123.45)
+float(10123.45)
+float(-101234.5)
+===DONE===
+---- ACTUAL OUTPUT
+*** Testing sscanf() : basic functionality -using exponential format ***
+
+-- Try sccanf() WITHOUT optional args --
+
+Fatal error: Uncaught Error: Call to undefined function sscanf in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/sscanf_basic5.php:16
+Stack trace:
+#0 {main}
+  thrown in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/sscanf_basic5.php on line 16
+---- FAILED

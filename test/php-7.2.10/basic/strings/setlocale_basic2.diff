@@ -1,0 +1,6 @@
+     *** Testing setlocale() with an array containing list of locales ***
+002- -- Testing setlocale() : 'category' argument as LC_ALL & 'locale' argument as an array --
+003- string(%d) "%s"
+004- Checking currency settings in the new locale, expected: %s, Found: %s
+005- Test PASSED.
+006- Done

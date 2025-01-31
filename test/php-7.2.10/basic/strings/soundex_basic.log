@@ -1,0 +1,27 @@
+
+---- EXPECTED OUTPUT
+*** Testing soundex() : basic functionality ***
+string(4) "E460"
+string(4) "G200"
+string(4) "H416"
+string(4) "K530"
+string(4) "L300"
+string(4) "L222"
+bool(true)
+bool(true)
+bool(true)
+bool(true)
+bool(true)
+bool(true)
+bool(false)
+bool(false)
+ 
+===DONE===
+---- ACTUAL OUTPUT
+*** Testing soundex() : basic functionality ***
+
+Fatal error: Uncaught Error: Call to undefined function soundex in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/soundex_basic.php:8
+Stack trace:
+#0 {main}
+  thrown in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/soundex_basic.php on line 8
+---- FAILED

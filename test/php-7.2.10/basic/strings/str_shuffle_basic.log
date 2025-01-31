@@ -1,0 +1,12 @@
+
+---- EXPECTED OUTPUT
+*** Testing str_shuffle() : basic functionality ***
+string(47) "%s"
+TEST PASSED
+===DONE===
+---- ACTUAL OUTPUT
+Fatal error: Uncaught Error: Parse error: syntax error, unexpected ')' in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/str_shuffle_basic.php:33
+Stack trace:
+#0 {main}
+  thrown in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/str_shuffle_basic.php on line 33
+---- FAILED

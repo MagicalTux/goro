@@ -1,0 +1,9 @@
+--
+     string(19) "!===Hello World===!"
+     
+     -- Trim the ASCII control characters at the beginning of a string --
+013- string(14) "Example string"
+013+ string(18) "
+014+ Example string
+015+ "
+     ===DONE===

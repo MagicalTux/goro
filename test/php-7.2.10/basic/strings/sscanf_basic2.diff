@@ -1,0 +1,17 @@
+     *** Testing sscanf() : basic functionality - using integer format ***
+     
+     -- Try sccanf() WITHOUT optional args --
+004- string(6) "Widget"
+005- int(1234789)
+006- int(25)
+     
+008- -- Try sccanf() WITH optional args --
+009- int(3)
+010- string(6) "Widget"
+011- int(1234789)
+012- int(25)
+013- ===DONE===
+005+ Fatal error: Uncaught Error: Call to undefined function sscanf in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/sscanf_basic2.php:18
+006+ Stack trace:
+007+ #0 {main}
+008+   thrown in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/sscanf_basic2.php on line 18

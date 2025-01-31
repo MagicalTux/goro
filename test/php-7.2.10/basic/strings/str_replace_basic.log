@@ -1,0 +1,23 @@
+
+---- EXPECTED OUTPUT
+*** Testing str_replace() on basic operations ***
+string(0) ""
+string(4) "tbst"
+string(0) ""
+int(0)
+string(1) "q"
+int(1)
+string(0) ""
+int(0)
+string(%d) "Resource id #%d"
+int(1)
+===DONE===
+---- ACTUAL OUTPUT
+*** Testing str_replace() on basic operations ***
+
+Fatal error: Uncaught Error: str_replace(): Too few arguments in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/str_replace_basic.php:11
+Stack trace:
+#0 /home/ronald/proj/goro/test/php-7.2.10/basic/strings/str_replace_basic.php(11): str_replace(, , )
+#1 {main}
+  thrown in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/str_replace_basic.php on line 11
+---- FAILED

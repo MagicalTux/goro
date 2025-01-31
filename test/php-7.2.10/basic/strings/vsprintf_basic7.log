@@ -1,0 +1,14 @@
+
+---- EXPECTED OUTPUT
+*** Testing vsprintf() : basic functionality - using unsigned format ***
+string(10) "4294966185"
+string(21) "4294966185 4293732729"
+string(32) "4294966185 4293732729 4292621864"
+Done
+---- ACTUAL OUTPUT
+*** Testing vsprintf() : basic functionality - using unsigned format ***
+string(22) "1777777777777777775651"
+string(45) "1777777777777777775651 1777777777777773224571"
+string(68) "1777777777777777775651 1777777777777773224571 1777777777777767033050"
+Done
+---- FAILED

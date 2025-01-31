@@ -1,0 +1,10 @@
+     *** Testing strspn() : basic functionality ***
+002- int(11)
+003- int(11)
+004- int(2)
+005- Done
+002+ 
+003+ Fatal error: Uncaught Error: Call to undefined function strspn in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/strspn_basic.php:23
+004+ Stack trace:
+005+ #0 {main}
+006+   thrown in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/strspn_basic.php on line 23

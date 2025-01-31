@@ -1,0 +1,22 @@
+
+---- EXPECTED OUTPUT
+*** Testing sprintf() : basic functionality - using float format ***
+string(6) "format"
+string(9) "11.110000"
+string(9) "11.110000"
+string(19) "11.110000 22.220000"
+string(19) "11.110000 22.220000"
+string(29) "11.110000 22.220000 33.330000"
+string(29) "11.110000 22.220000 33.330000"
+Done
+---- ACTUAL OUTPUT
+*** Testing sprintf() : basic functionality - using float format ***
+string(6) "format"
+string(17) "11.11000000000000"
+string(17) "11.11000000000000"
+string(35) "11.11000000000000 22.22000000000000"
+string(35) "11.11000000000000 22.22000000000000"
+string(53) "11.11000000000000 22.22000000000000 33.33000000000000"
+string(53) "11.11000000000000 22.22000000000000 33.33000000000000"
+Done
+---- FAILED

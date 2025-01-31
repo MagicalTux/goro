@@ -1,0 +1,8 @@
+*** Testing sscanf() : basic functionality - using unsigned format ***
+
+-- Try sccanf() WITHOUT optional args --
+
+Fatal error: Uncaught Error: Call to undefined function sscanf in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/sscanf_basic6.php:15
+Stack trace:
+#0 {main}
+  thrown in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/sscanf_basic6.php on line 15

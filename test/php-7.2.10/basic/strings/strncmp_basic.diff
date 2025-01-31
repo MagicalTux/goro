@@ -1,0 +1,21 @@
+001- \*\*\* Testing strncmp\(\) function: basic functionality \*\*\*
+002- -- Testing strncmp\(\) with single quoted string --
+003- int\(0\)
+004- int\(-[1-9][0-9]*\)
+005- int\([1-9][0-9]*\)
+006- -- Testing strncmp\(\) with double quoted string --
+007- int\(0\)
+008- int\(-[1-9][0-9]*\)
+009- int\([1-9][0-9]*\)
+010- -- Testing strncmp\(\) with here-doc string --
+011- int\(0\)
+012- int\(-[1-9][0-9]*\)
+013- int\([1-9][0-9]*\)
+014- \*\*\* Done \*\*\*
+001+ *** Testing strncmp() function: basic functionality ***
+002+ -- Testing strncmp() with single quoted string --
+003+ 
+004+ Fatal error: Uncaught Error: Call to undefined function strncmp in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/strncmp_basic.php:10
+005+ Stack trace:
+006+ #0 {main}
+007+   thrown in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/strncmp_basic.php on line 10

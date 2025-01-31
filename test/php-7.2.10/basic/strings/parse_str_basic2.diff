@@ -1,0 +1,17 @@
+     *** Testing parse_str() : non-default arg_separator.input specified ***
+002- NULL
+003- array(3) {
+002+ array(1) {
+       ["first"]=>
+005-   string(4) "val1"
+006-   ["second"]=>
+007-   string(4) "val2"
+008-   ["third"]=>
+009-   string(4) "val3"
+004+   string(27) "val1/second=val2/third=val3"
+005+ }
+006+ array(1) {
+007+   ["first"]=>
+008+   string(27) "val1/second=val2/third=val3"
+     }
+     ===DONE===

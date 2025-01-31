@@ -1,0 +1,36 @@
+     *** Testing sscanf() : basic functionality - - using hexadecimal format ***
+     
+     -- Try sccanf() WITHOUT optional args --
+004- int(297)
+005- int(303)
+006- int(4667)
+007- int(-4667)
+008- int(6844)
+009- int(1)
+010- int(297)
+011- int(303)
+012- int(4667)
+013- int(-4667)
+014- int(6844)
+015- int(1)
+     
+017- -- Try sccanf() WITH optional args --
+018- int(6)
+019- int(297)
+020- int(303)
+021- int(4667)
+022- int(-4667)
+023- int(6844)
+024- int(1)
+025- int(6)
+026- int(297)
+027- int(303)
+028- int(4667)
+029- int(-4667)
+030- int(6844)
+031- int(1)
+032- ===DONE===
+005+ Fatal error: Uncaught Error: Call to undefined function sscanf in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/sscanf_basic8.php:16
+006+ Stack trace:
+007+ #0 {main}
+008+   thrown in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/sscanf_basic8.php on line 16

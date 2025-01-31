@@ -1,0 +1,7 @@
+*** Testing get_html_translation_table() : basic functionality ***
+-- with table = HTML_ENTITIES --
+
+Fatal error: Uncaught Error: Call to undefined function get_html_translation_table in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/get_html_translation_table_basic1.php:14
+Stack trace:
+#0 {main}
+  thrown in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/get_html_translation_table_basic1.php on line 14

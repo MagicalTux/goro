@@ -1,0 +1,13 @@
+*** Testing stripcslashes() : basic functionality ***
+string(11) "Hello World"
+string(13) "Hello World
+"
+string(12) "\Hello World"
+string(16) "Heccf Wfrcd"
+string(11) "Hello World"
+string(2) "07"
+string(2) "08"
+string(2) "0c"
+string(2) "09"
+string(2) "0b"
+===DONE===

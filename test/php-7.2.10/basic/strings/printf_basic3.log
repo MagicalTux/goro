@@ -1,0 +1,52 @@
+
+---- EXPECTED OUTPUT
+*** Testing printf() : basic functionality - using float format ***
+
+-- Calling printf() with no arguments--
+format
+int(6)
+
+-- Calling printf() with one arguments--
+11.110000
+int(9)
+11.110000
+int(9)
+
+-- Calling printf() with two arguments--
+11.110000 22.220000
+int(19)
+11.110000 22.220000
+int(19)
+
+-- Calling printf() with three arguments--
+11.110000 22.220000 33.330000
+int(29)
+11.110000 22.220000 33.330000
+int(29)
+===DONE===
+---- ACTUAL OUTPUT
+*** Testing printf() : basic functionality - using float format ***
+
+-- Calling printf() with no arguments--
+format
+int(6)
+
+-- Calling printf() with one arguments--
+11.11000000000000
+int(17)
+11.11000000000000
+int(17)
+
+-- Calling printf() with two arguments--
+11.11000000000000 22.22000000000000
+int(35)
+11.11000000000000 22.22000000000000
+int(35)
+
+-- Calling printf() with three arguments--
+11.11000000000000 22.22000000000000 33.33000000000000
+int(53)
+11.11000000000000 22.22000000000000 33.33000000000000
+int(53)
+===DONE===
+---- FAILED
