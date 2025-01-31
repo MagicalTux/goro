@@ -63,15 +63,15 @@ func fncDirname(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // > func string basename ( string $path [, string $suffix] )
 func fncBasename(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var path string
-	var suffix *string
+	var suffix core.Optional[phpv.ZString]
 	_, err := core.Expand(ctx, args, &path, &suffix)
 	if err != nil {
 		return nil, err
 	}
 
 	result := filepath.Base(path)
-	if suffix != nil {
-		result = strings.TrimSuffix(result, *suffix)
+	if suffix.HasArg() && result != string(suffix.Get()) {
+		result = strings.TrimSuffix(result, string(suffix.Get()))
 	}
 
 	return phpv.ZString(result).ZVal(), nil
