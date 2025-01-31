@@ -71,7 +71,6 @@ func (c *compileRootCtx) NextItem() (*tokenizer.Item, error) {
 	}
 	for {
 		i, err := c.t.NextItem()
-
 		if err != nil {
 			return i, err
 		}

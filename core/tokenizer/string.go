@@ -81,8 +81,10 @@ func (sl stringLexer) lexStringWhitespace(l *Lexer) lexState {
 				lexPhpVariable(l)
 				switch c := l.peek(); c {
 				case '-':
-					l.push(lexInterpolatedObjectOp)
-					return l.base
+					if l.peekString(2) == "->" {
+						l.push(lexInterpolatedObjectOp)
+						return l.base
+					}
 				case '[':
 					l.push(lexInterpolatedArrayAccess)
 					return l.base
