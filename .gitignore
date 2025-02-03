@@ -5,6 +5,13 @@
 /sapi/php-httpd/php-httpd
 /test/wordpress/
 /test/wordpress.tar.gz
+/test/wordpress.tar.gz
+/test/**/*.out
+/test/**/*.log
+/test/**/*.sh
+/test/**/*.diff
+/test/**/*.php
+/test/**/*.exp
 
 # for vim
 .*.swp
