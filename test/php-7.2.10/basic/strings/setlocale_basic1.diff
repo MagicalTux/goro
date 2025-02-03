@@ -1,6 +1,0 @@
-     *** Testing setlocale() : basic functionality - set to a specific locale ***
-002- Setting system locale(LC_ALL) to %s
-003- string(%d) %s
-004- Checking currency settings in the new locale, expected: %s, Found: %s
-005- Test PASSED.
-006- Done
