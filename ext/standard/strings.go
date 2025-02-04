@@ -395,18 +395,13 @@ func fncStrLcFirst(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // > func string ltrim ( string $str [, string $character_mask ] )
 func fncStrLtrim(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var str phpv.ZString
-	var charsArg *phpv.ZString
-
+	var charsArg core.Optional[phpv.ZString]
 	_, err := core.Expand(ctx, args, &str, &charsArg)
 	if err != nil {
 		return nil, err
 	}
 
-	chars := trimChars
-	if charsArg != nil {
-		chars = string(*charsArg)
-	}
-
+	chars := expandCharacterRanges(string(charsArg.GetOrDefault(trimChars)))
 	result := strings.TrimLeft(string(str), chars)
 	return phpv.ZString(result).ZVal(), nil
 }
@@ -415,18 +410,13 @@ func fncStrLtrim(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // > alias chop
 func fncStrRtrim(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var str phpv.ZString
-	var charsArg *phpv.ZString
-
+	var charsArg core.Optional[phpv.ZString]
 	_, err := core.Expand(ctx, args, &str, &charsArg)
 	if err != nil {
 		return nil, err
 	}
 
-	chars := trimChars
-	if charsArg != nil {
-		chars = string(*charsArg)
-	}
-
+	chars := expandCharacterRanges(string(charsArg.GetOrDefault(trimChars)))
 	result := strings.TrimRight(string(str), chars)
 	return phpv.ZString(result).ZVal(), nil
 }
@@ -434,18 +424,13 @@ func fncStrRtrim(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // > func string trim ( string $str [, string $character_mask ] )
 func fncStrTrim(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var str phpv.ZString
-	var charsArg *phpv.ZString
-
+	var charsArg core.Optional[phpv.ZString]
 	_, err := core.Expand(ctx, args, &str, &charsArg)
 	if err != nil {
 		return nil, err
 	}
 
-	chars := trimChars
-	if charsArg != nil {
-		chars = string(*charsArg)
-	}
-
+	chars := expandCharacterRanges(string(charsArg.GetOrDefault(trimChars)))
 	result := strings.Trim(string(str), chars)
 	return phpv.ZString(result).ZVal(), nil
 }
@@ -2507,4 +2492,23 @@ func safeIndex[T any](xs []T, index int, defaultVal ...T) T {
 		x = defaultVal[0]
 	}
 	return x
+}
+
+// example:
+// expandCharacterRanges("abc..ghx..z") == "abcdefghxyz"
+func expandCharacterRanges(str string) string {
+	var buf bytes.Buffer
+	bytes := []byte(str)
+	for i := 0; i < len(bytes); i++ {
+		if core.Idx(bytes, i+1) == '.' && core.Idx(bytes, i+2) == '.' && i+3 < len(bytes) {
+			from := bytes[i]
+			to := bytes[i+3]
+			for c := from; c <= to; c++ {
+				buf.WriteByte(c)
+			}
+		} else {
+			buf.WriteByte(bytes[i])
+		}
+	}
+	return buf.String()
 }
