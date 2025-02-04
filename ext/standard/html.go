@@ -607,3 +607,53 @@ func fncHtmlSpecialChars(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error
 
 	return phpv.ZStr(buf.String()), nil
 }
+
+// > func string htmlspecialchars_decode ( string $string [, int $flags = ENT_COMPAT | ENT_HTML401 ] )
+func fncHtmlSpecialCharsDecode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var str phpv.ZString
+	var flagsArg core.Optional[phpv.ZInt]
+	_, err := core.Expand(ctx, args, &str, &flagsArg)
+	if err != nil {
+		return nil, err
+	}
+
+	flags := flagsArg.GetOrDefault(ENT_COMPAT | ENT_HTML401)
+
+	unescape := map[string]string{}
+	for _, e := range getHtmlTranslationTable(HTML_SPECIALCHARS, flags) {
+		unescape[e.value] = e.key
+	}
+
+	var buf bytes.Buffer
+	chars := []rune(str)
+	for i := 0; i < len(chars); i++ {
+		c := chars[i]
+
+		if c != '&' {
+			buf.WriteRune(c)
+			continue
+		}
+
+		var j int
+		if k := slices.Index(chars[i:], ';'); k <= 0 {
+			buf.WriteRune(c)
+			continue
+		} else {
+			j = min(i+k+1, len(chars))
+		}
+		sub := string(chars[i:j])
+
+		var repl string
+		if s, ok := unescape[sub]; !ok {
+			buf.WriteRune(c)
+			continue
+		} else {
+			repl = s
+		}
+
+		buf.WriteString(repl)
+		i = j - 1
+	}
+
+	return phpv.ZStr(buf.String()), nil
+}
