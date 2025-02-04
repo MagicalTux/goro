@@ -142,6 +142,8 @@ func init() {
 			"getopt":                     {Func: fncGetOpt, Args: []*phpctx.ExtFunctionArg{}},
 			"getrandmax":                 {Func: mathMtGetRandMax, Args: []*phpctx.ExtFunctionArg{}}, // alias
 			"gettype":                    {Func: fncGettype, Args: []*phpctx.ExtFunctionArg{}},
+			"hebrev":                     {Func: fncHebrev, Args: []*phpctx.ExtFunctionArg{}},
+			"hebrevc":                    {Func: fncHebrevc, Args: []*phpctx.ExtFunctionArg{}},
 			"hexdec":                     {Func: mathHexDec, Args: []*phpctx.ExtFunctionArg{}},
 			"hrtime":                     {Func: stdFuncHrTime, Args: []*phpctx.ExtFunctionArg{}},
 			"hypot":                      {Func: mathHypot, Args: []*phpctx.ExtFunctionArg{}},
