@@ -146,6 +146,7 @@ func init() {
 			"hebrevc":                    {Func: fncHebrevc, Args: []*phpctx.ExtFunctionArg{}},
 			"hexdec":                     {Func: mathHexDec, Args: []*phpctx.ExtFunctionArg{}},
 			"hrtime":                     {Func: stdFuncHrTime, Args: []*phpctx.ExtFunctionArg{}},
+			"htmlspecialchars":           {Func: fncHtmlSpecialChars, Args: []*phpctx.ExtFunctionArg{}},
 			"hypot":                      {Func: mathHypot, Args: []*phpctx.ExtFunctionArg{}},
 			"implode":                    {Func: fncStrImplode, Args: []*phpctx.ExtFunctionArg{}},
 			"in_array":                   {Func: fncInArray, Args: []*phpctx.ExtFunctionArg{}},

@@ -1,6 +1,8 @@
 package standard
 
 import (
+	"bytes"
+	"slices"
 	"sort"
 	"strings"
 
@@ -38,6 +40,20 @@ const (
 	ENT_HTML5                            phpv.ZInt = (16 | 32)
 	ENT_DISALLOWED                       phpv.ZInt = 128
 )
+
+func init() {
+	entitySet = make(map[string]struct{}, len(tableBase)+len(table401)+len(tableHtml5))
+	for _, t := range [](map[string]string){tableBase, table401, tableHtml5} {
+		for _, v := range t {
+			entitySet[v] = struct{}{}
+		}
+	}
+	entitySet["&quot;"] = struct{}{}
+	entitySet["&#039;"] = struct{}{}
+	entitySet["&apos;"] = struct{}{}
+}
+
+var entitySet map[string]struct{}
 
 var tableBase = map[string]string{
 	"&": "&amp;",
@@ -429,36 +445,18 @@ var tableHtml5 = map[string]string{
 	"𝕪": "&yopf;", "𝕫": "&zopf;",
 }
 
-// > func array get_html_translation_table ( [ int $table = HTML_SPECIALCHARS [, int $flags = ENT_COMPAT | ENT_HTML401 [, string $encoding = "UTF-8" ]]] )
-func fncGetHtmlTranslationTable(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	var tableArgs core.Optional[phpv.ZInt]
-	var flagsArgs core.Optional[phpv.ZInt]
-	var encodingArgs core.Optional[phpv.ZString]
-	_, err := core.Expand(ctx, args, &tableArgs, &flagsArgs, &encodingArgs)
-	if err != nil {
-		return nil, err
-	}
+type translationEntry struct {
+	key   string
+	value string
+}
 
-	table := tableArgs.GetOrDefault(HTML_SPECIALCHARS)
-	flags := flagsArgs.GetOrDefault(ENT_COMPAT | ENT_HTML401)
-
-	if encodingArgs.HasArg() && strings.ToUpper(string(encodingArgs.Get())) != "UTF-8" {
-		// TODO: encoding := encodingArgs.GetOrDefault("UTF-8")
-		return nil, ctx.FuncErrorf("only UTF-8 encoding is supported for now")
-	}
-
-	type row struct {
-		key   string
-		value string
-	}
-	rows := []*row{}
-	result := phpv.NewZArray()
-
+func getHtmlTranslationTable(table phpv.ZInt, flags phpv.ZInt) []*translationEntry {
+	entries := []*translationEntry{}
 	quoteFlags := flags & (ENT_HTML_QUOTE_DOUBLE | ENT_HTML_QUOTE_SINGLE)
 	flags &= ^(ENT_HTML_QUOTE_DOUBLE | ENT_HTML_QUOTE_SINGLE)
 
 	if quoteFlags&ENT_HTML_QUOTE_DOUBLE > 0 {
-		rows = append(rows, &row{`"`, `&quot;`})
+		entries = append(entries, &translationEntry{`"`, `&quot;`})
 	}
 
 	// Note: flags is divided into groups
@@ -482,47 +480,130 @@ func fncGetHtmlTranslationTable(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal
 	if table == HTML_SPECIALCHARS {
 		if quoteFlags&ENT_HTML_QUOTE_SINGLE > 0 {
 			if flags&(ENT_XML1|ENT_XHTML) > 0 {
-				rows = append(rows, &row{`'`, `&apos;`})
+				entries = append(entries, &translationEntry{`'`, `&apos;`})
 			} else {
-				rows = append(rows, &row{`'`, `&#039;`})
+				entries = append(entries, &translationEntry{`'`, `&#039;`})
 			}
 		}
 
 		for k, v := range tableBase {
-			rows = append(rows, &row{k, v})
+			entries = append(entries, &translationEntry{k, v})
 		}
 	} else {
 		if quoteFlags&ENT_HTML_QUOTE_SINGLE > 0 {
 			if flags&ENT_XML1 > 0 {
-				rows = append(rows, &row{`'`, `&apos;`})
+				entries = append(entries, &translationEntry{`'`, `&apos;`})
 			} else {
-				rows = append(rows, &row{`'`, `&#039;`})
+				entries = append(entries, &translationEntry{`'`, `&#039;`})
 			}
 		}
 
 		for k, v := range tableBase {
-			rows = append(rows, &row{k, v})
+			entries = append(entries, &translationEntry{k, v})
 		}
 
 		if flags != ENT_XML1 {
 			if flags == ENT_HTML401 || flags == ENT_XHTML {
 				for k, v := range table401 {
-					rows = append(rows, &row{k, v})
+					entries = append(entries, &translationEntry{k, v})
 				}
 			} else if flags == ENT_HTML5 {
 				for k, v := range tableHtml5 {
-					rows = append(rows, &row{k, v})
+					entries = append(entries, &translationEntry{k, v})
 				}
 			}
 		}
 	}
 
-	sort.SliceStable(rows, func(i, j int) bool {
-		return rows[i].key < rows[j].key
-	})
-	for _, row := range rows {
-		result.OffsetSet(ctx, phpv.ZStr(row.key), phpv.ZStr(row.value))
+	return entries
+}
+
+// > func array get_html_translation_table ( [ int $table = HTML_SPECIALCHARS [, int $flags = ENT_COMPAT | ENT_HTML401 [, string $encoding = "UTF-8" ]]] )
+func fncGetHtmlTranslationTable(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var tableArg core.Optional[phpv.ZInt]
+	var flagsArgs core.Optional[phpv.ZInt]
+	var encodingArgs core.Optional[phpv.ZString]
+	_, err := core.Expand(ctx, args, &tableArg, &flagsArgs, &encodingArgs)
+	if err != nil {
+		return nil, err
 	}
 
+	table := tableArg.GetOrDefault(HTML_SPECIALCHARS)
+	flags := flagsArgs.GetOrDefault(ENT_COMPAT | ENT_HTML401)
+
+	if encodingArgs.HasArg() && strings.ToUpper(string(encodingArgs.Get())) != "UTF-8" {
+		// TODO: encoding := encodingArgs.GetOrDefault("UTF-8")
+		return nil, ctx.FuncErrorf("only UTF-8 encoding is supported for now")
+	}
+
+	entries := getHtmlTranslationTable(table, flags)
+	sort.SliceStable(entries, func(i, j int) bool {
+		return entries[i].key < entries[j].key
+	})
+
+	result := phpv.NewZArray()
+	for _, row := range entries {
+		result.OffsetSet(ctx, phpv.ZStr(row.key), phpv.ZStr(row.value))
+	}
 	return result.ZVal(), nil
+}
+
+// > func string htmlspecialchars ( string $string [, int $flags = ENT_COMPAT | ENT_HTML401 [, string $encoding = ini_get("default_charset") [, bool $double_encode = TRUE ]]] )
+func fncHtmlSpecialChars(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var str phpv.ZString
+	var flagsArg core.Optional[phpv.ZInt]
+	var encodingArg core.Optional[phpv.ZString]
+	var doubleEncodeArg core.Optional[phpv.ZBool]
+	_, err := core.Expand(ctx, args, &str, &flagsArg, &encodingArg, &doubleEncodeArg)
+	if err != nil {
+		return nil, err
+	}
+
+	// if encodingArg.HasArg() && strings.ToUpper(string(encodingArg.Get())) != "UTF-8" {
+	// TODO: encoding := encodingArgs.GetOrDefault("UTF-8")
+	// }
+
+	flags := flagsArg.GetOrDefault(ENT_COMPAT | ENT_HTML401)
+	doubleEncode := bool(doubleEncodeArg.GetOrDefault(true))
+
+	escape := map[string]string{}
+	for _, e := range getHtmlTranslationTable(HTML_SPECIALCHARS, flags) {
+		escape[e.key] = e.value
+	}
+
+	var buf bytes.Buffer
+	chars := []rune(str)
+	for i := 0; i < len(chars); i++ {
+		c := chars[i]
+
+		if c == '&' && !doubleEncode {
+			valid := false
+			var j int
+			var sub string
+			if k := slices.Index(chars[i:], ';'); k >= 0 {
+				j = min(i+k+1, len(chars))
+				sub = string(chars[i:j])
+				_, valid = entitySet[sub]
+			}
+			if valid {
+				i = j - 1
+				buf.WriteString(sub)
+				continue
+			}
+		}
+
+		if repl, ok := escape[string(c)]; ok {
+			end := min(i+len(repl)+1, len(str))
+			if !doubleEncode && (string(str[i:end]) == repl) {
+				i += len(repl) - 1
+			}
+			buf.WriteString(repl)
+		} else {
+
+			buf.WriteRune(c)
+		}
+
+	}
+
+	return phpv.ZStr(buf.String()), nil
 }
