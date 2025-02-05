@@ -3,6 +3,7 @@ package standard
 import (
 	"bytes"
 	"fmt"
+	"strings"
 
 	"github.com/MagicalTux/goro/core"
 	"github.com/MagicalTux/goro/core/phpv"
@@ -130,6 +131,93 @@ func urlDecode(s string, raw bool) string {
 		}
 	}
 	return buf.String()
+}
+
+func parseQuery(sep string, ctx phpv.Context, query string, array phpv.ZArrayAccess) (err error) {
+	getKeyPath := func(key string) (result []string) {
+		key = strings.TrimSpace(key)
+		if len(key) == 0 || key[0] == '[' {
+			return
+		}
+
+		var i, j, k int
+		i = strings.IndexRune(key, '[')
+		if i < 0 {
+			result = []string{key}
+			goto Return
+		}
+		j = strings.IndexRune(key[i:], ']')
+		if j < 0 {
+			result = []string{key}
+			goto Return
+		}
+
+		result = []string{key[:i], key[i+1 : i+j]}
+
+		i = j + 1
+		for i < len(key) {
+			j := strings.IndexRune(key[i:], '[')
+			if j < 0 {
+				goto Return
+			}
+			k = strings.IndexRune(key[i+j:], ']')
+			if k < 0 {
+				goto Return
+			}
+			result = append(result, key[i+j+1:i+k+1])
+			i += k + 1
+		}
+
+	Return:
+		i = strings.IndexRune(result[0], '[')
+		if i >= 0 {
+			result[0] = strings.NewReplacer(
+				"[", "_",
+				".", "_",
+				" ", "_",
+			).Replace(result[0][:i+1]) + result[0][i+1:]
+		}
+
+		return
+	}
+
+	for query != "" {
+		var key string
+		key, query, _ = strings.Cut(query, sep)
+		if strings.Contains(key, ";") {
+			err = fmt.Errorf("invalid semicolon separator in query")
+			continue
+		}
+		if key == "" {
+			continue
+		}
+		key, value, _ := strings.Cut(key, "=")
+
+		key = urlDecode(key, true)
+		value = urlDecode(value, true)
+
+		container := array
+		paths := getKeyPath(key)
+		if len(paths) == 0 {
+			continue
+		}
+
+		for i := 0; i < len(paths)-1; i++ {
+			k := paths[i]
+			arr := phpv.NewZArray()
+
+			if k != "" {
+				container.OffsetSet(ctx, phpv.ZStr(k), arr.ZVal())
+			} else {
+				container.OffsetSet(ctx, nil, arr.ZVal())
+			}
+			container = arr
+		}
+
+		container.OffsetSet(ctx, phpv.ZStr(paths[len(paths)-1]), phpv.ZStr(value))
+	}
+
+	return err
 }
 
 func isHex(c rune) bool {

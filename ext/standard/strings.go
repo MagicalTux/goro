@@ -10,7 +10,6 @@ import (
 	"log"
 	"math"
 	"math/rand/v2"
-	"net/url"
 	"os"
 	"regexp"
 	"sort"
@@ -624,53 +623,46 @@ func fncStrOrd(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZInt(int(fc)).ZVal(), nil
 }
 
-// > func void parse_str ( string $string, array &$result )
+// > func void parse_str ( string $encoded_string [, array &$result ] )
 func fncStrParseStr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var str phpv.ZString
-	var arrayArg core.Ref[*phpv.ZArray]
+	var arg core.OptionalRef[*phpv.ZVal]
 
-	_, err := core.Expand(ctx, args, &str, &arrayArg)
+	_, err := core.Expand(ctx, args, &str, &arg)
 	if err != nil {
 		return nil, err
 	}
 
-	var array *phpv.ZArray
-	if arrayArg.Value == nil {
+	if !arg.HasArg() {
+		if err := ctx.Deprecated("Calling parse_str() without the result argument is deprecated"); err != nil {
+			return nil, err
+		}
+	}
+
+	sep := ctx.GetConfig("arg_separator.input", phpv.ZStr("&"))
+
+	var array phpv.ZArrayAccess
+	if !arg.HasArg() {
+		array = ctx.Parent(1)
+	} else if arg.Get().GetType() != phpv.ZtArray {
 		array = phpv.NewZArray()
 	} else {
-		array = arrayArg.Get()
+		arr := arg.Get().AsArray(ctx)
+		arr.Clear(ctx)
+		array = arr
 	}
 
-	u, err := url.Parse("?" + string(str))
+	err = parseQuery(sep.String(), ctx, string(str), array)
 	if err != nil {
 		return nil, err
 	}
 
-	for k, v := range u.Query() {
-		if len(v) == 0 {
-			array.OffsetSet(ctx, phpv.ZStr(k), phpv.ZStr(""))
-			continue
-		}
-
-		bracketIndex := strings.Index(k, "[]")
-		if bracketIndex >= 0 {
-			// PHP removes [] and everything after it
-			// e.g. foo[]xyz=1 becomes foo => 1
-			k = k[0:bracketIndex]
-		}
-
-		if len(v) > 1 || bracketIndex >= 0 {
-			values := phpv.NewZArray()
-			for _, e := range v {
-				values.OffsetSet(ctx, nil, phpv.ZStr((e)))
-			}
-			array.OffsetSet(ctx, phpv.ZStr(k), values.ZVal())
-		} else {
-			array.OffsetSet(ctx, phpv.ZStr(k), phpv.ZStr(v[0]))
-		}
+	if arg.HasArg() {
+		arr := array.(*phpv.ZArray)
+		arg.Set(ctx, arr.ZVal())
 	}
 
-	return array.ZVal(), nil
+	return nil, nil
 }
 
 // > func string quotemeta ( string $string )
