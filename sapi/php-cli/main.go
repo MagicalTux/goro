@@ -53,7 +53,11 @@ func main() {
 		}
 	}
 	for k, v := range options.IniEntries {
-		ctx.SetLocalConfig(phpv.ZString(k), phpv.ZStr(v))
+		val, err := cfg.EvalConfigValue(v)
+		if err != nil {
+			val = phpv.ZStr(v)
+		}
+		ctx.SetLocalConfig(phpv.ZString(k), val)
 	}
 
 	if p.ScriptFilename != "" {

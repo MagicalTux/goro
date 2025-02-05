@@ -35,7 +35,7 @@ func New() *Config {
 		ctx:    iniCtx,
 	}
 	for varName, entry := range Defaults {
-		expr, err := c.eval(entry.RawDefault)
+		expr, err := c.EvalConfigValue(entry.RawDefault)
 		if err != nil {
 			panic(fmt.Sprintf("failed to initialize ini default for %s: %s", varName, err))
 		}
@@ -75,7 +75,7 @@ func (c *Config) IterateConfig() iter.Seq2[string, phpv.IniValue] {
 	}
 }
 
-func (c *Config) eval(expr string) (*phpv.ZVal, error) {
+func (c *Config) EvalConfigValue(expr string) (*phpv.ZVal, error) {
 	switch expr {
 	case "1", "On", "True", "Yes":
 		return phpv.ZStr("1"), nil
@@ -140,7 +140,7 @@ func (c *Config) Parse(r io.Reader) error {
 		k := l[:pos]
 		l = l[pos+1:]
 
-		expr, err := c.eval(l)
+		expr, err := c.EvalConfigValue(l)
 		if err != nil {
 			return err
 		}
