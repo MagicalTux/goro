@@ -561,26 +561,47 @@ func fncStrNumberFormat(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 
 	n, fac := math.Modf(float64(num))
 
-	for {
-		base := math.Floor(math.Log10(n))
-		x := int(n / math.Pow10(int(base)))
+	if decimals == 0 {
+		n += math.Round(fac)
+	}
 
-		buf.WriteString(strconv.Itoa(x))
-		if int(base)%3 == 0 && base != 0 {
-			buf.WriteString(thousandsSep)
-		}
+	if n == 0 {
+		buf.WriteString("0")
+	} else {
+		for {
+			base := int(math.Log10(n))
+			x := int(n / math.Pow10(base))
 
-		n = float64(int(n) % int(math.Pow10(int(base))))
+			buf.WriteString(strconv.Itoa(x))
+			if base%3 == 0 && base != 0 {
+				buf.WriteString(thousandsSep)
+			}
 
-		if n == 0 {
-			break
+			n = float64(int(n) % int(math.Pow10(base)))
+			nextBase := int(math.Log10(n))
+			if base-nextBase > 1 {
+				for b := base - 1; b > nextBase; b-- {
+					buf.WriteString("0")
+					if b%3 == 0 {
+						buf.WriteString(thousandsSep)
+					}
+				}
+			}
+			if n == 0 {
+				break
+			}
 		}
 	}
 
-	if fac > 0 && decimals > 0 {
-		n := math.Round(fac * math.Pow10(decimals))
-		buf.WriteString(decimalSep)
-		buf.WriteString(strconv.Itoa(int(n)))
+	if decimals > 0 {
+		if fac > 0 {
+			n := math.Round(fac * math.Pow10(decimals))
+			buf.WriteString(decimalSep)
+			buf.WriteString(strconv.Itoa(int(n)))
+		} else {
+			buf.WriteString(decimalSep)
+			buf.WriteString(strings.Repeat("0", decimals))
+		}
 	}
 
 	return phpv.ZStr(buf.String()), nil
