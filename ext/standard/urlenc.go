@@ -133,14 +133,23 @@ func urlDecode(s string, raw bool) string {
 	return buf.String()
 }
 
-func parseQuery(sep string, ctx phpv.Context, query string, array phpv.ZArrayAccess) (err error) {
+func parseQuery(ctx phpv.Context, query string, array phpv.ZArrayAccess) (err error) {
 	getKeyPath := func(key string) (result []string) {
+		// getKeyPath("x") == []string{"x"}
+		// getKeyPath("x[]") == []string{"x", ""}
+		// getKeyPath("x[y]") == []string{"x", "y"}
+		// getKeyPath("x[y][]") == []string{"x", "y", ""}
+		// getKeyPath("x[") == []string{"x_"}
+		// getKeyPath("x][") == []string{"x]_"}
+		// getKeyPath("x][[") == []string{"x]_["}
+		// getKeyPath("x][[]") == []string{"x]", "["}
+
 		key = strings.TrimSpace(key)
 		if len(key) == 0 || key[0] == '[' {
 			return
 		}
 
-		var i, j, k int
+		var i, j int
 		i = strings.IndexRune(key, '[')
 		if i < 0 {
 			result = []string{key}
@@ -154,47 +163,50 @@ func parseQuery(sep string, ctx phpv.Context, query string, array phpv.ZArrayAcc
 
 		result = []string{key[:i], key[i+1 : i+j]}
 
-		i = j + 1
-		for i < len(key) {
-			j := strings.IndexRune(key[i:], '[')
+		key = key[i+j+1:]
+		for len(key) > 0 {
+			i = strings.IndexRune(key, '[')
+			if i < 0 {
+				goto Return
+			}
+			j = strings.IndexRune(key[i:], ']')
 			if j < 0 {
 				goto Return
 			}
-			k = strings.IndexRune(key[i+j:], ']')
-			if k < 0 {
-				goto Return
-			}
-			result = append(result, key[i+j+1:i+k+1])
-			i += k + 1
+			result = append(result, key[i+1:j])
+			key = key[j+1:]
 		}
 
 	Return:
-		i = strings.IndexRune(result[0], '[')
+		tmp := result[0]
+		tmp = strings.NewReplacer(".", "_", " ", "_").Replace(tmp)
+		i = strings.IndexRune(tmp, '[')
 		if i >= 0 {
-			result[0] = strings.NewReplacer(
-				"[", "_",
-				".", "_",
-				" ", "_",
-			).Replace(result[0][:i+1]) + result[0][i+1:]
+			// if there's a [ in the key, replace only the first one
+			// "key..[abc[[" == "key.._abc[["
+			tmp = strings.Replace(tmp[:i+1], "[", "_", 1) + tmp[i+1:]
 		}
+		result[0] = tmp
 
 		return
 	}
+
+	sep := ctx.GetConfig("arg_separator.input", phpv.ZStr("&")).String()
 
 	for query != "" {
 		var key string
 		key, query, _ = strings.Cut(query, sep)
 		if strings.Contains(key, ";") {
 			err = fmt.Errorf("invalid semicolon separator in query")
-			continue
+			return
 		}
 		if key == "" {
 			continue
 		}
 		key, value, _ := strings.Cut(key, "=")
 
-		key = urlDecode(key, true)
-		value = urlDecode(value, true)
+		key = urlDecode(key, false)
+		value = urlDecode(value, false)
 
 		container := array
 		paths := getKeyPath(key)
@@ -202,9 +214,20 @@ func parseQuery(sep string, ctx phpv.Context, query string, array phpv.ZArrayAcc
 			continue
 		}
 
+		// query such as arr[][x]=1234 will create a nested array
+		// ["arr" => [ 0 => [x => 1234]]]
 		for i := 0; i < len(paths)-1; i++ {
 			k := paths[i]
-			arr := phpv.NewZArray()
+			var arr *phpv.ZArray
+			if a, ok, _ := container.OffsetCheck(ctx, phpv.ZStr(k)); ok {
+				if a.GetType() != phpv.ZtArray {
+					arr = phpv.NewZArray()
+				} else {
+					arr = a.AsArray(ctx)
+				}
+			} else {
+				arr = phpv.NewZArray()
+			}
 
 			if k != "" {
 				container.OffsetSet(ctx, phpv.ZStr(k), arr.ZVal())
@@ -214,7 +237,13 @@ func parseQuery(sep string, ctx phpv.Context, query string, array phpv.ZArrayAcc
 			container = arr
 		}
 
-		container.OffsetSet(ctx, phpv.ZStr(paths[len(paths)-1]), phpv.ZStr(value))
+		k := paths[len(paths)-1]
+		if k != "" {
+			container.OffsetSet(ctx, phpv.ZStr(k), phpv.ZStr(value))
+		} else {
+			container.OffsetSet(ctx, nil, phpv.ZStr(value))
+		}
+
 	}
 
 	return err

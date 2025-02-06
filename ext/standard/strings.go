@@ -639,8 +639,6 @@ func fncStrParseStr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		}
 	}
 
-	sep := ctx.GetConfig("arg_separator.input", phpv.ZStr("&"))
-
 	var array phpv.ZArrayAccess
 	if !arg.HasArg() {
 		array = ctx.Parent(1)
@@ -652,7 +650,7 @@ func fncStrParseStr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		array = arr
 	}
 
-	err = parseQuery(sep.String(), ctx, string(str), array)
+	err = parseQuery(ctx, string(str), array)
 	if err != nil {
 		return nil, err
 	}
@@ -747,7 +745,6 @@ func fncStrSha1File(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // > func bool str_contains ( string $haystack, string $needle )
 func fncStrContains(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var haystack, needle phpv.ZString
-
 	_, err := core.Expand(ctx, args, &haystack, &needle)
 	if err != nil {
 		return phpv.ZBool(false).ZVal(), err

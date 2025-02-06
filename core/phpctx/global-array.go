@@ -20,6 +20,22 @@ func (c *Global) OffsetExists(ctx phpv.Context, name phpv.Val) (bool, error) {
 	return c.h.HasString(name.(phpv.ZString)), nil
 }
 
+func (c *Global) OffsetCheck(ctx phpv.Context, name phpv.Val) (*phpv.ZVal, bool, error) {
+	name, err := name.AsVal(ctx, phpv.ZtString)
+	if err != nil {
+		return nil, false, err
+	}
+	switch name.(phpv.ZString) {
+	case "GLOBALS":
+		return c.h.Array().ZVal(), true, nil
+	}
+
+	if !c.h.HasString(name.(phpv.ZString)) {
+		return nil, false, err
+	}
+	return c.h.GetString(name.(phpv.ZString)), true, nil
+}
+
 func (c *Global) OffsetGet(ctx phpv.Context, name phpv.Val) (*phpv.ZVal, error) {
 	name, err := name.AsVal(ctx, phpv.ZtString)
 	if err != nil {

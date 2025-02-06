@@ -10,6 +10,7 @@ type ZArrayAccess interface {
 	OffsetSet(ctx Context, key Val, value *ZVal) error
 	OffsetUnset(ctx Context, key Val) error
 	OffsetExists(ctx Context, key Val) (bool, error)
+	OffsetCheck(ctx Context, key Val) (*ZVal, bool, error)
 }
 
 type ZIterable interface {
