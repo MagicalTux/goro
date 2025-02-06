@@ -146,6 +146,7 @@ func init() {
 			"hebrevc":                    {Func: fncHebrevc, Args: []*phpctx.ExtFunctionArg{}},
 			"hex2bin":                    {Func: fncHex2Bin, Args: []*phpctx.ExtFunctionArg{}},
 			"hexdec":                     {Func: mathHexDec, Args: []*phpctx.ExtFunctionArg{}},
+			"highlight_file":             {Func: fncHighlightFile, Args: []*phpctx.ExtFunctionArg{}},
 			"hrtime":                     {Func: stdFuncHrTime, Args: []*phpctx.ExtFunctionArg{}},
 			"htmlspecialchars":           {Func: fncHtmlSpecialChars, Args: []*phpctx.ExtFunctionArg{}},
 			"htmlspecialchars_decode":    {Func: fncHtmlSpecialCharsDecode, Args: []*phpctx.ExtFunctionArg{}},
@@ -242,6 +243,7 @@ func init() {
 			"sha1":                       {Func: fncStrSha1, Args: []*phpctx.ExtFunctionArg{}},
 			"sha1_file":                  {Func: fncStrSha1File, Args: []*phpctx.ExtFunctionArg{}},
 			"shell_exec":                 {Func: fncShellExec, Args: []*phpctx.ExtFunctionArg{}},
+			"show_source":                {Func: fncHighlightFile, Args: []*phpctx.ExtFunctionArg{}}, // alias
 			"shuffle":                    {Func: fncArrayShuffle, Args: []*phpctx.ExtFunctionArg{}},
 			"sleep":                      {Func: stdFuncSleep, Args: []*phpctx.ExtFunctionArg{}},
 			"sort":                       {Func: fncArraySort, Args: []*phpctx.ExtFunctionArg{}},
