@@ -72,7 +72,7 @@ func mathBinDec(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZInt(result).ZVal(), nil
 }
 
-// > func number octdec ( string $hex_string )
+// > func number octdec ( string $oct_string )
 func mathOctDec(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var num phpv.ZString
 	_, err := core.Expand(ctx, args, &num)
@@ -132,7 +132,7 @@ func mathHexDec(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZInt(result).ZVal(), nil
 }
 
-// > func number base_convert ( string $hex_string )
+// > func number base_convert ( string $number , int $frombase , int $tobase )
 func mathBaseConvert(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var num phpv.ZString
 	var fromBase, toBase phpv.ZInt

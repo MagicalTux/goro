@@ -223,6 +223,7 @@ func init() {
 			"print_r":                    {Func: fncPrintR, Args: []*phpctx.ExtFunctionArg{}},
 			"printf":                     {Func: fncPrintf, Args: []*phpctx.ExtFunctionArg{}},
 			"putenv":                     {Func: putenv, Args: []*phpctx.ExtFunctionArg{}},
+			"quoted_printable_decode":    {Func: fncQuotedPrintableDecode, Args: []*phpctx.ExtFunctionArg{}},
 			"quotemeta":                  {Func: fncStrQuoteMeta, Args: []*phpctx.ExtFunctionArg{}},
 			"rad2deg":                    {Func: mathRad2Deg, Args: []*phpctx.ExtFunctionArg{}},
 			"rand":                       {Func: mathMtRand, Args: []*phpctx.ExtFunctionArg{}}, // alias
