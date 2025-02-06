@@ -15,7 +15,7 @@ func Zprintf(ctx phpv.Context, fmt phpv.ZString, arg ...*phpv.ZVal) (*phpv.ZVal,
 	in := []byte(fmt)
 	argp := 0
 
-	defaultPrecision := int(ctx.GetConfig("precision", phpv.ZInt(14).ZVal()).AsInt(ctx))
+	defaultPrecision := int(ctx.GetConfig("precision", phpv.ZInt(6).ZVal()).AsInt(ctx))
 
 	for {
 		p := bytes.IndexByte(in, '%')
@@ -88,7 +88,23 @@ func Zprintf(ctx phpv.Context, fmt phpv.ZString, arg ...*phpv.ZVal) (*phpv.ZVal,
 			if err != nil {
 				return nil, err
 			}
-			r = strconv.AppendFloat(r, float64(v.Value().(phpv.ZFloat)), fChar, floatPrecision, 64)
+			// this format option is not affected by the ini config precision
+			expPrecision := 6
+
+			// In Go, the exponent has a leading 0 if it's less than 10
+			//   Go:  1.123456E+01
+			//   PHP: 1.123456E+1
+			s := strconv.FormatFloat(float64(v.Value().(phpv.ZFloat)), fChar, expPrecision, 64)
+			plusIndex := strings.LastIndexByte(s, '+')
+			if plusIndex >= 0 && plusIndex < len(s)-1 && s[plusIndex+1] == '0' {
+				// this code removes that leading 0, so the tests
+				// can pass, but probably could be removed later
+				// since it's not that important.
+				r = append(r, s[0:plusIndex+1]...)
+				r = append(r, s[plusIndex+2:]...)
+			} else {
+				r = append(r, []byte(s)...)
+			}
 		case 'f', 'F':
 			// next arg is a float
 			// TODO: f is locale aware, F is not
@@ -103,7 +119,7 @@ func Zprintf(ctx phpv.Context, fmt phpv.ZString, arg ...*phpv.ZVal) (*phpv.ZVal,
 			if err != nil {
 				return nil, err
 			}
-			r = strconv.AppendInt(r, int64(v.Value().(phpv.ZInt)), 8)
+			r = strconv.AppendInt(r, int64(v.Value().(phpv.ZInt))&0xFFFFFFFF, 8)
 		case 's':
 			// next arg is a string
 			v, err = v.As(ctx, phpv.ZtString)
@@ -118,14 +134,14 @@ func Zprintf(ctx phpv.Context, fmt phpv.ZString, arg ...*phpv.ZVal) (*phpv.ZVal,
 			if err != nil {
 				return nil, err
 			}
-			r = strconv.AppendUint(r, uint64(v.Value().(phpv.ZInt)), 10)
+			r = strconv.AppendUint(r, uint64(v.Value().(phpv.ZInt))&0xFFFFFFFF, 10)
 		case 'x':
 			// next arg is an int
 			v, err = v.As(ctx, phpv.ZtInt)
 			if err != nil {
 				return nil, err
 			}
-			r = strconv.AppendInt(r, int64(v.Value().(phpv.ZInt)), 16)
+			r = strconv.AppendInt(r, int64(v.Value().(phpv.ZInt))&0xFFFFFFFF, 16)
 		case 'X':
 			// next arg is an int
 			v, err = v.As(ctx, phpv.ZtInt)
@@ -133,7 +149,7 @@ func Zprintf(ctx phpv.Context, fmt phpv.ZString, arg ...*phpv.ZVal) (*phpv.ZVal,
 				return nil, err
 			}
 
-			s := strconv.FormatInt(int64(v.Value().(phpv.ZInt)), 16)
+			s := strconv.FormatInt(int64(v.Value().(phpv.ZInt))&0xFFFFFFFF, 16)
 			s = strings.ToUpper(s)
 			r = append(r, []byte(s)...)
 		}

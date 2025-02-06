@@ -303,7 +303,7 @@ var Defaults = map[string]IniDirective{
 	"phar.require_hash":                     {`"1"`, INI_ALL},
 	"phar.cache_list":                       {`""`, INI_SYSTEM},
 	"post_max_size":                         {`"8M"`, INI_PERDIR},
-	"precision":                             {`"14"`, INI_ALL},
+	"precision":                             {`"6"`, INI_ALL},
 	"realpath_cache_size":                   {`"16K"`, INI_SYSTEM},
 	"realpath_cache_ttl":                    {`"120"`, INI_SYSTEM},
 	"register_argc_argv":                    {`"1"`, INI_PERDIR},
