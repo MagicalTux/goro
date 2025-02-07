@@ -15,7 +15,7 @@ func Zprintf(ctx phpv.Context, fmt phpv.ZString, arg ...*phpv.ZVal) (*phpv.ZVal,
 	in := []byte(fmt)
 	argp := 0
 
-	defaultPrecision := int(ctx.GetConfig("precision", phpv.ZInt(6).ZVal()).AsInt(ctx))
+	defaultPrecision := int(ctx.GetConfig("precision", phpv.ZInt(14).ZVal()).AsInt(ctx))
 
 	for {
 		p := bytes.IndexByte(in, '%')
@@ -119,7 +119,7 @@ func Zprintf(ctx phpv.Context, fmt phpv.ZString, arg ...*phpv.ZVal) (*phpv.ZVal,
 			if err != nil {
 				return nil, err
 			}
-			r = strconv.AppendInt(r, int64(v.Value().(phpv.ZInt))&0xFFFFFFFF, 8)
+			r = strconv.AppendUint(r, uint64(v.Value().(phpv.ZInt)), 8)
 		case 's':
 			// next arg is a string
 			v, err = v.As(ctx, phpv.ZtString)
@@ -134,14 +134,14 @@ func Zprintf(ctx phpv.Context, fmt phpv.ZString, arg ...*phpv.ZVal) (*phpv.ZVal,
 			if err != nil {
 				return nil, err
 			}
-			r = strconv.AppendUint(r, uint64(v.Value().(phpv.ZInt))&0xFFFFFFFF, 10)
+			r = strconv.AppendUint(r, uint64(v.Value().(phpv.ZInt)), 10)
 		case 'x':
 			// next arg is an int
 			v, err = v.As(ctx, phpv.ZtInt)
 			if err != nil {
 				return nil, err
 			}
-			r = strconv.AppendInt(r, int64(v.Value().(phpv.ZInt))&0xFFFFFFFF, 16)
+			r = strconv.AppendInt(r, int64(v.Value().(phpv.ZInt)), 16)
 		case 'X':
 			// next arg is an int
 			v, err = v.As(ctx, phpv.ZtInt)
@@ -149,7 +149,7 @@ func Zprintf(ctx phpv.Context, fmt phpv.ZString, arg ...*phpv.ZVal) (*phpv.ZVal,
 				return nil, err
 			}
 
-			s := strconv.FormatInt(int64(v.Value().(phpv.ZInt))&0xFFFFFFFF, 16)
+			s := strconv.FormatInt(int64(v.Value().(phpv.ZInt)), 16)
 			s = strings.ToUpper(s)
 			r = append(r, []byte(s)...)
 		}

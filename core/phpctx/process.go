@@ -136,6 +136,10 @@ func (p *Process) CommandLine(args []string) error {
 		case "-n", "--no-php-ini":
 			options.NoIniFile = true
 
+		case "-q", "--no-header":
+			// Quiet-mode is only for CGI, but
+			// add this anyway since the test uses it
+
 		default:
 			return fmt.Errorf("unknown flag: %s", arg)
 
