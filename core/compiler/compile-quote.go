@@ -199,6 +199,8 @@ func unescapePhpQuotedString(in string) phpv.ZString {
 			t.WriteByte('\f')
 		case 'r':
 			t.WriteByte('\r')
+		case '$':
+			t.WriteByte('$')
 		case '"', '\\':
 			t.WriteByte(in[0])
 		case '0', '1', '2', '3', '4', '5', '6', '7':

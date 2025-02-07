@@ -55,7 +55,7 @@ func (sl stringLexer) lexStringWhitespace(l *Lexer) lexState {
 		case '\\':
 			// handle case where "\$" == "$"
 			if l.hasPrefix(`\$`) {
-				l.input.ReadRune() // skip \
+				l.next()
 				l.next()
 			} else {
 				// advance (ignore) one

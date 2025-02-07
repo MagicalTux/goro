@@ -212,3 +212,8 @@ func (i *Item) Loc() *phpv.Loc {
 func Rune(r rune) ItemType {
 	return ItemType(r) + itemMax
 }
+
+func Type(t ItemType) rune {
+	c := rune(t - itemMax)
+	return c
+}
