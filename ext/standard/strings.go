@@ -1924,6 +1924,102 @@ func fncUcWords(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZStr(buf.String()), nil
 }
 
+// > func string soundex ( string $str )
+func fncSoundex(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var str phpv.ZString
+	_, err := core.Expand(ctx, args, &str)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	numeric := func(ch byte) byte {
+		switch unicode.ToLower(rune(ch)) {
+		case 'a', 'e', 'h', 'i', 'o', 'u', 'w', 'y':
+			return '0'
+		case 'b', 'f', 'p', 'v':
+			return '1'
+		case 'c', 'g', 'j', 'k', 'q', 's', 'x', 'z':
+			return '2'
+		case 'd', 't':
+			return '3'
+		case 'l':
+			return '4'
+		case 'm', 'n':
+			return '5'
+		case 'r':
+			return '6'
+		}
+		return 0
+	}
+
+	code := []byte{str[0], '0', '0', '0'}
+
+	j := 1
+	chars := []byte(str)
+	for i := 1; i < len(chars) && j < 4; i++ {
+		cur := numeric(chars[i])
+		prev := numeric(chars[i-1])
+		if cur > 0 && cur != prev && cur != '0' {
+			code[j] = cur
+			j++
+		}
+	}
+
+	return phpv.ZStr(string(code)), nil
+}
+
+// > func string similar_text ( string $first , string $second [, float &$percent ] )
+func fncSimilarText(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var first phpv.ZString
+	var second phpv.ZString
+	var percent core.OptionalRef[phpv.ZFloat]
+	_, err := core.Expand(ctx, args, &first, &second, &percent)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	sum := commonCharacters(string(first), string(second))
+	if percent.HasArg() {
+		percent.Set(ctx, phpv.ZFloat(sum*200)/phpv.ZFloat(len(first)+len(second)))
+	}
+
+	return phpv.ZInt(sum).ZVal(), nil
+}
+
+func commonCharacters(a, b string) int {
+	pos1, pos2, max := 0, 0, 0
+	for i := 0; i < len(a); i++ {
+		for j := 0; j < len(b); j++ {
+			l := 0
+			for l+i < len(a) && l+j < len(b) {
+				if a[l+i] != b[l+j] {
+					break
+				}
+				l++
+			}
+			if l > max {
+				pos1 = i
+				pos2 = j
+				max = l
+			}
+		}
+	}
+
+	sum := max
+	if sum > 0 {
+		if pos1 > 0 && pos2 > 0 {
+			sum += commonCharacters(a[:pos1], b[:pos2])
+		}
+		if pos1+max < len(a) && pos2+max < len(b) && pos1+max <= len(a)/2 && pos2+max <= len(b)/2 {
+			a2 := a[pos1+max : len(a)-(pos1+max)]
+			b2 := b[pos2+max : len(b)-(pos2+max)]
+			sum += commonCharacters(a2, b2)
+		}
+	}
+
+	return sum
+}
+
 // > func string wordwrap ( string $str [, int $width = 75 [, string $break = "\n" [, bool $cut = FALSE ]]] )
 func fncWordWrap(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var strArg phpv.ZString

@@ -245,8 +245,10 @@ func init() {
 			"shell_exec":                 {Func: fncShellExec, Args: []*phpctx.ExtFunctionArg{}},
 			"show_source":                {Func: fncHighlightFile, Args: []*phpctx.ExtFunctionArg{}}, // alias
 			"shuffle":                    {Func: fncArrayShuffle, Args: []*phpctx.ExtFunctionArg{}},
+			"similar_text":               {Func: fncSimilarText, Args: []*phpctx.ExtFunctionArg{}},
 			"sleep":                      {Func: stdFuncSleep, Args: []*phpctx.ExtFunctionArg{}},
 			"sort":                       {Func: fncArraySort, Args: []*phpctx.ExtFunctionArg{}},
+			"soundex":                    {Func: fncSoundex, Args: []*phpctx.ExtFunctionArg{}},
 			"sprintf":                    {Func: fncSprintf, Args: []*phpctx.ExtFunctionArg{}},
 			"sqrt":                       {Func: mathSqrt, Args: []*phpctx.ExtFunctionArg{}},
 			"srand":                      {Func: mathMtSRand, Args: []*phpctx.ExtFunctionArg{}}, // alias
