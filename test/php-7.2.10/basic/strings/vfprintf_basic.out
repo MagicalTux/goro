@@ -1,7 +1,0 @@
-*** Testing vfprintf() : basic functionality ***
-Warning: fopen(): fopen(vfprintf_test.txt): failed to open stream: No such file or directory in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/vfprintf_basic.php on line 22
-
-Fatal error: Uncaught Error: Call to undefined function ftruncate in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/vfprintf_basic.php:10
-Stack trace:
-#0 {main}
-  thrown in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/vfprintf_basic.php on line 10

@@ -1,12 +1,0 @@
---
-     string(10) "!===Hello "
-     
-     -- Trim some non-white space characters from a string using a character range --
-013- string(10) "0123456789"
-013+ string(35) "0123456789ABCDEFGHIJKLMNOPQRSTUVWXY"
-     
-     -- Trim the ASCII control characters at the beginning of a string --
-016- string(14) "Example string"
-016+ string(16) "Example string
-017+ "
-     ===DONE===

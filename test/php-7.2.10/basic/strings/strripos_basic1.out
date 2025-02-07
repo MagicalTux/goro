@@ -1,8 +1,0 @@
-*** Testing strripos() function: basic functionality ***
-
--- regular string for haystack & needle --
-
-Fatal error: Uncaught Error: Call to undefined function strripos in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/strripos_basic1.php:13
-Stack trace:
-#0 {main}
-  thrown in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/strripos_basic1.php on line 13

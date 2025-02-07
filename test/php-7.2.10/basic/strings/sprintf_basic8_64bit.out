@@ -1,6 +1,0 @@
-*** Testing sprintf() : basic functionality - using octal format ***
-string(6) "format"
-string(2) "21"
-string(7) "21 -347"
-string(11) "21 -347 567"
-Done

@@ -1,8 +1,0 @@
-001- *** Testing str_shuffle() : basic functionality ***
-002- string(47) "%s"
-003- TEST PASSED
-004- ===DONE===
-001+ Fatal error: Uncaught Error: Parse error: syntax error, unexpected ')' in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/str_shuffle_basic.php:33
-002+ Stack trace:
-003+ #0 {main}
-004+   thrown in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/str_shuffle_basic.php on line 33

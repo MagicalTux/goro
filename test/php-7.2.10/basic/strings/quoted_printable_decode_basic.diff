@@ -1,8 +1,0 @@
-     *** Testing quoted_printable_decode() : basic functionality ***
-002- string(76) "fa776f772d666163746f72c1d0d5ddc5ceced9c50a20d4cfd2c7cfd7d9c520d0d2cfc5cbd4d9"
-003- ===DONE===
-002+ 
-003+ Fatal error: Uncaught Error: Call to undefined function quoted_printable_decode in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/quoted_printable_decode_basic.php:15
-004+ Stack trace:
-005+ #0 {main}
-006+   thrown in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/quoted_printable_decode_basic.php on line 15

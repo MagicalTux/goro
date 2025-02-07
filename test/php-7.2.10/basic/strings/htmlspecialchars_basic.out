@@ -1,7 +1,0 @@
-*** Testing htmlspecialchars() : basic functionality ***
-Basic tests
-
-Fatal error: Uncaught Error: Call to undefined function htmlspecialchars in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/htmlspecialchars_basic.php:15
-Stack trace:
-#0 {main}
-  thrown in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/htmlspecialchars_basic.php on line 15

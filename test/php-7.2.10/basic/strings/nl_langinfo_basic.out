@@ -1,6 +1,0 @@
-*** Testing nl_langinfo() : basic functionality ***
-
-Fatal error: Uncaught Error: Call to undefined function setlocale in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/nl_langinfo_basic.php:10
-Stack trace:
-#0 {main}
-  thrown in /home/ronald/proj/goro/test/php-7.2.10/basic/strings/nl_langinfo_basic.php on line 10
