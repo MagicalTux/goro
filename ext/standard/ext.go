@@ -282,6 +282,7 @@ func init() {
 			"strpos":                     {Func: fncStrPos, Args: []*phpctx.ExtFunctionArg{}},
 			"strrchr":                    {Func: fncStrRChr, Args: []*phpctx.ExtFunctionArg{}},
 			"strrev":                     {Func: fncStrRev, Args: []*phpctx.ExtFunctionArg{}},
+			"strripos":                   {Func: fncStrIRPos, Args: []*phpctx.ExtFunctionArg{}},
 			"strrpos":                    {Func: fncStrRPos, Args: []*phpctx.ExtFunctionArg{}},
 			"strstr":                     {Func: fncStrStr, Args: []*phpctx.ExtFunctionArg{}},
 			"strtok":                     {Func: fncStrtok, Args: []*phpctx.ExtFunctionArg{}},

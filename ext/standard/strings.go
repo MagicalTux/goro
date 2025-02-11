@@ -1449,28 +1449,27 @@ func fncStripCSlashes(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // > func int|false stripos ( string $haystack, string $needle, int $offset = 0 )
 func fncStrIPos(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var haystackArg, needleArg phpv.ZString
-	var offsetArg *phpv.ZInt
+	var offsetArg core.Optional[phpv.ZInt]
 	_, err := core.Expand(ctx, args, &haystackArg, &needleArg, &offsetArg)
 	if err != nil {
 		return phpv.ZBool(false).ZVal(), err
 	}
 
-	offset := 0
-	if offsetArg != nil {
-		offset = int(*offsetArg)
-	}
-
-	haystack := bytesLowerCaseArray([]byte(haystackArg))
-	needle := bytesLowerCaseArray([]byte(needleArg))
+	offset := int(offsetArg.GetOrDefault(0))
+	haystack := strings.ToLower(string(haystackArg))
+	needle := strings.ToLower(string(needleArg))
 
 	if offset >= len(haystack) {
 		return phpv.ZBool(false).ZVal(), nil
 	}
-	if offset > 0 {
+	if offset < 0 {
+		offset = len(haystack) + offset
+		haystack = haystack[offset:]
+	} else {
 		haystack = haystack[offset:]
 	}
 
-	result := bytes.Index(haystack, needle)
+	result := strings.Index(haystack, needle)
 	if result < 0 {
 		return phpv.ZBool(false).ZVal(), nil
 	}
@@ -1480,23 +1479,21 @@ func fncStrIPos(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // > func int|false strpos ( string $haystack, string $needle, int $offset = 0 )
 func fncStrPos(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var haystack, needle []byte
-	var offsetArg *phpv.ZInt
+	var offsetArg core.Optional[phpv.ZInt]
 	_, err := core.Expand(ctx, args, &haystack, &needle, &offsetArg)
 	if err != nil {
 		return phpv.ZBool(false).ZVal(), err
 	}
 
-	// TODO: handle case where needle is int
-
-	offset := 0
-	if offsetArg != nil {
-		offset = int(*offsetArg)
-	}
+	offset := int(offsetArg.GetOrDefault(0))
 
 	if offset >= len(haystack) {
 		return phpv.ZBool(false).ZVal(), nil
 	}
-	if offset > 0 {
+	if offset < 0 {
+		offset = len(haystack) + offset
+		haystack = haystack[offset:]
+	} else {
 		haystack = haystack[offset:]
 	}
 
@@ -1511,18 +1508,13 @@ func fncStrPos(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // > func int|false strrpos ( string $haystack, string $needle, int $offset = 0 )
 func fncStrRPos(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var haystack, needle []byte
-	var offsetArg *phpv.ZInt
+	var offsetArg core.Optional[phpv.ZInt]
 	_, err := core.Expand(ctx, args, &haystack, &needle, &offsetArg)
 	if err != nil {
 		return phpv.ZBool(false).ZVal(), err
 	}
 
-	// TODO: handle case where needle is int
-
-	offset := 0
-	if offsetArg != nil {
-		offset = int(*offsetArg)
-	}
+	offset := int(offsetArg.GetOrDefault(0))
 
 	if offset >= len(haystack) {
 		return phpv.ZBool(false).ZVal(), nil
@@ -1538,6 +1530,41 @@ func fncStrRPos(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	} else {
 		n := len(haystack) + offset
 		result := bytes.LastIndex(haystack[:n], needle)
+		if result < 0 {
+			return phpv.ZBool(false).ZVal(), nil
+		}
+
+		return phpv.ZInt(result).ZVal(), nil
+	}
+}
+
+// > func int|false strripos ( string $haystack, string $needle, int $offset = 0 )
+func fncStrIRPos(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var haystackArg, needleArg []byte
+	var offsetArg core.Optional[phpv.ZInt]
+	_, err := core.Expand(ctx, args, &haystackArg, &needleArg, &offsetArg)
+	if err != nil {
+		return phpv.ZBool(false).ZVal(), err
+	}
+
+	offset := int(offsetArg.GetOrDefault(0))
+	haystack := strings.ToLower(string(haystackArg))
+	needle := strings.ToLower(string(needleArg))
+
+	if offset >= len(haystack) {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	if offset >= 0 {
+		haystack = haystack[offset:]
+		result := strings.LastIndex(haystack, needle)
+		if result < 0 {
+			return phpv.ZBool(false).ZVal(), nil
+		}
+
+		return phpv.ZInt(result + offset).ZVal(), nil
+	} else {
+		n := len(haystack) + offset
+		result := strings.LastIndex(haystack[:n], needle)
 		if result < 0 {
 			return phpv.ZBool(false).ZVal(), nil
 		}
