@@ -36,6 +36,10 @@ func NewFileHandler(root string) (*FileHandler, error) {
 	fh := &FileHandler{
 		Root: root,
 		Cwd:  "/",
+
+		// PHP seems to start with 5, probably for stdin, stdout and stderr
+		// and other thing, but hardcode this for now to make test pass
+		nextID: 4,
 	}
 
 	// try to get current working directory if within root

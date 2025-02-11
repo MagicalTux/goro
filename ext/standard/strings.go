@@ -2134,16 +2134,20 @@ func fncWordWrap(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 func strReplaceCommon(ctx phpv.Context, args []*phpv.ZVal, caseSensitive bool) (*phpv.ZVal, error) {
 	var search, replace, subject *phpv.ZVal
-	var count core.Ref[*phpv.ZInt]
+	var count core.OptionalRef[phpv.ZInt]
 	_, err := core.Expand(ctx, args, &search, &replace, &subject, &count)
 	if err != nil {
 		return nil, err
 	}
 
-	if count.Value == nil {
-		// avoid crash
-		var n phpv.ZInt
-		count.Set(ctx, &n)
+	if count.HasArg() {
+		count.Set(ctx, 0)
+	}
+
+	if search.GetType() == phpv.ZtString && replace.GetType() == phpv.ZtString {
+		if search.AsString(ctx) == "" && replace.AsString(ctx) == "" {
+			return phpv.ZStr(""), nil
+		}
 	}
 
 	if subject.GetType() == phpv.ZtArray {
@@ -2198,7 +2202,7 @@ func doStrReplace(
 	ctx phpv.Context,
 	subject phpv.ZString,
 	search, replace *phpv.ZVal,
-	count core.Ref[*phpv.ZInt],
+	count core.OptionalRef[phpv.ZInt],
 	caseSensitive bool,
 ) (phpv.ZString, error) {
 	if search.GetType() == phpv.ZtArray {
@@ -2248,7 +2252,7 @@ func doStrReplace(
 				subject = phpv.ZString(bytesReplace([]byte(subject), from_b, to_b, cnt, caseSensitive))
 
 				n := phpv.ZInt(cnt)
-				count.Set(ctx, &n)
+				count.Set(ctx, n)
 
 				it1.Next(ctx)
 				it2.Next(ctx)
@@ -2292,7 +2296,7 @@ func doStrReplace(
 			subject = phpv.ZString(bytesReplace([]byte(subject), from_b, to_b, cnt, caseSensitive))
 
 			n := phpv.ZInt(cnt)
-			count.Set(ctx, &n)
+			count.Set(ctx, n)
 
 			it1.Next(ctx)
 		}
@@ -2318,7 +2322,7 @@ func doStrReplace(
 	to_b := []byte(replace.AsString(ctx))
 	subject = phpv.ZString(bytesReplace([]byte(subject), from_b, to_b, cnt, caseSensitive))
 	n := phpv.ZInt(cnt)
-	count.Set(ctx, &n)
+	count.Set(ctx, n)
 
 	return subject, err
 }

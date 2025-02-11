@@ -2,6 +2,7 @@ package stream
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"runtime"
@@ -156,7 +157,7 @@ func (s *Stream) AsVal(ctx phpv.Context, t phpv.ZType) (phpv.Val, error) {
 	return nil, ctx.Errorf("cannot convert stream to %s", t.String())
 }
 func (s *Stream) String() string {
-	return "resource:" + s.GetResourceType().String()
+	return fmt.Sprintf("Resource id #%d", s.ResourceID)
 }
 
 func (s *Stream) GetResourceType() phpv.ResourceType { return s.ResourceType }
