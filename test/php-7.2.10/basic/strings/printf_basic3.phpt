@@ -1,5 +1,7 @@
 --TEST--
 Test printf() function : basic functionality - float format
+--INI--
+precision=6
 --FILE--
 <?php
 /* Prototype  : int printf  ( string $format  [, mixed $args  [, mixed $...  ]] )

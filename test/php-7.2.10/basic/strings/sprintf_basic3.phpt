@@ -1,5 +1,7 @@
 --TEST--
 Test sprintf() function : basic functionality - float format
+--INI--
+precision=6
 --FILE--
 <?php
 /* Prototype  : string sprintf(string $format [, mixed $arg1 [, mixed ...]])
