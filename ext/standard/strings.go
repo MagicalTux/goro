@@ -1124,6 +1124,21 @@ func fncStrNCaseCmp(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZInt(result).ZVal(), nil
 }
 
+// > func int strncmp ( string $string1, string $string2, int $len )
+func fncStrNCmp(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var str1, str2 []byte
+	var length phpv.ZInt
+	_, err := core.Expand(ctx, args, &str1, &str2, &length)
+	if err != nil {
+		return phpv.ZBool(false).ZVal(), err
+	}
+
+	str1 = str1[0:min(int(length), len(str1))]
+	str2 = str2[0:min(int(length), len(str2))]
+	result := strcmpCommon(str1, str2, true)
+	return phpv.ZInt(result).ZVal(), nil
+}
+
 // > func int strcmp ( string $string1, string $string2 )
 func fncStrCmp(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var str1, str2 phpv.ZString
@@ -1503,6 +1518,46 @@ func fncStrPos(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	return phpv.ZInt(result + offset).ZVal(), nil
+}
+
+// > func int strspn ( string $subject , string $mask [, int $start [, int $length ]] )
+func fncStrSpn(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var subject phpv.ZString
+	var mask phpv.ZString
+	var startArg core.Optional[phpv.ZInt]
+	var lengthArg core.Optional[phpv.ZInt]
+	_, err := core.Expand(ctx, args, &subject, &mask, &startArg, &lengthArg)
+	if err != nil {
+		return phpv.ZBool(false).ZVal(), err
+	}
+
+	start := int(startArg.GetOrDefault(0))
+	maxlen := int(lengthArg.GetOrDefault(phpv.ZInt(len(subject))))
+
+	if start >= len(subject) {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+
+	if start < 0 {
+		start = len(subject) + start
+		subject = subject[start:]
+	} else {
+		subject = subject[start:]
+	}
+
+	if maxlen < 0 {
+		maxlen = len(subject) + maxlen - start + 1
+	}
+
+	count := 0
+	for _, c := range subject {
+		if !strings.ContainsRune(string(mask), c) || count >= maxlen {
+			break
+		}
+		count++
+	}
+
+	return phpv.ZInt(count).ZVal(), nil
 }
 
 // > func int|false strrpos ( string $haystack, string $needle, int $offset = 0 )
