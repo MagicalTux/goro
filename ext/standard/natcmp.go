@@ -1,6 +1,10 @@
 package standard
 
-import "unicode"
+import (
+	"unicode"
+
+	"github.com/MagicalTux/goro/core"
+)
 
 // translated from sourcefrog's strnatcmp.c
 // https://github.com/sourcefrog/natsort/blob/master/strnatcmp.c
@@ -8,31 +12,23 @@ func natCmp(a, b []byte, caseSensitive bool) int {
 	ai := 0
 	bi := 0
 	for {
+		ca := core.Idx(a, ai)
+		cb := core.Idx(b, bi)
 
-		var ca, cb byte = 0, 0
-		if ai < len(a) {
-			ca = a[ai]
-		}
-		if bi < len(b) {
-			cb = b[bi]
-		}
-
-		// skip over leading spaces or zeros
+		// skip over leading spaces
 		for unicode.IsSpace(rune(ca)) {
-			ai++
-			if ai < len(a) {
+			if ai+1 < len(a) {
+				ai++
 				ca = a[ai]
 			} else {
-				ca = 0
 				break
 			}
 		}
 		for bi < len(b) && unicode.IsSpace(rune(cb)) {
-			bi++
-			if bi < len(b) {
-			} else {
+			if bi+1 < len(b) {
+				bi++
 				cb = b[bi]
-				cb = 0
+			} else {
 				break
 			}
 		}
@@ -83,13 +79,8 @@ func natCmpRight(a, b []byte) int {
 	// both numbers to know that they have the same magnitude, so we
 	// remember it in BIAS.
 	for i := range max(len(a), len(b)) {
-		var ca, cb byte
-		if i < len(a) {
-			ca = a[i]
-		}
-		if i < len(b) {
-			cb = b[i]
-		}
+		ca := core.Idx(a, i)
+		cb := core.Idx(b, i)
 
 		aDigit := unicode.IsDigit(rune(ca))
 		bDigit := unicode.IsDigit(rune(cb))
@@ -124,13 +115,8 @@ func natCmpLeft(a, b []byte) int {
 	// Compare two left-aligned numbers: the first to have a
 	// different value wins.
 	for i := range max(len(a), len(b)) {
-		var ca, cb byte
-		if i < len(a) {
-			ca = a[i]
-		}
-		if i < len(b) {
-			cb = b[i]
-		}
+		ca := core.Idx(a, i)
+		cb := core.Idx(b, i)
 
 		aDigit := unicode.IsDigit(rune(ca))
 		bDigit := unicode.IsDigit(rune(cb))

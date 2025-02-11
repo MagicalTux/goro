@@ -1109,7 +1109,7 @@ func fncStrCaseCmp(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZInt(result).ZVal(), nil
 }
 
-// > func int strncasecmp ( string $string1, string $string2 )
+// > func int strncasecmp ( string $string1, string $string2, int $len )
 func fncStrNCaseCmp(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var str1, str2 []byte
 	var length phpv.ZInt
@@ -1593,7 +1593,6 @@ func fncStrNatCaseCmp(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	result := natCmp([]byte(string1), []byte(string2), false)
-
 	return phpv.ZInt(result).ZVal(), nil
 }
 
@@ -1701,6 +1700,8 @@ func fncStrtok(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		}
 	}
 
+	index = min(index, len(str))
+	startIndex = min(startIndex, index)
 	result := string(str[startIndex:index])
 
 	strTokTempState.lastIndex = index + 1
@@ -1772,7 +1773,7 @@ func fncSubstrCompare(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZInt(result).ZVal(), nil
 }
 
-// > func int substr_cont ( string $haystack, string $needle, int $offset, ?int $length = null, bool $case_insensitive = false )
+// > func int substr_count ( string $haystack, string $needle, int $offset, ?int $length = null, bool $case_insensitive = false )
 func fncSubstrCount(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var haystackArg, needleArg phpv.ZString
 	var offsetArg *phpv.ZInt
@@ -1784,7 +1785,7 @@ func fncSubstrCount(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	if len(needleArg) == 0 {
-		return nil, errors.New("Argument #2 ($needle) cannot be empty")
+		return phpv.ZFalse.ZVal(), nil
 	}
 
 	haystack := []byte(haystackArg)
