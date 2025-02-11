@@ -204,7 +204,7 @@ func compileFunction(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 }
 
 func compileSpecialFuncCall(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
-	// special function call that comes without (), so as a keyword. Example: echo, die, etc
+	// special function call that comes with optional (), so as a keyword. Example: echo, die, etc
 	fn_name := phpv.ZString(i.Data)
 	l := i.Loc()
 
@@ -250,6 +250,39 @@ func compileSpecialFuncCall(i *tokenizer.Item, c compileCtx) (phpv.Runnable, err
 
 		return nil, i.Unexpected()
 	}
+}
+
+func compileSpecialFuncCallOne(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
+	// empty() and eval only takes one expression argument,
+	// anything more or less is a syntax error.
+	// Parenthesis is required.
+	fn_name := phpv.ZString(i.Data)
+	l := i.Loc()
+
+	i, err := c.NextItem()
+	if err != nil {
+		return nil, err
+	}
+
+	if !i.IsSingle('(') {
+		return nil, i.Unexpected()
+	}
+
+	arg, err := compileExpr(nil, c)
+	if err != nil {
+		return nil, err
+	}
+
+	i, err = c.NextItem()
+	if err != nil {
+		return nil, err
+	}
+
+	if !i.IsSingle(')') {
+		return nil, i.Unexpected()
+	}
+
+	return &runnableFunctionCall{fn_name, []phpv.Runnable{arg}, l}, nil
 }
 
 func compileFunctionWithName(name phpv.ZString, c compileCtx, l *phpv.Loc, rref bool, optionalBody ...bool) (phpv.ZClosure, error) {
