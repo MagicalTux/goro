@@ -23,6 +23,19 @@ func Idx[T any](xs []T, i int, defaultVal ...T) T {
 	return x
 }
 
+// safe-index on strings, returns 0 or defaultVal if out of bounds
+func StrIdx(str string, i int, defaultVal ...byte) byte {
+	if i >= 0 && i < len(str) {
+		return str[i]
+	}
+
+	if len(defaultVal) > 0 {
+		return defaultVal[0]
+	}
+
+	return 0
+}
+
 func IfElse[T any](cond bool, consequence, alternative T) T {
 	if cond {
 		return consequence

@@ -76,7 +76,7 @@ func fncStrAddCSlashes(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 	str := []byte(strArg)
 	escaped := map[byte]struct{}{}
 
-	charlist := []byte(stripCSlashes(string(charlistArg)))
+	charlist := []byte(stripSlashes(string(charlistArg), true))
 	for i := 0; i < len(charlist); i++ {
 		c := charlist[i]
 
@@ -1443,7 +1443,7 @@ func fncStripCSlashes(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZBool(false).ZVal(), err
 	}
 
-	return phpv.ZStr(stripCSlashes(string(str))), nil
+	return phpv.ZStr(stripSlashes(string(str), true)), nil
 }
 
 // > func int|false stripos ( string $haystack, string $needle, int $offset = 0 )
@@ -1553,8 +1553,8 @@ func fncStripSlashes(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if err != nil {
 		return phpv.ZBool(false).ZVal(), err
 	}
-	result := bytes.ReplaceAll([]byte(str), []byte(`\`), nil)
-	return phpv.ZStr(string(result)), nil
+
+	return phpv.ZStr(stripSlashes(string(str), false)), nil
 }
 
 // > func int strnatcasecmp ( string $string1, string $string2 )
@@ -2513,7 +2513,7 @@ func escapeByte(b byte) []byte {
 	return []byte{'\\', b}
 }
 
-func stripCSlashes(str string) string {
+func stripSlashes(str string, cStyle bool) string {
 	var buf bytes.Buffer
 	for i := 0; i < len(str); i++ {
 		if str[i] != '\\' {
@@ -2526,68 +2526,73 @@ func stripCSlashes(str string) string {
 			break
 		}
 
-		hex := false
-		unescaped := true
+		if cStyle {
+			unescaped := true
 
-		switch str[i] {
-		case 'n':
-			buf.WriteString("\n")
-		case 'r':
-			buf.WriteString("\r")
-		case 'a':
-			buf.WriteString("\a")
-		case 't':
-			buf.WriteString("\t")
-		case 'v':
-			buf.WriteString("\v")
-		case 'b':
-			buf.WriteString("\b")
-		case 'f':
-			buf.WriteString("\f")
-		default:
-			unescaped = false
-		}
-
-		if unescaped {
-			continue
+			switch str[i] {
+			case 'n':
+				buf.WriteString("\n")
+			case 'r':
+				buf.WriteString("\r")
+			case 'a':
+				buf.WriteString("\a")
+			case 't':
+				buf.WriteString("\t")
+			case 'v':
+				buf.WriteString("\v")
+			case 'b':
+				buf.WriteString("\b")
+			case 'f':
+				buf.WriteString("\f")
+			default:
+				unescaped = false
+			}
+			if unescaped {
+				continue
+			}
 		}
 
 		if str[i] == 'x' {
-			hex = true
+			// hex escape sequence
 			i++
 			if i >= len(str) {
 				buf.WriteByte('x')
 				break
 			}
-		}
 
-		readNum := unicode.IsNumber(rune(str[i]))
-		if !readNum {
-			buf.WriteByte(str[i])
-		} else if readNum {
-			base := 8
-			length := 3
-			if hex {
-				base = 16
-				length = 2
+			if !isHex(rune(str[i])) {
+				buf.WriteByte(str[i])
+				continue
+			}
+			j := i + 1
+			if isHex(rune(str[j])) {
+				j++
 			}
 
-			j := i
-			for j-i <= length-1 && unicode.IsNumber(rune(str[j])) {
-				j++
-				if j >= len(str) {
+			j = min(len(str), j)
+			n, err := strconv.ParseInt(string(str[i:j]), 16, 10)
+			if err == nil {
+				buf.WriteByte(byte(n))
+			}
+			i = j - 1
+		} else if unicode.IsNumber(rune(str[i])) {
+			// octal escape sequence
+			j := i + 1
+			for n := 0; n < 3; n++ {
+				if !isHex(rune(core.StrIdx(str, j))) {
 					break
 				}
+				j++
 			}
 
-			if j > i {
-				n, err := strconv.ParseInt(string(str[i:j]), base, 8)
-				if err == nil {
-					buf.WriteByte(byte(n))
-				}
-				i = j - 1
+			j = min(len(str), j)
+			n, err := strconv.ParseInt(string(str[i:j]), 8, 10)
+			if err == nil {
+				buf.WriteByte(byte(n))
 			}
-
+			i = j - 1
+		} else {
+			buf.WriteByte(str[i])
 		}
 	}
 
