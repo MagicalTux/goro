@@ -6,7 +6,7 @@ import (
 )
 
 type Handler interface {
-	Open(path *url.URL) (*Stream, error)
+	Open(path *url.URL, mode ...string) (*Stream, error)
 	Exists(path *url.URL) (bool, error)
 	Stat(path *url.URL) (os.FileInfo, error)
 	Lstat(path *url.URL) (os.FileInfo, error)

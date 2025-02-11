@@ -29,7 +29,7 @@ func fncHighlightFile(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, ctx.FuncError(err)
 	}
 
-	file, err := ctx.Global().Open(filename, true)
+	file, err := ctx.Global().Open(filename, "r", true)
 	if err != nil {
 		return nil, ctx.FuncError(err)
 	}

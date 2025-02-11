@@ -91,12 +91,40 @@ func (f *FileHandler) localPath(name string) (string, string, error) {
 	return fname, name, nil
 }
 
-func (f *FileHandler) OpenFile(fname string) (*Stream, error) {
+func (f *FileHandler) OpenFile(fname string, modeArg ...string) (*Stream, error) {
 	fname, name, err := f.localPath(fname)
 	if err != nil {
 		return nil, err
 	}
-	res, err := os.Open(fname)
+
+	flags := 0
+	mode := "r"
+	if len(modeArg) > 0 {
+		mode = modeArg[0]
+	}
+
+	switch mode {
+	case "r":
+		flags = os.O_RDONLY
+	case "w":
+		flags = os.O_WRONLY | os.O_TRUNC
+	case "a":
+		flags = os.O_WRONLY | os.O_CREATE | os.O_APPEND
+	case "r+":
+		flags = os.O_RDWR
+	case "w+":
+		flags = os.O_RDWR | os.O_CREATE | os.O_TRUNC
+	case "a+":
+		flags = os.O_RDWR | os.O_CREATE | os.O_APPEND
+	case "x":
+		flags = os.O_CREATE | os.O_EXCL | os.O_WRONLY
+	case "x+":
+		flags = os.O_CREATE | os.O_EXCL | os.O_RDWR
+	case "c", "c+", "e":
+		panic("TODO: mode " + mode)
+	}
+
+	res, err := os.OpenFile(fname, flags, 0644)
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +132,7 @@ func (f *FileHandler) OpenFile(fname string) (*Stream, error) {
 	s := NewStream(res)
 	s.SetAttr("wrapper_type", "plainfile")
 	s.SetAttr("stream_type", "Go")
-	s.SetAttr("mode", "r")
+	s.SetAttr("mode", mode)
 	s.SetAttr("seekable", true)
 	s.SetAttr("uri", name)
 
@@ -115,8 +143,8 @@ func (f *FileHandler) OpenFile(fname string) (*Stream, error) {
 	return s, nil
 }
 
-func (f *FileHandler) Open(p *url.URL) (*Stream, error) {
-	return f.OpenFile(p.Path)
+func (f *FileHandler) Open(p *url.URL, mode ...string) (*Stream, error) {
+	return f.OpenFile(p.Path, mode...)
 }
 
 func (f *FileHandler) Exists(p *url.URL) (bool, error) {

@@ -19,7 +19,7 @@ func PhpHandler() Handler {
 	return phpH
 }
 
-func (h *phpHandler) Open(p *url.URL) (*Stream, error) {
+func (h *phpHandler) Open(p *url.URL, mode ...string) (*Stream, error) {
 	switch p.Path {
 	case "stdin":
 		return h.stdin, nil

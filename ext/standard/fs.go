@@ -104,7 +104,7 @@ func fncIsDir(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	r, err := ctx.Global().Open(filename, true)
+	r, err := ctx.Global().Open(filename, "r", true)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return phpv.ZFalse.ZVal(), nil
@@ -127,7 +127,7 @@ func fncIsFile(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	r, err := ctx.Global().Open(filename, true)
+	r, err := ctx.Global().Open(filename, "r", true)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return phpv.ZFalse.ZVal(), nil
@@ -261,7 +261,7 @@ func fncFileGetContents(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 		return nil, errors.New("Argument #5 ($length) must be greater than or equal to 0")
 	}
 
-	f, err := ctx.Global().Open(filename, true)
+	f, err := ctx.Global().Open(filename, "r", true)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			// TODO: WARN Failed to open stream: No such file or directory
@@ -373,8 +373,6 @@ func fncFileOpen(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	// TODO use mode
-
 	if useIncludePathArg.HasArg() {
 		// TODO: handle use_include_path
 		return nil, ctx.FuncErrorf("use_include_path is not yet supported, set to false")
@@ -384,7 +382,7 @@ func fncFileOpen(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, ctx.FuncErrorf("context resource is not yet supported, set to NULL")
 	}
 
-	f, err := ctx.Global().Open(filename, true)
+	f, err := ctx.Global().Open(filename, mode, true)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return phpv.ZFalse.ZVal(), ctx.Warn("%s(%s): failed to open stream: No such file or directory", ctx.GetFuncName(), filename)
