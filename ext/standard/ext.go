@@ -252,6 +252,7 @@ func init() {
 			"sprintf":                    {Func: fncSprintf, Args: []*phpctx.ExtFunctionArg{}},
 			"sqrt":                       {Func: mathSqrt, Args: []*phpctx.ExtFunctionArg{}},
 			"srand":                      {Func: mathMtSRand, Args: []*phpctx.ExtFunctionArg{}}, // alias
+			"sscanf":                     {Func: fncSscanf, Args: []*phpctx.ExtFunctionArg{}},
 			"str_contains":               {Func: fncStrContains, Args: []*phpctx.ExtFunctionArg{}},
 			"str_ends_with":              {Func: fncStrEndsWith, Args: []*phpctx.ExtFunctionArg{}},
 			"str_getcsv":                 {Func: fncStrGetCsv, Args: []*phpctx.ExtFunctionArg{}},
