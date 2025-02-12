@@ -2,16 +2,32 @@ package core
 
 import (
 	"bytes"
+	"io"
 	"strconv"
 	"strings"
 
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
+type counter struct {
+	Value int
+}
+
+func (c *counter) Add(nn int, err error) error {
+	c.Value += nn
+	return err
+}
+
+type printfWriter interface {
+	io.Writer
+	io.ByteWriter
+	io.StringWriter
+}
+
 // Zprintf implements printf with zvals
-func Zprintf(ctx phpv.Context, fmt phpv.ZString, arg ...*phpv.ZVal) (*phpv.ZVal, error) {
-	var r []byte
+func ZFprintf(ctx phpv.Context, w printfWriter, fmt phpv.ZString, arg ...*phpv.ZVal) (int, error) {
 	var err error
+	var bytesWritten counter
 	in := []byte(fmt)
 	argp := 0
 
@@ -20,25 +36,32 @@ func Zprintf(ctx phpv.Context, fmt phpv.ZString, arg ...*phpv.ZVal) (*phpv.ZVal,
 	for {
 		p := bytes.IndexByte(in, '%')
 		if p == -1 {
-			if r == nil {
-				// no format
-				return fmt.ZVal(), nil
-			}
-			r = append(r, in...)
-			return phpv.ZString(r).ZVal(), nil
+			// no more %, write the rest of the string
+			err = bytesWritten.Add(w.Write(in))
+			goto Return
 		}
-		r = append(r, in[:p]...)
+
+		err = bytesWritten.Add(w.Write(in[:p]))
+		if err != nil {
+			goto Return
+		}
 		in = in[p:]
 
 		if len(in) < 2 {
 			// string ends in a '%'
-			r = append(r, in...)
-			return phpv.ZString(r).ZVal(), nil
+			err = bytesWritten.Add(w.Write(in))
+			if err != nil {
+				goto Return
+			}
 		}
 
 		if in[1] == '%' {
 			// escaped '%'
-			r = append(r, '%')
+			err = w.WriteByte('%')
+			if err != nil {
+				goto Return
+			}
+			bytesWritten.Value++
 			in = in[2:]
 			continue
 		}
@@ -47,8 +70,7 @@ func Zprintf(ctx phpv.Context, fmt phpv.ZString, arg ...*phpv.ZVal) (*phpv.ZVal,
 
 		if len(arg) <= argp {
 			// argument not found
-			// trigger warning: sprintf(): Too few arguments
-			return phpv.ZBool(false).ZVal(), nil
+			return bytesWritten.Value, ctx.Warn("Too few arguments")
 		}
 
 		v := arg[argp]
@@ -65,28 +87,39 @@ func Zprintf(ctx phpv.Context, fmt phpv.ZString, arg ...*phpv.ZVal) (*phpv.ZVal,
 			// next arg is an int
 			v, err = v.As(ctx, phpv.ZtInt)
 			if err != nil {
-				return nil, err
+				goto Return
 			}
-			r = strconv.AppendInt(r, int64(v.Value().(phpv.ZInt)), 2)
+			err = bytesWritten.Add(w.WriteString(strconv.FormatInt(int64(v.Value().(phpv.ZInt)), 2)))
+			if err != nil {
+				goto Return
+			}
 		case 'c':
 			// next arg is an int, but will be added as a single char
 			v, err = v.As(ctx, phpv.ZtInt)
 			if err != nil {
-				return nil, err
+				goto Return
 			}
-			r = append(r, byte(v.Value().(phpv.ZInt)))
+			err = w.WriteByte(byte(v.Value().(phpv.ZInt)))
+			if err != nil {
+				goto Return
+			}
+			bytesWritten.Value++
 		case 'd':
 			// next arg is an int
 			v, err = v.As(ctx, phpv.ZtInt)
 			if err != nil {
-				return nil, err
+				goto Return
 			}
-			r = strconv.AppendInt(r, int64(v.Value().(phpv.ZInt)), 10)
+			s := strconv.FormatInt(int64(v.Value().(phpv.ZInt)), 10)
+			err = bytesWritten.Add(w.WriteString(s))
+			if err != nil {
+				goto Return
+			}
 		case 'e', 'E', 'g', 'G':
 			// next arg is a float
 			v, err = v.As(ctx, phpv.ZtFloat)
 			if err != nil {
-				return nil, err
+				goto Return
 			}
 			// this format option is not affected by the ini config precision
 			expPrecision := 6
@@ -100,58 +133,100 @@ func Zprintf(ctx phpv.Context, fmt phpv.ZString, arg ...*phpv.ZVal) (*phpv.ZVal,
 				// this code removes that leading 0, so the tests
 				// can pass, but probably could be removed later
 				// since it's not that important.
-				r = append(r, s[0:plusIndex+1]...)
-				r = append(r, s[plusIndex+2:]...)
+				err = bytesWritten.Add(w.WriteString(s[0 : plusIndex+1]))
+				if err != nil {
+					goto Return
+				}
+				err = bytesWritten.Add(w.WriteString(s[plusIndex+2:]))
+				if err != nil {
+					goto Return
+				}
 			} else {
-				r = append(r, []byte(s)...)
+				err = bytesWritten.Add(w.WriteString(s))
+				if err != nil {
+					goto Return
+				}
 			}
 		case 'f', 'F':
 			// next arg is a float
 			// TODO: f is locale aware, F is not
 			v, err = v.As(ctx, phpv.ZtFloat)
 			if err != nil {
-				return nil, err
+				goto Return
 			}
-			r = strconv.AppendFloat(r, float64(v.Value().(phpv.ZFloat)), 'f', floatPrecision, 64)
+			s := strconv.FormatFloat(float64(v.Value().(phpv.ZFloat)), 'f', floatPrecision, 64)
+			err = bytesWritten.Add(w.WriteString(s))
+			if err != nil {
+				goto Return
+			}
 		case 'o':
 			// next arg is an int
 			v, err = v.As(ctx, phpv.ZtInt)
 			if err != nil {
-				return nil, err
+				goto Return
 			}
-			r = strconv.AppendUint(r, uint64(v.Value().(phpv.ZInt)), 8)
+			s := strconv.FormatUint(uint64(v.Value().(phpv.ZInt)), 8)
+			err = bytesWritten.Add(w.WriteString(s))
+			if err != nil {
+				goto Return
+			}
 		case 's':
 			// next arg is a string
 			v, err = v.As(ctx, phpv.ZtString)
 			if err != nil {
-				return nil, err
+				goto Return
 			}
-			r = append(r, []byte(v.Value().(phpv.ZString))...)
-			// TODO add more
+			s := string(v.Value().(phpv.ZString))
+			err = bytesWritten.Add(w.WriteString(s))
+			if err != nil {
+				goto Return
+			}
 		case 'u':
 			// next arg is an int
 			v, err = v.As(ctx, phpv.ZtInt)
 			if err != nil {
-				return nil, err
+				goto Return
 			}
-			r = strconv.AppendUint(r, uint64(v.Value().(phpv.ZInt)), 10)
+			s := strconv.FormatUint(uint64(v.Value().(phpv.ZInt)), 10)
+			err = bytesWritten.Add(w.WriteString(s))
+			if err != nil {
+				goto Return
+			}
 		case 'x':
 			// next arg is an int
 			v, err = v.As(ctx, phpv.ZtInt)
 			if err != nil {
-				return nil, err
+				goto Return
 			}
-			r = strconv.AppendInt(r, int64(v.Value().(phpv.ZInt)), 16)
+			s := strconv.FormatInt(int64(v.Value().(phpv.ZInt)), 16)
+			err = bytesWritten.Add(w.WriteString(s))
+			if err != nil {
+				goto Return
+			}
 		case 'X':
 			// next arg is an int
 			v, err = v.As(ctx, phpv.ZtInt)
 			if err != nil {
-				return nil, err
+				goto Return
 			}
-
 			s := strconv.FormatInt(int64(v.Value().(phpv.ZInt)), 16)
 			s = strings.ToUpper(s)
-			r = append(r, []byte(s)...)
+			err = bytesWritten.Add(w.WriteString(s))
+			if err != nil {
+				goto Return
+			}
 		}
 	}
+
+Return:
+	return bytesWritten.Value, err
+}
+
+func Zprintf(ctx phpv.Context, fmt phpv.ZString, arg ...*phpv.ZVal) (*phpv.ZVal, error) {
+	buf := new(bytes.Buffer)
+	_, err := ZFprintf(ctx, buf, fmt, arg...)
+	if err != nil {
+		return nil, err
+	}
+	return phpv.ZString(buf.String()).ZVal(), nil
 }
