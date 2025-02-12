@@ -35,9 +35,15 @@ type runReturn struct {
 }
 
 func (r *runReturn) Run(ctx phpv.Context) (*phpv.ZVal, error) {
-	ret, err := r.v.Run(ctx)
-	if err != nil {
-		return nil, err
+	var ret *phpv.ZVal
+	if r.v != nil {
+		var err error
+		ret, err = r.v.Run(ctx)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		ret = phpv.ZNULL.ZVal()
 	}
 	return nil, &phperr.PhpReturn{L: r.l, V: ret}
 }
