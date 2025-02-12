@@ -437,3 +437,80 @@ func fncGetResourceType(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	rtype := handle.GetResourceType().String()
 	return phpv.ZStr(rtype).ZVal(), nil
 }
+
+// > func bool ftruncate ( resource $handle , int $size )
+func fncFtruncate(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var handle phpv.Resource
+	var size phpv.ZInt
+	_, err := core.Expand(ctx, args, &handle, &size)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	var filename string
+	if s, ok := handle.(*stream.Stream); ok {
+		if f, ok := s.Attr("uri").(string); ok {
+			filename = f
+		}
+	}
+
+	if filename == "" {
+		ctx.Warn("resource type not yet supported:" + handle.GetResourceType().String())
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	os.Truncate(filename, int64(size))
+	return phpv.ZTrue.ZVal(), nil
+}
+
+// > func bool rewind ( resource $handle)
+func fncRewind(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var handle phpv.Resource
+	_, err := core.Expand(ctx, args, &handle)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	s, ok := handle.(*stream.Stream)
+	if !ok {
+		t := handle.GetResourceType().String()
+		return phpv.ZFalse.ZVal(), ctx.Warn("resource type not yet supported:" + t)
+	}
+
+	s.Seek(0, 0)
+	return phpv.ZTrue.ZVal(), nil
+}
+
+// > func string stream_get_contents ( resource $handle [, int $maxlength = -1 [, int $offset = -1 ]] )
+func fncStreamGetContents(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var handle phpv.Resource
+	var maxLen core.Optional[phpv.ZInt]
+	var offset core.Optional[phpv.ZInt]
+	_, err := core.Expand(ctx, args, &handle, &maxLen, &offset)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	file, ok := handle.(*stream.Stream)
+	if !ok {
+		t := handle.GetResourceType().String()
+		return phpv.ZFalse.ZVal(), ctx.Warn("resource type not yet supported:" + t)
+	}
+
+	if offset.HasArg() && offset.Get() > 0 {
+		file.Seek(int64(offset.Get()), 0)
+	}
+
+	var contents []byte
+	if !maxLen.HasArg() {
+		contents, err = io.ReadAll(file)
+	} else {
+		contents = make([]byte, maxLen.Get())
+		_, err = io.ReadFull(file, contents)
+	}
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	return phpv.ZStr(string(contents)), nil
+}
