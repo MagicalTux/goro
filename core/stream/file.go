@@ -103,11 +103,21 @@ func (f *FileHandler) OpenFile(fname string, modeArg ...string) (*Stream, error)
 		mode = modeArg[0]
 	}
 
+	flag := ""
+	if len(mode) > 0 {
+		i := len(mode) - 1
+		c := mode[i]
+		if c == 'b' || c == 't' {
+			flag = string(c)
+			mode = mode[:i]
+		}
+	}
+
 	switch mode {
 	case "r":
 		flags = os.O_RDONLY
 	case "w":
-		flags = os.O_WRONLY | os.O_TRUNC
+		flags = os.O_WRONLY | os.O_CREATE | os.O_TRUNC
 	case "a":
 		flags = os.O_WRONLY | os.O_CREATE | os.O_APPEND
 	case "r+":
@@ -133,6 +143,7 @@ func (f *FileHandler) OpenFile(fname string, modeArg ...string) (*Stream, error)
 	s.SetAttr("wrapper_type", "plainfile")
 	s.SetAttr("stream_type", "Go")
 	s.SetAttr("mode", mode)
+	s.SetAttr("flag", flag)
 	s.SetAttr("seekable", true)
 	s.SetAttr("uri", name)
 
