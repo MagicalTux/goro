@@ -7,6 +7,8 @@ import (
 // Used to make struct Callables satisfy the Val interface
 type CallableVal struct{}
 
+func (c CallableVal) Name() string { return "" }
+
 func (c CallableVal) GetType() ZType { return ZtCallable }
 
 func (c CallableVal) ZVal() *ZVal { return NewZVal(c) }

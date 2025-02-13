@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/MagicalTux/goro/core/logopt"
@@ -43,7 +44,10 @@ type Global struct {
 	IniConfig phpv.IniConfig
 
 	// this is the actual environment (defined functions, classes, etc)
-	globalFuncs   map[phpv.ZString]phpv.Callable
+	globalInternalFuncs map[phpv.ZString]phpv.Callable
+	globalUserFuncs     map[phpv.ZString]phpv.Callable
+	disabledFuncs       map[phpv.ZString]struct{}
+
 	globalClasses map[phpv.ZString]*phpobj.ZClass // TODO replace *ZClass with a nice interface
 	shutdownFuncs []phpv.Callable
 	constant      map[phpv.ZString]phpv.Val
@@ -102,22 +106,24 @@ func NewIniContext(config phpv.IniConfig) *Global {
 
 func createGlobal(p *Process) *Global {
 	g := &Global{
-		p:               p,
-		out:             os.Stdout,
-		errOut:          os.Stderr,
-		rand:            random.New(),
-		start:           time.Now(),
-		h:               phpv.NewHashTable(),
-		l:               &phpv.Loc{Filename: "unknown", Line: 1},
-		globalFuncs:     make(map[phpv.ZString]phpv.Callable),
-		globalClasses:   make(map[phpv.ZString]*phpobj.ZClass),
-		constant:        make(map[phpv.ZString]phpv.Val),
-		streamHandlers:  make(map[string]stream.Handler),
-		included:        make(map[phpv.ZString]bool),
-		globalLazyFunc:  make(map[phpv.ZString]*globalLazyOffset),
-		globalLazyClass: make(map[phpv.ZString]*globalLazyOffset),
-		shownDeprecated: make(map[string]struct{}),
-		mem:             NewMemMgr(32 * 1024 * 1024), // limit in bytes TODO read memory_limit from process (.ini file)
+		p:                   p,
+		out:                 os.Stdout,
+		errOut:              os.Stderr,
+		rand:                random.New(),
+		start:               time.Now(),
+		h:                   phpv.NewHashTable(),
+		l:                   &phpv.Loc{Filename: "unknown", Line: 1},
+		globalInternalFuncs: make(map[phpv.ZString]phpv.Callable),
+		globalUserFuncs:     make(map[phpv.ZString]phpv.Callable),
+		disabledFuncs:       make(map[phpv.ZString]struct{}),
+		globalClasses:       make(map[phpv.ZString]*phpobj.ZClass),
+		constant:            make(map[phpv.ZString]phpv.Val),
+		streamHandlers:      make(map[string]stream.Handler),
+		included:            make(map[phpv.ZString]bool),
+		globalLazyFunc:      make(map[phpv.ZString]*globalLazyOffset),
+		globalLazyClass:     make(map[phpv.ZString]*globalLazyOffset),
+		shownDeprecated:     make(map[string]struct{}),
+		mem:                 NewMemMgr(32 * 1024 * 1024), // limit in bytes TODO read memory_limit from process (.ini file)
 
 	}
 	g.SetDeadline(g.start.Add(30 * time.Second))
@@ -149,7 +155,7 @@ func (g *Global) init() {
 	// import global funcs & classes from ext
 	for _, e := range globalExtMap {
 		for k, v := range e.Functions {
-			g.globalFuncs[phpv.ZString(k)] = v
+			g.globalInternalFuncs[phpv.ZString(k)] = v
 		}
 		for _, c := range e.Classes {
 			// TODO: use class ID for comparing classes
@@ -190,7 +196,14 @@ func (g *Global) setupIni() {
 		if err != nil {
 			val = phpv.ZStr(v)
 		}
-		g.SetLocalConfig(phpv.ZString(k), val)
+		cfg.SetLocal(phpv.ZString(k), val)
+
+	}
+	if v := cfg.Get(phpv.ZString("disable_functions")); v != nil {
+		for _, name := range strings.Split(string(v.Get().AsString(g)), ",") {
+			name = strings.TrimSpace(name)
+			g.disabledFuncs[phpv.ZString(name)] = struct{}{}
+		}
 	}
 }
 
@@ -515,10 +528,10 @@ func (g *Global) Class() phpv.ZClass {
 
 func (g *Global) RegisterFunction(name phpv.ZString, f phpv.Callable) error {
 	name = name.ToLower()
-	if _, exists := g.globalFuncs[name]; exists {
+	if _, exists := g.globalUserFuncs[name]; exists {
 		return g.Errorf("duplicate function name in declaration")
 	}
-	g.globalFuncs[name] = f
+	g.globalUserFuncs[name] = f
 	delete(g.globalLazyFunc, name)
 	return nil
 }
@@ -528,7 +541,15 @@ func (g *Global) RegisterShutdownFunction(f phpv.Callable) {
 }
 
 func (g *Global) GetFunction(ctx phpv.Context, name phpv.ZString) (phpv.Callable, error) {
-	if f, ok := g.globalFuncs[name.ToLower()]; ok {
+	if f, ok := g.globalUserFuncs[name.ToLower()]; ok {
+		return f, nil
+	}
+	if f, ok := g.globalInternalFuncs[name.ToLower()]; ok {
+		if _, ok := g.disabledFuncs[name]; ok {
+			ctx.Warn("%s() has been disabled for security reasons",
+				name, logopt.NoFuncName(true))
+			return noOp, nil
+		}
 		return f, nil
 	}
 	if f, ok := g.globalLazyFunc[name.ToLower()]; ok {
@@ -537,12 +558,39 @@ func (g *Global) GetFunction(ctx phpv.Context, name phpv.ZString) (phpv.Callable
 			return nil, err
 		}
 		f.r[f.p] = phpv.RunNull{} // remove function declaration from tree now that his as been run
-		if f, ok := g.globalFuncs[name.ToLower()]; ok {
+		if f, ok := g.globalUserFuncs[name.ToLower()]; ok {
 			return f, nil
 		}
 	}
 
 	return nil, g.Errorf("Call to undefined function %s", name)
+}
+
+func (g *Global) GetDefinedFunctions(ctx phpv.Context, excludeDisabled bool) (*phpv.ZArray, error) {
+	result := phpv.NewZArray()
+	user := phpv.NewZArray()
+	internal := phpv.NewZArray()
+
+	result.OffsetSet(ctx, phpv.ZStr("user"), user.ZVal())
+	result.OffsetSet(ctx, phpv.ZStr("internal"), internal.ZVal())
+
+	for k := range g.globalUserFuncs {
+		user.OffsetSet(ctx, nil, k.ZVal())
+	}
+
+	if excludeDisabled {
+		for k := range g.globalInternalFuncs {
+			if _, ok := g.disabledFuncs[k]; !ok {
+				internal.OffsetSet(ctx, nil, k.ZVal())
+			}
+		}
+	} else {
+		for k := range g.globalInternalFuncs {
+			internal.OffsetSet(ctx, nil, k.ZVal())
+		}
+	}
+
+	return result, nil
 }
 
 func (g *Global) ConstantGet(name phpv.ZString) (phpv.Val, bool) {

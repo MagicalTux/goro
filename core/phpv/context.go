@@ -111,6 +111,13 @@ type IniValue struct {
 	Local  *ZVal
 }
 
+func (iv *IniValue) Get() *ZVal {
+	if iv.Local != nil {
+		return iv.Local
+	}
+	return iv.Global
+}
+
 type IniConfig interface {
 	Get(name ZString) *IniValue
 	SetLocal(name ZString, value *ZVal)
