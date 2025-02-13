@@ -113,7 +113,7 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		}
 		_, err = c.Run(g)
 		g.Close()
-		return phpv.FilterError(err)
+		return phpv.FilterExitError(err)
 	case "EXPECT":
 		// compare p.output with b
 		out := bytes.TrimSpace(p.output.Bytes())
@@ -133,7 +133,7 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 			return err
 		}
 		_, err = c.Run(g)
-		err = phpv.FilterError(err)
+		err = phpv.FilterExitError(err)
 		if err != nil {
 			return err
 		}

@@ -179,6 +179,8 @@ func (g *Global) setupIni() {
 	options := g.p.Options
 	cfg := g.IniConfig
 
+	cfg.LoadDefaults(g)
+
 	if options.IniFile != "" {
 		file, err := os.Open(options.IniFile)
 		if err != nil {
@@ -186,13 +188,13 @@ func (g *Global) setupIni() {
 			os.Exit(1)
 		}
 		defer file.Close()
-		if err = cfg.Parse(file); err != nil {
+		if err = cfg.Parse(g, file); err != nil {
 			println("error:", err.Error())
 			os.Exit(1)
 		}
 	}
 	for k, v := range options.IniEntries {
-		val, err := cfg.EvalConfigValue(v)
+		val, err := cfg.EvalConfigValue(g, v)
 		if err != nil {
 			val = phpv.ZStr(v)
 		}

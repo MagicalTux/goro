@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/MagicalTux/goro/core"
-	"github.com/MagicalTux/goro/core/phpctx"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -23,25 +22,49 @@ const (
 
 type Config struct {
 	Values map[string]*phpv.IniValue
-	ctx    phpv.Context
 }
 
-func New() *Config {
-	var iniCtx = phpctx.NewIniContext(&Config{
-		Values: map[string]*phpv.IniValue{},
-	})
+type IniContext struct {
+	phpv.GlobalContext
+}
+
+func (ic *IniContext) Global() phpv.GlobalContext {
+	return ic
+}
+
+func (ic *IniContext) ConstantGet(k phpv.ZString) (phpv.Val, bool) {
+	// override so no warnings are shown on non-existent constants
+	// e.g., just return the CONSTANT_FOO as "CONSTANT_FOO"
+	if v, ok := ic.GlobalContext.ConstantGet(k); ok {
+		return v, true
+	}
+	return k.ZVal(), true
+}
+
+// ideally, ini values will have a separate mini-compilers,
+// but this will do for now
+func GetFunction(ctx phpv.Context, name phpv.ZString) (phpv.Callable, error) {
+	return nil, ctx.Errorf("Cannot use functions inside ini")
+}
+func GetClass(ctx phpv.Context, name phpv.ZString, autoload bool) (phpv.ZClass, error) {
+	return nil, ctx.Errorf("Cannot use classes inside ini")
+}
+
+func New() phpv.IniConfig {
 	c := &Config{
 		Values: map[string]*phpv.IniValue{},
-		ctx:    iniCtx,
 	}
+	return c
+}
+
+func (c *Config) LoadDefaults(ctx phpv.Context) {
 	for varName, entry := range Defaults {
-		expr, err := c.EvalConfigValue(entry.RawDefault)
+		expr, err := c.EvalConfigValue(ctx, entry.RawDefault)
 		if err != nil {
 			panic(fmt.Sprintf("failed to initialize ini default for %s: %s", varName, err))
 		}
 		c.Values[varName] = &phpv.IniValue{Global: expr}
 	}
-	return c
 }
 
 func (c *Config) Get(varName phpv.ZString) *phpv.IniValue {
@@ -75,7 +98,7 @@ func (c *Config) IterateConfig() iter.Seq2[string, phpv.IniValue] {
 	}
 }
 
-func (c *Config) EvalConfigValue(expr string) (*phpv.ZVal, error) {
+func (c *Config) EvalConfigValue(ctx phpv.Context, expr string) (*phpv.ZVal, error) {
 	switch expr {
 	case "1", "On", "True", "Yes":
 		return phpv.ZStr("1"), nil
@@ -86,10 +109,11 @@ func (c *Config) EvalConfigValue(expr string) (*phpv.ZVal, error) {
 	case "NULL", "null":
 		return phpv.ZNULL.ZVal(), nil
 	}
-	return core.Eval(c.ctx, expr)
+	ctx = &IniContext{ctx.Global()}
+	return core.Eval(ctx, expr)
 }
 
-func (c *Config) Parse(r io.Reader) error {
+func (c *Config) Parse(ctx phpv.Context, r io.Reader) error {
 	buf := bufio.NewReader(r)
 	var lineNo int
 
@@ -140,7 +164,7 @@ func (c *Config) Parse(r io.Reader) error {
 		k := l[:pos]
 		l = l[pos+1:]
 
-		expr, err := c.EvalConfigValue(l)
+		expr, err := c.EvalConfigValue(ctx, l)
 		if err != nil {
 			return err
 		}
