@@ -235,6 +235,7 @@ func init() {
 			"rawurlencode":               {Func: fncRawurlencode, Args: []*phpctx.ExtFunctionArg{}},
 			"realpath":                   {Func: fncRealPath, Args: []*phpctx.ExtFunctionArg{}},
 			"register_shutdown_function": {Func: registerShutdownFunction, Args: []*phpctx.ExtFunctionArg{}},
+			"rename":                     {Func: fncRename, Args: []*phpctx.ExtFunctionArg{}},
 			"reset":                      {Func: fncArrayReset, Args: []*phpctx.ExtFunctionArg{}},
 			"rewind":                     {Func: fncRewind, Args: []*phpctx.ExtFunctionArg{}},
 			"rmdir":                      {Func: fncRmdir, Args: []*phpctx.ExtFunctionArg{}},

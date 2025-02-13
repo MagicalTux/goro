@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/stream"
 )
@@ -513,4 +514,59 @@ func fncStreamGetContents(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, erro
 	}
 
 	return phpv.ZStr(string(contents)), nil
+}
+
+// > func bool rename ( string $oldname , string $newname [, resource $context ] )
+func fncRename(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var oldNameArg, newNameArg phpv.ZString
+	var contextResource core.Optional[phpv.Resource]
+	_, err := core.Expand(ctx, args, &oldNameArg, &newNameArg, &contextResource)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	oldName := string(oldNameArg)
+	newName := string(newNameArg)
+
+	oldStat, err := os.Stat(oldName)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, ctx.Warn("%s(%s,%s): No such file or directory",
+				ctx.GetFuncName(), oldNameArg, newNameArg, logopt.NoFuncName(true))
+		}
+		return nil, ctx.FuncError(err)
+	}
+
+	newStat, err := os.Stat(newName)
+	if err != nil && !os.IsNotExist(err) {
+		return nil, ctx.FuncError(err)
+	}
+
+	if os.IsExist(err) {
+		if oldStat.IsDir() && newStat.IsDir() {
+			files, err := os.ReadDir(newName)
+			if err != nil {
+				return nil, ctx.FuncError(err)
+			}
+			if len(files) > 0 {
+				return nil, ctx.Warn("%s(%s,%s): Directory not empty",
+					ctx.GetFuncName(), oldNameArg, newNameArg, logopt.NoFuncName(true))
+			}
+		}
+		if !oldStat.IsDir() && newStat.IsDir() {
+			return nil, ctx.Warn("%s(%s,%s): Is a directory",
+				ctx.GetFuncName(), oldNameArg, newNameArg, logopt.NoFuncName(true))
+		}
+		if oldStat.IsDir() && !newStat.IsDir() {
+			return nil, ctx.Warn("%s(%s,%s): Not a directory",
+				ctx.GetFuncName(), oldNameArg, newNameArg, logopt.NoFuncName(true))
+		}
+	}
+
+	err = os.Rename(oldName, newName)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	return phpv.ZTrue.ZVal(), nil
 }
