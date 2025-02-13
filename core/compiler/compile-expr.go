@@ -200,6 +200,9 @@ func compilePostExpr(v phpv.Runnable, i *tokenizer.Item, c compileCtx) (phpv.Run
 		if err != nil {
 			return nil, err
 		}
+		if constant, ok := v.(*runConstant); ok {
+			return &runnableFunctionCall{phpv.ZString(constant.c), args, l}, nil
+		}
 		return &runnableFunctionCallRef{v, args, l}, nil
 	case tokenizer.Rune('['), tokenizer.Rune('{'):
 		c.backup()

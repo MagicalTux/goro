@@ -25,13 +25,17 @@ func (r *runConstant) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 		return phpv.ZBool(true).ZVal(), nil
 	case "false":
 		return phpv.ZBool(false).ZVal(), nil
+	case "self":
+		return phpv.ZString("self").ZVal(), nil
+	case "parent":
+		return phpv.ZString("parent").ZVal(), nil
 	}
 
 	z, ok := ctx.Global().ConstantGet(phpv.ZString(r.c))
 
 	if !ok {
-		// TODO issue warning Use of undefined constant tata - assumed 'tata' (this will throw an Error in a future version of PHP)
-		return phpv.ZString(r.c).ZVal(), nil
+		err := ctx.Warn("Use of undefined constant %s - assumed '%s' (this will throw an Error in a future version of PHP", r.c, r.c)
+		return phpv.ZString(r.c).ZVal(), err
 	}
 	return z.ZVal(), nil
 }
