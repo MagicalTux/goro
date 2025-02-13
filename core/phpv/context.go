@@ -115,6 +115,8 @@ type IniConfig interface {
 	Get(name ZString) *IniValue
 	SetLocal(name ZString, value *ZVal)
 	IterateConfig() iter.Seq2[string, IniValue]
+	Parse(r io.Reader) error
+	EvalConfigValue(expr string) (*ZVal, error)
 }
 
 type FuncContext interface {

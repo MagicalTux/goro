@@ -165,8 +165,33 @@ func (g *Global) init() {
 	// get env from process
 	g.environ = g.p.environ.Dup()
 
+	g.setupIni()
 	g.doGPC()
+}
 
+func (g *Global) setupIni() {
+	options := g.p.Options
+	cfg := g.IniConfig
+
+	if options.IniFile != "" {
+		file, err := os.Open(options.IniFile)
+		if err != nil {
+			println("error:", err.Error())
+			os.Exit(1)
+		}
+		defer file.Close()
+		if err = cfg.Parse(file); err != nil {
+			println("error:", err.Error())
+			os.Exit(1)
+		}
+	}
+	for k, v := range options.IniEntries {
+		val, err := cfg.EvalConfigValue(v)
+		if err != nil {
+			val = phpv.ZStr(v)
+		}
+		g.SetLocalConfig(phpv.ZString(k), val)
+	}
 }
 
 func (g *Global) doGPC() {

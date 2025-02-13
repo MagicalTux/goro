@@ -24,7 +24,7 @@ func main() {
 	err := p.CommandLine(os.Args)
 	if err != nil {
 		println("error:", err.Error())
-		os.Exit(-1)
+		os.Exit(1)
 	}
 
 	options := p.Options
@@ -37,27 +37,8 @@ func main() {
 		_, err = ctx.DoString(ctx, phpv.ZString(options.RunCode))
 		if err != nil {
 			println("error:", err.Error())
-			os.Exit(-1)
+			os.Exit(1)
 		}
-	}
-	if options.IniFile != "" {
-		file, err := os.Open(options.IniFile)
-		if err != nil {
-			println("error:", err.Error())
-			os.Exit(-1)
-		}
-		defer file.Close()
-		if err = cfg.Parse(file); err != nil {
-			println("error:", err.Error())
-			os.Exit(-1)
-		}
-	}
-	for k, v := range options.IniEntries {
-		val, err := cfg.EvalConfigValue(v)
-		if err != nil {
-			val = phpv.ZStr(v)
-		}
-		ctx.SetLocalConfig(phpv.ZString(k), val)
 	}
 
 	if p.ScriptFilename != "" {
