@@ -56,6 +56,11 @@ func (p *Process) populateConstants() {
 		}
 	}
 
+	exe, err := os.Executable()
+	if err != nil {
+		panic(err)
+	}
+	p.defaultConstants["PHP_BINARY"] = phpv.ZStr(exe)
 }
 
 // SetConstant sets a global constant, typically used to set PHP_SAPI.
