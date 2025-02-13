@@ -4,6 +4,7 @@ import (
 	"strings"
 	"unsafe"
 
+	"github.com/MagicalTux/goro/core/phpctx"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -233,5 +234,22 @@ func fncIniGetAll(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			result.OffsetSet(ctx, phpv.ZString(k), value)
 		}
 	}
+	return result.ZVal(), nil
+}
+
+// > func int get_defined_functions ( [ bool $exclude_disabled = FALSE ] )
+func fncGetDefinedFunctions(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var excludeDisabled Optional[phpv.ZBool]
+	_, err := Expand(ctx, args, &excludeDisabled)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	g := ctx.Global().(*phpctx.Global)
+	result, err := g.GetDefinedFunctions(ctx, bool(excludeDisabled.GetOrDefault(false)))
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
 	return result.ZVal(), nil
 }

@@ -40,6 +40,7 @@ func init() {
 			"gc_enable":             {Func: stdFuncGcEnable, Args: []*phpctx.ExtFunctionArg{}},
 			"gc_enabled":            {Func: stdFuncGcEnabled, Args: []*phpctx.ExtFunctionArg{}},
 			"gc_mem_caches":         {Func: stdFuncGcMemCaches, Args: []*phpctx.ExtFunctionArg{}},
+			"get_defined_functions": {Func: fncGetDefinedFunctions, Args: []*phpctx.ExtFunctionArg{}},
 			"get_loaded_extensions": {Func: fncLoadedExtensions, Args: []*phpctx.ExtFunctionArg{}},
 			"include":               {Func: fncInclude, Args: []*phpctx.ExtFunctionArg{}},
 			"include_once":          {Func: fncIncludeOnce, Args: []*phpctx.ExtFunctionArg{}},
