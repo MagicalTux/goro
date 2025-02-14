@@ -17,6 +17,15 @@ type runVariableRef struct {
 	l *phpv.Loc
 }
 
+func (rv *runVariable) VarName() phpv.ZString {
+	return rv.v
+}
+
+func (rv *runVariable) IsUnDefined(ctx phpv.Context) bool {
+	exists, _ := ctx.OffsetExists(ctx, rv.v)
+	return !exists
+}
+
 func compileRunVariableRef(i *tokenizer.Item, c compileCtx, l *phpv.Loc) (phpv.Runnable, error) {
 	r := &runVariableRef{l: l}
 	var err error

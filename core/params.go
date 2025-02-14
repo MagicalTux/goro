@@ -4,6 +4,7 @@ import (
 	"errors"
 	"reflect"
 
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
@@ -336,6 +337,19 @@ loop:
 		if isRef {
 			args[i] = args[i].Ref()
 		} else {
+			parentCtx := ctx.Parent(1)
+			if parentCtx == nil {
+				parentCtx = ctx
+			}
+			if args[i].GetName() != "" {
+				if ok, _ := parentCtx.OffsetExists(ctx, args[i].GetName()); !ok {
+					if err := ctx.Notice("Undefined variable: %s",
+						args[i].GetName(), logopt.NoFuncName(true)); err != nil {
+						return i, err
+					}
+				}
+			}
+
 			args[i] = args[i].Dup()
 		}
 
