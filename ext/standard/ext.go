@@ -149,6 +149,7 @@ func init() {
 			"hex2bin":                    {Func: fncHex2Bin, Args: []*phpctx.ExtFunctionArg{}},
 			"hexdec":                     {Func: mathHexDec, Args: []*phpctx.ExtFunctionArg{}},
 			"highlight_file":             {Func: fncHighlightFile, Args: []*phpctx.ExtFunctionArg{}},
+			"highlight_string":           {Func: fncHighlightString, Args: []*phpctx.ExtFunctionArg{}},
 			"hrtime":                     {Func: stdFuncHrTime, Args: []*phpctx.ExtFunctionArg{}},
 			"htmlspecialchars":           {Func: fncHtmlSpecialChars, Args: []*phpctx.ExtFunctionArg{}},
 			"htmlspecialchars_decode":    {Func: fncHtmlSpecialCharsDecode, Args: []*phpctx.ExtFunctionArg{}},

@@ -3,6 +3,7 @@ package standard
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/MagicalTux/goro/core"
@@ -19,23 +20,17 @@ var highlightReplacer = strings.NewReplacer(
 	"&", "&amp;",
 )
 
-// > func mixed highlight_file ( string $filename [, bool $return = FALSE ] )
-// > alias show_source
-func fncHighlightFile(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	var filename phpv.ZString
-	var returnStr core.Optional[phpv.ZBool]
-	_, err := core.Expand(ctx, args, &filename, &returnStr)
-	if err != nil {
-		return nil, ctx.FuncError(err)
-	}
+/*
+TODO: use ini values to customize highlighting
+highlight.string=#DD0000
+highlight.comment=#FF9900
+highlight.keyword=#007700
+highlight.default=#0000BB
+highlight.html=#000000
+*/
 
-	file, err := ctx.Global().Open(filename, "r", true)
-	if err != nil {
-		return nil, ctx.FuncError(err)
-	}
-	defer file.Close()
-
-	lexer := tokenizer.NewLexer(file, string(filename))
+func highlightString(r io.Reader, filename string) (string, error) {
+	lexer := tokenizer.NewLexer(r, string(filename))
 	var buf bytes.Buffer
 	var nodeBuf bytes.Buffer
 
@@ -64,7 +59,7 @@ func fncHighlightFile(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	for {
 		t, err := lexer.NextItem()
 		if err != nil {
-			return nil, ctx.FuncError(err)
+			return "", err
 		}
 		if t.Type == tokenizer.T_EOF {
 			break
@@ -113,7 +108,56 @@ func fncHighlightFile(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		buf.WriteString(out)
 	}
 
-	result := "<code><span style=\"color: #000000\">\n" + buf.String() + "\n</span>\n</code>"
+	return buf.String(), nil
+}
+
+// > func mixed highlight_string ( string $str [, bool $return = FALSE ] )
+func fncHighlightString(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var str phpv.ZString
+	var returnStr core.Optional[phpv.ZBool]
+	_, err := core.Expand(ctx, args, &str, &returnStr)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	r := strings.NewReader(string(str))
+
+	output, err := highlightString(r, "")
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	result := "<code><span style=\"color: #000000\">\n" + output + "</span>\n</code>"
+	if returnStr.GetOrDefault(phpv.ZFalse) {
+		return phpv.ZStr(result), nil
+	}
+
+	ctx.Write([]byte(result))
+	return nil, nil
+}
+
+// > func mixed highlight_file ( string $filename [, bool $return = FALSE ] )
+// > alias show_source
+func fncHighlightFile(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var filename phpv.ZString
+	var returnStr core.Optional[phpv.ZBool]
+	_, err := core.Expand(ctx, args, &filename, &returnStr)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	file, err := ctx.Global().Open(filename, "r", true)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+	defer file.Close()
+
+	output, err := highlightString(file, string(filename))
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	result := "<code><span style=\"color: #000000\">\n" + output + "\n</span>\n</code>"
 	if returnStr.GetOrDefault(phpv.ZFalse) {
 		return phpv.ZStr(result), nil
 	}
