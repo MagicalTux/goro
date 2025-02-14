@@ -1,9 +1,5 @@
 package tokenizer
 
-type stringLexer struct {
-	delimeter rune
-}
-
 func lexPhpStringConst(l *Lexer) lexState {
 	st_type := l.next() // " or '
 	if st_type == '"' {
@@ -32,6 +28,10 @@ func lexPhpStringConst(l *Lexer) lexState {
 			continue
 		}
 	}
+}
+
+type stringLexer struct {
+	delimeter rune
 }
 
 func (sl stringLexer) lexStringWhitespace(l *Lexer) lexState {

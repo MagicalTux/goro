@@ -60,6 +60,12 @@ func NewLexerPhp(i io.Reader, fn string) *Lexer {
 	return res
 }
 
+func (l *Lexer) pushCall(s lexState) {
+	l.baseStack = append(l.baseStack, l.base)
+	l.base = s
+	s(l)
+}
+
 func (l *Lexer) push(s lexState) {
 	l.baseStack = append(l.baseStack, l.base)
 	l.base = s

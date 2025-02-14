@@ -65,10 +65,36 @@ func compileQuoteHeredoc(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error)
 		case tokenizer.T_ENCAPSED_AND_WHITESPACE:
 			res = append(res, &runZVal{unescapePhpQuotedString(i.Data), i.Loc()})
 		case tokenizer.T_VARIABLE:
-			res = append(res, &runVariable{phpv.ZString(i.Data[1:]), i.Loc()})
+			var v phpv.Runnable = &runVariable{phpv.ZString(i.Data[1:]), i.Loc()}
+
+			i, err = c.NextItem()
+			if err != nil {
+				return nil, err
+			}
+
+			// check if there's a [] or -> after $var
+			switch i.Type {
+			case tokenizer.T_OBJECT_OPERATOR:
+				fallthrough
+			case tokenizer.Rune('['):
+				v, err = compilePostExpr(v, i, c)
+				if err != nil {
+					return nil, err
+				}
+				res = append(res, v)
+			default:
+				c.backup()
+				res = append(res, v)
+			}
 		case tokenizer.T_END_HEREDOC:
 			// end of quote
 			return res, nil
+		case tokenizer.Rune('{'):
+			v, err := compileQuoteComplexExpr(c)
+			if err != nil {
+				return nil, err
+			}
+			res = append(res, v)
 		default:
 			return nil, i.Unexpected()
 		}
