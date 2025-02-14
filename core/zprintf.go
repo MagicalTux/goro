@@ -38,8 +38,31 @@ func padRight(s string, minWidth int, pad byte) string {
 	return s + strings.Repeat(string(pad), minWidth-len(s))
 }
 
+func readPositionSpecifier(in []byte) (int, []byte) {
+	if len(in) == 0 || !unicode.IsDigit(rune(in[0])) {
+		return -1, in
+	}
+
+	i := 1
+	for i < len(in) {
+		switch in[i] {
+		case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
+		case '$':
+			n, _ := strconv.Atoi(string(in[0:i]))
+			return n, in[i+1:]
+		default:
+			return -1, in
+		}
+		i++
+	}
+
+	return -1, in
+}
+
 func readFormatOptions(in []byte) (*formatOptions, []byte) {
-	o := &formatOptions{}
+	o := &formatOptions{
+		padChar: ' ',
+	}
 	i := 0
 	for i < len(in) {
 		switch c := in[i]; c {
@@ -137,16 +160,22 @@ func ZFprintf(ctx phpv.Context, w printfWriter, format phpv.ZString, arg ...*php
 			continue
 		}
 
-		// TODO: support Position specifier
-
 		if len(arg) <= argp {
 			// argument not found
 			return bytesWritten.Value, ctx.Warn("Too few arguments")
 		}
 
+		var posSpec int
+		posSpec, in = readPositionSpecifier(in[1:])
+		if posSpec == 0 {
+			return bytesWritten.Value, ctx.Warn("Argument number must be greater than zero")
+		} else if posSpec-1 >= len(arg) {
+			return bytesWritten.Value, ctx.Warn("Too few arguments")
+		}
+
 		var options *formatOptions
 		var minWidth, precision int
-		options, in = readFormatOptions(in[1:])
+		options, in = readFormatOptions(in)
 		if options == nil {
 			goto Return
 		}
@@ -155,8 +184,13 @@ func ZFprintf(ctx phpv.Context, w printfWriter, format phpv.ZString, arg ...*php
 			goto Return
 		}
 
-		v := arg[argp]
-		argp++
+		var v *phpv.ZVal
+		if posSpec > 0 {
+			v = arg[posSpec-1]
+		} else {
+			v = arg[argp]
+			argp++
+		}
 
 		floatPrecision := defaultPrecision
 		if precision >= 0 {
@@ -236,6 +270,9 @@ func ZFprintf(ctx phpv.Context, w printfWriter, format phpv.ZString, arg ...*php
 				goto Return
 			}
 			output = string(v.Value().(phpv.ZString))
+			if precision >= 0 {
+				output = output[:precision]
+			}
 		case 'u':
 			// next arg is an int
 			v, err = v.As(ctx, phpv.ZtInt)
@@ -265,7 +302,7 @@ func ZFprintf(ctx phpv.Context, w printfWriter, format phpv.ZString, arg ...*php
 		}
 
 		if len(output) < minWidth {
-			if options.leftJustify {
+			if !options.leftJustify {
 				output = padLeft(output, minWidth, options.padChar)
 			} else {
 				output = padRight(output, minWidth, options.padChar)
