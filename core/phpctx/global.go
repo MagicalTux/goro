@@ -92,18 +92,6 @@ func NewGlobalReq(req *http.Request, p *Process, config phpv.IniConfig) *Global 
 	return res
 }
 
-func NewIniContext(config phpv.IniConfig) *Global {
-	p := NewProcess("ini")
-	res := createGlobal(p)
-	res.Context = context.Background()
-	res.IniConfig = config
-
-	for k, v := range res.p.defaultConstants {
-		res.constant[k] = v
-	}
-	return res
-}
-
 func createGlobal(p *Process) *Global {
 	g := &Global{
 		p:                   p,
@@ -151,6 +139,9 @@ func (g *Global) init() {
 	for k, v := range g.p.defaultConstants {
 		g.constant[k] = v
 	}
+	g.constant["STDIN"] = stream.Stdin
+	g.constant["STDOUT"] = stream.Stdout
+	g.constant["STDERR"] = stream.Stderr
 
 	// import global funcs & classes from ext
 	for _, e := range globalExtMap {
