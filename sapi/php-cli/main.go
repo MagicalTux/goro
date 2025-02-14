@@ -43,11 +43,20 @@ func main() {
 
 	if p.ScriptFilename != "" {
 		if err := ctx.RunFile(p.ScriptFilename); err != nil {
-			ctx.Write([]byte("\nFatal error: "))
 			if ex, ok := err.(*phperr.PhpThrow); ok {
+				ctx.Write([]byte("\nFatal error: "))
 				ctx.Write([]byte(fmt.Sprintf(ex.ErrorTrace(ctx))))
 			} else {
-				ctx.Write([]byte(fmt.Sprintf("Uncaught Error: %s", err.Error())))
+				logError := true
+				if phpErr, ok := err.(*phpv.PhpError); ok {
+					errorLevel := ctx.GetConfig("error_reporting", phpv.ZInt(0).ZVal()).AsInt(ctx)
+					logError = int(errorLevel)&int(phpErr.Code) > 0
+				}
+
+				if logError {
+					ctx.Write([]byte("\nFatal error: "))
+					ctx.Write([]byte(fmt.Sprintf("Uncaught Error: %s", err.Error())))
+				}
 			}
 			os.Exit(1)
 		}

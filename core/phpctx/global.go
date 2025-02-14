@@ -463,7 +463,13 @@ func logWarning(ctx phpv.Context, format string, a ...any) error {
 		return err
 	}
 
-	ctx.Global().LogError(phpErr, option)
+	errorLevel := ctx.GetConfig("error_reporting", phpv.ZInt(0).ZVal()).AsInt(ctx)
+	logError := int(errorLevel)&int(phpErr.Code) > 0
+
+	if logError {
+		ctx.Global().LogError(phpErr, option)
+	}
+
 	return nil
 }
 

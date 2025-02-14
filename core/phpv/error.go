@@ -39,7 +39,7 @@ type PhpError struct {
 
 func (e *PhpError) CanBeUserHandled() bool {
 	switch e.Code {
-	case E_ERROR, E_PARSE, E_CORE_ERROR,
+	case E_ERROR, E_PARSE, E_NOTICE, E_USER_ERROR, E_CORE_ERROR,
 		E_CORE_WARNING, E_COMPILE_ERROR,
 		E_COMPILE_WARNING, E_STRICT:
 		return false
@@ -49,7 +49,7 @@ func (e *PhpError) CanBeUserHandled() bool {
 
 func (e *PhpError) IsNonFatal() bool {
 	switch e.Code {
-	case E_WARNING, E_USER_WARNING, E_USER_NOTICE, E_DEPRECATED, E_USER_DEPRECATED:
+	case E_WARNING, E_USER_WARNING, E_NOTICE, E_USER_NOTICE, E_DEPRECATED, E_USER_DEPRECATED:
 		return true
 	}
 	return false
