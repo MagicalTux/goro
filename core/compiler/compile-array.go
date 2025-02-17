@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"errors"
 	"fmt"
 	"io"
 
@@ -116,50 +117,13 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		return nil, nil // FIXME PHP Fatal error:  Cannot use [] for reading
 	}
 
-	offset, err := ac.offset.Run(ctx)
+	offset, err := ac.getArrayOffset(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	switch offset.GetType() {
-	case phpv.ZtResource, phpv.ZtFloat:
-		offset, err = offset.As(ctx, phpv.ZtInt)
-		if err != nil {
-			return nil, err
-		}
-	case phpv.ZtString:
-	case phpv.ZtInt:
-	case phpv.ZtObject:
-		// check if has __toString
-		fallthrough
-	case phpv.ZtArray:
-		// Trigger: Illegal offset type
-		fallthrough
-	default:
-		offset, err = offset.As(ctx, phpv.ZtString)
-	}
-
 	if v.GetType() == phpv.ZtString {
-		if offset.GetType() != phpv.ZtInt {
-			// PHP Warning:  Illegal string offset 'abc'
-			offset, err = offset.As(ctx, phpv.ZtInt)
-			if err != nil {
-				return nil, err
-			}
-		}
-		str := v.String()
-		iofft := int(offset.Value().(phpv.ZInt))
-
-		if iofft < 0 {
-			iofft = len(str) + iofft
-		}
-
-		if iofft < 0 || iofft >= len(str) {
-			// PHP Notice:  Uninitialized string offset: 3
-			return phpv.ZString("").ZVal(), nil
-		}
-
-		return phpv.ZString([]byte{str[iofft]}).ZVal(), nil
+		return v.AsString(ctx).Array().OffsetGet(ctx, offset)
 	}
 
 	array := v.Array()
@@ -183,6 +147,9 @@ func (ac *runArrayAccess) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 	}
 
 	switch v.GetType() {
+	case phpv.ZtString:
+		return ac.writeValueToString(ctx, value)
+
 	case phpv.ZtArray:
 	case phpv.ZtObject:
 	default:
@@ -206,16 +173,64 @@ func (ac *runArrayAccess) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 		return array.OffsetSet(ctx, nil, value)
 	}
 
+	offset, err := ac.getArrayOffset(ctx)
+	if err != nil {
+		return err
+	}
+
+	// OK...
+	return array.OffsetSet(ctx, offset, value)
+}
+
+func (ac *runArrayAccess) writeValueToString(ctx phpv.Context, value *phpv.ZVal) error {
+	v, err := ac.value.Run(ctx)
+	if err != nil {
+		return err
+	}
+
+	if ac.offset == nil {
+		return ctx.Errorf("[] operator not supported for strings")
+	}
+
 	offset, err := ac.offset.Run(ctx)
 	if err != nil {
 		return err
+	}
+
+	offset, err = ac.getArrayOffset(ctx)
+	if err != nil {
+		return err
+	}
+
+	if phpv.IsNull(offset) {
+		return errors.New("[] operator not supported for string")
+	}
+
+	array := v.AsString(ctx).Array()
+
+	err = array.OffsetSet(ctx, offset, value)
+	if err != nil {
+		return err
+	}
+
+	if wr, ok := ac.value.(phpv.Writable); ok {
+		wr.WriteValue(ctx, array.String().ZVal())
+	}
+
+	return nil
+}
+
+func (ac *runArrayAccess) getArrayOffset(ctx phpv.Context) (*phpv.ZVal, error) {
+	offset, err := ac.offset.Run(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	switch offset.GetType() {
 	case phpv.ZtResource, phpv.ZtFloat:
 		offset, err = offset.As(ctx, phpv.ZtInt)
 		if err != nil {
-			return err
+			return nil, err
 		}
 	case phpv.ZtString:
 	case phpv.ZtInt:
@@ -229,8 +244,7 @@ func (ac *runArrayAccess) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 		offset, err = offset.As(ctx, phpv.ZtString)
 	}
 
-	// OK...
-	return array.OffsetSet(ctx, offset, value)
+	return offset, err
 }
 
 func compileArray(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {

@@ -124,10 +124,12 @@ func (r *runVariableRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	if err != nil {
 		return nil, err
 	}
+	name := phpv.ZString(v.String())
 	v, err = ctx.OffsetGet(ctx, v)
 	if v != nil {
 		v = v.Nude()
 	}
+	v.Name = &name
 	return v, err
 }
 
