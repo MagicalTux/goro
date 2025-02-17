@@ -20,25 +20,16 @@ var highlightReplacer = strings.NewReplacer(
 	"&", "&amp;",
 )
 
-/*
-TODO: use ini values to customize highlighting
-highlight.string=#DD0000
-highlight.comment=#FF9900
-highlight.keyword=#007700
-highlight.default=#0000BB
-highlight.html=#000000
-*/
-
-func highlightString(r io.Reader, filename string) (string, error) {
+func highlightString(ctx phpv.Context, r io.Reader, filename string) (string, error) {
 	lexer := tokenizer.NewLexer(r, string(filename))
 	var buf bytes.Buffer
 	var nodeBuf bytes.Buffer
 
-	colorToken := "#007700"
-	colorID := "#0000BB"
-	colorComment := "#FF8000"
-	colorString := "#DD0000"
-	colorHTML := "#000000"
+	colorString := string(ctx.GetConfig("highlight.string", phpv.ZStr("#DD0000")).AsString(ctx))
+	colorKeyword := string(ctx.GetConfig("highlight.keyword", phpv.ZStr("#007700")).AsString(ctx))
+	colorDefault := string(ctx.GetConfig("highlight.default", phpv.ZStr("#0000BB")).AsString(ctx))
+	colorComment := string(ctx.GetConfig("highlight.comment", phpv.ZStr("#FF8000")).AsString(ctx))
+	colorHTML := string(ctx.GetConfig("highlight.html", phpv.ZStr("#000000")).AsString(ctx))
 	currentColor := colorHTML
 
 	output := func(s string, color string) {
@@ -76,10 +67,10 @@ func highlightString(r io.Reader, filename string) (string, error) {
 			tokenizer.T_DNUMBER,
 			tokenizer.T_STRING,
 			tokenizer.T_VARIABLE:
-			output(t.Data, colorID)
+			output(t.Data, colorDefault)
 
 		case tokenizer.T_FUNCTION:
-			output("function", colorToken)
+			output("function", colorKeyword)
 
 		case tokenizer.T_COMMENT:
 			output(t.Data, colorComment)
@@ -96,7 +87,7 @@ func highlightString(r io.Reader, filename string) (string, error) {
 			output(t.Data, colorHTML)
 
 		default:
-			output(t.Data, colorToken)
+			output(t.Data, colorKeyword)
 		}
 	}
 	if nodeBuf.Len() > 0 {
@@ -122,7 +113,7 @@ func fncHighlightString(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 
 	r := strings.NewReader(string(str))
 
-	output, err := highlightString(r, "")
+	output, err := highlightString(ctx, r, "")
 	if err != nil {
 		return nil, ctx.FuncError(err)
 	}
@@ -152,7 +143,7 @@ func fncHighlightFile(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 	defer file.Close()
 
-	output, err := highlightString(file, string(filename))
+	output, err := highlightString(ctx, file, string(filename))
 	if err != nil {
 		return nil, ctx.FuncError(err)
 	}
