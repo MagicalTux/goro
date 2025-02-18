@@ -72,6 +72,7 @@ func (a runArray) Dump(w io.Writer) error {
 }
 
 type runArrayAccess struct {
+	runnableChild
 	value  phpv.Runnable
 	offset phpv.Runnable
 	l      *phpv.Loc
@@ -114,7 +115,18 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	}
 
 	if ac.offset == nil {
-		return nil, nil // FIXME PHP Fatal error:  Cannot use [] for reading
+		write := false
+		switch t := ac.Parent.(type) {
+		case *runOperator:
+			write = t.opD.write
+		case *runArrayAccess, *runnableForeach, *runDestructure:
+			write = true
+		}
+
+		if !write {
+			return nil, ctx.Errorf("Cannot use [] for reading")
+		}
+		return nil, nil
 	}
 
 	offset, err := ac.getArrayOffset(ctx)

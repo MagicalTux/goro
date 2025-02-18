@@ -83,6 +83,28 @@ func (c *FuncContext) OffsetGet(ctx phpv.Context, name phpv.Val) (*phpv.ZVal, er
 	return c.h.GetString(name.(phpv.ZString)), nil
 }
 
+func (c *FuncContext) OffsetCheck(ctx phpv.Context, name phpv.Val) (*phpv.ZVal, bool, error) {
+	name, err := name.AsVal(ctx, phpv.ZtString)
+	if err != nil {
+		return nil, false, err
+	}
+
+	switch name.(phpv.ZString) {
+	case "this":
+		if c.this == nil {
+			return nil, false, nil
+		}
+		return c.this.ZVal(), true, nil
+	case "GLOBALS", "_SERVER", "_GET", "_POST", "_FILES", "_COOKIE", "_SESSION", "_REQUEST", "_ENV":
+		return c.Global().OffsetCheck(ctx, name)
+	}
+
+	if !c.h.HasString(name.(phpv.ZString)) {
+		return nil, false, nil
+	}
+	return c.h.GetString(name.(phpv.ZString)), true, nil
+}
+
 func (c *FuncContext) OffsetSet(ctx phpv.Context, name phpv.Val, v *phpv.ZVal) error {
 	name, err := name.AsVal(ctx, phpv.ZtString)
 	if err != nil {

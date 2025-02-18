@@ -149,7 +149,7 @@ func compileForeachExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) 
 		}
 	case tokenizer.T_VARIABLE:
 		// store in r.k or r.v ?
-		res = &runVariable{phpv.ZString(i.Data[1:]), i.Loc()}
+		res = &runVariable{v: phpv.ZString(i.Data[1:]), l: i.Loc()}
 		i2, err := c.NextItem()
 		if err != nil {
 			return nil, err

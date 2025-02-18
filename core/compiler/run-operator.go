@@ -173,13 +173,6 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 
 	// read a and b
 	if r.a != nil {
-		if variable, ok := r.a.(*runVariable); ok {
-			if !op.write && variable.IsUnDefined(ctx) {
-				if err = ctx.Notice("Undefined variable: %s", variable.VarName()); err != nil {
-					return nil, err
-				}
-			}
-		}
 		a, err = r.a.Run(ctx)
 		if err != nil {
 			return nil, err
@@ -200,11 +193,6 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	}
 
 	if r.b != nil {
-		if variable, ok := r.b.(*runVariable); ok && variable.IsUnDefined(ctx) {
-			if err = ctx.Notice("Undefined variable: %s", variable.VarName()); err != nil {
-				return nil, err
-			}
-		}
 		b, err = r.b.Run(ctx)
 		if err != nil {
 			return nil, err

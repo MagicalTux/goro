@@ -3,11 +3,13 @@ package compiler
 import (
 	"io"
 
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
 
 type runVariable struct {
+	runnableChild
 	v phpv.ZString
 	l *phpv.Loc
 }
@@ -71,11 +73,37 @@ func (r *runVariable) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		return nil, ctx.Errorf("Using $this when not in object context")
 	}
 
-	res, err := ctx.OffsetGet(ctx, r.v.ZVal())
+	res, exists, err := ctx.OffsetCheck(ctx, r.v.ZVal())
 	if err != nil {
 		return nil, err
 	}
+
+	if !exists {
+		write := false
+		switch t := r.Parent.(type) {
+		case *runOperator:
+			write = t.opD.write
+		case *runArrayAccess, *runnableForeach, *runDestructure:
+			write = true
+		case *runnableFunctionCall:
+			// functions that take references can be considered as "write",
+			// but the param info is not available here, just assume
+			// write is true, and let the functions themselves
+			// check for undefined variables.
+			write = true
+		}
+
+		if !write {
+			if err := ctx.Notice("Undefined variable: %s",
+				varName, logopt.NoFuncName(true)); err != nil {
+				return phpv.ZNULL.ZVal(), err
+			}
+		}
+	}
+
 	if res == nil {
+		res := phpv.NewZVal(phpv.ZNULL)
+		res.Name = &r.v
 		return res, nil
 	}
 

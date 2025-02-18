@@ -71,7 +71,7 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 
 	switch i.Type {
 	case tokenizer.T_VARIABLE:
-		return &runVariable{phpv.ZString(i.Data[1:]), l}, nil
+		return &runVariable{v: phpv.ZString(i.Data[1:]), l: l}, nil
 	case tokenizer.Rune('$'):
 		return compileRunVariableRef(nil, c, l)
 	case tokenizer.T_LNUMBER:

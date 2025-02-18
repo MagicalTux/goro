@@ -1,6 +1,7 @@
 package phpctx
 
 import (
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phperr"
 	"github.com/MagicalTux/goro/core/phpv"
 )
@@ -68,6 +69,15 @@ func (c *Global) CallZVal(ctx phpv.Context, f phpv.Callable, args []*phpv.ZVal, 
 				// and foo takes a reference
 				ctx.OffsetSet(ctx, callCtx.Args[i].GetName(), callCtx.Args[i])
 			} else {
+				argName := args[i].GetName()
+				if argName != "" {
+					if ok, _ := ctx.OffsetExists(ctx, argName); !ok {
+						if err := ctx.Notice("Undefined variable: %s",
+							argName, logopt.NoFuncName(true)); err != nil {
+							return nil, err
+						}
+					}
+				}
 				callCtx.Args[i] = callCtx.Args[i].Dup()
 			}
 		}

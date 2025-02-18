@@ -65,7 +65,7 @@ func compileQuoteHeredoc(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error)
 		case tokenizer.T_ENCAPSED_AND_WHITESPACE:
 			res = append(res, &runZVal{unescapePhpQuotedString(i.Data), i.Loc()})
 		case tokenizer.T_VARIABLE:
-			var v phpv.Runnable = &runVariable{phpv.ZString(i.Data[1:]), i.Loc()}
+			var v phpv.Runnable = &runVariable{v: phpv.ZString(i.Data[1:]), l: i.Loc()}
 
 			i, err = c.NextItem()
 			if err != nil {
@@ -117,7 +117,7 @@ func compileQuoteEncapsed(i *tokenizer.Item, c compileCtx, q rune) (phpv.Runnabl
 		case tokenizer.T_ENCAPSED_AND_WHITESPACE:
 			res = append(res, &runZVal{unescapePhpQuotedString(i.Data), i.Loc()})
 		case tokenizer.T_VARIABLE:
-			var v phpv.Runnable = &runVariable{phpv.ZString(i.Data[1:]), i.Loc()}
+			var v phpv.Runnable = &runVariable{v: phpv.ZString(i.Data[1:]), l: i.Loc()}
 
 			i, err = c.NextItem()
 			if err != nil {
@@ -177,7 +177,7 @@ func compileQuoteComplexExpr(c compileCtx) (phpv.Runnable, error) {
 	}
 
 	// similar to compileExpr, except this should start with a variable
-	var v phpv.Runnable = &runVariable{phpv.ZString(i.Data[1:]), i.Loc()}
+	var v phpv.Runnable = &runVariable{v: phpv.ZString(i.Data[1:]), l: i.Loc()}
 	for {
 		sr, err := compilePostExpr(v, nil, c)
 		if err != nil {

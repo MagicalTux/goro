@@ -38,6 +38,12 @@ type Runnable interface {
 	Dump(io.Writer) error
 }
 
+type RunnableChild interface {
+	Runnable
+	GetParentNode() Runnable
+	SetParentNode(Runnable)
+}
+
 type Writable interface {
 	WriteValue(ctx Context, value *ZVal) error
 }
