@@ -394,13 +394,12 @@ func (g *Global) Warn(format string, a ...any) error {
 }
 
 func (g *Global) Notice(format string, a ...any) error {
-	g.WriteErr([]byte{'\n'})
 	a = append(a, logopt.ErrType(phpv.E_NOTICE))
-	return logWarning(g, format, a...)
+	return logWarning(g, "\n"+format, a...)
 }
 
 func (g *Global) Deprecated(format string, a ...any) error {
-	g.WriteErr([]byte{'\n'})
+	format = "\n" + format
 	a = append(a, logopt.ErrType(phpv.E_DEPRECATED))
 	err := logWarning(g, format, a...)
 	if err == nil {
@@ -412,10 +411,9 @@ func (g *Global) Deprecated(format string, a ...any) error {
 func (g *Global) WarnDeprecated() error {
 	funcName := g.GetFuncName()
 	if ok := g.ShownDeprecated(funcName); ok {
-		g.WriteErr([]byte{'\n'})
 		err := logWarning(
 			g,
-			"The %s() function is deprecated. This message will be suppressed on further calls",
+			"\nThe %s() function is deprecated. This message will be suppressed on further calls",
 			funcName, logopt.NoFuncName(true), logopt.ErrType(phpv.E_DEPRECATED),
 		)
 		return err
