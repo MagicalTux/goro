@@ -50,7 +50,7 @@ func highlightString(ctx phpv.Context, r io.Reader, filename string) (string, er
 	for {
 		t, err := lexer.NextItem()
 		if err != nil {
-			return "", err
+			break
 		}
 		if t.Type == tokenizer.T_EOF {
 			break
@@ -94,7 +94,7 @@ func highlightString(ctx phpv.Context, r io.Reader, filename string) (string, er
 		out := nodeBuf.String()
 		nodeBuf.Reset()
 		if currentColor != colorHTML {
-			out = fmt.Sprintf(`<span style="color: %s">%s</span>`, currentColor, out)
+			out = fmt.Sprintf(`<span style="color: %s">%s</span>%s`, currentColor, out, "\n")
 		}
 		buf.WriteString(out)
 	}
@@ -148,7 +148,7 @@ func fncHighlightFile(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, ctx.FuncError(err)
 	}
 
-	result := "<code><span style=\"color: #000000\">\n" + output + "\n</span>\n</code>"
+	result := "<code><span style=\"color: #000000\">\n" + output + "</span>\n</code>"
 	if returnStr.GetOrDefault(phpv.ZFalse) {
 		return phpv.ZStr(result), nil
 	}
