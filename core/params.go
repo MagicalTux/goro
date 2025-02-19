@@ -268,107 +268,112 @@ func zvalStore(ctx phpv.Context, i int, args []*phpv.ZVal, out interface{}) (php
 	}
 }
 
-func Expand(ctx phpv.Context, args []*phpv.ZVal, out ...interface{}) (int, error) {
-loop:
-	for i, v := range out {
-		isRef := false
-		switch r := v.(type) {
-		case optionalReferable:
-			if i >= len(args) {
-				continue loop
-			}
-			isRef = true
-			r.setHasValue(true)
+func ExpandAt(ctx phpv.Context, args []*phpv.ZVal, i int, out interface{}) error {
+	isRef := false
+	switch r := out.(type) {
+	case optionalReferable:
+		if i >= len(args) {
+			// no more args and this is optional, so no error
+			return nil
+		}
+		isRef = true
+		r.setHasValue(true)
+		name := args[i].GetName()
+		r.setName(name)
+		out = r.refParamValue()
+	case referable:
+		isRef = true
+		if i < len(args) {
+			r.init()
 			name := args[i].GetName()
 			r.setName(name)
-			v = r.refParamValue()
-		case referable:
-			isRef = true
-			if i < len(args) {
-				r.init()
-				name := args[i].GetName()
-				r.setName(name)
+		}
+		out = r.refParamValue()
+	case optionable:
+		if i >= len(args) {
+			// no more args and this is optional, so no error
+			return nil
+		}
+		out = r.getOptionalValue()
+	default:
+		rv := reflect.ValueOf(out)
+
+		if rv.Kind() != reflect.Ptr {
+			panic("expand requires arguments to be pointers")
+		}
+
+		if rv.Type().Elem().Kind() == reflect.Ptr {
+			// TODO: remove instances of *blah with Optional[blah] then remove this part
+
+			switch rv.Type().Elem() {
+			// these are expected to be pointers
+			case reflect.TypeOf(&phpv.ZVal{}):
+			case reflect.TypeOf(&phpobj.ZObject{}):
+			case reflect.TypeOf(&phpv.ZArray{}):
+
+			default:
+				// pointer of pointer → optional argument
+				if len(args) <= i {
+					// end of argments
+					return nil
+				}
+
+				// we have an argument → instanciate and update v to point to the subvalue
+				newv := reflect.New(rv.Type().Elem().Elem())
+				rv.Elem().Set(newv)
+				out = newv.Interface()
 			}
-			v = r.refParamValue()
-		case optionable:
-			if len(args) <= i {
-				// end of argments
-				continue
-			}
-			v = r.getOptionalValue()
-		default:
-			rv := reflect.ValueOf(v)
+		}
+	}
 
-			if rv.Kind() != reflect.Ptr {
-				panic("expand requires arguments to be pointers")
-			}
+	if len(args) <= i {
+		// not enough arguments, such errors in PHP can be returned as either:
+		// Uncaught ArgumentCountError: Too few arguments to function toto(), 0 passed
+		// x() expects at least 2 parameters, 0 given
+		return ctx.FuncError(ErrNotEnoughArguments)
+	}
 
-			if rv.Type().Elem().Kind() == reflect.Ptr {
-				// TODO: remove instances of *blah with Optional[blah] then remove this part
-
-				switch rv.Type().Elem() {
-				// these are expected to be pointers
-				case reflect.TypeOf(&phpv.ZVal{}):
-				case reflect.TypeOf(&phpobj.ZObject{}):
-				case reflect.TypeOf(&phpv.ZArray{}):
-
-				default:
-					// pointer of pointer → optional argument
-					if len(args) <= i {
-						// end of argments
-						continue
-					}
-
-					// we have an argument → instanciate and update v to point to the subvalue
-					newv := reflect.New(rv.Type().Elem().Elem())
-					rv.Elem().Set(newv)
-					v = newv.Interface()
+	if isRef {
+		args[i] = args[i].Ref()
+	} else {
+		parentCtx := ctx.Parent(1)
+		if parentCtx == nil {
+			parentCtx = ctx
+		}
+		if args[i].GetName() != "" {
+			if ok, _ := parentCtx.OffsetExists(ctx, args[i].GetName()); !ok {
+				if err := ctx.Notice("Undefined variable: %s",
+					args[i].GetName(), logopt.NoFuncName(true)); err != nil {
+					return err
 				}
 			}
 		}
 
-		if len(args) <= i {
-			// not enough arguments, such errors in PHP can be returned as either:
-			// Uncaught ArgumentCountError: Too few arguments to function toto(), 0 passed
-			// x() expects at least 2 parameters, 0 given
-			return i, ctx.FuncError(ErrNotEnoughArguments)
-		}
+		args[i] = args[i].Dup()
+	}
 
-		if isRef {
-			args[i] = args[i].Ref()
-		} else {
-			parentCtx := ctx.Parent(1)
-			if parentCtx == nil {
-				parentCtx = ctx
-			}
-			if args[i].GetName() != "" {
-				if ok, _ := parentCtx.OffsetExists(ctx, args[i].GetName()); !ok {
-					if err := ctx.Notice("Undefined variable: %s",
-						args[i].GetName(), logopt.NoFuncName(true)); err != nil {
-						return i, err
-					}
-				}
-			}
+	dest, err := zvalStore(ctx, i, args, out)
+	if err != nil {
+		return ctx.Error(err)
+	}
 
-			args[i] = args[i].Dup()
+	if isRef {
+		// handle case foo($bar) where $bar is undefined
+		// and foo takes a reference
+		name := args[i].GetName()
+		outZVal := dest.ZVal()
+		outZVal.Name = &name
+		if name != "GLOBALS" {
+			// check if varname is not GLOBALS to avoid infinite loop
+			ctx.Parent(1).OffsetSet(ctx, outZVal.Name, outZVal)
 		}
+	}
+	return nil
+}
 
-		out, err := zvalStore(ctx, i, args, v)
-		if err != nil {
-			return i, ctx.Error(err)
-		}
-
-		if isRef {
-			// handle case foo($bar) where $bar is undefined
-			// and foo takes a reference
-			name := args[i].GetName()
-			outZVal := out.ZVal()
-			outZVal.Name = &name
-			if name != "GLOBALS" {
-				// check if varname is not GLOBALS to avoid infinite loop
-				ctx.Parent(1).OffsetSet(ctx, outZVal.Name, outZVal)
-			}
-		}
+func Expand(ctx phpv.Context, args []*phpv.ZVal, out ...interface{}) (int, error) {
+	for i := range out {
+		ExpandAt(ctx, args, i, out[i])
 	}
 	return len(out), nil
 }

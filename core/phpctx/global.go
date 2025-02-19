@@ -72,6 +72,8 @@ type Global struct {
 
 	userErrorHandler phpv.Callable
 	userErrorFilter  phpv.PhpErrorType
+
+	locale map[phpv.ZInt]phpv.ZString
 }
 
 func NewGlobal(ctx context.Context, p *Process, config phpv.IniConfig) *Global {
@@ -111,6 +113,7 @@ func createGlobal(p *Process) *Global {
 		globalLazyFunc:      make(map[phpv.ZString]*globalLazyOffset),
 		globalLazyClass:     make(map[phpv.ZString]*globalLazyOffset),
 		shownDeprecated:     make(map[string]struct{}),
+		locale:              make(map[phpv.ZInt]phpv.ZString),
 		mem:                 NewMemMgr(32 * 1024 * 1024), // limit in bytes TODO read memory_limit from process (.ini file)
 
 	}
@@ -755,4 +758,15 @@ func (g *Global) ShownDeprecated(key string) bool {
 	_, exists := g.shownDeprecated[key]
 	g.shownDeprecated[key] = struct{}{}
 	return !exists
+}
+
+func (g *Global) GetLocale(category phpv.ZInt) phpv.ZString {
+	if lc, ok := g.locale[category]; ok {
+		return lc
+	}
+	return phpv.ZString("C")
+}
+
+func (g *Global) SetLocale(category phpv.ZInt, locale phpv.ZString) {
+	g.locale[category] = locale
 }
