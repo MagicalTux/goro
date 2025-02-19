@@ -173,7 +173,7 @@ func (l *Lexer) reset() {
 
 func (l *Lexer) backup() {
 	if l.width == 0 {
-		panic("lexer backup called without a previous read")
+		return
 	}
 
 	// update buffers

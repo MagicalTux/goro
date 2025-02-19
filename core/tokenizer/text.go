@@ -32,10 +32,13 @@ func lexPhpOpen(l *Lexer) lexState {
 		l.push(lexPhp)
 		return l.base
 	}
+
 	l.acceptFixedI("php")
-	if !l.acceptSpace() {
+	readSpaces := l.acceptSpace()
+	if !readSpaces && l.peek() > 0 && l.peekString(2) != "?>" {
 		return l.error("php tag should be followed by a whitespace")
 	}
+
 	l.emit(T_OPEN_TAG)
 	l.push(lexPhp)
 	return l.base
