@@ -2,7 +2,6 @@ package phpv
 
 import (
 	"errors"
-	"fmt"
 	"strconv"
 	"strings"
 	"unicode"
@@ -204,13 +203,15 @@ func (z ZStringArray) String() ZString {
 
 func (z ZStringArray) OffsetGet(ctx Context, key Val) (*ZVal, error) {
 	if key.GetType() != ZtInt {
-		return nil, fmt.Errorf("Illegal string offset '%s'", key.String())
+		if err := ctx.Warn("Illegal string offset '%s'", key.String()); err != nil {
+			return nil, err
+		}
 	}
 	val, _ := key.AsVal(ctx, ZtInt)
 	i := int(val.(ZInt))
 	s := *z.ZString
 	if i < 0 || i >= len(s) {
-		return ZStr(""), fmt.Errorf("Uninitialized string offset: %v", key.String())
+		return ZStr(""), ctx.Warn("Uninitialized string offset: %v", key.String())
 	}
 	c := ZString(s[i])
 
@@ -224,15 +225,13 @@ func (z ZStringArray) OffsetSet(ctx Context, key Val, value *ZVal) error {
 		i = len(s)
 	} else {
 		if key.GetType() != ZtInt {
-			return fmt.Errorf("Illegal string offset '%s'", key.String())
+			return ctx.Warn("Illegal string offset '%s'", key.String())
 		}
 		val, _ := key.AsVal(ctx, ZtInt)
 		i = int(val.(ZInt))
 	}
 
 	c := value.AsString(ctx)
-	if c == "" {
-	}
 
 	if i < 0 {
 		i = len(s) + i
@@ -249,7 +248,7 @@ func (z ZStringArray) OffsetSet(ctx Context, key Val, value *ZVal) error {
 
 func (z ZStringArray) OffsetUnset(ctx Context, key Val) error {
 	if key.GetType() != ZtInt {
-		return fmt.Errorf("Illegal string offset '%s'", key.String())
+		return ctx.Warn("Illegal string offset '%s'", key.String())
 	}
 	val, _ := key.AsVal(ctx, ZtInt)
 	i := val.(ZInt)
@@ -259,9 +258,6 @@ func (z ZStringArray) OffsetUnset(ctx Context, key Val) error {
 }
 
 func (z ZStringArray) OffsetExists(ctx Context, key Val) (bool, error) {
-	if key.GetType() != ZtInt {
-		return false, fmt.Errorf("Illegal string offset '%s'", key.String())
-	}
 	val, _ := key.AsVal(ctx, ZtInt)
 	i := int(val.(ZInt))
 	return i >= 0 && i < len(*z.ZString), nil
@@ -269,7 +265,7 @@ func (z ZStringArray) OffsetExists(ctx Context, key Val) (bool, error) {
 
 func (z ZStringArray) OffsetCheck(ctx Context, key Val) (*ZVal, bool, error) {
 	if key.GetType() != ZtInt {
-		return nil, false, fmt.Errorf("Illegal string offset '%s'", key.String())
+		return nil, false, nil
 	}
 	val, _ := key.AsVal(ctx, ZtInt)
 	i := int(val.(ZInt))
