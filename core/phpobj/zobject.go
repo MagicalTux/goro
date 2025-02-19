@@ -234,6 +234,24 @@ func (o *ZObject) GetMethod(method phpv.ZString, ctx phpv.Context) (phpv.Callabl
 	return m.Method, nil
 }
 
+func (o *ZObject) HasProp(ctx phpv.Context, key phpv.Val) (bool, error) {
+	var err error
+	key, err = key.AsVal(ctx, phpv.ZtString)
+	if err != nil {
+		return false, err
+	}
+
+	keyStr := key.(phpv.ZString)
+	if _, ok := o.hasPrivate[keyStr]; ok {
+		propName := getPrivatePropName(o.GetClass(), keyStr)
+		if o.h.HasString(propName) {
+			return true, nil
+		}
+	}
+
+	return o.h.HasString(key.(phpv.ZString)), nil
+}
+
 func (o *ZObject) ObjectGet(ctx phpv.Context, key phpv.Val) (*phpv.ZVal, error) {
 	var err error
 	key, err = key.AsVal(ctx, phpv.ZtString)

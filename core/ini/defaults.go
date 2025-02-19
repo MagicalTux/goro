@@ -337,7 +337,8 @@ var Defaults = map[string]IniDirective{
 	"session.cache_expire":                  {`"180"`, INI_ALL},
 	"session.use_trans_sid":                 {`"0"`, INI_ALL},
 	"session.trans_sid_tags":                {`"a=href,area=href,frame=src,form="`, INI_ALL},
-	"session.trans_sid_hosts":               {`$_SERVER['HTTP_HOST']`, INI_ALL},
+	// TODO: env should be initialized before evaluating the defaults values
+	// "session.trans_sid_hosts":               {`$_SERVER['HTTP_HOST']`, INI_ALL},
 	"session.sid_length":                    {`"32"`, INI_ALL},
 	"session.sid_bits_per_character":        {`"4"`, INI_ALL},
 	"session.upload_progress.enabled":       {`"1"`, INI_PERDIR},
