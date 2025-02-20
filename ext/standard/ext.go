@@ -303,6 +303,7 @@ func init() {
 			"substr_compare":             {Func: fncSubstrCompare, Args: []*phpctx.ExtFunctionArg{}},
 			"substr_count":               {Func: fncSubstrCount, Args: []*phpctx.ExtFunctionArg{}},
 			"substr_replace":             {Func: fncSubstrReplace, Args: []*phpctx.ExtFunctionArg{}},
+			"system":                     {Func: fncSystem, Args: []*phpctx.ExtFunctionArg{}},
 			"time":                       {Func: fncTime, Args: []*phpctx.ExtFunctionArg{}},
 			"trim":                       {Func: fncStrTrim, Args: []*phpctx.ExtFunctionArg{}},
 			"uasort":                     {Func: fncArrayUASort, Args: []*phpctx.ExtFunctionArg{}},
