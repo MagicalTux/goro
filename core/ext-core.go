@@ -2,6 +2,7 @@ package core
 
 import (
 	"github.com/MagicalTux/goro/core/compiler"
+	"github.com/MagicalTux/goro/core/locale"
 	"github.com/MagicalTux/goro/core/phpctx"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
@@ -79,6 +80,13 @@ func init() {
 			"E_USER_WARNING":               E_USER_WARNING,
 			"E_WARNING":                    E_WARNING,
 			"FALSE":                        FALSE,
+			"LC_ALL":                       locale.LC_ALL,
+			"LC_COLLATE":                   locale.LC_COLLATE,
+			"LC_CTYPE":                     locale.LC_CTYPE,
+			"LC_MESSAGES":                  locale.LC_MESSAGES,
+			"LC_MONETARY":                  locale.LC_MONETARY,
+			"LC_NUMERIC":                   locale.LC_NUMERIC,
+			"LC_TIME":                      locale.LC_TIME,
 			"NULL":                         NULL,
 			"PHP_EOL":                      PHP_EOL,
 			"PHP_EXTRA_VERSION":            PHP_EXTRA_VERSION,

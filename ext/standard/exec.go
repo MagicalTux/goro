@@ -1,6 +1,10 @@
 package standard
 
 import (
+	"bufio"
+	"bytes"
+	"errors"
+	"io"
 	"os/exec"
 	"regexp"
 	"strings"

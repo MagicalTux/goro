@@ -97,9 +97,6 @@ type GlobalContext interface {
 
 	GetLoadedExtensions() []string
 
-	GetLocale(category ZInt) ZString
-	SetLocale(category ZInt, locale ZString)
-
 	Random() *random.State
 
 	GetUserErrorHandler() (Callable, PhpErrorType)
