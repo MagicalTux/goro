@@ -205,6 +205,7 @@ func init() {
 			"natsort":                    {Func: fncArrayNatSort, Args: []*phpctx.ExtFunctionArg{}},
 			"next":                       {Func: fncArrayNext, Args: []*phpctx.ExtFunctionArg{}},
 			"nl2br":                      {Func: fncStrNewLine2Br, Args: []*phpctx.ExtFunctionArg{}},
+			"nl_langinfo":                {Func: fncNlLangInfo, Args: []*phpctx.ExtFunctionArg{}},
 			"number_format":              {Func: fncStrNumberFormat, Args: []*phpctx.ExtFunctionArg{}},
 			"ob_clean":                   {Func: fncObClean, Args: []*phpctx.ExtFunctionArg{}},
 			"ob_end_clean":               {Func: fncObEndClean, Args: []*phpctx.ExtFunctionArg{}},

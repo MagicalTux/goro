@@ -117,3 +117,13 @@ func fncLocaleConv(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	return result.ZVal(), nil
 }
+
+// > func string nl_langinfo ( int $item )
+func fncNlLangInfo(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var item phpv.ZInt
+	_, err := core.Expand(ctx, args, &item)
+	if err != nil {
+		return nil, err
+	}
+	return locale.LangInfo(item).ZVal(), nil
+}

@@ -1,11 +1,14 @@
 package locale
 
 // #include <locale.h>
+// #include <langinfo.h>
 import (
 	"C"
 )
 
-import "github.com/MagicalTux/goro/core/phpv"
+import (
+	"github.com/MagicalTux/goro/core/phpv"
+)
 
 // > const
 const (
@@ -16,6 +19,62 @@ const (
 	LC_MONETARY
 	LC_MESSAGES
 	LC_ALL
+)
+
+// > const
+const (
+	D_T_FMT    phpv.ZInt = 131112
+	D_FMT      phpv.ZInt = 131113
+	T_FMT      phpv.ZInt = 131114
+	T_FMT_AMPM phpv.ZInt = 131115
+	AM_STR     phpv.ZInt = 131110
+	PM_STR     phpv.ZInt = 131111
+	DAY_1      phpv.ZInt = 131079
+	DAY_2      phpv.ZInt = 131080
+	DAY_3      phpv.ZInt = 131081
+	DAY_4      phpv.ZInt = 131082
+	DAY_5      phpv.ZInt = 131083
+	DAY_6      phpv.ZInt = 131084
+	DAY_7      phpv.ZInt = 131085
+	ABDAY_1    phpv.ZInt = 131072
+	ABDAY_2    phpv.ZInt = 131073
+	ABDAY_3    phpv.ZInt = 131074
+	ABDAY_4    phpv.ZInt = 131075
+	ABDAY_5    phpv.ZInt = 131076
+	ABDAY_6    phpv.ZInt = 131077
+	ABDAY_7    phpv.ZInt = 131078
+	MON_1      phpv.ZInt = 131098
+	MON_2      phpv.ZInt = 131099
+	MON_3      phpv.ZInt = 131100
+	MON_4      phpv.ZInt = 131101
+	MON_5      phpv.ZInt = 131102
+	MON_6      phpv.ZInt = 131103
+	MON_7      phpv.ZInt = 131104
+	MON_8      phpv.ZInt = 131105
+	MON_9      phpv.ZInt = 131106
+	MON_10     phpv.ZInt = 131107
+	MON_11     phpv.ZInt = 131108
+	MON_12     phpv.ZInt = 131109
+	ABMON_1    phpv.ZInt = 131086
+	ABMON_2    phpv.ZInt = 131087
+	ABMON_3    phpv.ZInt = 131088
+	ABMON_4    phpv.ZInt = 131089
+	ABMON_5    phpv.ZInt = 131090
+	ABMON_6    phpv.ZInt = 131091
+	ABMON_7    phpv.ZInt = 131092
+	ABMON_8    phpv.ZInt = 131093
+	ABMON_9    phpv.ZInt = 131094
+	ABMON_10   phpv.ZInt = 131095
+	ABMON_11   phpv.ZInt = 131096
+	ABMON_12   phpv.ZInt = 131097
+	RADIXCHAR  phpv.ZInt = 65536
+	THOUSEP    phpv.ZInt = 65537
+	YESSTR     phpv.ZInt = 327682
+	YESEXPR    phpv.ZInt = 327680
+	NOSTR      phpv.ZInt = 327683
+	NOEXPR     phpv.ZInt = 327681
+	CRNCYSTR   phpv.ZInt = 262159
+	CODESET    phpv.ZInt = 14
 )
 
 type LconvNumericFormat struct {
@@ -89,4 +148,9 @@ func Localeconv() *Lconv {
 			NSignPosN:      int8(ret.int_n_sign_posn),
 		},
 	}
+}
+
+func LangInfo(item phpv.ZInt) phpv.ZString {
+	elem := C.GoString(C.nl_langinfo(C.int(item)))
+	return phpv.ZString(elem)
 }
