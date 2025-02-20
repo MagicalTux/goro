@@ -47,16 +47,24 @@ func main() {
 				ctx.Write([]byte("\nFatal error: "))
 				ctx.Write([]byte(fmt.Sprintf(ex.ErrorTrace(ctx))))
 			} else {
-				logError := true
 				if phpErr, ok := err.(*phpv.PhpError); ok {
 					errorLevel := ctx.GetConfig("error_reporting", phpv.ZInt(0).ZVal()).AsInt(ctx)
-					logError = int(errorLevel)&int(phpErr.Code) > 0
-				}
+					logError := int(errorLevel)&int(phpErr.Code) > 0
+					if logError {
+						if phpErr.Code == phpv.E_PARSE {
+							ctx.Write([]byte(err.Error()))
+						} else {
+							ctx.Write([]byte("\nFatal error: "))
+							ctx.Write([]byte(fmt.Sprintf("Uncaught Error: %s", err.Error())))
+						}
 
-				if logError {
+					}
+				} else {
+
 					ctx.Write([]byte("\nFatal error: "))
 					ctx.Write([]byte(fmt.Sprintf("Uncaught Error: %s", err.Error())))
 				}
+
 			}
 			os.Exit(1)
 		}

@@ -47,13 +47,16 @@ func stdFuncEval(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if err != nil {
 		if phpErr, ok := err.(*phpv.PhpError); ok {
 			evalLoc := phpErr.Loc
-			return nil, fmt.Errorf(
-				"\n%s in %s(%d) : eval()'d code on line %d",
-				phpErr.Err.Error(),
-				ctx.Loc().Filename,
-				ctx.Loc().Line,
-				evalLoc.Line,
-			)
+			return nil, &phpv.PhpError{
+				Err: fmt.Errorf(
+					"\n%s in %s(%d) : eval()'d code on line %d",
+					phpErr.Err.Error(),
+					ctx.Loc().Filename,
+					ctx.Loc().Line,
+					evalLoc.Line,
+				),
+				Code: phpv.E_PARSE,
+			}
 		}
 		return nil, ctx.Error(err, phpv.E_PARSE)
 	}
