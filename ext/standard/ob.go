@@ -87,7 +87,7 @@ func fncObGetLevel(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZInt(0).ZVal(), nil
 	}
 
-	return phpv.ZInt(buf.Level()).ZVal(), buf.Close()
+	return phpv.ZInt(buf.Level()).ZVal(), nil
 }
 
 // > func string ob_get_clean ( void )

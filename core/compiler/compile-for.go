@@ -73,13 +73,15 @@ func (r *runnableFor) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 			return nil, err
 		}
 
-		// execute cond
-		z, err := r.cond.Run(ctx)
-		if err != nil {
-			return nil, err
-		}
-		if !z.AsBool(ctx) {
-			break
+		if r.cond != nil {
+			// execute cond
+			z, err := r.cond.Run(ctx)
+			if err != nil {
+				return nil, err
+			}
+			if !z.AsBool(ctx) {
+				break
+			}
 		}
 
 		if r.code != nil {

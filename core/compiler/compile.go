@@ -291,9 +291,12 @@ func GetChildren(r phpv.Runnable) []phpv.Runnable {
 			}
 		}
 		return res
+	case *runnableUnset:
+		return t.args
 	case *phperr.PhpBreak:
 		return nil
 	case *phperr.PhpContinue:
+		return nil
 		return nil
 	default:
 		panic("TODO: " + reflect.TypeOf(r).String())

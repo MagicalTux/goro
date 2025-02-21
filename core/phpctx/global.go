@@ -39,8 +39,8 @@ type Global struct {
 	l     *phpv.Loc
 	mem   *MemMgr
 
-	deadline   time.Time
-	timerStart time.Time
+	deadlineDuration time.Duration
+	timerStart       time.Time
 
 	IniConfig phpv.IniConfig
 
@@ -287,9 +287,13 @@ func (g *Global) RunFile(fn string) error {
 	switch innerErr := phpv.UnwrapError(err).(type) {
 	case *phpv.PhpExit:
 	case *phperr.PhpTimeout:
-		g.WriteErr([]byte(innerErr.String()))
+		if g.GetConfig("display_errors", phpv.ZFalse.ZVal()).AsBool(g) {
+			g.WriteErr([]byte(innerErr.String()))
+		}
 	default:
-		return err
+		if err != nil {
+			return err
+		}
 	}
 
 	if len(g.shutdownFuncs) > 0 {
@@ -358,26 +362,27 @@ func (g *Global) IterateConfig() iter.Seq2[string, phpv.IniValue] {
 
 func (g *Global) Tick(ctx phpv.Context, l *phpv.Loc) error {
 	// TODO check run deadline, context cancellation and memory limit
-	if time.Until(g.deadline) <= 0 {
-		return &phperr.PhpTimeout{L: g.l, Seconds: g.deadline.Second() - g.timerStart.Second()}
+	deadline := g.timerStart.Add(g.deadlineDuration)
+	// println("deadline", deadline.String())
+	if time.Until(deadline) <= 0 {
+		return &phperr.PhpTimeout{L: g.l, Seconds: int(g.deadlineDuration.Seconds())}
 	}
 	g.l = l
 	return nil
 }
 
-func (g *Global) Deadline() (deadline time.Time, ok bool) {
-	return g.deadline, true
+func (g *Global) Deadline() (time.Time, bool) {
+	deadline := g.timerStart.Add(g.deadlineDuration)
+	return deadline, true
 }
 
 func (g *Global) SetDeadline(t time.Time) {
-	g.deadline = t
 	g.timerStart = time.Now()
+	g.deadlineDuration = t.Sub(g.timerStart)
 }
 
 func (g *Global) ResetDeadline() {
-	duration := time.Duration(g.deadline.Second() - g.timerStart.Second())
 	g.timerStart = time.Now()
-	g.deadline = g.timerStart.Add(duration * time.Second)
 }
 
 func (g *Global) Loc() *phpv.Loc {

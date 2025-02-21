@@ -373,7 +373,10 @@ func ExpandAt(ctx phpv.Context, args []*phpv.ZVal, i int, out interface{}) error
 
 func Expand(ctx phpv.Context, args []*phpv.ZVal, out ...interface{}) (int, error) {
 	for i := range out {
-		ExpandAt(ctx, args, i, out[i])
+		err := ExpandAt(ctx, args, i, out[i])
+		if err != nil {
+			return i, err
+		}
 	}
 	return len(out), nil
 }
