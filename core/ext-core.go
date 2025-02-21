@@ -45,8 +45,11 @@ func init() {
 			"get_loaded_extensions": {Func: fncLoadedExtensions, Args: []*phpctx.ExtFunctionArg{}},
 			"include":               {Func: fncInclude, Args: []*phpctx.ExtFunctionArg{}},
 			"include_once":          {Func: fncIncludeOnce, Args: []*phpctx.ExtFunctionArg{}},
+			"ini_alter":             {Func: fncIniSet, Args: []*phpctx.ExtFunctionArg{}}, // alias
 			"ini_get":               {Func: fncIniGet, Args: []*phpctx.ExtFunctionArg{}},
 			"ini_get_all":           {Func: fncIniGetAll, Args: []*phpctx.ExtFunctionArg{}},
+			"ini_restore":           {Func: fncIniRestore, Args: []*phpctx.ExtFunctionArg{}},
+			"ini_set":               {Func: fncIniSet, Args: []*phpctx.ExtFunctionArg{}},
 			"phpversion":            {Func: stdFuncPhpVersion, Args: []*phpctx.ExtFunctionArg{}},
 			"print":                 {Func: fncPrint, Args: []*phpctx.ExtFunctionArg{}},
 			"require":               {Func: fncRequire, Args: []*phpctx.ExtFunctionArg{}},

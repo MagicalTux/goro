@@ -25,6 +25,7 @@ func (c *Global) OffsetCheck(ctx phpv.Context, name phpv.Val) (*phpv.ZVal, bool,
 	if err != nil {
 		return nil, false, err
 	}
+
 	switch name.(phpv.ZString) {
 	case "GLOBALS":
 		return c.h.Array().ZVal(), true, nil

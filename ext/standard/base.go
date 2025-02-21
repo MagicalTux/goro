@@ -73,7 +73,7 @@ func stdFuncGetCfgVar(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if err != nil {
 		return nil, err
 	}
-	return ctx.Global().GetConfig(v, phpv.ZNull{}.ZVal()), nil
+	return ctx.Global().GetGlobalConfig(v, phpv.ZNull{}.ZVal()), nil
 }
 
 // > func string php_sapi_name ( void )

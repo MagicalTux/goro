@@ -27,14 +27,15 @@ func fncStrlen(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 // > func int error_reporting ([ int $level ] )
 func fncErrorReporting(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	var level *phpv.ZInt
-	_, err := Expand(ctx, args, &level)
+	var levelArg Optional[phpv.ZInt]
+	_, err := Expand(ctx, args, &levelArg)
 	if err != nil {
 		return nil, err
 	}
 
-	if level != nil {
-		ctx.Global().SetLocalConfig("error_reporting", (*level).ZVal())
+	if levelArg.HasArg() {
+		level := levelArg.Get()
+		ctx.Global().SetLocalConfig("error_reporting", level.ZVal())
 	}
 
 	return ctx.GetConfig("error_reporting", phpv.ZInt(0).ZVal()), nil
@@ -204,7 +205,38 @@ func fncIniGet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	return ctx.Global().GetConfig(varName, phpv.ZNULL.ZVal()), nil
+	value := ctx.Global().GetConfig(varName, phpv.ZStr(""))
+	return value.AsString(ctx).ZVal(), nil
+}
+
+// > func string ini_restore ( string $varname)
+func fncIniRestore(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var varName phpv.ZString
+	_, err := Expand(ctx, args, &varName)
+	if err != nil {
+		return nil, err
+	}
+
+	ctx.Global().RestoreConfig(varName)
+	return nil, nil
+}
+
+// > func string ini_set ( string $varname, string $newvalue )
+// > alias ini_alter
+func fncIniSet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var varName phpv.ZString
+	var newValue phpv.ZString
+	_, err := Expand(ctx, args, &varName, &newValue)
+	if err != nil {
+		return nil, err
+	}
+
+	oldValue, ok := ctx.Global().SetLocalConfig(varName, newValue.ZVal())
+	if !ok {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	return oldValue.ZVal(), nil
 }
 
 // > func array ini_get_all ([ string $extension [, bool $details = TRUE ]] )
@@ -220,18 +252,14 @@ func fncIniGetAll(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if Deref(details, true) {
 		for k, v := range ctx.Global().IterateConfig() {
 			entry := phpv.NewZArray()
-			entry.OffsetSet(ctx, phpv.ZStr("global_value"), v.Local)
-			entry.OffsetSet(ctx, phpv.ZStr("local_value"), v.Global)
+			entry.OffsetSet(ctx, phpv.ZStr("global_value"), v.Local.ZVal())
+			entry.OffsetSet(ctx, phpv.ZStr("local_value"), v.Global.ZVal())
 			result.OffsetSet(ctx, phpv.ZString(k), entry.ZVal())
 		}
 	} else {
 		g := ctx.Global()
 		for k, v := range g.IterateConfig() {
-			value := v.Local
-			if value == nil {
-				value = v.Global
-			}
-			result.OffsetSet(ctx, phpv.ZString(k), value)
+			result.OffsetSet(ctx, phpv.ZString(k), v.Get().ZVal())
 		}
 	}
 	return result.ZVal(), nil

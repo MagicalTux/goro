@@ -20,6 +20,13 @@ const (
 	INI_ALL = INI_USER | INI_PERDIR | INI_SYSTEM
 )
 
+// notes:
+// - ini_set and ini_get always return a string
+// - if $x is not a string, then ini_set("foo", $x)
+//   will convert the string first
+// - malformed expressions are treated as strings
+//   when evaluating ini values from files or CLI
+
 type Config struct {
 	Values map[string]*phpv.IniValue
 }
@@ -59,11 +66,11 @@ func New() phpv.IniConfig {
 
 func (c *Config) LoadDefaults(ctx phpv.Context) {
 	for varName, entry := range Defaults {
-		expr, err := c.EvalConfigValue(ctx, entry.RawDefault)
+		value, err := c.EvalConfigValue(ctx, phpv.ZString(entry.RawDefault))
 		if err != nil {
 			panic(fmt.Sprintf("failed to initialize ini default for %s: %s", varName, err))
 		}
-		c.Values[varName] = &phpv.IniValue{Global: expr}
+		c.Values[varName] = &phpv.IniValue{Global: value}
 	}
 }
 
@@ -74,14 +81,46 @@ func (c *Config) Get(varName phpv.ZString) *phpv.IniValue {
 	return nil
 }
 
-func (c *Config) SetLocal(varName phpv.ZString, val *phpv.ZVal) {
-	if _, ok := Defaults[string(varName)]; !ok {
-		return
+func (c *Config) RestoreConfig(ctx phpv.Context, varName phpv.ZString) {
+	if val, ok := c.Values[string(varName)]; ok {
+		val.Local = nil
 	}
+}
+
+func (c *Config) SetLocal(ctx phpv.Context, varName phpv.ZString, value *phpv.ZVal) *phpv.ZVal {
+	if _, ok := Defaults[string(varName)]; !ok {
+		return nil
+	}
+
 	entry, ok := c.Values[string(varName)]
 	if ok && entry != nil {
-		entry.Local = val
+		old := entry.Local
+		if old == nil {
+			old = entry.Global
+		}
+
+		entry.Local = value
+		return old
 	}
+	return nil
+}
+
+func (c *Config) SetGlobal(ctx phpv.Context, varName phpv.ZString, value *phpv.ZVal) *phpv.ZVal {
+	if _, ok := Defaults[string(varName)]; !ok {
+		return nil
+	}
+
+	entry, ok := c.Values[string(varName)]
+	if ok && entry != nil {
+		old := entry.Local
+		if old == nil {
+			old = entry.Global
+		}
+
+		entry.Local = value
+		return old
+	}
+	return nil
 }
 
 func (c *Config) IterateConfig() iter.Seq2[string, phpv.IniValue] {
@@ -98,7 +137,7 @@ func (c *Config) IterateConfig() iter.Seq2[string, phpv.IniValue] {
 	}
 }
 
-func (c *Config) EvalConfigValue(ctx phpv.Context, expr string) (*phpv.ZVal, error) {
+func (c *Config) EvalConfigValue(ctx phpv.Context, expr phpv.ZString) (*phpv.ZVal, error) {
 	switch expr {
 	case "1", "On", "True", "Yes":
 		return phpv.ZStr("1"), nil
@@ -110,7 +149,7 @@ func (c *Config) EvalConfigValue(ctx phpv.Context, expr string) (*phpv.ZVal, err
 		return phpv.ZNULL.ZVal(), nil
 	}
 	ctx = &IniContext{ctx.Global()}
-	return core.Eval(ctx, expr)
+	return core.Eval(ctx, string(expr))
 }
 
 func (c *Config) Parse(ctx phpv.Context, r io.Reader) error {
@@ -164,7 +203,7 @@ func (c *Config) Parse(ctx phpv.Context, r io.Reader) error {
 		k := l[:pos]
 		l = l[pos+1:]
 
-		expr, err := c.EvalConfigValue(ctx, l)
+		expr, err := c.EvalConfigValue(ctx, phpv.ZString(l))
 		if err != nil {
 			return err
 		}
@@ -175,4 +214,11 @@ func (c *Config) Parse(ctx phpv.Context, r io.Reader) error {
 	}
 
 	return nil
+}
+
+func (c *Config) CanIniSet(name phpv.ZString) bool {
+	if val, ok := Defaults[string(name)]; ok {
+		return val.Mode&(INI_USER) > 0
+	}
+	return false
 }

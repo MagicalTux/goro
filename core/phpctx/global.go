@@ -192,15 +192,15 @@ func (g *Global) setupIni() {
 		}
 	}
 	for k, v := range options.IniEntries {
-		val, err := cfg.EvalConfigValue(g, v)
+		val, err := cfg.EvalConfigValue(g, phpv.ZString(v))
 		if err != nil {
-			val = phpv.ZStr(v)
+			val = phpv.ZString(v).ZVal()
 		}
-		cfg.SetLocal(phpv.ZString(k), val)
+		cfg.SetGlobal(g, phpv.ZString(k), val)
 
 	}
 	if v := cfg.Get(phpv.ZString("disable_functions")); v != nil {
-		for _, name := range strings.Split(string(v.Get().AsString(g)), ",") {
+		for _, name := range strings.Split(string(v.GetString(g)), ",") {
 			name = strings.TrimSpace(name)
 			g.disabledFuncs[phpv.ZString(name)] = struct{}{}
 		}
@@ -323,21 +323,31 @@ func (g *Global) WriteErr(v []byte) (int, error) {
 	return g.errOut.Write(v)
 }
 
-func (g *Global) SetLocalConfig(name phpv.ZString, val *phpv.ZVal) error {
-	g.IniConfig.SetLocal(name, val.ZVal())
-	return nil
+func (g *Global) RestoreConfig(name phpv.ZString) {
+	g.IniConfig.RestoreConfig(g, name)
+}
+
+func (g *Global) SetLocalConfig(name phpv.ZString, value *phpv.ZVal) (*phpv.ZVal, bool) {
+	if !g.IniConfig.CanIniSet(name) {
+		return nil, false
+
+	}
+	old := g.IniConfig.SetLocal(g, name, value)
+	return old, true
 }
 
 func (g *Global) GetConfig(name phpv.ZString, def *phpv.ZVal) *phpv.ZVal {
 	val := g.IniConfig.Get(name)
-	if val != nil {
-		if val.Local != nil {
-			return val.Local
-		}
-		if val.Global != nil {
-			return val.Global
-		}
-		return phpv.ZNULL.ZVal()
+	if val != nil && val.Get() != nil {
+		return val.Get()
+	}
+	return def
+}
+
+func (g *Global) GetGlobalConfig(name phpv.ZString, def *phpv.ZVal) *phpv.ZVal {
+	val := g.IniConfig.Get(name)
+	if val != nil && val.Global != nil {
+		return val.Global
 	}
 	return def
 }

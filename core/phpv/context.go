@@ -50,6 +50,7 @@ type Context interface {
 	GetFuncName() string
 
 	GetConfig(name ZString, def *ZVal) *ZVal
+	GetGlobalConfig(name ZString, def *ZVal) *ZVal
 
 	Call(ctx Context, f Callable, args []Runnable, this ...ZObject) (*ZVal, error)
 	CallZVal(ctx Context, f Callable, args []*ZVal, this ...ZObject) (*ZVal, error)
@@ -72,7 +73,8 @@ type GlobalContext interface {
 	RegisterClass(name ZString, c ZClass) error
 	GetClass(ctx Context, name ZString, autoload bool) (ZClass, error)
 
-	SetLocalConfig(name ZString, value *ZVal) error
+	RestoreConfig(name ZString)
+	SetLocalConfig(name ZString, value *ZVal) (*ZVal, bool)
 	IterateConfig() iter.Seq2[string, IniValue]
 
 	ConstantSet(k ZString, v Val) bool
@@ -104,27 +106,6 @@ type GlobalContext interface {
 
 	WriteErr(p []byte) (n int, err error)
 	ShownDeprecated(key string) bool
-}
-
-type IniValue struct {
-	Global *ZVal
-	Local  *ZVal
-}
-
-func (iv *IniValue) Get() *ZVal {
-	if iv.Local != nil {
-		return iv.Local
-	}
-	return iv.Global
-}
-
-type IniConfig interface {
-	Get(name ZString) *IniValue
-	SetLocal(name ZString, value *ZVal)
-	IterateConfig() iter.Seq2[string, IniValue]
-	Parse(ctx Context, r io.Reader) error
-	EvalConfigValue(ctx Context, expr string) (*ZVal, error)
-	LoadDefaults(ctx Context)
 }
 
 type FuncContext interface {
