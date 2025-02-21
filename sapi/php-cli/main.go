@@ -43,7 +43,15 @@ func main() {
 
 	if p.ScriptFilename != "" {
 		if err := ctx.RunFile(p.ScriptFilename); err != nil {
-			if ex, ok := err.(*phperr.PhpThrow); ok {
+			displayErrors := ctx.GetConfig("display_errors", phpv.ZFalse.ZVal()).AsBool(ctx)
+			if !displayErrors {
+				if os.Getenv("DEBUG") == "" {
+					os.Exit(1)
+				}
+				println("**NOTE: still showing errors even with display_errors=0 since DEBUG=1")
+			}
+
+			if ex, ok := err.(*phperr.PhpThrow); ok && bool(displayErrors) {
 				ctx.Write([]byte("\nFatal error: "))
 				ctx.Write([]byte(fmt.Sprintf(ex.ErrorTrace(ctx))))
 			} else {
