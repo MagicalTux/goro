@@ -42,5 +42,5 @@ func compileTernaryOp(v phpv.Runnable, c compileCtx) (phpv.Runnable, error) {
 		return nil, err
 	}
 
-	return &runnableIf{cond: v, yes: yes, no: no, l: l}, nil
+	return &runnableIf{cond: v, yes: yes, no: no, l: l, ternary: true}, nil
 }

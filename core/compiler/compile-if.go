@@ -12,6 +12,8 @@ type runnableIf struct {
 	yes  phpv.Runnable
 	no   phpv.Runnable
 	l    *phpv.Loc
+
+	ternary bool
 }
 
 func (r *runnableIf) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
@@ -33,7 +35,40 @@ func (r *runnableIf) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 	}
 }
 
+func (r *runnableIf) dumpTernary(w io.Writer) error {
+	_, err := w.Write([]byte("["))
+	if err != nil {
+		return err
+	}
+	err = r.cond.Dump(w)
+	if err != nil {
+		return err
+	}
+	_, err = w.Write([]byte(" ? "))
+	if err != nil {
+		return err
+	}
+	err = r.yes.Dump(w)
+	if err != nil {
+		return err
+	}
+	if r.no != nil {
+		_, err = w.Write([]byte(" : "))
+		if err != nil {
+			return err
+		}
+		err = r.no.Dump(w)
+		if err != nil {
+			return err
+		}
+	}
+	_, err = w.Write([]byte{']'})
+	return err
+}
 func (r *runnableIf) Dump(w io.Writer) error {
+	if r.ternary {
+		return r.dumpTernary(w)
+	}
 	_, err := w.Write([]byte("if ("))
 	if err != nil {
 		return err

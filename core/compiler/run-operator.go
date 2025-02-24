@@ -25,6 +25,8 @@ type operatorInternalDetails struct {
 	pri     int
 }
 
+var ternaryPri = 22
+
 // ?: pri=24
 var operatorList = map[tokenizer.ItemType]*operatorInternalDetails{
 	tokenizer.Rune('='):             &operatorInternalDetails{write: true, skipA: true, pri: 25},
@@ -137,7 +139,17 @@ func spawnOperator(ctx phpv.Context, op tokenizer.ItemType, a, b phpv.Runnable, 
 		return nil, l.Errorf(ctx, phpv.E_COMPILE_ERROR, "invalid operator %s", op)
 	}
 
-	//log.Printf("spawn operator %s %s %s", debugDump(a), op.Name(), debugDump(b))
+	if top, ok := b.(*runnableIf); ok && top.ternary {
+		rop, isop := a.(*runOperator)
+		if (!isop && opD.pri <= ternaryPri) || (isop && rop.opD.pri <= ternaryPri) {
+			top.cond, err = spawnOperator(ctx, op, a, top.cond, l)
+			if err != nil {
+				return nil, err
+			}
+			return top, nil
+		}
+	}
+
 	if rop, isop := a.(*runOperator); isop {
 		if opD.pri < rop.opD.pri {
 			// need to go down one level values
@@ -145,13 +157,11 @@ func spawnOperator(ctx phpv.Context, op tokenizer.ItemType, a, b phpv.Runnable, 
 			if err != nil {
 				return nil, err
 			}
-			//rop.b = &runOperator{op: op, opD: opD, a: rop.b, b: b, l: l}
-			//log.Printf("did swap(a), res = %s", debugDump(rop))
 			return rop, nil
 		}
 	}
+
 	final := &runOperator{op: op, opD: opD, a: a, b: b, l: l}
-	//log.Printf("spawn operator: %s", debugDump(final))
 	return final, nil
 }
 

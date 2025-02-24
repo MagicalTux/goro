@@ -297,7 +297,6 @@ func GetChildren(r phpv.Runnable) []phpv.Runnable {
 		return nil
 	case *phperr.PhpContinue:
 		return nil
-		return nil
 	default:
 		panic("TODO: " + reflect.TypeOf(r).String())
 	}
