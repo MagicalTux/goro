@@ -4,6 +4,7 @@ import (
 	"math"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -324,13 +325,38 @@ func mathFmod(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 // > func float hypot ( float $x , float $y )
 func mathHypot(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	var x, y phpv.ZFloat
-	_, err := core.Expand(ctx, args, &x, &y)
+	var xArg, yArg *phpv.ZVal
+	_, err := core.Expand(ctx, args, &xArg, &yArg)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+	if xArg.GetType() == phpv.ZtString {
+		s := xArg.AsString(ctx)
+		if s.ContainsInvalidNumeric() {
+			if err = ctx.Notice("A non well formed numeric value encountered", logopt.NoFuncName(true)); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if yArg.GetType() == phpv.ZtString {
+		s := yArg.AsString(ctx)
+		if s.ContainsInvalidNumeric() {
+			if err = ctx.Notice("A non well formed numeric value encountered", logopt.NoFuncName(true)); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	x, err := xArg.AsNumeric(ctx)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+	y, err := yArg.AsNumeric(ctx)
 	if err != nil {
 		return nil, ctx.FuncError(err)
 	}
 
-	return phpv.ZFloat(math.Hypot(float64(x), float64(y))).ZVal(), nil
+	return phpv.ZFloat(math.Hypot(float64(x.AsFloat(ctx)), float64(y.AsFloat(ctx)))).ZVal(), nil
 }
 
 // > func float pi ( void )

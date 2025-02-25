@@ -522,7 +522,7 @@ func (g *Global) LogError(err *phpv.PhpError, optionArg ...logopt.Data) {
 		output.WriteString(fmt.Sprintf(" in %s on line %d", err.Loc.Filename, err.Loc.Line))
 	}
 
-	if g.lastOutChar != '\n' || err.Code == phpv.E_WARNING {
+	if (g.lastOutChar != '\n' || err.Code == phpv.E_WARNING) && err.Code != phpv.E_NOTICE {
 		g.Write([]byte("\n"))
 	}
 

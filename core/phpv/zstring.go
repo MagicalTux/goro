@@ -109,6 +109,60 @@ func (s ZString) IsNumeric() bool {
 	return true
 }
 
+func (z ZString) ContainsInvalidNumeric() bool {
+	// attempt to convert z to a numeric type. First, get rid of initial spaces
+	var r rune
+	var l int
+
+	for {
+		if len(z) < 1 {
+			return false
+		}
+		r, l = utf8.DecodeRuneInString(string(z))
+
+		if !unicode.IsSpace(r) {
+			break
+		}
+		z = z[l:]
+	}
+
+	p := 0
+	i := 0
+
+	for ; i < len(z); i++ {
+		c := z[i]
+		if c >= '0' && c <= '9' {
+			if p == 0 || p == 3 {
+				p += 1
+			}
+			continue
+		}
+		if c == '+' || c == '-' {
+			if p == 0 || p == 3 {
+				p += 1
+				continue
+			}
+			return true
+		}
+		if c == '.' {
+			if p == 1 {
+				p = 2
+				continue
+			}
+			return true
+		}
+		if c == 'e' || c == 'E' {
+			if p < 3 {
+				p = 3
+				continue
+			}
+			return true
+		}
+		return true
+	}
+	return false
+}
+
 func (z ZString) AsNumeric() (Val, error) {
 	// attempt to convert z to a numeric type. First, get rid of initial spaces
 	var r rune
