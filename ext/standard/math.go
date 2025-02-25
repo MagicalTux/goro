@@ -53,6 +53,9 @@ func mathAbs(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	switch z.GetType() {
 	case phpv.ZtInt:
 		i := z.AsInt(ctx)
+		if i <= -9223372036854775808 {
+			return phpv.ZFloat(math.Abs(float64(z.AsFloat(ctx)))).ZVal(), nil
+		}
 		if i < 0 {
 			return (-i).ZVal(), nil
 		} else {
