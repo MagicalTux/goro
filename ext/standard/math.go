@@ -18,6 +18,7 @@ var (
 	M_LOG2E    = phpv.ZFloat(math.Log2E)  // log_2 e
 	M_LOG10E   = phpv.ZFloat(math.Log10E) // log_10 e
 	M_LN2      = phpv.ZFloat(math.Ln2)    // log_e 2
+	M_LN10     = phpv.ZFloat(2.302585092994)
 	M_PI_2     = phpv.ZFloat(math.Pi / 2)
 	M_PI_4     = phpv.ZFloat(math.Pi / 4)
 	M_1_PI     = phpv.ZFloat(1 / math.Pi)
@@ -465,7 +466,8 @@ func mathIsFinite(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, ctx.FuncError(err)
 	}
 
-	result := !math.IsInf(float64(val.AsFloat(ctx)), 0)
+	n := float64(val.AsFloat(ctx))
+	result := !math.IsInf(n, 0) && !math.IsNaN(n)
 	return phpv.ZBool(result).ZVal(), nil
 }
 

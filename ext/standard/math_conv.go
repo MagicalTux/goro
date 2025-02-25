@@ -95,11 +95,7 @@ func mathOctDec(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		}
 	}
 
-	result, err := strconv.ParseInt(buf.String(), 8, 64)
-	if err != nil {
-		return nil, ctx.FuncError(err)
-	}
-	return phpv.ZInt(result).ZVal(), nil
+	return ParseInt(buf.String(), 8, 64)
 }
 
 // > func number hexdec ( string $hex_string )
