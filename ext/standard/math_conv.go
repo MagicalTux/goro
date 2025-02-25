@@ -65,11 +65,12 @@ func mathBinDec(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		}
 	}
 
-	result, err := strconv.ParseInt(buf.String(), 2, 64)
-	if err != nil {
-		return nil, ctx.FuncError(err)
+	s := buf.String()
+	if s == "" {
+		return phpv.ZInt(0).ZVal(), nil
 	}
-	return phpv.ZInt(result).ZVal(), nil
+
+	return ParseInt(s, 2, 64)
 }
 
 // > func number octdec ( string $oct_string )
@@ -125,11 +126,12 @@ func mathHexDec(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		}
 	}
 
-	result, err := strconv.ParseInt(buf.String(), 16, 64)
-	if err != nil {
-		return nil, ctx.FuncError(err)
+	s := buf.String()
+	if s == "" {
+		return phpv.ZInt(0).ZVal(), nil
 	}
-	return phpv.ZInt(result).ZVal(), nil
+
+	return ParseInt(s, 16, 64)
 }
 
 // > func number base_convert ( string $number , int $frombase , int $tobase )
