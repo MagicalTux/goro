@@ -1,7 +1,9 @@
 package phpv
 
 import (
+	"math"
 	"strconv"
+	"strings"
 )
 
 type ZType int
@@ -168,8 +170,20 @@ func (z ZFloat) AsVal(ctx Context, t ZType) (Val, error) {
 	case ZtFloat:
 		return z, nil
 	case ZtString:
+		if math.IsInf(float64(z), 1) {
+			return ZStr("INF"), nil
+		}
+		if math.IsInf(float64(z), -1) {
+			return ZStr("-INF"), nil
+		}
+
 		precision := int(ctx.GetConfig("precision", ZInt(14).ZVal()).AsInt(ctx))
-		return ZString(strconv.FormatFloat(float64(z), 'G', precision, 64)), nil
+		s := strconv.FormatFloat(float64(z), 'G', precision, 64)
+		if len(s) >= 3 && s[1] == 'E' && s[2] == '+' {
+			// add .0 before E, so 1E+23 would be 1.0E+23
+			s = string(s[0]) + ".0E+" + s[3:]
+		}
+		return ZString(strings.ToUpper(s)), nil
 	case ZtArray:
 		arr := NewZArray()
 		arr.OffsetSet(ctx, nil, z.ZVal())
