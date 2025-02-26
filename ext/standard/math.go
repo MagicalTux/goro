@@ -55,7 +55,7 @@ func mathAbs(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	switch z.GetType() {
 	case phpv.ZtInt:
 		i := z.AsInt(ctx)
-		if i <= -9223372036854775808 {
+		if i <= math.MinInt64 {
 			return phpv.ZFloat(math.Abs(float64(z.AsFloat(ctx)))).ZVal(), nil
 		}
 		if i < 0 {
@@ -247,6 +247,28 @@ func mathAtanh(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZFloat(math.Atanh(float64(x))).ZVal(), nil
 }
 
+// > func float sin ( float $arg )
+func mathSin(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var x phpv.ZFloat
+	_, err := core.Expand(ctx, args, &x)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	return phpv.ZFloat(math.Sin(float64(x))).ZVal(), nil
+}
+
+// > func float sinh ( float $arg )
+func mathSinh(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var x phpv.ZFloat
+	_, err := core.Expand(ctx, args, &x)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	return phpv.ZFloat(math.Sinh(float64(x))).ZVal(), nil
+}
+
 // > func float cos ( float $arg )
 func mathCos(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var x phpv.ZFloat
@@ -267,6 +289,28 @@ func mathCosh(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	return phpv.ZFloat(math.Cosh(float64(x))).ZVal(), nil
+}
+
+// > func float tan ( float $arg )
+func mathTan(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var x phpv.ZFloat
+	_, err := core.Expand(ctx, args, &x)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	return phpv.ZFloat(math.Tan(float64(x))).ZVal(), nil
+}
+
+// > func float tanh ( float $arg )
+func mathTanh(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var x phpv.ZFloat
+	_, err := core.Expand(ctx, args, &x)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	return phpv.ZFloat(math.Tanh(float64(x))).ZVal(), nil
 }
 
 // > func float deg2rad ( float $number )
@@ -507,31 +551,39 @@ func mathIsNaN(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 // > func number pow ( number $base , number $exp )
 func mathPow(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	var base, exp *phpv.ZVal
-	_, err := core.Expand(ctx, args, &base, &exp)
+	var baseArg, expArg *phpv.ZVal
+	_, err := core.Expand(ctx, args, &baseArg, &expArg)
 	if err != nil {
 		return nil, ctx.FuncError(err)
 	}
 
-	base, err = base.AsNumeric(ctx)
+	baseArg, err = baseArg.AsNumeric(ctx)
 	if err != nil {
 		return nil, ctx.FuncError(err)
 	}
-	exp, err = exp.AsNumeric(ctx)
+	expArg, err = expArg.AsNumeric(ctx)
 	if err != nil {
 		return nil, ctx.FuncError(err)
 	}
 
-	baseType := base.GetType()
-	extType := exp.GetType()
+	baseType := baseArg.GetType()
+	extType := expArg.GetType()
 
-	result := math.Pow(float64(base.AsFloat(ctx)), float64(exp.AsFloat(ctx)))
+	base := float64(baseArg.AsFloat(ctx))
+	exp := float64(expArg.AsFloat(ctx))
+	result := math.Pow(base, exp)
 
 	switch {
-	case baseType == phpv.ZtFloat, extType == phpv.ZtFloat:
-		return phpv.ZFloat(result).ZVal(), nil
+	case baseType == phpv.ZtFloat,
+		extType == phpv.ZtFloat,
+		exp < 0,
+		exp > 13,
+		result > math.MaxInt64,
+		result < math.MinInt64:
 
+		return phpv.ZFloat(result).ZVal(), nil
 	}
+
 	return phpv.ZInt(result).ZVal(), nil
 }
 

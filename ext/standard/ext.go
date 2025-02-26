@@ -254,6 +254,8 @@ func init() {
 			"show_source":                {Func: fncHighlightFile, Args: []*phpctx.ExtFunctionArg{}}, // alias
 			"shuffle":                    {Func: fncArrayShuffle, Args: []*phpctx.ExtFunctionArg{}},
 			"similar_text":               {Func: fncSimilarText, Args: []*phpctx.ExtFunctionArg{}},
+			"sin":                        {Func: mathSin, Args: []*phpctx.ExtFunctionArg{}},
+			"sinh":                       {Func: mathSinh, Args: []*phpctx.ExtFunctionArg{}},
 			"sleep":                      {Func: stdFuncSleep, Args: []*phpctx.ExtFunctionArg{}},
 			"sort":                       {Func: fncArraySort, Args: []*phpctx.ExtFunctionArg{}},
 			"soundex":                    {Func: fncSoundex, Args: []*phpctx.ExtFunctionArg{}},
@@ -306,6 +308,8 @@ func init() {
 			"substr_count":               {Func: fncSubstrCount, Args: []*phpctx.ExtFunctionArg{}},
 			"substr_replace":             {Func: fncSubstrReplace, Args: []*phpctx.ExtFunctionArg{}},
 			"system":                     {Func: fncSystem, Args: []*phpctx.ExtFunctionArg{}},
+			"tan":                        {Func: mathTan, Args: []*phpctx.ExtFunctionArg{}},
+			"tanh":                       {Func: mathTanh, Args: []*phpctx.ExtFunctionArg{}},
 			"time":                       {Func: fncTime, Args: []*phpctx.ExtFunctionArg{}},
 			"trim":                       {Func: fncStrTrim, Args: []*phpctx.ExtFunctionArg{}},
 			"uasort":                     {Func: fncArrayUASort, Args: []*phpctx.ExtFunctionArg{}},

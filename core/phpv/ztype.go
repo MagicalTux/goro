@@ -177,12 +177,28 @@ func (z ZFloat) AsVal(ctx Context, t ZType) (Val, error) {
 			return ZStr("-INF"), nil
 		}
 
-		precision := int(ctx.GetConfig("precision", ZInt(14).ZVal()).AsInt(ctx))
-		s := strconv.FormatFloat(float64(z), 'G', precision, 64)
-		if len(s) >= 3 && s[1] == 'E' && s[2] == '+' {
-			// add .0 before E, so 1E+23 would be 1.0E+23
-			s = string(s[0]) + ".0E+" + s[3:]
+		s := strconv.FormatFloat(float64(z), 'G', 14, 64)
+
+		eIndex := strings.Index(s, "E")
+		if eIndex > 0 && eIndex < len(s)-1 {
+			// do some string tweaking to match PHP's output
+			var pre string
+			if eIndex == 1 {
+				pre = string(s[0]) + ".0" + s[1:eIndex+2]
+			} else {
+				// add .0 before E, so 1E+23 would be 1.0E+23
+				pre = s[:eIndex+2]
+
+			}
+
+			post := s[eIndex+2:]
+			if s[eIndex+2] == '0' {
+				// remove padding 0, so 1.23E+04 would be 1.23E+4
+				post = post[1:]
+			}
+			s = pre + post
 		}
+
 		return ZString(strings.ToUpper(s)), nil
 	case ZtArray:
 		arr := NewZArray()
