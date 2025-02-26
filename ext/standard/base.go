@@ -111,7 +111,7 @@ func fncCallUserFunc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	return ctx.CallZVal(ctx, callback, args[1:], nil)
+	return ctx.CallZVal(ctx.Parent(1), callback, args[1:], nil)
 }
 
 // > func mixed call_user_func_array ( callable $callback , array $param_arr )
@@ -127,7 +127,7 @@ func fncCallUserFuncArray(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, erro
 	for _, v := range arrayArgs.Iterate(ctx) {
 		cbArgs = append(cbArgs, v)
 	}
-	return ctx.CallZVal(ctx, callback, cbArgs, nil)
+	return ctx.CallZVal(ctx.Parent(1), callback, cbArgs, nil)
 }
 
 // > func string inet_ntop ( string $in_addr )

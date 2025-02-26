@@ -398,7 +398,10 @@ func fncArrayWalk(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	for k, v := range array.Get().Iterate(ctx) {
 		callbackArgs[0] = v
 		callbackArgs[1] = k
-		ctx.CallZVal(ctx, callback, callbackArgs)
+		_, err := ctx.CallZVal(ctx, callback, callbackArgs)
+		if err != nil {
+			return nil, ctx.FuncError(err)
+		}
 	}
 
 	return phpv.ZTrue.ZVal(), nil
