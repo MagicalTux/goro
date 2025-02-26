@@ -307,6 +307,7 @@ func init() {
 			"substr_compare":             {Func: fncSubstrCompare, Args: []*phpctx.ExtFunctionArg{}},
 			"substr_count":               {Func: fncSubstrCount, Args: []*phpctx.ExtFunctionArg{}},
 			"substr_replace":             {Func: fncSubstrReplace, Args: []*phpctx.ExtFunctionArg{}},
+			"sys_get_temp_dir":           {Func: fncSysGetTempDir, Args: []*phpctx.ExtFunctionArg{}},
 			"system":                     {Func: fncSystem, Args: []*phpctx.ExtFunctionArg{}},
 			"tan":                        {Func: mathTan, Args: []*phpctx.ExtFunctionArg{}},
 			"tanh":                       {Func: mathTanh, Args: []*phpctx.ExtFunctionArg{}},

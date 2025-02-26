@@ -10,7 +10,7 @@ type IniDirective struct {
 	Mode       int
 }
 
-var Defaults = map[string]IniDirective{
+var Defaults = map[string]*IniDirective{
 	"allow_url_fopen":                       {`"1"`, INI_SYSTEM},
 	"allow_url_include":                     {`"0"`, INI_SYSTEM},
 	"arg_separator.input":                   {`"&"`, INI_PERDIR},
@@ -410,8 +410,9 @@ func init() {
 	if err != nil {
 		panic("failed to get current directory: " + cwd)
 	}
-	Defaults["extension_dir"] = IniDirective{
+	Defaults["extension_dir"] = &IniDirective{
 		RawDefault: fmt.Sprintf(`"%s"`, cwd),
 		Mode:       Defaults["extension_dir"].Mode,
 	}
+	Defaults["sys_temp_dir"].RawDefault = os.TempDir()
 }

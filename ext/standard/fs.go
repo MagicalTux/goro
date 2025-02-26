@@ -570,3 +570,9 @@ func fncRename(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	return phpv.ZTrue.ZVal(), nil
 }
+
+// > func string sys_get_temp_dir ( void )
+func fncSysGetTempDir(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	defaultDir := phpv.ZStr(os.TempDir())
+	return ctx.GetConfig("sys_temp_dir", defaultDir.ZVal()), nil
+}

@@ -68,7 +68,7 @@ func (c *Config) LoadDefaults(ctx phpv.Context) {
 	for varName, entry := range Defaults {
 		value, err := c.EvalConfigValue(ctx, phpv.ZString(entry.RawDefault))
 		if err != nil {
-			panic(fmt.Sprintf("failed to initialize ini default for %s: %s", varName, err))
+			value = phpv.ZStr(entry.RawDefault)
 		}
 		c.Values[varName] = &phpv.IniValue{Global: value}
 	}
