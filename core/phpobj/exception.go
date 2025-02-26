@@ -2,7 +2,6 @@ package phpobj
 
 import (
 	"bytes"
-	"fmt"
 
 	"github.com/MagicalTux/goro/core/phperr"
 	"github.com/MagicalTux/goro/core/phpv"
@@ -51,18 +50,10 @@ func init() {
 				return trace.String().ZVal(), nil
 			})},
 			"__tostring": {Name: "__toString", Method: NativeMethod(func(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				trace := o.GetOpaque(Exception).(phpv.StackTrace)
-				filename := ctx.Loc().Filename
-				line := ctx.Loc().Line
-				if len(trace) > 0 {
-					filename = trace[0].Filename
-					line = trace[0].Line
-				}
-
+				trace := o.GetOpaque(Exception).([]*phpv.StackTraceEntry)
 				var buf bytes.Buffer
-				buf.WriteString(fmt.Sprintf("Exception in %s:%d\n", filename, line))
 				buf.WriteString("Stack trace:\n")
-				buf.WriteString(string(trace.String()))
+				buf.WriteString(string(phpv.StackTrace(trace).String()))
 				return phpv.ZStr(buf.String()), nil
 			})},
 

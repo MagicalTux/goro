@@ -9,6 +9,7 @@ import (
 	"iter"
 	"log"
 	"maps"
+	"math"
 	"net/http"
 	"os"
 	"slices"
@@ -287,6 +288,7 @@ func (g *Global) RunFile(fn string) error {
 	switch innerErr := phpv.UnwrapError(err).(type) {
 	case *phpv.PhpExit:
 	case *phperr.PhpTimeout:
+		g.WriteErr([]byte("\n"))
 		if g.GetConfig("display_errors", phpv.ZFalse.ZVal()).AsBool(g) {
 			g.WriteErr([]byte(innerErr.String()))
 		}
@@ -305,6 +307,7 @@ func (g *Global) RunFile(fn string) error {
 					break
 				}
 				if timeout, ok := phpv.UnwrapError(err).(*phperr.PhpTimeout); ok {
+					g.WriteErr([]byte("\n"))
 					g.WriteErr([]byte(timeout.String()))
 					break
 				}
@@ -363,9 +366,9 @@ func (g *Global) IterateConfig() iter.Seq2[string, phpv.IniValue] {
 func (g *Global) Tick(ctx phpv.Context, l *phpv.Loc) error {
 	// TODO check run deadline, context cancellation and memory limit
 	deadline := g.timerStart.Add(g.deadlineDuration)
-	// println("deadline", deadline.String())
 	if time.Until(deadline) <= 0 {
-		return &phperr.PhpTimeout{L: g.l, Seconds: int(g.deadlineDuration.Seconds())}
+		seconds := math.Round(g.deadlineDuration.Seconds())
+		return &phperr.PhpTimeout{L: g.l, Seconds: int(seconds)}
 	}
 	g.l = l
 	return nil

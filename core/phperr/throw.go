@@ -15,7 +15,7 @@ func (e *PhpThrow) ErrorTrace(ctx phpv.Context) string {
 	message := e.Obj.HashTable().GetString("message").String()
 	trace := e.Obj.ZVal().AsString(ctx)
 	return fmt.Sprintf(
-		"Fatal error: Uncaught Exception: %s in %s on line %d\n%s",
+		"Uncaught Exception: %s in %s:%d\n%s",
 		message, e.Loc.Filename, e.Loc.Line, trace,
 	)
 }

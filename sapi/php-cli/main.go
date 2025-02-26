@@ -54,6 +54,8 @@ func main() {
 			if ex, ok := err.(*phperr.PhpThrow); ok && bool(displayErrors) {
 				ctx.Write([]byte("\nFatal error: "))
 				ctx.Write([]byte(fmt.Sprintf(ex.ErrorTrace(ctx))))
+				s := fmt.Sprintf("\n  thrown in %s on line %d", ex.Loc.Filename, ex.Loc.Line)
+				ctx.Write([]byte(s))
 			} else {
 				if phpErr, ok := err.(*phpv.PhpError); ok {
 					errorLevel := ctx.GetConfig("error_reporting", phpv.ZInt(0).ZVal()).AsInt(ctx)
@@ -68,7 +70,6 @@ func main() {
 
 					}
 				} else {
-
 					ctx.Write([]byte("\nFatal error: "))
 					ctx.Write([]byte(fmt.Sprintf("Uncaught Error: %s", err.Error())))
 				}
