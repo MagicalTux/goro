@@ -1,5 +1,7 @@
 package phpv
 
+import "iter"
+
 type ZClassProp struct {
 	VarName   ZString
 	Default   Val
@@ -49,4 +51,5 @@ type ZObject interface {
 	Clone(ctx Context) (ZObject, error)
 	GetParent() ZObject
 	GetKin(className string) ZObject
+	IterProps() iter.Seq[*ZClassProp]
 }
