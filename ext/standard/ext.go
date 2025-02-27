@@ -144,6 +144,11 @@ func init() {
 			"getopt":                     {Func: fncGetOpt, Args: []*phpctx.ExtFunctionArg{}},
 			"getrandmax":                 {Func: mathMtGetRandMax, Args: []*phpctx.ExtFunctionArg{}}, // alias
 			"gettype":                    {Func: fncGettype, Args: []*phpctx.ExtFunctionArg{}},
+			"header":                     {Func: fncHeader, Args: []*phpctx.ExtFunctionArg{}},
+			"header_register_callback":   {Func: fncHeaderRegisterCallback, Args: []*phpctx.ExtFunctionArg{}},
+			"header_remove":              {Func: fncHeaderRemove, Args: []*phpctx.ExtFunctionArg{}},
+			"headers_list":               {Func: fncHeaderList, Args: []*phpctx.ExtFunctionArg{}},
+			"headers_sent":               {Func: fncHeadersSent, Args: []*phpctx.ExtFunctionArg{}},
 			"hebrev":                     {Func: fncHebrev, Args: []*phpctx.ExtFunctionArg{}},
 			"hebrevc":                    {Func: fncHebrevc, Args: []*phpctx.ExtFunctionArg{}},
 			"hex2bin":                    {Func: fncHex2Bin, Args: []*phpctx.ExtFunctionArg{}},

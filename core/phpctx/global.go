@@ -74,6 +74,8 @@ type Global struct {
 
 	userErrorHandler phpv.Callable
 	userErrorFilter  phpv.PhpErrorType
+
+	header *phpv.HeaderContext
 }
 
 func NewGlobal(ctx context.Context, p *Process, config phpv.IniConfig) *Global {
@@ -115,6 +117,7 @@ func createGlobal(p *Process) *Global {
 		shownDeprecated:     make(map[string]struct{}),
 		mem:                 NewMemMgr(32 * 1024 * 1024), // limit in bytes TODO read memory_limit from process (.ini file)
 
+		header: &phpv.HeaderContext{Headers: http.Header{}},
 	}
 	g.SetDeadline(g.start.Add(30 * time.Second))
 
@@ -316,10 +319,21 @@ func (g *Global) RunFile(fn string) error {
 		}
 	}
 
+	// send headers even if there's no output
+	if !g.header.Sent && g.lastOutChar == 0 {
+		g.header.SendHeaders(g)
+	}
+
 	return g.Close()
 }
 
 func (g *Global) Write(v []byte) (int, error) {
+	if !g.header.Sent {
+		err := g.header.SendHeaders(g)
+		if err != nil {
+			return 0, err
+		}
+	}
 	if len(v) > 0 {
 		g.lastOutChar = v[len(v)-1]
 	}
@@ -780,4 +794,8 @@ func (g *Global) ShownDeprecated(key string) bool {
 	_, exists := g.shownDeprecated[key]
 	g.shownDeprecated[key] = struct{}{}
 	return !exists
+}
+
+func (g *Global) HeaderContext() *phpv.HeaderContext {
+	return g.header
 }

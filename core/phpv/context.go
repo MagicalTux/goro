@@ -56,6 +56,8 @@ type Context interface {
 	CallZVal(ctx Context, f Callable, args []*ZVal, this ...ZObject) (*ZVal, error)
 
 	GetStackTrace(ctx Context) []*StackTraceEntry
+
+	HeaderContext() *HeaderContext
 }
 
 type GlobalContext interface {
