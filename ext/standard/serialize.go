@@ -18,7 +18,8 @@ func fncSerialize(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if err != nil {
 		return nil, err
 	}
-	return phpv.ZStr(serialize(ctx, value)), nil
+	result, err := serialize(ctx, value)
+	return phpv.ZStr(result), err
 }
 
 // > func mixed unserialize ( string $str [, array $options ] )
@@ -38,7 +39,7 @@ func fncUnserialize(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return result, err
 }
 
-func serialize(ctx phpv.Context, value *phpv.ZVal) string {
+func serialize(ctx phpv.Context, value *phpv.ZVal) (string, error) {
 	var result string
 	switch value.GetType() {
 	case phpv.ZtNull:
@@ -69,8 +70,16 @@ func serialize(ctx phpv.Context, value *phpv.ZVal) string {
 		buf.WriteString(count)
 		buf.WriteString(":{")
 		for k, v := range arr.Iterate(ctx) {
-			buf.WriteString(serialize(ctx, k))
-			buf.WriteString(serialize(ctx, v))
+			sub, err := serialize(ctx, k)
+			if err != nil {
+				return "", err
+			}
+			buf.WriteString(sub)
+			sub, err = serialize(ctx, v)
+			if err != nil {
+				return "", err
+			}
+			buf.WriteString(sub)
 		}
 		buf.WriteString("}")
 		result = buf.String()
@@ -80,7 +89,7 @@ func serialize(ctx phpv.Context, value *phpv.ZVal) string {
 		if method, ok := obj.GetClass().GetMethod(phpv.ZString("__sleep")); ok {
 			val, err := ctx.Call(ctx, method.Method, nil, obj)
 			if err != nil {
-				panic(err) // TODO: return err
+				return "", err
 			}
 			props = val.AsArray(ctx)
 		}
@@ -90,17 +99,35 @@ func serialize(ctx phpv.Context, value *phpv.ZVal) string {
 
 		if props != nil {
 			for _, prop := range props.Iterate(ctx) {
-				varname := prop.AsString(ctx)
-				v := obj.HashTable().GetString(varname)
-				buf.WriteString(serialize(ctx, prop))
-				buf.WriteString(serialize(ctx, v))
+				sub, err := serialize(ctx, prop)
+				if err != nil {
+					return "", err
+				}
+				buf.WriteString(sub)
+
+				v := obj.HashTable().GetString(prop.AsString(ctx))
+				sub, err = serialize(ctx, v)
+				if err != nil {
+					return "", err
+				}
+				buf.WriteString(sub)
 				propCount++
 			}
 		} else {
 			for prop := range obj.IterProps(ctx) {
+				sub, err := serialize(ctx, prop.VarName.ZVal())
+				if err != nil {
+					return "", err
+				}
+				buf.WriteString(sub)
+
 				v := obj.HashTable().GetString(prop.VarName)
-				buf.WriteString(serialize(ctx, prop.VarName.ZVal()))
-				buf.WriteString(serialize(ctx, v))
+				sub, err = serialize(ctx, v)
+				if err != nil {
+					return "", err
+				}
+				buf.WriteString(sub)
+
 				propCount++
 			}
 		}
@@ -117,7 +144,7 @@ func serialize(ctx phpv.Context, value *phpv.ZVal) string {
 
 	}
 
-	return result
+	return result, nil
 }
 
 type unserializeError struct {
