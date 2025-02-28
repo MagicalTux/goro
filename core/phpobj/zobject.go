@@ -60,6 +60,28 @@ func (z *ZObject) AsVal(ctx phpv.Context, t phpv.ZType) (phpv.Val, error) {
 	return nil, ctx.Errorf("failed to convert object to %s", t)
 }
 
+// Similar to NewZObject, but without calling the constructor
+func CreateZObject(ctx phpv.Context, c phpv.ZClass) (*ZObject, error) {
+	if c == nil {
+		c = StdClass
+	}
+
+	n := &ZObject{
+		h:          phpv.NewHashTable(),
+		hasPrivate: make(map[phpv.ZString]struct{}),
+		Class:      c,
+		ID:         c.NextInstanceID(),
+		Opaque:     map[phpv.ZClass]interface{}{},
+	}
+
+	err := n.init(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return n, nil
+}
+
 func NewZObject(ctx phpv.Context, c phpv.ZClass, args ...*phpv.ZVal) (*ZObject, error) {
 	if c == nil {
 		c = StdClass
@@ -197,21 +219,40 @@ func (o *ZObject) init(ctx phpv.Context) error {
 	return nil
 }
 
-func (o *ZObject) IterProps() iter.Seq[*phpv.ZClassProp] {
-	return o.yieldGetProps
+func (o *ZObject) IterProps(ctx phpv.Context) iter.Seq[*phpv.ZClassProp] {
+	return (&propIterator{ctx, o}).yield
 }
 
-func (o *ZObject) yieldGetProps(yield func(*phpv.ZClassProp) bool) {
+type propIterator struct {
+	ctx phpv.Context
+	o   *ZObject
+}
+
+func (pi *propIterator) yield(yield func(*phpv.ZClassProp) bool) {
+	o := pi.o
+	ctx := pi.ctx
 	shown := map[string]struct{}{}
 	class := o.GetClass().(*ZClass)
+Loop:
 	for class != nil {
 		for _, p := range class.Props {
 			if !yield(p) {
-				break
+				break Loop
 			}
 			shown[p.VarName.String()] = struct{}{}
 		}
 		class = class.GetParent().(*ZClass)
+	}
+	for k := range o.h.NewIterator().Iterate(ctx) {
+		key := k.AsString(ctx)
+		if _, ok := shown[string(key)]; !ok {
+			p := &phpv.ZClassProp{
+				VarName: key,
+			}
+			if !yield(p) {
+				break
+			}
+		}
 	}
 }
 
@@ -293,7 +334,7 @@ func (o *ZObject) NewIterator() phpv.ZIterator {
 }
 
 func (a *ZObject) Count(ctx phpv.Context) phpv.ZInt {
-	return a.h.Count()
+	return max(a.h.Count(), phpv.ZInt(len(a.Class.(*ZClass).Props)))
 }
 
 func (a *ZObject) HashTable() *phpv.ZHashTable {

@@ -51,5 +51,5 @@ type ZObject interface {
 	Clone(ctx Context) (ZObject, error)
 	GetParent() ZObject
 	GetKin(className string) ZObject
-	IterProps() iter.Seq[*ZClassProp]
+	IterProps(ctx Context) iter.Seq[*ZClassProp]
 }

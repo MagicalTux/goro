@@ -76,14 +76,33 @@ func serialize(ctx phpv.Context, value *phpv.ZVal) string {
 		result = buf.String()
 	case phpv.ZtObject:
 		obj := value.AsObject(ctx)
+		var props *phpv.ZArray
+		if method, ok := obj.GetClass().GetMethod(phpv.ZString("__sleep")); ok {
+			val, err := ctx.Call(ctx, method.Method, nil, obj)
+			if err != nil {
+				panic(err) // TODO: return err
+			}
+			props = val.AsArray(ctx)
+		}
 
 		var buf bytes.Buffer
 		propCount := 0
-		for prop := range obj.IterProps() {
-			v := obj.HashTable().GetString(prop.VarName)
-			buf.WriteString(serialize(ctx, prop.VarName.ZVal()))
-			buf.WriteString(serialize(ctx, v))
-			propCount++
+
+		if props != nil {
+			for _, prop := range props.Iterate(ctx) {
+				varname := prop.AsString(ctx)
+				v := obj.HashTable().GetString(varname)
+				buf.WriteString(serialize(ctx, prop))
+				buf.WriteString(serialize(ctx, v))
+				propCount++
+			}
+		} else {
+			for prop := range obj.IterProps(ctx) {
+				v := obj.HashTable().GetString(prop.VarName)
+				buf.WriteString(serialize(ctx, prop.VarName.ZVal()))
+				buf.WriteString(serialize(ctx, v))
+				propCount++
+			}
 		}
 
 		contents := buf.String()
@@ -120,7 +139,7 @@ func unserialize(ctx phpv.Context, str string, offsetArg ...int) (result *phpv.Z
 	}
 	readError := &unserializeError{offset, len(str)}
 
-	if len(str) < 2 || (str[offset] != 'N' && str[offset+1] != ':') {
+	if len(str) < offset+2 || (str[offset] != 'N' && str[offset+1] != ':') {
 		return nil, offset, readError
 	}
 
@@ -234,9 +253,6 @@ func unserialize(ctx phpv.Context, str string, offsetArg ...int) (result *phpv.Z
 			return nil, offset, readError
 		}
 
-		// TODO: index out of  range
-		// unserialize('a:10:{')
-
 		if core.StrIdx(str, j+1) != '{' {
 			return nil, offset, readError
 		}
@@ -319,9 +335,15 @@ func unserialize(ctx phpv.Context, str string, offsetArg ...int) (result *phpv.Z
 		if err != nil {
 			class = phpobj.StdClass
 		}
-		obj, err := phpobj.NewZObject(ctx, class)
+		obj, err := phpobj.CreateZObject(ctx, class)
 		if err != nil {
 			return nil, offset, err
+		}
+		if method, ok := obj.GetClass().GetMethod(phpv.ZString("__wakeup")); ok {
+			_, err := ctx.Call(ctx, method.Method, nil, obj)
+			if err != nil {
+				return nil, offset, err
+			}
 		}
 
 		i = j + 2
@@ -335,9 +357,7 @@ func unserialize(ctx phpv.Context, str string, offsetArg ...int) (result *phpv.Z
 			if err != nil {
 				return nil, offset, readError
 			}
-			// TODO: Allow adding new non-existent properties
-			// or add another method for that
-			obj.ObjectSet(ctx, key, value)
+			obj.ObjectSet(ctx, key.AsString(ctx), value)
 
 			numProps--
 		}

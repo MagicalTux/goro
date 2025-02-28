@@ -102,7 +102,7 @@ func doVarDump(ctx phpv.Context, z *phpv.ZVal, linePfx string, recurs map[uintpt
 
 		localPfx := linePfx + "  "
 		if obj, ok := v.(*phpobj.ZObject); ok {
-			for prop := range obj.IterProps() {
+			for prop := range obj.IterProps(ctx) {
 				suffix := ""
 				printed := false
 				if ok {
