@@ -7,6 +7,11 @@ var StdClass = &ZClass{
 	Name: "stdClass",
 }
 
+// > class __PHP_Incomplete_Class
+var IncompleteClass = &ZClass{
+	Name: "__PHP_Incomplete_Class",
+}
+
 // > class Traversable
 var Traversable = &ZClass{
 	Type: phpv.ZClassTypeInterface,

@@ -24,6 +24,7 @@ func init() {
 			phpobj.StdClass,
 			phpobj.Throwable,
 			phpobj.Traversable,
+			phpobj.IncompleteClass,
 		},
 		// Note: ExtFunctionArg is currently unused
 		Functions: map[string]*phpctx.ExtFunction{

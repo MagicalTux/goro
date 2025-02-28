@@ -11,6 +11,11 @@ import (
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
+type deserializer struct {
+	allowedClasses  map[phpv.ZString]struct{}
+	allowAllClasses bool
+}
+
 // > func string serialize ( mixed $value )
 func fncSerialize(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var value *phpv.ZVal
@@ -25,17 +30,31 @@ func fncSerialize(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // > func mixed unserialize ( string $str [, array $options ] )
 func fncUnserialize(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var str phpv.ZString
-	var options core.Optional[*phpv.ZArray]
-	_, err := core.Expand(ctx, args, &str, &options)
+	var optionsArg core.Optional[*phpv.ZVal]
+	_, err := core.Expand(ctx, args, &str, &optionsArg)
 	if err != nil {
 		return nil, err
 	}
 
-	if options.HasArg() {
-		panic("TODO")
+	deserializer := &deserializer{
+		allowAllClasses: true,
+		allowedClasses:  map[phpv.ZString]struct{}{},
+	}
+	if optionsArg.HasArg() {
+		options := optionsArg.Get().AsArray(ctx)
+		arg, _ := options.OffsetGet(ctx, phpv.ZString("allowed_classes"))
+		switch arg.GetType() {
+		case phpv.ZtArray:
+			deserializer.allowAllClasses = false
+			for _, className := range arg.AsArray(ctx).Iterate(ctx) {
+				deserializer.allowedClasses[className.AsString(ctx)] = struct{}{}
+			}
+		default:
+			deserializer.allowAllClasses = bool(arg.AsBool(ctx))
+		}
 	}
 
-	result, _, err := unserialize(ctx, string(str))
+	result, _, err := deserializer.parse(ctx, string(str))
 	return result, err
 }
 
@@ -156,7 +175,7 @@ func (ue *unserializeError) Error() string {
 	return fmt.Sprintf("Error at offset %d of %d bytes", ue.offset, ue.length)
 }
 
-func unserialize(ctx phpv.Context, str string, offsetArg ...int) (result *phpv.ZVal, nextOffset int, err error) {
+func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (result *phpv.ZVal, nextOffset int, err error) {
 	offset := 0
 	if len(offsetArg) > 0 {
 		offset = offsetArg[0]
@@ -290,11 +309,11 @@ func unserialize(ctx phpv.Context, str string, offsetArg ...int) (result *phpv.Z
 		arr := phpv.NewZArray()
 		for numItems > 0 {
 			var key, value *phpv.ZVal
-			key, i, err = unserialize(ctx, str, i)
+			key, i, err = d.parse(ctx, str, i)
 			if err != nil {
 				return nil, offset, readError
 			}
-			value, i, err = unserialize(ctx, str, i)
+			value, i, err = d.parse(ctx, str, i)
 			if err != nil {
 				return nil, offset, readError
 			}
@@ -358,14 +377,24 @@ func unserialize(ctx phpv.Context, str string, offsetArg ...int) (result *phpv.Z
 			return nil, offset, readError
 		}
 
-		class, err := ctx.Global().GetClass(ctx, phpv.ZString(className), true)
-		if err != nil {
-			class = phpobj.StdClass
+		allowedClass := d.allowAllClasses
+		if !allowedClass {
+			_, allowedClass = d.allowedClasses[phpv.ZString(className)]
 		}
+
+		class, err := ctx.Global().GetClass(ctx, phpv.ZString(className), true)
+		if err != nil || !allowedClass || class == nil {
+			class = phpobj.IncompleteClass
+		}
+
 		obj, err := phpobj.CreateZObject(ctx, class)
 		if err != nil {
 			return nil, offset, err
 		}
+		if class == phpobj.IncompleteClass {
+			obj.ObjectSet(ctx, phpv.ZStr("__PHP_Incomplete_Class_Name"), phpv.ZStr(className))
+		}
+
 		if method, ok := obj.GetClass().GetMethod(phpv.ZString("__wakeup")); ok {
 			_, err := ctx.Call(ctx, method.Method, nil, obj)
 			if err != nil {
@@ -376,11 +405,11 @@ func unserialize(ctx phpv.Context, str string, offsetArg ...int) (result *phpv.Z
 		i = j + 2
 		for numProps > 0 {
 			var key, value *phpv.ZVal
-			key, i, err = unserialize(ctx, str, i)
+			key, i, err = d.parse(ctx, str, i)
 			if err != nil {
 				return nil, offset, readError
 			}
-			value, i, err = unserialize(ctx, str, i)
+			value, i, err = d.parse(ctx, str, i)
 			if err != nil {
 				return nil, offset, readError
 			}
