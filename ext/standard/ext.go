@@ -286,6 +286,7 @@ func init() {
 			"strcmp":                     {Func: fncStrCmp, Args: []*phpctx.ExtFunctionArg{}},
 			"strcoll":                    {Func: fncStrColl, Args: []*phpctx.ExtFunctionArg{}},
 			"strcspn":                    {Func: fncStrCspn, Args: []*phpctx.ExtFunctionArg{}},
+			"stream_context_create":      {Func: fncStreamContextCreate, Args: []*phpctx.ExtFunctionArg{}},
 			"stream_get_contents":        {Func: fncStreamGetContents, Args: []*phpctx.ExtFunctionArg{}},
 			"strip_tags":                 {Func: fncStripTags, Args: []*phpctx.ExtFunctionArg{}},
 			"stripcslashes":              {Func: fncStripCSlashes, Args: []*phpctx.ExtFunctionArg{}},

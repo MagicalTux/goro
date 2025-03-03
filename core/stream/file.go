@@ -14,8 +14,6 @@ import (
 type FileHandler struct {
 	Cwd  string
 	Root string
-
-	nextID int
 }
 
 func NewFileHandler(root string) (*FileHandler, error) {
@@ -36,10 +34,6 @@ func NewFileHandler(root string) (*FileHandler, error) {
 	fh := &FileHandler{
 		Root: root,
 		Cwd:  "/",
-
-		// PHP seems to start with 5, probably for stdin, stdout and stderr
-		// and other thing, but hardcode this for now to make test pass
-		nextID: 4,
 	}
 
 	// try to get current working directory if within root
@@ -91,7 +85,7 @@ func (f *FileHandler) localPath(name string) (string, string, error) {
 	return fname, name, nil
 }
 
-func (f *FileHandler) OpenFile(fname string, modeArg ...string) (*Stream, error) {
+func (f *FileHandler) OpenFile(ctx phpv.Context, fname string, modeArg ...string) (*Stream, error) {
 	fname, name, err := f.localPath(fname)
 	if err != nil {
 		return nil, err
@@ -148,14 +142,13 @@ func (f *FileHandler) OpenFile(fname string, modeArg ...string) (*Stream, error)
 	s.SetAttr("uri", name)
 
 	s.ResourceType = phpv.ResourceStream
-	s.ResourceID = f.nextID
-	f.nextID++
+	s.ResourceID = ctx.Global().NextResourceID()
 
 	return s, nil
 }
 
-func (f *FileHandler) Open(p *url.URL, mode ...string) (*Stream, error) {
-	return f.OpenFile(p.Path, mode...)
+func (f *FileHandler) Open(ctx phpv.Context, p *url.URL, mode ...string) (*Stream, error) {
+	return f.OpenFile(ctx, p.Path, mode...)
 }
 
 func (f *FileHandler) Exists(p *url.URL) (bool, error) {

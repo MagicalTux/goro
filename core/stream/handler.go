@@ -3,10 +3,12 @@ package stream
 import (
 	"net/url"
 	"os"
+
+	"github.com/MagicalTux/goro/core/phpv"
 )
 
 type Handler interface {
-	Open(path *url.URL, mode ...string) (*Stream, error)
+	Open(ctx phpv.Context, path *url.URL, mode ...string) (*Stream, error)
 	Exists(path *url.URL) (bool, error)
 	Stat(path *url.URL) (os.FileInfo, error)
 	Lstat(path *url.URL) (os.FileInfo, error)

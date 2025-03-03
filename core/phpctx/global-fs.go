@@ -33,13 +33,13 @@ func (g *Global) getHandler(fn phpv.ZString) (stream.Handler, *url.URL, error) {
 
 // Open opens a file using PHP stream wrappers and returns a handler to said
 // file.
-func (g *Global) Open(fn phpv.ZString, mode phpv.ZString, useIncludePath bool) (phpv.Stream, error) {
+func (g *Global) Open(ctx phpv.Context, fn phpv.ZString, mode phpv.ZString, useIncludePath bool) (phpv.Stream, error) {
 	h, u, err := g.getHandler(fn)
 	if err != nil {
 		return nil, err
 	}
 
-	f, err := h.Open(u, string(mode))
+	f, err := h.Open(ctx, u, string(mode))
 	if err == nil {
 		return f, nil
 	}
@@ -58,7 +58,7 @@ func (g *Global) Open(fn phpv.ZString, mode phpv.ZString, useIncludePath bool) (
 				absPath = filepath.Join(g.fileHandler.Root, p)
 			}
 
-			f, err = g.fileHandler.OpenFile(absPath)
+			f, err = g.fileHandler.OpenFile(g, absPath)
 			if err == nil {
 				return f, nil
 			}
@@ -71,6 +71,7 @@ func (g *Global) Open(fn phpv.ZString, mode phpv.ZString, useIncludePath bool) (
 	return nil, os.ErrNotExist
 }
 
+// TODO: internal include() or require() should not use nextResourceID
 func (g *Global) openForInclusion(ctx phpv.Context, fn phpv.ZString) (*stream.Stream, error) {
 	// From the PHP docs:
 	//   If the file isn't found in the include_path,
@@ -86,7 +87,7 @@ func (g *Global) openForInclusion(ctx phpv.Context, fn phpv.ZString) (*stream.St
 	}
 	localFile := u.Scheme == "file" || u.Scheme == ""
 	if !localFile || filepath.IsAbs(u.Path) {
-		return h.Open(u)
+		return h.Open(ctx, u)
 	}
 
 	var f *stream.Stream
@@ -98,7 +99,7 @@ func (g *Global) openForInclusion(ctx phpv.Context, fn phpv.ZString) (*stream.St
 			absPath = filepath.Join(g.fileHandler.Root, p)
 		}
 
-		f, err = g.fileHandler.OpenFile(absPath)
+		f, err = g.fileHandler.OpenFile(g, absPath)
 		if err == nil {
 			break
 		}
@@ -112,7 +113,7 @@ func (g *Global) openForInclusion(ctx phpv.Context, fn phpv.ZString) (*stream.St
 		// look in script dir
 		scriptDir := filepath.Dir(string(ctx.GetScriptFile()))
 		path := phpv.ZString(filepath.Join(scriptDir, string(fn)))
-		f, err = g.fileHandler.OpenFile(string(path))
+		f, err = g.fileHandler.OpenFile(g, string(path))
 		if err != nil && !errors.Is(err, os.ErrExist) {
 			return nil, err
 		}
@@ -121,7 +122,7 @@ func (g *Global) openForInclusion(ctx phpv.Context, fn phpv.ZString) (*stream.St
 		// file still not found,
 		// look in current working directory
 		path := phpv.ZString(filepath.Join(g.fileHandler.Cwd, string(fn)))
-		f, err = g.fileHandler.OpenFile(string(path))
+		f, err = g.fileHandler.OpenFile(g, string(path))
 		if err != nil && !errors.Is(err, os.ErrExist) {
 			return nil, err
 		}

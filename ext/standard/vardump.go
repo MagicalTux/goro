@@ -144,6 +144,9 @@ func doVarDump(ctx phpv.Context, z *phpv.ZVal, linePfx string, recurs map[uintpt
 			}
 		}
 		fmt.Fprintf(ctx, "%s}\n", linePfx)
+	case phpv.ZtResource:
+		r := z.Value().(phpv.Resource)
+		fmt.Fprintf(ctx, "resource(%d) of type (%s)\n", r.GetResourceID(), r.GetResourceType())
 	default:
 		fmt.Fprintf(ctx, "Unknown[%T]:%+v\n", z.Value(), z.Value())
 	}

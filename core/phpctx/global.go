@@ -76,6 +76,8 @@ type Global struct {
 	userErrorFilter  phpv.PhpErrorType
 
 	header *phpv.HeaderContext
+
+	nextResourceID int
 }
 
 func NewGlobal(ctx context.Context, p *Process, config phpv.IniConfig) *Global {
@@ -118,6 +120,9 @@ func createGlobal(p *Process) *Global {
 		mem:                 NewMemMgr(32 * 1024 * 1024), // limit in bytes TODO read memory_limit from process (.ini file)
 
 		header: &phpv.HeaderContext{Headers: http.Header{}},
+
+		// the first 3 are reserved for STDIN, STDOUT and STDERR
+		nextResourceID: 4,
 	}
 	g.SetDeadline(g.start.Add(30 * time.Second))
 
@@ -798,4 +803,10 @@ func (g *Global) ShownDeprecated(key string) bool {
 
 func (g *Global) HeaderContext() *phpv.HeaderContext {
 	return g.header
+}
+
+func (g *Global) NextResourceID() int {
+	id := g.nextResourceID
+	g.nextResourceID++
+	return id
 }
