@@ -88,7 +88,27 @@ func serialize(ctx phpv.Context, value *phpv.ZVal) (string, error) {
 		buf.WriteString("a:")
 		buf.WriteString(count)
 		buf.WriteString(":{")
+
+		refs := map[*phpv.ZVal]int{}
+
+		i := -1
 		for k, v := range arr.Iterate(ctx) {
+
+			if j, ok := refs[v.Nude()]; ok {
+				sub, err := serialize(ctx, k)
+				if err != nil {
+					return "", err
+				}
+				buf.WriteString(sub)
+				buf.WriteString("R:")
+				buf.WriteString(strconv.Itoa(j + 2))
+				buf.WriteString(";")
+				continue
+			} else {
+				i++
+				refs[v.Nude()] = i
+			}
+
 			sub, err := serialize(ctx, k)
 			if err != nil {
 				return "", err
@@ -307,17 +327,46 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 		readError.offset = 2
 
 		arr := phpv.NewZArray()
+		var refs int64 = 0
 		for numItems > 0 {
 			var key, value *phpv.ZVal
 			key, i, err = d.parse(ctx, str, i)
 			if err != nil {
 				return nil, offset, readError
 			}
-			value, i, err = d.parse(ctx, str, i)
-			if err != nil {
+
+			if i >= len(str) {
 				return nil, offset, readError
 			}
-			arr.OffsetSet(ctx, key, value)
+
+			if core.StrIdx(str, i) == 'R' && core.StrIdx(str, i+1) == ':' {
+				semi := indexOf(str, ";", i+2)
+				if semi < 0 {
+					return nil, offset, readError
+				}
+				index, err := strconv.ParseInt(str[i+2:semi], 10, 32)
+				if err != nil {
+					return nil, offset, readError
+				}
+				if index == 1 {
+					arr.OffsetSet(ctx, key, arr.ZVal())
+				} else {
+					index -= (2 - refs)
+					key2, _ := arr.OffsetKeyAt(ctx, int(index))
+					referred, _ := arr.OffsetGet(ctx, key2)
+					referred = referred.Ref()
+					arr.OffsetSet(ctx, key2, referred)
+					arr.OffsetSet(ctx, key, referred)
+				}
+				i = semi + 1
+				refs++
+			} else {
+				value, i, err = d.parse(ctx, str, i)
+				if err != nil {
+					return nil, offset, readError
+				}
+				arr.OffsetSet(ctx, key, value)
+			}
 			numItems--
 		}
 		if core.StrIdx(str, i) != '}' {
