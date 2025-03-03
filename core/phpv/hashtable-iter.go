@@ -12,7 +12,12 @@ func (z *zhashtableIterator) Current(ctx Context) (*ZVal, error) {
 		return nil, nil
 	}
 
-	return z.cur.v, nil
+	value := z.cur.v
+	if !value.IsRef() {
+		value = value.Dup()
+	}
+
+	return value, nil
 }
 
 func (z *zhashtableIterator) Key(ctx Context) (*ZVal, error) {
@@ -20,7 +25,7 @@ func (z *zhashtableIterator) Key(ctx Context) (*ZVal, error) {
 		return nil, nil
 	}
 
-	return NewZVal(z.cur.k), nil
+	return NewZVal(z.cur.k).Dup(), nil
 }
 
 func (z *zhashtableIterator) Next(ctx Context) (*ZVal, error) {
@@ -87,7 +92,12 @@ func (a *zhashtableIterator) Iterate(ctx Context) iter.Seq2[*ZVal, *ZVal] {
 		for ; a.Valid(ctx); a.Next(ctx) {
 			key, _ := a.Key(ctx)
 			value, _ := a.Current(ctx)
-			if !yield(key.Dup(), value.Dup()) {
+
+			if !value.IsRef() {
+				value = value.Dup()
+			}
+
+			if !yield(key.Dup(), value) {
 				break
 			}
 		}

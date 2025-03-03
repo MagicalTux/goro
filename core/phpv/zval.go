@@ -133,7 +133,11 @@ func (z *ZVal) Set(nz *ZVal) {
 	}
 	if _, isRef := nz.v.(*ZVal); isRef {
 		// simple set, keep reference alive
-		z.v = nz.v
+		if z != nz.v {
+			z.v = nz.v
+		} else {
+			z.v = NewZVal(z.v)
+		}
 		return
 	}
 

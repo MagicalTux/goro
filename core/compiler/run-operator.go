@@ -246,7 +246,11 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			res.AsArray(ctx).MainIterator().ResetIfEnd(ctx)
 		}
 
-		return res, w.WriteValue(ctx, res.ZVal())
+		if !res.IsRef() {
+			res = res.ZVal()
+		}
+
+		return res, w.WriteValue(ctx, res)
 	}
 
 	return res, nil

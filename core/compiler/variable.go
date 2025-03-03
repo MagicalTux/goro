@@ -190,8 +190,22 @@ func (r *runRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	ref := z.Ref()
+	if acc, ok := r.v.(*runArrayAccess); ok {
+		// An array element is referenced,
+		// this has the side-effect of making that
+		// element a reference too. For instance:
+		//   $foo[0] = "x";
+		//   $x = &$foo[0];
+		// The element at $foo[0] is now a reference too,
+		// such that var_dump($foo) will show something like
+		// int(0) => &string("x")
+		acc.WriteValue(ctx, ref)
+	}
+
 	// embed zval into another zval
-	return z.Ref(), nil
+	return ref, nil
 }
 
 func (r *runRef) Dump(w io.Writer) error {

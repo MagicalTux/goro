@@ -21,11 +21,8 @@ func stdFuncVarDump(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 func doVarDump(ctx phpv.Context, z *phpv.ZVal, linePfx string, recurs map[uintptr]bool) error {
 	var isRef string
-	if z.IsRef() {
-		// it seems & is not shown in PHP,
-		// so commenting this out for the mean time
-		// because it's making the tests fail
-		//isRef = "&"
+	if z.IsRef() && z.GetType() != phpv.ZtObject {
+		isRef = "&"
 	}
 
 	if recurs == nil {
