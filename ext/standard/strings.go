@@ -330,7 +330,7 @@ func fncStrExplode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // > alias join
 func fncStrImplode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var arg1 *phpv.ZVal
-	var arg2 **phpv.ZVal
+	var arg2 core.Optional[*phpv.ZVal]
 
 	_, err := core.Expand(ctx, args, &arg1, &arg2)
 	if err != nil {
@@ -340,12 +340,21 @@ func fncStrImplode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var sep phpv.ZString
 	var array *phpv.ZArray
 
-	if arg2 != nil {
-		sep = arg1.AsString(ctx)
-		array = (*arg2).AsArray(ctx)
-	} else {
+	// Note from the docs:
+	// implode() can, for historical reasons, accept its parameters in either order.
+	if arg1.GetType() == phpv.ZtArray {
 		array = arg1.AsArray(ctx)
-		sep = phpv.ZString("")
+		if arg2.HasArg() {
+			sep = arg2.Get().AsString(ctx)
+		} else {
+			sep = phpv.ZString("")
+		}
+	} else {
+		if !arg2.HasArg() {
+			return phpv.ZStr(""), ctx.Warn("Argument must be an array")
+		}
+		sep = arg1.AsString(ctx)
+		array = arg2.Get().AsArray(ctx)
 	}
 
 	var buf bytes.Buffer
