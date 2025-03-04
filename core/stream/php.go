@@ -54,7 +54,7 @@ func (h *phpHandler) getPath(p *url.URL) string {
 	return p.Host
 }
 
-func (h *phpHandler) Open(ctx phpv.Context, p *url.URL, mode ...string) (*Stream, error) {
+func (h *phpHandler) Open(ctx phpv.Context, p *url.URL, mode string, _ ...phpv.Resource) (*Stream, error) {
 	switch h.getPath(p) {
 	case "stdin":
 		return h.stdin, nil

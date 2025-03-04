@@ -241,9 +241,9 @@ func fncRmdir(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 func fncFileGetContents(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var filename phpv.ZString
 	var useIncludePathArg *phpv.ZBool
-	var contextResource **phpv.ZVal
-	var offsetArg *phpv.ZInt
-	var maxlen *phpv.ZInt
+	var contextResource core.Optional[phpv.Resource]
+	var offsetArg core.Optional[phpv.ZInt]
+	var maxlen core.Optional[phpv.ZInt]
 	_, err := core.Expand(ctx, args, &filename, &useIncludePathArg, &contextResource, &offsetArg, &maxlen)
 	if err != nil {
 		return nil, err
@@ -254,37 +254,38 @@ func fncFileGetContents(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 		return nil, errors.New("use_include_path is not yet supported, set to false")
 	}
 
-	if contextResource != nil && !phpv.IsNull(*contextResource) {
-		return nil, errors.New("context resource is not yet supported, set to NULL")
-	}
-
-	if maxlen != nil && *maxlen < 0 {
+	if maxlen.HasArg() && maxlen.Get() < 5 {
 		return nil, errors.New("Argument #5 ($length) must be greater than or equal to 0")
 	}
 
-	f, err := ctx.Global().Open(ctx, filename, "r", true)
+	if contextResource.HasArg() {
+		if _, ok := contextResource.Get().(*stream.Context); !ok {
+			return nil, ctx.FuncErrorf("$context must be a stream context")
+		}
+	}
+
+	f, err := ctx.Global().Open(ctx, filename, "r", true, contextResource.Get())
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			// TODO: WARN Failed to open stream: No such file or directory
-			return phpv.ZFalse.ZVal(), nil
+			return phpv.ZFalse.ZVal(), ctx.Warn("%s(%s): failed to open stream: No such file or directory", ctx.GetFuncName(), filename)
 		}
 		return nil, err
 	}
 	defer f.Close()
 
-	if offsetArg != nil {
-		off := *offsetArg
+	if offsetArg.HasArg() {
+		off := offsetArg.Get()
 		if off < 0 {
-			_, err = f.Seek(int64(*offsetArg), io.SeekEnd)
+			_, err = f.Seek(int64(offsetArg.Get()), io.SeekEnd)
 		} else {
-			_, err = f.Seek(int64(*offsetArg), io.SeekStart)
+			_, err = f.Seek(int64(offsetArg.Get()), io.SeekStart)
 		}
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	if maxlen == nil {
+	if !maxlen.HasArg() {
 		buf, err := io.ReadAll(f)
 		if err != nil {
 			return nil, err
@@ -292,7 +293,7 @@ func fncFileGetContents(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 		return phpv.ZStr(string(buf)), nil
 	}
 
-	buf := make([]byte, *maxlen)
+	buf := make([]byte, maxlen.Get())
 	_, err = f.Read(buf)
 	if err != nil && err != io.EOF {
 		return nil, err
@@ -368,7 +369,7 @@ func fncFileOpen(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var filename phpv.ZString
 	var mode phpv.ZString
 	var useIncludePathArg core.Optional[phpv.ZBool]
-	var contextResource core.OptionalRef[*phpv.ZVal]
+	var contextResource core.Optional[phpv.Resource]
 	_, err := core.Expand(ctx, args, &filename, &mode, &useIncludePathArg, &contextResource)
 	if err != nil {
 		return nil, err

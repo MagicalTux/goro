@@ -85,17 +85,13 @@ func (f *FileHandler) localPath(name string) (string, string, error) {
 	return fname, name, nil
 }
 
-func (f *FileHandler) OpenFile(ctx phpv.Context, fname string, modeArg ...string) (*Stream, error) {
+func (f *FileHandler) OpenFile(ctx phpv.Context, fname string, mode string, _ ...phpv.Resource) (*Stream, error) {
 	fname, name, err := f.localPath(fname)
 	if err != nil {
 		return nil, err
 	}
 
 	flags := 0
-	mode := "r"
-	if len(modeArg) > 0 {
-		mode = modeArg[0]
-	}
 
 	flag := ""
 	if len(mode) > 0 {
@@ -147,8 +143,8 @@ func (f *FileHandler) OpenFile(ctx phpv.Context, fname string, modeArg ...string
 	return s, nil
 }
 
-func (f *FileHandler) Open(ctx phpv.Context, p *url.URL, mode ...string) (*Stream, error) {
-	return f.OpenFile(ctx, p.Path, mode...)
+func (f *FileHandler) Open(ctx phpv.Context, p *url.URL, mode string, streamCtx ...phpv.Resource) (*Stream, error) {
+	return f.OpenFile(ctx, p.Path, mode, streamCtx...)
 }
 
 func (f *FileHandler) Exists(p *url.URL) (bool, error) {

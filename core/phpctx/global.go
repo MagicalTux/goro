@@ -131,6 +131,7 @@ func createGlobal(p *Process) *Global {
 	g.fileHandler, _ = stream.NewFileHandler("/")
 	g.streamHandlers["file"] = g.fileHandler
 	g.streamHandlers["php"] = stream.PhpHandler()
+	g.streamHandlers["http"] = stream.NewHttpHandler()
 
 	g.initLocale()
 

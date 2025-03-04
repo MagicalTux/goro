@@ -8,7 +8,7 @@ import (
 )
 
 type Handler interface {
-	Open(ctx phpv.Context, path *url.URL, mode ...string) (*Stream, error)
+	Open(ctx phpv.Context, path *url.URL, mode string, streamCtx ...phpv.Resource) (*Stream, error)
 	Exists(path *url.URL) (bool, error)
 	Stat(path *url.URL) (os.FileInfo, error)
 	Lstat(path *url.URL) (os.FileInfo, error)

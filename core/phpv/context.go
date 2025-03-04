@@ -85,7 +85,7 @@ type GlobalContext interface {
 	RegisterLazyFunc(name ZString, r Runnables, p int)
 	RegisterLazyClass(name ZString, r Runnables, p int)
 
-	Open(ctx Context, fn, mode ZString, useIncludePath bool) (Stream, error)
+	Open(ctx Context, fn, mode ZString, useIncludePath bool, streamCtx ...Resource) (Stream, error)
 	Exists(fn ZString) (bool, error)
 	Chdir(d ZString) error
 	Getwd() ZString
