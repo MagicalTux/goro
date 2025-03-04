@@ -290,7 +290,7 @@ func (g *Global) SetOutput(w io.Writer) {
 }
 
 func (g *Global) RunFile(fn string) error {
-	_, err := g.Require(g, phpv.ZString(fn))
+	_, err := g.requireMain(phpv.ZString(fn))
 	err = phpv.FilterExitError(err)
 
 	switch innerErr := phpv.UnwrapError(err).(type) {

@@ -58,7 +58,7 @@ func (g *Global) Open(ctx phpv.Context, fn phpv.ZString, mode phpv.ZString, useI
 				absPath = filepath.Join(g.fileHandler.Root, p)
 			}
 
-			f, err = g.fileHandler.OpenFile(g, absPath)
+			f, err = g.fileHandler.OpenFile(ctx, absPath)
 			if err == nil {
 				return f, nil
 			}
@@ -99,7 +99,7 @@ func (g *Global) openForInclusion(ctx phpv.Context, fn phpv.ZString) (*stream.St
 			absPath = filepath.Join(g.fileHandler.Root, p)
 		}
 
-		f, err = g.fileHandler.OpenFile(g, absPath)
+		f, err = g.fileHandler.OpenFile(ctx, absPath)
 		if err == nil {
 			break
 		}
@@ -113,7 +113,7 @@ func (g *Global) openForInclusion(ctx phpv.Context, fn phpv.ZString) (*stream.St
 		// look in script dir
 		scriptDir := filepath.Dir(string(ctx.GetScriptFile()))
 		path := phpv.ZString(filepath.Join(scriptDir, string(fn)))
-		f, err = g.fileHandler.OpenFile(g, string(path))
+		f, err = g.fileHandler.OpenFile(ctx, string(path))
 		if err != nil && !errors.Is(err, os.ErrExist) {
 			return nil, err
 		}
@@ -122,7 +122,7 @@ func (g *Global) openForInclusion(ctx phpv.Context, fn phpv.ZString) (*stream.St
 		// file still not found,
 		// look in current working directory
 		path := phpv.ZString(filepath.Join(g.fileHandler.Cwd, string(fn)))
-		f, err = g.fileHandler.OpenFile(g, string(path))
+		f, err = g.fileHandler.OpenFile(ctx, string(path))
 		if err != nil && !errors.Is(err, os.ErrExist) {
 			return nil, err
 		}

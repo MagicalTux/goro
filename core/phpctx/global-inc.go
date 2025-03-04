@@ -19,6 +19,14 @@ func (ic *includeContext) GetScriptFile() phpv.ZString {
 	return ic.scriptFilename
 }
 
+type globalContextNoID struct {
+	phpv.GlobalContext
+}
+
+func (g *globalContextNoID) Global() phpv.GlobalContext { return g }
+
+func (g *globalContextNoID) NextResourceID() int { return 0 }
+
 var Compile func(parent phpv.Context, t *tokenizer.Lexer) (phpv.Runnable, error)
 
 func (c *Global) DoString(ctx phpv.Context, strCode phpv.ZString) (*phpv.ZVal, error) {
@@ -89,6 +97,33 @@ func (c *Global) Include(ctx phpv.Context, fn phpv.ZString) (*phpv.ZVal, error) 
 	}
 
 	return phperr.CatchReturn(code.Run(ctx))
+}
+
+// Similar to Require() but disables allocating resource ID
+// for the first opened main script.
+func (c *Global) RequireMain(fn phpv.ZString) (*phpv.ZVal, error) {
+	f, err := c.openForInclusion(&globalContextNoID{c}, fn)
+	if err != nil {
+		return nil, c.FuncError(err)
+	}
+	defer f.Close()
+
+	// grab full path of file if possible
+	if fn2, ok := f.Attr("uri").(string); ok {
+		fn = phpv.ZString(fn2)
+	}
+	c.included[fn] = true
+
+	// tokenize
+	t := tokenizer.NewLexer(f, string(fn))
+
+	// compile
+	code, err := Compile(c, t)
+	if err != nil {
+		return nil, err
+	}
+
+	return phperr.CatchReturn(code.Run(c))
 }
 
 func (c *Global) Require(ctx phpv.Context, fn phpv.ZString) (*phpv.ZVal, error) {
