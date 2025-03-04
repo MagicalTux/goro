@@ -78,6 +78,8 @@ type Global struct {
 	header *phpv.HeaderContext
 
 	nextResourceID int
+
+	DefaultStreamContext *stream.Context
 }
 
 func NewGlobal(ctx context.Context, p *Process, config phpv.IniConfig) *Global {

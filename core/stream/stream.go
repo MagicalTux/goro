@@ -19,6 +19,7 @@ type Stream struct {
 
 	ResourceType phpv.ResourceType
 	ResourceID   int
+	Context      *Context
 }
 
 func streamFinalizer(s *Stream) {

@@ -46,7 +46,30 @@ func (c *Context) GetResourceID() int {
 	return c.ID
 }
 
-func FromZArray(ctx phpv.Context, options *phpv.ZArray, params *phpv.ZArray) *Context {
+func (c *Context) SetOption(wrapperName, option phpv.ZString, value *phpv.ZVal) {
+	if _, ok := c.Options[wrapperName]; !ok {
+		c.Options[wrapperName] = ContextOptions{}
+	}
+	c.Options[wrapperName][option] = value
+}
+
+func (c *Context) GetOption(wrapperName, option phpv.ZString) (*phpv.ZVal, bool) {
+	options, ok := c.Options[wrapperName]
+	if !ok {
+		return nil, false
+	}
+	value, ok := options[option]
+	return value, ok
+}
+
+func NewContext(ctx phpv.Context) *Context {
+	return &Context{
+		ID:      ctx.Global().NextResourceID(),
+		Options: make(map[phpv.ZString]ContextOptions),
+	}
+}
+
+func NewContextFromZArray(ctx phpv.Context, options *phpv.ZArray, params *phpv.ZArray) *Context {
 	streamCtx := &Context{
 		ID:      ctx.Global().NextResourceID(),
 		Options: make(map[phpv.ZString]ContextOptions),

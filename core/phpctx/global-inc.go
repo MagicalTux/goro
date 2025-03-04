@@ -101,7 +101,7 @@ func (c *Global) Include(ctx phpv.Context, fn phpv.ZString) (*phpv.ZVal, error) 
 
 // Similar to Require() but disables allocating resource ID
 // for the first opened main script.
-func (c *Global) RequireMain(fn phpv.ZString) (*phpv.ZVal, error) {
+func (c *Global) requireMain(fn phpv.ZString) (*phpv.ZVal, error) {
 	f, err := c.openForInclusion(&globalContextNoID{c}, fn)
 	if err != nil {
 		return nil, c.FuncError(err)
