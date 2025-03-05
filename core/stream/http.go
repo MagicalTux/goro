@@ -12,27 +12,22 @@ import (
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
-type HttpReader struct {
-	url            url.URL
-	response       *http.Response
-	requestFullURI bool
-	followLocation bool
-	ignoreErrors   bool
-}
-
-func (hr *HttpReader) Read(p []byte) (int, error) {
-	return hr.response.Body.Read(p)
-}
-
 type HttpHandler struct{}
 
 func NewHttpHandler() *HttpHandler {
 	return &HttpHandler{}
 }
 
-func (hh *HttpHandler) run(ctx phpv.Context, hr *HttpReader, options ContextOptions) error {
+func (hh *HttpHandler) run(ctx phpv.Context, path *url.URL, options ContextOptions) (*http.Response, error) {
+	followLocation := true
+	maxRedirects := 20
 	client := &http.Client{}
-	request := &http.Request{}
+	request := &http.Request{
+		URL:    path,
+		Header: make(http.Header),
+		Host:   path.Host,
+	}
+
 	for k, v := range options {
 		strVal := string(v.AsString(ctx))
 		switch k {
@@ -49,7 +44,7 @@ func (hh *HttpHandler) run(ctx phpv.Context, hr *HttpReader, options ContextOpti
 				Proxy: http.ProxyURL(proxyURL),
 			}
 		case "follow_location":
-			hr.followLocation = bool(v.AsBool(ctx))
+			followLocation = bool(v.AsBool(ctx))
 		case "protocol_version":
 			// go's HTTP client ignores protocol version,
 			// so no choice but to ignore here as well
@@ -58,17 +53,8 @@ func (hh *HttpHandler) run(ctx phpv.Context, hr *HttpReader, options ContextOpti
 			// and no way to set this option, it seems
 		case "timeout":
 			client.Timeout = time.Duration(v.AsInt(ctx)) * time.Second
-		case "ignore_errors":
-			hr.ignoreErrors = bool(v.AsBool(ctx))
 		case "max_redirects":
-			maxRedirect := int(v.AsInt(ctx))
-			client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-				if maxRedirect <= 0 || !hr.followLocation {
-					return http.ErrUseLastResponse
-				}
-				maxRedirect--
-				return nil
-			}
+			maxRedirects = int(v.AsInt(ctx))
 		case "header":
 			switch v.GetType() {
 			case phpv.ZtString:
@@ -98,13 +84,21 @@ func (hh *HttpHandler) run(ctx phpv.Context, hr *HttpReader, options ContextOpti
 		}
 	}
 
-	if hr.requestFullURI {
-		hr.url.Path = hr.url.RequestURI()
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if maxRedirects <= 0 || !followLocation {
+			return http.ErrUseLastResponse
+		}
+		maxRedirects--
+		return nil
 	}
 
-	var err error
-	hr.response, err = client.Do(request)
-	return err
+	userAgent := ctx.GetConfig("user_agent", phpv.ZNULL.ZVal())
+	if userAgent != nil {
+		request.Header.Set("User-Agent", string(userAgent.AsString(ctx)))
+	}
+
+	request.URL = path
+	return client.Do(request)
 }
 
 func (hh *HttpHandler) Open(ctx phpv.Context, path *url.URL, mode string, streamCtx ...phpv.Resource) (*Stream, error) {
@@ -120,12 +114,12 @@ func (hh *HttpHandler) Open(ctx phpv.Context, path *url.URL, mode string, stream
 		options = ContextOptions{}
 	}
 
-	r := &HttpReader{}
-	if err := hh.run(ctx, r, options); err != nil {
+	response, err := hh.run(ctx, path, options)
+	if err != nil {
 		return nil, err
 	}
-	stream := NewStream(r)
 
+	stream := NewStream(response.Body)
 	return stream, nil
 }
 
