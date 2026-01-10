@@ -653,4 +653,3 @@ func mathIntDiv(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	result := dividend / divisor
 	return phpv.ZInt(result).ZVal(), nil
 }
-

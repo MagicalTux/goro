@@ -1,6 +1,7 @@
 #!/bin/make
 GOROOT:=$(shell PATH="/pkg/main/dev-lang.go.dev/bin:$$PATH" go env GOROOT)
 GOPATH:=$(shell $(GOROOT)/bin/go env GOPATH)
+export CGO_ENABLED=0
 
 all:
 	GOROOT="$(GOROOT)" $(GOPATH)/bin/goimports -w -l .
