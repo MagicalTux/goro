@@ -20,12 +20,11 @@ func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, o
 }
 
 func (c *Global) CallZVal(ctx phpv.Context, f phpv.Callable, args []*phpv.ZVal, optionalThis ...phpv.ZObject) (*phpv.ZVal, error) {
-	callCtx := &FuncContext{
-		Context: ctx,
-		h:       phpv.NewHashTable(),
-		c:       f,
-		loc:     ctx.Loc(),
-	}
+	callCtx := GetFuncContext()
+	callCtx.Context = ctx
+	callCtx.c = f
+	callCtx.loc = ctx.Loc()
+	defer callCtx.Release()
 
 	var this phpv.ZObject
 	if len(optionalThis) > 0 {

@@ -42,6 +42,7 @@ type Global struct {
 
 	deadlineDuration time.Duration
 	timerStart       time.Time
+	tickCount        uint32
 
 	IniConfig phpv.IniConfig
 
@@ -386,13 +387,15 @@ func (g *Global) IterateConfig() iter.Seq2[string, phpv.IniValue] {
 }
 
 func (g *Global) Tick(ctx phpv.Context, l *phpv.Loc) error {
-	// TODO check run deadline, context cancellation and memory limit
-	deadline := g.timerStart.Add(g.deadlineDuration)
-	if time.Until(deadline) <= 0 {
-		seconds := math.Round(g.deadlineDuration.Seconds())
-		return &phperr.PhpTimeout{L: g.l, Seconds: int(seconds)}
-	}
 	g.l = l
+	g.tickCount++
+	if g.tickCount&0x3FF == 0 {
+		deadline := g.timerStart.Add(g.deadlineDuration)
+		if time.Until(deadline) <= 0 {
+			seconds := math.Round(g.deadlineDuration.Seconds())
+			return &phperr.PhpTimeout{L: g.l, Seconds: int(seconds)}
+		}
+	}
 	return nil
 }
 

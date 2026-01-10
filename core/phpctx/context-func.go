@@ -1,10 +1,39 @@
 package phpctx
 
 import (
+	"sync"
+
 	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phperr"
 	"github.com/MagicalTux/goro/core/phpv"
 )
+
+// Pool for FuncContext to reduce allocations during function calls
+var funcContextPool = sync.Pool{
+	New: func() any {
+		return &FuncContext{
+			h: phpv.NewHashTable(),
+		}
+	},
+}
+
+// GetFuncContext retrieves a FuncContext from the pool
+func GetFuncContext() *FuncContext {
+	return funcContextPool.Get().(*FuncContext)
+}
+
+// Release returns the FuncContext to the pool after clearing it
+func (c *FuncContext) Release() {
+	c.Context = nil
+	c.h.Empty()
+	c.this = nil
+	c.Args = c.Args[:0]
+	c.c = nil
+	c.loc = nil
+	c.class = nil
+	c.methodType = ""
+	funcContextPool.Put(c)
+}
 
 type FuncContext struct {
 	phpv.Context
@@ -46,12 +75,17 @@ func (c *FuncContext) Class() phpv.ZClass {
 }
 
 func (c *FuncContext) OffsetExists(ctx phpv.Context, name phpv.Val) (bool, error) {
-	name, err := name.AsVal(ctx, phpv.ZtString)
-	if err != nil {
-		return false, err
+	nameStr, ok := name.(phpv.ZString)
+	if !ok {
+		var err error
+		name, err = name.AsVal(ctx, phpv.ZtString)
+		if err != nil {
+			return false, err
+		}
+		nameStr = name.(phpv.ZString)
 	}
 
-	switch name.(phpv.ZString) {
+	switch nameStr {
 	case "this":
 		if c.this == nil {
 			return false, nil
@@ -60,75 +94,96 @@ func (c *FuncContext) OffsetExists(ctx phpv.Context, name phpv.Val) (bool, error
 	case "GLOBALS":
 		return true, nil
 	case "_SERVER", "_GET", "_POST", "_FILES", "_COOKIE", "_SESSION", "_REQUEST", "_ENV":
-		return c.Global().OffsetExists(ctx, name)
+		return c.Global().OffsetExists(ctx, nameStr)
 	}
-	return c.h.HasString(name.(phpv.ZString)), nil
+	return c.h.HasString(nameStr), nil
 }
 
 func (c *FuncContext) OffsetGet(ctx phpv.Context, name phpv.Val) (*phpv.ZVal, error) {
-	name, err := name.AsVal(ctx, phpv.ZtString)
-	if err != nil {
-		return nil, err
+	nameStr, ok := name.(phpv.ZString)
+	if !ok {
+		var err error
+		name, err = name.AsVal(ctx, phpv.ZtString)
+		if err != nil {
+			return nil, err
+		}
+		nameStr = name.(phpv.ZString)
 	}
 
-	switch name.(phpv.ZString) {
+	switch nameStr {
 	case "this":
 		if c.this == nil {
 			return nil, nil
 		}
 		return c.this.ZVal(), nil
 	case "GLOBALS", "_SERVER", "_GET", "_POST", "_FILES", "_COOKIE", "_SESSION", "_REQUEST", "_ENV":
-		return c.Global().OffsetGet(ctx, name)
+		return c.Global().OffsetGet(ctx, nameStr)
 	}
-	return c.h.GetString(name.(phpv.ZString)), nil
+	return c.h.GetString(nameStr), nil
 }
 
 func (c *FuncContext) OffsetCheck(ctx phpv.Context, name phpv.Val) (*phpv.ZVal, bool, error) {
-	name, err := name.AsVal(ctx, phpv.ZtString)
-	if err != nil {
-		return nil, false, err
+	nameStr, ok := name.(phpv.ZString)
+	if !ok {
+		var err error
+		name, err = name.AsVal(ctx, phpv.ZtString)
+		if err != nil {
+			return nil, false, err
+		}
+		nameStr = name.(phpv.ZString)
 	}
 
-	switch name.(phpv.ZString) {
+	switch nameStr {
 	case "this":
 		if c.this == nil {
 			return nil, false, nil
 		}
 		return c.this.ZVal(), true, nil
 	case "GLOBALS", "_SERVER", "_GET", "_POST", "_FILES", "_COOKIE", "_SESSION", "_REQUEST", "_ENV":
-		return c.Global().OffsetCheck(ctx, name)
+		return c.Global().OffsetCheck(ctx, nameStr)
 	}
 
-	if !c.h.HasString(name.(phpv.ZString)) {
+	v, found := c.h.GetStringB(nameStr)
+	if !found {
 		return nil, false, nil
 	}
-	return c.h.GetString(name.(phpv.ZString)), true, nil
+	return v, true, nil
 }
 
 func (c *FuncContext) OffsetSet(ctx phpv.Context, name phpv.Val, v *phpv.ZVal) error {
-	name, err := name.AsVal(ctx, phpv.ZtString)
-	if err != nil {
-		return err
+	nameStr, ok := name.(phpv.ZString)
+	if !ok {
+		var err error
+		name, err = name.AsVal(ctx, phpv.ZtString)
+		if err != nil {
+			return err
+		}
+		nameStr = name.(phpv.ZString)
 	}
 
-	switch name.(phpv.ZString) {
+	switch nameStr {
 	case "this":
 		return ctx.Errorf("Cannot re-assign $this")
 	}
-	return c.h.SetString(name.(phpv.ZString), v)
+	return c.h.SetString(nameStr, v)
 }
 
 func (c *FuncContext) OffsetUnset(ctx phpv.Context, name phpv.Val) error {
-	name, err := name.AsVal(ctx, phpv.ZtString)
-	if err != nil {
-		return err
+	nameStr, ok := name.(phpv.ZString)
+	if !ok {
+		var err error
+		name, err = name.AsVal(ctx, phpv.ZtString)
+		if err != nil {
+			return err
+		}
+		nameStr = name.(phpv.ZString)
 	}
 
-	switch name.(phpv.ZString) {
+	switch nameStr {
 	case "this":
 		return ctx.Errorf("Cannot unset $this")
 	}
-	return c.h.UnsetString(name.(phpv.ZString))
+	return c.h.UnsetString(nameStr)
 }
 
 func (c *FuncContext) Count(ctx phpv.Context) phpv.ZInt {

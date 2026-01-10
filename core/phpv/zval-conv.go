@@ -15,6 +15,10 @@ func (z *ZVal) CastTo(ctx Context, t ZType) error {
 }
 
 func (z *ZVal) As(ctx Context, t ZType) (*ZVal, error) {
+	// Fast path: if type already matches, return same ZVal to avoid allocation
+	if z != nil && z.GetType() == t {
+		return z, nil
+	}
 	r, err := z.AsVal(ctx, t)
 	return NewZVal(r), err
 }

@@ -22,7 +22,11 @@ func main() {
 	p := phpctx.NewProcess("cli")
 	p.CommandLine(os.Args)
 	ctx := phpctx.NewGlobal(context.Background(), p, ini.New())
-	if err := ctx.RunFile("test.php"); err != nil {
+	file := "test.php"
+	if len(os.Args) > 1 {
+		file = os.Args[1]
+	}
+	if err := ctx.RunFile(file); err != nil {
 		log.Printf("failed to run test file: %s", err)
 		os.Exit(1)
 	}

@@ -73,7 +73,7 @@ func (r *runVariable) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		return nil, ctx.Errorf("Using $this when not in object context")
 	}
 
-	res, exists, err := ctx.OffsetCheck(ctx, r.v.ZVal())
+	res, exists, err := ctx.OffsetCheck(ctx, r.v)
 	if err != nil {
 		return nil, err
 	}
@@ -115,9 +115,9 @@ func (r *runVariable) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 func (r *runVariable) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 	var err error
 	if value == nil {
-		err = ctx.OffsetUnset(ctx, r.v.ZVal())
+		err = ctx.OffsetUnset(ctx, r.v)
 	} else {
-		err = ctx.OffsetSet(ctx, r.v.ZVal(), value)
+		err = ctx.OffsetSet(ctx, r.v, value)
 	}
 	if err != nil {
 		return r.l.Error(ctx, err)
