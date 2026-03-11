@@ -120,8 +120,12 @@ func (f *FileHandler) OpenFile(ctx phpv.Context, fname string, mode string, _ ..
 		flags = os.O_CREATE | os.O_EXCL | os.O_WRONLY
 	case "x+":
 		flags = os.O_CREATE | os.O_EXCL | os.O_RDWR
-	case "c", "c+", "e":
-		panic("TODO: mode " + mode)
+	case "c":
+		flags = os.O_WRONLY | os.O_CREATE
+	case "c+":
+		flags = os.O_RDWR | os.O_CREATE
+	case "e":
+		flags = os.O_RDONLY | os.O_CREATE
 	}
 
 	res, err := os.OpenFile(fname, flags, 0644)

@@ -333,6 +333,10 @@ func ExpandAt(ctx phpv.Context, args []*phpv.ZVal, i int, out interface{}) error
 		return ctx.FuncError(ErrNotEnoughArguments)
 	}
 
+	if args[i] == nil {
+		args[i] = phpv.ZNULL.ZVal()
+	}
+
 	if isRef {
 		args[i] = args[i].Ref()
 	} else {

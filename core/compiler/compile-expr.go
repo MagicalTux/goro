@@ -93,6 +93,15 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		}
 		return &runZVal{phpv.ZFloat(v), l}, nil
 	case tokenizer.T_STRING:
+		// Peek ahead: if followed by ::, this is a class name, not a constant
+		next, err := c.NextItem()
+		if err != nil {
+			return nil, err
+		}
+		c.backup()
+		if next.Type == tokenizer.T_PAAMAYIM_NEKUDOTAYIM {
+			return &runZVal{phpv.ZString(i.Data), l}, nil
+		}
 		return &runConstant{i.Data, l}, nil
 
 	case tokenizer.T_CONSTANT_ENCAPSED_STRING:
@@ -107,12 +116,21 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		return &runZVal{phpv.ZInt(l.Line), l}, nil
 	case tokenizer.T_DIR:
 		return &runZVal{phpv.ZString(path.Dir(l.Filename)), l}, nil
-	case tokenizer.T_CLASS:
+	case tokenizer.T_CLASS_C:
 		class := c.getClass()
 		if class == nil {
-			return nil, c.Errorf("__CLASS__ outside of a class")
+			return &runZVal{phpv.ZString(""), l}, nil
 		}
 		return &runZVal{class.Name, l}, nil
+	case tokenizer.T_FUNC_C:
+		f := c.getFunc()
+		if f == nil {
+			return &runZVal{phpv.ZString(""), l}, nil
+		}
+		return &runZVal{phpv.ZString(f.name), l}, nil
+	case tokenizer.T_NS_C:
+		// Namespaces not yet fully supported, return empty string
+		return &runZVal{phpv.ZString(""), l}, nil
 	case tokenizer.T_METHOD_C:
 		class := c.getClass()
 		f := c.getFunc()

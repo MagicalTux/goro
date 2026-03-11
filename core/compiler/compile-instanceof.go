@@ -8,15 +8,27 @@ import (
 )
 
 type runInstanceOf struct {
-	v phpv.Runnable
-	l *phpv.Loc
-	c phpv.ZString
+	v        phpv.Runnable
+	l        *phpv.Loc
+	c        phpv.ZString   // static class name
+	classVar phpv.Runnable  // dynamic class name (variable)
 }
 
 func compileInstanceOf(v phpv.Runnable, i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
-	var err error
 	r := &runInstanceOf{l: i.Loc(), v: v}
 
+	// Check if next token is a variable
+	next, err := c.NextItem()
+	if err != nil {
+		return nil, err
+	}
+
+	if next.Type == tokenizer.T_VARIABLE {
+		r.classVar = &runVariable{v: phpv.ZString(next.Data[1:]), l: next.Loc()}
+		return r, nil
+	}
+
+	c.backup()
 	r.c, err = compileClassName(c)
 	if err != nil {
 		return nil, err
@@ -34,12 +46,21 @@ func (r *runInstanceOf) Dump(w io.Writer) error {
 }
 
 func (r *runInstanceOf) Run(ctx phpv.Context) (*phpv.ZVal, error) {
+	var className phpv.ZString
+	if r.classVar != nil {
+		// Dynamic class name from variable
+		classVal, err := r.classVar.Run(ctx)
+		if err != nil {
+			return nil, err
+		}
+		className = classVal.AsString(ctx)
+	} else {
+		className = r.c
+	}
+
 	// first, check class in parameter
-	c, err := ctx.Global().GetClass(ctx, r.c, false)
+	c, err := ctx.Global().GetClass(ctx, className, false)
 	if err != nil {
-		// the only error possible is if class does not exists (because autoload=false, with autoload=true the autoload function could throw an error/etc)
-		// if a class is not loaded or does not exist, an existing object cannot extend it (yet)
-		// TODO check against object classes in the future once objects can be passed between processes
 		return phpv.ZBool(false).ZVal(), nil
 	}
 
@@ -49,7 +70,6 @@ func (r *runInstanceOf) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		return nil, err
 	}
 	if v.GetType() != phpv.ZtObject {
-		// not an object
 		return phpv.ZBool(false).ZVal(), nil
 	}
 

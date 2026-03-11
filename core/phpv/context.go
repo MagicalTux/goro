@@ -75,6 +75,9 @@ type GlobalContext interface {
 	RegisterClass(name ZString, c ZClass) error
 	GetClass(ctx Context, name ZString, autoload bool) (ZClass, error)
 
+	RegisterAutoload(handler Callable)
+	UnregisterAutoload(handler Callable) bool
+
 	RestoreConfig(name ZString)
 	SetLocalConfig(name ZString, value *ZVal) (*ZVal, bool)
 	IterateConfig() iter.Seq2[string, IniValue]
@@ -110,6 +113,8 @@ type GlobalContext interface {
 	ShownDeprecated(key string) bool
 
 	NextResourceID() int
+
+	GetDeclaredClasses() []ZString
 }
 
 type FuncContext interface {

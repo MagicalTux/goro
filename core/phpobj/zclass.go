@@ -97,15 +97,69 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 			// TODO: why is Loc not set here, probably missing a Tick()
 			return fmt.Errorf("Interface function Template::%s() cannot contain body", string(m.Name))
 		}
-		if c, ok := m.Method.(phpv.Compilable); ok {
-			err := c.Compile(ctx)
+		if m.Modifiers.Has(phpv.ZAttrAbstract) && m.Modifiers.Has(phpv.ZAttrFinal) {
+			return c.fatalError(ctx, "Cannot use the final modifier on an abstract class member")
+		}
+		if comp, ok := m.Method.(phpv.Compilable); ok {
+			err := comp.Compile(ctx)
 			if err != nil {
 				return err
 			}
 		}
 	}
-	// TODO resolve extendstr/implementsstr
+
+	// Import abstract methods from interfaces that aren't already implemented
+	for _, intf := range c.Implementations {
+		for n, m := range intf.Methods {
+			if _, gotit := c.Methods[n]; !gotit {
+				c.Methods[n] = m
+			}
+		}
+	}
+
+	// Validate: non-abstract, non-interface classes must implement all abstract methods
+	if c.Type != phpv.ZClassTypeInterface && c.Attr&phpv.ZClassAttr(phpv.ZClassExplicitAbstract) == 0 {
+		var unimplemented []string
+		for _, m := range c.Methods {
+			if m.Empty && (m.Modifiers.Has(phpv.ZAttrAbstract) || m.Class != nil && m.Class != c) {
+				// Find the source class name for the error message
+				sourceName := c.Name
+				if m.Class != nil {
+					sourceName = m.Class.GetName()
+				}
+				unimplemented = append(unimplemented, string(sourceName)+"::"+string(m.Name))
+			}
+		}
+		if len(unimplemented) > 0 {
+			msg := fmt.Sprintf("Class %s contains %d abstract method", c.Name, len(unimplemented))
+			if len(unimplemented) > 1 {
+				msg += "s"
+			}
+			msg += " and must therefore be declared abstract or implement the remaining methods ("
+			for i, u := range unimplemented {
+				if i > 0 {
+					msg += ", "
+				}
+				msg += u
+			}
+			msg += ")"
+			return c.fatalError(ctx, msg)
+		}
+	}
+
 	return nil
+}
+
+// fatalError writes a fatal error to the output buffer and returns an exit error
+// so execution stops but the error message is properly formatted in PHP style.
+func (c *ZClass) fatalError(ctx phpv.Context, msg string) error {
+	phpErr := &phpv.PhpError{
+		Err:  fmt.Errorf("%s", msg),
+		Code: phpv.E_ERROR,
+		Loc:  c.L,
+	}
+	ctx.Global().LogError(phpErr)
+	return phpv.ExitError(255)
 }
 
 func (c *ZClass) InstanceOf(parentClass phpv.ZClass) bool {

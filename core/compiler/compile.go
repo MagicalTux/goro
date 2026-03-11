@@ -2,7 +2,6 @@ package compiler
 
 import (
 	"io"
-	"reflect"
 
 	"github.com/MagicalTux/goro/core/phpctx"
 	"github.com/MagicalTux/goro/core/phperr"
@@ -298,6 +297,7 @@ func GetChildren(r phpv.Runnable) []phpv.Runnable {
 	case *phperr.PhpContinue:
 		return nil
 	default:
-		panic("TODO: " + reflect.TypeOf(r).String())
+		// Unknown node type — return empty children rather than panicking
+		return nil
 	}
 }

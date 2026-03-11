@@ -374,7 +374,7 @@ func compileFunctionArgs(c compileCtx) (res []*phpv.FuncArg, err error) {
 		arg := &phpv.FuncArg{}
 		arg.Required = true // typically
 
-		if i.Type == tokenizer.T_STRING {
+		if i.Type == tokenizer.T_STRING || i.Type == tokenizer.T_ARRAY || i.Type == tokenizer.T_CALLABLE {
 			// this is a function parameter type hint
 			hint := i.Data
 

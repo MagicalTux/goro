@@ -12,15 +12,26 @@ type PhpThrow struct {
 }
 
 func (e *PhpThrow) ErrorTrace(ctx phpv.Context) string {
+	className := e.Obj.GetClass().GetName()
 	message := e.Obj.HashTable().GetString("message").String()
 	trace := e.Obj.ZVal().AsString(ctx)
+	if message == "" {
+		return fmt.Sprintf(
+			"Uncaught %s in %s:%d\n%s",
+			className, e.Loc.Filename, e.Loc.Line, trace,
+		)
+	}
 	return fmt.Sprintf(
-		"Uncaught Exception: %s in %s:%d\n%s",
-		message, e.Loc.Filename, e.Loc.Line, trace,
+		"Uncaught %s: %s in %s:%d\n%s",
+		className, message, e.Loc.Filename, e.Loc.Line, trace,
 	)
 }
 
 func (e *PhpThrow) Error() string {
+	className := e.Obj.GetClass().GetName()
 	message := e.Obj.HashTable().GetString("message").String()
-	return "Uncaught Exception: " + message
+	if message == "" {
+		return "Uncaught " + string(className)
+	}
+	return "Uncaught " + string(className) + ": " + message
 }

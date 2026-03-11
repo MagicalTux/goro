@@ -4,6 +4,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -34,8 +35,8 @@ func (r *runConstant) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 	z, ok := ctx.Global().ConstantGet(phpv.ZString(r.c))
 
 	if !ok {
-		err := ctx.Warn("Use of undefined constant %s - assumed '%s' (this will throw an Error in a future version of PHP", r.c, r.c)
-		return phpv.ZString(r.c).ZVal(), err
+		ctx.Warn("Use of undefined constant %s - assumed '%s' (this will throw an Error in a future version of PHP)", r.c, r.c, logopt.NoFuncName(true))
+		return phpv.ZString(r.c).ZVal(), nil
 	}
 	return z.ZVal(), nil
 }

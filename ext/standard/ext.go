@@ -94,6 +94,7 @@ func init() {
 			"chop":                       {Func: fncStrRtrim, Args: []*phpctx.ExtFunctionArg{}}, // alias
 			"chr":                        {Func: fncChr, Args: []*phpctx.ExtFunctionArg{}},
 			"chunk_split":                {Func: fncStrChunkSplit, Args: []*phpctx.ExtFunctionArg{}},
+			"class_exists":               {Func: stdClassExists, Args: []*phpctx.ExtFunctionArg{}},
 			"compact":                    {Func: fncArrayCompact, Args: []*phpctx.ExtFunctionArg{}},
 			"constant":                   {Func: constant, Args: []*phpctx.ExtFunctionArg{}},
 			"convert_cyr_string":         {Func: fncCyrConvertString, Args: []*phpctx.ExtFunctionArg{}},
@@ -135,6 +136,8 @@ func init() {
 			"function_exists":            {Func: stdFuncFuncExists, Args: []*phpctx.ExtFunctionArg{}},
 			"get_cfg_var":                {Func: stdFuncGetCfgVar, Args: []*phpctx.ExtFunctionArg{}},
 			"get_class":                  {Func: stdGetClass, Args: []*phpctx.ExtFunctionArg{}},
+			"get_declared_classes":        {Func: stdGetDeclaredClasses, Args: []*phpctx.ExtFunctionArg{}},
+			"get_parent_class":            {Func: stdGetParentClass, Args: []*phpctx.ExtFunctionArg{}},
 			"get_html_translation_table": {Func: fncGetHtmlTranslationTable, Args: []*phpctx.ExtFunctionArg{}},
 			"get_magic_quotes_gpc":       {Func: getMagicQuotesGpc, Args: []*phpctx.ExtFunctionArg{}},
 			"get_magic_quotes_runtime":   {Func: getMagicQuotesRuntime, Args: []*phpctx.ExtFunctionArg{}},
@@ -173,6 +176,7 @@ func init() {
 			"is_finite":                  {Func: mathIsFinite, Args: []*phpctx.ExtFunctionArg{}},
 			"is_float":                   {Func: fncIsFloat, Args: []*phpctx.ExtFunctionArg{}},
 			"is_infinite":                {Func: mathIsInfinite, Args: []*phpctx.ExtFunctionArg{}},
+			"is_a":                       {Func: stdIsA, Args: []*phpctx.ExtFunctionArg{}},
 			"is_int":                     {Func: fncIsInt, Args: []*phpctx.ExtFunctionArg{}},
 			"is_integer":                 {Func: fncIsInteger, Args: []*phpctx.ExtFunctionArg{}},
 			"is_long":                    {Func: fncIsLong, Args: []*phpctx.ExtFunctionArg{}},
@@ -184,6 +188,7 @@ func init() {
 			"is_resource":                {Func: fncIsResource, Args: []*phpctx.ExtFunctionArg{}},
 			"is_scalar":                  {Func: fncIsScalar, Args: []*phpctx.ExtFunctionArg{}},
 			"is_string":                  {Func: fncIsString, Args: []*phpctx.ExtFunctionArg{}},
+			"is_subclass_of":             {Func: stdIsSubclassOf, Args: []*phpctx.ExtFunctionArg{}},
 			"join":                       {Func: fncStrImplode, Args: []*phpctx.ExtFunctionArg{}}, // alias
 			"key":                        {Func: fncArrayKey, Args: []*phpctx.ExtFunctionArg{}},
 			"key_exists":                 {Func: fncArrayKeyExists, Args: []*phpctx.ExtFunctionArg{}}, // alias

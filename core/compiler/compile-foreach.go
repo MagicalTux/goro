@@ -14,6 +14,7 @@ type runnableForeach struct {
 	src  phpv.Runnable
 	code phpv.Runnable
 	k, v phpv.Runnable
+	ref  bool
 	l    *phpv.Loc
 }
 
@@ -54,11 +55,18 @@ func (r *runnableForeach) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 		if err != nil {
 			return nil, err
 		}
+		if v == nil {
+			break
+		}
 
 		if w, ok := r.v.(phpv.Writable); !ok {
 			return nil, errors.New("foreach value must be writable")
 		} else {
-			w.WriteValue(ctx, v.Dup())
+			if r.ref {
+				w.WriteValue(ctx, v.Ref())
+			} else {
+				w.WriteValue(ctx, v.Dup())
+			}
 		}
 
 		if r.code != nil {
@@ -198,6 +206,17 @@ func compileForeach(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		return nil, i.Unexpected()
 	}
 
+	// Peek to check for & (by-reference)
+	i, err = c.NextItem()
+	if err != nil {
+		return nil, err
+	}
+	if i.IsSingle('&') {
+		r.ref = true
+	} else {
+		c.backup()
+	}
+
 	r.v, err = compileForeachExpr(nil, c)
 	if err != nil {
 		return nil, err
@@ -217,6 +236,18 @@ func compileForeach(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 
 		// check for T_VARIABLE or T_LIST again
 		r.k = r.v
+		r.ref = false // reset ref flag, it's for the value not key
+
+		// Peek again for & before value
+		i, err = c.NextItem()
+		if err != nil {
+			return nil, err
+		}
+		if i.IsSingle('&') {
+			r.ref = true
+		} else {
+			c.backup()
+		}
 
 		r.v, err = compileForeachExpr(nil, c)
 		if err != nil {

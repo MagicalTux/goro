@@ -16,9 +16,12 @@ func init() {
 		Classes: []*phpobj.ZClass{},
 		// Note: ExtFunctionArg is currently unused
 		Functions: map[string]*phpctx.ExtFunction{
-			"preg_match":   {Func: pregMatch, Args: []*phpctx.ExtFunctionArg{}},
-			"preg_quote":   {Func: pregQuote, Args: []*phpctx.ExtFunctionArg{}},
-			"preg_replace": {Func: pregReplace, Args: []*phpctx.ExtFunctionArg{}},
+			"preg_match":            {Func: pregMatch, Args: []*phpctx.ExtFunctionArg{}},
+			"preg_match_all":        {Func: pregMatchAll, Args: []*phpctx.ExtFunctionArg{}},
+			"preg_quote":            {Func: pregQuote, Args: []*phpctx.ExtFunctionArg{}},
+			"preg_replace":          {Func: pregReplace, Args: []*phpctx.ExtFunctionArg{}},
+			"preg_replace_callback": {Func: pregReplaceCallback, Args: []*phpctx.ExtFunctionArg{}},
+			"preg_split":            {Func: pregSplit, Args: []*phpctx.ExtFunctionArg{}},
 		},
 		Constants: map[phpv.ZString]phpv.Val{
 			"PREG_GREP_INVERT":          PREG_GREP_INVERT,

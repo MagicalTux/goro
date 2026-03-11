@@ -37,6 +37,7 @@ func NewProcess(sapi string) *Process {
 		environ:          importEnv(os.Environ()),
 		defaultOut:       os.Stdout,
 		defaultErr:       os.Stderr,
+		Options:          &ProcessOptions{IniEntries: map[string]string{}},
 	}
 	res.populateConstants()
 	res.SetConstant("PHP_SAPI", phpv.ZString(sapi))

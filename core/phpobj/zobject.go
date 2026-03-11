@@ -19,6 +19,10 @@ type ZObject struct {
 	// for use with custom extension objects
 	Opaque map[phpv.ZClass]interface{}
 	ID     int
+
+	// Guards for __get/__set to prevent infinite recursion
+	getGuard map[phpv.ZString]bool
+	setGuard map[phpv.ZString]bool
 }
 
 func (z *ZObject) ZVal() *phpv.ZVal {
@@ -85,6 +89,11 @@ func CreateZObject(ctx phpv.Context, c phpv.ZClass) (*ZObject, error) {
 func NewZObject(ctx phpv.Context, c phpv.ZClass, args ...*phpv.ZVal) (*ZObject, error) {
 	if c == nil {
 		c = StdClass
+	}
+
+	// Check if class is abstract
+	if zc, ok := c.(*ZClass); ok && zc.Attr&phpv.ZClassAttr(phpv.ZClassExplicitAbstract) != 0 {
+		return nil, ctx.Errorf("Cannot instantiate abstract class %s", c.GetName())
 	}
 
 	n := &ZObject{
@@ -256,9 +265,71 @@ Loop:
 	}
 }
 
-func (o *ZObject) OffsetSet(ctx phpv.Context, key, value *phpv.ZVal) (*phpv.ZVal, error) {
-	// if extending ArrayAccess → todo
-	return nil, ctx.Errorf("Cannot use object of type stdClass as array")
+func (o *ZObject) implementsArrayAccess() bool {
+	return o.Class.Implements(ArrayAccess)
+}
+
+func (o *ZObject) callMethod(ctx phpv.Context, methodName string, args ...*phpv.ZVal) (*phpv.ZVal, error) {
+	m, err := o.GetMethod(phpv.ZString(methodName), ctx)
+	if err != nil {
+		return nil, err
+	}
+	return ctx.CallZVal(ctx, m, args, o)
+}
+
+func (o *ZObject) OffsetGet(ctx phpv.Context, key phpv.Val) (*phpv.ZVal, error) {
+	if !o.implementsArrayAccess() {
+		return nil, ctx.Errorf("Cannot use object of type %s as array", o.Class.GetName())
+	}
+	return o.callMethod(ctx, "offsetGet", key.ZVal())
+}
+
+func (o *ZObject) OffsetSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) error {
+	if !o.implementsArrayAccess() {
+		return ctx.Errorf("Cannot use object of type %s as array", o.Class.GetName())
+	}
+	var keyZVal *phpv.ZVal
+	if key == nil {
+		keyZVal = phpv.ZNULL.ZVal()
+	} else {
+		keyZVal = key.ZVal()
+	}
+	_, err := o.callMethod(ctx, "offsetSet", keyZVal, value)
+	return err
+}
+
+func (o *ZObject) OffsetExists(ctx phpv.Context, key phpv.Val) (bool, error) {
+	if !o.implementsArrayAccess() {
+		return false, ctx.Errorf("Cannot use object of type %s as array", o.Class.GetName())
+	}
+	result, err := o.callMethod(ctx, "offsetExists", key.ZVal())
+	if err != nil {
+		return false, err
+	}
+	return bool(result.AsBool(ctx)), nil
+}
+
+func (o *ZObject) OffsetUnset(ctx phpv.Context, key phpv.Val) error {
+	if !o.implementsArrayAccess() {
+		return ctx.Errorf("Cannot use object of type %s as array", o.Class.GetName())
+	}
+	_, err := o.callMethod(ctx, "offsetUnset", key.ZVal())
+	return err
+}
+
+func (o *ZObject) OffsetCheck(ctx phpv.Context, key phpv.Val) (*phpv.ZVal, bool, error) {
+	exists, err := o.OffsetExists(ctx, key)
+	if err != nil {
+		return nil, false, err
+	}
+	if !exists {
+		return nil, false, nil
+	}
+	val, err := o.OffsetGet(ctx, key)
+	if err != nil {
+		return nil, false, err
+	}
+	return val, true, nil
 }
 
 func (o *ZObject) GetMethod(method phpv.ZString, ctx phpv.Context) (phpv.Callable, error) {
@@ -290,7 +361,21 @@ func (o *ZObject) HasProp(ctx phpv.Context, key phpv.Val) (bool, error) {
 		}
 	}
 
-	return o.h.HasString(key.(phpv.ZString)), nil
+	if o.h.HasString(keyStr) {
+		return true, nil
+	}
+
+	// Property not found, try __isset magic method
+	class := o.GetClass().(*ZClass)
+	if m, ok := class.Methods["__isset"]; ok {
+		result, err := ctx.CallZVal(ctx, m.Method, []*phpv.ZVal{keyStr.ZVal()}, o)
+		if err != nil {
+			return false, err
+		}
+		return bool(result.AsBool(ctx)), nil
+	}
+
+	return false, nil
 }
 
 func (o *ZObject) ObjectGet(ctx phpv.Context, key phpv.Val) (*phpv.ZVal, error) {
@@ -308,7 +393,25 @@ func (o *ZObject) ObjectGet(ctx phpv.Context, key phpv.Val) (*phpv.ZVal, error) 
 		}
 	}
 
-	return o.h.GetString(key.(phpv.ZString)), nil
+	if o.h.HasString(keyStr) {
+		return o.h.GetString(keyStr), nil
+	}
+
+	// Property not found, try __get magic method
+	class := o.GetClass().(*ZClass)
+	if m, ok := class.Methods["__get"]; ok {
+		if o.getGuard == nil {
+			o.getGuard = make(map[phpv.ZString]bool)
+		}
+		if !o.getGuard[keyStr] {
+			o.getGuard[keyStr] = true
+			result, err := ctx.CallZVal(ctx, m.Method, []*phpv.ZVal{keyStr.ZVal()}, o)
+			delete(o.getGuard, keyStr)
+			return result, err
+		}
+	}
+
+	return o.h.GetString(keyStr), nil
 }
 
 func (o *ZObject) ObjectSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) error {
@@ -326,7 +429,26 @@ func (o *ZObject) ObjectSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) er
 		}
 	}
 
-	return o.h.SetString(key.(phpv.ZString), value)
+	// Check if property exists in declared props
+	if o.h.HasString(keyStr) {
+		return o.h.SetString(keyStr, value)
+	}
+
+	// Property not found, try __set magic method
+	class := o.GetClass().(*ZClass)
+	if m, ok := class.Methods["__set"]; ok {
+		if o.setGuard == nil {
+			o.setGuard = make(map[phpv.ZString]bool)
+		}
+		if !o.setGuard[keyStr] {
+			o.setGuard[keyStr] = true
+			_, err := ctx.CallZVal(ctx, m.Method, []*phpv.ZVal{keyStr.ZVal(), value}, o)
+			delete(o.setGuard, keyStr)
+			return err
+		}
+	}
+
+	return o.h.SetString(keyStr, value)
 }
 
 func (o *ZObject) NewIterator() phpv.ZIterator {

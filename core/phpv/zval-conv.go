@@ -49,9 +49,7 @@ func (z *ZVal) AsVal(ctx Context, t ZType) (Val, error) {
 		return v, nil
 	}
 
-	println(fmt.Errorf("todo %s => %s", z.v.GetType(), t))
-
-	return ZNULL, nil
+	return ZNULL, fmt.Errorf("unsupported type conversion: %s => %s", z.v.GetType(), t)
 }
 
 func (z *ZVal) AsNumeric(ctx Context) (*ZVal, error) {
@@ -78,7 +76,8 @@ func (z *ZVal) IsNull() bool {
 	if z.v == nil {
 		return true
 	}
-	return false
+	_, isNull := z.v.(ZNull)
+	return isNull
 }
 
 func (z *ZVal) AsBool(ctx Context) ZBool {

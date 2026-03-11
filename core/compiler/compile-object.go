@@ -34,7 +34,20 @@ func (r *runNewObject) Dump(w io.Writer) error {
 
 func (r *runNewObject) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	ctx.Tick(ctx, r.l)
-	class, err := ctx.Global().GetClass(ctx, r.obj, true)
+
+	var className phpv.ZString
+	if r.cl != nil {
+		// Dynamic class name from variable/expression
+		v, err := r.cl.Run(ctx)
+		if err != nil {
+			return nil, err
+		}
+		className = v.AsString(ctx)
+	} else {
+		className = r.obj
+	}
+
+	class, err := ctx.Global().GetClass(ctx, className, true)
 	if err != nil {
 		return nil, err
 	}
@@ -59,14 +72,26 @@ func (r *runNewObject) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 func compileNew(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	// next should be either:
 	// T_CLASS (anonymous class)
+	// T_VARIABLE (dynamic class name)
 	// string (name of a class)
 	var err error
 
 	n := &runNewObject{l: i.Loc()}
 
-	n.obj, err = compileClassName(c)
+	// Peek at next token to check for variable class name
+	next, err := c.NextItem()
 	if err != nil {
 		return nil, err
+	}
+
+	if next.Type == tokenizer.T_VARIABLE {
+		n.cl = &runVariable{v: phpv.ZString(next.Data[1:]), l: next.Loc()}
+	} else {
+		c.backup()
+		n.obj, err = compileClassName(c)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	i, err = c.NextItem()
@@ -189,27 +214,36 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 
 		switch className {
 		case "self":
-			if ctx.This() == nil {
-				return nil, ctx.Errorf("Cannot access self:: when no method scope is active")
+			if ctx.This() != nil {
+				objI = ctx.This()
+				class = objI.GetClass()
+			} else {
+				// In static context, resolve self from the closure's class
+				class, err = ctx.Global().GetClass(ctx, "self", false)
+				if err != nil {
+					return nil, ctx.Errorf("Cannot access self:: when no class scope is active")
+				}
 			}
-			if ctx.This().GetClass() == nil {
-				return nil, ctx.Errorf("Cannot access self:: when no class scope is active")
-			}
-			objI = ctx.This()
-			class = objI.GetClass()
 
 		case "parent":
-			if ctx.This() == nil {
-				return nil, ctx.Errorf("Cannot access parent:: when no method scope is active")
+			if ctx.This() != nil {
+				if ctx.This().GetClass().GetParent() == nil {
+					return nil, ctx.Errorf("Cannot access parent:: when current class scope has no parent")
+				}
+				objI = ctx.This().GetParent()
+				class = objI.GetClass()
+			} else {
+				// In static context, resolve parent from the closure's class
+				selfClass, selfErr := ctx.Global().GetClass(ctx, "self", false)
+				if selfErr != nil {
+					return nil, ctx.Errorf("Cannot access parent:: when no class scope is active")
+				}
+				parentClass := selfClass.GetParent()
+				if parentClass == nil {
+					return nil, ctx.Errorf("Cannot access parent:: when current class scope has no parent")
+				}
+				class = parentClass
 			}
-			if ctx.This().GetClass() == nil {
-				return nil, ctx.Errorf("Cannot access parent:: when no class scope is active")
-			}
-			if ctx.This().GetClass().GetParent() == nil {
-				return nil, ctx.Errorf("Cannot access parent:: when current class scope has no parent")
-			}
-			objI = ctx.This().GetParent()
-			class = objI.GetClass()
 
 		default:
 			nonStatic := false
@@ -235,7 +269,7 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 
 	method, ok := class.GetMethod(op)
 	if !ok {
-		return nil, ctx.Errorf("Call to undefine method %s:%s()", class.GetName(), op)
+		return nil, ctx.Errorf("Call to undefined method %s::%s()", class.GetName(), op)
 	}
 
 	if objI != nil {
@@ -361,7 +395,23 @@ func compileObjectOperator(v phpv.Runnable, i *tokenizer.Item, c compileCtx) (ph
 		return nil, err
 	}
 
-	if i.Type != tokenizer.T_STRING && i.Type != tokenizer.T_VARIABLE {
+	// After ->, PHP keywords can be used as property/method names
+	switch i.Type {
+	case tokenizer.T_STRING, tokenizer.T_VARIABLE,
+		tokenizer.T_ARRAY, tokenizer.T_LIST, tokenizer.T_CLASS,
+		tokenizer.T_CALLABLE, tokenizer.T_EMPTY, tokenizer.T_ISSET,
+		tokenizer.T_UNSET, tokenizer.T_ECHO, tokenizer.T_PRINT,
+		tokenizer.T_FOR, tokenizer.T_FOREACH, tokenizer.T_WHILE,
+		tokenizer.T_DO, tokenizer.T_SWITCH, tokenizer.T_IF,
+		tokenizer.T_ELSE, tokenizer.T_ELSEIF,
+		tokenizer.T_STATIC, tokenizer.T_ABSTRACT, tokenizer.T_FINAL,
+		tokenizer.T_FUNCTION, tokenizer.T_NEW, tokenizer.T_CLONE,
+		tokenizer.T_RETURN, tokenizer.T_TRY, tokenizer.T_CATCH,
+		tokenizer.T_THROW, tokenizer.T_INTERFACE, tokenizer.T_EXTENDS,
+		tokenizer.T_IMPLEMENTS, tokenizer.T_CONST, tokenizer.T_PUBLIC,
+		tokenizer.T_PROTECTED, tokenizer.T_PRIVATE:
+		// all valid after ->
+	default:
 		return nil, i.Unexpected()
 	}
 	op := phpv.ZString(i.Data)

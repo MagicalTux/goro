@@ -358,3 +358,170 @@ func stdGetClass(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	return object.GetClass().GetName().ZVal(), nil
 }
+
+// > func bool class_exists ( string $class_name [, bool $autoload = TRUE ] )
+func stdClassExists(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var className phpv.ZString
+	var autoloadArg *phpv.ZBool
+
+	_, err := core.Expand(ctx, args, &className, &autoloadArg)
+	if err != nil {
+		return nil, err
+	}
+
+	autoload := true
+	if autoloadArg != nil {
+		autoload = bool(*autoloadArg)
+	}
+
+	_, err = ctx.Global().GetClass(ctx, className, autoload)
+	if err != nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+	return phpv.ZTrue.ZVal(), nil
+}
+
+// > func string get_parent_class ([ mixed $object ] )
+func stdGetParentClass(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var objectArg *phpv.ZVal
+
+	_, err := core.Expand(ctx, args, &objectArg)
+	if err != nil {
+		return nil, err
+	}
+
+	var class phpv.ZClass
+
+	if objectArg == nil || objectArg.IsNull() {
+		// Use current class context
+		class = ctx.Class()
+	} else if objectArg.GetType() == phpv.ZtString {
+		// Class name as string
+		class, err = ctx.Global().GetClass(ctx, objectArg.AsString(ctx), false)
+		if err != nil {
+			return phpv.ZFalse.ZVal(), nil
+		}
+	} else if objectArg.GetType() == phpv.ZtObject {
+		obj := objectArg.AsObject(ctx)
+		if obj == nil {
+			return phpv.ZFalse.ZVal(), nil
+		}
+		class = obj.GetClass()
+	} else {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	if class == nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	parent := class.GetParent()
+	if parent == nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	return parent.GetName().ZVal(), nil
+}
+
+// > func bool is_a ( object $object , string $class_name [, bool $allow_string = FALSE ] )
+func stdIsA(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var objectArg *phpv.ZVal
+	var className phpv.ZString
+	var allowStringArg *phpv.ZBool
+
+	_, err := core.Expand(ctx, args, &objectArg, &className, &allowStringArg)
+	if err != nil {
+		return nil, err
+	}
+
+	allowString := false
+	if allowStringArg != nil {
+		allowString = bool(*allowStringArg)
+	}
+
+	var class phpv.ZClass
+
+	if objectArg.GetType() == phpv.ZtObject {
+		obj := objectArg.AsObject(ctx)
+		if obj == nil {
+			return phpv.ZFalse.ZVal(), nil
+		}
+		class = obj.GetClass()
+	} else if allowString && objectArg.GetType() == phpv.ZtString {
+		class, err = ctx.Global().GetClass(ctx, objectArg.AsString(ctx), false)
+		if err != nil {
+			return phpv.ZFalse.ZVal(), nil
+		}
+	} else {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	// Walk the inheritance chain
+	target := className.ToLower()
+	for class != nil {
+		if class.GetName().ToLower() == target {
+			return phpv.ZTrue.ZVal(), nil
+		}
+		class = class.GetParent()
+	}
+
+	return phpv.ZFalse.ZVal(), nil
+}
+
+// > func bool is_subclass_of ( mixed $object , string $class_name [, bool $allow_string = TRUE ] )
+func stdIsSubclassOf(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var objectArg *phpv.ZVal
+	var className phpv.ZString
+	var allowStringArg *phpv.ZBool
+
+	_, err := core.Expand(ctx, args, &objectArg, &className, &allowStringArg)
+	if err != nil {
+		return nil, err
+	}
+
+	allowString := true
+	if allowStringArg != nil {
+		allowString = bool(*allowStringArg)
+	}
+
+	var class phpv.ZClass
+
+	if objectArg.GetType() == phpv.ZtObject {
+		obj := objectArg.AsObject(ctx)
+		if obj == nil {
+			return phpv.ZFalse.ZVal(), nil
+		}
+		class = obj.GetClass()
+	} else if allowString && objectArg.GetType() == phpv.ZtString {
+		class, err = ctx.Global().GetClass(ctx, objectArg.AsString(ctx), false)
+		if err != nil {
+			return phpv.ZFalse.ZVal(), nil
+		}
+	} else {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	// Skip the first class itself, check parents only
+	target := className.ToLower()
+	class = class.GetParent()
+	for class != nil {
+		if class.GetName().ToLower() == target {
+			return phpv.ZTrue.ZVal(), nil
+		}
+		class = class.GetParent()
+	}
+
+	return phpv.ZFalse.ZVal(), nil
+}
+
+// > func array get_declared_classes ( void )
+func stdGetDeclaredClasses(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	result := phpv.NewZArray()
+
+	classes := ctx.Global().GetDeclaredClasses()
+	for _, name := range classes {
+		result.OffsetSet(ctx, nil, name.ZVal())
+	}
+
+	return result.ZVal(), nil
+}

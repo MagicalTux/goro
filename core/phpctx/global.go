@@ -76,6 +76,9 @@ type Global struct {
 	userErrorHandler phpv.Callable
 	userErrorFilter  phpv.PhpErrorType
 
+	autoloadFuncs    []phpv.Callable
+	autoloadingClass map[phpv.ZString]bool // prevent infinite recursion in autoload
+
 	header *phpv.HeaderContext
 
 	nextResourceID int
@@ -445,11 +448,10 @@ func (g *Global) Warn(format string, a ...any) error {
 
 func (g *Global) Notice(format string, a ...any) error {
 	a = append(a, logopt.ErrType(phpv.E_NOTICE))
-	return logWarning(g, "\n"+format, a...)
+	return logWarning(g, format, a...)
 }
 
 func (g *Global) Deprecated(format string, a ...any) error {
-	format = "\n" + format
 	a = append(a, logopt.ErrType(phpv.E_DEPRECATED))
 	err := logWarning(g, format, a...)
 	if err == nil {
@@ -463,7 +465,7 @@ func (g *Global) WarnDeprecated() error {
 	if ok := g.ShownDeprecated(funcName); ok {
 		err := logWarning(
 			g,
-			"\nThe %s() function is deprecated. This message will be suppressed on further calls",
+			"The %s() function is deprecated. This message will be suppressed on further calls",
 			funcName, logopt.NoFuncName(true), logopt.ErrType(phpv.E_DEPRECATED),
 		)
 		return err
@@ -529,13 +531,13 @@ func (g *Global) LogError(err *phpv.PhpError, optionArg ...logopt.Data) {
 
 	var output bytes.Buffer
 	switch err.Code {
-	case phpv.E_ERROR:
+	case phpv.E_ERROR, phpv.E_USER_ERROR:
 		output.WriteString("Fatal error")
-	case phpv.E_WARNING:
+	case phpv.E_WARNING, phpv.E_USER_WARNING:
 		output.WriteString("Warning")
-	case phpv.E_NOTICE:
+	case phpv.E_NOTICE, phpv.E_USER_NOTICE:
 		output.WriteString("Notice")
-	case phpv.E_DEPRECATED:
+	case phpv.E_DEPRECATED, phpv.E_USER_DEPRECATED:
 		output.WriteString("Deprecated")
 	default:
 		output.WriteString("Info")
@@ -550,10 +552,7 @@ func (g *Global) LogError(err *phpv.PhpError, optionArg ...logopt.Data) {
 		output.WriteString(fmt.Sprintf(" in %s on line %d", err.Loc.Filename, err.Loc.Line))
 	}
 
-	if (g.lastOutChar != '\n' || err.Code == phpv.E_WARNING) && err.Code != phpv.E_NOTICE {
-		g.Write([]byte("\n"))
-	}
-
+	g.Write([]byte("\n"))
 	g.Write(output.Bytes())
 	g.Write([]byte("\n"))
 }
@@ -660,9 +659,17 @@ func (g *Global) GetClass(ctx phpv.Context, name phpv.ZString, autoload bool) (p
 	switch name {
 	case "self":
 		// check for func
-		f := ctx.Func().(*FuncContext)
-		if f == nil {
+		fc := ctx.Func()
+		if fc == nil {
 			return nil, ctx.Errorf("Cannot access self:: when no method scope is active")
+		}
+		f, ok := fc.(*FuncContext)
+		if !ok || f == nil {
+			return nil, ctx.Errorf("Cannot access self:: when no method scope is active")
+		}
+		// Check FuncContext.class first (set by MethodCallable/static calls)
+		if f.class != nil {
+			return f.class, nil
 		}
 		cfunc, ok := f.c.(phpv.ZClosure)
 		if !ok || cfunc.GetClass() == nil {
@@ -671,22 +678,39 @@ func (g *Global) GetClass(ctx phpv.Context, name phpv.ZString, autoload bool) (p
 		return cfunc.GetClass(), nil
 	case "parent":
 		// check for func
-		f := ctx.Func().(*FuncContext)
-		if f == nil {
+		fc := ctx.Func()
+		if fc == nil {
 			return nil, ctx.Errorf("Cannot access parent:: when no method scope is active")
 		}
-		cfunc, ok := f.c.(phpv.ZClosure)
-		if !ok || cfunc.GetClass() == nil {
+		f, ok := fc.(*FuncContext)
+		if !ok || f == nil {
+			return nil, ctx.Errorf("Cannot access parent:: when no method scope is active")
+		}
+		var selfClass phpv.ZClass
+		if f.class != nil {
+			selfClass = f.class
+		} else if cfunc, ok := f.c.(phpv.ZClosure); ok {
+			selfClass = cfunc.GetClass()
+		}
+		if selfClass == nil {
 			return nil, ctx.Errorf("Cannot access parent:: when no class scope is active")
 		}
-		if cfunc.GetClass().GetParent() == nil {
+		if selfClass.GetParent() == nil {
 			return nil, ctx.Errorf("Cannot access parent:: when current class scope has no parent")
 		}
-		return cfunc.GetClass().GetParent(), nil
+		return selfClass.GetParent(), nil
 	case "static":
 		// check for func
-		f := ctx.Func().(*FuncContext)
-		if f == nil || f.this == nil {
+		fc := ctx.Func()
+		if fc == nil {
+			return nil, ctx.Errorf("Cannot access static:: when no class scope is active")
+		}
+		f, ok := fc.(*FuncContext)
+		if !ok || f == nil || f.this == nil {
+			// In static context, fall back to the class
+			if ok && f != nil && f.class != nil {
+				return f.class, nil
+			}
 			return nil, ctx.Errorf("Cannot access static:: when no class scope is active")
 		}
 		return f.this.GetClass(), nil
@@ -704,7 +728,27 @@ func (g *Global) GetClass(ctx phpv.Context, name phpv.ZString, autoload bool) (p
 			return c, nil
 		}
 	}
-	// TODO if autoload { do autoload }
+	// Try autoload
+	nameLower := name.ToLower()
+	if autoload && len(g.autoloadFuncs) > 0 {
+		if g.autoloadingClass == nil {
+			g.autoloadingClass = make(map[phpv.ZString]bool)
+		}
+		if !g.autoloadingClass[nameLower] {
+			g.autoloadingClass[nameLower] = true
+			defer delete(g.autoloadingClass, nameLower)
+			for _, loader := range g.autoloadFuncs {
+				_, err := ctx.CallZVal(ctx, loader, []*phpv.ZVal{name.ZVal()})
+				if err != nil {
+					return nil, err
+				}
+				// Check if the class was loaded
+				if c, ok := g.globalClasses[nameLower]; ok {
+					return c, nil
+				}
+			}
+		}
+	}
 	return nil, ctx.Errorf("Class '%s' not found", name)
 }
 
@@ -716,6 +760,14 @@ func (g *Global) RegisterClass(name phpv.ZString, c phpv.ZClass) error {
 	g.globalClasses[name] = c.(*phpobj.ZClass)
 	delete(g.globalLazyClass, name)
 	return nil
+}
+
+func (g *Global) GetDeclaredClasses() []phpv.ZString {
+	result := make([]phpv.ZString, 0, len(g.globalClasses))
+	for _, c := range g.globalClasses {
+		result = append(result, c.GetName())
+	}
+	return result
 }
 
 func (g *Global) Close() error {
@@ -776,6 +828,20 @@ func (g *Global) GetUserErrorHandler() (phpv.Callable, phpv.PhpErrorType) {
 func (g *Global) SetUserErrorHandler(handler phpv.Callable, filter phpv.PhpErrorType) {
 	g.userErrorHandler = handler
 	g.userErrorFilter = filter
+}
+
+func (g *Global) RegisterAutoload(handler phpv.Callable) {
+	g.autoloadFuncs = append(g.autoloadFuncs, handler)
+}
+
+func (g *Global) UnregisterAutoload(handler phpv.Callable) bool {
+	for i, f := range g.autoloadFuncs {
+		if f == handler {
+			g.autoloadFuncs = append(g.autoloadFuncs[:i], g.autoloadFuncs[i+1:]...)
+			return true
+		}
+	}
+	return false
 }
 
 func (g *Global) GetStackTrace(ctx phpv.Context) []*phpv.StackTraceEntry {

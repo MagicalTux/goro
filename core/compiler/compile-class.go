@@ -19,9 +19,25 @@ func (z *zclassCompileCtx) getClass() *phpobj.ZClass {
 
 func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	var attr phpv.ZClassAttr
-	err := parseZClassAttr(&attr, c)
-	if err != nil {
-		return nil, err
+	var err error
+
+	// If called from a modifier token (abstract/final), back it up so
+	// parseZClassAttr can consume it, then read the actual class token.
+	if i.Type == tokenizer.T_ABSTRACT || i.Type == tokenizer.T_FINAL {
+		c.backup()
+		err = parseZClassAttr(&attr, c)
+		if err != nil {
+			return nil, err
+		}
+		i, err = c.NextItem()
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		err = parseZClassAttr(&attr, c)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	class := &phpobj.ZClass{
@@ -142,41 +158,46 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 				return int(attrA - attrB)
 			})
 		case tokenizer.T_CONST:
-			// const K = V
-			// get const name
-			i, err = c.NextItem()
-			if err != nil {
-				return nil, err
-			}
-			if i.Type != tokenizer.T_STRING {
-				return nil, i.Unexpected()
-			}
-			constName := i.Data
+			// const K = V [, K2 = V2 ...];
+			for {
+				// get const name
+				i, err = c.NextItem()
+				if err != nil {
+					return nil, err
+				}
+				if i.Type != tokenizer.T_STRING {
+					return nil, i.Unexpected()
+				}
+				constName := i.Data
 
-			// =
-			i, err = c.NextItem()
-			if err != nil {
-				return nil, err
-			}
-			if !i.IsSingle('=') {
-				return nil, i.Unexpected()
-			}
+				// =
+				i, err = c.NextItem()
+				if err != nil {
+					return nil, err
+				}
+				if !i.IsSingle('=') {
+					return nil, i.Unexpected()
+				}
 
-			var v phpv.Runnable
-			v, err = compileExpr(nil, c)
-			if err != nil {
-				return nil, err
-			}
+				var v phpv.Runnable
+				v, err = compileExpr(nil, c)
+				if err != nil {
+					return nil, err
+				}
 
-			i, err = c.NextItem()
-			if err != nil {
-				return nil, err
-			}
-			if !i.IsSingle(';') {
-				return nil, i.Unexpected()
-			}
+				class.Const[phpv.ZString(constName)] = &phpv.CompileDelayed{v}
 
-			class.Const[phpv.ZString(constName)] = &phpv.CompileDelayed{v}
+				i, err = c.NextItem()
+				if err != nil {
+					return nil, err
+				}
+				if i.IsSingle(';') {
+					break
+				}
+				if !i.IsSingle(',') {
+					return nil, i.Unexpected()
+				}
+			}
 		case tokenizer.T_FUNCTION:
 			// next must be a string (method name)
 			i, err := c.NextItem()
@@ -199,20 +220,12 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 
 			var f phpv.Callable
 
-			switch class.Type {
-			case phpv.ZClassTypeInterface:
-				f, err = compileFunctionWithName(phpv.ZString(i.Data), c, l, rref, true)
-				if err != nil {
-					return nil, err
-				}
-				f.(*ZClosure).class = class
-			default:
-				f, err = compileFunctionWithName(phpv.ZString(i.Data), c, l, rref)
-				if err != nil {
-					return nil, err
-				}
-				f.(*ZClosure).class = class
+			optionalBody := class.Type == phpv.ZClassTypeInterface || attr&phpv.ZAttrAbstract != 0
+			f, err = compileFunctionWithName(phpv.ZString(i.Data), c, l, rref, optionalBody)
+			if err != nil {
+				return nil, err
 			}
+			f.(*ZClosure).class = class
 
 			// an interface method with a body is not a parse error,
 			// so delay returning an error when code is ran
@@ -258,7 +271,7 @@ func parseClassLine(class *phpobj.ZClass, c compileCtx) error {
 	}
 
 	if i.Type == tokenizer.T_EXTENDS {
-		// can only extend one class
+		// For interfaces, extends can have multiple comma-separated parents
 		class.ExtendsStr, err = compileReadClassIdentifier(c)
 		if err != nil {
 			return err
@@ -267,6 +280,29 @@ func parseClassLine(class *phpobj.ZClass, c compileCtx) error {
 		i, err = c.NextItem()
 		if err != nil {
 			return err
+		}
+
+		// Check for comma-separated extends (interfaces only)
+		if i.IsSingle(',') && class.Type == phpv.ZClassTypeInterface {
+			// first extends goes to ImplementsStr for interfaces
+			class.ImplementsStr = append(class.ImplementsStr, class.ExtendsStr)
+			for {
+				impl, err := compileReadClassIdentifier(c)
+				if err != nil {
+					return err
+				}
+				class.ImplementsStr = append(class.ImplementsStr, impl)
+				i, err = c.NextItem()
+				if err != nil {
+					return err
+				}
+				if !i.IsSingle(',') {
+					break
+				}
+			}
+			// Move first extends back
+			class.ExtendsStr = class.ImplementsStr[0]
+			class.ImplementsStr = class.ImplementsStr[1:]
 		}
 	}
 	if i.Type == tokenizer.T_IMPLEMENTS {

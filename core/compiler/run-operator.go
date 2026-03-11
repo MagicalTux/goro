@@ -53,9 +53,9 @@ var operatorList = map[tokenizer.ItemType]*operatorInternalDetails{
 	tokenizer.Rune('~'):             &operatorInternalDetails{op: operatorMathLogic, pri: 11},
 	tokenizer.T_SL:                  &operatorInternalDetails{numeric: true, op: operatorMathLogic, pri: 15},
 	tokenizer.T_SR:                  &operatorInternalDetails{numeric: true, op: operatorMathLogic, pri: 15},
-	tokenizer.T_LOGICAL_AND:         &operatorInternalDetails{numeric: true, op: operatorMathLogic, pri: 26},
-	tokenizer.T_LOGICAL_XOR:         &operatorInternalDetails{numeric: true, op: operatorMathLogic, pri: 27},
-	tokenizer.T_LOGICAL_OR:          &operatorInternalDetails{numeric: true, op: operatorMathLogic, pri: 28},
+	tokenizer.T_LOGICAL_AND:         &operatorInternalDetails{op: operatorBoolLogic, pri: 26},
+	tokenizer.T_LOGICAL_XOR:         &operatorInternalDetails{op: operatorLogicalXor, pri: 27},
+	tokenizer.T_LOGICAL_OR:          &operatorInternalDetails{op: operatorBoolLogic, pri: 28},
 	tokenizer.T_SL_EQUAL:            &operatorInternalDetails{write: true, skipA: true, numeric: true, op: operatorMathLogic, pri: 25},
 	tokenizer.T_SR_EQUAL:            &operatorInternalDetails{write: true, skipA: true, numeric: true, op: operatorMathLogic, pri: 25},
 	tokenizer.Rune('<'):             &operatorInternalDetails{op: operatorCompare, pri: 16},
@@ -70,10 +70,10 @@ var operatorList = map[tokenizer.ItemType]*operatorInternalDetails{
 	tokenizer.Rune('!'):             &operatorInternalDetails{op: operatorNot, pri: 12},
 	tokenizer.T_BOOLEAN_AND:         &operatorInternalDetails{op: operatorBoolLogic, pri: 21},
 	tokenizer.T_BOOLEAN_OR:          &operatorInternalDetails{op: operatorBoolLogic, pri: 22},
-	tokenizer.T_COALESCE:            &operatorInternalDetails{pri: 23, skipA: true}, // TODO
+	tokenizer.T_COALESCE:            &operatorInternalDetails{pri: 23, skipA: true, op: operatorCoalesce},
 	tokenizer.T_INC:                 &operatorInternalDetails{op: operatorIncDec, pri: 11},
 	tokenizer.T_DEC:                 &operatorInternalDetails{op: operatorIncDec, pri: 11},
-	tokenizer.Rune('@'):             &operatorInternalDetails{pri: 11}, // TODO
+	tokenizer.Rune('@'):             &operatorInternalDetails{pri: 11, op: operatorSilence},
 
 	// cast operators
 	tokenizer.T_BOOL_CAST: &operatorInternalDetails{op: func(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*phpv.ZVal, error) {
@@ -185,9 +185,14 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	if r.a != nil {
 		a, err = r.a.Run(ctx)
 		if err != nil {
-			return nil, err
+			// For null coalescing, suppress errors on the left side
+			if r.op == tokenizer.T_COALESCE {
+				a = nil
+				err = nil
+			} else {
+				return nil, err
+			}
 		}
-
 	}
 
 	// short-circuit evaluation
@@ -199,6 +204,10 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	case tokenizer.T_LOGICAL_OR, tokenizer.T_BOOLEAN_OR:
 		if a.AsBool(ctx) {
 			return phpv.ZTrue.ZVal(), nil
+		}
+	case tokenizer.T_COALESCE:
+		if a != nil && !a.IsNull() {
+			return a, nil
 		}
 	}
 
@@ -447,13 +456,32 @@ func operatorMath(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*ph
 
 func operatorBoolLogic(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*phpv.ZVal, error) {
 	switch op {
-	case tokenizer.T_BOOLEAN_AND:
+	case tokenizer.T_BOOLEAN_AND, tokenizer.T_LOGICAL_AND:
 		return (a.AsBool(ctx) && b.AsBool(ctx)).ZVal(), nil
-	case tokenizer.T_BOOLEAN_OR:
+	case tokenizer.T_BOOLEAN_OR, tokenizer.T_LOGICAL_OR:
 		return (a.AsBool(ctx) || b.AsBool(ctx)).ZVal(), nil
 	default:
-		return nil, ctx.Errorf("todo operator unsupported %s", op)
+		return nil, ctx.Errorf("unsupported boolean operator %s", op)
 	}
+}
+
+func operatorCoalesce(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*phpv.ZVal, error) {
+	if a != nil && !a.IsNull() {
+		return a, nil
+	}
+	return b, nil
+}
+
+func operatorSilence(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*phpv.ZVal, error) {
+	// The @ operator silences errors. The error_reporting config is already set
+	// in the Run() method before this is called, so we just return the value.
+	return b, nil
+}
+
+func operatorLogicalXor(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*phpv.ZVal, error) {
+	ab := a.AsBool(ctx)
+	bb := b.AsBool(ctx)
+	return phpv.ZBool(ab != bb).ZVal(), nil
 }
 
 func operatorMathLogic(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*phpv.ZVal, error) {
@@ -473,7 +501,11 @@ func operatorMathLogic(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal)
 		case tokenizer.Rune('&'), tokenizer.T_AND_EQUAL:
 			res = a.Value().(phpv.ZInt) & b.Value().(phpv.ZInt)
 		case tokenizer.Rune('%'), tokenizer.T_MOD_EQUAL:
-			res = a.Value().(phpv.ZInt) % b.Value().(phpv.ZInt)
+			bv := b.Value().(phpv.ZInt)
+			if bv == 0 {
+				return nil, ctx.Warn("Division by zero")
+			}
+			res = a.Value().(phpv.ZInt) % bv
 		case tokenizer.Rune('~'):
 			res = ^b.Value().(phpv.ZInt)
 		case tokenizer.T_SL, tokenizer.T_SL_EQUAL:
@@ -596,8 +628,8 @@ func operatorCompare(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (
 	// this handle cases such as "a" > "9999"
 	aIsNonNumericString := a.GetType() == phpv.ZtString && ia == nil
 	bIsNonNumericString := b.GetType() == phpv.ZtString && ib == nil
-	if (aIsNonNumericString && ib != nil && b.GetType() != phpv.ZtInt) ||
-		(bIsNonNumericString && ia != nil && a.GetType() != phpv.ZtInt) {
+	if (aIsNonNumericString && ib != nil && b.GetType() == phpv.ZtString) ||
+		(bIsNonNumericString && ia != nil && a.GetType() == phpv.ZtString) {
 		goto CompareStrings
 	}
 
