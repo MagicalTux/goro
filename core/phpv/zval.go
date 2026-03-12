@@ -128,8 +128,8 @@ func (z *ZVal) GetName() ZString {
 }
 
 func (z *ZVal) Set(nz *ZVal) {
-	if nz == nil {
-		panic("nil zval")
+	if z == nil || nz == nil {
+		return
 	}
 	if _, isRef := nz.v.(*ZVal); isRef {
 		// simple set, keep reference alive

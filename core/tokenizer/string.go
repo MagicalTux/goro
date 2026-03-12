@@ -127,10 +127,13 @@ func lexInterpolatedArrayAccess(l *Lexer) lexState {
 		switch {
 		case '0' <= c && c <= '9':
 			lexNumber(l)
-		case 'a' <= c && c <= 'z', 'A' <= c && c <= 'Z', c == '_', 0x7f <= c:
+		case 'a' <= c && c <= 'z', 'A' <= c && c <= 'Z', c == '_', 0x80 <= c:
 			lexPhpString(l)
 		default:
-			return l.error("unexpected character %c", c)
+			if c < 0x20 || c == 0x7f {
+				return l.error("syntax error, unexpected character 0x%02X", c)
+			}
+			return l.error("syntax error, unexpected character %c", c)
 		}
 	}
 

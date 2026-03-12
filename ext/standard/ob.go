@@ -42,27 +42,30 @@ func fncObStart(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // > func void ob_flush ( void )
 func fncObFlush(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	buf := ctx.Global().(*phpctx.Global).Buffer()
-	if buf != nil {
-		return phpv.ZNULL.ZVal(), buf.Flush()
+	if buf == nil {
+		ctx.Notice("Failed to flush buffer. No buffer to flush")
+		return phpv.ZBool(false).ZVal(), nil
 	}
-	return phpv.ZNULL.ZVal(), nil
+	return phpv.ZBool(true).ZVal(), buf.Flush()
 }
 
 // > func void ob_clean ( void )
 func fncObClean(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	buf := ctx.Global().(*phpctx.Global).Buffer()
 	if buf == nil {
-		return phpv.ZNULL.ZVal(), nil
+		ctx.Notice("Failed to delete buffer. No buffer to delete")
+		return phpv.ZBool(false).ZVal(), nil
 	}
 
 	buf.Clean()
-	return phpv.ZNULL.ZVal(), nil
+	return phpv.ZBool(true).ZVal(), nil
 }
 
 // > func bool ob_end_clean ( void )
 func fncObEndClean(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	buf := ctx.Global().(*phpctx.Global).Buffer()
 	if buf == nil {
+		ctx.Notice("Failed to delete buffer. No buffer to delete")
 		return phpv.ZBool(false).ZVal(), nil
 	}
 
@@ -74,6 +77,7 @@ func fncObEndClean(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 func fncObEndFlush(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	buf := ctx.Global().(*phpctx.Global).Buffer()
 	if buf == nil {
+		ctx.Notice("Failed to delete and flush buffer. No buffer to delete or flush")
 		return phpv.ZBool(false).ZVal(), nil
 	}
 
@@ -87,7 +91,7 @@ func fncObGetLevel(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZInt(0).ZVal(), nil
 	}
 
-	return phpv.ZInt(buf.Level()).ZVal(), nil
+	return phpv.ZInt(buf.Level() + 1).ZVal(), nil
 }
 
 // > func string ob_get_clean ( void )
@@ -99,8 +103,9 @@ func fncObGetClean(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	data := phpv.ZString(buf.Get()).ZVal()
 	buf.Clean()
+	err := buf.Close()
 
-	return data, nil
+	return data, err
 }
 
 // > func string ob_get_contents ( void )
@@ -135,12 +140,79 @@ func fncObImplicitFlush(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 		return nil, err
 	}
 
-	buf := ctx.Global().(*phpctx.Global).Buffer()
-	if buf == nil {
-		return phpv.ZNULL.ZVal(), nil
-	}
-
-	buf.ImplicitFlush = (v == nil) || (*v != 0)
+	// ob_implicit_flush only affects the top-level (sapi) output, not user buffers.
+	// We set it on the Global's implicit flush flag rather than on any specific buffer.
+	g := ctx.Global().(*phpctx.Global)
+	g.ImplicitFlush = (v == nil) || (*v != 0)
 
 	return phpv.ZNULL.ZVal(), nil
+}
+
+// > func int|false ob_get_length ( void )
+func fncObGetLength(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	buf := ctx.Global().(*phpctx.Global).Buffer()
+	if buf == nil {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+
+	return phpv.ZInt(len(buf.Get())).ZVal(), nil
+}
+
+// > func array ob_get_status ([ bool $full_status = false ] )
+func fncObGetStatus(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var fullStatus *phpv.ZBool
+	_, err := core.Expand(ctx, args, &fullStatus)
+	if err != nil {
+		return nil, err
+	}
+
+	g := ctx.Global().(*phpctx.Global)
+	buf := g.Buffer()
+
+	if fullStatus != nil && bool(*fullStatus) {
+		// Return array of all buffer status
+		result := phpv.NewZArray()
+		for b := buf; b != nil; b = b.Parent() {
+			status := bufferStatus(b)
+			result.OffsetSet(ctx, nil, status.ZVal())
+		}
+		return result.ZVal(), nil
+	}
+
+	if buf == nil {
+		return phpv.NewZArray().ZVal(), nil
+	}
+
+	return bufferStatus(buf).ZVal(), nil
+}
+
+func bufferCallbackName(buf *phpctx.Buffer) string {
+	if buf.CB == nil {
+		return "default output handler"
+	}
+	return buf.CB.Name()
+}
+
+func bufferStatus(buf *phpctx.Buffer) *phpv.ZArray {
+	status := phpv.NewZArray()
+	name := bufferCallbackName(buf)
+	status.OffsetSet(nil, phpv.ZString("name"), phpv.ZString(name).ZVal())
+	status.OffsetSet(nil, phpv.ZString("type"), phpv.ZInt(0).ZVal())
+	status.OffsetSet(nil, phpv.ZString("flags"), phpv.ZInt(112).ZVal())
+	status.OffsetSet(nil, phpv.ZString("level"), phpv.ZInt(buf.Level()).ZVal())
+	status.OffsetSet(nil, phpv.ZString("chunk_size"), phpv.ZInt(buf.ChunkSize).ZVal())
+	status.OffsetSet(nil, phpv.ZString("buffer_size"), phpv.ZInt(len(buf.Get())).ZVal())
+	status.OffsetSet(nil, phpv.ZString("buffer_used"), phpv.ZInt(len(buf.Get())).ZVal())
+	return status
+}
+
+// > func array ob_list_handlers ( void )
+func fncObListHandlers(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	result := phpv.NewZArray()
+	g := ctx.Global().(*phpctx.Global)
+	for b := g.Buffer(); b != nil; b = b.Parent() {
+		name := bufferCallbackName(b)
+		result.OffsetSet(ctx, nil, phpv.ZString(name).ZVal())
+	}
+	return result.ZVal(), nil
 }

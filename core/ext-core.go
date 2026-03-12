@@ -1,6 +1,9 @@
 package core
 
 import (
+	"fmt"
+	"time"
+
 	"github.com/MagicalTux/goro/core/compiler"
 	"github.com/MagicalTux/goro/core/locale"
 	"github.com/MagicalTux/goro/core/phpctx"
@@ -15,54 +18,69 @@ func init() {
 		Name:    "Core",
 		Version: VERSION,
 		Classes: []*phpobj.ZClass{
+			phpobj.ArgumentCountError,
+			phpobj.ArithmeticError,
 			phpobj.ArrayAccess,
+			phpobj.AssertionError,
+			phpobj.BadFunctionCallException,
 			compiler.Closure,
+			phpobj.DivisionByZeroError,
+			phpobj.Error,
 			phpobj.Exception,
+			phpobj.InvalidArgumentException,
 			phpobj.Iterator,
 			phpobj.IteratorAggregate,
+			phpobj.LogicException,
+			phpobj.OverflowException,
+			phpobj.RuntimeException,
 			phpobj.Serializable,
 			phpobj.StdClass,
 			phpobj.Throwable,
 			phpobj.Traversable,
+			phpobj.TypeError,
+			phpobj.UnexpectedValueException,
+			phpobj.ValueError,
 			phpobj.IncompleteClass,
 		},
 		// Note: ExtFunctionArg is currently unused
 		Functions: map[string]*phpctx.ExtFunction{
-			"count":                 {Func: fncCount, Args: []*phpctx.ExtFunctionArg{}},
-			"define":                {Func: fncDefine, Args: []*phpctx.ExtFunctionArg{}},
-			"defined":               {Func: fncDefined, Args: []*phpctx.ExtFunctionArg{}},
-			"echo":                  {Func: stdFuncEcho, Args: []*phpctx.ExtFunctionArg{}},
-			"empty":                 {Func: fncEmpty, Args: []*phpctx.ExtFunctionArg{}},
-			"error_reporting":       {Func: fncErrorReporting, Args: []*phpctx.ExtFunctionArg{}},
-			"func_get_arg":          {Func: fncFuncGetArg, Args: []*phpctx.ExtFunctionArg{}},
-			"func_get_args":         {Func: fncFuncGetArgs, Args: []*phpctx.ExtFunctionArg{}},
-			"func_num_args":         {Func: fncFuncNumArgs, Args: []*phpctx.ExtFunctionArg{}},
-			"gc_collect_cycles":     {Func: stdFuncGcCollectCycles, Args: []*phpctx.ExtFunctionArg{}},
-			"gc_disable":            {Func: stdFuncGcDisable, Args: []*phpctx.ExtFunctionArg{}},
-			"gc_enable":             {Func: stdFuncGcEnable, Args: []*phpctx.ExtFunctionArg{}},
-			"gc_enabled":            {Func: stdFuncGcEnabled, Args: []*phpctx.ExtFunctionArg{}},
-			"gc_mem_caches":         {Func: stdFuncGcMemCaches, Args: []*phpctx.ExtFunctionArg{}},
-			"get_defined_functions": {Func: fncGetDefinedFunctions, Args: []*phpctx.ExtFunctionArg{}},
-			"get_loaded_extensions": {Func: fncLoadedExtensions, Args: []*phpctx.ExtFunctionArg{}},
-			"include":               {Func: fncInclude, Args: []*phpctx.ExtFunctionArg{}},
-			"include_once":          {Func: fncIncludeOnce, Args: []*phpctx.ExtFunctionArg{}},
-			"ini_alter":             {Func: fncIniSet, Args: []*phpctx.ExtFunctionArg{}}, // alias
-			"ini_get":               {Func: fncIniGet, Args: []*phpctx.ExtFunctionArg{}},
-			"ini_get_all":           {Func: fncIniGetAll, Args: []*phpctx.ExtFunctionArg{}},
-			"ini_restore":           {Func: fncIniRestore, Args: []*phpctx.ExtFunctionArg{}},
-			"ini_set":               {Func: fncIniSet, Args: []*phpctx.ExtFunctionArg{}},
-			"phpversion":            {Func: stdFuncPhpVersion, Args: []*phpctx.ExtFunctionArg{}},
-			"print":                 {Func: fncPrint, Args: []*phpctx.ExtFunctionArg{}},
-			"require":               {Func: fncRequire, Args: []*phpctx.ExtFunctionArg{}},
-			"require_once":          {Func: fncRequireOnce, Args: []*phpctx.ExtFunctionArg{}},
-			"set_error_handler":       {Func: fncSetErrorHandler, Args: []*phpctx.ExtFunctionArg{}},
-			"sizeof":                  {Func: fncCount, Args: []*phpctx.ExtFunctionArg{}}, // alias
-			"spl_autoload_register":   {Func: fncSplAutoloadRegister, Args: []*phpctx.ExtFunctionArg{}},
-			"spl_autoload_unregister": {Func: fncSplAutoloadUnregister, Args: []*phpctx.ExtFunctionArg{}},
-			"strcmp":                {Func: fncStrcmp, Args: []*phpctx.ExtFunctionArg{}},
-			"strlen":                {Func: fncStrlen, Args: []*phpctx.ExtFunctionArg{}},
-			"trigger_error":         {Func: fncTriggerError, Args: []*phpctx.ExtFunctionArg{}},
-			"zend_version":          {Func: stdFuncZendVersion, Args: []*phpctx.ExtFunctionArg{}},
+			"count":                     {Func: fncCount, Args: []*phpctx.ExtFunctionArg{}},
+			"define":                    {Func: fncDefine, Args: []*phpctx.ExtFunctionArg{}},
+			"defined":                   {Func: fncDefined, Args: []*phpctx.ExtFunctionArg{}},
+			"echo":                      {Func: stdFuncEcho, Args: []*phpctx.ExtFunctionArg{}},
+			"empty":                     {Func: fncEmpty, Args: []*phpctx.ExtFunctionArg{}},
+			"error_reporting":           {Func: fncErrorReporting, Args: []*phpctx.ExtFunctionArg{}},
+			"func_get_arg":              {Func: fncFuncGetArg, Args: []*phpctx.ExtFunctionArg{}},
+			"func_get_args":             {Func: fncFuncGetArgs, Args: []*phpctx.ExtFunctionArg{}},
+			"func_num_args":             {Func: fncFuncNumArgs, Args: []*phpctx.ExtFunctionArg{}},
+			"gc_collect_cycles":         {Func: stdFuncGcCollectCycles, Args: []*phpctx.ExtFunctionArg{}},
+			"gc_disable":                {Func: stdFuncGcDisable, Args: []*phpctx.ExtFunctionArg{}},
+			"gc_enable":                 {Func: stdFuncGcEnable, Args: []*phpctx.ExtFunctionArg{}},
+			"gc_enabled":                {Func: stdFuncGcEnabled, Args: []*phpctx.ExtFunctionArg{}},
+			"gc_mem_caches":             {Func: stdFuncGcMemCaches, Args: []*phpctx.ExtFunctionArg{}},
+			"get_defined_functions":     {Func: fncGetDefinedFunctions, Args: []*phpctx.ExtFunctionArg{}},
+			"get_loaded_extensions":     {Func: fncLoadedExtensions, Args: []*phpctx.ExtFunctionArg{}},
+			"include":                   {Func: fncInclude, Args: []*phpctx.ExtFunctionArg{}},
+			"include_once":              {Func: fncIncludeOnce, Args: []*phpctx.ExtFunctionArg{}},
+			"ini_alter":                 {Func: fncIniSet, Args: []*phpctx.ExtFunctionArg{}}, // alias
+			"ini_get":                   {Func: fncIniGet, Args: []*phpctx.ExtFunctionArg{}},
+			"ini_get_all":               {Func: fncIniGetAll, Args: []*phpctx.ExtFunctionArg{}},
+			"ini_restore":               {Func: fncIniRestore, Args: []*phpctx.ExtFunctionArg{}},
+			"ini_set":                   {Func: fncIniSet, Args: []*phpctx.ExtFunctionArg{}},
+			"phpversion":                {Func: stdFuncPhpVersion, Args: []*phpctx.ExtFunctionArg{}},
+			"print":                     {Func: fncPrint, Args: []*phpctx.ExtFunctionArg{}},
+			"require":                   {Func: fncRequire, Args: []*phpctx.ExtFunctionArg{}},
+			"require_once":              {Func: fncRequireOnce, Args: []*phpctx.ExtFunctionArg{}},
+			"restore_exception_handler": {Func: fncRestoreExceptionHandler, Args: []*phpctx.ExtFunctionArg{}},
+			"set_error_handler":         {Func: fncSetErrorHandler, Args: []*phpctx.ExtFunctionArg{}},
+			"set_exception_handler":     {Func: fncSetExceptionHandler, Args: []*phpctx.ExtFunctionArg{}},
+			"sizeof":                    {Func: fncCount, Args: []*phpctx.ExtFunctionArg{}}, // alias
+			"spl_autoload_register":     {Func: fncSplAutoloadRegister, Args: []*phpctx.ExtFunctionArg{}},
+			"spl_autoload_unregister":   {Func: fncSplAutoloadUnregister, Args: []*phpctx.ExtFunctionArg{}},
+			"strcmp":                    {Func: fncStrcmp, Args: []*phpctx.ExtFunctionArg{}},
+			"strlen":                    {Func: fncStrlen, Args: []*phpctx.ExtFunctionArg{}},
+			"trigger_error":             {Func: fncTriggerError, Args: []*phpctx.ExtFunctionArg{}},
+			"zend_version":              {Func: stdFuncZendVersion, Args: []*phpctx.ExtFunctionArg{}},
 		},
 		Constants: map[phpv.ZString]phpv.Val{
 			"ABDAY_1":                      locale.ABDAY_1,
@@ -139,6 +157,7 @@ func init() {
 			"NOEXPR":                       locale.NOEXPR,
 			"NOSTR":                        locale.NOSTR,
 			"NULL":                         NULL,
+			"PATH_SEPARATOR":               PATH_SEPARATOR,
 			"PHP_EOL":                      PHP_EOL,
 			"PHP_EXTRA_VERSION":            PHP_EXTRA_VERSION,
 			"PHP_FD_SETSIZE":               PHP_FD_SETSIZE,
@@ -165,11 +184,15 @@ func init() {
 			"PHP_OUTPUT_HANDLER_START":     phpctx.PHP_OUTPUT_HANDLER_START,
 			"PHP_OUTPUT_HANDLER_STDFLAGS":  phpctx.PHP_OUTPUT_HANDLER_STDFLAGS,
 			"PHP_OUTPUT_HANDLER_WRITE":     phpctx.PHP_OUTPUT_HANDLER_WRITE,
+			"PHP_BUILD_DATE":               phpv.ZString(phpBuildDate()),
 			"PHP_RELEASE_VERSION":          PHP_RELEASE_VERSION,
 			"PHP_VERSION":                  PHP_VERSION,
 			"PHP_VERSION_ID":               PHP_VERSION_ID,
 			"PHP_ZTS":                      PHP_ZTS,
 			"PM_STR":                       locale.PM_STR,
+			"SEEK_SET":                     SEEK_SET,
+			"SEEK_CUR":                     SEEK_CUR,
+			"SEEK_END":                     SEEK_END,
 			"RADIXCHAR":                    locale.RADIXCHAR,
 			"THOUSEP":                      locale.THOUSEP,
 			"TRUE":                         TRUE,
@@ -180,4 +203,9 @@ func init() {
 			"ZEND_THREAD_SAFE":             ZEND_THREAD_SAFE,
 		},
 	})
+}
+
+func phpBuildDate() string {
+	t := time.Now()
+	return fmt.Sprintf("%s %2d %04d %02d:%02d:%02d", t.Month().String()[:3], t.Day(), t.Year(), t.Hour(), t.Minute(), t.Second())
 }

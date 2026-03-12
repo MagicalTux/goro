@@ -29,6 +29,12 @@ const (
 	PHP_FLOAT_EPSILON = phpv.ZFloat(2.220446049250313e-16)
 	PHP_FLOAT_MAX     = phpv.ZFloat(math.MaxFloat64)
 	PHP_FLOAT_MIN     = phpv.ZFloat(math.SmallestNonzeroFloat64)
+	PATH_SEPARATOR    = phpv.ZString(":")
+
+	// Seek constants
+	SEEK_SET = phpv.ZInt(0)
+	SEEK_CUR = phpv.ZInt(1)
+	SEEK_END = phpv.ZInt(2)
 
 	E_ERROR             = phpv.ZInt(phpv.E_ERROR)
 	E_WARNING           = phpv.ZInt(phpv.E_WARNING)

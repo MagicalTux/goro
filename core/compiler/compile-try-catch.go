@@ -62,7 +62,8 @@ func (rt *runnableTry) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			for _, className := range c.typeNames {
 				class, err := ctx.Global().GetClass(ctx, className, false)
 				if err != nil {
-					return nil, err
+					// Class not found - skip this catch type
+					continue
 				}
 				subClass := throwErr.Obj.GetClass().InstanceOf(class)
 				implements := throwErr.Obj.GetClass().Implements(class)
@@ -119,10 +120,38 @@ func compileCatch(i *tokenizer.Item, c compileCtx) (*runnableCatch, error) {
 
 	res := &runnableCatch{}
 	for {
+		// Handle leading \ for fully-qualified names like \TypeError
+		if i.Type == tokenizer.T_NS_SEPARATOR {
+			i, err = c.NextItem()
+			if err != nil {
+				return nil, err
+			}
+		}
 		if i.Type != tokenizer.T_STRING {
 			return nil, i.Unexpected()
 		}
-		res.typeNames = append(res.typeNames, phpv.ZString(i.Data))
+		// Build full name (consume namespace parts)
+		name := i.Data
+		for {
+			next, err := c.NextItem()
+			if err != nil {
+				return nil, err
+			}
+			if next.Type == tokenizer.T_NS_SEPARATOR {
+				part, err := c.NextItem()
+				if err != nil {
+					return nil, err
+				}
+				if part.Type != tokenizer.T_STRING {
+					return nil, part.Unexpected()
+				}
+				name += "\\" + part.Data
+			} else {
+				c.backup()
+				break
+			}
+		}
+		res.typeNames = append(res.typeNames, phpv.ZString(name))
 
 		i, err = c.NextItem()
 		if err != nil {

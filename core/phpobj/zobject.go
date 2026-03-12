@@ -6,6 +6,7 @@ import (
 	"maps"
 	"slices"
 
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -20,9 +21,10 @@ type ZObject struct {
 	Opaque map[phpv.ZClass]interface{}
 	ID     int
 
-	// Guards for __get/__set to prevent infinite recursion
-	getGuard map[phpv.ZString]bool
-	setGuard map[phpv.ZString]bool
+	// Guards for __get/__set/__isset to prevent infinite recursion
+	getGuard   map[phpv.ZString]bool
+	setGuard   map[phpv.ZString]bool
+	issetGuard map[phpv.ZString]bool
 }
 
 func (z *ZObject) ZVal() *phpv.ZVal {
@@ -55,13 +57,48 @@ func (z *ZObject) AsVal(ctx phpv.Context, t phpv.ZType) (phpv.Val, error) {
 	switch t {
 	case phpv.ZtString:
 		if m, ok := z.Class.GetMethod("__tostring"); ok {
-			return ctx.CallZVal(ctx, m.Method, nil, z)
+			result, err := ctx.CallZVal(ctx, m.Method, nil, z)
+			if err != nil {
+				return nil, err
+			}
+			if result != nil && result.GetType() != phpv.ZtString {
+				return nil, ThrowError(ctx, Error, fmt.Sprintf("%s::__toString(): Return value must be of type string, %s returned", z.Class.GetName(), result.GetType()))
+			}
+			return result, nil
 		}
 	case phpv.ZtInt:
 		return phpv.ZInt(1), nil
+	case phpv.ZtBool:
+		return phpv.ZBool(true), nil
+	case phpv.ZtFloat:
+		return phpv.ZFloat(1), nil
+	case phpv.ZtArray:
+		return z.toArray(ctx), nil
 	}
 
+	if t == phpv.ZtString {
+		return nil, ThrowError(ctx, Error, fmt.Sprintf("Object of class %s could not be converted to string", z.Class.GetName()))
+	}
 	return nil, ctx.Errorf("failed to convert object to %s", t)
+}
+
+// toArray converts an object to an array with PHP's property name mangling
+func (z *ZObject) toArray(ctx phpv.Context) *phpv.ZArray {
+	arr := phpv.NewZArray()
+	for prop := range z.IterProps(ctx) {
+		var key phpv.ZString
+		if prop.Modifiers.IsPrivate() {
+			className := string(z.GetDeclClassName(prop))
+			key = phpv.ZString("\x00" + className + "\x00" + string(prop.VarName))
+		} else if prop.Modifiers.IsProtected() {
+			key = phpv.ZString("\x00*\x00" + string(prop.VarName))
+		} else {
+			key = prop.VarName
+		}
+		v := z.GetPropValue(prop)
+		arr.OffsetSet(ctx, key, v)
+	}
+	return arr
 }
 
 // Similar to NewZObject, but without calling the constructor
@@ -74,13 +111,18 @@ func CreateZObject(ctx phpv.Context, c phpv.ZClass) (*ZObject, error) {
 		h:          phpv.NewHashTable(),
 		hasPrivate: make(map[phpv.ZString]struct{}),
 		Class:      c,
-		ID:         c.NextInstanceID(),
+		ID:         ctx.Global().NextObjectID(),
 		Opaque:     map[phpv.ZClass]interface{}{},
 	}
 
 	err := n.init(ctx)
 	if err != nil {
 		return nil, err
+	}
+
+	// Register for destructor call at shutdown if __destruct exists
+	if _, ok := c.GetMethod("__destruct"); ok {
+		ctx.Global().RegisterDestructor(n)
 	}
 
 	return n, nil
@@ -91,16 +133,21 @@ func NewZObject(ctx phpv.Context, c phpv.ZClass, args ...*phpv.ZVal) (*ZObject, 
 		c = StdClass
 	}
 
+	// Check if class is an interface
+	if zc, ok := c.(*ZClass); ok && zc.Type == phpv.ZClassTypeInterface {
+		return nil, ThrowError(ctx, Error, fmt.Sprintf("Cannot instantiate interface %s", c.GetName()))
+	}
+
 	// Check if class is abstract
 	if zc, ok := c.(*ZClass); ok && zc.Attr&phpv.ZClassAttr(phpv.ZClassExplicitAbstract) != 0 {
-		return nil, ctx.Errorf("Cannot instantiate abstract class %s", c.GetName())
+		return nil, ThrowError(ctx, Error, fmt.Sprintf("Cannot instantiate abstract class %s", c.GetName()))
 	}
 
 	n := &ZObject{
 		h:          phpv.NewHashTable(),
 		hasPrivate: make(map[phpv.ZString]struct{}),
 		Class:      c,
-		ID:         c.NextInstanceID(),
+		ID:         ctx.Global().NextObjectID(),
 		Opaque:     map[phpv.ZClass]interface{}{},
 	}
 	var constructor phpv.Callable
@@ -110,17 +157,57 @@ func NewZObject(ctx phpv.Context, c phpv.ZClass, args ...*phpv.ZVal) (*ZObject, 
 		return nil, err
 	}
 
+	var ctorMethod *phpv.ZClassMethod
 	if n.Class.Handlers() != nil && n.Class.Handlers().Constructor != nil {
-		constructor = n.Class.Handlers().Constructor.Method
+		ctorMethod = n.Class.Handlers().Constructor
+		constructor = ctorMethod.Method
 	} else if m, ok := n.Class.GetMethod("__construct"); ok {
+		ctorMethod = m
 		constructor = m.Method
 	}
 
 	if constructor != nil {
+		// Check constructor visibility before calling
+		if ctorMethod != nil {
+			if ctorMethod.Modifiers.Has(phpv.ZAttrPrivate) {
+				callerClass := ctx.Class()
+				ctorClass := ctorMethod.Class
+				if callerClass == nil || ctorClass == nil || callerClass.GetName() != ctorClass.GetName() {
+					if callerClass == nil {
+						return nil, ThrowError(ctx, Error, fmt.Sprintf("Call to private %s::__construct() from global scope", c.GetName()))
+					}
+					return nil, ThrowError(ctx, Error, fmt.Sprintf("Cannot call private %s::__construct()", c.GetName()))
+				}
+			} else if ctorMethod.Modifiers.Has(phpv.ZAttrProtected) {
+				callerClass := ctx.Class()
+				if callerClass == nil {
+					return nil, ThrowError(ctx, Error, fmt.Sprintf("Call to protected %s::__construct() from global scope", c.GetName()))
+				}
+				if !callerClass.InstanceOf(ctorMethod.Class) && !ctorMethod.Class.InstanceOf(callerClass) {
+					return nil, ThrowError(ctx, Error, fmt.Sprintf("Call to protected %s::__construct() from scope %s", c.GetName(), callerClass.GetName()))
+				}
+			}
+		}
+
+		// Handle constructor property promotion: set promoted properties before calling body
+		if fga, ok := constructor.(phpv.FuncGetArgs); ok {
+			fargs := fga.GetArgs()
+			for i, arg := range fargs {
+				if arg.Promotion != 0 && i < len(args) {
+					n.ObjectSet(ctx, phpv.ZString(arg.VarName).ZVal(), args[i])
+				}
+			}
+		}
+
 		_, err := ctx.CallZVal(ctx, constructor, args, n)
 		if err != nil {
 			return nil, err
 		}
+	}
+
+	// Register for destructor call at shutdown if __destruct exists
+	if _, ok := c.GetMethod("__destruct"); ok {
+		ctx.Global().RegisterDestructor(n)
 	}
 
 	return n, nil
@@ -132,7 +219,11 @@ func (z *ZObject) GetKin(className string) phpv.ZObject {
 		if class.GetName() == phpv.ZString(className) {
 			return z.new(class)
 		}
-		class = class.GetParent().(*ZClass)
+		parent := class.GetParent()
+		if parent == nil {
+			break
+		}
+		class = parent.(*ZClass)
 	}
 	return nil
 }
@@ -149,10 +240,11 @@ func (z *ZObject) GetParent() phpv.ZObject {
 	if z.CurrentClass != nil {
 		class = z.CurrentClass.(*ZClass)
 	}
-	parentClass := class.GetParent().(*ZClass)
-	if parentClass == nil {
+	parent := class.GetParent()
+	if parent == nil {
 		return nil
 	}
+	parentClass := parent.(*ZClass)
 	return z.new(parentClass)
 }
 
@@ -184,7 +276,15 @@ func (z *ZObject) Clone(ctx phpv.Context) (phpv.ZObject, error) {
 		h:            z.h.Dup(), // copy on write
 		hasPrivate:   maps.Clone(z.hasPrivate),
 		Opaque:       opaque,
-		ID:           z.Class.NextInstanceID(),
+		ID:           ctx.Global().NextObjectID(),
+	}
+
+	// Call __clone() on the new object if it exists
+	if m, ok := n.Class.GetMethod("__clone"); ok {
+		_, err := ctx.CallZVal(ctx, m.Method, nil, n)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return n, nil
@@ -196,9 +296,19 @@ func NewZObjectOpaque(ctx phpv.Context, c phpv.ZClass, v interface{}) (*ZObject,
 		Class:      c,
 		Opaque:     map[phpv.ZClass]interface{}{c: v},
 		hasPrivate: make(map[phpv.ZString]struct{}),
-		ID:         c.NextInstanceID(),
+		ID:         ctx.Global().NextObjectID(),
 	}
-	return n, n.init(ctx)
+	err := n.init(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Register for destructor call at shutdown if __destruct exists
+	if _, ok := c.GetMethod("__destruct"); ok {
+		ctx.Global().RegisterDestructor(n)
+	}
+
+	return n, nil
 }
 
 func (o *ZObject) init(ctx phpv.Context) error {
@@ -208,19 +318,35 @@ func (o *ZObject) init(ctx phpv.Context) error {
 	lineage := []*ZClass{}
 	for class != nil {
 		lineage = append(lineage, class)
-		class = class.GetParent().(*ZClass)
+		parent := class.GetParent()
+		if parent == nil {
+			break
+		}
+		class = parent.(*ZClass)
 	}
 
 	for _, class := range slices.Backward(lineage) {
 		for _, p := range class.Props {
-			if p.Default == nil {
+			if p.Modifiers.IsStatic() {
 				continue
 			}
-			o.h.SetString(p.VarName, p.Default.ZVal())
 			if p.Modifiers.IsPrivate() {
+				// Private properties are stored ONLY under their mangled name
+				// to avoid collisions with same-named properties in parent/child classes.
 				k := getPrivatePropName(class, p.VarName)
-				o.h.SetString(k, p.Default.ZVal())
+				if p.Default != nil {
+					o.h.SetString(k, p.Default.ZVal())
+				} else {
+					o.h.SetString(k, phpv.ZNULL.ZVal())
+				}
 				o.hasPrivate[p.VarName] = struct{}{}
+			} else {
+				// Public/protected properties stored under bare name
+				if p.Default != nil {
+					o.h.SetString(p.VarName, p.Default.ZVal())
+				} else {
+					o.h.SetString(p.VarName, phpv.ZNULL.ZVal())
+				}
 			}
 		}
 	}
@@ -241,19 +367,66 @@ func (pi *propIterator) yield(yield func(*phpv.ZClassProp) bool) {
 	o := pi.o
 	ctx := pi.ctx
 	shown := map[string]struct{}{}
+
+	// Build lineage from current class to root
+	var lineage []*ZClass
 	class := o.GetClass().(*ZClass)
-Loop:
 	for class != nil {
-		for _, p := range class.Props {
-			if !yield(p) {
-				break Loop
-			}
-			shown[p.VarName.String()] = struct{}{}
+		lineage = append(lineage, class)
+		parent := class.GetParent()
+		if parent == nil {
+			break
 		}
-		class = class.GetParent().(*ZClass)
+		class = parent.(*ZClass)
+	}
+
+	// Build a map of non-private property names to their most-derived version.
+	// lineage[0] is the most-derived class, so iterating from child to parent
+	// and keeping the first occurrence gives us the most-derived version.
+	mostDerived := map[string]*phpv.ZClassProp{}
+	for _, cl := range lineage {
+		for _, p := range cl.Props {
+			if p.Modifiers.IsStatic() {
+				continue
+			}
+			if !p.Modifiers.IsPrivate() {
+				if _, ok := mostDerived[p.VarName.String()]; !ok {
+					mostDerived[p.VarName.String()] = p
+				}
+			}
+		}
+	}
+
+	// Iterate from root to leaf (parent properties first) for correct ordering.
+	// For non-private properties, yield the most-derived version at the position
+	// where the property first appears in the hierarchy.
+	for i := len(lineage) - 1; i >= 0; i-- {
+		cl := lineage[i]
+		for _, p := range cl.Props {
+			if p.Modifiers.IsStatic() {
+				continue
+			}
+			if !p.Modifiers.IsPrivate() {
+				if _, ok := shown[p.VarName.String()]; ok {
+					continue
+				}
+				shown[p.VarName.String()] = struct{}{}
+				// Yield the most-derived version of this property
+				if derived, ok := mostDerived[p.VarName.String()]; ok {
+					p = derived
+				}
+			}
+			if !yield(p) {
+				return
+			}
+		}
 	}
 	for k := range o.h.NewIterator().Iterate(ctx) {
 		key := k.AsString(ctx)
+		// Skip mangled private property names (internal format: *ClassName:propName)
+		if len(key) > 0 && key[0] == '*' {
+			continue
+		}
 		if _, ok := shown[string(key)]; !ok {
 			p := &phpv.ZClassProp{
 				VarName: key,
@@ -265,11 +438,52 @@ Loop:
 	}
 }
 
+// GetPropValue returns the value for a class property, handling the mangled
+// name lookup for private properties.
+func (o *ZObject) GetPropValue(p *phpv.ZClassProp) *phpv.ZVal {
+	if p.Modifiers.IsPrivate() {
+		// Find the declaring class by matching the exact prop pointer
+		class := o.Class.(*ZClass)
+		for class != nil {
+			for _, cp := range class.Props {
+				if cp == p {
+					k := getPrivatePropName(class, p.VarName)
+					return o.h.GetString(k)
+				}
+			}
+			parent := class.GetParent()
+			if parent == nil {
+				break
+			}
+			class = parent.(*ZClass)
+		}
+	}
+	return o.h.GetString(p.VarName)
+}
+
+// GetDeclClassName returns the declaring class name for a private property.
+func (o *ZObject) GetDeclClassName(p *phpv.ZClassProp) phpv.ZString {
+	class := o.Class.(*ZClass)
+	for class != nil {
+		for _, cp := range class.Props {
+			if cp == p {
+				return class.GetName()
+			}
+		}
+		parent := class.GetParent()
+		if parent == nil {
+			break
+		}
+		class = parent.(*ZClass)
+	}
+	return o.Class.GetName()
+}
+
 func (o *ZObject) implementsArrayAccess() bool {
 	return o.Class.Implements(ArrayAccess)
 }
 
-func (o *ZObject) callMethod(ctx phpv.Context, methodName string, args ...*phpv.ZVal) (*phpv.ZVal, error) {
+func (o *ZObject) CallMethod(ctx phpv.Context, methodName string, args ...*phpv.ZVal) (*phpv.ZVal, error) {
 	m, err := o.GetMethod(phpv.ZString(methodName), ctx)
 	if err != nil {
 		return nil, err
@@ -281,7 +495,7 @@ func (o *ZObject) OffsetGet(ctx phpv.Context, key phpv.Val) (*phpv.ZVal, error) 
 	if !o.implementsArrayAccess() {
 		return nil, ctx.Errorf("Cannot use object of type %s as array", o.Class.GetName())
 	}
-	return o.callMethod(ctx, "offsetGet", key.ZVal())
+	return o.CallMethod(ctx, "offsetGet", key.ZVal())
 }
 
 func (o *ZObject) OffsetSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) error {
@@ -294,7 +508,7 @@ func (o *ZObject) OffsetSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) er
 	} else {
 		keyZVal = key.ZVal()
 	}
-	_, err := o.callMethod(ctx, "offsetSet", keyZVal, value)
+	_, err := o.CallMethod(ctx, "offsetSet", keyZVal, value)
 	return err
 }
 
@@ -302,7 +516,7 @@ func (o *ZObject) OffsetExists(ctx phpv.Context, key phpv.Val) (bool, error) {
 	if !o.implementsArrayAccess() {
 		return false, ctx.Errorf("Cannot use object of type %s as array", o.Class.GetName())
 	}
-	result, err := o.callMethod(ctx, "offsetExists", key.ZVal())
+	result, err := o.CallMethod(ctx, "offsetExists", key.ZVal())
 	if err != nil {
 		return false, err
 	}
@@ -313,7 +527,7 @@ func (o *ZObject) OffsetUnset(ctx phpv.Context, key phpv.Val) error {
 	if !o.implementsArrayAccess() {
 		return ctx.Errorf("Cannot use object of type %s as array", o.Class.GetName())
 	}
-	_, err := o.callMethod(ctx, "offsetUnset", key.ZVal())
+	_, err := o.CallMethod(ctx, "offsetUnset", key.ZVal())
 	return err
 }
 
@@ -355,7 +569,8 @@ func (o *ZObject) HasProp(ctx phpv.Context, key phpv.Val) (bool, error) {
 
 	keyStr := key.(phpv.ZString)
 	if _, ok := o.hasPrivate[keyStr]; ok {
-		propName := getPrivatePropName(o.GetClass(), keyStr)
+		resolveClass := o.resolvePrivateClass(ctx, keyStr)
+		propName := getPrivatePropName(resolveClass, keyStr)
 		if o.h.HasString(propName) {
 			return true, nil
 		}
@@ -368,7 +583,16 @@ func (o *ZObject) HasProp(ctx phpv.Context, key phpv.Val) (bool, error) {
 	// Property not found, try __isset magic method
 	class := o.GetClass().(*ZClass)
 	if m, ok := class.Methods["__isset"]; ok {
+		// Guard against infinite recursion
+		if o.issetGuard == nil {
+			o.issetGuard = make(map[phpv.ZString]bool)
+		}
+		if o.issetGuard[keyStr] {
+			return false, nil
+		}
+		o.issetGuard[keyStr] = true
 		result, err := ctx.CallZVal(ctx, m.Method, []*phpv.ZVal{keyStr.ZVal()}, o)
+		delete(o.issetGuard, keyStr)
 		if err != nil {
 			return false, err
 		}
@@ -376,6 +600,50 @@ func (o *ZObject) HasProp(ctx phpv.Context, key phpv.Val) (bool, error) {
 	}
 
 	return false, nil
+}
+
+// checkPropertyVisibility checks if the caller context has access to a property.
+// Returns nil if access is allowed, or an error to throw.
+func (o *ZObject) checkPropertyVisibility(ctx phpv.Context, keyStr phpv.ZString, action string) error {
+	callerClass := ctx.Class()
+
+	// First, check if the caller's own class declares a private property with this name.
+	// Private properties are not virtual: if class A has private $p and class B (extends A)
+	// also has private $p, A's methods should always access A's $p. So if the caller's class
+	// declares this property as private, access is always allowed (it's their own property).
+	if callerClass != nil {
+		if callerZClass, ok := callerClass.(*ZClass); ok {
+			if prop, ok := callerZClass.GetProp(keyStr); ok && prop.Modifiers.IsPrivate() && !prop.Modifiers.IsStatic() {
+				return nil
+			}
+		}
+	}
+
+	// Look up property declaration in class hierarchy
+	class := o.Class.(*ZClass)
+	for class != nil {
+		if prop, ok := class.GetProp(keyStr); ok {
+			if prop.Modifiers.IsPrivate() {
+				if callerClass == nil || callerClass.GetName() != class.GetName() {
+					return ThrowError(ctx, Error, fmt.Sprintf("Cannot access private property %s::$%s", o.Class.GetName(), keyStr))
+				}
+			} else if prop.Modifiers.IsProtected() {
+				if callerClass == nil {
+					return ThrowError(ctx, Error, fmt.Sprintf("Cannot access protected property %s::$%s", o.Class.GetName(), keyStr))
+				}
+				if !callerClass.InstanceOf(class) && !class.InstanceOf(callerClass) {
+					return ThrowError(ctx, Error, fmt.Sprintf("Cannot access protected property %s::$%s", o.Class.GetName(), keyStr))
+				}
+			}
+			return nil
+		}
+		parent := class.GetParent()
+		if parent == nil {
+			break
+		}
+		class = parent.(*ZClass)
+	}
+	return nil
 }
 
 func (o *ZObject) ObjectGet(ctx phpv.Context, key phpv.Val) (*phpv.ZVal, error) {
@@ -386,8 +654,20 @@ func (o *ZObject) ObjectGet(ctx phpv.Context, key phpv.Val) (*phpv.ZVal, error) 
 	}
 
 	keyStr := key.(phpv.ZString)
+
+	// Check if accessing a static property as non-static
+	o.checkStaticPropertyAccess(ctx, keyStr)
+
+	// Check property visibility
+	if err := o.checkPropertyVisibility(ctx, keyStr, "access"); err != nil {
+		return nil, err
+	}
+
 	if _, ok := o.hasPrivate[keyStr]; ok {
-		propName := getPrivatePropName(o.GetClass(), keyStr)
+		// Private properties are not virtual. If the caller's class declares a private
+		// property with this name, resolve to the caller's copy, not the object's class copy.
+		resolveClass := o.resolvePrivateClass(ctx, keyStr)
+		propName := getPrivatePropName(resolveClass, keyStr)
 		if o.h.HasString(propName) {
 			return o.h.GetString(propName), nil
 		}
@@ -407,11 +687,17 @@ func (o *ZObject) ObjectGet(ctx phpv.Context, key phpv.Val) (*phpv.ZVal, error) 
 			o.getGuard[keyStr] = true
 			result, err := ctx.CallZVal(ctx, m.Method, []*phpv.ZVal{keyStr.ZVal()}, o)
 			delete(o.getGuard, keyStr)
+			if result == nil && err == nil {
+				result = phpv.ZNULL.ZVal()
+			}
 			return result, err
 		}
 	}
 
-	return o.h.GetString(keyStr), nil
+	// Emit "Undefined property" warning
+	ctx.Warn("Undefined property: %s::$%s", o.GetClass().GetName(), keyStr, logopt.NoFuncName(true))
+
+	return phpv.ZNULL.ZVal(), nil
 }
 
 func (o *ZObject) ObjectSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) error {
@@ -422,8 +708,20 @@ func (o *ZObject) ObjectSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) er
 	}
 
 	keyStr := key.(phpv.ZString)
+
+	// Check if accessing a static property as non-static
+	o.checkStaticPropertyAccess(ctx, keyStr)
+
+	// Check property visibility
+	if err := o.checkPropertyVisibility(ctx, keyStr, "access"); err != nil {
+		return err
+	}
+
 	if _, ok := o.hasPrivate[keyStr]; ok {
-		propName := getPrivatePropName(o.GetClass(), keyStr)
+		// Private properties are not virtual. If the caller's class declares a private
+		// property with this name, resolve to the caller's copy, not the object's class copy.
+		resolveClass := o.resolvePrivateClass(ctx, keyStr)
+		propName := getPrivatePropName(resolveClass, keyStr)
 		if o.h.HasString(propName) {
 			return o.h.SetString(propName, value)
 		}
@@ -452,11 +750,167 @@ func (o *ZObject) ObjectSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) er
 }
 
 func (o *ZObject) NewIterator() phpv.ZIterator {
-	return o.h.NewIterator()
+	return o.NewIteratorInScope(nil)
+}
+
+// NewIteratorInScope creates an iterator that respects property visibility
+// relative to the given scope class. If scope is nil, only public properties
+// are visible (external access). If scope matches the object's class or a
+// parent, protected/private properties become visible accordingly.
+//
+// Property keys in the hash table:
+// - Public/Protected: bare "name"
+// - Private: "*ClassName:name"
+func (o *ZObject) NewIteratorInScope(scope phpv.ZClass) phpv.ZIterator {
+	// Build set of protected property names to know which bare names are non-public
+	protectedProps := make(map[phpv.ZString]struct{})
+	class := o.Class.(*ZClass)
+	for class != nil {
+		for _, p := range class.Props {
+			if p.Modifiers.IsProtected() {
+				protectedProps[p.VarName] = struct{}{}
+			}
+		}
+		parent := class.GetParent()
+		if parent == nil {
+			break
+		}
+		if pc, ok := parent.(*ZClass); ok && pc != nil {
+			class = pc
+		} else {
+			break
+		}
+	}
+	return &zobjectIterator{inner: o.h.NewIterator(), scope: scope, protectedProps: protectedProps}
+}
+
+type zobjectIterator struct {
+	inner          phpv.ZIterator
+	scope          phpv.ZClass // nil means external access (only public)
+	protectedProps map[phpv.ZString]struct{}
+}
+
+func (it *zobjectIterator) skipNonPublic(ctx phpv.Context) {
+	for it.inner.Valid(ctx) {
+		k, _ := it.inner.Key(ctx)
+		if k == nil {
+			break
+		}
+		key := k.AsString(ctx)
+
+		// Check for private property format: *ClassName:propName
+		if len(key) > 0 && key[0] == '*' {
+			if it.scope != nil {
+				// Extract class name from *ClassName:propName
+				colonIdx := -1
+				for i := 1; i < len(key); i++ {
+					if key[i] == ':' {
+						colonIdx = i
+						break
+					}
+				}
+				if colonIdx > 0 {
+					className := key[1:colonIdx]
+					if string(it.scope.GetName()) == string(className) {
+						break // visible - scope matches declaring class
+					}
+				}
+			}
+			// Not visible, skip
+			it.inner.Next(ctx)
+			continue
+		}
+
+		// Bare key - check if it's a protected property
+		if _, isProtected := it.protectedProps[key]; isProtected {
+			if it.scope != nil {
+				break // visible - we're inside a class method
+			}
+			it.inner.Next(ctx)
+			continue
+		}
+
+		// Public property or dynamic property - always visible
+		break
+	}
+}
+
+func (it *zobjectIterator) Current(ctx phpv.Context) (*phpv.ZVal, error) {
+	it.skipNonPublic(ctx)
+	return it.inner.Current(ctx)
+}
+
+func (it *zobjectIterator) Key(ctx phpv.Context) (*phpv.ZVal, error) {
+	it.skipNonPublic(ctx)
+	k, err := it.inner.Key(ctx)
+	if err != nil || k == nil {
+		return k, err
+	}
+	// Strip *ClassName: prefix from private property keys
+	key := k.AsString(ctx)
+	if len(key) > 0 && key[0] == '*' {
+		for i := 1; i < len(key); i++ {
+			if key[i] == ':' {
+				return phpv.ZString(key[i+1:]).ZVal(), nil
+			}
+		}
+	}
+	return k, nil
+}
+
+func (it *zobjectIterator) Next(ctx phpv.Context) (*phpv.ZVal, error) {
+	it.inner.Next(ctx)
+	it.skipNonPublic(ctx)
+	return it.inner.Current(ctx)
+}
+
+func (it *zobjectIterator) Prev(ctx phpv.Context) (*phpv.ZVal, error) {
+	return it.inner.Prev(ctx)
+}
+
+func (it *zobjectIterator) Reset(ctx phpv.Context) (*phpv.ZVal, error) {
+	v, err := it.inner.Reset(ctx)
+	it.skipNonPublic(ctx)
+	return v, err
+}
+
+func (it *zobjectIterator) ResetIfEnd(ctx phpv.Context) (*phpv.ZVal, error) {
+	return it.inner.ResetIfEnd(ctx)
+}
+
+func (it *zobjectIterator) End(ctx phpv.Context) (*phpv.ZVal, error) {
+	return it.inner.End(ctx)
+}
+
+func (it *zobjectIterator) Valid(ctx phpv.Context) bool {
+	it.skipNonPublic(ctx)
+	return it.inner.Valid(ctx)
+}
+
+func (it *zobjectIterator) Iterate(ctx phpv.Context) iter.Seq2[*phpv.ZVal, *phpv.ZVal] {
+	return func(yield func(*phpv.ZVal, *phpv.ZVal) bool) {
+		for it.skipNonPublic(ctx); it.inner.Valid(ctx); it.inner.Next(ctx) {
+			it.skipNonPublic(ctx)
+			if !it.inner.Valid(ctx) {
+				break
+			}
+			key, _ := it.inner.Key(ctx)
+			value, _ := it.inner.Current(ctx)
+			if !yield(key, value) {
+				break
+			}
+		}
+	}
 }
 
 func (a *ZObject) Count(ctx phpv.Context) phpv.ZInt {
-	return max(a.h.Count(), phpv.ZInt(len(a.Class.(*ZClass).Props)))
+	// Count non-static declared properties across the class hierarchy,
+	// plus any dynamic properties set on the instance.
+	count := 0
+	for range a.IterProps(ctx) {
+		count++
+	}
+	return phpv.ZInt(count)
 }
 
 func (a *ZObject) HashTable() *phpv.ZHashTable {
@@ -476,6 +930,65 @@ func (a *ZObject) String() string {
 
 func (a *ZObject) Value() phpv.Val {
 	return a
+}
+
+// resolvePrivateClass determines which class's private property to access.
+// If the caller's class declares a private property with the given name,
+// the caller's class is returned (private properties are not virtual).
+// Otherwise, falls back to the object's runtime class.
+func (o *ZObject) resolvePrivateClass(ctx phpv.Context, keyStr phpv.ZString) phpv.ZClass {
+	callerClass := ctx.Class()
+	if callerClass != nil {
+		if callerZClass, ok := callerClass.(*ZClass); ok {
+			if prop, ok := callerZClass.GetProp(keyStr); ok && prop.Modifiers.IsPrivate() && !prop.Modifiers.IsStatic() {
+				return callerClass
+			}
+		}
+	}
+	return o.GetClass()
+}
+
+// checkStaticPropertyAccess checks if the named property is declared as static
+// in the class hierarchy and emits a notice if the caller has access to it.
+// For protected/private static properties that the caller cannot access, no
+// notice is emitted (the visibility error from checkPropertyVisibility takes precedence).
+func (o *ZObject) checkStaticPropertyAccess(ctx phpv.Context, keyStr phpv.ZString) bool {
+	// If the caller's own class has a private non-static property with this name,
+	// the private property takes precedence — don't emit the static notice.
+	if callerClass := ctx.Class(); callerClass != nil {
+		if prop, ok := callerClass.GetProp(keyStr); ok && !prop.Modifiers.IsStatic() && prop.Modifiers.IsPrivate() {
+			return false
+		}
+	}
+	class := o.Class.(*ZClass)
+	for class != nil {
+		if prop, ok := class.GetProp(keyStr); ok && prop.Modifiers.IsStatic() {
+			// Only emit notice if the caller has access to this property
+			if prop.Modifiers.IsPublic() {
+				ctx.Notice("Accessing static property %s::$%s as non static", o.Class.GetName(), keyStr, logopt.NoFuncName(true))
+			} else {
+				callerClass := ctx.Class()
+				if callerClass != nil {
+					if prop.Modifiers.IsProtected() {
+						if callerClass.InstanceOf(class) || class.InstanceOf(callerClass) {
+							ctx.Notice("Accessing static property %s::$%s as non static", o.Class.GetName(), keyStr, logopt.NoFuncName(true))
+						}
+					} else if prop.Modifiers.IsPrivate() {
+						if callerClass.GetName() == class.GetName() {
+							ctx.Notice("Accessing static property %s::$%s as non static", o.Class.GetName(), keyStr, logopt.NoFuncName(true))
+						}
+					}
+				}
+			}
+			return true
+		}
+		parent := class.GetParent()
+		if parent == nil {
+			break
+		}
+		class = parent.(*ZClass)
+	}
+	return false
 }
 
 func getPrivatePropName(class phpv.ZClass, name phpv.ZString) phpv.ZString {

@@ -1,9 +1,12 @@
 package core
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/MagicalTux/goro/core/compiler"
+	"github.com/MagicalTux/goro/core/logopt"
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -27,7 +30,7 @@ func SpawnCallable(ctx phpv.Context, v *phpv.ZVal) (phpv.Callable, error) {
 				return nil, ctx.Errorf("Argument #1 ($callback) must be a valid callback, class MyClass does not have a method %q", methodName)
 			}
 
-			return member.Method, nil
+			return phpv.BindClass(member.Method, class, true), nil
 		}
 
 		return ctx.Global().GetFunction(ctx, s)
@@ -72,22 +75,60 @@ func SpawnCallable(ctx phpv.Context, v *phpv.ZVal) (phpv.Callable, error) {
 		if index := strings.Index(string(name), "::"); index >= 0 {
 			// handle className::method
 			className := name[0:index]
-			methodName := name[index+2:]
-			name = methodName
+			methodNamePart := name[index+2:]
+			name = methodNamePart
+
+			// Emit deprecated warning about this callable form
+			var displayClassName phpv.ZString
+			if firstArg.GetType() == phpv.ZtString {
+				displayClassName = firstArg.AsString(ctx)
+			} else {
+				displayClassName = instance.GetClass().GetName()
+			}
+			origMethodStr := methodName.AsString(ctx)
+			ctx.Deprecated("Callables of the form [\"%s\", \"%s\"] are deprecated", displayClassName, origMethodStr, logopt.NoFuncName(true))
+
 			if className == "parent" {
 				class = class.GetParent()
-			} else if className != "self" {
-				return nil, ctx.Errorf("Argument #1 ($callback) must be a valid callback, second array member %q is not a valid method", className)
+			} else if className == "self" {
+				// keep class as-is
+			} else {
+				// Look up the specified class
+				resolvedClass, err := ctx.Global().GetClass(ctx, className, false)
+				if err != nil {
+					return nil, err
+				}
+				class = resolvedClass
 			}
 		}
 
 		member, ok := class.GetMethod(name)
 		if !ok {
+			// Check for __call magic method
+			if instance != nil {
+				if callMethod, hasCall := class.GetMethod("__call"); hasCall {
+					origMethodName := methodName.AsString(ctx)
+					wrapper := &magicCallWrapper{
+						callMethod: callMethod.Method,
+						methodName: origMethodName,
+					}
+					return phpv.Bind(wrapper, instance), nil
+				}
+			}
 			return nil, ctx.Errorf("Argument #1 ($callback) must be a valid callback, method not found: %q", methodName)
 		}
 
-		method := phpv.Bind(member.Method, instance)
-		return method, nil
+		// Check if the method is abstract - abstract methods cannot be called directly
+		if member.Modifiers.Has(phpv.ZAttrAbstract) {
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+				fmt.Sprintf("call_user_func(): Argument #1 ($callback) must be a valid callback, cannot call abstract method %s::%s()", class.GetName(), member.Name))
+		}
+
+		if instance != nil {
+			method := phpv.Bind(member.Method, instance)
+			return method, nil
+		}
+		return phpv.BindClass(member.Method, class, true), nil
 
 	case phpv.ZtObject:
 		object := v.AsObject(ctx)
@@ -104,4 +145,26 @@ func SpawnCallable(ctx phpv.Context, v *phpv.ZVal) (phpv.Callable, error) {
 	default:
 		return nil, ctx.Errorf("Argument passed must be callable, %q given", v.GetType().String())
 	}
+}
+
+// magicCallWrapper wraps a __call magic method to be used as a Callable.
+// When called, it packages the arguments into the __call($methodName, $args) format.
+type magicCallWrapper struct {
+	phpv.CallableVal
+	callMethod phpv.Callable
+	methodName phpv.ZString
+}
+
+func (w *magicCallWrapper) Name() string {
+	return string(w.methodName)
+}
+
+func (w *magicCallWrapper) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	// Build args array for __call
+	a := phpv.NewZArray()
+	for _, arg := range args {
+		a.OffsetSet(ctx, nil, arg.Dup())
+	}
+	callArgs := []*phpv.ZVal{w.methodName.ZVal(), a.ZVal()}
+	return w.callMethod.Call(ctx, callArgs)
 }

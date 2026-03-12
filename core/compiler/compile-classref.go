@@ -37,9 +37,14 @@ func (r *runClassStaticVarRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	p, err := class.GetStaticProps(ctx)
+	// Walk the class hierarchy to find the static property (handles inheritance)
+	zc := class.(*phpobj.ZClass)
+	p, found, err := zc.FindStaticProp(ctx, r.varName)
 	if err != nil {
 		return nil, err
+	}
+	if !found {
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Access to undeclared static property %s::$%s", class.GetName(), r.varName))
 	}
 
 	return p.GetString(r.varName), nil
@@ -56,9 +61,14 @@ func (r *runClassStaticVarRef) WriteValue(ctx phpv.Context, value *phpv.ZVal) er
 		return err
 	}
 
-	p, err := class.GetStaticProps(ctx)
+	// Walk the class hierarchy to find the static property (handles inheritance)
+	zc := class.(*phpobj.ZClass)
+	p, found, err := zc.FindStaticProp(ctx, r.varName)
 	if err != nil {
 		return err
+	}
+	if !found {
+		return phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Access to undeclared static property %s::$%s", class.GetName(), r.varName))
 	}
 
 	return p.SetString(r.varName, value)
@@ -101,9 +111,34 @@ func (r *runClassStaticObjRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	v, ok := class.(*phpobj.ZClass).Const[r.objName]
+	cc, ok := class.(*phpobj.ZClass).Const[r.objName]
 	if !ok {
-		return phpv.ZNull{}.ZVal(), nil
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Undefined constant %s::%s", class.GetName(), r.objName))
+	}
+
+	// Check visibility
+	if cc.Modifiers.IsPrivate() {
+		callerClass := ctx.Class()
+		if callerClass == nil || callerClass.GetName() != class.GetName() {
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Cannot access private constant %s::%s", class.GetName(), r.objName))
+		}
+	} else if cc.Modifiers.IsProtected() {
+		callerClass := ctx.Class()
+		if callerClass == nil || !callerClass.InstanceOf(class) && !class.InstanceOf(callerClass) {
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Cannot access protected constant %s::%s", class.GetName(), r.objName))
+		}
+	}
+
+	v := cc.Value
+
+	// Resolve CompileDelayed values (e.g., constants referencing other constants)
+	if cd, isCD := v.(*phpv.CompileDelayed); isCD {
+		resolved, err := cd.Run(ctx)
+		if err != nil {
+			return nil, err
+		}
+		cc.Value = resolved.Value()
+		return resolved, nil
 	}
 
 	return v.ZVal(), nil
@@ -148,5 +183,37 @@ func (r *runClassStaticObjRef) Loc() *phpv.Loc {
 
 func (r *runClassStaticObjRef) Dump(w io.Writer) error {
 	_, err := fmt.Fprintf(w, "%s::%s", r.className, r.objName)
+	return err
+}
+
+// runClassNameOf implements $var::class and ClassName::class
+type runClassNameOf struct {
+	className phpv.Runnable
+	l         *phpv.Loc
+}
+
+func (r *runClassNameOf) Run(ctx phpv.Context) (*phpv.ZVal, error) {
+	v, err := r.className.Run(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	switch v.GetType() {
+	case phpv.ZtObject:
+		return phpv.ZString(v.AsObject(ctx).GetClass().GetName()).ZVal(), nil
+	case phpv.ZtString:
+		// ClassName::class resolves to the fully-qualified class name
+		return v, nil
+	default:
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Cannot use ::class on value of type %s", v.GetType().TypeName()))
+	}
+}
+
+func (r *runClassNameOf) Loc() *phpv.Loc {
+	return r.l
+}
+
+func (r *runClassNameOf) Dump(w io.Writer) error {
+	_, err := fmt.Fprintf(w, "%s::class", r.className)
 	return err
 }

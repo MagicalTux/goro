@@ -344,7 +344,7 @@ func fncArrayIntersectUKey(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, err
 		return nil, ctx.Warn("expects parameter 3 to be a valid callback, no array or string given")
 	}
 
-	otherArrays, err := expandArrayArgs(ctx, args[1:])
+	otherArrays, err := expandArrayArgs(ctx, args[1:len(args)-1])
 	if err != nil {
 		return nil, ctx.FuncError(err)
 	}

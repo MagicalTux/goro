@@ -25,7 +25,7 @@ func (st StackTrace) String() ZString {
 	for _, e := range st {
 		argsBuf.Reset()
 		for i, arg := range e.Args {
-			argsBuf.WriteString(arg.String())
+			argsBuf.WriteString(traceArgString(arg))
 			if i < len(e.Args)-1 {
 				argsBuf.WriteString(", ")
 			}
@@ -43,6 +43,19 @@ func (st StackTrace) String() ZString {
 	}
 	buf.WriteString(fmt.Sprintf("#%d {main}", level))
 	return ZString(buf.String())
+}
+
+func traceArgString(arg *ZVal) string {
+	if arg == nil {
+		return ""
+	}
+	if arg.GetType() == ZtObject {
+		if obj, ok := arg.Value().(ZObject); ok {
+			return fmt.Sprintf("Object(%s)", obj.GetClass().GetName())
+		}
+		return "Object"
+	}
+	return arg.String()
 }
 
 func GetGoDebugTrace() []byte {

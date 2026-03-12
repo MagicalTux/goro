@@ -5,6 +5,7 @@ import (
 	"reflect"
 
 	"github.com/MagicalTux/goro/core/logopt"
+	"github.com/MagicalTux/goro/core/phperr"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
@@ -346,7 +347,7 @@ func ExpandAt(ctx phpv.Context, args []*phpv.ZVal, i int, out interface{}) error
 		}
 		if args[i].GetName() != "" {
 			if ok, _ := parentCtx.OffsetExists(ctx, args[i].GetName()); !ok {
-				if err := ctx.Notice("Undefined variable: %s",
+				if err := ctx.Warn("Undefined variable $%s",
 					args[i].GetName(), logopt.NoFuncName(true)); err != nil {
 					return err
 				}
@@ -358,6 +359,11 @@ func ExpandAt(ctx phpv.Context, args []*phpv.ZVal, i int, out interface{}) error
 
 	dest, err := zvalStore(ctx, i, args, out)
 	if err != nil {
+		// If the error is already a PhpThrow (catchable exception), return it
+		// directly without wrapping, so try/catch can handle it properly.
+		if _, ok := err.(*phperr.PhpThrow); ok {
+			return err
+		}
 		return ctx.Error(err)
 	}
 

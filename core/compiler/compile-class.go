@@ -1,7 +1,7 @@
 package compiler
 
 import (
-	"slices"
+	"fmt"
 
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
@@ -44,7 +44,7 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		L:       i.Loc(),
 		Attr:    attr,
 		Methods: make(map[phpv.ZString]*phpv.ZClassMethod),
-		Const:   make(map[phpv.ZString]phpv.Val),
+		Const:   make(map[phpv.ZString]*phpv.ZClassConst),
 		H:       &phpv.ZClassHandlers{},
 	}
 
@@ -57,6 +57,10 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	}
 
 	c = &zclassCompileCtx{c, class}
+
+	// Set the compiling class so that deprecation messages can include the class name
+	c.Global().SetCompilingClass(class)
+	defer c.Global().SetCompilingClass(nil)
 
 	err = parseClassLine(class, c)
 	if err != nil {
@@ -77,6 +81,14 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		i, err := c.NextItem()
 		if err != nil {
 			return nil, err
+		}
+
+		// Skip doc comments
+		for i.Type == tokenizer.T_DOC_COMMENT || i.Type == tokenizer.T_COMMENT {
+			i, err = c.NextItem()
+			if err != nil {
+				return nil, err
+			}
 		}
 
 		if i.IsSingle('}') {
@@ -150,14 +162,26 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 
 				return nil, i.Unexpected()
 			}
-			// sort props, show public first, then protected, then private
-			slices.SortStableFunc(class.Props, func(a, b *phpv.ZClassProp) int {
-				visibility := phpv.ZAttrPublic | phpv.ZAttrProtected | phpv.ZAttrPrivate
-				attrA := a.Modifiers & (phpv.ZObjectAttr(visibility))
-				attrB := b.Modifiers & (phpv.ZObjectAttr(visibility))
-				return int(attrA - attrB)
-			})
 		case tokenizer.T_CONST:
+			// Check for invalid modifiers on constants
+			if attr.IsStatic() {
+				phpErr := &phpv.PhpError{
+					Err:  fmt.Errorf("Cannot use the static modifier on a class constant"),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  i.Loc(),
+				}
+				c.Global().LogError(phpErr)
+				return nil, phpv.ExitError(255)
+			}
+			if attr.Has(phpv.ZAttrAbstract) {
+				phpErr := &phpv.PhpError{
+					Err:  fmt.Errorf("Cannot use the abstract modifier on a class constant"),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  i.Loc(),
+				}
+				c.Global().LogError(phpErr)
+				return nil, phpv.ExitError(255)
+			}
 			// const K = V [, K2 = V2 ...];
 			for {
 				// get const name
@@ -169,6 +193,28 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 					return nil, i.Unexpected()
 				}
 				constName := i.Data
+
+				// Check for duplicate constant
+				if _, exists := class.Const[phpv.ZString(constName)]; exists {
+					phpErr := &phpv.PhpError{
+						Err:  fmt.Errorf("Cannot redefine class constant %s::%s", class.Name, constName),
+						Code: phpv.E_COMPILE_ERROR,
+						Loc:  i.Loc(),
+					}
+					c.Global().LogError(phpErr)
+					return nil, phpv.ExitError(255)
+				}
+
+				// Interface constants must be public
+				if class.Type == phpv.ZClassTypeInterface && (attr.IsPrivate() || attr.IsProtected()) {
+					phpErr := &phpv.PhpError{
+						Err:  fmt.Errorf("Access type for interface constant %s::%s must be public", class.Name, constName),
+						Code: phpv.E_COMPILE_ERROR,
+						Loc:  i.Loc(),
+					}
+					c.Global().LogError(phpErr)
+					return nil, phpv.ExitError(255)
+				}
 
 				// =
 				i, err = c.NextItem()
@@ -185,7 +231,10 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 					return nil, err
 				}
 
-				class.Const[phpv.ZString(constName)] = &phpv.CompileDelayed{v}
+				class.Const[phpv.ZString(constName)] = &phpv.ZClassConst{
+					Value:     &phpv.CompileDelayed{v},
+					Modifiers: attr,
+				}
 
 				i, err = c.NextItem()
 				if err != nil {
@@ -238,11 +287,25 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 				Method:    f,
 				Class:     class,
 				Empty:     emptyBody,
+				Loc:       l,
 			}
 
 			if x := method.Name.ToLower(); x == class.BaseName().ToLower() || x == "__construct" {
 				//if class.Constructor != nil {
 				class.Handlers().Constructor = method
+
+				// Handle constructor property promotion (PHP 8.0+)
+				if fga, ok := f.(phpv.FuncGetArgs); ok {
+					for _, arg := range fga.GetArgs() {
+						if arg.Promotion != 0 {
+							prop := &phpv.ZClassProp{
+								VarName:   arg.VarName,
+								Modifiers: arg.Promotion,
+							}
+							class.Props = append(class.Props, prop)
+						}
+					}
+				}
 			}
 			class.Methods[method.Name.ToLower()] = method
 		default:
@@ -325,11 +388,6 @@ func parseClassLine(class *phpobj.ZClass, c compileCtx) error {
 
 			if i.IsSingle(',') {
 				// there's more
-				i, err = c.NextItem()
-				if err != nil {
-					return err
-				}
-
 				continue
 			}
 			break

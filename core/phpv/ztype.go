@@ -166,40 +166,16 @@ func (z ZFloat) AsVal(ctx Context, t ZType) (Val, error) {
 	case ZtBool:
 		return ZBool(z != 0), nil
 	case ZtInt:
+		if math.IsNaN(float64(z)) || math.IsInf(float64(z), 0) || float64(z) > math.MaxInt64 || float64(z) < math.MinInt64 {
+			if ctx != nil {
+				ctx.Warn("The float %s is not representable as an int, cast occurred", FormatFloat(float64(z)))
+			}
+		}
 		return ZInt(z), nil
 	case ZtFloat:
 		return z, nil
 	case ZtString:
-		if math.IsInf(float64(z), 1) {
-			return ZStr("INF"), nil
-		}
-		if math.IsInf(float64(z), -1) {
-			return ZStr("-INF"), nil
-		}
-
-		s := strconv.FormatFloat(float64(z), 'G', 14, 64)
-
-		eIndex := strings.Index(s, "E")
-		if eIndex > 0 && eIndex < len(s)-1 {
-			// do some string tweaking to match PHP's output
-			var pre string
-			if eIndex == 1 {
-				pre = string(s[0]) + ".0" + s[1:eIndex+2]
-			} else {
-				// add .0 before E, so 1E+23 would be 1.0E+23
-				pre = s[:eIndex+2]
-
-			}
-
-			post := s[eIndex+2:]
-			if s[eIndex+2] == '0' {
-				// remove padding 0, so 1.23E+04 would be 1.23E+4
-				post = post[1:]
-			}
-			s = pre + post
-		}
-
-		return ZString(strings.ToUpper(s)), nil
+		return ZString(FormatFloatPrecision(float64(z), 14)), nil
 	case ZtArray:
 		arr := NewZArray()
 		arr.OffsetSet(ctx, nil, z.ZVal())
@@ -209,7 +185,108 @@ func (z ZFloat) AsVal(ctx Context, t ZType) (Val, error) {
 }
 
 func (v ZFloat) String() string {
-	s := strconv.FormatFloat(float64(v), 'f', -1, 64)
+	return FormatFloat(float64(v))
+}
+
+// FormatFloat formats a float64 value in PHP-compatible style for var_dump
+// and similar output (serialize_precision=-1 behavior). It uses the shortest
+// decimal representation that round-trips back to the same float64 value.
+// PHP uses decimal form for values where -4 <= exponent < 17, and scientific
+// notation otherwise, always ensuring a decimal point in E notation.
+func FormatFloat(f float64) string {
+	if math.IsInf(f, 1) {
+		return "INF"
+	}
+	if math.IsInf(f, -1) {
+		return "-INF"
+	}
+	if math.IsNaN(f) {
+		return "NAN"
+	}
+	if f == 0 {
+		if math.Signbit(f) {
+			return "-0"
+		}
+		return "0"
+	}
+
+	// Determine the exponent to decide format
+	abs := math.Abs(f)
+	exp := math.Floor(math.Log10(abs))
+
+	if exp >= -4 && exp < 17 {
+		// Use decimal notation
+		return strconv.FormatFloat(f, 'f', -1, 64)
+	}
+
+	// Use scientific notation
+	s := strconv.FormatFloat(f, 'E', -1, 64)
+	return phpFormatSci(s)
+}
+
+// phpFormatSci adjusts Go's scientific notation to match PHP style:
+// - ensures decimal point in mantissa (1E+20 → 1.0E+20)
+// - strips leading zeros from exponent (E+07 → E+7)
+func phpFormatSci(s string) string {
+	idx := strings.Index(s, "E")
+	if idx < 0 {
+		return s
+	}
+
+	mantissa := s[:idx]
+	expPart := s[idx:] // "E+07" or "E-04"
+
+	// Ensure mantissa has a decimal point
+	if !strings.Contains(mantissa, ".") {
+		mantissa = mantissa + ".0"
+	}
+
+	// Strip leading zeros from exponent (keep at least one digit)
+	if len(expPart) > 2 {
+		sign := expPart[1:2] // "+" or "-"
+		digits := expPart[2:]
+		for len(digits) > 1 && digits[0] == '0' {
+			digits = digits[1:]
+		}
+		expPart = "E" + sign + digits
+	}
+
+	return mantissa + expPart
+}
+
+// FormatFloatPrecision formats a float64 using the given precision (like PHP's
+// precision ini setting). Used for echo/print and string casting.
+func FormatFloatPrecision(f float64, prec int) string {
+	if math.IsInf(f, 1) {
+		return "INF"
+	}
+	if math.IsInf(f, -1) {
+		return "-INF"
+	}
+	if math.IsNaN(f) {
+		return "NAN"
+	}
+
+	s := strconv.FormatFloat(f, 'G', prec, 64)
+
+	// PHP formats scientific notation as e.g. "1.23E+7" not "1.23E+07"
+	// Also ensures there's a decimal point before E: "1.0E+20" not "1E+20"
+	eIndex := strings.Index(s, "E")
+	if eIndex > 0 && eIndex < len(s)-1 {
+		// Ensure decimal point exists in mantissa
+		pre := s[:eIndex]
+		if !strings.Contains(pre, ".") {
+			pre = pre + ".0"
+		}
+
+		// Remove leading zero from exponent
+		post := s[eIndex+2:] // skip "E+" or "E-"
+		sign := s[eIndex+1 : eIndex+2]
+		for len(post) > 1 && post[0] == '0' {
+			post = post[1:]
+		}
+		s = pre + "E" + sign + post
+	}
 	return s
 }
 
@@ -227,6 +304,30 @@ func (zt ZType) String() string {
 		return "integer"
 	case ZtFloat:
 		return "double"
+	case ZtString:
+		return "string"
+	case ZtArray:
+		return "array"
+	case ZtObject:
+		return "object"
+	case ZtResource:
+		return "resource"
+	default:
+		return "?"
+	}
+}
+
+// TypeName returns the PHP 8-style type name (lowercase, short form)
+func (zt ZType) TypeName() string {
+	switch zt {
+	case ZtNull:
+		return "null"
+	case ZtBool:
+		return "bool"
+	case ZtInt:
+		return "int"
+	case ZtFloat:
+		return "float"
 	case ZtString:
 		return "string"
 	case ZtArray:

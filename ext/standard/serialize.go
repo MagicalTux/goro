@@ -137,35 +137,59 @@ func serialize(ctx phpv.Context, value *phpv.ZVal) (string, error) {
 		propCount := 0
 
 		if props != nil {
+			zobj := obj.(*phpobj.ZObject)
 			for _, prop := range props.Iterate(ctx) {
-				sub, err := serialize(ctx, prop)
-				if err != nil {
-					return "", err
+				propName := prop.AsString(ctx)
+				// Look up the actual property to determine visibility
+				classProp, found := obj.GetClass().GetProp(propName)
+				if !found {
+					// Property not found - warn and skip
+					ctx.Warn("\"%s\" returned as member variable from __sleep() but does not exist", propName)
+					continue
 				}
+				// Mangle property name based on visibility
+				var mangledName string
+				if classProp.Modifiers.IsPrivate() {
+					className := string(zobj.GetDeclClassName(classProp))
+					mangledName = "\x00" + className + "\x00" + string(propName)
+				} else if classProp.Modifiers.IsProtected() {
+					mangledName = "\x00*\x00" + string(propName)
+				} else {
+					mangledName = string(propName)
+				}
+				sub := fmt.Sprintf(`s:%d:"%s";`, len(mangledName), mangledName)
 				buf.WriteString(sub)
 
-				v := obj.HashTable().GetString(prop.AsString(ctx))
-				sub, err = serialize(ctx, v)
+				v := zobj.GetPropValue(classProp)
+				sub2, err := serialize(ctx, v)
 				if err != nil {
 					return "", err
 				}
-				buf.WriteString(sub)
+				buf.WriteString(sub2)
 				propCount++
 			}
 		} else {
+			zobj := obj.(*phpobj.ZObject)
 			for prop := range obj.IterProps(ctx) {
-				sub, err := serialize(ctx, prop.VarName.ZVal())
-				if err != nil {
-					return "", err
+				// Mangle property name based on visibility
+				var mangledName string
+				if prop.Modifiers.IsPrivate() {
+					className := string(zobj.GetDeclClassName(prop))
+					mangledName = "\x00" + className + "\x00" + string(prop.VarName)
+				} else if prop.Modifiers.IsProtected() {
+					mangledName = "\x00*\x00" + string(prop.VarName)
+				} else {
+					mangledName = string(prop.VarName)
 				}
+				sub := fmt.Sprintf(`s:%d:"%s";`, len(mangledName), mangledName)
 				buf.WriteString(sub)
 
-				v := obj.HashTable().GetString(prop.VarName)
-				sub, err = serialize(ctx, v)
+				v := zobj.GetPropValue(prop)
+				sub2, err := serialize(ctx, v)
 				if err != nil {
 					return "", err
 				}
-				buf.WriteString(sub)
+				buf.WriteString(sub2)
 
 				propCount++
 			}

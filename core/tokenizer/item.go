@@ -172,6 +172,32 @@ func (i ItemType) Name() string {
 	return i.String()
 }
 
+// OpString returns the operator symbol for use in error messages
+func (i ItemType) OpString() string {
+	if i > itemMax {
+		return string(i.Rune())
+	}
+	for s, t := range lexPhpOps {
+		if t == i {
+			return s
+		}
+	}
+	// Single-char operators
+	switch {
+	case i == Rune('+'):
+		return "+"
+	case i == Rune('-'):
+		return "-"
+	case i == Rune('*'):
+		return "*"
+	case i == Rune('/'):
+		return "/"
+	case i == Rune('%'):
+		return "%"
+	}
+	return i.String()
+}
+
 func (i *Item) Rune() rune {
 	return i.Type.Rune()
 }
@@ -196,7 +222,7 @@ func (i *Item) IsExpressionEnd() bool {
 }
 
 func (i *Item) Unexpected() error {
-	err := fmt.Errorf("Parse error: syntax error, unexpected %s", i)
+	err := fmt.Errorf("syntax error, unexpected %s", i)
 	return &phpv.PhpError{
 		Err:          err,
 		Code:         phpv.E_PARSE,

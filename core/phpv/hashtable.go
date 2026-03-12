@@ -185,6 +185,10 @@ func (z *ZHashTable) HasString(k ZString) bool {
 }
 
 func (z *ZHashTable) SetString(k ZString, v *ZVal) error {
+	if v == nil {
+		return z.UnsetString(k)
+	}
+
 	z.lock.Lock()
 	defer z.lock.Unlock()
 
@@ -257,6 +261,10 @@ func (z *ZHashTable) GetInt(k ZInt) *ZVal {
 }
 
 func (z *ZHashTable) SetInt(k ZInt, v *ZVal) error {
+	if v == nil {
+		return z.UnsetInt(k)
+	}
+
 	z.lock.Lock()
 	defer z.lock.Unlock()
 

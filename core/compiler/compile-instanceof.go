@@ -3,6 +3,7 @@ package compiler
 import (
 	"io"
 
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
@@ -10,8 +11,8 @@ import (
 type runInstanceOf struct {
 	v        phpv.Runnable
 	l        *phpv.Loc
-	c        phpv.ZString   // static class name
-	classVar phpv.Runnable  // dynamic class name (variable)
+	c        phpv.ZString  // static class name
+	classVar phpv.Runnable // dynamic class name (variable)
 }
 
 func compileInstanceOf(v phpv.Runnable, i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
@@ -74,7 +75,12 @@ func (r *runInstanceOf) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	}
 
 	o := v.Value().(phpv.ZObject)
-	final := o.GetClass().InstanceOf(c)
+	// Use original class, not CurrentClass from GetKin
+	objClass := o.GetClass()
+	if zo, ok := o.(*phpobj.ZObject); ok {
+		objClass = zo.Class
+	}
+	final := objClass.InstanceOf(c)
 
 	return phpv.ZBool(final).ZVal(), nil
 }

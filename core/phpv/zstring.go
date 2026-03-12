@@ -59,30 +59,50 @@ func (s ZString) ToUpper() ZString {
 }
 
 func (s ZString) LooksInt() bool {
-	var first bool
+	var first, gotDigit bool
 	if len(s) == 0 {
 		return false
 	}
 	first = true
+	trailing := false
 	for _, c := range s {
+		if trailing {
+			if c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\v' || c == '\f' {
+				continue
+			}
+			return false
+		}
 		if first && (c == ' ' || c == '-') {
 			continue
 		}
-		if c < '0' || c > '9' {
-			return false
+		if c >= '0' && c <= '9' {
+			first = false
+			gotDigit = true
+			continue
 		}
-		first = false
+		if gotDigit && (c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\v' || c == '\f') {
+			trailing = true
+			continue
+		}
+		return false
 	}
-	return true
+	return gotDigit
 }
 
 func (s ZString) IsNumeric() bool {
-	var gotDot, gotE, first bool
+	var gotDot, gotE, first, gotDigit bool
 	if len(s) == 0 {
 		return false
 	}
 	first = true
+	trailing := false
 	for _, c := range s {
+		if trailing {
+			if unicode.IsSpace(c) {
+				continue
+			}
+			return false
+		}
 		if first && unicode.IsSpace(c) {
 			continue
 		}
@@ -96,17 +116,23 @@ func (s ZString) IsNumeric() bool {
 			first = false
 			continue // good
 		}
-		if c == 'e' && !gotE {
+		if c == 'e' && !gotE && gotDigit {
 			gotE = true
 			first = true
 			continue
 		}
-		if c < '0' || c > '9' {
-			return false
+		if c >= '0' && c <= '9' {
+			first = false
+			gotDigit = true
+			continue
 		}
-		first = false
+		if gotDigit && unicode.IsSpace(c) {
+			trailing = true
+			continue
+		}
+		return false
 	}
-	return true
+	return gotDigit
 }
 
 func (z ZString) ContainsInvalidNumeric() bool {
@@ -199,7 +225,7 @@ func (z ZString) AsNumeric() (Val, error) {
 			break
 		}
 		if c == '.' {
-			if p == 1 {
+			if p <= 1 {
 				p = 2
 				continue
 			}
@@ -257,7 +283,7 @@ func (z ZStringArray) String() ZString {
 
 func (z ZStringArray) OffsetGet(ctx Context, key Val) (*ZVal, error) {
 	if key.GetType() != ZtInt {
-		if err := ctx.Warn("Illegal string offset '%s'", key.String()); err != nil {
+		if err := ctx.Warn("Illegal string offset \"%s\"", key.String()); err != nil {
 			return nil, err
 		}
 	}
@@ -279,13 +305,20 @@ func (z ZStringArray) OffsetSet(ctx Context, key Val, value *ZVal) error {
 		i = len(s)
 	} else {
 		if key.GetType() != ZtInt {
-			return ctx.Warn("Illegal string offset '%s'", key.String())
+			return ctx.Warn("Illegal string offset \"%s\"", key.String())
 		}
 		val, _ := key.AsVal(ctx, ZtInt)
 		i = int(val.(ZInt))
 	}
 
 	c := value.AsString(ctx)
+	// PHP only uses the first byte when assigning to a string offset
+	if len(c) > 1 {
+		ctx.Warn("Only the first byte will be assigned to the string offset")
+		c = c[:1]
+	} else if len(c) == 0 {
+		c = "\x00"
+	}
 
 	if i < 0 {
 		i = len(s) + i
@@ -302,7 +335,7 @@ func (z ZStringArray) OffsetSet(ctx Context, key Val, value *ZVal) error {
 
 func (z ZStringArray) OffsetUnset(ctx Context, key Val) error {
 	if key.GetType() != ZtInt {
-		return ctx.Warn("Illegal string offset '%s'", key.String())
+		return ctx.Warn("Illegal string offset \"%s\"", key.String())
 	}
 	val, _ := key.AsVal(ctx, ZtInt)
 	i := val.(ZInt)

@@ -3,26 +3,39 @@ package phpv
 import "strings"
 
 func CompareObject(ctx Context, ao, bo ZObject) (int, error) {
+	// Same instance - always equal
+	if ao == bo {
+		return 0, nil
+	}
+
 	if ao.GetClass() != bo.GetClass() {
-		return -1, nil
+		return 1, nil
 	}
 
 	aIter := ao.NewIterator()
 	bIter := bo.NewIterator()
 	for aIter.Valid(ctx) && bIter.Valid(ctx) {
 		av, _ := aIter.Current(ctx)
-		bv, _ := aIter.Current(ctx)
+		bv, _ := bIter.Current(ctx)
 
 		cmp, err := Compare(ctx, av, bv)
 		if err != nil {
 			return -1, err
 		}
 		if cmp != 0 {
-			return -1, nil
+			return cmp, nil
 		}
 
 		aIter.Next(ctx)
 		bIter.Next(ctx)
+	}
+
+	// Check if one has more properties than the other
+	if aIter.Valid(ctx) {
+		return 1, nil
+	}
+	if bIter.Valid(ctx) {
+		return -1, nil
 	}
 
 	return 0, nil
@@ -50,7 +63,7 @@ func CompareArray(ctx Context, aa, ba *ZArray) (int, error) {
 		}
 
 		av, _ := aa.OffsetGet(ctx, k)
-		bv, _ := aa.OffsetGet(ctx, k)
+		bv, _ := ba.OffsetGet(ctx, k)
 
 		cmp, err := Compare(ctx, av, bv)
 		if err != nil {
@@ -107,12 +120,21 @@ func Compare(ctx Context, a, b *ZVal) (int, error) {
 		}
 	}
 
-	// if both are strings but only one is numeric, then do string comparison
-	// this handle cases that compare values like "a" and "9999"
-	aIsNonNumericString := a.GetType() == ZtString && ia == nil
-	bIsNonNumericString := b.GetType() == ZtString && ib == nil
-	if (aIsNonNumericString && ib != nil && b.GetType() != ZtInt) ||
-		(bIsNonNumericString && ia != nil && a.GetType() != ZtInt) {
+	// PHP 8: when both operands are strings, only do numeric comparison
+	// if BOTH are numeric strings. If either is non-numeric, use string comparison.
+	if a.GetType() == ZtString && b.GetType() == ZtString {
+		if ia == nil || ib == nil {
+			// At least one string is non-numeric, use string comparison
+			goto CompareStrings
+		}
+	}
+
+	// PHP 8: when comparing a number with a non-numeric string,
+	// convert the number to string and do string comparison
+	if (a.GetType() == ZtInt || a.GetType() == ZtFloat) && b.GetType() == ZtString && ib == nil {
+		goto CompareStrings
+	}
+	if (b.GetType() == ZtInt || b.GetType() == ZtFloat) && a.GetType() == ZtString && ia == nil {
 		goto CompareStrings
 	}
 
@@ -163,7 +185,7 @@ func Compare(ctx Context, a, b *ZVal) (int, error) {
 		return 0, nil
 	}
 
-	if a.GetType() == ZtBool || b.GetType() == ZtBool {
+	if a.GetType() == ZtBool || b.GetType() == ZtBool || a.GetType() == ZtNull || b.GetType() == ZtNull {
 		a, _ = a.As(ctx, ZtBool)
 		b, _ = b.As(ctx, ZtBool)
 
@@ -190,14 +212,6 @@ func Compare(ctx Context, a, b *ZVal) (int, error) {
 		return res, nil
 	}
 
-CompareStrings:
-	switch a.Value().GetType() {
-	case ZtString:
-		av := string(a.AsString(ctx))
-		bv := string(b.AsString(ctx))
-		return strings.Compare(av, bv), nil
-	}
-
 	if a.GetType() == ZtObject {
 		if b.GetType() != ZtObject {
 			return 1, nil
@@ -211,7 +225,12 @@ CompareStrings:
 		return CompareObject(ctx, b.AsObject(ctx), a.AsObject(ctx))
 	}
 
-	return 0, nil
+CompareStrings:
+	{
+		av := string(a.AsString(ctx))
+		bv := string(b.AsString(ctx))
+		return strings.Compare(av, bv), nil
+	}
 }
 
 func Equals(ctx Context, a, b *ZVal) (bool, error) {

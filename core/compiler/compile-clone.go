@@ -1,8 +1,10 @@
 package compiler
 
 import (
+	"fmt"
 	"io"
 
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
@@ -31,6 +33,28 @@ func (r *runnableClone) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 	}
 
 	obj := v.Value().(phpv.ZObject)
+
+	// Check __clone visibility
+	if m, ok := obj.GetClass().GetMethod("__clone"); ok {
+		if m.Modifiers.IsPrivate() || m.Modifiers.IsProtected() {
+			callerClass := ctx.Class()
+			if m.Modifiers.IsPrivate() {
+				if callerClass == nil || callerClass.GetName() != obj.GetClass().GetName() {
+					return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Call to private method %s::__clone() from global scope", obj.GetClass().GetName()))
+				}
+			} else {
+				// protected
+				if callerClass == nil || (!callerClass.InstanceOf(obj.GetClass()) && !obj.GetClass().InstanceOf(callerClass)) {
+					scope := "global scope"
+					if callerClass != nil {
+						scope = fmt.Sprintf("scope %s", callerClass.GetName())
+					}
+					return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Call to protected method %s::__clone() from %s", obj.GetClass().GetName(), scope))
+				}
+			}
+		}
+	}
+
 	obj, err = obj.Clone(ctx)
 	if err != nil {
 		return nil, err

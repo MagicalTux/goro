@@ -77,6 +77,18 @@ func fncStreamContextGetOptions(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal
 	return options.ZVal(), nil
 }
 
+// > func bool stream_isatty ( resource $stream )
+func fncStreamIsatty(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var streamRes phpv.Resource
+	_, err := core.Expand(ctx, args, &streamRes)
+	if err != nil {
+		return nil, err
+	}
+
+	// In the test/embedded context, streams are never TTYs
+	return phpv.ZFalse.ZVal(), nil
+}
+
 // > func bool stream_context_set_option ( resource $stream_or_context , string $wrapper , string $option , mixed $value )
 func fncStreamContextSetOption(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var streamOrContext phpv.Resource

@@ -1,6 +1,16 @@
 package tokenizer
 
 func lexText(l *Lexer) lexState {
+	// Skip shebang line (#!) at the very start of the file
+	if l.pos == 0 && l.start == 0 && l.hasPrefix("#!") {
+		for {
+			c := l.next()
+			if c == '\n' || c == eof {
+				break
+			}
+		}
+		l.ignore()
+	}
 	for {
 		if l.hasPrefix("<?") {
 			if l.pos > l.start {

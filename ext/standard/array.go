@@ -11,6 +11,7 @@ import (
 	"strconv"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpctx"
 	"github.com/MagicalTux/goro/core/phpv"
 )
@@ -197,6 +198,14 @@ func fncArrayKeyExists(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 	_, err := core.Expand(ctx, args, &key, &array)
 	if err != nil {
 		return nil, err
+	}
+
+	if _, ok := key.Value().(phpv.ZNull); ok {
+		if err := ctx.Deprecated("Using null as the key parameter for array_key_exists() is deprecated, use an empty string instead", logopt.NoFuncName(true)); err != nil {
+			return nil, err
+		}
+		// Convert null to empty string for the lookup
+		key = phpv.ZString("").ZVal()
 	}
 
 	exists, err := array.OffsetExists(ctx, key)
@@ -812,6 +821,9 @@ func fncArrayKey(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if err != nil {
 		return nil, ctx.Error(err)
 	}
+	if key == nil {
+		return phpv.ZNULL.ZVal(), nil
+	}
 	return key, nil
 }
 
@@ -831,7 +843,8 @@ func fncArrayCurrent(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if current == nil {
 		return phpv.ZFalse.ZVal(), nil
 	}
-	return current, nil
+	// Return the value, not the reference
+	return current.Nude(), nil
 }
 
 // > func mixed next ( array &$array )
@@ -1598,8 +1611,7 @@ func arrayRecursiveCompact(ctx phpv.Context, result *phpv.ZArray, varName *phpv.
 			}
 			result.OffsetSet(ctx, varName, value)
 		} else {
-			// Shown only on php-7.3 and later
-			// ctx.Notice("Undefined variable: %s", varName)
+			ctx.Notice("compact(): Undefined variable: %s", varName)
 		}
 	case phpv.ZtArray:
 		for _, varName := range varName.AsArray(ctx).Iterate(ctx) {
@@ -1633,7 +1645,7 @@ func containsInvalidChar(s string) bool {
 			'A' <= c && c <= 'Z',
 			'0' <= c && c <= '9',
 			c == '_',
-			0x7f <= c:
+			0x80 <= c:
 
 		default:
 			return false

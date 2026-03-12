@@ -85,7 +85,25 @@ func compileNew(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	}
 
 	if next.Type == tokenizer.T_VARIABLE {
-		n.cl = &runVariable{v: phpv.ZString(next.Data[1:]), l: next.Loc()}
+		v := phpv.Runnable(&runVariable{v: phpv.ZString(next.Data[1:]), l: next.Loc()})
+		// Check for property access like $this->name
+		for {
+			peek, err := c.NextItem()
+			if err != nil {
+				return nil, err
+			}
+			if peek.Type == tokenizer.T_OBJECT_OPERATOR {
+				prop, err := c.NextItem()
+				if err != nil {
+					return nil, err
+				}
+				v = &runObjectVar{ref: v, varName: phpv.ZString(prop.Data), l: peek.Loc()}
+			} else {
+				c.backup()
+				break
+			}
+		}
+		n.cl = v
 	} else {
 		c.backup()
 		n.obj, err = compileClassName(c)
@@ -268,8 +286,97 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	}
 
 	method, ok := class.GetMethod(op)
+
+	// PHP resolves private methods from the caller's class scope, not the runtime class.
+	// Private methods are not virtual — when calling $this->method() from within a class
+	// that defines a private method with that name, use the caller's private method
+	// regardless of what the runtime class hierarchy provides.
+	if objI != nil {
+		callerClass := ctx.Class()
+		if callerClass != nil {
+			if callerMethod, callerOk := callerClass.GetMethod(op); callerOk && callerMethod.Modifiers.Has(phpv.ZAttrPrivate) && callerMethod.Class != nil && callerMethod.Class.GetName() == callerClass.GetName() {
+				method = callerMethod
+				ok = true
+			}
+		}
+	}
+
 	if !ok {
+		// Check for __call magic method on instance calls
+		if objI != nil {
+			// When using :: syntax, __call should be resolved from $this's
+			// actual class (the runtime class), not the named class in the ::
+			// expression. For example, if B extends A and $this is B, then
+			// A::undefinedMethod() should invoke B::__call, not A::__call.
+			callClass := class
+			callObj := objI
+			if r.static && ctx.This() != nil {
+				callClass = ctx.This().GetClass()
+				callObj = ctx.This()
+			}
+			if callMethod, hasCall := callClass.GetMethod("__call"); hasCall {
+				// Evaluate arguments
+				var zArgs []*phpv.ZVal
+				for _, arg := range r.args {
+					val, err := arg.Run(ctx)
+					if err != nil {
+						return nil, err
+					}
+					zArgs = append(zArgs, val)
+				}
+				// Build args array (each arg must be a copy, not a reference)
+				a := phpv.NewZArray()
+				for _, sub := range zArgs {
+					a.OffsetSet(ctx, nil, sub.Dup())
+				}
+				callArgs := []*phpv.ZVal{op.ZVal(), a.ZVal()}
+				return ctx.CallZVal(ctx, callMethod.Method, callArgs, callObj)
+			}
+		}
 		return nil, ctx.Errorf("Call to undefined method %s::%s()", class.GetName(), op)
+	}
+
+	// Check if method is abstract - cannot be called directly
+	if method.Modifiers.Has(phpv.ZAttrAbstract) || (method.Empty && method.Class != nil && method.Class.GetType() != phpv.ZClassTypeInterface) {
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Cannot call abstract method %s::%s()", method.Class.GetName(), method.Name))
+	}
+
+	// Check method visibility
+	if method.Modifiers.Has(phpv.ZAttrPrivate) {
+		callerClass := ctx.Class()
+		methodClass := method.Class
+		if callerClass == nil || methodClass == nil || callerClass.GetName() != methodClass.GetName() {
+			methodClassName := class.GetName()
+			if methodClass != nil {
+				methodClassName = methodClass.GetName()
+			}
+			scope := "global scope"
+			if callerClass != nil {
+				scope = "scope " + string(callerClass.GetName())
+			}
+			if method.Name == "__construct" {
+				if callerClass == nil {
+					return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Call to private %s::__construct() from global scope", methodClassName))
+				}
+				return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Cannot call private %s::__construct()", methodClassName))
+			}
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Call to private method %s::%s() from %s", methodClassName, method.Name, scope))
+		}
+	} else if method.Modifiers.Has(phpv.ZAttrProtected) {
+		callerClass := ctx.Class()
+		if callerClass == nil {
+			if method.Name == "__construct" {
+				return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Call to protected %s::__construct() from global scope", class.GetName()))
+			}
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Call to protected method %s::%s() from global scope", class.GetName(), method.Name))
+		}
+		// Check if caller is in the same class hierarchy
+		if !callerClass.InstanceOf(method.Class) && !method.Class.InstanceOf(callerClass) {
+			if method.Name == "__construct" {
+				return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Call to protected %s::__construct() from scope %s", class.GetName(), callerClass.GetName()))
+			}
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Call to protected method %s::%s() from scope %s", class.GetName(), method.Name, callerClass.GetName()))
+		}
 	}
 
 	if objI != nil {
@@ -286,8 +393,19 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			}
 		}
 
-		m := phpv.BindClass(method.Method, class, false)
+		// Use method.Class (defining class) for ctx.Class() so self:: resolves correctly
+		bindClass := class
+		if method.Class != nil {
+			bindClass = method.Class
+		}
+		m := phpv.BindClass(method.Method, bindClass, true)
 		return ctx.Call(ctx, m, r.args, nil)
+	}
+
+	if r.static {
+		// :: syntax but with an object (e.g., parent::method())
+		m := phpv.BindClass(method.Method, class, true)
+		return ctx.Call(ctx, m, r.args, objI)
 	}
 
 	return ctx.Call(ctx, method.Method, r.args, objI)
@@ -366,6 +484,10 @@ func compilePaamayimNekudotayim(v phpv.Runnable, i *tokenizer.Item, c compileCtx
 		return nil, i.Unexpected()
 	case tokenizer.T_VARIABLE:
 		return &runClassStaticVarRef{v, ident[1:], l}, nil
+
+	case tokenizer.T_CLASS:
+		// $obj::class or ClassName::class → get class name
+		return &runClassNameOf{v, l}, nil
 
 	case tokenizer.T_STRING:
 		i, err = c.NextItem()

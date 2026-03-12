@@ -42,6 +42,9 @@ func parseZObjectAttr(a *phpv.ZObjectAttr, c compileCtx) error {
 		}
 
 		switch i.Type {
+		case tokenizer.T_DOC_COMMENT, tokenizer.T_COMMENT:
+			// skip comments between modifiers
+			continue
 		case tokenizer.T_STATIC:
 			if *a&phpv.ZAttrStatic != 0 {
 				return errors.New("Multiple static modifiers are not allowed")

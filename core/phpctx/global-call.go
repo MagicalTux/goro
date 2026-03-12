@@ -1,8 +1,11 @@
 package phpctx
 
 import (
+	"fmt"
+
 	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phperr"
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -20,11 +23,19 @@ func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, o
 }
 
 func (c *Global) CallZVal(ctx phpv.Context, f phpv.Callable, args []*phpv.ZVal, optionalThis ...phpv.ZObject) (*phpv.ZVal, error) {
+	c.callDepth++
+	if c.callDepth > 512 {
+		c.callDepth--
+		return nil, ctx.Errorf("Maximum function nesting level of '512' reached, aborting!")
+	}
 	callCtx := GetFuncContext()
 	callCtx.Context = ctx
 	callCtx.c = f
 	callCtx.loc = ctx.Loc()
-	defer callCtx.Release()
+	defer func() {
+		callCtx.Release()
+		c.callDepth--
+	}()
 
 	var this phpv.ZObject
 	if len(optionalThis) > 0 {
@@ -71,7 +82,7 @@ func (c *Global) CallZVal(ctx phpv.Context, f phpv.Callable, args []*phpv.ZVal, 
 				argName := args[i].GetName()
 				if argName != "" {
 					if ok, _ := ctx.OffsetExists(ctx, argName); !ok {
-						if err := ctx.Notice("Undefined variable: %s",
+						if err := ctx.Warn("Undefined variable $%s",
 							argName, logopt.NoFuncName(true)); err != nil {
 							return nil, err
 						}
@@ -90,7 +101,48 @@ func (c *Global) CallZVal(ctx phpv.Context, f phpv.Callable, args []*phpv.ZVal, 
 		callCtx.Args = args
 	}
 
+	// Check type hints
+	if fga, ok := f.(phpv.FuncGetArgs); ok {
+		funcArgs := fga.GetArgs()
+		for i, fa := range funcArgs {
+			if fa.Hint == nil {
+				continue
+			}
+			if i >= len(callCtx.Args) {
+				break
+			}
+			val := callCtx.Args[i]
+			if val.IsNull() && !fa.Required {
+				continue // allow null for optional params
+			}
+			if !fa.Hint.Check(callCtx, val) {
+				// Get the actual type name for the error
+				actualType := phpTypeName(val)
+				funcName := callCtx.GetFuncName()
+				msg := fmt.Sprintf("%s(): Argument #%d ($%s) must be of type %s, %s given", funcName, i+1, fa.VarName, fa.Hint.String(), actualType)
+				// Add call location and definition location
+				var defLoc *phpv.Loc
+				if dl, ok := f.(interface{ Loc() *phpv.Loc }); ok {
+					defLoc = dl.Loc()
+				}
+				if callLoc := ctx.Loc(); callLoc != nil {
+					msg += fmt.Sprintf(", called in %s on line %d", callLoc.Filename, callLoc.Line)
+				}
+				return nil, phpobj.ThrowErrorAt(callCtx, phpobj.TypeError, msg, defLoc)
+			}
+		}
+	}
+
 	return phperr.CatchReturn(f.Call(callCtx, callCtx.Args))
+}
+
+func phpTypeName(val *phpv.ZVal) string {
+	if val.GetType() == phpv.ZtObject {
+		if obj, ok := val.Value().(phpv.ZObject); ok {
+			return string(obj.GetClass().GetName())
+		}
+	}
+	return val.GetType().TypeName()
 }
 
 func (c *Global) Parent(n int) phpv.Context {

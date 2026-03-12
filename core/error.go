@@ -23,6 +23,9 @@ func fncTriggerError(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		Loc:  ctx.Loc(),
 	}
 	err = phperr.HandleUserError(ctx, phpErr)
+	if err == phperr.ErrHandledByUser {
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -48,4 +51,25 @@ func fncSetErrorHandler(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 
 	prevErrHandler, _ := ctx.Global().GetUserErrorHandler()
 	return prevErrHandler.ZVal(), err
+}
+
+// > func callable|null set_exception_handler ( callable|null $exception_handler )
+func fncSetExceptionHandler(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var handler phpv.Callable
+	_, err := Expand(ctx, args, &handler)
+	if err != nil {
+		return nil, err
+	}
+
+	prev := ctx.Global().SetUserExceptionHandler(handler)
+	if prev == nil {
+		return phpv.ZNULL.ZVal(), nil
+	}
+	return prev.ZVal(), nil
+}
+
+// > func bool restore_exception_handler ( void )
+func fncRestoreExceptionHandler(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	ctx.Global().SetUserExceptionHandler(nil)
+	return phpv.ZBool(true).ZVal(), nil
 }

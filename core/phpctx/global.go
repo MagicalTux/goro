@@ -53,6 +53,7 @@ type Global struct {
 
 	globalClasses map[phpv.ZString]*phpobj.ZClass // TODO replace *ZClass with a nice interface
 	shutdownFuncs []phpv.Callable
+	callDepth     int
 	constant      map[phpv.ZString]phpv.Val
 	environ       *phpv.ZHashTable
 	included      map[phpv.ZString]bool // included files (used for require_once, etc)
@@ -64,17 +65,19 @@ type Global struct {
 	globalLazyFunc  map[phpv.ZString]*globalLazyOffset
 	globalLazyClass map[phpv.ZString]*globalLazyOffset
 
-	errOut      io.Writer
-	out         io.Writer
-	buf         *Buffer
-	lastOutChar byte
+	errOut        io.Writer
+	out           io.Writer
+	buf           *Buffer
+	lastOutChar   byte
+	ImplicitFlush bool
 
 	rand *random.State
 
 	shownDeprecated map[string]struct{}
 
-	userErrorHandler phpv.Callable
-	userErrorFilter  phpv.PhpErrorType
+	userErrorHandler     phpv.Callable
+	userErrorFilter      phpv.PhpErrorType
+	userExceptionHandler phpv.Callable
 
 	autoloadFuncs    []phpv.Callable
 	autoloadingClass map[phpv.ZString]bool // prevent infinite recursion in autoload
@@ -82,8 +85,13 @@ type Global struct {
 	header *phpv.HeaderContext
 
 	nextResourceID int
+	nextObjectID   int
 
 	DefaultStreamContext *stream.Context
+
+	destructObjects []phpv.ZObject // objects with __destruct to call at shutdown
+
+	compilingClass phpv.ZClass // class currently being compiled (for self:: resolution)
 }
 
 func NewGlobal(ctx context.Context, p *Process, config phpv.IniConfig) *Global {
@@ -245,7 +253,10 @@ func (g *Global) doGPC() {
 				if err != nil {
 					log.Printf("failed to parse POST data: %s", err)
 				}
-				r.MergeArray(p)
+				// Copy preserving keys (not array_merge which renumbers int keys)
+				for k, v := range p.Iterate(g) {
+					r.OffsetSet(g, k, v)
+				}
 			}
 		case 'g', 'G':
 			if g.req != nil {
@@ -253,7 +264,10 @@ func (g *Global) doGPC() {
 				if err != nil {
 					log.Printf("failed to parse GET data: %s", err)
 				}
-				r.MergeArray(get)
+				// Copy preserving keys (not array_merge which renumbers int keys)
+				for k, v := range get.Iterate(g) {
+					r.OffsetSet(g, k, v)
+				}
 			}
 		case 's', 'S':
 			// SERVER
@@ -309,7 +323,29 @@ func (g *Global) RunFile(fn string) error {
 		}
 	default:
 		if err != nil {
-			return err
+			// Handle uncaught exceptions via user exception handler
+			if ex, ok := err.(*phperr.PhpThrow); ok && g.userExceptionHandler != nil {
+				handler := g.userExceptionHandler
+				g.userExceptionHandler = nil // prevent re-entrancy
+				_, handlerErr := g.CallZVal(g, handler, []*phpv.ZVal{ex.Obj.ZVal()})
+				if handlerErr != nil {
+					return handlerErr
+				}
+				err = nil
+			}
+			// Format uncaught exceptions as PHP Fatal error
+			if err != nil {
+				if ex, ok := err.(*phperr.PhpThrow); ok {
+					trace := ex.ErrorTrace(g)
+					loc := ex.Loc
+					if loc == nil {
+						loc = &phpv.Loc{}
+					}
+					g.WriteErr([]byte(fmt.Sprintf("\nFatal error: %s\n  thrown in %s on line %d\n", trace, loc.Filename, loc.Line)))
+					return nil
+				}
+				return err
+			}
 		}
 	}
 
@@ -422,23 +458,39 @@ func (g *Global) Loc() *phpv.Loc {
 
 func (g *Global) Error(err error, t ...phpv.PhpErrorType) error {
 	wrappedErr := g.l.Error(g, err, t...)
-	return phperr.HandleUserError(g, wrappedErr)
+	result := phperr.HandleUserError(g, wrappedErr)
+	if result == phperr.ErrHandledByUser {
+		return nil
+	}
+	return result
 }
 
 func (g *Global) Errorf(format string, a ...any) error {
 	err := g.l.Errorf(g, phpv.E_ERROR, format, a...)
-	return phperr.HandleUserError(g, err)
+	result := phperr.HandleUserError(g, err)
+	if result == phperr.ErrHandledByUser {
+		return nil
+	}
+	return result
 }
 
 func (g *Global) FuncError(err error, t ...phpv.PhpErrorType) error {
 	wrappedErr := g.l.Error(g, err, t...)
 	wrappedErr.FuncName = g.GetFuncName()
-	return phperr.HandleUserError(g, wrappedErr)
+	result := phperr.HandleUserError(g, wrappedErr)
+	if result == phperr.ErrHandledByUser {
+		return nil
+	}
+	return result
 }
 func (g *Global) FuncErrorf(format string, a ...any) error {
 	err := g.l.Errorf(g, phpv.E_ERROR, format, a...)
 	err.FuncName = g.GetFuncName()
-	return phperr.HandleUserError(g, err)
+	result := phperr.HandleUserError(g, err)
+	if result == phperr.ErrHandledByUser {
+		return nil
+	}
+	return result
 }
 
 func (g *Global) Warn(format string, a ...any) error {
@@ -509,6 +561,10 @@ func logWarning(ctx phpv.Context, format string, a ...any) error {
 	}
 
 	err := phperr.HandleUserError(ctx, phpErr)
+	if err == phperr.ErrHandledByUser {
+		// User error handler handled it - suppress default output
+		return nil
+	}
 	if err != nil {
 		return err
 	}
@@ -531,8 +587,10 @@ func (g *Global) LogError(err *phpv.PhpError, optionArg ...logopt.Data) {
 
 	var output bytes.Buffer
 	switch err.Code {
-	case phpv.E_ERROR, phpv.E_USER_ERROR:
+	case phpv.E_ERROR, phpv.E_USER_ERROR, phpv.E_COMPILE_ERROR:
 		output.WriteString("Fatal error")
+	case phpv.E_PARSE:
+		output.WriteString("Parse error")
 	case phpv.E_WARNING, phpv.E_USER_WARNING:
 		output.WriteString("Warning")
 	case phpv.E_NOTICE, phpv.E_USER_NOTICE:
@@ -548,7 +606,7 @@ func (g *Global) LogError(err *phpv.PhpError, optionArg ...logopt.Data) {
 		output.WriteString(fmt.Sprintf("%s(): ", err.FuncName))
 	}
 	output.WriteString(err.Err.Error())
-	if !option.NoLoc {
+	if !option.NoLoc && err.Loc != nil {
 		output.WriteString(fmt.Sprintf(" in %s on line %d", err.Loc.Filename, err.Loc.Line))
 	}
 
@@ -584,6 +642,27 @@ func (g *Global) RegisterFunction(name phpv.ZString, f phpv.Callable) error {
 
 func (g *Global) RegisterShutdownFunction(f phpv.Callable) {
 	g.shutdownFuncs = append(g.shutdownFuncs, f)
+}
+
+func (g *Global) RunShutdownFunctions() {
+	if len(g.shutdownFuncs) == 0 {
+		return
+	}
+	g.ResetDeadline()
+	for _, fn := range g.shutdownFuncs {
+		_, err := g.CallZVal(g, fn, nil, nil)
+		if err != nil {
+			if phpv.IsExit(err) {
+				break
+			}
+			if timeout, ok := phpv.UnwrapError(err).(*phperr.PhpTimeout); ok {
+				g.WriteErr([]byte("\n"))
+				g.WriteErr([]byte(timeout.String()))
+				break
+			}
+		}
+	}
+	g.shutdownFuncs = nil
 }
 
 func (g *Global) GetFunction(ctx phpv.Context, name phpv.ZString) (phpv.Callable, error) {
@@ -661,6 +740,11 @@ func (g *Global) GetClass(ctx phpv.Context, name phpv.ZString, autoload bool) (p
 		// check for func
 		fc := ctx.Func()
 		if fc == nil {
+			// During class compilation, self:: refers to the class being compiled.
+			// Check if there's a compilingClass set on the global context.
+			if g.compilingClass != nil {
+				return g.compilingClass, nil
+			}
 			return nil, ctx.Errorf("Cannot access self:: when no method scope is active")
 		}
 		f, ok := fc.(*FuncContext)
@@ -680,6 +764,15 @@ func (g *Global) GetClass(ctx phpv.Context, name phpv.ZString, autoload bool) (p
 		// check for func
 		fc := ctx.Func()
 		if fc == nil {
+			// During class compilation, parent:: refers to the parent of the class being compiled.
+			// Check if there's a compilingClass set on the global context.
+			if g.compilingClass != nil {
+				parentClass := g.compilingClass.GetParent()
+				if parentClass == nil {
+					return nil, ctx.Errorf("Cannot access parent:: when current class scope has no parent")
+				}
+				return parentClass, nil
+			}
 			return nil, ctx.Errorf("Cannot access parent:: when no method scope is active")
 		}
 		f, ok := fc.(*FuncContext)
@@ -749,7 +842,7 @@ func (g *Global) GetClass(ctx phpv.Context, name phpv.ZString, autoload bool) (p
 			}
 		}
 	}
-	return nil, ctx.Errorf("Class '%s' not found", name)
+	return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Class \"%s\" not found", name))
 }
 
 func (g *Global) RegisterClass(name phpv.ZString, c phpv.ZClass) error {
@@ -762,6 +855,18 @@ func (g *Global) RegisterClass(name phpv.ZString, c phpv.ZClass) error {
 	return nil
 }
 
+func (g *Global) UnregisterClass(name phpv.ZString) {
+	delete(g.globalClasses, name.ToLower())
+}
+
+func (g *Global) SetCompilingClass(c phpv.ZClass) {
+	g.compilingClass = c
+}
+
+func (g *Global) GetCompilingClass() phpv.ZClass {
+	return g.compilingClass
+}
+
 func (g *Global) GetDeclaredClasses() []phpv.ZString {
 	result := make([]phpv.ZString, 0, len(g.globalClasses))
 	for _, c := range g.globalClasses {
@@ -771,6 +876,9 @@ func (g *Global) GetDeclaredClasses() []phpv.ZString {
 }
 
 func (g *Global) Close() error {
+	// Call destructors for any remaining objects before closing
+	g.CallDestructors()
+
 	for {
 		if g.buf == nil {
 			return nil
@@ -830,6 +938,16 @@ func (g *Global) SetUserErrorHandler(handler phpv.Callable, filter phpv.PhpError
 	g.userErrorFilter = filter
 }
 
+func (g *Global) GetUserExceptionHandler() phpv.Callable {
+	return g.userExceptionHandler
+}
+
+func (g *Global) SetUserExceptionHandler(handler phpv.Callable) phpv.Callable {
+	prev := g.userExceptionHandler
+	g.userExceptionHandler = handler
+	return prev
+}
+
 func (g *Global) RegisterAutoload(handler phpv.Callable) {
 	g.autoloadFuncs = append(g.autoloadFuncs, handler)
 }
@@ -854,7 +972,7 @@ func (g *Global) GetStackTrace(ctx phpv.Context) []*phpv.StackTraceEntry {
 				className = string(fc.class.GetName())
 			}
 			trace = append(trace, &phpv.StackTraceEntry{
-				FuncName:   fc.GetFuncName(),
+				FuncName:   fc.GetFuncNameForTrace(),
 				Filename:   fc.loc.Filename,
 				ClassName:  className,
 				MethodType: fc.methodType,
@@ -881,4 +999,50 @@ func (g *Global) NextResourceID() int {
 	id := g.nextResourceID
 	g.nextResourceID++
 	return id
+}
+
+func (g *Global) NextObjectID() int {
+	g.nextObjectID++
+	return g.nextObjectID
+}
+
+func (g *Global) RegisterDestructor(obj phpv.ZObject) {
+	g.destructObjects = append(g.destructObjects, obj)
+}
+
+func (g *Global) UnregisterDestructor(obj phpv.ZObject) {
+	for i, o := range g.destructObjects {
+		if o == obj {
+			g.destructObjects = append(g.destructObjects[:i], g.destructObjects[i+1:]...)
+			return
+		}
+	}
+}
+
+// CallDestructors calls __destruct on all remaining tracked objects
+func (g *Global) CallDestructors() {
+	// Take the current list and clear it to prevent infinite loop
+	// if destructors create new objects
+	objs := g.destructObjects
+	g.destructObjects = nil
+	// Process in LIFO order
+	for i := len(objs) - 1; i >= 0; i-- {
+		obj := objs[i]
+		if m, ok := obj.GetClass().GetMethod("__destruct"); ok {
+			// Check visibility during shutdown — private/protected from global scope should warn and skip
+			if m.Modifiers.IsPrivate() || m.Modifiers.IsProtected() {
+				vis := "private"
+				if m.Modifiers.IsProtected() {
+					vis = "protected"
+				}
+				g.LogError(&phpv.PhpError{
+					Err:  fmt.Errorf("Call to %s %s::__destruct() from global scope during shutdown ignored", vis, obj.GetClass().GetName()),
+					Code: phpv.E_WARNING,
+					Loc:  &phpv.Loc{Filename: "Unknown", Line: 0},
+				}, logopt.Data{NoFuncName: true})
+				continue
+			}
+			g.CallZVal(g, m.Method, nil, obj)
+		}
+	}
 }

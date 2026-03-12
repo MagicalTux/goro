@@ -68,12 +68,12 @@ func doVarExport(ctx phpv.Context, w io.Writer, z *phpv.ZVal, linePfx string, re
 		fmt.Fprintf(w, "%s", z2)
 	case phpv.ZtString:
 		s := z.Value().(phpv.ZString)
-		fmt.Fprintf(w, "'%s'", strings.ReplaceAll(string(s), `'`, `\'`))
+		fmt.Fprintf(w, "%s", varExportString(string(s)))
 	case phpv.ZtArray:
 		p := uintptr(unsafe.Pointer(z))
 		recurs[p] = true
 
-		fmt.Fprintf(w, "array(\n")
+		fmt.Fprintf(w, "array (\n")
 		localPfx := linePfx + "  "
 		it := z.NewIterator()
 		for {
@@ -87,7 +87,7 @@ func doVarExport(ctx phpv.Context, w io.Writer, z *phpv.ZVal, linePfx string, re
 			if k.GetType() == phpv.ZtInt {
 				fmt.Fprintf(w, "%s%s => ", localPfx, k)
 			} else {
-				fmt.Fprintf(w, "%s'%s' => ", localPfx, strings.ReplaceAll(k.String(), `'`, `\'`))
+				fmt.Fprintf(w, "%s%s => ", localPfx, varExportString(k.String()))
 			}
 			v, err := it.Current(ctx)
 			if err != nil {
@@ -124,7 +124,7 @@ func doVarExport(ctx phpv.Context, w io.Writer, z *phpv.ZVal, linePfx string, re
 				if k.GetType() == phpv.ZtInt {
 					fmt.Fprintf(w, "%s%s => ", localPfx, k)
 				} else {
-					fmt.Fprintf(w, "%s'%s' => ", localPfx, strings.ReplaceAll(k.String(), `'`, `\'`))
+					fmt.Fprintf(w, "%s%s => ", localPfx, varExportString(k.String()))
 				}
 				v, err := it.Current(ctx)
 				if err != nil {
@@ -146,4 +146,23 @@ func doVarExport(ctx phpv.Context, w io.Writer, z *phpv.ZVal, linePfx string, re
 		fmt.Fprintf(w, "// Unknown[%T]:%+v\n", z.Value(), z.Value())
 	}
 	return nil
+}
+
+// varExportString formats a string for var_export output, handling NUL bytes
+// and single quote escaping. NUL bytes are output as '' . "\0" . '' concatenation.
+func varExportString(s string) string {
+	if !strings.Contains(s, "\x00") {
+		return "'" + strings.ReplaceAll(s, `'`, `\'`) + "'"
+	}
+	parts := strings.Split(s, "\x00")
+	var result strings.Builder
+	for i, part := range parts {
+		if i > 0 {
+			result.WriteString(" . \"\\0\" . ")
+		}
+		result.WriteString("'")
+		result.WriteString(strings.ReplaceAll(part, `'`, `\'`))
+		result.WriteString("'")
+	}
+	return result.String()
 }

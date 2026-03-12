@@ -51,6 +51,27 @@ func Bind(fn Callable, this ZObject, args ...*ZVal) *BoundedCallable {
 	return &BoundedCallable{fn, this, args}
 }
 
+func (b *BoundedCallable) GetArgs() []*FuncArg {
+	if fga, ok := b.Callable.(FuncGetArgs); ok {
+		return fga.GetArgs()
+	}
+	return nil
+}
+
+func (m *MethodCallable) Loc() *Loc {
+	if loc, ok := m.Callable.(interface{ Loc() *Loc }); ok {
+		return loc.Loc()
+	}
+	return nil
+}
+
 func BindClass(fn Callable, class ZClass, static bool) *MethodCallable {
 	return &MethodCallable{fn, class, static}
+}
+
+func (m *MethodCallable) GetArgs() []*FuncArg {
+	if fga, ok := m.Callable.(FuncGetArgs); ok {
+		return fga.GetArgs()
+	}
+	return nil
 }

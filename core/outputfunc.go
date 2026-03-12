@@ -5,7 +5,11 @@ import "github.com/MagicalTux/goro/core/phpv"
 // > func void echo ( string $arg1 [, string $... ] )
 func stdFuncEcho(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	for _, z := range args {
-		_, err := ctx.Write([]byte(z.AsString(ctx)))
+		s, err := z.As(ctx, phpv.ZtString)
+		if err != nil {
+			return nil, err
+		}
+		_, err = ctx.Write([]byte(s.Value().(phpv.ZString)))
 		if err != nil {
 			return nil, ctx.FuncError(err)
 		}

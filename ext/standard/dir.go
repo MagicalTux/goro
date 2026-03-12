@@ -32,7 +32,11 @@ func fncChdir(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, ctx.FuncError(err)
 	}
 
-	return nil, ctx.Global().Chdir(p)
+	err = ctx.Global().Chdir(p)
+	if err != nil {
+		return nil, err
+	}
+	return phpv.ZBool(true).ZVal(), nil
 }
 
 // > func array scandir ( string $directory [, int $sorting_order = SCANDIR_SORT_ASCENDING [, resource $context ]] )

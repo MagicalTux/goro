@@ -87,30 +87,47 @@ func doPrintR(ctx phpv.Context, z *phpv.ZVal, linePfx string, recurs map[uintptr
 		v := z.Value()
 		if obj, ok := v.(*phpobj.ZObject); ok {
 			fmt.Fprintf(ctx, "%s%s Object\n%s(\n", isRef, obj.Class.GetName(), linePfx)
+			localPfx := linePfx + "    "
+			for prop := range obj.IterProps(ctx) {
+				suffix := ""
+				switch {
+				case prop.Modifiers.IsPrivate():
+					className := string(obj.GetDeclClassName(prop))
+					suffix = ":" + className + ":private"
+				case prop.Modifiers.IsProtected():
+					suffix = ":protected"
+				}
+				fmt.Fprintf(ctx, "%s[%s%s] => ", localPfx, prop.VarName, suffix)
+				val := obj.GetPropValue(prop)
+				doPrintR(ctx, val, localPfx+"    ", recurs)
+				ctx.Write([]byte{'\n'})
+			}
+			fmt.Fprintf(ctx, "%s)\n", linePfx)
 		} else {
 			fmt.Fprintf(ctx, "%s? object(?)\n%s(\n", isRef, linePfx)
-		}
-		localPfx := linePfx + "    "
-		it := z.NewIterator()
-		if it != nil {
-			for {
-				if !it.Valid(ctx) {
-					break
+			localPfx := linePfx + "    "
+			it := z.NewIterator()
+			if it != nil {
+				for {
+					if !it.Valid(ctx) {
+						break
+					}
+					k, err := it.Key(ctx)
+					if err != nil {
+						return err
+					}
+					fmt.Fprintf(ctx, "%s[%s] => ", localPfx, k)
+					val, err := it.Current(ctx)
+					if err != nil {
+						return err
+					}
+					doPrintR(ctx, val, localPfx+"    ", recurs)
+					ctx.Write([]byte{'\n'})
+					it.Next(ctx)
 				}
-				k, err := it.Key(ctx)
-				if err != nil {
-					return err
-				}
-				fmt.Fprintf(ctx, "%s[%s] => ", localPfx, k)
-				v, err := it.Current(ctx)
-				if err != nil {
-					return err
-				}
-				doPrintR(ctx, v, localPfx+"    ", recurs)
-				it.Next(ctx)
 			}
+			fmt.Fprintf(ctx, "%s)\n", linePfx)
 		}
-		fmt.Fprintf(ctx, "%s)\n", linePfx)
 	default:
 		z, _ = z.As(ctx, phpv.ZtString)
 		fmt.Fprintf(ctx, "%s", z)

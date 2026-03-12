@@ -8,6 +8,7 @@ import (
 
 	"github.com/MagicalTux/goro/core"
 	"github.com/MagicalTux/goro/core/phpctx"
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -118,7 +119,7 @@ func fncCallUserFunc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 func fncCallUserFuncArray(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var callback phpv.Callable
 	var arrayArgs *phpv.ZArray
-	_, err := core.Expand(ctx, args, &callback, arrayArgs)
+	_, err := core.Expand(ctx, args, &callback, &arrayArgs)
 	if err != nil {
 		return nil, err
 	}
@@ -356,6 +357,10 @@ func stdGetClass(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZFalse.ZVal(), nil
 	}
 
+	// Use the original class (not CurrentClass from GetKin)
+	if zo, ok := object.(*phpobj.ZObject); ok {
+		return zo.Class.GetName().ZVal(), nil
+	}
 	return object.GetClass().GetName().ZVal(), nil
 }
 
@@ -419,8 +424,12 @@ func stdGetParentClass(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 	if parent == nil {
 		return phpv.ZFalse.ZVal(), nil
 	}
+	parentName := parent.GetName()
+	if parentName == "" {
+		return phpv.ZFalse.ZVal(), nil
+	}
 
-	return parent.GetName().ZVal(), nil
+	return parentName.ZVal(), nil
 }
 
 // > func bool is_a ( object $object , string $class_name [, bool $allow_string = FALSE ] )
@@ -446,7 +455,12 @@ func stdIsA(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		if obj == nil {
 			return phpv.ZFalse.ZVal(), nil
 		}
-		class = obj.GetClass()
+		// Use original class, not CurrentClass from GetKin
+		if zo, ok := obj.(*phpobj.ZObject); ok {
+			class = zo.Class
+		} else {
+			class = obj.GetClass()
+		}
 	} else if allowString && objectArg.GetType() == phpv.ZtString {
 		class, err = ctx.Global().GetClass(ctx, objectArg.AsString(ctx), false)
 		if err != nil {
@@ -456,13 +470,10 @@ func stdIsA(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZFalse.ZVal(), nil
 	}
 
-	// Walk the inheritance chain
-	target := className.ToLower()
-	for class != nil {
-		if class.GetName().ToLower() == target {
-			return phpv.ZTrue.ZVal(), nil
-		}
-		class = class.GetParent()
+	// Check using InstanceOf which handles both extends and implements
+	targetClass, err := ctx.Global().GetClass(ctx, className, false)
+	if err == nil {
+		return phpv.ZBool(class.InstanceOf(targetClass)).ZVal(), nil
 	}
 
 	return phpv.ZFalse.ZVal(), nil
@@ -504,7 +515,7 @@ func stdIsSubclassOf(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	// Skip the first class itself, check parents only
 	target := className.ToLower()
 	class = class.GetParent()
-	for class != nil {
+	for class != nil && class.GetName() != "" {
 		if class.GetName().ToLower() == target {
 			return phpv.ZTrue.ZVal(), nil
 		}
@@ -523,5 +534,93 @@ func stdGetDeclaredClasses(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, err
 		result.OffsetSet(ctx, nil, name.ZVal())
 	}
 
+	return result.ZVal(), nil
+}
+
+// > func array get_class_methods ( mixed $class_name )
+func stdGetClassMethods(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var classArg *phpv.ZVal
+	_, err := core.Expand(ctx, args, &classArg)
+	if err != nil {
+		return nil, err
+	}
+
+	var class phpv.ZClass
+
+	if classArg.GetType() == phpv.ZtObject {
+		obj := classArg.AsObject(ctx)
+		if obj == nil {
+			return phpv.ZNULL.ZVal(), nil
+		}
+		class = obj.GetClass()
+	} else {
+		class, err = ctx.Global().GetClass(ctx, classArg.AsString(ctx), true)
+		if err != nil {
+			return phpv.ZNULL.ZVal(), nil
+		}
+	}
+
+	result := phpv.NewZArray()
+	for _, m := range class.GetMethods() {
+		result.OffsetSet(ctx, nil, phpv.ZString(m.Name).ZVal())
+	}
+	return result.ZVal(), nil
+}
+
+// > func bool interface_exists ( string $interface_name [, bool $autoload = true ] )
+func stdInterfaceExists(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var name phpv.ZString
+	var autoloadArg *phpv.ZBool
+	_, err := core.Expand(ctx, args, &name, &autoloadArg)
+	if err != nil {
+		return nil, err
+	}
+
+	autoload := true
+	if autoloadArg != nil {
+		autoload = bool(*autoloadArg)
+	}
+
+	class, err := ctx.Global().GetClass(ctx, name, autoload)
+	if err != nil || class == nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	if class.GetType() == phpv.ZClassTypeInterface {
+		return phpv.ZTrue.ZVal(), nil
+	}
+	return phpv.ZFalse.ZVal(), nil
+}
+
+// > func array get_object_vars ( object $obj )
+func stdGetObjectVars(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var obj *phpv.ZVal
+	_, err := core.Expand(ctx, args, &obj)
+	if err != nil {
+		return nil, err
+	}
+
+	if obj.GetType() != phpv.ZtObject {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	o := obj.AsObject(ctx)
+	if o == nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	result := phpv.NewZArray()
+	it := o.NewIterator()
+	for ; it.Valid(ctx); it.Next(ctx) {
+		k, err := it.Key(ctx)
+		if err != nil {
+			continue
+		}
+		v, err := it.Current(ctx)
+		if err != nil {
+			continue
+		}
+		result.OffsetSet(ctx, k, v)
+	}
 	return result.ZVal(), nil
 }

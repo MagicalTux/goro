@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/MagicalTux/goro/core"
 	"github.com/MagicalTux/goro/core/compiler"
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
@@ -20,10 +22,53 @@ func constant(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
+	// Check for class constant (ClassName::CONST_NAME)
+	if idx := strings.Index(string(name), "::"); idx != -1 {
+		className := phpv.ZString(name[:idx])
+		constName := phpv.ZString(name[idx+2:])
+
+		class, err := ctx.Global().GetClass(ctx, className, true)
+		if err != nil {
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Class \"%s\" not found", className))
+		}
+
+		if zc, ok := class.(*phpobj.ZClass); ok {
+			cc, ok := zc.Const[constName]
+			if !ok {
+				return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Undefined class constant %s::%s", className, constName))
+			}
+
+			// Check visibility
+			if cc.Modifiers.IsPrivate() {
+				callerClass := ctx.Class()
+				if callerClass == nil || callerClass.GetName() != class.GetName() {
+					return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Cannot access private constant %s::%s", class.GetName(), constName))
+				}
+			} else if cc.Modifiers.IsProtected() {
+				callerClass := ctx.Class()
+				if callerClass == nil || !callerClass.InstanceOf(class) && !class.InstanceOf(callerClass) {
+					return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Cannot access protected constant %s::%s", class.GetName(), constName))
+				}
+			}
+
+			v := cc.Value
+			if cd, isCD := v.(*phpv.CompileDelayed); isCD {
+				resolved, err := cd.Run(ctx)
+				if err != nil {
+					return nil, err
+				}
+				cc.Value = resolved.Value()
+				return resolved, nil
+			}
+			return v.ZVal(), nil
+		}
+
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Undefined class constant %s::%s", className, constName))
+	}
+
 	k, ok := ctx.Global().ConstantGet(name)
 	if !ok {
-		// TODO trigger notice: constant not found
-		return phpv.ZNULL.ZVal(), nil
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Undefined constant \"%s\"", name))
 	}
 	return k.ZVal(), nil
 }
@@ -40,25 +85,27 @@ func stdFuncEval(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
+	// Build eval filename in PHP format: "file.php(line) : eval()'d code"
+	evalFilename := "- : eval()'d code"
+	if loc := ctx.Loc(); loc != nil {
+		evalFilename = fmt.Sprintf("%s(%d) : eval()'d code", loc.Filename, loc.Line)
+	}
+
 	// tokenize
-	t := tokenizer.NewLexerPhp(bytes.NewReader([]byte(z.Value().(phpv.ZString))), "-")
+	t := tokenizer.NewLexerPhp(bytes.NewReader([]byte(z.Value().(phpv.ZString))), evalFilename)
 
 	c, err := compiler.Compile(ctx, t)
 	if err != nil {
-		if phpErr, ok := err.(*phpv.PhpError); ok {
-			evalLoc := phpErr.Loc
-			return nil, &phpv.PhpError{
-				Err: fmt.Errorf(
-					"\n%s in %s(%d) : eval()'d code on line %d",
-					phpErr.Err.Error(),
-					ctx.Loc().Filename,
-					ctx.Loc().Line,
-					evalLoc.Line,
-				),
-				Code: phpv.E_PARSE,
-			}
+		err = phpv.FilterExitError(err)
+		if err == nil {
+			return phpv.ZBool(false).ZVal(), nil
 		}
-		return nil, ctx.Error(err, phpv.E_PARSE)
+		if phpErr, ok := err.(*phpv.PhpError); ok && phpErr.Code == phpv.E_PARSE {
+			// The Loc already has the eval filename format, so just log it directly
+			ctx.Global().LogError(phpErr)
+			return phpv.ZBool(false).ZVal(), nil
+		}
+		return nil, err
 	}
 
 	return c.Run(ctx.Parent(1))

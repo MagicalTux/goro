@@ -64,7 +64,18 @@ func (closure *ZClosure) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 		if err != nil {
 			return nil, err
 		}
-		s.Value = z
+		if s.Ref {
+			// reference capture: share the same ZVal between outer scope and closure
+			if !z.IsRef() {
+				ref := z.Ref()
+				ctx.OffsetSet(ctx, s.VarName.ZVal(), ref)
+				s.Value = ref
+			} else {
+				s.Value = z
+			}
+		} else {
+			s.Value = z.Nude().Dup()
+		}
 	}
 	return c.Spawn(ctx)
 }
@@ -154,6 +165,10 @@ func (z *ZClosure) GetArgs() []*phpv.FuncArg {
 	return z.args
 }
 
+func (z *ZClosure) Loc() *phpv.Loc {
+	return z.start
+}
+
 func (z *ZClosure) Name() string {
 	if z.name == "" {
 		return "anonymous"
@@ -174,7 +189,20 @@ func (z *ZClosure) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	for i, a := range z.args {
 		if len(args) <= i || args[i] == nil {
 			if a.Required {
-				return nil, ctx.Errorf("Uncaught ArgumentCountError: Too few arguments to function toto()")
+				funcName := ctx.GetFuncName()
+				requiredCount := 0
+				for _, arg := range z.args {
+					if arg.Required {
+						requiredCount++
+					}
+				}
+				// Build the error message with call location info
+				msg := fmt.Sprintf("Too few arguments to function %s(), %d passed", funcName, len(args))
+				if callLoc := ctx.Loc(); callLoc != nil {
+					msg += fmt.Sprintf(" in %s on line %d", callLoc.Filename, callLoc.Line)
+				}
+				msg += fmt.Sprintf(" and exactly %d expected", requiredCount)
+				return nil, phpobj.ThrowErrorAt(ctx, phpobj.ArgumentCountError, msg, z.start)
 			}
 			if a.DefaultValue != nil {
 				if len(args) == i {
@@ -204,6 +232,11 @@ func (z *ZClosure) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 func (z *ZClosure) dup() *ZClosure {
 	n := &ZClosure{}
 	n.code = z.code
+	n.name = z.name
+	n.class = z.class
+	n.start = z.start
+	n.end = z.end
+	n.rref = z.rref
 
 	if z.args != nil {
 		n.args = make([]*phpv.FuncArg, len(z.args))
@@ -215,11 +248,13 @@ func (z *ZClosure) dup() *ZClosure {
 	if z.use != nil {
 		n.use = make([]*phpv.FuncUse, len(z.use))
 		for k, v := range z.use {
-			n.use[k] = v
+			// deep copy so each closure instance has its own FuncUse
+			u := *v
+			n.use[k] = &u
 		}
 	}
 
-	return z
+	return n
 }
 
 func (z *ZClosure) GetClass() phpv.ZClass {

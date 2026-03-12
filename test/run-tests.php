@@ -49,7 +49,7 @@ Options:
 
     -w <file>   Write a list of all failed tests to <file>.
 
-    -a <file>   Same as -w but append rather then truncating <file>.
+    -a <file>   Same as -w but append rather than truncating <file>.
 
     -W <file>   Write a list of all tests and their result status to <file>.
 
@@ -90,7 +90,7 @@ Options:
     --temp-source <sdir>  --temp-target <tdir> [--temp-urlbase <url>]
                 Write temporary files to <tdir> by replacing <sdir> from the
                 filenames to generate with <tdir>. In general you want to make
-                <sdir> the path to your source files and <tdir> some patch in
+                <sdir> the path to your source files and <tdir> some path in
                 your web page hierarchy with <url> pointing to <tdir>.
 
     --keep-[all|php|skip|clean]
@@ -272,12 +272,12 @@ function main(): void
         'disable_functions=',
         'output_buffering=Off',
         'error_reporting=' . E_ALL,
+        'fatal_error_backtraces=Off',
         'display_errors=1',
         'display_startup_errors=1',
         'log_errors=0',
         'html_errors=0',
         'track_errors=0',
-        'report_memleaks=1',
         'report_zend_debug=0',
         'docref_root=',
         'docref_ext=.html',
@@ -601,7 +601,7 @@ function main(): void
                     $show_progress = false;
                     break;
                 case '--version':
-                    echo '$Id: 2c6db0d7e2df015ea8ce282ca4de40c8a2c4b121 $' . "\n";
+                    echo '$Id: 634beffa533ca87f6263ed451b8d1b0e38a45ba8 $' . "\n";
                     exit(1);
 
                 default:
@@ -648,6 +648,12 @@ function main(): void
         $environment['SKIP_ONLINE_TESTS'] = $online ? '0' : '1';
     }
 
+    if (!defined('STDIN') || !stream_isatty(STDIN)
+     || !defined('STDOUT') || !stream_isatty(STDOUT)
+     || !defined('STDERR') || !stream_isatty(STDERR)) {
+        $environment['SKIP_IO_CAPTURE_TESTS'] = '1';
+    }
+
     if ($selected_tests && count($test_files) === 0) {
         echo "No tests found.\n";
         return;
@@ -687,11 +693,16 @@ function main(): void
     // Run selected tests.
     $test_cnt = count($test_files);
 
+    if ($test_cnt === 1) {
+        $cfg['show']['diff'] = true;
+    }
+
     verify_config($php);
     write_information($user_tests, $phpdbg);
 
     if ($test_cnt) {
-        putenv('NO_INTERACTION=1');
+        $exts_tested = [];
+        $exts_skipped = [];
         usort($test_files, "test_sort");
         $start_time = hrtime(true);
 
@@ -770,7 +781,7 @@ function main(): void
         show_end($start_timestamp, $start_time, $end_time);
         show_summary();
 
-        save_results($output_file, /* prompt_to_save_results: */ true);
+        save_results($output_file, /* prompt_to_save_results: */ !$just_save_results);
     }
 
     $junit->saveXML();
@@ -804,7 +815,7 @@ function write_information(array $user_tests, $phpdbg): void
 
     // Get info from php
     $info_file = __DIR__ . '/run-test-info.php';
-    // @unlink($info_file);
+    @unlink($info_file);
     $php_info = '<?php echo "
 PHP_SAPI    : " , PHP_SAPI , "
 PHP_VERSION : " , phpversion() , "
@@ -840,7 +851,7 @@ More .INIs  : " , (function_exists(\'php_ini_scanned_files\') ? str_replace("\n"
     if (function_exists('opcache_invalidate')) {
         opcache_invalidate($info_file, true);
     }
-    // @unlink($info_file);
+    @unlink($info_file);
 
     // load list of enabled and loadable extensions
     save_text($info_file, <<<'PHP'
@@ -875,7 +886,7 @@ More .INIs  : " , (function_exists(\'php_ini_scanned_files\') ? str_replace("\n"
     if (function_exists('opcache_invalidate')) {
         opcache_invalidate($info_file, true);
     }
-    // @unlink($info_file);
+    @unlink($info_file);
 
     // Write test context information.
     echo "
@@ -896,7 +907,7 @@ function save_results(string $output_file, bool $prompt_to_save_results): void
 {
     global $sum_results, $failed_test_summary, $PHP_FAILED_TESTS, $php;
 
-    if (getenv('NO_INTERACTION')) {
+    if (getenv('NO_INTERACTION') && $prompt_to_save_results) {
         return;
     }
 
@@ -1231,7 +1242,7 @@ function system_with_timeout(
 
 function run_all_tests(array $test_files, array $env, ?string $redir_tested = null): void
 {
-    global $test_results, $failed_tests_file, $result_tests_file, $php, $test_idx, $file_cache;
+    global $test_results, $failed_tests_file, $result_tests_file, $php, $test_idx, $file_cache, $shuffle;
     global $preload;
     // Parallel testing
     global $PHP_FAILED_TESTS, $workers, $workerID, $workerSock;
@@ -1251,6 +1262,11 @@ function run_all_tests(array $test_files, array $env, ?string $redir_tested = nu
             }
             return true;
         });
+    }
+
+    // To discover parallelization issues and order dependent tests it is useful to randomize the test order.
+    if ($shuffle) {
+        shuffle($test_files);
     }
 
     /* Ignore -jN if there is only one file to analyze. */
@@ -1358,11 +1374,8 @@ function run_all_tests_parallel(array $test_files, array $env, ?string $redir_te
     // Some tests assume that they are executed in a certain order. We will be popping from
     // $test_files, so reverse its order here. This makes sure that order is preserved at least
     // for tests with a common conflict key.
-    $test_files = array_reverse($test_files);
-
-    // To discover parallelization issues it is useful to randomize the test order.
-    if ($shuffle) {
-        shuffle($test_files);
+    if (!$shuffle) {
+        $test_files = array_reverse($test_files);
     }
 
     // Don't start more workers than test files.
@@ -1809,8 +1822,8 @@ function run_test(string $php, $file, array $env): string
         $skipCache = new SkipCache($enableSkipCache, $cfg['keep']['skip']);
     }
 
-    $orig_php = $php;
     $php = escapeshellarg($php);
+    $orig_php = $php;
 
     $retried = false;
 retry:
@@ -1931,6 +1944,7 @@ TEST $file
     $diff_filename = $temp_dir . DIRECTORY_SEPARATOR . $main_file_name . 'diff';
     $log_filename = $temp_dir . DIRECTORY_SEPARATOR . $main_file_name . 'log';
     $exp_filename = $temp_dir . DIRECTORY_SEPARATOR . $main_file_name . 'exp';
+    $stdin_filename = $temp_dir . DIRECTORY_SEPARATOR . $main_file_name . 'stdin';
     $output_filename = $temp_dir . DIRECTORY_SEPARATOR . $main_file_name . 'out';
     $memcheck_filename = $temp_dir . DIRECTORY_SEPARATOR . $main_file_name . 'mem';
     $sh_filename = $temp_dir . DIRECTORY_SEPARATOR . $main_file_name . 'sh';
@@ -1969,6 +1983,7 @@ TEST $file
     @unlink($diff_filename);
     @unlink($log_filename);
     @unlink($exp_filename);
+    @unlink($stdin_filename);
     @unlink($output_filename);
     @unlink($memcheck_filename);
     @unlink($sh_filename);
@@ -2693,6 +2708,16 @@ COMMAND $cmd
             $diff = generate_diff($wanted, $wanted_re, $output);
         }
 
+        // write .stdin
+        if ($test->hasSection('STDIN') || $test->hasSection('PHPDBG')) {
+            $stdin = $test->hasSection('STDIN')
+                ? $test->getSection('STDIN')
+                : $test->getSection('PHPDBG') . "\n";
+            if (file_put_contents($stdin_filename, $stdin) === false) {
+                error("Cannot create test stdin - $stdin_filename");
+            }
+        }
+
         if (is_array($IN_REDIRECT)) {
             $orig_shortname = str_replace(TEST_PHP_SRCDIR . '/', '', $file);
             $diff = "# original source file: $orig_shortname\n" . $diff;
@@ -2720,8 +2745,14 @@ $output
     if (!$passed || $leaked) {
         // write .sh
         if (strpos($log_format, 'S') !== false) {
-            $env_lines = [];
+            // Unset all environment variables so that we don't inherit extra
+            // ones from the parent process.
+            $env_lines = ['unset $(env | cut -d= -f1)'];
             foreach ($env as $env_var => $env_val) {
+                if (strval($env_val) === '') {
+                    // proc_open does not pass empty env vars
+                    continue;
+                }
                 $env_lines[] = "export $env_var=" . escapeshellarg($env_val ?? "");
             }
             $exported_environment = "\n" . implode("\n", $env_lines) . "\n";
@@ -2730,7 +2761,7 @@ $output
 {$exported_environment}
 case "$1" in
 "gdb")
-    gdb --args {$orig_cmd}
+    gdb -ex 'unset environment LINES' -ex 'unset environment COLUMNS' --args {$orig_cmd}
     ;;
 "lldb")
     lldb -- {$orig_cmd}
@@ -2780,6 +2811,11 @@ function is_flaky(TestFile $test): bool
 {
     if ($test->hasSection('FLAKY')) {
         return true;
+    }
+    if ($test->hasSection('SKIPIF')) {
+        if (strpos($test->getSection('SKIPIF'), 'SKIP_PERF_SENSITIVE') !== false) {
+            return true;
+        }
     }
     if (!$test->hasSection('FILE')) {
         return false;
@@ -3070,18 +3106,6 @@ SLOW TEST SUMMARY
         $failed_test_summary .= "=====================================================================\n";
     }
 
-    if (count($PHP_FAILED_TESTS['XFAILED'])) {
-        $failed_test_summary .= '
-=====================================================================
-EXPECTED FAILED TEST SUMMARY
----------------------------------------------------------------------
-';
-        foreach ($PHP_FAILED_TESTS['XFAILED'] as $failed_test_data) {
-            $failed_test_summary .= $failed_test_data['test_name'] . $failed_test_data['info'] . "\n";
-        }
-        $failed_test_summary .= "=====================================================================\n";
-    }
-
     if (count($PHP_FAILED_TESTS['BORKED'])) {
         $failed_test_summary .= '
 =====================================================================
@@ -3126,19 +3150,6 @@ LEAKED TEST SUMMARY
 ---------------------------------------------------------------------
 ';
         foreach ($PHP_FAILED_TESTS['LEAKED'] as $failed_test_data) {
-            $failed_test_summary .= $failed_test_data['test_name'] . $failed_test_data['info'] . "\n";
-        }
-
-        $failed_test_summary .= "=====================================================================\n";
-    }
-
-    if (count($PHP_FAILED_TESTS['XLEAKED'])) {
-        $failed_test_summary .= '
-=====================================================================
-EXPECTED LEAK TEST SUMMARY
----------------------------------------------------------------------
-';
-        foreach ($PHP_FAILED_TESTS['XLEAKED'] as $failed_test_data) {
             $failed_test_summary .= $failed_test_data['test_name'] . $failed_test_data['info'] . "\n";
         }
 

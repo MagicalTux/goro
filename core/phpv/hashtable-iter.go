@@ -20,6 +20,31 @@ func (z *zhashtableIterator) Current(ctx Context) (*ZVal, error) {
 	return value, nil
 }
 
+// CurrentRef returns the actual *ZVal stored in the hash table without copying,
+// used by var_dump to detect references
+func (z *zhashtableIterator) CurrentRef(ctx Context) (*ZVal, error) {
+	if !z.Valid(ctx) {
+		return nil, nil
+	}
+	return z.cur.v, nil
+}
+
+// CurrentMakeRef converts the current hash table entry into a reference and
+// returns a new ZVal that shares the same inner reference, enabling foreach &$v
+func (z *zhashtableIterator) CurrentMakeRef(ctx Context) (*ZVal, error) {
+	if !z.Valid(ctx) {
+		return nil, nil
+	}
+	v := z.cur.v
+	if !v.IsRef() {
+		// Wrap the value in a shared inner ZVal to create a reference
+		inner := NewZVal(v.v)
+		v.v = inner // hash table entry is now a reference
+	}
+	// Return a new reference pointing to the same inner value
+	return NewZVal(v.v.(*ZVal)), nil
+}
+
 func (z *zhashtableIterator) Key(ctx Context) (*ZVal, error) {
 	if !z.Valid(ctx) {
 		return nil, nil

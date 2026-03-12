@@ -73,7 +73,10 @@ type GlobalContext interface {
 	RegisterShutdownFunction(f Callable)
 
 	RegisterClass(name ZString, c ZClass) error
+	UnregisterClass(name ZString)
 	GetClass(ctx Context, name ZString, autoload bool) (ZClass, error)
+	SetCompilingClass(c ZClass)
+	GetCompilingClass() ZClass
 
 	RegisterAutoload(handler Callable)
 	UnregisterAutoload(handler Callable) bool
@@ -108,13 +111,18 @@ type GlobalContext interface {
 
 	GetUserErrorHandler() (Callable, PhpErrorType)
 	SetUserErrorHandler(Callable, PhpErrorType)
+	SetUserExceptionHandler(handler Callable) Callable
 
 	WriteErr(p []byte) (n int, err error)
 	ShownDeprecated(key string) bool
 
 	NextResourceID() int
+	NextObjectID() int
 
 	GetDeclaredClasses() []ZString
+
+	RegisterDestructor(obj ZObject)
+	UnregisterDestructor(obj ZObject)
 }
 
 type FuncContext interface {

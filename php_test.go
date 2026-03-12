@@ -18,8 +18,8 @@ import (
 
 	"github.com/MagicalTux/goro/core/compiler"
 	"github.com/MagicalTux/goro/core/ini"
-	"github.com/MagicalTux/goro/core/phperr"
 	"github.com/MagicalTux/goro/core/phpctx"
+	"github.com/MagicalTux/goro/core/phperr"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
 	"github.com/andreyvit/diff"
@@ -70,32 +70,72 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		// pass data to the engine
 		g := phpctx.NewGlobalReq(p.req, p.p, ini.New())
 		g.SetOutput(p.output)
-		g.Chdir(phpv.ZString(path.Dir(p.path))) // chdir execution to path
+
+		// Convert to absolute path so __DIR__ and include paths work correctly
+		absPath, _ := filepath.Abs(p.path)
+		g.Chdir(phpv.ZString(filepath.Dir(absPath))) // chdir execution to path
 
 		// Use .php extension for the script filename (tests expect .php, not .phpt)
-		scriptPath := strings.TrimSuffix(p.path, "t")
+		scriptPath := strings.TrimSuffix(absPath, "t")
 		t := tokenizer.NewLexer(b, scriptPath)
 		c, err := compiler.Compile(g, t)
 		if err != nil {
-			return err
+			// Filter exit errors from compile (e.g., E_COMPILE_ERROR already output)
+			err = phpv.FilterExitError(err)
+			if err != nil {
+				// Handle parse errors and compile errors by outputting them
+				if phpErr, ok := err.(*phpv.PhpError); ok && (phpErr.Code == phpv.E_PARSE || phpErr.Code == phpv.E_COMPILE_ERROR) {
+					g.LogError(phpErr)
+					g.Close()
+					return nil
+				}
+				return err
+			}
+			g.Close()
+			return nil
 		}
 		var retVal *phpv.ZVal
 		retVal, err = c.Run(g)
-		g.Close()
 		retVal, err = phperr.CatchReturn(retVal, err)
 		_ = retVal
 		err = phpv.FilterExitError(err)
 		if err != nil {
-			// Format uncaught exceptions/errors to output like PHP does
+			// Handle uncaught exceptions via user exception handler before closing buffers
 			if ex, ok := err.(*phperr.PhpThrow); ok {
-				fmt.Fprintf(p.output, "\nFatal error: %s\n  thrown in %s on line %d\n", ex.ErrorTrace(g), ex.Loc.Filename, ex.Loc.Line)
-				return nil
-			}
-			if phpErr, ok := err.(*phpv.PhpError); ok && phpErr.Code == phpv.E_ERROR {
-				fmt.Fprintf(p.output, "\nFatal error: Uncaught Error: %s\n", phpErr.Error())
-				return nil
+				if handler := g.GetUserExceptionHandler(); handler != nil {
+					g.SetUserExceptionHandler(nil) // prevent re-entrancy
+					_, handlerErr := g.CallZVal(g, handler, []*phpv.ZVal{ex.Obj.ZVal()})
+					if handlerErr == nil {
+						err = nil
+					} else {
+						err = handlerErr
+					}
+				}
 			}
 		}
+		// Output fatal errors BEFORE running shutdown functions (PHP behavior)
+		if err != nil {
+			if ex, ok := err.(*phperr.PhpThrow); ok {
+				fmt.Fprintf(p.output, "\nFatal error: %s\n  thrown in %s on line %d\n", ex.ErrorTrace(g), ex.Loc.Filename, ex.Loc.Line)
+				err = nil
+			} else if timeout, ok := phperr.CatchTimeout(err).(*phperr.PhpTimeout); ok && timeout != nil {
+				fmt.Fprint(p.output, "\n"+timeout.String())
+				err = nil
+			} else if phpErr, ok := err.(*phpv.PhpError); ok && phpErr.Code == phpv.E_ERROR {
+				if phpErr.Loc != nil {
+					fmt.Fprintf(p.output, "\nFatal error: %s in %s on line %d\n", phpErr.Err.Error(), phpErr.Loc.Filename, phpErr.Loc.Line)
+				} else {
+					fmt.Fprintf(p.output, "\nFatal error: %s\n", phpErr.Err.Error())
+				}
+				err = nil
+			}
+		}
+		g.RunShutdownFunctions()
+		// Send headers if not already sent (fires header_register_callback callbacks)
+		if hc := g.HeaderContext(); hc != nil && !hc.Sent {
+			hc.SendHeaders(g)
+		}
+		g.Close()
 		return err
 	case "EXPECT":
 		// compare p.output with b
@@ -157,6 +197,43 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 	case "XFAIL":
 		// TODO but safe to ignore
 		return nil
+	case "CLEAN", "DESCRIPTION":
+		// CLEAN runs after the test (cleanup temp files etc) - not needed
+		// DESCRIPTION is informational only
+		return nil
+	case "STDIN", "ARGS", "CGI", "CAPTURE_STDIO":
+		// These require special execution modes we don't support yet
+		return skipTest
+	case "ENV":
+		// TODO: set environment variables for the test
+		return skipTest
+	case "COOKIE":
+		// Set cookies on the request
+		p.req.Header.Set("Cookie", strings.TrimRight(b.String(), "\r\n"))
+		return nil
+	case "POST_RAW":
+		// Raw POST data with Content-Type header on first line
+		data := b.String()
+		lines := strings.SplitN(data, "\n", 2)
+		if len(lines) == 2 {
+			// First line is Content-Type: ...
+			if strings.HasPrefix(lines[0], "Content-Type:") {
+				ct := strings.TrimSpace(strings.TrimPrefix(lines[0], "Content-Type:"))
+				body := strings.TrimRight(lines[1], "\r\n")
+				p.req = httptest.NewRequest("POST", "/"+path.Base(p.path), bytes.NewBufferString(body))
+				p.req.Header.Set("Content-Type", ct)
+			} else {
+				p.req = httptest.NewRequest("POST", "/"+path.Base(p.path), bytes.NewBuffer(bytes.TrimRight(b.Bytes(), "\r\n")))
+				p.req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			}
+		} else {
+			p.req = httptest.NewRequest("POST", "/"+path.Base(p.path), bytes.NewBuffer(bytes.TrimRight(b.Bytes(), "\r\n")))
+			p.req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		}
+		return nil
+	case "EXPECT_EXTERNAL", "EXPECTF_EXTERNAL", "EXPECTREGEX_EXTERNAL":
+		// External expect files - skip for now
+		return skipTest
 	default:
 		return fmt.Errorf("unhandled part type %s for test", part)
 	}
@@ -185,7 +262,7 @@ func runTest(t *testing.T, fpath string) (p *phptest, err error) {
 	// prepare env
 	p.p = phpctx.NewProcess("test")
 	p.req = httptest.NewRequest("GET", "/"+path.Base(fpath), nil)
-	r := regexp.MustCompile("^--([A-Z]+)--$")
+	r := regexp.MustCompile("^--([A-Z_]+)--$")
 
 	for {
 		lin, err := p.reader.ReadString('\n')

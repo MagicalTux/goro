@@ -2,12 +2,26 @@ package compiler
 
 import (
 	"fmt"
+	"math"
+	"math/big"
 	"path"
 	"strconv"
 
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
+
+// parseBigLiteral parses a binary, hex, or octal literal that overflows uint64
+// into a float64 value, matching PHP's behavior.
+func parseBigLiteral(s string) float64 {
+	var bi big.Int
+	_, ok := bi.SetString(s, 0)
+	if !ok {
+		return math.Inf(1)
+	}
+	f, _ := new(big.Float).SetInt(&bi).Float64()
+	return f
+}
 
 // an expression is:
 
@@ -80,6 +94,27 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			return &runZVal{phpv.ZInt(v), l}, nil
 		}
 		// if ParseInt failed, try to parse as float (value too large?)
+		// For binary/hex/octal with prefix, ParseFloat doesn't work, so use ParseUint then convert
+		if len(i.Data) > 2 && i.Data[0] == '0' && (i.Data[1] == 'b' || i.Data[1] == 'B' ||
+			i.Data[1] == 'x' || i.Data[1] == 'X' ||
+			i.Data[1] == 'o' || i.Data[1] == 'O') {
+			uv, uerr := strconv.ParseUint(i.Data, 0, 64)
+			if uerr == nil {
+				return &runZVal{phpv.ZFloat(float64(uv)), l}, nil
+			}
+			// truly huge: parse manually for float approximation
+			f := parseBigLiteral(i.Data)
+			return &runZVal{phpv.ZFloat(phpv.ZFloat(f)), l}, nil
+		}
+		// Try octal overflow (0...)
+		if len(i.Data) > 1 && i.Data[0] == '0' && i.Data[1] >= '0' && i.Data[1] <= '7' {
+			uv, uerr := strconv.ParseUint(i.Data, 0, 64)
+			if uerr == nil {
+				return &runZVal{phpv.ZFloat(float64(uv)), l}, nil
+			}
+			f := parseBigLiteral(i.Data)
+			return &runZVal{phpv.ZFloat(phpv.ZFloat(f)), l}, nil
+		}
 		fallthrough
 	case tokenizer.T_DNUMBER:
 		v, err := strconv.ParseFloat(i.Data, 64)
@@ -92,6 +127,47 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			return nil, err
 		}
 		return &runZVal{phpv.ZFloat(v), l}, nil
+	case tokenizer.T_NS_SEPARATOR:
+		// Fully-qualified name like \TypeError or \PHP_EOL
+		i, err = c.NextItem()
+		if err != nil {
+			return nil, err
+		}
+		if i.Type != tokenizer.T_STRING {
+			return nil, i.Unexpected()
+		}
+		// Build the full name (consume any further \Parts)
+		name := i.Data
+		for {
+			next, err := c.NextItem()
+			if err != nil {
+				return nil, err
+			}
+			if next.Type == tokenizer.T_NS_SEPARATOR {
+				part, err := c.NextItem()
+				if err != nil {
+					return nil, err
+				}
+				if part.Type != tokenizer.T_STRING {
+					return nil, part.Unexpected()
+				}
+				name += "\\" + part.Data
+			} else {
+				c.backup()
+				break
+			}
+		}
+		// Check if followed by :: (static access) or ( (function call)
+		next, err := c.NextItem()
+		if err != nil {
+			return nil, err
+		}
+		c.backup()
+		if next.Type == tokenizer.T_PAAMAYIM_NEKUDOTAYIM {
+			return &runZVal{phpv.ZString(name), l}, nil
+		}
+		// Strip leading namespace - goro doesn't do namespaces, so \Foo is just Foo
+		return &runConstant{name, l}, nil
 	case tokenizer.T_STRING:
 		// Peek ahead: if followed by ::, this is a class name, not a constant
 		next, err := c.NextItem()

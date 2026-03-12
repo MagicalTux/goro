@@ -182,7 +182,10 @@ func compileSwitch(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		if err != nil {
 			return nil, err
 		}
-		if !i.IsSingle(':') && !i.IsSingle(';') {
+		if i.IsSingle(';') {
+			// PHP 8.3+: semicolons after case/default are deprecated
+			c.Deprecated("Case statements followed by a semicolon (;) are deprecated, use a colon (:) instead")
+		} else if !i.IsSingle(':') {
 			return nil, i.Unexpected()
 		}
 

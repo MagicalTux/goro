@@ -3,6 +3,8 @@ package phpv
 import (
 	"iter"
 	"strconv"
+
+	"github.com/MagicalTux/goro/core/logopt"
 )
 
 // php arrays work with two kind of keys
@@ -13,11 +15,24 @@ type ZArray struct {
 	h *ZHashTable
 }
 
+// isNilKey checks if a Val represents "no key specified" (nil interface or nil *ZVal pointer),
+// as opposed to an actual null value used as a key. In PHP, $arr[] uses nil to mean "append",
+// while $arr[null] uses a ZNull-typed value to mean key "".
+func isNilKey(key Val) bool {
+	if key == nil {
+		return true
+	}
+	if zv, ok := key.(*ZVal); ok && zv == nil {
+		return true
+	}
+	return false
+}
+
 // php array will use integer keys for integer values and integer-looking strings
 func getArrayKeyValue(s Val) (ZInt, ZString, bool) {
 	switch s.GetType() {
 	case ZtNull:
-		return ZInt(0), "", true
+		return 0, "", false
 	case ZtBool:
 		if s.Value().(ZBool) {
 			return ZInt(1), "", true
@@ -92,7 +107,7 @@ func (a *ZArray) HasStringKeys() bool {
 }
 
 func (a *ZArray) OffsetGet(ctx Context, key Val) (*ZVal, error) {
-	if key == nil || key.GetType() == ZtNull {
+	if isNilKey(key) {
 		return nil, ctx.Errorf("Cannot use [] for reading")
 	}
 
@@ -103,6 +118,28 @@ func (a *ZArray) OffsetGet(ctx Context, key Val) (*ZVal, error) {
 	} else {
 		return a.h.GetString(zs), nil
 	}
+}
+
+// OffsetGetWarn is like OffsetGet but produces a warning for undefined keys (used by user-level array access)
+func (a *ZArray) OffsetGetWarn(ctx Context, key Val) (*ZVal, error) {
+	if isNilKey(key) {
+		return nil, ctx.Errorf("Cannot use [] for reading")
+	}
+
+	zi, zs, isint := getArrayKeyValue(key)
+
+	if isint {
+		if !a.h.HasInt(zi) {
+			ctx.Warn("Undefined array key %d", zi, logopt.NoFuncName(true))
+			return ZNULL.ZVal(), nil
+		}
+		return a.h.GetInt(zi), nil
+	}
+	if !a.h.HasString(zs) {
+		ctx.Warn("Undefined array key \"%s\"", zs, logopt.NoFuncName(true))
+		return ZNULL.ZVal(), nil
+	}
+	return a.h.GetString(zs), nil
 }
 
 func (a *ZArray) OffsetKeyAt(ctx Context, index int) (*ZVal, error) {
@@ -128,7 +165,7 @@ func (a *ZArray) OffsetAt(ctx Context, index int) (*ZVal, *ZVal, error) {
 }
 
 func (a *ZArray) OffsetCheck(ctx Context, key Val) (*ZVal, bool, error) {
-	if key == nil || key.GetType() == ZtNull {
+	if isNilKey(key) {
 		return nil, false, ctx.Errorf("Cannot use [] for reading")
 	}
 
@@ -142,7 +179,7 @@ func (a *ZArray) OffsetCheck(ctx Context, key Val) (*ZVal, bool, error) {
 }
 
 func (a *ZArray) OffsetSet(ctx Context, key Val, value *ZVal) error {
-	if key == nil || key.GetType() == ZtNull {
+	if isNilKey(key) {
 		err := a.h.Append(value)
 		return err
 	}
@@ -160,7 +197,7 @@ func (a *ZArray) OffsetSet(ctx Context, key Val, value *ZVal) error {
 }
 
 func (a *ZArray) OffsetUnset(ctx Context, key Val) error {
-	if key == nil || key.GetType() == ZtNull {
+	if isNilKey(key) {
 		return ctx.Errorf("Cannot use [] for unset")
 	}
 
@@ -182,7 +219,7 @@ func (a *ZArray) OffsetContains(ctx Context, val Val) (bool, error) {
 }
 
 func (a *ZArray) OffsetExists(ctx Context, key Val) (bool, error) {
-	if key == nil || key.GetType() == ZtNull {
+	if isNilKey(key) {
 		return false, ctx.Errorf("Cannot use [] for isset")
 	}
 

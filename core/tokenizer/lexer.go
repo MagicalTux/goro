@@ -7,6 +7,8 @@ import (
 	"io"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/MagicalTux/goro/core/phpv"
 )
 
 const eof = rune(-1)
@@ -87,7 +89,11 @@ func (l *Lexer) NextItem() (*Item, error) {
 		return &Item{Type: T_EOF}, nil
 	}
 	if i.Type == itemError {
-		return nil, i.Errorf(i.Data)
+		return nil, &phpv.PhpError{
+			Err:  fmt.Errorf("%s", i.Data),
+			Code: phpv.E_PARSE,
+			Loc:  i.Loc(),
+		}
 	}
 	return i, nil
 }
@@ -302,7 +308,7 @@ func (l *Lexer) acceptPhpLabel() string {
 	labelStart := l.output.Len()
 	c := l.next()
 	switch {
-	case 'a' <= c && c <= 'z', 'A' <= c && c <= 'Z', c == '_', 0x7f <= c:
+	case 'a' <= c && c <= 'z', 'A' <= c && c <= 'Z', c == '_', 0x80 <= c:
 	default:
 		l.backup()
 		// we didn't read a single char
@@ -312,7 +318,7 @@ func (l *Lexer) acceptPhpLabel() string {
 	for {
 		c := l.next()
 		switch {
-		case 'a' <= c && c <= 'z', 'A' <= c && c <= 'Z', '0' <= c && c <= '9', c == '_', 0x7f <= c:
+		case 'a' <= c && c <= 'z', 'A' <= c && c <= 'Z', '0' <= c && c <= '9', c == '_', 0x80 <= c:
 		default:
 			l.backup()
 			return l.output.String()[labelStart:]

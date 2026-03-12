@@ -21,7 +21,7 @@ func stdFuncVarDump(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 func doVarDump(ctx phpv.Context, z *phpv.ZVal, linePfx string, recurs map[uintptr]bool) error {
 	var isRef string
-	if z.IsRef() && z.GetType() != phpv.ZtObject {
+	if z.IsRef() && z.GetType() != phpv.ZtObject && linePfx != "" {
 		isRef = "&"
 	}
 
@@ -56,8 +56,9 @@ func doVarDump(ctx phpv.Context, z *phpv.ZVal, linePfx string, recurs map[uintpt
 	case phpv.ZtInt:
 		fmt.Fprintf(ctx, "%s%sint(%d)\n", linePfx, isRef, z.Value())
 	case phpv.ZtFloat:
-		z2, _ := z.As(ctx, phpv.ZtString)
-		fmt.Fprintf(ctx, "%s%sfloat(%s)\n", linePfx, isRef, z2)
+		// PHP uses serialize_precision=-1 by default for var_dump since PHP 7.1
+		s := phpv.FormatFloat(float64(z.Value().(phpv.ZFloat)))
+		fmt.Fprintf(ctx, "%s%sfloat(%s)\n", linePfx, isRef, s)
 	case phpv.ZtString:
 		s := z.Value().(phpv.ZString)
 		fmt.Fprintf(ctx, "%s%sstring(%d) \"%s\"\n", linePfx, isRef, len(s), s)
@@ -66,6 +67,10 @@ func doVarDump(ctx phpv.Context, z *phpv.ZVal, linePfx string, recurs map[uintpt
 		fmt.Fprintf(ctx, "%s%sarray(%d) {\n", linePfx, isRef, c)
 		localPfx := linePfx + "  "
 		it := z.NewIterator()
+		type refIterator interface {
+			CurrentRef(phpv.Context) (*phpv.ZVal, error)
+		}
+		ri, hasRef := it.(refIterator)
 		for {
 			if !it.Valid(ctx) {
 				break
@@ -79,7 +84,12 @@ func doVarDump(ctx phpv.Context, z *phpv.ZVal, linePfx string, recurs map[uintpt
 			} else {
 				fmt.Fprintf(ctx, "%s[\"%s\"]=>\n", localPfx, k)
 			}
-			v, err := it.Current(ctx)
+			var v *phpv.ZVal
+			if hasRef {
+				v, err = ri.CurrentRef(ctx)
+			} else {
+				v, err = it.Current(ctx)
+			}
 			if err != nil {
 				return err
 			}
@@ -101,21 +111,16 @@ func doVarDump(ctx phpv.Context, z *phpv.ZVal, linePfx string, recurs map[uintpt
 		if obj, ok := v.(*phpobj.ZObject); ok {
 			for prop := range obj.IterProps(ctx) {
 				suffix := ""
-				printed := false
-				if ok {
-					switch {
-					case prop.Modifiers.IsPrivate():
-						className := string(obj.Class.GetName())
-						suffix = `:"` + className + `":private`
-					case prop.Modifiers.IsProtected():
-						suffix = ":protected"
-					}
+				switch {
+				case prop.Modifiers.IsPrivate():
+					className := string(obj.GetDeclClassName(prop))
+					suffix = `:"` + className + `":private`
+				case prop.Modifiers.IsProtected():
+					suffix = ":protected"
 				}
-				if !printed {
-					fmt.Fprintf(ctx, "%s[\"%s\"%s]=>\n", localPfx, prop.VarName, suffix)
-				}
+				fmt.Fprintf(ctx, "%s[\"%s\"%s]=>\n", localPfx, prop.VarName, suffix)
 
-				v := z.HashTable().GetString(prop.VarName)
+				v := obj.GetPropValue(prop)
 				doVarDump(ctx, v, localPfx, recurs)
 			}
 		} else {

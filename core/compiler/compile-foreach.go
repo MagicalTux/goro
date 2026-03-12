@@ -4,8 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"iter"
 
 	"github.com/MagicalTux/goro/core/phperr"
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
@@ -24,7 +26,82 @@ func (r *runnableForeach) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 		return nil, err
 	}
 
-	it := z.NewIterator()
+	if z.GetType() != phpv.ZtArray && z.GetType() != phpv.ZtObject {
+		typeName := z.GetType().TypeName()
+		if z.GetType() == phpv.ZtBool {
+			if z.AsBool(ctx) {
+				typeName = "true"
+			} else {
+				typeName = "false"
+			}
+		}
+		phpErr := r.l.Error(ctx, fmt.Errorf("foreach() argument must be of type array|object, %s given", typeName), phpv.E_WARNING)
+		ctx.LogError(phpErr)
+		return nil, nil
+	}
+
+	var it phpv.ZIterator
+	if z.GetType() == phpv.ZtObject {
+		obj, ok := z.Value().(*phpobj.ZObject)
+		if ok {
+			if obj.GetClass().Implements(phpobj.IteratorAggregate) {
+				// Call getIterator() to get the Iterator object
+				iterResult, err := obj.CallMethod(ctx, "getIterator")
+				if err != nil {
+					return nil, err
+				}
+				iteratorErr := func(className phpv.ZString) error {
+					return phpobj.ThrowErrorAt(ctx, phpobj.Exception, fmt.Sprintf("Objects returned by %s::getIterator() must be traversable or implement interface Iterator", className), r.l)
+				}
+				if iterResult == nil || iterResult.GetType() != phpv.ZtObject {
+					return nil, iteratorErr(obj.GetClass().GetName())
+				}
+				iterObj, ok := iterResult.Value().(*phpobj.ZObject)
+				if !ok {
+					return nil, iteratorErr(obj.GetClass().GetName())
+				}
+				// Recursively unwrap nested IteratorAggregates
+				for iterObj.GetClass().Implements(phpobj.IteratorAggregate) && !iterObj.GetClass().Implements(phpobj.Iterator) {
+					iterResult, err = iterObj.CallMethod(ctx, "getIterator")
+					if err != nil {
+						return nil, err
+					}
+					if iterResult == nil || iterResult.GetType() != phpv.ZtObject {
+						return nil, iteratorErr(iterObj.GetClass().GetName())
+					}
+					iterObj, ok = iterResult.Value().(*phpobj.ZObject)
+					if !ok {
+						return nil, iteratorErr(obj.GetClass().GetName())
+					}
+				}
+				if !iterObj.GetClass().Implements(phpobj.Iterator) {
+					return nil, iteratorErr(obj.GetClass().GetName())
+				}
+				if r.ref {
+					return nil, phpobj.ThrowError(ctx, phpobj.Error, "An iterator cannot be used with foreach by reference")
+				}
+				it = &phpObjectIterator{ctx: ctx, obj: iterObj, started: false}
+			} else if obj.GetClass().Implements(phpobj.Iterator) {
+				if r.ref {
+					return nil, phpobj.ThrowError(ctx, phpobj.Error, "An iterator cannot be used with foreach by reference")
+				}
+				it = &phpObjectIterator{ctx: ctx, obj: obj, started: false}
+			}
+		}
+	}
+	if it == nil {
+		// For objects, use scope-aware iteration to handle property visibility
+		if z.GetType() == phpv.ZtObject {
+			if obj, ok := z.Value().(*phpobj.ZObject); ok {
+				// Use the defining class of the current method as the scope
+				scope := ctx.Class()
+				it = obj.NewIteratorInScope(scope)
+			}
+		}
+		if it == nil {
+			it = z.NewIterator()
+		}
+	}
 	if it == nil {
 		return nil, nil
 	}
@@ -36,6 +113,25 @@ func (r *runnableForeach) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 		}
 
 		if !it.Valid(ctx) {
+			break
+		}
+
+		var v *phpv.ZVal
+		if r.ref {
+			if ri, ok := it.(interface {
+				CurrentMakeRef(phpv.Context) (*phpv.ZVal, error)
+			}); ok {
+				v, err = ri.CurrentMakeRef(ctx)
+			} else {
+				v, err = it.Current(ctx)
+			}
+		} else {
+			v, err = it.Current(ctx)
+		}
+		if err != nil {
+			return nil, err
+		}
+		if v == nil {
 			break
 		}
 
@@ -51,19 +147,12 @@ func (r *runnableForeach) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 			}
 		}
 
-		v, err := it.Current(ctx)
-		if err != nil {
-			return nil, err
-		}
-		if v == nil {
-			break
-		}
-
 		if w, ok := r.v.(phpv.Writable); !ok {
 			return nil, errors.New("foreach value must be writable")
 		} else {
 			if r.ref {
-				w.WriteValue(ctx, v.Ref())
+				// v is already a reference from CurrentMakeRef
+				w.WriteValue(ctx, v)
 			} else {
 				w.WriteValue(ctx, v.Dup())
 			}
@@ -95,6 +184,98 @@ func (r *runnableForeach) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 		it.Next(ctx)
 	}
 	return nil, nil
+}
+
+// phpObjectIterator wraps a PHP Iterator object to implement phpv.ZIterator
+type phpObjectIterator struct {
+	ctx     phpv.Context
+	obj     *phpobj.ZObject
+	started bool
+	valid   bool
+	err     error
+}
+
+func (it *phpObjectIterator) ensureStarted() {
+	if !it.started {
+		it.started = true
+		_, it.err = it.obj.CallMethod(it.ctx, "rewind")
+		if it.err == nil {
+			v, err := it.obj.CallMethod(it.ctx, "valid")
+			if err != nil {
+				it.err = err
+				it.valid = false
+			} else {
+				it.valid = v != nil && bool(v.AsBool(it.ctx))
+			}
+		}
+	}
+}
+
+func (it *phpObjectIterator) Current(ctx phpv.Context) (*phpv.ZVal, error) {
+	it.ensureStarted()
+	if !it.valid {
+		return nil, nil
+	}
+	return it.obj.CallMethod(ctx, "current")
+}
+
+func (it *phpObjectIterator) Key(ctx phpv.Context) (*phpv.ZVal, error) {
+	it.ensureStarted()
+	if !it.valid {
+		return nil, nil
+	}
+	return it.obj.CallMethod(ctx, "key")
+}
+
+func (it *phpObjectIterator) Next(ctx phpv.Context) (*phpv.ZVal, error) {
+	it.ensureStarted()
+	_, err := it.obj.CallMethod(ctx, "next")
+	if err != nil {
+		return nil, err
+	}
+	v, err := it.obj.CallMethod(ctx, "valid")
+	if err != nil {
+		return nil, err
+	}
+	it.valid = v != nil && bool(v.AsBool(ctx))
+	return nil, nil
+}
+
+func (it *phpObjectIterator) Prev(ctx phpv.Context) (*phpv.ZVal, error) {
+	return nil, nil // Not supported for PHP iterators
+}
+
+func (it *phpObjectIterator) Reset(ctx phpv.Context) (*phpv.ZVal, error) {
+	it.started = false
+	it.ensureStarted()
+	return it.Current(ctx)
+}
+
+func (it *phpObjectIterator) ResetIfEnd(ctx phpv.Context) (*phpv.ZVal, error) {
+	return nil, nil
+}
+
+func (it *phpObjectIterator) End(ctx phpv.Context) (*phpv.ZVal, error) {
+	return nil, nil
+}
+
+func (it *phpObjectIterator) Valid(ctx phpv.Context) bool {
+	it.ensureStarted()
+	return it.valid
+}
+
+func (it *phpObjectIterator) Iterate(ctx phpv.Context) iter.Seq2[*phpv.ZVal, *phpv.ZVal] {
+	return func(yield func(*phpv.ZVal, *phpv.ZVal) bool) {
+		it.ensureStarted()
+		for it.valid {
+			key, _ := it.Key(ctx)
+			value, _ := it.Current(ctx)
+			if !yield(key, value) {
+				break
+			}
+			it.Next(ctx)
+		}
+	}
 }
 
 func (r *runnableForeach) Dump(w io.Writer) error {
@@ -232,6 +413,17 @@ func compileForeach(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		if _, ok := r.v.(*runDestructure); ok {
 			// foreach($arr as list(...) => $x) is invalid
 			return nil, i.Unexpected()
+		}
+
+		// If & was before the key (foreach($a as &$k => $v)), that's a fatal error
+		if r.ref {
+			phpErr := &phpv.PhpError{
+				Err:  fmt.Errorf("Key element cannot be a reference"),
+				Code: phpv.E_COMPILE_ERROR,
+				Loc:  l,
+			}
+			c.Global().LogError(phpErr)
+			return nil, phpv.ExitError(255)
 		}
 
 		// check for T_VARIABLE or T_LIST again

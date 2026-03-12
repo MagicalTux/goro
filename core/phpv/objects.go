@@ -14,6 +14,12 @@ type ZClassMethod struct {
 	Method    Callable
 	Class     ZClass
 	Empty     bool
+	Loc       *Loc
+}
+
+type ZClassConst struct {
+	Value     Val
+	Modifiers ZObjectAttr
 }
 
 type ZClassHandlers struct {
@@ -29,6 +35,8 @@ type ZClass interface {
 	GetStaticProps(ctx Context) (*ZHashTable, error)
 	GetProp(name ZString) (*ZClassProp, bool)
 	GetMethod(name ZString) (*ZClassMethod, bool)
+	GetMethods() map[ZString]*ZClassMethod
+	GetType() ZClassType
 	Handlers() *ZClassHandlers
 	GetParent() ZClass
 	NextInstanceID() int

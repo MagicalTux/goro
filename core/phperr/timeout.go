@@ -20,7 +20,7 @@ func (t *PhpTimeout) Error() string {
 }
 
 func (t *PhpTimeout) String() string {
-	return fmt.Sprintf("Fatal error: %s in %s on line %d\n\n", t.Error(), t.L.Filename, t.L.Line)
+	return fmt.Sprintf("Fatal error: %s in %s on line %d\n", t.Error(), t.L.Filename, t.L.Line)
 }
 
 func CatchTimeout(err error) error {

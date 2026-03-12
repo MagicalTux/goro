@@ -3,10 +3,12 @@ package core
 import (
 	"bytes"
 	"io"
+	"math"
 	"strconv"
 	"strings"
 	"unicode"
 
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -168,7 +170,7 @@ func ZFprintf(ctx phpv.Context, w printfWriter, format phpv.ZString, arg ...*php
 		var posSpec int
 		posSpec, in = readPositionSpecifier(in[1:])
 		if posSpec == 0 {
-			return bytesWritten.Value, ctx.Warn("Argument number must be greater than zero")
+			return bytesWritten.Value, phpobj.ThrowError(ctx, phpobj.ValueError, "Argument number specifier must be greater than zero and less than 2147483647")
 		} else if posSpec-1 >= len(arg) {
 			return bytesWritten.Value, ctx.Warn("Too few arguments")
 		}
@@ -233,19 +235,25 @@ func ZFprintf(ctx phpv.Context, w printfWriter, format phpv.ZString, arg ...*php
 			if err != nil {
 				goto Return
 			}
-			// this format option is not affected by the ini config precision
-			expPrecision := 6
+			f := float64(v.Value().(phpv.ZFloat))
+			if math.IsInf(f, 1) {
+				output = "INF"
+			} else if math.IsInf(f, -1) {
+				output = "-INF"
+			} else if math.IsNaN(f) {
+				output = "NAN"
+			} else {
+				// this format option is not affected by the ini config precision
+				expPrecision := 6
 
-			// In Go, the exponent has a leading 0 if it's less than 10
-			//   Go:  1.123456E+01
-			//   PHP: 1.123456E+1
-			output = strconv.FormatFloat(float64(v.Value().(phpv.ZFloat)), fChar, expPrecision, 64)
-			plusIndex := strings.LastIndexByte(output, '+')
-			if plusIndex >= 0 && plusIndex < len(output)-1 && output[plusIndex+1] == '0' {
-				// this code removes that leading 0, so the tests
-				// can pass, but probably could be removed later
-				// since it's not that important.
-				output = output[0:plusIndex+1] + output[plusIndex+2:]
+				// In Go, the exponent has a leading 0 if it's less than 10
+				//   Go:  1.123456E+01
+				//   PHP: 1.123456E+1
+				output = strconv.FormatFloat(f, fChar, expPrecision, 64)
+				plusIndex := strings.LastIndexByte(output, '+')
+				if plusIndex >= 0 && plusIndex < len(output)-1 && output[plusIndex+1] == '0' {
+					output = output[0:plusIndex+1] + output[plusIndex+2:]
+				}
 			}
 		case 'f', 'F':
 			signed = true
@@ -255,7 +263,16 @@ func ZFprintf(ctx phpv.Context, w printfWriter, format phpv.ZString, arg ...*php
 			if err != nil {
 				goto Return
 			}
-			output = strconv.FormatFloat(float64(v.Value().(phpv.ZFloat)), 'f', floatPrecision, 64)
+			f := float64(v.Value().(phpv.ZFloat))
+			if math.IsInf(f, 1) {
+				output = "INF"
+			} else if math.IsInf(f, -1) {
+				output = "-INF"
+			} else if math.IsNaN(f) {
+				output = "NAN"
+			} else {
+				output = strconv.FormatFloat(f, 'f', floatPrecision, 64)
+			}
 		case 'o':
 			// next arg is an int
 			v, err = v.As(ctx, phpv.ZtInt)

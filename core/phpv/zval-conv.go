@@ -148,7 +148,7 @@ func (z *ZVal) String() string {
 	case ZInt:
 		return strconv.FormatInt(int64(n), 10)
 	case ZFloat:
-		return strconv.FormatFloat(float64(n), 'G', -1, 64)
+		return FormatFloatPrecision(float64(n), 14)
 	case ZString:
 		return string(n)
 	}

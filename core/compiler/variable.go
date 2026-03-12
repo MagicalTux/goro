@@ -83,18 +83,33 @@ func (r *runVariable) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		switch t := r.Parent.(type) {
 		case *runOperator:
 			write = t.opD.write
+			// Suppress warnings for the left side of ?? (null coalescing)
+			if t.op == tokenizer.T_COALESCE {
+				write = true
+			}
 		case *runArrayAccess, *runnableForeach, *runDestructure:
 			write = true
 		case *runnableFunctionCall:
+			// Language constructs like echo/print never take references
+			switch t.name {
+			case "echo", "print":
+				write = false
+			default:
+				write = true
+			}
+		case *runnableFunctionCallRef, *runObjectFunc:
 			// functions that take references can be considered as "write",
 			// but the param info is not available here, just assume
 			// write is true, and let the functions themselves
 			// check for undefined variables.
 			write = true
+		case *runnableUnset:
+			// unset() on undefined variables is silently ignored
+			write = true
 		}
 
 		if !write {
-			if err := ctx.Notice("Undefined variable: %s",
+			if err := ctx.Warn("Undefined variable $%s",
 				varName, logopt.NoFuncName(true)); err != nil {
 				return phpv.ZNULL.ZVal(), err
 			}

@@ -5,6 +5,7 @@ import (
 	"unsafe"
 
 	"github.com/MagicalTux/goro/core/phpctx"
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -48,6 +49,11 @@ func fncDefine(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	_, err := Expand(ctx, args, &name, &value)
 	if err != nil {
 		return nil, err
+	}
+
+	// Class constants cannot be defined via define()
+	if strings.Contains(string(name), "::") {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "define(): Argument #1 ($constant_name) cannot be a class constant")
 	}
 
 	g := ctx.Global()

@@ -1,8 +1,14 @@
 package phperr
 
 import (
+	"errors"
+
 	"github.com/MagicalTux/goro/core/phpv"
 )
+
+// ErrHandledByUser is returned when a user error handler has handled the error.
+// Callers should not display the default error message when this is returned.
+var ErrHandledByUser = errors.New("handled by user error handler")
 
 func HandleUserError(ctx phpv.Context, err *phpv.PhpError) error {
 	var returnErr error = err
@@ -16,6 +22,10 @@ func HandleUserError(ctx phpv.Context, err *phpv.PhpError) error {
 	}
 
 	if errHandler != nil && err.CanBeUserHandled() {
+		// Temporarily disable the user error handler while it's being called
+		// to prevent re-entrancy (matching PHP behavior)
+		ctx.Global().SetUserErrorHandler(nil, 0)
+
 		args := []*phpv.ZVal{
 			phpv.ZInt(err.Code).ZVal(),
 			phpv.ZStr(err.Err.Error()),
@@ -24,6 +34,9 @@ func HandleUserError(ctx phpv.Context, err *phpv.PhpError) error {
 		}
 
 		proceed, err2 := ctx.CallZVal(ctx, errHandler, args)
+
+		// Restore the user error handler
+		ctx.Global().SetUserErrorHandler(errHandler, filterType)
 
 		if err2 != nil {
 			if e, ok := err2.(*PhpThrow); ok {
@@ -36,7 +49,8 @@ func HandleUserError(ctx phpv.Context, err *phpv.PhpError) error {
 			}
 			returnErr = err2
 		} else if bool(proceed.AsBool(ctx)) || err.IsNonFatal() {
-			returnErr = nil
+			// User handler handled the error - suppress default output
+			return ErrHandledByUser
 		}
 	}
 

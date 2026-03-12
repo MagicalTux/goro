@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/MagicalTux/goro/core/logopt"
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
@@ -73,9 +75,10 @@ func (a runArray) Dump(w io.Writer) error {
 
 type runArrayAccess struct {
 	runnableChild
-	value  phpv.Runnable
-	offset phpv.Runnable
-	l      *phpv.Loc
+	value        phpv.Runnable
+	offset       phpv.Runnable
+	l            *phpv.Loc
+	writeContext bool // set when reading as part of a write chain (suppress undefined key warnings)
 }
 
 func (r *runArrayAccess) Dump(w io.Writer) error {
@@ -134,6 +137,13 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
+	// PHP 8.1: Deprecation warning for null array offsets (read)
+	if offset.GetType() == phpv.ZtNull {
+		if err := ctx.Deprecated("Using null as an array offset is deprecated, use an empty string instead", logopt.NoFuncName(true)); err != nil {
+			return nil, err
+		}
+	}
+
 	if v.GetType() == phpv.ZtString {
 		return v.AsString(ctx).Array().OffsetGet(ctx, offset)
 	}
@@ -144,7 +154,13 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		return nil, ctx.Error(err, phpv.E_WARNING)
 	}
 
-	// OK...
+	// Use OffsetGetWarn for ZArray to produce "Undefined array key" warnings
+	// but not when this access is part of a write chain (auto-vivification)
+	if !ac.writeContext {
+		if za, ok := array.(*phpv.ZArray); ok {
+			return za.OffsetGetWarn(ctx, offset)
+		}
+	}
 	return array.OffsetGet(ctx, offset)
 }
 
@@ -153,9 +169,30 @@ func (a *runArrayAccess) Loc() *phpv.Loc {
 }
 
 func (ac *runArrayAccess) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
+	// Suppress undefined key warnings for inner array accesses in write context
+	if inner, ok := ac.value.(*runArrayAccess); ok {
+		inner.writeContext = true
+		defer func() { inner.writeContext = false }()
+	}
 	v, err := ac.value.Run(ctx)
 	if err != nil {
 		return err
+	}
+
+	// Handle unset ($a[x] = nil means unset)
+	if value == nil {
+		array := v.Array()
+		if array == nil {
+			return nil
+		}
+		if ac.offset == nil {
+			return nil
+		}
+		offset, err := ac.getArrayOffset(ctx)
+		if err != nil {
+			return err
+		}
+		return array.OffsetUnset(ctx, offset)
 	}
 
 	switch v.GetType() {
@@ -188,6 +225,13 @@ func (ac *runArrayAccess) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 	offset, err := ac.getArrayOffset(ctx)
 	if err != nil {
 		return err
+	}
+
+	// PHP 8.1: Deprecation warning for null array offsets (write)
+	if offset.GetType() == phpv.ZtNull {
+		if err := ctx.Deprecated("Using null as an array offset is deprecated, use an empty string instead", logopt.NoFuncName(true)); err != nil {
+			return err
+		}
 	}
 
 	// OK...
@@ -246,12 +290,12 @@ func (ac *runArrayAccess) getArrayOffset(ctx phpv.Context) (*phpv.ZVal, error) {
 		}
 	case phpv.ZtString:
 	case phpv.ZtInt:
+	case phpv.ZtNull:
+		// Null converts to empty string as array key (deprecation warning is handled by callers)
 	case phpv.ZtObject:
-		// check if has __toString
-		fallthrough
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Cannot access offset of type %s on array", offset.Value().(phpv.ZObject).GetClass().GetName()))
 	case phpv.ZtArray:
-		// Trigger: Illegal offset type
-		fallthrough
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "Illegal offset type")
 	default:
 		offset, err = offset.As(ctx, phpv.ZtString)
 	}

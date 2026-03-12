@@ -1,6 +1,8 @@
 package compiler
 
 import (
+	"io"
+
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
@@ -32,6 +34,7 @@ func init() {
 		tokenizer.T_FINAL:        &compileFuncCb{f: compileClass, skip: true},
 		tokenizer.T_INTERFACE:    &compileFuncCb{f: compileClass, skip: true},
 		tokenizer.T_TRY:          &compileFuncCb{f: compileTry, skip: true},
+		tokenizer.T_CONST:        &compileFuncCb{f: compileTopLevelConst, skip: true},
 		tokenizer.T_STATIC:       &compileFuncCb{f: compileStaticVar},
 		tokenizer.T_RETURN:       &compileFuncCb{f: compileReturn},
 		tokenizer.T_VARIABLE:     &compileFuncCb{f: compileExpr},
@@ -41,7 +44,7 @@ func init() {
 		tokenizer.T_ISSET:        &compileFuncCb{f: compileIsset},
 		tokenizer.T_UNSET:        &compileFuncCb{f: compileUnset},
 		tokenizer.T_THROW:        &compileFuncCb{f: compileThrow},
-		tokenizer.T_EMPTY:        &compileFuncCb{f: compileSpecialFuncCallOne},
+		tokenizer.T_EMPTY:        &compileFuncCb{f: compileEmpty},
 		tokenizer.T_EVAL:         &compileFuncCb{f: compileSpecialFuncCallOne},
 		tokenizer.T_INCLUDE:      &compileFuncCb{f: compileSpecialFuncCall},
 		tokenizer.T_REQUIRE:      &compileFuncCb{f: compileSpecialFuncCall},
@@ -126,6 +129,76 @@ func compileBaseUntil(i *tokenizer.Item, c compileCtx, until tokenizer.ItemType)
 			return res, err
 		}
 	}
+}
+
+// compileTopLevelConst handles: const NAME = expr [, NAME2 = expr2] ;
+func compileTopLevelConst(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
+	var res phpv.Runnables
+
+	for {
+		// Read constant name
+		i, err := c.NextItem()
+		if err != nil {
+			return nil, err
+		}
+		if i.Type != tokenizer.T_STRING {
+			return nil, i.Unexpected()
+		}
+		name := i.Data
+
+		// Read '='
+		i, err = c.NextItem()
+		if err != nil {
+			return nil, err
+		}
+		if !i.IsSingle('=') {
+			return nil, i.Unexpected()
+		}
+
+		// Compile value expression
+		val, err := compileExpr(nil, c)
+		if err != nil {
+			return nil, err
+		}
+
+		res = append(res, &runTopLevelConst{name: phpv.ZString(name), val: val, l: i.Loc()})
+
+		// Check for ',' (more constants) or ';' (end)
+		i, err = c.NextItem()
+		if err != nil {
+			return nil, err
+		}
+		if i.IsSingle(';') || i.IsExpressionEnd() {
+			break
+		}
+		if !i.IsSingle(',') {
+			return nil, i.Unexpected()
+		}
+	}
+
+	if len(res) == 1 {
+		return res[0], nil
+	}
+	return res, nil
+}
+
+type runTopLevelConst struct {
+	name phpv.ZString
+	val  phpv.Runnable
+	l    *phpv.Loc
+}
+
+func (r *runTopLevelConst) Run(ctx phpv.Context) (*phpv.ZVal, error) {
+	v, err := r.val.Run(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ctx.Global().ConstantSet(r.name, v.Value())
+	return nil, nil
+}
+
+func (r *runTopLevelConst) Dump(w io.Writer) error {
+	return nil
 }
 
 func compileBaseSingle(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {

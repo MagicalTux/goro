@@ -1,7 +1,9 @@
 package compiler
 
 import (
+	"fmt"
 	"io"
+	"strings"
 
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
@@ -302,9 +304,33 @@ func compileFunctionWithName(name phpv.ZString, c compileCtx, l *phpv.Loc, rref 
 	}
 	zc.args = args
 
+	// Emit deprecation for implicitly nullable parameters
+	for _, arg := range args {
+		if arg.ImplicitlyNullable {
+			funcName := string(name)
+			if cls := c.Global().GetCompilingClass(); cls != nil {
+				funcName = string(cls.GetName()) + "::" + funcName
+			}
+			c.Deprecated("%s(): Implicitly marking parameter $%s as nullable is deprecated, the explicit nullable type must be used instead", funcName, arg.VarName)
+		}
+	}
+
 	i, err := c.NextItem()
 	if err != nil {
 		return nil, err
+	}
+
+	// Handle return type declaration: function foo(): Type { ... }
+	if i.IsSingle(':') {
+		// Skip the return type - we parse but don't enforce it yet
+		err = skipReturnType(c)
+		if err != nil {
+			return nil, err
+		}
+		i, err = c.NextItem()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if i.Type == tokenizer.T_USE && name == "" {
@@ -374,6 +400,38 @@ func compileFunctionArgs(c compileCtx) (res []*phpv.FuncArg, err error) {
 		arg := &phpv.FuncArg{}
 		arg.Required = true // typically
 
+		// Handle constructor promotion visibility modifiers (PHP 8.0+)
+		if i.Type == tokenizer.T_PUBLIC || i.Type == tokenizer.T_PROTECTED || i.Type == tokenizer.T_PRIVATE {
+			switch i.Type {
+			case tokenizer.T_PUBLIC:
+				arg.Promotion = phpv.ZAttrPublic
+			case tokenizer.T_PROTECTED:
+				arg.Promotion = phpv.ZAttrProtected
+			case tokenizer.T_PRIVATE:
+				arg.Promotion = phpv.ZAttrPrivate
+			}
+			i, err = c.NextItem()
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		// Handle nullable type hint prefix: ?Type
+		if i.IsSingle('?') {
+			i, err = c.NextItem()
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		// Handle leading namespace separator: \ClassName
+		if i.Type == tokenizer.T_NS_SEPARATOR {
+			i, err = c.NextItem()
+			if err != nil {
+				return nil, err
+			}
+		}
+
 		if i.Type == tokenizer.T_STRING || i.Type == tokenizer.T_ARRAY || i.Type == tokenizer.T_CALLABLE {
 			// this is a function parameter type hint
 			hint := i.Data
@@ -410,12 +468,32 @@ func compileFunctionArgs(c compileCtx) (res []*phpv.FuncArg, err error) {
 				return
 			}
 		}
-		// in a function delcaration, we must have a T_VARIABLE now
+
+		// Handle variadic parameter: ...
+		if i.Type == tokenizer.T_ELLIPSIS {
+			// Skip the ... - we treat variadic like a regular param for now
+			i, err = c.NextItem()
+			if err != nil {
+				return
+			}
+		}
+
+		// in a function declaration, we must have a T_VARIABLE now
 		if i.Type != tokenizer.T_VARIABLE {
 			return nil, i.Unexpected()
 		}
 
 		arg.VarName = phpv.ZString(i.Data[1:]) // skip $
+
+		if arg.VarName == "this" {
+			phpErr := &phpv.PhpError{
+				Err:  fmt.Errorf("Cannot use $this as parameter"),
+				Code: phpv.E_COMPILE_ERROR,
+				Loc:  i.Loc(),
+			}
+			c.Global().LogError(phpErr)
+			return nil, phpv.ExitError(255)
+		}
 
 		res = append(res, arg)
 
@@ -433,6 +511,19 @@ func compileFunctionArgs(c compileCtx) (res []*phpv.FuncArg, err error) {
 			arg.DefaultValue = &phpv.CompileDelayed{r}
 			arg.Required = false
 
+			// Check for implicitly nullable parameter (type hint + NULL default)
+			if arg.Hint != nil {
+				isNull := false
+				if zv, ok := r.(*runZVal); ok {
+					_, isNull = zv.v.(phpv.ZNull)
+				} else if rc, ok := r.(*runConstant); ok {
+					isNull = strings.EqualFold(string(rc.c), "null")
+				}
+				if isNull {
+					arg.ImplicitlyNullable = true
+				}
+			}
+
 			i, err = c.NextItem()
 			if err != nil {
 				return nil, err
@@ -444,6 +535,10 @@ func compileFunctionArgs(c compileCtx) (res []*phpv.FuncArg, err error) {
 			i, err = c.NextItem()
 			if err != nil {
 				return nil, err
+			}
+			// Allow trailing comma (PHP 7.3+)
+			if i.IsSingle(')') {
+				return
 			}
 			continue
 		}
@@ -477,12 +572,22 @@ func compileFunctionUse(c compileCtx) (res []*phpv.FuncUse, err error) {
 
 	// parse arguments
 	for {
-		// in a function delcaration, we must have a T_VARIABLE now
+		// Allow & prefix for reference capture
+		isRef := false
+		if i.IsSingle('&') {
+			isRef = true
+			i, err = c.NextItem()
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		// in a function declaration, we must have a T_VARIABLE now
 		if i.Type != tokenizer.T_VARIABLE {
 			return nil, i.Unexpected()
 		}
 
-		res = append(res, &phpv.FuncUse{VarName: phpv.ZString(i.Data[1:])}) // skip $
+		res = append(res, &phpv.FuncUse{VarName: phpv.ZString(i.Data[1:]), Ref: isRef}) // skip $
 
 		i, err = c.NextItem()
 		if err != nil {
@@ -495,6 +600,10 @@ func compileFunctionUse(c compileCtx) (res []*phpv.FuncUse, err error) {
 			if err != nil {
 				return nil, err
 			}
+			// Allow trailing comma (PHP 7.3+)
+			if i.IsSingle(')') {
+				return
+			}
 			continue
 		}
 
@@ -503,6 +612,86 @@ func compileFunctionUse(c compileCtx) (res []*phpv.FuncUse, err error) {
 		}
 
 		return nil, i.Unexpected()
+	}
+}
+
+// skipReturnType skips a return type declaration after ':' in a function signature.
+// Handles: simple types (int, string, void, mixed), nullable (?Type),
+// namespaced types (\Foo\Bar), and union/intersection types (Type1|Type2, Type1&Type2).
+func skipReturnType(c compileCtx) error {
+	i, err := c.NextItem()
+	if err != nil {
+		return err
+	}
+
+	// Handle nullable prefix: ?Type
+	if i.IsSingle('?') {
+		i, err = c.NextItem()
+		if err != nil {
+			return err
+		}
+	}
+
+	// Handle leading namespace separator: \Foo
+	if i.Type == tokenizer.T_NS_SEPARATOR {
+		i, err = c.NextItem()
+		if err != nil {
+			return err
+		}
+	}
+
+	// Expect a type name token
+	switch i.Type {
+	case tokenizer.T_STRING, tokenizer.T_ARRAY, tokenizer.T_CALLABLE:
+		// valid type name - ok
+	default:
+		return i.Unexpected()
+	}
+
+	// Handle namespace parts and union/intersection types
+	for {
+		i, err = c.NextItem()
+		if err != nil {
+			return err
+		}
+
+		if i.Type == tokenizer.T_NS_SEPARATOR {
+			// namespace separator, skip next T_STRING
+			i, err = c.NextItem()
+			if err != nil {
+				return err
+			}
+			if i.Type != tokenizer.T_STRING {
+				return i.Unexpected()
+			}
+			continue
+		}
+
+		// Handle union types (Type1|Type2) and intersection types (Type1&Type2)
+		if i.IsSingle('|') || i.IsSingle('&') {
+			i, err = c.NextItem()
+			if err != nil {
+				return err
+			}
+			// Handle leading namespace separator in union member
+			if i.Type == tokenizer.T_NS_SEPARATOR {
+				i, err = c.NextItem()
+				if err != nil {
+					return err
+				}
+			}
+			switch i.Type {
+			case tokenizer.T_STRING, tokenizer.T_ARRAY, tokenizer.T_CALLABLE:
+				// valid - continue to check for more union/namespace parts
+				continue
+			default:
+				return i.Unexpected()
+			}
+		}
+
+		// Not a type continuation - put it back and we're done
+		c.backup()
+		return nil
 	}
 }
 
@@ -545,6 +734,10 @@ func compileFuncPassedArgs(c compileCtx) (res phpv.Runnables, err error) {
 			i, err = c.NextItem()
 			if err != nil {
 				return nil, err
+			}
+			// Allow trailing comma (PHP 7.3+)
+			if i.IsSingle(')') {
+				return
 			}
 			continue
 		}

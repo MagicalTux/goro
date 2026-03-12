@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
@@ -44,6 +45,176 @@ func compileIsset(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	return is, err
 }
 
+type runnableEmpty struct {
+	arg phpv.Runnable
+	l   *phpv.Loc
+}
+
+func (r *runnableEmpty) Dump(w io.Writer) error {
+	_, err := w.Write([]byte("empty("))
+	if err != nil {
+		return err
+	}
+	err = r.arg.Dump(w)
+	if err != nil {
+		return err
+	}
+	_, err = w.Write([]byte{')'})
+	return err
+}
+
+func (r *runnableEmpty) Run(ctx phpv.Context) (*phpv.ZVal, error) {
+	isEmpty, err := checkEmpty(ctx, r.arg)
+	if err != nil {
+		return nil, err
+	}
+	return phpv.ZBool(isEmpty).ZVal(), nil
+}
+
+func compileEmpty(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
+	// empty() takes exactly one argument
+	args, err := compileFuncPassedArgs(c)
+	if err != nil {
+		return nil, err
+	}
+	if len(args) != 1 {
+		return nil, i.Unexpected()
+	}
+	return &runnableEmpty{arg: args[0], l: i.Loc()}, nil
+}
+
+func isValueEmpty(ctx phpv.Context, v *phpv.ZVal) bool {
+	if v == nil {
+		return true
+	}
+	switch v.GetType() {
+	case phpv.ZtNull:
+		return true
+	case phpv.ZtBool:
+		return !bool(v.Value().(phpv.ZBool))
+	case phpv.ZtInt:
+		return v.Value().(phpv.ZInt) == 0
+	case phpv.ZtFloat:
+		return v.Value().(phpv.ZFloat) == 0
+	case phpv.ZtString:
+		s := v.Value().(phpv.ZString)
+		return s == "" || s == "0"
+	case phpv.ZtArray:
+		return v.Value().(*phpv.ZArray).Count(ctx) == 0
+	case phpv.ZtObject:
+		return false // objects are never empty
+	}
+	return false
+}
+
+func checkEmpty(ctx phpv.Context, v phpv.Runnable) (bool, error) {
+	switch t := v.(type) {
+	case *runVariable:
+		exists, _ := ctx.OffsetExists(ctx, t.v.ZVal())
+		if !exists {
+			return true, nil
+		}
+		val, err := v.Run(ctx)
+		if err != nil {
+			return true, nil
+		}
+		return isValueEmpty(ctx, val), nil
+
+	case *runArrayAccess:
+		// Check if the container exists first (suppress warnings for undefined props)
+		exists, _ := checkExistence(ctx, t.value, true)
+		if !exists {
+			return true, nil
+		}
+
+		// Now evaluate the container
+		value, err := t.value.Run(ctx)
+		if err != nil {
+			return true, nil
+		}
+		if value == nil {
+			return true, nil
+		}
+
+		if t.offset == nil {
+			return true, nil
+		}
+		key, err := t.offset.Run(ctx)
+		if err != nil {
+			return true, nil
+		}
+
+		// For ArrayAccess objects, call offsetExists first
+		if value.GetType() == phpv.ZtObject {
+			obj, ok := value.Value().(*phpobj.ZObject)
+			if ok && obj.GetClass().Implements(phpobj.ArrayAccess) {
+				exists, err := obj.OffsetExists(ctx, key)
+				if err != nil {
+					return true, nil
+				}
+				if !exists {
+					return true, nil
+				}
+				val, err := obj.OffsetGet(ctx, key)
+				if err != nil {
+					return true, nil
+				}
+				return isValueEmpty(ctx, val), nil
+			}
+		}
+
+		// For arrays and strings, check existence then value
+		var arr phpv.ZArrayAccess
+		if value.GetType() == phpv.ZtString {
+			str := value.AsString(ctx)
+			arr = phpv.ZStringArray{ZString: &str}
+		} else {
+			var ok bool
+			arr, ok = value.Value().(phpv.ZArrayAccess)
+			if !ok {
+				return true, nil
+			}
+		}
+		exists, err = arr.OffsetExists(ctx, key)
+		if err != nil || !exists {
+			return true, nil
+		}
+		val, err := arr.OffsetGet(ctx, key)
+		if err != nil {
+			return true, nil
+		}
+		return isValueEmpty(ctx, val), nil
+
+	case *runObjectVar:
+		// For object property access
+		value, err := t.ref.Run(ctx)
+		if err != nil {
+			return true, nil
+		}
+		if value.GetType() != phpv.ZtObject {
+			return true, nil
+		}
+		obj := value.AsObject(ctx).(*phpobj.ZObject)
+		exists, err := obj.HasProp(ctx, t.varName)
+		if err != nil || !exists {
+			return true, nil
+		}
+		val, err := obj.ObjectGet(ctx, t.varName)
+		if err != nil {
+			return true, nil
+		}
+		return isValueEmpty(ctx, val), nil
+
+	default:
+		// For any other expression, just evaluate and check
+		val, err := v.Run(ctx)
+		if err != nil {
+			return true, nil
+		}
+		return isValueEmpty(ctx, val), nil
+	}
+}
+
 func checkExistence(ctx phpv.Context, v phpv.Runnable, subExpr bool) (bool, error) {
 	// isset should only evaluate the sub-expressions:
 	// - isset(foo()) // foo is not evaluated
@@ -70,6 +241,14 @@ func checkExistence(ctx phpv.Context, v phpv.Runnable, subExpr bool) (bool, erro
 		key, err := t.offset.Run(ctx)
 		if err != nil {
 			return false, nil
+		}
+
+		// PHP 8.1: Deprecation warning for null array offsets
+		if key.GetType() == phpv.ZtNull {
+			if err := ctx.Deprecated("Using null as an array offset is deprecated, use an empty string instead", logopt.NoFuncName(true)); err != nil {
+				return false, err
+			}
+			key = phpv.ZString("").ZVal()
 		}
 
 		var arr phpv.ZArrayAccess
@@ -103,6 +282,24 @@ func checkExistence(ctx phpv.Context, v phpv.Runnable, subExpr bool) (bool, erro
 		}
 		obj := value.AsObject(ctx).(*phpobj.ZObject)
 		return obj.HasProp(ctx, t.varName)
+
+	case *runClassStaticVarRef:
+		// Check if the static property exists
+		className, err := t.className.Run(ctx)
+		if err != nil {
+			return false, nil
+		}
+		class, err := ctx.Global().GetClass(ctx, className.AsString(ctx), true)
+		if err != nil {
+			return false, nil
+		}
+		zc := class.(*phpobj.ZClass)
+		p, found, err := zc.FindStaticProp(ctx, t.varName)
+		if err != nil || !found {
+			return false, nil
+		}
+		val := p.GetString(t.varName)
+		return val != nil && !phpv.IsNull(val), nil
 
 	default:
 		if !subExpr {

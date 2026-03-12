@@ -66,6 +66,10 @@ func (c *FuncContext) Func() phpv.FuncContext {
 	return c
 }
 
+func (c *FuncContext) Callable() phpv.Callable {
+	return c.c
+}
+
 func (c *FuncContext) This() phpv.ZObject {
 	return c.this
 }
@@ -203,28 +207,58 @@ func (ctx *FuncContext) Parent(n int) phpv.Context {
 }
 
 func (ctx *FuncContext) GetFuncName() string {
-	return ctx.c.Name()
+	name := ctx.c.Name()
+	if ctx.class != nil && ctx.methodType != "" {
+		// PHP uses :: in error messages/warning for both static and instance methods
+		return string(ctx.class.GetName()) + "::" + name
+	}
+	return name
+}
+
+// GetFuncNameForTrace returns the function name using the actual method type (-> or ::) for stack traces
+func (ctx *FuncContext) GetFuncNameForTrace() string {
+	name := ctx.c.Name()
+	if ctx.class != nil && ctx.methodType != "" {
+		return string(ctx.class.GetName()) + ctx.methodType + name
+	}
+	return name
 }
 
 func (ctx *FuncContext) Error(err error, t ...phpv.PhpErrorType) error {
 	wrappedErr := ctx.Loc().Error(ctx, err, t...)
-	return phperr.HandleUserError(ctx, wrappedErr)
+	result := phperr.HandleUserError(ctx, wrappedErr)
+	if result == phperr.ErrHandledByUser {
+		return nil
+	}
+	return result
 }
 
 func (ctx *FuncContext) Errorf(format string, a ...any) error {
 	err := ctx.Loc().Errorf(ctx, phpv.E_ERROR, format, a...)
-	return phperr.HandleUserError(ctx, err)
+	result := phperr.HandleUserError(ctx, err)
+	if result == phperr.ErrHandledByUser {
+		return nil
+	}
+	return result
 }
 
 func (ctx *FuncContext) FuncError(err error, t ...phpv.PhpErrorType) error {
 	wrappedErr := ctx.Loc().Error(ctx, err, t...)
 	wrappedErr.FuncName = ctx.GetFuncName()
-	return phperr.HandleUserError(ctx, wrappedErr)
+	result := phperr.HandleUserError(ctx, wrappedErr)
+	if result == phperr.ErrHandledByUser {
+		return nil
+	}
+	return result
 }
 func (ctx *FuncContext) FuncErrorf(format string, a ...any) error {
 	err := ctx.Loc().Errorf(ctx, phpv.E_ERROR, format, a...)
 	err.FuncName = ctx.GetFuncName()
-	return phperr.HandleUserError(ctx, err)
+	result := phperr.HandleUserError(ctx, err)
+	if result == phperr.ErrHandledByUser {
+		return nil
+	}
+	return result
 }
 
 func (ctx *FuncContext) Warn(format string, a ...any) error {
@@ -233,13 +267,11 @@ func (ctx *FuncContext) Warn(format string, a ...any) error {
 }
 
 func (ctx *FuncContext) Notice(format string, a ...any) error {
-	ctx.Global().WriteErr([]byte{'\n'})
 	a = append(a, logopt.ErrType(phpv.E_NOTICE))
 	return logWarning(ctx, format, a...)
 }
 
 func (ctx *FuncContext) Deprecated(format string, a ...any) error {
-	ctx.Global().WriteErr([]byte{'\n'})
 	a = append(a, logopt.ErrType(phpv.E_DEPRECATED))
 	err := logWarning(ctx, format, a...)
 	if err == nil {
@@ -251,7 +283,6 @@ func (ctx *FuncContext) Deprecated(format string, a ...any) error {
 func (ctx *FuncContext) WarnDeprecated() error {
 	funcName := ctx.GetFuncName()
 	if ok := ctx.Global().ShownDeprecated(funcName); ok {
-		ctx.Global().WriteErr([]byte{'\n'})
 		err := logWarning(
 			ctx,
 			"The %s() function is deprecated. This message will be suppressed on further calls",
