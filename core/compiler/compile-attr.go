@@ -26,6 +26,11 @@ func parseZClassAttr(a *phpv.ZClassAttr, c compileCtx) error {
 				return errors.New("Multiple final modifiers are not allowed")
 			}
 			*a |= phpv.ZClassFinal
+		case tokenizer.T_READONLY:
+			if *a&phpv.ZClassReadonly != 0 {
+				return errors.New("Multiple readonly modifiers are not allowed")
+			}
+			*a |= phpv.ZClassReadonly
 		default:
 			c.backup()
 			return nil

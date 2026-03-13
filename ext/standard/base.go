@@ -386,6 +386,31 @@ func stdClassExists(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZTrue.ZVal(), nil
 }
 
+// > func bool enum_exists ( string $enum [, bool $autoload = TRUE ] )
+func stdEnumExists(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var className phpv.ZString
+	var autoloadArg *phpv.ZBool
+
+	_, err := core.Expand(ctx, args, &className, &autoloadArg)
+	if err != nil {
+		return nil, err
+	}
+
+	autoload := true
+	if autoloadArg != nil {
+		autoload = bool(*autoloadArg)
+	}
+
+	class, err := ctx.Global().GetClass(ctx, className, autoload)
+	if err != nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+	if class.GetType()&phpv.ZClassTypeEnum != 0 {
+		return phpv.ZTrue.ZVal(), nil
+	}
+	return phpv.ZFalse.ZVal(), nil
+}
+
 // > func string get_parent_class ([ mixed $object ] )
 func stdGetParentClass(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var objectArg *phpv.ZVal

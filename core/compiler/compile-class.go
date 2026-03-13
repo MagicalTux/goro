@@ -60,7 +60,7 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 
 	// If called from a modifier token (abstract/final), back it up so
 	// parseZClassAttr can consume it, then read the actual class token.
-	if i.Type == tokenizer.T_ABSTRACT || i.Type == tokenizer.T_FINAL {
+	if i.Type == tokenizer.T_ABSTRACT || i.Type == tokenizer.T_FINAL || i.Type == tokenizer.T_READONLY {
 		c.backup()
 		err = parseZClassAttr(&attr, c)
 		if err != nil {
@@ -229,6 +229,11 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 				prop := &phpv.ZClassProp{Modifiers: attr, TypeHint: propTypeHint}
 				prop.VarName = phpv.ZString(i.Data[1:])
 
+				// Readonly class: all properties are implicitly readonly
+				if class.Attr.Has(phpv.ZClassReadonly) {
+					prop.Modifiers |= phpv.ZAttrReadonly
+				}
+
 				// check for default value
 				i, err = c.NextItem()
 				if err != nil {
@@ -261,6 +266,13 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 					if prop.Modifiers.IsStatic() {
 						return nil, &phpv.PhpError{
 							Err:  fmt.Errorf("Static property %s::$%s cannot be readonly", class.Name, prop.VarName),
+							Code: phpv.E_COMPILE_ERROR,
+							Loc:  l,
+						}
+					}
+					if prop.Default != nil {
+						return nil, &phpv.PhpError{
+							Err:  fmt.Errorf("Readonly property %s::$%s cannot have default value", class.Name, prop.VarName),
 							Code: phpv.E_COMPILE_ERROR,
 							Loc:  l,
 						}
@@ -624,9 +636,14 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 				if fga, ok := f.(phpv.FuncGetArgs); ok {
 					for _, arg := range fga.GetArgs() {
 						if arg.Promotion != 0 {
+							modifiers := arg.Promotion
+							// Readonly class: all properties are implicitly readonly
+							if class.Attr.Has(phpv.ZClassReadonly) {
+								modifiers |= phpv.ZAttrReadonly
+							}
 							prop := &phpv.ZClassProp{
 								VarName:   arg.VarName,
-								Modifiers: arg.Promotion,
+								Modifiers: modifiers,
 								TypeHint:  arg.Hint,
 							}
 							class.Props = append(class.Props, prop)

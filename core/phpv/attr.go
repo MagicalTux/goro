@@ -15,6 +15,7 @@ const (
 	ZClassTrait                       = 0x80
 	ZClassAnon                        = 0x100
 	ZClassAnonBound                   = 0x200
+	ZClassReadonly                     = 0x800
 	ZClassInherited                   = 0x400
 
 	ZClassTypeImplicitAbstract ZClassType = 0x10
@@ -98,6 +99,9 @@ func (a ZClassAttr) String() string {
 	}
 	if a.Has(ZClassFinal) {
 		r = append(r, []byte(" final")...)
+	}
+	if a.Has(ZClassReadonly) {
+		r = append(r, []byte(" readonly")...)
 	}
 
 	if r == nil {

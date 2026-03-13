@@ -120,6 +120,7 @@ func init() {
 			"doubleval":                  {Func: fncDoubleval, Args: []*phpctx.ExtFunctionArg{}},
 			"each":                       {Func: fncArrayEach, Args: []*phpctx.ExtFunctionArg{}},
 			"end":                        {Func: fncArrayEnd, Args: []*phpctx.ExtFunctionArg{}},
+			"enum_exists":                {Func: stdEnumExists, Args: []*phpctx.ExtFunctionArg{}},
 			"eval":                       {Func: stdFuncEval, Args: []*phpctx.ExtFunctionArg{}},
 			"exit":                       {Func: exit, Args: []*phpctx.ExtFunctionArg{}},
 			"exp":                        {Func: mathExp, Args: []*phpctx.ExtFunctionArg{}},

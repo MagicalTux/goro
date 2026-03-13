@@ -274,7 +274,14 @@ func NewZObject(ctx phpv.Context, c phpv.ZClass, args ...*phpv.ZVal) (*ZObject, 
 						n.h.SetString(propName, args[i])
 					}
 					// Mark readonly properties as initialized
-					if arg.Promotion.IsReadonly() {
+					isReadonly := arg.Promotion.IsReadonly()
+					if !isReadonly {
+						// Check if this is a readonly class (all properties implicitly readonly)
+						if ca, ok := c.(*ZClass); ok {
+							isReadonly = ca.Attr.Has(phpv.ZClassReadonly)
+						}
+					}
+					if isReadonly {
 						if n.readonlyInit == nil {
 							n.readonlyInit = make(map[phpv.ZString]bool)
 						}
