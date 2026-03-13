@@ -222,6 +222,9 @@ func init() {
 		Props:   RuntimeException.Props,
 		Methods: CopyMethods(RuntimeException.Methods),
 	}
+
+	// Fiber classes (must be after Error is initialized)
+	initFiberClasses()
 }
 
 // ErrorException constructor: __construct($message = "", $code = 0, $severity = E_ERROR, $filename = __FILE__, $lineno = __LINE__, $previous = null)

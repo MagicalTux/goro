@@ -11,6 +11,9 @@ import (
 // WARNING: This file is auto-generated. DO NOT EDIT
 
 func init() {
+	// Wire up the Fiber callable resolver to avoid import cycles
+	phpobj.FiberResolveCallable = SpawnCallable
+
 	phpctx.RegisterExt(&phpctx.Ext{
 		Name:    "Core",
 		Version: VERSION,
@@ -26,6 +29,8 @@ func init() {
 			phpobj.Error,
 			phpobj.ErrorException,
 			phpobj.Exception,
+			phpobj.Fiber,
+			phpobj.FiberError,
 			phpobj.InvalidArgumentException,
 			phpobj.Iterator,
 			phpobj.IteratorAggregate,
