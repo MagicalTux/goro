@@ -301,8 +301,17 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		p.iniRaw = iniContent
 		return nil
 	case "EXTENSIONS":
-		// TODO
-		return skipTest
+		// Check that all required extensions are loaded
+		for _, line := range strings.Split(strings.TrimSpace(b.String()), "\n") {
+			ext := strings.TrimSpace(line)
+			if ext == "" {
+				continue
+			}
+			if !phpctx.HasExt(ext) {
+				return skipTest
+			}
+		}
+		return nil
 	case "XFAIL":
 		// TODO but safe to ignore
 		return nil

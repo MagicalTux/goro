@@ -489,16 +489,9 @@ func fncFileOpen(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	if useIncludePathArg.HasArg() {
-		// TODO: handle use_include_path
-		return nil, ctx.FuncErrorf("use_include_path is not yet supported, set to false")
-	}
+	useIncludePath := useIncludePathArg.HasArg() && bool(useIncludePathArg.Get())
 
-	if contextResource.Get() != nil {
-		return nil, ctx.FuncErrorf("context resource is not yet supported, set to NULL")
-	}
-
-	f, err := ctx.Global().Open(ctx, filename, mode, true)
+	f, err := ctx.Global().Open(ctx, filename, mode, useIncludePath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return phpv.ZFalse.ZVal(), ctx.Warn("%s(%s): Failed to open stream: No such file or directory", ctx.GetFuncName(), filename, logopt.NoFuncName(true))
