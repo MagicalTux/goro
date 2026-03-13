@@ -619,6 +619,14 @@ func compileFunctionArgs(c compileCtx) (res []*phpv.FuncArg, err error) {
 			if isNullable {
 				arg.Hint.Nullable = true
 			}
+
+			// Check for union type: Type1|Type2|...
+			if i.IsSingle('|') {
+				arg.Hint, i, err = parseUnionTypeHint(arg.Hint, c)
+				if err != nil {
+					return nil, err
+				}
+			}
 		}
 
 		if i.IsSingle('&') {
@@ -799,6 +807,52 @@ func compileFunctionUse(c compileCtx) (res []*phpv.FuncUse, err error) {
 		}
 
 		return nil, i.Unexpected()
+	}
+}
+
+// parseUnionTypeHint takes the first type hint already parsed and a compileCtx
+// positioned after the '|', and parses remaining union members.
+// Returns the combined union TypeHint and the next token to process.
+func parseUnionTypeHint(first *phpv.TypeHint, c compileCtx) (*phpv.TypeHint, *tokenizer.Item, error) {
+	union := &phpv.TypeHint{Union: []*phpv.TypeHint{first}}
+	for {
+		i, err := c.NextItem()
+		if err != nil {
+			return nil, nil, err
+		}
+		// Handle leading namespace separator
+		if i.Type == tokenizer.T_NS_SEPARATOR {
+			i, err = c.NextItem()
+			if err != nil {
+				return nil, nil, err
+			}
+		}
+		if i.Type != tokenizer.T_STRING && i.Type != tokenizer.T_ARRAY && i.Type != tokenizer.T_CALLABLE {
+			return nil, nil, i.Unexpected()
+		}
+		hint := i.Data
+		// Consume namespace parts
+		for {
+			i, err = c.NextItem()
+			if err != nil {
+				return nil, nil, err
+			}
+			if i.Type != tokenizer.T_NS_SEPARATOR {
+				break
+			}
+			i, err = c.NextItem()
+			if err != nil {
+				return nil, nil, err
+			}
+			if i.Type != tokenizer.T_STRING {
+				return nil, nil, i.Unexpected()
+			}
+			hint = hint + "\\" + i.Data
+		}
+		union.Union = append(union.Union, phpv.ParseTypeHint(phpv.ZString(hint)))
+		if !i.IsSingle('|') {
+			return union, i, nil
+		}
 	}
 }
 

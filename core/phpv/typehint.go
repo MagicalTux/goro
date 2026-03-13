@@ -1,12 +1,16 @@
 package phpv
 
-import "reflect"
+import (
+	"reflect"
+	"strings"
+)
 
 type TypeHint struct {
 	t        ZType
-	s        ZString // class name, or special value such as "self", "iterable". If t=ZtObject but s="" then any object is ok
-	c        ZClass  // looked up class, if any
-	Nullable bool    // true if the type is explicitly nullable (?Type)
+	s        ZString    // class name, or special value such as "self", "iterable". If t=ZtObject but s="" then any object is ok
+	c        ZClass     // looked up class, if any
+	Nullable bool       // true if the type is explicitly nullable (?Type)
+	Union    []*TypeHint // for union types (int|string), each alternative
 }
 
 func (h *TypeHint) Type() ZType {
@@ -28,6 +32,16 @@ func (h *TypeHint) Check(ctx Context, val *ZVal) bool {
 		return true
 	}
 
+	// Union type: check each alternative
+	if len(h.Union) > 0 {
+		for _, alt := range h.Union {
+			if alt.Check(ctx, val) {
+				return true
+			}
+		}
+		return false
+	}
+
 	if h.t == ZtObject {
 		// Class/interface type hint
 		if val.GetType() != ZtObject {
@@ -47,11 +61,31 @@ func (h *TypeHint) Check(ctx Context, val *ZVal) bool {
 		return classNameMatch(obj.GetClass(), h.s, ctx)
 	}
 
+	// "mixed" accepts anything
+	if h.t == ZtMixed {
+		return true
+	}
+
+	// Handle "false" and "true" standalone types
+	if h.t == ZtBool && h.s == "false" {
+		return val.GetType() == ZtBool && !bool(val.Value().(ZBool))
+	}
+	if h.t == ZtBool && h.s == "true" {
+		return val.GetType() == ZtBool && bool(val.Value().(ZBool))
+	}
+
 	return val.GetType() == h.t
 }
 
 // String returns the PHP type name for error messages
 func (h *TypeHint) String() string {
+	if len(h.Union) > 0 {
+		parts := make([]string, len(h.Union))
+		for i, alt := range h.Union {
+			parts[i] = alt.String()
+		}
+		return strings.Join(parts, "|")
+	}
 	prefix := ""
 	if h.Nullable {
 		prefix = "?"
@@ -96,6 +130,8 @@ func ParseTypeHint(s ZString) *TypeHint {
 	switch s.ToLower() {
 	case "self":
 		return &TypeHint{t: ZtObject, s: "self"}
+	case "static":
+		return &TypeHint{t: ZtObject, s: "static"}
 	case "iterable":
 		return &TypeHint{t: ZtObject, s: "iterable"}
 	case "object":
@@ -106,12 +142,24 @@ func ParseTypeHint(s ZString) *TypeHint {
 		return &TypeHint{t: ZtObject, s: "callable"}
 	case "bool":
 		return &TypeHint{t: ZtBool}
+	case "false":
+		return &TypeHint{t: ZtBool, s: "false"}
+	case "true":
+		return &TypeHint{t: ZtBool, s: "true"}
 	case "float":
 		return &TypeHint{t: ZtFloat}
 	case "int":
 		return &TypeHint{t: ZtInt}
 	case "string":
 		return &TypeHint{t: ZtString}
+	case "mixed":
+		return &TypeHint{t: ZtMixed}
+	case "void":
+		return &TypeHint{t: ZtVoid}
+	case "never":
+		return &TypeHint{t: ZtNever}
+	case "null":
+		return &TypeHint{t: ZtNull}
 	default:
 		return &TypeHint{t: ZtObject, s: s}
 	}

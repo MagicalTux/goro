@@ -180,21 +180,28 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 					}
 				}
 
-				if i.Type == tokenizer.T_VARIABLE {
-					// It was a type hint
+				if i.IsSingle('|') {
+					// Union type hint: int|string $prop
 					propTypeHint = phpv.ParseTypeHint(phpv.ZString(hint))
 					if isNullable {
 						propTypeHint.Nullable = true
 					}
+					propTypeHint, i, err = parseUnionTypeHint(propTypeHint, c)
+					if err != nil {
+						return nil, err
+					}
+				}
+				if i.Type == tokenizer.T_VARIABLE {
+					// It was a type hint (or we already parsed the union)
+					if propTypeHint == nil {
+						propTypeHint = phpv.ParseTypeHint(phpv.ZString(hint))
+						if isNullable {
+							propTypeHint.Nullable = true
+						}
+					}
 				} else {
 					// Not a typed property, back up
 					c.backup()
-					// Re-parse as the original token type
-					// We already consumed the type name, so we need to figure out what this is
-					// If hint was "function" or similar, this is not a property
-					// Back up doesn't work for multi-token, so handle based on what we consumed
-					// Actually, the only non-property case after attrs is T_CONST, T_USE, T_FUNCTION
-					// Those are already handled below. If we got here, it's an error.
 					return nil, i.Unexpected()
 				}
 			} else if isNullable {

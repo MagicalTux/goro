@@ -18,6 +18,9 @@ const (
 	ZtObject
 	ZtResource
 	ZtCallable
+	ZtMixed // PHP 8.0 mixed type (accepts any value)
+	ZtVoid  // PHP 7.1 void return type
+	ZtNever // PHP 8.1 never return type
 )
 
 // global NULL for easy call
@@ -336,6 +339,12 @@ func (zt ZType) TypeName() string {
 		return "object"
 	case ZtResource:
 		return "resource"
+	case ZtMixed:
+		return "mixed"
+	case ZtVoid:
+		return "void"
+	case ZtNever:
+		return "never"
 	default:
 		return "?"
 	}
