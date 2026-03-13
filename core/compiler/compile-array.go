@@ -72,7 +72,8 @@ func isNumericString(s string) bool {
 }
 
 type arrayEntry struct {
-	k, v phpv.Runnable
+	k, v   phpv.Runnable
+	spread bool // ...$expr spread syntax
 }
 
 type runArray struct {
@@ -85,6 +86,28 @@ func (a runArray) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	array := phpv.NewZArray()
 
 	for _, e := range a.e {
+		if e.spread {
+			// ...$expr - unpack iterable into the array
+			v, err := e.v.Run(ctx)
+			if err != nil {
+				return nil, err
+			}
+			if v.GetType() == phpv.ZtArray {
+				src := v.AsArray(ctx)
+				for k, v := range src.Iterate(ctx) {
+					// PHP 8.1+: string keys are preserved; int keys are re-indexed
+					if k.GetType() == phpv.ZtString {
+						array.OffsetSet(ctx, k, v.Dup())
+					} else {
+						array.OffsetSet(ctx, nil, v.Dup())
+					}
+				}
+			} else {
+				return nil, fmt.Errorf("Only arrays and Traversables can be unpacked")
+			}
+			continue
+		}
+
 		var k, v *phpv.ZVal
 
 		if e.k != nil {
@@ -543,6 +566,27 @@ func compileArray(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			break
 		}
 
+		// Handle spread operator: ...$expr
+		if i.Type == tokenizer.T_ELLIPSIS {
+			spreadExpr, err := compileExpr(nil, c)
+			if err != nil {
+				return nil, err
+			}
+			res.e = append(res.e, &arrayEntry{v: spreadExpr, spread: true})
+
+			i, err = c.NextItem()
+			if err != nil {
+				return nil, err
+			}
+			if i.IsSingle(',') {
+				continue
+			}
+			if i.IsSingle(array_type) {
+				break
+			}
+			return nil, i.Unexpected()
+		}
+
 		var k phpv.Runnable
 		k, err = compileExpr(i, c)
 		if err != nil {
@@ -583,12 +627,10 @@ func compileArray(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		}
 
 		if i.IsSingle(',') {
-			// TODO: append k
 			continue
 		}
 
 		if i.IsSingle(array_type) {
-			// TODO: append k
 			break
 		}
 		return nil, i.Unexpected()

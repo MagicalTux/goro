@@ -4,6 +4,7 @@ type FuncArg struct {
 	VarName            ZString
 	Ref                bool
 	Required           bool
+	Variadic           bool        // ...param (collects remaining args into array)
 	DefaultValue       Val
 	Hint               *TypeHint
 	Promotion          ZObjectAttr // Non-zero if this is a constructor promoted property

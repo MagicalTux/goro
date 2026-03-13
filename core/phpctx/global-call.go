@@ -2,6 +2,7 @@ package phpctx
 
 import (
 	"fmt"
+	"io"
 
 	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phperr"
@@ -26,6 +27,9 @@ func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, o
 	if funcArgs != nil {
 		args = reorderNamedArgs(ctx, funcArgs, args)
 	}
+
+	// Expand spread arguments (...$arr) into individual args before evaluation
+	args = expandSpreadArgs(ctx, args)
 
 	// Save call site location (arg evaluation may change global location)
 	callLoc := ctx.Loc()
@@ -184,6 +188,29 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 	if c, ok := f.(phpv.FuncGetArgs); ok {
 		// This function is defined inside a PHP script
 		func_args := c.GetArgs()
+
+		// Handle variadic parameter: pack remaining args into an array
+		variadicIdx := -1
+		for i, fa := range func_args {
+			if fa.Variadic {
+				variadicIdx = i
+				break
+			}
+		}
+
+		if variadicIdx >= 0 && len(args) >= variadicIdx {
+			// Pack arguments from variadicIdx onward into a ZArray
+			varArray := phpv.NewZArray()
+			for _, a := range args[variadicIdx:] {
+				varArray.OffsetSet(nil, nil, a.Dup())
+			}
+			// Replace args: keep args before variadic, then add the packed array
+			newArgs := make([]*phpv.ZVal, variadicIdx+1)
+			copy(newArgs, args[:variadicIdx])
+			newArgs[variadicIdx] = varArray.ZVal()
+			args = newArgs
+		}
+
 		callCtx.Args = args
 		for i := range args {
 			// Since this function was parsed, the parameter info is available
@@ -229,6 +256,33 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 			}
 			if i >= len(callCtx.Args) {
 				break
+			}
+			// For variadic params, the arg is already packed as an array.
+			// Type check each element of the array, not the array itself.
+			if fa.Variadic {
+				arr := callCtx.Args[i].AsArray(callCtx)
+				if arr != nil {
+					elemIdx := 0
+					for _, elem := range arr.Iterate(callCtx) {
+						if !fa.Hint.Check(callCtx, elem) {
+							actualType := phpTypeName(elem)
+							funcName := callCtx.GetFuncName()
+							msg := fmt.Sprintf("%s(): Argument #%d ($%s) must be of type %s, %s given", funcName, i+elemIdx+1, fa.VarName, fa.Hint.String(), actualType)
+							var defLoc *phpv.Loc
+							if dl, ok := f.(interface{ Loc() *phpv.Loc }); ok {
+								defLoc = dl.Loc()
+							}
+							if !callCtx.isInternal {
+								if callLoc := ctx.Loc(); callLoc != nil {
+									msg += fmt.Sprintf(", called in %s on line %d", callLoc.Filename, callLoc.Line)
+								}
+							}
+							return nil, phpobj.ThrowErrorAt(callCtx, phpobj.TypeError, msg, defLoc)
+						}
+						elemIdx++
+					}
+				}
+				continue
 			}
 			val := callCtx.Args[i]
 			if val.IsNull() && !fa.Required {
@@ -332,4 +386,61 @@ func phpTypeName(val *phpv.ZVal) string {
 
 func (c *Global) Parent(n int) phpv.Context {
 	return nil
+}
+
+// expandSpreadArgs expands any SpreadArgument entries by evaluating the
+// expression and creating a runZVal wrapper for each element of the result array.
+// Non-spread arguments are passed through unchanged.
+func expandSpreadArgs(ctx phpv.Context, args []phpv.Runnable) []phpv.Runnable {
+	// Quick check: any spread args?
+	hasSpread := false
+	for _, arg := range args {
+		if _, ok := arg.(phpv.SpreadArgument); ok {
+			hasSpread = true
+			break
+		}
+	}
+	if !hasSpread {
+		return args
+	}
+
+	result := make([]phpv.Runnable, 0, len(args))
+	for _, arg := range args {
+		sa, ok := arg.(phpv.SpreadArgument)
+		if !ok {
+			result = append(result, arg)
+			continue
+		}
+		// Evaluate the spread expression
+		val, err := sa.Inner().Run(ctx)
+		if err != nil {
+			// Can't return error from here, wrap as a runnable that will error
+			result = append(result, arg)
+			continue
+		}
+		if val.GetType() != phpv.ZtArray {
+			// Non-array spread: just pass the value
+			result = append(result, &spreadZVal{val})
+			continue
+		}
+		arr := val.AsArray(ctx)
+		for _, v := range arr.Iterate(ctx) {
+			result = append(result, &spreadZVal{v.Dup()})
+		}
+	}
+	return result
+}
+
+// spreadZVal is a Runnable wrapper for pre-evaluated spread argument values.
+type spreadZVal struct {
+	v *phpv.ZVal
+}
+
+func (s *spreadZVal) Run(ctx phpv.Context) (*phpv.ZVal, error) {
+	return s.v, nil
+}
+
+func (s *spreadZVal) Dump(w io.Writer) error {
+	_, err := w.Write([]byte("spread_val"))
+	return err
 }

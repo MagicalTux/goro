@@ -631,7 +631,7 @@ func compileFunctionArgs(c compileCtx) (res []*phpv.FuncArg, err error) {
 
 		// Handle variadic parameter: ...
 		if i.Type == tokenizer.T_ELLIPSIS {
-			// Skip the ... - we treat variadic like a regular param for now
+			arg.Variadic = true
 			i, err = c.NextItem()
 			if err != nil {
 				return
@@ -908,6 +908,27 @@ func (n *NamedArg) Dump(w io.Writer) error {
 	return n.Arg.Dump(w)
 }
 
+// SpreadArg wraps a Runnable for the argument unpacking syntax: func(...$arr)
+type SpreadArg struct {
+	Arg phpv.Runnable
+}
+
+func (s *SpreadArg) Run(ctx phpv.Context) (*phpv.ZVal, error) {
+	return s.Arg.Run(ctx)
+}
+
+func (s *SpreadArg) Inner() phpv.Runnable {
+	return s.Arg
+}
+
+func (s *SpreadArg) Dump(w io.Writer) error {
+	_, err := w.Write([]byte("..."))
+	if err != nil {
+		return err
+	}
+	return s.Arg.Dump(w)
+}
+
 func compileFuncPassedArgs(c compileCtx) (res phpv.Runnables, err error) {
 	i, err := c.NextItem()
 	if err != nil {
@@ -931,13 +952,19 @@ func compileFuncPassedArgs(c compileCtx) (res phpv.Runnables, err error) {
 	for {
 		var a phpv.Runnable
 
-		// Check for named argument: identifier followed by ':'
-		// Use peekType() to check the next token without consuming it.
-		// Note: ':' won't appear after an identifier in normal expressions
-		// (T_DOUBLE_COLON '::' is a separate token), so this is safe.
-		// PHP 8.0 allows keywords as named argument names (e.g., array:, match:)
-		if i.IsLabel() && c.peekType() == tokenizer.Rune(':') {
-			// Named argument
+		// Check for spread operator: ...$expr
+		if i.Type == tokenizer.T_ELLIPSIS {
+			spreadExpr, spreadErr := compileExpr(nil, c)
+			if spreadErr != nil {
+				return nil, spreadErr
+			}
+			a = &SpreadArg{Arg: spreadExpr}
+		} else if i.IsLabel() && c.peekType() == tokenizer.Rune(':') {
+			// Check for named argument: identifier followed by ':'
+			// Use peekType() to check the next token without consuming it.
+			// Note: ':' won't appear after an identifier in normal expressions
+			// (T_DOUBLE_COLON '::' is a separate token), so this is safe.
+			// PHP 8.0 allows keywords as named argument names (e.g., array:, match:)
 			argName := phpv.ZString(i.Data)
 			c.NextItem() // consume the ':'
 			nextI, nextErr := c.NextItem()

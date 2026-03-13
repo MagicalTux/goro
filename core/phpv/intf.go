@@ -54,6 +54,11 @@ type NamedArgument interface {
 	Inner() Runnable
 }
 
+// SpreadArgument is implemented by Runnable types that represent argument unpacking: func(...$arr)
+type SpreadArgument interface {
+	Inner() Runnable
+}
+
 // WritePreparable is implemented by Writable types that have sub-expressions
 // (e.g. array indices, variable-variable names) which need to be evaluated
 // before the RHS of an assignment. This ensures correct PHP evaluation order
