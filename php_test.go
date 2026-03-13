@@ -304,10 +304,11 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		// can't support. Accept everything else and let the test run.
 		// INI settings that always cause a skip (feature not implemented at all)
 		unsupported := map[string]bool{
-			// file_uploads: handled by valueDependent - skip only when =1 (enabled)
+			// file_uploads: accepted (tests needing upload infra also have upload_max_filesize/upload_tmp_dir)
 			// enable_post_data_reading: implemented - when 0, $_POST/$_FILES are empty but php://input works
 			// post_max_size: handled by valueDependent - skip only when non-zero
 			"upload_max_filesize":      true, // upload size limit
+			"upload_tmp_dir":           true, // upload temp directory not implemented
 			"max_file_uploads":         true, // upload count limit
 			// memory_limit: stored/retrieved via ini_get/ini_set; enforcement not implemented but tests don't require it
 			"hard_timeout":             true, // hard timeout not implemented
@@ -344,12 +345,8 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 				// post_max_size=0 means unlimited (no enforcement needed)
 				return strings.TrimSpace(v) != "0"
 			},
-			"file_uploads": func(v string) bool {
-				// file_uploads=0 means disabled — since we don't handle uploads,
-				// disabled mode is effectively what we do by default
-				lv := strings.ToLower(strings.TrimSpace(v))
-				return lv != "0" && lv != "off" && lv != "false" && lv != "no"
-			},
+			// file_uploads: accepted for all values — tests needing upload
+			// infrastructure also set upload_max_filesize or upload_tmp_dir
 		}
 		// Save content before scanning (scanner consumes the buffer)
 		iniContent := b.String()
