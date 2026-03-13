@@ -265,16 +265,44 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		}
 		return nil
 	case "INI":
-		// Parse INI settings. Only enable tests whose INI settings we support.
-		supported := map[string]bool{
-			"error_reporting":        true,
-			"display_errors":         true,
-			"display_startup_errors": true,
-			"log_errors":             true,
-			"html_errors":            true,
-			"include_path":           true,
-			"error_log":              true,
-			"max_execution_time":     true,
+		// Parse INI settings. Skip tests that require features we definitely
+		// can't support. Accept everything else and let the test run.
+		unsupported := map[string]bool{
+			"file_uploads":             true, // file upload handling
+			"enable_post_data_reading": true, // POST data parsing control
+			"post_max_size":            true, // POST size limit
+			"upload_max_filesize":      true, // upload size limit
+			"max_file_uploads":         true, // upload count limit
+			"memory_limit":             true, // memory tracking not implemented
+			"hard_timeout":             true, // hard timeout not implemented
+			"zlib.output_compression":  true, // compression not implemented
+			"session.auto_start":       true, // sessions not implemented
+			"filter.default":           true, // input filtering not implemented
+			"open_basedir":             true, // open_basedir restriction not implemented
+			"precision":                true, // float precision control not implemented
+			"serialize_precision":      true, // serialization precision not implemented
+			"register_argc_argv":       true, // argv/argc control not implemented
+			"variables_order":          true, // superglobal ordering not implemented
+			"highlight.string":         true, // syntax highlighting not implemented
+			"highlight.comment":        true,
+			"highlight.keyword":        true,
+			"highlight.default":        true,
+			"highlight.html":           true,
+			"max_input_nesting_level":  true, // input nesting limit not implemented
+			"max_input_vars":           true, // input vars limit not implemented
+			"short_open_tag":           true, // short open tags not fully implemented
+			"auto_prepend_file":        true, // auto prepend not implemented
+			"disable_functions":        true, // function disabling not implemented
+			"allow_url_fopen":          true, // URL fopen restriction not implemented
+			"default_charset":          true, // charset handling differences
+			"error_log_mode":           true, // log mode not implemented
+			"report_memleaks":          true, // memory leak detection not implemented
+			"sys_temp_dir":             true, // temp dir config not implemented
+			"date.timezone":            true, // timezone config not fully implemented
+			"opcache.save_comments":    true, // opcache not implemented
+			"opcache.optimization_level": true, // opcache not implemented
+			"docref_root":              true, // error doc URLs not implemented
+			"arg_separator.input":      true, // query string separator not implemented
 		}
 		// Save content before scanning (scanner consumes the buffer)
 		iniContent := b.String()
@@ -290,7 +318,7 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 				continue
 			}
 			k := strings.TrimSpace(line[:pos])
-			if !supported[k] {
+			if unsupported[k] {
 				hasUnsupported = true
 				break
 			}
