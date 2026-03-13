@@ -131,9 +131,9 @@ func lexInterpolatedArrayAccess(l *Lexer) lexState {
 			lexPhpString(l)
 		default:
 			if c < 0x20 || c == 0x7f {
-				return l.error("syntax error, unexpected character 0x%02X", c)
+				return l.error("syntax error, unexpected character 0x%02X, expecting identifier (T_STRING) or variable (T_VARIABLE) or number (T_NUM_STRING)", c)
 			}
-			return l.error("syntax error, unexpected character %c", c)
+			return l.error("syntax error, unexpected character %c, expecting identifier (T_STRING) or variable (T_VARIABLE) or number (T_NUM_STRING)", c)
 		}
 	}
 

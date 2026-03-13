@@ -86,6 +86,97 @@ func (r *runClassStaticVarRef) Dump(w io.Writer) error {
 	return err
 }
 
+// when classname::${expr} is used (dynamic static property)
+type runClassStaticDynVarRef struct {
+	className phpv.Runnable
+	nameExpr  phpv.Runnable
+	l         *phpv.Loc
+}
+
+func (r *runClassStaticDynVarRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
+	className, err := r.className.Run(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var class phpv.ZClass
+	switch className.GetType() {
+	case phpv.ZtObject:
+		class = className.AsObject(ctx).GetClass()
+	case phpv.ZtString:
+		class, err = ctx.Global().GetClass(ctx, className.AsString(ctx), true)
+	default:
+		return nil, errors.New("invalid method receiver type: " + className.GetName().String())
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	nameVal, err := r.nameExpr.Run(ctx)
+	if err != nil {
+		return nil, err
+	}
+	varName := phpv.ZString(nameVal.String())
+
+	zc := class.(*phpobj.ZClass)
+	p, found, err := zc.FindStaticProp(ctx, varName)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Access to undeclared static property %s::$%s", class.GetName(), varName))
+	}
+
+	v := p.GetString(varName)
+	return phpv.NewZVal(v.Value()), nil
+}
+
+func (r *runClassStaticDynVarRef) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
+	className, err := r.className.Run(ctx)
+	if err != nil {
+		return err
+	}
+
+	class, err := ctx.Global().GetClass(ctx, className.AsString(ctx), true)
+	if err != nil {
+		return err
+	}
+
+	nameVal, err := r.nameExpr.Run(ctx)
+	if err != nil {
+		return err
+	}
+	varName := phpv.ZString(nameVal.String())
+
+	zc := class.(*phpobj.ZClass)
+	p, found, err := zc.FindStaticProp(ctx, varName)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Access to undeclared static property %s::$%s", class.GetName(), varName))
+	}
+
+	return p.SetString(varName, value)
+}
+
+func (r *runClassStaticDynVarRef) Loc() *phpv.Loc {
+	return r.l
+}
+
+func (r *runClassStaticDynVarRef) Dump(w io.Writer) error {
+	_, err := fmt.Fprintf(w, "%s::${", r.className)
+	if err != nil {
+		return err
+	}
+	err = r.nameExpr.Dump(w)
+	if err != nil {
+		return err
+	}
+	_, err = w.Write([]byte{'}'})
+	return err
+}
+
 // when classname::something is used
 type runClassStaticObjRef struct {
 	className phpv.Runnable

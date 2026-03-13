@@ -717,6 +717,34 @@ func compilePaamayimNekudotayim(v phpv.Runnable, i *tokenizer.Item, c compileCtx
 	switch i.Type {
 	default:
 		return nil, i.Unexpected()
+	case tokenizer.Rune('$'):
+		// C::${expr} or C::$var — dynamic static property access
+		i, err = c.NextItem()
+		if err != nil {
+			return nil, err
+		}
+		if i.Type == tokenizer.Rune('{') {
+			// C::${expr}
+			expr, err := compileExpr(nil, c)
+			if err != nil {
+				return nil, err
+			}
+			i, err = c.NextItem()
+			if err != nil {
+				return nil, err
+			}
+			if i.Type != tokenizer.Rune('}') {
+				return nil, i.Unexpected()
+			}
+			return &runClassStaticDynVarRef{v, expr, l}, nil
+		}
+		// C::$var — indirect via variable
+		c.backup()
+		expr, err := compileExpr(nil, c)
+		if err != nil {
+			return nil, err
+		}
+		return &runClassStaticDynVarRef{v, expr, l}, nil
 	case tokenizer.T_VARIABLE:
 		return &runClassStaticVarRef{v, ident[1:], l}, nil
 
@@ -754,6 +782,55 @@ func compileObjectOperator(v phpv.Runnable, i *tokenizer.Item, c compileCtx, nul
 
 	// After ->, PHP keywords can be used as property/method names
 	switch i.Type {
+	case tokenizer.Rune('$'):
+		// $obj->${expr} or $obj->$var — variable-variable property access
+		// ${expr} is equivalent to {expr} for property name resolution
+		i, err = c.NextItem()
+		if err != nil {
+			return nil, err
+		}
+		if i.Type == tokenizer.Rune('{') {
+			// $obj->${expr} — same as $obj->{expr}
+			expr, err := compileExpr(nil, c)
+			if err != nil {
+				return nil, err
+			}
+			i, err = c.NextItem()
+			if err != nil {
+				return nil, err
+			}
+			if i.Type != tokenizer.Rune('}') {
+				return nil, i.Unexpected()
+			}
+			i, err = c.NextItem()
+			if err != nil {
+				return nil, err
+			}
+			c.backup()
+			if i.IsSingle('(') {
+				dynFunc := &runObjectDynFunc{ref: v, nameExpr: expr, l: l, nullsafe: nullsafe}
+				dynFunc.args, err = compileFuncPassedArgs(c)
+				return dynFunc, err
+			}
+			return &runObjectDynVar{ref: v, nameExpr: expr, l: l, nullsafe: nullsafe}, nil
+		}
+		// $obj->$var — indirect property, variable contains property name
+		c.backup()
+		expr, err := compileExpr(nil, c)
+		if err != nil {
+			return nil, err
+		}
+		i, err = c.NextItem()
+		if err != nil {
+			return nil, err
+		}
+		c.backup()
+		if i.IsSingle('(') {
+			dynFunc := &runObjectDynFunc{ref: v, nameExpr: expr, l: l, nullsafe: nullsafe}
+			dynFunc.args, err = compileFuncPassedArgs(c)
+			return dynFunc, err
+		}
+		return &runObjectDynVar{ref: v, nameExpr: expr, l: l, nullsafe: nullsafe}, nil
 	case tokenizer.Rune('{'):
 		// Dynamic property/method: $obj->{expr}
 		expr, err := compileExpr(nil, c)
