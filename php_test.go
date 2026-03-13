@@ -36,6 +36,7 @@ type phptest struct {
 	name   string
 	path   string
 	req    *http.Request
+	iniRaw string // raw INI settings from --INI-- section
 
 	p *phpctx.Process
 
@@ -70,6 +71,13 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 	case "FILE", "FILEEOF":
 		// pass data to the engine
 		g := phpctx.NewGlobalReq(p.req, p.p, ini.New())
+
+		// Apply --INI-- settings after global context is created (after defaults)
+		if p.iniRaw != "" {
+			if err := g.IniConfig.Parse(g, strings.NewReader(p.iniRaw)); err != nil {
+				return err
+			}
+		}
 		g.SetOutput(p.output)
 
 		// Convert to absolute path so __DIR__ and include paths work correctly
@@ -256,7 +264,43 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 			return fmt.Errorf("output not as expected!\n%s", diff.LineDiff(exp, string(out)))
 		}
 		return nil
-	case "INI", "EXTENSIONS":
+	case "INI":
+		// Parse INI settings. Only enable tests whose INI settings we support.
+		supported := map[string]bool{
+			"error_reporting":        true,
+			"display_errors":         true,
+			"display_startup_errors": true,
+			"log_errors":             true,
+			"html_errors":            true,
+			"include_path":           true,
+			"error_log":              true,
+			"max_execution_time":     true,
+		}
+		// Save content before scanning (scanner consumes the buffer)
+		iniContent := b.String()
+		scanner := bufio.NewScanner(strings.NewReader(iniContent))
+		hasUnsupported := false
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if line == "" || line[0] == ';' {
+				continue
+			}
+			pos := strings.IndexByte(line, '=')
+			if pos == -1 {
+				continue
+			}
+			k := strings.TrimSpace(line[:pos])
+			if !supported[k] {
+				hasUnsupported = true
+				break
+			}
+		}
+		if hasUnsupported {
+			return skipTest
+		}
+		p.iniRaw = iniContent
+		return nil
+	case "EXTENSIONS":
 		// TODO
 		return skipTest
 	case "XFAIL":

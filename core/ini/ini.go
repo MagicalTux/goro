@@ -159,19 +159,21 @@ func (c *Config) Parse(ctx phpv.Context, r io.Reader) error {
 	for {
 		lineNo += 1
 		l, err := buf.ReadString('\n')
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
+		if err != nil && err != io.EOF {
 			return err
 		}
+		atEOF := err == io.EOF
 		l = strings.TrimSpace(l)
 		if l == "" {
-			// empty line
+			if atEOF {
+				break
+			}
 			continue
 		}
 		if l[0] == ';' {
-			// comment only line
+			if atEOF {
+				break
+			}
 			continue
 		}
 
@@ -190,6 +192,9 @@ func (c *Config) Parse(ctx phpv.Context, r io.Reader) error {
 			}
 
 			// s = l[1 : len(l)-1]
+			if atEOF {
+				break
+			}
 			continue
 		}
 
@@ -197,11 +202,14 @@ func (c *Config) Parse(ctx phpv.Context, r io.Reader) error {
 		pos := strings.IndexByte(l, '=')
 		if pos == -1 {
 			// lines without values are considered to be ignored by php
+			if atEOF {
+				break
+			}
 			continue
 		}
 
-		k := l[:pos]
-		l = l[pos+1:]
+		k := strings.TrimSpace(l[:pos])
+		l = strings.TrimSpace(l[pos+1:])
 
 		expr, err := c.EvalConfigValue(ctx, phpv.ZString(l))
 		if err != nil {
@@ -211,6 +219,9 @@ func (c *Config) Parse(ctx phpv.Context, r io.Reader) error {
 			Global: expr,
 		}
 
+		if atEOF {
+			break
+		}
 	}
 
 	return nil

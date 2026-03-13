@@ -20,11 +20,12 @@ const (
 	E_USER_ERROR
 	E_USER_WARNING
 	E_USER_NOTICE
-	E_STRICT
+	E_STRICT // deprecated since PHP 8.0, removed in 8.4
 	E_RECOVERABLE_ERROR
 	E_DEPRECATED
 	E_USER_DEPRECATED
-	E_ALL PhpErrorType = (1 << iota) - 1
+	// E_ALL excludes E_STRICT (removed in PHP 8.4)
+	E_ALL PhpErrorType = (1 << iota) - 1 - E_STRICT
 )
 
 type PhpError struct {

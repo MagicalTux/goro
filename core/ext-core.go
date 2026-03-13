@@ -74,6 +74,7 @@ func init() {
 			"ini_alter":                 {Func: fncIniSet, Args: []*phpctx.ExtFunctionArg{}}, // alias
 			"ini_get":                   {Func: fncIniGet, Args: []*phpctx.ExtFunctionArg{}},
 			"ini_get_all":               {Func: fncIniGetAll, Args: []*phpctx.ExtFunctionArg{}},
+			"ini_parse_quantity":         {Func: fncIniParseQuantity, Args: []*phpctx.ExtFunctionArg{}},
 			"ini_restore":               {Func: fncIniRestore, Args: []*phpctx.ExtFunctionArg{}},
 			"ini_set":                   {Func: fncIniSet, Args: []*phpctx.ExtFunctionArg{}},
 			"phpversion":                {Func: stdFuncPhpVersion, Args: []*phpctx.ExtFunctionArg{}},

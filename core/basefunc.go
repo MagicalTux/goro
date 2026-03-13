@@ -4,6 +4,7 @@ import (
 	"strings"
 	"unsafe"
 
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpctx"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
@@ -286,6 +287,99 @@ func fncGetDefinedFunctions(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 	}
 
 	return result.ZVal(), nil
+}
+
+// > func int ini_parse_quantity ( string $shorthand )
+func fncIniParseQuantity(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var shorthand phpv.ZString
+	_, err := Expand(ctx, args, &shorthand)
+	if err != nil {
+		return nil, err
+	}
+
+	s := strings.TrimSpace(string(shorthand))
+	if s == "" {
+		return phpv.ZInt(0).ZVal(), nil
+	}
+
+	// Parse sign
+	negative := false
+	if len(s) > 0 && s[0] == '-' {
+		negative = true
+		s = s[1:]
+	} else if len(s) > 0 && s[0] == '+' {
+		s = s[1:]
+	}
+
+	// Parse numeric value (supports hex 0x, octal 0, decimal)
+	var num int64
+	numEnd := 0
+	if strings.HasPrefix(s, "0x") || strings.HasPrefix(s, "0X") {
+		numEnd = 2
+		for numEnd < len(s) {
+			c := s[numEnd]
+			if c >= '0' && c <= '9' {
+				num = num*16 + int64(c-'0')
+			} else if c >= 'a' && c <= 'f' {
+				num = num*16 + int64(c-'a'+10)
+			} else if c >= 'A' && c <= 'F' {
+				num = num*16 + int64(c-'A'+10)
+			} else {
+				break
+			}
+			numEnd++
+		}
+	} else {
+		for numEnd < len(s) {
+			c := s[numEnd]
+			if c >= '0' && c <= '9' {
+				num = num*10 + int64(c-'0')
+			} else {
+				break
+			}
+			numEnd++
+		}
+	}
+
+	// Skip past any trailing junk to find the multiplier
+	rest := strings.TrimSpace(s[numEnd:])
+	multiplier := int64(1)
+	if len(rest) > 0 {
+		last := rest[len(rest)-1]
+		switch last | 0x20 {
+		case 'k':
+			multiplier = 1024
+		case 'm':
+			multiplier = 1024 * 1024
+		case 'g':
+			multiplier = 1024 * 1024 * 1024
+		default:
+			// Unknown suffix character - emit warning
+			origStr := string(shorthand)
+			numStr := s[:numEnd]
+			if negative {
+				numStr = "-" + numStr
+			}
+			ctx.Warn("Invalid quantity \"%s\": unknown multiplier \"%c\", interpreting as \"%s\" for backwards compatibility",
+				origStr, last, numStr, logopt.Data{NoFuncName: true})
+		}
+		// Check for extra chars between number and multiplier
+		if multiplier > 1 && len(rest) > 1 {
+			origStr := string(shorthand)
+			numStr := s[:numEnd]
+			if negative {
+				numStr = "-" + numStr
+			}
+			ctx.Warn("Invalid quantity \"%s\", interpreting as \"%s %c\" for backwards compatibility",
+				origStr, numStr, rest[len(rest)-1], logopt.Data{NoFuncName: true})
+		}
+	}
+
+	num *= multiplier
+	if negative {
+		num = -num
+	}
+	return phpv.ZInt(num).ZVal(), nil
 }
 
 // > func string get_debug_type ( mixed $value )
