@@ -104,63 +104,63 @@ func init() {
 		Name:    "TypeError",
 		Extends: Error,
 		Props:   Error.Props,
-		Methods: copyMethods(Error.Methods),
+		Methods: CopyMethods(Error.Methods),
 	}
 
 	ValueError = &ZClass{
 		Name:    "ValueError",
 		Extends: Error,
 		Props:   Error.Props,
-		Methods: copyMethods(Error.Methods),
+		Methods: CopyMethods(Error.Methods),
 	}
 
 	ArgumentCountError = &ZClass{
 		Name:    "ArgumentCountError",
 		Extends: TypeError,
 		Props:   TypeError.Props,
-		Methods: copyMethods(TypeError.Methods),
+		Methods: CopyMethods(TypeError.Methods),
 	}
 
 	ArithmeticError = &ZClass{
 		Name:    "ArithmeticError",
 		Extends: Error,
 		Props:   Error.Props,
-		Methods: copyMethods(Error.Methods),
+		Methods: CopyMethods(Error.Methods),
 	}
 
 	DivisionByZeroError = &ZClass{
 		Name:    "DivisionByZeroError",
 		Extends: ArithmeticError,
 		Props:   ArithmeticError.Props,
-		Methods: copyMethods(ArithmeticError.Methods),
+		Methods: CopyMethods(ArithmeticError.Methods),
 	}
 
 	UnhandledMatchError = &ZClass{
 		Name:    "UnhandledMatchError",
 		Extends: Error,
 		Props:   Error.Props,
-		Methods: copyMethods(Error.Methods),
+		Methods: CopyMethods(Error.Methods),
 	}
 
 	CompileError = &ZClass{
 		Name:    "CompileError",
 		Extends: Error,
 		Props:   Error.Props,
-		Methods: copyMethods(Error.Methods),
+		Methods: CopyMethods(Error.Methods),
 	}
 
 	ParseError = &ZClass{
 		Name:    "ParseError",
 		Extends: CompileError,
 		Props:   CompileError.Props,
-		Methods: copyMethods(CompileError.Methods),
+		Methods: CopyMethods(CompileError.Methods),
 	}
 
 	AssertionError = &ZClass{
 		Name:    "AssertionError",
 		Extends: Error,
 		Props:   Error.Props,
-		Methods: copyMethods(Error.Methods),
+		Methods: CopyMethods(Error.Methods),
 	}
 
 	// ErrorException extends Exception with severity support
@@ -171,7 +171,7 @@ func init() {
 			{VarName: phpv.ZString("severity"), Default: phpv.ZInt(int64(phpv.E_ERROR)).ZVal(), Modifiers: phpv.ZAttrProtected},
 		}, Exception.Props...),
 		Methods: func() map[phpv.ZString]*phpv.ZClassMethod {
-			m := copyMethods(Exception.Methods)
+			m := CopyMethods(Exception.Methods)
 			m["__construct"] = &phpv.ZClassMethod{Name: "__construct", Method: NativeMethod(errorExceptionConstruct)}
 			m["getseverity"] = &phpv.ZClassMethod{Name: "getSeverity", Method: NativeMethod(func(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				return o.HashTable().GetString("severity"), nil
@@ -185,42 +185,42 @@ func init() {
 		Name:    "LogicException",
 		Extends: Exception,
 		Props:   Exception.Props,
-		Methods: copyMethods(Exception.Methods),
+		Methods: CopyMethods(Exception.Methods),
 	}
 
 	BadFunctionCallException = &ZClass{
 		Name:    "BadFunctionCallException",
 		Extends: LogicException,
 		Props:   LogicException.Props,
-		Methods: copyMethods(LogicException.Methods),
+		Methods: CopyMethods(LogicException.Methods),
 	}
 
 	InvalidArgumentException = &ZClass{
 		Name:    "InvalidArgumentException",
 		Extends: LogicException,
 		Props:   LogicException.Props,
-		Methods: copyMethods(LogicException.Methods),
+		Methods: CopyMethods(LogicException.Methods),
 	}
 
 	RuntimeException = &ZClass{
 		Name:    "RuntimeException",
 		Extends: Exception,
 		Props:   Exception.Props,
-		Methods: copyMethods(Exception.Methods),
+		Methods: CopyMethods(Exception.Methods),
 	}
 
 	OverflowException = &ZClass{
 		Name:    "OverflowException",
 		Extends: RuntimeException,
 		Props:   RuntimeException.Props,
-		Methods: copyMethods(RuntimeException.Methods),
+		Methods: CopyMethods(RuntimeException.Methods),
 	}
 
 	UnexpectedValueException = &ZClass{
 		Name:    "UnexpectedValueException",
 		Extends: RuntimeException,
 		Props:   RuntimeException.Props,
-		Methods: copyMethods(RuntimeException.Methods),
+		Methods: CopyMethods(RuntimeException.Methods),
 	}
 }
 
@@ -262,7 +262,7 @@ func errorExceptionConstruct(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*
 	return phpv.ZNULL.ZVal(), nil
 }
 
-func copyMethods(src map[phpv.ZString]*phpv.ZClassMethod) map[phpv.ZString]*phpv.ZClassMethod {
+func CopyMethods(src map[phpv.ZString]*phpv.ZClassMethod) map[phpv.ZString]*phpv.ZClassMethod {
 	dst := make(map[phpv.ZString]*phpv.ZClassMethod, len(src))
 	for k, v := range src {
 		// Deep copy so RegisterExt setting m.Class doesn't affect the original
