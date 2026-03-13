@@ -86,6 +86,15 @@ type UndefinedChecker interface {
 	VarName() ZString
 }
 
+// CompoundWritable is a marker interface for Writable types that represent
+// compound expressions (array elements, object properties) rather than simple
+// variables. These need special handling for by-ref parameter passing because
+// the reference needs to be created and cleaned up explicitly.
+type CompoundWritable interface {
+	Writable
+	IsCompoundWritable()
+}
+
 // WriteContextSetter is implemented by Runnable types (like array access
 // expressions) that can be put into write context to suppress warnings
 // during auto-vivification. Used when passing array elements by reference.

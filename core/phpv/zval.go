@@ -104,6 +104,21 @@ func (z *ZVal) IsRef() bool {
 	return isRef
 }
 
+// MakeRef converts a plain ZVal into a reference in-place by wrapping its
+// current value in an inner ZVal. If already a reference, this is a no-op.
+// This is used when a hash table entry needs to become a reference without
+// going through Set() which has self-reference detection that creates an
+// unwanted double-reference.
+func (z *ZVal) MakeRef() {
+	if z == nil {
+		return
+	}
+	if _, isRef := z.v.(*ZVal); isRef {
+		return // already a ref
+	}
+	z.v = &ZVal{v: z.v}
+}
+
 // UnRef unwraps a reference, replacing the outer ZVal's value with the inner
 // value. This simulates PHP's refcount-based un-ref when refcount drops to 1.
 func (z *ZVal) UnRef() {

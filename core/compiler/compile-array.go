@@ -337,6 +337,8 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	return array.OffsetGet(ctx, offset)
 }
 
+func (a *runArrayAccess) IsCompoundWritable() {}
+
 func (a *runArrayAccess) Loc() *phpv.Loc {
 	return a.l
 }

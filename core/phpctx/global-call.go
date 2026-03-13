@@ -35,7 +35,7 @@ func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, o
 	callLoc := ctx.Loc()
 
 	var zArgs []*phpv.ZVal
-	var byRefCleanups []*phpv.ZVal // refs to unwrap after call returns
+	var byRefCleanups []*phpv.ZVal
 	for i, arg := range args {
 		// Unwrap named arguments (already reordered to correct position)
 		if na, ok := arg.(phpv.NamedArgument); ok {
@@ -82,7 +82,7 @@ func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, o
 		}
 
 		if isRefParam {
-			writable, isWritable := arg.(phpv.Writable)
+			_, isWritable := arg.(phpv.Writable)
 			if !isWritable && !val.IsRef() {
 				// Non-variable, non-reference result passed to a by-ref parameter
 				if _, isFuncCall := arg.(phpv.FuncCallExpression); isFuncCall {
@@ -104,18 +104,22 @@ func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, o
 							funcName, i+1, funcArgs[i].VarName))
 				}
 			} else if isWritable && !val.IsRef() {
-				// Writable source (array element, object property) passed by ref:
-				// create the reference and write it back to the source so the
-				// source element also becomes a reference.
-				ref := val.Ref()
-				writable.WriteValue(ctx, ref)
-				val = ref
-				// Record for cleanup: when the function returns, the ref
-				// wrapper should be removed (PHP does this via refcounting;
-				// when refcount drops to 1, is_ref is cleared).
-				byRefCleanups = append(byRefCleanups, ref)
+				// For compound writable expressions (array elements, object
+				// properties), we need to ensure the element exists
+				// (auto-vivification) and set up a reference that gets cleaned
+				// up after the call. For simple variables, the existing ref
+				// mechanism in callZValImpl handles everything.
+				if _, isCompound := arg.(phpv.CompoundWritable); isCompound {
+					writable := arg.(phpv.Writable)
+					writable.WriteValue(ctx, val.Dup())
+					// Re-read to get the actual hash table entry ZVal.
+					val, _ = arg.Run(ctx)
+					// Make the hash table entry into a reference in-place.
+					val.MakeRef()
+					byRefCleanups = append(byRefCleanups, val)
+				}
 			}
-			// Reset write context after all by-ref handling (including WriteValue)
+			// Reset write context after all by-ref handling
 			if wcs, ok := arg.(phpv.WriteContextSetter); ok {
 				wcs.SetWriteContext(false)
 			}
@@ -134,10 +138,8 @@ func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, o
 	}
 	result, err := c.CallZVal(ctx, f, zArgs, optionalThis...)
 
-	// After the call returns, unwrap by-ref parameters that were created
-	// during this call. In PHP, when refcount drops to 1 (the function
-	// parameter goes out of scope), the is_ref flag is cleared. Since goro
-	// doesn't have refcounting, we do it explicitly here.
+	// After the call returns, unwrap by-ref hash table entries that were
+	// made into references during this call.
 	for _, ref := range byRefCleanups {
 		ref.UnRef()
 	}

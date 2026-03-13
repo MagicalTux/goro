@@ -94,12 +94,14 @@ func (r *runNewObject) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		}
 
 		if isRefParam {
-			writable, isWritable := a.(phpv.Writable)
-			if isWritable && !arg.IsRef() {
-				ref := arg.Ref()
-				writable.WriteValue(ctx, ref)
-				arg = ref
-				byRefCleanups = append(byRefCleanups, ref)
+			if cw, isCW := a.(phpv.CompoundWritable); isCW && !arg.IsRef() {
+				// Ensure the element exists (auto-vivification for $undef[0])
+				cw.WriteValue(ctx, arg.Dup())
+				// Re-read to get the actual hash table entry
+				arg, _ = a.Run(ctx)
+				// Make the hash table entry into a reference in-place
+				arg.MakeRef()
+				byRefCleanups = append(byRefCleanups, arg)
 			}
 			if wcs, ok := a.(phpv.WriteContextSetter); ok {
 				wcs.SetWriteContext(false)
@@ -111,7 +113,7 @@ func (r *runNewObject) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 
 	z, err := phpobj.NewZObject(ctx, class, args...)
 
-	// Unwrap by-ref parameters after constructor returns
+	// Unwrap by-ref hash table entries after constructor returns
 	for _, ref := range byRefCleanups {
 		ref.UnRef()
 	}
@@ -566,6 +568,8 @@ func (r *runObjectVar) PrepareWrite(ctx phpv.Context) error {
 	return nil
 }
 
+func (r *runObjectVar) IsCompoundWritable() {}
+
 func (r *runObjectVar) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 	// write object property
 	obj, err := r.ref.Run(ctx)
@@ -656,6 +660,8 @@ func (r *runObjectDynVar) PrepareWrite(ctx phpv.Context) error {
 	r.cachedName = name.Dup()
 	return nil
 }
+
+func (r *runObjectDynVar) IsCompoundWritable() {}
 
 func (r *runObjectDynVar) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 	obj, err := r.ref.Run(ctx)
