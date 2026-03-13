@@ -752,20 +752,33 @@ func (o *ZObject) checkPropertyVisibility(ctx phpv.Context, keyStr phpv.ZString,
 	// declares this property as private, access is always allowed (it's their own property).
 	if callerClass != nil {
 		if callerZClass, ok := callerClass.(*ZClass); ok {
-			if prop, ok := callerZClass.GetProp(keyStr); ok && prop.Modifiers.IsPrivate() && !prop.Modifiers.IsStatic() {
+			// Only check the caller's OWN declared props (not walking hierarchy).
+			// D extending C with private $p: D should NOT get blanket access.
+			if prop, ok := getOwnProp(callerZClass, keyStr); ok && prop.Modifiers.IsPrivate() && !prop.Modifiers.IsStatic() {
 				return nil
 			}
 		}
 	}
 
-	// Look up property declaration in class hierarchy
+	// Walk the class hierarchy, checking each class's OWN declared props
+	// (not using GetProp which walks the hierarchy internally).
 	class := o.Class.(*ZClass)
+	concreteClass := class
 	for class != nil {
-		if prop, ok := class.GetProp(keyStr); ok {
+		for _, prop := range class.Props {
+			if prop.VarName != keyStr {
+				continue
+			}
 			if prop.Modifiers.IsPrivate() {
-				if callerClass == nil || callerClass.GetName() != class.GetName() {
-					return ThrowError(ctx, Error, fmt.Sprintf("Cannot access private property %s::$%s", o.Class.GetName(), keyStr))
+				if callerClass != nil && callerClass.GetName() == class.GetName() {
+					return nil // caller is the declaring class, allowed
 				}
+				// Private property from a parent class is invisible to outsiders.
+				// Skip it and continue looking in parent classes.
+				if class != concreteClass {
+					goto nextClass
+				}
+				return ThrowError(ctx, Error, fmt.Sprintf("Cannot access private property %s::$%s", class.GetName(), keyStr))
 			} else if prop.Modifiers.IsProtected() {
 				if callerClass == nil {
 					return ThrowError(ctx, Error, fmt.Sprintf("Cannot access protected property %s::$%s", o.Class.GetName(), keyStr))
@@ -776,11 +789,11 @@ func (o *ZObject) checkPropertyVisibility(ctx phpv.Context, keyStr phpv.ZString,
 			}
 			return nil
 		}
-		parent := class.GetParent()
-		if parent == nil {
+	nextClass:
+		if class.Extends == nil {
 			break
 		}
-		class = parent.(*ZClass)
+		class = class.Extends
 	}
 	return nil
 }
@@ -932,6 +945,21 @@ func (o *ZObject) ObjectSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) er
 			_, err := ctx.CallZVal(ctx, m.Method, []*phpv.ZVal{keyStr.ZVal(), value}, o)
 			delete(o.setGuard, keyStr)
 			return err
+		}
+	}
+
+	// If the caller's own class declares a private property with this name and it was unset,
+	// recreate it under the mangled name (PHP allows recreating unset private props
+	// from within the declaring class). This check is after __set so that __set
+	// takes priority when defined.
+	if _, ok := o.hasPrivate[keyStr]; ok {
+		if callerClass := ctx.Class(); callerClass != nil {
+			if callerZClass, ok := callerClass.(*ZClass); ok {
+				if prop, ok := getOwnProp(callerZClass, keyStr); ok && prop.Modifiers.IsPrivate() {
+					propName := getPrivatePropName(callerClass, keyStr)
+					return o.h.SetString(propName, value)
+				}
+			}
 		}
 	}
 
@@ -1145,7 +1173,9 @@ func (o *ZObject) resolvePrivateClass(ctx phpv.Context, keyStr phpv.ZString) php
 	callerClass := ctx.Class()
 	if callerClass != nil {
 		if callerZClass, ok := callerClass.(*ZClass); ok {
-			if prop, ok := callerZClass.GetProp(keyStr); ok && prop.Modifiers.IsPrivate() && !prop.Modifiers.IsStatic() {
+			// Only check the caller's OWN declared props (not walking hierarchy).
+			// D extending C with private $p: D's methods should NOT resolve to D.
+			if prop, ok := getOwnProp(callerZClass, keyStr); ok && prop.Modifiers.IsPrivate() && !prop.Modifiers.IsStatic() {
 				return callerClass
 			}
 		}
@@ -1161,8 +1191,10 @@ func (o *ZObject) checkStaticPropertyAccess(ctx phpv.Context, keyStr phpv.ZStrin
 	// If the caller's own class has a private non-static property with this name,
 	// the private property takes precedence — don't emit the static notice.
 	if callerClass := ctx.Class(); callerClass != nil {
-		if prop, ok := callerClass.GetProp(keyStr); ok && !prop.Modifiers.IsStatic() && prop.Modifiers.IsPrivate() {
-			return false
+		if callerZClass, ok := callerClass.(*ZClass); ok {
+			if prop, ok := getOwnProp(callerZClass, keyStr); ok && !prop.Modifiers.IsStatic() && prop.Modifiers.IsPrivate() {
+				return false
+			}
 		}
 	}
 	class := o.Class.(*ZClass)
@@ -1198,4 +1230,15 @@ func (o *ZObject) checkStaticPropertyAccess(ctx phpv.Context, keyStr phpv.ZStrin
 
 func getPrivatePropName(class phpv.ZClass, name phpv.ZString) phpv.ZString {
 	return phpv.ZString(fmt.Sprintf("*%s:%s", class.GetName(), name))
+}
+
+// getOwnProp checks only this class's directly declared Props (NOT walking
+// the hierarchy via GetProp). Returns the prop and true if found.
+func getOwnProp(class *ZClass, name phpv.ZString) (*phpv.ZClassProp, bool) {
+	for _, p := range class.Props {
+		if p.VarName == name {
+			return p, true
+		}
+	}
+	return nil, false
 }

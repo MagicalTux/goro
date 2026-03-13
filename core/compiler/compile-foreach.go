@@ -42,11 +42,13 @@ func (r *runnableForeach) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 
 	if z.GetType() == phpv.ZtArray {
 		if r.ref {
-			// For by-reference foreach, force COW separation before creating the
-			// iterator. This ensures the iterator points to the post-copy entries,
-			// so that writes to the array (which also go through the index maps)
-			// modify the same entries the iterator traverses.
-			z.HashTable().SeparateCow()
+			// For by-reference foreach, separate this variable's array from
+			// any other variables sharing the same *ZArray (PHP COW semantics).
+			// Create a new independent array and replace the variable's inner
+			// value, so that copies made before the loop retain original data.
+			dup := z.Dup()
+			dup.HashTable().SeparateCow()
+			z.Set(dup)
 		} else {
 			// For non-reference foreach, snapshot the array so modifications
 			// during iteration don't affect the loop (PHP copy-on-write semantics).

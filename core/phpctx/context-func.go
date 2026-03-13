@@ -169,7 +169,46 @@ func (c *FuncContext) OffsetSet(ctx phpv.Context, name phpv.Val, v *phpv.ZVal) e
 	case "this":
 		return ctx.Errorf("Cannot re-assign $this")
 	}
+
+	// Eagerly call __destruct when overwriting a variable that holds an object.
+	// This matches PHP's behavior where destructors fire immediately when
+	// the last reference to an object is removed (e.g., $o = null).
+	if old := c.h.GetString(nameStr); old != nil && old.GetType() == phpv.ZtObject {
+		if obj, ok := old.Value().(phpv.ZObject); ok {
+			if m, hasDestructor := obj.GetClass().GetMethod("__destruct"); hasDestructor {
+				// Only eagerly destruct if the destructor is accessible from current scope
+				if canCallDestructor(ctx, m, obj) {
+					err := c.h.SetString(nameStr, v)
+					if err != nil {
+						return err
+					}
+					if destructable, ok2 := obj.(interface {
+						CallDestructor(phpv.Context) error
+					}); ok2 {
+						destructable.CallDestructor(ctx)
+					}
+					return nil
+				}
+			}
+		}
+	}
+
 	return c.h.SetString(nameStr, v)
+}
+
+// canCallDestructor checks whether the current calling scope has visibility
+// access to call the destructor. Returns false for private/protected destructors
+// called from a scope that doesn't have access, so they'll be handled at shutdown.
+func canCallDestructor(ctx phpv.Context, m *phpv.ZClassMethod, obj phpv.ZObject) bool {
+	if !m.Modifiers.IsPrivate() && !m.Modifiers.IsProtected() {
+		return true // public destructor, always callable
+	}
+	callerClass := ctx.Class()
+	if m.Modifiers.IsPrivate() {
+		return callerClass != nil && callerClass.GetName() == obj.GetClass().GetName()
+	}
+	// protected
+	return callerClass != nil && (callerClass.InstanceOf(obj.GetClass()) || obj.GetClass().InstanceOf(callerClass))
 }
 
 func (c *FuncContext) OffsetUnset(ctx phpv.Context, name phpv.Val) error {
