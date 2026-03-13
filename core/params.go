@@ -4,7 +4,6 @@ import (
 	"errors"
 	"reflect"
 
-	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phperr"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
@@ -341,19 +340,6 @@ func ExpandAt(ctx phpv.Context, args []*phpv.ZVal, i int, out interface{}) error
 	if isRef {
 		args[i] = args[i].Ref()
 	} else {
-		parentCtx := ctx.Parent(1)
-		if parentCtx == nil {
-			parentCtx = ctx
-		}
-		if args[i].GetName() != "" {
-			if ok, _ := parentCtx.OffsetExists(ctx, args[i].GetName()); !ok {
-				if err := ctx.Warn("Undefined variable $%s",
-					args[i].GetName(), logopt.NoFuncName(true)); err != nil {
-					return err
-				}
-			}
-		}
-
 		args[i] = args[i].Dup()
 	}
 

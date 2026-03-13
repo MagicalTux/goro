@@ -92,13 +92,10 @@ func (r *runVariable) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		case *runArrayAccess, *runnableForeach, *runDestructure:
 			write = true
 		case *runnableFunctionCall:
-			// Language constructs like echo/print never take references
-			switch t.name {
-			case "echo", "print":
-				write = false
-			default:
-				write = true
-			}
+			// Undefined variable warnings for function call args are handled
+			// in Call() which has access to parameter metadata (ref vs value).
+			// Suppress warnings here for all function calls.
+			write = true
 		case *runnableFunctionCallRef, *runObjectFunc:
 			// functions that take references can be considered as "write",
 			// but the param info is not available here, just assume

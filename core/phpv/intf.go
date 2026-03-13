@@ -65,3 +65,12 @@ type Callable interface {
 type Cloneable interface {
 	Clone() any
 }
+
+// UndefinedChecker is implemented by Runnable types that represent simple
+// variable accesses (e.g. $foo). It allows callers to check whether the
+// variable is defined before evaluating the expression — useful for emitting
+// "Undefined variable" warnings when passing undefined vars to functions.
+type UndefinedChecker interface {
+	IsUnDefined(ctx Context) bool
+	VarName() ZString
+}

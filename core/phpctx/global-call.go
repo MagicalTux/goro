@@ -27,16 +27,28 @@ func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, o
 
 	var zArgs []*phpv.ZVal
 	for i, arg := range args {
-		val, err := arg.Run(ctx)
-		if err != nil {
-			return nil, err
-		}
-
 		isRefParam := false
 		if funcArgs != nil && i < len(funcArgs) && funcArgs[i].Ref {
 			isRefParam = true
 		} else if extArgs != nil && i < len(extArgs) && extArgs[i].Ref {
 			isRefParam = true
+		}
+
+		// Emit "Undefined variable" warning for by-value params that are
+		// simple variables. This check must happen BEFORE arg.Run() since
+		// Run() suppresses warnings for function call contexts.
+		if !isRefParam {
+			if uc, ok := arg.(phpv.UndefinedChecker); ok {
+				if uc.IsUnDefined(ctx) {
+					ctx.Warn("Undefined variable $%s",
+						uc.VarName(), logopt.NoFuncName(true))
+				}
+			}
+		}
+
+		val, err := arg.Run(ctx)
+		if err != nil {
+			return nil, err
 		}
 
 		if isRefParam {
@@ -155,15 +167,6 @@ func (c *Global) CallZVal(ctx phpv.Context, f phpv.Callable, args []*phpv.ZVal, 
 					ctx.OffsetSet(ctx, callCtx.Args[i].GetName(), callCtx.Args[i])
 				}
 			} else {
-				argName := args[i].GetName()
-				if argName != "" {
-					if ok, _ := ctx.OffsetExists(ctx, argName); !ok {
-						if err := ctx.Warn("Undefined variable $%s",
-							argName, logopt.NoFuncName(true)); err != nil {
-							return nil, err
-						}
-					}
-				}
 				callCtx.Args[i] = callCtx.Args[i].Dup()
 			}
 		}
