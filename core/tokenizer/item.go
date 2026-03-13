@@ -60,6 +60,7 @@ const (
 	T_ENDSWITCH               // endswitch
 	T_ENDWHILE                // endwhile
 	T_END_HEREDOC
+	T_ENUM // "enum"
 	T_EVAL // eval()
 	T_EXIT // "exit" or "die"
 	T_EXTENDS

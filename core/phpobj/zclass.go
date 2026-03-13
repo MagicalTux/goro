@@ -32,6 +32,10 @@ type ZClass struct {
 
 	// class specific handlers
 	H *phpv.ZClassHandlers
+
+	// Enum support (PHP 8.1)
+	EnumBackingType phpv.ZType     // 0 for unit enums, ZtString or ZtInt for backed enums
+	EnumCases       []phpv.ZString // ordered list of case names
 }
 
 func (c *ZClass) GetName() phpv.ZString {

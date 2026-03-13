@@ -21,6 +21,7 @@ var phpMagicKeywords = map[string]ItemType{
 	"do":              T_DO,
 	"echo":            T_ECHO,
 	"else":            T_ELSE,
+	"enum":            T_ENUM,
 	"elseif":          T_ELSEIF,
 	"empty":           T_EMPTY,
 	"enddeclare":      T_ENDDECLARE,

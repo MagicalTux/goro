@@ -22,6 +22,7 @@ const (
 	ZClassTypeInterface                   = 0x40
 	ZClassTypeTrait                       = 0x80
 	ZClassTypeAnon                        = 0x100
+	ZClassTypeEnum                        = 0x200
 
 	ZAttrStatic         ZObjectAttr = ZObjectAttr(ZClassStatic)
 	ZAttrAbstract                   = ZObjectAttr(ZClassAbstract)

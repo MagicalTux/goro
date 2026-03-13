@@ -375,6 +375,19 @@ func (z *ZObject) Clone(ctx phpv.Context) (phpv.ZObject, error) {
 	return n, nil
 }
 
+// NewZObjectEnum creates a bare ZObject for an enum case without calling init()
+// or resolving constants. This avoids infinite recursion since enum cases are
+// stored as class constants themselves.
+func NewZObjectEnum(ctx phpv.Context, c phpv.ZClass) *ZObject {
+	return &ZObject{
+		h:          phpv.NewHashTable(),
+		Class:      c,
+		hasPrivate: make(map[phpv.ZString]struct{}),
+		Opaque:     map[phpv.ZClass]interface{}{},
+		ID:         ctx.Global().NextObjectID(),
+	}
+}
+
 func NewZObjectOpaque(ctx phpv.Context, c phpv.ZClass, v interface{}) (*ZObject, error) {
 	n := &ZObject{
 		h:          phpv.NewHashTable(),

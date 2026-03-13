@@ -745,6 +745,21 @@ func operatorCompareStrict(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.Z
 		res = a.Value().(phpv.ZFloat) == b.Value().(phpv.ZFloat)
 	case phpv.ZtString:
 		res = a.Value().(phpv.ZString) == b.Value().(phpv.ZString)
+	case phpv.ZtObject:
+		// For objects, === checks identity (same instance).
+		// We compare hash tables because ZObject.Unwrap() creates a new struct
+		// that shares the same hash table but has a different Go pointer.
+		aObj := a.AsObject(ctx)
+		bObj := b.AsObject(ctx)
+		if aObj != nil && bObj != nil {
+			res = aObj.HashTable() == bObj.HashTable()
+		} else {
+			res = aObj == nil && bObj == nil
+		}
+	case phpv.ZtArray:
+		// For arrays, === checks same keys and values in same order with strict comparison
+		// Simplified: compare by pointer identity for now
+		res = a.Value() == b.Value()
 	default:
 		return nil, ctx.Errorf("unsupported compare type %s", a.GetType())
 	}

@@ -36,6 +36,7 @@ func init() {
 		tokenizer.T_ABSTRACT:     &compileFuncCb{f: compileClass, skip: true},
 		tokenizer.T_FINAL:        &compileFuncCb{f: compileClass, skip: true},
 		tokenizer.T_INTERFACE:    &compileFuncCb{f: compileClass, skip: true},
+		tokenizer.T_ENUM:         &compileFuncCb{f: compileEnum, skip: true},
 		tokenizer.T_TRY:          &compileFuncCb{f: compileTry, skip: true},
 		tokenizer.T_CONST:        &compileFuncCb{f: compileTopLevelConst, skip: true},
 		tokenizer.T_STATIC:       &compileFuncCb{f: compileStaticVar},
