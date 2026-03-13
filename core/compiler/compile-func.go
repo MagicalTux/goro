@@ -711,7 +711,7 @@ func compileFunctionArgs(c compileCtx) (res []*phpv.FuncArg, err error) {
 				} else if rc, ok := r.(*runConstant); ok {
 					isNull = strings.EqualFold(string(rc.c), "null")
 				}
-				if isNull {
+				if isNull && !arg.Hint.Nullable {
 					arg.ImplicitlyNullable = true
 					arg.Hint.Nullable = true
 				}

@@ -89,6 +89,22 @@ func fncStreamIsatty(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZFalse.ZVal(), nil
 }
 
+// > func bool stream_wrapper_register ( string $protocol , string $classname [, int $flags = 0 ] )
+func fncStreamWrapperRegister(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var protocol phpv.ZString
+	var className phpv.ZString
+	_, err := core.Expand(ctx, args, &protocol, &className)
+	if err != nil {
+		return nil, err
+	}
+
+	g := ctx.Global().(*phpctx.Global)
+	handler := stream.NewUserStreamHandler(className)
+	g.RegisterStreamHandler(string(protocol), handler)
+
+	return phpv.ZTrue.ZVal(), nil
+}
+
 // > func bool stream_context_set_option ( resource $stream_or_context , string $wrapper , string $option , mixed $value )
 func fncStreamContextSetOption(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var streamOrContext phpv.Resource

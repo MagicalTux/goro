@@ -329,6 +329,8 @@ func init() {
 			"stream_context_set_option":  {Func: fncStreamContextSetOption, Args: []*phpctx.ExtFunctionArg{}},
 			"stream_get_contents":        {Func: fncStreamGetContents, Args: []*phpctx.ExtFunctionArg{}},
 			"stream_isatty":              {Func: fncStreamIsatty, Args: []*phpctx.ExtFunctionArg{}},
+			"stream_wrapper_register":    {Func: fncStreamWrapperRegister, Args: []*phpctx.ExtFunctionArg{}},
+			"stream_register_wrapper":    {Func: fncStreamWrapperRegister, Args: []*phpctx.ExtFunctionArg{}}, // alias
 			"strip_tags":                 {Func: fncStripTags, Args: []*phpctx.ExtFunctionArg{}},
 			"stripcslashes":              {Func: fncStripCSlashes, Args: []*phpctx.ExtFunctionArg{}},
 			"stripos":                    {Func: fncStrIPos, Args: []*phpctx.ExtFunctionArg{}},

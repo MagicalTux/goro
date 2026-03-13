@@ -154,6 +154,18 @@ func (g *Global) initLocale() {
 	locale.SetLocale(locale.LC_ALL, "")
 }
 
+func (g *Global) RegisterStreamHandler(scheme string, handler stream.Handler) {
+	g.streamHandlers[scheme] = handler
+}
+
+func (g *Global) UnregisterStreamHandler(scheme string) bool {
+	if _, ok := g.streamHandlers[scheme]; !ok {
+		return false
+	}
+	delete(g.streamHandlers, scheme)
+	return true
+}
+
 func (g *Global) AppendBuffer() *Buffer {
 	b := makeBuffer(g, g.out)
 	g.out = b
