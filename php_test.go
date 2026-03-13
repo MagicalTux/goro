@@ -322,7 +322,7 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 			// max_input_nesting_level: implemented in setUrlValueToArray (drops over-nested params)
 			// max_input_vars: limit on input parsing, tests use 1000 which is well above typical test needs
 			// short_open_tag: implemented in tokenizer - controls whether <? without php/= opens PHP mode
-			"auto_prepend_file":        true, // auto prepend not implemented
+			// auto_prepend_file: implemented in RunFile - includes file before main script
 			// disable_functions: implemented - removes named functions from available list
 			"allow_url_fopen":          true, // tests using this need HTTP server helpers we don't have
 			"default_charset":          true, // charset-aware functions (htmlentities etc) not fully implemented
@@ -379,6 +379,12 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		if hasUnsupported {
 			return skipError{reason: "unsupported INI"}
 		}
+		// Substitute {PWD} with test file directory (matches PHP run-tests.php)
+		testDir := filepath.Dir(p.path)
+		if absDir, err := filepath.Abs(testDir); err == nil {
+			testDir = absDir
+		}
+		iniContent = strings.ReplaceAll(iniContent, "{PWD}", testDir)
 		p.iniRaw = iniContent
 		return nil
 	case "EXTENSIONS":

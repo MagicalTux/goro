@@ -413,6 +413,13 @@ func (g *Global) GetStdin() *stream.Stream {
 }
 
 func (g *Global) RunFile(fn string) error {
+	// Handle auto_prepend_file: include a file before the main script
+	if prepend := g.GetConfig("auto_prepend_file", phpv.ZString("").ZVal()).String(); prepend != "" {
+		_, err := g.Include(g, phpv.ZString(prepend))
+		if err != nil {
+			return err
+		}
+	}
 	_, err := g.requireMain(phpv.ZString(fn))
 	err = phpv.FilterExitError(err)
 

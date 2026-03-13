@@ -5,10 +5,20 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/stream"
 )
+
+// getIncludePath reads the include_path INI setting and returns it as a slice of directories.
+func (g *Global) getIncludePath() []string {
+	val := g.GetConfig("include_path", phpv.ZStr(".")).String()
+	if val == "" {
+		return []string{"."}
+	}
+	return strings.Split(val, ":")
+}
 
 type OpenContext int
 
@@ -49,15 +59,16 @@ func (g *Global) Open(ctx phpv.Context, fn phpv.ZString, mode phpv.ZString, useI
 	// the docs didn't say if it should look in the
 	// include first or last, assuming the latter
 	if useIncludePath {
-		for _, p := range g.includePath {
-			var absPath string
+		for _, p := range g.getIncludePath() {
+			var dirPath string
 			if filepath.IsAbs(p) {
-				absPath = string(p)
+				dirPath = p
 			} else {
-				absPath = filepath.Join(g.fileHandler.Root, p)
+				dirPath = filepath.Join(g.fileHandler.Root, p)
 			}
 
-			f, err = g.fileHandler.OpenFile(ctx, absPath, "r")
+			fullPath := filepath.Join(dirPath, string(fn))
+			f, err = g.fileHandler.OpenFile(ctx, fullPath, "r")
 			if err == nil {
 				return f, nil
 			}
@@ -90,15 +101,16 @@ func (g *Global) openForInclusion(ctx phpv.Context, fn phpv.ZString) (*stream.St
 	}
 
 	var f *stream.Stream
-	for _, p := range g.includePath {
-		var absPath string
+	for _, p := range g.getIncludePath() {
+		var dirPath string
 		if filepath.IsAbs(p) {
-			absPath = string(p)
+			dirPath = p
 		} else {
-			absPath = filepath.Join(g.fileHandler.Root, p)
+			dirPath = filepath.Join(g.fileHandler.Root, p)
 		}
 
-		f, err = g.fileHandler.OpenFile(ctx, absPath, "r")
+		fullPath := filepath.Join(dirPath, string(fn))
+		f, err = g.fileHandler.OpenFile(ctx, fullPath, "r")
 		if err == nil {
 			break
 		}
