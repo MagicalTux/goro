@@ -189,7 +189,7 @@ func (r *runVariableRef) PrepareWrite(ctx phpv.Context) error {
 		return err
 	}
 	r.prepared = true
-	r.cachedKey = v
+	r.cachedKey = v.Dup()
 	return nil
 }
 

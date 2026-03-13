@@ -522,7 +522,7 @@ func (r *runObjectVar) PrepareWrite(ctx phpv.Context) error {
 			return err
 		}
 		r.prepared = true
-		r.cachedProp = offt
+		r.cachedProp = offt.Dup()
 	}
 	return nil
 }
@@ -614,7 +614,7 @@ func (r *runObjectDynVar) PrepareWrite(ctx phpv.Context) error {
 		return err
 	}
 	r.prepared = true
-	r.cachedName = name
+	r.cachedName = name.Dup()
 	return nil
 }
 

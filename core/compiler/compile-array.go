@@ -463,14 +463,16 @@ func (ac *runArrayAccess) PrepareWrite(ctx phpv.Context) error {
 			return err
 		}
 	}
-	// Evaluate and cache the offset expression
+	// Evaluate and cache the offset expression. We must snapshot the value
+	// because the original ZVal may be mutated later (e.g., ++$a returns
+	// the same ZVal that gets incremented by subsequent calls).
 	if ac.offset != nil {
 		offset, err := ac.offset.Run(ctx)
 		if err != nil {
 			return err
 		}
 		ac.prepared = true
-		ac.cachedOffset = offset
+		ac.cachedOffset = offset.Dup()
 	}
 	return nil
 }
