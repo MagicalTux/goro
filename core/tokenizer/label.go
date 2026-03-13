@@ -67,6 +67,7 @@ var phpMagicKeywords = map[string]ItemType{
 	"private":         T_PRIVATE,
 	"public":          T_PUBLIC,
 	"protected":       T_PROTECTED,
+	"readonly":        T_READONLY,
 	"require":         T_REQUIRE,
 	"require_once":    T_REQUIRE_ONCE,
 	"return":          T_RETURN,

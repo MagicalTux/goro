@@ -553,14 +553,17 @@ func compileFunctionArgs(c compileCtx) (res []*phpv.FuncArg, err error) {
 		arg.Required = true // typically
 
 		// Handle constructor promotion visibility modifiers (PHP 8.0+)
-		if i.Type == tokenizer.T_PUBLIC || i.Type == tokenizer.T_PROTECTED || i.Type == tokenizer.T_PRIVATE {
+		// Can include readonly modifier before or after visibility
+		for i.Type == tokenizer.T_PUBLIC || i.Type == tokenizer.T_PROTECTED || i.Type == tokenizer.T_PRIVATE || i.Type == tokenizer.T_READONLY {
 			switch i.Type {
 			case tokenizer.T_PUBLIC:
-				arg.Promotion = phpv.ZAttrPublic
+				arg.Promotion |= phpv.ZAttrPublic
 			case tokenizer.T_PROTECTED:
-				arg.Promotion = phpv.ZAttrProtected
+				arg.Promotion |= phpv.ZAttrProtected
 			case tokenizer.T_PRIVATE:
-				arg.Promotion = phpv.ZAttrPrivate
+				arg.Promotion |= phpv.ZAttrPrivate
+			case tokenizer.T_READONLY:
+				arg.Promotion |= phpv.ZAttrReadonly
 			}
 			i, err = c.NextItem()
 			if err != nil {

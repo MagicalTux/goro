@@ -6,6 +6,7 @@ type ZClassProp struct {
 	VarName   ZString
 	Default   Val
 	Modifiers ZObjectAttr
+	TypeHint  *TypeHint
 }
 
 // ZClassTraitUse represents a single "use TraitA, TraitB { ... }" statement in a class body.

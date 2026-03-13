@@ -147,6 +147,65 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			return nil, err
 		}
 
+		// Check for typed property: type hint before $variable
+		var propTypeHint *phpv.TypeHint
+		if i.Type == tokenizer.T_STRING || i.Type == tokenizer.T_ARRAY || i.Type == tokenizer.T_CALLABLE || i.IsSingle('?') || i.Type == tokenizer.T_STATIC {
+			// Could be a type hint for a property, or a regular class name
+			// Peek ahead to check if a T_VARIABLE follows (possibly after namespace parts)
+			isNullable := i.IsSingle('?')
+			hint := i.Data
+			if isNullable {
+				i, err = c.NextItem()
+				if err != nil {
+					return nil, err
+				}
+				hint = i.Data
+			}
+			if i.Type == tokenizer.T_STRING || i.Type == tokenizer.T_ARRAY || i.Type == tokenizer.T_CALLABLE || i.Type == tokenizer.T_STATIC {
+				// Consume namespace parts
+				for {
+					peek, err := c.NextItem()
+					if err != nil {
+						return nil, err
+					}
+					if peek.Type == tokenizer.T_NS_SEPARATOR {
+						next, err := c.NextItem()
+						if err != nil {
+							return nil, err
+						}
+						hint = hint + "\\" + next.Data
+					} else {
+						i = peek
+						break
+					}
+				}
+
+				if i.Type == tokenizer.T_VARIABLE {
+					// It was a type hint
+					propTypeHint = phpv.ParseTypeHint(phpv.ZString(hint))
+					if isNullable {
+						propTypeHint.Nullable = true
+					}
+				} else {
+					// Not a typed property, back up
+					c.backup()
+					// Re-parse as the original token type
+					// We already consumed the type name, so we need to figure out what this is
+					// If hint was "function" or similar, this is not a property
+					// Back up doesn't work for multi-token, so handle based on what we consumed
+					// Actually, the only non-property case after attrs is T_CONST, T_USE, T_FUNCTION
+					// Those are already handled below. If we got here, it's an error.
+					return nil, i.Unexpected()
+				}
+			} else if isNullable {
+				return nil, i.Unexpected()
+			} else {
+				// Not a type hint, restore position
+				// This shouldn't happen as we only enter this block for specific token types
+				c.backup()
+			}
+		}
+
 		switch i.Type {
 		case tokenizer.T_VAR:
 			// class variable, with possible default value
@@ -160,7 +219,7 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			fallthrough
 		case tokenizer.T_VARIABLE:
 			for {
-				prop := &phpv.ZClassProp{Modifiers: attr}
+				prop := &phpv.ZClassProp{Modifiers: attr, TypeHint: propTypeHint}
 				prop.VarName = phpv.ZString(i.Data[1:])
 
 				// check for default value
@@ -180,6 +239,24 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 					i, err = c.NextItem()
 					if err != nil {
 						return nil, err
+					}
+				}
+
+				// Validate readonly property constraints
+				if prop.Modifiers.IsReadonly() {
+					if prop.TypeHint == nil {
+						return nil, &phpv.PhpError{
+							Err:  fmt.Errorf("Readonly property %s::$%s must have type", class.Name, prop.VarName),
+							Code: phpv.E_COMPILE_ERROR,
+							Loc:  l,
+						}
+					}
+					if prop.Modifiers.IsStatic() {
+						return nil, &phpv.PhpError{
+							Err:  fmt.Errorf("Static property %s::$%s cannot be readonly", class.Name, prop.VarName),
+							Code: phpv.E_COMPILE_ERROR,
+							Loc:  l,
+						}
 					}
 				}
 
@@ -543,6 +620,7 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 							prop := &phpv.ZClassProp{
 								VarName:   arg.VarName,
 								Modifiers: arg.Promotion,
+								TypeHint:  arg.Hint,
 							}
 							class.Props = append(class.Props, prop)
 						}

@@ -75,6 +75,11 @@ func parseZObjectAttr(a *phpv.ZObjectAttr, c compileCtx) error {
 				return errors.New("Multiple access type modifiers are not allowed")
 			}
 			*a |= phpv.ZAttrPrivate
+		case tokenizer.T_READONLY:
+			if *a&phpv.ZAttrReadonly != 0 {
+				return errors.New("Multiple readonly modifiers are not allowed")
+			}
+			*a |= phpv.ZAttrReadonly
 		default:
 			c.backup()
 			return nil

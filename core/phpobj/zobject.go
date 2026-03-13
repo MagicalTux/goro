@@ -26,6 +26,9 @@ type ZObject struct {
 	setGuard   map[phpv.ZString]bool
 	issetGuard map[phpv.ZString]bool
 
+	// Readonly property tracking - set of properties that have been initialized
+	readonlyInit map[phpv.ZString]bool
+
 	// Destructor tracking
 	Destructed bool
 }
@@ -256,12 +259,27 @@ func NewZObject(ctx phpv.Context, c phpv.ZClass, args ...*phpv.ZVal) (*ZObject, 
 			}
 		}
 
-		// Handle constructor property promotion: set promoted properties before calling body
+		// Handle constructor property promotion: set promoted properties before calling body.
+		// We bypass ObjectSet (which checks visibility) and set directly on the hash table,
+		// since constructor promotion always has access to its own properties.
 		if fga, ok := constructor.(phpv.FuncGetArgs); ok {
 			fargs := fga.GetArgs()
 			for i, arg := range fargs {
 				if arg.Promotion != 0 && i < len(args) {
-					n.ObjectSet(ctx, phpv.ZString(arg.VarName).ZVal(), args[i])
+					propName := phpv.ZString(arg.VarName)
+					if arg.Promotion.IsPrivate() {
+						mangledName := getPrivatePropName(c, propName)
+						n.h.SetString(mangledName, args[i])
+					} else {
+						n.h.SetString(propName, args[i])
+					}
+					// Mark readonly properties as initialized
+					if arg.Promotion.IsReadonly() {
+						if n.readonlyInit == nil {
+							n.readonlyInit = make(map[phpv.ZString]bool)
+						}
+						n.readonlyInit[propName] = true
+					}
 				}
 			}
 		}
@@ -816,6 +834,33 @@ func (o *ZObject) checkPropertyVisibility(ctx phpv.Context, keyStr phpv.ZString,
 	return nil
 }
 
+// checkReadonlyWrite checks if a property is readonly and already initialized.
+// Returns an error if the property cannot be written to.
+func (o *ZObject) checkReadonlyWrite(ctx phpv.Context, keyStr phpv.ZString) error {
+	class := o.GetClass().(*ZClass)
+	for cur := class; cur != nil; cur = cur.Extends {
+		for _, prop := range cur.Props {
+			if prop.VarName == keyStr && prop.Modifiers.IsReadonly() {
+				// Readonly property found. Check if it's already initialized.
+				if o.readonlyInit != nil && o.readonlyInit[keyStr] {
+					// Check if the caller is within the declaring class scope
+					// (only the declaring class can initialize readonly properties,
+					// and even then, only once)
+					return ThrowError(ctx, Error,
+						fmt.Sprintf("Cannot modify readonly property %s::$%s", class.GetName(), keyStr))
+				}
+				// First write — mark as initialized
+				if o.readonlyInit == nil {
+					o.readonlyInit = make(map[phpv.ZString]bool)
+				}
+				o.readonlyInit[keyStr] = true
+				return nil
+			}
+		}
+	}
+	return nil
+}
+
 func (o *ZObject) ObjectGet(ctx phpv.Context, key phpv.Val) (*phpv.ZVal, error) {
 	var err error
 	key, err = key.AsVal(ctx, phpv.ZtString)
@@ -934,6 +979,11 @@ func (o *ZObject) ObjectSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) er
 
 	// Check property visibility
 	if err := o.checkPropertyVisibility(ctx, keyStr, "access"); err != nil {
+		return err
+	}
+
+	// Check readonly property enforcement
+	if err := o.checkReadonlyWrite(ctx, keyStr); err != nil {
 		return err
 	}
 

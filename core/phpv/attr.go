@@ -47,6 +47,7 @@ const (
 	ZAttrUseGuard                   = 0x1000000  // class has magic methods __get/__set/__unset/__isset that use guards
 	ZAttrHasTypeHints               = 0x10000000 // function has typed arguments
 	ZAttrHasReturnType              = 0x40000000 // Function has a return type (or class has such non-private function)
+	ZAttrReadonly                   = 0x08       // readonly property (PHP 8.1)
 )
 
 func (a ZClassAttr) Has(c ZClassAttr) bool {
@@ -83,6 +84,10 @@ func (a ZObjectAttr) IsProtected() bool {
 
 func (a ZObjectAttr) IsPrivate() bool {
 	return a.Access() == ZAttrPrivate
+}
+
+func (a ZObjectAttr) IsReadonly() bool {
+	return a.Has(ZAttrReadonly)
 }
 
 func (a ZClassAttr) String() string {
