@@ -54,21 +54,17 @@ func (r *runnableUnset) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 }
 
 // callDestructorIfNeeded checks if a ZVal holds an object with __destruct,
-// and if so, calls the destructor with visibility checking.
-// Returns an error if the destructor call fails (e.g., visibility error).
+// and if so, decrements the reference count and calls the destructor if
+// the count reaches zero.
 func callDestructorIfNeeded(ctx phpv.Context, zv *phpv.ZVal) error {
 	if zv == nil || zv.GetType() != phpv.ZtObject {
 		return nil
 	}
 	obj := zv.Value()
-	zobj, ok := obj.(phpv.ZObject)
-	if !ok {
-		return nil
-	}
-	if destructable, ok2 := zobj.(interface {
-		CallDestructor(phpv.Context) error
-	}); ok2 {
-		return destructable.CallDestructor(ctx)
+	if refObj, ok := obj.(interface {
+		DecRef(phpv.Context) error
+	}); ok {
+		return refObj.DecRef(ctx)
 	}
 	return nil
 }

@@ -5,6 +5,7 @@ import (
 	"iter"
 	"maps"
 	"slices"
+	"sync/atomic"
 
 	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpv"
@@ -31,6 +32,9 @@ type ZObject struct {
 
 	// Destructor tracking
 	Destructed bool
+
+	// Reference counting for destructor timing
+	refCount int32
 }
 
 // CallDestructor calls __destruct on this object if it hasn't been called yet.
@@ -95,6 +99,37 @@ func (z *ZObject) CallImplicitDestructor(ctx phpv.Context) error {
 	ctx.Global().UnregisterDestructor(z)
 	_, err := ctx.CallZVal(ctx, m.Method, nil, z)
 	return err
+}
+
+// IncRef increments the object's reference count.
+func (z *ZObject) IncRef() {
+	atomic.AddInt32(&z.refCount, 1)
+}
+
+// DecRef decrements the object's reference count and calls the destructor
+// (with visibility checks) when the count reaches zero.
+func (z *ZObject) DecRef(ctx phpv.Context) error {
+	n := atomic.AddInt32(&z.refCount, -1)
+	if n <= 0 {
+		return z.CallDestructor(ctx)
+	}
+	return nil
+}
+
+// DecRefImplicit decrements the object's reference count and calls the
+// destructor without visibility checks when the count reaches zero.
+// Used for scope exit where PHP always allows destructors to run.
+func (z *ZObject) DecRefImplicit(ctx phpv.Context) error {
+	n := atomic.AddInt32(&z.refCount, -1)
+	if n <= 0 {
+		return z.CallImplicitDestructor(ctx)
+	}
+	return nil
+}
+
+// RefCount returns the current reference count.
+func (z *ZObject) RefCount() int32 {
+	return atomic.LoadInt32(&z.refCount)
 }
 
 func (z *ZObject) ZVal() *phpv.ZVal {

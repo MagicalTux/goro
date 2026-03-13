@@ -34,6 +34,25 @@ func (c *FuncContext) Release() {
 	}
 	c.foreachRefCleanups = c.foreachRefCleanups[:0]
 
+	// DecRef all objects in local variables before clearing the scope.
+	// This ensures reference counts are properly decremented when leaving
+	// function scope. We use DecRefImplicit because scope exit in PHP
+	// allows destructors to run regardless of visibility.
+	if c.Context != nil {
+		it := c.h.NewIterator()
+		for it.Valid(c.Context) {
+			v, err := it.Current(c.Context)
+			if err == nil && v != nil && v.GetType() == phpv.ZtObject {
+				if obj, ok := v.Value().(interface {
+					DecRefImplicit(phpv.Context) error
+				}); ok {
+					obj.DecRefImplicit(c.Context)
+				}
+			}
+			it.Next(c.Context)
+		}
+	}
+
 	c.Context = nil
 	c.h.Empty()
 	c.this = nil
@@ -192,25 +211,36 @@ func (c *FuncContext) OffsetSet(ctx phpv.Context, name phpv.Val, v *phpv.ZVal) e
 		return ctx.Errorf("Cannot re-assign $this")
 	}
 
-	// Eagerly call __destruct when overwriting a variable that holds an object.
-	if old := c.h.GetString(nameStr); old != nil && old.GetType() == phpv.ZtObject {
-		if obj, ok := old.Value().(phpv.ZObject); ok {
-			if _, hasDestructor := obj.GetClass().GetMethod("__destruct"); hasDestructor {
-				err := c.h.SetString(nameStr, v)
-				if err != nil {
-					return err
-				}
-				if destructable, ok2 := obj.(interface {
-					CallDestructor(phpv.Context) error
-				}); ok2 {
-					return destructable.CallDestructor(ctx)
-				}
-				return nil
-			}
+	// Track object references: IncRef new object, DecRef old object.
+	old := c.h.GetString(nameStr)
+	isRef := old != nil && old.IsRef()
+
+	var oldObj interface {
+		DecRef(phpv.Context) error
+	}
+	if old != nil && old.GetType() == phpv.ZtObject {
+		if obj, ok := old.Value().(interface {
+			DecRef(phpv.Context) error
+		}); ok {
+			oldObj = obj
+		}
+	}
+	// Only IncRef for non-reference direct object storage
+	if !isRef && v != nil && v.GetType() == phpv.ZtObject && !v.IsRef() {
+		if obj, ok := v.Value().(interface{ IncRef() }); ok {
+			obj.IncRef()
 		}
 	}
 
-	return c.h.SetString(nameStr, v)
+	err := c.h.SetString(nameStr, v)
+	if err != nil {
+		return err
+	}
+
+	if oldObj != nil {
+		return oldObj.DecRef(ctx)
+	}
+	return nil
 }
 
 

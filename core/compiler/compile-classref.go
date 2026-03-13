@@ -74,7 +74,31 @@ func (r *runClassStaticVarRef) WriteValue(ctx phpv.Context, value *phpv.ZVal) er
 		return phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Access to undeclared static property %s::$%s", class.GetName(), r.varName))
 	}
 
-	return p.SetString(r.varName, value)
+	// Track object references for static properties
+	var oldObj interface {
+		DecRef(phpv.Context) error
+	}
+	if old := p.GetString(r.varName); old != nil && old.GetType() == phpv.ZtObject {
+		if obj, ok := old.Value().(interface {
+			DecRef(phpv.Context) error
+		}); ok {
+			oldObj = obj
+		}
+	}
+	if value != nil && value.GetType() == phpv.ZtObject {
+		if obj, ok := value.Value().(interface{ IncRef() }); ok {
+			obj.IncRef()
+		}
+	}
+
+	err = p.SetString(r.varName, value)
+	if err != nil {
+		return err
+	}
+	if oldObj != nil {
+		return oldObj.DecRef(ctx)
+	}
+	return nil
 }
 
 func (r *runClassStaticVarRef) Loc() *phpv.Loc {
@@ -177,7 +201,31 @@ func (r *runClassStaticDynVarRef) WriteValue(ctx phpv.Context, value *phpv.ZVal)
 		return phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Access to undeclared static property %s::$%s", class.GetName(), varName))
 	}
 
-	return p.SetString(varName, value)
+	// Track object references for static properties
+	var oldObj interface {
+		DecRef(phpv.Context) error
+	}
+	if old := p.GetString(varName); old != nil && old.GetType() == phpv.ZtObject {
+		if obj, ok := old.Value().(interface {
+			DecRef(phpv.Context) error
+		}); ok {
+			oldObj = obj
+		}
+	}
+	if value != nil && value.GetType() == phpv.ZtObject {
+		if obj, ok := value.Value().(interface{ IncRef() }); ok {
+			obj.IncRef()
+		}
+	}
+
+	err = p.SetString(varName, value)
+	if err != nil {
+		return err
+	}
+	if oldObj != nil {
+		return oldObj.DecRef(ctx)
+	}
+	return nil
 }
 
 func (r *runClassStaticDynVarRef) Loc() *phpv.Loc {
