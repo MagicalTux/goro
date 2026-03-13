@@ -315,8 +315,8 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 			"report_memleaks":          true, // memory leak detection not implemented
 			// sys_temp_dir is implemented in ext/standard/fs.go:fncSysGetTempDir
 			// date.timezone is handled by the date extension's ini settings
-			"opcache.save_comments":    true, // opcache not implemented
-			"docref_root":              true, // error doc URLs not implemented
+			"opcache.save_comments":    true, // needs ReflectionClass doc comments support
+			"docref_root":              true, // needs HTML error link formatting
 			// arg_separator.input is implemented in ext/standard/urlenc.go
 		}
 		// Save content before scanning (scanner consumes the buffer)
