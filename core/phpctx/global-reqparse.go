@@ -24,7 +24,33 @@ func (g *Global) parsePost(p, f *phpv.ZArray) error {
 	if ct == "" {
 		ct = "application/octet-stream"
 	}
-	ct, params, _ := mime.ParseMediaType(ct)
+	ct, params, parseErr := mime.ParseMediaType(ct)
+	// If Go's parser fails (e.g., comma in boundary), manually extract boundary
+	// PHP truncates boundary at comma: "boundary=foo, charset=..." → "foo"
+	if parseErr != nil && params == nil {
+		params = make(map[string]string)
+	}
+	if _, ok := params["boundary"]; !ok && strings.Contains(strings.ToLower(g.req.Header.Get("Content-Type")), "boundary") {
+		rawCT := g.req.Header.Get("Content-Type")
+		for _, part := range strings.Split(rawCT, ";") {
+			part = strings.TrimSpace(part)
+			if strings.HasPrefix(strings.ToLower(part), "boundary") {
+				if eqIdx := strings.IndexByte(part, '='); eqIdx != -1 {
+					b := strings.TrimSpace(part[eqIdx+1:])
+					// PHP truncates at comma
+					if commaIdx := strings.IndexByte(b, ','); commaIdx != -1 {
+						b = b[:commaIdx]
+					}
+					// Strip surrounding quotes
+					if len(b) >= 2 && b[0] == '"' && b[len(b)-1] == '"' {
+						b = b[1 : len(b)-1]
+					}
+					params["boundary"] = b
+					break
+				}
+			}
+		}
+	}
 
 	switch {
 	case ct == "application/x-www-form-urlencoded":
