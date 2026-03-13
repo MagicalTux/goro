@@ -134,14 +134,15 @@ func (c *Config) IterateConfig() iter.Seq2[string, phpv.IniValue] {
 }
 
 func (c *Config) EvalConfigValue(ctx phpv.Context, expr phpv.ZString) (*phpv.ZVal, error) {
-	switch expr {
-	case "1", "On", "True", "Yes":
+	lower := strings.ToLower(string(expr))
+	switch lower {
+	case "1", "on", "true", "yes":
 		return phpv.ZStr("1"), nil
-	case "0", "Off", "False", "No":
+	case "0", "off", "false", "no":
 		return phpv.ZStr("0"), nil
-	case "None", "":
+	case "none", "":
 		return phpv.ZStr(""), nil
-	case "NULL", "null":
+	case "null":
 		return phpv.ZNULL.ZVal(), nil
 	}
 	ctx = &IniContext{ctx.Global()}

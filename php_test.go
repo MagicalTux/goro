@@ -108,7 +108,8 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		os.WriteFile(scriptPath, b.Bytes(), 0644)
 		defer os.Remove(scriptPath)
 
-		t := tokenizer.NewLexer(b, scriptPath)
+		shortOpenTag := bool(g.GetConfig("short_open_tag", phpv.ZBool(true).ZVal()).AsBool(g))
+		t := tokenizer.NewLexerWithShortTag(b, scriptPath, shortOpenTag)
 		c, err := compiler.Compile(g, t)
 		if err != nil {
 			// Filter exit errors from compile (e.g., E_COMPILE_ERROR already output)
@@ -306,7 +307,7 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 			"highlight.html":           true,
 			"max_input_nesting_level":  true, // input nesting limit not implemented
 			// max_input_vars: limit on input parsing, tests use 1000 which is well above typical test needs
-			"short_open_tag":           true, // short open tags not fully implemented
+			// short_open_tag: implemented in tokenizer - controls whether <? without php/= opens PHP mode
 			"auto_prepend_file":        true, // auto prepend not implemented
 			// disable_functions: implemented - removes named functions from available list
 			"allow_url_fopen":          true, // tests using this need HTTP server helpers we don't have

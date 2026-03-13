@@ -19,8 +19,9 @@ var itemTypeHandler map[tokenizer.ItemType]*compileFuncCb
 
 func init() {
 	itemTypeHandler = map[tokenizer.ItemType]*compileFuncCb{
-		tokenizer.T_OPEN_TAG:     nil,
-		tokenizer.T_CLOSE_TAG:    nil,
+		tokenizer.T_OPEN_TAG:            nil,
+		tokenizer.T_OPEN_TAG_WITH_ECHO: &compileFuncCb{f: compileEchoTag},
+		tokenizer.T_CLOSE_TAG:           nil,
 		tokenizer.T_DOC_COMMENT:  nil, // TODO
 		tokenizer.T_INLINE_HTML:  &compileFuncCb{f: compileInlineHtml, skip: true},
 		tokenizer.T_FUNCTION:     &compileFuncCb{f: compileFunction, skip: true},
@@ -313,4 +314,46 @@ func (r *runDestroyTemporary) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 
 func (r *runDestroyTemporary) Dump(w io.Writer) error {
 	return r.inner.Dump(w)
+}
+
+// compileEchoTag handles <?= expr ?> which is equivalent to echo expr;
+func compileEchoTag(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
+	l := i.Loc()
+
+	// Parse expressions as arguments to echo, same as compileSpecialFuncCall
+	var args []phpv.Runnable
+
+	i, err := c.NextItem()
+	if err != nil {
+		return nil, err
+	}
+
+	for {
+		var a phpv.Runnable
+		a, err = compileExpr(i, c)
+		if err != nil {
+			return nil, err
+		}
+
+		args = append(args, a)
+
+		i, err = c.NextItem()
+		if err != nil {
+			return nil, err
+		}
+
+		if i.IsSingle(',') {
+			i, err = c.NextItem()
+			if err != nil {
+				return nil, err
+			}
+			continue
+		}
+		if i.IsExpressionEnd() {
+			c.backup()
+			return &runnableFunctionCall{"echo", args, l}, nil
+		}
+
+		return nil, i.Unexpected()
+	}
 }

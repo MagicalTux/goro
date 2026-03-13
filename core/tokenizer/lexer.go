@@ -32,15 +32,22 @@ type Lexer struct {
 	pLine, pChar int // previous line/char (for backup)
 
 	baseStack []lexState
+
+	ShortOpenTag bool // when false, <? without php/= is not a PHP open tag
 }
 
 func NewLexer(i io.Reader, fn string) *Lexer {
+	return NewLexerWithShortTag(i, fn, true)
+}
+
+func NewLexerWithShortTag(i io.Reader, fn string, shortOpenTag bool) *Lexer {
 	res := &Lexer{
-		input: bufio.NewReader(i),
-		fn:    fn, // filename, for position information
-		items: make(chan *Item, 2),
-		sLine: 1,
-		cLine: 1,
+		input:        bufio.NewReader(i),
+		fn:           fn, // filename, for position information
+		items:        make(chan *Item, 2),
+		sLine:        1,
+		cLine:        1,
+		ShortOpenTag: shortOpenTag,
 	}
 
 	go res.run(lexText)
