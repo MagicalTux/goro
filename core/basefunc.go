@@ -237,6 +237,14 @@ func fncIniSet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
+	// Check open_basedir for path-related INI settings
+	// "syslog" and "" are special values that bypass the check
+	if varName == "error_log" && string(newValue) != "" && string(newValue) != "syslog" {
+		if err := ctx.Global().CheckOpenBasedir(ctx, string(newValue), "ini_set"); err != nil {
+			return phpv.ZFalse.ZVal(), nil
+		}
+	}
+
 	oldValue, ok := ctx.Global().SetLocalConfig(varName, newValue.ZVal())
 	if !ok {
 		return phpv.ZFalse.ZVal(), nil

@@ -40,6 +40,7 @@ type phptest struct {
 	iniRaw    string // raw INI settings from --INI-- section
 	cliMode   bool   // true when test has --ARGS-- (run as CLI, not web)
 	stdinData []byte // data from --STDIN-- section
+	xfail     string // XFAIL reason, if set
 
 	p *phpctx.Process
 
@@ -400,7 +401,7 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		}
 		return nil
 	case "XFAIL":
-		// TODO but safe to ignore
+		p.xfail = strings.TrimSpace(b.String())
 		return nil
 	case "CLEAN":
 		// CLEAN runs after the test to clean up temp files/dirs
@@ -594,6 +595,11 @@ func runTest(t *testing.T, fpath string) (p *phptest, err error) {
 				expectErr = err
 			}
 		}
+	}
+
+	// If XFAIL is set and the test failed, convert to skip (expected failure)
+	if expectErr != nil && p.xfail != "" {
+		return p, skipError{reason: "XFAIL: " + p.xfail}
 	}
 
 	return p, expectErr

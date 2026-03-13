@@ -2,7 +2,10 @@ package core
 
 import (
 	"errors"
+	"log"
+	"os"
 
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phperr"
 	"github.com/MagicalTux/goro/core/phpv"
 )
@@ -72,4 +75,57 @@ func fncSetExceptionHandler(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 func fncRestoreExceptionHandler(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	ctx.Global().SetUserExceptionHandler(nil)
 	return phpv.ZBool(true).ZVal(), nil
+}
+
+// > func bool error_log ( string $message [, int $message_type = 0 [, string $destination [, string $extra_headers ]]] )
+func fncErrorLog(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var message phpv.ZString
+	var messageType *phpv.ZInt
+	var destination *phpv.ZString
+	_, err := Expand(ctx, args, &message, &messageType, &destination)
+	if err != nil {
+		return nil, err
+	}
+
+	msgType := Deref(messageType, phpv.ZInt(0))
+
+	switch msgType {
+	case 0:
+		// Send to PHP's system logger (use Go's log package)
+		log.Print(string(message))
+		return phpv.ZTrue.ZVal(), nil
+	case 3:
+		// Append to file
+		if destination == nil {
+			return phpv.ZFalse.ZVal(), nil
+		}
+		dest := string(*destination)
+
+		// Check open_basedir
+		if err := ctx.Global().CheckOpenBasedir(ctx, dest, "error_log"); err != nil {
+			ctx.Warn("error_log(%s): Failed to open stream: Operation not permitted", dest, logopt.NoFuncName(true))
+			return phpv.ZFalse.ZVal(), nil
+		}
+
+		// Resolve path relative to PHP's virtual cwd
+		p := dest
+		if len(p) == 0 || p[0] != '/' {
+			p = string(ctx.Global().Getwd()) + "/" + p
+		}
+
+		f, ferr := os.OpenFile(p, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if ferr != nil {
+			ctx.Warn("error_log(%s): Failed to open stream: %s", dest, ferr.Error(), logopt.NoFuncName(true))
+			return phpv.ZFalse.ZVal(), nil
+		}
+		defer f.Close()
+		_, ferr = f.WriteString(string(message))
+		if ferr != nil {
+			return phpv.ZFalse.ZVal(), nil
+		}
+		return phpv.ZTrue.ZVal(), nil
+	default:
+		// Type 1 (email), 2 (remote debugger), 4 (SAPI handler) not implemented
+		return phpv.ZTrue.ZVal(), nil
+	}
 }
