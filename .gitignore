@@ -12,6 +12,7 @@
 /test/**/*.diff
 /test/**/*.php
 /test/**/*.exp
+/test/**/*.txt
 /test/**/security/test/
 
 # for vim

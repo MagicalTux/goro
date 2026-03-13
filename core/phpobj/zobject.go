@@ -1288,8 +1288,10 @@ func (o *ZObject) checkStaticPropertyAccess(ctx phpv.Context, keyStr phpv.ZStrin
 	class := o.Class.(*ZClass)
 	for class != nil {
 		if prop, ok := class.GetProp(keyStr); ok && prop.Modifiers.IsStatic() {
-			// Only emit notice if the caller has access to this property
-			if prop.Modifiers.IsPublic() {
+			// Only emit notice if the caller has access to this property.
+			// Properties without explicit access modifier (access=0) are implicitly public.
+			access := prop.Modifiers.Access()
+			if access == phpv.ZAttrPublic || access == 0 {
 				ctx.Notice("Accessing static property %s::$%s as non static", o.Class.GetName(), keyStr, logopt.NoFuncName(true))
 			} else {
 				callerClass := ctx.Class()
