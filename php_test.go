@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -44,13 +45,18 @@ type phptest struct {
 	t *testing.T
 }
 
-type skipError struct{}
+type skipError struct {
+	reason string
+}
 
 func (s skipError) Error() string {
+	if s.reason != "" {
+		return "test skipped: " + s.reason
+	}
 	return "test skipped"
 }
 
-var skipTest skipError
+var skipTest = skipError{}
 
 func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 	switch part {
@@ -250,7 +256,7 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 			return err
 		}
 		if bytes.HasPrefix(output.Bytes(), []byte("skip ")) {
-			return skipTest
+			return skipError{reason: "SKIPIF: " + strings.TrimSpace(string(output.Bytes()))}
 		}
 		return nil
 	case "EXPECTF":
@@ -288,6 +294,7 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 	case "INI":
 		// Parse INI settings. Skip tests that require features we definitely
 		// can't support. Accept everything else and let the test run.
+		// INI settings that always cause a skip (feature not implemented at all)
 		unsupported := map[string]bool{
 			"file_uploads":             true, // file upload handling
 			// enable_post_data_reading: implemented - when 0, $_POST/$_FILES are empty but php://input works
@@ -296,7 +303,6 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 			"max_file_uploads":         true, // upload count limit
 			// memory_limit: stored/retrieved via ini_get/ini_set; enforcement not implemented but tests don't require it
 			"hard_timeout":             true, // hard timeout not implemented
-			"zlib.output_compression":  true, // compression not implemented
 			"session.auto_start":       true, // sessions not implemented
 			// filter.default=unsafe_raw is a no-op (no filtering), safe to accept
 			"open_basedir":             true, // open_basedir restriction not implemented
@@ -319,6 +325,14 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 			"docref_root":              true, // needs HTML error link formatting
 			// arg_separator.input is implemented in ext/standard/urlenc.go
 		}
+		// INI settings that only block when set to a non-default/active value
+		// e.g., zlib.output_compression=0 is "off" (default) → safe
+		valueDependent := map[string]func(string) bool{
+			"zlib.output_compression": func(v string) bool {
+				lv := strings.ToLower(strings.TrimSpace(v))
+				return lv != "0" && lv != "off" && lv != "false" && lv != "no" && lv != ""
+			},
+		}
 		// Save content before scanning (scanner consumes the buffer)
 		iniContent := b.String()
 		scanner := bufio.NewScanner(strings.NewReader(iniContent))
@@ -333,13 +347,21 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 				continue
 			}
 			k := strings.TrimSpace(line[:pos])
+			v := ""
+			if pos+1 < len(line) {
+				v = strings.TrimSpace(line[pos+1:])
+			}
 			if unsupported[k] {
+				hasUnsupported = true
+				break
+			}
+			if check, ok := valueDependent[k]; ok && check(v) {
 				hasUnsupported = true
 				break
 			}
 		}
 		if hasUnsupported {
-			return skipTest
+			return skipError{reason: "unsupported INI"}
 		}
 		p.iniRaw = iniContent
 		return nil
@@ -351,7 +373,7 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 				continue
 			}
 			if !phpctx.HasExt(ext) {
-				return skipTest
+				return skipError{reason: "missing extension: " + ext}
 			}
 		}
 		return nil
@@ -370,7 +392,7 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		return nil
 	case "STDIN", "CGI", "CAPTURE_STDIO":
 		// These require special execution modes we don't support yet
-		return skipTest
+		return skipError{reason: "unsupported section: " + part}
 	case "ENV":
 		// Set environment variables for the test
 		for _, line := range strings.Split(strings.TrimSpace(b.String()), "\n") {
@@ -588,7 +610,8 @@ func TestPhp(t *testing.T) {
 		count += 1
 		p, err := runTest(t, path)
 		if err != nil {
-			if err == skipTest {
+			var se skipError
+			if errors.As(err, &se) {
 				skip += 1
 				return nil
 			}
