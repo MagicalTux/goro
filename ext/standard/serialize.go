@@ -124,6 +124,27 @@ func serialize(ctx phpv.Context, value *phpv.ZVal) (string, error) {
 		result = buf.String()
 	case phpv.ZtObject:
 		obj := value.AsObject(ctx)
+
+		// Check for Serializable interface (deprecated in PHP 8.1+)
+		if obj.GetClass().Implements(phpobj.Serializable) {
+			if method, ok := obj.GetClass().GetMethod(phpv.ZString("serialize")); ok {
+				val, err := ctx.Call(ctx, method.Method, nil, obj)
+				if err != nil {
+					return "", err
+				}
+				if val.IsNull() {
+					return "N;", nil
+				}
+				if val.GetType() != phpv.ZtString {
+					return "", phpobj.ThrowError(ctx, phpobj.Exception, fmt.Sprintf("%s::serialize() must return a string or NULL", obj.GetClass().GetName()))
+				}
+				data := val.AsString(ctx)
+				className := string(obj.GetClass().GetName())
+				result = fmt.Sprintf(`C:%d:"%s":%d:{%s}`, len(className), className, len(data), string(data))
+				return result, nil
+			}
+		}
+
 		var props *phpv.ZArray
 		if method, ok := obj.GetClass().GetMethod(phpv.ZString("__sleep")); ok {
 			val, err := ctx.Call(ctx, method.Method, nil, obj)
@@ -148,14 +169,16 @@ func serialize(ctx phpv.Context, value *phpv.ZVal) (string, error) {
 					continue
 				}
 				// Mangle property name based on visibility
+				// Use classProp.VarName (the real property name) for mangling,
+				// since propName might already be in mangled format from __sleep()
 				var mangledName string
 				if classProp.Modifiers.IsPrivate() {
 					className := string(zobj.GetDeclClassName(classProp))
-					mangledName = "\x00" + className + "\x00" + string(propName)
+					mangledName = "\x00" + className + "\x00" + string(classProp.VarName)
 				} else if classProp.Modifiers.IsProtected() {
-					mangledName = "\x00*\x00" + string(propName)
+					mangledName = "\x00*\x00" + string(classProp.VarName)
 				} else {
-					mangledName = string(propName)
+					mangledName = string(classProp.VarName)
 				}
 				sub := fmt.Sprintf(`s:%d:"%s";`, len(mangledName), mangledName)
 				buf.WriteString(sub)
@@ -491,6 +514,86 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 			numProps--
 		}
 		return obj.ZVal(), i, nil
+	case 'C':
+		// C:3:"Xyz":6:{data_s}
+		//   ^1 ^2   ^3
+		// 1 - class name length
+		// 2 - class name
+		// 3 - data length
+
+		j := indexOf(str, ":", i)
+		if j < 0 {
+			return nil, offset, readError
+		}
+		s := str[i:j]
+		strLen, err := strconv.ParseInt(s, 10, 64)
+		if err != nil {
+			return nil, offset, readError
+		}
+
+		startQuote := j + 1
+		content := j + 2
+		endQuote := content + int(strLen)
+
+		switch {
+		case content+int(strLen) >= len(str):
+			return nil, offset, readError
+		case core.StrIdx(str, startQuote) != '"':
+			return nil, offset, readError
+		case core.StrIdx(str, endQuote) != '"':
+			return nil, offset, readError
+		}
+
+		className := str[content : content+int(strLen)]
+		i = endQuote + 1
+		if core.StrIdx(str, i) != ':' {
+			return nil, offset, readError
+		}
+		i++
+		j = indexOf(str, ":", i)
+		if j < 0 || j < i+1 {
+			return nil, offset, readError
+		}
+		dataLen, err := strconv.Atoi(str[i:j])
+		if err != nil {
+			return nil, offset, readError
+		}
+
+		if core.StrIdx(str, j+1) != '{' {
+			return nil, offset, readError
+		}
+
+		dataStart := j + 2
+		dataEnd := dataStart + dataLen
+		if dataEnd >= len(str) || core.StrIdx(str, dataEnd) != '}' {
+			return nil, offset, readError
+		}
+		data := str[dataStart:dataEnd]
+
+		allowedClass := d.allowAllClasses
+		if !allowedClass {
+			_, allowedClass = d.allowedClasses[phpv.ZString(className)]
+		}
+
+		class, err := ctx.Global().GetClass(ctx, phpv.ZString(className), true)
+		if err != nil || !allowedClass || class == nil {
+			class = phpobj.IncompleteClass
+		}
+
+		obj, err := phpobj.CreateZObject(ctx, class)
+		if err != nil {
+			return nil, offset, err
+		}
+
+		// Call the unserialize($data) method on the object
+		if method, ok := obj.GetClass().GetMethod(phpv.ZString("unserialize")); ok {
+			_, err := ctx.Global().CallZVal(ctx, method.Method, []*phpv.ZVal{phpv.ZStr(data).ZVal()}, obj)
+			if err != nil {
+				return nil, offset, err
+			}
+		}
+
+		return obj.ZVal(), dataEnd + 1, nil
 	}
 
 	return nil, offset, readError

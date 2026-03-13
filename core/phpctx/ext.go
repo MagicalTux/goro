@@ -1,6 +1,8 @@
 package phpctx
 
 import (
+	"fmt"
+
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
@@ -20,9 +22,11 @@ type Ext struct {
 
 type ExtFunction struct {
 	phpv.CallableVal
-	name string
-	Func func(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
-	Args []*ExtFunctionArg
+	name    string
+	Func    func(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
+	Args    []*ExtFunctionArg
+	MinArgs int // minimum required arguments (0 = no check)
+	MaxArgs int // maximum allowed arguments (0 = no check, -1 = variadic/unlimited)
 }
 
 func (e *ExtFunction) Name() string {
@@ -30,6 +34,19 @@ func (e *ExtFunction) Name() string {
 }
 
 func (e *ExtFunction) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	// PHP 8: strict argument count checking for built-in functions
+	if e.MaxArgs > 0 && len(args) > e.MaxArgs {
+		if e.MinArgs == e.MaxArgs {
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("%s() expects exactly %d argument, %d given", e.name, e.MaxArgs, len(args)))
+		}
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("%s() expects at most %d arguments, %d given", e.name, e.MaxArgs, len(args)))
+	}
+	if e.MinArgs > 0 && len(args) < e.MinArgs {
+		if e.MinArgs == e.MaxArgs {
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("%s() expects exactly %d argument, %d given", e.name, e.MinArgs, len(args)))
+		}
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("%s() expects at least %d arguments, %d given", e.name, e.MinArgs, len(args)))
+	}
 	return e.Func(ctx, args)
 }
 

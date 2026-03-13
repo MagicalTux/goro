@@ -290,6 +290,9 @@ func (z ZStringArray) OffsetGet(ctx Context, key Val) (*ZVal, error) {
 	val, _ := key.AsVal(ctx, ZtInt)
 	i := int(val.(ZInt))
 	s := *z.ZString
+	if i < 0 {
+		i = len(s) + i
+	}
 	if i < 0 || i >= len(s) {
 		return ZStr(""), ctx.Warn("Uninitialized string offset: %v", key.String())
 	}

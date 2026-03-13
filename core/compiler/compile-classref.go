@@ -47,7 +47,10 @@ func (r *runClassStaticVarRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Access to undeclared static property %s::$%s", class.GetName(), r.varName))
 	}
 
-	return p.GetString(r.varName), nil
+	v := p.GetString(r.varName)
+	// Return a detached snapshot so in-place mutations to the hash
+	// entry don't retroactively change already-read values (PHP semantics).
+	return phpv.NewZVal(v.Value()), nil
 }
 
 func (r *runClassStaticVarRef) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {

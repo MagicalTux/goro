@@ -171,7 +171,10 @@ func (z *ZClosure) Loc() *phpv.Loc {
 
 func (z *ZClosure) Name() string {
 	if z.name == "" {
-		return "anonymous"
+		if z.start != nil {
+			return fmt.Sprintf("{closure:%s:%d}", z.start.Filename, z.start.Line)
+		}
+		return "{closure}"
 	}
 	return string(z.name)
 }
@@ -222,11 +225,17 @@ func (z *ZClosure) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	}
 
 	// call function in that context
-	r, err := phperr.CatchReturn(z.code.Run(ctx))
-	if z.rref && r != nil {
-		r = r.Ref()
+	_, err = z.code.Run(ctx)
+	if err != nil {
+		// Check if this is an explicit return
+		r, err := phperr.CatchReturn(nil, err)
+		if z.rref && r != nil {
+			r = r.Ref()
+		}
+		return r, err
 	}
-	return r, err
+	// No explicit return statement - return NULL
+	return phpv.ZNULL.ZVal(), nil
 }
 
 func (z *ZClosure) dup() *ZClosure {
@@ -259,4 +268,8 @@ func (z *ZClosure) dup() *ZClosure {
 
 func (z *ZClosure) GetClass() phpv.ZClass {
 	return z.class
+}
+
+func (z *ZClosure) ReturnsByRef() bool {
+	return z.rref
 }

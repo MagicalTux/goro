@@ -66,10 +66,18 @@ func (c *Global) Include(ctx phpv.Context, fn phpv.ZString) (*phpv.ZVal, error) 
 	}
 
 	if f == nil {
-		return nil, ctx.Warn(
-			"%s(%s): failed to open stream: No such file or directory",
-			ctx.GetFuncName(),
+		if err := ctx.Warn(
+			"include(%s): Failed to open stream: No such file or directory",
 			string(fn),
+			logopt.NoFuncName(true),
+		); err != nil {
+			return nil, err
+		}
+		includePath := ctx.GetConfig("include_path", phpv.ZStr("."))
+		return nil, ctx.Warn(
+			"include(): Failed opening '%s' for inclusion (include_path='%s')",
+			string(fn),
+			includePath.String(),
 			logopt.NoFuncName(true),
 		)
 	}
@@ -158,10 +166,18 @@ func (c *Global) IncludeOnce(ctx phpv.Context, fn phpv.ZString) (*phpv.ZVal, err
 	}
 
 	if f == nil {
-		return nil, ctx.Warn(
-			"%s(%s): failed to open stream: No such file or directory",
-			ctx.GetFuncName(),
+		if err := ctx.Warn(
+			"include_once(%s): Failed to open stream: No such file or directory",
 			string(fn),
+			logopt.NoFuncName(true),
+		); err != nil {
+			return nil, err
+		}
+		includePath := ctx.GetConfig("include_path", phpv.ZStr("."))
+		return nil, ctx.Warn(
+			"include_once(): Failed opening '%s' for inclusion (include_path='%s')",
+			string(fn),
+			includePath.String(),
 			logopt.NoFuncName(true),
 		)
 	}

@@ -11,12 +11,75 @@ import (
 
 // perform call in new context
 func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, optionalThis ...phpv.ZObject) (*phpv.ZVal, error) {
+	// Pre-check: for reference parameters, validate expression types before evaluation
+	var funcArgs []*phpv.FuncArg
+	if fga, ok := f.(phpv.FuncGetArgs); ok {
+		funcArgs = fga.GetArgs()
+	}
+	// Also check Go-implemented functions with ExtFunctionArg metadata
+	var extArgs []*ExtFunctionArg
+	if ef, ok := f.(*ExtFunction); ok {
+		extArgs = ef.Args
+	}
+
+	// Save call site location (arg evaluation may change global location)
+	callLoc := ctx.Loc()
+
 	var zArgs []*phpv.ZVal
-	for _, arg := range args {
+	for i, arg := range args {
 		val, err := arg.Run(ctx)
 		if err != nil {
 			return nil, err
 		}
+
+		isRefParam := false
+		if funcArgs != nil && i < len(funcArgs) && funcArgs[i].Ref {
+			isRefParam = true
+		} else if extArgs != nil && i < len(extArgs) && extArgs[i].Ref {
+			isRefParam = true
+		}
+
+		if isRefParam {
+			writable, isWritable := arg.(phpv.Writable)
+			if !isWritable && !val.IsRef() {
+				// Non-variable, non-reference result passed to a by-ref parameter
+				if _, isFuncCall := arg.(phpv.FuncCallExpression); isFuncCall {
+					// Function/method call -> Notice, pass by value
+					// Restore call site location for correct notice line
+					ctx.Tick(ctx, callLoc)
+					ctx.Notice("Only variables should be passed by reference",
+						logopt.NoFuncName(true))
+					val = val.Dup()
+					val.Name = nil // clear Name so CallZVal skips ref processing
+				} else {
+					// Literal, assignment, or other non-variable expression -> Error
+					funcName := "unknown"
+					if namer, ok := f.(interface{ Name() string }); ok {
+						funcName = namer.Name()
+					}
+					return nil, phpobj.ThrowError(ctx, phpobj.Error,
+						fmt.Sprintf("%s(): Argument #%d ($%s) could not be passed by reference",
+							funcName, i+1, funcArgs[i].VarName))
+				}
+			} else if isWritable && !val.IsRef() {
+				// Writable source (array element, object property) passed by ref:
+				// create the reference and write it back to the source so the
+				// source element also becomes a reference.
+				ref := val.Ref()
+				writable.WriteValue(ctx, ref)
+				val = ref
+			}
+		}
+
+		// For non-reference parameters in PHP-defined functions, Dup the value
+		// immediately so that later argument evaluations (e.g., $x = 1) don't
+		// retroactively change values already captured for earlier arguments.
+		// For Go ext functions, Expand() handles Dup internally, and premature
+		// Dup would break array internal pointer sharing.
+		if !isRefParam && funcArgs != nil {
+			val = val.Dup()
+		}
+
 		zArgs = append(zArgs, val)
 	}
 	return c.CallZVal(ctx, f, zArgs, optionalThis...)
@@ -73,11 +136,24 @@ func (c *Global) CallZVal(ctx phpv.Context, f phpv.Callable, args []*phpv.ZVal, 
 		for i := range args {
 			// Since this function was parsed, the parameter info is available
 			if i < len(func_args) && func_args[i].Ref {
+				// Check if the argument can be passed by reference
+				argName := callCtx.Args[i].GetName()
+				if argName == "" {
+					// No variable name - either handled in Call() with a Notice
+					// (function call result), or a direct CallZVal with a non-variable.
+					// In either case, pass by value instead of by reference.
+					if !callCtx.Args[i].IsRef() {
+						callCtx.Args[i] = callCtx.Args[i].Dup()
+						continue
+					}
+				}
 				callCtx.Args[i] = callCtx.Args[i].Ref()
 
 				// Handle case foo($bar) where $bar is undefined
 				// and foo takes a reference
-				ctx.OffsetSet(ctx, callCtx.Args[i].GetName(), callCtx.Args[i])
+				if argName != "" {
+					ctx.OffsetSet(ctx, callCtx.Args[i].GetName(), callCtx.Args[i])
+				}
 			} else {
 				argName := args[i].GetName()
 				if argName != "" {

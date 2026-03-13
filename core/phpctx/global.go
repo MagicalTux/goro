@@ -540,6 +540,9 @@ func getLogArgs(args []any) (logopt.Data, []any) {
 			option.ErrType = t.ErrType
 			option.NoFuncName = t.NoFuncName
 			option.NoLoc = t.NoLoc
+			if t.Loc != nil {
+				option.Loc = t.Loc
+			}
 		default:
 			fmtArgs = append(fmtArgs, arg)
 		}
@@ -551,6 +554,9 @@ func logWarning(ctx phpv.Context, format string, a ...any) error {
 	funcName := ctx.GetFuncName()
 	loc := ctx.Loc()
 	option, fmtArgs := getLogArgs(a)
+	if l, ok := option.Loc.(*phpv.Loc); ok && l != nil {
+		loc = l
+	}
 	message := fmt.Sprintf(format, fmtArgs...)
 
 	phpErr := &phpv.PhpError{
@@ -585,34 +591,64 @@ func (g *Global) LogError(err *phpv.PhpError, optionArg ...logopt.Data) {
 		option = optionArg[0]
 	}
 
+	htmlErrors := bool(g.GetConfig("html_errors", phpv.ZBool(false).ZVal()).AsBool(g))
+
 	var output bytes.Buffer
+	var errType string
 	switch err.Code {
 	case phpv.E_ERROR, phpv.E_USER_ERROR, phpv.E_COMPILE_ERROR:
-		output.WriteString("Fatal error")
+		errType = "Fatal error"
 	case phpv.E_PARSE:
-		output.WriteString("Parse error")
+		errType = "Parse error"
 	case phpv.E_WARNING, phpv.E_USER_WARNING:
-		output.WriteString("Warning")
+		errType = "Warning"
 	case phpv.E_NOTICE, phpv.E_USER_NOTICE:
-		output.WriteString("Notice")
+		errType = "Notice"
 	case phpv.E_DEPRECATED, phpv.E_USER_DEPRECATED:
-		output.WriteString("Deprecated")
+		errType = "Deprecated"
 	default:
-		output.WriteString("Info")
+		errType = "Info"
 	}
 
-	output.WriteString(": ")
+	if htmlErrors {
+		output.WriteString(fmt.Sprintf("<b>%s</b>:  ", errType))
+	} else {
+		output.WriteString(errType)
+		output.WriteString(": ")
+	}
 	if !option.NoFuncName && err.FuncName != "" {
 		output.WriteString(fmt.Sprintf("%s(): ", err.FuncName))
 	}
-	output.WriteString(err.Err.Error())
+	msg := err.Err.Error()
+	if htmlErrors {
+		msg = htmlEscapeString(msg)
+	}
+	output.WriteString(msg)
 	if !option.NoLoc && err.Loc != nil {
-		output.WriteString(fmt.Sprintf(" in %s on line %d", err.Loc.Filename, err.Loc.Line))
+		if htmlErrors {
+			output.WriteString(fmt.Sprintf(" in <b>%s</b> on line <b>%d</b>", htmlEscapeString(err.Loc.Filename), err.Loc.Line))
+		} else {
+			output.WriteString(fmt.Sprintf(" in %s on line %d", err.Loc.Filename, err.Loc.Line))
+		}
 	}
 
-	g.Write([]byte("\n"))
-	g.Write(output.Bytes())
-	g.Write([]byte("\n"))
+	if htmlErrors {
+		g.Write([]byte("<br />\n"))
+		g.Write(output.Bytes())
+		g.Write([]byte("<br />\n"))
+	} else {
+		g.Write([]byte("\n"))
+		g.Write(output.Bytes())
+		g.Write([]byte("\n"))
+	}
+}
+
+func htmlEscapeString(s string) string {
+	s = strings.ReplaceAll(s, "&", "&amp;")
+	s = strings.ReplaceAll(s, "<", "&lt;")
+	s = strings.ReplaceAll(s, ">", "&gt;")
+	s = strings.ReplaceAll(s, "\"", "&quot;")
+	return s
 }
 
 func (g *Global) GetFuncName() string {
@@ -666,6 +702,10 @@ func (g *Global) RunShutdownFunctions() {
 }
 
 func (g *Global) GetFunction(ctx phpv.Context, name phpv.ZString) (phpv.Callable, error) {
+	// Strip leading namespace separator (e.g. \array_map → array_map)
+	if len(name) > 0 && name[0] == '\\' {
+		name = name[1:]
+	}
 	if f, ok := g.globalUserFuncs[name.ToLower()]; ok {
 		return f, nil
 	}
@@ -808,6 +848,10 @@ func (g *Global) GetClass(ctx phpv.Context, name phpv.ZString, autoload bool) (p
 		}
 		return f.this.GetClass(), nil
 	}
+	// Strip leading namespace separator (e.g. \Exception → Exception)
+	if len(name) > 0 && name[0] == '\\' {
+		name = name[1:]
+	}
 	if c, ok := g.globalClasses[name.ToLower()]; ok {
 		return c, nil
 	}
@@ -823,6 +867,10 @@ func (g *Global) GetClass(ctx phpv.Context, name phpv.ZString, autoload bool) (p
 	}
 	// Try autoload
 	nameLower := name.ToLower()
+	// PHP does not call autoloaders for class names containing path separators or NUL bytes
+	if strings.ContainsAny(string(name), "/\\\x00") {
+		autoload = false
+	}
 	if autoload && len(g.autoloadFuncs) > 0 {
 		if g.autoloadingClass == nil {
 			g.autoloadingClass = make(map[phpv.ZString]bool)

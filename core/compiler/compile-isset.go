@@ -195,11 +195,20 @@ func checkEmpty(ctx phpv.Context, v phpv.Runnable) (bool, error) {
 			return true, nil
 		}
 		obj := value.AsObject(ctx).(*phpobj.ZObject)
-		exists, err := obj.HasProp(ctx, t.varName)
+		// Resolve variable property name (e.g. $this->$name)
+		propName := t.varName
+		if len(propName) > 0 && propName[0] == '$' {
+			propVal, err := ctx.OffsetGet(ctx, propName[1:].ZVal())
+			if err != nil {
+				return true, nil
+			}
+			propName = propVal.AsString(ctx)
+		}
+		exists, err := obj.HasProp(ctx, propName)
 		if err != nil || !exists {
 			return true, nil
 		}
-		val, err := obj.ObjectGet(ctx, t.varName)
+		val, err := obj.ObjectGet(ctx, propName)
 		if err != nil {
 			return true, nil
 		}
@@ -281,7 +290,16 @@ func checkExistence(ctx phpv.Context, v phpv.Runnable, subExpr bool) (bool, erro
 			return false, nil
 		}
 		obj := value.AsObject(ctx).(*phpobj.ZObject)
-		return obj.HasProp(ctx, t.varName)
+		// Resolve variable property name (e.g. $this->$name)
+		propName := t.varName
+		if len(propName) > 0 && propName[0] == '$' {
+			propVal, err := ctx.OffsetGet(ctx, propName[1:].ZVal())
+			if err != nil {
+				return false, nil
+			}
+			propName = propVal.AsString(ctx)
+		}
+		return obj.HasProp(ctx, propName)
 
 	case *runClassStaticVarRef:
 		// Check if the static property exists

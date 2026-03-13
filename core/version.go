@@ -6,16 +6,16 @@ import (
 )
 
 // php targetted version
-const VERSION = "7.3.0"
+const VERSION = "8.0.0"
 
 // > const
 const (
 	PHP_VERSION         = phpv.ZString(VERSION) // version of PHP
-	PHP_MAJOR_VERSION   = phpv.ZInt(7)
-	PHP_MINOR_VERSION   = phpv.ZInt(3)
+	PHP_MAJOR_VERSION   = phpv.ZInt(8)
+	PHP_MINOR_VERSION   = phpv.ZInt(0)
 	PHP_RELEASE_VERSION = phpv.ZInt(0)
 	PHP_EXTRA_VERSION   = phpv.ZString("")
-	PHP_VERSION_ID      = phpv.ZInt(70300)
+	PHP_VERSION_ID      = phpv.ZInt(80000)
 )
 
 // > func string phpversion ([ string $extension ] )

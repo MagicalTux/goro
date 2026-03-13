@@ -66,6 +66,7 @@ const (
 	T_FILE // "__FILE__"
 	T_FINAL
 	T_FINALLY // "finally", for exceptions
+	T_FN      // "fn" (arrow functions)
 	T_FOR
 	T_FOREACH
 	T_FUNCTION
@@ -96,6 +97,7 @@ const (
 	T_LOGICAL_AND  // "and"
 	T_LOGICAL_OR   // "or"
 	T_LOGICAL_XOR  // "xor"
+	T_MATCH        // "match"
 	T_METHOD_C     // "__METHOD__"
 	T_MINUS_EQUAL  // -=
 	T_MOD_EQUAL    // %=
@@ -106,7 +108,8 @@ const (
 	T_NEW
 	T_NUM_STRING
 	T_OBJECT_CAST
-	T_OBJECT_OPERATOR // ->
+	T_NULLSAFE_OBJECT_OPERATOR // ?->
+	T_OBJECT_OPERATOR          // ->
 	T_OPEN_TAG
 	T_OPEN_TAG_WITH_ECHO // "<?="
 	T_OR_EQUAL           // |=

@@ -20,6 +20,13 @@ type FuncGetArgs interface {
 	GetArgs() []*FuncArg
 }
 
+// FuncCallExpression is a marker interface for expressions that represent
+// function/method calls. When passed to a by-reference parameter, these produce
+// a Notice rather than a Fatal Error.
+type FuncCallExpression interface {
+	IsFuncCallExpression()
+}
+
 type ZClosure interface {
 	FuncGetArgs
 	Callable

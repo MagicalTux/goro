@@ -4,12 +4,72 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
+
+// isLeadingNumeric checks if a string starts with a digit or +-digit.
+// Used to distinguish "foo" (TypeError) from "0foo" (warning) for string offsets.
+func isLeadingNumeric(s string) bool {
+	if len(s) == 0 {
+		return false
+	}
+	i := 0
+	if s[i] == '+' || s[i] == '-' {
+		i++
+	}
+	if i >= len(s) {
+		return false
+	}
+	return s[i] >= '0' && s[i] <= '9'
+}
+
+// isNumericString checks if a string is a valid numeric string (integer or float).
+func isNumericString(s string) bool {
+	s = strings.TrimSpace(s)
+	if len(s) == 0 {
+		return false
+	}
+	i := 0
+	if s[i] == '+' || s[i] == '-' {
+		i++
+	}
+	if i >= len(s) {
+		return false
+	}
+	hasDigit := false
+	for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+		hasDigit = true
+		i++
+	}
+	if i < len(s) && s[i] == '.' {
+		i++
+		for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+			hasDigit = true
+			i++
+		}
+	}
+	if !hasDigit {
+		return false
+	}
+	if i < len(s) && (s[i] == 'e' || s[i] == 'E') {
+		i++
+		if i < len(s) && (s[i] == '+' || s[i] == '-') {
+			i++
+		}
+		if i >= len(s) || s[i] < '0' || s[i] > '9' {
+			return false
+		}
+		for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+			i++
+		}
+	}
+	return i == len(s)
+}
 
 type arrayEntry struct {
 	k, v phpv.Runnable
@@ -79,6 +139,15 @@ type runArrayAccess struct {
 	offset       phpv.Runnable
 	l            *phpv.Loc
 	writeContext bool // set when reading as part of a write chain (suppress undefined key warnings)
+
+	// Set by Run() to indicate the container was an ArrayAccess object.
+	// Used by runOperator to emit "Indirect modification" notices for compound ops.
+	lastContainerIsOverloaded bool
+	lastContainerClassName    string
+
+	// PrepareWrite caching
+	prepared     bool
+	cachedOffset *phpv.ZVal
 }
 
 func (r *runArrayAccess) Dump(w io.Writer) error {
@@ -100,7 +169,41 @@ func (r *runArrayAccess) Dump(w io.Writer) error {
 	return err
 }
 
+// IsOverloaded checks if the container of this array access is an object with ArrayAccess.
+// This is used to detect illegal operations like assigning by reference.
+// Also sets lastContainerClassName for error messages.
+func (ac *runArrayAccess) IsOverloaded(ctx phpv.Context) bool {
+	v, err := ac.value.Run(ctx)
+	if err != nil {
+		return false
+	}
+	if v.GetType() == phpv.ZtObject {
+		obj := v.AsObject(ctx)
+		if obj != nil && obj.GetClass().Implements(phpobj.ArrayAccess) {
+			ac.lastContainerIsOverloaded = true
+			ac.lastContainerClassName = string(obj.GetClass().GetName())
+			return true
+		}
+	}
+	return false
+}
+
 func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
+	// Reset overloaded container tracking
+	ac.lastContainerIsOverloaded = false
+	ac.lastContainerClassName = ""
+
+	// Propagate writeContext down the chain to suppress warnings during auto-vivification
+	if ac.writeContext {
+		if inner, ok := ac.value.(*runArrayAccess); ok {
+			inner.writeContext = true
+			defer func() { inner.writeContext = false }()
+		}
+		if inner, ok := ac.value.(*runObjectVar); ok {
+			inner.writeContext = true
+			defer func() { inner.writeContext = false }()
+		}
+	}
 	v, err := ac.value.Run(ctx)
 	if err != nil {
 		return nil, err
@@ -110,7 +213,37 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	case phpv.ZtString:
 	case phpv.ZtArray:
 	case phpv.ZtObject:
+		// Track if container is an ArrayAccess object (not a plain array)
+		ac.lastContainerIsOverloaded = true
+		ac.lastContainerClassName = string(v.AsObject(ctx).GetClass().GetName())
+	case phpv.ZtNull:
+		if !ac.writeContext {
+			if err := ctx.Warn("Trying to access array offset on null", logopt.NoFuncName(true)); err != nil {
+				return nil, err
+			}
+		}
+		return phpv.ZNULL.ZVal(), nil
+	case phpv.ZtBool:
+		if !bool(v.AsBool(ctx)) && !ac.writeContext {
+			if err := ctx.Warn("Trying to access array offset on false", logopt.NoFuncName(true)); err != nil {
+				return nil, err
+			}
+		}
+		v, err = v.As(ctx, phpv.ZtArray)
+		if err != nil {
+			return nil, err
+		}
 	default:
+		// PHP 8: accessing a scalar with array syntax in write context throws Error
+		isWriteOp := ac.writeContext
+		if !isWriteOp {
+			if op, ok := ac.Parent.(*runOperator); ok && op.opD != nil && op.opD.write {
+				isWriteOp = true
+			}
+		}
+		if isWriteOp {
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot use a scalar value as an array")
+		}
 		v, err = v.As(ctx, phpv.ZtArray)
 		if err != nil {
 			return nil, err
@@ -145,6 +278,14 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	}
 
 	if v.GetType() == phpv.ZtString {
+		// PHP 8: completely non-numeric string offsets on strings throw TypeError.
+		// Strings with leading digits (like "0foo") produce a warning instead.
+		if offset.GetType() == phpv.ZtString {
+			s := strings.TrimSpace(string(offset.AsString(ctx)))
+			if len(s) > 0 && !isLeadingNumeric(s) {
+				return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "Cannot access offset of type string on string")
+			}
+		}
 		return v.AsString(ctx).Array().OffsetGet(ctx, offset)
 	}
 
@@ -169,14 +310,26 @@ func (a *runArrayAccess) Loc() *phpv.Loc {
 }
 
 func (ac *runArrayAccess) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
-	// Suppress undefined key warnings for inner array accesses in write context
+	// Suppress undefined key/property warnings for inner accesses in write context
 	if inner, ok := ac.value.(*runArrayAccess); ok {
+		inner.writeContext = true
+		defer func() { inner.writeContext = false }()
+	}
+	if inner, ok := ac.value.(*runObjectVar); ok {
 		inner.writeContext = true
 		defer func() { inner.writeContext = false }()
 	}
 	v, err := ac.value.Run(ctx)
 	if err != nil {
 		return err
+	}
+
+	// PHP: writing to a sub-element of an ArrayAccess return value is an indirect
+	// modification — offsetGet returns by value, so the write has no effect.
+	// But if offsetGet returned an object (e.g. another ArrayAccess), writes to it
+	// go through that object's offsetSet and work correctly.
+	if inner, ok := ac.value.(*runArrayAccess); ok && inner.lastContainerIsOverloaded && v.GetType() != phpv.ZtObject {
+		return ctx.Notice("Indirect modification of overloaded element of %s has no effect", inner.lastContainerClassName, logopt.Data{Loc: ac.l, NoFuncName: true})
 	}
 
 	// Handle unset ($a[x] = nil means unset)
@@ -201,7 +354,8 @@ func (ac *runArrayAccess) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 
 	case phpv.ZtArray:
 	case phpv.ZtObject:
-	default:
+	case phpv.ZtNull:
+		// null can be auto-vivified to array
 		err = v.CastTo(ctx, phpv.ZtArray)
 		if err != nil {
 			return err
@@ -209,6 +363,9 @@ func (ac *runArrayAccess) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 		if wr, ok := ac.value.(phpv.Writable); ok {
 			wr.WriteValue(ctx, v)
 		}
+	default:
+		// PHP 8: "Cannot use a scalar value as an array"
+		return phpobj.ThrowError(ctx, phpobj.Error, "Cannot use a scalar value as an array")
 	}
 
 	array := v.Array()
@@ -262,9 +419,20 @@ func (ac *runArrayAccess) writeValueToString(ctx phpv.Context, value *phpv.ZVal)
 		return errors.New("[] operator not supported for string")
 	}
 
+	// PHP: when assigning to a string offset, only the first byte of the
+	// value is used. If the value is a multi-character string, warn.
+	valStr := value.AsString(ctx)
+	if len(valStr) == 0 {
+		valStr = "\x00"
+	} else if len(valStr) > 1 {
+		ctx.Warn("Only the first byte will be assigned to the string offset")
+		valStr = valStr[:1]
+	}
+	assignVal := valStr.ZVal()
+
 	array := v.AsString(ctx).Array()
 
-	err = array.OffsetSet(ctx, offset, value)
+	err = array.OffsetSet(ctx, offset, assignVal)
 	if err != nil {
 		return err
 	}
@@ -273,13 +441,44 @@ func (ac *runArrayAccess) writeValueToString(ctx phpv.Context, value *phpv.ZVal)
 		wr.WriteValue(ctx, array.String().ZVal())
 	}
 
+	// Update the passed-in value to reflect what was actually written (single char).
+	// This ensures chained assignments like $b = $str[N] = $s return the truncated value.
+	value.Set(assignVal)
+
+	return nil
+}
+
+func (ac *runArrayAccess) PrepareWrite(ctx phpv.Context) error {
+	// Recursively prepare nested LHS expressions
+	if inner, ok := ac.value.(phpv.WritePreparable); ok {
+		if err := inner.PrepareWrite(ctx); err != nil {
+			return err
+		}
+	}
+	// Evaluate and cache the offset expression
+	if ac.offset != nil {
+		offset, err := ac.offset.Run(ctx)
+		if err != nil {
+			return err
+		}
+		ac.prepared = true
+		ac.cachedOffset = offset
+	}
 	return nil
 }
 
 func (ac *runArrayAccess) getArrayOffset(ctx phpv.Context) (*phpv.ZVal, error) {
-	offset, err := ac.offset.Run(ctx)
-	if err != nil {
-		return nil, err
+	var offset *phpv.ZVal
+	var err error
+	if ac.prepared {
+		offset = ac.cachedOffset
+		ac.prepared = false
+		ac.cachedOffset = nil
+	} else {
+		offset, err = ac.offset.Run(ctx)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	switch offset.GetType() {

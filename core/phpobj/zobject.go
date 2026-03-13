@@ -28,7 +28,7 @@ type ZObject struct {
 }
 
 func (z *ZObject) ZVal() *phpv.ZVal {
-	return phpv.MakeZVal(phpv.MakeZVal(z))
+	return phpv.MakeZVal(z)
 }
 
 func (z *ZObject) GetType() phpv.ZType {
@@ -312,6 +312,13 @@ func NewZObjectOpaque(ctx phpv.Context, c phpv.ZClass, v interface{}) (*ZObject,
 }
 
 func (o *ZObject) init(ctx phpv.Context) error {
+	// Resolve any pending CompileDelayed constants when the class is first used.
+	// This ensures forward-referenced constants throw errors at instantiation time
+	// if the referenced class/constant doesn't exist.
+	if err := o.GetClass().(*ZClass).ResolveConstants(ctx); err != nil {
+		return err
+	}
+
 	// initialize object variables with default values
 
 	class := o.GetClass().(*ZClass)
@@ -326,6 +333,8 @@ func (o *ZObject) init(ctx phpv.Context) error {
 	}
 
 	for _, class := range slices.Backward(lineage) {
+		// Set compiling class for self::/parent:: resolution in property defaults
+		ctx.Global().SetCompilingClass(class)
 		for _, p := range class.Props {
 			if p.Modifiers.IsStatic() {
 				continue
@@ -335,6 +344,14 @@ func (o *ZObject) init(ctx phpv.Context) error {
 				// to avoid collisions with same-named properties in parent/child classes.
 				k := getPrivatePropName(class, p.VarName)
 				if p.Default != nil {
+					// Resolve CompileDelayed defaults lazily
+					if cd, ok := p.Default.(*phpv.CompileDelayed); ok {
+						z, err := cd.Run(ctx)
+						if err != nil {
+							return err
+						}
+						p.Default = z.Value()
+					}
 					o.h.SetString(k, p.Default.ZVal())
 				} else {
 					o.h.SetString(k, phpv.ZNULL.ZVal())
@@ -343,6 +360,14 @@ func (o *ZObject) init(ctx phpv.Context) error {
 			} else {
 				// Public/protected properties stored under bare name
 				if p.Default != nil {
+					// Resolve CompileDelayed defaults lazily
+					if cd, ok := p.Default.(*phpv.CompileDelayed); ok {
+						z, err := cd.Run(ctx)
+						if err != nil {
+							return err
+						}
+						p.Default = z.Value()
+					}
 					o.h.SetString(p.VarName, p.Default.ZVal())
 				} else {
 					o.h.SetString(p.VarName, phpv.ZNULL.ZVal())
@@ -350,6 +375,7 @@ func (o *ZObject) init(ctx phpv.Context) error {
 			}
 		}
 	}
+	ctx.Global().SetCompilingClass(nil)
 
 	return nil
 }
@@ -410,10 +436,21 @@ func (pi *propIterator) yield(yield func(*phpv.ZClassProp) bool) {
 				if _, ok := shown[p.VarName.String()]; ok {
 					continue
 				}
+				// Skip properties that have been unset from the instance
+				if !o.h.HasString(p.VarName) {
+					shown[p.VarName.String()] = struct{}{}
+					continue
+				}
 				shown[p.VarName.String()] = struct{}{}
 				// Yield the most-derived version of this property
 				if derived, ok := mostDerived[p.VarName.String()]; ok {
 					p = derived
+				}
+			} else {
+				// Skip private properties that have been unset
+				propName := getPrivatePropName(cl, p.VarName)
+				if !o.h.HasString(propName) {
+					continue
 				}
 			}
 			if !yield(p) {
@@ -568,19 +605,33 @@ func (o *ZObject) HasProp(ctx phpv.Context, key phpv.Val) (bool, error) {
 	}
 
 	keyStr := key.(phpv.ZString)
-	if _, ok := o.hasPrivate[keyStr]; ok {
-		resolveClass := o.resolvePrivateClass(ctx, keyStr)
-		propName := getPrivatePropName(resolveClass, keyStr)
-		if o.h.HasString(propName) {
+
+	// Note: isset() does NOT emit "Accessing static property as non-static" notice
+	// (unlike ObjectGet/ObjectSet which do). This is PHP behavior.
+
+	// Check if property is visible from the calling context.
+	// If the property is declared private/protected and the caller doesn't have
+	// access, we should fall through to __isset rather than returning true.
+	propVisible := true
+	if o.isPropertyHidden(ctx, keyStr) {
+		propVisible = false
+	}
+
+	if propVisible {
+		if _, ok := o.hasPrivate[keyStr]; ok {
+			resolveClass := o.resolvePrivateClass(ctx, keyStr)
+			propName := getPrivatePropName(resolveClass, keyStr)
+			if o.h.HasString(propName) {
+				return true, nil
+			}
+		}
+
+		if o.h.HasString(keyStr) {
 			return true, nil
 		}
 	}
 
-	if o.h.HasString(keyStr) {
-		return true, nil
-	}
-
-	// Property not found, try __isset magic method
+	// Property not found or not visible, try __isset magic method
 	class := o.GetClass().(*ZClass)
 	if m, ok := class.Methods["__isset"]; ok {
 		// Guard against infinite recursion
@@ -600,6 +651,45 @@ func (o *ZObject) HasProp(ctx phpv.Context, key phpv.Val) (bool, error) {
 	}
 
 	return false, nil
+}
+
+// isPropertyHidden returns true if the property is declared with restricted visibility
+// (private/protected) and the current calling context doesn't have access.
+// Used by HasProp to decide whether to fall through to __isset.
+func (o *ZObject) isPropertyHidden(ctx phpv.Context, keyStr phpv.ZString) bool {
+	callerClass := ctx.Class()
+
+	// Check caller's own class first
+	if callerClass != nil {
+		if callerZClass, ok := callerClass.(*ZClass); ok {
+			if prop, ok := callerZClass.GetProp(keyStr); ok && prop.Modifiers.IsPrivate() && !prop.Modifiers.IsStatic() {
+				return false // caller's own private property - visible
+			}
+		}
+	}
+
+	// Walk the class hierarchy looking for the property declaration
+	class := o.Class.(*ZClass)
+	for class != nil {
+		if prop, ok := class.GetProp(keyStr); ok {
+			if prop.Modifiers.IsPrivate() {
+				return callerClass == nil || callerClass.GetName() != class.GetName()
+			}
+			if prop.Modifiers.IsProtected() {
+				if callerClass == nil {
+					return true
+				}
+				return !callerClass.InstanceOf(class) && !class.InstanceOf(callerClass)
+			}
+			return false // public
+		}
+		parent := class.GetParent()
+		if parent == nil {
+			break
+		}
+		class = parent.(*ZClass)
+	}
+	return false // no declaration found, not hidden
 }
 
 // checkPropertyVisibility checks if the caller context has access to a property.
@@ -669,12 +759,16 @@ func (o *ZObject) ObjectGet(ctx phpv.Context, key phpv.Val) (*phpv.ZVal, error) 
 		resolveClass := o.resolvePrivateClass(ctx, keyStr)
 		propName := getPrivatePropName(resolveClass, keyStr)
 		if o.h.HasString(propName) {
-			return o.h.GetString(propName), nil
+			v := o.h.GetString(propName)
+			// Return a detached snapshot so in-place mutations to the hash
+			// entry don't retroactively change already-read values (PHP semantics).
+			return phpv.NewZVal(v.Value()), nil
 		}
 	}
 
 	if o.h.HasString(keyStr) {
-		return o.h.GetString(keyStr), nil
+		v := o.h.GetString(keyStr)
+		return phpv.NewZVal(v.Value()), nil
 	}
 
 	// Property not found, try __get magic method
@@ -698,6 +792,52 @@ func (o *ZObject) ObjectGet(ctx phpv.Context, key phpv.Val) (*phpv.ZVal, error) 
 	ctx.Warn("Undefined property: %s::$%s", o.GetClass().GetName(), keyStr, logopt.NoFuncName(true))
 
 	return phpv.ZNULL.ZVal(), nil
+}
+
+// ObjectGetQuiet is like ObjectGet but returns (value, found, err) without emitting
+// "Undefined property" warnings. Used for write-context auto-vivification paths.
+func (o *ZObject) ObjectGetQuiet(ctx phpv.Context, key phpv.Val) (*phpv.ZVal, bool, error) {
+	var err error
+	key, err = key.AsVal(ctx, phpv.ZtString)
+	if err != nil {
+		return nil, false, err
+	}
+
+	keyStr := key.(phpv.ZString)
+
+	if _, ok := o.hasPrivate[keyStr]; ok {
+		resolveClass := o.resolvePrivateClass(ctx, keyStr)
+		propName := getPrivatePropName(resolveClass, keyStr)
+		if o.h.HasString(propName) {
+			return o.h.GetString(propName), true, nil
+		}
+	}
+
+	if o.h.HasString(keyStr) {
+		return o.h.GetString(keyStr), true, nil
+	}
+
+	// Property not found, try __get magic method
+	class := o.GetClass().(*ZClass)
+	if m, ok := class.Methods["__get"]; ok {
+		if o.getGuard == nil {
+			o.getGuard = make(map[phpv.ZString]bool)
+		}
+		if !o.getGuard[keyStr] {
+			o.getGuard[keyStr] = true
+			result, err := ctx.CallZVal(ctx, m.Method, []*phpv.ZVal{keyStr.ZVal()}, o)
+			delete(o.getGuard, keyStr)
+			if err != nil {
+				return nil, false, err
+			}
+			if result == nil {
+				result = phpv.ZNULL.ZVal()
+			}
+			return result, true, nil
+		}
+	}
+
+	return phpv.ZNULL.ZVal(), false, nil
 }
 
 func (o *ZObject) ObjectSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) error {
@@ -838,6 +978,22 @@ func (it *zobjectIterator) skipNonPublic(ctx phpv.Context) {
 func (it *zobjectIterator) Current(ctx phpv.Context) (*phpv.ZVal, error) {
 	it.skipNonPublic(ctx)
 	return it.inner.Current(ctx)
+}
+
+func (it *zobjectIterator) CurrentMakeRef(ctx phpv.Context) (*phpv.ZVal, error) {
+	it.skipNonPublic(ctx)
+	if inner, ok := it.inner.(interface {
+		CurrentMakeRef(phpv.Context) (*phpv.ZVal, error)
+	}); ok {
+		return inner.CurrentMakeRef(ctx)
+	}
+	return it.inner.Current(ctx)
+}
+
+func (it *zobjectIterator) CleanupRef() {
+	if ri, ok := it.inner.(interface{ CleanupRef() }); ok {
+		ri.CleanupRef()
+	}
 }
 
 func (it *zobjectIterator) Key(ctx phpv.Context) (*phpv.ZVal, error) {

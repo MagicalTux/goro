@@ -1,6 +1,9 @@
 package core
 
-import "github.com/MagicalTux/goro/core/phpv"
+import (
+	"github.com/MagicalTux/goro/core/phperr"
+	"github.com/MagicalTux/goro/core/phpv"
+)
 
 // > func void echo ( string $arg1 [, string $... ] )
 func stdFuncEcho(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
@@ -11,6 +14,11 @@ func stdFuncEcho(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		}
 		_, err = ctx.Write([]byte(s.Value().(phpv.ZString)))
 		if err != nil {
+			// Don't wrap PhpThrow errors (e.g. from output buffer callbacks)
+			// — they need to remain catchable by try/catch
+			if _, ok := err.(*phperr.PhpThrow); ok {
+				return nil, err
+			}
 			return nil, ctx.FuncError(err)
 		}
 	}
@@ -27,6 +35,9 @@ func fncPrint(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	_, err = ctx.Write([]byte(s))
 	if err != nil {
+		if _, ok := err.(*phperr.PhpThrow); ok {
+			return nil, err
+		}
 		return nil, ctx.FuncError(err)
 	}
 	return phpv.ZInt(1).ZVal(), nil

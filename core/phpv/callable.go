@@ -75,3 +75,38 @@ func (m *MethodCallable) GetArgs() []*FuncArg {
 	}
 	return nil
 }
+
+func (m *MethodCallable) ReturnsByRef() bool {
+	if rr, ok := m.Callable.(interface{ ReturnsByRef() bool }); ok {
+		return rr.ReturnsByRef()
+	}
+	return false
+}
+
+func (b *BoundedCallable) ReturnsByRef() bool {
+	if rr, ok := b.Callable.(interface{ ReturnsByRef() bool }); ok {
+		return rr.ReturnsByRef()
+	}
+	return false
+}
+
+// DisplayName returns the fully-qualified callable name for display purposes
+// (e.g. ob_get_status, ob_list_handlers). Unlike Name(), this includes
+// the class prefix for methods.
+func (m *MethodCallable) DisplayName() string {
+	return string(m.Class.GetName()) + "::" + m.Callable.Name()
+}
+
+func (b *BoundedCallable) DisplayName() string {
+	return string(b.This.GetClass().GetName()) + "::" + b.Callable.Name()
+}
+
+// CallableDisplayName returns the display name for a Callable.
+// For MethodCallable/BoundedCallable it includes the class prefix.
+// For other callables it returns Name().
+func CallableDisplayName(c Callable) string {
+	if m, ok := c.(interface{ DisplayName() string }); ok {
+		return m.DisplayName()
+	}
+	return c.Name()
+}

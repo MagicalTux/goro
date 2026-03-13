@@ -19,6 +19,16 @@ type StackTraceEntry struct {
 type StackTrace []*StackTraceEntry
 
 func (st StackTrace) String() ZString {
+	return st.format(true)
+}
+
+// StringNoMain formats the stack trace without the trailing {main} entry,
+// as used by debug_print_backtrace().
+func (st StackTrace) StringNoMain() ZString {
+	return st.format(false)
+}
+
+func (st StackTrace) format(includeMain bool) ZString {
 	var buf bytes.Buffer
 	var argsBuf bytes.Buffer
 	level := 0
@@ -41,7 +51,9 @@ func (st StackTrace) String() ZString {
 		buf.WriteString(line)
 		level++
 	}
-	buf.WriteString(fmt.Sprintf("#%d {main}", level))
+	if includeMain {
+		buf.WriteString(fmt.Sprintf("#%d {main}", level))
+	}
 	return ZString(buf.String())
 }
 
@@ -49,13 +61,30 @@ func traceArgString(arg *ZVal) string {
 	if arg == nil {
 		return ""
 	}
-	if arg.GetType() == ZtObject {
+	switch arg.GetType() {
+	case ZtObject:
 		if obj, ok := arg.Value().(ZObject); ok {
 			return fmt.Sprintf("Object(%s)", obj.GetClass().GetName())
 		}
 		return "Object"
+	case ZtString:
+		s := arg.String()
+		if len(s) > 15 {
+			return "'" + s[:15] + "...'"
+		}
+		return "'" + s + "'"
+	case ZtNull:
+		return "NULL"
+	case ZtBool:
+		if bool(arg.Value().(ZBool)) {
+			return "true"
+		}
+		return "false"
+	case ZtArray:
+		return "Array"
+	default:
+		return arg.String()
 	}
-	return arg.String()
 }
 
 func GetGoDebugTrace() []byte {

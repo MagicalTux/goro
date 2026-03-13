@@ -7,8 +7,13 @@ import (
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
 
+type globalVar struct {
+	static  phpv.ZString  // for static variable names like $foo
+	dynamic phpv.Runnable // for variable-variables like $$foo
+}
+
 type runGlobal struct {
-	vars []phpv.ZString
+	vars []globalVar
 	l    *phpv.Loc
 }
 
@@ -22,7 +27,18 @@ func (g *runGlobal) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	}
 
 	glob := ctx.Global()
-	for _, k := range g.vars {
+	for _, gv := range g.vars {
+		var k phpv.ZString
+		if gv.dynamic != nil {
+			z, err := gv.dynamic.Run(ctx)
+			if err != nil {
+				return nil, err
+			}
+			k = phpv.ZString(z.String())
+		} else {
+			k = gv.static
+		}
+
 		if ok, _ := glob.OffsetExists(ctx, k.ZVal()); !ok {
 			// need to create it
 			v = phpv.ZNull{}.ZVal()
@@ -45,7 +61,7 @@ func (g *runGlobal) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 func (g *runGlobal) Dump(w io.Writer) error {
 	_, err := w.Write([]byte("global "))
 	first := true
-	for _, v := range g.vars {
+	for _, gv := range g.vars {
 		if !first {
 			_, err = w.Write([]byte{','})
 			if err != nil {
@@ -53,11 +69,19 @@ func (g *runGlobal) Dump(w io.Writer) error {
 			}
 		}
 		first = false
-		_, err = w.Write([]byte{'$'})
-		if err != nil {
-			return err
+		if gv.dynamic != nil {
+			_, err = w.Write([]byte("$$"))
+			if err != nil {
+				return err
+			}
+			err = gv.dynamic.Dump(w)
+		} else {
+			_, err = w.Write([]byte{'$'})
+			if err != nil {
+				return err
+			}
+			_, err = w.Write([]byte(gv.static))
 		}
-		_, err = w.Write([]byte(v))
 		if err != nil {
 			return err
 		}
@@ -79,11 +103,19 @@ func compileGlobal(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		if err != nil {
 			return nil, err
 		}
-		if i.Type != tokenizer.T_VARIABLE {
+
+		if i.Type == tokenizer.T_VARIABLE {
+			g.vars = append(g.vars, globalVar{static: phpv.ZString(i.Data[1:])})
+		} else if i.IsSingle('$') {
+			// variable-variable: global $$k
+			expr, err := compileOneExpr(nil, c)
+			if err != nil {
+				return nil, err
+			}
+			g.vars = append(g.vars, globalVar{dynamic: expr})
+		} else {
 			return nil, i.Unexpected()
 		}
-
-		g.vars = append(g.vars, phpv.ZString(i.Data[1:]))
 
 		i, err = c.NextItem()
 

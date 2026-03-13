@@ -79,11 +79,19 @@ func compileStaticVar(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 
 	// static $var [= value] [, $var [= value]] ...
 	// static followed by T_PAAMAYIM_NEKUDOTAYIM means a static call (compiling is handled separately)
+	// static followed by T_FUNCTION is a static closure (static function() { ... })
 
 	for {
 		i, err := c.NextItem()
 		if err != nil {
 			return nil, err
+		}
+
+		// Handle "static function() { ... }" as a static closure
+		if i.Type == tokenizer.T_FUNCTION || i.Type == tokenizer.T_FN {
+			// Compile the closure; static closures don't bind $this
+			// but for now we just parse them as regular closures
+			return compileFunction(i, c)
 		}
 
 		if i.Type != tokenizer.T_VARIABLE {

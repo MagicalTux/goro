@@ -15,8 +15,10 @@ type runVariable struct {
 }
 
 type runVariableRef struct {
-	v phpv.Runnable
-	l *phpv.Loc
+	v         phpv.Runnable
+	l         *phpv.Loc
+	prepared  bool
+	cachedKey phpv.Val
 }
 
 func (rv *runVariable) VarName() phpv.ZString {
@@ -103,6 +105,9 @@ func (r *runVariable) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			// write is true, and let the functions themselves
 			// check for undefined variables.
 			write = true
+		case *runRef:
+			// &$var reference creation is a write context
+			write = true
 		case *runnableUnset:
 			// unset() on undefined variables is silently ignored
 			write = true
@@ -176,17 +181,35 @@ func (r *runVariableRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	return v, err
 }
 
-func (r *runVariableRef) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
-	var err error
+func (r *runVariableRef) PrepareWrite(ctx phpv.Context) error {
 	v, err := r.v.Run(ctx)
 	if err != nil {
 		return err
 	}
+	r.prepared = true
+	r.cachedKey = v
+	return nil
+}
 
-	if value == nil {
-		err = ctx.OffsetUnset(ctx, v)
+func (r *runVariableRef) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
+	var key phpv.Val
+	if r.prepared {
+		key = r.cachedKey
+		r.prepared = false
+		r.cachedKey = nil
 	} else {
-		err = ctx.OffsetSet(ctx, v, value)
+		v, err := r.v.Run(ctx)
+		if err != nil {
+			return err
+		}
+		key = v
+	}
+
+	var err error
+	if value == nil {
+		err = ctx.OffsetUnset(ctx, key)
+	} else {
+		err = ctx.OffsetSet(ctx, key, value)
 	}
 	if err != nil {
 		return r.l.Error(ctx, err)
@@ -200,10 +223,31 @@ type runRef struct {
 	l *phpv.Loc
 }
 
+func (r *runRef) isVariableLike() bool {
+	switch r.v.(type) {
+	case *runVariable, *runArrayAccess, *runObjectVar, *runClassStaticVarRef:
+		return true
+	}
+	return false
+}
+
 func (r *runRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	z, err := r.v.Run(ctx)
 	if err != nil {
 		return nil, err
+	}
+
+	// For non-variable expressions (e.g. function calls), check if the result
+	// is already a reference (from a ref-returning function). If not, the
+	// expression cannot be referenced.
+	if !r.isVariableLike() && !z.IsRef() {
+		// Restore location to the =& site (function calls update global loc)
+		ctx.Tick(ctx, r.l)
+		if err := ctx.Notice("Only variables should be assigned by reference",
+			logopt.NoFuncName(true)); err != nil {
+			return nil, err
+		}
+		return z, nil
 	}
 
 	ref := z.Ref()

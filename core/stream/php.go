@@ -59,6 +59,15 @@ func (h *phpHandler) Open(ctx phpv.Context, p *url.URL, mode string, _ ...phpv.R
 	case "stdin":
 		return h.stdin, nil
 	case "stdout":
+		// Use the context's output writer so that php://stdout goes through
+		// the SAPI output (test buffers, web output, etc.) instead of raw os.Stdout.
+		if g := ctx.Global(); g != nil {
+			s := NewStream(g)
+			s.SetAttr("stream_type", "Go")
+			s.SetAttr("mode", "w")
+			s.ResourceType = phpv.ResourceStream
+			return s, nil
+		}
 		return h.stdout, nil
 	case "stderr":
 		return h.stderr, nil

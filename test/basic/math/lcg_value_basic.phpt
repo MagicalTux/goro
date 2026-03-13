@@ -22,19 +22,18 @@ if ($i != 100) {
 }
 
 echo "\n lcg_value error cases..\n";
-$res = lcg_value(23);
-
-if (is_null($res)) {
-	echo "PASSED\n";
-} else {
+try {
+	$res = lcg_value(23);
 	echo "FAILED\n";
+} catch (TypeError $e) {
+	echo "PASSED: " . $e->getMessage() . "\n";
 }
 
-$res = lcg_value(10,false);
-if (is_null($res)) {
-	echo "PASSED\n";
-} else {
+try {
+	$res = lcg_value(10,false);
 	echo "FAILED\n";
+} catch (TypeError $e) {
+	echo "PASSED: " . $e->getMessage() . "\n";
 }
 
 echo "MATHS test script completed\n";
@@ -47,10 +46,6 @@ MATHS test script started
 PASSED
 
  lcg_value error cases..
-
-Warning: lcg_value() expects exactly 0 parameters, 1 given in %slcg_value_basic.php on line %d
-PASSED
-
-Warning: lcg_value() expects exactly 0 parameters, 2 given in %slcg_value_basic.php on line %d
-PASSED
+PASSED: lcg_value() expects exactly 0 arguments, 1 given
+PASSED: lcg_value() expects exactly 0 arguments, 2 given
 MATHS test script completed

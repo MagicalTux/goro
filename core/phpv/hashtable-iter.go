@@ -3,8 +3,9 @@ package phpv
 import "iter"
 
 type zhashtableIterator struct {
-	t   *ZHashTable
-	cur *hashTableVal
+	t       *ZHashTable
+	cur     *hashTableVal
+	prevRef *hashTableVal // previous entry that was made a reference by CurrentMakeRef
 }
 
 func (z *zhashtableIterator) Current(ctx Context) (*ZVal, error) {
@@ -35,14 +36,36 @@ func (z *zhashtableIterator) CurrentMakeRef(ctx Context) (*ZVal, error) {
 	if !z.Valid(ctx) {
 		return nil, nil
 	}
+	// Unwrap previous entry's reference since the loop variable no longer
+	// points to it (simulates PHP's refcount-based reference collapsing)
+	if z.prevRef != nil && z.prevRef != z.cur {
+		pv := z.prevRef.v
+		if inner, ok := pv.v.(*ZVal); ok {
+			pv.v = inner.v
+		}
+	}
 	v := z.cur.v
 	if !v.IsRef() {
 		// Wrap the value in a shared inner ZVal to create a reference
 		inner := NewZVal(v.v)
 		v.v = inner // hash table entry is now a reference
 	}
+	z.prevRef = z.cur
 	// Return a new reference pointing to the same inner value
 	return NewZVal(v.v.(*ZVal)), nil
+}
+
+// CleanupRef unwraps the last reference created by CurrentMakeRef.
+// This should be called after a by-reference foreach loop ends to remove
+// the reference wrapper from the last iterated element.
+func (z *zhashtableIterator) CleanupRef() {
+	if z.prevRef != nil {
+		pv := z.prevRef.v
+		if inner, ok := pv.v.(*ZVal); ok {
+			pv.v = inner.v
+		}
+		z.prevRef = nil
+	}
 }
 
 func (z *zhashtableIterator) Key(ctx Context) (*ZVal, error) {
@@ -54,11 +77,15 @@ func (z *zhashtableIterator) Key(ctx Context) (*ZVal, error) {
 }
 
 func (z *zhashtableIterator) Next(ctx Context) (*ZVal, error) {
-	if !z.Valid(ctx) {
+	if z.cur == nil {
 		return nil, nil
 	}
 
-	z.cur = z.cur.next
+	// If current element was deleted, Valid() will already advance past it,
+	// so we only need to advance if current is NOT deleted.
+	if !z.cur.deleted {
+		z.cur = z.cur.next
+	}
 	return z.Current(ctx)
 }
 

@@ -29,7 +29,7 @@ func NewHashTable() *ZHashTable {
 		_idx_s: make(map[ZString]*hashTableVal),
 		_idx_i: make(map[ZInt]*hashTableVal),
 	}
-	n.mainIterator = &zhashtableIterator{n, nil}
+	n.mainIterator = &zhashtableIterator{t: n}
 	return n
 }
 
@@ -52,7 +52,7 @@ func (z *ZHashTable) Dup() *ZHashTable {
 	}
 
 	cur := z.mainIterator.cur
-	n.mainIterator = &zhashtableIterator{n, cur}
+	n.mainIterator = &zhashtableIterator{t: n, cur: cur}
 
 	return n
 }
@@ -151,7 +151,19 @@ func (z *ZHashTable) doCopy() error {
 }
 
 func (z *ZHashTable) NewIterator() ZIterator {
-	return &zhashtableIterator{z, z.first}
+	return &zhashtableIterator{t: z, cur: z.first}
+}
+
+// SeparateCow forces a copy-on-write separation if needed. This should be
+// called before creating iterators that will be used alongside write operations
+// on the same hash table (e.g., foreach by-reference), so the iterator points
+// to the post-copy entries rather than pre-copy entries that get orphaned.
+func (z *ZHashTable) SeparateCow() {
+	z.lock.Lock()
+	defer z.lock.Unlock()
+	if z.cow {
+		z.doCopy()
+	}
 }
 
 func (z *ZHashTable) GetString(k ZString) *ZVal {

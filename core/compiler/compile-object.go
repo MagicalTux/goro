@@ -17,6 +17,8 @@ type runNewObject struct {
 	l      *phpv.Loc
 }
 
+func (*runNewObject) IsFuncCallExpression() {}
+
 func (r *runNewObject) Dump(w io.Writer) error {
 	_, err := fmt.Fprintf(w, "new %s(", r.obj)
 	if err != nil {
@@ -130,17 +132,26 @@ func compileNew(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 }
 
 type runObjectFunc struct {
-	ref    phpv.Runnable
-	op     phpv.ZString
-	args   phpv.Runnables
-	l      *phpv.Loc
-	static bool
+	ref      phpv.Runnable
+	op       phpv.ZString
+	args     phpv.Runnables
+	l        *phpv.Loc
+	static   bool
+	nullsafe bool
 }
 
+func (*runObjectFunc) IsFuncCallExpression() {}
+
 type runObjectVar struct {
-	ref     phpv.Runnable
-	varName phpv.ZString
-	l       *phpv.Loc
+	ref          phpv.Runnable
+	varName      phpv.ZString
+	l            *phpv.Loc
+	writeContext bool // set when reading as part of a write chain (suppress undefined property warnings)
+	nullsafe     bool
+
+	// PrepareWrite caching
+	prepared    bool
+	cachedProp  *phpv.ZVal
 }
 
 func (r *runObjectFunc) Dump(w io.Writer) error {
@@ -148,7 +159,11 @@ func (r *runObjectFunc) Dump(w io.Writer) error {
 	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(w, "->%s(", r.op)
+	op := "->"
+	if r.nullsafe {
+		op = "?->"
+	}
+	_, err = fmt.Fprintf(w, "%s%s(", op, r.op)
 	if err != nil {
 		return err
 	}
@@ -167,7 +182,11 @@ func (r *runObjectVar) Dump(w io.Writer) error {
 	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(w, "->%s", r.varName)
+	op := "->"
+	if r.nullsafe {
+		op = "?->"
+	}
+	_, err = fmt.Fprintf(w, "%s%s", op, r.varName)
 	return err
 }
 
@@ -177,6 +196,10 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	obj, err := r.ref.Run(ctx)
 	if err != nil {
 		return nil, err
+	}
+
+	if r.nullsafe && obj.GetType() == phpv.ZtNull {
+		return phpv.ZNULL.ZVal(), nil
 	}
 
 	op := r.op
@@ -418,6 +441,10 @@ func (r *runObjectVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
+	if r.nullsafe && obj.GetType() == phpv.ZtNull {
+		return phpv.ZNULL.ZVal(), nil
+	}
+
 	objI, ok := obj.Value().(phpv.ZObjectAccess)
 	if !ok {
 		// TODO make this a warning
@@ -436,8 +463,38 @@ func (r *runObjectVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		offt = r.varName.ZVal()
 	}
 
+	// In write context (e.g. $a->b[0] = x), suppress "Undefined property" warning
+	// for auto-vivification. PHP silently creates the property in this case.
+	if r.writeContext {
+		if oq, ok := objI.(interface {
+			ObjectGetQuiet(ctx phpv.Context, key phpv.Val) (*phpv.ZVal, bool, error)
+		}); ok {
+			v, found, err := oq.ObjectGetQuiet(ctx, offt)
+			if err != nil {
+				return nil, err
+			}
+			if !found {
+				return phpv.ZNULL.ZVal(), nil
+			}
+			return v, nil
+		}
+	}
+
 	// TODO Check access rights
 	return objI.ObjectGet(ctx, offt)
+}
+
+func (r *runObjectVar) PrepareWrite(ctx phpv.Context) error {
+	// If property name is dynamic ($varName), evaluate and cache it
+	if r.varName[0] == '$' {
+		offt, err := ctx.OffsetGet(ctx, r.varName[1:].ZVal())
+		if err != nil {
+			return err
+		}
+		r.prepared = true
+		r.cachedProp = offt
+	}
+	return nil
 }
 
 func (r *runObjectVar) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
@@ -455,7 +512,11 @@ func (r *runObjectVar) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 
 	// offset set
 	var offt *phpv.ZVal
-	if r.varName[0] == '$' {
+	if r.prepared {
+		offt = r.cachedProp
+		r.prepared = false
+		r.cachedProp = nil
+	} else if r.varName[0] == '$' {
 		// variable
 		offt, err = ctx.OffsetGet(ctx, r.varName[1:].ZVal())
 		if err != nil {
@@ -467,6 +528,150 @@ func (r *runObjectVar) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 
 	// TODO Check access rights
 	return objI.ObjectSet(ctx, offt, value)
+}
+
+// runObjectDynVar handles $obj->{expr} dynamic property access
+type runObjectDynVar struct {
+	ref      phpv.Runnable
+	nameExpr phpv.Runnable
+	l        *phpv.Loc
+	nullsafe bool
+
+	// PrepareWrite caching
+	prepared   bool
+	cachedName *phpv.ZVal
+}
+
+func (r *runObjectDynVar) Dump(w io.Writer) error {
+	err := r.ref.Dump(w)
+	if err != nil {
+		return err
+	}
+	_, err = w.Write([]byte("->{"))
+	if err != nil {
+		return err
+	}
+	err = r.nameExpr.Dump(w)
+	if err != nil {
+		return err
+	}
+	_, err = w.Write([]byte{'}'})
+	return err
+}
+
+func (r *runObjectDynVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {
+	obj, err := r.ref.Run(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if r.nullsafe && obj.GetType() == phpv.ZtNull {
+		return phpv.ZNULL.ZVal(), nil
+	}
+	objI, ok := obj.Value().(phpv.ZObjectAccess)
+	if !ok {
+		return nil, ctx.Errorf("variable is not an object, cannot fetch property")
+	}
+	name, err := r.nameExpr.Run(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return objI.ObjectGet(ctx, name)
+}
+
+func (r *runObjectDynVar) PrepareWrite(ctx phpv.Context) error {
+	name, err := r.nameExpr.Run(ctx)
+	if err != nil {
+		return err
+	}
+	r.prepared = true
+	r.cachedName = name
+	return nil
+}
+
+func (r *runObjectDynVar) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
+	obj, err := r.ref.Run(ctx)
+	if err != nil {
+		return err
+	}
+	objI, ok := obj.Value().(phpv.ZObjectAccess)
+	if !ok {
+		return ctx.Errorf("variable is not an object, cannot set property")
+	}
+	var name *phpv.ZVal
+	if r.prepared {
+		name = r.cachedName
+		r.prepared = false
+		r.cachedName = nil
+	} else {
+		name, err = r.nameExpr.Run(ctx)
+		if err != nil {
+			return err
+		}
+	}
+	return objI.ObjectSet(ctx, name, value)
+}
+
+// runObjectDynFunc handles $obj->{expr}() dynamic method call
+type runObjectDynFunc struct {
+	ref      phpv.Runnable
+	nameExpr phpv.Runnable
+	args     []phpv.Runnable
+	l        *phpv.Loc
+	nullsafe bool
+}
+
+func (r *runObjectDynFunc) Dump(w io.Writer) error {
+	err := r.ref.Dump(w)
+	if err != nil {
+		return err
+	}
+	_, err = w.Write([]byte("->{"))
+	if err != nil {
+		return err
+	}
+	err = r.nameExpr.Dump(w)
+	if err != nil {
+		return err
+	}
+	_, err = w.Write([]byte("}()"))
+	return err
+}
+
+func (r *runObjectDynFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
+	obj, err := r.ref.Run(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if r.nullsafe && obj.GetType() == phpv.ZtNull {
+		return phpv.ZNULL.ZVal(), nil
+	}
+	name, err := r.nameExpr.Run(ctx)
+	if err != nil {
+		return nil, err
+	}
+	methodName := phpv.ZString(name.String())
+	objZ := obj.AsObject(ctx)
+	if objZ == nil {
+		return nil, ctx.Errorf("Call to a member function %s() on a non-object", methodName)
+	}
+	method, ok := objZ.GetClass().GetMethod(methodName.ToLower())
+	if !ok {
+		method, ok = objZ.GetClass().GetMethod("__call")
+		if ok {
+			a := phpv.NewZArray()
+			callArgs := []*phpv.ZVal{methodName.ZVal(), a.ZVal()}
+			for _, sub := range r.args {
+				v, err := sub.Run(ctx)
+				if err != nil {
+					return nil, err
+				}
+				a.OffsetSet(ctx, nil, v)
+			}
+			return ctx.CallZVal(ctx, method.Method, callArgs, objZ)
+		}
+		return nil, ctx.Errorf("Call to undefined method %s::%s()", objZ.GetClass().GetName(), methodName)
+	}
+	return ctx.Call(ctx, method.Method, r.args, objZ)
 }
 
 func compilePaamayimNekudotayim(v phpv.Runnable, i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
@@ -508,7 +713,7 @@ func compilePaamayimNekudotayim(v phpv.Runnable, i *tokenizer.Item, c compileCtx
 	}
 }
 
-func compileObjectOperator(v phpv.Runnable, i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
+func compileObjectOperator(v phpv.Runnable, i *tokenizer.Item, c compileCtx, nullsafe bool) (phpv.Runnable, error) {
 	// call a method or get a variable on an object
 	l := i.Loc()
 
@@ -519,6 +724,33 @@ func compileObjectOperator(v phpv.Runnable, i *tokenizer.Item, c compileCtx) (ph
 
 	// After ->, PHP keywords can be used as property/method names
 	switch i.Type {
+	case tokenizer.Rune('{'):
+		// Dynamic property/method: $obj->{expr}
+		expr, err := compileExpr(nil, c)
+		if err != nil {
+			return nil, err
+		}
+		i, err = c.NextItem()
+		if err != nil {
+			return nil, err
+		}
+		if i.Type != tokenizer.Rune('}') {
+			return nil, i.Unexpected()
+		}
+		// Check if followed by ( for method call
+		i, err = c.NextItem()
+		if err != nil {
+			return nil, err
+		}
+		c.backup()
+		if i.IsSingle('(') {
+			// Dynamic method call: $obj->{expr}()
+			dynFunc := &runObjectDynFunc{ref: v, nameExpr: expr, l: l, nullsafe: nullsafe}
+			dynFunc.args, err = compileFuncPassedArgs(c)
+			return dynFunc, err
+		}
+		// Dynamic property access: $obj->{expr}
+		return &runObjectDynVar{ref: v, nameExpr: expr, l: l, nullsafe: nullsafe}, nil
 	case tokenizer.T_STRING, tokenizer.T_VARIABLE,
 		tokenizer.T_ARRAY, tokenizer.T_LIST, tokenizer.T_CLASS,
 		tokenizer.T_CALLABLE, tokenizer.T_EMPTY, tokenizer.T_ISSET,
@@ -546,14 +778,14 @@ func compileObjectOperator(v phpv.Runnable, i *tokenizer.Item, c compileCtx) (ph
 
 	if i.IsSingle('(') {
 		// this is a function call
-		v := &runObjectFunc{ref: v, op: op, l: l}
+		v := &runObjectFunc{ref: v, op: op, l: l, nullsafe: nullsafe}
 
 		// parse args
 		v.args, err = compileFuncPassedArgs(c)
 		return v, err
 	}
 
-	return &runObjectVar{ref: v, varName: op, l: l}, nil
+	return &runObjectVar{ref: v, varName: op, l: l, nullsafe: nullsafe}, nil
 }
 
 func compileClassName(c compileCtx) (phpv.ZString, error) {

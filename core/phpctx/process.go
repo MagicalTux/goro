@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/MagicalTux/goro/core/phpv"
 )
@@ -62,6 +63,7 @@ func (p *Process) populateConstants() {
 		panic(err)
 	}
 	p.defaultConstants["PHP_BINARY"] = phpv.ZStr(exe)
+	p.defaultConstants["PHP_BUILD_DATE"] = phpv.ZString(time.Now().Format("Jan _2 2006 15:04:05"))
 }
 
 // SetConstant sets a global constant, typically used to set PHP_SAPI.

@@ -30,6 +30,15 @@ var ArithmeticError *ZClass
 // > class DivisionByZeroError extends ArithmeticError
 var DivisionByZeroError *ZClass
 
+// > class UnhandledMatchError extends Error
+var UnhandledMatchError *ZClass
+
+// > class CompileError extends Error
+var CompileError *ZClass
+
+// > class ParseError extends CompileError
+var ParseError *ZClass
+
 // > class AssertionError extends Error
 var AssertionError *ZClass
 
@@ -121,6 +130,27 @@ func init() {
 		Extends: ArithmeticError,
 		Props:   ArithmeticError.Props,
 		Methods: copyMethods(ArithmeticError.Methods),
+	}
+
+	UnhandledMatchError = &ZClass{
+		Name:    "UnhandledMatchError",
+		Extends: Error,
+		Props:   Error.Props,
+		Methods: copyMethods(Error.Methods),
+	}
+
+	CompileError = &ZClass{
+		Name:    "CompileError",
+		Extends: Error,
+		Props:   Error.Props,
+		Methods: copyMethods(Error.Methods),
+	}
+
+	ParseError = &ZClass{
+		Name:    "ParseError",
+		Extends: CompileError,
+		Props:   CompileError.Props,
+		Methods: copyMethods(CompileError.Methods),
 	}
 
 	AssertionError = &ZClass{

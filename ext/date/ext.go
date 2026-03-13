@@ -13,10 +13,12 @@ func init() {
 	phpctx.RegisterExt(&phpctx.Ext{
 		Name:    "date",
 		Version: core.VERSION,
-		Classes: []*phpobj.ZClass{},
+		Classes: []*phpobj.ZClass{DateTime},
 		// Note: ExtFunctionArg is currently unused
 		Functions: map[string]*phpctx.ExtFunction{
-			"strftime": {Func: fncStrftime, Args: []*phpctx.ExtFunctionArg{}},
+			"date_default_timezone_get": {Func: fncDateDefaultTimezoneGet, Args: []*phpctx.ExtFunctionArg{}},
+			"date_default_timezone_set": {Func: fncDateDefaultTimezoneSet, Args: []*phpctx.ExtFunctionArg{}},
+			"strftime":                  {Func: fncStrftime, Args: []*phpctx.ExtFunctionArg{}},
 		},
 		Constants: map[phpv.ZString]phpv.Val{},
 	})

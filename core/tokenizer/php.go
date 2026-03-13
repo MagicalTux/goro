@@ -8,10 +8,12 @@ func lexPhp(l *Lexer) lexState {
 		case ' ', '\r', '\n', '\t':
 			l.acceptRun(" \r\n\t")
 			l.emit(T_WHITESPACE)
+			return l.base
 		case '(':
 			return lexPhpPossibleCast
 		case ')', ',', '{', '}', ';':
 			l.emit(Rune(l.next()))
+			return l.base
 		case '$':
 			return lexPhpVariable
 		case '#':
@@ -46,6 +48,7 @@ func lexPhp(l *Lexer) lexState {
 		case '\\': // T_NS_SEPARATOR
 			l.next()
 			l.emit(T_NS_SEPARATOR)
+			return l.base
 		case eof:
 			l.emit(T_EOF)
 			return nil

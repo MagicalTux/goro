@@ -23,6 +23,7 @@ type ZClass struct {
 	Implementations []*ZClass
 	Const           map[phpv.ZString]*phpv.ZClassConst // class constants
 	Props           []*phpv.ZClassProp
+	TraitUses       []phpv.ZClassTraitUse
 	Methods         map[phpv.ZString]*phpv.ZClassMethod
 	StaticProps     *phpv.ZHashTable
 
@@ -209,6 +210,112 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 			}
 		}
 	}
+	// Resolve trait uses: import methods and properties from traits
+	for _, tu := range c.TraitUses {
+		for _, traitName := range tu.TraitNames {
+			traitClass, err := ctx.Global().GetClass(ctx, traitName, true)
+			if err != nil {
+				return c.fatalError(ctx, fmt.Sprintf("Trait \"%s\" not found", traitName))
+			}
+			tc := traitClass.(*ZClass)
+			if tc.Type != phpv.ZClassTypeTrait {
+				return c.fatalError(ctx, fmt.Sprintf("%s cannot use %s - it is not a trait", c.Name, tc.Name))
+			}
+
+			// Copy methods from trait (don't override methods already defined in the class)
+			for name, m := range tc.Methods {
+				if _, exists := c.Methods[name]; !exists {
+					// Create a copy of the method pointing to this class
+					methodCopy := &phpv.ZClassMethod{
+						Name:      m.Name,
+						Modifiers: m.Modifiers,
+						Method:    m.Method,
+						Class:     c,
+						Empty:     m.Empty,
+						Loc:       m.Loc,
+					}
+					c.Methods[name] = methodCopy
+
+					// Check if this is a constructor
+					if name == "__construct" || name == c.BaseName().ToLower() {
+						c.Handlers().Constructor = methodCopy
+					}
+				}
+			}
+
+			// Copy properties from trait
+			for _, tp := range tc.Props {
+				found := false
+				for _, cp := range c.Props {
+					if cp.VarName == tp.VarName {
+						found = true
+						break
+					}
+				}
+				if !found {
+					c.Props = append(c.Props, tp)
+				}
+			}
+
+			// Copy constants from trait
+			for k, v := range tc.Const {
+				if _, exists := c.Const[k]; !exists {
+					c.Const[k] = v
+				}
+			}
+		}
+
+		// Apply aliases
+		for _, alias := range tu.Aliases {
+			if alias.NewName != "" {
+				// Find the method to alias
+				srcName := alias.MethodName.ToLower()
+				if m, ok := c.Methods[srcName]; ok {
+					// If a trait name was specified, verify it matches
+					if alias.TraitName != "" {
+						if m.Class == nil || m.Class.GetName().ToLower() != alias.TraitName.ToLower() {
+							// Try to find the method from the specific trait
+							traitClass, err := ctx.Global().GetClass(ctx, alias.TraitName, true)
+							if err == nil {
+								tc := traitClass.(*ZClass)
+								if tm, ok := tc.Methods[srcName]; ok {
+									m = &phpv.ZClassMethod{
+										Name:      tm.Name,
+										Modifiers: tm.Modifiers,
+										Method:    tm.Method,
+										Class:     c,
+										Empty:     tm.Empty,
+										Loc:       tm.Loc,
+									}
+								}
+							}
+						}
+					}
+
+					newMethod := &phpv.ZClassMethod{
+						Name:      alias.NewName,
+						Modifiers: m.Modifiers,
+						Method:    m.Method,
+						Class:     c,
+						Empty:     m.Empty,
+						Loc:       m.Loc,
+					}
+					if alias.NewAttr != 0 {
+						// Replace access modifiers
+						newMethod.Modifiers = (newMethod.Modifiers &^ phpv.ZAttrAccess) | alias.NewAttr
+					}
+					c.Methods[alias.NewName.ToLower()] = newMethod
+				}
+			} else if alias.NewAttr != 0 {
+				// Visibility change only (no rename)
+				srcName := alias.MethodName.ToLower()
+				if m, ok := c.Methods[srcName]; ok {
+					m.Modifiers = (m.Modifiers &^ phpv.ZAttrAccess) | alias.NewAttr
+				}
+			}
+		}
+	}
+
 	for _, impl := range c.ImplementsStr {
 		intf, err := ctx.Global().GetClass(ctx, impl, true)
 		if err != nil {
@@ -267,24 +374,26 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 		}
 	}
 
+	// Emit deprecation warning for classes implementing Serializable (deprecated in PHP 8.1)
+	if c.Type != phpv.ZClassTypeInterface && c.Implements(Serializable) {
+		ctx.Deprecated("%s implements the Serializable interface, which is deprecated. Implement __serialize() and __unserialize() instead (or in addition, if support for old PHP versions is necessary)", c.Name)
+	}
+
+	// Try to resolve constants eagerly, but if resolution fails (e.g. forward
+	// reference to a class not yet defined), leave them as CompileDelayed for
+	// lazy resolution when accessed (handled in compile-classref.go).
 	for k, cc := range c.Const {
 		if r, ok := cc.Value.(*phpv.CompileDelayed); ok {
 			z, err := r.Run(ctx)
-			if err != nil {
-				return err
+			if err == nil {
+				c.Const[k].Value = z.Value()
 			}
-			c.Const[k].Value = z.Value()
+			// If err != nil, leave as CompileDelayed for lazy resolution
 		}
 	}
-	for _, p := range c.Props {
-		if r, ok := p.Default.(*phpv.CompileDelayed); ok {
-			z, err := r.Run(ctx)
-			if err != nil {
-				return err
-			}
-			p.Default = z.Value()
-		}
-	}
+	// Property defaults are resolved lazily in GetStaticProps() and
+	// ZObject.init() to support forward references to classes/constants
+	// not yet defined at class compilation time.
 	// Check interface properties
 	if c.Type == phpv.ZClassTypeInterface && len(c.Props) > 0 {
 		return c.fatalError(ctx, fmt.Sprintf("Interfaces may only include hooked properties"))
@@ -304,19 +413,6 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 				loc = c.L
 			}
 			return c.fatalErrorAt(ctx, fmt.Sprintf("Access type for interface method %s::%s() must be public", c.Name, m.Name), loc)
-		}
-		// Warn if magic methods are explicitly non-public (only for methods declared in this class)
-		if (m.Modifiers.Has(phpv.ZAttrProtected) || m.Modifiers.Has(phpv.ZAttrPrivate)) && c.Type != phpv.ZClassTypeInterface && (m.Class == nil || m.Class == c) {
-			switch m.Name.ToLower() {
-			case "__call", "__callstatic", "__get", "__set", "__isset", "__unset",
-				"__tostring", "__debuginfo", "__serialize", "__unserialize":
-				phpErr := &phpv.PhpError{
-					Err:  fmt.Errorf("The magic method %s::%s() must have public visibility", c.Name, m.Name),
-					Code: phpv.E_WARNING,
-					Loc:  m.Loc,
-				}
-				ctx.Global().LogError(phpErr)
-			}
 		}
 		if m.Modifiers.Has(phpv.ZAttrAbstract) && m.Modifiers.Has(phpv.ZAttrFinal) {
 			return c.fatalError(ctx, "Cannot use the final modifier on an abstract method")
@@ -568,6 +664,31 @@ func (c *ZClass) validateMagicMethods(ctx phpv.Context) error {
 		}
 	}
 
+	// Warn about non-public magic methods
+	mustBePublic := []phpv.ZString{
+		"__call", "__callstatic", "__get", "__set", "__isset", "__unset",
+		"__debuginfo", "__serialize", "__unserialize",
+	}
+	for _, name := range mustBePublic {
+		m, ok := c.Methods[name]
+		if !ok {
+			continue
+		}
+		// Only warn if explicitly declared private or protected in this class (not inherited)
+		if (m.Modifiers.Has(phpv.ZAttrPrivate) || m.Modifiers.Has(phpv.ZAttrProtected)) && (m.Class == nil || m.Class == c) {
+			loc := m.Loc
+			if loc == nil {
+				loc = c.L
+			}
+			phpErr := &phpv.PhpError{
+				Err:  fmt.Errorf("The magic method %s::%s() must have public visibility", c.Name, m.Name),
+				Code: phpv.E_WARNING,
+				Loc:  loc,
+			}
+			ctx.Global().LogError(phpErr)
+		}
+	}
+
 	return nil
 }
 
@@ -660,6 +781,9 @@ func (c *ZClass) BaseName() phpv.ZString {
 func (c *ZClass) GetStaticProps(ctx phpv.Context) (*phpv.ZHashTable, error) {
 	if c.StaticProps == nil {
 		c.StaticProps = phpv.NewHashTable()
+		// Set compiling class for self::/parent:: resolution in property defaults
+		ctx.Global().SetCompilingClass(c)
+		defer ctx.Global().SetCompilingClass(nil)
 		for _, p := range c.Props {
 			if !p.Modifiers.IsStatic() {
 				continue
@@ -667,6 +791,14 @@ func (c *ZClass) GetStaticProps(ctx phpv.Context) (*phpv.ZHashTable, error) {
 			if p.Default == nil {
 				c.StaticProps.SetString(p.VarName, phpv.ZNULL.ZVal())
 				continue
+			}
+			// Resolve CompileDelayed defaults lazily
+			if cd, ok := p.Default.(*phpv.CompileDelayed); ok {
+				z, err := cd.Run(ctx)
+				if err != nil {
+					return nil, err
+				}
+				p.Default = z.Value()
 			}
 			c.StaticProps.SetString(p.VarName, p.Default.ZVal())
 		}
@@ -690,10 +822,53 @@ func (c *ZClass) FindStaticProp(ctx phpv.Context, name phpv.ZString) (*phpv.ZHas
 	return nil, false, nil
 }
 
+// ResolveConstants resolves any remaining CompileDelayed constants in the class
+// and its parent classes. Called when the class is first instantiated.
+func (c *ZClass) ResolveConstants(ctx phpv.Context) error {
+	for cur := c; cur != nil; cur = cur.Extends {
+		ctx.Global().SetCompilingClass(cur)
+		for k, cc := range cur.Const {
+			if r, ok := cc.Value.(*phpv.CompileDelayed); ok {
+				z, err := r.Run(ctx)
+				if err != nil {
+					ctx.Global().SetCompilingClass(nil)
+					return err
+				}
+				cur.Const[k].Value = z.Value()
+			}
+		}
+	}
+	ctx.Global().SetCompilingClass(nil)
+	return nil
+}
+
 func (c *ZClass) GetProp(name phpv.ZString) (*phpv.ZClassProp, bool) {
-	for _, prop := range c.Props {
-		if prop.VarName == name {
-			return prop, true
+	// Handle mangled private property names: \0ClassName\0propName
+	if len(name) > 0 && name[0] == 0 {
+		// Extract class name and property name
+		end := strings.IndexByte(string(name[1:]), 0)
+		if end > 0 {
+			className := name[1 : end+1]
+			propName := name[end+2:]
+			// Find the class and look for the private property
+			for cur := c; cur != nil; cur = cur.Extends {
+				if cur.Name == className {
+					for _, prop := range cur.Props {
+						if prop.VarName == propName {
+							return prop, true
+						}
+					}
+				}
+			}
+		}
+		return nil, false
+	}
+	// Walk class hierarchy for unmangled names
+	for cur := c; cur != nil; cur = cur.Extends {
+		for _, prop := range cur.Props {
+			if prop.VarName == name {
+				return prop, true
+			}
 		}
 	}
 	return nil, false

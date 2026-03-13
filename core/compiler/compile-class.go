@@ -8,6 +8,43 @@ import (
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
 
+// traitAlias is used during compilation to collect trait alias/insteadof directives.
+type traitAlias struct {
+	traitName  phpv.ZString
+	methodName phpv.ZString
+	newName    phpv.ZString
+	newAttr    phpv.ZObjectAttr
+}
+
+func convertAliases(aliases []traitAlias) []phpv.ZClassTraitAlias {
+	out := make([]phpv.ZClassTraitAlias, len(aliases))
+	for i, a := range aliases {
+		out[i] = phpv.ZClassTraitAlias{
+			TraitName:  a.traitName,
+			MethodName: a.methodName,
+			NewName:    a.newName,
+			NewAttr:    a.newAttr,
+		}
+	}
+	return out
+}
+
+// containsRuntimeOps checks if a compiled expression contains runtime
+// operations (variables, function calls) that are not allowed in class constants.
+func containsRuntimeOps(r phpv.Runnable) bool {
+	switch v := r.(type) {
+	case *runVariable, *runVariableRef:
+		return true
+	case runConcat:
+		for _, sub := range v {
+			if containsRuntimeOps(sub) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 type zclassCompileCtx struct {
 	compileCtx
 	class *phpobj.ZClass
@@ -52,6 +89,8 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	case tokenizer.T_CLASS:
 	case tokenizer.T_INTERFACE:
 		class.Type = phpv.ZClassTypeInterface
+	case tokenizer.T_TRAIT:
+		class.Type = phpv.ZClassTypeTrait
 	default:
 		return nil, i.Unexpected()
 	}
@@ -111,7 +150,7 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		switch i.Type {
 		case tokenizer.T_VAR:
 			// class variable, with possible default value
-			i, err := c.NextItem()
+			i, err = c.NextItem()
 			if err != nil {
 				return nil, err
 			}
@@ -231,6 +270,15 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 					return nil, err
 				}
 
+				// Check for invalid operations in constant expressions
+				if containsRuntimeOps(v) {
+					return nil, &phpv.PhpError{
+						Err:  fmt.Errorf("Constant expression contains invalid operations"),
+						Code: phpv.E_COMPILE_ERROR,
+						Loc:  i.Loc(),
+					}
+				}
+
 				class.Const[phpv.ZString(constName)] = &phpv.ZClassConst{
 					Value:     &phpv.CompileDelayed{v},
 					Modifiers: attr,
@@ -247,6 +295,200 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 					return nil, i.Unexpected()
 				}
 			}
+		case tokenizer.T_USE:
+			// Trait usage: use TraitName [, TraitName2] [{ ... }];
+			var traitNames []phpv.ZString
+			for {
+				i, err = c.NextItem()
+				if err != nil {
+					return nil, err
+				}
+				if i.Type != tokenizer.T_STRING && i.Type != tokenizer.T_NS_SEPARATOR {
+					return nil, i.Unexpected()
+				}
+				// Parse potentially namespaced trait name
+				name := i.Data
+				for {
+					peek, err := c.NextItem()
+					if err != nil {
+						return nil, err
+					}
+					if peek.Type == tokenizer.T_NS_SEPARATOR {
+						next, err := c.NextItem()
+						if err != nil {
+							return nil, err
+						}
+						name += "\\" + next.Data
+					} else {
+						c.backup()
+						break
+					}
+				}
+				traitNames = append(traitNames, phpv.ZString(name))
+
+				i, err = c.NextItem()
+				if err != nil {
+					return nil, err
+				}
+				if i.IsSingle(',') {
+					continue
+				}
+				break
+			}
+
+			// Handle trait adaptation block { ... } or semicolon
+			var aliases []traitAlias
+			if i.IsSingle('{') {
+				// Parse trait adaptations
+				for {
+					i, err = c.NextItem()
+					if err != nil {
+						return nil, err
+					}
+					if i.IsSingle('}') {
+						break
+					}
+					// Parse: [TraitName::]method as [visibility] newname;
+					// Parse: TraitName::method insteadof OtherTrait;
+					firstName := i.Data
+					i, err = c.NextItem()
+					if err != nil {
+						return nil, err
+					}
+					if i.Type == tokenizer.T_PAAMAYIM_NEKUDOTAYIM {
+						// TraitName::method
+						methodItem, err := c.NextItem()
+						if err != nil {
+							return nil, err
+						}
+						methodName := methodItem.Data
+						i, err = c.NextItem()
+						if err != nil {
+							return nil, err
+						}
+						if i.Type == tokenizer.T_AS {
+							// as [visibility] newname
+							i, err = c.NextItem()
+							if err != nil {
+								return nil, err
+							}
+							var newAttr phpv.ZObjectAttr
+							newName := ""
+							// Check for visibility modifier
+							switch i.Type {
+							case tokenizer.T_PUBLIC:
+								newAttr = phpv.ZAttrPublic
+								i, err = c.NextItem()
+								if err != nil {
+									return nil, err
+								}
+							case tokenizer.T_PROTECTED:
+								newAttr = phpv.ZAttrProtected
+								i, err = c.NextItem()
+								if err != nil {
+									return nil, err
+								}
+							case tokenizer.T_PRIVATE:
+								newAttr = phpv.ZAttrPrivate
+								i, err = c.NextItem()
+								if err != nil {
+									return nil, err
+								}
+							}
+							if i.Type == tokenizer.T_STRING {
+								newName = i.Data
+								i, err = c.NextItem()
+								if err != nil {
+									return nil, err
+								}
+							}
+							if !i.IsSingle(';') {
+								return nil, i.Unexpected()
+							}
+							aliases = append(aliases, traitAlias{
+								traitName:  phpv.ZString(firstName),
+								methodName: phpv.ZString(methodName),
+								newName:    phpv.ZString(newName),
+								newAttr:    newAttr,
+							})
+						} else if i.Type == tokenizer.T_INSTEADOF {
+							// insteadof OtherTrait [, OtherTrait2];
+							for {
+								i, err = c.NextItem()
+								if err != nil {
+									return nil, err
+								}
+								// Skip trait names
+								i, err = c.NextItem()
+								if err != nil {
+									return nil, err
+								}
+								if i.IsSingle(';') {
+									break
+								}
+								if !i.IsSingle(',') {
+									return nil, i.Unexpected()
+								}
+							}
+						} else {
+							return nil, i.Unexpected()
+						}
+					} else if i.Type == tokenizer.T_AS {
+						// method as [visibility] newname;
+						i, err = c.NextItem()
+						if err != nil {
+							return nil, err
+						}
+						var newAttr phpv.ZObjectAttr
+						newName := ""
+						switch i.Type {
+						case tokenizer.T_PUBLIC:
+							newAttr = phpv.ZAttrPublic
+							i, err = c.NextItem()
+							if err != nil {
+								return nil, err
+							}
+						case tokenizer.T_PROTECTED:
+							newAttr = phpv.ZAttrProtected
+							i, err = c.NextItem()
+							if err != nil {
+								return nil, err
+							}
+						case tokenizer.T_PRIVATE:
+							newAttr = phpv.ZAttrPrivate
+							i, err = c.NextItem()
+							if err != nil {
+								return nil, err
+							}
+						}
+						if i.Type == tokenizer.T_STRING {
+							newName = i.Data
+							i, err = c.NextItem()
+							if err != nil {
+								return nil, err
+							}
+						}
+						if !i.IsSingle(';') {
+							return nil, i.Unexpected()
+						}
+						aliases = append(aliases, traitAlias{
+							methodName: phpv.ZString(firstName),
+							newName:    phpv.ZString(newName),
+							newAttr:    newAttr,
+						})
+					} else {
+						return nil, i.Unexpected()
+					}
+				}
+			} else if !i.IsSingle(';') {
+				return nil, i.Unexpected()
+			}
+
+			// Store trait usage info on the class for runtime resolution
+			class.TraitUses = append(class.TraitUses, phpv.ZClassTraitUse{
+				TraitNames: traitNames,
+				Aliases:    convertAliases(aliases),
+			})
 		case tokenizer.T_FUNCTION:
 			// next must be a string (method name)
 			i, err := c.NextItem()

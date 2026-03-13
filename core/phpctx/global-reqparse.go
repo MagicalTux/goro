@@ -118,18 +118,32 @@ func parseQueryFragmentToArray(ctx phpv.Context, f string, a *phpv.ZArray) error
 }
 
 func setUrlValueToArray(ctx phpv.Context, k string, v phpv.Val, a *phpv.ZArray) error {
+	// Normalize dots and spaces in the first key component (PHP behavior)
+	normalizeKey := func(s string) string {
+		return strings.NewReplacer(".", "_", " ", "_").Replace(s)
+	}
+
 	p := strings.IndexByte(k, '[')
 	if p == -1 {
 		// simple
-		return a.OffsetSet(ctx, phpv.ZString(k).ZVal(), v.ZVal())
+		return a.OffsetSet(ctx, phpv.ZString(normalizeKey(k)).ZVal(), v.ZVal())
 	}
 	if p == 0 {
 		// failure
 		return errors.New("invalid key")
 	}
 
+	// Check if there's a matching ] after the [
+	q := strings.IndexByte(k[p:], ']')
+	if q == -1 {
+		// No matching ], treat entire key as flat name
+		// Replace [, ., and space with _ (PHP behavior)
+		flat := strings.NewReplacer(".", "_", " ", "_", "[", "_").Replace(k)
+		return a.OffsetSet(ctx, phpv.ZString(flat).ZVal(), v.ZVal())
+	}
+
 	n := a
-	zk := phpv.ZString(k[:p]).ZVal()
+	zk := phpv.ZString(normalizeKey(k[:p])).ZVal()
 
 	// loop through what remains of k
 	k = k[p:]

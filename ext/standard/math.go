@@ -653,3 +653,15 @@ func mathIntDiv(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	result := dividend / divisor
 	return phpv.ZInt(result).ZVal(), nil
 }
+
+// > func float fdiv ( float $dividend , float $divisor )
+func mathFdiv(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var dividend, divisor phpv.ZFloat
+	_, err := core.Expand(ctx, args, &dividend, &divisor)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	result := float64(dividend) / float64(divisor)
+	return phpv.ZFloat(result).ZVal(), nil
+}

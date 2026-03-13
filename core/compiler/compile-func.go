@@ -5,6 +5,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/MagicalTux/goro/core/phperr"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
@@ -15,6 +16,9 @@ type runnableFunctionCall struct {
 	args []phpv.Runnable
 	l    *phpv.Loc
 }
+
+func (*runnableFunctionCall) IsFuncCallExpression()    {}
+func (*runnableFunctionCallRef) IsFuncCallExpression() {}
 
 type runnableFunctionCallRef struct {
 	name phpv.Runnable
@@ -376,6 +380,154 @@ func compileFunctionWithName(name phpv.ZString, c compileCtx, l *phpv.Loc, rref 
 	return zc, nil
 }
 
+// compileArrowFunction compiles: fn(args) => expr
+// Arrow functions auto-capture variables from the enclosing scope by value.
+func compileArrowFunction(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
+	l := i.Loc()
+
+	rref := false
+	// Check for fn&(...) => expr (return by reference)
+	i, err := c.NextItem()
+	if err != nil {
+		return nil, err
+	}
+	if i.IsSingle('&') {
+		rref = true
+	} else {
+		c.backup()
+	}
+
+	zc := &ZClosure{
+		start: l,
+		rref:  rref,
+	}
+
+	c = &zclosureCompileCtx{c, zc}
+
+	// Parse arguments
+	args, err := compileFunctionArgs(c)
+	if err != nil {
+		return nil, err
+	}
+	zc.args = args
+
+	// Optional return type: fn(): Type => expr
+	i, err = c.NextItem()
+	if err != nil {
+		return nil, err
+	}
+	if i.IsSingle(':') {
+		err = skipReturnType(c)
+		if err != nil {
+			return nil, err
+		}
+		i, err = c.NextItem()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Expect =>
+	if i.Type != tokenizer.T_DOUBLE_ARROW {
+		return nil, i.Unexpected()
+	}
+
+	// Parse body expression
+	body, err := compileExpr(nil, c)
+	if err != nil {
+		return nil, err
+	}
+
+	// Wrap body in implicit return
+	zc.code = &runArrowReturn{body}
+
+	// Collect all variable names referenced in the body to auto-capture.
+	// Exclude variables that are function parameters.
+	paramNames := make(map[phpv.ZString]bool)
+	for _, a := range args {
+		paramNames[a.VarName] = true
+	}
+	varNames := collectVariableNames(body)
+	for _, name := range varNames {
+		if paramNames[name] || name == "this" {
+			continue
+		}
+		zc.use = append(zc.use, &phpv.FuncUse{VarName: name})
+	}
+
+	return zc, nil
+}
+
+// runArrowReturn wraps an expression to implicitly return its value
+type runArrowReturn struct {
+	expr phpv.Runnable
+}
+
+func (r *runArrowReturn) Run(ctx phpv.Context) (*phpv.ZVal, error) {
+	v, err := r.expr.Run(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return nil, &phperr.PhpReturn{V: v}
+}
+
+func (r *runArrowReturn) Dump(w io.Writer) error {
+	return r.expr.Dump(w)
+}
+
+// collectVariableNames walks a Runnable tree and collects all variable names
+// referenced by runVariable nodes.
+func collectVariableNames(r phpv.Runnable) []phpv.ZString {
+	seen := make(map[phpv.ZString]bool)
+	var result []phpv.ZString
+	collectVarsWalk(r, seen, &result)
+	return result
+}
+
+func collectVarsWalk(r phpv.Runnable, seen map[phpv.ZString]bool, result *[]phpv.ZString) {
+	if r == nil {
+		return
+	}
+	switch v := r.(type) {
+	case *runVariable:
+		if !seen[v.v] {
+			seen[v.v] = true
+			*result = append(*result, v.v)
+		}
+	case *runOperator:
+		collectVarsWalk(v.a, seen, result)
+		collectVarsWalk(v.b, seen, result)
+	case *runnableFunctionCall:
+		for _, arg := range v.args {
+			collectVarsWalk(arg, seen, result)
+		}
+	case *runnableFunctionCallRef:
+		for _, arg := range v.args {
+			collectVarsWalk(arg, seen, result)
+		}
+	case *runArrayAccess:
+		collectVarsWalk(v.value, seen, result)
+		collectVarsWalk(v.offset, seen, result)
+	case *runObjectVar:
+		collectVarsWalk(v.ref, seen, result)
+	case *runObjectFunc:
+		collectVarsWalk(v.ref, seen, result)
+		for _, arg := range v.args {
+			collectVarsWalk(arg, seen, result)
+		}
+	case phpv.Runnables:
+		for _, sub := range v {
+			collectVarsWalk(sub, seen, result)
+		}
+	case *runZVal:
+		// literal, no variables
+	case *ZClosure:
+		// nested closure, don't walk into it
+	default:
+		// For other types, use reflection or just skip
+	}
+}
+
 func compileFunctionArgs(c compileCtx) (res []*phpv.FuncArg, err error) {
 	i, err := c.NextItem()
 	if err != nil {
@@ -417,7 +569,9 @@ func compileFunctionArgs(c compileCtx) (res []*phpv.FuncArg, err error) {
 		}
 
 		// Handle nullable type hint prefix: ?Type
+		isNullable := false
 		if i.IsSingle('?') {
+			isNullable = true
 			i, err = c.NextItem()
 			if err != nil {
 				return nil, err
@@ -459,6 +613,9 @@ func compileFunctionArgs(c compileCtx) (res []*phpv.FuncArg, err error) {
 			}
 
 			arg.Hint = phpv.ParseTypeHint(phpv.ZString(hint))
+			if isNullable {
+				arg.Hint.Nullable = true
+			}
 		}
 
 		if i.IsSingle('&') {
@@ -512,8 +669,8 @@ func compileFunctionArgs(c compileCtx) (res []*phpv.FuncArg, err error) {
 			arg.Required = false
 
 			// Check for implicitly nullable parameter (type hint + NULL default)
+			isNull := false
 			if arg.Hint != nil {
-				isNull := false
 				if zv, ok := r.(*runZVal); ok {
 					_, isNull = zv.v.(phpv.ZNull)
 				} else if rc, ok := r.(*runConstant); ok {
@@ -521,6 +678,33 @@ func compileFunctionArgs(c compileCtx) (res []*phpv.FuncArg, err error) {
 				}
 				if isNull {
 					arg.ImplicitlyNullable = true
+					arg.Hint.Nullable = true
+				}
+			}
+
+			// Check: class-typed parameters cannot have scalar defaults (except null)
+			if arg.Hint != nil && arg.Hint.Type() == phpv.ZtObject && arg.Hint.ClassName() != "" && !isNull {
+				if zv, ok := r.(*runZVal); ok {
+					typeName := ""
+					switch zv.v.(type) {
+					case phpv.ZInt:
+						typeName = "int"
+					case phpv.ZFloat:
+						typeName = "float"
+					case phpv.ZString:
+						typeName = "string"
+					case phpv.ZBool:
+						typeName = "bool"
+					}
+					if typeName != "" {
+						phpErr := &phpv.PhpError{
+							Err:  fmt.Errorf("Cannot use %s as default value for parameter $%s of type %s", typeName, arg.VarName, arg.Hint.ClassName()),
+							Code: phpv.E_COMPILE_ERROR,
+							Loc:  i.Loc(),
+						}
+						c.Global().LogError(phpErr)
+						return nil, phpv.ExitError(255)
+					}
 				}
 			}
 

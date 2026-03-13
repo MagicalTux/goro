@@ -182,9 +182,9 @@ func parseQuery(ctx phpv.Context, query string, array phpv.ZArrayAccess) (err er
 		tmp = strings.NewReplacer(".", "_", " ", "_").Replace(tmp)
 		i = strings.IndexRune(tmp, '[')
 		if i >= 0 {
-			// if there's a [ in the key, replace only the first one
-			// "key..[abc[[" == "key.._abc[["
-			tmp = strings.Replace(tmp[:i+1], "[", "_", 1) + tmp[i+1:]
+			// Replace all remaining [ in the key name with _
+			// PHP normalizes unmatched [ to _ in variable names
+			tmp = strings.ReplaceAll(tmp, "[", "_")
 		}
 		result[0] = tmp
 

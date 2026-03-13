@@ -10,4 +10,5 @@ type Data struct {
 	ErrType    int
 	NoFuncName bool
 	NoLoc      bool
+	Loc        any // optional *phpv.Loc override for error location
 }

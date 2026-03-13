@@ -8,6 +8,21 @@ type ZClassProp struct {
 	Modifiers ZObjectAttr
 }
 
+// ZClassTraitUse represents a single "use TraitA, TraitB { ... }" statement in a class body.
+type ZClassTraitUse struct {
+	TraitNames []ZString
+	Aliases    []ZClassTraitAlias
+}
+
+// ZClassTraitAlias represents a trait alias or visibility change:
+// "TraitName::method as [visibility] newname"
+type ZClassTraitAlias struct {
+	TraitName  ZString     // optional: the trait the method belongs to
+	MethodName ZString     // original method name
+	NewName    ZString     // alias name (empty = just visibility change)
+	NewAttr    ZObjectAttr // new visibility (0 = unchanged)
+}
+
 type ZClassMethod struct {
 	Name      ZString
 	Modifiers ZObjectAttr

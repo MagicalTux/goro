@@ -186,6 +186,10 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		return compileQuoteHeredoc(i, c)
 	case tokenizer.T_ARRAY:
 		return compileArray(i, c)
+	case tokenizer.T_MATCH:
+		return compileMatch(i, c)
+	case tokenizer.T_THROW:
+		return compileThrow(i, c)
 	case tokenizer.T_FILE:
 		return &runZVal{phpv.ZString(l.Filename), l}, nil
 	case tokenizer.T_LINE:
@@ -262,6 +266,17 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			return nil, err
 		}
 
+		// Cannot take a reference to a class constant
+		if _, ok := v.(*runClassStaticObjRef); ok {
+			phpErr := &phpv.PhpError{
+				Err:  fmt.Errorf("syntax error, unexpected token \"::\""),
+				Code: phpv.E_PARSE,
+				Loc:  l,
+			}
+			c.Global().LogError(phpErr)
+			return nil, phpv.ExitError(255)
+		}
+
 		return &runRef{v, l}, nil
 	default:
 		h, ok := itemTypeHandler[i.Type]
@@ -317,7 +332,9 @@ func compilePostExpr(v phpv.Runnable, i *tokenizer.Item, c compileCtx) (phpv.Run
 			return spawnOperator(c, i.Type, v, nil, l)
 		}
 	case tokenizer.T_OBJECT_OPERATOR:
-		return compileObjectOperator(v, i, c)
+		return compileObjectOperator(v, i, c, false)
+	case tokenizer.T_NULLSAFE_OBJECT_OPERATOR:
+		return compileObjectOperator(v, i, c, true)
 	case tokenizer.T_PAAMAYIM_NEKUDOTAYIM:
 		return compilePaamayimNekudotayim(v, i, c)
 	case tokenizer.T_INSTANCEOF:

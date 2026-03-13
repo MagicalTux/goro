@@ -48,6 +48,14 @@ type Writable interface {
 	WriteValue(ctx Context, value *ZVal) error
 }
 
+// WritePreparable is implemented by Writable types that have sub-expressions
+// (e.g. array indices, variable-variable names) which need to be evaluated
+// before the RHS of an assignment. This ensures correct PHP evaluation order
+// where LHS side effects happen before RHS evaluation.
+type WritePreparable interface {
+	PrepareWrite(ctx Context) error
+}
+
 type Callable interface {
 	Val
 	Name() string

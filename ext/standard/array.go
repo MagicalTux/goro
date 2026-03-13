@@ -565,24 +565,44 @@ func fncArrayShift(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, ctx.FuncError(err)
 	}
 
-	var key *phpv.ZVal
-	for key = range array.Get().Iterate(ctx) {
+	arr := array.Get()
+	if arr.Count(ctx) == 0 {
+		return phpv.ZNULL.ZVal(), nil
+	}
+
+	// Get the first key/value
+	var firstKey, firstVal *phpv.ZVal
+	for k, v := range arr.Iterate(ctx) {
+		firstKey = k
+		firstVal = v
 		break
 	}
 
-	val, err := array.Get().OffsetGet(ctx, key)
-	if err != nil {
-		return nil, ctx.Error(err)
+	if firstKey == nil {
+		return phpv.ZNULL.ZVal(), nil
 	}
 
-	err = array.Get().OffsetUnset(ctx, key)
-	if err != nil {
-		return nil, ctx.Error(err)
+	// Remove the first element and rebuild array with renumbered integer keys
+	newArr := phpv.NewZArray()
+	first := true
+	for k, v := range arr.Iterate(ctx) {
+		if first {
+			first = false
+			continue // skip first element
+		}
+		// Renumber integer keys, preserve string keys
+		if k.GetType() == phpv.ZtInt {
+			newArr.OffsetSet(ctx, nil, v)
+		} else {
+			newArr.OffsetSet(ctx, k, v)
+		}
 	}
 
-	array.Get().Reset(ctx)
-
-	return val.ZVal(), nil
+	array.Set(ctx, newArr)
+	if firstVal == nil {
+		return phpv.ZNULL.ZVal(), nil
+	}
+	return firstVal.ZVal(), nil
 }
 
 // > func int array_unshift ( array &$array [, mixed $... ] )
@@ -1753,4 +1773,28 @@ func fncArraySplice(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	return result.ZVal(), nil
+}
+
+// > func bool array_is_list ( array $array )
+func fncArrayIsList(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var arr *phpv.ZArray
+	_, err := core.Expand(ctx, args, &arr)
+	if err != nil {
+		return nil, err
+	}
+
+	expectedKey := phpv.ZInt(0)
+	it := arr.NewIterator()
+	for it.Valid(ctx) {
+		k, err := it.Key(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if k.GetType() != phpv.ZtInt || k.Value().(phpv.ZInt) != expectedKey {
+			return phpv.ZBool(false).ZVal(), nil
+		}
+		expectedKey++
+		it.Next(ctx)
+	}
+	return phpv.ZBool(true).ZVal(), nil
 }

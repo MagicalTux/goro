@@ -8,6 +8,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/MagicalTux/goro/core/locale"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
@@ -243,8 +244,11 @@ func ZFprintf(ctx phpv.Context, w printfWriter, format phpv.ZString, arg ...*php
 			} else if math.IsNaN(f) {
 				output = "NAN"
 			} else {
-				// this format option is not affected by the ini config precision
+				// Use precision if specified, otherwise default to 6
 				expPrecision := 6
+				if precision >= 0 {
+					expPrecision = precision
+				}
 
 				// In Go, the exponent has a leading 0 if it's less than 10
 				//   Go:  1.123456E+01
@@ -258,7 +262,7 @@ func ZFprintf(ctx phpv.Context, w printfWriter, format phpv.ZString, arg ...*php
 		case 'f', 'F':
 			signed = true
 			// next arg is a float
-			// TODO: f is locale aware, F is not
+			// 'f' is locale aware, 'F' is not
 			v, err = v.As(ctx, phpv.ZtFloat)
 			if err != nil {
 				goto Return
@@ -272,6 +276,12 @@ func ZFprintf(ctx phpv.Context, w printfWriter, format phpv.ZString, arg ...*php
 				output = "NAN"
 			} else {
 				output = strconv.FormatFloat(f, 'f', floatPrecision, 64)
+				if fChar == 'f' {
+					lc := locale.Localeconv()
+					if lc.DecimalPoint != "" && lc.DecimalPoint != "." {
+						output = strings.Replace(output, ".", lc.DecimalPoint, 1)
+					}
+				}
 			}
 		case 'o':
 			// next arg is an int

@@ -30,51 +30,69 @@ func (r *runnableUnset) Dump(w io.Writer) error {
 func (r *runnableUnset) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 	for _, v := range r.args {
 		if x, ok := v.(phpv.Writable); ok {
-			// For array access on ArrayAccess objects, skip reading the value
-			// (unset should only call offsetUnset, not offsetGet)
-			if _, isArrayAccess := v.(*runArrayAccess); !isArrayAccess {
-				// Before unsetting, check if the value is an object with __destruct
+			// Skip reading the value for certain types:
+			// - ArrayAccess: unset should only call offsetUnset, not offsetGet
+			// - Object properties: reading triggers checkStaticPropertyAccess which
+			//   would cause a duplicate notice (WriteValue also triggers it)
+			_, isArrayAccess := v.(*runArrayAccess)
+			_, isObjectVar := v.(*runObjectVar)
+			if !isArrayAccess && !isObjectVar {
 				zv, runErr := v.Run(ctx)
 				if runErr != nil {
 					return nil, runErr
 				}
-				if zv != nil && zv.GetType() == phpv.ZtObject {
-					obj := zv.Value()
-					if zobj, ok := obj.(phpv.ZObject); ok {
-						if m, ok := zobj.GetClass().GetMethod("__destruct"); ok {
-							// Check destructor visibility
-							if m.Modifiers.IsPrivate() || m.Modifiers.IsProtected() {
-								callerClass := ctx.Class()
-								if m.Modifiers.IsPrivate() {
-									if callerClass == nil || callerClass.GetName() != zobj.GetClass().GetName() {
-										// Unregister from shutdown destructors before throwing to prevent duplicate warning from Close()
-										ctx.Global().UnregisterDestructor(zobj)
-										return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Call to private %s::__destruct() from global scope", zobj.GetClass().GetName()))
-									}
-								} else {
-									if callerClass == nil || (!callerClass.InstanceOf(zobj.GetClass()) && !zobj.GetClass().InstanceOf(callerClass)) {
-										scope := "global scope"
-										if callerClass != nil {
-											scope = fmt.Sprintf("scope %s", callerClass.GetName())
-										}
-										// Unregister from shutdown destructors before throwing to prevent duplicate warning from Close()
-										ctx.Global().UnregisterDestructor(zobj)
-										return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Call to protected %s::__destruct() from %s", zobj.GetClass().GetName(), scope))
-									}
-								}
-							}
-							ctx.Global().UnregisterDestructor(zobj)
-							ctx.CallZVal(ctx, m.Method, nil, zobj)
-						}
-					}
+				if err := callDestructorIfNeeded(ctx, zv); err != nil {
+					return nil, err
 				}
 			}
-			x.WriteValue(ctx, nil)
+			if err := x.WriteValue(ctx, nil); err != nil {
+				return nil, err
+			}
 		} else {
 			return nil, ctx.Errorf("unable to unset value")
 		}
 	}
 	return nil, nil
+}
+
+// callDestructorIfNeeded checks if a ZVal holds an object with __destruct,
+// and if so, calls the destructor (with proper visibility checking).
+// Returns an error if the destructor call fails (e.g., visibility error).
+func callDestructorIfNeeded(ctx phpv.Context, zv *phpv.ZVal) error {
+	if zv == nil || zv.GetType() != phpv.ZtObject {
+		return nil
+	}
+	obj := zv.Value()
+	zobj, ok := obj.(phpv.ZObject)
+	if !ok {
+		return nil
+	}
+	m, ok := zobj.GetClass().GetMethod("__destruct")
+	if !ok {
+		return nil
+	}
+	// Check destructor visibility
+	if m.Modifiers.IsPrivate() || m.Modifiers.IsProtected() {
+		callerClass := ctx.Class()
+		if m.Modifiers.IsPrivate() {
+			if callerClass == nil || callerClass.GetName() != zobj.GetClass().GetName() {
+				ctx.Global().UnregisterDestructor(zobj)
+				return phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Call to private %s::__destruct() from global scope", zobj.GetClass().GetName()))
+			}
+		} else {
+			if callerClass == nil || (!callerClass.InstanceOf(zobj.GetClass()) && !zobj.GetClass().InstanceOf(callerClass)) {
+				scope := "global scope"
+				if callerClass != nil {
+					scope = fmt.Sprintf("scope %s", callerClass.GetName())
+				}
+				ctx.Global().UnregisterDestructor(zobj)
+				return phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Call to protected %s::__destruct() from %s", zobj.GetClass().GetName(), scope))
+			}
+		}
+	}
+	ctx.Global().UnregisterDestructor(zobj)
+	_, err := ctx.CallZVal(ctx, m.Method, nil, zobj)
+	return err
 }
 
 func compileUnset(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {

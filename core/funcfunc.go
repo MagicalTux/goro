@@ -20,8 +20,26 @@ func fncFuncGetArgs(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	r := phpv.NewZArray()
 
-	for _, v := range c.Args {
-		r.OffsetSet(ctx, nil, v)
+	// PHP 7+: func_get_args() returns the current values of parameters
+	// (after any modifications in the function body), not the original values.
+	// Also, references are dereferenced (no & prefix in var_dump).
+	callable := c.Callable()
+	if ag, ok := callable.(phpv.FuncGetArgs); ok {
+		funcArgs := ag.GetArgs()
+		for i := 0; i < len(c.Args); i++ {
+			if i < len(funcArgs) {
+				v, err := c.OffsetGet(ctx, funcArgs[i].VarName)
+				if err == nil && v != nil {
+					r.OffsetSet(ctx, nil, v.Dup())
+					continue
+				}
+			}
+			r.OffsetSet(ctx, nil, c.Args[i].Dup())
+		}
+	} else {
+		for _, v := range c.Args {
+			r.OffsetSet(ctx, nil, v.Dup())
+		}
 	}
 
 	return r.ZVal(), nil
@@ -78,3 +96,82 @@ func fncFuncGetArg(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	return c.Args[argNum], nil
 }
+
+// > func void debug_print_backtrace ([ int $options = 0 [, int $limit = 0 ]] )
+func fncDebugPrintBacktrace(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var options *phpv.ZInt
+	var limit *phpv.ZInt
+	_, err := Expand(ctx, args, &options, &limit)
+	if err != nil {
+		return nil, err
+	}
+
+	rawTrace := ctx.GetStackTrace(ctx)
+	// Skip the first frame (debug_print_backtrace itself)
+	if len(rawTrace) > 0 {
+		rawTrace = rawTrace[1:]
+	}
+	trace := phpv.StackTrace(rawTrace)
+
+	lim := 0
+	if limit != nil && *limit > 0 {
+		lim = int(*limit)
+	}
+	if lim > 0 && lim < len(trace) {
+		trace = trace[:lim]
+	}
+
+	ctx.Write([]byte(trace.StringNoMain()))
+	return nil, nil
+}
+
+// > func array debug_backtrace ([ int $options = DEBUG_BACKTRACE_PROVIDE_OBJECT [, int $limit = 0 ]] )
+func fncDebugBacktrace(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var options *phpv.ZInt
+	var limit *phpv.ZInt
+	_, err := Expand(ctx, args, &options, &limit)
+	if err != nil {
+		return nil, err
+	}
+
+	rawTrace := ctx.GetStackTrace(ctx)
+
+	lim := 0
+	if limit != nil && *limit > 0 {
+		lim = int(*limit)
+	}
+	if lim > 0 && lim < len(rawTrace) {
+		rawTrace = rawTrace[:lim]
+	}
+
+	result := phpv.NewZArray()
+	trace := rawTrace
+	for _, entry := range trace {
+		frame := phpv.NewZArray()
+		frame.OffsetSet(ctx, phpv.ZString("file"), phpv.ZString(entry.Filename).ZVal())
+		frame.OffsetSet(ctx, phpv.ZString("line"), phpv.ZInt(entry.Line).ZVal())
+		funcName := entry.FuncName
+		if entry.ClassName != "" {
+			frame.OffsetSet(ctx, phpv.ZString("class"), phpv.ZString(entry.ClassName).ZVal())
+			if entry.MethodType != "" {
+				frame.OffsetSet(ctx, phpv.ZString("type"), phpv.ZString(entry.MethodType).ZVal())
+			}
+		}
+		frame.OffsetSet(ctx, phpv.ZString("function"), phpv.ZString(funcName).ZVal())
+		argsArr := phpv.NewZArray()
+		for _, a := range entry.Args {
+			argsArr.OffsetSet(ctx, nil, a)
+		}
+		frame.OffsetSet(ctx, phpv.ZString("args"), argsArr.ZVal())
+		result.OffsetSet(ctx, nil, frame.ZVal())
+	}
+
+	return result.ZVal(), nil
+}
+
+// > const
+const (
+	DEBUG_BACKTRACE_PROVIDE_OBJECT = phpv.ZInt(1)
+	DEBUG_BACKTRACE_IGNORE_ARGS    = phpv.ZInt(2)
+)
+

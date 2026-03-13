@@ -74,7 +74,9 @@ func (rt *runnableTry) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			}
 
 			if match {
-				ctx.OffsetSet(ctx, c.varname, throwErr.Obj.ZVal())
+				if c.varname != "" {
+					ctx.OffsetSet(ctx, c.varname, throwErr.Obj.ZVal())
+				}
 				_, err = c.body.Run(ctx)
 				if err != nil {
 					return nil, err
@@ -165,7 +167,12 @@ func compileCatch(i *tokenizer.Item, c compileCtx) (*runnableCatch, error) {
 		}
 
 		if i.IsSingle(')') {
-			return nil, i.Unexpected()
+			// PHP 8: catch without variable — e.g., catch (Throwable) { ... }
+			res.body, err = compileBaseSingle(nil, c)
+			if err != nil {
+				return nil, err
+			}
+			return res, nil
 		}
 		if i.Type == tokenizer.T_VARIABLE {
 			break

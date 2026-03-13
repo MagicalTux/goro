@@ -101,9 +101,13 @@ func stdFuncEval(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			return phpv.ZBool(false).ZVal(), nil
 		}
 		if phpErr, ok := err.(*phpv.PhpError); ok && phpErr.Code == phpv.E_PARSE {
-			// The Loc already has the eval filename format, so just log it directly
-			ctx.Global().LogError(phpErr)
-			return phpv.ZBool(false).ZVal(), nil
+			// PHP 8: eval() parse errors throw ParseError instead of logging
+			msg := phpErr.Err.Error()
+			loc := phpErr.Loc
+			if loc == nil {
+				loc = ctx.Loc()
+			}
+			return nil, phpobj.ThrowErrorAt(ctx, phpobj.ParseError, msg, loc)
 		}
 		return nil, err
 	}

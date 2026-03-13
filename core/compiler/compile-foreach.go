@@ -40,6 +40,20 @@ func (r *runnableForeach) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 		return nil, nil
 	}
 
+	if z.GetType() == phpv.ZtArray {
+		if r.ref {
+			// For by-reference foreach, force COW separation before creating the
+			// iterator. This ensures the iterator points to the post-copy entries,
+			// so that writes to the array (which also go through the index maps)
+			// modify the same entries the iterator traverses.
+			z.HashTable().SeparateCow()
+		} else {
+			// For non-reference foreach, snapshot the array so modifications
+			// during iteration don't affect the loop (PHP copy-on-write semantics).
+			z = z.Dup()
+		}
+	}
+
 	var it phpv.ZIterator
 	if z.GetType() == phpv.ZtObject {
 		obj, ok := z.Value().(*phpobj.ZObject)
@@ -80,7 +94,7 @@ func (r *runnableForeach) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 				if r.ref {
 					return nil, phpobj.ThrowError(ctx, phpobj.Error, "An iterator cannot be used with foreach by reference")
 				}
-				it = &phpObjectIterator{ctx: ctx, obj: iterObj, started: false}
+				it = &phpObjectIterator{ctx: ctx, obj: iterObj, started: false, fromGetIterator: true}
 			} else if obj.GetClass().Implements(phpobj.Iterator) {
 				if r.ref {
 					return nil, phpobj.ThrowError(ctx, phpobj.Error, "An iterator cannot be used with foreach by reference")
@@ -106,6 +120,17 @@ func (r *runnableForeach) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 		return nil, nil
 	}
 
+	// Eagerly call __destruct on iterator objects created by getIterator()
+	// when the foreach loop ends, since these temporary objects have no other references.
+	if poi, ok := it.(*phpObjectIterator); ok && poi.fromGetIterator {
+		defer func() {
+			if m, hasDestructor := poi.obj.GetClass().GetMethod("__destruct"); hasDestructor {
+				ctx.Global().UnregisterDestructor(poi.obj)
+				ctx.CallZVal(ctx, m.Method, nil, poi.obj)
+			}
+		}()
+	}
+
 	for {
 		err = ctx.Tick(ctx, r.l)
 		if err != nil {
@@ -113,6 +138,12 @@ func (r *runnableForeach) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 		}
 
 		if !it.Valid(ctx) {
+			// Check if the iterator has a pending error (e.g. exception in rewind/valid)
+			if ei, ok := it.(interface{ Err() error }); ok {
+				if iterErr := ei.Err(); iterErr != nil {
+					return nil, iterErr
+				}
+			}
 			break
 		}
 
@@ -188,16 +219,19 @@ func (r *runnableForeach) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 
 // phpObjectIterator wraps a PHP Iterator object to implement phpv.ZIterator
 type phpObjectIterator struct {
-	ctx     phpv.Context
-	obj     *phpobj.ZObject
-	started bool
-	valid   bool
-	err     error
+	ctx             phpv.Context
+	obj             *phpobj.ZObject
+	started         bool
+	valid           bool
+	needsValid      bool // set after Next() to defer valid() call to Valid()
+	err             error
+	fromGetIterator bool // true if created from IteratorAggregate::getIterator()
 }
 
 func (it *phpObjectIterator) ensureStarted() {
 	if !it.started {
 		it.started = true
+		it.needsValid = false
 		_, it.err = it.obj.CallMethod(it.ctx, "rewind")
 		if it.err == nil {
 			v, err := it.obj.CallMethod(it.ctx, "valid")
@@ -207,12 +241,17 @@ func (it *phpObjectIterator) ensureStarted() {
 			} else {
 				it.valid = v != nil && bool(v.AsBool(it.ctx))
 			}
+		} else {
+			it.valid = false
 		}
 	}
 }
 
 func (it *phpObjectIterator) Current(ctx phpv.Context) (*phpv.ZVal, error) {
 	it.ensureStarted()
+	if it.err != nil {
+		return nil, it.err
+	}
 	if !it.valid {
 		return nil, nil
 	}
@@ -221,6 +260,9 @@ func (it *phpObjectIterator) Current(ctx phpv.Context) (*phpv.ZVal, error) {
 
 func (it *phpObjectIterator) Key(ctx phpv.Context) (*phpv.ZVal, error) {
 	it.ensureStarted()
+	if it.err != nil {
+		return nil, it.err
+	}
 	if !it.valid {
 		return nil, nil
 	}
@@ -229,15 +271,19 @@ func (it *phpObjectIterator) Key(ctx phpv.Context) (*phpv.ZVal, error) {
 
 func (it *phpObjectIterator) Next(ctx phpv.Context) (*phpv.ZVal, error) {
 	it.ensureStarted()
+	if it.err != nil {
+		return nil, it.err
+	}
 	_, err := it.obj.CallMethod(ctx, "next")
 	if err != nil {
+		it.err = err
+		it.valid = false
 		return nil, err
 	}
-	v, err := it.obj.CallMethod(ctx, "valid")
-	if err != nil {
-		return nil, err
-	}
-	it.valid = v != nil && bool(v.AsBool(ctx))
+	// Mark that valid() needs to be called on the next Valid() check.
+	// This ensures valid() is called at the top of the next loop iteration,
+	// not immediately after next().
+	it.needsValid = true
 	return nil, nil
 }
 
@@ -247,6 +293,7 @@ func (it *phpObjectIterator) Prev(ctx phpv.Context) (*phpv.ZVal, error) {
 
 func (it *phpObjectIterator) Reset(ctx phpv.Context) (*phpv.ZVal, error) {
 	it.started = false
+	it.err = nil
 	it.ensureStarted()
 	return it.Current(ctx)
 }
@@ -261,7 +308,24 @@ func (it *phpObjectIterator) End(ctx phpv.Context) (*phpv.ZVal, error) {
 
 func (it *phpObjectIterator) Valid(ctx phpv.Context) bool {
 	it.ensureStarted()
+	if it.err != nil {
+		return false
+	}
+	if it.needsValid {
+		it.needsValid = false
+		v, err := it.obj.CallMethod(ctx, "valid")
+		if err != nil {
+			it.err = err
+			it.valid = false
+			return false
+		}
+		it.valid = v != nil && bool(v.AsBool(ctx))
+	}
 	return it.valid
+}
+
+func (it *phpObjectIterator) Err() error {
+	return it.err
 }
 
 func (it *phpObjectIterator) Iterate(ctx phpv.Context) iter.Seq2[*phpv.ZVal, *phpv.ZVal] {

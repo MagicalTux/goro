@@ -381,7 +381,7 @@ func fncFileGetContents(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	f, err := ctx.Global().Open(ctx, filename, "r", true, contextResource.Get())
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return phpv.ZFalse.ZVal(), ctx.Warn("%s(%s): failed to open stream: No such file or directory", ctx.GetFuncName(), filename)
+			return phpv.ZFalse.ZVal(), ctx.Warn("%s(%s): Failed to open stream: No such file or directory", ctx.GetFuncName(), filename, logopt.NoFuncName(true))
 		}
 		return nil, err
 	}
@@ -501,7 +501,7 @@ func fncFileOpen(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	f, err := ctx.Global().Open(ctx, filename, mode, true)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return phpv.ZFalse.ZVal(), ctx.Warn("%s(%s): failed to open stream: No such file or directory", ctx.GetFuncName(), filename)
+			return phpv.ZFalse.ZVal(), ctx.Warn("%s(%s): Failed to open stream: No such file or directory", ctx.GetFuncName(), filename, logopt.NoFuncName(true))
 		}
 		return nil, ctx.Error(err)
 	}
@@ -814,4 +814,50 @@ func fncCopy(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZFalse.ZVal(), nil
 	}
 	return phpv.ZTrue.ZVal(), nil
+}
+
+// > func bool symlink ( string $target , string $link )
+func fncSymlink(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var target, link string
+	_, err := core.Expand(ctx, args, &target, &link)
+	if err != nil {
+		return nil, err
+	}
+
+	err = os.Symlink(target, link)
+	if err != nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+	return phpv.ZTrue.ZVal(), nil
+}
+
+// > func string readlink ( string $path )
+func fncReadlink(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var p string
+	_, err := core.Expand(ctx, args, &p)
+	if err != nil {
+		return nil, err
+	}
+
+	target, err := os.Readlink(p)
+	if err != nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+	return phpv.ZString(target).ZVal(), nil
+}
+
+// > func int linkinfo ( string $path )
+func fncLinkinfo(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var p string
+	_, err := core.Expand(ctx, args, &p)
+	if err != nil {
+		return nil, err
+	}
+
+	fi, err := os.Lstat(p)
+	if err != nil {
+		return phpv.ZInt(-1).ZVal(), nil
+	}
+
+	return phpv.ZInt(int64(fi.Mode())).ZVal(), nil
 }

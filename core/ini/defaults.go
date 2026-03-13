@@ -101,7 +101,7 @@ var Defaults = map[string]*IniDirective{
 	"highlight.html":                        {`"#000000"`, INI_ALL},
 	"highlight.keyword":                     {`"#007700"`, INI_ALL},
 	"highlight.string":                      {`"#DD0000"`, INI_ALL},
-	"html_errors":                           {`"1"`, INI_ALL},
+	"html_errors":                           {`"0"`, INI_ALL},
 	"ibase.allow_persistent":                {`"1"`, INI_SYSTEM},
 	"ibase.max_persistent":                  {`"-1"`, INI_SYSTEM},
 	"ibase.max_links":                       {`"-1"`, INI_SYSTEM},

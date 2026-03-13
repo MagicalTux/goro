@@ -287,3 +287,43 @@ func fncGetDefinedFunctions(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 
 	return result.ZVal(), nil
 }
+
+// > func string get_debug_type ( mixed $value )
+func fncGetDebugType(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var v *phpv.ZVal
+	_, err := Expand(ctx, args, &v)
+	if err != nil {
+		return nil, err
+	}
+
+	var typeName string
+	switch v.GetType() {
+	case phpv.ZtNull:
+		typeName = "null"
+	case phpv.ZtBool:
+		typeName = "bool"
+	case phpv.ZtInt:
+		typeName = "int"
+	case phpv.ZtFloat:
+		typeName = "float"
+	case phpv.ZtString:
+		typeName = "string"
+	case phpv.ZtArray:
+		typeName = "array"
+	case phpv.ZtObject:
+		if obj, ok := v.Value().(*phpobj.ZObject); ok {
+			typeName = string(obj.GetClass().GetName())
+		} else {
+			typeName = "object"
+		}
+	case phpv.ZtResource:
+		if r, ok := v.Value().(phpv.Resource); ok {
+			typeName = "resource (" + r.GetResourceType().String() + ")"
+		} else {
+			typeName = "resource (Unknown)"
+		}
+	default:
+		typeName = "unknown"
+	}
+	return phpv.ZString(typeName).ZVal(), nil
+}

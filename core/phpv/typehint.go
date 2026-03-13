@@ -3,9 +3,10 @@ package phpv
 import "reflect"
 
 type TypeHint struct {
-	t ZType
-	s ZString // class name, or special value such as "self", "iterable". If t=ZtObject but s="" then any object is ok
-	c ZClass  // looked up class, if any
+	t        ZType
+	s        ZString // class name, or special value such as "self", "iterable". If t=ZtObject but s="" then any object is ok
+	c        ZClass  // looked up class, if any
+	Nullable bool    // true if the type is explicitly nullable (?Type)
 }
 
 func (h *TypeHint) Type() ZType {
@@ -19,6 +20,11 @@ func (h *TypeHint) ClassName() ZString {
 // Check returns true if the value matches this type hint
 func (h *TypeHint) Check(ctx Context, val *ZVal) bool {
 	if h == nil {
+		return true
+	}
+
+	// Nullable types accept null
+	if h.Nullable && val.IsNull() {
 		return true
 	}
 
@@ -38,7 +44,7 @@ func (h *TypeHint) Check(ctx Context, val *ZVal) bool {
 		if obj == nil {
 			return false
 		}
-		return classNameMatch(obj.GetClass(), h.s)
+		return classNameMatch(obj.GetClass(), h.s, ctx)
 	}
 
 	return val.GetType() == h.t
@@ -46,28 +52,32 @@ func (h *TypeHint) Check(ctx Context, val *ZVal) bool {
 
 // String returns the PHP type name for error messages
 func (h *TypeHint) String() string {
-	if h.s != "" {
-		return string(h.s)
+	prefix := ""
+	if h.Nullable {
+		prefix = "?"
 	}
-	return h.t.TypeName()
+	if h.s != "" {
+		return prefix + string(h.s)
+	}
+	return prefix + h.t.TypeName()
 }
 
-func classNameMatch(c ZClass, name ZString) bool {
+func classNameMatch(c ZClass, name ZString, ctx Context) bool {
 	if IsNilClass(c) {
 		return false
 	}
+	// If we have a context, try to look up the target class and use InstanceOf
+	// which properly checks parent classes and implemented interfaces
+	if ctx != nil {
+		if targetClass, err := ctx.Global().GetClass(ctx, name, false); err == nil && !IsNilClass(targetClass) {
+			return c.InstanceOf(targetClass)
+		}
+	}
+	// Fallback: name-based matching walking the parent chain
 	nameLower := name.ToLower()
 	for cur := c; !IsNilClass(cur); cur = cur.GetParent() {
 		if cur.GetName().ToLower() == nameLower {
 			return true
-		}
-		// Check implemented interfaces
-		if impl, ok := cur.(interface{ GetImplementations() []ZClass }); ok {
-			for _, intf := range impl.GetImplementations() {
-				if !IsNilClass(intf) && intf.GetName().ToLower() == nameLower {
-					return true
-				}
-			}
 		}
 	}
 	return false

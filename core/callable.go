@@ -6,6 +6,7 @@ import (
 
 	"github.com/MagicalTux/goro/core/compiler"
 	"github.com/MagicalTux/goro/core/logopt"
+	"github.com/MagicalTux/goro/core/phperr"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
@@ -21,13 +22,19 @@ func SpawnCallable(ctx phpv.Context, v *phpv.ZVal) (phpv.Callable, error) {
 			className := s[0:index]
 			methodName := s[index+2:]
 
-			class, err := ctx.Global().GetClass(ctx, className, false)
+			class, err := ctx.Global().GetClass(ctx, className, true)
 			if err != nil {
+				// Convert class-not-found errors into a TypeError for callback context
+				if _, ok := err.(*phperr.PhpThrow); ok {
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+						fmt.Sprintf("call_user_func(): Argument #1 ($callback) must be a valid callback, class \"%s\" not found", className))
+				}
 				return nil, err
 			}
 			member, ok := class.GetMethod(methodName.ToLower())
 			if !ok || !member.Modifiers.IsStatic() {
-				return nil, ctx.Errorf("Argument #1 ($callback) must be a valid callback, class MyClass does not have a method %q", methodName)
+				return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+					fmt.Sprintf("call_user_func(): Argument #1 ($callback) must be a valid callback, class \"%s\" does not have a method \"%s\"", className, methodName))
 			}
 
 			return phpv.BindClass(member.Method, class, true), nil
@@ -62,8 +69,13 @@ func SpawnCallable(ctx phpv.Context, v *phpv.ZVal) (phpv.Callable, error) {
 		var instance phpv.ZObject
 
 		if firstArg.GetType() == phpv.ZtString {
-			class, err = ctx.Global().GetClass(ctx, firstArg.AsString(ctx), false)
+			class, err = ctx.Global().GetClass(ctx, firstArg.AsString(ctx), true)
 			if err != nil {
+				// Convert class-not-found errors into a TypeError for callback context
+				if _, ok := err.(*phperr.PhpThrow); ok {
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+						fmt.Sprintf("call_user_func(): Argument #1 ($callback) must be a valid callback, class \"%s\" not found", firstArg.AsString(ctx)))
+				}
 				return nil, err
 			}
 		} else {
@@ -122,6 +134,22 @@ func SpawnCallable(ctx phpv.Context, v *phpv.ZVal) (phpv.Callable, error) {
 		if member.Modifiers.Has(phpv.ZAttrAbstract) {
 			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
 				fmt.Sprintf("call_user_func(): Argument #1 ($callback) must be a valid callback, cannot call abstract method %s::%s()", class.GetName(), member.Name))
+		}
+
+		// Check visibility — private/protected methods cannot be called from outside their scope
+		callerClass := ctx.Class()
+		if member.Modifiers.IsPrivate() {
+			// Private: only accessible from the same class
+			if callerClass == nil || callerClass.GetName() != class.GetName() {
+				return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+					fmt.Sprintf("call_user_func_array(): Argument #1 ($callback) must be a valid callback, cannot access private method %s::%s()", class.GetName(), member.Name))
+			}
+		} else if member.Modifiers.IsProtected() {
+			// Protected: only accessible from same class or subclass
+			if callerClass == nil || (!callerClass.InstanceOf(class) && !class.InstanceOf(callerClass)) {
+				return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+					fmt.Sprintf("call_user_func_array(): Argument #1 ($callback) must be a valid callback, cannot access protected method %s::%s()", class.GetName(), member.Name))
+			}
 		}
 
 		if instance != nil {

@@ -15,3 +15,5 @@
 
 # for vim
 .*.swp
+/php-cli
+*.test

@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"fmt"
 	"io"
 
 	"github.com/MagicalTux/goro/core/phpv"
@@ -23,6 +24,7 @@ func init() {
 		tokenizer.T_DOC_COMMENT:  nil, // TODO
 		tokenizer.T_INLINE_HTML:  &compileFuncCb{f: compileInlineHtml, skip: true},
 		tokenizer.T_FUNCTION:     &compileFuncCb{f: compileFunction, skip: true},
+		tokenizer.T_FN:           &compileFuncCb{f: compileArrowFunction, skip: true},
 		tokenizer.T_WHILE:        &compileFuncCb{f: compileWhile, skip: true},
 		tokenizer.T_DO:           &compileFuncCb{f: compileDoWhile},
 		tokenizer.T_FOR:          &compileFuncCb{f: compileFor, skip: true},
@@ -30,6 +32,7 @@ func init() {
 		tokenizer.T_SWITCH:       &compileFuncCb{f: compileSwitch, skip: true},
 		tokenizer.T_IF:           &compileFuncCb{f: compileIf, skip: true},
 		tokenizer.T_CLASS:        &compileFuncCb{f: compileClass, skip: true},
+		tokenizer.T_TRAIT:        &compileFuncCb{f: compileClass, skip: true},
 		tokenizer.T_ABSTRACT:     &compileFuncCb{f: compileClass, skip: true},
 		tokenizer.T_FINAL:        &compileFuncCb{f: compileClass, skip: true},
 		tokenizer.T_INTERFACE:    &compileFuncCb{f: compileClass, skip: true},
@@ -105,6 +108,7 @@ func compileBaseUntilAltEnd(i *tokenizer.Item, c compileCtx) (phpv.Runnable, err
 
 func compileBaseUntil(i *tokenizer.Item, c compileCtx, until tokenizer.ItemType) (phpv.Runnable, error) {
 	var res phpv.Runnables
+	var declaredStaticVars map[phpv.ZString]*phpv.Loc
 
 	for {
 		i, err := c.NextItem()
@@ -123,6 +127,22 @@ func compileBaseUntil(i *tokenizer.Item, c compileCtx, until tokenizer.ItemType)
 
 		t, err := compileBaseSingle(i, c)
 		if t != nil {
+			// Check for duplicate static variable declarations
+			if sv, ok := t.(*runStaticVar); ok {
+				if declaredStaticVars == nil {
+					declaredStaticVars = make(map[phpv.ZString]*phpv.Loc)
+				}
+				for _, v := range sv.vars {
+					if _, exists := declaredStaticVars[v.varName]; exists {
+						return nil, &phpv.PhpError{
+							Err:  fmt.Errorf("Duplicate declaration of static variable $%s", v.varName),
+							Code: phpv.E_COMPILE_ERROR,
+							Loc:  sv.l,
+						}
+					}
+					declaredStaticVars[v.varName] = sv.l
+				}
+			}
 			res = append(res, t)
 		}
 		if err != nil {

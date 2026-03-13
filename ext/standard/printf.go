@@ -2,14 +2,36 @@ package standard
 
 import (
 	"bufio"
+	"fmt"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/stream"
 )
 
+// checkPrintfFormat validates that the format argument to printf/sprintf is string-compatible.
+// PHP 8 throws TypeError for objects without __toString and arrays.
+func checkPrintfFormat(ctx phpv.Context, funcName string, arg *phpv.ZVal) error {
+	switch arg.GetType() {
+	case phpv.ZtObject:
+		obj := arg.AsObject(ctx)
+		if _, ok := obj.GetClass().GetMethod("__tostring"); !ok {
+			return phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("%s(): Argument #1 ($format) must be of type string, %s given", funcName, obj.GetClass().GetName()))
+		}
+	case phpv.ZtArray:
+		return phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("%s(): Argument #1 ($format) must be of type string, array given", funcName))
+	}
+	return nil
+}
+
 // > func string printf ( string $format [, mixed $args [, mixed $... ]] )
 func fncPrintf(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) > 0 {
+		if err := checkPrintfFormat(ctx, "printf", args[0]); err != nil {
+			return nil, err
+		}
+	}
 	var fmt phpv.ZString
 	n, err := core.Expand(ctx, args, &fmt)
 	if err != nil {
@@ -29,6 +51,11 @@ func fncPrintf(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 // > func string sprintf ( string $format [, mixed $args [, mixed $... ]] )
 func fncSprintf(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) > 0 {
+		if err := checkPrintfFormat(ctx, "sprintf", args[0]); err != nil {
+			return nil, err
+		}
+	}
 	var fmt phpv.ZString
 	n, err := core.Expand(ctx, args, &fmt)
 	if err != nil {

@@ -5,6 +5,7 @@ import (
 	"io"
 	"math"
 
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpctx"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
@@ -148,6 +149,16 @@ func spawnOperator(ctx phpv.Context, op tokenizer.ItemType, a, b phpv.Runnable, 
 			ctx.Global().LogError(phpErr)
 			return nil, phpv.ExitError(255)
 		}
+		// Cannot assign to a class constant
+		if _, ok := a.(*runClassStaticObjRef); ok {
+			phpErr := &phpv.PhpError{
+				Err:  fmt.Errorf("syntax error, unexpected token \"::\""),
+				Code: phpv.E_PARSE,
+				Loc:  l,
+			}
+			ctx.Global().LogError(phpErr)
+			return nil, phpv.ExitError(255)
+		}
 	}
 
 	if top, ok := b.(*runnableIf); ok && top.ternary {
@@ -192,6 +203,17 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	if r.op == tokenizer.Rune('@') {
 		// silence errors
 		ctx = phpctx.WithConfig(ctx, "error_reporting", phpv.ZInt(0).ZVal())
+	}
+
+	// For plain assignment (=), evaluate LHS sub-expressions for side effects
+	// BEFORE evaluating the RHS. PHP evaluates LHS target expressions (array
+	// indices, variable-variable names) before the RHS value expression.
+	if op.write && op.op == nil && r.a != nil {
+		if pw, ok := r.a.(phpv.WritePreparable); ok {
+			if err = pw.PrepareWrite(ctx); err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	// read a and b
@@ -265,6 +287,20 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		}
 	}
 
+	// For ++/-- on overloaded ArrayAccess, dup the value before operatorIncDec
+	// so doInc doesn't modify the original value returned by offsetGet.
+	if r.op == tokenizer.T_INC || r.op == tokenizer.T_DEC {
+		if r.a != nil {
+			if ac, isAA := r.a.(*runArrayAccess); isAA && ac.lastContainerIsOverloaded {
+				a = a.Dup()
+			}
+		} else if r.b != nil {
+			if ac, isAA := r.b.(*runArrayAccess); isAA && ac.lastContainerIsOverloaded {
+				b = b.Dup()
+			}
+		}
+	}
+
 	if op.op != nil {
 		res, err = op.op(ctx, r.op, a, b)
 		if err != nil {
@@ -280,14 +316,28 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	if r.op == tokenizer.T_INC || r.op == tokenizer.T_DEC {
 		if r.a != nil {
 			if w, ok := r.a.(phpv.Writable); ok && a != nil {
-				// Create a clean ZVal without variable name to avoid spurious warnings
-				v := a.Value().ZVal()
-				w.WriteValue(ctx, v)
+				// PHP: compound ops on ArrayAccess elements don't call offsetSet
+				if ac, isAA := r.a.(*runArrayAccess); isAA && ac.lastContainerIsOverloaded {
+					if err := ctx.Notice("Indirect modification of overloaded element of %s has no effect", ac.lastContainerClassName, logopt.Data{Loc: r.l, NoFuncName: true}); err != nil {
+						return nil, err
+					}
+				} else {
+					// Create a clean ZVal without variable name to avoid spurious warnings
+					v := a.Value().ZVal()
+					w.WriteValue(ctx, v)
+				}
 			}
 		} else if r.b != nil {
 			if w, ok := r.b.(phpv.Writable); ok && b != nil {
-				v := b.Value().ZVal()
-				w.WriteValue(ctx, v)
+				// PHP: compound ops on ArrayAccess elements don't call offsetSet
+				if ac, isAA := r.b.(*runArrayAccess); isAA && ac.lastContainerIsOverloaded {
+					if err := ctx.Notice("Indirect modification of overloaded element of %s has no effect", ac.lastContainerClassName, logopt.Data{Loc: r.l, NoFuncName: true}); err != nil {
+						return nil, err
+					}
+				} else {
+					v := b.Value().ZVal()
+					w.WriteValue(ctx, v)
+				}
 			}
 		}
 		return res, nil
@@ -297,6 +347,18 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		w, ok := r.a.(phpv.Writable)
 		if !ok {
 			return nil, ctx.Errorf("Can't use %#v value in write context", r.a)
+		}
+
+		// Check for reference assignment to ArrayAccess element
+		if res.IsRef() {
+			if acc, isAA := r.a.(*runArrayAccess); isAA {
+				if acc.IsOverloaded(ctx) {
+					ctx.Notice("Indirect modification of overloaded element of %s has no effect",
+						acc.lastContainerClassName, logopt.NoFuncName(true))
+					return nil, phpobj.ThrowError(ctx, phpobj.Error,
+						"Cannot assign by reference to an array dimension of an object")
+				}
+			}
 		}
 
 		// The PHP documentation states that the array's internal
@@ -318,8 +380,15 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 }
 
 func operatorAppend(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*phpv.ZVal, error) {
-	a, _ = a.As(ctx, phpv.ZtString)
-	b, _ = b.As(ctx, phpv.ZtString)
+	var err error
+	a, err = a.As(ctx, phpv.ZtString)
+	if err != nil {
+		return nil, err
+	}
+	b, err = b.As(ctx, phpv.ZtString)
+	if err != nil {
+		return nil, err
+	}
 
 	return (a.AsString(ctx) + b.AsString(ctx)).ZVal(), nil
 }
