@@ -81,6 +81,10 @@ bool(false)
 bool(true)
 bool(true)
 bool(true)
-bool(true)
-bool(true)
+
+Warning: symlink(): open_basedir restriction in effect. File(%s/test/ok.txt) is not within the allowed path(s): (.) in %s on line %d
+bool(false)
+
+Warning: unlink(%s/test/ok/ok2/ok.txt): No such file or directory in %s on line %d
+bool(false)
 *** Finished testing open_basedir configuration [symlink] ***

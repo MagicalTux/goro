@@ -12,6 +12,7 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -532,8 +533,94 @@ func (g *Global) SetLocalConfig(name phpv.ZString, value *phpv.ZVal) (*phpv.ZVal
 		value = g.capMemoryLimit(value)
 	}
 
+	// open_basedir: resolve paths and enforce narrowing (can only restrict further, not widen)
+	if name == "open_basedir" {
+		newValue := value.String()
+		if !g.checkOpenBasedirNarrowing(newValue) {
+			return nil, false
+		}
+		// Resolve relative paths to absolute at set time (prevents ".." bypass)
+		value = phpv.ZString(g.resolveBasedirPaths(newValue)).ZVal()
+	}
+
 	old := g.IniConfig.SetLocal(g, name, value)
 	return old, true
+}
+
+// resolveBasedirPaths resolves each entry in a colon-separated basedir list to an absolute path.
+func (g *Global) resolveBasedirPaths(basedir string) string {
+	dirs := strings.Split(basedir, string(filepath.ListSeparator))
+	resolved := make([]string, 0, len(dirs))
+	for _, dir := range dirs {
+		dir = strings.TrimSpace(dir)
+		if dir == "" {
+			continue
+		}
+		if !filepath.IsAbs(dir) {
+			dir = filepath.Join(string(g.Getwd()), dir)
+		}
+		dir = filepath.Clean(dir)
+		resolved = append(resolved, dir)
+	}
+	return strings.Join(resolved, string(filepath.ListSeparator))
+}
+
+// checkOpenBasedirNarrowing checks if newBasedir is a narrowing of the current basedir.
+// Each entry in newBasedir must be within one of the current basedir entries.
+// Returns true if the change is allowed.
+func (g *Global) checkOpenBasedirNarrowing(newBasedir string) bool {
+	currentBasedir := g.GetConfig("open_basedir", phpv.ZNULL.ZVal()).String()
+	if currentBasedir == "" {
+		return true // no current restriction, anything is allowed
+	}
+
+	// Resolve current basedir entries
+	currentDirs := strings.Split(currentBasedir, string(filepath.ListSeparator))
+	resolvedCurrent := make([]string, 0, len(currentDirs))
+	for _, dir := range currentDirs {
+		dir = strings.TrimSpace(dir)
+		if dir == "" {
+			continue
+		}
+		if !filepath.IsAbs(dir) {
+			dir = filepath.Join(string(g.Getwd()), dir)
+		}
+		resolvedCurrent = append(resolvedCurrent, filepath.Clean(dir))
+	}
+
+	// Resolve new basedir entries
+	newDirs := strings.Split(newBasedir, string(filepath.ListSeparator))
+	for _, dir := range newDirs {
+		dir = strings.TrimSpace(dir)
+		if dir == "" {
+			continue
+		}
+		if !filepath.IsAbs(dir) {
+			dir = filepath.Join(string(g.Getwd()), dir)
+		}
+		dir = filepath.Clean(dir)
+
+		// Check if this new entry is within any current entry
+		withinCurrent := false
+		for _, cur := range resolvedCurrent {
+			curWithSep := cur
+			if !strings.HasSuffix(curWithSep, string(filepath.Separator)) {
+				curWithSep += string(filepath.Separator)
+			}
+			dirWithSep := dir
+			if !strings.HasSuffix(dirWithSep, string(filepath.Separator)) {
+				dirWithSep += string(filepath.Separator)
+			}
+			if strings.HasPrefix(dirWithSep, curWithSep) || dir == cur {
+				withinCurrent = true
+				break
+			}
+		}
+		if !withinCurrent {
+			return false
+		}
+	}
+	return true
 }
 
 // parseIniBytes parses a PHP INI memory size string (e.g. "128M", "1G", "-1")

@@ -1062,16 +1062,18 @@ func fncSymlink(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	// symlink() resolves paths before basedir check (PHP shows absolute paths in warnings)
 	// Check link (dest) first, then target (source), matching PHP's order
-	link = resolveFilePath(ctx, link)
+	resolvedLink := resolveFilePath(ctx, link)
+	resolvedTarget := resolveFilePath(ctx, target)
 
-	if err := ctx.Global().CheckOpenBasedir(ctx, link, "symlink"); err != nil {
+	if err := ctx.Global().CheckOpenBasedir(ctx, resolvedLink, "symlink"); err != nil {
 		return phpv.ZFalse.ZVal(), nil
 	}
-	if err := ctx.Global().CheckOpenBasedir(ctx, target, "symlink"); err != nil {
+	if err := ctx.Global().CheckOpenBasedir(ctx, resolvedTarget, "symlink"); err != nil {
 		return phpv.ZFalse.ZVal(), nil
 	}
 
-	err = os.Symlink(target, link)
+	// Create symlink with original target (symlink targets are relative to symlink location)
+	err = os.Symlink(target, resolvedLink)
 	if err != nil {
 		return phpv.ZFalse.ZVal(), ctx.Warn("%s(): %s", ctx.GetFuncName(), err.Error(), logopt.NoFuncName(true))
 	}
