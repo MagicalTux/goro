@@ -5,7 +5,6 @@ import (
 	"unsafe"
 
 	"github.com/MagicalTux/goro/core/logopt"
-	"github.com/MagicalTux/goro/core/phpctx"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
@@ -272,16 +271,14 @@ func fncIniGetAll(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return result.ZVal(), nil
 }
 
-// > func int get_defined_functions ( [ bool $exclude_disabled = FALSE ] )
+// > func array get_defined_functions ([ bool $exclude_disabled = true ] )
 func fncGetDefinedFunctions(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	var excludeDisabled Optional[phpv.ZBool]
-	_, err := Expand(ctx, args, &excludeDisabled)
-	if err != nil {
-		return nil, ctx.FuncError(err)
+	if len(args) > 0 {
+		ctx.Deprecated("The $exclude_disabled parameter has no effect since PHP 8.0")
 	}
 
-	g := ctx.Global().(*phpctx.Global)
-	result, err := g.GetDefinedFunctions(ctx, bool(excludeDisabled.GetOrDefault(false)))
+	// Since PHP 8.0, disabled functions are always excluded
+	result, err := ctx.Global().GetDefinedFunctions(ctx, true)
 	if err != nil {
 		return nil, ctx.FuncError(err)
 	}

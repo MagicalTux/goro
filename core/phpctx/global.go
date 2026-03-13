@@ -215,6 +215,15 @@ func (g *Global) init() {
 // based on current INI settings. Call this after changing INI settings like
 // variables_order or register_argc_argv that affect superglobal population.
 func (g *Global) ReinitSuperglobals() {
+	// Re-process disable_functions in case INI was changed after init
+	if v := g.IniConfig.Get(phpv.ZString("disable_functions")); v != nil {
+		for _, name := range strings.Split(string(v.GetString(g)), ",") {
+			name = strings.TrimSpace(name)
+			if name != "" {
+				g.disabledFuncs[phpv.ZString(name)] = struct{}{}
+			}
+		}
+	}
 	g.doGPC()
 }
 

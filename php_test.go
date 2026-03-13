@@ -37,6 +37,7 @@ type phptest struct {
 	path   string
 	req    *http.Request
 	iniRaw string // raw INI settings from --INI-- section
+	cliMode bool  // true when test has --ARGS-- (run as CLI, not web)
 
 	p *phpctx.Process
 
@@ -70,7 +71,12 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		return nil
 	case "FILE", "FILEEOF":
 		// pass data to the engine
-		g := phpctx.NewGlobalReq(p.req, p.p, ini.New())
+		var g *phpctx.Global
+		if p.cliMode {
+			g = phpctx.NewGlobal(context.Background(), p.p, ini.New())
+		} else {
+			g = phpctx.NewGlobalReq(p.req, p.p, ini.New())
+		}
 
 		// Apply --INI-- settings after global context is created (after defaults)
 		needsReinit := false
@@ -79,7 +85,7 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 				return err
 			}
 			// Only reinit superglobals if INI contains settings that affect them
-			for _, key := range []string{"variables_order", "register_argc_argv", "enable_post_data_reading"} {
+			for _, key := range []string{"variables_order", "register_argc_argv", "enable_post_data_reading", "disable_functions"} {
 				if strings.Contains(p.iniRaw, key) {
 					needsReinit = true
 					break
@@ -302,7 +308,7 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 			// max_input_vars: limit on input parsing, tests use 1000 which is well above typical test needs
 			"short_open_tag":           true, // short open tags not fully implemented
 			"auto_prepend_file":        true, // auto prepend not implemented
-			"disable_functions":        true, // function disabling not implemented
+			// disable_functions: implemented - removes named functions from available list
 			"allow_url_fopen":          true, // tests using this need HTTP server helpers we don't have
 			"default_charset":          true, // charset-aware functions (htmlentities etc) not fully implemented
 			"error_log_mode":           true, // log mode not implemented
@@ -356,7 +362,13 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		// CLEAN runs after the test (cleanup temp files etc) - not needed
 		// DESCRIPTION is informational only
 		return nil
-	case "STDIN", "ARGS", "CGI", "CAPTURE_STDIO":
+	case "ARGS":
+		// Set command-line arguments for the test (CLI mode)
+		args := strings.Fields(strings.TrimSpace(b.String()))
+		p.p.Argv = append([]string{p.path}, args...)
+		p.cliMode = true
+		return nil
+	case "STDIN", "CGI", "CAPTURE_STDIO":
 		// These require special execution modes we don't support yet
 		return skipTest
 	case "ENV":

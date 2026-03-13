@@ -121,6 +121,7 @@ type GlobalContext interface {
 	NextObjectID() int
 
 	GetDeclaredClasses() []ZString
+	GetDefinedFunctions(ctx Context, excludeDisabled bool) (*ZArray, error)
 
 	RegisterDestructor(obj ZObject)
 	UnregisterDestructor(obj ZObject)
