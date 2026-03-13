@@ -599,7 +599,160 @@ func fncFread(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZString(buf[:n]).ZVal(), nil
 }
 
-// TODO: fgets, fstat, fseek
+// > func bool feof ( resource $handle )
+func fncFeof(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var handle phpv.Resource
+	_, err := core.Expand(ctx, args, &handle)
+	if err != nil {
+		return nil, err
+	}
+	if handle == nil {
+		return phpv.ZTrue.ZVal(), nil
+	}
+
+	var file *stream.Stream
+	if handle.GetResourceType() == phpv.ResourceStream {
+		file, _ = handle.(*stream.Stream)
+	}
+	if file == nil {
+		return phpv.ZTrue.ZVal(), nil
+	}
+
+	return phpv.ZBool(file.Eof()).ZVal(), nil
+}
+
+// > func string|false fgetc ( resource $handle )
+func fncFgetc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var handle phpv.Resource
+	_, err := core.Expand(ctx, args, &handle)
+	if err != nil {
+		return nil, err
+	}
+	if handle == nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	var file *stream.Stream
+	if handle.GetResourceType() == phpv.ResourceStream {
+		file, _ = handle.(*stream.Stream)
+	}
+	if file == nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	b, err := file.ReadByte()
+	if err != nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+	return phpv.ZString([]byte{b}).ZVal(), nil
+}
+
+// > func string|false fgets ( resource $handle [, int $length ] )
+func fncFgets(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var handle phpv.Resource
+	var length *phpv.ZInt
+	_, err := core.Expand(ctx, args, &handle, &length)
+	if err != nil {
+		return nil, err
+	}
+	if handle == nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	var file *stream.Stream
+	if handle.GetResourceType() == phpv.ResourceStream {
+		file, _ = handle.(*stream.Stream)
+	}
+	if file == nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	maxLen := 1024
+	if length != nil && int(*length) > 0 {
+		maxLen = int(*length) - 1 // PHP's fgets includes the length-1 limit
+	}
+
+	var buf []byte
+	for i := 0; i < maxLen; i++ {
+		b, err := file.ReadByte()
+		if err != nil {
+			break
+		}
+		buf = append(buf, b)
+		if b == '\n' {
+			break
+		}
+	}
+
+	if len(buf) == 0 {
+		return phpv.ZFalse.ZVal(), nil
+	}
+	return phpv.ZString(buf).ZVal(), nil
+}
+
+// > func int fseek ( resource $handle , int $offset [, int $whence = SEEK_SET ] )
+func fncFseek(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var handle phpv.Resource
+	var offset phpv.ZInt
+	var whence *phpv.ZInt
+	_, err := core.Expand(ctx, args, &handle, &offset, &whence)
+	if err != nil {
+		return nil, err
+	}
+	if handle == nil {
+		return phpv.ZInt(-1).ZVal(), nil
+	}
+
+	var file *stream.Stream
+	if handle.GetResourceType() == phpv.ResourceStream {
+		file, _ = handle.(*stream.Stream)
+	}
+	if file == nil {
+		return phpv.ZInt(-1).ZVal(), nil
+	}
+
+	w := io.SeekStart
+	if whence != nil {
+		switch int(*whence) {
+		case 1:
+			w = io.SeekCurrent
+		case 2:
+			w = io.SeekEnd
+		}
+	}
+
+	_, err = file.Seek(int64(offset), w)
+	if err != nil {
+		return phpv.ZInt(-1).ZVal(), nil
+	}
+	return phpv.ZInt(0).ZVal(), nil
+}
+
+// > func int|false ftell ( resource $handle )
+func fncFtell(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var handle phpv.Resource
+	_, err := core.Expand(ctx, args, &handle)
+	if err != nil {
+		return nil, err
+	}
+	if handle == nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	var file *stream.Stream
+	if handle.GetResourceType() == phpv.ResourceStream {
+		file, _ = handle.(*stream.Stream)
+	}
+	if file == nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	pos, err := file.Seek(0, io.SeekCurrent)
+	if err != nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+	return phpv.ZInt(pos).ZVal(), nil
+}
 
 // > func string get_resource_type ( resource $handle)
 func fncGetResourceType(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {

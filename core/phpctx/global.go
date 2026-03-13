@@ -92,6 +92,8 @@ type Global struct {
 	destructObjects []phpv.ZObject // objects with __destruct to call at shutdown
 
 	compilingClass phpv.ZClass // class currently being compiled (for self:: resolution)
+
+	rawRequestBody []byte // stored POST body for php://input
 }
 
 func NewGlobal(ctx context.Context, p *Process, config phpv.IniConfig) *Global {
@@ -209,11 +211,23 @@ func (g *Global) init() {
 	g.doGPC()
 }
 
+// ReinitSuperglobals re-initializes superglobals ($_GET, $_POST, $_SERVER, etc.)
+// based on current INI settings. Call this after changing INI settings like
+// variables_order or register_argc_argv that affect superglobal population.
+func (g *Global) ReinitSuperglobals() {
+	g.doGPC()
+}
+
 func (g *Global) setupIni() {
 	options := g.p.Options
 	cfg := g.IniConfig
 
 	cfg.LoadDefaults(g)
+
+	// In web SAPI, register_argc_argv defaults to "0" (PHP 8.1+ deprecates it for web)
+	if g.req != nil {
+		cfg.SetGlobal(g, "register_argc_argv", phpv.ZString("0").ZVal())
+	}
 
 	if options.IniFile != "" {
 		file, err := os.Open(options.IniFile)
@@ -250,30 +264,37 @@ func (g *Global) doGPC() {
 	c := phpv.NewZArray()
 	r := phpv.NewZArray()
 	s := phpv.NewZArray()
-	e := phpv.NewZArray() // initialize empty
+	e := phpv.NewZArray()
 	f := phpv.NewZArray()
+
+	// Check enable_post_data_reading setting
+	enablePostDataReading := g.GetConfig("enable_post_data_reading", phpv.ZString("1").ZVal()).String() != "0"
+
+	// Store the raw POST body for php://input before parsing
+	if g.req != nil && g.req.Body != nil && g.req.Method == "POST" {
+		g.storeRequestBody()
+	}
 
 	order := g.GetConfig("variables_order", phpv.ZString("EGPCS").ZVal()).String()
 
 	for _, l := range order {
 		switch l {
 		case 'e', 'E':
-			s.MergeTable(g.environ)
+			// 'E' populates $_ENV with environment variables
+			e.MergeTable(g.environ)
 		case 'c', 'C':
 			if g.req != nil {
 				parseCookiesToArray(g, g.req.Header.Get("Cookie"), c)
-				// Copy preserving keys (not array_merge which renumbers int keys)
 				for k, v := range c.Iterate(g) {
 					r.OffsetSet(g, k, v)
 				}
 			}
 		case 'p', 'P':
-			if g.req != nil && g.req.Method == "POST" {
+			if enablePostDataReading && g.req != nil && g.req.Method == "POST" {
 				err := g.parsePost(p, f)
 				if err != nil {
 					log.Printf("failed to parse POST data: %s", err)
 				}
-				// Copy preserving keys (not array_merge which renumbers int keys)
 				for k, v := range p.Iterate(g) {
 					r.OffsetSet(g, k, v)
 				}
@@ -284,32 +305,62 @@ func (g *Global) doGPC() {
 				if err != nil {
 					log.Printf("failed to parse GET data: %s", err)
 				}
-				// Copy preserving keys (not array_merge which renumbers int keys)
 				for k, v := range get.Iterate(g) {
 					r.OffsetSet(g, k, v)
 				}
 			}
 		case 's', 'S':
-			// SERVER
+			// Merge environment variables into $_SERVER (PHP behavior)
+			s.MergeTable(g.environ)
+
 			s.OffsetSet(g, phpv.ZString("REQUEST_TIME").ZVal(), phpv.ZInt(g.start.Unix()).ZVal())
 			s.OffsetSet(g, phpv.ZString("REQUEST_TIME_FLOAT").ZVal(), phpv.ZFloat(float64(g.start.UnixNano())/1e9).ZVal())
-
-			args := phpv.NewZArray()
-			for _, elem := range g.p.Argv {
-				args.OffsetSet(g, nil, phpv.ZStr(elem))
-			}
-
-			argv := args.ZVal()
-			argc := args.Count(g).ZVal()
-			s.OffsetSet(g, phpv.ZString("argv"), argv)
-			s.OffsetSet(g, phpv.ZString("argc"), argc)
-
 			s.OffsetSet(g, phpv.ZString("PHP_SELF"), phpv.ZStr(g.p.ScriptFilename))
 
-			g.h.SetString("argv", argv)
-			g.h.SetString("argc", argc)
+			// Add request-related SERVER variables
+			if g.req != nil {
+				s.OffsetSet(g, phpv.ZString("REQUEST_METHOD").ZVal(), phpv.ZString(g.req.Method).ZVal())
+				s.OffsetSet(g, phpv.ZString("QUERY_STRING").ZVal(), phpv.ZString(g.req.URL.RawQuery).ZVal())
+				if g.req.Host != "" {
+					s.OffsetSet(g, phpv.ZString("HTTP_HOST").ZVal(), phpv.ZString(g.req.Host).ZVal())
+				}
+				s.OffsetSet(g, phpv.ZString("REQUEST_URI").ZVal(), phpv.ZString(g.req.URL.RequestURI()).ZVal())
+				s.OffsetSet(g, phpv.ZString("SCRIPT_NAME").ZVal(), phpv.ZString(g.req.URL.Path).ZVal())
+			}
 
-			// TODO...
+			// Handle register_argc_argv
+			registerArgcArgv := g.GetConfig("register_argc_argv", phpv.ZString("1").ZVal()).String() != "0"
+
+			if g.req != nil {
+				// Web SAPI mode: when register_argc_argv=1, derive argv from query string
+				if registerArgcArgv {
+					// Emit deprecation warning - this is a PHP 8.1+ deprecation for web SAPI
+					g.Deprecated("Deriving $_SERVER['argv'] from the query string is deprecated. Configure register_argc_argv=0 to turn this message off")
+					args := phpv.NewZArray()
+					if g.req.URL.RawQuery != "" {
+						for _, part := range strings.Split(g.req.URL.RawQuery, "+") {
+							args.OffsetSet(g, nil, phpv.ZString(part).ZVal())
+						}
+					}
+					argv := args.ZVal()
+					argc := args.Count(g).ZVal()
+					s.OffsetSet(g, phpv.ZString("argv"), argv)
+					s.OffsetSet(g, phpv.ZString("argc"), argc)
+				}
+				// When register_argc_argv=0, don't populate argv/argc in $_SERVER
+			} else {
+				// CLI mode: always populate from process argv
+				args := phpv.NewZArray()
+				for _, elem := range g.p.Argv {
+					args.OffsetSet(g, nil, phpv.ZStr(elem))
+				}
+				argv := args.ZVal()
+				argc := args.Count(g).ZVal()
+				s.OffsetSet(g, phpv.ZString("argv"), argv)
+				s.OffsetSet(g, phpv.ZString("argc"), argc)
+				g.h.SetString("argv", argv)
+				g.h.SetString("argc", argc)
+			}
 		}
 	}
 	g.h.SetString("_GET", get.ZVal())
@@ -319,10 +370,6 @@ func (g *Global) doGPC() {
 	g.h.SetString("_SERVER", s.ZVal())
 	g.h.SetString("_ENV", e.ZVal())
 	g.h.SetString("_FILES", f.ZVal())
-	// _SESSION will only be set if a session is initialized
-
-	// parse post if any
-	// TODO
 }
 
 func (g *Global) SetOutput(w io.Writer) {
@@ -944,6 +991,29 @@ func (g *Global) GetDeclaredClasses() []phpv.ZString {
 		result = append(result, c.GetName())
 	}
 	return result
+}
+
+// storeRequestBody reads and stores the raw request body for php://input.
+// Must be called before parsePost() since that consumes the body reader.
+func (g *Global) storeRequestBody() {
+	if g.rawRequestBody != nil {
+		return // already stored
+	}
+	if g.req == nil || g.req.Body == nil {
+		return
+	}
+	body, err := io.ReadAll(io.LimitReader(g.req.Body, 64*1024*1024)) // 64MB limit
+	if err != nil {
+		return
+	}
+	g.rawRequestBody = body
+	// Replace the body with a new reader so parsePost can still consume it
+	g.req.Body = io.NopCloser(bytes.NewReader(body))
+}
+
+// GetRequestBody returns the raw request body for php://input
+func (g *Global) GetRequestBody() []byte {
+	return g.rawRequestBody
 }
 
 func (g *Global) Close() error {

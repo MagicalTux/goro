@@ -73,12 +73,23 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		g := phpctx.NewGlobalReq(p.req, p.p, ini.New())
 
 		// Apply --INI-- settings after global context is created (after defaults)
+		needsReinit := false
 		if p.iniRaw != "" {
 			if err := g.IniConfig.Parse(g, strings.NewReader(p.iniRaw)); err != nil {
 				return err
 			}
+			// Only reinit superglobals if INI contains settings that affect them
+			for _, key := range []string{"variables_order", "register_argc_argv", "enable_post_data_reading"} {
+				if strings.Contains(p.iniRaw, key) {
+					needsReinit = true
+					break
+				}
+			}
 		}
 		g.SetOutput(p.output)
+		if needsReinit {
+			g.ReinitSuperglobals()
+		}
 
 		// Convert to absolute path so __DIR__ and include paths work correctly
 		absPath, _ := filepath.Abs(p.path)
@@ -269,7 +280,7 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		// can't support. Accept everything else and let the test run.
 		unsupported := map[string]bool{
 			"file_uploads":             true, // file upload handling
-			"enable_post_data_reading": true, // POST data parsing control
+			// enable_post_data_reading: implemented - when 0, $_POST/$_FILES are empty but php://input works
 			"post_max_size":            true, // POST size limit
 			"upload_max_filesize":      true, // upload size limit
 			"max_file_uploads":         true, // upload count limit
@@ -280,8 +291,8 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 			// filter.default=unsafe_raw is a no-op (no filtering), safe to accept
 			"open_basedir":             true, // open_basedir restriction not implemented
 			// precision and serialize_precision are implemented in core/phpv/ztype.go
-			"register_argc_argv":       true, // argv/argc control not implemented
-			"variables_order":          true, // superglobal ordering not implemented
+			// register_argc_argv: implemented - controls argv/argc in $_SERVER
+			// variables_order: implemented in doGPC() - controls which superglobals are populated
 			"highlight.string":         true, // syntax highlighting not implemented
 			"highlight.comment":        true,
 			"highlight.keyword":        true,

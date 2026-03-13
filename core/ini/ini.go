@@ -112,12 +112,8 @@ func (c *Config) SetGlobal(ctx phpv.Context, varName phpv.ZString, value *phpv.Z
 
 	entry, ok := c.Values[string(varName)]
 	if ok && entry != nil {
-		old := entry.Local
-		if old == nil {
-			old = entry.Global
-		}
-
-		entry.Local = value
+		old := entry.Get()
+		entry.Global = value
 		return old
 	}
 	return nil

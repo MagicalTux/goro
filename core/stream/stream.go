@@ -16,6 +16,7 @@ var ErrNotSupported = errors.New("stream: method or operation not supported")
 type Stream struct {
 	f    interface{}
 	attr map[string]interface{}
+	eof  bool
 
 	ResourceType phpv.ResourceType
 	ResourceID   int
@@ -34,7 +35,11 @@ func NewStream(f interface{}) *Stream {
 
 func (s *Stream) Read(p []byte) (int, error) {
 	if r, ok := s.f.(io.Reader); ok {
-		return r.Read(p)
+		n, err := r.Read(p)
+		if err == io.EOF {
+			s.eof = true
+		}
+		return n, err
 	}
 	return 0, ErrNotSupported
 }
@@ -48,14 +53,22 @@ func (s *Stream) Write(p []byte) (n int, err error) {
 
 func (s *Stream) Seek(offset int64, whence int) (int64, error) {
 	if sk, ok := s.f.(io.Seeker); ok {
-		return sk.Seek(offset, whence)
+		pos, err := sk.Seek(offset, whence)
+		if err == nil {
+			s.eof = false // seeking clears EOF
+		}
+		return pos, err
 	}
 	return 0, ErrNotSupported
 }
 
 func (s *Stream) ReadByte() (byte, error) {
 	if rb, ok := s.f.(io.ByteReader); ok {
-		return rb.ReadByte()
+		b, err := rb.ReadByte()
+		if err == io.EOF {
+			s.eof = true
+		}
+		return b, err
 	}
 
 	b := make([]byte, 1)
@@ -66,6 +79,10 @@ func (s *Stream) ReadByte() (byte, error) {
 	}
 
 	return b[0], err
+}
+
+func (s *Stream) Eof() bool {
+	return s.eof
 }
 
 func (s *Stream) Close() error {

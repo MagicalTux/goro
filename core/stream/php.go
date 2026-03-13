@@ -1,6 +1,7 @@
 package stream
 
 import (
+	"bytes"
 	"net/url"
 	"os"
 
@@ -54,6 +55,11 @@ func (h *phpHandler) getPath(p *url.URL) string {
 	return p.Host
 }
 
+// RequestBodyProvider is implemented by Global to provide the raw request body
+type RequestBodyProvider interface {
+	GetRequestBody() []byte
+}
+
 func (h *phpHandler) Open(ctx phpv.Context, p *url.URL, mode string, _ ...phpv.Resource) (*Stream, error) {
 	switch h.getPath(p) {
 	case "stdin":
@@ -71,6 +77,27 @@ func (h *phpHandler) Open(ctx phpv.Context, p *url.URL, mode string, _ ...phpv.R
 		return h.stdout, nil
 	case "stderr":
 		return h.stderr, nil
+	case "input":
+		// php://input provides access to the raw request body
+		if g := ctx.Global(); g != nil {
+			if rbp, ok := g.(RequestBodyProvider); ok {
+				body := rbp.GetRequestBody()
+				if body == nil {
+					body = []byte{}
+				}
+				s := NewStream(bytes.NewReader(body))
+				s.SetAttr("stream_type", "Input")
+				s.SetAttr("mode", "rb")
+				s.ResourceType = phpv.ResourceStream
+				return s, nil
+			}
+		}
+		// No request body available, return empty stream
+		s := NewStream(bytes.NewReader([]byte{}))
+		s.SetAttr("stream_type", "Input")
+		s.SetAttr("mode", "rb")
+		s.ResourceType = phpv.ResourceStream
+		return s, nil
 	default:
 		return nil, os.ErrNotExist
 	}
@@ -78,7 +105,7 @@ func (h *phpHandler) Open(ctx phpv.Context, p *url.URL, mode string, _ ...phpv.R
 
 func (h *phpHandler) Exists(p *url.URL) (bool, error) {
 	switch h.getPath(p) {
-	case "stdin", "stdout", "stderr":
+	case "stdin", "stdout", "stderr", "input":
 		return true, nil
 	case "memory", "temp":
 		return true, nil
