@@ -437,9 +437,14 @@ func (g *Global) RunFile(fn string) error {
 						loc = &phpv.Loc{}
 					}
 					g.WriteErr([]byte(fmt.Sprintf("\nFatal error: %s\n  thrown in %s on line %d\n", trace, loc.Filename, loc.Line)))
-					return nil
+					err = nil
+				} else if phpErr, ok := err.(*phpv.PhpError); ok {
+					// Fatal PHP errors: log them and continue to shutdown functions
+					g.LogError(phpErr)
+					err = nil
+				} else {
+					return err
 				}
-				return err
 			}
 		}
 	}
