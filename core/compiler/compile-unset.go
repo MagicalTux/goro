@@ -1,10 +1,8 @@
 package compiler
 
 import (
-	"fmt"
 	"io"
 
-	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
@@ -67,32 +65,12 @@ func callDestructorIfNeeded(ctx phpv.Context, zv *phpv.ZVal) error {
 	if !ok {
 		return nil
 	}
-	m, ok := zobj.GetClass().GetMethod("__destruct")
-	if !ok {
-		return nil
+	if destructable, ok2 := zobj.(interface {
+		CallDestructor(phpv.Context) error
+	}); ok2 {
+		return destructable.CallDestructor(ctx)
 	}
-	// Check destructor visibility
-	if m.Modifiers.IsPrivate() || m.Modifiers.IsProtected() {
-		callerClass := ctx.Class()
-		if m.Modifiers.IsPrivate() {
-			if callerClass == nil || callerClass.GetName() != zobj.GetClass().GetName() {
-				ctx.Global().UnregisterDestructor(zobj)
-				return phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Call to private %s::__destruct() from global scope", zobj.GetClass().GetName()))
-			}
-		} else {
-			if callerClass == nil || (!callerClass.InstanceOf(zobj.GetClass()) && !zobj.GetClass().InstanceOf(callerClass)) {
-				scope := "global scope"
-				if callerClass != nil {
-					scope = fmt.Sprintf("scope %s", callerClass.GetName())
-				}
-				ctx.Global().UnregisterDestructor(zobj)
-				return phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Call to protected %s::__destruct() from %s", zobj.GetClass().GetName(), scope))
-			}
-		}
-	}
-	ctx.Global().UnregisterDestructor(zobj)
-	_, err := ctx.CallZVal(ctx, m.Method, nil, zobj)
-	return err
+	return nil
 }
 
 func compileUnset(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {

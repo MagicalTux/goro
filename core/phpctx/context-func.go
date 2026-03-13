@@ -1,12 +1,10 @@
 package phpctx
 
 import (
-	"fmt"
 	"sync"
 
 	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phperr"
-	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -176,37 +174,19 @@ func (c *FuncContext) OffsetSet(ctx phpv.Context, name phpv.Val, v *phpv.ZVal) e
 	}
 
 	// Eagerly call __destruct when overwriting a variable that holds an object.
-	// This matches PHP's behavior where destructors fire immediately when
-	// the last reference to an object is removed (e.g., $o = null).
 	if old := c.h.GetString(nameStr); old != nil && old.GetType() == phpv.ZtObject {
 		if obj, ok := old.Value().(phpv.ZObject); ok {
-			if m, hasDestructor := obj.GetClass().GetMethod("__destruct"); hasDestructor {
-				if canCallDestructor(ctx, m, obj) {
-					err := c.h.SetString(nameStr, v)
-					if err != nil {
-						return err
-					}
-					if destructable, ok2 := obj.(interface {
-						CallDestructor(phpv.Context) error
-					}); ok2 {
-						destructable.CallDestructor(ctx)
-					}
-					return nil
+			if _, hasDestructor := obj.GetClass().GetMethod("__destruct"); hasDestructor {
+				err := c.h.SetString(nameStr, v)
+				if err != nil {
+					return err
 				}
-				// PHP 8: inaccessible destructor throws Error
-				scope := "global scope"
-				if callerClass := ctx.Class(); callerClass != nil {
-					scope = "scope of class " + string(callerClass.GetName())
+				if destructable, ok2 := obj.(interface {
+					CallDestructor(phpv.Context) error
+				}); ok2 {
+					return destructable.CallDestructor(ctx)
 				}
-				visibility := "protected"
-				if m.Modifiers.IsPrivate() {
-					visibility = "private"
-				}
-				// Unregister from shutdown destructors to prevent duplicate call
-				ctx.Global().UnregisterDestructor(obj)
-				return phpobj.ThrowError(ctx, phpobj.Error,
-					fmt.Sprintf("Call to %s %s::__destruct() from %s",
-						visibility, obj.GetClass().GetName(), scope))
+				return nil
 			}
 		}
 	}

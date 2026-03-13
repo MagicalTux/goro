@@ -244,8 +244,10 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 				if dl, ok := f.(interface{ Loc() *phpv.Loc }); ok {
 					defLoc = dl.Loc()
 				}
-				if callLoc := ctx.Loc(); callLoc != nil {
-					msg += fmt.Sprintf(", called in %s on line %d", callLoc.Filename, callLoc.Line)
+				if !callCtx.isInternal {
+					if callLoc := ctx.Loc(); callLoc != nil {
+						msg += fmt.Sprintf(", called in %s on line %d", callLoc.Filename, callLoc.Line)
+					}
 				}
 				return nil, phpobj.ThrowErrorAt(callCtx, phpobj.TypeError, msg, defLoc)
 			}

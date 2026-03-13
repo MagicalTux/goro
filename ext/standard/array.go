@@ -346,7 +346,7 @@ func fncArrayFilter(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		for k, v := range array.Iterate(ctx) {
 			callbackArgs[0] = v
 			callbackArgs[1] = k
-			ok, err := ctx.CallZVal(ctx, callback, callbackArgs)
+			ok, err := ctx.CallZValInternal(ctx, callback, callbackArgs)
 			if err != nil {
 				return nil, err
 			}
@@ -359,7 +359,7 @@ func fncArrayFilter(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		callbackArgs := make([]*phpv.ZVal, 1)
 		for k, v := range array.Iterate(ctx) {
 			callbackArgs[0] = k
-			ok, err := ctx.CallZVal(ctx, callback, callbackArgs)
+			ok, err := ctx.CallZValInternal(ctx, callback, callbackArgs)
 			if err != nil {
 				return nil, err
 			}
@@ -372,7 +372,7 @@ func fncArrayFilter(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		callbackArgs := make([]*phpv.ZVal, 1)
 		for k, v := range array.Iterate(ctx) {
 			callbackArgs[0] = v
-			ok, err := ctx.CallZVal(ctx, callback, []*phpv.ZVal{v})
+			ok, err := ctx.CallZValInternal(ctx, callback, []*phpv.ZVal{v})
 			if err != nil {
 				return nil, err
 			}
@@ -407,7 +407,7 @@ func fncArrayWalk(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	for k, v := range array.Get().Iterate(ctx) {
 		callbackArgs[0] = v
 		callbackArgs[1] = k
-		_, err := ctx.CallZVal(ctx, callback, callbackArgs)
+		_, err := ctx.CallZValInternal(ctx, callback, callbackArgs)
 		if err != nil {
 			return nil, err
 		}
@@ -443,7 +443,7 @@ func fncArrayWalkRecursive(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, err
 
 			callbackArgs[0] = v
 			callbackArgs[1] = k
-			ctx.CallZVal(ctx, callback, callbackArgs)
+			ctx.CallZValInternal(ctx, callback, callbackArgs)
 		}
 	}
 
@@ -484,7 +484,7 @@ func fncArrayMap(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			}
 			args = append(args, val)
 		}
-		val, err := ctx.CallZVal(ctx, callback, args)
+		val, err := ctx.CallZValInternal(ctx, callback, args)
 		if err != nil {
 			return nil, err
 		}
@@ -1519,7 +1519,7 @@ func fncArrayReduce(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	for _, v := range array.Iterate(ctx) {
 		cbArgs[0] = accumulator
 		cbArgs[1] = v
-		accumulator, err = ctx.CallZVal(ctx, callback, cbArgs)
+		accumulator, err = ctx.CallZValInternal(ctx, callback, cbArgs)
 		if err != nil {
 			return nil, ctx.FuncError(err)
 		}

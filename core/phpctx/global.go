@@ -1085,7 +1085,8 @@ func (g *Global) CallDestructors() {
 			if isZObj {
 				zobj.Destructed = true
 			}
-			// Check visibility during shutdown — private/protected from global scope should warn and skip
+			// Check visibility during shutdown — private/protected from global scope
+			// should emit a warning and skip. PHP behavior varies by version.
 			if m.Modifiers.IsPrivate() || m.Modifiers.IsProtected() {
 				vis := "private"
 				if m.Modifiers.IsProtected() {

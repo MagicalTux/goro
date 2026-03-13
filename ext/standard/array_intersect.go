@@ -94,7 +94,7 @@ func fncArrayUIntersect(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 
 	containsArgs := containsEntryArgs{
 		ValEquals: func(a, b *phpv.ZVal) bool {
-			ret, _ := ctx.CallZVal(ctx, valueCompare, []*phpv.ZVal{a, b})
+			ret, _ := ctx.CallZValInternal(ctx, valueCompare, []*phpv.ZVal{a, b})
 			return ret.AsInt(ctx) == 0
 		},
 	}
@@ -141,7 +141,7 @@ func fncArrayUIntersectAssoc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, e
 			return ok
 		},
 		ValEquals: func(a, b *phpv.ZVal) bool {
-			ret, _ := ctx.CallZVal(ctx, valueCompare, []*phpv.ZVal{a, b})
+			ret, _ := ctx.CallZValInternal(ctx, valueCompare, []*phpv.ZVal{a, b})
 			return ret.AsInt(ctx) == 0
 		},
 	}
@@ -189,11 +189,11 @@ func fncArrayUIntersectUAssoc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, 
 
 	containsArgs := containsEntryArgs{
 		KeyEquals: func(a, b *phpv.ZVal) bool {
-			ret, _ := ctx.CallZVal(ctx, keyCompare, []*phpv.ZVal{a, b})
+			ret, _ := ctx.CallZValInternal(ctx, keyCompare, []*phpv.ZVal{a, b})
 			return ret.AsInt(ctx) == 0
 		},
 		ValEquals: func(a, b *phpv.ZVal) bool {
-			ret, _ := ctx.CallZVal(ctx, valueCompare, []*phpv.ZVal{a, b})
+			ret, _ := ctx.CallZValInternal(ctx, valueCompare, []*phpv.ZVal{a, b})
 			return ret.AsInt(ctx) == 0
 		},
 	}
@@ -279,7 +279,7 @@ func fncArrayIntersectUAssoc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, e
 	result := phpv.NewZArray()
 	containsArgs := containsEntryArgs{
 		KeyEquals: func(a, b *phpv.ZVal) bool {
-			ret, _ := ctx.CallZVal(ctx, keyCompare, []*phpv.ZVal{a, b})
+			ret, _ := ctx.CallZValInternal(ctx, keyCompare, []*phpv.ZVal{a, b})
 			return ret.AsInt(ctx) == 0
 		},
 		ValEquals: func(a, b *phpv.ZVal) bool {
@@ -352,7 +352,7 @@ func fncArrayIntersectUKey(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, err
 	result := phpv.NewZArray()
 	containsArgs := containsEntryArgs{
 		KeyEquals: func(a, b *phpv.ZVal) bool {
-			ret, _ := ctx.CallZVal(ctx, keyCompare, []*phpv.ZVal{a, b})
+			ret, _ := ctx.CallZValInternal(ctx, keyCompare, []*phpv.ZVal{a, b})
 			return ret.AsInt(ctx) == 0
 		},
 	}
