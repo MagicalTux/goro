@@ -101,7 +101,7 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 			// Apply max_memory_limit capping after INI is parsed
 			g.ApplyMaxMemoryLimit()
 			// Only reinit superglobals if INI contains settings that affect them
-			for _, key := range []string{"variables_order", "register_argc_argv", "enable_post_data_reading", "disable_functions"} {
+			for _, key := range []string{"variables_order", "register_argc_argv", "enable_post_data_reading", "disable_functions", "post_max_size"} {
 				if strings.Contains(p.iniRaw, key) {
 					needsReinit = true
 					break
@@ -342,16 +342,9 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 				return lv != "0" && lv != "off" && lv != "false" && lv != "no" && lv != ""
 			},
 			"post_max_size": func(v string) bool {
-				// post_max_size=0 means unlimited (no enforcement needed)
-				// post_max_size >= 1024 is a reasonable limit that doesn't affect test data
-				v = strings.TrimSpace(v)
-				if v == "0" {
-					return false // 0 = unlimited, safe
-				}
-				// Parse the value - if it's a large number, accept it
-				var size int64
-				fmt.Sscanf(v, "%d", &size)
-				return size < 1024 // skip only when limit is small (tests enforcement)
+				// post_max_size is now enforced in the runtime.
+				// Accept all values — enforcement is handled by parsePost().
+				return false
 			},
 			// file_uploads: accepted for all values — tests needing upload
 			// infrastructure also set upload_max_filesize or upload_tmp_dir

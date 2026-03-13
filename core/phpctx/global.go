@@ -271,6 +271,9 @@ func (g *Global) setupIni() {
 }
 
 func (g *Global) doGPC() {
+	// Clear any startup warnings from a previous doGPC() call (e.g., during reinit)
+	g.startupWarnings = nil
+
 	// initialize superglobals
 	get := phpv.NewZArray()
 	p := phpv.NewZArray()
@@ -286,6 +289,10 @@ func (g *Global) doGPC() {
 	// Store the raw POST body for php://input before parsing
 	if g.req != nil && g.req.Body != nil && g.req.Method == "POST" {
 		g.storeRequestBody()
+	}
+	// Reset body reader from stored raw body (needed for reinit after INI changes)
+	if g.req != nil && g.rawRequestBody != nil {
+		g.req.Body = io.NopCloser(bytes.NewReader(g.rawRequestBody))
 	}
 
 	order := g.GetConfig("variables_order", phpv.ZString("EGPCS").ZVal()).String()

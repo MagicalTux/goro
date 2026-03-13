@@ -3,11 +3,13 @@ package phpctx
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"mime"
 	"mime/multipart"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/MagicalTux/goro/core/phpv"
@@ -18,6 +20,22 @@ import (
 func (g *Global) parsePost(p, f *phpv.ZArray) error {
 	if g.req.Body == nil {
 		return errors.New("missing form body")
+	}
+
+	// Check post_max_size enforcement
+	postMaxSize := parseIniSize(g.GetConfig("post_max_size", phpv.ZString("8M").ZVal()).String())
+	if postMaxSize > 0 {
+		// Determine actual content length from the stored raw body or Content-Length header
+		var contentLength int64
+		if g.rawRequestBody != nil {
+			contentLength = int64(len(g.rawRequestBody))
+		} else if g.req.ContentLength > 0 {
+			contentLength = g.req.ContentLength
+		}
+		if contentLength > postMaxSize {
+			g.WriteStartupWarning(fmt.Sprintf("\nWarning: PHP Request Startup: POST Content-Length of %d bytes exceeds the limit of %d bytes in Unknown on line 0\n", contentLength, postMaxSize))
+			return nil // skip parsing, leave $_POST empty
+		}
 	}
 	ct := g.req.Header.Get("Content-Type")
 	// RFC 7231, section 3.1.1.5 - empty type MAY be treated as application/octet-stream
@@ -322,4 +340,35 @@ func setUrlValueToArray(ctx phpv.Context, k string, v phpv.Val, a *phpv.ZArray) 
 		k = k[p+1:]
 	}
 	return n.OffsetSet(ctx, zk, v.ZVal())
+}
+
+// parseIniSize parses a PHP INI size value with optional K, M, G suffix.
+// Returns the size in bytes. "1K" → 1024, "8M" → 8388608, "0" → 0.
+func parseIniSize(s string) int64 {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0
+	}
+	// Strip surrounding quotes (INI defaults use quoted values like `"8M"`)
+	if len(s) >= 2 && s[0] == '"' && s[len(s)-1] == '"' {
+		s = s[1 : len(s)-1]
+	}
+	if s == "" {
+		return 0
+	}
+	last := s[len(s)-1]
+	var multiplier int64 = 1
+	switch last {
+	case 'k', 'K':
+		multiplier = 1024
+		s = s[:len(s)-1]
+	case 'm', 'M':
+		multiplier = 1024 * 1024
+		s = s[:len(s)-1]
+	case 'g', 'G':
+		multiplier = 1024 * 1024 * 1024
+		s = s[:len(s)-1]
+	}
+	n, _ := strconv.ParseInt(strings.TrimSpace(s), 10, 64)
+	return n * multiplier
 }
