@@ -290,7 +290,7 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 			"post_max_size":            true, // POST size limit
 			"upload_max_filesize":      true, // upload size limit
 			"max_file_uploads":         true, // upload count limit
-			"memory_limit":             true, // memory tracking not implemented
+			// memory_limit: stored/retrieved via ini_get/ini_set; enforcement not implemented but tests don't require it
 			"hard_timeout":             true, // hard timeout not implemented
 			"zlib.output_compression":  true, // compression not implemented
 			"session.auto_start":       true, // sessions not implemented
@@ -372,8 +372,19 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		// These require special execution modes we don't support yet
 		return skipTest
 	case "ENV":
-		// TODO: set environment variables for the test
-		return skipTest
+		// Set environment variables for the test
+		for _, line := range strings.Split(strings.TrimSpace(b.String()), "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			if pos := strings.IndexByte(line, '='); pos != -1 {
+				k := line[:pos]
+				v := line[pos+1:]
+				p.p.SetEnv(k, v)
+			}
+		}
+		return nil
 	case "COOKIE":
 		// Set cookies on the request
 		p.req.Header.Set("Cookie", strings.TrimRight(b.String(), "\r\n"))

@@ -45,6 +45,11 @@ func NewProcess(sapi string) *Process {
 	return res
 }
 
+// SetEnv sets an environment variable on the process before a Global is created.
+func (p *Process) SetEnv(key, value string) {
+	p.environ.SetString(phpv.ZString(key), phpv.ZString(value).ZVal())
+}
+
 // Hander returns a http.Handler object suitable for use with golang standard
 // http servers and similar.
 func (p *Process) Handler(docroot string, iniCfg phpv.IniConfig) http.Handler {
