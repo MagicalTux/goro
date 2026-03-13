@@ -17,6 +17,9 @@ func lexPhp(l *Lexer) lexState {
 		case '$':
 			return lexPhpVariable
 		case '#':
+			if l.hasPrefix("#[") {
+				return lexPhpAttribute
+			}
 			return lexPhpEolComment
 		case '/':
 			// check if // or /* (comments)

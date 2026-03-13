@@ -630,10 +630,34 @@ func compileFunctionArgs(c compileCtx) (res []*phpv.FuncArg, err error) {
 		}
 
 		if i.IsSingle('&') {
-			arg.Ref = true
-			i, err = c.NextItem()
-			if err != nil {
-				return
+			// Disambiguate: &$var (reference) vs Type&Type2 (intersection type)
+			if arg.Hint != nil {
+				// We have a type hint already. Peek to see if this is an intersection type.
+				peek, peekErr := c.NextItem()
+				if peekErr != nil {
+					return nil, peekErr
+				}
+				if peek.Type == tokenizer.T_STRING || peek.Type == tokenizer.T_ARRAY || peek.Type == tokenizer.T_CALLABLE {
+					// Intersection type: A&B — treat like union for now (either type accepted)
+					arg.Hint, i, err = parseIntersectionTypeHint(arg.Hint, peek, c)
+					if err != nil {
+						return nil, err
+					}
+				} else {
+					// It's a reference marker: &$var
+					c.backup()
+					arg.Ref = true
+					i, err = c.NextItem()
+					if err != nil {
+						return
+					}
+				}
+			} else {
+				arg.Ref = true
+				i, err = c.NextItem()
+				if err != nil {
+					return
+				}
 			}
 		}
 
@@ -854,6 +878,68 @@ func parseUnionTypeHint(first *phpv.TypeHint, c compileCtx) (*phpv.TypeHint, *to
 			return union, i, nil
 		}
 	}
+}
+
+// parseIntersectionTypeHint parses an intersection type (A&B&C).
+// `first` is the already-parsed first type, `second` is the T_STRING token
+// right after the &. Returns combined hint and next token.
+func parseIntersectionTypeHint(first *phpv.TypeHint, secondToken *tokenizer.Item, c compileCtx) (*phpv.TypeHint, *tokenizer.Item, error) {
+	intersection := &phpv.TypeHint{Union: []*phpv.TypeHint{first}}
+
+	// Parse second type (already have its token)
+	hint := secondToken.Data
+	var i *tokenizer.Item
+	var err error
+	for {
+		i, err = c.NextItem()
+		if err != nil {
+			return nil, nil, err
+		}
+		if i.Type != tokenizer.T_NS_SEPARATOR {
+			break
+		}
+		i, err = c.NextItem()
+		if err != nil {
+			return nil, nil, err
+		}
+		if i.Type != tokenizer.T_STRING {
+			return nil, nil, i.Unexpected()
+		}
+		hint = hint + "\\" + i.Data
+	}
+	intersection.Union = append(intersection.Union, phpv.ParseTypeHint(phpv.ZString(hint)))
+
+	// Check for more & types
+	for i.IsSingle('&') {
+		i, err = c.NextItem()
+		if err != nil {
+			return nil, nil, err
+		}
+		if i.Type != tokenizer.T_STRING && i.Type != tokenizer.T_ARRAY && i.Type != tokenizer.T_CALLABLE {
+			return nil, nil, i.Unexpected()
+		}
+		hint = i.Data
+		for {
+			i, err = c.NextItem()
+			if err != nil {
+				return nil, nil, err
+			}
+			if i.Type != tokenizer.T_NS_SEPARATOR {
+				break
+			}
+			i, err = c.NextItem()
+			if err != nil {
+				return nil, nil, err
+			}
+			if i.Type != tokenizer.T_STRING {
+				return nil, nil, i.Unexpected()
+			}
+			hint = hint + "\\" + i.Data
+		}
+		intersection.Union = append(intersection.Union, phpv.ParseTypeHint(phpv.ZString(hint)))
+	}
+
+	return intersection, i, nil
 }
 
 // skipReturnType skips a return type declaration after ':' in a function signature.
