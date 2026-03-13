@@ -303,11 +303,7 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 			// precision and serialize_precision are implemented in core/phpv/ztype.go
 			// register_argc_argv: implemented - controls argv/argc in $_SERVER
 			// variables_order: implemented in doGPC() - controls which superglobals are populated
-			"highlight.string":         true, // syntax highlighting output format differs from PHP 8
-			"highlight.comment":        true,
-			"highlight.keyword":        true,
-			"highlight.default":        true,
-			"highlight.html":           true,
+			// highlight.*: implemented - syntax highlighting output matches PHP 8 format
 			"max_input_nesting_level":  true, // input nesting limit not implemented
 			// max_input_vars: limit on input parsing, tests use 1000 which is well above typical test needs
 			// short_open_tag: implemented in tokenizer - controls whether <? without php/= opens PHP mode

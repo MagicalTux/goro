@@ -12,12 +12,9 @@ import (
 )
 
 var highlightReplacer = strings.NewReplacer(
-	"\n", "<br />",
-	"\t", "&nbsp;&nbsp;&nbsp;&nbsp;",
-	" ", "&nbsp;",
+	"&", "&amp;",
 	"<", "&lt;",
 	">", "&gt;",
-	"&", "&amp;",
 )
 
 func highlightString(ctx phpv.Context, r io.Reader, filename string) (string, error) {
@@ -94,12 +91,12 @@ func highlightString(ctx phpv.Context, r io.Reader, filename string) (string, er
 		out := nodeBuf.String()
 		nodeBuf.Reset()
 		if currentColor != colorHTML {
-			out = fmt.Sprintf(`<span style="color: %s">%s</span>%s`, currentColor, out, "\n")
+			out = fmt.Sprintf(`<span style="color: %s">%s</span>`, currentColor, out)
 		}
 		buf.WriteString(out)
 	}
 
-	return buf.String(), nil
+	return fmt.Sprintf(`<pre><code style="color: %s">%s</code></pre>`, colorHTML, buf.String()), nil
 }
 
 // > func mixed highlight_string ( string $str [, bool $return = FALSE ] )
@@ -118,12 +115,11 @@ func fncHighlightString(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 		return nil, ctx.FuncError(err)
 	}
 
-	result := "<code><span style=\"color: #000000\">\n" + output + "</span>\n</code>"
 	if returnStr.GetOrDefault(phpv.ZFalse) {
-		return phpv.ZStr(result), nil
+		return phpv.ZStr(output), nil
 	}
 
-	ctx.Write([]byte(result))
+	ctx.Write([]byte(output))
 	return nil, nil
 }
 
@@ -148,11 +144,10 @@ func fncHighlightFile(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, ctx.FuncError(err)
 	}
 
-	result := "<code><span style=\"color: #000000\">\n" + output + "</span>\n</code>"
 	if returnStr.GetOrDefault(phpv.ZFalse) {
-		return phpv.ZStr(result), nil
+		return phpv.ZStr(output), nil
 	}
 
-	ctx.Write([]byte(result))
+	ctx.Write([]byte(output))
 	return nil, nil
 }
