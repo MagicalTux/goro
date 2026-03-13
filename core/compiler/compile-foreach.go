@@ -133,6 +133,21 @@ func (r *runnableForeach) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 		}()
 	}
 
+	// Register a cleanup for foreach-by-reference iterators. In PHP, when
+	// the loop variable goes out of scope (function return), the refcount
+	// on the last iterated element drops to 1 and the reference wrapper
+	// is removed. We register a cleanup function on the FuncContext so
+	// CleanupRef is called when the function returns.
+	if r.ref {
+		if cr, ok := it.(interface{ CleanupRef() }); ok {
+			if fc, ok2 := ctx.Func().(interface {
+				RegisterForeachRefCleanup(func())
+			}); ok2 {
+				fc.RegisterForeachRefCleanup(cr.CleanupRef)
+			}
+		}
+	}
+
 	for {
 		err = ctx.Tick(ctx, r.l)
 		if err != nil {
@@ -216,6 +231,7 @@ func (r *runnableForeach) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 
 		it.Next(ctx)
 	}
+
 	return nil, nil
 }
 

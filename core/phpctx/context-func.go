@@ -24,6 +24,16 @@ func GetFuncContext() *FuncContext {
 
 // Release returns the FuncContext to the pool after clearing it
 func (c *FuncContext) Release() {
+	// Clean up foreach-by-reference iterators. In PHP, when the loop
+	// variable goes out of scope (function return), the refcount on the
+	// last iterated element drops to 1 and the reference wrapper is
+	// removed. Since Goro has no refcounting, we call CleanupRef() on
+	// each registered iterator to unwrap the last element's reference.
+	for _, cleanup := range c.foreachRefCleanups {
+		cleanup()
+	}
+	c.foreachRefCleanups = c.foreachRefCleanups[:0]
+
 	c.Context = nil
 	c.h.Empty()
 	c.this = nil
@@ -50,6 +60,15 @@ type FuncContext struct {
 	methodType string
 
 	isInternal bool // true when called from internal code (e.g., output buffer callbacks)
+
+	foreachRefCleanups []func() // cleanup functions for foreach-by-reference iterators
+}
+
+// RegisterForeachRefCleanup registers a cleanup function to be called when
+// this function context is released, for cleaning up foreach-by-reference
+// iterator references.
+func (c *FuncContext) RegisterForeachRefCleanup(fn func()) {
+	c.foreachRefCleanups = append(c.foreachRefCleanups, fn)
 }
 
 func (c *FuncContext) AsVal(ctx phpv.Context, t phpv.ZType) (phpv.Val, error) {
