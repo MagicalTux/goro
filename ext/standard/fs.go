@@ -86,6 +86,16 @@ func fncFileExists(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
+	// Check for path length exceeding system maximum
+	p := string(filename)
+	if !filepath.IsAbs(p) {
+		p = filepath.Join(string(ctx.Global().Getwd()), p)
+	}
+	if len(p) > int(core.PHP_MAXPATHLEN) {
+		ctx.Warn("file_exists(): File name is longer than the maximum allowed path length on this platform (%d): %s", core.PHP_MAXPATHLEN, p, logopt.NoFuncName(true))
+		return phpv.ZFalse.ZVal(), nil
+	}
+
 	if err := ctx.Global().CheckOpenBasedir(ctx, string(filename), "file_exists"); err != nil {
 		return phpv.ZFalse.ZVal(), nil
 	}

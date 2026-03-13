@@ -64,5 +64,49 @@ func (g *Global) CheckOpenBasedir(ctx phpv.Context, path string, funcName string
 	return ErrOpenBasedir
 }
 
+// IsWithinOpenBasedir checks if the given path is within the open_basedir restriction
+// without emitting any warnings. Returns true if access would be allowed.
+func (g *Global) IsWithinOpenBasedir(path string) bool {
+	basedir := g.GetConfig("open_basedir", phpv.ZNULL.ZVal()).String()
+	if basedir == "" {
+		return true // no restriction
+	}
+
+	dirs := strings.Split(basedir, string(filepath.ListSeparator))
+
+	targetPath := path
+	if !filepath.IsAbs(targetPath) {
+		targetPath = filepath.Join(string(g.Getwd()), targetPath)
+	}
+	targetPath = filepath.Clean(targetPath)
+
+	for _, dir := range dirs {
+		dir = strings.TrimSpace(dir)
+		if dir == "" {
+			continue
+		}
+
+		baseDir := dir
+		if !filepath.IsAbs(baseDir) {
+			baseDir = filepath.Join(string(g.Getwd()), baseDir)
+		}
+		baseDir = filepath.Clean(baseDir)
+
+		if !strings.HasSuffix(baseDir, string(filepath.Separator)) {
+			baseDir += string(filepath.Separator)
+		}
+
+		targetCheck := targetPath
+		if !strings.HasSuffix(targetCheck, string(filepath.Separator)) {
+			targetCheck += string(filepath.Separator)
+		}
+
+		if strings.HasPrefix(targetCheck, baseDir) {
+			return true
+		}
+	}
+	return false
+}
+
 // ErrOpenBasedir is returned when an open_basedir restriction blocks file access.
 var ErrOpenBasedir = &phpv.PhpError{Code: phpv.E_WARNING}

@@ -13,7 +13,9 @@ func init() {
 	phpctx.RegisterExt(&phpctx.Ext{
 		Name:    "standard",
 		Version: core.VERSION,
-		Classes: []*phpobj.ZClass{},
+		Classes: []*phpobj.ZClass{
+			DirectoryClass,
+		},
 		// Note: ExtFunctionArg is currently unused
 		Functions: map[string]*phpctx.ExtFunction{
 			"abs":                        {Func: mathAbs, Args: []*phpctx.ExtFunctionArg{}},
@@ -119,6 +121,7 @@ func init() {
 			"decoct":                     {Func: mathDecOct, Args: []*phpctx.ExtFunctionArg{}},
 			"deg2rad":                    {Func: mathDeg2rad, Args: []*phpctx.ExtFunctionArg{}},
 			"die":                        {Func: die, Args: []*phpctx.ExtFunctionArg{}},
+			"dir":                        {Func: fncDir, Args: []*phpctx.ExtFunctionArg{}},
 			"dirname":                    {Func: fncDirname, Args: []*phpctx.ExtFunctionArg{}},
 			"disk_free_space":            {Func: fncDiskFreeSpace, Args: []*phpctx.ExtFunctionArg{}},
 			"disk_total_space":           {Func: fncDiskTotalSpace, Args: []*phpctx.ExtFunctionArg{}},
@@ -177,6 +180,7 @@ func init() {
 			"get_parent_class":           {Func: stdGetParentClass, Args: []*phpctx.ExtFunctionArg{}},
 			"get_resource_type":          {Func: fncGetResourceType, Args: []*phpctx.ExtFunctionArg{}},
 			"getcwd":                     {Func: fncGetcwd, Args: []*phpctx.ExtFunctionArg{}},
+			"glob":                       {Func: fncGlob, Args: []*phpctx.ExtFunctionArg{}},
 			"getenv":                     {Func: getenv, Args: []*phpctx.ExtFunctionArg{}},
 			"getopt":                     {Func: fncGetOpt, Args: []*phpctx.ExtFunctionArg{}},
 			"getrandmax":                 {Func: mathMtGetRandMax, Args: []*phpctx.ExtFunctionArg{}}, // alias
@@ -439,6 +443,13 @@ func init() {
 			"EXTR_PREFIX_SAME":                     EXTR_PREFIX_SAME,
 			"EXTR_REFS":                            EXTR_REFS,
 			"EXTR_SKIP":                            EXTR_SKIP,
+			"GLOB_BRACE":                           GLOB_BRACE,
+			"GLOB_ERR":                             GLOB_ERR,
+			"GLOB_MARK":                            GLOB_MARK,
+			"GLOB_NOCHECK":                         GLOB_NOCHECK,
+			"GLOB_NOESCAPE":                        GLOB_NOESCAPE,
+			"GLOB_NOSORT":                          GLOB_NOSORT,
+			"GLOB_ONLYDIR":                         GLOB_ONLYDIR,
 			"FILE_APPEND":                          FILE_APPEND,
 			"FILE_IGNORE_NEW_LINES":                FILE_IGNORE_NEW_LINES,
 			"FILE_NO_DEFAULT_CONTEXT":              FILE_NO_DEFAULT_CONTEXT,
