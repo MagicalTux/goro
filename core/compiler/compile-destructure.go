@@ -3,6 +3,7 @@ package compiler
 import (
 	"io"
 
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
@@ -127,13 +128,73 @@ func (a *runDestructure) Dump(w io.Writer) error {
 }
 
 func (a *runDestructure) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
-	val, err := a.Run(ctx)
-	if err != nil {
-		return err
+	if value == nil || value.GetType() != phpv.ZtArray {
+		// list() assignment from non-array: warn for each element
+		typeName := "null"
+		if value != nil {
+			typeName = value.GetType().TypeName()
+		}
+		for _, e := range a.e {
+			if e.v == nil {
+				continue
+			}
+			if sub, ok := e.v.(*runDestructure); ok {
+				sub.WriteValue(ctx, value)
+				continue
+			}
+			ctx.Warn("Cannot use %s as array", typeName, logopt.NoFuncName(true))
+			if w, ok := e.v.(phpv.Writable); ok {
+				w.WriteValue(ctx, phpv.ZNULL.ZVal())
+			}
+		}
+		return nil
 	}
-	list := val.Value().(*zList)
-	return list.WriteValue(ctx, value)
+	array := value.AsArray(ctx)
 
+	for idx, e := range a.e {
+		if e.v == nil {
+			continue // skipped slot
+		}
+
+		// Determine the array key for this entry
+		var key phpv.Val
+		if e.k != nil {
+			k, err := e.k.Run(ctx)
+			if err != nil {
+				return err
+			}
+			key = k
+		} else {
+			key = phpv.ZInt(idx)
+		}
+
+		// Get the value from the source array (with warnings for undefined keys)
+		val, _ := array.OffsetGetWarn(ctx, key)
+
+		// Use Writable interface (works for variables, array access,
+		// object properties, and nested destructures)
+		if w, ok := e.v.(phpv.Writable); ok {
+			if err := w.WriteValue(ctx, val.Dup()); err != nil {
+				return err
+			}
+			continue
+		}
+
+		// Fallback: evaluate the expression and use its name
+		v, err := e.v.Run(ctx)
+		if err != nil {
+			return err
+		}
+		name := v.GetName()
+		if name == "" {
+			return ctx.Errorf("Assignments can only happen to writable values")
+		}
+		if err := ctx.OffsetSet(ctx, name, val.Dup()); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func compileBaseDestructure(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
