@@ -66,6 +66,7 @@ func init() {
 		tokenizer.Rune('{'):      &compileFuncCb{f: compileBase, skip: true},
 		tokenizer.Rune(':'):      &compileFuncCb{f: compileBaseUntilAltEnd, skip: true},
 		tokenizer.Rune('('):      &compileFuncCb{f: compileExpr},
+		tokenizer.Rune('['):      &compileFuncCb{f: compileExpr},
 		tokenizer.Rune('@'):      &compileFuncCb{f: compileExpr},
 		tokenizer.Rune('$'):      &compileFuncCb{f: compileExpr},
 		tokenizer.Rune(';'):      nil,

@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"fmt"
 	"io"
 
 	"github.com/MagicalTux/goro/core/phpctx"
@@ -33,13 +34,21 @@ type compileCtx interface {
 	peekType() tokenizer.ItemType
 }
 
+type bracketEntry struct {
+	char rune
+	line int
+}
+
 type compileRootCtx struct {
 	phpv.Context
 
 	t *tokenizer.Lexer
 
-	next *tokenizer.Item
-	last *tokenizer.Item
+	next             *tokenizer.Item
+	last             *tokenizer.Item
+	bracketStack     []bracketEntry
+	lastBracketOp    int          // 0=none, 1=push, -1=pop
+	lastBracketEntry bracketEntry // the entry that was pushed or popped
 }
 
 func (c *compileRootCtx) ExpectSingle(r rune) error {
@@ -69,36 +78,131 @@ func (c *compileRootCtx) peekType() tokenizer.ItemType {
 		return c.next.Type
 	}
 
-	n, err := c.NextItem()
-	if err != nil {
-		return -1
-	}
-	c.backup()
-	return n.Type
-}
-
-func (c *compileRootCtx) NextItem() (*tokenizer.Item, error) {
-	if c.next != nil {
-		c.last, c.next = c.next, nil
-		return c.last, nil
-	}
+	// Read directly from tokenizer, bypassing bracket tracking.
+	// The token is stored in c.next and will be bracket-tracked
+	// when NextItem actually consumes it.
 	for {
 		i, err := c.t.NextItem()
 		if err != nil {
-			return i, err
+			return -1
 		}
-
 		switch i.Type {
-		case tokenizer.T_WHITESPACE:
-		case tokenizer.T_COMMENT:
+		case tokenizer.T_WHITESPACE, tokenizer.T_COMMENT:
+			continue
 		default:
-			c.last = i
-			return i, err
+			c.next = i
+			return i.Type
 		}
+	}
+}
+
+func (c *compileRootCtx) NextItem() (*tokenizer.Item, error) {
+	var i *tokenizer.Item
+	if c.next != nil {
+		i = c.next
+		c.next = nil
+	} else {
+		for {
+			var err error
+			i, err = c.t.NextItem()
+			if err != nil {
+				return i, err
+			}
+			if i.Type != tokenizer.T_WHITESPACE && i.Type != tokenizer.T_COMMENT {
+				break
+			}
+		}
+	}
+
+	c.last = i
+
+	// Track brackets for better syntax error messages
+	if bracketErr := c.trackBracket(i); bracketErr != nil {
+		return i, bracketErr
+	}
+
+	return i, nil
+}
+
+var matchingBracket = map[rune]rune{')': '(', ']': '[', '}': '{'}
+
+func (c *compileRootCtx) trackBracket(i *tokenizer.Item) error {
+	c.lastBracketOp = 0 // reset
+
+	switch {
+	case i.IsSingle('('):
+		entry := bracketEntry{'(', i.Line}
+		c.bracketStack = append(c.bracketStack, entry)
+		c.lastBracketOp = 1
+		c.lastBracketEntry = entry
+	case i.IsSingle('['):
+		entry := bracketEntry{'[', i.Line}
+		c.bracketStack = append(c.bracketStack, entry)
+		c.lastBracketOp = 1
+		c.lastBracketEntry = entry
+	case i.IsSingle('{'):
+		entry := bracketEntry{'{', i.Line}
+		c.bracketStack = append(c.bracketStack, entry)
+		c.lastBracketOp = 1
+		c.lastBracketEntry = entry
+	case i.IsSingle(')'), i.IsSingle(']'), i.IsSingle('}'):
+		var closingChar rune
+		if i.IsSingle(')') {
+			closingChar = ')'
+		} else if i.IsSingle(']') {
+			closingChar = ']'
+		} else {
+			closingChar = '}'
+		}
+		expected := matchingBracket[closingChar]
+		if len(c.bracketStack) == 0 {
+			return c.bracketError(fmt.Sprintf("Unmatched '%c'", closingChar), i)
+		}
+		top := c.bracketStack[len(c.bracketStack)-1]
+		if top.char != expected {
+			msg := fmt.Sprintf("Unclosed '%c'", top.char)
+			if top.line != i.Line {
+				msg += fmt.Sprintf(" on line %d", top.line)
+			}
+			msg += fmt.Sprintf(" does not match '%c'", closingChar)
+			return c.bracketError(msg, i)
+		}
+		c.lastBracketEntry = top // save what we're popping for undo
+		c.bracketStack = c.bracketStack[:len(c.bracketStack)-1]
+		c.lastBracketOp = -1
+	case i.Type == tokenizer.T_EOF:
+		if len(c.bracketStack) > 0 {
+			top := c.bracketStack[len(c.bracketStack)-1]
+			msg := fmt.Sprintf("Unclosed '%c'", top.char)
+			if top.line != i.Line {
+				msg += fmt.Sprintf(" on line %d", top.line)
+			}
+			return c.bracketError(msg, i)
+		}
+	}
+	return nil
+}
+
+func (c *compileRootCtx) bracketError(msg string, i *tokenizer.Item) error {
+	return &phpv.PhpError{
+		Err:          fmt.Errorf("%s", msg),
+		Code:         phpv.E_PARSE,
+		Loc:          i.Loc(),
+		GoStackTrace: phpv.GetGoDebugTrace(),
 	}
 }
 
 func (c *compileRootCtx) backup() {
+	// Undo the last bracket tracking operation
+	switch c.lastBracketOp {
+	case 1: // was a push, undo by popping
+		if len(c.bracketStack) > 0 {
+			c.bracketStack = c.bracketStack[:len(c.bracketStack)-1]
+		}
+	case -1: // was a pop, undo by pushing back
+		c.bracketStack = append(c.bracketStack, c.lastBracketEntry)
+	}
+	c.lastBracketOp = 0
 	c.next, c.last = c.last, nil
 }
 
