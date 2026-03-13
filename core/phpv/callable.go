@@ -41,11 +41,26 @@ type BoundedCallable struct {
 	Args []*ZVal
 }
 
+// Override Val methods so that BoundedCallable wraps itself in ZVal
+// instead of delegating to the embedded Callable (which would lose the wrapper).
+func (b *BoundedCallable) GetType() ZType                          { return ZtCallable }
+func (b *BoundedCallable) ZVal() *ZVal                             { return NewZVal(b) }
+func (b *BoundedCallable) Value() Val                              { return b }
+func (b *BoundedCallable) AsVal(ctx Context, t ZType) (Val, error) { return CallableVal{}.AsVal(ctx, t) }
+func (b *BoundedCallable) String() string                          { return "Callable" }
+
 type MethodCallable struct {
 	Callable
 	Class  ZClass
 	Static bool
 }
+
+// Override Val methods so that MethodCallable wraps itself in ZVal properly.
+func (m *MethodCallable) GetType() ZType                          { return ZtCallable }
+func (m *MethodCallable) ZVal() *ZVal                             { return NewZVal(m) }
+func (m *MethodCallable) Value() Val                              { return m }
+func (m *MethodCallable) AsVal(ctx Context, t ZType) (Val, error) { return CallableVal{}.AsVal(ctx, t) }
+func (m *MethodCallable) String() string                          { return "Callable" }
 
 func Bind(fn Callable, this ZObject, args ...*ZVal) *BoundedCallable {
 	return &BoundedCallable{fn, this, args}
@@ -98,6 +113,9 @@ func (m *MethodCallable) DisplayName() string {
 }
 
 func (b *BoundedCallable) DisplayName() string {
+	if b.This == nil {
+		return b.Callable.Name()
+	}
 	return string(b.This.GetClass().GetName()) + "::" + b.Callable.Name()
 }
 

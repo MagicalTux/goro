@@ -761,9 +761,14 @@ func compilePaamayimNekudotayim(v phpv.Runnable, i *tokenizer.Item, c compileCtx
 		switch i.Type {
 		case tokenizer.Rune('('):
 			c.backup()
-			v := &runObjectFunc{ref: v, op: ident, l: l, static: true}
-			v.args, err = compileFuncPassedArgs(c)
-			return v, err
+			args, err := compileFuncPassedArgs(c)
+			if err != nil {
+				return nil, err
+			}
+			if IsFirstClassCallable(args) {
+				return &runFirstClassMethodCallable{ref: v, method: ident, static: true, l: l}, nil
+			}
+			return &runObjectFunc{ref: v, op: ident, args: args, l: l, static: true}, err
 		default:
 			c.backup()
 			return &runClassStaticObjRef{v, ident, l}, nil
@@ -879,14 +884,89 @@ func compileObjectOperator(v phpv.Runnable, i *tokenizer.Item, c compileCtx, nul
 
 	if i.IsSingle('(') {
 		// this is a function call
-		v := &runObjectFunc{ref: v, op: op, l: l, nullsafe: nullsafe}
-
-		// parse args
-		v.args, err = compileFuncPassedArgs(c)
-		return v, err
+		args, err := compileFuncPassedArgs(c)
+		if err != nil {
+			return nil, err
+		}
+		if IsFirstClassCallable(args) {
+			return &runFirstClassMethodCallable{ref: v, method: op, static: false, nullsafe: nullsafe, l: l}, nil
+		}
+		return &runObjectFunc{ref: v, op: op, args: args, l: l, nullsafe: nullsafe}, nil
 	}
 
 	return &runObjectVar{ref: v, varName: op, l: l, nullsafe: nullsafe}, nil
+}
+
+// runFirstClassMethodCallable implements ClassName::method(...) and $obj->method(...)
+// first-class callable syntax.
+type runFirstClassMethodCallable struct {
+	ref      phpv.Runnable
+	method   phpv.ZString
+	static   bool
+	nullsafe bool
+	l        *phpv.Loc
+}
+
+func (r *runFirstClassMethodCallable) Run(ctx phpv.Context) (*phpv.ZVal, error) {
+	if err := ctx.Tick(ctx, r.l); err != nil {
+		return nil, err
+	}
+
+	if r.static {
+		// Static method: ClassName::method(...)
+		classNameVal, err := r.ref.Run(ctx)
+		if err != nil {
+			return nil, err
+		}
+		class, err := ctx.Global().GetClass(ctx, classNameVal.AsString(ctx), false)
+		if err != nil {
+			return nil, err
+		}
+		member, ok := class.GetMethod(r.method.ToLower())
+		if !ok {
+			return nil, ctx.Errorf("Call to undefined method %s::%s()", class.GetName(), r.method)
+		}
+		callable := phpv.BindClass(member.Method, class, true)
+		return phpv.NewZVal(callable), nil
+	}
+
+	// Instance method: $obj->method(...)
+	refVal, err := r.ref.Run(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if r.nullsafe && refVal.IsNull() {
+		return phpv.ZNULL.ZVal(), nil
+	}
+
+	obj := refVal.AsObject(ctx)
+	if obj == nil {
+		return nil, ctx.Errorf("Call to a member function %s() on a non-object", r.method)
+	}
+
+	class := obj.GetClass()
+	member, ok := class.GetMethod(r.method.ToLower())
+	if !ok {
+		return nil, ctx.Errorf("Call to undefined method %s::%s()", class.GetName(), r.method)
+	}
+
+	callable := phpv.Bind(member.Method, obj)
+	return phpv.NewZVal(callable), nil
+}
+
+func (r *runFirstClassMethodCallable) Dump(w io.Writer) error {
+	if err := r.ref.Dump(w); err != nil {
+		return err
+	}
+	if r.static {
+		w.Write([]byte("::"))
+	} else {
+		w.Write([]byte("->"))
+	}
+	w.Write([]byte(r.method))
+	_, err := w.Write([]byte("(...)"))
+	return err
 }
 
 func compileClassName(c compileCtx) (phpv.ZString, error) {

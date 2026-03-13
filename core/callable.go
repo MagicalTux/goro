@@ -158,6 +158,12 @@ func SpawnCallable(ctx phpv.Context, v *phpv.ZVal) (phpv.Callable, error) {
 		}
 		return phpv.BindClass(member.Method, class, true), nil
 
+	case phpv.ZtCallable:
+		if c, ok := v.Value().(phpv.Callable); ok {
+			return c, nil
+		}
+		return nil, ctx.Errorf("Argument passed must be callable, %q given", v.GetType().String())
+
 	case phpv.ZtObject:
 		object := v.AsObject(ctx)
 		if f, ok := object.GetClass().GetMethod("__invoke"); ok {

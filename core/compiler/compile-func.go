@@ -908,6 +908,70 @@ func (n *NamedArg) Dump(w io.Writer) error {
 	return n.Arg.Dump(w)
 }
 
+// FirstClassCallableMarker is returned by compileFuncPassedArgs when it detects
+// the first-class callable syntax func(...). Callers should check for this and
+// create a closure wrapping the function instead of a regular call.
+type FirstClassCallableMarker struct{}
+
+func (f *FirstClassCallableMarker) Run(ctx phpv.Context) (*phpv.ZVal, error) {
+	return nil, fmt.Errorf("internal: FirstClassCallableMarker should not be run directly")
+}
+
+func (f *FirstClassCallableMarker) Dump(w io.Writer) error {
+	_, err := w.Write([]byte("..."))
+	return err
+}
+
+// IsFirstClassCallable checks if args represent a first-class callable syntax.
+func IsFirstClassCallable(args phpv.Runnables) bool {
+	return len(args) == 1 && isFirstClassCallableMarker(args[0])
+}
+
+func isFirstClassCallableMarker(r phpv.Runnable) bool {
+	_, ok := r.(*FirstClassCallableMarker)
+	return ok
+}
+
+// runFirstClassCallable implements the first-class callable syntax: strlen(...)
+// It resolves the function at runtime and wraps it in a closure.
+type runFirstClassCallable struct {
+	target phpv.Runnable
+	l      *phpv.Loc
+}
+
+func (r *runFirstClassCallable) Run(ctx phpv.Context) (*phpv.ZVal, error) {
+	// Resolve the function name
+	var funcName phpv.ZString
+	if constant, ok := r.target.(*runConstant); ok {
+		funcName = phpv.ZString(constant.c)
+	} else {
+		val, err := r.target.Run(ctx)
+		if err != nil {
+			return nil, err
+		}
+		funcName = phpv.ZString(val.String())
+	}
+
+	// Look up the function
+	f, err := ctx.Global().GetFunction(ctx, funcName)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create a Closure wrapping this function
+	closure := phpv.Bind(f, nil)
+	return phpv.NewZVal(closure), nil
+}
+
+func (r *runFirstClassCallable) Dump(w io.Writer) error {
+	err := r.target.Dump(w)
+	if err != nil {
+		return err
+	}
+	_, err = w.Write([]byte("(...)"))
+	return err
+}
+
 // SpreadArg wraps a Runnable for the argument unpacking syntax: func(...$arr)
 type SpreadArg struct {
 	Arg phpv.Runnable
@@ -946,6 +1010,20 @@ func compileFuncPassedArgs(c compileCtx) (res phpv.Runnables, err error) {
 
 	if i.IsSingle(')') {
 		return
+	}
+
+	// Check for first-class callable syntax: func(...)
+	if i.Type == tokenizer.T_ELLIPSIS {
+		next, nextErr := c.NextItem()
+		if nextErr != nil {
+			return nil, nextErr
+		}
+		if next.IsSingle(')') {
+			// Return special sentinel: FirstClassCallable marker
+			return phpv.Runnables{&FirstClassCallableMarker{}}, nil
+		}
+		// Not first-class callable, put back the token after ...
+		c.backup()
 	}
 
 	// parse passed arguments

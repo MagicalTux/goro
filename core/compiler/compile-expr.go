@@ -309,6 +309,10 @@ func compilePostExpr(v phpv.Runnable, i *tokenizer.Item, c compileCtx) (phpv.Run
 		if err != nil {
 			return nil, err
 		}
+		// First-class callable syntax: func(...)
+		if IsFirstClassCallable(args) {
+			return &runFirstClassCallable{target: v, l: l}, nil
+		}
 		if constant, ok := v.(*runConstant); ok {
 			return &runnableFunctionCall{phpv.ZString(constant.c), args, l}, nil
 		}
