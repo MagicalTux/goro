@@ -232,7 +232,16 @@ func checkExistence(ctx phpv.Context, v phpv.Runnable, subExpr bool) (bool, erro
 	// - isset($x->foo()) // foo is not evaluated
 	switch t := v.(type) {
 	case *runVariable:
-		return ctx.OffsetExists(ctx, t.v.ZVal())
+		exists, err := ctx.OffsetExists(ctx, t.v.ZVal())
+		if !exists || err != nil {
+			return false, err
+		}
+		// isset() returns false for NULL values
+		val, err := ctx.OffsetGet(ctx, t.v.ZVal())
+		if err != nil {
+			return false, err
+		}
+		return val != nil && !phpv.IsNull(val), nil
 
 	case *runArrayAccess:
 		exists, err := checkExistence(ctx, t.value, true)
