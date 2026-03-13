@@ -74,6 +74,7 @@ var operatorList = map[tokenizer.ItemType]*operatorInternalDetails{
 	tokenizer.T_BOOLEAN_AND:         &operatorInternalDetails{op: operatorBoolLogic, pri: 21},
 	tokenizer.T_BOOLEAN_OR:          &operatorInternalDetails{op: operatorBoolLogic, pri: 22},
 	tokenizer.T_COALESCE:            &operatorInternalDetails{pri: 23, skipA: true, op: operatorCoalesce},
+	tokenizer.T_COALESCE_EQUAL:      &operatorInternalDetails{write: true, skipA: true, pri: 25, op: operatorCoalesceAssign},
 	tokenizer.T_INC:                 &operatorInternalDetails{op: operatorIncDec, pri: 11},
 	tokenizer.T_DEC:                 &operatorInternalDetails{op: operatorIncDec, pri: 11},
 	tokenizer.Rune('@'):             &operatorInternalDetails{pri: 11, op: operatorSilence},
@@ -221,7 +222,7 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		a, err = r.a.Run(ctx)
 		if err != nil {
 			// For null coalescing, suppress errors on the left side
-			if r.op == tokenizer.T_COALESCE {
+			if r.op == tokenizer.T_COALESCE || r.op == tokenizer.T_COALESCE_EQUAL {
 				a = nil
 				err = nil
 			} else {
@@ -241,6 +242,10 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			return phpv.ZTrue.ZVal(), nil
 		}
 	case tokenizer.T_COALESCE:
+		if a != nil && !a.IsNull() {
+			return a, nil
+		}
+	case tokenizer.T_COALESCE_EQUAL:
 		if a != nil && !a.IsNull() {
 			return a, nil
 		}
@@ -605,6 +610,11 @@ func operatorCoalesce(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) 
 	if a != nil && !a.IsNull() {
 		return a, nil
 	}
+	return b, nil
+}
+
+func operatorCoalesceAssign(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*phpv.ZVal, error) {
+	// Short-circuit already handled above; if we get here, a was null
 	return b, nil
 }
 

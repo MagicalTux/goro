@@ -5,6 +5,7 @@ var lexPhpOps = map[string]ItemType{
 	"&&":  T_BOOLEAN_AND,
 	"||":  T_BOOLEAN_OR,
 	"??":  T_COALESCE,
+	"??=": T_COALESCE_EQUAL,
 	"?>":  T_CLOSE_TAG,
 	".=":  T_CONCAT_EQUAL,
 	"--":  T_DEC,

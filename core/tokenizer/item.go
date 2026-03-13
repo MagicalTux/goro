@@ -30,6 +30,7 @@ const (
 	T_CLONE                    // "clone"
 	T_CLOSE_TAG                // ?> or %>
 	T_COALESCE                 // "??"
+	T_COALESCE_EQUAL           // "??="
 	T_COMMENT                  // // # or /* */
 	T_CONCAT_EQUAL             // .=
 	T_CONST                    // const
