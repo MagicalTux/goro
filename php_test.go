@@ -410,8 +410,16 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		}
 		return nil
 	case "EXPECT_EXTERNAL", "EXPECTF_EXTERNAL", "EXPECTREGEX_EXTERNAL":
-		// External expect files - skip for now
-		return skipTest
+		// Read the external file and delegate to the corresponding handler
+		extFile := strings.TrimSpace(b.String())
+		extPath := filepath.Join(filepath.Dir(p.path), extFile)
+		extData, err := os.ReadFile(extPath)
+		if err != nil {
+			return fmt.Errorf("file does not exist in %s:%d", p.path, 0)
+		}
+		extBuf := bytes.NewBuffer(extData)
+		basePart := strings.TrimSuffix(part, "_EXTERNAL")
+		return p.handlePart(basePart, extBuf)
 	default:
 		return fmt.Errorf("unhandled part type %s for test", part)
 	}
