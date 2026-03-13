@@ -70,6 +70,8 @@ func fncObFlush(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		ctx.Notice("Failed to flush buffer of %s (%d)", buf.CallbackName(), buf.Level())
 		return phpv.ZBool(false).ZVal(), nil
 	}
+	buf.SetCaller(ctx, "ob_flush")
+	defer buf.ClearCaller()
 	return phpv.ZBool(true).ZVal(), buf.Flush()
 }
 
@@ -85,6 +87,8 @@ func fncObClean(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZBool(false).ZVal(), nil
 	}
 
+	buf.SetCaller(ctx, "ob_clean")
+	defer buf.ClearCaller()
 	err := buf.Clean()
 	return phpv.ZBool(true).ZVal(), err
 }
@@ -101,6 +105,8 @@ func fncObEndClean(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZBool(false).ZVal(), nil
 	}
 
+	buf.SetCaller(ctx, "ob_end_clean")
+	defer buf.ClearCaller()
 	cleanErr := buf.Clean()
 	closeErr := buf.Close()
 	if cleanErr != nil {
@@ -121,6 +127,8 @@ func fncObEndFlush(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZBool(false).ZVal(), nil
 	}
 
+	buf.SetCaller(ctx, "ob_end_flush")
+	defer buf.ClearCaller()
 	return phpv.ZBool(true).ZVal(), buf.Close()
 }
 
@@ -153,6 +161,8 @@ func fncObGetClean(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return data, nil
 	}
 
+	buf.SetCaller(ctx, "ob_get_clean")
+	defer buf.ClearCaller()
 	cleanErr := buf.Clean()
 	closeErr := buf.Close()
 	if cleanErr != nil {
@@ -196,6 +206,8 @@ func fncObGetFlush(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return data, nil
 	}
 
+	buf.SetCaller(ctx, "ob_get_flush")
+	defer buf.ClearCaller()
 	return data, buf.Close()
 }
 

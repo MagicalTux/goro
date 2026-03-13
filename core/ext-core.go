@@ -24,6 +24,7 @@ func init() {
 			phpobj.CompileError,
 			phpobj.DivisionByZeroError,
 			phpobj.Error,
+			phpobj.ErrorException,
 			phpobj.Exception,
 			phpobj.InvalidArgumentException,
 			phpobj.Iterator,

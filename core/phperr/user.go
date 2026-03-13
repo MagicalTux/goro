@@ -26,9 +26,15 @@ func HandleUserError(ctx phpv.Context, err *phpv.PhpError) error {
 		// to prevent re-entrancy (matching PHP behavior)
 		ctx.Global().SetUserErrorHandler(nil, 0)
 
+		// PHP includes the function name prefix in $errstr for user error handlers
+		errMsg := err.Err.Error()
+		if err.FuncName != "" {
+			errMsg = err.FuncName + "(): " + errMsg
+		}
+
 		args := []*phpv.ZVal{
 			phpv.ZInt(err.Code).ZVal(),
-			phpv.ZStr(err.Err.Error()),
+			phpv.ZStr(errMsg),
 			phpv.ZStr(err.Loc.Filename),
 			phpv.ZInt(err.Loc.Line).ZVal(),
 		}

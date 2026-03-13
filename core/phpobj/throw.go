@@ -42,6 +42,9 @@ var ParseError *ZClass
 // > class AssertionError extends Error
 var AssertionError *ZClass
 
+// > class ErrorException extends Exception
+var ErrorException *ZClass
+
 // > class LogicException extends Exception
 var LogicException *ZClass
 
@@ -160,6 +163,23 @@ func init() {
 		Methods: copyMethods(Error.Methods),
 	}
 
+	// ErrorException extends Exception with severity support
+	ErrorException = &ZClass{
+		Name:    "ErrorException",
+		Extends: Exception,
+		Props: append([]*phpv.ZClassProp{
+			{VarName: phpv.ZString("severity"), Default: phpv.ZInt(int64(phpv.E_ERROR)).ZVal(), Modifiers: phpv.ZAttrProtected},
+		}, Exception.Props...),
+		Methods: func() map[phpv.ZString]*phpv.ZClassMethod {
+			m := copyMethods(Exception.Methods)
+			m["__construct"] = &phpv.ZClassMethod{Name: "__construct", Method: NativeMethod(errorExceptionConstruct)}
+			m["getseverity"] = &phpv.ZClassMethod{Name: "getSeverity", Method: NativeMethod(func(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				return o.HashTable().GetString("severity"), nil
+			})}
+			return m
+		}(),
+	}
+
 	// Exception subclasses
 	LogicException = &ZClass{
 		Name:    "LogicException",
@@ -202,6 +222,44 @@ func init() {
 		Props:   RuntimeException.Props,
 		Methods: copyMethods(RuntimeException.Methods),
 	}
+}
+
+// ErrorException constructor: __construct($message = "", $code = 0, $severity = E_ERROR, $filename = __FILE__, $lineno = __LINE__, $previous = null)
+func errorExceptionConstruct(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	// First call the parent Exception::__construct with (message, code, previous)
+	parentArgs := make([]*phpv.ZVal, 0, 3)
+	if len(args) > 0 {
+		parentArgs = append(parentArgs, args[0]) // message
+	}
+	if len(args) > 1 {
+		parentArgs = append(parentArgs, args[1]) // code
+	} else {
+		parentArgs = append(parentArgs, phpv.ZInt(0).ZVal())
+	}
+	if len(args) > 5 {
+		parentArgs = append(parentArgs, args[5]) // previous
+	}
+	_, err := exceptionConstruct(ctx, o, parentArgs)
+	if err != nil {
+		return nil, err
+	}
+
+	// Set severity
+	if len(args) > 2 {
+		o.HashTable().SetString("severity", args[2])
+	} else {
+		o.HashTable().SetString("severity", phpv.ZInt(int64(phpv.E_ERROR)).ZVal())
+	}
+
+	// Override file/line if provided
+	if len(args) > 3 && !args[3].IsNull() {
+		o.HashTable().SetString("file", args[3])
+	}
+	if len(args) > 4 && !args[4].IsNull() {
+		o.HashTable().SetString("line", args[4])
+	}
+
+	return phpv.ZNULL.ZVal(), nil
 }
 
 func copyMethods(src map[phpv.ZString]*phpv.ZClassMethod) map[phpv.ZString]*phpv.ZClassMethod {

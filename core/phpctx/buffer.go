@@ -61,6 +61,11 @@ type Buffer struct {
 	CB            phpv.Callable
 	Flags         int // capability flags (cleanable/flushable/removable)
 	status        int // runtime status flags (started/disabled/processed)
+
+	// Set by ob_* functions before calling Flush/Close/Clean to provide
+	// context for deprecation warnings about output from handlers.
+	callerCtx      phpv.Context
+	callerFuncName string
 }
 
 type Flusher interface {
@@ -89,10 +94,12 @@ func makeBuffer(g *Global, w io.Writer) *Buffer {
 
 // invokeCallback passes data through the output buffer callback and returns the transformed data.
 // If the callback returns false, the original data is returned unchanged.
+// The second return value may be a deprecation error if the callback produced output.
 func (b *Buffer) invokeCallback(d []byte, flag int) ([]byte, error) {
 	args := []*phpv.ZVal{phpv.ZString(d).ZVal(), phpv.ZInt(flag).ZVal()}
 	ctx := WithConfig(b.g, "ob_in_handler", phpv.ZBool(true).ZVal())
-	ctx = NewBufContext(ctx, nil)
+	detector := &outputDetector{}
+	ctx = NewBufContext(ctx, detector)
 	r, err := ctx.CallZVal(ctx, b.CB, args, nil)
 	if err != nil {
 		// Disable the callback on failure so subsequent writes pass through
@@ -100,15 +107,38 @@ func (b *Buffer) invokeCallback(d []byte, flag int) ([]byte, error) {
 		b.status |= BufferDisabled
 		return nil, err
 	}
+
+	// Check if the callback produced output (deprecated in PHP 8.4)
+	var deprecationErr error
+	if detector.hasOutput && b.callerFuncName != "" && b.callerCtx != nil {
+		cbName := phpv.CallableDisplayName(b.CB)
+		// Temporarily redirect output to the underlying writer so the
+		// deprecation message bypasses this buffer (matching PHP behavior).
+		savedOut := b.g.out
+		b.g.out = b.w
+		deprecationErr = b.callerCtx.Deprecated(
+			"Producing output from user output handler %s is deprecated",
+			cbName,
+		)
+		b.g.out = savedOut
+	}
+
 	// If callback returns false, use original data unchanged
 	if r.GetType() == phpv.ZtBool && !bool(r.Value().(phpv.ZBool)) {
+		if deprecationErr != nil {
+			return d, deprecationErr
+		}
 		return d, nil
 	}
 	r, err = r.As(b.g, phpv.ZtString)
 	if err != nil {
 		return nil, err
 	}
-	return []byte(r.AsString(b.g)), nil
+	result := []byte(r.AsString(b.g))
+	if deprecationErr != nil {
+		return result, deprecationErr
+	}
+	return result, nil
 }
 
 func (b *Buffer) Write(d []byte) (int, error) {
@@ -141,21 +171,16 @@ func (b *Buffer) flushData(flag int) error {
 	if b.CB != nil {
 		transformed, err := b.invokeCallback(data, flag)
 		if err != nil {
-			// For catchable exceptions (PhpThrow like TypeError), flush the raw
-			// data and propagate the exception so try/catch can handle it.
-			// For fatal errors (PhpError), don't flush — just propagate.
-			if _, ok := err.(*phperr.PhpThrow); ok {
-				for len(data) > 0 {
-					n, werr := b.w.Write(data)
-					if n == len(data) {
-						break
-					} else if n > 0 {
-						data = data[n:]
-					}
-					if werr != nil {
-						return werr
-					}
-				}
+			// If the callback returned transformed data along with an error
+			// (e.g., deprecation for producing output), write the transformed
+			// data first, then return the error.
+			if transformed != nil {
+				writeAll(b.w, transformed)
+			} else if _, ok := err.(*phperr.PhpThrow); ok {
+				// For catchable exceptions (PhpThrow like TypeError), flush the raw
+				// data and propagate the exception so try/catch can handle it.
+				// For fatal errors (PhpError), don't flush — just propagate.
+				writeAll(b.w, data)
 			}
 			return err
 		}
@@ -163,18 +188,23 @@ func (b *Buffer) flushData(flag int) error {
 	}
 
 	// Write data to the underlying writer
+	writeAll(b.w, data)
+	return nil
+}
+
+// writeAll writes all data to the writer, retrying on short writes.
+func writeAll(w io.Writer, data []byte) {
 	for len(data) > 0 {
-		n, err := b.w.Write(data)
+		n, err := w.Write(data)
 		if n == len(data) {
 			break
 		} else if n > 0 {
 			data = data[n:]
 		}
 		if err != nil {
-			return err
+			return
 		}
 	}
-	return nil
 }
 
 func (b *Buffer) IsCleanable() bool {
@@ -287,4 +317,28 @@ func (b *Buffer) Parent() *Buffer {
 		return p
 	}
 	return nil
+}
+
+// SetCaller stores the calling function context for deprecation warnings.
+func (b *Buffer) SetCaller(ctx phpv.Context, funcName string) {
+	b.callerCtx = ctx
+	b.callerFuncName = funcName
+}
+
+// ClearCaller removes the calling function context.
+func (b *Buffer) ClearCaller() {
+	b.callerCtx = nil
+	b.callerFuncName = ""
+}
+
+// outputDetector is a writer that tracks whether any output was produced.
+type outputDetector struct {
+	hasOutput bool
+}
+
+func (d *outputDetector) Write(p []byte) (int, error) {
+	if len(p) > 0 {
+		d.hasOutput = true
+	}
+	return len(p), nil
 }
