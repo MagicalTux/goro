@@ -784,23 +784,17 @@ func compileObjectOperator(v phpv.Runnable, i *tokenizer.Item, c compileCtx, nul
 	switch i.Type {
 	case tokenizer.Rune('$'):
 		// $obj->${expr} or $obj->$var — variable-variable property access
-		// ${expr} is equivalent to {expr} for property name resolution
+		// ${expr} evaluates expr, uses result as a variable name, looks up
+		// that variable, and uses its value as the property name.
 		i, err = c.NextItem()
 		if err != nil {
 			return nil, err
 		}
 		if i.Type == tokenizer.Rune('{') {
-			// $obj->${expr} — same as $obj->{expr}
-			expr, err := compileExpr(nil, c)
+			// $obj->${expr} — variable variable: evaluate expr, lookup variable
+			varRef, err := compileRunVariableRef(i, c, l)
 			if err != nil {
 				return nil, err
-			}
-			i, err = c.NextItem()
-			if err != nil {
-				return nil, err
-			}
-			if i.Type != tokenizer.Rune('}') {
-				return nil, i.Unexpected()
 			}
 			i, err = c.NextItem()
 			if err != nil {
@@ -808,11 +802,11 @@ func compileObjectOperator(v phpv.Runnable, i *tokenizer.Item, c compileCtx, nul
 			}
 			c.backup()
 			if i.IsSingle('(') {
-				dynFunc := &runObjectDynFunc{ref: v, nameExpr: expr, l: l, nullsafe: nullsafe}
+				dynFunc := &runObjectDynFunc{ref: v, nameExpr: varRef, l: l, nullsafe: nullsafe}
 				dynFunc.args, err = compileFuncPassedArgs(c)
 				return dynFunc, err
 			}
-			return &runObjectDynVar{ref: v, nameExpr: expr, l: l, nullsafe: nullsafe}, nil
+			return &runObjectDynVar{ref: v, nameExpr: varRef, l: l, nullsafe: nullsafe}, nil
 		}
 		// $obj->$var — indirect property, variable contains property name
 		c.backup()
