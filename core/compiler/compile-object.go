@@ -118,7 +118,7 @@ func compileNew(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 
 	if next.Type == tokenizer.T_VARIABLE {
 		v := phpv.Runnable(&runVariable{v: phpv.ZString(next.Data[1:]), l: next.Loc()})
-		// Check for property access like $this->name
+		// Check for property access or array subscript like $this->name or $a[0][1]
 		for {
 			peek, err := c.NextItem()
 			if err != nil {
@@ -130,6 +130,12 @@ func compileNew(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 					return nil, err
 				}
 				v = &runObjectVar{ref: v, varName: phpv.ZString(prop.Data), l: peek.Loc()}
+			} else if peek.IsSingle('[') {
+				c.backup()
+				v, err = compileArrayAccess(v, c)
+				if err != nil {
+					return nil, err
+				}
 			} else {
 				c.backup()
 				break
