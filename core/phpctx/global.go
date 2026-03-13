@@ -94,6 +94,8 @@ type Global struct {
 	compilingClass phpv.ZClass // class currently being compiled (for self:: resolution)
 
 	rawRequestBody []byte // stored POST body for php://input
+
+	customStdin *stream.Stream // custom stdin for testing
 }
 
 func NewGlobal(ctx context.Context, p *Process, config phpv.IniConfig) *Global {
@@ -384,6 +386,21 @@ func (g *Global) doGPC() {
 func (g *Global) SetOutput(w io.Writer) {
 	g.out = w
 	g.buf = nil
+}
+
+// SetStdin replaces the default stdin with a custom reader (useful for testing).
+func (g *Global) SetStdin(r io.Reader) {
+	s := stream.NewStream(r)
+	s.SetAttr("stream_type", "Go")
+	s.SetAttr("mode", "r")
+	s.ResourceType = phpv.ResourceStream
+	g.customStdin = s
+	g.constant["STDIN"] = s
+}
+
+// GetStdin returns the custom stdin stream if set, or nil.
+func (g *Global) GetStdin() *stream.Stream {
+	return g.customStdin
 }
 
 func (g *Global) RunFile(fn string) error {

@@ -37,8 +37,9 @@ type phptest struct {
 	name   string
 	path   string
 	req    *http.Request
-	iniRaw string // raw INI settings from --INI-- section
-	cliMode bool  // true when test has --ARGS-- (run as CLI, not web)
+	iniRaw    string // raw INI settings from --INI-- section
+	cliMode   bool   // true when test has --ARGS-- (run as CLI, not web)
+	stdinData []byte // data from --STDIN-- section
 
 	p *phpctx.Process
 
@@ -85,6 +86,11 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		}
 
 		g.SetOutput(p.output)
+
+		// Apply --STDIN-- data if present
+		if p.stdinData != nil {
+			g.SetStdin(bytes.NewReader(p.stdinData))
+		}
 
 		// Apply --INI-- settings after global context is created (after defaults)
 		needsReinit := false
@@ -402,7 +408,12 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		p.p.Argv = append([]string{p.path}, args...)
 		p.cliMode = true
 		return nil
-	case "STDIN", "CGI", "CAPTURE_STDIO":
+	case "STDIN":
+		// Save stdin data to be fed to the script via custom stdin stream
+		p.stdinData = b.Bytes()
+		p.cliMode = true // STDIN implies CLI mode
+		return nil
+	case "CGI", "CAPTURE_STDIO":
 		// These require special execution modes we don't support yet
 		return skipError{reason: "unsupported section: " + part}
 	case "ENV":
@@ -476,13 +487,16 @@ func runTest(t *testing.T, fpath string) (p *phptest, err error) {
 	defer p.f.Close()
 	p.reader = bufio.NewReader(p.f)
 
-	var b *bytes.Buffer
-	var part string
-
 	// prepare env
 	p.p = phpctx.NewProcess("test")
 	p.req = httptest.NewRequest("GET", "/"+path.Base(fpath), nil)
-	r := regexp.MustCompile("^--([A-Z_]+)--$")
+
+	// Phase 1: Parse all sections into a map
+	sections := make(map[string]*bytes.Buffer)
+	var sectionOrder []string
+	var curBuf *bytes.Buffer
+	var curPart string
+	sectionRe := regexp.MustCompile("^--([A-Z_]+)--$")
 
 	for {
 		lin, err := p.reader.ReadString('\n')
@@ -495,33 +509,64 @@ func runTest(t *testing.T, fpath string) (p *phptest, err error) {
 		}
 		if strings.HasPrefix(lin, "--") {
 			lin_trimmed := strings.TrimRight(lin, "\r\n")
-
-			if sub := r.FindSubmatch([]byte(lin_trimmed)); sub != nil {
+			if sub := sectionRe.FindSubmatch([]byte(lin_trimmed)); sub != nil {
 				thing := string(sub[1])
-				// start of a new thing?
-				if b != nil {
-					err := p.handlePart(part, b)
-					if err != nil {
-						return p, err
-					}
+				if curBuf != nil {
+					sections[curPart] = curBuf
+					sectionOrder = append(sectionOrder, curPart)
 				}
-				b = &bytes.Buffer{}
-				part = thing
+				curBuf = &bytes.Buffer{}
+				curPart = thing
 				continue
 			}
 		}
-
-		if b == nil {
+		if curBuf == nil {
 			return p, fmt.Errorf("malformed test file %s", fpath)
 		}
-		b.Write([]byte(lin))
+		curBuf.Write([]byte(lin))
 		if atEOF {
 			break
 		}
 	}
-	if b != nil {
-		err := p.handlePart(part, b)
-		if err != nil {
+	if curBuf != nil {
+		sections[curPart] = curBuf
+		sectionOrder = append(sectionOrder, curPart)
+	}
+
+	// Phase 2: Process sections in dependency order.
+	// Sections that set up state (SKIPIF, INI, STDIN, etc.) must run before
+	// FILE/FILEEOF which executes the script, which must run before
+	// EXPECT/EXPECTF which checks output.
+	// Process in order: everything except FILE/FILEEOF/EXPECT*/CLEAN first,
+	// then FILE/FILEEOF, then EXPECT*/CLEAN.
+	var fileParts []string    // FILE, FILEEOF
+	var expectParts []string  // EXPECT, EXPECTF, EXPECTREGEX, CLEAN, etc.
+	var setupParts []string   // everything else
+
+	for _, name := range sectionOrder {
+		switch name {
+		case "FILE", "FILEEOF":
+			fileParts = append(fileParts, name)
+		case "EXPECT", "EXPECTF", "EXPECTREGEX", "EXPECT_EXTERNAL", "EXPECTF_EXTERNAL",
+			"EXPECTREGEX_EXTERNAL", "CLEAN":
+			expectParts = append(expectParts, name)
+		default:
+			setupParts = append(setupParts, name)
+		}
+	}
+
+	for _, name := range setupParts {
+		if err := p.handlePart(name, sections[name]); err != nil {
+			return p, err
+		}
+	}
+	for _, name := range fileParts {
+		if err := p.handlePart(name, sections[name]); err != nil {
+			return p, err
+		}
+	}
+	for _, name := range expectParts {
+		if err := p.handlePart(name, sections[name]); err != nil {
 			return p, err
 		}
 	}

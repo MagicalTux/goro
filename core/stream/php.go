@@ -60,9 +60,22 @@ type RequestBodyProvider interface {
 	GetRequestBody() []byte
 }
 
+// StdinProvider is implemented by Global to provide a custom stdin stream
+type StdinProvider interface {
+	GetStdin() *Stream
+}
+
 func (h *phpHandler) Open(ctx phpv.Context, p *url.URL, mode string, _ ...phpv.Resource) (*Stream, error) {
 	switch h.getPath(p) {
 	case "stdin":
+		// Check for context-specific stdin (e.g., test STDIN section)
+		if g := ctx.Global(); g != nil {
+			if sp, ok := g.(StdinProvider); ok {
+				if s := sp.GetStdin(); s != nil {
+					return s, nil
+				}
+			}
+		}
 		return h.stdin, nil
 	case "stdout":
 		// Use the context's output writer so that php://stdout goes through
