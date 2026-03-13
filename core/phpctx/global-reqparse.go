@@ -72,7 +72,14 @@ func (g *Global) parsePost(p, f *phpv.ZArray) error {
 	case ct == "multipart/form-data": //, "multipart/mixed": // should we allow mixed?
 		boundary, ok := params["boundary"]
 		if !ok {
-			return errors.New("http: POST form-data missing boundary")
+			// No boundary parameter at all
+			g.WriteStartupWarning("\nWarning: PHP Request Startup: Missing boundary in multipart/form-data POST data in Unknown on line 0\n")
+			return nil
+		}
+		if parseErr != nil && strings.HasPrefix(boundary, "\"") {
+			// Go's parser failed and fallback extracted a boundary with unclosed quote — malformed
+			g.WriteStartupWarning("\nWarning: PHP Request Startup: Invalid boundary in multipart/form-data POST data in Unknown on line 0\n")
+			return nil
 		}
 		read := multipart.NewReader(io.LimitReader(g.req.Body, 64*1024*1024), boundary) // max 64MB body size, TODO use php.ini to set this value
 

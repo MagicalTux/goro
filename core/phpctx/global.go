@@ -96,6 +96,8 @@ type Global struct {
 	rawRequestBody []byte // stored POST body for php://input
 
 	customStdin *stream.Stream // custom stdin for testing
+
+	startupWarnings []byte // warnings from request startup (before output is set)
 }
 
 func NewGlobal(ctx context.Context, p *Process, config phpv.IniConfig) *Global {
@@ -475,6 +477,12 @@ func (g *Global) Write(v []byte) (int, error) {
 			return 0, err
 		}
 	}
+	// Flush any startup warnings that were buffered before output was set
+	if len(g.startupWarnings) > 0 {
+		sw := g.startupWarnings
+		g.startupWarnings = nil
+		g.out.Write(sw)
+	}
 	if len(v) > 0 {
 		g.lastOutChar = v[len(v)-1]
 	}
@@ -483,6 +491,12 @@ func (g *Global) Write(v []byte) (int, error) {
 
 func (g *Global) WriteErr(v []byte) (int, error) {
 	return g.errOut.Write(v)
+}
+
+// WriteStartupWarning buffers a warning message emitted during request startup
+// (before output is configured). These warnings are flushed on first Write.
+func (g *Global) WriteStartupWarning(msg string) {
+	g.startupWarnings = append(g.startupWarnings, []byte(msg)...)
 }
 
 func (g *Global) RestoreConfig(name phpv.ZString) {

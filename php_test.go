@@ -343,7 +343,15 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 			},
 			"post_max_size": func(v string) bool {
 				// post_max_size=0 means unlimited (no enforcement needed)
-				return strings.TrimSpace(v) != "0"
+				// post_max_size >= 1024 is a reasonable limit that doesn't affect test data
+				v = strings.TrimSpace(v)
+				if v == "0" {
+					return false // 0 = unlimited, safe
+				}
+				// Parse the value - if it's a large number, accept it
+				var size int64
+				fmt.Sscanf(v, "%d", &size)
+				return size < 1024 // skip only when limit is small (tests enforcement)
 			},
 			// file_uploads: accepted for all values — tests needing upload
 			// infrastructure also set upload_max_filesize or upload_tmp_dir
