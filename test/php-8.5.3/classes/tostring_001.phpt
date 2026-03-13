@@ -80,13 +80,13 @@ try {
 
 ?>
 ====DONE====
---EXPECT--
+--EXPECTF--
 ====test1====
 test1 Object
 (
 )
 Object of class test1 could not be converted to string
-object(test1)#1 (0) {
+object(test1)#%d (0) {
 }
 ====test2====
 test2 Object
@@ -94,7 +94,7 @@ test2 Object
 )
 test2::__toString()
 Converted
-object(test2)#3 (0) {
+object(test2)#%d (0) {
 }
 ====test3====
 test2::__toString()
@@ -128,7 +128,7 @@ string(9) "Converted"
 test2::__toString()
 Converted
 ====test10====
-object(test3)#2 (0) {
+object(test3)#%d (0) {
 }
 test3::__toString()
 test3::__toString(): Return value must be of type string, array returned
