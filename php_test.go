@@ -277,7 +277,7 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 			"hard_timeout":             true, // hard timeout not implemented
 			"zlib.output_compression":  true, // compression not implemented
 			"session.auto_start":       true, // sessions not implemented
-			"filter.default":           true, // input filtering not implemented
+			// filter.default=unsafe_raw is a no-op (no filtering), safe to accept
 			"open_basedir":             true, // open_basedir restriction not implemented
 			// precision and serialize_precision are implemented in core/phpv/ztype.go
 			"register_argc_argv":       true, // argv/argc control not implemented
@@ -296,8 +296,8 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 			"default_charset":          true, // charset handling differences
 			"error_log_mode":           true, // log mode not implemented
 			"report_memleaks":          true, // memory leak detection not implemented
-			"sys_temp_dir":             true, // temp dir config not implemented
-			"date.timezone":            true, // DateTime class not fully implemented
+			// sys_temp_dir is implemented in ext/standard/fs.go:fncSysGetTempDir
+			// date.timezone is handled by the date extension's ini settings
 			"opcache.save_comments":    true, // opcache not implemented
 			"docref_root":              true, // error doc URLs not implemented
 			"arg_separator.input":      true, // query string separator not implemented

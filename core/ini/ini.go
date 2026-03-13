@@ -149,7 +149,13 @@ func (c *Config) EvalConfigValue(ctx phpv.Context, expr phpv.ZString) (*phpv.ZVa
 		return phpv.ZNULL.ZVal(), nil
 	}
 	ctx = &IniContext{ctx.Global()}
-	return core.Eval(ctx, string(expr))
+	result, err := core.Eval(ctx, string(expr))
+	if err != nil {
+		// If evaluation as PHP fails, treat the value as a raw string.
+		// INI values like paths (/path/to/dir) or URLs are not PHP expressions.
+		return phpv.ZStr(string(expr)), nil
+	}
+	return result, nil
 }
 
 func (c *Config) Parse(ctx phpv.Context, r io.Reader) error {
