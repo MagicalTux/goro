@@ -194,20 +194,6 @@ func (c *FuncContext) OffsetSet(ctx phpv.Context, name phpv.Val, v *phpv.ZVal) e
 	return c.h.SetString(nameStr, v)
 }
 
-// canCallDestructor checks whether the current calling scope has visibility
-// access to call the destructor. Returns false for private/protected destructors
-// called from a scope that doesn't have access, so they'll be handled at shutdown.
-func canCallDestructor(ctx phpv.Context, m *phpv.ZClassMethod, obj phpv.ZObject) bool {
-	if !m.Modifiers.IsPrivate() && !m.Modifiers.IsProtected() {
-		return true // public destructor, always callable
-	}
-	callerClass := ctx.Class()
-	if m.Modifiers.IsPrivate() {
-		return callerClass != nil && callerClass.GetName() == obj.GetClass().GetName()
-	}
-	// protected
-	return callerClass != nil && (callerClass.InstanceOf(obj.GetClass()) || obj.GetClass().InstanceOf(callerClass))
-}
 
 func (c *FuncContext) OffsetUnset(ctx phpv.Context, name phpv.Val) error {
 	nameStr, ok := name.(phpv.ZString)

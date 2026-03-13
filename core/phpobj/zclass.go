@@ -5,6 +5,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/MagicalTux/goro/core/phperr"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -832,6 +833,11 @@ func (c *ZClass) ResolveConstants(ctx phpv.Context) error {
 				z, err := r.Run(ctx)
 				if err != nil {
 					ctx.Global().SetCompilingClass(nil)
+					// Add a synthetic [constant expression] frame to the stack trace
+					// to match PHP's behavior when constant expression evaluation fails.
+					if ex, ok := err.(*phperr.PhpThrow); ok {
+						addConstantExpressionFrame(ex, ctx)
+					}
 					return err
 				}
 				cur.Const[k].Value = z.Value()
@@ -840,6 +846,41 @@ func (c *ZClass) ResolveConstants(ctx phpv.Context) error {
 	}
 	ctx.Global().SetCompilingClass(nil)
 	return nil
+}
+
+// addConstantExpressionFrame prepends a [constant expression]() frame to an
+// exception's stack trace, matching PHP's behavior for errors during class
+// constant expression evaluation.
+func addConstantExpressionFrame(ex *phperr.PhpThrow, ctx phpv.Context) {
+	// Get caller location for the frame
+	loc := ctx.Loc()
+	filename := ""
+	line := 0
+	if loc != nil {
+		filename = loc.Filename
+		line = loc.Line
+	}
+
+	syntheticFrame := &phpv.StackTraceEntry{
+		FuncName: "[constant expression]",
+		Filename: filename,
+		Line:     line,
+	}
+
+	// Walk the class hierarchy to find the trace
+	cls := ex.Obj.GetClass()
+	for cls != nil {
+		if opaque := ex.Obj.GetOpaque(cls); opaque != nil {
+			if trace, ok := opaque.([]*phpv.StackTraceEntry); ok {
+				newTrace := make([]*phpv.StackTraceEntry, 0, len(trace)+1)
+				newTrace = append(newTrace, syntheticFrame)
+				newTrace = append(newTrace, trace...)
+				ex.Obj.SetOpaque(cls, newTrace)
+				return
+			}
+		}
+		cls = cls.GetParent()
+	}
 }
 
 func (c *ZClass) GetProp(name phpv.ZString) (*phpv.ZClassProp, bool) {

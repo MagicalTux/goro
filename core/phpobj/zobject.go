@@ -69,23 +69,6 @@ func (z *ZObject) CallDestructor(ctx phpv.Context) error {
 	return err
 }
 
-// CallDestructorAuto calls __destruct without visibility checks.
-// Used when PHP triggers destruction automatically (refcount drop, variable reassignment).
-// In PHP, automatic destruction always runs the destructor regardless of visibility.
-func (z *ZObject) CallDestructorAuto(ctx phpv.Context) error {
-	if z.Destructed {
-		return nil
-	}
-	m, ok := z.Class.GetMethod("__destruct")
-	if !ok {
-		return nil
-	}
-	z.Destructed = true
-	ctx.Global().UnregisterDestructor(z)
-
-	_, err := ctx.CallZVal(ctx, m.Method, nil, z)
-	return err
-}
 
 func destructorCallScope(callerClass phpv.ZClass) string {
 	if callerClass == nil {
