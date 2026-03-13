@@ -219,6 +219,20 @@ func (i *Item) IsSingle(r rune) bool {
 	return i.Type == ItemType(r)+itemMax
 }
 
+// IsLabel returns true if the item represents a PHP label/identifier,
+// including keywords. Used for named arguments where keywords are valid names.
+func (i *Item) IsLabel() bool {
+	if i.Type == T_STRING {
+		return true
+	}
+	// Keywords are also valid as named argument names in PHP 8.0
+	if i.Type >= itemMax {
+		return false // single-character token
+	}
+	// Check if this token type was produced from a keyword label
+	return i.Data != "" && labelType(i.Data) != T_STRING
+}
+
 func (i *Item) IsExpressionEnd() bool {
 	// T_CLOSE_TAG is acceptable to end an expression
 	return i.IsSingle(';') || i.Type == T_CLOSE_TAG

@@ -48,6 +48,12 @@ type Writable interface {
 	WriteValue(ctx Context, value *ZVal) error
 }
 
+// NamedArgument is implemented by Runnable types that represent PHP 8.0 named arguments.
+type NamedArgument interface {
+	ArgName() ZString
+	Inner() Runnable
+}
+
 // WritePreparable is implemented by Writable types that have sub-expressions
 // (e.g. array indices, variable-variable names) which need to be evaluated
 // before the RHS of an assignment. This ensures correct PHP evaluation order

@@ -265,6 +265,8 @@ func GetChildren(r phpv.Runnable) []phpv.Runnable {
 		return res
 	case *runnableClone:
 		return rt{t.arg}
+	case *NamedArg:
+		return rt{t.Arg}
 	case *runClassStaticVarRef:
 		return rt{t.className}
 	case *runClassStaticObjRef:

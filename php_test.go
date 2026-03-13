@@ -389,6 +389,7 @@ func runTest(t *testing.T, fpath string) (p *phptest, err error) {
 //	%x - one or more hex digits
 //	%e - directory separator
 //	%% - literal %
+//
 // sanitizeForRegex converts raw bytes to valid UTF-8 by treating each byte
 // as a Latin-1 character (byte 0xNN -> rune U+00NN). This allows the Go
 // regex engine to match binary data in PHP test output.

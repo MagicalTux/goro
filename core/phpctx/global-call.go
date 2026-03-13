@@ -22,11 +22,21 @@ func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, o
 		extArgs = ef.Args
 	}
 
+	// PHP 8.0 Named Arguments: reorder args to match parameter positions
+	if funcArgs != nil {
+		args = reorderNamedArgs(ctx, funcArgs, args)
+	}
+
 	// Save call site location (arg evaluation may change global location)
 	callLoc := ctx.Loc()
 
 	var zArgs []*phpv.ZVal
 	for i, arg := range args {
+		// Unwrap named arguments (already reordered to correct position)
+		if na, ok := arg.(phpv.NamedArgument); ok {
+			arg = na.Inner()
+		}
+
 		isRefParam := false
 		if funcArgs != nil && i < len(funcArgs) && funcArgs[i].Ref {
 			isRefParam = true
@@ -243,6 +253,70 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 	}
 
 	return phperr.CatchReturn(f.Call(callCtx, callCtx.Args))
+}
+
+// reorderNamedArgs reorders function call arguments based on PHP 8.0 named argument syntax.
+// Positional arguments must come before named arguments.
+// Named arguments are placed at their corresponding parameter position.
+func reorderNamedArgs(ctx phpv.Context, funcArgs []*phpv.FuncArg, args []phpv.Runnable) []phpv.Runnable {
+	// Check if any args are named
+	hasNamed := false
+	for _, arg := range args {
+		if _, ok := arg.(phpv.NamedArgument); ok {
+			hasNamed = true
+			break
+		}
+	}
+	if !hasNamed {
+		return args
+	}
+
+	// Build result array sized to max(len(funcArgs), len(args))
+	size := len(funcArgs)
+	if len(args) > size {
+		size = len(args)
+	}
+	result := make([]phpv.Runnable, size)
+
+	// Place positional arguments first
+	positionalEnd := 0
+	for i, arg := range args {
+		if _, ok := arg.(phpv.NamedArgument); ok {
+			break
+		}
+		result[i] = arg
+		positionalEnd = i + 1
+	}
+
+	// Place named arguments at their parameter positions
+	for _, arg := range args[positionalEnd:] {
+		na, ok := arg.(phpv.NamedArgument)
+		if !ok {
+			// Positional after named - this is a PHP error
+			// For now, just skip (PHP would throw an error)
+			continue
+		}
+		name := na.ArgName()
+		found := false
+		for j, fa := range funcArgs {
+			if fa.VarName == name {
+				result[j] = arg
+				found = true
+				break
+			}
+		}
+		if !found {
+			// Unknown named parameter - append at end, CallZVal will handle the error
+			result = append(result, arg)
+		}
+	}
+
+	// Trim trailing nil entries
+	for len(result) > 0 && result[len(result)-1] == nil {
+		result = result[:len(result)-1]
+	}
+
+	return result
 }
 
 func phpTypeName(val *phpv.ZVal) string {

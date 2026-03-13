@@ -72,11 +72,12 @@ func (r *runMatch) Loc() *phpv.Loc {
 }
 
 // compileMatch compiles a match expression:
-//   match (expr) {
-//       cond1, cond2 => body1,
-//       cond3 => body2,
-//       default => body3,
-//   }
+//
+//	match (expr) {
+//	    cond1, cond2 => body1,
+//	    cond3 => body2,
+//	    default => body3,
+//	}
 func compileMatch(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	m := &runMatch{l: i.Loc()}
 

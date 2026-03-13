@@ -149,7 +149,7 @@ func doVarExport(ctx phpv.Context, w io.Writer, z *phpv.ZVal, linePfx string, re
 }
 
 // varExportString formats a string for var_export output, handling NUL bytes
-// and single quote escaping. NUL bytes are output as '' . "\0" . '' concatenation.
+// and single quote escaping. NUL bytes are output as ” . "\0" . ” concatenation.
 func varExportString(s string) string {
 	if !strings.Contains(s, "\x00") {
 		return "'" + strings.ReplaceAll(s, `'`, `\'`) + "'"

@@ -76,4 +76,3 @@ type ZObject interface {
 	GetKin(className string) ZObject
 	IterProps(ctx Context) iter.Seq[*ZClassProp]
 }
-

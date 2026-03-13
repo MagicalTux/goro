@@ -879,6 +879,32 @@ func skipReturnType(c compileCtx) error {
 	}
 }
 
+// NamedArg wraps a Runnable with a parameter name for PHP 8.0 named arguments.
+type NamedArg struct {
+	Name phpv.ZString
+	Arg  phpv.Runnable
+}
+
+func (n *NamedArg) Run(ctx phpv.Context) (*phpv.ZVal, error) {
+	return n.Arg.Run(ctx)
+}
+
+func (n *NamedArg) ArgName() phpv.ZString {
+	return n.Name
+}
+
+func (n *NamedArg) Inner() phpv.Runnable {
+	return n.Arg
+}
+
+func (n *NamedArg) Dump(w io.Writer) error {
+	_, err := fmt.Fprintf(w, "%s: ", n.Name)
+	if err != nil {
+		return err
+	}
+	return n.Arg.Dump(w)
+}
+
 func compileFuncPassedArgs(c compileCtx) (res phpv.Runnables, err error) {
 	i, err := c.NextItem()
 	if err != nil {
@@ -901,9 +927,30 @@ func compileFuncPassedArgs(c compileCtx) (res phpv.Runnables, err error) {
 	// parse passed arguments
 	for {
 		var a phpv.Runnable
-		a, err = compileExpr(i, c)
-		if err != nil {
-			return nil, err
+
+		// Check for named argument: identifier followed by ':'
+		// Use peekType() to check the next token without consuming it.
+		// Note: ':' won't appear after an identifier in normal expressions
+		// (T_DOUBLE_COLON '::' is a separate token), so this is safe.
+		// PHP 8.0 allows keywords as named argument names (e.g., array:, match:)
+		if i.IsLabel() && c.peekType() == tokenizer.Rune(':') {
+			// Named argument
+			argName := phpv.ZString(i.Data)
+			c.NextItem() // consume the ':'
+			nextI, nextErr := c.NextItem()
+			if nextErr != nil {
+				return nil, nextErr
+			}
+			a, err = compileExpr(nextI, c)
+			if err != nil {
+				return nil, err
+			}
+			a = &NamedArg{Name: argName, Arg: a}
+		} else {
+			a, err = compileExpr(i, c)
+			if err != nil {
+				return nil, err
+			}
 		}
 
 		res = append(res, a)

@@ -180,8 +180,8 @@ type runObjectVar struct {
 	nullsafe     bool
 
 	// PrepareWrite caching
-	prepared    bool
-	cachedProp  *phpv.ZVal
+	prepared   bool
+	cachedProp *phpv.ZVal
 }
 
 func (r *runObjectFunc) Dump(w io.Writer) error {
