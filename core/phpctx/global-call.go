@@ -116,7 +116,17 @@ func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, o
 	return c.CallZVal(ctx, f, zArgs, optionalThis...)
 }
 
+// CallZValInternal is like CallZVal but marks the call as internal (e.g., from output buffer callbacks).
+// This causes the stack trace entry to show "[internal function]" instead of the filename.
+func (c *Global) CallZValInternal(ctx phpv.Context, f phpv.Callable, args []*phpv.ZVal, optionalThis ...phpv.ZObject) (*phpv.ZVal, error) {
+	return c.callZValImpl(ctx, f, args, true, optionalThis...)
+}
+
 func (c *Global) CallZVal(ctx phpv.Context, f phpv.Callable, args []*phpv.ZVal, optionalThis ...phpv.ZObject) (*phpv.ZVal, error) {
+	return c.callZValImpl(ctx, f, args, false, optionalThis...)
+}
+
+func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZVal, isInternal bool, optionalThis ...phpv.ZObject) (*phpv.ZVal, error) {
 	c.callDepth++
 	if c.callDepth > 512 {
 		c.callDepth--
@@ -126,6 +136,7 @@ func (c *Global) CallZVal(ctx phpv.Context, f phpv.Callable, args []*phpv.ZVal, 
 	callCtx.Context = ctx
 	callCtx.c = f
 	callCtx.loc = ctx.Loc()
+	callCtx.isInternal = isInternal
 	defer func() {
 		callCtx.Release()
 		c.callDepth--

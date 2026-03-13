@@ -43,3 +43,10 @@ func (c *cfgContext) Deprecated(format string, a ...any) error {
 	}
 	return err
 }
+
+func (c *cfgContext) Parent(n int) phpv.Context {
+	if n <= 1 {
+		return c.Context
+	}
+	return c.Context.Parent(n - 1)
+}

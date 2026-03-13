@@ -34,6 +34,7 @@ func (c *FuncContext) Release() {
 	c.loc = nil
 	c.class = nil
 	c.methodType = ""
+	c.isInternal = false
 	funcContextPool.Put(c)
 }
 
@@ -49,6 +50,8 @@ type FuncContext struct {
 
 	class      phpv.ZClass
 	methodType string
+
+	isInternal bool // true when called from internal code (e.g., output buffer callbacks)
 }
 
 func (c *FuncContext) AsVal(ctx phpv.Context, t phpv.ZType) (phpv.Val, error) {

@@ -195,6 +195,13 @@ func exit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return nil, phpv.ExitError(0)
 }
 
+// > func bool phpcredits ([ int $flag = CREDITS_ALL ] )
+func fncPhpCredits(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	// Output a minimal credits string; PHP's real phpcredits() outputs HTML.
+	ctx.Write([]byte("Goro PHP Engine\n"))
+	return phpv.ZBool(true).ZVal(), nil
+}
+
 // > func void register_shutdown_function ( callable $callback [, mixed $... ]  )
 func registerShutdownFunction(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var callback phpv.Callable

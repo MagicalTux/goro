@@ -57,6 +57,7 @@ func init() {
 		tokenizer.T_STRING:       &compileFuncCb{f: compileExpr},
 		tokenizer.T_CONTINUE:     &compileFuncCb{f: compileContinue},
 		tokenizer.T_BREAK:        &compileFuncCb{f: compileBreak},
+		tokenizer.T_MATCH:        &compileFuncCb{f: compileExpr},
 		tokenizer.T_NEW:          &compileFuncCb{f: compileNew},
 		tokenizer.T_CLONE:        &compileFuncCb{f: compileClone},
 		tokenizer.T_LIST:         &compileFuncCb{f: compileBaseDestructure},

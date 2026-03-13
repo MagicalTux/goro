@@ -1026,6 +1026,7 @@ func (g *Global) GetStackTrace(ctx phpv.Context) []*phpv.StackTraceEntry {
 				MethodType: fc.methodType,
 				Line:       fc.loc.Line,
 				Args:       fc.Args,
+				IsInternal: fc.isInternal,
 			})
 		}
 		context = context.Parent(1)

@@ -21,3 +21,10 @@ func (b *BufContext) Write(d []byte) (int, error) {
 	}
 	return b.b.Write(d)
 }
+
+func (b *BufContext) Parent(n int) phpv.Context {
+	if n <= 1 {
+		return b.Context
+	}
+	return b.Context.Parent(n - 1)
+}

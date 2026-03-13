@@ -41,8 +41,8 @@ const (
 
 // > const
 const (
-	PHP_OUTPUT_HANDLER_STARTED  = phpv.ZInt(BufferStarted)
-	PHP_OUTPUT_HANDLER_DISABLED = phpv.ZInt(BufferDisabled)
+	PHP_OUTPUT_HANDLER_STARTED   = phpv.ZInt(BufferStarted)
+	PHP_OUTPUT_HANDLER_DISABLED  = phpv.ZInt(BufferDisabled)
 	PHP_OUTPUT_HANDLER_PROCESSED = phpv.ZInt(BufferProcessed)
 )
 
@@ -97,10 +97,16 @@ func makeBuffer(g *Global, w io.Writer) *Buffer {
 // The second return value may be a deprecation error if the callback produced output.
 func (b *Buffer) invokeCallback(d []byte, flag int) ([]byte, error) {
 	args := []*phpv.ZVal{phpv.ZString(d).ZVal(), phpv.ZInt(flag).ZVal()}
-	ctx := WithConfig(b.g, "ob_in_handler", phpv.ZBool(true).ZVal())
+	// Use the caller context (from ob_* function) if available so the ob_*
+	// function appears in stack traces. Otherwise fall back to the global.
+	var baseCtx phpv.Context = b.g
+	if b.callerCtx != nil {
+		baseCtx = b.callerCtx
+	}
+	ctx := WithConfig(baseCtx, "ob_in_handler", phpv.ZBool(true).ZVal())
 	detector := &outputDetector{}
 	ctx = NewBufContext(ctx, detector)
-	r, err := ctx.CallZVal(ctx, b.CB, args, nil)
+	r, err := b.g.CallZValInternal(ctx, b.CB, args, nil)
 	if err != nil {
 		// Disable the callback on failure so subsequent writes pass through
 		b.CB = nil

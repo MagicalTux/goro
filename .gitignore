@@ -12,6 +12,7 @@
 /test/**/*.diff
 /test/**/*.php
 /test/**/*.exp
+/test/**/security/test/
 
 # for vim
 .*.swp

@@ -254,6 +254,7 @@ func init() {
 			"parse_str":                  {Func: fncStrParseStr, Args: []*phpctx.ExtFunctionArg{}},
 			"php_sapi_name":              {Func: stdFuncSapiName, Args: []*phpctx.ExtFunctionArg{}},
 			"php_uname":                  {Func: fncUname, Args: []*phpctx.ExtFunctionArg{}},
+			"phpcredits":                 {Func: fncPhpCredits, Args: []*phpctx.ExtFunctionArg{}},
 			"pi":                         {Func: mathPi, Args: []*phpctx.ExtFunctionArg{}},
 			"pos":                        {Func: fncArrayCurrent, Args: []*phpctx.ExtFunctionArg{}}, // alias
 			"pow":                        {Func: mathPow, Args: []*phpctx.ExtFunctionArg{}},

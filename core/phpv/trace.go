@@ -14,6 +14,7 @@ type StackTraceEntry struct {
 	MethodType string
 	Line       int
 	Args       []*ZVal
+	IsInternal bool // true when called from internal code (e.g., output buffer callbacks)
 }
 
 type StackTrace []*StackTraceEntry
@@ -40,14 +41,24 @@ func (st StackTrace) format(includeMain bool) ZString {
 				argsBuf.WriteString(", ")
 			}
 		}
-		line := fmt.Sprintf(
-			"#%d %s(%d): %s(%s)\n",
-			level,
-			e.Filename,
-			e.Line,
-			e.FuncName,
-			argsBuf.String(),
-		)
+		var line string
+		if e.IsInternal {
+			line = fmt.Sprintf(
+				"#%d [internal function]: %s(%s)\n",
+				level,
+				e.FuncName,
+				argsBuf.String(),
+			)
+		} else {
+			line = fmt.Sprintf(
+				"#%d %s(%d): %s(%s)\n",
+				level,
+				e.Filename,
+				e.Line,
+				e.FuncName,
+				argsBuf.String(),
+			)
+		}
 		buf.WriteString(line)
 		level++
 	}
