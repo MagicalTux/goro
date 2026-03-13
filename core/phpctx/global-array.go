@@ -82,7 +82,6 @@ func (c *Global) OffsetSet(ctx phpv.Context, name phpv.Val, v *phpv.ZVal) error 
 		return errors.New("Cannot re-assign $this")
 	}
 
-
 	// Eagerly call __destruct when overwriting a variable that holds an object.
 	if old := c.h.GetString(nameStr); old != nil && old.GetType() == phpv.ZtObject {
 		if obj, ok := old.Value().(phpv.ZObject); ok {

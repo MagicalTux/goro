@@ -2,6 +2,7 @@
 Test log() - basic function test log()
 --INI--
 precision=14
+serialize_precision=14
 --FILE--
 <?php
 $values = array(23,

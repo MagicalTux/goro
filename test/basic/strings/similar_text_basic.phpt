@@ -5,6 +5,7 @@ Mats Lindh <mats at lindh.no>
 #Testfest php.no
 --INI--
 precision=14
+serialize_precision=14
 --FILE--
 <?php
 /* Prototype  : proto int similar_text(string str1, string str2 [, float percent])

@@ -57,12 +57,7 @@ func doVarDump(ctx phpv.Context, z *phpv.ZVal, linePfx string, recurs map[uintpt
 		fmt.Fprintf(ctx, "%s%sint(%d)\n", linePfx, isRef, z.Value())
 	case phpv.ZtFloat:
 		p := phpv.GetSerializePrecision(ctx)
-		var s string
-		if p == -1 {
-			s = phpv.FormatFloat(float64(z.Value().(phpv.ZFloat)))
-		} else {
-			s = phpv.FormatFloatPrecision(float64(z.Value().(phpv.ZFloat)), p)
-		}
+		s := phpv.FormatFloatPrecision(float64(z.Value().(phpv.ZFloat)), p)
 		fmt.Fprintf(ctx, "%s%sfloat(%s)\n", linePfx, isRef, s)
 	case phpv.ZtString:
 		s := z.Value().(phpv.ZString)

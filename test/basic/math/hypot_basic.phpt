@@ -2,6 +2,7 @@
 Test hypot() - basic function test hypot()
 --INI--
 precision=14
+serialize_precision=14
 --FILE--
 <?php
 

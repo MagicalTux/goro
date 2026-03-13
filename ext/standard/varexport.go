@@ -65,12 +65,7 @@ func doVarExport(ctx phpv.Context, w io.Writer, z *phpv.ZVal, linePfx string, re
 		fmt.Fprintf(w, "%d", z.Value())
 	case phpv.ZtFloat:
 		p := phpv.GetSerializePrecision(ctx)
-		var s string
-		if p == -1 {
-			s = phpv.FormatFloat(float64(z.Value().(phpv.ZFloat)))
-		} else {
-			s = phpv.FormatFloatPrecision(float64(z.Value().(phpv.ZFloat)), p)
-		}
+		s := phpv.FormatFloatPrecision(float64(z.Value().(phpv.ZFloat)), p)
 		// var_export always needs a decimal point so the output is valid PHP float
 		if !strings.Contains(s, ".") && !strings.Contains(s, "E") && s != "INF" && s != "-INF" && s != "NAN" {
 			s += ".0"

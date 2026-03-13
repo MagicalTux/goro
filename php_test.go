@@ -279,8 +279,7 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 			"session.auto_start":       true, // sessions not implemented
 			"filter.default":           true, // input filtering not implemented
 			"open_basedir":             true, // open_basedir restriction not implemented
-			"precision":                true, // float precision control not implemented
-			"serialize_precision":      true, // serialization precision not implemented
+			// precision and serialize_precision are implemented in core/phpv/ztype.go
 			"register_argc_argv":       true, // argv/argc control not implemented
 			"variables_order":          true, // superglobal ordering not implemented
 			"highlight.string":         true, // syntax highlighting not implemented
@@ -298,7 +297,7 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 			"error_log_mode":           true, // log mode not implemented
 			"report_memleaks":          true, // memory leak detection not implemented
 			"sys_temp_dir":             true, // temp dir config not implemented
-			"date.timezone":            true, // timezone config not fully implemented
+			"date.timezone":            true, // DateTime class not fully implemented
 			"opcache.save_comments":    true, // opcache not implemented
 			"docref_root":              true, // error doc URLs not implemented
 			"arg_separator.input":      true, // query string separator not implemented

@@ -263,7 +263,15 @@ func phpFormatSci(s string) string {
 
 // FormatFloatPrecision formats a float64 using the given precision (like PHP's
 // precision ini setting). Used for echo/print and string casting.
+// When prec < 0, uses PHP's "shortest unique representation" mode.
+// When prec == 0, PHP uses 1 significant digit (minimum).
 func FormatFloatPrecision(f float64, prec int) string {
+	if prec < 0 {
+		// PHP precision=-1: use shortest unique representation
+		// (same as serialize_precision=-1 behavior)
+		return FormatFloat(f)
+	}
+
 	if math.IsInf(f, 1) {
 		return "INF"
 	}
@@ -274,27 +282,16 @@ func FormatFloatPrecision(f float64, prec int) string {
 		return "NAN"
 	}
 
+	// PHP treats precision=0 as 1 significant digit (minimum)
+	if prec == 0 {
+		prec = 1
+	}
+
 	s := strconv.FormatFloat(f, 'G', prec, 64)
 
 	// PHP formats scientific notation as e.g. "1.23E+7" not "1.23E+07"
 	// Also ensures there's a decimal point before E: "1.0E+20" not "1E+20"
-	eIndex := strings.Index(s, "E")
-	if eIndex > 0 && eIndex < len(s)-1 {
-		// Ensure decimal point exists in mantissa
-		pre := s[:eIndex]
-		if !strings.Contains(pre, ".") {
-			pre = pre + ".0"
-		}
-
-		// Remove leading zero from exponent
-		post := s[eIndex+2:] // skip "E+" or "E-"
-		sign := s[eIndex+1 : eIndex+2]
-		for len(post) > 1 && post[0] == '0' {
-			post = post[1:]
-		}
-		s = pre + "E" + sign + post
-	}
-	return s
+	return phpFormatSci(s)
 }
 
 // GetPrecision reads the 'precision' INI setting from the context.

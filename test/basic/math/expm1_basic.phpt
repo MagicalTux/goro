@@ -2,6 +2,7 @@
 Test expm1() - basic function test for expm1()
 --INI--
 precision=14
+serialize_precision=14
 --FILE--
 <?php
 /* Prototype  : float expm1 ( float $arg  )

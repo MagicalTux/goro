@@ -2,6 +2,7 @@
 Test atan2() - basic function test of atan2()
 --INI--
 precision=14
+serialize_precision=14
 --FILE--
 <?php
 $valuesy = array(23,

@@ -2,6 +2,7 @@
 Test log1p() - basic function test log1p()
 --INI--
 precision=14
+serialize_precision=14
 --FILE--
 <?php
 /* Prototype  : float log1p  ( float $arg  )

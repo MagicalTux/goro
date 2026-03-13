@@ -2,6 +2,7 @@
 Test exp() - basic function test for exp()
 --INI--
 precision=14
+serialize_precision=14
 --FILE--
 <?php
 $values = array(10,

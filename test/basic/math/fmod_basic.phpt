@@ -2,6 +2,7 @@
 Test fmod() - basic function test fmod()
 --INI--
 precision=14
+serialize_precision=14
 --FILE--
 <?php
 $values1 = array(234,

@@ -2,6 +2,7 @@
 Test round() - basic function test for round()
 --INI--
 precision=14
+serialize_precision=14
 --FILE--
 <?php
 /* Prototype  : float round  ( float $val  [, int $precision  ] )
