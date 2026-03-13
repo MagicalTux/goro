@@ -35,6 +35,7 @@ func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, o
 	callLoc := ctx.Loc()
 
 	var zArgs []*phpv.ZVal
+	var byRefCleanups []*phpv.ZVal // refs to unwrap after call returns
 	for i, arg := range args {
 		// Unwrap named arguments (already reordered to correct position)
 		if na, ok := arg.(phpv.NamedArgument); ok {
@@ -109,6 +110,10 @@ func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, o
 				ref := val.Ref()
 				writable.WriteValue(ctx, ref)
 				val = ref
+				// Record for cleanup: when the function returns, the ref
+				// wrapper should be removed (PHP does this via refcounting;
+				// when refcount drops to 1, is_ref is cleared).
+				byRefCleanups = append(byRefCleanups, ref)
 			}
 			// Reset write context after all by-ref handling (including WriteValue)
 			if wcs, ok := arg.(phpv.WriteContextSetter); ok {
@@ -127,7 +132,17 @@ func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, o
 
 		zArgs = append(zArgs, val)
 	}
-	return c.CallZVal(ctx, f, zArgs, optionalThis...)
+	result, err := c.CallZVal(ctx, f, zArgs, optionalThis...)
+
+	// After the call returns, unwrap by-ref parameters that were created
+	// during this call. In PHP, when refcount drops to 1 (the function
+	// parameter goes out of scope), the is_ref flag is cleared. Since goro
+	// doesn't have refcounting, we do it explicitly here.
+	for _, ref := range byRefCleanups {
+		ref.UnRef()
+	}
+
+	return result, err
 }
 
 // CallZValInternal is like CallZVal but marks the call as internal (e.g., from output buffer callbacks).

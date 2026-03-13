@@ -104,6 +104,17 @@ func (z *ZVal) IsRef() bool {
 	return isRef
 }
 
+// UnRef unwraps a reference, replacing the outer ZVal's value with the inner
+// value. This simulates PHP's refcount-based un-ref when refcount drops to 1.
+func (z *ZVal) UnRef() {
+	if z == nil {
+		return
+	}
+	if inner, ok := z.v.(*ZVal); ok {
+		z.v = inner.v
+	}
+}
+
 func (z *ZVal) Value() Val {
 	if z == nil {
 		panic("nil zval")

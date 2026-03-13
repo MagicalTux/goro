@@ -63,6 +63,7 @@ func (r *runNewObject) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	}
 
 	var args []*phpv.ZVal
+	var byRefCleanups []*phpv.ZVal
 	for i, a := range r.newArg {
 		// Emit "Undefined variable" warning for by-value params
 		isRefParam := funcArgs != nil && i < len(funcArgs) && funcArgs[i].Ref
@@ -75,14 +76,46 @@ func (r *runNewObject) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			}
 		}
 
+		// For by-ref params, enable write context for auto-vivification
+		if isRefParam {
+			if wcs, ok := a.(phpv.WriteContextSetter); ok {
+				wcs.SetWriteContext(true)
+			}
+		}
+
 		arg, err := a.Run(ctx)
 		if err != nil {
+			if isRefParam {
+				if wcs, ok := a.(phpv.WriteContextSetter); ok {
+					wcs.SetWriteContext(false)
+				}
+			}
 			return nil, err
 		}
+
+		if isRefParam {
+			writable, isWritable := a.(phpv.Writable)
+			if isWritable && !arg.IsRef() {
+				ref := arg.Ref()
+				writable.WriteValue(ctx, ref)
+				arg = ref
+				byRefCleanups = append(byRefCleanups, ref)
+			}
+			if wcs, ok := a.(phpv.WriteContextSetter); ok {
+				wcs.SetWriteContext(false)
+			}
+		}
+
 		args = append(args, arg)
 	}
 
 	z, err := phpobj.NewZObject(ctx, class, args...)
+
+	// Unwrap by-ref parameters after constructor returns
+	for _, ref := range byRefCleanups {
+		ref.UnRef()
+	}
+
 	if err != nil {
 		return nil, err
 	}
