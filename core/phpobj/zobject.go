@@ -25,6 +25,55 @@ type ZObject struct {
 	getGuard   map[phpv.ZString]bool
 	setGuard   map[phpv.ZString]bool
 	issetGuard map[phpv.ZString]bool
+
+	// Destructor tracking
+	Destructed bool
+}
+
+// CallDestructor calls __destruct on this object if it hasn't been called yet.
+// It checks visibility of the destructor against the calling context.
+// Returns true if the destructor was called, false if skipped.
+func (z *ZObject) CallDestructor(ctx phpv.Context) error {
+	if z.Destructed {
+		return nil
+	}
+	m, ok := z.Class.GetMethod("__destruct")
+	if !ok {
+		return nil
+	}
+	z.Destructed = true
+	// Unregister from shutdown destructor list
+	ctx.Global().UnregisterDestructor(z)
+
+	// Check visibility
+	if m.Modifiers.IsPrivate() || m.Modifiers.IsProtected() {
+		callerClass := ctx.Class()
+		if m.Modifiers.IsPrivate() {
+			if callerClass == nil || callerClass.GetName() != z.Class.GetName() {
+				vis := "private"
+				return ThrowError(ctx, Error,
+					fmt.Sprintf("Call to %s %s::__destruct() from %s",
+						vis, z.Class.GetName(), destructorCallScope(callerClass)))
+			}
+		} else { // protected
+			if callerClass == nil || (!callerClass.InstanceOf(z.Class) && !z.Class.InstanceOf(callerClass)) {
+				vis := "protected"
+				return ThrowError(ctx, Error,
+					fmt.Sprintf("Call to %s %s::__destruct() from %s",
+						vis, z.Class.GetName(), destructorCallScope(callerClass)))
+			}
+		}
+	}
+
+	_, err := ctx.CallZVal(ctx, m.Method, nil, z)
+	return err
+}
+
+func destructorCallScope(callerClass phpv.ZClass) string {
+	if callerClass == nil {
+		return "global scope"
+	}
+	return fmt.Sprintf("scope %s", callerClass.GetName())
 }
 
 func (z *ZObject) ZVal() *phpv.ZVal {

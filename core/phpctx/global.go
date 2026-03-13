@@ -1076,7 +1076,14 @@ func (g *Global) CallDestructors() {
 	// Process in LIFO order
 	for i := len(objs) - 1; i >= 0; i-- {
 		obj := objs[i]
+		zobj, isZObj := obj.(*phpobj.ZObject)
+		if isZObj && zobj.Destructed {
+			continue // Already destructed (e.g. during variable reassignment)
+		}
 		if m, ok := obj.GetClass().GetMethod("__destruct"); ok {
+			if isZObj {
+				zobj.Destructed = true
+			}
 			// Check visibility during shutdown — private/protected from global scope should warn and skip
 			if m.Modifiers.IsPrivate() || m.Modifiers.IsProtected() {
 				vis := "private"
