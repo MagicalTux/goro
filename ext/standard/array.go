@@ -409,7 +409,7 @@ func fncArrayWalk(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		callbackArgs[1] = k
 		_, err := ctx.CallZVal(ctx, callback, callbackArgs)
 		if err != nil {
-			return nil, ctx.FuncError(err)
+			return nil, err
 		}
 	}
 

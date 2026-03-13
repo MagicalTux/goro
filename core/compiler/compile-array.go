@@ -218,6 +218,15 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		ac.lastContainerClassName = string(v.AsObject(ctx).GetClass().GetName())
 	case phpv.ZtNull:
 		if !ac.writeContext {
+			// Check if the inner expression is an undefined variable and emit warning
+			if uc, ok := ac.value.(phpv.UndefinedChecker); ok {
+				if uc.IsUnDefined(ctx) {
+					if err := ctx.Warn("Undefined variable $%s",
+						uc.VarName(), logopt.NoFuncName(true)); err != nil {
+						return nil, err
+					}
+				}
+			}
 			if err := ctx.Warn("Trying to access array offset on null", logopt.NoFuncName(true)); err != nil {
 				return nil, err
 			}
@@ -307,6 +316,10 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 
 func (a *runArrayAccess) Loc() *phpv.Loc {
 	return a.l
+}
+
+func (ac *runArrayAccess) SetWriteContext(v bool) {
+	ac.writeContext = v
 }
 
 func (ac *runArrayAccess) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {

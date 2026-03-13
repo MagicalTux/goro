@@ -312,7 +312,7 @@ func fncMkdir(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	if err != nil {
-		return phpv.ZFalse.ZVal(), ctx.Warn("mkdir(): %s", err.Error())
+		return phpv.ZFalse.ZVal(), ctx.Warn("%s", err.Error())
 	}
 
 	return phpv.ZTrue.ZVal(), nil
@@ -826,7 +826,7 @@ func fncSymlink(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	err = os.Symlink(target, link)
 	if err != nil {
-		return phpv.ZFalse.ZVal(), nil
+		return phpv.ZFalse.ZVal(), ctx.Warn("%s(): %s", ctx.GetFuncName(), err.Error(), logopt.NoFuncName(true))
 	}
 	return phpv.ZTrue.ZVal(), nil
 }
@@ -841,7 +841,7 @@ func fncReadlink(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	target, err := os.Readlink(p)
 	if err != nil {
-		return phpv.ZFalse.ZVal(), nil
+		return phpv.ZFalse.ZVal(), ctx.Warn("%s(): %s", ctx.GetFuncName(), err.Error(), logopt.NoFuncName(true))
 	}
 	return phpv.ZString(target).ZVal(), nil
 }
@@ -856,7 +856,7 @@ func fncLinkinfo(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	fi, err := os.Lstat(p)
 	if err != nil {
-		return phpv.ZInt(-1).ZVal(), nil
+		return phpv.ZInt(-1).ZVal(), ctx.Warn("%s(): %s", ctx.GetFuncName(), err.Error(), logopt.NoFuncName(true))
 	}
 
 	return phpv.ZInt(int64(fi.Mode())).ZVal(), nil

@@ -46,8 +46,23 @@ func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, o
 			}
 		}
 
+		// For by-ref params, put array access expressions into write context
+		// to suppress "Trying to access array offset on null" warnings and
+		// enable auto-vivification (e.g., foo($undef[0]) should create $undef).
+		if isRefParam {
+			if wcs, ok := arg.(phpv.WriteContextSetter); ok {
+				wcs.SetWriteContext(true)
+			}
+		}
+
 		val, err := arg.Run(ctx)
 		if err != nil {
+			// Reset write context before returning error
+			if isRefParam {
+				if wcs, ok := arg.(phpv.WriteContextSetter); ok {
+					wcs.SetWriteContext(false)
+				}
+			}
 			return nil, err
 		}
 
@@ -80,6 +95,10 @@ func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, o
 				ref := val.Ref()
 				writable.WriteValue(ctx, ref)
 				val = ref
+			}
+			// Reset write context after all by-ref handling (including WriteValue)
+			if wcs, ok := arg.(phpv.WriteContextSetter); ok {
+				wcs.SetWriteContext(false)
 			}
 		}
 

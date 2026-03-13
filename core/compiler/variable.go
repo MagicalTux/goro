@@ -4,6 +4,7 @@ import (
 	"io"
 
 	"github.com/MagicalTux/goro/core/logopt"
+	"github.com/MagicalTux/goro/core/phperr"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
@@ -137,6 +138,10 @@ func (r *runVariable) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 		err = ctx.OffsetSet(ctx, r.v, value)
 	}
 	if err != nil {
+		// Don't wrap PhpThrow errors - they need to propagate as-is
+		if _, ok := err.(*phperr.PhpThrow); ok {
+			return err
+		}
 		return r.l.Error(ctx, err)
 	}
 	return nil

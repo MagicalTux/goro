@@ -74,3 +74,10 @@ type UndefinedChecker interface {
 	IsUnDefined(ctx Context) bool
 	VarName() ZString
 }
+
+// WriteContextSetter is implemented by Runnable types (like array access
+// expressions) that can be put into write context to suppress warnings
+// during auto-vivification. Used when passing array elements by reference.
+type WriteContextSetter interface {
+	SetWriteContext(bool)
+}

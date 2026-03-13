@@ -1,10 +1,12 @@
 package phpctx
 
 import (
+	"fmt"
 	"sync"
 
 	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phperr"
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -176,7 +178,6 @@ func (c *FuncContext) OffsetSet(ctx phpv.Context, name phpv.Val, v *phpv.ZVal) e
 	if old := c.h.GetString(nameStr); old != nil && old.GetType() == phpv.ZtObject {
 		if obj, ok := old.Value().(phpv.ZObject); ok {
 			if m, hasDestructor := obj.GetClass().GetMethod("__destruct"); hasDestructor {
-				// Only eagerly destruct if the destructor is accessible from current scope
 				if canCallDestructor(ctx, m, obj) {
 					err := c.h.SetString(nameStr, v)
 					if err != nil {
@@ -189,6 +190,20 @@ func (c *FuncContext) OffsetSet(ctx phpv.Context, name phpv.Val, v *phpv.ZVal) e
 					}
 					return nil
 				}
+				// PHP 8: inaccessible destructor throws Error
+				scope := "global scope"
+				if callerClass := ctx.Class(); callerClass != nil {
+					scope = "scope of class " + string(callerClass.GetName())
+				}
+				visibility := "protected"
+				if m.Modifiers.IsPrivate() {
+					visibility = "private"
+				}
+				// Unregister from shutdown destructors to prevent duplicate call
+				ctx.Global().UnregisterDestructor(obj)
+				return phpobj.ThrowError(ctx, phpobj.Error,
+					fmt.Sprintf("Call to %s %s::__destruct() from %s",
+						visibility, obj.GetClass().GetName(), scope))
 			}
 		}
 	}
