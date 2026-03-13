@@ -296,9 +296,9 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		// can't support. Accept everything else and let the test run.
 		// INI settings that always cause a skip (feature not implemented at all)
 		unsupported := map[string]bool{
-			"file_uploads":             true, // file upload handling
+			// file_uploads: handled by valueDependent - skip only when =1 (enabled)
 			// enable_post_data_reading: implemented - when 0, $_POST/$_FILES are empty but php://input works
-			"post_max_size":            true, // POST size limit
+			// post_max_size: handled by valueDependent - skip only when non-zero
 			"upload_max_filesize":      true, // upload size limit
 			"max_file_uploads":         true, // upload count limit
 			// memory_limit: stored/retrieved via ini_get/ini_set; enforcement not implemented but tests don't require it
@@ -331,6 +331,16 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 			"zlib.output_compression": func(v string) bool {
 				lv := strings.ToLower(strings.TrimSpace(v))
 				return lv != "0" && lv != "off" && lv != "false" && lv != "no" && lv != ""
+			},
+			"post_max_size": func(v string) bool {
+				// post_max_size=0 means unlimited (no enforcement needed)
+				return strings.TrimSpace(v) != "0"
+			},
+			"file_uploads": func(v string) bool {
+				// file_uploads=0 means disabled — since we don't handle uploads,
+				// disabled mode is effectively what we do by default
+				lv := strings.ToLower(strings.TrimSpace(v))
+				return lv != "0" && lv != "off" && lv != "false" && lv != "no"
 			},
 		}
 		// Save content before scanning (scanner consumes the buffer)
