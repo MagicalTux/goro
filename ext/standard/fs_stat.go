@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -330,6 +331,11 @@ func fncTempnam(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
+	// Empty dir means system temp directory
+	if dir == "" {
+		dir = os.TempDir()
+	}
+
 	if err := ctx.Global().CheckOpenBasedir(ctx, dir, "tempnam"); err != nil {
 		return phpv.ZFalse.ZVal(), nil
 	}
@@ -382,6 +388,7 @@ func fncFile(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	if err := ctx.Global().CheckOpenBasedir(ctx, string(filename), "file"); err != nil {
+		ctx.Warn("file(%s): Failed to open stream: Operation not permitted", filename, logopt.NoFuncName(true))
 		return phpv.ZFalse.ZVal(), nil
 	}
 

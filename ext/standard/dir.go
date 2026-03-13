@@ -59,6 +59,7 @@ func fncScanDir(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	if err := ctx.Global().CheckOpenBasedir(ctx, string(dir), "scandir"); err != nil {
 		ctx.Warn("scandir(%s): Failed to open directory: Operation not permitted", dir, logopt.NoFuncName(true))
+		ctx.Warn("scandir(): (errno 1): Operation not permitted", logopt.NoFuncName(true))
 		return phpv.ZFalse.ZVal(), nil
 	}
 

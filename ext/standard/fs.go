@@ -318,18 +318,18 @@ func fncUnlink(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	stat, err := os.Lstat(p)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			err = ctx.Warn("No such file or directory")
+			err = ctx.Warn("unlink(%s): No such file or directory", filename, logopt.NoFuncName(true))
 		} else {
-			err = ctx.Warn(err.Error())
+			err = ctx.Warn("unlink(%s): %s", filename, err.Error(), logopt.NoFuncName(true))
 		}
 		return phpv.ZFalse.ZVal(), err
 	}
 	if stat.Mode()&os.ModeSymlink == 0 && stat.IsDir() {
-		return phpv.ZFalse.ZVal(), ctx.Warn("Is a directory")
+		return phpv.ZFalse.ZVal(), ctx.Warn("unlink(%s): Is a directory", filename, logopt.NoFuncName(true))
 	}
 
 	if err := os.Remove(p); err != nil {
-		return phpv.ZFalse.ZVal(), ctx.Warn(err.Error())
+		return phpv.ZFalse.ZVal(), ctx.Warn("unlink(%s): %s", filename, err.Error(), logopt.NoFuncName(true))
 	}
 
 	return phpv.ZTrue.ZVal(), nil
@@ -1017,7 +1017,6 @@ func fncCopy(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	if err := ctx.Global().CheckOpenBasedir(ctx, string(src), "copy"); err != nil {
-		ctx.Warn("copy(%s): Failed to open stream: Operation not permitted", src, logopt.NoFuncName(true))
 		return phpv.ZFalse.ZVal(), nil
 	}
 	if err := ctx.Global().CheckOpenBasedir(ctx, string(dst), "copy"); err != nil {
