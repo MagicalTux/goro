@@ -6,7 +6,6 @@ import (
 	"errors"
 	"io"
 	"os/exec"
-	"regexp"
 	"strings"
 
 	"github.com/MagicalTux/goro/core"
@@ -21,17 +20,16 @@ func fncShellExec(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	fields := regexp.MustCompile(`\s+`).Split(strings.TrimSpace(cmd), -1)
-	prog := fields[0]
-	cliArgs := fields[1:]
-
-	if prog == "" {
-		return phpv.ZStr(""), nil
+	cmd = strings.TrimSpace(cmd)
+	if cmd == "" {
+		return phpv.ZNull{}.ZVal(), nil
 	}
 
-	output, err := exec.Command(prog, cliArgs...).Output()
+	// Use /bin/sh -c to match PHP's behavior (supports pipes, redirects, etc.)
+	output, err := exec.Command("/bin/sh", "-c", cmd).Output()
 	if err != nil {
-		return nil, err
+		// PHP returns null when shell_exec fails
+		return phpv.ZNull{}.ZVal(), nil
 	}
 
 	return phpv.ZStr(string(output)), nil
@@ -46,50 +44,44 @@ func fncSystem(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
+	cmdStr = strings.TrimSpace(cmdStr)
+	if cmdStr == "" {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	// Use /bin/sh -c to match PHP's behavior
+	var stderr bytes.Buffer
+	var stdout bytes.Buffer
+	command := exec.Command("/bin/sh", "-c", cmdStr)
+	command.Stderr = &stderr
+	command.Stdout = &stdout
+
+	err = command.Run()
+	if err != nil {
+		errOutput, _ := io.ReadAll(&stderr)
+		if len(errOutput) > 0 {
+			ctx.Global().WriteErr(errOutput)
+		}
+	}
+	if returnVar.HasArg() {
+		exitCode := phpv.ZInt(command.ProcessState.ExitCode())
+		returnVar.Set(ctx, exitCode)
+	}
+
+	// Print all output to stdout, return the last line
 	var lastLine []byte
-	for _, c := range strings.Split(cmdStr, ";") {
-		fields := regexp.MustCompile(`\s+`).Split(strings.TrimSpace(c), -1)
-		prog := fields[0]
-		cliArgs := fields[1:]
-
-		if prog == "" {
-			return phpv.ZStr(""), nil
+	buf := bufio.NewReader(&stdout)
+	for {
+		line, _, readErr := buf.ReadLine()
+		if errors.Is(readErr, io.EOF) {
+			break
 		}
-
-		var stderr bytes.Buffer
-		var stdout bytes.Buffer
-		command := exec.Command(prog, cliArgs...)
-		command.Stderr = &stderr
-		command.Stdout = &stdout
-
-		err = command.Run()
-		if err != nil {
-			errOutput, err := io.ReadAll(&stderr)
-			if err != nil {
-				return nil, ctx.Error(err)
-			}
-			ctx.Global().WriteErr([]byte(errOutput))
+		if readErr != nil {
+			return nil, ctx.Error(readErr)
 		}
-		if returnVar.HasArg() {
-			exitCode := phpv.ZInt(command.ProcessState.ExitCode())
-			returnVar.Set(ctx, exitCode)
-		}
-
-		// returns only the last line, but print
-		// all output on stdout
-		buf := bufio.NewReader(&stdout)
-		for {
-			line, _, err := buf.ReadLine()
-			if errors.Is(err, io.EOF) {
-				break
-			}
-			if err != nil {
-				return nil, ctx.Error(err)
-			}
-			lastLine = line
-			ctx.Write(line)
-			ctx.Write([]byte{'\n'})
-		}
+		lastLine = line
+		ctx.Write(line)
+		ctx.Write([]byte{'\n'})
 	}
 
 	return phpv.ZStr(string(lastLine)), nil
