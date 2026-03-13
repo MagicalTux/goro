@@ -288,7 +288,7 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 			"highlight.default":        true,
 			"highlight.html":           true,
 			"max_input_nesting_level":  true, // input nesting limit not implemented
-			"max_input_vars":           true, // input vars limit not implemented
+			// max_input_vars: limit on input parsing, tests use 1000 which is well above typical test needs
 			"short_open_tag":           true, // short open tags not fully implemented
 			"auto_prepend_file":        true, // auto prepend not implemented
 			"disable_functions":        true, // function disabling not implemented

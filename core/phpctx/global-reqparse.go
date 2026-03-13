@@ -88,6 +88,93 @@ func (g *Global) parsePost(p, f *phpv.ZArray) error {
 	}
 }
 
+// phpURLDecode decodes a URL-encoded string like PHP's urldecode:
+// - Converts %XX hex sequences to bytes
+// - Leaves malformed percent sequences (like %&' or trailing %) as-is
+// - Does NOT convert '+' to space (unlike query strings)
+func phpURLDecode(s string) string {
+	var buf strings.Builder
+	for i := 0; i < len(s); i++ {
+		if s[i] == '%' && i+2 < len(s) {
+			hi := unhex(s[i+1])
+			lo := unhex(s[i+2])
+			if hi >= 0 && lo >= 0 {
+				buf.WriteByte(byte(hi<<4 | lo))
+				i += 2
+				continue
+			}
+		}
+		buf.WriteByte(s[i])
+	}
+	return buf.String()
+}
+
+func unhex(c byte) int {
+	switch {
+	case '0' <= c && c <= '9':
+		return int(c - '0')
+	case 'a' <= c && c <= 'f':
+		return int(c - 'a' + 10)
+	case 'A' <= c && c <= 'F':
+		return int(c - 'A' + 10)
+	}
+	return -1
+}
+
+// parseCookiesToArray parses a Cookie header value into a ZArray following PHP's rules:
+// - Cookies separated by ';'
+// - Cookie names are NOT URL-decoded
+// - Cookie values ARE URL-decoded
+// - Dots and spaces in cookie names are replaced with underscores
+// - Empty cookies (no name) are skipped
+// - First occurrence wins for duplicate cookie names
+func parseCookiesToArray(ctx phpv.Context, cookieHeader string, a *phpv.ZArray) {
+	if cookieHeader == "" {
+		return
+	}
+
+	for _, cookie := range strings.Split(cookieHeader, ";") {
+		cookie = strings.TrimLeft(cookie, " \t")
+		if cookie == "" {
+			continue
+		}
+
+		eqIdx := strings.IndexByte(cookie, '=')
+		var name, value string
+		if eqIdx == -1 {
+			// Cookie without '=' — PHP treats this as name="" (empty value)
+			name = cookie
+			value = ""
+		} else {
+			name = cookie[:eqIdx]
+			value = cookie[eqIdx+1:]
+		}
+
+		// Trim leading/trailing spaces from name
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+
+		// URL-decode the value using PHP-compatible decoding that handles
+		// malformed percent sequences gracefully (leaves them as-is)
+		if eqIdx != -1 {
+			value = phpURLDecode(value)
+		}
+
+		// Normalize the name: replace dots and spaces with underscores
+		normalizedName := strings.NewReplacer(".", "_", " ", "_").Replace(name)
+
+		// First occurrence wins: check if key already exists
+		if exists, _ := a.OffsetExists(ctx, phpv.ZString(normalizedName).ZVal()); exists {
+			continue
+		}
+
+		// Use setUrlValueToArray which handles nested array syntax (name[key])
+		setUrlValueToArray(ctx, name, phpv.ZString(value), a)
+	}
+}
+
 // ParseQueryToArray will parse a given query string into a ZArray with PHP parsing rules
 func ParseQueryToArray(ctx phpv.Context, q string, a *phpv.ZArray) error {
 	// parse this ourselves instead of using url.Values so we can keep the order right

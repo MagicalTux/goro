@@ -259,6 +259,14 @@ func (g *Global) doGPC() {
 		switch l {
 		case 'e', 'E':
 			s.MergeTable(g.environ)
+		case 'c', 'C':
+			if g.req != nil {
+				parseCookiesToArray(g, g.req.Header.Get("Cookie"), c)
+				// Copy preserving keys (not array_merge which renumbers int keys)
+				for k, v := range c.Iterate(g) {
+					r.OffsetSet(g, k, v)
+				}
+			}
 		case 'p', 'P':
 			if g.req != nil && g.req.Method == "POST" {
 				err := g.parsePost(p, f)
