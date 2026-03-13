@@ -18,8 +18,11 @@ func init() {
 		},
 		// Note: ExtFunctionArg is currently unused
 		Functions: map[string]*phpctx.ExtFunction{
-			"json_decode": {Func: fncJsonDecode, Args: []*phpctx.ExtFunctionArg{}},
-			"json_encode": {Func: fncJsonEncode, Args: []*phpctx.ExtFunctionArg{}},
+			"json_decode":         {Func: fncJsonDecode, Args: []*phpctx.ExtFunctionArg{}},
+			"json_encode":         {Func: fncJsonEncode, Args: []*phpctx.ExtFunctionArg{}},
+			"json_last_error":     {Func: fncJsonLastError, Args: []*phpctx.ExtFunctionArg{}},
+			"json_last_error_msg": {Func: fncJsonLastErrorMsg, Args: []*phpctx.ExtFunctionArg{}},
+			"json_validate":       {Func: fncJsonValidate, Args: []*phpctx.ExtFunctionArg{}},
 		},
 		Constants: map[phpv.ZString]phpv.Val{
 			"JSON_BIGINT_AS_STRING":            JSON_BIGINT_AS_STRING,
@@ -41,6 +44,7 @@ func init() {
 			"JSON_HEX_TAG":                     JSON_HEX_TAG,
 			"JSON_INVALID_UTF8_IGNORE":         JSON_INVALID_UTF8_IGNORE,
 			"JSON_INVALID_UTF8_SUBSTITUTE":     JSON_INVALID_UTF8_SUBSTITUTE,
+			"JSON_THROW_ON_ERROR":              phpv.ZInt(ThrowOnError),
 			"JSON_NUMERIC_CHECK":               JSON_NUMERIC_CHECK,
 			"JSON_OBJECT_AS_ARRAY":             JSON_OBJECT_AS_ARRAY,
 			"JSON_PARTIAL_OUTPUT_ON_ERROR":     JSON_PARTIAL_OUTPUT_ON_ERROR,

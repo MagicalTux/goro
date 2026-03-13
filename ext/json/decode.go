@@ -36,8 +36,95 @@ func fncJsonDecode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		o |= ObjectAsArray
 	}
 
-	return jsonDecodeAny(ctx, strings.NewReader(string(json)), d, o)
-	// TODO check if reader was fully consumed, return ErrSyntax if not
+	result, jsonErr := jsonDecodeAny(ctx, strings.NewReader(string(json)), d, o)
+	if jsonErr != nil {
+		if je, ok := jsonErr.(JsonError); ok {
+			setLastJsonError(ctx, je)
+			return phpv.ZNULL.ZVal(), nil
+		}
+		setLastJsonError(ctx, ErrSyntax)
+		return phpv.ZNULL.ZVal(), nil
+	}
+	setLastJsonError(ctx, ErrNone)
+	return result, nil
+}
+
+func setLastJsonError(ctx phpv.Context, err JsonError) {
+	ctx.Global().OffsetSet(ctx, phpv.ZString("__json_last_error"), phpv.ZInt(int64(err)).ZVal())
+}
+
+func getLastJsonError(ctx phpv.Context) JsonError {
+	v, err := ctx.Global().OffsetGet(ctx, phpv.ZString("__json_last_error"))
+	if err != nil || v == nil || v.GetType() == phpv.ZtNull {
+		return ErrNone
+	}
+	return JsonError(v.AsInt(ctx))
+}
+
+// > func int json_last_error ( void )
+func fncJsonLastError(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	return phpv.ZInt(int64(getLastJsonError(ctx))).ZVal(), nil
+}
+
+// > func string json_last_error_msg ( void )
+func fncJsonLastErrorMsg(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	err := getLastJsonError(ctx)
+	var msg string
+	switch err {
+	case ErrNone:
+		msg = "No error"
+	case ErrDepth:
+		msg = "Maximum stack depth exceeded"
+	case ErrStateMismatch:
+		msg = "Underflow or the modes mismatch"
+	case ErrCtrlChar:
+		msg = "Unexpected control character found"
+	case ErrSyntax:
+		msg = "Syntax error"
+	case ErrUtf8:
+		msg = "Malformed UTF-8 characters, possibly incorrectly encoded"
+	case ErrRecursion:
+		msg = "Recursion detected"
+	case ErrInfOrNan:
+		msg = "Inf and NaN cannot be JSON encoded"
+	case ErrUnsupportedType:
+		msg = "Type is not supported"
+	case ErrInvalidPropName:
+		msg = "The decoded property name is not valid for PHP"
+	case ErrUtf16:
+		msg = "Single unpaired UTF-16 surrogate in unicode escape"
+	default:
+		msg = "Unknown error"
+	}
+	return phpv.ZString(msg).ZVal(), nil
+}
+
+// > func bool json_validate ( string $json [, int $depth = 512 [, int $flags = 0 ]] )
+func fncJsonValidate(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var json phpv.ZString
+	var depth *phpv.ZInt
+
+	_, err := core.Expand(ctx, args, &json, &depth)
+	if err != nil {
+		return nil, err
+	}
+
+	d := 512
+	if depth != nil {
+		d = int(*depth)
+	}
+
+	_, jsonErr := jsonDecodeAny(ctx, strings.NewReader(string(json)), d, 0)
+	if jsonErr != nil {
+		if je, ok := jsonErr.(JsonError); ok {
+			setLastJsonError(ctx, je)
+		} else {
+			setLastJsonError(ctx, ErrSyntax)
+		}
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	setLastJsonError(ctx, ErrNone)
+	return phpv.ZBool(true).ZVal(), nil
 }
 
 // nextRune returns the next non-space rune

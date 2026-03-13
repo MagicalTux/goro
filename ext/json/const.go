@@ -31,6 +31,7 @@ const (
 const (
 	InvalidUtf8Ignore     = 0x100000
 	InvalidUtf8Substitute = 0x200000
+	ThrowOnError          = 0x400000
 )
 
 type JsonError int
