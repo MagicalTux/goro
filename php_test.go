@@ -300,7 +300,6 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 			"sys_temp_dir":             true, // temp dir config not implemented
 			"date.timezone":            true, // timezone config not fully implemented
 			"opcache.save_comments":    true, // opcache not implemented
-			"opcache.optimization_level": true, // opcache not implemented
 			"docref_root":              true, // error doc URLs not implemented
 			"arg_separator.input":      true, // query string separator not implemented
 		}

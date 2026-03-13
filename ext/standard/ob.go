@@ -46,7 +46,7 @@ func fncObStart(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		b.CB = callback
 	}
 
-	if chunkSize != nil {
+	if chunkSize != nil && int(*chunkSize) > 0 {
 		b.ChunkSize = int(*chunkSize)
 	}
 
@@ -107,12 +107,8 @@ func fncObEndClean(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	buf.SetCaller(ctx, "ob_end_clean")
 	defer buf.ClearCaller()
-	cleanErr := buf.Clean()
-	closeErr := buf.Close()
-	if cleanErr != nil {
-		return phpv.ZBool(true).ZVal(), cleanErr
-	}
-	return phpv.ZBool(true).ZVal(), closeErr
+	err := buf.CloseClean()
+	return phpv.ZBool(true).ZVal(), err
 }
 
 // > func bool ob_end_flush ( void )
@@ -163,12 +159,8 @@ func fncObGetClean(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	buf.SetCaller(ctx, "ob_get_clean")
 	defer buf.ClearCaller()
-	cleanErr := buf.Clean()
-	closeErr := buf.Close()
-	if cleanErr != nil {
-		return data, cleanErr
-	}
-	return data, closeErr
+	err := buf.CloseClean()
+	return data, err
 }
 
 // > func string ob_get_contents ( void )

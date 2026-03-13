@@ -155,11 +155,20 @@ func (b *Buffer) Write(d []byte) (int, error) {
 		b.b = append(b.b, d...)
 	}
 
-	// should we flush
-	if b.ImplicitFlush {
-		return olen, b.Flush()
-	} else if (b.ChunkSize != 0) && (len(b.b) >= b.ChunkSize) {
-		return olen, b.Flush()
+	// Check if we should auto-flush (chunk-size overflow or implicit flush).
+	// Auto-flush uses WRITE/START flags, not FLUSH (which is for explicit ob_flush).
+	if b.ImplicitFlush || (b.ChunkSize > 0 && len(b.b) >= b.ChunkSize) {
+		flag := BufferWrite
+		if !b.started {
+			b.started = true
+			b.status |= BufferStarted
+			flag |= BufferStart
+		}
+		err := b.flushData(flag)
+		if err == nil {
+			b.status |= BufferProcessed
+		}
+		return olen, err
 	}
 	return olen, nil
 }
@@ -240,18 +249,38 @@ func (b *Buffer) Flush() error {
 }
 
 func (b *Buffer) Close() error {
+	return b.CloseWithFlags(BufferFinal, true)
+}
+
+// CloseClean closes and discards the buffer (ob_end_clean behavior).
+// Invokes callback with CLEAN|FINAL, discards result, removes buffer.
+func (b *Buffer) CloseClean() error {
+	return b.CloseWithFlags(BufferClean|BufferFinal, false)
+}
+
+// CloseWithFlags closes the buffer with the given flags.
+// If writeOutput is true, writes the callback result to the underlying writer.
+func (b *Buffer) CloseWithFlags(flag int, writeOutput bool) error {
 	if b.g.buf != b {
 		return errors.New("this buffer cannot be closed, not on top of stack")
 	}
 
-	flag := BufferFinal
 	if !b.started {
 		b.started = true
 		b.status |= BufferStarted
 		flag |= BufferStart
 	}
 
-	flushErr := b.flushData(flag)
+	var flushErr error
+	if writeOutput {
+		flushErr = b.flushData(flag)
+	} else {
+		// Invoke callback but discard the result
+		if b.CB != nil {
+			_, flushErr = b.invokeCallback(b.b, flag)
+		}
+		b.b = nil
+	}
 
 	b.status |= BufferProcessed
 
