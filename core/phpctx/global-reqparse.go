@@ -110,7 +110,7 @@ func (g *Global) parsePost(p, f *phpv.ZArray) error {
 				return err
 			}
 
-			k := part.FormName()
+			k := phpFormName(part)
 			fn := part.FileName()
 			if fn != "" {
 				// THIS IS A FILE
@@ -170,6 +170,94 @@ func unhex(c byte) int {
 		return int(c - 'A' + 10)
 	}
 	return -1
+}
+
+// phpFormName extracts the "name" parameter from a multipart part's
+// Content-Disposition header using PHP-compatible quoting rules:
+//   - Double-quoted: strip quotes, \\ → \, \" → "
+//   - Single-quoted: strip quotes, \\ → \, \' → '
+//   - Unquoted: read until ; or end, \\ → \, keep other backslashes as-is
+func phpFormName(part *multipart.Part) string {
+	cd := part.Header.Get("Content-Disposition")
+	if cd == "" {
+		return ""
+	}
+	// Find name= parameter (case-insensitive)
+	lower := strings.ToLower(cd)
+	idx := strings.Index(lower, "name=")
+	if idx < 0 {
+		return ""
+	}
+	rest := cd[idx+5:] // after "name="
+	if len(rest) == 0 {
+		return ""
+	}
+
+	switch rest[0] {
+	case '"':
+		// Double-quoted: read until unescaped closing "
+		var buf strings.Builder
+		for i := 1; i < len(rest); i++ {
+			if rest[i] == '\\' && i+1 < len(rest) {
+				next := rest[i+1]
+				if next == '"' || next == '\\' {
+					buf.WriteByte(next)
+					i++
+					continue
+				}
+				// Other backslash sequences kept as-is
+				buf.WriteByte(rest[i])
+				continue
+			}
+			if rest[i] == '"' {
+				break
+			}
+			buf.WriteByte(rest[i])
+		}
+		return buf.String()
+	case '\'':
+		// Single-quoted: read until unescaped closing '
+		var buf strings.Builder
+		for i := 1; i < len(rest); i++ {
+			if rest[i] == '\\' && i+1 < len(rest) {
+				next := rest[i+1]
+				if next == '\'' || next == '\\' {
+					buf.WriteByte(next)
+					i++
+					continue
+				}
+				// Other backslash sequences kept as-is
+				buf.WriteByte(rest[i])
+				continue
+			}
+			if rest[i] == '\'' {
+				break
+			}
+			buf.WriteByte(rest[i])
+		}
+		return buf.String()
+	default:
+		// Unquoted: read until ; or end of string
+		var buf strings.Builder
+		for i := 0; i < len(rest); i++ {
+			if rest[i] == ';' {
+				break
+			}
+			if rest[i] == '\\' && i+1 < len(rest) {
+				next := rest[i+1]
+				if next == '\\' {
+					buf.WriteByte('\\')
+					i++
+					continue
+				}
+				// Other backslash sequences kept as-is
+				buf.WriteByte(rest[i])
+				continue
+			}
+			buf.WriteByte(rest[i])
+		}
+		return strings.TrimRight(buf.String(), " \t")
+	}
 }
 
 // parseCookiesToArray parses a Cookie header value into a ZArray following PHP's rules:
