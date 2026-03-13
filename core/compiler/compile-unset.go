@@ -54,7 +54,7 @@ func (r *runnableUnset) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 }
 
 // callDestructorIfNeeded checks if a ZVal holds an object with __destruct,
-// and if so, calls the destructor (with proper visibility checking).
+// and if so, calls the destructor with visibility checking (for explicit unset).
 // Returns an error if the destructor call fails (e.g., visibility error).
 func callDestructorIfNeeded(ctx phpv.Context, zv *phpv.ZVal) error {
 	if zv == nil || zv.GetType() != phpv.ZtObject {

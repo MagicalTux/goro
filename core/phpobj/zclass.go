@@ -749,8 +749,11 @@ func (c *ZClass) InstanceOf(parentClass phpv.ZClass) bool {
 }
 
 func (c *ZClass) Implements(class phpv.ZClass) bool {
+	if c == class {
+		return true
+	}
 	for _, intf := range c.Implementations {
-		if class == intf {
+		if intf.Implements(class) {
 			return true
 		}
 	}

@@ -32,7 +32,6 @@ type ZObject struct {
 
 // CallDestructor calls __destruct on this object if it hasn't been called yet.
 // It checks visibility of the destructor against the calling context.
-// Returns true if the destructor was called, false if skipped.
 func (z *ZObject) CallDestructor(ctx phpv.Context) error {
 	if z.Destructed {
 		return nil
@@ -51,16 +50,24 @@ func (z *ZObject) CallDestructor(ctx phpv.Context) error {
 		if m.Modifiers.IsPrivate() {
 			if callerClass == nil || callerClass.GetName() != z.Class.GetName() {
 				vis := "private"
+				scope := "global scope"
+				if callerClass != nil {
+					scope = fmt.Sprintf("scope %s", callerClass.GetName())
+				}
 				return ThrowError(ctx, Error,
 					fmt.Sprintf("Call to %s %s::__destruct() from %s",
-						vis, z.Class.GetName(), destructorCallScope(callerClass)))
+						vis, z.Class.GetName(), scope))
 			}
 		} else { // protected
 			if callerClass == nil || (!callerClass.InstanceOf(z.Class) && !z.Class.InstanceOf(callerClass)) {
 				vis := "protected"
+				scope := "global scope"
+				if callerClass != nil {
+					scope = fmt.Sprintf("scope %s", callerClass.GetName())
+				}
 				return ThrowError(ctx, Error,
 					fmt.Sprintf("Call to %s %s::__destruct() from %s",
-						vis, z.Class.GetName(), destructorCallScope(callerClass)))
+						vis, z.Class.GetName(), scope))
 			}
 		}
 	}
@@ -70,11 +77,21 @@ func (z *ZObject) CallDestructor(ctx phpv.Context) error {
 }
 
 
-func destructorCallScope(callerClass phpv.ZClass) string {
-	if callerClass == nil {
-		return "global scope"
+// CallImplicitDestructor calls __destruct without visibility checks.
+// Used for implicit destruction (variable overwrite, shutdown) where
+// PHP always allows the destructor to run regardless of visibility.
+func (z *ZObject) CallImplicitDestructor(ctx phpv.Context) error {
+	if z.Destructed {
+		return nil
 	}
-	return fmt.Sprintf("scope %s", callerClass.GetName())
+	m, ok := z.Class.GetMethod("__destruct")
+	if !ok {
+		return nil
+	}
+	z.Destructed = true
+	ctx.Global().UnregisterDestructor(z)
+	_, err := ctx.CallZVal(ctx, m.Method, nil, z)
+	return err
 }
 
 func (z *ZObject) ZVal() *phpv.ZVal {
