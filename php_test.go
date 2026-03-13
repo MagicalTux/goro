@@ -402,8 +402,19 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 	case "XFAIL":
 		// TODO but safe to ignore
 		return nil
-	case "CLEAN", "DESCRIPTION":
-		// CLEAN runs after the test (cleanup temp files etc) - not needed
+	case "CLEAN":
+		// CLEAN runs after the test to clean up temp files/dirs
+		g := phpctx.NewGlobal(context.Background(), p.p, ini.New())
+		g.SetOutput(io.Discard)
+		absPath, _ := filepath.Abs(p.path)
+		g.Chdir(phpv.ZString(filepath.Dir(absPath)))
+		t := tokenizer.NewLexer(b, strings.TrimSuffix(absPath, "t"))
+		if c, err := compiler.Compile(g, t); err == nil {
+			c.Run(g)
+		}
+		g.Close()
+		return nil
+	case "DESCRIPTION":
 		// DESCRIPTION is informational only
 		return nil
 	case "ARGS":
