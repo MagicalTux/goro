@@ -171,6 +171,11 @@ type runArrayAccess struct {
 	// PrepareWrite caching
 	prepared     bool
 	cachedOffset *phpv.ZVal
+
+	// Compound assignment caching: during .= += etc., cache the container
+	// from the read phase so WriteValue doesn't re-evaluate the chain.
+	compoundCache    bool      // set by runOperator to enable caching
+	cachedContainer  *phpv.ZVal // cached result of ac.value.Run(ctx) from Run()
 }
 
 func (r *runArrayAccess) Dump(w io.Writer) error {
@@ -230,6 +235,12 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	v, err := ac.value.Run(ctx)
 	if err != nil {
 		return nil, err
+	}
+
+	// Cache container for compound assignment write-back (avoids re-evaluating the chain)
+	if ac.compoundCache {
+		ac.cachedContainer = v
+		ac.compoundCache = false
 	}
 
 	switch v.GetType() {
@@ -348,18 +359,27 @@ func (ac *runArrayAccess) SetWriteContext(v bool) {
 }
 
 func (ac *runArrayAccess) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
-	// Suppress undefined key/property warnings for inner accesses in write context
-	if inner, ok := ac.value.(*runArrayAccess); ok {
-		inner.writeContext = true
-		defer func() { inner.writeContext = false }()
-	}
-	if inner, ok := ac.value.(*runObjectVar); ok {
-		inner.writeContext = true
-		defer func() { inner.writeContext = false }()
-	}
-	v, err := ac.value.Run(ctx)
-	if err != nil {
-		return err
+	var v *phpv.ZVal
+	var err error
+
+	// Use cached container from compound assignment read phase if available
+	if ac.cachedContainer != nil {
+		v = ac.cachedContainer
+		ac.cachedContainer = nil
+	} else {
+		// Suppress undefined key/property warnings for inner accesses in write context
+		if inner, ok := ac.value.(*runArrayAccess); ok {
+			inner.writeContext = true
+			defer func() { inner.writeContext = false }()
+		}
+		if inner, ok := ac.value.(*runObjectVar); ok {
+			inner.writeContext = true
+			defer func() { inner.writeContext = false }()
+		}
+		v, err = ac.value.Run(ctx)
+		if err != nil {
+			return err
+		}
 	}
 
 	// PHP: writing to a sub-element of an ArrayAccess return value is an indirect

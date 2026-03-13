@@ -217,6 +217,14 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		}
 	}
 
+	// For compound write ops (.= += etc.), enable container caching on ArrayAccess LHS
+	// so WriteValue doesn't re-evaluate the container chain (avoiding extra offsetGet calls)
+	if op.write && op.op != nil {
+		if ac, ok := r.a.(*runArrayAccess); ok {
+			ac.compoundCache = true
+		}
+	}
+
 	// read a and b
 	if r.a != nil && !(op.write && op.op == nil) {
 		a, err = r.a.Run(ctx)
