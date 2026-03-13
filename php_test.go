@@ -101,7 +101,7 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 			// Apply max_memory_limit capping after INI is parsed
 			g.ApplyMaxMemoryLimit()
 			// Only reinit superglobals if INI contains settings that affect them
-			for _, key := range []string{"variables_order", "register_argc_argv", "enable_post_data_reading", "disable_functions", "post_max_size"} {
+			for _, key := range []string{"variables_order", "register_argc_argv", "enable_post_data_reading", "disable_functions", "post_max_size", "max_input_nesting_level"} {
 				if strings.Contains(p.iniRaw, key) {
 					needsReinit = true
 					break
@@ -319,7 +319,7 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 			// register_argc_argv: implemented - controls argv/argc in $_SERVER
 			// variables_order: implemented in doGPC() - controls which superglobals are populated
 			// highlight.*: implemented - syntax highlighting output matches PHP 8 format
-			"max_input_nesting_level":  true, // input nesting limit not implemented
+			// max_input_nesting_level: implemented in setUrlValueToArray (drops over-nested params)
 			// max_input_vars: limit on input parsing, tests use 1000 which is well above typical test needs
 			// short_open_tag: implemented in tokenizer - controls whether <? without php/= opens PHP mode
 			"auto_prepend_file":        true, // auto prepend not implemented

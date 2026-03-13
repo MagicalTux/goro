@@ -256,6 +256,20 @@ func parseQueryFragmentToArray(ctx phpv.Context, f string, a *phpv.ZArray) error
 }
 
 func setUrlValueToArray(ctx phpv.Context, k string, v phpv.Val, a *phpv.ZArray) error {
+	// Check max_input_nesting_level: count bracket pairs to determine nesting depth.
+	// Root variable counts as level 1, each bracket pair adds one level.
+	if maxLevel := parseIniSize(ctx.Global().GetConfig("max_input_nesting_level", phpv.ZString("64").ZVal()).String()); maxLevel > 0 {
+		depth := int64(1) // root variable name is level 1
+		for _, c := range k {
+			if c == '[' {
+				depth++
+			}
+		}
+		if depth > maxLevel {
+			return nil // silently drop variables that exceed nesting level
+		}
+	}
+
 	// Normalize dots and spaces in the first key component (PHP behavior)
 	normalizeKey := func(s string) string {
 		return strings.NewReplacer(".", "_", " ", "_").Replace(s)
