@@ -33,6 +33,9 @@ type ZClass struct {
 	// class specific handlers
 	H *phpv.ZClassHandlers
 
+	// InternalOnly prevents user classes from implementing/extending this class
+	InternalOnly bool
+
 	// Enum support (PHP 8.1)
 	EnumBackingType phpv.ZType     // 0 for unit enums, ZtString or ZtInt for backed enums
 	EnumCases       []phpv.ZString // ordered list of case names
@@ -331,6 +334,10 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 		// Check that we're implementing an interface, not a regular class
 		if c.Type != phpv.ZClassTypeInterface && intfClass.Type != phpv.ZClassTypeInterface {
 			return c.fatalError(ctx, fmt.Sprintf("%s cannot implement %s - it is not an interface", c.Name, intfClass.Name))
+		}
+		// Check if this is an internal-only interface that user classes can't implement
+		if intfClass.InternalOnly && c.L != nil {
+			return c.fatalError(ctx, fmt.Sprintf("%s can't be implemented by user classes", intfClass.Name))
 		}
 		c.Implementations = append(c.Implementations, intfClass)
 		// Add interface and its parents to the parents map for InstanceOf checks

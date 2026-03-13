@@ -292,15 +292,15 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 			"short_open_tag":           true, // short open tags not fully implemented
 			"auto_prepend_file":        true, // auto prepend not implemented
 			"disable_functions":        true, // function disabling not implemented
-			"allow_url_fopen":          true, // URL fopen restriction not implemented
-			"default_charset":          true, // charset handling differences
+			"allow_url_fopen":          true, // tests using this need HTTP server helpers we don't have
+			"default_charset":          true, // charset-aware functions (htmlentities etc) not fully implemented
 			"error_log_mode":           true, // log mode not implemented
 			"report_memleaks":          true, // memory leak detection not implemented
 			// sys_temp_dir is implemented in ext/standard/fs.go:fncSysGetTempDir
 			// date.timezone is handled by the date extension's ini settings
 			"opcache.save_comments":    true, // opcache not implemented
 			"docref_root":              true, // error doc URLs not implemented
-			"arg_separator.input":      true, // query string separator not implemented
+			// arg_separator.input is implemented in ext/standard/urlenc.go
 		}
 		// Save content before scanning (scanner consumes the buffer)
 		iniContent := b.String()
