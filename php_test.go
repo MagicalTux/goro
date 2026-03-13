@@ -78,12 +78,16 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 			g = phpctx.NewGlobalReq(p.req, p.p, ini.New())
 		}
 
+		g.SetOutput(p.output)
+
 		// Apply --INI-- settings after global context is created (after defaults)
 		needsReinit := false
 		if p.iniRaw != "" {
 			if err := g.IniConfig.Parse(g, strings.NewReader(p.iniRaw)); err != nil {
 				return err
 			}
+			// Apply max_memory_limit capping after INI is parsed
+			g.ApplyMaxMemoryLimit()
 			// Only reinit superglobals if INI contains settings that affect them
 			for _, key := range []string{"variables_order", "register_argc_argv", "enable_post_data_reading", "disable_functions"} {
 				if strings.Contains(p.iniRaw, key) {
@@ -92,7 +96,6 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 				}
 			}
 		}
-		g.SetOutput(p.output)
 		if needsReinit {
 			g.ReinitSuperglobals()
 		}
@@ -300,7 +303,7 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 			// precision and serialize_precision are implemented in core/phpv/ztype.go
 			// register_argc_argv: implemented - controls argv/argc in $_SERVER
 			// variables_order: implemented in doGPC() - controls which superglobals are populated
-			"highlight.string":         true, // syntax highlighting not implemented
+			"highlight.string":         true, // syntax highlighting output format differs from PHP 8
 			"highlight.comment":        true,
 			"highlight.keyword":        true,
 			"highlight.default":        true,

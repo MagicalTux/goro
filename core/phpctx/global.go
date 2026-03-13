@@ -475,10 +475,104 @@ func (g *Global) RestoreConfig(name phpv.ZString) {
 func (g *Global) SetLocalConfig(name phpv.ZString, value *phpv.ZVal) (*phpv.ZVal, bool) {
 	if !g.IniConfig.CanIniSet(name) {
 		return nil, false
-
 	}
+
+	// max_memory_limit capping: when setting memory_limit, check against max_memory_limit
+	if name == "memory_limit" {
+		value = g.capMemoryLimit(value)
+	}
+
 	old := g.IniConfig.SetLocal(g, name, value)
 	return old, true
+}
+
+// parseIniBytes parses a PHP INI memory size string (e.g. "128M", "1G", "-1")
+// into bytes. Returns -1 for unlimited.
+func parseIniBytes(s string) int64 {
+	s = strings.TrimSpace(s)
+	if s == "" || s == "-1" {
+		return -1
+	}
+	var multiplier int64 = 1
+	last := s[len(s)-1]
+	switch last {
+	case 'G', 'g':
+		multiplier = 1024 * 1024 * 1024
+		s = s[:len(s)-1]
+	case 'M', 'm':
+		multiplier = 1024 * 1024
+		s = s[:len(s)-1]
+	case 'K', 'k':
+		multiplier = 1024
+		s = s[:len(s)-1]
+	}
+	var n int64
+	fmt.Sscanf(s, "%d", &n)
+	return n * multiplier
+}
+
+// formatIniBytes formats bytes back to a human-readable INI string
+func formatIniBytes(b int64) string {
+	if b == -1 {
+		return "-1"
+	}
+	if b%(1024*1024*1024) == 0 {
+		return fmt.Sprintf("%dG", b/(1024*1024*1024))
+	}
+	if b%(1024*1024) == 0 {
+		return fmt.Sprintf("%dM", b/(1024*1024))
+	}
+	if b%1024 == 0 {
+		return fmt.Sprintf("%dK", b/1024)
+	}
+	return fmt.Sprintf("%d", b)
+}
+
+// ApplyMaxMemoryLimit should be called after INI parsing to enforce max_memory_limit
+// on the initial memory_limit value.
+func (g *Global) ApplyMaxMemoryLimit() {
+	maxVal := g.GetConfig("max_memory_limit", phpv.ZStr("-1"))
+	maxBytes := parseIniBytes(string(maxVal.AsString(g)))
+	if maxBytes == -1 {
+		return // no cap
+	}
+
+	memVal := g.GetConfig("memory_limit", phpv.ZStr("128M"))
+	memBytes := parseIniBytes(string(memVal.AsString(g)))
+	if memBytes == -1 {
+		// Silently cap unlimited to max
+		g.IniConfig.SetGlobal(g, "memory_limit", phpv.ZStr(formatIniBytes(maxBytes)))
+	} else if memBytes > maxBytes {
+		// Warn when a specific limit exceeds the max
+		g.LogError(&phpv.PhpError{
+			Err:  fmt.Errorf("Failed to set memory_limit to %d bytes. Setting to max_memory_limit instead (currently: %d bytes)", memBytes, maxBytes),
+			Code: phpv.E_WARNING,
+			Loc:  &phpv.Loc{Filename: "Unknown", Line: 0},
+		}, logopt.Data{NoFuncName: true})
+		g.IniConfig.SetGlobal(g, "memory_limit", phpv.ZStr(formatIniBytes(maxBytes)))
+	}
+}
+
+// capMemoryLimit checks memory_limit against max_memory_limit and caps it if needed.
+// Returns the (possibly capped) value.
+func (g *Global) capMemoryLimit(value *phpv.ZVal) *phpv.ZVal {
+	maxVal := g.GetConfig("max_memory_limit", phpv.ZStr("-1"))
+	maxBytes := parseIniBytes(string(maxVal.AsString(g)))
+	if maxBytes == -1 {
+		return value // no cap
+	}
+
+	memBytes := parseIniBytes(string(value.AsString(g)))
+	if memBytes == -1 {
+		// Silently cap unlimited to max
+		return phpv.ZStr(formatIniBytes(maxBytes))
+	}
+	if memBytes > maxBytes {
+		// Warn when a specific limit exceeds the max
+		g.Warn("Failed to set memory_limit to %d bytes. Setting to max_memory_limit instead (currently: %d bytes)", memBytes, maxBytes)
+		return phpv.ZStr(formatIniBytes(maxBytes))
+	}
+	return value
 }
 
 func (g *Global) GetConfig(name phpv.ZString, def *phpv.ZVal) *phpv.ZVal {

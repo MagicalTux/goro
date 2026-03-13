@@ -175,6 +175,7 @@ var Defaults = map[string]*IniDirective{
 	"memcache.compress_threshold":           {`20000`, INI_ALL},
 	"memcache.lock_timeout":                 {`15`, INI_ALL},
 	"memory_limit":                          {`"128M"`, INI_ALL},
+	"max_memory_limit":                      {`"-1"`, INI_SYSTEM},
 	"mysql.allow_local_infile":              {`"1"`, INI_SYSTEM},
 	"mysql.allow_persistent":                {`"1"`, INI_SYSTEM},
 	"mysql.max_persistent":                  {`"-1"`, INI_SYSTEM},
