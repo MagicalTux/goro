@@ -47,6 +47,10 @@ func fncOpendir(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
+	if err := ctx.Global().CheckOpenBasedir(ctx, string(path), "opendir"); err != nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
 	p := string(path)
 	if !filepath.IsAbs(p) {
 		p = filepath.Join(string(ctx.Global().Getwd()), p)

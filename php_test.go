@@ -314,7 +314,7 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 			"hard_timeout":             true, // hard timeout not implemented
 			"session.auto_start":       true, // sessions not implemented
 			// filter.default=unsafe_raw is a no-op (no filtering), safe to accept
-			"open_basedir":             true, // open_basedir restriction not implemented
+			// open_basedir: implemented - checks file access against allowed directories
 			// precision and serialize_precision are implemented in core/phpv/ztype.go
 			// register_argc_argv: implemented - controls argv/argc in $_SERVER
 			// variables_order: implemented in doGPC() - controls which superglobals are populated
@@ -672,8 +672,11 @@ func TestPhp(t *testing.T) {
 	skip := 0
 	fail := 0
 	filepath.Walk(TestsPath, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info == nil {
+			return nil // skip entries that disappeared (e.g. temp dirs from tests)
+		}
 		if !info.Mode().IsRegular() {
-			return err
+			return nil
 		}
 		if !strings.HasSuffix(path, ".phpt") {
 			return err

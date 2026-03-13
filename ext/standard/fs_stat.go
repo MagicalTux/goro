@@ -1,0 +1,508 @@
+package standard
+
+import (
+	"os"
+	"path/filepath"
+	"syscall"
+	"time"
+
+	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpv"
+)
+
+// resolveFilePath resolves a filename relative to the cwd from the global context.
+func resolveFilePath(ctx phpv.Context, filename string) string {
+	if !filepath.IsAbs(filename) {
+		return filepath.Join(string(ctx.Global().Getwd()), filename)
+	}
+	return filename
+}
+
+// > func array stat ( string $filename )
+func fncStat(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var filename string
+	_, err := core.Expand(ctx, args, &filename)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := ctx.Global().CheckOpenBasedir(ctx, filename, "stat"); err != nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	p := resolveFilePath(ctx, filename)
+	fi, err := os.Stat(p)
+	if err != nil {
+		return phpv.ZFalse.ZVal(), ctx.Warn("stat(): stat failed for %s", filename)
+	}
+
+	return buildStatArray(ctx, fi), nil
+}
+
+// > func array lstat ( string $filename )
+func fncLstat(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var filename string
+	_, err := core.Expand(ctx, args, &filename)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := ctx.Global().CheckOpenBasedir(ctx, filename, "lstat"); err != nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	p := resolveFilePath(ctx, filename)
+	fi, err := os.Lstat(p)
+	if err != nil {
+		return phpv.ZFalse.ZVal(), ctx.Warn("lstat(): Lstat failed for %s", filename)
+	}
+
+	return buildStatArray(ctx, fi), nil
+}
+
+// > func int fileatime ( string $filename )
+func fncFileatime(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var filename string
+	_, err := core.Expand(ctx, args, &filename)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := ctx.Global().CheckOpenBasedir(ctx, filename, "fileatime"); err != nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	p := resolveFilePath(ctx, filename)
+	fi, err := os.Stat(p)
+	if err != nil {
+		return phpv.ZFalse.ZVal(), ctx.Warn("fileatime(): stat failed for %s", filename)
+	}
+
+	st := fi.Sys().(*syscall.Stat_t)
+	return phpv.ZInt(st.Atim.Sec).ZVal(), nil
+}
+
+// > func int filectime ( string $filename )
+func fncFilectime(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var filename string
+	_, err := core.Expand(ctx, args, &filename)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := ctx.Global().CheckOpenBasedir(ctx, filename, "filectime"); err != nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	p := resolveFilePath(ctx, filename)
+	fi, err := os.Stat(p)
+	if err != nil {
+		return phpv.ZFalse.ZVal(), ctx.Warn("filectime(): stat failed for %s", filename)
+	}
+
+	st := fi.Sys().(*syscall.Stat_t)
+	return phpv.ZInt(st.Ctim.Sec).ZVal(), nil
+}
+
+// > func int filemtime ( string $filename )
+func fncFilemtime(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var filename string
+	_, err := core.Expand(ctx, args, &filename)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := ctx.Global().CheckOpenBasedir(ctx, filename, "filemtime"); err != nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	p := resolveFilePath(ctx, filename)
+	fi, err := os.Stat(p)
+	if err != nil {
+		return phpv.ZFalse.ZVal(), ctx.Warn("filemtime(): stat failed for %s", filename)
+	}
+
+	return phpv.ZInt(fi.ModTime().Unix()).ZVal(), nil
+}
+
+// > func int filesize ( string $filename )
+func fncFilesize(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var filename string
+	_, err := core.Expand(ctx, args, &filename)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := ctx.Global().CheckOpenBasedir(ctx, filename, "filesize"); err != nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	p := resolveFilePath(ctx, filename)
+	fi, err := os.Stat(p)
+	if err != nil {
+		return phpv.ZFalse.ZVal(), ctx.Warn("filesize(): stat failed for %s", filename)
+	}
+
+	return phpv.ZInt(fi.Size()).ZVal(), nil
+}
+
+// > func string filetype ( string $filename )
+func fncFiletype(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var filename string
+	_, err := core.Expand(ctx, args, &filename)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := ctx.Global().CheckOpenBasedir(ctx, filename, "filetype"); err != nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	p := resolveFilePath(ctx, filename)
+	fi, err := os.Lstat(p)
+	if err != nil {
+		return phpv.ZFalse.ZVal(), ctx.Warn("filetype(): Lstat failed for %s", filename)
+	}
+
+	mode := fi.Mode()
+	switch {
+	case mode.IsRegular():
+		return phpv.ZStr("file"), nil
+	case mode.IsDir():
+		return phpv.ZStr("dir"), nil
+	case mode&os.ModeSymlink != 0:
+		return phpv.ZStr("link"), nil
+	case mode&os.ModeCharDevice != 0:
+		return phpv.ZStr("char"), nil
+	case mode&os.ModeDevice != 0:
+		return phpv.ZStr("block"), nil
+	case mode&os.ModeNamedPipe != 0:
+		return phpv.ZStr("fifo"), nil
+	case mode&os.ModeSocket != 0:
+		return phpv.ZStr("socket"), nil
+	default:
+		return phpv.ZStr("unknown"), nil
+	}
+}
+
+// > func int fileperms ( string $filename )
+func fncFileperms(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var filename string
+	_, err := core.Expand(ctx, args, &filename)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := ctx.Global().CheckOpenBasedir(ctx, filename, "fileperms"); err != nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	p := resolveFilePath(ctx, filename)
+	fi, err := os.Stat(p)
+	if err != nil {
+		return phpv.ZFalse.ZVal(), ctx.Warn("fileperms(): stat failed for %s", filename)
+	}
+
+	st := fi.Sys().(*syscall.Stat_t)
+	return phpv.ZInt(st.Mode).ZVal(), nil
+}
+
+// > func int fileowner ( string $filename )
+func fncFileowner(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var filename string
+	_, err := core.Expand(ctx, args, &filename)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := ctx.Global().CheckOpenBasedir(ctx, filename, "fileowner"); err != nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	p := resolveFilePath(ctx, filename)
+	fi, err := os.Stat(p)
+	if err != nil {
+		return phpv.ZFalse.ZVal(), ctx.Warn("fileowner(): stat failed for %s", filename)
+	}
+
+	st := fi.Sys().(*syscall.Stat_t)
+	return phpv.ZInt(st.Uid).ZVal(), nil
+}
+
+// > func int filegroup ( string $filename )
+func fncFilegroup(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var filename string
+	_, err := core.Expand(ctx, args, &filename)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := ctx.Global().CheckOpenBasedir(ctx, filename, "filegroup"); err != nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	p := resolveFilePath(ctx, filename)
+	fi, err := os.Stat(p)
+	if err != nil {
+		return phpv.ZFalse.ZVal(), ctx.Warn("filegroup(): stat failed for %s", filename)
+	}
+
+	st := fi.Sys().(*syscall.Stat_t)
+	return phpv.ZInt(st.Gid).ZVal(), nil
+}
+
+// > func int fileinode ( string $filename )
+func fncFileinode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var filename string
+	_, err := core.Expand(ctx, args, &filename)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := ctx.Global().CheckOpenBasedir(ctx, filename, "fileinode"); err != nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	p := resolveFilePath(ctx, filename)
+	fi, err := os.Stat(p)
+	if err != nil {
+		return phpv.ZFalse.ZVal(), ctx.Warn("fileinode(): stat failed for %s", filename)
+	}
+
+	st := fi.Sys().(*syscall.Stat_t)
+	return phpv.ZInt(int64(st.Ino)).ZVal(), nil
+}
+
+// > func bool touch ( string $filename [, int $time = time() [, int $atime ]] )
+func fncTouch(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var filename string
+	var mtime *phpv.ZInt
+	var atime *phpv.ZInt
+	_, err := core.Expand(ctx, args, &filename, &mtime, &atime)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := ctx.Global().CheckOpenBasedir(ctx, filename, "touch"); err != nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	p := resolveFilePath(ctx, filename)
+
+	// Create file if it doesn't exist
+	if _, err := os.Stat(p); os.IsNotExist(err) {
+		f, err := os.Create(p)
+		if err != nil {
+			return phpv.ZFalse.ZVal(), ctx.Warn("touch(): Unable to create file %s because %s", filename, err)
+		}
+		f.Close()
+	}
+
+	// If no times specified, use current time
+	if mtime == nil && atime == nil {
+		now := time.Now()
+		err = os.Chtimes(p, now, now)
+	} else {
+		mt := time.Now()
+		at := mt
+		if mtime != nil {
+			mt = time.Unix(int64(*mtime), 0)
+		}
+		if atime != nil {
+			at = time.Unix(int64(*atime), 0)
+		} else if mtime != nil {
+			at = mt
+		}
+		err = os.Chtimes(p, at, mt)
+	}
+
+	if err != nil {
+		return phpv.ZFalse.ZVal(), ctx.Warn("touch(): %s", err)
+	}
+	return phpv.ZTrue.ZVal(), nil
+}
+
+// > func string tempnam ( string $dir , string $prefix )
+func fncTempnam(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var dir, prefix string
+	_, err := core.Expand(ctx, args, &dir, &prefix)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := ctx.Global().CheckOpenBasedir(ctx, dir, "tempnam"); err != nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	p := resolveFilePath(ctx, dir)
+
+	f, err := os.CreateTemp(p, prefix)
+	if err != nil {
+		return phpv.ZFalse.ZVal(), ctx.Warn("tempnam(): %s", err)
+	}
+	name := f.Name()
+	f.Close()
+	return phpv.ZString(name).ZVal(), nil
+}
+
+// > func bool link ( string $target , string $link )
+func fncLink(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var target, link string
+	_, err := core.Expand(ctx, args, &target, &link)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := ctx.Global().CheckOpenBasedir(ctx, target, "link"); err != nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+	if err := ctx.Global().CheckOpenBasedir(ctx, link, "link"); err != nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	err = os.Link(resolveFilePath(ctx, target), resolveFilePath(ctx, link))
+	if err != nil {
+		return phpv.ZFalse.ZVal(), ctx.Warn("link(): %s", err)
+	}
+	return phpv.ZTrue.ZVal(), nil
+}
+
+// > func array file ( string $filename [, int $flags = 0 [, resource $context ]] )
+func fncFile(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var filename phpv.ZString
+	var flags *phpv.ZInt
+	_, err := core.Expand(ctx, args, &filename, &flags)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := ctx.Global().CheckOpenBasedir(ctx, string(filename), "file"); err != nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	f, err := ctx.Global().Open(ctx, filename, "r", false)
+	if err != nil {
+		return phpv.ZFalse.ZVal(), ctx.Warn("file(%s): Failed to open stream: %s", filename, err)
+	}
+	defer f.Close()
+
+	result := phpv.NewZArray()
+
+	var buf []byte
+	b := make([]byte, 1)
+	for {
+		n, readErr := f.Read(b)
+		if n > 0 {
+			buf = append(buf, b[0])
+			if b[0] == '\n' {
+				line := string(buf)
+				if flags != nil && *flags&FILE_IGNORE_NEW_LINES != 0 {
+					line = line[:len(line)-1]
+				}
+				if flags != nil && *flags&FILE_SKIP_EMPTY_LINES != 0 && (line == "" || line == "\n") {
+					buf = buf[:0]
+					continue
+				}
+				result.OffsetSet(ctx, nil, phpv.ZString(line).ZVal())
+				buf = buf[:0]
+			}
+		}
+		if readErr != nil {
+			break
+		}
+	}
+
+	// Handle last line without trailing newline
+	if len(buf) > 0 {
+		line := string(buf)
+		if !(flags != nil && *flags&FILE_SKIP_EMPTY_LINES != 0 && line == "") {
+			result.OffsetSet(ctx, nil, phpv.ZString(line).ZVal())
+		}
+	}
+
+	return result.ZVal(), nil
+}
+
+// > func float disk_free_space ( string $directory )
+// > alias diskfreespace
+func fncDiskFreeSpace(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var dir string
+	_, err := core.Expand(ctx, args, &dir)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := ctx.Global().CheckOpenBasedir(ctx, dir, "disk_free_space"); err != nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	p := resolveFilePath(ctx, dir)
+	var stat syscall.Statfs_t
+	err = syscall.Statfs(p, &stat)
+	if err != nil {
+		return phpv.ZFalse.ZVal(), ctx.Warn("disk_free_space(): %s", err)
+	}
+
+	return phpv.ZFloat(float64(stat.Bavail) * float64(stat.Bsize)).ZVal(), nil
+}
+
+// > func float disk_total_space ( string $directory )
+func fncDiskTotalSpace(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var dir string
+	_, err := core.Expand(ctx, args, &dir)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := ctx.Global().CheckOpenBasedir(ctx, dir, "disk_total_space"); err != nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	p := resolveFilePath(ctx, dir)
+	var stat syscall.Statfs_t
+	err = syscall.Statfs(p, &stat)
+	if err != nil {
+		return phpv.ZFalse.ZVal(), ctx.Warn("disk_total_space(): %s", err)
+	}
+
+	return phpv.ZFloat(float64(stat.Blocks) * float64(stat.Bsize)).ZVal(), nil
+}
+
+// buildStatArray creates a PHP stat() result array from os.FileInfo.
+func buildStatArray(ctx phpv.Context, fi os.FileInfo) *phpv.ZVal {
+	st := fi.Sys().(*syscall.Stat_t)
+
+	result := phpv.NewZArray()
+
+	// Numeric indices 0-12
+	result.OffsetSet(ctx, phpv.ZInt(0).ZVal(), phpv.ZInt(int64(st.Dev)).ZVal())      // dev
+	result.OffsetSet(ctx, phpv.ZInt(1).ZVal(), phpv.ZInt(int64(st.Ino)).ZVal())      // ino
+	result.OffsetSet(ctx, phpv.ZInt(2).ZVal(), phpv.ZInt(int64(st.Mode)).ZVal())     // mode
+	result.OffsetSet(ctx, phpv.ZInt(3).ZVal(), phpv.ZInt(int64(st.Nlink)).ZVal())    // nlink
+	result.OffsetSet(ctx, phpv.ZInt(4).ZVal(), phpv.ZInt(int64(st.Uid)).ZVal())      // uid
+	result.OffsetSet(ctx, phpv.ZInt(5).ZVal(), phpv.ZInt(int64(st.Gid)).ZVal())      // gid
+	result.OffsetSet(ctx, phpv.ZInt(6).ZVal(), phpv.ZInt(int64(st.Rdev)).ZVal())     // rdev
+	result.OffsetSet(ctx, phpv.ZInt(7).ZVal(), phpv.ZInt(st.Size).ZVal())            // size
+	result.OffsetSet(ctx, phpv.ZInt(8).ZVal(), phpv.ZInt(st.Atim.Sec).ZVal())        // atime
+	result.OffsetSet(ctx, phpv.ZInt(9).ZVal(), phpv.ZInt(st.Mtim.Sec).ZVal())        // mtime
+	result.OffsetSet(ctx, phpv.ZInt(10).ZVal(), phpv.ZInt(st.Ctim.Sec).ZVal())       // ctime
+	result.OffsetSet(ctx, phpv.ZInt(11).ZVal(), phpv.ZInt(int64(st.Blksize)).ZVal()) // blksize
+	result.OffsetSet(ctx, phpv.ZInt(12).ZVal(), phpv.ZInt(st.Blocks).ZVal())         // blocks
+
+	// Named indices (same data, different keys)
+	result.OffsetSet(ctx, phpv.ZStr("dev"), phpv.ZInt(int64(st.Dev)).ZVal())
+	result.OffsetSet(ctx, phpv.ZStr("ino"), phpv.ZInt(int64(st.Ino)).ZVal())
+	result.OffsetSet(ctx, phpv.ZStr("mode"), phpv.ZInt(int64(st.Mode)).ZVal())
+	result.OffsetSet(ctx, phpv.ZStr("nlink"), phpv.ZInt(int64(st.Nlink)).ZVal())
+	result.OffsetSet(ctx, phpv.ZStr("uid"), phpv.ZInt(int64(st.Uid)).ZVal())
+	result.OffsetSet(ctx, phpv.ZStr("gid"), phpv.ZInt(int64(st.Gid)).ZVal())
+	result.OffsetSet(ctx, phpv.ZStr("rdev"), phpv.ZInt(int64(st.Rdev)).ZVal())
+	result.OffsetSet(ctx, phpv.ZStr("size"), phpv.ZInt(st.Size).ZVal())
+	result.OffsetSet(ctx, phpv.ZStr("atime"), phpv.ZInt(st.Atim.Sec).ZVal())
+	result.OffsetSet(ctx, phpv.ZStr("mtime"), phpv.ZInt(st.Mtim.Sec).ZVal())
+	result.OffsetSet(ctx, phpv.ZStr("ctime"), phpv.ZInt(st.Ctim.Sec).ZVal())
+	result.OffsetSet(ctx, phpv.ZStr("blksize"), phpv.ZInt(int64(st.Blksize)).ZVal())
+	result.OffsetSet(ctx, phpv.ZStr("blocks"), phpv.ZInt(st.Blocks).ZVal())
+
+	return result.ZVal()
+}

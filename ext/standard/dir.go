@@ -32,6 +32,10 @@ func fncChdir(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, ctx.FuncError(err)
 	}
 
+	if err := ctx.Global().CheckOpenBasedir(ctx, string(p), "chdir"); err != nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
 	err = ctx.Global().Chdir(p)
 	if err != nil {
 		return nil, err
@@ -50,6 +54,10 @@ func fncScanDir(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	sortingOrder := core.Deref(sortingOrderArg, SCANDIR_SORT_ASCENDING)
+
+	if err := ctx.Global().CheckOpenBasedir(ctx, string(dir), "scandir"); err != nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
 
 	files, err := os.ReadDir(string(dir))
 	if err != nil {

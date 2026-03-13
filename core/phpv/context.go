@@ -125,6 +125,8 @@ type GlobalContext interface {
 
 	RegisterDestructor(obj ZObject)
 	UnregisterDestructor(obj ZObject)
+
+	CheckOpenBasedir(ctx Context, path string, funcName string) error
 }
 
 type FuncContext interface {
