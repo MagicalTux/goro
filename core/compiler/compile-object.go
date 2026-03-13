@@ -736,7 +736,7 @@ func compilePaamayimNekudotayim(v phpv.Runnable, i *tokenizer.Item, c compileCtx
 			if i.Type != tokenizer.Rune('}') {
 				return nil, i.Unexpected()
 			}
-			return &runClassStaticDynVarRef{v, expr, l}, nil
+			return &runClassStaticDynVarRef{className: v, nameExpr: expr, l: l}, nil
 		}
 		// C::$var — indirect via variable
 		c.backup()
@@ -744,7 +744,7 @@ func compilePaamayimNekudotayim(v phpv.Runnable, i *tokenizer.Item, c compileCtx
 		if err != nil {
 			return nil, err
 		}
-		return &runClassStaticDynVarRef{v, expr, l}, nil
+		return &runClassStaticDynVarRef{className: v, nameExpr: expr, l: l}, nil
 	case tokenizer.T_VARIABLE:
 		return &runClassStaticVarRef{v, ident[1:], l}, nil
 

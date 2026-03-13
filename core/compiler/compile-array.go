@@ -418,12 +418,7 @@ func (ac *runArrayAccess) writeValueToString(ctx phpv.Context, value *phpv.ZVal)
 		return ctx.Errorf("[] operator not supported for strings")
 	}
 
-	offset, err := ac.offset.Run(ctx)
-	if err != nil {
-		return err
-	}
-
-	offset, err = ac.getArrayOffset(ctx)
+	offset, err := ac.getArrayOffset(ctx)
 	if err != nil {
 		return err
 	}

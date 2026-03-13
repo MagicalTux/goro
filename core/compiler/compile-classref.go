@@ -91,6 +91,10 @@ type runClassStaticDynVarRef struct {
 	className phpv.Runnable
 	nameExpr  phpv.Runnable
 	l         *phpv.Loc
+
+	// PrepareWrite caching
+	prepared   bool
+	cachedName phpv.ZString
 }
 
 func (r *runClassStaticDynVarRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
@@ -131,6 +135,16 @@ func (r *runClassStaticDynVarRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	return phpv.NewZVal(v.Value()), nil
 }
 
+func (r *runClassStaticDynVarRef) PrepareWrite(ctx phpv.Context) error {
+	nameVal, err := r.nameExpr.Run(ctx)
+	if err != nil {
+		return err
+	}
+	r.prepared = true
+	r.cachedName = phpv.ZString(nameVal.String())
+	return nil
+}
+
 func (r *runClassStaticDynVarRef) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 	className, err := r.className.Run(ctx)
 	if err != nil {
@@ -142,11 +156,17 @@ func (r *runClassStaticDynVarRef) WriteValue(ctx phpv.Context, value *phpv.ZVal)
 		return err
 	}
 
-	nameVal, err := r.nameExpr.Run(ctx)
-	if err != nil {
-		return err
+	var varName phpv.ZString
+	if r.prepared {
+		varName = r.cachedName
+		r.prepared = false
+	} else {
+		nameVal, err := r.nameExpr.Run(ctx)
+		if err != nil {
+			return err
+		}
+		varName = phpv.ZString(nameVal.String())
 	}
-	varName := phpv.ZString(nameVal.String())
 
 	zc := class.(*phpobj.ZClass)
 	p, found, err := zc.FindStaticProp(ctx, varName)
