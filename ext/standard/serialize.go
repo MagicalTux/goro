@@ -76,7 +76,15 @@ func serialize(ctx phpv.Context, value *phpv.ZVal) (string, error) {
 	case phpv.ZtFloat:
 		n := value.AsFloat(ctx)
 		p := phpv.GetSerializePrecision(ctx)
-		result = "d:" + phpv.FormatFloatPrecision(float64(n), p) + ";"
+		var s string
+		if p == 0 {
+			// PHP's zend_gcvt at ndigit=0 uses scientific notation for all
+			// non-zero finite values (threshold: decpt > 0, always true).
+			s = phpv.FormatFloatSerialize(float64(n))
+		} else {
+			s = phpv.FormatFloatPrecision(float64(n), p)
+		}
+		result = "d:" + s + ";"
 	case phpv.ZtString:
 		s := value.AsString(ctx)
 		result = fmt.Sprintf(`s:%d:"%s";`, len(s), s)

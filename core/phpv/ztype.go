@@ -294,6 +294,30 @@ func FormatFloatPrecision(f float64, prec int) string {
 	return phpFormatSci(s)
 }
 
+// FormatFloatSerialize formats a float64 for serialize() when serialize_precision=0.
+// PHP's zend_gcvt at ndigit=0 always uses scientific notation (1 significant digit
+// in E format), matching the behavior where the sci threshold is decpt > 0.
+func FormatFloatSerialize(f float64) string {
+	if math.IsInf(f, 1) {
+		return "INF"
+	}
+	if math.IsInf(f, -1) {
+		return "-INF"
+	}
+	if math.IsNaN(f) {
+		return "NAN"
+	}
+	if f == 0 {
+		if math.Signbit(f) {
+			return "-0"
+		}
+		return "0"
+	}
+	// 'E' format with prec=0 gives 1 significant digit in scientific notation
+	s := strconv.FormatFloat(f, 'E', 0, 64)
+	return phpFormatSci(s)
+}
+
 // GetPrecision reads the 'precision' INI setting from the context.
 // Returns 14 (PHP default) if not set or context is nil.
 func GetPrecision(ctx Context) int {
