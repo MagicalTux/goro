@@ -406,6 +406,13 @@ var Defaults = map[string]*IniDirective{
 	"zlib.output_handler":                   {`""`, INI_ALL},
 }
 
+// DeprecatedDirectives lists INI directives deprecated in PHP 8.x.
+// When these are set via ini file or ini_set, a deprecation warning is emitted.
+var DeprecatedDirectives = map[string]bool{
+	"report_memleaks":          true, // deprecated in PHP 8.4
+	"auto_detect_line_endings": true, // deprecated in PHP 8.1
+}
+
 func init() {
 	cwd, err := os.Getwd()
 	if err != nil {

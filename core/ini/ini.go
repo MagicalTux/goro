@@ -218,6 +218,11 @@ func (c *Config) Parse(ctx phpv.Context, r io.Reader) error {
 		if err != nil {
 			return err
 		}
+		// Emit deprecation warning for deprecated directives
+		if DeprecatedDirectives[k] {
+			fmt.Fprintf(ctx, "Deprecated: PHP Startup: Directive '%s' is deprecated in Unknown on line 0\n", k)
+		}
+
 		c.Values[k] = &phpv.IniValue{
 			Global: expr,
 		}

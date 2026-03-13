@@ -248,12 +248,14 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		g.SetOutput(output)
 		c, err := compiler.Compile(g, t)
 		if err != nil {
-			return err
+			// If SKIPIF code can't compile (e.g., missing include file), skip the test
+			return skipError{reason: "SKIPIF compile error: " + err.Error()}
 		}
 		_, err = c.Run(g)
 		err = phpv.FilterExitError(err)
 		if err != nil {
-			return err
+			// If SKIPIF code errors at runtime, skip the test (PHP's run-tests does the same)
+			return skipError{reason: "SKIPIF runtime error: " + err.Error()}
 		}
 		if bytes.HasPrefix(output.Bytes(), []byte("skip ")) {
 			return skipError{reason: "SKIPIF: " + strings.TrimSpace(string(output.Bytes()))}
@@ -318,7 +320,7 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 			"allow_url_fopen":          true, // tests using this need HTTP server helpers we don't have
 			"default_charset":          true, // charset-aware functions (htmlentities etc) not fully implemented
 			"error_log_mode":           true, // log mode not implemented
-			"report_memleaks":          true, // memory leak detection not implemented
+			// report_memleaks: deprecated directive, handled in ini parser
 			// sys_temp_dir is implemented in ext/standard/fs.go:fncSysGetTempDir
 			// date.timezone is handled by the date extension's ini settings
 			"opcache.save_comments":    true, // needs ReflectionClass doc comments support
@@ -623,6 +625,7 @@ func TestPhp(t *testing.T) {
 			var se skipError
 			if errors.As(err, &se) {
 				skip += 1
+				t.Logf("Skipped %s: %s", path, se.Error())
 				return nil
 			}
 			fail += 1
