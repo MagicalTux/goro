@@ -28,6 +28,7 @@ import (
 	_ "github.com/MagicalTux/goro/ext/json"
 	_ "github.com/MagicalTux/goro/ext/pcre"
 	_ "github.com/MagicalTux/goro/ext/reflection"
+	_ "github.com/MagicalTux/goro/ext/spl"
 	_ "github.com/MagicalTux/goro/ext/standard"
 	"github.com/andreyvit/diff"
 )
