@@ -75,8 +75,14 @@ func serialize(ctx phpv.Context, value *phpv.ZVal) (string, error) {
 		result = "i:" + strconv.FormatInt(int64(n), 10) + ";"
 	case phpv.ZtFloat:
 		n := value.AsFloat(ctx)
-		p := ctx.GetConfig("serialize_precision", phpv.ZInt(14).ZVal()).AsInt(ctx)
-		result = "d:" + strconv.FormatFloat(float64(n), 'G', int(p), 64) + ";"
+		p := phpv.GetSerializePrecision(ctx)
+		var s string
+		if p == -1 {
+			s = phpv.FormatFloat(float64(n))
+		} else {
+			s = phpv.FormatFloatPrecision(float64(n), p)
+		}
+		result = "d:" + s + ";"
 	case phpv.ZtString:
 		s := value.AsString(ctx)
 		result = fmt.Sprintf(`s:%d:"%s";`, len(s), s)

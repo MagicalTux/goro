@@ -56,8 +56,13 @@ func doVarDump(ctx phpv.Context, z *phpv.ZVal, linePfx string, recurs map[uintpt
 	case phpv.ZtInt:
 		fmt.Fprintf(ctx, "%s%sint(%d)\n", linePfx, isRef, z.Value())
 	case phpv.ZtFloat:
-		// PHP uses serialize_precision=-1 by default for var_dump since PHP 7.1
-		s := phpv.FormatFloat(float64(z.Value().(phpv.ZFloat)))
+		p := phpv.GetSerializePrecision(ctx)
+		var s string
+		if p == -1 {
+			s = phpv.FormatFloat(float64(z.Value().(phpv.ZFloat)))
+		} else {
+			s = phpv.FormatFloatPrecision(float64(z.Value().(phpv.ZFloat)), p)
+		}
 		fmt.Fprintf(ctx, "%s%sfloat(%s)\n", linePfx, isRef, s)
 	case phpv.ZtString:
 		s := z.Value().(phpv.ZString)

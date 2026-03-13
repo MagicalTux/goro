@@ -49,7 +49,8 @@ func appendJsonEncode(ctx phpv.Context, r []byte, v *phpv.ZVal, opt JsonEncOpt, 
 		s := strconv.FormatInt(int64(v.Value().(phpv.ZInt)), 10)
 		return append(r, []byte(s)...), nil
 	case phpv.ZtFloat:
-		s := strconv.FormatFloat(float64(v.Value().(phpv.ZFloat)), 'g', -1, 64)
+		p := phpv.GetSerializePrecision(ctx)
+		s := strconv.FormatFloat(float64(v.Value().(phpv.ZFloat)), 'g', p, 64)
 		return append(r, []byte(s)...), nil
 	case phpv.ZtString:
 		return appendJsonString(r, string(v.Value().(phpv.ZString)), opt)

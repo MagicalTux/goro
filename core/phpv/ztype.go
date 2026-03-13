@@ -178,7 +178,11 @@ func (z ZFloat) AsVal(ctx Context, t ZType) (Val, error) {
 	case ZtFloat:
 		return z, nil
 	case ZtString:
-		return ZString(FormatFloatPrecision(float64(z), 14)), nil
+		prec := 14
+		if ctx != nil {
+			prec = GetPrecision(ctx)
+		}
+		return ZString(FormatFloatPrecision(float64(z), prec)), nil
 	case ZtArray:
 		arr := NewZArray()
 		arr.OffsetSet(ctx, nil, z.ZVal())
@@ -291,6 +295,32 @@ func FormatFloatPrecision(f float64, prec int) string {
 		s = pre + "E" + sign + post
 	}
 	return s
+}
+
+// GetPrecision reads the 'precision' INI setting from the context.
+// Returns 14 (PHP default) if not set or context is nil.
+func GetPrecision(ctx Context) int {
+	if ctx == nil {
+		return 14
+	}
+	v := ctx.GetConfig("precision", ZInt(14).ZVal())
+	if v == nil {
+		return 14
+	}
+	return int(v.AsInt(ctx))
+}
+
+// GetSerializePrecision reads the 'serialize_precision' INI setting from the context.
+// Returns -1 (PHP default) if not set or context is nil.
+func GetSerializePrecision(ctx Context) int {
+	if ctx == nil {
+		return -1
+	}
+	v := ctx.GetConfig("serialize_precision", ZInt(-1).ZVal())
+	if v == nil {
+		return -1
+	}
+	return int(v.AsInt(ctx))
 }
 
 func (v ZFloat) Value() Val {
