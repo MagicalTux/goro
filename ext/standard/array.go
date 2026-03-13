@@ -168,21 +168,21 @@ func fncInArray(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			return nil, err
 		}
 
-		// TODO: doesn't work with non-scalar types
 		if strict {
-			if needle.GetType() != val.GetType() && needle.Value() == val.Value() {
+			eq, err := phpv.StrictEquals(ctx, needle, val)
+			if err != nil {
+				return nil, err
+			}
+			if eq {
 				return phpv.ZBool(true).ZVal(), nil
 			}
 		} else {
-			switch needle.GetType() {
-			case phpv.ZtBool, phpv.ZtFloat, phpv.ZtInt, phpv.ZtNull, phpv.ZtString:
-				if needle.String() == val.String() {
-					return phpv.ZBool(true).ZVal(), nil
-				}
-			default:
-				if needle.Value() == val.Value() {
-					return phpv.ZBool(true).ZVal(), nil
-				}
+			eq, err := phpv.Equals(ctx, needle, val)
+			if err != nil {
+				return nil, err
+			}
+			if eq {
+				return phpv.ZBool(true).ZVal(), nil
 			}
 		}
 	}
@@ -812,15 +812,21 @@ func fncArraySearch(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	if strict != nil && *strict {
 		for k, v := range haystack.Iterate(ctx) {
-			if v.GetType() == needle.GetType() && v.Value() == needle.Value() {
+			eq, err := phpv.StrictEquals(ctx, needle, v)
+			if err != nil {
+				return nil, err
+			}
+			if eq {
 				return k, nil
 			}
 		}
 	} else {
 		for k, v := range haystack.Iterate(ctx) {
-			match := v.GetType() == needle.GetType() && v.Value() == needle.Value()
-			match = match || v.String() == needle.String()
-			if match {
+			eq, err := phpv.Equals(ctx, needle, v)
+			if err != nil {
+				return nil, err
+			}
+			if eq {
 				return k, nil
 			}
 		}
