@@ -353,14 +353,19 @@ func fncLink(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	if err := ctx.Global().CheckOpenBasedir(ctx, target, "link"); err != nil {
-		return phpv.ZFalse.ZVal(), nil
-	}
+	// link() resolves paths before basedir check (PHP shows absolute paths in warnings)
+	// Check link (dest) first, then target (source), matching PHP's order
+	target = resolveFilePath(ctx, target)
+	link = resolveFilePath(ctx, link)
+
 	if err := ctx.Global().CheckOpenBasedir(ctx, link, "link"); err != nil {
 		return phpv.ZFalse.ZVal(), nil
 	}
+	if err := ctx.Global().CheckOpenBasedir(ctx, target, "link"); err != nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
 
-	err = os.Link(resolveFilePath(ctx, target), resolveFilePath(ctx, link))
+	err = os.Link(target, link)
 	if err != nil {
 		return phpv.ZFalse.ZVal(), ctx.Warn("link(): %s", err)
 	}

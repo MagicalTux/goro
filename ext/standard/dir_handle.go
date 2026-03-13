@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -48,6 +49,7 @@ func fncOpendir(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	if err := ctx.Global().CheckOpenBasedir(ctx, string(path), "opendir"); err != nil {
+		ctx.Warn("opendir(%s): Failed to open directory: Operation not permitted", path, logopt.NoFuncName(true))
 		return phpv.ZFalse.ZVal(), nil
 	}
 
@@ -58,7 +60,7 @@ func fncOpendir(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	entries, err := os.ReadDir(p)
 	if err != nil {
-		return phpv.ZFalse.ZVal(), ctx.Warn("opendir(%s): Failed to open directory: %s", path, err)
+		return phpv.ZFalse.ZVal(), ctx.Warn("opendir(%s): Failed to open directory: %s", path, err, logopt.NoFuncName(true))
 	}
 
 	dh := &dirHandle{

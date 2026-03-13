@@ -580,13 +580,23 @@ func runTest(t *testing.T, fpath string) (p *phptest, err error) {
 			return p, err
 		}
 	}
+	// Run CLEAN section unconditionally (even if EXPECT fails), to avoid leaving
+	// stale temp directories that break subsequent tests.
+	var expectErr error
 	for _, name := range expectParts {
-		if err := p.handlePart(name, sections[name]); err != nil {
-			return p, err
+		if name == "CLEAN" {
+			// Always run CLEAN
+			p.handlePart(name, sections[name])
+			continue
+		}
+		if expectErr == nil {
+			if err := p.handlePart(name, sections[name]); err != nil {
+				expectErr = err
+			}
 		}
 	}
 
-	return p, nil
+	return p, expectErr
 }
 
 // expectfToRegex converts a PHP EXPECTF pattern to a Go regex.

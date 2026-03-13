@@ -274,6 +274,8 @@ func fncRealPath(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZFalse.ZVal(), nil
 	}
 
+	filename = resolveFilePath(ctx, filename)
+
 	_, err = os.Stat(filename)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -307,7 +309,13 @@ func fncUnlink(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZFalse.ZVal(), nil
 	}
 
-	stat, err := os.Stat(filename)
+	p := filename
+	if !filepath.IsAbs(p) {
+		p = filepath.Join(string(ctx.Global().Getwd()), p)
+	}
+
+	// Use Lstat so broken symlinks can still be unlinked
+	stat, err := os.Lstat(p)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			err = ctx.Warn("No such file or directory")
@@ -316,11 +324,11 @@ func fncUnlink(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		}
 		return phpv.ZFalse.ZVal(), err
 	}
-	if stat.IsDir() {
+	if stat.Mode()&os.ModeSymlink == 0 && stat.IsDir() {
 		return phpv.ZFalse.ZVal(), ctx.Warn("Is a directory")
 	}
 
-	if err := os.Remove(filename); err != nil {
+	if err := os.Remove(p); err != nil {
 		return phpv.ZFalse.ZVal(), ctx.Warn(err.Error())
 	}
 
@@ -344,6 +352,8 @@ func fncMkdir(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	mode := core.Deref(modeArg, phpv.ZInt(0777))
 	recursive := core.Deref(recursiveArg, phpv.ZBool(false))
+
+	pathname = resolveFilePath(ctx, pathname)
 
 	if recursive {
 		err = os.MkdirAll(pathname, os.FileMode(mode))
@@ -374,6 +384,8 @@ func fncRmdir(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if err := ctx.Global().CheckOpenBasedir(ctx, dirname, "rmdir"); err != nil {
 		return phpv.ZFalse.ZVal(), nil
 	}
+
+	dirname = resolveFilePath(ctx, dirname)
 
 	stat, err := os.Stat(dirname)
 	if err != nil {
@@ -413,6 +425,7 @@ func fncFileGetContents(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	}
 
 	if err := ctx.Global().CheckOpenBasedir(ctx, string(filename), "file_get_contents"); err != nil {
+		ctx.Warn("%s(%s): Failed to open stream: Operation not permitted", ctx.GetFuncName(), filename, logopt.NoFuncName(true))
 		return phpv.ZFalse.ZVal(), nil
 	}
 
@@ -480,6 +493,7 @@ func fncFilePutContents(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	}
 
 	if err := ctx.Global().CheckOpenBasedir(ctx, string(filename), "file_put_contents"); err != nil {
+		ctx.Warn("%s(%s): Failed to open stream: Operation not permitted", ctx.GetFuncName(), filename, logopt.NoFuncName(true))
 		return phpv.ZFalse.ZVal(), nil
 	}
 
@@ -493,7 +507,7 @@ func fncFilePutContents(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	}
 
 	// TODO: should use ctx.Global().Open()
-	r, err := os.OpenFile(string(filename), flags, 0644)
+	r, err := os.OpenFile(resolveFilePath(ctx, string(filename)), flags, 0644)
 	if err != nil {
 		return nil, err
 	}
@@ -544,6 +558,7 @@ func fncFileOpen(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	useIncludePath := useIncludePathArg.HasArg() && bool(useIncludePathArg.Get())
 
 	if err := ctx.Global().CheckOpenBasedir(ctx, string(filename), "fopen"); err != nil {
+		ctx.Warn("%s(%s): Failed to open stream: Operation not permitted", ctx.GetFuncName(), filename, logopt.NoFuncName(true))
 		return phpv.ZFalse.ZVal(), nil
 	}
 
@@ -909,15 +924,15 @@ func fncRename(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, ctx.FuncError(err)
 	}
 
-	oldName := string(oldNameArg)
-	newName := string(newNameArg)
+	if err := ctx.Global().CheckOpenBasedir(ctx, string(oldNameArg), "rename"); err != nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+	if err := ctx.Global().CheckOpenBasedir(ctx, string(newNameArg), "rename"); err != nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
 
-	if err := ctx.Global().CheckOpenBasedir(ctx, oldName, "rename"); err != nil {
-		return phpv.ZFalse.ZVal(), nil
-	}
-	if err := ctx.Global().CheckOpenBasedir(ctx, newName, "rename"); err != nil {
-		return phpv.ZFalse.ZVal(), nil
-	}
+	oldName := resolveFilePath(ctx, string(oldNameArg))
+	newName := resolveFilePath(ctx, string(newNameArg))
 
 	oldStat, err := os.Stat(oldName)
 	if err != nil {
@@ -1002,9 +1017,11 @@ func fncCopy(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	if err := ctx.Global().CheckOpenBasedir(ctx, string(src), "copy"); err != nil {
+		ctx.Warn("copy(%s): Failed to open stream: Operation not permitted", src, logopt.NoFuncName(true))
 		return phpv.ZFalse.ZVal(), nil
 	}
 	if err := ctx.Global().CheckOpenBasedir(ctx, string(dst), "copy"); err != nil {
+		ctx.Warn("copy(%s): Failed to open stream: Operation not permitted", dst, logopt.NoFuncName(true))
 		return phpv.ZFalse.ZVal(), nil
 	}
 
@@ -1044,6 +1061,13 @@ func fncSymlink(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
+	// symlink() resolves paths before basedir check (PHP shows absolute paths in warnings)
+	// Check link (dest) first, then target (source), matching PHP's order
+	link = resolveFilePath(ctx, link)
+
+	if err := ctx.Global().CheckOpenBasedir(ctx, link, "symlink"); err != nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
 	if err := ctx.Global().CheckOpenBasedir(ctx, target, "symlink"); err != nil {
 		return phpv.ZFalse.ZVal(), nil
 	}
@@ -1067,6 +1091,7 @@ func fncReadlink(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZFalse.ZVal(), nil
 	}
 
+	p = resolveFilePath(ctx, p)
 	target, err := os.Readlink(p)
 	if err != nil {
 		return phpv.ZFalse.ZVal(), ctx.Warn("%s(): %s", ctx.GetFuncName(), err.Error(), logopt.NoFuncName(true))
@@ -1086,6 +1111,7 @@ func fncLinkinfo(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZInt(-1).ZVal(), nil
 	}
 
+	p = resolveFilePath(ctx, p)
 	fi, err := os.Lstat(p)
 	if err != nil {
 		return phpv.ZInt(-1).ZVal(), ctx.Warn("%s(): %s", ctx.GetFuncName(), err.Error(), logopt.NoFuncName(true))

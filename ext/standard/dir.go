@@ -2,8 +2,10 @@ package standard
 
 import (
 	"os"
+	"path/filepath"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -56,10 +58,15 @@ func fncScanDir(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	sortingOrder := core.Deref(sortingOrderArg, SCANDIR_SORT_ASCENDING)
 
 	if err := ctx.Global().CheckOpenBasedir(ctx, string(dir), "scandir"); err != nil {
+		ctx.Warn("scandir(%s): Failed to open directory: Operation not permitted", dir, logopt.NoFuncName(true))
 		return phpv.ZFalse.ZVal(), nil
 	}
 
-	files, err := os.ReadDir(string(dir))
+	p := string(dir)
+	if !filepath.IsAbs(p) {
+		p = filepath.Join(string(ctx.Global().Getwd()), p)
+	}
+	files, err := os.ReadDir(p)
 	if err != nil {
 		return nil, ctx.FuncError(err)
 	}
