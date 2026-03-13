@@ -10,7 +10,8 @@ func fncInclude(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	ctx = ctx.Parent(1)
+	// Pass the include's own FuncContext so it appears in stack traces.
+	// Include() will use ctx.Parent(1) for variable scoping.
 	return ctx.Global().Include(ctx, fn)
 }
 
@@ -22,7 +23,6 @@ func fncRequire(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	ctx = ctx.Parent(1)
 	return ctx.Global().Require(ctx, fn)
 }
 
@@ -34,7 +34,6 @@ func fncIncludeOnce(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	ctx = ctx.Parent(1)
 	return ctx.Global().IncludeOnce(ctx, fn)
 }
 
@@ -46,6 +45,5 @@ func fncRequireOnce(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	ctx = ctx.Parent(1)
 	return ctx.Global().RequireOnce(ctx, fn)
 }

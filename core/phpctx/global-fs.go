@@ -113,7 +113,7 @@ func (g *Global) openForInclusion(ctx phpv.Context, fn phpv.ZString) (*stream.St
 		scriptDir := filepath.Dir(string(ctx.GetScriptFile()))
 		path := phpv.ZString(filepath.Join(scriptDir, string(fn)))
 		f, err = g.fileHandler.OpenFile(ctx, string(path), "r")
-		if err != nil && !errors.Is(err, os.ErrExist) {
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return nil, err
 		}
 	}
@@ -122,7 +122,7 @@ func (g *Global) openForInclusion(ctx phpv.Context, fn phpv.ZString) (*stream.St
 		// look in current working directory
 		path := phpv.ZString(filepath.Join(g.fileHandler.Cwd, string(fn)))
 		f, err = g.fileHandler.OpenFile(ctx, string(path), "r")
-		if err != nil && !errors.Is(err, os.ErrExist) {
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return nil, err
 		}
 	}

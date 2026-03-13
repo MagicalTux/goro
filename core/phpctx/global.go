@@ -557,6 +557,9 @@ func logWarning(ctx phpv.Context, format string, a ...any) error {
 	if l, ok := option.Loc.(*phpv.Loc); ok && l != nil {
 		loc = l
 	}
+	if option.NoFuncName {
+		funcName = ""
+	}
 	message := fmt.Sprintf(format, fmtArgs...)
 
 	phpErr := &phpv.PhpError{

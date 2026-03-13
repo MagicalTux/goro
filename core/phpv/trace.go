@@ -35,10 +35,16 @@ func (st StackTrace) format(includeMain bool) ZString {
 	level := 0
 	for _, e := range st {
 		argsBuf.Reset()
-		for i, arg := range e.Args {
-			argsBuf.WriteString(traceArgString(arg))
-			if i < len(e.Args)-1 {
-				argsBuf.WriteString(", ")
+		// Include/require are language constructs; PHP omits their args
+		// from debug_print_backtrace() output.
+		isInclude := e.FuncName == "include" || e.FuncName == "require" ||
+			e.FuncName == "include_once" || e.FuncName == "require_once"
+		if !isInclude {
+			for i, arg := range e.Args {
+				argsBuf.WriteString(traceArgString(arg))
+				if i < len(e.Args)-1 {
+					argsBuf.WriteString(", ")
+				}
 			}
 		}
 		var line string
