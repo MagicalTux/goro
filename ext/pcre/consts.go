@@ -16,4 +16,12 @@ const (
 	PREG_REPLACE_EVAL phpv.ZInt = (1 << 0)
 
 	PREG_GREP_INVERT phpv.ZInt = (1 << 0)
+
+	PREG_NO_ERROR              phpv.ZInt = 0
+	PREG_INTERNAL_ERROR        phpv.ZInt = 1
+	PREG_BACKTRACK_LIMIT_ERROR phpv.ZInt = 2
+	PREG_RECURSION_LIMIT_ERROR phpv.ZInt = 3
+	PREG_BAD_UTF8_ERROR        phpv.ZInt = 4
+	PREG_BAD_UTF8_OFFSET_ERROR phpv.ZInt = 5
+	PREG_JIT_STACKLIMIT_ERROR  phpv.ZInt = 6
 )

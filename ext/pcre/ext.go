@@ -22,6 +22,8 @@ func init() {
 			"preg_replace":          {Func: pregReplace, Args: []*phpctx.ExtFunctionArg{}},
 			"preg_replace_callback": {Func: pregReplaceCallback, Args: []*phpctx.ExtFunctionArg{}},
 			"preg_split":            {Func: pregSplit, Args: []*phpctx.ExtFunctionArg{}},
+			"preg_last_error":       {Func: pregLastError, Args: []*phpctx.ExtFunctionArg{}},
+			"preg_last_error_msg":   {Func: pregLastErrorMsg, Args: []*phpctx.ExtFunctionArg{}},
 		},
 		Constants: map[phpv.ZString]phpv.Val{
 			"PREG_GREP_INVERT":          PREG_GREP_INVERT,
@@ -33,6 +35,13 @@ func init() {
 			"PREG_SPLIT_NO_EMPTY":       PREG_SPLIT_NO_EMPTY,
 			"PREG_SPLIT_OFFSET_CAPTURE": PREG_SPLIT_OFFSET_CAPTURE,
 			"PREG_UNMATCHED_AS_NULL":    PREG_UNMATCHED_AS_NULL,
+			"PREG_NO_ERROR":              PREG_NO_ERROR,
+			"PREG_INTERNAL_ERROR":        PREG_INTERNAL_ERROR,
+			"PREG_BACKTRACK_LIMIT_ERROR": PREG_BACKTRACK_LIMIT_ERROR,
+			"PREG_RECURSION_LIMIT_ERROR": PREG_RECURSION_LIMIT_ERROR,
+			"PREG_BAD_UTF8_ERROR":        PREG_BAD_UTF8_ERROR,
+			"PREG_BAD_UTF8_OFFSET_ERROR": PREG_BAD_UTF8_OFFSET_ERROR,
+			"PREG_JIT_STACKLIMIT_ERROR":  PREG_JIT_STACKLIMIT_ERROR,
 		},
 	})
 }

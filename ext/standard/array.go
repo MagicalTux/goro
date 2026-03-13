@@ -1804,3 +1804,99 @@ func fncArrayIsList(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 	return phpv.ZBool(true).ZVal(), nil
 }
+
+// > func bool array_any ( array $array , callable $callback )
+func fncArrayAny(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var array *phpv.ZArray
+	var callback phpv.Callable
+	_, err := core.Expand(ctx, args, &array, &callback)
+	if err != nil {
+		return nil, err
+	}
+
+	callbackArgs := make([]*phpv.ZVal, 2)
+	for k, v := range array.Iterate(ctx) {
+		callbackArgs[0] = v
+		callbackArgs[1] = k
+		result, err := ctx.CallZValInternal(ctx, callback, callbackArgs)
+		if err != nil {
+			return nil, err
+		}
+		if result.AsBool(ctx) {
+			return phpv.ZBool(true).ZVal(), nil
+		}
+	}
+	return phpv.ZBool(false).ZVal(), nil
+}
+
+// > func bool array_all ( array $array , callable $callback )
+func fncArrayAll(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var array *phpv.ZArray
+	var callback phpv.Callable
+	_, err := core.Expand(ctx, args, &array, &callback)
+	if err != nil {
+		return nil, err
+	}
+
+	callbackArgs := make([]*phpv.ZVal, 2)
+	for k, v := range array.Iterate(ctx) {
+		callbackArgs[0] = v
+		callbackArgs[1] = k
+		result, err := ctx.CallZValInternal(ctx, callback, callbackArgs)
+		if err != nil {
+			return nil, err
+		}
+		if !result.AsBool(ctx) {
+			return phpv.ZBool(false).ZVal(), nil
+		}
+	}
+	return phpv.ZBool(true).ZVal(), nil
+}
+
+// > func mixed array_find ( array $array , callable $callback )
+func fncArrayFind(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var array *phpv.ZArray
+	var callback phpv.Callable
+	_, err := core.Expand(ctx, args, &array, &callback)
+	if err != nil {
+		return nil, err
+	}
+
+	callbackArgs := make([]*phpv.ZVal, 2)
+	for k, v := range array.Iterate(ctx) {
+		callbackArgs[0] = v
+		callbackArgs[1] = k
+		result, err := ctx.CallZValInternal(ctx, callback, callbackArgs)
+		if err != nil {
+			return nil, err
+		}
+		if result.AsBool(ctx) {
+			return v, nil
+		}
+	}
+	return phpv.ZNULL.ZVal(), nil
+}
+
+// > func mixed array_find_key ( array $array , callable $callback )
+func fncArrayFindKey(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var array *phpv.ZArray
+	var callback phpv.Callable
+	_, err := core.Expand(ctx, args, &array, &callback)
+	if err != nil {
+		return nil, err
+	}
+
+	callbackArgs := make([]*phpv.ZVal, 2)
+	for k, v := range array.Iterate(ctx) {
+		callbackArgs[0] = v
+		callbackArgs[1] = k
+		result, err := ctx.CallZValInternal(ctx, callback, callbackArgs)
+		if err != nil {
+			return nil, err
+		}
+		if result.AsBool(ctx) {
+			return k, nil
+		}
+	}
+	return phpv.ZNULL.ZVal(), nil
+}

@@ -271,5 +271,45 @@ func compileBaseSingle(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		// expecting a ';' after a var
 		return nil, i.Unexpected()
 	}
+
+	// Wrap standalone `new Foo()` expressions so temporary objects get
+	// destroyed at statement end (matching PHP's refcount behavior).
+	if _, isNew := r.(*runNewObject); isNew {
+		r = &runDestroyTemporary{inner: r}
+	}
+
 	return r, nil
+}
+
+// runDestroyTemporary wraps a statement expression (typically `new Foo()`)
+// and calls __destruct on the resulting object at statement end. This
+// simulates PHP's refcount-based destruction of temporary objects.
+type runDestroyTemporary struct {
+	inner phpv.Runnable
+}
+
+func (r *runDestroyTemporary) Run(ctx phpv.Context) (*phpv.ZVal, error) {
+	result, err := r.inner.Run(ctx)
+	if err != nil {
+		return result, err
+	}
+	// If the result is an object with a destructor, destroy it immediately.
+	if result != nil && result.GetType() == phpv.ZtObject {
+		if obj, ok := result.Value().(phpv.ZObject); ok {
+			if _, hasDestructor := obj.GetClass().GetMethod("__destruct"); hasDestructor {
+				if destructable, ok2 := obj.(interface {
+					CallImplicitDestructor(phpv.Context) error
+				}); ok2 {
+					if derr := destructable.CallImplicitDestructor(ctx); derr != nil {
+						return nil, derr
+					}
+				}
+			}
+		}
+	}
+	return result, nil
+}
+
+func (r *runDestroyTemporary) Dump(w io.Writer) error {
+	return r.inner.Dump(w)
 }
