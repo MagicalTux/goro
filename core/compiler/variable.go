@@ -96,7 +96,7 @@ func (r *runVariable) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			// in Call() which has access to parameter metadata (ref vs value).
 			// Suppress warnings here for all function calls.
 			write = true
-		case *runnableFunctionCallRef, *runObjectFunc:
+		case *runnableFunctionCallRef, *runObjectFunc, *runNewObject:
 			// functions that take references can be considered as "write",
 			// but the param info is not available here, just assume
 			// write is true, and let the functions themselves

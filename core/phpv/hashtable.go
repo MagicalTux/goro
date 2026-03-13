@@ -114,9 +114,16 @@ func (z *ZHashTable) doCopy() error {
 			}
 			continue
 		}
+		// For reference values, preserve the same reference cell so that
+		// both the original and copy share the reference (PHP semantics).
+		// For non-reference values, create an independent copy.
+		val := c.v
+		if !c.v.IsRef() {
+			val = c.v.ZVal()
+		}
 		nc = &hashTableVal{
 			k:    c.k,
-			v:    c.v.ZVal(),
+			v:    val,
 			prev: nc,
 		}
 

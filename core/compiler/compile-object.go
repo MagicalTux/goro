@@ -54,9 +54,28 @@ func (r *runNewObject) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
+	// Determine constructor parameter info for undefined variable warnings
+	var funcArgs []*phpv.FuncArg
+	if constructor := getConstructor(class); constructor != nil {
+		if fga, ok := constructor.(phpv.FuncGetArgs); ok {
+			funcArgs = fga.GetArgs()
+		}
+	}
+
 	var args []*phpv.ZVal
-	for _, r := range r.newArg {
-		arg, err := r.Run(ctx)
+	for i, a := range r.newArg {
+		// Emit "Undefined variable" warning for by-value params
+		isRefParam := funcArgs != nil && i < len(funcArgs) && funcArgs[i].Ref
+		if !isRefParam {
+			if uc, ok := a.(phpv.UndefinedChecker); ok {
+				if uc.IsUnDefined(ctx) {
+					ctx.Warn("Undefined variable $%s",
+						uc.VarName(), logopt.NoFuncName(true))
+				}
+			}
+		}
+
+		arg, err := a.Run(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -69,6 +88,17 @@ func (r *runNewObject) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	}
 
 	return z.ZVal(), nil
+}
+
+// getConstructor returns the constructor Callable for a class, or nil.
+func getConstructor(class phpv.ZClass) phpv.Callable {
+	if h := class.Handlers(); h != nil && h.Constructor != nil {
+		return h.Constructor.Method
+	}
+	if m, ok := class.GetMethod("__construct"); ok {
+		return m.Method
+	}
+	return nil
 }
 
 func compileNew(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
