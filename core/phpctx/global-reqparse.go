@@ -117,10 +117,8 @@ func (g *Global) parsePost(p, f *phpv.ZArray) error {
 		for {
 			part, err := read.NextPart()
 			if err != nil {
-				if err == io.EOF {
-					break
-				}
-				return err
+				// EOF or any multipart parsing error ends the loop
+				break
 			}
 
 			k := phpFormName(part)
@@ -257,7 +255,8 @@ func (g *Global) parsePost(p, f *phpv.ZArray) error {
 		}
 		return nil
 	default:
-		return errors.New("Failed to parse POST: unknown content type")
+		// Unknown content type - silently skip, PHP leaves $_POST empty
+		return nil
 	}
 }
 
