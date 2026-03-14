@@ -1454,6 +1454,10 @@ func (g *Global) UnregisterAutoload(handler phpv.Callable) bool {
 	return false
 }
 
+func (g *Global) GetAutoloadFunctions() []phpv.Callable {
+	return g.autoloadFuncs
+}
+
 func (g *Global) GetStackTrace(ctx phpv.Context) []*phpv.StackTraceEntry {
 	var context phpv.Context = ctx
 	var trace []*phpv.StackTraceEntry

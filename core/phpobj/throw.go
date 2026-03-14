@@ -63,6 +63,27 @@ var UnexpectedValueException *ZClass
 // > class InvalidArgumentException extends LogicException
 var InvalidArgumentException *ZClass
 
+// > class OutOfBoundsException extends RuntimeException
+var OutOfBoundsException *ZClass
+
+// > class RangeException extends RuntimeException
+var RangeException *ZClass
+
+// > class UnderflowException extends RuntimeException
+var UnderflowException *ZClass
+
+// > class OutOfRangeException extends LogicException
+var OutOfRangeException *ZClass
+
+// > class DomainException extends LogicException
+var DomainException *ZClass
+
+// > class LengthException extends LogicException
+var LengthException *ZClass
+
+// > class BadMethodCallException extends BadFunctionCallException
+var BadMethodCallException *ZClass
+
 func init() {
 	// Error hierarchy (PHP 7+)
 	Error = &ZClass{
@@ -221,6 +242,55 @@ func init() {
 		Extends: RuntimeException,
 		Props:   RuntimeException.Props,
 		Methods: CopyMethods(RuntimeException.Methods),
+	}
+
+	OutOfBoundsException = &ZClass{
+		Name:    "OutOfBoundsException",
+		Extends: RuntimeException,
+		Props:   RuntimeException.Props,
+		Methods: CopyMethods(RuntimeException.Methods),
+	}
+
+	RangeException = &ZClass{
+		Name:    "RangeException",
+		Extends: RuntimeException,
+		Props:   RuntimeException.Props,
+		Methods: CopyMethods(RuntimeException.Methods),
+	}
+
+	UnderflowException = &ZClass{
+		Name:    "UnderflowException",
+		Extends: RuntimeException,
+		Props:   RuntimeException.Props,
+		Methods: CopyMethods(RuntimeException.Methods),
+	}
+
+	OutOfRangeException = &ZClass{
+		Name:    "OutOfRangeException",
+		Extends: LogicException,
+		Props:   LogicException.Props,
+		Methods: CopyMethods(LogicException.Methods),
+	}
+
+	DomainException = &ZClass{
+		Name:    "DomainException",
+		Extends: LogicException,
+		Props:   LogicException.Props,
+		Methods: CopyMethods(LogicException.Methods),
+	}
+
+	LengthException = &ZClass{
+		Name:    "LengthException",
+		Extends: LogicException,
+		Props:   LogicException.Props,
+		Methods: CopyMethods(LogicException.Methods),
+	}
+
+	BadMethodCallException = &ZClass{
+		Name:    "BadMethodCallException",
+		Extends: BadFunctionCallException,
+		Props:   BadFunctionCallException.Props,
+		Methods: CopyMethods(BadFunctionCallException.Methods),
 	}
 
 	// Fiber classes (must be after Error is initialized)

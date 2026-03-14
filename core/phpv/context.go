@@ -81,6 +81,7 @@ type GlobalContext interface {
 
 	RegisterAutoload(handler Callable)
 	UnregisterAutoload(handler Callable) bool
+	GetAutoloadFunctions() []Callable
 
 	RestoreConfig(name ZString)
 	SetLocalConfig(name ZString, value *ZVal) (*ZVal, bool)
