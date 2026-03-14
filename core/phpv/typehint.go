@@ -85,6 +85,11 @@ func (h *TypeHint) Check(ctx Context, val *ZVal) bool {
 		return val.GetType() == ZtBool && bool(val.Value().(ZBool))
 	}
 
+	// PHP allows implicit widening: int → float
+	if h.t == ZtFloat && val.GetType() == ZtInt {
+		return true
+	}
+
 	return val.GetType() == h.t
 }
 
