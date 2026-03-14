@@ -1507,13 +1507,15 @@ func (g *Global) GetStackTrace(ctx phpv.Context) []*phpv.StackTraceEntry {
 				className = string(fc.class.GetName())
 			}
 			trace = append(trace, &phpv.StackTraceEntry{
-				FuncName:   fc.GetFuncNameForTrace(),
-				Filename:   fc.loc.Filename,
-				ClassName:  className,
-				MethodType: fc.methodType,
-				Line:       fc.loc.Line,
-				Args:       fc.Args,
-				IsInternal: fc.isInternal,
+				FuncName:     fc.GetFuncNameForTrace(),
+				BareFuncName: fc.c.Name(),
+				Filename:     fc.loc.Filename,
+				ClassName:    className,
+				MethodType:   fc.methodType,
+				Line:         fc.loc.Line,
+				Args:         fc.Args,
+				Object:       fc.this,
+				IsInternal:   fc.isInternal,
 			})
 		}
 		context = context.Parent(1)

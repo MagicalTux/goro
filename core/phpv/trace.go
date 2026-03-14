@@ -8,13 +8,15 @@ import (
 )
 
 type StackTraceEntry struct {
-	FuncName   string
-	Filename   string
-	ClassName  string
-	MethodType string
-	Line       int
-	Args       []*ZVal
-	IsInternal bool // true when called from internal code (e.g., output buffer callbacks)
+	FuncName     string
+	BareFuncName string   // just the method/function name without class prefix
+	Filename     string
+	ClassName    string
+	MethodType   string
+	Line         int
+	Args         []*ZVal
+	Object       ZObject  // the $this object for instance method calls
+	IsInternal   bool     // true when called from internal code (e.g., output buffer callbacks)
 }
 
 type StackTrace []*StackTraceEntry

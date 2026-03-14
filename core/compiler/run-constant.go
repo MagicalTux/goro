@@ -1,10 +1,11 @@
 package compiler
 
 import (
+	"fmt"
 	"io"
 	"strings"
 
-	"github.com/MagicalTux/goro/core/logopt"
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -56,6 +57,6 @@ func (r *runConstant) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 		}
 	}
 
-	ctx.Warn("Use of undefined constant %s - assumed '%s' (this will throw an Error in a future version of PHP)", r.c, r.c, logopt.NoFuncName(true))
-	return phpv.ZString(r.c).ZVal(), nil
+	// PHP 8: using an undefined constant is a fatal Error
+	return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Undefined constant \"%s\"", r.c))
 }

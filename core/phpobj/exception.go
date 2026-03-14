@@ -166,7 +166,12 @@ func getExceptionTrace(ctx phpv.Context, stackTrace phpv.StackTrace) *phpv.ZArra
 		item := phpv.NewZArray()
 		item.OffsetSet(ctx, phpv.ZStr("file"), phpv.ZStr(e.Filename))
 		item.OffsetSet(ctx, phpv.ZStr("line"), phpv.ZInt(e.Line).ZVal())
-		item.OffsetSet(ctx, phpv.ZStr("function"), phpv.ZStr(e.FuncName))
+		// Use bare function name (without class prefix) for the "function" key
+		funcName := e.BareFuncName
+		if funcName == "" {
+			funcName = e.FuncName
+		}
+		item.OffsetSet(ctx, phpv.ZStr("function"), phpv.ZStr(funcName))
 
 		if e.ClassName != "" {
 			item.OffsetSet(ctx, phpv.ZStr("class"), phpv.ZStr(e.ClassName))

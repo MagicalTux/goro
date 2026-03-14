@@ -134,6 +134,14 @@ func fncDebugBacktrace(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 		return nil, err
 	}
 
+	// Default options value is DEBUG_BACKTRACE_PROVIDE_OBJECT (1)
+	opts := int64(DEBUG_BACKTRACE_PROVIDE_OBJECT)
+	if options != nil {
+		opts = int64(*options)
+	}
+	ignoreArgs := (opts & int64(DEBUG_BACKTRACE_IGNORE_ARGS)) != 0
+	provideObject := (opts & int64(DEBUG_BACKTRACE_PROVIDE_OBJECT)) != 0
+
 	rawTrace := ctx.GetStackTrace(ctx)
 
 	lim := 0
@@ -150,19 +158,29 @@ func fncDebugBacktrace(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 		frame := phpv.NewZArray()
 		frame.OffsetSet(ctx, phpv.ZString("file"), phpv.ZString(entry.Filename).ZVal())
 		frame.OffsetSet(ctx, phpv.ZString("line"), phpv.ZInt(entry.Line).ZVal())
-		funcName := entry.FuncName
+		// Use the bare function name (without class prefix) for the "function" key
+		funcName := entry.BareFuncName
+		if funcName == "" {
+			funcName = entry.FuncName
+		}
 		if entry.ClassName != "" {
 			frame.OffsetSet(ctx, phpv.ZString("class"), phpv.ZString(entry.ClassName).ZVal())
+			// Include "object" key for instance method calls when PROVIDE_OBJECT is set
+			if provideObject && entry.Object != nil && entry.MethodType == "->" {
+				frame.OffsetSet(ctx, phpv.ZString("object"), entry.Object.ZVal())
+			}
 			if entry.MethodType != "" {
 				frame.OffsetSet(ctx, phpv.ZString("type"), phpv.ZString(entry.MethodType).ZVal())
 			}
 		}
 		frame.OffsetSet(ctx, phpv.ZString("function"), phpv.ZString(funcName).ZVal())
-		argsArr := phpv.NewZArray()
-		for _, a := range entry.Args {
-			argsArr.OffsetSet(ctx, nil, a)
+		if !ignoreArgs {
+			argsArr := phpv.NewZArray()
+			for _, a := range entry.Args {
+				argsArr.OffsetSet(ctx, nil, a)
+			}
+			frame.OffsetSet(ctx, phpv.ZString("args"), argsArr.ZVal())
 		}
-		frame.OffsetSet(ctx, phpv.ZString("args"), argsArr.ZVal())
 		result.OffsetSet(ctx, nil, frame.ZVal())
 	}
 

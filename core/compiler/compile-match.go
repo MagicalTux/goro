@@ -63,8 +63,22 @@ func (r *runMatch) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	}
 
 	// No match and no default → UnhandledMatchError
+	// Include the unmatched value in the error message
+	var condStr string
+	switch cond.GetType() {
+	case phpv.ZtBool:
+		if cond.AsBool(ctx) {
+			condStr = "true"
+		} else {
+			condStr = "false"
+		}
+	case phpv.ZtNull:
+		condStr = "null"
+	default:
+		condStr = cond.String()
+	}
 	return nil, phpobj.ThrowError(ctx, phpobj.UnhandledMatchError,
-		fmt.Sprintf("Unhandled match case"))
+		fmt.Sprintf("Unhandled match case %s", condStr))
 }
 
 func (r *runMatch) Loc() *phpv.Loc {
