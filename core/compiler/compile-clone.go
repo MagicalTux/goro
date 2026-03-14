@@ -29,7 +29,7 @@ func (r *runnableClone) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 	}
 
 	if v.GetType() != phpv.ZtObject {
-		return nil, ctx.Errorf("__clone method called on non-object")
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("clone(): Argument #1 ($object) must be of type object, %s given", v.GetType().TypeName()))
 	}
 
 	obj := v.Value().(phpv.ZObject)

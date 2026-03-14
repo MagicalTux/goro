@@ -625,7 +625,7 @@ func (ac *runArrayAccess) getArrayOffset(ctx phpv.Context) (*phpv.ZVal, error) {
 	case phpv.ZtObject:
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Cannot access offset of type %s on array", offset.Value().(phpv.ZObject).GetClass().GetName()))
 	case phpv.ZtArray:
-		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "Illegal offset type")
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "Cannot access offset of type array on array")
 	default:
 		offset, err = offset.As(ctx, phpv.ZtString)
 	}

@@ -59,8 +59,9 @@ func (z ZNull) AsVal(ctx Context, t ZType) (Val, error) {
 	case ZtArray:
 		return NewZArray(), nil
 	case ZtObject:
-		// TODO: cyclic dependency phpv -> phpobj
-		// return phpobj.NewZObject(ctx, phpobj.StdClass)
+		if NewStdClassFunc != nil {
+			return NewStdClassFunc(ctx)
+		}
 	}
 	return nil, nil
 }

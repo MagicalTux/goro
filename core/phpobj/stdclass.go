@@ -2,6 +2,12 @@ package phpobj
 
 import "github.com/MagicalTux/goro/core/phpv"
 
+func init() {
+	phpv.NewStdClassFunc = func(ctx phpv.Context) (phpv.ZObject, error) {
+		return NewZObject(ctx, StdClass)
+	}
+}
+
 // > class StdClass
 var StdClass = &ZClass{
 	Name: "stdClass",

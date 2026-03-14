@@ -105,6 +105,32 @@ func (a *ZArray) AsVal(ctx Context, t ZType) (Val, error) {
 		return ZString("Array"), nil
 	case ZtArray:
 		return a, nil
+	case ZtObject:
+		if NewStdClassFunc == nil {
+			return nil, nil
+		}
+		obj, err := NewStdClassFunc(ctx)
+		if err != nil {
+			return nil, err
+		}
+		// Copy array entries as object properties
+		it := a.h.NewIterator()
+		for {
+			if !it.Valid(ctx) {
+				break
+			}
+			key, err := it.Key(ctx)
+			if err != nil {
+				break
+			}
+			val, err := it.Current(ctx)
+			if err != nil {
+				break
+			}
+			obj.ObjectSet(ctx, key, val)
+			it.Next(ctx)
+		}
+		return obj, nil
 	}
 	return nil, nil
 }

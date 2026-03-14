@@ -72,28 +72,40 @@ func (r *runSwitch) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	run := false
+	// PHP switch semantics: first check all case conditions, then if none match, use default.
+	// Default can appear anywhere in the block list but only runs if no case matches.
+	startIdx := -1
+	defaultIdx := -1
 
-	for _, bl := range r.blocks {
-		if !run {
-			// check cond (if nil, this is a default option)
-			if bl.cond != nil {
-				z, err := bl.cond.Run(ctx)
-				if err != nil {
-					return nil, err
-				}
-
-				v, err := operatorCompare(ctx, tokenizer.T_IS_EQUAL, cond, z)
-				if err != nil {
-					return nil, err
-				}
-				if !v.AsBool(ctx) {
-					continue
-				}
-			}
-			run = true
+	for idx, bl := range r.blocks {
+		if bl.cond == nil {
+			// default block
+			defaultIdx = idx
+			continue
 		}
+		z, err := bl.cond.Run(ctx)
+		if err != nil {
+			return nil, err
+		}
+		v, err := operatorCompare(ctx, tokenizer.T_IS_EQUAL, cond, z)
+		if err != nil {
+			return nil, err
+		}
+		if v.AsBool(ctx) {
+			startIdx = idx
+			break
+		}
+	}
 
+	if startIdx == -1 {
+		startIdx = defaultIdx
+	}
+	if startIdx == -1 {
+		return nil, nil
+	}
+
+	for idx := startIdx; idx < len(r.blocks); idx++ {
+		bl := r.blocks[idx]
 		_, err = bl.code.Run(ctx)
 		if err != nil {
 			e := r.l.Error(ctx, err)

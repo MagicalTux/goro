@@ -2,6 +2,10 @@ package phpv
 
 import "iter"
 
+// NewStdClassFunc is a factory for creating stdClass objects.
+// It is set by the phpobj package during init to break the cyclic dependency.
+var NewStdClassFunc func(ctx Context) (ZObject, error)
+
 // ZAttribute represents a PHP attribute (e.g. #[MyAttribute(args...)]).
 type ZAttribute struct {
 	ClassName ZString  // fully qualified attribute class name
