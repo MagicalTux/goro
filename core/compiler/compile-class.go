@@ -315,6 +315,17 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 					}
 				}
 
+				// Validate asymmetric visibility constraints
+				if prop.SetModifiers != 0 {
+					if prop.TypeHint == nil {
+						return nil, &phpv.PhpError{
+							Err:  fmt.Errorf("Property with asymmetric visibility %s::$%s must have type", class.Name, prop.VarName),
+							Code: phpv.E_COMPILE_ERROR,
+							Loc:  l,
+						}
+					}
+				}
+
 				// Property hooks: $prop { get { } set { } }
 				if i.IsSingle('{') {
 					if err := compilePropertyHooks(prop, class, c); err != nil {
@@ -711,10 +722,38 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 							if class.Attr.Has(phpv.ZClassReadonly) {
 								modifiers |= phpv.ZAttrReadonly
 							}
+							// Validate asymmetric visibility constraints for CPP
+							if arg.SetPromotion != 0 {
+								if arg.Hint == nil {
+									return nil, &phpv.PhpError{
+										Err:  fmt.Errorf("Property with asymmetric visibility %s::$%s must have type", class.Name, arg.VarName),
+										Code: phpv.E_COMPILE_ERROR,
+										Loc:  l,
+									}
+								}
+								// Validate: set visibility must not be wider than read visibility
+								setAccess := arg.SetPromotion & phpv.ZAttrAccess
+								if setAccess == phpv.ZAttrPublic {
+									return nil, &phpv.PhpError{
+										Err:  fmt.Errorf("Visibility of property %s::$%s must not be weaker than set visibility", class.Name, arg.VarName),
+										Code: phpv.E_COMPILE_ERROR,
+										Loc:  l,
+									}
+								}
+								readAccess := modifiers & phpv.ZAttrAccess
+								if readAccess == phpv.ZAttrPrivate && setAccess != phpv.ZAttrPrivate {
+									return nil, &phpv.PhpError{
+										Err:  fmt.Errorf("Visibility of property %s::$%s must not be weaker than set visibility", class.Name, arg.VarName),
+										Code: phpv.E_COMPILE_ERROR,
+										Loc:  l,
+									}
+								}
+							}
 							prop := &phpv.ZClassProp{
-								VarName:   arg.VarName,
-								Modifiers: modifiers,
-								TypeHint:  arg.Hint,
+								VarName:      arg.VarName,
+								Modifiers:    modifiers,
+								SetModifiers: arg.SetPromotion,
+								TypeHint:     arg.Hint,
 							}
 							class.Props = append(class.Props, prop)
 						}

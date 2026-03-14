@@ -8,6 +8,7 @@ type FuncArg struct {
 	DefaultValue       Val
 	Hint               *TypeHint
 	Promotion          ZObjectAttr // Non-zero if this is a constructor promoted property
+	SetPromotion       ZObjectAttr // PHP 8.4 asymmetric visibility for CPP (0 = same as Promotion)
 	ImplicitlyNullable bool        // type hint + NULL default without explicit ?
 	Attributes         []*ZAttribute // PHP 8.0 attributes
 }

@@ -583,14 +583,32 @@ func compileFunctionArgs(c compileCtx) (res []*phpv.FuncArg, err error) {
 
 		// Handle constructor promotion visibility modifiers (PHP 8.0+)
 		// Can include readonly modifier before or after visibility
+		// Also handles PHP 8.4 asymmetric visibility: public private(set)
 		for i.Type == tokenizer.T_PUBLIC || i.Type == tokenizer.T_PROTECTED || i.Type == tokenizer.T_PRIVATE || i.Type == tokenizer.T_READONLY {
 			switch i.Type {
-			case tokenizer.T_PUBLIC:
-				arg.Promotion |= phpv.ZAttrPublic
-			case tokenizer.T_PROTECTED:
-				arg.Promotion |= phpv.ZAttrProtected
-			case tokenizer.T_PRIVATE:
-				arg.Promotion |= phpv.ZAttrPrivate
+			case tokenizer.T_PUBLIC, tokenizer.T_PROTECTED, tokenizer.T_PRIVATE:
+				var thisAccess phpv.ZObjectAttr
+				switch i.Type {
+				case tokenizer.T_PUBLIC:
+					thisAccess = phpv.ZAttrPublic
+				case tokenizer.T_PROTECTED:
+					thisAccess = phpv.ZAttrProtected
+				case tokenizer.T_PRIVATE:
+					thisAccess = phpv.ZAttrPrivate
+				}
+				// Check for asymmetric visibility: modifier(set)
+				setAccess, isAsymmetric, err := tryParseAsymmetricSet(thisAccess, c)
+				if err != nil {
+					return nil, err
+				}
+				if isAsymmetric {
+					if arg.Promotion&phpv.ZAttrAccess == 0 {
+						arg.Promotion |= phpv.ZAttrPublic // implicit public read
+					}
+					arg.SetPromotion = setAccess
+				} else {
+					arg.Promotion |= thisAccess
+				}
 			case tokenizer.T_READONLY:
 				arg.Promotion |= phpv.ZAttrReadonly
 			}

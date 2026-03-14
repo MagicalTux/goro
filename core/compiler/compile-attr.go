@@ -334,6 +334,11 @@ func parseZObjectAttrFull(a *phpv.ZObjectAttr, setModifiers *phpv.ZObjectAttr, a
 			}
 
 			if isAsymmetric {
+				// Check for duplicate set modifier
+				if setModifiers != nil && *setModifiers != 0 {
+					return errors.New("Multiple access type modifiers are not allowed")
+				}
+
 				// This is a (set) modifier — it specifies write visibility only
 				if *a&phpv.ZAttrAccess == 0 {
 					// No read modifier yet — implicit public
