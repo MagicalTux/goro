@@ -750,8 +750,18 @@ func TestPhp(t *testing.T) {
 		} else {
 			pass += 1
 		}
+
+		// Write periodic progress to a file so we can monitor long runs
+		if count%100 == 0 {
+			os.WriteFile("/tmp/goro_test_progress.txt",
+				[]byte(fmt.Sprintf("Progress: %d tests, %d passed, %d failed, %d skipped\n",
+					count, pass, fail, skip)), 0644)
+		}
 		return nil
 	})
 
-	t.Logf("Total of %d tests, %d passed (%01.2f%% success), %d skipped and %d failed", count, pass, float64(pass)*100/float64(count-skip), skip, fail)
+	summary := fmt.Sprintf("Total of %d tests, %d passed (%01.2f%% success), %d skipped and %d failed",
+		count, pass, float64(pass)*100/float64(count-skip), skip, fail)
+	t.Logf("%s", summary)
+	os.WriteFile("/tmp/goro_test_progress.txt", []byte(summary+"\n"), 0644)
 }
