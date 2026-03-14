@@ -303,6 +303,15 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			return result.ZVal(), nil
 		}
 
+		// Bitwise operators on strings: PHP operates on the raw bytes
+		isBitwiseOp := r.op == tokenizer.Rune('|') || r.op == tokenizer.Rune('^') ||
+			r.op == tokenizer.Rune('&') || r.op == tokenizer.Rune('~') ||
+			r.op == tokenizer.T_OR_EQUAL || r.op == tokenizer.T_XOR_EQUAL ||
+			r.op == tokenizer.T_AND_EQUAL
+		if isBitwiseOp && aType == phpv.ZtString && (bType == phpv.ZtString || r.op == tokenizer.Rune('~')) {
+			return op.op(ctx, r.op, a, b)
+		}
+
 		// PHP 8: throw TypeError for unsupported operand types in arithmetic
 		if aType == phpv.ZtArray || bType == phpv.ZtArray {
 			return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Unsupported operand types: %s %s %s", phpTypeName(a), r.op.OpString(), phpTypeName(b)))

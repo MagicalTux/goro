@@ -804,11 +804,17 @@ func (r *runObjectDynVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	}
 	objI, ok := obj.Value().(phpv.ZObjectAccess)
 	if !ok {
+		// Evaluate the name expression first so we can include it in the warning
+		name, nameErr := r.nameExpr.Run(ctx)
 		typeName := "null"
 		if obj.GetType() != phpv.ZtNull {
 			typeName = obj.GetType().String()
 		}
-		ctx.Warn("Attempt to read property on %s", typeName, logopt.NoFuncName(true))
+		if nameErr == nil && name != nil {
+			ctx.Warn("Attempt to read property \"%s\" on %s", name.String(), typeName, logopt.NoFuncName(true))
+		} else {
+			ctx.Warn("Attempt to read property on %s", typeName, logopt.NoFuncName(true))
+		}
 		return phpv.ZNULL.ZVal(), nil
 	}
 	name, err := r.nameExpr.Run(ctx)
