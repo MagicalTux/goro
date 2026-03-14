@@ -34,6 +34,7 @@ func initReflectionMethod() {
 		"getnumberofrequiredparameters": {Name: "getNumberOfRequiredParameters", Method: phpobj.NativeMethod(reflectionMethodGetNumberOfRequiredParameters)},
 		"getparameters":                 {Name: "getParameters", Method: phpobj.NativeMethod(reflectionMethodGetParameters)},
 		"invoke":                        {Name: "invoke", Method: phpobj.NativeMethod(reflectionMethodInvoke)},
+		"getattributes":                 {Name: "getAttributes", Method: phpobj.NativeMethod(reflectionMethodGetAttributes)},
 	}
 }
 
@@ -244,4 +245,14 @@ func createReflectionMethodObject(ctx phpv.Context, class phpv.ZClass, method *p
 	obj.HashTable().SetString("class", class.GetName().ZVal())
 	obj.SetOpaque(ReflectionMethod, data)
 	return obj.ZVal(), nil
+}
+
+func reflectionMethodGetAttributes(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	data := getMethodData(o)
+	if data == nil {
+		return phpv.NewZArray().ZVal(), nil
+	}
+
+	name, flags := getAttributesArgs(ctx, args)
+	return filterAttributes(ctx, data.method.Attributes, phpobj.AttributeTARGET_METHOD, name, flags)
 }

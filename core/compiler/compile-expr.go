@@ -356,6 +356,10 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		}
 		// put the expr into a container to avoid
 		return &runParentheses{v}, err
+	case tokenizer.T_YIELD:
+		return compileYieldExpr(i, c)
+	case tokenizer.T_YIELD_FROM:
+		return compileYieldExpr(i, c)
 	case tokenizer.Rune('&'):
 		// get ref of something
 		// TODO make this operator?

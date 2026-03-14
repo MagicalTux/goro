@@ -152,6 +152,7 @@ const (
 	T_YIELD_FROM
 	T_DNUMBER
 	T_LNUMBER
+	T_ATTRIBUTE // #[
 	itemMax
 )
 

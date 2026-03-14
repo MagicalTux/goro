@@ -73,6 +73,9 @@ func init() {
 		tokenizer.T_NS_SEPARATOR: &compileFuncCb{f: compileExpr},
 		tokenizer.T_NAMESPACE:    &compileFuncCb{f: compileNamespace, skip: true},
 		tokenizer.T_USE:          &compileFuncCb{f: compileUse, skip: true},
+		tokenizer.T_YIELD:        &compileFuncCb{f: compileYield},
+		tokenizer.T_YIELD_FROM:   &compileFuncCb{f: compileYield},
+		tokenizer.T_ATTRIBUTE:    &compileFuncCb{f: compileAttributed, skip: true},
 		tokenizer.Rune(';'):      nil,
 		// '}': return compileBase (hidden)
 	}

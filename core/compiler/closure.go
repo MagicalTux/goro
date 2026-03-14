@@ -11,14 +11,15 @@ import (
 
 type ZClosure struct {
 	phpv.CallableVal
-	name  phpv.ZString
-	args  []*phpv.FuncArg
-	use   []*phpv.FuncUse
-	code  phpv.Runnable
-	class phpv.ZClass // class in which this closure was defined (for parent:: and self::)
-	start *phpv.Loc
-	end   *phpv.Loc
-	rref  bool // return ref?
+	name        phpv.ZString
+	args        []*phpv.FuncArg
+	use         []*phpv.FuncUse
+	code        phpv.Runnable
+	class       phpv.ZClass // class in which this closure was defined (for parent:: and self::)
+	start       *phpv.Loc
+	end         *phpv.Loc
+	rref        bool // return ref?
+	isGenerator bool // true if this function contains yield
 }
 
 // > class Closure
@@ -50,6 +51,10 @@ func (closure *ZClosure) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 		if err != nil {
 			return nil, err
 		}
+		// If the function is a generator, wrap it
+		if closure.isGenerator {
+			return nil, ctx.Global().RegisterFunction(closure.name, &generatorClosure{closure})
+		}
 		return nil, ctx.Global().RegisterFunction(closure.name, closure)
 	}
 	c := closure.dup()
@@ -76,6 +81,15 @@ func (closure *ZClosure) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 		} else {
 			s.Value = z.Nude().Dup()
 		}
+	}
+	// If the closure is a generator, wrap it
+	if c.isGenerator {
+		gc := &generatorClosure{c}
+		o, err := phpobj.NewZObjectOpaque(ctx, Closure, gc)
+		if err != nil {
+			return nil, err
+		}
+		return o.ZVal(), nil
 	}
 	return c.Spawn(ctx)
 }
@@ -180,6 +194,18 @@ func (z *ZClosure) Name() string {
 }
 
 func (z *ZClosure) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	// If this is a generator function, spawn a Generator object instead of
+	// executing the function body directly.
+	if z.isGenerator {
+		return phpobj.SpawnGenerator(ctx, z.callBody, args)
+	}
+
+	return z.callBody(ctx, args)
+}
+
+// callBody is the actual function body execution, used both for regular calls
+// and by SpawnGenerator for generator functions (bypasses generator check).
+func (z *ZClosure) callBody(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	// typically, we run from a clean context
 	var err error
 
@@ -246,6 +272,7 @@ func (z *ZClosure) dup() *ZClosure {
 	n.start = z.start
 	n.end = z.end
 	n.rref = z.rref
+	n.isGenerator = z.isGenerator
 
 	if z.args != nil {
 		n.args = make([]*phpv.FuncArg, len(z.args))

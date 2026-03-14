@@ -69,6 +69,7 @@ func init() {
 	initReflectionType()
 	initReflectionParameter()
 	initReflectionFunction()
+	initReflectionAttribute()
 
 	// Initialize methods on pre-declared classes
 	initReflectionClass()
@@ -87,6 +88,7 @@ func init() {
 			ReflectionParameter,
 			ReflectionType,
 			ReflectionNamedType,
+			ReflectionAttribute,
 		},
 	})
 }

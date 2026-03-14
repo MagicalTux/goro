@@ -30,6 +30,7 @@ func initReflectionProperty() {
 		"getvalue":    {Name: "getValue", Method: phpobj.NativeMethod(reflectionPropertyGetValue)},
 		"setvalue":    {Name: "setValue", Method: phpobj.NativeMethod(reflectionPropertySetValue)},
 		"getdeclaringclass": {Name: "getDeclaringClass", Method: phpobj.NativeMethod(reflectionPropertyGetDeclaringClass)},
+		"getattributes":     {Name: "getAttributes", Method: phpobj.NativeMethod(reflectionPropertyGetAttributes)},
 	}
 }
 
@@ -193,4 +194,9 @@ func reflectionPropertyGetDeclaringClass(ctx phpv.Context, o *phpobj.ZObject, ar
 		return phpv.ZNULL.ZVal(), nil
 	}
 	return createReflectionClassObject(ctx, data.class)
+}
+
+func reflectionPropertyGetAttributes(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	// Return empty array - attribute reflection not fully implemented
+	return phpv.NewZArray().ZVal(), nil
 }

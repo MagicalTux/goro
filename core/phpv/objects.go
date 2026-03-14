@@ -2,11 +2,23 @@ package phpv
 
 import "iter"
 
+// ZAttribute represents a PHP attribute (e.g. #[MyAttribute(args...)]).
+type ZAttribute struct {
+	ClassName ZString  // fully qualified attribute class name
+	Args      []*ZVal  // evaluated arguments (nil if no args)
+}
+
 type ZClassProp struct {
-	VarName   ZString
-	Default   Val
-	Modifiers ZObjectAttr
-	TypeHint  *TypeHint
+	VarName    ZString
+	Default    Val
+	Modifiers  ZObjectAttr
+	TypeHint   *TypeHint
+	Attributes []*ZAttribute // PHP 8.0 attributes
+
+	// Property hooks (PHP 8.4)
+	GetHook  Runnable // get { ... } hook body
+	SetHook  Runnable // set($value) { ... } hook body
+	SetParam ZString  // parameter name for set hook (default "$value")
 }
 
 // ZClassTraitUse represents a single "use TraitA, TraitB { ... }" statement in a class body.
@@ -25,12 +37,13 @@ type ZClassTraitAlias struct {
 }
 
 type ZClassMethod struct {
-	Name      ZString
-	Modifiers ZObjectAttr
-	Method    Callable
-	Class     ZClass
-	Empty     bool
-	Loc       *Loc
+	Name       ZString
+	Modifiers  ZObjectAttr
+	Method     Callable
+	Class      ZClass
+	Empty      bool
+	Loc        *Loc
+	Attributes []*ZAttribute // PHP 8.0 attributes
 }
 
 type ZClassConst struct {

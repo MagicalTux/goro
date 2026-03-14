@@ -8,27 +8,10 @@ func lexPhpEolComment(l *Lexer) lexState {
 }
 
 func lexPhpAttribute(l *Lexer) lexState {
-	// Skip #[...] attribute syntax (PHP 8.0)
-	// Handle nested brackets: #[Foo(arg1, [1,2])]
+	// Emit #[ as a T_ATTRIBUTE token (PHP 8.0)
 	l.next() // consume '#'
 	l.next() // consume '['
-	depth := 1
-	for depth > 0 {
-		c := l.next()
-		switch c {
-		case '[':
-			depth++
-		case '(':
-			depth++ // count parens too for nested expressions
-		case ')':
-			depth--
-		case ']':
-			depth--
-		case eof:
-			break
-		}
-	}
-	l.emit(T_COMMENT) // emit as comment so the parser ignores it
+	l.emit(T_ATTRIBUTE)
 	return l.base
 }
 

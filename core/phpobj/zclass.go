@@ -27,6 +27,7 @@ type ZClass struct {
 	TraitUses       []phpv.ZClassTraitUse
 	Methods         map[phpv.ZString]*phpv.ZClassMethod
 	StaticProps     *phpv.ZHashTable
+	Attributes      []*phpv.ZAttribute // PHP 8.0 attributes
 
 	nextIntanceID int
 

@@ -225,19 +225,12 @@ func compileSpecialFuncCall(i *tokenizer.Item, c compileCtx) (phpv.Runnable, err
 		return nil, err
 	}
 
-	// For unqualified function names in a namespace, PHP tries the
-	// namespace-prefixed name first, then falls back to global.
-	var nsName phpv.ZString
-	ns := c.getNamespace()
-	if ns != "" && !strings.Contains(string(fn_name), "\\") {
-		// Unqualified name inside a namespace: primary = ns\name, fallback = name
-		nsName = fn_name                  // fallback to global
-		fn_name = ns + "\\" + fn_name     // try namespaced first
-	}
+	// Special function calls (echo, print, exit, etc.) are language constructs
+	// and should not be namespace-resolved.
 
 	if i.IsSingle(';') {
 		c.backup()
-		return &runnableFunctionCall{name: fn_name, nsName: nsName, l: l}, nil
+		return &runnableFunctionCall{name: fn_name, l: l}, nil
 	}
 
 	var args []phpv.Runnable
@@ -267,7 +260,7 @@ func compileSpecialFuncCall(i *tokenizer.Item, c compileCtx) (phpv.Runnable, err
 		}
 		if i.IsExpressionEnd() {
 			c.backup()
-			return &runnableFunctionCall{name: fn_name, nsName: nsName, args: args, l: l}, nil
+			return &runnableFunctionCall{name: fn_name, args: args, l: l}, nil
 		}
 
 		return nil, i.Unexpected()
@@ -568,6 +561,19 @@ func compileFunctionArgs(c compileCtx) (res []*phpv.FuncArg, err error) {
 		arg := &phpv.FuncArg{}
 		arg.Required = true // typically
 
+		// Handle #[...] attributes on parameters (PHP 8.0+)
+		for i.Type == tokenizer.T_ATTRIBUTE {
+			paramAttrs, err := parseAttributes(c)
+			if err != nil {
+				return nil, err
+			}
+			arg.Attributes = append(arg.Attributes, paramAttrs...)
+			i, err = c.NextItem()
+			if err != nil {
+				return nil, err
+			}
+		}
+
 		// Handle constructor promotion visibility modifiers (PHP 8.0+)
 		// Can include readonly modifier before or after visibility
 		for i.Type == tokenizer.T_PUBLIC || i.Type == tokenizer.T_PROTECTED || i.Type == tokenizer.T_PRIVATE || i.Type == tokenizer.T_READONLY {
@@ -598,7 +604,9 @@ func compileFunctionArgs(c compileCtx) (res []*phpv.FuncArg, err error) {
 		}
 
 		// Handle leading namespace separator: \ClassName
+		hintFullyQualified := false
 		if i.Type == tokenizer.T_NS_SEPARATOR {
+			hintFullyQualified = true
 			i, err = c.NextItem()
 			if err != nil {
 				return nil, err
@@ -631,7 +639,14 @@ func compileFunctionArgs(c compileCtx) (res []*phpv.FuncArg, err error) {
 				hint = hint + "\\" + i.Data
 			}
 
-			arg.Hint = phpv.ParseTypeHint(phpv.ZString(hint))
+			// Resolve type hint through namespace (for class type hints)
+			resolvedHint := hint
+			if hintFullyQualified {
+				resolvedHint = string(c.resolveClassName("\\" + phpv.ZString(hint)))
+			} else {
+				resolvedHint = string(c.resolveClassName(phpv.ZString(hint)))
+			}
+			arg.Hint = phpv.ParseTypeHint(phpv.ZString(resolvedHint))
 			if isNullable {
 				arg.Hint.Nullable = true
 			}

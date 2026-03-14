@@ -130,3 +130,8 @@ func reflectionFunctionInvoke(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.
 	}
 	return ctx.CallZVal(ctx, data.callable, args)
 }
+
+func reflectionFunctionGetAttributes(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	// Functions don't have attributes stored yet - return empty array
+	return phpv.NewZArray().ZVal(), nil
+}

@@ -9,6 +9,7 @@ type FuncArg struct {
 	Hint               *TypeHint
 	Promotion          ZObjectAttr // Non-zero if this is a constructor promoted property
 	ImplicitlyNullable bool        // type hint + NULL default without explicit ?
+	Attributes         []*ZAttribute // PHP 8.0 attributes
 }
 
 type FuncUse struct {

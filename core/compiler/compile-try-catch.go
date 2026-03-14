@@ -123,7 +123,9 @@ func compileCatch(i *tokenizer.Item, c compileCtx) (*runnableCatch, error) {
 	res := &runnableCatch{}
 	for {
 		// Handle leading \ for fully-qualified names like \TypeError
+		fullyQualified := false
 		if i.Type == tokenizer.T_NS_SEPARATOR {
+			fullyQualified = true
 			i, err = c.NextItem()
 			if err != nil {
 				return nil, err
@@ -153,7 +155,14 @@ func compileCatch(i *tokenizer.Item, c compileCtx) (*runnableCatch, error) {
 				break
 			}
 		}
-		res.typeNames = append(res.typeNames, phpv.ZString(name))
+		// Resolve through namespace
+		var resolved phpv.ZString
+		if fullyQualified {
+			resolved = c.resolveClassName("\\" + phpv.ZString(name))
+		} else {
+			resolved = c.resolveClassName(phpv.ZString(name))
+		}
+		res.typeNames = append(res.typeNames, resolved)
 
 		i, err = c.NextItem()
 		if err != nil {

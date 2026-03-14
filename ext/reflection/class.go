@@ -31,6 +31,7 @@ func initReflectionClass() {
 		"newinstancewithoutconstructor": {Name: "newInstanceWithoutConstructor", Method: phpobj.NativeMethod(reflectionClassNewInstanceWithoutConstructor)},
 		"getconstructor":          {Name: "getConstructor", Method: phpobj.NativeMethod(reflectionClassGetConstructor)},
 		"implementsinterface":     {Name: "implementsInterface", Method: phpobj.NativeMethod(reflectionClassImplementsInterface)},
+		"getattributes":           {Name: "getAttributes", Method: phpobj.NativeMethod(reflectionClassGetAttributes)},
 	}
 }
 
@@ -505,4 +506,14 @@ func reflectionClassGetProperty(ctx phpv.Context, o *phpobj.ZObject, args []*php
 	}
 
 	return createReflectionPropertyObject(ctx, zc, prop)
+}
+
+func reflectionClassGetAttributes(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	zc := getZClass(o)
+	if zc == nil {
+		return phpv.NewZArray().ZVal(), nil
+	}
+
+	name, flags := getAttributesArgs(ctx, args)
+	return filterAttributes(ctx, zc.Attributes, phpobj.AttributeTARGET_CLASS, name, flags)
 }

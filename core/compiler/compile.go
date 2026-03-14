@@ -3,6 +3,7 @@ package compiler
 import (
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/MagicalTux/goro/core/phpctx"
@@ -79,6 +80,18 @@ func (c *compileRootCtx) getNamespace() phpv.ZString {
 	return c.namespace
 }
 
+// isBuiltinType checks if a name is a PHP built-in type that should not be namespace-resolved.
+func isBuiltinType(lower phpv.ZString) bool {
+	switch lower {
+	case "self", "parent", "static",
+		"int", "integer", "float", "double", "string", "bool", "boolean",
+		"array", "callable", "void", "mixed", "never", "null", "object",
+		"iterable", "true", "false":
+		return true
+	}
+	return false
+}
+
 func (c *compileRootCtx) resolveClassName(name phpv.ZString) phpv.ZString {
 	if len(name) == 0 {
 		return name
@@ -87,9 +100,9 @@ func (c *compileRootCtx) resolveClassName(name phpv.ZString) phpv.ZString {
 	if name[0] == '\\' {
 		return name[1:]
 	}
-	// Special names that should never be resolved
+	// Built-in types should never be resolved
 	lower := name.ToLower()
-	if lower == "self" || lower == "parent" || lower == "static" {
+	if isBuiltinType(lower) {
 		return name
 	}
 	// Check if name contains a backslash (qualified name)
@@ -169,6 +182,10 @@ func (c *compileRootCtx) resolveConstantName(name string) string {
 	// Fully qualified names start with \
 	if name[0] == '\\' {
 		return name[1:]
+	}
+	// Built-in constants should never be resolved
+	if isBuiltinType(phpv.ZString(strings.ToLower(name))) {
+		return name
 	}
 	// Check if name contains a backslash (qualified name)
 	for i := 0; i < len(name); i++ {
@@ -270,7 +287,8 @@ func (c *compileRootCtx) trackBracket(i *tokenizer.Item) error {
 		c.bracketStack = append(c.bracketStack, entry)
 		c.lastBracketOp = 1
 		c.lastBracketEntry = entry
-	case i.IsSingle('['):
+	case i.IsSingle('['), i.Type == tokenizer.T_ATTRIBUTE:
+		// T_ATTRIBUTE represents #[ which opens a bracket like [
 		entry := bracketEntry{'[', i.Line}
 		c.bracketStack = append(c.bracketStack, entry)
 		c.lastBracketOp = 1
@@ -575,6 +593,17 @@ func GetChildren(r phpv.Runnable) []phpv.Runnable {
 		return nil
 	case *phperr.PhpContinue:
 		return nil
+	case *runYield:
+		res := rt{}
+		if t.key != nil {
+			res = append(res, t.key)
+		}
+		if t.value != nil {
+			res = append(res, t.value)
+		}
+		return res
+	case *runYieldFrom:
+		return rt{t.expr}
 	default:
 		// Unknown node type — return empty children rather than panicking
 		return nil

@@ -1141,16 +1141,23 @@ func compileClassName(c compileCtx) (phpv.ZString, error) {
 		r = r + phpv.ZString(i.Data)
 
 		i, err = c.NextItem()
-		switch i.Type {
-		case tokenizer.T_NS_SEPARATOR:
-			r = r + "\\"
-		default:
-			c.backup()
-			if fullyQualified {
-				// Already fully qualified, strip leading \ is done by resolve
-				return c.resolveClassName("\\" + r), nil
-			}
-			return c.resolveClassName(r), nil
+		if err != nil {
+			return r, err
 		}
+		if i.Type == tokenizer.T_NS_SEPARATOR {
+			r = r + "\\"
+			// Read the next part after the separator
+			i, err = c.NextItem()
+			if err != nil {
+				return r, err
+			}
+			continue
+		}
+		// Not a namespace separator — done
+		c.backup()
+		if fullyQualified {
+			return c.resolveClassName("\\" + r), nil
+		}
+		return c.resolveClassName(r), nil
 	}
 }

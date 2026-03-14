@@ -72,7 +72,20 @@ func (z *zclassCompileCtx) resolveConstantName(name string) string {
 
 func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	var attr phpv.ZClassAttr
+	var classAttrs []*phpv.ZAttribute
 	var err error
+
+	// Handle #[...] attributes before class declaration
+	if i.Type == tokenizer.T_ATTRIBUTE {
+		classAttrs, err = parseAttributes(c)
+		if err != nil {
+			return nil, err
+		}
+		i, err = c.NextItem()
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	// If called from a modifier token (abstract/final), back it up so
 	// parseZClassAttr can consume it, then read the actual class token.
@@ -94,11 +107,12 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	}
 
 	class := &phpobj.ZClass{
-		L:       i.Loc(),
-		Attr:    attr,
-		Methods: make(map[phpv.ZString]*phpv.ZClassMethod),
-		Const:   make(map[phpv.ZString]*phpv.ZClassConst),
-		H:       &phpv.ZClassHandlers{},
+		L:          i.Loc(),
+		Attr:       attr,
+		Methods:    make(map[phpv.ZString]*phpv.ZClassMethod),
+		Const:      make(map[phpv.ZString]*phpv.ZClassConst),
+		H:          &phpv.ZClassHandlers{},
+		Attributes: classAttrs,
 	}
 
 	switch i.Type {
@@ -153,9 +167,10 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		l := i.Loc()
 		c.backup()
 
-		// parse attrs if any
+		// parse attrs if any (including #[...] attributes)
 		var attr phpv.ZObjectAttr
-		if err := parseZObjectAttr(&attr, c); err != nil {
+		var memberAttrs []*phpv.ZAttribute
+		if err := parseZObjectAttrWithAttrs(&attr, &memberAttrs, c); err != nil {
 			return nil, &phpv.PhpError{Err: err, Code: phpv.E_COMPILE_ERROR, Loc: l}
 		}
 
@@ -212,7 +227,9 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 				if i.Type == tokenizer.T_VARIABLE {
 					// It was a type hint (or we already parsed the union)
 					if propTypeHint == nil {
-						propTypeHint = phpv.ParseTypeHint(phpv.ZString(hint))
+						// Resolve type hint through namespace for class type hints
+						resolvedHint := string(c.resolveClassName(phpv.ZString(hint)))
+						propTypeHint = phpv.ParseTypeHint(phpv.ZString(resolvedHint))
 						if isNullable {
 							propTypeHint.Nullable = true
 						}
@@ -244,7 +261,7 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			fallthrough
 		case tokenizer.T_VARIABLE:
 			for {
-				prop := &phpv.ZClassProp{Modifiers: attr, TypeHint: propTypeHint}
+				prop := &phpv.ZClassProp{Modifiers: attr, TypeHint: propTypeHint, Attributes: memberAttrs}
 				prop.VarName = phpv.ZString(i.Data[1:])
 
 				// Readonly class: all properties are implicitly readonly
@@ -295,6 +312,15 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 							Loc:  l,
 						}
 					}
+				}
+
+				// Property hooks: $prop { get { } set { } }
+				if i.IsSingle('{') {
+					if err := compilePropertyHooks(prop, class, c); err != nil {
+						return nil, err
+					}
+					class.Props = append(class.Props, prop)
+					break
 				}
 
 				class.Props = append(class.Props, prop)
@@ -421,6 +447,14 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 					return nil, i.Unexpected()
 				}
 				// Parse potentially namespaced trait name
+				fullyQualified := false
+				if i.Type == tokenizer.T_NS_SEPARATOR {
+					fullyQualified = true
+					i, err = c.NextItem()
+					if err != nil {
+						return nil, err
+					}
+				}
 				name := i.Data
 				for {
 					peek, err := c.NextItem()
@@ -438,7 +472,14 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 						break
 					}
 				}
-				traitNames = append(traitNames, phpv.ZString(name))
+				// Resolve trait name through namespace
+				var resolved phpv.ZString
+				if fullyQualified {
+					resolved = c.resolveClassName("\\" + phpv.ZString(name))
+				} else {
+					resolved = c.resolveClassName(phpv.ZString(name))
+				}
+				traitNames = append(traitNames, resolved)
 
 				i, err = c.NextItem()
 				if err != nil {
@@ -647,12 +688,13 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 
 			// register method
 			method := &phpv.ZClassMethod{
-				Name:      phpv.ZString(i.Data),
-				Modifiers: attr,
-				Method:    f,
-				Class:     class,
-				Empty:     emptyBody,
-				Loc:       l,
+				Name:       phpv.ZString(i.Data),
+				Modifiers:  attr,
+				Method:     f,
+				Class:      class,
+				Empty:      emptyBody,
+				Loc:        l,
+				Attributes: memberAttrs,
 			}
 
 			if x := method.Name.ToLower(); x == class.BaseName().ToLower() || x == "__construct" {
@@ -840,3 +882,4 @@ func compileReadClassIdentifier(c compileCtx) (phpv.ZString, error) {
 		return c.resolveClassName(res), nil
 	}
 }
+

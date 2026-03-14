@@ -18,7 +18,7 @@ var Defaults = map[string]*IniDirective{
 	"assert.active":                         {`"1"`, INI_ALL},
 	"assert.bail":                           {`"0"`, INI_ALL},
 	"assert.callback":                       {`null`, INI_ALL},
-	"assert.exception":                      {`"0"`, INI_ALL},
+	"assert.exception":                      {`"1"`, INI_ALL},
 	"assert.quiet_eval":                     {`"0"`, INI_ALL},
 	"assert.warning":                        {`"1"`, INI_ALL},
 	"auto_append_file":                      {`null`, INI_PERDIR},
