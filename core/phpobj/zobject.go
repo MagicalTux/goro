@@ -1236,9 +1236,33 @@ func (o *ZObject) ObjectSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) er
 	// Check if accessing a static property as non-static
 	o.checkStaticPropertyAccess(ctx, keyStr)
 
-	// Check property visibility
-	if err := o.checkPropertyVisibility(ctx, keyStr, "access"); err != nil {
-		return err
+	// Check property visibility. If the property is not visible but __set/__unset exists,
+	// PHP calls the magic method instead of throwing the visibility error.
+	visErr := o.checkPropertyVisibility(ctx, keyStr, "access")
+	if visErr != nil {
+		if value == nil {
+			// unset() on a non-visible property → try __unset
+			class := o.GetClass().(*ZClass)
+			if m, ok := class.Methods["__unset"]; ok {
+				_, err := ctx.CallZVal(ctx, m.Method, []*phpv.ZVal{keyStr.ZVal()}, o)
+				return err
+			}
+		} else {
+			// set on a non-visible property → try __set
+			class := o.GetClass().(*ZClass)
+			if m, ok := class.Methods["__set"]; ok {
+				if o.setGuard == nil {
+					o.setGuard = make(map[phpv.ZString]bool)
+				}
+				if !o.setGuard[keyStr] {
+					o.setGuard[keyStr] = true
+					_, err := ctx.CallZVal(ctx, m.Method, []*phpv.ZVal{keyStr.ZVal(), value}, o)
+					delete(o.setGuard, keyStr)
+					return err
+				}
+			}
+		}
+		return visErr
 	}
 
 	// Check asymmetric (set) visibility (PHP 8.4)
