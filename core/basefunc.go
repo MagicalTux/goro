@@ -106,6 +106,22 @@ func fncCount(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZInt(count).ZVal(), nil
 	}
 
+	// For objects implementing the PHP Countable interface, call their count() method
+	if countable.GetType() == phpv.ZtObject {
+		if obj, ok := countable.Value().(*phpobj.ZObject); ok {
+			if m, hasCount := obj.GetClass().GetMethod("count"); hasCount {
+				result, err := ctx.CallZVal(ctx, m.Method, nil, obj)
+				if err != nil {
+					return nil, err
+				}
+				if result != nil {
+					return phpv.ZInt(result.AsInt(ctx)).ZVal(), nil
+				}
+				return phpv.ZInt(0).ZVal(), nil
+			}
+		}
+	}
+
 	if v, ok := countable.Value().(phpv.ZCountable); ok {
 		return v.Count(ctx).ZVal(), nil
 	}

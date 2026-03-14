@@ -9,7 +9,26 @@ import (
 
 func init() {
 	initArrayIterator()
+	initArrayObject()
 	initInfiniteIterator()
+	initFileInfo()
+	initSplFileObject()
+	initDirectoryIterator()
+	initSplFixedArray()
+	initSplDoublyLinkedList()
+	initObjectStorage()
+	initPriorityQueue()
+	initIteratorIterator()
+	initLimitIterator()
+	initCachingIterator()
+	initAppendIterator()
+	initRegexIterator()
+	initRecursiveArrayIterator()
+	initRecursiveIteratorIterator()
+	initNoRewindIterator()
+	initEmptyIterator()
+	initCallbackFilterIterator()
+	initMultipleIterator()
 
 	phpctx.RegisterExt(&phpctx.Ext{
 		Name:    "SPL",
@@ -17,8 +36,32 @@ func init() {
 		Classes: []*phpobj.ZClass{
 			Countable,
 			OuterIterator,
+			RecursiveIterator,
 			ArrayIteratorClass,
+			ArrayObjectClass,
 			InfiniteIteratorClass,
+			SplFileInfoClass,
+			SplFileObjectClass,
+			SplTempFileObjectClass,
+			DirectoryIteratorClass,
+			FilesystemIteratorClass,
+			SplFixedArrayClass,
+			SplDoublyLinkedListClass,
+			SplStackClass,
+			SplQueueClass,
+			SplObjectStorageClass,
+			SplPriorityQueueClass,
+			IteratorIteratorClass,
+			LimitIteratorClass,
+			CachingIteratorClass,
+			AppendIteratorClass,
+			RegexIteratorClass,
+			RecursiveArrayIteratorClass,
+			RecursiveIteratorIteratorClass,
+			NoRewindIteratorClass,
+			EmptyIteratorClass,
+			CallbackFilterIteratorClass,
+			MultipleIteratorClass,
 		},
 		Functions: map[string]*phpctx.ExtFunction{
 			"spl_object_hash":        {Func: splObjectHash, Args: []*phpctx.ExtFunctionArg{}},
