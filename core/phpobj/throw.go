@@ -300,14 +300,17 @@ func init() {
 // ErrorException constructor: __construct($message = "", $code = 0, $severity = E_ERROR, $filename = __FILE__, $lineno = __LINE__, $previous = null)
 func errorExceptionConstruct(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	// First call the parent Exception::__construct with (message, code, previous)
-	parentArgs := make([]*phpv.ZVal, 0, 3)
+	parentArgs := make([]*phpv.ZVal, 3)
+	// ErrorException::__construct($message = "", $code = 0, $severity = E_ERROR, $file = null, $line = null, $previous = null)
 	if len(args) > 0 {
-		parentArgs = append(parentArgs, args[0]) // message
+		parentArgs[0] = args[0] // message
+	} else {
+		parentArgs[0] = phpv.ZStr("") // default empty string
 	}
 	if len(args) > 1 {
-		parentArgs = append(parentArgs, args[1]) // code
+		parentArgs[1] = args[1] // code
 	} else {
-		parentArgs = append(parentArgs, phpv.ZInt(0).ZVal())
+		parentArgs[1] = phpv.ZInt(0).ZVal()
 	}
 	if len(args) > 5 {
 		parentArgs = append(parentArgs, args[5]) // previous

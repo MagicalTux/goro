@@ -1096,9 +1096,27 @@ func (o *ZObject) ObjectGet(ctx phpv.Context, key phpv.Val) (*phpv.ZVal, error) 
 	// Check if accessing a static property as non-static
 	o.checkStaticPropertyAccess(ctx, keyStr)
 
-	// Check property visibility
-	if err := o.checkPropertyVisibility(ctx, keyStr, "access"); err != nil {
-		return nil, err
+	// Check property visibility. If the property is not visible but __get exists,
+	// PHP calls __get instead of throwing the visibility error.
+	visErr := o.checkPropertyVisibility(ctx, keyStr, "access")
+	if visErr != nil {
+		// Before returning the visibility error, check if __get is available
+		class := o.GetClass().(*ZClass)
+		if m, ok := class.Methods["__get"]; ok {
+			if o.getGuard == nil {
+				o.getGuard = make(map[phpv.ZString]bool)
+			}
+			if !o.getGuard[keyStr] {
+				o.getGuard[keyStr] = true
+				result, err := ctx.CallZVal(ctx, m.Method, []*phpv.ZVal{keyStr.ZVal()}, o)
+				delete(o.getGuard, keyStr)
+				if result == nil && err == nil {
+					result = phpv.ZNULL.ZVal()
+				}
+				return result, err
+			}
+		}
+		return nil, visErr
 	}
 
 	// Check for property get hook (PHP 8.4) - only if not already inside a hook for this property
