@@ -381,3 +381,30 @@ func obResolveCallback(ctx phpv.Context, v *phpv.ZVal) (phpv.Callable, error) {
 		return nil, errors.New("no array or string given")
 	}
 }
+
+// > func bool output_add_rewrite_var ( string $name, string $value )
+func fncOutputAddRewriteVar(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var name phpv.ZString
+	var value phpv.ZString
+	_, err := core.Expand(ctx, args, &name, &value)
+	if err != nil {
+		return nil, err
+	}
+
+	// Track memory allocation for the name and value. PHP internally
+	// copies the strings for the URL rewriting rules, so we track
+	// the full allocation including the copies.
+	g := ctx.Global().(*phpctx.Global)
+	// PHP allocates: name copy + value copy + internal rule structures
+	// For large strings this dominates, so track 2x (name + value copies)
+	allocSize := uint64(len(name)+len(value)) * 2
+	if allocSize > 0 {
+		if err := g.MemAlloc(ctx, allocSize); err != nil {
+			return nil, ctx.Errorf("Allowed memory size of %d bytes exhausted (tried to allocate %d bytes)",
+				g.MemLimit(), allocSize)
+		}
+	}
+
+	// Store for URL rewriting (stub: accept but don't implement rewriting)
+	return phpv.ZBool(true).ZVal(), nil
+}

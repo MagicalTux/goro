@@ -99,8 +99,6 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 			if err := g.IniConfig.Parse(g, strings.NewReader(p.iniRaw)); err != nil {
 				return err
 			}
-			// Apply max_memory_limit capping after INI is parsed
-			g.ApplyMaxMemoryLimit()
 			// Only reinit superglobals if INI contains settings that affect them
 			for _, key := range []string{"variables_order", "register_argc_argv", "enable_post_data_reading", "disable_functions", "post_max_size", "max_input_nesting_level", "file_uploads", "upload_max_filesize", "max_file_uploads", "upload_tmp_dir"} {
 				if strings.Contains(p.iniRaw, key) {
@@ -109,6 +107,8 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 				}
 			}
 		}
+		// Always sync MemMgr limit with the INI memory_limit value
+		g.ApplyMaxMemoryLimit()
 		if needsReinit {
 			g.ReinitSuperglobals()
 		}
@@ -196,6 +196,10 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 				fmt.Fprint(g, "\n"+timeout.String())
 				err = nil
 			} else if phpErr, ok := err.(*phpv.PhpError); ok && phpErr.Code == phpv.E_ERROR {
+				// Clean buffered output before writing the fatal error,
+				// so only the error message passes through the callback
+				// (not the previously buffered output).
+				g.CleanBuffers()
 				if phpErr.Loc != nil {
 					if htmlErrors {
 						fmt.Fprintf(g, "<br />\n<b>Fatal error</b>:  %s in <b>%s</b> on line <b>%d</b><br />\n", phpErr.Err.Error(), phpErr.Loc.Filename, phpErr.Loc.Line)

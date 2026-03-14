@@ -463,6 +463,8 @@ func (g *Global) RunFile(fn string) error {
 					g.WriteErr([]byte(fmt.Sprintf("\nFatal error: %s\n  thrown in %s on line %d\n", trace, loc.Filename, loc.Line)))
 					err = nil
 				} else if phpErr, ok := err.(*phpv.PhpError); ok {
+					// Clean buffered output on fatal error
+					g.CleanBuffers()
 					// Defer fatal PHP errors until after shutdown/destructors
 					deferredErr = phpErr
 					err = nil
@@ -547,6 +549,13 @@ func (g *Global) SetLocalConfig(name phpv.ZString, value *phpv.ZVal) (*phpv.ZVal
 	// max_memory_limit capping: when setting memory_limit, check against max_memory_limit
 	if name == "memory_limit" {
 		value = g.capMemoryLimit(value)
+		// Update the actual MemMgr limit
+		bytes := parseIniBytes(string(value.AsString(g)))
+		if bytes <= 0 {
+			g.mem.SetLimit(0) // unlimited
+		} else {
+			g.mem.SetLimit(uint64(bytes))
+		}
 	}
 
 	// open_basedir: resolve paths and enforce narrowing (can only restrict further, not widen)
@@ -682,27 +691,34 @@ func formatIniBytes(b int64) string {
 }
 
 // ApplyMaxMemoryLimit should be called after INI parsing to enforce max_memory_limit
-// on the initial memory_limit value.
+// on the initial memory_limit value and sync the MemMgr limit.
 func (g *Global) ApplyMaxMemoryLimit() {
 	maxVal := g.GetConfig("max_memory_limit", phpv.ZStr("-1"))
 	maxBytes := parseIniBytes(string(maxVal.AsString(g)))
-	if maxBytes == -1 {
-		return // no cap
+	if maxBytes != -1 {
+		memVal := g.GetConfig("memory_limit", phpv.ZStr("128M"))
+		memBytes := parseIniBytes(string(memVal.AsString(g)))
+		if memBytes == -1 {
+			// Silently cap unlimited to max
+			g.IniConfig.SetGlobal(g, "memory_limit", phpv.ZStr(formatIniBytes(maxBytes)))
+		} else if memBytes > maxBytes {
+			// Warn when a specific limit exceeds the max
+			g.LogError(&phpv.PhpError{
+				Err:  fmt.Errorf("Failed to set memory_limit to %d bytes. Setting to max_memory_limit instead (currently: %d bytes)", memBytes, maxBytes),
+				Code: phpv.E_WARNING,
+				Loc:  &phpv.Loc{Filename: "Unknown", Line: 0},
+			}, logopt.Data{NoFuncName: true})
+			g.IniConfig.SetGlobal(g, "memory_limit", phpv.ZStr(formatIniBytes(maxBytes)))
+		}
 	}
 
+	// Sync MemMgr limit from the (possibly capped) INI value
 	memVal := g.GetConfig("memory_limit", phpv.ZStr("128M"))
 	memBytes := parseIniBytes(string(memVal.AsString(g)))
-	if memBytes == -1 {
-		// Silently cap unlimited to max
-		g.IniConfig.SetGlobal(g, "memory_limit", phpv.ZStr(formatIniBytes(maxBytes)))
-	} else if memBytes > maxBytes {
-		// Warn when a specific limit exceeds the max
-		g.LogError(&phpv.PhpError{
-			Err:  fmt.Errorf("Failed to set memory_limit to %d bytes. Setting to max_memory_limit instead (currently: %d bytes)", memBytes, maxBytes),
-			Code: phpv.E_WARNING,
-			Loc:  &phpv.Loc{Filename: "Unknown", Line: 0},
-		}, logopt.Data{NoFuncName: true})
-		g.IniConfig.SetGlobal(g, "memory_limit", phpv.ZStr(formatIniBytes(maxBytes)))
+	if memBytes <= 0 {
+		g.mem.SetLimit(0)
+	} else {
+		g.mem.SetLimit(uint64(memBytes))
 	}
 }
 
@@ -1297,6 +1313,23 @@ func (g *Global) Close() error {
 	}
 }
 
+// DiscardBuffers discards all output buffer content without flushing.
+// Used on fatal errors to prevent buffered output from leaking.
+func (g *Global) DiscardBuffers() {
+	for g.buf != nil {
+		g.buf.CloseClean()
+	}
+}
+
+// CleanBuffers discards buffered content in all active output buffers
+// without closing them. The buffers remain active so subsequent writes
+// (like fatal error messages) still pass through their callbacks.
+func (g *Global) CleanBuffers() {
+	for b := g.buf; b != nil; b = b.Parent() {
+		b.b = nil
+	}
+}
+
 // RegisterTempFile registers a temporary file path for cleanup when the
 // request ends. Used for uploaded file temp files.
 func (g *Global) RegisterTempFile(path string) {
@@ -1367,6 +1400,11 @@ func (g *Global) Global() phpv.GlobalContext {
 
 func (g *Global) MemAlloc(ctx phpv.Context, s uint64) error {
 	return g.mem.Alloc(ctx, s)
+}
+
+// MemLimit returns the current memory limit in bytes (0 = unlimited).
+func (g *Global) MemLimit() uint64 {
+	return g.mem.Limit()
 }
 
 func (g *Global) GetLoadedExtensions() []string {

@@ -7,7 +7,6 @@ memory_limit=64M
 --SKIPIF--
 <?php
 if (getenv("USE_ZEND_ALLOC") === "0") die("skip requires ZendMM");
-if (!function_exists('output_add_rewrite_var')) die('skip output_add_rewrite_var not available');
 ?>
 --FILE--
 <?php

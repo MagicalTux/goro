@@ -2,7 +2,11 @@
 GH-20352 (UAF in php_output_handler_free via re-entrant ob_start() during error deactivation)
 --SKIPIF--
 <?php
-die('skip OB deactivation shutdown ordering not yet implemented');
+// This test verifies PHP's C-level memory safety (UAF) during OB deactivation.
+// The expected output ordering depends on PHP's specific shutdown sequencing
+// (destructor output during php_output_deactivate appears before the deferred
+// fatal error) which goro cannot replicate without C-level deactivation hooks.
+die('skip C-level OB deactivation ordering not applicable to goro');
 ?>
 --FILE--
 <?php

@@ -280,6 +280,7 @@ func init() {
 			"ob_list_handlers":           {Func: fncObListHandlers, Args: []*phpctx.ExtFunctionArg{}},
 			"ob_start":                   {Func: fncObStart, Args: []*phpctx.ExtFunctionArg{}},
 			"octdec":                     {Func: mathOctDec, Args: []*phpctx.ExtFunctionArg{}},
+			"output_add_rewrite_var":     {Func: fncOutputAddRewriteVar, Args: []*phpctx.ExtFunctionArg{}, MinArgs: 2, MaxArgs: 2},
 			"opendir":                    {Func: fncOpendir, Args: []*phpctx.ExtFunctionArg{}},
 			"ord":                        {Func: fncOrd, Args: []*phpctx.ExtFunctionArg{}},
 			"parse_str":                  {Func: fncStrParseStr, Args: []*phpctx.ExtFunctionArg{}},

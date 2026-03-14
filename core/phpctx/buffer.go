@@ -161,6 +161,10 @@ func (b *Buffer) Write(d []byte) (int, error) {
 
 	// Always buffer raw data; the callback is invoked only on flush/close.
 	if len(d) > 0 {
+		// Check memory limit before buffering
+		if err := b.g.MemAlloc(b.g, uint64(len(d))); err != nil {
+			return 0, b.g.Errorf("Allowed memory size of %d bytes exhausted (tried to allocate %d bytes)", b.g.mem.Limit(), len(d))
+		}
 		b.b = append(b.b, d...)
 	}
 

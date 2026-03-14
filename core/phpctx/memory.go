@@ -18,6 +18,20 @@ func NewMemMgr(limit uint64) *MemMgr {
 	return &MemMgr{limit: limit}
 }
 
+// SetLimit updates the memory limit. A limit of 0 means unlimited.
+func (m *MemMgr) SetLimit(limit uint64) {
+	m.l.Lock()
+	defer m.l.Unlock()
+	m.limit = limit
+}
+
+// Limit returns the current memory limit.
+func (m *MemMgr) Limit() uint64 {
+	m.l.Lock()
+	defer m.l.Unlock()
+	return m.limit
+}
+
 func (m *MemMgr) Alloc(ctx phpv.Context, s uint64) error {
 	m.l.Lock()
 	defer m.l.Unlock()
@@ -32,11 +46,8 @@ func (m *MemMgr) internalAlloc(s uint64) error {
 		return nil
 	}
 
-	if m.cur >= m.limit {
-		return fmt.Errorf("Out of memory (currently allocated %d) (tried to allocate additional %d bytes)", m.cur, s)
-	}
-
-	if m.limit-m.cur < s {
+	// Check tracked allocations against limit
+	if m.cur >= m.limit || m.limit-m.cur < s {
 		return fmt.Errorf("Out of memory (currently allocated %d) (tried to allocate additional %d bytes)", m.cur, s)
 	}
 

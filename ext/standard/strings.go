@@ -18,6 +18,7 @@ import (
 	"unicode"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpctx"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -953,6 +954,17 @@ func fncStrRepeat(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	if times < 0 {
 		return nil, errors.New("Argument #2 ($times) must be greater than or equal to 0")
+	}
+
+	// Check memory limit before allocating large strings
+	allocSize := uint64(len(str)) * uint64(times)
+	if allocSize > 0 {
+		if g, ok := ctx.Global().(*phpctx.Global); ok {
+			if err := g.MemAlloc(ctx, allocSize); err != nil {
+				return nil, ctx.Errorf("Allowed memory size of %d bytes exhausted (tried to allocate %d bytes)",
+					g.MemLimit(), allocSize)
+			}
+		}
 	}
 
 	return phpv.ZStr(strings.Repeat(string(str), int(times))), nil
