@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go-version: ['1.24', '1.23']
+        go-version: ['1.24', '1.25', '1.26']
     steps:
       - uses: actions/checkout@v4
 
@@ -34,3 +34,21 @@ jobs:
 
       - name: Vet
         run: go vet ./...
+
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - name: Test with coverage
+        run: go test -v -count=1 -covermode=count -coverprofile=coverage.out ./...
+
+      - name: Upload coverage to Coveralls
+        uses: coverallsapp/github-action@v2
+        with:
+          file: coverage.out
+          format: golang
