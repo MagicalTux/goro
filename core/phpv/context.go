@@ -137,6 +137,8 @@ type GlobalContext interface {
 
 	IsUploadedFile(path string) bool
 	UnregisterUploadedFile(path string)
+
+	GetIncludedFiles() []string
 }
 
 type FuncContext interface {

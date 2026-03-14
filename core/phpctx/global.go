@@ -1437,6 +1437,15 @@ func (g *Global) MemLimit() uint64 {
 	return g.mem.Limit()
 }
 
+// GetIncludedFiles returns a list of all included/required file paths.
+func (g *Global) GetIncludedFiles() []string {
+	result := make([]string, 0, len(g.included))
+	for f := range g.included {
+		result = append(result, string(f))
+	}
+	return result
+}
+
 // OpenFile opens a file for reading through the global file access layer.
 // This centralizes file access so it can later be scoped to an fs.FS.
 func (g *Global) OpenFile(ctx phpv.Context, path string) (io.ReadCloser, error) {
