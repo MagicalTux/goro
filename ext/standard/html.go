@@ -657,3 +657,16 @@ func fncHtmlSpecialCharsDecode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal,
 
 	return phpv.ZStr(buf.String()), nil
 }
+
+// > func string htmlentities ( string $string [, int $flags = ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML401 [, string $encoding = ini_get("default_charset") [, bool $double_encode = TRUE ]]] )
+func fncHtmlEntities(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	// htmlentities encodes all applicable characters, not just the special ones
+	// For now, delegate to htmlspecialchars (covers the most common cases)
+	// A full implementation would encode all characters with HTML entities
+	return fncHtmlSpecialChars(ctx, args)
+}
+
+// > func string html_entity_decode ( string $string [, int $flags = ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML401 [, string $encoding = "UTF-8" ]] )
+func fncHtmlEntityDecode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	return fncHtmlSpecialCharsDecode(ctx, args)
+}

@@ -46,6 +46,26 @@ func init() {
 			"timezone_offset_get":         {Func: fncTimezoneOffsetGet, Args: []*phpctx.ExtFunctionArg{}},
 			"timezone_open":               {Func: fncTimezoneOpen, Args: []*phpctx.ExtFunctionArg{}},
 		},
-		Constants: map[phpv.ZString]phpv.Val{},
+		Constants: map[phpv.ZString]phpv.Val{
+			// Date format constants
+			"DATE_ATOM":         phpv.ZString("Y-m-d\\TH:i:sP"),
+			"DATE_COOKIE":       phpv.ZString("l, d-M-Y H:i:s T"),
+			"DATE_ISO8601":      phpv.ZString("Y-m-d\\TH:i:sO"),
+			"DATE_ISO8601_EXPANDED": phpv.ZString("X-m-d\\TH:i:sP"),
+			"DATE_RFC822":       phpv.ZString("D, d M y H:i:s O"),
+			"DATE_RFC850":       phpv.ZString("l, d-M-y H:i:s T"),
+			"DATE_RFC1036":      phpv.ZString("D, d M y H:i:s O"),
+			"DATE_RFC1123":      phpv.ZString("D, d M Y H:i:s O"),
+			"DATE_RFC7231":      phpv.ZString("D, d M Y H:i:s \\G\\M\\T"),
+			"DATE_RFC2822":      phpv.ZString("D, d M Y H:i:s O"),
+			"DATE_RFC3339":      phpv.ZString("Y-m-d\\TH:i:sP"),
+			"DATE_RFC3339_EXTENDED": phpv.ZString("Y-m-d\\TH:i:s.vP"),
+			"DATE_RSS":          phpv.ZString("D, d M Y H:i:s O"),
+			"DATE_W3C":          phpv.ZString("Y-m-d\\TH:i:sP"),
+			// Day of week constants
+			"SUNFUNCS_RET_TIMESTAMP": phpv.ZInt(0),
+			"SUNFUNCS_RET_STRING":    phpv.ZInt(1),
+			"SUNFUNCS_RET_DOUBLE":    phpv.ZInt(2),
+		},
 	})
 }

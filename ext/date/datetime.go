@@ -1,6 +1,7 @@
 package date
 
 import (
+	"fmt"
 	"math"
 	"time"
 
@@ -515,7 +516,10 @@ func init() {
 			{VarName: "invert", Default: phpv.ZInt(0).ZVal(), Modifiers: phpv.ZAttrPublic},
 			{VarName: "days", Default: phpv.ZBool(false).ZVal(), Modifiers: phpv.ZAttrPublic},
 		},
-		Methods: map[phpv.ZString]*phpv.ZClassMethod{},
+		Methods: map[phpv.ZString]*phpv.ZClassMethod{
+			"__construct": {Name: "__construct", Method: phpobj.NativeMethod(dateIntervalConstruct)},
+			"format":      {Name: "format", Method: phpobj.NativeMethod(dateIntervalFormat)},
+		},
 	}
 
 	// DateTime class
@@ -523,6 +527,22 @@ func init() {
 		Name:            "DateTime",
 		Implementations: []*phpobj.ZClass{DateTimeInterface},
 		Props:           []*phpv.ZClassProp{},
+		Const: map[phpv.ZString]*phpv.ZClassConst{
+			"ATOM":              {Value: phpv.ZString("Y-m-d\\TH:i:sP")},
+			"COOKIE":            {Value: phpv.ZString("l, d-M-Y H:i:s T")},
+			"ISO8601":           {Value: phpv.ZString("Y-m-d\\TH:i:sO")},
+			"ISO8601_EXPANDED":  {Value: phpv.ZString("X-m-d\\TH:i:sP")},
+			"RFC822":            {Value: phpv.ZString("D, d M y H:i:s O")},
+			"RFC850":            {Value: phpv.ZString("l, d-M-y H:i:s T")},
+			"RFC1036":           {Value: phpv.ZString("D, d M y H:i:s O")},
+			"RFC1123":           {Value: phpv.ZString("D, d M Y H:i:s O")},
+			"RFC7231":           {Value: phpv.ZString("D, d M Y H:i:s \\G\\M\\T")},
+			"RFC2822":           {Value: phpv.ZString("D, d M Y H:i:s O")},
+			"RFC3339":           {Value: phpv.ZString("Y-m-d\\TH:i:sP")},
+			"RFC3339_EXTENDED":  {Value: phpv.ZString("Y-m-d\\TH:i:s.vP")},
+			"RSS":               {Value: phpv.ZString("D, d M Y H:i:s O")},
+			"W3C":               {Value: phpv.ZString("Y-m-d\\TH:i:sP")},
+		},
 		Methods: map[phpv.ZString]*phpv.ZClassMethod{
 			"__construct": {
 				Name:      "__construct",
@@ -663,4 +683,114 @@ func init() {
 			},
 		},
 	}
+}
+
+func dateIntervalConstruct(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) < 1 {
+		return nil, ctx.Errorf("DateInterval::__construct() expects exactly 1 argument")
+	}
+	spec := string(args[0].AsString(ctx))
+	// Parse ISO 8601 duration: P1Y2M3DT4H5M6S
+	if len(spec) < 2 || spec[0] != 'P' {
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, "DateInterval::__construct(): Unknown or bad format ("+spec+")")
+	}
+	// Simple parser for PnYnMnDTnHnMnS
+	inTime := false
+	num := ""
+	for i := 1; i < len(spec); i++ {
+		c := spec[i]
+		if c >= '0' && c <= '9' {
+			num += string(c)
+			continue
+		}
+		n := 0
+		if num != "" {
+			fmt.Sscanf(num, "%d", &n)
+			num = ""
+		}
+		switch c {
+		case 'Y':
+			this.HashTable().SetString("y", phpv.ZInt(n).ZVal())
+		case 'M':
+			if inTime {
+				this.HashTable().SetString("i", phpv.ZInt(n).ZVal())
+			} else {
+				this.HashTable().SetString("m", phpv.ZInt(n).ZVal())
+			}
+		case 'D':
+			this.HashTable().SetString("d", phpv.ZInt(n).ZVal())
+		case 'T':
+			inTime = true
+		case 'H':
+			this.HashTable().SetString("h", phpv.ZInt(n).ZVal())
+		case 'S':
+			this.HashTable().SetString("s", phpv.ZInt(n).ZVal())
+		}
+	}
+	return nil, nil
+}
+
+func dateIntervalFormat(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) < 1 {
+		return nil, ctx.Errorf("DateInterval::format() expects exactly 1 argument")
+	}
+	format := string(args[0].AsString(ctx))
+	ht := this.HashTable()
+	
+	result := ""
+	for i := 0; i < len(format); i++ {
+		if format[i] == '%' && i+1 < len(format) {
+			i++
+			switch format[i] {
+			case 'Y':
+				result += fmt.Sprintf("%02d", ht.GetString("y").AsInt(ctx))
+			case 'y':
+				result += fmt.Sprintf("%d", ht.GetString("y").AsInt(ctx))
+			case 'M':
+				result += fmt.Sprintf("%02d", ht.GetString("m").AsInt(ctx))
+			case 'm':
+				result += fmt.Sprintf("%d", ht.GetString("m").AsInt(ctx))
+			case 'D':
+				result += fmt.Sprintf("%02d", ht.GetString("d").AsInt(ctx))
+			case 'd':
+				result += fmt.Sprintf("%d", ht.GetString("d").AsInt(ctx))
+			case 'H':
+				result += fmt.Sprintf("%02d", ht.GetString("h").AsInt(ctx))
+			case 'h':
+				result += fmt.Sprintf("%d", ht.GetString("h").AsInt(ctx))
+			case 'I':
+				result += fmt.Sprintf("%02d", ht.GetString("i").AsInt(ctx))
+			case 'i':
+				result += fmt.Sprintf("%d", ht.GetString("i").AsInt(ctx))
+			case 'S':
+				result += fmt.Sprintf("%02d", ht.GetString("s").AsInt(ctx))
+			case 's':
+				result += fmt.Sprintf("%d", ht.GetString("s").AsInt(ctx))
+			case 'R':
+				if ht.GetString("invert").AsInt(ctx) != 0 {
+					result += "-"
+				} else {
+					result += "+"
+				}
+			case 'r':
+				if ht.GetString("invert").AsInt(ctx) != 0 {
+					result += "-"
+				}
+			case 'a':
+				days := ht.GetString("days")
+				if days.GetType() == phpv.ZtBool {
+					result += "(unknown)"
+				} else {
+					result += fmt.Sprintf("%d", days.AsInt(ctx))
+				}
+			case '%':
+				result += "%"
+			default:
+				result += "%" + string(format[i])
+			}
+		} else {
+			result += string(format[i])
+		}
+	}
+	return phpv.ZStr(result), nil
 }

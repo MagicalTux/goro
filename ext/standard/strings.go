@@ -2731,3 +2731,37 @@ func expandCharacterRanges(str string) string {
 	}
 	return buf.String()
 }
+
+// > func int levenshtein ( string $string1 , string $string2 [, int $insertion_cost = 1 [, int $replacement_cost = 1 [, int $deletion_cost = 1 ]]] )
+func fncLevenshtein(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var s1, s2 phpv.ZString
+	_, err := core.Expand(ctx, args, &s1, &s2)
+	if err != nil {
+		return nil, err
+	}
+	
+	a, b := []rune(string(s1)), []rune(string(s2))
+	la, lb := len(a), len(b)
+	
+	if la == 0 { return phpv.ZInt(lb).ZVal(), nil }
+	if lb == 0 { return phpv.ZInt(la).ZVal(), nil }
+	if la > 255 || lb > 255 { return phpv.ZInt(-1).ZVal(), nil }
+	
+	d := make([][]int, la+1)
+	for i := range d {
+		d[i] = make([]int, lb+1)
+		d[i][0] = i
+	}
+	for j := 0; j <= lb; j++ {
+		d[0][j] = j
+	}
+	for i := 1; i <= la; i++ {
+		for j := 1; j <= lb; j++ {
+			cost := 1
+			if a[i-1] == b[j-1] { cost = 0 }
+			d[i][j] = min(d[i-1][j]+1, min(d[i][j-1]+1, d[i-1][j-1]+cost))
+		}
+	}
+	return phpv.ZInt(d[la][lb]).ZVal(), nil
+}
+
