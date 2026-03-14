@@ -246,7 +246,7 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 						return nil, err
 					}
 					// parse default value for class variable
-					prop.Default = &phpv.CompileDelayed{r}
+					prop.Default = &phpv.CompileDelayed{V: r}
 
 					i, err = c.NextItem()
 					if err != nil {
@@ -376,7 +376,7 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 				}
 
 				class.Const[phpv.ZString(constName)] = &phpv.ZClassConst{
-					Value:     &phpv.CompileDelayed{v},
+					Value:     &phpv.CompileDelayed{V: v},
 					Modifiers: attr,
 				}
 

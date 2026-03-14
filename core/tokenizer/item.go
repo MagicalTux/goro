@@ -252,7 +252,7 @@ func (i *Item) Unexpected() error {
 }
 
 func (i *Item) Loc() *phpv.Loc {
-	return &phpv.Loc{i.Filename, i.Line, i.Char}
+	return &phpv.Loc{Filename: i.Filename, Line: i.Line, Char: i.Char}
 }
 
 func Rune(r rune) ItemType {

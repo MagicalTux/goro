@@ -700,7 +700,7 @@ func compileFunctionArgs(c compileCtx) (res []*phpv.FuncArg, err error) {
 			if err != nil {
 				return nil, err
 			}
-			arg.DefaultValue = &phpv.CompileDelayed{r}
+			arg.DefaultValue = &phpv.CompileDelayed{V: r}
 			arg.Required = false
 
 			// Check for implicitly nullable parameter (type hint + NULL default)

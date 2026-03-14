@@ -155,7 +155,7 @@ func compileEnum(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 
 			// Store as class constant
 			class.Const[caseName] = &phpv.ZClassConst{
-				Value:     &phpv.CompileDelayed{&runEnumCaseInit{className: class.Name, caseName: caseName, backingValue: caseValue, backingType: backingType}},
+				Value:     &phpv.CompileDelayed{V: &runEnumCaseInit{className: class.Name, caseName: caseName, backingValue: caseValue, backingType: backingType}},
 				Modifiers: phpv.ZAttrPublic,
 			}
 
@@ -185,7 +185,7 @@ func compileEnum(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 				}
 
 				class.Const[phpv.ZString(constName)] = &phpv.ZClassConst{
-					Value:     &phpv.CompileDelayed{v},
+					Value:     &phpv.CompileDelayed{V: v},
 					Modifiers: phpv.ZAttrPublic,
 				}
 

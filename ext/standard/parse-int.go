@@ -9,15 +9,15 @@ import (
 )
 
 func baseError(fn, str string, base int) *strconv.NumError {
-	return &strconv.NumError{fn, str, errors.New("invalid base " + strconv.Itoa(base))}
+	return &strconv.NumError{Func: fn, Num: str, Err: errors.New("invalid base " + strconv.Itoa(base))}
 }
 
 func bitSizeError(fn, str string, bitSize int) *strconv.NumError {
-	return &strconv.NumError{fn, str, errors.New("invalid bit size " + strconv.Itoa(bitSize))}
+	return &strconv.NumError{Func: fn, Num: str, Err: errors.New("invalid bit size " + strconv.Itoa(bitSize))}
 }
 
 func syntaxError(fn, str string) *strconv.NumError {
-	return &strconv.NumError{fn, str, strconv.ErrSyntax}
+	return &strconv.NumError{Func: fn, Num: str, Err: strconv.ErrSyntax}
 }
 
 // based on strconv.ParseUint, but this one doesn't
