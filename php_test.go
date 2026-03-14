@@ -130,23 +130,52 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 
 		shortOpenTag := bool(g.GetConfig("short_open_tag", phpv.ZBool(true).ZVal()).AsBool(g))
 		t := tokenizer.NewLexerWithShortTag(b, scriptPath, shortOpenTag)
-		c, err := compiler.Compile(g, t)
-		if err != nil {
+
+		// Run compilation with a timeout - some tests cause the
+		// tokenizer/compiler to deadlock on heredoc parsing etc.
+		type compileResult struct {
+			c   phpv.Runnable
+			err error
+		}
+		compileCh := make(chan compileResult, 1)
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					compileCh <- compileResult{nil, fmt.Errorf("compile panic: %v", r)}
+				}
+			}()
+			cr, cerr := compiler.Compile(g, t)
+			compileCh <- compileResult{cr, cerr}
+		}()
+
+		var c phpv.Runnable
+		var compileErr error
+		select {
+		case result := <-compileCh:
+			c = result.c
+			compileErr = result.err
+		case <-time.After(10 * time.Second):
+			g.Close()
+			return fmt.Errorf("compile timed out after 10s")
+		}
+
+		if compileErr != nil {
 			// Filter exit errors from compile (e.g., E_COMPILE_ERROR already output)
-			err = phpv.FilterExitError(err)
-			if err != nil {
+			compileErr = phpv.FilterExitError(compileErr)
+			if compileErr != nil {
 				// Handle parse errors and compile errors by outputting them
-				if phpErr, ok := err.(*phpv.PhpError); ok && (phpErr.Code == phpv.E_PARSE || phpErr.Code == phpv.E_COMPILE_ERROR) {
+				if phpErr, ok := compileErr.(*phpv.PhpError); ok && (phpErr.Code == phpv.E_PARSE || phpErr.Code == phpv.E_COMPILE_ERROR) {
 					g.LogError(phpErr)
 					g.Close()
 					return nil
 				}
-				return err
+				return compileErr
 			}
 			g.Close()
 			return nil
 		}
 		var retVal *phpv.ZVal
+		var err error
 		retVal, err = c.Run(g)
 		retVal, err = phperr.CatchReturn(retVal, err)
 		_ = retVal

@@ -767,7 +767,7 @@ func (g *Global) IterateConfig() iter.Seq2[string, phpv.IniValue] {
 func (g *Global) Tick(ctx phpv.Context, l *phpv.Loc) error {
 	g.l = l
 	g.tickCount++
-	if g.tickCount&0x3FF == 0 {
+	if g.tickCount&0x3F == 0 {
 		deadline := g.timerStart.Add(g.deadlineDuration)
 		if time.Until(deadline) <= 0 {
 			seconds := math.Round(g.deadlineDuration.Seconds())
