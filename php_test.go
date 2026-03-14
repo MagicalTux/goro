@@ -708,11 +708,22 @@ func TestPhp(t *testing.T) {
 		os.Setenv("TEST_PHP_EXECUTABLE", exe)
 	}
 
+	// Batch support: GORO_TEST_SKIP and GORO_TEST_LIMIT env vars
+	batchSkip := 0
+	batchLimit := 0
+	if v := os.Getenv("GORO_TEST_SKIP"); v != "" {
+		fmt.Sscanf(v, "%d", &batchSkip)
+	}
+	if v := os.Getenv("GORO_TEST_LIMIT"); v != "" {
+		fmt.Sscanf(v, "%d", &batchLimit)
+	}
+
 	// run all tests in "test"
 	count := 0
 	pass := 0
 	skip := 0
 	fail := 0
+	testIdx := 0
 	filepath.Walk(TestsPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil || info == nil {
 			return nil // skip entries that disappeared (e.g. temp dirs from tests)
@@ -722,6 +733,13 @@ func TestPhp(t *testing.T) {
 		}
 		if !strings.HasSuffix(path, ".phpt") {
 			return err
+		}
+		testIdx++
+		if testIdx <= batchSkip {
+			return nil
+		}
+		if batchLimit > 0 && count >= batchLimit {
+			return nil
 		}
 
 		count += 1
