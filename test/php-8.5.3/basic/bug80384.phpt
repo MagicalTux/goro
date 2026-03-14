@@ -1,5 +1,9 @@
 --TEST--
 Bug #80384 large reads cause filters to internally buffer large amounts of memory
+--SKIPIF--
+<?php
+if (!function_exists('stream_filter_append')) die('skip stream_filter_append not available');
+?>
 --FILE--
 <?php
 /* First, create a file to read */

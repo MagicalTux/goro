@@ -139,9 +139,11 @@ func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, o
 	result, err := c.CallZVal(ctx, f, zArgs, optionalThis...)
 
 	// After the call returns, unwrap by-ref hash table entries that were
-	// made into references during this call.
+	// made into references during this call — but only if no other location
+	// still references the same inner ZVal (e.g. the callee stored it via
+	// $this->prop = &$param). This approximates PHP's refcount-based un-ref.
 	for _, ref := range byRefCleanups {
-		ref.UnRef()
+		ref.UnRefIfAlone()
 	}
 
 	return result, err

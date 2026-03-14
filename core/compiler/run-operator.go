@@ -386,6 +386,13 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			res = res.ZVal()
 		}
 
+		// Track reference aliases: when storing a reference value (from =&),
+		// increment the inner ZVal's refCount so UnRefIfAlone knows
+		// not to unwrap compound writable by-ref args.
+		if res.IsRef() {
+			res.RefInner()
+		}
+
 		return res, w.WriteValue(ctx, res)
 	}
 

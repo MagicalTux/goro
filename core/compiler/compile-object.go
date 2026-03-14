@@ -113,9 +113,10 @@ func (r *runNewObject) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 
 	z, err := phpobj.NewZObject(ctx, class, args...)
 
-	// Unwrap by-ref hash table entries after constructor returns
+	// Unwrap by-ref hash table entries after constructor returns — but
+	// only if no other location still references the same inner ZVal.
 	for _, ref := range byRefCleanups {
-		ref.UnRef()
+		ref.UnRefIfAlone()
 	}
 
 	if err != nil {
@@ -587,6 +588,10 @@ func (r *runObjectVar) PrepareWrite(ctx phpv.Context) error {
 }
 
 func (r *runObjectVar) IsCompoundWritable() {}
+
+func (r *runObjectVar) SetWriteContext(v bool) {
+	r.writeContext = v
+}
 
 func (r *runObjectVar) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 	// write object property

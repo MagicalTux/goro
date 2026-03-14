@@ -15,6 +15,11 @@ type Val interface {
 type ZVal struct {
 	v    Val
 	Name *ZString
+	// refCount tracks how many outer ZVals point to this ZVal when used as a
+	// reference inner value. Used to determine when to un-ref compound writable
+	// by-ref args: if refCount > 1 after a call, another location still
+	// references it (e.g. $this->prop = &$param), so don't un-ref.
+	refCount int
 }
 
 func NewZVal(v Val) *ZVal {
@@ -88,10 +93,15 @@ func (z *ZVal) Dup() *ZVal {
 	return res
 }
 
-// Ref returns a reference to this zval while making it itself a ref
+// Ref returns a reference to this zval while making it itself a ref.
+// If z is an inner reference ZVal (has refCount > 0), creating a new
+// wrapper increments the refCount to track the additional alias.
 func (z *ZVal) Ref() *ZVal {
 	if _, isRef := z.v.(*ZVal); isRef {
 		return z
+	}
+	if z.refCount > 0 {
+		z.refCount++
 	}
 	return NewZVal(z)
 }
@@ -116,7 +126,21 @@ func (z *ZVal) MakeRef() {
 	if _, isRef := z.v.(*ZVal); isRef {
 		return // already a ref
 	}
-	z.v = &ZVal{v: z.v}
+	z.v = &ZVal{v: z.v, refCount: 1}
+}
+
+// RefInner returns the inner ZVal of a reference and increments its refCount.
+// This should be called when creating a new alias to the inner value
+// (e.g. $this->prop = &$param). Returns nil if not a reference.
+func (z *ZVal) RefInner() *ZVal {
+	if z == nil {
+		return nil
+	}
+	if inner, ok := z.v.(*ZVal); ok {
+		inner.refCount++
+		return inner
+	}
+	return nil
 }
 
 // UnRef unwraps a reference, replacing the outer ZVal's value with the inner
@@ -127,6 +151,20 @@ func (z *ZVal) UnRef() {
 	}
 	if inner, ok := z.v.(*ZVal); ok {
 		z.v = inner.v
+	}
+}
+
+// UnRefIfAlone unwraps a reference only if the inner ZVal's refCount is <= 1,
+// meaning no other location holds a reference to the same inner value.
+// Used after function calls for compound writable by-ref args.
+func (z *ZVal) UnRefIfAlone() {
+	if z == nil {
+		return
+	}
+	if inner, ok := z.v.(*ZVal); ok {
+		if inner.refCount <= 1 {
+			z.v = inner.v
+		}
 	}
 }
 

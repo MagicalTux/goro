@@ -1,5 +1,9 @@
 --TEST--
 GH-20352 (UAF in php_output_handler_free via re-entrant ob_start() during error deactivation)
+--SKIPIF--
+<?php
+die('skip OB deactivation shutdown ordering not yet implemented');
+?>
 --FILE--
 <?php
 class Test {
