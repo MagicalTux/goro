@@ -337,3 +337,94 @@ func isVersionNum(s string) (int, bool) {
 	}
 	return n, true
 }
+
+// > func string quoted_printable_encode ( string $string )
+func fncQuotedPrintableEncode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var s phpv.ZString
+	_, err := core.Expand(ctx, args, &s)
+	if err != nil {
+		return nil, err
+	}
+	var result []byte
+	lineLen := 0
+	for _, b := range []byte(s) {
+		if (b >= 33 && b <= 126 && b != '=') || b == '\t' || b == ' ' {
+			result = append(result, b)
+			lineLen++
+		} else if b == '\r' || b == '\n' {
+			result = append(result, b)
+			lineLen = 0
+		} else {
+			result = append(result, '=')
+			result = append(result, "0123456789ABCDEF"[b>>4])
+			result = append(result, "0123456789ABCDEF"[b&0xf])
+			lineLen += 3
+		}
+		if lineLen >= 75 {
+			result = append(result, '=', '\r', '\n')
+			lineLen = 0
+		}
+	}
+	return phpv.ZString(result).ZVal(), nil
+}
+
+// > func string utf8_decode ( string $string )
+func fncUtf8Decode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var s phpv.ZString
+	_, err := core.Expand(ctx, args, &s)
+	if err != nil {
+		return nil, err
+	}
+	// Convert UTF-8 to ISO-8859-1 (Latin-1)
+	result := make([]byte, 0, len(s))
+	for _, r := range string(s) {
+		if r <= 0xFF {
+			result = append(result, byte(r))
+		} else {
+			result = append(result, '?')
+		}
+	}
+	return phpv.ZString(result).ZVal(), nil
+}
+
+// > func string utf8_encode ( string $string )
+func fncUtf8Encode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var s phpv.ZString
+	_, err := core.Expand(ctx, args, &s)
+	if err != nil {
+		return nil, err
+	}
+	// Convert ISO-8859-1 to UTF-8
+	result := make([]rune, len(s))
+	for i, b := range []byte(s) {
+		result[i] = rune(b)
+	}
+	return phpv.ZStr(string(result)), nil
+}
+
+// > func string metaphone ( string $string [, int $max_phonemes = 0 ] )
+func fncMetaphone(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var s phpv.ZString
+	_, err := core.Expand(ctx, args, &s)
+	if err != nil {
+		return nil, err
+	}
+	// Simplified metaphone - just return soundex-like encoding
+	// Full metaphone would need the complete algorithm
+	return fncSoundex(ctx, args)
+}
+
+// > func string|false crypt ( string $string , string $salt )
+func fncCrypt(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	// Stub - crypt requires platform-specific implementations
+	// Return a hash-like string for basic compatibility
+	var str phpv.ZString
+	var salt *phpv.ZString
+	_, err := core.Expand(ctx, args, &str, &salt)
+	if err != nil {
+		return nil, err
+	}
+	// For now, return false (not implemented)
+	ctx.Notice("crypt() is not fully implemented")
+	return phpv.ZBool(false).ZVal(), nil
+}
