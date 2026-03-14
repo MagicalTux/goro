@@ -314,7 +314,9 @@ func GeneratorYieldFrom(ctx phpv.Context, iterable *phpv.ZVal) (*phpv.ZVal, erro
 func generatorYieldFromGenerator(ctx phpv.Context, obj *ZObject, innerState *GeneratorState) (*phpv.ZVal, error) {
 	// Ensure inner generator is started
 	if !innerState.started {
-		generatorEnsureStarted(ctx, innerState)
+		if err := generatorEnsureStarted(ctx, innerState); err != nil {
+			return nil, err
+		}
 	}
 
 	for innerState.valid {
@@ -415,9 +417,9 @@ func generatorYieldFromArray(ctx phpv.Context, arr *phpv.ZVal) (*phpv.ZVal, erro
 }
 
 // generatorEnsureStarted kicks off the generator if it hasn't been started yet.
-func generatorEnsureStarted(ctx phpv.Context, state *GeneratorState) {
+func generatorEnsureStarted(ctx phpv.Context, state *GeneratorState) error {
 	if state.started || state.status == GeneratorClosed {
-		return
+		return nil
 	}
 	state.started = true
 	state.status = GeneratorRunning
@@ -427,14 +429,21 @@ func generatorEnsureStarted(ctx phpv.Context, state *GeneratorState) {
 
 	// Wait for the first yield or completion
 	select {
-	case <-state.doneCh:
+	case doneMsg := <-state.doneCh:
 		// Generator completed without yielding
 		state.valid = false
+		state.status = GeneratorClosed
+		if doneMsg.err != nil {
+			state.genErr = doneMsg.err
+			return doneMsg.err
+		}
 	case yield := <-state.yieldCh:
 		state.currentKey = yield.Key
 		state.currentValue = yield.Value
 		state.valid = true
+		state.status = GeneratorSuspended
 	}
+	return nil
 }
 
 // generatorAdvance sends a value into the generator and waits for the next yield.
@@ -503,7 +512,9 @@ func generatorCurrent(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZV
 		return phpv.ZNULL.ZVal(), nil
 	}
 
-	generatorEnsureStarted(ctx, state)
+	if err := generatorEnsureStarted(ctx, state); err != nil {
+		return nil, err
+	}
 
 	if !state.valid {
 		return phpv.ZNULL.ZVal(), nil
@@ -518,7 +529,9 @@ func generatorKey(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, 
 		return phpv.ZNULL.ZVal(), nil
 	}
 
-	generatorEnsureStarted(ctx, state)
+	if err := generatorEnsureStarted(ctx, state); err != nil {
+		return nil, err
+	}
 
 	if !state.valid {
 		return phpv.ZNULL.ZVal(), nil
@@ -533,7 +546,9 @@ func generatorNext(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal,
 		return phpv.ZNULL.ZVal(), nil
 	}
 
-	generatorEnsureStarted(ctx, state)
+	if err := generatorEnsureStarted(ctx, state); err != nil {
+		return nil, err
+	}
 
 	if err := generatorAdvance(ctx, state, nil); err != nil {
 		return nil, err
@@ -551,7 +566,9 @@ func generatorRewind(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVa
 	// Rewind is only meaningful before the generator starts.
 	// If already started, it's a no-op (PHP emits no error).
 	if !state.started {
-		generatorEnsureStarted(ctx, state)
+		if err := generatorEnsureStarted(ctx, state); err != nil {
+			return nil, err
+		}
 	}
 
 	return phpv.ZNULL.ZVal(), nil
@@ -563,7 +580,9 @@ func generatorValid(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal
 		return phpv.ZFalse.ZVal(), nil
 	}
 
-	generatorEnsureStarted(ctx, state)
+	if err := generatorEnsureStarted(ctx, state); err != nil {
+		return nil, err
+	}
 
 	return phpv.ZBool(state.valid).ZVal(), nil
 }
@@ -582,7 +601,9 @@ func generatorSend(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal,
 	}
 
 	if !state.started {
-		generatorEnsureStarted(ctx, state)
+		if err := generatorEnsureStarted(ctx, state); err != nil {
+			return nil, err
+		}
 		// For the first send(), PHP ignores the sent value and returns current
 		if state.valid {
 			return state.currentValue, nil
@@ -684,7 +705,9 @@ func NewGeneratorIterator(ctx phpv.Context, obj *ZObject) phpv.ZIterator {
 }
 
 func (it *generatorIterator) Current(ctx phpv.Context) (*phpv.ZVal, error) {
-	generatorEnsureStarted(ctx, it.state)
+	if err := generatorEnsureStarted(ctx, it.state); err != nil {
+		return nil, err
+	}
 	if !it.state.valid {
 		return phpv.ZNULL.ZVal(), nil
 	}
@@ -692,7 +715,9 @@ func (it *generatorIterator) Current(ctx phpv.Context) (*phpv.ZVal, error) {
 }
 
 func (it *generatorIterator) Key(ctx phpv.Context) (*phpv.ZVal, error) {
-	generatorEnsureStarted(ctx, it.state)
+	if err := generatorEnsureStarted(ctx, it.state); err != nil {
+		return nil, err
+	}
 	if !it.state.valid {
 		return phpv.ZNULL.ZVal(), nil
 	}
@@ -700,7 +725,9 @@ func (it *generatorIterator) Key(ctx phpv.Context) (*phpv.ZVal, error) {
 }
 
 func (it *generatorIterator) Next(ctx phpv.Context) (*phpv.ZVal, error) {
-	generatorEnsureStarted(ctx, it.state)
+	if err := generatorEnsureStarted(ctx, it.state); err != nil {
+		return nil, err
+	}
 	if err := generatorAdvance(ctx, it.state, nil); err != nil {
 		return nil, err
 	}
@@ -716,7 +743,9 @@ func (it *generatorIterator) Prev(ctx phpv.Context) (*phpv.ZVal, error) {
 
 func (it *generatorIterator) Reset(ctx phpv.Context) (*phpv.ZVal, error) {
 	if !it.state.started {
-		generatorEnsureStarted(ctx, it.state)
+		if err := generatorEnsureStarted(ctx, it.state); err != nil {
+			return nil, err
+		}
 	}
 	if it.state.valid {
 		return it.state.currentValue, nil
@@ -733,12 +762,15 @@ func (it *generatorIterator) End(ctx phpv.Context) (*phpv.ZVal, error) {
 }
 
 func (it *generatorIterator) Valid(ctx phpv.Context) bool {
+	// Note: errors from generatorEnsureStarted are stored in state.genErr
+	// and will be surfaced on the next call to Current/Key/Next.
 	generatorEnsureStarted(ctx, it.state)
 	return it.state.valid
 }
 
 func (it *generatorIterator) Iterate(ctx phpv.Context) iter.Seq2[*phpv.ZVal, *phpv.ZVal] {
 	return func(yield func(*phpv.ZVal, *phpv.ZVal) bool) {
+		// Note: errors from generatorEnsureStarted are stored in state.genErr
 		generatorEnsureStarted(ctx, it.state)
 		for it.state.valid {
 			key := it.state.currentKey
