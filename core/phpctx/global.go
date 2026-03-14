@@ -102,6 +102,7 @@ type Global struct {
 
 	tempFiles     []string            // temporary files to clean up (e.g., uploaded files)
 	uploadedFiles map[string]struct{} // set of uploaded file paths for is_uploaded_file()
+	obDisabled    bool                // OB system disabled after re-entrant fatal error
 }
 
 func NewGlobal(ctx context.Context, p *Process, config phpv.IniConfig) *Global {
@@ -1309,6 +1310,16 @@ func (g *Global) UnregisterUploadedFile(path string) {
 	if g.uploadedFiles != nil {
 		delete(g.uploadedFiles, path)
 	}
+}
+
+// IsObDisabled returns whether the OB system has been disabled.
+func (g *Global) IsObDisabled() bool {
+	return g.obDisabled
+}
+
+// SetObDisabled marks the OB system as disabled (after re-entrant fatal error).
+func (g *Global) SetObDisabled() {
+	g.obDisabled = true
 }
 
 func (g *Global) Flush() {

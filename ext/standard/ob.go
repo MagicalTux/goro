@@ -13,7 +13,16 @@ import (
 
 // > func bool ob_start ([ callable $output_callback = NULL [, int $chunk_size = 0 [, int $flags = PHP_OUTPUT_HANDLER_STDFLAGS ]]] )
 func fncObStart(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	g := ctx.Global().(*phpctx.Global)
+
+	// Check if OB system was disabled by a previous re-entrant fatal error
+	if g.IsObDisabled() {
+		ctx.Notice("Failed to create buffer")
+		return phpv.ZBool(false).ZVal(), nil
+	}
+
 	if ctx.GetConfig("ob_in_handler", phpv.ZBool(false).ZVal()).AsBool(ctx) {
+		g.SetObDisabled()
 		return nil, ctx.Errorf("ob_start(): Cannot use output buffering in output buffering display handlers")
 	}
 
@@ -40,7 +49,7 @@ func fncObStart(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		core.ExpandAt(ctx, args, 2, &flags)
 	}
 
-	b := ctx.Global().(*phpctx.Global).AppendBuffer()
+	b := g.AppendBuffer()
 
 	if callback != nil {
 		b.CB = callback
