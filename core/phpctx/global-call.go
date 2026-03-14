@@ -220,8 +220,15 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 		if variadicIdx >= 0 && len(args) >= variadicIdx {
 			// Pack arguments from variadicIdx onward into a ZArray
 			varArray := phpv.NewZArray()
+			isRefVariadic := func_args[variadicIdx].Ref
 			for _, a := range args[variadicIdx:] {
-				varArray.OffsetSet(nil, nil, a.Dup())
+				if isRefVariadic {
+					// For by-ref variadic, preserve the original ZVal (don't dup)
+					// so modifications inside the function propagate back
+					varArray.OffsetSet(nil, nil, a)
+				} else {
+					varArray.OffsetSet(nil, nil, a.Dup())
+				}
 			}
 			// Replace args: keep args before variadic, then add the packed array
 			newArgs := make([]*phpv.ZVal, variadicIdx+1)
@@ -435,32 +442,95 @@ func expandSpreadArgs(ctx phpv.Context, args []phpv.Runnable) []phpv.Runnable {
 			continue
 		}
 		// Evaluate the spread expression
-		val, err := sa.Inner().Run(ctx)
+		inner := sa.Inner()
+		val, err := inner.Run(ctx)
 		if err != nil {
 			// Can't return error from here, wrap as a runnable that will error
 			result = append(result, arg)
 			continue
 		}
-		if val.GetType() != phpv.ZtArray {
-			// Non-array spread: just pass the value
-			result = append(result, &spreadZVal{val})
+		// Detect if spread source is a variable (can be passed by reference)
+		_, isWritable := inner.(phpv.Writable)
+		if val.GetType() == phpv.ZtArray {
+			arr := val.AsArray(ctx)
+			if isWritable {
+				// From a variable: pass the actual hash table entries (for by-ref)
+				// Set a synthetic name on each entry so the by-ref mechanism
+				// in callZValImpl recognizes them as writable locations.
+				spreadName := phpv.ZString("__spread")
+				it := arr.NewIterator()
+				for it.Valid(ctx) {
+					// Use CurrentRef to get the actual ZVal without duplication
+					v, _ := it.(interface {
+						CurrentRef(phpv.Context) (*phpv.ZVal, error)
+					}).CurrentRef(ctx)
+					if v != nil {
+						v.Name = &spreadName
+						result = append(result, &spreadZVal{v: v, fromLiteral: false})
+					}
+					it.Next(ctx)
+				}
+			} else {
+				// From a literal: dup the values
+				for _, v := range arr.Iterate(ctx) {
+					result = append(result, &spreadZVal{v: v.Dup(), fromLiteral: true})
+				}
+			}
 			continue
 		}
-		arr := val.AsArray(ctx)
-		for _, v := range arr.Iterate(ctx) {
-			result = append(result, &spreadZVal{v.Dup()})
+		// Check for Traversable objects (Generator, Iterator, IteratorAggregate)
+		if val.GetType() == phpv.ZtObject {
+			if obj, ok := val.Value().(*phpobj.ZObject); ok {
+				if obj.GetClass().Implements(phpobj.IteratorAggregate) {
+					iterResult, err := obj.CallMethod(ctx, "getIterator")
+					if err == nil && iterResult != nil && iterResult.GetType() == phpv.ZtObject {
+						if iterObj, ok := iterResult.Value().(*phpobj.ZObject); ok && iterObj.GetClass().Implements(phpobj.Iterator) {
+							obj = iterObj
+						}
+					}
+				}
+				if obj.GetClass().Implements(phpobj.Iterator) {
+					obj.CallMethod(ctx, "rewind")
+					for {
+						v, err := obj.CallMethod(ctx, "valid")
+						if err != nil || !v.AsBool(ctx) {
+							break
+						}
+						value, err := obj.CallMethod(ctx, "current")
+						if err != nil {
+							break
+						}
+						result = append(result, &spreadZVal{v: value.Dup(), fromLiteral: true})
+						obj.CallMethod(ctx, "next")
+					}
+					continue
+				}
+			}
 		}
+		// Non-iterable spread: error will be caught at call time
+		result = append(result, &spreadZVal{v: val, fromLiteral: true})
 	}
 	return result
 }
 
 // spreadZVal is a Runnable wrapper for pre-evaluated spread argument values.
+// It implements Writable so that by-ref parameters can write back to the
+// original array element. When fromLiteral is true, no write-back occurs.
 type spreadZVal struct {
-	v *phpv.ZVal
+	v           *phpv.ZVal
+	fromLiteral bool // true if from a literal (non-variable), no write-back needed
 }
 
 func (s *spreadZVal) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	return s.v, nil
+}
+
+func (s *spreadZVal) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
+	// Write-back for by-ref parameter passing - update the original array element
+	if !s.fromLiteral {
+		s.v.Set(value)
+	}
+	return nil
 }
 
 func (s *spreadZVal) Dump(w io.Writer) error {
