@@ -1172,6 +1172,9 @@ func phpTypeName(v *phpv.ZVal) string {
 	case phpv.ZtArray:
 		return "array"
 	case phpv.ZtObject:
+		if obj := v.AsObject(nil); obj != nil {
+			return string(obj.GetClass().GetName())
+		}
 		return "object"
 	default:
 		return v.GetType().String()
