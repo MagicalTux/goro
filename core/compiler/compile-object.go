@@ -469,10 +469,7 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		}
 	default:
 		// PHP 8: calling method on non-object throws Error
-		typeName := "null"
-		if obj.GetType() != phpv.ZtNull {
-			typeName = obj.GetType().String()
-		}
+		typeName := phpValueTypeName(obj)
 		return nil, phpobj.ThrowError(ctx, phpobj.Error,
 			fmt.Sprintf("Call to a member function %s() on %s", r.op, typeName))
 	}
@@ -494,6 +491,10 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	}
 
 	if !ok {
+		// Check for __invoke method on objects with HandleInvoke
+		if objI != nil && op.ToLower() == "__invoke" && class.Handlers() != nil && class.Handlers().HandleInvoke != nil {
+			return class.Handlers().HandleInvoke(ctx, objI, r.args)
+		}
 		// Check for __call magic method on instance calls
 		if objI != nil {
 			// When using :: syntax, __call should be resolved from $this's
@@ -649,10 +650,7 @@ func (r *runObjectVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	objI, ok := obj.Value().(phpv.ZObjectAccess)
 	if !ok {
 		// PHP 8: reading property of non-object is a warning, returns null
-		typeName := "null"
-		if obj.GetType() != phpv.ZtNull {
-			typeName = obj.GetType().String()
-		}
+		typeName := phpValueTypeName(obj)
 		ctx.Warn("Attempt to read property \"%s\" on %s", r.varName, typeName, logopt.NoFuncName(true))
 		return phpv.ZNULL.ZVal(), nil
 	}
@@ -737,10 +735,7 @@ func (r *runObjectVar) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 	objI, ok := obj.Value().(phpv.ZObjectAccess)
 	if !ok {
 		// PHP 8: attempting to set property of non-object throws Error
-		typeName := "null"
-		if obj.GetType() != phpv.ZtNull {
-			typeName = obj.GetType().String()
-		}
+		typeName := phpValueTypeName(obj)
 		return phpobj.ThrowError(ctx, phpobj.Error,
 			fmt.Sprintf("Attempt to assign property \"%s\" on %s", r.varName, typeName))
 	}
@@ -806,10 +801,7 @@ func (r *runObjectDynVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	if !ok {
 		// Evaluate the name expression first so we can include it in the warning
 		name, nameErr := r.nameExpr.Run(ctx)
-		typeName := "null"
-		if obj.GetType() != phpv.ZtNull {
-			typeName = obj.GetType().String()
-		}
+		typeName := phpValueTypeName(obj)
 		if nameErr == nil && name != nil {
 			ctx.Warn("Attempt to read property \"%s\" on %s", name.String(), typeName, logopt.NoFuncName(true))
 		} else {
@@ -843,10 +835,7 @@ func (r *runObjectDynVar) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 	}
 	objI, ok := obj.Value().(phpv.ZObjectAccess)
 	if !ok {
-		typeName := "null"
-		if obj.GetType() != phpv.ZtNull {
-			typeName = obj.GetType().String()
-		}
+		typeName := phpValueTypeName(obj)
 		return phpobj.ThrowError(ctx, phpobj.Error,
 			fmt.Sprintf("Attempt to assign property on %s", typeName))
 	}
@@ -1313,4 +1302,33 @@ func expandNewSpreadArgs(ctx phpv.Context, args phpv.Runnables) (phpv.Runnables,
 		}
 	}
 	return result, nil
+}
+
+// phpValueTypeName returns the PHP 8 type name for a value in error messages.
+// PHP 8 shows actual values for scalars: "true", "false", "null", "int", "string", "float", "array"
+func phpValueTypeName(v *phpv.ZVal) string {
+	switch v.GetType() {
+	case phpv.ZtNull:
+		return "null"
+	case phpv.ZtBool:
+		if bool(v.Value().(phpv.ZBool)) {
+			return "true"
+		}
+		return "false"
+	case phpv.ZtInt:
+		return "int"
+	case phpv.ZtFloat:
+		return "float"
+	case phpv.ZtString:
+		return "string"
+	case phpv.ZtArray:
+		return "array"
+	case phpv.ZtObject:
+		if obj := v.AsObject(nil); obj != nil {
+			return string(obj.GetClass().GetName())
+		}
+		return "object"
+	default:
+		return v.GetType().String()
+	}
 }

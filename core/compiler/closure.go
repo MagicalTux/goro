@@ -211,7 +211,14 @@ func (z *ZClosure) callBody(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 
 	// set use vars
 	for _, u := range z.use {
-		ctx.OffsetSet(ctx, u.VarName.ZVal(), u.Value)
+		if u.Ref {
+			// Reference capture: share the same ZVal between closure and outer scope
+			ctx.OffsetSet(ctx, u.VarName.ZVal(), u.Value)
+		} else {
+			// Value capture: duplicate so modifications in the closure
+			// body don't persist across invocations
+			ctx.OffsetSet(ctx, u.VarName.ZVal(), u.Value.Dup())
+		}
 	}
 
 	// set args in new context

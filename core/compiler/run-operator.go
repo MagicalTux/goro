@@ -303,58 +303,62 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			return result.ZVal(), nil
 		}
 
-		// Bitwise operators on strings: PHP operates on the raw bytes
+		// Bitwise operators on strings: PHP operates on the raw bytes directly
+		// (no numeric conversion). Skip the numeric conversion below and let
+		// operatorMathLogic handle string operands. Don't return early so that
+		// compound assignment write-back (op.write) still runs.
 		isBitwiseOp := r.op == tokenizer.Rune('|') || r.op == tokenizer.Rune('^') ||
 			r.op == tokenizer.Rune('&') || r.op == tokenizer.Rune('~') ||
 			r.op == tokenizer.T_OR_EQUAL || r.op == tokenizer.T_XOR_EQUAL ||
 			r.op == tokenizer.T_AND_EQUAL
-		if isBitwiseOp && aType == phpv.ZtString && (bType == phpv.ZtString || r.op == tokenizer.Rune('~')) {
-			return op.op(ctx, r.op, a, b)
-		}
+		skipNumericConversion := isBitwiseOp && aType == phpv.ZtString && (bType == phpv.ZtString || r.op == tokenizer.Rune('~'))
+		_ = skipNumericConversion // used below
 
-		// PHP 8: throw TypeError for unsupported operand types in arithmetic
-		if aType == phpv.ZtArray || bType == phpv.ZtArray {
-			return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Unsupported operand types: %s %s %s", phpTypeName(a), r.op.OpString(), phpTypeName(b)))
-		}
-		if aType == phpv.ZtObject || bType == phpv.ZtObject {
-			return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Unsupported operand types: %s %s %s", phpTypeName(a), r.op.OpString(), phpTypeName(b)))
-		}
-
-		// PHP 8: handle non-numeric strings in arithmetic
-		// - Completely non-numeric ("hello"): TypeError
-		// - Leading numeric ("123abc"): Warning + use numeric part
-		// - Fully numeric ("123"): no warning
-		if aType == phpv.ZtString {
-			s := string(a.Value().(phpv.ZString))
-			if !isLeadingNumeric(s) {
+		if !skipNumericConversion {
+			// PHP 8: throw TypeError for unsupported operand types in arithmetic
+			if aType == phpv.ZtArray || bType == phpv.ZtArray {
 				return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Unsupported operand types: %s %s %s", phpTypeName(a), r.op.OpString(), phpTypeName(b)))
 			}
-		}
-		if bType == phpv.ZtString {
-			s := string(b.Value().(phpv.ZString))
-			if !isLeadingNumeric(s) {
+			if aType == phpv.ZtObject || bType == phpv.ZtObject {
 				return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Unsupported operand types: %s %s %s", phpTypeName(a), r.op.OpString(), phpTypeName(b)))
 			}
-		}
-		a, _ = a.AsNumeric(ctx)
-		b, _ = b.AsNumeric(ctx)
 
-		// normalize types - for bitwise/shift ops, always use int
-		isBitwise := r.op == tokenizer.T_SL || r.op == tokenizer.T_SR ||
-			r.op == tokenizer.T_SL_EQUAL || r.op == tokenizer.T_SR_EQUAL ||
-			r.op == tokenizer.Rune('|') || r.op == tokenizer.Rune('^') ||
-			r.op == tokenizer.Rune('&') || r.op == tokenizer.Rune('%') ||
-			r.op == tokenizer.T_OR_EQUAL || r.op == tokenizer.T_XOR_EQUAL ||
-			r.op == tokenizer.T_AND_EQUAL || r.op == tokenizer.T_MOD_EQUAL
-		if isBitwise {
-			a, _ = a.As(ctx, phpv.ZtInt)
-			b, _ = b.As(ctx, phpv.ZtInt)
-		} else if a.GetType() == phpv.ZtFloat || b.GetType() == phpv.ZtFloat {
-			a, _ = a.As(ctx, phpv.ZtFloat)
-			b, _ = b.As(ctx, phpv.ZtFloat)
-		} else {
-			a, _ = a.As(ctx, phpv.ZtInt)
-			b, _ = b.As(ctx, phpv.ZtInt)
+			// PHP 8: handle non-numeric strings in arithmetic
+			// - Completely non-numeric ("hello"): TypeError
+			// - Leading numeric ("123abc"): Warning + use numeric part
+			// - Fully numeric ("123"): no warning
+			if aType == phpv.ZtString {
+				s := string(a.Value().(phpv.ZString))
+				if !isLeadingNumeric(s) {
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Unsupported operand types: %s %s %s", phpTypeName(a), r.op.OpString(), phpTypeName(b)))
+				}
+			}
+			if bType == phpv.ZtString {
+				s := string(b.Value().(phpv.ZString))
+				if !isLeadingNumeric(s) {
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Unsupported operand types: %s %s %s", phpTypeName(a), r.op.OpString(), phpTypeName(b)))
+				}
+			}
+			a, _ = a.AsNumeric(ctx)
+			b, _ = b.AsNumeric(ctx)
+
+			// normalize types - for bitwise/shift ops, always use int
+			isBitwise := r.op == tokenizer.T_SL || r.op == tokenizer.T_SR ||
+				r.op == tokenizer.T_SL_EQUAL || r.op == tokenizer.T_SR_EQUAL ||
+				r.op == tokenizer.Rune('|') || r.op == tokenizer.Rune('^') ||
+				r.op == tokenizer.Rune('&') || r.op == tokenizer.Rune('%') ||
+				r.op == tokenizer.T_OR_EQUAL || r.op == tokenizer.T_XOR_EQUAL ||
+				r.op == tokenizer.T_AND_EQUAL || r.op == tokenizer.T_MOD_EQUAL
+			if isBitwise {
+				a, _ = a.As(ctx, phpv.ZtInt)
+				b, _ = b.As(ctx, phpv.ZtInt)
+			} else if a.GetType() == phpv.ZtFloat || b.GetType() == phpv.ZtFloat {
+				a, _ = a.As(ctx, phpv.ZtFloat)
+				b, _ = b.As(ctx, phpv.ZtFloat)
+			} else {
+				a, _ = a.As(ctx, phpv.ZtInt)
+				b, _ = b.As(ctx, phpv.ZtInt)
+			}
 		}
 	}
 

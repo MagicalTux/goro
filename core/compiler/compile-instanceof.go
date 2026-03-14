@@ -54,7 +54,12 @@ func (r *runInstanceOf) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		if err != nil {
 			return nil, err
 		}
-		className = classVal.AsString(ctx)
+		// If the variable holds an object, use its class name
+		if classVal.GetType() == phpv.ZtObject {
+			className = classVal.Value().(phpv.ZObject).GetClass().GetName()
+		} else {
+			className = classVal.AsString(ctx)
+		}
 	} else {
 		className = r.c
 	}
