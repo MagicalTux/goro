@@ -433,11 +433,14 @@ func fncArrayWalkRecursive(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, err
 		callbackArgs = append(callbackArgs, *userdata)
 	}
 
-	var loop func(*phpv.ZArray)
-	loop = func(array *phpv.ZArray) {
+	var loop func(*phpv.ZArray, int)
+	loop = func(array *phpv.ZArray, depth int) {
+		if depth > 256 {
+			return
+		}
 		for k, v := range array.Iterate(ctx) {
 			if v.GetType() == phpv.ZtArray {
-				loop(v.AsArray(ctx))
+				loop(v.AsArray(ctx), depth+1)
 				continue
 			}
 
@@ -447,7 +450,7 @@ func fncArrayWalkRecursive(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, err
 		}
 	}
 
-	loop(array.Get())
+	loop(array.Get(), 0)
 
 	return phpv.ZTrue.ZVal(), nil
 }
@@ -1274,7 +1277,14 @@ func fncArrayMergeRecursive(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 	return result.ZVal(), nil
 }
 
-func arrayRecursiveMerge(ctx phpv.Context, result, array *phpv.ZArray) {
+func arrayRecursiveMerge(ctx phpv.Context, result, array *phpv.ZArray, depth ...int) {
+	d := 0
+	if len(depth) > 0 {
+		d = depth[0]
+	}
+	if d > 256 {
+		return
+	}
 	for k, v := range array.Iterate(ctx) {
 		if k.GetType() == phpv.ZtInt {
 			result.OffsetSet(ctx, nil, v)
@@ -1291,7 +1301,7 @@ func arrayRecursiveMerge(ctx phpv.Context, result, array *phpv.ZArray) {
 				array = cur.AsArray(ctx)
 			}
 
-			arrayRecursiveMerge(ctx, array, v.AsArray(ctx))
+			arrayRecursiveMerge(ctx, array, v.AsArray(ctx), d+1)
 			continue
 		}
 
@@ -1335,7 +1345,14 @@ func fncArrayReplaceRecursive(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, 
 	return result.ZVal(), nil
 }
 
-func arrayRecursiveReplace(ctx phpv.Context, result, array *phpv.ZArray) {
+func arrayRecursiveReplace(ctx phpv.Context, result, array *phpv.ZArray, depth ...int) {
+	d := 0
+	if len(depth) > 0 {
+		d = depth[0]
+	}
+	if d > 256 {
+		return // prevent infinite recursion on circular references
+	}
 	for k, v := range array.Iterate(ctx) {
 		if v.GetType() == phpv.ZtArray {
 			var array *phpv.ZArray
@@ -1347,7 +1364,7 @@ func arrayRecursiveReplace(ctx phpv.Context, result, array *phpv.ZArray) {
 				array = cur.AsArray(ctx)
 			}
 
-			arrayRecursiveReplace(ctx, array, v.AsArray(ctx))
+			arrayRecursiveReplace(ctx, array, v.AsArray(ctx), d+1)
 			result.OffsetSet(ctx, k, array.ZVal())
 			continue
 		}
@@ -1589,7 +1606,15 @@ func fncArrayCompact(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return result.ZVal(), nil
 }
 
-func arrayRecursiveCompact(ctx phpv.Context, result *phpv.ZArray, varName *phpv.ZVal) error {
+func arrayRecursiveCompact(ctx phpv.Context, result *phpv.ZArray, varName *phpv.ZVal, depth ...int) error {
+	d := 0
+	if len(depth) > 0 {
+		d = depth[0]
+	}
+	if d > 256 {
+		return nil
+	}
+	_ = d
 	switch varName.GetType() {
 	case phpv.ZtString:
 		if ok, _ := ctx.OffsetExists(ctx, varName); ok {
@@ -1603,7 +1628,7 @@ func arrayRecursiveCompact(ctx phpv.Context, result *phpv.ZArray, varName *phpv.
 		}
 	case phpv.ZtArray:
 		for _, varName := range varName.AsArray(ctx).Iterate(ctx) {
-			err := arrayRecursiveCompact(ctx, result, varName)
+			err := arrayRecursiveCompact(ctx, result, varName, d+1)
 			if err != nil {
 				return err
 			}

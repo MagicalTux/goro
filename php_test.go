@@ -16,6 +16,7 @@ import (
 	"runtime/debug"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/MagicalTux/goro/core/compiler"
 	"github.com/MagicalTux/goro/core/ini"
@@ -85,6 +86,9 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		} else {
 			g = phpctx.NewGlobalReq(p.req, p.p, ini.New())
 		}
+		// Set a 10-second execution deadline per test to prevent
+		// infinite loops from blocking the entire suite.
+		g.SetDeadline(time.Now().Add(10 * time.Second))
 
 		g.SetOutput(p.output)
 
