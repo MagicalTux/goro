@@ -71,7 +71,8 @@ func init() {
 		tokenizer.Rune('@'):      &compileFuncCb{f: compileExpr},
 		tokenizer.Rune('$'):      &compileFuncCb{f: compileExpr},
 		tokenizer.T_NS_SEPARATOR: &compileFuncCb{f: compileExpr},
-		tokenizer.T_NAMESPACE:    &compileFuncCb{f: compileExpr},
+		tokenizer.T_NAMESPACE:    &compileFuncCb{f: compileNamespace, skip: true},
+		tokenizer.T_USE:          &compileFuncCb{f: compileUse, skip: true},
 		tokenizer.Rune(';'):      nil,
 		// '}': return compileBase (hidden)
 	}
@@ -188,7 +189,13 @@ func compileTopLevelConst(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error
 			return nil, err
 		}
 
-		res = append(res, &runTopLevelConst{name: phpv.ZString(name), val: val, l: i.Loc()})
+		// Prepend current namespace to constant name
+		constName := phpv.ZString(name)
+		ns := c.getNamespace()
+		if ns != "" {
+			constName = ns + "\\" + constName
+		}
+		res = append(res, &runTopLevelConst{name: constName, val: val, l: i.Loc()})
 
 		// Check for ',' (more constants) or ';' (end)
 		i, err = c.NextItem()
@@ -353,7 +360,7 @@ func compileEchoTag(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		}
 		if i.IsExpressionEnd() {
 			c.backup()
-			return &runnableFunctionCall{"echo", args, l}, nil
+			return &runnableFunctionCall{name: "echo", args: args, l: l}, nil
 		}
 
 		return nil, i.Unexpected()

@@ -1118,6 +1118,7 @@ func (r *runFirstClassMethodCallable) Dump(w io.Writer) error {
 
 func compileClassName(c compileCtx) (phpv.ZString, error) {
 	var r phpv.ZString
+	fullyQualified := false
 
 	i, err := c.NextItem()
 	if err != nil {
@@ -1125,7 +1126,7 @@ func compileClassName(c compileCtx) (phpv.ZString, error) {
 	}
 
 	if i.Type == tokenizer.T_NS_SEPARATOR {
-		r = "\\"
+		fullyQualified = true
 		i, err = c.NextItem()
 		if err != nil {
 			return r, err
@@ -1145,7 +1146,11 @@ func compileClassName(c compileCtx) (phpv.ZString, error) {
 			r = r + "\\"
 		default:
 			c.backup()
-			return r, nil
+			if fullyQualified {
+				// Already fully qualified, strip leading \ is done by resolve
+				return c.resolveClassName("\\" + r), nil
+			}
+			return c.resolveClassName(r), nil
 		}
 	}
 }

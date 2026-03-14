@@ -31,7 +31,13 @@ func compileEnum(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	if i.Type != tokenizer.T_STRING {
 		return nil, i.Unexpected()
 	}
-	class.Name = phpv.ZString(i.Data)
+	enumName := phpv.ZString(i.Data)
+	// Prepend current namespace to enum name
+	ns := c.getNamespace()
+	if ns != "" {
+		enumName = ns + "\\" + enumName
+	}
+	class.Name = enumName
 
 	// Check for backing type ": string" or ": int"
 	var backingType phpv.ZType

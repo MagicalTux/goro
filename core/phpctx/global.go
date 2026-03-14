@@ -1074,6 +1074,32 @@ func (g *Global) GetFunction(ctx phpv.Context, name phpv.ZString) (phpv.Callable
 		}
 	}
 
+	// Namespace fallback: if Foo\bar is not found, try bar (global)
+	if idx := strings.LastIndexByte(string(name), '\\'); idx >= 0 {
+		globalName := name[idx+1:]
+		if f, ok := g.globalUserFuncs[globalName.ToLower()]; ok {
+			return f, nil
+		}
+		if f, ok := g.globalInternalFuncs[globalName.ToLower()]; ok {
+			if _, ok := g.disabledFuncs[globalName]; ok {
+				ctx.Warn("%s() has been disabled for security reasons",
+					globalName, logopt.NoFuncName(true))
+				return noOp, nil
+			}
+			return f, nil
+		}
+		if f, ok := g.globalLazyFunc[globalName.ToLower()]; ok {
+			_, err := f.r[f.p].Run(ctx)
+			if err != nil {
+				return nil, err
+			}
+			f.r[f.p] = phpv.RunNull{}
+			if f, ok := g.globalUserFuncs[globalName.ToLower()]; ok {
+				return f, nil
+			}
+		}
+	}
+
 	return nil, g.Errorf("Call to undefined function %s", name)
 }
 

@@ -145,7 +145,6 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		return &runZVal{phpv.ZFloat(v), l}, nil
 	case tokenizer.T_NAMESPACE:
 		// namespace\Name — relative to the current namespace.
-		// Since goro doesn't implement namespaces, this resolves to just the name.
 		next, err := c.NextItem()
 		if err != nil {
 			return nil, err
@@ -180,6 +179,11 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 				c.backup()
 				break
 			}
+		}
+		// Resolve relative to current namespace
+		ns := c.getNamespace()
+		if ns != "" {
+			name = string(ns) + "\\" + name
 		}
 		// Check if followed by :: (class reference) or ( (function call)
 		next, err = c.NextItem()
@@ -221,6 +225,7 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 				break
 			}
 		}
+		// Fully qualified — use as-is (already stripped leading \)
 		// Check if followed by :: (static access) or ( (function call)
 		next, err := c.NextItem()
 		if err != nil {
@@ -230,19 +235,49 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		if next.Type == tokenizer.T_PAAMAYIM_NEKUDOTAYIM {
 			return &runZVal{phpv.ZString(name), l}, nil
 		}
-		// Strip leading namespace - goro doesn't do namespaces, so \Foo is just Foo
 		return &runConstant{name, l}, nil
 	case tokenizer.T_STRING:
-		// Peek ahead: if followed by ::, this is a class name, not a constant
+		// Check for qualified names: T_STRING followed by T_NS_SEPARATOR
+		name := i.Data
+		for {
+			peek, err := c.NextItem()
+			if err != nil {
+				return nil, err
+			}
+			if peek.Type == tokenizer.T_NS_SEPARATOR {
+				part, err := c.NextItem()
+				if err != nil {
+					return nil, err
+				}
+				if part.Type != tokenizer.T_STRING {
+					return nil, part.Unexpected()
+				}
+				name += "\\" + part.Data
+			} else {
+				c.backup()
+				break
+			}
+		}
+		// Peek ahead: if followed by ::, this is a class name
+		// if followed by (, this is a function call
+		// otherwise, it's a constant
 		next, err := c.NextItem()
 		if err != nil {
 			return nil, err
 		}
 		c.backup()
 		if next.Type == tokenizer.T_PAAMAYIM_NEKUDOTAYIM {
-			return &runZVal{phpv.ZString(i.Data), l}, nil
+			resolved := c.resolveClassName(phpv.ZString(name))
+			return &runZVal{resolved, l}, nil
 		}
-		return &runConstant{i.Data, l}, nil
+		if next.IsSingle('(') {
+			// Will be resolved as function name in compilePostExpr
+			resolved := c.resolveFunctionName(phpv.ZString(name))
+			return &runConstant{string(resolved), l}, nil
+		}
+		// Constant: resolve through namespace
+		resolved := c.resolveConstantName(name)
+		return &runConstant{resolved, l}, nil
 
 	case tokenizer.T_CONSTANT_ENCAPSED_STRING:
 		return compileQuoteConstant(i, c)
@@ -273,8 +308,7 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		}
 		return &runZVal{phpv.ZString(f.name), l}, nil
 	case tokenizer.T_NS_C:
-		// Namespaces not yet fully supported, return empty string
-		return &runZVal{phpv.ZString(""), l}, nil
+		return &runZVal{c.getNamespace(), l}, nil
 	case tokenizer.T_METHOD_C:
 		class := c.getClass()
 		f := c.getFunc()
@@ -301,7 +335,7 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		if err != nil {
 			return nil, err
 		}
-		return &runnableFunctionCall{"shell_exec", []phpv.Runnable{v}, l}, nil
+		return &runnableFunctionCall{name: "shell_exec", args: []phpv.Runnable{v}, l: l}, nil
 	case tokenizer.Rune('!'), tokenizer.Rune('+'), tokenizer.Rune('-'), tokenizer.Rune('~'), tokenizer.Rune('@'):
 		// this is an operator, let compilePostExpr() deal with it
 		return compilePostExpr(nil, i, c)
@@ -378,7 +412,8 @@ func compilePostExpr(v phpv.Runnable, i *tokenizer.Item, c compileCtx) (phpv.Run
 			return &runFirstClassCallable{target: v, l: l}, nil
 		}
 		if constant, ok := v.(*runConstant); ok {
-			return &runnableFunctionCall{phpv.ZString(constant.c), args, l}, nil
+			// Name was already resolved through resolveFunctionName in compileOneExpr
+			return &runnableFunctionCall{name: phpv.ZString(constant.c), args: args, l: l}, nil
 		}
 		return &runnableFunctionCallRef{v, args, l}, nil
 	case tokenizer.Rune('['), tokenizer.Rune('{'):

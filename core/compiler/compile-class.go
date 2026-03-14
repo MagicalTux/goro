@@ -54,6 +54,22 @@ func (z *zclassCompileCtx) getClass() *phpobj.ZClass {
 	return z.class
 }
 
+func (z *zclassCompileCtx) getNamespace() phpv.ZString {
+	return z.compileCtx.getNamespace()
+}
+
+func (z *zclassCompileCtx) resolveClassName(name phpv.ZString) phpv.ZString {
+	return z.compileCtx.resolveClassName(name)
+}
+
+func (z *zclassCompileCtx) resolveFunctionName(name phpv.ZString) phpv.ZString {
+	return z.compileCtx.resolveFunctionName(name)
+}
+
+func (z *zclassCompileCtx) resolveConstantName(name string) string {
+	return z.compileCtx.resolveConstantName(name)
+}
+
 func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	var attr phpv.ZClassAttr
 	var err error
@@ -698,7 +714,13 @@ func parseClassLine(class *phpobj.ZClass, c compileCtx) error {
 	}
 
 	if i.Type == tokenizer.T_STRING {
-		class.Name = phpv.ZString(i.Data)
+		className := phpv.ZString(i.Data)
+		// Prepend current namespace to class name
+		ns := c.getNamespace()
+		if ns != "" {
+			className = ns + "\\" + className
+		}
+		class.Name = className
 		i, err = c.NextItem()
 	} else if class.Name == "" && (i.IsSingle('{') || i.Type == tokenizer.T_EXTENDS || i.Type == tokenizer.T_IMPLEMENTS) {
 		// Anonymous class - no name, proceed directly to extends/implements/body
@@ -781,6 +803,7 @@ func parseClassLine(class *phpobj.ZClass, c compileCtx) error {
 
 func compileReadClassIdentifier(c compileCtx) (phpv.ZString, error) {
 	var res phpv.ZString
+	fullyQualified := false
 
 	for {
 		i, err := c.NextItem()
@@ -790,7 +813,9 @@ func compileReadClassIdentifier(c compileCtx) (phpv.ZString, error) {
 
 		// T_NS_SEPARATOR
 		if i.Type == tokenizer.T_NS_SEPARATOR {
-			if res != "" {
+			if res == "" {
+				fullyQualified = true
+			} else {
 				res += "\\"
 			}
 			i, err := c.NextItem()
@@ -809,6 +834,9 @@ func compileReadClassIdentifier(c compileCtx) (phpv.ZString, error) {
 		}
 
 		c.backup()
-		return res, nil
+		if fullyQualified {
+			return c.resolveClassName("\\" + res), nil
+		}
+		return c.resolveClassName(res), nil
 	}
 }

@@ -33,6 +33,10 @@ type compileCtx interface {
 	getClass() *phpobj.ZClass
 	getFunc() *ZClosure
 	peekType() tokenizer.ItemType
+	getNamespace() phpv.ZString
+	resolveClassName(name phpv.ZString) phpv.ZString
+	resolveFunctionName(name phpv.ZString) phpv.ZString
+	resolveConstantName(name string) string
 }
 
 type bracketEntry struct {
@@ -50,6 +54,11 @@ type compileRootCtx struct {
 	bracketStack     []bracketEntry
 	lastBracketOp    int          // 0=none, 1=push, -1=pop
 	lastBracketEntry bracketEntry // the entry that was pushed or popped
+
+	namespace    phpv.ZString                  // current namespace (empty = global)
+	useMap       map[phpv.ZString]phpv.ZString // use aliases for classes
+	useFuncMap   map[phpv.ZString]phpv.ZString // use function aliases
+	useConstMap  map[phpv.ZString]phpv.ZString // use const aliases
 }
 
 func (c *compileRootCtx) ExpectSingle(r rune) error {
@@ -64,6 +73,131 @@ func (c *compileRootCtx) ExpectSingle(r rune) error {
 		return i.Unexpected()
 	}
 	return nil
+}
+
+func (c *compileRootCtx) getNamespace() phpv.ZString {
+	return c.namespace
+}
+
+func (c *compileRootCtx) resolveClassName(name phpv.ZString) phpv.ZString {
+	if len(name) == 0 {
+		return name
+	}
+	// Fully qualified names start with \
+	if name[0] == '\\' {
+		return name[1:]
+	}
+	// Special names that should never be resolved
+	lower := name.ToLower()
+	if lower == "self" || lower == "parent" || lower == "static" {
+		return name
+	}
+	// Check if name contains a backslash (qualified name)
+	for i := 0; i < len(name); i++ {
+		if name[i] == '\\' {
+			// Qualified name: resolve first part through use map, then append rest
+			firstPart := name[:i]
+			rest := name[i:] // includes the leading backslash
+			if c.useMap != nil {
+				if alias, ok := c.useMap[firstPart]; ok {
+					return alias + rest
+				}
+			}
+			// Not aliased — prepend current namespace
+			if c.namespace != "" {
+				return c.namespace + "\\" + name
+			}
+			return name
+		}
+	}
+	// Unqualified name: check use map first
+	if c.useMap != nil {
+		if alias, ok := c.useMap[name]; ok {
+			return alias
+		}
+	}
+	// Prepend current namespace
+	if c.namespace != "" {
+		return c.namespace + "\\" + name
+	}
+	return name
+}
+
+func (c *compileRootCtx) resolveFunctionName(name phpv.ZString) phpv.ZString {
+	if len(name) == 0 {
+		return name
+	}
+	// Fully qualified names start with \
+	if name[0] == '\\' {
+		return name[1:]
+	}
+	// Check if name contains a backslash (qualified name)
+	for i := 0; i < len(name); i++ {
+		if name[i] == '\\' {
+			// Qualified name: resolve first part through use map
+			firstPart := name[:i]
+			rest := name[i:]
+			if c.useMap != nil {
+				if alias, ok := c.useMap[firstPart]; ok {
+					return alias + rest
+				}
+			}
+			if c.namespace != "" {
+				return c.namespace + "\\" + name
+			}
+			return name
+		}
+	}
+	// Unqualified name: check use function map first
+	if c.useFuncMap != nil {
+		if alias, ok := c.useFuncMap[name]; ok {
+			return alias
+		}
+	}
+	// For functions, prepend namespace but also fall back to global at runtime.
+	// We prepend the namespace here; GetFunction will try the global fallback.
+	if c.namespace != "" {
+		return c.namespace + "\\" + name
+	}
+	return name
+}
+
+func (c *compileRootCtx) resolveConstantName(name string) string {
+	if len(name) == 0 {
+		return name
+	}
+	// Fully qualified names start with \
+	if name[0] == '\\' {
+		return name[1:]
+	}
+	// Check if name contains a backslash (qualified name)
+	for i := 0; i < len(name); i++ {
+		if name[i] == '\\' {
+			// Qualified name: resolve first part through use map
+			firstPart := phpv.ZString(name[:i])
+			rest := name[i:]
+			if c.useMap != nil {
+				if alias, ok := c.useMap[firstPart]; ok {
+					return string(alias) + rest
+				}
+			}
+			if c.namespace != "" {
+				return string(c.namespace) + "\\" + name
+			}
+			return name
+		}
+	}
+	// Unqualified name: check use const map first
+	if c.useConstMap != nil {
+		if alias, ok := c.useConstMap[phpv.ZString(name)]; ok {
+			return string(alias)
+		}
+	}
+	// For constants, prepend namespace but also fall back to global at runtime.
+	if c.namespace != "" {
+		return string(c.namespace) + "\\" + name
+	}
+	return name
 }
 
 func (c *compileRootCtx) getClass() *phpobj.ZClass {
@@ -248,8 +382,11 @@ func Compile(parent phpv.Context, t *tokenizer.Lexer) (phpv.Runnable, error) {
 
 func compileInner(parent phpv.Context, t *tokenizer.Lexer) (phpv.Runnable, error) {
 	c := &compileRootCtx{
-		Context: parent,
-		t:       t,
+		Context:     parent,
+		t:           t,
+		useMap:      make(map[phpv.ZString]phpv.ZString),
+		useFuncMap:  make(map[phpv.ZString]phpv.ZString),
+		useConstMap: make(map[phpv.ZString]phpv.ZString),
 	}
 
 	r, err := compileBaseUntil(nil, c, tokenizer.T_EOF)

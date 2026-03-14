@@ -18,8 +18,18 @@ func (r *runConstant) Dump(w io.Writer) error {
 	return err
 }
 
+// shortName returns the part after the last backslash, or the full name if no backslash.
+func shortName(name string) string {
+	if idx := strings.LastIndexByte(name, '\\'); idx >= 0 {
+		return name[idx+1:]
+	}
+	return name
+}
+
 func (r *runConstant) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
-	switch strings.ToLower(string(r.c)) {
+	// Check special constants using the short (unqualified) name
+	short := shortName(r.c)
+	switch strings.ToLower(short) {
 	case "null":
 		return phpv.ZNull{}.ZVal(), nil
 	case "true":
@@ -32,11 +42,20 @@ func (r *runConstant) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 		return phpv.ZString("parent").ZVal(), nil
 	}
 
+	// Try the full (possibly namespaced) name first
 	z, ok := ctx.Global().ConstantGet(phpv.ZString(r.c))
-
-	if !ok {
-		ctx.Warn("Use of undefined constant %s - assumed '%s' (this will throw an Error in a future version of PHP)", r.c, r.c, logopt.NoFuncName(true))
-		return phpv.ZString(r.c).ZVal(), nil
+	if ok {
+		return z.ZVal(), nil
 	}
-	return z.ZVal(), nil
+
+	// Namespace fallback: if Foo\BAR is not found, try BAR (global)
+	if short != r.c {
+		z, ok = ctx.Global().ConstantGet(phpv.ZString(short))
+		if ok {
+			return z.ZVal(), nil
+		}
+	}
+
+	ctx.Warn("Use of undefined constant %s - assumed '%s' (this will throw an Error in a future version of PHP)", r.c, r.c, logopt.NoFuncName(true))
+	return phpv.ZString(r.c).ZVal(), nil
 }

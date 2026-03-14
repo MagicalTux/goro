@@ -266,14 +266,39 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		}
 	}
 
+	// Handle array + array union BEFORE numeric conversion
 	if op.numeric {
+		aType := a.GetType()
+		bType := b.GetType()
+		isPlus := r.op == tokenizer.Rune('+') || r.op == tokenizer.T_PLUS_EQUAL
+
+		// array + array = array union
+		if isPlus && aType == phpv.ZtArray && bType == phpv.ZtArray {
+			result := a.AsArray(ctx).Dup()
+			bArr := b.AsArray(ctx)
+			for k, v := range bArr.Iterate(ctx) {
+				if exists, _ := result.OffsetExists(ctx, k); !exists {
+					result.OffsetSet(ctx, k, v)
+				}
+			}
+			return result.ZVal(), nil
+		}
+
+		// PHP 8: throw TypeError for unsupported operand types in arithmetic
+		if aType == phpv.ZtArray || bType == phpv.ZtArray {
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Unsupported operand types: %s %s %s", phpTypeName(a), r.op.OpString(), phpTypeName(b)))
+		}
+		if aType == phpv.ZtObject || bType == phpv.ZtObject {
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Unsupported operand types: %s %s %s", phpTypeName(a), r.op.OpString(), phpTypeName(b)))
+		}
+
 		// PHP 8: throw TypeError for completely non-numeric strings in arithmetic
-		if a.GetType() == phpv.ZtString {
+		if aType == phpv.ZtString {
 			if _, err := a.Value().(phpv.ZString).AsNumeric(); err != nil {
 				return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Unsupported operand types: %s %s %s", phpTypeName(a), r.op.OpString(), phpTypeName(b)))
 			}
 		}
-		if b.GetType() == phpv.ZtString {
+		if bType == phpv.ZtString {
 			if _, err := b.Value().(phpv.ZString).AsNumeric(); err != nil {
 				return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Unsupported operand types: %s %s %s", phpTypeName(a), r.op.OpString(), phpTypeName(b)))
 			}

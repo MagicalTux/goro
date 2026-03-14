@@ -12,9 +12,10 @@ import (
 )
 
 type runnableFunctionCall struct {
-	name phpv.ZString
-	args []phpv.Runnable
-	l    *phpv.Loc
+	name   phpv.ZString
+	nsName phpv.ZString // fallback: namespace-qualified or global name
+	args   []phpv.Runnable
+	l      *phpv.Loc
 }
 
 func (*runnableFunctionCall) IsFuncCallExpression()    {}
@@ -190,8 +191,13 @@ func compileFunction(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 
 	switch i.Type {
 	case tokenizer.T_STRING:
-		// regular function definition
-		f, err := compileFunctionWithName(phpv.ZString(i.Data), c, l, rref)
+		// regular function definition - prepend namespace
+		funcName := phpv.ZString(i.Data)
+		ns := c.getNamespace()
+		if ns != "" {
+			funcName = ns + "\\" + funcName
+		}
+		f, err := compileFunctionWithName(funcName, c, l, rref)
 		if err != nil {
 			return nil, err
 		}
@@ -219,9 +225,19 @@ func compileSpecialFuncCall(i *tokenizer.Item, c compileCtx) (phpv.Runnable, err
 		return nil, err
 	}
 
+	// For unqualified function names in a namespace, PHP tries the
+	// namespace-prefixed name first, then falls back to global.
+	var nsName phpv.ZString
+	ns := c.getNamespace()
+	if ns != "" && !strings.Contains(string(fn_name), "\\") {
+		// Unqualified name inside a namespace: primary = ns\name, fallback = name
+		nsName = fn_name                  // fallback to global
+		fn_name = ns + "\\" + fn_name     // try namespaced first
+	}
+
 	if i.IsSingle(';') {
 		c.backup()
-		return &runnableFunctionCall{fn_name, nil, l}, nil
+		return &runnableFunctionCall{name: fn_name, nsName: nsName, l: l}, nil
 	}
 
 	var args []phpv.Runnable
@@ -251,7 +267,7 @@ func compileSpecialFuncCall(i *tokenizer.Item, c compileCtx) (phpv.Runnable, err
 		}
 		if i.IsExpressionEnd() {
 			c.backup()
-			return &runnableFunctionCall{fn_name, args, l}, nil
+			return &runnableFunctionCall{name: fn_name, nsName: nsName, args: args, l: l}, nil
 		}
 
 		return nil, i.Unexpected()
@@ -288,7 +304,7 @@ func compileSpecialFuncCallOne(i *tokenizer.Item, c compileCtx) (phpv.Runnable, 
 		return nil, i.Unexpected()
 	}
 
-	return &runnableFunctionCall{fn_name, []phpv.Runnable{arg}, l}, nil
+	return &runnableFunctionCall{name: fn_name, args: []phpv.Runnable{arg}, l: l}, nil
 }
 
 func compileFunctionWithName(name phpv.ZString, c compileCtx, l *phpv.Loc, rref bool, optionalBody ...bool) (phpv.ZClosure, error) {
