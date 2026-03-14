@@ -458,13 +458,153 @@ func (z *ZHashTable) Count() ZInt {
 
 // modifies all int indices such that the first one starts with zero
 func (z *ZHashTable) ResetIntKeys() {
-	i := 0
+	z.lock.Lock()
+	defer z.lock.Unlock()
+
+	// Rebuild the integer index map
+	for k := range z._idx_i {
+		delete(z._idx_i, k)
+	}
+	i := ZInt(0)
 	for c := z.first; c != nil; c = c.next {
+		if c.deleted {
+			continue
+		}
 		if c.k.GetType() != ZtInt {
 			continue
 		}
-		c.k = ZInt(i)
+		c.k = i
+		z._idx_i[i] = c
 		i++
 	}
-	z.inc = ZInt(i)
+	z.inc = i
+}
+
+// Shift removes the first element from the hash table and re-indexes integer
+// keys starting from 0. Returns the removed value, or nil if empty.
+// This modifies the hash table in-place so iterators remain connected.
+func (z *ZHashTable) Shift() *ZVal {
+	z.lock.Lock()
+	defer z.lock.Unlock()
+
+	if z.cow {
+		z.doCopy()
+	}
+
+	// Find first non-deleted entry
+	var target *hashTableVal
+	for c := z.first; c != nil; c = c.next {
+		if !c.deleted {
+			target = c
+			break
+		}
+	}
+	if target == nil {
+		return nil
+	}
+
+	// Save the value
+	val := target.v
+
+	// Remove from index
+	switch k := target.k.(type) {
+	case ZInt:
+		delete(z._idx_i, k)
+	case ZString:
+		delete(z._idx_s, k)
+	}
+
+	// Mark deleted and unlink
+	z.count -= 1
+	target.deleted = true
+
+	if z.first == target {
+		z.first = target.next
+	}
+	if z.last == target {
+		z.last = target.prev
+	}
+	if target.prev != nil {
+		target.prev.next = target.next
+	}
+	if target.next != nil {
+		target.next.prev = target.prev
+	}
+
+	// Re-index integer keys (rebuild _idx_i map)
+	for k := range z._idx_i {
+		delete(z._idx_i, k)
+	}
+	i := ZInt(0)
+	for c := z.first; c != nil; c = c.next {
+		if c.deleted {
+			continue
+		}
+		if c.k.GetType() != ZtInt {
+			continue
+		}
+		c.k = i
+		z._idx_i[i] = c
+		i++
+	}
+	z.inc = i
+
+	return val
+}
+
+// Unshift prepends values to the beginning of the hash table and re-indexes
+// integer keys. This modifies the hash table in-place so iterators stay connected.
+func (z *ZHashTable) Unshift(values []*ZVal) {
+	z.lock.Lock()
+	defer z.lock.Unlock()
+
+	if z.cow {
+		z.doCopy()
+	}
+
+	// Build new entries for the prepended values in order, with placeholder int keys
+	var newFirst, newLast *hashTableVal
+	for _, v := range values {
+		nt := &hashTableVal{k: ZInt(0), v: v}
+		if newFirst == nil {
+			newFirst = nt
+			newLast = nt
+		} else {
+			newLast.next = nt
+			nt.prev = newLast
+			newLast = nt
+		}
+		z.count += 1
+	}
+
+	if newFirst == nil {
+		return
+	}
+
+	// Link prepended entries before existing entries
+	if z.first != nil {
+		newLast.next = z.first
+		z.first.prev = newLast
+	} else {
+		z.last = newLast
+	}
+	z.first = newFirst
+
+	// Re-index all integer keys from the start (rebuild _idx_i map)
+	for k := range z._idx_i {
+		delete(z._idx_i, k)
+	}
+	i := ZInt(0)
+	for c := z.first; c != nil; c = c.next {
+		if c.deleted {
+			continue
+		}
+		if c.k.GetType() != ZtInt {
+			continue
+		}
+		c.k = i
+		z._idx_i[i] = c
+		i++
+	}
+	z.inc = i
 }

@@ -570,39 +570,13 @@ func fncArrayShift(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZNULL.ZVal(), nil
 	}
 
-	// Get the first key/value
-	var firstKey, firstVal *phpv.ZVal
-	for k, v := range arr.Iterate(ctx) {
-		firstKey = k
-		firstVal = v
-		break
-	}
-
-	if firstKey == nil {
+	// Remove the first element in-place and re-index integer keys.
+	// This preserves iterator connections for foreach loops.
+	val := arr.HashTable().Shift()
+	if val == nil {
 		return phpv.ZNULL.ZVal(), nil
 	}
-
-	// Remove the first element and rebuild array with renumbered integer keys
-	newArr := phpv.NewZArray()
-	first := true
-	for k, v := range arr.Iterate(ctx) {
-		if first {
-			first = false
-			continue // skip first element
-		}
-		// Renumber integer keys, preserve string keys
-		if k.GetType() == phpv.ZtInt {
-			newArr.OffsetSet(ctx, nil, v)
-		} else {
-			newArr.OffsetSet(ctx, k, v)
-		}
-	}
-
-	array.Set(ctx, newArr)
-	if firstVal == nil {
-		return phpv.ZNULL.ZVal(), nil
-	}
-	return firstVal.ZVal(), nil
+	return val.ZVal(), nil
 }
 
 // > func int array_unshift ( array &$array [, mixed $... ] )
@@ -613,24 +587,12 @@ func fncArrayUnshift(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, ctx.FuncError(err)
 	}
 
-	it := array.Get().NewIterator()
-	array.Get().Empty(ctx)
-
-	index := 0
+	// Prepend values in-place to preserve iterator connections for foreach loops
+	values := make([]*phpv.ZVal, 0, len(args)-1)
 	for i := 1; i < len(args); i++ {
-		array.Get().OffsetSet(ctx, phpv.ZInt(index), args[i])
-		index++
+		values = append(values, args[i])
 	}
-	for ; it.Valid(ctx); it.Next(ctx) {
-		key, _ := it.Key(ctx)
-		val, _ := it.Current(ctx)
-		if key.GetType() == phpv.ZtInt {
-			array.Get().OffsetSet(ctx, phpv.ZInt(index), val)
-			index++
-		} else {
-			array.Get().OffsetSet(ctx, key, val)
-		}
-	}
+	array.Get().HashTable().Unshift(values)
 
 	return phpv.ZInt(array.Get().Count(ctx)).ZVal(), nil
 }
