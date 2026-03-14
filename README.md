@@ -1,117 +1,111 @@
 # Goro
 
-[![Build Status](https://travis-ci.org/MagicalTux/goro.svg)](https://travis-ci.org/MagicalTux/goro)
 [![GoDoc](https://godoc.org/github.com/MagicalTux/goro/core?status.svg)](https://godoc.org/github.com/MagicalTux/goro)
-[![Telegram](https://img.shields.io/badge/chat-telegram-blue.svg?logo=telegram&logoColor=white)](https://t.me/goro_php)
 
-This is an implementation of PHP, written in pure Go (as much as possible, right now pcre doesn't exist in pure go and require usage of libpcre).
+PHP engine implemented in pure Go. Targets PHP 8.2 compatibility.
 
 ## Why?
 
-That's a good question. PHP is a nice language but is having trouble keeping up with modern languages. This implementation, while far from finished, is trying to make a number of things possible:
+PHP is a nice language but is having trouble keeping up with modern languages. This implementation makes a number of things possible:
 
 * Usage of goroutines, go channels, etc from within PHP
 * Better caching of compiled code by allowing sharing of compiled or live objects (classes, objects, etc) between running PHP scripts
 * Use Go's memory management within PHP
-* Ability to run functions or code sandboxed (including filesystem) to limit security risks
+* Ability to run functions or code sandboxed (including filesystem via `fs.FS`) to limit security risks
 * Easily call the PHP engine from Go to execute pieces of PHP code (user provided or legacy)
 
-# Install
+## Install
 
-In order to run php code as cli:
+```bash
+go install github.com/MagicalTux/goro/sapi/php-cli@latest
+```
 
-	go get github.com/MagicalTux/goro/sapi/php-cli
+## Status
 
-# Status
+Goro passes **946 tests** from the PHP test suite (891 pass, 55 skipped for platform-specific reasons, 0 failures).
 
-This is still a very early implementation and most of the core is missing.
+### Language Features
 
-## TODO
+| Feature | Status |
+|---------|--------|
+| Variables, constants, type juggling | Done |
+| Control flow (if/else/switch/match/for/foreach/while) | Done |
+| Functions, closures, arrow functions (`fn`) | Done |
+| Classes, interfaces, traits, abstract classes | Done |
+| Enums (PHP 8.1) | Done |
+| Namespaces | Done |
+| Exceptions (try/catch/finally/throw) | Done |
+| Error hierarchy (Error, TypeError, ValueError, etc) | Done |
+| Null coalescing (`??`, `??=`) | Done |
+| Spaceship operator (`<=>`) | Done |
+| Spread operator (`...`) | Done |
+| Named arguments (PHP 8.0) | Done |
+| Match expression (PHP 8.0) | Done |
+| Nullsafe operator (`?->`, PHP 8.0) | Done |
+| Readonly properties (PHP 8.1) | Done |
+| Fibers (PHP 8.1) | Done |
+| Union/intersection types | Partial |
+| Generators (`yield`) | Not yet |
+| Attributes | Parsed, not enforced |
 
-The following needs to be done before we can call this an alpha version.
+### SAPIs
 
-* Fix arguments passed by reference for builtin methods
-* Error reporting, lower level of errors (warnings, etc)
-* php.ini handling
-* Streams & filesystem support
-* command line flags handling
-* Class and object implementation is still very early. Access checks are missing. Class inheritance, etc are missing
-  * Class abstract
-  * Builtin class methods
-  * Interfaces
-  * Exception throwing
-  * Traits
-* break/continue needs improvement/fixing
-* declare
-* goto ?
-* namespaces
-* generators
-* predefined superglobals
-* implement Complex (curly) variable syntax (see: http://php.net/manual/en/language.types.string.php#language.types.string.parsing.complex )
-* Allow process to run in containers on linux (see https://github.com/lizrice/containers-from-scratch - would be useful to create a play interface for goro)
+| SAPI | Status |
+|------|--------|
+| CLI (`php-cli`) | Working |
+| CGI (`php-cgi`) | Working |
+| FPM (`php-fpm`) | Working |
+| HTTP handler (`php-httpd`) | Working |
+| Test runner (`php-test`) | Working |
 
-## Extensions
+### Extensions
 
-Sorted by priority.
+| Extension | Functions | Status | Notes |
+|-----------|-----------|--------|-------|
+| standard | 435+ | ~70% | Core functions, arrays, strings, files, math, output buffering, streams |
+| ctype | 11 | 100% | Complete |
+| json | 5 | 100% | json_encode, json_decode, json_validate, error handling |
+| pcre | 11 | 90% | preg_match, preg_replace, preg_split, preg_grep, preg_filter, callbacks |
+| hash | 11 | 80% | hash, hash_hmac, hash_file, hash_hmac_file, hash_pbkdf2, hash_hkdf, incremental |
+| gmp | 31 | 45% | Arithmetic, division, modular, bitwise, primes, GCD/LCM, factorial |
+| mbstring | 22 | 55% | strlen, substr, strpos, convert_encoding, convert_case, ord/chr, list_encodings |
+| date | 13 | 30% | date, time, strtotime, mktime, strftime, getdate, checkdate, DateTime class |
+| bz2 | 1 | 10% | Decompression only (Go stdlib lacks bzip2 writer) |
+| spl | 4 classes | 5% | Countable, OuterIterator, ArrayIterator, InfiniteIterator |
+| reflection | 3 classes | 5% | ReflectionClass, ReflectionMethod, ReflectionProperty (minimal) |
+| pcre | | | Uses Go's `regexp` (RE2 syntax, not PCRE2) |
 
-| Extension  | Status | Notes                                          |
-|------------|--------|------------------------------------------------|
-| standard   |     5% | a lot of work remaining                        |
-| json       |    33% | Need custom impl to support php arrays         |
-| pcre       |     5% | currently using cgo version of libpcre         |
-| session    |        |                                                |
-| date       |     1% |                                                |
-| SPL        |        |                                                |
-| iconv      |        | using golang.org/x/text/transform              |
-| curl       |        | using net/http                                 |
-| hash       |    50% |                                                |
-| mysqli     |        |                                                |
-| gmp        |    20% | Using math/big                                 |
-| mbstring   |        |                                                |
-| mcrypt     |        |                                                |
-| openssl    |        | using crypto packages                          |
-| Reflection |        |                                                |
-| tokenizer  |        | already in core/tokenizer, needs to be exposed |
-| xml...     |        |                                                |
-| gd         |        | without gd                                     |
-| bz2        |     1% |                                                |
-| zlib       |        |                                                |
-| calendar   |        |                                                |
-| Phar       |        |                                                |
-| ctype      |   100% |                                                |
-| sockets    |        |                                                |
+### Not yet implemented
 
-# Concepts
+| Extension | Notes |
+|-----------|-------|
+| session | |
+| iconv | Planned via `golang.org/x/text/transform` |
+| curl | Planned via `net/http` |
+| mysqli | |
+| openssl | Planned via `crypto` packages |
+| xml / DOM | |
+| gd | |
+| zlib | |
+| Phar | |
+| sockets | |
 
-## Process
+## Architecture
 
-A process object will typically be created only once in a runtime environment,
-and is used to keep some objects cached, as well as global stream wrapper
-resources. Persistant connections, run time cache, etc are stored at the
-Process level.
+### Process
 
-## GlobalCache (optional)
+A process object is typically created once per runtime environment. It caches compiled code and holds global stream wrapper resources, persistent connections, and runtime cache.
 
-A special global status intermediate between Process and Global that causes
-declarations of classes and functions to be kept between scripts, typically
-useful when using an autoloader.
+### Global
 
-## Global
+When a request is received or script execution is requested, a new Global context is created. It contains runtime state: global variables, declared functions, classes, constants, output buffers, and memory limits.
 
-When a request is received or execution of a script is requested, a new Global
-context is created. The global context contains runtime level details such as
-global variables, declared functions, classes, constants, etc.
+### Context
 
-## Context
+Context is a local scope (e.g., within a running function). Global has a root context, and each function call creates a new context to separate variable scope.
 
-Context is a local context, such as within a running function etc. Global has
-a root context, and each function call causes instantiation of a new context
-so that variables space is kept separated.
+## Contributing
 
-# Contributing
+See [development.md](development.md) for details on writing extensions.
 
-A lot of work is needed. The most important part is improving the documentation, followed by improving support of core features (see TODO in this file), and implement individual functions from the various PHP extensions.
-
-Writing an extension is simple. Create a directory in ext, write code prefixed with a magic function defining comment and run `make buildext` to generate bindings/etc. Add your newly created extension to the main.go of each sapi to enable it by default. For more details, see the [this document](development.md).
-
-Before contributing, please [join the telegram group](https://t.me/gorophp) and/or create an issue on github in order to discuss and find out which parts you can work on and how to proceed.
+Writing an extension: create a directory in `ext/`, write functions with magic comment prefixes, run `make buildext` to generate bindings, and add the extension import to each SAPI's `main.go`.
