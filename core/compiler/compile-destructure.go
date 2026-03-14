@@ -318,3 +318,33 @@ func compileDestructure(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) 
 
 	return res, nil
 }
+
+// arrayToDestructure converts a runArray (array literal) on the LHS of
+// an assignment into a runDestructure for PHP 7.1+ short list syntax:
+// [$a, $b] = expr
+func arrayToDestructure(arr *runArray) *runDestructure {
+	rd := &runDestructure{l: arr.l}
+	for _, entry := range arr.e {
+		if entry.spread {
+			return nil // spread in destructure not supported this way
+		}
+		de := &destructureEntry{}
+		if entry.k != nil {
+			de.k = entry.k
+		}
+		if entry.v != nil {
+			// Check if the value is itself an array (nested destructure)
+			if innerArr, ok := entry.v.(*runArray); ok {
+				inner := arrayToDestructure(innerArr)
+				if inner == nil {
+					return nil
+				}
+				de.v = inner
+			} else {
+				de.v = entry.v
+			}
+		}
+		rd.e = append(rd.e, de)
+	}
+	return rd
+}

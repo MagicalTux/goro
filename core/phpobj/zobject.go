@@ -27,6 +27,12 @@ type ZObject struct {
 	setGuard   map[phpv.ZString]bool
 	issetGuard map[phpv.ZString]bool
 
+	// Guards for property hook execution to prevent infinite recursion
+	// When a get/set hook accesses $this->propName for the same property,
+	// the guard ensures the backing value is accessed directly.
+	getHookGuard map[phpv.ZString]bool
+	setHookGuard map[phpv.ZString]bool
+
 	// Readonly property tracking - set of properties that have been initialized
 	readonlyInit map[phpv.ZString]bool
 
@@ -948,7 +954,7 @@ func (o *ZObject) checkSetVisibility(ctx phpv.Context, keyStr phpv.ZString) erro
 				}
 				return ThrowError(ctx, Error,
 					fmt.Sprintf("Cannot modify private(set) property %s::$%s from %s",
-						o.Class.GetName(), keyStr, scopeName(callerClass)))
+						cur.GetName(), keyStr, scopeName(callerClass)))
 			}
 			if prop.SetModifiers.IsProtected() {
 				// The declaring class and subclasses can write
@@ -957,12 +963,117 @@ func (o *ZObject) checkSetVisibility(ctx phpv.Context, keyStr phpv.ZString) erro
 				}
 				return ThrowError(ctx, Error,
 					fmt.Sprintf("Cannot modify protected(set) property %s::$%s from %s",
-						o.Class.GetName(), keyStr, scopeName(callerClass)))
+						cur.GetName(), keyStr, scopeName(callerClass)))
 			}
 			return nil
 		}
 	}
 	return nil
+}
+
+// findPropWithHook looks up a class property by name, walking the class hierarchy.
+// Returns the ZClassProp if found and it has hooks, nil otherwise.
+func (o *ZObject) findPropWithHook(keyStr phpv.ZString) *phpv.ZClassProp {
+	class := o.Class.(*ZClass)
+	for cur := class; cur != nil; cur = cur.Extends {
+		for _, prop := range cur.Props {
+			if prop.VarName == keyStr && prop.HasHooks {
+				return prop
+			}
+		}
+	}
+	return nil
+}
+
+// runGetHook executes a property get hook in the context of this object.
+// It uses CallZVal with a HookCallable to create a proper FuncContext with $this bound.
+func (o *ZObject) runGetHook(ctx phpv.Context, keyStr phpv.ZString, hook phpv.Runnable) (*phpv.ZVal, error) {
+	// Set recursion guard so $this->propName inside the hook accesses the backing value
+	if o.getHookGuard == nil {
+		o.getHookGuard = make(map[phpv.ZString]bool)
+	}
+	o.getHookGuard[keyStr] = true
+	defer delete(o.getHookGuard, keyStr)
+
+	// Create a callable wrapper for the hook body so CallZVal creates a
+	// proper FuncContext with $this bound to the object.
+	hookCallable := &phpv.HookCallable{
+		Hook:     hook,
+		HookName: fmt.Sprintf("%s::$%s::get", o.Class.GetName(), keyStr),
+	}
+
+	result, err := ctx.CallZVal(ctx, hookCallable, nil, o)
+	if err != nil {
+		return nil, err
+	}
+	if result == nil {
+		result = phpv.ZNULL.ZVal()
+	}
+	return result, nil
+}
+
+// runSetHook executes a property set hook in the context of this object.
+// It uses CallZVal with a HookCallable to create a proper FuncContext with $this
+// and the $value parameter available.
+// For short arrow set hooks (set => expr), the result is assigned to the backing value.
+func (o *ZObject) runSetHook(ctx phpv.Context, keyStr phpv.ZString, prop *phpv.ZClassProp, value *phpv.ZVal) error {
+	// Set recursion guard so $this->propName inside the hook accesses the backing value
+	if o.setHookGuard == nil {
+		o.setHookGuard = make(map[phpv.ZString]bool)
+	}
+	o.setHookGuard[keyStr] = true
+	defer delete(o.setHookGuard, keyStr)
+
+	paramName := prop.SetParam
+	if paramName == "" {
+		paramName = "value"
+	}
+
+	// Create a callable wrapper that declares the set parameter.
+	// The hook body references $value (or custom param name) as a local variable.
+	hookCallable := &phpv.HookCallable{
+		Hook:     prop.SetHook,
+		HookName: fmt.Sprintf("%s::$%s::set", o.Class.GetName(), keyStr),
+		Params: []*phpv.FuncArg{
+			{VarName: paramName},
+		},
+	}
+
+	result, err := ctx.CallZVal(ctx, hookCallable, []*phpv.ZVal{value}, o)
+	if err != nil {
+		return err
+	}
+
+	// For short arrow set hooks (set => expr), the expression result is assigned
+	// to the backing property. We detect this by checking if the hook produced
+	// a non-nil, non-null result. Short set hooks compile to just the expression
+	// Runnable (not a block), so they return the expression value directly.
+	// Block set hooks use "return" which is caught by CatchReturn in CallZVal,
+	// but typically don't return values (they assign to $this->prop directly).
+	if result != nil && !result.IsNull() {
+		o.objectSetBacking(keyStr, result)
+	}
+
+	return nil
+}
+
+// objectSetBacking directly sets the backing value of a property in the hash table,
+// bypassing hooks and visibility checks. Used by set hooks to store the final value.
+func (o *ZObject) objectSetBacking(keyStr phpv.ZString, value *phpv.ZVal) {
+	if _, ok := o.hasPrivate[keyStr]; ok {
+		// For private properties, we need to find the mangled name
+		class := o.Class.(*ZClass)
+		for cur := class; cur != nil; cur = cur.Extends {
+			for _, prop := range cur.Props {
+				if prop.VarName == keyStr && prop.Modifiers.IsPrivate() {
+					propName := getPrivatePropName(cur, keyStr)
+					o.h.SetString(propName, value)
+					return
+				}
+			}
+		}
+	}
+	o.h.SetString(keyStr, value)
 }
 
 // scopeName returns a human-readable scope name for error messages.
@@ -988,6 +1099,13 @@ func (o *ZObject) ObjectGet(ctx phpv.Context, key phpv.Val) (*phpv.ZVal, error) 
 	// Check property visibility
 	if err := o.checkPropertyVisibility(ctx, keyStr, "access"); err != nil {
 		return nil, err
+	}
+
+	// Check for property get hook (PHP 8.4) - only if not already inside a hook for this property
+	if o.getHookGuard == nil || !o.getHookGuard[keyStr] {
+		if prop := o.findPropWithHook(keyStr); prop != nil && prop.GetHook != nil {
+			return o.runGetHook(ctx, keyStr, prop.GetHook)
+		}
 	}
 
 	if _, ok := o.hasPrivate[keyStr]; ok {
@@ -1041,6 +1159,17 @@ func (o *ZObject) ObjectGetQuiet(ctx phpv.Context, key phpv.Val) (*phpv.ZVal, bo
 	}
 
 	keyStr := key.(phpv.ZString)
+
+	// Check for property get hook (PHP 8.4) - only if not already inside a hook for this property
+	if o.getHookGuard == nil || !o.getHookGuard[keyStr] {
+		if prop := o.findPropWithHook(keyStr); prop != nil && prop.GetHook != nil {
+			result, err := o.runGetHook(ctx, keyStr, prop.GetHook)
+			if err != nil {
+				return nil, false, err
+			}
+			return result, true, nil
+		}
+	}
 
 	if _, ok := o.hasPrivate[keyStr]; ok {
 		resolveClass := o.resolvePrivateClass(ctx, keyStr)
@@ -1102,6 +1231,13 @@ func (o *ZObject) ObjectSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) er
 	// Check readonly property enforcement
 	if err := o.checkReadonlyWrite(ctx, keyStr); err != nil {
 		return err
+	}
+
+	// Check for property set hook (PHP 8.4) - only if not already inside a hook for this property
+	if o.setHookGuard == nil || !o.setHookGuard[keyStr] {
+		if prop := o.findPropWithHook(keyStr); prop != nil && prop.SetHook != nil {
+			return o.runSetHook(ctx, keyStr, prop, value)
+		}
 	}
 
 	if _, ok := o.hasPrivate[keyStr]; ok {

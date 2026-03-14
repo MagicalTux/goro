@@ -162,6 +162,16 @@ func spawnOperator(ctx phpv.Context, op tokenizer.ItemType, a, b phpv.Runnable, 
 		}
 	}
 
+	// Short list syntax: [$a, $b] = expr → convert array literal to destructure target
+	if opD.write {
+		if arr, ok := a.(*runArray); ok {
+			dest := arrayToDestructure(arr)
+			if dest != nil {
+				a = dest
+			}
+		}
+	}
+
 	if top, ok := b.(*runnableIf); ok && top.ternary {
 		rop, isop := a.(*runOperator)
 		if (!isop && opD.pri <= ternaryPri) || (isop && rop.opD.pri <= ternaryPri) {

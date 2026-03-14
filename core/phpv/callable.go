@@ -128,3 +128,30 @@ func CallableDisplayName(c Callable) string {
 	}
 	return c.Name()
 }
+
+// HookCallable wraps a Runnable (property hook body) as a Callable so it can be
+// executed via CallZVal with a proper FuncContext (which sets $this, etc).
+// The hook body uses "return" statements to produce a value; the FuncContext's
+// CatchReturn mechanism captures that.
+type HookCallable struct {
+	CallableVal
+	Hook     Runnable
+	HookName string // e.g. "MyClass::$prop::get"
+	Params   []*FuncArg
+}
+
+func (h *HookCallable) Name() string { return h.HookName }
+
+func (h *HookCallable) Call(ctx Context, args []*ZVal) (*ZVal, error) {
+	// Set parameter variables in the local scope (like ZClosure.callBody does)
+	for i, p := range h.Params {
+		if i < len(args) && args[i] != nil {
+			ctx.OffsetSet(ctx, p.VarName.ZVal(), args[i])
+		}
+	}
+	return h.Hook.Run(ctx)
+}
+
+func (h *HookCallable) GetArgs() []*FuncArg {
+	return h.Params
+}
