@@ -390,6 +390,13 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 		if implementsTraversable && !implementsIteratorOrAggregate {
 			return c.fatalError(ctx, fmt.Sprintf("Class %s must implement interface Traversable as part of either Iterator or IteratorAggregate", c.Name))
 		}
+
+		// Check mutual exclusion: cannot implement both Iterator and IteratorAggregate
+		hasIterator := c.Implements(Iterator)
+		hasIteratorAggregate := c.Implements(IteratorAggregate)
+		if hasIterator && hasIteratorAggregate {
+			return c.fatalError(ctx, fmt.Sprintf("Class %s cannot implement both Iterator and IteratorAggregate at the same time", c.Name))
+		}
 	}
 
 	// Emit deprecation warning for classes implementing Serializable (deprecated in PHP 8.1)
