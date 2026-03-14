@@ -27,3 +27,22 @@ func fncStrftime(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	// TODO support locales, timezones, etc
 	return phpv.ZString(strftime.EnFormat(string(f), t)).ZVal(), nil
 }
+
+// > func string gmstrftime ( string $format [, int $timestamp = time() ] )
+func fncGmstrftime(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var f phpv.ZString
+	var ts *phpv.ZInt
+	_, err := core.Expand(ctx, args, &f, &ts)
+	if err != nil {
+		return nil, err
+	}
+
+	var t time.Time
+	if ts != nil {
+		t = time.Unix(int64(*ts), 0).UTC()
+	} else {
+		t = time.Now().UTC()
+	}
+
+	return phpv.ZString(strftime.EnFormat(string(f), t)).ZVal(), nil
+}

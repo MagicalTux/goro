@@ -29,6 +29,9 @@ func init() {
 	initEmptyIterator()
 	initCallbackFilterIterator()
 	initMultipleIterator()
+	initSplHeap()
+	initRecursiveDirectoryIterator()
+	initRecursiveTreeIterator()
 
 	phpctx.RegisterExt(&phpctx.Ext{
 		Name:    "SPL",
@@ -62,6 +65,11 @@ func init() {
 			EmptyIteratorClass,
 			CallbackFilterIteratorClass,
 			MultipleIteratorClass,
+			SplHeapClass,
+			SplMinHeapClass,
+			SplMaxHeapClass,
+			RecursiveDirectoryIteratorClass,
+			RecursiveTreeIteratorClass,
 		},
 		Functions: map[string]*phpctx.ExtFunction{
 			"spl_object_hash":        {Func: splObjectHash, Args: []*phpctx.ExtFunctionArg{}},

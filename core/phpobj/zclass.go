@@ -407,9 +407,13 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 	// Property defaults are resolved lazily in GetStaticProps() and
 	// ZObject.init() to support forward references to classes/constants
 	// not yet defined at class compilation time.
-	// Check interface properties
+	// Check interface properties: interfaces can only have hooked properties (PHP 8.4+)
 	if c.Type == phpv.ZClassTypeInterface && len(c.Props) > 0 {
-		return c.fatalError(ctx, fmt.Sprintf("Interfaces may only include hooked properties"))
+		for _, prop := range c.Props {
+			if prop.GetHook == nil && prop.SetHook == nil {
+				return c.fatalError(ctx, fmt.Sprintf("Interfaces may only include hooked properties"))
+			}
+		}
 	}
 	for _, m := range c.Methods {
 		if c.Type == phpv.ZClassTypeInterface && !m.Empty {

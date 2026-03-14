@@ -22,6 +22,9 @@ const (
 // fiberContextKey is used to store the current FiberState in the context.
 type fiberContextKey struct{}
 
+// fiberObjectKey is used to store the current Fiber ZObject in the context.
+type fiberObjectKey struct{}
+
 // FiberResolveCallable is set by the core package to resolve a ZVal into a Callable.
 // This avoids an import cycle between phpobj and core.
 var FiberResolveCallable func(ctx phpv.Context, v *phpv.ZVal) (phpv.Callable, error)
@@ -100,6 +103,8 @@ func initFiberClasses() {
 			"throw":        {Name: "throw", Modifiers: phpv.ZAttrPublic, Method: NativeMethod(fiberThrow)},
 			"suspend": {Name: "suspend", Modifiers: phpv.ZAttrPublic | phpv.ZAttrStatic,
 				Method: NativeStaticMethod(fiberSuspend)},
+			"getcurrent": {Name: "getCurrent", Modifiers: phpv.ZAttrPublic | phpv.ZAttrStatic,
+				Method: NativeStaticMethod(fiberGetCurrent)},
 		},
 	}
 }
@@ -168,10 +173,12 @@ func fiberStart(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, er
 
 	// Launch the fiber goroutine
 	go func() {
-		// Create a context that carries the fiber state
+		// Create a context that carries the fiber state and the fiber object
+		goCtx := context.WithValue(ctx, fiberContextKey{}, state)
+		goCtx = context.WithValue(goCtx, fiberObjectKey{}, o)
 		fiberCtx := &fiberExecContext{
 			Context: ctx,
-			goCtx:   context.WithValue(ctx, fiberContextKey{}, state),
+			goCtx:   goCtx,
 		}
 
 		// Call the callback
@@ -371,4 +378,17 @@ func fiberIsTerminated(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.Z
 		return phpv.ZFalse.ZVal(), nil
 	}
 	return phpv.ZBool(state.status == FiberTerminated).ZVal(), nil
+}
+
+// fiberGetCurrent implements Fiber::getCurrent(): ?Fiber (static method)
+func fiberGetCurrent(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	objVal := ctx.Value(fiberObjectKey{})
+	if objVal == nil {
+		return phpv.ZNULL.ZVal(), nil
+	}
+	obj, ok := objVal.(*ZObject)
+	if !ok {
+		return phpv.ZNULL.ZVal(), nil
+	}
+	return obj.ZVal(), nil
 }
