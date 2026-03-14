@@ -287,11 +287,10 @@ func getTimezoneMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal
 	if !ok {
 		return phpv.ZBool(false).ZVal(), nil
 	}
-	tzObj, err := phpobj.NewZObject(ctx, DateTimeZone)
+	tzObj, err := phpobj.NewZObject(ctx, DateTimeZone, phpv.ZString(t.Location().String()).ZVal())
 	if err != nil {
 		return nil, err
 	}
-	setTimezoneLoc(tzObj, t.Location())
 	return tzObj.ZVal(), nil
 }
 

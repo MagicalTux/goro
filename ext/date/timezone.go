@@ -198,16 +198,11 @@ func fncTimezoneOpen(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
 		return nil, ctx.Errorf("timezone_open() expects exactly 1 argument, 0 given")
 	}
-	tzName := args[0].AsString(ctx)
-	loc, err := time.LoadLocation(string(tzName))
+	obj, err := phpobj.NewZObject(ctx, DateTimeZone, args[0])
 	if err != nil {
+		// timezone_open returns false on failure, unlike the constructor which throws
 		return phpv.ZBool(false).ZVal(), nil
 	}
-	obj, err2 := phpobj.NewZObject(ctx, DateTimeZone)
-	if err2 != nil {
-		return nil, err2
-	}
-	setTimezoneLoc(obj, loc)
 	return obj.ZVal(), nil
 }
 
