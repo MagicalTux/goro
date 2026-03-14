@@ -102,6 +102,53 @@ func (a runArray) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 						array.OffsetSet(ctx, nil, v.Dup())
 					}
 				}
+			} else if v.GetType() == phpv.ZtObject {
+				// Handle Traversable objects (Iterator, IteratorAggregate, Generator)
+				obj, ok := v.Value().(*phpobj.ZObject)
+				if !ok {
+					return nil, fmt.Errorf("Only arrays and Traversables can be unpacked")
+				}
+				if obj.GetClass().Implements(phpobj.IteratorAggregate) {
+					iterResult, iterErr := obj.CallMethod(ctx, "getIterator")
+					if iterErr == nil && iterResult != nil && iterResult.GetType() == phpv.ZtObject {
+						if iterObj, ok := iterResult.Value().(*phpobj.ZObject); ok && iterObj.GetClass().Implements(phpobj.Iterator) {
+							obj = iterObj
+						}
+					}
+				}
+				if obj.GetClass().Implements(phpobj.Iterator) {
+					obj.CallMethod(ctx, "rewind")
+					for {
+						valid, verr := obj.CallMethod(ctx, "valid")
+						if verr != nil || !valid.AsBool(ctx) {
+							break
+						}
+						key, kerr := obj.CallMethod(ctx, "key")
+						if kerr != nil {
+							break
+						}
+						value, verr := obj.CallMethod(ctx, "current")
+						if verr != nil {
+							break
+						}
+						// PHP 8.1+: string keys are preserved; numeric string keys
+						// that look like integers are converted to integers and re-indexed
+						if key.GetType() == phpv.ZtString {
+							keyStr := string(key.AsString(ctx))
+							if isNumericString(keyStr) {
+								// Numeric string key from iterator → re-index as integer
+								array.OffsetSet(ctx, nil, value.Dup())
+							} else {
+								array.OffsetSet(ctx, key, value.Dup())
+							}
+						} else {
+							array.OffsetSet(ctx, nil, value.Dup())
+						}
+						obj.CallMethod(ctx, "next")
+					}
+				} else {
+					return nil, fmt.Errorf("Only arrays and Traversables can be unpacked")
+				}
 			} else {
 				return nil, fmt.Errorf("Only arrays and Traversables can be unpacked")
 			}

@@ -56,7 +56,11 @@ func compileOpExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	}
 
 	for {
-		if isOperator(c.peekType()) && !isRightAssociative(c.peekType()) {
+		pt := c.peekType()
+		// Allow postfix ++ and -- to be consumed as part of the operand,
+		// and also function calls, array access, object operators, and ::
+		if isOperator(pt) && !isRightAssociative(pt) &&
+			pt != tokenizer.T_INC && pt != tokenizer.T_DEC {
 			return res, nil
 		}
 		sr, err := compilePostExpr(res, nil, c)

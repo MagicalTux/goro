@@ -45,7 +45,15 @@ func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, o
 		isRefParam := false
 		if funcArgs != nil && i < len(funcArgs) && funcArgs[i].Ref {
 			isRefParam = true
-		} else if extArgs != nil && i < len(extArgs) && extArgs[i].Ref {
+		} else if funcArgs != nil && len(funcArgs) > 0 {
+			// Check if the last parameter is a variadic by-ref param;
+			// if so, all args from that index onward are by-ref.
+			last := funcArgs[len(funcArgs)-1]
+			if last.Variadic && last.Ref && i >= len(funcArgs)-1 {
+				isRefParam = true
+			}
+		}
+		if !isRefParam && extArgs != nil && i < len(extArgs) && extArgs[i].Ref {
 			isRefParam = true
 		}
 
@@ -115,6 +123,11 @@ func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, o
 					// Re-read to get the actual hash table entry ZVal.
 					val, _ = arg.Run(ctx)
 					// Make the hash table entry into a reference in-place.
+					val.MakeRef()
+					byRefCleanups = append(byRefCleanups, val)
+				} else if sv, isSpread := arg.(*spreadZVal); isSpread && !sv.fromLiteral {
+					// Spread from a variable: make the hash table entry a reference
+					// so modifications propagate back to the source array.
 					val.MakeRef()
 					byRefCleanups = append(byRefCleanups, val)
 				}
@@ -223,9 +236,11 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 			isRefVariadic := func_args[variadicIdx].Ref
 			for _, a := range args[variadicIdx:] {
 				if isRefVariadic {
-					// For by-ref variadic, preserve the original ZVal (don't dup)
-					// so modifications inside the function propagate back
-					varArray.OffsetSet(nil, nil, a)
+					// For by-ref variadic, make each element a reference so that
+					// modifications inside the function propagate back to the
+					// source array (when spread from a variable).
+					a.MakeRef()
+					varArray.OffsetSet(nil, nil, a.Ref())
 				} else {
 					varArray.OffsetSet(nil, nil, a.Dup())
 				}
@@ -239,6 +254,10 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 
 		callCtx.Args = args
 		for i := range args {
+			// Skip variadic parameter - already handled during packing above
+			if variadicIdx >= 0 && i == variadicIdx {
+				continue
+			}
 			// Since this function was parsed, the parameter info is available
 			if i < len(func_args) && func_args[i].Ref {
 				// Check if the argument can be passed by reference
@@ -455,9 +474,7 @@ func expandSpreadArgs(ctx phpv.Context, args []phpv.Runnable) []phpv.Runnable {
 			arr := val.AsArray(ctx)
 			if isWritable {
 				// From a variable: pass the actual hash table entries (for by-ref)
-				// Set a synthetic name on each entry so the by-ref mechanism
-				// in callZValImpl recognizes them as writable locations.
-				spreadName := phpv.ZString("__spread")
+				// so that modifications inside the function propagate back.
 				it := arr.NewIterator()
 				for it.Valid(ctx) {
 					// Use CurrentRef to get the actual ZVal without duplication
@@ -465,7 +482,6 @@ func expandSpreadArgs(ctx phpv.Context, args []phpv.Runnable) []phpv.Runnable {
 						CurrentRef(phpv.Context) (*phpv.ZVal, error)
 					}).CurrentRef(ctx)
 					if v != nil {
-						v.Name = &spreadName
 						result = append(result, &spreadZVal{v: v, fromLiteral: false})
 					}
 					it.Next(ctx)
