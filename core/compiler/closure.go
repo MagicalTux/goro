@@ -46,11 +46,11 @@ func (z *ZClosure) Spawn(ctx phpv.Context) (*phpv.ZVal, error) {
 
 func (closure *ZClosure) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 	if closure.name != "" {
-		// register function
-		err = closure.Compile(ctx)
-		if err != nil {
-			return nil, err
-		}
+		// register function - don't resolve default argument values now;
+		// they will be resolved lazily in callBody() so that errors
+		// (like integer overflow in array spread) are thrown at call time
+		// and can be caught by try/catch.
+
 		// If the function is a generator, wrap it
 		if closure.isGenerator {
 			return nil, ctx.Global().RegisterFunction(closure.name, &generatorClosure{closure})
@@ -237,6 +237,14 @@ func (z *ZClosure) callBody(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 				if len(args) == i {
 					// need to append to args
 					args = append(args, nil)
+				}
+				// Resolve CompileDelayed defaults lazily at call time
+				if cd, ok := a.DefaultValue.(*phpv.CompileDelayed); ok {
+					z, err := cd.Run(ctx)
+					if err != nil {
+						return nil, err
+					}
+					a.DefaultValue = z.Value()
 				}
 				args[i] = a.DefaultValue.ZVal()
 			} else {

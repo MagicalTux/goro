@@ -168,6 +168,15 @@ func spawnOperator(ctx phpv.Context, op tokenizer.ItemType, a, b phpv.Runnable, 
 			dest := arrayToDestructure(arr)
 			if dest != nil {
 				a = dest
+			} else {
+				// Spread operator in destructuring is not supported
+				phpErr := &phpv.PhpError{
+					Err:  fmt.Errorf("Spread operator is not supported in assignments"),
+					Code: phpv.E_ERROR,
+					Loc:  arr.l,
+				}
+				ctx.Global().LogError(phpErr)
+				return nil, phpv.ExitError(255)
 			}
 		}
 	}
@@ -302,14 +311,19 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Unsupported operand types: %s %s %s", phpTypeName(a), r.op.OpString(), phpTypeName(b)))
 		}
 
-		// PHP 8: throw TypeError for completely non-numeric strings in arithmetic
+		// PHP 8: handle non-numeric strings in arithmetic
+		// - Completely non-numeric ("hello"): TypeError
+		// - Leading numeric ("123abc"): Warning + use numeric part
+		// - Fully numeric ("123"): no warning
 		if aType == phpv.ZtString {
-			if _, err := a.Value().(phpv.ZString).AsNumeric(); err != nil {
+			s := string(a.Value().(phpv.ZString))
+			if !isLeadingNumeric(s) {
 				return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Unsupported operand types: %s %s %s", phpTypeName(a), r.op.OpString(), phpTypeName(b)))
 			}
 		}
 		if bType == phpv.ZtString {
-			if _, err := b.Value().(phpv.ZString).AsNumeric(); err != nil {
+			s := string(b.Value().(phpv.ZString))
+			if !isLeadingNumeric(s) {
 				return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Unsupported operand types: %s %s %s", phpTypeName(a), r.op.OpString(), phpTypeName(b)))
 			}
 		}
@@ -1190,3 +1204,5 @@ func phpTypeName(v *phpv.ZVal) string {
 		return v.GetType().String()
 	}
 }
+
+// isLeadingNumeric is defined in compile-array.go

@@ -666,9 +666,26 @@ func compileArray(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 
 		// Handle spread operator: ...$expr
 		if i.Type == tokenizer.T_ELLIPSIS {
+			spreadLoc := i.Loc()
 			spreadExpr, err := compileExpr(nil, c)
 			if err != nil {
 				return nil, err
+			}
+			// Compile-time check: literal non-array/non-object values cannot be unpacked
+			if zv, ok := spreadExpr.(*runZVal); ok {
+				switch zv.v.(type) {
+				case *phpv.ZArray:
+					// OK - array literal can be unpacked
+				default:
+					typeName := zv.v.(phpv.Val).GetType().TypeName()
+					phpErr := &phpv.PhpError{
+						Err:  fmt.Errorf("Only arrays and Traversables can be unpacked, %s given", typeName),
+						Code: phpv.E_ERROR,
+						Loc:  spreadLoc,
+					}
+					c.Global().LogError(phpErr)
+					return nil, phpv.ExitError(255)
+				}
 			}
 			res.e = append(res.e, &arrayEntry{v: spreadExpr, spread: true})
 
