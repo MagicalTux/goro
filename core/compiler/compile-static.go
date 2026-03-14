@@ -94,6 +94,14 @@ func compileStaticVar(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			return compileFunction(i, c)
 		}
 
+		// Handle "static::" as a late static binding expression (e.g. static::$foo = ..., static::method())
+		if i.Type == tokenizer.T_PAAMAYIM_NEKUDOTAYIM {
+			c.backup() // back up the :: token
+			// Build the "static" value, then parse as a full expression via compileExpr
+			staticItem := &tokenizer.Item{Type: tokenizer.T_STATIC, Data: "static", Filename: r.l.Filename, Line: r.l.Line}
+			return compileExpr(staticItem, c)
+		}
+
 		if i.Type != tokenizer.T_VARIABLE {
 			return nil, i.Unexpected()
 		}

@@ -84,6 +84,16 @@ func (g *generatorExecContext) Value(key any) any {
 	return g.Context.Value(key)
 }
 
+// CallZVal delegates to the Global context to ensure proper FuncContext setup.
+func (g *generatorExecContext) CallZVal(ctx phpv.Context, f phpv.Callable, args []*phpv.ZVal, this ...phpv.ZObject) (*phpv.ZVal, error) {
+	return g.Global().CallZVal(ctx, f, args, this...)
+}
+
+// Call delegates to the Global context.
+func (g *generatorExecContext) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, this ...phpv.ZObject) (*phpv.ZVal, error) {
+	return g.Global().Call(ctx, f, args, this...)
+}
+
 // Generator is the PHP Generator class.
 var Generator *ZClass
 
@@ -129,6 +139,21 @@ func getGeneratorState(o *ZObject) *GeneratorState {
 // the generator check in ZClosure.Call) to SpawnGenerator.
 type GeneratorBodyFunc func(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 
+// generatorBodyCallable wraps a GeneratorBodyFunc as a phpv.Callable so it
+// can be called through CallZVal (which sets up a proper FuncContext).
+type generatorBodyCallable struct {
+	phpv.CallableVal
+	fn GeneratorBodyFunc
+}
+
+func (g *generatorBodyCallable) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	return g.fn(ctx, args)
+}
+
+func (g *generatorBodyCallable) Name() string {
+	return "{generator}"
+}
+
 // SpawnGenerator creates a new Generator object. The caller provides a body
 // function that will run in a goroutine. This function is the actual body
 // execution (not the outer Call that checks isGenerator).
@@ -140,6 +165,11 @@ func SpawnGenerator(ctx phpv.Context, bodyFn GeneratorBodyFunc, args []*phpv.ZVa
 		doneCh:    make(chan generatorMsg, 1),
 		returnVal: phpv.ZNULL.ZVal(),
 	}
+
+	// Capture the Global context now, while ctx is still valid.
+	// The ctx may be a temporary FuncContext that gets cleaned up after
+	// SpawnGenerator returns, so we cannot use it from the goroutine later.
+	globalCtx := ctx.Global()
 
 	o, err := NewZObjectOpaque(ctx, Generator, state)
 	if err != nil {
@@ -159,15 +189,16 @@ func SpawnGenerator(ctx phpv.Context, bodyFn GeneratorBodyFunc, args []*phpv.ZVa
 			return
 		}
 
-		// Create a context that carries the generator state
+		// Use the Global context as base for the generator goroutine.
 		genCtx := &generatorExecContext{
-			Context: ctx,
-			goCtx:   context.WithValue(ctx, generatorContextKey{}, state),
+			Context: globalCtx,
+			goCtx:   context.WithValue(globalCtx, generatorContextKey{}, state),
 		}
 
-		// Call the body function directly (NOT through CallZVal, which would
-		// re-trigger the generator check in ZClosure.Call)
-		result, err := bodyFn(genCtx, args)
+		// Wrap the body in a Callable and use CallZVal to get a proper
+		// FuncContext (needed for Tick, Loc, etc).
+		callable := &generatorBodyCallable{fn: bodyFn}
+		result, err := genCtx.CallZVal(genCtx, callable, args)
 
 		// Generator completed
 		state.status = GeneratorClosed

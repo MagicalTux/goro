@@ -35,6 +35,7 @@ func initReflectionParameter() {
 			"allowsnull":          {Name: "allowsNull", Method: phpobj.NativeMethod(reflectionParameterAllowsNull)},
 			"ispassedbyreference": {Name: "isPassedByReference", Method: phpobj.NativeMethod(reflectionParameterIsPassedByReference)},
 			"isvariadic":          {Name: "isVariadic", Method: phpobj.NativeMethod(reflectionParameterIsVariadic)},
+			"getattributes":       {Name: "getAttributes", Method: phpobj.NativeMethod(reflectionParameterGetAttributes)},
 		},
 	}
 }
@@ -220,4 +221,13 @@ func createReflectionParameterObjects(ctx phpv.Context, funcArgs []*phpv.FuncArg
 		arr.OffsetSet(ctx, nil, obj.ZVal())
 	}
 	return arr.ZVal(), nil
+}
+
+func reflectionParameterGetAttributes(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	data := getParamData(o)
+	if data == nil {
+		return phpv.NewZArray().ZVal(), nil
+	}
+	name, flags := getAttributesArgs(ctx, args)
+	return filterAttributes(ctx, data.arg.Attributes, phpobj.AttributeTARGET_PARAMETER, name, flags)
 }

@@ -142,6 +142,7 @@ type runNewAnonymousClass struct {
 	class           *phpobj.ZClass
 	constructorArgs []phpv.Runnable
 	l               *phpv.Loc
+	compiled        bool
 }
 
 func (r *runNewAnonymousClass) Dump(w io.Writer) error {
@@ -152,15 +153,18 @@ func (r *runNewAnonymousClass) Dump(w io.Writer) error {
 func (r *runNewAnonymousClass) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	ctx.Tick(ctx, r.l)
 
-	// Register the anonymous class
-	err := ctx.Global().RegisterClass(r.class.Name, r.class)
-	if err != nil {
-		return nil, err
-	}
-	err = r.class.Compile(ctx)
-	if err != nil {
-		ctx.Global().UnregisterClass(r.class.Name)
-		return nil, err
+	// Register and compile the anonymous class only once (it may be in a loop)
+	if !r.compiled {
+		err := ctx.Global().RegisterClass(r.class.Name, r.class)
+		if err != nil {
+			return nil, err
+		}
+		err = r.class.Compile(ctx)
+		if err != nil {
+			ctx.Global().UnregisterClass(r.class.Name)
+			return nil, err
+		}
+		r.compiled = true
 	}
 
 	// Evaluate constructor arguments
@@ -456,7 +460,13 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			}
 		}
 	default:
-		return nil, ctx.Errorf("variable is not an object, cannot call method")
+		// PHP 8: calling method on non-object throws Error
+		typeName := "null"
+		if obj.GetType() != phpv.ZtNull {
+			typeName = obj.GetType().String()
+		}
+		return nil, phpobj.ThrowError(ctx, phpobj.Error,
+			fmt.Sprintf("Call to a member function %s() on %s", r.op, typeName))
 	}
 
 	method, ok := class.GetMethod(op)
@@ -598,8 +608,13 @@ func (r *runObjectVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 
 	objI, ok := obj.Value().(phpv.ZObjectAccess)
 	if !ok {
-		// TODO make this a warning
-		return nil, ctx.Errorf("variable is not an object, cannot fetch property")
+		// PHP 8: reading property of non-object is a warning, returns null
+		typeName := "null"
+		if obj.GetType() != phpv.ZtNull {
+			typeName = obj.GetType().String()
+		}
+		ctx.Warn("Attempt to read property \"%s\" on %s", r.varName, typeName, logopt.NoFuncName(true))
+		return phpv.ZNULL.ZVal(), nil
 	}
 
 	// offset get
@@ -681,8 +696,13 @@ func (r *runObjectVar) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 
 	objI, ok := obj.Value().(phpv.ZObjectAccess)
 	if !ok {
-		// TODO cast to object?
-		return ctx.Errorf("variable is not an object, cannot set property")
+		// PHP 8: attempting to set property of non-object throws Error
+		typeName := "null"
+		if obj.GetType() != phpv.ZtNull {
+			typeName = obj.GetType().String()
+		}
+		return phpobj.ThrowError(ctx, phpobj.Error,
+			fmt.Sprintf("Attempt to assign property \"%s\" on %s", r.varName, typeName))
 	}
 
 	// offset set
@@ -744,7 +764,12 @@ func (r *runObjectDynVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	}
 	objI, ok := obj.Value().(phpv.ZObjectAccess)
 	if !ok {
-		return nil, ctx.Errorf("variable is not an object, cannot fetch property")
+		typeName := "null"
+		if obj.GetType() != phpv.ZtNull {
+			typeName = obj.GetType().String()
+		}
+		ctx.Warn("Attempt to read property on %s", typeName, logopt.NoFuncName(true))
+		return phpv.ZNULL.ZVal(), nil
 	}
 	name, err := r.nameExpr.Run(ctx)
 	if err != nil {
@@ -772,7 +797,12 @@ func (r *runObjectDynVar) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 	}
 	objI, ok := obj.Value().(phpv.ZObjectAccess)
 	if !ok {
-		return ctx.Errorf("variable is not an object, cannot set property")
+		typeName := "null"
+		if obj.GetType() != phpv.ZtNull {
+			typeName = obj.GetType().String()
+		}
+		return phpobj.ThrowError(ctx, phpobj.Error,
+			fmt.Sprintf("Attempt to assign property on %s", typeName))
 	}
 	var name *phpv.ZVal
 	if r.prepared {

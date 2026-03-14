@@ -24,6 +24,10 @@ var AttributeClass *ZClass
 func init() {
 	AttributeClass = &ZClass{
 		Name: "Attribute",
+		// The Attribute class itself has #[Attribute(Attribute::TARGET_CLASS)]
+		Attributes: []*phpv.ZAttribute{
+			{ClassName: "Attribute", Args: []*phpv.ZVal{phpv.ZInt(AttributeTARGET_CLASS).ZVal()}},
+		},
 		Props: []*phpv.ZClassProp{
 			{VarName: "flags", Default: phpv.ZInt(0).ZVal(), Modifiers: phpv.ZAttrPublic},
 		},

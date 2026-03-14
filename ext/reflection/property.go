@@ -197,6 +197,10 @@ func reflectionPropertyGetDeclaringClass(ctx phpv.Context, o *phpobj.ZObject, ar
 }
 
 func reflectionPropertyGetAttributes(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	// Return empty array - attribute reflection not fully implemented
-	return phpv.NewZArray().ZVal(), nil
+	data := getPropData(o)
+	if data == nil {
+		return phpv.NewZArray().ZVal(), nil
+	}
+	name, flags := getAttributesArgs(ctx, args)
+	return filterAttributes(ctx, data.prop.Attributes, phpobj.AttributeTARGET_PROPERTY, name, flags)
 }

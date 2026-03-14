@@ -31,6 +31,7 @@ func initReflectionFunction() {
 			"getnumberofrequiredparameters": {Name: "getNumberOfRequiredParameters", Method: phpobj.NativeMethod(reflectionFunctionGetNumberOfRequiredParameters)},
 			"getparameters":              {Name: "getParameters", Method: phpobj.NativeMethod(reflectionFunctionGetParameters)},
 			"invoke":                     {Name: "invoke", Method: phpobj.NativeMethod(reflectionFunctionInvoke)},
+			"getattributes":              {Name: "getAttributes", Method: phpobj.NativeMethod(reflectionFunctionGetAttributes)},
 		},
 	}
 }
