@@ -2,6 +2,9 @@ package phpv
 
 import "strings"
 
+// compareDepth tracks recursion depth to prevent stack overflow on circular references.
+var compareDepth int
+
 func CompareObject(ctx Context, ao, bo ZObject) (int, error) {
 	// Same instance - always equal
 	if ao == bo {
@@ -11,6 +14,13 @@ func CompareObject(ctx Context, ao, bo ZObject) (int, error) {
 	if ao.GetClass() != bo.GetClass() {
 		return 1, nil
 	}
+
+	compareDepth++
+	if compareDepth > 256 {
+		compareDepth--
+		return 0, nil // treat deeply nested comparisons as equal to avoid stack overflow
+	}
+	defer func() { compareDepth-- }()
 
 	aIter := ao.NewIterator()
 	bIter := bo.NewIterator()

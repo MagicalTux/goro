@@ -1,0 +1,137 @@
+--TEST--
+Test array_combine() function : usage variations - associative array with different keys(Bug#43424)
+--FILE--
+<?php
+/*
+ * Testing the functionality of array_combine() by passing different
+ * associative arrays having different possible keys to $keys argument and
+ * associative arrays having different possible keys to $values argument.
+*/
+
+echo "*** Testing array_combine() : assoc array with diff keys to both \$keys and \$values argument ***\n";
+
+// get a resource variable
+$fp = fopen(__FILE__, "r");
+
+// get a class
+class classA
+{
+  public function __toString(){
+    return "Class A object";
+  }
+}
+
+// different variations of associative arrays to be passed to $arr1 argument
+$arrays = array (
+
+       // empty array
+/*1*/  array(),
+
+       // arrays with integer keys
+       array(0 => "0"),
+       array(1 => "1"),
+       array(1 => "1", 2 => "2", 3 => "3", 4 => "4"),
+
+       // arrays with string keys
+/*7*/  array('\tHello' => 111, 're\td' => "color",
+             '\v\fworld' => 2.2, 'pen\n' => 33),
+       array("\tHello" => 111, "re\td" => "color",
+             "\v\fworld" => 2.2, "pen\n" => 33),
+
+       // array with object, unset variable and resource variable
+/*10*/ array($fp => 'resource'),
+
+       // array with mixed keys
+/*11*/ array('hello' => 1, "fruit" => 2.2,
+             $fp => 'resource', 133 => "int",
+             )
+);
+
+// array to be passsed to $arr2 argument
+$arr2 = array(0 => 0, 2 => "float", 4 => "f3", 33333333 => "f4",
+              "\tHello" => 111, 2.2, 'color', "Hello world" => "string",
+              "pen\n" => 33, 133 => "int");
+
+// loop through each sub-array within $arrays to check the behavior of array_combine()
+// same arrays are passed to both $keys and $values
+$iterator = 1;
+foreach($arrays as $array) {
+  echo "-- Iteration $iterator --\n";
+  var_dump( array_combine($array, $array) );
+  $iterator++;
+}
+
+// close the file resource used
+fclose($fp);
+
+echo "Done";
+?>
+--EXPECTF--
+*** Testing array_combine() : assoc array with diff keys to both $keys and $values argument ***
+
+Warning: Resource ID#%d used as offset, casting to integer (%d) in %s on line %d
+
+Warning: Resource ID#%d used as offset, casting to integer (%d) in %s on line %d
+-- Iteration 1 --
+array(0) {
+}
+-- Iteration 2 --
+array(1) {
+  [0]=>
+  string(1) "0"
+}
+-- Iteration 3 --
+array(1) {
+  [1]=>
+  string(1) "1"
+}
+-- Iteration 4 --
+array(4) {
+  [1]=>
+  string(1) "1"
+  [2]=>
+  string(1) "2"
+  [3]=>
+  string(1) "3"
+  [4]=>
+  string(1) "4"
+}
+-- Iteration 5 --
+array(4) {
+  [111]=>
+  int(111)
+  ["color"]=>
+  string(5) "color"
+  ["2.2"]=>
+  float(2.2)
+  [33]=>
+  int(33)
+}
+-- Iteration 6 --
+array(4) {
+  [111]=>
+  int(111)
+  ["color"]=>
+  string(5) "color"
+  ["2.2"]=>
+  float(2.2)
+  [33]=>
+  int(33)
+}
+-- Iteration 7 --
+array(1) {
+  ["resource"]=>
+  string(8) "resource"
+}
+-- Iteration 8 --
+array(4) {
+  [1]=>
+  int(1)
+  ["2.2"]=>
+  float(2.2)
+  ["resource"]=>
+  string(8) "resource"
+  ["int"]=>
+  string(3) "int"
+}
+Done

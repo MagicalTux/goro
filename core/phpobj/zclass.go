@@ -760,16 +760,24 @@ func (c *ZClass) InstanceOf(parentClass phpv.ZClass) bool {
 }
 
 func (c *ZClass) Implements(class phpv.ZClass) bool {
+	return c.implementsWithGuard(class, make(map[phpv.ZClass]bool))
+}
+
+func (c *ZClass) implementsWithGuard(class phpv.ZClass, seen map[phpv.ZClass]bool) bool {
 	if c == class {
 		return true
 	}
+	if seen[c] {
+		return false // cycle detected
+	}
+	seen[c] = true
 	for _, intf := range c.Implementations {
-		if intf.Implements(class) {
+		if intf.implementsWithGuard(class, seen) {
 			return true
 		}
 	}
 	if c.Extends != nil {
-		return c.Extends.Implements(class)
+		return c.Extends.implementsWithGuard(class, seen)
 	}
 	return false
 }

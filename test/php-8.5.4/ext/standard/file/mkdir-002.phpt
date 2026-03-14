@@ -1,0 +1,56 @@
+--TEST--
+mkdir(dir, 0777) tests
+--SKIPIF--
+<?php
+if (substr(PHP_OS, 0, 3) == 'WIN') {
+    die('skip not for Windows');
+}
+?>
+--FILE--
+<?php
+
+var_dump(mkdir("mkdir-002", 0777));
+var_dump(mkdir("mkdir-002/subdir", 0777));
+var_dump(shell_exec("ls -l mkdir-002"));
+var_dump(rmdir("mkdir-002/subdir"));
+var_dump(rmdir("mkdir-002"));
+
+var_dump(mkdir("./mkdir-002", 0777));
+var_dump(mkdir("./mkdir-002/subdir", 0777));
+var_dump(shell_exec("ls -l ./mkdir-002"));
+var_dump(rmdir("./mkdir-002/subdir"));
+var_dump(rmdir("./mkdir-002"));
+
+var_dump(mkdir(__DIR__."/mkdir-002", 0777));
+var_dump(mkdir(__DIR__."/mkdir-002/subdir", 0777));
+$dirname = __DIR__."/mkdir-002";
+$dirname_escaped = escapeshellarg($dirname);
+var_dump(shell_exec("ls -l $dirname_escaped"));
+var_dump(rmdir(__DIR__."/mkdir-002/subdir"));
+var_dump(rmdir(__DIR__."/mkdir-002"));
+
+echo "Done\n";
+?>
+--EXPECTF--
+bool(true)
+bool(true)
+string(%d) "%s
+d%s subdir
+"
+bool(true)
+bool(true)
+bool(true)
+bool(true)
+string(%d) "%s
+d%s subdir
+"
+bool(true)
+bool(true)
+bool(true)
+bool(true)
+string(%d) "%s
+d%s subdir
+"
+bool(true)
+bool(true)
+Done

@@ -1,0 +1,59 @@
+--TEST--
+Test array_filter() function : usage variations - built-in functions as 'callback' argument
+--FILE--
+<?php
+/*
+* Passing built-in functions and different language constructs as 'callback' argument
+*/
+
+echo "*** Testing array_filter() : usage variations - built-in functions as 'callback' argument ***\n";
+
+$input = array(0, 1, 10, 100);
+
+// using built-in function 'is_int' as 'callback'
+var_dump( array_filter($input, 'is_int') );
+
+// using built-in function 'chr' as 'callback'
+var_dump( array_filter($input, 'chr') );
+
+// using language construct 'echo' as 'callback'
+try {
+    var_dump( array_filter($input, 'echo') );
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+
+// using language construct 'isset' as 'callback'
+try {
+    var_dump( array_filter($input, 'isset') );
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+
+echo "Done"
+?>
+--EXPECT--
+*** Testing array_filter() : usage variations - built-in functions as 'callback' argument ***
+array(4) {
+  [0]=>
+  int(0)
+  [1]=>
+  int(1)
+  [2]=>
+  int(10)
+  [3]=>
+  int(100)
+}
+array(4) {
+  [0]=>
+  int(0)
+  [1]=>
+  int(1)
+  [2]=>
+  int(10)
+  [3]=>
+  int(100)
+}
+array_filter(): Argument #2 ($callback) must be a valid callback or null, function "echo" not found or invalid function name
+array_filter(): Argument #2 ($callback) must be a valid callback or null, function "isset" not found or invalid function name
+Done

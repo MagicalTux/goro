@@ -67,9 +67,9 @@ func reflectionParameterConstruct(ctx phpv.Context, o *phpobj.ZObject, args []*p
 		obj := funcVal.AsObject(ctx)
 		if obj != nil {
 			opaque := obj.GetOpaque(obj.GetClass())
-			if closure, ok := opaque.(phpv.FuncGetArgs); ok {
+			if closure, ok := opaque.(phpv.ZClosure); ok {
 				funcArgs = closure.GetArgs()
-				funcName = phpv.ZString(opaque.(phpv.Callable).Name())
+				funcName = phpv.ZString(closure.Name())
 			}
 		}
 	}

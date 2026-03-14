@@ -5,7 +5,8 @@ type Compilable interface {
 }
 
 type CompileDelayed struct {
-	V Runnable
+	V         Runnable
+	resolving bool // guards against infinite recursion
 }
 
 func (c *CompileDelayed) GetType() ZType {
@@ -25,6 +26,11 @@ func (c *CompileDelayed) String() string {
 }
 
 func (c *CompileDelayed) Run(ctx Context) (*ZVal, error) {
+	if c.resolving {
+		return nil, ctx.Errorf("Cannot resolve circular constant reference")
+	}
+	c.resolving = true
+	defer func() { c.resolving = false }()
 	return c.V.Run(ctx)
 }
 

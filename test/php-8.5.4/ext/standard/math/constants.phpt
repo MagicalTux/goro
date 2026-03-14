@@ -1,0 +1,47 @@
+--TEST--
+Math constants
+--INI--
+precision=-1
+--FILE--
+<?php
+$constants = array(
+    "M_E",
+    "M_LOG2E",
+    "M_LOG10E",
+    "M_LN2",
+    "M_LN10",
+    "M_PI",
+    "M_PI_2",
+    "M_PI_4",
+    "M_1_PI",
+    "M_2_PI",
+    "M_SQRTPI",
+    "M_2_SQRTPI",
+    "M_LNPI",
+    "M_EULER",
+    "M_SQRT2",
+    "M_SQRT1_2",
+    "M_SQRT3"
+);
+foreach($constants as $constant) {
+    printf("%-10s: %s\n", $constant, constant($constant));
+}
+?>
+--EXPECT--
+M_E       : 2.718281828459045
+M_LOG2E   : 1.4426950408889634
+M_LOG10E  : 0.4342944819032518
+M_LN2     : 0.6931471805599453
+M_LN10    : 2.302585092994046
+M_PI      : 3.141592653589793
+M_PI_2    : 1.5707963267948966
+M_PI_4    : 0.7853981633974483
+M_1_PI    : 0.3183098861837907
+M_2_PI    : 0.6366197723675814
+M_SQRTPI  : 1.772453850905516
+M_2_SQRTPI: 1.1283791670955126
+M_LNPI    : 1.1447298858494002
+M_EULER   : 0.5772156649015329
+M_SQRT2   : 1.4142135623730951
+M_SQRT1_2 : 0.7071067811865476
+M_SQRT3   : 1.7320508075688772
