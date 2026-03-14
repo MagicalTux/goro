@@ -4,7 +4,7 @@
 [![Coverage Status](https://coveralls.io/repos/github/MagicalTux/goro/badge.svg?branch=master)](https://coveralls.io/github/MagicalTux/goro?branch=master)
 [![GoDoc](https://godoc.org/github.com/MagicalTux/goro/core?status.svg)](https://godoc.org/github.com/MagicalTux/goro)
 
-PHP engine implemented in pure Go. Targets PHP 8.2 compatibility.
+PHP engine implemented in pure Go. Targets latest PHP (currently 8.5) compatibility.
 
 ## Why?
 
