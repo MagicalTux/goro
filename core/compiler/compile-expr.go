@@ -84,6 +84,22 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	l := i.Loc()
 
 	switch i.Type {
+	case tokenizer.T_STATIC:
+		// "static" can appear as an expression when followed by :: (e.g. static::class, static::method())
+		next, err := c.NextItem()
+		if err != nil {
+			return nil, err
+		}
+		c.backup()
+		if next.Type == tokenizer.T_PAAMAYIM_NEKUDOTAYIM {
+			return &runZVal{phpv.ZString("static"), l}, nil
+		}
+		// Not followed by :: — fall through to default handler (e.g. static $var, static function)
+		h, ok := itemTypeHandler[i.Type]
+		if ok && h != nil {
+			return h.f(i, c)
+		}
+		return nil, i.Unexpected()
 	case tokenizer.T_VARIABLE:
 		return &runVariable{v: phpv.ZString(i.Data[1:]), l: l}, nil
 	case tokenizer.Rune('$'):

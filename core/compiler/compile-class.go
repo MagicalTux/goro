@@ -139,7 +139,9 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 
 		// parse attrs if any
 		var attr phpv.ZObjectAttr
-		parseZObjectAttr(&attr, c)
+		if err := parseZObjectAttr(&attr, c); err != nil {
+			return nil, &phpv.PhpError{Err: err, Code: phpv.E_COMPILE_ERROR, Loc: l}
+		}
 
 		// read whatever comes next
 		i, err = c.NextItem()
@@ -657,6 +659,19 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		}
 	}
 
+	// Validate: non-abstract, non-interface classes must not have abstract methods
+	if !class.Attr.Has(phpv.ZClassAbstract) && class.Type != phpv.ZClassTypeInterface && class.Type != phpv.ZClassTypeTrait {
+		for _, m := range class.Methods {
+			if m.Modifiers&phpv.ZAttrAbstract != 0 {
+				return nil, &phpv.PhpError{
+					Err:  fmt.Errorf("Class %s declares abstract method %s() and must therefore be declared abstract", class.Name, m.Name),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  class.L,
+				}
+			}
+		}
+	}
+
 	return class, nil
 }
 
@@ -666,13 +681,18 @@ func parseClassLine(class *phpobj.ZClass, c compileCtx) error {
 		return err
 	}
 
-	if i.Type != tokenizer.T_STRING {
+	if i.Type == tokenizer.T_STRING {
+		class.Name = phpv.ZString(i.Data)
+		i, err = c.NextItem()
+	} else if class.Name == "" && (i.IsSingle('{') || i.Type == tokenizer.T_EXTENDS || i.Type == tokenizer.T_IMPLEMENTS) {
+		// Anonymous class - no name, proceed directly to extends/implements/body
+	} else {
 		return i.Unexpected()
 	}
 
-	class.Name = phpv.ZString(i.Data)
-
-	i, err = c.NextItem()
+	if err != nil {
+		return err
+	}
 	if err != nil {
 		return err
 	}

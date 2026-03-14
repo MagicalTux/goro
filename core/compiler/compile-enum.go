@@ -264,7 +264,9 @@ func compileEnum(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			c.backup()
 
 			var attr phpv.ZObjectAttr
-			parseZObjectAttr(&attr, c)
+			if err := parseZObjectAttr(&attr, c); err != nil {
+				return nil, &phpv.PhpError{Err: err, Code: phpv.E_COMPILE_ERROR, Loc: l}
+			}
 
 			i, err = c.NextItem()
 			if err != nil {

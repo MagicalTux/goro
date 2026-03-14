@@ -364,6 +364,41 @@ func (r *runClassNameOf) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	case phpv.ZtObject:
 		return phpv.ZString(v.AsObject(ctx).GetClass().GetName()).ZVal(), nil
 	case phpv.ZtString:
+		// self::class, parent::class, static::class must resolve at runtime
+		name := v.AsString(ctx)
+		switch name {
+		case "self":
+			cls := ctx.Class()
+			if cls == nil {
+				return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot use \"self\" when no class scope is active")
+			}
+			return phpv.ZString(cls.GetName()).ZVal(), nil
+		case "parent":
+			cls := ctx.Class()
+			if cls == nil {
+				return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot use \"parent\" when no class scope is active")
+			}
+			parent := cls.GetParent()
+			if parent == nil {
+				return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot use \"parent\" when current class scope has no parent")
+			}
+			return phpv.ZString(parent.GetName()).ZVal(), nil
+		case "static":
+			// Late static binding: resolve to the actual called class.
+			// ctx.This() may have been kin'd to a parent class, so we
+			// use Unwrap() (if available) to get the real leaf class.
+			if this := ctx.This(); this != nil {
+				if uw, ok := this.(interface{ Unwrap() phpv.ZObject }); ok {
+					return phpv.ZString(uw.Unwrap().GetClass().GetName()).ZVal(), nil
+				}
+				return phpv.ZString(this.GetClass().GetName()).ZVal(), nil
+			}
+			cls := ctx.Class()
+			if cls == nil {
+				return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot use \"static\" when no class scope is active")
+			}
+			return phpv.ZString(cls.GetName()).ZVal(), nil
+		}
 		// ClassName::class resolves to the fully-qualified class name
 		return v, nil
 	default:

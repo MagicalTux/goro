@@ -137,6 +137,50 @@ func getConstructor(class phpv.ZClass) phpv.Callable {
 	return nil
 }
 
+// runNewAnonymousClass handles `new class [(args)] { ... }` anonymous class syntax.
+type runNewAnonymousClass struct {
+	class           *phpobj.ZClass
+	constructorArgs []phpv.Runnable
+	l               *phpv.Loc
+}
+
+func (r *runNewAnonymousClass) Dump(w io.Writer) error {
+	_, err := fmt.Fprintf(w, "new class {...}")
+	return err
+}
+
+func (r *runNewAnonymousClass) Run(ctx phpv.Context) (*phpv.ZVal, error) {
+	ctx.Tick(ctx, r.l)
+
+	// Register the anonymous class
+	err := ctx.Global().RegisterClass(r.class.Name, r.class)
+	if err != nil {
+		return nil, err
+	}
+	err = r.class.Compile(ctx)
+	if err != nil {
+		ctx.Global().UnregisterClass(r.class.Name)
+		return nil, err
+	}
+
+	// Evaluate constructor arguments
+	var args []*phpv.ZVal
+	for _, a := range r.constructorArgs {
+		v, err := a.Run(ctx)
+		if err != nil {
+			return nil, err
+		}
+		args = append(args, v)
+	}
+
+	// Create instance
+	obj, err := phpobj.NewZObject(ctx, r.class, args...)
+	if err != nil {
+		return nil, err
+	}
+	return obj.ZVal(), nil
+}
+
 func compileNew(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	// next should be either:
 	// T_CLASS (anonymous class)
@@ -152,7 +196,42 @@ func compileNew(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		return nil, err
 	}
 
-	if next.Type == tokenizer.T_VARIABLE {
+	if next.Type == tokenizer.T_CLASS {
+		// Anonymous class: new class [(args)] [extends X] [implements Y, Z] { ... }
+		// Parse optional constructor args first (before the class body)
+		peek, err := c.NextItem()
+		if err != nil {
+			return nil, err
+		}
+
+		var constructorArgs []phpv.Runnable
+		if peek.IsSingle('(') {
+			c.backup()
+			constructorArgs, err = compileFuncPassedArgs(c)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			c.backup()
+		}
+
+		// Compile the class using the normal class compiler but with T_CLASS token
+		// We back up and let compileClass handle extends/implements/body
+		classRunnable, err := compileClass(next, c)
+		if err != nil {
+			return nil, err
+		}
+
+		class := classRunnable.(*phpobj.ZClass)
+		// Generate unique anonymous class name
+		class.Name = phpv.ZString(fmt.Sprintf("class@anonymous%s:%d", n.l.Filename, n.l.Line))
+
+		return &runNewAnonymousClass{
+			class:           class,
+			constructorArgs: constructorArgs,
+			l:               n.l,
+		}, nil
+	} else if next.Type == tokenizer.T_VARIABLE {
 		v := phpv.Runnable(&runVariable{v: phpv.ZString(next.Data[1:]), l: next.Loc()})
 		// Check for property access or array subscript like $this->name or $a[0][1]
 		for {

@@ -1,8 +1,15 @@
 package phpv
 
 import (
+	"errors"
+	"math"
 	"sync"
 )
+
+// ErrNextElementOccupied is returned by Append when the next integer key
+// would overflow PHP_INT_MAX, matching PHP's "Cannot add element to the
+// array as the next element is already occupied" error.
+var ErrNextElementOccupied = errors.New("Cannot add element to the array as the next element is already occupied")
 
 type hashTableVal struct {
 	prev, next *hashTableVal
@@ -367,6 +374,10 @@ func (z *ZHashTable) Append(v *ZVal) error {
 
 	for {
 		if _, ok := z._idx_i[z.inc]; ok {
+			// If inc is at PHP_INT_MAX and that slot is taken, we cannot advance.
+			if z.inc == ZInt(math.MaxInt64) {
+				return ErrNextElementOccupied
+			}
 			z.inc += 1
 		} else {
 			break
@@ -375,7 +386,10 @@ func (z *ZHashTable) Append(v *ZVal) error {
 
 	nt := &hashTableVal{k: z.inc, v: v}
 	z._idx_i[z.inc] = nt
-	z.inc += 1
+	// Only increment if we won't overflow
+	if z.inc < ZInt(math.MaxInt64) {
+		z.inc += 1
+	}
 	z.count += 1
 
 	if z.last == nil {
