@@ -243,6 +243,10 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 						continue
 					}
 				}
+				// Convert the argument to a reference in-place so that the
+				// original location (hash table entry, object property, etc.)
+				// is also marked as a reference, matching PHP behavior.
+				callCtx.Args[i].MakeRef()
 				callCtx.Args[i] = callCtx.Args[i].Ref()
 
 				// Handle case foo($bar) where $bar is undefined

@@ -14,9 +14,13 @@ func stdFuncEcho(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		}
 		_, err = ctx.Write([]byte(s.Value().(phpv.ZString)))
 		if err != nil {
-			// Don't wrap PhpThrow errors (e.g. from output buffer callbacks)
-			// — they need to remain catchable by try/catch
+			// Don't wrap errors that already have context (PhpThrow, PhpError)
+			// — they originate from output buffer callbacks or similar and
+			// should preserve their original attribution, not "echo()".
 			if _, ok := err.(*phperr.PhpThrow); ok {
+				return nil, err
+			}
+			if _, ok := err.(*phpv.PhpError); ok {
 				return nil, err
 			}
 			return nil, ctx.FuncError(err)
@@ -36,6 +40,9 @@ func fncPrint(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	_, err = ctx.Write([]byte(s))
 	if err != nil {
 		if _, ok := err.(*phperr.PhpThrow); ok {
+			return nil, err
+		}
+		if _, ok := err.(*phpv.PhpError); ok {
 			return nil, err
 		}
 		return nil, ctx.FuncError(err)

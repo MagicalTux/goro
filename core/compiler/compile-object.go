@@ -545,6 +545,24 @@ func (r *runObjectVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 				return nil, err
 			}
 			if !found {
+				// Auto-create the property for return-by-reference and
+				// write-context auto-vivification. This matches PHP behavior
+				// where accessing an undefined property in write/ref context
+				// creates it as null without warning.
+				if oset, ok2 := objI.(interface {
+					ObjectSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) error
+				}); ok2 {
+					nullVal := phpv.ZNULL.ZVal()
+					if err := oset.ObjectSet(ctx, offt, nullVal); err != nil {
+						return nil, err
+					}
+					// Re-fetch from hash table to get the actual stored entry
+					v, _, err = oq.ObjectGetQuiet(ctx, offt)
+					if err != nil {
+						return nil, err
+					}
+					return v, nil
+				}
 				return phpv.ZNULL.ZVal(), nil
 			}
 			return v, nil

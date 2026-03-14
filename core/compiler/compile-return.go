@@ -50,6 +50,30 @@ func (r *runReturn) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	if err := ctx.Tick(ctx, r.l); err != nil {
 		return nil, err
 	}
+
+	// If returning by reference and the expression is a property access,
+	// enable write context so ObjectGetQuiet is used instead of ObjectGet.
+	// This suppresses "Undefined property" warnings and returns the actual
+	// hash table entry (not a detached copy), matching PHP semantics where
+	// returning an undefined property by reference auto-creates it.
+	var returnsByRef bool
+	if fc := ctx.Func(); fc != nil {
+		if cc, ok := fc.(interface{ Callable() phpv.Callable }); ok {
+			if c := cc.Callable(); c != nil {
+				if rr, ok := c.(interface{ ReturnsByRef() bool }); ok && rr.ReturnsByRef() {
+					returnsByRef = true
+				}
+			}
+		}
+	}
+
+	if returnsByRef {
+		if ov, ok := r.v.(*runObjectVar); ok {
+			ov.writeContext = true
+			defer func() { ov.writeContext = false }()
+		}
+	}
+
 	var ret *phpv.ZVal
 	if r.v != nil {
 		var err error
@@ -62,18 +86,12 @@ func (r *runReturn) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	}
 
 	// Check for "Only variable references should be returned by reference"
-	if fc := ctx.Func(); fc != nil {
-		if cc, ok := fc.(interface{ Callable() phpv.Callable }); ok {
-			if c := cc.Callable(); c != nil {
-				if rr, ok := c.(interface{ ReturnsByRef() bool }); ok && rr.ReturnsByRef() {
-					if !r.isReturnExprVariableLike() && (ret == nil || !ret.IsRef()) {
-						// Re-tick to restore location after expression evaluation
-						ctx.Tick(ctx, r.l)
-						ctx.Notice("Only variable references should be returned by reference",
-							logopt.NoFuncName(true))
-					}
-				}
-			}
+	if returnsByRef {
+		if !r.isReturnExprVariableLike() && (ret == nil || !ret.IsRef()) {
+			// Re-tick to restore location after expression evaluation
+			ctx.Tick(ctx, r.l)
+			ctx.Notice("Only variable references should be returned by reference",
+				logopt.NoFuncName(true))
 		}
 	}
 

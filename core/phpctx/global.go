@@ -428,6 +428,11 @@ func (g *Global) RunFile(fn string) error {
 	_, err := g.requireMain(phpv.ZString(fn))
 	err = phpv.FilterExitError(err)
 
+	// deferredErr holds fatal PHP errors that should be logged after
+	// shutdown functions and destructors have run (matching PHP behavior
+	// where fatal errors are displayed after destructor output).
+	var deferredErr *phpv.PhpError
+
 	switch innerErr := phpv.UnwrapError(err).(type) {
 	case *phpv.PhpExit:
 	case *phperr.PhpTimeout:
@@ -458,8 +463,8 @@ func (g *Global) RunFile(fn string) error {
 					g.WriteErr([]byte(fmt.Sprintf("\nFatal error: %s\n  thrown in %s on line %d\n", trace, loc.Filename, loc.Line)))
 					err = nil
 				} else if phpErr, ok := err.(*phpv.PhpError); ok {
-					// Fatal PHP errors: log them and continue to shutdown functions
-					g.LogError(phpErr)
+					// Defer fatal PHP errors until after shutdown/destructors
+					deferredErr = phpErr
 					err = nil
 				} else {
 					return err
@@ -491,7 +496,14 @@ func (g *Global) RunFile(fn string) error {
 		g.header.SendHeaders(g)
 	}
 
-	return g.Close()
+	closeErr := g.Close()
+
+	// Log the deferred fatal error after destructors have run
+	if deferredErr != nil {
+		g.LogError(deferredErr)
+	}
+
+	return closeErr
 }
 
 func (g *Global) Write(v []byte) (int, error) {
