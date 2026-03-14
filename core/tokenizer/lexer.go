@@ -23,6 +23,7 @@ type Lexer struct {
 	items      chan *Item
 	prevItem   *Item
 	base       lexState
+	done       chan struct{} // closed to signal the lexer goroutine to stop
 
 	inputRst []byte
 	output   bytes.Buffer
@@ -45,6 +46,7 @@ func NewLexerWithShortTag(i io.Reader, fn string, shortOpenTag bool) *Lexer {
 		input:        bufio.NewReader(i),
 		fn:           fn, // filename, for position information
 		items:        make(chan *Item, 2),
+		done:         make(chan struct{}),
 		sLine:        1,
 		cLine:        1,
 		ShortOpenTag: shortOpenTag,
@@ -60,6 +62,7 @@ func NewLexerPhp(i io.Reader, fn string) *Lexer {
 		input: bufio.NewReader(i),
 		fn:    fn, // filename, for position information
 		items: make(chan *Item, 2),
+		done:  make(chan struct{}),
 		sLine: 1,
 		cLine: 1,
 	}
@@ -118,6 +121,12 @@ func (l *Lexer) hasPrefixI(s string) bool {
 func (l *Lexer) run(state lexState) {
 	l.push(state)
 	for state = l.base; state != nil; {
+		// Check if we've been told to stop
+		select {
+		case <-l.done:
+			return
+		default:
+		}
 		state = state(l)
 	}
 	close(l.items)
@@ -125,14 +134,31 @@ func (l *Lexer) run(state lexState) {
 
 func (l *Lexer) emit(t ItemType) {
 	item := &Item{t, l.output.String(), l.fn, l.sLine, l.sChar}
-	l.items <- item
+	select {
+	case l.items <- item:
+	case <-l.done:
+		return
+	}
 	l.prevItem = item
 	l.start = l.pos
 	l.sLine, l.sChar = l.cLine, l.cChar
 	l.output.Reset()
 }
 
+func (l *Lexer) isDone() bool {
+	select {
+	case <-l.done:
+		return true
+	default:
+		return false
+	}
+}
+
 func (l *Lexer) next() rune {
+	if l.isDone() {
+		return eof
+	}
+
 	var r rune
 	var err error
 
@@ -334,11 +360,25 @@ func (l *Lexer) acceptPhpLabel() string {
 }
 
 func (l *Lexer) error(format string, args ...interface{}) lexState {
-	l.items <- &Item{
+	select {
+	case l.items <- &Item{
 		itemError,
 		fmt.Sprintf(format, args...),
 		l.fn,
 		l.sLine, l.sChar,
+	}:
+	case <-l.done:
 	}
 	return nil
+}
+
+// Close signals the lexer goroutine to stop. This should be called
+// when compilation is aborted (e.g., on timeout) to prevent goroutine leaks.
+func (l *Lexer) Close() {
+	select {
+	case <-l.done:
+		// already closed
+	default:
+		close(l.done)
+	}
 }

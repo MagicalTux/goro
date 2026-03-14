@@ -155,6 +155,7 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 			c = result.c
 			compileErr = result.err
 		case <-time.After(10 * time.Second):
+			t.Close() // stop the lexer goroutine
 			g.Close()
 			return fmt.Errorf("compile timed out after 10s")
 		}
