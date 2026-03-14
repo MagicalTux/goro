@@ -461,43 +461,79 @@ func fncArrayWalkRecursive(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, err
 
 // > func array array_map ( callable $callback , array $array1 [, array $... ] )
 func fncArrayMap(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	var callback phpv.Callable
-	var array *phpv.ZArray
-	_, err := core.Expand(ctx, args, &callback, &array)
-	if err != nil {
-		return nil, err
+	if len(args) < 2 {
+		return nil, ctx.Errorf("array_map() expects at least 2 arguments, %d given", len(args))
 	}
 
-	maxLen := int(array.Count(ctx))
-	arrays := []*phpv.ZArray{array}
-	result := phpv.NewZArray()
+	// Check if callback is null (special zip mode)
+	callbackIsNull := args[0].GetType() == phpv.ZtNull
 
-	for i := 2; i < len(args); i++ {
+	var callback phpv.Callable
+	if !callbackIsNull {
+		var err error
+		callback, err = core.SpawnCallable(ctx, args[0])
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Collect all arrays
+	var arrays []*phpv.ZArray
+	maxLen := 0
+	for i := 1; i < len(args); i++ {
 		b, err := args[i].As(ctx, phpv.ZtArray)
 		if err != nil {
 			return nil, err
 		}
-		array := b.Value().(*phpv.ZArray)
-		arrays = append(arrays, array)
-		maxLen = max(maxLen, int(array.Count(ctx)))
+		arr := b.Value().(*phpv.ZArray)
+		arrays = append(arrays, arr)
+		if l := int(arr.Count(ctx)); l > maxLen {
+			maxLen = l
+		}
 	}
 
-	for i := 0; i < maxLen; i++ {
-		var args []*phpv.ZVal
-		for _, arr := range arrays {
-			val, err := arr.OffsetGet(ctx, phpv.ZInt(i))
+	result := phpv.NewZArray()
+
+	if callbackIsNull {
+		if len(arrays) == 1 {
+			// Single array with null callback: return a copy of the array
+			for k, v := range arrays[0].Iterate(ctx) {
+				result.OffsetSet(ctx, k, v.Dup())
+			}
+		} else {
+			// Multiple arrays: zip into arrays of corresponding elements
+			for i := 0; i < maxLen; i++ {
+				sub := phpv.NewZArray()
+				for _, arr := range arrays {
+					val, err := arr.OffsetGet(ctx, phpv.ZInt(i))
+					if err != nil {
+						sub.OffsetSet(ctx, nil, phpv.ZNULL.ZVal())
+					} else {
+						sub.OffsetSet(ctx, nil, val.Dup())
+					}
+				}
+				result.OffsetSet(ctx, nil, sub.ZVal())
+			}
+		}
+	} else {
+		for i := 0; i < maxLen; i++ {
+			var callArgs []*phpv.ZVal
+			for _, arr := range arrays {
+				val, err := arr.OffsetGet(ctx, phpv.ZInt(i))
+				if err != nil {
+					callArgs = append(callArgs, phpv.ZNULL.ZVal())
+				} else {
+					callArgs = append(callArgs, val)
+				}
+			}
+			val, err := ctx.CallZValInternal(ctx, callback, callArgs)
 			if err != nil {
 				return nil, err
 			}
-			args = append(args, val)
-		}
-		val, err := ctx.CallZValInternal(ctx, callback, args)
-		if err != nil {
-			return nil, err
-		}
-		err = result.OffsetSet(ctx, nil, val)
-		if err != nil {
-			return nil, err
+			err = result.OffsetSet(ctx, nil, val)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 

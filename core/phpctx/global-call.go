@@ -29,7 +29,10 @@ func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, o
 	}
 
 	// Expand spread arguments (...$arr) into individual args before evaluation
-	args = expandSpreadArgs(ctx, args)
+	args, err := expandSpreadArgs(ctx, args)
+	if err != nil {
+		return nil, err
+	}
 
 	// Save call site location (arg evaluation may change global location)
 	callLoc := ctx.Loc()
@@ -440,7 +443,8 @@ func (c *Global) Parent(n int) phpv.Context {
 // expandSpreadArgs expands any SpreadArgument entries by evaluating the
 // expression and creating a runZVal wrapper for each element of the result array.
 // Non-spread arguments are passed through unchanged.
-func expandSpreadArgs(ctx phpv.Context, args []phpv.Runnable) []phpv.Runnable {
+// Returns an error (TypeError) if a non-array/Traversable value is spread.
+func expandSpreadArgs(ctx phpv.Context, args []phpv.Runnable) ([]phpv.Runnable, error) {
 	// Quick check: any spread args?
 	hasSpread := false
 	for _, arg := range args {
@@ -450,7 +454,7 @@ func expandSpreadArgs(ctx phpv.Context, args []phpv.Runnable) []phpv.Runnable {
 		}
 	}
 	if !hasSpread {
-		return args
+		return args, nil
 	}
 
 	result := make([]phpv.Runnable, 0, len(args))
@@ -464,9 +468,7 @@ func expandSpreadArgs(ctx phpv.Context, args []phpv.Runnable) []phpv.Runnable {
 		inner := sa.Inner()
 		val, err := inner.Run(ctx)
 		if err != nil {
-			// Can't return error from here, wrap as a runnable that will error
-			result = append(result, arg)
-			continue
+			return nil, err
 		}
 		// Detect if spread source is a variable (can be passed by reference)
 		_, isWritable := inner.(phpv.Writable)
@@ -507,10 +509,23 @@ func expandSpreadArgs(ctx phpv.Context, args []phpv.Runnable) []phpv.Runnable {
 				}
 				if obj.GetClass().Implements(phpobj.Iterator) {
 					obj.CallMethod(ctx, "rewind")
+					seenStringKey := false
 					for {
 						v, err := obj.CallMethod(ctx, "valid")
 						if err != nil || !v.AsBool(ctx) {
 							break
+						}
+						key, kerr := obj.CallMethod(ctx, "key")
+						if kerr != nil {
+							break
+						}
+						// Track named (string key) vs positional (integer key)
+						if key.GetType() == phpv.ZtString {
+							seenStringKey = true
+						} else if seenStringKey {
+							// Positional argument after named argument during unpacking
+							return nil, phpobj.ThrowError(ctx, phpobj.Error,
+								"Cannot use positional argument after named argument during unpacking")
 						}
 						value, err := obj.CallMethod(ctx, "current")
 						if err != nil {
@@ -522,11 +537,20 @@ func expandSpreadArgs(ctx phpv.Context, args []phpv.Runnable) []phpv.Runnable {
 					continue
 				}
 			}
+			// Object that does not implement Traversable
+			typeName := "stdClass"
+			if obj, ok := val.Value().(*phpobj.ZObject); ok {
+				typeName = string(obj.GetClass().GetName())
+			}
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+				fmt.Sprintf("Only arrays and Traversables can be unpacked, %s given", typeName))
 		}
-		// Non-iterable spread: error will be caught at call time
-		result = append(result, &spreadZVal{v: val, fromLiteral: true})
+		// Non-iterable, non-object spread: TypeError
+		typeName := val.GetType().TypeName()
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("Only arrays and Traversables can be unpacked, %s given", typeName))
 	}
-	return result
+	return result, nil
 }
 
 // spreadZVal is a Runnable wrapper for pre-evaluated spread argument values.

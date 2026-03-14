@@ -228,7 +228,9 @@ func compileNew(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 
 		class := classRunnable.(*phpobj.ZClass)
 		// Generate unique anonymous class name
-		class.Name = phpv.ZString(fmt.Sprintf("class@anonymous%s:%d", n.l.Filename, n.l.Line))
+		// PHP uses class@anonymous\x00path:line$index internally,
+		// but GetName() returns just "class@anonymous"
+		class.Name = phpv.ZString(fmt.Sprintf("class@anonymous\x00%s:%d$0", n.l.Filename, n.l.Line))
 
 		return &runNewAnonymousClass{
 			class:           class,

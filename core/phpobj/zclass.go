@@ -46,6 +46,11 @@ func (c *ZClass) GetName() phpv.ZString {
 	if c == nil {
 		return ""
 	}
+	// Anonymous classes have internal names like "class@anonymous\x00path:line$0"
+	// GetName() returns the display name (before the null byte)
+	if idx := strings.IndexByte(string(c.Name), 0); idx >= 0 {
+		return c.Name[:idx]
+	}
 	return c.Name
 }
 
