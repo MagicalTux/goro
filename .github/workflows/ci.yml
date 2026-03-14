@@ -45,7 +45,7 @@ jobs:
           go-version: '1.26'
 
       - name: Test with coverage
-        run: go test -v -count=1 -covermode=count -coverprofile=coverage.out ./...
+        run: go test -v -count=1 -covermode=count -coverpkg=./... -coverprofile=coverage.out ./...
 
       - name: Upload coverage to Coveralls
         uses: coverallsapp/github-action@v2
