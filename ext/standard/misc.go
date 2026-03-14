@@ -35,7 +35,7 @@ func constant(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		if zc, ok := class.(*phpobj.ZClass); ok {
 			cc, ok := zc.Const[constName]
 			if !ok {
-				return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Undefined class constant %s::%s", className, constName))
+				return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Undefined constant %s::%s", className, constName))
 			}
 
 			// Check visibility
@@ -63,7 +63,7 @@ func constant(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			return v.ZVal(), nil
 		}
 
-		return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Undefined class constant %s::%s", className, constName))
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Undefined constant %s::%s", className, constName))
 	}
 
 	k, ok := ctx.Global().ConstantGet(name)

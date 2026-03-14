@@ -143,6 +143,10 @@ func fncDebugBacktrace(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 	provideObject := (opts & int64(DEBUG_BACKTRACE_PROVIDE_OBJECT)) != 0
 
 	rawTrace := ctx.GetStackTrace(ctx)
+	// Skip the first frame (debug_backtrace itself)
+	if len(rawTrace) > 0 {
+		rawTrace = rawTrace[1:]
+	}
 
 	lim := 0
 	if limit != nil && *limit > 0 {

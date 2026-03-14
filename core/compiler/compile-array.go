@@ -470,14 +470,12 @@ func (ac *runArrayAccess) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 		}
 	case phpv.ZtBool:
 		if !bool(v.AsBool(ctx)) {
-			// PHP 8.1: false auto-vivifies to array with deprecation warning
+			// PHP 8.1: false auto-vivifies to empty array with deprecation warning
 			if err := ctx.Deprecated("Automatic conversion of false to array is deprecated", logopt.NoFuncName(true)); err != nil {
 				return err
 			}
-			err = v.CastTo(ctx, phpv.ZtArray)
-			if err != nil {
-				return err
-			}
+			// Set to empty array (not cast, which would produce [false])
+			v.Set(phpv.NewZArray().ZVal())
 			if wr, ok := ac.value.(phpv.Writable); ok {
 				wr.WriteValue(ctx, v)
 			}
