@@ -1407,6 +1407,12 @@ func (g *Global) MemLimit() uint64 {
 	return g.mem.Limit()
 }
 
+// OpenFile opens a file for reading through the global file access layer.
+// This centralizes file access so it can later be scoped to an fs.FS.
+func (g *Global) OpenFile(ctx phpv.Context, path string) (io.ReadCloser, error) {
+	return os.Open(path)
+}
+
 func (g *Global) GetLoadedExtensions() []string {
 	return slices.Collect(maps.Keys(globalExtMap))
 }

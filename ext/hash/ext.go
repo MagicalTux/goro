@@ -20,7 +20,9 @@ func init() {
 		Functions: map[string]*phpctx.ExtFunction{
 			"hash":        {Func: fncHash, Args: []*phpctx.ExtFunctionArg{}},
 			"hash_algos":  {Func: fncHashAlgos, Args: []*phpctx.ExtFunctionArg{}},
-			"hash_equals": {Func: fncHashEquals, Args: []*phpctx.ExtFunctionArg{}},
+			"hash_equals":    {Func: fncHashEquals, Args: []*phpctx.ExtFunctionArg{}},
+			"hash_file":      {Func: fncHashFile, Args: []*phpctx.ExtFunctionArg{}},
+			"hash_hmac_file": {Func: fncHashHmacFile, Args: []*phpctx.ExtFunctionArg{}},
 			"hash_final":  {Func: fncHashFinal, Args: []*phpctx.ExtFunctionArg{}},
 			"hash_hkdf":   {Func: fncHashHkdf, Args: []*phpctx.ExtFunctionArg{}},
 			"hash_hmac":   {Func: fncHashHmac, Args: []*phpctx.ExtFunctionArg{}},

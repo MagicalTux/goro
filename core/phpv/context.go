@@ -129,6 +129,11 @@ type GlobalContext interface {
 	CheckOpenBasedir(ctx Context, path string, funcName string) error
 	IsWithinOpenBasedir(path string) bool
 
+	// OpenFile opens a file for reading through the global file access layer.
+	// This centralizes file access so it can be scoped to an fs.FS in the future.
+	// The caller must close the returned ReadCloser.
+	OpenFile(ctx Context, path string) (io.ReadCloser, error)
+
 	IsUploadedFile(path string) bool
 	UnregisterUploadedFile(path string)
 }
