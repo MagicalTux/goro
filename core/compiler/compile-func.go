@@ -531,7 +531,14 @@ func collectVarsWalk(r phpv.Runnable, seen map[phpv.ZString]bool, result *[]phpv
 	case *runZVal:
 		// literal, no variables
 	case *ZClosure:
-		// nested closure, don't walk into it
+		// For nested arrow functions, their auto-captured variables need
+		// to be available in our scope too. Walk the use list.
+		for _, u := range v.use {
+			if !seen[u.VarName] {
+				seen[u.VarName] = true
+				*result = append(*result, u.VarName)
+			}
+		}
 	default:
 		// For other types, use reflection or just skip
 	}
