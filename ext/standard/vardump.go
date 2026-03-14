@@ -75,6 +75,10 @@ func doVarDump(ctx phpv.Context, z *phpv.ZVal, linePfx string, recurs map[uintpt
 			if !it.Valid(ctx) {
 				break
 			}
+			// Check deadline during long iterations
+			if err := ctx.Tick(ctx, nil); err != nil {
+				return err
+			}
 			k, err := it.Key(ctx)
 			if err != nil {
 				return err

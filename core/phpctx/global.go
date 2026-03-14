@@ -767,7 +767,7 @@ func (g *Global) IterateConfig() iter.Seq2[string, phpv.IniValue] {
 func (g *Global) Tick(ctx phpv.Context, l *phpv.Loc) error {
 	g.l = l
 	g.tickCount++
-	if g.tickCount&0x3F == 0 {
+	if g.tickCount&0xFF == 0 {
 		deadline := g.timerStart.Add(g.deadlineDuration)
 		if time.Until(deadline) <= 0 {
 			seconds := math.Round(g.deadlineDuration.Seconds())
@@ -1225,6 +1225,10 @@ func (g *Global) GetClass(ctx phpv.Context, name phpv.ZString, autoload bool) (p
 			g.autoloadingClass[nameLower] = true
 			defer delete(g.autoloadingClass, nameLower)
 			for _, loader := range g.autoloadFuncs {
+				// Check deadline before calling each autoloader
+				if err := g.Tick(ctx, g.l); err != nil {
+					return nil, err
+				}
 				_, err := ctx.CallZVal(ctx, loader, []*phpv.ZVal{name.ZVal()})
 				if err != nil {
 					return nil, err

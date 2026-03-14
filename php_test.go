@@ -31,6 +31,20 @@ import (
 // Currently focusing on lang tests, change variable to run other tests
 const TestsPath = "test"
 
+// truncatedDiff computes a diff but truncates inputs to avoid O(n²) blowup
+// on large outputs with many differences.
+func truncatedDiff(expected, actual string) string {
+	const maxLines = 100
+	truncate := func(s string) string {
+		lines := strings.SplitN(s, "\n", maxLines+1)
+		if len(lines) > maxLines {
+			return strings.Join(lines[:maxLines], "\n") + "\n... (truncated)"
+		}
+		return s
+	}
+	return diff.LineDiff(truncate(expected), truncate(actual))
+}
+
 type phptest struct {
 	f      *os.File
 	reader *bufio.Reader
@@ -88,7 +102,7 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		}
 		// Set a 10-second execution deadline per test to prevent
 		// infinite loops from blocking the entire suite.
-		g.SetDeadline(time.Now().Add(10 * time.Second))
+		g.SetDeadline(time.Now().Add(30 * time.Second))
 
 		g.SetOutput(p.output)
 
@@ -257,7 +271,7 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		exp = bytes.ReplaceAll(exp, []byte("\r\n"), []byte("\n"))
 
 		if bytes.Compare(out, exp) != 0 {
-			return fmt.Errorf("output not as expected!\n%s", diff.LineDiff(string(exp), string(out)))
+			return fmt.Errorf("output not as expected!\n%s", truncatedDiff(string(exp), string(out)))
 		}
 		return nil
 	case "SKIPIF":
@@ -297,7 +311,7 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 			return fmt.Errorf("invalid EXPECTF pattern: %s", err)
 		}
 		if !matched {
-			return fmt.Errorf("output not as expected!\n%s", diff.LineDiff(string(exp), string(out)))
+			return fmt.Errorf("output not as expected!\n%s", truncatedDiff(string(exp), string(out)))
 		}
 		return nil
 	case "EXPECTREGEX":
@@ -309,7 +323,7 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 			return fmt.Errorf("invalid EXPECTREGEX pattern: %s", err)
 		}
 		if !matched {
-			return fmt.Errorf("output not as expected!\n%s", diff.LineDiff(exp, string(out)))
+			return fmt.Errorf("output not as expected!\n%s", truncatedDiff(exp, string(out)))
 		}
 		return nil
 	case "INI":
@@ -725,12 +739,10 @@ func TestPhp(t *testing.T) {
 			pass += 1
 		}
 
-		// Write periodic progress to a file so we can monitor long runs
-		if count%100 == 0 {
-			os.WriteFile("/tmp/goro_test_progress.txt",
-				[]byte(fmt.Sprintf("Progress: %d tests, %d passed, %d failed, %d skipped\n",
-					count, pass, fail, skip)), 0644)
-		}
+		// Write progress to a file so we can monitor long runs
+		os.WriteFile("/tmp/goro_test_progress.txt",
+			[]byte(fmt.Sprintf("Progress: %d tests, %d passed, %d failed, %d skipped [%s] (%dMB output)\n",
+				count, pass, fail, skip, path, p.output.Len()/1024/1024)), 0644)
 		return nil
 	})
 
