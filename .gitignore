@@ -19,3 +19,18 @@
 .*.swp
 /php-cli
 *.test
+
+# Test artifacts created by PHP test suite
+test/php-8.5.4/ext/standard/file/*.tmp
+test/php-8.5.4/ext/standard/file/*.tmp*
+test/php-8.5.4/ext/standard/file/tempnamVar1/
+test/php-8.5.4/ext/standard/file/fopen_variation*.dir/
+test/php-8.5.4/ext/standard/file/FileGetContentsVar*.tmp
+test/php-8.5.4/ext/standard/file/*_variation6/
+test/php-8.5.4/ext/standard/file/*_variation4-0/
+test/php-8.5.4/ext/standard/filters/69b5*
+test/php-8.5.4/ext/standard/image/*.jpg
+test/php-8.5.4/ext/standard/image/*.data
+test/php-8.5.4/ext/standard/mail/maillog
+test/php-8.5.4/ext/standard/general_functions/*.ini
+test/php-8.5.4/ext/spl/SplFileObject/*.tmp
