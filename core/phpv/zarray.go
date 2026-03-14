@@ -85,6 +85,13 @@ func (a *ZArray) Dup() *ZArray {
 	return &ZArray{h: a.h.Dup()}
 }
 
+// SeparateCow forces copy-on-write separation if needed. This must be called
+// before taking references to hash table entries (e.g., for by-ref spread)
+// to avoid modifying data shared with other arrays.
+func (a *ZArray) SeparateCow() {
+	a.h.SeparateCow()
+}
+
 func (a *ZArray) AsVal(ctx Context, t ZType) (Val, error) {
 	switch t {
 	case ZtBool, ZtInt, ZtFloat:

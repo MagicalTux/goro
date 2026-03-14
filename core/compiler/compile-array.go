@@ -99,14 +99,19 @@ func (a runArray) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 					if k.GetType() == phpv.ZtString {
 						array.OffsetSet(ctx, k, v.Dup())
 					} else {
-						array.OffsetSet(ctx, nil, v.Dup())
+						err := array.OffsetSet(ctx, nil, v.Dup())
+						if err != nil {
+							return nil, phpobj.ThrowError(ctx, phpobj.Error, err.Error())
+						}
 					}
 				}
 			} else if v.GetType() == phpv.ZtObject {
 				// Handle Traversable objects (Iterator, IteratorAggregate, Generator)
 				obj, ok := v.Value().(*phpobj.ZObject)
 				if !ok {
-					return nil, fmt.Errorf("Only arrays and Traversables can be unpacked")
+					typeName := "object"
+					return nil, phpobj.ThrowError(ctx, phpobj.Error,
+						fmt.Sprintf("Only arrays and Traversables can be unpacked, %s given", typeName))
 				}
 				if obj.GetClass().Implements(phpobj.IteratorAggregate) {
 					iterResult, iterErr := obj.CallMethod(ctx, "getIterator")
@@ -126,6 +131,11 @@ func (a runArray) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 						key, kerr := obj.CallMethod(ctx, "key")
 						if kerr != nil {
 							break
+						}
+						// Validate key type: must be int or string
+						if key.GetType() != phpv.ZtInt && key.GetType() != phpv.ZtString {
+							return nil, phpobj.ThrowError(ctx, phpobj.Error,
+								"Keys must be of type int|string during array unpacking")
 						}
 						value, verr := obj.CallMethod(ctx, "current")
 						if verr != nil {
@@ -147,10 +157,14 @@ func (a runArray) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 						obj.CallMethod(ctx, "next")
 					}
 				} else {
-					return nil, fmt.Errorf("Only arrays and Traversables can be unpacked")
+					typeName := string(obj.GetClass().GetName())
+					return nil, phpobj.ThrowError(ctx, phpobj.Error,
+						fmt.Sprintf("Only arrays and Traversables can be unpacked, %s given", typeName))
 				}
 			} else {
-				return nil, fmt.Errorf("Only arrays and Traversables can be unpacked")
+				typeName := v.GetType().TypeName()
+				return nil, phpobj.ThrowError(ctx, phpobj.Error,
+					fmt.Sprintf("Only arrays and Traversables can be unpacked, %s given", typeName))
 			}
 			continue
 		}

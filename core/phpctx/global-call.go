@@ -477,6 +477,8 @@ func expandSpreadArgs(ctx phpv.Context, args []phpv.Runnable) ([]phpv.Runnable, 
 			if isWritable {
 				// From a variable: pass the actual hash table entries (for by-ref)
 				// so that modifications inside the function propagate back.
+				// Force COW separation first so we don't modify shared data.
+				arr.SeparateCow()
 				it := arr.NewIterator()
 				for it.Valid(ctx) {
 					// Use CurrentRef to get the actual ZVal without duplication
