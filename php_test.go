@@ -131,34 +131,8 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		shortOpenTag := bool(g.GetConfig("short_open_tag", phpv.ZBool(true).ZVal()).AsBool(g))
 		t := tokenizer.NewLexerWithShortTag(b, scriptPath, shortOpenTag)
 
-		// Run compilation with a timeout - some tests cause the
-		// tokenizer/compiler to deadlock on heredoc parsing etc.
-		type compileResult struct {
-			c   phpv.Runnable
-			err error
-		}
-		compileCh := make(chan compileResult, 1)
-		go func() {
-			defer func() {
-				if r := recover(); r != nil {
-					compileCh <- compileResult{nil, fmt.Errorf("compile panic: %v", r)}
-				}
-			}()
-			cr, cerr := compiler.Compile(g, t)
-			compileCh <- compileResult{cr, cerr}
-		}()
-
-		var c phpv.Runnable
-		var compileErr error
-		select {
-		case result := <-compileCh:
-			c = result.c
-			compileErr = result.err
-		case <-time.After(10 * time.Second):
-			t.Close() // stop the lexer goroutine
-			g.Close()
-			return fmt.Errorf("compile timed out after 10s")
-		}
+		// Compile (timeout is enforced by Compile via the Global's deadline)
+		c, compileErr := compiler.Compile(g, t)
 
 		if compileErr != nil {
 			// Filter exit errors from compile (e.g., E_COMPILE_ERROR already output)

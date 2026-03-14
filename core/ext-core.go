@@ -93,6 +93,7 @@ func init() {
 			"set_error_handler":         {Func: fncSetErrorHandler, Args: []*phpctx.ExtFunctionArg{}},
 			"set_exception_handler":     {Func: fncSetExceptionHandler, Args: []*phpctx.ExtFunctionArg{}},
 			"sizeof":                    {Func: fncCount, Args: []*phpctx.ExtFunctionArg{}}, // alias
+			"spl_autoload":              {Func: fncSplAutoload, Args: []*phpctx.ExtFunctionArg{}},
 			"spl_autoload_register":     {Func: fncSplAutoloadRegister, Args: []*phpctx.ExtFunctionArg{}},
 			"spl_autoload_unregister":   {Func: fncSplAutoloadUnregister, Args: []*phpctx.ExtFunctionArg{}},
 			"strcmp":                    {Func: fncStrcmp, Args: []*phpctx.ExtFunctionArg{}},

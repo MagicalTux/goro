@@ -3,6 +3,7 @@ package compiler
 import (
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/MagicalTux/goro/core/phpctx"
 	"github.com/MagicalTux/goro/core/phperr"
@@ -211,6 +212,41 @@ func init() {
 }
 
 func Compile(parent phpv.Context, t *tokenizer.Lexer) (phpv.Runnable, error) {
+	// Check if the global context has a deadline. If so, enforce it on compilation
+	// to prevent tokenizer/compiler deadlocks from hanging forever.
+	if deadline, ok := parent.Global().Deadline(); ok {
+		timeout := time.Until(deadline)
+		if timeout <= 0 {
+			t.Close()
+			return nil, fmt.Errorf("compile deadline already expired")
+		}
+		type result struct {
+			r   phpv.Runnable
+			err error
+		}
+		ch := make(chan result, 1)
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					ch <- result{nil, fmt.Errorf("compile panic: %v", r)}
+				}
+			}()
+			r, err := compileInner(parent, t)
+			ch <- result{r, err}
+		}()
+		select {
+		case res := <-ch:
+			return res.r, res.err
+		case <-time.After(timeout):
+			t.Close()
+			return nil, fmt.Errorf("compile timed out")
+		}
+	}
+
+	return compileInner(parent, t)
+}
+
+func compileInner(parent phpv.Context, t *tokenizer.Lexer) (phpv.Runnable, error) {
 	c := &compileRootCtx{
 		Context: parent,
 		t:       t,
