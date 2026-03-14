@@ -9,6 +9,7 @@ import (
 	"mime"
 	"mime/multipart"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 
@@ -101,6 +102,18 @@ func (g *Global) parsePost(p, f *phpv.ZArray) error {
 		}
 		read := multipart.NewReader(io.LimitReader(g.req.Body, 64*1024*1024), boundary) // max 64MB body size, TODO use php.ini to set this value
 
+		// File upload settings
+		fileUploads := g.GetConfig("file_uploads", phpv.ZString("1").ZVal()).String() != "0"
+		uploadMaxFilesize := parseIniSize(g.GetConfig("upload_max_filesize", phpv.ZString("2M").ZVal()).String())
+		maxFileUploads := parseIniSize(g.GetConfig("max_file_uploads", phpv.ZString("20").ZVal()).String())
+		uploadTmpDir := g.GetConfig("upload_tmp_dir", phpv.ZString("").ZVal()).String()
+		if uploadTmpDir == "" {
+			uploadTmpDir = os.TempDir()
+		}
+		var fileCount int64
+		var anonFileIdx int
+		var maxFileSize int64 = -1 // MAX_FILE_SIZE form field, -1 = not set
+
 		for {
 			part, err := read.NextPart()
 			if err != nil {
@@ -111,14 +124,116 @@ func (g *Global) parsePost(p, f *phpv.ZArray) error {
 			}
 
 			k := phpFormName(part)
-			fn := part.FileName()
-			if fn != "" {
-				// THIS IS A FILE
-				// TODO
+			cd := part.Header.Get("Content-Disposition")
+			fn := phpPartFilename(part)
+			hasFilenameParam := strings.Contains(strings.ToLower(cd), "filename=")
+
+			if hasFilenameParam {
+				// This is a file upload part
+				if !fileUploads {
+					// file_uploads=0: silently skip file parts, consume body
+					io.Copy(io.Discard, part)
+					continue
+				}
+
+				// Validate name for proper bracket structure
+				if k != "" && !isValidFileUploadName(k) {
+					io.Copy(io.Discard, part)
+					continue
+				}
+
+				// Empty filename = UPLOAD_ERR_NO_FILE (doesn't count towards limit)
+				if fn == "" {
+					io.Copy(io.Discard, part)
+					fileEntry := phpv.NewZArray()
+					fileEntry.OffsetSet(g, phpv.ZString("name").ZVal(), phpv.ZString("").ZVal())
+					fileEntry.OffsetSet(g, phpv.ZString("full_path").ZVal(), phpv.ZString("").ZVal())
+					fileEntry.OffsetSet(g, phpv.ZString("type").ZVal(), phpv.ZString("").ZVal())
+					fileEntry.OffsetSet(g, phpv.ZString("tmp_name").ZVal(), phpv.ZString("").ZVal())
+					fileEntry.OffsetSet(g, phpv.ZString("error").ZVal(), phpv.ZInt(4).ZVal()) // UPLOAD_ERR_NO_FILE
+					fileEntry.OffsetSet(g, phpv.ZString("size").ZVal(), phpv.ZInt(0).ZVal())
+					if k == "" {
+						f.OffsetSet(g, phpv.ZInt(anonFileIdx).ZVal(), fileEntry.ZVal())
+						anonFileIdx++
+					} else {
+						setFileToArray(g, k, fileEntry, f)
+					}
+					continue
+				}
+
+				fileCount++
+				if maxFileUploads > 0 && fileCount > maxFileUploads {
+					io.Copy(io.Discard, part)
+					continue
+				}
+
+				// Extract basename for "name" field, keep raw for "full_path"
+				rawFilename := fn
+				basename := phpBasename(rawFilename)
+
+				// Read file data to temp file
+				tmpFile, err := os.CreateTemp(uploadTmpDir, "php")
+				if err != nil {
+					io.Copy(io.Discard, part)
+					continue
+				}
+
+				size, copyErr := io.Copy(tmpFile, part)
+				tmpFile.Close()
+
+				// Determine upload error
+				uploadErr := phpv.ZInt(0) // UPLOAD_ERR_OK
+				if copyErr != nil {
+					// Partial upload (truncated/missing boundary)
+					os.Remove(tmpFile.Name())
+					uploadErr = phpv.ZInt(3) // UPLOAD_ERR_PARTIAL
+				} else if uploadMaxFilesize > 0 && size > uploadMaxFilesize {
+					os.Remove(tmpFile.Name())
+					uploadErr = phpv.ZInt(1) // UPLOAD_ERR_INI_SIZE
+				} else if maxFileSize >= 0 && size > maxFileSize {
+					os.Remove(tmpFile.Name())
+					uploadErr = phpv.ZInt(2) // UPLOAD_ERR_FORM_SIZE
+				}
+
+				// Register temp file for cleanup (even on error, in case it wasn't removed)
+				if uploadErr == 0 {
+					g.RegisterTempFile(tmpFile.Name())
+					g.RegisterUploadedFile(tmpFile.Name())
+				}
+
+				// Clean Content-Type (trim trailing semicolons/whitespace)
+				contentType := strings.TrimRight(part.Header.Get("Content-Type"), "; \t")
+
+				// Build the $_FILES entry
+				fileEntry := phpv.NewZArray()
+				fileEntry.OffsetSet(g, phpv.ZString("name").ZVal(), phpv.ZString(basename).ZVal())
+				fileEntry.OffsetSet(g, phpv.ZString("full_path").ZVal(), phpv.ZString(rawFilename).ZVal())
+				if uploadErr == 0 {
+					fileEntry.OffsetSet(g, phpv.ZString("type").ZVal(), phpv.ZString(contentType).ZVal())
+					fileEntry.OffsetSet(g, phpv.ZString("tmp_name").ZVal(), phpv.ZString(tmpFile.Name()).ZVal())
+					fileEntry.OffsetSet(g, phpv.ZString("error").ZVal(), uploadErr.ZVal())
+					fileEntry.OffsetSet(g, phpv.ZString("size").ZVal(), phpv.ZInt(size).ZVal())
+				} else {
+					fileEntry.OffsetSet(g, phpv.ZString("type").ZVal(), phpv.ZString("").ZVal())
+					fileEntry.OffsetSet(g, phpv.ZString("tmp_name").ZVal(), phpv.ZString("").ZVal())
+					fileEntry.OffsetSet(g, phpv.ZString("error").ZVal(), uploadErr.ZVal())
+					fileEntry.OffsetSet(g, phpv.ZString("size").ZVal(), phpv.ZInt(0).ZVal())
+				}
+
+				// Add to $_FILES
+				if k == "" {
+					f.OffsetSet(g, phpv.ZInt(anonFileIdx).ZVal(), fileEntry.ZVal())
+					anonFileIdx++
+				} else {
+					setFileToArray(g, k, fileEntry, f)
+				}
 				continue
 			}
+
 			if k == "" {
-				// TODO what should we do with these?
+				// No name and no filename — garbled MIME headers
+				io.Copy(io.Discard, part)
+				g.WriteStartupWarning("\nWarning: PHP Request Startup: File Upload Mime headers garbled in Unknown on line 0\n")
 				continue
 			}
 
@@ -126,6 +241,13 @@ func (g *Global) parsePost(p, f *phpv.ZArray) error {
 			_, err = g.mem.Copy(b, part) // count size against memory usage
 			if err != nil {
 				return err
+			}
+
+			// Track MAX_FILE_SIZE form field
+			if k == "MAX_FILE_SIZE" {
+				if n, parseErr := strconv.ParseInt(strings.TrimSpace(b.String()), 10, 64); parseErr == nil {
+					maxFileSize = n
+				}
 			}
 
 			err = setUrlValueToArray(g, k, phpv.ZString(b.Bytes()), p)
@@ -182,9 +304,22 @@ func phpFormName(part *multipart.Part) string {
 	if cd == "" {
 		return ""
 	}
-	// Find name= parameter (case-insensitive)
+	// Find name= parameter (case-insensitive), not inside "filename="
 	lower := strings.ToLower(cd)
 	idx := strings.Index(lower, "name=")
+	for idx >= 0 {
+		// Ensure this is a standalone "name=" parameter, not part of "filename="
+		if idx == 0 || lower[idx-1] == ';' || lower[idx-1] == ' ' || lower[idx-1] == '\t' {
+			break // good match
+		}
+		// Try next occurrence
+		nextIdx := strings.Index(lower[idx+5:], "name=")
+		if nextIdx < 0 {
+			idx = -1
+			break
+		}
+		idx = idx + 5 + nextIdx
+	}
 	if idx < 0 {
 		return ""
 	}
@@ -473,4 +608,118 @@ func parseIniSize(s string) int64 {
 	}
 	n, _ := strconv.ParseInt(strings.TrimSpace(s), 10, 64)
 	return n * multiplier
+}
+
+// setFileToArray sets a file entry in $_FILES following PHP's array structure.
+// For simple names like "file", it sets $_FILES["file"] = entry.
+// For array names like "file[]" or "file[key]", it builds nested arrays
+// with separate sub-arrays for each field (name, type, tmp_name, error, size).
+func setFileToArray(ctx phpv.Context, k string, entry *phpv.ZArray, f *phpv.ZArray) error {
+	p := strings.IndexByte(k, '[')
+	if p == -1 {
+		// Simple name: $_FILES["k"] = entry
+		return f.OffsetSet(ctx, phpv.ZString(k).ZVal(), entry.ZVal())
+	}
+
+	// Array name: $_FILES["file"]["name"][...] = ..., etc.
+	baseName := k[:p]
+	suffix := k[p:]
+
+	// Get or create the base array
+	baseKey := phpv.ZString(baseName).ZVal()
+	var base *phpv.ZArray
+	if existing, err := f.OffsetGet(ctx, baseKey); err == nil && existing.GetType() == phpv.ZtArray {
+		base = existing.Value().(*phpv.ZArray)
+	} else {
+		base = phpv.NewZArray()
+		f.OffsetSet(ctx, baseKey, base.ZVal())
+	}
+
+	// For each field, set the value at field+suffix path within base.
+	// e.g., for suffix="[]", this creates base["name"][] = val, base["type"][] = val, etc.
+	fields := []string{"name", "full_path", "type", "tmp_name", "error", "size"}
+	for _, field := range fields {
+		fieldKey := phpv.ZString(field).ZVal()
+		val, _ := entry.OffsetGet(ctx, fieldKey)
+		setUrlValueToArray(ctx, field+suffix, val.Value(), base)
+	}
+
+	return nil
+}
+
+// phpBasename returns the filename component of a path, handling both
+// forward slashes and backslashes (like PHP's basename for uploaded files).
+func phpBasename(filename string) string {
+	for i := len(filename) - 1; i >= 0; i-- {
+		if filename[i] == '/' || filename[i] == '\\' {
+			return filename[i+1:]
+		}
+	}
+	return filename
+}
+
+// phpPartFilename extracts the raw filename from a multipart part's
+// Content-Disposition header without applying filepath.Base() (which Go's
+// part.FileName() does). This preserves directory paths for full_path support.
+func phpPartFilename(part *multipart.Part) string {
+	cd := part.Header.Get("Content-Disposition")
+	if cd == "" {
+		return ""
+	}
+	lower := strings.ToLower(cd)
+	idx := strings.Index(lower, "filename=")
+	if idx < 0 {
+		return ""
+	}
+	// Make sure this is "filename=" not "filename*="
+	if idx > 0 && lower[idx-1] != ' ' && lower[idx-1] != ';' && lower[idx-1] != '\t' {
+		return ""
+	}
+	rest := cd[idx+9:] // after "filename="
+	if len(rest) == 0 {
+		return ""
+	}
+	if rest[0] == '"' {
+		// Quoted value — PHP does NOT process backslash escapes in filename values,
+		// so backslashes are kept as-is (important for Windows paths)
+		end := strings.IndexByte(rest[1:], '"')
+		if end < 0 {
+			return rest[1:] // unclosed quote, take rest
+		}
+		return rest[1 : 1+end]
+	}
+	// Unquoted value - read until ; or end
+	end := strings.IndexByte(rest, ';')
+	if end < 0 {
+		return strings.TrimSpace(rest)
+	}
+	return strings.TrimSpace(rest[:end])
+}
+
+// isValidFileUploadName validates that a file upload name has proper bracket
+// structure. Returns false for malformed names like "foo[]bar" or "foo[[key]".
+func isValidFileUploadName(k string) bool {
+	p := strings.IndexByte(k, '[')
+	if p == -1 {
+		return true // simple name
+	}
+	if p == 0 {
+		return false // starts with [
+	}
+	rest := k[p:]
+	for len(rest) > 0 {
+		if rest[0] != '[' {
+			return false // text between bracket pairs
+		}
+		close := strings.IndexByte(rest, ']')
+		if close == -1 {
+			return false // unclosed bracket
+		}
+		// Check for nested [ before ]
+		if strings.IndexByte(rest[1:close], '[') != -1 {
+			return false // nested bracket
+		}
+		rest = rest[close+1:]
+	}
+	return true
 }

@@ -99,6 +99,9 @@ type Global struct {
 	customStdin *stream.Stream // custom stdin for testing
 
 	startupWarnings []byte // warnings from request startup (before output is set)
+
+	tempFiles     []string            // temporary files to clean up (e.g., uploaded files)
+	uploadedFiles map[string]struct{} // set of uploaded file paths for is_uploaded_file()
 }
 
 func NewGlobal(ctx context.Context, p *Process, config phpv.IniConfig) *Global {
@@ -1260,6 +1263,12 @@ func (g *Global) Close() error {
 	// Call destructors for any remaining objects before closing
 	g.CallDestructors()
 
+	// Clean up temporary files (uploaded files, etc.)
+	for _, f := range g.tempFiles {
+		os.Remove(f)
+	}
+	g.tempFiles = nil
+
 	for {
 		if g.buf == nil {
 			return nil
@@ -1268,6 +1277,37 @@ func (g *Global) Close() error {
 		if err != nil {
 			return err
 		}
+	}
+}
+
+// RegisterTempFile registers a temporary file path for cleanup when the
+// request ends. Used for uploaded file temp files.
+func (g *Global) RegisterTempFile(path string) {
+	g.tempFiles = append(g.tempFiles, path)
+}
+
+// RegisterUploadedFile registers a file path as an uploaded file for
+// is_uploaded_file() and move_uploaded_file() checks.
+func (g *Global) RegisterUploadedFile(path string) {
+	if g.uploadedFiles == nil {
+		g.uploadedFiles = make(map[string]struct{})
+	}
+	g.uploadedFiles[path] = struct{}{}
+}
+
+// IsUploadedFile checks if the given path was registered as an uploaded file.
+func (g *Global) IsUploadedFile(path string) bool {
+	if g.uploadedFiles == nil {
+		return false
+	}
+	_, ok := g.uploadedFiles[path]
+	return ok
+}
+
+// UnregisterUploadedFile removes a file from the uploaded files set (after move).
+func (g *Global) UnregisterUploadedFile(path string) {
+	if g.uploadedFiles != nil {
+		delete(g.uploadedFiles, path)
 	}
 }
 

@@ -1130,3 +1130,38 @@ func fncLinkinfo(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	return phpv.ZInt(int64(fi.Mode())).ZVal(), nil
 }
+
+// > func bool is_uploaded_file ( string $filename )
+func fncIsUploadedFile(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var filename phpv.ZString
+	_, err := core.Expand(ctx, args, &filename)
+	if err != nil {
+		return nil, err
+	}
+
+	if ctx.Global().IsUploadedFile(string(filename)) {
+		return phpv.ZTrue.ZVal(), nil
+	}
+	return phpv.ZFalse.ZVal(), nil
+}
+
+// > func bool move_uploaded_file ( string $from, string $to )
+func fncMoveUploadedFile(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var from, to phpv.ZString
+	_, err := core.Expand(ctx, args, &from, &to)
+	if err != nil {
+		return nil, err
+	}
+
+	if !ctx.Global().IsUploadedFile(string(from)) {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	err = os.Rename(string(from), string(to))
+	if err != nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	ctx.Global().UnregisterUploadedFile(string(from))
+	return phpv.ZTrue.ZVal(), nil
+}

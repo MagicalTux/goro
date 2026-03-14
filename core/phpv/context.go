@@ -128,6 +128,9 @@ type GlobalContext interface {
 
 	CheckOpenBasedir(ctx Context, path string, funcName string) error
 	IsWithinOpenBasedir(path string) bool
+
+	IsUploadedFile(path string) bool
+	UnregisterUploadedFile(path string)
 }
 
 type FuncContext interface {

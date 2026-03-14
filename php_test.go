@@ -102,7 +102,7 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 			// Apply max_memory_limit capping after INI is parsed
 			g.ApplyMaxMemoryLimit()
 			// Only reinit superglobals if INI contains settings that affect them
-			for _, key := range []string{"variables_order", "register_argc_argv", "enable_post_data_reading", "disable_functions", "post_max_size", "max_input_nesting_level"} {
+			for _, key := range []string{"variables_order", "register_argc_argv", "enable_post_data_reading", "disable_functions", "post_max_size", "max_input_nesting_level", "file_uploads", "upload_max_filesize", "max_file_uploads", "upload_tmp_dir"} {
 				if strings.Contains(p.iniRaw, key) {
 					needsReinit = true
 					break
@@ -305,12 +305,12 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		// can't support. Accept everything else and let the test run.
 		// INI settings that always cause a skip (feature not implemented at all)
 		unsupported := map[string]bool{
-			// file_uploads: accepted (tests needing upload infra also have upload_max_filesize/upload_tmp_dir)
+			// file_uploads: accepted — implemented in parsePost() multipart handling
 			// enable_post_data_reading: implemented - when 0, $_POST/$_FILES are empty but php://input works
 			// post_max_size: handled by valueDependent - skip only when non-zero
-			"upload_max_filesize":      true, // upload size limit
-			"upload_tmp_dir":           true, // upload temp directory not implemented
-			"max_file_uploads":         true, // upload count limit
+			// upload_max_filesize: implemented — enforced in parsePost() file upload handling
+			// upload_tmp_dir: implemented — uses os.TempDir() as default
+			// max_file_uploads: implemented — enforced in parsePost() file upload handling
 			// memory_limit: stored/retrieved via ini_get/ini_set; enforcement not implemented but tests don't require it
 			"hard_timeout":             true, // hard timeout not implemented
 			"session.auto_start":       true, // sessions not implemented
