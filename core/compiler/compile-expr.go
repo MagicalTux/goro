@@ -310,17 +310,28 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		if f == nil {
 			return &runZVal{phpv.ZString(""), l}, nil
 		}
-		return &runZVal{phpv.ZString(f.name), l}, nil
+		name := f.name
+		if name == "" {
+			// Anonymous closure: PHP 8 uses {closure:file:line}
+			name = phpv.ZString(fmt.Sprintf("{closure:%s:%d}", l.Filename, l.Line))
+		}
+		return &runZVal{phpv.ZString(name), l}, nil
 	case tokenizer.T_NS_C:
 		return &runZVal{c.getNamespace(), l}, nil
 	case tokenizer.T_METHOD_C:
 		class := c.getClass()
 		f := c.getFunc()
-		if class == nil || f == nil {
+		if f == nil {
 			return &runZVal{phpv.ZString(""), l}, nil
 		}
-
-		return &runZVal{phpv.ZString(fmt.Sprintf("%s::%s", class.Name, f.name)), l}, nil
+		funcName := f.name
+		if funcName == "" {
+			funcName = phpv.ZString(fmt.Sprintf("{closure:%s:%d}", l.Filename, l.Line))
+		}
+		if class == nil {
+			return &runZVal{phpv.ZString(funcName), l}, nil
+		}
+		return &runZVal{phpv.ZString(fmt.Sprintf("%s::%s", class.Name, funcName)), l}, nil
 	case tokenizer.T_BOOL_CAST, tokenizer.T_INT_CAST, tokenizer.T_ARRAY_CAST, tokenizer.T_DOUBLE_CAST, tokenizer.T_OBJECT_CAST, tokenizer.T_STRING_CAST:
 		// perform a cast operation on the following (note: v is null)
 		// make this an operator for appropriate operator precedence

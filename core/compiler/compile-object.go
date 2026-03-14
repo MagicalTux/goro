@@ -533,7 +533,10 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Cannot call abstract method %s::%s()", method.Class.GetName(), method.Name))
 	}
 
-	// Check method visibility
+	// Check method visibility. If the method is not visible but __call exists on the
+	// class, PHP calls __call instead of throwing the visibility error.
+	methodNotVisible := false
+	var visErrMsg string
 	if method.Modifiers.Has(phpv.ZAttrPrivate) {
 		callerClass := ctx.Class()
 		methodClass := method.Class
@@ -552,7 +555,8 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 				}
 				return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Cannot call private %s::__construct()", methodClassName))
 			}
-			return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Call to private method %s::%s() from %s", methodClassName, method.Name, scope))
+			methodNotVisible = true
+			visErrMsg = fmt.Sprintf("Call to private method %s::%s() from %s", methodClassName, method.Name, scope)
 		}
 	} else if method.Modifiers.Has(phpv.ZAttrProtected) {
 		callerClass := ctx.Class()
@@ -560,15 +564,43 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			if method.Name == "__construct" {
 				return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Call to protected %s::__construct() from global scope", class.GetName()))
 			}
-			return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Call to protected method %s::%s() from global scope", class.GetName(), method.Name))
-		}
-		// Check if caller is in the same class hierarchy
-		if !callerClass.InstanceOf(method.Class) && !method.Class.InstanceOf(callerClass) {
+			methodNotVisible = true
+			visErrMsg = fmt.Sprintf("Call to protected method %s::%s() from global scope", class.GetName(), method.Name)
+		} else if !callerClass.InstanceOf(method.Class) && !method.Class.InstanceOf(callerClass) {
 			if method.Name == "__construct" {
 				return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Call to protected %s::__construct() from scope %s", class.GetName(), callerClass.GetName()))
 			}
-			return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Call to protected method %s::%s() from scope %s", class.GetName(), method.Name, callerClass.GetName()))
+			methodNotVisible = true
+			visErrMsg = fmt.Sprintf("Call to protected method %s::%s() from scope %s", class.GetName(), method.Name, callerClass.GetName())
 		}
+	}
+	if methodNotVisible {
+		// Before returning the visibility error, check if __call is available
+		if objI != nil {
+			callClass := class
+			callObj := objI
+			if r.static && ctx.This() != nil {
+				callClass = ctx.This().GetClass()
+				callObj = ctx.This()
+			}
+			if callMethod, hasCall := callClass.GetMethod("__call"); hasCall {
+				var zArgs []*phpv.ZVal
+				for _, arg := range r.args {
+					val, err := arg.Run(ctx)
+					if err != nil {
+						return nil, err
+					}
+					zArgs = append(zArgs, val)
+				}
+				a := phpv.NewZArray()
+				for _, sub := range zArgs {
+					a.OffsetSet(ctx, nil, sub.Dup())
+				}
+				callArgs := []*phpv.ZVal{op.ZVal(), a.ZVal()}
+				return ctx.CallZVal(ctx, callMethod.Method, callArgs, callObj)
+			}
+		}
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, visErrMsg)
 	}
 
 	if objI != nil {

@@ -136,20 +136,39 @@ func SpawnCallable(ctx phpv.Context, v *phpv.ZVal) (phpv.Callable, error) {
 				fmt.Sprintf("call_user_func(): Argument #1 ($callback) must be a valid callback, cannot call abstract method %s::%s()", class.GetName(), member.Name))
 		}
 
-		// Check visibility — private/protected methods cannot be called from outside their scope
+		// Check visibility — private/protected methods cannot be called from outside their scope.
+		// If the method is not visible but __call exists, fall through to __call.
 		callerClass := ctx.Class()
+		methodNotVisible := false
 		if member.Modifiers.IsPrivate() {
 			// Private: only accessible from the same class
 			if callerClass == nil || callerClass.GetName() != class.GetName() {
-				return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
-					fmt.Sprintf("call_user_func_array(): Argument #1 ($callback) must be a valid callback, cannot access private method %s::%s()", class.GetName(), member.Name))
+				methodNotVisible = true
 			}
 		} else if member.Modifiers.IsProtected() {
 			// Protected: only accessible from same class or subclass
 			if callerClass == nil || (!callerClass.InstanceOf(class) && !class.InstanceOf(callerClass)) {
-				return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
-					fmt.Sprintf("call_user_func_array(): Argument #1 ($callback) must be a valid callback, cannot access protected method %s::%s()", class.GetName(), member.Name))
+				methodNotVisible = true
 			}
+		}
+		if methodNotVisible {
+			// Check for __call magic method before throwing visibility error
+			if instance != nil {
+				if callMethod, hasCall := class.GetMethod("__call"); hasCall {
+					origMethodName := methodName.AsString(ctx)
+					wrapper := &magicCallWrapper{
+						callMethod: callMethod.Method,
+						methodName: origMethodName,
+					}
+					return phpv.Bind(wrapper, instance), nil
+				}
+			}
+			if member.Modifiers.IsPrivate() {
+				return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+					fmt.Sprintf("call_user_func_array(): Argument #1 ($callback) must be a valid callback, cannot access private method %s::%s()", class.GetName(), member.Name))
+			}
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+				fmt.Sprintf("call_user_func_array(): Argument #1 ($callback) must be a valid callback, cannot access protected method %s::%s()", class.GetName(), member.Name))
 		}
 
 		if instance != nil {

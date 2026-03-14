@@ -106,20 +106,34 @@ func fncFlush(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 // > func mixed call_user_func ( callable $callback [, mixed $... ] )
 func fncCallUserFunc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	// Resolve the callback in the caller's scope so that visibility checks
+	// (e.g. private/protected methods) are evaluated from the correct context.
+	// For example, call_user_func([$this, 'privateMethod']) from inside a class
+	// should succeed because the caller has access to the private method.
+	callerCtx := ctx.Parent(1)
+	if callerCtx == nil {
+		callerCtx = ctx
+	}
 	var callback phpv.Callable
-	_, err := core.Expand(ctx, args, &callback)
+	_, err := core.Expand(callerCtx, args, &callback)
 	if err != nil {
 		return nil, err
 	}
 
-	return ctx.CallZVal(ctx.Parent(1), callback, args[1:], nil)
+	return ctx.CallZVal(callerCtx, callback, args[1:], nil)
 }
 
 // > func mixed call_user_func_array ( callable $callback , array $param_arr )
 func fncCallUserFuncArray(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	// Resolve the callback in the caller's scope so that visibility checks
+	// (e.g. private/protected methods) are evaluated from the correct context.
+	callerCtx := ctx.Parent(1)
+	if callerCtx == nil {
+		callerCtx = ctx
+	}
 	var callback phpv.Callable
 	var arrayArgs *phpv.ZArray
-	_, err := core.Expand(ctx, args, &callback, &arrayArgs)
+	_, err := core.Expand(callerCtx, args, &callback, &arrayArgs)
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +142,7 @@ func fncCallUserFuncArray(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, erro
 	for _, v := range arrayArgs.Iterate(ctx) {
 		cbArgs = append(cbArgs, v)
 	}
-	return ctx.CallZVal(ctx.Parent(1), callback, cbArgs, nil)
+	return ctx.CallZVal(callerCtx, callback, cbArgs, nil)
 }
 
 // > func string inet_ntop ( string $in_addr )
