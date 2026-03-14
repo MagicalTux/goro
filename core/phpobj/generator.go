@@ -333,7 +333,9 @@ func generatorYieldFromGenerator(ctx phpv.Context, obj *ZObject, innerState *Gen
 			return nil, err
 		}
 		// Forward send value to inner generator
-		generatorAdvance(ctx, innerState, result)
+		if err := generatorAdvance(ctx, innerState, result); err != nil {
+			return nil, err
+		}
 	}
 
 	// Return the inner generator's return value
@@ -436,10 +438,11 @@ func generatorEnsureStarted(ctx phpv.Context, state *GeneratorState) {
 }
 
 // generatorAdvance sends a value into the generator and waits for the next yield.
-func generatorAdvance(ctx phpv.Context, state *GeneratorState, sendVal *phpv.ZVal) {
+// Returns an error if the generator threw an uncaught exception.
+func generatorAdvance(ctx phpv.Context, state *GeneratorState, sendVal *phpv.ZVal) error {
 	if state.status != GeneratorSuspended {
 		state.valid = false
-		return
+		return nil
 	}
 
 	state.status = GeneratorRunning
@@ -451,13 +454,20 @@ func generatorAdvance(ctx phpv.Context, state *GeneratorState, sendVal *phpv.ZVa
 	state.resumeCh <- generatorMsg{val: sendVal}
 
 	select {
-	case <-state.doneCh:
+	case doneMsg := <-state.doneCh:
 		state.valid = false
+		state.status = GeneratorClosed
+		if doneMsg.err != nil {
+			state.genErr = doneMsg.err
+			return doneMsg.err
+		}
 	case yield := <-state.yieldCh:
 		state.currentKey = yield.Key
 		state.currentValue = yield.Value
 		state.valid = true
+		state.status = GeneratorSuspended
 	}
+	return nil
 }
 
 // generatorThrowInner throws an exception into a generator.
@@ -525,7 +535,9 @@ func generatorNext(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal,
 
 	generatorEnsureStarted(ctx, state)
 
-	generatorAdvance(ctx, state, nil)
+	if err := generatorAdvance(ctx, state, nil); err != nil {
+		return nil, err
+	}
 
 	return phpv.ZNULL.ZVal(), nil
 }
@@ -578,7 +590,9 @@ func generatorSend(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal,
 		return phpv.ZNULL.ZVal(), nil
 	}
 
-	generatorAdvance(ctx, state, sendVal)
+	if err := generatorAdvance(ctx, state, sendVal); err != nil {
+		return nil, err
+	}
 
 	if state.valid {
 		return state.currentValue, nil
@@ -687,7 +701,9 @@ func (it *generatorIterator) Key(ctx phpv.Context) (*phpv.ZVal, error) {
 
 func (it *generatorIterator) Next(ctx phpv.Context) (*phpv.ZVal, error) {
 	generatorEnsureStarted(ctx, it.state)
-	generatorAdvance(ctx, it.state, nil)
+	if err := generatorAdvance(ctx, it.state, nil); err != nil {
+		return nil, err
+	}
 	if it.state.valid {
 		return it.state.currentValue, nil
 	}
@@ -730,6 +746,9 @@ func (it *generatorIterator) Iterate(ctx phpv.Context) iter.Seq2[*phpv.ZVal, *ph
 			if !yield(key, value) {
 				break
 			}
+			// Note: errors from generatorAdvance are lost in the iter.Seq2 pattern.
+			// This is a limitation; generator exceptions during foreach iteration
+			// should be handled by the caller.
 			generatorAdvance(ctx, it.state, nil)
 		}
 	}

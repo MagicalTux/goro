@@ -295,7 +295,30 @@ func (r *runClassStaticObjRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 
 	// Resolve CompileDelayed values (e.g., constants referencing other constants)
 	if cd, isCD := v.(*phpv.CompileDelayed); isCD {
+		// Detect circular references: if this constant is already being resolved,
+		// we have a cycle. Find which constant triggered the cycle by looking for
+		// the other constant(s) that are also in Resolving state.
+		if cc.Resolving {
+			// The self-referencing constant is the one that's currently being resolved
+			// and depends (directly or indirectly) on itself. Find it by scanning
+			// all resolving constants - the last-started one (not the one we're
+			// looking up) is the self-referencing one.
+			selfRefName := r.objName
+			zc := class.(*phpobj.ZClass)
+			for name, c := range zc.Const {
+				if c.Resolving && name != r.objName {
+					selfRefName = name
+				}
+			}
+			return nil, phpobj.ThrowError(ctx, phpobj.Error,
+				fmt.Sprintf("Cannot declare self-referencing constant self::%s", selfRefName))
+		}
+		cc.Resolving = true
+		// Set compiling class so self:: works during constant resolution
+		ctx.Global().SetCompilingClass(class.(*phpobj.ZClass))
 		resolved, err := cd.Run(ctx)
+		ctx.Global().SetCompilingClass(nil)
+		cc.Resolving = false
 		if err != nil {
 			return nil, err
 		}

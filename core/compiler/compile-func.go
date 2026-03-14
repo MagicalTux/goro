@@ -1244,16 +1244,27 @@ func compileFuncPassedArgs(c compileCtx) (res phpv.Runnables, err error) {
 	}
 
 	// parse passed arguments
+	hadSpread := false
 	for {
 		var a phpv.Runnable
 
 		// Check for spread operator: ...$expr
 		if i.Type == tokenizer.T_ELLIPSIS {
+			hadSpread = true
 			spreadExpr, spreadErr := compileExpr(nil, c)
 			if spreadErr != nil {
 				return nil, spreadErr
 			}
 			a = &SpreadArg{Arg: spreadExpr}
+		} else if hadSpread && !(i.IsLabel() && c.peekType() == tokenizer.Rune(':')) {
+			// Positional argument after spread is a compile error
+			phpErr := &phpv.PhpError{
+				Err:  fmt.Errorf("Cannot use positional argument after argument unpacking"),
+				Code: phpv.E_ERROR,
+				Loc:  i.Loc(),
+			}
+			c.Global().LogError(phpErr)
+			return nil, phpv.ExitError(255)
 		} else if i.IsLabel() && c.peekType() == tokenizer.Rune(':') {
 			// Check for named argument: identifier followed by ':'
 			// Use peekType() to check the next token without consuming it.

@@ -62,9 +62,15 @@ func (r *runNewObject) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		}
 	}
 
+	// Expand spread arguments (...$arr) into individual args
+	expandedArgs, expandErr := expandNewSpreadArgs(ctx, r.newArg)
+	if expandErr != nil {
+		return nil, expandErr
+	}
+
 	var args []*phpv.ZVal
 	var byRefCleanups []*phpv.ZVal
-	for i, a := range r.newArg {
+	for i, a := range expandedArgs {
 		// Emit "Undefined variable" warning for by-value params
 		isRefParam := funcArgs != nil && i < len(funcArgs) && funcArgs[i].Ref
 		if !isRefParam {
@@ -1192,4 +1198,81 @@ func compileClassName(c compileCtx) (phpv.ZString, error) {
 		}
 		return c.resolveClassName(r), nil
 	}
+}
+
+// expandNewSpreadArgs expands SpreadArg entries in new expression arguments.
+// Returns a flat list of Runnables with spread args replaced by individual values.
+func expandNewSpreadArgs(ctx phpv.Context, args phpv.Runnables) (phpv.Runnables, error) {
+	hasSpread := false
+	for _, arg := range args {
+		if _, ok := arg.(phpv.SpreadArgument); ok {
+			hasSpread = true
+			break
+		}
+	}
+	if !hasSpread {
+		return args, nil
+	}
+
+	result := make(phpv.Runnables, 0, len(args))
+	for _, arg := range args {
+		sa, ok := arg.(phpv.SpreadArgument)
+		if !ok {
+			result = append(result, arg)
+			continue
+		}
+		inner := sa.Inner()
+		val, err := inner.Run(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if val.GetType() == phpv.ZtArray {
+			arr := val.AsArray(ctx)
+			for _, v := range arr.Iterate(ctx) {
+				result = append(result, &runZVal{v: v.Dup().Value()})
+			}
+		} else if val.GetType() == phpv.ZtObject {
+			obj, ok := val.Value().(*phpobj.ZObject)
+			if !ok {
+				typeName := "object"
+				return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+					fmt.Sprintf("Only arrays and Traversables can be unpacked, %s given", typeName))
+			}
+			if obj.GetClass().Implements(phpobj.IteratorAggregate) {
+				iterResult, err := obj.CallMethod(ctx, "getIterator")
+				if err != nil {
+					return nil, err
+				}
+				if iterResult != nil && iterResult.GetType() == phpv.ZtObject {
+					if iterObj, ok := iterResult.Value().(*phpobj.ZObject); ok && iterObj.GetClass().Implements(phpobj.Iterator) {
+						obj = iterObj
+					}
+				}
+			}
+			if obj.GetClass().Implements(phpobj.Iterator) {
+				obj.CallMethod(ctx, "rewind")
+				for {
+					v, err := obj.CallMethod(ctx, "valid")
+					if err != nil || !v.AsBool(ctx) {
+						break
+					}
+					value, err := obj.CallMethod(ctx, "current")
+					if err != nil {
+						return nil, err
+					}
+					result = append(result, &runZVal{v: value.Dup().Value()})
+					obj.CallMethod(ctx, "next")
+				}
+			} else {
+				typeName := string(obj.GetClass().GetName())
+				return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+					fmt.Sprintf("Only arrays and Traversables can be unpacked, %s given", typeName))
+			}
+		} else {
+			typeName := val.GetType().TypeName()
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+				fmt.Sprintf("Only arrays and Traversables can be unpacked, %s given", typeName))
+		}
+	}
+	return result, nil
 }

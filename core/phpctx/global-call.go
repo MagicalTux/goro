@@ -503,23 +503,36 @@ func expandSpreadArgs(ctx phpv.Context, args []phpv.Runnable) ([]phpv.Runnable, 
 			if obj, ok := val.Value().(*phpobj.ZObject); ok {
 				if obj.GetClass().Implements(phpobj.IteratorAggregate) {
 					iterResult, err := obj.CallMethod(ctx, "getIterator")
-					if err == nil && iterResult != nil && iterResult.GetType() == phpv.ZtObject {
+					if err != nil {
+						return nil, err
+					}
+					if iterResult != nil && iterResult.GetType() == phpv.ZtObject {
 						if iterObj, ok := iterResult.Value().(*phpobj.ZObject); ok && iterObj.GetClass().Implements(phpobj.Iterator) {
 							obj = iterObj
 						}
 					}
 				}
 				if obj.GetClass().Implements(phpobj.Iterator) {
-					obj.CallMethod(ctx, "rewind")
+					if _, err := obj.CallMethod(ctx, "rewind"); err != nil {
+						return nil, err
+					}
 					seenStringKey := false
 					for {
 						v, err := obj.CallMethod(ctx, "valid")
-						if err != nil || !v.AsBool(ctx) {
+						if err != nil {
+							return nil, err
+						}
+						if !v.AsBool(ctx) {
 							break
 						}
 						key, kerr := obj.CallMethod(ctx, "key")
 						if kerr != nil {
-							break
+							return nil, kerr
+						}
+						// Validate key type: must be int or string
+						if key.GetType() != phpv.ZtInt && key.GetType() != phpv.ZtString {
+							return nil, phpobj.ThrowError(ctx, phpobj.Error,
+								"Keys must be of type int|string during argument unpacking")
 						}
 						// Track named (string key) vs positional (integer key)
 						if key.GetType() == phpv.ZtString {
@@ -531,10 +544,12 @@ func expandSpreadArgs(ctx phpv.Context, args []phpv.Runnable) ([]phpv.Runnable, 
 						}
 						value, err := obj.CallMethod(ctx, "current")
 						if err != nil {
-							break
+							return nil, err
 						}
 						result = append(result, &spreadZVal{v: value.Dup(), fromLiteral: true})
-						obj.CallMethod(ctx, "next")
+						if _, err := obj.CallMethod(ctx, "next"); err != nil {
+							return nil, err
+						}
 					}
 					continue
 				}

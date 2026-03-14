@@ -51,6 +51,7 @@ type ZClassMethod struct {
 type ZClassConst struct {
 	Value     Val
 	Modifiers ZObjectAttr
+	Resolving bool // true while the constant is being resolved (circular reference detection)
 }
 
 type ZClassHandlers struct {
