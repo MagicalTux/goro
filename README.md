@@ -1,5 +1,6 @@
 # Goro
 
+[![CI](https://github.com/MagicalTux/goro/actions/workflows/ci.yml/badge.svg)](https://github.com/MagicalTux/goro/actions/workflows/ci.yml)
 [![GoDoc](https://godoc.org/github.com/MagicalTux/goro/core?status.svg)](https://godoc.org/github.com/MagicalTux/goro)
 
 PHP engine implemented in pure Go. Targets PHP 8.2 compatibility.

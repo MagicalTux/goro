@@ -37,13 +37,4 @@ deps:
 testdeps:
 	$(GOROOT)/bin/go get -v -t .
 
-travis:
-	# get deps
-	$(GOROOT)/bin/go get -v -t .
-	$(GOROOT)/bin/go build -v
-	make -C sapi/php-cgi
-	make -C sapi/php-cli
-	make -C sapi/php-fpm
-	make -C sapi/php-httpd
-
-.PHONY: test http buildext sapi testdeps deps travis
+.PHONY: test http buildext sapi testdeps deps

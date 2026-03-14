@@ -1,8 +1,0 @@
-language: go
-sudo: false
-script: make travis
-go:
-  - "1.8"
-  - "1.10"
-  - "1.x"
-  - master
