@@ -911,7 +911,28 @@ func parseUnionTypeHint(first *phpv.TypeHint, c compileCtx) (*phpv.TypeHint, *to
 			}
 			hint = hint + "\\" + i.Data
 		}
-		union.Union = append(union.Union, phpv.ParseTypeHint(phpv.ZString(hint)))
+		parsedHint := phpv.ParseTypeHint(phpv.ZString(hint))
+		if i.IsSingle('&') {
+			// Intersection type: A&B (PHP 8.1)
+			if len(union.Intersection) == 0 {
+				// Move existing union entries to intersection
+				union.Intersection = append(union.Union, parsedHint)
+				union.Union = nil
+			} else {
+				union.Intersection = append(union.Intersection, parsedHint)
+			}
+			continue
+		}
+		if len(union.Intersection) > 0 {
+			// Finishing an intersection within a union (DNF: (A&B)|C)
+			union.Intersection = append(union.Intersection, parsedHint)
+			// Wrap intersection as a single union member
+			intersect := &phpv.TypeHint{Intersection: union.Intersection}
+			union.Union = append(union.Union, intersect)
+			union.Intersection = nil
+		} else {
+			union.Union = append(union.Union, parsedHint)
+		}
 		if !i.IsSingle('|') {
 			return union, i, nil
 		}

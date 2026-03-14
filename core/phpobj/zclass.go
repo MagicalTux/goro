@@ -410,7 +410,7 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 	// Check interface properties: interfaces can only have hooked properties (PHP 8.4+)
 	if c.Type == phpv.ZClassTypeInterface && len(c.Props) > 0 {
 		for _, prop := range c.Props {
-			if prop.GetHook == nil && prop.SetHook == nil {
+			if !prop.HasHooks {
 				return c.fatalError(ctx, fmt.Sprintf("Interfaces may only include hooked properties"))
 			}
 		}

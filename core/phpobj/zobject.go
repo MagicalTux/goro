@@ -326,7 +326,16 @@ func NewZObject(ctx phpv.Context, c phpv.ZClass, args ...*phpv.ZVal) (*ZObject, 
 			}
 		}
 
-		_, err := ctx.CallZVal(ctx, constructor, args, n)
+		// Wrap the constructor in a MethodCallable so that ctx.Class() returns
+		// the declaring class (not the instantiated class). This is important for
+		// private property access and PHP 8.4 asymmetric visibility.
+		ctorCallable := phpv.Callable(constructor)
+		if ctorMethod != nil && ctorMethod.Class != nil {
+			if _, ok := constructor.(*phpv.MethodCallable); !ok {
+				ctorCallable = phpv.BindClass(constructor, ctorMethod.Class, false)
+			}
+		}
+		_, err := ctx.CallZVal(ctx, ctorCallable, args, n)
 		if err != nil {
 			return nil, err
 		}
@@ -916,6 +925,54 @@ func (o *ZObject) checkReadonlyWrite(ctx phpv.Context, keyStr phpv.ZString) erro
 	return nil
 }
 
+// checkSetVisibility checks PHP 8.4 asymmetric visibility for property writes.
+// If a property has SetModifiers != 0, the write visibility may be more restrictive
+// than the read visibility. For example, "public private(set)" allows anyone to read
+// but only the declaring class to write.
+func (o *ZObject) checkSetVisibility(ctx phpv.Context, keyStr phpv.ZString) error {
+	class := o.Class.(*ZClass)
+	for cur := class; cur != nil; cur = cur.Extends {
+		for _, prop := range cur.Props {
+			if prop.VarName != keyStr || prop.Modifiers.IsStatic() {
+				continue
+			}
+			if prop.SetModifiers == 0 {
+				// No asymmetric visibility — normal visibility rules already checked
+				return nil
+			}
+			callerClass := ctx.Class()
+			if prop.SetModifiers.IsPrivate() {
+				// Only the declaring class can write
+				if callerClass != nil && callerClass.GetName() == cur.GetName() {
+					return nil
+				}
+				return ThrowError(ctx, Error,
+					fmt.Sprintf("Cannot modify private(set) property %s::$%s from %s",
+						o.Class.GetName(), keyStr, scopeName(callerClass)))
+			}
+			if prop.SetModifiers.IsProtected() {
+				// The declaring class and subclasses can write
+				if callerClass != nil && (callerClass.InstanceOf(cur) || cur.InstanceOf(callerClass)) {
+					return nil
+				}
+				return ThrowError(ctx, Error,
+					fmt.Sprintf("Cannot modify protected(set) property %s::$%s from %s",
+						o.Class.GetName(), keyStr, scopeName(callerClass)))
+			}
+			return nil
+		}
+	}
+	return nil
+}
+
+// scopeName returns a human-readable scope name for error messages.
+func scopeName(class phpv.ZClass) string {
+	if class == nil {
+		return "global scope"
+	}
+	return fmt.Sprintf("scope %s", class.GetName())
+}
+
 func (o *ZObject) ObjectGet(ctx phpv.Context, key phpv.Val) (*phpv.ZVal, error) {
 	var err error
 	key, err = key.AsVal(ctx, phpv.ZtString)
@@ -1034,6 +1091,11 @@ func (o *ZObject) ObjectSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) er
 
 	// Check property visibility
 	if err := o.checkPropertyVisibility(ctx, keyStr, "access"); err != nil {
+		return err
+	}
+
+	// Check asymmetric (set) visibility (PHP 8.4)
+	if err := o.checkSetVisibility(ctx, keyStr); err != nil {
 		return err
 	}
 

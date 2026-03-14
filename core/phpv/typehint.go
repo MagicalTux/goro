@@ -6,11 +6,12 @@ import (
 )
 
 type TypeHint struct {
-	t        ZType
-	s        ZString    // class name, or special value such as "self", "iterable". If t=ZtObject but s="" then any object is ok
-	c        ZClass     // looked up class, if any
-	Nullable bool       // true if the type is explicitly nullable (?Type)
-	Union    []*TypeHint // for union types (int|string), each alternative
+	t            ZType
+	s            ZString    // class name, or special value such as "self", "iterable". If t=ZtObject but s="" then any object is ok
+	c            ZClass     // looked up class, if any
+	Nullable     bool       // true if the type is explicitly nullable (?Type)
+	Union        []*TypeHint // for union types (int|string), each alternative
+	Intersection []*TypeHint // for intersection types (A&B), all must match
 }
 
 func (h *TypeHint) Type() ZType {
@@ -32,7 +33,7 @@ func (h *TypeHint) Check(ctx Context, val *ZVal) bool {
 		return true
 	}
 
-	// Union type: check each alternative
+	// Union type: check each alternative (any must match)
 	if len(h.Union) > 0 {
 		for _, alt := range h.Union {
 			if alt.Check(ctx, val) {
@@ -40,6 +41,16 @@ func (h *TypeHint) Check(ctx Context, val *ZVal) bool {
 			}
 		}
 		return false
+	}
+
+	// Intersection type: all must match
+	if len(h.Intersection) > 0 {
+		for _, part := range h.Intersection {
+			if !part.Check(ctx, val) {
+				return false
+			}
+		}
+		return true
 	}
 
 	if h.t == ZtObject {
@@ -85,6 +96,13 @@ func (h *TypeHint) String() string {
 			parts[i] = alt.String()
 		}
 		return strings.Join(parts, "|")
+	}
+	if len(h.Intersection) > 0 {
+		parts := make([]string, len(h.Intersection))
+		for i, part := range h.Intersection {
+			parts[i] = part.String()
+		}
+		return strings.Join(parts, "&")
 	}
 	prefix := ""
 	if h.Nullable {

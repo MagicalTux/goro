@@ -2,6 +2,7 @@ package compiler
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
@@ -219,12 +220,60 @@ func parseZClassAttr(a *phpv.ZClassAttr, c compileCtx) error {
 }
 
 func parseZObjectAttr(a *phpv.ZObjectAttr, c compileCtx) error {
-	return parseZObjectAttrWithAttrs(a, nil, c)
+	return parseZObjectAttrFull(a, nil, nil, c)
 }
 
 func parseZObjectAttrWithAttrs(a *phpv.ZObjectAttr, attrs *[]*phpv.ZAttribute, c compileCtx) error {
+	return parseZObjectAttrFull(a, nil, attrs, c)
+}
+
+// tryParseAsymmetricSet checks if the current position has "(set)" following an access modifier.
+// If it does, it consumes the "(set)" tokens and returns the set-visibility and true.
+// If not, it backs up and returns 0 and false.
+func tryParseAsymmetricSet(setAccess phpv.ZObjectAttr, c compileCtx) (phpv.ZObjectAttr, bool, error) {
+	// We've already consumed the access modifier token (e.g., T_PRIVATE).
+	// Now check if next token is '('
+	i, err := c.NextItem()
+	if err != nil {
+		return 0, false, err
+	}
+	if !i.IsSingle('(') {
+		c.backup()
+		return 0, false, nil
+	}
+
+	// Check for "set" keyword
+	i, err = c.NextItem()
+	if err != nil {
+		return 0, false, err
+	}
+	if i.Type != tokenizer.T_STRING || i.Data != "set" {
+		// Not "(set)", back up both tokens
+		c.backup() // back up the non-"set" token
+		// We can't back up twice with a single backup(), so we need to
+		// handle this differently. Since backup only saves one token,
+		// this means the '(' is lost. We need to restructure.
+		// Actually, if it's not "set", this is a syntax error in the
+		// asymmetric visibility context. PHP would also error here.
+		return 0, false, i.Unexpected()
+	}
+
+	// Expect ')'
+	i, err = c.NextItem()
+	if err != nil {
+		return 0, false, err
+	}
+	if !i.IsSingle(')') {
+		return 0, false, i.Unexpected()
+	}
+
+	return setAccess, true, nil
+}
+
+func parseZObjectAttrFull(a *phpv.ZObjectAttr, setModifiers *phpv.ZObjectAttr, attrs *[]*phpv.ZAttribute, c compileCtx) error {
 	// parse method attributes (public/protected/private, abstract or final)
 	// and PHP 8.0 #[...] attributes
+	// Also handles PHP 8.4 asymmetric visibility: public private(set)
 	for {
 		i, err := c.NextItem()
 		if err != nil {
@@ -269,19 +318,58 @@ func parseZObjectAttrWithAttrs(a *phpv.ZObjectAttr, attrs *[]*phpv.ZAttribute, c
 			*a |= phpv.ZAttrFinal
 		case tokenizer.T_PUBLIC:
 			if *a&phpv.ZAttrAccess != 0 {
-				return errors.New("Multiple access type modifiers are not allowed")
+				// Already have an access modifier — check for asymmetric visibility: public(set)
+				_, ok, err := tryParseAsymmetricSet(phpv.ZAttrPublic, c)
+				if err != nil {
+					return err
+				}
+				if !ok {
+					return errors.New("Multiple access type modifiers are not allowed")
+				}
+				// Validate: public(set) is not valid — set visibility must be stricter than read
+				return fmt.Errorf("Visibility of property must not be weaker than set visibility")
 			}
 			*a |= phpv.ZAttrPublic
 		case tokenizer.T_PROTECTED:
 			if *a&phpv.ZAttrAccess != 0 {
-				return errors.New("Multiple access type modifiers are not allowed")
+				// Already have an access modifier — check for asymmetric visibility: protected(set)
+				setAccess, ok, err := tryParseAsymmetricSet(phpv.ZAttrProtected, c)
+				if err != nil {
+					return err
+				}
+				if !ok {
+					return errors.New("Multiple access type modifiers are not allowed")
+				}
+				// Validate: set visibility must be <= read visibility
+				readAccess := *a & phpv.ZAttrAccess
+				if readAccess == phpv.ZAttrPrivate {
+					return fmt.Errorf("Visibility of property must not be weaker than set visibility")
+				}
+				if setModifiers != nil {
+					*setModifiers = setAccess
+				}
+			} else {
+				*a |= phpv.ZAttrProtected
 			}
-			*a |= phpv.ZAttrProtected
 		case tokenizer.T_PRIVATE:
 			if *a&phpv.ZAttrAccess != 0 {
-				return errors.New("Multiple access type modifiers are not allowed")
+				// Already have an access modifier — check for asymmetric visibility: private(set)
+				setAccess, ok, err := tryParseAsymmetricSet(phpv.ZAttrPrivate, c)
+				if err != nil {
+					return err
+				}
+				if !ok {
+					return errors.New("Multiple access type modifiers are not allowed")
+				}
+				// private(set) is valid with public or protected read visibility
+				readAccess := *a & phpv.ZAttrAccess
+				_ = readAccess // private(set) is always stricter, so always valid
+				if setModifiers != nil {
+					*setModifiers = setAccess
+				}
+			} else {
+				*a |= phpv.ZAttrPrivate
 			}
-			*a |= phpv.ZAttrPrivate
 		case tokenizer.T_READONLY:
 			if *a&phpv.ZAttrReadonly != 0 {
 				return errors.New("Multiple readonly modifiers are not allowed")

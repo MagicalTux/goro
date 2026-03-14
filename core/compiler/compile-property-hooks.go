@@ -11,6 +11,7 @@ import (
 // compilePropertyHooks parses the { get { ... } set($value) { ... } } block
 // after a property declaration (PHP 8.4 property hooks).
 func compilePropertyHooks(prop *phpv.ZClassProp, class *phpobj.ZClass, c compileCtx) error {
+	prop.HasHooks = true
 	for {
 		i, err := c.NextItem()
 		if err != nil {

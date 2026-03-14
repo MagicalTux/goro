@@ -9,16 +9,18 @@ type ZAttribute struct {
 }
 
 type ZClassProp struct {
-	VarName    ZString
-	Default    Val
-	Modifiers  ZObjectAttr
-	TypeHint   *TypeHint
-	Attributes []*ZAttribute // PHP 8.0 attributes
+	VarName       ZString
+	Default       Val
+	Modifiers     ZObjectAttr
+	SetModifiers  ZObjectAttr // PHP 8.4 asymmetric visibility: separate write visibility (0 = same as Modifiers)
+	TypeHint      *TypeHint
+	Attributes    []*ZAttribute // PHP 8.0 attributes
 
 	// Property hooks (PHP 8.4)
 	GetHook  Runnable // get { ... } hook body
 	SetHook  Runnable // set($value) { ... } hook body
 	SetParam ZString  // parameter name for set hook (default "$value")
+	HasHooks bool     // true if property declared with hook syntax (even abstract)
 }
 
 // ZClassTraitUse represents a single "use TraitA, TraitB { ... }" statement in a class body.

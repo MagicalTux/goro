@@ -169,8 +169,9 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 
 		// parse attrs if any (including #[...] attributes)
 		var attr phpv.ZObjectAttr
+		var setModifiers phpv.ZObjectAttr
 		var memberAttrs []*phpv.ZAttribute
-		if err := parseZObjectAttrWithAttrs(&attr, &memberAttrs, c); err != nil {
+		if err := parseZObjectAttrFull(&attr, &setModifiers, &memberAttrs, c); err != nil {
 			return nil, &phpv.PhpError{Err: err, Code: phpv.E_COMPILE_ERROR, Loc: l}
 		}
 
@@ -213,8 +214,8 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 					}
 				}
 
-				if i.IsSingle('|') {
-					// Union type hint: int|string $prop
+				if i.IsSingle('|') || i.IsSingle('&') {
+					// Union (int|string) or intersection (A&B) type hint
 					propTypeHint = phpv.ParseTypeHint(phpv.ZString(hint))
 					if isNullable {
 						propTypeHint.Nullable = true
@@ -261,7 +262,7 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			fallthrough
 		case tokenizer.T_VARIABLE:
 			for {
-				prop := &phpv.ZClassProp{Modifiers: attr, TypeHint: propTypeHint, Attributes: memberAttrs}
+				prop := &phpv.ZClassProp{Modifiers: attr, SetModifiers: setModifiers, TypeHint: propTypeHint, Attributes: memberAttrs}
 				prop.VarName = phpv.ZString(i.Data[1:])
 
 				// Readonly class: all properties are implicitly readonly
