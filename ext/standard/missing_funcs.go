@@ -225,3 +225,115 @@ func fncFlock(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	return phpv.ZTrue.ZVal(), nil
 }
+
+// > func int|bool version_compare ( string $version1, string $version2 [, string $operator ] )
+func fncVersionCompare(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var v1, v2 phpv.ZString
+	var op *phpv.ZString
+	_, err := core.Expand(ctx, args, &v1, &v2, &op)
+	if err != nil {
+		return nil, err
+	}
+
+	cmp := compareVersions(string(v1), string(v2))
+	
+	if op == nil {
+		if cmp < 0 { return phpv.ZInt(-1).ZVal(), nil }
+		if cmp > 0 { return phpv.ZInt(1).ZVal(), nil }
+		return phpv.ZInt(0).ZVal(), nil
+	}
+
+	var result bool
+	switch string(*op) {
+	case "<", "lt":
+		result = cmp < 0
+	case "<=", "le":
+		result = cmp <= 0
+	case ">", "gt":
+		result = cmp > 0
+	case ">=", "ge":
+		result = cmp >= 0
+	case "==", "eq":
+		result = cmp == 0
+	case "!=", "ne", "<>":
+		result = cmp != 0
+	default:
+		return phpv.ZNULL.ZVal(), nil
+	}
+	return phpv.ZBool(result).ZVal(), nil
+}
+
+func compareVersions(v1, v2 string) int {
+	parts1 := splitVersion(v1)
+	parts2 := splitVersion(v2)
+	
+	maxLen := len(parts1)
+	if len(parts2) > maxLen { maxLen = len(parts2) }
+	
+	for i := 0; i < maxLen; i++ {
+		var p1, p2 string
+		if i < len(parts1) { p1 = parts1[i] }
+		if i < len(parts2) { p2 = parts2[i] }
+		
+		cmp := compareVersionPart(p1, p2)
+		if cmp != 0 { return cmp }
+	}
+	return 0
+}
+
+func splitVersion(v string) []string {
+	var parts []string
+	cur := ""
+	for _, c := range v {
+		if c == '.' || c == '-' || c == '_' {
+			if cur != "" { parts = append(parts, cur) }
+			cur = ""
+		} else {
+			cur += string(c)
+		}
+	}
+	if cur != "" { parts = append(parts, cur) }
+	return parts
+}
+
+func compareVersionPart(a, b string) int {
+	// Special version strings have specific ordering
+	specials := map[string]int{"dev": 0, "alpha": 1, "a": 1, "beta": 2, "b": 2, "rc": 3, "p": 5, "pl": 5}
+	
+	aNum, aIsNum := isVersionNum(a)
+	bNum, bIsNum := isVersionNum(b)
+	
+	if aIsNum && bIsNum {
+		if aNum < bNum { return -1 }
+		if aNum > bNum { return 1 }
+		return 0
+	}
+	
+	aSpec, aIsSpec := specials[a]
+	bSpec, bIsSpec := specials[b]
+	
+	if aIsSpec && bIsSpec {
+		if aSpec < bSpec { return -1 }
+		if aSpec > bSpec { return 1 }
+		return 0
+	}
+	
+	// Number > special string
+	if aIsNum && bIsSpec { return 1 }
+	if aIsSpec && bIsNum { return -1 }
+	
+	// Fallback to string comparison
+	if a < b { return -1 }
+	if a > b { return 1 }
+	return 0
+}
+
+func isVersionNum(s string) (int, bool) {
+	if s == "" { return 0, true }
+	n := 0
+	for _, c := range s {
+		if c < '0' || c > '9' { return 0, false }
+		n = n*10 + int(c-'0')
+	}
+	return n, true
+}

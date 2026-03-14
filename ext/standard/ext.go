@@ -436,6 +436,7 @@ func init() {
 			"usleep":                     {Func: stdFuncUsleep, Args: []*phpctx.ExtFunctionArg{}},
 			"usort":                      {Func: fncArrayUSort, Args: []*phpctx.ExtFunctionArg{}},
 			"var_dump":                   {Func: stdFuncVarDump, Args: []*phpctx.ExtFunctionArg{}},
+			"version_compare":            {Func: fncVersionCompare, Args: []*phpctx.ExtFunctionArg{}},
 			"var_export":                 {Func: stdFuncVarExport, Args: []*phpctx.ExtFunctionArg{}},
 			"vfprintf":                   {Func: fncVFPrintf, Args: []*phpctx.ExtFunctionArg{}},
 			"vprintf":                    {Func: fncVPrintf, Args: []*phpctx.ExtFunctionArg{}},
