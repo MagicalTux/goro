@@ -64,7 +64,7 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		c.backup()
 		err = parseZClassAttr(&attr, c)
 		if err != nil {
-			return nil, err
+			return nil, &phpv.PhpError{Err: err, Code: phpv.E_COMPILE_ERROR, Loc: i.Loc()}
 		}
 		i, err = c.NextItem()
 		if err != nil {
@@ -73,7 +73,7 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	} else {
 		err = parseZClassAttr(&attr, c)
 		if err != nil {
-			return nil, err
+			return nil, &phpv.PhpError{Err: err, Code: phpv.E_COMPILE_ERROR, Loc: i.Loc()}
 		}
 	}
 
@@ -607,6 +607,15 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 				return nil, i.Unexpected()
 			}
 
+			// Check for invalid abstract+final combination on methods
+			if attr&phpv.ZAttrAbstract != 0 && attr&phpv.ZAttrFinal != 0 {
+				return nil, &phpv.PhpError{
+					Err:  fmt.Errorf("Cannot use the final modifier on an abstract method"),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  l,
+				}
+			}
+
 			var f phpv.Callable
 
 			optionalBody := class.Type == phpv.ZClassTypeInterface || attr&phpv.ZAttrAbstract != 0
@@ -663,10 +672,17 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	if !class.Attr.Has(phpv.ZClassAbstract) && class.Type != phpv.ZClassTypeInterface && class.Type != phpv.ZClassTypeTrait {
 		for _, m := range class.Methods {
 			if m.Modifiers&phpv.ZAttrAbstract != 0 {
+				var errMsg string
+				if class.Name == "" {
+					// Anonymous class
+					errMsg = fmt.Sprintf("Anonymous class method %s() must not be abstract", m.Name)
+				} else {
+					errMsg = fmt.Sprintf("Class %s declares abstract method %s() and must therefore be declared abstract", class.Name, m.Name)
+				}
 				return nil, &phpv.PhpError{
-					Err:  fmt.Errorf("Class %s declares abstract method %s() and must therefore be declared abstract", class.Name, m.Name),
+					Err:  fmt.Errorf("%s", errMsg),
 					Code: phpv.E_COMPILE_ERROR,
-					Loc:  class.L,
+					Loc:  m.Loc,
 				}
 			}
 		}

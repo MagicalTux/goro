@@ -20,10 +20,16 @@ func parseZClassAttr(a *phpv.ZClassAttr, c compileCtx) error {
 			if *a&phpv.ZClassAbstract != 0 {
 				return errors.New("Multiple abstract modifiers are not allowed")
 			}
+			if *a&phpv.ZClassFinal != 0 {
+				return errors.New("Cannot use the final modifier on an abstract class")
+			}
 			*a |= phpv.ZClassAbstract | phpv.ZClassExplicitAbstract
 		case tokenizer.T_FINAL:
 			if *a&phpv.ZClassFinal != 0 {
 				return errors.New("Multiple final modifiers are not allowed")
+			}
+			if *a&phpv.ZClassAbstract != 0 {
+				return errors.New("Cannot use the final modifier on an abstract class")
 			}
 			*a |= phpv.ZClassFinal
 		case tokenizer.T_READONLY:
@@ -59,10 +65,16 @@ func parseZObjectAttr(a *phpv.ZObjectAttr, c compileCtx) error {
 			if *a&phpv.ZAttrAbstract != 0 {
 				return errors.New("Multiple abstract modifiers are not allowed")
 			}
+			if *a&phpv.ZAttrFinal != 0 {
+				return errors.New("Cannot use the final modifier on an abstract method")
+			}
 			*a |= phpv.ZAttrAbstract
 		case tokenizer.T_FINAL:
 			if *a&phpv.ZAttrFinal != 0 {
 				return errors.New("Multiple final modifiers are not allowed")
+			}
+			if *a&phpv.ZAttrAbstract != 0 {
+				return errors.New("Cannot use the final modifier on an abstract method")
 			}
 			*a |= phpv.ZAttrFinal
 		case tokenizer.T_PUBLIC:

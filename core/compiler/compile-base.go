@@ -70,6 +70,8 @@ func init() {
 		tokenizer.Rune('['):      &compileFuncCb{f: compileExpr},
 		tokenizer.Rune('@'):      &compileFuncCb{f: compileExpr},
 		tokenizer.Rune('$'):      &compileFuncCb{f: compileExpr},
+		tokenizer.T_NS_SEPARATOR: &compileFuncCb{f: compileExpr},
+		tokenizer.T_NAMESPACE:    &compileFuncCb{f: compileExpr},
 		tokenizer.Rune(';'):      nil,
 		// '}': return compileBase (hidden)
 	}

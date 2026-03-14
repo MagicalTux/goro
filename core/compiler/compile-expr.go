@@ -143,6 +143,54 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			return nil, err
 		}
 		return &runZVal{phpv.ZFloat(v), l}, nil
+	case tokenizer.T_NAMESPACE:
+		// namespace\Name — relative to the current namespace.
+		// Since goro doesn't implement namespaces, this resolves to just the name.
+		next, err := c.NextItem()
+		if err != nil {
+			return nil, err
+		}
+		if next.Type != tokenizer.T_NS_SEPARATOR {
+			return nil, next.Unexpected()
+		}
+		// Now read the name part(s) after the backslash
+		i, err = c.NextItem()
+		if err != nil {
+			return nil, err
+		}
+		if i.Type != tokenizer.T_STRING {
+			return nil, i.Unexpected()
+		}
+		name := i.Data
+		for {
+			next, err := c.NextItem()
+			if err != nil {
+				return nil, err
+			}
+			if next.Type == tokenizer.T_NS_SEPARATOR {
+				part, err := c.NextItem()
+				if err != nil {
+					return nil, err
+				}
+				if part.Type != tokenizer.T_STRING {
+					return nil, part.Unexpected()
+				}
+				name += "\\" + part.Data
+			} else {
+				c.backup()
+				break
+			}
+		}
+		// Check if followed by :: (class reference) or ( (function call)
+		next, err = c.NextItem()
+		if err != nil {
+			return nil, err
+		}
+		c.backup()
+		if next.Type == tokenizer.T_PAAMAYIM_NEKUDOTAYIM {
+			return &runZVal{phpv.ZString(name), l}, nil
+		}
+		return &runConstant{name, l}, nil
 	case tokenizer.T_NS_SEPARATOR:
 		// Fully-qualified name like \TypeError or \PHP_EOL
 		i, err = c.NextItem()
