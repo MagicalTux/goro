@@ -107,6 +107,10 @@ func fncArrayMerge(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	a = a.Dup() // make sure we do a copy of array
 
 	for i := 1; i < len(args); i++ {
+		// Check deadline to prevent hanging on massive merges
+		if err := ctx.Tick(ctx, nil); err != nil {
+			return nil, err
+		}
 		b, err := args[i].As(ctx, phpv.ZtArray)
 		if err != nil {
 			return nil, err
@@ -1196,8 +1200,16 @@ func fncArrayFill(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, ctx.FuncError(err)
 	}
 
+	if num > 10000000 {
+		return nil, ctx.Errorf("array_fill(): Too many elements")
+	}
 	result := phpv.NewZArray()
 	for i := startIndex; i < startIndex+num; i++ {
+		if i%10000 == 0 {
+			if err := ctx.Tick(ctx, nil); err != nil {
+				return nil, err
+			}
+		}
 		result.OffsetSet(ctx, phpv.ZInt(i), fillValue)
 	}
 	return result.ZVal(), nil

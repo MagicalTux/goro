@@ -34,7 +34,7 @@ const TestsPath = "test"
 // truncatedDiff computes a diff but truncates inputs to avoid O(n²) blowup
 // on large outputs with many differences.
 func truncatedDiff(expected, actual string) string {
-	const maxLines = 100
+	const maxLines = 40
 	truncate := func(s string) string {
 		lines := strings.SplitN(s, "\n", maxLines+1)
 		if len(lines) > maxLines {
