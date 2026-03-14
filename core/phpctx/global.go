@@ -847,10 +847,13 @@ func getLogArgs(args []any) (logopt.Data, []any) {
 			option.NoFuncName = bool(t)
 		case logopt.NoLoc:
 			option.NoLoc = bool(t)
+		case logopt.IsInternal:
+			option.IsInternal = bool(t)
 		case logopt.Data:
 			option.ErrType = t.ErrType
 			option.NoFuncName = t.NoFuncName
 			option.NoLoc = t.NoLoc
+			option.IsInternal = t.IsInternal
 			if t.Loc != nil {
 				option.Loc = t.Loc
 			}
@@ -874,10 +877,11 @@ func logWarning(ctx phpv.Context, format string, a ...any) error {
 	message := fmt.Sprintf(format, fmtArgs...)
 
 	phpErr := &phpv.PhpError{
-		Err:      errors.New(message),
-		FuncName: funcName,
-		Code:     phpv.PhpErrorType(option.ErrType),
-		Loc:      loc,
+		Err:        errors.New(message),
+		FuncName:   funcName,
+		Code:       phpv.PhpErrorType(option.ErrType),
+		Loc:        loc,
+		IsInternal: option.IsInternal,
 	}
 
 	err := phperr.HandleUserError(ctx, phpErr)

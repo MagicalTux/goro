@@ -39,7 +39,15 @@ func HandleUserError(ctx phpv.Context, err *phpv.PhpError) error {
 			phpv.ZInt(err.Loc.Line).ZVal(),
 		}
 
-		proceed, err2 := ctx.CallZVal(ctx, errHandler, args)
+		var proceed *phpv.ZVal
+		var err2 error
+		if err.IsInternal {
+			// When the error originates from internal code (e.g., OB callbacks),
+			// the error handler frame should show as [internal function] in stack traces.
+			proceed, err2 = ctx.CallZValInternal(ctx, errHandler, args)
+		} else {
+			proceed, err2 = ctx.CallZVal(ctx, errHandler, args)
+		}
 
 		// Restore the user error handler
 		ctx.Global().SetUserErrorHandler(errHandler, filterType)

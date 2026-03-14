@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phperr"
 	"github.com/MagicalTux/goro/core/phpv"
 )
@@ -66,6 +67,7 @@ type Buffer struct {
 	// context for deprecation warnings about output from handlers.
 	callerCtx      phpv.Context
 	callerFuncName string
+	callerLoc      *phpv.Loc // snapshot of caller location at SetCaller time
 }
 
 type Flusher interface {
@@ -122,9 +124,16 @@ func (b *Buffer) invokeCallback(d []byte, flag int) ([]byte, error) {
 		// deprecation message bypasses this buffer (matching PHP behavior).
 		savedOut := b.g.out
 		b.g.out = b.w
+		// Use the captured caller location so the error points to the
+		// ob_end_flush() call, not the echo inside the handler.
+		var locOpt logopt.Data
+		locOpt.IsInternal = true // error originates from internal OB system
+		if b.callerLoc != nil {
+			locOpt.Loc = b.callerLoc
+		}
 		deprecationErr = b.callerCtx.Deprecated(
 			"Producing output from user output handler %s is deprecated",
-			cbName,
+			cbName, locOpt,
 		)
 		b.g.out = savedOut
 	}
@@ -355,15 +364,22 @@ func (b *Buffer) Parent() *Buffer {
 }
 
 // SetCaller stores the calling function context for deprecation warnings.
+// The location is captured at call time so it doesn't change during callback execution.
 func (b *Buffer) SetCaller(ctx phpv.Context, funcName string) {
 	b.callerCtx = ctx
 	b.callerFuncName = funcName
+	// Snapshot the location now, before the callback runs and potentially
+	// changes the global location pointer.
+	if loc := ctx.Loc(); loc != nil {
+		b.callerLoc = &phpv.Loc{Filename: loc.Filename, Line: loc.Line}
+	}
 }
 
 // ClearCaller removes the calling function context.
 func (b *Buffer) ClearCaller() {
 	b.callerCtx = nil
 	b.callerFuncName = ""
+	b.callerLoc = nil
 }
 
 // outputDetector is a writer that tracks whether any output was produced.

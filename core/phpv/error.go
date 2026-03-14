@@ -36,6 +36,8 @@ type PhpError struct {
 
 	PhpStackTrace StackTrace
 	GoStackTrace  []byte
+
+	IsInternal bool // true when error originates from internal (non-userspace) code
 }
 
 func (e *PhpError) CanBeUserHandled() bool {
