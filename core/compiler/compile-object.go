@@ -573,7 +573,9 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 					}
 					a.OffsetSet(ctx, nil, val)
 				}
-				return ctx.CallZVal(ctx, callStaticMethod.Method, callArgs, objI)
+				// Wrap in MethodCallable so stack trace shows class and :: type
+				callable := phpv.BindClass(callStaticMethod.Method, callClass, true)
+				return ctx.CallZVal(ctx, callable, callArgs, objI)
 			}
 		}
 
@@ -605,7 +607,9 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 					a.OffsetSet(ctx, nil, sub.Dup())
 				}
 				callArgs := []*phpv.ZVal{op.ZVal(), a.ZVal()}
-				return ctx.CallZVal(ctx, callMethod.Method, callArgs, callObj)
+				// Wrap in BoundedCallable so stack trace shows class and -> type
+				callable := phpv.Bind(callMethod.Method, callObj)
+				return ctx.CallZVal(ctx, callable, callArgs, callObj)
 			}
 		}
 		return nil, ctx.Errorf("Call to undefined method %s::%s()", class.GetName(), op)

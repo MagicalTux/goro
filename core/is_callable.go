@@ -51,6 +51,14 @@ func fncIsCallable(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZTrue.ZVal(), nil
 }
 
+// closureName extracts the display name from a closure opaque value.
+func closureName(opaque interface{}) string {
+	if namer, ok := opaque.(interface{ Name() string }); ok {
+		return namer.Name()
+	}
+	return "Closure::__invoke"
+}
+
 // isCallableSyntax checks if the value has a valid callable syntax and returns
 // whether it is syntactically valid and the name representation.
 func isCallableSyntax(ctx phpv.Context, value *phpv.ZVal) (bool, string) {
@@ -92,9 +100,9 @@ func isCallableSyntax(ctx phpv.Context, value *phpv.ZVal) (bool, string) {
 		if obj == nil {
 			return false, ""
 		}
-		// Check if it's a Closure
-		if _, ok := obj.GetOpaque(compiler.Closure).(*compiler.ZClosure); ok {
-			return true, "Closure::__invoke"
+		// Check if it's a Closure - return the closure's actual name
+		if opaque := obj.GetOpaque(compiler.Closure); opaque != nil {
+			return true, closureName(opaque)
 		}
 		// Check for __invoke method
 		if _, ok := obj.GetClass().GetMethod("__invoke"); ok {
