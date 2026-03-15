@@ -266,6 +266,58 @@ func ValidateAttributeList(ctx phpv.Context, attrs []*phpv.ZAttribute, target in
 	return ""
 }
 
+// isInternalAttributeClass returns true if the given attribute name refers to a
+// built-in PHP attribute class that should be validated at compile time.
+func isInternalAttributeClass(name phpv.ZString) bool {
+	switch name {
+	case "Attribute", "\\Attribute",
+		"Override", "\\Override",
+		"Deprecated", "\\Deprecated",
+		"NoDiscard", "\\NoDiscard",
+		"AllowDynamicProperties", "\\AllowDynamicProperties":
+		return true
+	}
+	return false
+}
+
+// ValidateInternalAttributeList validates only internal/built-in attribute
+// classes on a target. Userland attributes are only validated at Reflection
+// newInstance() time. Returns an error string if invalid, empty string if valid.
+func ValidateInternalAttributeList(ctx phpv.Context, attrs []*phpv.ZAttribute, target int) string {
+	// Check target validity for internal attributes only
+	for _, attr := range attrs {
+		if !isInternalAttributeClass(attr.ClassName) {
+			continue
+		}
+		if msg := ValidateAttributeTarget(ctx, attr, target); msg != "" {
+			return msg
+		}
+	}
+	// Check repeatable constraints for internal attributes only
+	seen := make(map[phpv.ZString]bool)
+	for _, attr := range attrs {
+		if !isInternalAttributeClass(attr.ClassName) {
+			continue
+		}
+		lowerName := attr.ClassName.ToLower()
+		if seen[lowerName] {
+			class, err := ctx.Global().GetClass(ctx, attr.ClassName, false)
+			if err != nil {
+				continue
+			}
+			flags := GetAttributeFlags(ctx, class)
+			if flags < 0 {
+				continue
+			}
+			if int(flags)&AttributeIS_REPEATABLE == 0 {
+				return fmt.Sprintf("Attribute \"%s\" must not be repeated", attr.ClassName)
+			}
+		}
+		seen[lowerName] = true
+	}
+	return ""
+}
+
 func describeTargets(flags int) string {
 	var parts []string
 	if flags&AttributeTARGET_CLASS != 0 {

@@ -122,8 +122,8 @@ type runAttributeValidatedFunc struct {
 }
 
 func (r *runAttributeValidatedFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
-	// Validate attributes before registering the function
-	if msg := phpobj.ValidateAttributeList(ctx, r.attrs, r.target); msg != "" {
+	// Validate internal attributes before registering the function
+	if msg := phpobj.ValidateInternalAttributeList(ctx, r.attrs, r.target); msg != "" {
 		// Determine location from the inner runnable
 		var loc *phpv.Loc
 		if zc, ok := r.inner.(*ZClosure); ok {

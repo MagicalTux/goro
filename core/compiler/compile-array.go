@@ -443,8 +443,7 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 
 	array := v.Array()
 	if array == nil {
-		err := fmt.Errorf("Cannot use object of type %s as array", v.GetType())
-		return nil, ctx.Error(err, phpv.E_WARNING)
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Cannot use object of type %s as array", v.GetType()))
 	}
 
 	// Use OffsetGetWarn for ZArray to produce "Undefined array key" warnings
@@ -559,8 +558,7 @@ func (ac *runArrayAccess) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 
 	array := v.Array()
 	if array == nil {
-		err := fmt.Errorf("Cannot use object of type %s as array", v.GetType())
-		return ac.l.Error(ctx, err, phpv.E_WARNING)
+		return phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Cannot use object of type %s as array", v.GetType()))
 	}
 
 	if ac.offset == nil {

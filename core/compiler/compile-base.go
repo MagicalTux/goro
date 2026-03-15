@@ -230,9 +230,9 @@ type runTopLevelConst struct {
 }
 
 func (r *runTopLevelConst) Run(ctx phpv.Context) (*phpv.ZVal, error) {
-	// Validate attributes on the constant before defining it
+	// Validate internal attributes on the constant before defining it
 	if len(r.attrs) > 0 {
-		if msg := phpobj.ValidateAttributeList(ctx, r.attrs, phpobj.AttributeTARGET_CONSTANT); msg != "" {
+		if msg := phpobj.ValidateInternalAttributeList(ctx, r.attrs, phpobj.AttributeTARGET_CONSTANT); msg != "" {
 			phpErr := &phpv.PhpError{
 				Err:  fmt.Errorf("%s", msg),
 				Code: phpv.E_ERROR,

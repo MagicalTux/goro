@@ -639,47 +639,44 @@ func (c *ZClass) validateAttributes(ctx phpv.Context) error {
 		// Special validation for #[Attribute]: can only be applied to non-abstract,
 		// non-interface, non-trait, non-enum classes
 		for _, attr := range c.Attributes {
-			if attr.ClassName == "Attribute" || attr.ClassName == "\\Attribute" {
-				switch c.Type {
-				case phpv.ZClassTypeInterface:
+			name := attr.ClassName
+			if name == "Attribute" || name == "\\Attribute" {
+				if c.Type.Has(phpv.ZClassTypeInterface) {
 					return c.fatalError(ctx, fmt.Sprintf("Cannot apply #[\\Attribute] to interface %s", c.GetName()))
-				case phpv.ZClassTypeTrait:
+				} else if c.Type.Has(phpv.ZClassTypeTrait) {
 					return c.fatalError(ctx, fmt.Sprintf("Cannot apply #[\\Attribute] to trait %s", c.GetName()))
-				case phpv.ZClassTypeEnum:
+				} else if c.Type.Has(phpv.ZClassTypeEnum) {
 					return c.fatalError(ctx, fmt.Sprintf("Cannot apply #[\\Attribute] to enum %s", c.GetName()))
-				default:
-					if c.Attr.Has(phpv.ZClassExplicitAbstract) {
-						return c.fatalError(ctx, fmt.Sprintf("Cannot apply #[\\Attribute] to abstract class %s", c.GetName()))
-					}
+				} else if c.Attr.Has(phpv.ZClassExplicitAbstract) {
+					return c.fatalError(ctx, fmt.Sprintf("Cannot apply #[\\Attribute] to abstract class %s", c.GetName()))
 				}
 			}
 			// Special validation for #[AllowDynamicProperties]
-			if attr.ClassName == "AllowDynamicProperties" || attr.ClassName == "\\AllowDynamicProperties" {
-				switch c.Type {
-				case phpv.ZClassTypeInterface:
+			if name == "AllowDynamicProperties" || name == "\\AllowDynamicProperties" {
+				if c.Type.Has(phpv.ZClassTypeInterface) {
 					return c.fatalError(ctx, fmt.Sprintf("Cannot apply #[\\AllowDynamicProperties] to interface %s", c.GetName()))
-				case phpv.ZClassTypeTrait:
+				} else if c.Type.Has(phpv.ZClassTypeTrait) {
 					return c.fatalError(ctx, fmt.Sprintf("Cannot apply #[\\AllowDynamicProperties] to trait %s", c.GetName()))
-				case phpv.ZClassTypeEnum:
+				} else if c.Type.Has(phpv.ZClassTypeEnum) {
 					return c.fatalError(ctx, fmt.Sprintf("Cannot apply #[\\AllowDynamicProperties] to enum %s", c.GetName()))
 				}
 			}
 		}
 
-		// Validate target and repeat for class attributes
-		if msg := ValidateAttributeList(ctx, c.Attributes, AttributeTARGET_CLASS); msg != "" {
+		// Validate target and repeat for class attributes (internal attrs only at compile time)
+		if msg := ValidateInternalAttributeList(ctx, c.Attributes, AttributeTARGET_CLASS); msg != "" {
 			return c.fatalError(ctx, msg)
 		}
 	}
 
-	// Validate method-level attributes
+	// Validate method-level attributes (internal attrs only at compile time)
 	for _, m := range c.Methods {
 		// Only validate methods defined in this class (not inherited)
 		if m.Class != nil && m.Class != c {
 			continue
 		}
 		if len(m.Attributes) > 0 {
-			if msg := ValidateAttributeList(ctx, m.Attributes, AttributeTARGET_METHOD); msg != "" {
+			if msg := ValidateInternalAttributeList(ctx, m.Attributes, AttributeTARGET_METHOD); msg != "" {
 				loc := m.Loc
 				if loc == nil {
 					loc = c.L
@@ -689,19 +686,19 @@ func (c *ZClass) validateAttributes(ctx phpv.Context) error {
 		}
 	}
 
-	// Validate property-level attributes
+	// Validate property-level attributes (internal attrs only at compile time)
 	for _, p := range c.Props {
 		if len(p.Attributes) > 0 {
-			if msg := ValidateAttributeList(ctx, p.Attributes, AttributeTARGET_PROPERTY); msg != "" {
+			if msg := ValidateInternalAttributeList(ctx, p.Attributes, AttributeTARGET_PROPERTY); msg != "" {
 				return c.fatalError(ctx, msg)
 			}
 		}
 	}
 
-	// Validate class constant attributes
+	// Validate class constant attributes (internal attrs only at compile time)
 	for _, cc := range c.Const {
 		if len(cc.Attributes) > 0 {
-			if msg := ValidateAttributeList(ctx, cc.Attributes, AttributeTARGET_CLASS_CONSTANT); msg != "" {
+			if msg := ValidateInternalAttributeList(ctx, cc.Attributes, AttributeTARGET_CLASS_CONSTANT); msg != "" {
 				return c.fatalError(ctx, msg)
 			}
 		}

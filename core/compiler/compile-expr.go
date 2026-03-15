@@ -202,9 +202,14 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		return &runConstant{name, l}, nil
 	case tokenizer.T_NS_SEPARATOR:
 		// Fully-qualified name like \TypeError or \PHP_EOL
+		// PHP 8.5: \clone($obj) is a function-call syntax for clone
 		i, err = c.NextItem()
 		if err != nil {
 			return nil, err
+		}
+		if i.Type == tokenizer.T_CLONE {
+			// \clone(...) — PHP 8.5 clone as a function
+			return compileClone(i, c)
 		}
 		if i.Type != tokenizer.T_STRING {
 			return nil, i.Unexpected()
