@@ -756,12 +756,16 @@ func (c *ZClass) validateMagicMethods(ctx phpv.Context) error {
 		"__set":        2,
 		"__isset":      1,
 		"__unset":      1,
+		"__unserialize": 1,
 	}
 
 	for name, requiredArgs := range magicArgCounts {
 		m, ok := c.Methods[name]
 		if !ok {
 			continue
+		}
+		if m.Class != nil && m.Class != c {
+			continue // inherited, don't re-validate
 		}
 		if fga, ok := m.Method.(phpv.FuncGetArgs); ok {
 			args := fga.GetArgs()
@@ -775,8 +779,9 @@ func (c *ZClass) validateMagicMethods(ctx phpv.Context) error {
 		}
 	}
 
-	// Validate __clone and __destruct take no arguments
-	noArgMethods := []phpv.ZString{"__clone", "__destruct"}
+	// Validate methods that cannot take arguments:
+	// __clone, __destruct, __serialize, __sleep, __wakeup, __toString
+	noArgMethods := []phpv.ZString{"__clone", "__destruct", "__serialize", "__sleep", "__wakeup", "__tostring"}
 	for _, name := range noArgMethods {
 		m, ok := c.Methods[name]
 		if !ok {
@@ -798,7 +803,11 @@ func (c *ZClass) validateMagicMethods(ctx phpv.Context) error {
 	}
 
 	// Validate __construct, __destruct, __clone cannot be static
-	noStaticMethods := []phpv.ZString{"__construct", "__destruct", "__clone"}
+	// Also __call, __get, __set, __isset, __unset, __toString cannot be static
+	noStaticMethods := []phpv.ZString{
+		"__construct", "__destruct", "__clone",
+		"__call", "__get", "__set", "__isset", "__unset", "__tostring",
+	}
 	for _, name := range noStaticMethods {
 		m, ok := c.Methods[name]
 		if !ok {
@@ -813,6 +822,101 @@ func (c *ZClass) validateMagicMethods(ctx phpv.Context) error {
 				loc = c.L
 			}
 			return c.fatalErrorAt(ctx, fmt.Sprintf("Method %s::%s() cannot be static", c.Name, m.Name), loc)
+		}
+	}
+
+	// Validate __callStatic and __set_state must be static
+	mustBeStatic := []phpv.ZString{"__callstatic", "__set_state"}
+	for _, name := range mustBeStatic {
+		m, ok := c.Methods[name]
+		if !ok {
+			continue
+		}
+		if m.Class != nil && m.Class != c {
+			continue // inherited
+		}
+		if !m.Modifiers.Has(phpv.ZAttrStatic) {
+			loc := m.Loc
+			if loc == nil {
+				loc = c.L
+			}
+			return c.fatalErrorAt(ctx, fmt.Sprintf("Method %s::%s() must be static", c.Name, m.Name), loc)
+		}
+	}
+
+	// Validate magic methods cannot take arguments by reference
+	noRefMethods := []phpv.ZString{
+		"__call", "__callstatic", "__get", "__set", "__isset", "__unset",
+	}
+	for _, name := range noRefMethods {
+		m, ok := c.Methods[name]
+		if !ok {
+			continue
+		}
+		if m.Class != nil && m.Class != c {
+			continue // inherited
+		}
+		if fga, ok := m.Method.(phpv.FuncGetArgs); ok {
+			for _, arg := range fga.GetArgs() {
+				if arg.Ref {
+					loc := m.Loc
+					if loc == nil {
+						loc = c.L
+					}
+					return c.fatalErrorAt(ctx, fmt.Sprintf("Method %s::%s() cannot take arguments by reference", c.Name, m.Name), loc)
+				}
+			}
+		}
+	}
+
+	// Validate parameter type hints for magic methods
+	// Map of method name → parameter index → required type name
+	type paramTypeReq struct {
+		paramIdx int
+		typeName string // "string" or "array"
+	}
+	paramTypeChecks := map[phpv.ZString][]paramTypeReq{
+		"__get":         {{0, "string"}},
+		"__set":         {{0, "string"}},
+		"__isset":       {{0, "string"}},
+		"__unset":       {{0, "string"}},
+		"__call":        {{0, "string"}, {1, "array"}},
+		"__callstatic":  {{0, "string"}, {1, "array"}},
+		"__unserialize": {{0, "array"}},
+		"__set_state":   {{0, "array"}},
+	}
+	for name, checks := range paramTypeChecks {
+		m, ok := c.Methods[name]
+		if !ok {
+			continue
+		}
+		if m.Class != nil && m.Class != c {
+			continue // inherited
+		}
+		fga, ok := m.Method.(phpv.FuncGetArgs)
+		if !ok {
+			continue
+		}
+		args := fga.GetArgs()
+		for _, check := range checks {
+			if check.paramIdx >= len(args) {
+				continue
+			}
+			arg := args[check.paramIdx]
+			if arg.Hint == nil {
+				continue
+			}
+			// Check if the type hint is compatible. The type hint must be the required
+			// type or a union that includes the required type. If the type hint is
+			// something incompatible (e.g. "int" when "string" is required), error.
+			if !magicParamTypeCompatible(arg.Hint, check.typeName) {
+				loc := m.Loc
+				if loc == nil {
+					loc = c.L
+				}
+				return c.fatalErrorAt(ctx, fmt.Sprintf("%s::%s(): Parameter #%d ($%s) must be of type %s when declared",
+					c.Name, m.Name, check.paramIdx+1, arg.VarName, check.typeName), loc)
+			}
 		}
 	}
 
@@ -842,6 +946,29 @@ func (c *ZClass) validateMagicMethods(ctx phpv.Context) error {
 	}
 
 	return nil
+}
+
+// magicParamTypeCompatible checks if a type hint is compatible with the required type
+// for a magic method parameter. The type hint must be exactly the required type, or a
+// union/nullable type that includes the required type.
+func magicParamTypeCompatible(hint *phpv.TypeHint, requiredType string) bool {
+	// Union types: check if any alternative is the required type
+	if len(hint.Union) > 0 {
+		for _, alt := range hint.Union {
+			if magicParamTypeCompatible(alt, requiredType) {
+				return true
+			}
+		}
+		return false
+	}
+	// Nullable: the base type must match
+	switch requiredType {
+	case "string":
+		return hint.Type() == phpv.ZtString || hint.Type() == phpv.ZtMixed
+	case "array":
+		return hint.Type() == phpv.ZtArray || hint.Type() == phpv.ZtMixed
+	}
+	return true
 }
 
 func pluralS(n int) string {

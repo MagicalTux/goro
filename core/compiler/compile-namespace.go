@@ -262,12 +262,19 @@ func compileUse(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			ctx.Warn("The use statement with non-compound name '%s' has no effect", fullName, logopt.NoFuncName(true))
 		}
 
-		// Check for name conflicts with classes defined in the current namespace
+		// Check for name conflicts with classes defined in the current namespace.
+		// Allow if the use statement imports the exact same class from the current namespace.
 		if useType == "class" && root.nsClassNames[alias] {
-			return nil, &phpv.PhpError{
-				Err:  fmt.Errorf("Cannot use %s as %s because the name is already in use", fullName, alias),
-				Code: phpv.E_COMPILE_ERROR,
-				Loc:  i.Loc(),
+			expectedName := alias
+			if root.namespace != "" {
+				expectedName = root.namespace + "\\" + alias
+			}
+			if fullName != expectedName {
+				return nil, &phpv.PhpError{
+					Err:  fmt.Errorf("Cannot use %s as %s because the name is already in use", fullName, alias),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  i.Loc(),
+				}
 			}
 		}
 

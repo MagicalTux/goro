@@ -185,9 +185,15 @@ func spawnOperator(ctx phpv.Context, op tokenizer.ItemType, a, b phpv.Runnable, 
 	if top, ok := b.(*runnableIf); ok && top.ternary {
 		rop, isop := a.(*runOperator)
 		if (!isop && opD.pri <= ternaryPri) || (isop && rop.opD.pri <= ternaryPri) {
+			// For short ternary (?:), yes and cond point to the same Runnable.
+			// Track whether yes needs to be updated to match the new cond.
+			shortTernary := top.yes == top.cond
 			top.cond, err = spawnOperator(ctx, op, a, top.cond, l)
 			if err != nil {
 				return nil, err
+			}
+			if shortTernary {
+				top.yes = top.cond
 			}
 			return top, nil
 		}

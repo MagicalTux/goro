@@ -938,6 +938,25 @@ func (o *ZObject) checkPropertyVisibility(ctx phpv.Context, keyStr phpv.ZString,
 	return nil
 }
 
+// IsReadonlyProperty checks if a property is declared as readonly in the class hierarchy.
+// Used for blocking indirect modifications (e.g. $obj->readonlyProp[] = val).
+func (o *ZObject) IsReadonlyProperty(keyStr phpv.ZString) bool {
+	class := o.GetClass().(*ZClass)
+	for cur := class; cur != nil; cur = cur.Extends {
+		for _, prop := range cur.Props {
+			if prop.VarName == keyStr && prop.Modifiers.IsReadonly() {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// IsReadonlyPropertyInitialized checks if a readonly property has been initialized.
+func (o *ZObject) IsReadonlyPropertyInitialized(keyStr phpv.ZString) bool {
+	return o.readonlyInit != nil && o.readonlyInit[keyStr]
+}
+
 // checkReadonlyWrite checks if a property is readonly and already initialized.
 // Returns an error if the property cannot be written to.
 func (o *ZObject) checkReadonlyWrite(ctx phpv.Context, keyStr phpv.ZString) error {
