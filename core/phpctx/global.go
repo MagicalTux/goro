@@ -560,6 +560,14 @@ func (g *Global) SetLocalConfig(name phpv.ZString, value *phpv.ZVal) (*phpv.ZVal
 		}
 	}
 
+	// zend.exception_string_param_max_len: range 0..1000000
+	if name == "zend.exception_string_param_max_len" {
+		n := value.AsInt(g)
+		if n < 0 || n > 1000000 {
+			return nil, false
+		}
+	}
+
 	// open_basedir: resolve paths and enforce narrowing (can only restrict further, not widen)
 	if name == "open_basedir" {
 		newValue := value.String()
