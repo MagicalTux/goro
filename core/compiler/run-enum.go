@@ -149,11 +149,12 @@ func (r *runEnumRegister) preCompileValidation(ctx phpv.Context) error {
 		}
 	}
 
-	// Pre-resolve interfaces to check for Traversable and duplicate implementations
-	// before the generic Compile runs.
+	// Pre-resolve interfaces to check for Traversable, duplicate implementations,
+	// and unimplemented abstract methods before the generic Compile runs.
 	resolvedInterfaces := make(map[*phpobj.ZClass]bool)
 	implementsTraversable := false
 	implementsIteratorOrAggregate := false
+	var allResolvedInterfaces []*phpobj.ZClass
 
 	for _, impl := range c.ImplementsStr {
 		implLower := impl.ToLower()
@@ -175,6 +176,7 @@ func (r *runEnumRegister) preCompileValidation(ctx phpv.Context) error {
 			return r.enumFatalError(ctx, fmt.Sprintf("Enum %s cannot implement previously implemented interface %s", c.Name, intfClass.GetName()))
 		}
 		resolvedInterfaces[intfClass] = true
+		allResolvedInterfaces = append(allResolvedInterfaces, intfClass)
 
 		// Track Traversable, Iterator, IteratorAggregate
 		if intfClass == phpobj.Traversable {
@@ -198,6 +200,60 @@ func (r *runEnumRegister) preCompileValidation(ctx phpv.Context) error {
 	// Check Traversable constraint for enums
 	if implementsTraversable && !implementsIteratorOrAggregate {
 		return r.enumFatalError(ctx, fmt.Sprintf("Enum %s must implement interface Traversable as part of either Iterator or IteratorAggregate", c.Name))
+	}
+
+	// Check for unimplemented abstract methods from interfaces.
+	// Enums cannot be abstract, so any unimplemented interface methods are an error.
+	var unimplemented []string
+	for _, intfClass := range allResolvedInterfaces {
+		for methodName, m := range intfClass.Methods {
+			// Interface methods are implicitly abstract
+			isAbstract := m.Empty || m.Modifiers.Has(phpv.ZAttrAbstract) ||
+				(m.Class != nil && m.Class.GetType() == phpv.ZClassTypeInterface)
+			if !isAbstract {
+				continue
+			}
+			// Check if the enum has a concrete implementation
+			if ours, gotit := c.Methods[methodName]; gotit {
+				if !ours.Empty {
+					continue // enum has a concrete implementation
+				}
+			}
+			// This method is not implemented
+			className := string(intfClass.GetName())
+			unimplemented = append(unimplemented, className+"::"+string(m.Name))
+		}
+	}
+	if len(unimplemented) > 0 {
+		msg := fmt.Sprintf("Enum %s must implement %d abstract method", c.Name, len(unimplemented))
+		if len(unimplemented) > 1 {
+			msg += "s"
+		}
+		msg += " ("
+		for i, u := range unimplemented {
+			if i > 0 {
+				msg += ", "
+			}
+			msg += u
+		}
+		msg += ")"
+		return r.enumFatalError(ctx, msg)
+	}
+
+	// Check for ambiguous constants from multiple interfaces
+	seenConsts := make(map[phpv.ZString]phpv.ZString) // const name -> first interface name
+	for _, intfClass := range allResolvedInterfaces {
+		for constName := range intfClass.Const {
+			// Skip if the enum itself defines this constant
+			if _, ownExists := c.Const[constName]; ownExists {
+				continue
+			}
+			if firstIntf, exists := seenConsts[constName]; exists {
+				return r.enumFatalError(ctx, fmt.Sprintf("Enum %s inherits both %s::%s and %s::%s, which is ambiguous",
+					c.Name, firstIntf, constName, intfClass.GetName(), constName))
+			}
+			seenConsts[constName] = intfClass.GetName()
+		}
 	}
 
 	return nil
