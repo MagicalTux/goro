@@ -475,3 +475,70 @@ func fncGetDebugType(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 	return phpv.ZString(typeName).ZVal(), nil
 }
+
+// fncClone implements the clone() function (PHP 8.5+).
+// clone(object $object, ?array $withProperties = null): object
+func fncClone(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) < 1 {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "clone() expects at least 1 argument, 0 given")
+	}
+
+	v := args[0]
+	if v.GetType() != phpv.ZtObject {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("clone(): Argument #1 ($object) must be of type object, %s given", v.GetType().TypeName()))
+	}
+
+	obj := v.Value().(phpv.ZObject)
+
+	// Enums cannot be cloned
+	if obj.GetClass().GetType()&phpv.ZClassTypeEnum != 0 {
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Trying to clone an uncloneable object of class %s", obj.GetClass().GetName()))
+	}
+
+	// Check __clone visibility
+	if m, ok := obj.GetClass().GetMethod("__clone"); ok {
+		if m.Modifiers.IsPrivate() || m.Modifiers.IsProtected() {
+			callerClass := ctx.Class()
+			if m.Modifiers.IsPrivate() {
+				if callerClass == nil || callerClass.GetName() != obj.GetClass().GetName() {
+					return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Call to private method %s::__clone() from global scope", obj.GetClass().GetName()))
+				}
+			} else {
+				// protected
+				if callerClass == nil || (!callerClass.InstanceOf(obj.GetClass()) && !obj.GetClass().InstanceOf(callerClass)) {
+					scope := "global scope"
+					if callerClass != nil {
+						scope = fmt.Sprintf("scope %s", callerClass.GetName())
+					}
+					return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Call to protected method %s::__clone() from %s", obj.GetClass().GetName(), scope))
+				}
+			}
+		}
+	}
+
+	// Validate second argument type if provided
+	if len(args) > 1 && args[1] != nil && !args[1].IsNull() {
+		if args[1].GetType() != phpv.ZtArray {
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("clone(): Argument #2 ($withProperties) must be of type array, %s given", args[1].GetType().TypeName()))
+		}
+	}
+
+	cloned, err := obj.Clone(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Apply withProperties
+	if len(args) > 1 && args[1] != nil && !args[1].IsNull() && args[1].GetType() == phpv.ZtArray {
+		arr := args[1].AsArray(ctx)
+		for k, val := range arr.Iterate(ctx) {
+			keyStr := k.AsString(ctx)
+			err = cloned.ObjectSet(ctx, keyStr, val.ZVal())
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	return cloned.ZVal(), nil
+}

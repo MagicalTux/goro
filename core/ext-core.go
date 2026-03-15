@@ -69,6 +69,7 @@ func init() {
 		Functions: map[string]*phpctx.ExtFunction{
 				"assert_options":             {Func: fncAssertOptions, Args: []*phpctx.ExtFunctionArg{}},
 			"class_alias":               {Func: fncClassAlias, Args: []*phpctx.ExtFunctionArg{}},
+			"clone":                     {Func: fncClone, MinArgs: 1, MaxArgs: 2, Args: []*phpctx.ExtFunctionArg{{ArgName: "object"}, {ArgName: "withProperties", Optional: true}}},
 			"count":                     {Func: fncCount, Args: []*phpctx.ExtFunctionArg{}},
 			"debug_backtrace":           {Func: fncDebugBacktrace, Args: []*phpctx.ExtFunctionArg{}},
 			"debug_print_backtrace":     {Func: fncDebugPrintBacktrace, Args: []*phpctx.ExtFunctionArg{}},
