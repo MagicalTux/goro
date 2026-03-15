@@ -1,6 +1,7 @@
 package core
 
 import (
+	"fmt"
 	"strings"
 	"unsafe"
 
@@ -44,6 +45,13 @@ func fncErrorReporting(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 
 // > func bool define ( string $name , mixed $value )
 func fncDefine(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) < 2 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, fmt.Sprintf("define() expects exactly 2 arguments, %d given", len(args)))
+	}
+	// Check argument type before conversion
+	if args[0].GetType() != phpv.ZtString {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("define(): Argument #1 ($constant_name) must be of type string, %s given", args[0].GetType().TypeName()))
+	}
 	var name phpv.ZString
 	var value *phpv.ZVal
 	_, err := Expand(ctx, args, &name, &value)
