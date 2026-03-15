@@ -28,6 +28,7 @@ var lexPhpOps = map[string]ItemType{
 	"->":  T_OBJECT_OPERATOR,
 	"?->": T_NULLSAFE_OBJECT_OPERATOR,
 	"|=":  T_OR_EQUAL,
+	"|>":  T_PIPE,
 	"+=":  T_PLUS_EQUAL,
 	"**":  T_POW,
 	"**=": T_POW_EQUAL,

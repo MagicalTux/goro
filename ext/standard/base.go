@@ -380,8 +380,13 @@ func stdGetClass(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	// Use the original class (not CurrentClass from GetKin)
+	// Return the raw internal name (including null byte + path for anonymous classes)
+	// so that PHP code can parse it with strstr($name, "\0", true).
 	if zo, ok := object.(*phpobj.ZObject); ok {
-		return zo.Class.GetName().ZVal(), nil
+		return zo.Class.Name.ZVal(), nil
+	}
+	if zc, ok := object.GetClass().(*phpobj.ZClass); ok {
+		return zc.Name.ZVal(), nil
 	}
 	return object.GetClass().GetName().ZVal(), nil
 }

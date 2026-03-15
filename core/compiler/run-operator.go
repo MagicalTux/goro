@@ -77,6 +77,7 @@ var operatorList = map[tokenizer.ItemType]*operatorInternalDetails{
 	tokenizer.T_COALESCE_EQUAL:      &operatorInternalDetails{write: true, skipA: true, pri: 25, op: operatorCoalesceAssign},
 	tokenizer.T_INC:                 &operatorInternalDetails{op: operatorIncDec, pri: 11},
 	tokenizer.T_DEC:                 &operatorInternalDetails{op: operatorIncDec, pri: 11},
+	tokenizer.T_PIPE:                &operatorInternalDetails{op: operatorPipe, pri: 24},
 	tokenizer.Rune('@'):             &operatorInternalDetails{pri: 11, op: operatorSilence},
 
 	// cast operators
@@ -885,6 +886,24 @@ func operatorCompareStrict(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.Z
 
 	return phpv.ZBool(res).ZVal(), nil
 }
+
+// operatorPipe implements the |> pipe operator (PHP 8.5).
+// $expr |> callable passes $expr as the first argument to callable.
+func operatorPipe(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*phpv.ZVal, error) {
+	// b is the callable (right side). Resolve it to a Callable.
+	if PipeResolveCallable == nil {
+		return nil, fmt.Errorf("pipe operator not available: callable resolver not initialized")
+	}
+	callable, err := PipeResolveCallable(ctx, b)
+	if err != nil {
+		return nil, err
+	}
+	// Call the callable with a as the first argument
+	return ctx.CallZVal(ctx, callable, []*phpv.ZVal{a})
+}
+
+// PipeResolveCallable is set from the core package to avoid circular imports.
+var PipeResolveCallable func(ctx phpv.Context, v *phpv.ZVal) (phpv.Callable, error)
 
 func operatorCompare(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*phpv.ZVal, error) {
 	// Handle array comparisons first - arrays are always greater than scalars in PHP 8

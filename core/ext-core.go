@@ -11,8 +11,9 @@ import (
 // WARNING: This file is auto-generated. DO NOT EDIT
 
 func init() {
-	// Wire up the Fiber callable resolver to avoid import cycles
+	// Wire up callable resolvers to avoid import cycles
 	phpobj.FiberResolveCallable = SpawnCallable
+	compiler.PipeResolveCallable = SpawnCallable
 
 	phpctx.RegisterExt(&phpctx.Ext{
 		Name:    "Core",

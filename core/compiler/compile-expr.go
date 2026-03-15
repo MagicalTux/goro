@@ -2,6 +2,7 @@ package compiler
 
 import (
 	"fmt"
+	"io"
 	"math"
 	"math/big"
 	"path"
@@ -304,6 +305,10 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		if class == nil {
 			return &runZVal{phpv.ZString(""), l}, nil
 		}
+		// In a trait, __CLASS__ must resolve at runtime to the using class name
+		if class.Type == phpv.ZClassTypeTrait {
+			return &runClassConstant{l: l}, nil
+		}
 		return &runZVal{class.Name, l}, nil
 	case tokenizer.T_FUNC_C:
 		f := c.getFunc()
@@ -479,4 +484,24 @@ func compilePostExpr(v phpv.Runnable, i *tokenizer.Item, c compileCtx) (phpv.Run
 	// unknown?
 	c.backup()
 	return nil, nil
+}
+
+// runClassConstant resolves __CLASS__ at runtime. This is needed when __CLASS__
+// is used inside a trait, because the value depends on the class that uses the
+// trait rather than the trait itself.
+type runClassConstant struct {
+	l *phpv.Loc
+}
+
+func (r *runClassConstant) Run(ctx phpv.Context) (*phpv.ZVal, error) {
+	class := ctx.Class()
+	if class != nil {
+		return class.GetName().ZVal(), nil
+	}
+	return phpv.ZString("").ZVal(), nil
+}
+
+func (r *runClassConstant) Dump(w io.Writer) error {
+	_, err := w.Write([]byte("__CLASS__"))
+	return err
 }

@@ -14,10 +14,24 @@ func ctypeArg(ctx phpv.Context, args []*phpv.ZVal) (string, error) {
 		return "", err
 	}
 
-	// convert
-	if v.GetType() == phpv.ZtInt {
+	// PHP 8.1+: passing int or float to ctype_* functions is deprecated.
+	// Legacy behavior treats ints in -128..255 as character codes.
+	switch v.GetType() {
+	case phpv.ZtInt:
 		i := v.Value().(phpv.ZInt)
 		if i >= -128 && i <= 255 {
+			if err := ctx.Deprecated("Argument of type int will be interpreted as string in the future"); err != nil {
+				return "", err
+			}
+			return string([]byte{byte(i)}), nil
+		}
+	case phpv.ZtFloat:
+		f := v.Value().(phpv.ZFloat)
+		i := int64(f)
+		if i >= -128 && i <= 255 {
+			if err := ctx.Deprecated("Argument of type float will be interpreted as string in the future"); err != nil {
+				return "", err
+			}
 			return string([]byte{byte(i)}), nil
 		}
 	}

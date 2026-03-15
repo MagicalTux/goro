@@ -115,6 +115,7 @@ const (
 	T_OPEN_TAG
 	T_OPEN_TAG_WITH_ECHO // "<?="
 	T_OR_EQUAL           // |=
+	T_PIPE               // |>
 	T_PLUS_EQUAL         // +=
 	T_POW                // **
 	T_POW_EQUAL
@@ -475,6 +476,8 @@ func tokenHumanName(t ItemType) string {
 		return "\\"
 	case T_ATTRIBUTE:
 		return "#["
+	case T_PIPE:
+		return "|>"
 	}
 	return ""
 }
