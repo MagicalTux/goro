@@ -266,6 +266,9 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 			// Since this function was parsed, the parameter info is available
 			if i < len(func_args) && func_args[i].Ref {
 				// Check if the argument can be passed by reference
+				if callCtx.Args[i] == nil {
+					callCtx.Args[i] = phpv.ZNULL.ZVal()
+				}
 				argName := callCtx.Args[i].GetName()
 				if argName == "" {
 					// No variable name - either handled in Call() with a Notice
