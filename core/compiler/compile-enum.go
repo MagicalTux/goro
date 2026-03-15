@@ -140,6 +140,20 @@ func compileEnum(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 
 		l := i.Loc()
 
+		// Parse leading #[...] attributes for enum members (cases, constants)
+		var memberAttrs []*phpv.ZAttribute
+		for i.Type == tokenizer.T_ATTRIBUTE {
+			parsed, err := parseAttributes(c)
+			if err != nil {
+				return nil, err
+			}
+			memberAttrs = append(memberAttrs, parsed...)
+			i, err = c.NextItem()
+			if err != nil {
+				return nil, err
+			}
+		}
+
 		switch i.Type {
 		case tokenizer.T_CASE:
 			// case Name [= value];
@@ -188,10 +202,11 @@ func compileEnum(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 
 			cases = append(cases, enumCase{name: caseName, value: caseValue})
 
-			// Store as class constant
+			// Store as class constant with optional attributes
 			class.Const[caseName] = &phpv.ZClassConst{
-				Value:     &phpv.CompileDelayed{V: &runEnumCaseInit{className: class.Name, caseName: caseName, backingValue: caseValue, backingType: backingType}},
-				Modifiers: phpv.ZAttrPublic,
+				Value:      &phpv.CompileDelayed{V: &runEnumCaseInit{className: class.Name, caseName: caseName, backingValue: caseValue, backingType: backingType}},
+				Modifiers:  phpv.ZAttrPublic,
+				Attributes: memberAttrs,
 			}
 
 		case tokenizer.T_CONST:
@@ -220,8 +235,9 @@ func compileEnum(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 				}
 
 				class.Const[phpv.ZString(constName)] = &phpv.ZClassConst{
-					Value:     &phpv.CompileDelayed{V: v},
-					Modifiers: phpv.ZAttrPublic,
+					Value:      &phpv.CompileDelayed{V: v},
+					Modifiers:  phpv.ZAttrPublic,
+					Attributes: memberAttrs,
 				}
 
 				i, err = c.NextItem()

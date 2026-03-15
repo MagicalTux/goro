@@ -1004,6 +1004,15 @@ func (o *ZObject) IsReadonlyPropertyInitialized(keyStr phpv.ZString) bool {
 	return o.readonlyInit != nil && o.readonlyInit[keyStr]
 }
 
+// MarkReadonlyInitialized marks a readonly property as initialized.
+// Used by native constructors that set properties via HashTable directly.
+func (o *ZObject) MarkReadonlyInitialized(keyStr phpv.ZString) {
+	if o.readonlyInit == nil {
+		o.readonlyInit = make(map[phpv.ZString]bool)
+	}
+	o.readonlyInit[keyStr] = true
+}
+
 // checkReadonlyWrite checks if a property is readonly and already initialized.
 // Returns an error if the property cannot be written to.
 func (o *ZObject) checkReadonlyWrite(ctx phpv.Context, keyStr phpv.ZString) error {

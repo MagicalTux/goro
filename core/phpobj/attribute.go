@@ -81,13 +81,59 @@ func init() {
 				msg := phpv.ZString("")
 				since := phpv.ZString("")
 				if len(args) > 0 {
-					msg = phpv.ZString(args[0].String())
+					// Validate type: message must be ?string
+					arg := args[0]
+					switch arg.GetType() {
+					case phpv.ZtNull:
+						// null is OK (nullable)
+					case phpv.ZtString:
+						msg = arg.Value().(phpv.ZString)
+					case phpv.ZtInt, phpv.ZtFloat, phpv.ZtBool:
+						// Scalars are coerced to string in non-strict mode
+						msg = phpv.ZString(arg.String())
+					default:
+						// Array, object, etc. always error
+						typeName := arg.GetType().TypeName()
+						if arg.GetType() == phpv.ZtObject {
+							if obj, ok := arg.Value().(phpv.ZObject); ok {
+								typeName = string(obj.GetClass().GetName())
+							}
+						}
+						return nil, ThrowError(ctx, TypeError,
+							fmt.Sprintf("Deprecated::__construct(): Argument #1 ($message) must be of type ?string, %s given", typeName))
+					}
 				}
 				if len(args) > 1 {
-					since = phpv.ZString(args[1].String())
+					// Validate type: since must be ?string
+					arg := args[1]
+					switch arg.GetType() {
+					case phpv.ZtNull:
+						// null is OK
+					case phpv.ZtString:
+						since = arg.Value().(phpv.ZString)
+					case phpv.ZtInt, phpv.ZtFloat, phpv.ZtBool:
+						since = phpv.ZString(arg.String())
+					default:
+						typeName := arg.GetType().TypeName()
+						if arg.GetType() == phpv.ZtObject {
+							if obj, ok := arg.Value().(phpv.ZObject); ok {
+								typeName = string(obj.GetClass().GetName())
+							}
+						}
+						return nil, ThrowError(ctx, TypeError,
+							fmt.Sprintf("Deprecated::__construct(): Argument #2 ($since) must be of type ?string, %s given", typeName))
+					}
+				}
+				// Check if properties are already initialized (readonly re-assignment)
+				if o.IsReadonlyPropertyInitialized("message") {
+					return nil, ThrowError(ctx, Error,
+						fmt.Sprintf("Cannot modify readonly property Deprecated::$message"))
 				}
 				o.HashTable().SetString("message", msg.ZVal())
 				o.HashTable().SetString("since", since.ZVal())
+				// Mark readonly properties as initialized
+				o.MarkReadonlyInitialized("message")
+				o.MarkReadonlyInitialized("since")
 				return nil, nil
 			})},
 		},
