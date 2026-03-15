@@ -247,6 +247,22 @@ func CreateZObject(ctx phpv.Context, c phpv.ZClass) (*ZObject, error) {
 	return n, nil
 }
 
+// isExceptionOrError checks if a class is Exception, Error, or extends either.
+// This walks only the Extends chain to avoid infinite recursion through interfaces.
+func isExceptionOrError(c phpv.ZClass) bool {
+	zc, ok := c.(*ZClass)
+	if !ok {
+		return false
+	}
+	for zc != nil {
+		if zc == Exception || zc == Error {
+			return true
+		}
+		zc = zc.Extends
+	}
+	return false
+}
+
 func NewZObject(ctx phpv.Context, c phpv.ZClass, args ...*phpv.ZVal) (*ZObject, error) {
 	if c == nil {
 		c = StdClass
@@ -285,13 +301,11 @@ func NewZObject(ctx phpv.Context, c phpv.ZClass, args ...*phpv.ZVal) (*ZObject, 
 	// PHP sets these during object creation (before the constructor runs),
 	// so even if a subclass overrides __construct without calling parent,
 	// file/line are still set to where "new" was called.
-	if zc, ok := c.(*ZClass); ok {
-		if zc.InstanceOf(Exception) || zc.InstanceOf(Error) {
-			loc := ctx.Loc()
-			if loc != nil {
-				n.h.SetString("file", phpv.ZString(loc.Filename).ZVal())
-				n.h.SetString("line", phpv.ZInt(loc.Line).ZVal())
-			}
+	if isExceptionOrError(c) {
+		loc := ctx.Loc()
+		if loc != nil {
+			n.h.SetString("file", phpv.ZString(loc.Filename).ZVal())
+			n.h.SetString("line", phpv.ZInt(loc.Line).ZVal())
 		}
 	}
 
