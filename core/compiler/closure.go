@@ -5,6 +5,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phperr"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
@@ -390,7 +391,7 @@ func (z *ZClosure) checkDeprecated(ctx phpv.Context) {
 				msg += ", " + attr.Args[0].String()
 			}
 
-			ctx.Deprecated("%s", msg)
+			ctx.Deprecated("%s", msg, logopt.NoFuncName(true))
 			return
 		}
 	}

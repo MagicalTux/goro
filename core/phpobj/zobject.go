@@ -774,7 +774,7 @@ func checkMethodDeprecated(ctx phpv.Context, class *ZClass, m *phpv.ZClassMethod
 			if len(attr.Args) > 0 && attr.Args[0].GetType() == phpv.ZtString {
 				msg += ", " + attr.Args[0].String()
 			}
-			ctx.Deprecated("%s", msg)
+			ctx.Deprecated("%s", msg, logopt.NoFuncName(true))
 			return
 		}
 	}
