@@ -146,14 +146,19 @@ func SpawnCallable(ctx phpv.Context, v *phpv.ZVal) (phpv.Callable, error) {
 		// If the method is not visible but __call exists, fall through to __call.
 		callerClass := ctx.Class()
 		methodNotVisible := false
+		// Use the declaring class for private visibility checks, not the object's class
+		declaringClass := class
+		if member.Class != nil {
+			declaringClass = member.Class
+		}
 		if member.Modifiers.IsPrivate() {
-			// Private: only accessible from the same class
-			if callerClass == nil || callerClass.GetName() != class.GetName() {
+			// Private: only accessible from the DECLARING class (not subclasses)
+			if callerClass == nil || callerClass.GetName() != declaringClass.GetName() {
 				methodNotVisible = true
 			}
 		} else if member.Modifiers.IsProtected() {
 			// Protected: only accessible from same class or subclass
-			if callerClass == nil || (!callerClass.InstanceOf(class) && !class.InstanceOf(callerClass)) {
+			if callerClass == nil || (!callerClass.InstanceOf(declaringClass) && !declaringClass.InstanceOf(callerClass)) {
 				methodNotVisible = true
 			}
 		}

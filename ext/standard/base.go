@@ -2,6 +2,7 @@ package standard
 
 import (
 	"errors"
+	"fmt"
 	"net"
 	"strings"
 	"unicode"
@@ -686,5 +687,103 @@ func stdGetObjectVars(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			result.OffsetSet(ctx, k, v)
 		}
 	}
+	return result.ZVal(), nil
+}
+
+// > func bool property_exists ( object|string $object_or_class , string $property )
+func stdPropertyExists(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) < 2 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, fmt.Sprintf("property_exists() expects exactly 2 arguments, %d given", len(args)))
+	}
+
+	propName := args[1].AsString(ctx)
+
+	var class phpv.ZClass
+	if args[0].GetType() == phpv.ZtObject {
+		class = args[0].AsObject(ctx).GetClass()
+	} else if args[0].GetType() == phpv.ZtString {
+		className := args[0].AsString(ctx)
+		var err error
+		class, err = ctx.Global().GetClass(ctx, className, true)
+		if err != nil {
+			return phpv.ZFalse.ZVal(), nil
+		}
+	} else {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("property_exists(): Argument #1 ($object_or_class) must be of type object|string, %s given", args[0].GetType().TypeName()))
+	}
+
+	// Check if the property is declared on the class
+	if _, found := class.GetProp(propName); found {
+		return phpv.ZTrue.ZVal(), nil
+	}
+
+	// For objects, also check dynamic properties
+	if args[0].GetType() == phpv.ZtObject {
+		if obj, ok := args[0].Value().(*phpobj.ZObject); ok {
+			if val := obj.HashTable().GetString(propName); val != nil {
+				return phpv.ZTrue.ZVal(), nil
+			}
+		}
+	}
+
+	return phpv.ZFalse.ZVal(), nil
+}
+
+// > func array get_class_vars ( string $class_name )
+func stdGetClassVars(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) < 1 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "get_class_vars() expects exactly 1 argument, 0 given")
+	}
+
+	className := args[0].AsString(ctx)
+	class, err := ctx.Global().GetClass(ctx, className, true)
+	if err != nil {
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Class \"%s\" does not exist", className))
+	}
+
+	result := phpv.NewZArray()
+
+	// Get the caller's class scope for visibility checks
+	callerCtx := ctx.Parent(1)
+	var scope phpv.ZClass
+	if callerCtx != nil {
+		scope = callerCtx.Class()
+	}
+
+	// Iterate over class properties and check visibility
+	if zc, ok := class.(*phpobj.ZClass); ok {
+		for _, prop := range zc.Props {
+			// Check visibility
+			if prop.Modifiers.IsPrivate() {
+				if scope == nil || scope.GetName() != class.GetName() {
+					continue
+				}
+			} else if prop.Modifiers.IsProtected() {
+				if scope == nil || (!scope.InstanceOf(class) && !class.InstanceOf(scope)) {
+					continue
+				}
+			}
+			// Get default value
+			def := phpv.ZNULL.ZVal()
+			if prop.Default != nil {
+				def = prop.Default.ZVal()
+			}
+			result.OffsetSet(ctx, prop.VarName.ZVal(), def)
+		}
+	}
+
+	return result.ZVal(), nil
+}
+
+// > func ?array error_get_last ( void )
+func stdErrorGetLast(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	// TODO: implement proper error tracking
+	return phpv.ZNULL.ZVal(), nil
+}
+
+// > func array get_defined_constants ( bool $categorize = false )
+func stdGetDefinedConstants(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	// TODO: proper implementation with categorization
+	result := phpv.NewZArray()
 	return result.ZVal(), nil
 }

@@ -129,6 +129,31 @@ func init() {
 				return bound.Call(ctx, callArgs)
 			}),
 		},
+		"__invoke": {
+			Name:      "__invoke",
+			Modifiers: phpv.ZAttrPublic,
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				// __invoke delegates to the HandleInvoke handler
+				opaque := o.GetOpaque(Closure)
+				var callable phpv.Callable
+				switch v := opaque.(type) {
+				case *ZClosure:
+					callable = v
+				case *generatorClosure:
+					callable = v
+				default:
+					return nil, fmt.Errorf("invalid closure opaque type: %T", opaque)
+				}
+				return callable.Call(ctx, args)
+			}),
+		},
+		"__debuginfo": {
+			Name:      "__debugInfo",
+			Modifiers: phpv.ZAttrPublic,
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				return closureDebugInfo(ctx, o)
+			}),
+		},
 	}
 }
 
@@ -533,4 +558,75 @@ func closureBind(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	return bound.Spawn(ctx)
+}
+
+// closureDebugInfo builds the __debugInfo array for a Closure object.
+// For user-defined closures this returns: name, file, line, [static], [this], [parameter]
+// For internal function closures it returns: function, [parameter]
+func closureDebugInfo(ctx phpv.Context, o *phpobj.ZObject) (*phpv.ZVal, error) {
+	opaque := o.GetOpaque(Closure)
+	if opaque == nil {
+		return phpv.NewZArray().ZVal(), nil
+	}
+
+	var z *ZClosure
+	switch v := opaque.(type) {
+	case *ZClosure:
+		z = v
+	case *generatorClosure:
+		z = v.ZClosure
+	default:
+		return phpv.NewZArray().ZVal(), nil
+	}
+
+	arr := phpv.NewZArray()
+
+	if z.name != "" && z.start == nil {
+		// Internal/named function wrapped as closure: use "function" key
+		arr.OffsetSet(ctx, phpv.ZString("function"), phpv.ZString(z.name).ZVal())
+	} else {
+		// User-defined closure: use name/file/line
+		name := z.Name()
+		arr.OffsetSet(ctx, phpv.ZString("name"), phpv.ZString(name).ZVal())
+		if z.start != nil {
+			arr.OffsetSet(ctx, phpv.ZString("file"), phpv.ZString(z.start.Filename).ZVal())
+			arr.OffsetSet(ctx, phpv.ZString("line"), phpv.ZInt(z.start.Line).ZVal())
+		}
+	}
+
+	// "static" key: captured use() variables
+	if len(z.use) > 0 {
+		staticArr := phpv.NewZArray()
+		for _, u := range z.use {
+			val := u.Value
+			if val == nil {
+				val = phpv.ZNULL.ZVal()
+			}
+			staticArr.OffsetSet(ctx, u.VarName, val)
+		}
+		arr.OffsetSet(ctx, phpv.ZString("static"), staticArr.ZVal())
+	}
+
+	// "this" key: captured $this
+	if z.this != nil {
+		arr.OffsetSet(ctx, phpv.ZString("this"), z.this.ZVal())
+	}
+
+	// "parameter" key: function parameters
+	if len(z.args) > 0 {
+		paramArr := phpv.NewZArray()
+		for _, a := range z.args {
+			paramKey := "$" + string(a.VarName)
+			var paramVal string
+			if a.Required {
+				paramVal = "<required>"
+			} else {
+				paramVal = "<optional>"
+			}
+			paramArr.OffsetSet(ctx, phpv.ZString(paramKey), phpv.ZString(paramVal).ZVal())
+		}
+		arr.OffsetSet(ctx, phpv.ZString("parameter"), paramArr.ZVal())
+	}
+
+	return arr.ZVal(), nil
 }
