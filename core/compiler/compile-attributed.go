@@ -48,8 +48,7 @@ func compileAttributed(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		if zc, ok := r.(*phpobj.ZClass); ok {
 			zc.Attributes = append(attrs, zc.Attributes...)
 
-			// Check #[\Deprecated] on non-trait class types (class, interface)
-			// Traits support #[\Deprecated] (PHP 8.4+), but classes/interfaces do not
+			// #[\Deprecated] is valid on traits but NOT on classes/interfaces
 			if zc.Type != phpv.ZClassTypeTrait {
 				for _, attr := range zc.Attributes {
 					if attr.ClassName == "Deprecated" || attr.ClassName == "\\Deprecated" {
@@ -61,6 +60,27 @@ func compileAttributed(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 							Err:  fmt.Errorf("Cannot apply #[\\Deprecated] to %s %s", kind, zc.Name),
 							Code: phpv.E_ERROR,
 							Loc:  zc.L,
+						}
+						c.Global().LogError(phpErr)
+						return nil, phpv.ExitError(255)
+					}
+				}
+			}
+		}
+		// For the wrapper type, also set attributes
+		if w, ok := r.(*runClassWithTraitDeprecationCheck); ok {
+			w.class.Attributes = append(attrs, w.class.Attributes...)
+			if w.class.Type != phpv.ZClassTypeTrait {
+				for _, attr := range w.class.Attributes {
+					if attr.ClassName == "Deprecated" || attr.ClassName == "\\Deprecated" {
+						kind := "class"
+						if w.class.Type == phpv.ZClassTypeInterface {
+							kind = "interface"
+						}
+						phpErr := &phpv.PhpError{
+							Err:  fmt.Errorf("Cannot apply #[\\Deprecated] to %s %s", kind, w.class.Name),
+							Code: phpv.E_ERROR,
+							Loc:  w.class.L,
 						}
 						c.Global().LogError(phpErr)
 						return nil, phpv.ExitError(255)
@@ -83,7 +103,6 @@ func compileAttributed(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			er.class.Attributes = append(attrs, er.class.Attributes...)
 			enumClass = er.class
 		}
-		// Check #[\Deprecated] on enums - not allowed
 		if enumClass != nil {
 			for _, attr := range enumClass.Attributes {
 				if attr.ClassName == "Deprecated" || attr.ClassName == "\\Deprecated" {

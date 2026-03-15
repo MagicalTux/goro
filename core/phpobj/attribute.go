@@ -62,6 +62,9 @@ var NoDiscardClass *ZClass
 var AllowDynamicPropertiesClass *ZClass
 
 func init() {
+	// Deprecated targets include CLASS so that traits with #[\Deprecated] pass
+	// attribute validation in ZClass.Compile(). Classes/interfaces/enums are
+	// rejected earlier in compileAttributed with a specific error message.
 	DeprecatedClass = &ZClass{
 		Name: "Deprecated",
 		Attributes: []*phpv.ZAttribute{
