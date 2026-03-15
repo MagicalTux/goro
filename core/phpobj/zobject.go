@@ -341,10 +341,8 @@ func NewZObject(ctx phpv.Context, c phpv.ZClass, args ...*phpv.ZVal) (*ZObject, 
 			}
 		}
 
-		// Check #[\Deprecated] attribute on constructor
-		if zc, ok := c.(*ZClass); ok {
-			checkMethodDeprecated(ctx, zc, ctorMethod)
-		}
+		// Note: #[\Deprecated] check for user constructors is handled by ZClosure.Call()
+		// which fires when the constructor body is actually invoked.
 
 		// Handle constructor property promotion: set promoted properties before calling body.
 		// We bypass ObjectSet (which checks visibility) and set directly on the hash table,
@@ -444,6 +442,7 @@ func (z *ZObject) new(class *ZClass) *ZObject {
 		CurrentClass: class,
 		Opaque:       z.Opaque,
 		ID:           z.ID,
+		readonlyInit: z.readonlyInit,
 	}
 }
 
@@ -794,8 +793,8 @@ func (o *ZObject) GetMethod(method phpv.ZString, ctx phpv.Context) (phpv.Callabl
 		}
 		return nil, ctx.Errorf("Call to undefined method %s::%s()", o.Class.GetName(), method)
 	}
-	// Check #[\Deprecated] attribute on the method
-	checkMethodDeprecated(ctx, class, m)
+	// Note: #[\Deprecated] check for user methods is handled by ZClosure.Call()
+	// which fires when the method body is actually invoked.
 	// TODO check method access
 	return m.Method, nil
 }
@@ -815,11 +814,12 @@ func checkMethodDeprecated(ctx phpv.Context, class *ZClass, m *phpv.ZClassMethod
 func formatDeprecatedMsg(label, name string, attr *phpv.ZAttribute) string {
 	msg := fmt.Sprintf("%s %s is deprecated", label, name)
 
+	// Coerce scalar types to string, matching Deprecated constructor behavior
 	var message, since string
-	if len(attr.Args) > 0 && attr.Args[0].GetType() == phpv.ZtString {
+	if len(attr.Args) > 0 && !attr.Args[0].IsNull() {
 		message = attr.Args[0].String()
 	}
-	if len(attr.Args) > 1 && attr.Args[1].GetType() == phpv.ZtString {
+	if len(attr.Args) > 1 && !attr.Args[1].IsNull() {
 		since = attr.Args[1].String()
 	}
 
