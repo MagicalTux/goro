@@ -840,14 +840,14 @@ func parseClassLine(class *phpobj.ZClass, c compileCtx) error {
 		}
 		// Check reserved class names
 		lowerName := className.ToLower()
-		classKind := "class"
+		classKind := "a class"
 		if class.Type == phpv.ZClassTypeInterface {
-			classKind = "interface"
+			classKind = "an interface"
 		}
 		switch lowerName {
 		case "self", "parent", "static":
 			return &phpv.PhpError{
-				Err:  fmt.Errorf("Cannot use \"%s\" as %s name, as it is reserved", i.Data, classKind),
+				Err:  fmt.Errorf("Cannot use \"%s\" as %s name as it is reserved", i.Data, classKind),
 				Code: phpv.E_COMPILE_ERROR,
 				Loc:  i.Loc(),
 			}
@@ -882,7 +882,7 @@ func parseClassLine(class *phpobj.ZClass, c compileCtx) error {
 		switch class.ExtendsStr.ToLower() {
 		case "self", "parent", "static":
 			return &phpv.PhpError{
-				Err:  fmt.Errorf("Cannot use \"%s\" as class name, as it is reserved", class.ExtendsStr),
+				Err:  fmt.Errorf("Cannot use \"%s\" as a class name as it is reserved", class.ExtendsStr),
 				Code: phpv.E_COMPILE_ERROR,
 				Loc:  i.Loc(),
 			}
