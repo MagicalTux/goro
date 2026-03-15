@@ -241,12 +241,13 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 				if _, exists := c.Methods[name]; !exists {
 					// Create a copy of the method pointing to this class
 					methodCopy := &phpv.ZClassMethod{
-						Name:      m.Name,
-						Modifiers: m.Modifiers,
-						Method:    m.Method,
-						Class:     c,
-						Empty:     m.Empty,
-						Loc:       m.Loc,
+						Name:       m.Name,
+						Modifiers:  m.Modifiers,
+						Method:     m.Method,
+						Class:      c,
+						Empty:      m.Empty,
+						Loc:        m.Loc,
+						Attributes: m.Attributes,
 					}
 					c.Methods[name] = methodCopy
 
@@ -530,7 +531,89 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 		}
 	}
 
+	// Validate #[\Override] attribute: methods with this attribute must have a
+	// matching method in a parent class, implemented interface, or abstract trait method.
+	if c.Type != phpv.ZClassTypeTrait {
+		for _, m := range c.Methods {
+			if !methodHasOverride(m) {
+				continue
+			}
+			// Only check methods defined in this class (not inherited from parent)
+			if m.Class != nil && m.Class != c {
+				continue
+			}
+
+			methodName := m.Name.ToLower()
+			found := false
+
+			// Check parent class for a matching method
+			if c.Extends != nil {
+				if parentMethod, ok := c.Extends.Methods[methodName]; ok {
+					if methodName == "__construct" {
+						// For __construct, only abstract parent constructors satisfy #[\Override]
+						if parentMethod.Modifiers.Has(phpv.ZAttrAbstract) || (parentMethod.Empty && parentMethod.Class != nil && parentMethod.Class.GetType() == phpv.ZClassTypeInterface) {
+							found = true
+						}
+					} else if !parentMethod.Modifiers.Has(phpv.ZAttrPrivate) {
+						found = true
+					}
+				}
+			}
+
+			// Check directly implemented interfaces
+			if !found {
+				for _, intf := range c.Implementations {
+					if _, ok := intf.Methods[methodName]; ok {
+						found = true
+						break
+					}
+				}
+			}
+
+			// Check used traits for abstract methods with the same name
+			if !found {
+				for _, tu := range c.TraitUses {
+					for _, traitName := range tu.TraitNames {
+						traitClass, err := ctx.Global().GetClass(ctx, traitName, true)
+						if err != nil {
+							continue
+						}
+						if tc, ok := traitClass.(*ZClass); ok {
+							if tm, ok := tc.Methods[methodName]; ok {
+								if tm.Modifiers.Has(phpv.ZAttrAbstract) || tm.Empty {
+									found = true
+									break
+								}
+							}
+						}
+					}
+					if found {
+						break
+					}
+				}
+			}
+
+			if !found {
+				loc := m.Loc
+				if loc == nil {
+					loc = c.L
+				}
+				return c.fatalErrorAt(ctx, fmt.Sprintf("%s::%s() has #[\\Override] attribute, but no matching parent method exists", c.GetName(), m.Name), loc)
+			}
+		}
+	}
+
 	return nil
+}
+
+// methodHasOverride checks if a method has the #[\Override] attribute.
+func methodHasOverride(m *phpv.ZClassMethod) bool {
+	for _, attr := range m.Attributes {
+		if attr.ClassName == "Override" {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *ZClass) checkMethodCompatibility(ctx phpv.Context, child *phpv.ZClassMethod, parent *phpv.ZClassMethod) error {

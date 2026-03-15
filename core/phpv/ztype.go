@@ -66,6 +66,20 @@ func (z ZNull) AsVal(ctx Context, t ZType) (Val, error) {
 	return nil, nil
 }
 
+// scalarToObject converts a scalar value to a stdClass object with a "scalar" property.
+// This is the PHP behavior for (object)$scalar.
+func scalarToObject(ctx Context, v *ZVal) (Val, error) {
+	if NewStdClassFunc == nil {
+		return nil, nil
+	}
+	obj, err := NewStdClassFunc(ctx)
+	if err != nil {
+		return nil, err
+	}
+	obj.ObjectSet(ctx, ZString("scalar"), v)
+	return obj, nil
+}
+
 func (z ZNull) Value() Val {
 	return z
 }
@@ -102,6 +116,8 @@ func (z ZBool) AsVal(ctx Context, t ZType) (Val, error) {
 		arr := NewZArray()
 		arr.OffsetSet(ctx, nil, z.ZVal())
 		return arr, nil
+	case ZtObject:
+		return scalarToObject(ctx, z.ZVal())
 	}
 	return nil, nil
 }
@@ -144,6 +160,8 @@ func (z ZInt) AsVal(ctx Context, t ZType) (Val, error) {
 		r := NewZArray()
 		r.OffsetSet(ctx, nil, z.ZVal())
 		return r, nil
+	case ZtObject:
+		return scalarToObject(ctx, z.ZVal())
 	}
 	return nil, nil
 }
@@ -188,6 +206,8 @@ func (z ZFloat) AsVal(ctx Context, t ZType) (Val, error) {
 		arr := NewZArray()
 		arr.OffsetSet(ctx, nil, z.ZVal())
 		return arr, nil
+	case ZtObject:
+		return scalarToObject(ctx, z.ZVal())
 	}
 	return nil, nil
 }

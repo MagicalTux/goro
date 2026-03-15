@@ -60,6 +60,7 @@ type compileRootCtx struct {
 	useMap       map[phpv.ZString]phpv.ZString // use aliases for classes
 	useFuncMap   map[phpv.ZString]phpv.ZString // use function aliases
 	useConstMap  map[phpv.ZString]phpv.ZString // use const aliases
+	strictTypes  bool                          // declare(strict_types=1) in effect
 }
 
 func (c *compileRootCtx) ExpectSingle(r rune) error {

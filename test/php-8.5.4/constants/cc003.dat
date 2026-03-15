@@ -1,5 +1,0 @@
-<?php
-class test {
-    const val = 1;
-}
-?>

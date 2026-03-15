@@ -103,8 +103,37 @@ func doVarDump(ctx phpv.Context, z *phpv.ZVal, linePfx string, recurs map[uintpt
 		fmt.Fprintf(ctx, "%s}\n", linePfx)
 	case phpv.ZtObject:
 		v := z.Value()
+
+		// Special handling for enum cases: display as enum(ClassName::CaseName)
 		if obj, ok := v.(*phpobj.ZObject); ok {
-			fmt.Fprintf(ctx, "%s%sobject(%s)#%d (%d) {\n", linePfx, isRef, obj.Class.GetName(), obj.ID, obj.Count(ctx))
+			if obj.GetClass().GetType()&phpv.ZClassTypeEnum != 0 {
+				// Get the case name from the "name" property
+				caseName := ""
+				if nameVal, err := obj.ObjectGet(ctx, phpv.ZString("name")); err == nil && nameVal != nil {
+					caseName = nameVal.String()
+				}
+				fmt.Fprintf(ctx, "%s%senum(%s::%s)\n", linePfx, isRef, obj.GetClass().GetName(), caseName)
+				return nil
+			}
+		}
+
+		// Check for __debugInfo() method - if present, use its return value
+		var debugInfoArr *phpv.ZArray
+		if obj, ok := v.(*phpobj.ZObject); ok {
+			if debugInfoMethod, hasDebugInfo := obj.GetClass().GetMethod("__debuginfo"); hasDebugInfo {
+				result, err := ctx.Global().CallZVal(ctx, debugInfoMethod.Method, nil, obj)
+				if err == nil && result != nil && result.GetType() == phpv.ZtArray {
+					debugInfoArr = result.AsArray(ctx)
+				}
+			}
+		}
+
+		if obj, ok := v.(*phpobj.ZObject); ok {
+			count := obj.Count(ctx)
+			if debugInfoArr != nil {
+				count = phpv.ZInt(debugInfoArr.Count(ctx))
+			}
+			fmt.Fprintf(ctx, "%s%sobject(%s)#%d (%d) {\n", linePfx, isRef, obj.Class.GetName(), obj.ID, count)
 		} else if c, ok := v.(phpv.ZCountable); ok {
 			fmt.Fprintf(ctx, "%s%sobject(?) (%d) {\n", linePfx, isRef, c.Count(ctx))
 		} else {
@@ -112,7 +141,30 @@ func doVarDump(ctx phpv.Context, z *phpv.ZVal, linePfx string, recurs map[uintpt
 		}
 
 		localPfx := linePfx + "  "
-		if obj, ok := v.(*phpobj.ZObject); ok {
+		if debugInfoArr != nil {
+			// Use __debugInfo return value instead of regular properties
+			it := debugInfoArr.NewIterator()
+			for {
+				if !it.Valid(ctx) {
+					break
+				}
+				k, err := it.Key(ctx)
+				if err != nil {
+					return err
+				}
+				if k.GetType() == phpv.ZtInt {
+					fmt.Fprintf(ctx, "%s[%s]=>\n", localPfx, k)
+				} else {
+					fmt.Fprintf(ctx, "%s[\"%s\"]=>\n", localPfx, k)
+				}
+				val, err := it.Current(ctx)
+				if err != nil {
+					return err
+				}
+				doVarDump(ctx, val, localPfx, recurs)
+				it.Next(ctx)
+			}
+		} else if obj, ok := v.(*phpobj.ZObject); ok {
 			for prop := range obj.IterProps(ctx) {
 				suffix := ""
 				switch {

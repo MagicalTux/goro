@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/MagicalTux/goro/core/compiler"
@@ -116,6 +117,11 @@ func SpawnCallable(ctx phpv.Context, v *phpv.ZVal) (phpv.Callable, error) {
 
 		member, ok := class.GetMethod(name)
 		if !ok {
+			// Check for __invoke via HandleInvoke (e.g., Closure::__invoke)
+			if instance != nil && name == "__invoke" && class.Handlers() != nil && class.Handlers().HandleInvoke != nil {
+				// Return a wrapped callable that calls HandleInvoke
+				return phpv.Bind(&invokeWrapper{obj: instance, handler: class.Handlers().HandleInvoke}, instance), nil
+			}
 			// Check for __call magic method
 			if instance != nil {
 				if callMethod, hasCall := class.GetMethod("__call"); hasCall {
@@ -164,11 +170,19 @@ func SpawnCallable(ctx phpv.Context, v *phpv.ZVal) (phpv.Callable, error) {
 				}
 			}
 			if member.Modifiers.IsPrivate() {
+				callerFunc := ctx.GetFuncName()
+				if callerFunc == "" {
+					callerFunc = "call_user_func"
+				}
 				return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
-					fmt.Sprintf("call_user_func_array(): Argument #1 ($callback) must be a valid callback, cannot access private method %s::%s()", class.GetName(), member.Name))
+					fmt.Sprintf("%s(): Argument #1 ($callback) must be a valid callback, cannot access private method %s::%s()", callerFunc, class.GetName(), member.Name))
+			}
+			callerFunc := ctx.GetFuncName()
+			if callerFunc == "" {
+				callerFunc = "call_user_func"
 			}
 			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
-				fmt.Sprintf("call_user_func_array(): Argument #1 ($callback) must be a valid callback, cannot access protected method %s::%s()", class.GetName(), member.Name))
+				fmt.Sprintf("%s(): Argument #1 ($callback) must be a valid callback, cannot access protected method %s::%s()", callerFunc, class.GetName(), member.Name))
 		}
 
 		if instance != nil {
@@ -198,6 +212,40 @@ func SpawnCallable(ctx phpv.Context, v *phpv.ZVal) (phpv.Callable, error) {
 	default:
 		return nil, ctx.Errorf("Argument passed must be callable, %q given", v.GetType().String())
 	}
+}
+
+// invokeWrapper wraps an object's HandleInvoke handler as a Callable.
+type invokeWrapper struct {
+	phpv.CallableVal
+	obj     phpv.ZObject
+	handler func(phpv.Context, phpv.ZObject, []phpv.Runnable) (*phpv.ZVal, error)
+}
+
+func (w *invokeWrapper) Name() string {
+	return "__invoke"
+}
+
+func (w *invokeWrapper) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	// Convert []*ZVal to []Runnable using zvalRunnable wrapper
+	runnables := make([]phpv.Runnable, len(args))
+	for i, a := range args {
+		runnables[i] = &zvalRunnable{v: a}
+	}
+	return w.handler(ctx, w.obj, runnables)
+}
+
+// zvalRunnable wraps a *ZVal as a Runnable (for passing pre-evaluated values as Runnable args)
+type zvalRunnable struct {
+	v *phpv.ZVal
+}
+
+func (r *zvalRunnable) Run(ctx phpv.Context) (*phpv.ZVal, error) {
+	return r.v, nil
+}
+
+func (r *zvalRunnable) Dump(w io.Writer) error {
+	_, err := fmt.Fprintf(w, "%v", r.v)
+	return err
 }
 
 // magicCallWrapper wraps a __call magic method to be used as a Callable.

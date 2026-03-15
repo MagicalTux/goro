@@ -332,11 +332,21 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 				if !isLeadingNumeric(s) {
 					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Unsupported operand types: %s %s %s", phpTypeName(a), r.op.OpString(), phpTypeName(b)))
 				}
+				if !isNumericString(s) {
+					if err := ctx.Warn("A non-numeric value encountered", logopt.Data{Loc: r.l, NoFuncName: true}); err != nil {
+						return nil, err
+					}
+				}
 			}
 			if bType == phpv.ZtString {
 				s := string(b.Value().(phpv.ZString))
 				if !isLeadingNumeric(s) {
 					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Unsupported operand types: %s %s %s", phpTypeName(a), r.op.OpString(), phpTypeName(b)))
+				}
+				if !isNumericString(s) {
+					if err := ctx.Warn("A non-numeric value encountered", logopt.Data{Loc: r.l, NoFuncName: true}); err != nil {
+						return nil, err
+					}
 				}
 			}
 			a, _ = a.AsNumeric(ctx)
@@ -645,7 +655,18 @@ func operatorMath(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*ph
 				res = phpv.ZFloat(a) * phpv.ZFloat(b)
 			}
 		case tokenizer.T_POW, tokenizer.T_POW_EQUAL:
-			res = phpv.ZFloat(math.Pow(float64(a), float64(b)))
+			if b >= 0 {
+				// Try to compute as integer first
+				result := phpv.ZFloat(math.Pow(float64(a), float64(b)))
+				intResult := phpv.ZInt(result)
+				if phpv.ZFloat(intResult) == result && result >= math.MinInt64 && result <= math.MaxInt64 {
+					res = intResult
+				} else {
+					res = result
+				}
+			} else {
+				res = phpv.ZFloat(math.Pow(float64(a), float64(b)))
+			}
 		}
 		return res.ZVal(), nil
 	case phpv.ZtFloat:
@@ -845,8 +866,7 @@ func operatorCompareStrict(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.Z
 		}
 	case phpv.ZtArray:
 		// For arrays, === checks same keys and values in same order with strict comparison
-		// Simplified: compare by pointer identity for now
-		res = a.Value() == b.Value()
+		res = a.AsArray(ctx).StrictEquals(ctx, b.AsArray(ctx))
 	default:
 		return nil, ctx.Errorf("unsupported compare type %s", a.GetType())
 	}

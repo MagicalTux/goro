@@ -76,6 +76,7 @@ func init() {
 		tokenizer.T_YIELD:        &compileFuncCb{f: compileYield},
 		tokenizer.T_YIELD_FROM:   &compileFuncCb{f: compileYield},
 		tokenizer.T_ATTRIBUTE:    &compileFuncCb{f: compileAttributed, skip: true},
+		tokenizer.T_DECLARE:      &compileFuncCb{f: compileDeclare, skip: true},
 		tokenizer.Rune(';'):      nil,
 		// '}': return compileBase (hidden)
 	}

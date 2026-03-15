@@ -256,6 +256,11 @@ func StrictEquals(ctx Context, a, b *ZVal) (bool, error) {
 		return false, nil
 	}
 
+	// For arrays, use StrictEquals recursively (not loose Compare)
+	if a.GetType() == ZtArray {
+		return a.AsArray(ctx).StrictEquals(ctx, b.AsArray(ctx)), nil
+	}
+
 	cmp, err := Compare(ctx, a, b)
 	if err != nil {
 		return false, err

@@ -62,8 +62,14 @@ func HandleUserError(ctx phpv.Context, err *phpv.PhpError) error {
 				}
 			}
 			returnErr = err2
-		} else if bool(proceed.AsBool(ctx)) || err.IsNonFatal() {
-			// User handler handled the error - suppress default output
+		} else if proceed != nil && proceed.GetType() == phpv.ZtBool && !bool(proceed.Value().(phpv.ZBool)) {
+			// Handler explicitly returned false: continue with default error handler
+			// (don't suppress the standard error message)
+			if err.IsNonFatal() {
+				return nil
+			}
+		} else if err.IsNonFatal() {
+			// Handler returned void/null/true: suppress default output
 			return ErrHandledByUser
 		}
 	}

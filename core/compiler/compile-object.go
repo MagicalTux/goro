@@ -612,10 +612,7 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	if objI == nil && r.static {
 		// :: is used outside of class context
 		if !method.Modifiers.IsStatic() {
-			err = ctx.Deprecated("Non-static method %s::%s() should not be called statically", class.GetName(), method.Name, logopt.NoFuncName(true))
-			if err != nil {
-				return nil, err
-			}
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Non-static method %s::%s() cannot be called statically", class.GetName(), method.Name))
 		}
 
 		// Use method.Class (defining class) for ctx.Class() so self:: resolves correctly

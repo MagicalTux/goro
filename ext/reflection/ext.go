@@ -12,6 +12,11 @@ import (
 var ReflectionException *phpobj.ZClass
 
 var ReflectionClass *phpobj.ZClass
+var ReflectionClassConstant *phpobj.ZClass
+var ReflectionConstant *phpobj.ZClass
+var ReflectionEnum *phpobj.ZClass
+var ReflectionEnumBackedCase *phpobj.ZClass
+var ReflectionEnumUnitCase *phpobj.ZClass
 var ReflectionMethod *phpobj.ZClass
 var ReflectionProperty *phpobj.ZClass
 
@@ -65,6 +70,49 @@ func init() {
 		Methods: map[phpv.ZString]*phpv.ZClassMethod{},
 	}
 
+	// Stub classes for features that need basic registration
+	ReflectionClassConstant = &phpobj.ZClass{
+		Name: "ReflectionClassConstant",
+		Methods: map[phpv.ZString]*phpv.ZClassMethod{
+			"__construct": {Name: "__construct", Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				return nil, nil // stub
+			})},
+		},
+	}
+
+	ReflectionConstant = &phpobj.ZClass{
+		Name: "ReflectionConstant",
+		Methods: map[phpv.ZString]*phpv.ZClassMethod{
+			"__construct": {Name: "__construct", Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				return nil, nil // stub
+			})},
+		},
+	}
+
+	ReflectionEnum = &phpobj.ZClass{
+		Name:    "ReflectionEnum",
+		Extends: ReflectionClass,
+		Methods: phpobj.CopyMethods(ReflectionClass.Methods),
+	}
+
+	ReflectionEnumBackedCase = &phpobj.ZClass{
+		Name: "ReflectionEnumBackedCase",
+		Methods: map[phpv.ZString]*phpv.ZClassMethod{
+			"__construct": {Name: "__construct", Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				return nil, nil // stub
+			})},
+		},
+	}
+
+	ReflectionEnumUnitCase = &phpobj.ZClass{
+		Name: "ReflectionEnumUnitCase",
+		Methods: map[phpv.ZString]*phpv.ZClassMethod{
+			"__construct": {Name: "__construct", Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				return nil, nil // stub
+			})},
+		},
+	}
+
 	// Initialize sub-class definitions (types, parameters, etc.)
 	initReflectionType()
 	initReflectionParameter()
@@ -82,6 +130,11 @@ func init() {
 		Classes: []*phpobj.ZClass{
 			ReflectionException,
 			ReflectionClass,
+			ReflectionClassConstant,
+			ReflectionConstant,
+			ReflectionEnum,
+			ReflectionEnumBackedCase,
+			ReflectionEnumUnitCase,
 			ReflectionMethod,
 			ReflectionProperty,
 			ReflectionFunction,

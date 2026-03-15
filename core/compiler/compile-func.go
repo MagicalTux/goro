@@ -151,6 +151,13 @@ func (r *runnableFunctionCallRef) Run(ctx phpv.Context) (l *phpv.ZVal, err error
 			return f.Class.Handlers().HandleInvoke(ctx, f, r.args)
 		}
 
+		// Check for __invoke method on objects (user-defined classes with __invoke)
+		if obj, ok := v.Value().(phpv.ZObject); ok {
+			if invokeMethod, hasInvoke := obj.GetClass().GetMethod("__invoke"); hasInvoke {
+				return ctx.Call(ctx, invokeMethod.Method, r.args, obj)
+			}
+		}
+
 		if f, ok = v.Value().(phpv.Callable); !ok {
 			v, err = v.As(ctx, phpv.ZtString)
 			if err != nil {

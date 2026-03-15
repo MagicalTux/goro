@@ -371,3 +371,59 @@ func (a *ZArray) Equals(ctx Context, b *ZArray) bool {
 	}
 	return true
 }
+
+// StrictEquals compares two arrays with strict comparison (===).
+// Same keys in the same order, with values compared strictly.
+// References are transparent (dereferenced before comparison).
+func (a *ZArray) StrictEquals(ctx Context, b *ZArray) bool {
+	if a.Count(ctx) != b.Count(ctx) {
+		return false
+	}
+	// Walk both linked lists in order
+	nodeA := a.h.first
+	nodeB := b.h.first
+	for nodeA != nil && nodeB != nil {
+		// Skip deleted nodes
+		if nodeA.deleted {
+			nodeA = nodeA.next
+			continue
+		}
+		if nodeB.deleted {
+			nodeB = nodeB.next
+			continue
+		}
+		// Compare keys: must be same type and value
+		kA := nodeA.k
+		kB := nodeB.k
+		if kA.GetType() != kB.GetType() {
+			return false
+		}
+		switch kA.GetType() {
+		case ZtInt:
+			if kA.(ZInt) != kB.(ZInt) {
+				return false
+			}
+		case ZtString:
+			if kA.(ZString) != kB.(ZString) {
+				return false
+			}
+		default:
+			return false
+		}
+		// Compare values strictly (dereferences references)
+		eq, _ := StrictEquals(ctx, nodeA.v, nodeB.v)
+		if !eq {
+			return false
+		}
+		nodeA = nodeA.next
+		nodeB = nodeB.next
+	}
+	// Skip remaining deleted nodes
+	for nodeA != nil && nodeA.deleted {
+		nodeA = nodeA.next
+	}
+	for nodeB != nil && nodeB.deleted {
+		nodeB = nodeB.next
+	}
+	return nodeA == nil && nodeB == nil
+}

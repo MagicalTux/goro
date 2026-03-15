@@ -63,9 +63,31 @@ func compileAttributed(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		if err != nil {
 			return nil, err
 		}
-		// Attributes on top-level functions are parsed but not stored yet
-		// (the main use case is class/method/property/parameter attributes)
-		_ = attrs
+		// Store attributes on the closure
+		if zc, ok := r.(*ZClosure); ok {
+			zc.attributes = attrs
+		}
+		return r, nil
+
+	case tokenizer.T_FN:
+		// Arrow function with attributes
+		r, err := compileArrowFunction(i, c)
+		if err != nil {
+			return nil, err
+		}
+		if zc, ok := r.(*ZClosure); ok {
+			zc.attributes = attrs
+		}
+		return r, nil
+
+	case tokenizer.T_CONST:
+		// Top-level constant with attributes: #[Attr] const FOO = expr;
+		r, err := compileTopLevelConst(i, c)
+		if err != nil {
+			return nil, err
+		}
+		// Store attributes on the constant (for Reflection API)
+		_ = attrs // TODO: Store attributes on constants when ZClassConst supports it
 		return r, nil
 
 	default:

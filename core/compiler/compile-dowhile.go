@@ -3,6 +3,7 @@ package compiler
 import (
 	"io"
 
+	"github.com/MagicalTux/goro/core/phperr"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
@@ -17,7 +18,28 @@ func (r *runnableDoWhile) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 	for {
 		_, err = r.code.Run(ctx)
 		if err != nil {
-			return nil, err
+			// Don't wrap PhpThrow (exceptions) - they need to propagate as-is
+			// for try/catch to work correctly
+			if _, isThrow := err.(*phperr.PhpThrow); isThrow {
+				return nil, err
+			}
+			e := r.l.Error(ctx, err)
+			switch br := e.Err.(type) {
+			case *phperr.PhpBreak:
+				if br.Intv > 1 {
+					br.Intv--
+					return nil, br
+				}
+				return nil, nil
+			case *phperr.PhpContinue:
+				if br.Intv > 1 {
+					br.Intv--
+					return nil, br
+				}
+				// continue in do-while: re-evaluate condition
+			default:
+				return nil, e
+			}
 		}
 
 		t, err := r.cond.Run(ctx)

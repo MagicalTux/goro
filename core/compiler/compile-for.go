@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"fmt"
 	"io"
 	"strconv"
 
@@ -20,7 +21,13 @@ func compileBreak(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			return nil, err
 		}
 		if intv <= 0 {
-			return nil, c.Errorf("'break' operator accepts only positive numbers")
+			phpErr := &phpv.PhpError{
+				Err:  fmt.Errorf("'break' operator accepts only positive integers"),
+				Loc:  i.Loc(),
+				Code: phpv.E_COMPILE_ERROR,
+			}
+			c.Global().LogError(phpErr)
+			return nil, phpv.ExitError(255)
 		}
 	} else {
 		c.backup()
@@ -41,7 +48,13 @@ func compileContinue(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			return nil, err
 		}
 		if intv <= 0 {
-			return nil, c.Errorf("'continue' operator accepts only positive numbers")
+			phpErr := &phpv.PhpError{
+				Err:  fmt.Errorf("'continue' operator accepts only positive integers"),
+				Loc:  i.Loc(),
+				Code: phpv.E_COMPILE_ERROR,
+			}
+			c.Global().LogError(phpErr)
+			return nil, phpv.ExitError(255)
 		}
 	} else {
 		c.backup()
@@ -87,6 +100,11 @@ func (r *runnableFor) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 		if r.code != nil {
 			_, err = r.code.Run(ctx)
 			if err != nil {
+				// Don't wrap PhpThrow (exceptions) - they need to propagate as-is
+				// for try/catch to work correctly
+				if _, isThrow := err.(*phperr.PhpThrow); isThrow {
+					return nil, err
+				}
 				e := r.l.Error(ctx, err)
 				switch br := e.Err.(type) {
 				case *phperr.PhpBreak:

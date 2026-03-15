@@ -85,6 +85,15 @@ func doPrintR(ctx phpv.Context, z *phpv.ZVal, linePfx string, recurs map[uintptr
 		fmt.Fprintf(ctx, "%s)\n", linePfx)
 	case phpv.ZtObject:
 		v := z.Value()
+		// Special handling for enum cases
+		if obj, ok := v.(*phpobj.ZObject); ok && obj.GetClass().GetType()&phpv.ZClassTypeEnum != 0 {
+			caseName := ""
+			if nameVal, err := obj.ObjectGet(ctx, phpv.ZString("name")); err == nil && nameVal != nil {
+				caseName = nameVal.String()
+			}
+			fmt.Fprintf(ctx, "%s%s::%s", isRef, obj.GetClass().GetName(), caseName)
+			return nil
+		}
 		if obj, ok := v.(*phpobj.ZObject); ok {
 			fmt.Fprintf(ctx, "%s%s Object\n%s(\n", isRef, obj.Class.GetName(), linePfx)
 			localPfx := linePfx + "    "

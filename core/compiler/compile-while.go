@@ -32,6 +32,11 @@ func (r *runnableWhile) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 		if r.code != nil {
 			_, err = r.code.Run(ctx)
 			if err != nil {
+				// Don't wrap PhpThrow (exceptions) - they need to propagate as-is
+				// for try/catch to work correctly
+				if _, isThrow := err.(*phperr.PhpThrow); isThrow {
+					return nil, err
+				}
 				e := r.l.Error(ctx, err)
 				switch br := e.Err.(type) {
 				case *phperr.PhpBreak:

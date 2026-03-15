@@ -29,8 +29,13 @@ func fncIsCallable(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZBool(ok).ZVal(), nil
 	}
 
-	// Actually try to resolve the callable
-	callable, resolveErr := SpawnCallable(ctx, value)
+	// Use the parent context for SpawnCallable so that visibility checks
+	// use the calling scope's class (not the is_callable function scope).
+	callerCtx := ctx.Parent(1)
+	if callerCtx == nil {
+		callerCtx = ctx
+	}
+	callable, resolveErr := SpawnCallable(callerCtx, value)
 	if resolveErr != nil || callable == nil {
 		// Not callable, but still set callable_name if requested
 		if callableName.HasArg() {
@@ -41,7 +46,7 @@ func fncIsCallable(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	if callableName.HasArg() {
-		callableName.Set(ctx, phpv.ZString(callable.Name()).ZVal())
+		callableName.Set(ctx, phpv.ZString(phpv.CallableDisplayName(callable)).ZVal())
 	}
 	return phpv.ZTrue.ZVal(), nil
 }

@@ -5,6 +5,7 @@ import (
 
 	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phperr"
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
@@ -73,7 +74,7 @@ func (r *runVariable) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 
 	varName := r.v.String()
 	if varName == "this" && ctx.This() == nil {
-		return nil, ctx.Errorf("Using $this when not in object context")
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, "Using $this when not in object context")
 	}
 
 	res, exists, err := ctx.OffsetCheck(ctx, r.v)

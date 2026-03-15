@@ -179,8 +179,37 @@ func (i ItemType) Name() string {
 	return i.String()
 }
 
-// OpString returns the operator symbol for use in error messages
+// OpString returns the operator symbol for use in error messages.
+// For compound assignment operators (+=, -= etc.), returns the base operator (+, - etc.)
+// since PHP error messages like "Unsupported operand types" use the base operator.
 func (i ItemType) OpString() string {
+	// Map compound assignment operators to their base operator
+	switch i {
+	case T_PLUS_EQUAL:
+		return "+"
+	case T_MINUS_EQUAL:
+		return "-"
+	case T_MUL_EQUAL:
+		return "*"
+	case T_DIV_EQUAL:
+		return "/"
+	case T_MOD_EQUAL:
+		return "%"
+	case T_POW_EQUAL:
+		return "**"
+	case T_SL_EQUAL:
+		return "<<"
+	case T_SR_EQUAL:
+		return ">>"
+	case T_AND_EQUAL:
+		return "&"
+	case T_OR_EQUAL:
+		return "|"
+	case T_XOR_EQUAL:
+		return "^"
+	case T_CONCAT_EQUAL:
+		return "."
+	}
 	if i > itemMax {
 		return string(i.Rune())
 	}
@@ -243,13 +272,211 @@ func (i *Item) IsExpressionEnd() bool {
 }
 
 func (i *Item) Unexpected() error {
-	err := fmt.Errorf("syntax error, unexpected %s", i)
+	err := fmt.Errorf("syntax error, unexpected %s", i.HumanName())
 	return &phpv.PhpError{
 		Err:          err,
 		Code:         phpv.E_PARSE,
 		Loc:          i.Loc(),
 		GoStackTrace: phpv.GetGoDebugTrace(),
 	}
+}
+
+// HumanName returns the PHP 8-style human-readable token name for error messages.
+// For keywords, returns `token "keyword"` (e.g. `token "exit"`).
+// For symbols, returns `"c"` (e.g. `"("`).
+// For special tokens, returns their description (e.g. `end of file`).
+func (i *Item) HumanName() string {
+	if i.Type > itemMax {
+		return fmt.Sprintf("\"%c\"", i.Type.Rune())
+	}
+	switch i.Type {
+	case T_EOF:
+		return "end of file"
+	case T_LNUMBER:
+		return fmt.Sprintf("integer \"%s\"", i.Data)
+	case T_DNUMBER:
+		return fmt.Sprintf("floating-point number \"%s\"", i.Data)
+	case T_STRING:
+		return fmt.Sprintf("identifier \"%s\"", i.Data)
+	case T_VARIABLE:
+		return fmt.Sprintf("variable \"%s\"", i.Data)
+	case T_CONSTANT_ENCAPSED_STRING:
+		return fmt.Sprintf("string content \"%s\"", i.Data)
+	case T_INLINE_HTML:
+		return "inline HTML"
+	}
+	// For keywords and other tokens, use the label map to get the keyword name
+	name := tokenHumanName(i.Type)
+	if name != "" {
+		return fmt.Sprintf("token \"%s\"", name)
+	}
+	return i.Type.Name()
+}
+
+// tokenHumanName returns the human-readable keyword for a token type,
+// matching PHP 8's error message format.
+func tokenHumanName(t ItemType) string {
+	switch t {
+	case T_ABSTRACT:
+		return "abstract"
+	case T_ARRAY:
+		return "array"
+	case T_AS:
+		return "as"
+	case T_BREAK:
+		return "break"
+	case T_CALLABLE:
+		return "callable"
+	case T_CASE:
+		return "case"
+	case T_CATCH:
+		return "catch"
+	case T_CLASS:
+		return "class"
+	case T_CLONE:
+		return "clone"
+	case T_CONST:
+		return "const"
+	case T_CONTINUE:
+		return "continue"
+	case T_DECLARE:
+		return "declare"
+	case T_DEFAULT:
+		return "default"
+	case T_DO:
+		return "do"
+	case T_ECHO:
+		return "echo"
+	case T_ELSE:
+		return "else"
+	case T_ELSEIF:
+		return "elseif"
+	case T_EMPTY:
+		return "empty"
+	case T_ENDDECLARE:
+		return "enddeclare"
+	case T_ENDFOR:
+		return "endfor"
+	case T_ENDFOREACH:
+		return "endforeach"
+	case T_ENDIF:
+		return "endif"
+	case T_ENDSWITCH:
+		return "endswitch"
+	case T_ENDWHILE:
+		return "endwhile"
+	case T_ENUM:
+		return "enum"
+	case T_EVAL:
+		return "eval"
+	case T_EXIT:
+		return "exit"
+	case T_EXTENDS:
+		return "extends"
+	case T_FINAL:
+		return "final"
+	case T_FINALLY:
+		return "finally"
+	case T_FN:
+		return "fn"
+	case T_FOR:
+		return "for"
+	case T_FOREACH:
+		return "foreach"
+	case T_FUNCTION:
+		return "function"
+	case T_GLOBAL:
+		return "global"
+	case T_GOTO:
+		return "goto"
+	case T_IF:
+		return "if"
+	case T_IMPLEMENTS:
+		return "implements"
+	case T_INCLUDE:
+		return "include"
+	case T_INCLUDE_ONCE:
+		return "include_once"
+	case T_INSTANCEOF:
+		return "instanceof"
+	case T_INSTEADOF:
+		return "insteadof"
+	case T_INTERFACE:
+		return "interface"
+	case T_ISSET:
+		return "isset"
+	case T_LIST:
+		return "list"
+	case T_MATCH:
+		return "match"
+	case T_NAMESPACE:
+		return "namespace"
+	case T_NEW:
+		return "new"
+	case T_PRINT:
+		return "print"
+	case T_PRIVATE:
+		return "private"
+	case T_PROTECTED:
+		return "protected"
+	case T_PUBLIC:
+		return "public"
+	case T_READONLY:
+		return "readonly"
+	case T_REQUIRE:
+		return "require"
+	case T_REQUIRE_ONCE:
+		return "require_once"
+	case T_RETURN:
+		return "return"
+	case T_STATIC:
+		return "static"
+	case T_SWITCH:
+		return "switch"
+	case T_THROW:
+		return "throw"
+	case T_TRAIT:
+		return "trait"
+	case T_TRY:
+		return "try"
+	case T_UNSET:
+		return "unset"
+	case T_USE:
+		return "use"
+	case T_VAR:
+		return "var"
+	case T_WHILE:
+		return "while"
+	case T_YIELD:
+		return "yield"
+	case T_YIELD_FROM:
+		return "yield from"
+	case T_INT_CAST:
+		return "(int)"
+	case T_DOUBLE_CAST:
+		return "(double)"
+	case T_STRING_CAST:
+		return "(string)"
+	case T_ARRAY_CAST:
+		return "(array)"
+	case T_OBJECT_CAST:
+		return "(object)"
+	case T_BOOL_CAST:
+		return "(bool)"
+	case T_UNSET_CAST:
+		return "(unset)"
+	case T_DOUBLE_ARROW:
+		return "=>"
+	case T_PAAMAYIM_NEKUDOTAYIM:
+		return "::"
+	case T_ELLIPSIS:
+		return "..."
+	case T_NS_SEPARATOR:
+		return "\\"
+	case T_ATTRIBUTE:
+		return "#["
+	}
+	return ""
 }
 
 func (i *Item) Loc() *phpv.Loc {

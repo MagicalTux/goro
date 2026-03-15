@@ -425,7 +425,11 @@ func (r *runClassNameOf) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		// ClassName::class resolves to the fully-qualified class name
 		return v, nil
 	default:
-		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Cannot use ::class on value of type %s", v.GetType().TypeName()))
+		typeName := v.GetType().TypeName()
+		if typeName == "null" {
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "Cannot use \"::class\" on null")
+		}
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Cannot use \"::class\" on value of type %s", typeName))
 	}
 }
 

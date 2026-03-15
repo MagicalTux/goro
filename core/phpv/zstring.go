@@ -6,6 +6,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/MagicalTux/goro/core/logopt"
 )
 
 func (z ZString) GetType() ZType {
@@ -46,6 +48,8 @@ func (z ZString) AsVal(ctx Context, t ZType) (Val, error) {
 		arr := NewZArray()
 		arr.OffsetSet(ctx, ZInt(0), z.ZVal())
 		return arr, nil
+	case ZtObject:
+		return scalarToObject(ctx, z.ZVal())
 	}
 	return nil, nil
 }
@@ -283,7 +287,7 @@ func (z ZStringArray) String() ZString {
 
 func (z ZStringArray) OffsetGet(ctx Context, key Val) (*ZVal, error) {
 	if key.GetType() != ZtInt {
-		if err := ctx.Warn("Illegal string offset \"%s\"", key.String()); err != nil {
+		if err := ctx.Warn("Illegal string offset \"%s\"", key.String(), logopt.NoFuncName(true)); err != nil {
 			return nil, err
 		}
 	}
@@ -308,7 +312,7 @@ func (z ZStringArray) OffsetSet(ctx Context, key Val, value *ZVal) error {
 		i = len(s)
 	} else {
 		if key.GetType() != ZtInt {
-			return ctx.Warn("Illegal string offset \"%s\"", key.String())
+			return ctx.Warn("Illegal string offset \"%s\"", key.String(), logopt.NoFuncName(true))
 		}
 		val, _ := key.AsVal(ctx, ZtInt)
 		i = int(val.(ZInt))
@@ -338,7 +342,7 @@ func (z ZStringArray) OffsetSet(ctx Context, key Val, value *ZVal) error {
 
 func (z ZStringArray) OffsetUnset(ctx Context, key Val) error {
 	if key.GetType() != ZtInt {
-		return ctx.Warn("Illegal string offset \"%s\"", key.String())
+		return ctx.Warn("Illegal string offset \"%s\"", key.String(), logopt.NoFuncName(true))
 	}
 	val, _ := key.AsVal(ctx, ZtInt)
 	i := val.(ZInt)

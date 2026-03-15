@@ -8,6 +8,7 @@ import (
 const (
 	ASSERT_ACTIVE    phpv.ZInt = 1
 	ASSERT_WARNING   phpv.ZInt = 2
+	ASSERT_CALLBACK  phpv.ZInt = 3
 	ASSERT_BAIL      phpv.ZInt = 4
 	ASSERT_QUIET     phpv.ZInt = 5
 	ASSERT_EXCEPTION phpv.ZInt = 6

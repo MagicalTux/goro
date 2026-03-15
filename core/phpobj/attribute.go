@@ -47,6 +47,79 @@ func init() {
 	}
 }
 
+// DeprecatedClass is the built-in #[\Deprecated] attribute class (PHP 8.4+)
+var DeprecatedClass *ZClass
+
+// OverrideClass is the built-in #[\Override] attribute class (PHP 8.3+)
+var OverrideClass *ZClass
+
+// NoDiscardClass is the built-in #[\NoDiscard] attribute class (PHP 8.5+)
+var NoDiscardClass *ZClass
+
+func init() {
+	DeprecatedClass = &ZClass{
+		Name: "Deprecated",
+		Attributes: []*phpv.ZAttribute{
+			{ClassName: "Attribute", Args: []*phpv.ZVal{phpv.ZInt(
+				AttributeTARGET_FUNCTION | AttributeTARGET_METHOD | AttributeTARGET_CLASS_CONSTANT,
+			).ZVal()}},
+		},
+		Props: []*phpv.ZClassProp{
+			{VarName: "message", Default: phpv.ZString("").ZVal(), Modifiers: phpv.ZAttrPublic | phpv.ZAttrReadonly},
+			{VarName: "since", Default: phpv.ZString("").ZVal(), Modifiers: phpv.ZAttrPublic | phpv.ZAttrReadonly},
+		},
+		Methods: map[phpv.ZString]*phpv.ZClassMethod{
+			"__construct": {Name: "__construct", Method: NativeMethod(func(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				msg := phpv.ZString("")
+				since := phpv.ZString("")
+				if len(args) > 0 {
+					msg = phpv.ZString(args[0].String())
+				}
+				if len(args) > 1 {
+					since = phpv.ZString(args[1].String())
+				}
+				o.HashTable().SetString("message", msg.ZVal())
+				o.HashTable().SetString("since", since.ZVal())
+				return nil, nil
+			})},
+		},
+	}
+
+	OverrideClass = &ZClass{
+		Name: "Override",
+		Attributes: []*phpv.ZAttribute{
+			{ClassName: "Attribute", Args: []*phpv.ZVal{phpv.ZInt(AttributeTARGET_METHOD).ZVal()}},
+		},
+		Methods: map[phpv.ZString]*phpv.ZClassMethod{
+			"__construct": {Name: "__construct", Method: NativeMethod(func(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				return nil, nil
+			})},
+		},
+	}
+
+	NoDiscardClass = &ZClass{
+		Name: "NoDiscard",
+		Attributes: []*phpv.ZAttribute{
+			{ClassName: "Attribute", Args: []*phpv.ZVal{phpv.ZInt(
+				AttributeTARGET_FUNCTION | AttributeTARGET_METHOD,
+			).ZVal()}},
+		},
+		Props: []*phpv.ZClassProp{
+			{VarName: "message", Default: phpv.ZString("").ZVal(), Modifiers: phpv.ZAttrPublic | phpv.ZAttrReadonly},
+		},
+		Methods: map[phpv.ZString]*phpv.ZClassMethod{
+			"__construct": {Name: "__construct", Method: NativeMethod(func(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				msg := phpv.ZString("")
+				if len(args) > 0 {
+					msg = phpv.ZString(args[0].String())
+				}
+				o.HashTable().SetString("message", msg.ZVal())
+				return nil, nil
+			})},
+		},
+	}
+}
+
 func attributeConstruct(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	flags := phpv.ZInt(AttributeTARGET_ALL)
 	if len(args) > 0 {

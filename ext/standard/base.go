@@ -648,18 +648,43 @@ func stdGetObjectVars(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZFalse.ZVal(), nil
 	}
 
+	// Use the calling scope's class for visibility checks.
+	// Use Parent(1) since we're inside the get_object_vars function context.
+	callerCtx := ctx.Parent(1)
+	var scope phpv.ZClass
+	if callerCtx != nil {
+		scope = callerCtx.Class()
+	}
+
 	result := phpv.NewZArray()
-	it := o.NewIterator()
-	for ; it.Valid(ctx); it.Next(ctx) {
-		k, err := it.Key(ctx)
-		if err != nil {
-			continue
+	if scopedIterator, ok := o.(interface {
+		NewIteratorInScope(phpv.ZClass) phpv.ZIterator
+	}); ok {
+		it := scopedIterator.NewIteratorInScope(scope)
+		for ; it.Valid(ctx); it.Next(ctx) {
+			k, err := it.Key(ctx)
+			if err != nil {
+				continue
+			}
+			v, err := it.Current(ctx)
+			if err != nil {
+				continue
+			}
+			result.OffsetSet(ctx, k, v)
 		}
-		v, err := it.Current(ctx)
-		if err != nil {
-			continue
+	} else {
+		it := o.NewIterator()
+		for ; it.Valid(ctx); it.Next(ctx) {
+			k, err := it.Key(ctx)
+			if err != nil {
+				continue
+			}
+			v, err := it.Current(ctx)
+			if err != nil {
+				continue
+			}
+			result.OffsetSet(ctx, k, v)
 		}
-		result.OffsetSet(ctx, k, v)
 	}
 	return result.ZVal(), nil
 }

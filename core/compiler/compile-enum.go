@@ -266,11 +266,12 @@ func compileEnum(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			}
 
 		default:
-			// Methods (possibly with modifiers)
+			// Methods (possibly with modifiers and #[...] attributes)
 			c.backup()
 
 			var attr phpv.ZObjectAttr
-			if err := parseZObjectAttr(&attr, c); err != nil {
+			var memberAttrs []*phpv.ZAttribute
+			if err := parseZObjectAttrWithAttrs(&attr, &memberAttrs, c); err != nil {
 				return nil, &phpv.PhpError{Err: err, Code: phpv.E_COMPILE_ERROR, Loc: l}
 			}
 
@@ -310,12 +311,13 @@ func compileEnum(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			_, emptyBody := f.(*ZClosure).code.(phpv.RunNull)
 
 			method := &phpv.ZClassMethod{
-				Name:      phpv.ZString(i.Data),
-				Modifiers: attr,
-				Method:    f,
-				Class:     class,
-				Empty:     emptyBody,
-				Loc:       l,
+				Name:       phpv.ZString(i.Data),
+				Modifiers:  attr,
+				Method:     f,
+				Class:      class,
+				Empty:      emptyBody,
+				Loc:        l,
+				Attributes: memberAttrs,
 			}
 			class.Methods[method.Name.ToLower()] = method
 		}

@@ -87,11 +87,15 @@ func compileStaticVar(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			return nil, err
 		}
 
-		// Handle "static function() { ... }" as a static closure
-		if i.Type == tokenizer.T_FUNCTION || i.Type == tokenizer.T_FN {
+		// Handle "static function() { ... }" or "static fn() => ..." as a static closure
+		if i.Type == tokenizer.T_FUNCTION {
 			// Compile the closure; static closures don't bind $this
 			// but for now we just parse them as regular closures
 			return compileFunction(i, c)
+		}
+		if i.Type == tokenizer.T_FN {
+			// static fn() => expr - arrow function static closure
+			return compileArrowFunction(i, c)
 		}
 
 		// Handle "static::" as a late static binding expression (e.g. static::$foo = ..., static::method())

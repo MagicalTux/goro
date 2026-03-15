@@ -178,10 +178,12 @@ func (z *ZObject) AsVal(ctx phpv.Context, t phpv.ZType) (phpv.Val, error) {
 			return result, nil
 		}
 	case phpv.ZtInt:
+		ctx.Warn("Object of class %s could not be converted to int", z.Class.GetName(), logopt.NoFuncName(true))
 		return phpv.ZInt(1), nil
 	case phpv.ZtBool:
 		return phpv.ZBool(true), nil
 	case phpv.ZtFloat:
+		ctx.Warn("Object of class %s could not be converted to float", z.Class.GetName(), logopt.NoFuncName(true))
 		return phpv.ZFloat(1), nil
 	case phpv.ZtArray:
 		return z.toArray(ctx), nil
@@ -298,6 +300,11 @@ func NewZObject(ctx phpv.Context, c phpv.ZClass, args ...*phpv.ZVal) (*ZObject, 
 					return nil, ThrowError(ctx, Error, fmt.Sprintf("Call to protected %s::__construct() from scope %s", c.GetName(), callerClass.GetName()))
 				}
 			}
+		}
+
+		// Check #[\Deprecated] attribute on constructor
+		if zc, ok := c.(*ZClass); ok {
+			checkMethodDeprecated(ctx, zc, ctorMethod)
 		}
 
 		// Handle constructor property promotion: set promoted properties before calling body.
@@ -748,8 +755,24 @@ func (o *ZObject) GetMethod(method phpv.ZString, ctx phpv.Context) (phpv.Callabl
 		}
 		return nil, ctx.Errorf("Call to undefined method %s::%s()", o.Class.GetName(), method)
 	}
+	// Check #[\Deprecated] attribute on the method
+	checkMethodDeprecated(ctx, class, m)
 	// TODO check method access
 	return m.Method, nil
+}
+
+// checkMethodDeprecated emits a deprecation warning if a method has #[\Deprecated]
+func checkMethodDeprecated(ctx phpv.Context, class *ZClass, m *phpv.ZClassMethod) {
+	for _, attr := range m.Attributes {
+		if attr.ClassName == "Deprecated" {
+			msg := fmt.Sprintf("Method %s::%s() is deprecated", class.GetName(), m.Name)
+			if len(attr.Args) > 0 && attr.Args[0].GetType() == phpv.ZtString {
+				msg += ", " + attr.Args[0].String()
+			}
+			ctx.Deprecated("%s", msg)
+			return
+		}
+	}
 }
 
 func (o *ZObject) HasProp(ctx phpv.Context, key phpv.Val) (bool, error) {
@@ -1232,6 +1255,11 @@ func (o *ZObject) ObjectSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) er
 	}
 
 	keyStr := key.(phpv.ZString)
+
+	// PHP: property names starting with \0 are not allowed
+	if len(keyStr) > 0 && keyStr[0] == 0 {
+		return ThrowError(ctx, Error, "Cannot access property starting with \"\\0\"")
+	}
 
 	// Check if accessing a static property as non-static
 	o.checkStaticPropertyAccess(ctx, keyStr)
