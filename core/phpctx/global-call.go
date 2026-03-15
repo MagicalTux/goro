@@ -208,6 +208,8 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 		callCtx.class = m.Class
 		if m.Static {
 			callCtx.methodType = "::"
+			// Static methods don't have $this, even when called on an instance
+			this = nil
 		} else {
 			callCtx.methodType = "->"
 		}

@@ -630,6 +630,12 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		return ctx.Call(ctx, m, r.args, objI)
 	}
 
+	// Static methods don't get $this even when called via instance ($obj->staticMethod())
+	if method.Modifiers.IsStatic() {
+		m := phpv.BindClass(method.Method, class, true)
+		return ctx.Call(ctx, m, r.args, nil)
+	}
+
 	return ctx.Call(ctx, method.Method, r.args, objI)
 }
 

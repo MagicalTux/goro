@@ -776,6 +776,28 @@ func (c *ZClass) validateMagicMethods(ctx phpv.Context) error {
 		}
 	}
 
+	// Validate __clone and __destruct take no arguments
+	noArgMethods := []phpv.ZString{"__clone", "__destruct"}
+	for _, name := range noArgMethods {
+		m, ok := c.Methods[name]
+		if !ok {
+			continue
+		}
+		if m.Class != nil && m.Class != c {
+			continue // inherited, don't re-validate
+		}
+		if fga, ok := m.Method.(phpv.FuncGetArgs); ok {
+			args := fga.GetArgs()
+			if len(args) > 0 {
+				loc := m.Loc
+				if loc == nil {
+					loc = c.L
+				}
+				return c.fatalErrorAt(ctx, fmt.Sprintf("Method %s::%s() cannot take arguments", c.Name, m.Name), loc)
+			}
+		}
+	}
+
 	// Warn about non-public magic methods
 	mustBePublic := []phpv.ZString{
 		"__call", "__callstatic", "__get", "__set", "__isset", "__unset",

@@ -431,7 +431,15 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	if op.write {
 		w, ok := r.a.(phpv.Writable)
 		if !ok {
-			return nil, ctx.Errorf("Can't use %#v value in write context", r.a)
+			// Provide a meaningful PHP error message instead of Go struct dump
+			what := "expression"
+			switch r.a.(type) {
+			case *runnableFunctionCall:
+				what = "function return value"
+			case *runObjectFunc:
+				what = "method return value"
+			}
+			return nil, ctx.Errorf("Can't use %s in write context", what)
 		}
 
 		// Check for reference assignment to ArrayAccess element
