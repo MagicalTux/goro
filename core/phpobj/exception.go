@@ -273,30 +273,35 @@ func exceptionConstruct(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.
 		o.HashTable().SetString("previous", args[2])
 	}
 
+	// Capture the stack trace from the constructor's context level.
+	// This includes the constructor call frame, matching PHP behavior
+	// where getTrace() shows Exception->__construct() as a frame.
+	trace := ctx.GetStackTrace(ctx)
+
+	// Walk up past Exception/Error constructor contexts to find the
+	// correct file and line where the exception was created.
+	locCtx := ctx
 	for {
-		// traverse parent contexts so that Exception/Error
-		// constructors aren't included in the trace
-		if ctx.This() == nil {
+		if locCtx.This() == nil {
 			break
 		}
-		if !ctx.This().GetClass().InstanceOf(Exception) && !ctx.This().GetClass().InstanceOf(Error) {
+		if !locCtx.This().GetClass().InstanceOf(Exception) && !locCtx.This().GetClass().InstanceOf(Error) {
 			break
 		}
-		parent := ctx.Parent(1)
+		parent := locCtx.Parent(1)
 		if parent == nil {
 			break
 		}
-		ctx = parent
+		locCtx = parent
 	}
 
 	// Set file and line to the location where the exception was created
-	loc := ctx.Loc()
+	loc := locCtx.Loc()
 	if loc != nil {
 		o.HashTable().SetString("file", phpv.ZString(loc.Filename).ZVal())
 		o.HashTable().SetString("line", phpv.ZInt(loc.Line).ZVal())
 	}
 
-	trace := ctx.GetStackTrace(ctx)
 	o.SetOpaque(Exception, trace)
 	// Also store under the actual class so ErrorTrace can find it
 	// (Error doesn't extend Exception, so walking the hierarchy won't find it)

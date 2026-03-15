@@ -273,16 +273,15 @@ func (closure *ZClosure) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 		c.this = ctx.This()
 		c.class = ctx.This().GetClass()
 	}
-	// For closures defined in a class method, capture the class scope
-	// even when there is no $this (e.g. static methods or static closures).
-	// Use the actual object's class (late static binding) when available,
-	// so static::class resolves to the runtime class, not the defining class.
-	if c.class == nil {
-		if ctx.This() != nil {
-			c.class = ctx.This().GetClass()
-		} else if ctx.Class() != nil {
-			c.class = ctx.Class()
-		}
+	// For static closures defined in a class method, capture the class scope
+	// but not $this.
+	if c.isStatic && c.class == nil && ctx.Class() != nil {
+		c.class = ctx.Class()
+	}
+	// For non-static closures without $this (e.g. defined in a static method),
+	// capture the class scope so self:: and static:: resolve correctly.
+	if !c.isStatic && c.class == nil && ctx.Class() != nil {
+		c.class = ctx.Class()
 	}
 	// run compile after dup so we re-fetch default vars each time
 	err = c.Compile(ctx)
@@ -479,10 +478,10 @@ func FormatDeprecatedMsg(label, name string, attr *phpv.ZAttribute) string {
 
 	// Extract message (arg 0) and since (arg 1)
 	var message, since string
-	if len(attr.Args) > 0 && attr.Args[0].GetType() == phpv.ZtString {
+	if len(attr.Args) > 0 && !attr.Args[0].IsNull() {
 		message = attr.Args[0].String()
 	}
-	if len(attr.Args) > 1 && attr.Args[1].GetType() == phpv.ZtString {
+	if len(attr.Args) > 1 && !attr.Args[1].IsNull() {
 		since = attr.Args[1].String()
 	}
 

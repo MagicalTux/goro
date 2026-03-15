@@ -170,6 +170,10 @@ func (r *runNewAnonymousClass) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			ctx.Global().UnregisterClass(r.class.Name)
 			return nil, err
 		}
+		// Validate #[\Override] on properties after compilation
+		if err := validatePropertyOverride(ctx, r.class); err != nil {
+			return nil, err
+		}
 		r.compiled = true
 	}
 
@@ -257,7 +261,15 @@ func compileNew(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			return nil, err
 		}
 
-		class := classRunnable.(*phpobj.ZClass)
+		var class *phpobj.ZClass
+		switch cr := classRunnable.(type) {
+		case *phpobj.ZClass:
+			class = cr
+		case *runClassWithTraitDeprecationCheck:
+			class = cr.class
+		default:
+			return nil, fmt.Errorf("unexpected type from compileClass: %T", classRunnable)
+		}
 		// Apply attributes from new #[Attr] class { }
 		if len(anonAttrs) > 0 {
 			class.Attributes = append(anonAttrs, class.Attributes...)
@@ -523,19 +535,8 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 
 	method, ok := class.GetMethod(op)
 
-	// Check #[\Deprecated] attribute on the resolved method
-	if ok && method != nil {
-		for _, attr := range method.Attributes {
-			if attr.ClassName == "Deprecated" {
-				funcName := string(class.GetName()) + "::" + string(method.Name)
-				msg := FormatDeprecatedMsg("Method", funcName+"()", attr)
-				if err := ctx.UserDeprecated("%s", msg, logopt.NoFuncName(true)); err != nil {
-					return nil, err
-				}
-				break
-			}
-		}
-	}
+	// Note: #[\Deprecated] check for user methods is handled by ZClosure.Call()
+	// which fires when the method body is actually invoked.
 
 	// PHP resolves private methods from the caller's class scope, not the runtime class.
 	// Private methods are not virtual — when calling $this->method() from within a class
