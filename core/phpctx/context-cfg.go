@@ -44,6 +44,11 @@ func (c *cfgContext) Deprecated(format string, a ...any) error {
 	return err
 }
 
+func (c *cfgContext) UserDeprecated(format string, a ...any) error {
+	a = append(a, logopt.ErrType(phpv.E_USER_DEPRECATED))
+	return logWarning(c, format, a...)
+}
+
 func (c *cfgContext) Parent(n int) phpv.Context {
 	if n <= 1 {
 		return c.Context

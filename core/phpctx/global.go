@@ -853,6 +853,11 @@ func (g *Global) Deprecated(format string, a ...any) error {
 	return err
 }
 
+func (g *Global) UserDeprecated(format string, a ...any) error {
+	a = append(a, logopt.ErrType(phpv.E_USER_DEPRECATED))
+	return logWarning(g, format, a...)
+}
+
 func (g *Global) WarnDeprecated() error {
 	funcName := g.GetFuncName()
 	if ok := g.ShownDeprecated(funcName); ok {

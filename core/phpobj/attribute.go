@@ -93,7 +93,7 @@ func init() {
 	OverrideClass = &ZClass{
 		Name: "Override",
 		Attributes: []*phpv.ZAttribute{
-			{ClassName: "Attribute", Args: []*phpv.ZVal{phpv.ZInt(AttributeTARGET_METHOD).ZVal()}},
+			{ClassName: "Attribute", Args: []*phpv.ZVal{phpv.ZInt(AttributeTARGET_METHOD | AttributeTARGET_PROPERTY).ZVal()}},
 		},
 		Methods: map[phpv.ZString]*phpv.ZClassMethod{
 			"__construct": {Name: "__construct", Method: NativeMethod(func(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {

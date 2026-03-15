@@ -444,15 +444,40 @@ func (z *ZClosure) checkDeprecated(ctx phpv.Context) {
 				funcName = string(z.class.GetName()) + "::" + funcName
 			}
 
-			msg := fmt.Sprintf("%s %s() is deprecated", label, funcName)
-			if len(attr.Args) > 0 && attr.Args[0].GetType() == phpv.ZtString {
-				msg += ", " + attr.Args[0].String()
-			}
-
-			ctx.Deprecated("%s", msg, logopt.NoFuncName(true))
+			msg := FormatDeprecatedMsg(label, funcName+"()", attr)
+			ctx.UserDeprecated("%s", msg, logopt.NoFuncName(true))
 			return
 		}
 	}
+}
+
+// FormatDeprecatedMsg formats a deprecation message from a #[\Deprecated] attribute.
+// Format rules (matching PHP 8.4+):
+//   - No args:             "Function foo() is deprecated"
+//   - Message only:        "Function foo() is deprecated, msg"
+//   - Since only:          "Function foo() is deprecated since 1.0"
+//   - Message + since:     "Function foo() is deprecated since 1.0, msg"
+//   - Empty message:       "Function foo() is deprecated" (same as no args)
+func FormatDeprecatedMsg(label, name string, attr *phpv.ZAttribute) string {
+	msg := fmt.Sprintf("%s %s is deprecated", label, name)
+
+	// Extract message (arg 0) and since (arg 1)
+	var message, since string
+	if len(attr.Args) > 0 && attr.Args[0].GetType() == phpv.ZtString {
+		message = attr.Args[0].String()
+	}
+	if len(attr.Args) > 1 && attr.Args[1].GetType() == phpv.ZtString {
+		since = attr.Args[1].String()
+	}
+
+	if since != "" {
+		msg += " since " + since
+	}
+	if message != "" {
+		msg += ", " + message
+	}
+
+	return msg
 }
 
 // callBody is the actual function body execution, used both for regular calls

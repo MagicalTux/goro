@@ -267,7 +267,7 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 					err = nil
 				}
 			}
-			if a != nil && !a.IsNull() {
+			if a != nil && !a.Nude().IsNull() {
 				return a, nil
 			}
 		}

@@ -87,9 +87,9 @@ func (r *runVariable) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		switch t := r.Parent.(type) {
 		case *runOperator:
 			write = t.opD.write
-			// Suppress warnings for the left side of ?? and ??= (null coalescing)
-			if t.op == tokenizer.T_COALESCE || t.op == tokenizer.T_COALESCE_EQUAL {
-				write = true
+			// For ??=, the RHS (r.b) is a read context — don't suppress warnings
+			if (t.op == tokenizer.T_COALESCE_EQUAL || t.op == tokenizer.T_COALESCE) && t.b == r {
+				write = false
 			}
 		case *runArrayAccess, *runnableForeach, *runDestructure:
 			write = true

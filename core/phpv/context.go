@@ -42,6 +42,7 @@ type Context interface {
 	Warn(format string, args ...any) error
 	Notice(format string, args ...any) error
 	Deprecated(format string, args ...any) error
+	UserDeprecated(format string, args ...any) error
 
 	LogError(err *PhpError, optionArg ...logopt.Data)
 

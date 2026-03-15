@@ -352,6 +352,11 @@ func (ctx *FuncContext) Deprecated(format string, a ...any) error {
 	return err
 }
 
+func (ctx *FuncContext) UserDeprecated(format string, a ...any) error {
+	a = append(a, logopt.ErrType(phpv.E_USER_DEPRECATED))
+	return logWarning(ctx, format, a...)
+}
+
 func (ctx *FuncContext) WarnDeprecated() error {
 	funcName := ctx.GetFuncName()
 	if ok := ctx.Global().ShownDeprecated(funcName); ok {
