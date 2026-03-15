@@ -5,6 +5,7 @@ import (
 	"io"
 
 	"github.com/MagicalTux/goro/core/logopt"
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
@@ -222,12 +223,26 @@ func compileTopLevelConst(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error
 }
 
 type runTopLevelConst struct {
-	name phpv.ZString
-	val  phpv.Runnable
-	l    *phpv.Loc
+	name  phpv.ZString
+	val   phpv.Runnable
+	l     *phpv.Loc
+	attrs []*phpv.ZAttribute // PHP 8.0 attributes on this constant
 }
 
 func (r *runTopLevelConst) Run(ctx phpv.Context) (*phpv.ZVal, error) {
+	// Validate attributes on the constant before defining it
+	if len(r.attrs) > 0 {
+		if msg := phpobj.ValidateAttributeList(ctx, r.attrs, phpobj.AttributeTARGET_CONSTANT); msg != "" {
+			phpErr := &phpv.PhpError{
+				Err:  fmt.Errorf("%s", msg),
+				Code: phpv.E_ERROR,
+				Loc:  r.l,
+			}
+			ctx.Global().LogError(phpErr)
+			return nil, phpv.ExitError(255)
+		}
+	}
+
 	v, err := r.val.Run(ctx)
 	if err != nil {
 		return nil, err
@@ -238,6 +253,10 @@ func (r *runTopLevelConst) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		if err := ctx.Warn("Constant %s already defined, this will be an error in PHP 9", r.name, logopt.Data{NoFuncName: true, Loc: r.l}); err != nil {
 			return nil, err
 		}
+	}
+	// Store attributes for reflection access
+	if len(r.attrs) > 0 {
+		ctx.Global().ConstantSetAttributes(r.name, r.attrs)
 	}
 	return nil, nil
 }

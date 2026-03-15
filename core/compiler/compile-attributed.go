@@ -1,6 +1,9 @@
 package compiler
 
 import (
+	"fmt"
+	"io"
+
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
@@ -66,6 +69,10 @@ func compileAttributed(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		// Store attributes on the closure
 		if zc, ok := r.(*ZClosure); ok {
 			zc.attributes = attrs
+			// For named functions, wrap with attribute validation
+			if zc.name != "" {
+				return &runAttributeValidatedFunc{inner: r, attrs: attrs, target: phpobj.AttributeTARGET_FUNCTION}, nil
+			}
 		}
 		return r, nil
 
@@ -86,11 +93,53 @@ func compileAttributed(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		if err != nil {
 			return nil, err
 		}
-		// Store attributes on the constant (for Reflection API)
-		_ = attrs // TODO: Store attributes on constants when ZClassConst supports it
+		// Store attributes on the constant(s)
+		if rtlc, ok := r.(*runTopLevelConst); ok {
+			rtlc.attrs = attrs
+		} else if runnables, ok := r.(phpv.Runnables); ok {
+			// Multiple constants: const A = 1, B = 2;
+			// Only the first constant gets the attributes
+			for _, sub := range runnables {
+				if rtlc, ok := sub.(*runTopLevelConst); ok {
+					rtlc.attrs = attrs
+					break
+				}
+			}
+		}
 		return r, nil
 
 	default:
 		return nil, i.Unexpected()
 	}
+}
+
+// runAttributeValidatedFunc wraps a function/closure declaration to validate
+// its attributes at runtime (when the function is registered).
+type runAttributeValidatedFunc struct {
+	inner  phpv.Runnable
+	attrs  []*phpv.ZAttribute
+	target int
+}
+
+func (r *runAttributeValidatedFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
+	// Validate attributes before registering the function
+	if msg := phpobj.ValidateAttributeList(ctx, r.attrs, r.target); msg != "" {
+		// Determine location from the inner runnable
+		var loc *phpv.Loc
+		if zc, ok := r.inner.(*ZClosure); ok {
+			loc = zc.start
+		}
+		phpErr := &phpv.PhpError{
+			Err:  fmt.Errorf("%s", msg),
+			Code: phpv.E_ERROR,
+			Loc:  loc,
+		}
+		ctx.Global().LogError(phpErr)
+		return nil, phpv.ExitError(255)
+	}
+	return r.inner.Run(ctx)
+}
+
+func (r *runAttributeValidatedFunc) Dump(w io.Writer) error {
+	return r.inner.Dump(w)
 }

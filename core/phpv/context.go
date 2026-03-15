@@ -89,6 +89,8 @@ type GlobalContext interface {
 
 	ConstantSet(k ZString, v Val) bool
 	ConstantGet(k ZString) (Val, bool)
+	ConstantSetAttributes(k ZString, attrs []*ZAttribute)
+	ConstantGetAttributes(k ZString) []*ZAttribute
 
 	RegisterLazyFunc(name ZString, r Runnables, p int)
 	RegisterLazyClass(name ZString, r Runnables, p int)

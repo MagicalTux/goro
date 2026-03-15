@@ -17,8 +17,9 @@ const (
 
 // reflectionAttributeData is stored as opaque data on ReflectionAttribute objects
 type reflectionAttributeData struct {
-	attr   *phpv.ZAttribute
-	target int // AttributeTARGET_* constant
+	attr     *phpv.ZAttribute
+	target   int                // AttributeTARGET_* constant
+	allAttrs []*phpv.ZAttribute // all attributes on the same target (for repeat checking)
 }
 
 func initReflectionAttribute() {
@@ -83,9 +84,13 @@ func reflectionAttributeIsRepeated(ctx phpv.Context, o *phpobj.ZObject, args []*
 		return phpv.ZBool(false).ZVal(), nil
 	}
 	// An attribute is "repeated" if it appears more than once on the same target.
-	// This would require access to the full attribute list of the target.
-	// For now, return false as a reasonable default.
-	return phpv.ZBool(false).ZVal(), nil
+	count := 0
+	for _, a := range data.allAttrs {
+		if a.ClassName.ToLower() == data.attr.ClassName.ToLower() {
+			count++
+		}
+	}
+	return phpv.ZBool(count > 1).ZVal(), nil
 }
 
 func reflectionAttributeNewInstance(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
@@ -101,6 +106,39 @@ func reflectionAttributeNewInstance(ctx phpv.Context, o *phpobj.ZObject, args []
 			fmt.Sprintf("Attribute class \"%s\" not found", data.attr.ClassName))
 	}
 
+	// Validate that the class is actually an attribute class
+	flags := phpobj.GetAttributeFlags(ctx, class)
+	if flags < 0 {
+		// The class does not have #[Attribute] - it's not a valid attribute class.
+		// PHP still allows instantiation but we should check this.
+		// Actually in PHP, if it lacks #[Attribute], newInstance() still works
+		// but just creates an instance. The validation only happens if it HAS
+		// #[Attribute] with specific flags.
+	} else {
+		// Validate target
+		if int(flags)&data.target == 0 {
+			return nil, phpobj.ThrowError(ctx, phpobj.Error,
+				fmt.Sprintf("Attribute \"%s\" cannot target %s (allowed targets: %s)",
+					data.attr.ClassName,
+					phpobj.TargetName(data.target),
+					describeTargetsForReflection(int(flags))))
+		}
+
+		// Validate repeat
+		if int(flags)&phpobj.AttributeIS_REPEATABLE == 0 {
+			count := 0
+			for _, a := range data.allAttrs {
+				if a.ClassName.ToLower() == data.attr.ClassName.ToLower() {
+					count++
+				}
+			}
+			if count > 1 {
+				return nil, phpobj.ThrowError(ctx, phpobj.Error,
+					fmt.Sprintf("Attribute \"%s\" must not be repeated", data.attr.ClassName))
+			}
+		}
+	}
+
 	// Create a new instance with the stored arguments
 	var constructArgs []*phpv.ZVal
 	if data.attr.Args != nil {
@@ -114,6 +152,40 @@ func reflectionAttributeNewInstance(ctx phpv.Context, o *phpobj.ZObject, args []
 	return obj.ZVal(), nil
 }
 
+// describeTargetsForReflection returns a human-readable string of allowed targets.
+func describeTargetsForReflection(flags int) string {
+	var parts []string
+	if flags&phpobj.AttributeTARGET_CLASS != 0 {
+		parts = append(parts, "class")
+	}
+	if flags&phpobj.AttributeTARGET_FUNCTION != 0 {
+		parts = append(parts, "function")
+	}
+	if flags&phpobj.AttributeTARGET_METHOD != 0 {
+		parts = append(parts, "method")
+	}
+	if flags&phpobj.AttributeTARGET_PROPERTY != 0 {
+		parts = append(parts, "property")
+	}
+	if flags&phpobj.AttributeTARGET_CLASS_CONSTANT != 0 {
+		parts = append(parts, "class constant")
+	}
+	if flags&phpobj.AttributeTARGET_PARAMETER != 0 {
+		parts = append(parts, "parameter")
+	}
+	if flags&phpobj.AttributeTARGET_CONSTANT != 0 {
+		parts = append(parts, "constant")
+	}
+	if len(parts) == 0 {
+		return "none"
+	}
+	result := parts[0]
+	for i := 1; i < len(parts); i++ {
+		result += ", " + parts[i]
+	}
+	return result
+}
+
 func reflectionAttributeToString(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	data := getAttrData(o)
 	if data == nil {
@@ -123,14 +195,15 @@ func reflectionAttributeToString(ctx phpv.Context, o *phpobj.ZObject, args []*ph
 }
 
 // createReflectionAttributeObject creates a ReflectionAttribute object for the given attribute.
-func createReflectionAttributeObject(ctx phpv.Context, attr *phpv.ZAttribute, target int) (*phpv.ZVal, error) {
+func createReflectionAttributeObject(ctx phpv.Context, attr *phpv.ZAttribute, target int, allAttrs []*phpv.ZAttribute) (*phpv.ZVal, error) {
 	obj, err := phpobj.CreateZObject(ctx, ReflectionAttribute)
 	if err != nil {
 		return nil, err
 	}
 	data := &reflectionAttributeData{
-		attr:   attr,
-		target: target,
+		attr:     attr,
+		target:   target,
+		allAttrs: allAttrs,
 	}
 	obj.SetOpaque(ReflectionAttribute, data)
 	return obj.ZVal(), nil
@@ -167,7 +240,7 @@ func filterAttributes(ctx phpv.Context, attrs []*phpv.ZAttribute, target int, na
 			}
 		}
 
-		val, err := createReflectionAttributeObject(ctx, attr, target)
+		val, err := createReflectionAttributeObject(ctx, attr, target, attrs)
 		if err != nil {
 			return nil, err
 		}

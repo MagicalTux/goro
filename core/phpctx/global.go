@@ -56,6 +56,7 @@ type Global struct {
 	shutdownFuncs []phpv.Callable
 	callDepth     int
 	constant      map[phpv.ZString]phpv.Val
+	constantAttrs map[phpv.ZString][]*phpv.ZAttribute // attributes on global constants
 	environ       *phpv.ZHashTable
 	included      map[phpv.ZString]bool // included files (used for require_once, etc)
 	includePath   []string              // TODO: initialize
@@ -137,6 +138,7 @@ func createGlobal(p *Process) *Global {
 		disabledFuncs:       make(map[phpv.ZString]struct{}),
 		globalClasses:       make(map[phpv.ZString]*phpobj.ZClass),
 		constant:            make(map[phpv.ZString]phpv.Val),
+		constantAttrs:       make(map[phpv.ZString][]*phpv.ZAttribute),
 		streamHandlers:      make(map[string]stream.Handler),
 		included:            make(map[phpv.ZString]bool),
 		globalLazyFunc:      make(map[phpv.ZString]*globalLazyOffset),
@@ -1144,6 +1146,14 @@ func (g *Global) ConstantSet(k phpv.ZString, v phpv.Val) bool {
 
 	g.constant[k] = v
 	return true
+}
+
+func (g *Global) ConstantSetAttributes(k phpv.ZString, attrs []*phpv.ZAttribute) {
+	g.constantAttrs[k] = attrs
+}
+
+func (g *Global) ConstantGetAttributes(k phpv.ZString) []*phpv.ZAttribute {
+	return g.constantAttrs[k]
 }
 
 func (g *Global) GetClass(ctx phpv.Context, name phpv.ZString, autoload bool) (phpv.ZClass, error) {

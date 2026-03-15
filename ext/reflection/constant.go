@@ -77,9 +77,16 @@ func reflectionConstantGetValue(ctx phpv.Context, o *phpobj.ZObject, args []*php
 }
 
 func reflectionConstantGetAttributes(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	// Global constants in this engine don't have attribute support yet,
-	// so we return an empty array.
-	return phpv.NewZArray().ZVal(), nil
+	data := getConstData(o)
+	if data == nil {
+		return phpv.NewZArray().ZVal(), nil
+	}
+	attrs := ctx.Global().ConstantGetAttributes(data.name)
+	if len(attrs) == 0 {
+		return phpv.NewZArray().ZVal(), nil
+	}
+	name, flags := getAttributesArgs(ctx, args)
+	return filterAttributes(ctx, attrs, phpobj.AttributeTARGET_CONSTANT, name, flags)
 }
 
 func reflectionConstantToString(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {

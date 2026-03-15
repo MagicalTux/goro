@@ -19,6 +19,7 @@ func init() {
 		Name:    "Core",
 		Version: VERSION,
 		Classes: []*phpobj.ZClass{
+			phpobj.AllowDynamicPropertiesClass,
 			phpobj.ArgumentCountError,
 			phpobj.ArithmeticError,
 			phpobj.ArrayAccess,
