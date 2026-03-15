@@ -798,6 +798,25 @@ func (c *ZClass) validateMagicMethods(ctx phpv.Context) error {
 		}
 	}
 
+	// Validate __construct, __destruct, __clone cannot be static
+	noStaticMethods := []phpv.ZString{"__construct", "__destruct", "__clone"}
+	for _, name := range noStaticMethods {
+		m, ok := c.Methods[name]
+		if !ok {
+			continue
+		}
+		if m.Class != nil && m.Class != c {
+			continue // inherited
+		}
+		if m.Modifiers.Has(phpv.ZAttrStatic) {
+			loc := m.Loc
+			if loc == nil {
+				loc = c.L
+			}
+			return c.fatalErrorAt(ctx, fmt.Sprintf("Method %s::%s() cannot be static", c.Name, m.Name), loc)
+		}
+	}
+
 	// Warn about non-public magic methods
 	mustBePublic := []phpv.ZString{
 		"__call", "__callstatic", "__get", "__set", "__isset", "__unset",

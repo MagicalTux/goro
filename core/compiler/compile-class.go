@@ -811,6 +811,20 @@ func parseClassLine(class *phpobj.ZClass, c compileCtx) error {
 		if ns != "" {
 			className = ns + "\\" + className
 		}
+		// Check reserved class names
+		lowerName := className.ToLower()
+		classKind := "class"
+		if class.Type == phpv.ZClassTypeInterface {
+			classKind = "interface"
+		}
+		switch lowerName {
+		case "self", "parent", "static":
+			return &phpv.PhpError{
+				Err:  fmt.Errorf("Cannot use \"%s\" as %s name, as it is reserved", i.Data, classKind),
+				Code: phpv.E_COMPILE_ERROR,
+				Loc:  i.Loc(),
+			}
+		}
 		class.Name = className
 		i, err = c.NextItem()
 	} else if class.Name == "" && (i.IsSingle('{') || i.Type == tokenizer.T_EXTENDS || i.Type == tokenizer.T_IMPLEMENTS) {
