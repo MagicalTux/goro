@@ -511,6 +511,22 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 
 	method, ok := class.GetMethod(op)
 
+	// Check #[\Deprecated] attribute on the resolved method
+	if ok && method != nil {
+		for _, attr := range method.Attributes {
+			if attr.ClassName == "Deprecated" {
+				label := "Method"
+				funcName := string(class.GetName()) + "::" + string(method.Name)
+				msg := fmt.Sprintf("%s %s() is deprecated", label, funcName)
+				if len(attr.Args) > 0 && attr.Args[0].GetType() == phpv.ZtString {
+					msg += ", " + attr.Args[0].String()
+				}
+				ctx.Deprecated("%s", msg, logopt.NoFuncName(true))
+				break
+			}
+		}
+	}
+
 	// PHP resolves private methods from the caller's class scope, not the runtime class.
 	// Private methods are not virtual — when calling $this->method() from within a class
 	// that defines a private method with that name, use the caller's private method
