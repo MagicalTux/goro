@@ -24,6 +24,7 @@ type ZClosure struct {
 	rref        bool // return ref?
 	isGenerator bool // true if this function contains yield
 	attributes  []*phpv.ZAttribute // PHP 8.0 attributes on this function
+	returnType  *phpv.TypeHint     // return type declaration (nil if none)
 }
 
 // > class Closure
@@ -474,13 +475,60 @@ func (z *ZClosure) callBody(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 	if err != nil {
 		// Check if this is an explicit return
 		r, err := phperr.CatchReturn(nil, err)
+		if err != nil {
+			return r, err
+		}
 		if z.rref && r != nil {
 			r = r.Ref()
 		}
-		return r, err
+		// Validate return type
+		if z.returnType != nil {
+			if err := z.checkReturnType(ctx, r); err != nil {
+				return nil, err
+			}
+		}
+		return r, nil
 	}
 	// No explicit return statement - return NULL
+	// For void return type, returning without a value is fine
+	if z.returnType != nil && z.returnType.Type() != phpv.ZtVoid {
+		if err := z.checkReturnType(ctx, phpv.ZNULL.ZVal()); err != nil {
+			return nil, err
+		}
+	}
 	return phpv.ZNULL.ZVal(), nil
+}
+
+// checkReturnType validates the return value against the declared return type.
+// Throws TypeError if the value does not match.
+func (z *ZClosure) checkReturnType(ctx phpv.Context, retVal *phpv.ZVal) error {
+	rt := z.returnType
+
+	// void means the function must not return a value (only bare "return;" or fall-through)
+	if rt.Type() == phpv.ZtVoid {
+		if retVal != nil && !retVal.IsNull() {
+			funcName := ctx.GetFuncName()
+			return phpobj.ThrowError(ctx, phpobj.TypeError,
+				fmt.Sprintf("%s(): Return value must be of type void, %s returned", funcName, phpv.ZValTypeName(retVal)))
+		}
+		return nil
+	}
+
+	// mixed accepts anything
+	if rt.Type() == phpv.ZtMixed {
+		return nil
+	}
+
+	if retVal == nil {
+		retVal = phpv.ZNULL.ZVal()
+	}
+
+	if !rt.Check(ctx, retVal) {
+		funcName := ctx.GetFuncName()
+		return phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("%s(): Return value must be of type %s, %s returned", funcName, rt.String(), phpv.ZValTypeName(retVal)))
+	}
+	return nil
 }
 
 func (z *ZClosure) dup() *ZClosure {
@@ -494,6 +542,7 @@ func (z *ZClosure) dup() *ZClosure {
 	n.rref = z.rref
 	n.isGenerator = z.isGenerator
 	n.attributes = z.attributes
+	n.returnType = z.returnType
 
 	if z.args != nil {
 		n.args = make([]*phpv.FuncArg, len(z.args))

@@ -342,8 +342,7 @@ func compileFunctionWithName(name phpv.ZString, c compileCtx, l *phpv.Loc, rref 
 
 	// Handle return type declaration: function foo(): Type { ... }
 	if i.IsSingle(':') {
-		// Skip the return type - we parse but don't enforce it yet
-		err = skipReturnType(c)
+		zc.returnType, err = parseReturnType(c)
 		if err != nil {
 			return nil, err
 		}
@@ -444,7 +443,7 @@ func compileArrowFunction(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error
 		return nil, err
 	}
 	if i.IsSingle(':') {
-		err = skipReturnType(c)
+		zc.returnType, err = parseReturnType(c)
 		if err != nil {
 			return nil, err
 		}
@@ -1037,28 +1036,33 @@ func parseIntersectionTypeHint(first *phpv.TypeHint, secondToken *tokenizer.Item
 	return intersection, i, nil
 }
 
-// skipReturnType skips a return type declaration after ':' in a function signature.
+// parseReturnType parses a return type declaration after ':' in a function signature.
 // Handles: simple types (int, string, void, mixed), nullable (?Type),
 // namespaced types (\Foo\Bar), and union/intersection types (Type1|Type2, Type1&Type2).
-func skipReturnType(c compileCtx) error {
+// Returns the parsed TypeHint, or nil if no return type is declared.
+func parseReturnType(c compileCtx) (*phpv.TypeHint, error) {
 	i, err := c.NextItem()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Handle nullable prefix: ?Type
+	isNullable := false
 	if i.IsSingle('?') {
+		isNullable = true
 		i, err = c.NextItem()
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 
 	// Handle leading namespace separator: \Foo
+	hintFullyQualified := false
 	if i.Type == tokenizer.T_NS_SEPARATOR {
+		hintFullyQualified = true
 		i, err = c.NextItem()
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 
@@ -1067,54 +1071,76 @@ func skipReturnType(c compileCtx) error {
 	case tokenizer.T_STRING, tokenizer.T_ARRAY, tokenizer.T_CALLABLE:
 		// valid type name - ok
 	default:
-		return i.Unexpected()
+		return nil, i.Unexpected()
 	}
 
-	// Handle namespace parts and union/intersection types
+	hint := i.Data
+
+	// Handle namespace parts
 	for {
 		i, err = c.NextItem()
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		if i.Type == tokenizer.T_NS_SEPARATOR {
-			// namespace separator, skip next T_STRING
+			// namespace separator, consume next T_STRING
 			i, err = c.NextItem()
 			if err != nil {
-				return err
+				return nil, err
 			}
 			if i.Type != tokenizer.T_STRING {
-				return i.Unexpected()
+				return nil, i.Unexpected()
 			}
+			hint = hint + "\\" + i.Data
 			continue
 		}
 
-		// Handle union types (Type1|Type2) and intersection types (Type1&Type2)
-		if i.IsSingle('|') || i.IsSingle('&') {
-			i, err = c.NextItem()
-			if err != nil {
-				return err
-			}
-			// Handle leading namespace separator in union member
-			if i.Type == tokenizer.T_NS_SEPARATOR {
-				i, err = c.NextItem()
-				if err != nil {
-					return err
-				}
-			}
-			switch i.Type {
-			case tokenizer.T_STRING, tokenizer.T_ARRAY, tokenizer.T_CALLABLE:
-				// valid - continue to check for more union/namespace parts
-				continue
-			default:
-				return i.Unexpected()
-			}
-		}
-
-		// Not a type continuation - put it back and we're done
-		c.backup()
-		return nil
+		break
 	}
+
+	// Resolve the type hint through namespace
+	resolvedHint := hint
+	if hintFullyQualified {
+		resolvedHint = string(c.resolveClassName("\\" + phpv.ZString(hint)))
+	} else {
+		resolvedHint = string(c.resolveClassName(phpv.ZString(hint)))
+	}
+	th := phpv.ParseTypeHint(phpv.ZString(resolvedHint))
+	if isNullable {
+		th.Nullable = true
+	}
+
+	// Handle union types (Type1|Type2) and intersection types (Type1&Type2)
+	if i.IsSingle('|') {
+		th, i, err = parseUnionTypeHint(th, c)
+		if err != nil {
+			return nil, err
+		}
+		c.backup()
+		return th, nil
+	}
+
+	if i.IsSingle('&') {
+		// Intersection type in return position: Type1&Type2
+		peek, peekErr := c.NextItem()
+		if peekErr != nil {
+			return nil, peekErr
+		}
+		if peek.Type == tokenizer.T_STRING || peek.Type == tokenizer.T_ARRAY || peek.Type == tokenizer.T_CALLABLE {
+			th, i, err = parseIntersectionTypeHint(th, peek, c)
+			if err != nil {
+				return nil, err
+			}
+			c.backup()
+			return th, nil
+		}
+		return nil, peek.Unexpected()
+	}
+
+	// Not a type continuation - put it back and we're done
+	c.backup()
+	return th, nil
 }
 
 // NamedArg wraps a Runnable with a parameter name for PHP 8.0 named arguments.
