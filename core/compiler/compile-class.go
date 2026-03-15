@@ -335,6 +335,15 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 					break
 				}
 
+				// Abstract properties without hooks are not allowed
+				if attr&phpv.ZAttrAbstract != 0 {
+					return nil, &phpv.PhpError{
+						Err:  fmt.Errorf("Only hooked properties may be declared abstract"),
+						Code: phpv.E_COMPILE_ERROR,
+						Loc:  l,
+					}
+				}
+
 				class.Props = append(class.Props, prop)
 				if i.IsSingle(';') {
 					break
@@ -845,6 +854,15 @@ func parseClassLine(class *phpobj.ZClass, c compileCtx) error {
 		class.ExtendsStr, err = compileReadClassIdentifier(c)
 		if err != nil {
 			return err
+		}
+		// Validate that self/parent/static aren't used as parent class names
+		switch class.ExtendsStr.ToLower() {
+		case "self", "parent", "static":
+			return &phpv.PhpError{
+				Err:  fmt.Errorf("Cannot use \"%s\" as class name, as it is reserved", class.ExtendsStr),
+				Code: phpv.E_COMPILE_ERROR,
+				Loc:  i.Loc(),
+			}
 		}
 
 		i, err = c.NextItem()
