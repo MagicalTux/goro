@@ -36,4 +36,6 @@ type ZClosure interface {
 	Runnable
 
 	GetClass() ZClass
+	IsStatic() bool    // true for static function() {} and static fn() =>
+	GetThis() ZObject  // the captured $this (nil for static closures / free functions)
 }

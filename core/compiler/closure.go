@@ -22,6 +22,7 @@ type ZClosure struct {
 	start       *phpv.Loc
 	end         *phpv.Loc
 	rref        bool // return ref?
+	isStatic    bool // true for static function() {} and static fn() =>
 	isGenerator bool // true if this function contains yield
 	attributes  []*phpv.ZAttribute // PHP 8.0 attributes on this function
 	returnType  *phpv.TypeHint     // return type declaration (nil if none)
@@ -56,6 +57,22 @@ func (w *wrappedClosure) Name() string {
 	return string(w.name)
 }
 
+func (w *wrappedClosure) IsStatic() bool {
+	return false
+}
+
+func (w *wrappedClosure) GetThis() phpv.ZObject {
+	return w.this
+}
+
+func (w *wrappedClosure) GetClass() phpv.ZClass {
+	return w.class
+}
+
+func (w *wrappedClosure) Run(ctx phpv.Context) (*phpv.ZVal, error) {
+	return w.Spawn(ctx)
+}
+
 func (w *wrappedClosure) Spawn(ctx phpv.Context) (*phpv.ZVal, error) {
 	o, err := phpobj.NewZObjectOpaque(ctx, Closure, w)
 	if err != nil {
@@ -81,7 +98,7 @@ func init() {
 			if v.this != nil {
 				return ctx.Call(ctx, v, args, v.this)
 			}
-			return ctx.Call(ctx, v, args, o)
+			return ctx.Call(ctx, v, args, nil)
 		default:
 			return nil, fmt.Errorf("invalid closure opaque type: %T", opaque)
 		}
@@ -89,7 +106,8 @@ func init() {
 		if z.this != nil {
 			return ctx.Call(ctx, callable, args, z.this)
 		}
-		return ctx.Call(ctx, callable, args, o)
+		// For closures without $this, don't pass anything as $this
+		return ctx.Call(ctx, callable, args, nil)
 	}
 
 	// Closure::bind() - static method
@@ -135,6 +153,27 @@ func init() {
 					return nil, phpobj.ThrowError(ctx, phpobj.Error, "Closure::call(): internal error - not a closure")
 				}
 
+				// First arg is newThis, rest are call args
+				newThis := args[0]
+				callArgs := args[1:]
+
+				// Handle wrappedClosure (from Closure::fromCallable)
+				if w, ok := opaque.(*wrappedClosure); ok {
+					var thisObj phpv.ZObject
+					if newThis.GetType() == phpv.ZtObject {
+						if obj, ok2 := newThis.Value().(phpv.ZObject); ok2 {
+							thisObj = obj
+						}
+					}
+					if thisObj == nil {
+						thisObj = w.this
+					}
+					if thisObj != nil {
+						return ctx.CallZVal(ctx, w.inner, callArgs, thisObj)
+					}
+					return ctx.CallZVal(ctx, w.inner, callArgs)
+				}
+
 				var z *ZClosure
 				switch v := opaque.(type) {
 				case *ZClosure:
@@ -145,9 +184,10 @@ func init() {
 					return nil, phpobj.ThrowError(ctx, phpobj.Error, "Closure::call(): internal error - unexpected type")
 				}
 
-				// First arg is newThis, rest are call args
-				newThis := args[0]
-				callArgs := args[1:]
+				// Static closures cannot bind $this
+				if z.isStatic && newThis.GetType() == phpv.ZtObject {
+					ctx.Warn("Cannot bind an instance to a static closure, this will be an error in PHP 9")
+				}
 
 				bound := z.dup()
 				if newThis.GetType() == phpv.ZtObject {
@@ -156,7 +196,10 @@ func init() {
 						bound.class = obj.GetClass()
 					}
 				}
-				return bound.Call(ctx, callArgs)
+				if bound.this != nil {
+					return ctx.CallZVal(ctx, bound, callArgs, bound.this)
+				}
+				return ctx.CallZVal(ctx, bound, callArgs)
 			}),
 		},
 		"__debuginfo": {
@@ -221,9 +264,14 @@ func (closure *ZClosure) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 	}
 	c := closure.dup()
 	// Capture $this from the enclosing method (non-static closures only)
-	if c.this == nil && ctx.This() != nil {
+	if !c.isStatic && c.this == nil && ctx.This() != nil {
 		c.this = ctx.This()
 		c.class = ctx.This().GetClass()
+	}
+	// For static closures defined in a class method, capture the class scope
+	// but not $this
+	if c.isStatic && c.class == nil && ctx.Class() != nil {
+		c.class = ctx.Class()
 	}
 	// run compile after dup so we re-fetch default vars each time
 	err = c.Compile(ctx)
@@ -564,6 +612,7 @@ func (z *ZClosure) dup() *ZClosure {
 	n.start = z.start
 	n.end = z.end
 	n.rref = z.rref
+	n.isStatic = z.isStatic
 	n.isGenerator = z.isGenerator
 	n.attributes = z.attributes
 	n.returnType = z.returnType
@@ -589,6 +638,18 @@ func (z *ZClosure) dup() *ZClosure {
 
 func (z *ZClosure) GetClass() phpv.ZClass {
 	return z.class
+}
+
+func (z *ZClosure) IsStatic() bool {
+	return z.isStatic
+}
+
+func (z *ZClosure) GetThis() phpv.ZObject {
+	return z.this
+}
+
+func (z *ZClosure) GetUseVars() []*phpv.FuncUse {
+	return z.use
 }
 
 func (z *ZClosure) ReturnsByRef() bool {
@@ -678,11 +739,24 @@ func closureBind(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	bound := z.dup()
 
 	if newThis.GetType() == phpv.ZtNull {
+		// Binding null to a non-static closure that already has $this bound
+		// should warn and return null in PHP
+		if !bound.isStatic && z.this != nil {
+			ctx.Warn("Cannot unbind $this of closure using $this, this will be an error in PHP 9")
+			return phpv.ZNULL.ZVal(), nil
+		}
 		bound.this = nil
 	} else if newThis.GetType() == phpv.ZtObject {
+		if bound.isStatic {
+			ctx.Warn("Cannot bind an instance to a static closure, this will be an error in PHP 9")
+		}
 		if obj, ok2 := newThis.Value().(phpv.ZObject); ok2 {
 			bound.this = obj
-			bound.class = obj.GetClass()
+			// If no scope was explicitly set and the closure has no scope,
+			// give it a "dummy" scope of "Closure" (PHP behavior)
+			if bound.class == nil && (len(args) <= 2 || args[2] == nil) {
+				bound.class = Closure
+			}
 		}
 	} else {
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
@@ -698,6 +772,8 @@ func closureBind(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				cls, err := ctx.Global().GetClass(ctx, scopeName, true)
 				if err == nil && cls != nil {
 					bound.class = cls
+				} else {
+					ctx.Warn("Class \"%s\" not found", scopeName)
 				}
 			}
 		} else if scopeArg.GetType() == phpv.ZtObject {
@@ -706,6 +782,9 @@ func closureBind(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			}
 		} else if scopeArg.GetType() == phpv.ZtNull {
 			bound.class = nil
+		} else {
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+				"Closure::bindTo(): Argument #2 ($newScope) must be of type object|string|null, "+scopeArg.GetType().TypeName()+" given")
 		}
 	}
 

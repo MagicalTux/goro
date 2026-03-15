@@ -35,6 +35,7 @@ func initReflectionMethod() {
 		"getparameters":                 {Name: "getParameters", Method: phpobj.NativeMethod(reflectionMethodGetParameters)},
 		"invoke":                        {Name: "invoke", Method: phpobj.NativeMethod(reflectionMethodInvoke)},
 		"getattributes":                 {Name: "getAttributes", Method: phpobj.NativeMethod(reflectionMethodGetAttributes)},
+		"getclosure":                    {Name: "getClosure", Method: phpobj.NativeMethod(reflectionMethodGetClosure)},
 	}
 }
 
@@ -245,6 +246,25 @@ func createReflectionMethodObject(ctx phpv.Context, class phpv.ZClass, method *p
 	obj.HashTable().SetString("class", class.GetName().ZVal())
 	obj.SetOpaque(ReflectionMethod, data)
 	return obj.ZVal(), nil
+}
+
+func reflectionMethodGetClosure(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	data := getMethodData(o)
+	if data == nil {
+		return phpv.ZNULL.ZVal(), nil
+	}
+
+	// Optional first arg: object instance
+	var instance phpv.ZObject
+	if len(args) > 0 && args[0].GetType() == phpv.ZtObject {
+		instance = args[0].AsObject(ctx)
+	}
+
+	callable := data.method.Method
+	if instance != nil {
+		callable = phpv.Bind(callable, instance)
+	}
+	return phpv.NewZVal(callable), nil
 }
 
 func reflectionMethodGetAttributes(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
