@@ -865,3 +865,33 @@ func compileArrayAccess(v phpv.Runnable, c compileCtx) (phpv.Runnable, error) {
 
 	return v, nil
 }
+
+// checkReadonlyIndirectModification walks an expression chain to find if it
+// resolves through a readonly object property. Returns an error if an indirect
+// modification of a readonly property would occur.
+func checkReadonlyIndirectModification(ctx phpv.Context, expr phpv.Runnable) error {
+	for {
+		switch inner := expr.(type) {
+		case *runObjectVar:
+			objVal, objErr := inner.ref.Run(ctx)
+			if objErr != nil || objVal == nil || objVal.GetType() != phpv.ZtObject {
+				return nil
+			}
+			obj, objOk := objVal.Value().(*phpobj.ZObject)
+			if !objOk {
+				return nil
+			}
+			propName := inner.varName
+			if obj.IsReadonlyProperty(propName) {
+				return phpobj.ThrowError(ctx, phpobj.Error,
+					fmt.Sprintf("Cannot indirectly modify readonly property %s::$%s", obj.GetClass().GetName(), propName))
+			}
+			return nil
+		case *runArrayAccess:
+			expr = inner.value
+			continue
+		default:
+			return nil
+		}
+	}
+}

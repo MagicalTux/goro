@@ -98,6 +98,10 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 			return c.fatalError(ctx, fmt.Sprintf("Class %s cannot extend final class %s", c.Name, c.Extends.Name))
 		}
 
+		// Emit warnings about non-public magic methods BEFORE inheritance checks,
+		// because PHP emits these warnings before checking access level narrowing.
+		c.warnNonPublicMagicMethods(ctx)
+
 		// need to import methods, with validation
 		for n, m := range c.Extends.Methods {
 			if ours, gotit := c.Methods[n]; gotit {
@@ -920,7 +924,17 @@ func (c *ZClass) validateMagicMethods(ctx phpv.Context) error {
 		}
 	}
 
-	// Warn about non-public magic methods
+	// Note: non-public magic method warnings are emitted by warnNonPublicMagicMethods()
+	// which is called earlier in Compile() before inheritance checks.
+	// We still call it here for classes without extends (so it always runs).
+	c.warnNonPublicMagicMethods(ctx)
+
+	return nil
+}
+
+// warnNonPublicMagicMethods emits warnings about non-public magic methods.
+// Called early in Compile() so warnings appear before inheritance errors.
+func (c *ZClass) warnNonPublicMagicMethods(ctx phpv.Context) {
 	mustBePublic := []phpv.ZString{
 		"__call", "__callstatic", "__get", "__set", "__isset", "__unset",
 		"__debuginfo", "__serialize", "__unserialize",
@@ -944,8 +958,6 @@ func (c *ZClass) validateMagicMethods(ctx phpv.Context) error {
 			ctx.Global().LogError(phpErr)
 		}
 	}
-
-	return nil
 }
 
 // magicParamTypeCompatible checks if a type hint is compatible with the required type

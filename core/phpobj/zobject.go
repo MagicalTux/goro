@@ -1465,10 +1465,11 @@ func (o *ZObject) NewIteratorInScope(scope phpv.ZClass) phpv.ZIterator {
 			break
 		}
 	}
-	return &zobjectIterator{inner: o.h.NewIterator(), scope: scope, protectedProps: protectedProps}
+	return &zobjectIterator{obj: o, inner: o.h.NewIterator(), scope: scope, protectedProps: protectedProps}
 }
 
 type zobjectIterator struct {
+	obj            *ZObject
 	inner          phpv.ZIterator
 	scope          phpv.ZClass // nil means external access (only public)
 	protectedProps map[phpv.ZString]struct{}
@@ -1526,6 +1527,28 @@ func (it *zobjectIterator) Current(ctx phpv.Context) (*phpv.ZVal, error) {
 
 func (it *zobjectIterator) CurrentMakeRef(ctx phpv.Context) (*phpv.ZVal, error) {
 	it.skipNonPublic(ctx)
+
+	// Check for readonly property — cannot acquire reference to readonly property
+	if it.obj != nil {
+		k, _ := it.inner.Key(ctx)
+		if k != nil {
+			keyStr := k.AsString(ctx)
+			// Strip private property prefix (*ClassName:propName -> propName)
+			if len(keyStr) > 0 && keyStr[0] == '*' {
+				for i := 1; i < len(keyStr); i++ {
+					if keyStr[i] == ':' {
+						keyStr = keyStr[i+1:]
+						break
+					}
+				}
+			}
+			if it.obj.IsReadonlyProperty(keyStr) && it.obj.IsReadonlyPropertyInitialized(keyStr) {
+				return nil, ThrowError(ctx, Error,
+					fmt.Sprintf("Cannot acquire reference to readonly property %s::$%s", it.obj.GetClass().GetName(), keyStr))
+			}
+		}
+	}
+
 	if inner, ok := it.inner.(interface {
 		CurrentMakeRef(phpv.Context) (*phpv.ZVal, error)
 	}); ok {
