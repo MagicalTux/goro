@@ -218,6 +218,16 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 		callCtx.methodType = "->"
 	}
 
+	// For closures with a class scope but no $this, set the class on the call context
+	// so that self:: and static:: resolve correctly inside the closure body.
+	if callCtx.class == nil {
+		if zc, ok := f.(phpv.ZClosure); ok {
+			if cls := zc.GetClass(); cls != nil {
+				callCtx.class = cls
+			}
+		}
+	}
+
 	callCtx.this = this
 
 	// collect args

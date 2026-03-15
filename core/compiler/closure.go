@@ -73,6 +73,11 @@ func (w *wrappedClosure) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	return w.Spawn(ctx)
 }
 
+func (w *wrappedClosure) Dump(wr io.Writer) error {
+	_, err := fmt.Fprintf(wr, "/* wrapped closure: %s */", w.name)
+	return err
+}
+
 func (w *wrappedClosure) Spawn(ctx phpv.Context) (*phpv.ZVal, error) {
 	o, err := phpobj.NewZObjectOpaque(ctx, Closure, w)
 	if err != nil {
@@ -186,7 +191,7 @@ func init() {
 
 				// Static closures cannot bind $this
 				if z.isStatic && newThis.GetType() == phpv.ZtObject {
-					ctx.Warn("Cannot bind an instance to a static closure, this will be an error in PHP 9")
+					ctx.Warn("Cannot bind an instance to a static closure, this will be an error in PHP 9", logopt.NoFuncName(true))
 				}
 
 				bound := z.dup()
@@ -742,13 +747,13 @@ func closureBind(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		// Binding null to a non-static closure that already has $this bound
 		// should warn and return null in PHP
 		if !bound.isStatic && z.this != nil {
-			ctx.Warn("Cannot unbind $this of closure using $this, this will be an error in PHP 9")
+			ctx.Warn("Cannot unbind $this of closure using $this, this will be an error in PHP 9", logopt.NoFuncName(true))
 			return phpv.ZNULL.ZVal(), nil
 		}
 		bound.this = nil
 	} else if newThis.GetType() == phpv.ZtObject {
 		if bound.isStatic {
-			ctx.Warn("Cannot bind an instance to a static closure, this will be an error in PHP 9")
+			ctx.Warn("Cannot bind an instance to a static closure, this will be an error in PHP 9", logopt.NoFuncName(true))
 		}
 		if obj, ok2 := newThis.Value().(phpv.ZObject); ok2 {
 			bound.this = obj
@@ -773,7 +778,7 @@ func closureBind(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				if err == nil && cls != nil {
 					bound.class = cls
 				} else {
-					ctx.Warn("Class \"%s\" not found", scopeName)
+					ctx.Warn("Class \"%s\" not found", scopeName, logopt.NoFuncName(true))
 				}
 			}
 		} else if scopeArg.GetType() == phpv.ZtObject {
@@ -786,6 +791,12 @@ func closureBind(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
 				"Closure::bindTo(): Argument #2 ($newScope) must be of type object|string|null, "+scopeArg.GetType().TypeName()+" given")
 		}
+	}
+
+	// PHP invariant: if a non-static closure has $this bound, it must have a scope.
+	// Assign "Closure" as dummy scope when no scope was set.
+	if bound.this != nil && bound.class == nil {
+		bound.class = Closure
 	}
 
 	return bound.Spawn(ctx)

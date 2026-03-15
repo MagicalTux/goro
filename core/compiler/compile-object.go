@@ -484,6 +484,18 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 				class = parentClass
 			}
 
+		case "static":
+			// Late static binding: resolve to the runtime class
+			if ctx.This() != nil {
+				objI = ctx.This()
+				class = objI.GetClass()
+			} else {
+				class, err = ctx.Global().GetClass(ctx, "static", false)
+				if err != nil {
+					return nil, ctx.Errorf("Cannot access static:: when no class scope is active")
+				}
+			}
+
 		default:
 			nonStatic := false
 			if ctx.This() != nil {
@@ -697,8 +709,9 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	}
 
 	if r.static {
-		// :: syntax but with an object (e.g., parent::method())
-		m := phpv.BindClass(method.Method, class, true)
+		// :: syntax but with an object (e.g., parent::method(), self::method())
+		// Not truly static: $this is forwarded, so use Static=false for the binding
+		m := phpv.BindClass(method.Method, class, false)
 		return ctx.Call(ctx, m, r.args, objI)
 	}
 

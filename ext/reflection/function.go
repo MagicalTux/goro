@@ -226,7 +226,7 @@ func reflectionFunctionGetClosureScopeClass(ctx phpv.Context, o *phpobj.ZObject,
 		return phpv.ZNULL.ZVal(), nil
 	}
 	// Return a ReflectionClass for this scope class
-	rcObj, err := phpobj.NewZObject(ctx, ReflectionClass)
+	rcObj, err := phpobj.CreateZObject(ctx, ReflectionClass)
 	if err != nil {
 		return nil, err
 	}
@@ -294,7 +294,22 @@ func reflectionFunctionGetReturnType(ctx phpv.Context, o *phpobj.ZObject, args [
 
 // closureFromCallableHelper wraps a Callable into a Closure object for ReflectionFunction::getClosure()
 func closureFromCallableHelper(ctx phpv.Context, callable phpv.Callable, name phpv.ZString, funcArgs []*phpv.FuncArg) (*phpv.ZVal, error) {
-	return phpv.NewZVal(callable), nil
+	// Use Closure::fromCallable to create a proper Closure object
+	return closureFromCallableVal(ctx, name.ZVal())
+}
+
+// closureFromCallableVal is a helper that calls through to the Closure class's fromCallable method
+func closureFromCallableVal(ctx phpv.Context, val *phpv.ZVal) (*phpv.ZVal, error) {
+	// Resolve the Closure class
+	cls, err := ctx.Global().GetClass(ctx, "Closure", false)
+	if err != nil {
+		return nil, err
+	}
+	method, ok := cls.GetMethod("fromcallable")
+	if !ok {
+		return nil, fmt.Errorf("Closure::fromCallable not found")
+	}
+	return ctx.CallZVal(ctx, method.Method, []*phpv.ZVal{val})
 }
 
 func reflectionFunctionGetAttributes(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
