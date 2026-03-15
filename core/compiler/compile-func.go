@@ -173,7 +173,7 @@ func (r *runnableFunctionCallRef) Run(ctx phpv.Context) (l *phpv.ZVal, err error
 					if method, methodOk := class.GetMethod(methodName); methodOk {
 						f = method.Method
 					} else {
-						return nil, ctx.Errorf("Call to undefined method %s::%s()", className, methodName)
+						return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Call to undefined method %s::%s()", className, methodName))
 					}
 				} else {
 					return nil, classErr
