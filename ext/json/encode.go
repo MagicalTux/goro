@@ -31,9 +31,30 @@ func fncJsonEncode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		d = int(*depth)
 	}
 
-	r, err = appendJsonEncode(ctx, r, v, o, d)
+	r, jsonErr := appendJsonEncode(ctx, r, v, o, d)
 
-	return phpv.ZString(r).ZVal(), err
+	if jsonErr != nil {
+		if je, ok := jsonErr.(JsonError); ok {
+			setLastJsonError(ctx, je)
+			if o&JsonEncOpt(ThrowOnError) != 0 {
+				// Throw JsonException
+				msg := ""
+				switch je {
+				case ErrNonBackedEnum:
+					msg = "Non-backed enums have no default serialization"
+				default:
+					msg = je.Error()
+				}
+				return nil, phpobj.ThrowError(ctx, JsonException, msg)
+			}
+			return phpv.ZBool(false).ZVal(), nil
+		}
+		// Unknown error type
+		setLastJsonError(ctx, ErrUnsupportedType)
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	setLastJsonError(ctx, ErrNone)
+	return phpv.ZString(r).ZVal(), nil
 }
 
 func appendJsonEncode(ctx phpv.Context, r []byte, v *phpv.ZVal, opt JsonEncOpt, depth int) ([]byte, error) {
@@ -82,10 +103,12 @@ func appendJsonEncodeState(ctx phpv.Context, r []byte, v *phpv.ZVal, opt JsonEnc
 				}
 			}
 			// Backed enums serialize to their backing value
-			if zobj, ok := obj.(*phpobj.ZObject); ok {
-				backingVal := zobj.HashTable().GetString("value")
-				if backingVal != nil {
-					return appendJsonEncodeState(ctx, r, backingVal, opt, depth, st)
+			if zc, ok := obj.GetClass().(*phpobj.ZClass); ok && zc.EnumBackingType != 0 {
+				if zobj, ok2 := obj.(*phpobj.ZObject); ok2 {
+					backingVal := zobj.HashTable().GetString("value")
+					if backingVal != nil {
+						return appendJsonEncodeState(ctx, r, backingVal, opt, depth, st)
+					}
 				}
 			}
 			// Unit (non-backed) enums cannot be serialized

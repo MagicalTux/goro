@@ -4,9 +4,9 @@ package json
 
 import "strconv"
 
-const _JsonError_name = "ErrNoneErrDepthErrStateMismatchErrCtrlCharErrSyntaxErrUtf8ErrRecursionErrInfOrNanErrUnsupportedTypeErrInvalidPropNameErrUtf16"
+const _JsonError_name = "ErrNoneErrDepthErrStateMismatchErrCtrlCharErrSyntaxErrUtf8ErrRecursionErrInfOrNanErrUnsupportedTypeErrInvalidPropNameErrUtf16ErrNonBackedEnum"
 
-var _JsonError_index = [...]uint8{0, 7, 15, 31, 42, 51, 58, 70, 81, 99, 117, 125}
+var _JsonError_index = [...]uint8{0, 7, 15, 31, 42, 51, 58, 70, 81, 99, 117, 125, 140}
 
 func (i JsonError) String() string {
 	if i < 0 || i >= JsonError(len(_JsonError_index)-1) {

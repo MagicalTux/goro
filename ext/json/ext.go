@@ -15,6 +15,7 @@ func init() {
 		Version: core.VERSION,
 		Classes: []*phpobj.ZClass{
 			JsonSerializable,
+			JsonException,
 		},
 		// Note: ExtFunctionArg is currently unused
 		Functions: map[string]*phpctx.ExtFunction{
