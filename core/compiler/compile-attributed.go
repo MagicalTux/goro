@@ -57,6 +57,8 @@ func compileAttributed(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		}
 		if zc, ok := r.(*phpobj.ZClass); ok {
 			zc.Attributes = append(attrs, zc.Attributes...)
+		} else if er, ok := r.(*runEnumRegister); ok {
+			er.class.Attributes = append(attrs, er.class.Attributes...)
 		}
 		return r, nil
 
