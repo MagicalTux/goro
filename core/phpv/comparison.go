@@ -5,6 +5,12 @@ import "strings"
 // compareDepth tracks recursion depth to prevent stack overflow on circular references.
 var compareDepth int
 
+// CompareUncomparable is a sentinel value returned by CompareObject
+// when two objects cannot be ordered (e.g., different enum cases).
+// Callers should treat this as "not equal" for == and "incomparable"
+// (all ordered comparisons return false) for <, >, <=, >=.
+const CompareUncomparable = 2
+
 func CompareObject(ctx Context, ao, bo ZObject) (int, error) {
 	// Same instance - always equal
 	if ao == bo {
@@ -13,6 +19,11 @@ func CompareObject(ctx Context, ao, bo ZObject) (int, error) {
 
 	if ao.GetClass() != bo.GetClass() {
 		return 1, nil
+	}
+
+	// Enum cases: different cases of the same enum are not orderable
+	if ao.GetClass().GetType().Has(ZClassTypeEnum) {
+		return CompareUncomparable, nil
 	}
 
 	compareDepth++

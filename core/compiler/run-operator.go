@@ -1111,6 +1111,21 @@ func operatorCompare(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (
 		if err != nil {
 			return nil, err
 		}
+		// Handle uncomparable objects (e.g., different enum cases)
+		if cmp == phpv.CompareUncomparable {
+			switch op {
+			case tokenizer.T_IS_EQUAL:
+				return phpv.ZBool(false).ZVal(), nil
+			case tokenizer.T_IS_NOT_EQUAL:
+				return phpv.ZBool(true).ZVal(), nil
+			default:
+				// All ordered comparisons (<, >, <=, >=, <=>) return false/0
+				if op == tokenizer.T_SPACESHIP {
+					return phpv.ZInt(0).ZVal(), nil
+				}
+				return phpv.ZBool(false).ZVal(), nil
+			}
+		}
 		switch op {
 		case tokenizer.T_IS_EQUAL:
 			return phpv.ZBool(cmp == 0).ZVal(), nil
@@ -1223,21 +1238,33 @@ CompareArrays:
 			if err != nil {
 				return nil, err
 			}
-			switch op {
-			case tokenizer.T_IS_EQUAL:
-				res = cmp == 0
-			case tokenizer.T_IS_NOT_EQUAL:
-				res = cmp != 0
-			case tokenizer.Rune('<'):
-				res = cmp < 0
-			case tokenizer.Rune('>'):
-				res = cmp > 0
-			case tokenizer.T_IS_SMALLER_OR_EQUAL:
-				res = cmp <= 0
-			case tokenizer.T_IS_GREATER_OR_EQUAL:
-				res = cmp >= 0
-			default:
-				return nil, ctx.Errorf("unsupported operator %s", op)
+			// Handle uncomparable objects (e.g., different enum cases)
+			if cmp == phpv.CompareUncomparable {
+				switch op {
+				case tokenizer.T_IS_EQUAL:
+					res = false
+				case tokenizer.T_IS_NOT_EQUAL:
+					res = true
+				default:
+					res = false // all ordered comparisons return false for uncomparable
+				}
+			} else {
+				switch op {
+				case tokenizer.T_IS_EQUAL:
+					res = cmp == 0
+				case tokenizer.T_IS_NOT_EQUAL:
+					res = cmp != 0
+				case tokenizer.Rune('<'):
+					res = cmp < 0
+				case tokenizer.Rune('>'):
+					res = cmp > 0
+				case tokenizer.T_IS_SMALLER_OR_EQUAL:
+					res = cmp <= 0
+				case tokenizer.T_IS_GREATER_OR_EQUAL:
+					res = cmp >= 0
+				default:
+					return nil, ctx.Errorf("unsupported operator %s", op)
+				}
 			}
 		}
 	default:
