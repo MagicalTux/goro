@@ -2,11 +2,13 @@ package core
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"os"
 
 	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phperr"
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -58,10 +60,26 @@ func fncSetErrorHandler(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 
 // > func callable|null set_exception_handler ( callable|null $exception_handler )
 func fncSetExceptionHandler(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) == 0 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "set_exception_handler() expects exactly 1 argument, 0 given")
+	}
+
+	// PHP accepts null to reset to default handler
+	if args[0].IsNull() {
+		prev := ctx.Global().SetUserExceptionHandler(nil)
+		if prev == nil {
+			return phpv.ZNULL.ZVal(), nil
+		}
+		return prev.ZVal(), nil
+	}
+
 	var handler phpv.Callable
 	_, err := Expand(ctx, args, &handler)
 	if err != nil {
-		return nil, err
+		// PHP 8.0+ throws TypeError with specific message format
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("set_exception_handler(): Argument #1 ($callback) must be a valid callback or null, %s",
+				callbackErrorMessage(ctx, args[0])))
 	}
 
 	prev := ctx.Global().SetUserExceptionHandler(handler)
@@ -69,6 +87,28 @@ func fncSetExceptionHandler(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 		return phpv.ZNULL.ZVal(), nil
 	}
 	return prev.ZVal(), nil
+}
+
+// callbackErrorMessage generates a descriptive error for invalid callbacks.
+func callbackErrorMessage(ctx phpv.Context, arg *phpv.ZVal) string {
+	switch arg.GetType() {
+	case phpv.ZtString:
+		return fmt.Sprintf("function \"%s\" not found or invalid function name", arg.String())
+	case phpv.ZtArray:
+		arr := arg.AsArray(ctx)
+		if arr != nil && arr.Count(ctx) == 2 {
+			classVal, _ := arr.OffsetGet(ctx, phpv.ZInt(0).ZVal())
+			if classVal != nil {
+				className := classVal.String()
+				if className == "" {
+					return "class \"\" not found"
+				}
+			}
+		}
+		return "no array or string given"
+	default:
+		return fmt.Sprintf("no array or string given")
+	}
 }
 
 // > func bool restore_exception_handler ( void )

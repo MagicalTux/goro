@@ -48,9 +48,12 @@ func fncDefine(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 2 {
 		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, fmt.Sprintf("define() expects exactly 2 arguments, %d given", len(args)))
 	}
-	// Check argument type before conversion
-	if args[0].GetType() != phpv.ZtString {
-		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("define(): Argument #1 ($constant_name) must be of type string, %s given", args[0].GetType().TypeName()))
+	// Check argument type - PHP uses coercion mode for internal functions,
+	// so scalars (int, float, bool) are coerced to string.
+	// Only objects and arrays cause a TypeError.
+	switch args[0].GetType() {
+	case phpv.ZtObject, phpv.ZtArray:
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("define(): Argument #1 ($constant_name) must be of type string, %s given", phpv.ZValTypeName(args[0])))
 	}
 	var name phpv.ZString
 	var value *phpv.ZVal
@@ -83,6 +86,11 @@ func fncDefined(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	_, err := Expand(ctx, args, &name)
 	if err != nil {
 		return nil, err
+	}
+
+	// Strip leading backslash (global namespace prefix)
+	if len(name) > 0 && name[0] == '\\' {
+		name = name[1:]
 	}
 
 	g := ctx.Global()

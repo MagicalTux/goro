@@ -22,6 +22,11 @@ func constant(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
+	// Strip leading backslash (global namespace prefix)
+	if len(name) > 0 && name[0] == '\\' {
+		name = name[1:]
+	}
+
 	// Check for class constant (ClassName::CONST_NAME)
 	if idx := strings.Index(string(name), "::"); idx != -1 {
 		className := phpv.ZString(name[:idx])
