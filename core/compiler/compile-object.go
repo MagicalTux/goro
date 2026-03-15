@@ -546,6 +546,27 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		if objI != nil && op.ToLower() == "__invoke" && class.Handlers() != nil && class.Handlers().HandleInvoke != nil {
 			return class.Handlers().HandleInvoke(ctx, objI, r.args)
 		}
+
+		// For :: syntax, check __callStatic first, then fall back to __call
+		if r.static {
+			callClass := class
+			if ctx.This() != nil {
+				callClass = ctx.This().GetClass()
+			}
+			if callStaticMethod, hasCallStatic := callClass.GetMethod("__callstatic"); hasCallStatic {
+				a := phpv.NewZArray()
+				callArgs := []*phpv.ZVal{op.ZVal(), a.ZVal()}
+				for _, sub := range r.args {
+					val, err := sub.Run(ctx)
+					if err != nil {
+						return nil, err
+					}
+					a.OffsetSet(ctx, nil, val)
+				}
+				return ctx.CallZVal(ctx, callStaticMethod.Method, callArgs, objI)
+			}
+		}
+
 		// Check for __call magic method on instance calls
 		if objI != nil {
 			// When using :: syntax, __call should be resolved from $this's

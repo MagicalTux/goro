@@ -1401,17 +1401,26 @@ func (o *ZObject) ObjectSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) er
 		return o.h.SetString(keyStr, value)
 	}
 
-	// Property not found, try __set magic method
+	// Property not found, try magic methods
 	class := o.GetClass().(*ZClass)
-	if m, ok := class.Methods["__set"]; ok {
-		if o.setGuard == nil {
-			o.setGuard = make(map[phpv.ZString]bool)
-		}
-		if !o.setGuard[keyStr] {
-			o.setGuard[keyStr] = true
-			_, err := ctx.CallZVal(ctx, m.Method, []*phpv.ZVal{keyStr.ZVal(), value}, o)
-			delete(o.setGuard, keyStr)
+	if value == nil {
+		// unset() on a non-existent property → try __unset
+		if m, ok := class.Methods["__unset"]; ok {
+			_, err := ctx.CallZVal(ctx, m.Method, []*phpv.ZVal{keyStr.ZVal()}, o)
 			return err
+		}
+	} else {
+		// set on a non-existent property → try __set
+		if m, ok := class.Methods["__set"]; ok {
+			if o.setGuard == nil {
+				o.setGuard = make(map[phpv.ZString]bool)
+			}
+			if !o.setGuard[keyStr] {
+				o.setGuard[keyStr] = true
+				_, err := ctx.CallZVal(ctx, m.Method, []*phpv.ZVal{keyStr.ZVal(), value}, o)
+				delete(o.setGuard, keyStr)
+				return err
+			}
 		}
 	}
 
