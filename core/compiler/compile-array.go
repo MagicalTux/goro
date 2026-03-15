@@ -499,6 +499,13 @@ func (ac *runArrayAccess) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 		return ctx.Notice("Indirect modification of overloaded element of %s has no effect", inner.lastContainerClassName, logopt.Data{Loc: ac.l, NoFuncName: true})
 	}
 
+	// PHP 8.1: Cannot indirectly modify readonly property.
+	// If the container expression chain resolves through a readonly property
+	// access ($obj->prop[...] = val or $obj->prop[0][...] = val), block it.
+	if err := checkReadonlyIndirectModification(ctx, ac.value); err != nil {
+		return err
+	}
+
 	// Handle unset ($a[x] = nil means unset)
 	if value == nil {
 		array := v.Array()

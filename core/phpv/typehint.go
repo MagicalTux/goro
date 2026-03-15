@@ -2,6 +2,7 @@ package phpv
 
 import (
 	"reflect"
+	"sort"
 	"strings"
 )
 
@@ -130,6 +131,46 @@ func (h *TypeHint) Check(ctx Context, val *ZVal) bool {
 	return valType == h.t
 }
 
+// typeHintSortOrder returns the sort key for a type hint in union display order.
+// PHP displays union types in canonical order: object types, then array, then scalars.
+func typeHintSortOrder(h *TypeHint) int {
+	switch h.t {
+	case ZtObject:
+		if h.s == "self" || h.s == "static" || h.s == "callable" || h.s == "iterable" {
+			return 10
+		}
+		if h.s == "" {
+			return 10 // bare "object"
+		}
+		return 5 // named class types first
+	case ZtArray:
+		return 20
+	case ZtString:
+		return 30
+	case ZtInt:
+		return 31
+	case ZtFloat:
+		return 32
+	case ZtBool:
+		if h.s == "false" {
+			return 41
+		}
+		if h.s == "true" {
+			return 40
+		}
+		return 33
+	case ZtNull:
+		return 50
+	case ZtVoid:
+		return 60
+	case ZtNever:
+		return 70
+	case ZtMixed:
+		return 0
+	}
+	return 100
+}
+
 // String returns the PHP type name for error messages
 func (h *TypeHint) String() string {
 	if len(h.Union) > 0 {
@@ -137,6 +178,9 @@ func (h *TypeHint) String() string {
 		for i, alt := range h.Union {
 			parts[i] = alt.String()
 		}
+		sort.SliceStable(parts, func(i, j int) bool {
+			return typeHintSortOrder(h.Union[i]) < typeHintSortOrder(h.Union[j])
+		})
 		return strings.Join(parts, "|")
 	}
 	if len(h.Intersection) > 0 {

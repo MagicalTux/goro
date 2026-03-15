@@ -671,7 +671,7 @@ func (c *ZClass) checkMethodCompatibility(ctx phpv.Context, child *phpv.ZClassMe
 		incompatible = true
 	}
 
-	// Check type hint compatibility for each parameter
+	// Check type hint compatibility for each parameter (contravariance: child can widen)
 	if !incompatible {
 		for i := 0; i < len(parentArgs) && i < len(childArgs); i++ {
 			ph := parentArgs[i].Hint
@@ -680,21 +680,47 @@ func (c *ZClass) checkMethodCompatibility(ctx phpv.Context, child *phpv.ZClassMe
 				continue
 			}
 			if ph != nil && ch == nil {
-				// Child drops type hint - incompatible
-				incompatible = true
-				break
+				// Child drops type hint — this is always a widening (accepts anything)
+				// which is compatible with contravariance
+				continue
 			}
 			if ph == nil && ch != nil {
-				// Child adds type hint - incompatible
+				// Child adds type hint where parent had none — narrowing, incompatible
 				incompatible = true
 				break
 			}
-			// Both have hints - check they match
-			if ph.Type() != ch.Type() || ph.ClassName() != ch.ClassName() {
+			// Both have hints — check if child type is a supertype of (or equal to) parent type.
+			// For contravariance, the child must accept at least everything the parent accepts.
+			if !typeHintIsWidening(ch, ph) {
 				incompatible = true
 				break
 			}
 		}
+	}
+
+	// Check return type covariance (child must return subtype of parent)
+	if !incompatible {
+		type retTypeGetter interface {
+			GetReturnType() *phpv.TypeHint
+		}
+		var parentRT, childRT *phpv.TypeHint
+		if rtg, ok := parent.Method.(retTypeGetter); ok {
+			parentRT = rtg.GetReturnType()
+		}
+		if rtg, ok := child.Method.(retTypeGetter); ok {
+			childRT = rtg.GetReturnType()
+		}
+		if parentRT != nil && childRT != nil {
+			// Both have return types — child's return type must be a subtype of parent's
+			// (covariance: child must be narrower or equal)
+			if !typeHintIsWidening(parentRT, childRT) {
+				incompatible = true
+			}
+		} else if parentRT != nil && childRT == nil {
+			// Parent has return type, child drops it — incompatible
+			incompatible = true
+		}
+		// If parent has no return type and child adds one, that's okay (child is narrower)
 	}
 
 	if incompatible {
@@ -727,6 +753,14 @@ func formatMethodSignature(className phpv.ZString, m *phpv.ZClassMethod) string 
 		}
 	}
 	sig += ")"
+	// Include return type if available
+	if rt, ok := m.Method.(interface {
+		GetReturnType() *phpv.TypeHint
+	}); ok {
+		if retType := rt.GetReturnType(); retType != nil {
+			sig += ": " + retType.String()
+		}
+	}
 	return sig
 }
 
@@ -958,6 +992,82 @@ func (c *ZClass) warnNonPublicMagicMethods(ctx phpv.Context) {
 			ctx.Global().LogError(phpErr)
 		}
 	}
+}
+
+// typeHintIsWidening checks if childHint accepts at least everything parentHint accepts.
+// This implements contravariance for parameter types: the child can accept more types.
+func typeHintIsWidening(childHint, parentHint *phpv.TypeHint) bool {
+	if childHint == nil {
+		// No type hint accepts everything — always a widening
+		return true
+	}
+	if parentHint == nil {
+		// Parent has no type but child does — narrowing
+		return false
+	}
+	// If child is "mixed", it accepts everything
+	if childHint.Type() == phpv.ZtMixed {
+		return true
+	}
+	// If parent is "mixed", child must also be mixed to be compatible
+	if parentHint.Type() == phpv.ZtMixed {
+		return childHint.Type() == phpv.ZtMixed
+	}
+
+	// Gather all "leaf" types from parent (flatten unions)
+	parentTypes := flattenTypeHint(parentHint)
+
+	// For each type the parent accepts, the child must also accept it
+	for _, pt := range parentTypes {
+		if !typeHintContains(childHint, pt) {
+			return false
+		}
+	}
+	return true
+}
+
+// flattenTypeHint returns all the individual type hints in a (possibly union) type.
+func flattenTypeHint(h *phpv.TypeHint) []*phpv.TypeHint {
+	if len(h.Union) > 0 {
+		var result []*phpv.TypeHint
+		for _, u := range h.Union {
+			result = append(result, flattenTypeHint(u)...)
+		}
+		return result
+	}
+	return []*phpv.TypeHint{h}
+}
+
+// typeHintContains checks if a type hint (possibly union) contains a specific single type.
+func typeHintContains(h *phpv.TypeHint, target *phpv.TypeHint) bool {
+	if len(h.Union) > 0 {
+		for _, u := range h.Union {
+			if typeHintContains(u, target) {
+				return true
+			}
+		}
+		return false
+	}
+	if h.Type() == phpv.ZtMixed {
+		return true
+	}
+	// Compare single types
+	if h.Type() != target.Type() {
+		return false
+	}
+	// For object types, check class name
+	if h.Type() == phpv.ZtObject {
+		if h.ClassName() == "" || target.ClassName() == "" {
+			// "object" matches any object type
+			return h.ClassName() == "" || target.ClassName() == ""
+		}
+		return h.ClassName().ToLower() == target.ClassName().ToLower()
+	}
+	// For bool with "true"/"false" specifiers
+	if h.Type() == phpv.ZtBool {
+		return h.ClassName() == target.ClassName()
+	}
+	return true
 }
 
 // magicParamTypeCompatible checks if a type hint is compatible with the required type

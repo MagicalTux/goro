@@ -346,6 +346,10 @@ func (z *ZClosure) GetArgs() []*phpv.FuncArg {
 	return z.args
 }
 
+func (z *ZClosure) GetReturnType() *phpv.TypeHint {
+	return z.returnType
+}
+
 func (z *ZClosure) Loc() *phpv.Loc {
 	return z.start
 }
