@@ -1272,6 +1272,27 @@ func (o *ZObject) ObjectSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) er
 		return ThrowError(ctx, Error, "Cannot access property starting with \"\\0\"")
 	}
 
+	// Enum cases are immutable: properties cannot be written to or created
+	if zc, ok := o.Class.(*ZClass); ok && zc.Type.Has(phpv.ZClassTypeEnum) {
+		// Check if the property is a known enum property (name, value)
+		if keyStr == "name" || (keyStr == "value" && zc.EnumBackingType != 0) {
+			if value == nil {
+				// unset() on readonly enum property
+				return ThrowError(ctx, Error,
+					fmt.Sprintf("Cannot unset readonly property %s::$%s", o.Class.GetName(), keyStr))
+			}
+			return ThrowError(ctx, Error,
+				fmt.Sprintf("Cannot modify readonly property %s::$%s", o.Class.GetName(), keyStr))
+		}
+		if value == nil {
+			// unset() on a non-existent property - still disallowed
+			return ThrowError(ctx, Error,
+				fmt.Sprintf("Cannot unset dynamic property %s::$%s", o.Class.GetName(), keyStr))
+		}
+		return ThrowError(ctx, Error,
+			fmt.Sprintf("Cannot create dynamic property %s::$%s", o.Class.GetName(), keyStr))
+	}
+
 	// Check if accessing a static property as non-static
 	o.checkStaticPropertyAccess(ctx, keyStr)
 

@@ -455,7 +455,17 @@ func (z *ZClosure) callBody(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 		if args[i].IsRef() {
 			ctx.OffsetSet(ctx, a.VarName.ZVal(), args[i].Ref())
 		} else {
-			ctx.OffsetSet(ctx, a.VarName.ZVal(), args[i].Nude().Dup())
+			argVal := args[i].Nude().Dup()
+			// Coerce value to match type hint (PHP non-strict mode)
+			if a.Hint != nil && argVal.GetType() != phpv.ZtNull {
+				hintType := a.Hint.Type()
+				if hintType != phpv.ZtMixed && hintType != phpv.ZtObject && argVal.GetType() != hintType {
+					if coerced, err2 := argVal.As(ctx, hintType); err2 == nil && coerced != nil {
+						argVal = coerced.ZVal()
+					}
+				}
+			}
+			ctx.OffsetSet(ctx, a.VarName.ZVal(), argVal)
 		}
 	}
 

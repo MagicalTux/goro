@@ -339,6 +339,39 @@ func compileEnum(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		class.EnumCases = append(class.EnumCases, phpv.ZString(ec.name))
 	}
 
+	// Reject user-defined built-in methods
+	if _, exists := class.Methods["cases"]; exists {
+		return nil, &phpv.PhpError{
+			Err:  fmt.Errorf("Cannot redeclare %s::cases()", class.Name),
+			Code: phpv.E_COMPILE_ERROR,
+			Loc:  i.Loc(),
+		}
+	}
+	if backingType != 0 {
+		if m, exists := class.Methods["from"]; exists {
+			loc := m.Loc
+			if loc == nil {
+				loc = i.Loc()
+			}
+			return nil, &phpv.PhpError{
+				Err:  fmt.Errorf("Cannot redeclare %s::from()", class.Name),
+				Code: phpv.E_COMPILE_ERROR,
+				Loc:  loc,
+			}
+		}
+		if m, exists := class.Methods["tryfrom"]; exists {
+			loc := m.Loc
+			if loc == nil {
+				loc = i.Loc()
+			}
+			return nil, &phpv.PhpError{
+				Err:  fmt.Errorf("Cannot redeclare %s::tryFrom()", class.Name),
+				Code: phpv.E_COMPILE_ERROR,
+				Loc:  loc,
+			}
+		}
+	}
+
 	// Add built-in enum methods
 
 	// cases() - returns array of all enum cases
