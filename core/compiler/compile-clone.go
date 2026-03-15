@@ -34,6 +34,11 @@ func (r *runnableClone) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 
 	obj := v.Value().(phpv.ZObject)
 
+	// Enums cannot be cloned
+	if obj.GetClass().GetType()&phpv.ZClassTypeEnum != 0 {
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Trying to clone an uncloneable object of class %s", obj.GetClass().GetName()))
+	}
+
 	// Check __clone visibility
 	if m, ok := obj.GetClass().GetMethod("__clone"); ok {
 		if m.Modifiers.IsPrivate() || m.Modifiers.IsProtected() {

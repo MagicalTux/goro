@@ -135,9 +135,14 @@ func doVarDump(ctx phpv.Context, z *phpv.ZVal, linePfx string, recurs map[uintpt
 						debugInfoArr = phpv.NewZArray()
 					default:
 						// Non-array, non-null return is a fatal error
+						loc := debugInfoMethod.Loc
+						if loc == nil {
+							loc = ctx.Loc()
+						}
 						return &phpv.PhpError{
 							Err:  fmt.Errorf("__debuginfo() must return an array"),
 							Code: phpv.E_ERROR,
+							Loc:  loc,
 						}
 					}
 				}

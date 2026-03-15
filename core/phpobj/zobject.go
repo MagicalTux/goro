@@ -256,6 +256,11 @@ func NewZObject(ctx phpv.Context, c phpv.ZClass, args ...*phpv.ZVal) (*ZObject, 
 		return nil, ThrowError(ctx, Error, fmt.Sprintf("Cannot instantiate abstract class %s", c.GetName()))
 	}
 
+	// Check if class is an enum (enums cannot be instantiated with new)
+	if c.GetType()&phpv.ZClassTypeEnum != 0 {
+		return nil, ThrowError(ctx, Error, fmt.Sprintf("Cannot instantiate enum %s", c.GetName()))
+	}
+
 	n := &ZObject{
 		h:          phpv.NewHashTable(),
 		hasPrivate: make(map[phpv.ZString]struct{}),

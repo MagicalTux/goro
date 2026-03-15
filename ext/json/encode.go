@@ -36,6 +36,11 @@ func fncJsonEncode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 }
 
 func appendJsonEncode(ctx phpv.Context, r []byte, v *phpv.ZVal, opt JsonEncOpt, depth int) ([]byte, error) {
+	st := &jsonState{}
+	return appendJsonEncodeState(ctx, r, v, opt, depth, st)
+}
+
+func appendJsonEncodeState(ctx phpv.Context, r []byte, v *phpv.ZVal, opt JsonEncOpt, depth int, st *jsonState) ([]byte, error) {
 	switch v.GetType() {
 	case phpv.ZtNull:
 		return append(r, []byte("null")...), nil
@@ -56,12 +61,10 @@ func appendJsonEncode(ctx phpv.Context, r []byte, v *phpv.ZVal, opt JsonEncOpt, 
 		return appendJsonString(r, string(v.Value().(phpv.ZString)), opt)
 	case phpv.ZtArray:
 		a := v.Value().(*phpv.ZArray)
-		if a.HasStringKeys() {
-			// append as object
-			return appendJsonObject(ctx, r, a.NewIterator(), opt, depth)
+		if a.HasStringKeys() || (opt&ForceObject != 0 && a.Count(ctx) > 0) {
+			return appendJsonObject(ctx, r, a.NewIterator(), opt, depth, st)
 		} else {
-			// append as array
-			return appendJsonArray(ctx, r, a.NewIterator(), opt, depth)
+			return appendJsonArray(ctx, r, a.NewIterator(), opt, depth, st)
 		}
 	case phpv.ZtObject:
 		// TODO check for JsonSerializable
@@ -69,19 +72,40 @@ func appendJsonEncode(ctx phpv.Context, r []byte, v *phpv.ZVal, opt JsonEncOpt, 
 		if it == nil {
 			return r, ErrUnsupportedType
 		}
-		return appendJsonObject(ctx, r, it, opt, depth)
+		return appendJsonObject(ctx, r, it, opt, depth, st)
 	default:
 		return r, ErrUnsupportedType
 	}
 }
 
-func appendJsonArray(ctx phpv.Context, r []byte, it phpv.ZIterator, opt JsonEncOpt, depth int) ([]byte, error) {
+// jsonIndent returns the indentation string for the given indent level.
+func jsonIndent(level int) []byte {
+	if level <= 0 {
+		return nil
+	}
+	s := make([]byte, level*4)
+	for i := range s {
+		s[i] = ' '
+	}
+	return s
+}
+
+// jsonState carries encoding state including indent level for pretty printing
+type jsonState struct {
+	indent int
+}
+
+func appendJsonArray(ctx phpv.Context, r []byte, it phpv.ZIterator, opt JsonEncOpt, depth int, st *jsonState) ([]byte, error) {
 	depth = depth - 1
 	if depth <= 0 {
 		return r, ErrDepth
 	}
+	pretty := opt&PrettyPrint != 0
 	r = append(r, '[')
 	first := true
+
+	oldIndent := st.indent
+	st.indent++
 
 	for ; it.Valid(ctx); it.Next(ctx) {
 		v, err := it.Current(ctx)
@@ -94,22 +118,36 @@ func appendJsonArray(ctx phpv.Context, r []byte, it phpv.ZIterator, opt JsonEncO
 		}
 		first = false
 
-		r, err = appendJsonEncode(ctx, r, v, opt, depth)
+		if pretty {
+			r = append(r, '\n')
+			r = append(r, jsonIndent(st.indent)...)
+		}
+
+		r, err = appendJsonEncodeState(ctx, r, v, opt, depth, st)
 		if err != nil {
 			return r, err
 		}
+	}
+	st.indent = oldIndent
+	if pretty && !first {
+		r = append(r, '\n')
+		r = append(r, jsonIndent(st.indent)...)
 	}
 	r = append(r, ']')
 	return r, nil
 }
 
-func appendJsonObject(ctx phpv.Context, r []byte, it phpv.ZIterator, opt JsonEncOpt, depth int) ([]byte, error) {
+func appendJsonObject(ctx phpv.Context, r []byte, it phpv.ZIterator, opt JsonEncOpt, depth int, st *jsonState) ([]byte, error) {
 	depth = depth - 1
 	if depth <= 0 {
 		return r, ErrDepth
 	}
+	pretty := opt&PrettyPrint != 0
 	r = append(r, '{')
 	first := true
+
+	oldIndent := st.indent
+	st.indent++
 
 	for ; it.Valid(ctx); it.Next(ctx) {
 		k, err := it.Key(ctx)
@@ -131,53 +169,109 @@ func appendJsonObject(ctx phpv.Context, r []byte, it phpv.ZIterator, opt JsonEnc
 		}
 		first = false
 
+		if pretty {
+			r = append(r, '\n')
+			r = append(r, jsonIndent(st.indent)...)
+		}
+
 		r, err = appendJsonString(r, string(k.Value().(phpv.ZString)), opt)
 		if err != nil {
 			return r, err
 		}
-		r = append(r, ':')
+		if pretty {
+			r = append(r, ':', ' ')
+		} else {
+			r = append(r, ':')
+		}
 
-		r, err = appendJsonEncode(ctx, r, v, opt, depth)
+		r, err = appendJsonEncodeState(ctx, r, v, opt, depth, st)
 		if err != nil {
 			return r, err
 		}
+	}
+	st.indent = oldIndent
+	if pretty && !first {
+		r = append(r, '\n')
+		r = append(r, jsonIndent(st.indent)...)
 	}
 	r = append(r, '}')
 	return r, nil
 }
 
 func appendJsonString(r []byte, s string, opt JsonEncOpt) ([]byte, error) {
+	unescSlash := opt&UnescapedSlashes != 0
+	unescUnicode := opt&UnescapedUnicode != 0
+	hexTag := opt&HexTag != 0
+	hexAmp := opt&HexAmp != 0
+	hexApos := opt&HexApos != 0
+	hexQuot := opt&HexQuot != 0
+
 	r = append(r, '"')
 	start := 0
 	for i := 0; i < len(s); {
 		if b := s[i]; b < utf8.RuneSelf { // ASCII
-			// check if b is safe
+			needsEscape := false
 			switch b {
-			case '"', '/', '\\':
+			case '"':
+				needsEscape = true
+			case '/':
+				needsEscape = !unescSlash
+			case '\\':
+				needsEscape = true
+			case '<':
+				needsEscape = hexTag
+			case '>':
+				needsEscape = hexTag
+			case '&':
+				needsEscape = hexAmp
+			case '\'':
+				needsEscape = hexApos
 			default:
-				if b >= 0x20 {
-					i++
-					continue
+				if b < 0x20 {
+					needsEscape = true
 				}
+			}
+
+			if !needsEscape {
+				i++
+				continue
 			}
 
 			if start < i {
 				r = append(r, []byte(s[start:i])...)
 			}
 
-			// unsafe, check how to escape b
+			// escape the character
 			switch b {
-			case '"', '/', '\\':
-				// need to prefix a \
-				r = append(r, '\\', b)
+			case '"':
+				if hexQuot {
+					r = append(r, []byte(`\u0022`)...)
+				} else {
+					r = append(r, '\\', '"')
+				}
+			case '/':
+				r = append(r, '\\', '/')
+			case '\\':
+				r = append(r, '\\', '\\')
+			case '<':
+				r = append(r, []byte(`\u003C`)...)
+			case '>':
+				r = append(r, []byte(`\u003E`)...)
+			case '&':
+				r = append(r, []byte(`\u0026`)...)
+			case '\'':
+				r = append(r, []byte(`\u0027`)...)
 			case '\n':
 				r = append(r, '\\', 'n')
 			case '\r':
 				r = append(r, '\\', 'r')
 			case '\t':
 				r = append(r, '\\', 't')
+			case '\b':
+				r = append(r, '\\', 'b')
+			case '\f':
+				r = append(r, '\\', 'f')
 			default:
-				// escape as unicode
 				r = append(r, '\\', 'u', '0', '0', hex[b>>4], hex[b&0xf])
 			}
 			i++
@@ -191,10 +285,8 @@ func appendJsonString(r []byte, s string, opt JsonEncOpt) ([]byte, error) {
 				r = append(r, []byte(s[start:i])...)
 			}
 			if opt&InvalidUtf8Substitute == InvalidUtf8Substitute {
-				// substitute character
 				r = append(r, []byte(`\ufffd`)...)
 			} else if opt&InvalidUtf8Ignore == 0 {
-				// return error
 				return r, ErrUtf8
 			}
 			i += size
@@ -202,14 +294,35 @@ func appendJsonString(r []byte, s string, opt JsonEncOpt) ([]byte, error) {
 			continue
 		}
 
-		// U+2028 is LINE SEPARATOR.
-		// U+2029 is PARAGRAPH SEPARATOR.
-		// They are both technically valid characters in JSON strings,
-		// but don't work in JSONP, which has to be evaluated as JavaScript,
-		// and can lead to security holes there. It is valid JSON to
-		// escape them, so we do so unconditionally.
-		// See http://timelessrepo.com/json-isnt-a-javascript-subset for discussion.
-		if c == '\u2028' || c == '\u2029' {
+		// Escape non-ASCII if JSON_UNESCAPED_UNICODE is not set
+		if !unescUnicode {
+			if start < i {
+				r = append(r, []byte(s[start:i])...)
+			}
+			if c <= 0xFFFF {
+				r = append(r, '\\', 'u',
+					hex[(c>>12)&0xf], hex[(c>>8)&0xf],
+					hex[(c>>4)&0xf], hex[c&0xf])
+			} else {
+				// Encode as UTF-16 surrogate pair
+				c -= 0x10000
+				hi := 0xD800 + (c>>10)&0x3FF
+				lo := 0xDC00 + c&0x3FF
+				r = append(r, '\\', 'u',
+					hex[(hi>>12)&0xf], hex[(hi>>8)&0xf],
+					hex[(hi>>4)&0xf], hex[hi&0xf])
+				r = append(r, '\\', 'u',
+					hex[(lo>>12)&0xf], hex[(lo>>8)&0xf],
+					hex[(lo>>4)&0xf], hex[lo&0xf])
+			}
+			i += size
+			start = i
+			continue
+		}
+
+		// U+2028 LINE SEPARATOR, U+2029 PARAGRAPH SEPARATOR
+		// Escape these unless JSON_UNESCAPED_LINE_TERMINATORS is set
+		if (c == '\u2028' || c == '\u2029') && opt&UnescapedEOL == 0 {
 			if start < i {
 				r = append(r, []byte(s[start:i])...)
 			}
