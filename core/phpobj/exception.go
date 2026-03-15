@@ -63,7 +63,8 @@ func init() {
 				if !ok {
 					return phpv.ZString("").ZVal(), nil
 				}
-				return phpv.StackTrace(trace).String().ZVal(), nil
+				maxLen := getExceptionStringParamMaxLen(ctx)
+				return phpv.StackTrace(trace).FormatWithMaxLen(maxLen).ZVal(), nil
 			})},
 			"__tostring": {Name: "__toString", Method: NativeMethod(exceptionToString)},
 
@@ -72,8 +73,25 @@ func init() {
 	}
 }
 
+// getExceptionStringParamMaxLen reads the zend.exception_string_param_max_len
+// ini setting from the context, falling back to the default (15).
+func getExceptionStringParamMaxLen(ctx phpv.Context) int {
+	if ctx == nil {
+		return phpv.TraceArgMaxLen
+	}
+	val := ctx.GetConfig("zend.exception_string_param_max_len", phpv.ZInt(int64(phpv.TraceArgMaxLen)).ZVal())
+	if val == nil {
+		return phpv.TraceArgMaxLen
+	}
+	n := val.AsInt(ctx)
+	if n < 0 {
+		return phpv.TraceArgMaxLen
+	}
+	return int(n)
+}
+
 // exceptionEntryToString formats a single exception entry (without the previous chain).
-func exceptionEntryToString(o *ZObject) string {
+func exceptionEntryToString(o *ZObject, maxLen int) string {
 	var trace []*phpv.StackTraceEntry
 	if opaque := o.GetOpaque(Exception); opaque != nil {
 		trace, _ = opaque.([]*phpv.StackTraceEntry)
@@ -83,10 +101,10 @@ func exceptionEntryToString(o *ZObject) string {
 	file := o.HashTable().GetString("file")
 	line := o.HashTable().GetString("line")
 
-	// Get the message string - support objects with __toString
+	// Get the message string - for objects, use .String() which may call __toString
 	var msg string
 	if messageVal != nil {
-		msg = messageVal.AsString(nil).String()
+		msg = messageVal.String()
 	}
 
 	var buf bytes.Buffer
@@ -113,11 +131,13 @@ func exceptionEntryToString(o *ZObject) string {
 		buf.WriteString("\n")
 	}
 	buf.WriteString("Stack trace:\n")
-	buf.WriteString(string(phpv.StackTrace(trace).String()))
+	buf.WriteString(string(phpv.StackTrace(trace).FormatWithMaxLen(maxLen)))
 	return buf.String()
 }
 
 func exceptionToString(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	maxLen := getExceptionStringParamMaxLen(ctx)
+
 	// Collect the chain from innermost to outermost (current)
 	var chain []*ZObject
 	seen := make(map[*ZObject]bool)
@@ -145,7 +165,7 @@ func exceptionToString(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.Z
 		if i < len(chain)-1 {
 			buf.WriteString("\n\nNext ")
 		}
-		buf.WriteString(exceptionEntryToString(chain[i]))
+		buf.WriteString(exceptionEntryToString(chain[i], maxLen))
 	}
 	return phpv.ZStr(buf.String()), nil
 }

@@ -32,6 +32,15 @@ func (st StackTrace) StringNoMain() ZString {
 }
 
 func (st StackTrace) format(includeMain bool) ZString {
+	return st.formatWithMaxLen(includeMain, TraceArgMaxLen)
+}
+
+// FormatWithMaxLen formats the stack trace with a custom string param max length.
+func (st StackTrace) FormatWithMaxLen(maxLen int) ZString {
+	return st.formatWithMaxLen(true, maxLen)
+}
+
+func (st StackTrace) formatWithMaxLen(includeMain bool, maxLen int) ZString {
 	var buf bytes.Buffer
 	var argsBuf bytes.Buffer
 	level := 0
@@ -43,7 +52,7 @@ func (st StackTrace) format(includeMain bool) ZString {
 			e.FuncName == "include_once" || e.FuncName == "require_once"
 		if !isInclude {
 			for i, arg := range e.Args {
-				argsBuf.WriteString(traceArgString(arg))
+				argsBuf.WriteString(TraceArgStringMaxLen(arg, maxLen))
 				if i < len(e.Args)-1 {
 					argsBuf.WriteString(", ")
 				}

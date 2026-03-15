@@ -135,7 +135,8 @@ func init() {
 				if !ok {
 					return phpv.ZString("").ZVal(), nil
 				}
-				return phpv.StackTrace(trace).String().ZVal(), nil
+				maxLen := getExceptionStringParamMaxLen(ctx)
+				return phpv.StackTrace(trace).FormatWithMaxLen(maxLen).ZVal(), nil
 			})},
 			"__tostring": {Name: "__toString", Method: NativeMethod(exceptionToString)},
 		},
