@@ -74,8 +74,13 @@ func compileEnum(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			if err != nil {
 				return nil, err
 			}
+			// PHP reports union types in a canonical order (string|int)
+			unionStr := typeName + "|" + i2.Data
+			if typeName == "int" && i2.Data == "string" {
+				unionStr = "string|int"
+			}
 			return nil, &phpv.PhpError{
-				Err:  fmt.Errorf("Enum backing type must be int or string, %s|%s given", typeName, i2.Data),
+				Err:  fmt.Errorf("Enum backing type must be int or string, %s given", unionStr),
 				Code: phpv.E_COMPILE_ERROR,
 				Loc:  i.Loc(),
 			}

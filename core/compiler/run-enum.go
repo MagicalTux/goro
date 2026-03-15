@@ -3,7 +3,6 @@ package compiler
 import (
 	"fmt"
 	"io"
-	"strings"
 
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
@@ -56,6 +55,34 @@ func (r *runEnumCaseInit) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 					val.GetType().TypeName(), r.backingType.TypeName()))
 		}
 		obj.HashTable().SetString("value", val)
+
+		// Check for duplicate backing values across all already-initialized cases
+		for _, otherCaseName := range zc.EnumCases {
+			if otherCaseName == r.caseName {
+				continue // skip self
+			}
+			cc, exists := zc.Const[otherCaseName]
+			if !exists {
+				continue
+			}
+			// Only check already-resolved cases (not CompileDelayed ones)
+			otherObj, ok := cc.Value.(*phpobj.ZObject)
+			if !ok {
+				continue
+			}
+			otherVal := otherObj.HashTable().GetString("value")
+			if otherVal == nil {
+				continue
+			}
+			eq, eqErr := phpv.StrictEquals(ctx, val, otherVal)
+			if eqErr != nil {
+				continue
+			}
+			if eq {
+				return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+					fmt.Sprintf("Duplicate value in enum %s for cases %s and %s", r.className, otherCaseName, r.caseName))
+			}
+		}
 	}
 
 	return obj.ZVal(), nil
@@ -198,8 +225,9 @@ func (r *runEnumRegister) preCompileValidation(ctx phpv.Context) error {
 	}
 
 	// Check Traversable constraint for enums
+	// PHP reports this error at "Unknown on line 0" (no source location)
 	if implementsTraversable && !implementsIteratorOrAggregate {
-		return r.enumFatalError(ctx, fmt.Sprintf("Enum %s must implement interface Traversable as part of either Iterator or IteratorAggregate", c.Name))
+		return r.enumFatalErrorAt(ctx, fmt.Sprintf("Enum %s must implement interface Traversable as part of either Iterator or IteratorAggregate", c.Name), &phpv.Loc{Filename: "Unknown", Line: 0})
 	}
 
 	// Check for unimplemented abstract methods from interfaces.
@@ -288,61 +316,21 @@ func (r *runEnumRegister) postCompileValidation(ctx phpv.Context) error {
 		}
 	}
 
-	// Check for duplicate backing values in backed enums
-	if c.EnumBackingType != 0 {
-		type caseInfo struct {
-			name  phpv.ZString
-			value string
-		}
-		seenValues := make(map[string]phpv.ZString) // value -> first case name
-		for _, caseName := range c.EnumCases {
-			cc, exists := c.Const[caseName]
-			if !exists {
-				continue
-			}
-			val := cc.Value
-			if cd, ok := val.(*phpv.CompileDelayed); ok {
-				z, err := cd.Run(ctx)
-				if err != nil {
-					continue
-				}
-				c.Const[caseName].Value = z.Value()
-				val = z.Value()
-			}
-			obj, ok := val.(*phpobj.ZObject)
-			if !ok {
-				continue
-			}
-			backingVal := obj.HashTable().GetString("value")
-			if backingVal == nil {
-				continue
-			}
-			valStr := backingVal.String()
-			if firstCase, exists := seenValues[valStr]; exists {
-				return phpobj.ThrowError(ctx, phpobj.ValueError,
-					fmt.Sprintf("Duplicate value in enum %s for cases %s and %s", c.Name, firstCase, caseName))
-			}
-			seenValues[valStr] = caseName
-		}
-	}
-
 	return nil
 }
 
 // enumFatalError emits a fatal error with enum-specific message formatting.
 func (r *runEnumRegister) enumFatalError(ctx phpv.Context, msg string) error {
+	return r.enumFatalErrorAt(ctx, msg, r.class.L)
+}
+
+// enumFatalErrorAt emits a fatal error at a specific location.
+func (r *runEnumRegister) enumFatalErrorAt(ctx phpv.Context, msg string, loc *phpv.Loc) error {
 	phpErr := &phpv.PhpError{
 		Err:  fmt.Errorf("%s", msg),
 		Code: phpv.E_ERROR,
-		Loc:  r.class.L,
+		Loc:  loc,
 	}
 	ctx.Global().LogError(phpErr)
 	return phpv.ExitError(255)
-}
-
-// enumFatalErrorMsg replaces "Class" with "Enum" in error messages for enum types.
-func enumFatalErrorMsg(msg string, enumName phpv.ZString) string {
-	prefix := fmt.Sprintf("Class %s ", enumName)
-	enumPrefix := fmt.Sprintf("Enum %s ", enumName)
-	return strings.Replace(msg, prefix, enumPrefix, 1)
 }
