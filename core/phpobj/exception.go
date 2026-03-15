@@ -193,7 +193,16 @@ func ThrowException(ctx phpv.Context, l *phpv.Loc, msg phpv.ZString, code phpv.Z
 // exceptionConstructorClassName returns the name of the base class that
 // defines __construct for error messages. In PHP, TypeError messages say
 // "Exception::__construct()" even when called on a subclass like "Hello".
+// For ErrorException subclasses, it returns "ErrorException" since ErrorException
+// defines its own __construct.
 func exceptionConstructorClassName(o *ZObject) phpv.ZString {
+	// Walk the class hierarchy to find which class defines __construct
+	if zc, ok := o.GetClass().(*ZClass); ok {
+		// Check ErrorException first (it overrides Exception::__construct)
+		if zc.InstanceOf(ErrorException) {
+			return ErrorException.GetName()
+		}
+	}
 	if o.GetClass().InstanceOf(Exception) {
 		return Exception.GetName()
 	}

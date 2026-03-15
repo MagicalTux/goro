@@ -231,7 +231,13 @@ func (r *runTopLevelConst) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	if err != nil {
 		return nil, err
 	}
-	ctx.Global().ConstantSet(r.name, v.Value())
+	ok := ctx.Global().ConstantSet(r.name, v.Value())
+	if !ok {
+		// Constant already defined - emit a warning (will become an error in PHP 9)
+		if err := ctx.Warn("Constant %s already defined, this will be an error in PHP 9", r.name); err != nil {
+			return nil, err
+		}
+	}
 	return nil, nil
 }
 

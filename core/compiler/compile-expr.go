@@ -340,6 +340,12 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			return &runZVal{phpv.ZString(funcName), l}, nil
 		}
 		return &runZVal{phpv.ZString(fmt.Sprintf("%s::%s", class.Name, funcName)), l}, nil
+	case tokenizer.T_TRAIT_C:
+		class := c.getClass()
+		if class != nil && class.Type == phpv.ZClassTypeTrait {
+			return &runZVal{class.Name, l}, nil
+		}
+		return &runZVal{phpv.ZString(""), l}, nil
 	case tokenizer.T_BOOL_CAST, tokenizer.T_INT_CAST, tokenizer.T_ARRAY_CAST, tokenizer.T_DOUBLE_CAST, tokenizer.T_OBJECT_CAST, tokenizer.T_STRING_CAST:
 		// perform a cast operation on the following (note: v is null)
 		// make this an operator for appropriate operator precedence
