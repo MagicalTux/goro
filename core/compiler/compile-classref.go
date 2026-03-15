@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
@@ -288,6 +289,18 @@ func (r *runClassStaticObjRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		callerClass := ctx.Class()
 		if callerClass == nil || !callerClass.InstanceOf(class) && !class.InstanceOf(callerClass) {
 			return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Cannot access protected constant %s::%s", class.GetName(), r.objName))
+		}
+	}
+
+	// Check #[\Deprecated] attribute on the class constant
+	for _, attr := range cc.Attributes {
+		if attr.ClassName == "Deprecated" {
+			msg := fmt.Sprintf("Constant %s::%s is deprecated", class.GetName(), r.objName)
+			if len(attr.Args) > 0 && attr.Args[0].GetType() == phpv.ZtString {
+				msg += ", " + attr.Args[0].String()
+			}
+			ctx.Deprecated("%s", msg, logopt.NoFuncName(true))
+			break
 		}
 	}
 
