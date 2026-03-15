@@ -41,12 +41,25 @@ func doVarDump(ctx phpv.Context, z *phpv.ZVal, linePfx string, recurs map[uintpt
 		recurs = n
 	}
 
+	// Track recursion by ZVal pointer AND by object pointer for objects.
+	// This prevents infinite recursion when the same object is referenced
+	// via different ZVals (e.g., closures with use(&$self) in __debugInfo).
 	v := uintptr(unsafe.Pointer(z))
 	if _, n := recurs[v]; n {
 		fmt.Fprintf(ctx, "%s*RECURSION*\n", linePfx)
 		return nil
 	} else {
 		recurs[v] = true
+	}
+	if z.GetType() == phpv.ZtObject {
+		if obj, ok := z.Value().(*phpobj.ZObject); ok {
+			objPtr := uintptr(unsafe.Pointer(obj))
+			if _, n := recurs[objPtr]; n {
+				fmt.Fprintf(ctx, "%s*RECURSION*\n", linePfx)
+				return nil
+			}
+			recurs[objPtr] = true
+		}
 	}
 
 	switch z.GetType() {

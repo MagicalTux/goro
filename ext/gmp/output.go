@@ -25,7 +25,18 @@ func gmpStrval(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		*base = 10
 	}
 
-	return phpv.ZString(i.Text(int(*base))).ZVal(), nil
+	b := int(*base)
+	// Validate base: must be 2-62 or -36 to -2
+	if (b < 2 || b > 62) && (b < -36 || b > -2) {
+		return nil, ctx.FuncErrorf("gmp_strval(): Argument #2 ($base) must be between 2 and 62, or between -2 and -36")
+	}
+
+	// Negative base means uppercase letters
+	if b < 0 {
+		b = -b
+	}
+
+	return phpv.ZString(i.Text(b)).ZVal(), nil
 }
 
 // > func int gmp_intval ( GMP $gmpnumber )

@@ -47,16 +47,24 @@ func (rt *runnableTry) Dump(w io.Writer) error {
 }
 
 func (rt *runnableTry) Run(ctx phpv.Context) (*phpv.ZVal, error) {
-	var throwErr *phperr.PhpThrow
+	var pendingErr error // error to propagate after finally (PhpThrow or other)
 	_, err := rt.try.Run(ctx)
 
 	if err != nil {
-		var ok bool
-		throwErr, ok = err.(*phperr.PhpThrow)
+		throwErr, ok := err.(*phperr.PhpThrow)
 		if !ok {
+			// Non-PHP-throw error (e.g. return, break, continue):
+			// still need to run finally
+			if rt.finally != nil {
+				_, ferr := rt.finally.Run(ctx)
+				if ferr != nil {
+					return nil, ferr
+				}
+			}
 			return nil, err
 		}
 
+		caught := false
 		for _, c := range rt.catches {
 			var match bool
 			for _, className := range c.typeNames {
@@ -79,27 +87,98 @@ func (rt *runnableTry) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 				}
 				_, err = c.body.Run(ctx)
 				if err != nil {
-					return nil, err
+					// Catch block threw/returned - still need to run finally
+					pendingErr = err
 				}
-				throwErr = nil
+				caught = true
 				break
 			}
 		}
 
-	}
-
-	if rt.finally != nil {
-		_, err = rt.finally.Run(ctx)
-		if err != nil {
-			return nil, err
+		if !caught {
+			// Uncaught exception - still need to run finally
+			pendingErr = throwErr
 		}
 	}
 
-	if throwErr != nil {
-		return nil, throwErr
+	if rt.finally != nil {
+		_, ferr := rt.finally.Run(ctx)
+		if ferr != nil {
+			// Finally block threw an error.
+			// If there was a pending PHP exception, chain it as previous
+			// of the finally exception (unless it would create a cycle).
+			if pendingThrow, ok := pendingErr.(*phperr.PhpThrow); ok {
+				if finallyThrow, ok2 := ferr.(*phperr.PhpThrow); ok2 {
+					chainExceptionPrevious(ctx, finallyThrow.Obj, pendingThrow.Obj)
+				}
+			}
+			return nil, ferr
+		}
+	}
+
+	if pendingErr != nil {
+		return nil, pendingErr
 	}
 
 	return nil, nil
+}
+
+// chainExceptionPrevious sets pendingObj as the $previous of finallyObj,
+// but only if it wouldn't create a cycle in the exception chain.
+func chainExceptionPrevious(ctx phpv.Context, finallyObj phpv.ZObject, pendingObj phpv.ZObject) {
+	// Check if pendingObj is already in the finallyObj's previous chain (would create cycle)
+	seen := make(map[phpv.ZObject]bool)
+	seen[finallyObj] = true
+	cur := finallyObj
+	for {
+		prev := cur.HashTable().GetString("previous")
+		if prev == nil || prev.GetType() == phpv.ZtNull {
+			break
+		}
+		prevObj, ok := prev.Value().(phpv.ZObject)
+		if !ok {
+			break
+		}
+		if seen[prevObj] {
+			return // cycle detected, don't chain
+		}
+		seen[prevObj] = true
+		cur = prevObj
+	}
+
+	// Check if finallyObj is in pendingObj's previous chain (would create cycle)
+	cur = pendingObj
+	for cur != nil {
+		if seen[cur] {
+			return // would create cycle
+		}
+		seen[cur] = true
+		prev := cur.HashTable().GetString("previous")
+		if prev == nil || prev.GetType() == phpv.ZtNull {
+			break
+		}
+		prevObj, ok := prev.Value().(phpv.ZObject)
+		if !ok {
+			break
+		}
+		cur = prevObj
+	}
+
+	// Find the end of the finallyObj's previous chain and append pendingObj
+	cur = finallyObj
+	for {
+		prev := cur.HashTable().GetString("previous")
+		if prev == nil || prev.GetType() == phpv.ZtNull {
+			cur.HashTable().SetString("previous", pendingObj.ZVal())
+			return
+		}
+		prevObj, ok := prev.Value().(phpv.ZObject)
+		if !ok {
+			cur.HashTable().SetString("previous", pendingObj.ZVal())
+			return
+		}
+		cur = prevObj
+	}
 }
 
 func compileCatch(i *tokenizer.Item, c compileCtx) (*runnableCatch, error) {

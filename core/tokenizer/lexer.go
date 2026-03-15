@@ -119,6 +119,13 @@ func (l *Lexer) hasPrefixI(s string) bool {
 }
 
 func (l *Lexer) run(state lexState) {
+	defer func() {
+		if r := recover(); r != nil {
+			// Recover from panics in the lexer goroutine and emit an error
+			l.error("internal tokenizer error: %v", r)
+		}
+		close(l.items)
+	}()
 	l.push(state)
 	for state = l.base; state != nil; {
 		// Check if we've been told to stop
@@ -129,7 +136,6 @@ func (l *Lexer) run(state lexState) {
 		}
 		state = state(l)
 	}
-	close(l.items)
 }
 
 func (l *Lexer) emit(t ItemType) {

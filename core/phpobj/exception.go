@@ -70,13 +70,13 @@ func init() {
 	}
 }
 
-func exceptionToString(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+// exceptionEntryToString formats a single exception entry (without the previous chain).
+func exceptionEntryToString(o *ZObject) string {
 	var trace []*phpv.StackTraceEntry
 	if opaque := o.GetOpaque(Exception); opaque != nil {
 		trace, _ = opaque.([]*phpv.StackTraceEntry)
 	}
 	className := o.GetClass().GetName()
-	// Access properties directly to bypass visibility checks (we're internal)
 	message := o.HashTable().GetString("message")
 	file := o.HashTable().GetString("file")
 	line := o.HashTable().GetString("line")
@@ -102,6 +102,39 @@ func exceptionToString(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.Z
 	}
 	buf.WriteString("Stack trace:\n")
 	buf.WriteString(string(phpv.StackTrace(trace).String()))
+	return buf.String()
+}
+
+func exceptionToString(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	// Collect the chain from innermost to outermost (current)
+	var chain []*ZObject
+	seen := make(map[*ZObject]bool)
+	current := o
+	for current != nil {
+		if seen[current] {
+			break // prevent infinite loops
+		}
+		seen[current] = true
+		chain = append(chain, current)
+		prev := current.HashTable().GetString("previous")
+		if prev == nil || prev.GetType() == phpv.ZtNull {
+			break
+		}
+		if prevObj, ok := prev.Value().(*ZObject); ok {
+			current = prevObj
+		} else {
+			break
+		}
+	}
+
+	var buf bytes.Buffer
+	// Output from innermost (last in chain) to outermost (first = current exception)
+	for i := len(chain) - 1; i >= 0; i-- {
+		if i < len(chain)-1 {
+			buf.WriteString("\n\nNext ")
+		}
+		buf.WriteString(exceptionEntryToString(chain[i]))
+	}
 	return phpv.ZStr(buf.String()), nil
 }
 
