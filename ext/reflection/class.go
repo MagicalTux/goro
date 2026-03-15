@@ -32,6 +32,8 @@ func initReflectionClass() {
 		"getconstructor":          {Name: "getConstructor", Method: phpobj.NativeMethod(reflectionClassGetConstructor)},
 		"implementsinterface":     {Name: "implementsInterface", Method: phpobj.NativeMethod(reflectionClassImplementsInterface)},
 		"getattributes":           {Name: "getAttributes", Method: phpobj.NativeMethod(reflectionClassGetAttributes)},
+		"getreflectionconstant":   {Name: "getReflectionConstant", Method: phpobj.NativeMethod(reflectionClassGetReflectionConstant)},
+		"getreflectionconstants":  {Name: "getReflectionConstants", Method: phpobj.NativeMethod(reflectionClassGetReflectionConstants)},
 	}
 }
 

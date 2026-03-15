@@ -18,6 +18,7 @@ var ReflectionEnum *phpobj.ZClass
 var ReflectionEnumBackedCase *phpobj.ZClass
 var ReflectionEnumUnitCase *phpobj.ZClass
 var ReflectionMethod *phpobj.ZClass
+var ReflectionObject *phpobj.ZClass
 var ReflectionProperty *phpobj.ZClass
 
 func init() {
@@ -70,23 +71,16 @@ func init() {
 		Methods: map[phpv.ZString]*phpv.ZClassMethod{},
 	}
 
-	// Stub classes for features that need basic registration
 	ReflectionClassConstant = &phpobj.ZClass{
 		Name: "ReflectionClassConstant",
-		Methods: map[phpv.ZString]*phpv.ZClassMethod{
-			"__construct": {Name: "__construct", Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				return nil, nil // stub
-			})},
-		},
+		// Const, Props, and Methods will be set by initReflectionClassConstant()
+		Methods: map[phpv.ZString]*phpv.ZClassMethod{},
 	}
 
 	ReflectionConstant = &phpobj.ZClass{
 		Name: "ReflectionConstant",
-		Methods: map[phpv.ZString]*phpv.ZClassMethod{
-			"__construct": {Name: "__construct", Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				return nil, nil // stub
-			})},
-		},
+		// Methods will be set by initReflectionConstant()
+		Methods: map[phpv.ZString]*phpv.ZClassMethod{},
 	}
 
 	ReflectionEnum = &phpobj.ZClass{
@@ -123,6 +117,42 @@ func init() {
 	initReflectionClass()
 	initReflectionMethod()
 	initReflectionProperty()
+	initReflectionClassConstant()
+	// initReflectionConstant - ReflectionConstant is a simple stub for now
+	ReflectionConstant.Methods = map[phpv.ZString]*phpv.ZClassMethod{
+		"__construct": {Name: "__construct", Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+			if len(args) < 1 {
+				return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "ReflectionConstant::__construct() expects exactly 1 argument, 0 given")
+			}
+			constName := args[0].AsString(ctx)
+			o.SetOpaque(ReflectionConstant, constName)
+			return nil, nil
+		})},
+		"getname": {Name: "getName", Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+			name, _ := o.GetOpaque(ReflectionConstant).(phpv.ZString)
+			return name.ZVal(), nil
+		})},
+		"getvalue": {Name: "getValue", Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+			name, _ := o.GetOpaque(ReflectionConstant).(phpv.ZString)
+			val, ok := ctx.Global().ConstantGet(name)
+			if !ok {
+				return phpv.ZNULL.ZVal(), nil
+			}
+			return val.ZVal(), nil
+		})},
+		"getattributes": {Name: "getAttributes", Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+			// TODO: return attributes for constants
+			return phpv.NewZArray().ZVal(), nil
+		})},
+	}
+
+	// ReflectionObject extends ReflectionClass with the same behavior
+	ReflectionObject = &phpobj.ZClass{
+		Name:    "ReflectionObject",
+		Extends: ReflectionClass,
+		Props:   ReflectionClass.Props,
+		Methods: phpobj.CopyMethods(ReflectionClass.Methods),
+	}
 
 	phpctx.RegisterExt(&phpctx.Ext{
 		Name:    "Reflection",
@@ -136,6 +166,7 @@ func init() {
 			ReflectionEnumBackedCase,
 			ReflectionEnumUnitCase,
 			ReflectionMethod,
+			ReflectionObject,
 			ReflectionProperty,
 			ReflectionFunction,
 			ReflectionParameter,

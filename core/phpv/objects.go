@@ -53,9 +53,10 @@ type ZClassMethod struct {
 }
 
 type ZClassConst struct {
-	Value     Val
-	Modifiers ZObjectAttr
-	Resolving bool // true while the constant is being resolved (circular reference detection)
+	Value      Val
+	Modifiers  ZObjectAttr
+	Resolving  bool           // true while the constant is being resolved (circular reference detection)
+	Attributes []*ZAttribute  // PHP 8.0 attributes
 }
 
 type ZClassHandlers struct {

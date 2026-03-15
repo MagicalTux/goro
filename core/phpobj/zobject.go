@@ -969,7 +969,12 @@ func (o *ZObject) checkReadonlyWrite(ctx phpv.Context, keyStr phpv.ZString) erro
 // If a property has SetModifiers != 0, the write visibility may be more restrictive
 // than the read visibility. For example, "public private(set)" allows anyone to read
 // but only the declaring class to write.
-func (o *ZObject) checkSetVisibility(ctx phpv.Context, keyStr phpv.ZString) error {
+// The isUnset parameter controls whether error messages say "Cannot unset" vs "Cannot modify".
+func (o *ZObject) checkSetVisibility(ctx phpv.Context, keyStr phpv.ZString, isUnset ...bool) error {
+	verb := "modify"
+	if len(isUnset) > 0 && isUnset[0] {
+		verb = "unset"
+	}
 	class := o.Class.(*ZClass)
 	for cur := class; cur != nil; cur = cur.Extends {
 		for _, prop := range cur.Props {
@@ -987,8 +992,8 @@ func (o *ZObject) checkSetVisibility(ctx phpv.Context, keyStr phpv.ZString) erro
 					return nil
 				}
 				return ThrowError(ctx, Error,
-					fmt.Sprintf("Cannot modify private(set) property %s::$%s from %s",
-						cur.GetName(), keyStr, scopeName(callerClass)))
+					fmt.Sprintf("Cannot %s private(set) property %s::$%s from %s",
+						verb, cur.GetName(), keyStr, scopeName(callerClass)))
 			}
 			if prop.SetModifiers.IsProtected() {
 				// The declaring class and subclasses can write
@@ -996,8 +1001,8 @@ func (o *ZObject) checkSetVisibility(ctx phpv.Context, keyStr phpv.ZString) erro
 					return nil
 				}
 				return ThrowError(ctx, Error,
-					fmt.Sprintf("Cannot modify protected(set) property %s::$%s from %s",
-						cur.GetName(), keyStr, scopeName(callerClass)))
+					fmt.Sprintf("Cannot %s protected(set) property %s::$%s from %s",
+						verb, cur.GetName(), keyStr, scopeName(callerClass)))
 			}
 			return nil
 		}
@@ -1326,7 +1331,27 @@ func (o *ZObject) ObjectSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) er
 	}
 
 	// Check asymmetric (set) visibility (PHP 8.4)
-	if err := o.checkSetVisibility(ctx, keyStr); err != nil {
+	if err := o.checkSetVisibility(ctx, keyStr, value == nil); err != nil {
+		// When asymmetric visibility blocks, try __set/__unset magic methods
+		class := o.GetClass().(*ZClass)
+		if value == nil {
+			if m, ok := class.Methods["__unset"]; ok {
+				_, err2 := ctx.CallZVal(ctx, m.Method, []*phpv.ZVal{keyStr.ZVal()}, o)
+				return err2
+			}
+		} else {
+			if m, ok := class.Methods["__set"]; ok {
+				if o.setGuard == nil {
+					o.setGuard = make(map[phpv.ZString]bool)
+				}
+				if !o.setGuard[keyStr] {
+					o.setGuard[keyStr] = true
+					_, err2 := ctx.CallZVal(ctx, m.Method, []*phpv.ZVal{keyStr.ZVal(), value}, o)
+					delete(o.setGuard, keyStr)
+					return err2
+				}
+			}
+		}
 		return err
 	}
 
