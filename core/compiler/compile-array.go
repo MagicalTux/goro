@@ -378,12 +378,10 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		if isWriteOp {
 			return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot use a scalar value as an array")
 		}
-		// PHP 8: reading array offset on non-array scalar warns and returns null
-		typeName := v.GetType().TypeName()
-		if err := ctx.Warn("Trying to access array offset on %s", typeName, logopt.NoFuncName(true)); err != nil {
+		v, err = v.As(ctx, phpv.ZtArray)
+		if err != nil {
 			return nil, err
 		}
-		return phpv.ZNULL.ZVal(), nil
 	}
 
 	if ac.offset == nil {
