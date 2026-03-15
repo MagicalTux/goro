@@ -395,11 +395,17 @@ func ThrowErrorAt(ctx phpv.Context, class *ZClass, msg string, loc *phpv.Loc) er
 }
 
 func ThrowObject(ctx phpv.Context, v *phpv.ZVal) error {
+	if v.GetType() != phpv.ZtObject {
+		return ThrowError(ctx, Error, "Can only throw objects")
+	}
 	o, ok := v.Value().(*ZObject)
 	if !ok {
-		return ctx.Errorf("Can only throw objects")
+		return ThrowError(ctx, Error, "Can only throw objects")
 	}
-	// TODO check if implements throwable or extends Exception
+	// Check if implements Throwable (extends Exception or Error)
+	if !o.GetClass().InstanceOf(Exception) && !o.GetClass().InstanceOf(Error) && !o.GetClass().Implements(Throwable) {
+		return ThrowError(ctx, Error, "Cannot throw objects that do not implement Throwable")
+	}
 
 	err := &phperr.PhpThrow{Obj: o, Loc: ctx.Loc()}
 	return err

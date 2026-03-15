@@ -422,6 +422,20 @@ func (zt ZType) TypeName() string {
 	}
 }
 
+// ZValTypeName returns the PHP type name of a ZVal, including the class name
+// for objects (e.g. "stdClass" instead of just "object").
+func ZValTypeName(z *ZVal) string {
+	if z == nil {
+		return "null"
+	}
+	if z.GetType() == ZtObject {
+		if obj, ok := z.Value().(ZObject); ok {
+			return string(obj.GetClass().GetName())
+		}
+	}
+	return z.GetType().TypeName()
+}
+
 func IsNull(val Val) bool {
 	return val == nil || val.GetType() == ZtNull
 }

@@ -2,6 +2,7 @@ package phpobj
 
 import (
 	"bytes"
+	"fmt"
 
 	"github.com/MagicalTux/goro/core/phperr"
 	"github.com/MagicalTux/goro/core/phpv"
@@ -160,16 +161,45 @@ func ThrowException(ctx phpv.Context, l *phpv.Loc, msg phpv.ZString, code phpv.Z
 
 // public __construct ([ string $message = "" [, int $code = 0 [, Throwable $previous = NULL ]]] )
 func exceptionConstruct(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	// Use direct hash table access to bypass visibility checks (internal method)
-	switch len(args) {
-	case 3:
-		o.HashTable().SetString("previous", args[2])
-		fallthrough
-	case 2:
-		o.HashTable().SetString("code", args[1])
-		fallthrough
-	case 1:
+	// Validate and set arguments
+	if len(args) >= 1 && args[0] != nil && !args[0].IsNull() {
+		// $message must be string
+		if args[0].GetType() != phpv.ZtString {
+			return nil, ThrowError(ctx, TypeError,
+				fmt.Sprintf("%s::__construct(): Argument #1 ($message) must be of type string, %s given",
+					o.GetClass().GetName(), phpv.ZValTypeName(args[0])))
+		}
 		o.HashTable().SetString("message", args[0])
+	}
+	if len(args) >= 2 && args[1] != nil && !args[1].IsNull() {
+		// $code must be int
+		if args[1].GetType() != phpv.ZtInt {
+			// PHP also accepts string-int coercion, but we keep it simple
+			codeVal, err := args[1].As(ctx, phpv.ZtInt)
+			if err != nil {
+				return nil, ThrowError(ctx, TypeError,
+					fmt.Sprintf("%s::__construct(): Argument #2 ($code) must be of type int, %s given",
+						o.GetClass().GetName(), phpv.ZValTypeName(args[1])))
+			}
+			o.HashTable().SetString("code", codeVal)
+		} else {
+			o.HashTable().SetString("code", args[1])
+		}
+	}
+	if len(args) >= 3 && args[2] != nil && !args[2].IsNull() {
+		// $previous must be ?Throwable
+		if args[2].GetType() != phpv.ZtObject {
+			return nil, ThrowError(ctx, TypeError,
+				fmt.Sprintf("%s::__construct(): Argument #3 ($previous) must be of type ?Throwable, %s given",
+					o.GetClass().GetName(), phpv.ZValTypeName(args[2])))
+		}
+		prevObj, ok := args[2].Value().(*ZObject)
+		if !ok || (!prevObj.GetClass().InstanceOf(Exception) && !prevObj.GetClass().InstanceOf(Error) && !prevObj.GetClass().Implements(Throwable)) {
+			return nil, ThrowError(ctx, TypeError,
+				fmt.Sprintf("%s::__construct(): Argument #3 ($previous) must be of type ?Throwable, %s given",
+					o.GetClass().GetName(), phpv.ZValTypeName(args[2])))
+		}
+		o.HashTable().SetString("previous", args[2])
 	}
 
 	for {

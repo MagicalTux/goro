@@ -326,7 +326,10 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		}
 		funcName := f.name
 		if funcName == "" {
+			// Anonymous closure: __METHOD__ returns just the closure name
+			// without class prefix (even when defined inside a class method)
 			funcName = phpv.ZString(fmt.Sprintf("{closure:%s:%d}", l.Filename, l.Line))
+			return &runZVal{phpv.ZString(funcName), l}, nil
 		}
 		if class == nil {
 			return &runZVal{phpv.ZString(funcName), l}, nil
