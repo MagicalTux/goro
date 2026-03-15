@@ -273,10 +273,16 @@ func (closure *ZClosure) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 		c.this = ctx.This()
 		c.class = ctx.This().GetClass()
 	}
-	// For static closures defined in a class method, capture the class scope
-	// but not $this
-	if c.isStatic && c.class == nil && ctx.Class() != nil {
-		c.class = ctx.Class()
+	// For closures defined in a class method, capture the class scope
+	// even when there is no $this (e.g. static methods or static closures).
+	// Use the actual object's class (late static binding) when available,
+	// so static::class resolves to the runtime class, not the defining class.
+	if c.class == nil {
+		if ctx.This() != nil {
+			c.class = ctx.This().GetClass()
+		} else if ctx.Class() != nil {
+			c.class = ctx.Class()
+		}
 	}
 	// run compile after dup so we re-fetch default vars each time
 	err = c.Compile(ctx)

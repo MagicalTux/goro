@@ -792,6 +792,7 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 								Modifiers:    modifiers,
 								SetModifiers: arg.SetPromotion,
 								TypeHint:     arg.Hint,
+								Attributes:   arg.Attributes,
 							}
 							class.Props = append(class.Props, prop)
 						}
@@ -824,17 +825,17 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		}
 	}
 
-	// If the class has trait uses, wrap it to check for deprecated traits after compilation
-	if len(class.TraitUses) > 0 {
+	// Wrap class to perform post-compilation checks (trait deprecation, property Override)
+	if len(class.TraitUses) > 0 || classHasOverrideProperty(class) {
 		return &runClassWithTraitDeprecationCheck{class: class}, nil
 	}
 
 	return class, nil
 }
 
-// runClassWithTraitDeprecationCheck wraps a ZClass to check for #[\Deprecated]
-// on traits after the class is compiled. This handles the case where a class
-// uses a deprecated trait and should emit E_USER_DEPRECATED.
+// runClassWithTraitDeprecationCheck wraps a ZClass to perform post-compilation checks:
+// - Trait deprecation: emit E_USER_DEPRECATED for deprecated traits
+// - Property Override: validate #[\Override] on properties
 type runClassWithTraitDeprecationCheck struct {
 	class *phpobj.ZClass
 }
@@ -844,6 +845,11 @@ func (r *runClassWithTraitDeprecationCheck) Run(ctx phpv.Context) (*phpv.ZVal, e
 	val, err := r.class.Run(ctx)
 	if err != nil {
 		return val, err
+	}
+
+	// Validate #[\Override] on properties
+	if err := validatePropertyOverride(ctx, r.class); err != nil {
+		return nil, err
 	}
 
 	// After compilation, check if any used traits have #[\Deprecated]
@@ -1040,3 +1046,62 @@ func compileReadClassIdentifier(c compileCtx) (phpv.ZString, error) {
 	}
 }
 
+
+// classHasOverrideProperty returns true if any property in the class has #[\Override].
+func classHasOverrideProperty(class *phpobj.ZClass) bool {
+	for _, p := range class.Props {
+		if propHasOverride(p) {
+			return true
+		}
+	}
+	return false
+}
+
+// propHasOverride checks if a property has the #[\Override] attribute.
+func propHasOverride(p *phpv.ZClassProp) bool {
+	for _, attr := range p.Attributes {
+		if attr.ClassName == "Override" || attr.ClassName == "\\Override" {
+			return true
+		}
+	}
+	return false
+}
+
+// validatePropertyOverride checks that every property with #[\Override] has a matching
+// non-private parent property. Properties don't satisfy Override via interfaces.
+func validatePropertyOverride(ctx phpv.Context, class *phpobj.ZClass) error {
+	if class.Type == phpv.ZClassTypeTrait {
+		return nil
+	}
+
+	for _, p := range class.Props {
+		if !propHasOverride(p) {
+			continue
+		}
+
+		propName := p.VarName
+		found := false
+
+		// Check parent class for a matching non-private property
+		if class.Extends != nil {
+			if parentProp, ok := class.Extends.GetProp(propName); ok {
+				if !parentProp.Modifiers.IsPrivate() {
+					found = true
+				}
+			}
+		}
+
+		if !found {
+			displayName := string(class.GetName())
+			phpErr := &phpv.PhpError{
+				Err:  fmt.Errorf("%s::$%s has #[\\Override] attribute, but no matching parent property exists", displayName, propName),
+				Code: phpv.E_ERROR,
+				Loc:  class.L,
+			}
+			ctx.Global().LogError(phpErr)
+			return phpv.ExitError(255)
+		}
+	}
+
+	return nil
+}
