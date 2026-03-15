@@ -312,7 +312,34 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		ac.lastContainerIsOverloaded = true
 		ac.lastContainerClassName = string(v.AsObject(ctx).GetClass().GetName())
 	case phpv.ZtNull:
+		// Check if this is a compound write context (e.g. $a[$b] += 1)
+		isCompoundWrite := false
 		if !ac.writeContext {
+			if op, ok := ac.Parent.(*runOperator); ok && op.opD != nil && op.opD.write && op.opD.op != nil {
+				isCompoundWrite = true
+			}
+		}
+		if isCompoundWrite {
+			// Compound assignment: auto-vivify null to array (like writeContext).
+			// Emit "Undefined variable" warning if applicable, then proceed
+			// with the offset evaluation so that undefined offsets also get warned about.
+			if uc, ok := ac.value.(phpv.UndefinedChecker); ok {
+				if uc.IsUnDefined(ctx) {
+					if err := ctx.Warn("Undefined variable $%s",
+						uc.VarName(), logopt.NoFuncName(true)); err != nil {
+						return nil, err
+					}
+				}
+			}
+			// Auto-vivify: cast null to empty array and write back
+			err = v.CastTo(ctx, phpv.ZtArray)
+			if err != nil {
+				return nil, err
+			}
+			if wr, ok := ac.value.(phpv.Writable); ok {
+				wr.WriteValue(ctx, v)
+			}
+		} else if !ac.writeContext {
 			// Check if the inner expression is an undefined variable and emit warning
 			if uc, ok := ac.value.(phpv.UndefinedChecker); ok {
 				if uc.IsUnDefined(ctx) {
@@ -325,8 +352,11 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			if err := ctx.Warn("Trying to access array offset on null", logopt.NoFuncName(true)); err != nil {
 				return nil, err
 			}
+			return phpv.ZNULL.ZVal(), nil
 		}
-		return phpv.ZNULL.ZVal(), nil
+		if !isCompoundWrite {
+			return phpv.ZNULL.ZVal(), nil
+		}
 	case phpv.ZtBool:
 		if !bool(v.AsBool(ctx)) && !ac.writeContext {
 			if err := ctx.Warn("Trying to access array offset on false", logopt.NoFuncName(true)); err != nil {
