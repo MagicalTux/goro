@@ -302,6 +302,16 @@ func compileEnum(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 				return nil, i.Unexpected()
 			}
 
+			// Check for forbidden magic methods on enums
+			methodNameLower := phpv.ZString(i.Data).ToLower()
+			if isEnumForbiddenMethod(methodNameLower) {
+				return nil, &phpv.PhpError{
+					Err:  fmt.Errorf("Enum %s cannot include magic method %s", class.Name, i.Data),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  l,
+				}
+			}
+
 			f, err := compileFunctionWithName(phpv.ZString(i.Data), c, l, rref, false)
 			if err != nil {
 				return nil, err
@@ -482,4 +492,20 @@ func compileEnum(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	}
 
 	return class, nil
+}
+
+// isEnumForbiddenMethod checks if a method name is a forbidden magic method for enums.
+// PHP enums cannot declare: __construct, __destruct, __clone, __get, __set, __isset,
+// __unset, __toString, __debugInfo, __sleep, __wakeup, __serialize, __unserialize, __set_state.
+// Allowed: __call, __callStatic, __invoke.
+func isEnumForbiddenMethod(name phpv.ZString) bool {
+	switch name {
+	case "__construct", "__destruct", "__clone",
+		"__get", "__set", "__isset", "__unset",
+		"__tostring", "__debuginfo",
+		"__sleep", "__wakeup", "__serialize", "__unserialize",
+		"__set_state":
+		return true
+	}
+	return false
 }

@@ -122,8 +122,24 @@ func doVarDump(ctx phpv.Context, z *phpv.ZVal, linePfx string, recurs map[uintpt
 		if obj, ok := v.(*phpobj.ZObject); ok {
 			if debugInfoMethod, hasDebugInfo := obj.GetClass().GetMethod("__debuginfo"); hasDebugInfo {
 				result, err := ctx.Global().CallZVal(ctx, debugInfoMethod.Method, nil, obj)
-				if err == nil && result != nil && result.GetType() == phpv.ZtArray {
-					debugInfoArr = result.AsArray(ctx)
+				if err != nil {
+					return err
+				}
+				if result != nil {
+					switch result.GetType() {
+					case phpv.ZtArray:
+						debugInfoArr = result.AsArray(ctx)
+					case phpv.ZtNull:
+						// Returning null is deprecated since PHP 8.2
+						ctx.Deprecated("Returning null from %s::__debugInfo() is deprecated, return an empty array instead", obj.GetClass().GetName())
+						debugInfoArr = phpv.NewZArray()
+					default:
+						// Non-array, non-null return is a fatal error
+						return &phpv.PhpError{
+							Err:  fmt.Errorf("__debuginfo() must return an array"),
+							Code: phpv.E_ERROR,
+						}
+					}
 				}
 			}
 		}

@@ -65,6 +65,13 @@ func stdFuncMethodExists(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error
 	}
 	_, ok := class.GetMethod(methodName)
 
+	// Also check for __invoke via HandleInvoke (e.g., Closure::__invoke)
+	if !ok && methodName.ToLower() == "__invoke" {
+		if h := class.Handlers(); h != nil && h.HandleInvoke != nil {
+			ok = true
+		}
+	}
+
 	return phpv.ZBool(ok).ZVal(), nil
 }
 

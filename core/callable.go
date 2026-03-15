@@ -204,13 +204,20 @@ func SpawnCallable(ctx phpv.Context, v *phpv.ZVal) (phpv.Callable, error) {
 
 	case phpv.ZtObject:
 		object := v.AsObject(ctx)
+
+		// For Closure objects, use the opaque ZClosure directly
+		if opaque := object.GetOpaque(compiler.Closure); opaque != nil {
+			switch z := opaque.(type) {
+			case *compiler.ZClosure:
+				return z, nil
+			case phpv.Callable:
+				return z, nil
+			}
+		}
+
 		if f, ok := object.GetClass().GetMethod("__invoke"); ok {
 			method := phpv.Bind(f.Method, object)
 			return method, nil
-		}
-
-		if z, ok := object.GetOpaque(compiler.Closure).(*compiler.ZClosure); ok {
-			return z, nil
 		}
 
 		fallthrough

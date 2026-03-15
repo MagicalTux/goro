@@ -378,6 +378,17 @@ func compileFunctionWithName(name phpv.ZString, c compileCtx, l *phpv.Loc, rref 
 			return zc, nil
 		}
 
+		// If we're in a class context and get ';' instead of '{', give a better error
+		if i.IsSingle(';') && name != "" {
+			if cls := c.getClass(); cls != nil {
+				return nil, &phpv.PhpError{
+					Err:  fmt.Errorf("Non-abstract method %s::%s() must contain body", cls.Name, name),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  l,
+				}
+			}
+		}
+
 		return nil, i.Unexpected()
 	}
 

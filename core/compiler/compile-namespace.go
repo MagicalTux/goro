@@ -1,6 +1,9 @@
 package compiler
 
 import (
+	"strings"
+
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
@@ -243,6 +246,12 @@ func compileUse(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			if err != nil {
 				return nil, err
 			}
+		}
+
+		// PHP warning: non-compound names in use statements have no effect
+		if !strings.Contains(string(fullName), "\\") {
+			ctx := c.(phpv.Context)
+			ctx.Warn("The use statement with non-compound name '%s' has no effect", fullName, logopt.NoFuncName(true))
 		}
 
 		// Register the alias

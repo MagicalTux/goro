@@ -60,7 +60,7 @@ func fncDefine(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	ok := g.ConstantSet(name, value.Value())
 	if !ok {
-		if err := ctx.Notice("Constant %s already defined, this will be an error in PHP 9", name, logopt.NoFuncName(true)); err != nil {
+		if err := ctx.Warn("Constant %s already defined, this will be an error in PHP 9", name, logopt.NoFuncName(true)); err != nil {
 			return nil, err
 		}
 		return phpv.ZBool(false).ZVal(), nil

@@ -3,6 +3,7 @@ package compiler
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/MagicalTux/goro/core/phperr"
 	"github.com/MagicalTux/goro/core/phpobj"
@@ -30,6 +31,37 @@ var Closure = &phpobj.ZClass{
 	H:    &phpv.ZClassHandlers{},
 }
 
+// wrappedClosure wraps an arbitrary Callable as a Closure object opaque.
+// Used by Closure::fromCallable() to wrap non-closure callables.
+type wrappedClosure struct {
+	phpv.CallableVal
+	inner    phpv.Callable
+	name     phpv.ZString
+	args     []*phpv.FuncArg
+	this     phpv.ZObject
+	class    phpv.ZClass
+}
+
+func (w *wrappedClosure) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	return w.inner.Call(ctx, args)
+}
+
+func (w *wrappedClosure) GetArgs() []*phpv.FuncArg {
+	return w.args
+}
+
+func (w *wrappedClosure) Name() string {
+	return string(w.name)
+}
+
+func (w *wrappedClosure) Spawn(ctx phpv.Context) (*phpv.ZVal, error) {
+	o, err := phpobj.NewZObjectOpaque(ctx, Closure, w)
+	if err != nil {
+		return nil, err
+	}
+	return o.ZVal(), nil
+}
+
 func init() {
 	// put this here to avoid initialization loop problem
 	Closure.H.HandleInvoke = func(ctx phpv.Context, o phpv.ZObject, args []phpv.Runnable) (*phpv.ZVal, error) {
@@ -43,6 +75,11 @@ func init() {
 		case *generatorClosure:
 			z = v.ZClosure
 			callable = v
+		case *wrappedClosure:
+			if v.this != nil {
+				return ctx.Call(ctx, v, args, v.this)
+			}
+			return ctx.Call(ctx, v, args, o)
 		default:
 			return nil, fmt.Errorf("invalid closure opaque type: %T", opaque)
 		}
@@ -74,7 +111,6 @@ func init() {
 				return closureBind(ctx, allArgs)
 			}),
 		},
-		// fromCallable is complex - for now just stub it
 		"fromcallable": {
 			Name:      "fromCallable",
 			Modifiers: phpv.ZAttrPublic | phpv.ZAttrStatic,
@@ -82,15 +118,7 @@ func init() {
 				if len(args) < 1 {
 					return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "Closure::fromCallable() expects exactly 1 argument, 0 given")
 				}
-				// If it's already a Closure object, return it
-				if args[0].GetType() == phpv.ZtObject {
-					if obj, ok := args[0].Value().(*phpobj.ZObject); ok {
-						if obj.GetClass() == Closure {
-							return args[0], nil
-						}
-					}
-				}
-				return nil, phpobj.ThrowError(ctx, phpobj.Error, "Closure::fromCallable() not fully implemented")
+				return closureFromCallable(ctx, args[0])
 			}),
 		},
 		"call": {
@@ -129,24 +157,6 @@ func init() {
 				return bound.Call(ctx, callArgs)
 			}),
 		},
-		"__invoke": {
-			Name:      "__invoke",
-			Modifiers: phpv.ZAttrPublic,
-			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				// __invoke delegates to the HandleInvoke handler
-				opaque := o.GetOpaque(Closure)
-				var callable phpv.Callable
-				switch v := opaque.(type) {
-				case *ZClosure:
-					callable = v
-				case *generatorClosure:
-					callable = v
-				default:
-					return nil, fmt.Errorf("invalid closure opaque type: %T", opaque)
-				}
-				return callable.Call(ctx, args)
-			}),
-		},
 		"__debuginfo": {
 			Name:      "__debugInfo",
 			Modifiers: phpv.ZAttrPublic,
@@ -169,6 +179,20 @@ func (r *runnableCallableWrapper) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 
 func (r *runnableCallableWrapper) Dump(w io.Writer) error {
 	_, err := w.Write([]byte("/* callable wrapper */"))
+	return err
+}
+
+// zvalRunnable wraps a *ZVal as a Runnable for passing pre-evaluated values
+type zvalRunnable struct {
+	v *phpv.ZVal
+}
+
+func (r *zvalRunnable) Run(ctx phpv.Context) (*phpv.ZVal, error) {
+	return r.v, nil
+}
+
+func (r *zvalRunnable) Dump(w io.Writer) error {
+	_, err := fmt.Fprintf(w, "%v", r.v)
 	return err
 }
 
@@ -511,6 +535,45 @@ func closureBind(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, phpobj.ThrowError(ctx, phpobj.Error, "Closure::bind(): internal error - not a closure")
 	}
 
+	// Handle wrappedClosure from fromCallable
+	if w, ok2 := opaque.(*wrappedClosure); ok2 {
+		newThis := args[1]
+		boundW := &wrappedClosure{
+			inner: w.inner,
+			name:  w.name,
+			args:  w.args,
+			this:  w.this,
+			class: w.class,
+		}
+		if newThis.GetType() == phpv.ZtNull {
+			boundW.this = nil
+		} else if newThis.GetType() == phpv.ZtObject {
+			if obj, ok3 := newThis.Value().(phpv.ZObject); ok3 {
+				boundW.this = obj
+				boundW.class = obj.GetClass()
+			}
+		}
+		if len(args) > 2 && args[2] != nil {
+			scopeArg := args[2]
+			if scopeArg.GetType() == phpv.ZtString {
+				scopeName := phpv.ZString(scopeArg.String())
+				if scopeName != "static" {
+					cls, err := ctx.Global().GetClass(ctx, scopeName, true)
+					if err == nil && cls != nil {
+						boundW.class = cls
+					}
+				}
+			} else if scopeArg.GetType() == phpv.ZtObject {
+				if obj, ok3 := scopeArg.Value().(phpv.ZObject); ok3 {
+					boundW.class = obj.GetClass()
+				}
+			} else if scopeArg.GetType() == phpv.ZtNull {
+				boundW.class = nil
+			}
+		}
+		return boundW.Spawn(ctx)
+	}
+
 	var z *ZClosure
 	switch v := opaque.(type) {
 	case *ZClosure:
@@ -560,13 +623,313 @@ func closureBind(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return bound.Spawn(ctx)
 }
 
-// closureDebugInfo builds the __debugInfo array for a Closure object.
-// For user-defined closures this returns: name, file, line, [static], [this], [parameter]
-// For internal function closures it returns: function, [parameter]
+// closureFromCallable implements Closure::fromCallable($callable).
+// It converts any callable to a Closure object.
+func closureFromCallable(ctx phpv.Context, arg *phpv.ZVal) (*phpv.ZVal, error) {
+	// If it's already a Closure object, return it as-is
+	if arg.GetType() == phpv.ZtObject {
+		if obj, ok := arg.Value().(*phpobj.ZObject); ok {
+			if obj.GetClass() == Closure {
+				return arg, nil
+			}
+			// Object with __invoke method
+			if f, hasInvoke := obj.GetClass().GetMethod("__invoke"); hasInvoke {
+				w := &wrappedClosure{
+					inner: phpv.Bind(f.Method, obj),
+					name:  phpv.ZString(string(obj.GetClass().GetName()) + "::__invoke"),
+					this:  obj,
+					class: obj.GetClass(),
+				}
+				if fga, ok2 := f.Method.(phpv.FuncGetArgs); ok2 {
+					w.args = fga.GetArgs()
+				}
+				return w.Spawn(ctx)
+			}
+			// Object with HandleInvoke
+			if h := obj.GetClass().Handlers(); h != nil && h.HandleInvoke != nil {
+				w := &wrappedClosure{
+					inner: &invokeHandlerCallable{obj: obj, handler: h.HandleInvoke},
+					name:  phpv.ZString(string(obj.GetClass().GetName()) + "::__invoke"),
+					this:  obj,
+					class: obj.GetClass(),
+				}
+				return w.Spawn(ctx)
+			}
+		}
+	}
+
+	// String callable: "functionName" or "Class::method"
+	if arg.GetType() == phpv.ZtString {
+		s := arg.AsString(ctx)
+
+		// Handle "self::" and "parent::" in string callables
+		sLower := s.ToLower()
+		if strings.HasPrefix(string(sLower), "self::") || strings.HasPrefix(string(sLower), "parent::") {
+			prefix := string(s[:strings.Index(string(s), "::")])
+			methodName := s[strings.Index(string(s), "::")+2:]
+
+			ctx.Deprecated("Use of \"%s\" in callables is deprecated", prefix)
+
+			callerClass := ctx.Class()
+			if callerClass == nil {
+				return nil, phpobj.ThrowError(ctx, phpobj.Error,
+					fmt.Sprintf("Cannot use \"%s\" when no class scope is active", prefix))
+			}
+			var class phpv.ZClass
+			if strings.EqualFold(prefix, "parent") {
+				class = callerClass.GetParent()
+				if class == nil {
+					return nil, phpobj.ThrowError(ctx, phpobj.Error,
+						fmt.Sprintf("Cannot use \"parent\" when current class scope has no parent"))
+				}
+			} else {
+				class = callerClass
+			}
+
+			member, ok := class.GetMethod(methodName.ToLower())
+			if !ok {
+				return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+					fmt.Sprintf("Closure::fromCallable(): Argument #1 ($callback) must be a valid callback, class \"%s\" does not have a method \"%s\"", class.GetName(), methodName))
+			}
+
+			// For instance methods called within an object context, use $this
+			thisObj := ctx.This()
+			var callable phpv.Callable
+			if thisObj != nil && !member.Modifiers.IsStatic() {
+				callable = phpv.Bind(member.Method, thisObj)
+			} else {
+				callable = phpv.BindClass(member.Method, class, true)
+			}
+
+			w := &wrappedClosure{
+				inner: callable,
+				name:  phpv.ZString(string(class.GetName()) + "::" + string(member.Name)),
+				class: class,
+			}
+			if thisObj != nil {
+				w.this = thisObj
+			}
+			if fga, ok2 := member.Method.(phpv.FuncGetArgs); ok2 {
+				w.args = fga.GetArgs()
+			}
+			return w.Spawn(ctx)
+		}
+
+		if idx := strings.Index(string(s), "::"); idx >= 0 {
+			className := s[:idx]
+			methodName := s[idx+2:]
+			class, err := ctx.Global().GetClass(ctx, className, true)
+			if err != nil {
+				return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+					fmt.Sprintf("Closure::fromCallable(): Argument #1 ($callback) must be a valid callback, class \"%s\" not found", className))
+			}
+			member, ok := class.GetMethod(methodName.ToLower())
+			if !ok {
+				return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+					fmt.Sprintf("Closure::fromCallable(): Argument #1 ($callback) must be a valid callback, class \"%s\" does not have a method \"%s\"", className, methodName))
+			}
+			w := &wrappedClosure{
+				inner: phpv.BindClass(member.Method, class, true),
+				name:  phpv.ZString(string(className) + "::" + string(member.Name)),
+				class: class,
+			}
+			if fga, ok2 := member.Method.(phpv.FuncGetArgs); ok2 {
+				w.args = fga.GetArgs()
+			}
+			return w.Spawn(ctx)
+		}
+		// Plain function name
+		fn, err := ctx.Global().GetFunction(ctx, s)
+		if err != nil {
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+				fmt.Sprintf("Closure::fromCallable(): Argument #1 ($callback) must be a valid callback, function \"%s\" not found or invalid function name", s))
+		}
+		w := &wrappedClosure{
+			inner: fn,
+			name:  s,
+		}
+		if fga, ok := fn.(phpv.FuncGetArgs); ok {
+			w.args = fga.GetArgs()
+		}
+		return w.Spawn(ctx)
+	}
+
+	// Array callable: [$obj, "method"] or ["ClassName", "method"]
+	if arg.GetType() == phpv.ZtArray {
+		arr := arg.Array()
+		first, err := arr.OffsetGet(ctx, phpv.ZInt(0))
+		if err != nil {
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+				"Closure::fromCallable(): Argument #1 ($callback) must be a valid callback, array callback must have exactly two members")
+		}
+		second, err := arr.OffsetGet(ctx, phpv.ZInt(1))
+		if err != nil {
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+				"Closure::fromCallable(): Argument #1 ($callback) must be a valid callback, array callback must have exactly two members")
+		}
+
+		methodName := second.AsString(ctx)
+		var class phpv.ZClass
+		var instance phpv.ZObject
+
+		if first.GetType() == phpv.ZtString {
+			class, err = ctx.Global().GetClass(ctx, first.AsString(ctx), true)
+			if err != nil {
+				return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+					fmt.Sprintf("Closure::fromCallable(): Argument #1 ($callback) must be a valid callback, class \"%s\" not found", first.AsString(ctx)))
+			}
+		} else if first.GetType() == phpv.ZtObject {
+			instance = first.AsObject(ctx)
+			class = instance.GetClass()
+		} else {
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+				"Closure::fromCallable(): Argument #1 ($callback) must be a valid callback, first array member is not a valid class name or object")
+		}
+
+		member, ok := class.GetMethod(methodName.ToLower())
+		if !ok {
+			// Check for __call / __callStatic
+			if instance != nil {
+				if callMethod, hasCall := class.GetMethod("__call"); hasCall {
+					origName := methodName
+					w := &wrappedClosure{
+						inner: &magicCallClosure{callMethod: callMethod.Method, methodName: origName, instance: instance},
+						name:  phpv.ZString(string(class.GetName()) + "::__call"),
+						this:  instance,
+						class: class,
+					}
+					return w.Spawn(ctx)
+				}
+			} else {
+				if callStaticMethod, hasCallStatic := class.GetMethod("__callstatic"); hasCallStatic {
+					origName := methodName
+					w := &wrappedClosure{
+						inner: &magicCallStaticClosure{callMethod: callStaticMethod.Method, methodName: origName, class: class},
+						name:  phpv.ZString(string(class.GetName()) + "::__callStatic"),
+						class: class,
+					}
+					return w.Spawn(ctx)
+				}
+			}
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+				fmt.Sprintf("Closure::fromCallable(): Argument #1 ($callback) must be a valid callback, class \"%s\" does not have a method \"%s\"", class.GetName(), methodName))
+		}
+
+		// Check visibility
+		callerClass := ctx.Class()
+		declaringClass := class
+		if member.Class != nil {
+			declaringClass = member.Class
+		}
+		if member.Modifiers.IsPrivate() {
+			if callerClass == nil || callerClass.GetName() != declaringClass.GetName() {
+				return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+					fmt.Sprintf("Closure::fromCallable(): Argument #1 ($callback) must be a valid callback, cannot access private method %s::%s()", class.GetName(), member.Name))
+			}
+		} else if member.Modifiers.IsProtected() {
+			if callerClass == nil || (!callerClass.InstanceOf(declaringClass) && !declaringClass.InstanceOf(callerClass)) {
+				return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+					fmt.Sprintf("Closure::fromCallable(): Argument #1 ($callback) must be a valid callback, cannot access protected method %s::%s()", class.GetName(), member.Name))
+			}
+		}
+
+		var callable phpv.Callable
+		if instance != nil {
+			callable = phpv.Bind(member.Method, instance)
+		} else {
+			callable = phpv.BindClass(member.Method, class, true)
+		}
+
+		w := &wrappedClosure{
+			inner: callable,
+			name:  phpv.ZString(string(class.GetName()) + "::" + string(member.Name)),
+			class: class,
+		}
+		if fga, ok2 := member.Method.(phpv.FuncGetArgs); ok2 {
+			w.args = fga.GetArgs()
+		}
+		if instance != nil {
+			w.this = instance
+		}
+		return w.Spawn(ctx)
+	}
+
+	return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+		"Closure::fromCallable(): Argument #1 ($callback) must be a valid callback, no array, string or object given")
+}
+
+// invokeHandlerCallable wraps a HandleInvoke handler as a Callable
+type invokeHandlerCallable struct {
+	phpv.CallableVal
+	obj     phpv.ZObject
+	handler func(ctx phpv.Context, o phpv.ZObject, args []phpv.Runnable) (*phpv.ZVal, error)
+}
+
+func (i *invokeHandlerCallable) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	runnables := make([]phpv.Runnable, len(args))
+	for idx, a := range args {
+		runnables[idx] = &zvalRunnable{v: a}
+	}
+	return i.handler(ctx, i.obj, runnables)
+}
+
+// magicCallClosure wraps __call for Closure::fromCallable
+type magicCallClosure struct {
+	phpv.CallableVal
+	callMethod phpv.Callable
+	methodName phpv.ZString
+	instance   phpv.ZObject
+}
+
+func (m *magicCallClosure) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	argsArr := phpv.NewZArray()
+	for _, a := range args {
+		argsArr.OffsetSet(ctx, nil, a)
+	}
+	return ctx.CallZVal(ctx, m.callMethod, []*phpv.ZVal{m.methodName.ZVal(), argsArr.ZVal()}, m.instance)
+}
+
+// magicCallStaticClosure wraps __callStatic for Closure::fromCallable
+type magicCallStaticClosure struct {
+	phpv.CallableVal
+	callMethod phpv.Callable
+	methodName phpv.ZString
+	class      phpv.ZClass
+}
+
+func (m *magicCallStaticClosure) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	argsArr := phpv.NewZArray()
+	for _, a := range args {
+		argsArr.OffsetSet(ctx, nil, a)
+	}
+	return ctx.CallZVal(ctx, m.callMethod, []*phpv.ZVal{m.methodName.ZVal(), argsArr.ZVal()})
+}
+
 func closureDebugInfo(ctx phpv.Context, o *phpobj.ZObject) (*phpv.ZVal, error) {
 	opaque := o.GetOpaque(Closure)
 	if opaque == nil {
 		return phpv.NewZArray().ZVal(), nil
+	}
+
+	// Handle wrappedClosure (from Closure::fromCallable)
+	if w, ok := opaque.(*wrappedClosure); ok {
+		arr := phpv.NewZArray()
+		arr.OffsetSet(ctx, phpv.ZString("function"), phpv.ZString(w.name).ZVal())
+		if len(w.args) > 0 {
+			paramArr := phpv.NewZArray()
+			for _, a := range w.args {
+				paramKey := "$" + string(a.VarName)
+				var paramVal string
+				if a.Required {
+					paramVal = "<required>"
+				} else {
+					paramVal = "<optional>"
+				}
+				paramArr.OffsetSet(ctx, phpv.ZString(paramKey), phpv.ZString(paramVal).ZVal())
+			}
+			arr.OffsetSet(ctx, phpv.ZString("parameter"), paramArr.ZVal())
+		}
+		return arr.ZVal(), nil
 	}
 
 	var z *ZClosure

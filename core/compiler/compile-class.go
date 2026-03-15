@@ -685,6 +685,15 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 				}
 			}
 
+			// Check for abstract+private combination (abstract methods cannot be private)
+			if attr&phpv.ZAttrAbstract != 0 && attr&phpv.ZAttrPrivate != 0 {
+				return nil, &phpv.PhpError{
+					Err:  fmt.Errorf("Abstract function %s::%s() cannot be declared private", class.Name, i.Data),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  l,
+				}
+			}
+
 			var f phpv.Callable
 
 			optionalBody := class.Type == phpv.ZClassTypeInterface || attr&phpv.ZAttrAbstract != 0
