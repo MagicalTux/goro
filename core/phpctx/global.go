@@ -1276,7 +1276,14 @@ func (g *Global) RegisterClass(name phpv.ZString, c phpv.ZClass) error {
 		if existing.L != nil {
 			prevLoc = fmt.Sprintf(" (previously declared in %s:%d)", existing.L.Filename, existing.L.Line)
 		}
-		return fmt.Errorf("Cannot redeclare class %s%s", name, prevLoc)
+		kind := "class"
+		switch existing.Type {
+		case phpv.ZClassTypeInterface:
+			kind = "interface"
+		case phpv.ZClassTypeTrait:
+			kind = "trait"
+		}
+		return fmt.Errorf("Cannot redeclare %s %s%s", kind, name, prevLoc)
 	}
 	g.globalClasses[lowerName] = c.(*phpobj.ZClass)
 	delete(g.globalLazyClass, lowerName)

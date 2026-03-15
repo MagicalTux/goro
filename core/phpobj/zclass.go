@@ -57,7 +57,7 @@ func (c *ZClass) GetName() phpv.ZString {
 func (c *ZClass) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	err := ctx.Global().RegisterClass(c.Name, c)
 	if err != nil {
-		return nil, err
+		return nil, c.fatalError(ctx, err.Error())
 	}
 	err = c.Compile(ctx)
 	if err != nil {
