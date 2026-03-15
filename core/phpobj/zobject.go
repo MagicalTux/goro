@@ -177,6 +177,12 @@ func (z *ZObject) AsVal(ctx phpv.Context, t phpv.ZType) (phpv.Val, error) {
 			}
 			return result, nil
 		}
+		// String-backed enums can be implicitly cast to string (returning their backing value)
+		if zc, ok := z.Class.(*ZClass); ok && zc.Type.Has(phpv.ZClassTypeEnum) && zc.EnumBackingType == phpv.ZtString {
+			if backingVal := z.h.GetString("value"); backingVal != nil {
+				return backingVal.Value().(phpv.ZString), nil
+			}
+		}
 	case phpv.ZtInt:
 		ctx.Warn("Object of class %s could not be converted to int", z.Class.GetName(), logopt.NoFuncName(true))
 		return phpv.ZInt(1), nil

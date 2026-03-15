@@ -85,12 +85,49 @@ func (h *TypeHint) Check(ctx Context, val *ZVal) bool {
 		return val.GetType() == ZtBool && bool(val.Value().(ZBool))
 	}
 
-	// PHP allows implicit widening: int → float
-	if h.t == ZtFloat && val.GetType() == ZtInt {
-		return true
+	// PHP non-strict mode type coercion rules:
+	// int accepts: int, float (if no fractional part), bool, numeric strings
+	// float accepts: float, int, bool, numeric strings
+	// string accepts: string, int, float, bool
+	// bool accepts: bool, int, float, string, null
+	valType := val.GetType()
+	switch h.t {
+	case ZtInt:
+		switch valType {
+		case ZtInt:
+			return true
+		case ZtFloat:
+			return true // PHP coerces float->int (with possible truncation)
+		case ZtBool:
+			return true
+		case ZtString:
+			return ZString(val.String()).IsNumeric()
+		}
+		return false
+	case ZtFloat:
+		switch valType {
+		case ZtFloat, ZtInt, ZtBool:
+			return true
+		case ZtString:
+			return ZString(val.String()).IsNumeric()
+		}
+		return false
+	case ZtString:
+		switch valType {
+		case ZtString, ZtInt, ZtFloat, ZtBool:
+			return true
+		}
+		return false
+	case ZtBool:
+		// Bool accepts any scalar
+		switch valType {
+		case ZtBool, ZtInt, ZtFloat, ZtString, ZtNull:
+			return true
+		}
+		return false
 	}
 
-	return val.GetType() == h.t
+	return valType == h.t
 }
 
 // String returns the PHP type name for error messages

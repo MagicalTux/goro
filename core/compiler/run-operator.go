@@ -887,6 +887,32 @@ func operatorCompareStrict(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.Z
 }
 
 func operatorCompare(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*phpv.ZVal, error) {
+	// Handle array comparisons first - arrays are always greater than scalars in PHP 8
+	if a.GetType() == phpv.ZtArray || b.GetType() == phpv.ZtArray {
+		cmp, err := phpv.Compare(ctx, a, b)
+		if err != nil {
+			return nil, err
+		}
+		var res bool
+		switch op {
+		case tokenizer.Rune('<'):
+			res = cmp < 0
+		case tokenizer.Rune('>'):
+			res = cmp > 0
+		case tokenizer.T_IS_SMALLER_OR_EQUAL:
+			res = cmp <= 0
+		case tokenizer.T_IS_GREATER_OR_EQUAL:
+			res = cmp >= 0
+		case tokenizer.T_IS_EQUAL:
+			res = cmp == 0
+		case tokenizer.T_IS_NOT_EQUAL:
+			res = cmp != 0
+		case tokenizer.T_SPACESHIP:
+			return phpv.ZInt(cmp).ZVal(), nil
+		}
+		return phpv.ZBool(res).ZVal(), nil
+	}
+
 	// operator compare (< > <= >= == === != !== <=>) involve a lot of dark magic in php, unless both values are of the same type (and even so)
 	// loose comparison will convert number-y looking strings into numbers, etc
 	var ia, ib *phpv.ZVal

@@ -382,6 +382,7 @@ func compileEnum(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	// from() and tryFrom() - only for backed enums
 	if backingType != 0 {
 		if _, exists := class.Methods["from"]; !exists {
+			enumBackingType := backingType // capture for closure
 			class.Methods["from"] = &phpv.ZClassMethod{
 				Name:      "from",
 				Modifiers: phpv.ZAttrPublic | phpv.ZAttrStatic,
@@ -398,6 +399,31 @@ func compileEnum(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 						return nil, fmt.Errorf("from() called on non-ZClass")
 					}
 					needle := args[0]
+					// Type check: int-backed enums require int, string-backed enums accept int|string
+					if enumBackingType == phpv.ZtInt {
+						if needle.GetType() != phpv.ZtInt {
+							actualType := needle.GetType().TypeName()
+							if needle.GetType() == phpv.ZtObject {
+								if obj, ok2 := needle.Value().(phpv.ZObject); ok2 {
+									actualType = string(obj.GetClass().GetName())
+								}
+							}
+							return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+								fmt.Sprintf("%s::from(): Argument #1 ($value) must be of type int, %s given", zc.GetName(), actualType))
+						}
+					} else if enumBackingType == phpv.ZtString {
+						// String-backed enums accept int and string (int is coerced to string for lookup)
+						if needle.GetType() != phpv.ZtString && needle.GetType() != phpv.ZtInt {
+							actualType := needle.GetType().TypeName()
+							if needle.GetType() == phpv.ZtObject {
+								if obj, ok2 := needle.Value().(phpv.ZObject); ok2 {
+									actualType = string(obj.GetClass().GetName())
+								}
+							}
+							return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+								fmt.Sprintf("%s::from(): Argument #1 ($value) must be of type string, %s given", zc.GetName(), actualType))
+						}
+					}
 					for _, caseName := range zc.EnumCases {
 						cc, exists := zc.Const[caseName]
 						if !exists {
@@ -429,15 +455,23 @@ func compileEnum(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 							return val.ZVal(), nil
 						}
 					}
-					// Throw ValueError
+					// Throw ValueError with appropriate formatting
+					// String values (including ints coerced to string) are quoted
+					var valueStr string
+					if enumBackingType == phpv.ZtString {
+						valueStr = fmt.Sprintf("\"%s\"", needle.String())
+					} else {
+						valueStr = needle.String()
+					}
 					return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
-						fmt.Sprintf("%s is not a valid backing value for enum \"%s\"", needle.String(), zc.Name))
+						fmt.Sprintf("%s is not a valid backing value for enum %s", valueStr, zc.GetName()))
 				}),
 				Class: class,
 			}
 		}
 
 		if _, exists := class.Methods["tryfrom"]; !exists {
+			enumBackingType := backingType // capture for closure
 			class.Methods["tryfrom"] = &phpv.ZClassMethod{
 				Name:      "tryFrom",
 				Modifiers: phpv.ZAttrPublic | phpv.ZAttrStatic,
@@ -454,6 +488,30 @@ func compileEnum(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 						return nil, fmt.Errorf("tryFrom() called on non-ZClass")
 					}
 					needle := args[0]
+					// Type check: int-backed enums require int, string-backed enums accept int|string
+					if enumBackingType == phpv.ZtInt {
+						if needle.GetType() != phpv.ZtInt {
+							actualType := needle.GetType().TypeName()
+							if needle.GetType() == phpv.ZtObject {
+								if obj, ok2 := needle.Value().(phpv.ZObject); ok2 {
+									actualType = string(obj.GetClass().GetName())
+								}
+							}
+							return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+								fmt.Sprintf("%s::tryFrom(): Argument #1 ($value) must be of type int, %s given", zc.GetName(), actualType))
+						}
+					} else if enumBackingType == phpv.ZtString {
+						if needle.GetType() != phpv.ZtString && needle.GetType() != phpv.ZtInt {
+							actualType := needle.GetType().TypeName()
+							if needle.GetType() == phpv.ZtObject {
+								if obj, ok2 := needle.Value().(phpv.ZObject); ok2 {
+									actualType = string(obj.GetClass().GetName())
+								}
+							}
+							return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+								fmt.Sprintf("%s::tryFrom(): Argument #1 ($value) must be of type string, %s given", zc.GetName(), actualType))
+						}
+					}
 					for _, caseName := range zc.EnumCases {
 						cc, exists := zc.Const[caseName]
 						if !exists {
