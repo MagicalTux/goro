@@ -522,6 +522,11 @@ func (z *ZClosure) ReturnsByRef() bool {
 	return z.rref
 }
 
+// GetAttributes returns the PHP attributes on this function/closure.
+func (z *ZClosure) GetAttributes() []*phpv.ZAttribute {
+	return z.attributes
+}
+
 // closureBind implements Closure::bind($closure, $newThis, $newScope = "static")
 func closureBind(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 2 {

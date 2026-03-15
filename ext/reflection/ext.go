@@ -192,16 +192,17 @@ func reflectionClassConstruct(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.
 		return nil, phpobj.ThrowError(ctx, phpobj.Error, "ReflectionClass::__construct() expects exactly 1 argument, 0 given")
 	}
 	arg := args[0]
-	var className phpv.ZString
+	var class phpv.ZClass
 	if arg.GetType() == phpv.ZtObject {
-		className = arg.AsObject(ctx).GetClass().GetName()
+		// For objects, use the class directly (handles anonymous classes)
+		class = arg.AsObject(ctx).GetClass()
 	} else {
-		className = arg.AsString(ctx)
-	}
-
-	class, err := resolveClass(ctx, className)
-	if err != nil {
-		return nil, err
+		className := arg.AsString(ctx)
+		var err error
+		class, err = resolveClass(ctx, className)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	o.HashTable().SetString("name", class.GetName().ZVal())

@@ -133,6 +133,20 @@ func reflectionFunctionInvoke(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.
 }
 
 func reflectionFunctionGetAttributes(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	// Functions don't have attributes stored yet - return empty array
-	return phpv.NewZArray().ZVal(), nil
+	data := getFuncData(o)
+	if data == nil {
+		return phpv.NewZArray().ZVal(), nil
+	}
+
+	// Try to get attributes from the callable
+	type attrGetter interface {
+		GetAttributes() []*phpv.ZAttribute
+	}
+	var attrs []*phpv.ZAttribute
+	if ag, ok := data.callable.(attrGetter); ok {
+		attrs = ag.GetAttributes()
+	}
+
+	name, flags := getAttributesArgs(ctx, args)
+	return filterAttributes(ctx, attrs, phpobj.AttributeTARGET_FUNCTION, name, flags)
 }

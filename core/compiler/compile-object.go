@@ -206,6 +206,31 @@ func compileNew(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		return nil, err
 	}
 
+	// Handle attributes before anonymous class: new #[Attr] class { }
+	var anonAttrs []*phpv.ZAttribute
+	if next.Type == tokenizer.T_ATTRIBUTE {
+		anonAttrs, err = parseAttributes(c)
+		if err != nil {
+			return nil, err
+		}
+		next, err = c.NextItem()
+		if err != nil {
+			return nil, err
+		}
+		// Handle multiple attribute groups
+		for next.Type == tokenizer.T_ATTRIBUTE {
+			moreAttrs, err := parseAttributes(c)
+			if err != nil {
+				return nil, err
+			}
+			anonAttrs = append(anonAttrs, moreAttrs...)
+			next, err = c.NextItem()
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
 	if next.Type == tokenizer.T_CLASS {
 		// Anonymous class: new class [(args)] [extends X] [implements Y, Z] { ... }
 		// Parse optional constructor args first (before the class body)
@@ -233,6 +258,10 @@ func compileNew(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		}
 
 		class := classRunnable.(*phpobj.ZClass)
+		// Apply attributes from new #[Attr] class { }
+		if len(anonAttrs) > 0 {
+			class.Attributes = append(anonAttrs, class.Attributes...)
+		}
 		// Generate unique anonymous class name.
 		// PHP 8.4+: the prefix is "ParentClass@anonymous" or "FirstInterface@anonymous"
 		// or "class@anonymous" if neither extends nor implements.
