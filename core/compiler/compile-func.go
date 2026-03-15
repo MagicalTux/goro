@@ -163,8 +163,24 @@ func (r *runnableFunctionCallRef) Run(ctx phpv.Context) (l *phpv.ZVal, err error
 			if err != nil {
 				return nil, err
 			}
-			// grab function
-			f, err = ctx.Global().GetFunction(ctx, v.Value().(phpv.ZString))
+			// grab function — handle "Class::method" syntax
+			funcName := v.Value().(phpv.ZString)
+			if idx := strings.Index(string(funcName), "::"); idx > 0 {
+				className := phpv.ZString(funcName[:idx])
+				methodName := phpv.ZString(funcName[idx+2:])
+				class, classErr := ctx.Global().GetClass(ctx, className, true)
+				if classErr == nil {
+					if method, methodOk := class.GetMethod(methodName); methodOk {
+						f = method.Method
+					} else {
+						return nil, ctx.Errorf("Call to undefined method %s::%s()", className, methodName)
+					}
+				} else {
+					return nil, classErr
+				}
+			} else {
+				f, err = ctx.Global().GetFunction(ctx, funcName)
+			}
 			if err != nil {
 				return nil, err
 			}
