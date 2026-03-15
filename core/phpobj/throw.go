@@ -110,12 +110,26 @@ func init() {
 				return o.HashTable().GetString("line"), nil
 			})},
 			"gettrace": {Name: "getTrace", Method: NativeMethod(func(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				trace := o.GetOpaque(Exception).([]*phpv.StackTraceEntry)
+				opaque := o.GetOpaque(Exception)
+				if opaque == nil {
+					return phpv.NewZArray().ZVal(), nil
+				}
+				trace, ok := opaque.([]*phpv.StackTraceEntry)
+				if !ok {
+					return phpv.NewZArray().ZVal(), nil
+				}
 				return getExceptionTrace(ctx, trace).ZVal(), nil
 			})},
 			"gettraceasstring": {Name: "getTraceAsString", Method: NativeMethod(func(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				trace := phpv.StackTrace(o.GetOpaque(Exception).([]*phpv.StackTraceEntry))
-				return trace.String().ZVal(), nil
+				opaque := o.GetOpaque(Exception)
+				if opaque == nil {
+					return phpv.ZString("").ZVal(), nil
+				}
+				trace, ok := opaque.([]*phpv.StackTraceEntry)
+				if !ok {
+					return phpv.ZString("").ZVal(), nil
+				}
+				return phpv.StackTrace(trace).String().ZVal(), nil
 			})},
 			"__tostring": {Name: "__toString", Method: NativeMethod(exceptionToString)},
 		},
