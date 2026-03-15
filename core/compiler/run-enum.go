@@ -3,6 +3,7 @@ package compiler
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
@@ -58,4 +59,234 @@ func (r *runEnumCaseInit) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	}
 
 	return obj.ZVal(), nil
+}
+
+// runEnumRegister wraps a ZClass (enum) to add enum-specific validation
+// during the Compile phase. It intercepts error messages to use "Enum"
+// instead of "Class" where appropriate.
+type runEnumRegister struct {
+	class *phpobj.ZClass
+}
+
+func (r *runEnumRegister) Dump(w io.Writer) error {
+	return r.class.Dump(w)
+}
+
+func (r *runEnumRegister) Run(ctx phpv.Context) (*phpv.ZVal, error) {
+	c := r.class
+
+	// Register the class first
+	err := ctx.Global().RegisterClass(c.Name, c)
+	if err != nil {
+		return nil, r.enumFatalError(ctx, err.Error())
+	}
+
+	// Do enum-specific pre-validation before Compile runs.
+	// This ensures enum-specific error messages are emitted instead of generic
+	// "Class X ..." messages from zclass.go's Compile method.
+	if err := r.preCompileValidation(ctx); err != nil {
+		ctx.Global().UnregisterClass(c.Name)
+		return nil, err
+	}
+
+	// Run the standard Compile
+	err = c.Compile(ctx)
+	if err != nil {
+		ctx.Global().UnregisterClass(c.Name)
+		return nil, err
+	}
+
+	// Post-compile validation for enum-specific rules that need resolved interfaces
+	if err := r.postCompileValidation(ctx); err != nil {
+		ctx.Global().UnregisterClass(c.Name)
+		return nil, err
+	}
+
+	return nil, nil
+}
+
+// preCompileValidation performs enum-specific checks before the generic Compile.
+// These checks need interfaces to be resolved, so we do them here at runtime.
+func (r *runEnumRegister) preCompileValidation(ctx phpv.Context) error {
+	c := r.class
+
+	// Check each user-specified interface for enum-specific restrictions.
+	// We need to resolve the interface classes to check their properties.
+	for _, impl := range c.ImplementsStr {
+		implLower := impl.ToLower()
+
+		// Skip auto-added UnitEnum and BackedEnum (already validated at compile time)
+		if implLower == "unitenum" || implLower == "backedenum" {
+			continue
+		}
+
+		// Try to resolve the interface
+		intf, err := ctx.Global().GetClass(ctx, impl, true)
+		if err != nil {
+			// Interface not found - let Compile handle this
+			continue
+		}
+		intfClass, ok := intf.(*phpobj.ZClass)
+		if !ok {
+			continue
+		}
+
+		// Check for Throwable
+		if intfClass == phpobj.Throwable || intfClass.Implements(phpobj.Throwable) {
+			return r.enumFatalError(ctx, fmt.Sprintf("Enum %s cannot implement interface %s", c.Name, intfClass.GetName()))
+		}
+
+		// Check for Serializable (direct or indirect)
+		if intfClass == phpobj.Serializable || intfClass.Implements(phpobj.Serializable) {
+			// Emit the Serializable deprecation warning first
+			phpErr := &phpv.PhpError{
+				Err:  fmt.Errorf("%s implements the Serializable interface, which is deprecated. Implement __serialize() and __unserialize() instead (or in addition, if support for old PHP versions is necessary)", c.Name),
+				Code: phpv.E_DEPRECATED,
+				Loc:  c.L,
+			}
+			ctx.Global().LogError(phpErr)
+			return r.enumFatalError(ctx, fmt.Sprintf("Enum %s cannot implement the Serializable interface", c.Name))
+		}
+	}
+
+	// Pre-resolve interfaces to check for Traversable and duplicate implementations
+	// before the generic Compile runs.
+	resolvedInterfaces := make(map[*phpobj.ZClass]bool)
+	implementsTraversable := false
+	implementsIteratorOrAggregate := false
+
+	for _, impl := range c.ImplementsStr {
+		implLower := impl.ToLower()
+		if implLower == "unitenum" || implLower == "backedenum" {
+			continue
+		}
+
+		intf, err := ctx.Global().GetClass(ctx, impl, true)
+		if err != nil {
+			continue // let Compile handle not-found errors
+		}
+		intfClass, ok := intf.(*phpobj.ZClass)
+		if !ok {
+			continue
+		}
+
+		// Check for duplicate interface implementations
+		if resolvedInterfaces[intfClass] {
+			return r.enumFatalError(ctx, fmt.Sprintf("Enum %s cannot implement previously implemented interface %s", c.Name, intfClass.GetName()))
+		}
+		resolvedInterfaces[intfClass] = true
+
+		// Track Traversable, Iterator, IteratorAggregate
+		if intfClass == phpobj.Traversable {
+			implementsTraversable = true
+		}
+		if intfClass == phpobj.Iterator {
+			implementsIteratorOrAggregate = true
+		}
+		if intfClass == phpobj.IteratorAggregate {
+			implementsIteratorOrAggregate = true
+		}
+		// Check transitive implementations
+		if intfClass.Implements(phpobj.Traversable) {
+			implementsTraversable = true
+		}
+		if intfClass.Implements(phpobj.Iterator) || intfClass.Implements(phpobj.IteratorAggregate) {
+			implementsIteratorOrAggregate = true
+		}
+	}
+
+	// Check Traversable constraint for enums
+	if implementsTraversable && !implementsIteratorOrAggregate {
+		return r.enumFatalError(ctx, fmt.Sprintf("Enum %s must implement interface Traversable as part of either Iterator or IteratorAggregate", c.Name))
+	}
+
+	return nil
+}
+
+// postCompileValidation performs enum-specific checks after Compile.
+// At this point, interfaces are resolved and methods imported.
+func (r *runEnumRegister) postCompileValidation(ctx phpv.Context) error {
+	c := r.class
+
+	// Check for traits with properties
+	for _, traitUse := range c.TraitUses {
+		for _, traitName := range traitUse.TraitNames {
+			traitClass, err := ctx.Global().GetClass(ctx, traitName, false)
+			if err != nil {
+				continue
+			}
+			tc, ok := traitClass.(*phpobj.ZClass)
+			if !ok {
+				continue
+			}
+			// Check for properties in trait
+			if len(tc.Props) > 0 {
+				return r.enumFatalError(ctx, fmt.Sprintf("Enum %s cannot include properties", c.Name))
+			}
+			// Check for forbidden methods in trait
+			for _, m := range tc.Methods {
+				if isEnumForbiddenMethod(m.Name.ToLower()) {
+					return r.enumFatalError(ctx, fmt.Sprintf("Enum %s cannot include magic method %s", c.Name, m.Name))
+				}
+			}
+		}
+	}
+
+	// Check for duplicate backing values in backed enums
+	if c.EnumBackingType != 0 {
+		type caseInfo struct {
+			name  phpv.ZString
+			value string
+		}
+		seenValues := make(map[string]phpv.ZString) // value -> first case name
+		for _, caseName := range c.EnumCases {
+			cc, exists := c.Const[caseName]
+			if !exists {
+				continue
+			}
+			val := cc.Value
+			if cd, ok := val.(*phpv.CompileDelayed); ok {
+				z, err := cd.Run(ctx)
+				if err != nil {
+					continue
+				}
+				c.Const[caseName].Value = z.Value()
+				val = z.Value()
+			}
+			obj, ok := val.(*phpobj.ZObject)
+			if !ok {
+				continue
+			}
+			backingVal := obj.HashTable().GetString("value")
+			if backingVal == nil {
+				continue
+			}
+			valStr := backingVal.String()
+			if firstCase, exists := seenValues[valStr]; exists {
+				return phpobj.ThrowError(ctx, phpobj.ValueError,
+					fmt.Sprintf("Duplicate value in enum %s for cases %s and %s", c.Name, firstCase, caseName))
+			}
+			seenValues[valStr] = caseName
+		}
+	}
+
+	return nil
+}
+
+// enumFatalError emits a fatal error with enum-specific message formatting.
+func (r *runEnumRegister) enumFatalError(ctx phpv.Context, msg string) error {
+	phpErr := &phpv.PhpError{
+		Err:  fmt.Errorf("%s", msg),
+		Code: phpv.E_ERROR,
+		Loc:  r.class.L,
+	}
+	ctx.Global().LogError(phpErr)
+	return phpv.ExitError(255)
+}
+
+// enumFatalErrorMsg replaces "Class" with "Enum" in error messages for enum types.
+func enumFatalErrorMsg(msg string, enumName phpv.ZString) string {
+	prefix := fmt.Sprintf("Class %s ", enumName)
+	enumPrefix := fmt.Sprintf("Enum %s ", enumName)
+	return strings.Replace(msg, prefix, enumPrefix, 1)
 }

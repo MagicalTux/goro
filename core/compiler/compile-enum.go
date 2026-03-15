@@ -62,9 +62,23 @@ func compileEnum(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 				Loc:  i.Loc(),
 			}
 		}
+		// Check for union type (e.g., string|int) which is not allowed
+		typeName := i.Data
 		i, err = c.NextItem()
 		if err != nil {
 			return nil, err
+		}
+		if i.IsSingle('|') {
+			// Read the other type
+			i2, err := c.NextItem()
+			if err != nil {
+				return nil, err
+			}
+			return nil, &phpv.PhpError{
+				Err:  fmt.Errorf("Enum backing type must be int or string, %s|%s given", typeName, i2.Data),
+				Code: phpv.E_COMPILE_ERROR,
+				Loc:  i.Loc(),
+			}
 		}
 	}
 
@@ -320,6 +334,15 @@ func compileEnum(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 				return nil, i.Unexpected()
 			}
 
+			// Check for abstract methods on enums (enums cannot have abstract methods)
+			if attr&phpv.ZAttrAbstract != 0 {
+				return nil, &phpv.PhpError{
+					Err:  fmt.Errorf("Enum method %s::%s() must not be abstract", class.Name, i.Data),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  l,
+				}
+			}
+
 			// Check for forbidden magic methods on enums
 			methodNameLower := phpv.ZString(i.Data).ToLower()
 			if isEnumForbiddenMethod(methodNameLower) {
@@ -330,6 +353,8 @@ func compileEnum(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 				}
 			}
 
+			// For abstract methods, optionalBody should be true to avoid "must contain body" error
+			// But since we already reject abstract above, use false
 			f, err := compileFunctionWithName(phpv.ZString(i.Data), c, l, rref, false)
 			if err != nil {
 				return nil, err
@@ -355,6 +380,47 @@ func compileEnum(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	class.EnumBackingType = backingType
 	for _, ec := range cases {
 		class.EnumCases = append(class.EnumCases, phpv.ZString(ec.name))
+	}
+
+	// Validate user-specified implements list for enums
+	for _, impl := range class.ImplementsStr {
+		implLower := impl.ToLower()
+		switch implLower {
+		case "unitenum":
+			return nil, &phpv.PhpError{
+				Err:  fmt.Errorf("Enum %s cannot implement previously implemented interface UnitEnum", class.Name),
+				Code: phpv.E_ERROR,
+				Loc:  class.L,
+			}
+		case "backedenum":
+			if backingType != 0 {
+				return nil, &phpv.PhpError{
+					Err:  fmt.Errorf("Enum %s cannot implement previously implemented interface BackedEnum", class.Name),
+					Code: phpv.E_ERROR,
+					Loc:  class.L,
+				}
+			}
+			// Non-backed enum trying to implement BackedEnum
+			return nil, &phpv.PhpError{
+				Err:  fmt.Errorf("Non-backed enum %s cannot implement interface BackedEnum", class.Name),
+				Code: phpv.E_ERROR,
+				Loc:  class.L,
+			}
+		}
+	}
+
+	// Check for duplicate interfaces in the implements list
+	seen := make(map[phpv.ZString]bool)
+	for _, impl := range class.ImplementsStr {
+		implLower := impl.ToLower()
+		if seen[implLower] {
+			return nil, &phpv.PhpError{
+				Err:  fmt.Errorf("Enum %s cannot implement previously implemented interface %s", class.Name, impl),
+				Code: phpv.E_ERROR,
+				Loc:  class.L,
+			}
+		}
+		seen[implLower] = true
 	}
 
 	// All enums implement UnitEnum; backed enums also implement BackedEnum
@@ -606,7 +672,7 @@ func compileEnum(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		}
 	}
 
-	return class, nil
+	return &runEnumRegister{class: class}, nil
 }
 
 // isEnumForbiddenMethod checks if a method name is a forbidden magic method for enums.

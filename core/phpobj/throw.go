@@ -5,8 +5,9 @@ import (
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
-// > class Throwable
+// > interface Throwable
 var Throwable = &ZClass{
+	Type: phpv.ZClassTypeInterface,
 	Name: "Throwable",
 	// need abstract methods:
 	// getMessage getCode getFile getLine getTrace getPrevious getTraceAsString __toString
