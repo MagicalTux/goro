@@ -23,6 +23,28 @@ func (h *TypeHint) ClassName() ZString {
 	return h.s
 }
 
+// IsNullable returns true if the type hint accepts null values.
+// This includes explicitly nullable types (?Type), union types containing null,
+// and the mixed type (which implicitly accepts null).
+func (h *TypeHint) IsNullable() bool {
+	if h == nil {
+		return true // no type hint accepts anything including null
+	}
+	if h.Nullable {
+		return true
+	}
+	if h.t == ZtMixed || h.t == ZtNull {
+		return true
+	}
+	// Check if any union member is null
+	for _, u := range h.Union {
+		if u.t == ZtNull || u.IsNullable() {
+			return true
+		}
+	}
+	return false
+}
+
 // Check returns true if the value matches this type hint
 func (h *TypeHint) Check(ctx Context, val *ZVal) bool {
 	if h == nil {

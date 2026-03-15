@@ -3,6 +3,7 @@ package phpobj
 import (
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 
 	"github.com/MagicalTux/goro/core/phperr"
@@ -140,8 +141,15 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 						return c.fatalErrorAt(ctx, fmt.Sprintf("Access level to %s::%s() must be protected (as in class %s) or weaker", c.Name, ours.Name, c.Extends.Name), loc)
 					}
 
-					// Check method signature compatibility (skip constructors)
-					if n != "__construct" {
+					// Check method signature compatibility
+					// For constructors, only enforce when parent has abstract constructor
+					if n == "__construct" {
+						if m.Modifiers.Has(phpv.ZAttrAbstract) || m.Empty {
+							if err := c.checkMethodCompatibility(ctx, ours, m); err != nil {
+								return err
+							}
+						}
+					} else {
 						if err := c.checkMethodCompatibility(ctx, ours, m); err != nil {
 							return err
 						}
@@ -152,10 +160,19 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 			}
 		}
 
-		// Check __construct compatibility against interface declarations inherited from parents
+		// Check __construct compatibility against abstract constructors in the ancestor chain
+		// and interface constructor declarations inherited from parents.
 		if ours, gotit := c.Methods["__construct"]; gotit && (ours.Class == nil || ours.Class == c) {
-			// Walk the parent chain and check interface constructors
 			for p := c.Extends; p != nil; p = p.Extends {
+				// Check abstract constructors in ancestor classes
+				if pCtor, hasCtor := p.Methods["__construct"]; hasCtor {
+					if pCtor.Modifiers.Has(phpv.ZAttrAbstract) || (pCtor.Empty && pCtor.Class != nil && pCtor.Class.GetType() == phpv.ZClassTypeInterface) {
+						if err := c.checkMethodCompatibility(ctx, ours, pCtor); err != nil {
+							return err
+						}
+					}
+				}
+				// Check interface constructors
 				for _, intf := range p.Implementations {
 					if intfCtor, hasCtor := intf.Methods["__construct"]; hasCtor {
 						if err := c.checkMethodCompatibility(ctx, ours, intfCtor); err != nil {
@@ -478,11 +495,9 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 			if ours, gotit := c.Methods[n]; !gotit {
 				c.Methods[n] = m
 			} else {
-				// Check constructor compatibility for interface implementations
-				if n == "__construct" {
-					if err := c.checkMethodCompatibility(ctx, ours, m); err != nil {
-						return err
-					}
+				// Check method signature compatibility for interface implementations
+				if err := c.checkMethodCompatibility(ctx, ours, m); err != nil {
+					return err
 				}
 			}
 		}
@@ -661,19 +676,83 @@ func (c *ZClass) checkMethodCompatibility(ctx phpv.Context, child *phpv.ZClassMe
 		}
 	}
 
-	// Child cannot require more parameters than parent
-	// Child cannot have fewer total parameters than parent
+	// Count non-variadic parent params for comparison
+	parentNonVariadic := len(parentArgs)
+	parentHasVariadic := false
+	for i, a := range parentArgs {
+		if a.Variadic {
+			parentNonVariadic = i
+			parentHasVariadic = true
+			break
+		}
+	}
+
+	childNonVariadic := len(childArgs)
+	childHasVariadic := false
+	for i, a := range childArgs {
+		if a.Variadic {
+			childNonVariadic = i
+			childHasVariadic = true
+			break
+		}
+	}
+
+	// Child cannot require more parameters than parent requires
+	// Child cannot have fewer non-variadic parameters than parent's non-variadic count
+	// (unless child has a variadic parameter to absorb the rest)
 	incompatible := false
-	if childRequired > len(parentArgs) {
+	if childRequired > parentRequired {
 		incompatible = true
 	}
-	if len(childArgs) < len(parentArgs) {
+	if !childHasVariadic && childNonVariadic < parentNonVariadic {
 		incompatible = true
+	}
+
+	// Check by-reference flag compatibility for each parameter
+	if !incompatible {
+		limit := parentNonVariadic
+		if childNonVariadic < limit {
+			limit = childNonVariadic
+		}
+		for i := 0; i < limit; i++ {
+			if parentArgs[i].Ref != childArgs[i].Ref {
+				incompatible = true
+				break
+			}
+		}
+	}
+
+	// If parent has variadic, check by-ref compatibility of child's extra params against parent variadic
+	if !incompatible && parentHasVariadic {
+		parentVariadicArg := parentArgs[parentNonVariadic]
+		for i := parentNonVariadic; i < childNonVariadic; i++ {
+			if parentVariadicArg.Ref != childArgs[i].Ref {
+				incompatible = true
+				break
+			}
+		}
+	}
+
+	// Check return-by-reference compatibility
+	if !incompatible {
+		type retByRefGetter interface {
+			ReturnsByRef() bool
+		}
+		var parentRetRef, childRetRef bool
+		if rr, ok := parent.Method.(retByRefGetter); ok {
+			parentRetRef = rr.ReturnsByRef()
+		}
+		if rr, ok := child.Method.(retByRefGetter); ok {
+			childRetRef = rr.ReturnsByRef()
+		}
+		if parentRetRef != childRetRef {
+			incompatible = true
+		}
 	}
 
 	// Check type hint compatibility for each parameter (contravariance: child can widen)
 	if !incompatible {
-		for i := 0; i < len(parentArgs) && i < len(childArgs); i++ {
+		for i := 0; i < parentNonVariadic && i < childNonVariadic; i++ {
 			ph := parentArgs[i].Hint
 			ch := childArgs[i].Hint
 			if ph == nil && ch == nil {
@@ -736,7 +815,12 @@ func (c *ZClass) checkMethodCompatibility(ctx phpv.Context, child *phpv.ZClassMe
 }
 
 func formatMethodSignature(className phpv.ZString, m *phpv.ZClassMethod) string {
-	sig := string(className) + "::" + string(m.Name) + "("
+	// Check if method returns by reference
+	retByRef := ""
+	if rr, ok := m.Method.(interface{ ReturnsByRef() bool }); ok && rr.ReturnsByRef() {
+		retByRef = "& "
+	}
+	sig := retByRef + string(className) + "::" + string(m.Name) + "("
 	if fga, ok := m.Method.(phpv.FuncGetArgs); ok {
 		args := fga.GetArgs()
 		for i, a := range args {
@@ -746,8 +830,14 @@ func formatMethodSignature(className phpv.ZString, m *phpv.ZClassMethod) string 
 			if a.Hint != nil {
 				sig += a.Hint.String() + " "
 			}
+			if a.Variadic {
+				sig += "..."
+			}
+			if a.Ref {
+				sig += "&"
+			}
 			sig += "$" + string(a.VarName)
-			if !a.Required {
+			if !a.Required && !a.Variadic && !a.ImplicitlyNullable {
 				sig += " = " + formatDefault(a.DefaultValue)
 			}
 		}
@@ -769,20 +859,51 @@ func formatDefault(v phpv.Val) string {
 		return "NULL"
 	}
 	switch vt := v.(type) {
+	case phpv.ZNull:
+		return "null"
 	case phpv.ZInt:
 		return fmt.Sprintf("%d", vt)
 	case phpv.ZString:
-		return fmt.Sprintf("'%s'", vt)
+		s := string(vt)
+		if len(s) > 10 {
+			s = s[:10] + "..."
+		}
+		return fmt.Sprintf("'%s'", s)
 	case phpv.ZFloat:
-		return fmt.Sprintf("%g", vt)
+		return strconv.FormatFloat(float64(vt), 'G', 14, 64)
 	case phpv.ZBool:
 		if vt {
 			return "true"
 		}
 		return "false"
+	case *phpv.ZArray:
+		if vt.HashTable().Count() == 0 {
+			return "[]"
+		}
+		return "[...]"
+	case *phpv.CompileDelayed:
+		// Default value hasn't been resolved yet — try to format the runnable
+		return formatDelayedDefault(vt.V)
 	default:
 		return fmt.Sprintf("%v", v)
 	}
+}
+
+// formatDelayedDefault attempts to produce a display string for a CompileDelayed
+// default value by inspecting the underlying Runnable expression.
+func formatDelayedDefault(r phpv.Runnable) string {
+	if r == nil {
+		return "<default>"
+	}
+	// Use Dump to get a representation, falling back to a generic placeholder
+	var buf strings.Builder
+	if err := r.Dump(&buf); err == nil {
+		s := buf.String()
+		if s != "" {
+			return s
+		}
+	}
+	return "<default>"
 }
 
 func (c *ZClass) validateMagicMethods(ctx phpv.Context) error {
@@ -1012,6 +1133,12 @@ func typeHintIsWidening(childHint, parentHint *phpv.TypeHint) bool {
 	// If parent is "mixed", child must also be mixed to be compatible
 	if parentHint.Type() == phpv.ZtMixed {
 		return childHint.Type() == phpv.ZtMixed
+	}
+
+	// Check nullable compatibility: if parent accepts null, child must also accept null
+	if parentHint.IsNullable() && !childHint.IsNullable() {
+		// Parent accepts null but child doesn't — narrowing
+		return false
 	}
 
 	// Gather all "leaf" types from parent (flatten unions)
