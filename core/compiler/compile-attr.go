@@ -76,12 +76,12 @@ func parseAttributes(c compileCtx) ([]*phpv.ZAttribute, error) {
 
 			// Check for arguments: (
 			if i.IsSingle('(') {
-				// Parse arguments as constant expressions
-				args, err := parseAttributeArgs(c)
+				// Parse arguments as constant expressions (supports named args)
+				args, namedArgs, err := parseAttributeArgs(c)
 				if err != nil {
 					return nil, err
 				}
-				attr.Args = args
+				attr.Args = resolveAttributeNamedArgs(className, args, namedArgs)
 
 				// Read next token after closing )
 				i, err = c.NextItem()
@@ -122,59 +122,136 @@ func parseAttributes(c compileCtx) ([]*phpv.ZAttribute, error) {
 
 // parseAttributeArgs parses the arguments inside #[Attr(...)].
 // Called after the opening '(' has been consumed.
-// Returns the parsed argument values.
-func parseAttributeArgs(c compileCtx) ([]*phpv.ZVal, error) {
-	var args []*phpv.ZVal
-
+// Returns the parsed argument values. Named arguments (e.g., message: "foo")
+// are collected and returned separately via namedArgs.
+func parseAttributeArgs(c compileCtx) (args []*phpv.ZVal, namedArgs map[phpv.ZString]*phpv.ZVal, err error) {
 	// Check for empty args: ()
 	i, err := c.NextItem()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if i.IsSingle(')') {
-		return args, nil
+		return args, nil, nil
 	}
 	c.backup()
 
 	for {
-		// Parse each argument as a constant expression
-		expr, err := compileExpr(nil, c)
+		// Check for named argument: identifier followed by ':'
+		i, err = c.NextItem()
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
-		// Try to evaluate the expression at compile time
-		val, err := expr.Run(c)
-		if err != nil {
-			// If we can't evaluate at compile time, store as nil
-			// This handles forward references etc.
-			args = append(args, phpv.ZNULL.ZVal())
+		if i.IsLabel() && c.peekType() == tokenizer.Rune(':') {
+			// Named argument: name: expr
+			argName := phpv.ZString(i.Data)
+			c.NextItem() // consume the ':'
+
+			// Parse the value expression
+			expr, err := compileExpr(nil, c)
+			if err != nil {
+				return nil, nil, err
+			}
+
+			val, err := expr.Run(c)
+			if err != nil {
+				val = phpv.ZNULL.ZVal()
+			}
+
+			if namedArgs == nil {
+				namedArgs = make(map[phpv.ZString]*phpv.ZVal)
+			}
+			namedArgs[argName] = val
 		} else {
-			args = append(args, val)
+			// Positional argument
+			c.backup()
+			expr, err := compileExpr(nil, c)
+			if err != nil {
+				return nil, nil, err
+			}
+
+			// Try to evaluate the expression at compile time
+			val, err := expr.Run(c)
+			if err != nil {
+				// If we can't evaluate at compile time, store as nil
+				// This handles forward references etc.
+				args = append(args, phpv.ZNULL.ZVal())
+			} else {
+				args = append(args, val)
+			}
 		}
 
-		i, err := c.NextItem()
+		i, err = c.NextItem()
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if i.IsSingle(')') {
-			return args, nil
+			return args, namedArgs, nil
 		}
 		if i.IsSingle(',') {
 			// Check for trailing comma before )
 			i, err = c.NextItem()
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			if i.IsSingle(')') {
-				return args, nil
+				return args, namedArgs, nil
 			}
 			c.backup()
 			continue
 		}
 
-		return nil, i.Unexpected()
+		return nil, nil, i.Unexpected()
 	}
+}
+
+// resolveAttributeNamedArgs resolves named arguments into positional arguments
+// for known built-in attribute classes. Unknown attributes have their named
+// args appended after positional args.
+func resolveAttributeNamedArgs(className phpv.ZString, args []*phpv.ZVal, namedArgs map[phpv.ZString]*phpv.ZVal) []*phpv.ZVal {
+	if len(namedArgs) == 0 {
+		return args
+	}
+
+	// Parameter name -> position mapping for known attribute classes
+	var paramMap map[phpv.ZString]int
+
+	switch className {
+	case "Deprecated", "\\Deprecated":
+		paramMap = map[phpv.ZString]int{"message": 0, "since": 1}
+	case "Attribute", "\\Attribute":
+		paramMap = map[phpv.ZString]int{"flags": 0}
+	case "NoDiscard", "\\NoDiscard":
+		paramMap = map[phpv.ZString]int{"message": 0}
+	default:
+		// For unknown attribute classes, append named args after positional args
+		for _, v := range namedArgs {
+			args = append(args, v)
+		}
+		return args
+	}
+
+	// Find max position needed
+	maxPos := len(args) - 1
+	for name := range namedArgs {
+		if pos, ok := paramMap[name]; ok && pos > maxPos {
+			maxPos = pos
+		}
+	}
+
+	// Extend args slice to accommodate all positions
+	for len(args) <= maxPos {
+		args = append(args, phpv.ZString("").ZVal())
+	}
+
+	// Place named args at their correct positions
+	for name, val := range namedArgs {
+		if pos, ok := paramMap[name]; ok {
+			args[pos] = val
+		}
+	}
+
+	return args
 }
 
 func parseZClassAttr(a *phpv.ZClassAttr, c compileCtx) error {

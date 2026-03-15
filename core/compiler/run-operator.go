@@ -251,17 +251,60 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		}
 	}
 
+	// For null coalescing (?? and ??=), use isset-like existence checking
+	// to determine if the LHS value is "set". This correctly handles:
+	// - undefined variables → treat as null
+	// - out-of-bounds string offsets → treat as null
+	// - ArrayAccess offsetExists returning false → treat as null
+	// - null values → treat as null
+	if r.op == tokenizer.T_COALESCE || r.op == tokenizer.T_COALESCE_EQUAL {
+		if r.a != nil {
+			exists, _ := checkExistence(ctx, r.a, false)
+			if exists {
+				a, err = r.a.Run(ctx)
+				if err != nil {
+					a = nil
+					err = nil
+				}
+			}
+			if a != nil && !a.IsNull() {
+				return a, nil
+			}
+		}
+		// Fall through to evaluate RHS
+		if r.b != nil {
+			b, err = r.b.Run(ctx)
+			if err != nil {
+				return nil, err
+			}
+		}
+		res = b
+		if op.write {
+			w, ok := r.a.(phpv.Writable)
+			if !ok {
+				// Provide a meaningful PHP error message
+				what := "expression"
+				switch r.a.(type) {
+				case *runnableFunctionCall:
+					what = "function return value"
+				case *runObjectFunc:
+					what = "method return value"
+				}
+				return nil, ctx.Errorf("Can't use %s in write context", what)
+			}
+			if !res.IsRef() {
+				res = res.ZVal()
+			}
+			return res, w.WriteValue(ctx, res)
+		}
+		return res, nil
+	}
+
 	// read a and b
 	if r.a != nil && !(op.write && op.op == nil) {
 		a, err = r.a.Run(ctx)
 		if err != nil {
-			// For null coalescing, suppress errors on the left side
-			if r.op == tokenizer.T_COALESCE || r.op == tokenizer.T_COALESCE_EQUAL {
-				a = nil
-				err = nil
-			} else {
-				return nil, err
-			}
+			return nil, err
 		}
 	}
 
@@ -274,14 +317,6 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	case tokenizer.T_LOGICAL_OR, tokenizer.T_BOOLEAN_OR:
 		if a.AsBool(ctx) {
 			return phpv.ZTrue.ZVal(), nil
-		}
-	case tokenizer.T_COALESCE:
-		if a != nil && !a.IsNull() {
-			return a, nil
-		}
-	case tokenizer.T_COALESCE_EQUAL:
-		if a != nil && !a.IsNull() {
-			return a, nil
 		}
 	}
 

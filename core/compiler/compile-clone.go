@@ -227,48 +227,22 @@ func compileClone(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 }
 
 // runFirstClassCloneCallable implements clone(...) first-class callable syntax.
-// It returns a Closure that wraps the clone operation.
+// It resolves the clone function at runtime and wraps it in a Closure.
 type runFirstClassCloneCallable struct {
 	l *phpv.Loc
 }
 
 func (r *runFirstClassCloneCallable) Run(ctx phpv.Context) (*phpv.ZVal, error) {
-	// Create a closure that wraps clone
-	closure := &ZClosure{
-		name: "clone",
-		args: []*phpv.FuncArg{
-			{VarName: phpv.ZString("object")},
-		},
-		code: &runnableCloneClosure{},
+	// Look up the clone function (registered as a built-in)
+	f, err := ctx.Global().GetFunction(ctx, "clone")
+	if err != nil {
+		return nil, err
 	}
+	closure := phpv.Bind(f, nil)
 	return phpv.NewZVal(closure), nil
 }
 
 func (r *runFirstClassCloneCallable) Dump(w io.Writer) error {
 	_, err := w.Write([]byte("\\clone(...)"))
-	return err
-}
-
-// runnableCloneClosure is the body of a clone(...) first-class callable closure.
-type runnableCloneClosure struct{}
-
-func (r *runnableCloneClosure) Run(ctx phpv.Context) (*phpv.ZVal, error) {
-	v, err := ctx.OffsetGet(ctx, phpv.ZString("object").ZVal())
-	if err != nil {
-		return nil, err
-	}
-	if v == nil || v.GetType() != phpv.ZtObject {
-		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("clone(): Argument #1 ($object) must be of type object, %s given", v.GetType().TypeName()))
-	}
-	obj := v.Value().(phpv.ZObject)
-	obj, err = obj.Clone(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return obj.ZVal(), nil
-}
-
-func (r *runnableCloneClosure) Dump(w io.Writer) error {
-	_, err := w.Write([]byte("clone($object)"))
 	return err
 }

@@ -104,17 +104,41 @@ func Compare(ctx Context, a, b *ZVal) (int, error) {
 	// operator compare (< > <= >= == === != !== <=>) involve a lot of dark magic in php, unless both values are of the same type (and even so)
 	// loose comparison will convert number-y looking strings into numbers, etc
 	if a.GetType() == ZtArray {
-		if b.GetType() != ZtArray {
-			return 1, nil
+		if b.GetType() == ZtArray {
+			return CompareArray(ctx, a.AsArray(ctx), b.AsArray(ctx))
 		}
-		return CompareArray(ctx, a.AsArray(ctx), b.AsArray(ctx))
+		// PHP: array vs bool/null → convert to bool comparison
+		if b.GetType() == ZtBool || b.GetType() == ZtNull {
+			ab := a.AsBool(ctx)
+			bb := b.AsBool(ctx)
+			if ab == bb {
+				return 0, nil
+			}
+			if ab {
+				return 1, nil
+			}
+			return -1, nil
+		}
+		return 1, nil // array > all other scalars
 	}
 
 	if b.GetType() == ZtArray {
-		if a.GetType() != ZtArray {
+		if a.GetType() == ZtArray {
+			return CompareArray(ctx, a.AsArray(ctx), b.AsArray(ctx))
+		}
+		// PHP: bool/null vs array → convert to bool comparison
+		if a.GetType() == ZtBool || a.GetType() == ZtNull {
+			ab := a.AsBool(ctx)
+			bb := b.AsBool(ctx)
+			if ab == bb {
+				return 0, nil
+			}
+			if ab {
+				return 1, nil
+			}
 			return -1, nil
 		}
-		return CompareArray(ctx, b.AsArray(ctx), a.AsArray(ctx))
+		return -1, nil // all other scalars < array
 	}
 
 	var ia, ib *ZVal
