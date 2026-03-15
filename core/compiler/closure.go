@@ -419,7 +419,9 @@ func (z *ZClosure) Name() string {
 
 func (z *ZClosure) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	// Check #[\Deprecated] attribute
-	z.checkDeprecated(ctx)
+	if err := z.checkDeprecated(ctx); err != nil {
+		return nil, err
+	}
 
 	// If this is a generator function, spawn a Generator object instead of
 	// executing the function body directly.
@@ -430,10 +432,11 @@ func (z *ZClosure) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	return z.callBody(ctx, args)
 }
 
-// checkDeprecated emits a deprecation warning if this function has #[\Deprecated]
-func (z *ZClosure) checkDeprecated(ctx phpv.Context) {
+// checkDeprecated emits a deprecation warning if this function has #[\Deprecated].
+// Returns an error if the user error handler throws an exception.
+func (z *ZClosure) checkDeprecated(ctx phpv.Context) error {
 	if len(z.attributes) == 0 {
-		return
+		return nil
 	}
 	for _, attr := range z.attributes {
 		if attr.ClassName == "Deprecated" {
@@ -445,10 +448,10 @@ func (z *ZClosure) checkDeprecated(ctx phpv.Context) {
 			}
 
 			msg := FormatDeprecatedMsg(label, funcName+"()", attr)
-			ctx.UserDeprecated("%s", msg, logopt.NoFuncName(true))
-			return
+			return ctx.UserDeprecated("%s", msg, logopt.NoFuncName(true))
 		}
 	}
+	return nil
 }
 
 // FormatDeprecatedMsg formats a deprecation message from a #[\Deprecated] attribute.

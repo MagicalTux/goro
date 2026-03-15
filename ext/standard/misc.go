@@ -9,6 +9,7 @@ import (
 
 	"github.com/MagicalTux/goro/core"
 	"github.com/MagicalTux/goro/core/compiler"
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
@@ -53,6 +54,27 @@ func constant(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				callerClass := ctx.Class()
 				if callerClass == nil || !callerClass.InstanceOf(class) && !class.InstanceOf(callerClass) {
 					return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Cannot access protected constant %s::%s", class.GetName(), constName))
+				}
+			}
+
+			// Check #[\Deprecated] attribute on the class constant
+			for _, attr := range cc.Attributes {
+				if attr.ClassName == "Deprecated" {
+					label := "Constant"
+					if zc.Type == phpv.ZClassTypeEnum {
+						for _, caseName := range zc.EnumCases {
+							if caseName == constName {
+								label = "Enum case"
+								break
+							}
+						}
+					}
+					cname := string(class.GetName()) + "::" + string(constName)
+					msg := compiler.FormatDeprecatedMsg(label, cname, attr)
+					if err := ctx.UserDeprecated("%s", msg, logopt.NoFuncName(true)); err != nil {
+						return nil, err
+					}
+					break
 				}
 			}
 

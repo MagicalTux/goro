@@ -804,14 +804,33 @@ func (o *ZObject) GetMethod(method phpv.ZString, ctx phpv.Context) (phpv.Callabl
 func checkMethodDeprecated(ctx phpv.Context, class *ZClass, m *phpv.ZClassMethod) {
 	for _, attr := range m.Attributes {
 		if attr.ClassName == "Deprecated" {
-			msg := fmt.Sprintf("Method %s::%s() is deprecated", class.GetName(), m.Name)
-			if len(attr.Args) > 0 && attr.Args[0].GetType() == phpv.ZtString {
-				msg += ", " + attr.Args[0].String()
-			}
-			ctx.Deprecated("%s", msg, logopt.NoFuncName(true))
+			msg := formatDeprecatedMsg("Method", string(class.GetName())+"::"+string(m.Name)+"()", attr)
+			ctx.UserDeprecated("%s", msg, logopt.NoFuncName(true))
 			return
 		}
 	}
+}
+
+// formatDeprecatedMsg formats a deprecation message from a #[\Deprecated] attribute.
+func formatDeprecatedMsg(label, name string, attr *phpv.ZAttribute) string {
+	msg := fmt.Sprintf("%s %s is deprecated", label, name)
+
+	var message, since string
+	if len(attr.Args) > 0 && attr.Args[0].GetType() == phpv.ZtString {
+		message = attr.Args[0].String()
+	}
+	if len(attr.Args) > 1 && attr.Args[1].GetType() == phpv.ZtString {
+		since = attr.Args[1].String()
+	}
+
+	if since != "" {
+		msg += " since " + since
+	}
+	if message != "" {
+		msg += ", " + message
+	}
+
+	return msg
 }
 
 func (o *ZObject) HasProp(ctx phpv.Context, key phpv.Val) (bool, error) {

@@ -163,6 +163,19 @@ func spawnOperator(ctx phpv.Context, op tokenizer.ItemType, a, b phpv.Runnable, 
 		}
 	}
 
+	// Compile-time check: ??= with [] (empty index) is not allowed
+	if op == tokenizer.T_COALESCE_EQUAL {
+		if ac, ok := a.(*runArrayAccess); ok && ac.offset == nil {
+			phpErr := &phpv.PhpError{
+				Err:  fmt.Errorf("Cannot use [] for reading"),
+				Code: phpv.E_ERROR,
+				Loc:  l,
+			}
+			ctx.Global().LogError(phpErr)
+			return nil, phpv.ExitError(255)
+		}
+	}
+
 	// Short list syntax: [$a, $b] = expr → convert array literal to destructure target
 	if opD.write {
 		if arr, ok := a.(*runArray); ok {
@@ -259,7 +272,14 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	// - null values → treat as null
 	if r.op == tokenizer.T_COALESCE || r.op == tokenizer.T_COALESCE_EQUAL {
 		if r.a != nil {
-			exists, _ := checkExistence(ctx, r.a, false)
+			exists, checkErr := checkExistence(ctx, r.a, false)
+			if checkErr != nil {
+				// For ??=, propagate errors like "Cannot use [] for reading"
+				if r.op == tokenizer.T_COALESCE_EQUAL {
+					return nil, checkErr
+				}
+				// For ??, suppress errors
+			}
 			if exists {
 				a, err = r.a.Run(ctx)
 				if err != nil {

@@ -2,7 +2,9 @@ package compiler
 
 import (
 	"fmt"
+	"io"
 
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
@@ -822,7 +824,58 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		}
 	}
 
+	// If the class has trait uses, wrap it to check for deprecated traits after compilation
+	if len(class.TraitUses) > 0 {
+		return &runClassWithTraitDeprecationCheck{class: class}, nil
+	}
+
 	return class, nil
+}
+
+// runClassWithTraitDeprecationCheck wraps a ZClass to check for #[\Deprecated]
+// on traits after the class is compiled. This handles the case where a class
+// uses a deprecated trait and should emit E_USER_DEPRECATED.
+type runClassWithTraitDeprecationCheck struct {
+	class *phpobj.ZClass
+}
+
+func (r *runClassWithTraitDeprecationCheck) Run(ctx phpv.Context) (*phpv.ZVal, error) {
+	// First, register and compile the class normally
+	val, err := r.class.Run(ctx)
+	if err != nil {
+		return val, err
+	}
+
+	// After compilation, check if any used traits have #[\Deprecated]
+	for _, tu := range r.class.TraitUses {
+		for _, traitName := range tu.TraitNames {
+			traitClass, err := ctx.Global().GetClass(ctx, traitName, false)
+			if err != nil {
+				continue
+			}
+			tc, ok := traitClass.(*phpobj.ZClass)
+			if !ok {
+				continue
+			}
+			for _, attr := range tc.Attributes {
+				if attr.ClassName == "Deprecated" || attr.ClassName == "\\Deprecated" {
+					usingName := string(r.class.GetName())
+					traitDisplayName := string(tc.GetName())
+					msg := FormatDeprecatedMsg("Trait", traitDisplayName+" used by "+usingName, attr)
+					if err := ctx.UserDeprecated("%s", msg, logopt.NoFuncName(true)); err != nil {
+						return nil, err
+					}
+					break
+				}
+			}
+		}
+	}
+
+	return val, nil
+}
+
+func (r *runClassWithTraitDeprecationCheck) Dump(w io.Writer) error {
+	return r.class.Dump(w)
 }
 
 func parseClassLine(class *phpobj.ZClass, c compileCtx) error {

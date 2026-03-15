@@ -5,6 +5,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
@@ -44,19 +45,40 @@ func (r *runConstant) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 	}
 
 	// Try the full (possibly namespaced) name first
-	z, ok := ctx.Global().ConstantGet(phpv.ZString(r.c))
+	constName := phpv.ZString(r.c)
+	z, ok := ctx.Global().ConstantGet(constName)
 	if ok {
+		// Check #[\Deprecated] on the constant
+		if err := checkConstantDeprecated(ctx, constName); err != nil {
+			return nil, err
+		}
 		return z.ZVal(), nil
 	}
 
 	// Namespace fallback: if Foo\BAR is not found, try BAR (global)
 	if short != r.c {
-		z, ok = ctx.Global().ConstantGet(phpv.ZString(short))
+		shortName := phpv.ZString(short)
+		z, ok = ctx.Global().ConstantGet(shortName)
 		if ok {
+			if err := checkConstantDeprecated(ctx, shortName); err != nil {
+				return nil, err
+			}
 			return z.ZVal(), nil
 		}
 	}
 
 	// PHP 8: using an undefined constant is a fatal Error
 	return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Undefined constant \"%s\"", r.c))
+}
+
+// checkConstantDeprecated checks if a global constant has #[\Deprecated] and emits a warning.
+func checkConstantDeprecated(ctx phpv.Context, name phpv.ZString) error {
+	attrs := ctx.Global().ConstantGetAttributes(name)
+	for _, attr := range attrs {
+		if attr.ClassName == "Deprecated" {
+			msg := FormatDeprecatedMsg("Constant", string(name), attr)
+			return ctx.UserDeprecated("%s", msg, logopt.NoFuncName(true))
+		}
+	}
+	return nil
 }

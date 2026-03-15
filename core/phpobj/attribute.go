@@ -66,7 +66,7 @@ func init() {
 		Name: "Deprecated",
 		Attributes: []*phpv.ZAttribute{
 			{ClassName: "Attribute", Args: []*phpv.ZVal{phpv.ZInt(
-				AttributeTARGET_FUNCTION | AttributeTARGET_METHOD | AttributeTARGET_CLASS_CONSTANT | AttributeTARGET_CONSTANT,
+				AttributeTARGET_CLASS | AttributeTARGET_FUNCTION | AttributeTARGET_METHOD | AttributeTARGET_CLASS_CONSTANT | AttributeTARGET_CONSTANT,
 			).ZVal()}},
 		},
 		Props: []*phpv.ZClassProp{

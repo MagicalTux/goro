@@ -295,11 +295,22 @@ func (r *runClassStaticObjRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	// Check #[\Deprecated] attribute on the class constant
 	for _, attr := range cc.Attributes {
 		if attr.ClassName == "Deprecated" {
-			msg := fmt.Sprintf("Constant %s::%s is deprecated", class.GetName(), r.objName)
-			if len(attr.Args) > 0 && attr.Args[0].GetType() == phpv.ZtString {
-				msg += ", " + attr.Args[0].String()
+			// Determine label: "Enum case" for enum cases, "Constant" otherwise
+			label := "Constant"
+			if zc, ok := class.(*phpobj.ZClass); ok && zc.Type == phpv.ZClassTypeEnum {
+				// Check if this is an enum case (present in EnumCases list)
+				for _, caseName := range zc.EnumCases {
+					if caseName == r.objName {
+						label = "Enum case"
+						break
+					}
+				}
 			}
-			ctx.Deprecated("%s", msg, logopt.NoFuncName(true))
+			name := string(class.GetName()) + "::" + string(r.objName)
+			msg := FormatDeprecatedMsg(label, name, attr)
+			if err := ctx.UserDeprecated("%s", msg, logopt.NoFuncName(true)); err != nil {
+				return nil, err
+			}
 			break
 		}
 	}

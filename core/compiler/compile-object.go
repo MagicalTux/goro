@@ -527,13 +527,11 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	if ok && method != nil {
 		for _, attr := range method.Attributes {
 			if attr.ClassName == "Deprecated" {
-				label := "Method"
 				funcName := string(class.GetName()) + "::" + string(method.Name)
-				msg := fmt.Sprintf("%s %s() is deprecated", label, funcName)
-				if len(attr.Args) > 0 && attr.Args[0].GetType() == phpv.ZtString {
-					msg += ", " + attr.Args[0].String()
+				msg := FormatDeprecatedMsg("Method", funcName+"()", attr)
+				if err := ctx.UserDeprecated("%s", msg, logopt.NoFuncName(true)); err != nil {
+					return nil, err
 				}
-				ctx.Deprecated("%s", msg, logopt.NoFuncName(true))
 				break
 			}
 		}
