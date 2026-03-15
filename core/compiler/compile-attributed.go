@@ -68,7 +68,7 @@ func compileAttributed(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			}
 		}
 		// For the wrapper type, also set attributes
-		if w, ok := r.(*runClassWithTraitDeprecationCheck); ok {
+		if w, ok := r.(*runClassWithTraitDeprecationCheck); ok { // wrapper from compileClass
 			w.class.Attributes = append(attrs, w.class.Attributes...)
 			if w.class.Type != phpv.ZClassTypeTrait {
 				for _, attr := range w.class.Attributes {

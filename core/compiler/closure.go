@@ -285,6 +285,13 @@ func (closure *ZClosure) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 	}
 	// collect use vars
 	for _, s := range c.use {
+		if !s.Ref {
+			// For by-value captures, emit "Undefined variable" warning
+			// if the variable doesn't exist in the enclosing scope.
+			if _, exists, _ := ctx.OffsetCheck(ctx, s.VarName); !exists {
+				ctx.Warn("Undefined variable $%s", s.VarName, logopt.NoFuncName(true))
+			}
+		}
 		z, err := ctx.OffsetGet(ctx, s.VarName.ZVal())
 		if err != nil {
 			return nil, err

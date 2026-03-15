@@ -188,10 +188,11 @@ func compileEnum(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 
 			cases = append(cases, enumCase{name: caseName, value: caseValue})
 
-			// Store as class constant
+			// Store as class constant with optional attributes
 			class.Const[caseName] = &phpv.ZClassConst{
-				Value:     &phpv.CompileDelayed{V: &runEnumCaseInit{className: class.Name, caseName: caseName, backingValue: caseValue, backingType: backingType}},
-				Modifiers: phpv.ZAttrPublic,
+				Value:      &phpv.CompileDelayed{V: &runEnumCaseInit{className: class.Name, caseName: caseName, backingValue: caseValue, backingType: backingType}},
+				Modifiers:  phpv.ZAttrPublic,
+				Attributes: memberAttrs,
 			}
 
 		case tokenizer.T_CONST:
