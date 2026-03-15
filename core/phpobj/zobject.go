@@ -1379,23 +1379,28 @@ func (o *ZObject) ObjectSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) er
 
 	// Check asymmetric (set) visibility (PHP 8.4)
 	if err := o.checkSetVisibility(ctx, keyStr, value == nil); err != nil {
-		// When asymmetric visibility blocks, try __set/__unset magic methods
-		class := o.GetClass().(*ZClass)
-		if value == nil {
-			if m, ok := class.Methods["__unset"]; ok {
-				_, err2 := ctx.CallZVal(ctx, m.Method, []*phpv.ZVal{keyStr.ZVal()}, o)
-				return err2
-			}
-		} else {
-			if m, ok := class.Methods["__set"]; ok {
-				if o.setGuard == nil {
-					o.setGuard = make(map[phpv.ZString]bool)
-				}
-				if !o.setGuard[keyStr] {
-					o.setGuard[keyStr] = true
-					_, err2 := ctx.CallZVal(ctx, m.Method, []*phpv.ZVal{keyStr.ZVal(), value}, o)
-					delete(o.setGuard, keyStr)
+		// When asymmetric visibility blocks and the property is UNSET,
+		// fall back to __set/__unset magic methods.
+		// If the property currently has a value, just throw the error.
+		propIsSet := o.h.HasString(keyStr) || (o.hasPrivate != nil && o.h.HasString(getPrivatePropName(o.Class.(*ZClass), keyStr)))
+		if !propIsSet {
+			class := o.GetClass().(*ZClass)
+			if value == nil {
+				if m, ok := class.Methods["__unset"]; ok {
+					_, err2 := ctx.CallZVal(ctx, m.Method, []*phpv.ZVal{keyStr.ZVal()}, o)
 					return err2
+				}
+			} else {
+				if m, ok := class.Methods["__set"]; ok {
+					if o.setGuard == nil {
+						o.setGuard = make(map[phpv.ZString]bool)
+					}
+					if !o.setGuard[keyStr] {
+						o.setGuard[keyStr] = true
+						_, err2 := ctx.CallZVal(ctx, m.Method, []*phpv.ZVal{keyStr.ZVal(), value}, o)
+						delete(o.setGuard, keyStr)
+						return err2
+					}
 				}
 			}
 		}

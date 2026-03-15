@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
@@ -234,7 +235,7 @@ func (r *runTopLevelConst) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	ok := ctx.Global().ConstantSet(r.name, v.Value())
 	if !ok {
 		// Constant already defined - emit a warning (will become an error in PHP 9)
-		if err := ctx.Warn("Constant %s already defined, this will be an error in PHP 9", r.name); err != nil {
+		if err := ctx.Warn("Constant %s already defined, this will be an error in PHP 9", r.name, logopt.Data{NoFuncName: true, Loc: r.l}); err != nil {
 			return nil, err
 		}
 	}
