@@ -233,10 +233,16 @@ func compileNew(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		}
 
 		class := classRunnable.(*phpobj.ZClass)
-		// Generate unique anonymous class name
-		// PHP uses class@anonymous\x00path:line$index internally,
-		// but GetName() returns just "class@anonymous"
-		class.Name = phpv.ZString(fmt.Sprintf("class@anonymous\x00%s:%d$0", n.l.Filename, n.l.Line))
+		// Generate unique anonymous class name.
+		// PHP 8.4+: the prefix is "ParentClass@anonymous" or "FirstInterface@anonymous"
+		// or "class@anonymous" if neither extends nor implements.
+		prefix := "class"
+		if class.ExtendsStr != "" {
+			prefix = string(class.ExtendsStr)
+		} else if len(class.ImplementsStr) > 0 {
+			prefix = string(class.ImplementsStr[0])
+		}
+		class.Name = phpv.ZString(fmt.Sprintf("%s@anonymous\x00%s:%d$0", prefix, n.l.Filename, n.l.Line))
 
 		return &runNewAnonymousClass{
 			class:           class,
