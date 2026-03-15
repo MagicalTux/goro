@@ -5,6 +5,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -67,7 +68,39 @@ func appendJsonEncodeState(ctx phpv.Context, r []byte, v *phpv.ZVal, opt JsonEnc
 			return appendJsonArray(ctx, r, a.NewIterator(), opt, depth, st)
 		}
 	case phpv.ZtObject:
-		// TODO check for JsonSerializable
+		obj := v.AsObject(ctx)
+		// Check for enum types
+		if obj != nil && obj.GetClass().GetType().Has(phpv.ZClassTypeEnum) {
+			// Check for JsonSerializable first
+			if obj.GetClass().Implements(JsonSerializable) {
+				if m, ok := obj.GetClass().GetMethod("jsonserialize"); ok {
+					result, err := ctx.CallZVal(ctx, m.Method, nil, obj)
+					if err != nil {
+						return r, err
+					}
+					return appendJsonEncodeState(ctx, r, result, opt, depth, st)
+				}
+			}
+			// Backed enums serialize to their backing value
+			if zobj, ok := obj.(*phpobj.ZObject); ok {
+				backingVal := zobj.HashTable().GetString("value")
+				if backingVal != nil {
+					return appendJsonEncodeState(ctx, r, backingVal, opt, depth, st)
+				}
+			}
+			// Unit (non-backed) enums cannot be serialized
+			return r, ErrNonBackedEnum
+		}
+		// Check for JsonSerializable
+		if obj != nil && obj.GetClass().Implements(JsonSerializable) {
+			if m, ok := obj.GetClass().GetMethod("jsonserialize"); ok {
+				result, err := ctx.CallZVal(ctx, m.Method, nil, obj)
+				if err != nil {
+					return r, err
+				}
+				return appendJsonEncodeState(ctx, r, result, opt, depth, st)
+			}
+		}
 		it := v.NewIterator()
 		if it == nil {
 			return r, ErrUnsupportedType

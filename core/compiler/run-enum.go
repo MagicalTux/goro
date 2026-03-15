@@ -48,6 +48,12 @@ func (r *runEnumCaseInit) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		if err != nil {
 			return nil, err
 		}
+		// Validate that the value type matches the backing type
+		if val.GetType() != r.backingType {
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+				fmt.Sprintf("Enum case type %s does not match enum backing type %s",
+					val.GetType().TypeName(), r.backingType.TypeName()))
+		}
 		obj.HashTable().SetString("value", val)
 	}
 

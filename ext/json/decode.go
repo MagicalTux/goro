@@ -93,6 +93,8 @@ func fncJsonLastErrorMsg(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error
 		msg = "The decoded property name is not valid for PHP"
 	case ErrUtf16:
 		msg = "Single unpaired UTF-16 surrogate in unicode escape"
+	case ErrNonBackedEnum:
+		msg = "Non-backed enums have no default serialization"
 	default:
 		msg = "Unknown error"
 	}

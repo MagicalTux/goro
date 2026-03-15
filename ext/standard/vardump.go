@@ -21,8 +21,13 @@ func stdFuncVarDump(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 func doVarDump(ctx phpv.Context, z *phpv.ZVal, linePfx string, recurs map[uintptr]bool) error {
 	var isRef string
-	if z.IsRef() && z.GetType() != phpv.ZtObject && linePfx != "" {
-		isRef = "&"
+	if z.IsRef() && linePfx != "" {
+		// PHP shows & prefix for non-objects, and also for enum objects
+		if z.GetType() != phpv.ZtObject {
+			isRef = "&"
+		} else if obj, ok := z.Value().(*phpobj.ZObject); ok && obj.GetClass().GetType()&phpv.ZClassTypeEnum != 0 {
+			isRef = "&"
+		}
 	}
 
 	if recurs == nil {

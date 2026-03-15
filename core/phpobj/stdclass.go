@@ -49,3 +49,18 @@ var Serializable = &ZClass{
 	Type: phpv.ZClassTypeInterface,
 	Name: "Serializable",
 }
+
+// > interface UnitEnum
+// All PHP enums implicitly implement UnitEnum
+var UnitEnum = &ZClass{
+	Type: phpv.ZClassTypeInterface,
+	Name: "UnitEnum",
+}
+
+// > interface BackedEnum extends UnitEnum
+// Backed enums (with int or string backing type) implicitly implement BackedEnum
+var BackedEnum = &ZClass{
+	Type:    phpv.ZClassTypeInterface,
+	Name:    "BackedEnum",
+	Extends: UnitEnum,
+}

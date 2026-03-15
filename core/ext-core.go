@@ -58,6 +58,8 @@ func init() {
 			phpobj.UnderflowException,
 			phpobj.UnexpectedValueException,
 			phpobj.UnhandledMatchError,
+			phpobj.UnitEnum,
+			phpobj.BackedEnum,
 			phpobj.ValueError,
 			phpobj.IncompleteClass,
 		},

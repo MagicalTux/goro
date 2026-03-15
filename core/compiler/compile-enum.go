@@ -56,7 +56,11 @@ func compileEnum(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		case i.Type == tokenizer.T_STRING && i.Data == "int":
 			backingType = phpv.ZtInt
 		default:
-			return nil, fmt.Errorf("Enum backing type must be string or int in %s on line %d", i.Filename, i.Line)
+			return nil, &phpv.PhpError{
+				Err:  fmt.Errorf("Enum backing type must be int or string, %s given", i.Data),
+				Code: phpv.E_COMPILE_ERROR,
+				Loc:  i.Loc(),
+			}
 		}
 		i, err = c.NextItem()
 		if err != nil {
@@ -137,8 +141,11 @@ func compileEnum(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			var caseValue phpv.Runnable
 			if i.IsSingle('=') {
 				if backingType == 0 {
-					return nil, fmt.Errorf("Case %s of non-backed enum %s must not have a value in %s on line %d",
-						caseName, class.Name, l.Filename, l.Line)
+					return nil, &phpv.PhpError{
+						Err:  fmt.Errorf("Case %s of non-backed enum %s must not have a value", caseName, class.Name),
+						Code: phpv.E_COMPILE_ERROR,
+						Loc:  l,
+					}
 				}
 				caseValue, err = compileExpr(nil, c)
 				if err != nil {
@@ -149,8 +156,11 @@ func compileEnum(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 					return nil, err
 				}
 			} else if backingType != 0 {
-				return nil, fmt.Errorf("Case %s of backed enum %s must have a value in %s on line %d",
-					caseName, class.Name, l.Filename, l.Line)
+				return nil, &phpv.PhpError{
+					Err:  fmt.Errorf("Case %s of backed enum %s must have a value", caseName, class.Name),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  l,
+				}
 			}
 
 			if !i.IsSingle(';') {
@@ -281,6 +291,14 @@ func compileEnum(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			}
 
 			if i.Type != tokenizer.T_FUNCTION {
+				// If we see a variable or type hint followed by a variable, it's a property declaration
+				if i.Type == tokenizer.T_VARIABLE || i.Type == tokenizer.T_STRING {
+					return nil, &phpv.PhpError{
+						Err:  fmt.Errorf("Enum %s cannot include properties", class.Name),
+						Code: phpv.E_COMPILE_ERROR,
+						Loc:  l,
+					}
+				}
 				return nil, i.Unexpected()
 			}
 
@@ -337,6 +355,12 @@ func compileEnum(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	class.EnumBackingType = backingType
 	for _, ec := range cases {
 		class.EnumCases = append(class.EnumCases, phpv.ZString(ec.name))
+	}
+
+	// All enums implement UnitEnum; backed enums also implement BackedEnum
+	class.ImplementsStr = append(class.ImplementsStr, "UnitEnum")
+	if backingType != 0 {
+		class.ImplementsStr = append(class.ImplementsStr, "BackedEnum")
 	}
 
 	// Reject user-defined built-in methods

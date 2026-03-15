@@ -133,6 +133,18 @@ func serialize(ctx phpv.Context, value *phpv.ZVal) (string, error) {
 	case phpv.ZtObject:
 		obj := value.AsObject(ctx)
 
+		// Enum serialization: E:length:"ClassName:CaseName";
+		if obj.GetClass().GetType().Has(phpv.ZClassTypeEnum) {
+			zobj := obj.(*phpobj.ZObject)
+			caseName := ""
+			if nameVal := zobj.HashTable().GetString("name"); nameVal != nil {
+				caseName = nameVal.String()
+			}
+			enumStr := fmt.Sprintf("%s:%s", obj.GetClass().GetName(), caseName)
+			result = fmt.Sprintf(`E:%d:"%s";`, len(enumStr), enumStr)
+			return result, nil
+		}
+
 		// Check for Serializable interface (deprecated in PHP 8.1+)
 		if obj.GetClass().Implements(phpobj.Serializable) {
 			if method, ok := obj.GetClass().GetMethod(phpv.ZString("serialize")); ok {
@@ -429,6 +441,81 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 		}
 
 		return arr.ZVal(), i + 1, nil
+	case 'E':
+		// E:7:"Foo:Bar";
+		// Enum unserialization
+		j := indexOf(str, ":", i)
+		if j < 0 {
+			return nil, offset, readError
+		}
+		strLen, err := strconv.ParseInt(str[i:j], 10, 64)
+		if err != nil {
+			return nil, offset, readError
+		}
+		startQuote := j + 1
+		content := j + 2
+		endQuote := content + int(strLen)
+
+		if content+int(strLen) >= len(str) ||
+			core.StrIdx(str, startQuote) != '"' ||
+			core.StrIdx(str, endQuote) != '"' {
+			return nil, offset, readError
+		}
+
+		enumStr := str[content:endQuote]
+		endSemi := endQuote + 1
+		if endSemi >= len(str) || core.StrIdx(str, endSemi) != ';' {
+			return nil, offset, readError
+		}
+
+		// Parse "ClassName:CaseName"
+		colonIdx := strings.Index(enumStr, ":")
+		if colonIdx < 0 {
+			ctx.Warn("unserialize(): Invalid enum name '%s' (missing colon)", enumStr)
+			return phpv.ZNULL.ZVal(), endSemi + 1, nil
+		}
+		className := enumStr[:colonIdx]
+		caseName := enumStr[colonIdx+1:]
+
+		// Look up the class
+		cls, clsErr := ctx.Global().GetClass(ctx, phpv.ZString(className), false)
+		if clsErr != nil {
+			ctx.Warn("unserialize(): Class '%s' not found", className)
+			return phpv.ZNULL.ZVal(), endSemi + 1, nil
+		}
+
+		// Verify it's an enum
+		if !cls.GetType().Has(phpv.ZClassTypeEnum) {
+			ctx.Warn("unserialize(): Class '%s' is not an enum", className)
+			return phpv.ZNULL.ZVal(), endSemi + 1, nil
+		}
+
+		// Look up the case constant
+		zc := cls.(*phpobj.ZClass)
+		cc, exists := zc.Const[phpv.ZString(caseName)]
+		if !exists {
+			ctx.Warn("unserialize(): Undefined constant %s::%s", className, caseName)
+			return phpv.ZNULL.ZVal(), endSemi + 1, nil
+		}
+
+		// Resolve CompileDelayed if needed
+		val := cc.Value
+		if cd, ok := val.(*phpv.CompileDelayed); ok {
+			z2, err2 := cd.Run(ctx)
+			if err2 != nil {
+				return nil, offset, readError
+			}
+			zc.Const[phpv.ZString(caseName)].Value = z2.Value()
+			val = z2.Value()
+		}
+
+		// Check that it's actually an enum case (ZObject)
+		if _, ok := val.(*phpobj.ZObject); !ok {
+			ctx.Warn("unserialize(): %s::%s is not an enum case", className, caseName)
+			return phpv.ZNULL.ZVal(), endSemi + 1, nil
+		}
+
+		return val.ZVal(), endSemi + 1, nil
 	case 'O':
 		// O:3:"Xyz":1:{s:3:"foo";i:123;}
 		//   ^1 ^2   ^3

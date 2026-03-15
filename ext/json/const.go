@@ -48,6 +48,7 @@ const (
 	ErrUnsupportedType
 	ErrInvalidPropName
 	ErrUtf16
+	ErrNonBackedEnum
 )
 
 // > const
@@ -79,4 +80,5 @@ const (
 	JSON_ERROR_UNSUPPORTED_TYPE      = phpv.ZInt(ErrUnsupportedType)
 	JSON_ERROR_INVALID_PROPERTY_NAME = phpv.ZInt(ErrInvalidPropName)
 	JSON_ERROR_UTF16                 = phpv.ZInt(ErrUtf16)
+	JSON_ERROR_NON_BACKED_ENUM       = phpv.ZInt(ErrNonBackedEnum)
 )
