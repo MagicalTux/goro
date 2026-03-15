@@ -429,6 +429,16 @@ func (r *runClassNameOf) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		if typeName == "null" {
 			return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "Cannot use \"::class\" on null")
 		}
+		// For non-string, non-object types, PHP raises "Illegal class name"
+		if v.GetType() != phpv.ZtString {
+			phpErr := &phpv.PhpError{
+				Err:  fmt.Errorf("Illegal class name"),
+				Code: phpv.E_ERROR,
+				Loc:  r.l,
+			}
+			ctx.Global().LogError(phpErr)
+			return nil, phpv.ExitError(255)
+		}
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Cannot use \"::class\" on value of type %s", typeName))
 	}
 }
