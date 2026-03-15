@@ -732,12 +732,6 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			}
 			f.(*ZClosure).class = class
 
-			// Copy attributes to the ZClosure so that deprecation checks work
-			// when the method is called through call_user_func or other indirect paths
-			if len(memberAttrs) > 0 {
-				f.(*ZClosure).attributes = append(f.(*ZClosure).attributes, memberAttrs...)
-			}
-
 			// an interface method with a body is not a parse error,
 			// so delay returning an error when code is ran
 			_, emptyBody := f.(*ZClosure).code.(phpv.RunNull)
@@ -888,11 +882,6 @@ func (r *runClassWithTraitDeprecationCheck) Run(ctx phpv.Context) (*phpv.ZVal, e
 
 func (r *runClassWithTraitDeprecationCheck) Dump(w io.Writer) error {
 	return r.class.Dump(w)
-}
-
-// GetClass returns the underlying ZClass, used by anonymous class compilation.
-func (r *runClassWithTraitDeprecationCheck) GetClass() *phpobj.ZClass {
-	return r.class
 }
 
 func parseClassLine(class *phpobj.ZClass, c compileCtx) error {
