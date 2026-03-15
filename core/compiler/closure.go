@@ -492,11 +492,31 @@ func (z *ZClosure) callBody(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 	// No explicit return statement - return NULL
 	// For void return type, returning without a value is fine
 	if z.returnType != nil && z.returnType.Type() != phpv.ZtVoid {
-		if err := z.checkReturnType(ctx, phpv.ZNULL.ZVal()); err != nil {
+		if err := z.checkReturnTypeNone(ctx); err != nil {
 			return nil, err
 		}
 	}
 	return phpv.ZNULL.ZVal(), nil
+}
+
+// checkReturnTypeNone validates when a function falls through without a return statement.
+// Uses "none returned" in the error message (PHP behavior for implicit returns).
+func (z *ZClosure) checkReturnTypeNone(ctx phpv.Context) error {
+	rt := z.returnType
+
+	// mixed and nullable types accept null/none
+	if rt.Type() == phpv.ZtMixed || rt.Nullable {
+		return nil
+	}
+
+	// Check if null would pass (e.g., for nullable union types)
+	if rt.Check(ctx, phpv.ZNULL.ZVal()) {
+		return nil
+	}
+
+	funcName := ctx.GetFuncName()
+	return phpobj.ThrowError(ctx, phpobj.TypeError,
+		fmt.Sprintf("%s(): Return value must be of type %s, none returned", funcName, rt.String()))
 }
 
 // checkReturnType validates the return value against the declared return type.
