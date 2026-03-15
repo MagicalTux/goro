@@ -395,6 +395,7 @@ var Defaults = map[string]*IniDirective{
 	"yaz.keepalive":                         {`"120"`, INI_ALL},
 	"yaz.log_mask":                          {`null`, INI_ALL},
 	"zend.assertions":                       {`"1"`, INI_ALL},
+	"zend.exception_string_param_max_len":   {`"15"`, INI_ALL},
 	"zend.detect_unicode":                   {`"1"`, INI_ALL},
 	"zend.enable_gc":                        {`"1"`, INI_ALL},
 	"zend.multibyte":                        {`"0"`, INI_PERDIR},

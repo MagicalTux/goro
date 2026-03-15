@@ -76,7 +76,17 @@ func (st StackTrace) format(includeMain bool) ZString {
 	return ZString(buf.String())
 }
 
+// TraceArgMaxLen is the default max length for string arguments in stack traces.
+// It can be overridden via the zend.exception_string_param_max_len ini setting.
+var TraceArgMaxLen = 15
+
 func traceArgString(arg *ZVal) string {
+	return TraceArgStringMaxLen(arg, TraceArgMaxLen)
+}
+
+// TraceArgStringMaxLen formats a single argument for display in a stack trace,
+// truncating string values to maxLen characters.
+func TraceArgStringMaxLen(arg *ZVal, maxLen int) string {
 	if arg == nil {
 		return ""
 	}
@@ -88,10 +98,8 @@ func traceArgString(arg *ZVal) string {
 		return "Object"
 	case ZtString:
 		s := arg.String()
-		if len(s) > 15 {
-			return "'" + s[:15] + "...'"
-		}
-		return "'" + s + "'"
+		escaped := escapeTraceString(s, maxLen)
+		return escaped
 	case ZtNull:
 		return "NULL"
 	case ZtBool:
@@ -104,6 +112,35 @@ func traceArgString(arg *ZVal) string {
 	default:
 		return arg.String()
 	}
+}
+
+// escapeTraceString escapes non-printable and non-ASCII bytes as \xHH
+// and truncates to maxLen characters, matching PHP's behavior.
+func escapeTraceString(s string, maxLen int) string {
+	var buf bytes.Buffer
+	buf.WriteByte('\'')
+	charCount := 0
+	truncated := false
+	for i := 0; i < len(s); i++ {
+		if maxLen >= 0 && charCount >= maxLen {
+			truncated = true
+			break
+		}
+		b := s[i]
+		if b < 0x20 || b > 0x7e {
+			// Escape non-printable and non-ASCII bytes as \xHH
+			buf.WriteString(fmt.Sprintf("\\x%02X", b))
+		} else {
+			buf.WriteByte(b)
+		}
+		charCount++
+	}
+	if truncated {
+		buf.WriteString("...'")
+	} else {
+		buf.WriteByte('\'')
+	}
+	return buf.String()
 }
 
 func GetGoDebugTrace() []byte {

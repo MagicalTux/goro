@@ -281,6 +281,20 @@ func NewZObject(ctx phpv.Context, c phpv.ZClass, args ...*phpv.ZVal) (*ZObject, 
 		return nil, err
 	}
 
+	// Pre-set file/line for Exception/Error subclasses.
+	// PHP sets these during object creation (before the constructor runs),
+	// so even if a subclass overrides __construct without calling parent,
+	// file/line are still set to where "new" was called.
+	if zc, ok := c.(*ZClass); ok {
+		if zc.InstanceOf(Exception) || zc.InstanceOf(Error) {
+			loc := ctx.Loc()
+			if loc != nil {
+				n.h.SetString("file", phpv.ZString(loc.Filename).ZVal())
+				n.h.SetString("line", phpv.ZInt(loc.Line).ZVal())
+			}
+		}
+	}
+
 	var ctorMethod *phpv.ZClassMethod
 	if n.Class.Handlers() != nil && n.Class.Handlers().Constructor != nil {
 		ctorMethod = n.Class.Handlers().Constructor
