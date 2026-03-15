@@ -3,6 +3,7 @@ package phpobj
 import (
 	"bytes"
 	"fmt"
+	"strings"
 
 	"github.com/MagicalTux/goro/core/phperr"
 	"github.com/MagicalTux/goro/core/phpv"
@@ -84,11 +85,16 @@ func exceptionEntryToString(o *ZObject) string {
 
 	var buf bytes.Buffer
 	msg := message.String()
+	// PHP uses "and defined in" when message contains "called in" (e.g. type errors)
+	locPrefix := " in "
+	if strings.Contains(msg, "called in") {
+		locPrefix = " and defined in "
+	}
 	if msg != "" {
 		buf.WriteString(string(className))
 		buf.WriteString(": ")
 		buf.WriteString(msg)
-		buf.WriteString(" in ")
+		buf.WriteString(locPrefix)
 		buf.WriteString(file.String())
 		buf.WriteString(":")
 		buf.WriteString(line.String())

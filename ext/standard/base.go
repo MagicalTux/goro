@@ -727,7 +727,7 @@ func stdPropertyExists(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 	// For objects, also check dynamic properties
 	if args[0].GetType() == phpv.ZtObject {
 		if obj, ok := args[0].Value().(*phpobj.ZObject); ok {
-			if val := obj.HashTable().GetString(propName); val != nil {
+			if _, found := obj.HashTable().GetStringB(propName); found {
 				return phpv.ZTrue.ZVal(), nil
 			}
 		}

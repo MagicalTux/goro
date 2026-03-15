@@ -10,7 +10,7 @@ func CtypeAlnum(s string) bool {
 		switch {
 		case 'a' <= c && c <= 'z':
 		case 'A' <= c && c <= 'Z':
-		case '0' <= c && c <= '0':
+		case '0' <= c && c <= '9':
 		default:
 			return false
 		}
@@ -38,11 +38,11 @@ func CtypeCntrl(s string) bool {
 		return false
 	}
 	for _, c := range s {
-		switch c {
-		case '\t', '\n', '\v', '\f', '\r':
-		default:
-			return false
+		// Control chars: 0-31 and 127 (DEL)
+		if (c >= 0 && c <= 31) || c == 127 {
+			continue
 		}
+		return false
 	}
 	return true
 }
@@ -146,7 +146,7 @@ func CtypeXdigit(s string) bool {
 		switch {
 		case 'a' <= c && c <= 'f':
 		case 'A' <= c && c <= 'F':
-		case '0' <= c && c <= '0':
+		case '0' <= c && c <= '9':
 		default:
 			return false
 		}
