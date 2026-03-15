@@ -87,11 +87,29 @@ func doPrintR(ctx phpv.Context, z *phpv.ZVal, linePfx string, recurs map[uintptr
 		v := z.Value()
 		// Special handling for enum cases
 		if obj, ok := v.(*phpobj.ZObject); ok && obj.GetClass().GetType()&phpv.ZClassTypeEnum != 0 {
-			caseName := ""
-			if nameVal, err := obj.ObjectGet(ctx, phpv.ZString("name")); err == nil && nameVal != nil {
-				caseName = nameVal.String()
+			zc := obj.GetClass().(*phpobj.ZClass)
+			// Format: "ClassName Enum[:backingType]\n(\n    [name] => CaseName\n    [value] => BackingValue\n)\n"
+			header := string(obj.GetClass().GetName()) + " Enum"
+			if zc.EnumBackingType == phpv.ZtInt {
+				header += ":int"
+			} else if zc.EnumBackingType == phpv.ZtString {
+				header += ":string"
 			}
-			fmt.Fprintf(ctx, "%s%s::%s", isRef, obj.GetClass().GetName(), caseName)
+			fmt.Fprintf(ctx, "%s%s\n%s(\n", isRef, header, linePfx)
+			localPfx := linePfx + "    "
+			// Always print name
+			nameVal := obj.HashTable().GetString("name")
+			if nameVal != nil {
+				fmt.Fprintf(ctx, "%s[name] => %s\n", localPfx, nameVal.String())
+			}
+			// Print value for backed enums
+			if zc.EnumBackingType != 0 {
+				valVal := obj.HashTable().GetString("value")
+				if valVal != nil {
+					fmt.Fprintf(ctx, "%s[value] => %s\n", localPfx, valVal.String())
+				}
+			}
+			fmt.Fprintf(ctx, "%s)\n", linePfx)
 			return nil
 		}
 		if obj, ok := v.(*phpobj.ZObject); ok {
