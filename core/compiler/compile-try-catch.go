@@ -2,6 +2,7 @@ package compiler
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 
 	"github.com/MagicalTux/goro/core/phperr"
@@ -208,6 +209,15 @@ func compileCatch(i *tokenizer.Item, c compileCtx) (*runnableCatch, error) {
 			i, err = c.NextItem()
 			if err != nil {
 				return nil, err
+			}
+		}
+		// Check for reserved names that cannot be used in catch
+		if i.Type == tokenizer.T_STATIC || (i.Type == tokenizer.T_STRING &&
+			(phpv.ZString(i.Data).ToLower() == "static")) {
+			return nil, &phpv.PhpError{
+				Err:  fmt.Errorf("Bad class name in the catch statement"),
+				Code: phpv.E_COMPILE_ERROR,
+				Loc:  i.Loc(),
 			}
 		}
 		if i.Type != tokenizer.T_STRING {

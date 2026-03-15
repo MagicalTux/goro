@@ -107,8 +107,8 @@ func compileGlobal(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		if i.Type == tokenizer.T_VARIABLE {
 			g.vars = append(g.vars, globalVar{static: phpv.ZString(i.Data[1:])})
 		} else if i.IsSingle('$') {
-			// variable-variable: global $$k
-			expr, err := compileOneExpr(nil, c)
+			// variable-variable: global $$k or global ${expr}
+			expr, err := compileRunVariableRef(nil, c, i.Loc())
 			if err != nil {
 				return nil, err
 			}

@@ -1270,12 +1270,12 @@ func (g *Global) GetClass(ctx phpv.Context, name phpv.ZString, autoload bool) (p
 }
 
 func (g *Global) RegisterClass(name phpv.ZString, c phpv.ZClass) error {
-	name = name.ToLower()
-	if _, ok := g.globalClasses[name]; ok {
-		return fmt.Errorf("Cannot declare class %s, because the name is already in use", name)
+	lowerName := name.ToLower()
+	if _, ok := g.globalClasses[lowerName]; ok {
+		return fmt.Errorf("Cannot redeclare class %s", name)
 	}
-	g.globalClasses[name] = c.(*phpobj.ZClass)
-	delete(g.globalLazyClass, name)
+	g.globalClasses[lowerName] = c.(*phpobj.ZClass)
+	delete(g.globalLazyClass, lowerName)
 	return nil
 }
 

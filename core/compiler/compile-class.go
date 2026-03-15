@@ -853,6 +853,11 @@ func parseClassLine(class *phpobj.ZClass, c compileCtx) error {
 			}
 		}
 		class.Name = className
+		// Track short class name for use-statement conflict detection
+		if root := getRootCtx(c); root != nil && root.nsClassNames != nil {
+			shortName := phpv.ZString(i.Data) // the unqualified name
+			root.nsClassNames[shortName] = true
+		}
 		i, err = c.NextItem()
 	} else if class.Name == "" && (i.IsSingle('{') || i.Type == tokenizer.T_EXTENDS || i.Type == tokenizer.T_IMPLEMENTS) {
 		// Anonymous class - no name, proceed directly to extends/implements/body

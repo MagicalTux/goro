@@ -794,8 +794,15 @@ func operatorMathLogic(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal)
 		return res.ZVal(), nil
 	case phpv.ZtFloat:
 		// need to convert to int
-		a, _ = a.As(ctx, phpv.ZtInt)
-		b, _ = b.As(ctx, phpv.ZtInt)
+		var err error
+		a, err = a.As(ctx, phpv.ZtInt)
+		if err != nil {
+			return nil, err
+		}
+		b, err = b.As(ctx, phpv.ZtInt)
+		if err != nil {
+			return nil, err
+		}
 		return operatorMathLogic(ctx, op, a, b)
 	case phpv.ZtString:
 		b, _ = b.As(ctx, phpv.ZtString) // force b to be string

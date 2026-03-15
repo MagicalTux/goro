@@ -193,7 +193,7 @@ func zvalStore(ctx phpv.Context, i int, args []*phpv.ZVal, out interface{}) (php
 		*tgt = v
 		return v, nil
 	case *phpv.Callable:
-		s, err := SpawnCallable(ctx, z)
+		s, err := SpawnCallableParam(ctx, z, paramNo)
 		if err != nil {
 			return nil, err
 		}

@@ -12,7 +12,15 @@ import (
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
+func SpawnCallableParam(ctx phpv.Context, v *phpv.ZVal, paramNo int) (phpv.Callable, error) {
+	return spawnCallableInternal(ctx, v, paramNo)
+}
+
 func SpawnCallable(ctx phpv.Context, v *phpv.ZVal) (phpv.Callable, error) {
+	return spawnCallableInternal(ctx, v, 1)
+}
+
+func spawnCallableInternal(ctx phpv.Context, v *phpv.ZVal, paramNo int) (phpv.Callable, error) {
 	switch v.GetType() {
 	case phpv.ZtString:
 		// name of a method
@@ -60,7 +68,12 @@ func SpawnCallable(ctx phpv.Context, v *phpv.ZVal) (phpv.Callable, error) {
 		switch firstArg.GetType() {
 		case phpv.ZtString, phpv.ZtObject:
 		default:
-			return nil, ctx.Errorf("Argument #1 ($callback) must be a valid callback, first array member %q is not a valid class name or object", firstArg.GetType().String())
+			callerFunc := ctx.GetFuncName()
+			if callerFunc == "" {
+				callerFunc = "call_user_func"
+			}
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+				fmt.Sprintf("%s(): Argument #%d ($callback) must be a valid callback, first array member is not a valid class name or object", callerFunc, paramNo))
 		}
 		if methodName.GetType() != phpv.ZtString {
 			return nil, ctx.Errorf("Argument #1 ($callback) must be a valid callback, second array member %q is not a valid method", firstArg.GetType().String())

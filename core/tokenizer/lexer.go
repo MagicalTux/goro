@@ -65,6 +65,7 @@ func NewLexerPhp(i io.Reader, fn string) *Lexer {
 		done:  make(chan struct{}),
 		sLine: 1,
 		cLine: 1,
+		base:  lexText, // allow ?> to fall back to HTML mode
 	}
 
 	go res.run(lexPhp)

@@ -60,6 +60,7 @@ type compileRootCtx struct {
 	useMap       map[phpv.ZString]phpv.ZString // use aliases for classes
 	useFuncMap   map[phpv.ZString]phpv.ZString // use function aliases
 	useConstMap  map[phpv.ZString]phpv.ZString // use const aliases
+	nsClassNames map[phpv.ZString]bool         // short class names defined in current namespace
 	strictTypes  bool                          // declare(strict_types=1) in effect
 }
 
@@ -401,11 +402,12 @@ func Compile(parent phpv.Context, t *tokenizer.Lexer) (phpv.Runnable, error) {
 
 func compileInner(parent phpv.Context, t *tokenizer.Lexer) (phpv.Runnable, error) {
 	c := &compileRootCtx{
-		Context:     parent,
-		t:           t,
-		useMap:      make(map[phpv.ZString]phpv.ZString),
-		useFuncMap:  make(map[phpv.ZString]phpv.ZString),
-		useConstMap: make(map[phpv.ZString]phpv.ZString),
+		Context:      parent,
+		t:            t,
+		useMap:       make(map[phpv.ZString]phpv.ZString),
+		useFuncMap:   make(map[phpv.ZString]phpv.ZString),
+		useConstMap:  make(map[phpv.ZString]phpv.ZString),
+		nsClassNames: make(map[phpv.ZString]bool),
 	}
 
 	r, err := compileBaseUntil(nil, c, tokenizer.T_EOF)

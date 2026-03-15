@@ -179,8 +179,11 @@ func (r *runVariableRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	v, err = ctx.OffsetGet(ctx, v)
 	if v != nil {
 		v = v.Nude()
+		v.Name = &name
+	} else {
+		v = phpv.NewZVal(phpv.ZNULL)
+		v.Name = &name
 	}
-	v.Name = &name
 	return v, err
 }
 
@@ -235,6 +238,13 @@ func (r *runRef) isVariableLike() bool {
 }
 
 func (r *runRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
+	// Reference creation is a write context — suppress "Undefined array key" warnings
+	// since the element will be created by the reference.
+	if acc, ok := r.v.(*runArrayAccess); ok {
+		acc.SetWriteContext(true)
+		defer acc.SetWriteContext(false)
+	}
+
 	z, err := r.v.Run(ctx)
 	if err != nil {
 		return nil, err

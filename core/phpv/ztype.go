@@ -190,7 +190,9 @@ func (z ZFloat) AsVal(ctx Context, t ZType) (Val, error) {
 	case ZtInt:
 		if math.IsNaN(float64(z)) || math.IsInf(float64(z), 0) || float64(z) > math.MaxInt64 || float64(z) < math.MinInt64 {
 			if ctx != nil {
-				ctx.Warn("The float %s is not representable as an int, cast occurred", FormatFloat(float64(z)))
+				if err := ctx.Warn("The float %s is not representable as an int, cast occurred", FormatFloat(float64(z))); err != nil {
+					return ZInt(z), err
+				}
 			}
 		}
 		return ZInt(z), nil

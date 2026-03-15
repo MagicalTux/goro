@@ -352,8 +352,21 @@ func (z ZStringArray) OffsetUnset(ctx Context, key Val) error {
 }
 
 func (z ZStringArray) OffsetExists(ctx Context, key Val) (bool, error) {
-	val, _ := key.AsVal(ctx, ZtInt)
-	i := int(val.(ZInt))
+	val, err := key.AsVal(ctx, ZtInt)
+	if err != nil {
+		return false, nil
+	}
+	intVal, ok := val.(ZInt)
+	if !ok {
+		// Try to extract from ZVal wrapper
+		if zv, ok2 := val.(*ZVal); ok2 {
+			intVal, ok = zv.Value().(ZInt)
+		}
+		if !ok {
+			return false, nil
+		}
+	}
+	i := int(intVal)
 	return i >= 0 && i < len(*z.ZString), nil
 }
 

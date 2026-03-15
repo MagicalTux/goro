@@ -2,7 +2,19 @@ package tokenizer
 
 func lexPhpEolComment(l *Lexer) lexState {
 	// this is a simple comment going until end of line
-	l.acceptUntil("\r\n")
+	// In PHP, ?> inside a // or # comment closes the PHP tag
+	for {
+		if l.hasPrefix("?>") {
+			// Emit the comment collected so far, then let the operator
+			// handler deal with the close tag
+			l.emit(T_COMMENT)
+			return l.base
+		}
+		c := l.next()
+		if c == eof || c == '\r' || c == '\n' {
+			break
+		}
+	}
 	l.emit(T_COMMENT)
 	return l.base
 }

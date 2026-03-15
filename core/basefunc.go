@@ -87,6 +87,21 @@ func fncDefined(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	g := ctx.Global()
 
+	// Check for class constant (ClassName::CONST_NAME)
+	if idx := strings.Index(string(name), "::"); idx != -1 {
+		className := phpv.ZString(name[:idx])
+		constName := phpv.ZString(name[idx+2:])
+		class, err := g.GetClass(ctx, className, false)
+		if err != nil {
+			return phpv.ZBool(false).ZVal(), nil
+		}
+		if zc, ok := class.(*phpobj.ZClass); ok {
+			_, exists := zc.Const[constName]
+			return phpv.ZBool(exists).ZVal(), nil
+		}
+		return phpv.ZBool(false).ZVal(), nil
+	}
+
 	_, ok := g.ConstantGet(name)
 
 	return phpv.ZBool(ok).ZVal(), nil

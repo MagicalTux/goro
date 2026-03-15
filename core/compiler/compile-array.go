@@ -412,6 +412,15 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	}
 
 	if v.GetType() == phpv.ZtString {
+		// PHP 8: object offsets on strings are not allowed
+		if offset.GetType() == phpv.ZtObject {
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+				fmt.Sprintf("Cannot access offset of type %s on string", offset.Value().(phpv.ZObject).GetClass().GetName()))
+		}
+		// PHP 8: array offsets on strings are not allowed
+		if offset.GetType() == phpv.ZtArray {
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "Cannot access offset of type array on string")
+		}
 		// PHP 8: completely non-numeric string offsets on strings throw TypeError.
 		// Strings with leading digits (like "0foo") produce a warning instead.
 		if offset.GetType() == phpv.ZtString {
@@ -421,6 +430,15 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			}
 		}
 		return v.AsString(ctx).Array().OffsetGet(ctx, offset)
+	}
+
+	// Check for invalid offset types on arrays
+	if offset.GetType() == phpv.ZtObject {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("Cannot access offset of type %s on array", offset.Value().(phpv.ZObject).GetClass().GetName()))
+	}
+	if offset.GetType() == phpv.ZtArray {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "Cannot access offset of type array on array")
 	}
 
 	array := v.Array()
@@ -548,6 +566,15 @@ func (ac *runArrayAccess) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 		return err
 	}
 
+	// Check for invalid offset types on arrays
+	if offset.GetType() == phpv.ZtObject {
+		return phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("Cannot access offset of type %s on array", offset.Value().(phpv.ZObject).GetClass().GetName()))
+	}
+	if offset.GetType() == phpv.ZtArray {
+		return phpobj.ThrowError(ctx, phpobj.TypeError, "Cannot access offset of type array on array")
+	}
+
 	// PHP 8.1: Deprecation warning for null array offsets (write)
 	if offset.GetType() == phpv.ZtNull {
 		if err := ctx.Deprecated("Using null as an array offset is deprecated, use an empty string instead", logopt.NoFuncName(true)); err != nil {
@@ -572,6 +599,12 @@ func (ac *runArrayAccess) writeValueToString(ctx phpv.Context, value *phpv.ZVal)
 	offset, err := ac.getArrayOffset(ctx)
 	if err != nil {
 		return err
+	}
+
+	// PHP 8: object offsets on strings are not allowed
+	if offset.GetType() == phpv.ZtObject {
+		return phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("Cannot access offset of type %s on string", offset.Value().(phpv.ZObject).GetClass().GetName()))
 	}
 
 	if phpv.IsNull(offset) {
@@ -652,10 +685,10 @@ func (ac *runArrayAccess) getArrayOffset(ctx phpv.Context) (*phpv.ZVal, error) {
 	case phpv.ZtInt:
 	case phpv.ZtNull:
 		// Null converts to empty string as array key (deprecation warning is handled by callers)
-	case phpv.ZtObject:
-		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Cannot access offset of type %s on array", offset.Value().(phpv.ZObject).GetClass().GetName()))
-	case phpv.ZtArray:
-		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "Cannot access offset of type array on array")
+	case phpv.ZtObject, phpv.ZtArray:
+		// Invalid offset types — callers are responsible for checking and
+		// producing context-specific error messages (e.g. "on array" vs "on string").
+		return offset, nil
 	default:
 		offset, err = offset.As(ctx, phpv.ZtString)
 	}

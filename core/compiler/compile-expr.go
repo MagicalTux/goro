@@ -64,6 +64,11 @@ func compileOpExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			pt != tokenizer.T_INC && pt != tokenizer.T_DEC {
 			return res, nil
 		}
+		// Stop at ternary ? and ?: since they have lower precedence
+		// than any unary/binary operator that uses compileOpExpr
+		if pt == tokenizer.Rune('?') {
+			return res, nil
+		}
 		sr, err := compilePostExpr(res, nil, c)
 		if err != nil {
 			return nil, err

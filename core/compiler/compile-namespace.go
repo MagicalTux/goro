@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/MagicalTux/goro/core/logopt"
@@ -54,10 +55,12 @@ func compileNamespace(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		oldUseMap := root.useMap
 		oldUseFuncMap := root.useFuncMap
 		oldUseConstMap := root.useConstMap
+		oldNsClassNames := root.nsClassNames
 		root.namespace = nsName
 		root.useMap = make(map[phpv.ZString]phpv.ZString)
 		root.useFuncMap = make(map[phpv.ZString]phpv.ZString)
 		root.useConstMap = make(map[phpv.ZString]phpv.ZString)
+		root.nsClassNames = make(map[phpv.ZString]bool)
 
 		body, err := compileBase(nil, c)
 
@@ -65,6 +68,7 @@ func compileNamespace(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		root.useMap = oldUseMap
 		root.useFuncMap = oldUseFuncMap
 		root.useConstMap = oldUseConstMap
+		root.nsClassNames = oldNsClassNames
 
 		if err != nil {
 			return nil, err
@@ -104,6 +108,7 @@ func compileNamespace(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		root.useMap = make(map[phpv.ZString]phpv.ZString)
 		root.useFuncMap = make(map[phpv.ZString]phpv.ZString)
 		root.useConstMap = make(map[phpv.ZString]phpv.ZString)
+		root.nsClassNames = make(map[phpv.ZString]bool)
 		return nil, nil
 	}
 
@@ -113,10 +118,12 @@ func compileNamespace(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		oldUseMap := root.useMap
 		oldUseFuncMap := root.useFuncMap
 		oldUseConstMap := root.useConstMap
+		oldNsClassNames := root.nsClassNames
 		root.namespace = nsName
 		root.useMap = make(map[phpv.ZString]phpv.ZString)
 		root.useFuncMap = make(map[phpv.ZString]phpv.ZString)
 		root.useConstMap = make(map[phpv.ZString]phpv.ZString)
+		root.nsClassNames = make(map[phpv.ZString]bool)
 
 		body, err := compileBase(nil, c)
 
@@ -124,6 +131,7 @@ func compileNamespace(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		root.useMap = oldUseMap
 		root.useFuncMap = oldUseFuncMap
 		root.useConstMap = oldUseConstMap
+		root.nsClassNames = oldNsClassNames
 
 		if err != nil {
 			return nil, err
@@ -252,6 +260,15 @@ func compileUse(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		if !strings.Contains(string(fullName), "\\") {
 			ctx := c.(phpv.Context)
 			ctx.Warn("The use statement with non-compound name '%s' has no effect", fullName, logopt.NoFuncName(true))
+		}
+
+		// Check for name conflicts with classes defined in the current namespace
+		if useType == "class" && root.nsClassNames[alias] {
+			return nil, &phpv.PhpError{
+				Err:  fmt.Errorf("Cannot use %s as %s because the name is already in use", fullName, alias),
+				Code: phpv.E_COMPILE_ERROR,
+				Loc:  i.Loc(),
+			}
 		}
 
 		// Register the alias
