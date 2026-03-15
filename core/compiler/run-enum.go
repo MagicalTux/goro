@@ -55,34 +55,6 @@ func (r *runEnumCaseInit) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 					val.GetType().TypeName(), r.backingType.TypeName()))
 		}
 		obj.HashTable().SetString("value", val)
-
-		// Check for duplicate backing values across all already-initialized cases
-		for _, otherCaseName := range zc.EnumCases {
-			if otherCaseName == r.caseName {
-				continue // skip self
-			}
-			cc, exists := zc.Const[otherCaseName]
-			if !exists {
-				continue
-			}
-			// Only check already-resolved cases (not CompileDelayed ones)
-			otherObj, ok := cc.Value.(*phpobj.ZObject)
-			if !ok {
-				continue
-			}
-			otherVal := otherObj.HashTable().GetString("value")
-			if otherVal == nil {
-				continue
-			}
-			eq, eqErr := phpv.StrictEquals(ctx, val, otherVal)
-			if eqErr != nil {
-				continue
-			}
-			if eq {
-				return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
-					fmt.Sprintf("Duplicate value in enum %s for cases %s and %s", r.className, otherCaseName, r.caseName))
-			}
-		}
 	}
 
 	return obj.ZVal(), nil

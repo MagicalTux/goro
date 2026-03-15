@@ -394,21 +394,21 @@ func compileEnum(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		case "unitenum":
 			return nil, &phpv.PhpError{
 				Err:  fmt.Errorf("Enum %s cannot implement previously implemented interface UnitEnum", class.Name),
-				Code: phpv.E_ERROR,
+				Code: phpv.E_COMPILE_ERROR,
 				Loc:  class.L,
 			}
 		case "backedenum":
 			if backingType != 0 {
 				return nil, &phpv.PhpError{
 					Err:  fmt.Errorf("Enum %s cannot implement previously implemented interface BackedEnum", class.Name),
-					Code: phpv.E_ERROR,
+					Code: phpv.E_COMPILE_ERROR,
 					Loc:  class.L,
 				}
 			}
 			// Non-backed enum trying to implement BackedEnum
 			return nil, &phpv.PhpError{
 				Err:  fmt.Errorf("Non-backed enum %s cannot implement interface BackedEnum", class.Name),
-				Code: phpv.E_ERROR,
+				Code: phpv.E_COMPILE_ERROR,
 				Loc:  class.L,
 			}
 		}
@@ -421,7 +421,7 @@ func compileEnum(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		if seen[implLower] {
 			return nil, &phpv.PhpError{
 				Err:  fmt.Errorf("Enum %s cannot implement previously implemented interface %s", class.Name, impl),
-				Code: phpv.E_ERROR,
+				Code: phpv.E_COMPILE_ERROR,
 				Loc:  class.L,
 			}
 		}

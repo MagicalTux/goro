@@ -110,10 +110,15 @@ func doVarExport(ctx phpv.Context, w io.Writer, z *phpv.ZVal, linePfx string, re
 
 		v := z.Value()
 		// Check if this is an enum case - var_export prints \ClassName::CaseName
+		// When nested (e.g., inside an array), add a newline and indent prefix
 		if obj, ok := v.(*phpobj.ZObject); ok && obj.GetClass().GetType()&phpv.ZClassTypeEnum != 0 {
 			caseName := obj.HashTable().GetString("name")
 			if caseName != nil {
-				fmt.Fprintf(w, "\\%s::%s", obj.Class.GetName(), caseName.String())
+				if linePfx != "" {
+					fmt.Fprintf(w, "\n%s\\%s::%s", linePfx, obj.Class.GetName(), caseName.String())
+				} else {
+					fmt.Fprintf(w, "\\%s::%s", obj.Class.GetName(), caseName.String())
+				}
 				return nil
 			}
 		}
