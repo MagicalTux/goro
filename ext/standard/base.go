@@ -409,8 +409,13 @@ func stdClassExists(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		autoload = bool(*autoloadArg)
 	}
 
-	_, err = ctx.Global().GetClass(ctx, className, autoload)
+	cls, err := ctx.Global().GetClass(ctx, className, autoload)
 	if err != nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+	// class_exists returns false for interfaces, traits, and enums
+	t := cls.GetType()
+	if t.Has(phpv.ZClassTypeInterface) || t.Has(phpv.ZClassTypeTrait) || t.Has(phpv.ZClassTypeEnum) {
 		return phpv.ZFalse.ZVal(), nil
 	}
 	return phpv.ZTrue.ZVal(), nil

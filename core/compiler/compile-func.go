@@ -437,6 +437,16 @@ func compileFunctionWithName(name phpv.ZString, c compileCtx, l *phpv.Loc, rref 
 
 	if !i.IsSingle('{') {
 		if len(optionalBody) > 0 && optionalBody[0] && i.IsSingle(';') {
+			// Abstract method — check for disallowed constructor promotion
+			for _, arg := range zc.args {
+				if arg.Promotion != 0 {
+					return nil, &phpv.PhpError{
+						Err:  fmt.Errorf("Cannot declare promoted property in an abstract constructor"),
+						Code: phpv.E_COMPILE_ERROR,
+						Loc:  l,
+					}
+				}
+			}
 			i, err = c.NextItem()
 			if err != nil {
 				return nil, err
