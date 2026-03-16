@@ -8,8 +8,9 @@ var NewStdClassFunc func(ctx Context) (ZObject, error)
 
 // ZAttribute represents a PHP attribute (e.g. #[MyAttribute(args...)]).
 type ZAttribute struct {
-	ClassName ZString  // fully qualified attribute class name
-	Args      []*ZVal  // evaluated arguments (nil if no args)
+	ClassName ZString    // fully qualified attribute class name
+	Args      []*ZVal    // evaluated arguments (nil if no args)
+	ArgExprs  []Runnable // unevaluated argument expressions for lazy evaluation (nil if fully resolved)
 }
 
 type ZClassProp struct {

@@ -76,11 +76,12 @@ func parseAttributes(c compileCtx) ([]*phpv.ZAttribute, error) {
 			// Check for arguments: (
 			if i.IsSingle('(') {
 				// Parse arguments as constant expressions (supports named args)
-				args, namedArgs, err := parseAttributeArgs(c)
+				args, argExprs, namedArgs, err := parseAttributeArgs(c)
 				if err != nil {
 					return nil, err
 				}
 				attr.Args = resolveAttributeNamedArgs(className, args, namedArgs)
+				attr.ArgExprs = argExprs
 
 				// Read next token after closing )
 				i, err = c.NextItem()
@@ -121,35 +122,57 @@ func parseAttributes(c compileCtx) ([]*phpv.ZAttribute, error) {
 
 // parseAttributeArgs parses the arguments inside #[Attr(...)].
 // Called after the opening '(' has been consumed.
-// Returns the parsed argument values. Named arguments (e.g., message: "foo")
-// are collected and returned separately via namedArgs.
-func parseAttributeArgs(c compileCtx) (args []*phpv.ZVal, namedArgs map[phpv.ZString]*phpv.ZVal, err error) {
+// Returns the parsed argument values, expression runnables for lazy evaluation,
+// and named arguments. Named arguments (e.g., message: "foo") are collected
+// and returned separately via namedArgs.
+func parseAttributeArgs(c compileCtx) (args []*phpv.ZVal, argExprs []phpv.Runnable, namedArgs map[phpv.ZString]*phpv.ZVal, err error) {
 	// Check for empty args: ()
 	i, err := c.NextItem()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if i.IsSingle(')') {
-		return args, nil, nil
+		return args, nil, nil, nil
 	}
 	c.backup()
 
+	hasLazy := false
+
 	for {
 		// Check for named argument: identifier followed by ':'
+		// We must read the label and then the next token to check for ':'.
+		// We cannot use peekType() here because if the condition fails,
+		// backup() would overwrite the peeked token stored in c.next,
+		// losing the token that peekType() read from the tokenizer.
 		i, err = c.NextItem()
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 
-		if i.IsLabel() && c.peekType() == tokenizer.Rune(':') {
-			// Named argument: name: expr
+		isNamedArg := false
+		if i.IsLabel() {
+			// Read the next token to see if it's a single ':' (named argument)
+			next, err2 := c.NextItem()
+			if err2 != nil {
+				return nil, nil, nil, err2
+			}
+			if next.IsSingle(':') {
+				isNamedArg = true
+			} else {
+				// Not a named argument - back up the non-':' token,
+				// then pass the label as the first token to compileExpr.
+				c.backup()
+			}
+		}
+
+		if isNamedArg {
+			// Named argument: name: expr (the ':' has already been consumed)
 			argName := phpv.ZString(i.Data)
-			c.NextItem() // consume the ':'
 
 			// Parse the value expression
 			expr, err := compileExpr(nil, c)
 			if err != nil {
-				return nil, nil, err
+				return nil, nil, nil, err
 			}
 
 			val, err := expr.Run(c)
@@ -162,45 +185,63 @@ func parseAttributeArgs(c compileCtx) (args []*phpv.ZVal, namedArgs map[phpv.ZSt
 			}
 			namedArgs[argName] = val
 		} else {
-			// Positional argument
-			c.backup()
-			expr, err := compileExpr(nil, c)
+			// Positional argument - pass i as the already-read first token
+			// if it was a label (to avoid needing double backup), or back up
+			// and let compileExpr read from scratch.
+			var expr phpv.Runnable
+			if i.IsLabel() {
+				// We already backed up the token after the label, so
+				// pass the label item directly to compileExpr.
+				expr, err = compileExpr(i, c)
+			} else {
+				c.backup()
+				expr, err = compileExpr(nil, c)
+			}
 			if err != nil {
-				return nil, nil, err
+				return nil, nil, nil, err
 			}
 
 			// Try to evaluate the expression at compile time
 			val, err := expr.Run(c)
 			if err != nil {
-				// If we can't evaluate at compile time, store as nil
-				// This handles forward references etc.
+				// If we can't evaluate at compile time, store the expression
+				// for lazy evaluation at runtime.
 				args = append(args, phpv.ZNULL.ZVal())
+				argExprs = append(argExprs, expr)
+				hasLazy = true
 			} else {
 				args = append(args, val)
+				argExprs = append(argExprs, nil)
 			}
 		}
 
 		i, err = c.NextItem()
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		if i.IsSingle(')') {
-			return args, namedArgs, nil
+			if !hasLazy {
+				argExprs = nil // no lazy args, don't store expressions
+			}
+			return args, argExprs, namedArgs, nil
 		}
 		if i.IsSingle(',') {
 			// Check for trailing comma before )
 			i, err = c.NextItem()
 			if err != nil {
-				return nil, nil, err
+				return nil, nil, nil, err
 			}
 			if i.IsSingle(')') {
-				return args, namedArgs, nil
+				if !hasLazy {
+					argExprs = nil
+				}
+				return args, argExprs, namedArgs, nil
 			}
 			c.backup()
 			continue
 		}
 
-		return nil, nil, i.Unexpected()
+		return nil, nil, nil, i.Unexpected()
 	}
 }
 
