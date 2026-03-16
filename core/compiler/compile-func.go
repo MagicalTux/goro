@@ -162,6 +162,13 @@ func (r *runnableFunctionCallRef) Run(ctx phpv.Context) (l *phpv.ZVal, err error
 			switch v.GetType() {
 			case phpv.ZtString:
 				funcName := v.Value().(phpv.ZString)
+				// PHP 8: certain functions cannot be called dynamically
+				switch string(funcName.ToLower()) {
+				case "extract", "compact", "get_defined_vars", "func_get_args",
+					"func_get_arg", "func_num_args":
+					return nil, phpobj.ThrowError(ctx, phpobj.Error,
+						fmt.Sprintf("Cannot call %s() dynamically", funcName))
+				}
 				if idx := strings.Index(string(funcName), "::"); idx > 0 {
 					className := phpv.ZString(funcName[:idx])
 					methodName := phpv.ZString(funcName[idx+2:])
