@@ -212,6 +212,11 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 
 	if m, ok := f.(*phpv.MethodCallable); ok {
 		callCtx.class = m.Class
+		if m.CalledClass != nil {
+			callCtx.calledClass = m.CalledClass
+		} else {
+			callCtx.calledClass = m.Class
+		}
 		if m.Static {
 			callCtx.methodType = "::"
 			// Static methods don't have $this, even when called on an instance
@@ -230,6 +235,14 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 		if zc, ok := f.(phpv.ZClosure); ok {
 			if cls := zc.GetClass(); cls != nil {
 				callCtx.class = cls
+			}
+		}
+	}
+	// Set called class for late static binding (static::class)
+	if callCtx.calledClass == nil {
+		if cc, ok := f.(interface{ GetCalledClass() phpv.ZClass }); ok {
+			if called := cc.GetCalledClass(); called != nil {
+				callCtx.calledClass = called
 			}
 		}
 	}

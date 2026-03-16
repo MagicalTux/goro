@@ -75,8 +75,9 @@ type FuncContext struct {
 
 	loc *phpv.Loc
 
-	class      phpv.ZClass
-	methodType string
+	class       phpv.ZClass
+	calledClass phpv.ZClass // for late static binding (static::class)
+	methodType  string
 
 	isInternal bool // true when called from internal code (e.g., output buffer callbacks)
 
@@ -116,6 +117,13 @@ func (c *FuncContext) This() phpv.ZObject {
 }
 
 func (c *FuncContext) Class() phpv.ZClass {
+	return c.class
+}
+
+func (c *FuncContext) CalledClass() phpv.ZClass {
+	if c.calledClass != nil {
+		return c.calledClass
+	}
 	return c.class
 }
 

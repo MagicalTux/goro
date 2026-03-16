@@ -432,13 +432,19 @@ func (r *runClassNameOf) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			return phpv.ZString(parent.GetName()).ZVal(), nil
 		case "static":
 			// Late static binding: resolve to the actual called class.
-			// ctx.This() may have been kin'd to a parent class, so we
-			// use Unwrap() (if available) to get the real leaf class.
 			if this := ctx.This(); this != nil {
 				if uw, ok := this.(interface{ Unwrap() phpv.ZObject }); ok {
 					return phpv.ZString(uw.Unwrap().GetClass().GetName()).ZVal(), nil
 				}
 				return phpv.ZString(this.GetClass().GetName()).ZVal(), nil
+			}
+			// Check for CalledClass (late static binding in static context)
+			if fc := ctx.Func(); fc != nil {
+				if cc, ok := fc.(interface{ CalledClass() phpv.ZClass }); ok {
+					if called := cc.CalledClass(); called != nil {
+						return phpv.ZString(called.GetName()).ZVal(), nil
+					}
+				}
 			}
 			cls := ctx.Class()
 			if cls == nil {

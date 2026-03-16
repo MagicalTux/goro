@@ -19,6 +19,7 @@ type ZClosure struct {
 	use           []*phpv.FuncUse
 	code          phpv.Runnable
 	class         phpv.ZClass    // class in which this closure was defined (for parent:: and self::)
+	calledClass   phpv.ZClass    // called class for late static binding (static::class)
 	this          phpv.ZObject   // captured $this from enclosing method (nil for static closures and free functions)
 	start         *phpv.Loc
 	end           *phpv.Loc
@@ -305,6 +306,14 @@ func (closure *ZClosure) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 	// capture the class scope so self:: and static:: resolve correctly.
 	if !c.isStatic && c.class == nil && ctx.Class() != nil {
 		c.class = ctx.Class()
+	}
+	// Capture the called class for late static binding (static::class)
+	if fc := ctx.Func(); fc != nil {
+		if cc, ok := fc.(interface{ CalledClass() phpv.ZClass }); ok {
+			if called := cc.CalledClass(); called != nil && called != c.class {
+				c.calledClass = called
+			}
+		}
 	}
 	// run compile after dup so we re-fetch default vars each time
 	err = c.Compile(ctx)
@@ -683,6 +692,7 @@ func (z *ZClosure) dup() *ZClosure {
 	n.name = z.name
 	n.enclosingFunc = z.enclosingFunc
 	n.class = z.class
+	n.calledClass = z.calledClass
 	n.this = z.this
 	n.start = z.start
 	n.end = z.end
@@ -712,6 +722,13 @@ func (z *ZClosure) dup() *ZClosure {
 }
 
 func (z *ZClosure) GetClass() phpv.ZClass {
+	return z.class
+}
+
+func (z *ZClosure) GetCalledClass() phpv.ZClass {
+	if z.calledClass != nil {
+		return z.calledClass
+	}
 	return z.class
 }
 

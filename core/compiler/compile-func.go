@@ -480,6 +480,18 @@ func compileFunctionWithName(name phpv.ZString, c compileCtx, l *phpv.Loc, rref 
 		if err != nil {
 			return nil, err
 		}
+		// Validate use variables don't conflict with parameter names
+		for _, u := range zc.use {
+			for _, a := range zc.args {
+				if u.VarName == a.VarName {
+					return nil, &phpv.PhpError{
+						Err:  fmt.Errorf("Cannot use lexical variable $%s as a parameter name", u.VarName),
+						Code: phpv.E_COMPILE_ERROR,
+						Loc:  l,
+					}
+				}
+			}
+		}
 
 		i, err = c.NextItem()
 		if err != nil {
@@ -1022,7 +1034,20 @@ func compileFunctionUse(c compileCtx) (res []*phpv.FuncUse, err error) {
 			return nil, i.Unexpected()
 		}
 
-		res = append(res, &phpv.FuncUse{VarName: phpv.ZString(i.Data[1:]), Ref: isRef}) // skip $
+		varName := phpv.ZString(i.Data[1:]) // skip $
+
+		// Check for duplicate use variables
+		for _, existing := range res {
+			if existing.VarName == varName {
+				return nil, &phpv.PhpError{
+					Err:  fmt.Errorf("Cannot use variable $%s twice", varName),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  i.Loc(),
+				}
+			}
+		}
+
+		res = append(res, &phpv.FuncUse{VarName: varName, Ref: isRef})
 
 		i, err = c.NextItem()
 		if err != nil {

@@ -699,12 +699,13 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Non-static method %s::%s() cannot be called statically", class.GetName(), method.Name))
 		}
 
-		// Use method.Class (defining class) for ctx.Class() so self:: resolves correctly
+		// Use method.Class (defining class) for self:: resolution,
+		// and class (called class) for static:: resolution (LSB)
 		bindClass := class
 		if method.Class != nil {
 			bindClass = method.Class
 		}
-		m := phpv.BindClass(method.Method, bindClass, true)
+		m := phpv.BindClassLSB(method.Method, bindClass, class, true)
 		return ctx.Call(ctx, m, r.args, nil)
 	}
 

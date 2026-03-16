@@ -51,8 +51,9 @@ func (b *BoundedCallable) String() string                          { return "Cal
 
 type MethodCallable struct {
 	Callable
-	Class  ZClass
-	Static bool
+	Class       ZClass
+	CalledClass ZClass // for late static binding; nil means same as Class
+	Static      bool
 }
 
 // Override Val methods so that MethodCallable wraps itself in ZVal properly.
@@ -81,7 +82,13 @@ func (m *MethodCallable) Loc() *Loc {
 }
 
 func BindClass(fn Callable, class ZClass, static bool) *MethodCallable {
-	return &MethodCallable{fn, class, static}
+	return &MethodCallable{fn, class, nil, static}
+}
+
+// BindClassLSB creates a method callable with separate defining and called classes
+// for late static binding support.
+func BindClassLSB(fn Callable, definingClass ZClass, calledClass ZClass, static bool) *MethodCallable {
+	return &MethodCallable{fn, definingClass, calledClass, static}
 }
 
 func (m *MethodCallable) GetArgs() []*FuncArg {
