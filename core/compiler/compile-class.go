@@ -981,8 +981,13 @@ func parseClassLine(class *phpobj.ZClass, c compileCtx) error {
 		}
 		switch lowerName {
 		case "self", "parent", "static":
+			// Class/interface declaration: use article "a"/"an" and no comma
+			article := "a"
+			if classKind == "interface" {
+				article = "an"
+			}
 			return &phpv.PhpError{
-				Err:  fmt.Errorf("Cannot use \"%s\" as %s name, as it is reserved", i.Data, classKind),
+				Err:  fmt.Errorf("Cannot use \"%s\" as %s %s name as it is reserved", i.Data, article, classKind),
 				Code: phpv.E_COMPILE_ERROR,
 				Loc:  i.Loc(),
 			}
@@ -1068,6 +1073,15 @@ func parseClassLine(class *phpobj.ZClass, c compileCtx) error {
 			}
 
 			if impl != "" {
+				// Check reserved names in implements
+				switch impl.ToLower() {
+				case "self", "parent", "static":
+					return &phpv.PhpError{
+						Err:  fmt.Errorf("Cannot use \"%s\" as interface name, as it is reserved", impl),
+						Code: phpv.E_COMPILE_ERROR,
+						Loc:  i.Loc(),
+					}
+				}
 				class.ImplementsStr = append(class.ImplementsStr, impl)
 			}
 

@@ -1263,7 +1263,8 @@ func (c *ZClass) validateMagicMethods(ctx phpv.Context) error {
 func (c *ZClass) warnNonPublicMagicMethods(ctx phpv.Context) {
 	mustBePublic := []phpv.ZString{
 		"__call", "__callstatic", "__get", "__set", "__isset", "__unset",
-		"__debuginfo", "__serialize", "__unserialize",
+		"__debuginfo", "__serialize", "__unserialize", "__invoke",
+		"__tostring", "__clone",
 	}
 	for _, name := range mustBePublic {
 		m, ok := c.Methods[name]
