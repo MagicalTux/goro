@@ -231,6 +231,11 @@ func (g *Global) ReinitSuperglobals() {
 		for _, name := range strings.Split(string(v.GetString(g)), ",") {
 			name = strings.TrimSpace(name)
 			if name != "" {
+				// PHP 8.5: exit/die cannot be disabled
+				if name == "exit" || name == "die" {
+					g.WriteErr([]byte(fmt.Sprintf("Warning: Cannot disable function %s() in Unknown on line 0\n", name)))
+					continue
+				}
 				g.disabledFuncs[phpv.ZString(name)] = struct{}{}
 			}
 		}
@@ -272,6 +277,13 @@ func (g *Global) setupIni() {
 	if v := cfg.Get(phpv.ZString("disable_functions")); v != nil {
 		for _, name := range strings.Split(string(v.GetString(g)), ",") {
 			name = strings.TrimSpace(name)
+			if name == "" {
+				continue
+			}
+			if name == "exit" || name == "die" {
+				g.startupWarnings = append(g.startupWarnings, []byte(fmt.Sprintf("Warning: Cannot disable function %s() in Unknown on line 0\n", name))...)
+				continue
+			}
 			g.disabledFuncs[phpv.ZString(name)] = struct{}{}
 		}
 	}

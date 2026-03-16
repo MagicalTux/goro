@@ -209,17 +209,29 @@ func exit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	z := *ext
 
-	if z.GetType() == phpv.ZtInt {
+	// PHP 8.5: validate argument type — must be string|int
+	switch z.GetType() {
+	case phpv.ZtInt:
 		return nil, phpv.ExitError(z.AsInt(ctx))
+	case phpv.ZtString:
+		ctx.Write([]byte(z.String()))
+		return nil, phpv.ExitError(0)
+	case phpv.ZtBool:
+		// bool is coerced to int
+		if z.Value().(phpv.ZBool) {
+			return nil, phpv.ExitError(1)
+		}
+		return nil, phpv.ExitError(0)
+	case phpv.ZtFloat:
+		// float is coerced to int
+		return nil, phpv.ExitError(phpv.ZInt(z.AsInt(ctx)))
+	case phpv.ZtNull:
+		return nil, phpv.ExitError(0)
+	default:
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("exit(): Argument #1 ($status) must be of type string|int, %s given",
+				phpv.ZValTypeName(z)))
 	}
-
-	z, err = z.As(ctx, phpv.ZtString)
-	if err != nil {
-		return nil, err
-	}
-
-	ctx.Write([]byte(z.String()))
-	return nil, phpv.ExitError(0)
 }
 
 // > func bool phpcredits ([ int $flag = CREDITS_ALL ] )
