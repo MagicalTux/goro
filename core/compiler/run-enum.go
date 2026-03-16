@@ -288,6 +288,32 @@ func (r *runEnumRegister) postCompileValidation(ctx phpv.Context) error {
 		}
 	}
 
+	// Check for duplicate backing values in backed enums
+	if c.EnumBackingType != 0 {
+		seen := make(map[string]phpv.ZString) // backing value string → case name
+		for _, k := range c.ConstOrder {
+			cc := c.Const[k]
+			if cc == nil {
+				continue
+			}
+			// Only check enum case constants (public, with resolved values that are enum objects)
+			val := cc.Value
+			if val == nil {
+				continue
+			}
+			if obj, ok := val.(*phpobj.ZObject); ok && obj.GetClass() == c {
+				backingVal := obj.HashTable().GetString("value")
+				if backingVal != nil {
+					key := backingVal.String()
+					if existing, dup := seen[key]; dup {
+						return r.enumFatalError(ctx, fmt.Sprintf("Duplicate value in enum %s for cases %s and %s", c.Name, existing, k))
+					}
+					seen[key] = k
+				}
+			}
+		}
+	}
+
 	return nil
 }
 

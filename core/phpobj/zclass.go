@@ -96,7 +96,10 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 			return c.fatalError(ctx, fmt.Sprintf("Class %s cannot extend interface %s", c.Name, c.Extends.Name))
 		}
 
-		// Check if parent class is final
+		// Check if parent class is final or an enum (enums cannot be extended)
+		if c.Extends.Type.Has(phpv.ZClassTypeEnum) {
+			return c.fatalError(ctx, fmt.Sprintf("Class %s cannot extend enum %s", c.Name, c.Extends.Name))
+		}
 		if c.Extends.Attr.Has(phpv.ZClassFinal) {
 			return c.fatalError(ctx, fmt.Sprintf("Class %s cannot extend final class %s", c.Name, c.Extends.Name))
 		}
