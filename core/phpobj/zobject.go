@@ -36,24 +36,26 @@ type ZObject struct {
 	// Readonly property tracking - set of properties that have been initialized
 	readonlyInit map[phpv.ZString]bool
 
-	// Destructor tracking
-	Destructed bool
+	// Destructor tracking - stored as a pointer so wrapper objects share the flag.
+	destructed *bool
 
-	// Reference counting for destructor timing
-	refCount int32
+	// Reference counting for destructor timing.
+	// Stored as a pointer so that wrapper objects (from GetKin/Unwrap/new)
+	// share the same refcount with the original.
+	refCount *int32
 }
 
 // CallDestructor calls __destruct on this object if it hasn't been called yet.
 // It checks visibility of the destructor against the calling context.
 func (z *ZObject) CallDestructor(ctx phpv.Context) error {
-	if z.Destructed {
+	if z.IsDestructed() {
 		return nil
 	}
 	m, ok := z.Class.GetMethod("__destruct")
 	if !ok {
 		return nil
 	}
-	z.Destructed = true
+	z.SetDestructed(true)
 	// Unregister from shutdown destructor list
 	ctx.Global().UnregisterDestructor(z)
 
@@ -94,14 +96,14 @@ func (z *ZObject) CallDestructor(ctx phpv.Context) error {
 // Used for implicit destruction (variable overwrite, shutdown) where
 // PHP always allows the destructor to run regardless of visibility.
 func (z *ZObject) CallImplicitDestructor(ctx phpv.Context) error {
-	if z.Destructed {
+	if z.IsDestructed() {
 		return nil
 	}
 	m, ok := z.Class.GetMethod("__destruct")
 	if !ok {
 		return nil
 	}
-	z.Destructed = true
+	z.SetDestructed(true)
 	ctx.Global().UnregisterDestructor(z)
 	_, err := ctx.CallZVal(ctx, m.Method, nil, z)
 	return err
@@ -109,13 +111,19 @@ func (z *ZObject) CallImplicitDestructor(ctx phpv.Context) error {
 
 // IncRef increments the object's reference count.
 func (z *ZObject) IncRef() {
-	atomic.AddInt32(&z.refCount, 1)
+	if z.refCount == nil {
+		z.refCount = new(int32)
+	}
+	atomic.AddInt32(z.refCount, 1)
 }
 
 // DecRef decrements the object's reference count and calls the destructor
 // (with visibility checks) when the count reaches zero.
 func (z *ZObject) DecRef(ctx phpv.Context) error {
-	n := atomic.AddInt32(&z.refCount, -1)
+	if z.refCount == nil {
+		z.refCount = new(int32)
+	}
+	n := atomic.AddInt32(z.refCount, -1)
 	if n <= 0 {
 		return z.CallDestructor(ctx)
 	}
@@ -126,7 +134,10 @@ func (z *ZObject) DecRef(ctx phpv.Context) error {
 // destructor without visibility checks when the count reaches zero.
 // Used for scope exit where PHP always allows destructors to run.
 func (z *ZObject) DecRefImplicit(ctx phpv.Context) error {
-	n := atomic.AddInt32(&z.refCount, -1)
+	if z.refCount == nil {
+		z.refCount = new(int32)
+	}
+	n := atomic.AddInt32(z.refCount, -1)
 	if n <= 0 {
 		return z.CallImplicitDestructor(ctx)
 	}
@@ -135,7 +146,26 @@ func (z *ZObject) DecRefImplicit(ctx phpv.Context) error {
 
 // RefCount returns the current reference count.
 func (z *ZObject) RefCount() int32 {
-	return atomic.LoadInt32(&z.refCount)
+	if z.refCount == nil {
+		return 0
+	}
+	return atomic.LoadInt32(z.refCount)
+}
+
+// IsDestructed returns whether the destructor has already been called.
+func (z *ZObject) IsDestructed() bool {
+	if z.destructed == nil {
+		return false
+	}
+	return *z.destructed
+}
+
+// SetDestructed sets the destructed flag.
+func (z *ZObject) SetDestructed(v bool) {
+	if z.destructed == nil {
+		z.destructed = new(bool)
+	}
+	*z.destructed = v
 }
 
 func (z *ZObject) ZVal() *phpv.ZVal {
@@ -238,6 +268,8 @@ func CreateZObject(ctx phpv.Context, c phpv.ZClass) (*ZObject, error) {
 		Class:      c,
 		ID:         ctx.Global().NextObjectID(),
 		Opaque:     map[phpv.ZClass]interface{}{},
+		refCount:   new(int32),
+		destructed: new(bool),
 	}
 
 	err := n.init(ctx)
@@ -295,6 +327,8 @@ func NewZObject(ctx phpv.Context, c phpv.ZClass, args ...*phpv.ZVal) (*ZObject, 
 		Class:      c,
 		ID:         ctx.Global().NextObjectID(),
 		Opaque:     map[phpv.ZClass]interface{}{},
+		refCount:   new(int32),
+		destructed: new(bool),
 	}
 	var constructor phpv.Callable
 
@@ -421,10 +455,15 @@ func (z *ZObject) GetKin(className string) phpv.ZObject {
 }
 
 func (z *ZObject) Unwrap() phpv.ZObject {
-	if z != nil {
-		return z.new(nil)
+	if z == nil {
+		return z
 	}
-	return z
+	// If no CurrentClass is set, no wrapping is needed - return self to
+	// preserve the same *ZObject pointer (and its refcount).
+	if z.CurrentClass == nil {
+		return z
+	}
+	return z.new(nil)
 }
 
 func (z *ZObject) GetParent() phpv.ZObject {
@@ -449,6 +488,8 @@ func (z *ZObject) new(class *ZClass) *ZObject {
 		Opaque:       z.Opaque,
 		ID:           z.ID,
 		readonlyInit: z.readonlyInit,
+		refCount:     z.refCount,
+		destructed:   z.destructed,
 	}
 }
 
@@ -470,6 +511,7 @@ func (z *ZObject) Clone(ctx phpv.Context) (phpv.ZObject, error) {
 		hasPrivate:   maps.Clone(z.hasPrivate),
 		Opaque:       opaque,
 		ID:           ctx.Global().NextObjectID(),
+		refCount:     new(int32),
 	}
 
 	// Call __clone() on the new object if it exists
@@ -493,6 +535,8 @@ func NewZObjectEnum(ctx phpv.Context, c phpv.ZClass) *ZObject {
 		hasPrivate: make(map[phpv.ZString]struct{}),
 		Opaque:     map[phpv.ZClass]interface{}{},
 		ID:         ctx.Global().NextObjectID(),
+		refCount:   new(int32),
+		destructed: new(bool),
 	}
 }
 

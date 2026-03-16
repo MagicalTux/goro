@@ -1660,12 +1660,12 @@ func (g *Global) CallDestructors() {
 	for i := len(objs) - 1; i >= 0; i-- {
 		obj := objs[i]
 		zobj, isZObj := obj.(*phpobj.ZObject)
-		if isZObj && zobj.Destructed {
+		if isZObj && zobj.IsDestructed() {
 			continue // Already destructed (e.g. during variable reassignment)
 		}
 		if m, ok := obj.GetClass().GetMethod("__destruct"); ok {
 			if isZObj {
-				zobj.Destructed = true
+				zobj.SetDestructed(true)
 			}
 			// Check visibility during shutdown — private/protected from global scope
 			// should emit a warning and skip. PHP behavior varies by version.

@@ -61,6 +61,14 @@ func callDestructorIfNeeded(ctx phpv.Context, zv *phpv.ZVal) error {
 		return nil
 	}
 	obj := zv.Value()
+	// Call HandleDecRef if the class defines it (e.g. Closure releasing captured $this)
+	if zobj, ok := obj.(phpv.ZObject); ok {
+		if cls := zobj.GetClass(); cls != nil {
+			if h := cls.Handlers(); h != nil && h.HandleDecRef != nil {
+				h.HandleDecRef(ctx, zobj)
+			}
+		}
+	}
 	if refObj, ok := obj.(interface {
 		DecRef(phpv.Context) error
 	}); ok {
