@@ -211,6 +211,20 @@ func attributeConstruct(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.
 	return nil, nil
 }
 
+// IsAttributeClass returns true if the given class has the #[Attribute] attribute.
+func IsAttributeClass(class phpv.ZClass) bool {
+	zc, ok := class.(*ZClass)
+	if !ok {
+		return false
+	}
+	for _, attr := range zc.Attributes {
+		if attr.ClassName == "Attribute" || attr.ClassName == "\\Attribute" {
+			return true
+		}
+	}
+	return false
+}
+
 // GetAttributeFlags returns the Attribute flags for a class, checking if it
 // has the #[Attribute] attribute. Returns -1 if the class is not an attribute class.
 func GetAttributeFlags(ctx phpv.Context, class phpv.ZClass) int64 {

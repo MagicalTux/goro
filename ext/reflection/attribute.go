@@ -61,6 +61,9 @@ func reflectionAttributeGetArguments(ctx phpv.Context, o *phpobj.ZObject, args [
 		return phpv.NewZArray().ZVal(), nil
 	}
 
+	// Resolve lazy argument expressions if needed
+	resolveAttrArgs(ctx, data.attr)
+
 	arr := phpv.NewZArray()
 	if data.attr.Args != nil {
 		for _, arg := range data.attr.Args {
@@ -107,37 +110,44 @@ func reflectionAttributeNewInstance(ctx phpv.Context, o *phpobj.ZObject, args []
 	}
 
 	// Validate that the class is actually an attribute class
-	flags := phpobj.GetAttributeFlags(ctx, class)
-	if flags < 0 {
-		// The class does not have #[Attribute] - it's not a valid attribute class.
-		// PHP still allows instantiation but we should check this.
-		// Actually in PHP, if it lacks #[Attribute], newInstance() still works
-		// but just creates an instance. The validation only happens if it HAS
-		// #[Attribute] with specific flags.
-	} else {
-		// Validate target
-		if int(flags)&data.target == 0 {
-			return nil, phpobj.ThrowError(ctx, phpobj.Error,
-				fmt.Sprintf("Attribute \"%s\" cannot target %s (allowed targets: %s)",
-					data.attr.ClassName,
-					phpobj.TargetName(data.target),
-					describeTargetsForReflection(int(flags))))
-		}
+	if !phpobj.IsAttributeClass(class) {
+		return nil, phpobj.ThrowError(ctx, phpobj.Error,
+			fmt.Sprintf("Attempting to use non-attribute class \"%s\" as attribute", data.attr.ClassName))
+	}
 
-		// Validate repeat
-		if int(flags)&phpobj.AttributeIS_REPEATABLE == 0 {
-			count := 0
-			for _, a := range data.allAttrs {
-				if a.ClassName.ToLower() == data.attr.ClassName.ToLower() {
-					count++
-				}
+	flags := phpobj.GetAttributeFlags(ctx, class)
+
+	// Validate flags value is within valid range
+	maxValid := int64(phpobj.AttributeTARGET_ALL | phpobj.AttributeIS_REPEATABLE)
+	if flags < 0 || flags > maxValid {
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid attribute flags specified")
+	}
+
+	// Validate target
+	if int(flags)&data.target == 0 {
+		return nil, phpobj.ThrowError(ctx, phpobj.Error,
+			fmt.Sprintf("Attribute \"%s\" cannot target %s (allowed targets: %s)",
+				data.attr.ClassName,
+				phpobj.TargetName(data.target),
+				describeTargetsForReflection(int(flags))))
+	}
+
+	// Validate repeat
+	if int(flags)&phpobj.AttributeIS_REPEATABLE == 0 {
+		count := 0
+		for _, a := range data.allAttrs {
+			if a.ClassName.ToLower() == data.attr.ClassName.ToLower() {
+				count++
 			}
-			if count > 1 {
-				return nil, phpobj.ThrowError(ctx, phpobj.Error,
-					fmt.Sprintf("Attribute \"%s\" must not be repeated", data.attr.ClassName))
-			}
+		}
+		if count > 1 {
+			return nil, phpobj.ThrowError(ctx, phpobj.Error,
+				fmt.Sprintf("Attribute \"%s\" must not be repeated", data.attr.ClassName))
 		}
 	}
+
+	// Resolve lazy argument expressions if needed
+	resolveAttrArgs(ctx, data.attr)
 
 	// Create a new instance with the stored arguments
 	var constructArgs []*phpv.ZVal
@@ -192,6 +202,23 @@ func reflectionAttributeToString(ctx phpv.Context, o *phpobj.ZObject, args []*ph
 		return phpv.ZString("Attribute [ ]").ZVal(), nil
 	}
 	return phpv.ZString(fmt.Sprintf("Attribute [ %s ]", data.attr.ClassName)).ZVal(), nil
+}
+
+// resolveAttrArgs evaluates any lazy argument expressions on the attribute.
+// This is called at runtime when getArguments() or newInstance() is invoked.
+func resolveAttrArgs(ctx phpv.Context, attr *phpv.ZAttribute) {
+	if attr.ArgExprs == nil {
+		return
+	}
+	for i, expr := range attr.ArgExprs {
+		if expr != nil {
+			val, err := expr.Run(ctx)
+			if err == nil && val != nil {
+				attr.Args[i] = val
+				attr.ArgExprs[i] = nil // mark as resolved
+			}
+		}
+	}
 }
 
 // createReflectionAttributeObject creates a ReflectionAttribute object for the given attribute.

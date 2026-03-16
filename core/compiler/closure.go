@@ -568,7 +568,11 @@ func (z *ZClosure) callBody(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 				if callLoc := ctx.Loc(); callLoc != nil {
 					msg += fmt.Sprintf(" in %s on line %d", callLoc.Filename, callLoc.Line)
 				}
-				msg += fmt.Sprintf(" and exactly %d expected", requiredCount)
+				if requiredCount < len(z.args) {
+					msg += fmt.Sprintf(" and at least %d expected", requiredCount)
+				} else {
+					msg += fmt.Sprintf(" and exactly %d expected", requiredCount)
+				}
 				return nil, phpobj.ThrowErrorAt(ctx, phpobj.ArgumentCountError, msg, z.start)
 			}
 			if a.DefaultValue != nil {
