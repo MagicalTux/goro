@@ -933,6 +933,10 @@ func parseClassLine(class *phpobj.ZClass, c compileCtx) error {
 			}
 		}
 		class.Name = className
+		// PHP 8.4+: Using "_" as a class/interface/trait name is deprecated
+		if i.Data == "_" {
+			c.Deprecated("Using \"_\" as %s name is deprecated since 8.4", classKind)
+		}
 		// Track short class name for use-statement conflict detection
 		if root := getRootCtx(c); root != nil && root.nsClassNames != nil {
 			shortName := phpv.ZString(i.Data) // the unqualified name

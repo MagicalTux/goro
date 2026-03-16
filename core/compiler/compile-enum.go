@@ -32,6 +32,10 @@ func compileEnum(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		return nil, i.Unexpected()
 	}
 	enumName := phpv.ZString(i.Data)
+	// PHP 8.4+: Using "_" as an enum name is deprecated
+	if i.Data == "_" {
+		c.Deprecated("Using \"_\" as an enum name is deprecated since 8.4")
+	}
 	// Prepend current namespace to enum name
 	ns := c.getNamespace()
 	if ns != "" {

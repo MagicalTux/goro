@@ -32,6 +32,7 @@ type ZClass struct {
 	Attributes      []*phpv.ZAttribute // PHP 8.0 attributes
 
 	nextIntanceID int
+	constSource   map[phpv.ZString]phpv.ZString // tracks which interface provided each inherited constant
 
 	// class specific handlers
 	H *phpv.ZClassHandlers
@@ -525,8 +526,16 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 				if _, exists := c.Const[k]; !exists {
 					c.Const[k] = v
 					c.ConstOrder = append(c.ConstOrder, k)
+					// Track which interface provided this constant for ambiguity detection
+					if c.constSource == nil {
+						c.constSource = make(map[phpv.ZString]phpv.ZString)
+					}
+					c.constSource[k] = intf.Name
 				} else if v.Modifiers.Has(phpv.ZAttrFinal) {
 					return c.fatalError(ctx, fmt.Sprintf("%s::%s cannot override final constant %s::%s", c.Name, k, intf.Name, k))
+				} else if src, hasSrc := c.constSource[k]; hasSrc && src != intf.Name {
+					// Same constant inherited from two different interfaces — ambiguous
+					return c.fatalError(ctx, fmt.Sprintf("Class %s inherits both %s::%s and %s::%s, which is ambiguous", c.Name, src, k, intf.Name, k))
 				}
 			}
 		}
