@@ -492,6 +492,25 @@ func init() {
 				Modifiers: phpv.ZAttrPublic | phpv.ZAttrStatic,
 				Method:    phpobj.NativeStaticMethod(datetimezoneListAbbreviations),
 			},
+			"__debuginfo": {
+				Name:      "__debugInfo",
+				Modifiers: phpv.ZAttrPublic,
+				Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+					arr := phpv.NewZArray()
+					opaque := o.GetOpaque(DateTimeZone)
+					if loc, ok := opaque.(*time.Location); ok && loc != nil {
+						name := loc.String()
+						// Determine timezone_type: 3=identifier, 2=abbreviation, 1=offset
+						tzType := 3
+						if len(name) <= 5 && name != "Local" {
+							tzType = 2
+						}
+						arr.OffsetSet(ctx, phpv.ZString("timezone_type"), phpv.ZInt(tzType).ZVal())
+						arr.OffsetSet(ctx, phpv.ZString("timezone"), phpv.ZString(name).ZVal())
+					}
+					return arr.ZVal(), nil
+				}),
+			},
 		},
 	}
 
