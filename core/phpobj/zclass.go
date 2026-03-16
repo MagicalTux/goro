@@ -266,17 +266,11 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 
 			if parentSetAccess != 0 || childSetAccess != 0 {
 				// Parent has no explicit set modifier — child cannot add one
+				// (adding a set restriction narrows access)
 				if parentSetAccess == 0 && childSetAccess != 0 {
 					return c.fatalError(ctx, fmt.Sprintf("Set access level of %s::$%s must be omitted (as in class %s)", c.Name, childProp.VarName, c.Extends.Name))
 				}
-				// Parent has set modifier, child doesn't — must match
-				if parentSetAccess != 0 && childSetAccess == 0 {
-					setName := "protected(set)"
-					if parentSetAccess == phpv.ZAttrProtected {
-						setName = "protected(set)"
-					}
-					return c.fatalError(ctx, fmt.Sprintf("Set access level of %s::$%s must be %s (as in class %s) or weaker", c.Name, childProp.VarName, setName, c.Extends.Name))
-				}
+				// Parent has set modifier, child doesn't — OK (widening)
 				// Both have set modifiers — child must not be narrower
 				if parentSetAccess != 0 && childSetAccess != 0 {
 					parentSetLevel := visibilityLevel(parentSetAccess)
@@ -749,6 +743,29 @@ func (c *ZClass) validateAttributes(ctx phpv.Context) error {
 					loc = c.L
 				}
 				return c.fatalErrorAt(ctx, msg, loc)
+			}
+			// NoDiscard-specific validations
+			for _, attr := range m.Attributes {
+				if attr.ClassName == "NoDiscard" || attr.ClassName == "\\NoDiscard" {
+					lowerName := string(m.Name.ToLower())
+					if lowerName == "__construct" || lowerName == "__clone" {
+						return c.fatalError(ctx, fmt.Sprintf("Method %s::%s cannot be #[\\NoDiscard]", c.Name, m.Name))
+					}
+					// Check return type
+					type returnTypeGetter interface {
+						GetReturnType() *phpv.TypeHint
+					}
+					if rtg, ok := m.Method.(returnTypeGetter); ok {
+						if rt := rtg.GetReturnType(); rt != nil {
+							if rt.Type() == phpv.ZtVoid {
+								return c.fatalError(ctx, "A void function does not return a value, but #[\\NoDiscard] requires a return value")
+							}
+							if rt.Type() == phpv.ZtNever {
+								return c.fatalError(ctx, "A never returning function does not return a value, but #[\\NoDiscard] requires a return value")
+							}
+						}
+					}
+				}
 			}
 		}
 	}
