@@ -279,8 +279,8 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 					}
 					c.Methods[name] = methodCopy
 
-					// Check if this is a constructor
-					if name == "__construct" || name == c.BaseName().ToLower() {
+					// Check if this is a constructor (PHP 8: only __construct)
+					if name == "__construct" {
 						c.Handlers().Constructor = methodCopy
 					}
 				}

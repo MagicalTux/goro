@@ -41,12 +41,24 @@ func spawnCallableInternal(ctx phpv.Context, v *phpv.ZVal, paramNo int) (phpv.Ca
 				return nil, err
 			}
 			member, ok := class.GetMethod(methodName.ToLower())
-			if !ok || !member.Modifiers.IsStatic() {
+			if !ok {
+				callerFunc := ctx.GetFuncName()
+				if callerFunc == "" {
+					callerFunc = "call_user_func"
+				}
 				return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
-					fmt.Sprintf("call_user_func(): Argument #1 ($callback) must be a valid callback, class \"%s\" does not have a method \"%s\"", className, methodName))
+					fmt.Sprintf("%s(): Argument #1 ($callback) must be a valid callback, class \"%s\" does not have a method \"%s\"", callerFunc, className, methodName))
 			}
 
-			return phpv.BindClass(member.Method, class, true), nil
+			if member.Modifiers.IsStatic() {
+				return phpv.BindClass(member.Method, class, true), nil
+			}
+			// Non-static method: allow if $this is available and is an instance of the class
+			if this := ctx.This(); this != nil && this.GetClass().InstanceOf(class) {
+				return phpv.Bind(member.Method, this), nil
+			}
+			// Non-static method called without instance context — deprecated in PHP 8
+			return phpv.BindClass(member.Method, class, false), nil
 		}
 
 		return ctx.Global().GetFunction(ctx, s)

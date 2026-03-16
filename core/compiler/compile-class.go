@@ -763,7 +763,7 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 				Attributes: memberAttrs,
 			}
 
-			if x := method.Name.ToLower(); x == class.BaseName().ToLower() || x == "__construct" {
+			if x := method.Name.ToLower(); x == "__construct" {
 				//if class.Constructor != nil {
 				class.Handlers().Constructor = method
 
