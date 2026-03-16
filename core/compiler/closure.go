@@ -13,19 +13,20 @@ import (
 
 type ZClosure struct {
 	phpv.CallableVal
-	name        phpv.ZString
-	args        []*phpv.FuncArg
-	use         []*phpv.FuncUse
-	code        phpv.Runnable
-	class       phpv.ZClass    // class in which this closure was defined (for parent:: and self::)
-	this        phpv.ZObject   // captured $this from enclosing method (nil for static closures and free functions)
-	start       *phpv.Loc
-	end         *phpv.Loc
-	rref        bool // return ref?
-	isStatic    bool // true for static function() {} and static fn() =>
-	isGenerator bool // true if this function contains yield
-	attributes  []*phpv.ZAttribute // PHP 8.0 attributes on this function
-	returnType  *phpv.TypeHint     // return type declaration (nil if none)
+	name          phpv.ZString
+	enclosingFunc string         // enclosing function/method name for closure naming (PHP 8.4+)
+	args          []*phpv.FuncArg
+	use           []*phpv.FuncUse
+	code          phpv.Runnable
+	class         phpv.ZClass    // class in which this closure was defined (for parent:: and self::)
+	this          phpv.ZObject   // captured $this from enclosing method (nil for static closures and free functions)
+	start         *phpv.Loc
+	end           *phpv.Loc
+	rref          bool // return ref?
+	isStatic      bool // true for static function() {} and static fn() =>
+	isGenerator   bool // true if this function contains yield
+	attributes    []*phpv.ZAttribute // PHP 8.0 attributes on this function
+	returnType    *phpv.TypeHint     // return type declaration (nil if none)
 }
 
 // > class Closure
@@ -422,7 +423,13 @@ func (z *ZClosure) Loc() *phpv.Loc {
 func (z *ZClosure) Name() string {
 	if z.name == "" {
 		if z.start != nil {
-			return fmt.Sprintf("{closure:%s:%d}", z.start.Filename, z.start.Line)
+			// PHP 8.4+: use enclosing function name if available,
+			// otherwise fall back to filename
+			scope := z.start.Filename
+			if z.enclosingFunc != "" {
+				scope = z.enclosingFunc
+			}
+			return fmt.Sprintf("{closure:%s:%d}", scope, z.start.Line)
 		}
 		return "{closure}"
 	}
@@ -652,6 +659,7 @@ func (z *ZClosure) dup() *ZClosure {
 	n := &ZClosure{}
 	n.code = z.code
 	n.name = z.name
+	n.enclosingFunc = z.enclosingFunc
 	n.class = z.class
 	n.this = z.this
 	n.start = z.start

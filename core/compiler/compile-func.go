@@ -367,6 +367,20 @@ func compileFunctionWithName(name phpv.ZString, c compileCtx, l *phpv.Loc, rref 
 		rref:  rref,
 	}
 
+	// For anonymous closures, capture the enclosing function/method name
+	// for PHP 8.4+ closure naming: {closure:enclosingFunc():line}
+	if name == "" {
+		if enclosing := c.getFunc(); enclosing != nil && enclosing.Name() != "" {
+			encName := enclosing.Name()
+			// For named functions, use just the function name
+			// For class methods, prepend the class name
+			if cls := c.getClass(); cls != nil {
+				encName = string(cls.GetName()) + "::" + encName
+			}
+			zc.enclosingFunc = encName + "()"
+		}
+	}
+
 	c = &zclosureCompileCtx{c, zc}
 
 	args, err := compileFunctionArgs(c)
