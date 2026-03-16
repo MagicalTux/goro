@@ -77,19 +77,23 @@ func (h *TypeHint) Check(ctx Context, val *ZVal) bool {
 	}
 
 	if h.t == ZtObject {
-		// "callable" type hint: accepts strings, arrays, closures, and invocable objects
+		// "callable" type hint: accepts strings, arrays, closures, and invocable objects.
+		// Validation is intentionally permissive — detailed checks (visibility,
+		// static vs instance) happen at call time via SpawnCallable.
 		if h.s == "callable" {
 			switch val.GetType() {
 			case ZtString:
-				// Verify the function actually exists and is callable
 				s := string(val.AsString(ctx))
 				if s == "" {
 					return false
 				}
 				if strings.Contains(s, "::") {
-					// Class::method - validate the method exists and is not abstract
 					parts := strings.SplitN(s, "::", 2)
-					cls, err := ctx.Global().GetClass(ctx, ZString(parts[0]), true)
+					if parts[0] == "" || parts[1] == "" {
+						return false
+					}
+					// Use autoload=false to avoid side effects during type checking
+					cls, err := ctx.Global().GetClass(ctx, ZString(parts[0]), false)
 					if err != nil || cls == nil {
 						return false
 					}
@@ -97,7 +101,6 @@ func (h *TypeHint) Check(ctx Context, val *ZVal) bool {
 					if !ok {
 						return false
 					}
-					// Check for abstract methods
 					if m.Modifiers.Has(ZAttrAbstract) {
 						return false
 					}
@@ -106,7 +109,16 @@ func (h *TypeHint) Check(ctx Context, val *ZVal) bool {
 				_, err := ctx.Global().GetFunction(ctx, ZString(s))
 				return err == nil
 			case ZtArray:
-				return true // array callable ([obj/class, method])
+				// Validate structure: second element must be a string (method name)
+				arr := val.Array()
+				if arr == nil {
+					return false
+				}
+				second, err := arr.OffsetGet(ctx, ZInt(1))
+				if err != nil || second == nil || second.GetType() != ZtString {
+					return false
+				}
+				return true
 			case ZtObject:
 				return true // closure or object with __invoke
 			case ZtCallable:

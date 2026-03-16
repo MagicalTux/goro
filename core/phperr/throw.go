@@ -29,9 +29,9 @@ func (e *PhpThrow) ThrownFile() string {
 // exception object's "line" property), falling back to Loc.Line.
 func (e *PhpThrow) ThrownLine() int {
 	if e.Obj != nil {
-		if l := e.Obj.HashTable().GetString("line"); l != nil {
-			if n, ok := l.Value().(phpv.ZInt); ok && n > 0 {
-				return int(n)
+		if l := e.Obj.HashTable().GetString("line"); l != nil && l.GetType() == phpv.ZtInt {
+			if n := int(l.Value().(phpv.ZInt)); n > 0 {
+				return n
 			}
 		}
 	}
@@ -50,10 +50,13 @@ func (e *PhpThrow) ErrorTrace(ctx phpv.Context) string {
 }
 
 func (e *PhpThrow) Error() string {
+	if e.Obj == nil {
+		return "Uncaught exception"
+	}
 	className := e.Obj.GetClass().GetName()
-	message := e.Obj.HashTable().GetString("message").String()
-	if message == "" {
+	msg := e.Obj.HashTable().GetString("message")
+	if msg == nil || msg.String() == "" {
 		return "Uncaught " + string(className)
 	}
-	return "Uncaught " + string(className) + ": " + message
+	return "Uncaught " + string(className) + ": " + msg.String()
 }

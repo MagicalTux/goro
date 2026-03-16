@@ -257,7 +257,8 @@ func compileSpecialFuncCall(i *tokenizer.Item, c compileCtx) (phpv.Runnable, err
 	}
 
 	// Check for first-class callable syntax: exit(...) / die(...)
-	// Note: backup() only supports one level, so we must not double-backup.
+	// Only T_EXIT supports this; echo/print/include are language constructs
+	// without callable semantics.
 	if i.IsSingle('(') {
 		next, nextErr := c.NextItem()
 		if nextErr != nil {
@@ -279,16 +280,15 @@ func compileSpecialFuncCall(i *tokenizer.Item, c compileCtx) (phpv.Runnable, err
 					l:      l,
 				}, nil
 			}
-			// Not first-class callable; backup last token only.
-			// The '(' and '...' are consumed, which is unusual.
-			// Fall through - compileExpr will handle the rest.
-			c.backup()
-		} else {
-			// Not '...'; backup the token after '(' and let '(' pass through
-			// to compileExpr as the start of a parenthesized expression.
-			c.backup()
+			// Saw '(' '...' but not ')' — this is a syntax error since
+			// backup() only supports one level and we can't restore both
+			// the '...' and the following token.
+			return nil, close.Unexpected()
 		}
-		// i is still '(' - fall through to expression parsing
+		// Not '...'; backup the token after '(' so the expression parser
+		// handles the full parenthesized expression (e.g., exit(42)).
+		c.backup()
+		// i is still '(' — fall through to expression parsing
 	}
 
 	var args []phpv.Runnable

@@ -22,11 +22,12 @@ type Ext struct {
 
 type ExtFunction struct {
 	phpv.CallableVal
-	name    string
-	Func    func(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
-	Args    []*ExtFunctionArg
-	MinArgs int // minimum required arguments (0 = no check)
-	MaxArgs int // maximum allowed arguments (0 = no check, -1 = variadic/unlimited)
+	name     string
+	Func     func(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
+	Args     []*ExtFunctionArg
+	MinArgs  int // minimum required arguments (0 = no check)
+	MaxArgs  int // maximum allowed arguments (0 = no check, -1 = variadic/unlimited)
+	funcArgs []*phpv.FuncArg // cached conversion of Args, populated at registration
 }
 
 func (e *ExtFunction) Name() string {
@@ -56,27 +57,34 @@ type ExtFunctionArg struct {
 	Optional bool // is this argument optional?
 }
 
-// GetArgs implements phpv.FuncGetArgs so that closureFromCallable can
-// read parameter metadata for the closure's __debugInfo output.
+// GetArgs implements phpv.FuncGetArgs, returning cached parameter metadata.
+// Returns nil for functions without declared Args (most built-in functions),
+// which signals to callZValImpl that Go-side argument handling applies.
 func (e *ExtFunction) GetArgs() []*phpv.FuncArg {
+	return e.funcArgs
+}
+
+// buildFuncArgs converts ExtFunctionArg metadata to FuncArg and caches it.
+// Called once at registration time by RegisterExt.
+func (e *ExtFunction) buildFuncArgs() {
 	if len(e.Args) == 0 {
-		return nil
+		return
 	}
-	args := make([]*phpv.FuncArg, len(e.Args))
+	e.funcArgs = make([]*phpv.FuncArg, len(e.Args))
 	for i, a := range e.Args {
-		args[i] = &phpv.FuncArg{
+		e.funcArgs[i] = &phpv.FuncArg{
 			VarName:  phpv.ZString(a.ArgName),
 			Required: !a.Optional,
 			Ref:      a.Ref,
 		}
 	}
-	return args
 }
 
 func RegisterExt(e *Ext) {
 	globalExtMap[e.Name] = e
 	for name, fn := range e.Functions {
 		fn.name = name
+		fn.buildFuncArgs()
 	}
 	for _, class := range e.Classes {
 		for _, m := range class.Methods {

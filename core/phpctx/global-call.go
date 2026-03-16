@@ -232,9 +232,11 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 
 	// collect args
 	// use func_args to check if any arg is a ref and needs to be passed as such
-	if c, ok := f.(phpv.FuncGetArgs); ok && c.GetArgs() != nil {
-		// This function has parameter metadata (PHP-defined or annotated Go function)
-		func_args := c.GetArgs()
+	var func_args []*phpv.FuncArg
+	if c, ok := f.(phpv.FuncGetArgs); ok {
+		func_args = c.GetArgs()
+	}
+	if func_args != nil {
 
 		// Handle variadic parameter: pack remaining args into an array
 		variadicIdx := -1
