@@ -2,7 +2,6 @@ package compiler
 
 import (
 	"errors"
-	"fmt"
 
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
@@ -422,16 +421,9 @@ func parseZObjectAttrFull(a *phpv.ZObjectAttr, setModifiers *phpv.ZObjectAttr, a
 					*a |= phpv.ZAttrPublic
 				}
 
-				// Validate: public(set) is never valid — set visibility must be stricter than read
-				if thisAccess == phpv.ZAttrPublic {
-					return fmt.Errorf("Visibility of property must not be weaker than set visibility")
-				}
-
-				// Validate: set visibility must be <= read visibility
-				readAccess := *a & phpv.ZAttrAccess
-				if readAccess == phpv.ZAttrPrivate && thisAccess != phpv.ZAttrPrivate {
-					return fmt.Errorf("Visibility of property must not be weaker than set visibility")
-				}
+				// Defer detailed validation to compile-class.go where class/property
+				// names are available for proper error messages. Only reject
+				// combinations that are syntactically invalid here.
 
 				if setModifiers != nil {
 					*setModifiers = setAccess
