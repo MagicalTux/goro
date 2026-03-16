@@ -267,6 +267,17 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 				prop := &phpv.ZClassProp{Modifiers: attr, SetModifiers: setModifiers, TypeHint: propTypeHint, Attributes: memberAttrs}
 				prop.VarName = phpv.ZString(i.Data[1:])
 
+				// Check for duplicate property declaration
+				for _, existing := range class.Props {
+					if existing.VarName == prop.VarName {
+						return nil, &phpv.PhpError{
+							Err:  fmt.Errorf("Cannot redeclare %s::$%s", class.Name, prop.VarName),
+							Code: phpv.E_COMPILE_ERROR,
+							Loc:  i.Loc(),
+						}
+					}
+				}
+
 				// Readonly class: all properties are implicitly readonly
 				if class.Attr.Has(phpv.ZClassReadonly) {
 					prop.Modifiers |= phpv.ZAttrReadonly

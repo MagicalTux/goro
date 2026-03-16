@@ -56,6 +56,17 @@ func compileDeclare(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			return nil, err
 		}
 
+		// Validate: ticks value must be a literal integer
+		if name == "ticks" {
+			if _, isLiteral := val.(*runZVal); !isLiteral {
+				return nil, &phpv.PhpError{
+					Err:  fmt.Errorf("declare(ticks) value must be a literal"),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  l,
+				}
+			}
+		}
+
 		directives = append(directives, declareDirective{name: name, val: val})
 
 		// Check for ',' or ')'
