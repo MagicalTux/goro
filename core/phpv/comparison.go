@@ -100,6 +100,54 @@ func CompareArray(ctx Context, aa, ba *ZArray) (int, error) {
 	return 0, nil
 }
 
+// compareIntStrings compares two integer-like strings with arbitrary precision.
+// Both strings must consist of optional leading whitespace, optional '-', then digits.
+// Returns -1, 0, or 1.
+func CompareIntStrings(a, b string) int {
+	a = strings.TrimSpace(a)
+	b = strings.TrimSpace(b)
+	aNeg := len(a) > 0 && a[0] == '-'
+	bNeg := len(b) > 0 && b[0] == '-'
+	if aNeg {
+		a = a[1:]
+	}
+	if bNeg {
+		b = b[1:]
+	}
+	// Strip leading zeros
+	a = strings.TrimLeft(a, "0")
+	b = strings.TrimLeft(b, "0")
+	if a == "" {
+		a = "0"
+		aNeg = false
+	}
+	if b == "" {
+		b = "0"
+		bNeg = false
+	}
+	if aNeg != bNeg {
+		if aNeg {
+			return -1
+		}
+		return 1
+	}
+	// Both same sign. Compare magnitudes.
+	var cmp int
+	if len(a) != len(b) {
+		if len(a) < len(b) {
+			cmp = -1
+		} else {
+			cmp = 1
+		}
+	} else {
+		cmp = strings.Compare(a, b)
+	}
+	if aNeg {
+		cmp = -cmp // negate for negative numbers
+	}
+	return cmp
+}
+
 func Compare(ctx Context, a, b *ZVal) (int, error) {
 	// operator compare (< > <= >= == === != !== <=>) involve a lot of dark magic in php, unless both values are of the same type (and even so)
 	// loose comparison will convert number-y looking strings into numbers, etc
@@ -150,15 +198,19 @@ func Compare(ctx Context, a, b *ZVal) (int, error) {
 	}
 
 	var ia, ib *ZVal
+	var aLooksInt, bLooksInt bool
 
 	switch a.GetType() {
 	case ZtInt, ZtFloat:
 		ia = a
 	case ZtString:
-		if a.Value().(ZString).LooksInt() {
-			ia, _ = a.As(ctx, ZtInt)
-		} else if a.Value().(ZString).IsNumeric() {
-			ia, _ = a.As(ctx, ZtFloat)
+		aStr := a.Value().(ZString)
+		aLooksInt = aStr.LooksInt()
+		if aLooksInt || aStr.IsNumeric() {
+			v, _ := aStr.AsNumeric()
+			if v != nil {
+				ia = NewZVal(v)
+			}
 		}
 	}
 
@@ -166,10 +218,13 @@ func Compare(ctx Context, a, b *ZVal) (int, error) {
 	case ZtInt, ZtFloat:
 		ib = b
 	case ZtString:
-		if b.Value().(ZString).LooksInt() {
-			ib, _ = b.As(ctx, ZtInt)
-		} else if b.Value().(ZString).IsNumeric() {
-			ib, _ = b.As(ctx, ZtFloat)
+		bStr := b.Value().(ZString)
+		bLooksInt = bStr.LooksInt()
+		if bLooksInt || bStr.IsNumeric() {
+			v, _ := bStr.AsNumeric()
+			if v != nil {
+				ib = NewZVal(v)
+			}
 		}
 	}
 
@@ -179,6 +234,13 @@ func Compare(ctx Context, a, b *ZVal) (int, error) {
 		if ia == nil || ib == nil {
 			// At least one string is non-numeric, use string comparison
 			goto CompareStrings
+		}
+		// When both strings look like integers but at least one overflowed to float,
+		// use arbitrary-precision integer comparison (float64 loses precision for large ints).
+		if aLooksInt && bLooksInt {
+			if ia.GetType() == ZtFloat || ib.GetType() == ZtFloat {
+				return CompareIntStrings(string(a.Value().(ZString)), string(b.Value().(ZString))), nil
+			}
 		}
 	}
 

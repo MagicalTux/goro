@@ -1035,15 +1035,19 @@ func operatorCompare(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (
 	// operator compare (< > <= >= == === != !== <=>) involve a lot of dark magic in php, unless both values are of the same type (and even so)
 	// loose comparison will convert number-y looking strings into numbers, etc
 	var ia, ib *phpv.ZVal
+	var aLooksInt, bLooksInt bool
 
 	switch a.GetType() {
 	case phpv.ZtInt, phpv.ZtFloat:
 		ia = a
 	case phpv.ZtString:
-		if a.Value().(phpv.ZString).LooksInt() {
-			ia, _ = a.As(ctx, phpv.ZtInt)
-		} else if a.Value().(phpv.ZString).IsNumeric() {
-			ia, _ = a.As(ctx, phpv.ZtFloat)
+		aStr := a.Value().(phpv.ZString)
+		aLooksInt = aStr.LooksInt()
+		if aLooksInt || aStr.IsNumeric() {
+			v, _ := aStr.AsNumeric()
+			if v != nil {
+				ia = phpv.NewZVal(v)
+			}
 		}
 	}
 
@@ -1051,10 +1055,13 @@ func operatorCompare(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (
 	case phpv.ZtInt, phpv.ZtFloat:
 		ib = b
 	case phpv.ZtString:
-		if b.Value().(phpv.ZString).LooksInt() {
-			ib, _ = b.As(ctx, phpv.ZtInt)
-		} else if b.Value().(phpv.ZString).IsNumeric() {
-			ib, _ = b.As(ctx, phpv.ZtFloat)
+		bStr := b.Value().(phpv.ZString)
+		bLooksInt = bStr.LooksInt()
+		if bLooksInt || bStr.IsNumeric() {
+			v, _ := bStr.AsNumeric()
+			if v != nil {
+				ib = phpv.NewZVal(v)
+			}
 		}
 	}
 
@@ -1065,6 +1072,33 @@ func operatorCompare(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (
 	if a.GetType() == phpv.ZtString && b.GetType() == phpv.ZtString {
 		if aIsNonNumericString || bIsNonNumericString {
 			goto CompareStrings
+		}
+		// When both strings look like integers but at least one overflowed to float,
+		// use arbitrary-precision integer comparison (float64 loses precision for large ints).
+		if aLooksInt && bLooksInt {
+			if ia.GetType() == phpv.ZtFloat || ib.GetType() == phpv.ZtFloat {
+				cmp := phpv.CompareIntStrings(string(a.Value().(phpv.ZString)), string(b.Value().(phpv.ZString)))
+				var res phpv.Val
+				switch op {
+				case tokenizer.Rune('<'):
+					res = phpv.ZBool(cmp < 0)
+				case tokenizer.Rune('>'):
+					res = phpv.ZBool(cmp > 0)
+				case tokenizer.T_IS_SMALLER_OR_EQUAL:
+					res = phpv.ZBool(cmp <= 0)
+				case tokenizer.T_IS_GREATER_OR_EQUAL:
+					res = phpv.ZBool(cmp >= 0)
+				case tokenizer.T_IS_EQUAL:
+					res = phpv.ZBool(cmp == 0)
+				case tokenizer.T_IS_NOT_EQUAL:
+					res = phpv.ZBool(cmp != 0)
+				case tokenizer.T_SPACESHIP:
+					res = phpv.ZInt(cmp)
+				default:
+					return nil, ctx.Errorf("unsupported operator %s", op)
+				}
+				return res.ZVal(), nil
+			}
 		}
 	}
 

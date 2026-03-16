@@ -214,6 +214,31 @@ func checkEmpty(ctx phpv.Context, v phpv.Runnable) (bool, error) {
 		}
 		return isValueEmpty(ctx, val), nil
 
+	case *runObjectDynVar:
+		// For dynamic object property access: $obj->{expr}
+		value, err := t.ref.Run(ctx)
+		if err != nil {
+			return true, nil
+		}
+		if value.GetType() != phpv.ZtObject {
+			return true, nil
+		}
+		obj := value.AsObject(ctx).(*phpobj.ZObject)
+		name, err := t.nameExpr.Run(ctx)
+		if err != nil {
+			return true, nil
+		}
+		propName := phpv.ZString(name.String())
+		exists, err := obj.HasProp(ctx, propName)
+		if err != nil || !exists {
+			return true, nil
+		}
+		val, err := obj.ObjectGet(ctx, propName)
+		if err != nil {
+			return true, nil
+		}
+		return isValueEmpty(ctx, val), nil
+
 	default:
 		// For any other expression, just evaluate and check
 		val, err := v.Run(ctx)
@@ -308,6 +333,26 @@ func checkExistence(ctx phpv.Context, v phpv.Runnable, subExpr bool) (bool, erro
 			}
 			propName = propVal.AsString(ctx)
 		}
+		return obj.HasProp(ctx, propName)
+
+	case *runObjectDynVar:
+		exists, err := checkExistence(ctx, t.ref, true)
+		if !exists || err != nil {
+			return exists, err
+		}
+		value, err := t.ref.Run(ctx)
+		if err != nil {
+			return false, err
+		}
+		if value.GetType() != phpv.ZtObject {
+			return false, nil
+		}
+		obj := value.AsObject(ctx).(*phpobj.ZObject)
+		name, err := t.nameExpr.Run(ctx)
+		if err != nil {
+			return false, nil
+		}
+		propName := phpv.ZString(name.String())
 		return obj.HasProp(ctx, propName)
 
 	case *runClassStaticVarRef:

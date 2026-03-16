@@ -491,6 +491,9 @@ func (z *ZClosure) checkDeprecated(ctx phpv.Context) error {
 	}
 	for _, attr := range z.attributes {
 		if attr.ClassName == "Deprecated" {
+			// Resolve lazy argument expressions (e.g., forward-referenced constants)
+			ResolveAttrArgs(ctx, attr)
+
 			funcName := z.Name()
 			label := "Function"
 			if z.class != nil {
@@ -503,6 +506,48 @@ func (z *ZClosure) checkDeprecated(ctx phpv.Context) error {
 		}
 	}
 	return nil
+}
+
+// attrResolveLoc is the location override used during attribute argument resolution.
+// When set, nested deprecation warnings (e.g., accessing deprecated constants
+// during attribute arg evaluation) use this location instead of their own
+// compile-time location. This ensures that `#[\Deprecated(OTHER_CONST)]` reports
+// the line of the statement that triggered the access, not the attribute declaration.
+var attrResolveLoc *phpv.Loc
+
+// ResolveAttrArgs evaluates any lazy argument expressions on the attribute.
+// This must be called before reading attr.Args when expressions couldn't be
+// fully evaluated at compile time (e.g., forward-referenced constants).
+// The caller should set ctx location (via ctx.Tick) to the access site before
+// calling this function so that nested deprecation warnings report the correct location.
+func ResolveAttrArgs(ctx phpv.Context, attr *phpv.ZAttribute) {
+	if attr.ArgExprs == nil {
+		return
+	}
+	attr.Resolving = true
+	// Save the resolve location override. During attribute argument resolution,
+	// nested constant accesses should report the outer access site location.
+	savedResolveLoc := attrResolveLoc
+	if attrResolveLoc == nil {
+		// First level of resolution: capture the current location as the override
+		attrResolveLoc = ctx.Loc()
+	}
+	defer func() {
+		attr.Resolving = false
+		attrResolveLoc = savedResolveLoc
+	}()
+	for i, expr := range attr.ArgExprs {
+		if expr != nil {
+			// Clear the expression BEFORE evaluating to prevent infinite
+			// recursion when the expression references the same constant
+			// (e.g., #[\Deprecated(TEST)] const TEST = "from itself").
+			attr.ArgExprs[i] = nil
+			val, err := expr.Run(ctx)
+			if err == nil && val != nil {
+				attr.Args[i] = val
+			}
+		}
+	}
 }
 
 // FormatDeprecatedMsg formats a deprecation message from a #[\Deprecated] attribute.

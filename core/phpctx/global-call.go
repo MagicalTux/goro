@@ -335,6 +335,11 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 					// (function call result), or a direct CallZVal with a non-variable.
 					// In either case, pass by value instead of by reference.
 					if !callCtx.Args[i].IsRef() {
+						// Emit "must be passed by reference, value given" warning
+						// (e.g. when call_user_func_array passes non-ref to a ref param)
+						funcName := callCtx.GetFuncName()
+						ctx.Warn("%s(): Argument #%d ($%s) must be passed by reference, value given",
+							funcName, i+1, func_args[i].VarName, logopt.NoFuncName(true))
 						callCtx.Args[i] = callCtx.Args[i].Dup()
 						continue
 					}

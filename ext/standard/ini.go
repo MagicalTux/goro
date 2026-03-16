@@ -3,6 +3,7 @@ package standard
 import (
 	"bufio"
 	"io"
+	"strconv"
 	"strings"
 
 	"github.com/MagicalTux/goro/core"
@@ -186,5 +187,87 @@ func iniProcessValue(ctx phpv.Context, value string, mode phpv.ZInt) *phpv.ZVal 
 		return phpv.ZString("").ZVal()
 	}
 
+	// In NORMAL mode, evaluate bitwise expressions (|, &, ~, ^, !)
+	if mode == INI_SCANNER_NORMAL && containsIniOperator(value) {
+		result := iniEvalExpression(value)
+		return phpv.ZString(result).ZVal()
+	}
+
 	return phpv.ZString(value).ZVal()
+}
+
+// containsIniOperator checks if the value string contains INI bitwise operators.
+func containsIniOperator(s string) bool {
+	for _, c := range s {
+		if c == '|' || c == '&' || c == '~' || c == '^' || c == '!' {
+			return true
+		}
+	}
+	return false
+}
+
+// iniEvalExpression evaluates a simple INI expression with bitwise operators.
+// PHP's INI parser supports: | (OR), & (AND), ~ (NOT), ^ (XOR), ! (NOT)
+func iniEvalExpression(expr string) string {
+	expr = strings.TrimSpace(expr)
+
+	// Split by | first (lowest precedence)
+	if idx := strings.IndexByte(expr, '|'); idx != -1 {
+		left := iniEvalExpression(expr[:idx])
+		right := iniEvalExpression(expr[idx+1:])
+		l, errL := strconv.ParseInt(left, 10, 64)
+		r, errR := strconv.ParseInt(right, 10, 64)
+		if errL == nil && errR == nil {
+			return strconv.FormatInt(l|r, 10)
+		}
+		return expr
+	}
+
+	// Split by ^ (XOR)
+	if idx := strings.IndexByte(expr, '^'); idx != -1 {
+		left := iniEvalExpression(expr[:idx])
+		right := iniEvalExpression(expr[idx+1:])
+		l, errL := strconv.ParseInt(left, 10, 64)
+		r, errR := strconv.ParseInt(right, 10, 64)
+		if errL == nil && errR == nil {
+			return strconv.FormatInt(l^r, 10)
+		}
+		return expr
+	}
+
+	// Split by & (AND)
+	if idx := strings.IndexByte(expr, '&'); idx != -1 {
+		left := iniEvalExpression(expr[:idx])
+		right := iniEvalExpression(expr[idx+1:])
+		l, errL := strconv.ParseInt(left, 10, 64)
+		r, errR := strconv.ParseInt(right, 10, 64)
+		if errL == nil && errR == nil {
+			return strconv.FormatInt(l&r, 10)
+		}
+		return expr
+	}
+
+	// Handle unary ~ (NOT) and ! (NOT)
+	expr = strings.TrimSpace(expr)
+	if len(expr) > 0 && expr[0] == '~' {
+		inner := iniEvalExpression(expr[1:])
+		v, err := strconv.ParseInt(inner, 10, 64)
+		if err == nil {
+			return strconv.FormatInt(^v, 10)
+		}
+		return expr
+	}
+	if len(expr) > 0 && expr[0] == '!' {
+		inner := iniEvalExpression(expr[1:])
+		v, err := strconv.ParseInt(inner, 10, 64)
+		if err == nil {
+			if v == 0 {
+				return "1"
+			}
+			return ""
+		}
+		return expr
+	}
+
+	return strings.TrimSpace(expr)
 }

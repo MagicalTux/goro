@@ -49,7 +49,7 @@ func (r *runConstant) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 	z, ok := ctx.Global().ConstantGet(constName)
 	if ok {
 		// Check #[\Deprecated] on the constant
-		if err := checkConstantDeprecated(ctx, constName); err != nil {
+		if err := checkConstantDeprecated(ctx, constName, r.l); err != nil {
 			return nil, err
 		}
 		return z.ZVal(), nil
@@ -60,7 +60,7 @@ func (r *runConstant) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 		shortName := phpv.ZString(short)
 		z, ok = ctx.Global().ConstantGet(shortName)
 		if ok {
-			if err := checkConstantDeprecated(ctx, shortName); err != nil {
+			if err := checkConstantDeprecated(ctx, shortName, r.l); err != nil {
 				return nil, err
 			}
 			return z.ZVal(), nil
@@ -72,11 +72,33 @@ func (r *runConstant) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 }
 
 // checkConstantDeprecated checks if a global constant has #[\Deprecated] and emits a warning.
-func checkConstantDeprecated(ctx phpv.Context, name phpv.ZString) error {
+// loc is the compile-time location of the constant access.
+func checkConstantDeprecated(ctx phpv.Context, name phpv.ZString, loc *phpv.Loc) error {
 	attrs := ctx.Global().ConstantGetAttributes(name)
 	for _, attr := range attrs {
 		if attr.ClassName == "Deprecated" {
+			// Skip if this attribute's args are currently being resolved
+			// (prevents infinite recursion for self-referencing constants)
+			if attr.Resolving {
+				return nil
+			}
+			// If we're inside attribute argument resolution, use the outer access
+			// site location instead of this constant reference's compile-time location.
+			useLoc := loc
+			if attrResolveLoc != nil {
+				useLoc = attrResolveLoc
+			}
+			// Set the context location before resolving, so that ResolveAttrArgs
+			// captures the correct access-site location for nested accesses.
+			if useLoc != nil {
+				ctx.Tick(ctx, useLoc)
+			}
+			// Resolve lazy argument expressions (e.g., forward-referenced constants).
+			ResolveAttrArgs(ctx, attr)
 			msg := FormatDeprecatedMsg("Constant", string(name), attr)
+			if useLoc != nil {
+				return ctx.UserDeprecated("%s", msg, logopt.NoFuncName(true), logopt.Data{Loc: useLoc})
+			}
 			return ctx.UserDeprecated("%s", msg, logopt.NoFuncName(true))
 		}
 	}

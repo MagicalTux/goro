@@ -11,6 +11,7 @@ type ZAttribute struct {
 	ClassName ZString    // fully qualified attribute class name
 	Args      []*ZVal    // evaluated arguments (nil if no args)
 	ArgExprs  []Runnable // unevaluated argument expressions for lazy evaluation (nil if fully resolved)
+	Resolving bool       // true while lazy args are being resolved (prevents re-entrant deprecation)
 }
 
 type ZClassProp struct {

@@ -231,7 +231,7 @@ type runRef struct {
 
 func (r *runRef) isVariableLike() bool {
 	switch r.v.(type) {
-	case *runVariable, *runArrayAccess, *runObjectVar, *runClassStaticVarRef:
+	case *runVariable, *runArrayAccess, *runObjectVar, *runObjectDynVar, *runClassStaticVarRef:
 		return true
 	}
 	return false

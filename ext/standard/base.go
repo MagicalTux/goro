@@ -8,6 +8,7 @@ import (
 	"unicode"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpctx"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
@@ -375,6 +376,11 @@ func stdGetClass(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	ctx = ctx.Parent(1)
+
+	if len(args) == 0 {
+		// PHP 8.0+: calling get_class() without arguments is deprecated
+		ctx.Deprecated("Calling get_class() without arguments is deprecated", logopt.NoFuncName(true))
+	}
 
 	object := objectArg.GetOrDefault(ctx.This())
 	if object == nil {

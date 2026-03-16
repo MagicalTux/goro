@@ -60,6 +60,8 @@ func constant(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			// Check #[\Deprecated] attribute on the class constant
 			for _, attr := range cc.Attributes {
 				if attr.ClassName == "Deprecated" {
+					// Resolve lazy argument expressions
+					compiler.ResolveAttrArgs(ctx, attr)
 					label := "Constant"
 					if zc.Type == phpv.ZClassTypeEnum {
 						for _, caseName := range zc.EnumCases {

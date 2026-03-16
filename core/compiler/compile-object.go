@@ -548,19 +548,9 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 
 	method, ok := class.GetMethod(op)
 
-	// Check #[\Deprecated] attribute on the resolved method
-	if ok && method != nil {
-		for _, attr := range method.Attributes {
-			if attr.ClassName == "Deprecated" {
-				funcName := string(class.GetName()) + "::" + string(method.Name)
-				msg := FormatDeprecatedMsg("Method", funcName+"()", attr)
-				if err := ctx.UserDeprecated("%s", msg, logopt.NoFuncName(true)); err != nil {
-					return nil, err
-				}
-				break
-			}
-		}
-	}
+	// Note: #[\Deprecated] check for user methods is handled by ZClosure.Call()
+	// which fires when the method body is actually invoked. We do NOT check
+	// method.Attributes here to avoid double-firing the deprecation warning.
 
 	// PHP resolves private methods from the caller's class scope, not the runtime class.
 	// Private methods are not virtual — when calling $this->method() from within a class
@@ -764,8 +754,13 @@ func (r *runObjectVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 
 	objI, ok := obj.Value().(phpv.ZObjectAccess)
 	if !ok {
-		// PHP 8: reading property of non-object is a warning, returns null
 		typeName := phpValueTypeName(obj)
+		if r.writeContext {
+			// PHP 8: modifying property of non-object in a write chain throws Error
+			return nil, phpobj.ThrowError(ctx, phpobj.Error,
+				fmt.Sprintf("Attempt to modify property \"%s\" on %s", r.varName, typeName))
+		}
+		// PHP 8: reading property of non-object is a warning, returns null
 		ctx.Warn("Attempt to read property \"%s\" on %s", r.varName, typeName, logopt.NoFuncName(true))
 		return phpv.ZNULL.ZVal(), nil
 	}
@@ -841,8 +836,16 @@ func (r *runObjectVar) SetWriteContext(v bool) {
 }
 
 func (r *runObjectVar) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
+	// Set write context on the ref chain so intermediate property accesses
+	// produce "Attempt to modify property" errors instead of "Attempt to read" warnings.
+	if wcs, ok := r.ref.(phpv.WriteContextSetter); ok {
+		wcs.SetWriteContext(true)
+	}
 	// write object property
 	obj, err := r.ref.Run(ctx)
+	if wcs, ok := r.ref.(phpv.WriteContextSetter); ok {
+		wcs.SetWriteContext(false)
+	}
 	if err != nil {
 		return err
 	}
@@ -975,6 +978,7 @@ type runObjectDynFunc struct {
 	args     []phpv.Runnable
 	l        *phpv.Loc
 	nullsafe bool
+	static   bool
 }
 
 func (r *runObjectDynFunc) Dump(w io.Writer) error {
@@ -1014,6 +1018,107 @@ func (r *runObjectDynFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		}
 	}
 	methodName := phpv.ZString(name.String())
+
+	if r.static && obj.GetType() == phpv.ZtString {
+		// Static call: Class::{'method'}()
+		className := obj.AsString(ctx)
+		var class phpv.ZClass
+		var objI phpv.ZObject
+
+		switch className {
+		case "self":
+			if ctx.This() != nil {
+				objI = ctx.This()
+				class = objI.GetClass()
+			} else {
+				class, err = ctx.Global().GetClass(ctx, "self", false)
+				if err != nil {
+					return nil, ctx.Errorf("Cannot access self:: when no class scope is active")
+				}
+			}
+		case "parent":
+			if ctx.This() != nil {
+				if ctx.This().GetClass().GetParent() == nil {
+					return nil, ctx.Errorf("Cannot access parent:: when current class scope has no parent")
+				}
+				objI = ctx.This().GetParent()
+				class = objI.GetClass()
+			} else {
+				selfClass, selfErr := ctx.Global().GetClass(ctx, "self", false)
+				if selfErr != nil {
+					return nil, ctx.Errorf("Cannot access parent:: when no class scope is active")
+				}
+				parentClass := selfClass.GetParent()
+				if parentClass == nil {
+					return nil, ctx.Errorf("Cannot access parent:: when current class scope has no parent")
+				}
+				class = parentClass
+			}
+		case "static":
+			if ctx.This() != nil {
+				objI = ctx.This()
+				class = objI.GetClass()
+			} else {
+				class, err = ctx.Global().GetClass(ctx, "static", false)
+				if err != nil {
+					return nil, ctx.Errorf("Cannot access static:: when no class scope is active")
+				}
+			}
+		default:
+			nonStatic := false
+			if ctx.This() != nil {
+				kin := ctx.This().GetKin(string(className))
+				if kin != nil {
+					objI = kin
+					class = objI.GetClass()
+					nonStatic = true
+				}
+			}
+			if !nonStatic {
+				class, err = ctx.Global().GetClass(ctx, className, true)
+				if err != nil {
+					return nil, err
+				}
+			}
+		}
+
+		method, ok := class.GetMethod(methodName.ToLower())
+		if !ok {
+			// Try __callStatic
+			method, ok = class.GetMethod("__callstatic")
+			if ok {
+				a := phpv.NewZArray()
+				callArgs := []*phpv.ZVal{methodName.ZVal(), a.ZVal()}
+				for _, sub := range r.args {
+					v, err := sub.Run(ctx)
+					if err != nil {
+						return nil, err
+					}
+					a.OffsetSet(ctx, nil, v)
+				}
+				return ctx.CallZVal(ctx, method.Method, callArgs, objI)
+			}
+			// Try __call on instance
+			if objI != nil {
+				method, ok = class.GetMethod("__call")
+				if ok {
+					a := phpv.NewZArray()
+					callArgs := []*phpv.ZVal{methodName.ZVal(), a.ZVal()}
+					for _, sub := range r.args {
+						v, err := sub.Run(ctx)
+						if err != nil {
+							return nil, err
+						}
+						a.OffsetSet(ctx, nil, v)
+					}
+					return ctx.CallZVal(ctx, method.Method, callArgs, objI)
+				}
+			}
+			return nil, ctx.Errorf("Call to undefined method %s::%s()", class.GetName(), methodName)
+		}
+		return ctx.Call(ctx, method.Method, r.args, objI)
+	}
+
 	objZ := obj.AsObject(ctx)
 	if objZ == nil {
 		return nil, ctx.Errorf("Call to a member function %s() on a non-object", methodName)
@@ -1095,6 +1200,34 @@ func compilePaamayimNekudotayim(v phpv.Runnable, i *tokenizer.Item, c compileCtx
 		}
 		c.backup()
 		return &runClassStaticVarRef{v, ident[1:], l}, nil
+
+	case tokenizer.Rune('{'):
+		// C::{'method'}() — dynamic static method call with brace-enclosed expression
+		expr, err := compileExpr(nil, c)
+		if err != nil {
+			return nil, err
+		}
+		i, err = c.NextItem()
+		if err != nil {
+			return nil, err
+		}
+		if i.Type != tokenizer.Rune('}') {
+			return nil, i.Unexpected()
+		}
+		// Check if followed by ( for method call
+		i, err = c.NextItem()
+		if err != nil {
+			return nil, err
+		}
+		c.backup()
+		if i.IsSingle('(') {
+			// Dynamic static method call: C::{'method'}()
+			dynFunc := &runObjectDynFunc{ref: v, nameExpr: expr, l: l, static: true}
+			dynFunc.args, err = compileFuncPassedArgs(c)
+			return dynFunc, err
+		}
+		// Dynamic static property/constant access: C::{'prop'}
+		return &runObjectDynVar{ref: v, nameExpr: expr, l: l}, nil
 
 	case tokenizer.T_CLASS:
 		// $obj::class or ClassName::class → get class name
