@@ -304,6 +304,25 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		ac.compoundCache = false
 	}
 
+	// Check for [] (empty offset) in read context — must be caught early
+	// before type-specific handling returns null for undefined containers
+	if ac.offset == nil && !ac.writeContext {
+		write := false
+		switch t := ac.Parent.(type) {
+		case *runOperator:
+			write = t.opD != nil && t.opD.write
+		case *runArrayAccess, *runnableForeach, *runDestructure:
+			write = true
+		}
+		if !write {
+			return nil, &phpv.PhpError{
+				Err:  fmt.Errorf("Cannot use [] for reading"),
+				Code: phpv.E_ERROR,
+				Loc:  ac.l,
+			}
+		}
+	}
+
 	switch v.GetType() {
 	case phpv.ZtString:
 	case phpv.ZtArray:
@@ -401,7 +420,11 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		}
 
 		if !write {
-			return nil, ctx.Errorf("Cannot use [] for reading")
+			return nil, &phpv.PhpError{
+				Err:  fmt.Errorf("Cannot use [] for reading"),
+				Code: phpv.E_ERROR,
+				Loc:  ac.l,
+			}
 		}
 		return nil, nil
 	}
@@ -862,6 +885,9 @@ func compileArrayAccess(v phpv.Runnable, c compileCtx) (phpv.Runnable, error) {
 		return nil, err
 	}
 	if i.IsSingle(endc) {
+		// $arr[] — empty offset. Only valid in write context.
+		// We compile it and defer the read-context check to runtime
+		// since write context is determined by the parent expression.
 		v = &runArrayAccess{value: v, offset: nil, l: l}
 		return v, nil
 	}
