@@ -459,11 +459,13 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 					}
 				}
 
-				class.Const[phpv.ZString(constName)] = &phpv.ZClassConst{
+				cn := phpv.ZString(constName)
+				class.Const[cn] = &phpv.ZClassConst{
 					Value:      &phpv.CompileDelayed{V: v},
 					Modifiers:  attr,
 					Attributes: memberAttrs,
 				}
+				class.ConstOrder = append(class.ConstOrder, cn)
 
 				i, err = c.NextItem()
 				if err != nil {

@@ -243,7 +243,7 @@ func (r *runEnumRegister) preCompileValidation(ctx phpv.Context) error {
 	// Check for ambiguous constants from multiple interfaces
 	seenConsts := make(map[phpv.ZString]phpv.ZString) // const name -> first interface name
 	for _, intfClass := range allResolvedInterfaces {
-		for constName := range intfClass.Const {
+		for _, constName := range intfClass.ConstOrder {
 			// Skip if the enum itself defines this constant
 			if _, ownExists := c.Const[constName]; ownExists {
 				continue

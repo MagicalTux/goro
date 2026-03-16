@@ -323,7 +323,11 @@ func reflectionClassGetReflectionConstants(ctx phpv.Context, o *phpobj.ZObject, 
 	seen := make(map[string]bool)
 	for cur := zc; cur != nil; {
 		if cur.Const != nil {
-			for name, c := range cur.Const {
+			for _, name := range cur.ConstOrder {
+				c := cur.Const[name]
+				if c == nil {
+					continue
+				}
 				key := strings.ToLower(string(name))
 				if seen[key] {
 					continue

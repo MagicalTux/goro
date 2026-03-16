@@ -318,8 +318,8 @@ func reflectionClassGetConstants(ctx phpv.Context, o *phpobj.ZObject, args []*ph
 
 	arr := phpv.NewZArray()
 	if zc.Const != nil {
-		for name, c := range zc.Const {
-			if c.Value != nil {
+		for _, name := range zc.ConstOrder {
+			if c := zc.Const[name]; c != nil && c.Value != nil {
 				arr.OffsetSet(ctx, name, c.Value.ZVal())
 			}
 		}

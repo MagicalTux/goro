@@ -208,6 +208,7 @@ func compileEnum(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 				Modifiers:  phpv.ZAttrPublic,
 				Attributes: memberAttrs,
 			}
+			class.ConstOrder = append(class.ConstOrder, caseName)
 
 		case tokenizer.T_CONST:
 			// Regular constant in enum
@@ -234,11 +235,13 @@ func compileEnum(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 					return nil, err
 				}
 
-				class.Const[phpv.ZString(constName)] = &phpv.ZClassConst{
+				ecn := phpv.ZString(constName)
+				class.Const[ecn] = &phpv.ZClassConst{
 					Value:      &phpv.CompileDelayed{V: v},
 					Modifiers:  phpv.ZAttrPublic,
 					Attributes: memberAttrs,
 				}
+				class.ConstOrder = append(class.ConstOrder, ecn)
 
 				i, err = c.NextItem()
 				if err != nil {

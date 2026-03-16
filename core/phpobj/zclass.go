@@ -24,6 +24,7 @@ type ZClass struct {
 	Extends         *ZClass
 	Implementations []*ZClass
 	Const           map[phpv.ZString]*phpv.ZClassConst // class constants
+	ConstOrder      []phpv.ZString                     // declaration order for deterministic iteration
 	Props           []*phpv.ZClassProp
 	TraitUses       []phpv.ZClassTraitUse
 	Methods         map[phpv.ZString]*phpv.ZClassMethod
@@ -183,9 +184,10 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 			}
 		}
 
-		// Inherit constants from parent (skip private ones)
-		for k, v := range c.Extends.Const {
-			if v.Modifiers.IsPrivate() {
+		// Inherit constants from parent (skip private ones), preserving order
+		for _, k := range c.Extends.ConstOrder {
+			v := c.Extends.Const[k]
+			if v == nil || v.Modifiers.IsPrivate() {
 				continue
 			}
 			if childConst, exists := c.Const[k]; exists {
@@ -203,6 +205,7 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 				}
 			} else {
 				c.Const[k] = v
+				c.ConstOrder = append(c.ConstOrder, k)
 			}
 		}
 
@@ -293,10 +296,13 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 				}
 			}
 
-			// Copy constants from trait
-			for k, v := range tc.Const {
-				if _, exists := c.Const[k]; !exists {
-					c.Const[k] = v
+			// Copy constants from trait, preserving order
+			for _, k := range tc.ConstOrder {
+				if v := tc.Const[k]; v != nil {
+					if _, exists := c.Const[k]; !exists {
+						c.Const[k] = v
+						c.ConstOrder = append(c.ConstOrder, k)
+					}
 				}
 			}
 		}
@@ -428,7 +434,11 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 	// Try to resolve constants eagerly, but if resolution fails (e.g. forward
 	// reference to a class not yet defined), leave them as CompileDelayed for
 	// lazy resolution when accessed (handled in compile-classref.go).
-	for k, cc := range c.Const {
+	for _, k := range c.ConstOrder {
+		cc := c.Const[k]
+		if cc == nil {
+			continue
+		}
 		if r, ok := cc.Value.(*phpv.CompileDelayed); ok {
 			z, err := r.Run(ctx)
 			if err == nil {
@@ -506,9 +516,12 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 				}
 			}
 		}
-		for k, v := range intf.Const {
-			if _, exists := c.Const[k]; !exists {
-				c.Const[k] = v
+		for _, k := range intf.ConstOrder {
+			if v := intf.Const[k]; v != nil {
+				if _, exists := c.Const[k]; !exists {
+					c.Const[k] = v
+					c.ConstOrder = append(c.ConstOrder, k)
+				}
 			}
 		}
 	}
@@ -696,7 +709,11 @@ func (c *ZClass) validateAttributes(ctx phpv.Context) error {
 	}
 
 	// Validate class constant attributes (internal attrs only at compile time)
-	for _, cc := range c.Const {
+	for _, k := range c.ConstOrder {
+		cc := c.Const[k]
+		if cc == nil {
+			continue
+		}
 		if len(cc.Attributes) > 0 {
 			if msg := ValidateInternalAttributeList(ctx, cc.Attributes, AttributeTARGET_CLASS_CONSTANT); msg != "" {
 				return c.fatalError(ctx, msg)
@@ -1449,7 +1466,11 @@ func (c *ZClass) FindStaticProp(ctx phpv.Context, name phpv.ZString) (*phpv.ZHas
 func (c *ZClass) ResolveConstants(ctx phpv.Context) error {
 	for cur := c; cur != nil; cur = cur.Extends {
 		ctx.Global().SetCompilingClass(cur)
-		for k, cc := range cur.Const {
+		for _, k := range cur.ConstOrder {
+			cc := cur.Const[k]
+			if cc == nil {
+				continue
+			}
 			if r, ok := cc.Value.(*phpv.CompileDelayed); ok {
 				z, err := r.Run(ctx)
 				if err != nil {

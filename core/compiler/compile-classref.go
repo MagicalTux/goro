@@ -329,8 +329,8 @@ func (r *runClassStaticObjRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			// looking up) is the self-referencing one.
 			selfRefName := r.objName
 			zc := class.(*phpobj.ZClass)
-			for name, c := range zc.Const {
-				if c.Resolving && name != r.objName {
+			for _, name := range zc.ConstOrder {
+				if c := zc.Const[name]; c != nil && c.Resolving && name != r.objName {
 					selfRefName = name
 				}
 			}
