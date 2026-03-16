@@ -400,7 +400,29 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 		}
 	}
 
-	return phperr.CatchReturn(f.Call(callCtx, callCtx.Args))
+	callResult, callErr := phperr.CatchReturn(f.Call(callCtx, callCtx.Args))
+
+	// For functions that do NOT return by reference, separate array values
+	// so that writing to the returned array doesn't modify the original
+	// (PHP copy-on-write semantics). Objects are excluded since they always
+	// have reference semantics.
+	if callErr == nil && callResult != nil && callResult.GetType() == phpv.ZtArray {
+		returnsByRef := false
+		if rr, ok := f.(interface{ ReturnsByRef() bool }); ok {
+			returnsByRef = rr.ReturnsByRef()
+		}
+		if !returnsByRef {
+			// Dup creates a COW clone; force a full separation so that
+			// in-place modifications (e.g. doInc on $foo->f1()[0]++)
+			// don't affect the original array's elements via shared ZVal pointers.
+			callResult = callResult.Dup()
+			if za, ok := callResult.Value().(*phpv.ZArray); ok {
+				za.SeparateCow()
+			}
+		}
+	}
+
+	return callResult, callErr
 }
 
 // reorderNamedArgs reorders function call arguments based on PHP 8.0 named argument syntax.

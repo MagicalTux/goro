@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -48,7 +49,15 @@ func fncClassAlias(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	// Register the class under the alias name
 	err = ctx.Global().RegisterClass(alias, class)
 	if err != nil {
-		ctx.Warn("%s", err)
+		// For class_alias, construct the message using the alias name (not the existing name)
+		if redeclErr, ok := err.(interface {
+			RedeclareKind() string
+			RedeclarePrevLoc() string
+		}); ok {
+			ctx.Warn("Cannot redeclare %s %s%s", redeclErr.RedeclareKind(), alias, redeclErr.RedeclarePrevLoc(), logopt.NoFuncName(true))
+		} else {
+			ctx.Warn("%s", err, logopt.NoFuncName(true))
+		}
 		return phpv.ZTrue.ZVal(), nil // PHP returns true even on redeclaration warning
 	}
 

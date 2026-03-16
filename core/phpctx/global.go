@@ -1178,14 +1178,14 @@ func (g *Global) ConstantGetAttributes(k phpv.ZString) []*phpv.ZAttribute {
 func (g *Global) GetClass(ctx phpv.Context, name phpv.ZString, autoload bool) (phpv.ZClass, error) {
 	switch name {
 	case "self":
+		// When compilingClass is set (e.g., during attribute argument evaluation
+		// or class constant resolution), it takes priority over the function context.
+		if g.compilingClass != nil {
+			return g.compilingClass, nil
+		}
 		// check for func
 		fc := ctx.Func()
 		if fc == nil {
-			// During class compilation, self:: refers to the class being compiled.
-			// Check if there's a compilingClass set on the global context.
-			if g.compilingClass != nil {
-				return g.compilingClass, nil
-			}
 			return nil, ctx.Errorf("Cannot access self:: when no method scope is active")
 		}
 		f, ok := fc.(*FuncContext)
@@ -1298,6 +1298,38 @@ func (g *Global) GetClass(ctx phpv.Context, name phpv.ZString, autoload bool) (p
 	return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Class \"%s\" not found", name))
 }
 
+// ErrClassRedeclare is returned when a class name is already registered.
+// IsAlias indicates the existing registration was under a different name (i.e. via class_alias).
+type ErrClassRedeclare struct {
+	Kind         string        // "class", "interface", or "trait"
+	ExistingName phpv.ZString  // original name of existing class
+	RegisterName phpv.ZString  // name being registered
+	PrevLoc      string        // " (previously declared in ...)" or ""
+	IsAlias      bool          // existing name differs from registered name (class_alias case)
+}
+
+func (e *ErrClassRedeclare) Error() string {
+	// Use the existing class's canonical name for display.
+	// For alias conflicts, the caller (class_alias) constructs its own message.
+	displayName := e.ExistingName
+	if displayName == "" {
+		displayName = e.RegisterName
+	}
+	return fmt.Sprintf("Cannot redeclare %s %s%s", e.Kind, displayName, e.PrevLoc)
+}
+
+func (e *ErrClassRedeclare) IsAliasConflict() bool {
+	return e.IsAlias
+}
+
+func (e *ErrClassRedeclare) RedeclareKind() string {
+	return e.Kind
+}
+
+func (e *ErrClassRedeclare) RedeclarePrevLoc() string {
+	return e.PrevLoc
+}
+
 func (g *Global) RegisterClass(name phpv.ZString, c phpv.ZClass) error {
 	lowerName := name.ToLower()
 	if existing, ok := g.globalClasses[lowerName]; ok {
@@ -1312,12 +1344,15 @@ func (g *Global) RegisterClass(name phpv.ZString, c phpv.ZClass) error {
 		case phpv.ZClassTypeTrait:
 			kind = "trait"
 		}
-		// Use the existing class's original name for proper casing
-		displayName := existing.Name
-		if displayName == "" {
-			displayName = name
+		// Detect if the existing registration is an alias (registered under a different name)
+		isAlias := existing.Name.ToLower() != lowerName
+		return &ErrClassRedeclare{
+			Kind:         kind,
+			ExistingName: existing.Name,
+			RegisterName: name,
+			PrevLoc:      prevLoc,
+			IsAlias:      isAlias,
 		}
-		return fmt.Errorf("Cannot redeclare %s %s%s", kind, displayName, prevLoc)
 	}
 	g.globalClasses[lowerName] = c.(*phpobj.ZClass)
 	delete(g.globalLazyClass, lowerName)

@@ -557,33 +557,10 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			return class.Handlers().HandleInvoke(ctx, objI, r.args)
 		}
 
-		// For :: syntax, check __callStatic first, then fall back to __call
-		if r.static {
-			callClass := class
-			if ctx.This() != nil {
-				callClass = ctx.This().GetClass()
-			}
-			if callStaticMethod, hasCallStatic := callClass.GetMethod("__callstatic"); hasCallStatic {
-				a := phpv.NewZArray()
-				callArgs := []*phpv.ZVal{op.ZVal(), a.ZVal()}
-				for _, sub := range r.args {
-					val, err := sub.Run(ctx)
-					if err != nil {
-						return nil, err
-					}
-					a.OffsetSet(ctx, nil, val)
-				}
-				// Wrap in MethodCallable so stack trace shows class and :: type
-				return ctx.CallZVal(ctx, phpv.BindClass(callStaticMethod.Method, callClass, true), callArgs, objI)
-			}
-		}
-
-		// Check for __call magic method on instance calls
+		// Check for __call magic method on instance calls.
+		// When there's an instance context (objI != nil), __call takes priority
+		// over __callStatic, even with :: syntax (self::, static::, ClassName::).
 		if objI != nil {
-			// When using :: syntax, __call should be resolved from $this's
-			// actual class (the runtime class), not the named class in the ::
-			// expression. For example, if B extends A and $this is B, then
-			// A::undefinedMethod() should invoke B::__call, not A::__call.
 			callClass := class
 			callObj := objI
 			if r.static && ctx.This() != nil {
@@ -608,6 +585,27 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 				callArgs := []*phpv.ZVal{op.ZVal(), a.ZVal()}
 				// Wrap in BoundedCallable so stack trace shows class and -> type
 				return ctx.CallZVal(ctx, phpv.Bind(callMethod.Method, callObj), callArgs, callObj)
+			}
+		}
+
+		// For :: syntax without an instance (pure static call), check __callStatic
+		if r.static {
+			callClass := class
+			if ctx.This() != nil {
+				callClass = ctx.This().GetClass()
+			}
+			if callStaticMethod, hasCallStatic := callClass.GetMethod("__callstatic"); hasCallStatic {
+				a := phpv.NewZArray()
+				callArgs := []*phpv.ZVal{op.ZVal(), a.ZVal()}
+				for _, sub := range r.args {
+					val, err := sub.Run(ctx)
+					if err != nil {
+						return nil, err
+					}
+					a.OffsetSet(ctx, nil, val)
+				}
+				// Wrap in MethodCallable so stack trace shows class and :: type
+				return ctx.CallZVal(ctx, phpv.BindClass(callStaticMethod.Method, callClass, true), callArgs, objI)
 			}
 		}
 		return nil, ctx.Errorf("Call to undefined method %s::%s()", class.GetName(), op)

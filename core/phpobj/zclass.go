@@ -60,6 +60,17 @@ func (c *ZClass) GetName() phpv.ZString {
 func (c *ZClass) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	err := ctx.Global().RegisterClass(c.Name, c)
 	if err != nil {
+		// Check if the conflict is with an alias (class_alias) - those produce a Warning, not Fatal
+		type aliasConflictErr interface {
+			IsAliasConflict() bool
+			RedeclareKind() string
+			RedeclarePrevLoc() string
+		}
+		if aliasErr, ok := err.(aliasConflictErr); ok && aliasErr.IsAliasConflict() {
+			// Use the name being declared (c.Name) for the display, not the alias's original name
+			ctx.Warn("Cannot redeclare %s %s%s", aliasErr.RedeclareKind(), c.Name, aliasErr.RedeclarePrevLoc())
+			return nil, nil
+		}
 		return nil, c.fatalError(ctx, err.Error())
 	}
 	err = c.Compile(ctx)

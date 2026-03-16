@@ -279,14 +279,21 @@ func (r *runClassStaticObjRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Undefined constant %s::%s", class.GetName(), r.objName))
 	}
 
-	// Check visibility
+	// Check visibility. compilingClass takes priority (used during attribute
+	// argument evaluation where self:: should have full access).
 	if cc.Modifiers.IsPrivate() {
 		callerClass := ctx.Class()
+		if cc := ctx.Global().GetCompilingClass(); cc != nil {
+			callerClass = cc
+		}
 		if callerClass == nil || callerClass.GetName() != class.GetName() {
 			return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Cannot access private constant %s::%s", class.GetName(), r.objName))
 		}
 	} else if cc.Modifiers.IsProtected() {
 		callerClass := ctx.Class()
+		if compilingCls := ctx.Global().GetCompilingClass(); compilingCls != nil {
+			callerClass = compilingCls
+		}
 		if callerClass == nil || !callerClass.InstanceOf(class) && !class.InstanceOf(callerClass) {
 			return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Cannot access protected constant %s::%s", class.GetName(), r.objName))
 		}
@@ -338,10 +345,12 @@ func (r *runClassStaticObjRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 				fmt.Sprintf("Cannot declare self-referencing constant self::%s", selfRefName))
 		}
 		cc.Resolving = true
-		// Set compiling class so self:: works during constant resolution
+		// Set compiling class so self:: works during constant resolution.
+		// Save and restore previous value to avoid disrupting outer scope.
+		prevCompiling := ctx.Global().GetCompilingClass()
 		ctx.Global().SetCompilingClass(class.(*phpobj.ZClass))
 		resolved, err := cd.Run(ctx)
-		ctx.Global().SetCompilingClass(nil)
+		ctx.Global().SetCompilingClass(prevCompiling)
 		cc.Resolving = false
 		if err != nil {
 			return nil, err
@@ -368,9 +377,22 @@ func (r *runClassStaticObjRef) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.
 
 	method, ok := class.GetMethod(r.objName.ToLower())
 	if !ok {
+		// When called from an instance context ($this is available), prefer __call
+		// over __callStatic, matching PHP behavior for self::, static::, ClassName::
+		// calls within instance methods.
+		if ctx.This() != nil {
+			method, ok = class.GetMethod("__call")
+			if ok {
+				a := phpv.NewZArray()
+				callArgs := []*phpv.ZVal{r.objName.ZVal(), a.ZVal()}
+				for _, sub := range args {
+					a.OffsetSet(ctx, nil, sub)
+				}
+				return ctx.CallZVal(ctx, method.Method, callArgs, ctx.This())
+			}
+		}
 		method, ok = class.GetMethod("__callStatic")
 		if ok {
-			// found __call method
 			a := phpv.NewZArray()
 			callArgs := []*phpv.ZVal{r.objName.ZVal(), a.ZVal()}
 
@@ -415,6 +437,10 @@ func (r *runClassNameOf) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		name := v.AsString(ctx)
 		switch name {
 		case "self":
+			// Check compilingClass first (set during attribute argument evaluation)
+			if cc := ctx.Global().GetCompilingClass(); cc != nil {
+				return phpv.ZString(cc.GetName()).ZVal(), nil
+			}
 			cls := ctx.Class()
 			if cls == nil {
 				return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot use \"self\" when no class scope is active")
