@@ -739,6 +739,15 @@ func compileArray(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			break
 		}
 
+		// Detect empty array elements (e.g., [1, , 3])
+		if i.IsSingle(',') {
+			return nil, &phpv.PhpError{
+				Err:  fmt.Errorf("Cannot use empty array elements in arrays"),
+				Code: phpv.E_COMPILE_ERROR,
+				Loc:  i.Loc(),
+			}
+		}
+
 		// Handle spread operator: ...$expr
 		if i.Type == tokenizer.T_ELLIPSIS {
 			spreadLoc := i.Loc()
