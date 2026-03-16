@@ -1,8 +1,20 @@
 package core
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/MagicalTux/goro/core/phpv"
 )
+
+// reservedClassAliasNames contains names that cannot be used as class aliases.
+var reservedClassAliasNames = map[string]bool{
+	"self": true, "parent": true, "static": true,
+	"int": true, "float": true, "bool": true, "string": true,
+	"array": true, "object": true, "null": true, "void": true,
+	"never": true, "true": true, "false": true, "mixed": true,
+	"callable": true, "iterable": true,
+}
 
 // > func bool class_alias ( string $class , string $alias [, bool $autoload = true ] )
 func fncClassAlias(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
@@ -12,6 +24,16 @@ func fncClassAlias(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	_, err := Expand(ctx, args, &className, &alias, &autoloadArg)
 	if err != nil {
 		return nil, err
+	}
+
+	// Check reserved names
+	aliasLower := strings.ToLower(string(alias))
+	if reservedClassAliasNames[aliasLower] {
+		return nil, &phpv.PhpError{
+			Err:  fmt.Errorf("Cannot use \"%s\" as a class alias as it is reserved", alias),
+			Code: phpv.E_ERROR,
+			Loc:  ctx.Loc(),
+		}
 	}
 
 	autoload := bool(autoloadArg.GetOrDefault(phpv.ZBool(true)))
