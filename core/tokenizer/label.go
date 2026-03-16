@@ -86,6 +86,19 @@ var phpMagicKeywords = map[string]ItemType{
 	// yield from T_YIELD_FROM TODO special case
 }
 
+// phpMagicConstantKeywords maps lowercase versions of magic constants
+// so that __dir__, __file__, etc. are recognized as case-insensitive tokens.
+var phpMagicConstantKeywords = map[string]ItemType{
+	"__class__":     T_CLASS_C,
+	"__dir__":       T_DIR,
+	"__file__":      T_FILE,
+	"__function__":  T_FUNC_C,
+	"__line__":      T_LINE,
+	"__method__":    T_METHOD_C,
+	"__namespace__": T_NS_C,
+	"__trait__":     T_TRAIT_C,
+}
+
 func lexPhpVariable(l *Lexer) lexState {
 	l.advance(1) // '$' (already confirmed)
 	if l.acceptPhpLabel() == "" {
@@ -98,11 +111,17 @@ func lexPhpVariable(l *Lexer) lexState {
 }
 
 func labelType(lbl string) ItemType {
-	// check for phpMagicKeywords
-	if v, ok := phpMagicKeywords[strings.ToLower(lbl)]; ok {
+	lower := strings.ToLower(lbl)
+	// check for regular keywords (case-insensitive)
+	if v, ok := phpMagicKeywords[lower]; ok {
 		return v
 	}
+	// check for magic constants with original case (e.g. __DIR__, __FILE__)
 	if v, ok := phpMagicKeywords[lbl]; ok {
+		return v
+	}
+	// check for magic constants in any case (e.g. __dir__, __Dir__)
+	if v, ok := phpMagicConstantKeywords[lower]; ok {
 		return v
 	}
 	return T_STRING

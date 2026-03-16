@@ -1,6 +1,8 @@
 package core
 
 import (
+	"fmt"
+
 	"github.com/MagicalTux/goro/core/phpctx"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
@@ -189,6 +191,76 @@ func fncDebugBacktrace(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 	}
 
 	return result.ZVal(), nil
+}
+
+// > func void debug_zval_dump ( mixed $value, mixed ...$values )
+func fncDebugZvalDump(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	for _, z := range args {
+		doDebugZvalDump(ctx, z, "", true)
+	}
+	return nil, nil
+}
+
+func doDebugZvalDump(ctx phpv.Context, z *phpv.ZVal, linePfx string, topLevel bool) {
+	switch z.GetType() {
+	case phpv.ZtNull:
+		fmt.Fprintf(ctx, "%sNULL\n", linePfx)
+	case phpv.ZtBool:
+		if z.Value().(phpv.ZBool) {
+			fmt.Fprintf(ctx, "%sbool(true)\n", linePfx)
+		} else {
+			fmt.Fprintf(ctx, "%sbool(false)\n", linePfx)
+		}
+	case phpv.ZtInt:
+		fmt.Fprintf(ctx, "%sint(%d)\n", linePfx, z.Value())
+	case phpv.ZtFloat:
+		p := phpv.GetSerializePrecision(ctx)
+		s := phpv.FormatFloatPrecision(float64(z.Value().(phpv.ZFloat)), p)
+		fmt.Fprintf(ctx, "%sfloat(%s)\n", linePfx, s)
+	case phpv.ZtString:
+		s := z.Value().(phpv.ZString)
+		// In PHP, constant/property strings are "interned"
+		fmt.Fprintf(ctx, "%sstring(%d) \"%s\" interned\n", linePfx, len(s), s)
+	case phpv.ZtArray:
+		c := z.Value().(phpv.ZCountable).Count(ctx)
+		fmt.Fprintf(ctx, "%sarray(%d) refcount(%d){\n", linePfx, c, 2)
+		localPfx := linePfx + "  "
+		it := z.NewIterator()
+		for it.Valid(ctx) {
+			k, _ := it.Key(ctx)
+			if k.GetType() == phpv.ZtInt {
+				fmt.Fprintf(ctx, "%s[%s]=>\n", localPfx, k)
+			} else {
+				fmt.Fprintf(ctx, "%s[\"%s\"]=>\n", localPfx, k)
+			}
+			v, _ := it.Current(ctx)
+			doDebugZvalDump(ctx, v, localPfx, false)
+			it.Next(ctx)
+		}
+		fmt.Fprintf(ctx, "%s}\n", linePfx)
+	case phpv.ZtObject:
+		v := z.Value()
+		if obj, ok := v.(*phpobj.ZObject); ok {
+			count := obj.Count(ctx)
+			// refcount(2) is typical: 1 for the variable + 1 for the function argument
+			fmt.Fprintf(ctx, "%sobject(%s)#%d (%d) refcount(%d){\n", linePfx, obj.Class.GetName(), obj.ID, count, 2)
+			localPfx := linePfx + "  "
+			for prop := range obj.IterProps(ctx) {
+				suffix := ""
+				switch {
+				case prop.Modifiers.IsPrivate():
+					className := string(obj.GetDeclClassName(prop))
+					suffix = `:"` + className + `":private`
+				case prop.Modifiers.IsProtected():
+					suffix = ":protected"
+				}
+				fmt.Fprintf(ctx, "%s[\"%s\"%s]=>\n", localPfx, prop.VarName, suffix)
+				pv := obj.GetPropValue(prop)
+				doDebugZvalDump(ctx, pv, localPfx, false)
+			}
+			fmt.Fprintf(ctx, "%s}\n", linePfx)
+		}
+	}
 }
 
 // > const

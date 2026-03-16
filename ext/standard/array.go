@@ -704,13 +704,25 @@ func fncArrayUnique(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	switch sortFlags {
 	case SORT_REGULAR:
-		added := phpv.NewZArray()
+		// Collect seen values and compare each new value against all seen ones.
+		// This is needed because objects (e.g. enums) cannot be used as array keys.
+		var seen []*phpv.ZVal
 		for k, v := range array.Iterate(ctx) {
-			if ok, _ := added.OffsetExists(ctx, k); ok {
-				continue
+			found := false
+			for _, sv := range seen {
+				eq, err := phpv.Equals(ctx, v, sv)
+				if err != nil {
+					return nil, err
+				}
+				if eq {
+					found = true
+					break
+				}
 			}
-			added.OffsetSet(ctx, v, phpv.ZTrue.ZVal())
-			result.OffsetSet(ctx, k, v)
+			if !found {
+				seen = append(seen, v)
+				result.OffsetSet(ctx, k, v)
+			}
 		}
 
 	case SORT_NUMERIC:

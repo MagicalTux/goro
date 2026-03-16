@@ -786,7 +786,21 @@ func stdGetClassVars(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			// Get default value
 			def := phpv.ZNULL.ZVal()
 			if prop.Default != nil {
-				def = prop.Default.ZVal()
+				// Resolve CompileDelayed values (e.g., constants used as default values)
+				if cd, ok := prop.Default.(*phpv.CompileDelayed); ok {
+					// Set compiling class so self:: resolves correctly
+					prevCompiling := ctx.Global().GetCompilingClass()
+					ctx.Global().SetCompilingClass(zc)
+					resolved, err := cd.Run(ctx)
+					ctx.Global().SetCompilingClass(prevCompiling)
+					if err != nil {
+						return nil, err
+					}
+					prop.Default = resolved.Value()
+					def = resolved
+				} else {
+					def = prop.Default.ZVal()
+				}
 			}
 			result.OffsetSet(ctx, prop.VarName.ZVal(), def)
 		}

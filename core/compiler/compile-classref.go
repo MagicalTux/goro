@@ -259,6 +259,10 @@ func (r *runClassStaticObjRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
+	// Preserve the original class reference string for error messages
+	// (e.g., "self" should stay "self" in "Undefined constant self::B")
+	origClassName := className.AsString(ctx)
+
 	var class phpv.ZClass
 
 	switch className.GetType() {
@@ -274,9 +278,17 @@ func (r *runClassStaticObjRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
+	// For error messages: use the original reference (self/parent/static) when applicable,
+	// otherwise use the resolved class name.
+	errorClassName := class.GetName()
+	switch origClassName.ToLower() {
+	case "self", "parent", "static":
+		errorClassName = origClassName
+	}
+
 	cc, ok := class.(*phpobj.ZClass).Const[r.objName]
 	if !ok {
-		return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Undefined constant %s::%s", class.GetName(), r.objName))
+		return nil, phpobj.ThrowErrorAt(ctx, phpobj.Error, fmt.Sprintf("Undefined constant %s::%s", errorClassName, r.objName), r.l)
 	}
 
 	// Check visibility. compilingClass takes priority (used during attribute
@@ -342,7 +354,7 @@ func (r *runClassStaticObjRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 				}
 			}
 			return nil, phpobj.ThrowError(ctx, phpobj.Error,
-				fmt.Sprintf("Cannot declare self-referencing constant self::%s", selfRefName))
+				fmt.Sprintf("Cannot declare self-referencing constant %s::%s", class.GetName(), selfRefName))
 		}
 		cc.Resolving = true
 		// Set compiling class so self:: works during constant resolution.

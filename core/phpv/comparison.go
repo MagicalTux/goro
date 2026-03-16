@@ -119,12 +119,20 @@ func Compare(ctx Context, a, b *ZVal) (int, error) {
 			}
 			return -1, nil
 		}
+		// PHP 8: objects are always greater than arrays
+		if b.GetType() == ZtObject {
+			return -1, nil // array < object
+		}
 		return 1, nil // array > all other scalars
 	}
 
 	if b.GetType() == ZtArray {
 		if a.GetType() == ZtArray {
 			return CompareArray(ctx, a.AsArray(ctx), b.AsArray(ctx))
+		}
+		// PHP 8: objects are always greater than arrays
+		if a.GetType() == ZtObject {
+			return 1, nil // object > array
 		}
 		// PHP: bool/null vs array → convert to bool comparison
 		if a.GetType() == ZtBool || a.GetType() == ZtNull {

@@ -289,6 +289,11 @@ func (ctx *FuncContext) Parent(n int) phpv.Context {
 func (ctx *FuncContext) GetFuncName() string {
 	name := ctx.c.Name()
 	if ctx.class != nil && ctx.methodType != "" {
+		// Native methods (e.g. built-in constructors) have an empty Name();
+		// when called as a method they are constructors.
+		if name == "" {
+			name = "__construct"
+		}
 		// PHP uses :: in error messages/warning for both static and instance methods
 		return string(ctx.class.GetName()) + "::" + name
 	}
@@ -299,6 +304,9 @@ func (ctx *FuncContext) GetFuncName() string {
 func (ctx *FuncContext) GetFuncNameForTrace() string {
 	name := ctx.c.Name()
 	if ctx.class != nil && ctx.methodType != "" {
+		if name == "" {
+			name = "__construct"
+		}
 		return string(ctx.class.GetName()) + ctx.methodType + name
 	}
 	return name

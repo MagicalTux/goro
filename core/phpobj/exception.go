@@ -274,12 +274,10 @@ func exceptionConstruct(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.
 	}
 
 	for {
-		// traverse parent contexts so that Exception/Error
-		// constructors aren't included in the trace
-		if ctx.This() == nil {
-			break
-		}
-		if !ctx.This().GetClass().InstanceOf(Exception) && !ctx.This().GetClass().InstanceOf(Error) {
+		// traverse parent contexts so that the current object's own
+		// constructor is not included in the trace. Only skip contexts
+		// where $this is the exact same object being constructed.
+		if ctx.This() != o {
 			break
 		}
 		parent := ctx.Parent(1)

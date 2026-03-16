@@ -73,6 +73,7 @@ func init() {
 			"count":                     {Func: fncCount, Args: []*phpctx.ExtFunctionArg{}},
 			"debug_backtrace":           {Func: fncDebugBacktrace, Args: []*phpctx.ExtFunctionArg{}},
 			"debug_print_backtrace":     {Func: fncDebugPrintBacktrace, Args: []*phpctx.ExtFunctionArg{}},
+			"debug_zval_dump":           {Func: fncDebugZvalDump, Args: []*phpctx.ExtFunctionArg{}},
 			"define":                    {Func: fncDefine, Args: []*phpctx.ExtFunctionArg{}},
 			"defined":                   {Func: fncDefined, Args: []*phpctx.ExtFunctionArg{}},
 			"echo":                      {Func: stdFuncEcho, Args: []*phpctx.ExtFunctionArg{}},

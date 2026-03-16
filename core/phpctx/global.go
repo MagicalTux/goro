@@ -1586,9 +1586,13 @@ func (g *Global) GetStackTrace(ctx phpv.Context) []*phpv.StackTraceEntry {
 			if fc.class != nil {
 				className = string(fc.class.GetName())
 			}
+			bareName := fc.c.Name()
+			if bareName == "" && fc.class != nil && fc.methodType != "" {
+				bareName = "__construct"
+			}
 			trace = append(trace, &phpv.StackTraceEntry{
 				FuncName:     fc.GetFuncNameForTrace(),
-				BareFuncName: fc.c.Name(),
+				BareFuncName: bareName,
 				Filename:     fc.loc.Filename,
 				ClassName:    className,
 				MethodType:   fc.methodType,
