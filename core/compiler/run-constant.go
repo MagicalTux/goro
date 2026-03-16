@@ -68,7 +68,7 @@ func (r *runConstant) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 	}
 
 	// PHP 8: using an undefined constant is a fatal Error
-	return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Undefined constant \"%s\"", r.c))
+	return nil, phpobj.ThrowErrorAt(ctx, phpobj.Error, fmt.Sprintf("Undefined constant \"%s\"", r.c), r.l)
 }
 
 // checkConstantDeprecated checks if a global constant has #[\Deprecated] and emits a warning.

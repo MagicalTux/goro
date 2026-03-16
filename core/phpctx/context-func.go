@@ -22,8 +22,10 @@ func GetFuncContext() *FuncContext {
 	return funcContextPool.Get().(*FuncContext)
 }
 
-// Release returns the FuncContext to the pool after clearing it
-func (c *FuncContext) Release() {
+// Release returns the FuncContext to the pool after clearing it.
+// It returns an error if any destructor triggered during scope cleanup
+// throws an exception.
+func (c *FuncContext) Release() error {
 	// Clean up foreach-by-reference iterators. In PHP, when the loop
 	// variable goes out of scope (function return), the refcount on the
 	// last iterated element drops to 1 and the reference wrapper is
@@ -38,7 +40,16 @@ func (c *FuncContext) Release() {
 	// This ensures reference counts are properly decremented when leaving
 	// function scope. We use DecRefImplicit because scope exit in PHP
 	// allows destructors to run regardless of visibility.
+	var releaseErr error
 	if c.Context != nil {
+		// Restore the global location to this function's call site before
+		// running scope-exit destructors. In PHP, if a destructor triggered
+		// during scope cleanup creates an exception, the stack trace should
+		// show the original call site (e.g., the line that created the
+		// outer object), not the last-executed line inside the function.
+		if c.loc != nil {
+			c.Context.Tick(c.Context, c.loc)
+		}
 		it := c.h.NewIterator()
 		for it.Valid(c.Context) {
 			v, err := it.Current(c.Context)
@@ -46,7 +57,11 @@ func (c *FuncContext) Release() {
 				if obj, ok := v.Value().(interface {
 					DecRefImplicit(phpv.Context) error
 				}); ok {
-					obj.DecRefImplicit(c.Context)
+					if derr := obj.DecRefImplicit(c.Context); derr != nil {
+						// Collect the last destructor error; in PHP, nested
+						// destructor exceptions are chained via "previous".
+						releaseErr = derr
+					}
 				}
 			}
 			it.Next(c.Context)
@@ -63,6 +78,7 @@ func (c *FuncContext) Release() {
 	c.methodType = ""
 	c.isInternal = false
 	funcContextPool.Put(c)
+	return releaseErr
 }
 
 type FuncContext struct {

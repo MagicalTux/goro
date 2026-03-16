@@ -335,7 +335,7 @@ func errorExceptionConstruct(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*
 		parentArgs[1] = phpv.ZInt(0).ZVal()
 	}
 	if len(args) > 5 {
-		parentArgs = append(parentArgs, args[5]) // previous
+		parentArgs[2] = args[5] // previous
 	}
 	_, err := exceptionConstruct(ctx, o, parentArgs)
 	if err != nil {

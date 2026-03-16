@@ -217,21 +217,27 @@ func exceptionConstruct(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.
 	// Determine base class name for error messages
 	baseClassName := exceptionConstructorClassName(o)
 
-	// Validate and set arguments
+	// Validate and set arguments.
+	// Use ObjectSet for property writes so that subclass property hooks
+	// (PHP 8.4) are triggered, matching PHP behavior.
 	if len(args) >= 1 && args[0] != nil && !args[0].IsNull() {
 		// $message must be string - PHP uses coercion mode for internal functions,
 		// so scalar types (int, float, bool) are accepted and coerced to string.
 		// Only objects and arrays cause a TypeError.
 		switch args[0].GetType() {
 		case phpv.ZtString:
-			o.HashTable().SetString("message", args[0])
+			if err := o.ObjectSet(ctx, phpv.ZString("message"), args[0]); err != nil {
+				return nil, err
+			}
 		case phpv.ZtInt, phpv.ZtFloat, phpv.ZtBool:
 			// Coerce scalar to string
 			msgVal, err := args[0].As(ctx, phpv.ZtString)
 			if err != nil {
 				return nil, err
 			}
-			o.HashTable().SetString("message", msgVal)
+			if err := o.ObjectSet(ctx, phpv.ZString("message"), msgVal); err != nil {
+				return nil, err
+			}
 		default:
 			return nil, ThrowError(ctx, TypeError,
 				fmt.Sprintf("%s::__construct(): Argument #1 ($message) must be of type string, %s given",
@@ -242,7 +248,9 @@ func exceptionConstruct(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.
 		// $code must be int - also uses coercion mode
 		switch args[1].GetType() {
 		case phpv.ZtInt:
-			o.HashTable().SetString("code", args[1])
+			if err := o.ObjectSet(ctx, phpv.ZString("code"), args[1]); err != nil {
+				return nil, err
+			}
 		case phpv.ZtFloat, phpv.ZtString, phpv.ZtBool:
 			codeVal, err := args[1].As(ctx, phpv.ZtInt)
 			if err != nil {
@@ -250,7 +258,9 @@ func exceptionConstruct(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.
 					fmt.Sprintf("%s::__construct(): Argument #2 ($code) must be of type int, %s given",
 						baseClassName, phpv.ZValTypeName(args[1])))
 			}
-			o.HashTable().SetString("code", codeVal)
+			if err := o.ObjectSet(ctx, phpv.ZString("code"), codeVal); err != nil {
+				return nil, err
+			}
 		default:
 			return nil, ThrowError(ctx, TypeError,
 				fmt.Sprintf("%s::__construct(): Argument #2 ($code) must be of type int, %s given",
@@ -270,6 +280,8 @@ func exceptionConstruct(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.
 				fmt.Sprintf("%s::__construct(): Argument #3 ($previous) must be of type ?Throwable, %s given",
 					baseClassName, phpv.ZValTypeName(args[2])))
 		}
+		// Use direct hash table write for $previous (private property).
+		// Private properties can't have hooks in subclasses.
 		o.HashTable().SetString("previous", args[2])
 	}
 
@@ -287,7 +299,9 @@ func exceptionConstruct(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.
 		ctx = parent
 	}
 
-	// Set file and line to the location where the exception was created
+	// Set file and line to the location where the exception was created.
+	// Use direct hash table writes for file/line since these are internal
+	// properties that should not trigger hooks (PHP behavior).
 	loc := ctx.Loc()
 	if loc != nil {
 		o.HashTable().SetString("file", phpv.ZString(loc.Filename).ZVal())

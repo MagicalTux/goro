@@ -1142,10 +1142,14 @@ func (o *ZObject) runGetHook(ctx phpv.Context, keyStr phpv.ZString, hook phpv.Ru
 	defer delete(o.getHookGuard, keyStr)
 
 	// Create a callable wrapper for the hook body so CallZVal creates a
-	// proper FuncContext with $this bound to the object.
-	hookCallable := &phpv.HookCallable{
-		Hook:     hook,
-		HookName: fmt.Sprintf("%s::$%s::get", o.Class.GetName(), keyStr),
+	// proper FuncContext with $this bound to the object. Wrap in MethodCallable
+	// so the class context is set, allowing access to private/protected members.
+	hookCallable := &phpv.MethodCallable{
+		Callable: &phpv.HookCallable{
+			Hook:     hook,
+			HookName: fmt.Sprintf("%s::$%s::get", o.Class.GetName(), keyStr),
+		},
+		Class: o.Class,
 	}
 
 	result, err := ctx.CallZVal(ctx, hookCallable, nil, o)
@@ -1177,12 +1181,17 @@ func (o *ZObject) runSetHook(ctx phpv.Context, keyStr phpv.ZString, prop *phpv.Z
 
 	// Create a callable wrapper that declares the set parameter.
 	// The hook body references $value (or custom param name) as a local variable.
-	hookCallable := &phpv.HookCallable{
-		Hook:     prop.SetHook,
-		HookName: fmt.Sprintf("%s::$%s::set", o.Class.GetName(), keyStr),
-		Params: []*phpv.FuncArg{
-			{VarName: paramName},
+	// Wrap in MethodCallable so CallZVal sets the class context, allowing
+	// the hook to access private/protected properties of the declaring class.
+	hookCallable := &phpv.MethodCallable{
+		Callable: &phpv.HookCallable{
+			Hook:     prop.SetHook,
+			HookName: fmt.Sprintf("%s::$%s::set", o.Class.GetName(), keyStr),
+			Params: []*phpv.FuncArg{
+				{VarName: paramName},
+			},
 		},
+		Class: o.Class,
 	}
 
 	result, err := ctx.CallZVal(ctx, hookCallable, []*phpv.ZVal{value}, o)

@@ -181,7 +181,7 @@ func (c *Global) CallZVal(ctx phpv.Context, f phpv.Callable, args []*phpv.ZVal, 
 	return c.callZValImpl(ctx, f, args, false, optionalThis...)
 }
 
-func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZVal, isInternal bool, optionalThis ...phpv.ZObject) (*phpv.ZVal, error) {
+func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZVal, isInternal bool, optionalThis ...phpv.ZObject) (callResult *phpv.ZVal, callErr error) {
 	c.callDepth++
 	if c.callDepth > 512 {
 		c.callDepth--
@@ -192,9 +192,20 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 	callCtx.c = f
 	callCtx.loc = ctx.Loc()
 	callCtx.isInternal = isInternal
+	// Release() may trigger destructor errors during scope cleanup.
+	// Named return values let the defer closure chain those errors
+	// with any pending call error before the function returns.
 	defer func() {
-		callCtx.Release()
+		releaseErr := callCtx.Release()
 		c.callDepth--
+		if releaseErr != nil && callErr != nil {
+			// Both the call and a destructor during scope cleanup threw.
+			// PHP chains the pending exception as the "previous" of the
+			// destructor exception, so the destructor error propagates.
+			callErr = chainPhpThrow(releaseErr, callErr)
+		} else if releaseErr != nil {
+			callErr = releaseErr
+		}
 	}()
 
 	var this phpv.ZObject
@@ -410,7 +421,7 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 		}
 	}
 
-	callResult, callErr := phperr.CatchReturn(f.Call(callCtx, callCtx.Args))
+	callResult, callErr = phperr.CatchReturn(f.Call(callCtx, callCtx.Args))
 
 	// For functions that do NOT return by reference, separate array values
 	// so that writing to the returned array doesn't modify the original
@@ -433,6 +444,21 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 	}
 
 	return callResult, callErr
+}
+
+// chainPhpThrow chains two PHP exceptions: when a destructor throws
+// (destructorErr) while another exception is already pending (pendingErr),
+// PHP sets the pending exception as the "previous" of the destructor
+// exception. The destructor exception then propagates.
+func chainPhpThrow(destructorErr, pendingErr error) error {
+	dThrow, dok := destructorErr.(*phperr.PhpThrow)
+	pThrow, pok := pendingErr.(*phperr.PhpThrow)
+	if dok && pok && dThrow.Obj != nil && pThrow.Obj != nil {
+		// Set pendingErr's exception object as "previous" on destructorErr's
+		// exception object, so the output chains them with "Next".
+		dThrow.Obj.HashTable().SetString("previous", pThrow.Obj.ZVal())
+	}
+	return destructorErr
 }
 
 // reorderNamedArgs reorders function call arguments based on PHP 8.0 named argument syntax.
