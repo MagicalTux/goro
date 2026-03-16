@@ -6,6 +6,7 @@ import (
 	"io"
 
 	"github.com/MagicalTux/goro/core/logopt"
+	"github.com/MagicalTux/goro/core/phperr"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
@@ -365,6 +366,24 @@ func (r *runClassStaticObjRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		ctx.Global().SetCompilingClass(prevCompiling)
 		cc.Resolving = false
 		if err != nil {
+			// Add a synthetic [constant expression] frame to match PHP behavior,
+			// but only if one hasn't been added yet (avoid duplicates in circular refs).
+			if ex, ok := err.(*phperr.PhpThrow); ok {
+				hasFrame := false
+				if opaque := ex.Obj.GetOpaque(ex.Obj.GetClass()); opaque != nil {
+					if trace, ok2 := opaque.([]*phpv.StackTraceEntry); ok2 {
+						for _, e := range trace {
+							if e.FuncName == "[constant expression]" {
+								hasFrame = true
+								break
+							}
+						}
+					}
+				}
+				if !hasFrame {
+					phpobj.AddConstantExpressionFrame(ex, ctx)
+				}
+			}
 			return nil, err
 		}
 		cc.Value = resolved.Value()

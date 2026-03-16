@@ -139,6 +139,12 @@ func fncCallUserFuncArray(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, erro
 	if callerCtx == nil {
 		callerCtx = ctx
 	}
+	// Validate second argument is an array before expansion
+	if len(args) >= 2 && args[1] != nil && args[1].GetType() != phpv.ZtArray {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("call_user_func_array(): Argument #2 ($args) must be of type array, %s given",
+				phpv.ZValTypeName(args[1])))
+	}
 	var callback phpv.Callable
 	var arrayArgs *phpv.ZArray
 	_, err := core.Expand(callerCtx, args, &callback, &arrayArgs)

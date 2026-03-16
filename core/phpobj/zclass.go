@@ -1565,7 +1565,7 @@ func (c *ZClass) ResolveConstants(ctx phpv.Context) error {
 					// Add a synthetic [constant expression] frame to the stack trace
 					// to match PHP's behavior when constant expression evaluation fails.
 					if ex, ok := err.(*phperr.PhpThrow); ok {
-						addConstantExpressionFrame(ex, ctx)
+						AddConstantExpressionFrame(ex, ctx)
 					}
 					return err
 				}
@@ -1577,10 +1577,10 @@ func (c *ZClass) ResolveConstants(ctx phpv.Context) error {
 	return nil
 }
 
-// addConstantExpressionFrame prepends a [constant expression]() frame to an
+// AddConstantExpressionFrame prepends a [constant expression]() frame to an
 // exception's stack trace, matching PHP's behavior for errors during class
 // constant expression evaluation.
-func addConstantExpressionFrame(ex *phperr.PhpThrow, ctx phpv.Context) {
+func AddConstantExpressionFrame(ex *phperr.PhpThrow, ctx phpv.Context) {
 	// Get caller location for the frame
 	loc := ctx.Loc()
 	filename := ""
@@ -1605,11 +1605,21 @@ func addConstantExpressionFrame(ex *phperr.PhpThrow, ctx phpv.Context) {
 				newTrace = append(newTrace, syntheticFrame)
 				newTrace = append(newTrace, trace...)
 				ex.Obj.SetOpaque(cls, newTrace)
+				// Also update Exception opaque if different
+				if cls != Exception {
+					ex.Obj.SetOpaque(Exception, newTrace)
+				}
 				return
 			}
 		}
 		cls = cls.GetParent()
 	}
+
+	// No existing trace found (e.g., error at global scope with nil trace).
+	// Create a new trace with just the synthetic frame.
+	newTrace := []*phpv.StackTraceEntry{syntheticFrame}
+	ex.Obj.SetOpaque(Exception, newTrace)
+	ex.Obj.SetOpaque(ex.Obj.GetClass(), newTrace)
 }
 
 func (c *ZClass) GetProp(name phpv.ZString) (*phpv.ZClassProp, bool) {

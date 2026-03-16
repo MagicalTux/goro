@@ -945,23 +945,42 @@ func compileFunctionArgs(c compileCtx) (res []*phpv.FuncArg, err error) {
 				}
 			}
 
-			// Check: class-typed parameters cannot have scalar defaults (except null)
-			if arg.Hint != nil && arg.Hint.Type() == phpv.ZtObject && arg.Hint.ClassName() != "" && !isNull {
+			// Check: default value must be type-compatible with the type hint
+			if arg.Hint != nil && !isNull {
+				valTypeName := ""
 				if zv, ok := r.(*runZVal); ok {
-					typeName := ""
 					switch zv.v.(type) {
 					case phpv.ZInt:
-						typeName = "int"
+						valTypeName = "int"
 					case phpv.ZFloat:
-						typeName = "float"
+						valTypeName = "float"
 					case phpv.ZString:
-						typeName = "string"
+						valTypeName = "string"
 					case phpv.ZBool:
-						typeName = "bool"
+						valTypeName = "bool"
 					}
-					if typeName != "" {
+				} else if _, ok := r.(runConcat); ok {
+					// Double-quoted strings compile to runConcat; the result is always a string
+					valTypeName = "string"
+				}
+				if valTypeName != "" {
+					hintType := arg.Hint.Type()
+					hintName := arg.Hint.String()
+					incompatible := false
+					switch hintType {
+					case phpv.ZtObject:
+						// class-typed parameter cannot have a scalar default
+						if arg.Hint.ClassName() != "" {
+							incompatible = true
+							hintName = string(arg.Hint.ClassName())
+						}
+					case phpv.ZtArray:
+						incompatible = true
+						hintName = "array"
+					}
+					if incompatible {
 						phpErr := &phpv.PhpError{
-							Err:  fmt.Errorf("Cannot use %s as default value for parameter $%s of type %s", typeName, arg.VarName, arg.Hint.ClassName()),
+							Err:  fmt.Errorf("Cannot use %s as default value for parameter $%s of type %s", valTypeName, arg.VarName, hintName),
 							Code: phpv.E_COMPILE_ERROR,
 							Loc:  i.Loc(),
 						}

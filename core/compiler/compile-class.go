@@ -874,7 +874,15 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 					}
 				}
 			}
-			class.Methods[method.Name.ToLower()] = method
+			methodKey := method.Name.ToLower()
+			if _, ok := class.Methods[methodKey]; ok {
+				return nil, &phpv.PhpError{
+					Err:  fmt.Errorf("Cannot redeclare %s::%s()", class.Name, method.Name),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  l,
+				}
+			}
+			class.Methods[methodKey] = method
 		case tokenizer.T_CASE:
 			// "case" keyword used in a class (not an enum)
 			return nil, &phpv.PhpError{

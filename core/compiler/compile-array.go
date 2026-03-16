@@ -310,7 +310,9 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		write := false
 		switch t := ac.Parent.(type) {
 		case *runOperator:
-			write = t.opD != nil && t.opD.write
+			// Only count as write context if this array access is the
+			// LHS (target) of the assignment, not the RHS (value).
+			write = t.opD != nil && t.opD.write && isDescendantOf(ac, t.a)
 		case *runArrayAccess, *runnableForeach, *runDestructure:
 			write = true
 		}
@@ -537,11 +539,15 @@ func (ac *runArrayAccess) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 
 	// Handle unset ($a[x] = nil means unset)
 	if value == nil {
+		if ac.offset == nil {
+			return &phpv.PhpError{
+				Err:  fmt.Errorf("Cannot use [] for unsetting"),
+				Code: phpv.E_ERROR,
+				Loc:  ac.l,
+			}
+		}
 		array := v.Array()
 		if array == nil {
-			return nil
-		}
-		if ac.offset == nil {
 			return nil
 		}
 		offset, err := ac.getArrayOffset(ctx)
@@ -859,6 +865,21 @@ func compileArray(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	}
 
 	return res, nil
+}
+
+// isDescendantOf checks whether node is the same as root or is reachable
+// via the children of root. Used to determine if an array access node is
+// on the LHS (write side) of an assignment operator.
+func isDescendantOf(node phpv.Runnable, root phpv.Runnable) bool {
+	if node == root {
+		return true
+	}
+	for _, c := range GetChildren(root) {
+		if c != nil && isDescendantOf(node, c) {
+			return true
+		}
+	}
+	return false
 }
 
 func compileArrayAccess(v phpv.Runnable, c compileCtx) (phpv.Runnable, error) {
