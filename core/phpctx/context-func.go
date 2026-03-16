@@ -54,6 +54,14 @@ func (c *FuncContext) Release() error {
 		for it.Valid(c.Context) {
 			v, err := it.Current(c.Context)
 			if err == nil && v != nil && v.GetType() == phpv.ZtObject {
+				if zobj, ok := v.Value().(phpv.ZObject); ok {
+					// Call HandleDecRef if the class defines it (e.g. Closure releasing captured $this)
+					if cls := zobj.GetClass(); cls != nil {
+						if h := cls.Handlers(); h != nil && h.HandleDecRef != nil {
+							h.HandleDecRef(c.Context, zobj)
+						}
+					}
+				}
 				if obj, ok := v.Value().(interface {
 					DecRefImplicit(phpv.Context) error
 				}); ok {

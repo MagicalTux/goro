@@ -63,6 +63,7 @@ type ZClassConst struct {
 type ZClassHandlers struct {
 	Constructor  *ZClassMethod
 	HandleInvoke func(ctx Context, o ZObject, args []Runnable) (*ZVal, error)
+	HandleDecRef func(ctx Context, o ZObject) // called when object refcount is decremented during scope cleanup
 }
 
 type ZClass interface {

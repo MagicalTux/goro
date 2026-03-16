@@ -244,6 +244,10 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 		}
 		if this != nil {
 			callCtx.methodType = "->"
+		} else if callCtx.class != nil {
+			// Static closures or closures without $this that have a class scope
+			// should display ClassName:: in stack traces and error messages.
+			callCtx.methodType = "::"
 		}
 	} else if this != nil {
 		callCtx.class = this.GetClass()
