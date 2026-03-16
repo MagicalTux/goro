@@ -885,6 +885,17 @@ func compileFunctionArgs(c compileCtx) (res []*phpv.FuncArg, err error) {
 			return nil, phpv.ExitError(255)
 		}
 
+		// Check for duplicate parameter names
+		for _, existing := range res {
+			if existing.VarName == arg.VarName {
+				return nil, &phpv.PhpError{
+					Err:  fmt.Errorf("Redefinition of parameter $%s", arg.VarName),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  i.Loc(),
+				}
+			}
+		}
+
 		res = append(res, arg)
 
 		i, err = c.NextItem()
