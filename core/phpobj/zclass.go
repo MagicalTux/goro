@@ -254,6 +254,42 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 			if parentAccess == phpv.ZAttrProtected && childAccess == phpv.ZAttrPrivate {
 				return c.fatalError(ctx, fmt.Sprintf("Access level to %s::$%s must be protected (as in class %s) or weaker", c.Name, childProp.VarName, c.Extends.Name))
 			}
+
+			// Cannot override a final property (explicit or implicit via private(set))
+			parentSetAccess := parentProp.SetModifiers & phpv.ZAttrAccess
+			if parentProp.Modifiers.Has(phpv.ZAttrFinal) || parentSetAccess == phpv.ZAttrPrivate {
+				return c.fatalError(ctx, fmt.Sprintf("Cannot override final property %s::$%s", c.Extends.Name, childProp.VarName))
+			}
+
+			// Check asymmetric set visibility override compatibility
+			childSetAccess := childProp.SetModifiers & phpv.ZAttrAccess
+
+			if parentSetAccess != 0 || childSetAccess != 0 {
+				// Parent has no explicit set modifier — child cannot add one
+				if parentSetAccess == 0 && childSetAccess != 0 {
+					return c.fatalError(ctx, fmt.Sprintf("Set access level of %s::$%s must be omitted (as in class %s)", c.Name, childProp.VarName, c.Extends.Name))
+				}
+				// Parent has set modifier, child doesn't — must match
+				if parentSetAccess != 0 && childSetAccess == 0 {
+					setName := "protected(set)"
+					if parentSetAccess == phpv.ZAttrProtected {
+						setName = "protected(set)"
+					}
+					return c.fatalError(ctx, fmt.Sprintf("Set access level of %s::$%s must be %s (as in class %s) or weaker", c.Name, childProp.VarName, setName, c.Extends.Name))
+				}
+				// Both have set modifiers — child must not be narrower
+				if parentSetAccess != 0 && childSetAccess != 0 {
+					parentSetLevel := visibilityLevel(parentSetAccess)
+					childSetLevel := visibilityLevel(childSetAccess)
+					if childSetLevel > parentSetLevel {
+						setName := "protected(set)"
+						if parentSetAccess == phpv.ZAttrPublic {
+							setName = "omitted"
+						}
+						return c.fatalError(ctx, fmt.Sprintf("Set access level of %s::$%s must be %s (as in class %s) or weaker", c.Name, childProp.VarName, setName, c.Extends.Name))
+					}
+				}
+			}
 		}
 	}
 	// Resolve trait uses: import methods and properties from traits
