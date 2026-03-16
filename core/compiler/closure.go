@@ -262,6 +262,28 @@ func (closure *ZClosure) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 		// (like integer overflow in array spread) are thrown at call time
 		// and can be caught by try/catch.
 
+		// Validate #[\NoDiscard] on void/never functions
+		for _, attr := range closure.attributes {
+			if attr.ClassName == "NoDiscard" || attr.ClassName == "\\NoDiscard" {
+				if closure.returnType != nil {
+					if closure.returnType.Type() == phpv.ZtVoid {
+						return nil, &phpv.PhpError{
+							Err:  fmt.Errorf("A void function does not return a value, but #[\\NoDiscard] requires a return value"),
+							Code: phpv.E_COMPILE_ERROR,
+							Loc:  closure.start,
+						}
+					}
+					if closure.returnType.Type() == phpv.ZtNever {
+						return nil, &phpv.PhpError{
+							Err:  fmt.Errorf("A never returning function does not return a value, but #[\\NoDiscard] requires a return value"),
+							Code: phpv.E_COMPILE_ERROR,
+							Loc:  closure.start,
+						}
+					}
+				}
+			}
+		}
+
 		// If the function is a generator, wrap it
 		if closure.isGenerator {
 			return nil, ctx.Global().RegisterFunction(closure.name, &generatorClosure{closure})
