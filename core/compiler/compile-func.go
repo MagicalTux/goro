@@ -159,35 +159,67 @@ func (r *runnableFunctionCallRef) Run(ctx phpv.Context) (l *phpv.ZVal, err error
 		}
 
 		if f, ok = v.Value().(phpv.Callable); !ok {
-			v, err = v.As(ctx, phpv.ZtString)
-			if err != nil {
-				return nil, err
-			}
-			// grab function — handle "Class::method" syntax
-			funcName := v.Value().(phpv.ZString)
-			if idx := strings.Index(string(funcName), "::"); idx > 0 {
-				className := phpv.ZString(funcName[:idx])
-				methodName := phpv.ZString(funcName[idx+2:])
-				class, classErr := ctx.Global().GetClass(ctx, className, true)
-				if classErr == nil {
-					if method, methodOk := class.GetMethod(methodName); methodOk {
-						f = method.Method
+			switch v.GetType() {
+			case phpv.ZtString:
+				funcName := v.Value().(phpv.ZString)
+				if idx := strings.Index(string(funcName), "::"); idx > 0 {
+					className := phpv.ZString(funcName[:idx])
+					methodName := phpv.ZString(funcName[idx+2:])
+					class, classErr := ctx.Global().GetClass(ctx, className, true)
+					if classErr == nil {
+						if method, methodOk := class.GetMethod(methodName.ToLower()); methodOk {
+							f = method.Method
+						} else {
+							return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Call to undefined method %s::%s()", className, methodName))
+						}
+					} else {
+						return nil, classErr
+					}
+				} else {
+					var fnErr error
+					f, fnErr = ctx.Global().GetFunction(ctx, funcName)
+					if fnErr != nil {
+						errName := funcName
+						if len(errName) > 0 && errName[0] == '\\' {
+							errName = errName[1:]
+						}
+						return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Call to undefined function %s()", errName))
+					}
+				}
+			case phpv.ZtArray:
+				// Array callable: [$obj, "method"] or ["Class", "method"]
+				arr := v.Array()
+				first, err1 := arr.OffsetGet(ctx, phpv.ZInt(0))
+				second, err2 := arr.OffsetGet(ctx, phpv.ZInt(1))
+				if err1 != nil || err2 != nil || first == nil || second == nil {
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "Array callback must have exactly two elements")
+				}
+				methodName := second.AsString(ctx)
+				if first.GetType() == phpv.ZtObject {
+					obj := first.AsObject(ctx)
+					class := obj.GetClass()
+					if method, ok := class.GetMethod(methodName.ToLower()); ok {
+						f = phpv.Bind(method.Method, obj)
+					} else {
+						return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Call to undefined method %s::%s()", class.GetName(), methodName))
+					}
+				} else if first.GetType() == phpv.ZtString {
+					className := first.AsString(ctx)
+					class, classErr := ctx.Global().GetClass(ctx, className, true)
+					if classErr != nil {
+						return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Class \"%s\" not found", className))
+					}
+					if method, ok := class.GetMethod(methodName.ToLower()); ok {
+						f = phpv.BindClass(method.Method, class, true)
 					} else {
 						return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Call to undefined method %s::%s()", className, methodName))
 					}
 				} else {
-					return nil, classErr
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "Array callback must have exactly two elements")
 				}
-			} else {
-				f, err = ctx.Global().GetFunction(ctx, funcName)
-				if err != nil {
-					// Dynamic call: throw a catchable Error instead of a fatal Go error
-					errName := funcName
-					if len(errName) > 0 && errName[0] == '\\' {
-						errName = errName[1:]
-					}
-					return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Call to undefined function %s()", errName))
-				}
+			default:
+				return nil, phpobj.ThrowError(ctx, phpobj.Error,
+					fmt.Sprintf("Value of type %s is not callable", phpv.ZValTypeName(v)))
 			}
 		}
 	}
