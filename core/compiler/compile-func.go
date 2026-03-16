@@ -1407,6 +1407,7 @@ func compileFuncPassedArgs(c compileCtx) (res phpv.Runnables, err error) {
 
 	// parse passed arguments
 	hadSpread := false
+	hadNamed := false
 	for {
 		var a phpv.Runnable
 
@@ -1418,21 +1419,20 @@ func compileFuncPassedArgs(c compileCtx) (res phpv.Runnables, err error) {
 				return nil, spreadErr
 			}
 			a = &SpreadArg{Arg: spreadExpr}
-		} else if hadSpread && !(i.IsLabel() && c.peekType() == tokenizer.Rune(':')) {
-			// Positional argument after spread is a compile error
-			phpErr := &phpv.PhpError{
-				Err:  fmt.Errorf("Cannot use positional argument after argument unpacking"),
-				Code: phpv.E_ERROR,
+		} else if (hadSpread || hadNamed) && !(i.IsLabel() && c.peekType() == tokenizer.Rune(':')) {
+			// Positional argument after named/spread is a compile error
+			msg := "Cannot use positional argument after named argument"
+			if hadSpread {
+				msg = "Cannot use positional argument after argument unpacking"
+			}
+			return nil, &phpv.PhpError{
+				Err:  fmt.Errorf("%s", msg),
+				Code: phpv.E_COMPILE_ERROR,
 				Loc:  i.Loc(),
 			}
-			c.Global().LogError(phpErr)
-			return nil, phpv.ExitError(255)
 		} else if i.IsLabel() && c.peekType() == tokenizer.Rune(':') {
 			// Check for named argument: identifier followed by ':'
-			// Use peekType() to check the next token without consuming it.
-			// Note: ':' won't appear after an identifier in normal expressions
-			// (T_DOUBLE_COLON '::' is a separate token), so this is safe.
-			// PHP 8.0 allows keywords as named argument names (e.g., array:, match:)
+			hadNamed = true
 			argName := phpv.ZString(i.Data)
 			c.NextItem() // consume the ':'
 			nextI, nextErr := c.NextItem()
