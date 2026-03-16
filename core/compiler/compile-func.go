@@ -117,7 +117,7 @@ func (r *runnableFunctionCallRef) Run(ctx phpv.Context) (l *phpv.ZVal, err error
 		}
 		method, ok := class.GetMethod(classRef.objName)
 		if !ok {
-			return nil, ctx.Errorf("Call to undefined method %s::%s()", classRef.className, classRef.objName)
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Call to undefined method %s::%s()", classRef.className, classRef.objName))
 		}
 		f = method.Method
 	} else if classRef, ok := r.name.(*runClassStaticVarRef); ok {
@@ -138,7 +138,7 @@ func (r *runnableFunctionCallRef) Run(ctx phpv.Context) (l *phpv.ZVal, err error
 		varname := varnameVal.AsString(ctx)
 		method, ok := class.GetMethod(varname)
 		if !ok {
-			return nil, ctx.Errorf("Call to undefined method %s::%s()", className.String(), varname)
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Call to undefined method %s::%s()", className.String(), varname))
 		}
 		f = method.Method
 	} else if f, ok = r.name.(phpv.Callable); !ok {
@@ -180,9 +180,14 @@ func (r *runnableFunctionCallRef) Run(ctx phpv.Context) (l *phpv.ZVal, err error
 				}
 			} else {
 				f, err = ctx.Global().GetFunction(ctx, funcName)
-			}
-			if err != nil {
-				return nil, err
+				if err != nil {
+					// Dynamic call: throw a catchable Error instead of a fatal Go error
+					errName := funcName
+					if len(errName) > 0 && errName[0] == '\\' {
+						errName = errName[1:]
+					}
+					return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Call to undefined function %s()", errName))
+				}
 			}
 		}
 	}
