@@ -10,6 +10,7 @@ require (
 )
 
 require (
+	github.com/KarpelesLab/strtotime v0.0.2 // indirect
 	github.com/sergi/go-diff v1.3.1 // indirect
 	golang.org/x/sys v0.40.0 // indirect
 	golang.org/x/text v0.33.0 // indirect

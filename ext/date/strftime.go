@@ -5,6 +5,7 @@ import (
 
 	"github.com/KarpelesLab/strftime"
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -17,7 +18,7 @@ func fncStrftime(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	ctx.Deprecated("Function strftime() is deprecated")
+	ctx.Deprecated("Function strftime() is deprecated since 8.1, use IntlDateFormatter::format() instead", logopt.NoFuncName(true))
 
 	if f == "" {
 		return phpv.ZFalse.ZVal(), nil
@@ -43,7 +44,7 @@ func fncGmstrftime(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	ctx.Deprecated("Function gmstrftime() is deprecated")
+	ctx.Deprecated("Function gmstrftime() is deprecated since 8.1, use IntlDateFormatter::format() instead", logopt.NoFuncName(true))
 
 	if f == "" {
 		return phpv.ZFalse.ZVal(), nil

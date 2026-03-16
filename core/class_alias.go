@@ -42,7 +42,7 @@ func fncClassAlias(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	// Resolve the original class
 	class, err := ctx.Global().GetClass(ctx, className, autoload)
 	if err != nil {
-		ctx.Warn("Class \"%s\" not found", className)
+		ctx.Warn("Class \"%s\" not found", className, logopt.NoFuncName(true))
 		return phpv.ZFalse.ZVal(), nil
 	}
 
@@ -54,7 +54,8 @@ func fncClassAlias(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			RedeclareKind() string
 			RedeclarePrevLoc() string
 		}); ok {
-			ctx.Warn("Cannot redeclare %s %s%s", redeclErr.RedeclareKind(), alias, redeclErr.RedeclarePrevLoc(), logopt.NoFuncName(true))
+			// PHP always says "class" in the class_alias warning, regardless of the actual kind
+			ctx.Warn("Cannot redeclare class %s%s", alias, redeclErr.RedeclarePrevLoc(), logopt.NoFuncName(true))
 		} else {
 			ctx.Warn("%s", err, logopt.NoFuncName(true))
 		}

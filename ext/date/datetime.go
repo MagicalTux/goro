@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/KarpelesLab/strtotime"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
@@ -38,9 +39,9 @@ func parseDateTimeWithTz(ctx phpv.Context, args []*phpv.ZVal) time.Time {
 		if tzLoc, err := time.LoadLocation(string(dateStr)); err == nil {
 			return time.Now().In(tzLoc)
 		}
-		// Use strToTime for full parsing support
+		// Use strtotime library first, fall back to custom parser
 		base := time.Now().In(loc)
-		if parsed, ok := strToTime(string(dateStr), base); ok {
+		if parsed, stErr := strtotime.StrToTime(string(dateStr), strtotime.InTZ(loc), strtotime.Rel(base)); stErr == nil {
 			// If the parsed time has a different location than the base,
 			// the string contained a timezone - keep it.
 			// Otherwise, apply the configured/requested timezone.
@@ -113,9 +114,14 @@ func modifyMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*p
 		return phpv.ZBool(false).ZVal(), nil
 	}
 	modifier := args[0].AsString(ctx)
-	newT, ok := strToTime(string(modifier), t)
-	if !ok {
-		return phpv.ZBool(false).ZVal(), nil
+	newT, stErr := strtotime.StrToTime(string(modifier), strtotime.InTZ(t.Location()), strtotime.Rel(t))
+	if stErr != nil {
+		// Fallback to custom parser
+		var ok bool
+		newT, ok = strToTime(string(modifier), t)
+		if !ok {
+			return phpv.ZBool(false).ZVal(), nil
+		}
 	}
 	setTimeVal(this, newT)
 	return this.ZVal(), nil

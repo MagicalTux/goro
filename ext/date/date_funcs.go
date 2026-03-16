@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/KarpelesLab/strtotime"
 	"github.com/MagicalTux/goro/core"
 	"github.com/MagicalTux/goro/core/phpv"
 )
@@ -1105,16 +1106,25 @@ func fncStrtotime(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	loc := getTimezone(ctx)
-	var base time.Time
+	opts := []strtotime.Option{strtotime.InTZ(loc)}
 	if baseTs != nil {
-		base = time.Unix(int64(*baseTs), 0).In(loc)
-	} else {
-		base = time.Now().In(loc)
+		opts = append(opts, strtotime.Rel(time.Unix(int64(*baseTs), 0).In(loc)))
 	}
 
-	t, ok := strToTime(string(datetime), base)
-	if !ok {
-		return phpv.ZBool(false).ZVal(), nil
+	t, stErr := strtotime.StrToTime(string(datetime), opts...)
+	if stErr != nil {
+		// Fall back to custom parser for formats the library doesn't handle yet
+		var base time.Time
+		if baseTs != nil {
+			base = time.Unix(int64(*baseTs), 0).In(loc)
+		} else {
+			base = time.Now().In(loc)
+		}
+		var ok bool
+		t, ok = strToTime(string(datetime), base)
+		if !ok {
+			return phpv.ZBool(false).ZVal(), nil
+		}
 	}
 
 	return phpv.ZInt(t.Unix()).ZVal(), nil

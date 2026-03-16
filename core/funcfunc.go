@@ -108,6 +108,13 @@ func fncDebugPrintBacktrace(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 		return nil, err
 	}
 
+	// Parse options to check for DEBUG_BACKTRACE_IGNORE_ARGS
+	opts := int64(0)
+	if options != nil {
+		opts = int64(*options)
+	}
+	ignoreArgs := (opts & int64(DEBUG_BACKTRACE_IGNORE_ARGS)) != 0
+
 	rawTrace := ctx.GetStackTrace(ctx)
 	// Skip the first frame (debug_print_backtrace itself)
 	if len(rawTrace) > 0 {
@@ -123,7 +130,7 @@ func fncDebugPrintBacktrace(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 		trace = trace[:lim]
 	}
 
-	ctx.Write([]byte(trace.StringNoMain()))
+	ctx.Write([]byte(trace.FormatNoMainOpts(ignoreArgs)))
 	return nil, nil
 }
 
@@ -164,11 +171,12 @@ func fncDebugBacktrace(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 		frame := phpv.NewZArray()
 		frame.OffsetSet(ctx, phpv.ZString("file"), phpv.ZString(entry.Filename).ZVal())
 		frame.OffsetSet(ctx, phpv.ZString("line"), phpv.ZInt(entry.Line).ZVal())
-		// Use the bare function name (without class prefix) for the "function" key
+		// PHP outputs "function" before "class" in backtrace arrays
 		funcName := entry.BareFuncName
 		if funcName == "" {
 			funcName = entry.FuncName
 		}
+		frame.OffsetSet(ctx, phpv.ZString("function"), phpv.ZString(funcName).ZVal())
 		if entry.ClassName != "" {
 			frame.OffsetSet(ctx, phpv.ZString("class"), phpv.ZString(entry.ClassName).ZVal())
 			// Include "object" key for instance method calls when PROVIDE_OBJECT is set
@@ -179,7 +187,6 @@ func fncDebugBacktrace(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 				frame.OffsetSet(ctx, phpv.ZString("type"), phpv.ZString(entry.MethodType).ZVal())
 			}
 		}
-		frame.OffsetSet(ctx, phpv.ZString("function"), phpv.ZString(funcName).ZVal())
 		if !ignoreArgs {
 			argsArr := phpv.NewZArray()
 			for _, a := range entry.Args {

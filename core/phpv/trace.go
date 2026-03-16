@@ -22,39 +22,43 @@ type StackTraceEntry struct {
 type StackTrace []*StackTraceEntry
 
 func (st StackTrace) String() ZString {
-	return st.format(true)
+	return st.formatInternal(true, TraceArgMaxLen, false)
 }
 
 // StringNoMain formats the stack trace without the trailing {main} entry,
 // as used by debug_print_backtrace().
 func (st StackTrace) StringNoMain() ZString {
-	return st.format(false)
-}
-
-func (st StackTrace) format(includeMain bool) ZString {
-	return st.formatWithMaxLen(includeMain, TraceArgMaxLen)
+	return st.formatInternal(false, TraceArgMaxLen, false)
 }
 
 // FormatWithMaxLen formats the stack trace with a custom string param max length.
 func (st StackTrace) FormatWithMaxLen(maxLen int) ZString {
-	return st.formatWithMaxLen(true, maxLen)
+	return st.formatInternal(true, maxLen, false)
 }
 
-func (st StackTrace) formatWithMaxLen(includeMain bool, maxLen int) ZString {
+// FormatNoMainOpts formats without {main}, optionally ignoring args.
+// Used by debug_print_backtrace() when DEBUG_BACKTRACE_IGNORE_ARGS is set.
+func (st StackTrace) FormatNoMainOpts(ignoreArgs bool) ZString {
+	return st.formatInternal(false, TraceArgMaxLen, ignoreArgs)
+}
+
+func (st StackTrace) formatInternal(includeMain bool, maxLen int, ignoreArgs bool) ZString {
 	var buf bytes.Buffer
 	var argsBuf bytes.Buffer
 	level := 0
 	for _, e := range st {
 		argsBuf.Reset()
-		// Include/require are language constructs; PHP omits their args
-		// from debug_print_backtrace() output.
-		isInclude := e.FuncName == "include" || e.FuncName == "require" ||
-			e.FuncName == "include_once" || e.FuncName == "require_once"
-		if !isInclude {
-			for i, arg := range e.Args {
-				argsBuf.WriteString(TraceArgStringMaxLen(arg, maxLen))
-				if i < len(e.Args)-1 {
-					argsBuf.WriteString(", ")
+		if !ignoreArgs {
+			// Include/require are language constructs; PHP omits their args
+			// from debug_print_backtrace() output.
+			isInclude := e.FuncName == "include" || e.FuncName == "require" ||
+				e.FuncName == "include_once" || e.FuncName == "require_once"
+			if !isInclude {
+				for i, arg := range e.Args {
+					argsBuf.WriteString(TraceArgStringMaxLen(arg, maxLen))
+					if i < len(e.Args)-1 {
+						argsBuf.WriteString(", ")
+					}
 				}
 			}
 		}
