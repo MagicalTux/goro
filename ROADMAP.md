@@ -1,6 +1,6 @@
 # Goro Roadmap
 
-**Current state (March 2026):** 1098 / 2000 PHP 8.5.4 tests passing (56.5%), 57 skipped, 845 failing.
+**Current state (March 2026):** 1101 / 2000 PHP 8.5.4 tests passing (56.7%), 57 skipped, 842 failing.
 
 This document tracks the major work areas needed to reach full PHP 8.5 compatibility, organized by impact (number of test fixes) and estimated effort.
 
