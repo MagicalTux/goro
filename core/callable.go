@@ -61,6 +61,12 @@ func spawnCallableInternal(ctx phpv.Context, v *phpv.ZVal, paramNo int) (phpv.Ca
 			return phpv.BindClass(member.Method, class, false), nil
 		}
 
+		// PHP 8: scope-dependent functions cannot be called dynamically
+		sLower := s.ToLower()
+		if sLower == "extract" || sLower == "compact" || sLower == "get_defined_vars" || sLower == "func_get_args" || sLower == "func_get_arg" || sLower == "func_num_args" {
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Cannot call %s() dynamically", s))
+		}
+
 		return ctx.Global().GetFunction(ctx, s)
 
 	case phpv.ZtArray:
