@@ -864,6 +864,13 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 				}
 			}
 			class.Methods[method.Name.ToLower()] = method
+		case tokenizer.T_CASE:
+			// "case" keyword used in a class (not an enum)
+			return nil, &phpv.PhpError{
+				Err:  fmt.Errorf("Case can only be used in enums"),
+				Code: phpv.E_COMPILE_ERROR,
+				Loc:  i.Loc(),
+			}
 		default:
 			return nil, i.Unexpected()
 		}
