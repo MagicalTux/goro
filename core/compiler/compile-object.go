@@ -979,6 +979,13 @@ func (r *runObjectDynFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	if err != nil {
 		return nil, err
 	}
+	if name.GetType() != phpv.ZtString {
+		return nil, &phpv.PhpError{
+			Err:  fmt.Errorf("Method name must be a string"),
+			Code: phpv.E_ERROR,
+			Loc:  r.l,
+		}
+	}
 	methodName := phpv.ZString(name.String())
 	objZ := obj.AsObject(ctx)
 	if objZ == nil {
