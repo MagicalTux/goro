@@ -41,6 +41,7 @@ func fncClassAlias(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	// Resolve the original class
 	class, err := ctx.Global().GetClass(ctx, className, autoload)
 	if err != nil {
+		ctx.Warn("Class \"%s\" not found", className)
 		return phpv.ZFalse.ZVal(), nil
 	}
 

@@ -968,14 +968,14 @@ func parseClassLine(class *phpobj.ZClass, c compileCtx) error {
 		}
 		// Check reserved class names
 		lowerName := className.ToLower()
-		classKind := "a class"
+		classKind := "class"
 		if class.Type == phpv.ZClassTypeInterface {
-			classKind = "an interface"
+			classKind = "interface"
 		}
 		switch lowerName {
 		case "self", "parent", "static":
 			return &phpv.PhpError{
-				Err:  fmt.Errorf("Cannot use \"%s\" as %s name as it is reserved", i.Data, classKind),
+				Err:  fmt.Errorf("Cannot use \"%s\" as %s name, as it is reserved", i.Data, classKind),
 				Code: phpv.E_COMPILE_ERROR,
 				Loc:  i.Loc(),
 			}
@@ -983,7 +983,11 @@ func parseClassLine(class *phpobj.ZClass, c compileCtx) error {
 		class.Name = className
 		// PHP 8.4+: Using "_" as a class/interface/trait name is deprecated
 		if i.Data == "_" {
-			c.Deprecated("Using \"_\" as %s name is deprecated since 8.4", classKind)
+			article := "a"
+			if classKind == "interface" {
+				article = "an"
+			}
+			c.Deprecated("Using \"_\" as %s %s name is deprecated since 8.4", article, classKind)
 		}
 		// Track short class name for use-statement conflict detection
 		if root := getRootCtx(c); root != nil && root.nsClassNames != nil {
@@ -1014,7 +1018,7 @@ func parseClassLine(class *phpobj.ZClass, c compileCtx) error {
 		switch class.ExtendsStr.ToLower() {
 		case "self", "parent", "static":
 			return &phpv.PhpError{
-				Err:  fmt.Errorf("Cannot use \"%s\" as a class name as it is reserved", class.ExtendsStr),
+				Err:  fmt.Errorf("Cannot use \"%s\" as class name, as it is reserved", class.ExtendsStr),
 				Code: phpv.E_COMPILE_ERROR,
 				Loc:  i.Loc(),
 			}
