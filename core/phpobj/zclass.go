@@ -298,9 +298,13 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 				return c.fatalError(ctx, fmt.Sprintf("%s cannot use %s - it is not a trait", c.Name, tc.Name))
 			}
 
-			// Copy methods from trait (don't override methods already defined in the class)
+			// Copy methods from trait (don't override methods explicitly defined in the class)
 			for name, m := range tc.Methods {
-				if _, exists := c.Methods[name]; !exists {
+				existing, exists := c.Methods[name]
+				// Import trait method if:
+				// - no existing method, OR
+				// - existing method was inherited from parent (not defined in this class)
+				if !exists || (existing.Class != nil && existing.Class != c) {
 					// Create a copy of the method pointing to this class
 					methodCopy := &phpv.ZClassMethod{
 						Name:       m.Name,
