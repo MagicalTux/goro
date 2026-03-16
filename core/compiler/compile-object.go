@@ -257,7 +257,14 @@ func compileNew(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			return nil, err
 		}
 
-		class := classRunnable.(*phpobj.ZClass)
+		var class *phpobj.ZClass
+		if zc, ok := classRunnable.(*phpobj.ZClass); ok {
+			class = zc
+		} else if w, ok := classRunnable.(interface{ GetClass() *phpobj.ZClass }); ok {
+			class = w.GetClass()
+		} else {
+			return nil, fmt.Errorf("invalid anonymous class definition")
+		}
 		// Apply attributes from new #[Attr] class { }
 		if len(anonAttrs) > 0 {
 			class.Attributes = append(anonAttrs, class.Attributes...)

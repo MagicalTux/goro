@@ -1078,9 +1078,8 @@ func (g *Global) GetFunction(ctx phpv.Context, name phpv.ZString) (phpv.Callable
 	}
 	if f, ok := g.globalInternalFuncs[name.ToLower()]; ok {
 		if _, ok := g.disabledFuncs[name]; ok {
-			ctx.Warn("%s() has been disabled for security reasons",
-				name, logopt.NoFuncName(true))
-			return noOp, nil
+			// PHP 8.0+: disabled functions are treated as undefined
+			return nil, g.Errorf("Call to undefined function %s()", name)
 		}
 		return f, nil
 	}
@@ -1103,9 +1102,7 @@ func (g *Global) GetFunction(ctx phpv.Context, name phpv.ZString) (phpv.Callable
 		}
 		if f, ok := g.globalInternalFuncs[globalName.ToLower()]; ok {
 			if _, ok := g.disabledFuncs[globalName]; ok {
-				ctx.Warn("%s() has been disabled for security reasons",
-					globalName, logopt.NoFuncName(true))
-				return noOp, nil
+				return nil, g.Errorf("Call to undefined function %s()", name)
 			}
 			return f, nil
 		}

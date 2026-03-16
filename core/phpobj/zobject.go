@@ -1032,18 +1032,6 @@ func (o *ZObject) checkReadonlyWrite(ctx phpv.Context, keyStr phpv.ZString) erro
 						fmt.Sprintf("Cannot modify readonly property %s::$%s", class.GetName(), keyStr))
 				}
 
-				// PHP 8.4: public readonly without explicit set visibility has
-				// implicit protected(set) scope. Only the declaring class and
-				// subclasses can initialize it.
-				if prop.SetModifiers == 0 && prop.Modifiers.IsPublic() {
-					callerClass := ctx.Class()
-					if callerClass == nil || (!callerClass.InstanceOf(cur) && !cur.InstanceOf(callerClass)) {
-						return ThrowError(ctx, Error,
-							fmt.Sprintf("Cannot modify protected(set) readonly property %s::$%s from %s",
-								cur.GetName(), keyStr, scopeName(callerClass)))
-					}
-				}
-
 				// First write — mark as initialized
 				if o.readonlyInit == nil {
 					o.readonlyInit = make(map[phpv.ZString]bool)
@@ -1054,6 +1042,15 @@ func (o *ZObject) checkReadonlyWrite(ctx phpv.Context, keyStr phpv.ZString) erro
 		}
 	}
 	return nil
+}
+
+// MarkReadonlyInit marks a readonly property as initialized (for use by native constructors
+// that set properties directly on the hash table without going through ObjectSet).
+func (o *ZObject) MarkReadonlyInit(key phpv.ZString) {
+	if o.readonlyInit == nil {
+		o.readonlyInit = make(map[phpv.ZString]bool)
+	}
+	o.readonlyInit[key] = true
 }
 
 // checkSetVisibility checks PHP 8.4 asymmetric visibility for property writes.
@@ -1073,7 +1070,22 @@ func (o *ZObject) checkSetVisibility(ctx phpv.Context, keyStr phpv.ZString, isUn
 				continue
 			}
 			if prop.SetModifiers == 0 {
-				// No asymmetric visibility — normal visibility rules already checked
+				// PHP 8.4: public readonly without explicit set visibility has
+				// implicit protected(set) scope for the initial write.
+				// Only enforce this for properties that haven't been initialized yet.
+				// Already-initialized readonly properties will get the standard
+				// "Cannot modify readonly property" error from checkReadonlyWrite.
+				if prop.Modifiers.IsReadonly() && prop.Modifiers.IsPublic() {
+					alreadyInit := o.readonlyInit != nil && o.readonlyInit[keyStr]
+					if !alreadyInit {
+						callerClass := ctx.Class()
+						if callerClass == nil || (!callerClass.InstanceOf(cur) && !cur.InstanceOf(callerClass)) {
+							return ThrowError(ctx, Error,
+								fmt.Sprintf("Cannot %s protected(set) readonly property %s::$%s from %s",
+									verb, cur.GetName(), keyStr, scopeName(callerClass)))
+						}
+					}
+				}
 				return nil
 			}
 			callerClass := ctx.Class()

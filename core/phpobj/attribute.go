@@ -168,6 +168,8 @@ func init() {
 					msg = phpv.ZString(args[0].String())
 				}
 				o.HashTable().SetString("message", msg.ZVal())
+				// Mark readonly property as initialized
+				o.MarkReadonlyInit("message")
 				return nil, nil
 			})},
 		},

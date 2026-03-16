@@ -18,6 +18,17 @@ func fncSetLocale(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
+	// PHP: setlocale(LC_ALL, 0) queries the current locale.
+	// The second arg can be int 0, a string, or an array.
+	if localeArg.GetType() == phpv.ZtInt && localeArg.Value().(phpv.ZInt) == 0 {
+		// Query current locale
+		res, _ := locale.SetLocale(category, "")
+		if res == "" {
+			return phpv.ZFalse.ZVal(), nil
+		}
+		return res.ZVal(), nil
+	}
+
 	var locales []phpv.ZString
 	switch localeArg.GetType() {
 	case phpv.ZtArray:
@@ -28,7 +39,8 @@ func fncSetLocale(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		locale := localeArg.AsString(ctx)
 		locales = append(locales, locale)
 	default:
-		return nil, ctx.Errorf("expected string or array")
+		// PHP 8: non-string, non-array, non-zero int is deprecated
+		locales = append(locales, localeArg.AsString(ctx))
 	}
 
 	for i := 2; i < len(args); i++ {

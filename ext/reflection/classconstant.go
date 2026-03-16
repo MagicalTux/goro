@@ -47,6 +47,7 @@ func initReflectionClassConstant() {
 		"isenumcase":        {Name: "isEnumCase", Method: phpobj.NativeMethod(reflectionClassConstantIsEnumCase)},
 		"getattributes":     {Name: "getAttributes", Method: phpobj.NativeMethod(reflectionClassConstantGetAttributes)},
 		"__tostring":        {Name: "__toString", Method: phpobj.NativeMethod(reflectionClassConstantToString)},
+		"getdoccomment":     {Name: "getDocComment", Method: phpobj.NativeMethod(reflectionClassConstantGetDocComment)},
 	}
 }
 
@@ -280,6 +281,12 @@ func createReflectionClassConstantObject(ctx phpv.Context, class *phpobj.ZClass,
 	obj.HashTable().SetString("class", class.GetName().ZVal())
 	obj.SetOpaque(ReflectionClassConstant, data)
 	return obj.ZVal(), nil
+}
+
+// reflectionClassConstantGetDocComment returns the doc comment for a class constant.
+// Doc comments are not preserved during compilation, so this always returns false.
+func reflectionClassConstantGetDocComment(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	return phpv.ZFalse.ZVal(), nil
 }
 
 // reflectionClassGetDocComment returns the doc comment for a class.
