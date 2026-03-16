@@ -31,6 +31,34 @@ import (
 // Currently focusing on lang tests, change variable to run other tests
 const TestsPath = "test"
 
+// maxTestOutputSize caps the output buffer per test to prevent OOM crashes
+// from infinite-output tests (e.g., recursive json_encode). 10 MB is generous
+// for any normal test.
+const maxTestOutputSize = 10 * 1024 * 1024
+
+// limitedBuffer wraps a bytes.Buffer and silently discards writes once the
+// buffer exceeds maxTestOutputSize. This prevents runaway tests from causing
+// OOM crashes that kill the entire test suite.
+type limitedBuffer struct {
+	buf     bytes.Buffer
+	limited bool
+}
+
+func (lb *limitedBuffer) Write(p []byte) (int, error) {
+	if lb.limited {
+		return len(p), nil // silently discard
+	}
+	if lb.buf.Len()+len(p) > maxTestOutputSize {
+		lb.limited = true
+		return len(p), nil
+	}
+	return lb.buf.Write(p)
+}
+
+func (lb *limitedBuffer) Bytes() []byte  { return lb.buf.Bytes() }
+func (lb *limitedBuffer) Len() int       { return lb.buf.Len() }
+func (lb *limitedBuffer) String() string { return lb.buf.String() }
+
 // truncatedDiff computes a diff but truncates inputs to avoid O(n²) blowup
 // on large outputs with many differences.
 func truncatedDiff(expected, actual string) string {
@@ -48,7 +76,7 @@ func truncatedDiff(expected, actual string) string {
 type phptest struct {
 	f      *os.File
 	reader *bufio.Reader
-	output *bytes.Buffer
+	output *limitedBuffer
 	name   string
 	path   string
 	req    *http.Request
@@ -505,7 +533,7 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 }
 
 func runTest(t *testing.T, fpath string) (p *phptest, err error) {
-	p = &phptest{t: t, output: &bytes.Buffer{}, name: fpath, path: fpath}
+	p = &phptest{t: t, output: &limitedBuffer{}, name: fpath, path: fpath}
 
 	defer func() {
 		if r := recover(); r != nil {

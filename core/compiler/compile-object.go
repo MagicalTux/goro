@@ -1324,6 +1324,9 @@ func compileClassName(c compileCtx) (phpv.ZString, error) {
 func expandNewSpreadArgs(ctx phpv.Context, args phpv.Runnables) (phpv.Runnables, error) {
 	hasSpread := false
 	for _, arg := range args {
+		if _, ok := arg.(phpv.NamedArgument); ok {
+			continue // named args are not spread args
+		}
 		if _, ok := arg.(phpv.SpreadArgument); ok {
 			hasSpread = true
 			break
@@ -1335,6 +1338,10 @@ func expandNewSpreadArgs(ctx phpv.Context, args phpv.Runnables) (phpv.Runnables,
 
 	result := make(phpv.Runnables, 0, len(args))
 	for _, arg := range args {
+		if _, ok := arg.(phpv.NamedArgument); ok {
+			result = append(result, arg)
+			continue
+		}
 		sa, ok := arg.(phpv.SpreadArgument)
 		if !ok {
 			result = append(result, arg)

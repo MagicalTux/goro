@@ -40,6 +40,12 @@ func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, o
 	var zArgs []*phpv.ZVal
 	var byRefCleanups []*phpv.ZVal
 	for i, arg := range args {
+		// nil entries come from reorderNamedArgs when a named argument
+		// skips a position (the callee will use its default value).
+		if arg == nil {
+			zArgs = append(zArgs, nil)
+			continue
+		}
 		// Unwrap named arguments (already reordered to correct position)
 		if na, ok := arg.(phpv.NamedArgument); ok {
 			arg = na.Inner()
@@ -252,6 +258,9 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 			varArray := phpv.NewZArray()
 			isRefVariadic := func_args[variadicIdx].Ref
 			for _, a := range args[variadicIdx:] {
+				if a == nil {
+					continue // skip nil gaps from named arg reordering
+				}
 				if isRefVariadic {
 					// For by-ref variadic, make each element a reference so that
 					// modifications inside the function propagate back to the
@@ -275,12 +284,13 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 			if variadicIdx >= 0 && i == variadicIdx {
 				continue
 			}
+			// nil entries come from named arg reordering when a position was skipped;
+			// the callee will fill in the default value, so leave them nil.
+			if callCtx.Args[i] == nil {
+				continue
+			}
 			// Since this function was parsed, the parameter info is available
 			if i < len(func_args) && func_args[i].Ref {
-				// Check if the argument can be passed by reference
-				if callCtx.Args[i] == nil {
-					callCtx.Args[i] = phpv.ZNULL.ZVal()
-				}
 				argName := callCtx.Args[i].GetName()
 				if argName == "" {
 					// No variable name - either handled in Call() with a Notice
@@ -463,8 +473,13 @@ func (c *Global) Parent(n int) phpv.Context {
 // Returns an error (TypeError) if a non-array/Traversable value is spread.
 func expandSpreadArgs(ctx phpv.Context, args []phpv.Runnable) ([]phpv.Runnable, error) {
 	// Quick check: any spread args?
+	// NamedArgument also satisfies SpreadArgument (both have Inner()),
+	// so we must exclude NamedArgument from spread detection.
 	hasSpread := false
 	for _, arg := range args {
+		if _, ok := arg.(phpv.NamedArgument); ok {
+			continue // named args are not spread args
+		}
 		if _, ok := arg.(phpv.SpreadArgument); ok {
 			hasSpread = true
 			break
@@ -476,6 +491,12 @@ func expandSpreadArgs(ctx phpv.Context, args []phpv.Runnable) ([]phpv.Runnable, 
 
 	result := make([]phpv.Runnable, 0, len(args))
 	for _, arg := range args {
+		// Skip named arguments - they satisfy SpreadArgument interface
+		// but should not be treated as spread/unpack operations.
+		if _, ok := arg.(phpv.NamedArgument); ok {
+			result = append(result, arg)
+			continue
+		}
 		sa, ok := arg.(phpv.SpreadArgument)
 		if !ok {
 			result = append(result, arg)
