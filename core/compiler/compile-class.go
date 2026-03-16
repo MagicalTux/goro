@@ -460,6 +460,14 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 				}
 
 				cn := phpv.ZString(constName)
+				// Private final constants are not visible to subclasses, so final is useless
+				if attr.Has(phpv.ZAttrFinal) && attr.IsPrivate() {
+					return nil, &phpv.PhpError{
+						Err:  fmt.Errorf("Private constant %s::%s cannot be final as it is not visible to other classes", class.Name, cn),
+						Code: phpv.E_COMPILE_ERROR,
+						Loc:  i.Loc(),
+					}
+				}
 				class.Const[cn] = &phpv.ZClassConst{
 					Value:      &phpv.CompileDelayed{V: v},
 					Modifiers:  attr,

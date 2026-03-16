@@ -191,6 +191,10 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 				continue
 			}
 			if childConst, exists := c.Const[k]; exists {
+				// Cannot override final constants
+				if v.Modifiers.Has(phpv.ZAttrFinal) {
+					return c.fatalError(ctx, fmt.Sprintf("%s::%s cannot override final constant %s::%s", c.Name, k, c.Extends.Name, k))
+				}
 				// Validate constant visibility is not narrowed
 				parentVis := visibilityLevel(v.Modifiers)
 				childVis := visibilityLevel(childConst.Modifiers)
@@ -521,6 +525,8 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 				if _, exists := c.Const[k]; !exists {
 					c.Const[k] = v
 					c.ConstOrder = append(c.ConstOrder, k)
+				} else if v.Modifiers.Has(phpv.ZAttrFinal) {
+					return c.fatalError(ctx, fmt.Sprintf("%s::%s cannot override final constant %s::%s", c.Name, k, intf.Name, k))
 				}
 			}
 		}
