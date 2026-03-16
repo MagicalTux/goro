@@ -274,13 +274,19 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		if r.a != nil {
 			exists, checkErr := checkExistence(ctx, r.a, false)
 			if checkErr != nil {
-				// For ??=, propagate errors like "Cannot use [] for reading"
+				// checkExistence doesn't handle non-variable expressions
+				// (literals, function calls, etc.). For ??, evaluate directly
+				// and check for null. For ??=, propagate the error.
 				if r.op == tokenizer.T_COALESCE_EQUAL {
 					return nil, checkErr
 				}
-				// For ??, suppress errors
-			}
-			if exists {
+				// For ??, evaluate the LHS directly
+				a, err = r.a.Run(ctx)
+				if err != nil {
+					a = nil
+					err = nil
+				}
+			} else if exists {
 				a, err = r.a.Run(ctx)
 				if err != nil {
 					a = nil

@@ -1169,7 +1169,11 @@ func compileObjectOperator(v phpv.Runnable, i *tokenizer.Item, c compileCtx, nul
 		tokenizer.T_RETURN, tokenizer.T_TRY, tokenizer.T_CATCH,
 		tokenizer.T_THROW, tokenizer.T_INTERFACE, tokenizer.T_EXTENDS,
 		tokenizer.T_IMPLEMENTS, tokenizer.T_CONST, tokenizer.T_PUBLIC,
-		tokenizer.T_PROTECTED, tokenizer.T_PRIVATE:
+		tokenizer.T_PROTECTED, tokenizer.T_PRIVATE,
+		tokenizer.T_VAR, tokenizer.T_ENUM, tokenizer.T_MATCH,
+		tokenizer.T_READONLY, tokenizer.T_INCLUDE, tokenizer.T_REQUIRE,
+		tokenizer.T_INCLUDE_ONCE, tokenizer.T_REQUIRE_ONCE,
+		tokenizer.T_EXIT, tokenizer.T_EVAL:
 		// all valid after ->
 	default:
 		return nil, i.Unexpected()
