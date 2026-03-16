@@ -36,7 +36,14 @@ func initReflectionMethod() {
 		"invoke":                        {Name: "invoke", Method: phpobj.NativeMethod(reflectionMethodInvoke)},
 		"getattributes":                 {Name: "getAttributes", Method: phpobj.NativeMethod(reflectionMethodGetAttributes)},
 		"getclosure":                    {Name: "getClosure", Method: phpobj.NativeMethod(reflectionMethodGetClosure)},
+		"getdoccomment":                 {Name: "getDocComment", Method: phpobj.NativeMethod(reflectionMethodGetDocComment)},
 	}
+}
+
+// reflectionMethodGetDocComment returns the doc comment for a method.
+// Doc comments are not preserved during compilation, so this always returns false.
+func reflectionMethodGetDocComment(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	return phpv.ZFalse.ZVal(), nil
 }
 
 func reflectionMethodConstructFull(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {

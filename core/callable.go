@@ -144,10 +144,9 @@ func spawnCallableInternal(ctx phpv.Context, v *phpv.ZVal, paramNo int) (phpv.Ca
 		if !ok {
 			// Check for __invoke via HandleInvoke (e.g., Closure::__invoke)
 			if instance != nil && name == "__invoke" && class.Handlers() != nil && class.Handlers().HandleInvoke != nil {
-				// Return a wrapped callable that calls HandleInvoke
 				return phpv.Bind(&invokeWrapper{obj: instance, handler: class.Handlers().HandleInvoke}, instance), nil
 			}
-			// Check for __call magic method
+			// Check for __call magic method (instance call)
 			if instance != nil {
 				if callMethod, hasCall := class.GetMethod("__call"); hasCall {
 					origMethodName := methodName.AsString(ctx)
@@ -156,6 +155,25 @@ func spawnCallableInternal(ctx phpv.Context, v *phpv.ZVal, paramNo int) (phpv.Ca
 						methodName: origMethodName,
 					}
 					return phpv.Bind(wrapper, instance), nil
+				}
+			}
+			// Check for __callStatic or __call (static call with string class name)
+			if instance == nil {
+				if callStaticMethod, hasCallStatic := class.GetMethod("__callstatic"); hasCallStatic {
+					origMethodName := methodName.AsString(ctx)
+					wrapper := &magicCallWrapper{
+						callMethod: callStaticMethod.Method,
+						methodName: origMethodName,
+					}
+					return phpv.BindClass(wrapper, class, true), nil
+				}
+				if callMethod, hasCall := class.GetMethod("__call"); hasCall {
+					origMethodName := methodName.AsString(ctx)
+					wrapper := &magicCallWrapper{
+						callMethod: callMethod.Method,
+						methodName: origMethodName,
+					}
+					return phpv.BindClass(wrapper, class, false), nil
 				}
 			}
 			return nil, ctx.Errorf("Argument #1 ($callback) must be a valid callback, method not found: %q", methodName)

@@ -44,8 +44,15 @@ func initReflectionFunction() {
 			"isstatic":                      {Name: "isStatic", Method: phpobj.NativeMethod(reflectionFunctionIsStatic)},
 			"isclosure":                     {Name: "isClosure", Method: phpobj.NativeMethod(reflectionFunctionIsClosure)},
 			"getreturntype":                 {Name: "getReturnType", Method: phpobj.NativeMethod(reflectionFunctionGetReturnType)},
+			"getdoccomment":                 {Name: "getDocComment", Method: phpobj.NativeMethod(reflectionFunctionGetDocComment)},
 		},
 	}
+}
+
+// reflectionFunctionGetDocComment returns the doc comment for a function.
+// Doc comments are not preserved during compilation, so this always returns false.
+func reflectionFunctionGetDocComment(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	return phpv.ZFalse.ZVal(), nil
 }
 
 func reflectionFunctionConstruct(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {

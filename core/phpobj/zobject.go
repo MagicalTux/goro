@@ -192,6 +192,12 @@ func (z *ZObject) AsVal(ctx phpv.Context, t phpv.ZType) (phpv.Val, error) {
 		ctx.Warn("Object of class %s could not be converted to float", z.Class.GetName(), logopt.NoFuncName(true))
 		return phpv.ZFloat(1), nil
 	case phpv.ZtArray:
+		// Closure objects cast to array as [0 => $closure], not property iteration
+		if z.Class.GetName() == "Closure" {
+			arr := phpv.NewZArray()
+			arr.OffsetSet(ctx, nil, z.ZVal())
+			return arr, nil
+		}
 		return z.toArray(ctx), nil
 	}
 
@@ -1022,12 +1028,22 @@ func (o *ZObject) checkReadonlyWrite(ctx phpv.Context, keyStr phpv.ZString) erro
 			if prop.VarName == keyStr && prop.Modifiers.IsReadonly() {
 				// Readonly property found. Check if it's already initialized.
 				if o.readonlyInit != nil && o.readonlyInit[keyStr] {
-					// Check if the caller is within the declaring class scope
-					// (only the declaring class can initialize readonly properties,
-					// and even then, only once)
 					return ThrowError(ctx, Error,
 						fmt.Sprintf("Cannot modify readonly property %s::$%s", class.GetName(), keyStr))
 				}
+
+				// PHP 8.4: public readonly without explicit set visibility has
+				// implicit protected(set) scope. Only the declaring class and
+				// subclasses can initialize it.
+				if prop.SetModifiers == 0 && prop.Modifiers.IsPublic() {
+					callerClass := ctx.Class()
+					if callerClass == nil || (!callerClass.InstanceOf(cur) && !cur.InstanceOf(callerClass)) {
+						return ThrowError(ctx, Error,
+							fmt.Sprintf("Cannot modify protected(set) readonly property %s::$%s from %s",
+								cur.GetName(), keyStr, scopeName(callerClass)))
+					}
+				}
+
 				// First write — mark as initialized
 				if o.readonlyInit == nil {
 					o.readonlyInit = make(map[phpv.ZString]bool)
@@ -1075,9 +1091,13 @@ func (o *ZObject) checkSetVisibility(ctx phpv.Context, keyStr phpv.ZString, isUn
 				if callerClass != nil && (callerClass.InstanceOf(cur) || cur.InstanceOf(callerClass)) {
 					return nil
 				}
+				readonlyStr := ""
+				if prop.Modifiers.IsReadonly() {
+					readonlyStr = " readonly"
+				}
 				return ThrowError(ctx, Error,
-					fmt.Sprintf("Cannot %s protected(set) property %s::$%s from %s",
-						verb, cur.GetName(), keyStr, scopeName(callerClass)))
+					fmt.Sprintf("Cannot %s protected(set)%s property %s::$%s from %s",
+						verb, readonlyStr, cur.GetName(), keyStr, scopeName(callerClass)))
 			}
 			return nil
 		}
@@ -1371,6 +1391,21 @@ func (o *ZObject) ObjectSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) er
 		}
 		return ThrowError(ctx, Error,
 			fmt.Sprintf("Cannot create dynamic property %s::$%s", o.Class.GetName(), keyStr))
+	}
+
+	// Internal classes (e.g. Closure) that don't allow dynamic properties
+	if zc, ok := o.Class.(*ZClass); ok && zc.InternalOnly && !o.h.HasString(keyStr) {
+		hasDeclared := false
+		for _, p := range zc.Props {
+			if p.VarName == keyStr {
+				hasDeclared = true
+				break
+			}
+		}
+		if !hasDeclared {
+			return ThrowError(ctx, Error,
+				fmt.Sprintf("Cannot create dynamic property %s::$%s", o.Class.GetName(), keyStr))
+		}
 	}
 
 	// Check if accessing a static property as non-static

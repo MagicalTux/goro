@@ -31,7 +31,14 @@ func initReflectionProperty() {
 		"setvalue":    {Name: "setValue", Method: phpobj.NativeMethod(reflectionPropertySetValue)},
 		"getdeclaringclass": {Name: "getDeclaringClass", Method: phpobj.NativeMethod(reflectionPropertyGetDeclaringClass)},
 		"getattributes":     {Name: "getAttributes", Method: phpobj.NativeMethod(reflectionPropertyGetAttributes)},
+		"getdoccomment":     {Name: "getDocComment", Method: phpobj.NativeMethod(reflectionPropertyGetDocComment)},
 	}
+}
+
+// reflectionPropertyGetDocComment returns the doc comment for a property.
+// Doc comments are not preserved during compilation, so this always returns false.
+func reflectionPropertyGetDocComment(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	return phpv.ZFalse.ZVal(), nil
 }
 
 func reflectionPropertyConstructFull(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {

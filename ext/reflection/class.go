@@ -34,6 +34,7 @@ func initReflectionClass() {
 		"getattributes":           {Name: "getAttributes", Method: phpobj.NativeMethod(reflectionClassGetAttributes)},
 		"getreflectionconstant":   {Name: "getReflectionConstant", Method: phpobj.NativeMethod(reflectionClassGetReflectionConstant)},
 		"getreflectionconstants":  {Name: "getReflectionConstants", Method: phpobj.NativeMethod(reflectionClassGetReflectionConstants)},
+		"getdoccomment":           {Name: "getDocComment", Method: phpobj.NativeMethod(reflectionClassGetDocComment)},
 	}
 }
 

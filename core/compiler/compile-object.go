@@ -390,6 +390,18 @@ func (r *runObjectVar) Dump(w io.Writer) error {
 
 func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	ctx.Tick(ctx, r.l)
+
+	// For :: calls with a variable receiver, emit "Undefined variable" warning
+	// before evaluating. The variable's parent is runObjectFunc which suppresses
+	// the warning in runVariable.Run, so we must check it here.
+	if r.static {
+		if uc, ok := r.ref.(phpv.UndefinedChecker); ok {
+			if uc.IsUnDefined(ctx) {
+				ctx.Warn("Undefined variable $%s", uc.VarName(), logopt.NoFuncName(true))
+			}
+		}
+	}
+
 	// fetch object
 	obj, err := r.ref.Run(ctx)
 	if err != nil {
@@ -400,17 +412,23 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		return phpv.ZNULL.ZVal(), nil
 	}
 
+	// For :: calls, validate class name type before evaluating method name.
+	if r.static && obj.GetType() != phpv.ZtObject && obj.GetType() != phpv.ZtString {
+		return nil, phpobj.ThrowError(ctx, phpobj.Error,
+			"Class name must be a valid object or a string")
+	}
+
 	op := r.op
 	if op[0] == '$' {
-		// variable
+		// variable method name
 		var opz *phpv.ZVal
 		opz, err = ctx.OffsetGet(ctx, op[1:].ZVal())
 		if err != nil {
 			return nil, err
 		}
-		opz, err = opz.As(ctx, phpv.ZtString)
-		if err != nil {
-			return nil, err
+		// Method name must be a string
+		if opz.GetType() != phpv.ZtString {
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, "Method name must be a string")
 		}
 		op = opz.Value().(phpv.ZString)
 	}
@@ -686,6 +704,8 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		return nil, phpobj.ThrowError(ctx, phpobj.Error, visErrMsg)
 	}
 
+	// Save the runtime class before narrowing for late static binding
+	runtimeClass := class
 	if objI != nil {
 		objI = objI.GetKin(string(method.Class.GetName()))
 		class = method.Class
@@ -715,8 +735,9 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	}
 
 	// Static methods don't get $this even when called via instance ($obj->staticMethod())
+	// Use BindClassLSB to preserve the runtime class for late static binding (get_called_class)
 	if method.Modifiers.IsStatic() {
-		m := phpv.BindClass(method.Method, class, true)
+		m := phpv.BindClassLSB(method.Method, class, runtimeClass, true)
 		return ctx.Call(ctx, m, r.args, nil)
 	}
 
@@ -1052,6 +1073,20 @@ func compilePaamayimNekudotayim(v phpv.Runnable, i *tokenizer.Item, c compileCtx
 		}
 		return &runClassStaticDynVarRef{className: v, nameExpr: expr, l: l}, nil
 	case tokenizer.T_VARIABLE:
+		// Check if followed by ( — dynamic method call: $a::$b()
+		i, err = c.NextItem()
+		if err != nil {
+			return nil, err
+		}
+		if i.IsSingle('(') {
+			c.backup()
+			args, err := compileFuncPassedArgs(c)
+			if err != nil {
+				return nil, err
+			}
+			return &runObjectFunc{ref: v, op: ident, args: args, l: l, static: true}, err
+		}
+		c.backup()
 		return &runClassStaticVarRef{v, ident[1:], l}, nil
 
 	case tokenizer.T_CLASS:

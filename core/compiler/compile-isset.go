@@ -311,7 +311,7 @@ func checkExistence(ctx phpv.Context, v phpv.Runnable, subExpr bool) (bool, erro
 		return obj.HasProp(ctx, propName)
 
 	case *runClassStaticVarRef:
-		// Check if the static property exists
+		// Check if the static property exists and is accessible
 		className, err := t.className.Run(ctx)
 		if err != nil {
 			return false, nil
@@ -321,6 +321,11 @@ func checkExistence(ctx phpv.Context, v phpv.Runnable, subExpr bool) (bool, erro
 			return false, nil
 		}
 		zc := class.(*phpobj.ZClass)
+		// Check visibility: private/protected static properties are not
+		// accessible from outside their declared scope.
+		if !phpobj.IsStaticPropAccessible(ctx, zc, t.varName) {
+			return false, nil
+		}
 		p, found, err := zc.FindStaticProp(ctx, t.varName)
 		if err != nil || !found {
 			return false, nil

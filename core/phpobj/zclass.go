@@ -1548,6 +1548,33 @@ func (c *ZClass) FindStaticProp(ctx phpv.Context, name phpv.ZString) (*phpv.ZHas
 	return nil, false, nil
 }
 
+// IsStaticPropAccessible checks whether the calling context has visibility
+// access to a static property on the given class. Returns true when the
+// property is public, when no declaration is found (the caller will handle
+// the "undeclared" error separately), or when the caller's class satisfies
+// the private/protected rules.
+func IsStaticPropAccessible(ctx phpv.Context, c *ZClass, name phpv.ZString) bool {
+	for cur := c; cur != nil; cur = cur.Extends {
+		for _, p := range cur.Props {
+			if p.VarName == name && p.Modifiers.IsStatic() {
+				if p.Modifiers.IsPrivate() {
+					callerClass := ctx.Class()
+					if callerClass == nil || callerClass.GetName() != cur.GetName() {
+						return false
+					}
+				} else if p.Modifiers.IsProtected() {
+					callerClass := ctx.Class()
+					if callerClass == nil || (!callerClass.InstanceOf(cur) && !cur.InstanceOf(callerClass)) {
+						return false
+					}
+				}
+				return true
+			}
+		}
+	}
+	return true
+}
+
 // ResolveConstants resolves any remaining CompileDelayed constants in the class
 // and its parent classes. Called when the class is first instantiated.
 func (c *ZClass) ResolveConstants(ctx phpv.Context) error {

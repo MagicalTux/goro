@@ -32,8 +32,9 @@ type ZClosure struct {
 
 // > class Closure
 var Closure = &phpobj.ZClass{
-	Name: "Closure",
-	H:    &phpv.ZClassHandlers{},
+	Name:         "Closure",
+	H:            &phpv.ZClassHandlers{},
+	InternalOnly: true,
 }
 
 // wrappedClosure wraps an arbitrary Callable as a Closure object opaque.

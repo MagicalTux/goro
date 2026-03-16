@@ -224,6 +224,16 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 		} else {
 			callCtx.methodType = "->"
 		}
+	} else if zc, ok := f.(phpv.ZClosure); ok {
+		// For closures, the scope (class) determines visibility, not $this's class.
+		if cls := zc.GetClass(); cls != nil {
+			callCtx.class = cls
+		} else if this != nil {
+			callCtx.class = this.GetClass()
+		}
+		if this != nil {
+			callCtx.methodType = "->"
+		}
 	} else if this != nil {
 		callCtx.class = this.GetClass()
 		callCtx.methodType = "->"

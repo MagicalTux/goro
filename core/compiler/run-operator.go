@@ -353,6 +353,28 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		}
 	}
 
+	// Handle unary minus/plus directly (r.a == nil means prefix unary operator).
+	// For unary minus, we must use Go negation (not 0-x) to produce negative zero:
+	// -0.0 must yield float(-0), but 0.0-0.0 yields float(0) per IEEE 754.
+	if r.a == nil && (r.op == tokenizer.Rune('-') || r.op == tokenizer.Rune('+')) {
+		bNum, _ := b.AsNumeric(ctx)
+		if r.op == tokenizer.Rune('-') {
+			switch v := bNum.Value().(type) {
+			case phpv.ZInt:
+				if v == 0 {
+					return phpv.ZInt(0).ZVal(), nil
+				}
+				if v == math.MinInt64 {
+					return phpv.ZFloat(-float64(v)).ZVal(), nil
+				}
+				return (-v).ZVal(), nil
+			case phpv.ZFloat:
+				return (-v).ZVal(), nil
+			}
+		}
+		return bNum, nil
+	}
+
 	// Handle array + array union BEFORE numeric conversion
 	if op.numeric {
 		aType := a.GetType()

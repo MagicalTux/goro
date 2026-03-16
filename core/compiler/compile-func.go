@@ -675,6 +675,8 @@ func collectVarsWalk(r phpv.Runnable, seen map[phpv.ZString]bool, result *[]phpv
 		for _, arg := range v.args {
 			collectVarsWalk(arg, seen, result)
 		}
+	case *runVariableRef:
+		collectVarsWalk(v.v, seen, result)
 	case *runArrayAccess:
 		collectVarsWalk(v.value, seen, result)
 		collectVarsWalk(v.offset, seen, result)

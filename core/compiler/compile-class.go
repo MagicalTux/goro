@@ -340,7 +340,7 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 					// Validate: set visibility must not be wider than read visibility
 					setAccess := prop.SetModifiers & phpv.ZAttrAccess
 					readAccess := prop.Modifiers & phpv.ZAttrAccess
-					if setAccess == phpv.ZAttrPublic {
+					if setAccess == phpv.ZAttrPublic && readAccess != phpv.ZAttrPublic {
 						return nil, &phpv.PhpError{
 							Err:  fmt.Errorf("Visibility of property %s::$%s must not be weaker than set visibility", class.Name, prop.VarName),
 							Code: phpv.E_COMPILE_ERROR,
@@ -833,14 +833,14 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 								}
 								// Validate: set visibility must not be wider than read visibility
 								setAccess := arg.SetPromotion & phpv.ZAttrAccess
-								if setAccess == phpv.ZAttrPublic {
+								readAccess := modifiers & phpv.ZAttrAccess
+								if setAccess == phpv.ZAttrPublic && readAccess != phpv.ZAttrPublic {
 									return nil, &phpv.PhpError{
 										Err:  fmt.Errorf("Visibility of property %s::$%s must not be weaker than set visibility", class.Name, arg.VarName),
 										Code: phpv.E_COMPILE_ERROR,
 										Loc:  l,
 									}
 								}
-								readAccess := modifiers & phpv.ZAttrAccess
 								if readAccess == phpv.ZAttrPrivate && setAccess != phpv.ZAttrPrivate {
 									return nil, &phpv.PhpError{
 										Err:  fmt.Errorf("Visibility of property %s::$%s must not be weaker than set visibility", class.Name, arg.VarName),
