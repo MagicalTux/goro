@@ -56,6 +56,23 @@ type ExtFunctionArg struct {
 	Optional bool // is this argument optional?
 }
 
+// GetArgs implements phpv.FuncGetArgs so that closureFromCallable can
+// read parameter metadata for the closure's __debugInfo output.
+func (e *ExtFunction) GetArgs() []*phpv.FuncArg {
+	if len(e.Args) == 0 {
+		return nil
+	}
+	args := make([]*phpv.FuncArg, len(e.Args))
+	for i, a := range e.Args {
+		args[i] = &phpv.FuncArg{
+			VarName:  phpv.ZString(a.ArgName),
+			Required: !a.Optional,
+			Ref:      a.Ref,
+		}
+	}
+	return args
+}
+
 func RegisterExt(e *Ext) {
 	globalExtMap[e.Name] = e
 	for name, fn := range e.Functions {

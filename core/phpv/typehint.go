@@ -77,6 +77,44 @@ func (h *TypeHint) Check(ctx Context, val *ZVal) bool {
 	}
 
 	if h.t == ZtObject {
+		// "callable" type hint: accepts strings, arrays, closures, and invocable objects
+		if h.s == "callable" {
+			switch val.GetType() {
+			case ZtString:
+				// Verify the function actually exists and is callable
+				s := string(val.AsString(ctx))
+				if s == "" {
+					return false
+				}
+				if strings.Contains(s, "::") {
+					// Class::method - validate the method exists and is not abstract
+					parts := strings.SplitN(s, "::", 2)
+					cls, err := ctx.Global().GetClass(ctx, ZString(parts[0]), true)
+					if err != nil || cls == nil {
+						return false
+					}
+					m, ok := cls.GetMethod(ZString(parts[1]).ToLower())
+					if !ok {
+						return false
+					}
+					// Check for abstract methods
+					if m.Modifiers.Has(ZAttrAbstract) {
+						return false
+					}
+					return true
+				}
+				_, err := ctx.Global().GetFunction(ctx, ZString(s))
+				return err == nil
+			case ZtArray:
+				return true // array callable ([obj/class, method])
+			case ZtObject:
+				return true // closure or object with __invoke
+			case ZtCallable:
+				return true
+			default:
+				return false
+			}
+		}
 		// Class/interface type hint
 		if val.GetType() != ZtObject {
 			return false
@@ -84,7 +122,7 @@ func (h *TypeHint) Check(ctx Context, val *ZVal) bool {
 		if h.s == "" {
 			return true // any object
 		}
-		if h.s == "self" || h.s == "iterable" || h.s == "callable" {
+		if h.s == "self" || h.s == "iterable" {
 			return true // TODO: proper check
 		}
 		// Check instanceof by class name

@@ -62,7 +62,7 @@ func main() {
 			if ex, ok := err.(*phperr.PhpThrow); ok && bool(displayErrors) {
 				ctx.Write([]byte("\nFatal error: "))
 				ctx.Write([]byte(ex.ErrorTrace(ctx)))
-				s := fmt.Sprintf("\n  thrown in %s on line %d", ex.Loc.Filename, ex.Loc.Line)
+				s := fmt.Sprintf("\n  thrown in %s on line %d", ex.ThrownFile(), ex.ThrownLine())
 				ctx.Write([]byte(s))
 			} else {
 				if phpErr, ok := err.(*phpv.PhpError); ok {

@@ -188,30 +188,22 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		if err != nil {
 			htmlErrors := bool(g.GetConfig("html_errors", phpv.ZBool(false).ZVal()).AsBool(g))
 			if ex, ok := err.(*phperr.PhpThrow); ok {
-				loc := ex.Loc
-				if loc == nil {
-					loc = &phpv.Loc{}
-				}
 				// Special handling for ParseError: PHP displays these as
 				// "Parse error: <message> in <file> on line <line>"
 				// instead of the usual "Fatal error: Uncaught ParseError: ..." format
 				if ex.Obj.GetClass().InstanceOf(phpobj.ParseError) {
 					message := ex.Obj.HashTable().GetString("message").String()
-					fileLoc := ex.Obj.HashTable().GetString("file").String()
-					lineLoc := ex.Obj.HashTable().GetString("line").AsInt(g)
-					if fileLoc == "" {
-						fileLoc = loc.Filename
-						lineLoc = phpv.ZInt(loc.Line)
-					}
+					fileLoc := ex.ThrownFile()
+					lineLoc := ex.ThrownLine()
 					if htmlErrors {
 						fmt.Fprintf(g, "<br />\n<b>Parse error</b>:  %s in <b>%s</b> on line <b>%d</b><br />\n", message, fileLoc, lineLoc)
 					} else {
 						fmt.Fprintf(g, "\nParse error: %s in %s on line %d\n", message, fileLoc, lineLoc)
 					}
 				} else if htmlErrors {
-					fmt.Fprintf(g, "<br />\n<b>Fatal error</b>:  %s\n  thrown in <b>%s</b> on line <b>%d</b><br />\n", ex.ErrorTrace(g), loc.Filename, loc.Line)
+					fmt.Fprintf(g, "<br />\n<b>Fatal error</b>:  %s\n  thrown in <b>%s</b> on line <b>%d</b><br />\n", ex.ErrorTrace(g), ex.ThrownFile(), ex.ThrownLine())
 				} else {
-					fmt.Fprintf(g, "\nFatal error: %s\n  thrown in %s on line %d\n", ex.ErrorTrace(g), loc.Filename, loc.Line)
+					fmt.Fprintf(g, "\nFatal error: %s\n  thrown in %s on line %d\n", ex.ErrorTrace(g), ex.ThrownFile(), ex.ThrownLine())
 				}
 				err = nil
 			} else if timeout, ok := phperr.CatchTimeout(err).(*phperr.PhpTimeout); ok && timeout != nil {
@@ -254,7 +246,7 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 				}
 				closeErr = nil
 			} else if ex, ok := closeErr.(*phperr.PhpThrow); ok {
-				fmt.Fprintf(p.output, "\nFatal error: %s\n  thrown in %s on line %d\n", ex.ErrorTrace(g), ex.Loc.Filename, ex.Loc.Line)
+				fmt.Fprintf(p.output, "\nFatal error: %s\n  thrown in %s on line %d\n", ex.ErrorTrace(g), ex.ThrownFile(), ex.ThrownLine())
 				closeErr = nil
 			}
 			if closeErr != nil {

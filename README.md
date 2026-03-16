@@ -24,7 +24,7 @@ go install github.com/MagicalTux/goro/sapi/php-cli@latest
 
 ## Status
 
-Goro passes **946 tests** from the PHP test suite (891 pass, 55 skipped for platform-specific reasons, 0 failures).
+Goro passes **1073 tests** from the PHP 8.5.4 test suite (1073 pass, 57 skipped for platform-specific reasons).
 
 ### Language Features
 
@@ -47,8 +47,9 @@ Goro passes **946 tests** from the PHP test suite (891 pass, 55 skipped for plat
 | Readonly properties (PHP 8.1) | Done |
 | Fibers (PHP 8.1) | Done |
 | Union/intersection types | Partial |
-| Generators (`yield`) | Not yet |
-| Attributes | Parsed, not enforced |
+| Generators (`yield`) | Done |
+| First-class callables (`strlen(...)`) | Done |
+| Attributes | Parsed, partially enforced |
 
 ### SAPIs
 
@@ -73,8 +74,8 @@ Goro passes **946 tests** from the PHP test suite (891 pass, 55 skipped for plat
 | mbstring | 22 | 55% | strlen, substr, strpos, convert_encoding, convert_case, ord/chr, list_encodings |
 | date | 13 | 30% | date, time, strtotime, mktime, strftime, getdate, checkdate, DateTime class |
 | bz2 | 1 | 10% | Decompression only (Go stdlib lacks bzip2 writer) |
-| spl | 4 classes | 5% | Countable, OuterIterator, ArrayIterator, InfiniteIterator |
-| reflection | 3 classes | 5% | ReflectionClass, ReflectionMethod, ReflectionProperty (minimal) |
+| spl | 6+ classes | 15% | Countable, OuterIterator, ArrayIterator, InfiniteIterator, SplFixedArray, SplDoublyLinkedList |
+| reflection | 5 classes | 15% | ReflectionClass, ReflectionMethod, ReflectionProperty, ReflectionFunction, ReflectionParameter |
 | pcre | | | Uses Go's `regexp` (RE2 syntax, not PCRE2) |
 
 ### Not yet implemented

@@ -256,6 +256,41 @@ func compileSpecialFuncCall(i *tokenizer.Item, c compileCtx) (phpv.Runnable, err
 		return &runnableFunctionCall{name: fn_name, l: l}, nil
 	}
 
+	// Check for first-class callable syntax: exit(...) / die(...)
+	// Note: backup() only supports one level, so we must not double-backup.
+	if i.IsSingle('(') {
+		next, nextErr := c.NextItem()
+		if nextErr != nil {
+			return nil, nextErr
+		}
+		if next.Type == tokenizer.T_ELLIPSIS {
+			close, closeErr := c.NextItem()
+			if closeErr != nil {
+				return nil, closeErr
+			}
+			if close.IsSingle(')') {
+				// PHP normalizes "die" to "exit" for first-class callables
+				callableName := string(fn_name)
+				if callableName == "die" {
+					callableName = "exit"
+				}
+				return &runFirstClassCallable{
+					target: &runConstant{c: callableName},
+					l:      l,
+				}, nil
+			}
+			// Not first-class callable; backup last token only.
+			// The '(' and '...' are consumed, which is unusual.
+			// Fall through - compileExpr will handle the rest.
+			c.backup()
+		} else {
+			// Not '...'; backup the token after '(' and let '(' pass through
+			// to compileExpr as the start of a parenthesized expression.
+			c.backup()
+		}
+		// i is still '(' - fall through to expression parsing
+	}
+
 	var args []phpv.Runnable
 
 	// parse passed arguments
@@ -1229,15 +1264,8 @@ func (r *runFirstClassCallable) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		funcName = phpv.ZString(val.String())
 	}
 
-	// Look up the function
-	f, err := ctx.Global().GetFunction(ctx, funcName)
-	if err != nil {
-		return nil, err
-	}
-
-	// Create a Closure wrapping this function
-	closure := phpv.Bind(f, nil)
-	return phpv.NewZVal(closure), nil
+	// Use closureFromCallable to create a proper Closure object
+	return closureFromCallable(ctx, funcName.ZVal())
 }
 
 func (r *runFirstClassCallable) Dump(w io.Writer) error {

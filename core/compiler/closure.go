@@ -273,16 +273,15 @@ func (closure *ZClosure) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 		c.this = ctx.This()
 		c.class = ctx.This().GetClass()
 	}
-	// For closures defined in a class method, capture the class scope
-	// even when there is no $this (e.g. static methods or static closures).
-	// Use the actual object's class (late static binding) when available,
-	// so static::class resolves to the runtime class, not the defining class.
-	if c.class == nil {
-		if ctx.This() != nil {
-			c.class = ctx.This().GetClass()
-		} else if ctx.Class() != nil {
-			c.class = ctx.Class()
-		}
+	// For static closures defined in a class method, capture the class scope
+	// but not $this.
+	if c.isStatic && c.class == nil && ctx.Class() != nil {
+		c.class = ctx.Class()
+	}
+	// For non-static closures without $this (e.g. defined in a static method),
+	// capture the class scope so self:: and static:: resolve correctly.
+	if !c.isStatic && c.class == nil && ctx.Class() != nil {
+		c.class = ctx.Class()
 	}
 	// run compile after dup so we re-fetch default vars each time
 	err = c.Compile(ctx)
@@ -1149,6 +1148,9 @@ func closureDebugInfo(ctx phpv.Context, o *phpobj.ZObject) (*phpv.ZVal, error) {
 			}
 			arr.OffsetSet(ctx, phpv.ZString("parameter"), paramArr.ZVal())
 		}
+		if w.this != nil {
+			arr.OffsetSet(ctx, phpv.ZString("this"), w.this.ZVal())
+		}
 		return arr.ZVal(), nil
 	}
 
@@ -1177,6 +1179,22 @@ func closureDebugInfo(ctx phpv.Context, o *phpobj.ZObject) (*phpv.ZVal, error) {
 		}
 	}
 
+	// "parameter" key: function parameters (must come before static/this to match PHP order)
+	if len(z.args) > 0 {
+		paramArr := phpv.NewZArray()
+		for _, a := range z.args {
+			paramKey := "$" + string(a.VarName)
+			var paramVal string
+			if a.Required {
+				paramVal = "<required>"
+			} else {
+				paramVal = "<optional>"
+			}
+			paramArr.OffsetSet(ctx, phpv.ZString(paramKey), phpv.ZString(paramVal).ZVal())
+		}
+		arr.OffsetSet(ctx, phpv.ZString("parameter"), paramArr.ZVal())
+	}
+
 	// "static" key: captured use() variables
 	if len(z.use) > 0 {
 		staticArr := phpv.NewZArray()
@@ -1193,22 +1211,6 @@ func closureDebugInfo(ctx phpv.Context, o *phpobj.ZObject) (*phpv.ZVal, error) {
 	// "this" key: captured $this
 	if z.this != nil {
 		arr.OffsetSet(ctx, phpv.ZString("this"), z.this.ZVal())
-	}
-
-	// "parameter" key: function parameters
-	if len(z.args) > 0 {
-		paramArr := phpv.NewZArray()
-		for _, a := range z.args {
-			paramKey := "$" + string(a.VarName)
-			var paramVal string
-			if a.Required {
-				paramVal = "<required>"
-			} else {
-				paramVal = "<optional>"
-			}
-			paramArr.OffsetSet(ctx, phpv.ZString(paramKey), phpv.ZString(paramVal).ZVal())
-		}
-		arr.OffsetSet(ctx, phpv.ZString("parameter"), paramArr.ZVal())
 	}
 
 	return arr.ZVal(), nil

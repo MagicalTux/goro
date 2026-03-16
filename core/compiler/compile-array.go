@@ -358,10 +358,15 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			return phpv.ZNULL.ZVal(), nil
 		}
 	case phpv.ZtBool:
-		if !bool(v.AsBool(ctx)) && !ac.writeContext {
-			if err := ctx.Warn("Trying to access array offset on false", logopt.NoFuncName(true)); err != nil {
+		if !ac.writeContext {
+			boolName := "true"
+			if !bool(v.AsBool(ctx)) {
+				boolName = "false"
+			}
+			if err := ctx.Warn("Trying to access array offset on %s", boolName, logopt.NoFuncName(true)); err != nil {
 				return nil, err
 			}
+			return phpv.ZNULL.ZVal(), nil
 		}
 		v, err = v.As(ctx, phpv.ZtArray)
 		if err != nil {
@@ -378,10 +383,12 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		if isWriteOp {
 			return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot use a scalar value as an array")
 		}
-		v, err = v.As(ctx, phpv.ZtArray)
-		if err != nil {
+		// PHP 8: reading array offset on non-array scalar (int, float) warns and returns null
+		typeName := v.GetType().TypeName()
+		if err := ctx.Warn("Trying to access array offset on %s", typeName, logopt.NoFuncName(true)); err != nil {
 			return nil, err
 		}
+		return phpv.ZNULL.ZVal(), nil
 	}
 
 	if ac.offset == nil {

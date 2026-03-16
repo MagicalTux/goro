@@ -458,11 +458,7 @@ func (g *Global) RunFile(fn string) error {
 			if err != nil {
 				if ex, ok := err.(*phperr.PhpThrow); ok {
 					trace := ex.ErrorTrace(g)
-					loc := ex.Loc
-					if loc == nil {
-						loc = &phpv.Loc{}
-					}
-					g.WriteErr([]byte(fmt.Sprintf("\nFatal error: %s\n  thrown in %s on line %d\n", trace, loc.Filename, loc.Line)))
+					g.WriteErr([]byte(fmt.Sprintf("\nFatal error: %s\n  thrown in %s on line %d\n", trace, ex.ThrownFile(), ex.ThrownLine())))
 					err = nil
 				} else if phpErr, ok := err.(*phpv.PhpError); ok {
 					// Clean buffered output on fatal error
