@@ -47,7 +47,8 @@ func fncClassAlias(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	// Register the class under the alias name
 	err = ctx.Global().RegisterClass(alias, class)
 	if err != nil {
-		return phpv.ZFalse.ZVal(), nil
+		ctx.Warn("%s", err)
+		return phpv.ZTrue.ZVal(), nil // PHP returns true even on redeclaration warning
 	}
 
 	return phpv.ZTrue.ZVal(), nil
