@@ -3,6 +3,7 @@ package date
 import (
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/MagicalTux/goro/core/phpobj"
@@ -33,9 +34,19 @@ func parseDateTimeWithTz(ctx phpv.Context, args []*phpv.ZVal) time.Time {
 		if string(dateStr) == "now" || string(dateStr) == "" {
 			return time.Now().In(loc)
 		}
+		// Check if the string is just a timezone abbreviation/name
+		if tzLoc, err := time.LoadLocation(string(dateStr)); err == nil {
+			return time.Now().In(tzLoc)
+		}
 		// Use strToTime for full parsing support
 		base := time.Now().In(loc)
 		if parsed, ok := strToTime(string(dateStr), base); ok {
+			// If the parsed time has a different location than the base,
+			// the string contained a timezone - keep it.
+			// Otherwise, apply the configured/requested timezone.
+			if parsed.Location().String() != base.Location().String() {
+				return parsed
+			}
 			return parsed.In(loc)
 		}
 		// Fallback: try common formats
@@ -461,6 +472,39 @@ func diffMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*php
 	return intervalObj.ZVal(), nil
 }
 
+// dateTimeDebugInfo implements __debugInfo for DateTime/DateTimeImmutable
+func dateTimeDebugInfo(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	t, ok := getTime(this)
+	if !ok {
+		return phpv.NewZArray().ZVal(), nil
+	}
+	arr := phpv.NewZArray()
+	// Format: "2006-12-12 00:00:00.000000"
+	dateStr := fmt.Sprintf("%04d-%02d-%02d %02d:%02d:%02d.%06d",
+		t.Year(), int(t.Month()), t.Day(),
+		t.Hour(), t.Minute(), t.Second(), t.Nanosecond()/1000)
+	if t.Year() < 0 {
+		dateStr = fmt.Sprintf("-%04d-%02d-%02d %02d:%02d:%02d.%06d",
+			-t.Year(), int(t.Month()), t.Day(),
+			t.Hour(), t.Minute(), t.Second(), t.Nanosecond()/1000)
+	}
+	arr.OffsetSet(ctx, phpv.ZString("date"), phpv.ZString(dateStr).ZVal())
+
+	// timezone_type: 1=offset, 2=abbreviation, 3=identifier
+	locName := t.Location().String()
+	tzType := 3
+	if locName == "UTC" || locName == "" {
+		tzType = 3
+		locName = "UTC"
+	} else if len(locName) <= 6 && !strings.Contains(locName, "/") {
+		tzType = 2
+	}
+	arr.OffsetSet(ctx, phpv.ZString("timezone_type"), phpv.ZInt(tzType).ZVal())
+	arr.OffsetSet(ctx, phpv.ZString("timezone"), phpv.ZString(locName).ZVal())
+
+	return arr.ZVal(), nil
+}
+
 func init() {
 	// DateTimeZone class
 	DateTimeZone = &phpobj.ZClass{
@@ -627,6 +671,11 @@ func init() {
 				Modifiers: phpv.ZAttrPublic | phpv.ZAttrStatic,
 				Method:    phpobj.NativeStaticMethod(createFromFormatStatic),
 			},
+			"__debuginfo": {
+				Name:      "__debugInfo",
+				Modifiers: phpv.ZAttrPublic,
+				Method:    phpobj.NativeMethod(dateTimeDebugInfo),
+			},
 		},
 	}
 
@@ -700,13 +749,19 @@ func init() {
 				Modifiers: phpv.ZAttrPublic | phpv.ZAttrStatic,
 				Method:    phpobj.NativeStaticMethod(createFromFormatImmutableStatic),
 			},
+			"__debuginfo": {
+				Name:      "__debugInfo",
+				Modifiers: phpv.ZAttrPublic,
+				Method:    phpobj.NativeMethod(dateTimeDebugInfo),
+			},
 		},
 	}
 }
 
 func dateIntervalConstruct(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
-		return nil, ctx.Errorf("DateInterval::__construct() expects exactly 1 argument")
+		// When called internally (e.g. from diff()) with no args, just return with defaults
+		return nil, nil
 	}
 	spec := string(args[0].AsString(ctx))
 	// Parse ISO 8601 duration: P1Y2M3DT4H5M6S

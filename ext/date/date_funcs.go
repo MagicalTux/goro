@@ -99,7 +99,12 @@ func phpDateFormat(format string, t time.Time) string {
 			year, _ := t.ISOWeek()
 			buf.WriteString(strconv.Itoa(year))
 		case 'Y': // A full numeric representation of a year, 4 digits
-			buf.WriteString(fmt.Sprintf("%04d", t.Year()))
+			y := t.Year()
+			if y < 0 {
+				buf.WriteString(fmt.Sprintf("-%04d", -y))
+			} else {
+				buf.WriteString(fmt.Sprintf("%04d", y))
+			}
 		case 'y': // A two digit representation of a year
 			buf.WriteString(fmt.Sprintf("%02d", t.Year()%100))
 
@@ -516,7 +521,7 @@ func fncCheckdate(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 // Regex patterns for strtotime parsing
 var (
-	reRelativeUnit = regexp.MustCompile(`(?i)([+-]?\d+)\s*(year|month|week|day|hour|minute|second|min|sec)s?`)
+	reRelativeUnit = regexp.MustCompile(`(?i)([+-]?\s*\d+)\s+(year|month|week|day|hour|minute|second|min|sec)s?`)
 	reNextLast     = regexp.MustCompile(`(?i)(next|last)\s+(sunday|monday|tuesday|wednesday|thursday|friday|saturday)`)
 	reMDY          = regexp.MustCompile(`^\d{1,2}/\d{1,2}/\d{2,4}$`)
 	reDMY          = regexp.MustCompile(`^\d{1,2}-\d{1,2}-\d{2,4}$`)
@@ -529,6 +534,9 @@ var (
 	reYesterday    = regexp.MustCompile(`(?i)^yesterday$`)
 	reMidnight     = regexp.MustCompile(`(?i)^midnight$`)
 	reNoon         = regexp.MustCompile(`(?i)^noon$`)
+
+	// ISO 8601 week date: YYYYWwwD or YYYYWww (with optional T time and tz)
+	reISOWeek = regexp.MustCompile(`^(\d{4})W(\d{2})(\d)?(?:T(\d{2}):?(\d{2})?:?(\d{2})?)?(.*)?$`)
 )
 
 var monthNames = map[string]time.Month{
@@ -544,6 +552,17 @@ var monthNames = map[string]time.Month{
 	"october":   time.October,
 	"november":  time.November,
 	"december":  time.December,
+	"jan":       time.January,
+	"feb":       time.February,
+	"mar":       time.March,
+	"apr":       time.April,
+	"jun":       time.June,
+	"jul":       time.July,
+	"aug":       time.August,
+	"sep":       time.September,
+	"oct":       time.October,
+	"nov":       time.November,
+	"dec":       time.December,
 }
 
 var dayNames = map[string]time.Weekday{
@@ -564,6 +583,105 @@ func parseMonth(name string) (time.Month, bool) {
 func parseWeekday(name string) (time.Weekday, bool) {
 	d, ok := dayNames[strings.ToLower(name)]
 	return d, ok
+}
+
+// parseTZOffset parses a timezone offset like "+02", "-0213", "+02:13", "+0", "-07:00", "-0700" etc.
+// Returns offset in seconds and whether it was successfully parsed.
+func parseTZOffset(s string) (int, bool) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, false
+	}
+	sign := 1
+	if s[0] == '+' {
+		s = s[1:]
+	} else if s[0] == '-' {
+		sign = -1
+		s = s[1:]
+	} else {
+		return 0, false
+	}
+
+	// Remove colon if present (e.g. "02:13" -> "0213")
+	s = strings.Replace(s, ":", "", 1)
+
+	hours := 0
+	mins := 0
+	var err error
+	switch len(s) {
+	case 1: // e.g. "2" -> 2 hours
+		hours, err = strconv.Atoi(s)
+		if err != nil {
+			return 0, false
+		}
+	case 2: // e.g. "02" -> 2 hours
+		hours, err = strconv.Atoi(s)
+		if err != nil {
+			return 0, false
+		}
+	case 4: // e.g. "0213" -> 2 hours 13 minutes
+		hours, err = strconv.Atoi(s[:2])
+		if err != nil {
+			return 0, false
+		}
+		mins, err = strconv.Atoi(s[2:4])
+		if err != nil {
+			return 0, false
+		}
+	default:
+		return 0, false
+	}
+
+	return sign * (hours*3600 + mins*60), true
+}
+
+// parseISOWeekDate parses ISO 8601 week date strings like "1997W011", "2004W101T05:00+0"
+func parseISOWeekDate(input string, loc *time.Location) (time.Time, bool) {
+	matches := reISOWeek.FindStringSubmatch(input)
+	if matches == nil {
+		return time.Time{}, false
+	}
+
+	year, _ := strconv.Atoi(matches[1])
+	week, _ := strconv.Atoi(matches[2])
+	day := 1 // default Monday
+	if matches[3] != "" {
+		day, _ = strconv.Atoi(matches[3])
+	}
+
+	hour, min, sec := 0, 0, 0
+	if matches[4] != "" {
+		hour, _ = strconv.Atoi(matches[4])
+	}
+	if matches[5] != "" {
+		min, _ = strconv.Atoi(matches[5])
+	}
+	if matches[6] != "" {
+		sec, _ = strconv.Atoi(matches[6])
+	}
+
+	// Calculate the date from ISO week
+	// January 4 is always in week 1
+	jan4 := time.Date(year, time.January, 4, 0, 0, 0, 0, loc)
+	// Monday of week 1
+	isoWeek1Monday := jan4.AddDate(0, 0, -int(jan4.Weekday()-time.Monday))
+	if jan4.Weekday() == time.Sunday {
+		isoWeek1Monday = jan4.AddDate(0, 0, -6)
+	}
+	// Add weeks and days
+	t := isoWeek1Monday.AddDate(0, 0, (week-1)*7+(day-1))
+	t = time.Date(t.Year(), t.Month(), t.Day(), hour, min, sec, 0, loc)
+
+	// Handle timezone offset in remainder
+	remainder := strings.TrimSpace(matches[7])
+	if remainder != "" {
+		if offset, ok := parseTZOffset(remainder); ok {
+			fixedLoc := time.FixedZone("", offset)
+			t = time.Date(t.Year(), t.Month(), t.Day(), hour, min, sec, 0, fixedLoc)
+		}
+	}
+
+	return t, true
 }
 
 // applyRelativeUnit applies a relative time unit to a time value.
@@ -641,30 +759,73 @@ func strToTime(input string, base time.Time) (time.Time, bool) {
 				}
 				diff = -diff
 			}
-			return base.AddDate(0, 0, diff), true
+			// Reset time to midnight for next/last weekday
+			y, m, d := base.Date()
+			return time.Date(y, m, d+diff, 0, 0, 0, 0, base.Location()), true
 		}
 	}
 
 	// Relative expressions: "+1 day", "-2 hours", "1 month", etc.
+	// Only match if the ENTIRE input is composed of relative unit expressions
 	if matches := reRelativeUnit.FindAllStringSubmatch(input, -1); len(matches) > 0 {
-		t := base
+		// Reconstruct what the regex matched and see if it covers the full input
+		remaining := strings.TrimSpace(input)
 		for _, match := range matches {
-			amount, _ := strconv.Atoi(match[1])
-			t = applyRelativeUnit(t, amount, match[2])
+			remaining = strings.Replace(remaining, match[0], "", 1)
 		}
-		return t, true
+		remaining = strings.TrimSpace(remaining)
+		if remaining == "" {
+			t := base
+			for _, match := range matches {
+				amount, _ := strconv.Atoi(strings.ReplaceAll(match[1], " ", ""))
+				t = applyRelativeUnit(t, amount, match[2])
+			}
+			return t, true
+		}
 	}
 
 	// Try various absolute date formats
 	loc := base.Location()
 
-	// ISO 8601 with timezone
+	// ISO 8601 week date: 1997W011, 2004W101T05:00+0
+	if t, ok := parseISOWeekDate(input, loc); ok {
+		return t, true
+	}
+
+	// Try to handle dates with various timezone offset formats
+	// This handles: "2001-10-22 21:19:58-02", "2001-10-22 21:19:58-0213", etc.
+	if t, ok := parseDateTimeWithOffset(input, loc); ok {
+		return t, true
+	}
+
+	// Formats that include explicit timezone info - use time.Parse to avoid
+	// ParseInLocation mangling timezone abbreviations
 	for _, layout := range []string{
 		time.RFC3339,
 		"2006-01-02T15:04:05-07:00",
 		"2006-01-02T15:04:05Z",
-		"2006-01-02T15:04:05",
+		"2006-01-02 15:04:05 MST",
 		"2006-01-02 15:04:05-07:00",
+		"Mon, 02 Jan 2006 15:04:05 -0700",
+		time.RFC1123Z,
+		time.RFC1123,
+		time.RFC822Z,
+		time.RFC822,
+		time.ANSIC,
+		time.UnixDate,
+		"Jan 2, 2006 15:04:05 MST",
+		"January 2, 2006 15:04:05 MST",
+		"Jan 2 2006 15:04:05 MST",
+		"January 2 2006 15:04:05 MST",
+	} {
+		if t, err := time.Parse(layout, input); err == nil {
+			return t, true
+		}
+	}
+
+	// Formats without timezone - use ParseInLocation to apply the base timezone
+	for _, layout := range []string{
+		"2006-01-02T15:04:05",
 		"2006-01-02 15:04:05",
 		"2006-01-02 15:04",
 		"2006-01-02",
@@ -673,13 +834,10 @@ func strToTime(input string, base time.Time) (time.Time, bool) {
 		"1/2/2006",
 		"02-Jan-2006",
 		"02-Jan-2006 15:04:05",
-		"Mon, 02 Jan 2006 15:04:05 -0700",
-		time.RFC1123Z,
-		time.RFC1123,
-		time.RFC822Z,
-		time.RFC822,
-		time.ANSIC,
-		time.UnixDate,
+		"Jan 2, 2006 15:04:05",
+		"January 2, 2006 15:04:05",
+		"Jan 2 2006 15:04:05",
+		"January 2 2006 15:04:05",
 		"Jan 2, 2006",
 		"January 2, 2006",
 		"Jan 2 2006",
@@ -699,6 +857,11 @@ func strToTime(input string, base time.Time) (time.Time, bool) {
 			}
 			return t, true
 		}
+	}
+
+	// "Mon DD YYYY HH:MM" or "Mon DD HH:MM" (short month name with optional year and time)
+	if t, ok := parseMonthNameDate(input, base, loc); ok {
+		return t, true
 	}
 
 	// "Month day, year" format
@@ -785,6 +948,151 @@ func strToTime(input string, base time.Time) (time.Time, bool) {
 	}
 
 	return base, false
+}
+
+// reDateTime matches various date-time formats with optional timezone offsets.
+// This handles formats like:
+//   "2001-10-22 21:19:58-02"
+//   "2001-10-22 21:19:58-0213"
+//   "2001-10-22 21:19:58+02"
+//   "2001-10-22 21:19:58+0213"
+//   "2001-10-22T211958-2"
+//   "20011022T211958+0213"
+//   "20011022T21:20+0215"
+var reDateTimeTZ = regexp.MustCompile(`^(-?\d{4})-(\d{2})-(\d{2})[T ](\d{2}):?(\d{2}):?(\d{2})?([+-]\d{1,2}(?::?\d{2})?)?$`)
+var reDateOnly = regexp.MustCompile(`^(-?\d{4})-(\d{2})-(\d{2})$`)
+var reCompactDateTimeTZ = regexp.MustCompile(`^(\d{4})(\d{2})(\d{2})T(\d{2}):?(\d{2}):?(\d{2})?(.*)?$`)
+
+func parseDateTimeWithOffset(input string, loc *time.Location) (time.Time, bool) {
+	// Try standard date-time with optional timezone: YYYY-MM-DD[T ]HH:MM:SS[+-offset]
+	if matches := reDateTimeTZ.FindStringSubmatch(input); matches != nil {
+		year, _ := strconv.Atoi(matches[1])
+		month, _ := strconv.Atoi(matches[2])
+		day, _ := strconv.Atoi(matches[3])
+		hour, _ := strconv.Atoi(matches[4])
+		min, _ := strconv.Atoi(matches[5])
+		sec := 0
+		if matches[6] != "" {
+			sec, _ = strconv.Atoi(matches[6])
+		}
+
+		tzPart := strings.TrimSpace(matches[7])
+		if tzPart != "" {
+			if offset, ok := parseTZOffset(tzPart); ok {
+				fixedLoc := time.FixedZone("", offset)
+				return time.Date(year, time.Month(month), day, hour, min, sec, 0, fixedLoc), true
+			}
+		}
+		// No timezone offset, use provided location
+		return time.Date(year, time.Month(month), day, hour, min, sec, 0, loc), true
+	}
+
+	// Try date-only with potentially negative year: YYYY-MM-DD
+	if matches := reDateOnly.FindStringSubmatch(input); matches != nil {
+		year, _ := strconv.Atoi(matches[1])
+		month, _ := strconv.Atoi(matches[2])
+		day, _ := strconv.Atoi(matches[3])
+		return time.Date(year, time.Month(month), day, 0, 0, 0, 0, loc), true
+	}
+
+	// Try compact date-time: YYYYMMDDTHHMMSS[+-offset]
+	if matches := reCompactDateTimeTZ.FindStringSubmatch(input); matches != nil {
+		year, _ := strconv.Atoi(matches[1])
+		month, _ := strconv.Atoi(matches[2])
+		day, _ := strconv.Atoi(matches[3])
+		hour, _ := strconv.Atoi(matches[4])
+		min, _ := strconv.Atoi(matches[5])
+		sec := 0
+		if matches[6] != "" {
+			sec, _ = strconv.Atoi(matches[6])
+		}
+
+		tzPart := strings.TrimSpace(matches[7])
+		if tzPart != "" {
+			if offset, ok := parseTZOffset(tzPart); ok {
+				fixedLoc := time.FixedZone("", offset)
+				return time.Date(year, time.Month(month), day, hour, min, sec, 0, fixedLoc), true
+			}
+		}
+		return time.Date(year, time.Month(month), day, hour, min, sec, 0, loc), true
+	}
+
+	return time.Time{}, false
+}
+
+// reMonthNameFull matches "Mon DD YYYY HH:MM", "Mon DD YYYY", "Mon DD HH:MM"
+var reMonthNameDateFull = regexp.MustCompile(`(?i)^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+(\d{1,2})\s+(\d{4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?$`)
+var reMonthNameDateNoTime = regexp.MustCompile(`(?i)^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+(\d{1,2})\s+(\d{4})$`)
+var reMonthNameTime = regexp.MustCompile(`(?i)^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+(\d{1,2})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?$`)
+var reMonthYear = regexp.MustCompile(`(?i)^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+(\d{4})$`)
+var reYearMonth = regexp.MustCompile(`(?i)^(\d{4})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*$`)
+
+func parseMonthNameDate(input string, base time.Time, loc *time.Location) (time.Time, bool) {
+	// "Mon DD YYYY HH:MM[:SS]"
+	if matches := reMonthNameDateFull.FindStringSubmatch(input); matches != nil {
+		m, ok := parseMonth(matches[1])
+		if !ok {
+			return time.Time{}, false
+		}
+		d, _ := strconv.Atoi(matches[2])
+		y, _ := strconv.Atoi(matches[3])
+		hour, _ := strconv.Atoi(matches[4])
+		min, _ := strconv.Atoi(matches[5])
+		sec := 0
+		if matches[6] != "" {
+			sec, _ = strconv.Atoi(matches[6])
+		}
+		return time.Date(y, m, d, hour, min, sec, 0, loc), true
+	}
+
+	// "Mon DD YYYY"
+	if matches := reMonthNameDateNoTime.FindStringSubmatch(input); matches != nil {
+		m, ok := parseMonth(matches[1])
+		if !ok {
+			return time.Time{}, false
+		}
+		d, _ := strconv.Atoi(matches[2])
+		y, _ := strconv.Atoi(matches[3])
+		return time.Date(y, m, d, 0, 0, 0, 0, loc), true
+	}
+
+	// "Mon DD HH:MM[:SS]" - no year, use base year
+	if matches := reMonthNameTime.FindStringSubmatch(input); matches != nil {
+		m, ok := parseMonth(matches[1])
+		if !ok {
+			return time.Time{}, false
+		}
+		d, _ := strconv.Atoi(matches[2])
+		hour, _ := strconv.Atoi(matches[3])
+		min, _ := strconv.Atoi(matches[4])
+		sec := 0
+		if matches[5] != "" {
+			sec, _ = strconv.Atoi(matches[5])
+		}
+		return time.Date(base.Year(), m, d, hour, min, sec, 0, loc), true
+	}
+
+	// "Mon YYYY" - month year
+	if matches := reMonthYear.FindStringSubmatch(input); matches != nil {
+		m, ok := parseMonth(matches[1])
+		if !ok {
+			return time.Time{}, false
+		}
+		y, _ := strconv.Atoi(matches[2])
+		return time.Date(y, m, 1, 0, 0, 0, 0, loc), true
+	}
+
+	// "YYYY Mon" - year month
+	if matches := reYearMonth.FindStringSubmatch(input); matches != nil {
+		y, _ := strconv.Atoi(matches[1])
+		m, ok := parseMonth(matches[2])
+		if !ok {
+			return time.Time{}, false
+		}
+		return time.Date(y, m, 1, 0, 0, 0, 0, loc), true
+	}
+
+	return time.Time{}, false
 }
 
 // > func int strtotime ( string $datetime [, int $baseTimestamp = time() ] )
