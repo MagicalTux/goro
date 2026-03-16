@@ -525,6 +525,16 @@ func (g *Global) Write(v []byte) (int, error) {
 	return g.out.Write(v)
 }
 
+// ErrorPrefix returns "\n" if prior output exists and didn't end with a
+// newline, matching PHP's behavior of separating inline output from error
+// messages. Returns "" when the error is the first output.
+func (g *Global) ErrorPrefix() string {
+	if g.lastOutChar != 0 && g.lastOutChar != '\n' {
+		return "\n"
+	}
+	return ""
+}
+
 func (g *Global) WriteErr(v []byte) (int, error) {
 	return g.errOut.Write(v)
 }

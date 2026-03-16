@@ -115,19 +115,39 @@ func doPrintR(ctx phpv.Context, z *phpv.ZVal, linePfx string, recurs map[uintptr
 		if obj, ok := v.(*phpobj.ZObject); ok {
 			fmt.Fprintf(ctx, "%s%s Object\n%s(\n", isRef, obj.Class.GetName(), linePfx)
 			localPfx := linePfx + "    "
-			for prop := range obj.IterProps(ctx) {
-				suffix := ""
-				switch {
-				case prop.Modifiers.IsPrivate():
-					className := string(obj.GetDeclClassName(prop))
-					suffix = ":" + className + ":private"
-				case prop.Modifiers.IsProtected():
-					suffix = ":protected"
+
+			// Check for __debugInfo() method
+			var debugInfoArr *phpv.ZArray
+			if debugInfoMethod, hasDebugInfo := obj.GetClass().GetMethod("__debuginfo"); hasDebugInfo {
+				result, err := ctx.Global().CallZVal(ctx, debugInfoMethod.Method, nil, obj)
+				if err == nil && result != nil && !result.IsNull() {
+					debugInfoArr = result.AsArray(ctx)
 				}
-				fmt.Fprintf(ctx, "%s[%s%s] => ", localPfx, prop.VarName, suffix)
-				val := obj.GetPropValue(prop)
-				doPrintR(ctx, val, localPfx+"    ", recurs)
-				ctx.Write([]byte{'\n'})
+			}
+
+			if debugInfoArr != nil {
+				// Use __debugInfo return value
+				for key, val := range debugInfoArr.Iterate(ctx) {
+					keyStr := key.String()
+					fmt.Fprintf(ctx, "%s[%s] => ", localPfx, keyStr)
+					doPrintR(ctx, val, localPfx+"    ", recurs)
+					ctx.Write([]byte{'\n'})
+				}
+			} else {
+				for prop := range obj.IterProps(ctx) {
+					suffix := ""
+					switch {
+					case prop.Modifiers.IsPrivate():
+						className := string(obj.GetDeclClassName(prop))
+						suffix = ":" + className + ":private"
+					case prop.Modifiers.IsProtected():
+						suffix = ":protected"
+					}
+					fmt.Fprintf(ctx, "%s[%s%s] => ", localPfx, prop.VarName, suffix)
+					val := obj.GetPropValue(prop)
+					doPrintR(ctx, val, localPfx+"    ", recurs)
+					ctx.Write([]byte{'\n'})
+				}
 			}
 			fmt.Fprintf(ctx, "%s)\n", linePfx)
 		} else {
