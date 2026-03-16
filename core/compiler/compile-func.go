@@ -426,6 +426,19 @@ func compileFunctionWithName(name phpv.ZString, c compileCtx, l *phpv.Loc, rref 
 	}
 	zc.args = args
 
+	// Reject promoted properties outside class methods
+	if c.getClass() == nil {
+		for _, arg := range args {
+			if arg.Promotion != 0 {
+				return nil, &phpv.PhpError{
+					Err:  fmt.Errorf("Cannot declare promoted property outside a constructor"),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  l,
+				}
+			}
+		}
+	}
+
 	// Emit deprecation for implicitly nullable parameters
 	for _, arg := range args {
 		if arg.ImplicitlyNullable {

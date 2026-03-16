@@ -768,9 +768,44 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 				class.Handlers().Constructor = method
 
 				// Handle constructor property promotion (PHP 8.0+)
+				isConstructor := method.Name.ToLower() == "__construct"
 				if fga, ok := f.(phpv.FuncGetArgs); ok {
 					for _, arg := range fga.GetArgs() {
 						if arg.Promotion != 0 {
+							// Promoted properties only allowed in constructors
+							if !isConstructor {
+								return nil, &phpv.PhpError{
+									Err:  fmt.Errorf("Cannot declare promoted property outside a constructor"),
+									Code: phpv.E_COMPILE_ERROR,
+									Loc:  l,
+								}
+							}
+							// Variadic parameters cannot be promoted
+							if arg.Variadic {
+								return nil, &phpv.PhpError{
+									Err:  fmt.Errorf("Cannot declare variadic promoted property"),
+									Code: phpv.E_COMPILE_ERROR,
+									Loc:  l,
+								}
+							}
+							// callable type cannot be used as property type
+							if arg.Hint != nil && arg.Hint.String() == "callable" {
+								return nil, &phpv.PhpError{
+									Err:  fmt.Errorf("Property %s::$%s cannot have type callable", class.Name, arg.VarName),
+									Code: phpv.E_COMPILE_ERROR,
+									Loc:  l,
+								}
+							}
+							// Check for duplicate property names
+							for _, existing := range class.Props {
+								if existing.VarName == arg.VarName {
+									return nil, &phpv.PhpError{
+										Err:  fmt.Errorf("Cannot redeclare %s::$%s", class.Name, arg.VarName),
+										Code: phpv.E_COMPILE_ERROR,
+										Loc:  l,
+									}
+								}
+							}
 							modifiers := arg.Promotion
 							// Readonly class: all properties are implicitly readonly
 							if class.Attr.Has(phpv.ZClassReadonly) {
@@ -811,6 +846,19 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 								Attributes:   arg.Attributes,
 							}
 							class.Props = append(class.Props, prop)
+						}
+					}
+				}
+			} else {
+				// Non-constructor methods: check for promoted properties (not allowed)
+				if fga, ok := f.(phpv.FuncGetArgs); ok {
+					for _, arg := range fga.GetArgs() {
+						if arg.Promotion != 0 {
+							return nil, &phpv.PhpError{
+								Err:  fmt.Errorf("Cannot declare promoted property outside a constructor"),
+								Code: phpv.E_COMPILE_ERROR,
+								Loc:  l,
+							}
 						}
 					}
 				}
