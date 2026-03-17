@@ -627,10 +627,10 @@ func FormatDeprecatedMsg(label, name string, attr *phpv.ZAttribute) string {
 
 	// Extract message (arg 0) and since (arg 1)
 	var message, since string
-	if len(attr.Args) > 0 && attr.Args[0].GetType() == phpv.ZtString {
+	if len(attr.Args) > 0 && attr.Args[0] != nil && attr.Args[0].GetType() != phpv.ZtNull {
 		message = attr.Args[0].String()
 	}
-	if len(attr.Args) > 1 && attr.Args[1].GetType() == phpv.ZtString {
+	if len(attr.Args) > 1 && attr.Args[1] != nil && attr.Args[1].GetType() != phpv.ZtNull {
 		since = attr.Args[1].String()
 	}
 

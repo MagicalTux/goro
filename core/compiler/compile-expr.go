@@ -246,6 +246,10 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			return &runZVal{phpv.ZString(name), l}, nil
 		}
 		return &runConstant{name, l}, nil
+	case tokenizer.T_ENUM:
+		// `enum` used as identifier in expression context — treat as T_STRING
+		i.Data = "enum"
+		fallthrough
 	case tokenizer.T_STRING:
 		// Check for qualified names: T_STRING followed by T_NS_SEPARATOR
 		name := i.Data
@@ -297,6 +301,8 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		return compileArray(i, c)
 	case tokenizer.T_MATCH:
 		return compileMatch(i, c)
+	case tokenizer.T_EXIT:
+		return compileExitExpr(i, c)
 	case tokenizer.T_THROW:
 		return compileThrow(i, c)
 	case tokenizer.T_FILE:
@@ -361,6 +367,14 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			return &runZVal{class.Name, l}, nil
 		}
 		return &runZVal{phpv.ZString(""), l}, nil
+	case tokenizer.T_UNSET_CAST:
+		phpErr := &phpv.PhpError{
+			Err:  fmt.Errorf("The (unset) cast is no longer supported"),
+			Code: phpv.E_COMPILE_ERROR,
+			Loc:  l,
+		}
+		c.Global().LogError(phpErr)
+		return nil, phpv.ExitError(255)
 	case tokenizer.T_BOOL_CAST, tokenizer.T_INT_CAST, tokenizer.T_ARRAY_CAST, tokenizer.T_DOUBLE_CAST, tokenizer.T_OBJECT_CAST, tokenizer.T_STRING_CAST:
 		// perform a cast operation on the following (note: v is null)
 		// make this an operator for appropriate operator precedence

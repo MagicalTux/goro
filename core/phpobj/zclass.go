@@ -630,7 +630,7 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 					}
 					// Check ambiguity: constant from different source
 					if src, hasSrc := c.constSource[k]; hasSrc && src != intf.Name {
-						return c.fatalError(ctx, fmt.Sprintf("Class %s inherits both %s::%s and %s::%s, which is ambiguous", c.Name, src, k, intf.Name, k))
+						classType := "Class"; if c.Type.IsInterface() { classType = "Interface" }; return c.fatalError(ctx, fmt.Sprintf("%s %s inherits both %s::%s and %s::%s, which is ambiguous", classType, c.Name, src, k, intf.Name, k))
 					}
 				}
 			}

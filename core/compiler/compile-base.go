@@ -77,11 +77,27 @@ func init() {
 		tokenizer.T_USE:          &compileFuncCb{f: compileUse, skip: true},
 		tokenizer.T_YIELD:        &compileFuncCb{f: compileYield},
 		tokenizer.T_YIELD_FROM:   &compileFuncCb{f: compileYield},
-		tokenizer.T_ATTRIBUTE:    &compileFuncCb{f: compileAttributed, skip: true},
-		tokenizer.T_DECLARE:      &compileFuncCb{f: compileDeclare, skip: true},
-		tokenizer.Rune(';'):      nil,
+		tokenizer.T_ATTRIBUTE:       &compileFuncCb{f: compileAttributed, skip: true},
+		tokenizer.T_DECLARE:         &compileFuncCb{f: compileDeclare, skip: true},
+		tokenizer.T_HALT_COMPILER:   &compileFuncCb{f: compileHaltCompiler, skip: true},
+		tokenizer.Rune(';'):         nil,
 		// '}': return compileBase (hidden)
 	}
+}
+
+// compileHaltCompiler handles __halt_compiler(); which stops compilation.
+func compileHaltCompiler(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
+	for {
+		tok, err := c.NextItem()
+		if err != nil {
+			return nil, err
+		}
+		if tok.Type == tokenizer.T_EOF {
+			c.backup()
+			break
+		}
+	}
+	return nil, nil
 }
 
 // compileIgnore will ignore a given token
@@ -175,7 +191,11 @@ func compileTopLevelConst(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error
 		if err != nil {
 			return nil, err
 		}
-		if i.Type != tokenizer.T_STRING {
+		// PHP 8.5: exit/die are fully reserved — cannot be used as constant names
+		if i.Type == tokenizer.T_EXIT {
+			return nil, i.UnexpectedExpecting("identifier")
+		}
+		if i.Type != tokenizer.T_STRING && !i.IsSemiReserved() {
 			return nil, i.Unexpected()
 		}
 		name := i.Data
