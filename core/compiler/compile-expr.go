@@ -344,6 +344,16 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		if class == nil {
 			return &runZVal{phpv.ZString(funcName), l}, nil
 		}
+		// __METHOD__ should only return "Class::method" when we're inside a method
+		// of the class. If we're at the class level (e.g., class constant), __METHOD__
+		// returns "". Check if the function context is directly inside the class by
+		// seeing if the current context chain has: class -> function (method case).
+		// If it's function -> class (class inside function), __METHOD__ is "".
+		if _, isClassCtx := c.(*zclassCompileCtx); isClassCtx {
+			// We're directly inside a class context (not inside a method body)
+			// This means __METHOD__ is being used in a class constant or property default
+			return &runZVal{phpv.ZString(""), l}, nil
+		}
 		return &runZVal{phpv.ZString(fmt.Sprintf("%s::%s", class.Name, funcName)), l}, nil
 	case tokenizer.T_TRAIT_C:
 		class := c.getClass()

@@ -77,6 +77,14 @@ func getTime(this *phpobj.ZObject) (time.Time, bool) {
 	return time.Time{}, false
 }
 
+// getTimeFromObj extracts a time.Time from any ZObject that implements DateTimeInterface
+func getTimeFromObj(obj phpv.ZObject) (time.Time, bool) {
+	if zo, ok := obj.(*phpobj.ZObject); ok {
+		return getTime(zo)
+	}
+	return time.Time{}, false
+}
+
 func setTimeVal(this *phpobj.ZObject, t time.Time) {
 	this.Opaque[DateTimeInterface] = t
 }
@@ -780,6 +788,52 @@ func init() {
 				Name:      "createFromFormat",
 				Modifiers: phpv.ZAttrPublic | phpv.ZAttrStatic,
 				Method:    phpobj.NativeStaticMethod(createFromFormatImmutableStatic),
+			},
+			"createfrominterface": {
+				Name:      "createFromInterface",
+				Modifiers: phpv.ZAttrPublic | phpv.ZAttrStatic,
+				Method: phpobj.NativeStaticMethod(func(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+					if len(args) < 1 {
+						return nil, ctx.Errorf("DateTimeImmutable::createFromInterface() expects exactly 1 argument, 0 given")
+					}
+					if args[0].GetType() != phpv.ZtObject {
+						return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "DateTimeImmutable::createFromInterface(): Argument #1 ($object) must be of type DateTimeInterface, "+args[0].GetType().TypeName()+" given")
+					}
+					srcObj := args[0].Value().(phpv.ZObject)
+					srcT, ok := getTimeFromObj(srcObj)
+					if !ok {
+						return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "DateTimeImmutable::createFromInterface(): Argument #1 ($object) must be of type DateTimeInterface")
+					}
+					newObj, err := phpobj.NewZObject(ctx, DateTimeImmutable)
+					if err != nil {
+						return nil, err
+					}
+					setTimeVal(newObj, srcT)
+					return newObj.ZVal(), nil
+				}),
+			},
+			"createfrommutable": {
+				Name:      "createFromMutable",
+				Modifiers: phpv.ZAttrPublic | phpv.ZAttrStatic,
+				Method: phpobj.NativeStaticMethod(func(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+					if len(args) < 1 {
+						return nil, ctx.Errorf("DateTimeImmutable::createFromMutable() expects exactly 1 argument, 0 given")
+					}
+					if args[0].GetType() != phpv.ZtObject {
+						return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "DateTimeImmutable::createFromMutable(): Argument #1 ($object) must be of type DateTime, "+args[0].GetType().TypeName()+" given")
+					}
+					srcObj := args[0].Value().(phpv.ZObject)
+					srcT, ok := getTimeFromObj(srcObj)
+					if !ok {
+						return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "DateTimeImmutable::createFromMutable(): Argument #1 ($object) must be of type DateTime")
+					}
+					newObj, err := phpobj.NewZObject(ctx, DateTimeImmutable)
+					if err != nil {
+						return nil, err
+					}
+					setTimeVal(newObj, srcT)
+					return newObj.ZVal(), nil
+				}),
 			},
 			"__debuginfo": {
 				Name:      "__debugInfo",
