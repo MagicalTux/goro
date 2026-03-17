@@ -187,7 +187,7 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		}()
 		var c phpv.Runnable
 		var compileErr error
-		timer := time.NewTimer(10 * time.Second)
+		timer := time.NewTimer(5 * time.Second)
 		select {
 		case result := <-compileCh:
 			timer.Stop()
@@ -195,6 +195,9 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 			compileErr = result.err
 		case <-timer.C:
 			t.Close() // kill the lexer goroutine
+			// Force GC to reclaim any memory the compile goroutine allocated
+			runtime.GC()
+			debug.FreeOSMemory()
 			return fmt.Errorf("compilation timed out (possible infinite loop)")
 		}
 
@@ -845,7 +848,7 @@ func TestPhp(t *testing.T) {
 	setMemoryLimit(memLimit)
 	// Set Go's GC-aware soft limit if not already set via env
 	if os.Getenv("GOMEMLIMIT") == "" {
-		debug.SetMemoryLimit(4 * 1024 * 1024 * 1024) // 4 GB soft GC limit
+		debug.SetMemoryLimit(2 * 1024 * 1024 * 1024) // 2 GB soft GC limit
 	}
 
 	// Batch support: GORO_TEST_SKIP and GORO_TEST_LIMIT env vars
