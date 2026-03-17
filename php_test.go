@@ -13,6 +13,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"runtime/debug"
 	"strings"
 	"testing"
@@ -816,7 +817,7 @@ func TestPhp(t *testing.T) {
 	// GOMEMLIMIT (Go's soft GC limit) is the primary control.
 	// RLIMIT_AS is a hard safety net at a higher value.
 	// Override with GORO_TEST_MEMLIMIT (in bytes, default 32 GB safety net).
-	memLimit := uint64(32 * 1024 * 1024 * 1024) // 32 GB safety net
+	memLimit := uint64(8 * 1024 * 1024 * 1024) // 8 GB safety net
 	if v := os.Getenv("GORO_TEST_MEMLIMIT"); v != "" {
 		fmt.Sscanf(v, "%d", &memLimit)
 	}
@@ -917,10 +918,18 @@ func TestPhp(t *testing.T) {
 			}
 		}
 
+		// Periodic GC to prevent cross-test memory accumulation
+		if count%50 == 0 {
+			runtime.GC()
+			debug.FreeOSMemory()
+		}
+
 		// Write progress to a file so we can monitor long runs
+		var m runtime.MemStats
+		runtime.ReadMemStats(&m)
 		os.WriteFile("/tmp/goro_test_progress.txt",
-			[]byte(fmt.Sprintf("Progress: %d tests, %d passed, %d failed, %d skipped [%s]\n",
-				count, pass, fail, skip, path)), 0644)
+			[]byte(fmt.Sprintf("Progress: %d tests, %d passed, %d failed, %d skipped [%s] (mem: %dMB, goroutines: %d)\n",
+				count, pass, fail, skip, path, m.Sys/1024/1024, runtime.NumGoroutine())), 0644)
 		return nil
 	})
 
