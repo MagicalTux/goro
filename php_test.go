@@ -837,18 +837,17 @@ func TestPhp(t *testing.T) {
 		os.Setenv("TEST_PHP_EXECUTABLE", exe)
 	}
 
-	// Set memory limits to prevent OOM-killing the host.
-	// GOMEMLIMIT (Go's soft GC limit) is the primary control.
-	// RLIMIT_AS is a hard safety net at a higher value.
-	// Override with GORO_TEST_MEMLIMIT (in bytes, default 32 GB safety net).
-	memLimit := uint64(8 * 1024 * 1024 * 1024) // 8 GB safety net
+	// Set RLIMIT_AS as a safety net. Go's virtual memory usage is much
+	// higher than actual RSS, so set this very high (64 GB) to avoid
+	// false triggers while still preventing 191 GB runaway allocations.
+	memLimit := uint64(64 * 1024 * 1024 * 1024) // 64 GB safety net
 	if v := os.Getenv("GORO_TEST_MEMLIMIT"); v != "" {
 		fmt.Sscanf(v, "%d", &memLimit)
 	}
 	setMemoryLimit(memLimit)
 	// Set Go's GC-aware soft limit if not already set via env
 	if os.Getenv("GOMEMLIMIT") == "" {
-		debug.SetMemoryLimit(2 * 1024 * 1024 * 1024) // 2 GB soft GC limit
+		debug.SetMemoryLimit(6 * 1024 * 1024 * 1024) // 6 GB soft GC limit
 	}
 
 	// Batch support: GORO_TEST_SKIP and GORO_TEST_LIMIT env vars
