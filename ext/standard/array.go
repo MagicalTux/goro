@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"math/rand/v2"
 	"regexp"
 	"slices"
@@ -1477,11 +1478,29 @@ func fncArrayPad(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, ctx.FuncError(err)
 	}
 
+	// PHP limits array_pad to a reasonable size
+	const maxPadSize = 1048576 // 1M elements max
+	absSize := int64(size)
+	if absSize < 0 {
+		if absSize == math.MinInt64 {
+			absSize = math.MaxInt64
+		} else {
+			absSize = -absSize
+		}
+	}
+	if absSize > maxPadSize {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+			"array_pad(): Argument #2 ($length) must not exceed the maximum allowed array size")
+	}
+
 	var result *phpv.ZArray
 	if size < 0 {
-		size = -size
+		padCount := int(absSize) - int(array.Count(ctx))
+		if padCount < 0 {
+			padCount = 0
+		}
 		result = phpv.NewZArray()
-		for i := 0; i < int(size)-int(array.Count(ctx)); i++ {
+		for i := 0; i < padCount; i++ {
 			result.OffsetSet(ctx, nil, padValue)
 		}
 		for k, v := range array.Iterate(ctx) {
@@ -1492,8 +1511,12 @@ func fncArrayPad(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			}
 		}
 	} else {
+		padCount := int(size) - int(array.Count(ctx))
+		if padCount < 0 {
+			padCount = 0
+		}
 		result = array.Dup()
-		for i := 0; i < int(size)-int(array.Count(ctx)); i++ {
+		for i := 0; i < padCount; i++ {
 			result.OffsetSet(ctx, nil, padValue)
 		}
 	}

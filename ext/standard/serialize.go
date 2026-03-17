@@ -59,6 +59,15 @@ func fncUnserialize(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 }
 
 func serialize(ctx phpv.Context, value *phpv.ZVal) (string, error) {
+	return serializeWithDepth(ctx, value, 0)
+}
+
+const maxSerializeDepth = 32
+
+func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int) (string, error) {
+	if depth > maxSerializeDepth {
+		return "N;", nil // prevent infinite recursion
+	}
 	var result string
 	switch value.GetType() {
 	case phpv.ZtNull:
@@ -103,7 +112,7 @@ func serialize(ctx phpv.Context, value *phpv.ZVal) (string, error) {
 		for k, v := range arr.Iterate(ctx) {
 
 			if j, ok := refs[v.Nude()]; ok {
-				sub, err := serialize(ctx, k)
+				sub, err := serializeWithDepth(ctx, k, depth+1)
 				if err != nil {
 					return "", err
 				}
@@ -117,12 +126,12 @@ func serialize(ctx phpv.Context, value *phpv.ZVal) (string, error) {
 				refs[v.Nude()] = i
 			}
 
-			sub, err := serialize(ctx, k)
+			sub, err := serializeWithDepth(ctx, k, depth+1)
 			if err != nil {
 				return "", err
 			}
 			buf.WriteString(sub)
-			sub, err = serialize(ctx, v)
+			sub, err = serializeWithDepth(ctx, v, depth+1)
 			if err != nil {
 				return "", err
 			}
@@ -204,7 +213,7 @@ func serialize(ctx phpv.Context, value *phpv.ZVal) (string, error) {
 				buf.WriteString(sub)
 
 				v := zobj.GetPropValue(classProp)
-				sub2, err := serialize(ctx, v)
+				sub2, err := serializeWithDepth(ctx, v, depth+1)
 				if err != nil {
 					return "", err
 				}
@@ -228,7 +237,7 @@ func serialize(ctx phpv.Context, value *phpv.ZVal) (string, error) {
 				buf.WriteString(sub)
 
 				v := zobj.GetPropValue(prop)
-				sub2, err := serialize(ctx, v)
+				sub2, err := serializeWithDepth(ctx, v, depth+1)
 				if err != nil {
 					return "", err
 				}
