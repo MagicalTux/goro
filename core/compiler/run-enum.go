@@ -296,8 +296,20 @@ func (r *runEnumRegister) postCompileValidation(ctx phpv.Context) error {
 			if cc == nil {
 				continue
 			}
-			// Only check enum case constants (public, with resolved values that are enum objects)
+			// Resolve CompileDelayed values if needed
 			val := cc.Value
+			if cd, isCD := val.(*phpv.CompileDelayed); isCD {
+				prevCompiling := ctx.Global().GetCompilingClass()
+				ctx.Global().SetCompilingClass(c)
+				resolved, err := cd.Run(ctx)
+				ctx.Global().SetCompilingClass(prevCompiling)
+				if err != nil {
+					return err
+				}
+				cc.Value = resolved.Value()
+				val = cc.Value
+			}
+			// Only check enum case constants (resolved to enum objects)
 			if val == nil {
 				continue
 			}

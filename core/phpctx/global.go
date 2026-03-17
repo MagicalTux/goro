@@ -104,6 +104,8 @@ type Global struct {
 	tempFiles     []string            // temporary files to clean up (e.g., uploaded files)
 	uploadedFiles map[string]struct{} // set of uploaded file paths for is_uploaded_file()
 	obDisabled    bool                // OB system disabled after re-entrant fatal error
+
+	lastCallable phpv.Callable // for NoDiscard checks
 }
 
 func NewGlobal(ctx context.Context, p *Process, config phpv.IniConfig) *Global {
@@ -198,6 +200,14 @@ func (g *Global) init() {
 	g.constant["STDIN"] = stream.Stdin
 	g.constant["STDOUT"] = stream.Stdout
 	g.constant["STDERR"] = stream.Stderr
+
+	// Mark E_STRICT as deprecated (PHP 8.4+)
+	g.ConstantSetAttributes("E_STRICT", []*phpv.ZAttribute{
+		{
+			ClassName: "Deprecated",
+			Args:      []*phpv.ZVal{phpv.ZString("the error level was removed").ZVal(), phpv.ZString("8.4").ZVal()},
+		},
+	})
 
 	// import global funcs & classes from ext
 	for _, e := range globalExtMap {
@@ -861,7 +871,21 @@ func (g *Global) FuncErrorf(format string, a ...any) error {
 }
 
 func (g *Global) Warn(format string, a ...any) error {
-	a = append(a, logopt.ErrType(phpv.E_WARNING))
+	// Only default to E_WARNING if caller didn't provide an explicit ErrType
+	hasErrType := false
+	for _, arg := range a {
+		if _, ok := arg.(logopt.ErrType); ok {
+			hasErrType = true
+			break
+		}
+		if d, ok := arg.(logopt.Data); ok && d.ErrType != 0 {
+			hasErrType = true
+			break
+		}
+	}
+	if !hasErrType {
+		a = append(a, logopt.ErrType(phpv.E_WARNING))
+	}
 	return logWarning(g, format, a...)
 }
 
@@ -1615,6 +1639,9 @@ func (g *Global) GetStackTrace(ctx phpv.Context) []*phpv.StackTraceEntry {
 	}
 	return trace
 }
+
+func (g *Global) LastCallable() phpv.Callable { return g.lastCallable }
+func (g *Global) ClearLastCallable() { g.lastCallable = nil }
 
 func (g *Global) ShownDeprecated(key string) bool {
 	_, exists := g.shownDeprecated[key]

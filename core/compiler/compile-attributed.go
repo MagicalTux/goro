@@ -5,6 +5,7 @@ import (
 	"io"
 
 	"github.com/MagicalTux/goro/core/phpobj"
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
@@ -200,4 +201,59 @@ func (r *runAttributeValidatedFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 
 func (r *runAttributeValidatedFunc) Dump(w io.Writer) error {
 	return r.inner.Dump(w)
+}
+
+type runNoDiscardStatement struct {
+	inner phpv.Runnable
+}
+func (r *runNoDiscardStatement) Run(ctx phpv.Context) (*phpv.ZVal, error) {
+	ctx.Global().ClearLastCallable()
+	result, err := r.inner.Run(ctx)
+	if err != nil { return result, err }
+	callable := ctx.Global().LastCallable()
+	if callable == nil { return result, nil }
+	attrs, funcName, label := getNoDiscardInfo(callable)
+	if attrs == nil { return result, nil }
+	for _, attr := range attrs {
+		if attr.ClassName == "NoDiscard" || attr.ClassName == "\\NoDiscard" {
+			if err := ResolveAttrArgs(ctx, attr); err != nil { return nil, err }
+			msg := fmt.Sprintf("The return value of %s %s() should either be used or intentionally ignored by casting it as (void)", label, funcName)
+			if len(attr.Args) > 0 && attr.Args[0].GetType() == phpv.ZtString {
+				customMsg := attr.Args[0].String()
+				if customMsg != "" { msg += ", " + customMsg }
+			}
+			if warnErr := ctx.Warn("%s", msg, logopt.NoFuncName(true), logopt.ErrType(phpv.E_USER_WARNING)); warnErr != nil { return nil, warnErr }
+			break
+		}
+	}
+	return result, nil
+}
+func (r *runNoDiscardStatement) Dump(w io.Writer) error { return r.inner.Dump(w) }
+func getNoDiscardInfo(c phpv.Callable) ([]*phpv.ZAttribute, string, string) {
+	if bc, ok := c.(*phpv.BoundedCallable); ok {
+		innerAttrs, _, _ := getNoDiscardInfo(bc.Callable)
+		if innerAttrs != nil {
+			name := bc.Callable.Name()
+			lbl := "function"
+			if bc.This != nil {
+				lbl = "method"
+				name = string(bc.This.GetClass().GetName()) + "::" + name
+			}
+			return innerAttrs, name, lbl
+		}
+		return nil, "", ""
+	}
+	if mc, ok := c.(*phpv.MethodCallable); ok {
+		innerAttrs, _, _ := getNoDiscardInfo(mc.Callable)
+		if innerAttrs != nil { return innerAttrs, string(mc.Class.GetName()) + "::" + mc.Callable.Name(), "method" }
+		return nil, "", ""
+	}
+	if ag, ok := c.(phpv.AttributeGetter); ok {
+		attrs := ag.GetAttributes()
+		name := c.Name()
+		lbl := "function"
+		if zc, ok := c.(phpv.ZClosure); ok && zc.GetClass() != nil { lbl = "method"; name = string(zc.GetClass().GetName()) + "::" + name }
+		return attrs, name, lbl
+	}
+	return nil, "", ""
 }

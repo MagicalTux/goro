@@ -1344,26 +1344,13 @@ func compileObjectOperator(v phpv.Runnable, i *tokenizer.Item, c compileCtx, nul
 		}
 		// Dynamic property access: $obj->{expr}
 		return &runObjectDynVar{ref: v, nameExpr: expr, l: l, nullsafe: nullsafe}, nil
-	case tokenizer.T_STRING, tokenizer.T_VARIABLE,
-		tokenizer.T_ARRAY, tokenizer.T_LIST, tokenizer.T_CLASS,
-		tokenizer.T_CALLABLE, tokenizer.T_EMPTY, tokenizer.T_ISSET,
-		tokenizer.T_UNSET, tokenizer.T_ECHO, tokenizer.T_PRINT,
-		tokenizer.T_FOR, tokenizer.T_FOREACH, tokenizer.T_WHILE,
-		tokenizer.T_DO, tokenizer.T_SWITCH, tokenizer.T_IF,
-		tokenizer.T_ELSE, tokenizer.T_ELSEIF,
-		tokenizer.T_STATIC, tokenizer.T_ABSTRACT, tokenizer.T_FINAL,
-		tokenizer.T_FUNCTION, tokenizer.T_NEW, tokenizer.T_CLONE,
-		tokenizer.T_RETURN, tokenizer.T_TRY, tokenizer.T_CATCH,
-		tokenizer.T_THROW, tokenizer.T_INTERFACE, tokenizer.T_EXTENDS,
-		tokenizer.T_IMPLEMENTS, tokenizer.T_CONST, tokenizer.T_PUBLIC,
-		tokenizer.T_PROTECTED, tokenizer.T_PRIVATE,
-		tokenizer.T_VAR, tokenizer.T_ENUM, tokenizer.T_MATCH,
-		tokenizer.T_READONLY, tokenizer.T_INCLUDE, tokenizer.T_REQUIRE,
-		tokenizer.T_INCLUDE_ONCE, tokenizer.T_REQUIRE_ONCE,
-		tokenizer.T_EXIT, tokenizer.T_EVAL:
-		// all valid after ->
+	case tokenizer.T_VARIABLE:
+		// dynamic member access (handled below)
 	default:
-		return nil, i.Unexpected()
+		// All semi-reserved keywords are valid after -> ($obj->exit(), $obj->trait, etc.)
+		if !i.IsSemiReserved() {
+			return nil, i.Unexpected()
+		}
 	}
 	op := phpv.ZString(i.Data)
 

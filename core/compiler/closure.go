@@ -42,11 +42,14 @@ var Closure = &phpobj.ZClass{
 // Used by Closure::fromCallable() to wrap non-closure callables.
 type wrappedClosure struct {
 	phpv.CallableVal
-	inner    phpv.Callable
-	name     phpv.ZString
-	args     []*phpv.FuncArg
-	this     phpv.ZObject
-	class    phpv.ZClass
+	inner        phpv.Callable
+	name         phpv.ZString
+	args         []*phpv.FuncArg
+	this         phpv.ZObject
+	class        phpv.ZClass
+	fromFunction bool // wrapping a named function (not a method)
+	fromMethod   bool // wrapping a class method
+	isStaticW    bool // true if wrapping a static method
 }
 
 func (w *wrappedClosure) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
@@ -62,7 +65,7 @@ func (w *wrappedClosure) Name() string {
 }
 
 func (w *wrappedClosure) IsStatic() bool {
-	return false
+	return w.isStaticW
 }
 
 func (w *wrappedClosure) GetThis() phpv.ZObject {
@@ -82,12 +85,25 @@ func (w *wrappedClosure) Dump(wr io.Writer) error {
 	return err
 }
 
+func (w *wrappedClosure) GetAttributes() []*phpv.ZAttribute {
+	if ag, ok := w.inner.(phpv.AttributeGetter); ok { return ag.GetAttributes() }
+	return nil
+}
+
 func (w *wrappedClosure) Spawn(ctx phpv.Context) (*phpv.ZVal, error) {
 	o, err := phpobj.NewZObjectOpaque(ctx, Closure, w)
 	if err != nil {
 		return nil, err
 	}
 	return o.ZVal(), nil
+}
+
+// isInternalClass returns true if the class is built into the engine (not user-defined).
+func isInternalClass(class phpv.ZClass) bool {
+	if zc, ok := class.(*phpobj.ZClass); ok {
+		return zc.L == nil
+	}
+	return false
 }
 
 func init() {
@@ -174,6 +190,25 @@ func init() {
 							thisObj = obj
 						}
 					}
+
+					// Check for incompatible method binding
+					if w.fromMethod && thisObj != nil && w.class != nil {
+						if !thisObj.GetClass().InstanceOf(w.class) {
+							ctx.Warn("Cannot bind method %s() to object of class %s, this will be an error in PHP 9",
+								w.name, thisObj.GetClass().GetName(), logopt.NoFuncName(true))
+							return phpv.ZNULL.ZVal(), nil
+						}
+					}
+
+					// Check for rebinding scope of function closures
+					if w.fromFunction && thisObj != nil && !w.fromMethod {
+						if isInternalClass(thisObj.GetClass()) {
+							ctx.Warn("Cannot bind closure to scope of internal class %s, this will be an error in PHP 9",
+								thisObj.GetClass().GetName(), logopt.NoFuncName(true))
+							return phpv.ZNULL.ZVal(), nil
+						}
+					}
+
 					if thisObj == nil {
 						thisObj = w.this
 					}
@@ -196,6 +231,17 @@ func init() {
 				// Static closures cannot bind $this
 				if z.isStatic && newThis.GetType() == phpv.ZtObject {
 					ctx.Warn("Cannot bind an instance to a static closure, this will be an error in PHP 9", logopt.NoFuncName(true))
+				}
+
+				// Check for binding to internal class scope
+				if newThis.GetType() == phpv.ZtObject {
+					if obj, ok := newThis.Value().(phpv.ZObject); ok {
+						if isInternalClass(obj.GetClass()) {
+							ctx.Warn("Cannot bind closure to scope of internal class %s, this will be an error in PHP 9",
+								obj.GetClass().GetName(), logopt.NoFuncName(true))
+							return phpv.ZNULL.ZVal(), nil
+						}
+					}
 				}
 
 				bound := z.dup()
@@ -493,7 +539,9 @@ func (z *ZClosure) checkDeprecated(ctx phpv.Context) error {
 	for _, attr := range z.attributes {
 		if attr.ClassName == "Deprecated" {
 			// Resolve lazy argument expressions (e.g., forward-referenced constants)
-			ResolveAttrArgs(ctx, attr)
+			if err := ResolveAttrArgs(ctx, attr); err != nil {
+				return err
+			}
 
 			funcName := z.Name()
 			label := "Function"
@@ -521,9 +569,9 @@ var attrResolveLoc *phpv.Loc
 // fully evaluated at compile time (e.g., forward-referenced constants).
 // The caller should set ctx location (via ctx.Tick) to the access site before
 // calling this function so that nested deprecation warnings report the correct location.
-func ResolveAttrArgs(ctx phpv.Context, attr *phpv.ZAttribute) {
+func ResolveAttrArgs(ctx phpv.Context, attr *phpv.ZAttribute) error {
 	if attr.ArgExprs == nil {
-		return
+		return nil
 	}
 	attr.Resolving = true
 	// Save the resolve location override. During attribute argument resolution,
@@ -544,11 +592,15 @@ func ResolveAttrArgs(ctx phpv.Context, attr *phpv.ZAttribute) {
 			// (e.g., #[\Deprecated(TEST)] const TEST = "from itself").
 			attr.ArgExprs[i] = nil
 			val, err := expr.Run(ctx)
-			if err == nil && val != nil {
+			if err != nil {
+				return err
+			}
+			if val != nil {
 				attr.Args[i] = val
 			}
 		}
 	}
+	return nil
 }
 
 // FormatDeprecatedMsg formats a deprecation message from a #[\Deprecated] attribute.
@@ -832,38 +884,116 @@ func closureBind(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	// Handle wrappedClosure from fromCallable
 	if w, ok2 := opaque.(*wrappedClosure); ok2 {
 		newThis := args[1]
+
+		// Determine new scope
+		var newScope phpv.ZClass
+		scopeIsExplicit := false
+		scopeIsStatic := true // default: "static" means keep current scope
+		if len(args) > 2 && args[2] != nil {
+			scopeArg := args[2]
+			scopeIsStatic = false
+			if scopeArg.GetType() == phpv.ZtString {
+				scopeName := phpv.ZString(scopeArg.String())
+				if scopeName == "static" {
+					scopeIsStatic = true
+				} else {
+					scopeIsExplicit = true
+					cls, err := ctx.Global().GetClass(ctx, scopeName, true)
+					if err == nil && cls != nil {
+						newScope = cls
+					}
+				}
+			} else if scopeArg.GetType() == phpv.ZtObject {
+				scopeIsExplicit = true
+				if obj, ok3 := scopeArg.Value().(phpv.ZObject); ok3 {
+					newScope = obj.GetClass()
+				}
+			} else if scopeArg.GetType() == phpv.ZtNull {
+				scopeIsExplicit = true
+				newScope = nil
+			}
+		}
+
+		// For fromFunction closures: cannot rebind scope
+		if w.fromFunction && scopeIsExplicit {
+			if newScope != nil && isInternalClass(newScope) {
+				ctx.Warn("Cannot bind closure to scope of internal class %s, this will be an error in PHP 9",
+					newScope.GetName(), logopt.NoFuncName(true))
+				return phpv.ZNULL.ZVal(), nil
+			}
+			if newScope != nil {
+				ctx.Warn("Cannot rebind scope of closure created from function, this will be an error in PHP 9", logopt.NoFuncName(true))
+				return phpv.ZNULL.ZVal(), nil
+			}
+		}
+
+		// For fromMethod closures: check scope changes and binding constraints
+		if w.fromMethod {
+			// Cannot bind instance to static method
+			if w.isStaticW && newThis.GetType() == phpv.ZtObject {
+				ctx.Warn("Cannot bind an instance to a static closure, this will be an error in PHP 9", logopt.NoFuncName(true))
+				return phpv.ZNULL.ZVal(), nil
+			}
+
+			// Cannot rebind scope (any scope change)
+			if scopeIsExplicit || (!scopeIsStatic && !scopeIsExplicit) {
+				resolvedScope := w.class
+				if scopeIsExplicit {
+					resolvedScope = newScope
+				}
+				if resolvedScope != w.class {
+					ctx.Warn("Cannot rebind scope of closure created from method, this will be an error in PHP 9", logopt.NoFuncName(true))
+					return phpv.ZNULL.ZVal(), nil
+				}
+			}
+
+			// Cannot unbind $this from instance method
+			if newThis.GetType() == phpv.ZtNull && w.this != nil {
+				ctx.Warn("Cannot unbind $this of method, this will be an error in PHP 9", logopt.NoFuncName(true))
+				return phpv.ZNULL.ZVal(), nil
+			}
+
+			// Cannot bind to incompatible object
+			if newThis.GetType() == phpv.ZtObject {
+				if obj, ok3 := newThis.Value().(phpv.ZObject); ok3 && w.class != nil {
+					if !obj.GetClass().InstanceOf(w.class) {
+						ctx.Warn("Cannot bind method %s() to object of class %s, this will be an error in PHP 9",
+							w.name, obj.GetClass().GetName(), logopt.NoFuncName(true))
+						return phpv.ZNULL.ZVal(), nil
+					}
+				}
+			}
+		}
+
+		// Check for internal class scope
+		if !w.fromFunction && !w.fromMethod && scopeIsExplicit && newScope != nil && isInternalClass(newScope) {
+			ctx.Warn("Cannot bind closure to scope of internal class %s, this will be an error in PHP 9",
+				newScope.GetName(), logopt.NoFuncName(true))
+			return phpv.ZNULL.ZVal(), nil
+		}
+
 		boundW := &wrappedClosure{
-			inner: w.inner,
-			name:  w.name,
-			args:  w.args,
-			this:  w.this,
-			class: w.class,
+			inner:        w.inner,
+			name:         w.name,
+			args:         w.args,
+			this:         w.this,
+			class:        w.class,
+			fromFunction: w.fromFunction,
+			fromMethod:   w.fromMethod,
+			isStaticW:    w.isStaticW,
 		}
 		if newThis.GetType() == phpv.ZtNull {
 			boundW.this = nil
 		} else if newThis.GetType() == phpv.ZtObject {
 			if obj, ok3 := newThis.Value().(phpv.ZObject); ok3 {
 				boundW.this = obj
-				boundW.class = obj.GetClass()
-			}
-		}
-		if len(args) > 2 && args[2] != nil {
-			scopeArg := args[2]
-			if scopeArg.GetType() == phpv.ZtString {
-				scopeName := phpv.ZString(scopeArg.String())
-				if scopeName != "static" {
-					cls, err := ctx.Global().GetClass(ctx, scopeName, true)
-					if err == nil && cls != nil {
-						boundW.class = cls
-					}
-				}
-			} else if scopeArg.GetType() == phpv.ZtObject {
-				if obj, ok3 := scopeArg.Value().(phpv.ZObject); ok3 {
+				if !scopeIsExplicit {
 					boundW.class = obj.GetClass()
 				}
-			} else if scopeArg.GetType() == phpv.ZtNull {
-				boundW.class = nil
 			}
+		}
+		if scopeIsExplicit && !scopeIsStatic {
+			boundW.class = newScope
 		}
 		return boundW.Spawn(ctx)
 	}
@@ -913,8 +1043,14 @@ func closureBind(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		if scopeArg.GetType() == phpv.ZtString {
 			scopeName := phpv.ZString(scopeArg.String())
 			if scopeName != "static" {
+				// Check for internal class
 				cls, err := ctx.Global().GetClass(ctx, scopeName, true)
 				if err == nil && cls != nil {
+					if isInternalClass(cls) {
+						ctx.Warn("Cannot bind closure to scope of internal class %s, this will be an error in PHP 9",
+							cls.GetName(), logopt.NoFuncName(true))
+						return phpv.ZNULL.ZVal(), nil
+					}
 					bound.class = cls
 				} else {
 					ctx.Warn("Class \"%s\" not found", scopeName, logopt.NoFuncName(true))
@@ -1020,9 +1156,11 @@ func closureFromCallable(ctx phpv.Context, arg *phpv.ZVal) (*phpv.ZVal, error) {
 			}
 
 			w := &wrappedClosure{
-				inner: callable,
-				name:  phpv.ZString(string(class.GetName()) + "::" + string(member.Name)),
-				class: class,
+				inner:      callable,
+				name:       phpv.ZString(string(class.GetName()) + "::" + string(member.Name)),
+				class:      class,
+				fromMethod: true,
+				isStaticW:  member.Modifiers.IsStatic(),
 			}
 			if thisObj != nil {
 				w.this = thisObj
@@ -1047,9 +1185,11 @@ func closureFromCallable(ctx phpv.Context, arg *phpv.ZVal) (*phpv.ZVal, error) {
 					fmt.Sprintf("Closure::fromCallable(): Argument #1 ($callback) must be a valid callback, class \"%s\" does not have a method \"%s\"", className, methodName))
 			}
 			w := &wrappedClosure{
-				inner: phpv.BindClass(member.Method, class, true),
-				name:  phpv.ZString(string(className) + "::" + string(member.Name)),
-				class: class,
+				inner:      phpv.BindClass(member.Method, class, true),
+				name:       phpv.ZString(string(className) + "::" + string(member.Name)),
+				class:      class,
+				fromMethod: true,
+				isStaticW:  member.Modifiers.IsStatic(),
 			}
 			if fga, ok2 := member.Method.(phpv.FuncGetArgs); ok2 {
 				w.args = fga.GetArgs()
@@ -1063,8 +1203,9 @@ func closureFromCallable(ctx phpv.Context, arg *phpv.ZVal) (*phpv.ZVal, error) {
 				fmt.Sprintf("Closure::fromCallable(): Argument #1 ($callback) must be a valid callback, function \"%s\" not found or invalid function name", s))
 		}
 		w := &wrappedClosure{
-			inner: fn,
-			name:  s,
+			inner:        fn,
+			name:         s,
+			fromFunction: true,
 		}
 		if fga, ok := fn.(phpv.FuncGetArgs); ok {
 			w.args = fga.GetArgs()
@@ -1151,6 +1292,12 @@ func closureFromCallable(ctx phpv.Context, arg *phpv.ZVal) (*phpv.ZVal, error) {
 			}
 		}
 
+		// Non-static method cannot be called statically
+		if instance == nil && !member.Modifiers.IsStatic() {
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+				fmt.Sprintf("Failed to create closure from callable: non-static method %s::%s() cannot be called statically", class.GetName(), member.Name))
+		}
+
 		var callable phpv.Callable
 		if instance != nil {
 			callable = phpv.Bind(member.Method, instance)
@@ -1159,9 +1306,11 @@ func closureFromCallable(ctx phpv.Context, arg *phpv.ZVal) (*phpv.ZVal, error) {
 		}
 
 		w := &wrappedClosure{
-			inner: callable,
-			name:  phpv.ZString(string(class.GetName()) + "::" + string(member.Name)),
-			class: class,
+			inner:      callable,
+			name:       phpv.ZString(string(class.GetName()) + "::" + string(member.Name)),
+			class:      class,
+			fromMethod: true,
+			isStaticW:  member.Modifiers.IsStatic(),
 		}
 		if fga, ok2 := member.Method.(phpv.FuncGetArgs); ok2 {
 			w.args = fga.GetArgs()

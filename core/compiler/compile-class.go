@@ -37,6 +37,10 @@ func containsRuntimeOps(r phpv.Runnable) bool {
 	switch v := r.(type) {
 	case *runVariable, *runVariableRef:
 		return true
+	case *runOperator:
+		return containsRuntimeOps(v.a) || containsRuntimeOps(v.b)
+	case *runnableFunctionCallRef:
+		return true
 	case runConcat:
 		for _, sub := range v {
 			if containsRuntimeOps(sub) {

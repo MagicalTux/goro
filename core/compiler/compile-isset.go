@@ -268,6 +268,22 @@ func checkExistence(ctx phpv.Context, v phpv.Runnable, subExpr bool) (bool, erro
 		}
 		return val != nil && !phpv.IsNull(val), nil
 
+	case *runVariableRef:
+		v, err := t.v.Run(ctx)
+		if err != nil {
+			return false, err
+		}
+		name := phpv.ZString(v.String())
+		exists, err := ctx.OffsetExists(ctx, name.ZVal())
+		if !exists || err != nil {
+			return false, err
+		}
+		val, err := ctx.OffsetGet(ctx, name.ZVal())
+		if err != nil {
+			return false, err
+		}
+		return val != nil && !phpv.IsNull(val), nil
+
 	case *runArrayAccess:
 		exists, err := checkExistence(ctx, t.value, true)
 		if !exists || err != nil {

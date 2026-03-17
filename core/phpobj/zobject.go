@@ -321,6 +321,16 @@ func NewZObject(ctx phpv.Context, c phpv.ZClass, args ...*phpv.ZVal) (*ZObject, 
 		return nil, ThrowError(ctx, Error, fmt.Sprintf("Cannot instantiate enum %s", c.GetName()))
 	}
 
+	// Check if class is a trait
+	if c.GetType() == phpv.ZClassTypeTrait {
+		return nil, ThrowError(ctx, Error, fmt.Sprintf("Cannot instantiate trait %s", c.GetName()))
+	}
+
+	// Check for classes that cannot be instantiated directly (e.g., Closure)
+	if zc, ok := c.(*ZClass); ok && zc.InternalOnly && zc.H != nil && zc.H.HandleInvoke != nil {
+		return nil, ThrowError(ctx, Error, fmt.Sprintf("Instantiation of class %s is not allowed", c.GetName()))
+	}
+
 	n := &ZObject{
 		h:          phpv.NewHashTable(),
 		hasPrivate: make(map[phpv.ZString]struct{}),

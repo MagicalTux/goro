@@ -188,6 +188,7 @@ func compileEnum(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 				if err != nil {
 					return nil, err
 				}
+				if containsRuntimeOps(caseValue) { return nil, &phpv.PhpError{Err: fmt.Errorf("Constant expression contains invalid operations"), Code: phpv.E_COMPILE_ERROR, Loc: l} }
 				i, err = c.NextItem()
 				if err != nil {
 					return nil, err

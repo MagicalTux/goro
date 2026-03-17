@@ -315,8 +315,21 @@ func (r *runClassStaticObjRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	// Check #[\Deprecated] attribute on the class constant
 	for _, attr := range cc.Attributes {
 		if attr.ClassName == "Deprecated" {
-			// Resolve lazy argument expressions (e.g., forward-referenced constants)
-			ResolveAttrArgs(ctx, attr)
+			// Skip if args are currently being resolved (prevents infinite recursion)
+			if attr.Resolving {
+				break
+			}
+			// Set compiling class context so self:: resolves correctly during attribute arg resolution
+			prevCompiling := ctx.Global().GetCompilingClass()
+			if zc, ok := class.(*phpobj.ZClass); ok {
+				ctx.Global().SetCompilingClass(zc)
+			}
+			// Resolve lazy argument expressions (e.g., self::TEST)
+			if err := ResolveAttrArgs(ctx, attr); err != nil {
+				ctx.Global().SetCompilingClass(prevCompiling)
+				return nil, err
+			}
+			ctx.Global().SetCompilingClass(prevCompiling)
 			// Determine label: "Enum case" for enum cases, "Constant" otherwise
 			label := "Constant"
 			if zc, ok := class.(*phpobj.ZClass); ok && zc.Type == phpv.ZClassTypeEnum {

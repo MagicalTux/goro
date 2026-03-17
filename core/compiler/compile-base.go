@@ -319,6 +319,10 @@ func compileBaseSingle(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		r = &runDestroyTemporary{inner: r}
 	}
 
+	if _, isFuncCall := r.(phpv.FuncCallExpression); isFuncCall {
+		r = &runNoDiscardStatement{inner: r}
+	}
+
 	return r, nil
 }
 

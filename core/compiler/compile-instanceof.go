@@ -67,6 +67,11 @@ func (r *runInstanceOf) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	// first, check class in parameter
 	c, err := ctx.Global().GetClass(ctx, className, false)
 	if err != nil {
+		// For self/parent/static outside class scope, propagate the Error exception
+		switch className {
+		case "self", "parent", "static":
+			return nil, err
+		}
 		return phpv.ZBool(false).ZVal(), nil
 	}
 

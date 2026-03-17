@@ -94,7 +94,9 @@ func checkConstantDeprecated(ctx phpv.Context, name phpv.ZString, loc *phpv.Loc)
 				ctx.Tick(ctx, useLoc)
 			}
 			// Resolve lazy argument expressions (e.g., forward-referenced constants).
-			ResolveAttrArgs(ctx, attr)
+			if err := ResolveAttrArgs(ctx, attr); err != nil {
+				return err
+			}
 			msg := FormatDeprecatedMsg("Constant", string(name), attr)
 			if useLoc != nil {
 				return ctx.UserDeprecated("%s", msg, logopt.NoFuncName(true), logopt.Data{Loc: useLoc})

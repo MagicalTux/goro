@@ -39,3 +39,8 @@ type ZClosure interface {
 	IsStatic() bool    // true for static function() {} and static fn() =>
 	GetThis() ZObject  // the captured $this (nil for static closures / free functions)
 }
+
+// AttributeGetter is implemented by callables that have PHP attributes.
+type AttributeGetter interface {
+	GetAttributes() []*ZAttribute
+}

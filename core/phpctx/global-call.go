@@ -431,6 +431,7 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 	}
 
 	callResult, callErr = phperr.CatchReturn(f.Call(callCtx, callCtx.Args))
+	if hasNoDiscardAttr(f) { c.lastCallable = f }
 
 	// For functions that do NOT return by reference, separate array values
 	// so that writing to the returned array doesn't modify the original
@@ -453,6 +454,24 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 	}
 
 	return callResult, callErr
+}
+
+// hasNoDiscardAttr checks if a callable has NoDiscard attributes.
+func hasNoDiscardAttr(c phpv.Callable) bool {
+	switch v := c.(type) {
+	case *phpv.BoundedCallable:
+		return hasNoDiscardAttr(v.Callable)
+	case *phpv.MethodCallable:
+		return hasNoDiscardAttr(v.Callable)
+	}
+	if ag, ok := c.(phpv.AttributeGetter); ok {
+		for _, attr := range ag.GetAttributes() {
+			if attr.ClassName == "NoDiscard" || attr.ClassName == "\\NoDiscard" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // chainPhpThrow chains two PHP exceptions: when a destructor throws

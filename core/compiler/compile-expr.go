@@ -162,7 +162,7 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		if err != nil {
 			return nil, err
 		}
-		if i.Type != tokenizer.T_STRING {
+		if !i.IsSemiReserved() {
 			return nil, i.Unexpected()
 		}
 		name := i.Data
@@ -176,7 +176,7 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 				if err != nil {
 					return nil, err
 				}
-				if part.Type != tokenizer.T_STRING {
+				if !part.IsSemiReserved() {
 					return nil, part.Unexpected()
 				}
 				name += "\\" + part.Data
@@ -211,7 +211,7 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			// \clone(...) — PHP 8.5 clone as a function
 			return compileClone(i, c)
 		}
-		if i.Type != tokenizer.T_STRING {
+		if !i.IsSemiReserved() {
 			return nil, i.Unexpected()
 		}
 		// Build the full name (consume any further \Parts)
@@ -226,7 +226,7 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 				if err != nil {
 					return nil, err
 				}
-				if part.Type != tokenizer.T_STRING {
+				if !part.IsSemiReserved() {
 					return nil, part.Unexpected()
 				}
 				name += "\\" + part.Data
@@ -259,7 +259,7 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 				if err != nil {
 					return nil, err
 				}
-				if part.Type != tokenizer.T_STRING {
+				if !part.IsSemiReserved() {
 					return nil, part.Unexpected()
 				}
 				name += "\\" + part.Data

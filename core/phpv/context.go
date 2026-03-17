@@ -142,6 +142,9 @@ type GlobalContext interface {
 	UnregisterUploadedFile(path string)
 
 	GetIncludedFiles() []string
+
+	LastCallable() Callable
+	ClearLastCallable()
 }
 
 type FuncContext interface {

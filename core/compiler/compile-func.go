@@ -722,6 +722,42 @@ func collectVarsWalk(r phpv.Runnable, seen map[phpv.ZString]bool, result *[]phpv
 		}
 	case *runZVal:
 		// literal, no variables
+	case *runnableIf:
+		collectVarsWalk(v.cond, seen, result)
+		collectVarsWalk(v.yes, seen, result)
+		collectVarsWalk(v.no, seen, result)
+	case *runnableIsset:
+		for _, arg := range v.args {
+			collectVarsWalk(arg, seen, result)
+		}
+	case *runnableEmpty:
+		collectVarsWalk(v.arg, seen, result)
+	case *runReturn:
+		collectVarsWalk(v.v, seen, result)
+	case *runnableTry:
+		collectVarsWalk(v.try, seen, result)
+		for _, c := range v.catches {
+			collectVarsWalk(c.body, seen, result)
+		}
+		collectVarsWalk(v.finally, seen, result)
+	case *runnableFor:
+		for _, s := range v.start {
+			collectVarsWalk(s, seen, result)
+		}
+		for _, c := range v.cond {
+			collectVarsWalk(c, seen, result)
+		}
+		for _, e := range v.each {
+			collectVarsWalk(e, seen, result)
+		}
+		collectVarsWalk(v.code, seen, result)
+	case *runnableWhile:
+		collectVarsWalk(v.cond, seen, result)
+		collectVarsWalk(v.code, seen, result)
+	case *runNoDiscardStatement:
+		collectVarsWalk(v.inner, seen, result)
+	case *runDestroyTemporary:
+		collectVarsWalk(v.inner, seen, result)
 	case *ZClosure:
 		// For nested arrow functions, their auto-captured variables need
 		// to be available in our scope too. Walk the use list.
@@ -1099,6 +1135,16 @@ func compileFunctionUse(c compileCtx) (res []*phpv.FuncUse, err error) {
 		}
 
 		varName := phpv.ZString(i.Data[1:]) // skip $
+
+		// Check for auto-global variables (cannot be used in use())
+		switch varName {
+		case "GLOBALS", "_SERVER", "_GET", "_POST", "_COOKIE", "_FILES", "_REQUEST", "_SESSION", "_ENV", "this":
+			return nil, &phpv.PhpError{
+				Err:  fmt.Errorf("Cannot use auto-global as lexical variable"),
+				Code: phpv.E_COMPILE_ERROR,
+				Loc:  i.Loc(),
+			}
+		}
 
 		// Check for duplicate use variables
 		for _, existing := range res {

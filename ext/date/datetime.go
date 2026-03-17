@@ -417,34 +417,20 @@ func diffMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*php
 		invert = true
 	}
 
-	// Calculate year/month/day differences matching PHP's behavior
+	// Calculate year/month/day differences matching PHP's behavior.
+	// PHP computes calendar date diff, then derives hours/minutes/seconds
+	// from actual elapsed time minus the calendar portion. This handles
+	// DST transitions correctly.
 	y1, m1, d1 := from.Date()
 	y2, m2, d2 := to.Date()
-	h1, min1, s1 := from.Clock()
-	h2, min2, s2 := to.Clock()
 
 	years := y2 - y1
 	months := int(m2) - int(m1)
 	days := d2 - d1
-	hours := h2 - h1
-	minutes := min2 - min1
-	seconds := s2 - s1
 
-	if seconds < 0 {
-		seconds += 60
-		minutes--
-	}
-	if minutes < 0 {
-		minutes += 60
-		hours--
-	}
-	if hours < 0 {
-		hours += 24
-		days--
-	}
+	// Normalize: borrow from months if days < 0
 	if days < 0 {
-		// Get number of days in the previous month
-		prevMonth := time.Date(y2, m2, 0, 0, 0, 0, 0, from.Location())
+		prevMonth := time.Date(y2, m2, 0, 0, 0, 0, 0, to.Location())
 		days += prevMonth.Day()
 		months--
 	}
@@ -452,6 +438,35 @@ func diffMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*php
 		months += 12
 		years--
 	}
+
+	// Compute remaining hours/minutes/seconds using actual elapsed time.
+	// Build a reference point: same wall-clock as 'from' but on the
+	// target date, in the 'to' timezone. This ensures DST transitions
+	// are accounted for correctly.
+	h1, min1, s1 := from.Clock()
+	ref := time.Date(y1+years, m1+time.Month(months), d1+days, h1, min1, s1, 0, from.Location())
+	remainSec := int(to.Unix() - ref.Unix())
+
+	// If remainSec is negative, we over-counted by one day
+	if remainSec < 0 {
+		days--
+		if days < 0 {
+			prevMonth := time.Date(y2, m2, 0, 0, 0, 0, 0, to.Location())
+			days += prevMonth.Day()
+			months--
+			if months < 0 {
+				months += 12
+				years--
+			}
+		}
+		ref = time.Date(y1+years, m1+time.Month(months), d1+days, h1, min1, s1, 0, to.Location())
+		remainSec = int(to.Unix() - ref.Unix())
+	}
+
+	hours := remainSec / 3600
+	remainSec %= 3600
+	minutes := remainSec / 60
+	seconds := remainSec % 60
 
 	// Check absolute parameter
 	absolute := false

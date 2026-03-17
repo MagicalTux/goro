@@ -426,6 +426,10 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 		if intfClass.InternalOnly && c.L != nil {
 			return c.fatalError(ctx, fmt.Sprintf("%s can't be implemented by user classes", intfClass.Name))
 		}
+		// Non-enum classes cannot implement UnitEnum or BackedEnum
+		if !c.Type.Has(phpv.ZClassTypeEnum) && (intfClass == UnitEnum || intfClass == BackedEnum) {
+			return c.fatalError(ctx, fmt.Sprintf("Non-enum class %s cannot implement interface %s", c.Name, intfClass.Name))
+		}
 		c.Implementations = append(c.Implementations, intfClass)
 		// Add interface and its parents to the parents map for InstanceOf checks
 		if c.parents == nil {

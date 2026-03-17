@@ -77,7 +77,7 @@ func compileNamespace(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	}
 
 	// Read namespace name: T_STRING parts joined by T_NS_SEPARATOR
-	if next.Type != tokenizer.T_STRING {
+	if !next.IsSemiReserved() {
 		return nil, next.Unexpected()
 	}
 	nsName = phpv.ZString(next.Data)
