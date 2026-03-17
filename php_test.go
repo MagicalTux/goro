@@ -752,10 +752,78 @@ func expectfToRegex(pattern string) string {
 	return result.String()
 }
 
+// testCache manages a file-based cache of test results so that known-passing
+// tests can be skipped on subsequent runs. The cache file stores the path and
+// modification time of each passing test. Set GORO_TEST_CACHE=1 to enable,
+// GORO_TEST_CACHE_CLEAR=1 to reset the cache for a full regression check.
+type testCache struct {
+	file    string
+	entries map[string]time.Time // path -> file mod time when it last passed
+}
+
+const testCacheFile = "/tmp/goro_test_cache.json"
+
+func loadTestCache() *testCache {
+	tc := &testCache{file: testCacheFile, entries: make(map[string]time.Time)}
+	data, err := os.ReadFile(testCacheFile)
+	if err != nil {
+		return tc
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		parts := strings.SplitN(line, "\t", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		t, err := time.Parse(time.RFC3339Nano, parts[0])
+		if err != nil {
+			continue
+		}
+		tc.entries[parts[1]] = t
+	}
+	return tc
+}
+
+func (tc *testCache) isCached(path string, info os.FileInfo) bool {
+	if cached, ok := tc.entries[path]; ok {
+		return info.ModTime().Equal(cached)
+	}
+	return false
+}
+
+func (tc *testCache) markPass(path string, info os.FileInfo) {
+	tc.entries[path] = info.ModTime()
+}
+
+func (tc *testCache) markFail(path string) {
+	delete(tc.entries, path)
+}
+
+func (tc *testCache) save() {
+	var buf strings.Builder
+	for path, modTime := range tc.entries {
+		fmt.Fprintf(&buf, "%s\t%s\n", modTime.Format(time.RFC3339Nano), path)
+	}
+	os.WriteFile(tc.file, []byte(buf.String()), 0644)
+}
+
 func TestPhp(t *testing.T) {
 	// Set TEST_PHP_EXECUTABLE so tests like bug54514 can compare with PHP_BINARY
 	if exe, err := os.Executable(); err == nil {
 		os.Setenv("TEST_PHP_EXECUTABLE", exe)
+	}
+
+	// Set memory limits to prevent OOM-killing the host.
+	// GOMEMLIMIT (Go's soft GC limit) is the primary control.
+	// RLIMIT_AS is a hard safety net at a higher value.
+	// Override with GORO_TEST_MEMLIMIT (in bytes, default 32 GB safety net).
+	memLimit := uint64(32 * 1024 * 1024 * 1024) // 32 GB safety net
+	if v := os.Getenv("GORO_TEST_MEMLIMIT"); v != "" {
+		fmt.Sscanf(v, "%d", &memLimit)
+	}
+	setMemoryLimit(memLimit)
+	// Set Go's GC-aware soft limit if not already set via env
+	if os.Getenv("GOMEMLIMIT") == "" {
+		debug.SetMemoryLimit(4 * 1024 * 1024 * 1024) // 4 GB soft GC limit
 	}
 
 	// Batch support: GORO_TEST_SKIP and GORO_TEST_LIMIT env vars
@@ -768,12 +836,33 @@ func TestPhp(t *testing.T) {
 		fmt.Sscanf(v, "%d", &batchLimit)
 	}
 
+	// Fail limit: stop after N failures to allow quick iteration.
+	// Default: 0 (no limit). Set GORO_TEST_FAIL_LIMIT=100 to stop after 100 failures.
+	failLimit := 0
+	if v := os.Getenv("GORO_TEST_FAIL_LIMIT"); v != "" {
+		fmt.Sscanf(v, "%d", &failLimit)
+	}
+
+	// Result cache: skip tests that previously passed (file unchanged).
+	// GORO_TEST_CACHE=1 to enable, GORO_TEST_CACHE_CLEAR=1 to reset.
+	useCache := os.Getenv("GORO_TEST_CACHE") == "1"
+	var cache *testCache
+	if useCache {
+		if os.Getenv("GORO_TEST_CACHE_CLEAR") == "1" {
+			os.Remove(testCacheFile)
+		}
+		cache = loadTestCache()
+		defer cache.save()
+	}
+
 	// run all tests in "test"
 	count := 0
 	pass := 0
 	skip := 0
 	fail := 0
+	cacheHit := 0
 	testIdx := 0
+	failLimitReached := false
 	filepath.Walk(TestsPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil || info == nil {
 			return nil // skip entries that disappeared (e.g. temp dirs from tests)
@@ -791,6 +880,17 @@ func TestPhp(t *testing.T) {
 		if batchLimit > 0 && count >= batchLimit {
 			return nil
 		}
+		if failLimitReached {
+			return nil
+		}
+
+		// Check cache: skip tests that passed before and haven't changed
+		if cache != nil && cache.isCached(path, info) {
+			count += 1
+			pass += 1
+			cacheHit += 1
+			return nil
+		}
 
 		count += 1
 		p, err := runTest(t, path)
@@ -802,20 +902,36 @@ func TestPhp(t *testing.T) {
 				return nil
 			}
 			fail += 1
+			if cache != nil {
+				cache.markFail(path)
+			}
 			t.Errorf("Error in %s: %s", p.name, err.Error())
+			if failLimit > 0 && fail >= failLimit {
+				failLimitReached = true
+				t.Logf("Fail limit reached (%d failures), stopping early", failLimit)
+			}
 		} else {
 			pass += 1
+			if cache != nil {
+				cache.markPass(path, info)
+			}
 		}
 
 		// Write progress to a file so we can monitor long runs
 		os.WriteFile("/tmp/goro_test_progress.txt",
-			[]byte(fmt.Sprintf("Progress: %d tests, %d passed, %d failed, %d skipped [%s] (%dMB output)\n",
-				count, pass, fail, skip, path, p.output.Len()/1024/1024)), 0644)
+			[]byte(fmt.Sprintf("Progress: %d tests, %d passed, %d failed, %d skipped [%s]\n",
+				count, pass, fail, skip, path)), 0644)
 		return nil
 	})
 
 	summary := fmt.Sprintf("Total of %d tests, %d passed (%01.2f%% success), %d skipped and %d failed",
 		count, pass, float64(pass)*100/float64(count-skip), skip, fail)
+	if cacheHit > 0 {
+		summary += fmt.Sprintf(" (%d from cache)", cacheHit)
+	}
+	if failLimitReached {
+		summary += fmt.Sprintf(" (stopped at %d failures)", failLimit)
+	}
 	t.Logf("%s", summary)
 	os.WriteFile("/tmp/goro_test_progress.txt", []byte(summary+"\n"), 0644)
 }
