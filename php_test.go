@@ -173,9 +173,30 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 
 		shortOpenTag := bool(g.GetConfig("short_open_tag", phpv.ZBool(true).ZVal()).AsBool(g))
 		t := tokenizer.NewLexerWithShortTag(b, scriptPath, shortOpenTag)
+		defer t.Close()
 
-		// Compile (timeout is enforced by Compile via the Global's deadline)
-		c, compileErr := compiler.Compile(g, t)
+		// Compile with timeout: run in goroutine so we can enforce deadline
+		type compileResult struct {
+			code phpv.Runnable
+			err  error
+		}
+		compileCh := make(chan compileResult, 1)
+		go func() {
+			code, err := compiler.Compile(g, t)
+			compileCh <- compileResult{code, err}
+		}()
+		var c phpv.Runnable
+		var compileErr error
+		timer := time.NewTimer(30 * time.Second)
+		select {
+		case result := <-compileCh:
+			timer.Stop()
+			c = result.code
+			compileErr = result.err
+		case <-timer.C:
+			t.Close() // kill the lexer goroutine
+			return fmt.Errorf("compilation timed out (possible infinite loop)")
+		}
 
 		if compileErr != nil {
 			// Filter exit errors from compile (e.g., E_COMPILE_ERROR already output)
