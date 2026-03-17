@@ -424,6 +424,17 @@ func (r *runClassStaticObjRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		return resolved, nil
 	}
 
+	// For enum cases, check if the enum has a stored error (e.g. duplicate values).
+	// This must be checked AFTER resolution since enum cases are resolved eagerly.
+	if zc, ok := class.(*phpobj.ZClass); ok && zc.EnumError != nil {
+		// Only throw for enum case constants, not regular constants
+		for _, caseName := range zc.EnumCases {
+			if caseName == r.objName {
+				return nil, zc.EnumError
+			}
+		}
+	}
+
 	return v.ZVal(), nil
 }
 
@@ -467,7 +478,7 @@ func (r *runClassStaticObjRef) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.
 
 			return ctx.CallZVal(ctx, method.Method, callArgs, ctx.This())
 		}
-		return nil, ctx.Errorf("Call to undefined method %s::%s()", r.className, r.objName)
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Call to undefined method %s::%s()", r.className, r.objName))
 	}
 
 	return ctx.CallZVal(ctx, method.Method, args, ctx.This())
@@ -508,12 +519,18 @@ func (r *runClassNameOf) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			}
 			cls := ctx.Class()
 			if cls == nil {
+				if ctx.Func() == nil {
+					return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot use \"self\" in the global scope")
+				}
 				return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot use \"self\" when no class scope is active")
 			}
 			return phpv.ZString(cls.GetName()).ZVal(), nil
 		case "parent":
 			cls := ctx.Class()
 			if cls == nil {
+				if ctx.Func() == nil {
+					return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot use \"parent\" in the global scope")
+				}
 				return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot access \"parent\" when no class scope is active")
 			}
 			parent := cls.GetParent()
@@ -539,6 +556,9 @@ func (r *runClassNameOf) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			}
 			cls := ctx.Class()
 			if cls == nil {
+				if ctx.Func() == nil {
+					return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot use \"static\" in the global scope")
+				}
 				return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot access \"static\" when no class scope is active")
 			}
 			return phpv.ZString(cls.GetName()).ZVal(), nil

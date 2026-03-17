@@ -631,7 +631,7 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 				return ctx.CallZVal(ctx, phpv.BindClass(callStaticMethod.Method, callClass, true), callArgs, objI)
 			}
 		}
-		return nil, ctx.Errorf("Call to undefined method %s::%s()", class.GetName(), op)
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Call to undefined method %s::%s()", class.GetName(), op))
 	}
 
 	// Check if method is abstract - cannot be called directly
@@ -1126,14 +1126,14 @@ func (r *runObjectDynFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 					return ctx.CallZVal(ctx, method.Method, callArgs, objI)
 				}
 			}
-			return nil, ctx.Errorf("Call to undefined method %s::%s()", class.GetName(), methodName)
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Call to undefined method %s::%s()", class.GetName(), methodName))
 		}
 		return ctx.Call(ctx, method.Method, r.args, objI)
 	}
 
 	objZ := obj.AsObject(ctx)
 	if objZ == nil {
-		return nil, ctx.Errorf("Call to a member function %s() on a non-object", methodName)
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Call to a member function %s() on null", methodName))
 	}
 	method, ok := objZ.GetClass().GetMethod(methodName.ToLower())
 	if !ok {
@@ -1150,7 +1150,7 @@ func (r *runObjectDynFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			}
 			return ctx.CallZVal(ctx, method.Method, callArgs, objZ)
 		}
-		return nil, ctx.Errorf("Call to undefined method %s::%s()", objZ.GetClass().GetName(), methodName)
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Call to undefined method %s::%s()", objZ.GetClass().GetName(), methodName))
 	}
 	return ctx.Call(ctx, method.Method, r.args, objZ)
 }
@@ -1411,7 +1411,7 @@ func (r *runFirstClassMethodCallable) Run(ctx phpv.Context) (*phpv.ZVal, error) 
 		}
 		member, ok := class.GetMethod(r.method.ToLower())
 		if !ok {
-			return nil, ctx.Errorf("Call to undefined method %s::%s()", class.GetName(), r.method)
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Call to undefined method %s::%s()", class.GetName(), r.method))
 		}
 		callable := phpv.BindClass(member.Method, class, true)
 		return phpv.NewZVal(callable), nil
@@ -1429,13 +1429,13 @@ func (r *runFirstClassMethodCallable) Run(ctx phpv.Context) (*phpv.ZVal, error) 
 
 	obj := refVal.AsObject(ctx)
 	if obj == nil {
-		return nil, ctx.Errorf("Call to a member function %s() on a non-object", r.method)
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Call to a member function %s() on null", r.method))
 	}
 
 	class := obj.GetClass()
 	member, ok := class.GetMethod(r.method.ToLower())
 	if !ok {
-		return nil, ctx.Errorf("Call to undefined method %s::%s()", class.GetName(), r.method)
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Call to undefined method %s::%s()", class.GetName(), r.method))
 	}
 
 	callable := phpv.Bind(member.Method, obj)

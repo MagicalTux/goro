@@ -1189,7 +1189,7 @@ func (g *Global) GetFunction(ctx phpv.Context, name phpv.ZString) (phpv.Callable
 		}
 	}
 
-	return nil, g.Errorf("Call to undefined function %s()", name)
+	return nil, phpobj.ThrowError(g, phpobj.Error, fmt.Sprintf("Call to undefined function %s()", name))
 }
 
 func (g *Global) GetDefinedFunctions(ctx phpv.Context, excludeDisabled bool) (*phpv.ZArray, error) {

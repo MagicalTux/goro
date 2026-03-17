@@ -43,6 +43,7 @@ type ZClass struct {
 	// Enum support (PHP 8.1)
 	EnumBackingType phpv.ZType     // 0 for unit enums, ZtString or ZtInt for backed enums
 	EnumCases       []phpv.ZString // ordered list of case names
+	EnumError       error          // non-nil if enum has a catchable error (e.g. duplicate values)
 }
 
 func (c *ZClass) GetName() phpv.ZString {

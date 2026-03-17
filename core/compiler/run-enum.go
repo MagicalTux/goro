@@ -34,6 +34,12 @@ func (r *runEnumCaseInit) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		return nil, fmt.Errorf("enum %s is not a ZClass", r.className)
 	}
 
+	// If the enum has a stored error (e.g. duplicate values or type mismatch),
+	// re-throw it as a catchable Error every time a case is accessed.
+	if zc.EnumError != nil {
+		return nil, zc.EnumError
+	}
+
 	// Create the enum case object using the special enum constructor
 	// that avoids init() to prevent infinite recursion (since enum cases
 	// are stored as class constants, and init resolves constants).
@@ -288,7 +294,9 @@ func (r *runEnumRegister) postCompileValidation(ctx phpv.Context) error {
 		}
 	}
 
-	// Check for duplicate backing values in backed enums
+	// Check for duplicate backing values in backed enums.
+	// Store the error on the class so it can be thrown as a catchable Error
+	// when a case is accessed (not as a fatal error).
 	if c.EnumBackingType != 0 {
 		seen := make(map[string]phpv.ZString) // backing value string → case name
 		for _, k := range c.ConstOrder {
@@ -304,7 +312,9 @@ func (r *runEnumRegister) postCompileValidation(ctx phpv.Context) error {
 				resolved, err := cd.Run(ctx)
 				ctx.Global().SetCompilingClass(prevCompiling)
 				if err != nil {
-					return err
+					// Type mismatch: store as catchable error
+					c.EnumError = err
+					break
 				}
 				cc.Value = resolved.Value()
 				val = cc.Value
@@ -318,7 +328,9 @@ func (r *runEnumRegister) postCompileValidation(ctx phpv.Context) error {
 				if backingVal != nil {
 					key := backingVal.String()
 					if existing, dup := seen[key]; dup {
-						return r.enumFatalError(ctx, fmt.Sprintf("Duplicate value in enum %s for cases %s and %s", c.Name, existing, k))
+						c.EnumError = phpobj.ThrowError(ctx, phpobj.Error,
+							fmt.Sprintf("Duplicate value in enum %s for cases %s and %s", c.Name, existing, k))
+						break
 					}
 					seen[key] = k
 				}

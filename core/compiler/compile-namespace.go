@@ -256,11 +256,13 @@ func compileUse(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			}
 		}
 
-		// PHP warning: non-compound names in use statements have no effect
+		// PHP warning: non-compound names in use statements have no effect.
 		// Only warn in the root namespace; inside a named namespace, importing
 		// a non-compound name (e.g. "use Attribute;") IS meaningful because it
 		// disambiguates from the current namespace prefix.
-		if !strings.Contains(string(fullName), "\\") && root.namespace == "" {
+		// Also skip the warning when an alias is specified (use X as Y) since
+		// the alias creates a meaningful mapping even for non-compound names.
+		if !strings.Contains(string(fullName), "\\") && root.namespace == "" && alias == lastPart(fullName) {
 			ctx := c.(phpv.Context)
 			ctx.Warn("The use statement with non-compound name '%s' has no effect", fullName, logopt.NoFuncName(true))
 		}

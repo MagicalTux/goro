@@ -574,7 +574,7 @@ func compileEnum(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 						return nil, fmt.Errorf("from() called on non-ZClass")
 					}
 					needle := args[0]
-					// Type check: int-backed enums require int, string-backed enums accept int|string
+					// Type check first (before EnumError check)
 					if enumBackingType == phpv.ZtInt {
 						if needle.GetType() != phpv.ZtInt {
 							actualType := needle.GetType().TypeName()
@@ -598,6 +598,10 @@ func compileEnum(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 							return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
 								fmt.Sprintf("%s::from(): Argument #1 ($value) must be of type string, %s given", zc.GetName(), actualType))
 						}
+					}
+					// Check for enum errors (duplicate values, type mismatches) after type check
+					if zc.EnumError != nil {
+						return nil, zc.EnumError
 					}
 					for _, caseName := range zc.EnumCases {
 						cc, exists := zc.Const[caseName]
@@ -663,7 +667,7 @@ func compileEnum(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 						return nil, fmt.Errorf("tryFrom() called on non-ZClass")
 					}
 					needle := args[0]
-					// Type check: int-backed enums require int, string-backed enums accept int|string
+					// Type check first (before EnumError check)
 					if enumBackingType == phpv.ZtInt {
 						if needle.GetType() != phpv.ZtInt {
 							actualType := needle.GetType().TypeName()
@@ -686,6 +690,10 @@ func compileEnum(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 							return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
 								fmt.Sprintf("%s::tryFrom(): Argument #1 ($value) must be of type string, %s given", zc.GetName(), actualType))
 						}
+					}
+					// Check for enum errors after type check
+					if zc.EnumError != nil {
+						return nil, zc.EnumError
 					}
 					for _, caseName := range zc.EnumCases {
 						cc, exists := zc.Const[caseName]
