@@ -592,6 +592,35 @@ func init() {
 		Name:         "DateTimeInterface",
 		Type:         phpv.ZClassTypeInterface,
 		InternalOnly: true,
+		Const: map[phpv.ZString]*phpv.ZClassConst{
+			"ATOM":              {Value: phpv.ZString("Y-m-d\\TH:i:sP")},
+			"COOKIE":            {Value: phpv.ZString("l, d-M-Y H:i:s T")},
+			"ISO8601":           {Value: phpv.ZString("Y-m-d\\TH:i:sO")},
+			"ISO8601_EXPANDED":  {Value: phpv.ZString("X-m-d\\TH:i:sP")},
+			"RFC822":            {Value: phpv.ZString("D, d M y H:i:s O")},
+			"RFC850":            {Value: phpv.ZString("l, d-M-y H:i:s T")},
+			"RFC1036":           {Value: phpv.ZString("D, d M y H:i:s O")},
+			"RFC1123":           {Value: phpv.ZString("D, d M Y H:i:s O")},
+			"RFC7231":           {Value: phpv.ZString("D, d M Y H:i:s \\G\\M\\T")},
+			"RFC2822":           {Value: phpv.ZString("D, d M Y H:i:s O")},
+			"RFC3339":           {Value: phpv.ZString("Y-m-d\\TH:i:sP")},
+			"RFC3339_EXTENDED":  {Value: phpv.ZString("Y-m-d\\TH:i:s.vP")},
+			"RSS":               {Value: phpv.ZString("D, d M Y H:i:s O")},
+			"W3C":               {Value: phpv.ZString("Y-m-d\\TH:i:sP")},
+		},
+		ConstOrder: []phpv.ZString{
+			"ATOM", "COOKIE", "ISO8601", "ISO8601_EXPANDED",
+			"RFC822", "RFC850", "RFC1036", "RFC1123", "RFC7231",
+			"RFC2822", "RFC3339", "RFC3339_EXTENDED", "RSS", "W3C",
+		},
+		Methods: map[phpv.ZString]*phpv.ZClassMethod{
+			"format":       {Name: "format", Modifiers: phpv.ZAttrPublic | phpv.ZAttrAbstract, Empty: true},
+			"gettimestamp": {Name: "getTimestamp", Modifiers: phpv.ZAttrPublic | phpv.ZAttrAbstract, Empty: true},
+			"getoffset":    {Name: "getOffset", Modifiers: phpv.ZAttrPublic | phpv.ZAttrAbstract, Empty: true},
+			"gettimezone":  {Name: "getTimezone", Modifiers: phpv.ZAttrPublic | phpv.ZAttrAbstract, Empty: true},
+			"diff":         {Name: "diff", Modifiers: phpv.ZAttrPublic | phpv.ZAttrAbstract, Empty: true},
+			"__wakeup":     {Name: "__wakeup", Modifiers: phpv.ZAttrPublic | phpv.ZAttrAbstract, Empty: true},
+		},
 	}
 
 	// DateInterval class

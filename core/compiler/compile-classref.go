@@ -290,6 +290,24 @@ func (r *runClassStaticObjRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 
 	cc, ok := class.(*phpobj.ZClass).Const[r.objName]
 	if !ok {
+		// Check implemented interfaces (for internal classes that don't inherit at registration time)
+		zc := class.(*phpobj.ZClass)
+		for _, intf := range zc.Implementations {
+			if c, found := intf.Const[r.objName]; found {
+				cc = c
+				ok = true
+				break
+			}
+		}
+		// Check parent class
+		if !ok && zc.Extends != nil {
+			if c, found := zc.Extends.Const[r.objName]; found {
+				cc = c
+				ok = true
+			}
+		}
+	}
+	if !ok {
 		return nil, phpobj.ThrowErrorAt(ctx, phpobj.Error, fmt.Sprintf("Undefined constant %s::%s", errorClassName, r.objName), r.l)
 	}
 

@@ -289,6 +289,21 @@ func (z ZStringArray) String() ZString {
 	return *z.ZString
 }
 
+// valToInt safely extracts an int from a Val that might be ZInt or *ZVal wrapping ZInt.
+func valToInt(val Val) int {
+	switch v := val.(type) {
+	case ZInt:
+		return int(v)
+	case *ZVal:
+		if v != nil {
+			if zi, ok := v.Value().(ZInt); ok {
+				return int(zi)
+			}
+		}
+	}
+	return 0
+}
+
 func (z ZStringArray) OffsetGet(ctx Context, key Val) (*ZVal, error) {
 	if key.GetType() != ZtInt {
 		if err := ctx.Warn("Illegal string offset \"%s\"", key.String(), logopt.NoFuncName(true)); err != nil {
@@ -296,7 +311,7 @@ func (z ZStringArray) OffsetGet(ctx Context, key Val) (*ZVal, error) {
 		}
 	}
 	val, _ := key.AsVal(ctx, ZtInt)
-	i := int(val.(ZInt))
+	i := valToInt(val)
 	s := *z.ZString
 	if i < 0 {
 		i = len(s) + i
@@ -319,7 +334,7 @@ func (z ZStringArray) OffsetSet(ctx Context, key Val, value *ZVal) error {
 			return ctx.Warn("Illegal string offset \"%s\"", key.String(), logopt.NoFuncName(true))
 		}
 		val, _ := key.AsVal(ctx, ZtInt)
-		i = int(val.(ZInt))
+		i = valToInt(val)
 	}
 
 	c := value.AsString(ctx)
@@ -349,7 +364,7 @@ func (z ZStringArray) OffsetUnset(ctx Context, key Val) error {
 		return ctx.Warn("Illegal string offset \"%s\"", key.String(), logopt.NoFuncName(true))
 	}
 	val, _ := key.AsVal(ctx, ZtInt)
-	i := val.(ZInt)
+	i := ZInt(valToInt(val))
 	s := *z.ZString
 	*z.ZString = s[0:i] + s[i+1:]
 	return nil
@@ -360,17 +375,7 @@ func (z ZStringArray) OffsetExists(ctx Context, key Val) (bool, error) {
 	if err != nil {
 		return false, nil
 	}
-	intVal, ok := val.(ZInt)
-	if !ok {
-		// Try to extract from ZVal wrapper
-		if zv, ok2 := val.(*ZVal); ok2 {
-			intVal, ok = zv.Value().(ZInt)
-		}
-		if !ok {
-			return false, nil
-		}
-	}
-	i := int(intVal)
+	i := valToInt(val)
 	return i >= 0 && i < len(*z.ZString), nil
 }
 
@@ -379,7 +384,7 @@ func (z ZStringArray) OffsetCheck(ctx Context, key Val) (*ZVal, bool, error) {
 		return nil, false, nil
 	}
 	val, _ := key.AsVal(ctx, ZtInt)
-	i := int(val.(ZInt))
+	i := valToInt(val)
 	if i < 0 && i >= len(*z.ZString) {
 		return nil, false, nil
 	}

@@ -2,6 +2,7 @@ package standard
 
 import (
 	"fmt"
+	"strings"
 	"unsafe"
 
 	"github.com/MagicalTux/goro/core/logopt"
@@ -195,7 +196,27 @@ func doVarDump(ctx phpv.Context, z *phpv.ZVal, linePfx string, recurs map[uintpt
 				if k.GetType() == phpv.ZtInt {
 					fmt.Fprintf(ctx, "%s[%s]=>\n", localPfx, k)
 				} else {
-					fmt.Fprintf(ctx, "%s[\"%s\"]=>\n", localPfx, k)
+					ks := k.String()
+					// Handle PHP's internal property naming convention:
+					// \0*\0name -> protected, \0ClassName\0name -> private
+					if len(ks) > 0 && ks[0] == 0 {
+						if len(ks) > 2 && ks[1] == '*' && ks[2] == 0 {
+							// Protected: \0*\0name
+							fmt.Fprintf(ctx, "%s[\"%s\":protected]=>\n", localPfx, ks[3:])
+						} else {
+							// Private: \0ClassName\0name
+							idx := strings.IndexByte(ks[1:], 0)
+							if idx >= 0 {
+								className := ks[1 : idx+1]
+								propName := ks[idx+2:]
+								fmt.Fprintf(ctx, "%s[\"%s\":\"%s\":private]=>\n", localPfx, propName, className)
+							} else {
+								fmt.Fprintf(ctx, "%s[\"%s\"]=>\n", localPfx, ks)
+							}
+						}
+					} else {
+						fmt.Fprintf(ctx, "%s[\"%s\"]=>\n", localPfx, ks)
+					}
 				}
 				val, err := it.Current(ctx)
 				if err != nil {
