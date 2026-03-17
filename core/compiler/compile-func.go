@@ -206,12 +206,12 @@ func (r *runnableFunctionCallRef) Run(ctx phpv.Context) (l *phpv.ZVal, err error
 				has0, _ := arr.OffsetExists(ctx, phpv.ZInt(0).ZVal())
 				has1, _ := arr.OffsetExists(ctx, phpv.ZInt(1).ZVal())
 				if !has0 || !has1 {
-					return nil, phpobj.ThrowError(ctx, phpobj.Error, "Array callback has to contain indices 0 and 1")
+					return nil, phpobj.ThrowError(ctx, phpobj.Error, "Array callback must have exactly two elements")
 				}
 				first, err1 := arr.OffsetGet(ctx, phpv.ZInt(0))
 				second, err2 := arr.OffsetGet(ctx, phpv.ZInt(1))
 				if err1 != nil || err2 != nil || first == nil || second == nil {
-					return nil, phpobj.ThrowError(ctx, phpobj.Error, "Array callback has to contain indices 0 and 1")
+					return nil, phpobj.ThrowError(ctx, phpobj.Error, "Array callback must have exactly two elements")
 				}
 				methodName := second.AsString(ctx)
 				if first.GetType() == phpv.ZtObject {
@@ -257,7 +257,7 @@ func (r *runnableFunctionCallRef) Run(ctx phpv.Context) (l *phpv.ZVal, err error
 				}
 			default:
 				return nil, phpobj.ThrowError(ctx, phpobj.Error,
-					fmt.Sprintf("Value of type %s is not callable", phpv.ZValTypeName(v)))
+					fmt.Sprintf("Object of type %s is not callable", phpv.ZValTypeName(v)))
 			}
 		}
 	}

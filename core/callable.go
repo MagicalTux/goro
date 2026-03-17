@@ -78,7 +78,7 @@ func spawnCallableInternal(ctx phpv.Context, v *phpv.ZVal, paramNo int) (phpv.Ca
 		has0, _ := array.OffsetExists(ctx, phpv.ZInt(0).ZVal())
 		has1, _ := array.OffsetExists(ctx, phpv.ZInt(1).ZVal())
 		if !has0 || !has1 {
-			return nil, phpobj.ThrowError(ctx, phpobj.Error, "Array callback has to contain indices 0 and 1")
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, "Array callback must have exactly two elements")
 		}
 		firstArg, err := array.OffsetGet(ctx, phpv.ZInt(0))
 		if err != nil {

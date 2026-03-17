@@ -95,7 +95,12 @@ func constant(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Undefined constant %s::%s", className, constName))
 	}
 
-	k, ok := ctx.Global().ConstantGet(name)
+	// Normalize namespace part of constant name to lowercase
+	normalizedName := name
+	if idx := strings.LastIndex(string(normalizedName), "\\"); idx >= 0 {
+		normalizedName = phpv.ZString(strings.ToLower(string(normalizedName[:idx])) + string(normalizedName[idx:]))
+	}
+	k, ok := ctx.Global().ConstantGet(normalizedName)
 	if !ok {
 		return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Undefined constant \"%s\"", name))
 	}

@@ -345,10 +345,26 @@ func isInternalAttributeClass(name phpv.ZString) bool {
 	return false
 }
 
+// hasDelayedTargetValidation checks if the attribute list contains the
+// #[\DelayedTargetValidation] attribute, which defers target validation
+// to runtime (reflection) instead of compile time.
+func hasDelayedTargetValidation(attrs []*phpv.ZAttribute) bool {
+	for _, attr := range attrs {
+		if attr.ClassName == "DelayedTargetValidation" || attr.ClassName == "\\DelayedTargetValidation" {
+			return true
+		}
+	}
+	return false
+}
+
 // ValidateInternalAttributeList validates only internal/built-in attribute
 // classes on a target. Userland attributes are only validated at Reflection
 // newInstance() time. Returns an error string if invalid, empty string if valid.
 func ValidateInternalAttributeList(ctx phpv.Context, attrs []*phpv.ZAttribute, target int) string {
+	// If #[DelayedTargetValidation] is present, skip target validation at compile time
+	if hasDelayedTargetValidation(attrs) {
+		return ""
+	}
 	// Check target validity for internal attributes only
 	for _, attr := range attrs {
 		if !isInternalAttributeClass(attr.ClassName) {
