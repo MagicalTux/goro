@@ -15,6 +15,7 @@ func Eval(ctx phpv.Context, expr string) (*phpv.ZVal, error) {
 		expr = `""`
 	}
 	t := tokenizer.NewLexerPhp(bytes.NewReader([]byte("return "+expr+";")), "-")
+	defer t.Close()
 	c, err := compiler.Compile(ctx, t)
 	if err != nil {
 		return nil, err

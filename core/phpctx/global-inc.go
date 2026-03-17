@@ -85,6 +85,7 @@ func (c *Global) DoString(ctx phpv.Context, strCode phpv.ZString) (*phpv.ZVal, e
 
 	// tokenize
 	t := tokenizer.NewLexer(f, string(f.Name()))
+	defer t.Close()
 
 	// compile
 	code, err := Compile(ctx, t)
@@ -138,6 +139,7 @@ func (c *Global) Include(ctx phpv.Context, fn phpv.ZString) (*phpv.ZVal, error) 
 
 	// tokenize
 	t := tokenizer.NewLexer(f, string(fn))
+	defer t.Close()
 
 	// compile
 	code, err := Compile(ctx, t)
@@ -165,6 +167,7 @@ func (c *Global) requireMain(fn phpv.ZString) (*phpv.ZVal, error) {
 
 	// tokenize
 	t := tokenizer.NewLexer(f, string(fn))
+	defer t.Close()
 
 	// compile
 	code, err := Compile(c, t)
@@ -196,6 +199,7 @@ func (c *Global) Require(ctx phpv.Context, fn phpv.ZString) (*phpv.ZVal, error) 
 
 	// tokenize
 	t := tokenizer.NewLexer(f, string(fn))
+	defer t.Close()
 
 	// compile
 	code, err := Compile(ctx, t)
@@ -251,6 +255,7 @@ func (c *Global) IncludeOnce(ctx phpv.Context, fn phpv.ZString) (*phpv.ZVal, err
 
 	// tokenize
 	t := tokenizer.NewLexer(f, string(fn))
+	defer t.Close()
 
 	// compile
 	code, err := Compile(ctx, t)
@@ -286,6 +291,7 @@ func (c *Global) RequireOnce(ctx phpv.Context, fn phpv.ZString) (*phpv.ZVal, err
 
 	// tokenize
 	t := tokenizer.NewLexer(f, string(fn))
+	defer t.Close()
 
 	// compile
 	code, err := Compile(ctx, t)
