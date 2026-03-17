@@ -250,7 +250,7 @@ func (g *Global) ReinitSuperglobals() {
 			if name != "" {
 				// PHP 8.5: exit/die cannot be disabled
 				if name == "exit" || name == "die" {
-					g.WriteErr([]byte(fmt.Sprintf("Warning: Cannot disable function %s() in Unknown on line 0\n", name)))
+					g.WriteStartupWarning(fmt.Sprintf("Warning: Cannot disable function %s() in Unknown on line 0\n", name))
 					continue
 				}
 				g.disabledFuncs[phpv.ZString(name)] = struct{}{}

@@ -1156,7 +1156,7 @@ func compileReadClassIdentifier(c compileCtx) (phpv.ZString, error) {
 			res += phpv.ZString(i.Data)
 			continue
 		}
-		if i.Type == tokenizer.T_STRING || i.IsSemiReserved() {
+		if i.Type == tokenizer.T_STRING || (i.IsSemiReserved() && i.Type != tokenizer.T_EXTENDS && i.Type != tokenizer.T_IMPLEMENTS && i.Type != tokenizer.T_READONLY) {
 			res += phpv.ZString(i.Data)
 			continue
 		}
