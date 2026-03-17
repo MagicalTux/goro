@@ -13,6 +13,7 @@ import (
 func compileBreak(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	// check if followed by digit
 	intv := int64(1)
+	loc := i.Loc()
 
 	i, err := c.NextItem()
 	if i.Type == tokenizer.T_LNUMBER {
@@ -29,17 +30,27 @@ func compileBreak(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			c.Global().LogError(phpErr)
 			return nil, phpv.ExitError(255)
 		}
-	} else {
+	} else if i.Type == tokenizer.Rune('(') || i.Type == tokenizer.Rune(';') || i.Type == tokenizer.T_CLOSE_TAG {
 		c.backup()
+	} else {
+		// Non-integer operand (e.g. break $x)
+		phpErr := &phpv.PhpError{
+			Err:  fmt.Errorf("'break' operator with non-integer operand is no longer supported"),
+			Loc:  loc,
+			Code: phpv.E_COMPILE_ERROR,
+		}
+		c.Global().LogError(phpErr)
+		return nil, phpv.ExitError(255)
 	}
 
 	// return this as a runtime element and not a compile time error so switch and loops will catch it
-	return &phperr.PhpBreak{L: i.Loc(), Intv: phpv.ZInt(intv), Initial: phpv.ZInt(intv)}, nil
+	return &phperr.PhpBreak{L: loc, Intv: phpv.ZInt(intv), Initial: phpv.ZInt(intv)}, nil
 }
 
 func compileContinue(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	// check if followed by digit
 	intv := int64(1)
+	loc := i.Loc()
 
 	i, err := c.NextItem()
 	if i.Type == tokenizer.T_LNUMBER {
@@ -56,12 +67,21 @@ func compileContinue(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			c.Global().LogError(phpErr)
 			return nil, phpv.ExitError(255)
 		}
-	} else {
+	} else if i.Type == tokenizer.Rune('(') || i.Type == tokenizer.Rune(';') || i.Type == tokenizer.T_CLOSE_TAG {
 		c.backup()
+	} else {
+		// Non-integer operand (e.g. continue $x)
+		phpErr := &phpv.PhpError{
+			Err:  fmt.Errorf("'continue' operator with non-integer operand is no longer supported"),
+			Loc:  loc,
+			Code: phpv.E_COMPILE_ERROR,
+		}
+		c.Global().LogError(phpErr)
+		return nil, phpv.ExitError(255)
 	}
 
 	// return this as a runtime element and not a compile time error so switch and loops will catch it
-	return &phperr.PhpContinue{L: i.Loc(), Intv: phpv.ZInt(intv), Initial: phpv.ZInt(intv)}, nil
+	return &phperr.PhpContinue{L: loc, Intv: phpv.ZInt(intv), Initial: phpv.ZInt(intv)}, nil
 }
 
 type runnableFor struct {

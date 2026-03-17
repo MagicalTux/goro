@@ -200,12 +200,11 @@ func spawnOperator(ctx phpv.Context, op tokenizer.ItemType, a, b phpv.Runnable, 
 		if (!isop && opD.pri <= ternaryPri) || (isop && rop.opD.pri <= ternaryPri) {
 			// For short ternary (?:), yes and cond point to the same Runnable.
 			// Track whether yes needs to be updated to match the new cond.
-			shortTernary := top.yes == top.cond
 			top.cond, err = spawnOperator(ctx, op, a, top.cond, l)
 			if err != nil {
 				return nil, err
 			}
-			if shortTernary {
+			if top.shortTernary {
 				top.yes = top.cond
 			}
 			return top, nil
@@ -647,7 +646,7 @@ func doInc(ctx phpv.Context, v *phpv.ZVal, inc bool) error {
 		}
 
 		// PHP 8.3: Incrementing non-numeric strings is deprecated
-		if err := ctx.Deprecated("Increment on non-numeric string is deprecated, use str_increment() instead"); err != nil {
+		if err := ctx.Deprecated("Increment on non-numeric string is deprecated, use str_increment() instead", logopt.NoFuncName(true)); err != nil {
 			return err
 		}
 
@@ -836,6 +835,11 @@ func operatorMathLogic(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal)
 	}
 
 	switch a.Value().GetType() {
+	case phpv.ZtBool, phpv.ZtNull:
+		// Boolean and null values should be converted to int for bitwise ops
+		a, _ = a.As(ctx, phpv.ZtInt)
+		b, _ = b.As(ctx, phpv.ZtInt)
+		return operatorMathLogic(ctx, op, a, b)
 	case phpv.ZtInt:
 		b, _ = b.As(ctx, phpv.ZtInt)
 		var res phpv.ZInt

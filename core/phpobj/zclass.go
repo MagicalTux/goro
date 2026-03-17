@@ -206,6 +206,7 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 				continue
 			}
 			if childConst, exists := c.Const[k]; exists {
+				_ = childConst // used below
 				// Cannot override final constants
 				if v.Modifiers.Has(phpv.ZAttrFinal) {
 					return c.fatalError(ctx, fmt.Sprintf("%s::%s cannot override final constant %s::%s", c.Name, k, c.Extends.Name, k))
@@ -225,6 +226,20 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 			} else {
 				c.Const[k] = v
 				c.ConstOrder = append(c.ConstOrder, k)
+				// Track that this constant came from the parent class for ambiguity detection
+				if c.constSource == nil {
+					c.constSource = make(map[phpv.ZString]phpv.ZString)
+				}
+				// If parent also tracked a source (inherited from interface), use that
+				if c.Extends.constSource != nil {
+					if src, ok := c.Extends.constSource[k]; ok {
+						c.constSource[k] = src
+					} else {
+						c.constSource[k] = c.Extends.Name
+					}
+				} else {
+					c.constSource[k] = c.Extends.Name
+				}
 			}
 		}
 
@@ -315,7 +330,8 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 				// Import trait method if:
 				// - no existing method, OR
 				// - existing method was inherited from parent (not defined in this class)
-				if !exists || (existing.Class != nil && existing.Class != c) {
+				//   BUT don't replace a concrete method with an abstract trait method
+				if !exists || (existing.Class != nil && existing.Class != c && !(m.Empty && m.Modifiers.Has(phpv.ZAttrAbstract) && !existing.Empty)) {
 					// Create a copy of the method pointing to this class
 					methodCopy := &phpv.ZClassMethod{
 						Name:       m.Name,
@@ -531,6 +547,21 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 			}
 			return c.fatalErrorAt(ctx, fmt.Sprintf("Access type for interface method %s::%s() must be public", c.Name, m.Name), loc)
 		}
+		// Check final/abstract modifiers on interface methods
+		if c.Type == phpv.ZClassTypeInterface && m.Modifiers.Has(phpv.ZAttrFinal) {
+			loc := m.Loc
+			if loc == nil {
+				loc = c.L
+			}
+			return c.fatalErrorAt(ctx, fmt.Sprintf("Interface method %s::%s() must not be final", c.Name, m.Name), loc)
+		}
+		if c.Type == phpv.ZClassTypeInterface && m.Modifiers.Has(phpv.ZAttrAbstract) {
+			loc := m.Loc
+			if loc == nil {
+				loc = c.L
+			}
+			return c.fatalErrorAt(ctx, fmt.Sprintf("Interface method %s::%s() must not be abstract", c.Name, m.Name), loc)
+		}
 		if m.Modifiers.Has(phpv.ZAttrAbstract) && m.Modifiers.Has(phpv.ZAttrFinal) {
 			return c.fatalError(ctx, "Cannot use the final modifier on an abstract method")
 		}
@@ -575,7 +606,7 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 		}
 		for _, k := range intf.ConstOrder {
 			if v := intf.Const[k]; v != nil {
-				if _, exists := c.Const[k]; !exists {
+				if existing, exists := c.Const[k]; !exists {
 					c.Const[k] = v
 					c.ConstOrder = append(c.ConstOrder, k)
 					// Track which interface provided this constant for ambiguity detection
@@ -583,18 +614,31 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 						c.constSource = make(map[phpv.ZString]phpv.ZString)
 					}
 					c.constSource[k] = intf.Name
-				} else if v.Modifiers.Has(phpv.ZAttrFinal) {
-					return c.fatalError(ctx, fmt.Sprintf("%s::%s cannot override final constant %s::%s", c.Name, k, intf.Name, k))
-				} else if src, hasSrc := c.constSource[k]; hasSrc && src != intf.Name {
-					// Same constant inherited from two different interfaces — ambiguous
-					return c.fatalError(ctx, fmt.Sprintf("Class %s inherits both %s::%s and %s::%s, which is ambiguous", c.Name, src, k, intf.Name, k))
+				} else if existing == v {
+					// Same constant object (diamond inheritance) - no conflict
+				} else {
+					// Check visibility: interface constants are implicitly public,
+					// so the implementing class must also make them public
+					if !v.Modifiers.IsPrivate() && existing.Modifiers.IsPrivate() {
+						return c.fatalError(ctx, fmt.Sprintf("Access level to %s::%s must be public (as in interface %s)", c.Name, k, intf.Name))
+					}
+					if !v.Modifiers.IsPrivate() && !v.Modifiers.IsProtected() && existing.Modifiers.IsProtected() {
+						return c.fatalError(ctx, fmt.Sprintf("Access level to %s::%s must be public (as in interface %s)", c.Name, k, intf.Name))
+					}
+					if v.Modifiers.Has(phpv.ZAttrFinal) {
+						return c.fatalError(ctx, fmt.Sprintf("%s::%s cannot override final constant %s::%s", c.Name, k, intf.Name, k))
+					}
+					// Check ambiguity: constant from different source
+					if src, hasSrc := c.constSource[k]; hasSrc && src != intf.Name {
+						return c.fatalError(ctx, fmt.Sprintf("Class %s inherits both %s::%s and %s::%s, which is ambiguous", c.Name, src, k, intf.Name, k))
+					}
 				}
 			}
 		}
 	}
 
 	// Validate: non-abstract, non-interface classes must implement all abstract methods
-	if c.Type != phpv.ZClassTypeInterface && c.Attr&phpv.ZClassAttr(phpv.ZClassExplicitAbstract) == 0 {
+	if c.Type != phpv.ZClassTypeInterface && c.Type != phpv.ZClassTypeTrait && c.Attr&phpv.ZClassAttr(phpv.ZClassExplicitAbstract) == 0 {
 		var ownAbstract []string   // abstract methods declared in this class
 		var unimplemented []string // inherited abstract methods not implemented
 		for _, m := range c.Methods {
@@ -960,7 +1004,7 @@ func (c *ZClass) checkMethodCompatibility(ctx phpv.Context, child *phpv.ZClassMe
 			}
 			// Both have hints — check if child type is a supertype of (or equal to) parent type.
 			// For contravariance, the child must accept at least everything the parent accepts.
-			if !typeHintIsWidening(ch, ph) {
+			if !typeHintIsWidening(ctx, ch, ph) {
 				incompatible = true
 				break
 			}
@@ -982,7 +1026,7 @@ func (c *ZClass) checkMethodCompatibility(ctx phpv.Context, child *phpv.ZClassMe
 		if parentRT != nil && childRT != nil {
 			// Both have return types — child's return type must be a subtype of parent's
 			// (covariance: child must be narrower or equal)
-			if !typeHintIsWidening(parentRT, childRT) {
+			if !typeHintIsWidening(ctx, parentRT, childRT) {
 				incompatible = true
 			}
 		} else if parentRT != nil && childRT == nil {
@@ -1283,7 +1327,7 @@ func (c *ZClass) warnNonPublicMagicMethods(ctx phpv.Context) {
 	mustBePublic := []phpv.ZString{
 		"__call", "__callstatic", "__get", "__set", "__isset", "__unset",
 		"__debuginfo", "__serialize", "__unserialize", "__invoke",
-		"__tostring", "__clone",
+		"__tostring",
 	}
 	for _, name := range mustBePublic {
 		m, ok := c.Methods[name]
@@ -1308,7 +1352,7 @@ func (c *ZClass) warnNonPublicMagicMethods(ctx phpv.Context) {
 
 // typeHintIsWidening checks if childHint accepts at least everything parentHint accepts.
 // This implements contravariance for parameter types: the child can accept more types.
-func typeHintIsWidening(childHint, parentHint *phpv.TypeHint) bool {
+func typeHintIsWidening(ctx phpv.Context, childHint, parentHint *phpv.TypeHint) bool {
 	if childHint == nil {
 		// No type hint accepts everything — always a widening
 		return true
@@ -1337,7 +1381,7 @@ func typeHintIsWidening(childHint, parentHint *phpv.TypeHint) bool {
 
 	// For each type the parent accepts, the child must also accept it
 	for _, pt := range parentTypes {
-		if !typeHintContains(childHint, pt) {
+		if !typeHintContains(ctx, childHint, pt) {
 			return false
 		}
 	}
@@ -1357,10 +1401,10 @@ func flattenTypeHint(h *phpv.TypeHint) []*phpv.TypeHint {
 }
 
 // typeHintContains checks if a type hint (possibly union) contains a specific single type.
-func typeHintContains(h *phpv.TypeHint, target *phpv.TypeHint) bool {
+func typeHintContains(ctx phpv.Context, h *phpv.TypeHint, target *phpv.TypeHint) bool {
 	if len(h.Union) > 0 {
 		for _, u := range h.Union {
-			if typeHintContains(u, target) {
+			if typeHintContains(ctx, u, target) {
 				return true
 			}
 		}
@@ -1379,7 +1423,26 @@ func typeHintContains(h *phpv.TypeHint, target *phpv.TypeHint) bool {
 			// "object" matches any object type
 			return h.ClassName() == "" || target.ClassName() == ""
 		}
-		return h.ClassName().ToLower() == target.ClassName().ToLower()
+		// Direct name comparison first
+		if h.ClassName().ToLower() == target.ClassName().ToLower() {
+			return true
+		}
+		// Check if the class names resolve to the same class (handles class_alias)
+		if ctx != nil {
+			hClass, err1 := ctx.Global().GetClass(ctx, h.ClassName(), false)
+			tClass, err2 := ctx.Global().GetClass(ctx, target.ClassName(), false)
+			if err1 == nil && err2 == nil && !phpv.IsNilClass(hClass) && !phpv.IsNilClass(tClass) {
+				// Same class object means they are aliases of each other
+				if hClass == tClass {
+					return true
+				}
+				// Also check instanceof relationship for inheritance
+				if hClass.InstanceOf(tClass) || tClass.InstanceOf(hClass) {
+					return true
+				}
+			}
+		}
+		return false
 	}
 	// For bool with "true"/"false" specifiers
 	if h.Type() == phpv.ZtBool {

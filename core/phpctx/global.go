@@ -31,6 +31,11 @@ type globalLazyOffset struct {
 	p int
 }
 
+type errorHandlerEntry struct {
+	handler phpv.Callable
+	filter  phpv.PhpErrorType
+}
+
 type Global struct {
 	context.Context
 
@@ -52,7 +57,8 @@ type Global struct {
 	globalUserFuncs     map[phpv.ZString]phpv.Callable
 	disabledFuncs       map[phpv.ZString]struct{}
 
-	globalClasses map[phpv.ZString]*phpobj.ZClass // TODO replace *ZClass with a nice interface
+	globalClasses   map[phpv.ZString]*phpobj.ZClass // TODO replace *ZClass with a nice interface
+	classOrigNames  map[phpv.ZString]phpv.ZString  // lowercase -> original-case name for class aliases
 	shutdownFuncs []phpv.Callable
 	callDepth     int
 	constant      map[phpv.ZString]phpv.Val
@@ -77,9 +83,8 @@ type Global struct {
 
 	shownDeprecated map[string]struct{}
 
-	userErrorHandler     phpv.Callable
-	userErrorFilter      phpv.PhpErrorType
-	userExceptionHandler phpv.Callable
+	userErrorHandlerStack  []errorHandlerEntry
+	userExceptionHandlerStack []phpv.Callable
 
 	autoloadFuncs    []phpv.Callable
 	autoloadingClass map[phpv.ZString]bool // prevent infinite recursion in autoload
@@ -139,6 +144,7 @@ func createGlobal(p *Process) *Global {
 		globalUserFuncs:     make(map[phpv.ZString]phpv.Callable),
 		disabledFuncs:       make(map[phpv.ZString]struct{}),
 		globalClasses:       make(map[phpv.ZString]*phpobj.ZClass),
+		classOrigNames:      make(map[phpv.ZString]phpv.ZString),
 		constant:            make(map[phpv.ZString]phpv.Val),
 		constantAttrs:       make(map[phpv.ZString][]*phpv.ZAttribute),
 		streamHandlers:      make(map[string]stream.Handler),
@@ -222,6 +228,7 @@ func (g *Global) init() {
 			// should be per context global, and not Go global
 			//classCopy := *c
 			g.globalClasses[c.GetName().ToLower()] = c
+			g.classOrigNames[c.GetName().ToLower()] = c.GetName()
 		}
 	}
 
@@ -457,6 +464,37 @@ func (g *Global) RunFile(fn string) error {
 	// where fatal errors are displayed after destructor output).
 	var deferredErr *phpv.PhpError
 
+	// Convert break/continue outside loop to a fatal error
+	if br, ok := phpv.UnwrapError(err).(*phperr.PhpBreak); ok {
+		if br.Initial > 1 {
+			err = &phpv.PhpError{
+				Err:  fmt.Errorf("Cannot 'break' %d levels", br.Initial),
+				Loc:  br.L,
+				Code: phpv.E_ERROR,
+			}
+		} else {
+			err = &phpv.PhpError{
+				Err:  fmt.Errorf("'break' not in the 'loop' or 'switch' context"),
+				Loc:  br.L,
+				Code: phpv.E_ERROR,
+			}
+		}
+	} else if cr, ok := phpv.UnwrapError(err).(*phperr.PhpContinue); ok {
+		if cr.Initial > 1 {
+			err = &phpv.PhpError{
+				Err:  fmt.Errorf("Cannot 'continue' %d levels", cr.Initial),
+				Loc:  cr.L,
+				Code: phpv.E_ERROR,
+			}
+		} else {
+			err = &phpv.PhpError{
+				Err:  fmt.Errorf("'continue' not in the 'loop' or 'switch' context"),
+				Loc:  cr.L,
+				Code: phpv.E_ERROR,
+			}
+		}
+	}
+
 	switch innerErr := phpv.UnwrapError(err).(type) {
 	case *phpv.PhpExit:
 	case *phperr.PhpTimeout:
@@ -467,9 +505,9 @@ func (g *Global) RunFile(fn string) error {
 	default:
 		if err != nil {
 			// Handle uncaught exceptions via user exception handler
-			if ex, ok := err.(*phperr.PhpThrow); ok && g.userExceptionHandler != nil {
-				handler := g.userExceptionHandler
-				g.userExceptionHandler = nil // prevent re-entrancy
+			if ex, ok := err.(*phperr.PhpThrow); ok && g.GetUserExceptionHandler() != nil {
+				handler := g.GetUserExceptionHandler()
+				g.SetUserExceptionHandler(nil) // prevent re-entrancy
 				_, handlerErr := g.CallZVal(g, handler, []*phpv.ZVal{ex.Obj.ZVal()})
 				if handlerErr != nil {
 					return handlerErr
@@ -1209,7 +1247,7 @@ func (g *Global) ConstantGetAttributes(k phpv.ZString) []*phpv.ZAttribute {
 }
 
 func (g *Global) GetClass(ctx phpv.Context, name phpv.ZString, autoload bool) (phpv.ZClass, error) {
-	switch name {
+	switch name.ToLower() {
 	case "self":
 		// When compilingClass is set (e.g., during attribute argument evaluation
 		// or class constant resolution), it takes priority over the function context.
@@ -1274,9 +1312,15 @@ func (g *Global) GetClass(ctx phpv.Context, name phpv.ZString, autoload bool) (p
 		}
 		f, ok := fc.(*FuncContext)
 		if !ok || f == nil || f.this == nil {
-			// In static context, fall back to the class
-			if ok && f != nil && f.class != nil {
-				return f.class, nil
+			// In static context, check calledClass first (for late static binding
+			// in static closures), then fall back to the class
+			if ok && f != nil {
+				if f.calledClass != nil {
+					return f.calledClass, nil
+				}
+				if f.class != nil {
+					return f.class, nil
+				}
 			}
 			return nil, phpobj.ThrowError(ctx, phpobj.Error, `Cannot access "static" when no class scope is active`)
 		}
@@ -1388,6 +1432,7 @@ func (g *Global) RegisterClass(name phpv.ZString, c phpv.ZClass) error {
 		}
 	}
 	g.globalClasses[lowerName] = c.(*phpobj.ZClass)
+	g.classOrigNames[lowerName] = name
 	delete(g.globalLazyClass, lowerName)
 	return nil
 }
@@ -1406,8 +1451,12 @@ func (g *Global) GetCompilingClass() phpv.ZClass {
 
 func (g *Global) GetDeclaredClasses() []phpv.ZString {
 	result := make([]phpv.ZString, 0, len(g.globalClasses))
-	for _, c := range g.globalClasses {
-		result = append(result, c.GetName())
+	for lowerName := range g.globalClasses {
+		if origName, ok := g.classOrigNames[lowerName]; ok {
+			result = append(result, origName)
+		} else {
+			result = append(result, g.globalClasses[lowerName].GetName())
+		}
 	}
 	return result
 }
@@ -1574,22 +1623,44 @@ func (g *Global) Random() *random.State {
 }
 
 func (g *Global) GetUserErrorHandler() (phpv.Callable, phpv.PhpErrorType) {
-	return g.userErrorHandler, g.userErrorFilter
+	if len(g.userErrorHandlerStack) == 0 {
+		return nil, 0
+	}
+	top := g.userErrorHandlerStack[len(g.userErrorHandlerStack)-1]
+	return top.handler, top.filter
 }
 
 func (g *Global) SetUserErrorHandler(handler phpv.Callable, filter phpv.PhpErrorType) {
-	g.userErrorHandler = handler
-	g.userErrorFilter = filter
+	// Push onto the stack (even null entries, to match PHP behavior)
+	g.userErrorHandlerStack = append(g.userErrorHandlerStack, errorHandlerEntry{handler: handler, filter: filter})
+}
+
+func (g *Global) RestoreUserErrorHandler() {
+	if len(g.userErrorHandlerStack) > 0 {
+		g.userErrorHandlerStack = g.userErrorHandlerStack[:len(g.userErrorHandlerStack)-1]
+	}
 }
 
 func (g *Global) GetUserExceptionHandler() phpv.Callable {
-	return g.userExceptionHandler
+	if len(g.userExceptionHandlerStack) == 0 {
+		return nil
+	}
+	return g.userExceptionHandlerStack[len(g.userExceptionHandlerStack)-1]
 }
 
 func (g *Global) SetUserExceptionHandler(handler phpv.Callable) phpv.Callable {
-	prev := g.userExceptionHandler
-	g.userExceptionHandler = handler
+	var prev phpv.Callable
+	if len(g.userExceptionHandlerStack) > 0 {
+		prev = g.userExceptionHandlerStack[len(g.userExceptionHandlerStack)-1]
+	}
+	g.userExceptionHandlerStack = append(g.userExceptionHandlerStack, handler)
 	return prev
+}
+
+func (g *Global) RestoreUserExceptionHandler() {
+	if len(g.userExceptionHandlerStack) > 0 {
+		g.userExceptionHandlerStack = g.userExceptionHandlerStack[:len(g.userExceptionHandlerStack)-1]
+	}
 }
 
 func (g *Global) RegisterAutoload(handler phpv.Callable) {

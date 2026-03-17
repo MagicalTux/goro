@@ -193,6 +193,41 @@ func phpDateFormat(format string, t time.Time) string {
 		case 'U': // Seconds since Unix Epoch
 			buf.WriteString(strconv.FormatInt(t.Unix(), 10))
 
+		case 'B': // Swatch Internet time (beats)
+			utcH := t.UTC().Hour()
+			utcM := t.UTC().Minute()
+			utcS := t.UTC().Second()
+			beats := ((utcH+1)*3600 + utcM*60 + utcS) * 1000 / 86400
+			buf.WriteString(fmt.Sprintf("%03d", beats%1000))
+
+		case 'p': // Timezone identifier like P but with Z for UTC
+			_, offset := t.Zone()
+			if offset == 0 {
+				buf.WriteString("Z")
+			} else {
+				buf.WriteString(phpDateFormat("P", t))
+			}
+
+		case 'X': // An expanded full numeric representation of a year, at least 4 digits
+			y := t.Year()
+			if y < 0 {
+				buf.WriteString(fmt.Sprintf("-%04d", -y))
+			} else if y > 9999 {
+				buf.WriteString(fmt.Sprintf("+%d", y))
+			} else {
+				buf.WriteString(fmt.Sprintf("%04d", y))
+			}
+
+		case 'x': // An expanded full numeric representation if needed, or a standard representation if possible
+			y := t.Year()
+			if y < 0 {
+				buf.WriteString(fmt.Sprintf("-%04d", -y))
+			} else if y > 9999 {
+				buf.WriteString(fmt.Sprintf("+%d", y))
+			} else {
+				buf.WriteString(fmt.Sprintf("%04d", y))
+			}
+
 		default:
 			buf.WriteRune(c)
 		}
@@ -251,7 +286,8 @@ func fncIdate(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	if len(format) != 1 {
-		return nil, ctx.Errorf("idate(): idate format is one char")
+		ctx.Warn("idate format is one char")
+		return phpv.ZFalse.ZVal(), nil
 	}
 
 	loc := getTimezone(ctx)
@@ -319,7 +355,8 @@ func fncIdate(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		_, offset := t.Zone()
 		result = offset
 	default:
-		return nil, ctx.Errorf("idate(): Unrecognized date format token")
+		ctx.Warn("Unrecognized date format token")
+		return phpv.ZFalse.ZVal(), nil
 	}
 
 	return phpv.ZInt(result).ZVal(), nil

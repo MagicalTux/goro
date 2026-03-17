@@ -369,6 +369,13 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		if err != nil {
 			return nil, err
 		}
+		// PHP 8.5: backtick operator is deprecated
+		phpErr := &phpv.PhpError{
+			Err:  fmt.Errorf("The backtick (`) operator is deprecated, use shell_exec() instead"),
+			Code: phpv.E_DEPRECATED,
+			Loc:  l,
+		}
+		c.Global().LogError(phpErr)
 		return &runnableFunctionCall{name: "shell_exec", args: []phpv.Runnable{v}, l: l}, nil
 	case tokenizer.Rune('!'), tokenizer.Rune('+'), tokenizer.Rune('-'), tokenizer.Rune('~'), tokenizer.Rune('@'):
 		// this is an operator, let compilePostExpr() deal with it

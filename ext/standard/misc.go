@@ -266,3 +266,15 @@ func registerShutdownFunction(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, 
 
 	return nil, nil
 }
+
+// > func bool register_tick_function ( callable $function [, mixed $... ] )
+func fncRegisterTickFunction(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	// Tick functions are not fully implemented in goro, but we accept the call
+	// to avoid "undefined function" errors.
+	return phpv.ZTrue.ZVal(), nil
+}
+
+// > func void unregister_tick_function ( callable $function )
+func fncUnregisterTickFunction(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	return nil, nil
+}

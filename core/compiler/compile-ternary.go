@@ -14,11 +14,14 @@ func compileTernaryOp(v phpv.Runnable, c compileCtx) (phpv.Runnable, error) {
 
 	var yes, no phpv.Runnable
 	l := i.Loc()
+	isShort := false
 
 	if i.IsSingle(':') {
 		yes = v
+		isShort = true
 	} else if i.IsSingle('?') {
 		yes = v
+		isShort = true
 		v, _ = spawnOperator(c, tokenizer.T_IS_NOT_IDENTICAL, v, &runZVal{nil, l}, l)
 	} else {
 		yes, err = compileExpr(i, c)
@@ -42,5 +45,5 @@ func compileTernaryOp(v phpv.Runnable, c compileCtx) (phpv.Runnable, error) {
 		return nil, err
 	}
 
-	return &runnableIf{cond: v, yes: yes, no: no, l: l, ternary: true}, nil
+	return &runnableIf{cond: v, yes: yes, no: no, l: l, ternary: true, shortTernary: isShort}, nil
 }

@@ -225,12 +225,25 @@ func unescapePhpQuotedString(in string) phpv.ZString {
 			t.WriteByte('\f')
 		case 'r':
 			t.WriteByte('\r')
+		case 'e':
+			t.WriteByte(0x1b) // ESC
 		case '$':
 			t.WriteByte('$')
 		case '"', '\\':
 			t.WriteByte(in[0])
 		case '0', '1', '2', '3', '4', '5', '6', '7':
-			t.WriteByte(in[0] - '0')
+			// PHP supports up to 3 octal digits
+			oct := int(in[0] - '0')
+			for j := 0; j < 2 && len(in) > 1; j++ {
+				next := in[1]
+				if next >= '0' && next <= '7' {
+					oct = oct*8 + int(next-'0')
+					in = in[1:]
+				} else {
+					break
+				}
+			}
+			t.WriteByte(byte(oct))
 		case 'x':
 			if len(in) < 3 {
 				t.WriteByte('\\')

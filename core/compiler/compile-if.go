@@ -13,7 +13,8 @@ type runnableIf struct {
 	no   phpv.Runnable
 	l    *phpv.Loc
 
-	ternary bool
+	ternary      bool
+	shortTernary bool // true for short ternary (?:) where yes === cond
 }
 
 func (r *runnableIf) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {

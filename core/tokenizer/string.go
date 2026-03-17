@@ -123,6 +123,15 @@ func lexInterpolatedArrayAccess(l *Lexer) lexState {
 	switch c := l.peek(); c {
 	case '$':
 		lexPhpVariable(l)
+	case '-':
+		// Negative number offset in string interpolation (e.g. "$array[-3]")
+		// Write '-' to output buffer and then lex the number
+		l.next() // consume '-' (writes to output buffer)
+		if c2 := l.peek(); c2 >= '0' && c2 <= '9' {
+			lexNumber(l) // this emits the number token with the '-' prefix
+		} else {
+			return l.error("syntax error, unexpected character -, expecting identifier (T_STRING) or variable (T_VARIABLE) or number (T_NUM_STRING)")
+		}
 	default:
 		switch {
 		case '0' <= c && c <= '9':

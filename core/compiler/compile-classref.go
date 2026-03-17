@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phperr"
@@ -481,7 +482,7 @@ func (r *runClassNameOf) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	case phpv.ZtString:
 		// self::class, parent::class, static::class must resolve at runtime
 		name := v.AsString(ctx)
-		switch name {
+		switch strings.ToLower(string(name)) {
 		case "self":
 			// Check compilingClass first (set during attribute argument evaluation)
 			if cc := ctx.Global().GetCompilingClass(); cc != nil {
@@ -489,13 +490,19 @@ func (r *runClassNameOf) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			}
 			cls := ctx.Class()
 			if cls == nil {
-				return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot use \"self\" in the global scope")
+				if ctx.Func() == nil {
+					return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot use \"self\" in the global scope")
+				}
+				return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot use \"self\" when no class scope is active")
 			}
 			return phpv.ZString(cls.GetName()).ZVal(), nil
 		case "parent":
 			cls := ctx.Class()
 			if cls == nil {
-				return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot use \"parent\" when no class scope is active")
+				if ctx.Func() == nil {
+					return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot use \"parent\" in the global scope")
+				}
+				return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot access \"parent\" when no class scope is active")
 			}
 			parent := cls.GetParent()
 			if parent == nil {
@@ -520,7 +527,10 @@ func (r *runClassNameOf) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			}
 			cls := ctx.Class()
 			if cls == nil {
-				return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot use \"static\" when no class scope is active")
+				if ctx.Func() == nil {
+					return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot use \"static\" in the global scope")
+				}
+				return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot access \"static\" when no class scope is active")
 			}
 			return phpv.ZString(cls.GetName()).ZVal(), nil
 		}

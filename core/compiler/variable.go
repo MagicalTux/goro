@@ -91,7 +91,7 @@ func (r *runVariable) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			if (t.op == tokenizer.T_COALESCE_EQUAL || t.op == tokenizer.T_COALESCE) && t.b == r {
 				write = false
 			}
-		case *runArrayAccess, *runnableForeach, *runDestructure:
+		case *runArrayAccess, *runDestructure:
 			write = true
 		case *runnableFunctionCall:
 			// Undefined variable warnings for function call args are handled

@@ -1212,6 +1212,16 @@ func validatePropertyOverride(ctx phpv.Context, class *phpobj.ZClass) error {
 			}
 		}
 
+		// Check implemented interfaces for a matching property
+		if !found {
+			for _, intf := range class.Implementations {
+				if _, ok := intf.GetProp(propName); ok {
+					found = true
+					break
+				}
+			}
+		}
+
 		if !found {
 			displayName := string(class.GetName())
 			phpErr := &phpv.PhpError{

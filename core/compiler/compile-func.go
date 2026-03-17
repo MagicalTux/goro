@@ -283,6 +283,20 @@ func compileFunction(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		if ns != "" {
 			funcName = ns + "\\" + funcName
 		}
+		// PHP 8.5: defining a custom assert() function is forbidden
+		baseName := funcName
+		if idx := strings.LastIndex(string(funcName), "\\"); idx >= 0 {
+			baseName = funcName[idx+1:]
+		}
+		if strings.ToLower(string(baseName)) == "assert" {
+			phpErr := &phpv.PhpError{
+				Err:  fmt.Errorf("Defining a custom assert() function is not allowed, as the function has special semantics"),
+				Loc:  l,
+				Code: phpv.E_COMPILE_ERROR,
+			}
+			c.Global().LogError(phpErr)
+			return nil, phpv.ExitError(255)
+		}
 		f, err := compileFunctionWithName(funcName, c, l, rref)
 		if err != nil {
 			return nil, err
@@ -465,9 +479,23 @@ func compileFunctionWithName(name phpv.ZString, c compileCtx, l *phpv.Loc, rref 
 		}
 	}
 
-	// Emit deprecation for implicitly nullable parameters
+	// Emit deprecation/error for implicitly nullable parameters
 	for _, arg := range args {
 		if arg.ImplicitlyNullable {
+			// For promoted properties, implicit nullable is a fatal error
+			// (typed properties cannot be implicitly nullable)
+			if arg.Promotion != 0 {
+				// Show the original non-nullable type in the error message
+				typeName := arg.Hint.String()
+				if strings.HasPrefix(typeName, "?") {
+					typeName = typeName[1:]
+				}
+				return nil, &phpv.PhpError{
+					Err:  fmt.Errorf("Cannot use null as default value for parameter $%s of type %s", arg.VarName, typeName),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  l,
+				}
+			}
 			funcName := string(name)
 			if cls := c.Global().GetCompilingClass(); cls != nil {
 				funcName = string(cls.GetName()) + "::" + funcName
@@ -819,7 +847,7 @@ func compileFunctionArgs(c compileCtx) (res []*phpv.FuncArg, err error) {
 				Loc:  i.Loc(),
 			}
 		}
-		for i.Type == tokenizer.T_PUBLIC || i.Type == tokenizer.T_PROTECTED || i.Type == tokenizer.T_PRIVATE || i.Type == tokenizer.T_READONLY || i.Type == tokenizer.T_STATIC {
+		for i.Type == tokenizer.T_PUBLIC || i.Type == tokenizer.T_PROTECTED || i.Type == tokenizer.T_PRIVATE || i.Type == tokenizer.T_READONLY || i.Type == tokenizer.T_STATIC || i.Type == tokenizer.T_FINAL {
 			if i.Type == tokenizer.T_STATIC {
 				return nil, &phpv.PhpError{
 					Err:  fmt.Errorf("Cannot use the static modifier on a parameter"),
@@ -853,6 +881,13 @@ func compileFunctionArgs(c compileCtx) (res []*phpv.FuncArg, err error) {
 				}
 			case tokenizer.T_READONLY:
 				arg.Promotion |= phpv.ZAttrReadonly
+			case tokenizer.T_FINAL:
+				// PHP 8.5: final modifier on promoted properties
+				// Mark as promoted if not already (final implies promotion)
+				if arg.Promotion == 0 {
+					arg.Promotion |= phpv.ZAttrPublic // implicit public if no visibility given
+				}
+				arg.Promotion |= phpv.ZAttrFinal
 			}
 			i, err = c.NextItem()
 			if err != nil {

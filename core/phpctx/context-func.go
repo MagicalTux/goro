@@ -83,6 +83,7 @@ func (c *FuncContext) Release() error {
 	c.c = nil
 	c.loc = nil
 	c.class = nil
+	c.calledClass = nil
 	c.methodType = ""
 	c.isInternal = false
 	funcContextPool.Put(c)

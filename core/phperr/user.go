@@ -14,6 +14,14 @@ func HandleUserError(ctx phpv.Context, err *phpv.PhpError) error {
 	var returnErr error = err
 	errHandler, filterType := ctx.Global().GetUserErrorHandler()
 
+	// If there's no user error handler, use default behavior
+	if errHandler == nil {
+		if err.IsNonFatal() {
+			return nil
+		}
+		return returnErr
+	}
+
 	if err.Code&filterType == 0 {
 		if err.IsNonFatal() {
 			return nil
@@ -22,9 +30,9 @@ func HandleUserError(ctx phpv.Context, err *phpv.PhpError) error {
 	}
 
 	if errHandler != nil && err.CanBeUserHandled() {
-		// Temporarily disable the user error handler while it's being called
+		// Temporarily pop the user error handler while it's being called
 		// to prevent re-entrancy (matching PHP behavior)
-		ctx.Global().SetUserErrorHandler(nil, 0)
+		ctx.Global().RestoreUserErrorHandler()
 
 		// PHP includes the function name prefix in $errstr for user error handlers
 		errMsg := err.Err.Error()
@@ -49,7 +57,7 @@ func HandleUserError(ctx phpv.Context, err *phpv.PhpError) error {
 			proceed, err2 = ctx.CallZVal(ctx, errHandler, args)
 		}
 
-		// Restore the user error handler
+		// Restore the user error handler by pushing it back
 		ctx.Global().SetUserErrorHandler(errHandler, filterType)
 
 		if err2 != nil {

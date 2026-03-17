@@ -54,6 +54,10 @@ func (rt *runnableTry) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	if err != nil {
 		throwErr, ok := err.(*phperr.PhpThrow)
 		if !ok {
+			// Check if this is an exit/die - do NOT run finally blocks
+			if _, isExit := err.(*phpv.PhpExit); isExit {
+				return nil, err
+			}
 			// Non-PHP-throw error (e.g. return, break, continue):
 			// still need to run finally
 			if rt.finally != nil {

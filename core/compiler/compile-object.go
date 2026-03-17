@@ -513,9 +513,14 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			}
 
 		case "static":
-			// Late static binding: resolve to the runtime class
+			// Late static binding: resolve to the runtime class.
+			// Unwrap the object to get the actual class (not the narrowed "kin" class)
+			// since static:: should always use the most-derived class.
 			if ctx.This() != nil {
 				objI = ctx.This()
+				if uw, ok2 := objI.(interface{ Unwrap() phpv.ZObject }); ok2 {
+					objI = uw.Unwrap()
+				}
 				class = objI.GetClass()
 			} else {
 				class, err = ctx.Global().GetClass(ctx, "static", false)
@@ -1058,8 +1063,12 @@ func (r *runObjectDynFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 				class = parentClass
 			}
 		case "static":
+			// Late static binding: unwrap to get the actual runtime class
 			if ctx.This() != nil {
 				objI = ctx.This()
+				if uw, ok2 := objI.(interface{ Unwrap() phpv.ZObject }); ok2 {
+					objI = uw.Unwrap()
+				}
 				class = objI.GetClass()
 			} else {
 				class, err = ctx.Global().GetClass(ctx, "static", false)

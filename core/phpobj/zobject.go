@@ -400,28 +400,49 @@ func NewZObject(ctx phpv.Context, c phpv.ZClass, args ...*phpv.ZVal) (*ZObject, 
 		if fga, ok := constructor.(phpv.FuncGetArgs); ok {
 			fargs := fga.GetArgs()
 			for i, arg := range fargs {
-				if arg.Promotion != 0 && i < len(args) {
-					propName := phpv.ZString(arg.VarName)
-					if arg.Promotion.IsPrivate() {
-						mangledName := getPrivatePropName(c, propName)
-						n.h.SetString(mangledName, args[i])
+				if arg.Promotion == 0 {
+					continue
+				}
+				var val *phpv.ZVal
+				if i < len(args) {
+					val = args[i]
+				} else if arg.DefaultValue != nil {
+					// Resolve default value for promoted property when argument not passed
+					if cd, ok := arg.DefaultValue.(*phpv.CompileDelayed); ok {
+						resolved, err := cd.Run(ctx)
+						if err != nil {
+							return nil, err
+						}
+						arg.DefaultValue = resolved.Value()
+						val = resolved
 					} else {
-						n.h.SetString(propName, args[i])
+						val = arg.DefaultValue.ZVal()
 					}
-					// Mark readonly properties as initialized
-					isReadonly := arg.Promotion.IsReadonly()
-					if !isReadonly {
-						// Check if this is a readonly class (all properties implicitly readonly)
-						if ca, ok := c.(*ZClass); ok {
-							isReadonly = ca.Attr.Has(phpv.ZClassReadonly)
-						}
+				}
+				if val == nil {
+					continue
+				}
+
+				propName := phpv.ZString(arg.VarName)
+				if arg.Promotion.IsPrivate() {
+					mangledName := getPrivatePropName(c, propName)
+					n.h.SetString(mangledName, val)
+				} else {
+					n.h.SetString(propName, val)
+				}
+				// Mark readonly properties as initialized
+				isReadonly := arg.Promotion.IsReadonly()
+				if !isReadonly {
+					// Check if this is a readonly class (all properties implicitly readonly)
+					if ca, ok := c.(*ZClass); ok {
+						isReadonly = ca.Attr.Has(phpv.ZClassReadonly)
 					}
-					if isReadonly {
-						if n.readonlyInit == nil {
-							n.readonlyInit = make(map[phpv.ZString]bool)
-						}
-						n.readonlyInit[propName] = true
+				}
+				if isReadonly {
+					if n.readonlyInit == nil {
+						n.readonlyInit = make(map[phpv.ZString]bool)
 					}
+					n.readonlyInit[propName] = true
 				}
 			}
 		}
@@ -1553,6 +1574,17 @@ func (o *ZObject) ObjectSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) er
 		return err
 	}
 
+	// Enforce typed property type checking (PHP 8.0+)
+	if value != nil {
+		if prop := o.findDeclaredProp(keyStr); prop != nil && prop.TypeHint != nil {
+			if coerced, err := o.enforcePropertyType(ctx, keyStr, prop, value); err != nil {
+				return err
+			} else if coerced != nil {
+				value = coerced
+			}
+		}
+	}
+
 	// Check for property set hook (PHP 8.4) - only if not already inside a hook for this property
 	if o.setHookGuard == nil || !o.setHookGuard[keyStr] {
 		if prop := o.findPropWithHook(keyStr); prop != nil && prop.SetHook != nil {
@@ -1610,6 +1642,23 @@ func (o *ZObject) ObjectSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) er
 					return o.h.SetString(propName, value)
 				}
 			}
+		}
+	}
+
+	// Dynamic property creation deprecation (PHP 8.2+)
+	// Only emit when creating a NEW property that is not declared in the class.
+	// Don't warn for declared properties that were temporarily unset.
+	// Don't warn if the class has __get or __set magic methods (implicit dynamic property support).
+	if value != nil && !o.allowsDynamicProperties() && o.findDeclaredProp(keyStr) == nil {
+		hasMagicProp := false
+		if zc, ok := o.Class.(*ZClass); ok {
+			_, hasGet := zc.Methods["__get"]
+			_, hasSet := zc.Methods["__set"]
+			hasMagicProp = hasGet || hasSet
+		}
+		if !hasMagicProp {
+			ctx.Deprecated("Creation of dynamic property %s::$%s is deprecated",
+				o.Class.GetName(), keyStr, logopt.NoFuncName(true))
 		}
 	}
 
@@ -1916,4 +1965,82 @@ func getOwnProp(class *ZClass, name phpv.ZString) (*phpv.ZClassProp, bool) {
 		}
 	}
 	return nil, false
+}
+
+// findDeclaredProp walks the class hierarchy to find a declared property by name.
+func (o *ZObject) findDeclaredProp(keyStr phpv.ZString) *phpv.ZClassProp {
+	class, ok := o.Class.(*ZClass)
+	if !ok {
+		return nil
+	}
+	for cur := class; cur != nil; cur = cur.Extends {
+		for _, prop := range cur.Props {
+			if prop.VarName == keyStr {
+				return prop
+			}
+		}
+	}
+	return nil
+}
+
+// enforcePropertyType checks that a value is compatible with a typed property's type hint.
+// Returns a coerced value if coercion is needed and possible, or an error if the type is incompatible.
+func (o *ZObject) enforcePropertyType(ctx phpv.Context, keyStr phpv.ZString, prop *phpv.ZClassProp, value *phpv.ZVal) (*phpv.ZVal, error) {
+	hint := prop.TypeHint
+	if hint == nil {
+		return nil, nil
+	}
+
+	// Null check
+	if value.IsNull() {
+		if hint.IsNullable() {
+			return nil, nil
+		}
+		return nil, ThrowError(ctx, TypeError,
+			fmt.Sprintf("Cannot assign null to property %s::$%s of type %s",
+				o.Class.GetName(), keyStr, hint.String()))
+	}
+
+	// Check if value matches the type hint
+	if hint.Check(ctx, value) {
+		// For scalar types, coerce the value to the exact type
+		hintType := hint.Type()
+		valType := value.GetType()
+		if hintType != phpv.ZtMixed && hintType != phpv.ZtObject && valType != hintType {
+			if coerced, err := value.Value().AsVal(ctx, hintType); err == nil && coerced != nil {
+				return coerced.ZVal(), nil
+			}
+		}
+		return nil, nil
+	}
+
+	// Type mismatch - throw TypeError
+	typeName := phpv.ZValTypeName(value)
+	return nil, ThrowError(ctx, TypeError,
+		fmt.Sprintf("Cannot assign %s to property %s::$%s of type %s",
+			typeName, o.Class.GetName(), keyStr, hint.String()))
+}
+
+// allowsDynamicProperties checks if the object's class allows dynamic property creation.
+// stdClass, classes with #[AllowDynamicProperties], and their descendants are exempt.
+func (o *ZObject) allowsDynamicProperties() bool {
+	class, ok := o.Class.(*ZClass)
+	if !ok {
+		return true // non-ZClass implementations allow dynamic props
+	}
+	// Walk the class hierarchy
+	for cur := class; cur != nil; cur = cur.Extends {
+		name := cur.Name
+		// stdClass allows dynamic properties
+		if name == "stdClass" {
+			return true
+		}
+		// Check for #[AllowDynamicProperties] attribute
+		for _, attr := range cur.Attributes {
+			if attr.ClassName == "AllowDynamicProperties" || attr.ClassName == "\\AllowDynamicProperties" {
+				return true
+			}
+		}
+	}
+	return false
 }

@@ -584,14 +584,32 @@ func stdIsSubclassOf(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZFalse.ZVal(), nil
 	}
 
-	// Skip the first class itself, check parents only
-	target := className.ToLower()
-	class = class.GetParent()
-	for class != nil && class.GetName() != "" {
-		if class.GetName().ToLower() == target {
+	// Resolve the target class name to an actual class (handles class_alias)
+	targetClass, targetErr := ctx.Global().GetClass(ctx, className, false)
+
+	if targetErr == nil && !phpv.IsNilClass(targetClass) {
+		// Use InstanceOf to check, but skip the first class itself (is_subclass_of excludes self)
+		parent := class.GetParent()
+		for parent != nil && parent.GetName() != "" {
+			if parent == targetClass || parent.InstanceOf(targetClass) {
+				return phpv.ZTrue.ZVal(), nil
+			}
+			parent = parent.GetParent()
+		}
+		// Also check implemented interfaces
+		if class.InstanceOf(targetClass) && class != targetClass {
 			return phpv.ZTrue.ZVal(), nil
 		}
-		class = class.GetParent()
+	} else {
+		// Fallback: name-based matching
+		target := className.ToLower()
+		parent := class.GetParent()
+		for parent != nil && parent.GetName() != "" {
+			if parent.GetName().ToLower() == target {
+				return phpv.ZTrue.ZVal(), nil
+			}
+			parent = parent.GetParent()
+		}
 	}
 
 	return phpv.ZFalse.ZVal(), nil
@@ -603,9 +621,50 @@ func stdGetDeclaredClasses(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, err
 
 	classes := ctx.Global().GetDeclaredClasses()
 	for _, name := range classes {
+		class, err := ctx.Global().GetClass(ctx, name, false)
+		if err != nil {
+			continue
+		}
+		// Only include real classes, not interfaces or traits
+		classType := class.GetType()
+		if classType&phpv.ZClassTypeInterface != 0 || classType&phpv.ZClassTypeTrait != 0 {
+			continue
+		}
 		result.OffsetSet(ctx, nil, name.ZVal())
 	}
 
+	return result.ZVal(), nil
+}
+
+// > func array get_declared_interfaces ( void )
+func stdGetDeclaredInterfaces(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	result := phpv.NewZArray()
+	classes := ctx.Global().GetDeclaredClasses()
+	for _, name := range classes {
+		class, err := ctx.Global().GetClass(ctx, name, false)
+		if err != nil {
+			continue
+		}
+		if class.GetType()&phpv.ZClassTypeInterface != 0 {
+			result.OffsetSet(ctx, nil, name.ZVal())
+		}
+	}
+	return result.ZVal(), nil
+}
+
+// > func array get_declared_traits ( void )
+func stdGetDeclaredTraits(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	result := phpv.NewZArray()
+	classes := ctx.Global().GetDeclaredClasses()
+	for _, name := range classes {
+		class, err := ctx.Global().GetClass(ctx, name, false)
+		if err != nil {
+			continue
+		}
+		if class.GetType()&phpv.ZClassTypeTrait != 0 {
+			result.OffsetSet(ctx, nil, name.ZVal())
+		}
+	}
 	return result.ZVal(), nil
 }
 

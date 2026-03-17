@@ -355,8 +355,20 @@ func (closure *ZClosure) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 	if !c.isStatic && c.class == nil && ctx.Class() != nil {
 		c.class = ctx.Class()
 	}
-	// Capture the called class for late static binding (static::class)
-	if fc := ctx.Func(); fc != nil {
+	// Capture the called class for late static binding (static::class).
+	// For instance method contexts, the called class is the actual runtime class
+	// of $this (unwrapped to get the real class, not the narrowed "kin" class).
+	// For static method contexts, use CalledClass() from the FuncContext.
+	if ctx.This() != nil {
+		unwrapped := ctx.This()
+		if uw, ok := unwrapped.(interface{ Unwrap() phpv.ZObject }); ok {
+			unwrapped = uw.Unwrap()
+		}
+		calledClass := unwrapped.GetClass()
+		if calledClass != nil && calledClass != c.class {
+			c.calledClass = calledClass
+		}
+	} else if fc := ctx.Func(); fc != nil {
 		if cc, ok := fc.(interface{ CalledClass() phpv.ZClass }); ok {
 			if called := cc.CalledClass(); called != nil && called != c.class {
 				c.calledClass = called

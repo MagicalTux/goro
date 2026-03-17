@@ -1,6 +1,7 @@
 package phpv
 
 import (
+	"math"
 	"reflect"
 	"sort"
 	"strings"
@@ -170,7 +171,12 @@ func (h *TypeHint) Check(ctx Context, val *ZVal) bool {
 		case ZtInt:
 			return true
 		case ZtFloat:
-			return true // PHP coerces float->int (with possible truncation)
+			// PHP coerces float->int, but NaN and Infinity cannot be converted
+			f := float64(val.Value().(ZFloat))
+			if math.IsNaN(f) || math.IsInf(f, 0) {
+				return false
+			}
+			return true
 		case ZtBool:
 			return true
 		case ZtString:

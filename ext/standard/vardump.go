@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"unsafe"
 
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
@@ -149,7 +150,7 @@ func doVarDump(ctx phpv.Context, z *phpv.ZVal, linePfx string, recurs map[uintpt
 						debugInfoArr = result.AsArray(ctx)
 					case phpv.ZtNull:
 						// Returning null is deprecated since PHP 8.2
-						ctx.Deprecated("Returning null from %s::__debugInfo() is deprecated, return an empty array instead", obj.GetClass().GetName())
+						ctx.Deprecated("Returning null from %s::__debugInfo() is deprecated, return an empty array instead", obj.GetClass().GetName(), logopt.NoFuncName(true))
 						debugInfoArr = phpv.NewZArray()
 					default:
 						// Non-array, non-null return is a fatal error

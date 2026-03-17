@@ -29,6 +29,9 @@ var IteratorAggregate = &ZClass{
 	Type:    phpv.ZClassTypeInterface,
 	Name:    "IteratorAggregate",
 	Extends: Traversable,
+	Methods: map[phpv.ZString]*phpv.ZClassMethod{
+		"getiterator": {Name: "getIterator", Modifiers: phpv.ZAttrPublic | phpv.ZAttrAbstract, Empty: true},
+	},
 }
 
 // > class Iterator
@@ -36,18 +39,35 @@ var Iterator = &ZClass{
 	Type:    phpv.ZClassTypeInterface,
 	Name:    "Iterator",
 	Extends: Traversable,
+	Methods: map[phpv.ZString]*phpv.ZClassMethod{
+		"current": {Name: "current", Modifiers: phpv.ZAttrPublic | phpv.ZAttrAbstract, Empty: true},
+		"key":     {Name: "key", Modifiers: phpv.ZAttrPublic | phpv.ZAttrAbstract, Empty: true},
+		"next":    {Name: "next", Modifiers: phpv.ZAttrPublic | phpv.ZAttrAbstract, Empty: true},
+		"rewind":  {Name: "rewind", Modifiers: phpv.ZAttrPublic | phpv.ZAttrAbstract, Empty: true},
+		"valid":   {Name: "valid", Modifiers: phpv.ZAttrPublic | phpv.ZAttrAbstract, Empty: true},
+	},
 }
 
 // > class ArrayAccess
 var ArrayAccess = &ZClass{
 	Type: phpv.ZClassTypeInterface,
 	Name: "ArrayAccess",
+	Methods: map[phpv.ZString]*phpv.ZClassMethod{
+		"offsetexists": {Name: "offsetExists", Modifiers: phpv.ZAttrPublic | phpv.ZAttrAbstract, Empty: true},
+		"offsetget":    {Name: "offsetGet", Modifiers: phpv.ZAttrPublic | phpv.ZAttrAbstract, Empty: true},
+		"offsetset":    {Name: "offsetSet", Modifiers: phpv.ZAttrPublic | phpv.ZAttrAbstract, Empty: true},
+		"offsetunset":  {Name: "offsetUnset", Modifiers: phpv.ZAttrPublic | phpv.ZAttrAbstract, Empty: true},
+	},
 }
 
 // > class Serializable
 var Serializable = &ZClass{
 	Type: phpv.ZClassTypeInterface,
 	Name: "Serializable",
+	Methods: map[phpv.ZString]*phpv.ZClassMethod{
+		"serialize":   {Name: "serialize", Modifiers: phpv.ZAttrPublic | phpv.ZAttrAbstract, Empty: true},
+		"unserialize": {Name: "unserialize", Modifiers: phpv.ZAttrPublic | phpv.ZAttrAbstract, Empty: true},
+	},
 }
 
 // > interface UnitEnum

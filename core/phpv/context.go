@@ -116,7 +116,9 @@ type GlobalContext interface {
 
 	GetUserErrorHandler() (Callable, PhpErrorType)
 	SetUserErrorHandler(Callable, PhpErrorType)
+	RestoreUserErrorHandler()
 	SetUserExceptionHandler(handler Callable) Callable
+	RestoreUserExceptionHandler()
 
 	WriteErr(p []byte) (n int, err error)
 	ShownDeprecated(key string) bool

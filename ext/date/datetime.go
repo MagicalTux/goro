@@ -601,8 +601,19 @@ func init() {
 			{VarName: "days", Default: phpv.ZBool(false).ZVal(), Modifiers: phpv.ZAttrPublic},
 		},
 		Methods: map[phpv.ZString]*phpv.ZClassMethod{
-			"__construct": {Name: "__construct", Method: phpobj.NativeMethod(dateIntervalConstruct)},
-			"format":      {Name: "format", Method: phpobj.NativeMethod(dateIntervalFormat)},
+			"__construct":        {Name: "__construct", Method: phpobj.NativeMethod(dateIntervalConstruct)},
+			"format":             {Name: "format", Method: phpobj.NativeMethod(dateIntervalFormat)},
+			"createfromdatestring": {
+				Name:      "createFromDateString",
+				Modifiers: phpv.ZAttrPublic | phpv.ZAttrStatic,
+				Method: phpobj.NativeStaticMethod(func(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+					if len(args) < 1 {
+						return nil, ctx.Errorf("DateInterval::createFromDateString() expects exactly 1 argument")
+					}
+					dateStr := string(args[0].AsString(ctx))
+					return createDateIntervalFromString(ctx, dateStr)
+				}),
+			},
 		},
 	}
 
@@ -888,4 +899,51 @@ func dateIntervalFormat(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVa
 		}
 	}
 	return phpv.ZStr(result), nil
+}
+
+// createDateIntervalFromString creates a DateInterval from a relative date string
+// like "2 days", "1 month 3 days", "next thursday", etc.
+func createDateIntervalFromString(ctx phpv.Context, dateStr string) (*phpv.ZVal, error) {
+	obj, err := phpobj.NewZObject(ctx, DateInterval)
+	if err != nil {
+		return nil, err
+	}
+
+	// Store the from_string flag and original string
+	obj.HashTable().SetString("from_string", phpv.ZBool(true).ZVal())
+	obj.HashTable().SetString("date_string", phpv.ZString(dateStr).ZVal())
+
+	// Parse relative date strings
+	// Parse simple formats like "N unit" (e.g., "2 days", "1 month")
+	dateStr = strings.TrimSpace(strings.ToLower(dateStr))
+	parts := strings.Fields(dateStr)
+
+	for i := 0; i < len(parts); i++ {
+		num := 0
+		// Try to parse a number
+		if n, err := fmt.Sscanf(parts[i], "%d", &num); err == nil && n == 1 {
+			if i+1 < len(parts) {
+				i++
+				unit := parts[i]
+				switch {
+				case strings.HasPrefix(unit, "year"):
+					obj.HashTable().SetString("y", phpv.ZInt(num).ZVal())
+				case strings.HasPrefix(unit, "month"):
+					obj.HashTable().SetString("m", phpv.ZInt(num).ZVal())
+				case strings.HasPrefix(unit, "day"):
+					obj.HashTable().SetString("d", phpv.ZInt(num).ZVal())
+				case strings.HasPrefix(unit, "hour"):
+					obj.HashTable().SetString("h", phpv.ZInt(num).ZVal())
+				case strings.HasPrefix(unit, "minute") || strings.HasPrefix(unit, "min"):
+					obj.HashTable().SetString("i", phpv.ZInt(num).ZVal())
+				case strings.HasPrefix(unit, "second") || strings.HasPrefix(unit, "sec"):
+					obj.HashTable().SetString("s", phpv.ZInt(num).ZVal())
+				case strings.HasPrefix(unit, "week"):
+					obj.HashTable().SetString("d", phpv.ZInt(num*7).ZVal())
+				}
+			}
+		}
+	}
+
+	return obj.ZVal(), nil
 }

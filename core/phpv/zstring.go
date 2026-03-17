@@ -33,6 +33,10 @@ func (z ZString) AsVal(ctx Context, t ZType) (Val, error) {
 			return nil, nil
 		}
 	case ZtFloat:
+		// Parse directly as float to preserve values like "-0"
+		if f, err := strconv.ParseFloat(strings.TrimSpace(string(z)), 64); err == nil {
+			return ZFloat(f), nil
+		}
 		v, _ := z.AsNumeric()
 		switch v := v.(type) {
 		case ZInt:
@@ -40,7 +44,7 @@ func (z ZString) AsVal(ctx Context, t ZType) (Val, error) {
 		case ZFloat:
 			return v, nil
 		default:
-			return nil, nil
+			return ZFloat(0), nil
 		}
 	case ZtString:
 		return z, nil

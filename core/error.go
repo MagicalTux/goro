@@ -41,6 +41,27 @@ func fncTriggerError(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 // > func mixed set_error_handler ( callable $error_handler [, int $error_types = E_ALL | E_STRICT ] )
 func fncSetErrorHandler(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) == 0 {
+		return nil, fmt.Errorf("set_error_handler() expects at least 1 argument, 0 given")
+	}
+
+	// Get previous error handler before setting the new one
+	prevErrHandler, _ := ctx.Global().GetUserErrorHandler()
+
+	// PHP accepts null to reset the error handler
+	if args[0].IsNull() {
+		var errorTypeArg Optional[phpv.ZInt]
+		if len(args) > 1 {
+			Expand(ctx, args[1:], &errorTypeArg)
+		}
+		errorType := errorTypeArg.GetOrDefault(E_ALL | E_STRICT)
+		ctx.Global().SetUserErrorHandler(nil, phpv.PhpErrorType(errorType))
+		if prevErrHandler == nil {
+			return phpv.ZNULL.ZVal(), nil
+		}
+		return prevErrHandler.ZVal(), nil
+	}
+
 	var handler phpv.Callable
 	var errorTypeArg Optional[phpv.ZInt]
 	_, err := Expand(ctx, args, &handler, &errorTypeArg)
@@ -51,11 +72,10 @@ func fncSetErrorHandler(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	errorType := errorTypeArg.GetOrDefault(E_ALL | E_STRICT)
 	ctx.Global().SetUserErrorHandler(handler, phpv.PhpErrorType(errorType))
 
-	// TODO: If the previous error handler was a class method,
-	// this function will return an indexed array with the class and the method name.
-
-	prevErrHandler, _ := ctx.Global().GetUserErrorHandler()
-	return prevErrHandler.ZVal(), err
+	if prevErrHandler == nil {
+		return phpv.ZNULL.ZVal(), nil
+	}
+	return prevErrHandler.ZVal(), nil
 }
 
 // > func callable|null set_exception_handler ( callable|null $exception_handler )
@@ -113,7 +133,7 @@ func callbackErrorMessage(ctx phpv.Context, arg *phpv.ZVal) string {
 
 // > func bool restore_exception_handler ( void )
 func fncRestoreExceptionHandler(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	ctx.Global().SetUserExceptionHandler(nil)
+	ctx.Global().RestoreUserExceptionHandler()
 	return phpv.ZBool(true).ZVal(), nil
 }
 
