@@ -187,7 +187,7 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		}()
 		var c phpv.Runnable
 		var compileErr error
-		timer := time.NewTimer(30 * time.Second)
+		timer := time.NewTimer(10 * time.Second)
 		select {
 		case result := <-compileCh:
 			timer.Stop()
