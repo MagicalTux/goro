@@ -592,6 +592,10 @@ func GetChildren(r phpv.Runnable) []phpv.Runnable {
 		return res
 	case *runnableUnset:
 		return t.args
+	case *runNoDiscardStatement:
+		return rt{t.inner}
+	case *runDestroyTemporary:
+		return rt{t.inner}
 	case *phperr.PhpBreak:
 		return nil
 	case *phperr.PhpContinue:
