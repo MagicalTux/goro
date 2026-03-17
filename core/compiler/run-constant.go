@@ -45,7 +45,12 @@ func (r *runConstant) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 	}
 
 	// Try the full (possibly namespaced) name first
-	constName := phpv.ZString(r.c)
+	// Normalize namespace part to lowercase (PHP namespace resolution is case-insensitive)
+	normalizedName := r.c
+	if idx := strings.LastIndex(normalizedName, "\\"); idx >= 0 {
+		normalizedName = strings.ToLower(normalizedName[:idx]) + normalizedName[idx:]
+	}
+	constName := phpv.ZString(normalizedName)
 	z, ok := ctx.Global().ConstantGet(constName)
 	if ok {
 		// Check #[\Deprecated] on the constant

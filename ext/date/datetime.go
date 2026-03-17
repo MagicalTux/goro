@@ -16,6 +16,7 @@ var DateTime *phpobj.ZClass
 var DateTimeImmutable *phpobj.ZClass
 var DateInterval *phpobj.ZClass
 var DateTimeZone *phpobj.ZClass
+var DatePeriod *phpobj.ZClass
 
 func parseDateTimeWithTz(ctx phpv.Context, args []*phpv.ZVal) time.Time {
 	var t time.Time
@@ -87,6 +88,26 @@ func getTimeFromObj(obj phpv.ZObject) (time.Time, bool) {
 
 func setTimeVal(this *phpobj.ZObject, t time.Time) {
 	this.Opaque[DateTimeInterface] = t
+	// Update hash table properties for var_export/serialization
+	dateStr := fmt.Sprintf("%04d-%02d-%02d %02d:%02d:%02d.%06d",
+		t.Year(), int(t.Month()), t.Day(),
+		t.Hour(), t.Minute(), t.Second(), t.Nanosecond()/1000)
+	if t.Year() < 0 {
+		dateStr = fmt.Sprintf("-%04d-%02d-%02d %02d:%02d:%02d.%06d",
+			-t.Year(), int(t.Month()), t.Day(),
+			t.Hour(), t.Minute(), t.Second(), t.Nanosecond()/1000)
+	}
+	this.HashTable().SetString("date", phpv.ZString(dateStr).ZVal())
+
+	locName := t.Location().String()
+	tzType := 3
+	if locName == "UTC" || locName == "" {
+		locName = "UTC"
+	} else if len(locName) <= 6 && !strings.Contains(locName, "/") {
+		tzType = 2
+	}
+	this.HashTable().SetString("timezone_type", phpv.ZInt(tzType).ZVal())
+	this.HashTable().SetString("timezone", phpv.ZString(locName).ZVal())
 }
 
 // formatMethod implements DateTime::format(string $format): string
@@ -889,6 +910,114 @@ func init() {
 	}
 	// Wire up __set_state after DateTimeImmutable is initialized (references DateTimeImmutable itself)
 	DateTimeImmutable.Methods["__set_state"].Method = phpobj.NativeStaticMethod(dateTimeSetState(DateTimeImmutable))
+
+	// DatePeriod class (stub)
+	DatePeriod = &phpobj.ZClass{
+		Name: "DatePeriod",
+		Props: []*phpv.ZClassProp{
+			{VarName: "start", Modifiers: phpv.ZAttrPublic | phpv.ZAttrReadonly},
+			{VarName: "current", Modifiers: phpv.ZAttrPublic | phpv.ZAttrReadonly},
+			{VarName: "end", Modifiers: phpv.ZAttrPublic | phpv.ZAttrReadonly},
+			{VarName: "interval", Modifiers: phpv.ZAttrPublic | phpv.ZAttrReadonly},
+			{VarName: "recurrences", Modifiers: phpv.ZAttrPublic | phpv.ZAttrReadonly},
+			{VarName: "include_start_date", Modifiers: phpv.ZAttrPublic | phpv.ZAttrReadonly},
+			{VarName: "include_end_date", Modifiers: phpv.ZAttrPublic | phpv.ZAttrReadonly},
+		},
+		Const: map[phpv.ZString]*phpv.ZClassConst{
+			"EXCLUDE_START_DATE": {Value: phpv.ZInt(1)},
+			"INCLUDE_END_DATE":   {Value: phpv.ZInt(2)},
+		},
+		Methods: map[phpv.ZString]*phpv.ZClassMethod{
+			"__construct": {
+				Name:      "__construct",
+				Modifiers: phpv.ZAttrPublic,
+				Method: phpobj.NativeMethod(func(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+					if len(args) == 0 {
+						return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "DatePeriod::__construct() accepts (DateTimeInterface, DateInterval, int [, int]), or (DateTimeInterface, DateInterval, DateTime [, int]), or (string [, int]) as arguments")
+					}
+					// Store start, interval, end/recurrences
+					if len(args) >= 1 {
+						this.ObjectSet(ctx, phpv.ZString("start"), args[0])
+					}
+					if len(args) >= 2 {
+						this.ObjectSet(ctx, phpv.ZString("interval"), args[1])
+					}
+					if len(args) >= 3 {
+						// Third arg could be end DateTime or recurrence count
+						if args[2].GetType() == phpv.ZtInt {
+							this.ObjectSet(ctx, phpv.ZString("recurrences"), args[2])
+						} else {
+							this.ObjectSet(ctx, phpv.ZString("end"), args[2])
+						}
+					}
+					this.ObjectSet(ctx, phpv.ZString("include_start_date"), phpv.ZBool(true).ZVal())
+					this.ObjectSet(ctx, phpv.ZString("include_end_date"), phpv.ZBool(false).ZVal())
+					return nil, nil
+				}),
+			},
+			"__set_state": {
+				Name:      "__set_state",
+				Modifiers: phpv.ZAttrPublic | phpv.ZAttrStatic,
+				Method: phpobj.NativeStaticMethod(func(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+					if len(args) < 1 || args[0].GetType() != phpv.ZtArray {
+						return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DatePeriod object")
+					}
+					arr := args[0].Value().(*phpv.ZArray)
+					// Get start, interval, end from the array
+					start, _ := arr.OffsetGet(ctx, phpv.ZString("start").ZVal())
+					interval, _ := arr.OffsetGet(ctx, phpv.ZString("interval").ZVal())
+					end, _ := arr.OffsetGet(ctx, phpv.ZString("end").ZVal())
+					recurrences, _ := arr.OffsetGet(ctx, phpv.ZString("recurrences").ZVal())
+
+					var ctorArgs []*phpv.ZVal
+					if start != nil && !start.IsNull() {
+						ctorArgs = append(ctorArgs, start)
+						if interval != nil && !interval.IsNull() {
+							ctorArgs = append(ctorArgs, interval)
+							if end != nil && !end.IsNull() {
+								ctorArgs = append(ctorArgs, end)
+							} else if recurrences != nil && !recurrences.IsNull() {
+								ctorArgs = append(ctorArgs, recurrences)
+							}
+						}
+					}
+					if len(ctorArgs) == 0 {
+						// Create with a dummy start to avoid constructor error
+						ctorArgs = []*phpv.ZVal{phpv.ZString("R1/2000-01-01T00:00:00Z/P1D").ZVal()}
+					}
+					obj, err := phpobj.NewZObject(ctx, DatePeriod, ctorArgs...)
+					if err != nil {
+						return nil, err
+					}
+					// Also set include_start_date and include_end_date
+					includeStart, _ := arr.OffsetGet(ctx, phpv.ZString("include_start_date").ZVal())
+					if includeStart != nil {
+						obj.ObjectSet(ctx, phpv.ZString("include_start_date"), includeStart)
+					}
+					includeEnd, _ := arr.OffsetGet(ctx, phpv.ZString("include_end_date").ZVal())
+					if includeEnd != nil {
+						obj.ObjectSet(ctx, phpv.ZString("include_end_date"), includeEnd)
+					}
+					return obj.ZVal(), nil
+				}),
+			},
+			"createfromiso8601string": {
+				Name:      "createFromISO8601String",
+				Modifiers: phpv.ZAttrPublic | phpv.ZAttrStatic,
+				Method: phpobj.NativeStaticMethod(func(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+					// Minimal stub
+					if len(args) < 1 {
+						return nil, phpobj.ThrowError(ctx, phpobj.Error, "DatePeriod::createFromISO8601String() expects exactly 1 argument")
+					}
+					obj, err := phpobj.NewZObject(ctx, DatePeriod)
+					if err != nil {
+						return nil, err
+					}
+					return obj.ZVal(), nil
+				}),
+			},
+		},
+	}
 }
 
 // dateTimeSetState implements DateTime::__set_state() and DateTimeImmutable::__set_state()

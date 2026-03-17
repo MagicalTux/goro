@@ -197,6 +197,20 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		retVal, err = phperr.CatchReturn(retVal, err)
 		_ = retVal
 		err = phpv.FilterExitError(err)
+		// Convert break/continue outside loop to a fatal error (matching PHP behavior)
+		if br, ok := phpv.UnwrapError(err).(*phperr.PhpBreak); ok {
+			if br.Initial > 1 {
+				err = &phpv.PhpError{Err: fmt.Errorf("Cannot 'break' %d levels", br.Initial), Loc: br.L, Code: phpv.E_ERROR}
+			} else {
+				err = &phpv.PhpError{Err: fmt.Errorf("'break' not in the 'loop' or 'switch' context"), Loc: br.L, Code: phpv.E_ERROR}
+			}
+		} else if cr, ok := phpv.UnwrapError(err).(*phperr.PhpContinue); ok {
+			if cr.Initial > 1 {
+				err = &phpv.PhpError{Err: fmt.Errorf("Cannot 'continue' %d levels", cr.Initial), Loc: cr.L, Code: phpv.E_ERROR}
+			} else {
+				err = &phpv.PhpError{Err: fmt.Errorf("'continue' not in the 'loop' or 'switch' context"), Loc: cr.L, Code: phpv.E_ERROR}
+			}
+		}
 		if err != nil {
 			// Handle uncaught exceptions via user exception handler before closing buffers
 			if ex, ok := err.(*phperr.PhpThrow); ok {

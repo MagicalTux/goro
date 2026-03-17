@@ -35,6 +35,9 @@ func lexPhpPossibleCast(l *Lexer) lexState {
 		case "unset":
 			l.emit(T_UNSET_CAST)
 			return l.base
+		case "void":
+			l.emit(T_VOID_CAST)
+			return l.base
 		}
 	}
 

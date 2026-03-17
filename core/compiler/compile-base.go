@@ -1,8 +1,10 @@
 package compiler
 
 import (
+	"bytes"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpobj"
@@ -77,6 +79,8 @@ func init() {
 		tokenizer.T_USE:          &compileFuncCb{f: compileUse, skip: true},
 		tokenizer.T_YIELD:        &compileFuncCb{f: compileYield},
 		tokenizer.T_YIELD_FROM:   &compileFuncCb{f: compileYield},
+		tokenizer.T_GOTO:         &compileFuncCb{f: compileGoto},
+		tokenizer.T_VOID_CAST:       &compileFuncCb{f: compileExpr},
 		tokenizer.T_ATTRIBUTE:       &compileFuncCb{f: compileAttributed, skip: true},
 		tokenizer.T_DECLARE:         &compileFuncCb{f: compileDeclare, skip: true},
 		tokenizer.T_HALT_COMPILER:   &compileFuncCb{f: compileHaltCompiler, skip: true},
@@ -86,7 +90,11 @@ func init() {
 }
 
 // compileHaltCompiler handles __halt_compiler(); which stops compilation.
+// It also sets the __COMPILER_HALT_OFFSET__ constant to the byte offset after the semicolon.
 func compileHaltCompiler(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
+	filename := i.Filename
+
+	// Consume remaining tokens until EOF
 	for {
 		tok, err := c.NextItem()
 		if err != nil {
@@ -97,7 +105,81 @@ func compileHaltCompiler(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error)
 			break
 		}
 	}
+
+	// Read the file to compute the byte offset after __halt_compiler();
+	if filename != "" && filename != "-" {
+		content, err := os.ReadFile(filename)
+		if err == nil {
+			// Find __halt_compiler in the file
+			patterns := []string{"__halt_compiler();", "__HALT_COMPILER();"}
+			for _, pat := range patterns {
+				idx := bytes.Index(content, []byte(pat))
+				if idx >= 0 {
+					offset := idx + len(pat)
+					c.Global().ConstantSet(phpv.ZString("__COMPILER_HALT_OFFSET__"), phpv.ZInt(offset))
+					break
+				}
+			}
+			// Also try case-insensitive search
+			if _, ok := c.Global().ConstantGet(phpv.ZString("__COMPILER_HALT_OFFSET__")); !ok {
+				lower := bytes.ToLower(content)
+				idx := bytes.Index(lower, []byte("__halt_compiler"))
+				if idx >= 0 {
+					// Find the next (); after it
+					rest := content[idx:]
+					semiIdx := bytes.IndexByte(rest, ';')
+					if semiIdx >= 0 {
+						offset := idx + semiIdx + 1
+						c.Global().ConstantSet(phpv.ZString("__COMPILER_HALT_OFFSET__"), phpv.ZInt(offset))
+					}
+				}
+			}
+		}
+	}
+
 	return nil, nil
+}
+
+// compileGoto handles the `goto label;` statement.
+// PHP 8.5 fully reserves exit/die as keywords, so they cannot be used as goto labels.
+func compileGoto(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
+	l := i.Loc()
+
+	// Read the label name - must be a T_STRING identifier
+	label, err := c.NextItem()
+	if err != nil {
+		return nil, err
+	}
+	if label.Type != tokenizer.T_STRING {
+		return nil, label.UnexpectedExpecting("identifier")
+	}
+
+	// Read the semicolon
+	semi, err := c.NextItem()
+	if err != nil {
+		return nil, err
+	}
+	if !semi.IsSingle(';') {
+		return nil, semi.Unexpected()
+	}
+
+	return &runGoto{label: phpv.ZString(label.Data), l: l}, nil
+}
+
+// runGoto represents a goto statement. Currently produces a runtime error
+// since goto is not fully supported.
+type runGoto struct {
+	label phpv.ZString
+	l     *phpv.Loc
+}
+
+func (r *runGoto) Run(ctx phpv.Context) (*phpv.ZVal, error) {
+	return nil, fmt.Errorf("'goto' operator is not supported")
+}
+
+func (r *runGoto) Dump(w io.Writer) error {
+	_, err := fmt.Fprintf(w, "goto %s", r.label)
+	return err
 }
 
 // compileIgnore will ignore a given token

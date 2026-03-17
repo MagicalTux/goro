@@ -1482,6 +1482,14 @@ func (g *Global) GetRequestBody() []byte {
 }
 
 func (g *Global) Close() error {
+	// Flush any startup warnings that were never flushed (e.g., if exit() was
+	// called before any output was produced).
+	if len(g.startupWarnings) > 0 {
+		sw := g.startupWarnings
+		g.startupWarnings = nil
+		g.out.Write(sw)
+	}
+
 	// Call destructors for any remaining objects before closing
 	g.CallDestructors()
 

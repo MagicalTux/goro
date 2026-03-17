@@ -30,8 +30,9 @@ type runnableFunctionCallRef struct {
 func (r *runnableFunctionCall) Dump(w io.Writer) error {
 	name := string(r.name)
 	// PHP AST printing prefixes built-in language constructs with \ for global namespace
+	// PHP normalizes "die" to "exit" in AST dumps
 	if name == "exit" || name == "die" {
-		name = "\\" + name
+		name = "\\exit"
 	}
 	_, err := w.Write([]byte(name))
 	if err != nil {
@@ -201,10 +202,16 @@ func (r *runnableFunctionCallRef) Run(ctx phpv.Context) (l *phpv.ZVal, err error
 			case phpv.ZtArray:
 				// Array callable: [$obj, "method"] or ["Class", "method"]
 				arr := v.Array()
+				// Check that indices 0 and 1 exist
+				has0, _ := arr.OffsetExists(ctx, phpv.ZInt(0).ZVal())
+				has1, _ := arr.OffsetExists(ctx, phpv.ZInt(1).ZVal())
+				if !has0 || !has1 {
+					return nil, phpobj.ThrowError(ctx, phpobj.Error, "Array callback has to contain indices 0 and 1")
+				}
 				first, err1 := arr.OffsetGet(ctx, phpv.ZInt(0))
 				second, err2 := arr.OffsetGet(ctx, phpv.ZInt(1))
 				if err1 != nil || err2 != nil || first == nil || second == nil {
-					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "Array callback must have exactly two elements")
+					return nil, phpobj.ThrowError(ctx, phpobj.Error, "Array callback has to contain indices 0 and 1")
 				}
 				methodName := second.AsString(ctx)
 				if first.GetType() == phpv.ZtObject {
@@ -347,6 +354,12 @@ func compileSpecialFuncCall(i *tokenizer.Item, c compileCtx) (phpv.Runnable, err
 
 	// Special function calls (echo, print, exit, etc.) are language constructs
 	// and should not be namespace-resolved.
+
+	// PHP 8.5: exit/die are fully reserved keywords and cannot be used as labels.
+	// If followed by ':', produce a parse error (e.g. `exit:` is not a valid label).
+	if i.IsSingle(':') && (fn_name == "exit" || fn_name == "die") {
+		return nil, i.Unexpected()
+	}
 
 	if i.IsSingle(';') {
 		c.backup()

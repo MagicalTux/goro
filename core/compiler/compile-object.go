@@ -1167,7 +1167,7 @@ func compilePaamayimNekudotayim(v phpv.Runnable, i *tokenizer.Item, c compileCtx
 
 	switch i.Type {
 	case tokenizer.Rune('$'):
-		// C::${expr} or C::$var — dynamic static property access
+		// C::${expr}, C::$var, or C::$$var() — dynamic static property/method access
 		i, err = c.NextItem()
 		if err != nil {
 			return nil, err
@@ -1187,12 +1187,30 @@ func compilePaamayimNekudotayim(v phpv.Runnable, i *tokenizer.Item, c compileCtx
 			}
 			return &runClassStaticDynVarRef{className: v, nameExpr: expr, l: l}, nil
 		}
-		// C::$var — indirect via variable
+		// C::$var or C::$$var — indirect via variable
+		// The first $ was already consumed. If the next token is T_VARIABLE,
+		// this is $$var (variable variable). Wrap in a variable ref.
 		c.backup()
-		expr, err := compileExpr(nil, c)
+		var expr phpv.Runnable
+		// Use compileRunVariableRef which handles $$var correctly
+		expr, err = compileRunVariableRef(nil, c, l)
 		if err != nil {
 			return nil, err
 		}
+		// Check if followed by ( — dynamic method call: C::$$var()
+		peek, peekErr := c.NextItem()
+		if peekErr != nil {
+			return nil, peekErr
+		}
+		if peek.IsSingle('(') {
+			c.backup()
+			args, err := compileFuncPassedArgs(c)
+			if err != nil {
+				return nil, err
+			}
+			return &runObjectDynFunc{ref: v, nameExpr: expr, l: l, static: true, args: args}, nil
+		}
+		c.backup()
 		return &runClassStaticDynVarRef{className: v, nameExpr: expr, l: l}, nil
 	case tokenizer.T_VARIABLE:
 		// Check if followed by ( — dynamic method call: $a::$b()

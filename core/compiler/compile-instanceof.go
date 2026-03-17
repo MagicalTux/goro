@@ -42,7 +42,14 @@ func (r *runInstanceOf) Dump(w io.Writer) error {
 	if err != nil {
 		return err
 	}
-	_, err = w.Write([]byte(" instanceof " + string(r.c)))
+	_, err = w.Write([]byte(" instanceof "))
+	if err != nil {
+		return err
+	}
+	if r.classVar != nil {
+		return r.classVar.Dump(w)
+	}
+	_, err = w.Write([]byte(r.c))
 	return err
 }
 

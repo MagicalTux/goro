@@ -22,8 +22,29 @@ func compilePropertyHooks(prop *phpv.ZClassProp, class *phpobj.ZClass, c compile
 			return nil
 		}
 
+		// Skip optional attributes before hook name
+		for i.Type == tokenizer.T_ATTRIBUTE {
+			// Consume the attribute and its arguments
+			_, err := parseAttributes(c)
+			if err != nil {
+				return err
+			}
+			i, err = c.NextItem()
+			if err != nil {
+				return err
+			}
+		}
+
 		// Skip optional modifiers before hook name
 		for i.Type == tokenizer.T_FINAL || i.Type == tokenizer.T_ABSTRACT {
+			i, err = c.NextItem()
+			if err != nil {
+				return err
+			}
+		}
+
+		// Skip optional '&' for by-ref hooks
+		if i.IsSingle('&') {
 			i, err = c.NextItem()
 			if err != nil {
 				return err

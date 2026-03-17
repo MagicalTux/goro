@@ -113,17 +113,13 @@ func isRightAssociative(t tokenizer.ItemType) bool {
 }
 
 func (r *runOperator) Dump(w io.Writer) error {
-	_, err := w.Write([]byte{'('})
-	if err != nil {
-		return err
-	}
 	if r.a != nil {
-		err = r.a.Dump(w)
+		err := r.a.Dump(w)
 		if err != nil {
 			return err
 		}
 	}
-	_, err = w.Write([]byte(operatorSymbol(r.op)))
+	_, err := w.Write([]byte(operatorSymbol(r.op)))
 	if err != nil {
 		return err
 	}
@@ -133,8 +129,7 @@ func (r *runOperator) Dump(w io.Writer) error {
 			return err
 		}
 	}
-	_, err = w.Write([]byte{')'})
-	return err
+	return nil
 }
 
 // operatorSymbol returns the PHP source representation of an operator.

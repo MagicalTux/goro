@@ -376,6 +376,13 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		}
 		c.Global().LogError(phpErr)
 		return nil, phpv.ExitError(255)
+	case tokenizer.T_VOID_CAST:
+		// (void) cast: evaluate the expression and discard the result
+		t_v, err := compileOpExpr(nil, c)
+		if err != nil {
+			return nil, err
+		}
+		return &runVoidCast{expr: t_v}, nil
 	case tokenizer.T_BOOL_CAST, tokenizer.T_INT_CAST, tokenizer.T_ARRAY_CAST, tokenizer.T_DOUBLE_CAST, tokenizer.T_OBJECT_CAST, tokenizer.T_STRING_CAST:
 		// perform a cast operation on the following (note: v is null)
 		// make this an operator for appropriate operator precedence
@@ -558,4 +565,23 @@ func (r *runClassConstant) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 func (r *runClassConstant) Dump(w io.Writer) error {
 	_, err := w.Write([]byte("__CLASS__"))
 	return err
+}
+
+// runVoidCast evaluates an expression and discards the result.
+// Implements the (void) cast in PHP 8.5.
+type runVoidCast struct {
+	expr phpv.Runnable
+}
+
+func (r *runVoidCast) Run(ctx phpv.Context) (*phpv.ZVal, error) {
+	_, err := r.expr.Run(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return phpv.ZNULL.ZVal(), nil
+}
+
+func (r *runVoidCast) Dump(w io.Writer) error {
+	w.Write([]byte("(void)"))
+	return r.expr.Dump(w)
 }

@@ -10,9 +10,11 @@ import (
 	"slices"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/MagicalTux/goro/core"
 	"github.com/MagicalTux/goro/core/logopt"
+	"github.com/MagicalTux/goro/core/phperr"
 	"github.com/MagicalTux/goro/core/phpctx"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
@@ -475,6 +477,13 @@ func fncArrayMap(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		var err error
 		callback, err = core.SpawnCallableParam(ctx, args[0], 1)
 		if err != nil {
+			// If it's a "Cannot call X() dynamically" error, pass through as-is
+			if throwErr, ok := err.(*phperr.PhpThrow); ok {
+				msg := throwErr.Obj.HashTable().GetString("message").String()
+				if strings.HasPrefix(msg, "Cannot call ") && strings.HasSuffix(msg, " dynamically") {
+					return nil, err
+				}
+			}
 			// Convert to TypeError with proper array_map() prefix
 			cbStr := ""
 			if args[0].GetType() == phpv.ZtString {

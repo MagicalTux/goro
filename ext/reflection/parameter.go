@@ -36,6 +36,7 @@ func initReflectionParameter() {
 			"ispassedbyreference": {Name: "isPassedByReference", Method: phpobj.NativeMethod(reflectionParameterIsPassedByReference)},
 			"isvariadic":          {Name: "isVariadic", Method: phpobj.NativeMethod(reflectionParameterIsVariadic)},
 			"getattributes":       {Name: "getAttributes", Method: phpobj.NativeMethod(reflectionParameterGetAttributes)},
+			"hastype":             {Name: "hasType", Method: phpobj.NativeMethod(reflectionParameterHasType)},
 		},
 	}
 }
@@ -168,6 +169,14 @@ func reflectionParameterGetType(ctx phpv.Context, o *phpobj.ZObject, args []*php
 		return phpv.ZNULL.ZVal(), nil
 	}
 	return createReflectionTypeObject(ctx, data.arg.Hint)
+}
+
+func reflectionParameterHasType(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	data := getParamData(o)
+	if data == nil || data.arg.Hint == nil {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	return phpv.ZBool(true).ZVal(), nil
 }
 
 func reflectionParameterAllowsNull(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {

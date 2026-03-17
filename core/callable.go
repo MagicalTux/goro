@@ -74,6 +74,12 @@ func spawnCallableInternal(ctx phpv.Context, v *phpv.ZVal, paramNo int) (phpv.Ca
 		// - [$obj, "methodName"]
 		// - ["className", "methodName"]
 		array := v.Array()
+		// PHP requires indices 0 and 1 to be present
+		has0, _ := array.OffsetExists(ctx, phpv.ZInt(0).ZVal())
+		has1, _ := array.OffsetExists(ctx, phpv.ZInt(1).ZVal())
+		if !has0 || !has1 {
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, "Array callback has to contain indices 0 and 1")
+		}
 		firstArg, err := array.OffsetGet(ctx, phpv.ZInt(0))
 		if err != nil {
 			return nil, err

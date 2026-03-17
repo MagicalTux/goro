@@ -34,6 +34,7 @@ func initReflectionMethod() {
 		"getnumberofrequiredparameters": {Name: "getNumberOfRequiredParameters", Method: phpobj.NativeMethod(reflectionMethodGetNumberOfRequiredParameters)},
 		"getparameters":                 {Name: "getParameters", Method: phpobj.NativeMethod(reflectionMethodGetParameters)},
 		"invoke":                        {Name: "invoke", Method: phpobj.NativeMethod(reflectionMethodInvoke)},
+		"invokeargs":                    {Name: "invokeArgs", Method: phpobj.NativeMethod(reflectionMethodInvokeArgs)},
 		"getattributes":                 {Name: "getAttributes", Method: phpobj.NativeMethod(reflectionMethodGetAttributes)},
 		"getclosure":                    {Name: "getClosure", Method: phpobj.NativeMethod(reflectionMethodGetClosure)},
 		"getdoccomment":                 {Name: "getDocComment", Method: phpobj.NativeMethod(reflectionMethodGetDocComment)},
@@ -236,6 +237,42 @@ func reflectionMethodInvoke(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZV
 
 	obj := objArg.AsObject(ctx)
 	return ctx.CallZVal(ctx, data.method.Method, methodArgs, obj)
+}
+
+func reflectionMethodInvokeArgs(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	data := getMethodData(o)
+	if data == nil {
+		return nil, phpobj.ThrowError(ctx, ReflectionException, "Internal error: Failed to retrieve the reflection object")
+	}
+
+	if len(args) < 2 {
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, "ReflectionMethod::invokeArgs() expects exactly 2 arguments")
+	}
+
+	// First argument is the object instance (or null for static methods)
+	objArg := args[0]
+
+	// Second argument is the array of arguments
+	arrVal, err := args[1].As(ctx, phpv.ZtArray)
+	if err != nil {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "ReflectionMethod::invokeArgs(): Argument #2 ($args) must be of type array")
+	}
+	arr := arrVal.Value().(*phpv.ZArray)
+	var callArgs []*phpv.ZVal
+	for _, v := range arr.Iterate(ctx) {
+		callArgs = append(callArgs, v)
+	}
+
+	if data.method.Modifiers.IsStatic() {
+		return ctx.CallZVal(ctx, data.method.Method, callArgs)
+	}
+
+	if objArg.GetType() != phpv.ZtObject {
+		return nil, phpobj.ThrowError(ctx, ReflectionException, fmt.Sprintf("Trying to invoke non static method %s::%s() without an object", data.class.GetName(), data.method.Name))
+	}
+
+	obj := objArg.AsObject(ctx)
+	return ctx.CallZVal(ctx, data.method.Method, callArgs, obj)
 }
 
 // createReflectionMethodObject creates a ReflectionMethod object for the given

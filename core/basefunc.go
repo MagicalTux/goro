@@ -10,6 +10,17 @@ import (
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
+// normalizeConstantNamespace normalizes the namespace portion of a constant name
+// to lowercase. In PHP, the namespace part is case-insensitive.
+// e.g., "NS1\ns2\const1" -> "ns1\ns2\const1"
+func normalizeConstantNamespace(name string) string {
+	idx := strings.LastIndex(name, "\\")
+	if idx < 0 {
+		return name // no namespace
+	}
+	return strings.ToLower(name[:idx]) + name[idx:]
+}
+
 // > const
 const (
 	COUNT_NORMAL phpv.ZInt = iota
@@ -72,6 +83,10 @@ func fncDefine(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "define(): Argument #1 ($constant_name) cannot be a class constant")
 	}
 
+	// Normalize namespace part of constant name to lowercase
+	// In PHP, namespaced constants have case-insensitive namespace portions
+	name = phpv.ZString(normalizeConstantNamespace(string(name)))
+
 	g := ctx.Global()
 
 	ok := g.ConstantSet(name, value.Value())
@@ -115,7 +130,9 @@ func fncDefined(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZBool(false).ZVal(), nil
 	}
 
-	_, ok := g.ConstantGet(name)
+	// Normalize namespace part of constant name to lowercase
+	normalizedName := phpv.ZString(normalizeConstantNamespace(string(name)))
+	_, ok := g.ConstantGet(normalizedName)
 
 	return phpv.ZBool(ok).ZVal(), nil
 }

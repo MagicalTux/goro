@@ -153,7 +153,8 @@ const (
 	T_YIELD_FROM
 	T_DNUMBER
 	T_LNUMBER
-	T_ATTRIBUTE // #[
+	T_ATTRIBUTE  // #[
+	T_VOID_CAST  // "(void)"
 	itemMax
 )
 
@@ -326,7 +327,7 @@ func (i *Item) UnexpectedExpecting(expecting string) error {
 // For special tokens, returns their description (e.g. `end of file`).
 func (i *Item) HumanName() string {
 	if i.Type > itemMax {
-		return fmt.Sprintf("\"%c\"", i.Type.Rune())
+		return fmt.Sprintf("token \"%c\"", i.Type.Rune())
 	}
 	switch i.Type {
 	case T_EOF:
@@ -504,6 +505,8 @@ func tokenHumanName(t ItemType) string {
 		return "(bool)"
 	case T_UNSET_CAST:
 		return "(unset)"
+	case T_VOID_CAST:
+		return "(void)"
 	case T_DOUBLE_ARROW:
 		return "=>"
 	case T_PAAMAYIM_NEKUDOTAYIM:

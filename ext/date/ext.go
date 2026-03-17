@@ -13,7 +13,7 @@ func init() {
 	phpctx.RegisterExt(&phpctx.Ext{
 		Name:    "date",
 		Version: core.VERSION,
-		Classes: []*phpobj.ZClass{DateTimeInterface, DateTime, DateTimeImmutable, DateInterval, DateTimeZone},
+		Classes: []*phpobj.ZClass{DateTimeInterface, DateTime, DateTimeImmutable, DateInterval, DateTimeZone, DatePeriod},
 		Functions: map[string]*phpctx.ExtFunction{
 			"checkdate":                   {Func: fncCheckdate, Args: []*phpctx.ExtFunctionArg{}},
 			"date":                        {Func: fncDate, Args: []*phpctx.ExtFunctionArg{}},

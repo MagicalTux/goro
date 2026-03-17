@@ -36,6 +36,7 @@ func initReflectionFunction() {
 			"getnumberofrequiredparameters": {Name: "getNumberOfRequiredParameters", Method: phpobj.NativeMethod(reflectionFunctionGetNumberOfRequiredParameters)},
 			"getparameters":                 {Name: "getParameters", Method: phpobj.NativeMethod(reflectionFunctionGetParameters)},
 			"invoke":                        {Name: "invoke", Method: phpobj.NativeMethod(reflectionFunctionInvoke)},
+			"invokeargs":                    {Name: "invokeArgs", Method: phpobj.NativeMethod(reflectionFunctionInvokeArgs)},
 			"getattributes":                 {Name: "getAttributes", Method: phpobj.NativeMethod(reflectionFunctionGetAttributes)},
 			"getclosure":                    {Name: "getClosure", Method: phpobj.NativeMethod(reflectionFunctionGetClosure)},
 			"getclosurethis":                {Name: "getClosureThis", Method: phpobj.NativeMethod(reflectionFunctionGetClosureThis)},
@@ -151,6 +152,27 @@ func reflectionFunctionInvoke(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.
 		return nil, phpobj.ThrowError(ctx, ReflectionException, "Internal error: Failed to retrieve the reflection object")
 	}
 	return ctx.CallZVal(ctx, data.callable, args)
+}
+
+func reflectionFunctionInvokeArgs(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	data := getFuncData(o)
+	if data == nil || data.callable == nil {
+		return nil, phpobj.ThrowError(ctx, ReflectionException, "Internal error: Failed to retrieve the reflection object")
+	}
+	if len(args) < 1 {
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, "ReflectionFunction::invokeArgs() expects exactly 1 argument, 0 given")
+	}
+	// args[0] should be an array of arguments
+	arrVal, err := args[0].As(ctx, phpv.ZtArray)
+	if err != nil {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "ReflectionFunction::invokeArgs(): Argument #1 ($args) must be of type array")
+	}
+	arr := arrVal.Value().(*phpv.ZArray)
+	var callArgs []*phpv.ZVal
+	for _, v := range arr.Iterate(ctx) {
+		callArgs = append(callArgs, v)
+	}
+	return ctx.CallZVal(ctx, data.callable, callArgs)
 }
 
 func reflectionFunctionGetShortName(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
