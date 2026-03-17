@@ -389,7 +389,7 @@ func (r *runClassStaticObjRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 				}
 			}
 			return nil, phpobj.ThrowError(ctx, phpobj.Error,
-				fmt.Sprintf("Cannot declare self-referencing constant %s::%s", class.GetName(), selfRefName))
+				fmt.Sprintf("Cannot declare self-referencing constant %s::%s", errorClassName, selfRefName))
 		}
 		cc.Resolving = true
 		// Set compiling class so self:: works during constant resolution.

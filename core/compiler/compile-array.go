@@ -599,7 +599,13 @@ func (ac *runArrayAccess) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 
 	if ac.offset == nil {
 		// append
-		return array.OffsetSet(ctx, nil, value)
+		if err := array.OffsetSet(ctx, nil, value); err != nil {
+			if err == phpv.ErrNextElementOccupied {
+				return phpobj.ThrowError(ctx, phpobj.Error, err.Error())
+			}
+			return err
+		}
+		return nil
 	}
 
 	offset, err := ac.getArrayOffset(ctx)

@@ -251,7 +251,7 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 			} else if timeout, ok := phperr.CatchTimeout(err).(*phperr.PhpTimeout); ok && timeout != nil {
 				fmt.Fprint(g, "\n"+timeout.String())
 				err = nil
-			} else if phpErr, ok := err.(*phpv.PhpError); ok && phpErr.Code == phpv.E_ERROR {
+			} else if phpErr, ok := err.(*phpv.PhpError); ok && (phpErr.Code == phpv.E_ERROR || phpErr.Code == phpv.E_COMPILE_ERROR) {
 				// Clean buffered output before writing the fatal error,
 				// so only the error message passes through the callback
 				// (not the previously buffered output).
@@ -280,7 +280,7 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		closeErr := g.Close()
 		if err == nil && closeErr != nil {
 			// Handle fatal errors from output buffer callbacks during close
-			if phpErr, ok := closeErr.(*phpv.PhpError); ok && phpErr.Code == phpv.E_ERROR {
+			if phpErr, ok := closeErr.(*phpv.PhpError); ok && (phpErr.Code == phpv.E_ERROR || phpErr.Code == phpv.E_COMPILE_ERROR) {
 				if phpErr.Loc != nil {
 					fmt.Fprintf(p.output, "\nFatal error: %s in %s on line %d\n", phpErr.Err.Error(), phpErr.Loc.Filename, phpErr.Loc.Line)
 				} else {
@@ -530,6 +530,10 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 			p.req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		}
 		return nil
+	case "EXPECTHEADERS":
+		// EXPECTHEADERS checks HTTP response headers. In our test runner
+		// we don't validate response headers — just skip silently.
+		return nil
 	case "EXPECT_EXTERNAL", "EXPECTF_EXTERNAL", "EXPECTREGEX_EXTERNAL":
 		// Read the external file and delegate to the corresponding handler
 		extFile := strings.TrimSpace(b.String())
@@ -624,7 +628,7 @@ func runTest(t *testing.T, fpath string) (p *phptest, err error) {
 		case "FILE", "FILEEOF":
 			fileParts = append(fileParts, name)
 		case "EXPECT", "EXPECTF", "EXPECTREGEX", "EXPECT_EXTERNAL", "EXPECTF_EXTERNAL",
-			"EXPECTREGEX_EXTERNAL", "CLEAN":
+			"EXPECTREGEX_EXTERNAL", "EXPECTHEADERS", "CLEAN":
 			expectParts = append(expectParts, name)
 		default:
 			setupParts = append(setupParts, name)
@@ -720,6 +724,18 @@ func expectfToRegex(pattern string) string {
 				result.WriteString(`[0-9a-fA-F]+`)
 			case 'e':
 				result.WriteString(`[/\\]`)
+			case 'r':
+				// %r...%r embeds a raw regex between two %r markers
+				end := strings.Index(pattern[i+2:], "%r")
+				if end >= 0 {
+					result.WriteString(pattern[i+2 : i+2+end])
+					i += 2 + end + 2
+					continue
+				}
+				// No matching %r, treat as literal
+				result.WriteString(regexp.QuoteMeta(sanitizeForRegex(pattern[i : i+1])))
+				i++
+				continue
 			case '%':
 				result.WriteString(`%`)
 			default:

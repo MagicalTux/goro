@@ -361,20 +361,21 @@ func hasDelayedTargetValidation(attrs []*phpv.ZAttribute) bool {
 // classes on a target. Userland attributes are only validated at Reflection
 // newInstance() time. Returns an error string if invalid, empty string if valid.
 func ValidateInternalAttributeList(ctx phpv.Context, attrs []*phpv.ZAttribute, target int) string {
-	// If #[DelayedTargetValidation] is present, skip target validation at compile time
-	if hasDelayedTargetValidation(attrs) {
-		return ""
-	}
+	delayed := hasDelayedTargetValidation(attrs)
 	// Check target validity for internal attributes only
-	for _, attr := range attrs {
-		if !isInternalAttributeClass(attr.ClassName) {
-			continue
-		}
-		if msg := ValidateAttributeTarget(ctx, attr, target); msg != "" {
-			return msg
+	// (skip if #[DelayedTargetValidation] is present)
+	if !delayed {
+		for _, attr := range attrs {
+			if !isInternalAttributeClass(attr.ClassName) {
+				continue
+			}
+			if msg := ValidateAttributeTarget(ctx, attr, target); msg != "" {
+				return msg
+			}
 		}
 	}
 	// Check repeatable constraints for internal attributes only
+	// (NOT skipped by DelayedTargetValidation - repetition errors always fire)
 	seen := make(map[phpv.ZString]bool)
 	for _, attr := range attrs {
 		if !isInternalAttributeClass(attr.ClassName) {

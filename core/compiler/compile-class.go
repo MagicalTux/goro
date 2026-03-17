@@ -131,6 +131,10 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		return nil, i.Unexpected()
 	}
 
+	// Save enclosing scope info before wrapping in class context
+	enclosingFunc := c.getFunc()
+	enclosingClass := c.getClass()
+
 	c = &zclassCompileCtx{c, class}
 
 	// Set the compiling class so that deprecation messages can include the class name
@@ -140,6 +144,16 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	err = parseClassLine(class, c)
 	if err != nil {
 		return nil, err
+	}
+
+	// PHP 8: Named class declarations may not be nested (inside a method within a class).
+	// Anonymous classes (class.Name is empty) are allowed inside methods.
+	if class.Name != "" && enclosingFunc != nil && enclosingClass != nil {
+		return nil, &phpv.PhpError{
+			Err:  fmt.Errorf("Class declarations may not be nested"),
+			Code: phpv.E_COMPILE_ERROR,
+			Loc:  class.L,
+		}
 	}
 
 	i, err = c.NextItem()

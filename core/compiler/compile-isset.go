@@ -1,7 +1,7 @@
 package compiler
 
 import (
-	"errors"
+	"fmt"
 	"io"
 
 	"github.com/MagicalTux/goro/core/logopt"
@@ -295,7 +295,11 @@ func checkExistence(ctx phpv.Context, v phpv.Runnable, subExpr bool) (bool, erro
 		}
 
 		if t.offset == nil {
-			return false, errors.New("Cannot use [] for reading")
+			return false, &phpv.PhpError{
+				Err:  fmt.Errorf("Cannot use [] for reading"),
+				Code: phpv.E_COMPILE_ERROR,
+				Loc:  t.l,
+			}
 		}
 		key, err := t.offset.Run(ctx)
 		if err != nil {

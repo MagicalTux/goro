@@ -206,7 +206,10 @@ func (r *runnableFunctionCallRef) Run(ctx phpv.Context) (l *phpv.ZVal, err error
 				has0, _ := arr.OffsetExists(ctx, phpv.ZInt(0).ZVal())
 				has1, _ := arr.OffsetExists(ctx, phpv.ZInt(1).ZVal())
 				if !has0 || !has1 {
-					return nil, phpobj.ThrowError(ctx, phpobj.Error, "Array callback must have exactly two elements")
+					if countable, ok := arr.(phpv.ZCountable); !ok || countable.Count(ctx) != 2 {
+						return nil, phpobj.ThrowError(ctx, phpobj.Error, "Array callback must have exactly two elements")
+					}
+					return nil, phpobj.ThrowError(ctx, phpobj.Error, "Array callback has to contain indices 0 and 1")
 				}
 				first, err1 := arr.OffsetGet(ctx, phpv.ZInt(0))
 				second, err2 := arr.OffsetGet(ctx, phpv.ZInt(1))
@@ -256,8 +259,12 @@ func (r *runnableFunctionCallRef) Run(ctx phpv.Context) (l *phpv.ZVal, err error
 					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "Array callback must have exactly two elements")
 				}
 			default:
+				typeWord := "Value"
+				if v.GetType() == phpv.ZtObject {
+					typeWord = "Object"
+				}
 				return nil, phpobj.ThrowError(ctx, phpobj.Error,
-					fmt.Sprintf("Object of type %s is not callable", phpv.ZValTypeName(v)))
+					fmt.Sprintf("%s of type %s is not callable", typeWord, phpv.ZValTypeName(v)))
 			}
 		}
 	}
@@ -676,6 +683,11 @@ func compileFunctionWithName(name phpv.ZString, c compileCtx, l *phpv.Loc, rref 
 	zc.code, err = compileBase(nil, c)
 	if err != nil {
 		return nil, err
+	}
+
+	// Validate break/continue usage: they must be inside a loop or switch
+	if breakErr := validateBreakContinue(zc.code, 0); breakErr != nil {
+		return nil, breakErr
 	}
 
 	// Check if the closure body references $this (for unbinding warnings)

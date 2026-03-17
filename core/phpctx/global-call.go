@@ -431,7 +431,19 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 	}
 
 	callResult, callErr = phperr.CatchReturn(f.Call(callCtx, callCtx.Args))
-	if hasNoDiscardAttr(f) { c.lastCallable = f }
+	if hasNoDiscardAttr(f) {
+		// Wrap with the runtime object (this) so NoDiscard warnings
+		// report the correct class name (e.g. for trait methods).
+		if this != nil {
+			if _, alreadyBound := f.(*phpv.BoundedCallable); !alreadyBound {
+				c.lastCallable = phpv.Bind(f, this)
+			} else {
+				c.lastCallable = f
+			}
+		} else {
+			c.lastCallable = f
+		}
+	}
 
 	// For functions that do NOT return by reference, separate array values
 	// so that writing to the returned array doesn't modify the original

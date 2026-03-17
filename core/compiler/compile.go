@@ -432,6 +432,13 @@ func compileInner(parent phpv.Context, t *tokenizer.Lexer) (phpv.Runnable, error
 		}
 	}
 
+	// Validate break/continue at the top-level scope (outside loops).
+	// Functions are validated in compileFunctionWithName; this catches
+	// break/continue in the global scope.
+	if breakErr := validateBreakContinue(r, 0); breakErr != nil {
+		return nil, breakErr
+	}
+
 	// In some cases, a node needs to know if it's a write context,
 	// and one way of conveying that information is with parent nodes.
 	// Doing something like ctx = WriteContext(ctx) wouldn't work

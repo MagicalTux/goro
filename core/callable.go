@@ -50,6 +50,49 @@ func spawnCallableInternal(ctx phpv.Context, v *phpv.ZVal, paramNo int) (phpv.Ca
 					fmt.Sprintf("%s(): Argument #1 ($callback) must be a valid callback, class \"%s\" does not have a method \"%s\"", callerFunc, className, methodName))
 			}
 
+			// Check visibility of the method
+			callerClass := ctx.Class()
+			if member.Modifiers.IsPrivate() {
+				declaringClass := class
+				if member.Class != nil {
+					declaringClass = member.Class
+				}
+				if callerClass == nil || callerClass.GetName() != declaringClass.GetName() {
+					callerFunc := ctx.GetFuncName()
+					if callerFunc == "" {
+						callerFunc = "call_user_func"
+					}
+					scope := "global scope"
+					if callerClass != nil {
+						scope = "scope " + string(callerClass.GetName())
+					}
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+						fmt.Sprintf("%s(): Argument #%d ($callback) must be a valid callback, cannot access private method %s::%s() from %s", callerFunc, paramNo, class.GetName(), member.Name, scope))
+				}
+			} else if member.Modifiers.Has(phpv.ZAttrProtected) {
+				accessible := false
+				if callerClass != nil {
+					// Basic hierarchy check: caller is-a target class or vice versa
+					accessible = callerClass.InstanceOf(class) || class.InstanceOf(callerClass)
+					// Also check via the method's declaring class
+					if !accessible && member.Class != nil {
+						accessible = callerClass.InstanceOf(member.Class) || member.Class.InstanceOf(callerClass)
+					}
+				}
+				if !accessible {
+					callerFunc := ctx.GetFuncName()
+					if callerFunc == "" {
+						callerFunc = "call_user_func"
+					}
+					scope := "global scope"
+					if callerClass != nil {
+						scope = "scope " + string(callerClass.GetName())
+					}
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+						fmt.Sprintf("%s(): Argument #%d ($callback) must be a valid callback, cannot access protected method %s::%s() from %s", callerFunc, paramNo, class.GetName(), member.Name, scope))
+				}
+			}
+
 			if member.Modifiers.IsStatic() {
 				return phpv.BindClass(member.Method, class, true), nil
 			}
@@ -74,11 +117,14 @@ func spawnCallableInternal(ctx phpv.Context, v *phpv.ZVal, paramNo int) (phpv.Ca
 		// - [$obj, "methodName"]
 		// - ["className", "methodName"]
 		array := v.Array()
-		// PHP requires indices 0 and 1 to be present
+		// PHP requires exactly 2 elements at indices 0 and 1
 		has0, _ := array.OffsetExists(ctx, phpv.ZInt(0).ZVal())
 		has1, _ := array.OffsetExists(ctx, phpv.ZInt(1).ZVal())
 		if !has0 || !has1 {
-			return nil, phpobj.ThrowError(ctx, phpobj.Error, "Array callback must have exactly two elements")
+			if countable, ok := array.(phpv.ZCountable); !ok || countable.Count(ctx) != 2 {
+				return nil, phpobj.ThrowError(ctx, phpobj.Error, "Array callback must have exactly two elements")
+			}
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, "Array callback has to contain indices 0 and 1")
 		}
 		firstArg, err := array.OffsetGet(ctx, phpv.ZInt(0))
 		if err != nil {
@@ -295,7 +341,12 @@ func spawnCallableInternal(ctx phpv.Context, v *phpv.ZVal, paramNo int) (phpv.Ca
 
 		fallthrough
 	default:
-		return nil, ctx.Errorf("Argument passed must be callable, %q given", v.GetType().String())
+		callerFunc := ctx.GetFuncName()
+		if callerFunc == "" {
+			callerFunc = "call_user_func"
+		}
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("%s(): Argument #%d ($callback) must be a valid callback, no array, string, or closure given", callerFunc, paramNo))
 	}
 }
 
