@@ -135,9 +135,32 @@ The remaining ~200 failures are individual bugs spread across many PHP features.
 
 ---
 
-## Not Currently Tested (Beyond the 2000 test subset)
+## Full Test Suite (12,110 tests)
 
-The full PHP test suite has ~18,000 tests. Additional areas not covered by our current 2000-test subset:
+The full PHP 8.5.4 test suite imported into goro has 12,110 tests. Major areas by test count:
+
+| Area | Tests | Status |
+|------|-------|--------|
+| ext/standard | 3,808 | ~40% — arrays, strings, files, math |
+| ext/spl | 781 | ~15% — iterators, data structures |
+| ext/date | 688 | ~30% — DateTime, DateInterval, DatePeriod |
+| ext/reflection | 493 | ~15% — ReflectionClass, Method, Function |
+| ext/mbstring | 416 | ~55% — multibyte string functions |
+| type_declarations | 496 | Partial — union/intersection/DNF types |
+| traits | 216 | ~80% — trait method resolution |
+| lazy_objects | 213 | Not started |
+| property_hooks | 211 | Not started (PHP 8.4) |
+| attributes | 204 | ~50% — parsing done, reflection partial |
+| generators | 184 | ~70% — yield, yield from |
+| magic_methods | 157 | ~60% — __get/__set/__call etc |
+| enum | 151 | ~60% — cases, backed enums |
+| ext/pcre | 163 | ~70% — preg_match, preg_replace |
+| ext/gmp | 99 | ~45% — arithmetic operations |
+| ext/json | 88 | ~90% — encode/decode |
+| ext/hash | 80 | ~80% — hash functions |
+| ext/ctype | 49 | ~80% — character type functions |
+
+### Not Implemented Extensions
 - **Sessions** — Not implemented
 - **Streams** — Partial (file streams work, network streams not implemented)
 - **XML/DOM** — Not implemented
