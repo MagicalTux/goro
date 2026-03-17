@@ -24,7 +24,7 @@ go install github.com/MagicalTux/goro/sapi/php-cli@latest
 
 ## Status
 
-Goro passes **~4,050 tests** from the PHP 8.5.4 test suite (12,110 total tests, ~652 skipped for platform-specific reasons). On the first 2,000 tests: **1,376/2,000 (70.8%)**.
+Goro passes **1,376 of the first 2,000 tests** (70.8%) from the PHP 8.5.4 test suite (12,110 total tests available). Full-suite results pending.
 
 ### Language Features
 
