@@ -26,6 +26,7 @@ type ZClosure struct {
 	rref          bool // return ref?
 	isStatic      bool // true for static function() {} and static fn() =>
 	isGenerator   bool // true if this function contains yield
+	usesThis      bool // true if the closure body references $this
 	attributes    []*phpv.ZAttribute // PHP 8.0 attributes on this function
 	returnType    *phpv.TypeHint     // return type declaration (nil if none)
 }
@@ -749,6 +750,7 @@ func (z *ZClosure) dup() *ZClosure {
 	n.rref = z.rref
 	n.isStatic = z.isStatic
 	n.isGenerator = z.isGenerator
+	n.usesThis = z.usesThis
 	n.attributes = z.attributes
 	n.returnType = z.returnType
 
@@ -881,9 +883,9 @@ func closureBind(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	bound := z.dup()
 
 	if newThis.GetType() == phpv.ZtNull {
-		// Binding null to a non-static closure that already has $this bound
-		// should warn and return null in PHP
-		if !bound.isStatic && z.this != nil {
+		// Binding null to a non-static closure that uses $this in its body
+		// should warn and return the bound closure (PHP 8.4+)
+		if !bound.isStatic && z.usesThis && z.this != nil {
 			ctx.Warn("Cannot unbind $this of closure using $this, this will be an error in PHP 9", logopt.NoFuncName(true))
 			return phpv.ZNULL.ZVal(), nil
 		}

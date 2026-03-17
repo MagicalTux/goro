@@ -1195,11 +1195,11 @@ func (g *Global) GetClass(ctx phpv.Context, name phpv.ZString, autoload bool) (p
 		// check for func
 		fc := ctx.Func()
 		if fc == nil {
-			return nil, ctx.Errorf("Cannot access self:: when no method scope is active")
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, `Cannot access "self" when no class scope is active`)
 		}
 		f, ok := fc.(*FuncContext)
 		if !ok || f == nil {
-			return nil, ctx.Errorf("Cannot access self:: when no method scope is active")
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, `Cannot access "self" when no class scope is active`)
 		}
 		// Check FuncContext.class first (set by MethodCallable/static calls)
 		if f.class != nil {
@@ -1207,7 +1207,7 @@ func (g *Global) GetClass(ctx phpv.Context, name phpv.ZString, autoload bool) (p
 		}
 		cfunc, ok := f.c.(phpv.ZClosure)
 		if !ok || cfunc.GetClass() == nil {
-			return nil, ctx.Errorf("Cannot access self:: when no class scope is active")
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, `Cannot access "self" when no class scope is active`)
 		}
 		return cfunc.GetClass(), nil
 	case "parent":
@@ -1219,15 +1219,15 @@ func (g *Global) GetClass(ctx phpv.Context, name phpv.ZString, autoload bool) (p
 			if g.compilingClass != nil {
 				parentClass := g.compilingClass.GetParent()
 				if parentClass == nil {
-					return nil, ctx.Errorf("Cannot access parent:: when current class scope has no parent")
+					return nil, phpobj.ThrowError(ctx, phpobj.Error, `Cannot access "parent" when current class scope has no parent`)
 				}
 				return parentClass, nil
 			}
-			return nil, ctx.Errorf("Cannot access parent:: when no method scope is active")
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, `Cannot access "parent" when no class scope is active`)
 		}
 		f, ok := fc.(*FuncContext)
 		if !ok || f == nil {
-			return nil, ctx.Errorf("Cannot access parent:: when no method scope is active")
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, `Cannot access "parent" when no class scope is active`)
 		}
 		var selfClass phpv.ZClass
 		if f.class != nil {
@@ -1236,17 +1236,17 @@ func (g *Global) GetClass(ctx phpv.Context, name phpv.ZString, autoload bool) (p
 			selfClass = cfunc.GetClass()
 		}
 		if selfClass == nil {
-			return nil, ctx.Errorf("Cannot access parent:: when no class scope is active")
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, `Cannot access "parent" when no class scope is active`)
 		}
 		if selfClass.GetParent() == nil {
-			return nil, ctx.Errorf("Cannot access parent:: when current class scope has no parent")
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, `Cannot access "parent" when current class scope has no parent`)
 		}
 		return selfClass.GetParent(), nil
 	case "static":
 		// check for func
 		fc := ctx.Func()
 		if fc == nil {
-			return nil, ctx.Errorf("Cannot access static:: when no class scope is active")
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, `Cannot access "static" when no class scope is active`)
 		}
 		f, ok := fc.(*FuncContext)
 		if !ok || f == nil || f.this == nil {
@@ -1254,7 +1254,7 @@ func (g *Global) GetClass(ctx phpv.Context, name phpv.ZString, autoload bool) (p
 			if ok && f != nil && f.class != nil {
 				return f.class, nil
 			}
-			return nil, ctx.Errorf("Cannot access static:: when no class scope is active")
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, `Cannot access "static" when no class scope is active`)
 		}
 		return f.this.GetClass(), nil
 	}

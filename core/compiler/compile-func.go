@@ -207,6 +207,25 @@ func (r *runnableFunctionCallRef) Run(ctx phpv.Context) (l *phpv.ZVal, err error
 					class := obj.GetClass()
 					if method, ok := class.GetMethod(methodName.ToLower()); ok {
 						f = phpv.Bind(method.Method, obj)
+					} else if methodName.ToLower() == "__invoke" && class.Handlers() != nil && class.Handlers().HandleInvoke != nil {
+						// Handle __invoke via HandleInvoke (e.g., Closure::__invoke)
+						return class.Handlers().HandleInvoke(ctx, obj, r.args)
+					} else if callMethod, hasCall := class.GetMethod("__call"); hasCall {
+						// Fall back to __call magic method
+						var zArgs []*phpv.ZVal
+						for _, arg := range r.args {
+							val, err := arg.Run(ctx)
+							if err != nil {
+								return nil, err
+							}
+							zArgs = append(zArgs, val)
+						}
+						a := phpv.NewZArray()
+						for _, sub := range zArgs {
+							a.OffsetSet(ctx, nil, sub.Dup())
+						}
+						callArgs := []*phpv.ZVal{methodName.ZVal(), a.ZVal()}
+						return ctx.CallZVal(ctx, phpv.Bind(callMethod.Method, obj), callArgs, obj)
 					} else {
 						return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Call to undefined method %s::%s()", class.GetName(), methodName))
 					}
@@ -540,6 +559,16 @@ func compileFunctionWithName(name phpv.ZString, c compileCtx, l *phpv.Loc, rref 
 		return nil, err
 	}
 
+	// Check if the closure body references $this (for unbinding warnings)
+	if name == "" {
+		for _, vn := range collectVariableNames(zc.code) {
+			if vn == "this" {
+				zc.usesThis = true
+				break
+			}
+		}
+	}
+
 	i, err = c.NextItem()
 	if err != nil {
 		return nil, err
@@ -747,7 +776,21 @@ func compileFunctionArgs(c compileCtx) (res []*phpv.FuncArg, err error) {
 		// Handle constructor promotion visibility modifiers (PHP 8.0+)
 		// Can include readonly modifier before or after visibility
 		// Also handles PHP 8.4 asymmetric visibility: public private(set)
-		for i.Type == tokenizer.T_PUBLIC || i.Type == tokenizer.T_PROTECTED || i.Type == tokenizer.T_PRIVATE || i.Type == tokenizer.T_READONLY {
+		if i.Type == tokenizer.T_STATIC {
+			return nil, &phpv.PhpError{
+				Err:  fmt.Errorf("Cannot use the static modifier on a parameter"),
+				Code: phpv.E_COMPILE_ERROR,
+				Loc:  i.Loc(),
+			}
+		}
+		for i.Type == tokenizer.T_PUBLIC || i.Type == tokenizer.T_PROTECTED || i.Type == tokenizer.T_PRIVATE || i.Type == tokenizer.T_READONLY || i.Type == tokenizer.T_STATIC {
+			if i.Type == tokenizer.T_STATIC {
+				return nil, &phpv.PhpError{
+					Err:  fmt.Errorf("Cannot use the static modifier on a parameter"),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  i.Loc(),
+				}
+			}
 			switch i.Type {
 			case tokenizer.T_PUBLIC, tokenizer.T_PROTECTED, tokenizer.T_PRIVATE:
 				var thisAccess phpv.ZObjectAttr

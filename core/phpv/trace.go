@@ -106,6 +106,12 @@ func TraceArgStringMaxLen(arg *ZVal, maxLen int) string {
 	switch arg.GetType() {
 	case ZtObject:
 		if obj, ok := arg.Value().(ZObject); ok {
+			// Enum cases: format as EnumName::CaseName instead of Object(EnumName)
+			if obj.GetClass().GetType().Has(ZClassTypeEnum) {
+				if nameVal := obj.HashTable().GetString("name"); nameVal != nil && nameVal.GetType() == ZtString {
+					return fmt.Sprintf("%s::%s", obj.GetClass().GetName(), nameVal.String())
+				}
+			}
 			return fmt.Sprintf("Object(%s)", obj.GetClass().GetName())
 		}
 		return "Object"

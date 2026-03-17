@@ -311,6 +311,9 @@ func compileNew(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			}
 		}
 		n.cl = v
+	} else if next.Type == tokenizer.T_STATIC {
+		// new static — late static binding (resolved at runtime)
+		n.obj = phpv.ZString("static")
 	} else {
 		c.backup()
 		n.obj, err = compileClassName(c)
@@ -485,14 +488,14 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 				// In static context, resolve self from the closure's class
 				class, err = ctx.Global().GetClass(ctx, "self", false)
 				if err != nil {
-					return nil, ctx.Errorf("Cannot access self:: when no class scope is active")
+					return nil, phpobj.ThrowError(ctx, phpobj.Error, `Cannot access "self" when no class scope is active`)
 				}
 			}
 
 		case "parent":
 			if ctx.This() != nil {
 				if ctx.This().GetClass().GetParent() == nil {
-					return nil, ctx.Errorf("Cannot access parent:: when current class scope has no parent")
+					return nil, phpobj.ThrowError(ctx, phpobj.Error, `Cannot access "parent" when current class scope has no parent`)
 				}
 				objI = ctx.This().GetParent()
 				class = objI.GetClass()
@@ -500,11 +503,11 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 				// In static context, resolve parent from the closure's class
 				selfClass, selfErr := ctx.Global().GetClass(ctx, "self", false)
 				if selfErr != nil {
-					return nil, ctx.Errorf("Cannot access parent:: when no class scope is active")
+					return nil, phpobj.ThrowError(ctx, phpobj.Error, `Cannot access "parent" when no class scope is active`)
 				}
 				parentClass := selfClass.GetParent()
 				if parentClass == nil {
-					return nil, ctx.Errorf("Cannot access parent:: when current class scope has no parent")
+					return nil, phpobj.ThrowError(ctx, phpobj.Error, `Cannot access "parent" when current class scope has no parent`)
 				}
 				class = parentClass
 			}
@@ -517,7 +520,7 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			} else {
 				class, err = ctx.Global().GetClass(ctx, "static", false)
 				if err != nil {
-					return nil, ctx.Errorf("Cannot access static:: when no class scope is active")
+					return nil, phpobj.ThrowError(ctx, phpobj.Error, `Cannot access "static" when no class scope is active`)
 				}
 			}
 
@@ -1033,24 +1036,24 @@ func (r *runObjectDynFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			} else {
 				class, err = ctx.Global().GetClass(ctx, "self", false)
 				if err != nil {
-					return nil, ctx.Errorf("Cannot access self:: when no class scope is active")
+					return nil, phpobj.ThrowError(ctx, phpobj.Error, `Cannot access "self" when no class scope is active`)
 				}
 			}
 		case "parent":
 			if ctx.This() != nil {
 				if ctx.This().GetClass().GetParent() == nil {
-					return nil, ctx.Errorf("Cannot access parent:: when current class scope has no parent")
+					return nil, phpobj.ThrowError(ctx, phpobj.Error, `Cannot access "parent" when current class scope has no parent`)
 				}
 				objI = ctx.This().GetParent()
 				class = objI.GetClass()
 			} else {
 				selfClass, selfErr := ctx.Global().GetClass(ctx, "self", false)
 				if selfErr != nil {
-					return nil, ctx.Errorf("Cannot access parent:: when no class scope is active")
+					return nil, phpobj.ThrowError(ctx, phpobj.Error, `Cannot access "parent" when no class scope is active`)
 				}
 				parentClass := selfClass.GetParent()
 				if parentClass == nil {
-					return nil, ctx.Errorf("Cannot access parent:: when current class scope has no parent")
+					return nil, phpobj.ThrowError(ctx, phpobj.Error, `Cannot access "parent" when current class scope has no parent`)
 				}
 				class = parentClass
 			}
@@ -1061,7 +1064,7 @@ func (r *runObjectDynFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			} else {
 				class, err = ctx.Global().GetClass(ctx, "static", false)
 				if err != nil {
-					return nil, ctx.Errorf("Cannot access static:: when no class scope is active")
+					return nil, phpobj.ThrowError(ctx, phpobj.Error, `Cannot access "static" when no class scope is active`)
 				}
 			}
 		default:
@@ -1154,8 +1157,6 @@ func compilePaamayimNekudotayim(v phpv.Runnable, i *tokenizer.Item, c compileCtx
 	ident := phpv.ZString(i.Data)
 
 	switch i.Type {
-	default:
-		return nil, i.Unexpected()
 	case tokenizer.Rune('$'):
 		// C::${expr} or C::$var — dynamic static property access
 		i, err = c.NextItem()
@@ -1233,7 +1234,12 @@ func compilePaamayimNekudotayim(v phpv.Runnable, i *tokenizer.Item, c compileCtx
 		// $obj::class or ClassName::class → get class name
 		return &runClassNameOf{v, l}, nil
 
-	case tokenizer.T_STRING:
+	default:
+		// Semi-reserved keywords can be used as static method/constant names (Foo::exit, Foo::die(), etc.)
+		if !i.IsSemiReserved() {
+			return nil, i.Unexpected()
+		}
+		// Fall through to handle as identifier (same as T_STRING)
 		i, err = c.NextItem()
 		if err != nil {
 			return nil, err

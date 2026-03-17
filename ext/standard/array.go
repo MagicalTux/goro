@@ -3,6 +3,7 @@ package standard
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"math/rand/v2"
 	"regexp"
@@ -13,6 +14,7 @@ import (
 	"github.com/MagicalTux/goro/core"
 	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpctx"
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -471,9 +473,19 @@ func fncArrayMap(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var callback phpv.Callable
 	if !callbackIsNull {
 		var err error
-		callback, err = core.SpawnCallable(ctx, args[0])
+		callback, err = core.SpawnCallableParam(ctx, args[0], 1)
 		if err != nil {
-			return nil, err
+			// Convert to TypeError with proper array_map() prefix
+			cbStr := ""
+			if args[0].GetType() == phpv.ZtString {
+				cbStr = args[0].String()
+			}
+			if cbStr != "" {
+				return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+					fmt.Sprintf("array_map(): Argument #1 ($callback) must be a valid callback or null, function \"%s\" not found or invalid function name", cbStr))
+			}
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+				fmt.Sprintf("array_map(): Argument #1 ($callback) must be a valid callback or null, no array, string or object given"))
 		}
 	}
 
@@ -515,7 +527,21 @@ func fncArrayMap(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				result.OffsetSet(ctx, nil, sub.ZVal())
 			}
 		}
+	} else if len(arrays) == 1 {
+		// Single array with callback: iterate by actual keys (preserves keys)
+		for k, v := range arrays[0].Iterate(ctx) {
+			callArgs := []*phpv.ZVal{v}
+			val, err := ctx.CallZValInternal(ctx, callback, callArgs)
+			if err != nil {
+				return nil, err
+			}
+			err = result.OffsetSet(ctx, k, val)
+			if err != nil {
+				return nil, err
+			}
+		}
 	} else {
+		// Multiple arrays: iterate by sequential integer index
 		for i := 0; i < maxLen; i++ {
 			var callArgs []*phpv.ZVal
 			for _, arr := range arrays {

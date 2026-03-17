@@ -272,6 +272,33 @@ func (i *Item) IsExpressionEnd() bool {
 	return i.IsSingle(';') || i.Type == T_CLOSE_TAG
 }
 
+// IsSemiReserved returns true if the token is a semi-reserved keyword that can
+// be used as a class constant name, method name, or property name in PHP.
+// See https://www.php.net/manual/en/reserved.other-reserved-words.php
+func (i *Item) IsSemiReserved() bool {
+	switch i.Type {
+	case T_STRING:
+		return true
+	case T_ABSTRACT, T_ARRAY, T_AS, T_BREAK, T_CALLABLE, T_CASE, T_CATCH,
+		T_CLASS, T_CLONE, T_CONST, T_CONTINUE, T_DECLARE, T_DEFAULT,
+		T_DO, T_ECHO, T_ELSE, T_ELSEIF, T_EMPTY, T_ENDDECLARE,
+		T_ENDFOR, T_ENDFOREACH, T_ENDIF, T_ENDSWITCH, T_ENDWHILE,
+		T_EVAL, T_EXIT, T_EXTENDS, T_FINAL, T_FINALLY, T_FN,
+		T_FOR, T_FOREACH, T_FUNCTION, T_GLOBAL, T_GOTO, T_IF,
+		T_IMPLEMENTS, T_INCLUDE, T_INCLUDE_ONCE, T_INSTANCEOF,
+		T_INSTEADOF, T_INTERFACE, T_ISSET, T_LIST, T_LOGICAL_AND,
+		T_LOGICAL_OR, T_LOGICAL_XOR, T_MATCH, T_NAMESPACE, T_NEW,
+		T_PRINT, T_PRIVATE, T_PROTECTED, T_PUBLIC, T_READONLY,
+		T_REQUIRE, T_REQUIRE_ONCE, T_RETURN, T_STATIC, T_SWITCH,
+		T_THROW, T_TRAIT, T_TRY, T_UNSET, T_USE, T_VAR, T_WHILE,
+		T_YIELD, T_YIELD_FROM, T_ENUM,
+		T_CLASS_C, T_TRAIT_C, T_FUNC_C, T_METHOD_C, T_LINE, T_FILE,
+		T_DIR, T_NS_C:
+		return true
+	}
+	return false
+}
+
 func (i *Item) Unexpected() error {
 	err := fmt.Errorf("syntax error, unexpected %s", i.HumanName())
 	return &phpv.PhpError{

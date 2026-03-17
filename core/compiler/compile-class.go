@@ -419,7 +419,7 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 				if err != nil {
 					return nil, err
 				}
-				if i.Type != tokenizer.T_STRING {
+				if !i.IsSemiReserved() {
 					return nil, i.Unexpected()
 				}
 				constName := i.Data
@@ -722,7 +722,7 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 				}
 			}
 
-			if i.Type != tokenizer.T_STRING {
+			if !i.IsSemiReserved() {
 				return nil, i.Unexpected()
 			}
 
