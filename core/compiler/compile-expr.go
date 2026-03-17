@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"path"
 	"strconv"
+	"strings"
 
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
@@ -482,7 +483,18 @@ func compilePostExpr(v phpv.Runnable, i *tokenizer.Item, c compileCtx) (phpv.Run
 		}
 		if constant, ok := v.(*runConstant); ok {
 			// Name was already resolved through resolveFunctionName in compileOneExpr
-			return &runnableFunctionCall{name: phpv.ZString(constant.c), args: args, l: l}, nil
+			funcName := phpv.ZString(constant.c)
+			// PHP 8: assert() auto-generates description from the AST of its argument
+			if strings.ToLower(string(funcName)) == "assert" && len(args) == 1 {
+				var buf strings.Builder
+				buf.WriteString("assert(")
+				if err := args[0].Dump(&buf); err == nil {
+					buf.WriteString(")")
+					desc := buf.String()
+					args = append(args, &runZVal{phpv.ZString(desc), l})
+				}
+			}
+			return &runnableFunctionCall{name: funcName, args: args, l: l}, nil
 		}
 		return &runnableFunctionCallRef{v, args, l}, nil
 	case tokenizer.Rune('['), tokenizer.Rune('{'):

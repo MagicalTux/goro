@@ -29,18 +29,23 @@ func fncStrlen(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 // > func int error_reporting ([ int $level ] )
 func fncErrorReporting(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	var levelArg Optional[phpv.ZInt]
-	_, err := Expand(ctx, args, &levelArg)
-	if err != nil {
-		return nil, err
-	}
+	oldVal := ctx.GetConfig("error_reporting", phpv.ZInt(0).ZVal())
 
-	if levelArg.HasArg() {
-		level := levelArg.Get()
+	if len(args) >= 1 && args[0] != nil && !args[0].IsNull() {
+		switch args[0].GetType() {
+		case phpv.ZtObject, phpv.ZtArray:
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+				fmt.Sprintf("error_reporting(): Argument #1 ($error_level) must be of type ?int, %s given", phpv.ZValTypeName(args[0])))
+		}
+		var level phpv.ZInt
+		_, err := Expand(ctx, args, &level)
+		if err != nil {
+			return nil, err
+		}
 		ctx.Global().SetLocalConfig("error_reporting", level.ZVal())
 	}
 
-	return ctx.GetConfig("error_reporting", phpv.ZInt(0).ZVal()), nil
+	return oldVal, nil
 }
 
 // > func bool define ( string $name , mixed $value )

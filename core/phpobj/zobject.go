@@ -811,14 +811,14 @@ func (o *ZObject) CallMethod(ctx phpv.Context, methodName string, args ...*phpv.
 
 func (o *ZObject) OffsetGet(ctx phpv.Context, key phpv.Val) (*phpv.ZVal, error) {
 	if !o.implementsArrayAccess() {
-		return nil, ctx.Errorf("Cannot use object of type %s as array", o.Class.GetName())
+		return nil, ThrowError(ctx, Error, fmt.Sprintf("Cannot use object of type %s as array", o.Class.GetName()))
 	}
 	return o.CallMethod(ctx, "offsetGet", key.ZVal())
 }
 
 func (o *ZObject) OffsetSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) error {
 	if !o.implementsArrayAccess() {
-		return ctx.Errorf("Cannot use object of type %s as array", o.Class.GetName())
+		return ThrowError(ctx, Error, fmt.Sprintf("Cannot use object of type %s as array", o.Class.GetName()))
 	}
 	var keyZVal *phpv.ZVal
 	if key == nil {
@@ -832,7 +832,7 @@ func (o *ZObject) OffsetSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) er
 
 func (o *ZObject) OffsetExists(ctx phpv.Context, key phpv.Val) (bool, error) {
 	if !o.implementsArrayAccess() {
-		return false, ctx.Errorf("Cannot use object of type %s as array", o.Class.GetName())
+		return false, ThrowError(ctx, Error, fmt.Sprintf("Cannot use object of type %s as array", o.Class.GetName()))
 	}
 	result, err := o.CallMethod(ctx, "offsetExists", key.ZVal())
 	if err != nil {
@@ -843,7 +843,7 @@ func (o *ZObject) OffsetExists(ctx phpv.Context, key phpv.Val) (bool, error) {
 
 func (o *ZObject) OffsetUnset(ctx phpv.Context, key phpv.Val) error {
 	if !o.implementsArrayAccess() {
-		return ctx.Errorf("Cannot use object of type %s as array", o.Class.GetName())
+		return ThrowError(ctx, Error, fmt.Sprintf("Cannot use object of type %s as array", o.Class.GetName()))
 	}
 	_, err := o.CallMethod(ctx, "offsetUnset", key.ZVal())
 	return err

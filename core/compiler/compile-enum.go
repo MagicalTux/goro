@@ -9,6 +9,33 @@ import (
 )
 
 func compileEnum(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
+	// `enum` is a soft keyword: it's only an enum declaration when followed by
+	// T_STRING (the enum name). Otherwise treat it as an identifier.
+	next, err := c.NextItem()
+	if err != nil {
+		return nil, err
+	}
+	if next.Type != tokenizer.T_STRING {
+		// Not an enum declaration — treat `enum` as an identifier.
+		c.backup()
+		i.Type = tokenizer.T_STRING
+		i.Data = "enum"
+		r, err := compileExpr(i, c)
+		if err != nil {
+			return r, err
+		}
+		// Consume semicolon since this dispatch entry has skip=true
+		semi, err := c.NextItem()
+		if err != nil {
+			return r, err
+		}
+		if !semi.IsExpressionEnd() {
+			return nil, semi.Unexpected()
+		}
+		return r, nil
+	}
+
+	// This is a real enum declaration. `next` holds the enum name token.
 	// enum Name [: string|int] [implements Interface, ...] { ... }
 	class := &phpobj.ZClass{
 		L:       i.Loc(),
@@ -23,14 +50,8 @@ func compileEnum(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	c.Global().SetCompilingClass(class)
 	defer c.Global().SetCompilingClass(nil)
 
-	// Read enum name
-	i, err := c.NextItem()
-	if err != nil {
-		return nil, err
-	}
-	if i.Type != tokenizer.T_STRING {
-		return nil, i.Unexpected()
-	}
+	// We already read the enum name via lookahead
+	i = next
 	enumName := phpv.ZString(i.Data)
 	// PHP 8.4+: Using "_" as an enum name is deprecated
 	if i.Data == "_" {

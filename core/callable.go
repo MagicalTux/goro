@@ -101,14 +101,32 @@ func spawnCallableInternal(ctx phpv.Context, v *phpv.ZVal, paramNo int) (phpv.Ca
 		var instance phpv.ZObject
 
 		if firstArg.GetType() == phpv.ZtString {
-			class, err = ctx.Global().GetClass(ctx, firstArg.AsString(ctx), true)
-			if err != nil {
-				// Convert class-not-found errors into a TypeError for callback context
-				if _, ok := err.(*phperr.PhpThrow); ok {
-					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
-						fmt.Sprintf("call_user_func(): Argument #1 ($callback) must be a valid callback, class \"%s\" not found", firstArg.AsString(ctx)))
+			className := firstArg.AsString(ctx)
+			classNameLower := className.ToLower()
+			if classNameLower == "self" || classNameLower == "parent" {
+				if err := ctx.Deprecated("Use of \"%s\" in callables is deprecated", className, logopt.NoFuncName(true)); err != nil {
+					return nil, err
 				}
-				return nil, err
+				callerClass := ctx.Class()
+				if callerClass == nil {
+					return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Cannot use \"%s\" when no class scope is active", className))
+				}
+				if classNameLower == "parent" {
+					class = callerClass.GetParent()
+					if class == nil {
+						return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot use \"parent\" when current class scope has no parent")
+					}
+				} else {
+					class = callerClass
+				}
+			} else {
+				class, err = ctx.Global().GetClass(ctx, className, true)
+				if err != nil {
+					if _, ok := err.(*phperr.PhpThrow); ok {
+						return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("call_user_func(): Argument #1 ($callback) must be a valid callback, class \"%s\" not found", className))
+					}
+					return nil, err
+				}
 			}
 		} else {
 			instance = firstArg.AsObject(ctx)

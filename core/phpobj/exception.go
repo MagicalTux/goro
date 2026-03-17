@@ -282,7 +282,7 @@ func exceptionConstruct(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.
 		}
 		// Use direct hash table write for $previous (private property).
 		// Private properties can't have hooks in subclasses.
-		o.HashTable().SetString("previous", args[2])
+		o.HashTable().SetString("previous", prevObj.ZVal())
 	}
 
 	for {

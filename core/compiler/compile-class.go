@@ -989,7 +989,8 @@ func parseClassLine(class *phpobj.ZClass, c compileCtx) error {
 		return err
 	}
 
-	if i.Type == tokenizer.T_STRING {
+	// Semi-reserved keywords (like 'enum') can be used as class names
+	if i.Type == tokenizer.T_STRING || i.IsSemiReserved() {
 		className := phpv.ZString(i.Data)
 		// Prepend current namespace to class name
 		ns := c.getNamespace()
@@ -1148,13 +1149,13 @@ func compileReadClassIdentifier(c compileCtx) (phpv.ZString, error) {
 			if err != nil {
 				return res, err
 			}
-			if i.Type != tokenizer.T_STRING {
+			if i.Type != tokenizer.T_STRING && !i.IsSemiReserved() {
 				return res, i.Unexpected()
 			}
 			res += phpv.ZString(i.Data)
 			continue
 		}
-		if i.Type == tokenizer.T_STRING {
+		if i.Type == tokenizer.T_STRING || i.IsSemiReserved() {
 			res += phpv.ZString(i.Data)
 			continue
 		}

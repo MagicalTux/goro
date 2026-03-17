@@ -1474,7 +1474,8 @@ func compileClassName(c compileCtx) (phpv.ZString, error) {
 	}
 
 	for {
-		if i.Type != tokenizer.T_STRING {
+		// Semi-reserved keywords (like 'enum') can be used as class names
+		if i.Type != tokenizer.T_STRING && !i.IsSemiReserved() {
 			return r, i.Unexpected()
 		}
 

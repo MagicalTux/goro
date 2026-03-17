@@ -123,7 +123,7 @@ func (r *runOperator) Dump(w io.Writer) error {
 			return err
 		}
 	}
-	_, err = w.Write([]byte(r.op.Name())) // TODO fixme
+	_, err = w.Write([]byte(operatorSymbol(r.op)))
 	if err != nil {
 		return err
 	}
@@ -135,6 +135,94 @@ func (r *runOperator) Dump(w io.Writer) error {
 	}
 	_, err = w.Write([]byte{')'})
 	return err
+}
+
+// operatorSymbol returns the PHP source representation of an operator.
+func operatorSymbol(op tokenizer.ItemType) string {
+	switch op {
+	case tokenizer.T_BOOLEAN_AND:
+		return " && "
+	case tokenizer.T_BOOLEAN_OR:
+		return " || "
+	case tokenizer.T_LOGICAL_AND:
+		return " and "
+	case tokenizer.T_LOGICAL_OR:
+		return " or "
+	case tokenizer.T_LOGICAL_XOR:
+		return " xor "
+	case tokenizer.T_IS_EQUAL:
+		return " == "
+	case tokenizer.T_IS_NOT_EQUAL:
+		return " != "
+	case tokenizer.T_IS_IDENTICAL:
+		return " === "
+	case tokenizer.T_IS_NOT_IDENTICAL:
+		return " !== "
+	case tokenizer.T_IS_SMALLER_OR_EQUAL:
+		return " <= "
+	case tokenizer.T_IS_GREATER_OR_EQUAL:
+		return " >= "
+	case tokenizer.T_SPACESHIP:
+		return " <=> "
+	case tokenizer.T_SL:
+		return " << "
+	case tokenizer.T_SR:
+		return " >> "
+	case tokenizer.T_COALESCE:
+		return " ?? "
+	case tokenizer.T_CONCAT_EQUAL:
+		return " .= "
+	case tokenizer.T_PLUS_EQUAL:
+		return " += "
+	case tokenizer.T_MINUS_EQUAL:
+		return " -= "
+	case tokenizer.T_MUL_EQUAL:
+		return " *= "
+	case tokenizer.T_DIV_EQUAL:
+		return " /= "
+	case tokenizer.T_MOD_EQUAL:
+		return " %= "
+	case tokenizer.T_AND_EQUAL:
+		return " &= "
+	case tokenizer.T_OR_EQUAL:
+		return " |= "
+	case tokenizer.T_XOR_EQUAL:
+		return " ^= "
+	case tokenizer.T_SL_EQUAL:
+		return " <<= "
+	case tokenizer.T_SR_EQUAL:
+		return " >>= "
+	case tokenizer.T_POW_EQUAL:
+		return " **= "
+	case tokenizer.T_COALESCE_EQUAL:
+		return " ??= "
+	case tokenizer.T_POW:
+		return " ** "
+	case tokenizer.T_INC:
+		return "++"
+	case tokenizer.T_DEC:
+		return "--"
+	case tokenizer.T_INSTANCEOF:
+		return " instanceof "
+	case tokenizer.T_BOOL_CAST:
+		return "(bool)"
+	case tokenizer.T_INT_CAST:
+		return "(int)"
+	case tokenizer.T_DOUBLE_CAST:
+		return "(float)"
+	case tokenizer.T_STRING_CAST:
+		return "(string)"
+	case tokenizer.T_ARRAY_CAST:
+		return "(array)"
+	case tokenizer.T_OBJECT_CAST:
+		return "(object)"
+	default:
+		// Single-character operators like +, -, *, /, %, etc.
+		if r := op.Rune(); r != 0 {
+			return " " + string(r) + " "
+		}
+		return op.Name()
+	}
 }
 
 func spawnOperator(ctx phpv.Context, op tokenizer.ItemType, a, b phpv.Runnable, l *phpv.Loc) (phpv.Runnable, error) {

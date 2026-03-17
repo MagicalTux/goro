@@ -28,7 +28,12 @@ type runnableFunctionCallRef struct {
 }
 
 func (r *runnableFunctionCall) Dump(w io.Writer) error {
-	_, err := w.Write([]byte(r.name))
+	name := string(r.name)
+	// PHP AST printing prefixes built-in language constructs with \ for global namespace
+	if name == "exit" || name == "die" {
+		name = "\\" + name
+	}
+	_, err := w.Write([]byte(name))
 	if err != nil {
 		return err
 	}
@@ -275,6 +280,21 @@ func compileFunction(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		}
 	}
 
+	// PHP 8.5: exit/die are fully reserved and cannot be used as function names.
+	if i.Type == tokenizer.T_EXIT {
+		return nil, &phpv.PhpError{
+			Err:  fmt.Errorf("syntax error, unexpected token \"exit\", expecting \"(\""),
+			Code: phpv.E_PARSE,
+			Loc:  i.Loc(),
+		}
+	}
+
+	// Semi-reserved keywords (including 'enum') can be used as function names.
+	if i.IsSemiReserved() && i.Type != tokenizer.T_STRING {
+		// Treat semi-reserved keyword as a string for function naming
+		i.Type = tokenizer.T_STRING
+	}
+
 	switch i.Type {
 	case tokenizer.T_STRING:
 		// regular function definition - prepend namespace
@@ -362,6 +382,10 @@ func compileSpecialFuncCall(i *tokenizer.Item, c compileCtx) (phpv.Runnable, err
 			// the '...' and the following token.
 			return nil, close.Unexpected()
 		}
+		if next.IsSingle(')') {
+			// exit() / die() with no arguments
+			return &runnableFunctionCall{name: fn_name, l: l}, nil
+		}
 		// Not '...'; backup the token after '(' so the expression parser
 		// handles the full parenthesized expression (e.g., exit(42)).
 		c.backup()
@@ -433,6 +457,60 @@ func compileSpecialFuncCallOne(i *tokenizer.Item, c compileCtx) (phpv.Runnable, 
 	}
 
 	return &runnableFunctionCall{name: fn_name, args: []phpv.Runnable{arg}, l: l}, nil
+}
+
+// compileExitExpr handles exit/die in expression context (PHP 8.5).
+func compileExitExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
+	fn_name := phpv.ZString(i.Data)
+	l := i.Loc()
+
+	next, err := c.NextItem()
+	if err != nil {
+		return nil, err
+	}
+
+	if next.IsSingle('(') {
+		after, err := c.NextItem()
+		if err != nil {
+			return nil, err
+		}
+		if after.IsSingle(')') {
+			return &runnableFunctionCall{name: fn_name, l: l}, nil
+		}
+		if after.Type == tokenizer.T_ELLIPSIS {
+			close, err := c.NextItem()
+			if err != nil {
+				return nil, err
+			}
+			if close.IsSingle(')') {
+				callableName := string(fn_name)
+				if callableName == "die" {
+					callableName = "exit"
+				}
+				return &runFirstClassCallable{
+					target: &runConstant{c: callableName},
+					l:      l,
+				}, nil
+			}
+			return nil, close.Unexpected()
+		}
+		c.backup()
+		arg, err := compileExpr(nil, c)
+		if err != nil {
+			return nil, err
+		}
+		close, err := c.NextItem()
+		if err != nil {
+			return nil, err
+		}
+		if !close.IsSingle(')') {
+			return nil, close.Unexpected()
+		}
+		return &runnableFunctionCall{name: fn_name, args: []phpv.Runnable{arg}, l: l}, nil
+	}
+
+	c.backup()
+	return &runnableFunctionCall{name: fn_name, l: l}, nil
 }
 
 func compileFunctionWithName(name phpv.ZString, c compileCtx, l *phpv.Loc, rref bool, optionalBody ...bool) (phpv.ZClosure, error) {

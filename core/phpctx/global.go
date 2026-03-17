@@ -307,9 +307,6 @@ func (g *Global) setupIni() {
 }
 
 func (g *Global) doGPC() {
-	// Clear any startup warnings from a previous doGPC() call (e.g., during reinit)
-	g.startupWarnings = nil
-
 	// initialize superglobals
 	get := phpv.NewZArray()
 	p := phpv.NewZArray()

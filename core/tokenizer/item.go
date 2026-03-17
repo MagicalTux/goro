@@ -309,6 +309,17 @@ func (i *Item) Unexpected() error {
 	}
 }
 
+// UnexpectedExpecting returns a parse error with the "expecting" hint.
+func (i *Item) UnexpectedExpecting(expecting string) error {
+	err := fmt.Errorf("syntax error, unexpected %s, expecting %s", i.HumanName(), expecting)
+	return &phpv.PhpError{
+		Err:          err,
+		Code:         phpv.E_PARSE,
+		Loc:          i.Loc(),
+		GoStackTrace: phpv.GetGoDebugTrace(),
+	}
+}
+
 // HumanName returns the PHP 8-style human-readable token name for error messages.
 // For keywords, returns `token "keyword"` (e.g. `token "exit"`).
 // For symbols, returns `"c"` (e.g. `"("`).
