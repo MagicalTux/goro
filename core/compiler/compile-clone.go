@@ -60,8 +60,8 @@ func (r *runnableClone) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 
 	obj := v.Value().(phpv.ZObject)
 
-	// Enums cannot be cloned
-	if obj.GetClass().GetType()&phpv.ZClassTypeEnum != 0 {
+	// Enums and Generators cannot be cloned
+	if obj.GetClass().GetType()&phpv.ZClassTypeEnum != 0 || obj.GetClass().GetName() == "Generator" {
 		return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Trying to clone an uncloneable object of class %s", obj.GetClass().GetName()))
 	}
 

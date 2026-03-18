@@ -10,9 +10,9 @@ import (
 )
 
 // runYield represents a yield expression in a generator function.
-// yield $value — yields a value with an auto-incrementing key
-// yield $key => $value — yields with an explicit key
-// yield (no value) — yields null
+// yield $value -- yields a value with an auto-incrementing key
+// yield $key => $value -- yields with an explicit key
+// yield (no value) -- yields null
 type runYield struct {
 	key   phpv.Runnable // nil if no explicit key
 	value phpv.Runnable // nil means yield null
@@ -82,7 +82,7 @@ func (r *runYield) Dump(w io.Writer) error {
 }
 
 // runYieldFrom represents a yield from expression.
-// yield from $iterable — delegates to a sub-generator/iterator.
+// yield from $iterable -- delegates to a sub-generator/iterator.
 type runYieldFrom struct {
 	expr phpv.Runnable
 	l    *phpv.Loc
@@ -117,9 +117,15 @@ func compileYield(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 
 	// Mark the enclosing function as a generator
 	f := c.getFunc()
-	if f != nil {
-		f.isGenerator = true
+	if f == nil {
+		// yield outside of a function is a compile error
+		return nil, &phpv.PhpError{
+			Err:  fmt.Errorf("The \"yield\" expression can only be used inside a function"),
+			Code: phpv.E_COMPILE_ERROR,
+			Loc:  l,
+		}
 	}
+	f.isGenerator = true
 
 	isYieldFrom := i.Type == tokenizer.T_YIELD_FROM
 
@@ -234,7 +240,16 @@ type generatorClosure struct {
 func (g *generatorClosure) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	// Spawn a generator that runs the function body in a goroutine.
 	// Use callBody to bypass the generator check in ZClosure.Call.
-	return phpobj.SpawnGenerator(ctx, g.ZClosure.callBody, args)
+	// Pass $this so that method generators and closures can access $this.
+	name := g.ZClosure.Name()
+	if g.ZClosure.this != nil {
+		return phpobj.SpawnGeneratorNamed(ctx, g.ZClosure.callBody, args, name, g.ZClosure.this)
+	}
+	// Also check the calling context for $this (e.g., method generators)
+	if ctx.This() != nil {
+		return phpobj.SpawnGeneratorNamed(ctx, g.ZClosure.callBody, args, name, ctx.This())
+	}
+	return phpobj.SpawnGeneratorNamed(ctx, g.ZClosure.callBody, args, name)
 }
 
 func (g *generatorClosure) Name() string {

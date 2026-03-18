@@ -42,6 +42,7 @@ func init() {
 			"strtotime":                   {Func: fncStrtotime, Args: []*phpctx.ExtFunctionArg{}},
 			"timezone_abbreviations_list": {Func: fncTimezoneAbbreviationsList, Args: []*phpctx.ExtFunctionArg{}},
 			"timezone_identifiers_list":   {Func: fncTimezoneIdentifiersList, Args: []*phpctx.ExtFunctionArg{}},
+			"timezone_name_from_abbr":     {Func: fncTimezoneNameFromAbbr, Args: []*phpctx.ExtFunctionArg{}},
 			"timezone_name_get":           {Func: fncTimezoneNameGet, Args: []*phpctx.ExtFunctionArg{}},
 			"timezone_offset_get":         {Func: fncTimezoneOffsetGet, Args: []*phpctx.ExtFunctionArg{}},
 			"timezone_open":               {Func: fncTimezoneOpen, Args: []*phpctx.ExtFunctionArg{}},

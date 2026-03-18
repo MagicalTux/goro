@@ -244,6 +244,94 @@ func fncTimezoneAbbreviationsList(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZV
 	return datetimezoneListAbbreviations(ctx, args)
 }
 
+// > func string|false timezone_name_from_abbr ( string $abbr [, int $utcOffset = -1 [, int $isDST = -1 ]] )
+func fncTimezoneNameFromAbbr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var abbr phpv.ZString
+	var utcOffset core.Optional[phpv.ZInt]
+	var isDST core.Optional[phpv.ZInt]
+	_, err := core.Expand(ctx, args, &abbr, &utcOffset, &isDST)
+	if err != nil {
+		return nil, err
+	}
+
+	abbrStr := string(abbr)
+
+	// Common timezone abbreviations mapping
+	commonAbbrs := map[string]string{
+		"CET":  "Europe/Berlin",
+		"CEST": "Europe/Berlin",
+		"EET":  "Europe/Helsinki",
+		"EEST": "Europe/Helsinki",
+		"WET":  "Europe/Lisbon",
+		"WEST": "Europe/Lisbon",
+		"GMT":  "UTC",
+		"UTC":  "UTC",
+		"EST":  "America/New_York",
+		"EDT":  "America/New_York",
+		"CST":  "America/Chicago",
+		"CDT":  "America/Chicago",
+		"MST":  "America/Denver",
+		"MDT":  "America/Denver",
+		"PST":  "America/Los_Angeles",
+		"PDT": "America/Los_Angeles",
+		"HST": "Pacific/Honolulu",
+		"AKST": "America/Anchorage",
+		"AKDT": "America/Anchorage",
+		"AST":  "America/Puerto_Rico",
+		"IST":  "Asia/Kolkata",
+		"JST":  "Asia/Tokyo",
+		"KST":  "Asia/Seoul",
+		"CST6CDT": "America/Chicago",
+		"EST5EDT": "America/New_York",
+		"MST7MDT": "America/Denver",
+		"PST8PDT": "America/Los_Angeles",
+		"AEST": "Australia/Sydney",
+		"AEDT": "Australia/Sydney",
+		"ACST": "Australia/Adelaide",
+		"ACDT": "Australia/Adelaide",
+		"AWST": "Australia/Perth",
+		"NZST": "Pacific/Auckland",
+		"NZDT": "Pacific/Auckland",
+		"BST":  "Europe/London",
+		"MET":  "MET",
+		"MSK":  "Europe/Moscow",
+	}
+
+	// Try direct abbreviation lookup
+	if abbrStr != "" {
+		if tz, ok := commonAbbrs[abbrStr]; ok {
+			return phpv.ZString(tz).ZVal(), nil
+		}
+		// Try as a full timezone name
+		if _, err := time.LoadLocation(abbrStr); err == nil {
+			return phpv.ZString(abbrStr).ZVal(), nil
+		}
+	}
+
+	// If offset is provided, try to find by offset
+	if utcOffset.HasArg() {
+		offset := int(utcOffset.Get())
+		// Go through known timezones to find one with matching offset
+		for _, tzName := range []string{
+			"UTC", "Europe/London", "Europe/Berlin", "Europe/Helsinki",
+			"America/New_York", "America/Chicago", "America/Denver",
+			"America/Los_Angeles", "Asia/Tokyo", "Asia/Shanghai",
+			"Asia/Kolkata", "Australia/Sydney", "Pacific/Auckland",
+		} {
+			loc, err := time.LoadLocation(tzName)
+			if err != nil {
+				continue
+			}
+			_, tzOffset := time.Now().In(loc).Zone()
+			if tzOffset == offset {
+				return phpv.ZString(tzName).ZVal(), nil
+			}
+		}
+	}
+
+	return phpv.ZBool(false).ZVal(), nil
+}
+
 // > func DateTime date_create ([ string $datetime = "now" [, DateTimeZone $timezone = null ]] )
 func fncDateCreate(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	obj, err := phpobj.NewZObject(ctx, DateTime)

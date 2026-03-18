@@ -326,9 +326,14 @@ func NewZObject(ctx phpv.Context, c phpv.ZClass, args ...*phpv.ZVal) (*ZObject, 
 		return nil, ThrowError(ctx, Error, fmt.Sprintf("Cannot instantiate trait %s", c.GetName()))
 	}
 
-	// Check for classes that cannot be instantiated directly (e.g., Closure)
-	if zc, ok := c.(*ZClass); ok && zc.InternalOnly && zc.H != nil && zc.H.HandleInvoke != nil {
-		return nil, ThrowError(ctx, Error, fmt.Sprintf("Instantiation of class %s is not allowed", c.GetName()))
+	// Check for classes that cannot be instantiated directly (e.g., Closure, Generator)
+	if zc, ok := c.(*ZClass); ok && zc.InternalOnly {
+		if zc == Generator {
+			return nil, ThrowError(ctx, Error, fmt.Sprintf("The \"%s\" class is reserved for internal use and cannot be manually instantiated", c.GetName()))
+		}
+		if zc.H != nil && zc.H.HandleInvoke != nil {
+			return nil, ThrowError(ctx, Error, fmt.Sprintf("Instantiation of class %s is not allowed", c.GetName()))
+		}
 	}
 
 	n := &ZObject{
