@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/MagicalTux/goro/core/phpobj"
+
 	"github.com/MagicalTux/goro/core"
 	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpv"
@@ -55,8 +57,17 @@ func fncDirname(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZString(path.Dir(p)).ZVal(), nil
 	}
 
-	for i := phpv.ZInt(0); i < *lvl; i++ {
+	levels := *lvl
+	if levels < 1 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "dirname(): Argument #2 ($levels) must be greater than or equal to 1")
+	}
+
+	for i := phpv.ZInt(0); i < levels; i++ {
+		prev := p
 		p = path.Dir(p)
+		if p == prev {
+			break // reached root, no point continuing
+		}
 	}
 	return phpv.ZString(p).ZVal(), nil
 }
