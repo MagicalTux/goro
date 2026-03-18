@@ -22,7 +22,10 @@ func initReflectionConstant() {
 		"getname":       {Name: "getName", Method: phpobj.NativeMethod(reflectionConstantGetName)},
 		"getvalue":      {Name: "getValue", Method: phpobj.NativeMethod(reflectionConstantGetValue)},
 		"getattributes": {Name: "getAttributes", Method: phpobj.NativeMethod(reflectionConstantGetAttributes)},
-		"__tostring":    {Name: "__toString", Method: phpobj.NativeMethod(reflectionConstantToString)},
+		"__tostring":       {Name: "__toString", Method: phpobj.NativeMethod(reflectionConstantToString)},
+		"isdeprecated":     {Name: "isDeprecated", Method: phpobj.NativeMethod(reflectionConstantIsDeprecated)},
+		"getextensionname": {Name: "getExtensionName", Method: phpobj.NativeMethod(reflectionConstantGetExtensionName)},
+		"getextension":     {Name: "getExtension", Method: phpobj.NativeMethod(reflectionConstantGetExtension)},
 	}
 }
 

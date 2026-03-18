@@ -44,7 +44,7 @@ func fncDirname(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	for {
-		if len(p) == 1 {
+		if len(p) <= 1 {
 			break
 		}
 		if p[len(p)-1] != '/' {
@@ -650,8 +650,14 @@ func fncFwrite(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	b := []byte(data)
-	if length != nil && int(*length) < len(b) {
-		b = b[:int(*length)]
+	if length != nil {
+		l := int(*length)
+		if l < 0 {
+			l = 0
+		}
+		if l < len(b) {
+			b = b[:l]
+		}
 	}
 	n, err := file.Write(b)
 	if err != nil {
@@ -683,6 +689,10 @@ func fncFread(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZFalse.ZVal(), nil
 	}
 
+	if length <= 0 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+			"fread(): Argument #2 ($length) must be greater than 0")
+	}
 	buf := make([]byte, int(length))
 	n, err := file.Read(buf)
 	if err != nil && n == 0 {
@@ -868,6 +878,11 @@ func fncFtruncate(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, ctx.FuncError(err)
 	}
 
+	if size < 0 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+			"ftruncate(): Argument #2 ($size) must be greater than or equal to 0")
+	}
+
 	var filename string
 	if s, ok := handle.(*stream.Stream); ok {
 		if f, ok := s.Attr("uri").(string); ok {
@@ -880,7 +895,37 @@ func fncFtruncate(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZFalse.ZVal(), nil
 	}
 
-	os.Truncate(filename, int64(size))
+	err = os.Truncate(filename, int64(size))
+	if err != nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+	return phpv.ZTrue.ZVal(), nil
+}
+
+// > func bool fflush ( resource $handle )
+func fncFflush(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var handle phpv.Resource
+	_, err := core.Expand(ctx, args, &handle)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	if handle == nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	var file *stream.Stream
+	if handle.GetResourceType() == phpv.ResourceStream {
+		file, _ = handle.(*stream.Stream)
+	}
+	if file == nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	err = file.Flush()
+	if err != nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
 	return phpv.ZTrue.ZVal(), nil
 }
 

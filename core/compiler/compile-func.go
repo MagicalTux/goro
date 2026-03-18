@@ -660,6 +660,18 @@ func compileFunctionWithName(name phpv.ZString, c compileCtx, l *phpv.Loc, rref 
 		}
 	}
 
+	// Handle return type after use() clause: function() use ($x): Type { ... }
+	if i.IsSingle(':') && zc.returnType == nil {
+		zc.returnType, err = parseReturnType(c)
+		if err != nil {
+			return nil, err
+		}
+		i, err = c.NextItem()
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	if !i.IsSingle('{') {
 		if len(optionalBody) > 0 && optionalBody[0] && i.IsSingle(';') {
 			// Abstract method — check for disallowed constructor promotion

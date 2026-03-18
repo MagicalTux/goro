@@ -1,23 +1,34 @@
 package standard
 
 import (
+	"fmt"
+
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
 type arrayDiffFn func(k1, v1, k2, v2 *phpv.ZVal) (bool, error)
 
 func arrayDiff(ctx phpv.Context, array *phpv.ZArray, args []*phpv.ZVal, shouldRemove arrayDiffFn) error {
+	return arrayDiffNamed(ctx, "", 2, array, args, shouldRemove)
+}
+
+func arrayDiffNamed(ctx phpv.Context, funcName string, argOffset int, array *phpv.ZArray, args []*phpv.ZVal, shouldRemove arrayDiffFn) error {
 	// array_diff($array, $xs, $ys, $zs)
 	// Basically, what array_diff does is to remove entries in $array
 	// that is contained by any of the other arrays $xs, $ys, etc.
 	// The keys in $array will not be shifted/modified, only for deletion
 	for i := 0; i < len(args); i++ {
-		temp, err := args[i].As(ctx, phpv.ZtArray)
-		if err != nil {
-			return err
+		if args[i].GetType() != phpv.ZtArray {
+			if funcName != "" {
+				return phpobj.ThrowError(ctx, phpobj.TypeError,
+					fmt.Sprintf("%s(): Argument #%d must be of type array, %s given", funcName, i+argOffset, args[i].GetType().TypeName()))
+			}
+			return phpobj.ThrowError(ctx, phpobj.TypeError,
+				fmt.Sprintf("Argument #%d must be of type array, %s given", i+argOffset, args[i].GetType().TypeName()))
 		}
-		array2 := temp.AsArray(ctx)
+		array2 := args[i].AsArray(ctx)
 
 		for k1, v1 := range array.Iterate(ctx) {
 			for k2, v2 := range array2.Iterate(ctx) {
@@ -42,11 +53,11 @@ func fncArrayDiff(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	result := array.Dup()
-	err = arrayDiff(ctx, result, args[1:], func(k1, v1, k2, v2 *phpv.ZVal) (bool, error) {
+	err = arrayDiffNamed(ctx, "array_diff", 2, result, args[1:], func(k1, v1, k2, v2 *phpv.ZVal) (bool, error) {
 		return v1.AsString(ctx) == v2.AsString(ctx), nil
 	})
 	if err != nil {
-		return nil, ctx.FuncError(err)
+		return nil, err
 	}
 
 	return result.ZVal(), nil
@@ -315,11 +326,11 @@ func fncArrayDiffKey(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	result := array.Dup()
-	err = arrayDiff(ctx, result, args[1:], func(k1, v1, k2, v2 *phpv.ZVal) (bool, error) {
+	err = arrayDiffNamed(ctx, "array_diff_key", 2, result, args[1:], func(k1, v1, k2, v2 *phpv.ZVal) (bool, error) {
 		return k1.AsString(ctx) == k2.AsString(ctx), nil
 	})
 	if err != nil {
-		return nil, ctx.FuncError(err)
+		return nil, err
 	}
 
 	return result.ZVal(), nil
@@ -334,7 +345,7 @@ func fncArrayDiffAssoc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 	}
 
 	result := array.Dup()
-	err = arrayDiff(ctx, result, args[1:], func(k1, v1, k2, v2 *phpv.ZVal) (bool, error) {
+	err = arrayDiffNamed(ctx, "array_diff_assoc", 2, result, args[1:], func(k1, v1, k2, v2 *phpv.ZVal) (bool, error) {
 		if k1.AsString(ctx) != k2.AsString(ctx) {
 			return false, nil
 		}
@@ -344,7 +355,7 @@ func fncArrayDiffAssoc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 		return true, nil
 	})
 	if err != nil {
-		return nil, ctx.FuncError(err)
+		return nil, err
 	}
 
 	return result.ZVal(), nil

@@ -107,6 +107,43 @@ func fncGettype(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZString(t.String()).ZVal(), nil
 }
 
+// > func bool settype ( mixed &$var , string $type )
+func fncSettype(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) < 2 {
+		return nil, ctx.Errorf("settype() expects exactly 2 arguments, %d given", len(args))
+	}
+
+	typeName := args[1].AsString(ctx)
+	var newVal *phpv.ZVal
+	var err error
+
+	switch string(typeName) {
+	case "int", "integer":
+		newVal, err = args[0].As(ctx, phpv.ZtInt)
+	case "float", "double":
+		newVal, err = args[0].As(ctx, phpv.ZtFloat)
+	case "string":
+		newVal, err = args[0].As(ctx, phpv.ZtString)
+	case "bool", "boolean":
+		newVal, err = args[0].As(ctx, phpv.ZtBool)
+	case "array":
+		newVal, err = args[0].As(ctx, phpv.ZtArray)
+	case "object":
+		newVal, err = args[0].As(ctx, phpv.ZtObject)
+	case "null":
+		newVal = phpv.ZNULL.ZVal()
+	default:
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	if err != nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	args[0].Set(newVal)
+	return phpv.ZTrue.ZVal(), nil
+}
+
 // > func void flush ( void )
 func fncFlush(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	ctx.Global().Flush()

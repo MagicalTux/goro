@@ -263,6 +263,20 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 			}
 		}
 	}
+	// For callables with a class scope (e.g., generator body callables),
+	// set the class context so get_class()/self::/static:: work.
+	if callCtx.class == nil {
+		if cg, ok := f.(interface{ GetClass() phpv.ZClass }); ok {
+			if cls := cg.GetClass(); cls != nil {
+				callCtx.class = cls
+				if this != nil {
+					callCtx.methodType = "->"
+				} else {
+					callCtx.methodType = "::"
+				}
+			}
+		}
+	}
 	// Set called class for late static binding (static::class)
 	if callCtx.calledClass == nil {
 		if cc, ok := f.(interface{ GetCalledClass() phpv.ZClass }); ok {

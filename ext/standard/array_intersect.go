@@ -1,7 +1,10 @@
 package standard
 
 import (
+	"fmt"
+
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -28,13 +31,21 @@ func arrayContainsEntry(ctx phpv.Context, array *phpv.ZArray, key, val *phpv.ZVa
 }
 
 func expandArrayArgs(ctx phpv.Context, args []*phpv.ZVal) ([]*phpv.ZArray, error) {
+	return expandArrayArgsNamed(ctx, "", 2, args)
+}
+
+func expandArrayArgsNamed(ctx phpv.Context, funcName string, argOffset int, args []*phpv.ZVal) ([]*phpv.ZArray, error) {
 	var result []*phpv.ZArray
 	for i := 0; i < len(args); i++ {
-		val, err := args[i].As(ctx, phpv.ZtArray)
-		if err != nil {
-			return nil, err
+		if args[i].GetType() != phpv.ZtArray {
+			if funcName != "" {
+				return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+					fmt.Sprintf("%s(): Argument #%d must be of type array, %s given", funcName, i+argOffset, args[i].GetType().TypeName()))
+			}
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+				fmt.Sprintf("Argument #%d must be of type array, %s given", i+argOffset, args[i].GetType().TypeName()))
 		}
-		result = append(result, val.AsArray(ctx))
+		result = append(result, args[i].AsArray(ctx))
 	}
 	return result, nil
 }
@@ -51,9 +62,9 @@ func fncArrayIntersect(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 		return nil, ctx.Warn("at least 2 parameters are required, %d given", len(args))
 	}
 
-	otherArrays, err := expandArrayArgs(ctx, args[1:])
+	otherArrays, err := expandArrayArgsNamed(ctx, "array_intersect", 2, args[1:])
 	if err != nil {
-		return nil, ctx.FuncError(err)
+		return nil, err
 	}
 	result := phpv.NewZArray()
 
@@ -224,9 +235,9 @@ func fncArrayIntersectAssoc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 		return nil, ctx.Warn("at least 2 parameters are required, %d given", len(args))
 	}
 
-	otherArrays, err := expandArrayArgs(ctx, args[1:])
+	otherArrays, err := expandArrayArgsNamed(ctx, "array_intersect_assoc", 2, args[1:])
 	if err != nil {
-		return nil, ctx.FuncError(err)
+		return nil, err
 	}
 
 	result := phpv.NewZArray()
@@ -308,9 +319,9 @@ func fncArrayIntersectKey(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, erro
 		return nil, ctx.FuncError(err)
 	}
 
-	otherArrays, err := expandArrayArgs(ctx, args[1:])
+	otherArrays, err := expandArrayArgsNamed(ctx, "array_intersect_key", 2, args[1:])
 	if err != nil {
-		return nil, ctx.FuncError(err)
+		return nil, err
 	}
 
 	result := phpv.NewZArray()

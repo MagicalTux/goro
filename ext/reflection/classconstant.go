@@ -45,6 +45,7 @@ func initReflectionClassConstant() {
 		"isprivate":         {Name: "isPrivate", Method: phpobj.NativeMethod(reflectionClassConstantIsPrivate)},
 		"isfinal":           {Name: "isFinal", Method: phpobj.NativeMethod(reflectionClassConstantIsFinal)},
 		"isenumcase":        {Name: "isEnumCase", Method: phpobj.NativeMethod(reflectionClassConstantIsEnumCase)},
+		"isdeprecated":      {Name: "isDeprecated", Method: phpobj.NativeMethod(reflectionClassConstantIsDeprecated)},
 		"getattributes":     {Name: "getAttributes", Method: phpobj.NativeMethod(reflectionClassConstantGetAttributes)},
 		"__tostring":        {Name: "__toString", Method: phpobj.NativeMethod(reflectionClassConstantToString)},
 		"getdoccomment":     {Name: "getDocComment", Method: phpobj.NativeMethod(reflectionClassConstantGetDocComment)},

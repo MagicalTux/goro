@@ -32,6 +32,12 @@ func initReflectionProperty() {
 		"getdeclaringclass": {Name: "getDeclaringClass", Method: phpobj.NativeMethod(reflectionPropertyGetDeclaringClass)},
 		"getattributes":     {Name: "getAttributes", Method: phpobj.NativeMethod(reflectionPropertyGetAttributes)},
 		"getdoccomment":     {Name: "getDocComment", Method: phpobj.NativeMethod(reflectionPropertyGetDocComment)},
+		"isreadonly":        {Name: "isReadOnly", Method: phpobj.NativeMethod(reflectionPropertyIsReadOnly)},
+		"gettype":           {Name: "getType", Method: phpobj.NativeMethod(reflectionPropertyGetType)},
+		"hastype":           {Name: "hasType", Method: phpobj.NativeMethod(reflectionPropertyHasType)},
+		"hasdefaultvalue":   {Name: "hasDefaultValue", Method: phpobj.NativeMethod(reflectionPropertyHasDefaultValue)},
+		"getdefaultvalue":   {Name: "getDefaultValue", Method: phpobj.NativeMethod(reflectionPropertyGetDefaultValue)},
+		"getmodifiers":      {Name: "getModifiers", Method: phpobj.NativeMethod(reflectionPropertyGetModifiers)},
 	}
 }
 

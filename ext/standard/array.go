@@ -2,7 +2,6 @@ package standard
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -68,7 +67,8 @@ func fncArrayCombine(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	if keys.Count(ctx) != values.Count(ctx) {
-		return nil, errors.New("Argument #1 ($keys) and argument #2 ($values) must have the same number of elements")
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+			"array_combine(): Argument #1 ($keys) and argument #2 ($values) must have the same number of elements")
 	}
 
 	result := phpv.NewZArray()
@@ -84,7 +84,14 @@ func fncArrayCombine(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		if err != nil {
 			return nil, err
 		}
-		err = result.OffsetSet(ctx, key, val)
+		// array_combine converts key values to string first, then applies
+		// standard array key coercion. This means float 1.1 becomes string
+		// key "1.1" (not truncated to int 1).
+		keyStr, err := key.As(ctx, phpv.ZtString)
+		if err != nil {
+			return nil, err
+		}
+		err = result.OffsetSet(ctx, keyStr, val)
 		if err != nil {
 			return nil, err
 		}
@@ -323,7 +330,7 @@ func fncArrayFlip(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		switch v.GetType() {
 		case phpv.ZtInt, phpv.ZtString:
 		default:
-			if err = ctx.Warn("Can only flip STRING and INTEGER values!"); err != nil {
+			if err = ctx.Warn("Can only flip string and integer values, entry skipped"); err != nil {
 				return nil, err
 			}
 			continue
@@ -348,20 +355,33 @@ func arrayFilterDefaultCallback(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal
 // > func array array_filter ( array $array [, callable $callback [, int $flag = 0 ]] )
 func fncArrayFilter(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var array *phpv.ZArray
-	var callbackArg core.Optional[phpv.Callable]
-	var flagArg core.Optional[phpv.ZInt]
-	_, err := core.Expand(ctx, args, &array, &callbackArg, &flagArg)
+	_, err := core.Expand(ctx, args, &array)
 	if err != nil {
 		return nil, err
 	}
 
-	callback := callbackArg.GetOrDefault(&phpctx.ExtFunction{
-		Func: arrayFilterDefaultCallback,
-	})
+	// In PHP, passing null as callback is equivalent to not passing a callback
+	// (filter by truthiness). Handle this before trying to parse as Callable.
+	var callback phpv.Callable
+	if len(args) >= 2 && args[1] != nil && args[1].GetType() != phpv.ZtNull {
+		cb, err := core.SpawnCallableParam(ctx, args[1], 2)
+		if err != nil {
+			return nil, err
+		}
+		callback = cb
+	} else {
+		callback = &phpctx.ExtFunction{
+			Func: arrayFilterDefaultCallback,
+		}
+	}
 
 	var flag phpv.ZInt = 0
-	if flagArg.HasArg() {
-		flag = flagArg.Get()
+	if len(args) >= 3 {
+		flagVal, err := args[2].As(ctx, phpv.ZtInt)
+		if err != nil {
+			return nil, err
+		}
+		flag = flagVal.Value().(phpv.ZInt)
 	}
 
 	result := phpv.NewZArray()
@@ -1410,7 +1430,7 @@ func fncArrayCountValues(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error
 		case phpv.ZtInt:
 		case phpv.ZtString:
 		default:
-			if err = ctx.Warn("Can only count STRING and INTEGER values!"); err != nil {
+			if err = ctx.Warn("Can only count string and integer values, entry skipped"); err != nil {
 				return nil, err
 			}
 			continue
@@ -1436,8 +1456,13 @@ func fncArrayFill(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, ctx.FuncError(err)
 	}
 
+	if num < 0 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+			"array_fill(): Argument #2 ($count) must be greater than or equal to 0")
+	}
 	if num > 10000000 {
-		return nil, ctx.Errorf("array_fill(): Too many elements")
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+			"array_fill(): Argument #2 ($count) is too large")
 	}
 	result := phpv.NewZArray()
 	for i := startIndex; i < startIndex+num; i++ {
@@ -1462,9 +1487,56 @@ func fncArrayFillKeys(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	result := phpv.NewZArray()
 	for _, v := range array.Iterate(ctx) {
-		result.OffsetSet(ctx, v, fillValue)
+		// array_fill_keys converts values to string first for use as keys,
+		// so float 1.23 becomes string key "1.23" rather than int key 1.
+		keyStr, err := v.As(ctx, phpv.ZtString)
+		if err != nil {
+			return nil, err
+		}
+		result.OffsetSet(ctx, keyStr, fillValue)
 	}
 	return result.ZVal(), nil
+}
+
+// > func mixed array_first ( array $array )
+func fncArrayFirst(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var array *phpv.ZArray
+	_, err := core.Expand(ctx, args, &array)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	for _, v := range array.Iterate(ctx) {
+		return v, nil
+	}
+
+	return phpv.ZNULL.ZVal(), nil
+}
+
+// > func mixed array_last ( array $array )
+func fncArrayLast(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var array *phpv.ZArray
+	_, err := core.Expand(ctx, args, &array)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	it := array.NewIterator()
+	_, err = it.End(ctx)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	if !it.Valid(ctx) {
+		return phpv.ZNULL.ZVal(), nil
+	}
+
+	v, err := it.Current(ctx)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	return v, nil
 }
 
 // > func array array_key_first ( array $keys )
@@ -1684,16 +1756,49 @@ func fncArrayProduct(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, ctx.FuncError(err)
 	}
 
-	var product phpv.ZFloat = 1
+	// PHP returns int when all values are integers, float otherwise
+	floatResult := false
+	var intProduct phpv.ZInt = 1
+	var floatProduct phpv.ZFloat = 1
 	for _, v := range array.Iterate(ctx) {
-		if v.GetType() == phpv.ZtArray {
+		switch v.GetType() {
+		case phpv.ZtArray, phpv.ZtObject:
+			if err := ctx.Warn("Multiplication is not supported on type %s", v.GetType().TypeName()); err != nil {
+				return nil, err
+			}
 			continue
+		case phpv.ZtString:
+			// Check if string is numeric; if it contains '.', 'e', or 'E', result becomes float
+			s := string(v.AsString(ctx))
+			if strings.ContainsAny(s, ".eE") {
+				floatResult = true
+			}
+			if !floatResult {
+				intProduct *= v.AsInt(ctx)
+			}
+			floatProduct *= v.AsFloat(ctx)
+		case phpv.ZtFloat:
+			floatResult = true
+			floatProduct *= v.AsFloat(ctx)
+		case phpv.ZtBool:
+			boolVal := v.AsInt(ctx)
+			intProduct *= boolVal
+			floatProduct *= phpv.ZFloat(boolVal)
+		case phpv.ZtResource:
+			if err := ctx.Warn("Multiplication is not supported on type %s", v.GetType().TypeName()); err != nil {
+				return nil, err
+			}
+			continue
+		default:
+			intProduct *= v.AsInt(ctx)
+			floatProduct *= v.AsFloat(ctx)
 		}
-
-		product *= v.AsFloat(ctx)
 	}
 
-	return product.ZVal(), nil
+	if floatResult {
+		return floatProduct.ZVal(), nil
+	}
+	return intProduct.ZVal(), nil
 }
 
 // > func number array_sum ( array $array )
@@ -1739,13 +1844,18 @@ func fncArrayRand(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	num := core.Deref(numArg, 1)
 
+	if num < 1 || num > phpv.ZInt(array.Count(ctx)) {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+			"array_rand(): Argument #2 ($num) must be between 1 and the number of elements in argument #1 ($array)")
+	}
+
 	if num == 1 {
 		i := rand.IntN(int(array.Count(ctx)))
 		return array.OffsetKeyAt(ctx, i)
 	}
 
 	result := phpv.NewZArray()
-	indices := rand.Perm(int(array.Count(ctx)))[:num]
+	indices := rand.Perm(int(array.Count(ctx)))[:int(num)]
 
 	i := 0
 	for k := range array.Iterate(ctx) {
@@ -1888,7 +1998,7 @@ func arrayRecursiveCompact(ctx phpv.Context, result *phpv.ZArray, varName *phpv.
 			}
 			result.OffsetSet(ctx, varName, value)
 		} else {
-			ctx.Notice("compact(): Undefined variable: %s", varName)
+			ctx.Warn("Undefined variable $%s", varName)
 		}
 	case phpv.ZtArray:
 		if depth >= compactMaxDepth {

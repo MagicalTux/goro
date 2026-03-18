@@ -148,8 +148,10 @@ type GeneratorBodyFunc func(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 // can be called through CallZVal (which sets up a proper FuncContext).
 type generatorBodyCallable struct {
 	phpv.CallableVal
-	fn   GeneratorBodyFunc
-	name string
+	fn          GeneratorBodyFunc
+	name        string
+	class       phpv.ZClass // class scope for the generator
+	calledClass phpv.ZClass // called class for late static binding
 }
 
 func (g *generatorBodyCallable) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
@@ -163,6 +165,9 @@ func (g *generatorBodyCallable) Name() string {
 	return "{generator}"
 }
 
+func (g *generatorBodyCallable) GetClass() phpv.ZClass       { return g.class }
+func (g *generatorBodyCallable) GetCalledClass() phpv.ZClass  { return g.calledClass }
+
 // SpawnGenerator creates a new Generator object. The caller provides a body
 // function that will run in a goroutine. This function is the actual body
 // execution (not the outer Call that checks isGenerator).
@@ -173,6 +178,18 @@ func SpawnGenerator(ctx phpv.Context, bodyFn GeneratorBodyFunc, args []*phpv.ZVa
 // SpawnGeneratorNamed is like SpawnGenerator but also sets the function name
 // for stack traces and __debugInfo, and accepts optional $this for method generators.
 func SpawnGeneratorNamed(ctx phpv.Context, bodyFn GeneratorBodyFunc, args []*phpv.ZVal, funcName string, optionalThis ...phpv.ZObject) (*phpv.ZVal, error) {
+	// Capture class context from calling scope for get_class()/self::/static::
+	var classCtx phpv.ZClass
+	var calledClassCtx phpv.ZClass
+	if ctx.Class() != nil {
+		classCtx = ctx.Class()
+	}
+	if fc := ctx.Func(); fc != nil {
+		if cc, ok := fc.(interface{ CalledClass() phpv.ZClass }); ok {
+			calledClassCtx = cc.CalledClass()
+		}
+	}
+
 	state := &GeneratorState{
 		funcName:  funcName,
 		status:    GeneratorCreated,
@@ -219,7 +236,7 @@ func SpawnGeneratorNamed(ctx phpv.Context, bodyFn GeneratorBodyFunc, args []*php
 
 		// Wrap the body in a Callable and use CallZVal to get a proper
 		// FuncContext (needed for Tick, Loc, etc).
-		callable := &generatorBodyCallable{fn: bodyFn, name: state.funcName}
+		callable := &generatorBodyCallable{fn: bodyFn, name: state.funcName, class: classCtx, calledClass: calledClassCtx}
 		var result *phpv.ZVal
 		var err error
 		if thisObj != nil {

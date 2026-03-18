@@ -38,6 +38,11 @@ func initReflectionMethod() {
 		"getattributes":                 {Name: "getAttributes", Method: phpobj.NativeMethod(reflectionMethodGetAttributes)},
 		"getclosure":                    {Name: "getClosure", Method: phpobj.NativeMethod(reflectionMethodGetClosure)},
 		"getdoccomment":                 {Name: "getDocComment", Method: phpobj.NativeMethod(reflectionMethodGetDocComment)},
+		"isdeprecated":                  {Name: "isDeprecated", Method: phpobj.NativeMethod(reflectionMethodIsDeprecated)},
+		"getreturntype":                 {Name: "getReturnType", Method: phpobj.NativeMethod(reflectionMethodGetReturnType)},
+		"hasreturntype":                 {Name: "hasReturnType", Method: phpobj.NativeMethod(reflectionMethodHasReturnType)},
+		"hasprototype":                  {Name: "hasPrototype", Method: phpobj.NativeMethod(reflectionMethodHasPrototype)},
+		"createfrommethodname":          {Name: "createFromMethodName", Method: phpobj.NativeMethod(reflectionMethodCreateFromMethodName), Modifiers: phpv.ZAttrPublic | phpv.ZAttrStatic},
 	}
 }
 

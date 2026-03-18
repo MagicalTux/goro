@@ -118,6 +118,140 @@ func fncGetIncludePath(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 	return ctx.GetConfig("include_path", phpv.ZString(".").ZVal()), nil
 }
 
+// > func array|false fgetcsv ( resource $handle [, int $length = 0 [, string $separator = "," [, string $enclosure = '"' [, string $escape = "\\" ]]]] )
+func fncFgetcsv(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var handle phpv.Resource
+	var lengthArg *phpv.ZInt
+	var sepArg, encArg, escArg *phpv.ZString
+	_, err := core.Expand(ctx, args, &handle, &lengthArg, &sepArg, &encArg, &escArg)
+	if err != nil {
+		return nil, err
+	}
+	if handle == nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	var file *stream.Stream
+	if handle.GetResourceType() == phpv.ResourceStream {
+		file, _ = handle.(*stream.Stream)
+	}
+	if file == nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	sep := byte(',')
+	enc := byte('"')
+	esc := byte('\\')
+
+	if sepArg != nil && len(*sepArg) > 0 {
+		sep = (*sepArg)[0]
+	}
+	if encArg != nil && len(*encArg) > 0 {
+		enc = (*encArg)[0]
+	}
+	if escArg != nil {
+		if len(*escArg) > 0 {
+			esc = (*escArg)[0]
+		} else {
+			esc = 0 // empty string means no escape
+		}
+	}
+
+	maxLen := 0
+	if lengthArg != nil && *lengthArg > 0 {
+		maxLen = int(*lengthArg)
+	}
+
+	// Read a line from the file
+	var line []byte
+	for {
+		b, err := file.ReadByte()
+		if err != nil {
+			if len(line) == 0 {
+				return phpv.ZFalse.ZVal(), nil
+			}
+			break
+		}
+		if b == '\n' {
+			break
+		}
+		if b == '\r' {
+			// Check for \r\n
+			nb, err := file.ReadByte()
+			if err == nil && nb != '\n' {
+				// Not \r\n, seek back 1 byte
+				file.Seek(-1, io.SeekCurrent)
+			}
+			break
+		}
+		line = append(line, b)
+		if maxLen > 0 && len(line) >= maxLen-1 {
+			break
+		}
+	}
+
+	// Parse CSV
+	return parseCsvLine(ctx, string(line), sep, enc, esc)
+}
+
+func parseCsvLine(ctx phpv.Context, line string, sep, enc, esc byte) (*phpv.ZVal, error) {
+	result := phpv.NewZArray()
+	i := 0
+	for i <= len(line) {
+		if i == len(line) {
+			// Trailing separator means empty final field
+			break
+		}
+		if line[i] == enc {
+			// Enclosed field
+			i++ // skip opening enclosure
+			var field []byte
+			for i < len(line) {
+				if esc != 0 && esc != enc && line[i] == esc && i+1 < len(line) {
+					// Escape character followed by another char
+					i++
+					field = append(field, line[i])
+					i++
+				} else if line[i] == enc {
+					if i+1 < len(line) && line[i+1] == enc {
+						// Doubled enclosure = literal enclosure
+						field = append(field, enc)
+						i += 2
+					} else {
+						// End of enclosed field
+						i++ // skip closing enclosure
+						break
+					}
+				} else {
+					field = append(field, line[i])
+					i++
+				}
+			}
+			// Skip to next separator
+			for i < len(line) && line[i] != sep {
+				i++
+			}
+			if i < len(line) {
+				i++ // skip separator
+			}
+			result.OffsetSet(ctx, nil, phpv.ZString(field).ZVal())
+		} else {
+			// Unenclosed field
+			start := i
+			for i < len(line) && line[i] != sep {
+				i++
+			}
+			field := line[start:i]
+			if i < len(line) {
+				i++ // skip separator
+			}
+			result.OffsetSet(ctx, nil, phpv.ZString(field).ZVal())
+		}
+	}
+
+	return result.ZVal(), nil
+}
+
 // > func int|false fputcsv ( resource $handle , array $fields [, string $separator = "," [, string $enclosure = '"' [, string $escape = "\\" ]]] )
 func fncFputcsv(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var handle phpv.Resource

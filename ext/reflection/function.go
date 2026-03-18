@@ -46,6 +46,13 @@ func initReflectionFunction() {
 			"isclosure":                     {Name: "isClosure", Method: phpobj.NativeMethod(reflectionFunctionIsClosure)},
 			"getreturntype":                 {Name: "getReturnType", Method: phpobj.NativeMethod(reflectionFunctionGetReturnType)},
 			"getdoccomment":                 {Name: "getDocComment", Method: phpobj.NativeMethod(reflectionFunctionGetDocComment)},
+			"isdeprecated":                  {Name: "isDeprecated", Method: phpobj.NativeMethod(reflectionFunctionIsDeprecated)},
+			"isvariadic":                    {Name: "isVariadic", Method: phpobj.NativeMethod(reflectionFunctionIsVariadic)},
+			"isanonymous":                   {Name: "isAnonymous", Method: phpobj.NativeMethod(reflectionFunctionIsAnonymous)},
+			"hasreturntype":                 {Name: "hasReturnType", Method: phpobj.NativeMethod(reflectionFunctionHasReturnType)},
+			"getfilename":                   {Name: "getFileName", Method: phpobj.NativeMethod(reflectionFunctionGetFileName)},
+			"getextensionname":              {Name: "getExtensionName", Method: phpobj.NativeMethod(reflectionFunctionGetExtensionName)},
+			"getstaticvariables":            {Name: "getStaticVariables", Method: phpobj.NativeMethod(reflectionFunctionGetStaticVariables)},
 		},
 	}
 }

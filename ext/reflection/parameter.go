@@ -36,7 +36,10 @@ func initReflectionParameter() {
 			"ispassedbyreference": {Name: "isPassedByReference", Method: phpobj.NativeMethod(reflectionParameterIsPassedByReference)},
 			"isvariadic":          {Name: "isVariadic", Method: phpobj.NativeMethod(reflectionParameterIsVariadic)},
 			"getattributes":       {Name: "getAttributes", Method: phpobj.NativeMethod(reflectionParameterGetAttributes)},
-			"hastype":             {Name: "hasType", Method: phpobj.NativeMethod(reflectionParameterHasType)},
+			"hastype":                  {Name: "hasType", Method: phpobj.NativeMethod(reflectionParameterHasType)},
+			"__tostring":               {Name: "__toString", Method: phpobj.NativeMethod(reflectionParameterToString)},
+			"isdefaultvalueavailable":  {Name: "isDefaultValueAvailable", Method: phpobj.NativeMethod(reflectionParameterIsDefaultValueAvailable)},
+			"getdeclaringfunction":     {Name: "getDeclaringFunction", Method: phpobj.NativeMethod(reflectionParameterGetDeclaringFunction)},
 		},
 	}
 }
