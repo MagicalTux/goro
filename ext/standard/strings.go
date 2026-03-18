@@ -542,6 +542,10 @@ func fncStrNewLine2Br(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 // > func string number_format ( float $num, int $decimals = 0, ?string $decimal_separator = ".", ?string $thousands_separator = "," )
 func fncStrNumberFormat(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	// Check for NULL args before Expand converts them
+	decSepIsNull := len(args) > 2 && args[2] != nil && args[2].GetType() == phpv.ZtNull
+	thousSepIsNull := len(args) > 3 && args[3] != nil && args[3].GetType() == phpv.ZtNull
+
 	var num phpv.ZFloat
 	var decimalsArg *phpv.ZInt
 	var decimalSepArg *phpv.ZString
@@ -559,10 +563,10 @@ func fncStrNumberFormat(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	if decimalsArg != nil {
 		decimals = int(*decimalsArg)
 	}
-	if decimalSepArg != nil {
+	if decimalSepArg != nil && !decSepIsNull {
 		decimalSep = string(*decimalSepArg)
 	}
-	if thousandsSepArg != nil {
+	if thousandsSepArg != nil && !thousSepIsNull {
 		thousandsSep = string(*thousandsSepArg)
 	}
 
