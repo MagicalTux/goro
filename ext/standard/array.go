@@ -577,6 +577,10 @@ func fncArrayMap(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 }
 
 // > func array range (  callable $callback , array $array1 [, array $... ] )
+// rangeMaxSize is the maximum number of elements range() will produce.
+// Matches PHP's HT_MAX_SIZE on 64-bit platforms.
+const rangeMaxSize = 1 << 28
+
 func fncRange(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var start, end *phpv.ZVal
 	var stepArg *phpv.ZInt
@@ -592,6 +596,22 @@ func fncRange(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	if step < 0 {
 		step = -step
+	}
+
+	// Check for INF/NaN in float arguments
+	if start.GetType() == phpv.ZtFloat {
+		f := float64(start.AsFloat(ctx))
+		if math.IsInf(f, 0) || math.IsNaN(f) {
+			return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+				fmt.Sprintf("range(): Argument #1 ($start) must be a finite number, %s provided", rangeFormatFloat(f)))
+		}
+	}
+	if end.GetType() == phpv.ZtFloat {
+		f := float64(end.AsFloat(ctx))
+		if math.IsInf(f, 0) || math.IsNaN(f) {
+			return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+				fmt.Sprintf("range(): Argument #2 ($end) must be a finite number, %s provided", rangeFormatFloat(f)))
+		}
 	}
 
 	result := phpv.NewZArray()
@@ -618,6 +638,28 @@ func fncRange(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	} else {
 		n1 := int(start.AsInt(ctx))
 		n2 := int(end.AsInt(ctx))
+
+		if step == 0 {
+			return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+				"range(): Argument #3 ($step) must not be 0")
+		}
+
+		// Calculate the number of elements and check against max
+		var numElements int
+		if n1 < n2 {
+			numElements = (n2-n1)/step + 1
+		} else if n1 > n2 {
+			numElements = (n1-n2)/step + 1
+		} else {
+			numElements = 1
+		}
+
+		if numElements > rangeMaxSize || numElements < 0 {
+			return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+				fmt.Sprintf("The supplied range exceeds the maximum array size by %d elements: start=%d, end=%d, step=%d. Calculated size: %d. Maximum size: %d.",
+					numElements-rangeMaxSize, n1, n2, step, numElements, rangeMaxSize))
+		}
+
 		if n1 < n2 {
 			for i := n1; i <= n2; i += step {
 				result.OffsetSet(ctx, nil, phpv.ZInt(i).ZVal())
@@ -630,6 +672,16 @@ func fncRange(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	return result.ZVal(), nil
+}
+
+func rangeFormatFloat(f float64) string {
+	if math.IsInf(f, 1) {
+		return "INF"
+	}
+	if math.IsInf(f, -1) {
+		return "-INF"
+	}
+	return "NAN"
 }
 
 // > func mixed array_shift ( array &$array )

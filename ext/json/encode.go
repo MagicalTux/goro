@@ -90,8 +90,16 @@ func appendJsonEncodeState(ctx phpv.Context, r []byte, v *phpv.ZVal, opt JsonEnc
 		}
 	case phpv.ZtObject:
 		obj := v.AsObject(ctx)
+		if obj == nil {
+			return r, ErrUnsupportedType
+		}
+		// Recursion detection: bail out if we are already encoding this object
+		if st.markObject(obj) {
+			return r, ErrRecursion
+		}
+		defer st.unmarkObject(obj)
 		// Check for enum types
-		if obj != nil && obj.GetClass().GetType().Has(phpv.ZClassTypeEnum) {
+		if obj.GetClass().GetType().Has(phpv.ZClassTypeEnum) {
 			// Check for JsonSerializable first
 			if obj.GetClass().Implements(JsonSerializable) {
 				if m, ok := obj.GetClass().GetMethod("jsonserialize"); ok {
@@ -115,7 +123,7 @@ func appendJsonEncodeState(ctx phpv.Context, r []byte, v *phpv.ZVal, opt JsonEnc
 			return r, ErrNonBackedEnum
 		}
 		// Check for JsonSerializable
-		if obj != nil && obj.GetClass().Implements(JsonSerializable) {
+		if obj.GetClass().Implements(JsonSerializable) {
 			if m, ok := obj.GetClass().GetMethod("jsonserialize"); ok {
 				result, err := ctx.CallZVal(ctx, m.Method, nil, obj)
 				if err != nil {
@@ -147,8 +155,27 @@ func jsonIndent(level int) []byte {
 }
 
 // jsonState carries encoding state including indent level for pretty printing
+// and object recursion detection.
 type jsonState struct {
 	indent int
+	seen   map[phpv.ZObject]bool
+}
+
+func (st *jsonState) markObject(obj phpv.ZObject) bool {
+	if st.seen == nil {
+		st.seen = make(map[phpv.ZObject]bool)
+	}
+	if st.seen[obj] {
+		return true
+	}
+	st.seen[obj] = true
+	return false
+}
+
+func (st *jsonState) unmarkObject(obj phpv.ZObject) {
+	if st.seen != nil {
+		delete(st.seen, obj)
+	}
 }
 
 func appendJsonArray(ctx phpv.Context, r []byte, it phpv.ZIterator, opt JsonEncOpt, depth int, st *jsonState) ([]byte, error) {
