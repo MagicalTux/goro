@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -1097,6 +1098,9 @@ func operatorCompare(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (
 	if a.GetType() == phpv.ZtArray || b.GetType() == phpv.ZtArray {
 		cmp, err := phpv.Compare(ctx, a, b)
 		if err != nil {
+			if errors.Is(err, phpv.ErrComparisonDepth) {
+				return nil, phpobj.ThrowError(ctx, phpobj.Error, err.Error())
+			}
 			return nil, err
 		}
 		var res bool
@@ -1391,6 +1395,9 @@ func operatorCompare(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (
 	if a.GetType() == phpv.ZtObject && b.GetType() == phpv.ZtObject {
 		cmp, err := phpv.CompareObject(ctx, a.AsObject(ctx), b.AsObject(ctx))
 		if err != nil {
+			if errors.Is(err, phpv.ErrComparisonDepth) {
+				return nil, phpobj.ThrowError(ctx, phpobj.Error, err.Error())
+			}
 			return nil, err
 		}
 		// Handle uncomparable objects (e.g., different enum cases)
@@ -1518,6 +1525,9 @@ CompareArrays:
 		if b.GetType() == phpv.ZtObject {
 			cmp, err := phpv.CompareObject(ctx, a.AsObject(ctx), b.AsObject(ctx))
 			if err != nil {
+				if errors.Is(err, phpv.ErrComparisonDepth) {
+					return nil, phpobj.ThrowError(ctx, phpobj.Error, err.Error())
+				}
 				return nil, err
 			}
 			// Handle uncomparable objects (e.g., different enum cases)

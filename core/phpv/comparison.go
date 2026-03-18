@@ -1,6 +1,13 @@
 package phpv
 
-import "strings"
+import (
+	"errors"
+	"strings"
+)
+
+// ErrComparisonDepth is returned when object comparison exceeds the maximum
+// recursion depth. Callers should convert this to a PHP Error throwable.
+var ErrComparisonDepth = errors.New("Nesting level too deep - recursive dependency?")
 
 // compareDepth tracks recursion depth to prevent stack overflow on circular references.
 var compareDepth int
@@ -29,7 +36,7 @@ func CompareObject(ctx Context, ao, bo ZObject) (int, error) {
 	compareDepth++
 	if compareDepth > 256 {
 		compareDepth--
-		return 0, nil // treat deeply nested comparisons as equal to avoid stack overflow
+		return 0, ErrComparisonDepth
 	}
 	defer func() { compareDepth-- }()
 

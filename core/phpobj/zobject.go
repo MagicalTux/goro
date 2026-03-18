@@ -43,6 +43,15 @@ type ZObject struct {
 	// Stored as a pointer so that wrapper objects (from GetKin/Unwrap/new)
 	// share the same refcount with the original.
 	refCount *int32
+
+	// jsonApplyCount tracks recursive json_encode depth.
+	// Mirrors PHP's GC_PROTECT_RECURSION mechanism.
+	// Stored as a pointer so wrapper objects share the same counter.
+	jsonApplyCount *int32
+
+	// serializeApplyCount tracks recursive serialize depth.
+	// Stored as a pointer so wrapper objects share the same counter.
+	serializeApplyCount *int32
 }
 
 // CallDestructor calls __destruct on this object if it hasn't been called yet.
@@ -166,6 +175,42 @@ func (z *ZObject) SetDestructed(v bool) {
 		z.destructed = new(bool)
 	}
 	*z.destructed = v
+}
+
+// IncrJsonApplyCount increments the json_encode recursion guard counter.
+// Returns the count BEFORE incrementing. If > 0, the object is already being json-encoded.
+func (z *ZObject) IncrJsonApplyCount() int32 {
+	if z.jsonApplyCount == nil {
+		z.jsonApplyCount = new(int32)
+	}
+	old := *z.jsonApplyCount
+	*z.jsonApplyCount++
+	return old
+}
+
+// DecrJsonApplyCount decrements the json_encode recursion guard counter.
+func (z *ZObject) DecrJsonApplyCount() {
+	if z.jsonApplyCount != nil && *z.jsonApplyCount > 0 {
+		*z.jsonApplyCount--
+	}
+}
+
+// IncrSerializeApplyCount increments the serialize recursion guard counter.
+// Returns the count BEFORE incrementing. If > 0, the object is already being serialized.
+func (z *ZObject) IncrSerializeApplyCount() int32 {
+	if z.serializeApplyCount == nil {
+		z.serializeApplyCount = new(int32)
+	}
+	old := *z.serializeApplyCount
+	*z.serializeApplyCount++
+	return old
+}
+
+// DecrSerializeApplyCount decrements the serialize recursion guard counter.
+func (z *ZObject) DecrSerializeApplyCount() {
+	if z.serializeApplyCount != nil && *z.serializeApplyCount > 0 {
+		*z.serializeApplyCount--
+	}
 }
 
 func (z *ZObject) ZVal() *phpv.ZVal {
@@ -517,15 +562,17 @@ func (z *ZObject) GetParent() phpv.ZObject {
 
 func (z *ZObject) new(class *ZClass) *ZObject {
 	return &ZObject{
-		h:            z.h,
-		hasPrivate:   z.hasPrivate,
-		Class:        z.Class,
-		CurrentClass: class,
-		Opaque:       z.Opaque,
-		ID:           z.ID,
-		readonlyInit: z.readonlyInit,
-		refCount:     z.refCount,
-		destructed:   z.destructed,
+		h:                   z.h,
+		hasPrivate:          z.hasPrivate,
+		Class:               z.Class,
+		CurrentClass:        class,
+		Opaque:              z.Opaque,
+		ID:                  z.ID,
+		readonlyInit:        z.readonlyInit,
+		refCount:            z.refCount,
+		destructed:          z.destructed,
+		jsonApplyCount:      z.jsonApplyCount,
+		serializeApplyCount: z.serializeApplyCount,
 	}
 }
 

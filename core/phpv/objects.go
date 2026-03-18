@@ -100,4 +100,18 @@ type ZObject interface {
 	GetParent() ZObject
 	GetKin(className string) ZObject
 	IterProps(ctx Context) iter.Seq[*ZClassProp]
+
+	// IncrJsonApplyCount increments the json_encode recursion guard counter.
+	// Returns the count before incrementing; if > 0 the object is already
+	// being json-encoded.
+	IncrJsonApplyCount() int32
+	// DecrJsonApplyCount decrements the json_encode recursion guard counter.
+	DecrJsonApplyCount()
+
+	// IncrSerializeApplyCount increments the serialize recursion guard counter.
+	// Returns the count before incrementing; if > 0 the object is already
+	// being serialized.
+	IncrSerializeApplyCount() int32
+	// DecrSerializeApplyCount decrements the serialize recursion guard counter.
+	DecrSerializeApplyCount()
 }

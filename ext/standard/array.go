@@ -600,19 +600,17 @@ const rangeMaxSize = 1 << 28
 
 func fncRange(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var start, end *phpv.ZVal
-	var stepArg *phpv.ZInt
-	_, err := core.Expand(ctx, args, &start, &end, &stepArg)
+	var stepArgVal core.Optional[*phpv.ZVal]
+	_, err := core.Expand(ctx, args, &start, &end, &stepArgVal)
 	if err != nil {
 		return nil, err
 	}
 
-	step := 1
-	if stepArg != nil {
-		step = int(*stepArg)
-	}
-
-	if step < 0 {
-		step = -step
+	// Determine if we should use the float path:
+	// if any of start, end, or step is a float, use float arithmetic.
+	useFloat := start.GetType() == phpv.ZtFloat || end.GetType() == phpv.ZtFloat
+	if stepArgVal.HasArg() && stepArgVal.Get().GetType() == phpv.ZtFloat {
+		useFloat = true
 	}
 
 	// Check for INF/NaN in float arguments
@@ -633,7 +631,19 @@ func fncRange(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	result := phpv.NewZArray()
 
-	if start.GetType() == phpv.ZtString && end.GetType() == phpv.ZtString {
+	if start.GetType() == phpv.ZtString && end.GetType() == phpv.ZtString && !useFloat {
+		step := 1
+		if stepArgVal.HasArg() {
+			step = int(stepArgVal.Get().AsInt(ctx))
+		}
+		if step < 0 {
+			step = -step
+		}
+		if step == 0 {
+			return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+				"range(): Argument #3 ($step) must not be 0")
+		}
+
 		s1 := []byte(start.AsString(ctx))
 		s2 := []byte(end.AsString(ctx))
 
@@ -652,7 +662,62 @@ func fncRange(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				result.OffsetSet(ctx, nil, phpv.ZStr(c))
 			}
 		}
+	} else if useFloat {
+		// Float range path
+		f1 := float64(start.AsFloat(ctx))
+		f2 := float64(end.AsFloat(ctx))
+		fstep := 1.0
+		if stepArgVal.HasArg() {
+			fstep = float64(stepArgVal.Get().AsFloat(ctx))
+		}
+		if fstep < 0 {
+			fstep = -fstep
+		}
+		if fstep == 0 {
+			return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+				"range(): Argument #3 ($step) must not be 0")
+		}
+
+		// Calculate element count before allocating
+		var diff float64
+		if f1 <= f2 {
+			diff = f2 - f1
+		} else {
+			diff = f1 - f2
+		}
+		numElementsF := math.Floor(diff/fstep) + 1
+		if numElementsF > float64(rangeMaxSize) || math.IsInf(numElementsF, 0) {
+			return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+				fmt.Sprintf("The supplied range exceeds the maximum array size by %.1f elements: start=%.1f, end=%.1f, step=%.1f. Max size: %d",
+					numElementsF-float64(rangeMaxSize), f1, f2, fstep, rangeMaxSize))
+		}
+
+		numElements := int(numElementsF)
+		if f1 <= f2 {
+			for j := 0; j < numElements; j++ {
+				result.OffsetSet(ctx, nil, phpv.ZFloat(f1+float64(j)*fstep).ZVal())
+			}
+		} else {
+			for j := 0; j < numElements; j++ {
+				result.OffsetSet(ctx, nil, phpv.ZFloat(f1-float64(j)*fstep).ZVal())
+			}
+		}
 	} else {
+		step := 1
+		if stepArgVal.HasArg() {
+			step = int(stepArgVal.Get().AsInt(ctx))
+		}
+
+		// Check for INT_MIN step which cannot be negated without overflow
+		if step == math.MinInt {
+			return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+				fmt.Sprintf("range(): Argument #3 ($step) must be greater than %d", math.MinInt))
+		}
+
+		if step < 0 {
+			step = -step
+		}
+
 		n1 := int(start.AsInt(ctx))
 		n2 := int(end.AsInt(ctx))
 
@@ -661,29 +726,47 @@ func fncRange(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				"range(): Argument #3 ($step) must not be 0")
 		}
 
-		// Calculate the number of elements and check against max
-		var numElements int
+		// Calculate the number of elements using uint64 to avoid overflow
+		// when n1 and n2 are near opposite extremes of the int range.
+		// We cast to uint64 before subtraction so the unsigned wraparound
+		// gives the correct positive magnitude.
+		var numElements uint64
 		if n1 < n2 {
-			numElements = (n2-n1)/step + 1
+			diff := (uint64(n2) - uint64(n1))
+			quotient := diff / uint64(step)
+			// Guard against +1 overflowing uint64 (e.g., range(MIN, MAX, 1))
+			if quotient == math.MaxUint64 {
+				numElements = math.MaxUint64
+			} else {
+				numElements = quotient + 1
+			}
 		} else if n1 > n2 {
-			numElements = (n1-n2)/step + 1
+			diff := (uint64(n1) - uint64(n2))
+			quotient := diff / uint64(step)
+			if quotient == math.MaxUint64 {
+				numElements = math.MaxUint64
+			} else {
+				numElements = quotient + 1
+			}
 		} else {
 			numElements = 1
 		}
 
-		if numElements > rangeMaxSize || numElements < 0 {
+		if numElements > uint64(rangeMaxSize) {
 			return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
 				fmt.Sprintf("The supplied range exceeds the maximum array size by %d elements: start=%d, end=%d, step=%d. Calculated size: %d. Maximum size: %d.",
-					numElements-rangeMaxSize, n1, n2, step, numElements, rangeMaxSize))
+					numElements-uint64(rangeMaxSize), n1, n2, step, numElements, rangeMaxSize))
 		}
 
-		if n1 < n2 {
-			for i := n1; i <= n2; i += step {
-				result.OffsetSet(ctx, nil, phpv.ZInt(i).ZVal())
+		// Use counted loop to avoid overflow when i +/- step wraps around
+		// at the boundaries of the int range.
+		if n1 <= n2 {
+			for j := uint64(0); j < numElements; j++ {
+				result.OffsetSet(ctx, nil, phpv.ZInt(n1+int(j)*step).ZVal())
 			}
 		} else {
-			for i := n1; i >= n2; i -= step {
-				result.OffsetSet(ctx, nil, phpv.ZInt(i).ZVal())
+			for j := uint64(0); j < numElements; j++ {
+				result.OffsetSet(ctx, nil, phpv.ZInt(n1-int(j)*step).ZVal())
 			}
 		}
 	}
