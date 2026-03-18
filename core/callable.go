@@ -42,6 +42,23 @@ func spawnCallableInternal(ctx phpv.Context, v *phpv.ZVal, paramNo int) (phpv.Ca
 			}
 			member, ok := class.GetMethod(methodName.ToLower())
 			if !ok {
+				// When inside instance context, prefer __call over __callStatic
+				if this := ctx.This(); this != nil && this.GetClass().InstanceOf(class) {
+					if callMethod, hasCall := class.GetMethod("__call"); hasCall {
+						wrapper := &magicCallWrapper{
+							callMethod: callMethod.Method,
+							methodName: methodName,
+						}
+						return phpv.Bind(wrapper, this), nil
+					}
+				}
+				if callStaticMethod, hasCallStatic := class.GetMethod("__callstatic"); hasCallStatic {
+					wrapper := &magicCallWrapper{
+						callMethod: callStaticMethod.Method,
+						methodName: methodName,
+					}
+					return phpv.BindClass(wrapper, class, true), nil
+				}
 				callerFunc := ctx.GetFuncName()
 				if callerFunc == "" {
 					callerFunc = "call_user_func"
@@ -235,6 +252,17 @@ func spawnCallableInternal(ctx phpv.Context, v *phpv.ZVal, paramNo int) (phpv.Ca
 			}
 			// Check for __callStatic or __call (static call with string class name)
 			if instance == nil {
+				// When inside instance context, prefer __call over __callStatic
+				if this := ctx.This(); this != nil && this.GetClass().InstanceOf(class) {
+					if callMethod, hasCall := class.GetMethod("__call"); hasCall {
+						origMethodName := methodName.AsString(ctx)
+						wrapper := &magicCallWrapper{
+							callMethod: callMethod.Method,
+							methodName: origMethodName,
+						}
+						return phpv.Bind(wrapper, this), nil
+					}
+				}
 				if callStaticMethod, hasCallStatic := class.GetMethod("__callstatic"); hasCallStatic {
 					origMethodName := methodName.AsString(ctx)
 					wrapper := &magicCallWrapper{

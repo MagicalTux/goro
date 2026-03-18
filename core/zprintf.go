@@ -2,6 +2,7 @@ package core
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"math"
 	"strconv"
@@ -42,7 +43,16 @@ func padRight(s string, minWidth int, pad byte) string {
 }
 
 func readPositionSpecifier(in []byte) (int, []byte) {
-	if len(in) == 0 || !unicode.IsDigit(rune(in[0])) {
+	if len(in) == 0 {
+		return -1, in
+	}
+
+	// Handle $s without preceding digits (e.g., %$s) - treat as position 0
+	if in[0] == '$' {
+		return 0, in[1:]
+	}
+
+	if !unicode.IsDigit(rune(in[0])) {
 		return -1, in
 	}
 
@@ -62,7 +72,9 @@ func readPositionSpecifier(in []byte) (int, []byte) {
 	return -1, in
 }
 
-func readFormatOptions(in []byte) (*formatOptions, []byte) {
+var errMissingPadChar = fmt.Errorf("Missing padding character")
+
+func readFormatOptions(in []byte) (*formatOptions, []byte, error) {
 	o := &formatOptions{
 		padChar: ' ',
 	}
@@ -77,16 +89,16 @@ func readFormatOptions(in []byte) (*formatOptions, []byte) {
 			o.padChar = c
 		case '\'':
 			if i+1 >= len(in) {
-				return nil, nil
+				return nil, nil, errMissingPadChar
 			}
 			i++
 			o.padChar = in[i]
 		default:
-			return o, in[i:]
+			return o, in[i:], nil
 		}
 		i++
 	}
-	return nil, nil
+	return nil, nil, nil
 }
 
 func readFormatWidth(in []byte) (int, int, []byte) {
@@ -163,22 +175,25 @@ func ZFprintf(ctx phpv.Context, w printfWriter, format phpv.ZString, arg ...*php
 			continue
 		}
 
-		if len(arg) <= argp {
-			// argument not found
-			return bytesWritten.Value, ctx.Warn("Too few arguments")
-		}
-
 		var posSpec int
 		posSpec, in = readPositionSpecifier(in[1:])
-		if posSpec == 0 {
+		if posSpec == 0 || posSpec >= 2147483647 {
 			return bytesWritten.Value, phpobj.ThrowError(ctx, phpobj.ValueError, "Argument number specifier must be greater than zero and less than 2147483647")
-		} else if posSpec-1 >= len(arg) {
-			return bytesWritten.Value, ctx.Warn("Too few arguments")
+		} else if posSpec > 0 && posSpec-1 >= len(arg) {
+			return bytesWritten.Value, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, fmt.Sprintf("%d arguments are required, %d given", posSpec+1, len(arg)+1))
+		}
+		if posSpec < 0 && len(arg) <= argp {
+			// argument not found (sequential mode)
+			return bytesWritten.Value, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, fmt.Sprintf("%d arguments are required, %d given", argp+2, len(arg)+1))
 		}
 
 		var options *formatOptions
 		var minWidth, precision int
-		options, in = readFormatOptions(in)
+		var fmtErr error
+		options, in, fmtErr = readFormatOptions(in)
+		if fmtErr == errMissingPadChar {
+			return bytesWritten.Value, phpobj.ThrowError(ctx, phpobj.ValueError, "Missing padding character")
+		}
 		if options == nil {
 			goto Return
 		}
@@ -330,7 +345,14 @@ func ZFprintf(ctx phpv.Context, w printfWriter, format phpv.ZString, arg ...*php
 
 		if len(output) < minWidth {
 			if !options.leftJustify {
-				output = padLeft(output, minWidth, options.padChar)
+				// When zero-padding, the sign must come before the zeros
+				if options.padChar == '0' && len(output) > 0 && (output[0] == '-' || output[0] == '+') {
+					sign := output[0:1]
+					rest := output[1:]
+					output = sign + padLeft(rest, minWidth-1, '0')
+				} else {
+					output = padLeft(output, minWidth, options.padChar)
+				}
 			} else {
 				output = padRight(output, minWidth, options.padChar)
 			}

@@ -340,15 +340,24 @@ func compileNew(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 }
 
 type runObjectFunc struct {
-	ref      phpv.Runnable
-	op       phpv.ZString
-	args     phpv.Runnables
-	l        *phpv.Loc
-	static   bool
-	nullsafe bool
+	ref        phpv.Runnable
+	op         phpv.ZString
+	args       phpv.Runnables
+	l          *phpv.Loc
+	static     bool
+	nullsafe   bool
+	isThisRef  bool // true when the receiver is $this (affects __call vs __callStatic dispatch)
 }
 
 func (*runObjectFunc) IsFuncCallExpression() {}
+
+// isThisVariable checks if a Runnable is a $this variable reference
+func isThisVariable(r phpv.Runnable) bool {
+	if rv, ok := r.(*runVariable); ok && rv.v == "this" {
+		return true
+	}
+	return false
+}
 
 type runObjectVar struct {
 	ref          phpv.Runnable
@@ -445,9 +454,11 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 
 	var objI phpv.ZObject
 	var class phpv.ZClass
+	objFromVariable := false // true when objI came from an object-typed variable (not class name resolution)
 	switch obj.GetType() {
 	case phpv.ZtObject:
 		objI = obj.Value().(*phpobj.ZObject).Unwrap()
+		objFromVariable = true
 		class = objI.GetClass()
 	case phpv.ZtString:
 		// object receiver is a string, so :: syntax was used
@@ -575,14 +586,37 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	}
 
 	if !ok {
+		// Cannot call constructor via static syntax without instance context
+		if r.static && op.ToLower() == "__construct" && objI == nil {
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot call constructor")
+		}
+
 		// Check for __invoke method on objects with HandleInvoke
 		if objI != nil && op.ToLower() == "__invoke" && class.Handlers() != nil && class.Handlers().HandleInvoke != nil {
 			return class.Handlers().HandleInvoke(ctx, objI, r.args)
 		}
 
+		// For :: syntax on an object variable that is NOT $this (e.g. $a::method()),
+		// __callStatic takes priority over __call.
+		if r.static && objFromVariable && !r.isThisRef {
+			callClass := class
+			if callStaticMethod, hasCallStatic := callClass.GetMethod("__callstatic"); hasCallStatic {
+				a := phpv.NewZArray()
+				callArgs := []*phpv.ZVal{op.ZVal(), a.ZVal()}
+				for _, sub := range r.args {
+					val, err := sub.Run(ctx)
+					if err != nil {
+						return nil, err
+					}
+					a.OffsetSet(ctx, nil, val)
+				}
+				return ctx.CallZVal(ctx, phpv.BindClass(callStaticMethod.Method, callClass, true), callArgs, objI)
+			}
+		}
+
 		// Check for __call magic method on instance calls.
 		// When there's an instance context (objI != nil), __call takes priority
-		// over __callStatic, even with :: syntax (self::, static::, ClassName::).
+		// over __callStatic for: self::, static::, parent::, $this::, ClassName:: in hierarchy.
 		if objI != nil {
 			callClass := class
 			callObj := objI
@@ -1224,7 +1258,7 @@ func compilePaamayimNekudotayim(v phpv.Runnable, i *tokenizer.Item, c compileCtx
 			if err != nil {
 				return nil, err
 			}
-			return &runObjectFunc{ref: v, op: ident, args: args, l: l, static: true}, err
+			return &runObjectFunc{ref: v, op: ident, args: args, l: l, static: true, isThisRef: isThisVariable(v)}, err
 		}
 		c.backup()
 		return &runClassStaticVarRef{v, ident[1:], l}, nil
@@ -1282,7 +1316,7 @@ func compilePaamayimNekudotayim(v phpv.Runnable, i *tokenizer.Item, c compileCtx
 			if IsFirstClassCallable(args) {
 				return &runFirstClassMethodCallable{ref: v, method: ident, static: true, l: l}, nil
 			}
-			return &runObjectFunc{ref: v, op: ident, args: args, l: l, static: true}, err
+			return &runObjectFunc{ref: v, op: ident, args: args, l: l, static: true, isThisRef: isThisVariable(v)}, err
 		default:
 			c.backup()
 			return &runClassStaticObjRef{v, ident, l}, nil

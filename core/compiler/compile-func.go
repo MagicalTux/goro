@@ -547,12 +547,16 @@ func compileFunctionWithName(name phpv.ZString, c compileCtx, l *phpv.Loc, rref 
 	if name == "" {
 		if enclosing := c.getFunc(); enclosing != nil && enclosing.Name() != "" {
 			encName := enclosing.Name()
-			// For named functions, use just the function name
-			// For class methods, prepend the class name
-			if cls := c.getClass(); cls != nil {
-				encName = string(cls.GetName()) + "::" + encName
+			if strings.HasPrefix(encName, "{closure:") {
+				// Nested closure: use the full closure name as scope (no ()  suffix)
+				zc.enclosingFunc = encName
+			} else {
+				// Named function/method: prepend class name and add ()
+				if cls := c.getClass(); cls != nil {
+					encName = string(cls.GetName()) + "::" + encName
+				}
+				zc.enclosingFunc = encName + "()"
 			}
-			zc.enclosingFunc = encName + "()"
 		}
 	}
 
@@ -728,8 +732,9 @@ func compileArrowFunction(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error
 	}
 
 	zc := &ZClosure{
-		start: l,
-		rref:  rref,
+		start:   l,
+		rref:    rref,
+		isArrow: true,
 	}
 
 	c = &zclosureCompileCtx{c, zc}
@@ -998,9 +1003,27 @@ func compileFunctionArgs(c compileCtx) (res []*phpv.FuncArg, err error) {
 			}
 		}
 
+		// Handle DNF type when '(' was consumed by tryParseAsymmetricSet
+		if parenConsumedByAsymmetric {
+			c.backup()
+			intersect, next, pErr := parseParenIntersection(c)
+			if pErr != nil {
+				return nil, pErr
+			}
+			if next.IsSingle('|') {
+				arg.Hint, i, err = parseUnionTypeHint(intersect, c)
+				if err != nil {
+					return nil, err
+				}
+			} else {
+				arg.Hint = intersect
+				i = next
+			}
+		}
+
 		// Handle nullable type hint prefix: ?Type
 		isNullable := false
-		if i.IsSingle('?') {
+		if arg.Hint == nil && i.IsSingle('?') {
 			isNullable = true
 			i, err = c.NextItem()
 			if err != nil {
@@ -1008,9 +1031,26 @@ func compileFunctionArgs(c compileCtx) (res []*phpv.FuncArg, err error) {
 			}
 		}
 
+		// Handle DNF type: (A&B)|C in parameter position
+		if arg.Hint == nil && i.IsSingle('(') {
+			intersect, next, pErr := parseParenIntersection(c)
+			if pErr != nil {
+				return nil, pErr
+			}
+			if next.IsSingle('|') {
+				arg.Hint, i, err = parseUnionTypeHint(intersect, c)
+				if err != nil {
+					return nil, err
+				}
+			} else {
+				arg.Hint = intersect
+				i = next
+			}
+		}
+
 		// Handle leading namespace separator: \ClassName
 		hintFullyQualified := false
-		if i.Type == tokenizer.T_NS_SEPARATOR {
+		if arg.Hint == nil && i.Type == tokenizer.T_NS_SEPARATOR {
 			hintFullyQualified = true
 			i, err = c.NextItem()
 			if err != nil {
@@ -1018,7 +1058,7 @@ func compileFunctionArgs(c compileCtx) (res []*phpv.FuncArg, err error) {
 			}
 		}
 
-		if i.Type == tokenizer.T_STRING || i.Type == tokenizer.T_ARRAY || i.Type == tokenizer.T_CALLABLE {
+		if arg.Hint == nil && (i.Type == tokenizer.T_STRING || i.Type == tokenizer.T_ARRAY || i.Type == tokenizer.T_CALLABLE) {
 			// this is a function parameter type hint
 			hint := i.Data
 
@@ -1165,7 +1205,7 @@ func compileFunctionArgs(c compileCtx) (res []*phpv.FuncArg, err error) {
 				} else if rc, ok := r.(*runConstant); ok {
 					isNull = strings.EqualFold(string(rc.c), "null")
 				}
-				if isNull && !arg.Hint.Nullable {
+				if isNull && !arg.Hint.Nullable && arg.Hint.Type() != phpv.ZtMixed {
 					arg.ImplicitlyNullable = true
 					arg.Hint.Nullable = true
 				}
@@ -1385,18 +1425,65 @@ func validateTypeHint(th *phpv.TypeHint, loc *phpv.Loc) error {
 			}
 		}
 
-		// Check for duplicate types
-		seen := make(map[string]bool)
+		// never cannot be in a union
 		for _, u := range th.Union {
-			key := u.String()
+			if u.Type() == phpv.ZtNever {
+				return &phpv.PhpError{
+					Err:  fmt.Errorf("Type never can only be used as a standalone type"),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  loc,
+				}
+			}
+		}
+
+		// Check for duplicate types and bool/true/false conflicts
+		seen := make(map[string]bool)
+		hasFalse := false
+		hasTrue := false
+		hasBool := false
+		for _, u := range th.Union {
+			key := strings.ToLower(u.String())
+			if u.Type() == phpv.ZtBool {
+				if u.ClassName() == "false" {
+					hasFalse = true
+					key = "false"
+				} else if u.ClassName() == "true" {
+					hasTrue = true
+					key = "true"
+				} else {
+					hasBool = true
+					key = "bool"
+				}
+			}
 			if seen[key] {
 				return &phpv.PhpError{
-					Err:  fmt.Errorf("Duplicate type %s is redundant", key),
+					Err:  fmt.Errorf("Duplicate type %s is redundant", u.String()),
 					Code: phpv.E_COMPILE_ERROR,
 					Loc:  loc,
 				}
 			}
 			seen[key] = true
+		}
+		if hasBool && hasFalse {
+			return &phpv.PhpError{
+				Err:  fmt.Errorf("Duplicate type false is redundant"),
+				Code: phpv.E_COMPILE_ERROR,
+				Loc:  loc,
+			}
+		}
+		if hasBool && hasTrue {
+			return &phpv.PhpError{
+				Err:  fmt.Errorf("Duplicate type true is redundant"),
+				Code: phpv.E_COMPILE_ERROR,
+				Loc:  loc,
+			}
+		}
+		if hasTrue && hasFalse {
+			return &phpv.PhpError{
+				Err:  fmt.Errorf("Type contains both true and false, bool must be used instead"),
+				Code: phpv.E_COMPILE_ERROR,
+				Loc:  loc,
+			}
 		}
 	}
 
@@ -1406,6 +1493,19 @@ func validateTypeHint(th *phpv.TypeHint, loc *phpv.Loc) error {
 			if err := validateIntersectionMember(part, loc); err != nil {
 				return err
 			}
+		}
+		// Check for duplicate types in intersection
+		seen := make(map[string]bool)
+		for _, part := range th.Intersection {
+			key := strings.ToUpper(part.String())
+			if seen[key] {
+				return &phpv.PhpError{
+					Err:  fmt.Errorf("Duplicate type %s is redundant", part.String()),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  loc,
+				}
+			}
+			seen[key] = true
 		}
 	}
 
@@ -1469,6 +1569,60 @@ func validateIntersectionMember(part *phpv.TypeHint, loc *phpv.Loc) error {
 	return nil
 }
 
+// parseParenIntersection parses a parenthesized intersection group: (A&B&C)
+// The opening '(' has already been consumed. Returns the intersection TypeHint
+// and the next token after ')'.
+func parseParenIntersection(c compileCtx) (*phpv.TypeHint, *tokenizer.Item, error) {
+	intersection := &phpv.TypeHint{}
+	for {
+		i, err := c.NextItem()
+		if err != nil {
+			return nil, nil, err
+		}
+		// Handle leading namespace separator
+		if i.Type == tokenizer.T_NS_SEPARATOR {
+			i, err = c.NextItem()
+			if err != nil {
+				return nil, nil, err
+			}
+		}
+		if i.Type != tokenizer.T_STRING && i.Type != tokenizer.T_ARRAY && i.Type != tokenizer.T_CALLABLE && i.Type != tokenizer.T_STATIC {
+			return nil, nil, i.Unexpected()
+		}
+		hint := i.Data
+		// Consume namespace parts
+		for {
+			i, err = c.NextItem()
+			if err != nil {
+				return nil, nil, err
+			}
+			if i.Type != tokenizer.T_NS_SEPARATOR {
+				break
+			}
+			i, err = c.NextItem()
+			if err != nil {
+				return nil, nil, err
+			}
+			if i.Type != tokenizer.T_STRING {
+				return nil, nil, i.Unexpected()
+			}
+			hint = hint + "\\" + i.Data
+		}
+		intersection.Intersection = append(intersection.Intersection, phpv.ParseTypeHint(phpv.ZString(hint)))
+		if i.IsSingle(')') {
+			// End of group, get next token
+			next, err := c.NextItem()
+			if err != nil {
+				return nil, nil, err
+			}
+			return intersection, next, nil
+		}
+		if !i.IsSingle('&') {
+			return nil, nil, i.Unexpected()
+		}
+	}
+}
+
 // parseUnionTypeHint takes the first type hint already parsed and a compileCtx
 // positioned after the '|', and parses remaining union members.
 // Returns the combined union TypeHint and the next token to process.
@@ -1478,6 +1632,18 @@ func parseUnionTypeHint(first *phpv.TypeHint, c compileCtx) (*phpv.TypeHint, *to
 		i, err := c.NextItem()
 		if err != nil {
 			return nil, nil, err
+		}
+		// Handle DNF: (A&B) group within union
+		if i.IsSingle('(') {
+			intersect, next, pErr := parseParenIntersection(c)
+			if pErr != nil {
+				return nil, nil, pErr
+			}
+			union.Union = append(union.Union, intersect)
+			if !next.IsSingle('|') {
+				return union, next, nil
+			}
+			continue
 		}
 		// Handle leading namespace separator
 		if i.Type == tokenizer.T_NS_SEPARATOR {
@@ -1540,7 +1706,7 @@ func parseUnionTypeHint(first *phpv.TypeHint, c compileCtx) (*phpv.TypeHint, *to
 // `first` is the already-parsed first type, `second` is the T_STRING token
 // right after the &. Returns combined hint and next token.
 func parseIntersectionTypeHint(first *phpv.TypeHint, secondToken *tokenizer.Item, c compileCtx) (*phpv.TypeHint, *tokenizer.Item, error) {
-	intersection := &phpv.TypeHint{Union: []*phpv.TypeHint{first}}
+	intersection := &phpv.TypeHint{Intersection: []*phpv.TypeHint{first}}
 
 	// Parse second type (already have its token)
 	hint := secondToken.Data
@@ -1563,7 +1729,7 @@ func parseIntersectionTypeHint(first *phpv.TypeHint, secondToken *tokenizer.Item
 		}
 		hint = hint + "\\" + i.Data
 	}
-	intersection.Union = append(intersection.Union, phpv.ParseTypeHint(phpv.ZString(hint)))
+	intersection.Intersection = append(intersection.Intersection, phpv.ParseTypeHint(phpv.ZString(hint)))
 
 	// Check for more & types
 	for i.IsSingle('&') {
@@ -1592,7 +1758,7 @@ func parseIntersectionTypeHint(first *phpv.TypeHint, secondToken *tokenizer.Item
 			}
 			hint = hint + "\\" + i.Data
 		}
-		intersection.Union = append(intersection.Union, phpv.ParseTypeHint(phpv.ZString(hint)))
+		intersection.Intersection = append(intersection.Intersection, phpv.ParseTypeHint(phpv.ZString(hint)))
 	}
 
 	return intersection, i, nil
@@ -1616,6 +1782,30 @@ func parseReturnType(c compileCtx) (*phpv.TypeHint, error) {
 		if err != nil {
 			return nil, err
 		}
+	}
+
+	// Handle DNF type: (A&B)|C in return position
+	if i.IsSingle('(') {
+		intersect, next, pErr := parseParenIntersection(c)
+		if pErr != nil {
+			return nil, pErr
+		}
+		if next.IsSingle('|') {
+			th, next2, pErr2 := parseUnionTypeHint(intersect, c)
+			if pErr2 != nil {
+				return nil, pErr2
+			}
+			c.backup()
+			if err := validateTypeHint(th, next2.Loc()); err != nil {
+				return nil, err
+			}
+			return th, nil
+		}
+		c.backup()
+		if err := validateTypeHint(intersect, next.Loc()); err != nil {
+			return nil, err
+		}
+		return intersect, nil
 	}
 
 	// Handle leading namespace separator: \Foo

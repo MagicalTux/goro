@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/MagicalTux/goro/core"
-	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/stream"
 )
@@ -376,7 +375,6 @@ func fncUtf8Decode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if err != nil {
 		return nil, err
 	}
-	ctx.Deprecated("Function utf8_decode() is deprecated since 8.2, visit the php.net documentation for various alternatives", logopt.NoFuncName(true))
 	// Convert UTF-8 to ISO-8859-1 (Latin-1)
 	result := make([]byte, 0, len(s))
 	for _, r := range string(s) {
@@ -396,7 +394,6 @@ func fncUtf8Encode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if err != nil {
 		return nil, err
 	}
-	ctx.Deprecated("Function utf8_encode() is deprecated since 8.2, visit the php.net documentation for various alternatives", logopt.NoFuncName(true))
 	// Convert ISO-8859-1 to UTF-8
 	result := make([]rune, len(s))
 	for i, b := range []byte(s) {

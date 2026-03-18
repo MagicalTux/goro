@@ -33,6 +33,7 @@ type ZClassProp struct {
 type ZClassTraitUse struct {
 	TraitNames []ZString
 	Aliases    []ZClassTraitAlias
+	Insteadof  []ZClassTraitInsteadof
 }
 
 // ZClassTraitAlias represents a trait alias or visibility change:
@@ -42,6 +43,13 @@ type ZClassTraitAlias struct {
 	MethodName ZString     // original method name
 	NewName    ZString     // alias name (empty = just visibility change)
 	NewAttr    ZObjectAttr // new visibility (0 = unchanged)
+}
+
+// ZClassTraitInsteadof represents "TraitName::method insteadof OtherTrait [, OtherTrait2]"
+type ZClassTraitInsteadof struct {
+	TraitName    ZString   // the trait whose method wins
+	MethodName   ZString   // the method name being resolved
+	InsteadOf    []ZString // traits whose methods are excluded
 }
 
 type ZClassMethod struct {

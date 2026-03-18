@@ -19,6 +19,7 @@ import (
 
 	"github.com/MagicalTux/goro/core"
 	"github.com/MagicalTux/goro/core/phpctx"
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -136,6 +137,10 @@ func fncChr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	_, err := core.Expand(ctx, args, &codepoint)
 	if err != nil {
 		return nil, err
+	}
+
+	if codepoint < 0 || codepoint > 255 {
+		ctx.Deprecated("Providing a value not in-between 0 and 255 is deprecated, this is because a byte value must be in the [0, 255] interval. The value used will be constrained using %% 256")
 	}
 
 	b := uint8(codepoint)
@@ -561,59 +566,65 @@ func fncStrNumberFormat(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 		thousandsSep = string(*thousandsSepArg)
 	}
 
-	var buf bytes.Buffer
-
-	if num < 0 {
-		num = -num
-		buf.WriteRune('-')
+	f := float64(num)
+	negative := false
+	if f < 0 {
+		negative = true
+		f = -f
 	}
 
-	n, fac := math.Modf(float64(num))
-
-	if decimals == 0 {
-		n += math.Round(fac)
+	if math.IsNaN(f) {
+		return phpv.ZStr("NAN"), nil
 	}
-
-	if n == 0 {
-		buf.WriteString("0")
-	} else {
-		for {
-			base := int(math.Log10(n))
-			x := int(n / math.Pow10(base))
-
-			buf.WriteString(strconv.Itoa(x))
-			if base%3 == 0 && base != 0 {
-				buf.WriteString(thousandsSep)
-			}
-
-			n = float64(int(n) % int(math.Pow10(base)))
-			nextBase := int(math.Log10(n))
-			if base-nextBase > 1 {
-				for b := base - 1; b > nextBase; b-- {
-					buf.WriteString("0")
-					if b%3 == 0 {
-						buf.WriteString(thousandsSep)
-					}
-				}
-			}
-			if n == 0 {
-				break
-			}
+	if math.IsInf(f, 0) {
+		if negative {
+			return phpv.ZStr("-INF"), nil
 		}
+		return phpv.ZStr("INF"), nil
+	}
+
+	formatted := strconv.FormatFloat(f, 'f', decimals, 64)
+
+	intPart := formatted
+	decPart := ""
+	if dotIdx := strings.Index(formatted, "."); dotIdx >= 0 {
+		intPart = formatted[:dotIdx]
+		decPart = formatted[dotIdx+1:]
 	}
 
 	if decimals > 0 {
-		if fac > 0 {
-			n := math.Round(fac * math.Pow10(decimals))
-			buf.WriteString(decimalSep)
-			buf.WriteString(strconv.Itoa(int(n)))
-		} else {
-			buf.WriteString(decimalSep)
-			buf.WriteString(strings.Repeat("0", decimals))
+		if len(decPart) < decimals {
+			decPart = decPart + strings.Repeat("0", decimals-len(decPart))
+		} else if len(decPart) > decimals {
+			decPart = decPart[:decimals]
 		}
 	}
 
-	return phpv.ZStr(buf.String()), nil
+	if thousandsSep != "" && len(intPart) > 3 {
+		var buf bytes.Buffer
+		start := len(intPart) % 3
+		if start == 0 {
+			start = 3
+		}
+		buf.WriteString(intPart[:start])
+		for i := start; i < len(intPart); i += 3 {
+			buf.WriteString(thousandsSep)
+			buf.WriteString(intPart[i : i+3])
+		}
+		intPart = buf.String()
+	}
+
+	var result bytes.Buffer
+	if negative {
+		result.WriteRune('-')
+	}
+	result.WriteString(intPart)
+	if decimals > 0 {
+		result.WriteString(decimalSep)
+		result.WriteString(decPart)
+	}
+
+	return phpv.ZStr(result.String()), nil
 }
 
 // > fun int ord(string $character)
@@ -906,12 +917,17 @@ func fncStrPad(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	if len(str) >= int(length) {
+	if length < 0 || len(str) >= int(length) {
 		return str.ZVal(), nil
 	}
 
+	// Check for unreasonable pad length
+	if int(length) > 1<<30 {
+		return nil, ctx.Errorf("Allowed memory size exhausted")
+	}
+
 	padStr := " "
-	padType := STR_PAD_LEFT
+	padType := STR_PAD_RIGHT
 
 	if padStrArg != nil {
 		padStr = string(*padStrArg)
@@ -920,24 +936,34 @@ func fncStrPad(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		padType = *padTypeArg
 	}
 
+	if len(padStr) == 0 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "str_pad(): Argument #3 ($pad_string) must be a non-empty string")
+	}
+
+	padNeeded := int(length) - len(str)
+	// Helper to generate exactly n chars of padding
+	makePad := func(n int) string {
+		if n <= 0 {
+			return ""
+		}
+		reps := (n / len(padStr)) + 1
+		return strings.Repeat(padStr, reps)[:n]
+	}
+
 	var buf bytes.Buffer
 	switch padType {
 	case STR_PAD_LEFT:
-		buf.WriteString(strings.Repeat(padStr, int(length)-len(str)))
+		buf.WriteString(makePad(padNeeded))
 		buf.WriteString(string(str))
 	case STR_PAD_RIGHT:
 		buf.WriteString(string(str))
-		buf.WriteString(strings.Repeat(padStr, int(length)-len(str)))
+		buf.WriteString(makePad(padNeeded))
 	case STR_PAD_BOTH:
-		n := (int(length) - len(str))
-		right := n / 2
-		if n&1 == 1 {
-			right++
-		}
-		left := n - right
-		buf.WriteString(strings.Repeat(padStr, left))
+		right := padNeeded / 2
+		left := padNeeded - right
+		buf.WriteString(makePad(left))
 		buf.WriteString(string(str))
-		buf.WriteString(strings.Repeat(padStr, right))
+		buf.WriteString(makePad(right))
 	}
 
 	return phpv.ZStr(buf.String()), nil
@@ -953,7 +979,7 @@ func fncStrRepeat(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	if times < 0 {
-		return nil, errors.New("Argument #2 ($times) must be greater than or equal to 0")
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "str_repeat(): Argument #2 ($times) must be greater than or equal to 0")
 	}
 
 	// Check memory limit before allocating large strings
@@ -1138,7 +1164,9 @@ func fncStrNCaseCmp(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if err != nil {
 		return phpv.ZBool(false).ZVal(), err
 	}
-
+	if int(length) < 0 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "strncasecmp(): Argument #3 ($length) must be greater than or equal to 0")
+	}
 	str1 = str1[0:min(int(length), len(str1))]
 	str2 = str2[0:min(int(length), len(str2))]
 	result := strcmpCommon(str1, str2, false)
@@ -1153,7 +1181,9 @@ func fncStrNCmp(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if err != nil {
 		return phpv.ZBool(false).ZVal(), err
 	}
-
+	if int(length) < 0 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "strncmp(): Argument #3 ($length) must be greater than or equal to 0")
+	}
 	str1 = str1[0:min(int(length), len(str1))]
 	str2 = str2[0:min(int(length), len(str2))]
 	result := strcmpCommon(str1, str2, true)
@@ -1709,6 +1739,10 @@ func fncStrPbrk(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZBool(false).ZVal(), err
 	}
 
+	if len(chars) == 0 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "strpbrk(): Argument #2 ($characters) must be a non-empty string")
+	}
+
 	i := bytes.IndexAny([]byte(str), string(chars))
 	if i < 0 {
 		return phpv.ZBool(false).ZVal(), nil
@@ -1826,6 +1860,8 @@ func fncSubstr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 // > func int substr_compare ( string $haystack, string $needle, int $offset, ?int $length = null, bool $case_insensitive = false )
 func fncSubstrCompare(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	lengthIsNull := len(args) > 3 && args[3] != nil && args[3].GetType() == phpv.ZtNull
+
 	var haystackArg, needleArg phpv.ZString
 	var offsetArg phpv.ZInt
 	var lengthArg *phpv.ZInt
@@ -1838,24 +1874,42 @@ func fncSubstrCompare(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	haystack := []byte(haystackArg)
 	needle := []byte(needleArg)
 	offset := int(offsetArg)
-	haystackLen := len(haystack)
-	needleLen := len(needle)
 	caseInsensitive := false
 
-	if lengthArg != nil {
-		haystackLen = int(*lengthArg)
-		needleLen = haystackLen
-	}
 	if caseInsensitiveArg != nil {
 		caseInsensitive = bool(*caseInsensitiveArg)
 	}
 
-	str1 := substr([]byte(haystack), offset, haystackLen)
-	str2 := substr([]byte(needle), 0, needleLen)
-	result := strcmpCommon(str1, str2, !caseInsensitive)
+	hasLength := lengthArg != nil && !lengthIsNull
+	var lengthVal int
+	if hasLength {
+		lengthVal = int(*lengthArg)
+	}
 
-	// strcmp returns the difference between two bytes
-	// so explicitly clamp it to -1 to 1
+	if hasLength && lengthVal < 0 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "substr_compare(): Argument #4 ($length) must be greater than or equal to 0")
+	}
+
+	if offset < 0 {
+		offset = len(haystack) + offset
+	}
+	if offset < 0 || offset > len(haystack) {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "substr_compare(): Argument #3 ($offset) must be contained in argument #1 ($haystack)")
+	}
+
+	str1 := haystack[offset:]
+
+	if hasLength {
+		if lengthVal < len(str1) {
+			str1 = str1[:lengthVal]
+		}
+		if lengthVal < len(needle) {
+			needle = needle[:lengthVal]
+		}
+	}
+
+	result := strcmpCommon(str1, needle, !caseInsensitive)
+
 	if result < 0 {
 		result = -1
 	} else if result > 0 {
@@ -2264,11 +2318,7 @@ func strReplaceCommon(ctx phpv.Context, args []*phpv.ZVal, caseSensitive bool) (
 		count.Set(ctx, 0)
 	}
 
-	if search.GetType() == phpv.ZtString && replace.GetType() == phpv.ZtString {
-		if search.AsString(ctx) == "" && replace.AsString(ctx) == "" {
-			return phpv.ZStr(""), nil
-		}
-	}
+	// Note: empty search strings are handled in doStrReplace (PHP skips them)
 
 	if subject.GetType() == phpv.ZtArray {
 		res := subject.Dup()
@@ -2347,6 +2397,12 @@ func doStrReplace(
 
 				from_b := []byte(from.AsString(ctx))
 
+				if len(from_b) == 0 {
+					it1.Next(ctx)
+					it2.Next(ctx)
+					continue
+				}
+
 				cnt := bytesCount([]byte(subject), from_b, caseSensitive)
 				if cnt == 0 {
 					// nothing to replace, skip
@@ -2406,6 +2462,11 @@ func doStrReplace(
 
 			from_b := []byte(from.AsString(ctx))
 
+			if len(from_b) == 0 {
+				it1.Next(ctx)
+				continue
+			}
+
 			cnt := bytesCount([]byte(subject), from_b, caseSensitive)
 			if cnt == 0 {
 				// nothing to replace, skip
@@ -2428,6 +2489,10 @@ func doStrReplace(
 	}
 
 	from_b := []byte(search.AsString(ctx))
+
+	if len(from_b) == 0 {
+		return subject, nil
+	}
 
 	cnt := bytesCount([]byte(subject), from_b, caseSensitive)
 	if cnt == 0 {
@@ -2569,7 +2634,15 @@ func segment(strArg []byte, offset, length int) ([]byte, []byte, []byte) {
 	if length < 0 {
 		end = max(0, len(strArg)+length)
 	} else {
-		end = min(start+length, len(strArg))
+		sum := start + length
+		if sum < start || sum > len(strArg) {
+			end = len(strArg)
+		} else {
+			end = sum
+		}
+	}
+	if end < start {
+		end = start
 	}
 
 	if start == 0 && end == len(strArg) {

@@ -54,6 +54,7 @@ func init() {
 			phpobj.RuntimeException,
 			phpobj.Serializable,
 			phpobj.StdClass,
+			phpobj.Stringable,
 			phpobj.Throwable,
 			phpobj.Traversable,
 			phpobj.TypeError,

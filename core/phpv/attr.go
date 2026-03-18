@@ -50,6 +50,7 @@ const (
 	ZAttrHasTypeHints               = 0x10000000 // function has typed arguments
 	ZAttrHasReturnType              = 0x40000000 // Function has a return type (or class has such non-private function)
 	ZAttrReadonly                   = 0x08       // readonly property (PHP 8.1)
+	ZAttrParenConsumed              = 0x80000000 // internal flag: opening paren was consumed during attribute parsing
 )
 
 func (a ZClassAttr) Has(c ZClassAttr) bool {

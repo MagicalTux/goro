@@ -347,7 +347,13 @@ func parseZObjectAttrWithAttrs(a *phpv.ZObjectAttr, attrs *[]*phpv.ZAttribute, c
 // tryParseAsymmetricSet checks if the current position has "(set)" following an access modifier.
 // If it does, it consumes the "(set)" tokens and returns the set-visibility and true.
 // If not, it backs up and returns 0 and false.
+// parenConsumedByAsymmetric is set to true when tryParseAsymmetricSet consumed
+// '(' but found it was not "(set)". The token after '(' has been backed up.
+// Callers should check this flag to handle DNF type parsing.
+var parenConsumedByAsymmetric bool
+
 func tryParseAsymmetricSet(setAccess phpv.ZObjectAttr, c compileCtx) (phpv.ZObjectAttr, bool, error) {
+	parenConsumedByAsymmetric = false
 	// We've already consumed the access modifier token (e.g., T_PRIVATE).
 	// Now check if next token is '('
 	i, err := c.NextItem()
@@ -365,14 +371,12 @@ func tryParseAsymmetricSet(setAccess phpv.ZObjectAttr, c compileCtx) (phpv.ZObje
 		return 0, false, err
 	}
 	if i.Type != tokenizer.T_STRING || i.Data != "set" {
-		// Not "(set)", back up both tokens
-		c.backup() // back up the non-"set" token
-		// We can't back up twice with a single backup(), so we need to
-		// handle this differently. Since backup only saves one token,
-		// this means the '(' is lost. We need to restructure.
-		// Actually, if it's not "set", this is a syntax error in the
-		// asymmetric visibility context. PHP would also error here.
-		return 0, false, i.Unexpected()
+		// Not "(set)" - could be a DNF type like public (X&Y)|null $prop
+		// Back up the non-"set" token. The '(' is consumed and lost.
+		// Signal via parenConsumedByAsymmetric so the caller can handle DNF.
+		c.backup()
+		parenConsumedByAsymmetric = true
+		return 0, false, nil
 	}
 
 	// Expect ')'
@@ -448,6 +452,16 @@ func parseZObjectAttrFull(a *phpv.ZObjectAttr, setModifiers *phpv.ZObjectAttr, a
 			setAccess, isAsymmetric, err := tryParseAsymmetricSet(thisAccess, c)
 			if err != nil {
 				return err
+			}
+
+			if parenConsumedByAsymmetric {
+				// '(' was consumed but it wasn't "(set)" - this is a DNF type.
+				// Set the access modifier and return. The caller will handle DNF parsing.
+				if *a&phpv.ZAttrAccess != 0 {
+					return errors.New("Multiple access type modifiers are not allowed")
+				}
+				*a |= thisAccess
+				return nil
 			}
 
 			if isAsymmetric {

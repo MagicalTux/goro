@@ -426,16 +426,20 @@ func compileForeachExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) 
 	case tokenizer.T_VARIABLE:
 		// store in r.k or r.v ?
 		res = &runVariable{v: phpv.ZString(i.Data[1:]), l: i.Loc()}
-		i2, err := c.NextItem()
-		if err != nil {
-			return nil, err
-		}
-		if !i2.IsSingle('[') {
-			c.backup()
-		} else {
-			res, err = compilePostExpr(res, i2, c)
+		// Handle chained access: $var[...], $var->prop, $var->prop[...], etc.
+		for {
+			i2, err := c.NextItem()
 			if err != nil {
 				return nil, err
+			}
+			if i2.IsSingle('[') || i2.Type == tokenizer.T_OBJECT_OPERATOR || i2.Type == tokenizer.T_NULLSAFE_OBJECT_OPERATOR {
+				res, err = compilePostExpr(res, i2, c)
+				if err != nil {
+					return nil, err
+				}
+			} else {
+				c.backup()
+				break
 			}
 		}
 

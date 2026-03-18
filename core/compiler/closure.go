@@ -25,6 +25,7 @@ type ZClosure struct {
 	end           *phpv.Loc
 	rref          bool // return ref?
 	isStatic      bool // true for static function() {} and static fn() =>
+	isArrow       bool // true for fn() => expr (arrow function)
 	isGenerator   bool // true if this function contains yield
 	usesThis      bool // true if the closure body references $this
 	attributes    []*phpv.ZAttribute // PHP 8.0 attributes on this function
@@ -431,7 +432,97 @@ func (c *ZClosure) Compile(ctx phpv.Context) error {
 	return nil
 }
 
+func (c *ZClosure) dumpTypeHint(w io.Writer, th *phpv.TypeHint) error {
+	if th == nil {
+		return nil
+	}
+	// TypeHint.String() already includes the ? prefix for nullable types
+	_, err := w.Write([]byte(th.String()))
+	return err
+}
+
+func (c *ZClosure) dumpArgs(w io.Writer) error {
+	if c.rref {
+		if _, err := w.Write([]byte{'&'}); err != nil {
+			return err
+		}
+	}
+	if _, err := w.Write([]byte{'('}); err != nil {
+		return err
+	}
+	first := true
+	for _, a := range c.args {
+		if !first {
+			if _, err := w.Write([]byte(", ")); err != nil {
+				return err
+			}
+		}
+		first = false
+		if a.Hint != nil {
+			if err := c.dumpTypeHint(w, a.Hint); err != nil {
+				return err
+			}
+			if _, err := w.Write([]byte{' '}); err != nil {
+				return err
+			}
+		}
+		if a.Variadic {
+			if _, err := w.Write([]byte("...")); err != nil {
+				return err
+			}
+		}
+		if a.Ref {
+			if _, err := w.Write([]byte{'&'}); err != nil {
+				return err
+			}
+		}
+		if _, err := w.Write([]byte{'$'}); err != nil {
+			return err
+		}
+		if _, err := w.Write([]byte(a.VarName)); err != nil {
+			return err
+		}
+		if a.DefaultValue != nil {
+			if _, err := w.Write([]byte(" = ")); err != nil {
+				return err
+			}
+			if _, err := fmt.Fprintf(w, "%#v", a.DefaultValue); err != nil {
+				return err
+			}
+		}
+	}
+	_, err := w.Write([]byte{')'})
+	return err
+}
+
 func (c *ZClosure) Dump(w io.Writer) error {
+	if c.isArrow {
+		// Arrow function: fn(args): type => expr
+		if _, err := w.Write([]byte("fn")); err != nil {
+			return err
+		}
+		if err := c.dumpArgs(w); err != nil {
+			return err
+		}
+		if c.returnType != nil {
+			if _, err := w.Write([]byte(": ")); err != nil {
+				return err
+			}
+			if err := c.dumpTypeHint(w, c.returnType); err != nil {
+				return err
+			}
+		}
+		if _, err := w.Write([]byte(" => ")); err != nil {
+			return err
+		}
+		// For arrow functions, code is a runArrowReturn wrapping the expression
+		if ar, ok := c.code.(*runArrowReturn); ok {
+			return ar.expr.Dump(w)
+		}
+		return c.code.Dump(w)
+	}
+
+	// Regular closure: function(args) use(...) { ... }
 	_, err := w.Write([]byte("function"))
 	if c.name != "" {
 		_, err = w.Write([]byte{' '})
@@ -443,50 +534,46 @@ func (c *ZClosure) Dump(w io.Writer) error {
 			return err
 		}
 	}
-	_, err = w.Write([]byte{'('})
-	if err != nil {
+	if err = c.dumpArgs(w); err != nil {
 		return err
 	}
-	first := true
-	for _, a := range c.args {
-		if !first {
-			_, err = w.Write([]byte{','})
-			if err != nil {
-				return err
-			}
-		}
-		first = false
-		if a.Ref {
-			_, err = w.Write([]byte{'&'})
-			if err != nil {
-				return err
-			}
-		}
-		_, err = w.Write([]byte{'$'})
-		if err != nil {
+
+	if len(c.use) > 0 {
+		if _, err = w.Write([]byte(" use(")); err != nil {
 			return err
 		}
-		_, err = w.Write([]byte(a.VarName))
-		if err != nil {
-			return err
+		first := true
+		for _, u := range c.use {
+			if !first {
+				if _, err = w.Write([]byte(", ")); err != nil {
+					return err
+				}
+			}
+			first = false
+			if u.Ref {
+				if _, err = w.Write([]byte{'&'}); err != nil {
+					return err
+				}
+			}
+			if _, err = fmt.Fprintf(w, "$%s", u.VarName); err != nil {
+				return err
+			}
 		}
-		if a.DefaultValue != nil {
-			_, err = w.Write([]byte{'='})
-			if err != nil {
-				return err
-			}
-			_, err = fmt.Fprintf(w, "%#v", a.DefaultValue) // TODO
-			if err != nil {
-				return err
-			}
+		if _, err = w.Write([]byte{')'}); err != nil {
+			return err
 		}
 	}
 
-	if c.use != nil {
-		// TODO use
+	if c.returnType != nil {
+		if _, err = w.Write([]byte(": ")); err != nil {
+			return err
+		}
+		if err = c.dumpTypeHint(w, c.returnType); err != nil {
+			return err
+		}
 	}
 
-	_, err = w.Write([]byte{'{'})
+	_, err = w.Write([]byte(" {\n"))
 	if err != nil {
 		return err
 	}
@@ -495,7 +582,7 @@ func (c *ZClosure) Dump(w io.Writer) error {
 	if err != nil {
 		return err
 	}
-	_, err = w.Write([]byte{'}'})
+	_, err = w.Write([]byte("\n}"))
 	return err
 }
 
@@ -708,7 +795,8 @@ func (z *ZClosure) callBody(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 		} else {
 			argVal := args[i].Nude().Dup()
 			// Coerce value to match type hint (PHP non-strict mode)
-			if a.Hint != nil && argVal.GetType() != phpv.ZtNull {
+			// Skip coercion for union/intersection types - they handle their own checking
+			if a.Hint != nil && argVal.GetType() != phpv.ZtNull && len(a.Hint.Union) == 0 && len(a.Hint.Intersection) == 0 {
 				hintType := a.Hint.Type()
 				if hintType != phpv.ZtMixed && hintType != phpv.ZtObject && argVal.GetType() != hintType {
 					if coerced, err2 := argVal.As(ctx, hintType); err2 == nil && coerced != nil {

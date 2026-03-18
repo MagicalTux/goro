@@ -313,27 +313,63 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 			}
 		}
 	}
+	// Interfaces cannot use traits
+	if c.Type == phpv.ZClassTypeInterface && len(c.TraitUses) > 0 {
+		traitName := c.TraitUses[0].TraitNames[0]
+		return c.fatalError(ctx, fmt.Sprintf("Cannot use traits inside of interfaces. %s is used in %s", traitName, c.Name))
+	}
+
 	// Resolve trait uses: import methods and properties from traits
 	for _, tu := range c.TraitUses {
+		// Build insteadof exclusion map
+		type excludeKey struct {
+			method    phpv.ZString
+			traitName phpv.ZString
+		}
+		excluded := make(map[excludeKey]bool)
+		for _, io := range tu.Insteadof {
+			methodLower := io.MethodName.ToLower()
+			for _, excTrait := range io.InsteadOf {
+				excluded[excludeKey{methodLower, excTrait.ToLower()}] = true
+			}
+		}
+
+		// Track which trait provided each method for conflict detection
+		type methodSource struct {
+			traitName phpv.ZString
+			method    *phpv.ZClassMethod
+		}
+		traitMethods := make(map[phpv.ZString]*methodSource)
+
+		var resolvedTraits []*ZClass
 		for _, traitName := range tu.TraitNames {
 			traitClass, err := ctx.Global().GetClass(ctx, traitName, true)
 			if err != nil {
-				return c.fatalError(ctx, fmt.Sprintf("Trait \"%s\" not found", traitName))
+				return ThrowError(ctx, Error, fmt.Sprintf("Trait \"%s\" not found", traitName))
 			}
 			tc := traitClass.(*ZClass)
 			if tc.Type != phpv.ZClassTypeTrait {
 				return c.fatalError(ctx, fmt.Sprintf("%s cannot use %s - it is not a trait", c.Name, tc.Name))
 			}
+			resolvedTraits = append(resolvedTraits, tc)
+		}
 
-			// Copy methods from trait (don't override methods explicitly defined in the class)
+		for _, tc := range resolvedTraits {
 			for name, m := range tc.Methods {
-				existing, exists := c.Methods[name]
-				// Import trait method if:
-				// - no existing method, OR
-				// - existing method was inherited from parent (not defined in this class)
-				//   BUT don't replace a concrete method with an abstract trait method
-				if !exists || (existing.Class != nil && existing.Class != c && !(m.Empty && m.Modifiers.Has(phpv.ZAttrAbstract) && !existing.Empty)) {
-					// Create a copy of the method pointing to this class
+				if excluded[excludeKey{name, tc.Name.ToLower()}] {
+					continue
+				}
+				if src, exists := traitMethods[name]; exists {
+					if m.Empty && m.Modifiers.Has(phpv.ZAttrAbstract) && src.method.Empty && src.method.Modifiers.Has(phpv.ZAttrAbstract) {
+						continue
+					}
+					return c.fatalError(ctx, fmt.Sprintf("Trait method %s::%s has not been applied as %s::%s, because of collision with %s::%s",
+						tc.Name, m.Name, c.Name, m.Name, src.traitName, m.Name))
+				}
+				traitMethods[name] = &methodSource{traitName: tc.Name, method: m}
+
+				existing, existsInClass := c.Methods[name]
+				if !existsInClass || (existing.Class != nil && existing.Class != c && !(m.Empty && m.Modifiers.Has(phpv.ZAttrAbstract) && !existing.Empty)) {
 					methodCopy := &phpv.ZClassMethod{
 						Name:       m.Name,
 						Modifiers:  m.Modifiers,
@@ -344,15 +380,12 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 						Attributes: m.Attributes,
 					}
 					c.Methods[name] = methodCopy
-
-					// Check if this is a constructor (PHP 8: only __construct)
 					if name == "__construct" {
 						c.Handlers().Constructor = methodCopy
 					}
 				}
 			}
 
-			// Copy properties from trait
 			for _, tp := range tc.Props {
 				found := false
 				for _, cp := range c.Props {
@@ -366,12 +399,29 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 				}
 			}
 
-			// Copy constants from trait, preserving order
 			for _, k := range tc.ConstOrder {
 				if v := tc.Const[k]; v != nil {
-					if _, exists := c.Const[k]; !exists {
+					if existing, exists := c.Const[k]; !exists {
 						c.Const[k] = v
 						c.ConstOrder = append(c.ConstOrder, k)
+					} else {
+						// Check for constant conflicts: different value, visibility, or finality
+						incompatible := false
+						if existing.Modifiers&phpv.ZAttrAccess != v.Modifiers&phpv.ZAttrAccess {
+							incompatible = true // different visibility
+						} else if existing.Modifiers&phpv.ZAttrFinal != v.Modifiers&phpv.ZAttrFinal {
+							incompatible = true // different finality
+						} else if existing.Value != nil && v.Value != nil {
+							// Compare values
+							ev := fmt.Sprintf("%v", existing.Value)
+							tv := fmt.Sprintf("%v", v.Value)
+							if ev != tv {
+								incompatible = true
+							}
+						}
+						if incompatible {
+							return c.fatalError(ctx, fmt.Sprintf("%s and %s define the same constant (%s) in the composition of %s. However, the definition differs and is considered incompatible. Class was composed", c.Name, tc.Name, k, c.Name))
+						}
 					}
 				}
 			}
@@ -498,6 +548,26 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 		hasIteratorAggregate := c.Implements(IteratorAggregate)
 		if hasIterator && hasIteratorAggregate {
 			return c.fatalError(ctx, fmt.Sprintf("Class %s cannot implement both Iterator and IteratorAggregate at the same time", c.Name))
+		}
+	}
+
+	// Auto-implement Stringable interface for classes with __toString().
+	if c.Type != phpv.ZClassTypeInterface && c.Type != phpv.ZClassTypeTrait {
+		if _, hasToString := c.GetMethod("__tostring"); hasToString {
+			alreadyImplements := false
+			for _, impl := range c.Implementations {
+				if impl == Stringable {
+					alreadyImplements = true
+					break
+				}
+			}
+			if !alreadyImplements && (c.parents == nil || c.parents[Stringable] == nil) {
+				c.Implementations = append(c.Implementations, Stringable)
+				if c.parents == nil {
+					c.parents = make(map[*ZClass]*ZClass)
+				}
+				c.parents[Stringable] = Stringable
+			}
 		}
 	}
 

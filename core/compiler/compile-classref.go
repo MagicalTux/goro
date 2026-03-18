@@ -288,11 +288,19 @@ func (r *runClassStaticObjRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		errorClassName = origClassName
 	}
 
-	cc, ok := class.(*phpobj.ZClass).Const[r.objName]
+	// Cannot access trait constants directly (PHP 8.2+)
+	zclass := class.(*phpobj.ZClass)
+	if zclass.Type == phpv.ZClassTypeTrait {
+		// Only block if accessed via the trait name directly (not via a using class)
+		if origClassName.ToLower() == zclass.Name.ToLower() {
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Cannot access trait constant %s::%s directly", zclass.Name, r.objName))
+		}
+	}
+
+	cc, ok := zclass.Const[r.objName]
 	if !ok {
 		// Check implemented interfaces (for internal classes that don't inherit at registration time)
-		zc := class.(*phpobj.ZClass)
-		for _, intf := range zc.Implementations {
+		for _, intf := range zclass.Implementations {
 			if c, found := intf.Const[r.objName]; found {
 				cc = c
 				ok = true
@@ -300,8 +308,8 @@ func (r *runClassStaticObjRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			}
 		}
 		// Check parent class
-		if !ok && zc.Extends != nil {
-			if c, found := zc.Extends.Const[r.objName]; found {
+		if !ok && zclass.Extends != nil {
+			if c, found := zclass.Extends.Const[r.objName]; found {
 				cc = c
 				ok = true
 			}

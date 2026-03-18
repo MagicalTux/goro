@@ -436,6 +436,7 @@ func init() {
 			"tempnam":                    {Func: fncTempnam, Args: []*phpctx.ExtFunctionArg{}},
 			"time":                       {Func: fncTime, Args: []*phpctx.ExtFunctionArg{}},
 			"touch":                      {Func: fncTouch, Args: []*phpctx.ExtFunctionArg{}},
+			"trait_exists":               {Func: stdTraitExists, Args: []*phpctx.ExtFunctionArg{}},
 			"trim":                       {Func: fncStrTrim, Args: []*phpctx.ExtFunctionArg{}},
 			"uasort":                     {Func: fncArrayUASort, Args: []*phpctx.ExtFunctionArg{}},
 			"ucfirst":                    {Func: fncUcFirst, Args: []*phpctx.ExtFunctionArg{}},

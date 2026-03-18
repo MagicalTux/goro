@@ -28,9 +28,13 @@ func fncHex2Bin(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
+	if len(s)%2 != 0 {
+		return phpv.ZFalse.ZVal(), ctx.Warn("Hexadecimal input string must have an even length")
+	}
+
 	result, err := hex.DecodeString(s)
 	if err != nil {
-		return nil, err
+		return phpv.ZFalse.ZVal(), ctx.Warn("Input string must be hexadecimal string")
 	}
 
 	return phpv.ZString(result).ZVal(), nil

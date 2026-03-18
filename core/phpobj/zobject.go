@@ -247,7 +247,10 @@ func (z *ZObject) AsVal(ctx phpv.Context, t phpv.ZType) (phpv.Val, error) {
 			if err != nil {
 				return nil, err
 			}
-			if result != nil && result.GetType() != phpv.ZtString {
+			if result == nil || result.GetType() == phpv.ZtNull {
+				return nil, ThrowError(ctx, Error, fmt.Sprintf("%s::__toString(): Return value must be of type string, none returned", z.Class.GetName()))
+			}
+			if result.GetType() != phpv.ZtString {
 				return nil, ThrowError(ctx, Error, fmt.Sprintf("%s::__toString(): Return value must be of type string, %s returned", z.Class.GetName(), result.GetType()))
 			}
 			return result, nil

@@ -306,6 +306,8 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		return compileExitExpr(i, c)
 	case tokenizer.T_THROW:
 		return compileThrow(i, c)
+	case tokenizer.T_INCLUDE, tokenizer.T_REQUIRE, tokenizer.T_INCLUDE_ONCE, tokenizer.T_REQUIRE_ONCE:
+		return compileSpecialFuncCall(i, c)
 	case tokenizer.T_FILE:
 		return &runZVal{phpv.ZString(l.Filename), l}, nil
 	case tokenizer.T_LINE:

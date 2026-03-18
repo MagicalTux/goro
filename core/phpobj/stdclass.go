@@ -70,6 +70,15 @@ var Serializable = &ZClass{
 	},
 }
 
+// > interface Stringable
+var Stringable = &ZClass{
+	Type: phpv.ZClassTypeInterface,
+	Name: "Stringable",
+	Methods: map[phpv.ZString]*phpv.ZClassMethod{
+		"__tostring": {Name: "__toString", Modifiers: phpv.ZAttrPublic | phpv.ZAttrAbstract, Empty: true},
+	},
+}
+
 // > interface UnitEnum
 // All PHP enums implicitly implement UnitEnum
 var UnitEnum = &ZClass{

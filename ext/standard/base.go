@@ -723,6 +723,31 @@ func stdInterfaceExists(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	return phpv.ZFalse.ZVal(), nil
 }
 
+// > func bool trait_exists ( string $trait_name [, bool $autoload = true ] )
+func stdTraitExists(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var name phpv.ZString
+	var autoloadArg *phpv.ZBool
+	_, err := core.Expand(ctx, args, &name, &autoloadArg)
+	if err != nil {
+		return nil, err
+	}
+
+	autoload := true
+	if autoloadArg != nil {
+		autoload = bool(*autoloadArg)
+	}
+
+	class, err := ctx.Global().GetClass(ctx, name, autoload)
+	if err != nil || class == nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	if class.GetType() == phpv.ZClassTypeTrait {
+		return phpv.ZTrue.ZVal(), nil
+	}
+	return phpv.ZFalse.ZVal(), nil
+}
+
 // > func array get_object_vars ( object $obj )
 func stdGetObjectVars(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var obj *phpv.ZVal

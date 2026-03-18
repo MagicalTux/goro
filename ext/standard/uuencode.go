@@ -152,5 +152,5 @@ func convertUuDecode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZStr(string(dest[:totalLen])), nil
 
 fail_err:
-	return phpv.ZFalse.ZVal(), ctx.Warn("The given parameter is not a valid uuencoded string")
+	return phpv.ZFalse.ZVal(), ctx.Warn("Argument #1 ($data) is not a valid uuencoded string")
 }

@@ -31,6 +31,25 @@ func convertAliases(aliases []traitAlias) []phpv.ZClassTraitAlias {
 	return out
 }
 
+// traitInsteadof records "TraitName::method insteadof OtherTrait" during compilation.
+type traitInsteadof struct {
+	traitName  phpv.ZString
+	methodName phpv.ZString
+	insteadOf  []phpv.ZString
+}
+
+func convertInsteadofs(insteadofs []traitInsteadof) []phpv.ZClassTraitInsteadof {
+	out := make([]phpv.ZClassTraitInsteadof, len(insteadofs))
+	for i, io := range insteadofs {
+		out[i] = phpv.ZClassTraitInsteadof{
+			TraitName:  io.traitName,
+			MethodName: io.methodName,
+			InsteadOf:  io.insteadOf,
+		}
+	}
+	return out
+}
+
 // containsRuntimeOps checks if a compiled expression contains runtime
 // operations (variables, function calls) that are not allowed in class constants.
 func containsRuntimeOps(r phpv.Runnable) bool {
@@ -203,7 +222,37 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 
 		// Check for typed property: type hint before $variable
 		var propTypeHint *phpv.TypeHint
-		if i.Type == tokenizer.T_STRING || i.Type == tokenizer.T_ARRAY || i.Type == tokenizer.T_CALLABLE || i.IsSingle('?') || i.Type == tokenizer.T_STATIC {
+		// Handle DNF type when '(' was consumed by tryParseAsymmetricSet
+		if parenConsumedByAsymmetric {
+			c.backup()
+			intersect, next, pErr := parseParenIntersection(c)
+			if pErr != nil {
+				return nil, pErr
+			}
+			if next.IsSingle('|') {
+				propTypeHint, i, err = parseUnionTypeHint(intersect, c)
+				if err != nil {
+					return nil, err
+				}
+			} else {
+				propTypeHint = intersect
+				i = next
+			}
+		} else if i.IsSingle('(') {
+			intersect, next, pErr := parseParenIntersection(c)
+			if pErr != nil {
+				return nil, pErr
+			}
+			if next.IsSingle('|') {
+				propTypeHint, i, err = parseUnionTypeHint(intersect, c)
+				if err != nil {
+					return nil, err
+				}
+			} else {
+				propTypeHint = intersect
+				i = next
+			}
+		} else if i.Type == tokenizer.T_STRING || i.Type == tokenizer.T_ARRAY || i.Type == tokenizer.T_CALLABLE || i.IsSingle('?') || i.Type == tokenizer.T_STATIC {
 			// Could be a type hint for a property, or a regular class name
 			// Peek ahead to check if a T_VARIABLE follows (possibly after namespace parts)
 			isNullable := i.IsSingle('?')
@@ -580,6 +629,7 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 
 			// Handle trait adaptation block { ... } or semicolon
 			var aliases []traitAlias
+			var insteadofs []traitInsteadof
 			if i.IsSingle('{') {
 				// Parse trait adaptations
 				for {
@@ -655,12 +705,13 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 							})
 						} else if i.Type == tokenizer.T_INSTEADOF {
 							// insteadof OtherTrait [, OtherTrait2];
+							var excludedTraits []phpv.ZString
 							for {
 								i, err = c.NextItem()
 								if err != nil {
 									return nil, err
 								}
-								// Skip trait names
+								excludedTraits = append(excludedTraits, phpv.ZString(i.Data))
 								i, err = c.NextItem()
 								if err != nil {
 									return nil, err
@@ -672,6 +723,11 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 									return nil, i.Unexpected()
 								}
 							}
+							insteadofs = append(insteadofs, traitInsteadof{
+								traitName:  phpv.ZString(firstName),
+								methodName: phpv.ZString(methodName),
+								insteadOf:  excludedTraits,
+							})
 						} else {
 							return nil, i.Unexpected()
 						}
@@ -730,6 +786,7 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			class.TraitUses = append(class.TraitUses, phpv.ZClassTraitUse{
 				TraitNames: traitNames,
 				Aliases:    convertAliases(aliases),
+				Insteadof:  convertInsteadofs(insteadofs),
 			})
 		case tokenizer.T_FUNCTION:
 			// next must be a string (method name)
@@ -760,8 +817,9 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 				}
 			}
 
-			// Check for abstract+private combination (abstract methods cannot be private)
-			if attr&phpv.ZAttrAbstract != 0 && attr&phpv.ZAttrPrivate != 0 {
+			// Check for abstract+private combination (abstract methods cannot be private,
+			// EXCEPT in traits where PHP 8.0+ allows private abstract methods)
+			if attr&phpv.ZAttrAbstract != 0 && attr&phpv.ZAttrPrivate != 0 && class.Type != phpv.ZClassTypeTrait {
 				return nil, &phpv.PhpError{
 					Err:  fmt.Errorf("Abstract function %s::%s() cannot be declared private", class.Name, i.Data),
 					Code: phpv.E_COMPILE_ERROR,
@@ -1026,7 +1084,9 @@ func parseClassLine(class *phpobj.ZClass, c compileCtx) error {
 			classKind = "interface"
 		}
 		switch lowerName {
-		case "self", "parent", "static":
+		case "self", "parent", "static",
+			"int", "float", "bool", "string", "void", "null", "false", "true", "mixed", "never",
+			"array", "callable", "object", "iterable":
 			// Class/interface declaration: use article "a"/"an" and no comma
 			article := "a"
 			if classKind == "interface" {
@@ -1067,6 +1127,14 @@ func parseClassLine(class *phpobj.ZClass, c compileCtx) error {
 	}
 
 	if i.Type == tokenizer.T_EXTENDS {
+		// Traits cannot extend classes
+		if class.Type == phpv.ZClassTypeTrait {
+			return &phpv.PhpError{
+				Err:  fmt.Errorf("syntax error, unexpected token \"extends\", expecting \"{\""),
+				Code: phpv.E_PARSE,
+				Loc:  i.Loc(),
+			}
+		}
 		// For interfaces, extends can have multiple comma-separated parents
 		class.ExtendsStr, err = compileReadClassIdentifier(c)
 		if err != nil {
@@ -1111,6 +1179,14 @@ func parseClassLine(class *phpobj.ZClass, c compileCtx) error {
 		}
 	}
 	if i.Type == tokenizer.T_IMPLEMENTS {
+		// Traits cannot implement interfaces
+		if class.Type == phpv.ZClassTypeTrait {
+			return &phpv.PhpError{
+				Err:  fmt.Errorf("syntax error, unexpected token \"implements\", expecting \"{\""),
+				Code: phpv.E_PARSE,
+				Loc:  i.Loc(),
+			}
+		}
 		// can implement many classes
 		for {
 			impl, err := compileReadClassIdentifier(c)

@@ -79,7 +79,7 @@ func (h *TypeHint) Check(ctx Context, val *ZVal) bool {
 
 	if h.t == ZtObject {
 		// "callable" type hint: accepts strings, arrays, closures, and invocable objects.
-		// Validation is intentionally permissive — detailed checks (visibility,
+		// Validation is intentionally permissive -- detailed checks (visibility,
 		// static vs instance) happen at call time via SpawnCallable.
 		if h.s == "callable" {
 			switch val.GetType() {
@@ -128,6 +128,10 @@ func (h *TypeHint) Check(ctx Context, val *ZVal) bool {
 				return false
 			}
 		}
+		// iterable accepts arrays and Traversable objects
+		if h.s == "iterable" {
+			return val.GetType() == ZtArray || val.GetType() == ZtObject
+		}
 		// Class/interface type hint
 		if val.GetType() != ZtObject {
 			return false
@@ -135,7 +139,7 @@ func (h *TypeHint) Check(ctx Context, val *ZVal) bool {
 		if h.s == "" {
 			return true // any object
 		}
-		if h.s == "self" || h.s == "iterable" {
+		if h.s == "self" {
 			return true // TODO: proper check
 		}
 		// Check instanceof by class name
@@ -212,6 +216,9 @@ func (h *TypeHint) Check(ctx Context, val *ZVal) bool {
 // typeHintSortOrder returns the sort key for a type hint in union display order.
 // PHP displays union types in canonical order: object types, then array, then scalars.
 func typeHintSortOrder(h *TypeHint) int {
+	if len(h.Intersection) > 0 {
+		return 4 // intersection groups before regular types
+	}
 	switch h.t {
 	case ZtObject:
 		if h.s == "self" || h.s == "static" || h.s == "callable" || h.s == "iterable" {
@@ -254,7 +261,12 @@ func (h *TypeHint) String() string {
 	if len(h.Union) > 0 {
 		parts := make([]string, len(h.Union))
 		for i, alt := range h.Union {
-			parts[i] = alt.String()
+			s := alt.String()
+			// Wrap intersection groups in parentheses for DNF display
+			if len(alt.Intersection) > 0 {
+				s = "(" + s + ")"
+			}
+			parts[i] = s
 		}
 		sort.SliceStable(parts, func(i, j int) bool {
 			return typeHintSortOrder(h.Union[i]) < typeHintSortOrder(h.Union[j])
@@ -267,6 +279,13 @@ func (h *TypeHint) String() string {
 			parts[i] = part.String()
 		}
 		return strings.Join(parts, "&")
+	}
+	// iterable is displayed as Traversable|array in error messages (PHP 8.4+)
+	if h.s == "iterable" {
+		if h.Nullable {
+			return "Traversable|array|null"
+		}
+		return "Traversable|array"
 	}
 	prefix := ""
 	if h.Nullable {
