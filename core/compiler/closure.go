@@ -623,7 +623,14 @@ func (z *ZClosure) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	// If this is a generator function, spawn a Generator object instead of
 	// executing the function body directly.
 	if z.isGenerator {
-		return phpobj.SpawnGenerator(ctx, z.callBody, args)
+		name := z.Name()
+		if z.this != nil {
+			return phpobj.SpawnGeneratorNamed(ctx, z.callBody, args, name, z.this)
+		}
+		if ctx.This() != nil {
+			return phpobj.SpawnGeneratorNamed(ctx, z.callBody, args, name, ctx.This())
+		}
+		return phpobj.SpawnGeneratorNamed(ctx, z.callBody, args, name)
 	}
 
 	return z.callBody(ctx, args)
@@ -819,8 +826,9 @@ func (z *ZClosure) callBody(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 		if z.rref && r != nil {
 			r = r.Ref()
 		}
-		// Validate return type
-		if z.returnType != nil {
+		// Validate return type (skip for generator bodies - the return type applies
+		// to the Generator object, not the internal return value)
+		if z.returnType != nil && !z.isGenerator {
 			if err := z.checkReturnType(ctx, r); err != nil {
 				return nil, err
 			}
@@ -829,7 +837,7 @@ func (z *ZClosure) callBody(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 	}
 	// No explicit return statement - return NULL
 	// For void return type, returning without a value is fine
-	if z.returnType != nil && z.returnType.Type() != phpv.ZtVoid {
+	if z.returnType != nil && z.returnType.Type() != phpv.ZtVoid && !z.isGenerator {
 		if err := z.checkReturnTypeNone(ctx); err != nil {
 			return nil, err
 		}

@@ -31,8 +31,9 @@ var FiberResolveCallable func(ctx phpv.Context, v *phpv.ZVal) (phpv.Callable, er
 
 // FiberState holds the internal state of a PHP Fiber.
 type FiberState struct {
-	callback phpv.Callable
-	status   FiberStatus
+	callback    phpv.Callable
+	callbackVal *phpv.ZVal   // original callback ZVal for lazy resolution
+	status      FiberStatus
 
 	// Channels for cooperative scheduling between caller and fiber goroutine.
 	// The protocol ensures mutual exclusion: at any point, exactly one side is running.
@@ -123,15 +124,17 @@ func fiberConstruct(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal
 		return nil, ThrowError(ctx, TypeError, "Fiber::__construct() expects exactly 1 argument, 0 given")
 	}
 
-	// The callback is stored as a ZVal; we'll resolve it to a Callable when start() is called.
-	// This avoids issues with callable resolution at construction time.
+	// Prevent calling constructor twice
+	if getFiberState(o) != nil {
+		return nil, ThrowError(ctx, FiberError, "Cannot call constructor twice")
+	}
+
+	// The callback is stored in the state (not hash table to keep it hidden from var_dump)
 	state := &FiberState{
-		status: FiberCreated,
+		status:      FiberCreated,
+		callbackVal: args[0],
 	}
 	o.SetOpaque(Fiber, state)
-
-	// Store the callback ZVal for later resolution
-	o.HashTable().SetString("__fiber_callback", args[0])
 
 	return nil, nil
 }
@@ -143,22 +146,21 @@ func fiberStart(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, er
 		return nil, ThrowError(ctx, FiberError, "Cannot start a fiber that is not properly initialized")
 	}
 	if state.status != FiberCreated {
-		return nil, ThrowError(ctx, FiberError, "Cannot start a fiber that is not in the created state")
+		return nil, ThrowError(ctx, FiberError, "Cannot start a fiber that has already been started")
 	}
 
-	// Resolve the callback
-	callbackZVal := o.HashTable().GetString("__fiber_callback")
-	if callbackZVal == nil {
+	// Resolve the callback from state
+	if state.callbackVal == nil {
 		return nil, ThrowError(ctx, FiberError, "Fiber callback not set")
 	}
 
 	// Try direct Callable extraction first, then use the resolver
 	var callback phpv.Callable
-	if c, ok := callbackZVal.Value().(phpv.Callable); ok {
+	if c, ok := state.callbackVal.Value().(phpv.Callable); ok {
 		callback = c
 	} else if FiberResolveCallable != nil {
 		var err error
-		callback, err = FiberResolveCallable(ctx, callbackZVal)
+		callback, err = FiberResolveCallable(ctx, state.callbackVal)
 		if err != nil {
 			return nil, ThrowError(ctx, TypeError, fmt.Sprintf("Fiber::__construct() expects parameter 1 to be a valid callback, %s", err))
 		}

@@ -58,6 +58,8 @@ type GeneratorState struct {
 
 	// Whether the generator has been started (first next/send/rewind was called)
 	started bool
+	// Whether the generator has been advanced past initial state (next/send was called)
+	advanced bool
 	// Whether we have a valid current value (false after generator closes)
 	valid bool
 }
@@ -521,6 +523,7 @@ func generatorAdvance(ctx phpv.Context, state *GeneratorState, sendVal *phpv.ZVa
 		return nil
 	}
 
+	state.advanced = true
 	state.status = GeneratorRunning
 
 	if sendVal == nil {
@@ -613,6 +616,10 @@ func generatorNext(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal,
 		return phpv.ZNULL.ZVal(), nil
 	}
 
+	if state.status == GeneratorRunning {
+		return nil, ThrowError(ctx, Error, "Cannot resume an already running generator")
+	}
+
 	if err := generatorEnsureStarted(ctx, state); err != nil {
 		return nil, err
 	}
@@ -630,8 +637,12 @@ func generatorRewind(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVa
 		return phpv.ZNULL.ZVal(), nil
 	}
 
-	// Rewind is only meaningful before the generator starts.
-	// If already started, it's a no-op (PHP emits no error).
+	if state.status == GeneratorClosed {
+		return nil, ThrowError(ctx, Exception, "Cannot traverse an already closed generator")
+	}
+	if state.advanced {
+		return nil, ThrowError(ctx, Exception, "Cannot rewind a generator that was already run")
+	}
 	if !state.started {
 		if err := generatorEnsureStarted(ctx, state); err != nil {
 			return nil, err
@@ -658,6 +669,10 @@ func generatorSend(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal,
 	state := getGeneratorState(o)
 	if state == nil {
 		return phpv.ZNULL.ZVal(), nil
+	}
+
+	if state.status == GeneratorRunning {
+		return nil, ThrowError(ctx, Error, "Cannot resume an already running generator")
 	}
 
 	var sendVal *phpv.ZVal
@@ -738,6 +753,13 @@ func generatorGetReturn(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.
 	state := getGeneratorState(o)
 	if state == nil {
 		return nil, ThrowError(ctx, Error, "Cannot get return value of a generator that hasn't returned")
+	}
+
+	// Auto-prime the generator if it hasn't been started yet
+	if !state.started {
+		if err := generatorEnsureStarted(ctx, state); err != nil {
+			return nil, err
+		}
 	}
 
 	if state.status != GeneratorClosed {
