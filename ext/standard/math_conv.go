@@ -7,6 +7,7 @@ import (
 	"unicode"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -137,6 +138,13 @@ func mathBaseConvert(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	_, err := core.Expand(ctx, args, &num, &fromBase, &toBase)
 	if err != nil {
 		return nil, ctx.FuncError(err)
+	}
+
+	if fromBase < 2 || fromBase > 36 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "base_convert(): Argument #2 ($from_base) must be between 2 and 36 (inclusive)")
+	}
+	if toBase < 2 || toBase > 36 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "base_convert(): Argument #3 ($to_base) must be between 2 and 36 (inclusive)")
 	}
 
 	const allowedConvChars = "0123456789abcdefghijklmnopqrstuvwxyz"
