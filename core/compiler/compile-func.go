@@ -1097,6 +1097,13 @@ func compileFunctionArgs(c compileCtx) (res []*phpv.FuncArg, err error) {
 			}
 		}
 
+		// Validate type hint
+		if arg.Hint != nil {
+			if err := validateTypeHint(arg.Hint, i.Loc()); err != nil {
+				return nil, err
+			}
+		}
+
 		// Handle variadic parameter: ...
 		if i.Type == tokenizer.T_ELLIPSIS {
 			arg.Variadic = true
@@ -1323,6 +1330,145 @@ func compileFunctionUse(c compileCtx) (res []*phpv.FuncUse, err error) {
 	}
 }
 
+// validateTypeHint checks a parsed TypeHint for PHP compile-time validity rules.
+// It returns a compile error if the type is invalid (e.g., ?mixed, mixed|X, ?void).
+func validateTypeHint(th *phpv.TypeHint, loc *phpv.Loc) error {
+	if th == nil {
+		return nil
+	}
+
+	// mixed cannot be nullable: "Type mixed cannot be marked as nullable since mixed already includes null"
+	if th.Nullable && th.Type() == phpv.ZtMixed {
+		return &phpv.PhpError{
+			Err:  fmt.Errorf("Type mixed cannot be marked as nullable since mixed already includes null"),
+			Code: phpv.E_COMPILE_ERROR,
+			Loc:  loc,
+		}
+	}
+
+	// void cannot be nullable: "Void can only be used as a standalone type"
+	if th.Nullable && th.Type() == phpv.ZtVoid {
+		return &phpv.PhpError{
+			Err:  fmt.Errorf("Void can only be used as a standalone type"),
+			Code: phpv.E_COMPILE_ERROR,
+			Loc:  loc,
+		}
+	}
+
+	// Union type validations
+	if len(th.Union) > 0 {
+		for _, u := range th.Union {
+			// mixed cannot be in union: "Type mixed can only be used as a standalone type"
+			if u.Type() == phpv.ZtMixed {
+				return &phpv.PhpError{
+					Err:  fmt.Errorf("Type mixed can only be used as a standalone type"),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  loc,
+				}
+			}
+			// void cannot be in union: "Void can only be used as a standalone type"
+			if u.Type() == phpv.ZtVoid {
+				return &phpv.PhpError{
+					Err:  fmt.Errorf("Type void can only be used as a standalone type"),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  loc,
+				}
+			}
+
+			// Validate intersection type members: scalar types cannot be in intersections
+			if len(u.Intersection) > 0 {
+				for _, part := range u.Intersection {
+					if err := validateIntersectionMember(part, loc); err != nil {
+						return err
+					}
+				}
+			}
+		}
+
+		// Check for duplicate types
+		seen := make(map[string]bool)
+		for _, u := range th.Union {
+			key := u.String()
+			if seen[key] {
+				return &phpv.PhpError{
+					Err:  fmt.Errorf("Duplicate type %s is redundant", key),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  loc,
+				}
+			}
+			seen[key] = true
+		}
+	}
+
+	// Intersection type validations (standalone, not within a union)
+	if len(th.Intersection) > 0 {
+		for _, part := range th.Intersection {
+			if err := validateIntersectionMember(part, loc); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+// validateIntersectionMember checks a single member of an intersection type.
+// Scalar types, array, callable, void, never, mixed, null, bool, true, false
+// cannot be part of an intersection type.
+func validateIntersectionMember(part *phpv.TypeHint, loc *phpv.Loc) error {
+	t := part.Type()
+	name := part.ClassName()
+
+	var errType string
+	switch t {
+	case phpv.ZtInt:
+		errType = "int"
+	case phpv.ZtFloat:
+		errType = "float"
+	case phpv.ZtString:
+		errType = "string"
+	case phpv.ZtBool:
+		if name == "false" {
+			errType = "false"
+		} else if name == "true" {
+			errType = "true"
+		} else {
+			errType = "bool"
+		}
+	case phpv.ZtArray:
+		errType = "array"
+	case phpv.ZtNull:
+		errType = "null"
+	case phpv.ZtVoid:
+		errType = "void"
+	case phpv.ZtNever:
+		errType = "never"
+	case phpv.ZtMixed:
+		errType = "mixed"
+	case phpv.ZtObject:
+		// Check for special pseudo-types
+		switch name {
+		case "callable":
+			errType = "callable"
+		case "iterable":
+			errType = "Traversable|array"
+		case "static":
+			errType = "static"
+		case "":
+			errType = "object"
+		}
+	}
+
+	if errType != "" {
+		return &phpv.PhpError{
+			Err:  fmt.Errorf("Type %s cannot be part of an intersection type", errType),
+			Code: phpv.E_COMPILE_ERROR,
+			Loc:  loc,
+		}
+	}
+	return nil
+}
+
 // parseUnionTypeHint takes the first type hint already parsed and a compileCtx
 // positioned after the '|', and parses remaining union members.
 // Returns the combined union TypeHint and the next token to process.
@@ -1340,7 +1486,7 @@ func parseUnionTypeHint(first *phpv.TypeHint, c compileCtx) (*phpv.TypeHint, *to
 				return nil, nil, err
 			}
 		}
-		if i.Type != tokenizer.T_STRING && i.Type != tokenizer.T_ARRAY && i.Type != tokenizer.T_CALLABLE {
+		if i.Type != tokenizer.T_STRING && i.Type != tokenizer.T_ARRAY && i.Type != tokenizer.T_CALLABLE && i.Type != tokenizer.T_STATIC {
 			return nil, nil, i.Unexpected()
 		}
 		hint := i.Data
@@ -1425,7 +1571,7 @@ func parseIntersectionTypeHint(first *phpv.TypeHint, secondToken *tokenizer.Item
 		if err != nil {
 			return nil, nil, err
 		}
-		if i.Type != tokenizer.T_STRING && i.Type != tokenizer.T_ARRAY && i.Type != tokenizer.T_CALLABLE {
+		if i.Type != tokenizer.T_STRING && i.Type != tokenizer.T_ARRAY && i.Type != tokenizer.T_CALLABLE && i.Type != tokenizer.T_STATIC {
 			return nil, nil, i.Unexpected()
 		}
 		hint = i.Data
@@ -1484,8 +1630,8 @@ func parseReturnType(c compileCtx) (*phpv.TypeHint, error) {
 
 	// Expect a type name token
 	switch i.Type {
-	case tokenizer.T_STRING, tokenizer.T_ARRAY, tokenizer.T_CALLABLE:
-		// valid type name - ok
+	case tokenizer.T_STRING, tokenizer.T_ARRAY, tokenizer.T_CALLABLE, tokenizer.T_STATIC:
+		// valid type name - ok (T_STATIC is allowed as a return type)
 	default:
 		return nil, i.Unexpected()
 	}
@@ -1534,6 +1680,9 @@ func parseReturnType(c compileCtx) (*phpv.TypeHint, error) {
 			return nil, err
 		}
 		c.backup()
+		if err := validateTypeHint(th, i.Loc()); err != nil {
+			return nil, err
+		}
 		return th, nil
 	}
 
@@ -1549,6 +1698,9 @@ func parseReturnType(c compileCtx) (*phpv.TypeHint, error) {
 				return nil, err
 			}
 			c.backup()
+			if err := validateTypeHint(th, i.Loc()); err != nil {
+				return nil, err
+			}
 			return th, nil
 		}
 		return nil, peek.Unexpected()
@@ -1556,6 +1708,9 @@ func parseReturnType(c compileCtx) (*phpv.TypeHint, error) {
 
 	// Not a type continuation - put it back and we're done
 	c.backup()
+	if err := validateTypeHint(th, i.Loc()); err != nil {
+		return nil, err
+	}
 	return th, nil
 }
 

@@ -269,6 +269,13 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			}
 		}
 
+		// Validate property type hint
+		if propTypeHint != nil {
+			if err := validateTypeHint(propTypeHint, i.Loc()); err != nil {
+				return nil, err
+			}
+		}
+
 		switch i.Type {
 		case tokenizer.T_VAR:
 			// class variable, with possible default value
