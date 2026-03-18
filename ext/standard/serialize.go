@@ -55,7 +55,12 @@ func fncUnserialize(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	result, _, err := deserializer.parse(ctx, string(str))
-	return result, err
+	if err != nil {
+		// PHP emits a warning and returns false on unserialize errors
+		ctx.Warn("%s", err.Error())
+		return phpv.ZFalse.ZVal(), nil
+	}
+	return result, nil
 }
 
 func serialize(ctx phpv.Context, value *phpv.ZVal) (string, error) {
@@ -480,8 +485,8 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 		// Parse "ClassName:CaseName"
 		colonIdx := strings.Index(enumStr, ":")
 		if colonIdx < 0 {
-			ctx.Warn("unserialize(): Invalid enum name '%s' (missing colon)", enumStr)
-			return phpv.ZNULL.ZVal(), endSemi + 1, nil
+			ctx.Warn("Invalid enum name '%s' (missing colon)", enumStr)
+			return nil, offset, &unserializeError{0, len(str)}
 		}
 		className := enumStr[:colonIdx]
 		caseName := enumStr[colonIdx+1:]
@@ -489,22 +494,22 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 		// Look up the class
 		cls, clsErr := ctx.Global().GetClass(ctx, phpv.ZString(className), false)
 		if clsErr != nil {
-			ctx.Warn("unserialize(): Class '%s' not found", className)
-			return phpv.ZNULL.ZVal(), endSemi + 1, nil
+			ctx.Warn("Class '%s' not found", className)
+			return nil, offset, &unserializeError{0, len(str)}
 		}
 
 		// Verify it's an enum
 		if !cls.GetType().Has(phpv.ZClassTypeEnum) {
-			ctx.Warn("unserialize(): Class '%s' is not an enum", className)
-			return phpv.ZNULL.ZVal(), endSemi + 1, nil
+			ctx.Warn("Class '%s' is not an enum", className)
+			return nil, offset, &unserializeError{0, len(str)}
 		}
 
 		// Look up the case constant
 		zc := cls.(*phpobj.ZClass)
 		cc, exists := zc.Const[phpv.ZString(caseName)]
 		if !exists {
-			ctx.Warn("unserialize(): Undefined constant %s::%s", className, caseName)
-			return phpv.ZNULL.ZVal(), endSemi + 1, nil
+			ctx.Warn("Undefined constant %s::%s", className, caseName)
+			return nil, offset, &unserializeError{endSemi + 1, len(str)}
 		}
 
 		// Resolve CompileDelayed if needed
@@ -518,10 +523,21 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 			val = z2.Value()
 		}
 
-		// Check that it's actually an enum case (ZObject)
+		// Check that it's actually an enum case (not just a regular class constant)
+		isEnumCase := false
+		for _, ec := range zc.EnumCases {
+			if string(ec) == caseName {
+				isEnumCase = true
+				break
+			}
+		}
+		if !isEnumCase {
+			ctx.Warn("%s::%s is not an enum case", className, caseName)
+			return nil, offset, &unserializeError{endSemi + 1, len(str)}
+		}
 		if _, ok := val.(*phpobj.ZObject); !ok {
-			ctx.Warn("unserialize(): %s::%s is not an enum case", className, caseName)
-			return phpv.ZNULL.ZVal(), endSemi + 1, nil
+			ctx.Warn("%s::%s is not an enum case", className, caseName)
+			return nil, offset, &unserializeError{endSemi + 1, len(str)}
 		}
 
 		return val.ZVal(), endSemi + 1, nil

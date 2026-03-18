@@ -308,21 +308,40 @@ func fncTimezoneNameFromAbbr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, e
 		}
 	}
 
-	// If offset is provided, try to find by offset
-	if utcOffset.HasArg() {
+	// If abbr is empty and isDST is not explicitly provided, return false
+	if abbrStr == "" && !isDST.HasArg() {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+
+	// If offset is provided and isDST is explicitly specified, search by offset
+	if utcOffset.HasArg() && isDST.HasArg() {
 		offset := int(utcOffset.Get())
-		// Go through known timezones to find one with matching offset
+		wantDST := int(isDST.Get()) == 1
+		// Use a reference date in January (non-DST for northern hemisphere)
+		// and July (DST for northern hemisphere) to check offsets
+		refWinter := time.Date(2024, 1, 15, 12, 0, 0, 0, time.UTC)
+		refSummer := time.Date(2024, 7, 15, 12, 0, 0, 0, time.UTC)
+		// Go through known timezones to find one with matching offset and DST preference
 		for _, tzName := range []string{
-			"UTC", "Europe/London", "Europe/Berlin", "Europe/Helsinki",
+			"Europe/Paris", "Europe/London", "Europe/Berlin", "Europe/Helsinki",
+			"Europe/Moscow", "Europe/Lisbon", "Europe/Rome", "Europe/Madrid",
 			"America/New_York", "America/Chicago", "America/Denver",
-			"America/Los_Angeles", "Asia/Tokyo", "Asia/Shanghai",
-			"Asia/Kolkata", "Australia/Sydney", "Pacific/Auckland",
+			"America/Los_Angeles", "America/Anchorage", "Pacific/Honolulu",
+			"Asia/Tokyo", "Asia/Shanghai", "Asia/Kolkata", "Asia/Seoul",
+			"Australia/Sydney", "Australia/Adelaide", "Australia/Perth",
+			"Pacific/Auckland", "UTC",
 		} {
 			loc, err := time.LoadLocation(tzName)
 			if err != nil {
 				continue
 			}
-			_, tzOffset := time.Now().In(loc).Zone()
+			var ref time.Time
+			if wantDST {
+				ref = refSummer
+			} else {
+				ref = refWinter
+			}
+			_, tzOffset := ref.In(loc).Zone()
 			if tzOffset == offset {
 				return phpv.ZString(tzName).ZVal(), nil
 			}
