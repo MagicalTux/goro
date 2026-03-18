@@ -1,6 +1,6 @@
 # Goro Roadmap
 
-**Current state (March 2026):** 3,149+ / 8,610 tested (12,110 total, 40% pass rate). First 2,000: 1,376/2,000 (70.8%). 7 test batches timeout due to known engine bugs (json/serialize recursion, heredoc parser, range overflow).
+**Current state (March 2026):** ~3,400+ / 12,110 total. First 2,000: 1,381/2,000 (71.1%). OOM bugs fixed: json_encode recursion, range() limits, serialize depth, goroutine leak. Remaining OOM: 5 batches with specific problematic tests.
 
 This document tracks the major work areas needed to reach full PHP 8.5 compatibility, organized by impact (number of test fixes) and estimated effort.
 
