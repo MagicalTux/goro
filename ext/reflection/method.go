@@ -2,6 +2,7 @@ package reflection
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
@@ -53,25 +54,52 @@ func reflectionMethodGetDocComment(ctx phpv.Context, o *phpobj.ZObject, args []*
 }
 
 func reflectionMethodConstructFull(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	if len(args) < 2 {
-		return nil, phpobj.ThrowError(ctx, phpobj.Error, "ReflectionMethod::__construct() expects exactly 2 arguments")
+	if len(args) < 1 {
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, "ReflectionMethod::__construct() expects at least 1 argument, 0 given")
 	}
 
 	var class phpv.ZClass
+	var methodName phpv.ZString
 	var err error
 
-	// First arg can be object or class name
-	if args[0].GetType() == phpv.ZtObject {
-		class = args[0].AsObject(ctx).GetClass()
-	} else {
-		className := args[0].AsString(ctx)
+	if len(args) == 1 {
+		// Single argument form: "ClassName::methodName"
+		methodStr := string(args[0].AsString(ctx))
+		parts := strings.SplitN(methodStr, "::", 2)
+		if len(parts) != 2 {
+			return nil, phpobj.ThrowError(ctx, ReflectionException,
+				fmt.Sprintf("ReflectionMethod::__construct(): Argument #1 ($objectOrMethod) must be a valid method name"))
+		}
+
+		// Emit deprecation notice (ignore error - it's just a notice)
+		_ = ctx.Deprecated("Calling ReflectionMethod::__construct() with 1 argument is deprecated, use ReflectionMethod::createFromMethodName() instead")
+
+		className := phpv.ZString(parts[0])
+		methodName = phpv.ZString(parts[1])
+
+		if string(className) == "" {
+			return nil, phpobj.ThrowError(ctx, ReflectionException,
+				"ReflectionMethod::__construct(): Argument #1 ($objectOrMethod) must be a valid method name")
+		}
+
 		class, err = resolveClass(ctx, className)
 		if err != nil {
 			return nil, err
 		}
+	} else {
+		// Two argument form: (class/object, methodName)
+		if args[0].GetType() == phpv.ZtObject {
+			class = args[0].AsObject(ctx).GetClass()
+		} else {
+			className := args[0].AsString(ctx)
+			class, err = resolveClass(ctx, className)
+			if err != nil {
+				return nil, err
+			}
+		}
+		methodName = args[1].AsString(ctx)
 	}
 
-	methodName := args[1].AsString(ctx)
 	method, ok := class.GetMethod(methodName)
 	if !ok {
 		return nil, phpobj.ThrowError(ctx, ReflectionException, fmt.Sprintf("Method %s::%s() does not exist", class.GetName(), methodName))

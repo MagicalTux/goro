@@ -2,6 +2,7 @@ package reflection
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
@@ -29,6 +30,7 @@ func initReflectionAttribute() {
 			"IS_INSTANCEOF": {Value: phpv.ZInt(ReflectionAttributeIS_INSTANCEOF)},
 		},
 		Methods: map[phpv.ZString]*phpv.ZClassMethod{
+			"__construct":  {Name: "__construct", Method: phpobj.NativeMethod(reflectionAttributeConstruct)},
 			"getname":      {Name: "getName", Method: phpobj.NativeMethod(reflectionAttributeGetName)},
 			"getarguments": {Name: "getArguments", Method: phpobj.NativeMethod(reflectionAttributeGetArguments)},
 			"gettarget":    {Name: "getTarget", Method: phpobj.NativeMethod(reflectionAttributeGetTarget)},
@@ -37,6 +39,10 @@ func initReflectionAttribute() {
 			"__tostring":   {Name: "__toString", Method: phpobj.NativeMethod(reflectionAttributeToString)},
 		},
 	}
+}
+
+func reflectionAttributeConstruct(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	return nil, phpobj.ThrowError(ctx, ReflectionException, "Cannot directly instantiate ReflectionAttribute")
 }
 
 func getAttrData(o *phpobj.ZObject) *reflectionAttributeData {
@@ -201,7 +207,26 @@ func reflectionAttributeToString(ctx phpv.Context, o *phpobj.ZObject, args []*ph
 	if data == nil {
 		return phpv.ZString("Attribute [ ]").ZVal(), nil
 	}
-	return phpv.ZString(fmt.Sprintf("Attribute [ %s ]", data.attr.ClassName)).ZVal(), nil
+
+	// Resolve lazy argument expressions if needed
+	resolveAttrArgs(ctx, data.attr)
+
+	if len(data.attr.Args) == 0 {
+		return phpv.ZString(fmt.Sprintf("Attribute [ %s ]\n", data.attr.ClassName)).ZVal(), nil
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Attribute [ %s ] {\n", data.attr.ClassName))
+	sb.WriteString(fmt.Sprintf("  - Arguments [%d] {\n", len(data.attr.Args)))
+	for i, arg := range data.attr.Args {
+		sb.WriteString(fmt.Sprintf("    Argument #%d [ ", i))
+		if arg != nil {
+			sb.WriteString(arg.String())
+		}
+		sb.WriteString(" ]\n")
+	}
+	sb.WriteString("  }\n}\n")
+	return phpv.ZString(sb.String()).ZVal(), nil
 }
 
 // resolveAttrArgs evaluates any lazy argument expressions on the attribute.

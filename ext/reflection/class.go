@@ -345,11 +345,32 @@ func reflectionClassGetConstants(ctx phpv.Context, o *phpobj.ZObject, args []*ph
 		return phpv.NewZArray().ZVal(), nil
 	}
 
+	// Optional filter argument
+	var filter int64 = -1
+	if len(args) > 0 && args[0].GetType() != phpv.ZtNull {
+		filter = int64(args[0].AsInt(ctx))
+	}
+
 	arr := phpv.NewZArray()
 	if zc.Const != nil {
 		for _, name := range zc.ConstOrder {
-			if c := zc.Const[name]; c != nil && c.Value != nil {
-				arr.OffsetSet(ctx, name, c.Value.ZVal())
+			c := zc.Const[name]
+			if c == nil || c.Value == nil {
+				continue
+			}
+			if filter != -1 && !classConstMatchesFilter(c, filter) {
+				continue
+			}
+			// Resolve CompileDelayed values
+			val := c.Value
+			if cd, ok := val.(*phpv.CompileDelayed); ok {
+				resolved, err := cd.Run(ctx)
+				if err != nil {
+					continue
+				}
+				arr.OffsetSet(ctx, name, resolved)
+			} else {
+				arr.OffsetSet(ctx, name, val.ZVal())
 			}
 		}
 	}

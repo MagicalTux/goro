@@ -112,6 +112,8 @@ func init() {
 	initReflectionParameter()
 	initReflectionFunction()
 	initReflectionAttribute()
+	initReflectionExtension()
+	initReflectionStatic()
 
 	// Initialize methods on pre-declared classes
 	initReflectionClass()
@@ -142,6 +144,8 @@ func init() {
 			ReflectionEnum,
 			ReflectionEnumBackedCase,
 			ReflectionEnumUnitCase,
+			ReflectionExtension,
+			ReflectionStatic,
 			ReflectionMethod,
 			ReflectionObject,
 			ReflectionProperty,
@@ -166,13 +170,18 @@ func resolveClass(ctx phpv.Context, className phpv.ZString) (phpv.ZClass, error)
 
 func reflectionClassConstruct(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
-		return nil, phpobj.ThrowError(ctx, phpobj.Error, "ReflectionClass::__construct() expects exactly 1 argument, 0 given")
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "ReflectionClass::__construct() expects exactly 1 argument, 0 given")
+	}
+	if len(args) > 1 {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "ReflectionClass::__construct() expects exactly 1 argument, 2 given")
 	}
 	arg := args[0]
 	var class phpv.ZClass
 	if arg.GetType() == phpv.ZtObject {
 		// For objects, use the class directly (handles anonymous classes)
 		class = arg.AsObject(ctx).GetClass()
+	} else if arg.GetType() == phpv.ZtArray {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "ReflectionClass::__construct(): Argument #1 ($objectOrClass) must be of type object|string, array given")
 	} else {
 		className := arg.AsString(ctx)
 		var err error
@@ -191,12 +200,32 @@ func reflectionClassImplementsInterface(ctx phpv.Context, o *phpobj.ZObject, arg
 	if len(args) < 1 {
 		return nil, phpobj.ThrowError(ctx, phpobj.Error, "ReflectionClass::implementsInterface() expects exactly 1 argument, 0 given")
 	}
-	ifaceName := args[0].AsString(ctx)
 
-	// Try to resolve the interface (triggers autoload)
-	iface, err := ctx.Global().GetClass(ctx, ifaceName, true)
-	if err != nil {
-		return nil, phpobj.ThrowError(ctx, ReflectionException, fmt.Sprintf("Interface \"%s\" does not exist", ifaceName))
+	var iface phpv.ZClass
+	var err error
+
+	if args[0].GetType() == phpv.ZtObject {
+		// Could be a ReflectionClass object
+		obj := args[0].AsObject(ctx)
+		if obj != nil {
+			opaque := obj.GetOpaque(ReflectionClass)
+			if opaque != nil {
+				iface = opaque.(phpv.ZClass)
+			}
+		}
+	}
+
+	if iface == nil {
+		ifaceName := args[0].AsString(ctx)
+		iface, err = ctx.Global().GetClass(ctx, ifaceName, true)
+		if err != nil {
+			return nil, phpobj.ThrowError(ctx, ReflectionException, fmt.Sprintf("Interface \"%s\" does not exist", ifaceName))
+		}
+	}
+
+	// Check that the argument is actually an interface
+	if iface.GetType() != phpv.ZClassTypeInterface {
+		return nil, phpobj.ThrowError(ctx, ReflectionException, fmt.Sprintf("%s is not an interface", iface.GetName()))
 	}
 
 	class := o.GetOpaque(ReflectionClass).(phpv.ZClass)
