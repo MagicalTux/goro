@@ -825,6 +825,13 @@ func (g *Global) GetConfig(name phpv.ZString, def *phpv.ZVal) *phpv.ZVal {
 	return def
 }
 
+// GetConfigEntry returns the raw IniValue for a config entry, or nil if the
+// config option doesn't exist. Unlike GetConfig, this allows callers to
+// distinguish between "not set" and "set to empty".
+func (g *Global) GetConfigEntry(name phpv.ZString) *phpv.IniValue {
+	return g.IniConfig.Get(name)
+}
+
 func (g *Global) GetGlobalConfig(name phpv.ZString, def *phpv.ZVal) *phpv.ZVal {
 	val := g.IniConfig.Get(name)
 	if val != nil && val.Global != nil {

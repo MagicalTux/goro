@@ -597,6 +597,16 @@ func NewZObjectOpaque(ctx phpv.Context, c phpv.ZClass, v interface{}) (*ZObject,
 	return n, nil
 }
 
+// dupDefault creates a per-instance copy of a default property value.
+// For arrays, this creates a proper duplicate so that each object instance
+// gets its own independent array instead of sharing the class-level default.
+func dupDefault(v phpv.Val) *phpv.ZVal {
+	if arr, ok := v.(*phpv.ZArray); ok {
+		return arr.Dup().ZVal()
+	}
+	return v.ZVal()
+}
+
 func (o *ZObject) init(ctx phpv.Context) error {
 	// Resolve any pending CompileDelayed constants when the class is first used.
 	// This ensures forward-referenced constants throw errors at instantiation time
@@ -638,7 +648,7 @@ func (o *ZObject) init(ctx phpv.Context) error {
 						}
 						p.Default = z.Value()
 					}
-					o.h.SetString(k, p.Default.ZVal())
+					o.h.SetString(k, dupDefault(p.Default))
 				} else {
 					o.h.SetString(k, phpv.ZNULL.ZVal())
 				}
@@ -654,7 +664,7 @@ func (o *ZObject) init(ctx phpv.Context) error {
 						}
 						p.Default = z.Value()
 					}
-					o.h.SetString(p.VarName, p.Default.ZVal())
+					o.h.SetString(p.VarName, dupDefault(p.Default))
 				} else {
 					o.h.SetString(p.VarName, phpv.ZNULL.ZVal())
 				}

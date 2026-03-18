@@ -103,12 +103,29 @@ func fncArrayCombine(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 }
 
 // > func array array_merge ( array $array1 [, array $... ] )
+const arrayMergeMaxElements = 1<<31 - 1 // ~2 billion, matches PHP's HT_MAX_SIZE
+
 func fncArrayMerge(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var a *phpv.ZArray
 	_, err := core.Expand(ctx, args, &a)
 	if err != nil {
 		return nil, err
 	}
+
+	// Pre-check total element count to prevent OOM from massive merges
+	totalCount := int64(a.Count(ctx))
+	for i := 1; i < len(args); i++ {
+		b, err := args[i].As(ctx, phpv.ZtArray)
+		if err != nil {
+			return nil, err
+		}
+		totalCount += int64(b.Value().(*phpv.ZArray).Count(ctx))
+		if totalCount > arrayMergeMaxElements {
+			return nil, phpobj.ThrowError(ctx, phpobj.Error,
+				fmt.Sprintf("The total number of elements must be lower than %d", arrayMergeMaxElements+1))
+		}
+	}
+
 	a = a.Dup() // make sure we do a copy of array
 
 	for i := 1; i < len(args); i++ {
@@ -1760,6 +1777,8 @@ func fncArrayExtract(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return nil, nil
 }
 
+const compactMaxDepth = 32
+
 // > func array compact ( mixed $varname1 [, mixed $... ] )
 func fncArrayCompact(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) == 0 {
@@ -1768,23 +1787,15 @@ func fncArrayCompact(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	parentCtx := ctx.Parent(1)
 	result := phpv.NewZArray()
 	for _, v := range args {
-		err := arrayRecursiveCompact(parentCtx, result, v)
+		err := arrayRecursiveCompact(parentCtx, result, v, 0)
 		if err != nil {
-			return nil, ctx.Error(err)
+			return nil, err
 		}
 	}
 	return result.ZVal(), nil
 }
 
-func arrayRecursiveCompact(ctx phpv.Context, result *phpv.ZArray, varName *phpv.ZVal, depth ...int) error {
-	d := 0
-	if len(depth) > 0 {
-		d = depth[0]
-	}
-	if d > 256 {
-		return nil
-	}
-	_ = d
+func arrayRecursiveCompact(ctx phpv.Context, result *phpv.ZArray, varName *phpv.ZVal, depth int) error {
 	switch varName.GetType() {
 	case phpv.ZtString:
 		if ok, _ := ctx.OffsetExists(ctx, varName); ok {
@@ -1797,8 +1808,12 @@ func arrayRecursiveCompact(ctx phpv.Context, result *phpv.ZArray, varName *phpv.
 			ctx.Notice("compact(): Undefined variable: %s", varName)
 		}
 	case phpv.ZtArray:
-		for _, varName := range varName.AsArray(ctx).Iterate(ctx) {
-			err := arrayRecursiveCompact(ctx, result, varName, d+1)
+		if depth >= compactMaxDepth {
+			return phpobj.ThrowError(ctx, phpobj.Error, "Recursion detected")
+		}
+		arr := varName.AsArray(ctx)
+		for _, varName := range arr.Iterate(ctx) {
+			err := arrayRecursiveCompact(ctx, result, varName, depth+1)
 			if err != nil {
 				return err
 			}

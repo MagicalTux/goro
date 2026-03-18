@@ -274,6 +274,9 @@ func fncLoadedExtensions(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error
 	return result.ZVal(), nil
 }
 
+// iniNotFoundSentinel is a sentinel value used by ini_get to detect unknown settings.
+var iniNotFoundSentinel = &phpv.ZVal{}
+
 // > func string ini_get ( string $varname)
 func fncIniGet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var varName phpv.ZString
@@ -282,7 +285,11 @@ func fncIniGet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	value := ctx.Global().GetConfig(varName, phpv.ZStr(""))
+	// PHP returns false if the configuration option doesn't exist
+	value := ctx.Global().GetConfig(varName, iniNotFoundSentinel)
+	if value == iniNotFoundSentinel {
+		return phpv.ZFalse.ZVal(), nil
+	}
 	return value.AsString(ctx).ZVal(), nil
 }
 

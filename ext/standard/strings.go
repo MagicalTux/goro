@@ -1362,6 +1362,22 @@ func fncStrTr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 		// // The longest keys will be tried first, so sort by length
 		keys := replacePairs.ByteArrayKeys(ctx)
+
+		// Filter out empty string keys (would cause infinite loop)
+		hasEmpty := false
+		filtered := keys[:0]
+		for _, key := range keys {
+			if len(key) == 0 {
+				hasEmpty = true
+				continue
+			}
+			filtered = append(filtered, key)
+		}
+		keys = filtered
+		if hasEmpty {
+			ctx.Warn("Ignoring replacement of empty string")
+		}
+
 		sort.Slice(keys, func(i, j int) bool {
 			if len(keys[i]) > len(keys[j]) {
 				return true

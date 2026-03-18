@@ -64,12 +64,13 @@ func fncUnserialize(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 }
 
 func serialize(ctx phpv.Context, value *phpv.ZVal) (string, error) {
-	return serializeWithDepth(ctx, value, 0)
+	seen := make(map[phpv.ZObject]bool)
+	return serializeWithDepth(ctx, value, 0, seen)
 }
 
-const maxSerializeDepth = 32
+const maxSerializeDepth = 128
 
-func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int) (string, error) {
+func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seen map[phpv.ZObject]bool) (string, error) {
 	if depth > maxSerializeDepth {
 		return "N;", nil // prevent infinite recursion
 	}
@@ -117,7 +118,7 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int) (string, 
 		for k, v := range arr.Iterate(ctx) {
 
 			if j, ok := refs[v.Nude()]; ok {
-				sub, err := serializeWithDepth(ctx, k, depth+1)
+				sub, err := serializeWithDepth(ctx, k, depth+1, seen)
 				if err != nil {
 					return "", err
 				}
@@ -131,12 +132,12 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int) (string, 
 				refs[v.Nude()] = i
 			}
 
-			sub, err := serializeWithDepth(ctx, k, depth+1)
+			sub, err := serializeWithDepth(ctx, k, depth+1, seen)
 			if err != nil {
 				return "", err
 			}
 			buf.WriteString(sub)
-			sub, err = serializeWithDepth(ctx, v, depth+1)
+			sub, err = serializeWithDepth(ctx, v, depth+1, seen)
 			if err != nil {
 				return "", err
 			}
@@ -146,6 +147,13 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int) (string, 
 		result = buf.String()
 	case phpv.ZtObject:
 		obj := value.AsObject(ctx)
+
+		// Detect object cycles to prevent infinite recursion
+		if seen[obj] {
+			return "N;", nil
+		}
+		seen[obj] = true
+		defer delete(seen, obj)
 
 		// Enum serialization: E:length:"ClassName:CaseName";
 		if obj.GetClass().GetType().Has(phpv.ZClassTypeEnum) {
@@ -177,6 +185,43 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int) (string, 
 				result = fmt.Sprintf(`C:%d:"%s":%d:{%s}`, len(className), className, len(data), string(data))
 				return result, nil
 			}
+		}
+
+		// Check for __serialize() method (PHP 7.4+, preferred over __sleep)
+		if method, ok := obj.GetClass().GetMethod(phpv.ZString("__serialize")); ok {
+			val, err := ctx.Call(ctx, method.Method, nil, obj)
+			if err != nil {
+				return "", err
+			}
+			arr := val.AsArray(ctx)
+			if arr == nil {
+				return "N;", nil
+			}
+
+			var buf bytes.Buffer
+			propCount := 0
+			for k, v := range arr.Iterate(ctx) {
+				sub, err := serializeWithDepth(ctx, k, depth+1, seen)
+				if err != nil {
+					return "", err
+				}
+				buf.WriteString(sub)
+				sub, err = serializeWithDepth(ctx, v, depth+1, seen)
+				if err != nil {
+					return "", err
+				}
+				buf.WriteString(sub)
+				propCount++
+			}
+
+			contents := buf.String()
+			buf.Reset()
+			className := string(obj.GetClass().GetName())
+			buf.WriteString(fmt.Sprintf(`O:%d:"%s":%d:`, len(className), className, propCount))
+			buf.WriteString("{")
+			buf.WriteString(contents)
+			buf.WriteString("}")
+			return buf.String(), nil
 		}
 
 		var props *phpv.ZArray
@@ -218,7 +263,7 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int) (string, 
 				buf.WriteString(sub)
 
 				v := zobj.GetPropValue(classProp)
-				sub2, err := serializeWithDepth(ctx, v, depth+1)
+				sub2, err := serializeWithDepth(ctx, v, depth+1, seen)
 				if err != nil {
 					return "", err
 				}
@@ -242,7 +287,7 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int) (string, 
 				buf.WriteString(sub)
 
 				v := zobj.GetPropValue(prop)
-				sub2, err := serializeWithDepth(ctx, v, depth+1)
+				sub2, err := serializeWithDepth(ctx, v, depth+1, seen)
 				if err != nil {
 					return "", err
 				}
@@ -611,27 +656,52 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 			obj.ObjectSet(ctx, phpv.ZStr("__PHP_Incomplete_Class_Name"), phpv.ZStr(className))
 		}
 
-		if method, ok := obj.GetClass().GetMethod(phpv.ZString("__wakeup")); ok {
-			_, err := ctx.Call(ctx, method.Method, nil, obj)
+		// Check if class has __unserialize method
+		_, hasUnserialize := obj.GetClass().GetMethod(phpv.ZString("__unserialize"))
+
+		i = j + 2
+		if hasUnserialize {
+			// Collect key-value pairs into an array, then call __unserialize
+			arr := phpv.NewZArray()
+			for numProps > 0 {
+				var key, value *phpv.ZVal
+				key, i, err = d.parse(ctx, str, i)
+				if err != nil {
+					return nil, offset, readError
+				}
+				value, i, err = d.parse(ctx, str, i)
+				if err != nil {
+					return nil, offset, readError
+				}
+				arr.OffsetSet(ctx, key, value)
+				numProps--
+			}
+			method, _ := obj.GetClass().GetMethod(phpv.ZString("__unserialize"))
+			_, err := ctx.Global().CallZVal(ctx, method.Method, []*phpv.ZVal{arr.ZVal()}, obj)
 			if err != nil {
 				return nil, offset, err
 			}
-		}
-
-		i = j + 2
-		for numProps > 0 {
-			var key, value *phpv.ZVal
-			key, i, err = d.parse(ctx, str, i)
-			if err != nil {
-				return nil, offset, readError
+		} else {
+			if method, ok := obj.GetClass().GetMethod(phpv.ZString("__wakeup")); ok {
+				_, err := ctx.Call(ctx, method.Method, nil, obj)
+				if err != nil {
+					return nil, offset, err
+				}
 			}
-			value, i, err = d.parse(ctx, str, i)
-			if err != nil {
-				return nil, offset, readError
-			}
-			obj.ObjectSet(ctx, key.AsString(ctx), value)
 
-			numProps--
+			for numProps > 0 {
+				var key, value *phpv.ZVal
+				key, i, err = d.parse(ctx, str, i)
+				if err != nil {
+					return nil, offset, readError
+				}
+				value, i, err = d.parse(ctx, str, i)
+				if err != nil {
+					return nil, offset, readError
+				}
+				obj.ObjectSet(ctx, key.AsString(ctx), value)
+				numProps--
+			}
 		}
 		return obj.ZVal(), i, nil
 	case 'C':
