@@ -376,7 +376,7 @@ func compileSpecialFuncCall(i *tokenizer.Item, c compileCtx) (phpv.Runnable, err
 	// Check for first-class callable syntax: exit(...) / die(...)
 	// Only T_EXIT supports this; echo/print/include are language constructs
 	// without callable semantics.
-	if i.IsSingle('(') {
+	if i.IsSingle('(') && (fn_name == "exit" || fn_name == "die") {
 		next, nextErr := c.NextItem()
 		if nextErr != nil {
 			return nil, nextErr
@@ -414,7 +414,19 @@ func compileSpecialFuncCall(i *tokenizer.Item, c compileCtx) (phpv.Runnable, err
 
 	var args []phpv.Runnable
 
-	// parse passed arguments
+	// For include/require constructs, parse a single expression and return
+	// without consuming the terminator - they can be used in expression context
+	// where the terminator is ) not ;
+	isInclude := fn_name == "include" || fn_name == "require" || fn_name == "include_once" || fn_name == "require_once" || fn_name == "print"
+	if isInclude {
+		a, err := compileExpr(i, c)
+		if err != nil {
+			return nil, err
+		}
+		return &runnableFunctionCall{name: fn_name, args: []phpv.Runnable{a}, l: l}, nil
+	}
+
+	// parse passed arguments (for echo which takes multiple comma-separated args)
 	for {
 		var a phpv.Runnable
 		a, err = compileExpr(i, c)

@@ -1082,6 +1082,8 @@ func parseClassLine(class *phpobj.ZClass, c compileCtx) error {
 		classKind := "class"
 		if class.Type == phpv.ZClassTypeInterface {
 			classKind = "interface"
+		} else if class.Type == phpv.ZClassTypeTrait {
+			classKind = "trait"
 		}
 		switch lowerName {
 		case "self", "parent", "static",

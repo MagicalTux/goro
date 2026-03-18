@@ -215,6 +215,16 @@ func (g *Global) init() {
 		},
 	})
 
+	// Mark DATE_RFC7231 as deprecated (PHP 8.5)
+	rfc7231DeprecationMsg := phpv.ZString("this format ignores the associated timezone and always uses GMT").ZVal()
+	rfc7231DeprecationSince := phpv.ZString("8.5").ZVal()
+	g.ConstantSetAttributes("DATE_RFC7231", []*phpv.ZAttribute{
+		{
+			ClassName: "Deprecated",
+			Args:      []*phpv.ZVal{rfc7231DeprecationMsg, rfc7231DeprecationSince},
+		},
+	})
+
 	// import global funcs & classes from ext
 	for _, e := range globalExtMap {
 		for k, v := range e.Functions {

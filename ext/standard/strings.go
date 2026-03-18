@@ -1892,8 +1892,11 @@ func fncSubstrCompare(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	if offset < 0 {
 		offset = len(haystack) + offset
+		if offset < 0 {
+			offset = 0
+		}
 	}
-	if offset < 0 || offset > len(haystack) {
+	if offset > len(haystack) {
 		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "substr_compare(): Argument #3 ($offset) must be contained in argument #1 ($haystack)")
 	}
 

@@ -715,6 +715,21 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		}
 	}
 	if methodNotVisible {
+		// For static calls without instance, check __callStatic first
+		if r.static && objI == nil {
+			if callStaticMethod, hasCallStatic := class.GetMethod("__callstatic"); hasCallStatic {
+				a := phpv.NewZArray()
+				callArgs := []*phpv.ZVal{op.ZVal(), a.ZVal()}
+				for _, sub := range r.args {
+					val, err := sub.Run(ctx)
+					if err != nil {
+						return nil, err
+					}
+					a.OffsetSet(ctx, nil, val)
+				}
+				return ctx.CallZVal(ctx, phpv.BindClass(callStaticMethod.Method, class, true), callArgs, nil)
+			}
+		}
 		// Before returning the visibility error, check if __call is available
 		if objI != nil {
 			callClass := class

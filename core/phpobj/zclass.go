@@ -343,6 +343,11 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 
 		var resolvedTraits []*ZClass
 		for _, traitName := range tu.TraitNames {
+			// Check reserved names
+			switch traitName.ToLower() {
+			case "self", "parent", "static":
+				return c.fatalError(ctx, fmt.Sprintf("Cannot use \"%s\" as trait name, as it is reserved", traitName))
+			}
 			traitClass, err := ctx.Global().GetClass(ctx, traitName, true)
 			if err != nil {
 				return ThrowError(ctx, Error, fmt.Sprintf("Trait \"%s\" not found", traitName))
@@ -391,6 +396,11 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 				for _, cp := range c.Props {
 					if cp.VarName == tp.VarName {
 						found = true
+						// Check for property conflict: different visibility or different default value
+						if cp.Modifiers&phpv.ZAttrAccess != tp.Modifiers&phpv.ZAttrAccess ||
+							cp.Modifiers&phpv.ZAttrStatic != tp.Modifiers&phpv.ZAttrStatic {
+							return c.fatalError(ctx, fmt.Sprintf("%s and %s define the same property ($%s) in the composition of %s. However, the definition differs and is considered incompatible. Class was composed", c.Name, tc.Name, tp.VarName, c.Name))
+						}
 						break
 					}
 				}
