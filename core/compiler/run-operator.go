@@ -1340,12 +1340,54 @@ func operatorCompare(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (
 		return phpv.ZBool(res).ZVal(), nil
 	}
 
-	// non numeric comparison
+	// PHP 8: objects are greater than all scalar types
+	if a.GetType() == phpv.ZtObject && b.GetType() != phpv.ZtObject {
+		switch op {
+		case tokenizer.Rune('<'):
+			return phpv.ZBool(false).ZVal(), nil
+		case tokenizer.Rune('>'):
+			return phpv.ZBool(true).ZVal(), nil
+		case tokenizer.T_IS_SMALLER_OR_EQUAL:
+			return phpv.ZBool(false).ZVal(), nil
+		case tokenizer.T_IS_GREATER_OR_EQUAL:
+			return phpv.ZBool(true).ZVal(), nil
+		case tokenizer.T_IS_EQUAL:
+			return phpv.ZBool(false).ZVal(), nil
+		case tokenizer.T_IS_NOT_EQUAL:
+			return phpv.ZBool(true).ZVal(), nil
+		case tokenizer.T_SPACESHIP:
+			return phpv.ZInt(1).ZVal(), nil
+		default:
+			return nil, ctx.Errorf("unsupported operator %s", op)
+		}
+	}
+	if b.GetType() == phpv.ZtObject && a.GetType() != phpv.ZtObject {
+		switch op {
+		case tokenizer.Rune('<'):
+			return phpv.ZBool(true).ZVal(), nil
+		case tokenizer.Rune('>'):
+			return phpv.ZBool(false).ZVal(), nil
+		case tokenizer.T_IS_SMALLER_OR_EQUAL:
+			return phpv.ZBool(true).ZVal(), nil
+		case tokenizer.T_IS_GREATER_OR_EQUAL:
+			return phpv.ZBool(false).ZVal(), nil
+		case tokenizer.T_IS_EQUAL:
+			return phpv.ZBool(false).ZVal(), nil
+		case tokenizer.T_IS_NOT_EQUAL:
+			return phpv.ZBool(true).ZVal(), nil
+		case tokenizer.T_SPACESHIP:
+			return phpv.ZInt(-1).ZVal(), nil
+		default:
+			return nil, ctx.Errorf("unsupported operator %s", op)
+		}
+	}
+
+	// non numeric comparison for same-type non-objects
 	if a.GetType() != b.GetType() {
 		return phpv.ZBool(false).ZVal(), nil
 	}
 
-	// Object comparison
+	// Object comparison (both objects)
 	if a.GetType() == phpv.ZtObject && b.GetType() == phpv.ZtObject {
 		cmp, err := phpv.CompareObject(ctx, a.AsObject(ctx), b.AsObject(ctx))
 		if err != nil {

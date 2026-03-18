@@ -40,9 +40,9 @@ type GeneratorState struct {
 	status GeneratorStatus
 
 	// Channels for cooperative scheduling between caller and generator goroutine.
-	resumeCh  chan generatorMsg    // caller -> generator: value sent via send()/next()
-	yieldCh   chan *GeneratorYield // generator -> caller: yielded key/value pair
-	doneCh    chan generatorMsg    // generator -> caller: signals completion (return or exception)
+	resumeCh chan generatorMsg    // caller -> generator: value sent via send()/next()
+	yieldCh  chan *GeneratorYield // generator -> caller: yielded key/value pair
+	doneCh   chan generatorMsg    // generator -> caller: signals completion (return or exception)
 
 	// Current iteration state
 	currentKey   *phpv.ZVal
@@ -52,6 +52,9 @@ type GeneratorState struct {
 
 	// Error from the generator (uncaught exception during execution)
 	genErr error
+
+	// Function name for stack traces and __debugInfo
+	funcName string
 
 	// Whether the generator has been started (first next/send/rewind was called)
 	started bool
@@ -103,17 +106,19 @@ var ClosedGeneratorError *ZClass
 func init() {
 	Generator = &ZClass{
 		Name:            "Generator",
+		Attr:            phpv.ZClassFinal,
 		InternalOnly:    true,
 		Implementations: []*ZClass{Iterator},
 		Methods: map[phpv.ZString]*phpv.ZClassMethod{
-			"current":   {Name: "current", Modifiers: phpv.ZAttrPublic, Method: NativeMethod(generatorCurrent)},
-			"key":       {Name: "key", Modifiers: phpv.ZAttrPublic, Method: NativeMethod(generatorKey)},
-			"next":      {Name: "next", Modifiers: phpv.ZAttrPublic, Method: NativeMethod(generatorNext)},
-			"rewind":    {Name: "rewind", Modifiers: phpv.ZAttrPublic, Method: NativeMethod(generatorRewind)},
-			"valid":     {Name: "valid", Modifiers: phpv.ZAttrPublic, Method: NativeMethod(generatorValid)},
-			"send":      {Name: "send", Modifiers: phpv.ZAttrPublic, Method: NativeMethod(generatorSend)},
-			"throw":     {Name: "throw", Modifiers: phpv.ZAttrPublic, Method: NativeMethod(generatorThrow)},
-			"getreturn": {Name: "getReturn", Modifiers: phpv.ZAttrPublic, Method: NativeMethod(generatorGetReturn)},
+			"current":      {Name: "current", Modifiers: phpv.ZAttrPublic, Method: NativeMethod(generatorCurrent)},
+			"key":          {Name: "key", Modifiers: phpv.ZAttrPublic, Method: NativeMethod(generatorKey)},
+			"next":         {Name: "next", Modifiers: phpv.ZAttrPublic, Method: NativeMethod(generatorNext)},
+			"rewind":       {Name: "rewind", Modifiers: phpv.ZAttrPublic, Method: NativeMethod(generatorRewind)},
+			"valid":        {Name: "valid", Modifiers: phpv.ZAttrPublic, Method: NativeMethod(generatorValid)},
+			"send":         {Name: "send", Modifiers: phpv.ZAttrPublic, Method: NativeMethod(generatorSend)},
+			"throw":        {Name: "throw", Modifiers: phpv.ZAttrPublic, Method: NativeMethod(generatorThrow)},
+			"getreturn":    {Name: "getReturn", Modifiers: phpv.ZAttrPublic, Method: NativeMethod(generatorGetReturn)},
+			"__debuginfo":  {Name: "__debugInfo", Modifiers: phpv.ZAttrPublic, Method: NativeMethod(generatorDebugInfo)},
 		},
 	}
 
@@ -143,7 +148,8 @@ type GeneratorBodyFunc func(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 // can be called through CallZVal (which sets up a proper FuncContext).
 type generatorBodyCallable struct {
 	phpv.CallableVal
-	fn GeneratorBodyFunc
+	fn   GeneratorBodyFunc
+	name string
 }
 
 func (g *generatorBodyCallable) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
@@ -151,6 +157,9 @@ func (g *generatorBodyCallable) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv
 }
 
 func (g *generatorBodyCallable) Name() string {
+	if g.name != "" {
+		return g.name
+	}
 	return "{generator}"
 }
 
@@ -158,12 +167,25 @@ func (g *generatorBodyCallable) Name() string {
 // function that will run in a goroutine. This function is the actual body
 // execution (not the outer Call that checks isGenerator).
 func SpawnGenerator(ctx phpv.Context, bodyFn GeneratorBodyFunc, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	return SpawnGeneratorNamed(ctx, bodyFn, args, "")
+}
+
+// SpawnGeneratorNamed is like SpawnGenerator but also sets the function name
+// for stack traces and __debugInfo, and accepts optional $this for method generators.
+func SpawnGeneratorNamed(ctx phpv.Context, bodyFn GeneratorBodyFunc, args []*phpv.ZVal, funcName string, optionalThis ...phpv.ZObject) (*phpv.ZVal, error) {
 	state := &GeneratorState{
+		funcName:  funcName,
 		status:    GeneratorCreated,
 		resumeCh:  make(chan generatorMsg),
 		yieldCh:   make(chan *GeneratorYield),
 		doneCh:    make(chan generatorMsg, 1),
 		returnVal: phpv.ZNULL.ZVal(),
+	}
+
+	// Capture $this if provided
+	var thisObj phpv.ZObject
+	if len(optionalThis) > 0 {
+		thisObj = optionalThis[0]
 	}
 
 	// Capture the Global context now, while ctx is still valid.
@@ -197,8 +219,14 @@ func SpawnGenerator(ctx phpv.Context, bodyFn GeneratorBodyFunc, args []*phpv.ZVa
 
 		// Wrap the body in a Callable and use CallZVal to get a proper
 		// FuncContext (needed for Tick, Loc, etc).
-		callable := &generatorBodyCallable{fn: bodyFn}
-		result, err := genCtx.CallZVal(genCtx, callable, args)
+		callable := &generatorBodyCallable{fn: bodyFn, name: state.funcName}
+		var result *phpv.ZVal
+		var err error
+		if thisObj != nil {
+			result, err = genCtx.CallZVal(genCtx, callable, args, thisObj)
+		} else {
+			result, err = genCtx.CallZVal(genCtx, callable, args)
+		}
 
 		// Generator completed
 		state.status = GeneratorClosed
@@ -226,18 +254,40 @@ func SpawnGenerator(ctx phpv.Context, bodyFn GeneratorBodyFunc, args []*phpv.ZVa
 	return o.ZVal(), nil
 }
 
+// GeneratorYieldDelegated yields a value as part of yield-from delegation.
+// Unlike GeneratorYieldValue, it does NOT update the outer generator's implicit key counter.
+func GeneratorYieldDelegated(ctx phpv.Context, key, value *phpv.ZVal) (*phpv.ZVal, error) {
+	return generatorYieldValueImpl(ctx, key, value, true)
+}
+
 // GeneratorYieldValue is called from within the generator goroutine to yield a value.
 // It suspends the generator and returns the value sent by the caller via send().
 func GeneratorYieldValue(ctx phpv.Context, key, value *phpv.ZVal) (*phpv.ZVal, error) {
+	return generatorYieldValueImpl(ctx, key, value, false)
+}
+
+func generatorYieldValueImpl(ctx phpv.Context, key, value *phpv.ZVal, fromDelegate bool) (*phpv.ZVal, error) {
 	stateVal := ctx.Value(generatorContextKey{})
 	if stateVal == nil {
 		return nil, fmt.Errorf("yield used outside of a generator")
 	}
 	state := stateVal.(*GeneratorState)
 
-	if key == nil {
+	if key == nil && !fromDelegate {
 		key = phpv.ZInt(state.implicitKey).ZVal()
 		state.implicitKey++
+	} else if key == nil {
+		// During delegation, use the key as-is (from inner generator)
+		key = phpv.ZInt(0).ZVal()
+	} else if !fromDelegate {
+		// If an explicit integer key >= implicitKey is used,
+		// update the counter so the next auto-key is key+1 (PHP behavior)
+		// Only for direct yields, not delegation.
+		if key.GetType() == phpv.ZtInt {
+			if k := key.Value().(phpv.ZInt); k >= state.implicitKey {
+				state.implicitKey = k + 1
+			}
+		}
 	}
 
 	state.status = GeneratorSuspended
@@ -320,8 +370,8 @@ func generatorYieldFromGenerator(ctx phpv.Context, obj *ZObject, innerState *Gen
 	}
 
 	for innerState.valid {
-		// Yield the inner generator's current value
-		result, err := GeneratorYieldValue(ctx, innerState.currentKey, innerState.currentValue)
+		// Yield the inner generator's current value (using Delegated to preserve outer key counter)
+		result, err := GeneratorYieldDelegated(ctx, innerState.currentKey, innerState.currentValue)
 		if err != nil {
 			// Forward throw to inner generator
 			if _, ok := err.(*phperr.PhpThrow); ok {
@@ -375,7 +425,7 @@ func generatorYieldFromIterator(ctx phpv.Context, obj *ZObject) (*phpv.ZVal, err
 			return nil, err
 		}
 
-		_, err = GeneratorYieldValue(ctx, key, value)
+		_, err = GeneratorYieldDelegated(ctx, key, value)
 		if err != nil {
 			return nil, err
 		}
@@ -405,7 +455,7 @@ func generatorYieldFromArray(ctx phpv.Context, arr *phpv.ZVal) (*phpv.ZVal, erro
 			return nil, err
 		}
 
-		_, err = GeneratorYieldValue(ctx, key, value)
+		_, err = GeneratorYieldDelegated(ctx, key, value)
 		if err != nil {
 			return nil, err
 		}
@@ -685,6 +735,15 @@ func generatorGetReturn(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.
 		return phpv.ZNULL.ZVal(), nil
 	}
 	return state.returnVal, nil
+}
+
+func generatorDebugInfo(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	state := getGeneratorState(o)
+	arr := phpv.NewZArray()
+	if state != nil && state.funcName != "" {
+		arr.OffsetSet(ctx, phpv.ZString("function"), phpv.ZString(state.funcName).ZVal())
+	}
+	return arr.ZVal(), nil
 }
 
 // generatorIterator implements phpv.ZIterator for Generator objects.
