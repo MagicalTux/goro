@@ -98,7 +98,7 @@ func init() {
 			"class_uses":             {Func: classUses, Args: []*phpctx.ExtFunctionArg{}},
 			"spl_autoload_functions":  {Func: splAutoloadFunctions, Args: []*phpctx.ExtFunctionArg{}},
 			"spl_autoload_call":      {Func: splAutoloadCall, Args: []*phpctx.ExtFunctionArg{}},
-			//"spl_autoload_extensions": {Func: splAutoloadExtensions, Args: []*phpctx.ExtFunctionArg{}},
+			"spl_autoload_extensions": {Func: splAutoloadExtensions, Args: []*phpctx.ExtFunctionArg{}},
 			"spl_classes":            {Func: splClasses, Args: []*phpctx.ExtFunctionArg{}},
 		},
 		Constants: map[phpv.ZString]phpv.Val{},

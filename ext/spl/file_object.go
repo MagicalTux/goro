@@ -41,6 +41,9 @@ type splFileObjectData struct {
 
 	// Max line len (0 = unlimited)
 	maxLineLen int
+
+	// Open mode
+	openMode string
 }
 
 var SplFileObjectClass *phpobj.ZClass
@@ -173,10 +176,11 @@ func sfoConstruct(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv
 	}
 
 	// Resolve relative paths against PHP CWD
-	if !filepath.IsAbs(path) {
+	resolvedPath := path
+	if !filepath.IsAbs(resolvedPath) {
 		cwd := string(ctx.Global().Getwd())
 		if cwd != "" {
-			path = filepath.Join(cwd, path)
+			resolvedPath = filepath.Join(cwd, resolvedPath)
 		}
 	}
 
@@ -218,7 +222,7 @@ func sfoConstruct(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv
 		flag = os.O_RDONLY
 	}
 
-	file, err2 := os.OpenFile(path, flag, 0644)
+	file, err2 := os.OpenFile(resolvedPath, flag, 0644)
 	if err2 != nil {
 		return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException,
 			fmt.Sprintf("SplFileObject::__construct(%s): Failed to open stream: %s", path, err2.Error()))
@@ -226,12 +230,13 @@ func sfoConstruct(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv
 
 	info, _ := file.Stat()
 	data := &splFileObjectData{
-		splFileInfoData: splFileInfoData{path: path, info: info},
+		splFileInfoData: splFileInfoData{path: path, resolvedPath: resolvedPath, info: info},
 		file:            file,
 		scanner:         bufio.NewScanner(file),
 		csvSep:          ',',
 		csvEnc:          '"',
 		csvEsc:          '\\',
+		openMode:        openMode,
 	}
 	o.SetOpaque(SplFileInfoClass, &data.splFileInfoData)
 	o.SetOpaque(SplFileObjectClass, data)
@@ -258,12 +263,13 @@ func stfoConstruct(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*php
 
 	info, _ := file.Stat()
 	data := &splFileObjectData{
-		splFileInfoData: splFileInfoData{path: file.Name(), info: info},
+		splFileInfoData: splFileInfoData{path: "php://temp", resolvedPath: file.Name(), info: info},
 		file:            file,
 		scanner:         bufio.NewScanner(file),
 		csvSep:          ',',
 		csvEnc:          '"',
 		csvEsc:          '\\',
+		openMode:        "wb",
 	}
 	o.SetOpaque(SplFileInfoClass, &data.splFileInfoData)
 	o.SetOpaque(SplFileObjectClass, data)
@@ -896,8 +902,15 @@ func sfoDebugInfo(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv
 	d := getSFOData(o)
 	arr := phpv.NewZArray()
 	if d != nil {
-		arr.OffsetSet(ctx, phpv.ZString("pathName"), phpv.ZStr(d.path))
-		arr.OffsetSet(ctx, phpv.ZString("fileName"), phpv.ZStr(d.path))
+		arr.OffsetSet(ctx, phpv.ZString("\x00SplFileInfo\x00pathName"), phpv.ZStr(d.path))
+		arr.OffsetSet(ctx, phpv.ZString("\x00SplFileInfo\x00fileName"), phpv.ZStr(filepath.Base(d.path)))
+		openMode := d.openMode
+		if openMode == "" {
+			openMode = "r"
+		}
+		arr.OffsetSet(ctx, phpv.ZString("\x00SplFileObject\x00openMode"), phpv.ZStr(openMode))
+		arr.OffsetSet(ctx, phpv.ZString("\x00SplFileObject\x00delimiter"), phpv.ZStr(string(d.csvSep)))
+		arr.OffsetSet(ctx, phpv.ZString("\x00SplFileObject\x00enclosure"), phpv.ZStr(string(d.csvEnc)))
 	}
 	return arr.ZVal(), nil
 }
