@@ -1,6 +1,6 @@
 # Goro Roadmap
 
-**Current state (March 2026):** 4,654 / 11,610 tested (40.1%). First 2,000: 1,386/2,000 (71.7%). 1 test batch still has OOM issue.
+**Current state (March 2026):** 4,878 / 11,610 tested (42.0%). First 2,000: 1,384/2,000 (71.6%).
 
 This document tracks the major work areas needed to reach full PHP 8.5 compatibility, organized by impact (number of test fixes) and estimated effort.
 
@@ -179,7 +179,7 @@ The full PHP 8.5.4 test suite imported into goro has 12,110 tests. Major areas b
 
 | Milestone | Tests Passing | Key Deliverables |
 |-----------|--------------|-------------------|
-| Current | 4,654 / 12,110 | Core language, basic extensions |
+| Current | 4,878 / 12,110 | Core language, basic extensions |
 | M1 (55%) | ~1100 | Closure debug info, exception stack traces, const expressions |
 | M2 (60%) | ~1200 | Attribute reflection, enum validation, error message fixes |
 | M3 (65%) | ~1300 | Date extension fixes, asymmetric visibility enforcement, assert() |
