@@ -142,7 +142,7 @@ The full PHP 8.5.4 test suite imported into goro has 12,110 tests. Major areas b
 | Area | Tests | Status |
 |------|-------|--------|
 | ext/standard | 3,808 | ~40% — arrays, strings, files, math |
-| ext/spl | 781 | ~15% — iterators, data structures |
+| ext/spl | 781 | ~48% — iterators, data structures |
 | ext/date | 688 | ~30% — DateTime, DateInterval, DatePeriod |
 | ext/reflection | 493 | ~15% — ReflectionClass, Method, Function |
 | ext/mbstring | 416 | ~55% — multibyte string functions |
