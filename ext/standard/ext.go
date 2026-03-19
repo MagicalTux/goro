@@ -423,7 +423,11 @@ func init() {
 			"stream_context_get_options": {Func: fncStreamContextGetOptions, Args: []*phpctx.ExtFunctionArg{}},
 			"stream_context_set_default": {Func: fncStreamContextGetDefault, Args: []*phpctx.ExtFunctionArg{}}, // alias
 			"stream_context_set_option":  {Func: fncStreamContextSetOption, Args: []*phpctx.ExtFunctionArg{}},
+			"stream_copy_to_stream":      {Func: fncStreamCopyToStream, Args: []*phpctx.ExtFunctionArg{}},
 			"stream_get_contents":        {Func: fncStreamGetContents, Args: []*phpctx.ExtFunctionArg{}},
+			"stream_get_line":            {Func: fncStreamGetLine, Args: []*phpctx.ExtFunctionArg{}},
+			"stream_get_meta_data":       {Func: fncStreamGetMetaData, Args: []*phpctx.ExtFunctionArg{}},
+			"stream_is_local":            {Func: fncStreamIsLocal, Args: []*phpctx.ExtFunctionArg{}},
 			"stream_isatty":              {Func: fncStreamIsatty, Args: []*phpctx.ExtFunctionArg{}},
 			"stream_wrapper_register":    {Func: fncStreamWrapperRegister, Args: []*phpctx.ExtFunctionArg{}},
 			"stream_register_wrapper":    {Func: fncStreamWrapperRegister, Args: []*phpctx.ExtFunctionArg{}}, // alias
@@ -460,6 +464,7 @@ func init() {
 			"tan":                        {Func: mathTan, Args: []*phpctx.ExtFunctionArg{}},
 			"tanh":                       {Func: mathTanh, Args: []*phpctx.ExtFunctionArg{}},
 			"tempnam":                    {Func: fncTempnam, Args: []*phpctx.ExtFunctionArg{}},
+			"tmpfile":                    {Func: fncTmpfile, Args: []*phpctx.ExtFunctionArg{}},
 			"time":                       {Func: fncTime, Args: []*phpctx.ExtFunctionArg{}},
 			"touch":                      {Func: fncTouch, Args: []*phpctx.ExtFunctionArg{}},
 			"trait_exists":               {Func: stdTraitExists, Args: []*phpctx.ExtFunctionArg{}},

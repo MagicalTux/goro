@@ -1,6 +1,11 @@
 package standard
 
 import (
+	"errors"
+	"io"
+	"os"
+	"strings"
+
 	"github.com/MagicalTux/goro/core"
 	"github.com/MagicalTux/goro/core/phpctx"
 	"github.com/MagicalTux/goro/core/phpv"
@@ -130,4 +135,157 @@ func fncStreamContextSetOption(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal,
 	}
 
 	return nil, nil
+}
+
+func fncTmpfile(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	f, err := os.CreateTemp("", "php")
+	if err != nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+	os.Remove(f.Name())
+	s := stream.NewStream(f)
+	s.SetAttr("wrapper_type", "plainfile")
+	s.SetAttr("stream_type", "STDIO")
+	s.SetAttr("mode", "r+b")
+	s.SetAttr("seekable", true)
+	s.SetAttr("uri", f.Name())
+	s.ResourceType = phpv.ResourceStream
+	s.ResourceID = ctx.Global().NextResourceID()
+	return s.ZVal(), nil
+}
+
+func fncStreamGetMetaData(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var handle phpv.Resource
+	_, err := core.Expand(ctx, args, &handle)
+	if err != nil {
+		return nil, err
+	}
+	s, ok := handle.(*stream.Stream)
+	if !ok {
+		return phpv.ZFalse.ZVal(), nil
+	}
+	result := phpv.NewZArray()
+	result.OffsetSet(ctx, phpv.ZStr("timed_out"), phpv.ZFalse.ZVal())
+	result.OffsetSet(ctx, phpv.ZStr("blocked"), phpv.ZTrue.ZVal())
+	result.OffsetSet(ctx, phpv.ZStr("eof"), phpv.ZBool(s.Eof()).ZVal())
+	wrapperType := "plainfile"
+	if v, ok := s.Attr("wrapper_type").(string); ok {
+		wrapperType = v
+	}
+	result.OffsetSet(ctx, phpv.ZStr("wrapper_type"), phpv.ZString(wrapperType).ZVal())
+	streamType := "STDIO"
+	if v, ok := s.Attr("stream_type").(string); ok {
+		streamType = v
+	}
+	result.OffsetSet(ctx, phpv.ZStr("stream_type"), phpv.ZString(streamType).ZVal())
+	streamMode := "r"
+	if v, ok := s.Attr("mode").(string); ok {
+		streamMode = v
+	}
+	result.OffsetSet(ctx, phpv.ZStr("mode"), phpv.ZString(streamMode).ZVal())
+	result.OffsetSet(ctx, phpv.ZStr("unread_bytes"), phpv.ZInt(0).ZVal())
+	seekable := false
+	if v, ok := s.Attr("seekable").(bool); ok {
+		seekable = v
+	}
+	result.OffsetSet(ctx, phpv.ZStr("seekable"), phpv.ZBool(seekable).ZVal())
+	if uri, ok := s.Attr("uri").(string); ok {
+		result.OffsetSet(ctx, phpv.ZStr("uri"), phpv.ZString(uri).ZVal())
+	}
+	return result.ZVal(), nil
+}
+
+func fncStreamIsLocal(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) < 1 {
+		return nil, errors.New("stream_is_local() expects exactly 1 argument")
+	}
+	z := args[0]
+	if z.GetType() == phpv.ZtString {
+		sv := z.String()
+		if strings.HasPrefix(sv, "file://") || !strings.Contains(sv, "://") {
+			return phpv.ZTrue.ZVal(), nil
+		}
+		return phpv.ZFalse.ZVal(), nil
+	}
+	if z.GetType() == phpv.ZtResource {
+		if res, ok := z.Value().(phpv.Resource); ok {
+			if ss, ok := res.(*stream.Stream); ok {
+				if wt, ok := ss.Attr("wrapper_type").(string); ok {
+					if wt == "plainfile" || wt == "PHP" {
+						return phpv.ZTrue.ZVal(), nil
+					}
+				}
+			}
+		}
+	}
+	return phpv.ZFalse.ZVal(), nil
+}
+
+func fncStreamCopyToStream(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var source, dest phpv.Resource
+	var maxLength core.Optional[phpv.ZInt]
+	var offset core.Optional[phpv.ZInt]
+	_, err := core.Expand(ctx, args, &source, &dest, &maxLength, &offset)
+	if err != nil {
+		return nil, err
+	}
+	srcStream, ok := source.(*stream.Stream)
+	if !ok {
+		return phpv.ZFalse.ZVal(), nil
+	}
+	dstStream, ok := dest.(*stream.Stream)
+	if !ok {
+		return phpv.ZFalse.ZVal(), nil
+	}
+	if offset.HasArg() && offset.Get() > 0 {
+		srcStream.Seek(int64(offset.Get()), io.SeekStart)
+	}
+	var n int64
+	if maxLength.HasArg() && maxLength.Get() >= 0 {
+		n, err = io.CopyN(dstStream, srcStream, int64(maxLength.Get()))
+	} else {
+		n, err = io.Copy(dstStream, srcStream)
+	}
+	if err != nil && err != io.EOF {
+		return phpv.ZFalse.ZVal(), nil
+	}
+	return phpv.ZInt(n).ZVal(), nil
+}
+
+func fncStreamGetLine(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var handle phpv.Resource
+	var length phpv.ZInt
+	var ending *phpv.ZString
+	_, err := core.Expand(ctx, args, &handle, &length, &ending)
+	if err != nil {
+		return nil, err
+	}
+	file, ok := handle.(*stream.Stream)
+	if !ok {
+		return phpv.ZFalse.ZVal(), nil
+	}
+	endStr := "\n"
+	if ending != nil && len(*ending) > 0 {
+		endStr = string(*ending)
+	}
+	var buf []byte
+	maxLen := int(length)
+	for i := 0; i < maxLen; i++ {
+		b, berr := file.ReadByte()
+		if berr != nil {
+			break
+		}
+		buf = append(buf, b)
+		if len(buf) >= len(endStr) {
+			tail := string(buf[len(buf)-len(endStr):])
+			if tail == endStr {
+				buf = buf[:len(buf)-len(endStr)]
+				break
+			}
+		}
+	}
+	if len(buf) == 0 && file.Eof() {
+		return phpv.ZFalse.ZVal(), nil
+	}
+	return phpv.ZString(buf).ZVal(), nil
 }
