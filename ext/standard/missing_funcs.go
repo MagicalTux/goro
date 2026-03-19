@@ -196,10 +196,10 @@ func fncFgetcsv(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	// Parse CSV
-	return parseCsvLine(ctx, string(line), sep, enc, esc)
+	return ParseCsvLine(ctx, string(line), sep, enc, esc)
 }
 
-func parseCsvLine(ctx phpv.Context, line string, sep, enc, esc byte) (*phpv.ZVal, error) {
+func ParseCsvLine(ctx phpv.Context, line string, sep, enc, esc byte) (*phpv.ZVal, error) {
 	result := phpv.NewZArray()
 	i := 0
 	for i <= len(line) {
@@ -292,6 +292,21 @@ func fncFputcsv(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		esc = (*escArg)[0]
 	}
 
+	lineBytes, err := BuildCsvLine(ctx, fields, sep, enc, esc)
+	if err != nil {
+		return nil, err
+	}
+
+	n, err := file.Write(lineBytes)
+	if err != nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	return phpv.ZInt(n).ZVal(), nil
+}
+
+// BuildCsvLine builds a CSV line from a ZArray of fields. Returns the line as bytes (including trailing newline).
+func BuildCsvLine(ctx phpv.Context, fields *phpv.ZArray, sep, enc, esc byte) ([]byte, error) {
 	var buf bytes.Buffer
 	first := true
 
@@ -336,13 +351,7 @@ func fncFputcsv(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		}
 	}
 	buf.WriteByte('\n')
-
-	n, err := file.Write(buf.Bytes())
-	if err != nil {
-		return phpv.ZFalse.ZVal(), nil
-	}
-
-	return phpv.ZInt(n).ZVal(), nil
+	return buf.Bytes(), nil
 }
 
 // > func bool flock ( resource $handle , int $operation [, int &$wouldblock ] )

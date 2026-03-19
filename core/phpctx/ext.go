@@ -88,7 +88,9 @@ func RegisterExt(e *Ext) {
 	}
 	for _, class := range e.Classes {
 		for _, m := range class.Methods {
-			m.Class = class
+			if m.Class == nil {
+				m.Class = class
+			}
 		}
 	}
 }

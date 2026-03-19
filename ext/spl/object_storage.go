@@ -83,7 +83,11 @@ func initObjectStorage() {
 				if len(args) > 1 && args[1] != nil {
 					info = args[1]
 				}
-				hash := objectHash(obj)
+				// Call getHash to support overridden getHash methods
+				hash, err := callGetHash(ctx, o, obj)
+				if err != nil {
+					return nil, err
+				}
 				if _, exists := d.entries[hash]; !exists {
 					d.order = append(d.order, hash)
 				}
@@ -105,7 +109,10 @@ func initObjectStorage() {
 				if !ok {
 					return nil, nil
 				}
-				hash := objectHash(obj)
+				hash, err := callGetHash(ctx, o, obj)
+				if err != nil {
+					return nil, err
+				}
 				if _, exists := d.entries[hash]; exists {
 					delete(d.entries, hash)
 					for i, h := range d.order {
@@ -132,7 +139,10 @@ func initObjectStorage() {
 				if !ok {
 					return phpv.ZFalse.ZVal(), nil
 				}
-				hash := objectHash(obj)
+				hash, err := callGetHash(ctx, o, obj)
+				if err != nil {
+					return nil, err
+				}
 				_, exists := d.entries[hash]
 				return phpv.ZBool(exists).ZVal(), nil
 			}),
@@ -151,11 +161,8 @@ func initObjectStorage() {
 			Name: "getInfo",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				d := getObjectStorageData(o)
-				if d == nil {
+				if d == nil || d.pos < 0 || d.pos >= len(d.order) {
 					return phpv.ZNULL.ZVal(), nil
-				}
-				if d.pos < 0 || d.pos >= len(d.order) {
-					return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException, "SplObjectStorage::getInfo(): Called on invalid iterator")
 				}
 				hash := d.order[d.pos]
 				entry, exists := d.entries[hash]
@@ -169,11 +176,8 @@ func initObjectStorage() {
 			Name: "setInfo",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				d := getObjectStorageData(o)
-				if d == nil {
+				if d == nil || d.pos < 0 || d.pos >= len(d.order) {
 					return nil, nil
-				}
-				if d.pos < 0 || d.pos >= len(d.order) {
-					return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException, "SplObjectStorage::setInfo(): Called on invalid iterator")
 				}
 				info := phpv.ZNULL.ZVal()
 				if len(args) > 0 && args[0] != nil {
@@ -201,16 +205,13 @@ func initObjectStorage() {
 			Name: "current",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				d := getObjectStorageData(o)
-				if d == nil {
-					return phpv.ZFalse.ZVal(), nil
-				}
-				if d.pos < 0 || d.pos >= len(d.order) {
-					return phpv.ZFalse.ZVal(), nil
+				if d == nil || d.pos < 0 || d.pos >= len(d.order) {
+					return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException, "Called current() on invalid iterator")
 				}
 				hash := d.order[d.pos]
 				entry, exists := d.entries[hash]
 				if !exists {
-					return phpv.ZFalse.ZVal(), nil
+					return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException, "Called current() on invalid iterator")
 				}
 				return entry.obj.ZVal(), nil
 			}),
@@ -247,6 +248,24 @@ func initObjectStorage() {
 				return phpv.ZBool(valid).ZVal(), nil
 			}),
 		},
+		"seek": {
+			Name: "seek",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				d := getObjectStorageData(o)
+				if d == nil {
+					return nil, phpobj.ThrowError(ctx, phpobj.OutOfBoundsException, "Seek position 0 is out of range")
+				}
+				if len(args) == 0 || args[0] == nil {
+					return nil, phpobj.ThrowError(ctx, phpobj.OutOfBoundsException, "Seek position 0 is out of range")
+				}
+				pos := int(args[0].AsInt(ctx))
+				if pos < 0 || pos >= len(d.order) {
+					return nil, phpobj.ThrowError(ctx, phpobj.OutOfBoundsException, fmt.Sprintf("Seek position %d is out of range", pos))
+				}
+				d.pos = pos
+				return nil, nil
+			}),
+		},
 		"gethash": {
 			Name: "getHash",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
@@ -274,7 +293,10 @@ func initObjectStorage() {
 				if !ok {
 					return phpv.ZFalse.ZVal(), nil
 				}
-				hash := objectHash(obj)
+				hash, err := callGetHash(ctx, o, obj)
+				if err != nil {
+					return nil, err
+				}
 				_, exists := d.entries[hash]
 				return phpv.ZBool(exists).ZVal(), nil
 			}),
@@ -293,10 +315,13 @@ func initObjectStorage() {
 				if !ok {
 					return phpv.ZNULL.ZVal(), nil
 				}
-				hash := objectHash(obj)
+				hash, err := callGetHash(ctx, o, obj)
+				if err != nil {
+					return nil, err
+				}
 				entry, exists := d.entries[hash]
 				if !exists {
-					return nil, phpobj.ThrowError(ctx, phpobj.UnexpectedValueException, fmt.Sprintf("Object not found"))
+					return nil, phpobj.ThrowError(ctx, phpobj.UnexpectedValueException, "Object not found")
 				}
 				return entry.info, nil
 			}),
@@ -319,7 +344,10 @@ func initObjectStorage() {
 				if len(args) > 1 && args[1] != nil {
 					info = args[1]
 				}
-				hash := objectHash(obj)
+				hash, err := callGetHash(ctx, o, obj)
+				if err != nil {
+					return nil, err
+				}
 				if _, exists := d.entries[hash]; !exists {
 					d.order = append(d.order, hash)
 				}
@@ -341,7 +369,10 @@ func initObjectStorage() {
 				if !ok {
 					return nil, nil
 				}
-				hash := objectHash(obj)
+				hash, err := callGetHash(ctx, o, obj)
+				if err != nil {
+					return nil, err
+				}
 				if _, exists := d.entries[hash]; exists {
 					delete(d.entries, hash)
 					for i, h := range d.order {
@@ -456,7 +487,44 @@ func initObjectStorage() {
 				return phpv.ZInt(count).ZVal(), nil
 			}),
 		},
+		"__debuginfo": {
+			Name: "__debugInfo",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				d := getObjectStorageData(o)
+				result := phpv.NewZArray()
+				// Build the storage array with obj/inf pairs
+				storage := phpv.NewZArray()
+				if d != nil {
+					for i, hash := range d.order {
+						entry, exists := d.entries[hash]
+						if !exists {
+							continue
+						}
+						pair := phpv.NewZArray()
+						pair.OffsetSet(ctx, phpv.ZString("obj"), entry.obj.ZVal())
+						pair.OffsetSet(ctx, phpv.ZString("inf"), entry.info)
+						storage.OffsetSet(ctx, phpv.ZInt(i), pair.ZVal())
+					}
+				}
+				result.OffsetSet(ctx, phpv.ZString("\x00SplObjectStorage\x00storage"), storage.ZVal())
+				return result.ZVal(), nil
+			}),
+		},
 	}
+}
+
+// callGetHash calls the getHash method on the SplObjectStorage object.
+// This supports overridden getHash methods in subclasses.
+func callGetHash(ctx phpv.Context, storage *phpobj.ZObject, obj *phpobj.ZObject) (string, error) {
+	// Call the getHash method (may be overridden)
+	result, err := storage.CallMethod(ctx, "getHash", obj.ZVal())
+	if err != nil {
+		return "", err
+	}
+	if result == nil {
+		return objectHash(obj), nil
+	}
+	return string(result.AsString(ctx)), nil
 }
 
 var SplObjectStorageClass = &phpobj.ZClass{

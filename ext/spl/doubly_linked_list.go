@@ -15,20 +15,34 @@ const (
 	splDllItModeKeep   = 0
 )
 
+// splDllIterState stores saved iterator state for nested foreach support
+type splDllIterState struct {
+	pos       int
+	started   bool
+	iterMode  int
+	iterFroze bool
+}
+
 // splDllData holds the internal state for an SplDoublyLinkedList instance
 type splDllData struct {
-	data    []*phpv.ZVal
-	pos     int
-	mode    int // iterator mode (IT_MODE_LIFO|IT_MODE_FIFO + IT_MODE_DELETE|IT_MODE_KEEP)
-	started bool
+	data      []*phpv.ZVal
+	pos       int
+	mode      int // iterator mode (IT_MODE_LIFO|IT_MODE_FIFO + IT_MODE_DELETE|IT_MODE_KEEP)
+	started   bool
+	iterMode  int  // mode frozen at rewind time for consistent iteration direction
+	iterFroze bool // true once rewind sets the iterMode
+	// Stack of saved iterator states for nested foreach support
+	savedStates []splDllIterState
 }
 
 func (d *splDllData) Clone() any {
 	nd := &splDllData{
-		data:    make([]*phpv.ZVal, len(d.data)),
-		pos:     d.pos,
-		mode:    d.mode,
-		started: d.started,
+		data:      make([]*phpv.ZVal, len(d.data)),
+		pos:       d.pos,
+		mode:      d.mode,
+		started:   d.started,
+		iterMode:  d.iterMode,
+		iterFroze: d.iterFroze,
 	}
 	for i, v := range d.data {
 		if v != nil {
@@ -36,6 +50,28 @@ func (d *splDllData) Clone() any {
 		}
 	}
 	return nd
+}
+
+// SaveIterState saves the current iterator state to a stack (for nested foreach)
+func (d *splDllData) SaveIterState() {
+	d.savedStates = append(d.savedStates, splDllIterState{
+		pos:       d.pos,
+		started:   d.started,
+		iterMode:  d.iterMode,
+		iterFroze: d.iterFroze,
+	})
+}
+
+// RestoreIterState restores the most recently saved iterator state
+func (d *splDllData) RestoreIterState() {
+	if len(d.savedStates) > 0 {
+		state := d.savedStates[len(d.savedStates)-1]
+		d.savedStates = d.savedStates[:len(d.savedStates)-1]
+		d.pos = state.pos
+		d.started = state.started
+		d.iterMode = state.iterMode
+		d.iterFroze = state.iterFroze
+	}
 }
 
 func getSplDllData(o *phpobj.ZObject, cls *phpobj.ZClass) *splDllData {
@@ -46,10 +82,58 @@ func getSplDllData(o *phpobj.ZObject, cls *phpobj.ZClass) *splDllData {
 	return d.(*splDllData)
 }
 
+// validateDllIndex validates an index argument for SplDoublyLinkedList offset methods.
+// It returns the integer index and nil error, or -1 and the error to throw.
+// methodName should be like "SplDoublyLinkedList::offsetGet"
+func validateDllIndex(ctx phpv.Context, arg *phpv.ZVal, methodName string) (int, error) {
+	if arg == nil || arg.IsNull() {
+		return -1, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("%s(): Argument #1 ($index) must be of type int, null given", methodName))
+	}
+	// Check type: must be int (or numeric string convertible to int)
+	switch arg.GetType() {
+	case phpv.ZtInt:
+		// ok
+	case phpv.ZtFloat:
+		// PHP allows float but it gets truncated
+	case phpv.ZtBool:
+		// PHP allows bool (0 or 1)
+	case phpv.ZtString:
+		// Check if numeric
+		s := string(arg.AsString(ctx))
+		isNumeric := true
+		for i, c := range s {
+			if c >= '0' && c <= '9' {
+				continue
+			}
+			if i == 0 && (c == '-' || c == '+') {
+				continue
+			}
+			isNumeric = false
+			break
+		}
+		if !isNumeric || len(s) == 0 {
+			return -1, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("%s(): Argument #1 ($index) must be of type int, string given", methodName))
+		}
+	case phpv.ZtArray:
+		return -1, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("%s(): Argument #1 ($index) must be of type int, array given", methodName))
+	case phpv.ZtObject:
+		typeName := "object"
+		if obj, ok := arg.Value().(*phpobj.ZObject); ok {
+			typeName = string(obj.GetClass().GetName())
+		}
+		return -1, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("%s(): Argument #1 ($index) must be of type int, %s given", methodName, typeName))
+	default:
+		return -1, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("%s(): Argument #1 ($index) must be of type int", methodName))
+	}
+	return int(arg.AsInt(ctx)), nil
+}
+
 func makeSplDllMethods(cls *phpobj.ZClass, defaultMode int) map[phpv.ZString]*phpv.ZClassMethod {
 	getData := func(o *phpobj.ZObject) *splDllData {
 		return getSplDllData(o, cls)
 	}
+
+	clsName := string(cls.Name)
 
 	return map[phpv.ZString]*phpv.ZClassMethod{
 		"__construct": {
@@ -141,7 +225,7 @@ func makeSplDllMethods(cls *phpobj.ZClass, defaultMode int) map[phpv.ZString]*ph
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				d := getData(o)
 				if d == nil || len(d.data) == 0 {
-					return nil, phpobj.ThrowError(ctx, phpobj.UnderflowException, "Can't dequeue from an empty datastructure")
+					return nil, phpobj.ThrowError(ctx, phpobj.UnderflowException, "Can't shift from an empty datastructure")
 				}
 				v := d.data[0]
 				d.data = d.data[1:]
@@ -212,12 +296,15 @@ func makeSplDllMethods(cls *phpobj.ZClass, defaultMode int) map[phpv.ZString]*ph
 				if d == nil {
 					return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException, "Internal data not initialized")
 				}
-				if len(args) == 0 || args[0] == nil {
-					return nil, phpobj.ThrowError(ctx, phpobj.OutOfRangeException, "Offset invalid or out of range")
+				if len(args) == 0 {
+					return nil, phpobj.ThrowError(ctx, phpobj.OutOfRangeException, fmt.Sprintf("%s::offsetGet(): Argument #1 ($index) is out of range", clsName))
 				}
-				idx := int(args[0].AsInt(ctx))
+				idx, err := validateDllIndex(ctx, args[0], clsName+"::offsetGet")
+				if err != nil {
+					return nil, err
+				}
 				if idx < 0 || idx >= len(d.data) {
-					return nil, phpobj.ThrowError(ctx, phpobj.OutOfRangeException, "Offset out of range")
+					return nil, phpobj.ThrowError(ctx, phpobj.OutOfRangeException, fmt.Sprintf("%s::offsetGet(): Argument #1 ($index) is out of range", clsName))
 				}
 				return d.data[idx], nil
 			}),
@@ -230,16 +317,19 @@ func makeSplDllMethods(cls *phpobj.ZClass, defaultMode int) map[phpv.ZString]*ph
 					return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException, "Internal data not initialized")
 				}
 				if len(args) < 2 {
-					return nil, phpobj.ThrowError(ctx, phpobj.OutOfRangeException, "Offset invalid or out of range")
+					return nil, phpobj.ThrowError(ctx, phpobj.OutOfRangeException, fmt.Sprintf("%s::offsetSet(): Argument #1 ($index) is out of range", clsName))
 				}
 				// null key means push/append
 				if args[0] == nil || args[0].IsNull() {
 					d.data = append(d.data, args[1])
 					return nil, nil
 				}
-				idx := int(args[0].AsInt(ctx))
+				idx, err := validateDllIndex(ctx, args[0], clsName+"::offsetSet")
+				if err != nil {
+					return nil, err
+				}
 				if idx < 0 || idx >= len(d.data) {
-					return nil, phpobj.ThrowError(ctx, phpobj.OutOfRangeException, "Offset out of range")
+					return nil, phpobj.ThrowError(ctx, phpobj.OutOfRangeException, fmt.Sprintf("%s::offsetSet(): Argument #1 ($index) is out of range", clsName))
 				}
 				d.data[idx] = args[1]
 				return nil, nil
@@ -253,11 +343,14 @@ func makeSplDllMethods(cls *phpobj.ZClass, defaultMode int) map[phpv.ZString]*ph
 					return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException, "Internal data not initialized")
 				}
 				if len(args) == 0 || args[0] == nil {
-					return nil, phpobj.ThrowError(ctx, phpobj.OutOfRangeException, "Offset invalid or out of range")
+					return nil, phpobj.ThrowError(ctx, phpobj.OutOfRangeException, fmt.Sprintf("%s::offsetUnset(): Argument #1 ($index) is out of range", clsName))
 				}
-				idx := int(args[0].AsInt(ctx))
+				idx, err := validateDllIndex(ctx, args[0], clsName+"::offsetUnset")
+				if err != nil {
+					return nil, err
+				}
 				if idx < 0 || idx >= len(d.data) {
-					return nil, phpobj.ThrowError(ctx, phpobj.OutOfRangeException, "Offset out of range")
+					return nil, phpobj.ThrowError(ctx, phpobj.OutOfRangeException, fmt.Sprintf("%s::offsetUnset(): Argument #1 ($index) is out of range", clsName))
 				}
 				d.data = append(d.data[:idx], d.data[idx+1:]...)
 				// Adjust iterator position
@@ -271,8 +364,12 @@ func makeSplDllMethods(cls *phpobj.ZClass, defaultMode int) map[phpv.ZString]*ph
 			Name: "current",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				d := getData(o)
-				if d == nil || d.pos < 0 || d.pos >= len(d.data) {
-					return phpv.ZFalse.ZVal(), nil
+				if d == nil {
+					// PHP returns NULL for current() on uninitialized list
+					return phpv.ZNULL.ZVal(), nil
+				}
+				if d.pos < 0 || d.pos >= len(d.data) {
+					return phpv.ZNULL.ZVal(), nil
 				}
 				return d.data[d.pos], nil
 			}),
@@ -281,8 +378,8 @@ func makeSplDllMethods(cls *phpobj.ZClass, defaultMode int) map[phpv.ZString]*ph
 			Name: "key",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				d := getData(o)
-				if d == nil || d.pos < 0 || d.pos >= len(d.data) {
-					return phpv.ZNULL.ZVal(), nil
+				if d == nil {
+					return phpv.ZInt(0).ZVal(), nil
 				}
 				return phpv.ZInt(d.pos).ZVal(), nil
 			}),
@@ -294,7 +391,27 @@ func makeSplDllMethods(cls *phpobj.ZClass, defaultMode int) map[phpv.ZString]*ph
 				if d == nil {
 					return nil, nil
 				}
-				if d.mode&splDllItModeLifo != 0 {
+				// Use iterMode (frozen at rewind) for direction if available
+				mode := d.mode
+				if d.iterFroze {
+					mode = d.iterMode
+				}
+
+				// IT_MODE_DELETE: remove current element before advancing
+				if mode&splDllItModeDelete != 0 {
+					if d.pos >= 0 && d.pos < len(d.data) {
+						d.data = append(d.data[:d.pos], d.data[d.pos+1:]...)
+						// In FIFO+DELETE mode: pos stays the same (points to next element)
+						// In LIFO+DELETE mode: pos decrements (was at end, remove it, now go to new end)
+						if mode&splDllItModeLifo != 0 {
+							d.pos--
+						}
+						// For FIFO, pos stays the same, pointing to the next element
+						return nil, nil
+					}
+				}
+
+				if mode&splDllItModeLifo != 0 {
 					d.pos--
 				} else {
 					d.pos++
@@ -309,7 +426,11 @@ func makeSplDllMethods(cls *phpobj.ZClass, defaultMode int) map[phpv.ZString]*ph
 				if d == nil {
 					return nil, nil
 				}
-				if d.mode&splDllItModeLifo != 0 {
+				mode := d.mode
+				if d.iterFroze {
+					mode = d.iterMode
+				}
+				if mode&splDllItModeLifo != 0 {
 					d.pos++
 				} else {
 					d.pos--
@@ -325,6 +446,9 @@ func makeSplDllMethods(cls *phpobj.ZClass, defaultMode int) map[phpv.ZString]*ph
 					return nil, nil
 				}
 				d.started = true
+				// Freeze the mode at rewind time so changing mode mid-iteration doesn't affect direction
+				d.iterMode = d.mode
+				d.iterFroze = true
 				if d.mode&splDllItModeLifo != 0 {
 					d.pos = len(d.data) - 1
 				} else {
@@ -354,6 +478,20 @@ func makeSplDllMethods(cls *phpobj.ZClass, defaultMode int) map[phpv.ZString]*ph
 					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "SplDoublyLinkedList::setIteratorMode(): Argument #1 ($mode) must be of type int")
 				}
 				mode := int(args[0].AsInt(ctx))
+
+				// SplStack and SplQueue have frozen LIFO/FIFO direction
+				if cls == SplStackClass {
+					// SplStack must be LIFO - if trying to set FIFO (bit 1 cleared), throw
+					if mode&splDllItModeLifo == 0 {
+						return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException, "Iterators' LIFO/FIFO modes for SplStack/SplQueue objects are frozen")
+					}
+				} else if cls == SplQueueClass {
+					// SplQueue must be FIFO - if trying to set LIFO (bit 1 set), throw
+					if mode&splDllItModeLifo != 0 {
+						return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException, "Iterators' LIFO/FIFO modes for SplStack/SplQueue objects are frozen")
+					}
+				}
+
 				d.mode = mode
 				return phpv.ZInt(mode).ZVal(), nil
 			}),
@@ -449,12 +587,19 @@ func makeSplDllMethods(cls *phpobj.ZClass, defaultMode int) map[phpv.ZString]*ph
 				if d == nil {
 					return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException, "Internal data not initialized")
 				}
-				if len(args) < 2 || args[0] == nil {
-					return nil, phpobj.ThrowError(ctx, phpobj.OutOfRangeException, "Offset invalid or out of range")
+				if len(args) < 2 {
+					return nil, phpobj.ThrowError(ctx, phpobj.OutOfRangeException, fmt.Sprintf("%s::add(): Argument #1 ($index) is out of range", clsName))
 				}
-				idx := int(args[0].AsInt(ctx))
+				if args[0] == nil {
+					return nil, phpobj.ThrowError(ctx, phpobj.OutOfRangeException, fmt.Sprintf("%s::add(): Argument #1 ($index) is out of range", clsName))
+				}
+				// Type check the index
+				idx, err := validateDllIndex(ctx, args[0], clsName+"::add")
+				if err != nil {
+					return nil, err
+				}
 				if idx < 0 || idx > len(d.data) {
-					return nil, phpobj.ThrowError(ctx, phpobj.OutOfRangeException, "Offset out of range")
+					return nil, phpobj.ThrowError(ctx, phpobj.OutOfRangeException, fmt.Sprintf("%s::add(): Argument #1 ($index) is out of range", clsName))
 				}
 				// Insert at position
 				d.data = append(d.data, nil)
@@ -467,18 +612,26 @@ func makeSplDllMethods(cls *phpobj.ZClass, defaultMode int) map[phpv.ZString]*ph
 			Name: "__debugInfo",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				d := getData(o)
-				if d == nil {
-					return phpv.NewZArray().ZVal(), nil
+				result := phpv.NewZArray()
+				flags := 0
+				if d != nil {
+					flags = d.mode
 				}
-				arr := phpv.NewZArray()
-				for i, v := range d.data {
-					if v == nil {
-						arr.OffsetSet(ctx, phpv.ZInt(i), phpv.ZNULL.ZVal())
-					} else {
-						arr.OffsetSet(ctx, phpv.ZInt(i), v)
+				// Private property: flags
+				result.OffsetSet(ctx, phpv.ZString("\x00SplDoublyLinkedList\x00flags"), phpv.ZInt(flags).ZVal())
+				// Private property: dllist
+				dllist := phpv.NewZArray()
+				if d != nil {
+					for i, v := range d.data {
+						if v == nil {
+							dllist.OffsetSet(ctx, phpv.ZInt(i), phpv.ZNULL.ZVal())
+						} else {
+							dllist.OffsetSet(ctx, phpv.ZInt(i), v)
+						}
 					}
 				}
-				return arr.ZVal(), nil
+				result.OffsetSet(ctx, phpv.ZString("\x00SplDoublyLinkedList\x00dllist"), dllist.ZVal())
+				return result.ZVal(), nil
 			}),
 		},
 	}
@@ -569,7 +722,7 @@ func initSplDoublyLinkedList() {
 	SplDoublyLinkedListClass.Const = map[phpv.ZString]*phpv.ZClassConst{
 		"IT_MODE_LIFO":   {Value: phpv.ZInt(splDllItModeLifo)},
 		"IT_MODE_FIFO":   {Value: phpv.ZInt(splDllItModeFifo)},
-		"IT_MODE_DELETE":  {Value: phpv.ZInt(splDllItModeDelete)},
+		"IT_MODE_DELETE": {Value: phpv.ZInt(splDllItModeDelete)},
 		"IT_MODE_KEEP":   {Value: phpv.ZInt(splDllItModeKeep)},
 	}
 	SplDoublyLinkedListClass.Methods = makeSplDllMethods(SplDoublyLinkedListClass, splDllItModeFifo)
@@ -578,18 +731,17 @@ func initSplDoublyLinkedList() {
 	SplStackClass.Const = map[phpv.ZString]*phpv.ZClassConst{
 		"IT_MODE_LIFO":   {Value: phpv.ZInt(splDllItModeLifo)},
 		"IT_MODE_FIFO":   {Value: phpv.ZInt(splDllItModeFifo)},
-		"IT_MODE_DELETE":  {Value: phpv.ZInt(splDllItModeDelete)},
+		"IT_MODE_DELETE": {Value: phpv.ZInt(splDllItModeDelete)},
 		"IT_MODE_KEEP":   {Value: phpv.ZInt(splDllItModeKeep)},
 	}
 	SplStackClass.Methods = makeSplDllMethods(SplStackClass, splDllItModeLifo|splDllItModeKeep)
 
-	// SplQueue: same methods but default mode is FIFO + DELETE for dequeue
+	// SplQueue: same methods but default mode is FIFO + KEEP
 	SplQueueClass.Const = map[phpv.ZString]*phpv.ZClassConst{
 		"IT_MODE_LIFO":   {Value: phpv.ZInt(splDllItModeLifo)},
 		"IT_MODE_FIFO":   {Value: phpv.ZInt(splDllItModeFifo)},
-		"IT_MODE_DELETE":  {Value: phpv.ZInt(splDllItModeDelete)},
+		"IT_MODE_DELETE": {Value: phpv.ZInt(splDllItModeDelete)},
 		"IT_MODE_KEEP":   {Value: phpv.ZInt(splDllItModeKeep)},
 	}
 	SplQueueClass.Methods = makeSplDllMethods(SplQueueClass, splDllItModeFifo|splDllItModeKeep)
 }
-

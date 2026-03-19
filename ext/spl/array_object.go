@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
@@ -16,19 +17,48 @@ const (
 	ArrayObjectARRAY_AS_PROPS phpv.ZInt = 2
 )
 
-// arrayObjectData holds the internal state for an ArrayObject instance
+// arrayObjectData holds the internal state for an ArrayObject instance.
+// When objectStorage is non-nil the ArrayObject wraps an object (deprecated in PHP 8.5);
+// otherwise it stores a plain array.
 type arrayObjectData struct {
 	array         *phpv.ZArray
+	objectStorage *phpobj.ZObject // non-nil when wrapping an object
 	flags         phpv.ZInt
 	iteratorClass phpv.ZString
 }
 
 func (d *arrayObjectData) Clone() any {
-	return &arrayObjectData{
-		array:         d.array.Dup(),
+	cloned := &arrayObjectData{
 		flags:         d.flags,
 		iteratorClass: d.iteratorClass,
 	}
+	if d.objectStorage != nil {
+		// When cloning, duplicate the object backing
+		cloned.objectStorage = d.objectStorage
+		cloned.array = d.array
+	} else if d.array != nil {
+		cloned.array = d.array.Dup()
+	}
+	return cloned
+}
+
+// getStorage returns the ZVal representing the internal storage.
+// If objectStorage is set, returns the object. Otherwise returns the array.
+func (d *arrayObjectData) getStorage() *phpv.ZVal {
+	if d.objectStorage != nil {
+		return d.objectStorage.ZVal()
+	}
+	if d.array != nil {
+		return d.array.ZVal()
+	}
+	return phpv.NewZArray().ZVal()
+}
+
+// getEffectiveArray returns the array to use for operations. When backed by an
+// object we convert the object properties to an array on-the-fly for read ops
+// that need array semantics (sorts, count, etc.).
+func (d *arrayObjectData) getEffectiveArray() *phpv.ZArray {
+	return d.array
 }
 
 func getArrayObjectData(o *phpobj.ZObject) *arrayObjectData {
@@ -39,7 +69,66 @@ func getArrayObjectData(o *phpobj.ZObject) *arrayObjectData {
 	return d.(*arrayObjectData)
 }
 
+// validateIteratorClass checks that the given class name is a valid iterator class
+// (must be ArrayIterator or a subclass of it). Returns an error if invalid.
+func validateIteratorClass(ctx phpv.Context, className phpv.ZString, methodName string) error {
+	if className == "" || strings.EqualFold(string(className), "arrayiterator") {
+		return nil
+	}
+	cls, err := ctx.Global().GetClass(ctx, className, true)
+	if err != nil || cls == nil {
+		return phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("%s: Argument #%s must be a class name derived from ArrayIterator, %s given",
+				methodName, iteratorClassArgNum(methodName), className))
+	}
+	// Check it extends ArrayIterator (or IS ArrayIterator)
+	if !cls.Implements(ArrayIteratorClass) {
+		return phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("%s: Argument #%s must be a class name derived from ArrayIterator, %s given",
+				methodName, iteratorClassArgNum(methodName), className))
+	}
+	return nil
+}
+
+func iteratorClassArgNum(methodName string) string {
+	if strings.Contains(methodName, "__construct") {
+		return "3 ($iteratorClass)"
+	}
+	return "1 ($iteratorClass)"
+}
+
+// setObjectStorage sets the data to wrap an object. Emits a deprecation warning.
+func setObjectStorage(ctx phpv.Context, d *arrayObjectData, obj *phpobj.ZObject, methodName string) error {
+	ctx.Deprecated("%s: Using an object as a backing array for ArrayObject is deprecated, as it allows violating class constraints and invariants", methodName, logopt.NoFuncName(true))
+	d.objectStorage = obj
+
+	// Build an array view from the object properties for array-like access
+	arr := phpv.NewZArray()
+	for prop := range obj.IterProps(ctx) {
+		if prop.Modifiers.IsPublic() || (!prop.Modifiers.IsPrivate() && !prop.Modifiers.IsProtected()) {
+			v := obj.GetPropValue(prop)
+			arr.OffsetSet(ctx, prop.VarName.ZVal(), v)
+		}
+	}
+	d.array = arr
+	return nil
+}
+
 func initArrayObject() {
+	// Set up the array cast handler for (array) support
+	ArrayObjectClass.H = &phpv.ZClassHandlers{
+		HandleCastArray: func(ctx phpv.Context, o phpv.ZObject) (*phpv.ZArray, error) {
+			if zo, ok := o.(*phpobj.ZObject); ok {
+				d := zo.GetOpaque(ArrayObjectClass)
+				if d != nil {
+					data := d.(*arrayObjectData)
+					return data.array.Dup(), nil
+				}
+			}
+			return phpv.NewZArray(), nil
+		},
+	}
+
 	ArrayObjectClass.Implementations = []*phpobj.ZClass{
 		phpobj.IteratorAggregate,
 		phpobj.ArrayAccess,
@@ -56,8 +145,28 @@ func initArrayObject() {
 		"__construct": {
 			Name: "__construct",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				// Validate arg count FIRST: at most 3
+				if len(args) > 3 {
+					return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError,
+						fmt.Sprintf("ArrayObject::__construct() expects at most 3 arguments, %d given", len(args)))
+				}
+
 				d := &arrayObjectData{
 					iteratorClass: "ArrayIterator",
+				}
+
+				// Validate $iteratorClass BEFORE processing input (so no deprecation leaks on error)
+				if len(args) > 2 && args[2] != nil {
+					className := args[2].AsString(ctx)
+					if err := validateIteratorClass(ctx, className, "ArrayObject::__construct()"); err != nil {
+						return nil, err
+					}
+					d.iteratorClass = className
+				}
+
+				// Parse $flags argument (default: 0)
+				if len(args) > 1 && args[1] != nil {
+					d.flags = args[1].AsInt(ctx)
 				}
 
 				// Parse $array argument (default: empty array)
@@ -66,27 +175,23 @@ func initArrayObject() {
 					case phpv.ZtArray:
 						d.array = args[0].Value().(*phpv.ZArray).Dup()
 					case phpv.ZtObject:
-						// Convert object to array
-						arr, err := args[0].Value().AsVal(ctx, phpv.ZtArray)
-						if err != nil {
+						obj := args[0].Value().(*phpobj.ZObject)
+						// If wrapping an ArrayObject/ArrayIterator and flags were not explicitly set,
+						// inherit the flags from the wrapped object
+						if len(args) <= 1 || args[1] == nil {
+							innerData := obj.GetOpaque(ArrayObjectClass)
+							if innerData != nil {
+								d.flags = innerData.(*arrayObjectData).flags
+							}
+						}
+						if err := setObjectStorage(ctx, d, obj, "ArrayObject::__construct()"); err != nil {
 							return nil, err
 						}
-						d.array = arr.(*phpv.ZArray).Dup()
 					default:
 						d.array = phpv.NewZArray()
 					}
 				} else {
 					d.array = phpv.NewZArray()
-				}
-
-				// Parse $flags argument (default: 0)
-				if len(args) > 1 && args[1] != nil {
-					d.flags = args[1].AsInt(ctx)
-				}
-
-				// Parse $iteratorClass argument (default: "ArrayIterator")
-				if len(args) > 2 && args[2] != nil {
-					d.iteratorClass = args[2].AsString(ctx)
 				}
 
 				o.SetOpaque(ArrayObjectClass, d)
@@ -106,6 +211,28 @@ func initArrayObject() {
 				if len(args) < 1 {
 					return phpv.ZFalse.ZVal(), nil
 				}
+				// Validate offset type - arrays are not valid offsets
+				if args[0].GetType() == phpv.ZtArray {
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+						"Cannot access offset of type array in isset or empty")
+				}
+				if d.objectStorage != nil {
+					// If the object implements ArrayAccess, delegate to it
+					if d.objectStorage.GetClass().Implements(phpobj.ArrayAccess) {
+						result, err := d.objectStorage.CallMethod(ctx, "offsetExists", args[0])
+						if err != nil {
+							return phpv.ZFalse.ZVal(), nil
+						}
+						return result, nil
+					}
+					// Otherwise check as property
+					key := args[0].AsString(ctx)
+					_, err := d.objectStorage.ObjectGet(ctx, key)
+					if err != nil {
+						return phpv.ZFalse.ZVal(), nil
+					}
+					return phpv.ZTrue.ZVal(), nil
+				}
 				exists, err := d.array.OffsetExists(ctx, args[0])
 				if err != nil {
 					return nil, err
@@ -123,7 +250,18 @@ func initArrayObject() {
 				if len(args) < 1 {
 					return phpv.ZNULL.ZVal(), nil
 				}
-				return d.array.OffsetGet(ctx, args[0])
+				if args[0].GetType() == phpv.ZtArray {
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+						"Cannot access offset of type array on ArrayObject")
+				}
+				if d.objectStorage != nil {
+					if d.objectStorage.GetClass().Implements(phpobj.ArrayAccess) {
+						return d.objectStorage.CallMethod(ctx, "offsetGet", args[0])
+					}
+					key := args[0].AsString(ctx)
+					return d.objectStorage.ObjectGet(ctx, key)
+				}
+				return d.array.OffsetGetWarn(ctx, args[0])
 			}),
 		},
 		"offsetset": {
@@ -138,6 +276,18 @@ func initArrayObject() {
 				}
 				key := args[0]
 				value := args[1]
+				if key.GetType() == phpv.ZtArray {
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+						"Cannot access offset of type array on ArrayObject")
+				}
+				if d.objectStorage != nil {
+					if d.objectStorage.GetClass().Implements(phpobj.ArrayAccess) {
+						_, err := d.objectStorage.CallMethod(ctx, "offsetSet", key, value)
+						return nil, err
+					}
+					keyStr := key.AsString(ctx)
+					return nil, d.objectStorage.ObjectSet(ctx, keyStr, value)
+				}
 				// If key is null, append (like $arr[] = value)
 				if key.GetType() == phpv.ZtNull {
 					err := d.array.OffsetSet(ctx, nil, value)
@@ -157,6 +307,17 @@ func initArrayObject() {
 				if len(args) < 1 {
 					return nil, nil
 				}
+				if args[0].GetType() == phpv.ZtArray {
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+						"Cannot unset offset of type array on ArrayObject")
+				}
+				if d.objectStorage != nil {
+					if d.objectStorage.GetClass().Implements(phpobj.ArrayAccess) {
+						_, err := d.objectStorage.CallMethod(ctx, "offsetUnset", args[0])
+						return nil, err
+					}
+					return nil, d.array.OffsetUnset(ctx, args[0])
+				}
 				err := d.array.OffsetUnset(ctx, args[0])
 				return nil, err
 			}),
@@ -170,6 +331,10 @@ func initArrayObject() {
 				d := getArrayObjectData(o)
 				if d == nil {
 					return phpv.ZInt(0).ZVal(), nil
+				}
+				if d.objectStorage != nil {
+					count := d.objectStorage.Count(ctx)
+					return count.ZVal(), nil
 				}
 				return d.array.Count(ctx).ZVal(), nil
 			}),
@@ -195,6 +360,12 @@ func initArrayObject() {
 				iterObj, err := phpobj.NewZObject(ctx, iterClass, d.array.ZVal())
 				if err != nil {
 					return nil, err
+				}
+
+				// Copy flags to the iterator
+				iterData := getArrayIteratorData(iterObj)
+				if iterData != nil {
+					iterData.flags = d.flags
 				}
 
 				return iterObj.ZVal(), nil
@@ -237,26 +408,41 @@ func initArrayObject() {
 					return phpv.NewZArray().ZVal(), nil
 				}
 				if len(args) < 1 {
-					return nil, fmt.Errorf("ArrayObject::exchangeArray() expects exactly 1 argument")
+					return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError,
+						"ArrayObject::exchangeArray() expects exactly 1 argument, 0 given")
 				}
 
-				oldArray := d.array
+				// Save old storage for return
+				var oldStorage *phpv.ZVal
+				if d.objectStorage != nil {
+					oldStorage = d.objectStorage.ZVal()
+				} else {
+					oldStorage = d.array.ZVal()
+				}
 
 				switch args[0].GetType() {
 				case phpv.ZtArray:
 					d.array = args[0].Value().(*phpv.ZArray).Dup()
+					d.objectStorage = nil
 				case phpv.ZtObject:
-					arr, err := args[0].Value().AsVal(ctx, phpv.ZtArray)
-					if err != nil {
+					obj := args[0].Value().(*phpobj.ZObject)
+					if err := setObjectStorage(ctx, d, obj, "ArrayObject::exchangeArray()"); err != nil {
 						return nil, err
 					}
-					d.array = arr.(*phpv.ZArray).Dup()
 				default:
 					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
-						fmt.Sprintf("ArrayObject::exchangeArray(): Argument #1 ($array) must be of type array|object, %s given", args[0].GetType().TypeName()))
+						fmt.Sprintf("ArrayObject::exchangeArray(): Argument #1 ($array) must be of type array, %s given", args[0].GetType().TypeName()))
 				}
 
-				return oldArray.ZVal(), nil
+				// Return old array (convert object to array if necessary)
+				if oldStorage.GetType() == phpv.ZtObject {
+					arr, err := oldStorage.Value().AsVal(ctx, phpv.ZtArray)
+					if err != nil {
+						return oldStorage, nil
+					}
+					return arr.ZVal(), nil
+				}
+				return oldStorage, nil
 			}),
 		},
 
@@ -295,8 +481,12 @@ func initArrayObject() {
 				if d == nil {
 					return phpv.ZTrue.ZVal(), nil
 				}
-				sortFlags := phpv.ZInt(0) // SORT_REGULAR
+				sortFlags := phpv.ZInt(0)
 				if len(args) > 0 && args[0] != nil {
+					if args[0].GetType() == phpv.ZtString {
+						return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+							"ArrayObject::asort(): Argument #1 ($flags) must be of type int, string given")
+					}
 					sortFlags = args[0].AsInt(ctx)
 				}
 				arrayObjectSort(ctx, d.array, sortFlags, sortByValue, false)
@@ -311,8 +501,12 @@ func initArrayObject() {
 				if d == nil {
 					return phpv.ZTrue.ZVal(), nil
 				}
-				sortFlags := phpv.ZInt(0) // SORT_REGULAR
+				sortFlags := phpv.ZInt(0)
 				if len(args) > 0 && args[0] != nil {
+					if args[0].GetType() == phpv.ZtString {
+						return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+							"ArrayObject::ksort(): Argument #1 ($flags) must be of type int, string given")
+					}
 					sortFlags = args[0].AsInt(ctx)
 				}
 				arrayObjectSort(ctx, d.array, sortFlags, sortByKey, false)
@@ -327,7 +521,10 @@ func initArrayObject() {
 				if d == nil {
 					return phpv.ZTrue.ZVal(), nil
 				}
-				// SORT_NATURAL = 6
+				if len(args) > 0 {
+					return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError,
+						fmt.Sprintf("ArrayObject::natsort() expects exactly 0 arguments, %d given", len(args)))
+				}
 				arrayObjectSort(ctx, d.array, 6, sortByValue, false)
 				return phpv.ZTrue.ZVal(), nil
 			}),
@@ -340,7 +537,10 @@ func initArrayObject() {
 				if d == nil {
 					return phpv.ZTrue.ZVal(), nil
 				}
-				// SORT_NATURAL | SORT_FLAG_CASE = 6 | 8 = 14
+				if len(args) > 0 {
+					return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError,
+						fmt.Sprintf("ArrayObject::natcasesort() expects exactly 0 arguments, %d given", len(args)))
+				}
 				arrayObjectSort(ctx, d.array, 6|8, sortByValue, false)
 				return phpv.ZTrue.ZVal(), nil
 			}),
@@ -353,12 +553,14 @@ func initArrayObject() {
 				if d == nil {
 					return phpv.ZTrue.ZVal(), nil
 				}
-				if len(args) < 1 {
-					return nil, fmt.Errorf("ArrayObject::uasort() expects exactly 1 argument")
+				if len(args) != 1 {
+					return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError,
+						fmt.Sprintf("ArrayObject::uasort() expects exactly 1 argument, %d given", len(args)))
 				}
 				cb, err := core.SpawnCallable(ctx, args[0])
 				if err != nil || cb == nil {
-					return nil, fmt.Errorf("ArrayObject::uasort(): Argument #1 ($callback) must be a valid callback")
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+						"ArrayObject::uasort(): Argument #1 ($callback) must be a valid callback")
 				}
 				err = arrayObjectUSort(ctx, d.array, cb, sortByValue)
 				if err != nil {
@@ -375,12 +577,14 @@ func initArrayObject() {
 				if d == nil {
 					return phpv.ZTrue.ZVal(), nil
 				}
-				if len(args) < 1 {
-					return nil, fmt.Errorf("ArrayObject::uksort() expects exactly 1 argument")
+				if len(args) != 1 {
+					return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError,
+						fmt.Sprintf("ArrayObject::uksort() expects exactly 1 argument, %d given", len(args)))
 				}
 				cb, err := core.SpawnCallable(ctx, args[0])
 				if err != nil || cb == nil {
-					return nil, fmt.Errorf("ArrayObject::uksort(): Argument #1 ($callback) must be a valid callback")
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+						"ArrayObject::uksort(): Argument #1 ($callback) must be a valid callback")
 				}
 				err = arrayObjectUSort(ctx, d.array, cb, sortByKey)
 				if err != nil {
@@ -402,7 +606,11 @@ func initArrayObject() {
 				if len(args) < 1 {
 					return nil, nil
 				}
-				d.iteratorClass = args[0].AsString(ctx)
+				className := args[0].AsString(ctx)
+				if err := validateIteratorClass(ctx, className, "ArrayObject::setIteratorClass()"); err != nil {
+					return nil, err
+				}
+				d.iteratorClass = className
 				return nil, nil
 			}),
 		},
@@ -418,7 +626,7 @@ func initArrayObject() {
 			}),
 		},
 
-		// ---- Serializable ----
+		// ---- Serializable (old interface) ----
 
 		"serialize": {
 			Name: "serialize",
@@ -427,7 +635,6 @@ func initArrayObject() {
 				if d == nil {
 					return phpv.ZString("").ZVal(), nil
 				}
-				// Look up and call the global serialize() function
 				fn, err := ctx.Global().GetFunction(ctx, "serialize")
 				if err != nil {
 					return phpv.ZString("").ZVal(), nil
@@ -454,7 +661,6 @@ func initArrayObject() {
 				if len(args) < 1 {
 					return nil, nil
 				}
-				// Look up and call the global unserialize() function
 				fn, err := ctx.Global().GetFunction(ctx, "unserialize")
 				if err != nil {
 					return nil, err
@@ -470,6 +676,144 @@ func initArrayObject() {
 			}),
 		},
 
+		// ---- __serialize / __unserialize (PHP 7.4+) ----
+
+		"__serialize": {
+			Name: "__serialize",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				d := getArrayObjectData(o)
+				if d == nil {
+					d = &arrayObjectData{
+						array:         phpv.NewZArray(),
+						iteratorClass: "ArrayIterator",
+					}
+				}
+
+				// PHP serializes ArrayObject as: {0: flags, 1: storage, 2: member_properties, 3: iterator_class_or_null}
+				result := phpv.NewZArray()
+				result.OffsetSet(ctx, phpv.ZInt(0).ZVal(), d.flags.ZVal())
+
+				// Storage: array or object
+				result.OffsetSet(ctx, phpv.ZInt(1).ZVal(), d.getStorage())
+
+				// Member properties (dynamic properties on the ArrayObject itself)
+				memberProps := phpv.NewZArray()
+				for prop := range o.IterProps(ctx) {
+					// Skip the internal storage property
+					v := o.GetPropValue(prop)
+					memberProps.OffsetSet(ctx, prop.VarName.ZVal(), v)
+				}
+				result.OffsetSet(ctx, phpv.ZInt(2).ZVal(), memberProps.ZVal())
+
+				// Iterator class (null if default)
+				if d.iteratorClass != "" && !strings.EqualFold(string(d.iteratorClass), "arrayiterator") {
+					result.OffsetSet(ctx, phpv.ZInt(3).ZVal(), d.iteratorClass.ZVal())
+				} else {
+					result.OffsetSet(ctx, phpv.ZInt(3).ZVal(), phpv.ZNULL.ZVal())
+				}
+
+				return result.ZVal(), nil
+			}),
+		},
+
+		"__unserialize": {
+			Name: "__unserialize",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				if len(args) < 1 || args[0].GetType() != phpv.ZtArray {
+					return nil, nil
+				}
+
+				arr := args[0].Value().(*phpv.ZArray)
+
+				d := &arrayObjectData{
+					iteratorClass: "ArrayIterator",
+				}
+
+				// Index 0: flags
+				if flagsVal, err := arr.OffsetGet(ctx, phpv.ZInt(0).ZVal()); err == nil && flagsVal != nil {
+					d.flags = flagsVal.AsInt(ctx)
+				}
+
+				// Index 1: storage (array or object)
+				if storageVal, err := arr.OffsetGet(ctx, phpv.ZInt(1).ZVal()); err == nil && storageVal != nil {
+					switch storageVal.GetType() {
+					case phpv.ZtArray:
+						d.array = storageVal.Value().(*phpv.ZArray)
+					case phpv.ZtObject:
+						obj := storageVal.Value().(*phpobj.ZObject)
+						ctx.Deprecated("ArrayObject::__unserialize(): Using an object as a backing array for ArrayObject is deprecated, as it allows violating class constraints and invariants", logopt.NoFuncName(true))
+						d.objectStorage = obj
+						// Build array view
+						viewArr := phpv.NewZArray()
+						for prop := range obj.IterProps(ctx) {
+							if prop.Modifiers.IsPublic() || (!prop.Modifiers.IsPrivate() && !prop.Modifiers.IsProtected()) {
+								v := obj.GetPropValue(prop)
+								viewArr.OffsetSet(ctx, prop.VarName.ZVal(), v)
+							}
+						}
+						d.array = viewArr
+					default:
+						d.array = phpv.NewZArray()
+					}
+				} else {
+					d.array = phpv.NewZArray()
+				}
+
+				// Index 2: member properties
+				if memberVal, err := arr.OffsetGet(ctx, phpv.ZInt(2).ZVal()); err == nil && memberVal != nil && memberVal.GetType() == phpv.ZtArray {
+					memberArr := memberVal.Value().(*phpv.ZArray)
+					for k, v := range memberArr.Iterate(ctx) {
+						o.ObjectSet(ctx, k.AsString(ctx), v)
+					}
+				}
+
+				// Index 3: iterator class (null means default)
+				if iterVal, err := arr.OffsetGet(ctx, phpv.ZInt(3).ZVal()); err == nil && iterVal != nil && !iterVal.IsNull() {
+					d.iteratorClass = iterVal.AsString(ctx)
+				}
+
+				o.SetOpaque(ArrayObjectClass, d)
+				return nil, nil
+			}),
+		},
+
+		// ---- __debugInfo for proper var_dump/print_r output ----
+
+		"__debuginfo": {
+			Name:      "__debugInfo",
+			Modifiers: phpv.ZAttrPublic,
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				d := getArrayObjectData(o)
+				if d == nil {
+					return phpv.NewZArray().ZVal(), nil
+				}
+
+				result := phpv.NewZArray()
+
+				// First include any declared/dynamic properties set on the object itself
+				for prop := range o.IterProps(ctx) {
+					var mangledName string
+					if prop.Modifiers.IsPrivate() {
+						className := string(o.GetDeclClassName(prop))
+						mangledName = "\x00" + className + "\x00" + string(prop.VarName)
+					} else if prop.Modifiers.IsProtected() {
+						mangledName = "\x00*\x00" + string(prop.VarName)
+					} else {
+						mangledName = string(prop.VarName)
+					}
+					v := o.GetPropValue(prop)
+					result.OffsetSet(ctx, phpv.ZString(mangledName).ZVal(), v)
+				}
+
+				// Then add the internal storage as a private property
+				// Use the NUL-byte mangled name: \0ClassName\0propName
+				storageKey := "\x00ArrayObject\x00storage"
+				result.OffsetSet(ctx, phpv.ZString(storageKey).ZVal(), d.getStorage())
+
+				return result.ZVal(), nil
+			}),
+		},
+
 		// ---- Magic methods for ARRAY_AS_PROPS support ----
 
 		"__get": {
@@ -481,7 +825,7 @@ func initArrayObject() {
 					return phpv.ZNULL.ZVal(), nil
 				}
 				if d.flags&ArrayObjectARRAY_AS_PROPS != 0 {
-					return d.array.OffsetGet(ctx, args[0])
+					return d.array.OffsetGetWarn(ctx, args[0])
 				}
 				return phpv.ZNULL.ZVal(), nil
 			}),

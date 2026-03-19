@@ -50,8 +50,11 @@ type splHeapData struct {
 	// compare is the Go-level compare function.
 	// For SplMinHeap/SplMaxHeap it uses phpv.Compare directly.
 	// For user-extended classes, it calls the PHP compare() method.
-	compareFn func(ctx phpv.Context, a, b *phpv.ZVal) (int, error)
-	ctx       phpv.Context
+	compareFn  func(ctx phpv.Context, a, b *phpv.ZVal) (int, error)
+	ctx        phpv.Context
+	compareErr error // last compare error (for corruption detection)
+	// iterKey tracks the key during iteration (0, 1, 2, ...)
+	iterKey int
 }
 
 func (d *splHeapData) Clone() any {
@@ -63,6 +66,7 @@ func (d *splHeapData) Clone() any {
 		corrupted: d.corrupted,
 		compareFn: d.compareFn,
 		ctx:       d.ctx,
+		iterKey:   d.iterKey,
 	}
 	copy(nd.heap.entries, d.heap.entries)
 	nd.heap.less = nd.makeLess()
@@ -73,6 +77,8 @@ func (d *splHeapData) makeLess() func(a, b *splHeapEntry) bool {
 	return func(a, b *splHeapEntry) bool {
 		cmp, err := d.compareFn(d.ctx, a.value, b.value)
 		if err != nil {
+			d.corrupted = true
+			d.compareErr = err
 			return false
 		}
 		if cmp != 0 {
@@ -183,16 +189,25 @@ func initSplHeap() {
 				if d == nil {
 					return phpv.ZTrue.ZVal(), nil
 				}
+				if d.corrupted {
+					return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException, "Heap is corrupted, heap properties are no longer ensured.")
+				}
 				if len(args) == 0 {
 					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "SplHeap::insert() expects exactly 1 argument")
 				}
 				d.ctx = ctx
+				d.compareErr = nil
 				entry := &splHeapEntry{
-					value: args[0],
+					value: args[0].Dup(),
 					index: d.nextIndex,
 				}
 				d.nextIndex++
 				heap.Push(d.heap, entry)
+				if d.compareErr != nil {
+					err := d.compareErr
+					d.compareErr = nil
+					return nil, err
+				}
 				return phpv.ZTrue.ZVal(), nil
 			}),
 		},
@@ -201,10 +216,19 @@ func initSplHeap() {
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				d := getHeapData(o)
 				if d == nil || d.heap.Len() == 0 {
-					return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException, "Can't extract from an empty datastructure")
+					return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException, "Can't extract from an empty heap")
+				}
+				if d.corrupted {
+					return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException, "Heap is corrupted, heap properties are no longer ensured.")
 				}
 				d.ctx = ctx
+				d.compareErr = nil
 				entry := heap.Pop(d.heap).(*splHeapEntry)
+				if d.compareErr != nil {
+					err := d.compareErr
+					d.compareErr = nil
+					return nil, err
+				}
 				return entry.value, nil
 			}),
 		},
@@ -213,7 +237,10 @@ func initSplHeap() {
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				d := getHeapData(o)
 				if d == nil || d.heap.Len() == 0 {
-					return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException, "Can't peek at an empty datastructure")
+					return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException, "Can't peek at an empty heap")
+				}
+				if d.corrupted {
+					return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException, "Heap is corrupted, heap properties are no longer ensured.")
 				}
 				return d.heap.entries[0].value, nil
 			}),
@@ -243,7 +270,7 @@ func initSplHeap() {
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				d := getHeapData(o)
 				if d == nil || d.heap.Len() == 0 {
-					return phpv.ZFalse.ZVal(), nil
+					return phpv.ZNULL.ZVal(), nil
 				}
 				return d.heap.entries[0].value, nil
 			}),
@@ -255,7 +282,8 @@ func initSplHeap() {
 				if d == nil || d.heap.Len() == 0 {
 					return phpv.ZNULL.ZVal(), nil
 				}
-				return phpv.ZInt(d.nextIndex - d.heap.Len()).ZVal(), nil
+				// PHP SplHeap key() returns remaining_count - 1
+				return phpv.ZInt(d.heap.Len() - 1).ZVal(), nil
 			}),
 		},
 		"next": {
@@ -266,14 +294,25 @@ func initSplHeap() {
 					return nil, nil
 				}
 				d.ctx = ctx
+				d.compareErr = nil
 				heap.Pop(d.heap)
+				if d.compareErr != nil {
+					err := d.compareErr
+					d.compareErr = nil
+					return nil, err
+				}
+				d.iterKey++
 				return nil, nil
 			}),
 		},
 		"rewind": {
 			Name: "rewind",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				// SplHeap::rewind() is a no-op - the heap is iterated destructively
+				// SplHeap::rewind() resets the key counter
+				d := getHeapData(o)
+				if d != nil {
+					d.iterKey = 0
+				}
 				return nil, nil
 			}),
 		},
@@ -305,6 +344,37 @@ func initSplHeap() {
 					d.corrupted = false
 				}
 				return phpv.ZTrue.ZVal(), nil
+			}),
+		},
+		"__debuginfo": {
+			Name: "__debugInfo",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				d := getHeapData(o)
+				result := phpv.NewZArray()
+
+				// Determine class name for private property prefix
+				className := "SplHeap"
+
+				// flags (private to SplHeap)
+				result.OffsetSet(ctx, phpv.ZString("\x00"+className+"\x00flags"), phpv.ZInt(0).ZVal())
+
+				// isCorrupted (private to SplHeap)
+				corrupted := false
+				if d != nil {
+					corrupted = d.corrupted
+				}
+				result.OffsetSet(ctx, phpv.ZString("\x00"+className+"\x00isCorrupted"), phpv.ZBool(corrupted).ZVal())
+
+				// heap (private to SplHeap) - array of values
+				heapArr := phpv.NewZArray()
+				if d != nil {
+					for i, entry := range d.heap.entries {
+						heapArr.OffsetSet(ctx, phpv.ZInt(i), entry.value)
+					}
+				}
+				result.OffsetSet(ctx, phpv.ZString("\x00"+className+"\x00heap"), heapArr.ZVal())
+
+				return result.ZVal(), nil
 			}),
 		},
 	}

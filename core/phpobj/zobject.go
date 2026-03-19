@@ -276,6 +276,10 @@ func (z *ZObject) AsVal(ctx phpv.Context, t phpv.ZType) (phpv.Val, error) {
 			arr.OffsetSet(ctx, nil, z.ZVal())
 			return arr, nil
 		}
+		// Check for custom array cast handler (e.g., ArrayObject)
+		if h := z.Class.Handlers(); h != nil && h.HandleCastArray != nil {
+			return h.HandleCastArray(ctx, z)
+		}
 		return z.toArray(ctx), nil
 	}
 

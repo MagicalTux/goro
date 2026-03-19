@@ -94,8 +94,12 @@ func initInfiniteIterator() {
 		"valid": {
 			Name: "valid",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				// InfiniteIterator is always valid (it rewinds when inner ends)
-				return phpv.ZTrue.ZVal(), nil
+				d := getInfiniteIteratorData(o)
+				if d == nil {
+					return phpv.ZFalse.ZVal(), nil
+				}
+				// InfiniteIterator delegates valid() to the inner iterator
+				return d.inner.CallMethod(ctx, "valid")
 			}),
 		},
 		"getinneriterator": {

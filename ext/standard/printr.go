@@ -3,6 +3,7 @@ package standard
 import (
 	"bytes"
 	"fmt"
+	"strings"
 	"unsafe"
 
 	"github.com/MagicalTux/goro/core"
@@ -129,7 +130,26 @@ func doPrintR(ctx phpv.Context, z *phpv.ZVal, linePfx string, recurs map[uintptr
 				// Use __debugInfo return value
 				for key, val := range debugInfoArr.Iterate(ctx) {
 					keyStr := key.String()
-					fmt.Fprintf(ctx, "%s[%s] => ", localPfx, keyStr)
+					// Handle PHP's internal property naming convention:
+					// \0*\0name -> protected, \0ClassName\0name -> private
+					if len(keyStr) > 0 && keyStr[0] == 0 {
+						if len(keyStr) > 2 && keyStr[1] == '*' && keyStr[2] == 0 {
+							// Protected: \0*\0name -> name:protected
+							fmt.Fprintf(ctx, "%s[%s:protected] => ", localPfx, keyStr[3:])
+						} else {
+							// Private: \0ClassName\0name -> name:ClassName:private
+							idx := strings.IndexByte(keyStr[1:], 0)
+							if idx >= 0 {
+								className := keyStr[1 : idx+1]
+								propName := keyStr[idx+2:]
+								fmt.Fprintf(ctx, "%s[%s:%s:private] => ", localPfx, propName, className)
+							} else {
+								fmt.Fprintf(ctx, "%s[%s] => ", localPfx, keyStr)
+							}
+						}
+					} else {
+						fmt.Fprintf(ctx, "%s[%s] => ", localPfx, keyStr)
+					}
 					doPrintR(ctx, val, localPfx+"    ", recurs)
 					ctx.Write([]byte{'\n'})
 				}

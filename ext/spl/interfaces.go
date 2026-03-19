@@ -18,3 +18,33 @@ var OuterIterator = &phpobj.ZClass{
 	Name:    "OuterIterator",
 	Extends: phpobj.Iterator,
 }
+
+// SeekableIterator interface - extends Iterator with seek()
+var SeekableIterator = &phpobj.ZClass{
+	Type:    phpv.ZClassTypeInterface,
+	Name:    "SeekableIterator",
+	Extends: phpobj.Iterator,
+	Methods: map[phpv.ZString]*phpv.ZClassMethod{
+		"seek": {Name: "seek", Modifiers: phpv.ZAttrPublic | phpv.ZAttrAbstract, Empty: true},
+	},
+}
+
+// SplObserver interface
+var SplObserver = &phpobj.ZClass{
+	Type: phpv.ZClassTypeInterface,
+	Name: "SplObserver",
+	Methods: map[phpv.ZString]*phpv.ZClassMethod{
+		"update": {Name: "update", Modifiers: phpv.ZAttrPublic | phpv.ZAttrAbstract, Empty: true},
+	},
+}
+
+// SplSubject interface
+var SplSubject = &phpobj.ZClass{
+	Type: phpv.ZClassTypeInterface,
+	Name: "SplSubject",
+	Methods: map[phpv.ZString]*phpv.ZClassMethod{
+		"attach": {Name: "attach", Modifiers: phpv.ZAttrPublic | phpv.ZAttrAbstract, Empty: true},
+		"detach": {Name: "detach", Modifiers: phpv.ZAttrPublic | phpv.ZAttrAbstract, Empty: true},
+		"notify": {Name: "notify", Modifiers: phpv.ZAttrPublic | phpv.ZAttrAbstract, Empty: true},
+	},
+}

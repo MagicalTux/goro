@@ -22,16 +22,28 @@ type priorityEntry struct {
 
 // priorityHeap implements heap.Interface
 type priorityHeap struct {
-	entries []*priorityEntry
-	ctx     phpv.Context
+	entries   []*priorityEntry
+	ctx       phpv.Context
+	compareFn func(ctx phpv.Context, a, b *phpv.ZVal) (int, error) // custom compare function
+	data      *splPriorityQueueData                                 // back-reference for corruption tracking
 }
 
 func (h *priorityHeap) Len() int { return len(h.entries) }
 
 func (h *priorityHeap) Less(i, j int) bool {
-	// Higher priority comes first (max-heap)
-	cmp, err := phpv.Compare(h.ctx, h.entries[i].priority, h.entries[j].priority)
+	var cmp int
+	var err error
+	if h.compareFn != nil {
+		cmp, err = h.compareFn(h.ctx, h.entries[i].priority, h.entries[j].priority)
+	} else {
+		// Higher priority comes first (max-heap)
+		cmp, err = phpv.Compare(h.ctx, h.entries[i].priority, h.entries[j].priority)
+	}
 	if err != nil {
+		if h.data != nil {
+			h.data.corrupted = true
+			h.data.compareErr = err
+		}
 		return false
 	}
 	if cmp != 0 {
@@ -63,9 +75,10 @@ type splPriorityQueueData struct {
 	heap         *priorityHeap
 	extractFlags int
 	nextIndex    int
-	// For iteration: we build a sorted snapshot
-	iterItems []*priorityEntry
-	iterPos   int
+	corrupted    bool
+	compareErr   error
+	// iterKey tracks the key during iteration
+	iterKey int
 }
 
 func (d *splPriorityQueueData) Clone() any {
@@ -76,6 +89,8 @@ func (d *splPriorityQueueData) Clone() any {
 		},
 		extractFlags: d.extractFlags,
 		nextIndex:    d.nextIndex,
+		corrupted:    d.corrupted,
+		iterKey:      d.iterKey,
 	}
 	copy(nd.heap.entries, d.heap.entries)
 	return nd
@@ -109,16 +124,44 @@ func initPriorityQueue() {
 			Name: "__construct",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				d := &splPriorityQueueData{
-					heap: &priorityHeap{
-						entries: nil,
-						ctx:     ctx,
-					},
 					extractFlags: splPriorityQueueExtrData,
 					nextIndex:    0,
 				}
+				h := &priorityHeap{
+					entries: nil,
+					ctx:     ctx,
+					data:    d,
+				}
+				// Check if the user has overridden the compare method
+				cls := o.GetClass()
+				if cls != SplPriorityQueueClass {
+					// User subclass - call PHP compare() method
+					h.compareFn = func(ctx phpv.Context, a, b *phpv.ZVal) (int, error) {
+						result, err := o.CallMethod(ctx, "compare", a, b)
+						if err != nil {
+							return 0, err
+						}
+						return int(result.AsInt(ctx)), nil
+					}
+				}
+				d.heap = h
 				heap.Init(d.heap)
 				o.SetOpaque(SplPriorityQueueClass, d)
 				return nil, nil
+			}),
+		},
+		"compare": {
+			Name:      "compare",
+			Modifiers: phpv.ZAttrPublic,
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				if len(args) < 2 {
+					return phpv.ZInt(0).ZVal(), nil
+				}
+				cmp, err := phpv.Compare(ctx, args[0], args[1])
+				if err != nil {
+					return phpv.ZInt(0).ZVal(), nil
+				}
+				return phpv.ZInt(cmp).ZVal(), nil
 			}),
 		},
 		"insert": {
@@ -128,19 +171,26 @@ func initPriorityQueue() {
 				if d == nil {
 					return phpv.ZTrue.ZVal(), nil
 				}
+				if d.corrupted {
+					return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException, "Heap is corrupted, heap properties are no longer ensured.")
+				}
 				if len(args) < 2 {
 					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "SplPriorityQueue::insert() expects exactly 2 arguments")
 				}
 				d.heap.ctx = ctx
+				d.compareErr = nil
 				entry := &priorityEntry{
-					value:    args[0],
-					priority: args[1],
+					value:    args[0].Dup(),
+					priority: args[1].Dup(),
 					index:    d.nextIndex,
 				}
 				d.nextIndex++
 				heap.Push(d.heap, entry)
-				// Invalidate iteration snapshot
-				d.iterItems = nil
+				if d.compareErr != nil {
+					err := d.compareErr
+					d.compareErr = nil
+					return nil, err
+				}
 				return phpv.ZTrue.ZVal(), nil
 			}),
 		},
@@ -149,12 +199,19 @@ func initPriorityQueue() {
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				d := getPriorityQueueData(o)
 				if d == nil || d.heap.Len() == 0 {
-					return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException, "Can't extract from an empty datastructure")
+					return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException, "Can't extract from an empty heap")
+				}
+				if d.corrupted {
+					return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException, "Heap is corrupted, heap properties are no longer ensured.")
 				}
 				d.heap.ctx = ctx
+				d.compareErr = nil
 				entry := heap.Pop(d.heap).(*priorityEntry)
-				// Invalidate iteration snapshot
-				d.iterItems = nil
+				if d.compareErr != nil {
+					err := d.compareErr
+					d.compareErr = nil
+					return nil, err
+				}
 				return d.extractValue(entry), nil
 			}),
 		},
@@ -163,7 +220,7 @@ func initPriorityQueue() {
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				d := getPriorityQueueData(o)
 				if d == nil || d.heap.Len() == 0 {
-					return phpv.ZFalse.ZVal(), nil
+					return phpv.ZNULL.ZVal(), nil
 				}
 				d.heap.ctx = ctx
 				// Return top element without removing
@@ -196,7 +253,10 @@ func initPriorityQueue() {
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				d := getPriorityQueueData(o)
 				if d == nil || d.heap.Len() == 0 {
-					return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException, "Can't peek at an empty datastructure")
+					return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException, "Can't peek at an empty heap")
+				}
+				if d.corrupted {
+					return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException, "Heap is corrupted, heap properties are no longer ensured.")
 				}
 				d.heap.ctx = ctx
 				entry := d.heap.entries[0]
@@ -210,8 +270,8 @@ func initPriorityQueue() {
 				if d == nil || d.heap.Len() == 0 {
 					return phpv.ZNULL.ZVal(), nil
 				}
-				// Key returns the current count position (total inserted minus remaining)
-				return phpv.ZInt(d.nextIndex - d.heap.Len()).ZVal(), nil
+				// PHP SplPriorityQueue key() returns remaining_count - 1
+				return phpv.ZInt(d.heap.Len() - 1).ZVal(), nil
 			}),
 		},
 		"next": {
@@ -223,13 +283,18 @@ func initPriorityQueue() {
 				}
 				d.heap.ctx = ctx
 				heap.Pop(d.heap)
+				d.iterKey++
 				return nil, nil
 			}),
 		},
 		"rewind": {
 			Name: "rewind",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				// SplPriorityQueue::rewind() is a no-op - the queue is iterated destructively
+				// SplPriorityQueue::rewind() resets the key counter
+				d := getPriorityQueueData(o)
+				if d != nil {
+					d.iterKey = 0
+				}
 				return nil, nil
 			}),
 		},
@@ -255,7 +320,7 @@ func initPriorityQueue() {
 				}
 				flags := int(args[0].AsInt(ctx))
 				if flags < 1 || flags > 3 {
-					return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException, "Must specify a valid extract flag")
+					return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException, "Must specify at least one extract flag")
 				}
 				d.extractFlags = flags
 				return phpv.ZInt(flags).ZVal(), nil
@@ -269,6 +334,63 @@ func initPriorityQueue() {
 					return phpv.ZInt(splPriorityQueueExtrData).ZVal(), nil
 				}
 				return phpv.ZInt(d.extractFlags).ZVal(), nil
+			}),
+		},
+		"iscorrupted": {
+			Name: "isCorrupted",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				d := getPriorityQueueData(o)
+				if d == nil {
+					return phpv.ZFalse.ZVal(), nil
+				}
+				return phpv.ZBool(d.corrupted).ZVal(), nil
+			}),
+		},
+		"recoverfromcorruption": {
+			Name: "recoverFromCorruption",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				d := getPriorityQueueData(o)
+				if d != nil {
+					d.corrupted = false
+				}
+				return phpv.ZTrue.ZVal(), nil
+			}),
+		},
+		"__debuginfo": {
+			Name: "__debugInfo",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				d := getPriorityQueueData(o)
+				result := phpv.NewZArray()
+
+				className := "SplPriorityQueue"
+
+				// flags (private)
+				flags := splPriorityQueueExtrData
+				if d != nil {
+					flags = d.extractFlags
+				}
+				result.OffsetSet(ctx, phpv.ZString("\x00"+className+"\x00flags"), phpv.ZInt(flags).ZVal())
+
+				// isCorrupted (private)
+				corrupted := false
+				if d != nil {
+					corrupted = d.corrupted
+				}
+				result.OffsetSet(ctx, phpv.ZString("\x00"+className+"\x00isCorrupted"), phpv.ZBool(corrupted).ZVal())
+
+				// heap (private) - array of data/priority pairs
+				heapArr := phpv.NewZArray()
+				if d != nil {
+					for i, entry := range d.heap.entries {
+						pair := phpv.NewZArray()
+						pair.OffsetSet(ctx, phpv.ZString("data"), entry.value)
+						pair.OffsetSet(ctx, phpv.ZString("priority"), entry.priority)
+						heapArr.OffsetSet(ctx, phpv.ZInt(i), pair.ZVal())
+					}
+				}
+				result.OffsetSet(ctx, phpv.ZString("\x00"+className+"\x00heap"), heapArr.ZVal())
+
+				return result.ZVal(), nil
 			}),
 		},
 	}

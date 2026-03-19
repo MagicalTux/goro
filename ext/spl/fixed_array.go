@@ -1,14 +1,17 @@
 package spl
 
 import (
+	"fmt"
+
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
 // splFixedArrayData holds the internal state for an SplFixedArray instance
 type splFixedArrayData struct {
-	data []*phpv.ZVal
-	pos  int
+	data     []*phpv.ZVal
+	pos      int
+	savedPos []int // stack of saved positions for nested foreach
 }
 
 func (d *splFixedArrayData) Clone() any {
@@ -24,6 +27,19 @@ func (d *splFixedArrayData) Clone() any {
 	return nd
 }
 
+// SaveIterState saves the current iterator position (for nested foreach)
+func (d *splFixedArrayData) SaveIterState() {
+	d.savedPos = append(d.savedPos, d.pos)
+}
+
+// RestoreIterState restores the most recently saved iterator position
+func (d *splFixedArrayData) RestoreIterState() {
+	if len(d.savedPos) > 0 {
+		d.pos = d.savedPos[len(d.savedPos)-1]
+		d.savedPos = d.savedPos[:len(d.savedPos)-1]
+	}
+}
+
 func getSplFixedArrayData(o *phpobj.ZObject) *splFixedArrayData {
 	d := o.GetOpaque(SplFixedArrayClass)
 	if d == nil {
@@ -36,14 +52,46 @@ func getSplFixedArrayData(o *phpobj.ZObject) *splFixedArrayData {
 // Returns the index and nil error, or -1 and an error to throw.
 func validateFixedArrayIndex(ctx phpv.Context, d *splFixedArrayData, indexVal *phpv.ZVal) (int, error) {
 	if indexVal == nil || indexVal.IsNull() {
-		return -1, phpobj.ThrowError(ctx, phpobj.RuntimeException, "Index invalid or out of range")
+		return -1, phpobj.ThrowError(ctx, phpobj.OutOfBoundsException, "Index invalid or out of range")
 	}
 
 	// PHP SplFixedArray only accepts integer indices
+	switch indexVal.GetType() {
+	case phpv.ZtInt, phpv.ZtFloat, phpv.ZtBool:
+		// These are OK - will be converted to int
+	case phpv.ZtString:
+		// Check if numeric string
+		s := string(indexVal.AsString(ctx))
+		isNumeric := len(s) > 0
+		for i, c := range s {
+			if c >= '0' && c <= '9' {
+				continue
+			}
+			if i == 0 && (c == '-' || c == '+') && len(s) > 1 {
+				continue
+			}
+			isNumeric = false
+			break
+		}
+		if !isNumeric {
+			return -1, phpobj.ThrowError(ctx, phpobj.TypeError,
+				fmt.Sprintf("Cannot access offset of type string on SplFixedArray"))
+		}
+	case phpv.ZtArray:
+		return -1, phpobj.ThrowError(ctx, phpobj.TypeError, "Cannot access offset of type array on SplFixedArray")
+	case phpv.ZtObject:
+		typeName := "object"
+		if obj, ok := indexVal.Value().(*phpobj.ZObject); ok {
+			typeName = string(obj.GetClass().GetName())
+		}
+		return -1, phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("Cannot access offset of type %s on SplFixedArray", typeName))
+	}
+
 	idx := int(indexVal.AsInt(ctx))
 
 	if idx < 0 || idx >= len(d.data) {
-		return -1, phpobj.ThrowError(ctx, phpobj.RuntimeException, "Index invalid or out of range")
+		return -1, phpobj.ThrowError(ctx, phpobj.OutOfBoundsException, "Index invalid or out of range")
 	}
 	return idx, nil
 }
@@ -140,7 +188,7 @@ func initSplFixedArray() {
 					return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException, "Internal data not initialized")
 				}
 				if len(args) == 0 {
-					return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException, "Index invalid or out of range")
+					return nil, phpobj.ThrowError(ctx, phpobj.OutOfBoundsException, "Index invalid or out of range")
 				}
 				idx, err := validateFixedArrayIndex(ctx, d, args[0])
 				if err != nil {
@@ -160,11 +208,11 @@ func initSplFixedArray() {
 					return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException, "Internal data not initialized")
 				}
 				if len(args) < 2 {
-					return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException, "Index invalid or out of range")
+					return nil, phpobj.ThrowError(ctx, phpobj.OutOfBoundsException, "Index invalid or out of range")
 				}
-				// null key (append) is not supported
+				// null key (append) is not supported for SplFixedArray
 				if args[0] == nil || args[0].IsNull() {
-					return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException, "Index invalid or out of range")
+					return nil, phpobj.ThrowError(ctx, phpobj.Error, "[] operator not supported for SplFixedArray")
 				}
 				idx, err := validateFixedArrayIndex(ctx, d, args[0])
 				if err != nil {
@@ -182,7 +230,7 @@ func initSplFixedArray() {
 					return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException, "Internal data not initialized")
 				}
 				if len(args) == 0 {
-					return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException, "Index invalid or out of range")
+					return nil, phpobj.ThrowError(ctx, phpobj.OutOfBoundsException, "Index invalid or out of range")
 				}
 				idx, err := validateFixedArrayIndex(ctx, d, args[0])
 				if err != nil {

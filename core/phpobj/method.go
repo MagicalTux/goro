@@ -32,6 +32,36 @@ func (m NativeMethod) String() string {
 	return "Callable"
 }
 
+// NativeMethodNamed wraps a NativeMethod with parameter name metadata,
+// enabling PHP 8.0 named argument support for native methods.
+type NativeMethodNamed struct {
+	Fn   NativeMethod
+	Args []*phpv.FuncArg
+}
+
+func (m *NativeMethodNamed) Name() string { return "" }
+
+func (m *NativeMethodNamed) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	return m.Fn.Call(ctx, args)
+}
+
+func (m *NativeMethodNamed) GetArgs() []*phpv.FuncArg {
+	return m.Args
+}
+
+func (m *NativeMethodNamed) GetType() phpv.ZType { return phpv.ZtCallable }
+func (m *NativeMethodNamed) ZVal() *phpv.ZVal    { return phpv.NewZVal(m) }
+func (m *NativeMethodNamed) Value() phpv.Val     { return m }
+func (m *NativeMethodNamed) AsVal(ctx phpv.Context, t phpv.ZType) (phpv.Val, error) {
+	if t == phpv.ZtCallable {
+		return m, nil
+	}
+	return nil, errors.New("Cannot cast callables to other type")
+}
+func (m *NativeMethodNamed) String() string {
+	return "Callable"
+}
+
 // NativeStaticMethod is like NativeMethod but for static methods.
 // It receives the class from context instead of requiring $this.
 type NativeStaticMethod func(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)

@@ -52,6 +52,8 @@ func initRecursiveDirectoryIterator() {
 	RecursiveDirectoryIteratorClass.Methods["valid"] = &phpv.ZClassMethod{Name: "valid", Method: phpobj.NativeMethod(rdiValid)}
 	RecursiveDirectoryIteratorClass.Methods["isdot"] = &phpv.ZClassMethod{Name: "isDot", Method: phpobj.NativeMethod(rdiIsDot)}
 	RecursiveDirectoryIteratorClass.Methods["__tostring"] = &phpv.ZClassMethod{Name: "__toString", Method: phpobj.NativeMethod(rdiToString)}
+	RecursiveDirectoryIteratorClass.Methods["getflags"] = &phpv.ZClassMethod{Name: "getFlags", Method: phpobj.NativeMethod(rdiGetFlags)}
+	RecursiveDirectoryIteratorClass.Methods["setflags"] = &phpv.ZClassMethod{Name: "setFlags", Method: phpobj.NativeMethod(rdiSetFlags)}
 }
 
 func getRDIData(o *phpobj.ZObject) *recursiveDirectoryIteratorData {
@@ -68,7 +70,7 @@ func rdiConstruct(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv
 		return nil, err
 	}
 
-	flags := 0
+	flags := fsIterKeyAsPathname | fsIterCurrentAsFileinfo | fsIterSkipDots
 	if len(args) > 1 {
 		flags = int(args[1].AsInt(ctx))
 	}
@@ -100,8 +102,22 @@ func rdiConstruct(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv
 		path:    dirPath,
 		entries: allEntries,
 		pos:     0,
+		flags:   flags,
 	}
 	o.SetOpaque(DirectoryIteratorClass, diData)
+
+	// Skip dots on initial position if SKIP_DOTS is set
+	if flags&fsIterSkipDots != 0 {
+		for data.pos < len(data.entries) {
+			name := data.entries[data.pos].Name()
+			if name == "." || name == ".." {
+				data.pos++
+				continue
+			}
+			break
+		}
+		diData.pos = data.pos
+	}
 
 	// Set up SplFileInfo
 	updateRDISFI(o, data)
@@ -117,13 +133,35 @@ func updateRDISFI(o *phpobj.ZObject, d *recursiveDirectoryIteratorData) {
 }
 
 func rdiCurrent(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	return o.ZVal(), nil
+	d := getRDIData(o)
+	if d == nil || d.pos >= len(d.entries) {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+
+	if d.flags&fsIterCurrentAsPathname != 0 {
+		return phpv.ZStr(filepath.Join(d.path, d.entries[d.pos].Name())), nil
+	}
+	if d.flags&fsIterCurrentAsSelf != 0 {
+		return o.ZVal(), nil
+	}
+
+	// Default: CURRENT_AS_FILEINFO
+	entryPath := filepath.Join(d.path, d.entries[d.pos].Name())
+	infoObj, err := phpobj.NewZObject(ctx, SplFileInfoClass, phpv.ZString(entryPath).ZVal())
+	if err != nil {
+		return nil, err
+	}
+	return infoObj.ZVal(), nil
 }
 
 func rdiKey(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	d := getRDIData(o)
 	if d == nil || d.pos >= len(d.entries) {
 		return phpv.ZStr(""), nil
+	}
+
+	if d.flags&fsIterKeyAsFilename != 0 {
+		return phpv.ZStr(d.entries[d.pos].Name()), nil
 	}
 	return phpv.ZStr(filepath.Join(d.path, d.entries[d.pos].Name())), nil
 }
@@ -134,14 +172,16 @@ func rdiNext(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal
 		return nil, nil
 	}
 	d.pos++
-	// Skip . and .. after initial position
-	for d.pos < len(d.entries) {
-		name := d.entries[d.pos].Name()
-		if name == "." || name == ".." {
-			d.pos++
-			continue
+	// Skip dots if SKIP_DOTS is set
+	if d.flags&fsIterSkipDots != 0 {
+		for d.pos < len(d.entries) {
+			name := d.entries[d.pos].Name()
+			if name == "." || name == ".." {
+				d.pos++
+				continue
+			}
+			break
 		}
-		break
 	}
 	updateRDISFI(o, d)
 	// Keep DirectoryIterator data in sync
@@ -156,15 +196,17 @@ func rdiRewind(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZV
 	if d == nil {
 		return nil, nil
 	}
-	// Skip . and .. for FilesystemIterator/RecursiveDirectoryIterator
 	d.pos = 0
-	for d.pos < len(d.entries) {
-		name := d.entries[d.pos].Name()
-		if name == "." || name == ".." {
-			d.pos++
-			continue
+	// Skip dots if SKIP_DOTS is set
+	if d.flags&fsIterSkipDots != 0 {
+		for d.pos < len(d.entries) {
+			name := d.entries[d.pos].Name()
+			if name == "." || name == ".." {
+				d.pos++
+				continue
+			}
+			break
 		}
-		break
 	}
 	updateRDISFI(o, d)
 	if diData, ok := o.GetOpaque(DirectoryIteratorClass).(*directoryIteratorData); ok {
@@ -205,7 +247,28 @@ func rdiHasChildren(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*ph
 	if name == "." || name == ".." {
 		return phpv.ZFalse.ZVal(), nil
 	}
-	return phpv.ZBool(entry.IsDir()).ZVal(), nil
+
+	entryPath := filepath.Join(d.path, name)
+
+	// If FOLLOW_SYMLINKS is set, use os.Stat (follows symlinks)
+	// Otherwise, use os.Lstat (does not follow)
+	if d.flags&fsIterFollowSymlinks != 0 {
+		info, err := os.Stat(entryPath)
+		if err != nil {
+			return phpv.ZFalse.ZVal(), nil
+		}
+		return phpv.ZBool(info.IsDir()).ZVal(), nil
+	}
+
+	// Without FOLLOW_SYMLINKS, symlinks to dirs are not considered children
+	linfo, err := os.Lstat(entryPath)
+	if err != nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+	if linfo.Mode()&os.ModeSymlink != 0 {
+		return phpv.ZFalse.ZVal(), nil
+	}
+	return phpv.ZBool(linfo.IsDir()).ZVal(), nil
 }
 
 func rdiGetChildren(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
@@ -260,4 +323,26 @@ func rdiGetSubPathname(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (
 		return phpv.ZStr(name), nil
 	}
 	return phpv.ZStr(d.subPath + string(filepath.Separator) + name), nil
+}
+
+func rdiGetFlags(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	d := getRDIData(o)
+	if d == nil {
+		return phpv.ZInt(0).ZVal(), nil
+	}
+	return phpv.ZInt(d.flags).ZVal(), nil
+}
+
+func rdiSetFlags(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	d := getRDIData(o)
+	if d == nil {
+		return nil, nil
+	}
+	var flags phpv.ZInt
+	_, err := core.Expand(ctx, args, &flags)
+	if err != nil {
+		return nil, err
+	}
+	d.flags = int(flags)
+	return nil, nil
 }

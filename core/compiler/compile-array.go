@@ -464,13 +464,16 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		return v.AsString(ctx).Array().OffsetGet(ctx, offset)
 	}
 
-	// Check for invalid offset types on arrays
-	if offset.GetType() == phpv.ZtObject {
-		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
-			fmt.Sprintf("Cannot access offset of type %s on array", offset.Value().(phpv.ZObject).GetClass().GetName()))
-	}
-	if offset.GetType() == phpv.ZtArray {
-		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "Cannot access offset of type array on array")
+	// Check for invalid offset types on arrays (but not on ArrayAccess objects,
+	// where any offset type can be passed to offsetGet/offsetSet)
+	if v.GetType() != phpv.ZtObject {
+		if offset.GetType() == phpv.ZtObject {
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+				fmt.Sprintf("Cannot access offset of type %s on array", offset.Value().(phpv.ZObject).GetClass().GetName()))
+		}
+		if offset.GetType() == phpv.ZtArray {
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "Cannot access offset of type array on array")
+		}
 	}
 
 	array := v.Array()
@@ -613,17 +616,19 @@ func (ac *runArrayAccess) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 		return err
 	}
 
-	// Check for invalid offset types on arrays
-	if offset.GetType() == phpv.ZtObject {
-		return phpobj.ThrowError(ctx, phpobj.TypeError,
-			fmt.Sprintf("Cannot access offset of type %s on array", offset.Value().(phpv.ZObject).GetClass().GetName()))
-	}
-	if offset.GetType() == phpv.ZtArray {
-		return phpobj.ThrowError(ctx, phpobj.TypeError, "Cannot access offset of type array on array")
+	// Check for invalid offset types on arrays (but not on ArrayAccess objects)
+	if v.GetType() != phpv.ZtObject {
+		if offset.GetType() == phpv.ZtObject {
+			return phpobj.ThrowError(ctx, phpobj.TypeError,
+				fmt.Sprintf("Cannot access offset of type %s on array", offset.Value().(phpv.ZObject).GetClass().GetName()))
+		}
+		if offset.GetType() == phpv.ZtArray {
+			return phpobj.ThrowError(ctx, phpobj.TypeError, "Cannot access offset of type array on array")
+		}
 	}
 
 	// PHP 8.1: Deprecation warning for null array offsets (write)
-	if offset.GetType() == phpv.ZtNull {
+	if offset.GetType() == phpv.ZtNull && v.GetType() != phpv.ZtObject {
 		if err := ctx.Deprecated("Using null as an array offset is deprecated, use an empty string instead", logopt.NoFuncName(true)); err != nil {
 			return err
 		}

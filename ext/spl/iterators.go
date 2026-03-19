@@ -1,6 +1,7 @@
 package spl
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 	"unicode/utf8"
@@ -291,6 +292,43 @@ func initLimitIterator() {
 				return phpv.ZInt(d.pos).ZVal(), nil
 			}),
 		},
+		"seek": {
+			Name: "seek",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				d := getLimitIteratorData(o)
+				if d == nil || len(args) == 0 {
+					return nil, nil
+				}
+				position := int(args[0].AsInt(ctx))
+				if position < d.offset {
+					return nil, phpobj.ThrowError(ctx, phpobj.OutOfBoundsException, fmt.Sprintf("Cannot seek to %d which is below the offset %d", position, d.offset))
+				}
+				if d.limit >= 0 && position >= d.offset+d.limit {
+					return nil, phpobj.ThrowError(ctx, phpobj.OutOfBoundsException, fmt.Sprintf("Cannot seek to %d which is behind offset %d plus count %d", position, d.offset, d.limit))
+				}
+				// Rewind and advance to position
+				_, err := d.inner.CallMethod(ctx, "rewind")
+				if err != nil {
+					return nil, err
+				}
+				d.pos = 0
+				for d.pos < position {
+					v, err := d.inner.CallMethod(ctx, "valid")
+					if err != nil {
+						return nil, err
+					}
+					if !bool(v.AsBool(ctx)) {
+						return nil, phpobj.ThrowError(ctx, phpobj.OutOfBoundsException, fmt.Sprintf("Cannot seek to %d which is behind the last element", position))
+					}
+					_, err = d.inner.CallMethod(ctx, "next")
+					if err != nil {
+						return nil, err
+					}
+					d.pos++
+				}
+				return nil, nil
+			}),
+		},
 	}
 }
 
@@ -319,6 +357,7 @@ type cachingIteratorData struct {
 	currentKey *phpv.ZVal
 	hasNext    bool
 	started    bool
+	cache      *phpv.ZArray
 }
 
 func (d *cachingIteratorData) Clone() any {
@@ -329,6 +368,7 @@ func (d *cachingIteratorData) Clone() any {
 		currentKey: d.currentKey,
 		hasNext:    d.hasNext,
 		started:    d.started,
+		cache:      d.cache,
 	}
 }
 
@@ -361,6 +401,7 @@ func initCachingIterator() {
 					flags:   flags,
 					hasNext: false,
 					started: false,
+					cache:   phpv.NewZArray(),
 				})
 				return nil, nil
 			}),
@@ -377,6 +418,7 @@ func initCachingIterator() {
 					return nil, err
 				}
 				d.started = true
+				d.cache = phpv.NewZArray()
 				// Fetch first element
 				v, err := d.inner.CallMethod(ctx, "valid")
 				if err != nil {
@@ -385,6 +427,10 @@ func initCachingIterator() {
 				if bool(v.AsBool(ctx)) {
 					d.currentVal, _ = d.inner.CallMethod(ctx, "current")
 					d.currentKey, _ = d.inner.CallMethod(ctx, "key")
+					// Store in cache if FULL_CACHE
+					if d.flags&cachingIteratorFullCache != 0 && d.currentKey != nil {
+						d.cache.OffsetSet(ctx, d.currentKey.Value(), d.currentVal)
+					}
 					// Advance inner to look ahead
 					_, err = d.inner.CallMethod(ctx, "next")
 					if err != nil {
@@ -437,6 +483,10 @@ func initCachingIterator() {
 				if bool(v.AsBool(ctx)) {
 					d.currentVal, _ = d.inner.CallMethod(ctx, "current")
 					d.currentKey, _ = d.inner.CallMethod(ctx, "key")
+					// Store in cache if FULL_CACHE
+					if d.flags&cachingIteratorFullCache != 0 && d.currentKey != nil {
+						d.cache.OffsetSet(ctx, d.currentKey.Value(), d.currentVal)
+					}
 					_, err = d.inner.CallMethod(ctx, "next")
 					if err != nil {
 						d.hasNext = false
@@ -521,12 +571,93 @@ func initCachingIterator() {
 				return phpv.ZString(d.currentVal.AsString(ctx)).ZVal(), nil
 			}),
 		},
+		"count": {
+			Name: "count",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				d := getCachingIteratorData(o)
+				if d == nil {
+					return phpv.ZInt(0).ZVal(), nil
+				}
+				if d.flags&cachingIteratorFullCache == 0 {
+					return nil, phpobj.ThrowError(ctx, phpobj.BadMethodCallException, "CachingIterator does not use a full cache (see CachingIterator::__construct)")
+				}
+				return d.cache.Count(ctx).ZVal(), nil
+			}),
+		},
+		"getcache": {
+			Name: "getCache",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				d := getCachingIteratorData(o)
+				if d == nil {
+					return phpv.NewZArray().ZVal(), nil
+				}
+				if d.flags&cachingIteratorFullCache == 0 {
+					return nil, phpobj.ThrowError(ctx, phpobj.BadMethodCallException, "CachingIterator does not use a full cache (see CachingIterator::__construct)")
+				}
+				return d.cache.ZVal(), nil
+			}),
+		},
+		"offsetget": {
+			Name: "offsetGet",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				d := getCachingIteratorData(o)
+				if d == nil || len(args) == 0 {
+					return phpv.ZNULL.ZVal(), nil
+				}
+				if d.flags&cachingIteratorFullCache == 0 {
+					return nil, phpobj.ThrowError(ctx, phpobj.BadMethodCallException, "CachingIterator does not use a full cache (see CachingIterator::__construct)")
+				}
+				return d.cache.OffsetGet(ctx, args[0].Value())
+			}),
+		},
+		"offsetset": {
+			Name: "offsetSet",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				d := getCachingIteratorData(o)
+				if d == nil || len(args) < 2 {
+					return nil, nil
+				}
+				if d.flags&cachingIteratorFullCache == 0 {
+					return nil, phpobj.ThrowError(ctx, phpobj.BadMethodCallException, "CachingIterator does not use a full cache (see CachingIterator::__construct)")
+				}
+				d.cache.OffsetSet(ctx, args[0].Value(), args[1])
+				return nil, nil
+			}),
+		},
+		"offsetexists": {
+			Name: "offsetExists",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				d := getCachingIteratorData(o)
+				if d == nil || len(args) == 0 {
+					return phpv.ZFalse.ZVal(), nil
+				}
+				if d.flags&cachingIteratorFullCache == 0 {
+					return nil, phpobj.ThrowError(ctx, phpobj.BadMethodCallException, "CachingIterator does not use a full cache (see CachingIterator::__construct)")
+				}
+				exists, _ := d.cache.OffsetExists(ctx, args[0])
+				return phpv.ZBool(exists).ZVal(), nil
+			}),
+		},
+		"offsetunset": {
+			Name: "offsetUnset",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				d := getCachingIteratorData(o)
+				if d == nil || len(args) == 0 {
+					return nil, nil
+				}
+				if d.flags&cachingIteratorFullCache == 0 {
+					return nil, phpobj.ThrowError(ctx, phpobj.BadMethodCallException, "CachingIterator does not use a full cache (see CachingIterator::__construct)")
+				}
+				d.cache.OffsetUnset(ctx, args[0].Value())
+				return nil, nil
+			}),
+		},
 	}
 }
 
 var CachingIteratorClass = &phpobj.ZClass{
 	Name:            "CachingIterator",
-	Implementations: []*phpobj.ZClass{OuterIterator, Countable},
+	Implementations: []*phpobj.ZClass{OuterIterator, Countable, phpobj.ArrayAccess},
 	Const: map[phpv.ZString]*phpv.ZClassConst{
 		"CALL_TOSTRING":        {Value: phpv.ZInt(cachingIteratorCallToString)},
 		"CATCH_GET_CHILD":      {Value: phpv.ZInt(cachingIteratorCatchGetChild)},
@@ -711,18 +842,20 @@ const (
 )
 
 type regexIteratorData struct {
-	inner   *phpobj.ZObject
-	pattern phpv.ZString
-	mode    int
-	flags   int
+	inner     *phpobj.ZObject
+	pattern   phpv.ZString
+	mode      int
+	flags     int
+	pregFlags int
 }
 
 func (d *regexIteratorData) Clone() any {
 	return &regexIteratorData{
-		inner:   d.inner,
-		pattern: d.pattern,
-		mode:    d.mode,
-		flags:   d.flags,
+		inner:     d.inner,
+		pattern:   d.pattern,
+		mode:      d.mode,
+		flags:     d.flags,
+		pregFlags: d.pregFlags,
 	}
 }
 
@@ -775,7 +908,24 @@ func initRegexIterator() {
 					return nil, nil
 				}
 				_, err := d.inner.CallMethod(ctx, "rewind")
-				return nil, err
+				if err != nil {
+					return nil, err
+				}
+				// Skip to first matching element
+				for {
+					v, err := d.inner.CallMethod(ctx, "valid")
+					if err != nil || !bool(v.AsBool(ctx)) {
+						break
+					}
+					if d.accept(ctx) {
+						break
+					}
+					_, err = d.inner.CallMethod(ctx, "next")
+					if err != nil {
+						return nil, err
+					}
+				}
+				return nil, nil
 			}),
 		},
 		"current": {
@@ -888,6 +1038,53 @@ func initRegexIterator() {
 					return phpv.ZNULL.ZVal(), nil
 				}
 				return d.inner.ZVal(), nil
+			}),
+		},
+		"setmode": {
+			Name: "setMode",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				d := getRegexIteratorData(o)
+				if d == nil || len(args) == 0 {
+					return nil, nil
+				}
+				mode := int(args[0].AsInt(ctx))
+				if mode < 0 || mode > 4 {
+					return nil, phpobj.ThrowError(ctx, phpobj.InvalidArgumentException, fmt.Sprintf("RegexIterator::setMode(): Argument #1 ($mode) must be RegexIterator::MATCH, RegexIterator::GET_MATCH, RegexIterator::ALL_MATCHES, RegexIterator::SPLIT, or RegexIterator::REPLACE"))
+				}
+				d.mode = mode
+				return nil, nil
+			}),
+		},
+		"setflags": {
+			Name: "setFlags",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				d := getRegexIteratorData(o)
+				if d == nil || len(args) == 0 {
+					return nil, nil
+				}
+				d.flags = int(args[0].AsInt(ctx))
+				return nil, nil
+			}),
+		},
+		"getpregflags": {
+			Name: "getPregFlags",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				d := getRegexIteratorData(o)
+				if d == nil {
+					return phpv.ZInt(0).ZVal(), nil
+				}
+				return phpv.ZInt(d.pregFlags).ZVal(), nil
+			}),
+		},
+		"setpregflags": {
+			Name: "setPregFlags",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				d := getRegexIteratorData(o)
+				if d == nil || len(args) == 0 {
+					return nil, nil
+				}
+				d.pregFlags = int(args[0].AsInt(ctx))
+				return nil, nil
 			}),
 		},
 	}
@@ -1144,6 +1341,58 @@ func initRecursiveArrayIterator() {
 				return d.array.Count(ctx).ZVal(), nil
 			}),
 		},
+		"offsetexists": {
+			Name: "offsetExists",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				d := getRecursiveArrayIteratorData(o)
+				if d == nil || len(args) < 1 {
+					return phpv.ZFalse.ZVal(), nil
+				}
+				exists, err := d.array.OffsetExists(ctx, args[0])
+				if err != nil {
+					return nil, err
+				}
+				return phpv.ZBool(exists).ZVal(), nil
+			}),
+		},
+		"offsetget": {
+			Name: "offsetGet",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				d := getRecursiveArrayIteratorData(o)
+				if d == nil || len(args) < 1 {
+					return phpv.ZNULL.ZVal(), nil
+				}
+				return d.array.OffsetGet(ctx, args[0])
+			}),
+		},
+		"offsetset": {
+			Name: "offsetSet",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				d := getRecursiveArrayIteratorData(o)
+				if d == nil || len(args) < 2 {
+					return nil, nil
+				}
+				key := args[0]
+				value := args[1]
+				if key.GetType() == phpv.ZtNull {
+					err := d.array.OffsetSet(ctx, nil, value)
+					return nil, err
+				}
+				err := d.array.OffsetSet(ctx, key, value)
+				return nil, err
+			}),
+		},
+		"offsetunset": {
+			Name: "offsetUnset",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				d := getRecursiveArrayIteratorData(o)
+				if d == nil || len(args) < 1 {
+					return nil, nil
+				}
+				err := d.array.OffsetUnset(ctx, args[0])
+				return nil, err
+			}),
+		},
 	}
 }
 
@@ -1156,7 +1405,7 @@ var RecursiveIterator = &phpobj.ZClass{
 
 var RecursiveArrayIteratorClass = &phpobj.ZClass{
 	Name:            "RecursiveArrayIterator",
-	Implementations: []*phpobj.ZClass{RecursiveIterator, Countable},
+	Implementations: []*phpobj.ZClass{RecursiveIterator, Countable, phpobj.ArrayAccess},
 }
 
 // ============================================================================
@@ -1171,16 +1420,18 @@ const (
 
 type recursiveIteratorIteratorData struct {
 	// Stack of iterators at each depth level
-	stack []*phpobj.ZObject
-	mode  int
-	depth int
+	stack    []*phpobj.ZObject
+	mode     int
+	depth    int
+	maxDepth int // -1 means no limit
 }
 
 func (d *recursiveIteratorIteratorData) Clone() any {
 	nd := &recursiveIteratorIteratorData{
-		stack: make([]*phpobj.ZObject, len(d.stack)),
-		mode:  d.mode,
-		depth: d.depth,
+		stack:    make([]*phpobj.ZObject, len(d.stack)),
+		mode:     d.mode,
+		depth:    d.depth,
+		maxDepth: d.maxDepth,
 	}
 	copy(nd.stack, d.stack)
 	return nd
@@ -1211,9 +1462,10 @@ func initRecursiveIteratorIterator() {
 					mode = int(args[1].AsInt(ctx))
 				}
 				d := &recursiveIteratorIteratorData{
-					stack: []*phpobj.ZObject{inner},
-					mode:  mode,
-					depth: 0,
+					stack:    []*phpobj.ZObject{inner},
+					mode:     mode,
+					depth:    0,
+					maxDepth: -1,
 				}
 				o.SetOpaque(RecursiveIteratorIteratorClass, d)
 				return nil, nil
@@ -1234,8 +1486,10 @@ func initRecursiveIteratorIterator() {
 				if err != nil {
 					return nil, err
 				}
+				// Call beginIteration hook
+				o.Unwrap().(*phpobj.ZObject).CallMethod(ctx, "beginIteration")
 				// Descend into children if needed
-				err = recursiveIteratorDescend(ctx, d)
+				err = recursiveIteratorDescend(ctx, d, o)
 				return nil, err
 			}),
 		},
@@ -1268,7 +1522,7 @@ func initRecursiveIteratorIterator() {
 				if d == nil || len(d.stack) == 0 {
 					return nil, nil
 				}
-				err := recursiveIteratorNext(ctx, d)
+				err := recursiveIteratorNext(ctx, d, o)
 				return nil, err
 			}),
 		},
@@ -1307,12 +1561,114 @@ func initRecursiveIteratorIterator() {
 				return d.stack[len(d.stack)-1].ZVal(), nil
 			}),
 		},
+		"getsubiterator": {
+			Name: "getSubIterator",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				d := getRecursiveIteratorIteratorData(o)
+				if d == nil || len(d.stack) == 0 {
+					return phpv.ZNULL.ZVal(), nil
+				}
+				level := len(d.stack) - 1
+				if len(args) > 0 {
+					level = int(args[0].AsInt(ctx))
+				}
+				if level < 0 || level >= len(d.stack) {
+					return phpv.ZNULL.ZVal(), nil
+				}
+				return d.stack[level].ZVal(), nil
+			}),
+		},
+		"setmaxdepth": {
+			Name: "setMaxDepth",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				d := getRecursiveIteratorIteratorData(o)
+				if d == nil {
+					return nil, nil
+				}
+				if len(args) == 0 {
+					d.maxDepth = -1
+				} else {
+					depth := int(args[0].AsInt(ctx))
+					if depth < 0 {
+						return nil, phpobj.ThrowError(ctx, phpobj.OutOfRangeException, "Parameter max_depth must be >= -1")
+					}
+					d.maxDepth = depth
+				}
+				return nil, nil
+			}),
+		},
+		"getmaxdepth": {
+			Name: "getMaxDepth",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				d := getRecursiveIteratorIteratorData(o)
+				if d == nil {
+					return phpv.ZFalse.ZVal(), nil
+				}
+				if d.maxDepth < 0 {
+					return phpv.ZFalse.ZVal(), nil
+				}
+				return phpv.ZInt(d.maxDepth).ZVal(), nil
+			}),
+		},
+		"beginiteration": {
+			Name: "beginIteration",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				// Default implementation does nothing; subclasses can override
+				return nil, nil
+			}),
+		},
+		"enditeration": {
+			Name: "endIteration",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				return nil, nil
+			}),
+		},
+		"beginchildren": {
+			Name: "beginChildren",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				return nil, nil
+			}),
+		},
+		"endchildren": {
+			Name: "endChildren",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				return nil, nil
+			}),
+		},
+		"callhaschildren": {
+			Name: "callHasChildren",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				d := getRecursiveIteratorIteratorData(o)
+				if d == nil || len(d.stack) == 0 {
+					return phpv.ZFalse.ZVal(), nil
+				}
+				top := d.stack[len(d.stack)-1]
+				return top.CallMethod(ctx, "hasChildren")
+			}),
+		},
+		"callgetchildren": {
+			Name: "callGetChildren",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				d := getRecursiveIteratorIteratorData(o)
+				if d == nil || len(d.stack) == 0 {
+					return phpv.ZNULL.ZVal(), nil
+				}
+				top := d.stack[len(d.stack)-1]
+				return top.CallMethod(ctx, "getChildren")
+			}),
+		},
+		"nextelement": {
+			Name: "nextElement",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				return nil, nil
+			}),
+		},
 	}
 }
 
-// recursiveIteratorDescend tries to descend into children of the current element
-// for LEAVES_ONLY and SELF_FIRST modes.
-func recursiveIteratorDescend(ctx phpv.Context, d *recursiveIteratorIteratorData) error {
+// recursiveIteratorDescend tries to descend into children of the current element.
+// The outer parameter is the RecursiveIteratorIterator object for calling hooks.
+func recursiveIteratorDescend(ctx phpv.Context, d *recursiveIteratorIteratorData, outer *phpobj.ZObject) error {
 	for {
 		top := d.stack[len(d.stack)-1]
 		v, err := top.CallMethod(ctx, "valid")
@@ -1320,17 +1676,38 @@ func recursiveIteratorDescend(ctx phpv.Context, d *recursiveIteratorIteratorData
 			return err
 		}
 
-		// Check if current has children
-		hasChildrenResult, err := top.CallMethod(ctx, "hasChildren")
-		if err != nil {
-			return nil // Not a RecursiveIterator, stop descending
+		// Check maxDepth limit
+		currentDepth := len(d.stack) - 1
+		if d.maxDepth >= 0 && currentDepth >= d.maxDepth {
+			return nil // Max depth reached
 		}
-		if !bool(hasChildrenResult.AsBool(ctx)) {
+
+		// Check if current has children (use callHasChildren on outer if overridden)
+		var hasChildren bool
+		if outer != nil {
+			hasChildrenResult, err := outer.Unwrap().(*phpobj.ZObject).CallMethod(ctx, "callHasChildren")
+			if err != nil {
+				return nil
+			}
+			hasChildren = bool(hasChildrenResult.AsBool(ctx))
+		} else {
+			hasChildrenResult, err := top.CallMethod(ctx, "hasChildren")
+			if err != nil {
+				return nil
+			}
+			hasChildren = bool(hasChildrenResult.AsBool(ctx))
+		}
+		if !hasChildren {
 			return nil // Leaf node
 		}
 
-		// Get children iterator
-		childResult, err := top.CallMethod(ctx, "getChildren")
+		// Get children iterator (use callGetChildren on outer if overridden)
+		var childResult *phpv.ZVal
+		if outer != nil {
+			childResult, err = outer.Unwrap().(*phpobj.ZObject).CallMethod(ctx, "callGetChildren")
+		} else {
+			childResult, err = top.CallMethod(ctx, "getChildren")
+		}
 		if err != nil {
 			return nil
 		}
@@ -1348,11 +1725,15 @@ func recursiveIteratorDescend(ctx phpv.Context, d *recursiveIteratorIteratorData
 		}
 		d.stack = append(d.stack, child)
 		d.depth++
+		// Call beginChildren hook on outer
+		if outer != nil {
+			outer.Unwrap().(*phpobj.ZObject).CallMethod(ctx, "beginChildren")
+		}
 	}
 }
 
 // recursiveIteratorNext advances the recursive iterator
-func recursiveIteratorNext(ctx phpv.Context, d *recursiveIteratorIteratorData) error {
+func recursiveIteratorNext(ctx phpv.Context, d *recursiveIteratorIteratorData, outer *phpobj.ZObject) error {
 	if len(d.stack) == 0 {
 		return nil
 	}
@@ -1370,11 +1751,15 @@ func recursiveIteratorNext(ctx phpv.Context, d *recursiveIteratorIteratorData) e
 	}
 	if bool(v.AsBool(ctx)) {
 		// Try to descend into children
-		return recursiveIteratorDescend(ctx, d)
+		return recursiveIteratorDescend(ctx, d, outer)
 	}
 
 	// Current level exhausted, go back up
 	for len(d.stack) > 1 {
+		// Call endChildren hook on outer
+		if outer != nil {
+			outer.Unwrap().(*phpobj.ZObject).CallMethod(ctx, "endChildren")
+		}
 		d.stack = d.stack[:len(d.stack)-1]
 		d.depth--
 		top = d.stack[len(d.stack)-1]
@@ -1387,7 +1772,7 @@ func recursiveIteratorNext(ctx phpv.Context, d *recursiveIteratorIteratorData) e
 			return err
 		}
 		if bool(v.AsBool(ctx)) {
-			return recursiveIteratorDescend(ctx, d)
+			return recursiveIteratorDescend(ctx, d, outer)
 		}
 	}
 	return nil
@@ -1520,13 +1905,13 @@ func initEmptyIterator() {
 		"current": {
 			Name: "current",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException, "Accessing current() on an EmptyIterator")
+				return nil, phpobj.ThrowError(ctx, phpobj.BadMethodCallException, "Accessing the value of an EmptyIterator")
 			}),
 		},
 		"key": {
 			Name: "key",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException, "Accessing key() on an EmptyIterator")
+				return nil, phpobj.ThrowError(ctx, phpobj.BadMethodCallException, "Accessing the key of an EmptyIterator")
 			}),
 		},
 		"next": {
@@ -1913,4 +2298,363 @@ var MultipleIteratorClass = &phpobj.ZClass{
 		"MIT_KEYS_NUMERIC": {Value: phpv.ZInt(multipleIteratorMitKeysNumeric)},
 		"MIT_KEYS_ASSOC":   {Value: phpv.ZInt(multipleIteratorMitKeysAssoc)},
 	},
+}
+
+// ============================================================================
+// FilterIterator (abstract class)
+// ============================================================================
+
+type filterIteratorData struct {
+	inner *phpobj.ZObject
+}
+
+func (d *filterIteratorData) Clone() any {
+	return &filterIteratorData{inner: d.inner}
+}
+
+func getFilterIteratorData(o *phpobj.ZObject) *filterIteratorData {
+	d := o.GetOpaque(FilterIteratorClass)
+	if d == nil {
+		return nil
+	}
+	return d.(*filterIteratorData)
+}
+
+func filterIteratorSkipToAccepted(ctx phpv.Context, o *phpobj.ZObject, d *filterIteratorData) error {
+	// Unwrap to get the runtime class (e.g. ParentIterator) rather than the
+	// narrowed FilterIterator class, so that accept() resolves to the override.
+	realObj := o.Unwrap().(*phpobj.ZObject)
+	for {
+		v, err := d.inner.CallMethod(ctx, "valid")
+		if err != nil || !bool(v.AsBool(ctx)) {
+			return err
+		}
+		// Call accept() on the FilterIterator subclass (not the inner iterator)
+		accepted, err := realObj.CallMethod(ctx, "accept")
+		if err != nil {
+			return err
+		}
+		if bool(accepted.AsBool(ctx)) {
+			return nil
+		}
+		_, err = d.inner.CallMethod(ctx, "next")
+		if err != nil {
+			return err
+		}
+	}
+}
+
+func initFilterIterator() {
+	FilterIteratorClass.Methods = map[phpv.ZString]*phpv.ZClassMethod{
+		"__construct": {
+			Name: "__construct",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				if len(args) == 0 || args[0] == nil || args[0].GetType() != phpv.ZtObject {
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "FilterIterator::__construct(): Argument #1 ($iterator) must be of type Iterator")
+				}
+				inner, ok := args[0].Value().(*phpobj.ZObject)
+				if !ok {
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "FilterIterator::__construct(): Argument #1 ($iterator) must be of type Iterator")
+				}
+				o.SetOpaque(FilterIteratorClass, &filterIteratorData{inner: inner})
+				return nil, nil
+			}),
+		},
+		"rewind": {
+			Name: "rewind",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				d := getFilterIteratorData(o)
+				if d == nil {
+					return nil, nil
+				}
+				_, err := d.inner.CallMethod(ctx, "rewind")
+				if err != nil {
+					return nil, err
+				}
+				return nil, filterIteratorSkipToAccepted(ctx, o, d)
+			}),
+		},
+		"current": {
+			Name: "current",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				d := getFilterIteratorData(o)
+				if d == nil {
+					return phpv.ZFalse.ZVal(), nil
+				}
+				return d.inner.CallMethod(ctx, "current")
+			}),
+		},
+		"key": {
+			Name: "key",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				d := getFilterIteratorData(o)
+				if d == nil {
+					return phpv.ZNULL.ZVal(), nil
+				}
+				return d.inner.CallMethod(ctx, "key")
+			}),
+		},
+		"next": {
+			Name: "next",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				d := getFilterIteratorData(o)
+				if d == nil {
+					return nil, nil
+				}
+				_, err := d.inner.CallMethod(ctx, "next")
+				if err != nil {
+					return nil, err
+				}
+				return nil, filterIteratorSkipToAccepted(ctx, o, d)
+			}),
+		},
+		"valid": {
+			Name: "valid",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				d := getFilterIteratorData(o)
+				if d == nil {
+					return phpv.ZFalse.ZVal(), nil
+				}
+				return d.inner.CallMethod(ctx, "valid")
+			}),
+		},
+		"getinneriterator": {
+			Name: "getInnerIterator",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				d := getFilterIteratorData(o)
+				if d == nil {
+					return phpv.ZNULL.ZVal(), nil
+				}
+				return d.inner.ZVal(), nil
+			}),
+		},
+		"accept": {
+			Name:      "accept",
+			Modifiers: phpv.ZAttrAbstract | phpv.ZAttrPublic,
+			Empty:     true,
+		},
+	}
+}
+
+var FilterIteratorClass = &phpobj.ZClass{
+	Name:            "FilterIterator",
+	Extends:         IteratorIteratorClass,
+	Implementations: []*phpobj.ZClass{OuterIterator},
+}
+
+// ============================================================================
+// RecursiveFilterIterator
+// ============================================================================
+
+func initRecursiveFilterIterator() {
+	// Copy methods from FilterIterator
+	RecursiveFilterIteratorClass.Methods = make(map[phpv.ZString]*phpv.ZClassMethod)
+	for k, v := range FilterIteratorClass.Methods {
+		RecursiveFilterIteratorClass.Methods[k] = v
+	}
+	// Add recursive methods
+	RecursiveFilterIteratorClass.Methods["haschildren"] = &phpv.ZClassMethod{
+		Name: "hasChildren",
+		Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+			d := getFilterIteratorData(o)
+			if d == nil {
+				return phpv.ZFalse.ZVal(), nil
+			}
+			return d.inner.CallMethod(ctx, "hasChildren")
+		}),
+	}
+	RecursiveFilterIteratorClass.Methods["getchildren"] = &phpv.ZClassMethod{
+		Name: "getChildren",
+		Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+			d := getFilterIteratorData(o)
+			if d == nil {
+				return phpv.ZNULL.ZVal(), nil
+			}
+			children, err := d.inner.CallMethod(ctx, "getChildren")
+			if err != nil {
+				return nil, err
+			}
+			if children == nil || children.GetType() != phpv.ZtObject {
+				return phpv.ZNULL.ZVal(), nil
+			}
+			childObj := children.Value().(*phpobj.ZObject)
+			result, err := phpobj.NewZObject(ctx, RecursiveFilterIteratorClass, childObj.ZVal())
+			if err != nil {
+				return nil, err
+			}
+			return result.ZVal(), nil
+		}),
+	}
+}
+
+var RecursiveFilterIteratorClass = &phpobj.ZClass{
+	Name:            "RecursiveFilterIterator",
+	Extends:         FilterIteratorClass,
+	Implementations: []*phpobj.ZClass{RecursiveIterator, OuterIterator},
+}
+
+// ============================================================================
+// RecursiveCachingIterator
+// ============================================================================
+
+func initRecursiveCachingIterator() {
+	// Copy methods from CachingIterator
+	RecursiveCachingIteratorClass.Methods = make(map[phpv.ZString]*phpv.ZClassMethod)
+	for k, v := range CachingIteratorClass.Methods {
+		RecursiveCachingIteratorClass.Methods[k] = v
+	}
+	// Add recursive methods
+	RecursiveCachingIteratorClass.Methods["haschildren"] = &phpv.ZClassMethod{
+		Name: "hasChildren",
+		Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+			d := getCachingIteratorData(o)
+			if d == nil || d.currentVal == nil {
+				return phpv.ZFalse.ZVal(), nil
+			}
+			return d.inner.CallMethod(ctx, "hasChildren")
+		}),
+	}
+	RecursiveCachingIteratorClass.Methods["getchildren"] = &phpv.ZClassMethod{
+		Name: "getChildren",
+		Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+			d := getCachingIteratorData(o)
+			if d == nil {
+				return phpv.ZNULL.ZVal(), nil
+			}
+			children, err := d.inner.CallMethod(ctx, "getChildren")
+			if err != nil {
+				return nil, err
+			}
+			if children == nil || children.GetType() != phpv.ZtObject {
+				return phpv.ZNULL.ZVal(), nil
+			}
+			childObj := children.Value().(*phpobj.ZObject)
+			result, err := phpobj.NewZObject(ctx, RecursiveCachingIteratorClass, childObj.ZVal())
+			if err != nil {
+				return nil, err
+			}
+			return result.ZVal(), nil
+		}),
+	}
+}
+
+var RecursiveCachingIteratorClass = &phpobj.ZClass{
+	Name:            "RecursiveCachingIterator",
+	Extends:         CachingIteratorClass,
+	Implementations: []*phpobj.ZClass{RecursiveIterator, Countable},
+}
+
+// ============================================================================
+// RecursiveRegexIterator
+// ============================================================================
+
+func initRecursiveRegexIterator() {
+	// Copy methods from RegexIterator
+	RecursiveRegexIteratorClass.Methods = make(map[phpv.ZString]*phpv.ZClassMethod)
+	for k, v := range RegexIteratorClass.Methods {
+		RecursiveRegexIteratorClass.Methods[k] = v
+	}
+	// Add recursive methods
+	RecursiveRegexIteratorClass.Methods["haschildren"] = &phpv.ZClassMethod{
+		Name: "hasChildren",
+		Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+			d := getRegexIteratorData(o)
+			if d == nil {
+				return phpv.ZFalse.ZVal(), nil
+			}
+			return d.inner.CallMethod(ctx, "hasChildren")
+		}),
+	}
+	RecursiveRegexIteratorClass.Methods["getchildren"] = &phpv.ZClassMethod{
+		Name: "getChildren",
+		Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+			d := getRegexIteratorData(o)
+			if d == nil {
+				return phpv.ZNULL.ZVal(), nil
+			}
+			children, err := d.inner.CallMethod(ctx, "getChildren")
+			if err != nil {
+				return nil, err
+			}
+			return children, nil
+		}),
+	}
+}
+
+var RecursiveRegexIteratorClass = &phpobj.ZClass{
+	Name:            "RecursiveRegexIterator",
+	Extends:         RegexIteratorClass,
+	Implementations: []*phpobj.ZClass{RecursiveIterator},
+}
+
+// ============================================================================
+// RecursiveCallbackFilterIterator
+// ============================================================================
+
+func initRecursiveCallbackFilterIterator() {
+	// Copy methods from CallbackFilterIterator
+	RecursiveCallbackFilterIteratorClass.Methods = make(map[phpv.ZString]*phpv.ZClassMethod)
+	for k, v := range CallbackFilterIteratorClass.Methods {
+		RecursiveCallbackFilterIteratorClass.Methods[k] = v
+	}
+	// Add recursive methods
+	RecursiveCallbackFilterIteratorClass.Methods["haschildren"] = &phpv.ZClassMethod{
+		Name: "hasChildren",
+		Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+			d := getCallbackFilterIteratorData(o)
+			if d == nil {
+				return phpv.ZFalse.ZVal(), nil
+			}
+			return d.inner.CallMethod(ctx, "hasChildren")
+		}),
+	}
+	RecursiveCallbackFilterIteratorClass.Methods["getchildren"] = &phpv.ZClassMethod{
+		Name: "getChildren",
+		Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+			d := getCallbackFilterIteratorData(o)
+			if d == nil {
+				return phpv.ZNULL.ZVal(), nil
+			}
+			children, err := d.inner.CallMethod(ctx, "getChildren")
+			if err != nil {
+				return nil, err
+			}
+			return children, nil
+		}),
+	}
+}
+
+var RecursiveCallbackFilterIteratorClass = &phpobj.ZClass{
+	Name:            "RecursiveCallbackFilterIterator",
+	Extends:         CallbackFilterIteratorClass,
+	Implementations: []*phpobj.ZClass{RecursiveIterator},
+}
+
+// ============================================================================
+// ParentIterator (extends RecursiveFilterIterator, accept() checks hasChildren)
+// ============================================================================
+
+func initParentIterator() {
+	// Copy methods from RecursiveFilterIterator
+	ParentIteratorClass.Methods = make(map[phpv.ZString]*phpv.ZClassMethod)
+	for k, v := range RecursiveFilterIteratorClass.Methods {
+		ParentIteratorClass.Methods[k] = v
+	}
+	// Override accept to return hasChildren()
+	ParentIteratorClass.Methods["accept"] = &phpv.ZClassMethod{
+		Name: "accept",
+		Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+			d := getFilterIteratorData(o)
+			if d == nil {
+				return phpv.ZFalse.ZVal(), nil
+			}
+			return d.inner.CallMethod(ctx, "hasChildren")
+		}),
+	}
+}
+
+var ParentIteratorClass = &phpobj.ZClass{
+	Name:            "ParentIterator",
+	Extends:         RecursiveFilterIteratorClass,
+	Implementations: []*phpobj.ZClass{RecursiveIterator, OuterIterator},
 }

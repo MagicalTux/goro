@@ -101,6 +101,21 @@ func (r *runnableForeach) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 				if r.ref {
 					return nil, phpobj.ThrowError(ctx, phpobj.Error, "An iterator cannot be used with foreach by reference")
 				}
+				// Save iterator state for nested foreach support.
+				// SPL classes like SplDoublyLinkedList, SplFixedArray use
+				// opaque data that includes iterator position. Save it
+				// before rewind so nested loops don't clobber outer state.
+				type iterStateSaver interface {
+					SaveIterState()
+					RestoreIterState()
+				}
+				for _, opaque := range obj.Opaque {
+					if saver, ok := opaque.(iterStateSaver); ok {
+						saver.SaveIterState()
+						defer saver.RestoreIterState()
+						break
+					}
+				}
 				it = &phpObjectIterator{ctx: ctx, obj: obj, started: false}
 			}
 		}

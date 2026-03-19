@@ -424,3 +424,199 @@ func splAutoloadFunctions(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, erro
 
 	return result.ZVal(), nil
 }
+
+// > func int iterator_apply ( Traversable $iterator , callable $callback [, array $args = [] ] )
+func iteratorApply(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) < 2 {
+		return nil, ctx.Errorf("iterator_apply() expects at least 2 arguments, %d given", len(args))
+	}
+	if len(args) > 3 {
+		return nil, ctx.Errorf("iterator_apply() expects at most 3 arguments, %d given", len(args))
+	}
+
+	z := args[0]
+	callback := args[1]
+
+	if z.GetType() != phpv.ZtObject {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("iterator_apply(): Argument #1 ($iterator) must be of type Traversable, %s given", z.GetType()))
+	}
+
+	// Validate callback
+	if callback.GetType() != phpv.ZtString && callback.GetType() != phpv.ZtArray && callback.GetType() != phpv.ZtObject {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("iterator_apply(): Argument #2 ($callback) must be a valid callback, no array or string given"))
+	}
+
+	// Validate optional args parameter
+	var extraArgs []*phpv.ZVal
+	if len(args) > 2 {
+		if args[2].GetType() != phpv.ZtArray && !args[2].IsNull() {
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("iterator_apply(): Argument #3 ($args) must be of type ?array, %s given", args[2].GetType()))
+		}
+		if args[2].GetType() == phpv.ZtArray {
+			arr := args[2].Value().(*phpv.ZArray)
+			for _, v := range arr.Iterate(ctx) {
+				extraArgs = append(extraArgs, v)
+			}
+		}
+	}
+
+	obj, ok := z.Value().(*phpobj.ZObject)
+	if !ok {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("iterator_apply(): Argument #1 ($iterator) must be of type Traversable, %s given", z.GetType()))
+	}
+
+	// Resolve callback
+	cb, err := core.SpawnCallable(ctx, callback)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get the iterator - handle IteratorAggregate
+	iterObj := obj
+	if obj.GetClass().Implements(phpobj.IteratorAggregate) {
+		iterResult, err := obj.CallMethod(ctx, "getIterator")
+		if err != nil {
+			return nil, err
+		}
+		if iterResult != nil && iterResult.GetType() == phpv.ZtObject {
+			if io, ok := iterResult.Value().(*phpobj.ZObject); ok {
+				iterObj = io
+			}
+		}
+	}
+
+	count := 0
+
+	_, err = iterObj.CallMethod(ctx, "rewind")
+	if err != nil {
+		return nil, err
+	}
+
+	for {
+		validResult, err := iterObj.CallMethod(ctx, "valid")
+		if err != nil {
+			return nil, err
+		}
+		if !bool(validResult.AsBool(ctx)) {
+			break
+		}
+
+		result, err := ctx.CallZVal(ctx, cb, extraArgs, nil)
+		if err != nil {
+			return nil, err
+		}
+		count++
+
+		if result == nil || !bool(result.AsBool(ctx)) {
+			break
+		}
+
+		_, err = iterObj.CallMethod(ctx, "next")
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return phpv.ZInt(count).ZVal(), nil
+}
+
+// > func void spl_autoload_call ( string $class )
+func splAutoloadCall(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) < 1 {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "spl_autoload_call() expects exactly 1 argument, 0 given")
+	}
+
+	if args[0].GetType() != phpv.ZtString {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("spl_autoload_call(): Argument #1 ($class) must be of type string, %s given", args[0].GetType()))
+	}
+
+	className := args[0].AsString(ctx)
+
+	// Try to load the class using all registered autoloaders
+	loaders := ctx.Global().GetAutoloadFunctions()
+	for _, loader := range loaders {
+		ctx.CallZVal(ctx, loader, []*phpv.ZVal{className.ZVal()}, nil)
+		// Check if the class now exists
+		if _, err := ctx.Global().GetClass(ctx, className, false); err == nil {
+			return nil, nil
+		}
+	}
+
+	return nil, nil
+}
+
+// splAutoloadExtensionsValue stores the current file extensions for spl_autoload
+var splAutoloadExtensionsValue = ".php,.inc"
+
+// > func string spl_autoload_extensions ( [string $file_extensions] )
+func splAutoloadExtensions(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) > 0 {
+		splAutoloadExtensionsValue = string(args[0].AsString(ctx))
+	}
+	return phpv.ZString(splAutoloadExtensionsValue).ZVal(), nil
+}
+
+// > func array spl_classes ( void )
+func splClasses(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	result := phpv.NewZArray()
+
+	// Return a list of all SPL classes
+	classes := []string{
+		"AppendIterator",
+		"ArrayIterator",
+		"ArrayObject",
+		"BadFunctionCallException",
+		"BadMethodCallException",
+		"CachingIterator",
+		"CallbackFilterIterator",
+		"DirectoryIterator",
+		"DomainException",
+		"EmptyIterator",
+		"FilesystemIterator",
+		"FilterIterator",
+		"GlobIterator",
+		"InfiniteIterator",
+		"InvalidArgumentException",
+		"IteratorIterator",
+		"LengthException",
+		"LimitIterator",
+		"LogicException",
+		"MultipleIterator",
+		"NoRewindIterator",
+		"OutOfBoundsException",
+		"OutOfRangeException",
+		"OverflowException",
+		"ParentIterator",
+		"RangeException",
+		"RecursiveArrayIterator",
+		"RecursiveCachingIterator",
+		"RecursiveCallbackFilterIterator",
+		"RecursiveDirectoryIterator",
+		"RecursiveFilterIterator",
+		"RecursiveIteratorIterator",
+		"RecursiveRegexIterator",
+		"RecursiveTreeIterator",
+		"RegexIterator",
+		"RuntimeException",
+		"SplDoublyLinkedList",
+		"SplFileInfo",
+		"SplFileObject",
+		"SplFixedArray",
+		"SplHeap",
+		"SplMaxHeap",
+		"SplMinHeap",
+		"SplObjectStorage",
+		"SplPriorityQueue",
+		"SplQueue",
+		"SplStack",
+		"SplTempFileObject",
+		"UnderflowException",
+		"UnexpectedValueException",
+	}
+
+	for _, name := range classes {
+		result.OffsetSet(ctx, phpv.ZString(name), phpv.ZString(name).ZVal())
+	}
+
+	return result.ZVal(), nil
+}
