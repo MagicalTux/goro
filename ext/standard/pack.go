@@ -318,7 +318,9 @@ func fncPack(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				buf.WriteString(s)
 				buf.WriteByte(0)
 			} else {
-				if len(s) >= repeat {
+				if repeat <= 0 {
+					// zero-length Z format: no output
+				} else if len(s) >= repeat {
 					buf.WriteString(s[:repeat-1])
 					buf.WriteByte(0)
 				} else {

@@ -5,6 +5,7 @@ import (
 
 	"github.com/MagicalTux/goro/core"
 	"github.com/MagicalTux/goro/core/logopt"
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -18,23 +19,23 @@ var (
 	M_LOG2E    = phpv.ZFloat(math.Log2E)  // log_2 e
 	M_LOG10E   = phpv.ZFloat(math.Log10E) // log_10 e
 	M_LN2      = phpv.ZFloat(math.Ln2)    // log_e 2
-	M_LN10     = phpv.ZFloat(2.302585092994)
+	M_LN10     = phpv.ZFloat(math.Ln10)
 	M_PI_2     = phpv.ZFloat(math.Pi / 2)
 	M_PI_4     = phpv.ZFloat(math.Pi / 4)
 	M_1_PI     = phpv.ZFloat(1 / math.Pi)
 	M_2_PI     = phpv.ZFloat(2 / math.Pi)
-	M_SQRTPI   = phpv.ZFloat(math.Sqrt(math.Pi)) // PHP 5.2.0
+	M_SQRTPI   = phpv.ZFloat(1.7724538509055160272981674833411) // PHP 5.2.0
 	M_2_SQRTPI = phpv.ZFloat(2 / math.Sqrt(math.Pi))
 	M_SQRT2    = phpv.ZFloat(math.Sqrt(2))
 	M_SQRT3    = phpv.ZFloat(math.Sqrt(3)) // PHP 5.2.0
-	M_SQRT1_2  = phpv.ZFloat(1 / math.Sqrt(2))
+	M_SQRT1_2  = phpv.ZFloat(0.70710678118654752440084436210485)
 	M_LNPI     = phpv.ZFloat(math.Log(math.Pi))
 	M_EULER    = phpv.ZFloat(0.57721566490153286061) // Euler constant
 
-	PHP_ROUND_HALF_UP   = phpv.ZInt(1) // Round halves up
-	PHP_ROUND_HALF_DOWN = phpv.ZInt(2) // Round halves down
-	PHP_ROUND_HALF_EVEN = phpv.ZInt(3) // Round halves to even numbers
-	PHP_ROUND_HALF_ODD  = phpv.ZInt(4) // Round halves to odd numbers
+	PHP_ROUND_HALF_UP   = phpv.ZInt(RoundingModeHalfAwayFromZero) // Round halves up
+	PHP_ROUND_HALF_DOWN = phpv.ZInt(RoundingModeHalfTowardsZero) // Round halves down
+	PHP_ROUND_HALF_EVEN = phpv.ZInt(RoundingModeHalfEven)        // Round halves to even numbers
+	PHP_ROUND_HALF_ODD  = phpv.ZInt(RoundingModeHalfOdd)         // Round halves to odd numbers
 
 	M_PHI = phpv.ZFloat(math.Phi) // specific to this implementation of PHP
 )
@@ -104,27 +105,77 @@ func mathFloor(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZFloat(math.Floor(i)).ZVal(), nil
 }
 
+// resolveRoundingMode extracts the integer rounding mode from args.
+// It handles both integer constants (PHP_ROUND_HALF_UP etc) and
+// RoundingMode enum objects.
+func resolveRoundingMode(ctx phpv.Context, modeVal *phpv.ZVal) (phpv.ZInt, error) {
+	if modeVal == nil {
+		return phpv.ZInt(RoundingModeHalfAwayFromZero), nil
+	}
+
+	// Check if it's a RoundingMode enum object
+	if modeVal.GetType() == phpv.ZtObject {
+		obj, ok := modeVal.Value().(*phpobj.ZObject)
+		if ok && obj.GetClass() == RoundingModeEnum {
+			backingVal := obj.HashTable().GetString("value")
+			if backingVal != nil {
+				return backingVal.AsInt(ctx), nil
+			}
+		}
+	}
+
+	// Otherwise treat as integer
+	return modeVal.AsInt(ctx), nil
+}
+
 // > func number round ( float $val [, int $precision = 0 [, int $mode = PHP_ROUND_HALF_UP ]] )
 func mathRound(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var val *phpv.ZVal
 	var precisionArg *phpv.ZInt
-	var modeArg *phpv.ZInt
-	_, err := core.Expand(ctx, args, &val, &precisionArg, &modeArg)
+	_, err := core.Expand(ctx, args, &val, &precisionArg)
 	if err != nil {
 		return nil, ctx.FuncError(err)
 	}
 
 	precision := core.Deref(precisionArg, 0)
-	mode := core.Deref(modeArg, PHP_ROUND_HALF_UP)
+
+	// Get mode from 3rd argument (if present)
+	var mode phpv.ZInt
+	if len(args) >= 3 && args[2] != nil {
+		mode, err = resolveRoundingMode(ctx, args[2])
+		if err != nil {
+			return nil, ctx.FuncError(err)
+		}
+	} else {
+		mode = phpv.ZInt(RoundingModeHalfAwayFromZero)
+	}
+
+	// Validate mode
+	if mode < 1 || mode > 8 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "round(): Argument #3 ($mode) must be a valid rounding mode (RoundingMode::*)")
+	}
 
 	val, err = val.AsNumeric(ctx)
 	if err != nil {
 		return nil, ctx.FuncError(err)
 	}
 
-	shift := float64(1)
 	n := float64(val.AsFloat(ctx))
 
+	// Handle non-half rounding modes (ceil/floor/truncate/away-from-zero)
+	switch phpv.ZInt(mode) {
+	case phpv.ZInt(RoundingModePositiveInfinity):
+		return phpv.ZFloat(roundWithPrecisionCeil(n, int(precision))).ZVal(), nil
+	case phpv.ZInt(RoundingModeNegativeInfinity):
+		return phpv.ZFloat(roundWithPrecisionFloor(n, int(precision))).ZVal(), nil
+	case phpv.ZInt(RoundingModeTowardsZero):
+		return phpv.ZFloat(roundWithPrecisionTrunc(n, int(precision))).ZVal(), nil
+	case phpv.ZInt(RoundingModeAwayFromZero):
+		return phpv.ZFloat(roundWithPrecisionAwayFromZero(n, int(precision))).ZVal(), nil
+	}
+
+	// Half-rounding modes
+	shift := float64(1)
 	if precision != 0 {
 		shift = math.Pow10(int(precision))
 		n *= shift
@@ -142,17 +193,16 @@ func mathRound(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	case d > 0.5:
 		roundUp = true
 	default:
-		switch mode {
-		case PHP_ROUND_HALF_UP:
+		switch phpv.ZInt(mode) {
+		case phpv.ZInt(RoundingModeHalfAwayFromZero):
 			roundUp = true
-		case PHP_ROUND_HALF_DOWN:
+		case phpv.ZInt(RoundingModeHalfTowardsZero):
 			roundUp = false
-
-		case PHP_ROUND_HALF_ODD:
+		case phpv.ZInt(RoundingModeHalfOdd):
 			if !odd {
 				roundUp = true
 			}
-		case PHP_ROUND_HALF_EVEN:
+		case phpv.ZInt(RoundingModeHalfEven):
 			if odd {
 				roundUp = true
 			}
@@ -168,6 +218,51 @@ func mathRound(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	n /= shift
 
 	return phpv.ZFloat(n).ZVal(), nil
+}
+
+// roundWithPrecisionCeil rounds towards positive infinity with given precision
+func roundWithPrecisionCeil(n float64, precision int) float64 {
+	if precision == 0 {
+		return math.Ceil(n)
+	}
+	shift := math.Pow10(precision)
+	return math.Ceil(n*shift) / shift
+}
+
+// roundWithPrecisionFloor rounds towards negative infinity with given precision
+func roundWithPrecisionFloor(n float64, precision int) float64 {
+	if precision == 0 {
+		return math.Floor(n)
+	}
+	shift := math.Pow10(precision)
+	return math.Floor(n*shift) / shift
+}
+
+// roundWithPrecisionTrunc rounds towards zero with given precision
+func roundWithPrecisionTrunc(n float64, precision int) float64 {
+	if precision == 0 {
+		return math.Trunc(n)
+	}
+	shift := math.Pow10(precision)
+	return math.Trunc(n*shift) / shift
+}
+
+// roundWithPrecisionAwayFromZero rounds away from zero with given precision
+func roundWithPrecisionAwayFromZero(n float64, precision int) float64 {
+	if precision == 0 {
+		if n >= 0 {
+			return math.Ceil(n)
+		}
+		return math.Floor(n)
+	}
+	shift := math.Pow10(precision)
+	v := n * shift
+	if v >= 0 {
+		v = math.Ceil(v)
+	} else {
+		v = math.Floor(v)
+	}
+	return v / shift
 }
 
 // > func float acos ( float $arg )
@@ -568,9 +663,12 @@ func mathPow(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	baseType := baseArg.GetType()
 	extType := expArg.GetType()
-
 	base := float64(baseArg.AsFloat(ctx))
 	exp := float64(expArg.AsFloat(ctx))
+	// PHP 8.4: pow(0, negative) is deprecated
+	if base == 0 && exp < 0 {
+		ctx.Deprecated("Power of base 0 and negative exponent is deprecated")
+	}
 	result := math.Pow(base, exp)
 
 	switch {
@@ -650,8 +748,27 @@ func mathIntDiv(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, ctx.FuncError(err)
 	}
 
+	if divisor == 0 {
+		return nil, phpobj.ThrowError(ctx, phpobj.DivisionByZeroError, "Division by zero")
+	}
+	if dividend == math.MinInt64 && divisor == -1 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ArithmeticError, "Division of PHP_INT_MIN by -1 is not an integer")
+	}
+
 	result := dividend / divisor
 	return phpv.ZInt(result).ZVal(), nil
+}
+
+// > func float fpow ( float $base , float $exponent )
+func mathFpow(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var base, exp phpv.ZFloat
+	_, err := core.Expand(ctx, args, &base, &exp)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	result := math.Pow(float64(base), float64(exp))
+	return phpv.ZFloat(result).ZVal(), nil
 }
 
 // > func float fdiv ( float $dividend , float $divisor )

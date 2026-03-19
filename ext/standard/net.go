@@ -74,7 +74,7 @@ func fncHttpResponseCode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error
 		}
 		code := h.StatusCode
 		if code == 0 {
-			code = 200
+			return phpv.ZFalse.ZVal(), nil
 		}
 		return phpv.ZInt(code).ZVal(), nil
 	}
@@ -84,15 +84,20 @@ func fncHttpResponseCode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error
 		return phpv.ZFalse.ZVal(), nil
 	}
 
+	// Check if headers are already sent
+	if h.Sent {
+		return phpv.ZFalse.ZVal(), ctx.Warn("http_response_code(): Cannot set response code - headers already sent")
+	}
+
 	code := int(*responseCode)
 	if code < 100 || code > 599 {
 		return nil, fmt.Errorf("http_response_code(): Invalid HTTP response code %d", code)
 	}
 
 	oldCode := h.StatusCode
-	if oldCode == 0 {
-		oldCode = 200
-	}
 	h.StatusCode = code
+	if oldCode == 0 {
+		return phpv.ZTrue.ZVal(), nil
+	}
 	return phpv.ZInt(oldCode).ZVal(), nil
 }

@@ -1,0 +1,8 @@
+<?php
+$input = stream_get_contents(STDIN);
+
+if ($input) {
+    fwrite(STDOUT, $input);
+    fwrite(STDERR, $input);
+}
+?>

@@ -78,7 +78,11 @@ func doVarExport(ctx phpv.Context, w io.Writer, z *phpv.ZVal, linePfx string, re
 		p := uintptr(unsafe.Pointer(z))
 		recurs[p] = true
 
-		fmt.Fprintf(w, "array (\n")
+		if linePfx != "" {
+			fmt.Fprintf(w, "\n%sarray (\n", linePfx)
+		} else {
+			fmt.Fprintf(w, "array (\n")
+		}
 		localPfx := linePfx + "  "
 		it := z.NewIterator()
 		for {

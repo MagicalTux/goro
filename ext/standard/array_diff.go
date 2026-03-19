@@ -46,6 +46,11 @@ func arrayDiffNamed(ctx phpv.Context, funcName string, argOffset int, array *php
 
 // > func array array_diff ( array $array1 , array $array2 [, array $... ] )
 func fncArrayDiff(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) >= 1 && args[0].GetType() != phpv.ZtArray {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("array_diff(): Argument #1 ($array) must be of type array, %s given", args[0].GetType().TypeName()))
+	}
+
 	var array *phpv.ZArray
 	_, err := core.Expand(ctx, args, &array)
 	if err != nil {
@@ -319,6 +324,11 @@ func fncArrayDiffUAssoc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 
 // > func array array_diff_key ( array $array1 , array $array2 [, array $... ] )
 func fncArrayDiffKey(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) >= 1 && args[0].GetType() != phpv.ZtArray {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("array_diff_key(): Argument #1 ($array) must be of type array, %s given", args[0].GetType().TypeName()))
+	}
+
 	var array *phpv.ZArray
 	_, err := core.Expand(ctx, args, &array)
 	if err != nil {
@@ -338,6 +348,11 @@ func fncArrayDiffKey(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 // > func array array_diff_assoc ( array $array1 , array $array2 [, array $... ] )
 func fncArrayDiffAssoc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) >= 1 && args[0].GetType() != phpv.ZtArray {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("array_diff_assoc(): Argument #1 ($array) must be of type array, %s given", args[0].GetType().TypeName()))
+	}
+
 	var array *phpv.ZArray
 	_, err := core.Expand(ctx, args, &array)
 	if err != nil {

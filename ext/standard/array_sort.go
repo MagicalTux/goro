@@ -400,8 +400,8 @@ func (zv zSortComparer) regular(i, j int) bool {
 }
 
 func (zv zSortComparer) numerically(i, j int) bool {
-	a := zv.values[i].item.AsInt(zv.ctx)
-	b := zv.values[j].item.AsInt(zv.ctx)
+	a := float64(zv.values[i].item.AsFloat(zv.ctx))
+	b := float64(zv.values[j].item.AsFloat(zv.ctx))
 	return a < b
 }
 

@@ -1,12 +1,9 @@
 package standard
 
 import (
-	"bytes"
 	"fmt"
-	"io"
 	"math"
 	"math/rand/v2"
-	"regexp"
 	"slices"
 	"sort"
 	"strconv"
@@ -113,6 +110,14 @@ func fncArrayCombine(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 const arrayMergeMaxElements = 1<<31 - 1 // ~2 billion, matches PHP's HT_MAX_SIZE
 
 func fncArrayMerge(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	// Validate all arguments are arrays first
+	for i, arg := range args {
+		if arg.GetType() != phpv.ZtArray {
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+				fmt.Sprintf("array_merge(): Argument #%d must be of type array, %s given", i+1, arg.GetType().TypeName()))
+		}
+	}
+
 	var a *phpv.ZArray
 	_, err := core.Expand(ctx, args, &a)
 	if err != nil {
@@ -626,11 +631,19 @@ func fncRange(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
+	// Convert numeric strings to their numeric equivalents.
+	// PHP's range() treats "2003" as int 2003 and "1.5" as float 1.5.
+	start = rangeCoerceNumericString(start)
+	end = rangeCoerceNumericString(end)
+
 	// Determine if we should use the float path:
 	// if any of start, end, or step is a float, use float arithmetic.
 	useFloat := start.GetType() == phpv.ZtFloat || end.GetType() == phpv.ZtFloat
-	if stepArgVal.HasArg() && stepArgVal.Get().GetType() == phpv.ZtFloat {
-		useFloat = true
+	if stepArgVal.HasArg() {
+		coerced := rangeCoerceNumericString(stepArgVal.Get())
+		if coerced.GetType() == phpv.ZtFloat {
+			useFloat = true
+		}
 	}
 
 	// Check for INF/NaN in float arguments
@@ -804,6 +817,22 @@ func rangeFormatFloat(f float64) string {
 	return "NAN"
 }
 
+// rangeCoerceNumericString converts a ZVal that is a numeric string into
+// its numeric equivalent (int or float). Non-string or non-numeric values
+// are returned as-is. This mirrors PHP's range() behavior where "2003"
+// is treated as int 2003 and "1.5" as float 1.5.
+func rangeCoerceNumericString(v *phpv.ZVal) *phpv.ZVal {
+	if v.GetType() != phpv.ZtString {
+		return v
+	}
+	s := phpv.ZString(v.String())
+	numVal, err := s.AsNumeric()
+	if err != nil {
+		return v
+	}
+	return numVal.ZVal()
+}
+
 // > func mixed array_shift ( array &$array )
 func fncArrayShift(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) > 0 && args[0].GetType() != phpv.ZtArray {
@@ -866,7 +895,6 @@ func fncArrayPush(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // > func mixed array_pop ( array &$array )
 func fncArrayPop(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) > 0 && args[0].GetType() != phpv.ZtArray {
-
 		return phpv.ZNULL.ZVal(), ctx.Warn("expects parameter 1 to be array, %s given", args[0].GetType())
 	}
 
@@ -876,20 +904,28 @@ func fncArrayPop(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, ctx.FuncError(err)
 	}
 
+	arr := array.Get()
+	if arr.Count(ctx) == 0 {
+		return phpv.ZNULL.ZVal(), nil
+	}
+
 	var key *phpv.ZVal
-	for key = range array.Get().Iterate(ctx) {
+	for key = range arr.Iterate(ctx) {
 		// iterate until last key
 	}
 
-	val, err := array.Get().OffsetGet(ctx, key)
+	val, err := arr.OffsetGet(ctx, key)
 	if err != nil {
 		return nil, ctx.Error(err)
 	}
 
-	err = array.Get().OffsetUnset(ctx, key)
+	err = arr.OffsetUnset(ctx, key)
 	if err != nil {
 		return nil, ctx.Error(err)
 	}
+
+	// Reset the next integer key counter after pop, matching PHP behavior
+	arr.HashTable().RecalcNextIntKey()
 
 	return val.ZVal(), nil
 }
@@ -1289,8 +1325,9 @@ func fncArrayChunk(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, ctx.FuncError(err)
 	}
 
-	if size == 0 {
-		return phpv.ZNULL.ZVal(), ctx.Warn("Size parameter expected to be greater than 0")
+	if size <= 0 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+			"array_chunk(): Argument #2 ($length) must be greater than 0")
 	}
 
 	preserveKeys := core.Deref(preserveKeysArg, false)
@@ -1578,6 +1615,14 @@ func fncArrayKeyLast(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 // > func array array_merge_recursive ( array $array1 [, array $... ] )
 func fncArrayMergeRecursive(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	// Validate all arguments are arrays first
+	for i, arg := range args {
+		if arg.GetType() != phpv.ZtArray {
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+				fmt.Sprintf("array_merge_recursive(): Argument #%d must be of type array, %s given", i+1, arg.GetType().TypeName()))
+		}
+	}
+
 	var array *phpv.ZArray
 	_, err := core.Expand(ctx, args, &array)
 	if err != nil {
@@ -1905,69 +1950,118 @@ func fncArrayExtract(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	parentCtx := ctx.Parent(1)
 	flags := core.Deref(flagsArg, EXTR_OVERWRITE)
-	prefix := core.Deref(prefixArgs, "")
+	prefix := string(core.Deref(prefixArgs, ""))
 
-	switch flags {
+	// Strip EXTR_REFS flag
+	baseFlags := flags & ^EXTR_REFS
+
+	// Validate flags
+	switch baseFlags {
+	case EXTR_OVERWRITE, EXTR_SKIP, EXTR_PREFIX_SAME, EXTR_PREFIX_ALL,
+		EXTR_PREFIX_INVALID, EXTR_PREFIX_IF_EXISTS, EXTR_IF_EXISTS:
+		// valid
+	default:
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+			"extract(): Argument #2 ($flags) must be a valid extract type")
+	}
+
+	// Prefix is required for certain modes - but only if it was not provided at all
+	switch baseFlags {
 	case EXTR_PREFIX_SAME, EXTR_PREFIX_ALL, EXTR_PREFIX_INVALID, EXTR_PREFIX_IF_EXISTS:
-		if prefix == "" {
-			return nil, ctx.FuncErrorf("specified extract type requires the prefix parameter")
+		if prefixArgs == nil {
+			return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+				"extract(): Argument #3 ($prefix) is required when using this extract type")
 		}
 	}
 
-	// TODO: handle EXTR_REFS
-	flags &= ^EXTR_REFS
+	count := phpv.ZInt(0)
 
 	for k, v := range array.Get().Iterate(ctx) {
-		alreadyDefined, _ := parentCtx.OffsetExists(ctx, k)
-
-		var varName phpv.ZString = k.AsString(ctx)
-
-		if !containsInvalidChar(string(varName)) {
-			continue
-		}
+		varName := string(k.AsString(ctx))
 
 		invalidVarName := k.GetType() == phpv.ZtInt
-		if !invalidVarName && !regexp.MustCompile(`^[a-zA-Z_]`).MatchString(string(varName)) {
+		if !invalidVarName && !extractIsValidVarName(varName) {
 			invalidVarName = true
 		}
 
-		switch flags {
+		switch baseFlags {
+		case EXTR_OVERWRITE, EXTR_SKIP, EXTR_IF_EXISTS:
+			if invalidVarName {
+				continue
+			}
+		}
+
+		alreadyDefined, _ := parentCtx.OffsetExists(ctx, phpv.ZString(varName).ZVal())
+
+		var targetName string
+		doSet := false
+
+		switch baseFlags {
 		case EXTR_OVERWRITE:
-			parentCtx.OffsetSet(parentCtx, k, v)
+			targetName = varName
+			doSet = true
 		case EXTR_SKIP:
 			if !alreadyDefined {
-				parentCtx.OffsetSet(parentCtx, k, v)
+				targetName = varName
+				doSet = true
 			}
 		case EXTR_PREFIX_SAME:
 			if alreadyDefined {
-				prefixed := prefix + "_" + k.AsString(ctx)
-				parentCtx.OffsetSet(parentCtx, prefixed, v)
-			} else {
-				parentCtx.OffsetSet(parentCtx, varName, v)
+				targetName = prefix + "_" + varName
+				doSet = true
+			} else if !invalidVarName {
+				targetName = varName
+				doSet = true
 			}
 		case EXTR_PREFIX_ALL:
-			prefixed := prefix + "_" + k.AsString(ctx)
-			parentCtx.OffsetSet(parentCtx, prefixed, v)
+			targetName = prefix + "_" + varName
+			doSet = true
 		case EXTR_PREFIX_INVALID:
 			if invalidVarName {
-				prefixed := prefix + "_" + k.AsString(ctx)
-				parentCtx.OffsetSet(parentCtx, prefixed, v)
+				targetName = prefix + "_" + varName
+				doSet = true
 			} else {
-				parentCtx.OffsetSet(parentCtx, varName, v)
+				targetName = varName
+				doSet = true
 			}
 		case EXTR_IF_EXISTS:
 			if alreadyDefined {
-				parentCtx.OffsetSet(parentCtx, k, v)
+				targetName = varName
+				doSet = true
 			}
 		case EXTR_PREFIX_IF_EXISTS:
 			if alreadyDefined {
-				prefixed := prefix + "_" + varName
-				parentCtx.OffsetSet(parentCtx, prefixed, v)
+				targetName = prefix + "_" + varName
+				doSet = true
 			}
+		}
+
+		if doSet && extractIsValidVarName(targetName) {
+			parentCtx.OffsetSet(parentCtx, phpv.ZString(targetName).ZVal(), v)
+			count++
 		}
 	}
 
-	return nil, nil
+	return count.ZVal(), nil
+}
+
+func extractIsValidVarName(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if i == 0 {
+			if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' || c >= 0x80) {
+				return false
+			}
+		} else {
+			if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c >= 0x80) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 const compactMaxDepth = 32
@@ -1979,8 +2073,8 @@ func fncArrayCompact(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 	parentCtx := ctx.Parent(1)
 	result := phpv.NewZArray()
-	for _, v := range args {
-		err := arrayRecursiveCompact(parentCtx, result, v, 0)
+	for i, v := range args {
+		err := arrayRecursiveCompact(ctx, parentCtx, result, v, 0, i+1)
 		if err != nil {
 			return nil, err
 		}
@@ -1988,7 +2082,7 @@ func fncArrayCompact(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return result.ZVal(), nil
 }
 
-func arrayRecursiveCompact(ctx phpv.Context, result *phpv.ZArray, varName *phpv.ZVal, depth int) error {
+func arrayRecursiveCompact(funcCtx phpv.Context, ctx phpv.Context, result *phpv.ZArray, varName *phpv.ZVal, depth int, argNum int) error {
 	switch varName.GetType() {
 	case phpv.ZtString:
 		if ok, _ := ctx.OffsetExists(ctx, varName); ok {
@@ -1998,7 +2092,7 @@ func arrayRecursiveCompact(ctx phpv.Context, result *phpv.ZArray, varName *phpv.
 			}
 			result.OffsetSet(ctx, varName, value)
 		} else {
-			ctx.Warn("Undefined variable $%s", varName)
+			funcCtx.Warn("Undefined variable $%s", varName)
 		}
 	case phpv.ZtArray:
 		if depth >= compactMaxDepth {
@@ -2006,45 +2100,19 @@ func arrayRecursiveCompact(ctx phpv.Context, result *phpv.ZArray, varName *phpv.
 		}
 		arr := varName.AsArray(ctx)
 		for _, varName := range arr.Iterate(ctx) {
-			err := arrayRecursiveCompact(ctx, result, varName, depth+1)
+			err := arrayRecursiveCompact(funcCtx, ctx, result, varName, depth+1, argNum)
 			if err != nil {
 				return err
 			}
 		}
 	default:
-		// ignore other types
+		// PHP 8+ warns about non-string, non-array arguments
+		funcCtx.Warn("Argument #%d must be string or array of strings, %s given", argNum, varName.GetType().TypeName())
 	}
 
 	return nil
 }
 
-func containsInvalidChar(s string) bool {
-	if s == "" {
-		return false
-	}
-
-	buf := bytes.NewBufferString(s)
-
-	for {
-		c, err := buf.ReadByte()
-		if err == io.EOF {
-			break
-		}
-		switch {
-		case
-			'a' <= c && c <= 'z',
-			'A' <= c && c <= 'Z',
-			'0' <= c && c <= '9',
-			c == '_',
-			0x80 <= c:
-
-		default:
-			return false
-		}
-	}
-
-	return true
-}
 
 // > func mixed shuffle ( array &$array )
 func fncArrayShuffle(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {

@@ -179,6 +179,11 @@ func stdFuncSleep(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
+	if t < 0 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+			fmt.Sprintf("sleep(): Argument #1 ($seconds) must be greater than or equal to 0"))
+	}
+
 	time.Sleep(time.Duration(t) * time.Second)
 
 	return phpv.ZInt(0).ZVal(), nil
@@ -190,6 +195,11 @@ func stdFuncUsleep(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	_, err := core.Expand(ctx, args, &t)
 	if err != nil {
 		return nil, err
+	}
+
+	if t < 0 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+			fmt.Sprintf("usleep(): Argument #1 ($microseconds) must be greater than or equal to 0"))
 	}
 
 	time.Sleep(time.Duration(t) * time.Microsecond)
@@ -274,12 +284,32 @@ func registerShutdownFunction(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, 
 
 // > func bool register_tick_function ( callable $function [, mixed $... ] )
 func fncRegisterTickFunction(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	// Tick functions are not fully implemented in goro, but we accept the call
-	// to avoid "undefined function" errors.
+	if len(args) < 1 {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			"register_tick_function() expects at least 1 argument, 0 given")
+	}
+	// Validate the callback
+	var callback phpv.Callable
+	_, err := core.Expand(ctx, args, &callback)
+	if err != nil {
+		return nil, err
+	}
+	// Tick functions are not fully implemented in goro, but we validate the callback
 	return phpv.ZTrue.ZVal(), nil
 }
 
 // > func void unregister_tick_function ( callable $function )
 func fncUnregisterTickFunction(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) < 1 {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			"unregister_tick_function() expects exactly 1 argument, 0 given")
+	}
+	// Validate the callback
+	var callback phpv.Callable
+	_, err := core.Expand(ctx, args, &callback)
+	if err != nil {
+		return nil, err
+	}
+	_ = callback
 	return nil, nil
 }

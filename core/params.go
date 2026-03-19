@@ -63,6 +63,10 @@ func (or *Optional[T]) HasArg() bool {
 	return or.value != nil
 }
 
+func (o *Optional[T]) Set(v T) {
+	o.value = &v
+}
+
 type referable interface {
 	refParamValue() any
 	setName(name phpv.ZString)

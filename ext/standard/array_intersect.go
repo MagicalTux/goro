@@ -52,6 +52,11 @@ func expandArrayArgsNamed(ctx phpv.Context, funcName string, argOffset int, args
 
 // > func array array_intersect ( array $array2 , array $array2 [, array $... ] )
 func fncArrayIntersect(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) >= 1 && args[0].GetType() != phpv.ZtArray {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("array_intersect(): Argument #1 ($array) must be of type array, %s given", args[0].GetType().TypeName()))
+	}
+
 	var array *phpv.ZArray
 	_, err := core.Expand(ctx, args, &array)
 	if err != nil {
@@ -225,6 +230,11 @@ func fncArrayUIntersectUAssoc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, 
 
 // > func array array_intersect_assoc ( array $array1 , array $array2 [, array $... ] )
 func fncArrayIntersectAssoc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) >= 1 && args[0].GetType() != phpv.ZtArray {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("array_intersect_assoc(): Argument #1 ($array) must be of type array, %s given", args[0].GetType().TypeName()))
+	}
+
 	var array *phpv.ZArray
 	_, err := core.Expand(ctx, args, &array)
 	if err != nil {
@@ -313,6 +323,11 @@ func fncArrayIntersectUAssoc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, e
 
 // > func array array_intersect_key ( array $array1 , array $array2 [, array $... ] )
 func fncArrayIntersectKey(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) >= 1 && args[0].GetType() != phpv.ZtArray {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("array_intersect_key(): Argument #1 ($array) must be of type array, %s given", args[0].GetType().TypeName()))
+	}
+
 	var array *phpv.ZArray
 	_, err := core.Expand(ctx, args, &array)
 	if err != nil {

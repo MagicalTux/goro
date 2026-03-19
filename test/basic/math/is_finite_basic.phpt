@@ -22,7 +22,9 @@ for ($i = 0; $i < count($values); $i++) {
 	var_dump($res);
 }
 ?>
---EXPECT--
+--EXPECTF--
+
+Deprecated: pow(): Power of base 0 and negative exponent is deprecated in %s on line %d
 bool(true)
 bool(true)
 bool(true)

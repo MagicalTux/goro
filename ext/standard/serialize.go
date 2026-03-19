@@ -3,6 +3,7 @@ package standard
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -173,31 +174,14 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seenArray
 			return result, nil
 		}
 
-		// Check for Serializable interface (deprecated in PHP 8.1+)
-		if obj.GetClass().Implements(phpobj.Serializable) {
-			if method, ok := obj.GetClass().GetMethod(phpv.ZString("serialize")); ok {
-				val, err := ctx.Call(ctx, method.Method, nil, obj)
-				if err != nil {
-					return "", err
-				}
-				if val.IsNull() {
-					return "N;", nil
-				}
-				if val.GetType() != phpv.ZtString {
-					return "", phpobj.ThrowError(ctx, phpobj.Exception, fmt.Sprintf("%s::serialize() must return a string or NULL", obj.GetClass().GetName()))
-				}
-				data := val.AsString(ctx)
-				className := string(obj.GetClass().GetName())
-				result = fmt.Sprintf(`C:%d:"%s":%d:{%s}`, len(className), className, len(data), string(data))
-				return result, nil
-			}
-		}
-
-		// Check for __serialize() method (PHP 7.4+, preferred over __sleep)
+		// Check for __serialize() method (PHP 7.4+, preferred over Serializable and __sleep)
 		if method, ok := obj.GetClass().GetMethod(phpv.ZString("__serialize")); ok {
 			val, err := ctx.Call(ctx, method.Method, nil, obj)
 			if err != nil {
 				return "", err
+			}
+			if val.GetType() != phpv.ZtArray {
+				return "", phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("%s::__serialize() must return an array", obj.GetClass().GetName()))
 			}
 			arr := val.AsArray(ctx)
 			if arr == nil {
@@ -230,13 +214,39 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seenArray
 			return buf.String(), nil
 		}
 
+		// Check for Serializable interface (deprecated in PHP 8.1+, after __serialize)
+		if obj.GetClass().Implements(phpobj.Serializable) {
+			if method, ok := obj.GetClass().GetMethod(phpv.ZString("serialize")); ok {
+				val, err := ctx.Call(ctx, method.Method, nil, obj)
+				if err != nil {
+					return "", err
+				}
+				if val.IsNull() {
+					return "N;", nil
+				}
+				if val.GetType() != phpv.ZtString {
+					return "", phpobj.ThrowError(ctx, phpobj.Exception, fmt.Sprintf("%s::serialize() must return a string or NULL", obj.GetClass().GetName()))
+				}
+				data := val.AsString(ctx)
+				className := string(obj.GetClass().GetName())
+				result = fmt.Sprintf(`C:%d:"%s":%d:{%s}`, len(className), className, len(data), string(data))
+				return result, nil
+			}
+		}
+
 		var props *phpv.ZArray
 		if method, ok := obj.GetClass().GetMethod(phpv.ZString("__sleep")); ok {
 			val, err := ctx.Call(ctx, method.Method, nil, obj)
 			if err != nil {
 				return "", err
 			}
-			props = val.AsArray(ctx)
+			if val.GetType() == phpv.ZtArray {
+				props = val.AsArray(ctx)
+			} else {
+				// __sleep must return an array; if not, serialize returns NULL
+				ctx.Notice("serialize(): __sleep should return an array only containing the names of instance-variables to serialize")
+				return "N;", nil
+			}
 		}
 
 		var buf bytes.Buffer
@@ -391,12 +401,20 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 			return nil, offset, readError
 		}
 		s := str[i:semicIndex]
-		p := ctx.GetConfig("serialize_precision", phpv.ZInt(14).ZVal()).AsInt(ctx)
-		n, err := strconv.ParseFloat(s, int(p))
+		// Handle special float values
+		switch s {
+		case "INF":
+			return phpv.ZFloat(math.Inf(1)).ZVal(), semicIndex + 1, nil
+		case "-INF":
+			return phpv.ZFloat(math.Inf(-1)).ZVal(), semicIndex + 1, nil
+		case "NAN":
+			return phpv.ZFloat(math.NaN()).ZVal(), semicIndex + 1, nil
+		}
+		n, err := strconv.ParseFloat(s, 64)
 		if err != nil {
 			return nil, offset, readError
 		}
-		return phpv.ZFloat(n).ZVal(), semicIndex, nil
+		return phpv.ZFloat(n).ZVal(), semicIndex + 1, nil
 	case 's':
 		// s:3:"foo";
 		//   ^1  ^2
@@ -688,13 +706,6 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 				return nil, offset, err
 			}
 		} else {
-			if method, ok := obj.GetClass().GetMethod(phpv.ZString("__wakeup")); ok {
-				_, err := ctx.Call(ctx, method.Method, nil, obj)
-				if err != nil {
-					return nil, offset, err
-				}
-			}
-
 			for numProps > 0 {
 				var key, value *phpv.ZVal
 				key, i, err = d.parse(ctx, str, i)
@@ -708,6 +719,16 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 				obj.ObjectSet(ctx, key.AsString(ctx), value)
 				numProps--
 			}
+			if method, ok := obj.GetClass().GetMethod(phpv.ZString("__wakeup")); ok {
+				_, err := ctx.Call(ctx, method.Method, nil, obj)
+				if err != nil {
+					return nil, offset, err
+				}
+			}
+		}
+		// Skip closing '}'
+		if i < len(str) && str[i] == '}' {
+			i++
 		}
 		return obj.ZVal(), i, nil
 	case 'C':

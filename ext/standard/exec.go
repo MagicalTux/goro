@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -18,6 +19,12 @@ func fncEscapeshellarg(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 	_, err := core.Expand(ctx, args, &arg)
 	if err != nil {
 		return nil, err
+	}
+
+	// Check for null bytes
+	if strings.ContainsRune(string(arg), 0) {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+			"escapeshellarg(): Argument #1 ($arg) must not contain any null bytes")
 	}
 
 	// Escape single quotes and wrap in single quotes
@@ -32,6 +39,12 @@ func fncEscapeshellcmd(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 	_, err := core.Expand(ctx, args, &cmd)
 	if err != nil {
 		return nil, err
+	}
+
+	// Check for null bytes
+	if strings.ContainsRune(string(cmd), 0) {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+			"escapeshellcmd(): Argument #1 ($command) must not contain any null bytes")
 	}
 
 	// Escape shell metacharacters

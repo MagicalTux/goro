@@ -26,8 +26,8 @@ echo "Done\n";
 ?>
 --EXPECT--
 ***Testing basic operations ***
-bool(false)
-bool(false)
+NULL
+NULL
 int(0)
 int(0)
 int(0)

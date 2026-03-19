@@ -218,16 +218,22 @@ func ZFprintf(ctx phpv.Context, w printfWriter, format phpv.ZString, arg ...*php
 		fChar := in[0]
 		in = in[1:]
 
+		// Skip 'l' length modifier (no-op in PHP, C compatibility)
+		if fChar == 'l' && len(in) > 0 {
+			fChar = in[0]
+			in = in[1:]
+		}
+
 		signed := false
 		var output string
 		switch fChar {
 		case 'b': // binary
-			// next arg is an int
+			// next arg is an int (unsigned representation, like PHP)
 			v, err = v.As(ctx, phpv.ZtInt)
 			if err != nil {
 				goto Return
 			}
-			output = strconv.FormatInt(int64(v.Value().(phpv.ZInt)), 2)
+			output = strconv.FormatUint(uint64(v.Value().(phpv.ZInt)), 2)
 		case 'c':
 			// next arg is an int, but will be added as a single char
 			v, err = v.As(ctx, phpv.ZtInt)
@@ -312,7 +318,7 @@ func ZFprintf(ctx phpv.Context, w printfWriter, format phpv.ZString, arg ...*php
 				goto Return
 			}
 			output = string(v.Value().(phpv.ZString))
-			if precision >= 0 {
+			if precision >= 0 && precision < len(output) {
 				output = output[:precision]
 			}
 		case 'u':
@@ -323,19 +329,19 @@ func ZFprintf(ctx phpv.Context, w printfWriter, format phpv.ZString, arg ...*php
 			}
 			output = strconv.FormatUint(uint64(v.Value().(phpv.ZInt)), 10)
 		case 'x':
-			// next arg is an int
+			// next arg is an int (unsigned representation, like PHP)
 			v, err = v.As(ctx, phpv.ZtInt)
 			if err != nil {
 				goto Return
 			}
-			output = strconv.FormatInt(int64(v.Value().(phpv.ZInt)), 16)
+			output = strconv.FormatUint(uint64(v.Value().(phpv.ZInt)), 16)
 		case 'X':
-			// next arg is an int
+			// next arg is an int (unsigned representation, like PHP)
 			v, err = v.As(ctx, phpv.ZtInt)
 			if err != nil {
 				goto Return
 			}
-			output = strconv.FormatInt(int64(v.Value().(phpv.ZInt)), 16)
+			output = strconv.FormatUint(uint64(v.Value().(phpv.ZInt)), 16)
 			output = strings.ToUpper(output)
 		}
 

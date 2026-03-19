@@ -51,20 +51,33 @@ func stdFuncMethodExists(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error
 	}
 
 	var class phpv.ZClass
+	isObject := false
 	switch objectArg.GetType() {
 	case phpv.ZtString:
 		className := objectArg.AsString(ctx)
-		class, err = ctx.Global().GetClass(ctx, className, false)
+		class, err = ctx.Global().GetClass(ctx, className, true)
 		if err != nil {
 			return phpv.ZFalse.ZVal(), nil
 		}
 	case phpv.ZtObject:
 		obj := objectArg.AsObject(ctx)
 		class = obj.GetClass()
+		isObject = true
 	default:
-		return nil, errors.New("Argument #1 ($object_or_class) must be of type object|string")
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("method_exists(): Argument #1 ($object_or_class) must be of type object|string, %s given",
+				phpv.ZValTypeName(objectArg)))
 	}
-	_, ok := class.GetMethod(methodName)
+	m, ok := class.GetMethod(methodName)
+
+	// When called with a string class name (not an object), private methods
+	// inherited from a parent class should not be considered existing.
+	if ok && !isObject && m != nil && m.Modifiers.IsPrivate() {
+		// Check if the method is defined in the requested class itself
+		if m.Class != nil && m.Class.GetName() != class.GetName() {
+			ok = false
+		}
+	}
 
 	// Also check for __invoke via HandleInvoke (e.g., Closure::__invoke)
 	if !ok && methodName.ToLower() == "__invoke" {
@@ -132,8 +145,10 @@ func fncSettype(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		newVal, err = args[0].As(ctx, phpv.ZtObject)
 	case "null":
 		newVal = phpv.ZNULL.ZVal()
+	case "resource":
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot convert to resource type")
 	default:
-		return phpv.ZFalse.ZVal(), nil
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "settype(): Argument #2 ($type) must be a valid type")
 	}
 
 	if err != nil {
@@ -715,21 +730,50 @@ func stdGetClassMethods(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 
 	var class phpv.ZClass
 
-	if classArg.GetType() == phpv.ZtObject {
+	switch classArg.GetType() {
+	case phpv.ZtObject:
 		obj := classArg.AsObject(ctx)
 		if obj == nil {
 			return phpv.ZNULL.ZVal(), nil
 		}
 		class = obj.GetClass()
-	} else {
+	case phpv.ZtString:
 		class, err = ctx.Global().GetClass(ctx, classArg.AsString(ctx), true)
 		if err != nil {
 			return phpv.ZNULL.ZVal(), nil
 		}
+	default:
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("get_class_methods(): Argument #1 ($object_or_class) must be an object or a valid class name, %s given",
+				classArg.GetType().TypeName()))
 	}
+
+	// Determine visibility context: which class is the caller?
+	callerClass := ctx.Class()
 
 	result := phpv.NewZArray()
 	for _, m := range class.GetMethods() {
+		// Filter out private methods from parent classes
+		if m.Modifiers.IsPrivate() {
+			// Private methods are only visible from the class where they are declared
+			if m.Class != nil && m.Class.GetName() != class.GetName() {
+				// Inherited private method - only visible if caller is that parent class
+				if callerClass == nil || callerClass.GetName() != m.Class.GetName() {
+					continue
+				}
+			} else {
+				// Private method in this class - only visible if caller is this class
+				if callerClass == nil || callerClass.GetName() != class.GetName() {
+					continue
+				}
+			}
+		}
+		// Filter out protected methods when called from outside the hierarchy
+		if m.Modifiers.IsProtected() {
+			if callerClass == nil || (!callerClass.InstanceOf(class) && !class.InstanceOf(callerClass)) {
+				continue
+			}
+		}
 		result.OffsetSet(ctx, nil, phpv.ZString(m.Name).ZVal())
 	}
 	return result.ZVal(), nil
@@ -944,8 +988,32 @@ func stdGetClassVars(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 // > func ?array error_get_last ( void )
 func stdErrorGetLast(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	// TODO: implement proper error tracking
-	return phpv.ZNULL.ZVal(), nil
+	g, ok := ctx.Global().(*phpctx.Global)
+	if !ok || g.LastError == nil {
+		return phpv.ZNULL.ZVal(), nil
+	}
+
+	err := g.LastError
+	result := phpv.NewZArray()
+	result.OffsetSet(ctx, phpv.ZString("type").ZVal(), phpv.ZInt(err.Code).ZVal())
+	result.OffsetSet(ctx, phpv.ZString("message").ZVal(), phpv.ZString(err.Err.Error()).ZVal())
+	file := ""
+	line := 0
+	if err.Loc != nil {
+		file = err.Loc.Filename
+		line = err.Loc.Line
+	}
+	result.OffsetSet(ctx, phpv.ZString("file").ZVal(), phpv.ZString(file).ZVal())
+	result.OffsetSet(ctx, phpv.ZString("line").ZVal(), phpv.ZInt(line).ZVal())
+	return result.ZVal(), nil
+}
+
+// > func void error_clear_last ( void )
+func stdErrorClearLast(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if g, ok := ctx.Global().(*phpctx.Global); ok {
+		g.LastError = nil
+	}
+	return nil, nil
 }
 
 // > func array get_defined_constants ( bool $categorize = false )

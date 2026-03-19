@@ -108,6 +108,11 @@ func fncSetIncludePath(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 		return nil, err
 	}
 
+	// Empty string is not a valid include path
+	if newPath == "" {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
 	old := ctx.GetConfig("include_path", phpv.ZString(".").ZVal())
 	ctx.Global().SetLocalConfig("include_path", newPath.ZVal())
 	return old, nil

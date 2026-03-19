@@ -307,8 +307,15 @@ func (z *ZHashTable) SetInt(k ZInt, v *ZVal) error {
 	nt := &hashTableVal{k: k, v: v}
 	z.count += 1
 
-	if k > z.inc {
-		z.inc = k
+	// Update the next free element counter using unsigned comparison,
+	// matching PHP's zend_hash behavior:
+	// if (h >= (zend_ulong)ht->nNextFreeElement) { nNextFreeElement = h + 1; }
+	if uint64(k) >= uint64(z.inc) {
+		if k < ZInt(math.MaxInt64) {
+			z.inc = k + 1
+		} else {
+			z.inc = k
+		}
 	}
 
 	z._idx_i[k] = nt
@@ -362,6 +369,32 @@ func (z *ZHashTable) HasInt(k ZInt) bool {
 
 	_, ok := z._idx_i[k]
 	return ok
+}
+
+// RecalcNextIntKey recalculates the next integer key counter (inc) based on
+// the current maximum integer key in the hash table. This is needed after
+// operations like array_pop() that remove elements from the end.
+func (z *ZHashTable) RecalcNextIntKey() {
+	z.lock.Lock()
+	defer z.lock.Unlock()
+
+	if len(z._idx_i) == 0 {
+		z.inc = 0
+		return
+	}
+	var maxKey ZInt
+	found := false
+	for k := range z._idx_i {
+		if !found || k > maxKey {
+			maxKey = k
+			found = true
+		}
+	}
+	if maxKey < ZInt(math.MaxInt64) {
+		z.inc = maxKey + 1
+	} else {
+		z.inc = maxKey
+	}
 }
 
 func (z *ZHashTable) Append(v *ZVal) error {

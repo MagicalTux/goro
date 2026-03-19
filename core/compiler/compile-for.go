@@ -216,8 +216,11 @@ func compileForSub(c compileCtx, final rune) (res phpv.Runnables, err error) {
 		if i.IsSingle(final) {
 			return
 		}
-		if i.IsSingle(';') {
-			i = nil
+		if i.IsSingle(',') {
+			i, err = c.NextItem()
+			if err != nil {
+				return
+			}
 			continue
 		}
 		return nil, i.Unexpected()

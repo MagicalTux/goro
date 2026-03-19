@@ -111,6 +111,9 @@ type Global struct {
 	obDisabled    bool                // OB system disabled after re-entrant fatal error
 
 	lastCallable phpv.Callable // for NoDiscard checks
+
+	// Last error tracked for error_get_last() / error_clear_last()
+	LastError *phpv.PhpError
 }
 
 func NewGlobal(ctx context.Context, p *Process, config phpv.IniConfig) *Global {
@@ -1045,6 +1048,9 @@ func (g *Global) LogError(err *phpv.PhpError, optionArg ...logopt.Data) {
 	if len(optionArg) > 0 {
 		option = optionArg[0]
 	}
+
+	// Track last error for error_get_last()
+	g.LastError = err
 
 	htmlErrors := bool(g.GetConfig("html_errors", phpv.ZBool(false).ZVal()).AsBool(g))
 

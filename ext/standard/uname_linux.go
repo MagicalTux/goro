@@ -7,6 +7,7 @@ import (
 	"syscall"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -14,7 +15,7 @@ func fncUnameHelperToString(v [65]int8) phpv.ZString {
 	out := make([]byte, len(v))
 	for i := 0; i < len(v); i++ {
 		if v[i] == 0 {
-			return phpv.ZString(out[:i-1])
+			return phpv.ZString(out[:i])
 		}
 		out[i] = byte(v[i])
 	}
@@ -30,6 +31,12 @@ func fncUname(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	mode := core.Deref(modeArg, "a")
+
+	// Validate mode
+	if len(mode) > 1 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+			"php_uname(): Argument #1 ($mode) must be a single character")
+	}
 
 	var name syscall.Utsname
 	if err := syscall.Uname(&name); err != nil {
@@ -47,10 +54,11 @@ func fncUname(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return fncUnameHelperToString(name.Version).ZVal(), nil
 	case "m":
 		return fncUnameHelperToString(name.Machine).ZVal(), nil
-	default:
-		fallthrough
 	case "a":
 		// return full uname, ie "s n r v m"
 		return (fncUnameHelperToString(name.Sysname) + " " + fncUnameHelperToString(name.Nodename) + "." + fncUnameHelperToString(name.Domainname) + " " + fncUnameHelperToString(name.Release) + " " + fncUnameHelperToString(name.Version) + " " + fncUnameHelperToString(name.Machine)).ZVal(), nil
+	default:
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+			`php_uname(): Argument #1 ($mode) must be one of "a", "m", "n", "r", "s", or "v"`)
 	}
 }
