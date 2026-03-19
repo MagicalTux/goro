@@ -128,7 +128,7 @@ func updateRDISFI(o *phpobj.ZObject, d *recursiveDirectoryIteratorData) {
 	if d.pos < len(d.entries) {
 		entryPath := filepath.Join(d.path, d.entries[d.pos].Name())
 		info, _ := os.Stat(entryPath)
-		o.SetOpaque(SplFileInfoClass, &splFileInfoData{path: entryPath, info: info})
+		o.SetOpaque(SplFileInfoClass, &splFileInfoData{path: entryPath, resolvedPath: entryPath, info: info})
 	}
 }
 

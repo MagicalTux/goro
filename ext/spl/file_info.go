@@ -124,9 +124,10 @@ func sfiGetBasename(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*ph
 		return phpv.ZStr(""), nil
 	}
 	base := filepath.Base(d.path)
-	if len(args) > 0 {
+	if len(args) > 0 && args[0] != nil {
 		suffix := string(args[0].AsString(ctx))
-		if strings.HasSuffix(base, suffix) {
+		// PHP: suffix is only stripped if the result would be non-empty
+		if strings.HasSuffix(base, suffix) && len(base) > len(suffix) {
 			base = base[:len(base)-len(suffix)]
 		}
 	}
@@ -278,6 +279,11 @@ func sfiGetPerms(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.
 	if d == nil || d.info == nil {
 		return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException,
 			fmt.Sprintf("SplFileInfo::getPerms(): stat failed for %s", sfiPathOrEmpty(d)))
+	}
+	// Return full mode including file type bits (like PHP's stat 'mode')
+	sys := d.info.Sys()
+	if stat, ok := sys.(*syscall.Stat_t); ok {
+		return phpv.ZInt(stat.Mode).ZVal(), nil
 	}
 	return phpv.ZInt(d.info.Mode().Perm()).ZVal(), nil
 }

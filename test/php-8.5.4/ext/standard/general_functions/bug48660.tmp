@@ -1,0 +1,8 @@
+
+[cases]
+
+Case.a = avalue
+Case.b = "$dollar_sign"
+Case.c = "dollar_sign$"
+Case.d = "$dollar_sign$"
+Case.e = 10

@@ -182,7 +182,7 @@ func updateDISFI(o *phpobj.ZObject, d *directoryIteratorData) {
 	if d.pos < len(d.entries) {
 		entryPath := filepath.Join(d.path, d.entries[d.pos].Name())
 		info, _ := os.Stat(entryPath)
-		o.SetOpaque(SplFileInfoClass, &splFileInfoData{path: entryPath, info: info})
+		o.SetOpaque(SplFileInfoClass, &splFileInfoData{path: entryPath, resolvedPath: entryPath, info: info})
 	}
 }
 
@@ -282,9 +282,9 @@ func diGetBasename(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*php
 		return phpv.ZStr(""), nil
 	}
 	name := d.entries[d.pos].Name()
-	if len(args) > 0 {
+	if len(args) > 0 && args[0] != nil {
 		suffix := string(args[0].AsString(ctx))
-		if strings.HasSuffix(name, suffix) {
+		if strings.HasSuffix(name, suffix) && len(name) > len(suffix) {
 			name = name[:len(name)-len(suffix)]
 		}
 	}
