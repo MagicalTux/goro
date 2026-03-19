@@ -14,9 +14,7 @@ type PhpThrow struct {
 func (e *PhpThrow) ThrownFile() string {
 	if e.Obj != nil {
 		if f := e.Obj.HashTable().GetString("file"); f != nil && f.GetType() == phpv.ZtString {
-			if s := f.String(); s != "" {
-				return s
-			}
+			return f.String()
 		}
 	}
 	if e.Loc != nil {
@@ -30,9 +28,7 @@ func (e *PhpThrow) ThrownFile() string {
 func (e *PhpThrow) ThrownLine() int {
 	if e.Obj != nil {
 		if l := e.Obj.HashTable().GetString("line"); l != nil && l.GetType() == phpv.ZtInt {
-			if n := int(l.Value().(phpv.ZInt)); n > 0 {
-				return n
-			}
+			return int(l.Value().(phpv.ZInt))
 		}
 	}
 	if e.Loc != nil {

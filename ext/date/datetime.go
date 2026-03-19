@@ -103,6 +103,9 @@ func setTimeVal(this *phpobj.ZObject, t time.Time) {
 	tzType := 3
 	if locName == "UTC" || locName == "" {
 		locName = "UTC"
+	} else if len(locName) > 0 && (locName[0] == '+' || locName[0] == '-') {
+		// Fixed offset timezone like "+05:00"
+		tzType = 1
 	} else if len(locName) <= 6 && !strings.Contains(locName, "/") {
 		tzType = 2
 	}
@@ -166,9 +169,13 @@ func modifyImmutableMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.
 		return phpv.ZBool(false).ZVal(), nil
 	}
 	modifier := args[0].AsString(ctx)
-	newT, ok := strToTime(string(modifier), t)
-	if !ok {
-		return phpv.ZBool(false).ZVal(), nil
+	newT, stErr := strtotime.StrToTime(string(modifier), strtotime.InTZ(t.Location()), strtotime.Rel(t))
+	if stErr != nil {
+		var ok bool
+		newT, ok = strToTime(string(modifier), t)
+		if !ok {
+			return phpv.ZBool(false).ZVal(), nil
+		}
 	}
 	newObj, err := phpobj.NewZObject(ctx, DateTimeImmutable)
 	if err != nil {
@@ -375,34 +382,50 @@ func setTimestampImmutableMethod(ctx phpv.Context, this *phpobj.ZObject, args []
 	return newObj.ZVal(), nil
 }
 
-// createFromFormatStatic implements DateTime::createFromFormat(string $format, string $datetime, ?DateTimeZone $timezone = null): DateTime|false
-func createFromFormatStatic(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	if len(args) < 2 {
-		return nil, ctx.Errorf("DateTime::createFromFormat() expects at least 2 arguments")
-	}
-	// For now, delegate to parseDateTime-style parsing ignoring the format
-	// This is a simplified implementation
-	obj, err := phpobj.NewZObject(ctx, DateTime)
-	if err != nil {
-		return nil, err
-	}
-	t := parseDateTimeWithTz(ctx, args[1:])
-	setTimeVal(obj, t)
-	return obj.ZVal(), nil
-}
+// createFromFormatStaticFor creates a createFromFormat static method for the given class
+func createFromFormatStaticFor(targetClass *phpobj.ZClass) func(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	return func(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+		if len(args) < 2 {
+			return nil, ctx.Errorf("%s::createFromFormat() expects at least 2 arguments", targetClass.Name)
+		}
 
-// createFromFormatImmutableStatic implements DateTimeImmutable::createFromFormat()
-func createFromFormatImmutableStatic(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	if len(args) < 2 {
-		return nil, ctx.Errorf("DateTimeImmutable::createFromFormat() expects at least 2 arguments")
+		format := string(args[0].AsString(ctx))
+		datetime := string(args[1].AsString(ctx))
+
+		// Reject null bytes in format or datetime (PHP behavior)
+		for _, c := range format {
+			if c == 0 {
+				return phpv.ZBool(false).ZVal(), nil
+			}
+		}
+		for _, c := range datetime {
+			if c == 0 {
+				return phpv.ZBool(false).ZVal(), nil
+			}
+		}
+
+		// Determine timezone
+		loc := getTimezone(ctx)
+		if len(args) > 2 && args[2] != nil && !args[2].IsNull() {
+			if tzObj, ok := args[2].Value().(*phpobj.ZObject); ok {
+				if tzLoc, ok := getTimezoneLoc(tzObj); ok {
+					loc = tzLoc
+				}
+			}
+		}
+
+		t, ok := createFromFormatParsed(ctx, format, datetime, loc)
+		if !ok {
+			return phpv.ZBool(false).ZVal(), nil
+		}
+
+		obj, err := phpobj.NewZObject(ctx, targetClass)
+		if err != nil {
+			return nil, err
+		}
+		setTimeVal(obj, t)
+		return obj.ZVal(), nil
 	}
-	obj, err := phpobj.NewZObject(ctx, DateTimeImmutable)
-	if err != nil {
-		return nil, err
-	}
-	t := parseDateTimeWithTz(ctx, args[1:])
-	setTimeVal(obj, t)
-	return obj.ZVal(), nil
 }
 
 // diffMethod computes the difference between two DateTime-like objects
@@ -522,6 +545,573 @@ func diffMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*php
 	return intervalObj.ZVal(), nil
 }
 
+// addIntervalToTime adds a DateInterval to a time.Time and returns the result
+func addIntervalToTime(ctx phpv.Context, t time.Time, intervalObj *phpobj.ZObject, subtract bool) time.Time {
+	ht := intervalObj.HashTable()
+	years := int(ht.GetString("y").AsInt(ctx))
+	months := int(ht.GetString("m").AsInt(ctx))
+	days := int(ht.GetString("d").AsInt(ctx))
+	hours := int(ht.GetString("h").AsInt(ctx))
+	minutes := int(ht.GetString("i").AsInt(ctx))
+	seconds := int(ht.GetString("s").AsInt(ctx))
+	invert := int(ht.GetString("invert").AsInt(ctx)) != 0
+
+	// Get fractional seconds
+	fVal := ht.GetString("f")
+	var microseconds int
+	if fVal != nil && !fVal.IsNull() {
+		microseconds = int(fVal.AsFloat(ctx) * 1000000)
+	}
+
+	// If invert is set, flip the direction
+	if invert {
+		subtract = !subtract
+	}
+
+	if subtract {
+		years = -years
+		months = -months
+		days = -days
+		hours = -hours
+		minutes = -minutes
+		seconds = -seconds
+		microseconds = -microseconds
+	}
+
+	// Apply date part first (years, months, days)
+	t = t.AddDate(years, months, days)
+	// Then apply time part
+	t = t.Add(time.Duration(hours)*time.Hour +
+		time.Duration(minutes)*time.Minute +
+		time.Duration(seconds)*time.Second +
+		time.Duration(microseconds)*time.Microsecond)
+	return t
+}
+
+// addMethod implements DateTime::add(DateInterval $interval): DateTime
+func addMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) < 1 {
+		return nil, ctx.Errorf("DateTime::add() expects exactly 1 argument, 0 given")
+	}
+	t, ok := getTime(this)
+	if !ok {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	intervalObj, ok := args[0].Value().(*phpobj.ZObject)
+	if !ok {
+		return nil, ctx.Errorf("DateTime::add() expects parameter 1 to be DateInterval")
+	}
+	newT := addIntervalToTime(ctx, t, intervalObj, false)
+	setTimeVal(this, newT)
+	return this.ZVal(), nil
+}
+
+// addImmutableMethod implements DateTimeImmutable::add() - returns new instance
+func addImmutableMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) < 1 {
+		return nil, ctx.Errorf("DateTimeImmutable::add() expects exactly 1 argument, 0 given")
+	}
+	t, ok := getTime(this)
+	if !ok {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	intervalObj, ok := args[0].Value().(*phpobj.ZObject)
+	if !ok {
+		return nil, ctx.Errorf("DateTimeImmutable::add() expects parameter 1 to be DateInterval")
+	}
+	newT := addIntervalToTime(ctx, t, intervalObj, false)
+	newObj, err := phpobj.NewZObject(ctx, DateTimeImmutable)
+	if err != nil {
+		return nil, err
+	}
+	setTimeVal(newObj, newT)
+	return newObj.ZVal(), nil
+}
+
+// subMethod implements DateTime::sub(DateInterval $interval): DateTime
+func subMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) < 1 {
+		return nil, ctx.Errorf("DateTime::sub() expects exactly 1 argument, 0 given")
+	}
+	t, ok := getTime(this)
+	if !ok {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	intervalObj, ok := args[0].Value().(*phpobj.ZObject)
+	if !ok {
+		return nil, ctx.Errorf("DateTime::sub() expects parameter 1 to be DateInterval")
+	}
+	newT := addIntervalToTime(ctx, t, intervalObj, true)
+	setTimeVal(this, newT)
+	return this.ZVal(), nil
+}
+
+// subImmutableMethod implements DateTimeImmutable::sub() - returns new instance
+func subImmutableMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) < 1 {
+		return nil, ctx.Errorf("DateTimeImmutable::sub() expects exactly 1 argument, 0 given")
+	}
+	t, ok := getTime(this)
+	if !ok {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	intervalObj, ok := args[0].Value().(*phpobj.ZObject)
+	if !ok {
+		return nil, ctx.Errorf("DateTimeImmutable::sub() expects parameter 1 to be DateInterval")
+	}
+	newT := addIntervalToTime(ctx, t, intervalObj, true)
+	newObj, err := phpobj.NewZObject(ctx, DateTimeImmutable)
+	if err != nil {
+		return nil, err
+	}
+	setTimeVal(newObj, newT)
+	return newObj.ZVal(), nil
+}
+
+// setISODateMethod implements DateTime::setISODate(int $year, int $week, int $dayOfWeek = 1): DateTime
+func setISODateMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) < 2 {
+		return nil, ctx.Errorf("DateTime::setISODate() expects at least 2 arguments")
+	}
+	t, ok := getTime(this)
+	if !ok {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	year := int(args[0].AsInt(ctx))
+	week := int(args[1].AsInt(ctx))
+	dayOfWeek := 1
+	if len(args) > 2 {
+		dayOfWeek = int(args[2].AsInt(ctx))
+	}
+
+	// Calculate date from ISO year/week/day
+	jan4 := time.Date(year, time.January, 4, 0, 0, 0, 0, t.Location())
+	isoWeek1Monday := jan4.AddDate(0, 0, -int(jan4.Weekday()-time.Monday))
+	if jan4.Weekday() == time.Sunday {
+		isoWeek1Monday = jan4.AddDate(0, 0, -6)
+	}
+	target := isoWeek1Monday.AddDate(0, 0, (week-1)*7+(dayOfWeek-1))
+	h, m, s := t.Clock()
+	newT := time.Date(target.Year(), target.Month(), target.Day(), h, m, s, t.Nanosecond(), t.Location())
+	setTimeVal(this, newT)
+	return this.ZVal(), nil
+}
+
+// setISODateImmutableMethod implements DateTimeImmutable::setISODate() - returns new instance
+func setISODateImmutableMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) < 2 {
+		return nil, ctx.Errorf("DateTimeImmutable::setISODate() expects at least 2 arguments")
+	}
+	t, ok := getTime(this)
+	if !ok {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	year := int(args[0].AsInt(ctx))
+	week := int(args[1].AsInt(ctx))
+	dayOfWeek := 1
+	if len(args) > 2 {
+		dayOfWeek = int(args[2].AsInt(ctx))
+	}
+
+	jan4 := time.Date(year, time.January, 4, 0, 0, 0, 0, t.Location())
+	isoWeek1Monday := jan4.AddDate(0, 0, -int(jan4.Weekday()-time.Monday))
+	if jan4.Weekday() == time.Sunday {
+		isoWeek1Monday = jan4.AddDate(0, 0, -6)
+	}
+	target := isoWeek1Monday.AddDate(0, 0, (week-1)*7+(dayOfWeek-1))
+	h, m, s := t.Clock()
+	newT := time.Date(target.Year(), target.Month(), target.Day(), h, m, s, t.Nanosecond(), t.Location())
+	newObj, err := phpobj.NewZObject(ctx, DateTimeImmutable)
+	if err != nil {
+		return nil, err
+	}
+	setTimeVal(newObj, newT)
+	return newObj.ZVal(), nil
+}
+
+// createFromTimestampStatic implements DateTime::createFromTimestamp(int|float $timestamp)
+func createFromTimestampStatic(targetClass *phpobj.ZClass) func(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	return func(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+		if len(args) < 1 {
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("%s::createFromTimestamp() expects exactly 1 argument, 0 given", targetClass.Name))
+		}
+		val := args[0]
+
+		var t time.Time
+		if val.GetType() == phpv.ZtFloat {
+			f := float64(val.AsFloat(ctx))
+			if math.IsNaN(f) || math.IsInf(f, 0) {
+				return nil, phpobj.ThrowError(ctx, phpobj.ValueError, fmt.Sprintf("%s::createFromTimestamp(): Argument #1 ($timestamp) must be a finite number, %s given", targetClass.Name, val.AsString(ctx)))
+			}
+			sec := int64(f)
+			nsec := int64((f - float64(sec)) * 1e9)
+			if nsec < 0 {
+				sec--
+				nsec += 1e9
+			}
+			t = time.Unix(sec, nsec).UTC()
+		} else {
+			ts := val.AsInt(ctx)
+			t = time.Unix(int64(ts), 0).UTC()
+		}
+
+		obj, err := phpobj.NewZObject(ctx, targetClass)
+		if err != nil {
+			return nil, err
+		}
+		setTimeVal(obj, t)
+		return obj.ZVal(), nil
+	}
+}
+
+// createFromInterfaceStatic implements DateTime::createFromInterface(DateTimeInterface $object)
+func createFromInterfaceStatic(targetClass *phpobj.ZClass) func(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	return func(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+		if len(args) < 1 {
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("%s::createFromInterface() expects exactly 1 argument, 0 given", targetClass.Name))
+		}
+		if args[0].GetType() != phpv.ZtObject {
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("%s::createFromInterface(): Argument #1 ($object) must be of type DateTimeInterface, %s given", targetClass.Name, args[0].GetType().TypeName()))
+		}
+		srcObj := args[0].Value().(phpv.ZObject)
+		srcT, ok := getTimeFromObj(srcObj)
+		if !ok {
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("%s::createFromInterface(): Argument #1 ($object) must be of type DateTimeInterface", targetClass.Name))
+		}
+		newObj, err := phpobj.NewZObject(ctx, targetClass)
+		if err != nil {
+			return nil, err
+		}
+		setTimeVal(newObj, srcT)
+		return newObj.ZVal(), nil
+	}
+}
+
+// wakeupMethod implements DateTime::__wakeup() - validates serialization
+func wakeupMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	dateVal := this.HashTable().GetString("date")
+	if dateVal == nil || dateVal.IsNull() || string(dateVal.AsString(ctx)) == "" {
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DateTime object")
+	}
+
+	dateStr := string(dateVal.AsString(ctx))
+	tzVal := this.HashTable().GetString("timezone")
+	var loc *time.Location = time.UTC
+	if tzVal != nil && !tzVal.IsNull() {
+		tzStr := string(tzVal.AsString(ctx))
+		if l, err := time.LoadLocation(tzStr); err == nil {
+			loc = l
+		} else if offset, ok := parseTZOffset(tzStr); ok {
+			loc = time.FixedZone(tzStr, offset)
+		}
+	}
+
+	parsed, err := time.ParseInLocation("2006-01-02 15:04:05.000000", dateStr, loc)
+	if err != nil {
+		parsed, err = time.ParseInLocation("2006-01-02 15:04:05", dateStr, loc)
+		if err != nil {
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DateTime object")
+		}
+	}
+	setTimeVal(this, parsed)
+	return nil, nil
+}
+
+// getLastErrorsStatic implements DateTime::getLastErrors(): array|false
+func getLastErrorsStatic(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	return phpv.ZBool(false).ZVal(), nil
+}
+
+// createFromFormatParsed does the actual format parsing for createFromFormat
+func createFromFormatParsed(ctx phpv.Context, format string, datetime string, loc *time.Location) (time.Time, bool) {
+	now := time.Now().In(loc)
+	year := now.Year()
+	month := int(now.Month())
+	day := now.Day()
+	hour := now.Hour()
+	minute := now.Minute()
+	second := now.Second()
+	microsecond := 0
+	yearSet := false
+	monthSet := false
+	daySet := false
+	hourSet := false
+	minuteSet := false
+	secondSet := false
+	resetTime := false
+	usedLoc := loc
+
+	di := 0 // datetime index
+	for fi := 0; fi < len(format) && di <= len(datetime); fi++ {
+		fc := format[fi]
+		switch fc {
+		case 'Y': // 4-digit year
+			if di+4 > len(datetime) {
+				return time.Time{}, false
+			}
+			n, err := fmt.Sscanf(datetime[di:di+4], "%d", &year)
+			if err != nil || n != 1 {
+				return time.Time{}, false
+			}
+			yearSet = true
+			di += 4
+		case 'y': // 2-digit year
+			if di+2 > len(datetime) {
+				return time.Time{}, false
+			}
+			var y2 int
+			n, err := fmt.Sscanf(datetime[di:di+2], "%d", &y2)
+			if err != nil || n != 1 {
+				return time.Time{}, false
+			}
+			if y2 >= 70 {
+				year = 1900 + y2
+			} else {
+				year = 2000 + y2
+			}
+			yearSet = true
+			di += 2
+		case 'm', 'n': // month with/without leading zero
+			end := di
+			for end < len(datetime) && end < di+2 && datetime[end] >= '0' && datetime[end] <= '9' {
+				end++
+			}
+			if end == di {
+				return time.Time{}, false
+			}
+			fmt.Sscanf(datetime[di:end], "%d", &month)
+			monthSet = true
+			di = end
+		case 'd', 'j': // day with/without leading zero
+			end := di
+			for end < len(datetime) && end < di+2 && datetime[end] >= '0' && datetime[end] <= '9' {
+				end++
+			}
+			if end == di {
+				return time.Time{}, false
+			}
+			fmt.Sscanf(datetime[di:end], "%d", &day)
+			daySet = true
+			di = end
+		case 'H', 'G': // 24-hour with/without leading zero
+			end := di
+			for end < len(datetime) && end < di+2 && datetime[end] >= '0' && datetime[end] <= '9' {
+				end++
+			}
+			if end == di {
+				return time.Time{}, false
+			}
+			fmt.Sscanf(datetime[di:end], "%d", &hour)
+			hourSet = true
+			di = end
+		case 'h', 'g': // 12-hour format
+			end := di
+			for end < len(datetime) && end < di+2 && datetime[end] >= '0' && datetime[end] <= '9' {
+				end++
+			}
+			if end == di {
+				return time.Time{}, false
+			}
+			fmt.Sscanf(datetime[di:end], "%d", &hour)
+			hourSet = true
+			di = end
+		case 'i': // minutes
+			if di+2 > len(datetime) {
+				return time.Time{}, false
+			}
+			fmt.Sscanf(datetime[di:di+2], "%d", &minute)
+			minuteSet = true
+			di += 2
+		case 's': // seconds
+			if di+2 > len(datetime) {
+				return time.Time{}, false
+			}
+			fmt.Sscanf(datetime[di:di+2], "%d", &second)
+			secondSet = true
+			di += 2
+		case 'u': // microseconds (up to 6 digits)
+			end := di
+			for end < len(datetime) && end < di+6 && datetime[end] >= '0' && datetime[end] <= '9' {
+				end++
+			}
+			if end == di {
+				return time.Time{}, false
+			}
+			s := datetime[di:end]
+			for len(s) < 6 {
+				s += "0"
+			}
+			fmt.Sscanf(s, "%d", &microsecond)
+			di = end
+		case 'v': // milliseconds (3 digits)
+			end := di
+			for end < len(datetime) && end < di+3 && datetime[end] >= '0' && datetime[end] <= '9' {
+				end++
+			}
+			if end == di {
+				return time.Time{}, false
+			}
+			s := datetime[di:end]
+			for len(s) < 3 {
+				s += "0"
+			}
+			var ms int
+			fmt.Sscanf(s, "%d", &ms)
+			microsecond = ms * 1000
+			di = end
+		case 'A', 'a': // AM/PM
+			if di+2 > len(datetime) {
+				return time.Time{}, false
+			}
+			ampm := strings.ToUpper(datetime[di : di+2])
+			if ampm == "PM" && hour < 12 {
+				hour += 12
+			} else if ampm == "AM" && hour == 12 {
+				hour = 0
+			}
+			di += 2
+		case 'P', 'p', 'O': // timezone offset +02:00 or +0200 or Z
+			if di < len(datetime) && datetime[di] == 'Z' {
+				usedLoc = time.UTC
+				di++
+			} else if di < len(datetime) && (datetime[di] == '+' || datetime[di] == '-') {
+				end := di + 1
+				for end < len(datetime) && (datetime[end] >= '0' && datetime[end] <= '9' || datetime[end] == ':') {
+					end++
+				}
+				if offset, ok := parseTZOffset(datetime[di:end]); ok {
+					usedLoc = time.FixedZone("", offset)
+					di = end
+				}
+			}
+		case 'T': // timezone abbreviation
+			end := di
+			for end < len(datetime) && ((datetime[end] >= 'A' && datetime[end] <= 'Z') || (datetime[end] >= 'a' && datetime[end] <= 'z')) {
+				end++
+			}
+			if end > di {
+				tzName := datetime[di:end]
+				if l, err := time.LoadLocation(tzName); err == nil {
+					usedLoc = l
+				}
+				di = end
+			}
+		case 'e': // timezone identifier
+			end := di
+			for end < len(datetime) && datetime[end] != ' ' && datetime[end] != '\t' {
+				end++
+			}
+			if end > di {
+				tzName := datetime[di:end]
+				if l, err := time.LoadLocation(tzName); err == nil {
+					usedLoc = l
+				}
+				di = end
+			}
+		case 'U': // unix timestamp
+			end := di
+			if end < len(datetime) && (datetime[end] == '+' || datetime[end] == '-') {
+				end++
+			}
+			for end < len(datetime) && datetime[end] >= '0' && datetime[end] <= '9' {
+				end++
+			}
+			if end > di {
+				var ts int64
+				fmt.Sscanf(datetime[di:end], "%d", &ts)
+				return time.Unix(ts, 0).In(loc), true
+			}
+		case 'M', 'F': // month name (short or full)
+			end := di
+			for end < len(datetime) && ((datetime[end] >= 'A' && datetime[end] <= 'Z') || (datetime[end] >= 'a' && datetime[end] <= 'z')) {
+				end++
+			}
+			if end > di {
+				m, ok := parseMonth(datetime[di:end])
+				if ok {
+					month = int(m)
+					monthSet = true
+				}
+				di = end
+			}
+		case 'D', 'l': // day name (skip)
+			end := di
+			for end < len(datetime) && ((datetime[end] >= 'A' && datetime[end] <= 'Z') || (datetime[end] >= 'a' && datetime[end] <= 'z')) {
+				end++
+			}
+			di = end
+		case '\\': // literal next char
+			fi++
+			if fi < len(format) && di < len(datetime) {
+				di++
+			}
+		case '!': // reset all to unix epoch
+			year = 1970
+			month = 1
+			day = 1
+			hour = 0
+			minute = 0
+			second = 0
+			microsecond = 0
+			yearSet = true
+			monthSet = true
+			daySet = true
+			hourSet = true
+			minuteSet = true
+			secondSet = true
+		case '|': // reset unset fields to unix epoch
+			resetTime = true
+		case '+': // consume rest
+			di = len(datetime)
+		case '#': // separator: any of ;:/.,-
+			if di < len(datetime) {
+				di++
+			}
+		case '?': // any single character
+			if di < len(datetime) {
+				di++
+			}
+		case '*': // any number of characters until next digit
+			for di < len(datetime) && !(datetime[di] >= '0' && datetime[di] <= '9') {
+				di++
+			}
+		case ' ': // optional whitespace
+			for di < len(datetime) && (datetime[di] == ' ' || datetime[di] == '\t') {
+				di++
+			}
+		default:
+			// Literal character match
+			if di < len(datetime) && datetime[di] == fc {
+				di++
+			}
+		}
+	}
+
+	// If '|' was used, reset unset fields to unix epoch values
+	if resetTime {
+		if !yearSet {
+			year = 1970
+		}
+		if !monthSet {
+			month = 1
+		}
+		if !daySet {
+			day = 1
+		}
+		if !hourSet {
+			hour = 0
+		}
+		if !minuteSet {
+			minute = 0
+		}
+		if !secondSet {
+			second = 0
+		}
+	}
+
+	return time.Date(year, time.Month(month), day, hour, minute, second, microsecond*1000, usedLoc), true
+}
+
 // dateTimeDebugInfo implements __debugInfo for DateTime/DateTimeImmutable
 func dateTimeDebugInfo(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	t, ok := getTime(this)
@@ -546,6 +1136,8 @@ func dateTimeDebugInfo(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal
 	if locName == "UTC" || locName == "" {
 		tzType = 3
 		locName = "UTC"
+	} else if len(locName) > 0 && (locName[0] == '+' || locName[0] == '-') {
+		tzType = 1
 	} else if len(locName) <= 6 && !strings.Contains(locName, "/") {
 		tzType = 2
 	}
@@ -575,6 +1167,29 @@ func init() {
 				Name:      "getOffset",
 				Modifiers: phpv.ZAttrPublic,
 				Method:    phpobj.NativeMethod(datetimezoneGetOffset),
+			},
+			"gettransitions": {
+				Name:      "getTransitions",
+				Modifiers: phpv.ZAttrPublic,
+				Method: phpobj.NativeMethod(func(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+					loc, ok := getTimezoneLoc(this)
+					if !ok {
+						return phpv.ZBool(false).ZVal(), nil
+					}
+					// Return a basic transitions array with at least the current offset
+					result := phpv.NewZArray()
+					now := time.Now().In(loc)
+					name, offset := now.Zone()
+					entry := phpv.NewZArray()
+					entry.OffsetSet(ctx, phpv.ZString("ts"), phpv.ZInt(0).ZVal())
+					entry.OffsetSet(ctx, phpv.ZString("time"), phpv.ZString("1970-01-01T00:00:00+00:00").ZVal())
+					entry.OffsetSet(ctx, phpv.ZString("offset"), phpv.ZInt(offset).ZVal())
+					_, stdOffset := time.Date(now.Year(), time.January, 1, 0, 0, 0, 0, loc).Zone()
+					entry.OffsetSet(ctx, phpv.ZString("isdst"), phpv.ZBool(offset != stdOffset).ZVal())
+					entry.OffsetSet(ctx, phpv.ZString("abbr"), phpv.ZString(name).ZVal())
+					result.OffsetSet(ctx, nil, entry.ZVal())
+					return result.ZVal(), nil
+				}),
 			},
 			"listidentifiers": {
 				Name:      "listIdentifiers",
@@ -661,6 +1276,37 @@ func init() {
 		Methods: map[phpv.ZString]*phpv.ZClassMethod{
 			"__construct":        {Name: "__construct", Method: phpobj.NativeMethod(dateIntervalConstruct)},
 			"format":             {Name: "format", Method: phpobj.NativeMethod(dateIntervalFormat)},
+			"__unserialize": {
+				Name:      "__unserialize",
+				Modifiers: phpv.ZAttrPublic,
+				Method: phpobj.NativeMethod(func(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+					if len(args) < 1 || args[0].GetType() != phpv.ZtArray {
+						return nil, nil
+					}
+					arr := args[0].Value().(*phpv.ZArray)
+					for _, key := range []string{"y", "m", "d", "h", "i", "s", "f", "invert", "days"} {
+						v, _ := arr.OffsetGet(ctx, phpv.ZString(key).ZVal())
+						if v != nil && !v.IsNull() {
+							this.HashTable().SetString(phpv.ZString(key), v)
+						}
+					}
+					return nil, nil
+				}),
+			},
+			"__serialize": {
+				Name:      "__serialize",
+				Modifiers: phpv.ZAttrPublic,
+				Method: phpobj.NativeMethod(func(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+					result := phpv.NewZArray()
+					for _, key := range []string{"y", "m", "d", "h", "i", "s", "f", "invert", "days"} {
+						v := this.HashTable().GetString(phpv.ZString(key))
+						if v != nil {
+							result.OffsetSet(ctx, phpv.ZString(key), v)
+						}
+					}
+					return result.ZVal(), nil
+				}),
+			},
 			"createfromdatestring": {
 				Name:      "createFromDateString",
 				Modifiers: phpv.ZAttrPublic | phpv.ZAttrStatic,
@@ -721,10 +1367,25 @@ func init() {
 				Modifiers: phpv.ZAttrPublic,
 				Method:    phpobj.NativeMethod(modifyMethod),
 			},
+			"add": {
+				Name:      "add",
+				Modifiers: phpv.ZAttrPublic,
+				Method:    phpobj.NativeMethod(addMethod),
+			},
+			"sub": {
+				Name:      "sub",
+				Modifiers: phpv.ZAttrPublic,
+				Method:    phpobj.NativeMethod(subMethod),
+			},
 			"setdate": {
 				Name:      "setDate",
 				Modifiers: phpv.ZAttrPublic,
 				Method:    phpobj.NativeMethod(setDateMethod),
+			},
+			"setisodate": {
+				Name:      "setISODate",
+				Modifiers: phpv.ZAttrPublic,
+				Method:    phpobj.NativeMethod(setISODateMethod),
 			},
 			"settime": {
 				Name:      "setTime",
@@ -759,12 +1420,33 @@ func init() {
 			"createfromformat": {
 				Name:      "createFromFormat",
 				Modifiers: phpv.ZAttrPublic | phpv.ZAttrStatic,
-				Method:    phpobj.NativeStaticMethod(createFromFormatStatic),
+			},
+			"createfromtimestamp": {
+				Name:      "createFromTimestamp",
+				Modifiers: phpv.ZAttrPublic | phpv.ZAttrStatic,
+			},
+			"createfrominterface": {
+				Name:      "createFromInterface",
+				Modifiers: phpv.ZAttrPublic | phpv.ZAttrStatic,
+			},
+			"createfromimmutable": {
+				Name:      "createFromImmutable",
+				Modifiers: phpv.ZAttrPublic | phpv.ZAttrStatic,
+			},
+			"getlasterrors": {
+				Name:      "getLastErrors",
+				Modifiers: phpv.ZAttrPublic | phpv.ZAttrStatic,
+				Method:    phpobj.NativeStaticMethod(getLastErrorsStatic),
 			},
 			"__debuginfo": {
 				Name:      "__debugInfo",
 				Modifiers: phpv.ZAttrPublic,
 				Method:    phpobj.NativeMethod(dateTimeDebugInfo),
+			},
+			"__wakeup": {
+				Name:      "__wakeup",
+				Modifiers: phpv.ZAttrPublic,
+				Method:    phpobj.NativeMethod(wakeupMethod),
 			},
 			"__set_state": {
 				Name:      "__set_state",
@@ -772,8 +1454,30 @@ func init() {
 			},
 		},
 	}
-	// Wire up __set_state after DateTime is initialized (references DateTime itself)
+	// Wire up methods that reference DateTime itself
 	DateTime.Methods["__set_state"].Method = phpobj.NativeStaticMethod(dateTimeSetState(DateTime))
+	DateTime.Methods["createfromformat"].Method = phpobj.NativeStaticMethod(createFromFormatStaticFor(DateTime))
+	DateTime.Methods["createfromtimestamp"].Method = phpobj.NativeStaticMethod(createFromTimestampStatic(DateTime))
+	DateTime.Methods["createfrominterface"].Method = phpobj.NativeStaticMethod(createFromInterfaceStatic(DateTime))
+	DateTime.Methods["createfromimmutable"].Method = phpobj.NativeStaticMethod(func(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+		if len(args) < 1 {
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "DateTime::createFromImmutable() expects exactly 1 argument, 0 given")
+		}
+		if args[0].GetType() != phpv.ZtObject {
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "DateTime::createFromImmutable(): Argument #1 ($object) must be of type DateTimeImmutable, "+args[0].GetType().TypeName()+" given")
+		}
+		srcObj := args[0].Value().(phpv.ZObject)
+		srcT, ok := getTimeFromObj(srcObj)
+		if !ok {
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "DateTime::createFromImmutable(): Argument #1 ($object) must be of type DateTimeImmutable")
+		}
+		newObj, err := phpobj.NewZObject(ctx, DateTime)
+		if err != nil {
+			return nil, err
+		}
+		setTimeVal(newObj, srcT)
+		return newObj.ZVal(), nil
+	})
 
 	// DateTimeImmutable class
 	DateTimeImmutable = &phpobj.ZClass{
@@ -805,10 +1509,25 @@ func init() {
 				Modifiers: phpv.ZAttrPublic,
 				Method:    phpobj.NativeMethod(modifyImmutableMethod),
 			},
+			"add": {
+				Name:      "add",
+				Modifiers: phpv.ZAttrPublic,
+				Method:    phpobj.NativeMethod(addImmutableMethod),
+			},
+			"sub": {
+				Name:      "sub",
+				Modifiers: phpv.ZAttrPublic,
+				Method:    phpobj.NativeMethod(subImmutableMethod),
+			},
 			"setdate": {
 				Name:      "setDate",
 				Modifiers: phpv.ZAttrPublic,
 				Method:    phpobj.NativeMethod(setDateImmutableMethod),
+			},
+			"setisodate": {
+				Name:      "setISODate",
+				Modifiers: phpv.ZAttrPublic,
+				Method:    phpobj.NativeMethod(setISODateImmutableMethod),
 			},
 			"settime": {
 				Name:      "setTime",
@@ -843,7 +1562,11 @@ func init() {
 			"createfromformat": {
 				Name:      "createFromFormat",
 				Modifiers: phpv.ZAttrPublic | phpv.ZAttrStatic,
-				Method:    phpobj.NativeStaticMethod(createFromFormatImmutableStatic),
+				Method:    phpobj.NativeStaticMethod(createFromFormatStaticFor(DateTimeImmutable)),
+			},
+			"createfromtimestamp": {
+				Name:      "createFromTimestamp",
+				Modifiers: phpv.ZAttrPublic | phpv.ZAttrStatic,
 			},
 			"createfrominterface": {
 				Name:      "createFromInterface",
@@ -897,10 +1620,20 @@ func init() {
 					return newObj.ZVal(), nil
 				}),
 			},
+			"getlasterrors": {
+				Name:      "getLastErrors",
+				Modifiers: phpv.ZAttrPublic | phpv.ZAttrStatic,
+				Method:    phpobj.NativeStaticMethod(getLastErrorsStatic),
+			},
 			"__debuginfo": {
 				Name:      "__debugInfo",
 				Modifiers: phpv.ZAttrPublic,
 				Method:    phpobj.NativeMethod(dateTimeDebugInfo),
+			},
+			"__wakeup": {
+				Name:      "__wakeup",
+				Modifiers: phpv.ZAttrPublic,
+				Method:    phpobj.NativeMethod(wakeupMethod),
 			},
 			"__set_state": {
 				Name:      "__set_state",
@@ -908,8 +1641,9 @@ func init() {
 			},
 		},
 	}
-	// Wire up __set_state after DateTimeImmutable is initialized (references DateTimeImmutable itself)
+	// Wire up methods that reference DateTimeImmutable itself
 	DateTimeImmutable.Methods["__set_state"].Method = phpobj.NativeStaticMethod(dateTimeSetState(DateTimeImmutable))
+	DateTimeImmutable.Methods["createfromtimestamp"].Method = phpobj.NativeStaticMethod(createFromTimestampStatic(DateTimeImmutable))
 
 	// DatePeriod class (stub)
 	DatePeriod = &phpobj.ZClass{
@@ -1005,7 +1739,6 @@ func init() {
 				Name:      "createFromISO8601String",
 				Modifiers: phpv.ZAttrPublic | phpv.ZAttrStatic,
 				Method: phpobj.NativeStaticMethod(func(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-					// Minimal stub
 					if len(args) < 1 {
 						return nil, phpobj.ThrowError(ctx, phpobj.Error, "DatePeriod::createFromISO8601String() expects exactly 1 argument")
 					}
@@ -1014,6 +1747,50 @@ func init() {
 						return nil, err
 					}
 					return obj.ZVal(), nil
+				}),
+			},
+			"getstartdate": {
+				Name:      "getStartDate",
+				Modifiers: phpv.ZAttrPublic,
+				Method: phpobj.NativeMethod(func(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+					v, _ := this.ObjectGet(ctx, phpv.ZString("start"))
+					if v == nil {
+						return phpv.ZNULL.ZVal(), nil
+					}
+					return v, nil
+				}),
+			},
+			"getenddate": {
+				Name:      "getEndDate",
+				Modifiers: phpv.ZAttrPublic,
+				Method: phpobj.NativeMethod(func(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+					v, _ := this.ObjectGet(ctx, phpv.ZString("end"))
+					if v == nil {
+						return phpv.ZNULL.ZVal(), nil
+					}
+					return v, nil
+				}),
+			},
+			"getdateinterval": {
+				Name:      "getDateInterval",
+				Modifiers: phpv.ZAttrPublic,
+				Method: phpobj.NativeMethod(func(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+					v, _ := this.ObjectGet(ctx, phpv.ZString("interval"))
+					if v == nil {
+						return phpv.ZNULL.ZVal(), nil
+					}
+					return v, nil
+				}),
+			},
+			"getrecurrences": {
+				Name:      "getRecurrences",
+				Modifiers: phpv.ZAttrPublic,
+				Method: phpobj.NativeMethod(func(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+					v, _ := this.ObjectGet(ctx, phpv.ZString("recurrences"))
+					if v == nil || v.IsNull() {
+						return phpv.ZNULL.ZVal(), nil
+					}
+					return v, nil
 				}),
 			},
 		},

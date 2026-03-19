@@ -501,6 +501,137 @@ func (r *runClassStaticObjRef) Dump(w io.Writer) error {
 	return err
 }
 
+// runClassDynConst implements C::{expr} — dynamic class constant fetch (PHP 8.3+).
+// The expression is evaluated at runtime to produce the constant name.
+type runClassDynConst struct {
+	className phpv.Runnable
+	nameExpr  phpv.Runnable
+	l         *phpv.Loc
+}
+
+func (r *runClassDynConst) Run(ctx phpv.Context) (*phpv.ZVal, error) {
+	classVal, err := r.className.Run(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	nameVal, err := r.nameExpr.Run(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// The constant name must be a string
+	if nameVal.GetType() != phpv.ZtString {
+		return nil, phpobj.ThrowError(ctx, phpobj.Error,
+			fmt.Sprintf("Cannot use value of type %s as class constant name", phpv.ZValTypeName(nameVal)))
+	}
+
+	constName := nameVal.AsString(ctx)
+
+	var class phpv.ZClass
+	switch classVal.GetType() {
+	case phpv.ZtObject:
+		class = classVal.AsObject(ctx).GetClass()
+	case phpv.ZtString:
+		class, err = ctx.Global().GetClass(ctx, classVal.AsString(ctx), true)
+		if err != nil {
+			return nil, err
+		}
+	default:
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("Cannot use %s as class name", phpv.ZValTypeName(classVal)))
+	}
+
+	// Handle "class" as special keyword
+	if strings.EqualFold(string(constName), "class") {
+		return phpv.ZString(class.GetName()).ZVal(), nil
+	}
+
+	// Look up the constant on the class
+	zclass, ok := class.(*phpobj.ZClass)
+	if !ok {
+		return nil, phpobj.ThrowError(ctx, phpobj.Error,
+			fmt.Sprintf("Undefined constant %s::%s", class.GetName(), constName))
+	}
+
+	cc, found := zclass.Const[constName]
+	if !found {
+		// Check interfaces
+		for _, intf := range zclass.Implementations {
+			if c, f := intf.Const[constName]; f {
+				cc = c
+				found = true
+				break
+			}
+		}
+		// Check parent
+		if !found && zclass.Extends != nil {
+			if c, f := zclass.Extends.Const[constName]; f {
+				cc = c
+				found = true
+			}
+		}
+	}
+	if !found {
+		return nil, phpobj.ThrowError(ctx, phpobj.Error,
+			fmt.Sprintf("Undefined constant %s::%s", class.GetName(), constName))
+	}
+
+	// Check visibility
+	if cc.Modifiers.IsPrivate() {
+		callerClass := ctx.Class()
+		if callerClass == nil || callerClass.GetName() != class.GetName() {
+			return nil, phpobj.ThrowError(ctx, phpobj.Error,
+				fmt.Sprintf("Cannot access private constant %s::%s", class.GetName(), constName))
+		}
+	} else if cc.Modifiers.IsProtected() {
+		callerClass := ctx.Class()
+		if callerClass == nil || (!callerClass.InstanceOf(class) && !class.InstanceOf(callerClass)) {
+			return nil, phpobj.ThrowError(ctx, phpobj.Error,
+				fmt.Sprintf("Cannot access protected constant %s::%s", class.GetName(), constName))
+		}
+	}
+
+	v := cc.Value
+	// Resolve CompileDelayed
+	if cd, isCD := v.(*phpv.CompileDelayed); isCD {
+		if cc.Resolving {
+			return nil, phpobj.ThrowError(ctx, phpobj.Error,
+				fmt.Sprintf("Cannot declare self-referencing constant %s::%s", class.GetName(), constName))
+		}
+		cc.Resolving = true
+		prevCompiling := ctx.Global().GetCompilingClass()
+		ctx.Global().SetCompilingClass(zclass)
+		resolved, err := cd.Run(ctx)
+		ctx.Global().SetCompilingClass(prevCompiling)
+		cc.Resolving = false
+		if err != nil {
+			return nil, err
+		}
+		cc.Value = resolved.Value()
+		return resolved, nil
+	}
+
+	return v.ZVal(), nil
+}
+
+func (r *runClassDynConst) Dump(w io.Writer) error {
+	if err := r.className.Dump(w); err != nil {
+		return err
+	}
+	if _, err := w.Write([]byte("::")); err != nil {
+		return err
+	}
+	if _, err := w.Write([]byte{'{'}); err != nil {
+		return err
+	}
+	if err := r.nameExpr.Dump(w); err != nil {
+		return err
+	}
+	_, err := w.Write([]byte{'}'})
+	return err
+}
+
 // runClassNameOf implements $var::class and ClassName::class
 type runClassNameOf struct {
 	className phpv.Runnable
@@ -527,18 +658,12 @@ func (r *runClassNameOf) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			}
 			cls := ctx.Class()
 			if cls == nil {
-				if ctx.Func() == nil {
-					return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot use \"self\" in the global scope")
-				}
 				return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot use \"self\" when no class scope is active")
 			}
 			return phpv.ZString(cls.GetName()).ZVal(), nil
 		case "parent":
 			cls := ctx.Class()
 			if cls == nil {
-				if ctx.Func() == nil {
-					return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot use \"parent\" in the global scope")
-				}
 				return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot access \"parent\" when no class scope is active")
 			}
 			parent := cls.GetParent()
@@ -564,9 +689,6 @@ func (r *runClassNameOf) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			}
 			cls := ctx.Class()
 			if cls == nil {
-				if ctx.Func() == nil {
-					return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot use \"static\" in the global scope")
-				}
 				return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot access \"static\" when no class scope is active")
 			}
 			return phpv.ZString(cls.GetName()).ZVal(), nil

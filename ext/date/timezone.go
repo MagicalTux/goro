@@ -1,12 +1,72 @@
 package date
 
 import (
+	"fmt"
+	"math"
 	"time"
 
 	"github.com/MagicalTux/goro/core"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
+
+func degreesToRadians(d float64) float64 { return d * math.Pi / 180 }
+func radiansToDegrees(r float64) float64 { return r * 180 / math.Pi }
+
+const solarZenithSunrise = 90.833
+
+func calculateSunTime(timestamp int64, latitude, longitude, zenith float64, isSunrise bool) float64 {
+	t := time.Unix(timestamp, 0).UTC()
+	dayOfYear := float64(t.YearDay())
+	lngHour := longitude / 15.0
+	var tApprox float64
+	if isSunrise {
+		tApprox = dayOfYear + (6-lngHour)/24
+	} else {
+		tApprox = dayOfYear + (18-lngHour)/24
+	}
+	M := 0.9856*tApprox - 3.289
+	L := M + 1.916*math.Sin(degreesToRadians(M)) + 0.020*math.Sin(degreesToRadians(2*M)) + 282.634
+	for L < 0 {
+		L += 360
+	}
+	for L >= 360 {
+		L -= 360
+	}
+	RA := radiansToDegrees(math.Atan(0.91764 * math.Tan(degreesToRadians(L))))
+	for RA < 0 {
+		RA += 360
+	}
+	for RA >= 360 {
+		RA -= 360
+	}
+	Lquadrant := math.Floor(L/90) * 90
+	RAquadrant := math.Floor(RA/90) * 90
+	RA = RA + (Lquadrant - RAquadrant)
+	RA = RA / 15
+	sinDec := 0.39782 * math.Sin(degreesToRadians(L))
+	cosDec := math.Cos(math.Asin(sinDec))
+	cosH := (math.Cos(degreesToRadians(zenith)) - sinDec*math.Sin(degreesToRadians(latitude))) / (cosDec * math.Cos(degreesToRadians(latitude)))
+	if cosH > 1 || cosH < -1 {
+		return math.NaN()
+	}
+	var H float64
+	if isSunrise {
+		H = 360 - radiansToDegrees(math.Acos(cosH))
+	} else {
+		H = radiansToDegrees(math.Acos(cosH))
+	}
+	H = H / 15
+	T := H + RA - 0.06571*tApprox - 6.622
+	UT := T - lngHour
+	for UT < 0 {
+		UT += 24
+	}
+	for UT >= 24 {
+		UT -= 24
+	}
+	return UT
+}
 
 // > func bool date_default_timezone_set ( string $timezoneId )
 func fncDateDefaultTimezoneSet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
@@ -59,15 +119,28 @@ func setTimezoneLoc(obj *phpobj.ZObject, loc *time.Location) {
 	obj.Opaque[DateTimeZone] = loc
 }
 
+// parseTzName handles offset strings like "+05:30" or "-02:00" in addition to named zones
+func parseTzName(tzName string) (*time.Location, error) {
+	if loc, err := time.LoadLocation(tzName); err == nil {
+		return loc, nil
+	}
+	if len(tzName) >= 2 && (tzName[0] == '+' || tzName[0] == '-') {
+		if offset, ok := parseTZOffset(tzName); ok {
+			return time.FixedZone(tzName, offset), nil
+		}
+	}
+	return nil, fmt.Errorf("unknown timezone: %s", tzName)
+}
+
 // datetimezoneConstruct implements DateTimeZone::__construct(string $timezone)
 func datetimezoneConstruct(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
 		return nil, ctx.Errorf("DateTimeZone::__construct() expects exactly 1 argument, 0 given")
 	}
-	tzName := args[0].AsString(ctx)
-	loc, err := time.LoadLocation(string(tzName))
+	tzName := string(args[0].AsString(ctx))
+	loc, err := parseTzName(tzName)
 	if err != nil {
-		return nil, phpobj.ThrowError(ctx, phpobj.Exception, "DateTimeZone::__construct(): Unknown or bad timezone ("+string(tzName)+")")
+		return nil, phpobj.ThrowError(ctx, phpobj.Exception, "DateTimeZone::__construct(): Unknown or bad timezone ("+tzName+")")
 	}
 	setTimezoneLoc(this, loc)
 	return nil, nil
@@ -479,4 +552,305 @@ func fncDateTimestampSet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error
 		return phpv.ZBool(false).ZVal(), nil
 	}
 	return setTimestampMethod(ctx, dtObj, args[1:])
+}
+
+func fncDateAdd(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) < 2 {
+		return nil, ctx.Errorf("date_add() expects exactly 2 arguments")
+	}
+	dtObj, ok := args[0].Value().(*phpobj.ZObject)
+	if !ok {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	return addMethod(ctx, dtObj, args[1:])
+}
+
+func fncDateSub(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) < 2 {
+		return nil, ctx.Errorf("date_sub() expects exactly 2 arguments")
+	}
+	dtObj, ok := args[0].Value().(*phpobj.ZObject)
+	if !ok {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	return subMethod(ctx, dtObj, args[1:])
+}
+
+func fncDateCreateFromFormat(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	return createFromFormatStaticFor(DateTime)(ctx, args)
+}
+
+func fncDateCreateImmutableFromFormat(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	return createFromFormatStaticFor(DateTimeImmutable)(ctx, args)
+}
+
+func fncDateIntervalCreateFromDateString(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) < 1 {
+		return nil, ctx.Errorf("date_interval_create_from_date_string() expects exactly 1 argument")
+	}
+	return createDateIntervalFromString(ctx, string(args[0].AsString(ctx)))
+}
+
+func fncDateIntervalFormat(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) < 2 {
+		return nil, ctx.Errorf("date_interval_format() expects exactly 2 arguments")
+	}
+	intObj, ok := args[0].Value().(*phpobj.ZObject)
+	if !ok {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	return dateIntervalFormat(ctx, intObj, args[1:])
+}
+
+func fncDateISODateSet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) < 3 {
+		return nil, ctx.Errorf("date_isodate_set() expects at least 3 arguments")
+	}
+	dtObj, ok := args[0].Value().(*phpobj.ZObject)
+	if !ok {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	return setISODateMethod(ctx, dtObj, args[1:])
+}
+
+func fncDateGetLastErrors(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	return phpv.ZBool(false).ZVal(), nil
+}
+
+func fncDateParse(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) < 1 {
+		return nil, ctx.Errorf("date_parse() expects exactly 1 argument")
+	}
+	datetime := string(args[0].AsString(ctx))
+	result := phpv.NewZArray()
+	t, ok := strToTime(datetime, time.Now().UTC())
+	if !ok {
+		result.OffsetSet(ctx, phpv.ZString("year"), phpv.ZBool(false).ZVal())
+		result.OffsetSet(ctx, phpv.ZString("month"), phpv.ZBool(false).ZVal())
+		result.OffsetSet(ctx, phpv.ZString("day"), phpv.ZBool(false).ZVal())
+		result.OffsetSet(ctx, phpv.ZString("hour"), phpv.ZBool(false).ZVal())
+		result.OffsetSet(ctx, phpv.ZString("minute"), phpv.ZBool(false).ZVal())
+		result.OffsetSet(ctx, phpv.ZString("second"), phpv.ZBool(false).ZVal())
+	} else {
+		result.OffsetSet(ctx, phpv.ZString("year"), phpv.ZInt(t.Year()).ZVal())
+		result.OffsetSet(ctx, phpv.ZString("month"), phpv.ZInt(int(t.Month())).ZVal())
+		result.OffsetSet(ctx, phpv.ZString("day"), phpv.ZInt(t.Day()).ZVal())
+		result.OffsetSet(ctx, phpv.ZString("hour"), phpv.ZInt(t.Hour()).ZVal())
+		result.OffsetSet(ctx, phpv.ZString("minute"), phpv.ZInt(t.Minute()).ZVal())
+		result.OffsetSet(ctx, phpv.ZString("second"), phpv.ZInt(t.Second()).ZVal())
+	}
+	result.OffsetSet(ctx, phpv.ZString("fraction"), phpv.ZFloat(0).ZVal())
+	result.OffsetSet(ctx, phpv.ZString("warning_count"), phpv.ZInt(0).ZVal())
+	result.OffsetSet(ctx, phpv.ZString("warnings"), phpv.NewZArray().ZVal())
+	result.OffsetSet(ctx, phpv.ZString("error_count"), phpv.ZInt(0).ZVal())
+	result.OffsetSet(ctx, phpv.ZString("errors"), phpv.NewZArray().ZVal())
+	result.OffsetSet(ctx, phpv.ZString("is_localtime"), phpv.ZBool(false).ZVal())
+	return result.ZVal(), nil
+}
+
+func fncDateParseFromFormat(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) < 2 {
+		return nil, ctx.Errorf("date_parse_from_format() expects exactly 2 arguments")
+	}
+	format := string(args[0].AsString(ctx))
+	datetime := string(args[1].AsString(ctx))
+	result := phpv.NewZArray()
+	t, ok := createFromFormatParsed(ctx, format, datetime, time.UTC)
+	if !ok {
+		result.OffsetSet(ctx, phpv.ZString("year"), phpv.ZBool(false).ZVal())
+		result.OffsetSet(ctx, phpv.ZString("month"), phpv.ZBool(false).ZVal())
+		result.OffsetSet(ctx, phpv.ZString("day"), phpv.ZBool(false).ZVal())
+		result.OffsetSet(ctx, phpv.ZString("hour"), phpv.ZBool(false).ZVal())
+		result.OffsetSet(ctx, phpv.ZString("minute"), phpv.ZBool(false).ZVal())
+		result.OffsetSet(ctx, phpv.ZString("second"), phpv.ZBool(false).ZVal())
+	} else {
+		result.OffsetSet(ctx, phpv.ZString("year"), phpv.ZInt(t.Year()).ZVal())
+		result.OffsetSet(ctx, phpv.ZString("month"), phpv.ZInt(int(t.Month())).ZVal())
+		result.OffsetSet(ctx, phpv.ZString("day"), phpv.ZInt(t.Day()).ZVal())
+		result.OffsetSet(ctx, phpv.ZString("hour"), phpv.ZInt(t.Hour()).ZVal())
+		result.OffsetSet(ctx, phpv.ZString("minute"), phpv.ZInt(t.Minute()).ZVal())
+		result.OffsetSet(ctx, phpv.ZString("second"), phpv.ZInt(t.Second()).ZVal())
+	}
+	result.OffsetSet(ctx, phpv.ZString("fraction"), phpv.ZFloat(0).ZVal())
+	result.OffsetSet(ctx, phpv.ZString("warning_count"), phpv.ZInt(0).ZVal())
+	result.OffsetSet(ctx, phpv.ZString("warnings"), phpv.NewZArray().ZVal())
+	result.OffsetSet(ctx, phpv.ZString("error_count"), phpv.ZInt(0).ZVal())
+	result.OffsetSet(ctx, phpv.ZString("errors"), phpv.NewZArray().ZVal())
+	result.OffsetSet(ctx, phpv.ZString("is_localtime"), phpv.ZBool(false).ZVal())
+	return result.ZVal(), nil
+}
+
+func fncGettimeofday(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var asFloat *phpv.ZBool
+	_, err := core.Expand(ctx, args, &asFloat)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	if asFloat != nil && bool(*asFloat) {
+		return phpv.ZFloat(float64(now.UnixNano()) / 1e9).ZVal(), nil
+	}
+	result := phpv.NewZArray()
+	result.OffsetSet(ctx, phpv.ZString("sec"), phpv.ZInt(now.Unix()).ZVal())
+	result.OffsetSet(ctx, phpv.ZString("usec"), phpv.ZInt(int64(now.Nanosecond()/1000)).ZVal())
+	result.OffsetSet(ctx, phpv.ZString("minuteswest"), phpv.ZInt(0).ZVal())
+	result.OffsetSet(ctx, phpv.ZString("dsttime"), phpv.ZInt(0).ZVal())
+	return result.ZVal(), nil
+}
+
+func fncTimezoneVersionGet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	return phpv.ZString("0.system").ZVal(), nil
+}
+
+func fncTimezoneLocationGet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) < 1 {
+		return nil, ctx.Errorf("timezone_location_get() expects exactly 1 argument")
+	}
+	result := phpv.NewZArray()
+	result.OffsetSet(ctx, phpv.ZString("country_code"), phpv.ZString("??").ZVal())
+	result.OffsetSet(ctx, phpv.ZString("latitude"), phpv.ZFloat(0).ZVal())
+	result.OffsetSet(ctx, phpv.ZString("longitude"), phpv.ZFloat(0).ZVal())
+	result.OffsetSet(ctx, phpv.ZString("comments"), phpv.ZString("").ZVal())
+	return result.ZVal(), nil
+}
+
+func fncTimezoneTransitionsGet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) < 1 {
+		return nil, ctx.Errorf("timezone_transitions_get() expects at least 1 argument")
+	}
+	tzObj, ok := args[0].Value().(*phpobj.ZObject)
+	if !ok {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	loc, ok := getTimezoneLoc(tzObj)
+	if !ok {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	result := phpv.NewZArray()
+	now := time.Now().In(loc)
+	name, offset := now.Zone()
+	entry := phpv.NewZArray()
+	entry.OffsetSet(ctx, phpv.ZString("ts"), phpv.ZInt(0).ZVal())
+	entry.OffsetSet(ctx, phpv.ZString("time"), phpv.ZString("1970-01-01T00:00:00+00:00").ZVal())
+	entry.OffsetSet(ctx, phpv.ZString("offset"), phpv.ZInt(offset).ZVal())
+	_, stdOffset := time.Date(now.Year(), time.January, 1, 0, 0, 0, 0, loc).Zone()
+	entry.OffsetSet(ctx, phpv.ZString("isdst"), phpv.ZBool(offset != stdOffset).ZVal())
+	entry.OffsetSet(ctx, phpv.ZString("abbr"), phpv.ZString(name).ZVal())
+	result.OffsetSet(ctx, nil, entry.ZVal())
+	return result.ZVal(), nil
+}
+
+func fncDateSunInfo(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) < 3 {
+		return nil, ctx.Errorf("date_sun_info() expects exactly 3 arguments")
+	}
+	timestamp := int64(args[0].AsInt(ctx))
+	latitude := float64(args[1].AsFloat(ctx))
+	longitude := float64(args[2].AsFloat(ctx))
+	t := time.Unix(timestamp, 0).UTC()
+	dayStart := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
+	result := phpv.NewZArray()
+	sunriseUT := calculateSunTime(dayStart.Unix(), latitude, longitude, solarZenithSunrise, true)
+	sunsetUT := calculateSunTime(dayStart.Unix(), latitude, longitude, solarZenithSunrise, false)
+	if math.IsNaN(sunriseUT) {
+		result.OffsetSet(ctx, phpv.ZString("sunrise"), phpv.ZBool(false).ZVal())
+	} else {
+		result.OffsetSet(ctx, phpv.ZString("sunrise"), phpv.ZInt(dayStart.Unix()+int64(sunriseUT*3600)).ZVal())
+	}
+	if math.IsNaN(sunsetUT) {
+		result.OffsetSet(ctx, phpv.ZString("sunset"), phpv.ZBool(false).ZVal())
+	} else {
+		result.OffsetSet(ctx, phpv.ZString("sunset"), phpv.ZInt(dayStart.Unix()+int64(sunsetUT*3600)).ZVal())
+	}
+	transit := (sunriseUT + sunsetUT) / 2
+	result.OffsetSet(ctx, phpv.ZString("transit"), phpv.ZInt(dayStart.Unix()+int64(transit*3600)).ZVal())
+	for _, tw := range []struct {
+		zenith   float64
+		beginKey string
+		endKey   string
+	}{
+		{96, "civil_twilight_begin", "civil_twilight_end"},
+		{102, "nautical_twilight_begin", "nautical_twilight_end"},
+		{108, "astronomical_twilight_begin", "astronomical_twilight_end"},
+	} {
+		begin := calculateSunTime(dayStart.Unix(), latitude, longitude, tw.zenith, true)
+		end := calculateSunTime(dayStart.Unix(), latitude, longitude, tw.zenith, false)
+		if math.IsNaN(begin) {
+			result.OffsetSet(ctx, phpv.ZString(tw.beginKey), phpv.ZBool(false).ZVal())
+		} else {
+			result.OffsetSet(ctx, phpv.ZString(tw.beginKey), phpv.ZInt(dayStart.Unix()+int64(begin*3600)).ZVal())
+		}
+		if math.IsNaN(end) {
+			result.OffsetSet(ctx, phpv.ZString(tw.endKey), phpv.ZBool(false).ZVal())
+		} else {
+			result.OffsetSet(ctx, phpv.ZString(tw.endKey), phpv.ZInt(dayStart.Unix()+int64(end*3600)).ZVal())
+		}
+	}
+	return result.ZVal(), nil
+}
+
+func fncDateSunrise(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	return dateSunFunc(ctx, args, true)
+}
+
+func fncDateSunset(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	return dateSunFunc(ctx, args, false)
+}
+
+func dateSunFunc(ctx phpv.Context, args []*phpv.ZVal, isSunrise bool) (*phpv.ZVal, error) {
+	funcName := "date_sunset"
+	if isSunrise {
+		funcName = "date_sunrise"
+	}
+	ctx.Deprecated(fmt.Sprintf("Function %s() is deprecated since 8.1", funcName))
+	if len(args) < 1 {
+		return nil, ctx.Errorf("%s() expects at least 1 argument", funcName)
+	}
+	timestamp := int64(args[0].AsInt(ctx))
+	returnFormat := 1
+	latitude := 0.0
+	longitude := 0.0
+	zenith := solarZenithSunrise
+	utcOffset := math.NaN()
+	if len(args) > 1 {
+		returnFormat = int(args[1].AsInt(ctx))
+	}
+	if len(args) > 2 {
+		latitude = float64(args[2].AsFloat(ctx))
+	}
+	if len(args) > 3 {
+		longitude = float64(args[3].AsFloat(ctx))
+	}
+	if len(args) > 4 {
+		zenith = float64(args[4].AsFloat(ctx))
+	}
+	if len(args) > 5 {
+		utcOffset = float64(args[5].AsFloat(ctx))
+	}
+	ut := calculateSunTime(timestamp, latitude, longitude, zenith, isSunrise)
+	if math.IsNaN(ut) {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	if !math.IsNaN(utcOffset) {
+		ut += utcOffset
+	}
+	for ut < 0 {
+		ut += 24
+	}
+	for ut >= 24 {
+		ut -= 24
+	}
+	switch returnFormat {
+	case 0:
+		t := time.Unix(timestamp, 0).UTC()
+		dayStart := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
+		return phpv.ZInt(dayStart.Unix() + int64(ut*3600)).ZVal(), nil
+	case 1:
+		hours := int(ut)
+		minutes := int((ut - float64(hours)) * 60)
+		return phpv.ZString(fmt.Sprintf("%02d:%02d", hours, minutes)).ZVal(), nil
+	case 2:
+		return phpv.ZFloat(ut).ZVal(), nil
+	}
+	return phpv.ZBool(false).ZVal(), nil
 }

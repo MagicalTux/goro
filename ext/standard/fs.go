@@ -711,6 +711,9 @@ func fncFeof(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if handle == nil {
 		return phpv.ZTrue.ZVal(), nil
 	}
+	if handle.GetResourceType() == phpv.ResourceUnknown {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "feof(): Argument #1 ($stream) must be an open stream resource")
+	}
 
 	var file *stream.Stream
 	if handle.GetResourceType() == phpv.ResourceStream {
@@ -804,6 +807,9 @@ func fncFseek(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if handle == nil {
 		return phpv.ZInt(-1).ZVal(), nil
 	}
+	if handle.GetResourceType() == phpv.ResourceUnknown {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "fseek(): Argument #1 ($stream) must be an open stream resource")
+	}
 
 	var file *stream.Stream
 	if handle.GetResourceType() == phpv.ResourceStream {
@@ -839,6 +845,9 @@ func fncFtell(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 	if handle == nil {
 		return phpv.ZFalse.ZVal(), nil
+	}
+	if handle.GetResourceType() == phpv.ResourceUnknown {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "ftell(): Argument #1 ($stream) must be an open stream resource")
 	}
 
 	var file *stream.Stream
@@ -878,23 +887,35 @@ func fncFtruncate(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, ctx.FuncError(err)
 	}
 
+	if handle.GetResourceType() == phpv.ResourceUnknown {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "ftruncate(): Argument #1 ($stream) must be an open stream resource")
+	}
+
 	if size < 0 {
 		return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
 			"ftruncate(): Argument #2 ($size) must be greater than or equal to 0")
 	}
 
-	var filename string
-	if s, ok := handle.(*stream.Stream); ok {
-		if f, ok := s.Attr("uri").(string); ok {
-			filename = f
-		}
+	s, ok := handle.(*stream.Stream)
+	if !ok {
+		ctx.Warn("resource type not yet supported:" + handle.GetResourceType().String())
+		return phpv.ZFalse.ZVal(), nil
 	}
-
+	if f := s.UnderlyingFile(); f != nil {
+		err = f.Truncate(int64(size))
+		if err != nil {
+			return phpv.ZFalse.ZVal(), nil
+		}
+		return phpv.ZTrue.ZVal(), nil
+	}
+	var filename string
+	if f, ok := s.Attr("uri").(string); ok {
+		filename = f
+	}
 	if filename == "" {
 		ctx.Warn("resource type not yet supported:" + handle.GetResourceType().String())
 		return phpv.ZFalse.ZVal(), nil
 	}
-
 	err = os.Truncate(filename, int64(size))
 	if err != nil {
 		return phpv.ZFalse.ZVal(), nil

@@ -30,20 +30,11 @@ func phpBase64Valid(c byte) bool {
 	return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '+' || c == '/'
 }
 
-// phpBase64Clean strips all non-base64 characters for non-strict mode (PHP behavior)
-func phpBase64Clean(s string) string {
-	var buf strings.Builder
-	buf.Grow(len(s))
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if phpBase64Valid(c) || c == '=' {
-			buf.WriteByte(c)
-		}
-	}
-	return buf.String()
+func phpBase64IsWhitespace(c byte) bool {
+	return c == ' ' || c == '\t' || c == '\n' || c == '\r'
 }
 
-// > func string base64_decode ( string $data [, bool $strict = FALSE ] )
+// > func string|false base64_decode ( string $data [, bool $strict = FALSE ] )
 func fncBase64Decode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var s phpv.ZString
 	var strict *phpv.ZBool
@@ -55,49 +46,82 @@ func fncBase64Decode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	if strict != nil && *strict {
-		// Strip whitespace for strict mode too (PHP does this)
-		cleaned := strings.Map(func(r rune) rune {
-			if r == ' ' || r == '\t' || r == '\n' || r == '\r' {
-				return -1
+		// Strict: strip whitespace, validate chars and padding
+		var cleaned strings.Builder
+		for i := 0; i < len(s); i++ {
+			if !phpBase64IsWhitespace(s[i]) {
+				cleaned.WriteByte(s[i])
 			}
-			return r
-		}, string(s))
-
-		// Validate: only base64 chars and padding allowed
-		padStarted := false
-		for i := 0; i < len(cleaned); i++ {
-			c := cleaned[i]
-			if c == '=' {
-				padStarted = true
-			} else if padStarted {
-				return phpv.ZFalse.ZVal(), nil
-			} else if !phpBase64Valid(c) {
+		}
+		data := cleaned.String()
+		if data == "" {
+			return phpv.ZString("").ZVal(), nil
+		}
+		// Find data vs padding boundary
+		dataEnd := len(data)
+		for dataEnd > 0 && data[dataEnd-1] == '=' {
+			dataEnd--
+		}
+		dataChars := data[:dataEnd]
+		padChars := data[dataEnd:]
+		for i := 0; i < len(dataChars); i++ {
+			if !phpBase64Valid(dataChars[i]) {
 				return phpv.ZFalse.ZVal(), nil
 			}
 		}
-
-		// Add padding if needed
-		if mod := len(cleaned) % 4; mod != 0 {
-			cleaned += strings.Repeat("=", 4-mod)
+		for i := 0; i < len(padChars); i++ {
+			if padChars[i] != '=' {
+				return phpv.ZFalse.ZVal(), nil
+			}
 		}
-
-		r, err := base64.StdEncoding.DecodeString(cleaned)
-		if err != nil {
+		mod := len(dataChars) % 4
+		if mod == 1 {
+			return phpv.ZFalse.ZVal(), nil
+		}
+		expectedPad := 0
+		if mod == 2 {
+			expectedPad = 2
+		} else if mod == 3 {
+			expectedPad = 1
+		}
+		if len(padChars) != expectedPad && len(padChars) != 0 {
+			return phpv.ZFalse.ZVal(), nil
+		}
+		padded := dataChars
+		if mod != 0 {
+			padded += strings.Repeat("=", 4-mod)
+		}
+		r, decErr := base64.StdEncoding.DecodeString(padded)
+		if decErr != nil {
 			return phpv.ZFalse.ZVal(), nil
 		}
 		return phpv.ZString(r).ZVal(), nil
 	}
 
-	// non strict mode: PHP silently ignores any non-base64 characters
-	cleaned := phpBase64Clean(string(s))
-	cleaned = strings.TrimRight(cleaned, "=")
-
-	if len(cleaned) == 0 {
+	// Non-strict: strip ALL non-base64 chars (including =)
+	var cleaned strings.Builder
+	cleaned.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		if phpBase64Valid(s[i]) {
+			cleaned.WriteByte(s[i])
+		}
+	}
+	data := cleaned.String()
+	if len(data) == 0 {
 		return phpv.ZString("").ZVal(), nil
 	}
-
-	r, err := base64.RawStdEncoding.DecodeString(cleaned)
-	if err != nil {
+	// Truncate trailing incomplete group (mod 4 == 1 means lone char)
+	if mod := len(data) % 4; mod == 1 {
+		data = data[:len(data)-1]
+		if len(data) == 0 {
+			return phpv.ZString("").ZVal(), nil
+		}
+	}
+	if mod2 := len(data) % 4; mod2 != 0 {
+		data += strings.Repeat("=", 4-mod2)
+	}
+	r, decErr := base64.StdEncoding.DecodeString(data)
+	if decErr != nil {
 		return phpv.ZFalse.ZVal(), nil
 	}
 	return phpv.ZString(r).ZVal(), nil

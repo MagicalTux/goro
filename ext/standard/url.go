@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -37,6 +38,246 @@ const (
 	PHP_QUERY_RFC3986 phpv.ZInt = 2
 )
 
+type phpParsedURL struct {
+	scheme, user, pass, host, path, query, fragment string
+	port                                            int
+	hasScheme, hasUser, hasPass, hasHost, hasPort    bool
+	hasPath, hasQuery, hasFragment                   bool
+}
+
+func isURLAlpha(c byte) bool { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') }
+
+func isSchemeValid(s string) bool {
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if !isURLAlpha(c) && (c < '0' || c > '9') && c != '+' && c != '-' && c != '.' {
+			return false
+		}
+	}
+	return true
+}
+
+func phpParseURL(raw string) (*phpParsedURL, bool) {
+	r := &phpParsedURL{}
+	s := raw
+	if len(s) == 0 {
+		r.path = ""
+		r.hasPath = true
+		return r, true
+	}
+	if i := strings.IndexByte(s, '#'); i >= 0 {
+		r.fragment = s[i+1:]
+		r.hasFragment = true
+		s = s[:i]
+	}
+	if i := strings.IndexByte(s, '?'); i >= 0 {
+		r.query = s[i+1:]
+		r.hasQuery = true
+		s = s[:i]
+	}
+	// Protocol-relative //authority
+	if len(s) >= 2 && s[0] == '/' && s[1] == '/' {
+		rest := s[2:]
+		if !phpParseAuth(r, &rest) {
+			return nil, false
+		}
+		if len(rest) > 0 {
+			r.path = rest
+			r.hasPath = true
+		}
+		return r, true
+	}
+	ci := strings.IndexByte(s, ':')
+	if ci < 0 {
+		r.path = s
+		r.hasPath = true
+		return r, true
+	}
+	if ci == 0 {
+		return nil, false
+	}
+	before := s[:ci]
+	after := s[ci+1:]
+	// scheme://authority
+	if len(after) >= 2 && after[0] == '/' && after[1] == '/' {
+		if !isSchemeValid(before) {
+			r.path = s
+			r.hasPath = true
+			return r, true
+		}
+		r.scheme = before
+		r.hasScheme = true
+		rest := after[2:]
+		if len(rest) == 0 || rest[0] == '/' {
+			// Empty authority - only valid for file
+			if strings.EqualFold(before, "file") {
+				if len(rest) > 0 {
+					pp := rest
+					if len(pp) >= 3 && pp[0] == '/' && isURLAlpha(pp[1]) && pp[2] == ':' {
+						pp = pp[1:]
+					}
+					r.path = pp
+					r.hasPath = true
+				}
+				return r, true
+			}
+			return nil, false
+		}
+		if !phpParseAuth(r, &rest) {
+			return nil, false
+		}
+		if len(rest) > 0 {
+			r.path = rest
+			r.hasPath = true
+		}
+		return r, true
+	}
+	// Check host:port/path pattern
+	allDigit := len(after) > 0
+	slashAt := -1
+	for i := 0; i < len(after); i++ {
+		if after[i] == '/' {
+			slashAt = i
+			break
+		}
+		if after[i] < '0' || after[i] > '9' {
+			allDigit = false
+			break
+		}
+	}
+	if allDigit && slashAt >= 0 {
+		ps := after[:slashAt]
+		if len(ps) > 0 {
+			p, e := strconv.Atoi(ps)
+			if e == nil && p <= 65535 {
+				r.host = before
+				r.hasHost = true
+				r.port = p
+				r.hasPort = true
+				r.path = after[slashAt:]
+				r.hasPath = true
+				return r, true
+			}
+		}
+	}
+	if allDigit && slashAt < 0 && !r.hasQuery && !r.hasFragment {
+		ps := after
+		if len(ps) > 0 {
+			p, e := strconv.Atoi(ps)
+			if e == nil && p <= 65535 {
+				r.host = before
+				r.hasHost = true
+				r.port = p
+				r.hasPort = true
+				return r, true
+			}
+		} else {
+			r.scheme = before
+			r.hasScheme = true
+			return r, true
+		}
+	}
+	if !isSchemeValid(before) {
+		r.path = s
+		r.hasPath = true
+		return r, true
+	}
+	r.scheme = before
+	r.hasScheme = true
+	if len(after) > 0 {
+		r.path = after
+		r.hasPath = true
+	}
+	return r, true
+}
+
+func phpParseAuth(r *phpParsedURL, s *string) bool {
+	a := *s
+	pi := strings.IndexByte(a, '/')
+	var auth string
+	if pi >= 0 {
+		auth = a[:pi]
+		*s = a[pi:]
+	} else {
+		auth = a
+		*s = ""
+	}
+	ai := strings.LastIndexByte(auth, '@')
+	if ai >= 0 {
+		ui := auth[:ai]
+		auth = auth[ai+1:]
+		ci := strings.IndexByte(ui, ':')
+		if ci >= 0 {
+			r.user = ui[:ci]
+			r.pass = ui[ci+1:]
+			r.hasUser = true
+			r.hasPass = true
+		} else {
+			r.user = ui
+			r.hasUser = true
+		}
+	}
+	if len(auth) == 0 {
+		return false
+	}
+	if auth[0] == '[' {
+		bi := strings.IndexByte(auth, ']')
+		if bi < 0 {
+			return false
+		}
+		r.host = auth[:bi+1]
+		r.hasHost = true
+		auth = auth[bi+1:]
+		if len(auth) > 0 && auth[0] == ':' {
+			auth = auth[1:]
+			if len(auth) > 0 {
+				p, e := strconv.Atoi(auth)
+				if e != nil || p > 65535 {
+					return false
+				}
+				r.port = p
+				r.hasPort = true
+			}
+		}
+		return true
+	}
+	ci := strings.LastIndexByte(auth, ':')
+	if ci >= 0 {
+		hp := auth[:ci]
+		pp := auth[ci+1:]
+		if len(pp) == 0 {
+			if len(hp) == 0 {
+				return false
+			}
+			r.host = hp
+			r.hasHost = true
+			return true
+		}
+		de := 0
+		for de < len(pp) && pp[de] >= '0' && pp[de] <= '9' {
+			de++
+		}
+		if de == 0 {
+			return false
+		}
+		p, e := strconv.Atoi(pp[:de])
+		if e != nil || p > 65535 {
+			return false
+		}
+		if len(hp) == 0 {
+			return false
+		}
+		r.host = hp
+		r.hasHost = true
+		r.port = p
+		r.hasPort = true
+	} else {
+		r.host = auth
+		r.hasHost = true
+	}
+	return true
+}
+
 // > func mixed parse_url ( string $url [, int $component = -1 ] )
 func fncParseUrl(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var urlStr string
@@ -45,122 +286,89 @@ func fncParseUrl(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	comp := phpv.ZInt(-1)
 	if component != nil {
 		comp = *component
 	}
-
-	// PHP's parse_url is more lenient than Go's url.Parse.
-	// We need to handle some edge cases.
-
-	// If URL has no scheme, Go's url.Parse treats it differently.
-	// PHP parse_url("//host/path") should parse host correctly.
-	// PHP parse_url("/path") should return just path.
-
-	parsed, parseErr := url.Parse(urlStr)
-	if parseErr != nil {
+	if comp > 7 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+			"parse_url(): Argument #2 ($component) must be a valid URL component identifier, "+strconv.FormatInt(int64(comp), 10)+" given")
+	}
+	parsed, ok := phpParseURL(urlStr)
+	if !ok {
 		return phpv.ZFalse.ZVal(), nil
 	}
-
-	// Extract components
-	scheme := parsed.Scheme
-	host := parsed.Hostname()
-	portStr := parsed.Port()
-	var port int
-	var hasPort bool
-	if portStr != "" {
-		port, err = strconv.Atoi(portStr)
-		if err == nil {
-			hasPort = true
-		}
-	}
-	user := ""
-	pass := ""
-	hasPass := false
-	if parsed.User != nil {
-		user = parsed.User.Username()
-		pass, hasPass = parsed.User.Password()
-	}
-	path := parsed.Path
-	query := parsed.RawQuery
-	fragment := parsed.Fragment
-
-	// If a specific component is requested, return just that
 	if comp >= 0 {
 		switch comp {
 		case PHP_URL_SCHEME:
-			if scheme == "" {
+			if !parsed.hasScheme {
 				return phpv.ZNULL.ZVal(), nil
 			}
-			return phpv.ZString(scheme).ZVal(), nil
+			return phpv.ZString(parsed.scheme).ZVal(), nil
 		case PHP_URL_HOST:
-			if host == "" {
+			if !parsed.hasHost {
 				return phpv.ZNULL.ZVal(), nil
 			}
-			return phpv.ZString(host).ZVal(), nil
+			return phpv.ZString(parsed.host).ZVal(), nil
 		case PHP_URL_PORT:
-			if !hasPort {
+			if !parsed.hasPort {
 				return phpv.ZNULL.ZVal(), nil
 			}
-			return phpv.ZInt(port).ZVal(), nil
+			return phpv.ZInt(parsed.port).ZVal(), nil
 		case PHP_URL_USER:
-			if user == "" && parsed.User == nil {
+			if !parsed.hasUser {
 				return phpv.ZNULL.ZVal(), nil
 			}
-			return phpv.ZString(user).ZVal(), nil
+			return phpv.ZString(parsed.user).ZVal(), nil
 		case PHP_URL_PASS:
-			if !hasPass {
+			if !parsed.hasPass {
 				return phpv.ZNULL.ZVal(), nil
 			}
-			return phpv.ZString(pass).ZVal(), nil
+			return phpv.ZString(parsed.pass).ZVal(), nil
 		case PHP_URL_PATH:
-			if path == "" {
+			if !parsed.hasPath {
 				return phpv.ZNULL.ZVal(), nil
 			}
-			return phpv.ZString(path).ZVal(), nil
+			return phpv.ZString(parsed.path).ZVal(), nil
 		case PHP_URL_QUERY:
-			if query == "" {
+			if !parsed.hasQuery {
 				return phpv.ZNULL.ZVal(), nil
 			}
-			return phpv.ZString(query).ZVal(), nil
+			return phpv.ZString(parsed.query).ZVal(), nil
 		case PHP_URL_FRAGMENT:
-			if fragment == "" {
+			if !parsed.hasFragment {
 				return phpv.ZNULL.ZVal(), nil
 			}
-			return phpv.ZString(fragment).ZVal(), nil
+			return phpv.ZString(parsed.fragment).ZVal(), nil
 		default:
 			return phpv.ZFalse.ZVal(), nil
 		}
 	}
-
-	// Return associative array with all components
 	result := phpv.NewZArray()
-	if scheme != "" {
-		result.OffsetSet(ctx, phpv.ZString("scheme"), phpv.ZString(scheme).ZVal())
+	if parsed.hasScheme {
+		result.OffsetSet(ctx, phpv.ZString("scheme"), phpv.ZString(parsed.scheme).ZVal())
 	}
-	if host != "" {
-		result.OffsetSet(ctx, phpv.ZString("host"), phpv.ZString(host).ZVal())
+	if parsed.hasHost && parsed.host != "" {
+		result.OffsetSet(ctx, phpv.ZString("host"), phpv.ZString(parsed.host).ZVal())
 	}
-	if hasPort {
-		result.OffsetSet(ctx, phpv.ZString("port"), phpv.ZInt(port).ZVal())
+	if parsed.hasPort {
+		result.OffsetSet(ctx, phpv.ZString("port"), phpv.ZInt(parsed.port).ZVal())
 	}
-	if parsed.User != nil {
-		result.OffsetSet(ctx, phpv.ZString("user"), phpv.ZString(user).ZVal())
-		if hasPass {
-			result.OffsetSet(ctx, phpv.ZString("pass"), phpv.ZString(pass).ZVal())
-		}
+	if parsed.hasUser {
+		result.OffsetSet(ctx, phpv.ZString("user"), phpv.ZString(parsed.user).ZVal())
 	}
-	if path != "" {
-		result.OffsetSet(ctx, phpv.ZString("path"), phpv.ZString(path).ZVal())
+	if parsed.hasPass {
+		result.OffsetSet(ctx, phpv.ZString("pass"), phpv.ZString(parsed.pass).ZVal())
 	}
-	if query != "" {
-		result.OffsetSet(ctx, phpv.ZString("query"), phpv.ZString(query).ZVal())
+	if parsed.hasPath {
+		result.OffsetSet(ctx, phpv.ZString("path"), phpv.ZString(parsed.path).ZVal())
 	}
-	if fragment != "" {
-		result.OffsetSet(ctx, phpv.ZString("fragment"), phpv.ZString(fragment).ZVal())
+	if parsed.hasQuery {
+		result.OffsetSet(ctx, phpv.ZString("query"), phpv.ZString(parsed.query).ZVal())
 	}
-
+	if parsed.hasFragment {
+		result.OffsetSet(ctx, phpv.ZString("fragment"), phpv.ZString(parsed.fragment).ZVal())
+	}
 	return result.ZVal(), nil
 }
 

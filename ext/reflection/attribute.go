@@ -37,6 +37,7 @@ func initReflectionAttribute() {
 			"isrepeated":   {Name: "isRepeated", Method: phpobj.NativeMethod(reflectionAttributeIsRepeated)},
 			"newinstance":  {Name: "newInstance", Method: phpobj.NativeMethod(reflectionAttributeNewInstance)},
 			"__tostring":   {Name: "__toString", Method: phpobj.NativeMethod(reflectionAttributeToString)},
+			"__debuginfo":  {Name: "__debugInfo", Method: phpobj.NativeMethod(reflectionAttributeDebugInfo)},
 		},
 	}
 }
@@ -227,6 +228,16 @@ func reflectionAttributeToString(ctx phpv.Context, o *phpobj.ZObject, args []*ph
 	}
 	sb.WriteString("  }\n}\n")
 	return phpv.ZString(sb.String()).ZVal(), nil
+}
+
+func reflectionAttributeDebugInfo(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	data := getAttrData(o)
+	if data == nil {
+		return phpv.NewZArray().ZVal(), nil
+	}
+	arr := phpv.NewZArray()
+	arr.OffsetSet(ctx, phpv.ZString("name"), data.attr.ClassName.ZVal())
+	return arr.ZVal(), nil
 }
 
 // resolveAttrArgs evaluates any lazy argument expressions on the attribute.

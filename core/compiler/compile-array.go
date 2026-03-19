@@ -176,6 +176,18 @@ func (a runArray) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			if err != nil {
 				return nil, err
 			}
+			// Validate key type: objects and arrays cannot be used as array keys
+			if k.GetType() == phpv.ZtObject {
+				objName := "object"
+				if obj, ok := k.Value().(phpv.ZObject); ok {
+					objName = string(obj.GetClass().GetName())
+				}
+				return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+					fmt.Sprintf("Cannot access offset of type %s on array", objName))
+			}
+			if k.GetType() == phpv.ZtArray {
+				return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "Cannot access offset of type array on array")
+			}
 		}
 		v, err = e.v.Run(ctx)
 		if err != nil {

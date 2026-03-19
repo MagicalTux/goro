@@ -2,6 +2,7 @@ package reflection
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
@@ -188,6 +189,10 @@ func reflectionFunctionGetShortName(ctx phpv.Context, o *phpobj.ZObject, args []
 		return phpv.ZString("").ZVal(), nil
 	}
 	name := string(data.name)
+	// Closures (names starting with "{closure:") should not be split on namespace separator
+	if strings.HasPrefix(name, "{closure:") {
+		return phpv.ZString(name).ZVal(), nil
+	}
 	// Find last \ for namespace separator
 	if idx := lastIndexByte(name, '\\'); idx >= 0 {
 		return phpv.ZString(name[idx+1:]).ZVal(), nil
@@ -201,6 +206,10 @@ func reflectionFunctionGetNamespaceName(ctx phpv.Context, o *phpobj.ZObject, arg
 		return phpv.ZString("").ZVal(), nil
 	}
 	name := string(data.name)
+	// Closures don't have a namespace component
+	if strings.HasPrefix(name, "{closure:") {
+		return phpv.ZString("").ZVal(), nil
+	}
 	if idx := lastIndexByte(name, '\\'); idx >= 0 {
 		return phpv.ZString(name[:idx]).ZVal(), nil
 	}
@@ -213,6 +222,10 @@ func reflectionFunctionInNamespace(ctx phpv.Context, o *phpobj.ZObject, args []*
 		return phpv.ZBool(false).ZVal(), nil
 	}
 	name := string(data.name)
+	// Closures are not "in a namespace" even if their name contains backslashes
+	if strings.HasPrefix(name, "{closure:") {
+		return phpv.ZBool(false).ZVal(), nil
+	}
 	return phpv.ZBool(lastIndexByte(name, '\\') >= 0).ZVal(), nil
 }
 

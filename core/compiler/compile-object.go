@@ -1303,8 +1303,8 @@ func compilePaamayimNekudotayim(v phpv.Runnable, i *tokenizer.Item, c compileCtx
 			dynFunc.args, err = compileFuncPassedArgs(c)
 			return dynFunc, err
 		}
-		// Dynamic static property/constant access: C::{'prop'}
-		return &runObjectDynVar{ref: v, nameExpr: expr, l: l}, nil
+		// Dynamic class constant fetch: C::{expr}
+		return &runClassDynConst{className: v, nameExpr: expr, l: l}, nil
 
 	case tokenizer.T_CLASS:
 		// $obj::class or ClassName::class → get class name

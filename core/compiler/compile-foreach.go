@@ -438,6 +438,13 @@ func compileForeachExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) 
 		if err != nil {
 			return nil, err
 		}
+	case tokenizer.Rune('['):
+		// Short list syntax: [$a, $b] = ...
+		// Reuse compileDestructure by passing the '[' token
+		res, err = compileDestructure(i, c)
+		if err != nil {
+			return nil, err
+		}
 	case tokenizer.T_VARIABLE:
 		// store in r.k or r.v ?
 		res = &runVariable{v: phpv.ZString(i.Data[1:]), l: i.Loc()}

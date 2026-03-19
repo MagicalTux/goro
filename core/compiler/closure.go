@@ -265,6 +265,21 @@ func init() {
 				return closureDebugInfo(ctx, o)
 			}),
 		},
+		"__invoke": {
+			Name:      "__invoke",
+			Modifiers: phpv.ZAttrPublic,
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				// Delegate to the HandleInvoke handler which knows how to call the closure
+				if Closure.H != nil && Closure.H.HandleInvoke != nil {
+					runnables := make([]phpv.Runnable, len(args))
+					for i, a := range args {
+						runnables[i] = &zvalRunnable{v: a}
+					}
+					return Closure.H.HandleInvoke(ctx, o, runnables)
+				}
+				return nil, fmt.Errorf("Closure::__invoke(): internal error")
+			}),
+		},
 	}
 }
 
@@ -1291,6 +1306,23 @@ func closureFromCallable(ctx phpv.Context, arg *phpv.ZVal) (*phpv.ZVal, error) {
 			if !ok {
 				return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
 					fmt.Sprintf("Closure::fromCallable(): Argument #1 ($callback) must be a valid callback, class \"%s\" does not have a method \"%s\"", className, methodName))
+			}
+			// Check visibility
+			callerClass := ctx.Class()
+			declaringClass := class
+			if member.Class != nil {
+				declaringClass = member.Class
+			}
+			if member.Modifiers.IsPrivate() {
+				if callerClass == nil || callerClass.GetName() != declaringClass.GetName() {
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+						fmt.Sprintf("Closure::fromCallable(): Argument #1 ($callback) must be a valid callback, cannot access private method %s::%s()", class.GetName(), member.Name))
+				}
+			} else if member.Modifiers.IsProtected() {
+				if callerClass == nil || (!callerClass.InstanceOf(declaringClass) && !declaringClass.InstanceOf(callerClass)) {
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+						fmt.Sprintf("Closure::fromCallable(): Argument #1 ($callback) must be a valid callback, cannot access protected method %s::%s()", class.GetName(), member.Name))
+				}
 			}
 			w := &wrappedClosure{
 				inner:      phpv.BindClass(member.Method, class, true),

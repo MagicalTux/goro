@@ -229,7 +229,13 @@ func compileDestructure(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) 
 		}
 	}
 
-	if !i.IsSingle('(') {
+	// Determine closing delimiter: ')' for list(), ']' for short syntax []
+	var closingRune rune
+	if i.IsSingle('(') {
+		closingRune = ')'
+	} else if i.IsSingle('[') {
+		closingRune = ']'
+	} else {
 		return nil, i.Unexpected()
 	}
 
@@ -241,12 +247,12 @@ func compileDestructure(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) 
 			return nil, err
 		}
 
-		if i.IsSingle(')') {
+		if i.IsSingle(closingRune) {
 			break
 		}
 
 		if i.IsSingle(',') {
-			// empty slot is allowed: list($x,)
+			// empty slot is allowed: list($x,) or [$x,]
 			res.e = append(res.e, &destructureEntry{v: nil})
 			continue
 		}
@@ -256,6 +262,10 @@ func compileDestructure(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) 
 		if i.Type == tokenizer.T_LIST {
 			isList = true
 			k, err = compileDestructure(nil, c)
+		} else if i.IsSingle('[') {
+			// Nested short list syntax: [[$a, $b], $c]
+			isList = true
+			k, err = compileDestructure(i, c)
 		} else {
 			k, err = compileExpr(i, c)
 		}
@@ -273,7 +283,7 @@ func compileDestructure(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) 
 			continue
 		}
 
-		if i.IsSingle(')') {
+		if i.IsSingle(closingRune) {
 			res.e = append(res.e, &destructureEntry{v: k})
 			break
 		}
@@ -292,6 +302,8 @@ func compileDestructure(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) 
 		var v phpv.Runnable
 		if i.Type == tokenizer.T_LIST {
 			v, err = compileDestructure(nil, c)
+		} else if i.IsSingle('[') {
+			v, err = compileDestructure(i, c)
 		} else {
 			v, err = compileExpr(i, c)
 		}
