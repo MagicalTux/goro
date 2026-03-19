@@ -450,7 +450,7 @@ func fncFileGetContents(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 		return phpv.ZFalse.ZVal(), nil
 	}
 
-	if maxlen.HasArg() && maxlen.Get() < 5 {
+	if maxlen.HasArg() && maxlen.Get() < 0 {
 		return nil, errors.New("Argument #5 ($length) must be greater than or equal to 0")
 	}
 
@@ -503,14 +503,9 @@ func fncFilePutContents(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	var filename phpv.ZString
 	var data *phpv.ZVal
 	var flagsArg *phpv.ZInt
-	var resource **phpv.ZVal
-	_, err := core.Expand(ctx, args, &filename, &data, &flagsArg, &resource)
+	_, err := core.Expand(ctx, args, &filename, &data, &flagsArg)
 	if err != nil {
 		return nil, err
-	}
-
-	if resource != nil {
-		return nil, errors.New("context resource is not yet supported, set to NULL")
 	}
 
 	if err := ctx.Global().CheckOpenBasedir(ctx, string(filename), "file_put_contents"); err != nil {
@@ -518,41 +513,62 @@ func fncFilePutContents(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 		return phpv.ZFalse.ZVal(), nil
 	}
 
-	flags := os.O_CREATE | os.O_WRONLY | os.O_TRUNC
+	openMode := phpv.ZString("w")
 	if flagsArg != nil {
-		// TODO: handle LOCK_EX and FILE_USE_INCLUDE_PATH flags
 		if (*flagsArg & FILE_APPEND) != 0 {
-			flags |= os.O_APPEND
-			flags &= ^os.O_TRUNC
+			openMode = "a"
 		}
 	}
 
-	// TODO: should use ctx.Global().Open()
-	r, err := os.OpenFile(resolveFilePath(ctx, string(filename)), flags, 0644)
+	fh, err := ctx.Global().Open(ctx, filename, openMode, false)
 	if err != nil {
 		return nil, err
 	}
-	defer r.Close()
+	defer fh.Close()
+	ss, _ := fh.(*stream.Stream)
+	if ss == nil {
+		return nil, errors.New("file_put_contents: cannot get stream")
+	}
+	r := ss.UnderlyingFile()
+	if r == nil {
+		return nil, errors.New("file_put_contents: cannot get underlying file handle")
+	}
 
 	written := 0
 	switch data.GetType() {
 	case phpv.ZtResource:
-		return nil, errors.New("data resource is not yet supported")
+		res, rok := data.Value().(phpv.Resource)
+		if !rok {
+			return nil, errors.New("data resource is not a valid resource")
+		}
+		stm, sok := res.(*stream.Stream)
+		if !sok {
+			return nil, errors.New("data resource is not a stream")
+		}
+		rbuf, rerr := io.ReadAll(stm)
+		if rerr != nil {
+			return nil, rerr
+		}
+		if written, err = r.Write(rbuf); err != nil {
+			return nil, err
+		}
 
 	case phpv.ZtArray:
-		array, err := data.As(ctx, phpv.ZtArray)
-		if err != nil {
-			return nil, err
-		}
-		output, err := fncStrImplode(ctx, []*phpv.ZVal{
-			phpv.ZStr(","),
-			array,
-		})
-		if err != nil {
-			return nil, err
-		}
-		if written, err = r.Write([]byte(output.String())); err != nil {
-			return nil, err
+		arr, aok := data.Value().(*phpv.ZArray)
+		if aok && arr != nil {
+			it := arr.NewIterator()
+			for ; it.Valid(ctx); it.Next(ctx) {
+				val, ierr := it.Current(ctx)
+				if ierr != nil {
+					return nil, ierr
+				}
+				sv := val.String()
+				wn, werr := r.Write([]byte(sv))
+				if werr != nil {
+					return nil, werr
+				}
+				written += wn
+			}
 		}
 	default:
 		str := data.String()
@@ -661,6 +677,7 @@ func fncFwrite(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 	n, err := file.Write(b)
 	if err != nil {
+		ctx.Notice("fwrite(): Write of %d bytes failed with errno=9 Bad file descriptor", len(b), logopt.NoFuncName(true))
 		return phpv.ZFalse.ZVal(), nil
 	}
 	return phpv.ZInt(n).ZVal(), nil
@@ -696,6 +713,10 @@ func fncFread(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	buf := make([]byte, int(length))
 	n, err := file.Read(buf)
 	if err != nil && n == 0 {
+		if err == io.EOF {
+			return phpv.ZString("").ZVal(), nil
+		}
+		ctx.Notice("fread(): Read of %d bytes failed with errno=9 Bad file descriptor", length, logopt.NoFuncName(true))
 		return phpv.ZFalse.ZVal(), nil
 	}
 	return phpv.ZString(buf[:n]).ZVal(), nil
@@ -875,6 +896,9 @@ func fncGetResourceType(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	}
 
 	rtype := handle.GetResourceType().String()
+	if rtype == "unknown" {
+		rtype = "Unknown"
+	}
 	return phpv.ZStr(rtype).ZVal(), nil
 }
 
@@ -989,13 +1013,15 @@ func fncStreamGetContents(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, erro
 	}
 
 	var contents []byte
-	if !maxLen.HasArg() {
+	if !maxLen.HasArg() || maxLen.Get() < 0 {
 		contents, err = io.ReadAll(file)
 	} else {
 		contents = make([]byte, maxLen.Get())
-		_, err = io.ReadFull(file, contents)
+		var n int
+		n, err = io.ReadFull(file, contents)
+		contents = contents[:n]
 	}
-	if err != nil {
+	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
 		return nil, ctx.FuncError(err)
 	}
 
