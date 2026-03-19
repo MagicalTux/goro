@@ -1266,6 +1266,11 @@ func (g *Global) ConstantGetAttributes(k phpv.ZString) []*phpv.ZAttribute {
 	return g.constantAttrs[k]
 }
 
+// GetAllConstants returns all defined constants.
+func (g *Global) GetAllConstants() map[phpv.ZString]phpv.Val {
+	return g.constant
+}
+
 func (g *Global) GetClass(ctx phpv.Context, name phpv.ZString, autoload bool) (phpv.ZClass, error) {
 	switch name.ToLower() {
 	case "self":

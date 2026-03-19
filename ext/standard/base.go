@@ -740,7 +740,8 @@ func stdGetClassMethods(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	case phpv.ZtString:
 		class, err = ctx.Global().GetClass(ctx, classArg.AsString(ctx), true)
 		if err != nil {
-			return phpv.ZNULL.ZVal(), nil
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+				fmt.Sprintf("get_class_methods(): Argument #1 ($object_or_class) must be an object or a valid class name, string given"))
 		}
 	default:
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
@@ -1018,7 +1019,34 @@ func stdErrorClearLast(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 
 // > func array get_defined_constants ( bool $categorize = false )
 func stdGetDefinedConstants(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	// TODO: proper implementation with categorization
+	var categorize *phpv.ZBool
+	_, err := core.Expand(ctx, args, &categorize)
+	if err != nil {
+		return nil, err
+	}
+
+	g, ok := ctx.Global().(*phpctx.Global)
+	if !ok {
+		return phpv.NewZArray().ZVal(), nil
+	}
+
+	constants := g.GetAllConstants()
+
+	if categorize != nil && *categorize {
+		// Return categorized constants (simplified: all in "user" category)
+		userConsts := phpv.NewZArray()
+		for name, val := range constants {
+			userConsts.OffsetSet(ctx, phpv.ZString(name).ZVal(), val.ZVal())
+		}
+		result := phpv.NewZArray()
+		result.OffsetSet(ctx, phpv.ZString("user").ZVal(), userConsts.ZVal())
+		return result.ZVal(), nil
+	}
+
+	// Return flat list of all constants
 	result := phpv.NewZArray()
+	for name, val := range constants {
+		result.OffsetSet(ctx, phpv.ZString(name).ZVal(), val.ZVal())
+	}
 	return result.ZVal(), nil
 }

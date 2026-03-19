@@ -514,6 +514,12 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 	case "DESCRIPTION":
 		// DESCRIPTION is informational only
 		return nil
+	case "WHITESPACE_SENSITIVE":
+		// WHITESPACE_SENSITIVE is informational only (tells IDE/editors not to strip trailing whitespace)
+		return nil
+	case "CONFLICTS":
+		// CONFLICTS marks tests that shouldn't run in parallel; we run sequentially so this is a no-op
+		return nil
 	case "ARGS":
 		// Set command-line arguments for the test (CLI mode)
 		args := strings.Fields(strings.TrimSpace(b.String()))

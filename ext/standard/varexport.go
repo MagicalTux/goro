@@ -8,6 +8,7 @@ import (
 	"unsafe"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
@@ -45,7 +46,7 @@ func doVarExport(ctx phpv.Context, w io.Writer, z *phpv.ZVal, linePfx string, re
 
 	p := uintptr(unsafe.Pointer(z))
 	if _, n := recurs[p]; n {
-		if err := ctx.Warn("does not handle circular references"); err != nil {
+		if err := ctx.Warn("var_export does not handle circular references", logopt.NoFuncName(true)); err != nil {
 			return err
 		}
 		fmt.Fprintf(w, "NULL")
