@@ -608,7 +608,7 @@ func fncHtmlSpecialChars(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error
 	return phpv.ZStr(buf.String()), nil
 }
 
-// > func string htmlspecialchars_decode ( string $string [, int $flags = ENT_COMPAT | ENT_HTML401 ] )
+// > func string htmlspecialchars_decode ( string $string [, int $flags = ENT_QUOTES | ENT_SUBSTITUTE ] )
 func fncHtmlSpecialCharsDecode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var str phpv.ZString
 	var flagsArg core.Optional[phpv.ZInt]
@@ -617,7 +617,7 @@ func fncHtmlSpecialCharsDecode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal,
 		return nil, err
 	}
 
-	flags := flagsArg.GetOrDefault(ENT_COMPAT | ENT_HTML401)
+	flags := flagsArg.GetOrDefault(ENT_QUOTES | ENT_HTML_SUBSTITUTE_ERRORS)
 
 	unescape := map[string]string{}
 	for _, e := range getHtmlTranslationTable(HTML_SPECIALCHARS, flags) {

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpctx"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
@@ -20,7 +21,11 @@ func getenv(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	if varname == nil {
-		// Return all environment variables as an array
+		// Return all environment variables from goro's internal env
+		if g, ok := ctx.Global().(*phpctx.Global); ok {
+			return g.GetAllEnv(ctx).ZVal(), nil
+		}
+		// Fallback to OS environment
 		result := phpv.NewZArray()
 		for _, envVar := range os.Environ() {
 			pos := strings.IndexByte(envVar, '=')

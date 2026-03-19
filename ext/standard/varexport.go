@@ -128,7 +128,12 @@ func doVarExport(ctx phpv.Context, w io.Writer, z *phpv.ZVal, linePfx string, re
 		}
 
 		if obj, ok := v.(*phpobj.ZObject); ok {
-			fmt.Fprintf(w, "\n%s%s::__set_state(array(\n", linePfx, obj.Class.GetName())
+			className := obj.Class.GetName()
+			if className == "stdClass" {
+				fmt.Fprintf(w, "(object) array(\n")
+			} else {
+				fmt.Fprintf(w, "\\%s::__set_state(array(\n", className)
+			}
 		} else {
 			fmt.Fprintf(w, "%sarray(\n", linePfx)
 		}
@@ -160,8 +165,12 @@ func doVarExport(ctx phpv.Context, w io.Writer, z *phpv.ZVal, linePfx string, re
 			}
 		}
 
-		if _, ok := v.(*phpobj.ZObject); ok {
-			fmt.Fprintf(w, "%s))", linePfx)
+		if obj, ok := v.(*phpobj.ZObject); ok {
+			if obj.Class.GetName() == "stdClass" {
+				fmt.Fprintf(w, "%s)", linePfx)
+			} else {
+				fmt.Fprintf(w, "%s))", linePfx)
+			}
 		} else {
 			fmt.Fprintf(w, "%s)", linePfx)
 		}

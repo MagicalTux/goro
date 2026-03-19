@@ -15,3 +15,15 @@ func (g *Global) Setenv(key, value string) error {
 func (g *Global) Unsetenv(key string) error {
 	return g.environ.UnsetString(phpv.ZString(key))
 }
+
+// GetAllEnv returns all environment variables as a ZArray.
+func (g *Global) GetAllEnv(ctx phpv.Context) *phpv.ZArray {
+	result := phpv.NewZArray()
+	it := g.environ.NewIterator()
+	for ; it.Valid(ctx); it.Next(ctx) {
+		k, _ := it.Key(ctx)
+		v, _ := it.Current(ctx)
+		result.OffsetSet(ctx, k, v)
+	}
+	return result
+}
