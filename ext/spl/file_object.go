@@ -479,6 +479,9 @@ func sfoFputcsv(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.Z
 		return phpv.ZBool(false).ZVal(), nil
 	}
 
+	// Invalidate scanner after write - recreate at current position
+	d.scanner = bufio.NewScanner(d.file)
+
 	return phpv.ZInt(n).ZVal(), nil
 }
 
@@ -571,6 +574,8 @@ func sfoFwrite(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZV
 	}
 
 	n, _ := d.file.Write(writeData)
+	// Invalidate scanner after write
+	d.scanner = bufio.NewScanner(d.file)
 	return phpv.ZInt(n).ZVal(), nil
 }
 

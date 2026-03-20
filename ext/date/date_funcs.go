@@ -598,8 +598,8 @@ var (
 	// YYYY-MM format
 	reYearMonthOnly = regexp.MustCompile(`^(\d{4})-(\d{2})$`)
 
-	// AM/PM times: "3am", "12pm", "1pm"
-	reAmPm = regexp.MustCompile(`(?i)^(\d{1,2})(am|pm)$`)
+	// AM/PM times: "3am", "12pm", "1pm", "1a.m.", "12p.m."
+	reAmPm = regexp.MustCompile(`(?i)^(\d{1,2})\s*(am|pm|a\.m\.|p\.m\.)$`)
 
 	// Day-name before date: "Mon 2005-11-14" or "Fri Nov 19 2003"
 	// Day name followed by content that contains at least one digit (to avoid matching "Saturday" alone)
@@ -819,6 +819,36 @@ func strToTime(input string, base time.Time) (time.Time, bool) {
 		input = cleanInput
 	}
 
+	// Bare weekday name: "monday", "mon", "Saturday" etc - means "next <weekday>"
+	lower := strings.ToLower(input)
+	if wd, ok := parseWeekday(lower); ok {
+		current := base.Weekday()
+		diff := int(wd) - int(current)
+		if diff <= 0 {
+			diff += 7
+		}
+		y, m, d := base.Date()
+		return time.Date(y, m, d+diff, 0, 0, 0, 0, base.Location()), true
+	}
+	// Handle 3-letter weekday abbreviations
+	if len(lower) == 3 {
+		fullNames := map[string]string{
+			"mon": "monday", "tue": "tuesday", "wed": "wednesday",
+			"thu": "thursday", "fri": "friday", "sat": "saturday", "sun": "sunday",
+		}
+		if full, ok := fullNames[lower]; ok {
+			if wd, ok := parseWeekday(full); ok {
+				current := base.Weekday()
+				diff := int(wd) - int(current)
+				if diff <= 0 {
+					diff += 7
+				}
+				y, m, d := base.Date()
+				return time.Date(y, m, d+diff, 0, 0, 0, 0, base.Location()), true
+			}
+		}
+	}
+
 	// "N ago" format
 	if matches := reAgo.FindStringSubmatch(input); matches != nil {
 		amount, _ := strconv.Atoi(matches[1])
@@ -872,10 +902,10 @@ func strToTime(input string, base time.Time) (time.Time, bool) {
 	// Try various absolute date formats
 	loc := base.Location()
 
-	// AM/PM: "3am", "1pm", "12am"
+	// AM/PM: "3am", "1pm", "12am", "5:05pm", "8:00 AM", "1a.m.", "12p.m."
 	if matches := reAmPm.FindStringSubmatch(input); matches != nil {
 		h, _ := strconv.Atoi(matches[1])
-		ampm := strings.ToLower(matches[2])
+		ampm := strings.ToLower(strings.ReplaceAll(matches[2], ".", ""))
 		if ampm == "pm" && h < 12 {
 			h += 12
 		} else if ampm == "am" && h == 12 {
@@ -883,6 +913,24 @@ func strToTime(input string, base time.Time) (time.Time, bool) {
 		}
 		y, m, d := base.Date()
 		return time.Date(y, m, d, h, 0, 0, 0, loc), true
+	}
+	// HH:MM[am/pm] or HH:MM:SS[am/pm] or HH:MM [am/pm] (also a.m./p.m.)
+	reTimeAmPm := regexp.MustCompile(`(?i)^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)$`)
+	if matches := reTimeAmPm.FindStringSubmatch(input); matches != nil {
+		h, _ := strconv.Atoi(matches[1])
+		min, _ := strconv.Atoi(matches[2])
+		sec := 0
+		if matches[3] != "" {
+			sec, _ = strconv.Atoi(matches[3])
+		}
+		ampm := strings.ToLower(strings.ReplaceAll(matches[4], ".", ""))
+		if ampm == "pm" && h < 12 {
+			h += 12
+		} else if ampm == "am" && h == 12 {
+			h = 0
+		}
+		y, m, d := base.Date()
+		return time.Date(y, m, d, h, min, sec, 0, loc), true
 	}
 
 	// "Mon DD HH:MM:SS YYYY" e.g. "Sep 04 16:39:45 2001"
@@ -948,6 +996,26 @@ func strToTime(input string, base time.Time) (time.Time, bool) {
 	if matches := reOffsetWithComment.FindStringSubmatch(input); matches != nil {
 		if t, ok := strToTime(matches[1], base); ok {
 			return t, true
+		}
+	}
+
+	// Handle "GMT+HHMM" or "UTC+HH" style timezone at end of string
+	if idx := strings.Index(strings.ToUpper(input), "GMT+"); idx > 0 {
+		datePart := strings.TrimSpace(input[:idx])
+		tzPart := input[idx+3:]
+		if offset, ok := parseTZOffset(tzPart); ok {
+			if t, ok := strToTime(datePart, base); ok {
+				return time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), 0, makeFixedZone(offset)), true
+			}
+		}
+	}
+	if idx := strings.Index(strings.ToUpper(input), "GMT-"); idx > 0 {
+		datePart := strings.TrimSpace(input[:idx])
+		tzPart := input[idx+3:]
+		if offset, ok := parseTZOffset(tzPart); ok {
+			if t, ok := strToTime(datePart, base); ok {
+				return time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), 0, makeFixedZone(offset)), true
+			}
 		}
 	}
 
@@ -1284,6 +1352,7 @@ var reMonthNameDateNoTime = regexp.MustCompile(`(?i)^(jan|feb|mar|apr|may|jun|ju
 var reMonthNameTime = regexp.MustCompile(`(?i)^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+(\d{1,2})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?$`)
 var reMonthYear = regexp.MustCompile(`(?i)^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+(\d{4})$`)
 var reYearMonth = regexp.MustCompile(`(?i)^(\d{4})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*$`)
+var reMonthDay = regexp.MustCompile(`(?i)^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+(\d{1,2})$`)
 
 func parseMonthNameDate(input string, base time.Time, loc *time.Location) (time.Time, bool) {
 	// "Mon DD YYYY HH:MM[:SS]"
@@ -1348,6 +1417,21 @@ func parseMonthNameDate(input string, base time.Time, loc *time.Location) (time.
 			return time.Time{}, false
 		}
 		return time.Date(y, m, 1, 0, 0, 0, 0, loc), true
+	}
+
+	// "Month Day" (without year) - uses base year, or next year if the date has passed
+	if matches := reMonthDay.FindStringSubmatch(input); matches != nil {
+		m, ok := parseMonth(matches[1])
+		if ok {
+			d, _ := strconv.Atoi(matches[2])
+			y := base.Year()
+			candidate := time.Date(y, m, d, 0, 0, 0, 0, loc)
+			// If the date is in the past relative to the base, use next year
+			if candidate.Before(base) {
+				y++
+			}
+			return time.Date(y, m, d, 0, 0, 0, 0, loc), true
+		}
 	}
 
 	return time.Time{}, false

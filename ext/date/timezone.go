@@ -131,6 +131,16 @@ func parseTzName(tzName string) (*time.Location, error) {
 			return time.FixedZone(tzName, offset), nil
 		}
 	}
+	// Handle "GMT+HHMM" or "GMT-HHMM" or "UTC+HH" style
+	upper := strings.ToUpper(tzName)
+	if strings.HasPrefix(upper, "GMT") || strings.HasPrefix(upper, "UTC") {
+		rest := tzName[3:]
+		if len(rest) > 0 && (rest[0] == '+' || rest[0] == '-') {
+			if offset, ok := parseTZOffset(rest); ok {
+				return makeFixedZone(offset), nil
+			}
+		}
+	}
 	return nil, fmt.Errorf("unknown timezone: %s", tzName)
 }
 

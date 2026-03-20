@@ -12,9 +12,11 @@ import (
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
 
-// isLeadingNumeric checks if a string starts with a digit or +-digit.
-// Used to distinguish "foo" (TypeError) from "0foo" (warning) for string offsets.
+// isLeadingNumeric checks if a string starts with a digit, decimal point, or +-digit/+-dot.
+// Used to distinguish "foo" (TypeError) from "0foo" or ".5foo" (warning) for string offsets
+// and arithmetic operations. PHP considers strings like ".1", "-.1" as leading numeric.
 func isLeadingNumeric(s string) bool {
+	s = strings.TrimSpace(s)
 	if len(s) == 0 {
 		return false
 	}
@@ -25,7 +27,8 @@ func isLeadingNumeric(s string) bool {
 	if i >= len(s) {
 		return false
 	}
-	return s[i] >= '0' && s[i] <= '9'
+	// Accept digit or decimal point (e.g. ".1", "-.5")
+	return (s[i] >= '0' && s[i] <= '9') || s[i] == '.'
 }
 
 // isNumericString checks if a string is a valid numeric string (integer or float).
