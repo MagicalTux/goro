@@ -614,16 +614,7 @@ func fncMetaphone(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 }
 
 // > func string|false crypt ( string $string , string $salt )
+// fncCrypt delegates to the CGo-based implementation in crypt.go
 func fncCrypt(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	// Stub - crypt requires platform-specific implementations
-	// Return a hash-like string for basic compatibility
-	var str phpv.ZString
-	var salt *phpv.ZString
-	_, err := core.Expand(ctx, args, &str, &salt)
-	if err != nil {
-		return nil, err
-	}
-	// For now, return false (not implemented)
-	ctx.Notice("crypt() is not fully implemented")
-	return phpv.ZBool(false).ZVal(), nil
+	return fncCryptImpl(ctx, args)
 }

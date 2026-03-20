@@ -305,8 +305,7 @@ func fncStrExplode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	if sep == "" {
-		// TODO: on PHP8+, throw an error
-		return phpv.ZBool(false).ZVal(), nil
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "explode(): Argument #1 ($separator) must not be empty")
 	}
 
 	limit := math.MaxInt64
@@ -2417,11 +2416,9 @@ func fncWordWrap(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	brk := []byte(breakStr)
 	textLen := len(str)
 
-	if width > 0 && textLen <= width {
-		// If the whole string fits in the width, no wrapping needed (unless cut mode with negative width, handled below).
-		if !cut {
-			return phpv.ZStr(string(str)), nil
-		}
+	if width > 0 && !cut && textLen <= width {
+		// If the whole string fits in the width, no wrapping needed.
+		return phpv.ZStr(string(str)), nil
 	}
 
 	// Allocate result buffer
@@ -2439,7 +2436,7 @@ func fncWordWrap(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		lastSpace := -1
 		for current < textLen {
 			if str[current] == ' ' {
-				if width > 0 && lineLen >= width {
+				if lineLen >= width {
 					// We need to break. If we've seen a space on this line, break at last space.
 					if lastSpace != -1 {
 						buf.Write(str[lastStart:lastSpace])
@@ -2454,7 +2451,7 @@ func fncWordWrap(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			current++
 		}
 		// If we exceeded width and there's a pending space
-		if width > 0 && lineLen >= width && lastSpace >= lastStart {
+		if lineLen >= width && lastSpace >= lastStart {
 			buf.Write(str[lastStart:lastSpace])
 			buf.Write(brk)
 			lastStart = lastSpace + 1
@@ -2462,9 +2459,13 @@ func fncWordWrap(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		buf.Write(str[lastStart:textLen])
 	} else {
 		// Cut mode: force break at exactly 'width' characters
+		effectiveWidth := width
+		if effectiveWidth <= 0 {
+			effectiveWidth = 1
+		}
 		for current < textLen {
 			if str[current] == ' ' {
-				if lineLen >= width {
+				if lineLen >= effectiveWidth {
 					if lineLen > 0 {
 						buf.Write(str[lastStart:current])
 						buf.Write(brk)
@@ -2476,7 +2477,7 @@ func fncWordWrap(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				}
 			} else {
 				lineLen++
-				if lineLen > width {
+				if lineLen > effectiveWidth {
 					// Force break
 					buf.Write(str[lastStart:current])
 					buf.Write(brk)

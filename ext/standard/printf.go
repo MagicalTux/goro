@@ -119,6 +119,9 @@ func fncVPrintf(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 // > func string fprintf ( resource $handle , string $format [, mixed $... ] )
 func fncFPrintf(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) < 2 {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("fprintf() expects at least 2 arguments, %d given", len(args)))
+	}
 	var handle phpv.Resource
 	var fmt phpv.ZString
 	n, err := core.Expand(ctx, args, &handle, &fmt)

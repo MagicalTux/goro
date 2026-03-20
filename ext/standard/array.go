@@ -1903,7 +1903,13 @@ func fncArrayProduct(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				floatResult = true
 			}
 			if !floatResult {
-				intProduct *= v.AsInt(ctx)
+				vi := v.AsInt(ctx)
+				newProduct := intProduct * vi
+				if vi != 0 && intProduct != 0 && newProduct/vi != intProduct {
+					floatResult = true
+				} else {
+					intProduct = newProduct
+				}
 			}
 			floatProduct *= v.AsFloat(ctx)
 		case phpv.ZtFloat:
@@ -1919,7 +1925,16 @@ func fncArrayProduct(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			}
 			continue
 		default:
-			intProduct *= v.AsInt(ctx)
+			if !floatResult {
+				newProduct := intProduct * v.AsInt(ctx)
+				// Detect overflow: if v != 0 and result/v != intProduct, overflow occurred
+				vi := v.AsInt(ctx)
+				if vi != 0 && intProduct != 0 && newProduct/vi != intProduct {
+					floatResult = true
+				} else {
+					intProduct = newProduct
+				}
+			}
 			floatProduct *= v.AsFloat(ctx)
 		}
 	}

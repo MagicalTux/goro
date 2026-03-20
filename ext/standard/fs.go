@@ -454,10 +454,20 @@ func fncFileGetContents(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	var contextZval *phpv.ZVal
 	var offsetArg core.Optional[phpv.ZInt]
 	var maxlen core.Optional[phpv.ZInt]
-	_, err := core.Expand(ctx, args, &filename, &useIncludePathArg, &contextZval, &offsetArg, &maxlen)
-	if err != nil {
+
+	// Expand required param first
+	var err error
+	if err = core.ExpandAt(ctx, args, 0, &filename); err != nil {
 		return nil, err
 	}
+	// Optional params
+	core.ExpandAt(ctx, args, 1, &useIncludePathArg)
+	// Context param: manually handle since *phpv.ZVal is not treated as optional by Expand
+	if len(args) >= 3 {
+		contextZval = args[2]
+	}
+	core.ExpandAt(ctx, args, 3, &offsetArg)
+	core.ExpandAt(ctx, args, 4, &maxlen)
 
 	if useIncludePathArg != nil && *useIncludePathArg {
 		// TODO: handle use_include_path
