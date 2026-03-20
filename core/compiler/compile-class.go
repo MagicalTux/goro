@@ -142,6 +142,58 @@ func checkStaticClassInConstExpr(r phpv.Runnable) *phpv.Loc {
 	return nil
 }
 
+// containsAttrDynamicClassName checks for dynamic class names in
+// class constant references within attribute arguments, including
+// object property access used as class names (e.g., a->b::c).
+func containsAttrDynamicClassName(r phpv.Runnable) bool {
+	if r == nil {
+		return false
+	}
+	switch v := r.(type) {
+	case *runClassStaticObjRef:
+		switch v.className.(type) {
+		case *runObjectVar, *runObjectDynVar, *runObjectFunc:
+			return true
+		}
+		return containsAttrDynamicClassName(v.className)
+	case *runClassStaticVarRef:
+		switch v.className.(type) {
+		case *runObjectVar, *runObjectDynVar, *runObjectFunc:
+			return true
+		}
+		return containsAttrDynamicClassName(v.className)
+	case *runOperator:
+		return containsAttrDynamicClassName(v.a) || containsAttrDynamicClassName(v.b)
+	}
+	return false
+}
+
+// containsAttrRuntimeOps checks for additional runtime operations
+// that are not allowed specifically in attribute arguments, including
+// function calls (not first-class callables).
+func containsAttrRuntimeOps(r phpv.Runnable) bool {
+	if r == nil {
+		return false
+	}
+	switch v := r.(type) {
+	case *runnableFunctionCall:
+		return true
+	case *runOperator:
+		return containsAttrRuntimeOps(v.a) || containsAttrRuntimeOps(v.b)
+	case *runClassStaticObjRef:
+		return containsAttrRuntimeOps(v.className)
+	case *runClassStaticVarRef:
+		return containsAttrRuntimeOps(v.className)
+	case runConcat:
+		for _, sub := range v {
+			if containsAttrRuntimeOps(sub) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // containsDynamicClassName checks if an expression uses a dynamic class name
 // (e.g., $var::CONST) which is not allowed in compile-time constants.
 func containsDynamicClassName(r phpv.Runnable) bool {

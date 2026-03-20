@@ -142,16 +142,24 @@ func parseAttributeArgs(c compileCtx) (args []*phpv.ZVal, argExprs []phpv.Runnab
 	hasLazy := false
 
 	for {
+		// Check for unpacking (...) which is not allowed in attribute arguments
+		i, err = c.NextItem()
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if i.Type == tokenizer.T_ELLIPSIS {
+			return nil, nil, nil, &phpv.PhpError{
+				Err:  fmt.Errorf("Cannot use unpacking in attribute argument list"),
+				Code: phpv.E_COMPILE_ERROR,
+				Loc:  i.Loc(),
+			}
+		}
+
 		// Check for named argument: identifier followed by ':'
 		// We must read the label and then the next token to check for ':'.
 		// We cannot use peekType() here because if the condition fails,
 		// backup() would overwrite the peeked token stored in c.next,
 		// losing the token that peekType() read from the tokenizer.
-		i, err = c.NextItem()
-		if err != nil {
-			return nil, nil, nil, err
-		}
-
 		isNamedArg := false
 		if i.IsLabel() {
 			// Read the next token to see if it's a single ':' (named argument)
@@ -202,6 +210,15 @@ func parseAttributeArgs(c compileCtx) (args []*phpv.ZVal, argExprs []phpv.Runnab
 			}
 			if err != nil {
 				return nil, nil, nil, err
+			}
+
+			// Check for dynamic class names in class constant references
+			if containsDynamicClassName(expr) || containsAttrDynamicClassName(expr) {
+				return nil, nil, nil, &phpv.PhpError{
+					Err:  fmt.Errorf("Dynamic class names are not allowed in compile-time class constant references"),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  i.Loc(),
+				}
 			}
 
 			// Check for invalid operations in constant expressions (function calls, variables)
