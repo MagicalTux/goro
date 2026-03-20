@@ -862,14 +862,14 @@ func TestPhp(t *testing.T) {
 	// Set RLIMIT_AS as a safety net. Go's virtual memory usage is much
 	// higher than actual RSS, so set this very high (64 GB) to avoid
 	// false triggers while still preventing 191 GB runaway allocations.
-	memLimit := uint64(64 * 1024 * 1024 * 1024) // 64 GB safety net
+	memLimit := uint64(16 * 1024 * 1024 * 1024) // 16 GB safety net per process
 	if v := os.Getenv("GORO_TEST_MEMLIMIT"); v != "" {
 		fmt.Sscanf(v, "%d", &memLimit)
 	}
 	setMemoryLimit(memLimit)
 	// Set Go's GC-aware soft limit if not already set via env
 	if os.Getenv("GOMEMLIMIT") == "" {
-		debug.SetMemoryLimit(6 * 1024 * 1024 * 1024) // 6 GB soft GC limit
+		debug.SetMemoryLimit(3 * 1024 * 1024 * 1024) // 3 GB soft GC limit per process
 	}
 
 	// Known-hanging tests that cause OOM/infinite loops in the engine.
