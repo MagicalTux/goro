@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -38,14 +39,14 @@ func fncParseIniFile(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	rc, err := ctx.Global().OpenFile(ctx, path)
 	if err != nil {
-		ctx.Warn("parse_ini_file(%s): Failed to open stream: %s", string(filename), err.Error())
+		ctx.Warn("parse_ini_file(%s): Failed to open stream: %s", string(filename), err.Error(), logopt.NoFuncName(true))
 		return phpv.ZFalse.ZVal(), nil
 	}
 	defer rc.Close()
 
 	data, err := io.ReadAll(rc)
 	if err != nil {
-		ctx.Warn("parse_ini_file(%s): Failed to read file: %s", string(filename), err.Error())
+		ctx.Warn("parse_ini_file(%s): Failed to read file: %s", string(filename), err.Error(), logopt.NoFuncName(true))
 		return phpv.ZFalse.ZVal(), nil
 	}
 

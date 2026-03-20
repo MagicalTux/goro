@@ -299,9 +299,8 @@ func (a *ZArray) StringKeys(ctx Context) []ZString {
 func (a *ZArray) ByteArrayKeys(ctx Context) [][]byte {
 	var keys [][]byte
 	for key := range a.Iterate(ctx) {
-		if key.GetType() == ZtString {
-			keys = append(keys, []byte(key.AsString(ctx)))
-		}
+		// Include both string and integer keys (convert int keys to string representation)
+		keys = append(keys, []byte(key.AsString(ctx)))
 	}
 	return keys
 }

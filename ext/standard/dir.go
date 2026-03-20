@@ -109,7 +109,7 @@ func fncChdir(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	err = ctx.Global().Chdir(p)
 	if err != nil {
-		ctx.Warn("chdir(): %s (errno 2)", err)
+		ctx.Warn("%s (errno 2)", err)
 		return phpv.ZFalse.ZVal(), nil
 	}
 	return phpv.ZBool(true).ZVal(), nil

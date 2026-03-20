@@ -35,7 +35,7 @@ func fncStat(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	p := resolveFilePath(ctx, filename)
 	fi, err := os.Stat(p)
 	if err != nil {
-		return phpv.ZFalse.ZVal(), ctx.Warn("stat(): stat failed for %s", filename)
+		return phpv.ZFalse.ZVal(), ctx.Warn("stat failed for %s", filename)
 	}
 
 	return buildStatArray(ctx, fi), nil
@@ -56,7 +56,7 @@ func fncLstat(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	p := resolveFilePath(ctx, filename)
 	fi, err := os.Lstat(p)
 	if err != nil {
-		return phpv.ZFalse.ZVal(), ctx.Warn("lstat(): Lstat failed for %s", filename)
+		return phpv.ZFalse.ZVal(), ctx.Warn("Lstat failed for %s", filename)
 	}
 
 	return buildStatArray(ctx, fi), nil
@@ -77,7 +77,7 @@ func fncFileatime(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	p := resolveFilePath(ctx, filename)
 	fi, err := os.Stat(p)
 	if err != nil {
-		return phpv.ZFalse.ZVal(), ctx.Warn("fileatime(): stat failed for %s", filename)
+		return phpv.ZFalse.ZVal(), ctx.Warn("stat failed for %s", filename)
 	}
 
 	st := fi.Sys().(*syscall.Stat_t)
@@ -99,7 +99,7 @@ func fncFilectime(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	p := resolveFilePath(ctx, filename)
 	fi, err := os.Stat(p)
 	if err != nil {
-		return phpv.ZFalse.ZVal(), ctx.Warn("filectime(): stat failed for %s", filename)
+		return phpv.ZFalse.ZVal(), ctx.Warn("stat failed for %s", filename)
 	}
 
 	st := fi.Sys().(*syscall.Stat_t)
@@ -121,7 +121,7 @@ func fncFilemtime(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	p := resolveFilePath(ctx, filename)
 	fi, err := os.Stat(p)
 	if err != nil {
-		return phpv.ZFalse.ZVal(), ctx.Warn("filemtime(): stat failed for %s", filename)
+		return phpv.ZFalse.ZVal(), ctx.Warn("stat failed for %s", filename)
 	}
 
 	return phpv.ZInt(fi.ModTime().Unix()).ZVal(), nil
@@ -142,7 +142,7 @@ func fncFilesize(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	p := resolveFilePath(ctx, filename)
 	fi, err := os.Stat(p)
 	if err != nil {
-		return phpv.ZFalse.ZVal(), ctx.Warn("filesize(): stat failed for %s", filename)
+		return phpv.ZFalse.ZVal(), ctx.Warn("stat failed for %s", filename)
 	}
 
 	return phpv.ZInt(fi.Size()).ZVal(), nil
@@ -163,7 +163,7 @@ func fncFiletype(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	p := resolveFilePath(ctx, filename)
 	fi, err := os.Lstat(p)
 	if err != nil {
-		return phpv.ZFalse.ZVal(), ctx.Warn("filetype(): Lstat failed for %s", filename)
+		return phpv.ZFalse.ZVal(), ctx.Warn("Lstat failed for %s", filename)
 	}
 
 	mode := fi.Mode()
@@ -202,7 +202,7 @@ func fncFileperms(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	p := resolveFilePath(ctx, filename)
 	fi, err := os.Stat(p)
 	if err != nil {
-		return phpv.ZFalse.ZVal(), ctx.Warn("fileperms(): stat failed for %s", filename)
+		return phpv.ZFalse.ZVal(), ctx.Warn("stat failed for %s", filename)
 	}
 
 	st := fi.Sys().(*syscall.Stat_t)
@@ -224,7 +224,7 @@ func fncFileowner(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	p := resolveFilePath(ctx, filename)
 	fi, err := os.Stat(p)
 	if err != nil {
-		return phpv.ZFalse.ZVal(), ctx.Warn("fileowner(): stat failed for %s", filename)
+		return phpv.ZFalse.ZVal(), ctx.Warn("stat failed for %s", filename)
 	}
 
 	st := fi.Sys().(*syscall.Stat_t)
@@ -246,7 +246,7 @@ func fncFilegroup(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	p := resolveFilePath(ctx, filename)
 	fi, err := os.Stat(p)
 	if err != nil {
-		return phpv.ZFalse.ZVal(), ctx.Warn("filegroup(): stat failed for %s", filename)
+		return phpv.ZFalse.ZVal(), ctx.Warn("stat failed for %s", filename)
 	}
 
 	st := fi.Sys().(*syscall.Stat_t)
@@ -268,7 +268,7 @@ func fncFileinode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	p := resolveFilePath(ctx, filename)
 	fi, err := os.Stat(p)
 	if err != nil {
-		return phpv.ZFalse.ZVal(), ctx.Warn("fileinode(): stat failed for %s", filename)
+		return phpv.ZFalse.ZVal(), ctx.Warn("stat failed for %s", filename)
 	}
 
 	st := fi.Sys().(*syscall.Stat_t)
@@ -295,7 +295,7 @@ func fncTouch(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if _, err := os.Stat(p); os.IsNotExist(err) {
 		f, err := os.Create(p)
 		if err != nil {
-			return phpv.ZFalse.ZVal(), ctx.Warn("touch(): Unable to create file %s because %s", filename, err)
+			return phpv.ZFalse.ZVal(), ctx.Warn("Unable to create file %s because %s", filename, err)
 		}
 		f.Close()
 	}
@@ -319,7 +319,7 @@ func fncTouch(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	if err != nil {
-		return phpv.ZFalse.ZVal(), ctx.Warn("touch(): %s", err)
+		return phpv.ZFalse.ZVal(), ctx.Warn("%s", err)
 	}
 	return phpv.ZTrue.ZVal(), nil
 }
@@ -345,7 +345,7 @@ func fncTempnam(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	f, err := os.CreateTemp(p, prefix)
 	if err != nil {
-		return phpv.ZFalse.ZVal(), ctx.Warn("tempnam(): %s", err)
+		return phpv.ZFalse.ZVal(), ctx.Warn("%s", err)
 	}
 	name := f.Name()
 	f.Close()
@@ -374,7 +374,7 @@ func fncLink(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	err = os.Link(target, link)
 	if err != nil {
-		return phpv.ZFalse.ZVal(), ctx.Warn("link(): %s", err)
+		return phpv.ZFalse.ZVal(), ctx.Warn("%s", err)
 	}
 	return phpv.ZTrue.ZVal(), nil
 }
@@ -459,7 +459,7 @@ func fncDiskFreeSpace(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var stat syscall.Statfs_t
 	err = syscall.Statfs(p, &stat)
 	if err != nil {
-		return phpv.ZFalse.ZVal(), ctx.Warn("disk_free_space(): %s", err)
+		return phpv.ZFalse.ZVal(), ctx.Warn("%s", err)
 	}
 
 	return phpv.ZFloat(float64(stat.Bavail) * float64(stat.Bsize)).ZVal(), nil
@@ -481,7 +481,7 @@ func fncDiskTotalSpace(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 	var stat syscall.Statfs_t
 	err = syscall.Statfs(p, &stat)
 	if err != nil {
-		return phpv.ZFalse.ZVal(), ctx.Warn("disk_total_space(): %s", err)
+		return phpv.ZFalse.ZVal(), ctx.Warn("%s", err)
 	}
 
 	return phpv.ZFloat(float64(stat.Blocks) * float64(stat.Bsize)).ZVal(), nil

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -1314,5 +1315,197 @@ func fncUmask(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	old := syscall.Umask(int(*maskArg))
 	return phpv.ZInt(old).ZVal(), nil
+}
+
+// > func array|false fstat ( resource $stream )
+func fncFstat(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var handle phpv.Resource
+	_, err := core.Expand(ctx, args, &handle)
+	if err != nil {
+		return nil, err
+	}
+	if handle == nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	var file *stream.Stream
+	if handle.GetResourceType() == phpv.ResourceStream {
+		file, _ = handle.(*stream.Stream)
+	}
+	if file == nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	f := file.UnderlyingFile()
+	if f == nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	info, statErr := f.Stat()
+	if statErr != nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	// Build stat array (same format as stat())
+	result := phpv.NewZArray()
+	sys := info.Sys()
+	if sysstat, ok := sys.(*syscall.Stat_t); ok {
+		result.OffsetSet(ctx, phpv.ZInt(0).ZVal(), phpv.ZInt(sysstat.Dev).ZVal())
+		result.OffsetSet(ctx, phpv.ZString("dev").ZVal(), phpv.ZInt(sysstat.Dev).ZVal())
+		result.OffsetSet(ctx, phpv.ZInt(1).ZVal(), phpv.ZInt(sysstat.Ino).ZVal())
+		result.OffsetSet(ctx, phpv.ZString("ino").ZVal(), phpv.ZInt(sysstat.Ino).ZVal())
+		result.OffsetSet(ctx, phpv.ZInt(2).ZVal(), phpv.ZInt(sysstat.Mode).ZVal())
+		result.OffsetSet(ctx, phpv.ZString("mode").ZVal(), phpv.ZInt(sysstat.Mode).ZVal())
+		result.OffsetSet(ctx, phpv.ZInt(3).ZVal(), phpv.ZInt(sysstat.Nlink).ZVal())
+		result.OffsetSet(ctx, phpv.ZString("nlink").ZVal(), phpv.ZInt(sysstat.Nlink).ZVal())
+		result.OffsetSet(ctx, phpv.ZInt(4).ZVal(), phpv.ZInt(sysstat.Uid).ZVal())
+		result.OffsetSet(ctx, phpv.ZString("uid").ZVal(), phpv.ZInt(sysstat.Uid).ZVal())
+		result.OffsetSet(ctx, phpv.ZInt(5).ZVal(), phpv.ZInt(sysstat.Gid).ZVal())
+		result.OffsetSet(ctx, phpv.ZString("gid").ZVal(), phpv.ZInt(sysstat.Gid).ZVal())
+		result.OffsetSet(ctx, phpv.ZInt(6).ZVal(), phpv.ZInt(sysstat.Rdev).ZVal())
+		result.OffsetSet(ctx, phpv.ZString("rdev").ZVal(), phpv.ZInt(sysstat.Rdev).ZVal())
+		result.OffsetSet(ctx, phpv.ZInt(7).ZVal(), phpv.ZInt(sysstat.Size).ZVal())
+		result.OffsetSet(ctx, phpv.ZString("size").ZVal(), phpv.ZInt(sysstat.Size).ZVal())
+		result.OffsetSet(ctx, phpv.ZInt(8).ZVal(), phpv.ZInt(sysstat.Atim.Sec).ZVal())
+		result.OffsetSet(ctx, phpv.ZString("atime").ZVal(), phpv.ZInt(sysstat.Atim.Sec).ZVal())
+		result.OffsetSet(ctx, phpv.ZInt(9).ZVal(), phpv.ZInt(sysstat.Mtim.Sec).ZVal())
+		result.OffsetSet(ctx, phpv.ZString("mtime").ZVal(), phpv.ZInt(sysstat.Mtim.Sec).ZVal())
+		result.OffsetSet(ctx, phpv.ZInt(10).ZVal(), phpv.ZInt(sysstat.Ctim.Sec).ZVal())
+		result.OffsetSet(ctx, phpv.ZString("ctime").ZVal(), phpv.ZInt(sysstat.Ctim.Sec).ZVal())
+		result.OffsetSet(ctx, phpv.ZInt(11).ZVal(), phpv.ZInt(sysstat.Blksize).ZVal())
+		result.OffsetSet(ctx, phpv.ZString("blksize").ZVal(), phpv.ZInt(sysstat.Blksize).ZVal())
+		result.OffsetSet(ctx, phpv.ZInt(12).ZVal(), phpv.ZInt(sysstat.Blocks).ZVal())
+		result.OffsetSet(ctx, phpv.ZString("blocks").ZVal(), phpv.ZInt(sysstat.Blocks).ZVal())
+	}
+	return result.ZVal(), nil
+}
+
+// > func bool chown ( string $filename , string|int $user )
+func fncChown(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var filename phpv.ZString
+	var user *phpv.ZVal
+	_, err := core.Expand(ctx, args, &filename, &user)
+	if err != nil {
+		return nil, err
+	}
+
+	p := resolveFilePath(ctx, string(filename))
+	uid := int(user.AsInt(ctx))
+
+	if err := os.Chown(p, uid, -1); err != nil {
+		ctx.Warn("Operation not permitted")
+		return phpv.ZFalse.ZVal(), nil
+	}
+	return phpv.ZTrue.ZVal(), nil
+}
+
+// > func bool chgrp ( string $filename , string|int $group )
+func fncChgrp(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var filename phpv.ZString
+	var group *phpv.ZVal
+	_, err := core.Expand(ctx, args, &filename, &group)
+	if err != nil {
+		return nil, err
+	}
+
+	p := resolveFilePath(ctx, string(filename))
+	gid := int(group.AsInt(ctx))
+
+	if err := os.Chown(p, -1, gid); err != nil {
+		ctx.Warn("Operation not permitted")
+		return phpv.ZFalse.ZVal(), nil
+	}
+	return phpv.ZTrue.ZVal(), nil
+}
+
+// > func string get_current_user ( void )
+func fncGetCurrentUser(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	username := os.Getenv("USER")
+	if username == "" {
+		username = os.Getenv("LOGNAME")
+	}
+	if username == "" {
+		username = "nobody"
+	}
+	return phpv.ZString(username).ZVal(), nil
+}
+
+// > func void|false passthru ( string $command [, int &$result_code ] )
+func fncPassthru(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var cmdStr string
+	var returnVar core.OptionalRef[phpv.ZInt]
+	_, err := core.Expand(ctx, args, &cmdStr, &returnVar)
+	if err != nil {
+		return nil, err
+	}
+
+	cmdStr = strings.TrimSpace(cmdStr)
+	if cmdStr == "" {
+		return nil, nil
+	}
+
+	cmd := exec.Command("/bin/sh", "-c", cmdStr)
+	out, runErr := cmd.CombinedOutput()
+
+	exitCode := 0
+	if runErr != nil {
+		if exitErr, ok := runErr.(*exec.ExitError); ok {
+			exitCode = exitErr.ExitCode()
+		}
+	} else if cmd.ProcessState != nil {
+		exitCode = cmd.ProcessState.ExitCode()
+	}
+
+	// passthru writes output directly to stdout
+	ctx.Write(out)
+
+	if returnVar.HasArg() {
+		returnVar.Set(ctx, phpv.ZInt(exitCode))
+	}
+
+	return nil, nil
+}
+
+// > func resource|false popen ( string $command , string $mode )
+func fncPopen(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var cmdStr, mode string
+	_, err := core.Expand(ctx, args, &cmdStr, &mode)
+	if err != nil {
+		return nil, err
+	}
+
+	if mode == "r" {
+		cmd := exec.Command("/bin/sh", "-c", cmdStr)
+		out, runErr := cmd.Output()
+		if runErr != nil {
+			if _, ok := runErr.(*exec.ExitError); !ok {
+				return phpv.ZFalse.ZVal(), nil
+			}
+		}
+		r := strings.NewReader(string(out))
+		s := stream.NewStream(r)
+		s.ResourceType = phpv.ResourceStream
+		return s.ZVal(), nil
+	}
+
+	return phpv.ZFalse.ZVal(), nil
+}
+
+// > func int pclose ( resource $handle )
+func fncPclose(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var handle phpv.Resource
+	_, err := core.Expand(ctx, args, &handle)
+	if err != nil {
+		return nil, err
+	}
+	if handle == nil {
+		return phpv.ZInt(-1).ZVal(), nil
+	}
+
+	s, ok := handle.(*stream.Stream)
+	if ok {
+		s.Close()
+	}
+	return phpv.ZInt(0).ZVal(), nil
 }
 

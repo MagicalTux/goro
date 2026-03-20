@@ -50,7 +50,7 @@ func fncAssert(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		if description != nil && !description.IsNull() && description.GetType() == phpv.ZtString {
 			msg = description.AsString(ctx).String()
 		}
-		err := ctx.Warn("assert(): %s failed", msg)
+		err := ctx.Warn("%s failed", msg)
 		if err != nil {
 			return nil, err
 		}
