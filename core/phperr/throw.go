@@ -14,13 +14,20 @@ type PhpThrow struct {
 func (e *PhpThrow) ThrownFile() string {
 	if e.Obj != nil {
 		if f := e.Obj.HashTable().GetString("file"); f != nil && f.GetType() == phpv.ZtString {
-			return f.String()
+			s := f.String()
+			if s == "" {
+				return "Unknown"
+			}
+			return s
 		}
 	}
 	if e.Loc != nil {
+		if e.Loc.Filename == "" {
+			return "Unknown"
+		}
 		return e.Loc.Filename
 	}
-	return ""
+	return "Unknown"
 }
 
 // ThrownLine returns the line where the exception was constructed (from the

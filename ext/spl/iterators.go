@@ -6,6 +6,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/MagicalTux/goro/core"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
@@ -35,6 +36,10 @@ func initIteratorIterator() {
 		"__construct": {
 			Name: "__construct",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				if len(args) > 2 {
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+						fmt.Sprintf("IteratorIterator::__construct() expects at most 2 arguments, %d given", len(args)))
+				}
 				if len(args) == 0 || args[0] == nil || args[0].GetType() != phpv.ZtObject {
 					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "IteratorIterator::__construct(): Argument #1 ($iterator) must be of type Traversable")
 				}
@@ -176,7 +181,10 @@ func initLimitIterator() {
 					limit = int(args[2].AsInt(ctx))
 				}
 				if offset < 0 {
-					return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "LimitIterator::__construct(): Argument #2 ($offset) must be non-negative")
+					return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "LimitIterator::__construct(): Argument #2 ($offset) must be greater than or equal to 0")
+				}
+				if limit < -1 {
+					return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "LimitIterator::__construct(): Argument #3 ($limit) must be greater than or equal to -1")
 				}
 				o.SetOpaque(LimitIteratorClass, &limitIteratorData{
 					inner:  inner,
@@ -395,6 +403,16 @@ func initCachingIterator() {
 				flags := cachingIteratorCallToString
 				if len(args) > 1 {
 					flags = int(args[1].AsInt(ctx))
+				}
+				// Validate that only one toString flag is set
+				toStringFlags := flags & (cachingIteratorCallToString | cachingIteratorToStringUseKey | cachingIteratorToStringUseCurrent | cachingIteratorToStringUseInner)
+				bitCount := 0
+				for tf := toStringFlags; tf != 0; tf &= tf - 1 {
+					bitCount++
+				}
+				if bitCount > 1 {
+					return nil, phpobj.ThrowError(ctx, phpobj.InvalidArgumentException,
+						"CachingIterator::__construct(): Argument #2 ($flags) must contain only one of CachingIterator::CALL_TOSTRING, CachingIterator::TOSTRING_USE_KEY, CachingIterator::TOSTRING_USE_CURRENT, or CachingIterator::TOSTRING_USE_INNER")
 				}
 				o.SetOpaque(CachingIteratorClass, &cachingIteratorData{
 					inner:   inner,
@@ -699,6 +717,10 @@ func initAppendIterator() {
 		"__construct": {
 			Name: "__construct",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				if len(args) > 0 {
+					return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError,
+						fmt.Sprintf("AppendIterator::__construct() expects exactly 0 arguments, %d given", len(args)))
+				}
 				o.SetOpaque(AppendIteratorClass, &appendIteratorData{
 					iterators: nil,
 					current:   0,
@@ -1049,7 +1071,7 @@ func initRegexIterator() {
 				}
 				mode := int(args[0].AsInt(ctx))
 				if mode < 0 || mode > 4 {
-					return nil, phpobj.ThrowError(ctx, phpobj.InvalidArgumentException, fmt.Sprintf("RegexIterator::setMode(): Argument #1 ($mode) must be RegexIterator::MATCH, RegexIterator::GET_MATCH, RegexIterator::ALL_MATCHES, RegexIterator::SPLIT, or RegexIterator::REPLACE"))
+					return nil, phpobj.ThrowError(ctx, phpobj.ValueError, fmt.Sprintf("RegexIterator::setMode(): Argument #1 ($mode) must be RegexIterator::MATCH, RegexIterator::GET_MATCH, RegexIterator::ALL_MATCHES, RegexIterator::SPLIT, or RegexIterator::REPLACE"))
 				}
 				d.mode = mode
 				return nil, nil
@@ -1760,8 +1782,16 @@ func recursiveIteratorNext(ctx phpv.Context, d *recursiveIteratorIteratorData, o
 		if outer != nil {
 			outer.Unwrap().(*phpobj.ZObject).CallMethod(ctx, "endChildren")
 		}
+		if len(d.stack) <= 1 {
+			break // endChildren may have modified the stack
+		}
 		d.stack = d.stack[:len(d.stack)-1]
-		d.depth--
+		if d.depth > 0 {
+			d.depth--
+		}
+		if len(d.stack) == 0 {
+			break
+		}
 		top = d.stack[len(d.stack)-1]
 		_, err = top.CallMethod(ctx, "next")
 		if err != nil {
@@ -1940,7 +1970,7 @@ var EmptyIteratorClass = &phpobj.ZClass{
 
 type callbackFilterIteratorData struct {
 	inner    *phpobj.ZObject
-	callback *phpv.ZVal
+	callback phpv.Callable
 }
 
 func (d *callbackFilterIteratorData) Clone() any {
@@ -1970,9 +2000,14 @@ func initCallbackFilterIterator() {
 				if !ok {
 					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "CallbackFilterIterator::__construct(): Argument #1 ($iterator) must be of type Iterator")
 				}
+				// Resolve the callback (handles arrays like [$obj, 'method'], strings, closures, etc.)
+				callback, err := core.SpawnCallable(ctx, args[1])
+				if err != nil {
+					return nil, err
+				}
 				o.SetOpaque(CallbackFilterIteratorClass, &callbackFilterIteratorData{
 					inner:    inner,
-					callback: args[1],
+					callback: callback,
 				})
 				return nil, nil
 			}),
@@ -2080,7 +2115,7 @@ func callbackFilterAccept(ctx phpv.Context, d *callbackFilterIteratorData) bool 
 	if err != nil {
 		return false
 	}
-	result, err := ctx.CallZVal(ctx, d.callback.Value().(phpv.Callable), []*phpv.ZVal{current, key, d.inner.ZVal()}, nil)
+	result, err := ctx.CallZVal(ctx, d.callback, []*phpv.ZVal{current, key, d.inner.ZVal()}, nil)
 	if err != nil {
 		return false
 	}
@@ -2179,7 +2214,7 @@ func initMultipleIterator() {
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				d := getMultipleIteratorData(o)
 				if d == nil || len(d.iterators) == 0 {
-					return phpv.ZFalse.ZVal(), nil
+					return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException, "Called current() on an invalid iterator")
 				}
 				result := phpv.NewZArray()
 				for i, it := range d.iterators {
@@ -2197,7 +2232,7 @@ func initMultipleIterator() {
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				d := getMultipleIteratorData(o)
 				if d == nil || len(d.iterators) == 0 {
-					return phpv.ZFalse.ZVal(), nil
+					return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException, "Called key() on an invalid iterator")
 				}
 				result := phpv.NewZArray()
 				for i, it := range d.iterators {

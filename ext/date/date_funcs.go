@@ -149,7 +149,20 @@ func phpDateFormat(format string, t time.Time) string {
 
 		// Timezone
 		case 'e': // Timezone identifier
-			buf.WriteString(t.Location().String())
+			locName := t.Location().String()
+			if locName == "" {
+				// Fixed-offset zone with no name - format as +HH:MM
+				_, offset := t.Zone()
+				sign := "+"
+				if offset < 0 {
+					sign = "-"
+					offset = -offset
+				}
+				hours := offset / 3600
+				mins := (offset % 3600) / 60
+				locName = fmt.Sprintf("%s%02d:%02d", sign, hours, mins)
+			}
+			buf.WriteString(locName)
 		case 'I': // Whether daylight saving time (1 if DST, 0 otherwise)
 			_, offset := t.Zone()
 			_, stdOffset := time.Date(t.Year(), time.January, 1, 0, 0, 0, 0, t.Location()).Zone()
@@ -575,6 +588,35 @@ var (
 
 	// ISO 8601 week date: YYYYWwwD or YYYYWww (with optional T time and tz)
 	reISOWeek = regexp.MustCompile(`^(\d{4})W(\d{2})(\d)?(?:T(\d{2}):?(\d{2})?:?(\d{2})?)?(.*)?$`)
+
+	// "Mon DD HH:MM:SS YYYY" e.g. "Sep 04 16:39:45 2001"
+	reMonDTimeY = regexp.MustCompile(`(?i)^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+(\d{1,2})\s+(\d{1,2}):(\d{2}):(\d{2})\s+(\d{4})$`)
+
+	// "Mon DD, YYYY HH:MM:SS TZ" e.g. "Nov 19, 2003 16:20:42 -0500"
+	reMonDYTimeTZ = regexp.MustCompile(`(?i)^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+(\d{1,2}),?\s+(\d{4})\s+(\d{1,2}):(\d{2}):?(\d{2})?\s*([+-]\d{2}:?\d{2})?$`)
+
+	// YYYY-MM format
+	reYearMonthOnly = regexp.MustCompile(`^(\d{4})-(\d{2})$`)
+
+	// AM/PM times: "3am", "12pm", "1pm"
+	reAmPm = regexp.MustCompile(`(?i)^(\d{1,2})(am|pm)$`)
+
+	// Day-name before date: "Mon 2005-11-14" or "Fri Nov 19 2003"
+	// Day name followed by content that contains at least one digit (to avoid matching "Saturday" alone)
+	reDayNameDate = regexp.MustCompile(`(?i)^(?:sunday|monday|tuesday|wednesday|thursday|friday|saturday|sun|mon|tue|wed|thu|fri|sat),?\s+(.*\d.*)$`)
+
+	// RFC2822 with trailing timezone name: "Sun, 21 Dec 2003 20:38:33 +0000 GMT"
+	reRFC2822Extra = regexp.MustCompile(`(?i)^[a-z]+,\s+(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+(\d{4})\s+(\d{2}):(\d{2}):(\d{2})\s+([+-]\d{4})\s+\(?[a-z]+\)?$`)
+
+	// Timestamp with timezone comment: "Thu Nov 10 21:09:30 EST 2005" (like "Thu Nov 10 21:09:30 2005")
+	// or  "Mon, 14 Nov 2005 09:05:00 +0000 (PST)" - offset with timezone comment in parens
+	reOffsetWithComment = regexp.MustCompile(`(?i)^(.+[+-]\d{4})\s+\([A-Z]+\)$`)
+
+	// "DD.MM.YYYY HH:MM" format
+	reDotDate = regexp.MustCompile(`^(\d{1,2})\.(\d{1,2})\.(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$`)
+
+	// Ordinal day: "November 26th" or "26th November 2005" (only when digits precede the suffix)
+	reOrdinal = regexp.MustCompile(`\b(\d{1,2})(?:st|nd|rd|th)\b`)
 )
 
 var monthNames = map[string]time.Month{
@@ -714,8 +756,7 @@ func parseISOWeekDate(input string, loc *time.Location) (time.Time, bool) {
 	remainder := strings.TrimSpace(matches[7])
 	if remainder != "" {
 		if offset, ok := parseTZOffset(remainder); ok {
-			fixedLoc := time.FixedZone("", offset)
-			t = time.Date(t.Year(), t.Month(), t.Day(), hour, min, sec, 0, fixedLoc)
+			t = time.Date(t.Year(), t.Month(), t.Day(), hour, min, sec, 0, makeFixedZone(offset))
 		}
 	}
 
@@ -772,6 +813,12 @@ func strToTime(input string, base time.Time) (time.Time, bool) {
 		return time.Date(y, m, d, 12, 0, 0, 0, base.Location()), true
 	}
 
+	// Strip ordinal suffixes before further processing: "26th" -> "26"
+	cleanInput := reOrdinal.ReplaceAllString(input, "${1}")
+	if cleanInput != input {
+		input = cleanInput
+	}
+
 	// "N ago" format
 	if matches := reAgo.FindStringSubmatch(input); matches != nil {
 		amount, _ := strconv.Atoi(matches[1])
@@ -825,6 +872,108 @@ func strToTime(input string, base time.Time) (time.Time, bool) {
 	// Try various absolute date formats
 	loc := base.Location()
 
+	// AM/PM: "3am", "1pm", "12am"
+	if matches := reAmPm.FindStringSubmatch(input); matches != nil {
+		h, _ := strconv.Atoi(matches[1])
+		ampm := strings.ToLower(matches[2])
+		if ampm == "pm" && h < 12 {
+			h += 12
+		} else if ampm == "am" && h == 12 {
+			h = 0
+		}
+		y, m, d := base.Date()
+		return time.Date(y, m, d, h, 0, 0, 0, loc), true
+	}
+
+	// "Mon DD HH:MM:SS YYYY" e.g. "Sep 04 16:39:45 2001"
+	if matches := reMonDTimeY.FindStringSubmatch(input); matches != nil {
+		m, ok := parseMonth(matches[1])
+		if ok {
+			d, _ := strconv.Atoi(matches[2])
+			hour, _ := strconv.Atoi(matches[3])
+			min, _ := strconv.Atoi(matches[4])
+			sec, _ := strconv.Atoi(matches[5])
+			y, _ := strconv.Atoi(matches[6])
+			return time.Date(y, m, d, hour, min, sec, 0, loc), true
+		}
+	}
+
+	// "Mon DD, YYYY HH:MM[:SS] [+-HHMM]" e.g. "Nov 19, 2003 16:20:42 -0500"
+	if matches := reMonDYTimeTZ.FindStringSubmatch(input); matches != nil {
+		m, ok := parseMonth(matches[1])
+		if ok {
+			d, _ := strconv.Atoi(matches[2])
+			y, _ := strconv.Atoi(matches[3])
+			hour, _ := strconv.Atoi(matches[4])
+			min, _ := strconv.Atoi(matches[5])
+			sec := 0
+			if matches[6] != "" {
+				sec, _ = strconv.Atoi(matches[6])
+			}
+			usedLoc := loc
+			if matches[7] != "" {
+				if offset, ok := parseTZOffset(matches[7]); ok {
+					usedLoc = makeFixedZone(offset)
+				}
+			}
+			return time.Date(y, m, d, hour, min, sec, 0, usedLoc), true
+		}
+	}
+
+	// YYYY-MM format
+	if matches := reYearMonthOnly.FindStringSubmatch(input); matches != nil {
+		y, _ := strconv.Atoi(matches[1])
+		m, _ := strconv.Atoi(matches[2])
+		return time.Date(y, time.Month(m), 1, 0, 0, 0, 0, loc), true
+	}
+
+	// RFC2822 with trailing timezone name/comment: "Sun, 21 Dec 2003 20:38:33 +0000 GMT"
+	if matches := reRFC2822Extra.FindStringSubmatch(input); matches != nil {
+		d, _ := strconv.Atoi(matches[1])
+		m, ok := parseMonth(matches[2])
+		if ok {
+			y, _ := strconv.Atoi(matches[3])
+			hour, _ := strconv.Atoi(matches[4])
+			min, _ := strconv.Atoi(matches[5])
+			sec, _ := strconv.Atoi(matches[6])
+			usedLoc := loc
+			if offset, ok := parseTZOffset(matches[7]); ok {
+				usedLoc = makeFixedZone(offset)
+			}
+			return time.Date(y, m, d, hour, min, sec, 0, usedLoc), true
+		}
+	}
+
+	// Offset with timezone comment in parens: "+0000 (PST)" -> strip parens
+	if matches := reOffsetWithComment.FindStringSubmatch(input); matches != nil {
+		if t, ok := strToTime(matches[1], base); ok {
+			return t, true
+		}
+	}
+
+	// Day-name prefix: "Mon 2005-11-14" -> strip day name and parse rest
+	if matches := reDayNameDate.FindStringSubmatch(input); matches != nil {
+		if t, ok := strToTime(matches[1], base); ok {
+			return t, true
+		}
+	}
+
+	// DD.MM.YYYY [HH:MM[:SS]] format
+	if matches := reDotDate.FindStringSubmatch(input); matches != nil {
+		d, _ := strconv.Atoi(matches[1])
+		m, _ := strconv.Atoi(matches[2])
+		y, _ := strconv.Atoi(matches[3])
+		hour, min, sec := 0, 0, 0
+		if matches[4] != "" {
+			hour, _ = strconv.Atoi(matches[4])
+			min, _ = strconv.Atoi(matches[5])
+			if matches[6] != "" {
+				sec, _ = strconv.Atoi(matches[6])
+			}
+		}
+		return time.Date(y, time.Month(m), d, hour, min, sec, 0, loc), true
+	}
+
 	// ISO 8601 week date: 1997W011, 2004W101T05:00+0
 	if t, ok := parseISOWeekDate(input, loc); ok {
 		return t, true
@@ -843,7 +992,10 @@ func strToTime(input string, base time.Time) (time.Time, bool) {
 		"2006-01-02T15:04:05-07:00",
 		"2006-01-02T15:04:05Z",
 		"2006-01-02 15:04:05 MST",
+		"2006-01-02 15:04 MST",
 		"2006-01-02 15:04:05-07:00",
+		"2006-01-02 15:04:05 -0700",
+		"2006-01-02 15:04:05-0700",
 		"Mon, 02 Jan 2006 15:04:05 -0700",
 		time.RFC1123Z,
 		time.RFC1123,
@@ -855,8 +1007,21 @@ func strToTime(input string, base time.Time) (time.Time, bool) {
 		"January 2, 2006 15:04:05 MST",
 		"Jan 2 2006 15:04:05 MST",
 		"January 2 2006 15:04:05 MST",
+		"Jan 2, 2006 15:04:05 -0700",
+		"Jan 2 2006 15:04:05 -0700",
+		"January 2, 2006 15:04:05 -0700",
+		"January 2 2006 15:04:05 -0700",
+		"2 Jan 06 15:04:05 -0700",
+		"2 Jan 2006 15:04:05 -0700",
+		"2 Jan 06 15:04:05 MST",
+		"2 Jan 2006 15:04:05 MST",
 	} {
 		if t, err := time.Parse(layout, input); err == nil {
+			// Fix timezone names for fixed offsets from time.Parse
+			if t.Location().String() == "" {
+				_, offset := t.Zone()
+				t = t.In(makeFixedZone(offset))
+			}
 			return t, true
 		}
 	}
@@ -868,10 +1033,11 @@ func strToTime(input string, base time.Time) (time.Time, bool) {
 		"2006-01-02 15:04",
 		"2006-01-02",
 		"2006/01/02",
+		"01/02/2006 15:04:05",
 		"01/02/2006",
 		"1/2/2006",
-		"02-Jan-2006",
 		"02-Jan-2006 15:04:05",
+		"02-Jan-2006",
 		"Jan 2, 2006 15:04:05",
 		"January 2, 2006 15:04:05",
 		"Jan 2 2006 15:04:05",
@@ -880,10 +1046,16 @@ func strToTime(input string, base time.Time) (time.Time, bool) {
 		"January 2, 2006",
 		"Jan 2 2006",
 		"January 2 2006",
+		"2 Jan 2006 15:04:05",
+		"2 January 2006 15:04:05",
+		"2 Jan 2006 15:04",
+		"2 January 2006 15:04",
 		"2 Jan 2006",
 		"2 January 2006",
 		"20060102",
 		"20060102150405",
+		"02.01.2006 15:04:05",
+		"02.01.2006",
 		"15:04:05",
 		"15:04",
 	} {
@@ -922,20 +1094,56 @@ func strToTime(input string, base time.Time) (time.Time, bool) {
 		}
 	}
 
-	// M/D/Y format
-	if reMDY.MatchString(input) {
-		parts := strings.Split(input, "/")
-		m, _ := strconv.Atoi(parts[0])
-		d, _ := strconv.Atoi(parts[1])
-		y, _ := strconv.Atoi(parts[2])
-		if y < 100 {
-			if y >= 70 {
-				y += 1900
-			} else {
-				y += 2000
+	// M/D/Y format, optionally followed by HHMM or HH:MM or HH:MM:SS or HH:MM AM/PM
+	if reMDY.MatchString(input) || strings.Contains(input, "/") {
+		// Try to extract date and optional time
+		mdyParts := strings.SplitN(input, " ", 2)
+		if reMDY.MatchString(mdyParts[0]) {
+			parts := strings.Split(mdyParts[0], "/")
+			m, _ := strconv.Atoi(parts[0])
+			d, _ := strconv.Atoi(parts[1])
+			y, _ := strconv.Atoi(parts[2])
+			if y < 100 {
+				if y >= 70 {
+					y += 1900
+				} else {
+					y += 2000
+				}
 			}
+			hour, min, sec := 0, 0, 0
+			if len(mdyParts) > 1 {
+				timePart := strings.TrimSpace(mdyParts[1])
+				// Try HHMM format (military time)
+				if len(timePart) == 4 {
+					if h, err := strconv.Atoi(timePart[:2]); err == nil {
+						if mi, err := strconv.Atoi(timePart[2:]); err == nil {
+							hour, min = h, mi
+						}
+					}
+				} else if strings.Contains(timePart, ":") {
+					// HH:MM[:SS] [AM/PM] format
+					timeAndAmPm := strings.Fields(timePart)
+					timeParts := strings.Split(timeAndAmPm[0], ":")
+					if len(timeParts) >= 2 {
+						hour, _ = strconv.Atoi(timeParts[0])
+						min, _ = strconv.Atoi(timeParts[1])
+						if len(timeParts) >= 3 {
+							sec, _ = strconv.Atoi(timeParts[2])
+						}
+					}
+					// Handle AM/PM
+					if len(timeAndAmPm) > 1 {
+						ampm := strings.ToUpper(timeAndAmPm[1])
+						if ampm == "PM" && hour < 12 {
+							hour += 12
+						} else if ampm == "AM" && hour == 12 {
+							hour = 0
+						}
+					}
+				}
+			}
+			return time.Date(y, time.Month(m), d, hour, min, sec, 0, loc), true
 		}
-		return time.Date(y, time.Month(m), d, 0, 0, 0, 0, loc), true
 	}
 
 	// D-M-Y format (European)
@@ -979,9 +1187,9 @@ func strToTime(input string, base time.Time) (time.Time, bool) {
 
 	// Try Go's built-in relaxed parse with the @ prefix for unix timestamps
 	if len(input) > 0 && input[0] == '@' {
-		ts, err := strconv.ParseInt(input[1:], 10, 64)
+		ts, err := strconv.ParseInt(strings.TrimSpace(input[1:]), 10, 64)
 		if err == nil {
-			return time.Unix(ts, 0).In(loc), true
+			return time.Unix(ts, 0).UTC(), true
 		}
 	}
 
@@ -997,9 +1205,23 @@ func strToTime(input string, base time.Time) (time.Time, bool) {
 //   "2001-10-22T211958-2"
 //   "20011022T211958+0213"
 //   "20011022T21:20+0215"
-var reDateTimeTZ = regexp.MustCompile(`^(-?\d{4})-(\d{2})-(\d{2})[T ](\d{2}):?(\d{2}):?(\d{2})?([+-]\d{1,2}(?::?\d{2})?)?$`)
+var reDateTimeTZ = regexp.MustCompile(`^(-?\d{4})-(\d{2})-(\d{2})[T ](\d{2}):?(\d{2}):?(\d{2})?\s*([+-]\d{1,4}(?::?\d{2})?)?$`)
 var reDateOnly = regexp.MustCompile(`^(-?\d{4})-(\d{2})-(\d{2})$`)
 var reCompactDateTimeTZ = regexp.MustCompile(`^(\d{4})(\d{2})(\d{2})T(\d{2}):?(\d{2}):?(\d{2})?(.*)?$`)
+
+// makeFixedZone creates a fixed zone with a properly formatted name like "+02:00" or "-08:00"
+func makeFixedZone(offset int) *time.Location {
+	sign := "+"
+	absOffset := offset
+	if offset < 0 {
+		sign = "-"
+		absOffset = -offset
+	}
+	hours := absOffset / 3600
+	mins := (absOffset % 3600) / 60
+	name := fmt.Sprintf("%s%02d:%02d", sign, hours, mins)
+	return time.FixedZone(name, offset)
+}
 
 func parseDateTimeWithOffset(input string, loc *time.Location) (time.Time, bool) {
 	// Try standard date-time with optional timezone: YYYY-MM-DD[T ]HH:MM:SS[+-offset]
@@ -1017,8 +1239,7 @@ func parseDateTimeWithOffset(input string, loc *time.Location) (time.Time, bool)
 		tzPart := strings.TrimSpace(matches[7])
 		if tzPart != "" {
 			if offset, ok := parseTZOffset(tzPart); ok {
-				fixedLoc := time.FixedZone("", offset)
-				return time.Date(year, time.Month(month), day, hour, min, sec, 0, fixedLoc), true
+				return time.Date(year, time.Month(month), day, hour, min, sec, 0, makeFixedZone(offset)), true
 			}
 		}
 		// No timezone offset, use provided location
@@ -1048,8 +1269,7 @@ func parseDateTimeWithOffset(input string, loc *time.Location) (time.Time, bool)
 		tzPart := strings.TrimSpace(matches[7])
 		if tzPart != "" {
 			if offset, ok := parseTZOffset(tzPart); ok {
-				fixedLoc := time.FixedZone("", offset)
-				return time.Date(year, time.Month(month), day, hour, min, sec, 0, fixedLoc), true
+				return time.Date(year, time.Month(month), day, hour, min, sec, 0, makeFixedZone(offset)), true
 			}
 		}
 		return time.Date(year, time.Month(month), day, hour, min, sec, 0, loc), true
@@ -1143,25 +1363,28 @@ func fncStrtotime(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	loc := getTimezone(ctx)
+	var base time.Time
+	if baseTs != nil {
+		base = time.Unix(int64(*baseTs), 0).In(loc)
+	} else {
+		base = time.Now().In(loc)
+	}
+
+	// Try our custom parser first - it handles timezone abbreviations, AM/PM, and
+	// many formats correctly that the strtotime library gets wrong
+	if t, ok := strToTime(string(datetime), base); ok {
+		return phpv.ZInt(t.Unix()).ZVal(), nil
+	}
+
+	// Fall back to the strtotime library for relative dates and complex formats
 	opts := []strtotime.Option{strtotime.InTZ(loc)}
 	if baseTs != nil {
-		opts = append(opts, strtotime.Rel(time.Unix(int64(*baseTs), 0).In(loc)))
+		opts = append(opts, strtotime.Rel(base))
 	}
 
 	t, stErr := strtotime.StrToTime(string(datetime), opts...)
 	if stErr != nil {
-		// Fall back to custom parser for formats the library doesn't handle yet
-		var base time.Time
-		if baseTs != nil {
-			base = time.Unix(int64(*baseTs), 0).In(loc)
-		} else {
-			base = time.Now().In(loc)
-		}
-		var ok bool
-		t, ok = strToTime(string(datetime), base)
-		if !ok {
-			return phpv.ZBool(false).ZVal(), nil
-		}
+		return phpv.ZBool(false).ZVal(), nil
 	}
 
 	return phpv.ZInt(t.Unix()).ZVal(), nil

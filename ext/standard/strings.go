@@ -590,8 +590,16 @@ func fncStrNumberFormat(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	// Handle negative decimals: round to the left of the decimal point
 	if decimals < 0 {
 		shift := math.Pow10(-decimals)
-		f = math.Round(f/shift) * shift
+		f = phpRoundHalfAwayFromZero(f/shift) * shift
 		decimals = 0
+	}
+
+	// Pre-round with PHP's "round half away from zero" mode before formatting,
+	// because Go's strconv.FormatFloat uses "round half to even" (banker's rounding)
+	// which differs from PHP's behavior.
+	if decimals >= 0 {
+		shift := math.Pow10(decimals)
+		f = phpRoundHalfAwayFromZero(f*shift) / shift
 	}
 
 	formatted := strconv.FormatFloat(f, 'f', decimals, 64)

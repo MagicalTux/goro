@@ -323,6 +323,17 @@ func fncIniSet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		}
 	}
 
+	// zend.assertions: cannot completely enable/disable at runtime
+	if varName == "zend.assertions" {
+		newInt := newValue.ZVal().AsInt(ctx)
+		oldVal := ctx.GetConfig("zend.assertions", phpv.ZInt(1).ZVal()).AsInt(ctx)
+		// Cannot switch between enabled (1) and completely disabled (-1) at runtime
+		if (newInt == -1 && oldVal != -1) || (newInt != -1 && oldVal == -1) {
+			ctx.Warn("zend.assertions may be completely enabled or disabled only in php.ini", logopt.NoFuncName(true))
+			return phpv.ZFalse.ZVal(), nil
+		}
+	}
+
 	oldValue, ok := ctx.Global().SetLocalConfig(varName, newValue.ZVal())
 	if !ok {
 		return phpv.ZFalse.ZVal(), nil

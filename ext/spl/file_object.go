@@ -175,9 +175,32 @@ func sfoConstruct(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv
 			"SplFileObject::__construct(): Argument #1 ($filename) must not contain any null bytes")
 	}
 
+	// Handle stream wrappers
+	if strings.HasPrefix(path, "php://temp") || strings.HasPrefix(path, "php://memory") {
+		// Create a temp file for php://temp and php://memory
+		file, err := os.CreateTemp("", "spl_*")
+		if err != nil {
+			return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException,
+				fmt.Sprintf("SplFileObject::__construct(%s): Failed to open stream: %s", path, err))
+		}
+		info, _ := file.Stat()
+		data := &splFileObjectData{
+			splFileInfoData: splFileInfoData{path: path, resolvedPath: file.Name(), info: info},
+			file:            file,
+			scanner:         bufio.NewScanner(file),
+			csvSep:          ',',
+			csvEnc:          '"',
+			csvEsc:          '\\',
+			openMode:        openMode,
+		}
+		o.SetOpaque(SplFileInfoClass, &data.splFileInfoData)
+		o.SetOpaque(SplFileObjectClass, data)
+		return nil, nil
+	}
+
 	// Resolve relative paths against PHP CWD
 	resolvedPath := path
-	if !filepath.IsAbs(resolvedPath) {
+	if !filepath.IsAbs(resolvedPath) && !strings.Contains(path, "://") {
 		cwd := string(ctx.Global().Getwd())
 		if cwd != "" {
 			resolvedPath = filepath.Join(cwd, resolvedPath)
@@ -255,15 +278,34 @@ func sfoConstruct(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv
 }
 
 func stfoConstruct(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	// SplTempFileObject accepts an optional maxMemory argument (ignored here, we always use a temp file)
+	// SplTempFileObject accepts an optional maxMemory argument
+	maxMemory := 2 * 1024 * 1024 // default: 2MB
+	if len(args) > 0 && args[0] != nil {
+		if args[0].GetType() == phpv.ZtString {
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+				"SplTempFileObject::__construct(): Argument #1 ($maxMemory) must be of type int, string given")
+		}
+		maxMemory = int(args[0].AsInt(ctx))
+	}
+
 	file, err := os.CreateTemp("", "spl_temp_*")
 	if err != nil {
 		return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException, err.Error())
 	}
 
+	// Determine the path name based on maxMemory
+	var displayPath string
+	if maxMemory < 0 {
+		displayPath = "php://memory"
+	} else if len(args) > 0 && args[0] != nil {
+		displayPath = fmt.Sprintf("php://temp/maxmemory:%d", maxMemory)
+	} else {
+		displayPath = "php://temp"
+	}
+
 	info, _ := file.Stat()
 	data := &splFileObjectData{
-		splFileInfoData: splFileInfoData{path: "php://temp", resolvedPath: file.Name(), info: info},
+		splFileInfoData: splFileInfoData{path: displayPath, resolvedPath: file.Name(), info: info},
 		file:            file,
 		scanner:         bufio.NewScanner(file),
 		csvSep:          ',',
@@ -689,8 +731,8 @@ func sfoSeek(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal
 
 	target := int(lineNum)
 	if target < 0 {
-		return nil, phpobj.ThrowError(ctx, phpobj.LogicException,
-			fmt.Sprintf("Can't seek file %s to negative line %d", d.path, target))
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+			"SplFileObject::seek(): Argument #1 ($line) must be greater than or equal to 0")
 	}
 
 	// Rewind to beginning
@@ -741,7 +783,16 @@ func sfoCurrent(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.Z
 	if d == nil || d.eof {
 		return phpv.ZBool(false).ZVal(), nil
 	}
-	return phpv.ZStr(d.curLine), nil
+	if d.flags&sfoReadCsv != 0 {
+		// In CSV mode, return the parsed CSV array
+		line := strings.TrimRight(d.curLine, "\r\n")
+		return standard.ParseCsvLine(ctx, line, d.csvSep, d.csvEnc, d.csvEsc)
+	}
+	line := d.curLine
+	if d.flags&sfoDropNewLine != 0 {
+		line = strings.TrimRight(line, "\r\n")
+	}
+	return phpv.ZStr(line), nil
 }
 
 func sfoKey(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
@@ -757,12 +808,26 @@ func sfoNext(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal
 	if d == nil || d.eof {
 		return nil, nil
 	}
-	if d.scanner.Scan() {
-		d.curLine = d.scanner.Text() + "\n"
-		d.line++
-	} else {
-		d.eof = true
-		d.curLine = ""
+	for {
+		if d.scanner.Scan() {
+			d.curLine = d.scanner.Text() + "\n"
+			d.line++
+		} else {
+			d.eof = true
+			d.curLine = ""
+			break
+		}
+		// Handle SKIP_EMPTY flag
+		if d.flags&sfoSkipEmpty != 0 {
+			line := d.curLine
+			if d.flags&sfoDropNewLine != 0 {
+				line = strings.TrimRight(line, "\r\n")
+			}
+			if line == "" || (line == "\n") || (line == "\r\n") {
+				continue
+			}
+		}
+		break
 	}
 	return nil, nil
 }
@@ -903,7 +968,7 @@ func sfoDebugInfo(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv
 	arr := phpv.NewZArray()
 	if d != nil {
 		arr.OffsetSet(ctx, phpv.ZString("\x00SplFileInfo\x00pathName"), phpv.ZStr(d.path))
-		arr.OffsetSet(ctx, phpv.ZString("\x00SplFileInfo\x00fileName"), phpv.ZStr(filepath.Base(d.path)))
+		arr.OffsetSet(ctx, phpv.ZString("\x00SplFileInfo\x00fileName"), phpv.ZStr(sfiBaseName(d.path)))
 		openMode := d.openMode
 		if openMode == "" {
 			openMode = "r"

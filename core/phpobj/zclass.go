@@ -1894,8 +1894,10 @@ func (c *ZClass) validateMagicMethods(ctx phpv.Context) error {
 
 	// Note: non-public magic method warnings are emitted by warnNonPublicMagicMethods()
 	// which is called earlier in Compile() before inheritance checks.
-	// We still call it here for classes without extends (so it always runs).
-	c.warnNonPublicMagicMethods(ctx)
+	// We only call it here for classes without extends (so it always runs).
+	if c.Extends == nil {
+		c.warnNonPublicMagicMethods(ctx)
+	}
 
 	return nil
 }

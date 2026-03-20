@@ -102,9 +102,25 @@ func initSplFixedArray() {
 			Name: "__construct",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				size := 0
-				if len(args) > 0 && args[0] != nil {
+				if len(args) > 0 && args[0] != nil && !args[0].IsNull() {
+					// Type check: must be int
+					switch args[0].GetType() {
+					case phpv.ZtInt, phpv.ZtFloat, phpv.ZtBool:
+						// Acceptable types (will be converted to int)
+					case phpv.ZtNull:
+						// null is deprecated in PHP 8.4+ but accepted
+					default:
+						typeName := args[0].GetType().TypeName()
+						if args[0].GetType() == phpv.ZtObject {
+							if obj, ok := args[0].Value().(*phpobj.ZObject); ok {
+								typeName = string(obj.GetClass().GetName())
+							}
+						}
+						return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+							fmt.Sprintf("SplFixedArray::__construct(): Argument #1 ($size) must be of type int, %s given", typeName))
+					}
 					size = int(args[0].AsInt(ctx))
-					if size < 0 {
+					if size < 0 || size > 1<<30 {
 						return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "SplFixedArray::__construct(): Argument #1 ($size) must be greater than or equal to 0")
 					}
 				}
@@ -146,7 +162,7 @@ func initSplFixedArray() {
 					return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "SplFixedArray::setSize(): Argument #1 ($size) must be greater than or equal to 0")
 				}
 				newSize := int(args[0].AsInt(ctx))
-				if newSize < 0 {
+				if newSize < 0 || newSize > 1<<30 {
 					return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "SplFixedArray::setSize(): Argument #1 ($size) must be greater than or equal to 0")
 				}
 				oldSize := len(d.data)
@@ -354,6 +370,9 @@ func initSplFixedArray() {
 					size := int(maxKey) + 1
 					if count == 0 {
 						size = 0
+					}
+					if size < 0 || size > 1<<30 {
+						return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "SplFixedArray::fromArray(): array too large")
 					}
 
 					d := &splFixedArrayData{

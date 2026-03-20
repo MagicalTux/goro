@@ -785,6 +785,9 @@ func expectfToRegex(pattern string) string {
 				continue
 			case '%':
 				result.WriteString(`%`)
+			case '0':
+				// %0 represents a NUL byte
+				result.WriteString(regexp.QuoteMeta(sanitizeForRegex("\x00")))
 			default:
 				result.WriteString(regexp.QuoteMeta(sanitizeForRegex(pattern[i : i+1])))
 				i++

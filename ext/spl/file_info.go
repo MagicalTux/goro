@@ -103,7 +103,7 @@ func sfiGetFilename(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*ph
 	if d == nil {
 		return phpv.ZStr(""), nil
 	}
-	return phpv.ZStr(filepath.Base(d.path)), nil
+	return phpv.ZStr(sfiBaseName(d.path)), nil
 }
 
 func sfiGetExtension(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
@@ -499,9 +499,18 @@ func sfiDebugInfo(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv
 	if d != nil {
 		// Use \0ClassName\0propName format for private property display
 		arr.OffsetSet(ctx, phpv.ZString("\x00SplFileInfo\x00pathName"), phpv.ZStr(d.path))
-		arr.OffsetSet(ctx, phpv.ZString("\x00SplFileInfo\x00fileName"), phpv.ZStr(filepath.Base(d.path)))
+		arr.OffsetSet(ctx, phpv.ZString("\x00SplFileInfo\x00fileName"), phpv.ZStr(sfiBaseName(d.path)))
 	}
 	return arr.ZVal(), nil
+}
+
+// sfiBaseName returns the filename portion of the path, handling stream wrappers.
+func sfiBaseName(path string) string {
+	// For stream wrappers like "php://temp", "php://memory", return the full path
+	if strings.Contains(path, "://") {
+		return path
+	}
+	return filepath.Base(path)
 }
 
 func sfiPathOrEmpty(d *splFileInfoData) string {

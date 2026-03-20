@@ -321,10 +321,15 @@ func BuildCsvLine(ctx phpv.Context, fields *phpv.ZArray, sep, enc, esc byte) ([]
 		if err != nil {
 			return nil, err
 		}
+
+		// Convert non-string values to string, emit warning for arrays
+		if val.GetType() == phpv.ZtArray {
+			ctx.Warn("Array to string conversion")
+		}
 		field := val.String()
 
-		// Check if enclosure is needed
-		needsEnclose := strings.ContainsAny(field, string([]byte{sep, enc, '\n', '\r'}))
+		// Check if enclosure is needed (matches PHP's php_fputcsv behavior)
+		needsEnclose := strings.ContainsAny(field, string([]byte{sep, enc, '\n', '\r', '\t', ' '}))
 		if esc != 0 && esc != enc {
 			needsEnclose = needsEnclose || strings.ContainsRune(field, rune(esc))
 		}
@@ -334,9 +339,8 @@ func BuildCsvLine(ctx phpv.Context, fields *phpv.ZArray, sep, enc, esc byte) ([]
 			for i := 0; i < len(field); i++ {
 				c := field[i]
 				if c == enc {
-					if esc != 0 {
-						buf.WriteByte(esc)
-					}
+					// PHP always doubles the enclosure character
+					buf.WriteByte(enc)
 					buf.WriteByte(enc)
 				} else if c == esc && esc != enc && esc != 0 {
 					buf.WriteByte(esc)

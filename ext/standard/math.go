@@ -265,6 +265,24 @@ func roundWithPrecisionAwayFromZero(n float64, precision int) float64 {
 	return v / shift
 }
 
+// phpRoundHalfAwayFromZero rounds a float to the nearest integer,
+// with ties (exactly 0.5) rounding away from zero, matching PHP's default
+// rounding mode. This differs from Go's math.Round which uses "round half to even".
+func phpRoundHalfAwayFromZero(n float64) float64 {
+	t := math.Trunc(n)
+	d := n - t
+	if d < 0 {
+		d = -d
+	}
+	if d > 0.5 || (d == 0.5 && n >= 0) {
+		return t + math.Copysign(1, n)
+	}
+	if d == 0.5 && n < 0 {
+		return t - 1
+	}
+	return t
+}
+
 // > func float acos ( float $arg )
 func mathAcos(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var f phpv.ZFloat

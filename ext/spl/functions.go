@@ -32,10 +32,10 @@ func splObjectId(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZInt(obj.ID).ZVal(), nil
 }
 
-// > func array iterator_to_array ( Traversable $iterator [, bool $preserve_keys = true ] )
+// > func array iterator_to_array ( Traversable|array $iterator [, bool $preserve_keys = true ] )
 func iteratorToArray(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
-		return nil, ctx.Errorf("iterator_to_array() expects at least 1 argument, 0 given")
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "iterator_to_array() expects at least 1 argument, 0 given")
 	}
 
 	z := args[0]
@@ -44,13 +44,31 @@ func iteratorToArray(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		preserveKeys = bool(args[1].AsBool(ctx))
 	}
 
+	// PHP 8.2+ supports arrays directly
+	if z.GetType() == phpv.ZtArray {
+		if preserveKeys {
+			return z.Dup(), nil
+		}
+		// Reindex
+		arr := z.Value().(*phpv.ZArray)
+		result := phpv.NewZArray()
+		idx := 0
+		for _, v := range arr.Iterate(ctx) {
+			result.OffsetSet(ctx, phpv.ZInt(idx), v)
+			idx++
+		}
+		return result.ZVal(), nil
+	}
+
 	if z.GetType() != phpv.ZtObject {
-		return nil, ctx.Errorf("iterator_to_array(): Argument #1 ($iterator) must be of type Traversable, %s given", z.GetType())
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("iterator_to_array(): Argument #1 ($iterator) must be of type Traversable|array, %s given", z.GetType()))
 	}
 
 	obj, ok := z.Value().(*phpobj.ZObject)
 	if !ok {
-		return nil, ctx.Errorf("iterator_to_array(): Argument #1 ($iterator) must be of type Traversable, %s given", z.GetType())
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("iterator_to_array(): Argument #1 ($iterator) must be of type Traversable|array, %s given", z.GetType()))
 	}
 
 	// Get the iterator - handle IteratorAggregate, Iterator, and plain objects
@@ -216,21 +234,29 @@ func (w *phpIteratorWrapper) Iterate(ctx phpv.Context) iter.Seq2[*phpv.ZVal, *ph
 	}
 }
 
-// > func int iterator_count ( Traversable $iterator )
+// > func int iterator_count ( Traversable|array $iterator )
 func iteratorCount(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
-		return nil, ctx.Errorf("iterator_count() expects exactly 1 argument, 0 given")
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "iterator_count() expects exactly 1 argument, 0 given")
 	}
 
 	z := args[0]
 
+	// PHP 8.2+ supports arrays directly
+	if z.GetType() == phpv.ZtArray {
+		arr := z.Value().(*phpv.ZArray)
+		return phpv.ZInt(arr.Count(ctx)).ZVal(), nil
+	}
+
 	if z.GetType() != phpv.ZtObject {
-		return nil, ctx.Errorf("iterator_count(): Argument #1 ($iterator) must be of type Traversable, %s given", z.GetType())
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("iterator_count(): Argument #1 ($iterator) must be of type Traversable|array, %s given", z.GetType()))
 	}
 
 	obj, ok := z.Value().(*phpobj.ZObject)
 	if !ok {
-		return nil, ctx.Errorf("iterator_count(): Argument #1 ($iterator) must be of type Traversable, %s given", z.GetType())
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("iterator_count(): Argument #1 ($iterator) must be of type Traversable|array, %s given", z.GetType()))
 	}
 
 	// Get the iterator - handle IteratorAggregate
@@ -297,16 +323,21 @@ func iteratorCount(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 }
 
 // resolveClass resolves a class from either an object or a class name string.
-func resolveClass(ctx phpv.Context, z *phpv.ZVal, autoload bool) (*phpobj.ZClass, error) {
+// funcName is used for error messages (e.g., "class_implements", "class_parents", "class_uses").
+func resolveClass(ctx phpv.Context, z *phpv.ZVal, autoload bool, funcName ...string) (*phpobj.ZClass, error) {
+	fn := "class_implements"
+	if len(funcName) > 0 {
+		fn = funcName[0]
+	}
 	switch z.GetType() {
 	case phpv.ZtObject:
 		obj, ok := z.Value().(*phpobj.ZObject)
 		if !ok {
-			return nil, ctx.Errorf("expected object")
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("%s(): Argument #1 ($object_or_class) must be of type object|string, %s given", fn, z.GetType()))
 		}
 		c, ok := obj.Class.(*phpobj.ZClass)
 		if !ok {
-			return nil, ctx.Errorf("could not resolve class")
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("%s(): Argument #1 ($object_or_class) must be of type object|string, %s given", fn, z.GetType()))
 		}
 		return c, nil
 	case phpv.ZtString:
@@ -317,11 +348,11 @@ func resolveClass(ctx phpv.Context, z *phpv.ZVal, autoload bool) (*phpobj.ZClass
 		}
 		c, ok := cls.(*phpobj.ZClass)
 		if !ok {
-			return nil, ctx.Errorf("could not resolve class")
+			return nil, fmt.Errorf("could not resolve class")
 		}
 		return c, nil
 	default:
-		return nil, ctx.Errorf("class_implements(): Argument #1 ($object_or_class) must be of type object|string, %s given", z.GetType())
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("%s(): Argument #1 ($object_or_class) must be of type object|string, %s given", fn, z.GetType()))
 	}
 }
 
@@ -336,9 +367,18 @@ func classImplements(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		autoload = bool(args[1].AsBool(ctx))
 	}
 
-	cls, err := resolveClass(ctx, args[0], autoload)
+	cls, err := resolveClass(ctx, args[0], autoload, "class_implements")
 	if err != nil {
-		return phpv.ZFalse.ZVal(), nil
+		if args[0].GetType() == phpv.ZtString {
+			className := args[0].AsString(ctx)
+			if autoload {
+				ctx.Warn("class_implements(): Class %s does not exist and could not be loaded", className)
+			} else {
+				ctx.Warn("class_implements(): Class %s does not exist", className)
+			}
+			return phpv.ZFalse.ZVal(), nil
+		}
+		return nil, err
 	}
 
 	result := phpv.NewZArray()
@@ -371,9 +411,18 @@ func classParents(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		autoload = bool(args[1].AsBool(ctx))
 	}
 
-	cls, err := resolveClass(ctx, args[0], autoload)
+	cls, err := resolveClass(ctx, args[0], autoload, "class_parents")
 	if err != nil {
-		return phpv.ZFalse.ZVal(), nil
+		if args[0].GetType() == phpv.ZtString {
+			className := args[0].AsString(ctx)
+			if autoload {
+				ctx.Warn("class_parents(): Class %s does not exist and could not be loaded", className)
+			} else {
+				ctx.Warn("class_parents(): Class %s does not exist", className)
+			}
+			return phpv.ZFalse.ZVal(), nil
+		}
+		return nil, err
 	}
 
 	result := phpv.NewZArray()
@@ -398,9 +447,18 @@ func classUses(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		autoload = bool(args[1].AsBool(ctx))
 	}
 
-	cls, err := resolveClass(ctx, args[0], autoload)
+	cls, err := resolveClass(ctx, args[0], autoload, "class_uses")
 	if err != nil {
-		return phpv.ZFalse.ZVal(), nil
+		if args[0].GetType() == phpv.ZtString {
+			className := args[0].AsString(ctx)
+			if autoload {
+				ctx.Warn("class_uses(): Class %s does not exist and could not be loaded", className)
+			} else {
+				ctx.Warn("class_uses(): Class %s does not exist", className)
+			}
+			return phpv.ZFalse.ZVal(), nil
+		}
+		return nil, err
 	}
 
 	result := phpv.NewZArray()
@@ -428,10 +486,10 @@ func splAutoloadFunctions(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, erro
 // > func int iterator_apply ( Traversable $iterator , callable $callback [, array $args = [] ] )
 func iteratorApply(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 2 {
-		return nil, ctx.Errorf("iterator_apply() expects at least 2 arguments, %d given", len(args))
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("iterator_apply() expects at least 2 arguments, %d given", len(args)))
 	}
 	if len(args) > 3 {
-		return nil, ctx.Errorf("iterator_apply() expects at most 3 arguments, %d given", len(args))
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("iterator_apply() expects at most 3 arguments, %d given", len(args)))
 	}
 
 	z := args[0]

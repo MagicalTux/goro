@@ -53,8 +53,8 @@ func lexPhpHeredoc(l *Lexer) lexState {
 		return l.base
 	}
 	// Check for indented end marker at start (flexible heredoc)
-	if indent, found := checkFlexibleEndMarker(l, op); found {
-		_ = indent
+	if _, advLen, found := checkFlexibleEndMarker(l, op); found {
+		l.advance(advLen)
 		l.emit(T_END_HEREDOC)
 		return l.base
 	}
@@ -86,11 +86,11 @@ func lexPhpHeredoc(l *Lexer) lexState {
 				l.emit(T_END_HEREDOC)
 				return l.base
 			}
-			if indent, found := checkFlexibleEndMarker(l, op); found {
-				_ = indent
+			if indent, advLen, found := checkFlexibleEndMarker(l, op); found {
 				if l.pos > l.start {
-					emitHeredocContent(l)
+					emitHeredocContentWithIndent(l, indent)
 				}
+				l.advance(advLen)
 				l.emit(T_END_HEREDOC)
 				return l.base
 			}
@@ -169,19 +169,20 @@ func lexPhpHeredoc(l *Lexer) lexState {
 }
 
 // checkFlexibleEndMarker checks if the current position has whitespace followed
-// by the end marker (flexible heredoc syntax, PHP 7.3+). If found, it advances
-// past the whitespace and marker and returns the indentation string and true.
-func checkFlexibleEndMarker(l *Lexer, marker string) (string, bool) {
+// by the end marker (flexible heredoc syntax, PHP 7.3+). If found, it returns
+// the indentation string, the number of characters to advance, and true.
+// The caller is responsible for advancing past the marker.
+func checkFlexibleEndMarker(l *Lexer, marker string) (string, int, bool) {
 	// Peek ahead to see if we have whitespace + marker
 	// Maximum reasonable indent is 256 chars
 	peekLen := len(marker) + 256
 	s := l.peekString(peekLen)
 	if len(s) == 0 {
-		return "", false
+		return "", 0, false
 	}
 	// Check if it starts with whitespace (spaces or tabs)
 	if s[0] != ' ' && s[0] != '\t' {
-		return "", false
+		return "", 0, false
 	}
 	// Find where the whitespace ends
 	i := 0
@@ -196,22 +197,26 @@ func checkFlexibleEndMarker(l *Lexer, marker string) (string, bool) {
 		afterMarker := i + len(marker)
 		if afterMarker >= len(s) {
 			// EOF after marker - valid
-			l.advance(afterMarker)
-			return indent, true
+			return indent, afterMarker, true
 		}
 		ch := s[afterMarker]
 		if ch == ';' || ch == '\n' || ch == '\r' || ch == ')' || ch == ']' || ch == ',' || ch == '}' {
 			// Valid flexible heredoc end marker
-			l.advance(afterMarker)
-			return indent, true
+			return indent, afterMarker, true
 		}
 	}
-	return "", false
+	return "", 0, false
 }
 
 // emitHeredocContent emits the heredoc content, stripping the trailing newline
 // character(s) that precede the end marker line.
 func emitHeredocContent(l *Lexer) {
+	emitHeredocContentWithIndent(l, "")
+}
+
+// emitHeredocContentWithIndent emits the heredoc content, stripping the trailing
+// newline and removing the specified indentation prefix from each line.
+func emitHeredocContentWithIndent(l *Lexer, indent string) {
 	// The output buffer contains content up to and including the newline before
 	// the end marker. We need to strip that trailing newline.
 	s := l.output.String()
@@ -221,8 +226,15 @@ func emitHeredocContent(l *Lexer) {
 			s = s[:len(s)-1]
 		}
 	}
-	// We can't easily modify the output buffer, so we'll just emit as-is.
-	// The content naturally includes the trailing newline which is part of
-	// the heredoc content in PHP.
-	l.emit(T_ENCAPSED_AND_WHITESPACE)
+	// Strip leading indentation from each line (flexible heredoc PHP 7.3+)
+	if indent != "" {
+		lines := strings.Split(s, "\n")
+		for i, line := range lines {
+			if strings.HasPrefix(line, indent) {
+				lines[i] = line[len(indent):]
+			}
+		}
+		s = strings.Join(lines, "\n")
+	}
+	l.emitWithData(T_ENCAPSED_AND_WHITESPACE, s)
 }

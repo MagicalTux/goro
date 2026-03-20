@@ -36,13 +36,26 @@ func parseDateTimeWithTz(ctx phpv.Context, args []*phpv.ZVal) time.Time {
 		if string(dateStr) == "now" || string(dateStr) == "" {
 			return time.Now().In(loc)
 		}
-		// Check if the string is just a timezone abbreviation/name
-		if tzLoc, err := time.LoadLocation(string(dateStr)); err == nil {
-			return time.Now().In(tzLoc)
+
+		// Handle @timestamp - PHP always uses UTC (+00:00) for these
+		s := strings.TrimSpace(string(dateStr))
+		if len(s) > 0 && s[0] == '@' {
+			ts, err := fmt.Sscanf(s[1:], "%d", new(int64))
+			if err == nil && ts == 1 {
+				var tsVal int64
+				fmt.Sscanf(s[1:], "%d", &tsVal)
+				return time.Unix(tsVal, 0).In(time.FixedZone("+00:00", 0))
+			}
 		}
-		// Use strtotime library first, fall back to custom parser
+
+		// Try our custom parser first - it handles timezone abbreviations correctly
+		// (the strtotime library converts abbreviations to full timezone names)
 		base := time.Now().In(loc)
-		if parsed, stErr := strtotime.StrToTime(string(dateStr), strtotime.InTZ(loc), strtotime.Rel(base)); stErr == nil {
+		if parsed, ok := strToTime(s, base); ok {
+			return parsed
+		}
+		// Use strtotime library for relative dates and complex formats
+		if parsed, stErr := strtotime.StrToTime(s, strtotime.InTZ(loc), strtotime.Rel(base)); stErr == nil {
 			// If the parsed time has a different location than the base,
 			// the string contained a timezone - keep it.
 			// Otherwise, apply the configured/requested timezone.
@@ -51,14 +64,14 @@ func parseDateTimeWithTz(ctx phpv.Context, args []*phpv.ZVal) time.Time {
 			}
 			return parsed.In(loc)
 		}
-		// Fallback: try common formats
+		// Last resort: try Go's built-in formats
 		for _, layout := range []string{
 			"2006-01-02 15:04:05 MST",
 			"2006-01-02 15:04:05",
 			"2006-01-02",
 			time.RFC3339,
 		} {
-			if parsed, err := time.ParseInLocation(layout, string(dateStr), loc); err == nil {
+			if parsed, err := time.ParseInLocation(layout, s, loc); err == nil {
 				t = parsed
 				break
 			}
@@ -101,8 +114,25 @@ func setTimeVal(this *phpobj.ZObject, t time.Time) {
 
 	locName := t.Location().String()
 	tzType := 3
-	if locName == "UTC" || locName == "" {
-		locName = "UTC"
+	if locName == "" {
+		// Empty location name from Go's time.Parse - derive from offset
+		_, offset := t.Zone()
+		if offset == 0 {
+			locName = "UTC"
+		} else {
+			sign := "+"
+			absOffset := offset
+			if offset < 0 {
+				sign = "-"
+				absOffset = -offset
+			}
+			hours := absOffset / 3600
+			mins := (absOffset % 3600) / 60
+			locName = fmt.Sprintf("%s%02d:%02d", sign, hours, mins)
+			tzType = 1
+		}
+	} else if locName == "UTC" {
+		// UTC is type 3 identifier
 	} else if len(locName) > 0 && (locName[0] == '+' || locName[0] == '-') {
 		// Fixed offset timezone like "+05:00"
 		tzType = 1
@@ -527,7 +557,11 @@ func diffMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*php
 	}
 
 	// Calculate total days for the 'days' property
-	totalDays := int(math.Round(to.Sub(from).Hours() / 24))
+	// PHP calculates this as the number of full days between the two dates.
+	// Use Unix timestamps to handle massive date ranges (Duration is limited to ~292 years).
+	fromUTC := time.Date(from.Year(), from.Month(), from.Day(), from.Hour(), from.Minute(), from.Second(), 0, time.UTC)
+	toUTC := time.Date(to.Year(), to.Month(), to.Day(), to.Hour(), to.Minute(), to.Second(), 0, time.UTC)
+	totalDays := int((toUTC.Unix() - fromUTC.Unix()) / 86400)
 
 	intervalObj.ObjectSet(ctx, phpv.ZString("y"), phpv.ZInt(years).ZVal())
 	intervalObj.ObjectSet(ctx, phpv.ZString("m"), phpv.ZInt(months).ZVal())
@@ -980,7 +1014,7 @@ func createFromFormatParsed(ctx phpv.Context, format string, datetime string, lo
 					end++
 				}
 				if offset, ok := parseTZOffset(datetime[di:end]); ok {
-					usedLoc = time.FixedZone("", offset)
+					usedLoc = makeFixedZone(offset)
 					di = end
 				}
 			}
@@ -1133,9 +1167,24 @@ func dateTimeDebugInfo(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal
 	// timezone_type: 1=offset, 2=abbreviation, 3=identifier
 	locName := t.Location().String()
 	tzType := 3
-	if locName == "UTC" || locName == "" {
+	if locName == "" {
+		_, offset := t.Zone()
+		if offset == 0 {
+			locName = "UTC"
+		} else {
+			sign := "+"
+			absOffset := offset
+			if offset < 0 {
+				sign = "-"
+				absOffset = -offset
+			}
+			hours := absOffset / 3600
+			mins := (absOffset % 3600) / 60
+			locName = fmt.Sprintf("%s%02d:%02d", sign, hours, mins)
+			tzType = 1
+		}
+	} else if locName == "UTC" {
 		tzType = 3
-		locName = "UTC"
 	} else if len(locName) > 0 && (locName[0] == '+' || locName[0] == '-') {
 		tzType = 1
 	} else if len(locName) <= 6 && !strings.Contains(locName, "/") {
@@ -1272,6 +1321,7 @@ func init() {
 			{VarName: "f", Default: phpv.ZFloat(0).ZVal(), Modifiers: phpv.ZAttrPublic},
 			{VarName: "invert", Default: phpv.ZInt(0).ZVal(), Modifiers: phpv.ZAttrPublic},
 			{VarName: "days", Default: phpv.ZBool(false).ZVal(), Modifiers: phpv.ZAttrPublic},
+			{VarName: "from_string", Default: phpv.ZBool(false).ZVal(), Modifiers: phpv.ZAttrPublic},
 		},
 		Methods: map[phpv.ZString]*phpv.ZClassMethod{
 			"__construct":        {Name: "__construct", Method: phpobj.NativeMethod(dateIntervalConstruct)},
@@ -1284,7 +1334,7 @@ func init() {
 						return nil, nil
 					}
 					arr := args[0].Value().(*phpv.ZArray)
-					for _, key := range []string{"y", "m", "d", "h", "i", "s", "f", "invert", "days"} {
+					for _, key := range []string{"y", "m", "d", "h", "i", "s", "f", "invert", "days", "from_string"} {
 						v, _ := arr.OffsetGet(ctx, phpv.ZString(key).ZVal())
 						if v != nil && !v.IsNull() {
 							this.HashTable().SetString(phpv.ZString(key), v)
@@ -1298,7 +1348,7 @@ func init() {
 				Modifiers: phpv.ZAttrPublic,
 				Method: phpobj.NativeMethod(func(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 					result := phpv.NewZArray()
-					for _, key := range []string{"y", "m", "d", "h", "i", "s", "f", "invert", "days"} {
+					for _, key := range []string{"y", "m", "d", "h", "i", "s", "f", "invert", "days", "from_string"} {
 						v := this.HashTable().GetString(phpv.ZString(key))
 						if v != nil {
 							result.OffsetSet(ctx, phpv.ZString(key), v)
@@ -1347,6 +1397,9 @@ func init() {
 				Name:      "__construct",
 				Modifiers: phpv.ZAttrPublic,
 				Method: phpobj.NativeMethod(func(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+					if len(args) > 2 {
+						return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, fmt.Sprintf("DateTime::__construct() expects at most 2 arguments, %d given", len(args)))
+					}
 					t := parseDateTimeWithTz(ctx, args)
 					setTimeVal(this, t)
 					return nil, nil
@@ -1489,6 +1542,9 @@ func init() {
 				Name:      "__construct",
 				Modifiers: phpv.ZAttrPublic,
 				Method: phpobj.NativeMethod(func(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+					if len(args) > 2 {
+						return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, fmt.Sprintf("DateTimeImmutable::__construct() expects at most 2 arguments, %d given", len(args)))
+					}
 					t := parseDateTimeWithTz(ctx, args)
 					setTimeVal(this, t)
 					return nil, nil
@@ -1939,6 +1995,20 @@ func dateIntervalFormat(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVa
 			case 'r':
 				if ht.GetString("invert").AsInt(ctx) != 0 {
 					result += "-"
+				}
+			case 'F':
+				fVal := ht.GetString("f")
+				if fVal != nil && !fVal.IsNull() {
+					result += fmt.Sprintf("%06d", int(fVal.AsFloat(ctx)*1000000))
+				} else {
+					result += "000000"
+				}
+			case 'f':
+				fVal := ht.GetString("f")
+				if fVal != nil && !fVal.IsNull() {
+					result += fmt.Sprintf("%d", int(fVal.AsFloat(ctx)*1000000))
+				} else {
+					result += "0"
 				}
 			case 'a':
 				days := ht.GetString("days")
