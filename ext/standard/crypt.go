@@ -65,8 +65,11 @@ func fncCryptImpl(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	resultStr := C.GoString(result)
-	// PHP returns "*0" or "*1" on failure
+	// PHP returns "*1" on failure if salt was "*0", otherwise "*0"
 	if strings.HasPrefix(resultStr, "*") {
+		if saltStr == "*0" || saltStr == "*1" {
+			return phpv.ZStr("*1").ZVal(), nil
+		}
 		return phpv.ZStr("*0").ZVal(), nil
 	}
 

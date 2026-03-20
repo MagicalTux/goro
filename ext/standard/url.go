@@ -449,9 +449,23 @@ func buildQueryRecursive(ctx phpv.Context, arr *phpv.ZArray, numericPrefix strin
 		if v.GetType() == phpv.ZtArray {
 			subArr := v.AsArray(ctx)
 			buildQueryRecursive(ctx, subArr, numericPrefix, fullKey, sep, enc, pairs)
+		} else if v.GetType() == phpv.ZtNull {
+			// null values are skipped in http_build_query
+			continue
 		} else {
 			encodedKey := queryEncode(fullKey, enc)
-			encodedVal := queryEncode(v.String(), enc)
+			// PHP's http_build_query converts booleans via int (false -> "0", true -> "1")
+			var valStr string
+			if v.GetType() == phpv.ZtBool {
+				if v.Value().(phpv.ZBool) {
+					valStr = "1"
+				} else {
+					valStr = "0"
+				}
+			} else {
+				valStr = string(v.AsString(ctx))
+			}
+			encodedVal := queryEncode(valStr, enc)
 			*pairs = append(*pairs, encodedKey+"="+encodedVal)
 		}
 	}

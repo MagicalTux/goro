@@ -1965,7 +1965,11 @@ func fncArraySum(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	if !floatResult {
-		return phpv.ZInt(sum).ZVal(), nil
+		// Check if sum fits in int64 range
+		if sum >= -9223372036854775808 && sum <= 9223372036854775807 {
+			return phpv.ZInt(sum).ZVal(), nil
+		}
+		// Overflow - return as float
 	}
 
 	return sum.ZVal(), nil
@@ -1981,7 +1985,8 @@ func fncArrayRand(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	if array.Count(ctx) == 0 {
-		return nil, ctx.Warn("Array is empty")
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+			"array_rand(): Argument #1 ($array) must not be empty")
 	}
 
 	// TODO: use Mersenne Twister RNG for maximum compatibility
