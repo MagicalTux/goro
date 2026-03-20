@@ -42,6 +42,12 @@ func (r *runClassStaticVarRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 
 	// Walk the class hierarchy to find the static property (handles inheritance)
 	zc := class.(*phpobj.ZClass)
+
+	// Check visibility before looking up the property value
+	if visErr := phpobj.CheckStaticPropVisibility(ctx, zc, r.varName); visErr != "" {
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, visErr)
+	}
+
 	p, found, err := zc.FindStaticProp(ctx, r.varName)
 	if err != nil {
 		return nil, err
@@ -69,6 +75,12 @@ func (r *runClassStaticVarRef) WriteValue(ctx phpv.Context, value *phpv.ZVal) er
 
 	// Walk the class hierarchy to find the static property (handles inheritance)
 	zc := class.(*phpobj.ZClass)
+
+	// Check visibility before writing
+	if visErr := phpobj.CheckStaticPropVisibility(ctx, zc, r.varName); visErr != "" {
+		return phpobj.ThrowError(ctx, phpobj.Error, visErr)
+	}
+
 	p, found, err := zc.FindStaticProp(ctx, r.varName)
 	if err != nil {
 		return err

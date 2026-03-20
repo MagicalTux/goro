@@ -86,11 +86,11 @@ func fncSetExceptionHandler(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 
 	// PHP accepts null to reset to default handler
 	if args[0].IsNull() {
-		prev := ctx.Global().SetUserExceptionHandler(nil)
+		prev := ctx.Global().SetUserExceptionHandler(nil, nil)
 		if prev == nil {
 			return phpv.ZNULL.ZVal(), nil
 		}
-		return prev.ZVal(), nil
+		return prev, nil
 	}
 
 	var handler phpv.Callable
@@ -102,11 +102,14 @@ func fncSetExceptionHandler(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 				callbackErrorMessage(ctx, args[0])))
 	}
 
-	prev := ctx.Global().SetUserExceptionHandler(handler)
+	// Store the original ZVal so we can return it later (PHP returns
+	// the handler in its original form: string for named functions,
+	// Closure object for closures, array for [class, method])
+	prev := ctx.Global().SetUserExceptionHandler(handler, args[0])
 	if prev == nil {
 		return phpv.ZNULL.ZVal(), nil
 	}
-	return prev.ZVal(), nil
+	return prev, nil
 }
 
 // callbackErrorMessage generates a descriptive error for invalid callbacks.

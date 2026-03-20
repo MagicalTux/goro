@@ -190,6 +190,10 @@ func fncDebugBacktrace(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 		if !ignoreArgs {
 			argsArr := phpv.NewZArray()
 			for _, a := range entry.Args {
+				// Deref arguments so references don't show as &... in var_dump
+				if a != nil {
+					a = a.Dup()
+				}
 				argsArr.OffsetSet(ctx, nil, a)
 			}
 			frame.OffsetSet(ctx, phpv.ZString("args"), argsArr.ZVal())

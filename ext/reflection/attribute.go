@@ -69,12 +69,19 @@ func reflectionAttributeGetArguments(ctx phpv.Context, o *phpobj.ZObject, args [
 	}
 
 	// Resolve lazy argument expressions if needed
-	resolveAttrArgs(ctx, data.attr)
+	if err := resolveAttrArgs(ctx, data.attr); err != nil {
+		return nil, err
+	}
 
 	arr := phpv.NewZArray()
 	if data.attr.Args != nil {
-		for _, arg := range data.attr.Args {
-			arr.OffsetSet(ctx, nil, arg)
+		for i, arg := range data.attr.Args {
+			// Use named key if available
+			if i < len(data.attr.ArgNames) && data.attr.ArgNames[i] != "" {
+				arr.OffsetSet(ctx, data.attr.ArgNames[i], arg)
+			} else {
+				arr.OffsetSet(ctx, nil, arg)
+			}
 		}
 	}
 	return arr.ZVal(), nil
@@ -122,7 +129,30 @@ func reflectionAttributeNewInstance(ctx phpv.Context, o *phpobj.ZObject, args []
 			fmt.Sprintf("Attempting to use non-attribute class \"%s\" as attribute", data.attr.ClassName))
 	}
 
-	flags := phpobj.GetAttributeFlags(ctx, class)
+	// Validate the #[Attribute] attribute on the class by instantiating it.
+	// This catches type errors like #[Attribute("foo")] where "foo" is not int,
+	// and also resolves lazy arg expressions (like Foo::BAR).
+	flags := int64(phpobj.AttributeTARGET_ALL) // default
+	zc, _ := class.(*phpobj.ZClass)
+	if zc != nil {
+		for _, classAttr := range zc.Attributes {
+			if classAttr.ClassName == "Attribute" || classAttr.ClassName == "\\Attribute" {
+				// Resolve lazy args
+				if err := resolveAttrArgs(ctx, classAttr); err != nil {
+					return nil, err
+				}
+				if len(classAttr.Args) > 0 {
+					// Validate by instantiating the Attribute class
+					_, err := phpobj.NewZObject(ctx, phpobj.AttributeClass, classAttr.Args...)
+					if err != nil {
+						return nil, err
+					}
+					flags = int64(classAttr.Args[0].AsInt(ctx))
+				}
+				break
+			}
+		}
+	}
 
 	// Validate flags value is within valid range
 	maxValid := int64(phpobj.AttributeTARGET_ALL | phpobj.AttributeIS_REPEATABLE)
@@ -154,7 +184,9 @@ func reflectionAttributeNewInstance(ctx phpv.Context, o *phpobj.ZObject, args []
 	}
 
 	// Resolve lazy argument expressions if needed
-	resolveAttrArgs(ctx, data.attr)
+	if err := resolveAttrArgs(ctx, data.attr); err != nil {
+		return nil, err
+	}
 
 	// Create a new instance with the stored arguments
 	var constructArgs []*phpv.ZVal
@@ -210,7 +242,9 @@ func reflectionAttributeToString(ctx phpv.Context, o *phpobj.ZObject, args []*ph
 	}
 
 	// Resolve lazy argument expressions if needed
-	resolveAttrArgs(ctx, data.attr)
+	if err := resolveAttrArgs(ctx, data.attr); err != nil {
+		return nil, err
+	}
 
 	if len(data.attr.Args) == 0 {
 		return phpv.ZString(fmt.Sprintf("Attribute [ %s ]\n", data.attr.ClassName)).ZVal(), nil
@@ -242,19 +276,23 @@ func reflectionAttributeDebugInfo(ctx phpv.Context, o *phpobj.ZObject, args []*p
 
 // resolveAttrArgs evaluates any lazy argument expressions on the attribute.
 // This is called at runtime when getArguments() or newInstance() is invoked.
-func resolveAttrArgs(ctx phpv.Context, attr *phpv.ZAttribute) {
+func resolveAttrArgs(ctx phpv.Context, attr *phpv.ZAttribute) error {
 	if attr.ArgExprs == nil {
-		return
+		return nil
 	}
 	for i, expr := range attr.ArgExprs {
 		if expr != nil {
 			val, err := expr.Run(ctx)
-			if err == nil && val != nil {
+			if err != nil {
+				return err
+			}
+			if val != nil {
 				attr.Args[i] = val
 				attr.ArgExprs[i] = nil // mark as resolved
 			}
 		}
 	}
+	return nil
 }
 
 // createReflectionAttributeObject creates a ReflectionAttribute object for the given attribute.
@@ -277,7 +315,23 @@ func createReflectionAttributeObject(ctx phpv.Context, attr *phpv.ZAttribute, ta
 // flags: 0 or ReflectionAttribute::IS_INSTANCEOF
 // attrs: the attributes to filter
 // target: the AttributeTARGET_* constant for these attributes
+// callerClass: the reflection class name for error messages (e.g. "ReflectionFunctionAbstract")
 func filterAttributes(ctx phpv.Context, attrs []*phpv.ZAttribute, target int, name phpv.ZString, flags int) (*phpv.ZVal, error) {
+	// Validate flags: only 0 and IS_INSTANCEOF (2) are valid
+	if flags != 0 && flags != ReflectionAttributeIS_INSTANCEOF {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+			"ReflectionFunctionAbstract::getAttributes(): Argument #2 ($flags) must be a valid attribute filter flag")
+	}
+
+	// When IS_INSTANCEOF is set and a name is given, the filter class must exist
+	if name != "" && flags&ReflectionAttributeIS_INSTANCEOF != 0 {
+		_, err := ctx.Global().GetClass(ctx, name, true)
+		if err != nil {
+			return nil, phpobj.ThrowError(ctx, phpobj.Error,
+				fmt.Sprintf("Class \"%s\" not found", name))
+		}
+	}
+
 	arr := phpv.NewZArray()
 
 	for _, attr := range attrs {

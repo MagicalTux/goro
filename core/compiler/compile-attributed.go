@@ -50,7 +50,8 @@ func compileAttributed(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			zc.Attributes = append(attrs, zc.Attributes...)
 
 			// #[\Deprecated] is valid on traits but NOT on classes/interfaces
-			if zc.Type != phpv.ZClassTypeTrait {
+			// Skip this check if #[DelayedTargetValidation] is present
+			if zc.Type != phpv.ZClassTypeTrait && !hasDelayedTargetValidationAttr(zc.Attributes) {
 				for _, attr := range zc.Attributes {
 					if attr.ClassName == "Deprecated" || attr.ClassName == "\\Deprecated" {
 						kind := "class"
@@ -71,7 +72,7 @@ func compileAttributed(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		// For the wrapper type, also set attributes
 		if w, ok := r.(*runClassWithTraitDeprecationCheck); ok { // wrapper from compileClass
 			w.class.Attributes = append(attrs, w.class.Attributes...)
-			if w.class.Type != phpv.ZClassTypeTrait {
+			if w.class.Type != phpv.ZClassTypeTrait && !hasDelayedTargetValidationAttr(w.class.Attributes) {
 				for _, attr := range w.class.Attributes {
 					if attr.ClassName == "Deprecated" || attr.ClassName == "\\Deprecated" {
 						kind := "class"
@@ -104,7 +105,7 @@ func compileAttributed(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			er.class.Attributes = append(attrs, er.class.Attributes...)
 			enumClass = er.class
 		}
-		if enumClass != nil {
+		if enumClass != nil && !hasDelayedTargetValidationAttr(enumClass.Attributes) {
 			for _, attr := range enumClass.Attributes {
 				if attr.ClassName == "Deprecated" || attr.ClassName == "\\Deprecated" {
 					phpErr := &phpv.PhpError{
@@ -152,18 +153,17 @@ func compileAttributed(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		if err != nil {
 			return nil, err
 		}
-		// Store attributes on the constant(s)
+		// Check if multiple constants are declared with attributes (not allowed)
+		if _, ok := r.(phpv.Runnables); ok {
+			return nil, &phpv.PhpError{
+				Err:  fmt.Errorf("Cannot apply attributes to multiple constants at once"),
+				Code: phpv.E_COMPILE_ERROR,
+				Loc:  i.Loc(),
+			}
+		}
+		// Store attributes on the constant
 		if rtlc, ok := r.(*runTopLevelConst); ok {
 			rtlc.attrs = attrs
-		} else if runnables, ok := r.(phpv.Runnables); ok {
-			// Multiple constants: const A = 1, B = 2;
-			// Only the first constant gets the attributes
-			for _, sub := range runnables {
-				if rtlc, ok := sub.(*runTopLevelConst); ok {
-					rtlc.attrs = attrs
-					break
-				}
-			}
 		}
 		return r, nil
 
@@ -256,4 +256,14 @@ func getNoDiscardInfo(c phpv.Callable) ([]*phpv.ZAttribute, string, string) {
 		return attrs, name, lbl
 	}
 	return nil, "", ""
+}
+
+// hasDelayedTargetValidationAttr checks if an attribute list contains #[DelayedTargetValidation].
+func hasDelayedTargetValidationAttr(attrs []*phpv.ZAttribute) bool {
+	for _, attr := range attrs {
+		if attr.ClassName == "DelayedTargetValidation" || attr.ClassName == "\\DelayedTargetValidation" {
+			return true
+		}
+	}
+	return false
 }

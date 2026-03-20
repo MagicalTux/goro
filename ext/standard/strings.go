@@ -2409,93 +2409,85 @@ func fncWordWrap(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "wordwrap(): Argument #3 ($break) cannot be empty")
 	}
 
-	// If width is negative, treat as if every character needs wrapping
-	if width < 0 {
-		width = 1
+	if len(str) == 0 {
+		return phpv.ZStr(""), nil
 	}
 
-	// It wasn't explicitly defined, but word here means
-	// anything separated only by " " 0x20 (doesn't include other whitespaces)
+	// Faithful reimplementation of PHP's ext/standard/string.c php_wordwrap
+	brk := []byte(breakStr)
+	textLen := len(str)
 
-	// Beyond the seemingly simple wordwrap
-	// as described by the documentation, lies
-	// a really quirky, untuitive behaviour when
-	// it comes to edge cases, particularly with
-	// strings with erratic long sequences of whitespaces.
-	// This is the simplest implementation I could
-	// muster that faithfully reproduces the original
-	// wordwrap implementation. Modify or optimize
-	// at your own peril. Just kidding. Or not.
+	if width > 0 && textLen <= width {
+		// If the whole string fits in the width, no wrapping needed (unless cut mode with negative width, handled below).
+		if !cut {
+			return phpv.ZStr(string(str)), nil
+		}
+	}
+
+	// Allocate result buffer
 	var buf bytes.Buffer
-	if cut {
-		i := 0
-		for i < len(str) {
-			j := min(i+width, len(str)-1)
+	buf.Grow(textLen + textLen/max(width, 1)*len(brk) + len(brk))
 
-			for str[j] != ' ' && j > i {
-				j--
-			}
+	// current = pointer walking through the input
+	// lastStart = start of the current chunk to be written
+	current := 0
+	lastStart := 0
+	lineLen := 0
 
-			if i == j {
-				j = i + 1
-				for j < min(i+width, len(str)) && str[j] != ' ' {
-					j++
+	if !cut {
+		// Non-cut mode: only break at spaces
+		lastSpace := -1
+		for current < textLen {
+			if str[current] == ' ' {
+				if width > 0 && lineLen >= width {
+					// We need to break. If we've seen a space on this line, break at last space.
+					if lastSpace != -1 {
+						buf.Write(str[lastStart:lastSpace])
+						buf.Write(brk)
+						lastStart = lastSpace + 1
+						lineLen = current - lastStart
+					}
 				}
-				buf.Write(str[i:j])
-				if j < len(str)-1 {
-					buf.WriteString(breakStr)
-				}
-				i = j
-				continue
+				lastSpace = current
 			}
-
-			buf.Write(str[i:j])
-
-			if j >= len(str) {
-				break
-			}
-			if j < len(str)-1 {
-				buf.WriteString(breakStr)
-			}
-			i = j
-			if str[i] == ' ' {
-				i++
-			}
+			lineLen++
+			current++
 		}
+		// If we exceeded width and there's a pending space
+		if width > 0 && lineLen >= width && lastSpace >= lastStart {
+			buf.Write(str[lastStart:lastSpace])
+			buf.Write(brk)
+			lastStart = lastSpace + 1
+		}
+		buf.Write(str[lastStart:textLen])
 	} else {
-		i := 0
-		lastBreak := -1
-		for i < len(str) {
-			j := min(i+width, len(str))
-			if j >= len(str) {
-				buf.Write(str[i:j])
-				break
-			}
-
-			for str[j] != ' ' && j > i {
-				j--
-			}
-
-			if i == j {
-				for j < len(str) && str[j] != ' ' {
-					j++
+		// Cut mode: force break at exactly 'width' characters
+		for current < textLen {
+			if str[current] == ' ' {
+				if lineLen >= width {
+					if lineLen > 0 {
+						buf.Write(str[lastStart:current])
+						buf.Write(brk)
+					}
+					lastStart = current + 1
+					lineLen = 0
+				} else {
+					lineLen++
+				}
+			} else {
+				lineLen++
+				if lineLen > width {
+					// Force break
+					buf.Write(str[lastStart:current])
+					buf.Write(brk)
+					lastStart = current
+					lineLen = 1
 				}
 			}
-
-			buf.Write(str[i:j])
-			if j >= len(str) {
-				break
-			}
-
-			if str[j] == ' ' && j-lastBreak > 1 {
-				buf.WriteString(breakStr)
-				lastBreak = j
-			} else {
-				buf.WriteByte(' ')
-			}
-
-			i = j + 1
+			current++
 		}
+		// Write remaining
+		buf.Write(str[lastStart:textLen])
 	}
 
 	return phpv.ZStr(buf.String()), nil

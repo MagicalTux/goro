@@ -7,6 +7,7 @@ import (
 
 	"github.com/MagicalTux/goro/core"
 	"github.com/MagicalTux/goro/core/logopt"
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/stream"
 )
@@ -406,12 +407,12 @@ func fncVersionCompare(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 		result = cmp > 0
 	case ">=", "ge":
 		result = cmp >= 0
-	case "==", "eq":
+	case "==", "=", "eq":
 		result = cmp == 0
 	case "!=", "ne", "<>":
 		result = cmp != 0
 	default:
-		return phpv.ZNULL.ZVal(), nil
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "version_compare(): Argument #3 ($operator) must be a valid comparison operator")
 	}
 	return phpv.ZBool(result).ZVal(), nil
 }
@@ -435,49 +436,92 @@ func compareVersions(v1, v2 string) int {
 }
 
 func splitVersion(v string) []string {
+	// PHP splits on '.', '-', '_' and also on transitions between
+	// digits and letters (e.g. "1a2" => ["1","a","2"]).
 	var parts []string
 	cur := ""
-	for _, c := range v {
+	prevIsDigit := false
+	for i, c := range v {
 		if c == '.' || c == '-' || c == '_' {
-			if cur != "" { parts = append(parts, cur) }
+			if cur != "" {
+				parts = append(parts, cur)
+			}
 			cur = ""
-		} else {
-			cur += string(c)
+			continue
 		}
+		isDigit := c >= '0' && c <= '9'
+		if i > 0 && cur != "" && isDigit != prevIsDigit {
+			parts = append(parts, cur)
+			cur = ""
+		}
+		cur += string(c)
+		prevIsDigit = isDigit
 	}
-	if cur != "" { parts = append(parts, cur) }
+	if cur != "" {
+		parts = append(parts, cur)
+	}
 	return parts
 }
 
 func compareVersionPart(a, b string) int {
 	// Special version strings have specific ordering
-	specials := map[string]int{"dev": 0, "alpha": 1, "a": 1, "beta": 2, "b": 2, "rc": 3, "p": 5, "pl": 5}
-	
+	// In PHP: "dev" < "alpha" = "a" < "beta" = "b" < "RC" = "rc" < "#" < "pl" = "p"
+	// Where "#" means any numeric string. Empty string is treated as 0 (numeric).
+	specials := map[string]int{"dev": 0, "alpha": 1, "a": 1, "beta": 2, "b": 2, "rc": 3, "#": 4, "p": 5, "pl": 5}
+
+	aLower := strings.ToLower(a)
+	bLower := strings.ToLower(b)
+
 	aNum, aIsNum := isVersionNum(a)
 	bNum, bIsNum := isVersionNum(b)
-	
+
 	if aIsNum && bIsNum {
-		if aNum < bNum { return -1 }
-		if aNum > bNum { return 1 }
+		if aNum < bNum {
+			return -1
+		}
+		if aNum > bNum {
+			return 1
+		}
 		return 0
 	}
-	
-	aSpec, aIsSpec := specials[a]
-	bSpec, bIsSpec := specials[b]
-	
+
+	// Map to canonical weight
+	aSpec, aIsSpec := specials[aLower]
+	if aIsNum {
+		aSpec = specials["#"]
+		aIsSpec = true
+	}
+	bSpec, bIsSpec := specials[bLower]
+	if bIsNum {
+		bSpec = specials["#"]
+		bIsSpec = true
+	}
+
 	if aIsSpec && bIsSpec {
-		if aSpec < bSpec { return -1 }
-		if aSpec > bSpec { return 1 }
+		if aSpec < bSpec {
+			return -1
+		}
+		if aSpec > bSpec {
+			return 1
+		}
 		return 0
 	}
-	
-	// Number > special string
-	if aIsNum && bIsSpec { return 1 }
-	if aIsSpec && bIsNum { return -1 }
-	
+
+	// Number > special string, special string > unknown
+	if aIsSpec && !bIsSpec {
+		return 1
+	}
+	if !aIsSpec && bIsSpec {
+		return -1
+	}
+
 	// Fallback to string comparison
-	if a < b { return -1 }
-	if a > b { return 1 }
+	if a < b {
+		return -1
+	}
+	if a > b {
+		return 1
+	}
 	return 0
 }
 

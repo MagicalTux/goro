@@ -22,16 +22,39 @@ func compilePropertyHooks(prop *phpv.ZClassProp, class *phpobj.ZClass, c compile
 			return nil
 		}
 
-		// Skip optional attributes before hook name
+		// Parse optional attributes before hook name
+		var hookAttrs []*phpv.ZAttribute
 		for i.Type == tokenizer.T_ATTRIBUTE {
 			// Consume the attribute and its arguments
-			_, err := parseAttributes(c)
+			parsed, err := parseAttributes(c)
 			if err != nil {
 				return err
 			}
+			hookAttrs = append(hookAttrs, parsed...)
 			i, err = c.NextItem()
 			if err != nil {
 				return err
+			}
+		}
+
+		// Check for #[\NoDiscard] on property hooks (not allowed)
+		for _, attr := range hookAttrs {
+			if attr.ClassName == "NoDiscard" || attr.ClassName == "\\NoDiscard" {
+				// Check if DelayedTargetValidation is also present
+				hasDelayed := false
+				for _, a := range hookAttrs {
+					if a.ClassName == "DelayedTargetValidation" || a.ClassName == "\\DelayedTargetValidation" {
+						hasDelayed = true
+						break
+					}
+				}
+				if !hasDelayed {
+					return &phpv.PhpError{
+						Err:  fmt.Errorf("#[\\NoDiscard] is not supported for property hooks"),
+						Code: phpv.E_COMPILE_ERROR,
+						Loc:  i.Loc(),
+					}
+				}
 			}
 		}
 

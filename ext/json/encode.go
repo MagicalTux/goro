@@ -93,12 +93,13 @@ func appendJsonEncodeState(ctx phpv.Context, r []byte, v *phpv.ZVal, opt JsonEnc
 		if obj == nil {
 			return r, ErrUnsupportedType
 		}
-		// Recursion detection using per-object json apply count.
-		if obj.IncrJsonApplyCount() > 0 {
-			obj.DecrJsonApplyCount()
+
+		// Check for recursion: if we're already encoding this object, bail out
+		if st.markObject(obj) {
 			return r, ErrRecursion
 		}
-		defer obj.DecrJsonApplyCount()
+		defer st.unmarkObject(obj)
+
 		// Check for enum types
 		if obj.GetClass().GetType().Has(phpv.ZClassTypeEnum) {
 			// Check for JsonSerializable first
@@ -155,9 +156,31 @@ func jsonIndent(level int) []byte {
 	return s
 }
 
-// jsonState carries encoding state including indent level for pretty printing.
+// jsonState carries encoding state including indent level for pretty printing
+// and object recursion detection.
 type jsonState struct {
 	indent int
+	seen   map[phpv.ZObject]bool // tracks objects currently being encoded
+}
+
+// markObject checks if the object is already being encoded (recursion).
+// If not, it marks it and returns false. If already seen, returns true.
+func (st *jsonState) markObject(obj phpv.ZObject) bool {
+	if st.seen == nil {
+		st.seen = make(map[phpv.ZObject]bool)
+	}
+	if st.seen[obj] {
+		return true // recursion detected
+	}
+	st.seen[obj] = true
+	return false
+}
+
+// unmarkObject removes the object from the seen set after encoding completes.
+func (st *jsonState) unmarkObject(obj phpv.ZObject) {
+	if st.seen != nil {
+		delete(st.seen, obj)
+	}
 }
 
 func appendJsonArray(ctx phpv.Context, r []byte, it phpv.ZIterator, opt JsonEncOpt, depth int, st *jsonState) ([]byte, error) {

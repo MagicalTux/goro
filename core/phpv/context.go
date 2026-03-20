@@ -117,7 +117,7 @@ type GlobalContext interface {
 	GetUserErrorHandler() (Callable, PhpErrorType)
 	SetUserErrorHandler(Callable, PhpErrorType)
 	RestoreUserErrorHandler()
-	SetUserExceptionHandler(handler Callable) Callable
+	SetUserExceptionHandler(handler Callable, originalVal *ZVal) *ZVal
 	RestoreUserExceptionHandler()
 
 	WriteErr(p []byte) (n int, err error)
@@ -147,6 +147,11 @@ type GlobalContext interface {
 
 	LastCallable() Callable
 	ClearLastCallable()
+
+	RegisterTickFunction(cb Callable, args []*ZVal)
+	UnregisterTickFunction(cb Callable)
+	CallTickFunctions(ctx Context) error
+	HasTickFunctions() bool
 }
 
 type FuncContext interface {

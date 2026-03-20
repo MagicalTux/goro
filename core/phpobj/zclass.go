@@ -324,7 +324,11 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 			if parentSetAccess != 0 || childSetAccess != 0 {
 				// Parent has no explicit set modifier — child cannot add one
 				// (adding a set restriction narrows access)
-				if parentSetAccess == 0 && childSetAccess != 0 {
+				// Exception: if the parent property is a virtual (get-only) property
+				// with no set semantics, the child may add set visibility when adding
+				// a backing store.
+				parentIsVirtualGetOnly := parentProp.HasHooks && parentProp.GetHook != nil && parentProp.SetHook == nil && parentProp.Default == nil
+				if parentSetAccess == 0 && childSetAccess != 0 && !parentIsVirtualGetOnly {
 					return c.fatalError(ctx, fmt.Sprintf("Set access level of %s::$%s must be omitted (as in class %s)", c.Name, childProp.VarName, c.Extends.Name))
 				}
 				// Parent has set modifier, child doesn't — OK (widening)
@@ -2221,6 +2225,31 @@ func IsStaticPropAccessible(ctx phpv.Context, c *ZClass, name phpv.ZString) bool
 		}
 	}
 	return true
+}
+
+// CheckStaticPropVisibility checks if a static property is accessible from
+// the current context. Returns an error message string if inaccessible,
+// or an empty string if accessible.
+func CheckStaticPropVisibility(ctx phpv.Context, c *ZClass, name phpv.ZString) string {
+	for cur := c; cur != nil; cur = cur.Extends {
+		for _, p := range cur.Props {
+			if p.VarName == name && p.Modifiers.IsStatic() {
+				if p.Modifiers.IsPrivate() {
+					callerClass := ctx.Class()
+					if callerClass == nil || callerClass.GetName() != cur.GetName() {
+						return fmt.Sprintf("Cannot access private property %s::$%s", c.GetName(), name)
+					}
+				} else if p.Modifiers.IsProtected() {
+					callerClass := ctx.Class()
+					if callerClass == nil || (!callerClass.InstanceOf(cur) && !cur.InstanceOf(callerClass)) {
+						return fmt.Sprintf("Cannot access protected property %s::$%s", c.GetName(), name)
+					}
+				}
+				return ""
+			}
+		}
+	}
+	return ""
 }
 
 // ResolveConstants resolves any remaining CompileDelayed constants in the class

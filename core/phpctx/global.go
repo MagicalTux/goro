@@ -36,6 +36,11 @@ type errorHandlerEntry struct {
 	filter  phpv.PhpErrorType
 }
 
+type exceptionHandlerEntry struct {
+	handler     phpv.Callable
+	originalVal *phpv.ZVal // original ZVal passed to set_exception_handler
+}
+
 type Global struct {
 	context.Context
 
@@ -84,7 +89,7 @@ type Global struct {
 	shownDeprecated map[string]struct{}
 
 	userErrorHandlerStack  []errorHandlerEntry
-	userExceptionHandlerStack []phpv.Callable
+	userExceptionHandlerStack []exceptionHandlerEntry
 
 	autoloadFuncs    []phpv.Callable
 	autoloadingClass map[phpv.ZString]bool // prevent infinite recursion in autoload
@@ -114,6 +119,14 @@ type Global struct {
 
 	// Last error tracked for error_get_last() / error_clear_last()
 	LastError *phpv.PhpError
+
+	// Tick functions for declare(ticks=N)
+	tickFuncs []tickFuncEntry
+}
+
+type tickFuncEntry struct {
+	callable phpv.Callable
+	args     []*phpv.ZVal // extra args passed to register_tick_function
 }
 
 func NewGlobal(ctx context.Context, p *Process, config phpv.IniConfig) *Global {
@@ -514,33 +527,15 @@ func (g *Global) RunFile(fn string) error {
 		}
 	default:
 		if err != nil {
-			// Handle uncaught exceptions via user exception handler
-			if ex, ok := err.(*phperr.PhpThrow); ok && g.GetUserExceptionHandler() != nil {
-				handler := g.GetUserExceptionHandler()
-				g.SetUserExceptionHandler(nil) // prevent re-entrancy
-				_, handlerErr := g.CallZVal(g, handler, []*phpv.ZVal{ex.Obj.ZVal()})
-				if handlerErr != nil {
-					return handlerErr
-				}
-				err = nil
-			}
-			// Format uncaught exceptions as PHP Fatal error
+			err = g.handleUncaughtException(err)
 			if err != nil {
-				if ex, ok := err.(*phperr.PhpThrow); ok {
-					trace := ex.ErrorTrace(g)
-					thrownFile := ex.ThrownFile()
-					if thrownFile == "" {
-						thrownFile = "Unknown"
-					}
-					g.WriteErr([]byte(fmt.Sprintf("\nFatal error: %s\n  thrown in %s on line %d\n", trace, thrownFile, ex.ThrownLine())))
-					err = nil
-				} else if phpErr, ok := err.(*phpv.PhpError); ok {
+				if phpErr, ok := err.(*phpv.PhpError); ok {
 					// Clean buffered output on fatal error
 					g.CleanBuffers()
 					// Defer fatal PHP errors until after shutdown/destructors
 					deferredErr = phpErr
 					err = nil
-				} else {
+				} else if _, ok := err.(*phperr.PhpThrow); !ok {
 					return err
 				}
 			}
@@ -550,17 +545,21 @@ func (g *Global) RunFile(fn string) error {
 	if len(g.shutdownFuncs) > 0 {
 		g.ResetDeadline()
 		for _, fn := range g.shutdownFuncs {
-			_, err := g.CallZVal(g, fn, nil, nil)
-			if err != nil {
-				if phpv.IsExit(err) {
+			_, serr := g.CallZVal(g, fn, nil, nil)
+			if serr != nil {
+				if phpv.IsExit(serr) {
 					break
 				}
-				if timeout, ok := phpv.UnwrapError(err).(*phperr.PhpTimeout); ok {
+				if timeout, ok := phpv.UnwrapError(serr).(*phperr.PhpTimeout); ok {
 					g.WriteErr([]byte("\n"))
 					g.WriteErr([]byte(timeout.String()))
 					break
 				}
-				return err
+				serr = g.handleUncaughtException(serr)
+				if serr != nil {
+					// Non-exception, non-handled error during shutdown
+					break
+				}
 			}
 		}
 	}
@@ -578,6 +577,100 @@ func (g *Global) RunFile(fn string) error {
 	}
 
 	return closeErr
+}
+
+// HandleUncaughtException handles an uncaught exception by calling the user
+// exception handler if one is registered. Returns nil if the exception was
+// handled, or the (possibly new) error if it wasn't.
+//
+// PHP behavior:
+//   - The exception handler is temporarily removed during invocation to prevent
+//     re-entrancy.
+//   - After the handler completes (successfully or not), the handler is restored.
+//   - If the handler throws a new exception, check if the handler registered a
+//     new handler during its execution; if so, use the new handler for the new
+//     exception (recursively).
+//   - If no handler is available for a thrown exception, return it as-is.
+func (g *Global) HandleUncaughtException(err error) error {
+	ex, ok := err.(*phperr.PhpThrow)
+	if !ok {
+		return err
+	}
+
+	for {
+		handler := g.GetUserExceptionHandler()
+		if handler == nil {
+			// No handler available - return the exception as-is
+			return ex
+		}
+
+		// PHP behavior: the exception handler stays on the stack during
+		// invocation. The handler can manipulate the stack via
+		// restore_exception_handler() or set_exception_handler().
+		// After the handler returns:
+		// - If the handler modified the stack, respect those changes
+		// - If the handler didn't modify the stack, leave it as-is
+		stackLenBefore := len(g.userExceptionHandlerStack)
+
+		_, handlerErr := g.CallZValInternal(g, handler, []*phpv.ZVal{ex.Obj.ZVal()})
+		stackChanged := len(g.userExceptionHandlerStack) != stackLenBefore
+
+		if handlerErr == nil {
+			// Handler succeeded. Nothing more to do.
+			return nil
+		}
+
+		// Handler threw a new exception.
+		newEx, isThrow := handlerErr.(*phperr.PhpThrow)
+		if !isThrow {
+			if inner, ok2 := phpv.UnwrapError(handlerErr).(*phperr.PhpThrow); ok2 {
+				newEx = inner
+				isThrow = true
+			}
+		}
+		if !isThrow {
+			return handlerErr
+		}
+
+		if stackChanged {
+			// The handler modified the stack. Check if a new (different)
+			// handler is available. If so, use it for the new exception.
+			newHandler := g.GetUserExceptionHandler()
+			if newHandler != nil && newHandler != handler {
+				ex = newEx
+				continue
+			}
+		}
+
+		// Either the handler didn't change the stack (same handler is on top,
+		// which would cause infinite recursion) or no new handler was
+		// registered. Return the new exception as an unhandled fatal error.
+		return newEx
+	}
+}
+
+// handleUncaughtException is a convenience wrapper that formats unhandled
+// exceptions as fatal errors to stderr (web server mode).
+func (g *Global) handleUncaughtException(err error) error {
+	result := g.HandleUncaughtException(err)
+	if result == nil {
+		return nil
+	}
+	if ex, ok := result.(*phperr.PhpThrow); ok {
+		g.formatUncaughtFatal(ex)
+		return nil
+	}
+	return result
+}
+
+// formatUncaughtFatal formats an uncaught exception as a PHP Fatal error to stderr.
+func (g *Global) formatUncaughtFatal(ex *phperr.PhpThrow) {
+	trace := ex.ErrorTrace(g)
+	thrownFile := ex.ThrownFile()
+	if thrownFile == "" {
+		thrownFile = "Unknown"
+	}
+	g.WriteErr([]byte(fmt.Sprintf("\nFatal error: %s\n  thrown in %s on line %d\n", trace, thrownFile, ex.ThrownLine())))
 }
 
 func (g *Global) Write(v []byte) (int, error) {
@@ -1161,6 +1254,9 @@ func (g *Global) RunShutdownFunctions() {
 				g.WriteErr([]byte(timeout.String()))
 				break
 			}
+			// Handle uncaught exceptions from shutdown functions via the
+			// exception handler (GH-10695)
+			g.handleUncaughtException(err)
 		}
 	}
 	g.shutdownFuncs = nil
@@ -1513,6 +1609,37 @@ func (g *Global) GetRequestBody() []byte {
 	return g.rawRequestBody
 }
 
+// RegisterTickFunction adds a tick function to be called every N statements
+func (g *Global) RegisterTickFunction(cb phpv.Callable, args []*phpv.ZVal) {
+	g.tickFuncs = append(g.tickFuncs, tickFuncEntry{callable: cb, args: args})
+}
+
+// UnregisterTickFunction removes a tick function by callable identity
+func (g *Global) UnregisterTickFunction(cb phpv.Callable) {
+	for i, tf := range g.tickFuncs {
+		if tf.callable == cb {
+			g.tickFuncs = append(g.tickFuncs[:i], g.tickFuncs[i+1:]...)
+			return
+		}
+	}
+}
+
+// CallTickFunctions invokes all registered tick functions
+func (g *Global) CallTickFunctions(ctx phpv.Context) error {
+	for _, tf := range g.tickFuncs {
+		_, err := tf.callable.Call(ctx, tf.args)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// HasTickFunctions returns true if any tick functions are registered
+func (g *Global) HasTickFunctions() bool {
+	return len(g.tickFuncs) > 0
+}
+
 func (g *Global) Close() error {
 	// Flush any startup warnings that were never flushed (e.g., if exit() was
 	// called before any output was produced).
@@ -1682,15 +1809,20 @@ func (g *Global) GetUserExceptionHandler() phpv.Callable {
 	if len(g.userExceptionHandlerStack) == 0 {
 		return nil
 	}
-	return g.userExceptionHandlerStack[len(g.userExceptionHandlerStack)-1]
+	return g.userExceptionHandlerStack[len(g.userExceptionHandlerStack)-1].handler
 }
 
-func (g *Global) SetUserExceptionHandler(handler phpv.Callable) phpv.Callable {
-	var prev phpv.Callable
+// SetUserExceptionHandler sets the exception handler and returns the original
+// ZVal of the previous handler (so that set_exception_handler can return it).
+func (g *Global) SetUserExceptionHandler(handler phpv.Callable, originalVal *phpv.ZVal) *phpv.ZVal {
+	var prev *phpv.ZVal
 	if len(g.userExceptionHandlerStack) > 0 {
-		prev = g.userExceptionHandlerStack[len(g.userExceptionHandlerStack)-1]
+		prev = g.userExceptionHandlerStack[len(g.userExceptionHandlerStack)-1].originalVal
 	}
-	g.userExceptionHandlerStack = append(g.userExceptionHandlerStack, handler)
+	g.userExceptionHandlerStack = append(g.userExceptionHandlerStack, exceptionHandlerEntry{
+		handler:     handler,
+		originalVal: originalVal,
+	})
 	return prev
 }
 
@@ -1785,7 +1917,8 @@ func (g *Global) UnregisterDestructor(obj phpv.ZObject) {
 	}
 }
 
-// CallDestructors calls __destruct on all remaining tracked objects
+// CallDestructors calls __destruct on all remaining tracked objects.
+// Exceptions thrown by destructors are passed to handleUncaughtException.
 func (g *Global) CallDestructors() {
 	// Take the current list and clear it to prevent infinite loop
 	// if destructors create new objects
@@ -1816,7 +1949,11 @@ func (g *Global) CallDestructors() {
 				}, logopt.Data{NoFuncName: true})
 				continue
 			}
-			g.CallZVal(g, m.Method, nil, obj)
+			_, derr := g.CallZVal(g, m.Method, nil, obj)
+			if derr != nil {
+				// Try to handle via the exception handler (GH-10695)
+				g.handleUncaughtException(derr)
+			}
 		}
 	}
 }

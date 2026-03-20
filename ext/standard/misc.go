@@ -294,7 +294,12 @@ func fncRegisterTickFunction(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, e
 	if err != nil {
 		return nil, err
 	}
-	// Tick functions are not fully implemented in goro, but we validate the callback
+	// Store extra args (everything after the first) to pass to the tick function
+	var extraArgs []*phpv.ZVal
+	if len(args) > 1 {
+		extraArgs = args[1:]
+	}
+	ctx.Global().RegisterTickFunction(callback, extraArgs)
 	return phpv.ZTrue.ZVal(), nil
 }
 
@@ -310,6 +315,6 @@ func fncUnregisterTickFunction(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal,
 	if err != nil {
 		return nil, err
 	}
-	_ = callback
+	ctx.Global().UnregisterTickFunction(callback)
 	return nil, nil
 }

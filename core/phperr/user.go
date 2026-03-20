@@ -61,14 +61,6 @@ func HandleUserError(ctx phpv.Context, err *phpv.PhpError) error {
 		ctx.Global().SetUserErrorHandler(errHandler, filterType)
 
 		if err2 != nil {
-			if e, ok := err2.(*PhpThrow); ok {
-				class := e.Obj.GetClass()
-				if stack, ok := e.Obj.GetOpaque(class).([]*phpv.StackTraceEntry); ok {
-					// remove the user handler frame from the stack
-					stack = stack[1:]
-					e.Obj.SetOpaque(class, stack)
-				}
-			}
 			returnErr = err2
 		} else if proceed != nil && proceed.GetType() == phpv.ZtBool && !bool(proceed.Value().(phpv.ZBool)) {
 			// Handler explicitly returned false: continue with default error handler

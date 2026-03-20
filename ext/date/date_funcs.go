@@ -321,6 +321,14 @@ func fncIdate(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		result = beats % 1000
 	case 'd':
 		result = t.Day()
+	case 'g':
+		h := t.Hour() % 12
+		if h == 0 {
+			h = 12
+		}
+		result = h
+	case 'G':
+		result = t.Hour()
 	case 'h':
 		h := t.Hour() % 12
 		if h == 0 {
@@ -339,6 +347,8 @@ func fncIdate(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		} else {
 			result = 0
 		}
+	case 'j':
+		result = t.Day()
 	case 'L':
 		y := t.Year()
 		if (y%4 == 0 && y%100 != 0) || y%400 == 0 {
@@ -346,6 +356,17 @@ func fncIdate(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		}
 	case 'm':
 		result = int(t.Month())
+	case 'n':
+		result = int(t.Month())
+	case 'N':
+		wd := int(t.Weekday())
+		if wd == 0 {
+			wd = 7
+		}
+		result = wd
+	case 'o':
+		year, _ := t.ISOWeek()
+		result = year
 	case 's':
 		result = t.Second()
 	case 't':

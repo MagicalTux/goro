@@ -22,10 +22,11 @@ type ZObject struct {
 	Opaque map[phpv.ZClass]interface{}
 	ID     int
 
-	// Guards for __get/__set/__isset to prevent infinite recursion
+	// Guards for __get/__set/__isset/__unset to prevent infinite recursion
 	getGuard   map[phpv.ZString]bool
 	setGuard   map[phpv.ZString]bool
 	issetGuard map[phpv.ZString]bool
+	unsetGuard map[phpv.ZString]bool
 
 	// Guards for property hook execution to prevent infinite recursion
 	// When a get/set hook accesses $this->propName for the same property,
@@ -432,10 +433,11 @@ func NewZObject(ctx phpv.Context, c phpv.ZClass, args ...*phpv.ZVal) (*ZObject, 
 				callerClass := ctx.Class()
 				ctorClass := ctorMethod.Class
 				if callerClass == nil || ctorClass == nil || callerClass.GetName() != ctorClass.GetName() {
-					if callerClass == nil {
-						return nil, ThrowError(ctx, Error, fmt.Sprintf("Call to private %s::__construct() from global scope", c.GetName()))
+					scope := "global scope"
+					if callerClass != nil {
+						scope = fmt.Sprintf("scope %s", callerClass.GetName())
 					}
-					return nil, ThrowError(ctx, Error, fmt.Sprintf("Cannot call private %s::__construct()", c.GetName()))
+					return nil, ThrowError(ctx, Error, fmt.Sprintf("Call to private %s::__construct() from %s", c.GetName(), scope))
 				}
 			} else if ctorMethod.Modifiers.Has(phpv.ZAttrProtected) {
 				callerClass := ctx.Class()
@@ -1625,8 +1627,15 @@ func (o *ZObject) ObjectSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) er
 			// unset() on a non-visible property → try __unset
 			class := o.GetClass().(*ZClass)
 			if m, ok := class.Methods["__unset"]; ok {
-				_, err := ctx.CallZVal(ctx, m.Method, []*phpv.ZVal{keyStr.ZVal()}, o)
-				return err
+				if o.unsetGuard == nil {
+					o.unsetGuard = make(map[phpv.ZString]bool)
+				}
+				if !o.unsetGuard[keyStr] {
+					o.unsetGuard[keyStr] = true
+					_, err := ctx.CallZVal(ctx, m.Method, []*phpv.ZVal{keyStr.ZVal()}, o)
+					delete(o.unsetGuard, keyStr)
+					return err
+				}
 			}
 		} else {
 			// set on a non-visible property → try __set
@@ -1656,8 +1665,15 @@ func (o *ZObject) ObjectSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) er
 			class := o.GetClass().(*ZClass)
 			if value == nil {
 				if m, ok := class.Methods["__unset"]; ok {
-					_, err2 := ctx.CallZVal(ctx, m.Method, []*phpv.ZVal{keyStr.ZVal()}, o)
-					return err2
+					if o.unsetGuard == nil {
+						o.unsetGuard = make(map[phpv.ZString]bool)
+					}
+					if !o.unsetGuard[keyStr] {
+						o.unsetGuard[keyStr] = true
+						_, err2 := ctx.CallZVal(ctx, m.Method, []*phpv.ZVal{keyStr.ZVal()}, o)
+						delete(o.unsetGuard, keyStr)
+						return err2
+					}
 				}
 			} else {
 				if m, ok := class.Methods["__set"]; ok {
@@ -1719,8 +1735,15 @@ func (o *ZObject) ObjectSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) er
 	if value == nil {
 		// unset() on a non-existent property → try __unset
 		if m, ok := class.Methods["__unset"]; ok {
-			_, err := ctx.CallZVal(ctx, m.Method, []*phpv.ZVal{keyStr.ZVal()}, o)
-			return err
+			if o.unsetGuard == nil {
+				o.unsetGuard = make(map[phpv.ZString]bool)
+			}
+			if !o.unsetGuard[keyStr] {
+				o.unsetGuard[keyStr] = true
+				_, err := ctx.CallZVal(ctx, m.Method, []*phpv.ZVal{keyStr.ZVal()}, o)
+				delete(o.unsetGuard, keyStr)
+				return err
+			}
 		}
 	} else {
 		// set on a non-existent property → try __set

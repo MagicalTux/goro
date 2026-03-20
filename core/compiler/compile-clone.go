@@ -106,6 +106,12 @@ func (r *runnableClone) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 	// Apply withProperties: set each property on the cloned object
 	if withProps != nil {
 		arr := withProps.AsArray(ctx)
+		// Check for references in the with-properties array
+		for _, v := range arr.Iterate(ctx) {
+			if v.IsRef() {
+				return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot assign by reference when cloning with updated properties")
+			}
+		}
 		for k, v := range arr.Iterate(ctx) {
 			keyStr := k.AsString(ctx)
 			err = obj.ObjectSet(ctx, keyStr, v.ZVal())

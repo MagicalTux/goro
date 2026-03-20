@@ -173,7 +173,11 @@ func exceptionToString(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.Z
 		}
 		buf.WriteString(exceptionEntryToString(ctx, chain[i], maxLen))
 	}
-	return phpv.ZStr(buf.String()), nil
+	result := phpv.ZStr(buf.String())
+	// Cache the result in the 'string' property (PHP behavior: __toString
+	// caches its result in the private $string property)
+	o.HashTable().SetString("string", result)
+	return result, nil
 }
 
 func SpawnException(ctx phpv.Context, l *phpv.Loc, msg phpv.ZString, code phpv.ZInt, prev *ZObject) (*ZObject, error) {

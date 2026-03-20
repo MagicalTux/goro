@@ -352,10 +352,12 @@ func (r *runTopLevelConst) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		if err := ctx.Warn("Constant %s already defined, this will be an error in PHP 9", r.name, logopt.Data{NoFuncName: true, Loc: r.l}); err != nil {
 			return nil, err
 		}
-	}
-	// Store attributes for reflection access
-	if len(r.attrs) > 0 {
-		ctx.Global().ConstantSetAttributes(r.name, r.attrs)
+		// Do NOT update attributes - the original constant's attributes are preserved
+	} else {
+		// Store attributes for reflection access (only on first definition)
+		if len(r.attrs) > 0 {
+			ctx.Global().ConstantSetAttributes(r.name, r.attrs)
+		}
 	}
 	return nil, nil
 }

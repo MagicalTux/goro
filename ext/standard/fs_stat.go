@@ -8,6 +8,7 @@ import (
 
 	"github.com/MagicalTux/goro/core"
 	"github.com/MagicalTux/goro/core/logopt"
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -385,6 +386,12 @@ func fncFile(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	_, err := core.Expand(ctx, args, &filename, &flags)
 	if err != nil {
 		return nil, err
+	}
+
+	// Validate flags: only FILE_USE_INCLUDE_PATH, FILE_IGNORE_NEW_LINES, FILE_SKIP_EMPTY_LINES, FILE_NO_DEFAULT_CONTEXT are valid
+	validFlags := FILE_USE_INCLUDE_PATH | FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES | FILE_NO_DEFAULT_CONTEXT
+	if flags != nil && (*flags & ^validFlags) != 0 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "file(): Argument #2 ($flags) must be a valid flag value")
 	}
 
 	if err := ctx.Global().CheckOpenBasedir(ctx, string(filename), "file"); err != nil {

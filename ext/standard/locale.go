@@ -19,7 +19,7 @@ func fncSetLocale(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	// PHP: setlocale(LC_ALL, 0) queries the current locale.
-	// The second arg can be int 0, a string, or an array.
+	// The second arg can be int 0, a string "0", null, an array, or an object with __toString.
 	if localeArg.GetType() == phpv.ZtInt && localeArg.Value().(phpv.ZInt) == 0 {
 		// Query current locale
 		res, _ := locale.SetLocale(category, "")
@@ -36,10 +36,21 @@ func fncSetLocale(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			locales = append(locales, elem.AsString(ctx))
 		}
 	case phpv.ZtString:
-		locale := localeArg.AsString(ctx)
-		locales = append(locales, locale)
+		s := localeArg.AsString(ctx)
+		if s == "0" {
+			// "0" is same as int 0 - query
+			res, _ := locale.SetLocale(category, "")
+			if res == "" {
+				return phpv.ZFalse.ZVal(), nil
+			}
+			return res.ZVal(), nil
+		}
+		locales = append(locales, s)
+	case phpv.ZtNull:
+		// null means reset to default (empty string)
+		locales = append(locales, "")
 	default:
-		// PHP 8: non-string, non-array, non-zero int is deprecated
+		// Objects with __toString, ints, etc. are converted to string
 		locales = append(locales, localeArg.AsString(ctx))
 	}
 
@@ -57,8 +68,12 @@ func fncSetLocale(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			for _, elem := range v.AsArray(ctx).Iterate(ctx) {
 				locales = append(locales, elem.AsString(ctx))
 			}
+		case phpv.ZtNull:
+			// null is treated as empty string (query or reset)
+			locales = append(locales, "")
 		default:
-			return nil, ctx.Errorf("expected string or array")
+			// int and other types are converted to string
+			locales = append(locales, v.AsString(ctx))
 		}
 	}
 

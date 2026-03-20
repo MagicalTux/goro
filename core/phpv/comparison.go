@@ -3,6 +3,8 @@ package phpv
 import (
 	"errors"
 	"strings"
+
+	"github.com/MagicalTux/goro/core/logopt"
 )
 
 // ErrComparisonDepth is returned when object comparison exceeds the maximum
@@ -25,7 +27,7 @@ func CompareObject(ctx Context, ao, bo ZObject) (int, error) {
 	}
 
 	if ao.GetClass() != bo.GetClass() {
-		return 1, nil
+		return CompareUncomparable, nil
 	}
 
 	// Enum cases: different cases of the same enum are not orderable
@@ -155,6 +157,19 @@ func CompareIntStrings(a, b string) int {
 	return cmp
 }
 
+// compareObjectToNumeric converts an object to a numeric type for comparison,
+// emitting E_NOTICE (not E_WARNING) as PHP does for implicit comparison conversions.
+// targetType should be ZtInt or ZtFloat depending on the other operand.
+func CompareObjectToNumeric(ctx Context, z *ZVal, targetType ZType) *ZVal {
+	obj := z.AsObject(ctx)
+	if targetType == ZtFloat {
+		ctx.Notice("Object of class %s could not be converted to float", obj.GetClass().GetName(), logopt.NoFuncName(true))
+		return NewZVal(ZFloat(1))
+	}
+	ctx.Notice("Object of class %s could not be converted to int", obj.GetClass().GetName(), logopt.NoFuncName(true))
+	return NewZVal(ZInt(1))
+}
+
 func Compare(ctx Context, a, b *ZVal) (int, error) {
 	// operator compare (< > <= >= == === != !== <=>) involve a lot of dark magic in php, unless both values are of the same type (and even so)
 	// loose comparison will convert number-y looking strings into numbers, etc
@@ -260,13 +275,53 @@ func Compare(ctx Context, a, b *ZVal) (int, error) {
 		goto CompareStrings
 	}
 
+	// PHP 8: string vs object -> no numeric conversion, objects are greater than strings
+	if a.GetType() == ZtString && b.GetType() == ZtObject {
+		return -1, nil // string < object
+	}
+	if a.GetType() == ZtObject && b.GetType() == ZtString {
+		return 1, nil // object > string
+	}
+
+	// PHP 8: when either operand is bool or null, always use bool comparison
+	// (even if the other operand is numeric). This must come before numeric comparison.
+	if a.GetType() == ZtBool || b.GetType() == ZtBool || a.GetType() == ZtNull || b.GetType() == ZtNull {
+		ab := a.AsBool(ctx)
+		bb := b.AsBool(ctx)
+		if ab == bb {
+			return 0, nil
+		}
+		if ab {
+			return 1, nil
+		}
+		return -1, nil
+	}
+
 	if ia != nil || ib != nil {
 		// if either part is a numeric, force the other one as numeric too and go through comparison
 		if ia == nil {
-			ia, _ = a.AsNumeric(ctx)
+			if a.GetType() == ZtObject {
+				// Object in comparison: emit Notice (not Warning) with appropriate target type
+				targetType := ZtInt
+				if ib != nil && ib.GetType() == ZtFloat {
+					targetType = ZtFloat
+				}
+				ia = CompareObjectToNumeric(ctx, a, targetType)
+			} else {
+				ia, _ = a.AsNumeric(ctx)
+			}
 		}
 		if ib == nil {
-			ib, _ = b.AsNumeric(ctx)
+			if b.GetType() == ZtObject {
+				// Object in comparison: emit Notice (not Warning) with appropriate target type
+				targetType := ZtInt
+				if ia != nil && ia.GetType() == ZtFloat {
+					targetType = ZtFloat
+				}
+				ib = CompareObjectToNumeric(ctx, b, targetType)
+			} else {
+				ib, _ = b.AsNumeric(ctx)
+			}
 		}
 
 		// perform numeric comparison

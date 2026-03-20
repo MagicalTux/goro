@@ -435,6 +435,28 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 					if err := compilePropertyHooks(prop, class, c); err != nil {
 						return nil, err
 					}
+
+					// Validate asymmetric visibility on virtual properties (PHP 8.4)
+					// A virtual property with only a get hook is "read-only virtual"
+					// A virtual property with only a set hook is "write-only virtual"
+					// Neither should specify asymmetric visibility.
+					if prop.SetModifiers != 0 {
+						if prop.GetHook != nil && prop.SetHook == nil && prop.Default == nil {
+							return nil, &phpv.PhpError{
+								Err:  fmt.Errorf("Read-only virtual property %s::$%s must not specify asymmetric visibility", class.Name, prop.VarName),
+								Code: phpv.E_COMPILE_ERROR,
+								Loc:  l,
+							}
+						}
+						if prop.SetHook != nil && prop.GetHook == nil && prop.Default == nil {
+							return nil, &phpv.PhpError{
+								Err:  fmt.Errorf("Write-only virtual property %s::$%s must not specify asymmetric visibility", class.Name, prop.VarName),
+								Code: phpv.E_COMPILE_ERROR,
+								Loc:  l,
+							}
+						}
+					}
+
 					class.Props = append(class.Props, prop)
 					break
 				}

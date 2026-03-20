@@ -80,8 +80,10 @@ func parseAttributes(c compileCtx) ([]*phpv.ZAttribute, error) {
 				if err != nil {
 					return nil, err
 				}
-				attr.Args = resolveAttributeNamedArgs(className, args, namedArgs)
+				resolved, argNames := resolveAttributeNamedArgsWithNames(className, args, namedArgs)
+				attr.Args = resolved
 				attr.ArgExprs = argExprs
+				attr.ArgNames = argNames
 
 				// Read next token after closing )
 				i, err = c.NextItem()
@@ -292,6 +294,63 @@ func resolveAttributeNamedArgs(className phpv.ZString, args []*phpv.ZVal, namedA
 	}
 
 	return args
+}
+
+// resolveAttributeNamedArgsWithNames is like resolveAttributeNamedArgs but also
+// returns the argument names (for reflection). Empty string = positional.
+func resolveAttributeNamedArgsWithNames(className phpv.ZString, args []*phpv.ZVal, namedArgs map[phpv.ZString]*phpv.ZVal) ([]*phpv.ZVal, []phpv.ZString) {
+	if len(namedArgs) == 0 {
+		return args, nil
+	}
+
+	// Parameter name -> position mapping for known attribute classes
+	var paramMap map[phpv.ZString]int
+
+	switch className {
+	case "Deprecated", "\\Deprecated":
+		paramMap = map[phpv.ZString]int{"message": 0, "since": 1}
+	case "Attribute", "\\Attribute":
+		paramMap = map[phpv.ZString]int{"flags": 0}
+	case "NoDiscard", "\\NoDiscard":
+		paramMap = map[phpv.ZString]int{"message": 0}
+	default:
+		// For unknown attribute classes, append named args after positional args
+		// Build names list: empty for positional, name for named
+		names := make([]phpv.ZString, len(args))
+		for name, v := range namedArgs {
+			args = append(args, v)
+			names = append(names, name)
+		}
+		return args, names
+	}
+
+	// Find max position needed
+	maxPos := len(args) - 1
+	for name := range namedArgs {
+		if pos, ok := paramMap[name]; ok && pos > maxPos {
+			maxPos = pos
+		}
+	}
+
+	// Extend args slice to accommodate all positions
+	names := make([]phpv.ZString, len(args))
+	for len(args) <= maxPos {
+		args = append(args, phpv.ZString("").ZVal())
+		names = append(names, "")
+	}
+
+	// Place named args at their correct positions
+	for name, val := range namedArgs {
+		if pos, ok := paramMap[name]; ok {
+			args[pos] = val
+			for len(names) <= pos {
+				names = append(names, "")
+			}
+			names[pos] = name
+		}
+	}
+
+	return args, names
 }
 
 func parseZClassAttr(a *phpv.ZClassAttr, c compileCtx) error {

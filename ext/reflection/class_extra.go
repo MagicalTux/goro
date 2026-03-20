@@ -457,7 +457,7 @@ func formatReflectionClass(ctx phpv.Context, zc *phpobj.ZClass) string {
 	}
 	sb.WriteString(" ] {\n")
 	if zc.L != nil {
-		sb.WriteString(fmt.Sprintf("  @@ %s %d - %d\n", zc.L.Filename, zc.L.Line, zc.L.Line))
+		sb.WriteString(fmt.Sprintf("  @@ %s %d-%d\n", zc.L.Filename, zc.L.Line, zc.L.Line))
 	}
 	sb.WriteString("\n")
 

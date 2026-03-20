@@ -68,6 +68,44 @@ func compileDeclare(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			}
 		}
 
+		// Validate: encoding directive
+		if name == "encoding" {
+			lit, isLiteral := val.(*runZVal)
+			if !isLiteral {
+				// Non-literal expression (e.g., M_PI, constant) -> fatal error
+				return nil, &phpv.PhpError{
+					Err:  fmt.Errorf("Encoding must be a literal"),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  l,
+				}
+			}
+			// Check if multibyte is enabled
+			mbVal := c.GetConfig(phpv.ZString("zend.multibyte"), nil)
+			mbEnabled := false
+			if mbVal != nil {
+				mbStr := string(mbVal.AsString(c))
+				mbEnabled = mbStr == "1" || strings.EqualFold(mbStr, "on") || strings.EqualFold(mbStr, "true")
+			}
+
+			if !mbEnabled {
+				// Emit warning about multibyte being off
+				c.Warn("declare(encoding=...) ignored because Zend multibyte feature is turned off by settings")
+			}
+
+			// For non-string literal values, warn about unsupported encoding
+			switch v := lit.v.(type) {
+			case phpv.ZString:
+				// String encoding value - only "utf-8" is supported (case-insensitive)
+				if !strings.EqualFold(string(v), "utf-8") && !strings.EqualFold(string(v), "utf8") {
+					c.Warn("Unsupported encoding [%s]", string(v))
+				}
+			case phpv.ZInt:
+				c.Warn("Unsupported encoding [%d]", int64(v))
+			case phpv.ZFloat:
+				c.Warn("Unsupported encoding [%s]", phpv.FormatFloat(float64(v)))
+			}
+		}
+
 		directives = append(directives, declareDirective{name: name, val: val})
 
 		// Check for ',' or ')'
@@ -166,42 +204,79 @@ type declareDirective struct {
 func buildDeclareRunnable(directives []declareDirective, body phpv.Runnable, l *phpv.Loc) phpv.Runnable {
 	// For strict_types and encoding, there's nothing to do at runtime
 	// (strict_types is handled at compile time in type checking).
-	// For ticks, we'd need to set up tick handlers.
-	// For now, if there's a body, return it; otherwise return nil.
+	// For ticks, wrap the body in a ticking handler.
+	var ticksVal int64
 	hasTicks := false
 	for _, d := range directives {
 		if d.name == "ticks" {
 			hasTicks = true
+			if lit, ok := d.val.(*runZVal); ok {
+				switch v := lit.v.(type) {
+				case phpv.ZInt:
+					ticksVal = int64(v)
+				case phpv.ZFloat:
+					ticksVal = int64(v)
+				}
+			}
 		}
 	}
 
-	if body == nil && !hasTicks {
-		return nil
+	if hasTicks && body != nil && ticksVal > 0 {
+		return &runnableDeclareTicks{body: body, ticks: ticksVal, l: l}
 	}
 
 	if body != nil {
 		return body
 	}
 
-	// ticks without body - nothing to run
 	return nil
 }
 
-// runnableDeclare wraps a body with declare directives
-type runnableDeclare struct {
-	body phpv.Runnable
-	l    *phpv.Loc
+// runnableDeclareTicks wraps a body and calls tick functions after every N statements
+type runnableDeclareTicks struct {
+	body  phpv.Runnable
+	ticks int64
+	l     *phpv.Loc
 }
 
-func (r *runnableDeclare) Run(ctx phpv.Context) (*phpv.ZVal, error) {
+func (r *runnableDeclareTicks) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	if r.body == nil {
 		return nil, nil
 	}
-	return r.body.Run(ctx)
+
+	// If the body is a Runnables (list of statements), tick after each
+	if stmts, ok := r.body.(phpv.Runnables); ok {
+		var last *phpv.ZVal
+		var count int64
+		for _, stmt := range stmts {
+			var err error
+			last, err = stmt.Run(ctx)
+			if err != nil {
+				return last, err
+			}
+			count++
+			if count%r.ticks == 0 {
+				if err := ctx.Global().CallTickFunctions(ctx); err != nil {
+					return nil, err
+				}
+			}
+		}
+		return last, nil
+	}
+
+	// Single statement body
+	result, err := r.body.Run(ctx)
+	if err != nil {
+		return result, err
+	}
+	if err := ctx.Global().CallTickFunctions(ctx); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
-func (r *runnableDeclare) Dump(w io.Writer) error {
-	_, err := w.Write([]byte("declare(...)"))
+func (r *runnableDeclareTicks) Dump(w io.Writer) error {
+	_, err := w.Write([]byte("declare(ticks=...)"))
 	if err != nil {
 		return err
 	}

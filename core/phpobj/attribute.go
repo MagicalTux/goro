@@ -165,7 +165,26 @@ func init() {
 			"__construct": {Name: "__construct", Method: NativeMethod(func(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				msg := phpv.ZString("")
 				if len(args) > 0 {
-					msg = phpv.ZString(args[0].String())
+					arg := args[0]
+					switch arg.GetType() {
+					case phpv.ZtNull:
+						// null is OK (nullable)
+					case phpv.ZtString:
+						msg = arg.Value().(phpv.ZString)
+					case phpv.ZtInt, phpv.ZtFloat, phpv.ZtBool:
+						// Scalars are coerced to string in non-strict mode
+						msg = phpv.ZString(arg.String())
+					default:
+						// Array, object, etc. always error
+						typeName := arg.GetType().TypeName()
+						if arg.GetType() == phpv.ZtObject {
+							if obj, ok := arg.Value().(phpv.ZObject); ok {
+								typeName = string(obj.GetClass().GetName())
+							}
+						}
+						return nil, ThrowError(ctx, TypeError,
+							fmt.Sprintf("NoDiscard::__construct(): Argument #1 ($message) must be of type ?string, %s given", typeName))
+					}
 				}
 				o.HashTable().SetString("message", msg.ZVal())
 				// Mark readonly property as initialized

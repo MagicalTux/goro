@@ -1229,6 +1229,19 @@ func compileFunctionArgs(c compileCtx) (res []*phpv.FuncArg, err error) {
 			}
 		}
 
+		// Validate internal attributes on parameters at compile time
+		if len(arg.Attributes) > 0 {
+			if msg := phpobj.ValidateInternalAttributeList(c, arg.Attributes, phpobj.AttributeTARGET_PARAMETER); msg != "" {
+				phpErr := &phpv.PhpError{
+					Err:  fmt.Errorf("%s", msg),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  i.Loc(),
+				}
+				c.Global().LogError(phpErr)
+				return nil, phpv.ExitError(255)
+			}
+		}
+
 		res = append(res, arg)
 
 		i, err = c.NextItem()

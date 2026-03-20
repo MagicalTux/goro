@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
 
 	"github.com/MagicalTux/goro/core/phpobj"
 
@@ -337,14 +338,10 @@ func fncRealPath(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // > func string unlink ( string $filename [, resource $context ] )
 func fncUnlink(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var filename string
-	var context **phpv.ZVal
+	var context **phpv.ZVal // optional context parameter
 	_, err := core.Expand(ctx, args, &filename, &context)
 	if err != nil {
 		return nil, err
-	}
-
-	if context != nil {
-		return nil, ctx.Errorf("context resource is not yet supported, must be NULL")
 	}
 
 	if err := ctx.Global().CheckOpenBasedir(ctx, filename, "unlink"); err != nil {
@@ -453,10 +450,10 @@ func fncRmdir(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 func fncFileGetContents(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var filename phpv.ZString
 	var useIncludePathArg *phpv.ZBool
-	var contextResource core.Optional[phpv.Resource]
+	var contextZval *phpv.ZVal
 	var offsetArg core.Optional[phpv.ZInt]
 	var maxlen core.Optional[phpv.ZInt]
-	_, err := core.Expand(ctx, args, &filename, &useIncludePathArg, &contextResource, &offsetArg, &maxlen)
+	_, err := core.Expand(ctx, args, &filename, &useIncludePathArg, &contextZval, &offsetArg, &maxlen)
 	if err != nil {
 		return nil, err
 	}
@@ -472,16 +469,32 @@ func fncFileGetContents(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	}
 
 	if maxlen.HasArg() && maxlen.Get() < 0 {
-		return nil, errors.New("Argument #5 ($length) must be greater than or equal to 0")
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "file_get_contents(): Argument #5 ($length) must be greater than or equal to 0")
 	}
 
-	if contextResource.HasArg() {
-		if _, ok := contextResource.Get().(*stream.Context); !ok {
+	// Parse the context resource - accept NULL or a valid stream context
+	var contextResource phpv.Resource
+	if contextZval != nil && contextZval.GetType() != phpv.ZtNull {
+		s, cerr := contextZval.As(ctx, phpv.ZtResource)
+		if cerr != nil {
+			return nil, cerr
+		}
+		res, ok := s.Value().(phpv.Resource)
+		if !ok {
 			return nil, ctx.FuncErrorf("$context must be a stream context")
 		}
+		if _, ok := res.(*stream.Context); !ok {
+			return nil, ctx.FuncErrorf("$context must be a stream context")
+		}
+		contextResource = res
 	}
 
-	f, err := ctx.Global().Open(ctx, filename, "r", true, contextResource.Get())
+	var f phpv.Stream
+	if contextResource != nil {
+		f, err = ctx.Global().Open(ctx, filename, "r", true, contextResource)
+	} else {
+		f, err = ctx.Global().Open(ctx, filename, "r", true)
+	}
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return phpv.ZFalse.ZVal(), ctx.Warn("%s(%s): Failed to open stream: No such file or directory", ctx.GetFuncName(), filename, logopt.NoFuncName(true))
@@ -1283,3 +1296,23 @@ func fncMoveUploadedFile(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error
 	ctx.Global().UnregisterUploadedFile(string(from))
 	return phpv.ZTrue.ZVal(), nil
 }
+
+// > func int umask ([ int $mask ] )
+func fncUmask(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var maskArg *phpv.ZInt
+	_, err := core.Expand(ctx, args, &maskArg)
+	if err != nil {
+		return nil, err
+	}
+
+	if maskArg == nil {
+		// Query current umask: set to 0, read old value, restore
+		old := syscall.Umask(0)
+		syscall.Umask(old)
+		return phpv.ZInt(old).ZVal(), nil
+	}
+
+	old := syscall.Umask(int(*maskArg))
+	return phpv.ZInt(old).ZVal(), nil
+}
+

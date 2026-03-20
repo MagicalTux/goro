@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -71,3 +72,45 @@ func fncMkTime(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	date := time.Date(year, month, day, hour, min, sec, 0, time.UTC)
 	return phpv.ZInt(date.Unix()).ZVal(), nil
 }
+
+// > func array|bool time_nanosleep ( int $seconds , int $nanoseconds )
+func fncTimeNanosleep(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var seconds, nanoseconds phpv.ZInt
+	_, err := core.Expand(ctx, args, &seconds, &nanoseconds)
+	if err != nil {
+		return nil, err
+	}
+
+	if seconds < 0 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "time_nanosleep(): Argument #1 ($seconds) must be greater than or equal to 0")
+	}
+	if nanoseconds < 0 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "time_nanosleep(): Argument #2 ($nanoseconds) must be greater than or equal to 0")
+	}
+	if nanoseconds >= 1000000000 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "time_nanosleep(): Argument #2 ($nanoseconds) must be less than 1000000000")
+	}
+
+	d := time.Duration(seconds)*time.Second + time.Duration(nanoseconds)*time.Nanosecond
+	time.Sleep(d)
+	return phpv.ZTrue.ZVal(), nil
+}
+
+// > func bool time_sleep_until ( float $timestamp )
+func fncTimeSleepUntil(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var timestamp phpv.ZFloat
+	_, err := core.Expand(ctx, args, &timestamp)
+	if err != nil {
+		return nil, err
+	}
+
+	target := time.Unix(int64(timestamp), int64((float64(timestamp)-float64(int64(timestamp)))*1e9))
+	now := time.Now()
+	if target.Before(now) {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "time_sleep_until(): Argument #1 ($timestamp) must be greater than or equal to the current time")
+	}
+
+	time.Sleep(target.Sub(now))
+	return phpv.ZTrue.ZVal(), nil
+}
+

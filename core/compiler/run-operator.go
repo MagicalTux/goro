@@ -1238,13 +1238,44 @@ func operatorCompare(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (
 		goto CompareStrings
 	}
 
+	// PHP 8: string vs object -> no numeric conversion, objects are greater than strings
+	if (a.GetType() == phpv.ZtString && b.GetType() == phpv.ZtObject) ||
+		(a.GetType() == phpv.ZtObject && b.GetType() == phpv.ZtString) {
+		// Skip numeric comparison, fall through to object > scalar comparison
+		goto ObjectScalarCompare
+	}
+
+	// PHP 8: when either operand is bool or null, always use bool comparison
+	// (even if the other operand is numeric). This must come before numeric comparison.
+	if a.GetType() == phpv.ZtBool || b.GetType() == phpv.ZtBool || a.GetType() == phpv.ZtNull || b.GetType() == phpv.ZtNull {
+		return operatorCompareBool(ctx, op, a, b)
+	}
+
 	if ia != nil || ib != nil {
 		// if either part is a numeric, force the other one as numeric too and go through comparison
 		if ia == nil {
-			ia, _ = a.AsNumeric(ctx)
+			if a.GetType() == phpv.ZtObject {
+				// Object in comparison: emit Notice (not Warning) with appropriate target type
+				targetType := phpv.ZtInt
+				if ib != nil && ib.GetType() == phpv.ZtFloat {
+					targetType = phpv.ZtFloat
+				}
+				ia = phpv.CompareObjectToNumeric(ctx, a, targetType)
+			} else {
+				ia, _ = a.AsNumeric(ctx)
+			}
 		}
 		if ib == nil {
-			ib, _ = b.AsNumeric(ctx)
+			if b.GetType() == phpv.ZtObject {
+				// Object in comparison: emit Notice (not Warning) with appropriate target type
+				targetType := phpv.ZtInt
+				if ia != nil && ia.GetType() == phpv.ZtFloat {
+					targetType = phpv.ZtFloat
+				}
+				ib = phpv.CompareObjectToNumeric(ctx, b, targetType)
+			} else {
+				ib, _ = b.AsNumeric(ctx)
+			}
 		}
 
 		// perform numeric comparison
@@ -1380,6 +1411,7 @@ func operatorCompare(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (
 		return phpv.ZBool(res).ZVal(), nil
 	}
 
+ObjectScalarCompare:
 	// PHP 8: objects are greater than all scalar types
 	if a.GetType() == phpv.ZtObject && b.GetType() != phpv.ZtObject {
 		switch op {
@@ -1600,6 +1632,45 @@ CompareArrays:
 	}
 
 	return phpv.ZBool(res).ZVal(), nil
+}
+
+// operatorCompareBool performs a bool comparison between two values.
+// In PHP 8, when either operand is bool or null, comparison is always done
+// by casting both to bool.
+func operatorCompareBool(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*phpv.ZVal, error) {
+	a, _ = a.As(ctx, phpv.ZtBool)
+	b, _ = b.As(ctx, phpv.ZtBool)
+	var ab, bb int
+	if a.Value().(phpv.ZBool) {
+		ab = 1
+	}
+	if b.Value().(phpv.ZBool) {
+		bb = 1
+	}
+
+	switch op {
+	case tokenizer.Rune('<'):
+		return phpv.ZBool(ab < bb).ZVal(), nil
+	case tokenizer.Rune('>'):
+		return phpv.ZBool(ab > bb).ZVal(), nil
+	case tokenizer.T_IS_SMALLER_OR_EQUAL:
+		return phpv.ZBool(ab <= bb).ZVal(), nil
+	case tokenizer.T_IS_GREATER_OR_EQUAL:
+		return phpv.ZBool(ab >= bb).ZVal(), nil
+	case tokenizer.T_IS_EQUAL:
+		return phpv.ZBool(ab == bb).ZVal(), nil
+	case tokenizer.T_IS_NOT_EQUAL:
+		return phpv.ZBool(ab != bb).ZVal(), nil
+	case tokenizer.T_SPACESHIP:
+		if ab < bb {
+			return phpv.ZInt(-1).ZVal(), nil
+		} else if ab > bb {
+			return phpv.ZInt(1).ZVal(), nil
+		}
+		return phpv.ZInt(0).ZVal(), nil
+	default:
+		return nil, ctx.Errorf("unsupported operator %s", op)
+	}
 }
 
 // phpTypeName returns the PHP type name for error messages (e.g., "string", "int", "float")

@@ -191,6 +191,18 @@ func (a runArray) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			if k.GetType() == phpv.ZtArray {
 				return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "Cannot access offset of type array on array")
 			}
+			// PHP 8.1: Deprecation for float keys that lose precision
+			if k.GetType() == phpv.ZtFloat {
+				if _, err := phpv.FloatToIntImplicit(ctx, k.Value().(phpv.ZFloat)); err != nil {
+					return nil, err
+				}
+			}
+			// PHP 8.1: Deprecation for null used as array key
+			if k.GetType() == phpv.ZtNull {
+				if err := ctx.Deprecated("Using null as an array offset is deprecated, use an empty string instead", logopt.NoFuncName(true)); err != nil {
+					return nil, err
+				}
+			}
 		}
 		v, err = e.v.Run(ctx)
 		if err != nil {
