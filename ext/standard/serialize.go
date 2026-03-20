@@ -245,7 +245,7 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seenArray
 				props = val.AsArray(ctx)
 			} else {
 				// __sleep must return an array; if not, serialize returns NULL
-				ctx.Notice("serialize(): __sleep should return an array only containing the names of instance-variables to serialize")
+				ctx.Warn("%s::__sleep() should return an array only containing the names of instance-variables to serialize", obj.GetClass().GetName())
 				return "N;", nil
 			}
 		}
@@ -256,10 +256,28 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seenArray
 		if props != nil {
 			zobj := obj.(*phpobj.ZObject)
 			for _, prop := range props.Iterate(ctx) {
+				if prop.GetType() != phpv.ZtString {
+					ctx.Warn("%s::__sleep() should return an array only containing the names of instance-variables to serialize", obj.GetClass().GetName())
+					continue
+				}
 				propName := prop.AsString(ctx)
 				// Look up the actual property to determine visibility
 				classProp, found := obj.GetClass().GetProp(propName)
 				if !found {
+					// Check if it's a dynamic property on the object
+					if zobj.HashTable().HasString(propName) {
+						mangledName := string(propName)
+						sub := fmt.Sprintf(`s:%d:"%s";`, len(mangledName), mangledName)
+						buf.WriteString(sub)
+						v := zobj.HashTable().GetString(propName)
+						sub2, err := serializeWithDepth(ctx, v, depth+1, seenArrays)
+						if err != nil {
+							return "", err
+						}
+						buf.WriteString(sub2)
+						propCount++
+						continue
+					}
 					// Property not found - warn and skip
 					ctx.Warn("\"%s\" returned as member variable from __sleep() but does not exist", propName)
 					continue

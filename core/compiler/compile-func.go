@@ -5,6 +5,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phperr"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
@@ -137,6 +138,12 @@ func (r *runnableFunctionCallRef) Run(ctx phpv.Context) (l *phpv.ZVal, err error
 			return nil, err
 		}
 
+		// Emit "Undefined variable" warning if $foo is not defined
+		if _, exists, _ := ctx.OffsetCheck(ctx, classRef.varName); !exists {
+			if err := ctx.Warn("Undefined variable $%s", classRef.varName, logopt.NoFuncName(true)); err != nil {
+				return nil, err
+			}
+		}
 		varnameVal, _ := ctx.OffsetGet(ctx, classRef.varName)
 		if varnameVal.GetType() != phpv.ZtString {
 			return nil, ctx.Errorf("Function name must be a string")

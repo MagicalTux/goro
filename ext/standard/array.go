@@ -2092,7 +2092,7 @@ func arrayRecursiveCompact(funcCtx phpv.Context, ctx phpv.Context, result *phpv.
 			}
 			result.OffsetSet(ctx, varName, value)
 		} else {
-			funcCtx.Warn("Undefined variable $%s", varName)
+			funcCtx.Notice("Undefined variable: %s", varName)
 		}
 	case phpv.ZtArray:
 		if depth >= compactMaxDepth {
@@ -2106,8 +2106,7 @@ func arrayRecursiveCompact(funcCtx phpv.Context, ctx phpv.Context, result *phpv.
 			}
 		}
 	default:
-		// PHP 8+ warns about non-string, non-array arguments
-		funcCtx.Warn("Argument #%d must be string or array of strings, %s given", argNum, varName.GetType().TypeName())
+		// PHP silently ignores non-string, non-array values (e.g., integers, booleans, NULL)
 	}
 
 	return nil

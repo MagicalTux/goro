@@ -63,7 +63,13 @@ func doVarExport(ctx phpv.Context, w io.Writer, z *phpv.ZVal, linePfx string, re
 			fmt.Fprintf(w, "false")
 		}
 	case phpv.ZtInt:
-		fmt.Fprintf(w, "%d", z.Value())
+		n := int64(z.Value().(phpv.ZInt))
+		if n == -9223372036854775808 {
+			// PHP_INT_MIN can't be expressed as a literal because the positive form overflows
+			fmt.Fprintf(w, "(-9223372036854775807-1)")
+		} else {
+			fmt.Fprintf(w, "%d", n)
+		}
 	case phpv.ZtFloat:
 		p := phpv.GetSerializePrecision(ctx)
 		s := phpv.FormatFloatPrecision(float64(z.Value().(phpv.ZFloat)), p)
@@ -151,9 +157,9 @@ func doVarExport(ctx phpv.Context, w io.Writer, z *phpv.ZVal, linePfx string, re
 					return err
 				}
 				if k.GetType() == phpv.ZtInt {
-					fmt.Fprintf(w, "%s%s => ", localPfx, k)
+					fmt.Fprintf(w, "%s %s => ", localPfx, k)
 				} else {
-					fmt.Fprintf(w, "%s%s => ", localPfx, varExportString(k.String()))
+					fmt.Fprintf(w, "%s %s => ", localPfx, varExportString(k.String()))
 				}
 				v, err := it.Current(ctx)
 				if err != nil {
@@ -181,21 +187,28 @@ func doVarExport(ctx phpv.Context, w io.Writer, z *phpv.ZVal, linePfx string, re
 	return nil
 }
 
-// varExportString formats a string for var_export output, handling NUL bytes
-// and single quote escaping. NUL bytes are output as ” . "\0" . ” concatenation.
+// varExportString formats a string for var_export output, handling NUL bytes,
+// single quote escaping, and backslash escaping.
 func varExportString(s string) string {
+	// PHP's var_export escapes single quotes and backslashes in single-quoted strings
+	escapeSingleQuoted := func(s string) string {
+		s = strings.ReplaceAll(s, `\`, `\\`)
+		s = strings.ReplaceAll(s, "'", `\'`)
+		return s
+	}
+
 	if !strings.Contains(s, "\x00") {
-		return "'" + strings.ReplaceAll(s, `'`, `\'`) + "'"
+		return "'" + escapeSingleQuoted(s) + "'"
 	}
 	parts := strings.Split(s, "\x00")
 	var result strings.Builder
 	for i, part := range parts {
 		if i > 0 {
-			result.WriteString(" . \"\\0\" . ")
+			result.WriteString(` . "\0" . `)
 		}
-		result.WriteString("'")
-		result.WriteString(strings.ReplaceAll(part, `'`, `\'`))
-		result.WriteString("'")
+		result.WriteByte('\'')
+		result.WriteString(escapeSingleQuoted(part))
+		result.WriteByte('\'')
 	}
 	return result.String()
 }
