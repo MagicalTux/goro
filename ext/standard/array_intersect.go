@@ -94,7 +94,7 @@ func fncArrayUIntersect(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 		return nil, ctx.FuncError(err)
 	}
 
-	if len(args) < 3 {
+	if len(args) < 2 {
 		return nil, ctx.Warn("at least 3 parameters are required, %d given", len(args))
 	}
 
@@ -137,7 +137,7 @@ func fncArrayUIntersectAssoc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, e
 		return nil, ctx.FuncError(err)
 	}
 
-	if len(args) < 3 {
+	if len(args) < 2 {
 		return nil, ctx.Warn("at least 3 parameters are required, %d given", len(args))
 	}
 
@@ -283,7 +283,7 @@ func fncArrayIntersectUAssoc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, e
 		return nil, ctx.FuncError(err)
 	}
 
-	if len(args) < 3 {
+	if len(args) < 2 {
 		return nil, ctx.Warn("at least 3 parameters are required, %d given", len(args))
 	}
 
@@ -361,7 +361,7 @@ func fncArrayIntersectUKey(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, err
 		return nil, ctx.FuncError(err)
 	}
 
-	if len(args) < 3 {
+	if len(args) < 2 {
 		return nil, ctx.Warn("at least 3 parameters are required, %d given", len(args))
 	}
 

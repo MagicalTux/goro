@@ -25,8 +25,8 @@ const (
 
 // > const
 const (
-	ARRAY_FILTER_USE_KEY  phpv.ZInt = 1
-	ARRAY_FILTER_USE_BOTH phpv.ZInt = 2
+	ARRAY_FILTER_USE_BOTH phpv.ZInt = 1
+	ARRAY_FILTER_USE_KEY  phpv.ZInt = 2
 )
 
 // > const
@@ -1406,44 +1406,92 @@ func fncArrayColumn(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, ctx.FuncError(err)
 	}
 
-	columnKey, err := getArrayKeyValue(ctx, columnKeyArg)
-	if err != nil {
-		return nil, ctx.FuncError(err)
-	}
+	// When column_key is null, we return the entire row
+	columnKeyIsNull := columnKeyArg == nil || columnKeyArg.IsNull()
 
-	var indexKey *phpv.ZVal
-	if indexKeyArg.HasArg() {
-		indexKey, err = getArrayKeyValue(ctx, indexKeyArg.Get())
+	var columnKey *phpv.ZVal
+	if !columnKeyIsNull {
+		columnKey, err = getArrayKeyValue(ctx, columnKeyArg)
 		if err != nil {
 			return nil, ctx.FuncError(err)
 		}
 	}
 
+	var indexKey *phpv.ZVal
+	var indexKeyIsNull bool
+	if indexKeyArg.HasArg() {
+		ik := indexKeyArg.Get()
+		indexKeyIsNull = ik == nil || ik.IsNull()
+		if !indexKeyIsNull {
+			indexKey, err = getArrayKeyValue(ctx, ik)
+			if err != nil {
+				return nil, ctx.FuncError(err)
+			}
+		}
+	} else {
+		indexKeyIsNull = true
+	}
+
 	// result is an array of { row[indexKey] : row[columnKey], ... }
 	// where row = array[i]
+	// if column_key is null, return the entire row
 	// if row[indexKey] doesn't exist or non-numeric, use maxIndex+1 as key
 
 	result := phpv.NewZArray()
 	for _, item := range array.Iterate(ctx) {
-		if item.GetType() != phpv.ZtArray {
-			continue
+		// array_column also works on objects (accessing public properties)
+		var value *phpv.ZVal
+		if columnKeyIsNull {
+			value = item
+		} else {
+			if item.GetType() == phpv.ZtArray {
+				row := item.AsArray(ctx)
+				if exists, _ := row.OffsetExists(ctx, columnKey); !exists {
+					continue
+				}
+				value, _ = row.OffsetGet(ctx, columnKey)
+			} else if item.GetType() == phpv.ZtObject {
+				// Access object property
+				obj, ok := item.Value().(*phpobj.ZObject)
+				if !ok {
+					continue
+				}
+				propName := columnKey.AsString(ctx)
+				propVal, err := obj.ObjectGet(ctx, propName)
+				if err != nil || propVal == nil {
+					continue
+				}
+				value = propVal
+			} else {
+				continue
+			}
 		}
-		row := item.AsArray(ctx)
-		if exists, _ := row.OffsetExists(ctx, columnKey); !exists {
-			continue
-		}
-		value, _ := row.OffsetGet(ctx, columnKey)
 
 		var key *phpv.ZVal
-		if indexKey != nil {
-			if exists, _ := row.OffsetExists(ctx, indexKey); !exists {
-			} else {
-				k, _ := row.OffsetGet(ctx, indexKey)
-				if k.GetType() == phpv.ZtInt {
-					index := k.AsInt(ctx)
-					key = index.ZVal()
-				} else {
-					key = k
+		if !indexKeyIsNull && indexKey != nil {
+			if item.GetType() == phpv.ZtArray {
+				row := item.AsArray(ctx)
+				if exists, _ := row.OffsetExists(ctx, indexKey); exists {
+					k, _ := row.OffsetGet(ctx, indexKey)
+					if k.GetType() == phpv.ZtInt {
+						index := k.AsInt(ctx)
+						key = index.ZVal()
+					} else {
+						key = k
+					}
+				}
+			} else if item.GetType() == phpv.ZtObject {
+				obj, ok := item.Value().(*phpobj.ZObject)
+				if ok {
+					propName := indexKey.AsString(ctx)
+					propVal, err := obj.ObjectGet(ctx, propName)
+					if err == nil && propVal != nil {
+						if propVal.GetType() == phpv.ZtInt {
+							key = propVal
+						} else {
+							key = propVal
+						}
+					}
 				}
 			}
 		}

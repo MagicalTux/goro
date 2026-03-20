@@ -146,29 +146,44 @@ func doVarExport(ctx phpv.Context, w io.Writer, z *phpv.ZVal, linePfx string, re
 		}
 
 		localPfx := linePfx + "  "
-		it := z.NewIterator()
-		if it != nil {
-			for {
-				if !it.Valid(ctx) {
-					break
-				}
-				k, err := it.Key(ctx)
-				if err != nil {
-					return err
-				}
-				if k.GetType() == phpv.ZtInt {
-					fmt.Fprintf(w, "%s %s => ", localPfx, k)
-				} else {
-					fmt.Fprintf(w, "%s %s => ", localPfx, varExportString(k.String()))
-				}
-				v, err := it.Current(ctx)
-				if err != nil {
-					return err
+		if obj, ok := v.(*phpobj.ZObject); ok {
+			// Use IterProps to get all properties (including private/protected)
+			for prop := range obj.IterProps(ctx) {
+				fmt.Fprintf(w, "%s %s => ", localPfx, varExportString(prop.VarName.String()))
+
+				propVal := obj.GetPropValue(prop)
+				if propVal == nil {
+					propVal = phpv.ZNULL.ZVal()
 				}
 
-				doVarExport(ctx, w, v, localPfx, recurs)
+				doVarExport(ctx, w, propVal, localPfx, recurs)
 				fmt.Fprintf(w, ",\n")
-				it.Next(ctx)
+			}
+		} else {
+			it := z.NewIterator()
+			if it != nil {
+				for {
+					if !it.Valid(ctx) {
+						break
+					}
+					k, err := it.Key(ctx)
+					if err != nil {
+						return err
+					}
+					if k.GetType() == phpv.ZtInt {
+						fmt.Fprintf(w, "%s %s => ", localPfx, k)
+					} else {
+						fmt.Fprintf(w, "%s %s => ", localPfx, varExportString(k.String()))
+					}
+					v, err := it.Current(ctx)
+					if err != nil {
+						return err
+					}
+
+					doVarExport(ctx, w, v, localPfx, recurs)
+					fmt.Fprintf(w, ",\n")
+					it.Next(ctx)
+				}
 			}
 		}
 

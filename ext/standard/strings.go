@@ -2574,10 +2574,14 @@ func doStrReplace(
 		if replace.GetType() == phpv.ZtArray {
 			it1 := search.NewIterator()
 			it2 := replace.NewIterator()
+			totalCount := 0
 
 			for {
 				if !it1.Valid(ctx) {
 					// end of source,
+					if count.HasArg() {
+						count.Set(ctx, phpv.ZInt(totalCount))
+					}
 					return subject, nil
 				}
 				from, err := it1.Current(ctx)
@@ -2622,8 +2626,7 @@ func doStrReplace(
 				to_b := []byte(to.AsString(ctx))
 				subject = phpv.ZString(bytesReplace([]byte(subject), from_b, to_b, cnt, caseSensitive))
 
-				n := phpv.ZInt(cnt)
-				count.Set(ctx, n)
+				totalCount += cnt
 
 				it1.Next(ctx)
 				it2.Next(ctx)
@@ -2639,10 +2642,14 @@ func doStrReplace(
 		to_b := []byte(replace.AsString(ctx))
 
 		it1 := search.NewIterator()
+		totalCount := 0
 
 		for {
 			if !it1.Valid(ctx) {
 				// end of source,
+				if count.HasArg() {
+					count.Set(ctx, phpv.ZInt(totalCount))
+				}
 				return subject, nil
 			}
 			from, err := it1.Current(ctx)
@@ -2671,8 +2678,7 @@ func doStrReplace(
 
 			subject = phpv.ZString(bytesReplace([]byte(subject), from_b, to_b, cnt, caseSensitive))
 
-			n := phpv.ZInt(cnt)
-			count.Set(ctx, n)
+			totalCount += cnt
 
 			it1.Next(ctx)
 		}
@@ -2719,10 +2725,11 @@ func bytesReplace(s, old, new []byte, count int, caseSensitive bool) []byte {
 
 	replaced := 0
 	var buf bytes.Buffer
-	for i := 0; i < len(s)-len(old)+1; i++ {
+	i := 0
+	for i <= len(s)-len(old) {
 		if count > 0 && replaced >= count {
 			buf.Write(s[i:])
-			break
+			return buf.Bytes()
 		}
 
 		match := true
@@ -2738,10 +2745,15 @@ func bytesReplace(s, old, new []byte, count int, caseSensitive bool) []byte {
 		if match {
 			buf.Write(new)
 			replaced++
-			i += len(old) - 1
+			i += len(old)
 		} else {
 			buf.WriteByte(s[i])
+			i++
 		}
+	}
+	// Write any remaining bytes that couldn't form a complete match
+	if i < len(s) {
+		buf.Write(s[i:])
 	}
 
 	return buf.Bytes()

@@ -127,6 +127,18 @@ func spawnCallableInternal(ctx phpv.Context, v *phpv.ZVal, paramNo int) (phpv.Ca
 			return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Cannot call %s() dynamically", s))
 		}
 
+		// Language constructs cannot be used as callbacks
+		switch sLower {
+		case "echo", "print", "isset", "unset", "empty", "list", "eval",
+			"die", "exit", "include", "require", "include_once", "require_once":
+			callerFunc := ctx.GetFuncName()
+			if callerFunc == "" {
+				callerFunc = "call_user_func"
+			}
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+				fmt.Sprintf("%s(): Argument #%d ($callback) must be a valid callback, function \"%s\" not found or invalid function name", callerFunc, paramNo, s))
+		}
+
 		return ctx.Global().GetFunction(ctx, s)
 
 	case phpv.ZtArray:

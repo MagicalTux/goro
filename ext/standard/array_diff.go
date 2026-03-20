@@ -76,8 +76,8 @@ func fncArrayUDiff(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, ctx.FuncError(err)
 	}
 
-	if len(args) < 3 {
-		return nil, ctx.Errorf("at least 3 parameters are required, %d given", len(args))
+	if len(args) < 2 {
+		return nil, ctx.Errorf("at least 2 parameters are required, %d given", len(args))
 	}
 
 	lastArg := args[len(args)-1]
@@ -120,8 +120,8 @@ func fncArrayUDiffAssoc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 		return nil, ctx.FuncError(err)
 	}
 
-	if len(args) < 3 {
-		return nil, ctx.Errorf("at least 3 parameters are required, %d given", len(args))
+	if len(args) < 2 {
+		return nil, ctx.Errorf("at least 2 parameters are required, %d given", len(args))
 	}
 
 	lastArg := args[len(args)-1]
@@ -238,8 +238,8 @@ func fncArrayDiffUKey(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, ctx.FuncError(err)
 	}
 
-	if len(args) < 3 {
-		return nil, ctx.Errorf("at least 3 parameters are required, %d given", len(args))
+	if len(args) < 2 {
+		return nil, ctx.Errorf("at least 2 parameters are required, %d given", len(args))
 	}
 
 	lastArg := args[len(args)-1]
@@ -282,8 +282,8 @@ func fncArrayDiffUAssoc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 		return nil, ctx.FuncError(err)
 	}
 
-	if len(args) < 3 {
-		return nil, ctx.Errorf("at least 3 parameters are required, %d given", len(args))
+	if len(args) < 2 {
+		return nil, ctx.Errorf("at least 2 parameters are required, %d given", len(args))
 	}
 
 	lastArg := args[len(args)-1]
