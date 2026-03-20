@@ -621,23 +621,17 @@ func fncFileClose(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, nil
 	}
 
-	var file phpv.Stream
-	switch handle.GetResourceType() {
-	case phpv.ResourceStream:
-		if f, ok := handle.(*stream.Stream); ok {
-			file = f
+	if f, ok := handle.(*stream.Stream); ok {
+		err = f.Close()
+		if err != nil {
+			return phpv.ZFalse.ZVal(), nil
 		}
-	}
-	if file == nil {
-		return nil, ctx.Errorf("cannot close resource, not a file")
-	}
-
-	err = file.Close()
-	if err != nil {
-		return nil, ctx.Error(err)
+		// Mark the resource as closed (type becomes "Unknown")
+		f.ResourceType = phpv.ResourceUnknown
+		return phpv.ZTrue.ZVal(), nil
 	}
 
-	return nil, nil
+	return phpv.ZFalse.ZVal(), nil
 }
 
 // > func int fwrite ( resource $handle , string $string [, int $length ] )

@@ -1442,6 +1442,24 @@ func compilePaamayimNekudotayim(v phpv.Runnable, i *tokenizer.Item, c compileCtx
 		return &runClassDynConst{className: v, nameExpr: expr, l: l}, nil
 
 	case tokenizer.T_CLASS:
+		// Check if followed by ( — if so, this is a static method call Obj::class()
+		// not the ::class name fetch
+		peek, peekErr := c.NextItem()
+		if peekErr != nil {
+			return nil, peekErr
+		}
+		if peek.IsSingle('(') {
+			c.backup()
+			args, err := compileFuncPassedArgs(c)
+			if err != nil {
+				return nil, err
+			}
+			if IsFirstClassCallable(args) {
+				return &runFirstClassMethodCallable{ref: v, method: ident, static: true, l: l}, nil
+			}
+			return &runObjectFunc{ref: v, op: ident, args: args, l: l, static: true, isThisRef: isThisVariable(v)}, err
+		}
+		c.backup()
 		// $obj::class or ClassName::class → get class name
 		return &runClassNameOf{v, l}, nil
 

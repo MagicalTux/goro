@@ -80,6 +80,11 @@ func init() {
 		tokenizer.T_YIELD:        &compileFuncCb{f: compileYield},
 		tokenizer.T_YIELD_FROM:   &compileFuncCb{f: compileYield},
 		tokenizer.T_GOTO:         &compileFuncCb{f: compileGoto},
+		tokenizer.T_CONSTANT_ENCAPSED_STRING: &compileFuncCb{f: compileExpr},
+		tokenizer.Rune('"'):          &compileFuncCb{f: compileExpr},
+		tokenizer.T_START_HEREDOC:    &compileFuncCb{f: compileExpr},
+		tokenizer.T_LNUMBER:         &compileFuncCb{f: compileExpr},
+		tokenizer.T_DNUMBER:         &compileFuncCb{f: compileExpr},
 		tokenizer.T_VOID_CAST:       &compileFuncCb{f: compileExpr},
 		tokenizer.T_ATTRIBUTE:       &compileFuncCb{f: compileAttributed, skip: true},
 		tokenizer.T_DECLARE:         &compileFuncCb{f: compileDeclare, skip: true},
@@ -154,15 +159,7 @@ func compileGoto(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		return nil, label.UnexpectedExpecting("identifier")
 	}
 
-	// Read the semicolon
-	semi, err := c.NextItem()
-	if err != nil {
-		return nil, err
-	}
-	if !semi.IsSingle(';') {
-		return nil, semi.Unexpected()
-	}
-
+	// Note: semicolon is consumed by compileBaseSingle after this returns
 	return &runGoto{label: phpv.ZString(label.Data), l: l}, nil
 }
 
@@ -277,7 +274,10 @@ func compileTopLevelConst(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error
 		if i.Type == tokenizer.T_EXIT {
 			return nil, i.UnexpectedExpecting("identifier")
 		}
-		if i.Type != tokenizer.T_STRING && !i.IsSemiReserved() {
+		if i.Type != tokenizer.T_STRING {
+			if i.IsSemiReserved() {
+				return nil, i.UnexpectedExpecting("identifier")
+			}
 			return nil, i.Unexpected()
 		}
 		name := i.Data
@@ -380,8 +380,25 @@ func compileBaseSingle(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		}
 	}
 
+	// Check for label definition: T_STRING followed by ':'
+	// Labels are used as goto targets. We parse and discard them (they're no-ops).
+	if i.Type == tokenizer.T_STRING && c.peekType() == tokenizer.Rune(':') {
+		// Consume the ':'
+		c.NextItem()
+		// Label is a no-op — just compile the next statement
+		return compileBaseSingle(nil, c)
+	}
+
+	// Special case: T_READONLY followed by '(' is a function call, not a class modifier.
+	if i.Type == tokenizer.T_READONLY && c.peekType() == tokenizer.Rune('(') {
+		h = &compileFuncCb{f: compileExpr}
+		ok = true
+	}
+
 	// is it a single char item?
-	h, ok = itemTypeHandler[i.Type]
+	if !ok {
+		h, ok = itemTypeHandler[i.Type]
+	}
 	if !ok {
 		_, ok = operatorList[i.Type]
 		if ok {
@@ -411,8 +428,32 @@ func compileBaseSingle(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	}
 
 	if !i.IsExpressionEnd() {
-		// expecting a ';' after a var
-		return nil, i.Unexpected()
+		// If the next token is an operator, continue as expression
+		// This handles cases like `new d + new d;`
+		if isOperator(i.Type) {
+			c.backup()
+			for {
+				sr, err := compilePostExpr(r, nil, c)
+				if err != nil {
+					return nil, err
+				}
+				if sr == nil {
+					break
+				}
+				r = sr
+			}
+			// Now expect ';'
+			i, err = c.NextItem()
+			if err != nil {
+				return r, err
+			}
+			if !i.IsExpressionEnd() {
+				return nil, i.Unexpected()
+			}
+		} else {
+			// expecting a ';' after a var
+			return nil, i.Unexpected()
+		}
 	}
 
 	// Wrap standalone `new Foo()` expressions so temporary objects get

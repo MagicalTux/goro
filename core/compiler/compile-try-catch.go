@@ -58,6 +58,20 @@ func (rt *runnableTry) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			if _, isExit := err.(*phpv.PhpExit); isExit {
 				return nil, err
 			}
+			// For return statements, snapshot the return value before running finally
+			// so that modifications in finally don't affect the returned value.
+			if ret, isReturn := err.(*phperr.PhpReturn); isReturn && rt.finally != nil {
+				if ret.V != nil {
+					ret.V = ret.V.Dup()
+				}
+			}
+			if retWrap, isError := err.(*phpv.PhpError); isError {
+				if ret, isReturn := retWrap.Err.(*phperr.PhpReturn); isReturn && rt.finally != nil {
+					if ret.V != nil {
+						ret.V = ret.V.Dup()
+					}
+				}
+			}
 			// Non-PHP-throw error (e.g. return, break, continue):
 			// still need to run finally
 			if rt.finally != nil {
@@ -93,6 +107,12 @@ func (rt *runnableTry) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 				_, err = c.body.Run(ctx)
 				if err != nil {
 					// Catch block threw/returned - still need to run finally
+					// Snapshot return value so finally cannot modify it.
+					if ret, isReturn := err.(*phperr.PhpReturn); isReturn && rt.finally != nil {
+						if ret.V != nil {
+							ret.V = ret.V.Dup()
+						}
+					}
 					pendingErr = err
 				}
 				caught = true
@@ -301,6 +321,7 @@ func compileCatch(i *tokenizer.Item, c compileCtx) (*runnableCatch, error) {
 }
 
 func compileTry(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
+	l := i.Loc()
 	var err error
 	res := &runnableTry{}
 	res.try, err = compileBaseSingle(nil, c)
@@ -332,6 +353,15 @@ func compileTry(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		default:
 			c.backup()
 			done = true
+		}
+	}
+
+	// Check that try has at least one catch or a finally block
+	if len(res.catches) == 0 && res.finally == nil {
+		return nil, &phpv.PhpError{
+			Err:  fmt.Errorf("Cannot use try without catch or finally"),
+			Code: phpv.E_COMPILE_ERROR,
+			Loc:  l,
 		}
 	}
 

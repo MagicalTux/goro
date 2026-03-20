@@ -9,52 +9,58 @@ import (
 func pregFilter(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var pattern, replacement, subject *phpv.ZVal
 	var limit *phpv.ZInt
-	var count *phpv.ZInt
+	var countRef core.OptionalRef[phpv.ZInt]
 
-	_, err := core.Expand(ctx, args, &pattern, &replacement, &subject, &limit, &count)
+	_, err := core.Expand(ctx, args, &pattern, &replacement, &subject, &limit, &countRef)
 	if err != nil {
 		return nil, err
 	}
 
-	if limit == nil {
-		limit = new(phpv.ZInt)
-		*limit = -1
+	limitVal := phpv.ZInt(-1)
+	if limit != nil {
+		limitVal = *limit
 	}
-	if count == nil {
-		count = new(phpv.ZInt)
-	}
+	count := new(phpv.ZInt)
+
+	var result *phpv.ZVal
 
 	// If subject is an array, apply preg_replace to each element and return only changed ones
 	if subject.GetType() == phpv.ZtArray {
 		subjectArr := subject.Value().(*phpv.ZArray)
-		result := phpv.NewZArray()
+		resultArr := phpv.NewZArray()
 		totalCount := phpv.ZInt(0)
 
 		for k, v := range subjectArr.Iterate(ctx) {
 			elemCount := phpv.ZInt(0)
-			replaced, err := doPregReplace(ctx, pattern, replacement, v, *limit, &elemCount)
+			replaced, err := doPregReplace(ctx, pattern, replacement, v, limitVal, &elemCount)
 			if err != nil {
 				return nil, err
 			}
 			totalCount += elemCount
 			// Only include entries where a replacement was actually made
 			if elemCount > 0 {
-				result.OffsetSet(ctx, k, replaced)
+				resultArr.OffsetSet(ctx, k, replaced)
 			}
 		}
 		*count = totalCount
-		return result.ZVal(), nil
+		result = resultArr.ZVal()
+	} else {
+		// For string subjects, do the replace and return null if no replacement was made
+		replaced, err := doPregReplace(ctx, pattern, replacement, subject, limitVal, count)
+		if err != nil {
+			return nil, err
+		}
+
+		if *count == 0 {
+			result = phpv.ZNULL.ZVal()
+		} else {
+			result = replaced
+		}
 	}
 
-	// For string subjects, do the replace and return null if no replacement was made
-	replaced, err := doPregReplace(ctx, pattern, replacement, subject, *limit, count)
-	if err != nil {
-		return nil, err
+	if countRef.HasArg() {
+		countRef.Set(ctx, *count)
 	}
 
-	if *count == 0 {
-		return phpv.ZNULL.ZVal(), nil
-	}
-
-	return replaced, nil
+	return result, nil
 }

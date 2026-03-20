@@ -9,7 +9,6 @@ import (
 
 // > func string preg_quote ( string $str [, string $delimiter = NULL ] )
 func pregQuote(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	// this version won't accept UTF-8 characters as delimiter. If this is an issue, replace loop below to use string()
 	var str phpv.ZString
 	var delimiter *phpv.ZString
 	_, err := core.Expand(ctx, args, &str, &delimiter)
@@ -17,9 +16,13 @@ func pregQuote(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	toEscape := ".\\+*?[^]$(){}=!<>|:-" // according to http://php.net/manual/en/function.preg-quote.php
+	// Characters that preg_quote must escape (PHP manual)
+	toEscape := ".\\+*?[^]$(){}=!<>|:-#\000"
 	if delimiter != nil {
-		toEscape += string(*delimiter)
+		d := string(*delimiter)
+		if len(d) > 0 && !strings.ContainsRune(toEscape, rune(d[0])) {
+			toEscape += string(d[0])
+		}
 	}
 
 	var target []byte
@@ -32,18 +35,21 @@ func pregQuote(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			continue
 		}
 		// need to escape this
-		if target == nil && p > 0 {
+		if target == nil {
 			// need to create initial target
 			target = make([]byte, p)
-			copy(target, []byte(str))
+			copy(target, []byte(str[:p]))
 		}
-		target = append(target, c)
+		if c == 0 {
+			target = append(target, '\\', '0', '0', '0')
+		} else {
+			target = append(target, '\\', c)
+		}
 	}
 
 	if target == nil {
 		// no change
 		return str.ZVal(), nil
-	} else {
-		return phpv.ZString(target).ZVal(), nil
 	}
+	return phpv.ZString(target).ZVal(), nil
 }

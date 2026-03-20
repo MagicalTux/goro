@@ -252,6 +252,12 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		// `enum` used as identifier in expression context — treat as T_STRING
 		i.Data = "enum"
 		fallthrough
+	case tokenizer.T_READONLY:
+		if i.Type == tokenizer.T_READONLY {
+			// `readonly` used as identifier in expression context — treat as T_STRING
+			i.Data = "readonly"
+		}
+		fallthrough
 	case tokenizer.T_STRING:
 		// Check for qualified names: T_STRING followed by T_NS_SEPARATOR
 		name := i.Data

@@ -1,9 +1,63 @@
 package pcre
 
 import (
+	"regexp"
+
 	"github.com/MagicalTux/goro/core"
 	"github.com/MagicalTux/goro/core/phpv"
 )
+
+// makeMatchVal creates a single match value, handling PREG_OFFSET_CAPTURE and PREG_UNMATCHED_AS_NULL.
+func makeMatchVal(ctx phpv.Context, elem string, matched bool, loc int, offsetCapture, unmatchedAsNull bool) *phpv.ZVal {
+	if !matched {
+		if offsetCapture {
+			pair := phpv.NewZArray()
+			if unmatchedAsNull {
+				pair.OffsetSet(ctx, nil, phpv.ZNULL.ZVal())
+			} else {
+				pair.OffsetSet(ctx, nil, phpv.ZString("").ZVal())
+			}
+			pair.OffsetSet(ctx, nil, phpv.ZInt(-1).ZVal())
+			return pair.ZVal()
+		}
+		if unmatchedAsNull {
+			return phpv.ZNULL.ZVal()
+		}
+		return phpv.ZString("").ZVal()
+	}
+	if offsetCapture {
+		pair := phpv.NewZArray()
+		pair.OffsetSet(ctx, nil, phpv.ZString(elem).ZVal())
+		pair.OffsetSet(ctx, nil, phpv.ZInt(loc).ZVal())
+		return pair.ZVal()
+	}
+	return phpv.ZString(elem).ZVal()
+}
+
+// addNamedCaptures adds both numeric and named keys to a matches array,
+// mimicking PHP's behavior where named groups appear as both numeric and string keys.
+// In PHP, for named groups the order is: [0]=full, ["name1"]=group1, [1]=group1, ["name2"]=group2, [2]=group2, ...
+func addNamedCaptures(ctx phpv.Context, matches *phpv.ZArray, re *regexp.Regexp, m []string, flags phpv.ZInt, locs []int, baseOffset int) {
+	names := re.SubexpNames()
+	offsetCapture := flags&phpv.ZInt(PREG_OFFSET_CAPTURE) != 0
+	unmatchedAsNull := flags&phpv.ZInt(PREG_UNMATCHED_AS_NULL) != 0
+
+	for i, elem := range m {
+		matched := locs == nil || locs[i*2] >= 0
+		loc := 0
+		if locs != nil && locs[i*2] >= 0 {
+			loc = locs[i*2] + baseOffset
+		}
+		val := makeMatchVal(ctx, elem, matched, loc, offsetCapture, unmatchedAsNull)
+
+		// PHP ordering: for named groups, the string key comes BEFORE the numeric key
+		if i < len(names) && names[i] != "" {
+			matches.OffsetSet(ctx, phpv.ZString(names[i]).ZVal(), val)
+		}
+		// Add numeric key
+		matches.OffsetSet(ctx, nil, val)
+	}
+}
 
 // > func int preg_match ( string $pattern , string $subject [, array &$matches [, int $flags = 0 [, int $offset = 0 ]]] )
 func pregMatch(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
@@ -19,59 +73,51 @@ func pregMatch(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	flags := core.Deref(flagsArg, 0)
 	offset := core.Deref(offsetArg, 0)
 
-	re, err := prepareRegexp(string(pattern))
-	if err != nil {
-		return nil, err
+	re, pcreErr := prepareRegexp(string(pattern))
+	if pcreErr != nil {
+		ctx.Warn("%s", pcreErr.Warning("preg_match"))
+		return phpv.ZBool(false).ZVal(), nil
 	}
 
 	subjectStr := string(subject)
 
 	// Handle offset parameter
-	if offset > 0 {
-		if int(offset) >= len(subjectStr) {
+	var sliceOffset int
+	if offset != 0 {
+		byteOffset := int(offset)
+		if byteOffset < 0 {
+			byteOffset = len(subjectStr) + byteOffset
+		}
+		if byteOffset < 0 || byteOffset > len(subjectStr) {
 			return phpv.ZInt(0).ZVal(), nil
 		}
-		subjectStr = subjectStr[int(offset):]
+		sliceOffset = byteOffset
+		subjectStr = subjectStr[byteOffset:]
 	}
 
-	if flags&phpv.ZInt(PREG_OFFSET_CAPTURE) != 0 {
-		// PREG_OFFSET_CAPTURE: each match element is [match, offset]
-		loc := re.FindStringSubmatchIndex(subjectStr)
-		if loc == nil {
-			return phpv.ZInt(0).ZVal(), nil
-		}
-
+	loc := re.FindStringSubmatchIndex(subjectStr)
+	if loc == nil {
 		if matchesArg.Value != nil {
-			matches := *matchesArg.Get()
-			for i := 0; i < len(loc); i += 2 {
-				pair := phpv.NewZArray()
-				if loc[i] < 0 {
-					pair.OffsetSet(ctx, nil, phpv.ZString("").ZVal())
-					pair.OffsetSet(ctx, nil, phpv.ZInt(-1).ZVal())
-				} else {
-					pair.OffsetSet(ctx, nil, phpv.ZString(subjectStr[loc[i]:loc[i+1]]).ZVal())
-					pair.OffsetSet(ctx, nil, phpv.ZInt(loc[i]+int(offset)).ZVal())
-				}
-				matches.OffsetSet(ctx, nil, pair.ZVal())
-			}
+			matchesArg.Set(ctx, phpv.NewZArray())
 		}
-
-		return phpv.ZInt(1).ZVal(), nil
-	}
-
-	m := re.FindStringSubmatch(subjectStr)
-	if m == nil {
 		return phpv.ZInt(0).ZVal(), nil
 	}
 
 	if matchesArg.Value != nil {
-		matches := *matchesArg.Get()
-		for _, elem := range m {
-			matches.OffsetSet(ctx, nil, phpv.ZStr(elem))
-		}
-	}
+		matches := phpv.NewZArray()
 
-	_ = flags
+		// Build the match string array from loc
+		numGroups := len(loc) / 2
+		m := make([]string, numGroups)
+		for i := 0; i < numGroups; i++ {
+			if loc[i*2] >= 0 {
+				m[i] = subjectStr[loc[i*2]:loc[i*2+1]]
+			}
+		}
+
+		addNamedCaptures(ctx, matches, re, m, flags, loc, sliceOffset)
+		matchesArg.Set(ctx, matches)
+	}
 
 	return phpv.ZInt(1).ZVal(), nil
 }
@@ -90,62 +136,156 @@ func pregMatchAll(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	flags := core.Deref(flagsArg, 0)
 	offset := core.Deref(offsetArg, 0)
 
-	re, err := prepareRegexp(string(pattern))
-	if err != nil {
-		return nil, err
+	re, pcreErr := prepareRegexp(string(pattern))
+	if pcreErr != nil {
+		ctx.Warn("%s", pcreErr.Warning("preg_match_all"))
+		return phpv.ZBool(false).ZVal(), nil
 	}
 
 	subjectStr := string(subject)
 
+	var sliceOffset int
 	if offset > 0 {
-		if int(offset) >= len(subjectStr) {
+		byteOffset := int(offset)
+		if byteOffset >= len(subjectStr) {
+			if matchesArg.Value != nil {
+				newMatches := phpv.NewZArray()
+				subArr := phpv.NewZArray()
+				newMatches.OffsetSet(ctx, nil, subArr.ZVal())
+				matchesArg.Set(ctx, newMatches)
+			}
 			return phpv.ZInt(0).ZVal(), nil
 		}
-		subjectStr = subjectStr[int(offset):]
+		sliceOffset = byteOffset
+		subjectStr = subjectStr[byteOffset:]
 	}
 
-	allMatches := re.FindAllStringSubmatch(subjectStr, -1)
-	if allMatches == nil {
+	names := re.SubexpNames()
+
+	// Find all matches with their indices
+	allLocs := re.FindAllStringSubmatchIndex(subjectStr, -1)
+	if allLocs == nil {
 		if matchesArg.Value != nil {
-			// Initialize empty matches array
-			matches := *matchesArg.Get()
-			subArr := phpv.NewZArray()
-			matches.OffsetSet(ctx, nil, subArr.ZVal())
+			newMatches := phpv.NewZArray()
+			if flags&phpv.ZInt(PREG_SET_ORDER) != 0 {
+				// No sub-arrays needed
+			} else {
+				// PREG_PATTERN_ORDER: create empty arrays for each group
+				numGroups := re.NumSubexp() + 1
+				for i := 0; i < numGroups; i++ {
+					subArr := phpv.NewZArray()
+					if i < len(names) && names[i] != "" {
+						newMatches.OffsetSet(ctx, phpv.ZString(names[i]).ZVal(), subArr.ZVal())
+					}
+					newMatches.OffsetSet(ctx, nil, subArr.ZVal())
+				}
+			}
+			matchesArg.Set(ctx, newMatches)
 		}
 		return phpv.ZInt(0).ZVal(), nil
 	}
 
+	numGroups := len(allLocs[0]) / 2
+	offsetCapture := flags&phpv.ZInt(PREG_OFFSET_CAPTURE) != 0
+	unmatchedAsNull := flags&phpv.ZInt(PREG_UNMATCHED_AS_NULL) != 0
+
 	if matchesArg.Value != nil {
-		matches := *matchesArg.Get()
+		matches := phpv.NewZArray()
 
 		if flags&phpv.ZInt(PREG_SET_ORDER) != 0 {
 			// PREG_SET_ORDER: each element is an array of all groups for one match
-			for _, m := range allMatches {
+			for _, loc := range allLocs {
 				subArr := phpv.NewZArray()
-				for _, elem := range m {
-					subArr.OffsetSet(ctx, nil, phpv.ZStr(elem))
+				for i := 0; i < numGroups; i++ {
+					s := loc[i*2]
+					e := loc[i*2+1]
+					var val *phpv.ZVal
+					if s < 0 {
+						if offsetCapture {
+							pair := phpv.NewZArray()
+							if unmatchedAsNull {
+								pair.OffsetSet(ctx, nil, phpv.ZNULL.ZVal())
+							} else {
+								pair.OffsetSet(ctx, nil, phpv.ZString("").ZVal())
+							}
+							pair.OffsetSet(ctx, nil, phpv.ZInt(-1).ZVal())
+							val = pair.ZVal()
+						} else {
+							if unmatchedAsNull {
+								val = phpv.ZNULL.ZVal()
+							} else {
+								val = phpv.ZString("").ZVal()
+							}
+						}
+					} else {
+						if offsetCapture {
+							pair := phpv.NewZArray()
+							pair.OffsetSet(ctx, nil, phpv.ZString(subjectStr[s:e]).ZVal())
+							pair.OffsetSet(ctx, nil, phpv.ZInt(s+sliceOffset).ZVal())
+							val = pair.ZVal()
+						} else {
+							val = phpv.ZString(subjectStr[s:e]).ZVal()
+						}
+					}
+					subArr.OffsetSet(ctx, nil, val)
+					if i < len(names) && names[i] != "" {
+						subArr.OffsetSet(ctx, phpv.ZString(names[i]).ZVal(), val)
+					}
 				}
 				matches.OffsetSet(ctx, nil, subArr.ZVal())
 			}
 		} else {
 			// PREG_PATTERN_ORDER (default): each element is an array of all matches for one group
-			numGroups := len(allMatches[0])
 			groups := make([]*phpv.ZArray, numGroups)
 			for i := range groups {
 				groups[i] = phpv.NewZArray()
 			}
-			for _, m := range allMatches {
-				for i, elem := range m {
-					groups[i].OffsetSet(ctx, nil, phpv.ZStr(elem))
+			for _, loc := range allLocs {
+				for i := 0; i < numGroups; i++ {
+					s := loc[i*2]
+					e := loc[i*2+1]
+					var val *phpv.ZVal
+					if s < 0 {
+						if offsetCapture {
+							pair := phpv.NewZArray()
+							if unmatchedAsNull {
+								pair.OffsetSet(ctx, nil, phpv.ZNULL.ZVal())
+							} else {
+								pair.OffsetSet(ctx, nil, phpv.ZString("").ZVal())
+							}
+							pair.OffsetSet(ctx, nil, phpv.ZInt(-1).ZVal())
+							val = pair.ZVal()
+						} else {
+							if unmatchedAsNull {
+								val = phpv.ZNULL.ZVal()
+							} else {
+								val = phpv.ZString("").ZVal()
+							}
+						}
+					} else {
+						if offsetCapture {
+							pair := phpv.NewZArray()
+							pair.OffsetSet(ctx, nil, phpv.ZString(subjectStr[s:e]).ZVal())
+							pair.OffsetSet(ctx, nil, phpv.ZInt(s+sliceOffset).ZVal())
+							val = pair.ZVal()
+						} else {
+							val = phpv.ZString(subjectStr[s:e]).ZVal()
+						}
+					}
+					groups[i].OffsetSet(ctx, nil, val)
 				}
 			}
-			for _, g := range groups {
+			for i, g := range groups {
+				if i < len(names) && names[i] != "" {
+					matches.OffsetSet(ctx, phpv.ZString(names[i]).ZVal(), g.ZVal())
+				}
 				matches.OffsetSet(ctx, nil, g.ZVal())
 			}
 		}
+		matchesArg.Set(ctx, matches)
 	}
 
-	return phpv.ZInt(len(allMatches)).ZVal(), nil
+	return phpv.ZInt(len(allLocs)).ZVal(), nil
 }
 
 // > func array preg_split ( string $pattern , string $subject [, int $limit = -1 [, int $flags = 0 ]] )
@@ -161,51 +301,161 @@ func pregSplit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	limit := core.Deref(limitArg, -1)
 	flags := core.Deref(flagsArg, 0)
 
-	re, err := prepareRegexp(string(pattern))
-	if err != nil {
-		return nil, err
+	re, pcreErr := prepareRegexp(string(pattern))
+	if pcreErr != nil {
+		ctx.Warn("%s", pcreErr.Warning("preg_split"))
+		return phpv.ZBool(false).ZVal(), nil
 	}
 
-	n := -1
-	if limit >= 0 {
-		n = int(limit)
-	}
+	subjectStr := string(subject)
+	noEmpty := flags&phpv.ZInt(PREG_SPLIT_NO_EMPTY) != 0
+	delimCapture := flags&phpv.ZInt(PREG_SPLIT_DELIM_CAPTURE) != 0
+	offsetCapture := flags&phpv.ZInt(PREG_SPLIT_OFFSET_CAPTURE) != 0
 
-	parts := re.Split(string(subject), n)
+	maxSplits := int(limit)
+	if maxSplits == 0 {
+		// PHP: limit=0 is same as limit=-1 (unlimited)
+		maxSplits = -1
+	}
 
 	result := phpv.NewZArray()
-	for _, part := range parts {
-		if flags&phpv.ZInt(PREG_SPLIT_NO_EMPTY) != 0 && part == "" {
-			continue
+	addPart := func(s string, offset int) {
+		if noEmpty && s == "" {
+			return
 		}
-		result.OffsetSet(ctx, nil, phpv.ZString(part).ZVal())
+		if offsetCapture {
+			pair := phpv.NewZArray()
+			pair.OffsetSet(ctx, nil, phpv.ZString(s).ZVal())
+			pair.OffsetSet(ctx, nil, phpv.ZInt(offset).ZVal())
+			result.OffsetSet(ctx, nil, pair.ZVal())
+		} else {
+			result.OffsetSet(ctx, nil, phpv.ZString(s).ZVal())
+		}
+	}
+
+	nSplits := 0
+	pos := 0
+
+	for {
+		if maxSplits > 0 && nSplits >= maxSplits-1 {
+			break
+		}
+
+		if pos > len(subjectStr) {
+			break
+		}
+
+		loc := re.FindStringSubmatchIndex(subjectStr[pos:])
+		if loc == nil {
+			break
+		}
+
+		// loc is relative to subjectStr[pos:]
+		matchStart := pos + loc[0]
+		matchEnd := pos + loc[1]
+
+		addPart(subjectStr[pos:matchStart], pos)
+		nSplits++
+
+		// Add captured delimiters if PREG_SPLIT_DELIM_CAPTURE
+		if delimCapture {
+			numGroups := len(loc) / 2
+			for i := 1; i < numGroups; i++ {
+				s := loc[i*2]
+				e := loc[i*2+1]
+				if s >= 0 {
+					capStr := subjectStr[pos+s : pos+e]
+					addPart(capStr, pos+s)
+				} else {
+					// Unmatched capture group
+					if !noEmpty {
+						addPart("", -1)
+					}
+				}
+			}
+		}
+
+		// Advance past the match
+		if matchEnd == pos {
+			// Zero-length match: advance by one byte
+			if pos < len(subjectStr) {
+				addPart(subjectStr[pos:pos+1], pos)
+				nSplits++
+			}
+			pos = matchEnd + 1
+		} else {
+			pos = matchEnd
+		}
+	}
+
+	// Add the remaining part
+	if pos <= len(subjectStr) {
+		addPart(subjectStr[pos:], pos)
 	}
 
 	return result.ZVal(), nil
 }
 
-// > func string preg_replace_callback ( mixed $pattern , callable $callback , mixed $subject [, int $limit = -1 [, int &$count ]] )
+// > func string preg_replace_callback ( mixed $pattern , callable $callback , mixed $subject [, int $limit = -1 [, int &$count [, int $flags = 0 ]]] )
 func pregReplaceCallback(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var pattern *phpv.ZVal
 	var callback phpv.Callable
 	var subject *phpv.ZVal
 	var limitArg *phpv.ZInt
-	var count *phpv.ZInt
+	var countRef core.OptionalRef[phpv.ZInt]
+	var flagsArg *phpv.ZInt
 
-	_, err := core.Expand(ctx, args, &pattern, &callback, &subject, &limitArg, &count)
+	_, err := core.Expand(ctx, args, &pattern, &callback, &subject, &limitArg, &countRef, &flagsArg)
 	if err != nil {
 		return nil, err
 	}
 
 	limit := core.Deref(limitArg, -1)
-	if count == nil {
-		count = new(phpv.ZInt)
+	flags := core.Deref(flagsArg, 0)
+	count := new(phpv.ZInt)
+
+	var result *phpv.ZVal
+
+	// Handle array subject
+	if subject.GetType() == phpv.ZtArray {
+		subjectArr := subject.Value().(*phpv.ZArray)
+		resultArr := phpv.NewZArray()
+		totalCount := phpv.ZInt(0)
+		for k, v := range subjectArr.Iterate(ctx) {
+			c := phpv.ZInt(0)
+			r, err := doReplaceCallback(ctx, pattern, callback, v, limit, &c, flags)
+			if err != nil {
+				return nil, err
+			}
+			totalCount += c
+			resultArr.OffsetSet(ctx, k, r)
+		}
+		*count = totalCount
+		result = resultArr.ZVal()
+	} else {
+		result, err = doReplaceCallback(ctx, pattern, callback, subject, limit, count, flags)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	re, err := prepareRegexp(string(pattern.AsString(ctx)))
-	if err != nil {
-		return nil, err
+	if countRef.HasArg() {
+		countRef.Set(ctx, *count)
 	}
+
+	return result, nil
+}
+
+func doReplaceCallback(ctx phpv.Context, pattern *phpv.ZVal, callback phpv.Callable, subject *phpv.ZVal, limit phpv.ZInt, count *phpv.ZInt, flags phpv.ZInt) (*phpv.ZVal, error) {
+	re, pcreErr := prepareRegexp(string(pattern.AsString(ctx)))
+	if pcreErr != nil {
+		ctx.Warn("%s", pcreErr.Warning("preg_replace_callback"))
+		return phpv.ZNULL.ZVal(), nil
+	}
+
+	names := re.SubexpNames()
+	offsetCapture := flags&phpv.ZInt(PREG_OFFSET_CAPTURE) != 0
+	unmatchedAsNull := flags&phpv.ZInt(PREG_UNMATCHED_AS_NULL) != 0
 
 	in := []byte(subject.AsString(ctx))
 	var r []byte
@@ -222,13 +472,41 @@ func pregReplaceCallback(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error
 			break
 		}
 
-		// Extract submatches
+		// Extract submatches and build matches array with named captures
 		matchArr := phpv.NewZArray()
-		for i := 0; i < len(loc); i += 2 {
-			if loc[i] < 0 {
-				matchArr.OffsetSet(ctx, nil, phpv.ZString("").ZVal())
+		numGroups := len(loc) / 2
+		for i := 0; i < numGroups; i++ {
+			var val *phpv.ZVal
+			if loc[i*2] < 0 {
+				if offsetCapture {
+					pair := phpv.NewZArray()
+					if unmatchedAsNull {
+						pair.OffsetSet(ctx, nil, phpv.ZNULL.ZVal())
+					} else {
+						pair.OffsetSet(ctx, nil, phpv.ZString("").ZVal())
+					}
+					pair.OffsetSet(ctx, nil, phpv.ZInt(-1).ZVal())
+					val = pair.ZVal()
+				} else {
+					if unmatchedAsNull {
+						val = phpv.ZNULL.ZVal()
+					} else {
+						val = phpv.ZString("").ZVal()
+					}
+				}
 			} else {
-				matchArr.OffsetSet(ctx, nil, phpv.ZString(in[loc[i]:loc[i+1]]).ZVal())
+				if offsetCapture {
+					pair := phpv.NewZArray()
+					pair.OffsetSet(ctx, nil, phpv.ZString(in[loc[i*2]:loc[i*2+1]]).ZVal())
+					pair.OffsetSet(ctx, nil, phpv.ZInt(loc[i*2]).ZVal())
+					val = pair.ZVal()
+				} else {
+					val = phpv.ZString(in[loc[i*2]:loc[i*2+1]]).ZVal()
+				}
+			}
+			matchArr.OffsetSet(ctx, nil, val)
+			if i < len(names) && names[i] != "" {
+				matchArr.OffsetSet(ctx, phpv.ZString(names[i]).ZVal(), val)
 			}
 		}
 

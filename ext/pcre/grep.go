@@ -18,9 +18,10 @@ func pregGrep(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	flags := core.Deref(flagsArg, 0)
 
-	re, err := prepareRegexp(string(pattern))
-	if err != nil {
-		return phpv.ZFalse.ZVal(), err
+	re, pcreErr := prepareRegexp(string(pattern))
+	if pcreErr != nil {
+		ctx.Warn("%s", pcreErr.Warning("preg_grep"))
+		return phpv.ZBool(false).ZVal(), nil
 	}
 
 	invert := flags&phpv.ZInt(PREG_GREP_INVERT) != 0

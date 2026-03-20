@@ -1575,6 +1575,30 @@ func (o *ZObject) ObjectSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) er
 			fmt.Sprintf("Cannot create dynamic property %s::$%s", o.Class.GetName(), keyStr))
 	}
 
+	// Readonly classes do not allow dynamic properties
+	if zc, ok := o.Class.(*ZClass); ok && zc.Attr.Has(phpv.ZClassReadonly) && !o.h.HasString(keyStr) {
+		hasDeclared := false
+		for cur := zc; cur != nil; cur = cur.Extends {
+			for _, p := range cur.Props {
+				if p.VarName == keyStr {
+					hasDeclared = true
+					break
+				}
+			}
+			if hasDeclared {
+				break
+			}
+		}
+		if !hasDeclared {
+			if value == nil {
+				return ThrowError(ctx, Error,
+					fmt.Sprintf("Cannot create dynamic property %s::$%s", o.Class.GetName(), keyStr))
+			}
+			return ThrowError(ctx, Error,
+				fmt.Sprintf("Cannot create dynamic property %s::$%s", o.Class.GetName(), keyStr))
+		}
+	}
+
 	// Internal classes (e.g. Closure) that don't allow dynamic properties
 	if zc, ok := o.Class.(*ZClass); ok && zc.InternalOnly && !o.h.HasString(keyStr) {
 		hasDeclared := false
@@ -2122,8 +2146,8 @@ func (o *ZObject) allowsDynamicProperties() bool {
 	// Walk the class hierarchy
 	for cur := class; cur != nil; cur = cur.Extends {
 		name := cur.Name
-		// stdClass allows dynamic properties
-		if name == "stdClass" {
+		// stdClass and __PHP_Incomplete_Class allow dynamic properties
+		if name == "stdClass" || name == "__PHP_Incomplete_Class" {
 			return true
 		}
 		// Check for #[AllowDynamicProperties] attribute

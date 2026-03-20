@@ -531,7 +531,11 @@ func compileForeach(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	if i.Type == tokenizer.T_DOUBLE_ARROW {
 		if _, ok := r.v.(*runDestructure); ok {
 			// foreach($arr as list(...) => $x) is invalid
-			return nil, i.Unexpected()
+			return nil, &phpv.PhpError{
+				Err:  fmt.Errorf("Cannot use list as key element"),
+				Code: phpv.E_COMPILE_ERROR,
+				Loc:  l,
+			}
 		}
 
 		// If & was before the key (foreach($a as &$k => $v)), that's a fatal error
@@ -573,6 +577,22 @@ func compileForeach(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 
 	if !i.IsSingle(')') {
 		return nil, i.Unexpected()
+	}
+
+	// Cannot re-assign $this in foreach
+	if isThisVariable(r.v) {
+		return nil, &phpv.PhpError{
+			Err:  fmt.Errorf("Cannot re-assign $this"),
+			Code: phpv.E_COMPILE_ERROR,
+			Loc:  l,
+		}
+	}
+	if isThisVariable(r.k) {
+		return nil, &phpv.PhpError{
+			Err:  fmt.Errorf("Cannot re-assign $this"),
+			Code: phpv.E_COMPILE_ERROR,
+			Loc:  l,
+		}
 	}
 
 	// Cannot use nullsafe operator as foreach write target

@@ -109,7 +109,8 @@ func fncChdir(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	err = ctx.Global().Chdir(p)
 	if err != nil {
-		return nil, err
+		ctx.Warn("chdir(): %s (errno 2)", err)
+		return phpv.ZFalse.ZVal(), nil
 	}
 	return phpv.ZBool(true).ZVal(), nil
 }
@@ -138,24 +139,38 @@ func fncScanDir(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 	files, err := os.ReadDir(p)
 	if err != nil {
-		return nil, ctx.FuncError(err)
+		ctx.Warn("scandir(%s): Failed to open directory: %s", dir, err, logopt.NoFuncName(true))
+		ctx.Warn("scandir(): (errno 2): No such file or directory", logopt.NoFuncName(true))
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	// Build full list including . and ..
+	names := make([]string, 0, len(files)+2)
+	names = append(names, ".", "..")
+	for _, file := range files {
+		names = append(names, file.Name())
+	}
+
+	// Sort based on sorting order
+	switch sortingOrder {
+	case SCANDIR_SORT_ASCENDING:
+		sort.Strings(names)
+	case SCANDIR_SORT_DESCENDING:
+		sort.Sort(sort.Reverse(sort.StringSlice(names)))
+	case SCANDIR_SORT_NONE:
+		// No sorting needed
+	default:
+		// Any other non-zero value means descending in PHP
+		if sortingOrder != 0 {
+			sort.Sort(sort.Reverse(sort.StringSlice(names)))
+		} else {
+			sort.Strings(names)
+		}
 	}
 
 	result := phpv.NewZArray()
-
-	switch sortingOrder {
-	case SCANDIR_SORT_ASCENDING, SCANDIR_SORT_NONE:
-		result.OffsetSet(ctx, nil, phpv.ZStr("."))
-		result.OffsetSet(ctx, nil, phpv.ZStr(".."))
-		for _, file := range files {
-			result.OffsetSet(ctx, nil, phpv.ZStr(file.Name()))
-		}
-	case SCANDIR_SORT_DESCENDING:
-		for _, file := range core.IterateBackwards(files) {
-			result.OffsetSet(ctx, nil, phpv.ZStr(file.Name()))
-		}
-		result.OffsetSet(ctx, nil, phpv.ZStr(".."))
-		result.OffsetSet(ctx, nil, phpv.ZStr("."))
+	for _, name := range names {
+		result.OffsetSet(ctx, nil, phpv.ZStr(name))
 	}
 
 	return result.ZVal(), nil
@@ -197,7 +212,7 @@ func fncDir(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if err != nil {
 		return nil, err
 	}
-	obj.HashTable().SetString("path", phpv.ZString(dirPath).ZVal())
+	obj.HashTable().SetString("path", phpv.ZString(p).ZVal())
 	obj.HashTable().SetString("handle", dh.ZVal())
 
 	return obj.ZVal(), nil

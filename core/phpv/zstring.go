@@ -334,7 +334,7 @@ func (z ZStringArray) OffsetGet(ctx Context, key Val) (*ZVal, error) {
 		i = len(s) + i
 	}
 	if i < 0 || i >= len(s) {
-		return ZStr(""), ctx.Warn("Uninitialized string offset: %v", key.String())
+		return ZStr(""), ctx.Warn("Uninitialized string offset %v", key.String())
 	}
 	c := ZString(s[i])
 

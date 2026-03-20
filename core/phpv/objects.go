@@ -60,6 +60,7 @@ type ZClassMethod struct {
 	Empty      bool
 	Loc        *Loc
 	Attributes []*ZAttribute // PHP 8.0 attributes
+	FromTrait  ZClass        // non-nil if this method was imported from a trait
 }
 
 type ZClassConst struct {

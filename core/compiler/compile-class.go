@@ -467,6 +467,16 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 				return nil, i.Unexpected()
 			}
 		case tokenizer.T_CONST:
+			// Check for invalid readonly modifier on constants
+			if attr&phpv.ZAttrReadonly != 0 {
+				phpErr := &phpv.PhpError{
+					Err:  fmt.Errorf("Cannot use the readonly modifier on a class constant"),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  i.Loc(),
+				}
+				c.Global().LogError(phpErr)
+				return nil, phpv.ExitError(255)
+			}
 			// Check for invalid modifiers on constants
 			if attr.IsStatic() {
 				phpErr := &phpv.PhpError{
@@ -497,6 +507,15 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 					return nil, i.Unexpected()
 				}
 				constName := i.Data
+
+				// 'class' is reserved for class name fetching (Foo::class)
+				if phpv.ZString(constName).ToLower() == "class" {
+					return nil, &phpv.PhpError{
+						Err:  fmt.Errorf("A class constant must not be called 'class'; it is reserved for class name fetching"),
+						Code: phpv.E_COMPILE_ERROR,
+						Loc:  i.Loc(),
+					}
+				}
 
 				// Check for duplicate constant
 				if _, exists := class.Const[phpv.ZString(constName)]; exists {
@@ -579,7 +598,7 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 				if err != nil {
 					return nil, err
 				}
-				if i.Type != tokenizer.T_STRING && i.Type != tokenizer.T_NS_SEPARATOR {
+				if i.Type != tokenizer.T_STRING && i.Type != tokenizer.T_NS_SEPARATOR && i.Type != tokenizer.T_STATIC && i.Type != tokenizer.T_READONLY {
 					return nil, i.Unexpected()
 				}
 				// Parse potentially namespaced trait name
@@ -659,13 +678,35 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 							return nil, err
 						}
 						if i.Type == tokenizer.T_AS {
-							// as [visibility] newname
+							// as [visibility] [final] newname
 							i, err = c.NextItem()
 							if err != nil {
 								return nil, err
 							}
 							var newAttr phpv.ZObjectAttr
 							newName := ""
+							// Check for abstract/static (not allowed)
+							if i.Type == tokenizer.T_ABSTRACT {
+								return nil, &phpv.PhpError{
+									Err:  fmt.Errorf("Cannot use \"abstract\" as method modifier in trait alias"),
+									Code: phpv.E_COMPILE_ERROR,
+									Loc:  i.Loc(),
+								}
+							}
+							if i.Type == tokenizer.T_STATIC {
+								return nil, &phpv.PhpError{
+									Err:  fmt.Errorf("Cannot use \"static\" as method modifier in trait alias"),
+									Code: phpv.E_COMPILE_ERROR,
+									Loc:  i.Loc(),
+								}
+							}
+							if i.Type == tokenizer.T_READONLY {
+								return nil, &phpv.PhpError{
+									Err:  fmt.Errorf("Cannot use the readonly modifier on a method"),
+									Code: phpv.E_COMPILE_ERROR,
+									Loc:  i.Loc(),
+								}
+							}
 							// Check for visibility modifier
 							switch i.Type {
 							case tokenizer.T_PUBLIC:
@@ -682,6 +723,12 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 								}
 							case tokenizer.T_PRIVATE:
 								newAttr = phpv.ZAttrPrivate
+								i, err = c.NextItem()
+								if err != nil {
+									return nil, err
+								}
+							case tokenizer.T_FINAL:
+								newAttr = phpv.ZAttrFinal
 								i, err = c.NextItem()
 								if err != nil {
 									return nil, err
@@ -732,13 +779,35 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 							return nil, i.Unexpected()
 						}
 					} else if i.Type == tokenizer.T_AS {
-						// method as [visibility] newname;
+						// method as [visibility] [final] newname;
 						i, err = c.NextItem()
 						if err != nil {
 							return nil, err
 						}
 						var newAttr phpv.ZObjectAttr
 						newName := ""
+						// Check for abstract/static (not allowed)
+						if i.Type == tokenizer.T_ABSTRACT {
+							return nil, &phpv.PhpError{
+								Err:  fmt.Errorf("Cannot use \"abstract\" as method modifier in trait alias"),
+								Code: phpv.E_COMPILE_ERROR,
+								Loc:  i.Loc(),
+							}
+						}
+						if i.Type == tokenizer.T_STATIC {
+							return nil, &phpv.PhpError{
+								Err:  fmt.Errorf("Cannot use \"static\" as method modifier in trait alias"),
+								Code: phpv.E_COMPILE_ERROR,
+								Loc:  i.Loc(),
+							}
+						}
+						if i.Type == tokenizer.T_READONLY {
+							return nil, &phpv.PhpError{
+								Err:  fmt.Errorf("Cannot use the readonly modifier on a method"),
+								Code: phpv.E_COMPILE_ERROR,
+								Loc:  i.Loc(),
+							}
+						}
 						switch i.Type {
 						case tokenizer.T_PUBLIC:
 							newAttr = phpv.ZAttrPublic
@@ -754,6 +823,12 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 							}
 						case tokenizer.T_PRIVATE:
 							newAttr = phpv.ZAttrPrivate
+							i, err = c.NextItem()
+							if err != nil {
+								return nil, err
+							}
+						case tokenizer.T_FINAL:
+							newAttr = phpv.ZAttrFinal
 							i, err = c.NextItem()
 							if err != nil {
 								return nil, err
@@ -789,6 +864,14 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 				Insteadof:  convertInsteadofs(insteadofs),
 			})
 		case tokenizer.T_FUNCTION:
+			// Check for invalid readonly modifier on methods
+			if attr&phpv.ZAttrReadonly != 0 {
+				return nil, &phpv.PhpError{
+					Err:  fmt.Errorf("Cannot use the readonly modifier on a method"),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  l,
+				}
+			}
 			// next must be a string (method name)
 			i, err := c.NextItem()
 			if err != nil {
@@ -930,6 +1013,14 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 										Code: phpv.E_COMPILE_ERROR,
 										Loc:  l,
 									}
+								}
+							}
+							// Validate readonly promoted property must have type
+							if modifiers.IsReadonly() && arg.Hint == nil {
+								return nil, &phpv.PhpError{
+									Err:  fmt.Errorf("Readonly property %s::$%s must have type", class.Name, arg.VarName),
+									Code: phpv.E_COMPILE_ERROR,
+									Loc:  l,
 								}
 							}
 							prop := &phpv.ZClassProp{

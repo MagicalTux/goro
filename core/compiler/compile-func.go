@@ -310,10 +310,20 @@ func compileFunction(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		}
 	}
 
-	// Semi-reserved keywords (including 'enum') can be used as function names.
+	// Semi-reserved keywords can be used as method names inside a class.
+	// At the top level, only "soft keywords" (readonly, enum) can be used
+	// as function names. Other reserved words (echo, return, etc.) are errors.
 	if i.IsSemiReserved() && i.Type != tokenizer.T_STRING {
-		// Treat semi-reserved keyword as a string for function naming
-		i.Type = tokenizer.T_STRING
+		if c.getClass() != nil {
+			// Inside a class: all semi-reserved keywords are valid method names
+			i.Type = tokenizer.T_STRING
+		} else if i.Type == tokenizer.T_READONLY || i.Type == tokenizer.T_ENUM {
+			// Soft keywords: can be used as function names at top level
+			i.Type = tokenizer.T_STRING
+		} else {
+			// At top level: hard keywords can't be used as function names
+			return nil, i.UnexpectedExpecting("\"(\"")
+		}
 	}
 
 	switch i.Type {

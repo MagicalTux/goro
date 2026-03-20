@@ -1,9 +1,11 @@
 package compiler
 
 import (
+	"fmt"
 	"io"
 
 	"github.com/MagicalTux/goro/core/logopt"
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
@@ -128,12 +130,30 @@ func (a *runDestructure) Dump(w io.Writer) error {
 }
 
 func (a *runDestructure) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
-	if value == nil || value.GetType() != phpv.ZtArray {
-		// list() assignment from non-array: warn for each element
-		typeName := "null"
-		if value != nil {
-			typeName = value.GetType().TypeName()
+	if value == nil || value.GetType() == phpv.ZtNull {
+		// list() assignment from null: silently assign null to all elements (PHP 8 behavior)
+		for _, e := range a.e {
+			if e.v == nil {
+				continue
+			}
+			if sub, ok := e.v.(*runDestructure); ok {
+				sub.WriteValue(ctx, phpv.ZNULL.ZVal())
+				continue
+			}
+			if w, ok := e.v.(phpv.Writable); ok {
+				w.WriteValue(ctx, phpv.ZNULL.ZVal())
+			}
 		}
+		return nil
+	}
+	if value.GetType() == phpv.ZtObject {
+		// Object type that doesn't implement ArrayAccess: throw Error
+		obj := value.Value().(phpv.ZObject)
+		return phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Cannot use object of type %s as array", obj.GetClass().GetName()))
+	}
+	if value.GetType() != phpv.ZtArray {
+		// list() assignment from non-array: warn for each element
+		typeName := value.GetType().TypeName()
 		for _, e := range a.e {
 			if e.v == nil {
 				continue
@@ -326,6 +346,54 @@ func compileDestructure(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) 
 			break
 		}
 		return nil, i.Unexpected()
+	}
+
+	// Check for empty list: all entries have nil v (all commas, no actual targets)
+	hasNonNil := false
+	for _, e := range res.e {
+		if e.v != nil {
+			hasNonNil = true
+			break
+		}
+	}
+	if !hasNonNil {
+		return nil, &phpv.PhpError{
+			Err:  fmt.Errorf("Cannot use empty list"),
+			Code: phpv.E_COMPILE_ERROR,
+			Loc:  res.l,
+		}
+	}
+
+	// Validate keyed destructuring rules:
+	// 1. Cannot mix keyed and unkeyed entries
+	// 2. Cannot have empty (nil) entries in keyed destructuring
+	hasKeyed := false
+	hasUnkeyed := false
+	for _, e := range res.e {
+		if e.k != nil {
+			hasKeyed = true
+		} else if e.v != nil {
+			hasUnkeyed = true
+		}
+	}
+	if hasKeyed && hasUnkeyed {
+		return nil, &phpv.PhpError{
+			Err:  fmt.Errorf("Cannot mix keyed and unkeyed array entries in assignments"),
+			Code: phpv.E_COMPILE_ERROR,
+			Loc:  res.l,
+		}
+	}
+	if hasKeyed {
+		// Check for empty entries in keyed destructuring
+		for _, e := range res.e {
+			if e.v == nil && e.k == nil {
+				return nil, &phpv.PhpError{
+					Err:  fmt.Errorf("Cannot use empty array entries in keyed array assignment"),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  res.l,
+				}
+			}
+		}
 	}
 
 	return res, nil

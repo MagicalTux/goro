@@ -103,10 +103,29 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 		}
 		c.Extends = parent.(*ZClass)
 		c.parents[parent.(*ZClass)] = parent.(*ZClass)
+		// Add all of parent's parents (transitive)
+		if c.Extends.parents != nil {
+			for k, v := range c.Extends.parents {
+				c.parents[k] = v
+			}
+		}
 
 		// Check if trying to extend an interface (must use implements instead)
 		if c.Type != phpv.ZClassTypeInterface && c.Extends.Type == phpv.ZClassTypeInterface {
 			return c.fatalError(ctx, fmt.Sprintf("Class %s cannot extend interface %s", c.Name, c.Extends.Name))
+		}
+
+		// Check if trying to extend a trait (use "use" instead)
+		if c.Extends.Type == phpv.ZClassTypeTrait {
+			return c.fatalError(ctx, fmt.Sprintf("Class %s cannot extend trait %s", c.Name, c.Extends.Name))
+		}
+
+		// Readonly class inheritance checks
+		if c.Attr.Has(phpv.ZClassReadonly) && !c.Extends.Attr.Has(phpv.ZClassReadonly) {
+			return c.fatalError(ctx, fmt.Sprintf("Readonly class %s cannot extend non-readonly class %s", c.Name, c.Extends.Name))
+		}
+		if !c.Attr.Has(phpv.ZClassReadonly) && c.Extends.Attr.Has(phpv.ZClassReadonly) {
+			return c.fatalError(ctx, fmt.Sprintf("Non-readonly class %s cannot extend readonly class %s", c.Name, c.Extends.Name))
 		}
 
 		// Check if parent class is final or an enum (enums cannot be extended)
@@ -283,6 +302,16 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 				return c.fatalError(ctx, fmt.Sprintf("Access level to %s::$%s must be protected (as in class %s) or weaker", c.Name, childProp.VarName, c.Extends.Name))
 			}
 
+			// Check readonly mismatch
+			parentReadonly := parentProp.Modifiers.IsReadonly()
+			childReadonly := childProp.Modifiers.IsReadonly()
+			if parentReadonly && !childReadonly {
+				return c.fatalError(ctx, fmt.Sprintf("Cannot redeclare readonly property %s::$%s as non-readonly %s::$%s", c.Extends.Name, childProp.VarName, c.Name, childProp.VarName))
+			}
+			if !parentReadonly && childReadonly {
+				return c.fatalError(ctx, fmt.Sprintf("Cannot redeclare non-readonly property %s::$%s as readonly %s::$%s", c.Extends.Name, childProp.VarName, c.Name, childProp.VarName))
+			}
+
 			// Cannot override a final property (explicit or implicit via private(set))
 			parentSetAccess := parentProp.SetModifiers & phpv.ZAttrAccess
 			if parentProp.Modifiers.Has(phpv.ZAttrFinal) || parentSetAccess == phpv.ZAttrPrivate {
@@ -321,6 +350,16 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 	}
 
 	// Resolve trait uses: import methods and properties from traits
+	// Track which trait provided each property (across all use statements) for conflict reporting
+	type propSourceInfo struct {
+		traitName phpv.ZString
+	}
+	propSources := make(map[phpv.ZString]*propSourceInfo)
+	// Track which trait provided each constant (across all use statements) for conflict reporting
+	constTraitSources := make(map[phpv.ZString]phpv.ZString)
+	// Track which methods have been excluded (for duplicate exclusion detection)
+	globalExcluded := make(map[phpv.ZString]map[phpv.ZString]bool) // method -> set of excluded trait names
+
 	for _, tu := range c.TraitUses {
 		// Build insteadof exclusion map
 		type excludeKey struct {
@@ -328,9 +367,63 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 			traitName phpv.ZString
 		}
 		excluded := make(map[excludeKey]bool)
+
+		// Build map of resolved trait names for validation
+		resolvedTraitNames := make(map[phpv.ZString]bool)
+		for _, tn := range tu.TraitNames {
+			resolvedTraitNames[tn.ToLower()] = true
+		}
+
 		for _, io := range tu.Insteadof {
 			methodLower := io.MethodName.ToLower()
+			// Check reserved names in insteadof references
+			switch io.TraitName.ToLower() {
+			case "self", "parent", "static":
+				return c.fatalError(ctx, fmt.Sprintf("Cannot use \"%s\" as trait name, as it is reserved", io.TraitName))
+			}
+			// Check that the insteadof source trait is in the use list
+			if !resolvedTraitNames[io.TraitName.ToLower()] {
+				// Try to resolve the class to give a better error message
+				otherClass, lookupErr := ctx.Global().GetClass(ctx, io.TraitName, false)
+				if lookupErr != nil || otherClass == nil {
+					return c.fatalError(ctx, fmt.Sprintf("Could not find trait %s", io.TraitName))
+				}
+				oc := otherClass.(*ZClass)
+				if oc.Type != phpv.ZClassTypeTrait {
+					return c.fatalError(ctx, fmt.Sprintf("Class %s is not a trait, Only traits may be used in 'as' and 'insteadof' statements", io.TraitName))
+				}
+				return c.fatalError(ctx, fmt.Sprintf("Required Trait %s wasn't added to %s", io.TraitName, c.Name))
+			}
 			for _, excTrait := range io.InsteadOf {
+				// Check reserved names
+				switch excTrait.ToLower() {
+				case "self", "parent", "static":
+					return c.fatalError(ctx, fmt.Sprintf("Cannot use \"%s\" as trait name, as it is reserved", excTrait))
+				}
+				// Validate: the excluded trait must be in the use list
+				if !resolvedTraitNames[excTrait.ToLower()] {
+					otherClass, lookupErr := ctx.Global().GetClass(ctx, excTrait, false)
+					if lookupErr != nil || otherClass == nil {
+						return c.fatalError(ctx, fmt.Sprintf("Could not find trait %s", excTrait))
+					}
+					oc := otherClass.(*ZClass)
+					if oc.Type != phpv.ZClassTypeTrait {
+						return c.fatalError(ctx, fmt.Sprintf("Class %s is not a trait, Only traits may be used in 'as' and 'insteadof' statements", excTrait))
+					}
+					return c.fatalError(ctx, fmt.Sprintf("Required Trait %s wasn't added to %s", excTrait, c.Name))
+				}
+				// Validate: cannot exclude the same trait that provides the method (inconsistent)
+				if excTrait.ToLower() == io.TraitName.ToLower() {
+					return c.fatalError(ctx, fmt.Sprintf("Inconsistent insteadof definition. The method %s is to be used from %s, but %s is also on the exclude list", io.MethodName, io.TraitName, io.TraitName))
+				}
+				// Check for duplicate exclusions across all use statements
+				if globalExcluded[methodLower] == nil {
+					globalExcluded[methodLower] = make(map[phpv.ZString]bool)
+				}
+				if globalExcluded[methodLower][excTrait.ToLower()] {
+					return c.fatalError(ctx, fmt.Sprintf("Failed to evaluate a trait precedence (%s). Method of trait %s was defined to be excluded multiple times", io.MethodName, excTrait))
+				}
+				globalExcluded[methodLower][excTrait.ToLower()] = true
 				excluded[excludeKey{methodLower, excTrait.ToLower()}] = true
 			}
 		}
@@ -355,9 +448,27 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 			}
 			tc := traitClass.(*ZClass)
 			if tc.Type != phpv.ZClassTypeTrait {
-				return c.fatalError(ctx, fmt.Sprintf("%s cannot use %s - it is not a trait", c.Name, tc.Name))
+				return ThrowError(ctx, Error, fmt.Sprintf("%s cannot use %s - it is not a trait", c.Name, tc.Name))
 			}
 			resolvedTraits = append(resolvedTraits, tc)
+		}
+
+		// Validate insteadof references: check that the method actually exists in the source trait
+		for _, io := range tu.Insteadof {
+			srcLower := io.TraitName.ToLower()
+			methodLower := io.MethodName.ToLower()
+			found := false
+			for _, tc := range resolvedTraits {
+				if tc.Name.ToLower() == srcLower {
+					if _, ok := tc.Methods[methodLower]; ok {
+						found = true
+					}
+					break
+				}
+			}
+			if !found {
+				return c.fatalError(ctx, fmt.Sprintf("A precedence rule was defined for %s::%s but this method does not exist", io.TraitName, io.MethodName))
+			}
 		}
 
 		for _, tc := range resolvedTraits {
@@ -366,7 +477,37 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 					continue
 				}
 				if src, exists := traitMethods[name]; exists {
+					// Both abstract: OK, skip
 					if m.Empty && m.Modifiers.Has(phpv.ZAttrAbstract) && src.method.Empty && src.method.Modifiers.Has(phpv.ZAttrAbstract) {
+						continue
+					}
+					// One abstract, one concrete: the concrete one wins (no conflict)
+					if m.Empty && m.Modifiers.Has(phpv.ZAttrAbstract) && !src.method.Empty {
+						// Current method is abstract, existing is concrete - existing wins, skip
+						continue
+					}
+					if !m.Empty && src.method.Empty && src.method.Modifiers.Has(phpv.ZAttrAbstract) {
+						// Current method is concrete, existing is abstract - replace
+						traitMethods[name] = &methodSource{traitName: tc.Name, method: m}
+						methodCopy := &phpv.ZClassMethod{
+							Name:       m.Name,
+							Modifiers:  m.Modifiers,
+							Method:     m.Method,
+							Class:      c,
+							Empty:      m.Empty,
+							Loc:        m.Loc,
+							Attributes: m.Attributes,
+							FromTrait:  tc,
+						}
+						c.Methods[name] = methodCopy
+						if name == "__construct" {
+							c.Handlers().Constructor = methodCopy
+						}
+						continue
+					}
+					// Both concrete from different traits but same underlying method body
+					// (e.g., both inherited from the same base trait through diamond): no conflict
+					if src.method.Method == m.Method {
 						continue
 					}
 					return c.fatalError(ctx, fmt.Sprintf("Trait method %s::%s has not been applied as %s::%s, because of collision with %s::%s",
@@ -375,7 +516,33 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 				traitMethods[name] = &methodSource{traitName: tc.Name, method: m}
 
 				existing, existsInClass := c.Methods[name]
-				if !existsInClass || (existing.Class != nil && existing.Class != c && !(m.Empty && m.Modifiers.Has(phpv.ZAttrAbstract) && !existing.Empty)) {
+				// If existing method is abstract (from a previous trait or class body) and
+				// current trait method is concrete, the concrete method should replace it
+				if existsInClass && existing.Empty && (existing.Modifiers.Has(phpv.ZAttrAbstract) || (existing.Class != nil && existing.Class.GetType() == phpv.ZClassTypeInterface)) && !m.Empty {
+					// Check compatibility first
+					traitMethod := &phpv.ZClassMethod{
+						Name:      m.Name,
+						Modifiers: m.Modifiers,
+						Method:    m.Method,
+						Class:     c,
+						Empty:     m.Empty,
+						Loc:       m.Loc,
+					}
+					abstractMethod := existing
+					if abstractMethod.FromTrait != nil {
+						abstractMethod = &phpv.ZClassMethod{
+							Name:      existing.Name,
+							Modifiers: existing.Modifiers,
+							Method:    existing.Method,
+							Class:     existing.FromTrait,
+							Empty:     existing.Empty,
+							Loc:       existing.Loc,
+						}
+					}
+					if err := c.checkMethodCompatibility(ctx, traitMethod, abstractMethod); err != nil {
+						return err
+					}
+					// Replace the abstract method with the concrete one
 					methodCopy := &phpv.ZClassMethod{
 						Name:       m.Name,
 						Modifiers:  m.Modifiers,
@@ -384,6 +551,79 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 						Empty:      m.Empty,
 						Loc:        m.Loc,
 						Attributes: m.Attributes,
+						FromTrait:  tc,
+					}
+					c.Methods[name] = methodCopy
+					if name == "__construct" {
+						c.Handlers().Constructor = methodCopy
+					}
+					continue
+				}
+				if existsInClass && existing.Class == c && !existing.Empty && existing.FromTrait == nil {
+					// Class has its own concrete implementation (not from a trait).
+					// If trait method is abstract, check compatibility.
+					if m.Empty && m.Modifiers.Has(phpv.ZAttrAbstract) {
+						// Create a temporary method ref with trait's class for error message
+						traitMethod := &phpv.ZClassMethod{
+							Name:      m.Name,
+							Modifiers: m.Modifiers,
+							Method:    m.Method,
+							Class:     tc,
+							Empty:     m.Empty,
+							Loc:       m.Loc,
+						}
+						if err := c.checkMethodCompatibility(ctx, existing, traitMethod); err != nil {
+							return err
+						}
+					}
+					// Also check static/non-static mismatch for abstract trait methods
+					if m.Empty && m.Modifiers.Has(phpv.ZAttrAbstract) {
+						if m.Modifiers.Has(phpv.ZAttrStatic) && !existing.Modifiers.Has(phpv.ZAttrStatic) {
+							return c.fatalError(ctx, fmt.Sprintf("Cannot make static method %s::%s() non static in class %s", tc.Name, m.Name, c.Name))
+						}
+						if !m.Modifiers.Has(phpv.ZAttrStatic) && existing.Modifiers.Has(phpv.ZAttrStatic) {
+							return c.fatalError(ctx, fmt.Sprintf("Cannot make non static method %s::%s() static in class %s", tc.Name, m.Name, c.Name))
+						}
+					}
+					// Keep class's own method, don't import trait method
+				} else if !existsInClass || (existing.Class != nil && existing.Class != c && !(m.Empty && m.Modifiers.Has(phpv.ZAttrAbstract) && !existing.Empty)) {
+					// Check if the inherited method is final (cannot be overridden by trait)
+					if existsInClass && existing.Modifiers.Has(phpv.ZAttrFinal) && !m.Empty {
+						if existing.Class != nil {
+							return c.fatalError(ctx, fmt.Sprintf("Cannot override final method %s::%s()", existing.Class.GetName(), existing.Name))
+						}
+					}
+					// If the trait method replaces an inherited abstract method, check compatibility
+					if existsInClass && !m.Empty && existing.Empty && (existing.Modifiers.Has(phpv.ZAttrAbstract) || (existing.Class != nil && existing.Class.GetType() == phpv.ZClassTypeInterface)) {
+						// Check static/non-static compatibility
+						if existing.Modifiers.Has(phpv.ZAttrStatic) && !m.Modifiers.Has(phpv.ZAttrStatic) {
+							return c.fatalError(ctx, fmt.Sprintf("Cannot make static method %s::%s() non static in class %s", existing.Class.GetName(), existing.Name, c.Name))
+						}
+						if !existing.Modifiers.Has(phpv.ZAttrStatic) && m.Modifiers.Has(phpv.ZAttrStatic) {
+							return c.fatalError(ctx, fmt.Sprintf("Cannot make non static method %s::%s() static in class %s", existing.Class.GetName(), existing.Name, c.Name))
+						}
+						// Check method signature compatibility
+						traitMethod := &phpv.ZClassMethod{
+							Name:      m.Name,
+							Modifiers: m.Modifiers,
+							Method:    m.Method,
+							Class:     c,
+							Empty:     m.Empty,
+							Loc:       m.Loc,
+						}
+						if err := c.checkMethodCompatibility(ctx, traitMethod, existing); err != nil {
+							return err
+						}
+					}
+					methodCopy := &phpv.ZClassMethod{
+						Name:       m.Name,
+						Modifiers:  m.Modifiers,
+						Method:     m.Method,
+						Class:      c,
+						Empty:      m.Empty,
+						Loc:        m.Loc,
+						Attributes: m.Attributes,
+						FromTrait:  tc,
 					}
 					c.Methods[name] = methodCopy
 					if name == "__construct" {
@@ -397,16 +637,41 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 				for _, cp := range c.Props {
 					if cp.VarName == tp.VarName {
 						found = true
-						// Check for property conflict: different visibility or different default value
-						if cp.Modifiers&phpv.ZAttrAccess != tp.Modifiers&phpv.ZAttrAccess ||
-							cp.Modifiers&phpv.ZAttrStatic != tp.Modifiers&phpv.ZAttrStatic {
-							return c.fatalError(ctx, fmt.Sprintf("%s and %s define the same property ($%s) in the composition of %s. However, the definition differs and is considered incompatible. Class was composed", c.Name, tc.Name, tp.VarName, c.Name))
+						// Check for property conflict: different visibility, static, or readonly mismatch
+						incompatible := false
+						if cp.Modifiers&phpv.ZAttrAccess != tp.Modifiers&phpv.ZAttrAccess {
+							incompatible = true
+						}
+						if cp.Modifiers&phpv.ZAttrStatic != tp.Modifiers&phpv.ZAttrStatic {
+							incompatible = true
+						}
+						if cp.Modifiers&phpv.ZAttrReadonly != tp.Modifiers&phpv.ZAttrReadonly {
+							incompatible = true
+						}
+						// Check default value compatibility
+						if !incompatible && cp.Default != nil && tp.Default != nil {
+							ev := fmt.Sprintf("%v", cp.Default)
+							tv := fmt.Sprintf("%v", tp.Default)
+							if ev != tv {
+								incompatible = true
+							}
+						} else if !incompatible && ((cp.Default == nil) != (tp.Default == nil)) {
+							incompatible = true
+						}
+						if incompatible {
+							// Use the trait name that originally provided the property, not "c.Name"
+							firstProvider := c.Name
+							if src, ok := propSources[cp.VarName]; ok {
+								firstProvider = src.traitName
+							}
+							return c.fatalError(ctx, fmt.Sprintf("%s and %s define the same property ($%s) in the composition of %s. However, the definition differs and is considered incompatible. Class was composed", firstProvider, tc.Name, tp.VarName, c.Name))
 						}
 						break
 					}
 				}
 				if !found {
 					c.Props = append(c.Props, tp)
+					propSources[tp.VarName] = &propSourceInfo{traitName: tc.Name}
 				}
 			}
 
@@ -415,6 +680,7 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 					if existing, exists := c.Const[k]; !exists {
 						c.Const[k] = v
 						c.ConstOrder = append(c.ConstOrder, k)
+						constTraitSources[k] = tc.Name
 					} else {
 						// Check for constant conflicts: different value, visibility, or finality
 						incompatible := false
@@ -423,26 +689,99 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 						} else if existing.Modifiers&phpv.ZAttrFinal != v.Modifiers&phpv.ZAttrFinal {
 							incompatible = true // different finality
 						} else if existing.Value != nil && v.Value != nil {
-							// Compare values
-							ev := fmt.Sprintf("%v", existing.Value)
-							tv := fmt.Sprintf("%v", v.Value)
+							// Resolve CompileDelayed values before comparison
+							existingVal := existing.Value
+							if cd, ok := existingVal.(*phpv.CompileDelayed); ok {
+								if z, err := cd.Run(ctx); err == nil {
+									existingVal = z.Value()
+								}
+							}
+							traitVal := v.Value
+							if cd, ok := traitVal.(*phpv.CompileDelayed); ok {
+								if z, err := cd.Run(ctx); err == nil {
+									traitVal = z.Value()
+								}
+							}
+							ev := fmt.Sprintf("%v", existingVal)
+							tv := fmt.Sprintf("%v", traitVal)
 							if ev != tv {
 								incompatible = true
 							}
 						}
 						if incompatible {
-							return c.fatalError(ctx, fmt.Sprintf("%s and %s define the same constant (%s) in the composition of %s. However, the definition differs and is considered incompatible. Class was composed", c.Name, tc.Name, k, c.Name))
+							// Use the trait name that originally provided the constant, not "c.Name"
+							firstProvider := c.Name
+							if src, ok := constTraitSources[k]; ok {
+								firstProvider = src
+							}
+							return c.fatalError(ctx, fmt.Sprintf("%s and %s define the same constant (%s) in the composition of %s. However, the definition differs and is considered incompatible. Class was composed", firstProvider, tc.Name, k, c.Name))
 						}
 					}
 				}
 			}
 		}
 
+		// Build set of all trait method names for alias validation
+		allTraitMethodNames := make(map[phpv.ZString]bool)
+		for _, tc := range resolvedTraits {
+			for name := range tc.Methods {
+				allTraitMethodNames[name] = true
+			}
+		}
+
 		// Apply aliases
 		for _, alias := range tu.Aliases {
+			// Validate: the alias references a trait in the use list if a trait name is specified
+			if alias.TraitName != "" {
+				traitNameLower := alias.TraitName.ToLower()
+				found := false
+				for _, tc := range resolvedTraits {
+					if tc.Name.ToLower() == traitNameLower {
+						found = true
+						break
+					}
+				}
+				if !found {
+					// Try to resolve the class to give a better error message
+					otherClass, lookupErr := ctx.Global().GetClass(ctx, alias.TraitName, false)
+					if lookupErr != nil || otherClass == nil {
+						return c.fatalError(ctx, fmt.Sprintf("Could not find trait %s", alias.TraitName))
+					}
+					oc := otherClass.(*ZClass)
+					if oc.Type != phpv.ZClassTypeTrait {
+						return c.fatalError(ctx, fmt.Sprintf("Class %s is not a trait, Only traits may be used in 'as' and 'insteadof' statements", alias.TraitName))
+					}
+					return c.fatalError(ctx, fmt.Sprintf("Required Trait %s wasn't added to %s", alias.TraitName, c.Name))
+				}
+			}
+
 			if alias.NewName != "" {
 				// Find the method to alias
 				srcName := alias.MethodName.ToLower()
+
+				// Validate method exists in one of the used traits
+				if alias.TraitName != "" {
+					// Look specifically in the named trait
+					traitNameLower := alias.TraitName.ToLower()
+					foundInTrait := false
+					for _, tc := range resolvedTraits {
+						if tc.Name.ToLower() == traitNameLower {
+							if _, ok := tc.Methods[srcName]; ok {
+								foundInTrait = true
+							}
+							break
+						}
+					}
+					if !foundInTrait {
+						return c.fatalError(ctx, fmt.Sprintf("An alias was defined for %s::%s but this method does not exist", alias.TraitName, alias.MethodName))
+					}
+				} else {
+					// No trait specified - method must exist in at least one trait
+					if !allTraitMethodNames[srcName] {
+						return c.fatalError(ctx, fmt.Sprintf("An alias (%s) was defined for method %s(), but this method does not exist", alias.NewName, alias.MethodName))
+					}
+				}
+
 				if m, ok := c.Methods[srcName]; ok {
 					// If a trait name was specified, verify it matches
 					if alias.TraitName != "" {
@@ -465,6 +804,26 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 						}
 					}
 
+					// Check for ambiguity: method exists in multiple traits without resolution
+					if alias.TraitName == "" {
+						// Count how many traits have this method
+						conflictTraits := []phpv.ZString{}
+						for _, tc := range resolvedTraits {
+							if _, ok := tc.Methods[srcName]; ok {
+								conflictTraits = append(conflictTraits, tc.Name)
+							}
+						}
+						if len(conflictTraits) > 1 {
+							return c.fatalError(ctx, fmt.Sprintf("An alias was defined for method %s(), which exists in both %s and %s. Use %s::%s or %s::%s to resolve the ambiguity",
+								alias.MethodName, conflictTraits[0], conflictTraits[1], conflictTraits[0], alias.MethodName, conflictTraits[1], alias.MethodName))
+						}
+					}
+
+					// Determine source trait for the aliased method
+					aliasTrait := m.FromTrait
+					if aliasTrait == nil && m.Class != nil && m.Class != c {
+						aliasTrait = m.Class
+					}
 					newMethod := &phpv.ZClassMethod{
 						Name:      alias.NewName,
 						Modifiers: m.Modifiers,
@@ -472,19 +831,105 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 						Class:     c,
 						Empty:     m.Empty,
 						Loc:       m.Loc,
+						FromTrait: aliasTrait,
 					}
 					if alias.NewAttr != 0 {
-						// Replace access modifiers
-						newMethod.Modifiers = (newMethod.Modifiers &^ phpv.ZAttrAccess) | alias.NewAttr
+						if alias.NewAttr == phpv.ZAttrFinal {
+							// Add final modifier
+							newMethod.Modifiers = newMethod.Modifiers | phpv.ZAttrFinal
+						} else {
+							// Replace access modifiers
+							newMethod.Modifiers = (newMethod.Modifiers &^ phpv.ZAttrAccess) | alias.NewAttr
+						}
 					}
-					c.Methods[alias.NewName.ToLower()] = newMethod
+					// Check if the alias name conflicts with an existing trait method from a different trait
+					aliasLower := alias.NewName.ToLower()
+					if existing, exists := c.Methods[aliasLower]; exists && existing.FromTrait != nil {
+						// Determine source trait of the aliased method
+						srcTraitName := phpv.ZString("")
+						if newMethod.FromTrait != nil {
+							srcTraitName = newMethod.FromTrait.GetName()
+						} else if alias.TraitName != "" {
+							srcTraitName = alias.TraitName
+						}
+						existingTraitName := existing.FromTrait.GetName()
+						if srcTraitName != existingTraitName {
+							return c.fatalError(ctx, fmt.Sprintf("Trait method %s::%s has not been applied as %s::%s, because of collision with %s::%s",
+								existingTraitName, existing.Name, c.Name, alias.NewName, srcTraitName, alias.NewName))
+						}
+					}
+					c.Methods[aliasLower] = newMethod
 				}
 			} else if alias.NewAttr != 0 {
 				// Visibility change only (no rename)
 				srcName := alias.MethodName.ToLower()
-				if m, ok := c.Methods[srcName]; ok {
-					m.Modifiers = (m.Modifiers &^ phpv.ZAttrAccess) | alias.NewAttr
+
+				// Validate method exists in one of the used traits
+				if alias.TraitName != "" {
+					traitNameLower := alias.TraitName.ToLower()
+					foundInTrait := false
+					for _, tc := range resolvedTraits {
+						if tc.Name.ToLower() == traitNameLower {
+							if _, ok := tc.Methods[srcName]; ok {
+								foundInTrait = true
+							}
+							break
+						}
+					}
+					if !foundInTrait {
+						return c.fatalError(ctx, fmt.Sprintf("The modifiers of the trait method %s() are changed, but this method does not exist. Error", alias.MethodName))
+					}
+				} else {
+					if !allTraitMethodNames[srcName] {
+						return c.fatalError(ctx, fmt.Sprintf("The modifiers of the trait method %s() are changed, but this method does not exist. Error", alias.MethodName))
+					}
 				}
+
+				if m, ok := c.Methods[srcName]; ok {
+					// Don't change the original method's modifiers directly if it was from a trait -
+					// create a copy so aliasing doesn't affect the original trait method
+					var newMods phpv.ZObjectAttr
+					if alias.NewAttr == phpv.ZAttrFinal {
+						newMods = m.Modifiers | phpv.ZAttrFinal
+					} else {
+						newMods = (m.Modifiers &^ phpv.ZAttrAccess) | alias.NewAttr
+					}
+					methodCopy := &phpv.ZClassMethod{
+						Name:       m.Name,
+						Modifiers:  newMods,
+						Method:     m.Method,
+						Class:      c,
+						Empty:      m.Empty,
+						Loc:        m.Loc,
+						Attributes: m.Attributes,
+					}
+					c.Methods[srcName] = methodCopy
+				}
+			}
+		}
+
+		// Validate insteadof references: check that referenced traits are actually in the use list
+		// and that they are not regular classes
+		for _, io := range tu.Insteadof {
+			for _, excTrait := range io.InsteadOf {
+				// Check if it's a class (not a trait) - give specific error
+				otherClass, err := ctx.Global().GetClass(ctx, excTrait, false)
+				if err == nil && otherClass != nil {
+					oc := otherClass.(*ZClass)
+					if oc.Type != phpv.ZClassTypeTrait {
+						return c.fatalError(ctx, fmt.Sprintf("Class %s is not a trait, Only traits may be used in 'as' and 'insteadof' statements", excTrait))
+					}
+				}
+			}
+		}
+	}
+
+	// Readonly class: validate that all trait-imported properties are readonly
+	if c.Attr.Has(phpv.ZClassReadonly) {
+		for _, prop := range c.Props {
+			if propSources[prop.VarName] != nil && !prop.Modifiers.IsReadonly() {
+				src := propSources[prop.VarName]
+				return c.fatalError(ctx, fmt.Sprintf("Readonly class %s cannot use trait with a non-readonly property %s::$%s", c.Name, src.traitName, prop.VarName))
 			}
 		}
 	}
@@ -524,9 +969,10 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 		}
 	}
 
-	// PHP requires that classes implementing Traversable must do so through
-	// either Iterator or IteratorAggregate, not directly.
-	if c.Type != phpv.ZClassTypeInterface {
+	// PHP requires that non-abstract classes implementing Traversable must do so through
+	// either Iterator or IteratorAggregate, not directly. Abstract classes are allowed
+	// to implement Traversable directly.
+	if c.Type != phpv.ZClassTypeInterface && c.Attr&phpv.ZClassAttr(phpv.ZClassExplicitAbstract) == 0 {
 		implementsTraversable := false
 		implementsIteratorOrAggregate := false
 		// Check direct implementations and parents (which include transitive interfaces)
@@ -582,9 +1028,10 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 		}
 	}
 
-	// Note: Serializable interface deprecation warning is suppressed for now.
-	// PHP emits this warning with special handling (only once, respects @),
-	// and many tests include Serializable classes without expecting the warning.
+	// Emit Serializable interface deprecation warning (PHP 8.1+)
+	if c.Type != phpv.ZClassTypeInterface && c.Type != phpv.ZClassTypeTrait && c.Implements(Serializable) {
+		ctx.Deprecated("%s implements the Serializable interface, which is deprecated. Implement __serialize() and __unserialize() instead (or in addition, if support for old PHP versions is necessary)", c.Name)
+	}
 
 	// Try to resolve constants eagerly, but if resolution fails (e.g. forward
 	// reference to a class not yet defined), leave them as CompileDelayed for
@@ -648,7 +1095,8 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 			return c.fatalError(ctx, "Cannot use the final modifier on an abstract method")
 		}
 		// Warn about final private methods (they can never be overridden)
-		if m.Modifiers.Has(phpv.ZAttrFinal) && m.Modifiers.Has(phpv.ZAttrPrivate) && (m.Class == nil || m.Class == c) && m.Name.ToLower() != "__construct" {
+		// Skip for trait-imported methods where final came from the trait (PHP relaxes this)
+		if m.Modifiers.Has(phpv.ZAttrFinal) && m.Modifiers.Has(phpv.ZAttrPrivate) && (m.Class == nil || m.Class == c) && m.Name.ToLower() != "__construct" && m.FromTrait == nil {
 			phpErr := &phpv.PhpError{
 				Err:  fmt.Errorf("Private methods cannot be final as they are never overridden by other classes"),
 				Code: phpv.E_WARNING,
@@ -719,15 +1167,49 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 		}
 	}
 
+	// Special check: even abstract classes must implement private abstract trait methods,
+	// because private methods are not inherited to subclasses.
+	if c.Type != phpv.ZClassTypeInterface && c.Type != phpv.ZClassTypeTrait && c.Attr&phpv.ZClassAttr(phpv.ZClassExplicitAbstract) != 0 {
+		var privateUnimpl []string
+		for _, m := range c.Methods {
+			if m.Empty && m.Modifiers.Has(phpv.ZAttrAbstract) && m.Modifiers.Has(phpv.ZAttrPrivate) && m.FromTrait != nil {
+				privateUnimpl = append(privateUnimpl, string(c.Name)+"::"+string(m.Name))
+			}
+		}
+		if len(privateUnimpl) > 0 {
+			msg := fmt.Sprintf("Class %s must implement %d abstract method", c.Name, len(privateUnimpl))
+			if len(privateUnimpl) > 1 {
+				msg += "s"
+			}
+			if len(privateUnimpl) > 1 {
+				msg += " and must therefore be declared abstract or implement the remaining methods ("
+			} else {
+				msg += " (" // different format for private abstract trait methods
+			}
+			for i, u := range privateUnimpl {
+				if i > 0 {
+					msg += ", "
+				}
+				msg += u
+			}
+			msg += ")"
+			return c.fatalError(ctx, msg)
+		}
+	}
+
 	// Validate: non-abstract, non-interface classes must implement all abstract methods
 	if c.Type != phpv.ZClassTypeInterface && c.Type != phpv.ZClassTypeTrait && c.Attr&phpv.ZClassAttr(phpv.ZClassExplicitAbstract) == 0 {
-		var ownAbstract []string   // abstract methods declared in this class
+		var ownAbstract []string   // abstract methods declared in this class source code
 		var unimplemented []string // inherited abstract methods not implemented
 		for _, m := range c.Methods {
 			isAbstract := m.Empty && (m.Modifiers.Has(phpv.ZAttrAbstract) || (m.Class != nil && m.Class.GetType() == phpv.ZClassTypeInterface))
 			if isAbstract {
-				if m.Class == nil || m.Class == c {
-					// Declared in this class
+				// Methods imported from traits are "inherited" (not "declared" in source)
+				if m.FromTrait != nil {
+					// Trait-imported abstract methods use the composing class name (C::method)
+					unimplemented = append(unimplemented, string(c.Name)+"::"+string(m.Name))
+				} else if m.Class == nil || m.Class == c {
+					// Declared in this class source code
 					ownAbstract = append(ownAbstract, string(m.Name))
 				} else {
 					// Inherited from parent/interface
@@ -735,9 +1217,15 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 				}
 			}
 		}
-		if len(ownAbstract) > 0 {
+		if len(ownAbstract) > 0 && len(unimplemented) == 0 {
 			// PHP: "Class X declares abstract method Y() and must therefore be declared abstract"
 			return c.fatalError(ctx, fmt.Sprintf("Class %s declares abstract method %s() and must therefore be declared abstract", c.Name, ownAbstract[0]))
+		}
+		// If there are both own abstract and unimplemented, combine them all as unimplemented
+		if len(ownAbstract) > 0 {
+			for _, name := range ownAbstract {
+				unimplemented = append(unimplemented, string(c.Name)+"::"+name)
+			}
 		}
 		if len(unimplemented) > 0 {
 			msg := fmt.Sprintf("Class %s contains %d abstract method", c.Name, len(unimplemented))
@@ -865,6 +1353,8 @@ func (c *ZClass) validateAttributes(ctx phpv.Context) error {
 					return c.fatalError(ctx, fmt.Sprintf("Cannot apply #[\\AllowDynamicProperties] to trait %s", c.GetName()))
 				} else if c.Type.Has(phpv.ZClassTypeEnum) {
 					return c.fatalError(ctx, fmt.Sprintf("Cannot apply #[\\AllowDynamicProperties] to enum %s", c.GetName()))
+				} else if c.Attr.Has(phpv.ZClassReadonly) {
+					return c.fatalError(ctx, fmt.Sprintf("Cannot apply #[\\AllowDynamicProperties] to readonly class %s", c.GetName()))
 				}
 			}
 		}

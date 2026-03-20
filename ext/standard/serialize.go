@@ -43,24 +43,41 @@ func fncUnserialize(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		allowedClasses:  map[phpv.ZString]struct{}{},
 	}
 	if optionsArg.HasArg() {
-		options := optionsArg.Get().AsArray(ctx)
-		arg, _ := options.OffsetGet(ctx, phpv.ZString("allowed_classes"))
-		switch arg.GetType() {
-		case phpv.ZtArray:
-			deserializer.allowAllClasses = false
-			for _, className := range arg.AsArray(ctx).Iterate(ctx) {
-				deserializer.allowedClasses[className.AsString(ctx)] = struct{}{}
+		options := optionsArg.Get()
+		if options.GetType() == phpv.ZtArray {
+			arg, _ := options.AsArray(ctx).OffsetGet(ctx, phpv.ZString("allowed_classes"))
+			switch arg.GetType() {
+			case phpv.ZtArray:
+				deserializer.allowAllClasses = false
+				for _, className := range arg.AsArray(ctx).Iterate(ctx) {
+					// Each element must be a string class name
+					if className.GetType() != phpv.ZtString {
+						typeName := className.GetType().String()
+						return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("unserialize(): Option \"allowed_classes\" must be an array of class names, %s given", typeName))
+					}
+					// Store lowercase for case-insensitive matching
+					deserializer.allowedClasses[phpv.ZString(strings.ToLower(string(className.AsString(ctx))))] = struct{}{}
+				}
+			case phpv.ZtBool:
+				deserializer.allowAllClasses = bool(arg.AsBool(ctx))
+			default:
+				// allowed_classes must be bool or array
+				typeName := arg.GetType().String()
+				return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("unserialize(): Option \"allowed_classes\" must be of type array|bool, %s given", typeName))
 			}
-		default:
-			deserializer.allowAllClasses = bool(arg.AsBool(ctx))
 		}
 	}
 
-	result, _, err := deserializer.parse(ctx, string(str))
+	strData := string(str)
+	result, nextOffset, err := deserializer.parse(ctx, strData)
 	if err != nil {
 		// PHP emits a warning and returns false on unserialize errors
 		ctx.Warn("%s", err.Error())
 		return phpv.ZFalse.ZVal(), nil
+	}
+	// Warn about extra data after a valid value
+	if nextOffset < len(strData) {
+		ctx.Warn("Extra data starting at offset %d of %d bytes", nextOffset, len(strData))
 	}
 	return result, nil
 }
@@ -582,10 +599,18 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 		if ref == nil {
 			return nil, offset, readError
 		}
-		// R: creates a reference - make the referred value a reference if not already
-		ref = ref.Ref()
-		d.addRef(ref)
-		return ref, semicIndex + 1, nil
+		// R: creates a reference - convert the original to a reference in-place,
+		// then create a new wrapper sharing the same inner ZVal.
+		// This ensures both the original and the new value show as references.
+		ref.MakeRef()
+		// Get the inner reference ZVal and create a new outer wrapper
+		inner := ref.RefInner()
+		if inner == nil {
+			return nil, offset, readError
+		}
+		newRef := phpv.NewZVal(inner)
+		d.addRef(newRef)
+		return newRef, semicIndex + 1, nil
 
 	case 'r':
 		// r:N; - object reference (reuses the Nth object without creating a PHP reference)
@@ -797,7 +822,8 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 
 		allowedClass := d.allowAllClasses
 		if !allowedClass {
-			_, allowedClass = d.allowedClasses[phpv.ZString(className)]
+			// Case-insensitive class name matching
+			_, allowedClass = d.allowedClasses[phpv.ZString(strings.ToLower(className))]
 		}
 
 		class, err := ctx.Global().GetClass(ctx, phpv.ZString(className), true)
@@ -807,6 +833,12 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 
 		// Check if the class is an enum (enums cannot be unserialized with O:)
 		if class.GetType().Has(phpv.ZClassTypeEnum) {
+			return nil, offset, &unserializeError{0, len(str)}
+		}
+
+		// Check if the class is abstract (abstract classes cannot be instantiated)
+		if class != phpobj.IncompleteClass && (class.GetType().Has(phpv.ZClassTypeExplicitAbstract) || class.GetType().Has(phpv.ZClassTypeImplicitAbstract)) {
+			ctx.Warn("Cannot instantiate abstract class %s", class.GetName())
 			return nil, offset, &unserializeError{0, len(str)}
 		}
 
@@ -857,7 +889,7 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 				if err != nil {
 					return nil, offset, readError
 				}
-				obj.ObjectSet(ctx, key.AsString(ctx), value)
+				unserializeSetProperty(ctx, obj, key.AsString(ctx), value)
 				numProps--
 			}
 			if method, ok := obj.GetClass().GetMethod(phpv.ZString("__wakeup")); ok {
@@ -925,12 +957,20 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 
 		allowedClass := d.allowAllClasses
 		if !allowedClass {
-			_, allowedClass = d.allowedClasses[phpv.ZString(className)]
+			// Case-insensitive class name matching
+			_, allowedClass = d.allowedClasses[phpv.ZString(strings.ToLower(className))]
 		}
 
 		class, err := ctx.Global().GetClass(ctx, phpv.ZString(className), true)
 		if err != nil || !allowedClass || class == nil {
 			class = phpobj.IncompleteClass
+		}
+
+		// Validate that class implementing Serializable uses C: format properly
+		if class != phpobj.IncompleteClass && !class.Implements(phpobj.Serializable) {
+			// If the class doesn't implement Serializable, C: format is invalid
+			ctx.Warn("Erroneous data format for unserializing '%s'", className)
+			return nil, offset, &unserializeError{i - 1, len(str)}
 		}
 
 		obj, err := phpobj.CreateZObject(ctx, class)
@@ -953,5 +993,36 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 	}
 
 	return nil, offset, readError
+}
+
+// unserializeSetProperty sets a property on an object during unserialization,
+// handling PHP's property name mangling for visibility.
+// Mangled names: "\0ClassName\0prop" for private, "\0*\0prop" for protected
+func unserializeSetProperty(ctx phpv.Context, obj phpv.ZObject, key phpv.ZString, value *phpv.ZVal) {
+	keyStr := string(key)
+
+	// Check if this is a mangled property name
+	if len(keyStr) > 0 && keyStr[0] == '\x00' {
+		// Find the second \x00
+		secondNull := strings.IndexByte(keyStr[1:], '\x00')
+		if secondNull >= 0 {
+			propName := keyStr[secondNull+2:]
+			// Try to set the demangled property name
+			// First check if the class has a declared property with this name
+			if _, found := obj.GetClass().GetProp(phpv.ZString(propName)); found {
+				obj.ObjectSet(ctx, phpv.ZString(propName), value)
+				return
+			}
+			// For __PHP_Incomplete_Class or classes without the property declared,
+			// store with the mangled name in the hash table directly
+			if zobj, ok := obj.(*phpobj.ZObject); ok {
+				zobj.HashTable().SetString(phpv.ZString(propName), value)
+				return
+			}
+		}
+	}
+
+	// Non-mangled name: set normally
+	obj.ObjectSet(ctx, key, value)
 }
 

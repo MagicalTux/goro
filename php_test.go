@@ -30,7 +30,12 @@ import (
 )
 
 // Currently focusing on lang tests, change variable to run other tests
-const TestsPath = "test"
+var TestsPath = func() string {
+	if v := os.Getenv("GORO_TEST_PATH"); v != "" {
+		return v
+	}
+	return "test"
+}()
 
 // maxTestOutputSize caps the output buffer per test to prevent OOM crashes
 // from infinite-output tests (e.g., recursive json_encode). 10 MB is generous
