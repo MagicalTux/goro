@@ -23,6 +23,14 @@ func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, o
 		extArgs = ef.Args
 	}
 
+	// Expand spread arguments (...$arr) into individual args before evaluation.
+	// This must happen before named arg reordering because spread of string-keyed
+	// arrays produces named args that need to be reordered.
+	args, err := expandSpreadArgs(ctx, args)
+	if err != nil {
+		return nil, err
+	}
+
 	// PHP 8.0 Named Arguments: reorder args to match parameter positions
 	if funcArgs != nil {
 		funcName := ""
@@ -34,12 +42,6 @@ func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, o
 		if namedErr != nil {
 			return nil, namedErr
 		}
-	}
-
-	// Expand spread arguments (...$arr) into individual args before evaluation
-	args, err := expandSpreadArgs(ctx, args)
-	if err != nil {
-		return nil, err
 	}
 
 	// Save call site location (arg evaluation may change global location)
@@ -683,20 +685,43 @@ func expandSpreadArgs(ctx phpv.Context, args []phpv.Runnable) ([]phpv.Runnable, 
 				// Force COW separation first so we don't modify shared data.
 				arr.SeparateCow()
 				it := arr.NewIterator()
+				seenStringKey := false
 				for it.Valid(ctx) {
+					k, _ := it.Key(ctx)
 					// Use CurrentRef to get the actual ZVal without duplication
 					v, _ := it.(interface {
 						CurrentRef(phpv.Context) (*phpv.ZVal, error)
 					}).CurrentRef(ctx)
 					if v != nil {
-						result = append(result, &spreadZVal{v: v, fromLiteral: false})
+						entry := phpv.Runnable(&spreadZVal{v: v, fromLiteral: false})
+						// String keys become named arguments
+						if k != nil && k.GetType() == phpv.ZtString {
+							entry = &spreadNamedArg{name: phpv.ZString(k.String()), inner: entry}
+							seenStringKey = true
+						} else if seenStringKey {
+							// Positional after named during unpacking
+							return nil, phpobj.ThrowError(ctx, phpobj.Error,
+								"Cannot use positional argument after named argument during unpacking")
+						}
+						result = append(result, entry)
 					}
 					it.Next(ctx)
 				}
 			} else {
 				// From a literal: dup the values
-				for _, v := range arr.Iterate(ctx) {
-					result = append(result, &spreadZVal{v: v.Dup(), fromLiteral: true})
+				seenStringKey := false
+				for k, v := range arr.Iterate(ctx) {
+					entry := phpv.Runnable(&spreadZVal{v: v.Dup(), fromLiteral: true})
+					// String keys become named arguments
+					if k != nil && k.GetType() == phpv.ZtString {
+						entry = &spreadNamedArg{name: phpv.ZString(k.String()), inner: entry}
+						seenStringKey = true
+					} else if seenStringKey {
+						// Positional after named during unpacking
+						return nil, phpobj.ThrowError(ctx, phpobj.Error,
+							"Cannot use positional argument after named argument during unpacking")
+					}
+					result = append(result, entry)
 				}
 			}
 			continue
@@ -771,6 +796,34 @@ func expandSpreadArgs(ctx phpv.Context, args []phpv.Runnable) ([]phpv.Runnable, 
 			fmt.Sprintf("Only arrays and Traversables can be unpacked, %s given", typeName))
 	}
 	return result, nil
+}
+
+// spreadNamedArg wraps a spread arg value with a string key name,
+// implementing phpv.NamedArgument so the function call machinery treats it
+// as a named parameter.
+type spreadNamedArg struct {
+	name  phpv.ZString
+	inner phpv.Runnable
+}
+
+func (s *spreadNamedArg) Run(ctx phpv.Context) (*phpv.ZVal, error) {
+	return s.inner.Run(ctx)
+}
+
+func (s *spreadNamedArg) ArgName() phpv.ZString {
+	return s.name
+}
+
+func (s *spreadNamedArg) Inner() phpv.Runnable {
+	return s.inner
+}
+
+func (s *spreadNamedArg) Dump(w io.Writer) error {
+	_, err := fmt.Fprintf(w, "%s: ", s.name)
+	if err != nil {
+		return err
+	}
+	return s.inner.Dump(w)
 }
 
 // spreadZVal is a Runnable wrapper for pre-evaluated spread argument values.

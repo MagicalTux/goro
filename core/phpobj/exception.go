@@ -91,7 +91,7 @@ func getExceptionStringParamMaxLen(ctx phpv.Context) int {
 }
 
 // exceptionEntryToString formats a single exception entry (without the previous chain).
-func exceptionEntryToString(o *ZObject, maxLen int) string {
+func exceptionEntryToString(ctx phpv.Context, o *ZObject, maxLen int) string {
 	var trace []*phpv.StackTraceEntry
 	if opaque := o.GetOpaque(Exception); opaque != nil {
 		trace, _ = opaque.([]*phpv.StackTraceEntry)
@@ -101,10 +101,16 @@ func exceptionEntryToString(o *ZObject, maxLen int) string {
 	file := o.HashTable().GetString("file")
 	line := o.HashTable().GetString("line")
 
-	// Get the message string - for objects, use .String() which may call __toString
+	// Get the message string - for objects, call __toString via context
 	var msg string
 	if messageVal != nil {
-		msg = messageVal.String()
+		if messageVal.GetType() == phpv.ZtObject && ctx != nil {
+			// Object message - call __toString to get string representation
+			strVal := messageVal.AsString(ctx)
+			msg = string(strVal)
+		} else {
+			msg = messageVal.String()
+		}
 	}
 
 	var buf bytes.Buffer
@@ -165,7 +171,7 @@ func exceptionToString(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.Z
 		if i < len(chain)-1 {
 			buf.WriteString("\n\nNext ")
 		}
-		buf.WriteString(exceptionEntryToString(chain[i], maxLen))
+		buf.WriteString(exceptionEntryToString(ctx, chain[i], maxLen))
 	}
 	return phpv.ZStr(buf.String()), nil
 }

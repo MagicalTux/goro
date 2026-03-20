@@ -352,6 +352,16 @@ func (d *deserializer) getRef(index int) *phpv.ZVal {
 	return d.refs[index-1]
 }
 
+// parseKey parses a value without registering it in the reference table (for array/object keys).
+func (d *deserializer) parseKey(ctx phpv.Context, str string, offset int) (result *phpv.ZVal, nextOffset int, err error) {
+	// Save ref count, parse, then restore (keys don't count as references)
+	savedLen := len(d.refs)
+	result, nextOffset, err = d.parse(ctx, str, offset)
+	// Remove any refs that were added during key parsing
+	d.refs = d.refs[:savedLen]
+	return
+}
+
 func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (result *phpv.ZVal, nextOffset int, err error) {
 	offset := 0
 	if len(offsetArg) > 0 {
@@ -525,11 +535,9 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 			if raw[k] == '\\' && k+2 < len(raw) {
 				hi := unhex(raw[k+1])
 				lo := unhex(raw[k+2])
-				if hi >= 0 && lo >= 0 {
-					buf.WriteByte(byte(hi<<4 | lo))
-					k += 2
-					continue
-				}
+				buf.WriteByte(hi<<4 | lo)
+				k += 2
+				continue
 			}
 			buf.WriteByte(raw[k])
 		}
@@ -609,7 +617,7 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 
 		for numItems > 0 {
 			var key, value *phpv.ZVal
-			key, i, err = d.parse(ctx, str, i)
+			key, i, err = d.parseKey(ctx, str, i)
 			if err != nil {
 				return nil, offset, readError
 			}
@@ -804,7 +812,7 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 			arr := phpv.NewZArray()
 			for numProps > 0 {
 				var key, value *phpv.ZVal
-				key, i, err = d.parse(ctx, str, i)
+				key, i, err = d.parseKey(ctx, str, i)
 				if err != nil {
 					return nil, offset, readError
 				}
@@ -823,7 +831,7 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 		} else {
 			for numProps > 0 {
 				var key, value *phpv.ZVal
-				key, i, err = d.parse(ctx, str, i)
+				key, i, err = d.parseKey(ctx, str, i)
 				if err != nil {
 					return nil, offset, readError
 				}
@@ -929,16 +937,3 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 	return nil, offset, readError
 }
 
-// unhex converts a hex character to its integer value, returning -1 for invalid chars.
-func unhex(c byte) int {
-	switch {
-	case c >= '0' && c <= '9':
-		return int(c - '0')
-	case c >= 'a' && c <= 'f':
-		return int(c-'a') + 10
-	case c >= 'A' && c <= 'F':
-		return int(c-'A') + 10
-	default:
-		return -1
-	}
-}

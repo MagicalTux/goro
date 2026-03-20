@@ -2216,12 +2216,17 @@ func fncArraySplice(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 // > func bool array_is_list ( array $array )
 func fncArrayIsList(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	var arr *phpv.ZArray
-	_, err := core.Expand(ctx, args, &arr)
-	if err != nil {
-		return nil, err
+	if len(args) < 1 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError,
+			"array_is_list() expects exactly 1 argument, 0 given")
+	}
+	if args[0].GetType() != phpv.ZtArray {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("array_is_list(): Argument #1 ($array) must be of type array, %s given",
+				phpv.ZValTypeNameDetailed(args[0])))
 	}
 
+	arr := args[0].AsArray(ctx)
 	expectedKey := phpv.ZInt(0)
 	it := arr.NewIterator()
 	for it.Valid(ctx) {
