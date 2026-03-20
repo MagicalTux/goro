@@ -205,7 +205,7 @@ func parseAttributeArgs(c compileCtx) (args []*phpv.ZVal, argExprs []phpv.Runnab
 			}
 
 			// Check for invalid operations in constant expressions (function calls, variables)
-			if containsRuntimeOps(expr) {
+			if containsRuntimeOps(expr) || containsAttrRuntimeOps(expr) {
 				return nil, nil, nil, &phpv.PhpError{
 					Err:  fmt.Errorf("Constant expression contains invalid operations"),
 					Code: phpv.E_COMPILE_ERROR,

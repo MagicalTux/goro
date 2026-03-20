@@ -1518,13 +1518,16 @@ func closureFromCallable(ctx phpv.Context, arg *phpv.ZVal) (*phpv.ZVal, error) {
 			callable = phpv.BindClass(member.Method, class, true)
 		}
 
-		// Use the declaring class for the closure's class and name
-		// (e.g., SplDoublyLinkedList::count, not SplStack::count)
-		// declaringClass was already set above for visibility checks
+		// Use the declaring class for the closure's name (e.g., SplDoublyLinkedList::count)
+		// but keep the called class for the scope (for late static binding)
+		displayClass := class
+		if member.Class != nil && member.Class != class {
+			displayClass = member.Class
+		}
 		w := &wrappedClosure{
 			inner:      callable,
-			name:       phpv.ZString(string(declaringClass.GetName()) + "::" + string(member.Name)),
-			class:      declaringClass,
+			name:       phpv.ZString(string(displayClass.GetName()) + "::" + string(member.Name)),
+			class:      class,
 			fromMethod: true,
 			isStaticW:  member.Modifiers.IsStatic(),
 		}

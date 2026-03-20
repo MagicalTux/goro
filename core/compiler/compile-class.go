@@ -63,8 +63,6 @@ func containsRuntimeOps(r phpv.Runnable) bool {
 		return containsRuntimeOps(v.a) || containsRuntimeOps(v.b)
 	case *runnableFunctionCallRef:
 		return true
-	case *runnableFunctionCall:
-		return true
 	case *runClassStaticObjRef:
 		return containsRuntimeOps(v.className)
 	case *runClassStaticVarRef:
