@@ -242,18 +242,8 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 			}
 		}
 		if err != nil {
-			// Handle uncaught exceptions via user exception handler before closing buffers
-			if ex, ok := err.(*phperr.PhpThrow); ok {
-				if handler := g.GetUserExceptionHandler(); handler != nil {
-					g.SetUserExceptionHandler(nil) // prevent re-entrancy
-					_, handlerErr := g.CallZVal(g, handler, []*phpv.ZVal{ex.Obj.ZVal()})
-					if handlerErr == nil {
-						err = nil
-					} else {
-						err = handlerErr
-					}
-				}
-			}
+			// Handle uncaught exceptions via user exception handler
+			err = g.HandleUncaughtException(err)
 		}
 		// Output fatal errors through the global output (which may be buffered)
 		// so output buffer callbacks can process them (PHP behavior).
