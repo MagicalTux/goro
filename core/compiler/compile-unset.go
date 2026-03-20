@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"fmt"
 	"io"
 
 	"github.com/MagicalTux/goro/core/phpv"
@@ -81,5 +82,20 @@ func compileUnset(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	var err error
 	un := &runnableUnset{l: i.Loc()}
 	un.args, err = compileFuncPassedArgs(c)
-	return un, err
+	if err != nil {
+		return nil, err
+	}
+	// Cannot use nullsafe operator in unset()
+	for _, arg := range un.args {
+		if containsNullSafe(arg) {
+			phpErr := &phpv.PhpError{
+				Err:  fmt.Errorf("Can't use nullsafe operator in write context"),
+				Code: phpv.E_COMPILE_ERROR,
+				Loc:  i.Loc(),
+			}
+			c.Global().LogError(phpErr)
+			return nil, phpv.ExitError(255)
+		}
+	}
+	return un, nil
 }

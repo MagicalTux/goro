@@ -1116,6 +1116,23 @@ func compileFunctionArgs(c compileCtx) (res []*phpv.FuncArg, err error) {
 				resolvedHint = string(c.resolveClassName(phpv.ZString(hint)))
 			}
 			arg.Hint = phpv.ParseTypeHint(phpv.ZString(resolvedHint))
+
+			// void and never cannot be used as parameter types
+			if arg.Hint.Type() == phpv.ZtVoid {
+				return nil, &phpv.PhpError{
+					Err:  fmt.Errorf("void cannot be used as a parameter type"),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  i.Loc(),
+				}
+			}
+			if arg.Hint.Type() == phpv.ZtNever {
+				return nil, &phpv.PhpError{
+					Err:  fmt.Errorf("never cannot be used as a parameter type"),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  i.Loc(),
+				}
+			}
+
 			if isNullable {
 				arg.Hint.Nullable = true
 			}
@@ -1883,6 +1900,23 @@ func parseReturnType(c compileCtx) (*phpv.TypeHint, error) {
 		resolvedHint = string(c.resolveClassName(phpv.ZString(hint)))
 	}
 	th := phpv.ParseTypeHint(phpv.ZString(resolvedHint))
+
+	// Check for self/parent outside of class scope (only for named functions, not closures)
+	if th.Type() == phpv.ZtObject {
+		cn := th.ClassName()
+		if cn == "self" || cn == "parent" {
+			fn := c.getFunc()
+			isNamedFunction := fn != nil && fn.name != ""
+			if isNamedFunction && c.Global().GetCompilingClass() == nil {
+				return nil, &phpv.PhpError{
+					Err:  fmt.Errorf("Cannot use \"%s\" when no class scope is active", cn),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  i.Loc(),
+				}
+			}
+		}
+	}
+
 	if isNullable {
 		th.Nullable = true
 	}

@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
@@ -386,6 +387,28 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		}
 		return &runVoidCast{expr: t_v}, nil
 	case tokenizer.T_BOOL_CAST, tokenizer.T_INT_CAST, tokenizer.T_ARRAY_CAST, tokenizer.T_DOUBLE_CAST, tokenizer.T_OBJECT_CAST, tokenizer.T_STRING_CAST:
+		// Check for non-canonical casts and emit deprecation/error
+		if i.Data != "" {
+			switch i.Data {
+			case "real":
+				// (real) cast has been removed in PHP 8.0
+				phpErr := &phpv.PhpError{
+					Err:  fmt.Errorf("The (real) cast has been removed, use (float) instead"),
+					Code: phpv.E_PARSE,
+					Loc:  l,
+				}
+				c.Global().LogError(phpErr)
+				return nil, phpv.ExitError(255)
+			case "boolean":
+				c.Deprecated("Non-canonical cast (boolean) is deprecated, use the (bool) cast instead", logopt.NoFuncName(true))
+			case "integer":
+				c.Deprecated("Non-canonical cast (integer) is deprecated, use the (int) cast instead", logopt.NoFuncName(true))
+			case "double":
+				c.Deprecated("Non-canonical cast (double) is deprecated, use the (float) cast instead", logopt.NoFuncName(true))
+			case "binary":
+				c.Deprecated("Non-canonical cast (binary) is deprecated, use the (string) cast instead", logopt.NoFuncName(true))
+			}
+		}
 		// perform a cast operation on the following (note: v is null)
 		// make this an operator for appropriate operator precedence
 		t_v, err := compileOpExpr(nil, c)
@@ -448,6 +471,17 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			phpErr := &phpv.PhpError{
 				Err:  fmt.Errorf("syntax error, unexpected token \"::\""),
 				Code: phpv.E_PARSE,
+				Loc:  l,
+			}
+			c.Global().LogError(phpErr)
+			return nil, phpv.ExitError(255)
+		}
+
+		// Cannot take reference of a nullsafe chain
+		if containsNullSafe(v) {
+			phpErr := &phpv.PhpError{
+				Err:  fmt.Errorf("Cannot take reference of a nullsafe chain"),
+				Code: phpv.E_COMPILE_ERROR,
 				Loc:  l,
 			}
 			c.Global().LogError(phpErr)
@@ -529,7 +563,11 @@ func compilePostExpr(v phpv.Runnable, i *tokenizer.Item, c compileCtx) (phpv.Run
 	case tokenizer.T_NULLSAFE_OBJECT_OPERATOR:
 		return compileObjectOperator(v, i, c, true)
 	case tokenizer.T_PAAMAYIM_NEKUDOTAYIM:
-		return compilePaamayimNekudotayim(v, i, c)
+		result, err := compilePaamayimNekudotayim(v, i, c)
+		if err != nil {
+			return nil, err
+		}
+		return wrapNullSafeChain(v, result), nil
 	case tokenizer.T_INSTANCEOF:
 		return compileInstanceOf(v, i, c)
 	default:

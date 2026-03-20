@@ -46,7 +46,16 @@ func fncIsCallable(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	if callableName.HasArg() {
-		callableName.Set(ctx, phpv.ZString(phpv.CallableDisplayName(callable)).ZVal())
+		displayName := phpv.CallableDisplayName(callable)
+		// For array callables like [$obj, "method"], use the syntax-derived name
+		// when the callable display name is incomplete (e.g., NativeMethod has empty name)
+		if value.GetType() == phpv.ZtArray && strings.HasSuffix(displayName, "::") {
+			_, syntaxName := isCallableSyntax(ctx, value)
+			if syntaxName != "" {
+				displayName = syntaxName
+			}
+		}
+		callableName.Set(ctx, phpv.ZString(displayName).ZVal())
 	}
 	return phpv.ZTrue.ZVal(), nil
 }

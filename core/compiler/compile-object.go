@@ -10,6 +10,83 @@ import (
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
 
+// nullSafeChainProducer is implemented by compiled nodes that may produce null
+// via the ?-> short-circuit mechanism. When such a node is the ref of a
+// subsequent chain operation (->foo(), ->bar, [idx], ::method()), the outer
+// operation must also propagate null to implement PHP's nullsafe chain semantics.
+type nullSafeChainProducer interface {
+	isNullSafeChain() bool
+}
+
+// isNullSafeChainRef returns true if the given Runnable may produce null as part
+// of a nullsafe (?->) chain, meaning subsequent chained operations should also
+// propagate null.
+func isNullSafeChainRef(r phpv.Runnable) bool {
+	if nsc, ok := r.(nullSafeChainProducer); ok {
+		return nsc.isNullSafeChain()
+	}
+	return false
+}
+
+// containsNullSafe checks if an expression contains a nullsafe operator (?->)
+// anywhere in its chain. This is used at compile time to detect invalid usage
+// of nullsafe in write contexts (assignment, unset, by-ref, etc.).
+func containsNullSafe(r phpv.Runnable) bool {
+	switch v := r.(type) {
+	case *runObjectVar:
+		return v.nullsafe || v.nullChain || containsNullSafe(v.ref)
+	case *runObjectFunc:
+		return v.nullsafe || v.nullChain || containsNullSafe(v.ref)
+	case *runObjectDynVar:
+		return v.nullsafe || v.nullChain || containsNullSafe(v.ref)
+	case *runObjectDynFunc:
+		return v.nullsafe || v.nullChain || containsNullSafe(v.ref)
+	case *runArrayAccess:
+		return v.nullChain || containsNullSafe(v.value)
+	case *runNullChainWrap:
+		return true
+	default:
+		return false
+	}
+}
+
+// wrapNullSafeChain wraps a Runnable in a runNullChainWrap if the ref is a
+// nullsafe chain producer. This is used for operations like ::method(), ::$prop
+// that follow a nullsafe chain — if the ref resolves to null, the wrapper
+// catches it and returns null.
+func wrapNullSafeChain(ref phpv.Runnable, result phpv.Runnable) phpv.Runnable {
+	if isNullSafeChainRef(ref) {
+		return &runNullChainWrap{inner: result, ref: ref}
+	}
+	return result
+}
+
+// runNullChainWrap wraps a Runnable expression that follows a nullsafe chain.
+// Before evaluating the inner expression, it evaluates the ref and if it's null,
+// short-circuits the entire expression to null.
+type runNullChainWrap struct {
+	inner phpv.Runnable
+	ref   phpv.Runnable // the nullsafe chain producer (for null check)
+}
+
+func (r *runNullChainWrap) isNullSafeChain() bool { return true }
+
+func (r *runNullChainWrap) Run(ctx phpv.Context) (*phpv.ZVal, error) {
+	// Check if the ref evaluates to null (nullsafe chain short-circuit)
+	v, err := r.ref.Run(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if v.GetType() == phpv.ZtNull {
+		return phpv.ZNULL.ZVal(), nil
+	}
+	return r.inner.Run(ctx)
+}
+
+func (r *runNullChainWrap) Dump(w io.Writer) error {
+	return r.inner.Dump(w)
+}
+
 type runNewObject struct {
 	obj    phpv.ZString
 	cl     phpv.Runnable // for anonymous
@@ -346,8 +423,11 @@ type runObjectFunc struct {
 	l          *phpv.Loc
 	static     bool
 	nullsafe   bool
+	nullChain  bool // propagate null from inner nullsafe chain
 	isThisRef  bool // true when the receiver is $this (affects __call vs __callStatic dispatch)
 }
+
+func (r *runObjectFunc) isNullSafeChain() bool { return r.nullsafe || r.nullChain }
 
 func (*runObjectFunc) IsFuncCallExpression() {}
 
@@ -365,11 +445,14 @@ type runObjectVar struct {
 	l            *phpv.Loc
 	writeContext bool // set when reading as part of a write chain (suppress undefined property warnings)
 	nullsafe     bool
+	nullChain    bool // propagate null from inner nullsafe chain
 
 	// PrepareWrite caching
 	prepared   bool
 	cachedProp *phpv.ZVal
 }
+
+func (r *runObjectVar) isNullSafeChain() bool { return r.nullsafe || r.nullChain }
 
 func (r *runObjectFunc) Dump(w io.Writer) error {
 	err := r.ref.Dump(w)
@@ -427,7 +510,7 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	if r.nullsafe && obj.GetType() == phpv.ZtNull {
+	if (r.nullsafe || r.nullChain) && obj.GetType() == phpv.ZtNull {
 		return phpv.ZNULL.ZVal(), nil
 	}
 
@@ -604,11 +687,17 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 				a := phpv.NewZArray()
 				callArgs := []*phpv.ZVal{op.ZVal(), a.ZVal()}
 				for _, sub := range r.args {
-					val, err := sub.Run(ctx)
+					var key *phpv.ZVal
+					inner := sub
+					if na, ok := sub.(phpv.NamedArgument); ok {
+						key = na.ArgName().ZVal()
+						inner = na.Inner()
+					}
+					val, err := inner.Run(ctx)
 					if err != nil {
 						return nil, err
 					}
-					a.OffsetSet(ctx, nil, val)
+					a.OffsetSet(ctx, key, val)
 				}
 				return ctx.CallZVal(ctx, phpv.BindClass(callStaticMethod.Method, callClass, true), callArgs, objI)
 			}
@@ -625,19 +714,20 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 				callObj = ctx.This()
 			}
 			if callMethod, hasCall := callClass.GetMethod("__call"); hasCall {
-				// Evaluate arguments
-				var zArgs []*phpv.ZVal
+				// Evaluate arguments, preserving named arg keys
+				a := phpv.NewZArray()
 				for _, arg := range r.args {
-					val, err := arg.Run(ctx)
+					var key *phpv.ZVal
+					inner := arg
+					if na, ok := arg.(phpv.NamedArgument); ok {
+						key = na.ArgName().ZVal()
+						inner = na.Inner()
+					}
+					val, err := inner.Run(ctx)
 					if err != nil {
 						return nil, err
 					}
-					zArgs = append(zArgs, val)
-				}
-				// Build args array (each arg must be a copy, not a reference)
-				a := phpv.NewZArray()
-				for _, sub := range zArgs {
-					a.OffsetSet(ctx, nil, sub.Dup())
+					a.OffsetSet(ctx, key, val.Dup())
 				}
 				callArgs := []*phpv.ZVal{op.ZVal(), a.ZVal()}
 				// Wrap in BoundedCallable so stack trace shows class and -> type
@@ -655,11 +745,17 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 				a := phpv.NewZArray()
 				callArgs := []*phpv.ZVal{op.ZVal(), a.ZVal()}
 				for _, sub := range r.args {
-					val, err := sub.Run(ctx)
+					var key *phpv.ZVal
+					inner := sub
+					if na, ok := sub.(phpv.NamedArgument); ok {
+						key = na.ArgName().ZVal()
+						inner = na.Inner()
+					}
+					val, err := inner.Run(ctx)
 					if err != nil {
 						return nil, err
 					}
-					a.OffsetSet(ctx, nil, val)
+					a.OffsetSet(ctx, key, val)
 				}
 				// Wrap in MethodCallable so stack trace shows class and :: type
 				return ctx.CallZVal(ctx, phpv.BindClass(callStaticMethod.Method, callClass, true), callArgs, objI)
@@ -795,6 +891,13 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		return ctx.Call(ctx, m, r.args, nil)
 	}
 
+	// For Closure::__invoke() calls (e.g. $closure->__invoke($arg) or $closure->__INVOKE($arg)),
+	// delegate to the HandleInvoke handler so that by-ref parameters work correctly.
+	// The NativeMethod wrapper for __invoke doesn't carry parameter info.
+	if method.Name.ToLower() == "__invoke" && class.Handlers() != nil && class.Handlers().HandleInvoke != nil {
+		return class.Handlers().HandleInvoke(ctx, objI, r.args)
+	}
+
 	return ctx.Call(ctx, method.Method, r.args, objI)
 }
 
@@ -805,7 +908,7 @@ func (r *runObjectVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	if r.nullsafe && obj.GetType() == phpv.ZtNull {
+	if (r.nullsafe || r.nullChain) && obj.GetType() == phpv.ZtNull {
 		return phpv.ZNULL.ZVal(), nil
 	}
 
@@ -888,6 +991,32 @@ func (r *runObjectVar) PrepareWrite(ctx phpv.Context) error {
 
 func (r *runObjectVar) IsCompoundWritable() {}
 
+// CheckReadonlyRef checks if creating a reference to this object property would
+// violate readonly constraints (e.g., enum name/value properties).
+func (r *runObjectVar) CheckReadonlyRef(ctx phpv.Context) error {
+	obj, err := r.ref.Run(ctx)
+	if err != nil {
+		return nil // don't block on evaluation errors
+	}
+	if obj.GetType() != phpv.ZtObject {
+		return nil
+	}
+	zobj, ok := obj.Value().(*phpobj.ZObject)
+	if !ok {
+		return nil
+	}
+	propName := r.varName
+	if len(propName) > 0 && propName[0] == '$' {
+		// Dynamic property name - skip check
+		return nil
+	}
+	if zobj.IsReadonlyProperty(propName) && zobj.IsReadonlyPropertyInitialized(propName) {
+		return phpobj.ThrowError(ctx, phpobj.Error,
+			fmt.Sprintf("Cannot indirectly modify readonly property %s::$%s", zobj.GetClass().GetName(), propName))
+	}
+	return nil
+}
+
 func (r *runObjectVar) SetWriteContext(v bool) {
 	r.writeContext = v
 }
@@ -937,15 +1066,18 @@ func (r *runObjectVar) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 
 // runObjectDynVar handles $obj->{expr} dynamic property access
 type runObjectDynVar struct {
-	ref      phpv.Runnable
-	nameExpr phpv.Runnable
-	l        *phpv.Loc
-	nullsafe bool
+	ref       phpv.Runnable
+	nameExpr  phpv.Runnable
+	l         *phpv.Loc
+	nullsafe  bool
+	nullChain bool // propagate null from inner nullsafe chain
 
 	// PrepareWrite caching
 	prepared   bool
 	cachedName *phpv.ZVal
 }
+
+func (r *runObjectDynVar) isNullSafeChain() bool { return r.nullsafe || r.nullChain }
 
 func (r *runObjectDynVar) Dump(w io.Writer) error {
 	err := r.ref.Dump(w)
@@ -969,7 +1101,7 @@ func (r *runObjectDynVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	if err != nil {
 		return nil, err
 	}
-	if r.nullsafe && obj.GetType() == phpv.ZtNull {
+	if (r.nullsafe || r.nullChain) && obj.GetType() == phpv.ZtNull {
 		return phpv.ZNULL.ZVal(), nil
 	}
 	objI, ok := obj.Value().(phpv.ZObjectAccess)
@@ -1030,13 +1162,16 @@ func (r *runObjectDynVar) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 
 // runObjectDynFunc handles $obj->{expr}() dynamic method call
 type runObjectDynFunc struct {
-	ref      phpv.Runnable
-	nameExpr phpv.Runnable
-	args     []phpv.Runnable
-	l        *phpv.Loc
-	nullsafe bool
-	static   bool
+	ref       phpv.Runnable
+	nameExpr  phpv.Runnable
+	args      []phpv.Runnable
+	l         *phpv.Loc
+	nullsafe  bool
+	nullChain bool // propagate null from inner nullsafe chain
+	static    bool
 }
+
+func (r *runObjectDynFunc) isNullSafeChain() bool { return r.nullsafe || r.nullChain }
 
 func (r *runObjectDynFunc) Dump(w io.Writer) error {
 	err := r.ref.Dump(w)
@@ -1060,7 +1195,7 @@ func (r *runObjectDynFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	if err != nil {
 		return nil, err
 	}
-	if r.nullsafe && obj.GetType() == phpv.ZtNull {
+	if (r.nullsafe || r.nullChain) && obj.GetType() == phpv.ZtNull {
 		return phpv.ZNULL.ZVal(), nil
 	}
 	name, err := r.nameExpr.Run(ctx)
@@ -1343,6 +1478,11 @@ func compileObjectOperator(v phpv.Runnable, i *tokenizer.Item, c compileCtx, nul
 	// call a method or get a variable on an object
 	l := i.Loc()
 
+	// Determine if this operation is part of a nullsafe chain.
+	// If not explicitly nullsafe but the ref is a nullsafe chain producer,
+	// propagate the null-chain flag so the entire chain short-circuits.
+	chainProp := !nullsafe && isNullSafeChainRef(v)
+
 	i, err := c.NextItem()
 	if err != nil {
 		return nil, err
@@ -1370,11 +1510,11 @@ func compileObjectOperator(v phpv.Runnable, i *tokenizer.Item, c compileCtx, nul
 			}
 			c.backup()
 			if i.IsSingle('(') {
-				dynFunc := &runObjectDynFunc{ref: v, nameExpr: varRef, l: l, nullsafe: nullsafe}
+				dynFunc := &runObjectDynFunc{ref: v, nameExpr: varRef, l: l, nullsafe: nullsafe, nullChain: chainProp}
 				dynFunc.args, err = compileFuncPassedArgs(c)
 				return dynFunc, err
 			}
-			return &runObjectDynVar{ref: v, nameExpr: varRef, l: l, nullsafe: nullsafe}, nil
+			return &runObjectDynVar{ref: v, nameExpr: varRef, l: l, nullsafe: nullsafe, nullChain: chainProp}, nil
 		}
 		// $obj->$var — indirect property, variable contains property name
 		c.backup()
@@ -1388,11 +1528,11 @@ func compileObjectOperator(v phpv.Runnable, i *tokenizer.Item, c compileCtx, nul
 		}
 		c.backup()
 		if i.IsSingle('(') {
-			dynFunc := &runObjectDynFunc{ref: v, nameExpr: expr, l: l, nullsafe: nullsafe}
+			dynFunc := &runObjectDynFunc{ref: v, nameExpr: expr, l: l, nullsafe: nullsafe, nullChain: chainProp}
 			dynFunc.args, err = compileFuncPassedArgs(c)
 			return dynFunc, err
 		}
-		return &runObjectDynVar{ref: v, nameExpr: expr, l: l, nullsafe: nullsafe}, nil
+		return &runObjectDynVar{ref: v, nameExpr: expr, l: l, nullsafe: nullsafe, nullChain: chainProp}, nil
 	case tokenizer.Rune('{'):
 		// Dynamic property/method: $obj->{expr}
 		expr, err := compileExpr(nil, c)
@@ -1414,12 +1554,12 @@ func compileObjectOperator(v phpv.Runnable, i *tokenizer.Item, c compileCtx, nul
 		c.backup()
 		if i.IsSingle('(') {
 			// Dynamic method call: $obj->{expr}()
-			dynFunc := &runObjectDynFunc{ref: v, nameExpr: expr, l: l, nullsafe: nullsafe}
+			dynFunc := &runObjectDynFunc{ref: v, nameExpr: expr, l: l, nullsafe: nullsafe, nullChain: chainProp}
 			dynFunc.args, err = compileFuncPassedArgs(c)
 			return dynFunc, err
 		}
 		// Dynamic property access: $obj->{expr}
-		return &runObjectDynVar{ref: v, nameExpr: expr, l: l, nullsafe: nullsafe}, nil
+		return &runObjectDynVar{ref: v, nameExpr: expr, l: l, nullsafe: nullsafe, nullChain: chainProp}, nil
 	case tokenizer.T_VARIABLE:
 		// dynamic member access (handled below)
 	default:
@@ -1445,10 +1585,10 @@ func compileObjectOperator(v phpv.Runnable, i *tokenizer.Item, c compileCtx, nul
 		if IsFirstClassCallable(args) {
 			return &runFirstClassMethodCallable{ref: v, method: op, static: false, nullsafe: nullsafe, l: l}, nil
 		}
-		return &runObjectFunc{ref: v, op: op, args: args, l: l, nullsafe: nullsafe}, nil
+		return &runObjectFunc{ref: v, op: op, args: args, l: l, nullsafe: nullsafe, nullChain: chainProp}, nil
 	}
 
-	return &runObjectVar{ref: v, varName: op, l: l, nullsafe: nullsafe}, nil
+	return &runObjectVar{ref: v, varName: op, l: l, nullsafe: nullsafe, nullChain: chainProp}, nil
 }
 
 // runFirstClassMethodCallable implements ClassName::method(...) and $obj->method(...)

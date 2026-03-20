@@ -258,6 +258,13 @@ func init() {
 				return ctx.CallZVal(ctx, bound, callArgs)
 			}),
 		},
+		"getcurrent": {
+			Name:      "getCurrent",
+			Modifiers: phpv.ZAttrPublic | phpv.ZAttrStatic,
+			Method: phpobj.NativeStaticMethod(func(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				return closureGetCurrent(ctx)
+			}),
+		},
 		"__debuginfo": {
 			Name:      "__debugInfo",
 			Modifiers: phpv.ZAttrPublic,
@@ -821,7 +828,14 @@ func (z *ZClosure) callBody(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 			if a.Hint != nil && argVal.GetType() != phpv.ZtNull && len(a.Hint.Union) == 0 && len(a.Hint.Intersection) == 0 {
 				hintType := a.Hint.Type()
 				if hintType != phpv.ZtMixed && hintType != phpv.ZtObject && argVal.GetType() != hintType {
-					if coerced, err2 := argVal.As(ctx, hintType); err2 == nil && coerced != nil {
+					// Emit implicit conversion deprecation for float->int
+					if hintType == phpv.ZtInt && argVal.GetType() == phpv.ZtFloat {
+						v, err2 := phpv.FloatToIntImplicit(ctx, argVal.Value().(phpv.ZFloat))
+						if err2 != nil {
+							return nil, err2
+						}
+						argVal = v.ZVal()
+					} else if coerced, err2 := argVal.As(ctx, hintType); err2 == nil && coerced != nil {
 						argVal = coerced.ZVal()
 					}
 				}
@@ -841,18 +855,30 @@ func (z *ZClosure) callBody(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 		if z.rref && r != nil {
 			r = r.Ref()
 		}
-		// Validate return type (skip for generator bodies - the return type applies
+		// Validate and coerce return type (skip for generator bodies - the return type applies
 		// to the Generator object, not the internal return value)
 		if z.returnType != nil && !z.isGenerator {
 			if err := z.checkReturnType(ctx, r); err != nil {
 				return nil, err
 			}
+			// Coerce return value to declared type (PHP non-strict mode)
+			r = z.coerceReturnValue(ctx, r)
 		}
 		return r, nil
 	}
 	// No explicit return statement - return NULL
 	// For void return type, returning without a value is fine
+	// For never return type, falling through is an error
 	if z.returnType != nil && z.returnType.Type() != phpv.ZtVoid && !z.isGenerator {
+		if z.returnType.Type() == phpv.ZtNever {
+			funcName := ctx.GetFuncName()
+			label := "function"
+			if z.class != nil {
+				label = "method"
+			}
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+				fmt.Sprintf("%s(): never-returning %s must not implicitly return", funcName, label))
+		}
 		if err := z.checkReturnTypeNone(ctx); err != nil {
 			return nil, err
 		}
@@ -910,6 +936,46 @@ func (z *ZClosure) checkReturnType(ctx phpv.Context, retVal *phpv.ZVal) error {
 			fmt.Sprintf("%s(): Return value must be of type %s, %s returned", funcName, rt.String(), phpv.ZValTypeName(retVal)))
 	}
 	return nil
+}
+
+// coerceReturnValue coerces the return value to the declared return type in non-strict mode.
+func (z *ZClosure) coerceReturnValue(ctx phpv.Context, r *phpv.ZVal) *phpv.ZVal {
+	if z.returnType == nil || r == nil {
+		return r
+	}
+	rt := z.returnType
+	// Don't coerce for void, never, mixed, or nullable types returning null
+	if rt.Type() == phpv.ZtVoid || rt.Type() == phpv.ZtNever || rt.Type() == phpv.ZtMixed {
+		return r
+	}
+	// Don't coerce union/intersection types
+	if len(rt.Union) > 0 || len(rt.Intersection) > 0 {
+		return r
+	}
+	// Don't coerce object types
+	if rt.Type() == phpv.ZtObject {
+		return r
+	}
+	// If the return value already matches, no coercion needed
+	if r.GetType() == rt.Type() {
+		return r
+	}
+	// Null handling
+	if r.IsNull() {
+		return r
+	}
+	// Coerce scalar types (with implicit conversion warnings)
+	hintType := rt.Type()
+	if hintType == phpv.ZtInt && r.GetType() == phpv.ZtFloat {
+		v, _ := phpv.FloatToIntImplicit(ctx, r.Value().(phpv.ZFloat))
+		return v.ZVal()
+	}
+	if hintType == phpv.ZtInt || hintType == phpv.ZtFloat || hintType == phpv.ZtString || hintType == phpv.ZtBool {
+		if coerced, err := r.As(ctx, hintType); err == nil && coerced != nil {
+			return coerced
+		}
+	}
+	return r
 }
 
 func (z *ZClosure) dup() *ZClosure {
@@ -1510,6 +1576,52 @@ func (m *magicCallStaticClosure) Call(ctx phpv.Context, args []*phpv.ZVal) (*php
 		argsArr.OffsetSet(ctx, nil, a)
 	}
 	return ctx.CallZVal(ctx, m.callMethod, []*phpv.ZVal{m.methodName.ZVal(), argsArr.ZVal()})
+}
+
+// closureGetCurrent implements Closure::getCurrent().
+// Returns the Closure object for the currently executing anonymous closure.
+// Throws an Error if called outside of a closure context.
+func closureGetCurrent(ctx phpv.Context) (*phpv.ZVal, error) {
+	// Walk up the call stack looking for a closure context.
+	// The current context is the getCurrent() call itself,
+	// so we need to go to the parent to find the caller.
+	cur := ctx.Parent(1)
+	for cur != nil {
+		fc := cur.Func()
+		if fc == nil {
+			break
+		}
+		// Check if the FuncContext has a Callable method
+		if callableGetter, ok := fc.(interface{ Callable() phpv.Callable }); ok {
+			callable := callableGetter.Callable()
+			if callable == nil {
+				break
+			}
+			// Check if it's a ZClosure (anonymous function)
+			switch c := callable.(type) {
+			case *ZClosure:
+				if c.name == "" {
+					// Anonymous closure - return its Closure object
+					return c.Spawn(ctx)
+				}
+				// Named function wrapped as closure via foo(...) - not a closure
+				return nil, phpobj.ThrowError(ctx, phpobj.Error, "Current function is not a closure")
+			case *generatorClosure:
+				if c.ZClosure.name == "" {
+					return c.ZClosure.Spawn(ctx)
+				}
+				return nil, phpobj.ThrowError(ctx, phpobj.Error, "Current function is not a closure")
+			case *wrappedClosure:
+				// Wrapped function from fromCallable - not a closure
+				return nil, phpobj.ThrowError(ctx, phpobj.Error, "Current function is not a closure")
+			}
+			// Some other callable (named function, etc.)
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, "Current function is not a closure")
+		}
+		// Try to go up another level
+		cur = cur.Parent(1)
+	}
+	return nil, phpobj.ThrowError(ctx, phpobj.Error, "Current function is not a closure")
 }
 
 func closureDebugInfo(ctx phpv.Context, o *phpobj.ZObject) (*phpv.ZVal, error) {

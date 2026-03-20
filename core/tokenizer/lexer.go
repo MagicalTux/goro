@@ -152,6 +152,19 @@ func (l *Lexer) emit(t ItemType) {
 	l.output.Reset()
 }
 
+func (l *Lexer) emitWithData(t ItemType, data string) {
+	item := &Item{t, data, l.fn, l.sLine, l.sChar}
+	select {
+	case l.items <- item:
+	case <-l.done:
+		return
+	}
+	l.prevItem = item
+	l.start = l.pos
+	l.sLine, l.sChar = l.cLine, l.cChar
+	l.output.Reset()
+}
+
 func (l *Lexer) isDone() bool {
 	select {
 	case <-l.done:

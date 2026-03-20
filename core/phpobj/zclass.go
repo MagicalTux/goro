@@ -28,6 +28,7 @@ type ZClass struct {
 	Props           []*phpv.ZClassProp
 	TraitUses       []phpv.ZClassTraitUse
 	Methods         map[phpv.ZString]*phpv.ZClassMethod
+	MethodOrder     []phpv.ZString // declaration order for deterministic iteration
 	StaticProps     *phpv.ZHashTable
 	Attributes      []*phpv.ZAttribute // PHP 8.0 attributes
 
@@ -1107,7 +1108,8 @@ func (c *ZClass) checkMethodCompatibility(ctx phpv.Context, child *phpv.ZClassMe
 		if parentRT != nil && childRT != nil {
 			// Both have return types — child's return type must be a subtype of parent's
 			// (covariance: child must be narrower or equal)
-			if !typeHintIsWidening(ctx, parentRT, childRT) {
+			// Special case: 'never' is the bottom type, always a valid covariant return type
+			if childRT.Type() != phpv.ZtNever && !typeHintIsWidening(ctx, parentRT, childRT) {
 				incompatible = true
 			}
 		} else if parentRT != nil && childRT == nil {
@@ -1837,6 +1839,44 @@ func (c *ZClass) GetMethod(name phpv.ZString) (*phpv.ZClassMethod, bool) {
 
 func (c *ZClass) GetMethods() map[phpv.ZString]*phpv.ZClassMethod {
 	return c.Methods
+}
+
+// GetMethodsOrdered returns methods in PHP declaration order:
+// the class's own methods first (in MethodOrder), then inherited methods
+// from parent, grandparent, etc.
+func (c *ZClass) GetMethodsOrdered() []*phpv.ZClassMethod {
+	var result []*phpv.ZClassMethod
+	seen := make(map[phpv.ZString]bool)
+
+	// Walk from this class up to ancestors
+	for cur := c; cur != nil; cur = cur.Extends {
+		// Use MethodOrder if available (compilation order)
+		if len(cur.MethodOrder) > 0 {
+			for _, name := range cur.MethodOrder {
+				if seen[name] {
+					continue
+				}
+				if m, ok := cur.Methods[name]; ok {
+					// Only include if this class actually declares this method
+					if m.Class == nil || m.Class.GetName() == cur.GetName() {
+						seen[name] = true
+						result = append(result, m)
+					}
+				}
+			}
+		}
+		// Also check methods not in MethodOrder (e.g., builtin methods, trait methods)
+		for name, m := range cur.Methods {
+			if seen[name] {
+				continue
+			}
+			if m.Class == nil || m.Class.GetName() == cur.GetName() {
+				seen[name] = true
+				result = append(result, m)
+			}
+		}
+	}
+	return result
 }
 
 func (c *ZClass) GetType() phpv.ZClassType {

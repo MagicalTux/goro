@@ -235,6 +235,7 @@ type runArrayAccess struct {
 	offset       phpv.Runnable
 	l            *phpv.Loc
 	writeContext bool // set when reading as part of a write chain (suppress undefined key warnings)
+	nullChain    bool // propagate null from inner nullsafe chain
 
 	// Set by Run() to indicate the container was an ArrayAccess object.
 	// Used by runOperator to emit "Indirect modification" notices for compound ops.
@@ -250,6 +251,8 @@ type runArrayAccess struct {
 	compoundCache    bool      // set by runOperator to enable caching
 	cachedContainer  *phpv.ZVal // cached result of ac.value.Run(ctx) from Run()
 }
+
+func (r *runArrayAccess) isNullSafeChain() bool { return r.nullChain }
 
 func (r *runArrayAccess) Dump(w io.Writer) error {
 	err := r.value.Dump(w)
@@ -308,6 +311,11 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	v, err := ac.value.Run(ctx)
 	if err != nil {
 		return nil, err
+	}
+
+	// Nullsafe chain propagation: if the value is null and we're in a chain, return null
+	if ac.nullChain && v.GetType() == phpv.ZtNull {
+		return phpv.ZNULL.ZVal(), nil
 	}
 
 	// Cache container for compound assignment write-back (avoids re-evaluating the chain)
@@ -448,8 +456,9 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	// PHP 8.1: Deprecation warning for null array offsets (read)
-	if offset.GetType() == phpv.ZtNull {
+	// PHP 8.1: Deprecation warning for null array offsets (read).
+	// Only applies to string and array containers, not objects (ArrayAccess).
+	if offset.GetType() == phpv.ZtNull && (v.GetType() == phpv.ZtString || v.GetType() == phpv.ZtArray) {
 		if err := ctx.Deprecated("Using null as an array offset is deprecated, use an empty string instead", logopt.NoFuncName(true)); err != nil {
 			return nil, err
 		}
@@ -924,6 +933,9 @@ func compileArrayAccess(v phpv.Runnable, c compileCtx) (phpv.Runnable, error) {
 
 	l := i.Loc()
 
+	// Check if the value being indexed is part of a nullsafe chain
+	chainProp := isNullSafeChainRef(v)
+
 	i, err = c.NextItem()
 	if err != nil {
 		return nil, err
@@ -932,7 +944,7 @@ func compileArrayAccess(v phpv.Runnable, c compileCtx) (phpv.Runnable, error) {
 		// $arr[] — empty offset. Only valid in write context.
 		// We compile it and defer the read-context check to runtime
 		// since write context is determined by the parent expression.
-		v = &runArrayAccess{value: v, offset: nil, l: l}
+		v = &runArrayAccess{value: v, offset: nil, l: l, nullChain: chainProp}
 		return v, nil
 	}
 	c.backup()
@@ -952,7 +964,7 @@ func compileArrayAccess(v phpv.Runnable, c compileCtx) (phpv.Runnable, error) {
 		return nil, i.Unexpected()
 	}
 
-	v = &runArrayAccess{value: v, offset: offt, l: l}
+	v = &runArrayAccess{value: v, offset: offt, l: l, nullChain: chainProp}
 
 	return v, nil
 }

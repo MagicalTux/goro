@@ -98,12 +98,30 @@ func (r *runVariable) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			// in Call() which has access to parameter metadata (ref vs value).
 			// Suppress warnings here for all function calls.
 			write = true
-		case *runnableFunctionCallRef, *runObjectFunc, *runNewObject:
-			// functions that take references can be considered as "write",
-			// but the param info is not available here, just assume
-			// write is true, and let the functions themselves
-			// check for undefined variables.
-			write = true
+		case *runnableFunctionCallRef:
+			// For dynamic function calls ($foo()), don't suppress warnings
+			// when this variable is the function name itself. PHP triggers
+			// "Undefined variable" before trying to call it.
+			// Only suppress for arguments (handled in Call()).
+			if t.name != r {
+				write = true
+			}
+		case *runNewObject:
+			// For new $foo(), don't suppress the "Undefined variable" warning.
+			// PHP triggers it before trying to instantiate, so the error handler
+			// can convert it to an exception and the catch block catches it.
+			// Only suppress for constructor arguments (handled in Call()).
+			if t.cl != r {
+				write = true
+			}
+		case *runObjectFunc:
+			// For method calls ($obj->method()), don't suppress warnings
+			// when this variable is the receiver (ref). PHP triggers "Undefined
+			// variable" before evaluating the method call.
+			// Only suppress for arguments (where ref info isn't available here).
+			if t.ref != r {
+				write = true
+			}
 		case *runRef:
 			// &$var reference creation is a write context
 			write = true
@@ -243,6 +261,14 @@ func (r *runRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	if acc, ok := r.v.(*runArrayAccess); ok {
 		acc.SetWriteContext(true)
 		defer acc.SetWriteContext(false)
+	}
+
+	// Check if creating a reference would violate readonly constraints
+	// (e.g., $ref = &$enum->value)
+	if rc, ok := r.v.(phpv.ReadonlyRefChecker); ok {
+		if err := rc.CheckReadonlyRef(ctx); err != nil {
+			return nil, err
+		}
 	}
 
 	z, err := r.v.Run(ctx)

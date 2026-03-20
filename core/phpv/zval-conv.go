@@ -29,6 +29,11 @@ func (z *ZVal) AsVal(ctx Context, t ZType) (Val, error) {
 		return z.Value(), nil
 	}
 	if t == ZtNull {
+		// For NAN float values, delegate to ZFloat.AsVal so it can emit the
+		// "unexpected NAN value was coerced to null" warning (PHP 8.5).
+		if z != nil && z.v != nil && z.GetType() == ZtFloat {
+			return z.v.AsVal(ctx, t)
+		}
 		// cast to NULL can only result into null
 		return ZNull{}, nil
 	}

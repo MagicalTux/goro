@@ -957,6 +957,11 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 					}
 				}
 			}
+			// Validate magic method return type declarations
+			if err := validateMagicMethodReturnType(class, method, l); err != nil {
+				return nil, err
+			}
+
 			methodKey := method.Name.ToLower()
 			if _, ok := class.Methods[methodKey]; ok {
 				return nil, &phpv.PhpError{
@@ -966,6 +971,7 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 				}
 			}
 			class.Methods[methodKey] = method
+			class.MethodOrder = append(class.MethodOrder, methodKey)
 		case tokenizer.T_CASE:
 			// "case" keyword used in a class (not an enum)
 			return nil, &phpv.PhpError{
@@ -1332,6 +1338,103 @@ func validatePropertyOverride(ctx phpv.Context, class *phpobj.ZClass) error {
 			}
 			ctx.Global().LogError(phpErr)
 			return phpv.ExitError(255)
+		}
+	}
+
+	return nil
+}
+
+// validateMagicMethodReturnType checks that magic methods declare valid return types.
+// PHP enforces specific return type constraints on magic methods at compile time.
+func validateMagicMethodReturnType(class *phpobj.ZClass, method *phpv.ZClassMethod, l *phpv.Loc) error {
+	zc, ok := method.Method.(*ZClosure)
+	if !ok {
+		return nil
+	}
+	rt := zc.GetReturnType()
+	name := method.Name.ToLower()
+
+	switch name {
+	case "__construct", "__destruct":
+		// Cannot declare any return type
+		if rt != nil {
+			return &phpv.PhpError{
+				Err:  fmt.Errorf("Method %s::%s() cannot declare a return type", class.Name, method.Name),
+				Code: phpv.E_COMPILE_ERROR,
+				Loc:  l,
+			}
+		}
+	case "__clone", "__set", "__unset", "__unserialize", "__wakeup":
+		// Return type must be void when declared
+		if rt != nil && rt.Type() != phpv.ZtVoid {
+			return &phpv.PhpError{
+				Err:  fmt.Errorf("%s::%s(): Return type must be void when declared", class.Name, method.Name),
+				Code: phpv.E_COMPILE_ERROR,
+				Loc:  l,
+			}
+		}
+	case "__isset":
+		// Return type must be bool when declared
+		if rt != nil {
+			if rt.Type() != phpv.ZtBool || rt.ClassName() == "false" || rt.ClassName() == "true" || len(rt.Union) > 0 {
+				return &phpv.PhpError{
+					Err:  fmt.Errorf("%s::%s(): Return type must be bool when declared", class.Name, method.Name),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  l,
+				}
+			}
+		}
+	case "__tostring":
+		// Return type must be string when declared (never is allowed as covariant)
+		if rt != nil && rt.Type() != phpv.ZtString && rt.Type() != phpv.ZtNever {
+			return &phpv.PhpError{
+				Err:  fmt.Errorf("%s::%s(): Return type must be string when declared", class.Name, method.Name),
+				Code: phpv.E_COMPILE_ERROR,
+				Loc:  l,
+			}
+		}
+	case "__debuginfo":
+		// Return type must be ?array when declared (accepts array, ?array, array|null)
+		if rt != nil {
+			valid := false
+			if rt.Type() == phpv.ZtArray {
+				valid = true // array or ?array (nullable is ok)
+			}
+			// Check union types: all members must be array or null
+			if len(rt.Union) > 0 {
+				valid = true
+				for _, alt := range rt.Union {
+					if alt.Type() != phpv.ZtArray && alt.Type() != phpv.ZtNull {
+						valid = false
+						break
+					}
+				}
+			}
+			if !valid {
+				return &phpv.PhpError{
+					Err:  fmt.Errorf("%s::%s(): Return type must be ?array when declared", class.Name, method.Name),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  l,
+				}
+			}
+		}
+	case "__serialize", "__sleep":
+		// Return type must be array when declared
+		if rt != nil && rt.Type() != phpv.ZtArray {
+			return &phpv.PhpError{
+				Err:  fmt.Errorf("%s::%s(): Return type must be array when declared", class.Name, method.Name),
+				Code: phpv.E_COMPILE_ERROR,
+				Loc:  l,
+			}
+		}
+	case "__set_state":
+		// Return type must be object when declared
+		if rt != nil && (rt.Type() != phpv.ZtObject || rt.ClassName() != "") {
+			return &phpv.PhpError{
+				Err:  fmt.Errorf("%s::%s(): Return type must be object when declared", class.Name, method.Name),
+				Code: phpv.E_COMPILE_ERROR,
+				Loc:  l,
+			}
 		}
 	}
 

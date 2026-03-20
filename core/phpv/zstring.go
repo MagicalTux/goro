@@ -2,6 +2,7 @@ package phpv
 
 import (
 	"errors"
+	"math"
 	"strconv"
 	"strings"
 	"unicode"
@@ -9,6 +10,22 @@ import (
 
 	"github.com/MagicalTux/goro/core/logopt"
 )
+
+// floatToIntCapped converts a float to int, capping at INT64_MAX/MIN for out-of-range values.
+// This matches PHP's behavior for string-to-int conversion where large float strings
+// are capped rather than returning 0.
+func floatToIntCapped(f float64) ZInt {
+	if math.IsNaN(f) {
+		return ZInt(0)
+	}
+	if math.IsInf(f, 1) || f > float64(math.MaxInt64) {
+		return ZInt(math.MaxInt64)
+	}
+	if math.IsInf(f, -1) || f < float64(math.MinInt64) {
+		return ZInt(math.MinInt64)
+	}
+	return ZInt(f)
+}
 
 func (z ZString) GetType() ZType {
 	return ZtString
@@ -28,7 +45,7 @@ func (z ZString) AsVal(ctx Context, t ZType) (Val, error) {
 		case ZInt:
 			return v, nil
 		case ZFloat:
-			return ZInt(v), nil
+			return floatToIntCapped(float64(v)), nil
 		default:
 			return nil, nil
 		}

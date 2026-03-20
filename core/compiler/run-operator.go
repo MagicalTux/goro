@@ -245,6 +245,36 @@ func spawnOperator(ctx phpv.Context, op tokenizer.ItemType, a, b phpv.Runnable, 
 			ctx.Global().LogError(phpErr)
 			return nil, phpv.ExitError(255)
 		}
+		// Cannot use nullsafe operator in write context (assignment, +=, ++, etc.)
+		if containsNullSafe(a) {
+			phpErr := &phpv.PhpError{
+				Err:  fmt.Errorf("Can't use nullsafe operator in write context"),
+				Code: phpv.E_COMPILE_ERROR,
+				Loc:  l,
+			}
+			ctx.Global().LogError(phpErr)
+			return nil, phpv.ExitError(255)
+		}
+	}
+
+	// Compile-time check: Cannot use nullsafe for pre/post increment/decrement
+	if (op == tokenizer.T_INC || op == tokenizer.T_DEC) && a != nil && containsNullSafe(a) {
+		phpErr := &phpv.PhpError{
+			Err:  fmt.Errorf("Can't use nullsafe operator in write context"),
+			Code: phpv.E_COMPILE_ERROR,
+			Loc:  l,
+		}
+		ctx.Global().LogError(phpErr)
+		return nil, phpv.ExitError(255)
+	}
+	if (op == tokenizer.T_INC || op == tokenizer.T_DEC) && b != nil && containsNullSafe(b) {
+		phpErr := &phpv.PhpError{
+			Err:  fmt.Errorf("Can't use nullsafe operator in write context"),
+			Code: phpv.E_COMPILE_ERROR,
+			Loc:  l,
+		}
+		ctx.Global().LogError(phpErr)
+		return nil, phpv.ExitError(255)
 	}
 
 	// Compile-time check: ??= with [] (empty index) is not allowed
@@ -537,8 +567,14 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 				r.op == tokenizer.T_OR_EQUAL || r.op == tokenizer.T_XOR_EQUAL ||
 				r.op == tokenizer.T_AND_EQUAL || r.op == tokenizer.T_MOD_EQUAL
 			if isBitwise {
-				a, _ = a.As(ctx, phpv.ZtInt)
-				b, _ = b.As(ctx, phpv.ZtInt)
+				a, err = implicitToInt(ctx, a)
+				if err != nil {
+					return nil, err
+				}
+				b, err = implicitToInt(ctx, b)
+				if err != nil {
+					return nil, err
+				}
 			} else if a.GetType() == phpv.ZtFloat || b.GetType() == phpv.ZtFloat {
 				a, _ = a.As(ctx, phpv.ZtFloat)
 				b, _ = b.As(ctx, phpv.ZtFloat)
@@ -974,13 +1010,13 @@ func operatorMathLogic(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal)
 		}
 		return res.ZVal(), nil
 	case phpv.ZtFloat:
-		// need to convert to int
+		// need to convert to int (implicit conversion emits deprecation for precision loss)
 		var err error
-		a, err = a.As(ctx, phpv.ZtInt)
+		a, err = implicitToInt(ctx, a)
 		if err != nil {
 			return nil, err
 		}
-		b, err = b.As(ctx, phpv.ZtInt)
+		b, err = implicitToInt(ctx, b)
 		if err != nil {
 			return nil, err
 		}
@@ -1589,6 +1625,18 @@ func phpTypeName(v *phpv.ZVal) string {
 	default:
 		return v.GetType().String()
 	}
+}
+
+// implicitToInt converts a ZVal to int, emitting a "Deprecated: Implicit conversion
+// from float X to int loses precision" warning when a float with fractional part is
+// implicitly converted to int (PHP 8.1+).
+func implicitToInt(ctx phpv.Context, z *phpv.ZVal) (*phpv.ZVal, error) {
+	if z.GetType() == phpv.ZtFloat {
+		v, err := phpv.FloatToIntImplicit(ctx, z.Value().(phpv.ZFloat))
+		return v.ZVal(), err
+	}
+	r, err := z.As(ctx, phpv.ZtInt)
+	return r, err
 }
 
 // isLeadingNumeric is defined in compile-array.go

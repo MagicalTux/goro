@@ -15,6 +15,7 @@ import (
 type deserializer struct {
 	allowedClasses  map[phpv.ZString]struct{}
 	allowAllClasses bool
+	refs            []*phpv.ZVal // reference tracking: index 0 is unused, index 1 is the first value parsed
 }
 
 // > func string serialize ( mixed $value )
@@ -337,6 +338,20 @@ func (ue *unserializeError) Error() string {
 	return fmt.Sprintf("Error at offset %d of %d bytes", ue.offset, ue.length)
 }
 
+// addRef registers a value in the reference table and returns its 1-based index.
+func (d *deserializer) addRef(z *phpv.ZVal) int {
+	d.refs = append(d.refs, z)
+	return len(d.refs) // 1-based
+}
+
+// getRef returns the value at a 1-based reference index.
+func (d *deserializer) getRef(index int) *phpv.ZVal {
+	if index < 1 || index > len(d.refs) {
+		return nil
+	}
+	return d.refs[index-1]
+}
+
 func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (result *phpv.ZVal, nextOffset int, err error) {
 	offset := 0
 	if len(offsetArg) > 0 {
@@ -346,6 +361,10 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 		return phpv.ZNULL.ZVal(), offset, nil
 	}
 	readError := &unserializeError{offset, len(str)}
+
+	if offset >= len(str) {
+		return nil, offset, readError
+	}
 
 	if len(str) < offset+2 || (str[offset] != 'N' && str[offset+1] != ':') {
 		return nil, offset, readError
@@ -361,27 +380,40 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 		return from + i
 	}
 
+	// Helper: parse a length value and reject signed numbers (PHP rejects +N and -N for lengths)
+	parseLengthUnsigned := func(s string) (int64, error) {
+		if len(s) > 0 && (s[0] == '+' || s[0] == '-') {
+			return 0, fmt.Errorf("signed length")
+		}
+		return strconv.ParseInt(s, 10, 64)
+	}
+
 	switch str[offset] {
 	case 'N':
 		// N;
 		if core.StrIdx(str, offset+1) != ';' {
 			return nil, offset, readError
 		}
-		return phpv.ZNULL.ZVal(), offset + 2, nil
+		val := phpv.ZNULL.ZVal()
+		d.addRef(val)
+		return val, offset + 2, nil
 	case 'b':
 		// b:1; or b:0;
 		if core.StrIdx(str, i+1) != ';' {
 			return nil, offset, readError
 		}
 		v := core.StrIdx(str, i)
+		var val *phpv.ZVal
 		switch v {
 		case '1':
-			return phpv.ZTrue.ZVal(), i + 2, nil
+			val = phpv.ZTrue.ZVal()
 		case '0':
-			return phpv.ZFalse.ZVal(), i + 2, nil
+			val = phpv.ZFalse.ZVal()
 		default:
 			return nil, offset, readError
 		}
+		d.addRef(val)
+		return val, i + 2, nil
 	case 'i':
 		// i:123456;
 		semicIndex := indexOf(str, ";", i)
@@ -393,7 +425,9 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 		if err != nil {
 			return nil, offset, readError
 		}
-		return phpv.ZInt(n).ZVal(), semicIndex + 1, nil
+		val := phpv.ZInt(n).ZVal()
+		d.addRef(val)
+		return val, semicIndex + 1, nil
 	case 'd':
 		// d:123.456;
 		semicIndex := indexOf(str, ";", i)
@@ -402,31 +436,32 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 		}
 		s := str[i:semicIndex]
 		// Handle special float values
+		var val *phpv.ZVal
 		switch s {
 		case "INF":
-			return phpv.ZFloat(math.Inf(1)).ZVal(), semicIndex + 1, nil
+			val = phpv.ZFloat(math.Inf(1)).ZVal()
 		case "-INF":
-			return phpv.ZFloat(math.Inf(-1)).ZVal(), semicIndex + 1, nil
+			val = phpv.ZFloat(math.Inf(-1)).ZVal()
 		case "NAN":
-			return phpv.ZFloat(math.NaN()).ZVal(), semicIndex + 1, nil
+			val = phpv.ZFloat(math.NaN()).ZVal()
+		default:
+			n, err := strconv.ParseFloat(s, 64)
+			if err != nil {
+				return nil, offset, readError
+			}
+			val = phpv.ZFloat(n).ZVal()
 		}
-		n, err := strconv.ParseFloat(s, 64)
-		if err != nil {
-			return nil, offset, readError
-		}
-		return phpv.ZFloat(n).ZVal(), semicIndex + 1, nil
+		d.addRef(val)
+		return val, semicIndex + 1, nil
 	case 's':
 		// s:3:"foo";
-		//   ^1  ^2
-		// 1 - string length
-		// 2 - string contents, no escapes
 		j := indexOf(str, ":", i)
 		if j < 0 {
 			return nil, offset, readError
 		}
 		s := str[i:j]
-		strLen, err := strconv.ParseInt(s, 10, 64)
-		if err != nil {
+		strLen, err := parseLengthUnsigned(s)
+		if err != nil || strLen < 0 {
 			return nil, offset, readError
 		}
 		readError.offset = 2
@@ -450,22 +485,114 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 		}
 
 		s = str[content : content+int(strLen)]
-		return phpv.ZStr(s), semi + 1, nil
+		val := phpv.ZStr(s)
+		d.addRef(val)
+		return val, semi + 1, nil
+
+	case 'S':
+		// S:3:"\65bc"; - escaped string (deprecated in PHP 8.5)
+		ctx.Deprecated("Unserializing the 'S' format is deprecated")
+		j := indexOf(str, ":", i)
+		if j < 0 {
+			return nil, offset, readError
+		}
+		s := str[i:j]
+		strLen, err := parseLengthUnsigned(s)
+		if err != nil || strLen < 0 {
+			return nil, offset, readError
+		}
+
+		startQuote := j + 1
+		content := j + 2
+		endQuote := content + int(strLen)
+		semi := endQuote + 1
+
+		switch {
+		case content+int(strLen) >= len(str):
+			return nil, offset, readError
+		case core.StrIdx(str, startQuote) != '"':
+			return nil, offset, readError
+		case core.StrIdx(str, endQuote) != '"':
+			return nil, offset, readError
+		case core.StrIdx(str, semi) != ';':
+			return nil, offset, readError
+		}
+
+		// Decode escaped string: \xx hex escapes
+		raw := str[content : content+int(strLen)]
+		var buf bytes.Buffer
+		for k := 0; k < len(raw); k++ {
+			if raw[k] == '\\' && k+2 < len(raw) {
+				hi := unhex(raw[k+1])
+				lo := unhex(raw[k+2])
+				if hi >= 0 && lo >= 0 {
+					buf.WriteByte(byte(hi<<4 | lo))
+					k += 2
+					continue
+				}
+			}
+			buf.WriteByte(raw[k])
+		}
+		val := phpv.ZString(buf.String()).ZVal()
+		d.addRef(val)
+		return val, semi + 1, nil
+
+	case 'R':
+		// R:N; - value reference (creates a PHP reference to the Nth value)
+		semicIndex := indexOf(str, ";", i)
+		if semicIndex < 0 {
+			return nil, offset, readError
+		}
+		s := str[i:semicIndex]
+		// Reject signed references
+		if len(s) > 0 && (s[0] == '+' || s[0] == '-') {
+			return nil, offset, &unserializeError{offset, len(str)}
+		}
+		index, err := strconv.ParseInt(s, 10, 64)
+		if err != nil || index < 1 {
+			return nil, offset, readError
+		}
+		ref := d.getRef(int(index))
+		if ref == nil {
+			return nil, offset, readError
+		}
+		// R: creates a reference - make the referred value a reference if not already
+		ref = ref.Ref()
+		d.addRef(ref)
+		return ref, semicIndex + 1, nil
+
+	case 'r':
+		// r:N; - object reference (reuses the Nth object without creating a PHP reference)
+		semicIndex := indexOf(str, ";", i)
+		if semicIndex < 0 {
+			return nil, offset, readError
+		}
+		s := str[i:semicIndex]
+		// Reject signed references
+		if len(s) > 0 && (s[0] == '+' || s[0] == '-') {
+			return nil, offset, &unserializeError{offset, len(str)}
+		}
+		index, err := strconv.ParseInt(s, 10, 64)
+		if err != nil || index < 1 {
+			return nil, offset, readError
+		}
+		ref := d.getRef(int(index))
+		if ref == nil {
+			return nil, offset, readError
+		}
+		// r: doesn't create a reference, just reuses the value
+		d.addRef(ref)
+		return ref, semicIndex + 1, nil
 
 	case 'a':
 		// "a:2:{i:0;s:1:"x";s:1:"y";s:1:"z";}" == ["x", "y" => z]
-		//    -  --- -------
-		//    ^1  ^2   ^3
-		// 1 - array length
-		// 2 - key of first item
-		// 3 - value  of first item
 		j := indexOf(str, ":", i)
 		if j < 0 || j < i+1 || j >= len(str) {
 			return nil, offset, readError
 		}
 		s := str[i:j]
-		numItems, err := strconv.ParseInt(s, 10, 64)
-		if err != nil {
+		numItems, err := parseLengthUnsigned(s)
+		if err != nil || numItems < 0 {
 			return nil, offset, readError
 		}
 
@@ -477,7 +604,9 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 		readError.offset = 2
 
 		arr := phpv.NewZArray()
-		var refs int64 = 0
+		// Register the array in refs before parsing its contents
+		d.addRef(arr.ZVal())
+
 		for numItems > 0 {
 			var key, value *phpv.ZVal
 			key, i, err = d.parse(ctx, str, i)
@@ -489,34 +618,11 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 				return nil, offset, readError
 			}
 
-			if core.StrIdx(str, i) == 'R' && core.StrIdx(str, i+1) == ':' {
-				semi := indexOf(str, ";", i+2)
-				if semi < 0 {
-					return nil, offset, readError
-				}
-				index, err := strconv.ParseInt(str[i+2:semi], 10, 32)
-				if err != nil {
-					return nil, offset, readError
-				}
-				if index == 1 {
-					arr.OffsetSet(ctx, key, arr.ZVal())
-				} else {
-					index -= (2 - refs)
-					key2, _ := arr.OffsetKeyAt(ctx, int(index))
-					referred, _ := arr.OffsetGet(ctx, key2)
-					referred = referred.Ref()
-					arr.OffsetSet(ctx, key2, referred)
-					arr.OffsetSet(ctx, key, referred)
-				}
-				i = semi + 1
-				refs++
-			} else {
-				value, i, err = d.parse(ctx, str, i)
-				if err != nil {
-					return nil, offset, readError
-				}
-				arr.OffsetSet(ctx, key, value)
+			value, i, err = d.parse(ctx, str, i)
+			if err != nil {
+				return nil, offset, readError
 			}
+			arr.OffsetSet(ctx, key, value)
 			numItems--
 		}
 		if core.StrIdx(str, i) != '}' {
@@ -609,21 +715,18 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 			return nil, offset, &unserializeError{endSemi + 1, len(str)}
 		}
 
-		return val.ZVal(), endSemi + 1, nil
+		zval := val.ZVal()
+		d.addRef(zval)
+		return zval, endSemi + 1, nil
 	case 'O':
 		// O:3:"Xyz":1:{s:3:"foo";i:123;}
-		//   ^1 ^2   ^3
-		// 1 - class name length
-		// 2 - class name
-		// 3 - property count
-
 		j := indexOf(str, ":", i)
 		if j < 0 {
 			return nil, offset, readError
 		}
 		s := str[i:j]
-		strLen, err := strconv.ParseInt(s, 10, 64)
-		if err != nil {
+		strLen, err := parseLengthUnsigned(s)
+		if err != nil || strLen < 0 {
 			return nil, offset, readError
 		}
 		readError.offset = 2
@@ -653,8 +756,12 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 		if j < 0 || j < i+1 {
 			return nil, offset, readError
 		}
-		numProps, err := strconv.Atoi(str[i:j])
-		if err != nil {
+		numPropsStr := str[i:j]
+		if len(numPropsStr) > 0 && (numPropsStr[0] == '+' || numPropsStr[0] == '-') {
+			return nil, offset, readError
+		}
+		numProps, err := strconv.Atoi(numPropsStr)
+		if err != nil || numProps < 0 {
 			return nil, offset, readError
 		}
 
@@ -672,6 +779,11 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 			class = phpobj.IncompleteClass
 		}
 
+		// Check if the class is an enum (enums cannot be unserialized with O:)
+		if class.GetType().Has(phpv.ZClassTypeEnum) {
+			return nil, offset, &unserializeError{0, len(str)}
+		}
+
 		obj, err := phpobj.CreateZObject(ctx, class)
 		if err != nil {
 			return nil, offset, err
@@ -679,6 +791,9 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 		if class == phpobj.IncompleteClass {
 			obj.ObjectSet(ctx, phpv.ZStr("__PHP_Incomplete_Class_Name"), phpv.ZStr(className))
 		}
+
+		// Register object in refs before parsing properties (for back-references)
+		d.addRef(obj.ZVal())
 
 		// Check if class has __unserialize method
 		_, hasUnserialize := obj.GetClass().GetMethod(phpv.ZString("__unserialize"))
@@ -733,18 +848,13 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 		return obj.ZVal(), i, nil
 	case 'C':
 		// C:3:"Xyz":6:{data_s}
-		//   ^1 ^2   ^3
-		// 1 - class name length
-		// 2 - class name
-		// 3 - data length
-
 		j := indexOf(str, ":", i)
 		if j < 0 {
 			return nil, offset, readError
 		}
 		s := str[i:j]
-		strLen, err := strconv.ParseInt(s, 10, 64)
-		if err != nil {
+		strLen, err := parseLengthUnsigned(s)
+		if err != nil || strLen < 0 {
 			return nil, offset, readError
 		}
 
@@ -802,6 +912,9 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 			return nil, offset, err
 		}
 
+		// Register object in refs
+		d.addRef(obj.ZVal())
+
 		// Call the unserialize($data) method on the object
 		if method, ok := obj.GetClass().GetMethod(phpv.ZString("unserialize")); ok {
 			_, err := ctx.Global().CallZVal(ctx, method.Method, []*phpv.ZVal{phpv.ZStr(data).ZVal()}, obj)
@@ -814,4 +927,18 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 	}
 
 	return nil, offset, readError
+}
+
+// unhex converts a hex character to its integer value, returning -1 for invalid chars.
+func unhex(c byte) int {
+	switch {
+	case c >= '0' && c <= '9':
+		return int(c - '0')
+	case c >= 'a' && c <= 'f':
+		return int(c-'a') + 10
+	case c >= 'A' && c <= 'F':
+		return int(c-'A') + 10
+	default:
+		return -1
+	}
 }

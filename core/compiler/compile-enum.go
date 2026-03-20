@@ -425,6 +425,7 @@ func compileEnum(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 				Attributes: allAttrs,
 			}
 			class.Methods[method.Name.ToLower()] = method
+			class.MethodOrder = append(class.MethodOrder, method.Name.ToLower())
 		}
 	}
 

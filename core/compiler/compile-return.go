@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"fmt"
 	"io"
 
 	"github.com/MagicalTux/goro/core/logopt"
@@ -19,7 +20,54 @@ func compileReturn(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	l := i.Loc()
 
 	if i.IsSingle(';') {
+		// bare "return;" - check if never return type (never cannot have any return)
+		if fn := c.getFunc(); fn != nil && fn.returnType != nil && fn.returnType.Type() == phpv.ZtNever {
+			label := "function"
+			if c.getClass() != nil {
+				label = "method"
+			}
+			return nil, &phpv.PhpError{
+				Err:  fmt.Errorf("A never-returning %s must not return", label),
+				Code: phpv.E_COMPILE_ERROR,
+				Loc:  l,
+			}
+		}
 		return &runReturn{nil, l}, nil // return nothing
+	}
+
+	// Check for void return type - cannot return a value
+	if fn := c.getFunc(); fn != nil && fn.returnType != nil {
+		rt := fn.returnType.Type()
+		if rt == phpv.ZtVoid {
+			label := "function"
+			if c.getClass() != nil {
+				label = "method"
+			}
+			// Check if the return value is explicitly NULL for a better error message
+			if i.Type == tokenizer.T_STRING && phpv.ZString(i.Data).ToLower() == "null" {
+				return nil, &phpv.PhpError{
+					Err:  fmt.Errorf("A void %s must not return a value (did you mean \"return;\" instead of \"return null;\"?)", label),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  l,
+				}
+			}
+			return nil, &phpv.PhpError{
+				Err:  fmt.Errorf("A void %s must not return a value", label),
+				Code: phpv.E_COMPILE_ERROR,
+				Loc:  l,
+			}
+		}
+		if rt == phpv.ZtNever {
+			label := "function"
+			if c.getClass() != nil {
+				label = "method"
+			}
+			return nil, &phpv.PhpError{
+				Err:  fmt.Errorf("A never-returning %s must not return", label),
+				Code: phpv.E_COMPILE_ERROR,
+				Loc:  l,
+			}
+		}
 	}
 
 	v, err := compileExpr(nil, c)
@@ -71,6 +119,12 @@ func (r *runReturn) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		if ov, ok := r.v.(*runObjectVar); ok {
 			ov.writeContext = true
 			defer func() { ov.writeContext = false }()
+		}
+		// Check if returning a reference to a readonly property
+		if rc, ok := r.v.(phpv.ReadonlyRefChecker); ok {
+			if err := rc.CheckReadonlyRef(ctx); err != nil {
+				return nil, err
+			}
 		}
 	}
 

@@ -25,7 +25,15 @@ func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, o
 
 	// PHP 8.0 Named Arguments: reorder args to match parameter positions
 	if funcArgs != nil {
-		args = reorderNamedArgs(ctx, funcArgs, args)
+		funcName := ""
+		if fn, ok := f.(interface{ GetFuncName() phpv.ZString }); ok {
+			funcName = string(fn.GetFuncName())
+		}
+		var namedErr error
+		args, namedErr = reorderNamedArgs(ctx, funcArgs, args, funcName)
+		if namedErr != nil {
+			return nil, namedErr
+		}
 	}
 
 	// Expand spread arguments (...$arr) into individual args before evaluation
@@ -127,6 +135,15 @@ func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, o
 				// up after the call. For simple variables, the existing ref
 				// mechanism in callZValImpl handles everything.
 				if _, isCompound := arg.(phpv.CompoundWritable); isCompound {
+					// Check if creating a reference would violate readonly constraints
+					if rc, ok := arg.(phpv.ReadonlyRefChecker); ok {
+						if err := rc.CheckReadonlyRef(ctx); err != nil {
+							if wcs, ok := arg.(phpv.WriteContextSetter); ok {
+								wcs.SetWriteContext(false)
+							}
+							return nil, err
+						}
+					}
 					writable := arg.(phpv.Writable)
 					writable.WriteValue(ctx, val.Dup())
 					// Re-read to get the actual hash table entry ZVal.
@@ -518,7 +535,8 @@ func chainPhpThrow(destructorErr, pendingErr error) error {
 // reorderNamedArgs reorders function call arguments based on PHP 8.0 named argument syntax.
 // Positional arguments must come before named arguments.
 // Named arguments are placed at their corresponding parameter position.
-func reorderNamedArgs(ctx phpv.Context, funcArgs []*phpv.FuncArg, args []phpv.Runnable) []phpv.Runnable {
+// Returns an error for unknown named parameters or duplicate parameter names.
+func reorderNamedArgs(ctx phpv.Context, funcArgs []*phpv.FuncArg, args []phpv.Runnable, funcName string) ([]phpv.Runnable, error) {
 	// Check if any args are named
 	hasNamed := false
 	for _, arg := range args {
@@ -528,7 +546,7 @@ func reorderNamedArgs(ctx phpv.Context, funcArgs []*phpv.FuncArg, args []phpv.Ru
 		}
 	}
 	if !hasNamed {
-		return args
+		return args, nil
 	}
 
 	// Build result array sized to max(len(funcArgs), len(args))
@@ -538,6 +556,9 @@ func reorderNamedArgs(ctx phpv.Context, funcArgs []*phpv.FuncArg, args []phpv.Ru
 	}
 	result := make([]phpv.Runnable, size)
 
+	// Track which positions are filled (for duplicate detection)
+	filled := make([]bool, size)
+
 	// Place positional arguments first
 	positionalEnd := 0
 	for i, arg := range args {
@@ -545,7 +566,14 @@ func reorderNamedArgs(ctx phpv.Context, funcArgs []*phpv.FuncArg, args []phpv.Ru
 			break
 		}
 		result[i] = arg
+		filled[i] = true
 		positionalEnd = i + 1
+	}
+
+	// Check if the last funcArg is variadic
+	hasVariadic := false
+	if len(funcArgs) > 0 {
+		hasVariadic = funcArgs[len(funcArgs)-1].Variadic
 	}
 
 	// Place named arguments at their parameter positions
@@ -560,14 +588,26 @@ func reorderNamedArgs(ctx phpv.Context, funcArgs []*phpv.FuncArg, args []phpv.Ru
 		found := false
 		for j, fa := range funcArgs {
 			if fa.VarName == name {
+				if filled[j] {
+					// Duplicate named parameter: named param overwrites positional or another named
+					return nil, phpobj.ThrowError(ctx, phpobj.Error,
+						fmt.Sprintf("Named parameter $%s overwrites previous argument", name))
+				}
 				result[j] = arg
+				filled[j] = true
 				found = true
 				break
 			}
 		}
 		if !found {
-			// Unknown named parameter - append at end, CallZVal will handle the error
-			result = append(result, arg)
+			if hasVariadic {
+				// Named args for variadic parameters are collected into the variadic array
+				result = append(result, arg)
+			} else {
+				// Unknown named parameter
+				return nil, phpobj.ThrowError(ctx, phpobj.Error,
+					fmt.Sprintf("Unknown named parameter $%s", name))
+			}
 		}
 	}
 
@@ -576,7 +616,7 @@ func reorderNamedArgs(ctx phpv.Context, funcArgs []*phpv.FuncArg, args []phpv.Ru
 		result = result[:len(result)-1]
 	}
 
-	return result
+	return result, nil
 }
 
 func phpTypeName(val *phpv.ZVal) string {

@@ -214,6 +214,12 @@ func (r *runnableForeach) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 			return nil, errors.New("foreach value must be writable")
 		} else {
 			if r.ref {
+				// Check if creating a reference would violate readonly constraints
+				if rc, ok := r.v.(phpv.ReadonlyRefChecker); ok {
+					if err := rc.CheckReadonlyRef(ctx); err != nil {
+						return nil, err
+					}
+				}
 				// v is already a reference from CurrentMakeRef
 				w.WriteValue(ctx, v)
 			} else {
@@ -567,6 +573,17 @@ func compileForeach(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 
 	if !i.IsSingle(')') {
 		return nil, i.Unexpected()
+	}
+
+	// Cannot use nullsafe operator as foreach write target
+	if containsNullSafe(r.v) {
+		phpErr := &phpv.PhpError{
+			Err:  fmt.Errorf("Can't use nullsafe operator in write context"),
+			Code: phpv.E_COMPILE_ERROR,
+			Loc:  l,
+		}
+		c.Global().LogError(phpErr)
+		return nil, phpv.ExitError(255)
 	}
 
 	// check for ;

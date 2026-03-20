@@ -1137,7 +1137,14 @@ func (o *ZObject) checkPropertyVisibility(ctx phpv.Context, keyStr phpv.ZString,
 
 // IsReadonlyProperty checks if a property is declared as readonly in the class hierarchy.
 // Used for blocking indirect modifications (e.g. $obj->readonlyProp[] = val).
+// Enum properties (name, value) are always treated as readonly.
 func (o *ZObject) IsReadonlyProperty(keyStr phpv.ZString) bool {
+	// Enum properties are implicitly readonly
+	if zc, ok := o.GetClass().(*ZClass); ok && zc.Type.Has(phpv.ZClassTypeEnum) {
+		if keyStr == "name" || (keyStr == "value" && zc.EnumBackingType != 0) {
+			return true
+		}
+	}
 	class := o.GetClass().(*ZClass)
 	for cur := class; cur != nil; cur = cur.Extends {
 		for _, prop := range cur.Props {
@@ -1150,7 +1157,14 @@ func (o *ZObject) IsReadonlyProperty(keyStr phpv.ZString) bool {
 }
 
 // IsReadonlyPropertyInitialized checks if a readonly property has been initialized.
+// Enum properties (name, value) are always considered initialized.
 func (o *ZObject) IsReadonlyPropertyInitialized(keyStr phpv.ZString) bool {
+	// Enum properties are always initialized
+	if zc, ok := o.GetClass().(*ZClass); ok && zc.Type.Has(phpv.ZClassTypeEnum) {
+		if keyStr == "name" || (keyStr == "value" && zc.EnumBackingType != 0) {
+			return true
+		}
+	}
 	return o.readonlyInit != nil && o.readonlyInit[keyStr]
 }
 
@@ -2076,6 +2090,14 @@ func (o *ZObject) enforcePropertyType(ctx phpv.Context, keyStr phpv.ZString, pro
 		hintType := hint.Type()
 		valType := value.GetType()
 		if hintType != phpv.ZtMixed && hintType != phpv.ZtObject && valType != hintType {
+			// Emit implicit conversion deprecation for float->int
+			if hintType == phpv.ZtInt && valType == phpv.ZtFloat {
+				v, err := phpv.FloatToIntImplicit(ctx, value.Value().(phpv.ZFloat))
+				if err != nil {
+					return nil, err
+				}
+				return v.ZVal(), nil
+			}
 			if coerced, err := value.Value().AsVal(ctx, hintType); err == nil && coerced != nil {
 				return coerced.ZVal(), nil
 			}

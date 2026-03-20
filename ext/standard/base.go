@@ -66,7 +66,7 @@ func stdFuncMethodExists(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error
 	default:
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
 			fmt.Sprintf("method_exists(): Argument #1 ($object_or_class) must be of type object|string, %s given",
-				phpv.ZValTypeName(objectArg)))
+				phpv.ZValTypeNameDetailed(objectArg)))
 	}
 	m, ok := class.GetMethod(methodName)
 
@@ -144,7 +144,7 @@ func fncSettype(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	case "object":
 		newVal, err = args[0].As(ctx, phpv.ZtObject)
 	case "null":
-		newVal = phpv.ZNULL.ZVal()
+		newVal, err = args[0].As(ctx, phpv.ZtNull)
 	case "resource":
 		return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot convert to resource type")
 	default:
@@ -421,25 +421,40 @@ func fncGetOpt(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 // > func string get_class ([ object $object ] )
 func stdGetClass(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	var objectArg core.Optional[phpv.ZObject]
-	_, err := core.Expand(ctx, args, &objectArg)
-	if err != nil {
-		return nil, err
+	callerCtx := ctx.Parent(1)
+	if callerCtx == nil {
+		callerCtx = ctx
 	}
-
-	ctx = ctx.Parent(1)
 
 	if len(args) == 0 {
 		// PHP 8.0+: calling get_class() without arguments is deprecated
-		ctx.Deprecated("Calling get_class() without arguments is deprecated", logopt.NoFuncName(true))
+		callerCtx.Deprecated("Calling get_class() without arguments is deprecated", logopt.NoFuncName(true))
+		if callerCtx.This() != nil {
+			object := callerCtx.This()
+			if zo, ok := object.(*phpobj.ZObject); ok {
+				if zc, ok := zo.Class.(*phpobj.ZClass); ok {
+					return zc.Name.ZVal(), nil
+				}
+				return zo.Class.GetName().ZVal(), nil
+			}
+			return object.GetClass().GetName().ZVal(), nil
+		}
+		if callerCtx.Class() != nil {
+			return callerCtx.Class().GetName().ZVal(), nil
+		}
+		return phpv.ZFalse.ZVal(), nil
 	}
 
-	object := objectArg.GetOrDefault(ctx.This())
-	if object == nil {
-		if ctx.Class() != nil {
-			return ctx.Class().GetName().ZVal(), nil
-		}
+	// With argument, must be object type
+	arg := args[0]
+	if arg.GetType() != phpv.ZtObject {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("get_class(): Argument #1 ($object) must be of type object, %s given",
+				phpv.ZValTypeNameDetailed(arg)))
+	}
 
+	object := arg.AsObject(ctx)
+	if object == nil {
 		return phpv.ZFalse.ZVal(), nil
 	}
 
@@ -521,14 +536,16 @@ func stdGetParentClass(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 
 	var class phpv.ZClass
 
-	if objectArg == nil || objectArg.IsNull() {
-		// Use current class context
+	if objectArg == nil || (len(args) == 0) {
+		// No argument: use current class context
 		class = ctx.Class()
 	} else if objectArg.GetType() == phpv.ZtString {
-		// Class name as string
-		class, err = ctx.Global().GetClass(ctx, objectArg.AsString(ctx), false)
+		// Class name as string - try to resolve it (with autoload)
+		class, err = ctx.Global().GetClass(ctx, objectArg.AsString(ctx), true)
 		if err != nil {
-			return phpv.ZFalse.ZVal(), nil
+			// Invalid class name - throw TypeError
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+				fmt.Sprintf("get_parent_class(): Argument #1 ($object_or_class) must be an object or a valid class name, string given"))
 		}
 	} else if objectArg.GetType() == phpv.ZtObject {
 		obj := objectArg.AsObject(ctx)
@@ -537,7 +554,10 @@ func stdGetParentClass(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 		}
 		class = obj.GetClass()
 	} else {
-		return phpv.ZFalse.ZVal(), nil
+		// PHP 8: TypeError for non-object/non-string types
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("get_parent_class(): Argument #1 ($object_or_class) must be an object or a valid class name, %s given",
+				phpv.ZValTypeNameDetailed(objectArg)))
 	}
 
 	if class == nil {
@@ -586,7 +606,7 @@ func stdIsA(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			class = obj.GetClass()
 		}
 	} else if allowString && objectArg.GetType() == phpv.ZtString {
-		class, err = ctx.Global().GetClass(ctx, objectArg.AsString(ctx), false)
+		class, err = ctx.Global().GetClass(ctx, objectArg.AsString(ctx), true)
 		if err != nil {
 			return phpv.ZFalse.ZVal(), nil
 		}
@@ -628,16 +648,17 @@ func stdIsSubclassOf(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		}
 		class = obj.GetClass()
 	} else if allowString && objectArg.GetType() == phpv.ZtString {
-		class, err = ctx.Global().GetClass(ctx, objectArg.AsString(ctx), false)
+		class, err = ctx.Global().GetClass(ctx, objectArg.AsString(ctx), true)
 		if err != nil {
 			return phpv.ZFalse.ZVal(), nil
 		}
 	} else {
+		// Non-object/non-string types: just return false (PHP doesn't throw TypeError here)
 		return phpv.ZFalse.ZVal(), nil
 	}
 
 	// Resolve the target class name to an actual class (handles class_alias)
-	targetClass, targetErr := ctx.Global().GetClass(ctx, className, false)
+	targetClass, targetErr := ctx.Global().GetClass(ctx, className, true)
 
 	if targetErr == nil && !phpv.IsNilClass(targetClass) {
 		// Use InstanceOf to check, but skip the first class itself (is_subclass_of excludes self)
@@ -677,9 +698,9 @@ func stdGetDeclaredClasses(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, err
 		if err != nil {
 			continue
 		}
-		// Only include real classes, not interfaces or traits
+		// Only include real classes, not interfaces, traits, or enums
 		classType := class.GetType()
-		if classType&phpv.ZClassTypeInterface != 0 || classType&phpv.ZClassTypeTrait != 0 {
+		if classType&phpv.ZClassTypeInterface != 0 || classType&phpv.ZClassTypeTrait != 0 || classType&phpv.ZClassTypeEnum != 0 {
 			continue
 		}
 		result.OffsetSet(ctx, nil, name.ZVal())
@@ -741,32 +762,43 @@ func stdGetClassMethods(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 		class, err = ctx.Global().GetClass(ctx, classArg.AsString(ctx), true)
 		if err != nil {
 			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
-				fmt.Sprintf("get_class_methods(): Argument #1 ($object_or_class) must be an object or a valid class name, string given"))
+				"get_class_methods(): Argument #1 ($object_or_class) must be an object or a valid class name, string given")
 		}
 	default:
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
 			fmt.Sprintf("get_class_methods(): Argument #1 ($object_or_class) must be an object or a valid class name, %s given",
-				classArg.GetType().TypeName()))
+				phpv.ZValTypeNameDetailed(classArg)))
 	}
 
 	// Determine visibility context: which class is the caller?
-	callerClass := ctx.Class()
+	callerCtx := ctx.Parent(1)
+	var callerClass phpv.ZClass
+	if callerCtx != nil {
+		callerClass = callerCtx.Class()
+	}
 
+	// Get methods in PHP declaration order using GetMethodsOrdered
+	var methods []*phpv.ZClassMethod
+	if zc, ok := class.(*phpobj.ZClass); ok {
+		methods = zc.GetMethodsOrdered()
+	} else {
+		// Fallback for non-ZClass types
+		for _, m := range class.GetMethods() {
+			methods = append(methods, m)
+		}
+	}
+
+	// Filter by visibility
 	result := phpv.NewZArray()
-	for _, m := range class.GetMethods() {
-		// Filter out private methods from parent classes
+	for _, m := range methods {
+		// Filter out private methods
 		if m.Modifiers.IsPrivate() {
-			// Private methods are only visible from the class where they are declared
-			if m.Class != nil && m.Class.GetName() != class.GetName() {
-				// Inherited private method - only visible if caller is that parent class
-				if callerClass == nil || callerClass.GetName() != m.Class.GetName() {
-					continue
-				}
-			} else {
-				// Private method in this class - only visible if caller is this class
-				if callerClass == nil || callerClass.GetName() != class.GetName() {
-					continue
-				}
+			declaringClass := m.Class
+			if declaringClass == nil {
+				declaringClass = class
+			}
+			if callerClass == nil || callerClass.GetName() != declaringClass.GetName() {
+				continue
 			}
 		}
 		// Filter out protected methods when called from outside the hierarchy

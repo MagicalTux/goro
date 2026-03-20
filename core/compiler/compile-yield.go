@@ -127,6 +127,18 @@ func compileYield(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	}
 	f.isGenerator = true
 
+	// Check return type constraints for generators.
+	// Generator return type must be Generator, Iterator, Traversable, iterable, or mixed.
+	if f.returnType != nil {
+		if !isValidGeneratorReturnType(f.returnType) {
+			return nil, &phpv.PhpError{
+				Err:  fmt.Errorf("Generator return type must be a supertype of Generator, %s given", f.returnType.String()),
+				Code: phpv.E_COMPILE_ERROR,
+				Loc:  l,
+			}
+		}
+	}
+
 	isYieldFrom := i.Type == tokenizer.T_YIELD_FROM
 
 	// The tokenizer doesn't emit T_YIELD_FROM; it emits T_YIELD followed by
@@ -173,6 +185,16 @@ func compileYield(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		return nil, err
 	}
 
+	// In a return-by-reference generator, yield values are yielded by reference.
+	// Cannot take reference of a nullsafe chain.
+	if f.rref && containsNullSafe(value) {
+		return nil, &phpv.PhpError{
+			Err:  fmt.Errorf("Cannot take reference of a nullsafe chain"),
+			Code: phpv.E_COMPILE_ERROR,
+			Loc:  l,
+		}
+	}
+
 	// Check if this is yield $key => $value
 	next, err = c.NextItem()
 	if err != nil {
@@ -185,6 +207,14 @@ func compileYield(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		value, err = compileExpr(nil, c)
 		if err != nil {
 			return nil, err
+		}
+		// Check nullsafe in value of key=>value yield in ref generator
+		if f.rref && containsNullSafe(value) {
+			return nil, &phpv.PhpError{
+				Err:  fmt.Errorf("Cannot take reference of a nullsafe chain"),
+				Code: phpv.E_COMPILE_ERROR,
+				Loc:  l,
+			}
 		}
 		return &runYield{key: key, value: value, l: l}, nil
 	}
@@ -294,4 +324,37 @@ func (g *generatorClosure) Loc() *phpv.Loc {
 
 func (g *generatorClosure) ReturnsByRef() bool {
 	return g.ZClosure.ReturnsByRef()
+}
+
+// isValidGeneratorReturnType checks if a type hint is valid as a generator return type.
+// Valid types are: Generator, Iterator, Traversable, iterable, mixed, object, callable,
+// or any union containing at least one of these.
+func isValidGeneratorReturnType(th *phpv.TypeHint) bool {
+	if th == nil {
+		return true
+	}
+	// Union types: at least one member must be a valid generator supertype
+	if len(th.Union) > 0 {
+		for _, alt := range th.Union {
+			if isValidGeneratorReturnType(alt) {
+				return true
+			}
+		}
+		return false
+	}
+	// mixed accepts anything
+	if th.Type() == phpv.ZtMixed {
+		return true
+	}
+	// Check for specific class names that are supertypes of Generator
+	if th.Type() == phpv.ZtObject {
+		cn := th.ClassName().ToLower()
+		switch cn {
+		case "generator", "iterator", "traversable", "iterable", "callable":
+			return true
+		case "":
+			return true // bare "object" type accepts Generator
+		}
+	}
+	return false
 }

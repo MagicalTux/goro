@@ -95,6 +95,14 @@ type CompoundWritable interface {
 	IsCompoundWritable()
 }
 
+// ReadonlyRefChecker is implemented by Runnable types (like object property
+// access) that can check whether creating a reference would violate readonly
+// constraints. Used by the by-ref parameter passing code to throw
+// "Cannot indirectly modify readonly property" before making a reference.
+type ReadonlyRefChecker interface {
+	CheckReadonlyRef(ctx Context) error
+}
+
 // WriteContextSetter is implemented by Runnable types (like array access
 // expressions) that can be put into write context to suppress warnings
 // during auto-vivification. Used when passing array elements by reference.

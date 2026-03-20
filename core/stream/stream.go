@@ -155,11 +155,15 @@ func (s *Stream) AsVal(ctx phpv.Context, t phpv.ZType) (phpv.Val, error) {
 	case phpv.ZtResource:
 		return s, nil
 	case phpv.ZtBool:
-		return phpv.ZTrue.ZVal(), nil
+		return phpv.ZBool(true), nil
 	case phpv.ZtInt:
-		return phpv.ZInt(s.ResourceID).ZVal(), nil
+		return phpv.ZInt(s.ResourceID), nil
+	case phpv.ZtFloat:
+		return phpv.ZFloat(s.ResourceID), nil
 	case phpv.ZtString:
-		return phpv.ZStr(s.String()), nil
+		return phpv.ZString(s.String()), nil
+	case phpv.ZtNull:
+		return phpv.ZNull{}, nil
 	case phpv.ZtArray:
 		arr := phpv.NewZArray()
 		arr.OffsetSet(ctx, nil, s.ZVal())

@@ -4,6 +4,8 @@ import (
 	"math"
 	"strconv"
 	"strings"
+
+	"github.com/MagicalTux/goro/core/logopt"
 )
 
 type ZType int
@@ -184,32 +186,68 @@ func (z ZFloat) ZVal() *ZVal {
 }
 
 func (z ZFloat) AsVal(ctx Context, t ZType) (Val, error) {
+	f := float64(z)
 	switch t {
 	case ZtBool:
+		// PHP 8.5: warn when NAN is coerced to bool
+		if math.IsNaN(f) && ctx != nil {
+			if err := ctx.Warn("unexpected NAN value was coerced to %s", t.TypeName(), logopt.NoFuncName(true)); err != nil {
+				return ZBool(true), err
+			}
+		}
 		return ZBool(z != 0), nil
 	case ZtInt:
-		if math.IsNaN(float64(z)) || math.IsInf(float64(z), 0) || float64(z) > math.MaxInt64 || float64(z) < math.MinInt64 {
+		if math.IsNaN(f) || math.IsInf(f, 0) || f > math.MaxInt64 || f < math.MinInt64 {
 			if ctx != nil {
-				if err := ctx.Warn("The float %s is not representable as an int, cast occurred", FormatFloat(float64(z))); err != nil {
-					return ZInt(z), err
+				if err := ctx.Warn("The float %s is not representable as an int, cast occurred", FormatFloat(f), logopt.NoFuncName(true)); err != nil {
+					return ZInt(0), err
 				}
 			}
+			return ZInt(0), nil
 		}
 		return ZInt(z), nil
 	case ZtFloat:
 		return z, nil
 	case ZtString:
+		// PHP 8.5: warn when NAN is coerced to string
+		if math.IsNaN(f) && ctx != nil {
+			if err := ctx.Warn("unexpected NAN value was coerced to %s", t.TypeName(), logopt.NoFuncName(true)); err != nil {
+				return ZString("NAN"), err
+			}
+		}
 		prec := 14
 		if ctx != nil {
 			prec = GetPrecision(ctx)
 		}
-		return ZString(FormatFloatPrecision(float64(z), prec)), nil
+		return ZString(FormatFloatPrecision(f, prec)), nil
 	case ZtArray:
+		// PHP 8.5: warn when NAN is coerced to array
+		if math.IsNaN(f) && ctx != nil {
+			if err := ctx.Warn("unexpected NAN value was coerced to %s", t.TypeName(), logopt.NoFuncName(true)); err != nil {
+				arr := NewZArray()
+				arr.OffsetSet(ctx, nil, ZNULL.ZVal())
+				return arr, err
+			}
+		}
 		arr := NewZArray()
 		arr.OffsetSet(ctx, nil, z.ZVal())
 		return arr, nil
 	case ZtObject:
+		// PHP 8.5: warn when NAN is coerced to object
+		if math.IsNaN(f) && ctx != nil {
+			if err := ctx.Warn("unexpected NAN value was coerced to %s", t.TypeName(), logopt.NoFuncName(true)); err != nil {
+				return scalarToObject(ctx, ZNULL.ZVal())
+			}
+		}
 		return scalarToObject(ctx, z.ZVal())
+	case ZtNull:
+		// PHP 8.5: warn when NAN is coerced to null
+		if math.IsNaN(f) && ctx != nil {
+			if err := ctx.Warn("unexpected NAN value was coerced to %s", t.TypeName(), logopt.NoFuncName(true)); err != nil {
+				return ZNull{}, err
+			}
+		}
+		return ZNull{}, nil
 	}
 	return nil, nil
 }
@@ -371,6 +409,31 @@ func (v ZFloat) Value() Val {
 	return v
 }
 
+// FloatToIntImplicit converts a float to int for implicit conversion contexts (bitwise ops,
+// array offsets, modulo, function args with int type, etc.). It emits the PHP 8.1+
+// "Deprecated: Implicit conversion from float X to int loses precision" when the float
+// has a non-zero fractional part.
+func FloatToIntImplicit(ctx Context, f ZFloat) (ZInt, error) {
+	fv := float64(f)
+	if math.IsNaN(fv) || math.IsInf(fv, 0) || fv > math.MaxInt64 || fv < math.MinInt64 {
+		if ctx != nil {
+			if err := ctx.Warn("The float %s is not representable as an int, cast occurred", FormatFloat(fv), logopt.NoFuncName(true)); err != nil {
+				return ZInt(0), err
+			}
+		}
+		return ZInt(0), nil
+	}
+	// Check if the float has a fractional part
+	if fv != math.Trunc(fv) {
+		if ctx != nil {
+			if err := ctx.Deprecated("Implicit conversion from float %s to int loses precision", FormatFloat(fv), logopt.NoFuncName(true)); err != nil {
+				return ZInt(fv), err
+			}
+		}
+	}
+	return ZInt(fv), nil
+}
+
 func (zt ZType) String() string {
 	switch zt {
 	case ZtNull:
@@ -429,6 +492,26 @@ func (zt ZType) TypeName() string {
 func ZValTypeName(z *ZVal) string {
 	if z == nil {
 		return "null"
+	}
+	if z.GetType() == ZtObject {
+		if obj, ok := z.Value().(ZObject); ok {
+			return string(obj.GetClass().GetName())
+		}
+	}
+	return z.GetType().TypeName()
+}
+
+// ZValTypeNameDetailed returns the PHP 8 type name for error messages, where
+// booleans are "true" or "false" instead of "bool".
+func ZValTypeNameDetailed(z *ZVal) string {
+	if z == nil {
+		return "null"
+	}
+	if z.GetType() == ZtBool {
+		if z.Value().(ZBool) {
+			return "true"
+		}
+		return "false"
 	}
 	if z.GetType() == ZtObject {
 		if obj, ok := z.Value().(ZObject); ok {

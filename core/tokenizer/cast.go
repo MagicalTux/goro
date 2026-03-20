@@ -13,18 +13,22 @@ func lexPhpPossibleCast(l *Lexer) lexState {
 	l.acceptSpaces()
 	if l.accept(")") {
 
-		switch strings.ToLower(typ) {
+		ltyp := strings.ToLower(typ)
+		switch ltyp {
 		case "int", "integer":
-			l.emit(T_INT_CAST)
+			l.emitWithData(T_INT_CAST, ltyp)
 			return l.base
 		case "bool", "boolean":
-			l.emit(T_BOOL_CAST)
+			l.emitWithData(T_BOOL_CAST, ltyp)
 			return l.base
-		case "float", "double", "real":
-			l.emit(T_DOUBLE_CAST)
+		case "float", "double":
+			l.emitWithData(T_DOUBLE_CAST, ltyp)
 			return l.base
-		case "string":
-			l.emit(T_STRING_CAST)
+		case "real":
+			l.emitWithData(T_DOUBLE_CAST, "real")
+			return l.base
+		case "string", "binary":
+			l.emitWithData(T_STRING_CAST, ltyp)
 			return l.base
 		case "array":
 			l.emit(T_ARRAY_CAST)
