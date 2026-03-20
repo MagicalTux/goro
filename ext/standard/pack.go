@@ -6,10 +6,25 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"unsafe"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
+
+// nativeEndian is the byte order of the current machine.
+var nativeEndian binary.ByteOrder
+
+func init() {
+	buf := [2]byte{}
+	*(*uint16)(unsafe.Pointer(&buf[0])) = uint16(0xABCD)
+	if buf[0] == 0xCD {
+		nativeEndian = binary.LittleEndian
+	} else {
+		nativeEndian = binary.BigEndian
+	}
+}
 
 // > func string pack ( string $format [, mixed $... ] )
 func fncPack(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
@@ -146,6 +161,20 @@ func fncPack(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				v := args[argIdx].AsInt(ctx)
 				argIdx++
 				binary.Write(&buf, binary.LittleEndian, uint16(v))
+			}
+
+		case 'i', 'I': // signed/unsigned machine int (typically 32 bit)
+			count := repeat
+			if count == -1 {
+				count = len(args) - argIdx
+			}
+			for j := 0; j < count; j++ {
+				if argIdx >= len(args) {
+					return nil, fmt.Errorf("pack(): Type %c: too few arguments", code)
+				}
+				v := args[argIdx].AsInt(ctx)
+				argIdx++
+				binary.Write(&buf, nativeEndian, uint32(v))
 			}
 
 		case 'l', 'L': // signed/unsigned long (32 bit, machine byte order)
@@ -530,6 +559,34 @@ func fncUnpack(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				setUnpackResult(result, ctx, name, phpv.ZInt(v).ZVal(), j+1)
 			}
 
+		case 'i': // signed machine int (32 bit, native byte order)
+			count := repeat
+			if count == -1 {
+				count = (len(d) - pos) / 4
+			}
+			for j := 0; j < count; j++ {
+				if pos+4 > len(d) {
+					return nil, fmt.Errorf("unpack(): Type i: not enough input")
+				}
+				v := int32(nativeEndian.Uint32(d[pos:]))
+				pos += 4
+				setUnpackResult(result, ctx, name, phpv.ZInt(v).ZVal(), j+1)
+			}
+
+		case 'I': // unsigned machine int (32 bit, native byte order)
+			count := repeat
+			if count == -1 {
+				count = (len(d) - pos) / 4
+			}
+			for j := 0; j < count; j++ {
+				if pos+4 > len(d) {
+					return nil, fmt.Errorf("unpack(): Type I: not enough input")
+				}
+				v := nativeEndian.Uint32(d[pos:])
+				pos += 4
+				setUnpackResult(result, ctx, name, phpv.ZInt(v).ZVal(), j+1)
+			}
+
 		case 'l': // signed long (32 bit)
 			count := repeat
 			if count == -1 {
@@ -699,7 +756,7 @@ func fncUnpack(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			}
 
 		default:
-			return nil, fmt.Errorf("unpack(): Type %c: unknown format code", code)
+			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, fmt.Sprintf("Invalid format type %c", code))
 		}
 	}
 

@@ -74,6 +74,10 @@ func (s *Stream) ReadByte() (byte, error) {
 	b := make([]byte, 1)
 	n, err := s.Read(b)
 
+	if err == io.EOF {
+		s.eof = true
+	}
+
 	if err == nil && n == 0 {
 		return 0, ErrNotSupported
 	}

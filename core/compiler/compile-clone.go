@@ -106,10 +106,20 @@ func (r *runnableClone) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 	// Apply withProperties: set each property on the cloned object
 	if withProps != nil {
 		arr := withProps.AsArray(ctx)
-		// Check for references in the with-properties array
-		for _, v := range arr.Iterate(ctx) {
-			if v.IsRef() {
-				return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot assign by reference when cloning with updated properties")
+		// Check for references in the with-properties array.
+		// Use CurrentRef (if available) to detect reference values without
+		// the iterator automatically derefing them.
+		it := arr.NewIterator()
+		type refIterator interface {
+			CurrentRef(phpv.Context) (*phpv.ZVal, error)
+		}
+		if ri, ok := it.(refIterator); ok {
+			for it.Valid(ctx) {
+				v, _ := ri.CurrentRef(ctx)
+				if v != nil && v.IsRef() {
+					return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot assign by reference when cloning with updated properties")
+				}
+				it.Next(ctx)
 			}
 		}
 		for k, v := range arr.Iterate(ctx) {

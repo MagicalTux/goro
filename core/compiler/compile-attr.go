@@ -2,6 +2,7 @@ package compiler
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
@@ -201,6 +202,15 @@ func parseAttributeArgs(c compileCtx) (args []*phpv.ZVal, argExprs []phpv.Runnab
 			}
 			if err != nil {
 				return nil, nil, nil, err
+			}
+
+			// Check for invalid operations in constant expressions (function calls, variables)
+			if containsRuntimeOps(expr) {
+				return nil, nil, nil, &phpv.PhpError{
+					Err:  fmt.Errorf("Constant expression contains invalid operations"),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  i.Loc(),
+				}
 			}
 
 			// Try to evaluate the expression at compile time
