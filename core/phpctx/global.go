@@ -1904,6 +1904,10 @@ func (g *Global) NextObjectID() int {
 	return g.nextObjectID
 }
 
+func (g *Global) ReleaseObjectID(id int) {
+	// No-op for now: Go GC doesn't provide deterministic object lifecycle
+}
+
 func (g *Global) RegisterDestructor(obj phpv.ZObject) {
 	g.destructObjects = append(g.destructObjects, obj)
 }

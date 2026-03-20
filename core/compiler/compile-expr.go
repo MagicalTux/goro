@@ -497,6 +497,81 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		}
 
 		return &runRef{v, l}, nil
+	case tokenizer.T_ATTRIBUTE:
+		// #[Attr] in expression context: attributes on anonymous functions/closures
+		attrs, err := parseAttributes(c)
+		if err != nil {
+			return nil, err
+		}
+		// Read what follows: should be function, fn, or static function/fn
+		next, err := c.NextItem()
+		if err != nil {
+			return nil, err
+		}
+		// Handle additional attribute groups
+		for next.Type == tokenizer.T_ATTRIBUTE {
+			moreAttrs, err := parseAttributes(c)
+			if err != nil {
+				return nil, err
+			}
+			attrs = append(attrs, moreAttrs...)
+			next, err = c.NextItem()
+			if err != nil {
+				return nil, err
+			}
+		}
+		switch next.Type {
+		case tokenizer.T_FUNCTION:
+			r, err := compileFunction(next, c)
+			if err != nil {
+				return nil, err
+			}
+			if zc, ok := r.(*ZClosure); ok {
+				zc.attributes = attrs
+			}
+			return r, nil
+		case tokenizer.T_FN:
+			r, err := compileArrowFunction(next, c)
+			if err != nil {
+				return nil, err
+			}
+			if zc, ok := r.(*ZClosure); ok {
+				zc.attributes = attrs
+			}
+			return r, nil
+		case tokenizer.T_STATIC:
+			// static function or static fn
+			next2, err := c.NextItem()
+			if err != nil {
+				return nil, err
+			}
+			switch next2.Type {
+			case tokenizer.T_FUNCTION:
+				r, err := compileFunction(next2, c)
+				if err != nil {
+					return nil, err
+				}
+				if zc, ok := r.(*ZClosure); ok {
+					zc.attributes = attrs
+					zc.isStatic = true
+				}
+				return r, nil
+			case tokenizer.T_FN:
+				r, err := compileArrowFunction(next2, c)
+				if err != nil {
+					return nil, err
+				}
+				if zc, ok := r.(*ZClosure); ok {
+					zc.attributes = attrs
+					zc.isStatic = true
+				}
+				return r, nil
+			default:
+				return nil, next2.Unexpected()
+			}
+		default:
+			return nil, next.Unexpected()
+		}
 	default:
 		h, ok := itemTypeHandler[i.Type]
 		if ok && h != nil {

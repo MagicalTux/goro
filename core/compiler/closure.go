@@ -208,6 +208,9 @@ func init() {
 								thisObj.GetClass().GetName(), logopt.NoFuncName(true))
 							return phpv.ZNULL.ZVal(), nil
 						}
+						// Calling with an object on a function closure implies binding scope, warn and return null
+						ctx.Warn("Cannot rebind scope of closure created from function, this will be an error in PHP 9", logopt.NoFuncName(true))
+						return phpv.ZNULL.ZVal(), nil
 					}
 
 					if thisObj == nil {
@@ -1241,6 +1244,8 @@ func closureBind(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 						return phpv.ZNULL.ZVal(), nil
 					}
 					bound.class = cls
+					// Reset calledClass so static::class resolves to the new scope
+					bound.calledClass = nil
 				} else {
 					ctx.Warn("Class \"%s\" not found", scopeName, logopt.NoFuncName(true))
 				}
@@ -1248,9 +1253,11 @@ func closureBind(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		} else if scopeArg.GetType() == phpv.ZtObject {
 			if obj, ok2 := scopeArg.Value().(phpv.ZObject); ok2 {
 				bound.class = obj.GetClass()
+				bound.calledClass = nil
 			}
 		} else if scopeArg.GetType() == phpv.ZtNull {
 			bound.class = nil
+			bound.calledClass = nil
 		} else {
 			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
 				"Closure::bindTo(): Argument #2 ($newScope) must be of type object|string|null, "+scopeArg.GetType().TypeName()+" given")
@@ -1311,7 +1318,7 @@ func closureFromCallable(ctx phpv.Context, arg *phpv.ZVal) (*phpv.ZVal, error) {
 			prefix := string(s[:strings.Index(string(s), "::")])
 			methodName := s[strings.Index(string(s), "::")+2:]
 
-			ctx.Deprecated("Use of \"%s\" in callables is deprecated", prefix)
+			ctx.Deprecated("Use of \"%s\" in callables is deprecated", prefix, logopt.NoFuncName(true))
 
 			callerClass := ctx.Class()
 			if callerClass == nil {
@@ -1511,10 +1518,13 @@ func closureFromCallable(ctx phpv.Context, arg *phpv.ZVal) (*phpv.ZVal, error) {
 			callable = phpv.BindClass(member.Method, class, true)
 		}
 
+		// Use the declaring class for the closure's class and name
+		// (e.g., SplDoublyLinkedList::count, not SplStack::count)
+		// declaringClass was already set above for visibility checks
 		w := &wrappedClosure{
 			inner:      callable,
-			name:       phpv.ZString(string(class.GetName()) + "::" + string(member.Name)),
-			class:      class,
+			name:       phpv.ZString(string(declaringClass.GetName()) + "::" + string(member.Name)),
+			class:      declaringClass,
 			fromMethod: true,
 			isStaticW:  member.Modifiers.IsStatic(),
 		}
@@ -1648,6 +1658,21 @@ func closureDebugInfo(ctx phpv.Context, o *phpobj.ZObject) (*phpv.ZVal, error) {
 			}
 			arr.OffsetSet(ctx, phpv.ZString("parameter"), paramArr.ZVal())
 		}
+		// "static" key: static variables from the wrapped function
+		if innerClosure, ok2 := w.inner.(*ZClosure); ok2 {
+			staticVars := collectStaticVars(innerClosure.code)
+			if len(staticVars) > 0 {
+				staticArr := phpv.NewZArray()
+				for _, sv := range staticVars {
+					val := sv.z
+					if val == nil {
+						val = phpv.ZNULL.ZVal()
+					}
+					staticArr.OffsetSet(ctx, sv.varName, val)
+				}
+				arr.OffsetSet(ctx, phpv.ZString("static"), staticArr.ZVal())
+			}
+		}
 		if w.this != nil {
 			arr.OffsetSet(ctx, phpv.ZString("this"), w.this.ZVal())
 		}
@@ -1695,16 +1720,34 @@ func closureDebugInfo(ctx phpv.Context, o *phpobj.ZObject) (*phpv.ZVal, error) {
 		arr.OffsetSet(ctx, phpv.ZString("parameter"), paramArr.ZVal())
 	}
 
-	// "static" key: captured use() variables
-	if len(z.use) > 0 {
-		staticArr := phpv.NewZArray()
-		for _, u := range z.use {
-			val := u.Value
+	// "static" key: captured use() variables AND static variables from the code body
+	hasStatic := false
+	staticArr := phpv.NewZArray()
+
+	// use() variables
+	for _, u := range z.use {
+		hasStatic = true
+		val := u.Value
+		if val == nil {
+			val = phpv.ZNULL.ZVal()
+		}
+		staticArr.OffsetSet(ctx, u.VarName, val)
+	}
+
+	// Static variables from the function body (static $x = ...)
+	if z.code != nil {
+		staticVars := collectStaticVars(z.code)
+		for _, sv := range staticVars {
+			hasStatic = true
+			val := sv.z
 			if val == nil {
 				val = phpv.ZNULL.ZVal()
 			}
-			staticArr.OffsetSet(ctx, u.VarName, val)
+			staticArr.OffsetSet(ctx, sv.varName, val)
 		}
+	}
+
+	if hasStatic {
 		arr.OffsetSet(ctx, phpv.ZString("static"), staticArr.ZVal())
 	}
 
@@ -1714,4 +1757,23 @@ func closureDebugInfo(ctx phpv.Context, o *phpobj.ZObject) (*phpv.ZVal, error) {
 	}
 
 	return arr.ZVal(), nil
+}
+
+// collectStaticVars walks a Runnable tree and collects all staticVarInfo from runStaticVar nodes.
+func collectStaticVars(r phpv.Runnable) []*staticVarInfo {
+	if r == nil {
+		return nil
+	}
+	switch v := r.(type) {
+	case *runStaticVar:
+		return v.vars
+	case phpv.Runnables:
+		var result []*staticVarInfo
+		for _, sub := range v {
+			result = append(result, collectStaticVars(sub)...)
+		}
+		return result
+	default:
+		return nil
+	}
 }

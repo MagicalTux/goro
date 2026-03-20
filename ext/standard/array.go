@@ -455,13 +455,22 @@ func fncArrayWalk(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		callbackArgs = append(callbackArgs, *userdata)
 	}
 
-	for k, v := range array.Get().Iterate(ctx) {
+	// array_walk passes elements by reference to the callback,
+	// so use CurrentMakeRef to create references to hash table entries.
+	arr := array.Get()
+	it := arr.NewIterator()
+	for it.Valid(ctx) {
+		k, _ := it.Key(ctx)
+		v, _ := it.(interface {
+			CurrentMakeRef(phpv.Context) (*phpv.ZVal, error)
+		}).CurrentMakeRef(ctx)
 		callbackArgs[0] = v
 		callbackArgs[1] = k
 		_, err := ctx.CallZValInternal(ctx, callback, callbackArgs)
 		if err != nil {
 			return nil, err
 		}
+		it.Next(ctx)
 	}
 
 	return phpv.ZTrue.ZVal(), nil
@@ -999,6 +1008,29 @@ func fncArrayUnique(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 // > func array array_slice ( array $array , int $offset [, int $length = NULL [, bool $preserve_keys = FALSE ]] )
 func fncArraySlice(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	// Validate $length parameter type before Expand (PHP rejects arrays and objects)
+	// Also track whether length was explicitly null.
+	lengthIsNull := false
+	if len(args) >= 3 && args[2] != nil {
+		if args[2].IsNull() {
+			lengthIsNull = true
+		} else {
+			t := args[2].GetType()
+			if t == phpv.ZtArray || t == phpv.ZtObject {
+				return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+					fmt.Sprintf("array_slice(): Argument #3 ($length) must be of type ?int, %s given",
+						phpv.ZValTypeName(args[2])))
+			}
+			// In strict_types mode, float is also rejected for int parameters
+			if t == phpv.ZtFloat {
+				strictTypes := ctx.GetConfig("strict_types", phpv.ZInt(0).ZVal())
+				if strictTypes != nil && strictTypes.AsInt(ctx) == 1 {
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+						fmt.Sprintf("array_slice(): Argument #3 ($length) must be of type ?int, float given"))
+				}
+			}
+		}
+	}
 	var array *phpv.ZArray
 	var offset phpv.ZInt
 	var lengthArg *phpv.ZInt
@@ -1006,6 +1038,10 @@ func fncArraySlice(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	_, err := core.Expand(ctx, args, &array, &offset, &lengthArg, &preserveKeysArg)
 	if err != nil {
 		return nil, ctx.Error(err)
+	}
+	// If length was explicitly null, treat as if it wasn't provided (take all)
+	if lengthIsNull {
+		lengthArg = nil
 	}
 
 	arrayCount := array.Count(ctx)

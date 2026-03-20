@@ -181,7 +181,17 @@ func fncCallUserFunc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	return ctx.CallZVal(callerCtx, callback, args[1:], nil)
+	// call_user_func always passes arguments by value. Strip the Name
+	// from each argument so that the callee's by-ref parameter handling
+	// in callZValImpl sees an unnamed value and emits the appropriate
+	// "must be passed by reference, value given" warning instead of
+	// silently creating a reference.
+	cbArgs := make([]*phpv.ZVal, len(args)-1)
+	for i, a := range args[1:] {
+		cbArgs[i] = a.Dup()
+		cbArgs[i].Name = nil
+	}
+	return ctx.CallZVal(callerCtx, callback, cbArgs, nil)
 }
 
 // > func mixed call_user_func_array ( callable $callback , array $param_arr )
@@ -205,9 +215,20 @@ func fncCallUserFuncArray(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, erro
 		return nil, err
 	}
 
+	// call_user_func_array passes arguments by value unless the array
+	// element is already a reference (&$var). For non-reference values,
+	// strip the Name so by-ref parameter handling emits the appropriate
+	// "must be passed by reference, value given" warning.
+	// For actual references, preserve them so they pass through.
 	var cbArgs []*phpv.ZVal
 	for _, v := range arrayArgs.Iterate(ctx) {
-		cbArgs = append(cbArgs, v)
+		if v.IsRef() {
+			cbArgs = append(cbArgs, v)
+		} else {
+			dup := v.Dup()
+			dup.Name = nil
+			cbArgs = append(cbArgs, dup)
+		}
 	}
 	return ctx.CallZVal(callerCtx, callback, cbArgs, nil)
 }

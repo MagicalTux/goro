@@ -125,6 +125,7 @@ type GlobalContext interface {
 
 	NextResourceID() int
 	NextObjectID() int
+	ReleaseObjectID(id int)
 
 	GetDeclaredClasses() []ZString
 	GetDefinedFunctions(ctx Context, excludeDisabled bool) (*ZArray, error)

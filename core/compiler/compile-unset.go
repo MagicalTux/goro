@@ -33,9 +33,12 @@ func (r *runnableUnset) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 			// - ArrayAccess: unset should only call offsetUnset, not offsetGet
 			// - Object properties: reading triggers checkStaticPropertyAccess which
 			//   would cause a duplicate notice (WriteValue also triggers it)
+			// - Static class properties: unset always throws "Attempt to unset static property"
+			//   regardless of whether the property exists, so skip the read
 			_, isArrayAccess := v.(*runArrayAccess)
 			_, isObjectVar := v.(*runObjectVar)
-			if !isArrayAccess && !isObjectVar {
+			_, isStaticVar := v.(*runClassStaticVarRef)
+			if !isArrayAccess && !isObjectVar && !isStaticVar {
 				zv, runErr := v.Run(ctx)
 				if runErr != nil {
 					return nil, runErr

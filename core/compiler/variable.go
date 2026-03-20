@@ -28,6 +28,11 @@ func (rv *runVariable) VarName() phpv.ZString {
 }
 
 func (rv *runVariable) IsUnDefined(ctx phpv.Context) bool {
+	// $this has its own special error ("Using $this when not in object context"),
+	// so don't report it as an undefined variable.
+	if rv.v.String() == "this" {
+		return false
+	}
 	exists, _ := ctx.OffsetExists(ctx, rv.v)
 	return !exists
 }

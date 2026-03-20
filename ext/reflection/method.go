@@ -339,11 +339,16 @@ func reflectionMethodGetClosure(ctx phpv.Context, o *phpobj.ZObject, args []*php
 
 	// Build an array callable [$instance, "methodName"] or ["ClassName", "methodName"]
 	// and use Closure::fromCallable to create a proper Closure object.
+	// Use the declaring class (method.Class) if available, as it's the real owner of the method.
 	arr := phpv.NewZArray()
 	if instance != nil {
 		arr.OffsetSet(ctx, phpv.ZInt(0), instance.ZVal())
 	} else {
-		arr.OffsetSet(ctx, phpv.ZInt(0), data.class.GetName().ZVal())
+		className := data.class.GetName()
+		if data.method.Class != nil {
+			className = data.method.Class.GetName()
+		}
+		arr.OffsetSet(ctx, phpv.ZInt(0), className.ZVal())
 	}
 	arr.OffsetSet(ctx, phpv.ZInt(1), data.method.Name.ZVal())
 	return closureFromCallableVal(ctx, arr.ZVal())

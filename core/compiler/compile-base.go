@@ -294,6 +294,60 @@ func compileTopLevelConst(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error
 			return nil, err
 		}
 
+		// Validate closures in constant expressions
+		if zc, ok := val.(*ZClosure); ok {
+			if !zc.isStatic {
+				return nil, &phpv.PhpError{
+					Err:  fmt.Errorf("Closures in constant expressions must be static"),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  zc.start,
+				}
+			}
+			if len(zc.use) > 0 {
+				return nil, &phpv.PhpError{
+					Err:  fmt.Errorf("Cannot use(...) variables in constant expression"),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  zc.start,
+				}
+			}
+		}
+
+		// Check for static:: in top-level constant (compile-time error)
+		if loc := checkStaticClassInConstExpr(val); loc != nil {
+			return nil, &phpv.PhpError{
+				Err:  fmt.Errorf("\"static::\" is not allowed in compile-time constants"),
+				Code: phpv.E_COMPILE_ERROR,
+				Loc:  loc,
+			}
+		}
+
+		// Check for (expression)::class in constant expressions
+		if loc := checkExpressionClassInConstExpr(val); loc != nil {
+			return nil, &phpv.PhpError{
+				Err:  fmt.Errorf("(expression)::class cannot be used in constant expressions"),
+				Code: phpv.E_COMPILE_ERROR,
+				Loc:  loc,
+			}
+		}
+
+		// Check for dynamic class names ($var::CONST) in constant expressions
+		if containsDynamicClassName(val) {
+			return nil, &phpv.PhpError{
+				Err:  fmt.Errorf("Dynamic class names are not allowed in compile-time class constant references"),
+				Code: phpv.E_COMPILE_ERROR,
+				Loc:  i.Loc(),
+			}
+		}
+
+		// Check for other runtime ops in constant expressions
+		if containsRuntimeOps(val) {
+			return nil, &phpv.PhpError{
+				Err:  fmt.Errorf("Constant expression contains invalid operations"),
+				Code: phpv.E_COMPILE_ERROR,
+				Loc:  i.Loc(),
+			}
+		}
+
 		// Prepend current namespace to constant name
 		constName := phpv.ZString(name)
 		ns := c.getNamespace()

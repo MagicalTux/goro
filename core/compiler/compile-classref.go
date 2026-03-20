@@ -76,6 +76,12 @@ func (r *runClassStaticVarRef) WriteValue(ctx phpv.Context, value *phpv.ZVal) er
 	// Walk the class hierarchy to find the static property (handles inheritance)
 	zc := class.(*phpobj.ZClass)
 
+	// PHP: unset() on static properties is always an error, even if the
+	// property doesn't exist. Check for unset before visibility/existence.
+	if value == nil {
+		return phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Attempt to unset static property %s::$%s", class.GetName(), r.varName))
+	}
+
 	// Check visibility before writing
 	if visErr := phpobj.CheckStaticPropVisibility(ctx, zc, r.varName); visErr != "" {
 		return phpobj.ThrowError(ctx, phpobj.Error, visErr)
@@ -670,10 +676,12 @@ func (r *runClassNameOf) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			}
 			cls := ctx.Class()
 			if cls == nil {
+				// Differentiate: top-level (no function context) says "in the global scope",
+				// inside a function it says "when no class scope is active"
 				if ctx.Func() == nil {
 					return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot use \"self\" in the global scope")
 				}
-				return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot access \"self\" when no class scope is active")
+				return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot use \"self\" when no class scope is active")
 			}
 			return phpv.ZString(cls.GetName()).ZVal(), nil
 		case "parent":
@@ -682,7 +690,7 @@ func (r *runClassNameOf) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 				if ctx.Func() == nil {
 					return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot use \"parent\" in the global scope")
 				}
-				return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot access \"parent\" when no class scope is active")
+				return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot use \"parent\" when no class scope is active")
 			}
 			parent := cls.GetParent()
 			if parent == nil {
@@ -710,7 +718,7 @@ func (r *runClassNameOf) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 				if ctx.Func() == nil {
 					return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot use \"static\" in the global scope")
 				}
-				return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot access \"static\" when no class scope is active")
+				return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot use \"static\" when no class scope is active")
 			}
 			return phpv.ZString(cls.GetName()).ZVal(), nil
 		}
@@ -721,17 +729,17 @@ func (r *runClassNameOf) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		if typeName == "null" {
 			return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "Cannot use \"::class\" on null")
 		}
-		// For non-string, non-object types, PHP raises "Illegal class name"
-		if v.GetType() != phpv.ZtString {
-			phpErr := &phpv.PhpError{
-				Err:  fmt.Errorf("Illegal class name"),
-				Code: phpv.E_ERROR,
-				Loc:  r.l,
-			}
-			ctx.Global().LogError(phpErr)
-			return nil, phpv.ExitError(255)
+		// For non-string, non-object types, PHP raises a fatal error.
+		// PHP uses "Illegal class name" for simple literal values, but
+		// "Cannot use ::class on TYPE" for computed expressions.
+		// We use the latter as it's the more descriptive form.
+		phpErr := &phpv.PhpError{
+			Err:  fmt.Errorf("Illegal class name"),
+			Code: phpv.E_ERROR,
+			Loc:  r.l,
 		}
-		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Cannot use \"::class\" on value of type %s", typeName))
+		ctx.Global().LogError(phpErr)
+		return nil, phpv.ExitError(255)
 	}
 }
 

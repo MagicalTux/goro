@@ -1230,8 +1230,13 @@ func compileFunctionArgs(c compileCtx) (res []*phpv.FuncArg, err error) {
 		}
 
 		// Validate internal attributes on parameters at compile time
+		// For promoted properties, also allow attributes targeting properties
 		if len(arg.Attributes) > 0 {
-			if msg := phpobj.ValidateInternalAttributeList(c, arg.Attributes, phpobj.AttributeTARGET_PARAMETER); msg != "" {
+			target := phpobj.AttributeTARGET_PARAMETER
+			if arg.Promotion != 0 {
+				target |= phpobj.AttributeTARGET_PROPERTY
+			}
+			if msg := phpobj.ValidateInternalAttributeList(c, arg.Attributes, target); msg != "" {
 				phpErr := &phpv.PhpError{
 					Err:  fmt.Errorf("%s", msg),
 					Code: phpv.E_COMPILE_ERROR,
@@ -1255,6 +1260,43 @@ func compileFunctionArgs(c compileCtx) (res []*phpv.FuncArg, err error) {
 			if err != nil {
 				return nil, err
 			}
+
+			// Check for static::class in method default parameter (compile-time error)
+			if loc := checkStaticClassInConstExpr(r); loc != nil {
+				return nil, &phpv.PhpError{
+					Err:  fmt.Errorf("static::class cannot be used for compile-time class name resolution"),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  loc,
+				}
+			}
+
+			// Resolve self::class and parent::class at compile time in default parameters
+			if cn, ok := r.(*runClassNameOf); ok {
+				if zv, ok2 := cn.className.(*runZVal); ok2 {
+					if s, ok3 := zv.v.(phpv.ZString); ok3 {
+						switch s.ToLower() {
+						case "self":
+							if cls := c.getClass(); cls != nil {
+								r = &runZVal{cls.GetName(), cn.l}
+							}
+						case "parent":
+							if cls := c.getClass(); cls != nil {
+								if cls.ExtendsStr != "" {
+									// Resolve through namespace
+									r = &runZVal{cls.ExtendsStr, cn.l}
+								} else {
+									return nil, &phpv.PhpError{
+										Err:  fmt.Errorf("Cannot use \"parent\" when current class scope has no parent"),
+										Code: phpv.E_COMPILE_ERROR,
+										Loc:  cn.l,
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+
 			arg.DefaultValue = &phpv.CompileDelayed{V: r}
 			arg.Required = false
 

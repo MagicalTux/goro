@@ -209,7 +209,13 @@ func (a runArray) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			return nil, err
 		}
 
-		array.OffsetSet(ctx, k, v.ZVal())
+		// Preserve references (e.g., array(&$a)) by not calling v.ZVal()
+		// which would unwrap the reference. Pass the ref ZVal directly.
+		if v.IsRef() {
+			array.OffsetSet(ctx, k, v)
+		} else {
+			array.OffsetSet(ctx, k, v.ZVal())
+		}
 	}
 
 	return array.ZVal(), nil

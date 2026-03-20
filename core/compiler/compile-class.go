@@ -53,6 +53,9 @@ func convertInsteadofs(insteadofs []traitInsteadof) []phpv.ZClassTraitInsteadof 
 // containsRuntimeOps checks if a compiled expression contains runtime
 // operations (variables, function calls) that are not allowed in class constants.
 func containsRuntimeOps(r phpv.Runnable) bool {
+	if r == nil {
+		return false
+	}
 	switch v := r.(type) {
 	case *runVariable, *runVariableRef:
 		return true
@@ -60,6 +63,12 @@ func containsRuntimeOps(r phpv.Runnable) bool {
 		return containsRuntimeOps(v.a) || containsRuntimeOps(v.b)
 	case *runnableFunctionCallRef:
 		return true
+	case *runnableFunctionCall:
+		return true
+	case *runClassStaticObjRef:
+		return containsRuntimeOps(v.className)
+	case *runClassStaticVarRef:
+		return containsRuntimeOps(v.className)
 	case runConcat:
 		for _, sub := range v {
 			if containsRuntimeOps(sub) {
@@ -68,6 +77,131 @@ func containsRuntimeOps(r phpv.Runnable) bool {
 		}
 	}
 	return false
+}
+
+// containsNewExpr checks if a compiled expression contains a `new` expression.
+// Used to reject `new` in contexts where it is not allowed (class constants,
+// non-static property defaults).
+func containsNewExpr(r phpv.Runnable) bool {
+	if r == nil {
+		return false
+	}
+	switch v := r.(type) {
+	case *runNewObject:
+		return true
+	case *runOperator:
+		return containsNewExpr(v.a) || containsNewExpr(v.b)
+	case runConcat:
+		for _, sub := range v {
+			if containsNewExpr(sub) {
+				return true
+			}
+		}
+	case *runArray:
+		for _, e := range v.e {
+			if containsNewExpr(e.k) || containsNewExpr(e.v) {
+				return true
+			}
+		}
+	case *runParentheses:
+		return containsNewExpr(v.r)
+	}
+	return false
+}
+
+// checkStaticClassInConstExpr checks if a compiled expression contains static::class
+// or static::CONST which cannot be used in compile-time class name resolution.
+// Returns the location of the static:: if found, nil otherwise.
+func checkStaticClassInConstExpr(r phpv.Runnable) *phpv.Loc {
+	if r == nil {
+		return nil
+	}
+	switch v := r.(type) {
+	case *runClassNameOf:
+		if zv, ok2 := v.className.(*runZVal); ok2 {
+			if s, ok3 := zv.v.(phpv.ZString); ok3 && s.ToLower() == "static" {
+				return v.l
+			}
+		}
+	case *runClassStaticObjRef:
+		if zv, ok2 := v.className.(*runZVal); ok2 {
+			if s, ok3 := zv.v.(phpv.ZString); ok3 && s.ToLower() == "static" {
+				return v.l
+			}
+		}
+	case *runClassStaticVarRef:
+		if zv, ok2 := v.className.(*runZVal); ok2 {
+			if s, ok3 := zv.v.(phpv.ZString); ok3 && s.ToLower() == "static" {
+				return v.l
+			}
+		}
+	case *runOperator:
+		if loc := checkStaticClassInConstExpr(v.a); loc != nil {
+			return loc
+		}
+		return checkStaticClassInConstExpr(v.b)
+	}
+	return nil
+}
+
+// containsDynamicClassName checks if an expression uses a dynamic class name
+// (e.g., $var::CONST) which is not allowed in compile-time constants.
+func containsDynamicClassName(r phpv.Runnable) bool {
+	if r == nil {
+		return false
+	}
+	switch v := r.(type) {
+	case *runClassStaticObjRef:
+		if _, ok := v.className.(*runVariable); ok {
+			return true
+		}
+		if _, ok := v.className.(*runVariableRef); ok {
+			return true
+		}
+	case *runClassStaticVarRef:
+		if _, ok := v.className.(*runVariable); ok {
+			return true
+		}
+		if _, ok := v.className.(*runVariableRef); ok {
+			return true
+		}
+	case *runOperator:
+		return containsDynamicClassName(v.a) || containsDynamicClassName(v.b)
+	}
+	return false
+}
+
+// checkExpressionClassInConstExpr checks if a compiled expression contains
+// (expression)::class which cannot be used in constant expressions.
+// Returns the location if found, nil otherwise.
+func checkExpressionClassInConstExpr(r phpv.Runnable) *phpv.Loc {
+	if cn, ok := r.(*runClassNameOf); ok {
+		// Check if className is a non-constant expression (array, variable, etc.)
+		switch cn.className.(type) {
+		case *runZVal:
+			// Literal class name or self/parent/static — handled elsewhere
+			return nil
+		default:
+			// Any other expression (array, variable, function call, etc.)
+			return cn.l
+		}
+	}
+	return nil
+}
+
+// checkParentClassInConstExpr checks if parent::class is used in a class constant
+// context where the class has no parent.
+func checkParentClassInConstExpr(r phpv.Runnable, class *phpobj.ZClass) (phpv.ZString, *phpv.Loc) {
+	if cn, ok := r.(*runClassNameOf); ok {
+		if zv, ok2 := cn.className.(*runZVal); ok2 {
+			if s, ok3 := zv.v.(phpv.ZString); ok3 && s.ToLower() == "parent" {
+				if class.ExtendsStr == "" {
+					return s, cn.l
+				}
+			}
+		}
+	}
+	return "", nil
 }
 
 type zclassCompileCtx struct {
@@ -368,6 +502,41 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 					if err != nil {
 						return nil, err
 					}
+					// Validate closures in constant expressions (property defaults)
+					if zc, ok := r.(*ZClosure); ok {
+						if !zc.isStatic {
+							return nil, &phpv.PhpError{
+								Err:  fmt.Errorf("Closures in constant expressions must be static"),
+								Code: phpv.E_COMPILE_ERROR,
+								Loc:  zc.start,
+							}
+						}
+						if len(zc.use) > 0 {
+							return nil, &phpv.PhpError{
+								Err:  fmt.Errorf("Cannot use(...) variables in constant expression"),
+								Code: phpv.E_COMPILE_ERROR,
+								Loc:  zc.start,
+							}
+						}
+					}
+					// New expressions are not allowed in non-static property defaults
+					if !prop.Modifiers.IsStatic() && containsNewExpr(r) {
+						return nil, &phpv.PhpError{
+							Err:  fmt.Errorf("New expressions are not supported in this context"),
+							Code: phpv.E_COMPILE_ERROR,
+							Loc:  l,
+						}
+					}
+					// Object casts are not allowed in non-static property defaults
+					if !prop.Modifiers.IsStatic() {
+						if op, ok := r.(*runOperator); ok && op.op == tokenizer.T_OBJECT_CAST {
+							return nil, &phpv.PhpError{
+								Err:  fmt.Errorf("Object casts are not supported in this context"),
+								Code: phpv.E_COMPILE_ERROR,
+								Loc:  l,
+							}
+						}
+					}
 					// parse default value for class variable
 					prop.Default = &phpv.CompileDelayed{V: r}
 
@@ -576,10 +745,54 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 					return nil, err
 				}
 
+				// Validate closures in class constant expressions
+				if zc, ok := v.(*ZClosure); ok {
+					if !zc.isStatic {
+						return nil, &phpv.PhpError{
+							Err:  fmt.Errorf("Closures in constant expressions must be static"),
+							Code: phpv.E_COMPILE_ERROR,
+							Loc:  zc.start,
+						}
+					}
+					if len(zc.use) > 0 {
+						return nil, &phpv.PhpError{
+							Err:  fmt.Errorf("Cannot use(...) variables in constant expression"),
+							Code: phpv.E_COMPILE_ERROR,
+							Loc:  zc.start,
+						}
+					}
+				}
+
+				// Check for static::class in class constant (compile-time error)
+				if loc := checkStaticClassInConstExpr(v); loc != nil {
+					return nil, &phpv.PhpError{
+						Err:  fmt.Errorf("static::class cannot be used for compile-time class name resolution"),
+						Code: phpv.E_COMPILE_ERROR,
+						Loc:  loc,
+					}
+				}
+				// Check for parent::class in class with no parent
+				if _, loc := checkParentClassInConstExpr(v, class); loc != nil {
+					return nil, &phpv.PhpError{
+						Err:  fmt.Errorf("Cannot use \"parent\" when current class scope has no parent"),
+						Code: phpv.E_COMPILE_ERROR,
+						Loc:  loc,
+					}
+				}
+
 				// Check for invalid operations in constant expressions
 				if containsRuntimeOps(v) {
 					return nil, &phpv.PhpError{
 						Err:  fmt.Errorf("Constant expression contains invalid operations"),
+						Code: phpv.E_COMPILE_ERROR,
+						Loc:  i.Loc(),
+					}
+				}
+
+				// New expressions are not allowed in class constants
+				if containsNewExpr(v) {
+					return nil, &phpv.PhpError{
+						Err:  fmt.Errorf("New expressions are not supported in this context"),
 						Code: phpv.E_COMPILE_ERROR,
 						Loc:  i.Loc(),
 					}

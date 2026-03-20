@@ -191,7 +191,80 @@ func reflectionAttributeNewInstance(ctx phpv.Context, o *phpobj.ZObject, args []
 	// Create a new instance with the stored arguments
 	var constructArgs []*phpv.ZVal
 	if data.attr.Args != nil {
-		constructArgs = data.attr.Args
+		constructArgs = make([]*phpv.ZVal, len(data.attr.Args))
+		copy(constructArgs, data.attr.Args)
+	}
+
+	// Resolve named arguments to the correct positional parameters
+	// based on the constructor's parameter list
+	if data.attr.ArgNames != nil {
+		var constructor phpv.Callable
+		if zc != nil {
+			if zc.Handlers() != nil && zc.Handlers().Constructor != nil {
+				constructor = zc.Handlers().Constructor.Method
+			} else if m, ok := zc.GetMethod("__construct"); ok {
+				constructor = m.Method
+			}
+		}
+		if constructor != nil {
+			if fga, ok := constructor.(phpv.FuncGetArgs); ok {
+				fargs := fga.GetArgs()
+				// Build parameter name -> position map
+				paramMap := make(map[phpv.ZString]int)
+				for i, arg := range fargs {
+					paramMap[phpv.ZString(arg.VarName)] = i
+				}
+				// Build new args array with named args placed at correct positions
+				// First count positional args (those without names)
+				positionalCount := 0
+				for i, name := range data.attr.ArgNames {
+					if name == "" && i < len(constructArgs) {
+						positionalCount = i + 1
+					}
+				}
+				// Determine max position needed
+				maxPos := positionalCount - 1
+				for i, name := range data.attr.ArgNames {
+					if name != "" {
+						if pos, ok := paramMap[name]; ok && pos > maxPos {
+							maxPos = pos
+						} else if !ok {
+							return nil, phpobj.ThrowError(ctx, phpobj.Error,
+								fmt.Sprintf("Unknown named parameter $%s", name))
+						}
+					} else if i > maxPos {
+						maxPos = i
+					}
+				}
+				// Build properly ordered args
+				newArgs := make([]*phpv.ZVal, maxPos+1)
+				for i := range newArgs {
+					newArgs[i] = phpv.ZNULL.ZVal()
+				}
+				// Place positional args
+				namedIdx := 0
+				for i, name := range data.attr.ArgNames {
+					if i >= len(constructArgs) {
+						break
+					}
+					if name == "" {
+						if namedIdx < len(newArgs) {
+							newArgs[namedIdx] = constructArgs[i]
+						}
+						namedIdx++
+					} else {
+						if pos, ok := paramMap[name]; ok {
+							newArgs[pos] = constructArgs[i]
+						}
+					}
+				}
+				// Also handle args without names list entries
+				if len(data.attr.ArgNames) == 0 {
+					newArgs = constructArgs
+				}
+				constructArgs = newArgs
+			}
+		}
 	}
 
 	obj, err := phpobj.NewZObject(ctx, class, constructArgs...)

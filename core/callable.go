@@ -31,14 +31,35 @@ func spawnCallableInternal(ctx phpv.Context, v *phpv.ZVal, paramNo int) (phpv.Ca
 			className := s[0:index]
 			methodName := s[index+2:]
 
-			class, err := ctx.Global().GetClass(ctx, className, true)
-			if err != nil {
-				// Convert class-not-found errors into a TypeError for callback context
-				if _, ok := err.(*phperr.PhpThrow); ok {
-					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
-						fmt.Sprintf("call_user_func(): Argument #1 ($callback) must be a valid callback, class \"%s\" not found", className))
+			var class phpv.ZClass
+			classNameLower := className.ToLower()
+			if classNameLower == "self" || classNameLower == "parent" {
+				if err := ctx.Deprecated("Use of \"%s\" in callables is deprecated", className, logopt.NoFuncName(true)); err != nil {
+					return nil, err
 				}
-				return nil, err
+				callerClass := ctx.Class()
+				if callerClass == nil {
+					return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Cannot use \"%s\" when no class scope is active", className))
+				}
+				if classNameLower == "parent" {
+					class = callerClass.GetParent()
+					if class == nil {
+						return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot use \"parent\" when current class scope has no parent")
+					}
+				} else {
+					class = callerClass
+				}
+			} else {
+				var err error
+				class, err = ctx.Global().GetClass(ctx, className, true)
+				if err != nil {
+					// Convert class-not-found errors into a TypeError for callback context
+					if _, ok := err.(*phperr.PhpThrow); ok {
+						return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+							fmt.Sprintf("call_user_func(): Argument #1 ($callback) must be a valid callback, class \"%s\" not found", className))
+					}
+					return nil, err
+				}
 			}
 			member, ok := class.GetMethod(methodName.ToLower())
 			if !ok {
@@ -222,9 +243,12 @@ func spawnCallableInternal(ctx phpv.Context, v *phpv.ZVal, paramNo int) (phpv.Ca
 			name = methodNamePart
 
 			// Emit deprecated warning about this callable form
+			// Use the actual runtime class name for objects, not CurrentClass.
 			var displayClassName phpv.ZString
 			if firstArg.GetType() == phpv.ZtString {
 				displayClassName = firstArg.AsString(ctx)
+			} else if zo, ok := instance.(*phpobj.ZObject); ok {
+				displayClassName = zo.Class.GetName()
 			} else {
 				displayClassName = instance.GetClass().GetName()
 			}
@@ -232,9 +256,16 @@ func spawnCallableInternal(ctx phpv.Context, v *phpv.ZVal, paramNo int) (phpv.Ca
 			ctx.Deprecated("Callables of the form [\"%s\", \"%s\"] are deprecated", displayClassName, origMethodStr, logopt.NoFuncName(true))
 
 			if className == "parent" {
-				class = class.GetParent()
+				// For "parent::", resolve relative to the actual runtime class
+				// (not CurrentClass), so C->parent = B, not B->parent = A.
+				if zo, ok := instance.(*phpobj.ZObject); ok {
+					class = zo.Class.GetParent()
+				} else {
+					class = class.GetParent()
+				}
 			} else if className == "self" {
-				// keep class as-is
+				// For "self::", keep as current scope class for method lookup
+				// (class already set from GetClass() which returns CurrentClass)
 			} else {
 				// Look up the specified class
 				resolvedClass, err := ctx.Global().GetClass(ctx, className, false)
@@ -292,7 +323,12 @@ func spawnCallableInternal(ctx phpv.Context, v *phpv.ZVal, paramNo int) (phpv.Ca
 					return phpv.BindClass(wrapper, class, false), nil
 				}
 			}
-			return nil, ctx.Errorf("Argument #1 ($callback) must be a valid callback, method not found: %q", methodName)
+			callerFunc := ctx.GetFuncName()
+			if callerFunc == "" {
+				callerFunc = "call_user_func"
+			}
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+				fmt.Sprintf("%s(): Argument #1 ($callback) must be a valid callback, class %s does not have a method \"%s\"", callerFunc, class.GetName(), methodName.AsString(ctx)))
 		}
 
 		// Check if the method is abstract - abstract methods cannot be called directly
@@ -350,6 +386,10 @@ func spawnCallableInternal(ctx phpv.Context, v *phpv.ZVal, paramNo int) (phpv.Ca
 		}
 
 		if instance != nil {
+			// Static methods should not receive $this even when called on an instance
+			if member.Modifiers.IsStatic() {
+				return phpv.BindClass(member.Method, class, true), nil
+			}
 			method := phpv.Bind(member.Method, instance)
 			return method, nil
 		}
