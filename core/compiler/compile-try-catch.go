@@ -60,15 +60,28 @@ func (rt *runnableTry) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			}
 			// For return statements, snapshot the return value before running finally
 			// so that modifications in finally don't affect the returned value.
-			if ret, isReturn := err.(*phperr.PhpReturn); isReturn && rt.finally != nil {
-				if ret.V != nil {
-					ret.V = ret.V.Dup()
+			// Skip snapshotting for return-by-reference functions.
+			returnsByRef := false
+			if fc := ctx.Func(); fc != nil {
+				if cc, ok := fc.(interface{ Callable() phpv.Callable }); ok {
+					if c := cc.Callable(); c != nil {
+						if rr, ok := c.(interface{ ReturnsByRef() bool }); ok && rr.ReturnsByRef() {
+							returnsByRef = true
+						}
+					}
 				}
 			}
-			if retWrap, isError := err.(*phpv.PhpError); isError {
-				if ret, isReturn := retWrap.Err.(*phperr.PhpReturn); isReturn && rt.finally != nil {
+			if !returnsByRef {
+				if ret, isReturn := err.(*phperr.PhpReturn); isReturn && rt.finally != nil {
 					if ret.V != nil {
 						ret.V = ret.V.Dup()
+					}
+				}
+				if retWrap, isError := err.(*phpv.PhpError); isError {
+					if ret, isReturn := retWrap.Err.(*phperr.PhpReturn); isReturn && rt.finally != nil {
+						if ret.V != nil {
+							ret.V = ret.V.Dup()
+						}
 					}
 				}
 			}

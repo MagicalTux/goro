@@ -1029,8 +1029,9 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 	}
 
 	// Emit Serializable interface deprecation warning (PHP 8.1+)
+	// Ignore the error return - this deprecation should not prevent class registration
 	if c.Type != phpv.ZClassTypeInterface && c.Type != phpv.ZClassTypeTrait && c.Implements(Serializable) {
-		ctx.Deprecated("%s implements the Serializable interface, which is deprecated. Implement __serialize() and __unserialize() instead (or in addition, if support for old PHP versions is necessary)", c.Name)
+		_ = ctx.Deprecated("%s implements the Serializable interface, which is deprecated. Implement __serialize() and __unserialize() instead (or in addition, if support for old PHP versions is necessary)", c.Name)
 	}
 
 	// Try to resolve constants eagerly, but if resolution fails (e.g. forward

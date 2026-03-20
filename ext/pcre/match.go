@@ -227,10 +227,10 @@ func pregMatchAll(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 							val = phpv.ZString(subjectStr[s:e]).ZVal()
 						}
 					}
-					subArr.OffsetSet(ctx, nil, val)
 					if i < len(names) && names[i] != "" {
 						subArr.OffsetSet(ctx, phpv.ZString(names[i]).ZVal(), val)
 					}
+					subArr.OffsetSet(ctx, nil, val)
 				}
 				matches.OffsetSet(ctx, nil, subArr.ZVal())
 			}
@@ -333,26 +333,31 @@ func pregSplit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		}
 	}
 
+	// Find all matches to properly handle zero-length matches
+	allLocs := re.FindAllStringSubmatchIndex(subjectStr, -1)
+	if allLocs == nil {
+		// No matches; return the entire subject
+		addPart(subjectStr, 0)
+		return result.ZVal(), nil
+	}
+
 	nSplits := 0
 	pos := 0
+	lastMatchEnd := -1
 
-	for {
+	for _, loc := range allLocs {
 		if maxSplits > 0 && nSplits >= maxSplits-1 {
 			break
 		}
 
-		if pos > len(subjectStr) {
-			break
-		}
+		matchStart := loc[0]
+		matchEnd := loc[1]
 
-		loc := re.FindStringSubmatchIndex(subjectStr[pos:])
-		if loc == nil {
-			break
+		// Skip zero-length matches at the same position as previous match end
+		// to avoid infinite splitting
+		if matchStart == matchEnd && matchStart == lastMatchEnd {
+			continue
 		}
-
-		// loc is relative to subjectStr[pos:]
-		matchStart := pos + loc[0]
-		matchEnd := pos + loc[1]
 
 		addPart(subjectStr[pos:matchStart], pos)
 		nSplits++
@@ -364,8 +369,7 @@ func pregSplit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				s := loc[i*2]
 				e := loc[i*2+1]
 				if s >= 0 {
-					capStr := subjectStr[pos+s : pos+e]
-					addPart(capStr, pos+s)
+					addPart(subjectStr[s:e], s)
 				} else {
 					// Unmatched capture group
 					if !noEmpty {
@@ -375,17 +379,8 @@ func pregSplit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			}
 		}
 
-		// Advance past the match
-		if matchEnd == pos {
-			// Zero-length match: advance by one byte
-			if pos < len(subjectStr) {
-				addPart(subjectStr[pos:pos+1], pos)
-				nSplits++
-			}
-			pos = matchEnd + 1
-		} else {
-			pos = matchEnd
-		}
+		pos = matchEnd
+		lastMatchEnd = matchEnd
 	}
 
 	// Add the remaining part
@@ -504,10 +499,10 @@ func doReplaceCallback(ctx phpv.Context, pattern *phpv.ZVal, callback phpv.Calla
 					val = phpv.ZString(in[loc[i*2]:loc[i*2+1]]).ZVal()
 				}
 			}
-			matchArr.OffsetSet(ctx, nil, val)
 			if i < len(names) && names[i] != "" {
 				matchArr.OffsetSet(ctx, phpv.ZString(names[i]).ZVal(), val)
 			}
+			matchArr.OffsetSet(ctx, nil, val)
 		}
 
 		// Call the callback with the matches array

@@ -142,5 +142,9 @@ func lexPhpString(l *Lexer) lexState {
 	}
 
 	l.emit(t)
+	if t == T_HALT_COMPILER {
+		l.emit(T_EOF)
+		return nil
+	}
 	return l.base
 }

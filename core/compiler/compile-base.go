@@ -274,10 +274,7 @@ func compileTopLevelConst(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error
 		if i.Type == tokenizer.T_EXIT {
 			return nil, i.UnexpectedExpecting("identifier")
 		}
-		if i.Type != tokenizer.T_STRING {
-			if i.IsSemiReserved() {
-				return nil, i.UnexpectedExpecting("identifier")
-			}
+		if i.Type != tokenizer.T_STRING && !i.IsSemiReserved() {
 			return nil, i.Unexpected()
 		}
 		name := i.Data

@@ -294,7 +294,7 @@ func (i *Item) IsSemiReserved() bool {
 		T_THROW, T_TRAIT, T_TRY, T_UNSET, T_USE, T_VAR, T_WHILE,
 		T_YIELD, T_YIELD_FROM, T_ENUM,
 		T_CLASS_C, T_TRAIT_C, T_FUNC_C, T_METHOD_C, T_LINE, T_FILE,
-		T_DIR, T_NS_C, T_HALT_COMPILER:
+		T_DIR, T_NS_C:
 		return true
 	}
 	return false

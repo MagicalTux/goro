@@ -599,18 +599,10 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 		if ref == nil {
 			return nil, offset, readError
 		}
-		// R: creates a reference - convert the original to a reference in-place,
-		// then create a new wrapper sharing the same inner ZVal.
-		// This ensures both the original and the new value show as references.
-		ref.MakeRef()
-		// Get the inner reference ZVal and create a new outer wrapper
-		inner := ref.RefInner()
-		if inner == nil {
-			return nil, offset, readError
-		}
-		newRef := phpv.NewZVal(inner)
-		d.addRef(newRef)
-		return newRef, semicIndex + 1, nil
+		// R: creates a reference - make the referred value a reference if not already
+		ref = ref.Ref()
+		d.addRef(ref)
+		return ref, semicIndex + 1, nil
 
 	case 'r':
 		// r:N; - object reference (reuses the Nth object without creating a PHP reference)
