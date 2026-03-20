@@ -50,13 +50,19 @@ func fncUnserialize(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			case phpv.ZtArray:
 				deserializer.allowAllClasses = false
 				for _, className := range arg.AsArray(ctx).Iterate(ctx) {
-					// Each element must be a string class name
-					if className.GetType() != phpv.ZtString {
+					switch className.GetType() {
+					case phpv.ZtString:
+						// Direct string
+						deserializer.allowedClasses[phpv.ZString(strings.ToLower(string(className.AsString(ctx))))] = struct{}{}
+					case phpv.ZtObject:
+						// Object with __toString is OK; call AsString which triggers __toString
+						s := className.AsString(ctx)
+						deserializer.allowedClasses[phpv.ZString(strings.ToLower(string(s)))] = struct{}{}
+					default:
+						// null, bool, int, float, array, resource → TypeError
 						typeName := className.GetType().String()
 						return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("unserialize(): Option \"allowed_classes\" must be an array of class names, %s given", typeName))
 					}
-					// Store lowercase for case-insensitive matching
-					deserializer.allowedClasses[phpv.ZString(strings.ToLower(string(className.AsString(ctx))))] = struct{}{}
 				}
 			case phpv.ZtBool:
 				deserializer.allowAllClasses = bool(arg.AsBool(ctx))
@@ -97,6 +103,10 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seenArray
 	switch value.GetType() {
 	case phpv.ZtNull:
 		result = "N;"
+	case phpv.ZtResource:
+		// PHP serializes resources as their integer ID
+		r := value.Value().(phpv.Resource)
+		result = "i:" + strconv.Itoa(r.GetResourceID()) + ";"
 	case phpv.ZtBool:
 		switch value.AsBool(ctx) {
 		case true:
@@ -819,6 +829,18 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 		}
 
 		class, err := ctx.Global().GetClass(ctx, phpv.ZString(className), true)
+		if (err != nil || class == nil) && allowedClass {
+			// Try unserialize_callback_func if set
+			cbFuncVal := ctx.GetConfig("unserialize_callback_func", phpv.ZNULL.ZVal())
+			if cbFuncVal != nil && !cbFuncVal.IsNull() && cbFuncVal.String() != "" {
+				cbName := cbFuncVal.AsString(ctx)
+				if cbCallable, cbErr := ctx.Global().GetFunction(ctx, cbName); cbErr == nil && cbCallable != nil {
+					ctx.Global().CallZVal(ctx, cbCallable, []*phpv.ZVal{phpv.ZStr(className)})
+					// Try again after callback
+					class, err = ctx.Global().GetClass(ctx, phpv.ZString(className), true)
+				}
+			}
+		}
 		if err != nil || !allowedClass || class == nil {
 			class = phpobj.IncompleteClass
 		}
@@ -999,22 +1021,29 @@ func unserializeSetProperty(ctx phpv.Context, obj phpv.ZObject, key phpv.ZString
 		secondNull := strings.IndexByte(keyStr[1:], '\x00')
 		if secondNull >= 0 {
 			propName := keyStr[secondNull+2:]
-			// Try to set the demangled property name
-			// First check if the class has a declared property with this name
-			if _, found := obj.GetClass().GetProp(phpv.ZString(propName)); found {
-				obj.ObjectSet(ctx, phpv.ZString(propName), value)
-				return
-			}
-			// For __PHP_Incomplete_Class or classes without the property declared,
-			// store with the mangled name in the hash table directly
 			if zobj, ok := obj.(*phpobj.ZObject); ok {
+				// Check if the class has a declared property with this name
+				if _, found := obj.GetClass().GetProp(phpv.ZString(propName)); found {
+					// Directly set the property value in the hash table,
+					// bypassing visibility checks (unserialization can set any property)
+					zobj.HashTable().SetString(phpv.ZString(propName), value)
+					return
+				}
+				// Property not declared - set as dynamic property using demangled name
 				zobj.HashTable().SetString(phpv.ZString(propName), value)
 				return
 			}
 		}
 	}
 
-	// Non-mangled name: set normally
+	// Non-mangled name: for declared properties, set directly bypassing visibility
+	if zobj, ok := obj.(*phpobj.ZObject); ok {
+		if _, found := obj.GetClass().GetProp(key); found {
+			zobj.HashTable().SetString(key, value)
+			return
+		}
+	}
+	// Dynamic property or non-ZObject: use normal ObjectSet
 	obj.ObjectSet(ctx, key, value)
 }
 

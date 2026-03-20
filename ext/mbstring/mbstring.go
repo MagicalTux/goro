@@ -206,17 +206,41 @@ func fncMbInternalEncoding(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, err
 // mb_detect_encoding detects encoding of a string.
 func fncMbDetectEncoding(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var s phpv.ZString
+	var encodingList *phpv.ZVal
+	var strict *phpv.ZBool
 
-	_, err := core.Expand(ctx, args, &s)
+	_, err := core.Expand(ctx, args, &s, &encodingList, &strict)
 	if err != nil {
 		return nil, err
 	}
 
-	// In goro, strings are always UTF-8
-	if utf8.ValidString(string(s)) {
+	str := string(s)
+
+	// Empty string is ASCII
+	if len(str) == 0 {
+		return phpv.ZString("ASCII").ZVal(), nil
+	}
+
+	// Check if string is pure ASCII (all bytes < 128)
+	isASCII := true
+	for i := 0; i < len(str); i++ {
+		if str[i] >= 128 {
+			isASCII = false
+			break
+		}
+	}
+
+	if isASCII {
+		return phpv.ZString("ASCII").ZVal(), nil
+	}
+
+	// Check if valid UTF-8
+	if utf8.ValidString(str) {
 		return phpv.ZString("UTF-8").ZVal(), nil
 	}
-	return phpv.ZString("ASCII").ZVal(), nil
+
+	// Invalid UTF-8, try to detect as something else
+	return phpv.ZBool(false).ZVal(), nil
 }
 
 // mb_check_encoding checks if strings are valid for the specified encoding.

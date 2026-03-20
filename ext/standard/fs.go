@@ -81,7 +81,28 @@ func fncBasename(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	result := filepath.Base(path)
+	// PHP's basename:
+	// - empty string returns empty string
+	// - only uses forward slash as separator on non-Windows
+	// - strips trailing forward slashes before computing
+	if path == "" {
+		return phpv.ZString("").ZVal(), nil
+	}
+
+	// Strip trailing forward slashes (not backslashes on Linux)
+	for len(path) > 1 && path[len(path)-1] == '/' {
+		path = path[:len(path)-1]
+	}
+
+	// Find last forward slash
+	idx := strings.LastIndex(path, "/")
+	var result string
+	if idx >= 0 {
+		result = path[idx+1:]
+	} else {
+		result = path
+	}
+
 	if suffix.HasArg() && result != string(suffix.Get()) {
 		result = strings.TrimSuffix(result, string(suffix.Get()))
 	}

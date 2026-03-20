@@ -91,6 +91,11 @@ func init() {
 			"PREG_BAD_UTF8_ERROR":        PREG_BAD_UTF8_ERROR,
 			"PREG_BAD_UTF8_OFFSET_ERROR": PREG_BAD_UTF8_OFFSET_ERROR,
 			"PREG_JIT_STACKLIMIT_ERROR":  PREG_JIT_STACKLIMIT_ERROR,
+			// PCRE version/JIT constants
+			"PCRE_VERSION":       phpv.ZString("10.42 2022-12-11"),
+			"PCRE_VERSION_MAJOR": phpv.ZInt(10),
+			"PCRE_VERSION_MINOR": phpv.ZInt(42),
+			"PCRE_JIT_SUPPORT":   phpv.ZBool(false),
 		},
 	})
 }
