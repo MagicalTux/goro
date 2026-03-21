@@ -26,6 +26,8 @@ const (
 	FILE_SKIP_EMPTY_LINES   phpv.ZInt = 4
 	FILE_APPEND             phpv.ZInt = 8
 	FILE_NO_DEFAULT_CONTEXT phpv.ZInt = 16
+	FILE_BINARY             phpv.ZInt = 0
+	FILE_TEXT               phpv.ZInt = 0
 )
 
 // > const

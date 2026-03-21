@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phperr"
 	"github.com/MagicalTux/goro/core/phpv"
 )
@@ -97,6 +98,14 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 		parent, err := ctx.Global().GetClass(ctx, c.ExtendsStr, true)
 		if err != nil {
 			return err
+		}
+		// Check for self-extension (e.g. interface Foo extends Foo)
+		if parent == c {
+			noun := "Class"
+			if c.Type == phpv.ZClassTypeInterface {
+				noun = "Interface"
+			}
+			return ThrowError(ctx, Error, fmt.Sprintf("%s \"%s\" not found", noun, c.ExtendsStr))
 		}
 		if _, found := c.parents[parent.(*ZClass)]; found {
 			return ctx.Errorf("class extends loop found")
@@ -1954,16 +1963,7 @@ func (c *ZClass) warnNonPublicMagicMethods(ctx phpv.Context) {
 		}
 		// Only warn if explicitly declared private or protected in this class (not inherited)
 		if (m.Modifiers.Has(phpv.ZAttrPrivate) || m.Modifiers.Has(phpv.ZAttrProtected)) && (m.Class == nil || m.Class == c) {
-			loc := m.Loc
-			if loc == nil {
-				loc = c.L
-			}
-			phpErr := &phpv.PhpError{
-				Err:  fmt.Errorf("The magic method %s::%s() must have public visibility", c.Name, m.Name),
-				Code: phpv.E_WARNING,
-				Loc:  loc,
-			}
-			ctx.Global().LogError(phpErr)
+			ctx.Warn("The magic method %s::%s() must have public visibility", c.Name, m.Name, logopt.NoFuncName(true))
 		}
 	}
 }

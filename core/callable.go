@@ -88,6 +88,17 @@ func spawnCallableInternal(ctx phpv.Context, v *phpv.ZVal, paramNo int) (phpv.Ca
 					fmt.Sprintf("%s(): Argument #1 ($callback) must be a valid callback, class \"%s\" does not have a method \"%s\"", callerFunc, className, methodName))
 			}
 
+			// Check if the method is abstract (cannot be called directly)
+			// This covers both explicit "abstract" methods and interface methods (implicitly abstract)
+			if member.Modifiers.Has(phpv.ZAttrAbstract) || member.Empty {
+				callerFunc := ctx.GetFuncName()
+				if callerFunc == "" {
+					callerFunc = "call_user_func"
+				}
+				return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+					fmt.Sprintf("%s(): Argument #1 ($callback) must be a valid callback, cannot call abstract method %s::%s()", callerFunc, class.GetName(), member.Name))
+			}
+
 			// Check visibility of the method
 			callerClass := ctx.Class()
 			if member.Modifiers.IsPrivate() {
@@ -332,7 +343,8 @@ func spawnCallableInternal(ctx phpv.Context, v *phpv.ZVal, paramNo int) (phpv.Ca
 		}
 
 		// Check if the method is abstract - abstract methods cannot be called directly
-		if member.Modifiers.Has(phpv.ZAttrAbstract) {
+		// This covers both explicit "abstract" methods and interface methods (implicitly abstract)
+		if member.Modifiers.Has(phpv.ZAttrAbstract) || member.Empty {
 			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
 				fmt.Sprintf("call_user_func(): Argument #1 ($callback) must be a valid callback, cannot call abstract method %s::%s()", class.GetName(), member.Name))
 		}

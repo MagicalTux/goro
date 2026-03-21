@@ -1,9 +1,54 @@
 package standard
 
 import (
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
+
+// > const
+const (
+	ASSERT_ACTIVE     phpv.ZInt = 1
+	ASSERT_WARNING    phpv.ZInt = 2
+	ASSERT_BAIL       phpv.ZInt = 3
+	ASSERT_EXCEPTION  phpv.ZInt = 4
+	ASSERT_CALLBACK   phpv.ZInt = 5
+)
+
+// assert_options INI key mapping
+var assertOptionKeys = map[phpv.ZInt]string{
+	ASSERT_ACTIVE:    "assert.active",
+	ASSERT_WARNING:   "assert.warning",
+	ASSERT_BAIL:      "assert.bail",
+	ASSERT_EXCEPTION: "assert.exception",
+	ASSERT_CALLBACK:  "assert.callback",
+}
+
+// > func mixed assert_options ( int $option [, mixed $value ] )
+func fncAssertOptions(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) < 1 {
+		return nil, ctx.Errorf("assert_options() expects at least 1 argument, 0 given")
+	}
+
+	// Emit deprecation warning (PHP 8.3+)
+	_ = ctx.Deprecated("Function assert_options() is deprecated since 8.3", logopt.NoFuncName(true))
+
+	option := args[0].AsInt(ctx)
+	iniKey, ok := assertOptionKeys[option]
+	if !ok {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "assert_options(): Argument #1 ($option) must be an ASSERT_* constant")
+	}
+
+	// Get the current value
+	oldVal := ctx.GetConfig(phpv.ZString(iniKey), phpv.ZInt(0).ZVal())
+
+	// If a new value is provided, set it
+	if len(args) >= 2 {
+		ctx.Global().SetLocalConfig(phpv.ZString(iniKey), args[1])
+	}
+
+	return oldVal, nil
+}
 
 // > func bool assert ( mixed $assertion [, Throwable|string|null $description = null] )
 func fncAssert(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {

@@ -14,7 +14,7 @@ var Defaults = map[string]*IniDirective{
 	"allow_url_fopen":                       {`"1"`, INI_SYSTEM},
 	"allow_url_include":                     {`"0"`, INI_SYSTEM},
 	"arg_separator.input":                   {`"&"`, INI_PERDIR},
-	"arg_separator.output":                  {`"&"`, INI_ALL},
+	"arg_separator.output":                  {`"&"`, INI_PERDIR},
 	"assert.active":                         {`"1"`, INI_ALL},
 	"assert.bail":                           {`"0"`, INI_ALL},
 	"assert.callback":                       {`null`, INI_ALL},
@@ -412,6 +412,17 @@ var Defaults = map[string]*IniDirective{
 var DeprecatedDirectives = map[string]bool{
 	"report_memleaks":          true, // deprecated in PHP 8.4
 	"auto_detect_line_endings": true, // deprecated in PHP 8.1
+}
+
+// DeprecatedINISettings maps deprecated INI setting names to their default values.
+// A deprecation warning is only emitted at startup when the setting is changed to
+// a non-default value. (PHP 8.3+ behavior for assert.* settings)
+var DeprecatedINISettings = map[string]string{
+	"assert.active":    "1",
+	"assert.warning":   "1",
+	"assert.callback":  "",
+	"assert.bail":      "0",
+	"assert.exception": "1",
 }
 
 func init() {

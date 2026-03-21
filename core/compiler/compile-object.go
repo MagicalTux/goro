@@ -316,6 +316,16 @@ func compileNew(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		}
 	}
 
+	// Handle modifiers before anonymous class: new readonly class { }
+	var anonClassAttr phpv.ZClassAttr
+	if next.Type == tokenizer.T_READONLY {
+		anonClassAttr |= phpv.ZClassReadonly
+		next, err = c.NextItem()
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	if next.Type == tokenizer.T_CLASS {
 		// Anonymous class: new class [(args)] [extends X] [implements Y, Z] { ... }
 		// Parse optional constructor args first (before the class body)
@@ -353,6 +363,10 @@ func compileNew(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		// Apply attributes from new #[Attr] class { }
 		if len(anonAttrs) > 0 {
 			class.Attributes = append(anonAttrs, class.Attributes...)
+		}
+		// Apply class modifiers from new readonly class { }
+		if anonClassAttr != 0 {
+			class.Attr |= anonClassAttr
 		}
 		// Generate unique anonymous class name.
 		// PHP 8.4+: the prefix is "ParentClass@anonymous" or "FirstInterface@anonymous"
@@ -909,8 +923,13 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 
 	if r.static {
 		// :: syntax but with an object (e.g., parent::method(), self::method())
-		// Not truly static: $this is forwarded, so use Static=false for the binding
-		m := phpv.BindClass(method.Method, class, false)
+		// Not truly static: $this is forwarded, so use Static=false for the binding.
+		// Preserve the CalledClass from the current context for late static binding (LSB).
+		var calledClass phpv.ZClass
+		if fc, ok := ctx.(interface{ CalledClass() phpv.ZClass }); ok {
+			calledClass = fc.CalledClass()
+		}
+		m := phpv.BindClassLSB(method.Method, class, calledClass, false)
 		// For trait-aliased methods, preserve the alias name in the stack trace
 		calledName := string(op)
 		if m.Callable.Name() != calledName {

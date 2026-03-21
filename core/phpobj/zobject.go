@@ -519,10 +519,12 @@ func NewZObject(ctx phpv.Context, c phpv.ZClass, args ...*phpv.ZVal) (*ZObject, 
 		// Wrap the constructor in a MethodCallable so that ctx.Class() returns
 		// the declaring class (not the instantiated class). This is important for
 		// private property access and PHP 8.4 asymmetric visibility.
+		// Use BindClassLSB to set CalledClass to the instantiated class (c) for
+		// late static binding support (get_called_class() returns the actual class).
 		ctorCallable := phpv.Callable(constructor)
 		if ctorMethod != nil && ctorMethod.Class != nil {
 			if _, ok := constructor.(*phpv.MethodCallable); !ok {
-				ctorCallable = phpv.BindClass(constructor, ctorMethod.Class, false)
+				ctorCallable = phpv.BindClassLSB(constructor, ctorMethod.Class, c, false)
 			}
 		}
 		_, err := ctx.CallZVal(ctx, ctorCallable, args, n)

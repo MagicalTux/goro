@@ -360,6 +360,7 @@ func arraySort(ctx phpv.Context, entries []compareEntry, sortFlags phpv.ZInt, re
 
 func arrayUSort(ctx phpv.Context, entries []compareEntry, compare phpv.Callable) error {
 	var err error
+	boolDeprecated := false
 	sort.Slice(entries, func(i, j int) bool {
 		if err != nil {
 			return false
@@ -369,6 +370,14 @@ func arrayUSort(ctx phpv.Context, entries []compareEntry, compare phpv.Callable)
 
 		var ret *phpv.ZVal
 		ret, err = ctx.CallZValInternal(ctx, compare, []*phpv.ZVal{a, b})
+		if err != nil {
+			return false
+		}
+		// PHP 8.2+ deprecation: comparison functions should not return bool
+		if ret != nil && ret.GetType() == phpv.ZtBool && !boolDeprecated {
+			boolDeprecated = true
+			_ = ctx.Deprecated("Returning bool from comparison function is deprecated, return an integer less than, equal to, or greater than zero")
+		}
 		return ret.AsInt(ctx) < 0
 	})
 

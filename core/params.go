@@ -332,11 +332,12 @@ func ExpandAt(ctx phpv.Context, args []*phpv.ZVal, i int, out interface{}) error
 
 	if len(args) <= i {
 		// PHP 8: Too few arguments throws ArgumentCountError (catchable)
+		// Internal (built-in) functions use the format: func() expects at least N arguments, M given
 		funcName := ctx.GetFuncName()
 		if funcName == "" {
 			return phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "Too few arguments")
 		}
-		return phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "Too few arguments to function "+funcName+"(), "+phpv.ZInt(len(args)).String()+" passed and at least "+phpv.ZInt(i+1).String()+" expected")
+		return phpobj.ThrowError(ctx, phpobj.ArgumentCountError, funcName+"() expects at least "+phpv.ZInt(i+1).String()+" arguments, "+phpv.ZInt(len(args)).String()+" given")
 	}
 
 	if args[i] == nil {

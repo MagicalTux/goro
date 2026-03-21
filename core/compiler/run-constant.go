@@ -76,9 +76,28 @@ func (r *runConstant) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 	return nil, phpobj.ThrowErrorAt(ctx, phpobj.Error, fmt.Sprintf("Undefined constant \"%s\"", r.c), r.l)
 }
 
+// builtinDeprecatedConstants maps constant names to their deprecation message.
+var builtinDeprecatedConstants = map[phpv.ZString]string{
+	"ASSERT_ACTIVE":    "Constant ASSERT_ACTIVE is deprecated since 8.3, as assert_options() is deprecated",
+	"ASSERT_WARNING":   "Constant ASSERT_WARNING is deprecated since 8.3, as assert_options() is deprecated",
+	"ASSERT_BAIL":      "Constant ASSERT_BAIL is deprecated since 8.3, as assert_options() is deprecated",
+	"ASSERT_EXCEPTION": "Constant ASSERT_EXCEPTION is deprecated since 8.3, as assert_options() is deprecated",
+	"ASSERT_CALLBACK":  "Constant ASSERT_CALLBACK is deprecated since 8.3, as assert_options() is deprecated",
+	"FILE_BINARY":      "Constant FILE_BINARY is deprecated since 8.1, as the constant has no effect",
+	"FILE_TEXT":         "Constant FILE_TEXT is deprecated since 8.1, as the constant has no effect",
+}
+
 // checkConstantDeprecated checks if a global constant has #[\Deprecated] and emits a warning.
 // loc is the compile-time location of the constant access.
 func checkConstantDeprecated(ctx phpv.Context, name phpv.ZString, loc *phpv.Loc) error {
+	// Check built-in deprecated constants
+	if msg, ok := builtinDeprecatedConstants[name]; ok {
+		if loc != nil {
+			return ctx.Deprecated("%s", msg, logopt.NoFuncName(true), logopt.Data{Loc: loc})
+		}
+		return ctx.Deprecated("%s", msg, logopt.NoFuncName(true))
+	}
+
 	attrs := ctx.Global().ConstantGetAttributes(name)
 	for _, attr := range attrs {
 		if attr.ClassName == "Deprecated" {

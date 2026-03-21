@@ -127,6 +127,10 @@ func fncScanDir(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	sortingOrder := core.Deref(sortingOrderArg, SCANDIR_SORT_ASCENDING)
 
+	if dir == "" {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "scandir(): Argument #1 ($directory) must not be empty")
+	}
+
 	if err := ctx.Global().CheckOpenBasedir(ctx, string(dir), "scandir"); err != nil {
 		ctx.Warn("scandir(%s): Failed to open directory: Operation not permitted", dir, logopt.NoFuncName(true))
 		ctx.Warn("scandir(): (errno 1): Operation not permitted", logopt.NoFuncName(true))
