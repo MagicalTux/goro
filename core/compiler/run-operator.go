@@ -1199,6 +1199,35 @@ func operatorCompare(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (
 		return phpv.ZBool(res).ZVal(), nil
 	}
 
+	// NaN is never equal to anything, including itself (IEEE 754).
+	// PHP returns false for all == comparisons involving NaN, and 1 for <=>.
+	if a.GetType() == phpv.ZtFloat && math.IsNaN(float64(a.Value().(phpv.ZFloat))) {
+		if op == tokenizer.T_IS_EQUAL {
+			return phpv.ZBool(false).ZVal(), nil
+		}
+		if op == tokenizer.T_IS_NOT_EQUAL {
+			return phpv.ZBool(true).ZVal(), nil
+		}
+		if op == tokenizer.T_SPACESHIP {
+			return phpv.ZInt(1).ZVal(), nil
+		}
+		// For <, >, <=, >= with NaN: always false
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	if b.GetType() == phpv.ZtFloat && math.IsNaN(float64(b.Value().(phpv.ZFloat))) {
+		if op == tokenizer.T_IS_EQUAL {
+			return phpv.ZBool(false).ZVal(), nil
+		}
+		if op == tokenizer.T_IS_NOT_EQUAL {
+			return phpv.ZBool(true).ZVal(), nil
+		}
+		if op == tokenizer.T_SPACESHIP {
+			return phpv.ZInt(1).ZVal(), nil
+		}
+		// For <, >, <=, >= with NaN: always false
+		return phpv.ZBool(false).ZVal(), nil
+	}
+
 	// operator compare (< > <= >= == === != !== <=>) involve a lot of dark magic in php, unless both values are of the same type (and even so)
 	// loose comparison will convert number-y looking strings into numbers, etc
 	var ia, ib *phpv.ZVal
