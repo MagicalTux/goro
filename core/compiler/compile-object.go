@@ -122,7 +122,14 @@ func (r *runNewObject) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		if err != nil {
 			return nil, err
 		}
-		className = v.AsString(ctx)
+		// If the value is an object, use its class name (PHP: new $obj)
+		if v.GetType() == phpv.ZtObject {
+			if obj, ok := v.Value().(phpv.ZObject); ok {
+				className = obj.GetClass().GetName()
+			}
+		} else {
+			className = v.AsString(ctx)
+		}
 	} else {
 		className = r.obj
 	}
