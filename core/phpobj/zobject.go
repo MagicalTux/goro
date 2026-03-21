@@ -40,7 +40,8 @@ type ZObject struct {
 	// Tracks typed properties that were explicitly unset (to distinguish from
 	// "never initialized"). Unset typed properties allow __set/__unset fallback,
 	// while never-initialized typed properties throw the visibility error directly.
-	typedPropUnset map[phpv.ZString]bool
+	// Stored as a pointer so wrapper objects share the same map.
+	typedPropUnset *map[phpv.ZString]bool
 
 	// Destructor tracking - stored as a pointer so wrapper objects share the flag.
 	destructed *bool
@@ -320,14 +321,16 @@ func CreateZObject(ctx phpv.Context, c phpv.ZClass) (*ZObject, error) {
 		c = StdClass
 	}
 
+	tpu := make(map[phpv.ZString]bool)
 	n := &ZObject{
-		h:          phpv.NewHashTable(),
-		hasPrivate: make(map[phpv.ZString]struct{}),
-		Class:      c,
-		ID:         ctx.Global().NextObjectID(),
-		Opaque:     map[phpv.ZClass]interface{}{},
-		refCount:   new(int32),
-		destructed: new(bool),
+		h:              phpv.NewHashTable(),
+		hasPrivate:     make(map[phpv.ZString]struct{}),
+		Class:          c,
+		ID:             ctx.Global().NextObjectID(),
+		Opaque:         map[phpv.ZClass]interface{}{},
+		typedPropUnset: &tpu,
+		refCount:       new(int32),
+		destructed:     new(bool),
 	}
 
 	err := n.init(ctx)
@@ -394,14 +397,16 @@ func NewZObject(ctx phpv.Context, c phpv.ZClass, args ...*phpv.ZVal) (*ZObject, 
 		}
 	}
 
+	tpu := make(map[phpv.ZString]bool)
 	n := &ZObject{
-		h:          phpv.NewHashTable(),
-		hasPrivate: make(map[phpv.ZString]struct{}),
-		Class:      c,
-		ID:         ctx.Global().NextObjectID(),
-		Opaque:     map[phpv.ZClass]interface{}{},
-		refCount:   new(int32),
-		destructed: new(bool),
+		h:              phpv.NewHashTable(),
+		hasPrivate:     make(map[phpv.ZString]struct{}),
+		Class:          c,
+		ID:             ctx.Global().NextObjectID(),
+		Opaque:         map[phpv.ZClass]interface{}{},
+		typedPropUnset: &tpu,
+		refCount:       new(int32),
+		destructed:     new(bool),
 	}
 	var constructor phpv.Callable
 
@@ -583,6 +588,7 @@ func (z *ZObject) new(class *ZClass) *ZObject {
 		Opaque:              z.Opaque,
 		ID:                  z.ID,
 		readonlyInit:        z.readonlyInit,
+		typedPropUnset:      z.typedPropUnset,
 		refCount:            z.refCount,
 		destructed:          z.destructed,
 		jsonApplyCount:      z.jsonApplyCount,
@@ -1729,7 +1735,7 @@ func (o *ZObject) ObjectSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) er
 		if !propInHash {
 			if prop := o.findDeclaredProp(keyStr); prop != nil && prop.TypeHint != nil {
 				// Check if explicitly unset
-				if o.typedPropUnset == nil || !o.typedPropUnset[keyStr] {
+				if o.typedPropUnset == nil || !(*o.typedPropUnset)[keyStr] {
 					propIsSet = true // never initialized - treat as "set" for error purposes
 				}
 			}
@@ -1813,10 +1819,9 @@ func (o *ZObject) ObjectSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) er
 				// Already not in hash table - nothing to unset from hash table
 			}
 			if prop := o.findDeclaredProp(keyStr); prop != nil && prop.TypeHint != nil {
-				if o.typedPropUnset == nil {
-					o.typedPropUnset = make(map[phpv.ZString]bool)
+				if o.typedPropUnset != nil {
+					(*o.typedPropUnset)[keyStr] = true
 				}
-				o.typedPropUnset[keyStr] = true
 			}
 			if propInHashTable {
 				return o.h.SetString(keyStr, value) // removes from hash table
@@ -1825,7 +1830,7 @@ func (o *ZObject) ObjectSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) er
 		}
 		// Property is being set - clear the unset flag
 		if o.typedPropUnset != nil {
-			delete(o.typedPropUnset, keyStr)
+			delete(*o.typedPropUnset, keyStr)
 		}
 		return o.h.SetString(keyStr, value)
 	}
