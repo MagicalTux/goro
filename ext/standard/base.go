@@ -679,7 +679,8 @@ func stdIsSubclassOf(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	// Resolve the target class name to an actual class (handles class_alias)
-	targetClass, targetErr := ctx.Global().GetClass(ctx, className, true)
+	// Do not trigger autoloading for the target class
+	targetClass, targetErr := ctx.Global().GetClass(ctx, className, false)
 
 	if targetErr == nil && !phpv.IsNilClass(targetClass) {
 		// Use InstanceOf to check, but skip the first class itself (is_subclass_of excludes self)
@@ -1000,7 +1001,7 @@ func stdPropertyExists(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 			return phpv.ZFalse.ZVal(), nil
 		}
 	} else {
-		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("property_exists(): Argument #1 ($object_or_class) must be of type object|string, %s given", args[0].GetType().TypeName()))
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("property_exists(): Argument #1 ($object_or_class) must be of type object|string, %s given", phpv.ZValTypeNameDetailed(args[0])))
 	}
 
 	// Check if the property is declared on the class

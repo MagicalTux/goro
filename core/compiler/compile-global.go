@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"fmt"
 	"io"
 
 	"github.com/MagicalTux/goro/core/phpv"
@@ -105,7 +106,15 @@ func compileGlobal(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		}
 
 		if i.Type == tokenizer.T_VARIABLE {
-			g.vars = append(g.vars, globalVar{static: phpv.ZString(i.Data[1:])})
+			varName := phpv.ZString(i.Data[1:])
+			if varName == "this" {
+				return nil, &phpv.PhpError{
+					Err:  fmt.Errorf("Cannot use $this as global variable"),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  i.Loc(),
+				}
+			}
+			g.vars = append(g.vars, globalVar{static: varName})
 		} else if i.IsSingle('$') {
 			// variable-variable: global $$k or global ${expr}
 			expr, err := compileRunVariableRef(nil, c, i.Loc())

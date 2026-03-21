@@ -122,6 +122,13 @@ func compileStaticVar(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		if i.Type != tokenizer.T_VARIABLE {
 			return nil, i.Unexpected()
 		}
+		if i.Data[1:] == "this" {
+			return nil, &phpv.PhpError{
+				Err:  fmt.Errorf("Cannot use $this as static variable"),
+				Code: phpv.E_COMPILE_ERROR,
+				Loc:  i.Loc(),
+			}
+		}
 		stv := &staticVarInfo{varName: phpv.ZString(i.Data[1:])}
 
 		// parse default value, if any

@@ -1425,8 +1425,15 @@ func compileFunctionUse(c compileCtx) (res []*phpv.FuncUse, err error) {
 		varName := phpv.ZString(i.Data[1:]) // skip $
 
 		// Check for auto-global variables (cannot be used in use())
+		if varName == "this" {
+			return nil, &phpv.PhpError{
+				Err:  fmt.Errorf("Cannot use $this as lexical variable"),
+				Code: phpv.E_COMPILE_ERROR,
+				Loc:  i.Loc(),
+			}
+		}
 		switch varName {
-		case "GLOBALS", "_SERVER", "_GET", "_POST", "_COOKIE", "_FILES", "_REQUEST", "_SESSION", "_ENV", "this":
+		case "GLOBALS", "_SERVER", "_GET", "_POST", "_COOKIE", "_FILES", "_REQUEST", "_SESSION", "_ENV":
 			return nil, &phpv.PhpError{
 				Err:  fmt.Errorf("Cannot use auto-global as lexical variable"),
 				Code: phpv.E_COMPILE_ERROR,

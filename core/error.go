@@ -22,6 +22,15 @@ func fncTriggerError(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	errorType := errorTypeArg.GetOrDefault(E_USER_NOTICE)
+
+	// Validate error type - must be one of the E_USER_* constants
+	switch phpv.PhpErrorType(errorType) {
+	case phpv.E_USER_ERROR, phpv.E_USER_WARNING, phpv.E_USER_NOTICE, phpv.E_USER_DEPRECATED:
+		// valid
+	default:
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, fmt.Sprintf("trigger_error(): Argument #2 ($error_level) must be one of E_USER_ERROR, E_USER_WARNING, E_USER_NOTICE, or E_USER_DEPRECATED"))
+	}
+
 	phpErr := &phpv.PhpError{
 		Err:  errors.New(message.String()),
 		Code: phpv.PhpErrorType(errorType),
@@ -29,14 +38,14 @@ func fncTriggerError(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 	err = phperr.HandleUserError(ctx, phpErr)
 	if err == phperr.ErrHandledByUser {
-		return nil, nil
+		return phpv.ZBool(true).ZVal(), nil
 	}
 	if err != nil {
 		return nil, err
 	}
 
 	ctx.LogError(phpErr)
-	return nil, nil
+	return phpv.ZBool(true).ZVal(), nil
 }
 
 // > func mixed set_error_handler ( callable $error_handler [, int $error_types = E_ALL | E_STRICT ] )

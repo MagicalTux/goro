@@ -980,6 +980,10 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 		if intfClass.InternalOnly && c.L != nil {
 			return c.fatalError(ctx, fmt.Sprintf("%s can't be implemented by user classes", intfClass.Name))
 		}
+		// Throwable can only be implemented by extending Exception or Error
+		if intfClass == Throwable && c.L != nil {
+			return c.fatalError(ctx, fmt.Sprintf("Class %s cannot implement interface Throwable, extend Exception or Error instead", c.Name))
+		}
 		// Non-enum classes cannot implement UnitEnum or BackedEnum
 		if !c.Type.Has(phpv.ZClassTypeEnum) && (intfClass == UnitEnum || intfClass == BackedEnum) {
 			return c.fatalError(ctx, fmt.Sprintf("Non-enum class %s cannot implement interface %s", c.Name, intfClass.Name))
