@@ -1054,7 +1054,7 @@ func fncStreamGetContents(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, erro
 		return phpv.ZFalse.ZVal(), ctx.Warn("resource type not yet supported:" + t)
 	}
 
-	if offset.HasArg() && offset.Get() > 0 {
+	if offset.HasArg() && offset.Get() >= 0 {
 		file.Seek(int64(offset.Get()), 0)
 	}
 

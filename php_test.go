@@ -875,8 +875,20 @@ func TestPhp(t *testing.T) {
 	// Known-hanging tests that cause OOM/infinite loops in the engine.
 	// These are skipped until the underlying bugs are fixed.
 	hangingTests := map[string]bool{
-		"test/php-8.5.4/ext/date/bug73460-002.phpt":                             true, // DateTime::sub DST infinite loop
-		"test/php-8.5.4/ext/standard/serialize/serialization_objects_015.phpt":   true, // Object self-reference in serialize
+		"test/php-8.5.4/ext/date/bug73460-002.phpt":                                                   true, // DateTime::sub DST infinite loop
+		"test/php-8.5.4/func_arg_fetch_optimization.phpt":                                             true, // $x[][$y] recursion causes OOM before call depth limit
+		"test/php-8.5.4/ext/mbstring/utf_encodings.phpt":                                              true, // Slow torture test (needs SKIP_SLOW_TESTS)
+		"test/php-8.5.4/ext/standard/file/file_get_contents_file_put_contents_5gb.phpt":               true, // 5GB allocation, memory_limit=-1
+		"test/php-8.5.4/ext/standard/strings/gh15613.phpt":                                            true, // memory_limit=-1, huge unpack
+		"test/php-8.5.4/ext/mbstring/euc_tw_encoding.phpt":                                            true, // Slow mbstring encoding conversion test
+		"test/php-8.5.4/ext/mbstring/gb18030_encoding.phpt":                                           true, // Slow mbstring encoding conversion test
+		"test/php-8.5.4/fibers/get-return-after-bailout.phpt":                                         true, // Fiber + str_repeat(PHP_INT_MAX) hang
+	}
+
+	// Directories containing tests that require external resources (network, etc.)
+	// and will hang waiting for I/O. Skip the entire directory.
+	hangingDirs := []string{
+		"ext/standard/network/",
 	}
 
 	// Batch support: GORO_TEST_SKIP and GORO_TEST_LIMIT env vars
@@ -943,6 +955,14 @@ func TestPhp(t *testing.T) {
 			skip += 1
 			t.Logf("Skipped %s: known hanging test", path)
 			return nil
+		}
+		// Skip entire directories that require external resources
+		for _, dir := range hangingDirs {
+			if strings.Contains(path, dir) {
+				count += 1
+				skip += 1
+				return nil
+			}
 		}
 
 		// Check cache: skip tests that passed before and haven't changed

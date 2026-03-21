@@ -217,6 +217,15 @@ func initArrayObject() {
 						"Cannot access offset of type array in isset or empty")
 				}
 				if d.objectStorage != nil {
+					if d.objectStorage == o {
+						// Self-wrapping: check as property directly (avoid infinite recursion)
+						key := args[0].AsString(ctx)
+						_, err := o.ObjectGet(ctx, key)
+						if err != nil {
+							return phpv.ZFalse.ZVal(), nil
+						}
+						return phpv.ZTrue.ZVal(), nil
+					}
 					// If the object implements ArrayAccess, delegate to it
 					if d.objectStorage.GetClass().Implements(phpobj.ArrayAccess) {
 						result, err := d.objectStorage.CallMethod(ctx, "offsetExists", args[0])
@@ -255,6 +264,11 @@ func initArrayObject() {
 						"Cannot access offset of type array on ArrayObject")
 				}
 				if d.objectStorage != nil {
+					if d.objectStorage == o {
+						// Self-wrapping: get property directly
+						key := args[0].AsString(ctx)
+						return o.ObjectGet(ctx, key)
+					}
 					if d.objectStorage.GetClass().Implements(phpobj.ArrayAccess) {
 						return d.objectStorage.CallMethod(ctx, "offsetGet", args[0])
 					}
@@ -281,6 +295,11 @@ func initArrayObject() {
 						"Cannot access offset of type array on ArrayObject")
 				}
 				if d.objectStorage != nil {
+					if d.objectStorage == o {
+						// Self-wrapping: set property directly (avoid infinite recursion)
+						keyStr := key.AsString(ctx)
+						return nil, o.ObjectSet(ctx, keyStr, value)
+					}
 					if d.objectStorage.GetClass().Implements(phpobj.ArrayAccess) {
 						_, err := d.objectStorage.CallMethod(ctx, "offsetSet", key, value)
 						return nil, err
@@ -312,6 +331,10 @@ func initArrayObject() {
 						"Cannot unset offset of type array on ArrayObject")
 				}
 				if d.objectStorage != nil {
+					if d.objectStorage == o {
+						// Self-wrapping: unset property directly
+						return nil, d.array.OffsetUnset(ctx, args[0])
+					}
 					if d.objectStorage.GetClass().Implements(phpobj.ArrayAccess) {
 						_, err := d.objectStorage.CallMethod(ctx, "offsetUnset", args[0])
 						return nil, err
@@ -332,7 +355,7 @@ func initArrayObject() {
 				if d == nil {
 					return phpv.ZInt(0).ZVal(), nil
 				}
-				if d.objectStorage != nil {
+				if d.objectStorage != nil && d.objectStorage != o {
 					count := d.objectStorage.Count(ctx)
 					return count.ZVal(), nil
 				}
@@ -803,6 +826,12 @@ func initArrayObject() {
 					}
 					v := o.GetPropValue(prop)
 					result.OffsetSet(ctx, phpv.ZString(mangledName).ZVal(), v)
+				}
+
+				// When wrapping self, show just the object properties
+				// (skip the storage wrapper to avoid infinite recursion in var_dump)
+				if d.objectStorage != nil && d.objectStorage == o {
+					return result.ZVal(), nil
 				}
 
 				// Then add the internal storage as a private property

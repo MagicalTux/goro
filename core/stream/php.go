@@ -2,8 +2,10 @@ package stream
 
 import (
 	"bytes"
+	"io"
 	"net/url"
 	"os"
+	"strings"
 
 	"github.com/MagicalTux/goro/core/phpv"
 )
@@ -114,10 +116,11 @@ func (h *phpHandler) Open(ctx phpv.Context, p *url.URL, mode string, _ ...phpv.R
 	case "temp", "memory":
 		// php://temp and php://memory both provide read-write temporary streams
 		// php://temp may use a temporary file for large data, but we use in-memory for both
-		buf := &readWriteBuffer{Buffer: bytes.NewBuffer(nil)}
+		appendMode := strings.Contains(mode, "a")
+		buf := &readWriteBuffer{appendMode: appendMode}
 		s := NewStream(buf)
 		s.SetAttr("stream_type", "TEMP")
-		s.SetAttr("mode", "w+b")
+		s.SetAttr("mode", mode)
 		s.ResourceType = phpv.ResourceStream
 		return s, nil
 	default:
@@ -145,36 +148,65 @@ func (f *phpHandler) Lstat(p *url.URL) (os.FileInfo, error) {
 
 // readWriteBuffer implements a seekable read-write in-memory buffer for php://temp and php://memory
 type readWriteBuffer struct {
-	*bytes.Buffer
-	pos int
+	data       []byte
+	pos        int
+	appendMode bool // when true, writes always go to the end (like "a+" mode)
 }
 
 func (b *readWriteBuffer) Read(p []byte) (int, error) {
-	data := b.Buffer.Bytes()
-	if b.pos >= len(data) {
-		return 0, nil
+	if b.pos >= len(b.data) {
+		return 0, io.EOF
 	}
-	n := copy(p, data[b.pos:])
+	n := copy(p, b.data[b.pos:])
 	b.pos += n
 	return n, nil
 }
 
 func (b *readWriteBuffer) Write(p []byte) (int, error) {
-	// Ensure we write at the current position
-	data := b.Buffer.Bytes()
-	if b.pos < len(data) {
-		// Overwrite from pos
-		end := b.pos + len(p)
-		if end <= len(data) {
-			copy(data[b.pos:end], p)
-		} else {
-			copy(data[b.pos:], p[:len(data)-b.pos])
-			b.Buffer.Write(p[len(data)-b.pos:])
-		}
-	} else {
-		// Append
-		b.Buffer.Write(p)
+	if len(p) == 0 {
+		return 0, nil
 	}
-	b.pos += len(p)
+	// In append mode, writes always go to the end
+	if b.appendMode {
+		b.data = append(b.data, p...)
+		b.pos = len(b.data)
+		return len(p), nil
+	}
+	// If pos is past end, zero-fill the gap
+	if b.pos > len(b.data) {
+		b.data = append(b.data, make([]byte, b.pos-len(b.data))...)
+	}
+	end := b.pos + len(p)
+	if end <= len(b.data) {
+		// Overwrite existing data
+		copy(b.data[b.pos:end], p)
+	} else if b.pos < len(b.data) {
+		// Partial overwrite + extend
+		copy(b.data[b.pos:], p[:len(b.data)-b.pos])
+		b.data = append(b.data, p[len(b.data)-b.pos:]...)
+	} else {
+		// Pure append
+		b.data = append(b.data, p...)
+	}
+	b.pos = end
 	return len(p), nil
+}
+
+func (b *readWriteBuffer) Seek(offset int64, whence int) (int64, error) {
+	var newPos int64
+	switch whence {
+	case io.SeekStart:
+		newPos = offset
+	case io.SeekCurrent:
+		newPos = int64(b.pos) + offset
+	case io.SeekEnd:
+		newPos = int64(len(b.data)) + offset
+	default:
+		return 0, ErrNotSupported
+	}
+	if newPos < 0 {
+		return int64(b.pos), ErrNotSupported
+	}
+	b.pos = int(newPos)
+	return newPos, nil
 }

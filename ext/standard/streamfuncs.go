@@ -270,7 +270,9 @@ func fncStreamGetLine(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 	var buf []byte
 	maxLen := int(length)
-	for i := 0; i < maxLen; i++ {
+	// In PHP, length=0 means "unlimited" - read until delimiter or EOF
+	unlimited := maxLen <= 0
+	for i := 0; unlimited || i < maxLen; i++ {
 		b, berr := file.ReadByte()
 		if berr != nil {
 			break

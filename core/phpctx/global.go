@@ -128,6 +128,10 @@ type Global struct {
 
 	// JSON encoding recursion detection across nested json_encode calls
 	jsonEncodingObjects map[phpv.ZObject]bool
+
+	// Serialize recursion detection across nested serialize calls
+	// (especially Serializable::serialize() calling serialize() internally)
+	SerializeSeenObjects map[phpv.ZObject]bool
 }
 
 type tickFuncEntry struct {
@@ -1817,6 +1821,16 @@ func (g *Global) UnmarkJsonEncoding(obj phpv.ZObject) {
 	if g.jsonEncodingObjects != nil {
 		delete(g.jsonEncodingObjects, obj)
 	}
+}
+
+// GetSerializeSeenObjects returns the current serialize object tracking map (may be nil).
+func (g *Global) GetSerializeSeenObjects() map[phpv.ZObject]bool {
+	return g.SerializeSeenObjects
+}
+
+// SetSerializeSeenObjects sets the serialize object tracking map.
+func (g *Global) SetSerializeSeenObjects(m map[phpv.ZObject]bool) {
+	g.SerializeSeenObjects = m
 }
 
 // GetIncludedFiles returns a list of all included/required file paths.

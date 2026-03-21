@@ -88,14 +88,46 @@ func fncUnserialize(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return result, nil
 }
 
+// serializeSeen tracks both arrays and objects to prevent infinite recursion
+// in serialize, particularly when Serializable::serialize() calls serialize()
+// internally with cross-referenced objects.
+type serializeSeen struct {
+	arrays  map[*phpv.ZArray]bool
+	objects map[phpv.ZObject]bool
+}
+
+func newSerializeSeen() *serializeSeen {
+	return &serializeSeen{
+		arrays:  make(map[*phpv.ZArray]bool),
+		objects: make(map[phpv.ZObject]bool),
+	}
+}
+
 func serialize(ctx phpv.Context, value *phpv.ZVal) (string, error) {
-	seenArrays := make(map[*phpv.ZArray]bool)
-	return serializeWithDepth(ctx, value, 0, seenArrays)
+	seen := newSerializeSeen()
+	// Share object tracking with nested serialize calls (e.g., Serializable::serialize()
+	// calling the built-in serialize() internally). The Global stores a shared map.
+	type serializeTracker interface {
+		GetSerializeSeenObjects() map[phpv.ZObject]bool
+		SetSerializeSeenObjects(map[phpv.ZObject]bool)
+	}
+	if g, ok := ctx.Global().(serializeTracker); ok {
+		existing := g.GetSerializeSeenObjects()
+		if existing != nil {
+			// Reuse the existing seen objects from the outer serialize call
+			seen.objects = existing
+		} else {
+			// First (outermost) serialize call: set up and clean up
+			g.SetSerializeSeenObjects(seen.objects)
+			defer g.SetSerializeSeenObjects(nil)
+		}
+	}
+	return serializeWithDepth(ctx, value, 0, seen)
 }
 
 const maxSerializeDepth = 128
 
-func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seenArrays map[*phpv.ZArray]bool) (string, error) {
+func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seen *serializeSeen) (string, error) {
 	if depth > maxSerializeDepth {
 		return "N;", nil // prevent infinite recursion
 	}
@@ -136,11 +168,11 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seenArray
 		arr := value.AsArray(ctx)
 
 		// Detect array cycles to prevent infinite recursion
-		if seenArrays[arr] {
+		if seen.arrays[arr] {
 			return "N;", nil
 		}
-		seenArrays[arr] = true
-		defer delete(seenArrays, arr)
+		seen.arrays[arr] = true
+		defer delete(seen.arrays, arr)
 
 		count := strconv.FormatInt(int64(arr.Count(ctx)), 10)
 
@@ -155,7 +187,7 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seenArray
 		for k, v := range arr.Iterate(ctx) {
 
 			if j, ok := refs[v.Nude()]; ok {
-				sub, err := serializeWithDepth(ctx, k, depth+1, seenArrays)
+				sub, err := serializeWithDepth(ctx, k, depth+1, seen)
 				if err != nil {
 					return "", err
 				}
@@ -169,12 +201,12 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seenArray
 				refs[v.Nude()] = i
 			}
 
-			sub, err := serializeWithDepth(ctx, k, depth+1, seenArrays)
+			sub, err := serializeWithDepth(ctx, k, depth+1, seen)
 			if err != nil {
 				return "", err
 			}
 			buf.WriteString(sub)
-			sub, err = serializeWithDepth(ctx, v, depth+1, seenArrays)
+			sub, err = serializeWithDepth(ctx, v, depth+1, seen)
 			if err != nil {
 				return "", err
 			}
@@ -185,10 +217,13 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seenArray
 	case phpv.ZtObject:
 		obj := value.AsObject(ctx)
 
-		// Note: serialize does NOT use per-object recursion detection like
-		// json_encode does. Cross-function cycles (serialize -> json_encode ->
-		// serialize) are broken by json_encode's own recursion detection.
-		// Pure serialize recursion is prevented by the depth limit.
+		// Detect object cycles to prevent infinite recursion
+		// (especially with Serializable::serialize() calling serialize() internally)
+		if seen.objects[obj] {
+			return "N;", nil
+		}
+		seen.objects[obj] = true
+		defer delete(seen.objects, obj)
 
 		// Enum serialization: E:length:"ClassName:CaseName";
 		if obj.GetClass().GetType().Has(phpv.ZClassTypeEnum) {
@@ -219,12 +254,12 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seenArray
 			var buf bytes.Buffer
 			propCount := 0
 			for k, v := range arr.Iterate(ctx) {
-				sub, err := serializeWithDepth(ctx, k, depth+1, seenArrays)
+				sub, err := serializeWithDepth(ctx, k, depth+1, seen)
 				if err != nil {
 					return "", err
 				}
 				buf.WriteString(sub)
-				sub, err = serializeWithDepth(ctx, v, depth+1, seenArrays)
+				sub, err = serializeWithDepth(ctx, v, depth+1, seen)
 				if err != nil {
 					return "", err
 				}
@@ -297,7 +332,7 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seenArray
 						sub := fmt.Sprintf(`s:%d:"%s";`, len(mangledName), mangledName)
 						buf.WriteString(sub)
 						v := zobj.HashTable().GetString(propName)
-						sub2, err := serializeWithDepth(ctx, v, depth+1, seenArrays)
+						sub2, err := serializeWithDepth(ctx, v, depth+1, seen)
 						if err != nil {
 							return "", err
 						}
@@ -325,7 +360,7 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seenArray
 				buf.WriteString(sub)
 
 				v := zobj.GetPropValue(classProp)
-				sub2, err := serializeWithDepth(ctx, v, depth+1, seenArrays)
+				sub2, err := serializeWithDepth(ctx, v, depth+1, seen)
 				if err != nil {
 					return "", err
 				}
@@ -349,7 +384,7 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seenArray
 				buf.WriteString(sub)
 
 				v := zobj.GetPropValue(prop)
-				sub2, err := serializeWithDepth(ctx, v, depth+1, seenArrays)
+				sub2, err := serializeWithDepth(ctx, v, depth+1, seen)
 				if err != nil {
 					return "", err
 				}
