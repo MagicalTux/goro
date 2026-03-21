@@ -16,8 +16,8 @@ enum Foo {}
 var_dump((new \ReflectionClass(Foo::class))->getAttributes(EnumAttribute::class)[0]->newInstance());
 
 ?>
---EXPECT--
-object(EnumAttribute)#1 (1) {
+--EXPECTF--
+object(EnumAttribute)#%d (1) {
   ["value"]=>
   string(3) "Foo"
 }

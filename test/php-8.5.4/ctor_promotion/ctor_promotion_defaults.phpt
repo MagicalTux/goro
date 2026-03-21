@@ -16,8 +16,8 @@ var_dump(new Point(10.0, 11.0));
 var_dump(new Point(10.0, 11.0, 12.0));
 
 ?>
---EXPECT--
-object(Point)#1 (3) {
+--EXPECTF--
+object(Point)#%d (3) {
   ["x"]=>
   float(10)
   ["y"]=>
@@ -25,7 +25,7 @@ object(Point)#1 (3) {
   ["z"]=>
   float(2)
 }
-object(Point)#1 (3) {
+object(Point)#%d (3) {
   ["x"]=>
   float(10)
   ["y"]=>
@@ -33,7 +33,7 @@ object(Point)#1 (3) {
   ["z"]=>
   float(2)
 }
-object(Point)#1 (3) {
+object(Point)#%d (3) {
   ["x"]=>
   float(10)
   ["y"]=>

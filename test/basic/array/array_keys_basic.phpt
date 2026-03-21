@@ -10,8 +10,10 @@ var_dump(array_keys($basic_arr));
 
 echo "Done\n";
 ?>
---EXPECT--
+--EXPECTF--
 *** Testing array_keys() on basic array operation ***
+
+Deprecated: Implicit conversion from float -23.45 to int loses precision in %s on line %d
 array(5) {
   [0]=>
   string(1) "a"

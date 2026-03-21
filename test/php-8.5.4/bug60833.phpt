@@ -22,13 +22,13 @@ class B extends A {
 $t = new B();
 $t->testit();
 ?>
---EXPECT--
-object(A)#2 (0) {
+--EXPECTF--
+object(A)#%d (0) {
 }
-object(A)#2 (0) {
+object(A)#%d (0) {
 }
-object(B)#2 (0) {
+object(B)#%d (0) {
 }
-object(A)#2 (0) {
+object(A)#%d (0) {
 }
 string(1) "B"

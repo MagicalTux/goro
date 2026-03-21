@@ -33,10 +33,10 @@ namespace {
 }
 
 ?>
---EXPECT--
-object(enum\Foo)#1 (0) {
+--EXPECTF--
+object(enum\Foo)#%d (0) {
 }
-object(enum)#1 (0) {
+object(enum)#%d (0) {
 }
 string(13) "enum function"
 string(13) "enum constant"

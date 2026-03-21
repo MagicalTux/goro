@@ -18,8 +18,8 @@ enum Foo {
 var_dump((new \ReflectionClassConstant(Foo::class, 'Bar'))->getAttributes(EnumCaseAttribute::class)[0]->newInstance());
 
 ?>
---EXPECT--
-object(EnumCaseAttribute)#1 (1) {
+--EXPECTF--
+object(EnumCaseAttribute)#%d (1) {
   ["value"]=>
   string(3) "Bar"
 }

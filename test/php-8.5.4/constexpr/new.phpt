@@ -45,15 +45,15 @@ try {
 }
 
 ?>
---EXPECT--
+--EXPECTF--
 Class "DoesNotExist" not found
-object(stdClass)#2 (0) {
+object(stdClass)#%d (0) {
 }
 Unsupported operand types: array + int
 Unsupported operand types: array + int
-object(Test)#4 (2) {
+object(Test)#%d (2) {
   ["a"]=>
-  object(stdClass)#1 (0) {
+  object(stdClass)#%d (0) {
   }
   ["b"]=>
   int(42)

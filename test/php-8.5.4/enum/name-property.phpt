@@ -20,10 +20,10 @@ var_dump((new ReflectionClass(IntFoo::class))->getProperties());
 var_dump(IntFoo::Bar->name);
 
 ?>
---EXPECT--
+--EXPECTF--
 array(1) {
   [0]=>
-  object(ReflectionProperty)#2 (2) {
+  object(ReflectionProperty)#%d (2) {
     ["name"]=>
     string(4) "name"
     ["class"]=>
@@ -33,14 +33,14 @@ array(1) {
 string(3) "Bar"
 array(2) {
   [0]=>
-  object(ReflectionProperty)#3 (2) {
+  object(ReflectionProperty)#%d (2) {
     ["name"]=>
     string(4) "name"
     ["class"]=>
     string(6) "IntFoo"
   }
   [1]=>
-  object(ReflectionProperty)#4 (2) {
+  object(ReflectionProperty)#%d (2) {
     ["name"]=>
     string(5) "value"
     ["class"]=>

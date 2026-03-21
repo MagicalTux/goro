@@ -24,12 +24,12 @@ test();
 var_dump(TEST);
 
 ?>
---EXPECT--
-object(stdClass)#3 (0) {
+--EXPECTF--
+object(stdClass)#%d (0) {
 }
-object(stdClass)#2 (0) {
+object(stdClass)#%d (0) {
 }
-object(stdClass)#3 (0) {
+object(stdClass)#%d (0) {
 }
-object(stdClass)#1 (0) {
+object(stdClass)#%d (0) {
 }
