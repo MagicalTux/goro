@@ -76,12 +76,13 @@ array(2) {
   ["b"]=>
   float(0.2)
 }
+
 array(0) {
 }
 array(0) {
 }
 
-Notice: compact(): Undefined variable: g in %s on line %d
+Warning: compact(): Undefined variable $g in %s on line %d
 array(0) {
 }
 Done

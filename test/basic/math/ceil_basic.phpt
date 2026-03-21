@@ -43,7 +43,7 @@ for ($i = 0; $i < count($values); $i++) {
 
 ?>
 ===Done===
---EXPECT--
+--EXPECTF--
 *** Testing ceil() : basic functionality ***
 float(0)
 float(0)
@@ -64,5 +64,7 @@ float(-3950)
 float(39)
 float(1)
 float(0)
+
+Deprecated: ceil(): Passing null to parameter #1 ($num) of type int|float is deprecated in %s on line %d
 float(0)
 ===Done===
