@@ -965,6 +965,18 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 		}
 	}
 
+	// Track interfaces seen in THIS declaration's implements/extends list
+	// to detect duplicates (including aliases that resolve to the same interface).
+	// Note: we do NOT include interfaces from the parent class - PHP allows
+	// re-implementing an interface that a parent class already implements.
+	seenInterfaces := make(map[*ZClass]bool)
+	// For interfaces with multiple extends (interface c extends a, b),
+	// the first extended interface is c.Extends and the rest are in ImplementsStr.
+	// Seed seenInterfaces with the first extended interface.
+	if c.Type == phpv.ZClassTypeInterface && c.Extends != nil {
+		seenInterfaces[c.Extends] = true
+	}
+
 	for _, impl := range c.ImplementsStr {
 		intf, err := ctx.Global().GetClass(ctx, impl, true)
 		if err != nil {
@@ -976,6 +988,14 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 		if c.Type != phpv.ZClassTypeInterface && intfClass.Type != phpv.ZClassTypeInterface {
 			return c.fatalError(ctx, fmt.Sprintf("%s cannot implement %s - it is not an interface", c.Name, intfClass.Name))
 		}
+		// Check for duplicate interface implementation (including aliases that resolve to the same interface)
+		if seenInterfaces[intfClass] {
+			if c.Type == phpv.ZClassTypeInterface {
+				return c.fatalError(ctx, fmt.Sprintf("Interface %s cannot implement previously implemented interface %s", c.GetName(), intfClass.GetName()))
+			}
+			return c.fatalError(ctx, fmt.Sprintf("Class %s cannot implement previously implemented interface %s", c.GetName(), intfClass.GetName()))
+		}
+		seenInterfaces[intfClass] = true
 		// Check if this is an internal-only interface that user classes can't implement
 		if intfClass.InternalOnly && c.L != nil {
 			return c.fatalError(ctx, fmt.Sprintf("%s can't be implemented by user classes", intfClass.Name))
@@ -1221,15 +1241,12 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 			}
 		}
 		if len(privateUnimpl) > 0 {
-			msg := fmt.Sprintf("Class %s must implement %d abstract method", c.Name, len(privateUnimpl))
+			displayName := c.GetName()
+			msg := fmt.Sprintf("Class %s must implement %d abstract method", displayName, len(privateUnimpl))
 			if len(privateUnimpl) > 1 {
 				msg += "s"
 			}
-			if len(privateUnimpl) > 1 {
-				msg += " and must therefore be declared abstract or implement the remaining methods ("
-			} else {
-				msg += " (" // different format for private abstract trait methods
-			}
+			msg += " ("
 			for i, u := range privateUnimpl {
 				if i > 0 {
 					msg += ", "
@@ -1263,24 +1280,21 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 		}
 		if len(ownAbstract) > 0 && len(unimplemented) == 0 {
 			// PHP: "Class X declares abstract method Y() and must therefore be declared abstract"
-			return c.fatalError(ctx, fmt.Sprintf("Class %s declares abstract method %s() and must therefore be declared abstract", c.Name, ownAbstract[0]))
+			return c.fatalError(ctx, fmt.Sprintf("Class %s declares abstract method %s() and must therefore be declared abstract", c.GetName(), ownAbstract[0]))
 		}
 		// If there are both own abstract and unimplemented, combine them all as unimplemented
 		if len(ownAbstract) > 0 {
 			for _, name := range ownAbstract {
-				unimplemented = append(unimplemented, string(c.Name)+"::"+name)
+				unimplemented = append(unimplemented, string(c.GetName())+"::"+name)
 			}
 		}
 		if len(unimplemented) > 0 {
-			msg := fmt.Sprintf("Class %s contains %d abstract method", c.Name, len(unimplemented))
+			displayName := c.GetName()
+			msg := fmt.Sprintf("Class %s must implement %d abstract method", displayName, len(unimplemented))
 			if len(unimplemented) > 1 {
 				msg += "s"
 			}
-			if len(unimplemented) > 1 {
-				msg += " and must therefore be declared abstract or implement the remaining methods ("
-			} else {
-				msg += " and must therefore be declared abstract or implement the remaining method ("
-			}
+			msg += " ("
 			for i, u := range unimplemented {
 				if i > 0 {
 					msg += ", "

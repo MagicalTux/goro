@@ -569,6 +569,9 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			if aType == phpv.ZtObject || bType == phpv.ZtObject {
 				return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Unsupported operand types: %s %s %s", phpTypeName(a), r.op.OpString(), phpTypeName(b)))
 			}
+			if aType == phpv.ZtResource || bType == phpv.ZtResource {
+				return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Unsupported operand types: %s %s %s", phpTypeName(a), r.op.OpString(), phpTypeName(b)))
+			}
 
 			// PHP 8: handle non-numeric strings in arithmetic
 			// - Completely non-numeric ("hello"): TypeError
@@ -916,6 +919,10 @@ func operatorMath(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*ph
 				res = phpv.ZFloat(a) * phpv.ZFloat(b)
 			}
 		case tokenizer.T_POW, tokenizer.T_POW_EQUAL:
+			// PHP 8.4: 0 ** negative is deprecated
+			if a == 0 && b < 0 {
+				ctx.Deprecated("Power of base 0 and negative exponent is deprecated", logopt.NoFuncName(true))
+			}
 			if b >= 0 {
 				// Try to compute as integer first
 				result := phpv.ZFloat(math.Pow(float64(a), float64(b)))
@@ -946,7 +953,13 @@ func operatorMath(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*ph
 		case tokenizer.T_MUL_EQUAL, tokenizer.Rune('*'):
 			res = a.Value().(phpv.ZFloat) * b.Value().(phpv.ZFloat)
 		case tokenizer.T_POW, tokenizer.T_POW_EQUAL:
-			res = phpv.ZFloat(math.Pow(float64(a.Value().(phpv.ZFloat)), float64(b.Value().(phpv.ZFloat))))
+			af := a.Value().(phpv.ZFloat)
+			bf := b.Value().(phpv.ZFloat)
+			// PHP 8.4: 0 ** negative is deprecated
+			if af == 0 && bf < 0 {
+				ctx.Deprecated("Power of base 0 and negative exponent is deprecated", logopt.NoFuncName(true))
+			}
+			res = phpv.ZFloat(math.Pow(float64(af), float64(bf)))
 		}
 		return res.ZVal(), nil
 	default:

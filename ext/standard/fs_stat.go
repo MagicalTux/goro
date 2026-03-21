@@ -295,7 +295,13 @@ func fncTouch(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if _, err := os.Stat(p); os.IsNotExist(err) {
 		f, err := os.Create(p)
 		if err != nil {
-			return phpv.ZFalse.ZVal(), ctx.Warn("Unable to create file %s because %s", filename, err)
+			errMsg := err.Error()
+			if os.IsNotExist(err) {
+				errMsg = "No such file or directory"
+			} else if os.IsPermission(err) {
+				errMsg = "Permission denied"
+			}
+			return phpv.ZFalse.ZVal(), ctx.Warn("Unable to create file %s because %s", filename, errMsg)
 		}
 		f.Close()
 	}
@@ -401,7 +407,11 @@ func fncFile(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	f, err := ctx.Global().Open(ctx, filename, "r", false)
 	if err != nil {
-		return phpv.ZFalse.ZVal(), ctx.Warn("file(%s): Failed to open stream: %s", filename, err)
+		errMsg := err.Error()
+		if os.IsNotExist(err) {
+			errMsg = "No such file or directory"
+		}
+		return phpv.ZFalse.ZVal(), ctx.Warn("file(%s): Failed to open stream: %s", filename, errMsg, logopt.NoFuncName(true))
 	}
 	defer f.Close()
 
@@ -418,7 +428,7 @@ func fncFile(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				if flags != nil && *flags&FILE_IGNORE_NEW_LINES != 0 {
 					line = line[:len(line)-1]
 				}
-				if flags != nil && *flags&FILE_SKIP_EMPTY_LINES != 0 && (line == "" || line == "\n") {
+				if flags != nil && *flags&FILE_SKIP_EMPTY_LINES != 0 && line == "" {
 					buf = buf[:0]
 					continue
 				}

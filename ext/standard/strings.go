@@ -1126,16 +1126,36 @@ func fncStrWordCount(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		chars = string(*charsArg)
 	}
 
+	// PHP's str_word_count considers a character to be a word character if it is
+	// an ASCII alpha (a-zA-Z), an apostrophe, a dash, or one of the extra chars.
+	// Apostrophes and dashes are only word-internal (they must have an alpha on
+	// both sides to be counted).
+	isAlpha := func(c byte) bool {
+		return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= 0x80) || strings.ContainsRune(chars, rune(c))
+	}
+	isWordInternal := func(c byte) bool {
+		return c == '\'' || c == '-'
+	}
+
+	s := string(str)
+
 	switch format {
 	case 0:
 		wordCount := 0
 		inWord := false
-		for _, c := range str {
-			isWord := unicode.IsLetter(c) || strings.ContainsRune(chars, c)
-			if !inWord && isWord {
-				wordCount++
+		for i := 0; i < len(s); i++ {
+			c := s[i]
+			if isAlpha(c) {
+				if !inWord {
+					wordCount++
+				}
+				inWord = true
+			} else if isWordInternal(c) && inWord && i+1 < len(s) && isAlpha(s[i+1]) {
+				// apostrophe/dash connecting two word chars
+				inWord = true
+			} else {
+				inWord = false
 			}
-			inWord = isWord
 		}
 		return phpv.ZInt(wordCount).ZVal(), nil
 
@@ -1145,24 +1165,30 @@ func fncStrWordCount(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		words := phpv.NewZArray()
 		inWord := false
 		j := 0
-		for i, c := range str {
-			isWord := unicode.IsLetter(c) || strings.ContainsRune(chars, c)
-
-			if isWord && !inWord {
-				j = i
-			} else if !isWord && inWord {
-				word := str[j:i]
-				if format == 2 {
-					words.OffsetSet(ctx, phpv.ZInt(j), word.ZVal())
-				} else {
-					words.OffsetSet(ctx, nil, word.ZVal())
+		for i := 0; i < len(s); i++ {
+			c := s[i]
+			if isAlpha(c) {
+				if !inWord {
+					j = i
 				}
+				inWord = true
+			} else if isWordInternal(c) && inWord && i+1 < len(s) && isAlpha(s[i+1]) {
+				// apostrophe/dash connecting two word chars - stay in word
+				inWord = true
+			} else {
+				if inWord {
+					word := phpv.ZString(s[j:i])
+					if format == 2 {
+						words.OffsetSet(ctx, phpv.ZInt(j), word.ZVal())
+					} else {
+						words.OffsetSet(ctx, nil, word.ZVal())
+					}
+				}
+				inWord = false
 			}
-
-			inWord = isWord
 		}
 		if inWord {
-			word := str[j:]
+			word := phpv.ZString(s[j:])
 			if format == 2 {
 				words.OffsetSet(ctx, phpv.ZInt(j), word.ZVal())
 			} else {
@@ -1172,7 +1198,7 @@ func fncStrWordCount(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 		return words.ZVal(), nil
 	default:
-		return nil, errors.New("Argument #2 ($format) must be a valid format value")
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "str_word_count(): Argument #2 ($format) must be a valid format value")
 	}
 }
 

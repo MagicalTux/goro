@@ -122,6 +122,11 @@ func fncFileExists(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
+	// Empty string should return false
+	if string(filename) == "" {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
 	// Check for path length exceeding system maximum
 	p := string(filename)
 	if !filepath.IsAbs(p) {
@@ -155,6 +160,10 @@ func fncIsDir(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
+	if string(filename) == "" {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
 	if err := ctx.Global().CheckOpenBasedir(ctx, string(filename), "is_dir"); err != nil {
 		return phpv.ZFalse.ZVal(), nil
 	}
@@ -180,6 +189,10 @@ func fncIsFile(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	_, err := core.Expand(ctx, args, &filename)
 	if err != nil {
 		return nil, err
+	}
+
+	if string(filename) == "" {
+		return phpv.ZFalse.ZVal(), nil
 	}
 
 	if err := ctx.Global().CheckOpenBasedir(ctx, string(filename), "is_file"); err != nil {
@@ -471,6 +484,11 @@ func fncFileGetContents(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	core.ExpandAt(ctx, args, 3, &offsetArg)
 	core.ExpandAt(ctx, args, 4, &maxlen)
 
+	// Empty path throws ValueError
+	if string(filename) == "" {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "Path must not be empty")
+	}
+
 	if useIncludePathArg != nil && *useIncludePathArg {
 		// TODO: handle use_include_path
 		return nil, errors.New("use_include_path is not yet supported, set to false")
@@ -560,6 +578,11 @@ func fncFilePutContents(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 		return nil, err
 	}
 
+	// Empty path throws ValueError
+	if string(filename) == "" {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "Path must not be empty")
+	}
+
 	if err := ctx.Global().CheckOpenBasedir(ctx, string(filename), "file_put_contents"); err != nil {
 		ctx.Warn("%s(%s): Failed to open stream: Operation not permitted", ctx.GetFuncName(), filename, logopt.NoFuncName(true))
 		return phpv.ZFalse.ZVal(), nil
@@ -645,6 +668,11 @@ func fncFileOpen(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	useIncludePath := useIncludePathArg.HasArg() && bool(useIncludePathArg.Get())
+
+	// Empty path throws ValueError
+	if string(filename) == "" {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "Path must not be empty")
+	}
 
 	if err := ctx.Global().CheckOpenBasedir(ctx, string(filename), "fopen"); err != nil {
 		ctx.Warn("%s(%s): Failed to open stream: Operation not permitted", ctx.GetFuncName(), filename, logopt.NoFuncName(true))

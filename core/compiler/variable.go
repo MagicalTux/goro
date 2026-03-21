@@ -17,6 +17,7 @@ type runVariable struct {
 }
 
 type runVariableRef struct {
+	runnableChild
 	v         phpv.Runnable
 	l         *phpv.Loc
 	prepared  bool

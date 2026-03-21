@@ -885,6 +885,10 @@ func fncArrayShift(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if val == nil {
 		return phpv.ZNULL.ZVal(), nil
 	}
+
+	// Reset the internal array pointer after shift, matching PHP behavior
+	arr.MainIterator().Reset(ctx)
+
 	return val.ZVal(), nil
 }
 
@@ -961,6 +965,9 @@ func fncArrayPop(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	// Reset the next integer key counter after pop, matching PHP behavior
 	arr.HashTable().RecalcNextIntKey()
+
+	// Reset the internal array pointer after pop, matching PHP behavior
+	arr.MainIterator().Reset(ctx)
 
 	return val.ZVal(), nil
 }
@@ -2265,7 +2272,7 @@ func arrayRecursiveCompact(funcCtx phpv.Context, ctx phpv.Context, result *phpv.
 			}
 			result.OffsetSet(ctx, varName, value)
 		} else {
-			funcCtx.Notice("Undefined variable: %s", varName)
+			funcCtx.Notice("compact(): Undefined variable: %s", varName, logopt.NoFuncName(true))
 		}
 	case phpv.ZtArray:
 		if depth >= compactMaxDepth {
@@ -2279,7 +2286,7 @@ func arrayRecursiveCompact(funcCtx phpv.Context, ctx phpv.Context, result *phpv.
 			}
 		}
 	default:
-		// PHP silently ignores non-string, non-array values (e.g., integers, booleans, NULL)
+		// PHP silently ignores non-string, non-array values
 	}
 
 	return nil

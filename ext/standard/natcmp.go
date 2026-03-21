@@ -12,8 +12,21 @@ func natCmp(a, b []byte, caseSensitive bool) int {
 	ai := 0
 	bi := 0
 	for {
-		ca := core.Idx(a, ai)
-		cb := core.Idx(b, bi)
+		// Check for end of strings
+		aEnd := ai >= len(a)
+		bEnd := bi >= len(b)
+		if aEnd && bEnd {
+			return 0
+		}
+		if aEnd {
+			return -1
+		}
+		if bEnd {
+			return 1
+		}
+
+		ca := a[ai]
+		cb := b[bi]
 
 		// skip over leading spaces
 		for unicode.IsSpace(rune(ca)) {
@@ -50,9 +63,18 @@ func natCmp(a, b []byte, caseSensitive bool) int {
 			}
 		}
 
-		if ca == 0 && cb == 0 {
+		// Re-check bounds after digit processing may have advanced
+		if ai >= len(a) && bi >= len(b) {
 			return 0
 		}
+		if ai >= len(a) {
+			return -1
+		}
+		if bi >= len(b) {
+			return 1
+		}
+		ca = a[ai]
+		cb = b[bi]
 
 		if !caseSensitive {
 			ca = bytesUpperCase(ca)

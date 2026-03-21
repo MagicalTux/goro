@@ -1812,8 +1812,9 @@ func validateMagicMethodReturnType(class *phpobj.ZClass, method *phpv.ZClassMeth
 			}
 		}
 	case "__set_state":
-		// Return type must be object when declared
-		if rt != nil && (rt.Type() != phpv.ZtObject || rt.ClassName() != "") {
+		// Return type must be object when declared.
+		// Allow: object, self, static, parent, class names, union/intersection of objects.
+		if rt != nil && !isObjectLikeReturnType(rt) {
 			return &phpv.PhpError{
 				Err:  fmt.Errorf("%s::%s(): Return type must be object when declared", class.Name, method.Name),
 				Code: phpv.E_COMPILE_ERROR,
@@ -1823,4 +1824,31 @@ func validateMagicMethodReturnType(class *phpobj.ZClass, method *phpv.ZClassMeth
 	}
 
 	return nil
+}
+
+// isObjectLikeReturnType checks if a return type hint is compatible with "object".
+// This includes: object, self, static, parent, class names, and union/intersection types
+// where all alternatives resolve to objects.
+func isObjectLikeReturnType(rt *phpv.TypeHint) bool {
+	if rt == nil {
+		return true
+	}
+	// Union types: all alternatives must be object-like
+	if len(rt.Union) > 0 {
+		for _, u := range rt.Union {
+			if !isObjectLikeReturnType(u) {
+				return false
+			}
+		}
+		return true
+	}
+	// Intersection types: all must be object-like (they always are since they require classes)
+	if len(rt.Intersection) > 0 {
+		return true
+	}
+	// Object type (generic or specific class name, including self/static/parent)
+	if rt.Type() == phpv.ZtObject {
+		return true
+	}
+	return false
 }

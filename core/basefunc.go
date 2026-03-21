@@ -3,6 +3,7 @@ package core
 import (
 	"fmt"
 	"strings"
+	"time"
 	"unsafe"
 
 	"github.com/MagicalTux/goro/core/logopt"
@@ -29,6 +30,10 @@ const (
 
 // > func int strlen ( string $string )
 func fncStrlen(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	// PHP 8.1+ deprecation: passing null to non-nullable string parameter
+	if len(args) > 0 && args[0] != nil && args[0].GetType() == phpv.ZtNull {
+		ctx.Deprecated("strlen(): Passing null to parameter #1 ($string) of type string is deprecated", logopt.NoFuncName(true))
+	}
 	var s phpv.ZString
 	_, err := Expand(ctx, args, &s)
 	if err != nil {
@@ -339,6 +344,16 @@ func fncIniSet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		// Cannot switch between enabled (1) and completely disabled (-1) at runtime
 		if (newInt == -1 && oldVal != -1) || (newInt != -1 && oldVal == -1) {
 			ctx.Warn("zend.assertions may be completely enabled or disabled only in php.ini", logopt.NoFuncName(true))
+			return phpv.ZFalse.ZVal(), nil
+		}
+	}
+
+	// Validate date.timezone value
+	if varName == "date.timezone" && string(newValue) != "" {
+		_, err := time.LoadLocation(string(newValue))
+		if err != nil {
+			oldTz := ctx.GetConfig("date.timezone", phpv.ZString("UTC").ZVal()).String()
+			ctx.Warn("ini_set(): Invalid date.timezone value '%s', using '%s' instead", newValue, oldTz, logopt.NoFuncName(true))
 			return phpv.ZFalse.ZVal(), nil
 		}
 	}

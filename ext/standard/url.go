@@ -400,7 +400,7 @@ func fncHttpBuildQuery(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 
 	if data.GetType() == phpv.ZtArray {
 		arr := data.AsArray(ctx)
-		if err := buildQueryRecursive(ctx, arr, prefix, "", sep, enc, &pairs); err != nil {
+		if err := buildQueryRecursive(ctx, arr, prefix, "", sep, enc, &pairs, nil); err != nil {
 			return nil, err
 		}
 	} else if data.GetType() == phpv.ZtObject {
@@ -408,33 +408,39 @@ func fncHttpBuildQuery(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 		if obj, ok := data.Value().(*phpobj.ZObject); ok && obj.GetClass().GetType().Has(phpv.ZClassTypeEnum) {
 			return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "http_build_query(): Argument #1 ($data) must not be an enum, "+string(obj.GetClass().GetName())+" given")
 		}
-		// Convert object to array-like iteration
-		obj := data.AsObject(ctx)
-		it := obj.NewIterator()
-		for ; it.Valid(ctx); it.Next(ctx) {
-			k, kerr := it.Key(ctx)
-			if kerr != nil {
-				continue
-			}
-			v, verr := it.Current(ctx)
-			if verr != nil {
-				continue
-			}
-			key := k.String()
-			// Check if key is numeric
-			if _, numErr := strconv.Atoi(key); numErr == nil {
-				key = prefix + key
-			}
-			encodedKey := queryEncode(key, enc)
-			encodedVal := queryEncode(v.String(), enc)
-			pairs = append(pairs, encodedKey+"="+encodedVal)
+		// Convert object public properties to array, then use buildQueryRecursive
+		arr := objectPublicPropsToArray(ctx, data)
+		if err := buildQueryRecursive(ctx, arr, prefix, "", sep, enc, &pairs, nil); err != nil {
+			return nil, err
 		}
 	}
 
 	return phpv.ZString(strings.Join(pairs, sep)).ZVal(), nil
 }
 
-func buildQueryRecursive(ctx phpv.Context, arr *phpv.ZArray, numericPrefix string, parentKey string, sep string, enc phpv.ZInt, pairs *[]string) error {
+// objectPublicPropsToArray converts an object's public properties to a ZArray.
+func objectPublicPropsToArray(ctx phpv.Context, z *phpv.ZVal) *phpv.ZArray {
+	arr := phpv.NewZArray()
+	obj := z.AsObject(ctx)
+	it := obj.NewIterator()
+	for ; it.Valid(ctx); it.Next(ctx) {
+		k, kerr := it.Key(ctx)
+		if kerr != nil {
+			continue
+		}
+		v, verr := it.Current(ctx)
+		if verr != nil {
+			continue
+		}
+		arr.OffsetSet(ctx, k, v)
+	}
+	return arr
+}
+
+func buildQueryRecursive(ctx phpv.Context, arr *phpv.ZArray, numericPrefix string, parentKey string, sep string, enc phpv.ZInt, pairs *[]string, visited map[int]bool) error {
+	if visited == nil {
+		visited = make(map[int]bool)
+	}
 	for k, v := range arr.Iterate(ctx) {
 		key := k.String()
 
@@ -454,8 +460,34 @@ func buildQueryRecursive(ctx phpv.Context, arr *phpv.ZArray, numericPrefix strin
 
 		if v.GetType() == phpv.ZtArray {
 			subArr := v.AsArray(ctx)
-			if err := buildQueryRecursive(ctx, subArr, numericPrefix, fullKey, sep, enc, pairs); err != nil {
+			if err := buildQueryRecursive(ctx, subArr, numericPrefix, fullKey, sep, enc, pairs, visited); err != nil {
 				return err
+			}
+		} else if v.GetType() == phpv.ZtObject {
+			// Handle enum objects - backed enums use their backing value, unbacked enums throw ValueError
+			if obj, ok := v.Value().(*phpobj.ZObject); ok && obj.GetClass().GetType().Has(phpv.ZClassTypeEnum) {
+				backingVal, found := obj.HashTable().GetStringB("value")
+				if !found {
+					// Unbacked enum
+					return phpobj.ThrowError(ctx, phpobj.ValueError, "Unbacked enum "+string(obj.GetClass().GetName())+" cannot be converted to a string")
+				}
+				valStr := backingVal.String()
+				encodedKey := queryEncode(fullKey, enc)
+				encodedVal := queryEncode(valStr, enc)
+				*pairs = append(*pairs, encodedKey+"="+encodedVal)
+			} else {
+				// Recurse into object's public properties
+				// Use object ID for cycle detection
+				objPtr := v.Value().(*phpobj.ZObject)
+				objID := objPtr.ID
+				if !visited[objID] {
+					visited[objID] = true
+					subArr := objectPublicPropsToArray(ctx, v)
+					if err := buildQueryRecursive(ctx, subArr, numericPrefix, fullKey, sep, enc, pairs, visited); err != nil {
+						return err
+					}
+					delete(visited, objID)
+				}
 			}
 		} else if v.GetType() == phpv.ZtNull {
 			// null values are skipped in http_build_query
@@ -469,18 +501,6 @@ func buildQueryRecursive(ctx phpv.Context, arr *phpv.ZArray, numericPrefix strin
 					valStr = "1"
 				} else {
 					valStr = "0"
-				}
-			} else if v.GetType() == phpv.ZtObject {
-				// Handle enum objects - backed enums use their backing value, unbacked enums throw ValueError
-				if obj, ok := v.Value().(*phpobj.ZObject); ok && obj.GetClass().GetType().Has(phpv.ZClassTypeEnum) {
-					backingVal, found := obj.HashTable().GetStringB("value")
-					if !found {
-						// Unbacked enum
-						return phpobj.ThrowError(ctx, phpobj.ValueError, "Unbacked enum "+string(obj.GetClass().GetName())+" cannot be converted to a string")
-					}
-					valStr = backingVal.String()
-				} else {
-					valStr = string(v.AsString(ctx))
 				}
 			} else {
 				valStr = string(v.AsString(ctx))

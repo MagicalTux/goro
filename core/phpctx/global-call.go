@@ -122,9 +122,9 @@ func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, o
 					val.Name = nil // clear Name so CallZVal skips ref processing
 				} else {
 					// Literal, assignment, or other non-variable expression -> Error
-					funcName := "unknown"
-					if namer, ok := f.(interface{ Name() string }); ok {
-						funcName = namer.Name()
+					funcName := phpv.CallableDisplayName(f)
+					if funcName == "" {
+						funcName = "unknown"
 					}
 					return nil, phpobj.ThrowError(ctx, phpobj.Error,
 						fmt.Sprintf("%s(): Argument #%d ($%s) could not be passed by reference",

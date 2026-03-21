@@ -82,7 +82,7 @@ func fncArrayUSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		})
 	}
 
-	err = arrayUSort(ctx, entries, compareFunc)
+	err = arrayUSort(ctx, entries, compareFunc, "usort")
 	if err != nil {
 		return nil, ctx.FuncError(err)
 	}
@@ -115,7 +115,7 @@ func fncArrayUASort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		})
 	}
 
-	err = arrayUSort(ctx, entries, compareFunc)
+	err = arrayUSort(ctx, entries, compareFunc, "uasort")
 	if err != nil {
 		return nil, ctx.FuncError(err)
 	}
@@ -147,7 +147,7 @@ func fncArrayUKSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		})
 	}
 
-	err = arrayUSort(ctx, entries, compareFunc)
+	err = arrayUSort(ctx, entries, compareFunc, "uksort")
 	if err != nil {
 		return nil, ctx.FuncError(err)
 	}
@@ -358,9 +358,13 @@ func arraySort(ctx phpv.Context, entries []compareEntry, sortFlags phpv.ZInt, re
 	sort.Slice(entries, sortFn)
 }
 
-func arrayUSort(ctx phpv.Context, entries []compareEntry, compare phpv.Callable) error {
+func arrayUSort(ctx phpv.Context, entries []compareEntry, compare phpv.Callable, funcName ...string) error {
 	var err error
 	boolDeprecated := false
+	fname := "usort"
+	if len(funcName) > 0 {
+		fname = funcName[0]
+	}
 	sort.Slice(entries, func(i, j int) bool {
 		if err != nil {
 			return false
@@ -376,7 +380,7 @@ func arrayUSort(ctx phpv.Context, entries []compareEntry, compare phpv.Callable)
 		// PHP 8.2+ deprecation: comparison functions should not return bool
 		if ret != nil && ret.GetType() == phpv.ZtBool && !boolDeprecated {
 			boolDeprecated = true
-			_ = ctx.Deprecated("Returning bool from comparison function is deprecated, return an integer less than, equal to, or greater than zero")
+			_ = ctx.Deprecated(fname + "(): Returning bool from comparison function is deprecated, return an integer less than, equal to, or greater than zero")
 		}
 		return ret.AsInt(ctx) < 0
 	})
