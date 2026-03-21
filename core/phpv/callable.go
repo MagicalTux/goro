@@ -54,6 +54,7 @@ type MethodCallable struct {
 	Class       ZClass
 	CalledClass ZClass // for late static binding; nil means same as Class
 	Static      bool
+	AliasName   string // non-empty when the method was called via a trait alias
 }
 
 // Override Val methods so that MethodCallable wraps itself in ZVal properly.
@@ -62,6 +63,13 @@ func (m *MethodCallable) ZVal() *ZVal                             { return NewZV
 func (m *MethodCallable) Value() Val                              { return m }
 func (m *MethodCallable) AsVal(ctx Context, t ZType) (Val, error) { return CallableVal{}.AsVal(ctx, t) }
 func (m *MethodCallable) String() string                          { return "Callable" }
+
+func (m *MethodCallable) Name() string {
+	if m.AliasName != "" {
+		return m.AliasName
+	}
+	return m.Callable.Name()
+}
 
 func Bind(fn Callable, this ZObject, args ...*ZVal) *BoundedCallable {
 	return &BoundedCallable{fn, this, args}
@@ -82,13 +90,13 @@ func (m *MethodCallable) Loc() *Loc {
 }
 
 func BindClass(fn Callable, class ZClass, static bool) *MethodCallable {
-	return &MethodCallable{fn, class, nil, static}
+	return &MethodCallable{fn, class, nil, static, ""}
 }
 
 // BindClassLSB creates a method callable with separate defining and called classes
 // for late static binding support.
 func BindClassLSB(fn Callable, definingClass ZClass, calledClass ZClass, static bool) *MethodCallable {
-	return &MethodCallable{fn, definingClass, calledClass, static}
+	return &MethodCallable{fn, definingClass, calledClass, static, ""}
 }
 
 func (m *MethodCallable) GetArgs() []*FuncArg {

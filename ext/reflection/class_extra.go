@@ -409,6 +409,10 @@ func formatReflectionClass(ctx phpv.Context, zc *phpobj.ZClass) string {
 	} else if zc.Type.Has(phpv.ZClassTypeTrait) {
 		kind = "Trait"
 		kindLower = "trait"
+	} else if zc.GetType()&phpv.ZClassTypeEnum != 0 {
+		// Use GetType() instead of Type to avoid matching non-enum flags
+		kind = "Enum"
+		kindLower = "enum"
 	}
 
 	origin := "<user>"
@@ -429,7 +433,8 @@ func formatReflectionClass(ctx phpv.Context, zc *phpobj.ZClass) string {
 	if zc.Attr.Has(phpv.ZClassAttr(phpv.ZClassExplicitAbstract)) {
 		modifiers += " abstract"
 	}
-	if zc.Attr.Has(phpv.ZClassFinal) {
+	if zc.Attr.Has(phpv.ZClassFinal) && kind != "Enum" {
+		// Enums are implicitly final but don't show it in the format
 		modifiers += " final"
 	}
 	if zc.Attr.Has(phpv.ZClassReadonly) {

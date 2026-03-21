@@ -2,6 +2,7 @@ package pcre
 
 import (
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -22,6 +23,24 @@ func pregReplaceCallbackArray(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, 
 	flags := core.Deref(flagsArg, 0)
 	count := new(phpv.ZInt)
 
+	// Validate all keys are strings and all values are valid callbacks BEFORE executing
+	var pairs []patCallback
+	for k, v := range patternsAndCallbacks.Iterate(ctx) {
+		// Check key is a string (not numeric)
+		if k.GetType() == phpv.ZtInt {
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+				"preg_replace_callback_array(): Argument #1 ($pattern) must contain only string patterns as keys")
+		}
+		patternStr := string(k.AsString(ctx))
+
+		callback, cbErr := core.SpawnCallable(ctx, v)
+		if cbErr != nil {
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+				"preg_replace_callback_array(): Argument #1 ($pattern) must contain only valid callbacks")
+		}
+		pairs = append(pairs, patCallback{pattern: patternStr, callback: callback})
+	}
+
 	var result *phpv.ZVal
 
 	// Handle array subject
@@ -31,7 +50,7 @@ func pregReplaceCallbackArray(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, 
 		totalCount := phpv.ZInt(0)
 		for k, v := range subjectArr.Iterate(ctx) {
 			c := phpv.ZInt(0)
-			res, err := doCallbackArray(ctx, patternsAndCallbacks, v, limit, &c, flags)
+			res, err := doCallbackArrayPairs(ctx, pairs, v, limit, &c, flags)
 			if err != nil {
 				return nil, err
 			}
@@ -41,7 +60,7 @@ func pregReplaceCallbackArray(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, 
 		*count = totalCount
 		result = resultArr.ZVal()
 	} else {
-		result, err = doCallbackArray(ctx, patternsAndCallbacks, subject, limit, count, flags)
+		result, err = doCallbackArrayPairs(ctx, pairs, subject, limit, count, flags)
 		if err != nil {
 			return nil, err
 		}
@@ -54,22 +73,19 @@ func pregReplaceCallbackArray(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, 
 	return result, nil
 }
 
-func doCallbackArray(ctx phpv.Context, patternsAndCallbacks *phpv.ZArray, subject *phpv.ZVal, limit phpv.ZInt, count *phpv.ZInt, flags phpv.ZInt) (*phpv.ZVal, error) {
+type patCallback struct {
+	pattern  string
+	callback phpv.Callable
+}
+
+func doCallbackArrayPairs(ctx phpv.Context, pairs []patCallback, subject *phpv.ZVal, limit phpv.ZInt, count *phpv.ZInt, flags phpv.ZInt) (*phpv.ZVal, error) {
 	totalCount := phpv.ZInt(0)
 	current := subject
 
-	// Iterate over patterns_and_callbacks: key=pattern, value=callback
-	for k, v := range patternsAndCallbacks.Iterate(ctx) {
-		patternStr := k.AsString(ctx)
-
-		callback, err := core.SpawnCallable(ctx, v)
-		if err != nil {
-			return nil, err
-		}
-
-		patternVal := phpv.ZString(patternStr).ZVal()
+	for _, pair := range pairs {
+		patternVal := phpv.ZString(pair.pattern).ZVal()
 		c := phpv.ZInt(0)
-		result, err := doReplaceCallback(ctx, patternVal, callback, current, limit, &c, flags)
+		result, err := doReplaceCallback(ctx, patternVal, pair.callback, current, limit, &c, flags)
 		if err != nil {
 			return nil, err
 		}

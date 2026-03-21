@@ -27,6 +27,9 @@ func (r *runnableUnset) Dump(w io.Writer) error {
 }
 
 func (r *runnableUnset) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
+	if r.l != nil {
+		ctx.Tick(ctx, r.l)
+	}
 	for _, v := range r.args {
 		if x, ok := v.(phpv.Writable); ok {
 			// Skip reading the value for certain types:

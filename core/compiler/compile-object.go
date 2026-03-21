@@ -523,10 +523,21 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	op := r.op
 	if op[0] == '$' {
 		// variable method name
-		var opz *phpv.ZVal
-		opz, err = ctx.OffsetGet(ctx, op[1:].ZVal())
-		if err != nil {
-			return nil, err
+		varName := op[1:]
+		// Check if the variable is defined - trigger "Undefined variable" warning if not
+		opz, varFound, checkErr := ctx.OffsetCheck(ctx, varName.ZVal())
+		if checkErr != nil {
+			return nil, checkErr
+		}
+		if !varFound || opz == nil || opz.IsNull() {
+			// Variable is undefined - trigger warning (PHP E_WARNING)
+			warnErr := ctx.Warn("Undefined variable $%s", varName, logopt.NoFuncName(true))
+			if warnErr != nil {
+				return nil, warnErr
+			}
+		}
+		if opz == nil {
+			opz = phpv.ZNULL.ZVal()
 		}
 		// Method name must be a string
 		if opz.GetType() != phpv.ZtString {
@@ -699,6 +710,7 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 					}
 					a.OffsetSet(ctx, key, val)
 				}
+				SetDeprecationAlias(string(op))
 				return ctx.CallZVal(ctx, phpv.BindClass(callStaticMethod.Method, callClass, true), callArgs, objI)
 			}
 		}
@@ -730,6 +742,8 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 					a.OffsetSet(ctx, key, val.Dup())
 				}
 				callArgs := []*phpv.ZVal{op.ZVal(), a.ZVal()}
+				// Set deprecation alias so __call() deprecation says the called method name
+				SetDeprecationAlias(string(op))
 				// Wrap in BoundedCallable so stack trace shows class and -> type
 				return ctx.CallZVal(ctx, phpv.Bind(callMethod.Method, callObj), callArgs, callObj)
 			}
@@ -757,6 +771,8 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 					}
 					a.OffsetSet(ctx, key, val)
 				}
+				// Set deprecation alias so __callStatic() deprecation says the called method name
+				SetDeprecationAlias(string(op))
 				// Wrap in MethodCallable so stack trace shows class and :: type
 				return ctx.CallZVal(ctx, phpv.BindClass(callStaticMethod.Method, callClass, true), callArgs, objI)
 			}
@@ -823,6 +839,7 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 					}
 					a.OffsetSet(ctx, nil, val)
 				}
+				SetDeprecationAlias(string(op))
 				return ctx.CallZVal(ctx, phpv.BindClass(callStaticMethod.Method, class, true), callArgs, nil)
 			}
 		}
@@ -874,6 +891,11 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			bindClass = method.Class
 		}
 		m := phpv.BindClassLSB(method.Method, bindClass, class, true)
+		// For trait-aliased methods, preserve the alias name in the stack trace
+		calledName := string(op)
+		if m.Callable.Name() != calledName {
+			m.AliasName = calledName
+		}
 		return ctx.Call(ctx, m, r.args, nil)
 	}
 
@@ -881,6 +903,11 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		// :: syntax but with an object (e.g., parent::method(), self::method())
 		// Not truly static: $this is forwarded, so use Static=false for the binding
 		m := phpv.BindClass(method.Method, class, false)
+		// For trait-aliased methods, preserve the alias name in the stack trace
+		calledName := string(op)
+		if m.Callable.Name() != calledName {
+			m.AliasName = calledName
+		}
 		return ctx.Call(ctx, m, r.args, objI)
 	}
 
@@ -898,7 +925,21 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		return class.Handlers().HandleInvoke(ctx, objI, r.args)
 	}
 
-	return ctx.Call(ctx, method.Method, r.args, objI)
+	// For trait methods, the callable (ZClosure) may report the trait class via GetClass(),
+	// which overrides the narrowed $this class in callZValImpl. Wrap in a MethodCallable
+	// so the class is set explicitly to the declaring class.
+	// Also, for trait-aliased methods, the callable's Name() returns the original trait name,
+	// so we set AliasName to the called name.
+	callable := phpv.Callable(method.Method)
+	if method.FromTrait != nil || method.Method.Name() != string(op) {
+		mc := phpv.BindClass(method.Method, class, false)
+		if method.Method.Name() != string(op) {
+			mc.AliasName = string(op)
+		}
+		callable = mc
+	}
+
+	return ctx.Call(ctx, callable, r.args, objI)
 }
 
 func (r *runObjectVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {
@@ -927,7 +968,10 @@ func (r *runObjectVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 
 	// offset get
 	var offt *phpv.ZVal
-	if r.varName[0] == '$' {
+	if r.prepared && r.cachedProp != nil {
+		offt = r.cachedProp
+		// Don't consume the cache - it may be needed by WriteValue later
+	} else if r.varName[0] == '$' {
 		// variable
 		offt, err = ctx.OffsetGet(ctx, r.varName[1:].ZVal())
 		if err != nil {
@@ -992,7 +1036,7 @@ func (r *runObjectVar) PrepareWrite(ctx phpv.Context) error {
 func (r *runObjectVar) IsCompoundWritable() {}
 
 // CheckReadonlyRef checks if creating a reference to this object property would
-// violate readonly constraints (e.g., enum name/value properties).
+// violate readonly or asymmetric visibility constraints.
 func (r *runObjectVar) CheckReadonlyRef(ctx phpv.Context) error {
 	obj, err := r.ref.Run(ctx)
 	if err != nil {
@@ -1013,6 +1057,10 @@ func (r *runObjectVar) CheckReadonlyRef(ctx phpv.Context) error {
 	if zobj.IsReadonlyProperty(propName) && zobj.IsReadonlyPropertyInitialized(propName) {
 		return phpobj.ThrowError(ctx, phpobj.Error,
 			fmt.Sprintf("Cannot indirectly modify readonly property %s::$%s", zobj.GetClass().GetName(), propName))
+	}
+	// Check asymmetric visibility for reference creation
+	if err := checkAsymmetricVisibilityIndirect(ctx, zobj, propName); err != nil {
+		return err
 	}
 	return nil
 }
@@ -1107,7 +1155,13 @@ func (r *runObjectDynVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	objI, ok := obj.Value().(phpv.ZObjectAccess)
 	if !ok {
 		// Evaluate the name expression first so we can include it in the warning
-		name, nameErr := r.nameExpr.Run(ctx)
+		var name *phpv.ZVal
+		var nameErr error
+		if r.prepared && r.cachedName != nil {
+			name = r.cachedName
+		} else {
+			name, nameErr = r.nameExpr.Run(ctx)
+		}
 		typeName := phpValueTypeName(obj)
 		if nameErr == nil && name != nil {
 			ctx.Warn("Attempt to read property \"%s\" on %s", name.String(), typeName, logopt.NoFuncName(true))
@@ -1116,9 +1170,16 @@ func (r *runObjectDynVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		}
 		return phpv.ZNULL.ZVal(), nil
 	}
-	name, err := r.nameExpr.Run(ctx)
-	if err != nil {
-		return nil, err
+	// Use cached name from PrepareWrite if available (e.g. ??= memoization)
+	var name *phpv.ZVal
+	if r.prepared && r.cachedName != nil {
+		name = r.cachedName
+		// Don't consume the cache - it may be needed by WriteValue later
+	} else {
+		name, err = r.nameExpr.Run(ctx)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return objI.ObjectGet(ctx, name)
 }

@@ -661,6 +661,17 @@ func (z *ZClosure) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	return z.callBody(ctx, args)
 }
 
+// deprecationAliasName is a package-level variable that stores an alias method name
+// for deprecation messages. When __call() or __callStatic() is invoked,
+// the caller sets this to the original method name (e.g., "test") so that
+// the deprecation message says "Method Clazz::test()" instead of "Method Clazz::__call()".
+var deprecationAliasName string
+
+// SetDeprecationAlias sets the alias name for the next deprecation check.
+func SetDeprecationAlias(name string) {
+	deprecationAliasName = name
+}
+
 // checkDeprecated emits a deprecation warning if this function has #[\Deprecated].
 // Returns an error if the user error handler throws an exception.
 func (z *ZClosure) checkDeprecated(ctx phpv.Context) error {
@@ -674,18 +685,105 @@ func (z *ZClosure) checkDeprecated(ctx phpv.Context) error {
 				return err
 			}
 
+			// Validate Deprecated constructor arg types before using them
+			if err := ValidateDeprecatedArgs(ctx, attr); err != nil {
+				return err
+			}
+
 			funcName := z.Name()
 			label := "Function"
 			if z.class != nil {
 				label = "Method"
-				funcName = string(z.class.GetName()) + "::" + funcName
+				// Use alias name if set (for __call/__callStatic)
+				name := funcName
+				if deprecationAliasName != "" {
+					name = deprecationAliasName
+				}
+				funcName = string(z.class.GetName()) + "::" + name
 			}
+			// Clear the alias after use
+			deprecationAliasName = ""
 
 			msg := FormatDeprecatedMsg(label, funcName+"()", attr)
 			return ctx.UserDeprecated("%s", msg, logopt.NoFuncName(true))
 		}
 	}
 	return nil
+}
+
+// ValidateDeprecatedArgs validates the argument types for #[\Deprecated].
+// The constructor signature is: __construct(?string $message = "", ?string $since = "").
+// In strict mode, int/float/bool are rejected. Arrays and objects are always rejected.
+func ValidateDeprecatedArgs(ctx phpv.Context, attr *phpv.ZAttribute) error {
+	for i, arg := range attr.Args {
+		if arg == nil || arg.GetType() == phpv.ZtNull || arg.GetType() == phpv.ZtString {
+			continue
+		}
+		paramName := "$message"
+		paramNum := 1
+		if i == 1 {
+			paramName = "$since"
+			paramNum = 2
+		}
+		if i > 1 {
+			continue // no more params
+		}
+		switch arg.GetType() {
+		case phpv.ZtInt, phpv.ZtFloat, phpv.ZtBool:
+			// In non-strict mode, these coerce to string (OK)
+			// In strict mode, these are rejected
+			if attr.StrictTypes {
+				return phpobj.ThrowError(ctx, phpobj.TypeError,
+					fmt.Sprintf("Deprecated::__construct(): Argument #%d (%s) must be of type ?string, %s given",
+						paramNum, paramName, attrArgTypeName(arg)))
+			}
+		default:
+			// Array, object, etc. always error
+			return phpobj.ThrowError(ctx, phpobj.TypeError,
+				fmt.Sprintf("Deprecated::__construct(): Argument #%d (%s) must be of type ?string, %s given",
+					paramNum, paramName, attrArgTypeName(arg)))
+		}
+	}
+	return nil
+}
+
+// ValidateNoDiscardArgs validates the argument types for #[\NoDiscard].
+// The constructor signature is: __construct(?string $message = "").
+// In strict mode, int/float/bool are rejected. Arrays and objects are always rejected.
+func ValidateNoDiscardArgs(ctx phpv.Context, attr *phpv.ZAttribute) error {
+	if len(attr.Args) == 0 {
+		return nil
+	}
+	arg := attr.Args[0]
+	if arg == nil || arg.GetType() == phpv.ZtNull || arg.GetType() == phpv.ZtString {
+		return nil
+	}
+	switch arg.GetType() {
+	case phpv.ZtInt, phpv.ZtFloat, phpv.ZtBool:
+		if attr.StrictTypes {
+			return phpobj.ThrowError(ctx, phpobj.TypeError,
+				fmt.Sprintf("NoDiscard::__construct(): Argument #1 ($message) must be of type ?string, %s given",
+					attrArgTypeName(arg)))
+		}
+	default:
+		return phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("NoDiscard::__construct(): Argument #1 ($message) must be of type ?string, %s given",
+				attrArgTypeName(arg)))
+	}
+	return nil
+}
+
+// attrArgTypeName returns the PHP type name for an attribute argument value.
+func attrArgTypeName(v *phpv.ZVal) string {
+	switch v.GetType() {
+	case phpv.ZtObject:
+		if obj, ok := v.Value().(phpv.ZObject); ok {
+			return string(obj.GetClass().GetName())
+		}
+		return "object"
+	default:
+		return v.GetType().TypeName()
+	}
 }
 
 // attrResolveLoc is the location override used during attribute argument resolution.

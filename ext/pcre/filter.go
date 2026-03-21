@@ -24,6 +24,15 @@ func pregFilter(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	var result *phpv.ZVal
 
+	// doFilterReplace applies pattern/replacement to a single subject string
+	// and tracks the replacement count.
+	doFilterReplace := func(p, r, s *phpv.ZVal, c *phpv.ZInt) (*phpv.ZVal, error) {
+		if p.GetType() == phpv.ZtArray {
+			return doPregReplaceArrayPattern(ctx, p, r, s, limitVal, c)
+		}
+		return doPregReplace(ctx, p, r, s, limitVal, c)
+	}
+
 	// If subject is an array, apply preg_replace to each element and return only changed ones
 	if subject.GetType() == phpv.ZtArray {
 		subjectArr := subject.Value().(*phpv.ZArray)
@@ -32,7 +41,7 @@ func pregFilter(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 		for k, v := range subjectArr.Iterate(ctx) {
 			elemCount := phpv.ZInt(0)
-			replaced, err := doPregReplace(ctx, pattern, replacement, v, limitVal, &elemCount)
+			replaced, err := doFilterReplace(pattern, replacement, v, &elemCount)
 			if err != nil {
 				return nil, err
 			}
@@ -46,7 +55,7 @@ func pregFilter(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		result = resultArr.ZVal()
 	} else {
 		// For string subjects, do the replace and return null if no replacement was made
-		replaced, err := doPregReplace(ctx, pattern, replacement, subject, limitVal, count)
+		replaced, err := doFilterReplace(pattern, replacement, subject, count)
 		if err != nil {
 			return nil, err
 		}

@@ -45,15 +45,70 @@ func fncAssert(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			return nil, phpobj.ThrowError(ctx, phpobj.AssertionError, msg)
 		}
 
-		// When assert.exception=0, issue a warning
+		// When assert.exception=0, issue a warning and optionally call callback
 		msg := "assert(false)"
 		if description != nil && !description.IsNull() && description.GetType() == phpv.ZtString {
 			msg = description.AsString(ctx).String()
 		}
-		err := ctx.Warn("%s failed", msg)
-		if err != nil {
-			return nil, err
+
+		// Check assert.warning (default 1)
+		assertWarning := ctx.GetConfig("assert.warning", phpv.ZInt(1).ZVal()).AsInt(ctx)
+		if assertWarning != 0 {
+			ctx.Warn("%s failed", msg)
 		}
+
+		// Check assert.callback - stored as a callable via assert_options()
+		callbackVal := ctx.GetConfig("assert.callback", phpv.ZNULL.ZVal())
+		if callbackVal != nil && !callbackVal.IsNull() {
+			loc := ctx.Loc()
+			file := ""
+			line := phpv.ZInt(0)
+			if loc != nil {
+				file = loc.Filename
+				line = phpv.ZInt(loc.Line)
+			}
+			callbackArgs := []*phpv.ZVal{
+				phpv.ZString(file).ZVal(),
+				line.ZVal(),
+				phpv.ZString(msg).ZVal(),
+			}
+
+			// Resolve the callable. For string callbacks, look up by function name.
+			// For closure/object callbacks, extract the Callable interface.
+			if callbackVal.GetType() == phpv.ZtString {
+				funcName := callbackVal.AsString(ctx)
+				callable, resolveErr := ctx.Global().GetFunction(ctx, funcName)
+				if resolveErr != nil {
+					return nil, resolveErr
+				}
+				_, callErr := ctx.CallZVal(ctx, callable, callbackArgs)
+				if callErr != nil {
+					return nil, callErr
+				}
+			} else if callbackVal.GetType() == phpv.ZtObject {
+				// For closures and invokable objects, invoke via __invoke method
+				if obj, ok := callbackVal.Value().(phpv.ZObject); ok {
+					if f, hasInvoke := obj.GetClass().GetMethod("__invoke"); hasInvoke {
+						_, callErr := ctx.CallZVal(ctx, f.Method, callbackArgs, obj)
+						if callErr != nil {
+							return nil, callErr
+						}
+					}
+				}
+			} else if callable, ok := callbackVal.Value().(phpv.Callable); ok {
+				_, callErr := ctx.CallZVal(ctx, callable, callbackArgs)
+				if callErr != nil {
+					return nil, callErr
+				}
+			}
+		}
+
+		// Check assert.bail (default 0)
+		assertBail := ctx.GetConfig("assert.bail", phpv.ZInt(0).ZVal()).AsInt(ctx)
+		if assertBail != 0 {
+			return nil, phpv.ExitError(0)
+		}
+
 		return phpv.ZBool(false).ZVal(), nil
 	}
 

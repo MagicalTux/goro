@@ -291,8 +291,8 @@ func prepareRegexp(pattern string) (*regexp.Regexp, *pcreError) {
 		case 'X': // extra - PCRE_EXTRA, mostly ignored in modern PHP
 		case 'J': // allow duplicate named groups - not supported in Go
 			// Just ignore for now
-		case 'n': // non-capture modifier - not supported in Go regexp natively
-			// Just ignore for now
+		case 'n': // non-capture modifier - convert unnamed groups to non-capturing
+			regexBody = convertUnnamedToNonCapture(regexBody)
 		default:
 			return nil, &pcreError{kind: pcreErrUnknownModifier, modifier: f}
 		}
@@ -310,12 +310,61 @@ func prepareRegexp(pattern string) (*regexp.Regexp, *pcreError) {
 		finalPattern = regexBody
 	}
 
+	// Validate named groups: PCRE requires names to start with a non-digit
+	if err := validateNamedGroups(finalPattern); err != nil {
+		return nil, err
+	}
+
 	re, err := regexp.Compile(finalPattern)
 	if err != nil {
 		return nil, &pcreError{kind: pcreErrCompile, compileErr: err}
 	}
 
 	return re, nil
+}
+
+// validateNamedGroups checks for PCRE-invalid named group names (e.g., starting with a digit).
+func validateNamedGroups(pattern string) *pcreError {
+	i := 0
+	for i < len(pattern) {
+		// Skip escaped characters
+		if pattern[i] == '\\' && i+1 < len(pattern) {
+			i += 2
+			continue
+		}
+		// Skip character classes
+		if pattern[i] == '[' {
+			i++
+			for i < len(pattern) && pattern[i] != ']' {
+				if pattern[i] == '\\' && i+1 < len(pattern) {
+					i += 2
+				} else {
+					i++
+				}
+			}
+			if i < len(pattern) {
+				i++
+			}
+			continue
+		}
+		// Check for named groups: (?P<name>), (?<name>), (?'name')
+		if i+3 < len(pattern) && pattern[i] == '(' && pattern[i+1] == '?' {
+			nameStart := -1
+			if pattern[i+2] == 'P' && i+4 < len(pattern) && pattern[i+3] == '<' {
+				nameStart = i + 4
+			} else if pattern[i+2] == '<' && pattern[i+3] != '=' && pattern[i+3] != '!' {
+				nameStart = i + 3
+			}
+			if nameStart >= 0 && nameStart < len(pattern) {
+				ch := pattern[nameStart]
+				if ch >= '0' && ch <= '9' {
+					return &pcreError{kind: pcreErrCompile, compileErr: fmt.Errorf("subpattern name must start with a non-digit at offset %d", nameStart-1)}
+				}
+			}
+		}
+		i++
+	}
+	return nil
 }
 
 // convertNamedCaptures converts PHP named capture syntaxes to Go-compatible format.
@@ -406,6 +455,69 @@ func stripExtendedWhitespace(pattern string) string {
 	return result.String()
 }
 
+// convertUnnamedToNonCapture converts unnamed capture groups (...) to non-capture
+// groups (?:...) for the PCRE /n modifier. Named groups (?P<name>...), (?<name>...),
+// and (?'name'...) are left intact. Other special groups (?:...), (?=...), (?!...), etc.
+// are also left intact.
+func convertUnnamedToNonCapture(pattern string) string {
+	var result strings.Builder
+	i := 0
+	for i < len(pattern) {
+		// Handle backslash escapes
+		if pattern[i] == '\\' && i+1 < len(pattern) {
+			result.WriteByte(pattern[i])
+			result.WriteByte(pattern[i+1])
+			i += 2
+			continue
+		}
+		// Skip character classes [...]
+		if pattern[i] == '[' {
+			result.WriteByte(pattern[i])
+			i++
+			// Handle negation
+			if i < len(pattern) && pattern[i] == '^' {
+				result.WriteByte(pattern[i])
+				i++
+			}
+			// Handle ] as first char in class
+			if i < len(pattern) && pattern[i] == ']' {
+				result.WriteByte(pattern[i])
+				i++
+			}
+			for i < len(pattern) && pattern[i] != ']' {
+				if pattern[i] == '\\' && i+1 < len(pattern) {
+					result.WriteByte(pattern[i])
+					result.WriteByte(pattern[i+1])
+					i += 2
+				} else {
+					result.WriteByte(pattern[i])
+					i++
+				}
+			}
+			if i < len(pattern) {
+				result.WriteByte(pattern[i])
+				i++
+			}
+			continue
+		}
+		if pattern[i] == '(' {
+			if i+1 < len(pattern) && pattern[i+1] == '?' {
+				// This is a special group (?...) - leave it as-is
+				result.WriteByte(pattern[i])
+				i++
+			} else {
+				// This is an unnamed capture group - convert to non-capturing
+				result.WriteString("(?:")
+				i++
+			}
+			continue
+		}
+		result.WriteByte(pattern[i])
+		i++
+	}
+	return result.String()
+}
+
 func doPregReplace(ctx phpv.Context, pattern, replacement, subject *phpv.ZVal, limit phpv.ZInt, count *phpv.ZInt) (*phpv.ZVal, error) {
 	patternStr, err := pattern.As(ctx, phpv.ZtString)
 	if err != nil {
@@ -421,20 +533,21 @@ func doPregReplace(ctx phpv.Context, pattern, replacement, subject *phpv.ZVal, l
 	repl := []byte(replacement.AsString(ctx))
 	in := []byte(subject.AsString(ctx))
 
-	var r []byte
-	n := 0
 	maxReplacements := int(limit)
+	if maxReplacements < 0 {
+		maxReplacements = -1
+	}
 
-	for {
-		if maxReplacements >= 0 && n >= maxReplacements {
-			break
-		}
+	// Find all matches at once on the original string to preserve anchor semantics
+	allLocs := re.FindAllSubmatchIndex(in, maxReplacements)
+	if allLocs == nil {
+		*count = 0
+		return phpv.ZString(in).ZVal(), nil
+	}
 
-		loc := re.FindSubmatchIndex(in)
-		if loc == nil {
-			break
-		}
-
+	var r []byte
+	pos := 0
+	for _, loc := range allLocs {
 		// Extract submatches for backreference expansion
 		var matches [][]byte
 		for i := 0; i < len(loc); i += 2 {
@@ -445,23 +558,19 @@ func doPregReplace(ctx phpv.Context, pattern, replacement, subject *phpv.ZVal, l
 			}
 		}
 
-		r = append(r, in[:loc[0]]...)
+		r = append(r, in[pos:loc[0]]...)
 		r = append(r, pcreExpand(matches, repl)...)
-		in = in[loc[1]:]
-		n++
+		pos = loc[1]
 
-		// Prevent infinite loop on zero-length matches
-		if loc[0] == loc[1] {
-			if len(in) == 0 {
-				break
-			}
-			r = append(r, in[0])
-			in = in[1:]
+		// For zero-length matches, advance by one byte to avoid infinite loop
+		if loc[0] == loc[1] && pos < len(in) {
+			r = append(r, in[pos])
+			pos++
 		}
 	}
-	r = append(r, in...)
+	r = append(r, in[pos:]...)
 
-	*count = phpv.ZInt(n)
+	*count = phpv.ZInt(len(allLocs))
 
 	return phpv.ZString(r).ZVal(), nil
 }

@@ -217,6 +217,8 @@ func (r *runNoDiscardStatement) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	for _, attr := range attrs {
 		if attr.ClassName == "NoDiscard" || attr.ClassName == "\\NoDiscard" {
 			if err := ResolveAttrArgs(ctx, attr); err != nil { return nil, err }
+			// Validate NoDiscard constructor arg types
+			if err := ValidateNoDiscardArgs(ctx, attr); err != nil { return nil, err }
 			msg := fmt.Sprintf("The return value of %s %s() should either be used or intentionally ignored by casting it as (void)", label, funcName)
 			if len(attr.Args) > 0 && attr.Args[0] != nil && attr.Args[0].GetType() != phpv.ZtNull {
 				customMsg := attr.Args[0].String()

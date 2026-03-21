@@ -1,9 +1,11 @@
 package pcre
 
 import (
+	"fmt"
 	"regexp"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -84,15 +86,24 @@ func pregMatch(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	// Handle offset parameter
 	var sliceOffset int
 	if offset != 0 {
-		byteOffset := int(offset)
+		byteOffset := int64(offset)
+		subLen := int64(len(subjectStr))
 		if byteOffset < 0 {
-			byteOffset = len(subjectStr) + byteOffset
+			byteOffset = subLen + byteOffset
 		}
-		if byteOffset < 0 || byteOffset > len(subjectStr) {
+		if byteOffset < 0 {
+			// Check for extreme underflow (e.g., PHP_INT_MIN)
+			if int64(offset) < -subLen {
+				return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+					fmt.Sprintf("preg_match(): Argument #5 ($offset) must be greater than or equal to %d", -subLen))
+			}
+			byteOffset = 0
+		}
+		if byteOffset > subLen {
 			return phpv.ZInt(0).ZVal(), nil
 		}
-		sliceOffset = byteOffset
-		subjectStr = subjectStr[byteOffset:]
+		sliceOffset = int(byteOffset)
+		subjectStr = subjectStr[sliceOffset:]
 	}
 
 	loc := re.FindStringSubmatchIndex(subjectStr)
@@ -145,19 +156,42 @@ func pregMatchAll(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	subjectStr := string(subject)
 
 	var sliceOffset int
-	if offset > 0 {
-		byteOffset := int(offset)
-		if byteOffset >= len(subjectStr) {
+	if offset != 0 {
+		byteOffset := int64(offset)
+		subLen := int64(len(subjectStr))
+		if byteOffset < 0 {
+			byteOffset = subLen + byteOffset
+		}
+		if byteOffset < 0 {
+			// Check for extreme underflow (e.g., PHP_INT_MIN)
+			if int64(offset) < -subLen {
+				return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+					fmt.Sprintf("preg_match_all(): Argument #5 ($offset) must be greater than or equal to %d", -subLen))
+			}
+			byteOffset = 0
+		}
+		if byteOffset >= subLen {
 			if matchesArg.Value != nil {
 				newMatches := phpv.NewZArray()
-				subArr := phpv.NewZArray()
-				newMatches.OffsetSet(ctx, nil, subArr.ZVal())
+				if flags&phpv.ZInt(PREG_SET_ORDER) != 0 {
+					// No sub-arrays needed
+				} else {
+					numGroups := re.NumSubexp() + 1
+					names := re.SubexpNames()
+					for i := 0; i < numGroups; i++ {
+						subArr := phpv.NewZArray()
+						if i < len(names) && names[i] != "" {
+							newMatches.OffsetSet(ctx, phpv.ZString(names[i]).ZVal(), subArr.ZVal())
+						}
+						newMatches.OffsetSet(ctx, nil, subArr.ZVal())
+					}
+				}
 				matchesArg.Set(ctx, newMatches)
 			}
 			return phpv.ZInt(0).ZVal(), nil
 		}
-		sliceOffset = byteOffset
-		subjectStr = subjectStr[byteOffset:]
+		sliceOffset = int(byteOffset)
+		subjectStr = subjectStr[sliceOffset:]
 	}
 
 	names := re.SubexpNames()
@@ -453,20 +487,22 @@ func doReplaceCallback(ctx phpv.Context, pattern *phpv.ZVal, callback phpv.Calla
 	unmatchedAsNull := flags&phpv.ZInt(PREG_UNMATCHED_AS_NULL) != 0
 
 	in := []byte(subject.AsString(ctx))
-	var r []byte
-	n := 0
+
 	maxReplacements := int(limit)
+	if maxReplacements < 0 {
+		maxReplacements = -1
+	}
 
-	for {
-		if maxReplacements >= 0 && n >= maxReplacements {
-			break
-		}
+	// Find all matches at once on the original string to preserve anchor semantics
+	allLocs := re.FindAllSubmatchIndex(in, maxReplacements)
+	if allLocs == nil {
+		*count = 0
+		return phpv.ZString(in).ZVal(), nil
+	}
 
-		loc := re.FindSubmatchIndex(in)
-		if loc == nil {
-			break
-		}
-
+	var r []byte
+	pos := 0
+	for _, loc := range allLocs {
 		// Extract submatches and build matches array with named captures
 		matchArr := phpv.NewZArray()
 		numGroups := len(loc) / 2
@@ -511,23 +547,19 @@ func doReplaceCallback(ctx phpv.Context, pattern *phpv.ZVal, callback phpv.Calla
 			return nil, err
 		}
 
-		r = append(r, in[:loc[0]]...)
+		r = append(r, in[pos:loc[0]]...)
 		r = append(r, []byte(result.AsString(ctx))...)
-		in = in[loc[1]:]
-		n++
+		pos = loc[1]
 
-		// Prevent infinite loop on zero-length matches
-		if loc[0] == loc[1] {
-			if len(in) == 0 {
-				break
-			}
-			r = append(r, in[0])
-			in = in[1:]
+		// For zero-length matches, advance by one byte to avoid infinite loop
+		if loc[0] == loc[1] && pos < len(in) {
+			r = append(r, in[pos])
+			pos++
 		}
 	}
-	r = append(r, in...)
+	r = append(r, in[pos:]...)
 
-	*count = phpv.ZInt(n)
+	*count = phpv.ZInt(len(allLocs))
 
 	return phpv.ZString(r).ZVal(), nil
 }

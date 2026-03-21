@@ -61,6 +61,15 @@ var NoDiscardClass *ZClass
 // AllowDynamicPropertiesClass is the built-in #[\AllowDynamicProperties] attribute class (PHP 8.2+)
 var AllowDynamicPropertiesClass *ZClass
 
+// DelayedTargetValidationClass is the built-in #[\DelayedTargetValidation] attribute class (PHP 8.5+)
+var DelayedTargetValidationClass *ZClass
+
+// SensitiveParameterClass is the built-in #[\SensitiveParameter] attribute class (PHP 8.2+)
+var SensitiveParameterClass *ZClass
+
+// ReturnTypeWillChangeClass is the built-in #[\ReturnTypeWillChange] attribute class (PHP 8.1+)
+var ReturnTypeWillChangeClass *ZClass
+
 func init() {
 	// Deprecated targets include CLASS so that traits with #[\Deprecated] pass
 	// attribute validation in ZClass.Compile(). Classes/interfaces/enums are
@@ -163,6 +172,11 @@ func init() {
 		},
 		Methods: map[phpv.ZString]*phpv.ZClassMethod{
 			"__construct": {Name: "__construct", Method: NativeMethod(func(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				// Check if readonly property is already initialized (re-assignment)
+				if o.IsReadonlyPropertyInitialized("message") {
+					return nil, ThrowError(ctx, Error,
+						fmt.Sprintf("Cannot modify readonly property NoDiscard::$message"))
+				}
 				msg := phpv.ZString("")
 				if len(args) > 0 {
 					arg := args[0]
@@ -198,6 +212,42 @@ func init() {
 		Name: "AllowDynamicProperties",
 		Attributes: []*phpv.ZAttribute{
 			{ClassName: "Attribute", Args: []*phpv.ZVal{phpv.ZInt(AttributeTARGET_CLASS).ZVal()}},
+		},
+		Methods: map[phpv.ZString]*phpv.ZClassMethod{
+			"__construct": {Name: "__construct", Method: NativeMethod(func(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				return nil, nil
+			})},
+		},
+	}
+
+	DelayedTargetValidationClass = &ZClass{
+		Name: "DelayedTargetValidation",
+		Attributes: []*phpv.ZAttribute{
+			{ClassName: "Attribute", Args: []*phpv.ZVal{phpv.ZInt(AttributeTARGET_ALL).ZVal()}},
+		},
+		Methods: map[phpv.ZString]*phpv.ZClassMethod{
+			"__construct": {Name: "__construct", Method: NativeMethod(func(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				return nil, nil
+			})},
+		},
+	}
+
+	SensitiveParameterClass = &ZClass{
+		Name: "SensitiveParameter",
+		Attributes: []*phpv.ZAttribute{
+			{ClassName: "Attribute", Args: []*phpv.ZVal{phpv.ZInt(AttributeTARGET_PARAMETER).ZVal()}},
+		},
+		Methods: map[phpv.ZString]*phpv.ZClassMethod{
+			"__construct": {Name: "__construct", Method: NativeMethod(func(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				return nil, nil
+			})},
+		},
+	}
+
+	ReturnTypeWillChangeClass = &ZClass{
+		Name: "ReturnTypeWillChange",
+		Attributes: []*phpv.ZAttribute{
+			{ClassName: "Attribute", Args: []*phpv.ZVal{phpv.ZInt(AttributeTARGET_METHOD).ZVal()}},
 		},
 		Methods: map[phpv.ZString]*phpv.ZClassMethod{
 			"__construct": {Name: "__construct", Method: NativeMethod(func(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {

@@ -174,8 +174,10 @@ func exceptionToString(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.Z
 		buf.WriteString(exceptionEntryToString(ctx, chain[i], maxLen))
 	}
 	result := phpv.ZStr(buf.String())
-	// Cache the result in the 'string' private property (PHP behavior)
-	o.HashTable().SetString("string", result)
+	// Cache the result in the 'string' private property (PHP behavior).
+	// Use the mangled private property key to avoid creating a duplicate entry.
+	mangledKey := phpv.ZString("*" + string(Exception.GetName()) + ":string")
+	o.HashTable().SetString(mangledKey, result)
 	return result, nil
 }
 

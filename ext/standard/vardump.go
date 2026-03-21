@@ -237,8 +237,13 @@ func doVarDump(ctx phpv.Context, z *phpv.ZVal, linePfx string, recurs map[uintpt
 				}
 				fmt.Fprintf(ctx, "%s[\"%s\"%s]=>\n", localPfx, prop.VarName, suffix)
 
-				v := obj.GetPropValue(prop)
-				doVarDump(ctx, v, localPfx, recurs)
+				if prop.TypeHint != nil && !obj.HasPropValue(prop) {
+					// Typed property that has not been initialized
+					fmt.Fprintf(ctx, "%suninitialized(%s)\n", localPfx, prop.TypeHint.String())
+				} else {
+					v := obj.GetPropValue(prop)
+					doVarDump(ctx, v, localPfx, recurs)
+				}
 			}
 		} else {
 			it := z.NewIterator()

@@ -301,9 +301,16 @@ func checkExistence(ctx phpv.Context, v phpv.Runnable, subExpr bool) (bool, erro
 				Loc:  t.l,
 			}
 		}
-		key, err := t.offset.Run(ctx)
-		if err != nil {
-			return false, nil
+		// Use cached offset from PrepareWrite if available (e.g. ??= memoization)
+		var key *phpv.ZVal
+		if t.prepared && t.cachedOffset != nil {
+			key = t.cachedOffset
+			// Don't consume the cache - it will be needed by WriteValue later
+		} else {
+			key, err = t.offset.Run(ctx)
+			if err != nil {
+				return false, nil
+			}
 		}
 
 		// PHP 8.1: Deprecation warning for null array offsets
@@ -368,9 +375,15 @@ func checkExistence(ctx phpv.Context, v phpv.Runnable, subExpr bool) (bool, erro
 			return false, nil
 		}
 		obj := value.AsObject(ctx).(*phpobj.ZObject)
-		name, err := t.nameExpr.Run(ctx)
-		if err != nil {
-			return false, nil
+		// Use cached name from PrepareWrite if available (e.g. ??= memoization)
+		var name *phpv.ZVal
+		if t.prepared && t.cachedName != nil {
+			name = t.cachedName
+		} else {
+			name, err = t.nameExpr.Run(ctx)
+			if err != nil {
+				return false, nil
+			}
 		}
 		propName := phpv.ZString(name.String())
 		return obj.HasProp(ctx, propName)
@@ -396,6 +409,34 @@ func checkExistence(ctx phpv.Context, v phpv.Runnable, subExpr bool) (bool, erro
 			return false, nil
 		}
 		val := p.GetString(t.varName)
+		return val != nil && !phpv.IsNull(val), nil
+
+	case *runClassStaticDynVarRef:
+		className, err := t.className.Run(ctx)
+		if err != nil {
+			return false, nil
+		}
+		class, err := ctx.Global().GetClass(ctx, className.AsString(ctx), true)
+		if err != nil {
+			return false, nil
+		}
+		// Use cached name from PrepareWrite if available
+		var varName phpv.ZString
+		if t.prepared && t.cachedName != "" {
+			varName = t.cachedName
+		} else {
+			nameVal, nameErr := t.nameExpr.Run(ctx)
+			if nameErr != nil {
+				return false, nil
+			}
+			varName = phpv.ZString(nameVal.String())
+		}
+		zc := class.(*phpobj.ZClass)
+		p, found, err := zc.FindStaticProp(ctx, varName)
+		if err != nil || !found {
+			return false, nil
+		}
+		val := p.GetString(varName)
 		return val != nil && !phpv.IsNull(val), nil
 
 	default:

@@ -18,9 +18,10 @@ const (
 
 // reflectionAttributeData is stored as opaque data on ReflectionAttribute objects
 type reflectionAttributeData struct {
-	attr     *phpv.ZAttribute
-	target   int                // AttributeTARGET_* constant
-	allAttrs []*phpv.ZAttribute // all attributes on the same target (for repeat checking)
+	attr        *phpv.ZAttribute
+	target      int                // AttributeTARGET_* constant
+	allAttrs    []*phpv.ZAttribute // all attributes on the same target (for repeat checking)
+	targetClass phpv.ZClass        // the class the attribute is declared on (for validator checks)
 }
 
 func initReflectionAttribute() {
@@ -183,6 +184,14 @@ func reflectionAttributeNewInstance(ctx phpv.Context, o *phpobj.ZObject, args []
 		}
 	}
 
+	// Special validator checks for built-in attribute classes
+	// These checks run at newInstance() time, especially for #[DelayedTargetValidation]
+	if data.targetClass != nil {
+		if err := validateBuiltinAttributeOnClass(ctx, data.attr.ClassName, data.targetClass); err != nil {
+			return nil, err
+		}
+	}
+
 	// Resolve lazy argument expressions if needed
 	if err := resolveAttrArgs(ctx, data.attr); err != nil {
 		return nil, err
@@ -206,6 +215,27 @@ func reflectionAttributeNewInstance(ctx phpv.Context, o *phpobj.ZObject, args []
 				constructor = m.Method
 			}
 		}
+
+		// Check for named args: if there's no constructor or no FuncGetArgs,
+		// any named argument is unknown
+		hasNamedArgs := false
+		for _, name := range data.attr.ArgNames {
+			if name != "" {
+				hasNamedArgs = true
+				break
+			}
+		}
+
+		if hasNamedArgs && constructor == nil {
+			// No constructor but named args used - any named arg is unknown
+			for _, name := range data.attr.ArgNames {
+				if name != "" {
+					return nil, phpobj.ThrowError(ctx, phpobj.Error,
+						fmt.Sprintf("Unknown named parameter $%s", name))
+				}
+			}
+		}
+
 		if constructor != nil {
 			if fga, ok := constructor.(phpv.FuncGetArgs); ok {
 				fargs := fga.GetArgs()
@@ -263,11 +293,21 @@ func reflectionAttributeNewInstance(ctx phpv.Context, o *phpobj.ZObject, args []
 					newArgs = constructArgs
 				}
 				constructArgs = newArgs
+			} else if hasNamedArgs {
+				// Constructor exists but doesn't support named args introspection
+				for _, name := range data.attr.ArgNames {
+					if name != "" {
+						return nil, phpobj.ThrowError(ctx, phpobj.Error,
+							fmt.Sprintf("Unknown named parameter $%s", name))
+					}
+				}
 			}
 		}
 	}
 
-	obj, err := phpobj.NewZObject(ctx, class, constructArgs...)
+	// Use global context so constructor visibility check uses "global scope"
+	// instead of "scope ReflectionAttribute"
+	obj, err := phpobj.NewZObject(ctx.Global(), class, constructArgs...)
 	if err != nil {
 		return nil, err
 	}
@@ -370,17 +410,88 @@ func resolveAttrArgs(ctx phpv.Context, attr *phpv.ZAttribute) error {
 
 // createReflectionAttributeObject creates a ReflectionAttribute object for the given attribute.
 func createReflectionAttributeObject(ctx phpv.Context, attr *phpv.ZAttribute, target int, allAttrs []*phpv.ZAttribute) (*phpv.ZVal, error) {
+	return createReflectionAttributeObjectWithClass(ctx, attr, target, allAttrs, nil)
+}
+
+// createReflectionAttributeObjectWithClass creates a ReflectionAttribute object with target class info.
+func createReflectionAttributeObjectWithClass(ctx phpv.Context, attr *phpv.ZAttribute, target int, allAttrs []*phpv.ZAttribute, targetClass phpv.ZClass) (*phpv.ZVal, error) {
 	obj, err := phpobj.CreateZObject(ctx, ReflectionAttribute)
 	if err != nil {
 		return nil, err
 	}
 	data := &reflectionAttributeData{
-		attr:     attr,
-		target:   target,
-		allAttrs: allAttrs,
+		attr:        attr,
+		target:      target,
+		allAttrs:    allAttrs,
+		targetClass: targetClass,
 	}
 	obj.SetOpaque(ReflectionAttribute, data)
 	return obj.ZVal(), nil
+}
+
+// validateBuiltinAttributeOnClass performs validator checks for built-in attribute classes
+// when newInstance() is called. These checks are deferred by #[DelayedTargetValidation].
+func validateBuiltinAttributeOnClass(ctx phpv.Context, attrName phpv.ZString, targetClass phpv.ZClass) error {
+	zc, ok := targetClass.(*phpobj.ZClass)
+	if !ok {
+		return nil
+	}
+
+	switch attrName {
+	case "Attribute", "\\Attribute":
+		if zc.Type.Has(phpv.ZClassTypeInterface) {
+			return phpobj.ThrowError(ctx, phpobj.Error,
+				fmt.Sprintf("Cannot apply #[\\Attribute] to interface %s", zc.GetName()))
+		} else if zc.Type.Has(phpv.ZClassTypeTrait) {
+			return phpobj.ThrowError(ctx, phpobj.Error,
+				fmt.Sprintf("Cannot apply #[\\Attribute] to trait %s", zc.GetName()))
+		} else if zc.Type.Has(phpv.ZClassTypeEnum) {
+			return phpobj.ThrowError(ctx, phpobj.Error,
+				fmt.Sprintf("Cannot apply #[\\Attribute] to enum %s", zc.GetName()))
+		} else if zc.Attr.Has(phpv.ZClassExplicitAbstract) {
+			return phpobj.ThrowError(ctx, phpobj.Error,
+				fmt.Sprintf("Cannot apply #[\\Attribute] to abstract class %s", zc.GetName()))
+		}
+	case "AllowDynamicProperties", "\\AllowDynamicProperties":
+		if zc.Type.Has(phpv.ZClassTypeInterface) {
+			return phpobj.ThrowError(ctx, phpobj.Error,
+				fmt.Sprintf("Cannot apply #[\\AllowDynamicProperties] to interface %s", zc.GetName()))
+		} else if zc.Type.Has(phpv.ZClassTypeTrait) {
+			return phpobj.ThrowError(ctx, phpobj.Error,
+				fmt.Sprintf("Cannot apply #[\\AllowDynamicProperties] to trait %s", zc.GetName()))
+		} else if zc.Type.Has(phpv.ZClassTypeEnum) {
+			return phpobj.ThrowError(ctx, phpobj.Error,
+				fmt.Sprintf("Cannot apply #[\\AllowDynamicProperties] to enum %s", zc.GetName()))
+		} else if zc.Attr.Has(phpv.ZClassReadonly) {
+			return phpobj.ThrowError(ctx, phpobj.Error,
+				fmt.Sprintf("Cannot apply #[\\AllowDynamicProperties] to readonly class %s", zc.GetName()))
+		}
+	case "Deprecated", "\\Deprecated":
+		// #[Deprecated] is valid on traits but NOT on classes/interfaces/enums
+		if zc.Type.Has(phpv.ZClassTypeTrait) {
+			// Traits are OK
+		} else if zc.Type.Has(phpv.ZClassTypeInterface) {
+			return phpobj.ThrowError(ctx, phpobj.Error,
+				fmt.Sprintf("Cannot apply #[\\Deprecated] to interface %s", zc.GetName()))
+		} else if zc.GetType()&phpv.ZClassTypeEnum != 0 {
+			return phpobj.ThrowError(ctx, phpobj.Error,
+				fmt.Sprintf("Cannot apply #[\\Deprecated] to enum %s", zc.GetName()))
+		} else {
+			// Regular class/abstract class
+			kind := "class"
+			if zc.Attr.Has(phpv.ZClassExplicitAbstract) {
+				kind = "class" // PHP says "class" even for abstract
+			}
+			return phpobj.ThrowError(ctx, phpobj.Error,
+				fmt.Sprintf("Cannot apply #[\\Deprecated] to %s %s", kind, zc.GetName()))
+		}
+	case "NoDiscard", "\\NoDiscard":
+		// #[NoDiscard] on classes is not valid (only functions/methods)
+		// But since target validation already handles this, only check for special cases
+		// NoDiscard target is function|method, so class target would already be caught
+	}
+
+	return nil
 }
 
 // filterAttributes returns ReflectionAttribute objects for matching attributes.
@@ -388,8 +499,7 @@ func createReflectionAttributeObject(ctx phpv.Context, attr *phpv.ZAttribute, ta
 // flags: 0 or ReflectionAttribute::IS_INSTANCEOF
 // attrs: the attributes to filter
 // target: the AttributeTARGET_* constant for these attributes
-// callerClass: the reflection class name for error messages (e.g. "ReflectionFunctionAbstract")
-func filterAttributes(ctx phpv.Context, attrs []*phpv.ZAttribute, target int, name phpv.ZString, flags int) (*phpv.ZVal, error) {
+func filterAttributes(ctx phpv.Context, attrs []*phpv.ZAttribute, target int, name phpv.ZString, flags int, targetClass ...phpv.ZClass) (*phpv.ZVal, error) {
 	// Validate flags: only 0 and IS_INSTANCEOF (2) are valid
 	if flags != 0 && flags != ReflectionAttributeIS_INSTANCEOF {
 		return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
@@ -430,7 +540,11 @@ func filterAttributes(ctx phpv.Context, attrs []*phpv.ZAttribute, target int, na
 			}
 		}
 
-		val, err := createReflectionAttributeObject(ctx, attr, target, attrs)
+		var tc phpv.ZClass
+		if len(targetClass) > 0 {
+			tc = targetClass[0]
+		}
+		val, err := createReflectionAttributeObjectWithClass(ctx, attr, target, attrs, tc)
 		if err != nil {
 			return nil, err
 		}

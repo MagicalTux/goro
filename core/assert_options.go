@@ -14,6 +14,24 @@ const (
 	ASSERT_EXCEPTION phpv.ZInt = 6
 )
 
+// Maps assert option constants to their INI setting names
+var assertOptionToIni = map[phpv.ZInt]phpv.ZString{
+	ASSERT_ACTIVE:    "assert.active",
+	ASSERT_WARNING:   "assert.warning",
+	ASSERT_BAIL:      "assert.bail",
+	ASSERT_QUIET:     "assert.quiet_eval",
+	ASSERT_EXCEPTION: "assert.exception",
+}
+
+// Default values for each assert option
+var assertOptionDefaults = map[phpv.ZInt]phpv.ZInt{
+	ASSERT_ACTIVE:    1,
+	ASSERT_WARNING:   1,
+	ASSERT_BAIL:      0,
+	ASSERT_QUIET:     0,
+	ASSERT_EXCEPTION: 1,
+}
+
 // > func mixed assert_options ( int $option [, mixed $value ] )
 func fncAssertOptions(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var option phpv.ZInt
@@ -23,25 +41,31 @@ func fncAssertOptions(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	// PHP 8 deprecated most assert_options functionality.
-	// Return the "current" value as a stub.
-	switch option {
-	case ASSERT_ACTIVE:
-		// assert.active is on by default
-		return phpv.ZInt(1).ZVal(), nil
-	case ASSERT_WARNING:
-		// assert.warning is on by default
-		return phpv.ZInt(1).ZVal(), nil
-	case ASSERT_BAIL:
-		// assert.bail is off by default
-		return phpv.ZInt(0).ZVal(), nil
-	case ASSERT_QUIET:
-		// assert.quiet_eval was removed in PHP 8
-		return phpv.ZInt(0).ZVal(), nil
-	case ASSERT_EXCEPTION:
-		// assert.exception is on by default in PHP 8
-		return phpv.ZInt(1).ZVal(), nil
-	default:
+	if option == ASSERT_CALLBACK {
+		// ASSERT_CALLBACK is stored as a special INI-like config
+		iniName := phpv.ZString("assert.callback")
+		old := ctx.GetConfig(iniName, phpv.ZNULL.ZVal())
+		if value.HasArg() {
+			ctx.Global().SetLocalConfig(iniName, value.Get())
+		}
+		return old, nil
+	}
+
+	iniName, ok := assertOptionToIni[option]
+	if !ok {
 		return phpv.ZFalse.ZVal(), nil
 	}
+
+	// Get the current value
+	def := assertOptionDefaults[option]
+	old := ctx.GetConfig(iniName, def.ZVal())
+	oldInt := old.AsInt(ctx)
+
+	if value.HasArg() {
+		// Set the new value
+		newVal := value.Get()
+		ctx.Global().SetLocalConfig(iniName, newVal)
+	}
+
+	return phpv.ZInt(oldInt).ZVal(), nil
 }

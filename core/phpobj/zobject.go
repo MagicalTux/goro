@@ -37,6 +37,11 @@ type ZObject struct {
 	// Readonly property tracking - set of properties that have been initialized
 	readonlyInit map[phpv.ZString]bool
 
+	// Tracks typed properties that were explicitly unset (to distinguish from
+	// "never initialized"). Unset typed properties allow __set/__unset fallback,
+	// while never-initialized typed properties throw the visibility error directly.
+	typedPropUnset map[phpv.ZString]bool
+
 	// Destructor tracking - stored as a pointer so wrapper objects share the flag.
 	destructed *bool
 
@@ -691,6 +696,7 @@ func (o *ZObject) init(ctx phpv.Context) error {
 			if p.Modifiers.IsStatic() {
 				continue
 			}
+			// Debug line removed
 			if p.Modifiers.IsPrivate() {
 				// Private properties are stored ONLY under their mangled name
 				// to avoid collisions with same-named properties in parent/child classes.
@@ -705,9 +711,11 @@ func (o *ZObject) init(ctx phpv.Context) error {
 						p.Default = z.Value()
 					}
 					o.h.SetString(k, dupDefault(p.Default))
-				} else {
+				} else if p.TypeHint == nil {
+					// Untyped properties without default get null
 					o.h.SetString(k, phpv.ZNULL.ZVal())
 				}
+				// Typed properties without default are "uninitialized" - don't set them
 				o.hasPrivate[p.VarName] = struct{}{}
 			} else {
 				// Public/protected properties stored under bare name
@@ -721,9 +729,11 @@ func (o *ZObject) init(ctx phpv.Context) error {
 						p.Default = z.Value()
 					}
 					o.h.SetString(p.VarName, dupDefault(p.Default))
-				} else {
+				} else if p.TypeHint == nil {
+					// Untyped properties without default get null
 					o.h.SetString(p.VarName, phpv.ZNULL.ZVal())
 				}
+				// Typed properties without default are "uninitialized" - don't set them
 			}
 		}
 	}
@@ -788,10 +798,13 @@ func (pi *propIterator) yield(yield func(*phpv.ZClassProp) bool) {
 				if _, ok := shown[p.VarName.String()]; ok {
 					continue
 				}
-				// Skip properties that have been unset from the instance
+				// Skip non-typed properties that have been unset from the instance.
+				// Typed properties are always shown (as "uninitialized(type)" in var_dump).
 				if !o.h.HasString(p.VarName) {
-					shown[p.VarName.String()] = struct{}{}
-					continue
+					if p.TypeHint == nil {
+						shown[p.VarName.String()] = struct{}{}
+						continue
+					}
 				}
 				shown[p.VarName.String()] = struct{}{}
 				// Yield the most-derived version of this property
@@ -799,10 +812,12 @@ func (pi *propIterator) yield(yield func(*phpv.ZClassProp) bool) {
 					p = derived
 				}
 			} else {
-				// Skip private properties that have been unset
+				// Skip private properties that have been unset (unless typed)
 				propName := getPrivatePropName(cl, p.VarName)
 				if !o.h.HasString(propName) {
-					continue
+					if p.TypeHint == nil {
+						continue
+					}
 				}
 			}
 			if !yield(p) {
@@ -825,6 +840,28 @@ func (pi *propIterator) yield(yield func(*phpv.ZClassProp) bool) {
 			}
 		}
 	}
+}
+
+// HasPropValue returns true if the property has a value in the hash table.
+// Returns false for typed properties that have not been initialized.
+func (o *ZObject) HasPropValue(p *phpv.ZClassProp) bool {
+	if p.Modifiers.IsPrivate() {
+		class := o.Class.(*ZClass)
+		for class != nil {
+			for _, cp := range class.Props {
+				if cp == p {
+					k := getPrivatePropName(class, p.VarName)
+					return o.h.HasString(k)
+				}
+			}
+			parent := class.GetParent()
+			if parent == nil {
+				break
+			}
+			class = parent.(*ZClass)
+		}
+	}
+	return o.h.HasString(p.VarName)
 }
 
 // GetPropValue returns the value for a class property, handling the mangled
@@ -1391,12 +1428,17 @@ func (o *ZObject) objectSetBacking(keyStr phpv.ZString, value *phpv.ZVal) {
 	o.h.SetString(keyStr, value)
 }
 
-// scopeName returns a human-readable scope name for error messages.
-func scopeName(class phpv.ZClass) string {
+// ScopeName returns a human-readable scope name for error messages.
+func ScopeName(class phpv.ZClass) string {
 	if class == nil {
 		return "global scope"
 	}
 	return fmt.Sprintf("scope %s", class.GetName())
+}
+
+// scopeName is the package-internal alias for ScopeName.
+func scopeName(class phpv.ZClass) string {
+	return ScopeName(class)
 }
 
 func (o *ZObject) ObjectGet(ctx phpv.Context, key phpv.Val) (*phpv.ZVal, error) {
@@ -1457,6 +1499,25 @@ func (o *ZObject) ObjectGet(ctx phpv.Context, key phpv.Val) (*phpv.ZVal, error) 
 	if o.h.HasString(keyStr) {
 		v := o.h.GetString(keyStr)
 		return phpv.NewZVal(v.Value()), nil
+	}
+
+	// Check for uninitialized typed property - throws Error instead of calling __get
+	if prop := o.findDeclaredProp(keyStr); prop != nil && prop.TypeHint != nil {
+		// Find the declaring class for the error message
+		declClass := o.Class.GetName()
+		if zc, ok := o.Class.(*ZClass); ok {
+			for cur := zc; cur != nil; cur = cur.Extends {
+				for _, cp := range cur.Props {
+					if cp.VarName == keyStr {
+						declClass = cur.GetName()
+						goto foundDecl
+					}
+				}
+			}
+		}
+	foundDecl:
+		return nil, ThrowError(ctx, Error,
+			fmt.Sprintf("Typed property %s::$%s must not be accessed before initialization", declClass, keyStr))
 	}
 
 	// Property not found, try __get magic method
@@ -1660,7 +1721,19 @@ func (o *ZObject) ObjectSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) er
 		// When asymmetric visibility blocks and the property is UNSET,
 		// fall back to __set/__unset magic methods.
 		// If the property currently has a value, just throw the error.
-		propIsSet := o.h.HasString(keyStr) || (o.hasPrivate != nil && o.h.HasString(getPrivatePropName(o.Class.(*ZClass), keyStr)))
+		propInHash := o.h.HasString(keyStr) || (o.hasPrivate != nil && o.h.HasString(getPrivatePropName(o.Class.(*ZClass), keyStr)))
+		// Property is considered "set" if it's in the hash table, OR if it's a typed
+		// property that was never initialized (not explicitly unset).
+		// Explicitly-unset typed properties allow __set/__unset fallback.
+		propIsSet := propInHash
+		if !propInHash {
+			if prop := o.findDeclaredProp(keyStr); prop != nil && prop.TypeHint != nil {
+				// Check if explicitly unset
+				if o.typedPropUnset == nil || !o.typedPropUnset[keyStr] {
+					propIsSet = true // never initialized - treat as "set" for error purposes
+				}
+			}
+		}
 		if !propIsSet {
 			class := o.GetClass().(*ZClass)
 			if value == nil {
@@ -1725,8 +1798,35 @@ func (o *ZObject) ObjectSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) er
 		}
 	}
 
-	// Check if property exists in declared props
-	if o.h.HasString(keyStr) {
+	// Check if property exists in declared props OR is a declared typed property (uninitialized)
+	propInHashTable := o.h.HasString(keyStr)
+	isDeclaredTyped := false
+	if !propInHashTable {
+		if prop := o.findDeclaredProp(keyStr); prop != nil && prop.TypeHint != nil && !prop.Modifiers.IsPrivate() {
+			isDeclaredTyped = true
+		}
+	}
+	if propInHashTable || isDeclaredTyped {
+		if value == nil {
+			// Track that this typed property was explicitly unset
+			if !propInHashTable {
+				// Already not in hash table - nothing to unset from hash table
+			}
+			if prop := o.findDeclaredProp(keyStr); prop != nil && prop.TypeHint != nil {
+				if o.typedPropUnset == nil {
+					o.typedPropUnset = make(map[phpv.ZString]bool)
+				}
+				o.typedPropUnset[keyStr] = true
+			}
+			if propInHashTable {
+				return o.h.SetString(keyStr, value) // removes from hash table
+			}
+			return nil
+		}
+		// Property is being set - clear the unset flag
+		if o.typedPropUnset != nil {
+			delete(o.typedPropUnset, keyStr)
+		}
 		return o.h.SetString(keyStr, value)
 	}
 
@@ -1991,8 +2091,12 @@ func (it *zobjectIterator) Iterate(ctx phpv.Context) iter.Seq2[*phpv.ZVal, *phpv
 func (a *ZObject) Count(ctx phpv.Context) phpv.ZInt {
 	// Count non-static declared properties across the class hierarchy,
 	// plus any dynamic properties set on the instance.
+	// Uninitialized typed properties are NOT counted.
 	count := 0
-	for range a.IterProps(ctx) {
+	for prop := range a.IterProps(ctx) {
+		if prop.TypeHint != nil && !a.HasPropValue(prop) {
+			continue // uninitialized typed property
+		}
 		count++
 	}
 	return phpv.ZInt(count)

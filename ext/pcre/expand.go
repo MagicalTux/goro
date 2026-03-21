@@ -33,6 +33,25 @@ func pcreExpand(matches [][]byte, repl []byte) []byte {
 		if num >= 0 {
 			if num < len(matches) {
 				res = append(res, matches[num]...)
+			} else {
+				// PHP behavior: if the group number doesn't exist, try shorter
+				// numbers. E.g., $103 with only 11 groups -> try $10, then $1.
+				// Only applies to non-braced references (braced like ${103} are exact).
+				found := false
+				for num >= 10 {
+					// put back the last digit
+					lastDigit := num % 10
+					num = num / 10
+					repl = append([]byte{byte('0' + lastDigit)}, repl...)
+					if num < len(matches) {
+						res = append(res, matches[num]...)
+						found = true
+						break
+					}
+				}
+				if !found && num >= 0 && num < len(matches) {
+					res = append(res, matches[num]...)
+				}
 			}
 		} else {
 			// TODO named ranges?

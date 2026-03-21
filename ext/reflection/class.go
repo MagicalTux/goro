@@ -567,5 +567,5 @@ func reflectionClassGetAttributes(ctx phpv.Context, o *phpobj.ZObject, args []*p
 	}
 
 	name, flags := getAttributesArgs(ctx, args)
-	return filterAttributes(ctx, zc.Attributes, phpobj.AttributeTARGET_CLASS, name, flags)
+	return filterAttributes(ctx, zc.Attributes, phpobj.AttributeTARGET_CLASS, name, flags, zc)
 }

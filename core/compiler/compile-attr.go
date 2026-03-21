@@ -74,6 +74,11 @@ func parseAttributes(c compileCtx) ([]*phpv.ZAttribute, error) {
 				ClassName: className,
 			}
 
+			// Propagate strict_types from the compile context
+			if rc, ok := c.(*compileRootCtx); ok && rc.strictTypes {
+				attr.StrictTypes = true
+			}
+
 			// Check for arguments: (
 			if i.IsSingle('(') {
 				// Parse arguments as constant expressions (supports named args)

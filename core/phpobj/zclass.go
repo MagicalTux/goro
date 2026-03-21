@@ -1340,31 +1340,36 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 func (c *ZClass) validateAttributes(ctx phpv.Context) error {
 	// Validate class-level attributes
 	if len(c.Attributes) > 0 {
-		// Special validation for #[Attribute]: can only be applied to non-abstract,
-		// non-interface, non-trait, non-enum classes
-		for _, attr := range c.Attributes {
-			name := attr.ClassName
-			if name == "Attribute" || name == "\\Attribute" {
-				if c.Type.Has(phpv.ZClassTypeInterface) {
-					return c.fatalError(ctx, fmt.Sprintf("Cannot apply #[\\Attribute] to interface %s", c.GetName()))
-				} else if c.Type.Has(phpv.ZClassTypeTrait) {
-					return c.fatalError(ctx, fmt.Sprintf("Cannot apply #[\\Attribute] to trait %s", c.GetName()))
-				} else if c.Type.Has(phpv.ZClassTypeEnum) {
-					return c.fatalError(ctx, fmt.Sprintf("Cannot apply #[\\Attribute] to enum %s", c.GetName()))
-				} else if c.Attr.Has(phpv.ZClassExplicitAbstract) {
-					return c.fatalError(ctx, fmt.Sprintf("Cannot apply #[\\Attribute] to abstract class %s", c.GetName()))
+		// Skip compile-time validation if #[DelayedTargetValidation] is present
+		delayed := hasDelayedTargetValidation(c.Attributes)
+
+		if !delayed {
+			// Special validation for #[Attribute]: can only be applied to non-abstract,
+			// non-interface, non-trait, non-enum classes
+			for _, attr := range c.Attributes {
+				name := attr.ClassName
+				if name == "Attribute" || name == "\\Attribute" {
+					if c.Type.Has(phpv.ZClassTypeInterface) {
+						return c.fatalError(ctx, fmt.Sprintf("Cannot apply #[\\Attribute] to interface %s", c.GetName()))
+					} else if c.Type.Has(phpv.ZClassTypeTrait) {
+						return c.fatalError(ctx, fmt.Sprintf("Cannot apply #[\\Attribute] to trait %s", c.GetName()))
+					} else if c.Type.Has(phpv.ZClassTypeEnum) {
+						return c.fatalError(ctx, fmt.Sprintf("Cannot apply #[\\Attribute] to enum %s", c.GetName()))
+					} else if c.Attr.Has(phpv.ZClassExplicitAbstract) {
+						return c.fatalError(ctx, fmt.Sprintf("Cannot apply #[\\Attribute] to abstract class %s", c.GetName()))
+					}
 				}
-			}
-			// Special validation for #[AllowDynamicProperties]
-			if name == "AllowDynamicProperties" || name == "\\AllowDynamicProperties" {
-				if c.Type.Has(phpv.ZClassTypeInterface) {
-					return c.fatalError(ctx, fmt.Sprintf("Cannot apply #[\\AllowDynamicProperties] to interface %s", c.GetName()))
-				} else if c.Type.Has(phpv.ZClassTypeTrait) {
-					return c.fatalError(ctx, fmt.Sprintf("Cannot apply #[\\AllowDynamicProperties] to trait %s", c.GetName()))
-				} else if c.Type.Has(phpv.ZClassTypeEnum) {
-					return c.fatalError(ctx, fmt.Sprintf("Cannot apply #[\\AllowDynamicProperties] to enum %s", c.GetName()))
-				} else if c.Attr.Has(phpv.ZClassReadonly) {
-					return c.fatalError(ctx, fmt.Sprintf("Cannot apply #[\\AllowDynamicProperties] to readonly class %s", c.GetName()))
+				// Special validation for #[AllowDynamicProperties]
+				if name == "AllowDynamicProperties" || name == "\\AllowDynamicProperties" {
+					if c.Type.Has(phpv.ZClassTypeInterface) {
+						return c.fatalError(ctx, fmt.Sprintf("Cannot apply #[\\AllowDynamicProperties] to interface %s", c.GetName()))
+					} else if c.Type.Has(phpv.ZClassTypeTrait) {
+						return c.fatalError(ctx, fmt.Sprintf("Cannot apply #[\\AllowDynamicProperties] to trait %s", c.GetName()))
+					} else if c.Type.Has(phpv.ZClassTypeEnum) {
+						return c.fatalError(ctx, fmt.Sprintf("Cannot apply #[\\AllowDynamicProperties] to enum %s", c.GetName()))
+					} else if c.Attr.Has(phpv.ZClassReadonly) {
+						return c.fatalError(ctx, fmt.Sprintf("Cannot apply #[\\AllowDynamicProperties] to readonly class %s", c.GetName()))
+					}
 				}
 			}
 		}

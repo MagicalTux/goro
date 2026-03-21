@@ -1010,6 +1010,10 @@ func checkReadonlyIndirectModification(ctx phpv.Context, expr phpv.Runnable) err
 				return phpobj.ThrowError(ctx, phpobj.Error,
 					fmt.Sprintf("Cannot indirectly modify readonly property %s::$%s", obj.GetClass().GetName(), propName))
 			}
+			// Check asymmetric visibility for indirect modification
+			if err := checkAsymmetricVisibilityIndirect(ctx, obj, propName); err != nil {
+				return err
+			}
 			return nil
 		case *runArrayAccess:
 			expr = inner.value
@@ -1018,4 +1022,40 @@ func checkReadonlyIndirectModification(ctx phpv.Context, expr phpv.Runnable) err
 			return nil
 		}
 	}
+}
+
+// checkAsymmetricVisibilityIndirect checks if an indirect modification (e.g., $obj->prop[] = x,
+// $ref = &$obj->prop, ++$obj->prop) violates asymmetric set-visibility constraints.
+// Returns an error if the current scope cannot write to the property.
+func checkAsymmetricVisibilityIndirect(ctx phpv.Context, obj *phpobj.ZObject, propName phpv.ZString) error {
+	class := obj.GetClass().(*phpobj.ZClass)
+	for cur := class; cur != nil; cur = cur.Extends {
+		for _, prop := range cur.Props {
+			if prop.VarName != propName || prop.Modifiers.IsStatic() {
+				continue
+			}
+			if prop.SetModifiers == 0 {
+				return nil // no asymmetric visibility
+			}
+			callerClass := ctx.Class()
+			if prop.SetModifiers.IsPrivate() {
+				if callerClass != nil && callerClass.GetName() == cur.GetName() {
+					return nil
+				}
+				return phpobj.ThrowError(ctx, phpobj.Error,
+					fmt.Sprintf("Cannot indirectly modify private(set) property %s::$%s from %s",
+						cur.GetName(), propName, phpobj.ScopeName(callerClass)))
+			}
+			if prop.SetModifiers.IsProtected() {
+				if callerClass != nil && (callerClass.InstanceOf(cur) || cur.InstanceOf(callerClass)) {
+					return nil
+				}
+				return phpobj.ThrowError(ctx, phpobj.Error,
+					fmt.Sprintf("Cannot indirectly modify protected(set) property %s::$%s from %s",
+						cur.GetName(), propName, phpobj.ScopeName(callerClass)))
+			}
+			return nil
+		}
+	}
+	return nil
 }

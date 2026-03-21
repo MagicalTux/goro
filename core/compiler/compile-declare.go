@@ -127,6 +127,19 @@ func compileDeclare(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		return nil, err
 	}
 
+	// Set strict_types on the compile context so attribute constructors can check it
+	for _, d := range directives {
+		if d.name == "strict_types" {
+			if lit, ok := d.val.(*runZVal); ok {
+				if lit.v == phpv.ZInt(1) || lit.v == phpv.ZBool(true) {
+					if rc, ok := c.(*compileRootCtx); ok {
+						rc.strictTypes = true
+					}
+				}
+			}
+		}
+	}
+
 	if i.IsSingle(';') {
 		// Statement form: declare(strict_types=1);
 		// For ticks, we need a runnable; for strict_types/encoding, nothing to run

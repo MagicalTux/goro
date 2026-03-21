@@ -161,11 +161,18 @@ func (r *runClassStaticDynVarRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	nameVal, err := r.nameExpr.Run(ctx)
-	if err != nil {
-		return nil, err
+	// Use cached name from PrepareWrite if available (e.g. ??= memoization)
+	var varName phpv.ZString
+	if r.prepared && r.cachedName != "" {
+		varName = r.cachedName
+		// Don't consume the cache - it may be needed by WriteValue later
+	} else {
+		nameVal, err := r.nameExpr.Run(ctx)
+		if err != nil {
+			return nil, err
+		}
+		varName = phpv.ZString(nameVal.String())
 	}
-	varName := phpv.ZString(nameVal.String())
 
 	zc := class.(*phpobj.ZClass)
 	p, found, err := zc.FindStaticProp(ctx, varName)

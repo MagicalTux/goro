@@ -1959,7 +1959,11 @@ func dateIntervalFormat(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVa
 	
 	result := ""
 	for i := 0; i < len(format); i++ {
-		if format[i] == '%' && i+1 < len(format) {
+		if format[i] == '%' {
+			// A trailing '%' with no specifier is consumed silently (PHP returns "")
+			if i+1 >= len(format) {
+				break
+			}
 			i++
 			switch format[i] {
 			case 'Y':

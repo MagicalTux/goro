@@ -288,6 +288,27 @@ func spawnOperator(ctx phpv.Context, op tokenizer.ItemType, a, b phpv.Runnable, 
 			ctx.Global().LogError(phpErr)
 			return nil, phpv.ExitError(255)
 		}
+		// ??= on function call result with array access is not allowed
+		if ac, ok := a.(*runArrayAccess); ok {
+			lhs := ac.value
+			for {
+				if innerAc, ok := lhs.(*runArrayAccess); ok {
+					lhs = innerAc.value
+				} else {
+					break
+				}
+			}
+			switch lhs.(type) {
+			case *runnableFunctionCall, *runnableFunctionCallRef:
+				phpErr := &phpv.PhpError{
+					Err:  fmt.Errorf("Cannot use result of built-in function in write context"),
+					Code: phpv.E_ERROR,
+					Loc:  l,
+				}
+				ctx.Global().LogError(phpErr)
+				return nil, phpv.ExitError(255)
+			}
+		}
 	}
 
 	// Short list syntax: [$a, $b] = expr → convert array literal to destructure target
@@ -384,14 +405,33 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	// - ArrayAccess offsetExists returning false → treat as null
 	// - null values → treat as null
 	if r.op == tokenizer.T_COALESCE || r.op == tokenizer.T_COALESCE_EQUAL {
+		// For ??=, prepare the write target first to cache offset expressions.
+		// This ensures array offsets like id($foo) are evaluated only once.
+		if r.op == tokenizer.T_COALESCE_EQUAL {
+			if pw, ok := r.a.(phpv.WritePreparable); ok {
+				if err = pw.PrepareWrite(ctx); err != nil {
+					return nil, err
+				}
+			}
+		}
 		if r.a != nil {
 			exists, checkErr := checkExistence(ctx, r.a, false)
 			if checkErr != nil {
 				// checkExistence doesn't handle non-variable expressions
 				// (literals, function calls, etc.). For ??, evaluate directly
-				// and check for null. For ??=, propagate the error.
+				// and check for null. For ??=, generate a write-context error.
 				if r.op == tokenizer.T_COALESCE_EQUAL {
-					return nil, checkErr
+					// Provide a meaningful PHP error message for ??= on non-writable
+					what := "expression"
+					switch r.a.(type) {
+					case *runnableFunctionCall:
+						what = "function return value"
+					case *runnableFunctionCallRef:
+						what = "function return value"
+					case *runObjectFunc:
+						what = "method return value"
+					}
+					return nil, ctx.Errorf("Can't use %s in write context", what)
 				}
 				// For ??, evaluate the LHS directly
 				a, err = r.a.Run(ctx)
