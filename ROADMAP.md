@@ -1,6 +1,6 @@
 # Goro Roadmap
 
-**Current state (March 2026):** ~6,200+ / 12,110 tests passing (~51%). First 2,000: 1,552/2,000 (80.2%). **80% milestone reached!**
+**Current state (March 2026):** ~6,300+ / 12,110 tests passing (~52%). First 2,000: 1,560/2,000 (80.6%). **80% milestone reached!**
 
 This document tracks the major work areas needed to reach full PHP 8.5 compatibility, organized by impact (number of test fixes) and estimated effort.
 
