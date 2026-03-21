@@ -677,7 +677,7 @@ func fncRange(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		}
 	}
 
-	result := phpv.NewZArray()
+	result := phpv.NewZArrayTracked(ctx.Global().MemMgrTracker())
 
 	if start.GetType() == phpv.ZtString && end.GetType() == phpv.ZtString && !useFloat {
 		step := 1
@@ -698,16 +698,22 @@ func fncRange(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		// use only first character of the string
 
 		if len(s1) == 0 || len(s2) == 0 {
-			result.OffsetSet(ctx, nil, phpv.ZInt(0).ZVal())
+			if err := result.OffsetSet(ctx, nil, phpv.ZInt(0).ZVal()); err != nil {
+				return nil, err
+			}
 		} else if s1[0] < s2[0] {
 			for i := s1[0]; i <= s2[0]; i += byte(step) {
 				c := string(rune(i))
-				result.OffsetSet(ctx, nil, phpv.ZStr(c))
+				if err := result.OffsetSet(ctx, nil, phpv.ZStr(c)); err != nil {
+					return nil, err
+				}
 			}
 		} else {
 			for i := s1[0]; i >= s2[0]; i -= byte(step) {
 				c := string(rune(i))
-				result.OffsetSet(ctx, nil, phpv.ZStr(c))
+				if err := result.OffsetSet(ctx, nil, phpv.ZStr(c)); err != nil {
+					return nil, err
+				}
 			}
 		}
 	} else if useFloat {
@@ -743,11 +749,15 @@ func fncRange(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		numElements := int(numElementsF)
 		if f1 <= f2 {
 			for j := 0; j < numElements; j++ {
-				result.OffsetSet(ctx, nil, phpv.ZFloat(f1+float64(j)*fstep).ZVal())
+				if err := result.OffsetSet(ctx, nil, phpv.ZFloat(f1+float64(j)*fstep).ZVal()); err != nil {
+					return nil, err
+				}
 			}
 		} else {
 			for j := 0; j < numElements; j++ {
-				result.OffsetSet(ctx, nil, phpv.ZFloat(f1-float64(j)*fstep).ZVal())
+				if err := result.OffsetSet(ctx, nil, phpv.ZFloat(f1-float64(j)*fstep).ZVal()); err != nil {
+					return nil, err
+				}
 			}
 		}
 	} else {
@@ -810,11 +820,15 @@ func fncRange(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		// at the boundaries of the int range.
 		if n1 <= n2 {
 			for j := uint64(0); j < numElements; j++ {
-				result.OffsetSet(ctx, nil, phpv.ZInt(n1+int(j)*step).ZVal())
+				if err := result.OffsetSet(ctx, nil, phpv.ZInt(n1+int(j)*step).ZVal()); err != nil {
+					return nil, err
+				}
 			}
 		} else {
 			for j := uint64(0); j < numElements; j++ {
-				result.OffsetSet(ctx, nil, phpv.ZInt(n1-int(j)*step).ZVal())
+				if err := result.OffsetSet(ctx, nil, phpv.ZInt(n1-int(j)*step).ZVal()); err != nil {
+					return nil, err
+				}
 			}
 		}
 	}
@@ -1617,14 +1631,16 @@ func fncArrayFill(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
 			"array_fill(): Argument #2 ($count) is too large")
 	}
-	result := phpv.NewZArray()
+	result := phpv.NewZArrayTracked(ctx.Global().MemMgrTracker())
 	for i := startIndex; i < startIndex+num; i++ {
 		if i%10000 == 0 {
 			if err := ctx.Tick(ctx, nil); err != nil {
 				return nil, err
 			}
 		}
-		result.OffsetSet(ctx, phpv.ZInt(i), fillValue)
+		if err := result.OffsetSet(ctx, phpv.ZInt(i), fillValue); err != nil {
+			return nil, err
+		}
 	}
 	return result.ZVal(), nil
 }
@@ -1638,7 +1654,7 @@ func fncArrayFillKeys(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, ctx.FuncError(err)
 	}
 
-	result := phpv.NewZArray()
+	result := phpv.NewZArrayTracked(ctx.Global().MemMgrTracker())
 	for _, v := range array.Iterate(ctx) {
 		// array_fill_keys converts values to string first for use as keys,
 		// so float 1.23 becomes string key "1.23" rather than int key 1.
@@ -1646,7 +1662,9 @@ func fncArrayFillKeys(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		if err != nil {
 			return nil, err
 		}
-		result.OffsetSet(ctx, keyStr, fillValue)
+		if err := result.OffsetSet(ctx, keyStr, fillValue); err != nil {
+			return nil, err
+		}
 	}
 	return result.ZVal(), nil
 }
@@ -1884,15 +1902,21 @@ func fncArrayPad(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		if padCount < 0 {
 			padCount = 0
 		}
-		result = phpv.NewZArray()
+		result = phpv.NewZArrayTracked(ctx.Global().MemMgrTracker())
 		for i := 0; i < padCount; i++ {
-			result.OffsetSet(ctx, nil, padValue)
+			if err := result.OffsetSet(ctx, nil, padValue); err != nil {
+				return nil, err
+			}
 		}
 		for k, v := range array.Iterate(ctx) {
 			if k.GetType() == phpv.ZtInt {
-				result.OffsetSet(ctx, nil, v)
+				if err := result.OffsetSet(ctx, nil, v); err != nil {
+					return nil, err
+				}
 			} else {
-				result.OffsetSet(ctx, k, v)
+				if err := result.OffsetSet(ctx, k, v); err != nil {
+					return nil, err
+				}
 			}
 		}
 	} else {
@@ -1902,7 +1926,9 @@ func fncArrayPad(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		}
 		result = array.Dup()
 		for i := 0; i < padCount; i++ {
-			result.OffsetSet(ctx, nil, padValue)
+			if err := result.OffsetSet(ctx, nil, padValue); err != nil {
+				return nil, err
+			}
 		}
 	}
 

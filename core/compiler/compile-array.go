@@ -86,7 +86,7 @@ type runArray struct {
 
 func (a runArray) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	var err error
-	array := phpv.NewZArray()
+	array := phpv.NewZArrayTracked(ctx.Global().MemMgrTracker())
 
 	for _, e := range a.e {
 		if e.spread {

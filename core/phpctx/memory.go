@@ -3,62 +3,96 @@ package phpctx
 import (
 	"fmt"
 	"io"
-	"sync"
+	"sync/atomic"
 
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
 type MemMgr struct {
-	limit uint64
-	cur   uint64
-	l     sync.Mutex
+	limit   int64 // -1 = unlimited, 0 = unlimited, >0 = limit in bytes
+	tracked int64 // current tracked PHP allocations (atomic)
+	peak    int64 // peak tracked (atomic)
 }
 
-func NewMemMgr(limit uint64) *MemMgr {
+func NewMemMgr(limit int64) *MemMgr {
 	return &MemMgr{limit: limit}
 }
 
-// SetLimit updates the memory limit. A limit of 0 means unlimited.
-func (m *MemMgr) SetLimit(limit uint64) {
-	m.l.Lock()
-	defer m.l.Unlock()
-	m.limit = limit
+// SetLimit updates the memory limit. A limit of 0 or -1 means unlimited.
+func (m *MemMgr) SetLimit(limit int64) {
+	atomic.StoreInt64(&m.limit, limit)
 }
 
-// Limit returns the current memory limit.
-func (m *MemMgr) Limit() uint64 {
-	m.l.Lock()
-	defer m.l.Unlock()
-	return m.limit
+// Limit returns the current memory limit in bytes (0 = unlimited).
+func (m *MemMgr) Limit() int64 {
+	return atomic.LoadInt64(&m.limit)
 }
 
-func (m *MemMgr) Alloc(ctx phpv.Context, s uint64) error {
-	m.l.Lock()
-	defer m.l.Unlock()
+// Alloc tracks a new PHP-level allocation of size bytes.
+// Returns a fatal PhpError if the allocation would exceed the memory limit.
+func (m *MemMgr) Alloc(size int64) error {
+	newTracked := atomic.AddInt64(&m.tracked, size)
 
-	return m.internalAlloc(s)
-}
-
-func (m *MemMgr) internalAlloc(s uint64) error {
-	if m.limit == 0 {
-		// no limit
-		m.cur = m.cur + s // we don't check for overflow
-		return nil
+	// Update peak
+	for {
+		oldPeak := atomic.LoadInt64(&m.peak)
+		if newTracked <= oldPeak {
+			break
+		}
+		if atomic.CompareAndSwapInt64(&m.peak, oldPeak, newTracked) {
+			break
+		}
 	}
 
-	// Check tracked allocations against limit
-	if m.cur >= m.limit || m.limit-m.cur < s {
-		return fmt.Errorf("Out of memory (currently allocated %d) (tried to allocate additional %d bytes)", m.cur, s)
+	// Check limit
+	limit := atomic.LoadInt64(&m.limit)
+	if limit <= 0 {
+		return nil // unlimited
 	}
-
-	// because s is below difference between m.limit and m.cur there won't be any overflow
-	m.cur += s
-
+	if newTracked > limit {
+		// Revert the allocation so the counter stays accurate
+		atomic.AddInt64(&m.tracked, -size)
+		return &phpv.PhpError{
+			Err:  fmt.Errorf("Allowed memory size of %d bytes exhausted (tried to allocate %d bytes)", limit, size),
+			Code: phpv.E_ERROR,
+		}
+	}
 	return nil
 }
 
+// Free releases a previously tracked allocation.
+func (m *MemMgr) Free(size int64) {
+	atomic.AddInt64(&m.tracked, -size)
+}
+
+// Usage returns the current tracked memory usage in bytes.
+func (m *MemMgr) Usage() int64 {
+	v := atomic.LoadInt64(&m.tracked)
+	if v < 0 {
+		return 0
+	}
+	return v
+}
+
+// PeakUsage returns the peak tracked memory usage in bytes.
+func (m *MemMgr) PeakUsage() int64 {
+	return atomic.LoadInt64(&m.peak)
+}
+
+// ResetPeak sets peak = current tracked usage.
+func (m *MemMgr) ResetPeak() {
+	cur := atomic.LoadInt64(&m.tracked)
+	atomic.StoreInt64(&m.peak, cur)
+}
+
+// MemAlloc implements phpv.MemTracker interface.
+func (m *MemMgr) MemAlloc(size int64) error { return m.Alloc(size) }
+
+// MemFree implements phpv.MemTracker interface.
+func (m *MemMgr) MemFree(size int64) { m.Free(size) }
+
+// Copy copies data from src to dst while tracking memory usage.
 func (m *MemMgr) Copy(dst io.Writer, src io.Reader) (written int64, err error) {
-	// io.Copy but with memory limit checks
 	buf := make([]byte, 32*1024)
 	for {
 		nr, er := src.Read(buf)
@@ -67,7 +101,7 @@ func (m *MemMgr) Copy(dst io.Writer, src io.Reader) (written int64, err error) {
 			if nw > 0 {
 				written += int64(nw)
 			}
-			if em := m.internalAlloc(uint64(nw)); em != nil {
+			if em := m.Alloc(int64(nw)); em != nil {
 				err = em
 				break
 			}

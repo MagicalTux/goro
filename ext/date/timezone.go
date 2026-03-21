@@ -887,6 +887,10 @@ func dateSunFunc(ctx phpv.Context, args []*phpv.ZVal, isSunrise bool) (*phpv.ZVa
 	if !math.IsNaN(utcOffset) {
 		ut += utcOffset
 	}
+	// If ut is infinite, NaN, or too extreme for the normalization loops, return false
+	if math.IsInf(ut, 0) || math.IsNaN(ut) || ut > 1e15 || ut < -1e15 {
+		return phpv.ZBool(false).ZVal(), nil
+	}
 	for ut < 0 {
 		ut += 24
 	}

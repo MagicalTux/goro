@@ -11,6 +11,17 @@ import (
 // array as the next element is already occupied" error.
 var ErrNextElementOccupied = errors.New("Cannot add element to the array as the next element is already occupied")
 
+// MemTracker is the interface used by ZHashTable to report memory
+// allocation and deallocation events to the PHP memory manager.
+type MemTracker interface {
+	MemAlloc(size int64) error
+	MemFree(size int64)
+}
+
+// memEstimatePerElement is the estimated bytes each hash table element
+// occupies (Go map entry + linked list node + ZVal wrapper).
+const memEstimatePerElement int64 = 128
+
 type hashTableVal struct {
 	prev, next *hashTableVal
 	k          Val
@@ -29,6 +40,8 @@ type ZHashTable struct {
 	_idx_i map[ZInt]*hashTableVal
 
 	mainIterator *zhashtableIterator
+
+	memTracker MemTracker // nil = no tracking
 }
 
 func NewHashTable() *ZHashTable {
@@ -40,6 +53,17 @@ func NewHashTable() *ZHashTable {
 	return n
 }
 
+// SetMemTracker sets the memory tracker for this hash table.
+// When set, the hash table reports element additions and removals.
+func (z *ZHashTable) SetMemTracker(mt MemTracker) {
+	z.memTracker = mt
+}
+
+// GetMemTracker returns the current memory tracker (may be nil).
+func (z *ZHashTable) GetMemTracker() MemTracker {
+	return z.memTracker
+}
+
 func (z *ZHashTable) Dup() *ZHashTable {
 	z.lock.Lock()
 	defer z.lock.Unlock()
@@ -49,13 +73,14 @@ func (z *ZHashTable) Dup() *ZHashTable {
 
 	// do not blindly copy all of z as it includes the lock
 	n := &ZHashTable{
-		first:  z.first,
-		last:   z.last,
-		inc:    z.inc,
-		count:  z.count,
-		cow:    true,
-		_idx_s: z._idx_s,
-		_idx_i: z._idx_i,
+		first:      z.first,
+		last:       z.last,
+		inc:        z.inc,
+		count:      z.count,
+		cow:        true,
+		_idx_s:     z._idx_s,
+		_idx_i:     z._idx_i,
+		memTracker: z.memTracker,
 	}
 
 	cur := z.mainIterator.cur
@@ -72,6 +97,8 @@ func (z *ZHashTable) Clear() {
 		z.doCopy()
 	}
 
+	oldCount := z.count
+
 	for _, v := range z._idx_i {
 		v.deleted = true
 	}
@@ -86,6 +113,10 @@ func (z *ZHashTable) Clear() {
 
 	clear(z._idx_i)
 	clear(z._idx_s)
+
+	if z.memTracker != nil && oldCount > 0 {
+		z.memTracker.MemFree(int64(oldCount) * memEstimatePerElement)
+	}
 }
 
 // Similar to Clear, but doesn't set the deleted flag
@@ -227,6 +258,14 @@ func (z *ZHashTable) SetString(k ZString, v *ZVal) error {
 		t.v.Set(v)
 		return nil
 	}
+
+	// Track new element allocation
+	if z.memTracker != nil {
+		if err := z.memTracker.MemAlloc(memEstimatePerElement); err != nil {
+			return err
+		}
+	}
+
 	// append
 	nt := &hashTableVal{k: k, v: v}
 	z.count += 1
@@ -272,6 +311,10 @@ func (z *ZHashTable) UnsetString(k ZString) error {
 	if t.next != nil {
 		t.next.prev = t.prev
 	}
+
+	if z.memTracker != nil {
+		z.memTracker.MemFree(memEstimatePerElement)
+	}
 	return nil
 }
 
@@ -303,6 +346,14 @@ func (z *ZHashTable) SetInt(k ZInt, v *ZVal) error {
 		t.v.Set(v)
 		return nil
 	}
+
+	// Track new element allocation
+	if z.memTracker != nil {
+		if err := z.memTracker.MemAlloc(memEstimatePerElement); err != nil {
+			return err
+		}
+	}
+
 	// append
 	nt := &hashTableVal{k: k, v: v}
 	z.count += 1
@@ -360,6 +411,10 @@ func (z *ZHashTable) UnsetInt(k ZInt) error {
 	if t.next != nil {
 		t.next.prev = t.prev
 	}
+
+	if z.memTracker != nil {
+		z.memTracker.MemFree(memEstimatePerElement)
+	}
 	return nil
 }
 
@@ -414,6 +469,13 @@ func (z *ZHashTable) Append(v *ZVal) error {
 			z.inc += 1
 		} else {
 			break
+		}
+	}
+
+	// Track new element allocation
+	if z.memTracker != nil {
+		if err := z.memTracker.MemAlloc(memEstimatePerElement); err != nil {
+			return err
 		}
 	}
 
@@ -595,6 +657,10 @@ func (z *ZHashTable) Shift() *ZVal {
 		i++
 	}
 	z.inc = i
+
+	if z.memTracker != nil {
+		z.memTracker.MemFree(memEstimatePerElement)
+	}
 
 	return val
 }

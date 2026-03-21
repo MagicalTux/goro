@@ -54,6 +54,8 @@ type Global struct {
 	deadlineDuration time.Duration
 	timerStart       time.Time
 	tickCount        uint32
+	baselineAlloc    uint64 // runtime.MemStats.Alloc at script start
+	lastMemCheck     uint64 // last observed Alloc from runtime
 
 	IniConfig phpv.IniConfig
 
@@ -123,6 +125,9 @@ type Global struct {
 
 	// Tick functions for declare(ticks=N)
 	tickFuncs []tickFuncEntry
+
+	// JSON encoding recursion detection across nested json_encode calls
+	jsonEncodingObjects map[phpv.ZObject]bool
 }
 
 type tickFuncEntry struct {
@@ -169,7 +174,7 @@ func createGlobal(p *Process) *Global {
 		globalLazyFunc:      make(map[phpv.ZString]*globalLazyOffset),
 		globalLazyClass:     make(map[phpv.ZString]*globalLazyOffset),
 		shownDeprecated:     make(map[string]struct{}),
-		mem:                 NewMemMgr(32 * 1024 * 1024), // limit in bytes TODO read memory_limit from process (.ini file)
+		mem:                 NewMemMgr(134217728), // 128MB default (PHP default memory_limit)
 
 		header: &phpv.HeaderContext{Headers: http.Header{}},
 
@@ -177,6 +182,9 @@ func createGlobal(p *Process) *Global {
 		nextResourceID: 4,
 	}
 	g.SetDeadline(g.start.Add(30 * time.Second))
+
+	// Record baseline memory so Tick() can measure per-script usage
+	g.InitBaselineMemory()
 
 	g.fileHandler, _ = stream.NewFileHandler("/")
 	g.streamHandlers["file"] = g.fileHandler
@@ -730,7 +738,7 @@ func (g *Global) SetLocalConfig(name phpv.ZString, value *phpv.ZVal) (*phpv.ZVal
 		if bytes <= 0 {
 			g.mem.SetLimit(0) // unlimited
 		} else {
-			g.mem.SetLimit(uint64(bytes))
+			g.mem.SetLimit(bytes)
 		}
 	}
 
@@ -902,7 +910,7 @@ func (g *Global) ApplyMaxMemoryLimit() {
 	if memBytes <= 0 {
 		g.mem.SetLimit(0)
 	} else {
-		g.mem.SetLimit(uint64(memBytes))
+		g.mem.SetLimit(memBytes)
 	}
 }
 
@@ -963,6 +971,11 @@ func (g *Global) Tick(ctx phpv.Context, l *phpv.Loc) error {
 		if time.Until(deadline) <= 0 {
 			seconds := math.Round(g.deadlineDuration.Seconds())
 			return &phperr.PhpTimeout{L: g.l, Seconds: int(seconds)}
+		}
+
+		// Check memory usage using the shared snapshot (updated by background goroutine)
+		if err := g.checkMemoryLimit(); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -1762,12 +1775,48 @@ func (g *Global) Global() phpv.GlobalContext {
 }
 
 func (g *Global) MemAlloc(ctx phpv.Context, s uint64) error {
-	return g.mem.Alloc(ctx, s)
+	return g.mem.Alloc(int64(s))
 }
 
 // MemLimit returns the current memory limit in bytes (0 = unlimited).
 func (g *Global) MemLimit() uint64 {
-	return g.mem.Limit()
+	l := g.mem.Limit()
+	if l < 0 {
+		return 0
+	}
+	return uint64(l)
+}
+
+// MemUsage returns the current tracked PHP memory usage in bytes.
+func (g *Global) MemUsage() int64 { return g.mem.Usage() }
+
+// MemPeakUsage returns the peak tracked PHP memory usage in bytes.
+func (g *Global) MemPeakUsage() int64 { return g.mem.PeakUsage() }
+
+// MemResetPeak sets peak = current tracked usage.
+func (g *Global) MemResetPeak() { g.mem.ResetPeak() }
+
+// MemMgr returns the memory manager, which implements phpv.MemTracker.
+func (g *Global) MemMgrTracker() phpv.MemTracker { return g.mem }
+
+// MarkJsonEncoding marks an object as currently being json-encoded.
+// Returns true if the object was already being encoded (recursion detected).
+func (g *Global) MarkJsonEncoding(obj phpv.ZObject) bool {
+	if g.jsonEncodingObjects == nil {
+		g.jsonEncodingObjects = make(map[phpv.ZObject]bool)
+	}
+	if g.jsonEncodingObjects[obj] {
+		return true // recursion
+	}
+	g.jsonEncodingObjects[obj] = true
+	return false
+}
+
+// UnmarkJsonEncoding removes the json-encoding mark from an object.
+func (g *Global) UnmarkJsonEncoding(obj phpv.ZObject) {
+	if g.jsonEncodingObjects != nil {
+		delete(g.jsonEncodingObjects, obj)
+	}
 }
 
 // GetIncludedFiles returns a list of all included/required file paths.

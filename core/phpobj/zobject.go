@@ -415,6 +415,12 @@ func NewZObject(ctx phpv.Context, c phpv.ZClass, args ...*phpv.ZVal) (*ZObject, 
 		return nil, err
 	}
 
+	// Track object memory allocation
+	if mt := ctx.Global().MemMgrTracker(); mt != nil {
+		propCount := int64(n.h.Count())
+		mt.MemAlloc(256 + propCount*64)
+	}
+
 	// Pre-set file/line for Exception/Error subclasses.
 	// PHP sets these during object creation (before the constructor runs),
 	// so even if a subclass overrides __construct without calling parent,

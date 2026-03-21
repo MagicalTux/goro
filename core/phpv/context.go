@@ -147,6 +147,9 @@ type GlobalContext interface {
 
 	GetIncludedFiles() []string
 
+	// MemMgrTracker returns the memory tracker for PHP-level allocation tracking.
+	MemMgrTracker() MemTracker
+
 	LastCallable() Callable
 	ClearLastCallable()
 

@@ -428,15 +428,9 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 				return false
 			},
 			"memory_limit": func(v string) bool {
-				// memory_limit enforcement is not implemented. Tests that set
-				// a low memory_limit expect the engine to throw a fatal OOM
-				// error, which we can't do. Skip any test that sets a specific
-				// limit (but accept -1 or very large values).
-				lv := strings.TrimSpace(v)
-				if lv == "-1" || lv == "" {
-					return false // unlimited or default, safe to accept
-				}
-				return true // any specific limit, skip
+				// memory_limit is now enforced via runtime memory checking
+				// in the Tick() handler. Accept all values.
+				return false
 			},
 			// file_uploads: accepted for all values — tests needing upload
 			// infrastructure also set upload_max_filesize or upload_tmp_dir

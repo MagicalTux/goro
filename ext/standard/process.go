@@ -5,6 +5,7 @@ import (
 	"runtime"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpctx"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -26,20 +27,28 @@ func fncMemoryGetUsage(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 		return nil, err
 	}
 
-	var m runtime.MemStats
-	runtime.ReadMemStats(&m)
-
 	if realUsage != nil && *realUsage {
+		var m runtime.MemStats
+		runtime.ReadMemStats(&m)
 		return phpv.ZInt(m.HeapSys).ZVal(), nil
 	}
+
+	// Return PHP-level tracked memory usage
+	if g, ok := ctx.Global().(*phpctx.Global); ok {
+		return phpv.ZInt(g.MemUsage()).ZVal(), nil
+	}
+
+	// Fallback to runtime stats
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
 	return phpv.ZInt(m.HeapAlloc).ZVal(), nil
 }
 
 // > func void memory_reset_peak_usage ( void )
 func fncMemoryResetPeakUsage(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	// Go's runtime doesn't support resetting peak memory tracking.
-	// Run GC to free memory so that subsequent peak usage reads are lower.
-	runtime.GC()
+	if g, ok := ctx.Global().(*phpctx.Global); ok {
+		g.MemResetPeak()
+	}
 	return nil, nil
 }
 
@@ -51,14 +60,19 @@ func fncMemoryGetPeakUsage(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, err
 		return nil, err
 	}
 
-	var m runtime.MemStats
-	runtime.ReadMemStats(&m)
-
 	if realUsage != nil && *realUsage {
-		// Go doesn't track peak HeapSys separately; use HeapSys as approximation
+		var m runtime.MemStats
+		runtime.ReadMemStats(&m)
 		return phpv.ZInt(m.HeapSys).ZVal(), nil
 	}
-	// TotalAlloc is cumulative bytes allocated (never decreases), serves as
-	// an approximation of peak usage since Go doesn't track peak HeapAlloc.
+
+	// Return PHP-level tracked peak memory usage
+	if g, ok := ctx.Global().(*phpctx.Global); ok {
+		return phpv.ZInt(g.MemPeakUsage()).ZVal(), nil
+	}
+
+	// Fallback to runtime stats
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
 	return phpv.ZInt(m.TotalAlloc).ZVal(), nil
 }

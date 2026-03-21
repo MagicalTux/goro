@@ -69,6 +69,14 @@ func NewZArray() *ZArray {
 	return &ZArray{h: NewHashTable()}
 }
 
+// NewZArrayTracked creates a new ZArray with memory tracking enabled.
+// The tracker is notified when elements are added or removed.
+func NewZArrayTracked(mt MemTracker) *ZArray {
+	h := NewHashTable()
+	h.SetMemTracker(mt)
+	return &ZArray{h: h}
+}
+
 func (a *ZArray) String() string {
 	return "Array"
 }

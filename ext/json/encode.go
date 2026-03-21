@@ -5,6 +5,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpctx"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
@@ -94,11 +95,21 @@ func appendJsonEncodeState(ctx phpv.Context, r []byte, v *phpv.ZVal, opt JsonEnc
 			return r, ErrUnsupportedType
 		}
 
-		// Check for recursion: if we're already encoding this object, bail out
+		// Check for recursion: if we're already encoding this object, bail out.
+		// This checks both the local jsonState (same json_encode call) and
+		// the global context (nested json_encode calls via JsonSerializable).
 		if st.markObject(obj) {
 			return r, ErrRecursion
 		}
 		defer st.unmarkObject(obj)
+
+		// Check cross-call recursion (e.g., JsonSerializable calling json_encode($this))
+		if g, ok := ctx.Global().(*phpctx.Global); ok {
+			if g.MarkJsonEncoding(obj) {
+				return r, ErrRecursion
+			}
+			defer g.UnmarkJsonEncoding(obj)
+		}
 
 		// Check for enum types
 		if obj.GetClass().GetType().Has(phpv.ZClassTypeEnum) {
