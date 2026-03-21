@@ -111,6 +111,15 @@ func (h *phpHandler) Open(ctx phpv.Context, p *url.URL, mode string, _ ...phpv.R
 		s.SetAttr("mode", "rb")
 		s.ResourceType = phpv.ResourceStream
 		return s, nil
+	case "temp", "memory":
+		// php://temp and php://memory both provide read-write temporary streams
+		// php://temp may use a temporary file for large data, but we use in-memory for both
+		buf := &readWriteBuffer{Buffer: bytes.NewBuffer(nil)}
+		s := NewStream(buf)
+		s.SetAttr("stream_type", "TEMP")
+		s.SetAttr("mode", "w+b")
+		s.ResourceType = phpv.ResourceStream
+		return s, nil
 	default:
 		return nil, os.ErrNotExist
 	}
@@ -132,4 +141,40 @@ func (f *phpHandler) Stat(p *url.URL) (os.FileInfo, error) {
 
 func (f *phpHandler) Lstat(p *url.URL) (os.FileInfo, error) {
 	return nil, ErrNotSupported
+}
+
+// readWriteBuffer implements a seekable read-write in-memory buffer for php://temp and php://memory
+type readWriteBuffer struct {
+	*bytes.Buffer
+	pos int
+}
+
+func (b *readWriteBuffer) Read(p []byte) (int, error) {
+	data := b.Buffer.Bytes()
+	if b.pos >= len(data) {
+		return 0, nil
+	}
+	n := copy(p, data[b.pos:])
+	b.pos += n
+	return n, nil
+}
+
+func (b *readWriteBuffer) Write(p []byte) (int, error) {
+	// Ensure we write at the current position
+	data := b.Buffer.Bytes()
+	if b.pos < len(data) {
+		// Overwrite from pos
+		end := b.pos + len(p)
+		if end <= len(data) {
+			copy(data[b.pos:end], p)
+		} else {
+			copy(data[b.pos:], p[:len(data)-b.pos])
+			b.Buffer.Write(p[len(data)-b.pos:])
+		}
+	} else {
+		// Append
+		b.Buffer.Write(p)
+	}
+	b.pos += len(p)
+	return len(p), nil
 }

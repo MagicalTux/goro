@@ -1531,8 +1531,12 @@ func parseClassLine(class *phpobj.ZClass, c compileCtx) error {
 		// Validate that self/parent/static aren't used as parent class names
 		switch class.ExtendsStr.ToLower() {
 		case "self", "parent", "static":
+			noun := "class"
+			if class.Type == phpv.ZClassTypeInterface {
+				noun = "interface"
+			}
 			return &phpv.PhpError{
-				Err:  fmt.Errorf("Cannot use \"%s\" as class name, as it is reserved", class.ExtendsStr),
+				Err:  fmt.Errorf("Cannot use \"%s\" as %s name, as it is reserved", class.ExtendsStr, noun),
 				Code: phpv.E_COMPILE_ERROR,
 				Loc:  i.Loc(),
 			}

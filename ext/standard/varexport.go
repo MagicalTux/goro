@@ -44,8 +44,24 @@ func doVarExport(ctx phpv.Context, w io.Writer, z *phpv.ZVal, linePfx string, re
 		recurs = n
 	}
 
-	p := uintptr(unsafe.Pointer(z))
-	if _, n := recurs[p]; n {
+	// For circular reference detection, we need to check the underlying value pointer
+	// for arrays and objects, not the ZVal wrapper pointer. When references are used
+	// (e.g., $a[] =& $a), the same underlying array/object is wrapped in different ZVal objects.
+	var valuePtr uintptr
+	switch z.GetType() {
+	case phpv.ZtArray:
+		valuePtr = uintptr(unsafe.Pointer(z.Value().(*phpv.ZArray)))
+	case phpv.ZtObject:
+		if obj, ok := z.Value().(*phpobj.ZObject); ok {
+			valuePtr = uintptr(unsafe.Pointer(obj))
+		} else {
+			valuePtr = uintptr(unsafe.Pointer(z))
+		}
+	default:
+		valuePtr = uintptr(unsafe.Pointer(z))
+	}
+
+	if _, found := recurs[valuePtr]; found {
 		if err := ctx.Warn("var_export does not handle circular references", logopt.NoFuncName(true)); err != nil {
 			return err
 		}
@@ -82,7 +98,7 @@ func doVarExport(ctx phpv.Context, w io.Writer, z *phpv.ZVal, linePfx string, re
 		s := z.Value().(phpv.ZString)
 		fmt.Fprintf(w, "%s", varExportString(string(s)))
 	case phpv.ZtArray:
-		p := uintptr(unsafe.Pointer(z))
+		p := uintptr(unsafe.Pointer(z.Value().(*phpv.ZArray)))
 		recurs[p] = true
 
 		if linePfx != "" {
@@ -116,8 +132,11 @@ func doVarExport(ctx phpv.Context, w io.Writer, z *phpv.ZVal, linePfx string, re
 		}
 		fmt.Fprintf(w, "%s)", linePfx)
 	case phpv.ZtObject:
-		p := uintptr(unsafe.Pointer(z))
-		recurs[p] = true
+		if obj, ok := z.Value().(*phpobj.ZObject); ok {
+			recurs[uintptr(unsafe.Pointer(obj))] = true
+		} else {
+			recurs[uintptr(unsafe.Pointer(z))] = true
+		}
 
 		v := z.Value()
 		// Check if this is an enum case - var_export prints \ClassName::CaseName
@@ -137,9 +156,17 @@ func doVarExport(ctx phpv.Context, w io.Writer, z *phpv.ZVal, linePfx string, re
 		if obj, ok := v.(*phpobj.ZObject); ok {
 			className := obj.Class.GetName()
 			if className == "stdClass" {
-				fmt.Fprintf(w, "(object) array(\n")
+				if linePfx != "" {
+					fmt.Fprintf(w, "\n%s(object) array(\n", linePfx)
+				} else {
+					fmt.Fprintf(w, "(object) array(\n")
+				}
 			} else {
-				fmt.Fprintf(w, "\\%s::__set_state(array(\n", className)
+				if linePfx != "" {
+					fmt.Fprintf(w, "\n%s\\%s::__set_state(array(\n", linePfx, className)
+				} else {
+					fmt.Fprintf(w, "\\%s::__set_state(array(\n", className)
+				}
 			}
 		} else {
 			fmt.Fprintf(w, "%sarray(\n", linePfx)

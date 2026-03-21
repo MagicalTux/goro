@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"fmt"
 	"io"
 
 	"github.com/MagicalTux/goro/core/phperr"
@@ -108,23 +109,29 @@ func (r *runSwitch) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		bl := r.blocks[idx]
 		_, err = bl.code.Run(ctx)
 		if err != nil {
-			e := r.l.Error(ctx, err)
-			err = e
-			switch br := e.Err.(type) {
+			// Check for break/continue without wrapping (preserves exception types for try/catch)
+			var innerErr error = err
+			if pe, ok := err.(*phpv.PhpError); ok {
+				innerErr = pe.Err
+			}
+			switch br := innerErr.(type) {
 			case *phperr.PhpBreak:
 				if br.Intv > 1 {
 					br.Intv -= 1
 					return nil, br
 				}
+				// break 1 = break out of switch
+				return nil, nil
 			case *phperr.PhpContinue:
 				if br.Intv > 1 {
 					br.Intv -= 1
 					return nil, br
 				}
+				// continue 1 in switch = break (PHP behavior)
+				return nil, nil
 			default:
 				return nil, err
 			}
-			break
 		}
 	}
 
@@ -170,6 +177,8 @@ func compileSwitch(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		return nil, err
 	}
 
+	hasDefault := false
+
 	for {
 
 		if (altForm && i.Type == tokenizer.T_ENDSWITCH) || (!altForm && i.IsSingle('}')) {
@@ -186,6 +195,14 @@ func compileSwitch(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 				return nil, err
 			}
 		case tokenizer.T_DEFAULT:
+			if hasDefault {
+				return nil, &phpv.PhpError{
+					Err:  fmt.Errorf("Switch statements may only contain one default clause"),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  i.Loc(),
+				}
+			}
+			hasDefault = true
 		default:
 			return sw, i.Unexpected()
 		}

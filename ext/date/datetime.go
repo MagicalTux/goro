@@ -18,7 +18,7 @@ var DateInterval *phpobj.ZClass
 var DateTimeZone *phpobj.ZClass
 var DatePeriod *phpobj.ZClass
 
-func parseDateTimeWithTz(ctx phpv.Context, args []*phpv.ZVal) time.Time {
+func parseDateTimeWithTz(ctx phpv.Context, args []*phpv.ZVal) (time.Time, error) {
 	var t time.Time
 
 	// Determine timezone: if second arg is a DateTimeZone, use it; otherwise use configured tz
@@ -34,7 +34,7 @@ func parseDateTimeWithTz(ctx phpv.Context, args []*phpv.ZVal) time.Time {
 	if len(args) > 0 && !args[0].IsNull() {
 		dateStr := args[0].AsString(ctx)
 		if string(dateStr) == "now" || string(dateStr) == "" {
-			return time.Now().In(loc)
+			return time.Now().In(loc), nil
 		}
 
 		// Handle @timestamp - PHP always uses UTC (+00:00) for these
@@ -44,7 +44,7 @@ func parseDateTimeWithTz(ctx phpv.Context, args []*phpv.ZVal) time.Time {
 			if err == nil && ts == 1 {
 				var tsVal int64
 				fmt.Sscanf(s[1:], "%d", &tsVal)
-				return time.Unix(tsVal, 0).In(time.FixedZone("+00:00", 0))
+				return time.Unix(tsVal, 0).In(time.FixedZone("+00:00", 0)), nil
 			}
 		}
 
@@ -52,7 +52,7 @@ func parseDateTimeWithTz(ctx phpv.Context, args []*phpv.ZVal) time.Time {
 		// (the strtotime library converts abbreviations to full timezone names)
 		base := time.Now().In(loc)
 		if parsed, ok := strToTime(s, base); ok {
-			return parsed
+			return parsed, nil
 		}
 		// Use strtotime library for relative dates and complex formats
 		if parsed, stErr := strtotime.StrToTime(s, strtotime.InTZ(loc), strtotime.Rel(base)); stErr == nil {
@@ -60,9 +60,9 @@ func parseDateTimeWithTz(ctx phpv.Context, args []*phpv.ZVal) time.Time {
 			// the string contained a timezone - keep it.
 			// Otherwise, apply the configured/requested timezone.
 			if parsed.Location().String() != base.Location().String() {
-				return parsed
+				return parsed, nil
 			}
-			return parsed.In(loc)
+			return parsed.In(loc), nil
 		}
 		// Last resort: try Go's built-in formats
 		for _, layout := range []string{
@@ -77,11 +77,28 @@ func parseDateTimeWithTz(ctx phpv.Context, args []*phpv.ZVal) time.Time {
 			}
 		}
 		if t.IsZero() {
-			t = time.Now().In(loc)
+			// Parse failed: throw DateMalformedStringException (PHP 8.3+)
+			pos := 0
+			ch := ""
+			for i, c := range s {
+				if c < '0' || c > '9' {
+					if c != '-' || i > 4 {
+						pos = i
+						ch = string(c)
+						break
+					}
+				}
+			}
+			if ch == "" && len(s) > 0 {
+				pos = len(s) - 1
+				ch = string(s[pos])
+			}
+			msg := fmt.Sprintf("Failed to parse time string (%s) at position %d (%s): Unexpected character", s, pos, ch)
+			return t, phpobj.ThrowError(ctx, DateMalformedStringException, msg)
 		}
-		return t
+		return t, nil
 	}
-	return time.Now().In(loc)
+	return time.Now().In(loc), nil
 }
 
 func getTime(this *phpobj.ZObject) (time.Time, bool) {
@@ -176,13 +193,16 @@ func modifyMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*p
 		return phpv.ZBool(false).ZVal(), nil
 	}
 	modifier := args[0].AsString(ctx)
+	if len(modifier) == 0 {
+		return nil, phpobj.ThrowError(ctx, DateMalformedStringException, "DateTime::modify(): Failed to parse time string () at position 0 ( ): Empty string")
+	}
 	newT, stErr := strtotime.StrToTime(string(modifier), strtotime.InTZ(t.Location()), strtotime.Rel(t))
 	if stErr != nil {
 		// Fallback to custom parser
 		var ok bool
 		newT, ok = strToTime(string(modifier), t)
 		if !ok {
-			return phpv.ZBool(false).ZVal(), nil
+			return nil, phpobj.ThrowError(ctx, DateMalformedStringException, fmt.Sprintf("DateTime::modify(): Failed to parse time string (%s) at position 0 (%s): Unexpected character", modifier, string(modifier[0:1])))
 		}
 	}
 	setTimeVal(this, newT)
@@ -199,12 +219,15 @@ func modifyImmutableMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.
 		return phpv.ZBool(false).ZVal(), nil
 	}
 	modifier := args[0].AsString(ctx)
+	if len(modifier) == 0 {
+		return nil, phpobj.ThrowError(ctx, DateMalformedStringException, "DateTimeImmutable::modify(): Failed to parse time string () at position 0 ( ): Empty string")
+	}
 	newT, stErr := strtotime.StrToTime(string(modifier), strtotime.InTZ(t.Location()), strtotime.Rel(t))
 	if stErr != nil {
 		var ok bool
 		newT, ok = strToTime(string(modifier), t)
 		if !ok {
-			return phpv.ZBool(false).ZVal(), nil
+			return nil, phpobj.ThrowError(ctx, DateMalformedStringException, fmt.Sprintf("DateTimeImmutable::modify(): Failed to parse time string (%s) at position 0 (%s): Unexpected character", modifier, string(modifier[0:1])))
 		}
 	}
 	newObj, err := phpobj.NewZObject(ctx, DateTimeImmutable)
@@ -1400,7 +1423,10 @@ func init() {
 					if len(args) > 2 {
 						return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, fmt.Sprintf("DateTime::__construct() expects at most 2 arguments, %d given", len(args)))
 					}
-					t := parseDateTimeWithTz(ctx, args)
+					t, err2 := parseDateTimeWithTz(ctx, args)
+					if err2 != nil {
+						return nil, err2
+					}
 					setTimeVal(this, t)
 					return nil, nil
 				}),
@@ -1545,7 +1571,10 @@ func init() {
 					if len(args) > 2 {
 						return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, fmt.Sprintf("DateTimeImmutable::__construct() expects at most 2 arguments, %d given", len(args)))
 					}
-					t := parseDateTimeWithTz(ctx, args)
+					t, err2 := parseDateTimeWithTz(ctx, args)
+					if err2 != nil {
+						return nil, err2
+					}
 					setTimeVal(this, t)
 					return nil, nil
 				}),
@@ -1911,8 +1940,15 @@ func dateIntervalConstruct(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.
 	}
 	spec := string(args[0].AsString(ctx))
 	// Parse ISO 8601 duration: P1Y2M3DT4H5M6S
-	if len(spec) < 2 || spec[0] != 'P' {
-		return nil, phpobj.ThrowError(ctx, phpobj.Error, "DateInterval::__construct(): Unknown or bad format ("+spec+")")
+	if len(spec) == 0 {
+		return nil, phpobj.ThrowError(ctx, DateMalformedIntervalStringException, "Unknown or bad format ("+spec+")")
+	}
+	if spec[0] != 'P' {
+		// Not a proper ISO 8601 duration - could be a datetime string
+		return nil, phpobj.ThrowError(ctx, DateMalformedIntervalStringException, "Failed to parse interval ("+spec+")")
+	}
+	if len(spec) < 2 {
+		return nil, phpobj.ThrowError(ctx, DateMalformedIntervalStringException, "Unknown or bad format ("+spec+")")
 	}
 	// Simple parser for PnYnMnDTnHnMnS
 	inTime := false
@@ -2047,9 +2083,10 @@ func createDateIntervalFromString(ctx phpv.Context, dateStr string) (*phpv.ZVal,
 
 	// Parse relative date strings
 	// Parse simple formats like "N unit" (e.g., "2 days", "1 month")
-	dateStr = strings.TrimSpace(strings.ToLower(dateStr))
-	parts := strings.Fields(dateStr)
+	trimmed := strings.TrimSpace(strings.ToLower(dateStr))
+	parts := strings.Fields(trimmed)
 
+	parsed := false
 	for i := 0; i < len(parts); i++ {
 		num := 0
 		// Try to parse a number
@@ -2060,20 +2097,37 @@ func createDateIntervalFromString(ctx phpv.Context, dateStr string) (*phpv.ZVal,
 				switch {
 				case strings.HasPrefix(unit, "year"):
 					obj.HashTable().SetString("y", phpv.ZInt(num).ZVal())
+					parsed = true
 				case strings.HasPrefix(unit, "month"):
 					obj.HashTable().SetString("m", phpv.ZInt(num).ZVal())
+					parsed = true
 				case strings.HasPrefix(unit, "day"):
 					obj.HashTable().SetString("d", phpv.ZInt(num).ZVal())
+					parsed = true
 				case strings.HasPrefix(unit, "hour"):
 					obj.HashTable().SetString("h", phpv.ZInt(num).ZVal())
+					parsed = true
 				case strings.HasPrefix(unit, "minute") || strings.HasPrefix(unit, "min"):
 					obj.HashTable().SetString("i", phpv.ZInt(num).ZVal())
+					parsed = true
 				case strings.HasPrefix(unit, "second") || strings.HasPrefix(unit, "sec"):
 					obj.HashTable().SetString("s", phpv.ZInt(num).ZVal())
+					parsed = true
 				case strings.HasPrefix(unit, "week"):
 					obj.HashTable().SetString("d", phpv.ZInt(num*7).ZVal())
+					parsed = true
 				}
 			}
+		}
+	}
+
+	if !parsed && len(trimmed) > 0 {
+		// Try to use strtotime to parse relative expressions
+		_, stErr := strtotime.StrToTime(dateStr)
+		if stErr != nil {
+			return nil, phpobj.ThrowError(ctx, DateMalformedIntervalStringException,
+				fmt.Sprintf("Unknown or bad format (%s) at position 0 (%s): The timezone could not be found in the database",
+					dateStr, string(dateStr[0:1])))
 		}
 	}
 

@@ -895,7 +895,13 @@ func fncArrayPush(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	for i := 1; i < len(args); i++ {
-		array.Get().OffsetSet(ctx, nil, args[i])
+		err = array.Get().OffsetSet(ctx, nil, args[i])
+		if err != nil {
+			if err == phpv.ErrNextElementOccupied {
+				return nil, phpobj.ThrowError(ctx, phpobj.Error, err.Error())
+			}
+			return nil, err
+		}
 	}
 
 	return phpv.ZInt(array.Get().Count(ctx)).ZVal(), nil
@@ -1135,7 +1141,7 @@ func fncArraySearch(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // > func mixed key ( array $array )
 func fncArrayKey(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) > 0 && args[0] != nil && args[0].GetType() == phpv.ZtObject {
-		ctx.Deprecated("key(): Calling key() on an object is deprecated")
+		ctx.Deprecated("Calling key() on an object is deprecated")
 	}
 	var array *phpv.ZArray
 	_, err := core.Expand(ctx, args, &array)
@@ -1157,7 +1163,7 @@ func fncArrayKey(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // > alias pos
 func fncArrayCurrent(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) > 0 && args[0] != nil && args[0].GetType() == phpv.ZtObject {
-		ctx.Deprecated("current(): Calling current() on an object is deprecated")
+		ctx.Deprecated("Calling current() on an object is deprecated")
 	}
 	var array *phpv.ZArray
 	_, err := core.Expand(ctx, args, &array)
@@ -1180,7 +1186,7 @@ func fncArrayCurrent(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 func fncArrayNext(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	// PHP 8.5: calling next() on an object is deprecated
 	if len(args) > 0 && args[0] != nil && args[0].GetType() == phpv.ZtObject {
-		ctx.Deprecated("next(): Calling next() on an object is deprecated")
+		ctx.Deprecated("Calling next() on an object is deprecated")
 	}
 
 	var array core.Ref[*phpv.ZArray]
@@ -1204,7 +1210,7 @@ func fncArrayNext(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // > func mixed prev ( array &$array )
 func fncArrayPrev(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) > 0 && args[0] != nil && args[0].GetType() == phpv.ZtObject {
-		ctx.Deprecated("prev(): Calling prev() on an object is deprecated")
+		ctx.Deprecated("Calling prev() on an object is deprecated")
 	}
 	var array core.Ref[*phpv.ZArray]
 	_, err := core.Expand(ctx, args, &array)
@@ -1225,7 +1231,7 @@ func fncArrayPrev(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // > func mixed reset ( array &$array )
 func fncArrayReset(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) > 0 && args[0] != nil && args[0].GetType() == phpv.ZtObject {
-		ctx.Deprecated("reset(): Calling reset() on an object is deprecated")
+		ctx.Deprecated("Calling reset() on an object is deprecated")
 	}
 	var array core.Ref[*phpv.ZArray]
 	_, err := core.Expand(ctx, args, &array)
@@ -1249,7 +1255,7 @@ func fncArrayReset(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // > func mixed end ( array &$array )
 func fncArrayEnd(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) > 0 && args[0] != nil && args[0].GetType() == phpv.ZtObject {
-		ctx.Deprecated("end(): Calling end() on an object is deprecated")
+		ctx.Deprecated("Calling end() on an object is deprecated")
 	}
 	var array core.Ref[*phpv.ZArray]
 	_, err := core.Expand(ctx, args, &array)

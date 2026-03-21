@@ -34,14 +34,21 @@ func (h *TypeHint) IsNullable() bool {
 	if h.Nullable {
 		return true
 	}
+	// Intersection types (A&B) are never nullable (they require concrete objects)
+	if len(h.Intersection) > 0 {
+		return false
+	}
+	// Union types: nullability is determined by members, not the wrapper's zero-value t field
+	if len(h.Union) > 0 {
+		for _, u := range h.Union {
+			if u.t == ZtNull || u.IsNullable() {
+				return true
+			}
+		}
+		return false
+	}
 	if h.t == ZtMixed || h.t == ZtNull {
 		return true
-	}
-	// Check if any union member is null
-	for _, u := range h.Union {
-		if u.t == ZtNull || u.IsNullable() {
-			return true
-		}
 	}
 	return false
 }

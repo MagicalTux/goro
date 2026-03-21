@@ -331,10 +331,12 @@ func ExpandAt(ctx phpv.Context, args []*phpv.ZVal, i int, out interface{}) error
 	}
 
 	if len(args) <= i {
-		// not enough arguments, such errors in PHP can be returned as either:
-		// Uncaught ArgumentCountError: Too few arguments to function toto(), 0 passed
-		// x() expects at least 2 parameters, 0 given
-		return ctx.FuncError(ErrNotEnoughArguments)
+		// PHP 8: Too few arguments throws ArgumentCountError (catchable)
+		funcName := ctx.GetFuncName()
+		if funcName == "" {
+			return phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "Too few arguments")
+		}
+		return phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "Too few arguments to function "+funcName+"(), "+phpv.ZInt(len(args)).String()+" passed and at least "+phpv.ZInt(i+1).String()+" expected")
 	}
 
 	if args[i] == nil {
@@ -354,7 +356,8 @@ func ExpandAt(ctx phpv.Context, args []*phpv.ZVal, i int, out interface{}) error
 		if _, ok := err.(*phperr.PhpThrow); ok {
 			return err
 		}
-		return ctx.Error(err)
+		// Type conversion errors during parameter expansion should be TypeError (catchable)
+		return phpobj.ThrowError(ctx, phpobj.TypeError, err.Error())
 	}
 
 	if isRef {

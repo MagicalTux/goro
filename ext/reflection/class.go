@@ -489,6 +489,11 @@ func reflectionClassNewInstanceWithoutConstructor(ctx phpv.Context, o *phpobj.ZO
 		return nil, phpobj.ThrowError(ctx, ReflectionException, "Internal error: Failed to retrieve the reflection object")
 	}
 
+	// Enums cannot be instantiated
+	if class.GetType().Has(phpv.ZClassTypeEnum) {
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Cannot instantiate enum %s", class.GetName()))
+	}
+
 	obj, err := phpobj.CreateZObject(ctx, class)
 	if err != nil {
 		return nil, err

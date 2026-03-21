@@ -318,6 +318,24 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 				return c.fatalError(ctx, fmt.Sprintf("Cannot override final property %s::$%s", c.Extends.Name, childProp.VarName))
 			}
 
+			// Check property type invariance: child type must match parent type exactly
+			// (bidirectional check: both must accept the same set of values)
+			if parentProp.TypeHint != nil || childProp.TypeHint != nil {
+				if parentProp.TypeHint == nil && childProp.TypeHint != nil {
+					return c.fatalError(ctx, fmt.Sprintf("Type of %s::$%s must be omitted to match the parent definition in class %s", c.Name, childProp.VarName, c.Extends.Name))
+				}
+				if parentProp.TypeHint != nil && childProp.TypeHint == nil {
+					return c.fatalError(ctx, fmt.Sprintf("Type of %s::$%s must be %s (as in class %s)", c.Name, childProp.VarName, parentProp.TypeHint.String(), c.Extends.Name))
+				}
+				if parentProp.TypeHint != nil && childProp.TypeHint != nil {
+					// Semantic comparison: each must be a widening of the other (both directions)
+					if !typeHintIsWidening(ctx, childProp.TypeHint, parentProp.TypeHint) ||
+						!typeHintIsWidening(ctx, parentProp.TypeHint, childProp.TypeHint) {
+						return c.fatalError(ctx, fmt.Sprintf("Type of %s::$%s must be %s (as in class %s)", c.Name, childProp.VarName, parentProp.TypeHint.String(), c.Extends.Name))
+					}
+				}
+			}
+
 			// Check asymmetric set visibility override compatibility
 			childSetAccess := childProp.SetModifiers & phpv.ZAttrAccess
 
@@ -1589,6 +1607,10 @@ func (c *ZClass) checkMethodCompatibility(ctx phpv.Context, child *phpv.ZClassMe
 			}
 			if ph == nil && ch != nil {
 				// Child adds type hint where parent had none — narrowing, incompatible
+				// Exception: "mixed" accepts everything, same as no type
+				if ch.Type() == phpv.ZtMixed {
+					continue
+				}
 				incompatible = true
 				break
 			}
@@ -1617,7 +1639,10 @@ func (c *ZClass) checkMethodCompatibility(ctx phpv.Context, child *phpv.ZClassMe
 			// Both have return types — child's return type must be a subtype of parent's
 			// (covariance: child must be narrower or equal)
 			// Special case: 'never' is the bottom type, always a valid covariant return type
-			if childRT.Type() != phpv.ZtNever && !typeHintIsWidening(ctx, parentRT, childRT) {
+			// Special case: 'void' can only be returned by void parents (not mixed)
+			if childRT.Type() == phpv.ZtVoid && parentRT.Type() != phpv.ZtVoid {
+				incompatible = true
+			} else if childRT.Type() != phpv.ZtNever && childRT.Type() != phpv.ZtVoid && !typeHintIsWidening(ctx, parentRT, childRT) {
 				incompatible = true
 			}
 		} else if parentRT != nil && childRT == nil {
@@ -1993,7 +2018,9 @@ func flattenTypeHint(h *phpv.TypeHint) []*phpv.TypeHint {
 	return []*phpv.TypeHint{h}
 }
 
-// typeHintContains checks if a type hint (possibly union) contains a specific single type.
+// typeHintContains checks if a type hint (possibly union/intersection) contains a specific single type.
+// "Contains" means: every value satisfying h also satisfies target.
+// For intersection types A&B, every value satisfying A&B also satisfies A (since it must implement both).
 func typeHintContains(ctx phpv.Context, h *phpv.TypeHint, target *phpv.TypeHint) bool {
 	if len(h.Union) > 0 {
 		for _, u := range h.Union {
@@ -2003,18 +2030,110 @@ func typeHintContains(ctx phpv.Context, h *phpv.TypeHint, target *phpv.TypeHint)
 		}
 		return false
 	}
+
+	// If h is an intersection type (A&B&C), h only accepts values that satisfy ALL members.
+	// So h "contains" target only if target values satisfy every member of h.
+	// For target to satisfy a member, each member must "contain" target.
+	if len(h.Intersection) > 0 {
+		if len(target.Intersection) > 0 {
+			// Both are intersections: h=A&B contains target=X&Y if for every member of h,
+			// target as a whole satisfies it. Target=X&Y satisfies member A if any of X,Y
+			// is a subtype of A.
+			for _, hp := range h.Intersection {
+				found := false
+				for _, tp := range target.Intersection {
+					if typeHintContains(ctx, hp, tp) {
+						found = true
+						break
+					}
+				}
+				if !found {
+					return false
+				}
+			}
+			return true
+		}
+		// target is a single type: h (A&B) contains target only if target satisfies
+		// every member of h. E.g., h=A&B, target=C: only if C is subtype of both A and B.
+		for _, part := range h.Intersection {
+			if !typeHintContains(ctx, part, target) {
+				return false
+			}
+		}
+		return true
+	}
+
 	if h.Type() == phpv.ZtMixed {
 		return true
 	}
+
+	// If target is an intersection (X&Y), every value of type X&Y satisfies each
+	// member individually. So h accepts X&Y if h accepts at least one member.
+	// For example: h=X accepts target=X&Y because every X&Y value is also an X.
+	if len(target.Intersection) > 0 {
+		for _, tp := range target.Intersection {
+			if typeHintContains(ctx, h, tp) {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Handle "iterable" as a special case: it's equivalent to Traversable|array
+	if h.Type() == phpv.ZtObject && h.ClassName() == "iterable" {
+		// iterable contains array and Traversable
+		if target.Type() == phpv.ZtArray {
+			return true
+		}
+		if target.Type() == phpv.ZtObject && (target.ClassName() == "iterable" || target.ClassName().ToLower() == "traversable") {
+			return true
+		}
+		return false
+	}
+	if target.Type() == phpv.ZtObject && target.ClassName() == "iterable" {
+		// target is iterable, h must be array or Traversable to satisfy
+		if h.Type() == phpv.ZtArray {
+			return true
+		}
+		if h.Type() == phpv.ZtObject && (h.ClassName() == "iterable" || h.ClassName().ToLower() == "traversable") {
+			return true
+		}
+		// h could be a class that implements Traversable
+		if h.Type() == phpv.ZtObject && h.ClassName() != "" && ctx != nil {
+			hClass, err1 := ctx.Global().GetClass(ctx, h.ClassName(), false)
+			traversable, err2 := ctx.Global().GetClass(ctx, "traversable", false)
+			if err1 == nil && err2 == nil && !phpv.IsNilClass(hClass) && !phpv.IsNilClass(traversable) {
+				if hClass.InstanceOf(traversable) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+
+	// "object" type contains any class type and intersection types
+	if h.Type() == phpv.ZtObject && h.ClassName() == "" {
+		// bare "object" contains any object type
+		if target.Type() == phpv.ZtObject {
+			return true
+		}
+		return false
+	}
+
 	// Compare single types
 	if h.Type() != target.Type() {
 		return false
 	}
 	// For object types, check class name
 	if h.Type() == phpv.ZtObject {
-		if h.ClassName() == "" || target.ClassName() == "" {
-			// "object" matches any object type
-			return h.ClassName() == "" || target.ClassName() == ""
+		if target.ClassName() == "" {
+			// target is bare "object", any object type satisfies it
+			return true
+		}
+		if h.ClassName() == "" {
+			// h is bare "object", target is a specific class
+			// "object" does not contain a specific class
+			return false
 		}
 		// Direct name comparison first
 		if h.ClassName().ToLower() == target.ClassName().ToLower() {

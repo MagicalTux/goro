@@ -2,6 +2,7 @@ package phpv
 
 import (
 	"errors"
+	"math"
 	"strings"
 
 	"github.com/MagicalTux/goro/core/logopt"
@@ -173,6 +174,16 @@ func CompareObjectToNumeric(ctx Context, z *ZVal, targetType ZType) *ZVal {
 func Compare(ctx Context, a, b *ZVal) (int, error) {
 	// operator compare (< > <= >= == === != !== <=>) involve a lot of dark magic in php, unless both values are of the same type (and even so)
 	// loose comparison will convert number-y looking strings into numbers, etc
+
+	// NaN is never equal to anything, including itself (IEEE 754).
+	// PHP returns 1 for NaN comparisons, making == false and all ordered comparisons false.
+	if a.GetType() == ZtFloat && math.IsNaN(float64(a.Value().(ZFloat))) {
+		return 1, nil
+	}
+	if b.GetType() == ZtFloat && math.IsNaN(float64(b.Value().(ZFloat))) {
+		return 1, nil
+	}
+
 	if a.GetType() == ZtArray {
 		if b.GetType() == ZtArray {
 			return CompareArray(ctx, a.AsArray(ctx), b.AsArray(ctx))

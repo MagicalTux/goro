@@ -141,7 +141,7 @@ func (s ZString) IsNumeric() bool {
 			first = false
 			continue // good
 		}
-		if c == 'e' && !gotE && gotDigit {
+		if (c == 'e' || c == 'E') && !gotE && gotDigit {
 			gotE = true
 			first = true
 			continue
@@ -276,6 +276,10 @@ func (z ZString) AsNumeric() (Val, error) {
 
 	v, err := strconv.ParseFloat(string(z[:i]), 64)
 	if err == nil {
+		return ZFloat(v), nil
+	}
+	// Accept overflow to +/-Inf (range error) - PHP treats "1e1000" as INF
+	if numErr, ok := err.(*strconv.NumError); ok && numErr.Err == strconv.ErrRange && math.IsInf(v, 0) {
 		return ZFloat(v), nil
 	}
 

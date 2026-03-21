@@ -2458,16 +2458,13 @@ func fncWordWrap(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		}
 		buf.Write(str[lastStart:textLen])
 	} else {
-		// Cut mode: break at spaces preferentially, but force-cut words longer than width.
-		// This is a faithful reimplementation of PHP's ext/standard/string.c php_wordwrap cut mode.
-		effectiveWidth := width
-		if effectiveWidth <= 0 {
-			effectiveWidth = 1
-		}
+		// Cut mode: Faithful reimplementation of PHP's ext/standard/string.c php_wordwrap.
+		// PHP uses the raw width value (can be negative). When negative, every character
+		// exceeds the width limit, producing a break before each character.
 		lastSpace := -1
 		for current < textLen {
 			if str[current] == ' ' {
-				if lineLen >= effectiveWidth {
+				if lineLen >= width {
 					// Line is already at or over width. Break before this space.
 					if lastSpace >= lastStart {
 						// Break at the last space we saw
@@ -2488,7 +2485,7 @@ func fncWordWrap(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				lastSpace = current
 			}
 			lineLen++
-			if lineLen > effectiveWidth && str[current] != ' ' {
+			if lineLen > width && str[current] != ' ' {
 				// Force break in the middle of a word
 				// First, if there's a pending space break, use it
 				if lastSpace >= lastStart {
@@ -2498,7 +2495,7 @@ func fncWordWrap(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 					lineLen = current - lastStart + 1
 					lastSpace = -1
 					// Check if we still exceed width after breaking at space
-					if lineLen > effectiveWidth {
+					if lineLen > width {
 						buf.Write(str[lastStart:current])
 						buf.Write(brk)
 						lastStart = current
@@ -2514,7 +2511,7 @@ func fncWordWrap(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			current++
 		}
 		// Handle remaining text
-		if lineLen >= effectiveWidth && lastSpace >= lastStart {
+		if lineLen >= width && lastSpace >= lastStart {
 			buf.Write(str[lastStart:lastSpace])
 			buf.Write(brk)
 			lastStart = lastSpace + 1
@@ -2892,28 +2889,22 @@ func isNotLetter(c rune) bool {
 }
 
 func strcmpCommon(str1, str2 []byte, caseSensitive bool) int {
-	for i := 0; i < max(len(str1), len(str2)); i++ {
-		var c1, c2 byte
-		if i < len(str1) {
-			c1 = str1[i]
-		}
-		if i < len(str2) {
-			c2 = str2[i]
-		}
+	minLen := min(len(str1), len(str2))
+	for i := 0; i < minLen; i++ {
+		c1 := str1[i]
+		c2 := str2[i]
 
 		if !caseSensitive {
 			c1 = bytesLowerCase(c1)
 			c2 = bytesLowerCase(c2)
 		}
 
-		if c1 < c2 {
-			return -1
-		}
-		if c1 > c2 {
-			return 1
+		if c1 != c2 {
+			return int(c1) - int(c2)
 		}
 	}
-	// If all characters match but lengths differ
+	// If all compared characters match, compare by length using three-way comparison
+	// (matching PHP's ZEND_THREEWAY_COMPARE for length differences)
 	if len(str1) < len(str2) {
 		return -1
 	}

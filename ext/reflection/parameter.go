@@ -66,7 +66,29 @@ func reflectionParameterConstruct(ctx phpv.Context, o *phpobj.ZObject, args []*p
 		}
 	} else if funcVal.GetType() == phpv.ZtArray {
 		// [class, method] callable
-		return nil, phpobj.ThrowError(ctx, ReflectionException, "ReflectionParameter::__construct(): array callables not yet supported")
+		arr := funcVal.AsArray(ctx)
+		if arr == nil || arr.Count(ctx) != 2 {
+			return nil, phpobj.ThrowError(ctx, ReflectionException, "ReflectionParameter::__construct(): Expected array with class and method name")
+		}
+		classVal, _ := arr.OffsetGet(ctx, phpv.ZInt(0).ZVal())
+		methodVal, _ := arr.OffsetGet(ctx, phpv.ZInt(1).ZVal())
+		if classVal == nil || methodVal == nil {
+			return nil, phpobj.ThrowError(ctx, ReflectionException, "ReflectionParameter::__construct(): Expected array with class and method name")
+		}
+		className := classVal.AsString(ctx)
+		methodName := methodVal.AsString(ctx)
+		class, err := ctx.Global().GetClass(ctx, className, true)
+		if err != nil {
+			return nil, phpobj.ThrowError(ctx, ReflectionException, fmt.Sprintf("Class \"%s\" does not exist", className))
+		}
+		method, ok := class.GetMethod(methodName)
+		if !ok {
+			return nil, phpobj.ThrowError(ctx, ReflectionException, fmt.Sprintf("Method %s::%s() does not exist", className, methodName))
+		}
+		if fga, ok2 := method.Method.(phpv.FuncGetArgs); ok2 {
+			funcArgs = fga.GetArgs()
+		}
+		funcName = phpv.ZString(fmt.Sprintf("%s::%s", className, methodName))
 	} else if funcVal.GetType() == phpv.ZtObject {
 		// Closure
 		obj := funcVal.AsObject(ctx)

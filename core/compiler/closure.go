@@ -989,11 +989,21 @@ func (z *ZClosure) callBody(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 
 // checkReturnTypeNone validates when a function falls through without a return statement.
 // Uses "none returned" in the error message (PHP behavior for implicit returns).
+// In PHP 8.5, functions with mixed return type that fall through without returning
+// a value throw a TypeError (tested by mixed_return_weak_error.phpt).
 func (z *ZClosure) checkReturnTypeNone(ctx phpv.Context) error {
 	rt := z.returnType
 
-	// mixed and nullable types accept null/none
-	if rt.Type() == phpv.ZtMixed || rt.Nullable {
+	// mixed type: falling through without explicit return is a TypeError in PHP 8.5+
+	// even though mixed includes null, PHP requires "return null;" explicitly
+	if rt.Type() == phpv.ZtMixed && len(rt.Union) == 0 && len(rt.Intersection) == 0 {
+		funcName := ctx.GetFuncName()
+		return phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("%s(): Return value must be of type mixed, none returned", funcName))
+	}
+
+	// nullable types accept null/none (fall-through returns null implicitly)
+	if rt.Nullable {
 		return nil
 	}
 
@@ -1049,8 +1059,26 @@ func (z *ZClosure) coerceReturnValue(ctx phpv.Context, r *phpv.ZVal) *phpv.ZVal 
 	if rt.Type() == phpv.ZtVoid || rt.Type() == phpv.ZtNever || rt.Type() == phpv.ZtMixed {
 		return r
 	}
-	// Don't coerce union/intersection types
-	if len(rt.Union) > 0 || len(rt.Intersection) > 0 {
+	// Don't coerce intersection types
+	if len(rt.Intersection) > 0 {
+		return r
+	}
+	// For union types, try to coerce to the first matching scalar alternative
+	if len(rt.Union) > 0 {
+		// If the value already passes the type check, no coercion needed
+		if rt.Check(ctx, r) {
+			return r
+		}
+		// Try coercing to each scalar union member
+		for _, alt := range rt.Union {
+			if alt.Type() == phpv.ZtBool || alt.Type() == phpv.ZtInt || alt.Type() == phpv.ZtFloat || alt.Type() == phpv.ZtString {
+				if coerced, err := r.As(ctx, alt.Type()); err == nil && coerced != nil {
+					if alt.Check(ctx, coerced) {
+						return coerced
+					}
+				}
+			}
+		}
 		return r
 	}
 	// Don't coerce object types

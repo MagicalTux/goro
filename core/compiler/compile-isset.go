@@ -323,7 +323,40 @@ func checkExistence(ctx phpv.Context, v phpv.Runnable, subExpr bool) (bool, erro
 
 		var arr phpv.ZArrayAccess
 		if value.GetType() == phpv.ZtString {
-			if key.GetType() != phpv.ZtInt {
+			// PHP isset on string offsets accepts various key types:
+			// int -> direct offset
+			// string -> only integer numeric strings (not "1.5", not "abc")
+			// bool -> true=1, false=0
+			// float -> truncated to int (with deprecation in real PHP)
+			// null -> treated as 0
+			// array, object, resource -> false
+			switch key.GetType() {
+			case phpv.ZtInt:
+				// good
+			case phpv.ZtString:
+				// Check if it's a pure integer numeric string (not float)
+				s := key.AsString(ctx)
+				if !s.IsNumeric() {
+					return false, nil
+				}
+				// Must be integer-like (no dots, no 'e' notation)
+				for _, c := range string(s) {
+					if c == '.' || c == 'e' || c == 'E' {
+						return false, nil
+					}
+				}
+				key = key.AsInt(ctx).ZVal()
+			case phpv.ZtBool:
+				if key.Value().(phpv.ZBool) {
+					key = phpv.ZInt(1).ZVal()
+				} else {
+					key = phpv.ZInt(0).ZVal()
+				}
+			case phpv.ZtFloat:
+				key = key.AsInt(ctx).ZVal()
+			case phpv.ZtNull:
+				key = phpv.ZInt(0).ZVal()
+			default:
 				return false, nil
 			}
 			str := value.AsString(ctx)
