@@ -75,15 +75,17 @@ func fncAssert(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 			// Resolve the callable. For string callbacks, look up by function name.
 			// For closure/object callbacks, extract the Callable interface.
+			var callbackErr error
 			if callbackVal.GetType() == phpv.ZtString {
 				funcName := callbackVal.AsString(ctx)
 				callable, resolveErr := ctx.Global().GetFunction(ctx, funcName)
 				if resolveErr != nil {
-					return nil, resolveErr
-				}
-				_, callErr := ctx.CallZVal(ctx, callable, callbackArgs)
-				if callErr != nil {
-					return nil, callErr
+					callbackErr = resolveErr
+				} else {
+					_, callErr := ctx.CallZVal(ctx, callable, callbackArgs)
+					if callErr != nil {
+						callbackErr = callErr
+					}
 				}
 			} else if callbackVal.GetType() == phpv.ZtObject {
 				// For closures and invokable objects, invoke via __invoke method
@@ -91,14 +93,23 @@ func fncAssert(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 					if f, hasInvoke := obj.GetClass().GetMethod("__invoke"); hasInvoke {
 						_, callErr := ctx.CallZVal(ctx, f.Method, callbackArgs, obj)
 						if callErr != nil {
-							return nil, callErr
+							callbackErr = callErr
 						}
 					}
 				}
 			} else if callable, ok := callbackVal.Value().(phpv.Callable); ok {
 				_, callErr := ctx.CallZVal(ctx, callable, callbackArgs)
 				if callErr != nil {
-					return nil, callErr
+					callbackErr = callErr
+				}
+			}
+
+			// If the callback raised an error, display it as a warning
+			if callbackErr != nil {
+				if phpErr, ok := callbackErr.(*phpv.PhpError); ok {
+					ctx.Warn("Uncaught %s", phpErr.Err.Error())
+				} else {
+					ctx.Warn("Uncaught error in assert callback: %s", callbackErr.Error())
 				}
 			}
 		}
