@@ -24,7 +24,12 @@ func readInt(ctx phpv.Context, v *phpv.ZVal) (*big.Int, error) {
 		obj, ok := v.Value().(*phpobj.ZObject)
 		if ok && obj.Class == GMP { // TODO check via instanceof (to be created)
 			// this is a gmp object
-			i = obj.GetOpaque(GMP).(*big.Int)
+			opaque := obj.GetOpaque(GMP)
+			if opaque == nil {
+				// Uninitialized GMP object, treat as zero
+				return big.NewInt(0), nil
+			}
+			i = opaque.(*big.Int)
 			return i, nil
 		}
 		fallthrough

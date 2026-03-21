@@ -1,6 +1,8 @@
 package gmp
 
 import (
+	"fmt"
+	"math"
 	"math/big"
 
 	"github.com/MagicalTux/goro/core"
@@ -18,8 +20,19 @@ func gmpSetbit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if err != nil {
 		return nil, err
 	}
-	i, ok := a.GetOpaque(GMP).(*big.Int)
-	if !ok {
+
+	// Limit to ~512MB of memory (max bit index ~4 billion)
+	const maxBitIndex = 4294967295 // 0xFFFFFFFF
+	if index < 0 || int64(index) > maxBitIndex {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+			fmt.Sprintf("gmp_setbit(): Argument #2 ($index) must be between 0 and %d * %d", math.MaxInt64, 8))
+	}
+
+	opaque := a.GetOpaque(GMP)
+	var i *big.Int
+	if opaque != nil {
+		i = opaque.(*big.Int)
+	} else {
 		i = &big.Int{}
 	}
 
@@ -28,8 +41,8 @@ func gmpSetbit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		b = 0
 	}
 
-	r := &big.Int{}
-	r.SetBit(i, int(index), b)
+	r := new(big.Int).Set(i) // Copy first to avoid issues
+	r.SetBit(r, int(index), b)
 
 	a.SetOpaque(GMP, r)
 
@@ -45,15 +58,27 @@ func gmpClrbit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if err != nil {
 		return nil, err
 	}
-	i, ok := a.GetOpaque(GMP).(*big.Int)
-	if !ok {
+
+	// Limit to ~512MB of memory (max bit index ~4 billion)
+	const maxBitIndex = 4294967295 // 0xFFFFFFFF
+	if index < 0 || int64(index) > maxBitIndex {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+			fmt.Sprintf("gmp_clrbit(): Argument #2 ($index) must be between 0 and %d * %d", math.MaxInt64, 8))
+	}
+
+	opaque := a.GetOpaque(GMP)
+	var i *big.Int
+	if opaque != nil {
+		i = opaque.(*big.Int)
+	} else {
 		i = &big.Int{}
 	}
 
-	r := &big.Int{}
-	r.SetBit(i, int(index), 0)
+	r := new(big.Int).Set(i) // Copy first to avoid issues
+	r.SetBit(r, int(index), 0)
 
 	a.SetOpaque(GMP, r)
 
 	return nil, nil
 }
+

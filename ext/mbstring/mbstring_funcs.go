@@ -583,6 +583,181 @@ func fncMbOutputHandler(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	return contents.ZVal(), nil
 }
 
+// mb_strwidth returns the width of a string, where East Asian wide/fullwidth
+// characters count as 2, and other characters count as 1.
+func fncMbStrwidth(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var s phpv.ZString
+	var enc *phpv.ZString
+
+	_, err := core.Expand(ctx, args, &s, &enc)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert to UTF-8 if needed (for now we assume the input uses the requested encoding)
+	str := string(s)
+	width := 0
+
+	for _, r := range str {
+		width += runeWidth(r)
+	}
+
+	return phpv.ZInt(width).ZVal(), nil
+}
+
+// runeWidth returns the display width of a rune.
+// East Asian wide and fullwidth characters return 2, others return 1.
+// Control characters return 0.
+func runeWidth(r rune) int {
+	if r == 0 {
+		return 0
+	}
+	// Control characters
+	if r < 0x20 || (r >= 0x7F && r < 0xA0) {
+		return 0
+	}
+	// East Asian Fullwidth and Wide characters
+	if isEastAsianWide(r) {
+		return 2
+	}
+	return 1
+}
+
+// isEastAsianWide returns true if the rune is considered "wide" in East Asian contexts.
+func isEastAsianWide(r rune) bool {
+	// CJK Unified Ideographs
+	if r >= 0x4E00 && r <= 0x9FFF {
+		return true
+	}
+	// CJK Unified Ideographs Extension A
+	if r >= 0x3400 && r <= 0x4DBF {
+		return true
+	}
+	// CJK Compatibility Ideographs
+	if r >= 0xF900 && r <= 0xFAFF {
+		return true
+	}
+	// CJK Unified Ideographs Extension B-F
+	if r >= 0x20000 && r <= 0x2FA1F {
+		return true
+	}
+	// Fullwidth Forms
+	if r >= 0xFF01 && r <= 0xFF60 {
+		return true
+	}
+	if r >= 0xFFE0 && r <= 0xFFE6 {
+		return true
+	}
+	// Katakana
+	if r >= 0x30A0 && r <= 0x30FF {
+		return true
+	}
+	// Hiragana
+	if r >= 0x3040 && r <= 0x309F {
+		return true
+	}
+	// CJK Symbols and Punctuation
+	if r >= 0x3000 && r <= 0x303F {
+		return true
+	}
+	// Hangul Syllables
+	if r >= 0xAC00 && r <= 0xD7AF {
+		return true
+	}
+	// Hangul Jamo
+	if r >= 0x1100 && r <= 0x115F {
+		return true
+	}
+	if r >= 0x2329 && r <= 0x232A {
+		return true
+	}
+	// Enclosed CJK Letters and Months
+	if r >= 0x3200 && r <= 0x32FF {
+		return true
+	}
+	// CJK Compatibility
+	if r >= 0x3300 && r <= 0x33FF {
+		return true
+	}
+	// Bopomofo
+	if r >= 0x3100 && r <= 0x312F {
+		return true
+	}
+	// Kanbun
+	if r >= 0x3190 && r <= 0x319F {
+		return true
+	}
+	return false
+}
+
+// mb_parse_str parses a URL-encoded string and stores the results in the
+// second parameter (passed by reference).
+func fncMbParseStr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) < 2 {
+		return phpv.ZFalse.ZVal(), nil
+	}
+	var s phpv.ZString
+	_, err := core.Expand(ctx, args, &s)
+	if err != nil {
+		return nil, err
+	}
+
+	// Use the standard parse_str logic - mb_parse_str in PHP 8+ requires
+	// the second parameter and behaves like parse_str with that parameter.
+	result := phpv.NewZArray()
+
+	pairs := strings.Split(string(s), "&")
+	for _, pair := range pairs {
+		if pair == "" {
+			continue
+		}
+		parts := strings.SplitN(pair, "=", 2)
+		key := urlDecode(parts[0])
+		val := ""
+		if len(parts) > 1 {
+			val = urlDecode(parts[1])
+		}
+		// Handle array notation in keys (e.g., "foo[bar]=val")
+		if idx := strings.Index(key, "["); idx >= 0 {
+			// Simple array handling
+			result.OffsetSet(ctx, phpv.ZString(key[:idx]).ZVal(), phpv.ZString(val).ZVal())
+		} else {
+			result.OffsetSet(ctx, phpv.ZString(key).ZVal(), phpv.ZString(val).ZVal())
+		}
+	}
+
+	// Write result to second parameter (passed by reference)
+	*args[1] = *result.ZVal()
+	return phpv.ZTrue.ZVal(), nil
+}
+
+// urlDecode decodes a URL-encoded string.
+func urlDecode(s string) string {
+	s = strings.ReplaceAll(s, "+", " ")
+	var result strings.Builder
+	for i := 0; i < len(s); i++ {
+		if s[i] == '%' && i+2 < len(s) {
+			h := s[i+1 : i+3]
+			var b byte
+			for _, c := range h {
+				b <<= 4
+				if c >= '0' && c <= '9' {
+					b |= byte(c - '0')
+				} else if c >= 'a' && c <= 'f' {
+					b |= byte(c - 'a' + 10)
+				} else if c >= 'A' && c <= 'F' {
+					b |= byte(c - 'A' + 10)
+				}
+			}
+			result.WriteByte(b)
+			i += 2
+		} else {
+			result.WriteByte(s[i])
+		}
+	}
+	return result.String()
+}
+
 // encodingAliases maps encoding names to their aliases
 var encodingAliases = map[string][]string{
 	"ASCII":        {"ANSI_X3.4-1968", "iso-ir-6", "ANSI_X3.4-1986", "ISO_646.irv:1991", "US-ASCII", "ISO646-US", "us", "IBM367", "cp367", "csASCII"},

@@ -323,12 +323,15 @@ func (r *runClassStaticObjRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	}
 
 	cc, ok := zclass.Const[r.objName]
+	// Track the class that actually declares this constant for deprecation messages.
+	deprecClassName := class.GetName()
 	if !ok {
 		// Check implemented interfaces (for internal classes that don't inherit at registration time)
 		for _, intf := range zclass.Implementations {
 			if c, found := intf.Const[r.objName]; found {
 				cc = c
 				ok = true
+				deprecClassName = intf.GetName()
 				break
 			}
 		}
@@ -337,6 +340,7 @@ func (r *runClassStaticObjRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			if c, found := zclass.Extends.Const[r.objName]; found {
 				cc = c
 				ok = true
+				deprecClassName = zclass.Extends.GetName()
 			}
 		}
 	}
@@ -393,7 +397,7 @@ func (r *runClassStaticObjRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 					}
 				}
 			}
-			name := string(class.GetName()) + "::" + string(r.objName)
+			name := string(deprecClassName) + "::" + string(r.objName)
 			msg := FormatDeprecatedMsg(label, name, attr)
 			if err := ctx.UserDeprecated("%s", msg, logopt.NoFuncName(true)); err != nil {
 				return nil, err

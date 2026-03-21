@@ -55,6 +55,9 @@ func gmpProbPrime(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	n := 10
 	if reps != nil {
 		n = int(*reps)
+		if n < 0 {
+			n = 0
+		}
 	}
 
 	// PHP returns:
@@ -62,6 +65,10 @@ func gmpProbPrime(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	// 1 - probably prime
 	// 2 - definitely prime
 	if i.Sign() <= 0 {
+		return phpv.ZInt(0).ZVal(), nil
+	}
+
+	if n == 0 {
 		return phpv.ZInt(0).ZVal(), nil
 	}
 

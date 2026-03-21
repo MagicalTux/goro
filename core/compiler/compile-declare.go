@@ -5,6 +5,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
@@ -70,8 +71,8 @@ func compileDeclare(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 
 		// Validate: encoding directive
 		if name == "encoding" {
-			lit, isLiteral := val.(*runZVal)
-			if !isLiteral {
+			lit := extractLiteral(val)
+			if lit == nil {
 				// Non-literal expression (e.g., M_PI, constant) -> fatal error
 				return nil, &phpv.PhpError{
 					Err:  fmt.Errorf("Encoding must be a literal"),
@@ -89,20 +90,30 @@ func compileDeclare(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 
 			if !mbEnabled {
 				// Emit warning about multibyte being off
-				c.Warn("declare(encoding=...) ignored because Zend multibyte feature is turned off by settings")
+				c.Warn("declare(encoding=...) ignored because Zend multibyte feature is turned off by settings", logopt.Data{Loc: l})
+			}
+
+			// Check if encoding declare is the first statement in the script
+			if !c.isTopLevel() || c.getFunc() != nil {
+				return nil, &phpv.PhpError{
+					Err:  fmt.Errorf("Encoding declaration pragma must be the very first statement in the script"),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  l,
+				}
 			}
 
 			// For non-string literal values, warn about unsupported encoding
+			prec := phpv.GetPrecision(c)
 			switch v := lit.v.(type) {
 			case phpv.ZString:
 				// String encoding value - only "utf-8" is supported (case-insensitive)
 				if !strings.EqualFold(string(v), "utf-8") && !strings.EqualFold(string(v), "utf8") {
-					c.Warn("Unsupported encoding [%s]", string(v))
+					c.Warn("Unsupported encoding [%s]", string(v), logopt.Data{Loc: l})
 				}
 			case phpv.ZInt:
-				c.Warn("Unsupported encoding [%d]", int64(v))
+				c.Warn("Unsupported encoding [%d]", int64(v), logopt.Data{Loc: l})
 			case phpv.ZFloat:
-				c.Warn("Unsupported encoding [%s]", phpv.FormatFloat(float64(v)))
+				c.Warn("Unsupported encoding [%s]", phpv.FormatFloatPrecision(float64(v), prec), logopt.Data{Loc: l})
 			}
 		}
 
@@ -308,3 +319,17 @@ func (r *runnableDeclareTicks) Dump(w io.Writer) error {
 }
 
 
+// extractLiteral extracts a *runZVal from a Runnable that is a compile-time literal.
+// Handles *runZVal directly and runConcat with a single *runZVal element
+// (produced by double-quoted constant strings like "utf-8").
+func extractLiteral(r phpv.Runnable) *runZVal {
+	if lit, ok := r.(*runZVal); ok {
+		return lit
+	}
+	if rc, ok := r.(runConcat); ok && len(rc) == 1 {
+		if lit, ok := rc[0].(*runZVal); ok {
+			return lit
+		}
+	}
+	return nil
+}

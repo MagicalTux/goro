@@ -4,6 +4,7 @@ import (
 	"math/big"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -25,13 +26,17 @@ func gmpInvert(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	r := &big.Int{}
-	r.ModInverse(ia, ib)
+	if ib.Sign() == 0 {
+		return nil, phpobj.ThrowError(ctx, phpobj.DivisionByZeroError, "Division by zero")
+	}
 
-	if r == nil {
+	r := new(big.Int)
+	result := r.ModInverse(ia, ib)
+
+	if result == nil {
 		// No inverse exists
 		return phpv.ZFalse.ZVal(), nil
 	}
 
-	return returnInt(ctx, r)
+	return returnInt(ctx, result)
 }

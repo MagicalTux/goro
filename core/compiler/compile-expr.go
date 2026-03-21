@@ -623,9 +623,13 @@ func compilePostExpr(v phpv.Runnable, i *tokenizer.Item, c compileCtx) (phpv.Run
 			return &runnableFunctionCall{name: funcName, args: args, l: l}, nil
 		}
 		return &runnableFunctionCallRef{v, args, l}, nil
-	case tokenizer.Rune('['), tokenizer.Rune('{'):
+	case tokenizer.Rune('['):
 		c.backup()
 		return compileArrayAccess(v, c)
+	case tokenizer.Rune('{'):
+		// PHP8 removed curly-brace array access
+		c.backup()
+		return nil, nil
 	case tokenizer.Rune(';'):
 		c.backup()
 		// just a value

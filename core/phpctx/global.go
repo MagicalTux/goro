@@ -103,7 +103,8 @@ type Global struct {
 
 	destructObjects []phpv.ZObject // objects with __destruct to call at shutdown
 
-	compilingClass phpv.ZClass // class currently being compiled (for self:: resolution)
+	compilingClass   phpv.ZClass
+	noDiscardPending bool // class currently being compiled (for self:: resolution)
 
 	rawRequestBody []byte // stored POST body for php://input
 
@@ -1893,6 +1894,13 @@ func (g *Global) ShownDeprecated(key string) bool {
 	_, exists := g.shownDeprecated[key]
 	g.shownDeprecated[key] = struct{}{}
 	return !exists
+}
+
+func (g *Global) SetNoDiscardPending(v bool) { g.noDiscardPending = v }
+func (g *Global) ConsumeNoDiscardPending() bool {
+	was := g.noDiscardPending
+	g.noDiscardPending = false
+	return was
 }
 
 func (g *Global) HeaderContext() *phpv.HeaderContext {

@@ -435,6 +435,24 @@ func compileEnum(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		class.EnumCases = append(class.EnumCases, phpv.ZString(ec.name))
 	}
 
+	// Add virtual name property so ReflectionClass::getProperties() works for enums.
+	class.Props = append(class.Props, &phpv.ZClassProp{
+		VarName:   "name",
+		Modifiers: phpv.ZAttrPublic | phpv.ZAttrReadonly,
+		TypeHint:  phpv.ParseTypeHint("string"),
+	})
+	if backingType != 0 {
+		btName := phpv.ZString("int")
+		if backingType == phpv.ZtString {
+			btName = "string"
+		}
+		class.Props = append(class.Props, &phpv.ZClassProp{
+			VarName:   "value",
+			Modifiers: phpv.ZAttrPublic | phpv.ZAttrReadonly,
+			TypeHint:  phpv.ParseTypeHint(btName),
+		})
+	}
+
 	// Validate user-specified implements list for enums
 	for _, impl := range class.ImplementsStr {
 		implLower := impl.ToLower()
