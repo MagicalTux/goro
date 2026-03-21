@@ -97,6 +97,16 @@ func init() {
 // compileHaltCompiler handles __halt_compiler(); which stops compilation.
 // It also sets the __COMPILER_HALT_OFFSET__ constant to the byte offset after the semicolon.
 func compileHaltCompiler(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
+	// __halt_compiler() can only be used from the outermost scope.
+	// If we are inside any block (function, class, if, etc.), emit a fatal error.
+	if !c.isTopLevel() {
+		return nil, &phpv.PhpError{
+			Err:  fmt.Errorf("__HALT_COMPILER() can only be used from the outermost scope"),
+			Code: phpv.E_COMPILE_ERROR,
+			Loc:  i.Loc(),
+		}
+	}
+
 	filename := i.Filename
 
 	// Consume remaining tokens until EOF
@@ -115,28 +125,17 @@ func compileHaltCompiler(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error)
 	if filename != "" && filename != "-" {
 		content, err := os.ReadFile(filename)
 		if err == nil {
-			// Find __halt_compiler in the file
-			patterns := []string{"__halt_compiler();", "__HALT_COMPILER();"}
-			for _, pat := range patterns {
-				idx := bytes.Index(content, []byte(pat))
-				if idx >= 0 {
-					offset := idx + len(pat)
-					c.Global().ConstantSet(phpv.ZString("__COMPILER_HALT_OFFSET__"), phpv.ZInt(offset))
-					break
-				}
-			}
-			// Also try case-insensitive search
-			if _, ok := c.Global().ConstantGet(phpv.ZString("__COMPILER_HALT_OFFSET__")); !ok {
-				lower := bytes.ToLower(content)
-				idx := bytes.Index(lower, []byte("__halt_compiler"))
-				if idx >= 0 {
-					// Find the next (); after it
-					rest := content[idx:]
-					semiIdx := bytes.IndexByte(rest, ';')
-					if semiIdx >= 0 {
-						offset := idx + semiIdx + 1
-						c.Global().ConstantSet(phpv.ZString("__COMPILER_HALT_OFFSET__"), phpv.ZInt(offset))
-					}
+			// Find __halt_compiler in the file using case-insensitive search
+			lower := bytes.ToLower(content)
+			idx := bytes.Index(lower, []byte("__halt_compiler"))
+			if idx >= 0 {
+				// Find the (); after the keyword
+				rest := content[idx:]
+				semiIdx := bytes.IndexByte(rest, ';')
+				if semiIdx >= 0 {
+					offset := idx + semiIdx + 1
+					// Use ConstantForceSet so each included file can update the offset
+					c.Global().ConstantForceSet(phpv.ZString("__COMPILER_HALT_OFFSET__"), phpv.ZInt(offset))
 				}
 			}
 		}

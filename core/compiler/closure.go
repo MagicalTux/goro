@@ -1371,6 +1371,27 @@ func closureBind(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return bound.Spawn(ctx)
 }
 
+// callerClass returns the class context of the actual caller of Closure::fromCallable(),
+// walking up the context chain past the Closure class's own method context.
+func callerClass(ctx phpv.Context) phpv.ZClass {
+	// Walk up the parent chain to find a non-Closure class context.
+	// The immediate ctx is inside Closure::fromCallable (class = Closure).
+	// The actual caller is one or more levels up.
+	c := ctx
+	for c != nil {
+		cls := c.Class()
+		if cls != nil && cls != Closure {
+			return cls
+		}
+		p := c.Parent(1)
+		if p == c || p == nil {
+			break
+		}
+		c = p
+	}
+	return ctx.Class()
+}
+
 // closureFromCallable implements Closure::fromCallable($callable).
 // It converts any callable to a Closure object.
 func closureFromCallable(ctx phpv.Context, arg *phpv.ZVal) (*phpv.ZVal, error) {
@@ -1418,26 +1439,43 @@ func closureFromCallable(ctx phpv.Context, arg *phpv.ZVal) (*phpv.ZVal, error) {
 
 			ctx.Deprecated("Use of \"%s\" in callables is deprecated", prefix, logopt.NoFuncName(true))
 
-			callerClass := ctx.Class()
-			if callerClass == nil {
+			callerCls := callerClass(ctx)
+			if callerCls == nil {
 				return nil, phpobj.ThrowError(ctx, phpobj.Error,
 					fmt.Sprintf("Cannot use \"%s\" when no class scope is active", prefix))
 			}
 			var class phpv.ZClass
 			if strings.EqualFold(prefix, "parent") {
-				class = callerClass.GetParent()
+				class = callerCls.GetParent()
 				if class == nil {
 					return nil, phpobj.ThrowError(ctx, phpobj.Error,
 						fmt.Sprintf("Cannot use \"parent\" when current class scope has no parent"))
 				}
 			} else {
-				class = callerClass
+				class = callerCls
 			}
 
 			member, ok := class.GetMethod(methodName.ToLower())
 			if !ok {
 				return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
 					fmt.Sprintf("Closure::fromCallable(): Argument #1 ($callback) must be a valid callback, class \"%s\" does not have a method \"%s\"", class.GetName(), methodName))
+			}
+
+			// Check visibility for self::/parent:: callables
+			declaringClass := class
+			if member.Class != nil {
+				declaringClass = member.Class
+			}
+			if member.Modifiers.IsPrivate() {
+				if callerCls == nil || callerCls.GetName() != declaringClass.GetName() {
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+						fmt.Sprintf("Closure::fromCallable(): Argument #1 ($callback) must be a valid callback, cannot access private method %s::%s()", class.GetName(), member.Name))
+				}
+			} else if member.Modifiers.IsProtected() {
+				if callerCls == nil || (!callerCls.InstanceOf(declaringClass) && !declaringClass.InstanceOf(callerCls)) {
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+						fmt.Sprintf("Closure::fromCallable(): Argument #1 ($callback) must be a valid callback, cannot access protected method %s::%s()", class.GetName(), member.Name))
+				}
 			}
 
 			// For instance methods called within an object context, use $this
@@ -1479,18 +1517,18 @@ func closureFromCallable(ctx phpv.Context, arg *phpv.ZVal) (*phpv.ZVal, error) {
 					fmt.Sprintf("Closure::fromCallable(): Argument #1 ($callback) must be a valid callback, class \"%s\" does not have a method \"%s\"", className, methodName))
 			}
 			// Check visibility
-			callerClass := ctx.Class()
+			callerCls2 := callerClass(ctx)
 			declaringClass := class
 			if member.Class != nil {
 				declaringClass = member.Class
 			}
 			if member.Modifiers.IsPrivate() {
-				if callerClass == nil || callerClass.GetName() != declaringClass.GetName() {
+				if callerCls2 == nil || callerCls2.GetName() != declaringClass.GetName() {
 					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
 						fmt.Sprintf("Closure::fromCallable(): Argument #1 ($callback) must be a valid callback, cannot access private method %s::%s()", class.GetName(), member.Name))
 				}
 			} else if member.Modifiers.IsProtected() {
-				if callerClass == nil || (!callerClass.InstanceOf(declaringClass) && !declaringClass.InstanceOf(callerClass)) {
+				if callerCls2 == nil || (!callerCls2.InstanceOf(declaringClass) && !declaringClass.InstanceOf(callerCls2)) {
 					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
 						fmt.Sprintf("Closure::fromCallable(): Argument #1 ($callback) must be a valid callback, cannot access protected method %s::%s()", class.GetName(), member.Name))
 				}
@@ -1586,18 +1624,18 @@ func closureFromCallable(ctx phpv.Context, arg *phpv.ZVal) (*phpv.ZVal, error) {
 		}
 
 		// Check visibility
-		callerClass := ctx.Class()
+		callerCls3 := callerClass(ctx)
 		declaringClass := class
 		if member.Class != nil {
 			declaringClass = member.Class
 		}
 		if member.Modifiers.IsPrivate() {
-			if callerClass == nil || callerClass.GetName() != declaringClass.GetName() {
+			if callerCls3 == nil || callerCls3.GetName() != declaringClass.GetName() {
 				return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
 					fmt.Sprintf("Closure::fromCallable(): Argument #1 ($callback) must be a valid callback, cannot access private method %s::%s()", class.GetName(), member.Name))
 			}
 		} else if member.Modifiers.IsProtected() {
-			if callerClass == nil || (!callerClass.InstanceOf(declaringClass) && !declaringClass.InstanceOf(callerClass)) {
+			if callerCls3 == nil || (!callerCls3.InstanceOf(declaringClass) && !declaringClass.InstanceOf(callerCls3)) {
 				return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
 					fmt.Sprintf("Closure::fromCallable(): Argument #1 ($callback) must be a valid callback, cannot access protected method %s::%s()", class.GetName(), member.Name))
 			}

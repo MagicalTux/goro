@@ -202,9 +202,9 @@ func (c *Global) CallZVal(ctx phpv.Context, f phpv.Callable, args []*phpv.ZVal, 
 
 func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZVal, isInternal bool, optionalThis ...phpv.ZObject) (callResult *phpv.ZVal, callErr error) {
 	c.callDepth++
-	if c.callDepth > 512 {
+	if c.callDepth > 4096 {
 		c.callDepth--
-		return nil, ctx.Errorf("Maximum function nesting level of '512' reached, aborting!")
+		return nil, ctx.Errorf("Maximum function nesting level of '4096' reached, aborting!")
 	}
 	callCtx := GetFuncContext()
 	callCtx.Context = ctx

@@ -526,6 +526,9 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		p.stdinData = b.Bytes()
 		p.cliMode = true // STDIN implies CLI mode
 		return nil
+	case "FLAKY":
+		// FLAKY marks tests that may fail intermittently; treat as informational
+		return nil
 	case "CGI", "CAPTURE_STDIO":
 		// These require special execution modes we don't support yet
 		return skipError{reason: "unsupported section: " + part}
@@ -571,6 +574,16 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		// EXPECTHEADERS checks HTTP response headers. In our test runner
 		// we don't validate response headers — just skip silently.
 		return nil
+	case "FILE_EXTERNAL":
+		// Read the script from an external file and delegate to FILE handler
+		extFile := strings.TrimSpace(b.String())
+		extPath := filepath.Join(filepath.Dir(p.path), extFile)
+		extData, err := os.ReadFile(extPath)
+		if err != nil {
+			return fmt.Errorf("FILE_EXTERNAL: cannot read %s: %s", extPath, err)
+		}
+		extBuf := bytes.NewBuffer(extData)
+		return p.handlePart("FILE", extBuf)
 	case "EXPECT_EXTERNAL", "EXPECTF_EXTERNAL", "EXPECTREGEX_EXTERNAL":
 		// Read the external file and delegate to the corresponding handler
 		extFile := strings.TrimSpace(b.String())
@@ -662,7 +675,7 @@ func runTest(t *testing.T, fpath string) (p *phptest, err error) {
 
 	for _, name := range sectionOrder {
 		switch name {
-		case "FILE", "FILEEOF":
+		case "FILE", "FILEEOF", "FILE_EXTERNAL":
 			fileParts = append(fileParts, name)
 		case "EXPECT", "EXPECTF", "EXPECTREGEX", "EXPECT_EXTERNAL", "EXPECTF_EXTERNAL",
 			"EXPECTREGEX_EXTERNAL", "EXPECTHEADERS", "CLEAN":

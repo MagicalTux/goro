@@ -8,7 +8,7 @@ var Countable = &phpobj.ZClass{
 	Type: phpv.ZClassTypeInterface,
 	Name: "Countable",
 	Methods: map[phpv.ZString]*phpv.ZClassMethod{
-		"count": {Name: "count", Modifiers: phpv.ZAttrPublic | phpv.ZAttrAbstract, Empty: true},
+		"count": {Name: "count", Modifiers: phpv.ZAttrPublic, Empty: true},
 	},
 }
 
@@ -25,7 +25,7 @@ var SeekableIterator = &phpobj.ZClass{
 	Name:    "SeekableIterator",
 	Extends: phpobj.Iterator,
 	Methods: map[phpv.ZString]*phpv.ZClassMethod{
-		"seek": {Name: "seek", Modifiers: phpv.ZAttrPublic | phpv.ZAttrAbstract, Empty: true},
+		"seek": {Name: "seek", Modifiers: phpv.ZAttrPublic, Empty: true},
 	},
 }
 
@@ -34,7 +34,7 @@ var SplObserver = &phpobj.ZClass{
 	Type: phpv.ZClassTypeInterface,
 	Name: "SplObserver",
 	Methods: map[phpv.ZString]*phpv.ZClassMethod{
-		"update": {Name: "update", Modifiers: phpv.ZAttrPublic | phpv.ZAttrAbstract, Empty: true},
+		"update": {Name: "update", Modifiers: phpv.ZAttrPublic, Empty: true},
 	},
 }
 
@@ -43,8 +43,8 @@ var SplSubject = &phpobj.ZClass{
 	Type: phpv.ZClassTypeInterface,
 	Name: "SplSubject",
 	Methods: map[phpv.ZString]*phpv.ZClassMethod{
-		"attach": {Name: "attach", Modifiers: phpv.ZAttrPublic | phpv.ZAttrAbstract, Empty: true},
-		"detach": {Name: "detach", Modifiers: phpv.ZAttrPublic | phpv.ZAttrAbstract, Empty: true},
-		"notify": {Name: "notify", Modifiers: phpv.ZAttrPublic | phpv.ZAttrAbstract, Empty: true},
+		"attach": {Name: "attach", Modifiers: phpv.ZAttrPublic, Empty: true},
+		"detach": {Name: "detach", Modifiers: phpv.ZAttrPublic, Empty: true},
+		"notify": {Name: "notify", Modifiers: phpv.ZAttrPublic, Empty: true},
 	},
 }

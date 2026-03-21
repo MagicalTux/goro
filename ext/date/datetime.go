@@ -1299,12 +1299,12 @@ func init() {
 			"RFC2822", "RFC3339", "RFC3339_EXTENDED", "RSS", "W3C",
 		},
 		Methods: map[phpv.ZString]*phpv.ZClassMethod{
-			"format":       {Name: "format", Modifiers: phpv.ZAttrPublic | phpv.ZAttrAbstract, Empty: true},
-			"gettimestamp": {Name: "getTimestamp", Modifiers: phpv.ZAttrPublic | phpv.ZAttrAbstract, Empty: true},
-			"getoffset":    {Name: "getOffset", Modifiers: phpv.ZAttrPublic | phpv.ZAttrAbstract, Empty: true},
-			"gettimezone":  {Name: "getTimezone", Modifiers: phpv.ZAttrPublic | phpv.ZAttrAbstract, Empty: true},
-			"diff":         {Name: "diff", Modifiers: phpv.ZAttrPublic | phpv.ZAttrAbstract, Empty: true},
-			"__wakeup":     {Name: "__wakeup", Modifiers: phpv.ZAttrPublic | phpv.ZAttrAbstract, Empty: true},
+			"format":       {Name: "format", Modifiers: phpv.ZAttrPublic, Empty: true},
+			"gettimestamp": {Name: "getTimestamp", Modifiers: phpv.ZAttrPublic, Empty: true},
+			"getoffset":    {Name: "getOffset", Modifiers: phpv.ZAttrPublic, Empty: true},
+			"gettimezone":  {Name: "getTimezone", Modifiers: phpv.ZAttrPublic, Empty: true},
+			"diff":         {Name: "diff", Modifiers: phpv.ZAttrPublic, Empty: true},
+			"__wakeup":     {Name: "__wakeup", Modifiers: phpv.ZAttrPublic, Empty: true},
 		},
 	}
 

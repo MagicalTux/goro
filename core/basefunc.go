@@ -89,6 +89,15 @@ func fncDefine(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	g := ctx.Global()
 
+	// __COMPILER_HALT_OFFSET__ is a reserved "magic" constant.
+	// PHP always warns when trying to define() it, even if it hasn't been set by __halt_compiler().
+	if name == "__COMPILER_HALT_OFFSET__" {
+		if err := ctx.Warn("Constant %s already defined, this will be an error in PHP 9", name, logopt.NoFuncName(true)); err != nil {
+			return nil, err
+		}
+		return phpv.ZBool(false).ZVal(), nil
+	}
+
 	ok := g.ConstantSet(name, value.Value())
 	if !ok {
 		if err := ctx.Warn("Constant %s already defined, this will be an error in PHP 9", name, logopt.NoFuncName(true)); err != nil {

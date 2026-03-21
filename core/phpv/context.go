@@ -90,6 +90,7 @@ type GlobalContext interface {
 
 	ConstantSet(k ZString, v Val) bool
 	ConstantGet(k ZString) (Val, bool)
+	ConstantForceSet(k ZString, v Val) // overwrite even if already set
 	ConstantSetAttributes(k ZString, attrs []*ZAttribute)
 	ConstantGetAttributes(k ZString) []*ZAttribute
 

@@ -1,8 +1,14 @@
 package tokenizer
 
 func lexText(l *Lexer) lexState {
+	// Skip UTF-8 BOM at the very start of the file
+	// BOM is U+FEFF which is 3 bytes in UTF-8 but 1 rune
+	if l.pos == 0 && l.start == 0 && l.hasPrefix("\xEF\xBB\xBF") {
+		l.next() // consume the single BOM rune (U+FEFF)
+		l.ignore()
+	}
 	// Skip shebang line (#!) at the very start of the file
-	if l.pos == 0 && l.start == 0 && l.hasPrefix("#!") {
+	if l.start == l.pos && l.pos <= 3 && l.hasPrefix("#!") {
 		for {
 			c := l.next()
 			if c == '\n' || c == eof {

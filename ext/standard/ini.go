@@ -31,6 +31,12 @@ func fncParseIniFile(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	sections := bool(processSections.GetOrDefault(phpv.ZBool(false)))
 	mode := scannerMode.GetOrDefault(INI_SCANNER_NORMAL)
 
+	// Validate scanner mode
+	if mode != INI_SCANNER_NORMAL && mode != INI_SCANNER_RAW && mode != INI_SCANNER_TYPED {
+		ctx.Warn("Invalid scanner mode", logopt.NoFuncName(true))
+		return phpv.ZFalse.ZVal(), nil
+	}
+
 	// Use ctx.Global().OpenFile() for file access
 	path := string(filename)
 	if len(path) == 0 || path[0] != '/' {
@@ -65,6 +71,12 @@ func fncParseIniString(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 
 	sections := bool(processSections.GetOrDefault(phpv.ZBool(false)))
 	mode := scannerMode.GetOrDefault(INI_SCANNER_NORMAL)
+
+	// Validate scanner mode
+	if mode != INI_SCANNER_NORMAL && mode != INI_SCANNER_RAW && mode != INI_SCANNER_TYPED {
+		ctx.Warn("Invalid scanner mode", logopt.NoFuncName(true))
+		return phpv.ZFalse.ZVal(), nil
+	}
 
 	return parseIniString(ctx, string(iniString), sections, mode)
 }

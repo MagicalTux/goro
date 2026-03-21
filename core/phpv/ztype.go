@@ -189,12 +189,6 @@ func (z ZFloat) AsVal(ctx Context, t ZType) (Val, error) {
 	f := float64(z)
 	switch t {
 	case ZtBool:
-		// PHP 8.5: warn when NAN is coerced to bool
-		if math.IsNaN(f) && ctx != nil {
-			if err := ctx.Warn("unexpected NAN value was coerced to %s", t.TypeName(), logopt.NoFuncName(true)); err != nil {
-				return ZBool(true), err
-			}
-		}
 		return ZBool(z != 0), nil
 	case ZtInt:
 		if math.IsNaN(f) || math.IsInf(f, 0) || f > math.MaxInt64 || f < math.MinInt64 {
@@ -209,44 +203,18 @@ func (z ZFloat) AsVal(ctx Context, t ZType) (Val, error) {
 	case ZtFloat:
 		return z, nil
 	case ZtString:
-		// PHP 8.5: warn when NAN is coerced to string
-		if math.IsNaN(f) && ctx != nil {
-			if err := ctx.Warn("unexpected NAN value was coerced to %s", t.TypeName(), logopt.NoFuncName(true)); err != nil {
-				return ZString("NAN"), err
-			}
-		}
 		prec := 14
 		if ctx != nil {
 			prec = GetPrecision(ctx)
 		}
 		return ZString(FormatFloatPrecision(f, prec)), nil
 	case ZtArray:
-		// PHP 8.5: warn when NAN is coerced to array
-		if math.IsNaN(f) && ctx != nil {
-			if err := ctx.Warn("unexpected NAN value was coerced to %s", t.TypeName(), logopt.NoFuncName(true)); err != nil {
-				arr := NewZArray()
-				arr.OffsetSet(ctx, nil, ZNULL.ZVal())
-				return arr, err
-			}
-		}
 		arr := NewZArray()
 		arr.OffsetSet(ctx, nil, z.ZVal())
 		return arr, nil
 	case ZtObject:
-		// PHP 8.5: warn when NAN is coerced to object
-		if math.IsNaN(f) && ctx != nil {
-			if err := ctx.Warn("unexpected NAN value was coerced to %s", t.TypeName(), logopt.NoFuncName(true)); err != nil {
-				return scalarToObject(ctx, ZNULL.ZVal())
-			}
-		}
 		return scalarToObject(ctx, z.ZVal())
 	case ZtNull:
-		// PHP 8.5: warn when NAN is coerced to null
-		if math.IsNaN(f) && ctx != nil {
-			if err := ctx.Warn("unexpected NAN value was coerced to %s", t.TypeName(), logopt.NoFuncName(true)); err != nil {
-				return ZNull{}, err
-			}
-		}
 		return ZNull{}, nil
 	}
 	return nil, nil

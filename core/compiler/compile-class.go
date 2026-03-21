@@ -279,6 +279,10 @@ func (z *zclassCompileCtx) resolveConstantName(name string) string {
 	return z.compileCtx.resolveConstantName(name)
 }
 
+func (z *zclassCompileCtx) isTopLevel() bool {
+	return false // inside a class is never top level
+}
+
 func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	var attr phpv.ZClassAttr
 	var classAttrs []*phpv.ZAttribute

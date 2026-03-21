@@ -133,6 +133,10 @@ func (r *runVariable) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		case *runnableUnset:
 			// unset() on undefined variables is silently ignored
 			write = true
+		case phpv.Runnables:
+			// Bare variable used as a statement ($var;) - PHP's compiler
+			// optimizes this away (no FETCH_R opcode), so no warning.
+			write = true
 		}
 
 		if !write {

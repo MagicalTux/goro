@@ -941,6 +941,46 @@ func stdGetObjectVars(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return result.ZVal(), nil
 }
 
+// > func array get_mangled_object_vars ( object $object )
+// Returns all object properties (including private/protected) with PHP name mangling.
+// Private properties are stored as "\0ClassName\0propName".
+// Protected properties are stored as "\0*\0propName".
+func stdGetMangledObjectVars(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var obj *phpv.ZVal
+	_, err := core.Expand(ctx, args, &obj)
+	if err != nil {
+		return nil, err
+	}
+
+	if obj.GetType() != phpv.ZtObject {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("get_mangled_object_vars(): Argument #1 ($object) must be of type object, %s given", obj.GetType().TypeName()))
+	}
+
+	o := obj.AsObject(ctx)
+	if o == nil {
+		return phpv.NewZArray().ZVal(), nil
+	}
+
+	result := phpv.NewZArray()
+	ht := o.HashTable()
+	if ht != nil {
+		it := ht.NewIterator()
+		for ; it.Valid(ctx); it.Next(ctx) {
+			k, err := it.Key(ctx)
+			if err != nil {
+				continue
+			}
+			v, err := it.Current(ctx)
+			if err != nil {
+				continue
+			}
+			result.OffsetSet(ctx, k, v)
+		}
+	}
+	return result.ZVal(), nil
+}
+
 // > func bool property_exists ( object|string $object_or_class , string $property )
 func stdPropertyExists(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 2 {

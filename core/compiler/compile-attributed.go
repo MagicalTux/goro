@@ -148,6 +148,10 @@ func compileAttributed(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		return r, nil
 
 	case tokenizer.T_CONST:
+		// const with attributes inside a function body is a parse error
+		if c.getFunc() != nil {
+			return nil, i.Unexpected()
+		}
 		// Top-level constant with attributes: #[Attr] const FOO = expr;
 		r, err := compileTopLevelConst(i, c)
 		if err != nil {

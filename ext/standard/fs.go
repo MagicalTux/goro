@@ -510,7 +510,8 @@ func fncFileGetContents(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 		if errors.Is(err, os.ErrNotExist) {
 			return phpv.ZFalse.ZVal(), ctx.Warn("%s(%s): Failed to open stream: No such file or directory", ctx.GetFuncName(), filename, logopt.NoFuncName(true))
 		}
-		return nil, err
+		// Catch "is a directory" and permission errors gracefully
+		return phpv.ZFalse.ZVal(), ctx.Warn("%s(%s): Failed to open stream: %s", ctx.GetFuncName(), filename, err, logopt.NoFuncName(true))
 	}
 	defer f.Close()
 
@@ -522,25 +523,29 @@ func fncFileGetContents(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 			_, err = f.Seek(int64(offsetArg.Get()), io.SeekStart)
 		}
 		if err != nil {
-			return nil, err
+			return phpv.ZFalse.ZVal(), ctx.Warn("%s(%s): Failed to seek stream", ctx.GetFuncName(), filename, logopt.NoFuncName(true))
 		}
 	}
 
 	if !maxlen.HasArg() {
 		buf, err := io.ReadAll(f)
 		if err != nil {
-			return nil, err
+			return phpv.ZFalse.ZVal(), ctx.Warn("%s(%s): Failed to read stream: %s", ctx.GetFuncName(), filename, err, logopt.NoFuncName(true))
 		}
 		return phpv.ZStr(string(buf)), nil
 	}
 
 	buf := make([]byte, maxlen.Get())
-	_, err = f.Read(buf)
+	n, err := f.Read(buf)
 	if err != nil && err != io.EOF {
 		return nil, err
 	}
+	if n == 0 {
+		// Nothing was read (e.g. offset past end of stream) — PHP returns false
+		return phpv.ZFalse.ZVal(), nil
+	}
 
-	return phpv.ZStr(string(buf)), nil
+	return phpv.ZStr(string(buf[:n])), nil
 }
 
 // > func int file_put_contents ( string $filename , mixed $data [, int $flags = 0 [, resource $context ]]
@@ -1426,6 +1431,20 @@ func fncChgrp(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZFalse.ZVal(), nil
 	}
 	return phpv.ZTrue.ZVal(), nil
+}
+
+// > func int|false getlastmod ( void )
+// Returns the last modification time of the main script
+func fncGetlastmod(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	scriptFile := ctx.GetScriptFile()
+	if scriptFile == "" {
+		return phpv.ZFalse.ZVal(), nil
+	}
+	info, err := os.Stat(string(scriptFile))
+	if err != nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+	return phpv.ZInt(info.ModTime().Unix()).ZVal(), nil
 }
 
 // > func string get_current_user ( void )

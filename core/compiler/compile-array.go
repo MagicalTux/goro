@@ -438,7 +438,8 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		// PHP 8: accessing a scalar with array syntax in write context throws Error
 		isWriteOp := ac.writeContext
 		if !isWriteOp {
-			if op, ok := ac.Parent.(*runOperator); ok && op.opD != nil && op.opD.write {
+			if op, ok := ac.Parent.(*runOperator); ok && op.opD != nil && op.opD.write && op.a == ac {
+				// Only treat as write if this array access is the LHS of the assignment
 				isWriteOp = true
 			}
 		}
@@ -709,7 +710,7 @@ func (ac *runArrayAccess) writeValueToString(ctx phpv.Context, value *phpv.ZVal)
 	// value is used. If the value is a multi-character string, warn.
 	valStr := value.AsString(ctx)
 	if len(valStr) == 0 {
-		valStr = "\x00"
+		return phpobj.ThrowError(ctx, phpobj.Error, "Cannot assign an empty string to a string offset")
 	} else if len(valStr) > 1 {
 		ctx.Warn("Only the first byte will be assigned to the string offset")
 		valStr = valStr[:1]

@@ -26,3 +26,7 @@ func (z *zclosureCompileCtx) resolveFunctionName(name phpv.ZString) phpv.ZString
 func (z *zclosureCompileCtx) resolveConstantName(name string) string {
 	return z.compileCtx.resolveConstantName(name)
 }
+
+func (z *zclosureCompileCtx) isTopLevel() bool {
+	return false // inside a function is never top level
+}

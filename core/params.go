@@ -276,8 +276,8 @@ func ExpandAt(ctx phpv.Context, args []*phpv.ZVal, i int, out interface{}) error
 	isRef := false
 	switch r := out.(type) {
 	case optionalReferable:
-		if i >= len(args) {
-			// no more args and this is optional, so no error
+		if i >= len(args) || args[i] == nil {
+			// no more args (or skipped named param) and this is optional, so no error
 			return nil
 		}
 		isRef = true

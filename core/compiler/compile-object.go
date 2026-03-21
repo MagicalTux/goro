@@ -3,6 +3,7 @@ package compiler
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpobj"
@@ -584,7 +585,7 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		// in B, A::foo() and C::foo() is a non-static call.
 		// Whereas, in or outside of B, D::foo() is a static call.
 
-		switch className {
+		switch strings.ToLower(string(className)) {
 		case "self":
 			if ctx.This() != nil {
 				objI = ctx.This()
@@ -1278,7 +1279,7 @@ func (r *runObjectDynFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		var class phpv.ZClass
 		var objI phpv.ZObject
 
-		switch className {
+		switch strings.ToLower(string(className)) {
 		case "self":
 			if ctx.This() != nil {
 				objI = ctx.This()
@@ -1635,7 +1636,13 @@ func compileObjectOperator(v phpv.Runnable, i *tokenizer.Item, c compileCtx, nul
 			// Dynamic method call: $obj->{expr}()
 			dynFunc := &runObjectDynFunc{ref: v, nameExpr: expr, l: l, nullsafe: nullsafe, nullChain: chainProp}
 			dynFunc.args, err = compileFuncPassedArgs(c)
-			return dynFunc, err
+			if err != nil {
+				return nil, err
+			}
+			if IsFirstClassCallable(dynFunc.args) {
+				return &runFirstClassDynMethodCallable{ref: v, nameExpr: expr, l: l}, nil
+			}
+			return dynFunc, nil
 		}
 		// Dynamic property access: $obj->{expr}
 		return &runObjectDynVar{ref: v, nameExpr: expr, l: l, nullsafe: nullsafe, nullChain: chainProp}, nil
@@ -1719,13 +1726,27 @@ func (r *runFirstClassMethodCallable) Run(ctx phpv.Context) (*phpv.ZVal, error) 
 	}
 
 	class := obj.GetClass()
-	member, ok := class.GetMethod(r.method.ToLower())
+	_, ok := class.GetMethod(r.method.ToLower())
 	if !ok {
+		// Check for __call magic method
+		if callMethod, hasCall := class.GetMethod("__call"); hasCall {
+			w := &wrappedClosure{
+				inner: &magicCallClosure{callMethod: callMethod.Method, methodName: r.method, instance: obj},
+				name:  phpv.ZString(string(class.GetName()) + "::__call"),
+				this:  obj,
+				class: class,
+			}
+			return w.Spawn(ctx)
+		}
 		return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Call to undefined method %s::%s()", class.GetName(), r.method))
 	}
 
-	callable := phpv.Bind(member.Method, obj)
-	return phpv.NewZVal(callable), nil
+	// Build a proper Closure object via closureFromCallable so that
+	// ->bindTo() and other Closure methods work correctly.
+	arr := phpv.NewZArray()
+	arr.OffsetSet(ctx, phpv.ZInt(0), obj.ZVal())
+	arr.OffsetSet(ctx, phpv.ZInt(1), r.method.ZVal())
+	return closureFromCallable(ctx, arr.ZVal())
 }
 
 func (r *runFirstClassMethodCallable) Dump(w io.Writer) error {
@@ -1739,6 +1760,54 @@ func (r *runFirstClassMethodCallable) Dump(w io.Writer) error {
 	}
 	w.Write([]byte(r.method))
 	_, err := w.Write([]byte("(...)"))
+	return err
+}
+
+// runFirstClassDynMethodCallable implements $obj->{expr}(...) first-class callable syntax.
+type runFirstClassDynMethodCallable struct {
+	ref      phpv.Runnable
+	nameExpr phpv.Runnable
+	l        *phpv.Loc
+}
+
+func (r *runFirstClassDynMethodCallable) Run(ctx phpv.Context) (*phpv.ZVal, error) {
+	if err := ctx.Tick(ctx, r.l); err != nil {
+		return nil, err
+	}
+
+	refVal, err := r.ref.Run(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	nameVal, err := r.nameExpr.Run(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	obj := refVal.AsObject(ctx)
+	if obj == nil {
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, "Call to a member function on non-object")
+	}
+
+	methodName := nameVal.AsString(ctx)
+
+	// Build a Closure via closureFromCallable
+	arr := phpv.NewZArray()
+	arr.OffsetSet(ctx, phpv.ZInt(0), obj.ZVal())
+	arr.OffsetSet(ctx, phpv.ZInt(1), methodName.ZVal())
+	return closureFromCallable(ctx, arr.ZVal())
+}
+
+func (r *runFirstClassDynMethodCallable) Dump(w io.Writer) error {
+	if err := r.ref.Dump(w); err != nil {
+		return err
+	}
+	w.Write([]byte("->{"))
+	if err := r.nameExpr.Dump(w); err != nil {
+		return err
+	}
+	_, err := w.Write([]byte("}(...)"))
 	return err
 }
 

@@ -38,6 +38,7 @@ type compileCtx interface {
 	resolveClassName(name phpv.ZString) phpv.ZString
 	resolveFunctionName(name phpv.ZString) phpv.ZString
 	resolveConstantName(name string) string
+	isTopLevel() bool // true when at the outermost scope (not inside any block or function)
 }
 
 type bracketEntry struct {
@@ -225,6 +226,17 @@ func (c *compileRootCtx) getClass() *phpobj.ZClass {
 
 func (c *compileRootCtx) getFunc() *ZClosure {
 	return nil
+}
+
+func (c *compileRootCtx) isTopLevel() bool {
+	// We're at the top level if the bracket stack has no '{' entries.
+	// The bracket stack tracks open brackets that haven't been closed yet.
+	for _, b := range c.bracketStack {
+		if b.char == '{' {
+			return false
+		}
+	}
+	return c.getFunc() == nil
 }
 
 func (c *compileRootCtx) peekType() tokenizer.ItemType {
@@ -601,6 +613,8 @@ func GetChildren(r phpv.Runnable) []phpv.Runnable {
 		return t.args
 	case *runNoDiscardStatement:
 		return rt{t.inner}
+	case *runnableDeclareTicks:
+		return rt{t.body}
 	case *runDestroyTemporary:
 		return rt{t.inner}
 	case *phperr.PhpBreak:

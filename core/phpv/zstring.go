@@ -360,7 +360,7 @@ func (z ZStringArray) OffsetSet(ctx Context, key Val, value *ZVal) error {
 		ctx.Warn("Only the first byte will be assigned to the string offset")
 		c = c[:1]
 	} else if len(c) == 0 {
-		c = "\x00"
+		return errors.New("Cannot assign an empty string to a string offset")
 	}
 
 	if i < 0 {

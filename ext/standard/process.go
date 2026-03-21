@@ -35,6 +35,14 @@ func fncMemoryGetUsage(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 	return phpv.ZInt(m.HeapAlloc).ZVal(), nil
 }
 
+// > func void memory_reset_peak_usage ( void )
+func fncMemoryResetPeakUsage(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	// Go's runtime doesn't support resetting peak memory tracking.
+	// Run GC to free memory so that subsequent peak usage reads are lower.
+	runtime.GC()
+	return nil, nil
+}
+
 // > func int memory_get_peak_usage ([ bool $real_usage = false ] )
 func fncMemoryGetPeakUsage(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var realUsage *bool

@@ -1134,6 +1134,9 @@ func fncArraySearch(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 // > func mixed key ( array $array )
 func fncArrayKey(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) > 0 && args[0] != nil && args[0].GetType() == phpv.ZtObject {
+		ctx.Deprecated("key(): Calling key() on an object is deprecated")
+	}
 	var array *phpv.ZArray
 	_, err := core.Expand(ctx, args, &array)
 	if err != nil {
@@ -1153,6 +1156,9 @@ func fncArrayKey(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // > func mixed current ( array $array )
 // > alias pos
 func fncArrayCurrent(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) > 0 && args[0] != nil && args[0].GetType() == phpv.ZtObject {
+		ctx.Deprecated("current(): Calling current() on an object is deprecated")
+	}
 	var array *phpv.ZArray
 	_, err := core.Expand(ctx, args, &array)
 	if err != nil {
@@ -1172,6 +1178,11 @@ func fncArrayCurrent(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 // > func mixed next ( array &$array )
 func fncArrayNext(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	// PHP 8.5: calling next() on an object is deprecated
+	if len(args) > 0 && args[0] != nil && args[0].GetType() == phpv.ZtObject {
+		ctx.Deprecated("next(): Calling next() on an object is deprecated")
+	}
+
 	var array core.Ref[*phpv.ZArray]
 	_, err := core.Expand(ctx, args, &array)
 	if err != nil {
@@ -1192,6 +1203,9 @@ func fncArrayNext(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 // > func mixed prev ( array &$array )
 func fncArrayPrev(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) > 0 && args[0] != nil && args[0].GetType() == phpv.ZtObject {
+		ctx.Deprecated("prev(): Calling prev() on an object is deprecated")
+	}
 	var array core.Ref[*phpv.ZArray]
 	_, err := core.Expand(ctx, args, &array)
 	if err != nil {
@@ -1210,6 +1224,9 @@ func fncArrayPrev(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 // > func mixed reset ( array &$array )
 func fncArrayReset(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) > 0 && args[0] != nil && args[0].GetType() == phpv.ZtObject {
+		ctx.Deprecated("reset(): Calling reset() on an object is deprecated")
+	}
 	var array core.Ref[*phpv.ZArray]
 	_, err := core.Expand(ctx, args, &array)
 	if err != nil {
@@ -1231,6 +1248,9 @@ func fncArrayReset(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 // > func mixed end ( array &$array )
 func fncArrayEnd(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) > 0 && args[0] != nil && args[0].GetType() == phpv.ZtObject {
+		ctx.Deprecated("end(): Calling end() on an object is deprecated")
+	}
 	var array core.Ref[*phpv.ZArray]
 	_, err := core.Expand(ctx, args, &array)
 	if err != nil {
@@ -1897,9 +1917,17 @@ func fncArrayProduct(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			}
 			continue
 		case phpv.ZtString:
-			// Check if string is numeric; if it contains '.', 'e', or 'E', result becomes float
-			s := string(v.AsString(ctx))
-			if strings.ContainsAny(s, ".eE") {
+			// Check if string is numeric; if not, warn but still use its numeric value (0)
+			s := v.AsString(ctx)
+			isNumStr := s.IsNumeric()
+			if !isNumStr {
+				if err := ctx.Warn("Multiplication is not supported on type string"); err != nil {
+					return nil, err
+				}
+			}
+			ss := string(s)
+			// Only check for float indicators in actually numeric strings
+			if isNumStr && strings.ContainsAny(ss, ".eE") {
 				floatResult = true
 			}
 			if !floatResult {
@@ -1923,7 +1951,10 @@ func fncArrayProduct(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			if err := ctx.Warn("Multiplication is not supported on type %s", v.GetType().TypeName()); err != nil {
 				return nil, err
 			}
-			continue
+			// Warn but still use the resource's numeric value (resource ID)
+			vi := v.AsInt(ctx)
+			intProduct *= vi
+			floatProduct *= phpv.ZFloat(vi)
 		default:
 			if !floatResult {
 				newProduct := intProduct * v.AsInt(ctx)
@@ -2252,6 +2283,9 @@ func fncArraySplice(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, ctx.Error(err)
 	}
 
+	// Check if length argument was explicitly null (treated same as omitted in PHP)
+	lengthIsNull := len(args) >= 3 && args[2] != nil && args[2].GetType() == phpv.ZtNull
+
 	arrayCount := array.Get().Count(ctx)
 	length := phpv.ZInt(arrayCount)
 	replacement := phpv.NewZArray()
@@ -2259,7 +2293,7 @@ func fncArraySplice(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if offset < 0 {
 		offset = arrayCount + offset
 	}
-	if lengthArg.HasArg() {
+	if lengthArg.HasArg() && !lengthIsNull {
 		length = lengthArg.Get()
 		if length < 0 {
 			length = min(arrayCount+length, arrayCount)

@@ -1358,6 +1358,12 @@ func (g *Global) ConstantSet(k phpv.ZString, v phpv.Val) bool {
 	return true
 }
 
+// ConstantForceSet sets a constant value, overwriting any existing value.
+// Used for __COMPILER_HALT_OFFSET__ which is per-file.
+func (g *Global) ConstantForceSet(k phpv.ZString, v phpv.Val) {
+	g.constant[k] = v
+}
+
 func (g *Global) ConstantSetAttributes(k phpv.ZString, attrs []*phpv.ZAttribute) {
 	g.constantAttrs[k] = attrs
 }

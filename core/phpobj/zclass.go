@@ -1003,8 +1003,11 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 		if implementsTraversable && !implementsIteratorOrAggregate {
 			return c.fatalError(ctx, fmt.Sprintf("Class %s must implement interface Traversable as part of either Iterator or IteratorAggregate", c.Name))
 		}
+	}
 
-		// Check mutual exclusion: cannot implement both Iterator and IteratorAggregate
+	// Check mutual exclusion: cannot implement both Iterator and IteratorAggregate
+	// This applies to ALL non-interface classes, including abstract ones.
+	if c.Type != phpv.ZClassTypeInterface {
 		hasIterator := c.Implements(Iterator)
 		hasIteratorAggregate := c.Implements(IteratorAggregate)
 		if hasIterator && hasIteratorAggregate {
