@@ -136,6 +136,75 @@ func init() {
 		return ctx.Call(ctx, callable, args, nil)
 	}
 
+	// Closure comparison handler: two Closure objects are equal only if they
+	// wrap the same underlying callable with the same bound $this and scope.
+	Closure.H.HandleCompare = func(ctx phpv.Context, a, b phpv.ZObject) (int, error) {
+		opaqueA := a.GetOpaque(Closure)
+		opaqueB := b.GetOpaque(Closure)
+
+		if opaqueA == nil || opaqueB == nil {
+			if opaqueA == opaqueB {
+				return 0, nil
+			}
+			return 1, nil
+		}
+
+		// Compare wrappedClosure (from Closure::fromCallable)
+		wA, okA := opaqueA.(*wrappedClosure)
+		wB, okB := opaqueB.(*wrappedClosure)
+		if okA && okB {
+			// Same name, same $this, same class → equal
+			if wA.name != wB.name {
+				return 1, nil
+			}
+			if wA.this != wB.this {
+				return 1, nil
+			}
+			if wA.class != wB.class {
+				return 1, nil
+			}
+			// Compare inner callable identity for __call/__callStatic wrappers
+			if mcA, ok1 := wA.inner.(*magicCallClosure); ok1 {
+				if mcB, ok2 := wB.inner.(*magicCallClosure); ok2 {
+					if mcA.methodName != mcB.methodName {
+						return 1, nil
+					}
+				} else {
+					return 1, nil
+				}
+			}
+			if mcA, ok1 := wA.inner.(*magicCallStaticClosure); ok1 {
+				if mcB, ok2 := wB.inner.(*magicCallStaticClosure); ok2 {
+					if mcA.methodName != mcB.methodName {
+						return 1, nil
+					}
+				} else {
+					return 1, nil
+				}
+			}
+			return 0, nil
+		}
+
+		// Compare ZClosure
+		zA, okZA := opaqueA.(*ZClosure)
+		zB, okZB := opaqueB.(*ZClosure)
+		if okZA && okZB {
+			if zA.code != zB.code {
+				return 1, nil
+			}
+			if zA.this != zB.this {
+				return 1, nil
+			}
+			if zA.class != zB.class {
+				return 1, nil
+			}
+			return 0, nil
+		}
+
+		// Different types of opaque → not equal
+		return 1, nil
+	}
+
 	// Closure::bind() - static method
 	Closure.Methods = map[phpv.ZString]*phpv.ZClassMethod{
 		"bind": {

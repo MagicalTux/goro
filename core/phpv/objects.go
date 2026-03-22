@@ -78,6 +78,7 @@ type ZClassHandlers struct {
 	HandleInvoke     func(ctx Context, o ZObject, args []Runnable) (*ZVal, error)
 	HandleDecRef     func(ctx Context, o ZObject) // called when object refcount is decremented during scope cleanup
 	HandleCastArray  func(ctx Context, o ZObject) (*ZArray, error) // override (array) cast
+	HandleCompare    func(ctx Context, a, b ZObject) (int, error)  // override == comparison; return 0=equal, non-0=not-equal
 }
 
 type ZClass interface {

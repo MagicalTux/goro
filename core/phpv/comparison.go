@@ -36,6 +36,11 @@ func CompareObject(ctx Context, ao, bo ZObject) (int, error) {
 		return CompareUncomparable, nil
 	}
 
+	// Check for custom comparison handler (e.g., Closure)
+	if h := ao.GetClass().Handlers(); h != nil && h.HandleCompare != nil {
+		return h.HandleCompare(ctx, ao, bo)
+	}
+
 	compareDepth++
 	if compareDepth > 256 {
 		compareDepth--

@@ -1107,9 +1107,20 @@ func strToTime(input string, base time.Time) (time.Time, bool) {
 	} {
 		if t, err := time.Parse(layout, input); err == nil {
 			// Fix timezone names for fixed offsets from time.Parse
-			if t.Location().String() == "" {
+			locName := t.Location().String()
+			if locName == "" {
 				_, offset := t.Zone()
 				t = t.In(makeFixedZone(offset))
+			} else {
+				// Go's time.Parse may parse timezone abbreviations with offset 0
+				// when the actual offset should be non-zero. Fix using our abbreviation table.
+				upper := strings.ToUpper(locName)
+				if realOffset, ok := timezoneAbbreviationOffsets[upper]; ok {
+					_, parsedOffset := t.Zone()
+					if parsedOffset != realOffset {
+						t = time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), t.Nanosecond(), time.FixedZone(locName, realOffset))
+					}
+				}
 			}
 			return t, true
 		}
