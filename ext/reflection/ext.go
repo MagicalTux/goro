@@ -124,6 +124,8 @@ func init() {
 
 	// Copy methods to classes that inherit from ReflectionClass (after it's fully initialized)
 	ReflectionEnum.Methods = phpobj.CopyMethods(ReflectionClass.Methods)
+	ReflectionEnum.Props = ReflectionClass.Props
+	initReflectionEnum()
 
 	// ReflectionObject extends ReflectionClass with the same behavior
 	ReflectionObject = &phpobj.ZClass{
@@ -153,6 +155,8 @@ func init() {
 			ReflectionParameter,
 			ReflectionType,
 			ReflectionNamedType,
+			ReflectionUnionType,
+			ReflectionIntersectionType,
 			ReflectionAttribute,
 		},
 	})
