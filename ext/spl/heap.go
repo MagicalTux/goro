@@ -2,6 +2,7 @@ package spl
 
 import (
 	"container/heap"
+	"fmt"
 
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
@@ -346,6 +347,72 @@ func initSplHeap() {
 				return phpv.ZTrue.ZVal(), nil
 			}),
 		},
+		"__serialize": {Name: "__serialize", Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+			d := getHeapData(o)
+			if d != nil && d.corrupted {
+				return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException, "Heap is corrupted, heap properties are no longer ensured.")
+			}
+			result := phpv.NewZArray()
+			// Key 0: member properties (empty array for base classes)
+			result.OffsetSet(ctx, phpv.ZInt(0), phpv.NewZArray().ZVal())
+			// Key 1: internal data
+			internalData := phpv.NewZArray()
+			internalData.OffsetSet(ctx, phpv.ZString("flags"), phpv.ZInt(0).ZVal())
+			heapElements := phpv.NewZArray()
+			if d != nil {
+				for i, entry := range d.heap.entries {
+					heapElements.OffsetSet(ctx, phpv.ZInt(i), entry.value)
+				}
+			}
+			internalData.OffsetSet(ctx, phpv.ZString("heap_elements"), heapElements.ZVal())
+			result.OffsetSet(ctx, phpv.ZInt(1), internalData.ZVal())
+			return result.ZVal(), nil
+		})},
+		"__unserialize": {Name: "__unserialize", Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+			if len(args) == 0 || args[0] == nil {
+				return nil, nil
+			}
+			arr := args[0].AsArray(ctx)
+			if arr == nil {
+				return nil, phpobj.ThrowError(ctx, phpobj.UnexpectedValueException,
+					fmt.Sprintf("Invalid serialization data for %s object", o.GetClass().GetName()))
+			}
+			// Key 1: internal data
+			internalVal, err := arr.OffsetGet(ctx, phpv.ZInt(1).ZVal())
+			if err != nil || internalVal == nil || internalVal.GetType() != phpv.ZtArray {
+				return nil, phpobj.ThrowError(ctx, phpobj.UnexpectedValueException,
+					fmt.Sprintf("Invalid serialization data for %s object", o.GetClass().GetName()))
+			}
+			internal := internalVal.AsArray(ctx)
+			heapElementsVal, err := internal.OffsetGet(ctx, phpv.ZString("heap_elements").ZVal())
+			if err != nil || heapElementsVal == nil || heapElementsVal.GetType() != phpv.ZtArray {
+				return nil, phpobj.ThrowError(ctx, phpobj.UnexpectedValueException,
+					fmt.Sprintf("Invalid serialization data for %s object", o.GetClass().GetName()))
+			}
+			elements := heapElementsVal.AsArray(ctx)
+			// Determine compare function based on class
+			var compareFn func(phpv.Context, *phpv.ZVal, *phpv.ZVal) (int, error)
+			cls := o.GetClass()
+			switch {
+			case cls == SplMinHeapClass || cls.InstanceOf(SplMinHeapClass):
+				compareFn = minHeapCompare
+			case cls == SplMaxHeapClass || cls.InstanceOf(SplMaxHeapClass):
+				compareFn = maxHeapCompare
+			default:
+				compareFn = func(ctx2 phpv.Context, a, b *phpv.ZVal) (int, error) {
+					return userCompare(ctx2, o, a, b)
+				}
+			}
+			d := initHeapData(ctx, o, compareFn)
+			it := elements.NewIterator()
+			for ; it.Valid(ctx); it.Next(ctx) {
+				v, _ := it.Current(ctx)
+				d.heap.Push(&splHeapEntry{value: v, index: d.nextIndex})
+				d.nextIndex++
+			}
+			heap.Init(d.heap)
+			return nil, nil
+		})},
 		"__debuginfo": {
 			Name: "__debugInfo",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {

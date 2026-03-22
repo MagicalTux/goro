@@ -2,6 +2,7 @@ package spl
 
 import (
 	"container/heap"
+	"fmt"
 
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
@@ -116,6 +117,17 @@ func (d *splPriorityQueueData) extractValue(entry *priorityEntry) *phpv.ZVal {
 	default: // EXTR_DATA
 		return entry.value
 	}
+}
+
+func initPriorityQueueData(ctx phpv.Context, o *phpobj.ZObject) *splPriorityQueueData {
+	d := &splPriorityQueueData{
+		extractFlags: splPriorityQueueExtrData,
+		nextIndex:    0,
+	}
+	d.heap = &priorityHeap{ctx: ctx, data: d}
+	heap.Init(d.heap)
+	o.SetOpaque(SplPriorityQueueClass, d)
+	return d
 }
 
 func initPriorityQueue() {
@@ -356,6 +368,74 @@ func initPriorityQueue() {
 				return phpv.ZTrue.ZVal(), nil
 			}),
 		},
+		"__serialize": {Name: "__serialize", Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+			d := getPriorityQueueData(o)
+			if d != nil && d.corrupted {
+				return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException, "Heap is corrupted, heap properties are no longer ensured.")
+			}
+			result := phpv.NewZArray()
+			result.OffsetSet(ctx, phpv.ZInt(0), phpv.NewZArray().ZVal())
+			internalData := phpv.NewZArray()
+			flags := splPriorityQueueExtrData
+			if d != nil {
+				flags = d.extractFlags
+			}
+			internalData.OffsetSet(ctx, phpv.ZString("flags"), phpv.ZInt(flags).ZVal())
+			heapElements := phpv.NewZArray()
+			if d != nil {
+				for i, entry := range d.heap.entries {
+					pair := phpv.NewZArray()
+					pair.OffsetSet(ctx, phpv.ZString("data"), entry.value)
+					pair.OffsetSet(ctx, phpv.ZString("priority"), entry.priority)
+					heapElements.OffsetSet(ctx, phpv.ZInt(i), pair.ZVal())
+				}
+			}
+			internalData.OffsetSet(ctx, phpv.ZString("heap_elements"), heapElements.ZVal())
+			result.OffsetSet(ctx, phpv.ZInt(1), internalData.ZVal())
+			return result.ZVal(), nil
+		})},
+		"__unserialize": {Name: "__unserialize", Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+			if len(args) == 0 || args[0] == nil {
+				return nil, nil
+			}
+			arr := args[0].AsArray(ctx)
+			if arr == nil {
+				return nil, phpobj.ThrowError(ctx, phpobj.UnexpectedValueException,
+					fmt.Sprintf("Invalid serialization data for %s object", o.GetClass().GetName()))
+			}
+			internalVal, err := arr.OffsetGet(ctx, phpv.ZInt(1).ZVal())
+			if err != nil || internalVal == nil || internalVal.GetType() != phpv.ZtArray {
+				return nil, phpobj.ThrowError(ctx, phpobj.UnexpectedValueException,
+					fmt.Sprintf("Invalid serialization data for %s object", o.GetClass().GetName()))
+			}
+			internal := internalVal.AsArray(ctx)
+			d := initPriorityQueueData(ctx, o)
+			if flagsVal, err2 := internal.OffsetGet(ctx, phpv.ZString("flags").ZVal()); err2 == nil && flagsVal != nil {
+				d.extractFlags = int(flagsVal.AsInt(ctx))
+			}
+			heapElementsVal, err := internal.OffsetGet(ctx, phpv.ZString("heap_elements").ZVal())
+			if err != nil || heapElementsVal == nil || heapElementsVal.GetType() != phpv.ZtArray {
+				return nil, nil
+			}
+			elements := heapElementsVal.AsArray(ctx)
+			it := elements.NewIterator()
+			for ; it.Valid(ctx); it.Next(ctx) {
+				v, _ := it.Current(ctx)
+				pairArr := v.AsArray(ctx)
+				if pairArr == nil {
+					continue
+				}
+				dataVal, _ := pairArr.OffsetGet(ctx, phpv.ZString("data").ZVal())
+				priorityVal, _ := pairArr.OffsetGet(ctx, phpv.ZString("priority").ZVal())
+				if dataVal == nil || priorityVal == nil {
+					continue
+				}
+				d.heap.Push(&priorityEntry{value: dataVal, priority: priorityVal, index: d.nextIndex})
+				d.nextIndex++
+			}
+			heap.Init(d.heap)
+			return nil, nil
+		})},
 		"__debuginfo": {
 			Name: "__debugInfo",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {

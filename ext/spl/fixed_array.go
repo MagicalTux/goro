@@ -436,6 +436,68 @@ func initSplFixedArray() {
 				return arr.ZVal(), nil
 			}),
 		},
+		"__serialize": {Name: "__serialize", Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+			d := getSplFixedArrayData(o)
+			result := phpv.NewZArray()
+			if d != nil {
+				for i, v := range d.data {
+					if v == nil {
+						result.OffsetSet(ctx, phpv.ZInt(i), phpv.ZNULL.ZVal())
+					} else {
+						result.OffsetSet(ctx, phpv.ZInt(i), v)
+					}
+				}
+			}
+			// Include dynamic properties
+			for prop := range o.IterProps(ctx) {
+				v := o.GetPropValue(prop)
+				result.OffsetSet(ctx, prop.VarName, v)
+			}
+			return result.ZVal(), nil
+		})},
+		"__unserialize": {Name: "__unserialize", Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+			if len(args) == 0 || args[0] == nil {
+				return nil, nil
+			}
+			arr := args[0].AsArray(ctx)
+			if arr == nil {
+				return nil, nil
+			}
+			// Find the largest integer key to determine the size
+			maxIdx := -1
+			it := arr.NewIterator()
+			for ; it.Valid(ctx); it.Next(ctx) {
+				k, _ := it.Key(ctx)
+				if k != nil && k.GetType() == phpv.ZtInt {
+					idx := int(k.Value().(phpv.ZInt))
+					if idx > maxIdx {
+						maxIdx = idx
+					}
+				}
+			}
+			d := &splFixedArrayData{}
+			if maxIdx >= 0 {
+				d.data = make([]*phpv.ZVal, maxIdx+1)
+			}
+			// Fill integer-keyed entries and set string-keyed properties
+			it = arr.NewIterator()
+			for ; it.Valid(ctx); it.Next(ctx) {
+				k, _ := it.Key(ctx)
+				v, _ := it.Current(ctx)
+				if k != nil && k.GetType() == phpv.ZtInt {
+					idx := int(k.Value().(phpv.ZInt))
+					if idx >= 0 && idx < len(d.data) {
+						d.data[idx] = v
+					}
+				} else if k != nil && k.GetType() == phpv.ZtString {
+					// Dynamic property
+					propName := k.Value().(phpv.ZString)
+					o.ObjectSet(ctx, propName, v)
+				}
+			}
+			o.SetOpaque(SplFixedArrayClass, d)
+			return nil, nil
+		})},
 	}
 }
 
