@@ -153,6 +153,14 @@ func (r *runNewObject) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		return nil, expandErr
 	}
 
+	// Reorder named arguments based on constructor parameter positions
+	if funcArgs != nil {
+		expandedArgs, err = reorderNewNamedArgs(ctx, funcArgs, expandedArgs)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	var args []*phpv.ZVal
 	var byRefCleanups []*phpv.ZVal
 	for i, a := range expandedArgs {
@@ -1980,6 +1988,88 @@ func expandNewSpreadArgs(ctx phpv.Context, args phpv.Runnables) (phpv.Runnables,
 				fmt.Sprintf("Only arrays and Traversables can be unpacked, %s given", typeName))
 		}
 	}
+	return result, nil
+}
+
+// reorderNewNamedArgs reorders arguments for new expressions based on constructor
+// parameter positions. Named arguments are placed at their parameter position,
+// while positional arguments remain in order. Returns an error for duplicate or
+// unknown named parameters.
+func reorderNewNamedArgs(ctx phpv.Context, funcArgs []*phpv.FuncArg, args phpv.Runnables) (phpv.Runnables, error) {
+	// Check if any args are named
+	hasNamed := false
+	for _, arg := range args {
+		if _, ok := arg.(phpv.NamedArgument); ok {
+			hasNamed = true
+			break
+		}
+	}
+	if !hasNamed {
+		return args, nil
+	}
+
+	// Build result array sized to max(len(funcArgs), len(args))
+	size := len(funcArgs)
+	if len(args) > size {
+		size = len(args)
+	}
+	result := make(phpv.Runnables, size)
+	filled := make([]bool, size)
+
+	// Place positional arguments first
+	positionalEnd := 0
+	for i, arg := range args {
+		if _, ok := arg.(phpv.NamedArgument); ok {
+			break
+		}
+		if i < size {
+			result[i] = arg
+			filled[i] = true
+		}
+		positionalEnd = i + 1
+	}
+
+	// Check if the last funcArg is variadic
+	hasVariadic := false
+	if len(funcArgs) > 0 {
+		hasVariadic = funcArgs[len(funcArgs)-1].Variadic
+	}
+
+	// Place named arguments at their parameter positions
+	for _, arg := range args[positionalEnd:] {
+		na, ok := arg.(phpv.NamedArgument)
+		if !ok {
+			continue
+		}
+		name := na.ArgName()
+		found := false
+		for j, fa := range funcArgs {
+			if fa.VarName == name {
+				if filled[j] {
+					return nil, phpobj.ThrowError(ctx, phpobj.Error,
+						fmt.Sprintf("Named parameter $%s overwrites previous argument", name))
+				}
+				result[j] = arg
+				filled[j] = true
+				found = true
+				break
+			}
+		}
+		if !found {
+			if hasVariadic {
+				result = append(result, arg)
+			} else {
+				return nil, phpobj.ThrowError(ctx, phpobj.Error,
+					fmt.Sprintf("Unknown named parameter $%s", name))
+			}
+		}
+	}
+
+	// Trim trailing nil entries
+	for len(result) > 0 && result[len(result)-1] == nil {
+		result = result[:len(result)-1]
+	}
+
 	return result, nil
 }
 

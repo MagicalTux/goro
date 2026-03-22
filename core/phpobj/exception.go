@@ -54,18 +54,7 @@ func init() {
 				}
 				return getExceptionTrace(ctx, trace).ZVal(), nil
 			})},
-			"gettraceasstring": {Name: "getTraceAsString", Method: NativeMethod(func(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				opaque := o.GetOpaque(Exception)
-				if opaque == nil {
-					return phpv.ZString("").ZVal(), nil
-				}
-				trace, ok := opaque.([]*phpv.StackTraceEntry)
-				if !ok {
-					return phpv.ZString("").ZVal(), nil
-				}
-				maxLen := getExceptionStringParamMaxLen(ctx)
-				return phpv.StackTrace(trace).FormatWithMaxLen(maxLen).ZVal(), nil
-			})},
+			"gettraceasstring": {Name: "getTraceAsString", Method: NativeMethod(exceptionGetTraceAsString)},
 			"__tostring": {Name: "__toString", Method: NativeMethod(exceptionToString)},
 
 			// TODO: final private __clone ( void ) : void
@@ -337,7 +326,159 @@ func exceptionConstruct(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.
 		o.SetOpaque(o.GetClass(), trace)
 	}
 
+	// Store the trace array in the hash table (private property) so that
+	// getTraceAsString() can read it even if modified by user code.
+	traceArr := getExceptionTrace(ctx, trace)
+	// Find the mangled key for the private trace property
+	traceMangledKey := phpv.ZString("*" + string(Exception.GetName()) + ":trace")
+	if o.GetClass().InstanceOf(Error) && !o.GetClass().InstanceOf(Exception) {
+		traceMangledKey = phpv.ZString("*" + string(Error.GetName()) + ":trace")
+	}
+	o.HashTable().SetString(traceMangledKey, traceArr.ZVal())
+
 	return phpv.ZNULL.ZVal(), nil
+}
+
+func exceptionGetTraceAsString(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	maxLen := getExceptionStringParamMaxLen(ctx)
+
+	// Check if the trace property has been modified in the hash table.
+	// The trace property is private to Exception/Error, so it's stored under the mangled name.
+	// Check both the Exception and Error mangled names.
+	var traceVal *phpv.ZVal
+	for _, className := range []string{"Exception", "Error"} {
+		mangledKey := phpv.ZString("*" + className + ":trace")
+		v := o.HashTable().GetString(mangledKey)
+		if v != nil && v.GetType() == phpv.ZtArray {
+			traceVal = v
+			break
+		}
+	}
+
+	if traceVal != nil {
+		traceArr := traceVal.Value().(*phpv.ZArray)
+		return getTraceAsStringFromArray(ctx, traceArr, maxLen).ZVal(), nil
+	}
+
+	// Fall back to opaque storage
+	opaque := o.GetOpaque(Exception)
+	if opaque == nil {
+		return phpv.ZString("#0 {main}").ZVal(), nil
+	}
+	trace, ok := opaque.([]*phpv.StackTraceEntry)
+	if !ok {
+		return phpv.ZString("#0 {main}").ZVal(), nil
+	}
+	return phpv.StackTrace(trace).FormatWithMaxLen(maxLen).ZVal(), nil
+}
+
+// getTraceAsStringFromArray formats a trace array (from the hash table) as a string.
+// This matches PHP's behavior of reading from the trace property which may have
+// been modified by user code (e.g., via ReflectionProperty::setValue).
+func getTraceAsStringFromArray(ctx phpv.Context, traceArr *phpv.ZArray, maxLen int) phpv.ZString {
+	var buf bytes.Buffer
+	level := 0
+	frameIdx := 0
+	for _, frame := range traceArr.Iterate(ctx) {
+		// Each frame should be an array
+		if frame == nil || frame.GetType() != phpv.ZtArray {
+			ctx.Warn("Expected array for frame %d", frameIdx)
+			frameIdx++
+			continue
+		}
+		frameIdx++
+		frameArr := frame.Value().(*phpv.ZArray)
+
+		// Read frame fields with validation
+		fileVal, _ := frameArr.OffsetGet(ctx, phpv.ZString("file"))
+		lineVal, _ := frameArr.OffsetGet(ctx, phpv.ZString("line"))
+		funcVal, _ := frameArr.OffsetGet(ctx, phpv.ZString("function"))
+		classVal, _ := frameArr.OffsetGet(ctx, phpv.ZString("class"))
+		typeVal, _ := frameArr.OffsetGet(ctx, phpv.ZString("type"))
+		argsVal, _ := frameArr.OffsetGet(ctx, phpv.ZString("args"))
+
+		// Validate and extract values
+		file := ""
+		if fileVal != nil && fileVal.GetType() != phpv.ZtNull {
+			if fileVal.GetType() != phpv.ZtString {
+				ctx.Warn("File name is not a string")
+				file = "[unknown file]"
+			} else {
+				file = fileVal.String()
+			}
+		}
+
+		lineNum := 0
+		if lineVal != nil && lineVal.GetType() != phpv.ZtNull {
+			lineNum = int(lineVal.AsInt(ctx))
+		}
+
+		funcName := ""
+		if funcVal != nil && funcVal.GetType() != phpv.ZtNull {
+			if funcVal.GetType() != phpv.ZtString {
+				ctx.Warn("Value for function is not a string")
+				funcName = "[unknown]"
+			} else {
+				funcName = funcVal.String()
+			}
+		}
+
+		className := ""
+		if classVal != nil && classVal.GetType() != phpv.ZtNull {
+			if classVal.GetType() != phpv.ZtString {
+				ctx.Warn("Value for class is not a string")
+				className = "[unknown]"
+			} else {
+				className = classVal.String()
+			}
+		}
+
+		methodType := ""
+		if typeVal != nil && typeVal.GetType() != phpv.ZtNull {
+			if typeVal.GetType() != phpv.ZtString {
+				ctx.Warn("Value for type is not a string")
+				methodType = "[unknown]"
+			} else {
+				methodType = typeVal.String()
+			}
+		}
+
+		// Format args
+		argsStr := ""
+		if argsVal != nil && argsVal.GetType() != phpv.ZtNull {
+			if argsVal.GetType() != phpv.ZtArray {
+				ctx.Warn("args element is not an array")
+			} else {
+				argsArr := argsVal.Value().(*phpv.ZArray)
+				var argsBuf bytes.Buffer
+				first := true
+				for _, arg := range argsArr.Iterate(ctx) {
+					if !first {
+						argsBuf.WriteString(", ")
+					}
+					first = false
+					argsBuf.WriteString(phpv.TraceArgStringMaxLen(arg, maxLen))
+				}
+				argsStr = argsBuf.String()
+			}
+		}
+
+		// Build the full function name
+		fullFunc := funcName
+		if className != "" {
+			fullFunc = className + methodType + funcName
+		}
+
+		// Format the line
+		if file == "" {
+			buf.WriteString(fmt.Sprintf("#%d [internal function]: %s(%s)\n", level, fullFunc, argsStr))
+		} else {
+			buf.WriteString(fmt.Sprintf("#%d %s(%d): %s(%s)\n", level, file, lineNum, fullFunc, argsStr))
+		}
+		level++
+	}
+	buf.WriteString(fmt.Sprintf("#%d {main}", level))
+	return phpv.ZString(buf.String())
 }
 
 func getExceptionTrace(ctx phpv.Context, stackTrace phpv.StackTrace) *phpv.ZArray {

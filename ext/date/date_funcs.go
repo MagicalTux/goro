@@ -720,6 +720,15 @@ func parseTZOffset(s string) (int, bool) {
 		if err != nil {
 			return 0, false
 		}
+	case 3: // e.g. "500" (from "5:00") -> 5 hours 0 minutes
+		hours, err = strconv.Atoi(s[:1])
+		if err != nil {
+			return 0, false
+		}
+		mins, err = strconv.Atoi(s[1:3])
+		if err != nil {
+			return 0, false
+		}
 	case 4: // e.g. "0213" -> 2 hours 13 minutes
 		hours, err = strconv.Atoi(s[:2])
 		if err != nil {

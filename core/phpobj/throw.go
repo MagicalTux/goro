@@ -127,18 +127,7 @@ func init() {
 				}
 				return getExceptionTrace(ctx, trace).ZVal(), nil
 			})},
-			"gettraceasstring": {Name: "getTraceAsString", Method: NativeMethod(func(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				opaque := o.GetOpaque(Exception)
-				if opaque == nil {
-					return phpv.ZString("").ZVal(), nil
-				}
-				trace, ok := opaque.([]*phpv.StackTraceEntry)
-				if !ok {
-					return phpv.ZString("").ZVal(), nil
-				}
-				maxLen := getExceptionStringParamMaxLen(ctx)
-				return phpv.StackTrace(trace).FormatWithMaxLen(maxLen).ZVal(), nil
-			})},
+			"gettraceasstring": {Name: "getTraceAsString", Method: NativeMethod(exceptionGetTraceAsString)},
 			"__tostring": {Name: "__toString", Method: NativeMethod(exceptionToString)},
 		},
 	}
