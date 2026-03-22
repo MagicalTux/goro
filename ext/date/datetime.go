@@ -2739,10 +2739,17 @@ func datePeriodCreateFromISO8601String(ctx phpv.Context, args []*phpv.ZVal) (*ph
 		options = int(args[1].AsInt(ctx))
 	}
 
-	obj, err := phpobj.NewZObject(ctx, DatePeriod)
+	// Use late static binding for subclass support
+	actualClass := getCalledClassForStatic(ctx, DatePeriod)
+
+	// Create the DatePeriod without calling the constructor.
+	// NewZObjectOpaque skips the constructor and sets Opaque[class]=value.
+	obj, err := phpobj.NewZObjectOpaque(ctx, actualClass, true)
 	if err != nil {
 		return nil, err
 	}
+	// Ensure the DatePeriod opaque key is set for initialization checks
+	obj.SetOpaque(DatePeriod, true)
 	_, err = datePeriodInitFromISO(ctx, obj, isoStr, options)
 	if err != nil {
 		return nil, err

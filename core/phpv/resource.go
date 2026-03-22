@@ -15,7 +15,7 @@ func (rs ResourceType) String() string {
 	case ResourceContext:
 		return "stream-context"
 	}
-	return "unknown"
+	return "Unknown"
 }
 
 type Resource interface {

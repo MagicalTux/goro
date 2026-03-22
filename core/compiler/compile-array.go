@@ -302,6 +302,11 @@ func (r *runArrayAccess) Dump(w io.Writer) error {
 // This is used to detect illegal operations like assigning by reference.
 // Also sets lastContainerClassName for error messages.
 func (ac *runArrayAccess) IsOverloaded(ctx phpv.Context) bool {
+	// Set writeContext to suppress "Undefined array key" warnings during the check
+	if inner, ok := ac.value.(*runArrayAccess); ok {
+		inner.writeContext = true
+		defer func() { inner.writeContext = false }()
+	}
 	v, err := ac.value.Run(ctx)
 	if err != nil {
 		return false

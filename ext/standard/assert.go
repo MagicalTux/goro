@@ -56,6 +56,13 @@ func fncAssert(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, ctx.Errorf("assert() expects at least 1 argument, 0 given")
 	}
 
+	// Check assert.active INI setting (default is 1)
+	// When assert.active = 0, assert() always returns true without evaluating
+	assertActive := ctx.GetConfig("assert.active", phpv.ZInt(1).ZVal()).AsInt(ctx)
+	if assertActive == 0 {
+		return phpv.ZBool(true).ZVal(), nil
+	}
+
 	// Check zend.assertions INI setting
 	// -1 = completely disabled (no evaluation), 0 = disabled (no action), 1 = enabled
 	zendAssertions := ctx.GetConfig("zend.assertions", phpv.ZInt(1).ZVal()).AsInt(ctx)

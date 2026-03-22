@@ -304,12 +304,13 @@ func fncIsLink(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZFalse.ZVal(), nil
 	}
 
-	r, err := ctx.Global().Open(ctx, filename, "r", true)
-	if err != nil {
-		return phpv.ZFalse.ZVal(), nil
+	p := string(filename)
+	if !filepath.IsAbs(p) {
+		p = filepath.Join(string(ctx.Global().Getwd()), p)
 	}
-	stat, err := r.Stat()
-	r.Close()
+
+	// Use Lstat to check if the path itself is a symlink (not following it)
+	stat, err := os.Lstat(p)
 	if err != nil {
 		return phpv.ZFalse.ZVal(), nil
 	}
@@ -970,9 +971,6 @@ func fncGetResourceType(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	}
 
 	rtype := handle.GetResourceType().String()
-	if rtype == "unknown" {
-		rtype = "Unknown"
-	}
 	return phpv.ZStr(rtype).ZVal(), nil
 }
 
@@ -1190,6 +1188,7 @@ func fncChmod(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	err = os.Chmod(p, os.FileMode(mode))
 	if err != nil {
+		ctx.Warn("chmod(): %s", err)
 		return phpv.ZFalse.ZVal(), nil
 	}
 	return phpv.ZTrue.ZVal(), nil

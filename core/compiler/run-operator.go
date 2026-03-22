@@ -632,23 +632,14 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	// before operatorIncDec so doInc doesn't modify the original value
 	// returned by offsetGet. If &offsetGet returns by reference, doInc should
 	// modify in-place through the reference.
-	// Also dup for object properties and static properties so in-place doInc
-	// doesn't leak when the write-back fails (e.g., asymmetric visibility check).
+	// Note: ObjectGet/static prop Read already return detached copies, so no dup needed.
 	if r.op == tokenizer.T_INC || r.op == tokenizer.T_DEC {
 		if r.a != nil {
 			if ac, isAA := r.a.(*runArrayAccess); isAA && ac.lastContainerIsOverloaded && !ac.lastContainerOffsetGetReturnsRef {
 				a = a.Dup()
-			} else if _, isOV := r.a.(*runObjectVar); isOV {
-				a = a.Dup()
-			} else if _, isSV := r.a.(*runClassStaticVarRef); isSV {
-				a = a.Dup()
 			}
 		} else if r.b != nil {
 			if ac, isAA := r.b.(*runArrayAccess); isAA && ac.lastContainerIsOverloaded && !ac.lastContainerOffsetGetReturnsRef {
-				b = b.Dup()
-			} else if _, isOV := r.b.(*runObjectVar); isOV {
-				b = b.Dup()
-			} else if _, isSV := r.b.(*runClassStaticVarRef); isSV {
 				b = b.Dup()
 			}
 		}
