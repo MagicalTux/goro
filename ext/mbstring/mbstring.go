@@ -180,6 +180,21 @@ func fncMbStrrpos(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 	hRunes := []rune(string(haystack))
 	nRunes := []rune(string(needle))
+
+	// Validate offset bounds
+	if offset != nil {
+		o := int(*offset)
+		if o >= 0 {
+			if o > len(hRunes) {
+				return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "mb_strrpos(): Argument #3 ($offset) must be contained in argument #1 ($haystack)")
+			}
+		} else {
+			if -o > len(hRunes) {
+				return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "mb_strrpos(): Argument #3 ($offset) must be contained in argument #1 ($haystack)")
+			}
+		}
+	}
+
 	if len(nRunes) == 0 {
 		start := len(hRunes)
 		if offset != nil {
@@ -190,17 +205,24 @@ func fncMbStrrpos(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		}
 		return phpv.ZInt(start).ZVal(), nil
 	}
-	start := len(hRunes) - 1
+
+	// For negative offset: search ends at len(hRunes) + offset
+	// For positive offset: search starts at offset
 	searchFrom := 0
+	searchEnd := len(hRunes) - 1
 	if offset != nil {
 		o := int(*offset)
 		if o >= 0 {
 			searchFrom = o
 		} else {
-			start = len(hRunes) + o
+			// Negative offset: limit the end of the search.
+			// We can only find matches starting at positions up to len(hRunes)+o-len(nRunes)
+			// but the search window ends at len(hRunes)+o
+			searchEnd = len(hRunes) + o - 1
 		}
 	}
-	for i := start; i >= searchFrom; i-- {
+
+	for i := searchEnd; i >= searchFrom; i-- {
 		if i+len(nRunes) > len(hRunes) {
 			continue
 		}
@@ -269,7 +291,8 @@ func fncMbStrtolower(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if enc != nil && !isValidEncoding(string(*enc)) {
 		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, fmt.Sprintf("mb_strtolower(): Argument #2 ($encoding) must be a valid encoding, \"%s\" given", string(*enc)))
 	}
-	return phpv.ZString(strings.ToLower(string(s))).ZVal(), nil
+	// Use full case lowering (handles titlecase chars like ǅ->ǆ, Greek sigma, etc.)
+	return phpv.ZString(convertCaseLower(string(s))).ZVal(), nil
 }
 
 func fncMbStrtoupper(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
@@ -282,7 +305,8 @@ func fncMbStrtoupper(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if enc != nil && !isValidEncoding(string(*enc)) {
 		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, fmt.Sprintf("mb_strtoupper(): Argument #2 ($encoding) must be a valid encoding, \"%s\" given", string(*enc)))
 	}
-	return phpv.ZString(strings.ToUpper(string(s))).ZVal(), nil
+	// Use full case uppering (handles ß->SS, ﬀ->FF, etc.)
+	return phpv.ZString(convertCaseUpper(string(s))).ZVal(), nil
 }
 
 func fncMbInternalEncoding(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {

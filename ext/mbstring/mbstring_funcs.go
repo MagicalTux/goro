@@ -127,22 +127,62 @@ func fncMbStrripos(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var offset *phpv.ZInt
 	var enc *phpv.ZString
 	_, err := core.Expand(ctx, args, &haystack, &needle, &offset, &enc)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	hRunes := []rune(strings.ToLower(string(haystack)))
 	nRunes := []rune(strings.ToLower(string(needle)))
+
+	// Validate offset bounds
+	if offset != nil {
+		o := int(*offset)
+		if o >= 0 {
+			if o > len(hRunes) {
+				return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "mb_strripos(): Argument #3 ($offset) must be contained in argument #1 ($haystack)")
+			}
+		} else {
+			if -o > len(hRunes) {
+				return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "mb_strripos(): Argument #3 ($offset) must be contained in argument #1 ($haystack)")
+			}
+		}
+	}
+
 	if len(nRunes) == 0 {
 		start := len(hRunes)
-		if offset != nil { o := int(*offset); if o < 0 { start = len(hRunes) + o } }
+		if offset != nil {
+			o := int(*offset)
+			if o < 0 {
+				start = len(hRunes) + o
+			}
+		}
 		return phpv.ZInt(start).ZVal(), nil
 	}
-	start := len(hRunes) - 1
+
 	searchFrom := 0
-	if offset != nil { o := int(*offset); if o >= 0 { searchFrom = o } else { start = len(hRunes) + o } }
-	for i := start; i >= searchFrom; i-- {
-		if i+len(nRunes) > len(hRunes) { continue }
+	searchEnd := len(hRunes) - 1
+	if offset != nil {
+		o := int(*offset)
+		if o >= 0 {
+			searchFrom = o
+		} else {
+			searchEnd = len(hRunes) + o - 1
+		}
+	}
+
+	for i := searchEnd; i >= searchFrom; i-- {
+		if i+len(nRunes) > len(hRunes) {
+			continue
+		}
 		match := true
-		for j := 0; j < len(nRunes); j++ { if hRunes[i+j] != nRunes[j] { match = false; break } }
-		if match { return phpv.ZInt(i).ZVal(), nil }
+		for j := 0; j < len(nRunes); j++ {
+			if hRunes[i+j] != nRunes[j] {
+				match = false
+				break
+			}
+		}
+		if match {
+			return phpv.ZInt(i).ZVal(), nil
+		}
 	}
 	return phpv.ZBool(false).ZVal(), nil
 }
@@ -174,18 +214,104 @@ func fncMbStrrichr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 }
 
 func fncMbStrimwidth(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	var s phpv.ZString; var start, width phpv.ZInt; var trimmarker, enc *phpv.ZString
+	var s phpv.ZString
+	var start, width phpv.ZInt
+	var trimmarker, enc *phpv.ZString
 	_, err := core.Expand(ctx, args, &s, &start, &width, &trimmarker, &enc)
-	if err != nil { return nil, err }
-	runes := []rune(string(s)); runeLen := len(runes)
-	st := int(start); if st < 0 { st = runeLen + st }; if st < 0 { st = 0 }; if st > runeLen { return phpv.ZString("").ZVal(), nil }
-	w := int(width); if w < 0 { w = runeLen + w - st; if w < 0 { w = 0 } }
-	marker := ""; if trimmarker != nil { marker = string(*trimmarker) }; markerRunes := []rune(marker)
-	remaining := runes[st:]
-	if len(remaining) <= w { return phpv.ZString(string(remaining)).ZVal(), nil }
-	if len(markerRunes) >= w { return phpv.ZString(string(markerRunes[:w])).ZVal(), nil }
-	cutLen := w - len(markerRunes)
-	return phpv.ZString(string(remaining[:cutLen]) + marker).ZVal(), nil
+	if err != nil {
+		return nil, err
+	}
+	runes := []rune(string(s))
+	// Calculate total display width of the string
+	totalWidth := 0
+	for _, r := range runes {
+		totalWidth += runeWidth(r)
+	}
+
+	st := int(start)
+	if st < 0 {
+		st = totalWidth + st
+	}
+	if st < 0 {
+		st = 0
+	}
+	if st > totalWidth {
+		return phpv.ZString("").ZVal(), nil
+	}
+
+	w := int(width)
+	if w < 0 {
+		w = totalWidth + w - st
+		if w < 0 {
+			w = 0
+		}
+	}
+
+	marker := ""
+	if trimmarker != nil {
+		marker = string(*trimmarker)
+	}
+	markerWidth := 0
+	for _, r := range marker {
+		markerWidth += runeWidth(r)
+	}
+
+	// Find the starting rune index that corresponds to display width st
+	startIdx := 0
+	currentWidth := 0
+	for i, r := range runes {
+		if currentWidth >= st {
+			startIdx = i
+			break
+		}
+		currentWidth += runeWidth(r)
+		if i == len(runes)-1 {
+			startIdx = len(runes)
+		}
+	}
+
+	remaining := runes[startIdx:]
+	// Calculate the display width of the remaining string
+	remainingWidth := 0
+	for _, r := range remaining {
+		remainingWidth += runeWidth(r)
+	}
+
+	// If the remaining string fits within the target width, return it as-is
+	if remainingWidth <= w {
+		return phpv.ZString(string(remaining)).ZVal(), nil
+	}
+
+	// We need to trim. If marker is wider than target, return truncated marker
+	if markerWidth >= w {
+		// Return as much of the marker as fits
+		var result strings.Builder
+		mw := 0
+		for _, r := range marker {
+			rw := runeWidth(r)
+			if mw+rw > w {
+				break
+			}
+			result.WriteRune(r)
+			mw += rw
+		}
+		return phpv.ZString(result.String()).ZVal(), nil
+	}
+
+	// Take characters from remaining until we fill (w - markerWidth) display width
+	cutWidth := w - markerWidth
+	var result strings.Builder
+	cw := 0
+	for _, r := range remaining {
+		rw := runeWidth(r)
+		if cw+rw > cutWidth {
+			break
+		}
+		result.WriteRune(r)
+		cw += rw
+	}
+	result.WriteString(marker)
+	return phpv.ZString(result.String()).ZVal(), nil
 }
 
 func fncMbStrcut(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
@@ -203,8 +329,118 @@ func fncMbStrcut(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 }
 
 func fncMbConvertVariables(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	if len(args) < 3 { return nil, ctx.Errorf("mb_convert_variables() expects at least 3 arguments") }
-	return phpv.ZString("UTF-8").ZVal(), nil
+	if len(args) < 3 {
+		return nil, ctx.Errorf("mb_convert_variables() expects at least 3 arguments")
+	}
+
+	toEnc := args[0].String()
+	if !isValidEncoding(toEnc) {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, fmt.Sprintf("mb_convert_variables(): Argument #1 ($to_encoding) must be a valid encoding, \"%s\" given", toEnc))
+	}
+
+	// Parse from_encoding (can be string with comma-separated list, or array)
+	var fromEncodings []string
+	fromArg := args[1]
+	if fromArg.GetType() == phpv.ZtArray {
+		arr := fromArg.Value().(*phpv.ZArray)
+		for _, v := range arr.Iterate(ctx) {
+			e := strings.TrimSpace(v.String())
+			if e != "" {
+				fromEncodings = append(fromEncodings, getCanonicalEncodingName(e))
+			}
+		}
+	} else {
+		encStr := fromArg.String()
+		if encStr == "auto" || encStr == "AUTO" {
+			fromEncodings = getDetectOrder(ctx)
+		} else {
+			for _, e := range strings.Split(encStr, ",") {
+				e = strings.TrimSpace(e)
+				if e != "" {
+					fromEncodings = append(fromEncodings, getCanonicalEncodingName(e))
+				}
+			}
+		}
+	}
+	if len(fromEncodings) == 0 {
+		fromEncodings = []string{getMbInternalEncoding(ctx)}
+	}
+
+	// Detect encoding from the first string found in arguments
+	detectedEnc := fromEncodings[0]
+	if len(fromEncodings) > 1 {
+		// Find the first string in the variable args to detect encoding
+		firstStr := ""
+		for i := 2; i < len(args); i++ {
+			if s := findFirstString(ctx, args[i]); s != "" {
+				firstStr = s
+				break
+			}
+		}
+		if firstStr != "" {
+			detectedEnc = detectFromEncodings(firstStr, fromEncodings)
+		}
+	}
+
+	// Convert all variable arguments in-place
+	for i := 2; i < len(args); i++ {
+		if err := mbConvertVariableInPlace(ctx, args[i], detectedEnc, toEnc); err != nil {
+			return nil, err
+		}
+	}
+
+	return phpv.ZString(getCanonicalEncodingName(detectedEnc)).ZVal(), nil
+}
+
+// findFirstString recursively finds the first string value in a ZVal (string or array)
+func findFirstString(ctx phpv.Context, z *phpv.ZVal) string {
+	if z == nil {
+		return ""
+	}
+	v := z.Value()
+	switch val := v.(type) {
+	case phpv.ZString:
+		return string(val)
+	case *phpv.ZArray:
+		for _, elem := range val.Iterate(ctx) {
+			if s := findFirstString(ctx, elem); s != "" {
+				return s
+			}
+		}
+	}
+	if z.GetType() == phpv.ZtString {
+		return z.String()
+	}
+	return ""
+}
+
+// mbConvertVariableInPlace converts encoding of a variable in-place
+func mbConvertVariableInPlace(ctx phpv.Context, z *phpv.ZVal, fromEnc, toEnc string) error {
+	if z == nil {
+		return nil
+	}
+
+	v := z.Value()
+	switch val := v.(type) {
+	case phpv.ZString:
+		converted, illegal, _ := convertEncoding([]byte(string(val)), fromEnc, toEnc)
+		if illegal > 0 {
+			incrementIllegalChars(ctx, illegal)
+		}
+		z.Set(phpv.ZString(converted).ZVal())
+	case *phpv.ZArray:
+		// Convert each element in the array
+		newArr := phpv.NewZArray()
+		for k, elem := range val.Iterate(ctx) {
+			elemCopy := elem.Dup()
+			if err := mbConvertVariableInPlace(ctx, elemCopy, fromEnc, toEnc); err != nil {
+				return err
+			}
+			newArr.OffsetSet(ctx, k, elemCopy)
+		}
+		z.Set(newArr.ZVal())
+	}
+	return nil
 }
 
 func fncMbHttpInput(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) { return phpv.ZBool(false).ZVal(), nil }
@@ -387,160 +623,3 @@ var encodingAliases = map[string][]string{
 	"WINDOWS-1251": {"cp1251"},
 }
 
-func fncMbEncodeNumericentity(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	if len(args) < 2 { return nil, ctx.Errorf("mb_encode_numericentity() expects at least 2 arguments") }
-	str := args[0].String(); convmap := args[1]
-	if convmap.GetType() != phpv.ZtArray { return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "mb_encode_numericentity(): Argument #2 ($map) must be of type array") }
-	mapArr := convmap.Value().(*phpv.ZArray)
-	var mapVals []int
-	for _, v := range mapArr.Iterate(ctx) { mapVals = append(mapVals, int(v.AsInt(ctx))) }
-	isHex := false; if len(args) > 3 && args[3] != nil { isHex = args[3].AsBool(ctx) == phpv.ZTrue }
-	var result strings.Builder
-	for _, r := range str {
-		encoded := false
-		for i := 0; i+3 < len(mapVals); i += 4 {
-			if int(r) >= mapVals[i] && int(r) <= mapVals[i+1] {
-				cp := (int(r) + mapVals[i+2]) & mapVals[i+3]
-				if isHex { result.WriteString(fmt.Sprintf("&#x%X;", cp)) } else { result.WriteString(fmt.Sprintf("&#%d;", cp)) }
-				encoded = true; break
-			}
-		}
-		if !encoded { result.WriteRune(r) }
-	}
-	return phpv.ZString(result.String()).ZVal(), nil
-}
-
-func fncMbDecodeNumericentity(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	if len(args) < 2 { return nil, ctx.Errorf("mb_decode_numericentity() expects at least 2 arguments") }
-	str := args[0].String(); convmap := args[1]
-	if convmap.GetType() != phpv.ZtArray { return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "mb_decode_numericentity(): Argument #2 ($map) must be of type array") }
-	mapArr := convmap.Value().(*phpv.ZArray)
-	var mapVals []int
-	for _, v := range mapArr.Iterate(ctx) { mapVals = append(mapVals, int(v.AsInt(ctx))) }
-	var result strings.Builder
-	i := 0
-	for i < len(str) {
-		if str[i] == '&' && i+2 < len(str) && str[i+1] == '#' {
-			j := i + 2; isHex := false
-			if j < len(str) && (str[j] == 'x' || str[j] == 'X') { isHex = true; j++ }
-			numStart := j
-			for j < len(str) && ((str[j] >= '0' && str[j] <= '9') || (isHex && ((str[j] >= 'a' && str[j] <= 'f') || (str[j] >= 'A' && str[j] <= 'F')))) { j++ }
-			if j > numStart && j < len(str) && str[j] == ';' {
-				var cp int
-				if isHex { fmt.Sscanf(str[numStart:j], "%x", &cp) } else { fmt.Sscanf(str[numStart:j], "%d", &cp) }
-				decoded := false
-				for k := 0; k+3 < len(mapVals); k += 4 {
-					orig := (cp & mapVals[k+3]) - mapVals[k+2]
-					if orig >= mapVals[k] && orig <= mapVals[k+1] { result.WriteRune(rune(orig)); decoded = true; break }
-				}
-				if !decoded { result.WriteString(str[i : j+1]) }
-				i = j + 1; continue
-			}
-		}
-		result.WriteByte(str[i]); i++
-	}
-	return phpv.ZString(result.String()).ZVal(), nil
-}
-
-func fncMbDecodeMimeheader(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	var s phpv.ZString
-	_, err := core.Expand(ctx, args, &s)
-	if err != nil { return nil, err }
-	str := string(s); var result strings.Builder; i := 0
-	for i < len(str) {
-		if i+2 < len(str) && str[i] == '=' && str[i+1] == '?' {
-			end := strings.Index(str[i+2:], "?=")
-			if end >= 0 {
-				parts := strings.SplitN(str[i+2:i+2+end], "?", 3)
-				if len(parts) == 3 {
-					charset, encType, text := parts[0], strings.ToUpper(parts[1]), parts[2]
-					var decoded string
-					if encType == "B" { decoded = mimeDecBase64(text) } else if encType == "Q" { decoded = mimeDecQP(text) } else { decoded = text }
-					if n := normalizeEncodingName(charset); n != "UTF-8" && n != "UTF8" { c, _, _ := decodeToUTF8([]byte(decoded), n); result.Write(c) } else { result.WriteString(decoded) }
-					i = i + 2 + end + 2; continue
-				}
-			}
-		}
-		result.WriteByte(str[i]); i++
-	}
-	return phpv.ZString(result.String()).ZVal(), nil
-}
-
-func mimeDecBase64(s string) string {
-	const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
-	var result []byte; var buf uint32; var bits int
-	for _, c := range s { if c == '=' { break }; idx := strings.IndexRune(chars, c); if idx < 0 { continue }; buf = (buf << 6) | uint32(idx); bits += 6; if bits >= 8 { bits -= 8; result = append(result, byte(buf>>uint(bits))); buf &= (1 << uint(bits)) - 1 } }
-	return string(result)
-}
-
-func mimeDecQP(s string) string {
-	var result []byte
-	for i := 0; i < len(s); i++ {
-		if s[i] == '=' && i+2 < len(s) {
-			var b byte; valid := true
-			for _, c := range s[i+1 : i+3] { b <<= 4; if c >= '0' && c <= '9' { b |= byte(c - '0') } else if c >= 'a' && c <= 'f' { b |= byte(c - 'a' + 10) } else if c >= 'A' && c <= 'F' { b |= byte(c - 'A' + 10) } else { valid = false; break } }
-			if valid { result = append(result, b); i += 2; continue }
-		}
-		if s[i] == '_' { result = append(result, ' ') } else { result = append(result, s[i]) }
-	}
-	return string(result)
-}
-
-func fncMbEncodeMimeheader(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	var s phpv.ZString; var charset, transferEnc, linefeed *phpv.ZString; var indent *phpv.ZInt
-	_, err := core.Expand(ctx, args, &s, &charset, &transferEnc, &linefeed, &indent)
-	if err != nil { return nil, err }
-	str := string(s); cs := "UTF-8"; if charset != nil { cs = string(*charset) }
-	needsEnc := false; for i := 0; i < len(str); i++ { if str[i] > 127 { needsEnc = true; break } }
-	if !needsEnc { return phpv.ZString(str).ZVal(), nil }
-	enc := "B"; if transferEnc != nil { enc = strings.ToUpper(string(*transferEnc)) }
-	var encoded string
-	if enc == "Q" {
-		var r strings.Builder
-		for i := 0; i < len(str); i++ {
-			if s[i] == ' ' { r.WriteByte('_') } else if (s[i] >= 'A' && s[i] <= 'Z') || (s[i] >= 'a' && s[i] <= 'z') || (s[i] >= '0' && s[i] <= '9') { r.WriteByte(s[i]) } else { r.WriteString(fmt.Sprintf("=%02X", s[i])) }
-		}
-		encoded = r.String()
-	} else {
-		const b64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
-		data := []byte(str); var r strings.Builder
-		for i := 0; i < len(data); i += 3 {
-			var b0, b1, b2 byte; b0 = data[i]; if i+1 < len(data) { b1 = data[i+1] }; if i+2 < len(data) { b2 = data[i+2] }
-			r.WriteByte(b64[b0>>2]); r.WriteByte(b64[((b0&3)<<4)|(b1>>4)])
-			if i+1 < len(data) { r.WriteByte(b64[((b1&0xF)<<2)|(b2>>6)]) } else { r.WriteByte('=') }
-			if i+2 < len(data) { r.WriteByte(b64[b2&0x3F]) } else { r.WriteByte('=') }
-		}
-		encoded = r.String()
-	}
-	return phpv.ZString(fmt.Sprintf("=?%s?%s?%s?=", cs, enc, encoded)).ZVal(), nil
-}
-
-func fncMbConvertKana(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	var s phpv.ZString; var option, enc *phpv.ZString
-	_, err := core.Expand(ctx, args, &s, &option, &enc)
-	if err != nil { return nil, err }
-	return s.ZVal(), nil
-}
-
-func fncMbRegexSetOptions(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	if len(args) == 0 { return phpv.ZString("msr").ZVal(), nil }
-	return phpv.ZString(args[0].String()).ZVal(), nil
-}
-
-func fncMbUcfirst(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	var s phpv.ZString; var enc *phpv.ZString
-	_, err := core.Expand(ctx, args, &s, &enc)
-	if err != nil { return nil, err }
-	str := string(s); if len(str) == 0 { return s.ZVal(), nil }
-	runes := []rune(str); runes[0] = unicode.ToUpper(runes[0])
-	return phpv.ZString(string(runes)).ZVal(), nil
-}
-
-func fncMbLcfirst(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	var s phpv.ZString; var enc *phpv.ZString
-	_, err := core.Expand(ctx, args, &s, &enc)
-	if err != nil { return nil, err }
-	str := string(s); if len(str) == 0 { return s.ZVal(), nil }
-	runes := []rune(str); runes[0] = unicode.ToLower(runes[0])
-	return phpv.ZString(string(runes)).ZVal(), nil
-}
