@@ -405,7 +405,7 @@ func init() {
 			"show_source":                {Func: fncHighlightFile, Args: []*phpctx.ExtFunctionArg{}}, // alias
 			"shuffle":                    {Func: fncArrayShuffle, Args: []*phpctx.ExtFunctionArg{{ArgName: "array", Ref: true}}},
 			"similar_text":               {Func: fncSimilarText, Args: []*phpctx.ExtFunctionArg{{ArgName: "string1"}, {ArgName: "string2"}, {ArgName: "percent", Ref: true, Optional: true}}},
-			"sin":                        {Func: mathSin, Args: []*phpctx.ExtFunctionArg{}},
+			"sin":                        {Func: mathSin, Args: []*phpctx.ExtFunctionArg{{ArgName: "num"}}},
 			"sinh":                       {Func: mathSinh, Args: []*phpctx.ExtFunctionArg{}},
 			"sleep":                      {Func: stdFuncSleep, Args: []*phpctx.ExtFunctionArg{}},
 			"sort":                       {Func: fncArraySort, Args: []*phpctx.ExtFunctionArg{{ArgName: "array", Ref: true}, {ArgName: "flags", Optional: true}}},

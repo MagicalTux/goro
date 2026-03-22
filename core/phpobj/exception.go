@@ -80,7 +80,8 @@ func getExceptionStringParamMaxLen(ctx phpv.Context) int {
 }
 
 // exceptionEntryToString formats a single exception entry (without the previous chain).
-func exceptionEntryToString(ctx phpv.Context, o *ZObject, maxLen int) string {
+// Returns the formatted string and an error if the message could not be converted to string.
+func exceptionEntryToString(ctx phpv.Context, o *ZObject, maxLen int) (string, error) {
 	var trace []*phpv.StackTraceEntry
 	if opaque := o.GetOpaque(Exception); opaque != nil {
 		trace, _ = opaque.([]*phpv.StackTraceEntry)
@@ -90,13 +91,33 @@ func exceptionEntryToString(ctx phpv.Context, o *ZObject, maxLen int) string {
 	file := o.HashTable().GetString("file")
 	line := o.HashTable().GetString("line")
 
+	// Get the file string - for objects with __toString, call it via context
+	var fileStr string
+	if file != nil {
+		if file.GetType() == phpv.ZtObject && ctx != nil {
+			fileStr = string(file.AsString(ctx))
+		} else {
+			fileStr = file.String()
+		}
+	}
+
+	// Get the line string
+	var lineStr string
+	if line != nil {
+		lineStr = line.String()
+	}
+
 	// Get the message string - for objects, call __toString via context
 	var msg string
 	if messageVal != nil {
 		if messageVal.GetType() == phpv.ZtObject && ctx != nil {
-			// Object message - call __toString to get string representation
-			strVal := messageVal.AsString(ctx)
-			msg = string(strVal)
+			// Object message - try to call __toString to get string representation
+			r, err := messageVal.As(ctx, phpv.ZtString)
+			if err != nil {
+				// The message object could not be converted to string
+				return "", err
+			}
+			msg = r.String()
 		} else {
 			msg = messageVal.String()
 		}
@@ -113,21 +134,21 @@ func exceptionEntryToString(ctx phpv.Context, o *ZObject, maxLen int) string {
 		buf.WriteString(": ")
 		buf.WriteString(msg)
 		buf.WriteString(locPrefix)
-		buf.WriteString(file.String())
+		buf.WriteString(fileStr)
 		buf.WriteString(":")
-		buf.WriteString(line.String())
+		buf.WriteString(lineStr)
 		buf.WriteString("\n")
 	} else {
 		buf.WriteString(string(className))
 		buf.WriteString(" in ")
-		buf.WriteString(file.String())
+		buf.WriteString(fileStr)
 		buf.WriteString(":")
-		buf.WriteString(line.String())
+		buf.WriteString(lineStr)
 		buf.WriteString("\n")
 	}
 	buf.WriteString("Stack trace:\n")
 	buf.WriteString(string(phpv.StackTrace(trace).FormatWithMaxLen(maxLen)))
-	return buf.String()
+	return buf.String(), nil
 }
 
 func exceptionToString(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
@@ -160,7 +181,11 @@ func exceptionToString(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.Z
 		if i < len(chain)-1 {
 			buf.WriteString("\n\nNext ")
 		}
-		buf.WriteString(exceptionEntryToString(ctx, chain[i], maxLen))
+		s, err := exceptionEntryToString(ctx, chain[i], maxLen)
+		if err != nil {
+			return nil, err
+		}
+		buf.WriteString(s)
 	}
 	result := phpv.ZStr(buf.String())
 	// Cache the result in the 'string' private property (PHP behavior).
