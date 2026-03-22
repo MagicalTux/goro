@@ -63,14 +63,22 @@ func spawnCallableInternal(ctx phpv.Context, v *phpv.ZVal, paramNo int) (phpv.Ca
 			}
 			member, ok := class.GetMethod(methodName.ToLower())
 			if !ok {
-				// When inside instance context, prefer __call over __callStatic
-				if this := ctx.This(); this != nil && this.GetClass().InstanceOf(class) {
-					if callMethod, hasCall := class.GetMethod("__call"); hasCall {
-						wrapper := &magicCallWrapper{
-							callMethod: callMethod.Method,
-							methodName: methodName,
+				// When inside instance context, prefer __call over __callStatic.
+				// Use the actual object class (not the scope class) for the
+				// instanceof check, since $this may be a subclass instance.
+				if this := ctx.This(); this != nil {
+					actualClass := this.GetClass()
+					if zo, ok := this.(*phpobj.ZObject); ok {
+						actualClass = zo.Class
+					}
+					if actualClass.InstanceOf(class) {
+						if callMethod, hasCall := class.GetMethod("__call"); hasCall {
+							wrapper := &magicCallWrapper{
+								callMethod: callMethod.Method,
+								methodName: methodName,
+							}
+							return phpv.Bind(wrapper, this), nil
 						}
-						return phpv.Bind(wrapper, this), nil
 					}
 				}
 				if callStaticMethod, hasCallStatic := class.GetMethod("__callstatic"); hasCallStatic {
@@ -306,16 +314,24 @@ func spawnCallableInternal(ctx phpv.Context, v *phpv.ZVal, paramNo int) (phpv.Ca
 			}
 			// Check for __callStatic or __call (static call with string class name)
 			if instance == nil {
-				// When inside instance context, prefer __call over __callStatic
-				thisObj := ctx.This()
-				if this := thisObj; this != nil && this.GetClass().InstanceOf(class) {
-					if callMethod, hasCall := class.GetMethod("__call"); hasCall {
-						origMethodName := methodName.AsString(ctx)
-						wrapper := &magicCallWrapper{
-							callMethod: callMethod.Method,
-							methodName: origMethodName,
+				// When inside instance context, prefer __call over __callStatic.
+				// Use the actual object class (not the scope class) for the
+				// instanceof check, since $this may be a subclass instance.
+				if this := ctx.This(); this != nil {
+					actualClass := this.GetClass()
+					// Also check the underlying Class field for the real runtime class
+					if zo, ok := this.(*phpobj.ZObject); ok {
+						actualClass = zo.Class
+					}
+					if actualClass.InstanceOf(class) {
+						if callMethod, hasCall := class.GetMethod("__call"); hasCall {
+							origMethodName := methodName.AsString(ctx)
+							wrapper := &magicCallWrapper{
+								callMethod: callMethod.Method,
+								methodName: origMethodName,
+							}
+							return phpv.Bind(wrapper, this), nil
 						}
-						return phpv.Bind(wrapper, this), nil
 					}
 				}
 				if callStaticMethod, hasCallStatic := class.GetMethod("__callstatic"); hasCallStatic {
@@ -326,9 +342,9 @@ func spawnCallableInternal(ctx phpv.Context, v *phpv.ZVal, paramNo int) (phpv.Ca
 					}
 					return phpv.BindClass(wrapper, class, true), nil
 				}
-				// Note: __call only applies to instance context, NOT static string context.
-				// is_callable(['ClassName', 'method']) should return false if only __call exists
-				// (no __callStatic). PHP only invokes __call via instances.
+				// Note: __call only applies to instance context, NOT static string context
+				// without $this. is_callable(['ClassName', 'method']) should return false
+				// if only __call exists (no __callStatic) and we're not in instance context.
 			}
 			callerFunc := ctx.GetFuncName()
 			if callerFunc == "" {
