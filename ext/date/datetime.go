@@ -1730,13 +1730,44 @@ func init() {
 					}
 					arr := args[0].Value().(*phpv.ZArray)
 
-					// Check if from_string is true
+					// Check if from_string is true or date_string is provided
 					fromStr, _ := arr.OffsetGet(ctx, phpv.ZString("from_string").ZVal())
-					if fromStr != nil && bool(fromStr.AsBool(ctx)) {
-						// date_string must be present and valid
-						ds, _ := arr.OffsetGet(ctx, phpv.ZString("date_string").ZVal())
+					ds, _ := arr.OffsetGet(ctx, phpv.ZString("date_string").ZVal())
+					isFromString := (fromStr != nil && bool(fromStr.AsBool(ctx))) || (ds != nil && !ds.IsNull() && (fromStr == nil || fromStr.IsNull()))
+					if isFromString {
 						if ds != nil && !ds.IsNull() {
 							dateStr := string(ds.AsString(ctx))
+							// Validate the date string by attempting to parse it
+							_, stErr := strtotime.StrToTime(dateStr)
+							if stErr != nil {
+								// Check if it's a valid format
+								_, ok := strToTime(dateStr, time.Now())
+								if !ok {
+									// Find position and character of the error
+									pos := 0
+									ch := ""
+									for i, c := range dateStr {
+										if c < '0' || c > '9' {
+											// Skip dashes at expected positions in YYYY-MM-DD format
+											if c == '-' && (i == 4 || i == 7) {
+												continue
+											}
+											// Skip spaces and colons in datetime parts
+											if c == ' ' && i == 10 {
+												continue
+											}
+											if c == ':' && (i == 13 || i == 16) {
+												continue
+											}
+											pos = i
+											ch = string(c)
+											break
+										}
+									}
+									return nil, phpobj.ThrowError(ctx, phpobj.Error,
+										fmt.Sprintf("Unknown or bad format (%s) at position %d (%s) while unserializing: Unexpected character", dateStr, pos, ch))
+								}
+							}
 							return createDateIntervalFromString(ctx, dateStr)
 						}
 						return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DateInterval object")
@@ -2377,7 +2408,7 @@ func datePeriodConstruct(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZV
 		if args[2].GetType() == phpv.ZtInt {
 			recCount := int(args[2].AsInt(ctx))
 			if recCount < 1 {
-				return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+				return nil, phpobj.ThrowError(ctx, DateException,
 					fmt.Sprintf("DatePeriod::__construct(): Recurrence count must be greater or equal to 1 and lower than %d", int(^uint(0)>>1)))
 			}
 			this.ObjectSet(ctx, phpv.ZString("recurrences"), args[2])
