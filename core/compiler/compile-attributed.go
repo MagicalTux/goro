@@ -269,16 +269,21 @@ type runNoDiscardStatement struct {
 }
 func (r *runNoDiscardStatement) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	ctx.Global().ClearLastCallable()
+	savedEmitted := noDiscardAlreadyEmitted
 	noDiscardAlreadyEmitted = false
 	prevInCtx := inNoDiscardContext
 	inNoDiscardContext = true
 	result, err := r.inner.Run(ctx)
 	inNoDiscardContext = prevInCtx
-	if err != nil { return result, err }
+	if err != nil {
+		noDiscardAlreadyEmitted = savedEmitted
+		return result, err
+	}
 	// If the NoDiscard warning was already emitted before the call (e.g., for __call/__callStatic),
 	// don't emit it again.
-	if noDiscardAlreadyEmitted {
-		noDiscardAlreadyEmitted = false
+	alreadyEmitted := noDiscardAlreadyEmitted
+	noDiscardAlreadyEmitted = savedEmitted
+	if alreadyEmitted {
 		return result, nil
 	}
 	callable := ctx.Global().LastCallable()
