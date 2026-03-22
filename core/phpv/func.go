@@ -26,9 +26,16 @@ type FuncGetArgs interface {
 
 // FuncCallExpression is a marker interface for expressions that represent
 // function/method calls. When passed to a by-reference parameter, these produce
-// a Notice rather than a Fatal Error.
+// a Fatal Error in PHP 8+ ("could not be passed by reference").
 type FuncCallExpression interface {
 	IsFuncCallExpression()
+}
+
+// ParenthesizedExpression is a marker interface for parenthesized expressions.
+// When passed to a by-reference parameter, these produce a Notice ("Only
+// variables should be passed by reference") rather than a Fatal Error.
+type ParenthesizedExpression interface {
+	IsParenthesizedExpression()
 }
 
 type ZClosure interface {

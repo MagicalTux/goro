@@ -120,18 +120,23 @@ func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, o
 					val = val.Dup()
 					val.Name = nil
 				} else if _, isFuncCall := arg.(phpv.FuncCallExpression); isFuncCall {
-					// Function/method call -> Notice, pass by value
-					// Restore call site location for correct notice line
+					// Function/method call or parenthesized expression -> Notice, pass by value
 					ctx.Tick(ctx, callLoc)
 					ctx.Notice("Only variables should be passed by reference",
 						logopt.NoFuncName(true))
 					val = val.Dup()
-					// Mark as already warned about by-ref issue. Use a sentinel
-					// name so CallZVal knows not to emit a second warning.
+					alreadyWarned := phpv.ZString("\x00ref_warned")
+					val.Name = &alreadyWarned
+				} else if _, isParens := arg.(phpv.ParenthesizedExpression); isParens {
+					// Parenthesized expression -> Notice, pass by value
+					ctx.Tick(ctx, callLoc)
+					ctx.Notice("Only variables should be passed by reference",
+						logopt.NoFuncName(true))
+					val = val.Dup()
 					alreadyWarned := phpv.ZString("\x00ref_warned")
 					val.Name = &alreadyWarned
 				} else {
-					// Literal, assignment, or other non-variable expression -> Error
+					// Literal, assignment, or other non-variable expression -> Fatal Error
 					funcName := phpv.CallableDisplayName(f)
 					if funcName == "" {
 						funcName = "unknown"

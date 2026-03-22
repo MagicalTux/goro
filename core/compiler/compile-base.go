@@ -524,7 +524,18 @@ func compileBaseSingle(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	}
 
 	if _, isFuncCall := r.(phpv.FuncCallExpression); isFuncCall {
-		r = &runNoDiscardStatement{inner: r}
+		// Don't wrap language constructs (echo, print, exit, etc.) in NoDiscard check
+		// as they are not real function calls and can't have NoDiscard attributes.
+		if fc, ok := r.(*runnableFunctionCall); ok {
+			switch fc.name.ToLower() {
+			case "echo", "print", "exit", "die", "include", "include_once", "require", "require_once":
+				// skip wrapping
+			default:
+				r = &runNoDiscardStatement{inner: r}
+			}
+		} else {
+			r = &runNoDiscardStatement{inner: r}
+		}
 	}
 
 	return r, nil
