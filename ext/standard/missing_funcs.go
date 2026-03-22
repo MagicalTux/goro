@@ -203,9 +203,13 @@ func fncFgetcsv(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 func ParseCsvLine(ctx phpv.Context, line string, sep, enc, esc byte) (*phpv.ZVal, error) {
 	result := phpv.NewZArray()
 	i := 0
+	trailingSep := false
 	for i <= len(line) {
 		if i == len(line) {
-			// Trailing separator means empty final field
+			if trailingSep {
+				// Trailing separator means empty final field
+				result.OffsetSet(ctx, nil, phpv.ZString("").ZVal())
+			}
 			break
 		}
 		if line[i] == enc {
@@ -214,7 +218,7 @@ func ParseCsvLine(ctx phpv.Context, line string, sep, enc, esc byte) (*phpv.ZVal
 			var field []byte
 			for i < len(line) {
 				if esc != 0 && esc != enc && line[i] == esc && i+1 < len(line) {
-					// Escape character followed by another char - keep both chars
+					// Escape character followed by another char: keep both chars
 					field = append(field, line[i])
 					i++
 					field = append(field, line[i])
@@ -238,8 +242,10 @@ func ParseCsvLine(ctx phpv.Context, line string, sep, enc, esc byte) (*phpv.ZVal
 			for i < len(line) && line[i] != sep {
 				i++
 			}
+			trailingSep = false
 			if i < len(line) {
 				i++ // skip separator
+				trailingSep = true
 			}
 			result.OffsetSet(ctx, nil, phpv.ZString(field).ZVal())
 		} else {
@@ -249,8 +255,10 @@ func ParseCsvLine(ctx phpv.Context, line string, sep, enc, esc byte) (*phpv.ZVal
 				i++
 			}
 			field := line[start:i]
+			trailingSep = false
 			if i < len(line) {
 				i++ // skip separator
+				trailingSep = true
 			}
 			result.OffsetSet(ctx, nil, phpv.ZString(field).ZVal())
 		}
@@ -331,23 +339,27 @@ func BuildCsvLine(ctx phpv.Context, fields *phpv.ZArray, sep, enc, esc byte) ([]
 		field := val.String()
 
 		// Check if enclosure is needed (matches PHP 8.5's php_fputcsv behavior)
-		// PHP encloses fields that contain the separator, enclosure, or whitespace chars.
+		// PHP encloses fields containing separator, enclosure, escape, or whitespace chars.
 		needsEnclose := strings.ContainsAny(field, string([]byte{sep, enc, '\n', '\r', '\t', ' '}))
+		if esc != 0 && esc != enc {
+			needsEnclose = needsEnclose || strings.ContainsRune(field, rune(esc))
+		}
 
 		if needsEnclose {
 			buf.WriteByte(enc)
 			for i := 0; i < len(field); i++ {
 				c := field[i]
 				if c == enc {
-					// Check if preceded by escape character - if so, don't double
+					// Double the enclosure unless preceded by escape char
 					if esc != 0 && esc != enc && i > 0 && field[i-1] == esc {
+						// Escape char already escapes this enclosure, write as-is
 						buf.WriteByte(c)
 					} else {
-						// Double the enclosure character
 						buf.WriteByte(enc)
 						buf.WriteByte(enc)
 					}
 				} else {
+					// Write all other chars (including escape) as-is
 					buf.WriteByte(c)
 				}
 			}

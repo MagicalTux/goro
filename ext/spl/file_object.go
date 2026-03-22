@@ -900,6 +900,9 @@ func sfoSetCsvControl(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*
 			d.csvEsc = s[0]
 		}
 		d.csvEscapeSet = true
+	} else {
+		// If escape was not provided, emit deprecation
+		ctx.Deprecated("the $escape parameter must be provided as its default value will change")
 	}
 
 	return nil, nil

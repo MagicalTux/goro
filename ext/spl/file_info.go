@@ -85,7 +85,7 @@ func sfiConstruct(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv
 
 	// Resolve relative paths against PHP CWD for file operations
 	resolvedPath := path
-	if !filepath.IsAbs(resolvedPath) {
+	if !filepath.IsAbs(resolvedPath) && !strings.Contains(path, "://") {
 		cwd := string(ctx.Global().Getwd())
 		if cwd != "" {
 			resolvedPath = filepath.Join(cwd, resolvedPath)
@@ -354,7 +354,12 @@ func sfiOpenFile(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.
 	}
 
 	// Forward all args to the SplFileObject constructor, but first arg is the filename
-	constructArgs := []*phpv.ZVal{phpv.ZString(sfiResolved(d)).ZVal()}
+	// Use the original path for stream wrappers (e.g. php://temp)
+	openPath := sfiResolved(d)
+	if strings.Contains(d.path, "://") {
+		openPath = d.path
+	}
+	constructArgs := []*phpv.ZVal{phpv.ZString(openPath).ZVal()}
 	constructArgs = append(constructArgs, args...)
 
 	obj, err := phpobj.NewZObject(ctx, fileClass, constructArgs...)
