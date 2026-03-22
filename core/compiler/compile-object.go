@@ -164,6 +164,12 @@ func (r *runNewObject) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	var args []*phpv.ZVal
 	var byRefCleanups []*phpv.ZVal
 	for i, a := range expandedArgs {
+		// nil entry means a named-argument gap (optional parameter with default value)
+		if a == nil {
+			args = append(args, phpv.ZNULL.ZVal())
+			continue
+		}
+
 		// Emit "Undefined variable" warning for by-value params
 		isRefParam := funcArgs != nil && i < len(funcArgs) && funcArgs[i].Ref
 		if !isRefParam {

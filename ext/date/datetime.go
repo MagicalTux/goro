@@ -1029,6 +1029,20 @@ func serializeMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) 
 		return phpv.NewZArray().ZVal(), nil
 	}
 	arr := phpv.NewZArray()
+
+	// Include custom properties from subclasses first (before date/timezone_type/timezone)
+	builtinProps := map[string]bool{"date": true, "timezone_type": true, "timezone": true}
+	for prop := range this.IterProps(ctx) {
+		pName := string(prop.VarName)
+		if builtinProps[pName] {
+			continue
+		}
+		v := this.HashTable().GetString(prop.VarName)
+		if v != nil {
+			arr.OffsetSet(ctx, phpv.ZString(pName), v)
+		}
+	}
+
 	dateStr := fmt.Sprintf("%04d-%02d-%02d %02d:%02d:%02d.%06d",
 		t.Year(), int(t.Month()), t.Day(),
 		t.Hour(), t.Minute(), t.Second(), t.Nanosecond()/1000)
@@ -1070,6 +1084,37 @@ func serializeMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) 
 	return arr.ZVal(), nil
 }
 
+// resolveTimezoneForSerialization resolves a timezone string from serialized data.
+// It handles named zones (Europe/London), abbreviations (CEST, BST), and offsets (+01:30, +0130).
+func resolveTimezoneForSerialization(tzStr string) *time.Location {
+	// Try as named location first
+	if l, err := time.LoadLocation(tzStr); err == nil {
+		return l
+	}
+	// Try as offset (+01:30, -05:00, +0130)
+	if len(tzStr) >= 2 && (tzStr[0] == '+' || tzStr[0] == '-') {
+		if offset, ok := parseTZOffset(tzStr); ok {
+			// Normalize the name to +HH:MM format
+			sign := "+"
+			absOffset := offset
+			if offset < 0 {
+				sign = "-"
+				absOffset = -offset
+			}
+			hours := absOffset / 3600
+			mins := (absOffset % 3600) / 60
+			name := fmt.Sprintf("%s%02d:%02d", sign, hours, mins)
+			return time.FixedZone(name, offset)
+		}
+	}
+	// Try as timezone abbreviation (CEST, BST, etc.)
+	upper := strings.ToUpper(tzStr)
+	if offset, ok := timezoneAbbreviationOffsets[upper]; ok {
+		return time.FixedZone(tzStr, offset)
+	}
+	return time.UTC
+}
+
 // unserializeMethod implements DateTime::__unserialize(array $data)
 func unserializeMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 || args[0].GetType() != phpv.ZtArray {
@@ -1082,14 +1127,9 @@ func unserializeMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal
 	}
 	dateStr := string(dateVal.AsString(ctx))
 	tzVal, _ := arr.OffsetGet(ctx, phpv.ZString("timezone").ZVal())
-	var loc *time.Location = time.UTC
+	loc := time.UTC
 	if tzVal != nil && !tzVal.IsNull() {
-		tzStr := string(tzVal.AsString(ctx))
-		if l, err := time.LoadLocation(tzStr); err == nil {
-			loc = l
-		} else if offset, ok := parseTZOffset(tzStr); ok {
-			loc = time.FixedZone(tzStr, offset)
-		}
+		loc = resolveTimezoneForSerialization(string(tzVal.AsString(ctx)))
 	}
 	parsed, err := time.ParseInLocation("2006-01-02 15:04:05.000000", dateStr, loc)
 	if err != nil {
@@ -1099,6 +1139,20 @@ func unserializeMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal
 		}
 	}
 	setTimeVal(this, parsed)
+
+	// Restore custom properties from subclasses
+	builtinKeys := map[string]bool{"date": true, "timezone_type": true, "timezone": true}
+	it := arr.NewIterator()
+	for it.Valid(ctx) {
+		k, _ := it.Key(ctx)
+		v, _ := it.Current(ctx)
+		ks := k.String()
+		if !builtinKeys[ks] {
+			this.ObjectSet(ctx, phpv.ZString(ks), v)
+		}
+		it.Next(ctx)
+	}
+
 	return nil, nil
 }
 
@@ -1111,14 +1165,9 @@ func wakeupMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*p
 
 	dateStr := string(dateVal.AsString(ctx))
 	tzVal := this.HashTable().GetString("timezone")
-	var loc *time.Location = time.UTC
+	loc := time.UTC
 	if tzVal != nil && !tzVal.IsNull() {
-		tzStr := string(tzVal.AsString(ctx))
-		if l, err := time.LoadLocation(tzStr); err == nil {
-			loc = l
-		} else if offset, ok := parseTZOffset(tzStr); ok {
-			loc = time.FixedZone(tzStr, offset)
-		}
+		loc = resolveTimezoneForSerialization(string(tzVal.AsString(ctx)))
 	}
 
 	parsed, err := time.ParseInLocation("2006-01-02 15:04:05.000000", dateStr, loc)
@@ -1716,6 +1765,18 @@ func init() {
 							if v != nil {
 								result.OffsetSet(ctx, phpv.ZString(key), v)
 							}
+						}
+					}
+					// Include custom properties from subclasses
+					builtinKeys := map[string]bool{"y": true, "m": true, "d": true, "h": true, "i": true, "s": true, "f": true, "invert": true, "days": true, "from_string": true, "date_string": true}
+					for prop := range this.IterProps(ctx) {
+						pName := string(prop.VarName)
+						if builtinKeys[pName] {
+							continue
+						}
+						v := this.HashTable().GetString(prop.VarName)
+						if v != nil {
+							result.OffsetSet(ctx, phpv.ZString(pName), v)
 						}
 					}
 					return result.ZVal(), nil

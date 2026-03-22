@@ -300,10 +300,19 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		}
 	}
 
-	// If called from a modifier token (abstract/final), back it up so
-	// parseZClassAttr can consume it, then read the actual class token.
+	// If called from a modifier token (abstract/final/readonly), apply the
+	// modifier directly rather than backing up (backup can lose a peeked token
+	// when T_READONLY was preceded by a peekType() call in compileBaseSingle).
+	// Then call parseZClassAttr to pick up any remaining modifiers.
 	if i.Type == tokenizer.T_ABSTRACT || i.Type == tokenizer.T_FINAL || i.Type == tokenizer.T_READONLY {
-		c.backup()
+		switch i.Type {
+		case tokenizer.T_ABSTRACT:
+			attr |= phpv.ZClassAbstract | phpv.ZClassExplicitAbstract
+		case tokenizer.T_FINAL:
+			attr |= phpv.ZClassFinal
+		case tokenizer.T_READONLY:
+			attr |= phpv.ZClassReadonly
+		}
 		err = parseZClassAttr(&attr, c)
 		if err != nil {
 			return nil, &phpv.PhpError{Err: err, Code: phpv.E_COMPILE_ERROR, Loc: i.Loc()}

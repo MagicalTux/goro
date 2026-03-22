@@ -55,3 +55,27 @@ func (c *cfgContext) Parent(n int) phpv.Context {
 	}
 	return c.Context.Parent(n - 1)
 }
+
+// funcNameContext wraps a context to override GetFuncName() without changing
+// other context properties. This is used by call_user_func/call_user_func_array
+// so that error messages reference the correct function name.
+type funcNameContext struct {
+	phpv.Context
+	name string
+}
+
+// WithFuncName creates a context wrapper that overrides GetFuncName().
+func WithFuncName(parent phpv.Context, name string) phpv.Context {
+	return &funcNameContext{parent, name}
+}
+
+func (c *funcNameContext) GetFuncName() string {
+	return c.name
+}
+
+func (c *funcNameContext) Parent(n int) phpv.Context {
+	if n <= 1 {
+		return c.Context
+	}
+	return c.Context.Parent(n - 1)
+}

@@ -375,8 +375,16 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	op := r.opD
 
 	if r.op == tokenizer.Rune('@') {
-		// silence errors
+		// silence errors - save the current global error_reporting level
+		// and restore it after the expression completes. PHP's @ operator
+		// saves error_reporting, sets it to 0, evaluates the expression,
+		// then restores it. This is needed because code inside the silenced
+		// expression may call error_reporting() to change the global value.
+		savedErrorReporting := ctx.GetConfig("error_reporting", phpv.ZInt(0).ZVal())
 		ctx = phpctx.WithConfig(ctx, "error_reporting", phpv.ZInt(0).ZVal())
+		defer func() {
+			ctx.Global().SetLocalConfig("error_reporting", savedErrorReporting)
+		}()
 	}
 
 	// For plain assignment (=), evaluate LHS sub-expressions for side effects
