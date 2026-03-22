@@ -885,6 +885,8 @@ func TestPhp(t *testing.T) {
 		"test/php-8.5.4/fibers/get-return-after-bailout.phpt":                                         true, // Fiber + str_repeat(PHP_INT_MAX) hang
 		"test/php-8.5.4/fibers/backtrace-object.phpt":                                                 true, // Nil pointer in fiber backtrace
 		"test/php-8.5.4/ext/standard/strings/gh15552.phpt":                                            true, // sscanf huge arg index causes OOM
+		"test/php-8.5.4/ext/date/DateTimeImmutable_inherited_serialization.phpt":                       true, // Nil pointer in inherited serialization
+		"test/php-8.5.4/ext/date/DateTimePeriod_inherited_serialization.phpt":                          true, // Nil pointer in inherited serialization
 	}
 
 	// Directories containing tests that require external resources (network, etc.)
