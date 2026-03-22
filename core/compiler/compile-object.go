@@ -1426,6 +1426,9 @@ func (r *runObjectDynFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 				}
 				SetDeprecationAlias(string(methodName))
 				SetNoDiscardAlias(string(methodName))
+				if err := EmitNoDiscardForMagicCall(ctx, method.Method, class.GetName(), string(methodName)); err != nil {
+					return nil, err
+				}
 				return ctx.CallZVal(ctx, method.Method, callArgs, objI)
 			}
 			// Try __call on instance
@@ -1443,6 +1446,9 @@ func (r *runObjectDynFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 					}
 					SetDeprecationAlias(string(methodName))
 					SetNoDiscardAlias(string(methodName))
+					if err := EmitNoDiscardForMagicCall(ctx, method.Method, class.GetName(), string(methodName)); err != nil {
+						return nil, err
+					}
 					return ctx.CallZVal(ctx, method.Method, callArgs, objI)
 				}
 			}
@@ -1470,6 +1476,9 @@ func (r *runObjectDynFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			}
 			SetDeprecationAlias(string(methodName))
 			SetNoDiscardAlias(string(methodName))
+			if err := EmitNoDiscardForMagicCall(ctx, method.Method, objZ.GetClass().GetName(), string(methodName)); err != nil {
+				return nil, err
+			}
 			return ctx.CallZVal(ctx, method.Method, callArgs, objZ)
 		}
 		return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Call to undefined method %s::%s()", objZ.GetClass().GetName(), methodName))

@@ -307,7 +307,8 @@ func spawnCallableInternal(ctx phpv.Context, v *phpv.ZVal, paramNo int) (phpv.Ca
 			// Check for __callStatic or __call (static call with string class name)
 			if instance == nil {
 				// When inside instance context, prefer __call over __callStatic
-				if this := ctx.This(); this != nil && this.GetClass().InstanceOf(class) {
+				thisObj := ctx.This()
+				if this := thisObj; this != nil && this.GetClass().InstanceOf(class) {
 					if callMethod, hasCall := class.GetMethod("__call"); hasCall {
 						origMethodName := methodName.AsString(ctx)
 						wrapper := &magicCallWrapper{
