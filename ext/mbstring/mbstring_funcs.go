@@ -165,7 +165,11 @@ func fncMbStrripos(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		if o >= 0 {
 			searchFrom = o
 		} else {
-			searchEnd = len(hRunes) + o - 1
+			endPos := len(hRunes) + o
+			if endPos < 0 {
+				endPos = 0
+			}
+			searchEnd = endPos
 		}
 	}
 
@@ -416,7 +420,17 @@ func findFirstString(ctx phpv.Context, z *phpv.ZVal) string {
 
 // mbConvertVariableInPlace converts encoding of a variable in-place
 func mbConvertVariableInPlace(ctx phpv.Context, z *phpv.ZVal, fromEnc, toEnc string) error {
-	if z == nil {
+	visited := make(map[*phpv.ZVal]bool)
+	return mbConvertVariableInPlaceImpl(ctx, z, fromEnc, toEnc, visited, 0)
+}
+
+func mbConvertVariableInPlaceImpl(ctx phpv.Context, z *phpv.ZVal, fromEnc, toEnc string, visited map[*phpv.ZVal]bool, depth int) error {
+	if z == nil || depth > 100 {
+		return nil
+	}
+
+	// Check for recursive references
+	if visited[z] {
 		return nil
 	}
 
@@ -429,11 +443,12 @@ func mbConvertVariableInPlace(ctx phpv.Context, z *phpv.ZVal, fromEnc, toEnc str
 		}
 		z.Set(phpv.ZString(converted).ZVal())
 	case *phpv.ZArray:
+		visited[z] = true
 		// Convert each element in the array
 		newArr := phpv.NewZArray()
 		for k, elem := range val.Iterate(ctx) {
 			elemCopy := elem.Dup()
-			if err := mbConvertVariableInPlace(ctx, elemCopy, fromEnc, toEnc); err != nil {
+			if err := mbConvertVariableInPlaceImpl(ctx, elemCopy, fromEnc, toEnc, visited, depth+1); err != nil {
 				return err
 			}
 			newArr.OffsetSet(ctx, k, elemCopy)
@@ -615,11 +630,36 @@ var encodingAliases = map[string][]string{
 	"ASCII":        {"ANSI_X3.4-1968", "iso-ir-6", "ANSI_X3.4-1986", "ISO_646.irv:1991", "US-ASCII", "ISO646-US", "us", "IBM367", "cp367", "csASCII"},
 	"UTF-8":        {"utf8"},
 	"UTF-16":       {"utf16"},
+	"UTF-7":        {"utf7"},
+	"UTF7-IMAP":    {"UTF-7-IMAP"},
 	"ISO-8859-1":   {"ISO_8859-1", "latin1"},
+	"ISO-8859-2":   {"ISO_8859-2", "latin2"},
+	"ISO-8859-3":   {"ISO_8859-3", "latin3"},
+	"ISO-8859-4":   {"ISO_8859-4", "latin4"},
+	"ISO-8859-5":   {"ISO_8859-5", "cyrillic"},
+	"ISO-8859-6":   {"ISO_8859-6", "arabic"},
+	"ISO-8859-7":   {"ISO_8859-7", "greek"},
+	"ISO-8859-8":   {"ISO_8859-8", "hebrew"},
+	"ISO-8859-9":   {"ISO_8859-9", "latin5"},
+	"ISO-8859-10":  {"ISO_8859-10", "latin6"},
 	"ISO-8859-15":  {"ISO_8859-15", "Latin-9"},
 	"EUC-JP":       {"EUC_JP", "eucJP-win", "eucJP-open"},
-	"SJIS":         {"Shift_JIS", "SJIS-win", "cp932"},
-	"WINDOWS-1252": {"cp1252"},
-	"WINDOWS-1251": {"cp1251"},
+	"SJIS":         {"Shift_JIS", "SJIS-win", "cp932", "MS_Kanji", "MacJapanese", "SJIS-mac"},
+	"WINDOWS-1250": {"cp1250", "CP-1250"},
+	"WINDOWS-1251": {"cp1251", "CP-1251"},
+	"WINDOWS-1252": {"cp1252", "CP-1252"},
+	"WINDOWS-1253": {"cp1253", "CP-1253"},
+	"WINDOWS-1254": {"cp1254", "CP-1254"},
+	"WINDOWS-1255": {"cp1255", "CP-1255"},
+	"WINDOWS-1256": {"cp1256", "CP-1256"},
+	"WINDOWS-1257": {"cp1257", "CP-1257"},
+	"WINDOWS-1258": {"cp1258", "CP-1258"},
+	"ISO-2022-JP":  {"JIS", "ISO2022-JP"},
+	"EUC-KR":       {"EUCKR", "UHC"},
+	"BIG5":         {"Big5", "BIG-5", "CP950"},
+	"GB18030":      {"GB18030-2022"},
+	"GBK":          {"CP936", "EUC-CN"},
+	"KOI8-R":       {"KOI8R"},
+	"KOI8-U":       {"KOI8U"},
 }
 

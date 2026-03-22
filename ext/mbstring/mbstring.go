@@ -206,8 +206,8 @@ func fncMbStrrpos(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZInt(start).ZVal(), nil
 	}
 
-	// For negative offset: search ends at len(hRunes) + offset
-	// For positive offset: search starts at offset
+	// For negative offset: search ends at len(hRunes) + offset (exclusive upper bound for start positions)
+	// For positive offset: search starts from offset
 	searchFrom := 0
 	searchEnd := len(hRunes) - 1
 	if offset != nil {
@@ -215,10 +215,14 @@ func fncMbStrrpos(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		if o >= 0 {
 			searchFrom = o
 		} else {
-			// Negative offset: limit the end of the search.
-			// We can only find matches starting at positions up to len(hRunes)+o-len(nRunes)
-			// but the search window ends at len(hRunes)+o
-			searchEnd = len(hRunes) + o - 1
+			// Negative offset: the search considers only the portion of the string
+			// from position 0 to position len+offset (inclusive).
+			// So the last possible match start position is len+offset.
+			endPos := len(hRunes) + o
+			if endPos < 0 {
+				endPos = 0
+			}
+			searchEnd = endPos
 		}
 	}
 
@@ -390,6 +394,12 @@ func fncMbDetectEncoding(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error
 			if utf8.ValidString(str) {
 				return phpv.ZString("UTF-8").ZVal(), nil
 			}
+		case "7BIT":
+			// 7bit never matches in mb_detect_encoding (always return false)
+			continue
+		case "HTML-ENTITIES":
+			// HTML-ENTITIES is not a real encoding for detection
+			continue
 		default:
 			if isCheckEncodingValid(str, normalized) {
 				return phpv.ZString(getCanonicalEncodingName(encName)).ZVal(), nil
@@ -416,6 +426,10 @@ func fncMbCheckEncoding(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, fmt.Sprintf("mb_check_encoding(): Argument #2 ($encoding) must be a valid encoding, \"%s\" given", encStr))
 		}
 		encoding = normalizeEncodingName(encStr)
+		// Emit deprecation warning for deprecated encodings
+		if isDeprecatedEncodingForCheck(encoding) {
+			ctx.Deprecated("%s", deprecationMessage(encoding))
+		}
 	} else {
 		encoding = normalizeEncodingName(getMbInternalEncoding(ctx))
 	}
@@ -449,6 +463,14 @@ func fncMbConvertEncoding(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, erro
 	if !isValidEncoding(toEnc) {
 		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, fmt.Sprintf("mb_convert_encoding(): Argument #2 ($to_encoding) must be a valid encoding, \"%s\" given", toEnc))
 	}
+	// Check for deprecation on the to_encoding
+	toNorm := normalizeEncodingName(toEnc)
+	deprecationEmitted := false
+	if isDeprecatedEncoding(toNorm) {
+		ctx.Deprecated("%s", deprecationMessage(toNorm))
+		deprecationEmitted = true
+	}
+
 	var fromEncodings []string
 	if len(args) > 2 && args[2] != nil && args[2].GetType() != phpv.ZtNull {
 		fromArg := args[2]
@@ -457,6 +479,9 @@ func fncMbConvertEncoding(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, erro
 			for _, v := range arr.Iterate(ctx) {
 				e := strings.TrimSpace(v.String())
 				if e != "" {
+					if !isValidEncoding(e) {
+						return nil, phpobj.ThrowError(ctx, phpobj.ValueError, fmt.Sprintf("mb_convert_encoding(): Argument #3 ($from_encoding) contains invalid encoding \"%s\"", e))
+					}
 					fromEncodings = append(fromEncodings, getCanonicalEncodingName(e))
 				}
 			}
@@ -468,6 +493,9 @@ func fncMbConvertEncoding(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, erro
 				for _, e := range strings.Split(encStr, ",") {
 					e = strings.TrimSpace(e)
 					if e != "" {
+						if !isValidEncoding(e) {
+							return nil, phpobj.ThrowError(ctx, phpobj.ValueError, fmt.Sprintf("mb_convert_encoding(): Argument #3 ($from_encoding) contains invalid encoding \"%s\"", e))
+						}
 						fromEncodings = append(fromEncodings, getCanonicalEncodingName(e))
 					}
 				}
@@ -479,6 +507,16 @@ func fncMbConvertEncoding(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, erro
 	}
 	if len(fromEncodings) == 0 {
 		fromEncodings = []string{getMbInternalEncoding(ctx)}
+	}
+	// Check for deprecation on from encodings (only emit if we haven't already)
+	if !deprecationEmitted {
+		for _, fe := range fromEncodings {
+			feNorm := normalizeEncodingName(fe)
+			if isDeprecatedEncoding(feNorm) {
+				ctx.Deprecated("%s", deprecationMessage(feNorm))
+				break
+			}
+		}
 	}
 	if args[0].GetType() == phpv.ZtArray {
 		return mbConvertEncodingArray(ctx, args[0], toEnc, fromEncodings)
