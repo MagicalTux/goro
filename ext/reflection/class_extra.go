@@ -597,7 +597,7 @@ func formatReflectionClass(ctx phpv.Context, zc *phpobj.ZClass) string {
 		if !prop.Modifiers.IsStatic() {
 			continue
 		}
-		sb.WriteString(fmt.Sprintf("    Property [ %s static $%s ]\n", rcAccessStr(prop.Modifiers), prop.VarName))
+		sb.WriteString(rcFormatStaticProperty(prop))
 	}
 	sb.WriteString("  }\n\n")
 
@@ -627,7 +627,7 @@ func formatReflectionClass(ctx phpv.Context, zc *phpobj.ZClass) string {
 		if prop.Modifiers.IsStatic() {
 			continue
 		}
-		sb.WriteString(fmt.Sprintf("    Property [ %s $%s ]\n", rcAccessStr(prop.Modifiers), prop.VarName))
+		sb.WriteString(rcFormatProperty(prop))
 	}
 	sb.WriteString("  }\n\n")
 
@@ -662,13 +662,24 @@ func rcAccessStr(mod phpv.ZObjectAttr) string {
 func rcFormatMethodShort(zc *phpobj.ZClass, m *phpv.ZClassMethod) string {
 	var sb strings.Builder
 	sb.WriteString("    Method [ ")
-	origin := "<user>"
+	origin := "<user"
 	if m.Loc == nil {
-		origin = "<internal>"
+		origin = "<internal"
+	}
+	if m.Prototype != nil {
+		origin += ", prototype " + string(m.Prototype.GetName())
 	}
 	if m.Class != nil && m.Class.GetName() != zc.GetName() {
 		origin += ", inherits " + string(m.Class.GetName())
 	}
+	// Check if this is a constructor
+	nameLower := strings.ToLower(string(m.Name))
+	if nameLower == "__construct" {
+		origin += ", ctor"
+	} else if nameLower == "__destruct" {
+		origin += ", dtor"
+	}
+	origin += ">"
 	sb.WriteString(origin)
 	if m.Modifiers.Has(phpv.ZAttrAbstract) || m.Empty {
 		sb.WriteString(" abstract")
@@ -676,15 +687,15 @@ func rcFormatMethodShort(zc *phpobj.ZClass, m *phpv.ZClassMethod) string {
 	if m.Modifiers.Has(phpv.ZAttrFinal) {
 		sb.WriteString(" final")
 	}
+	if m.Modifiers.IsStatic() {
+		sb.WriteString(" static")
+	}
 	if m.Modifiers.IsProtected() {
 		sb.WriteString(" protected")
 	} else if m.Modifiers.IsPrivate() {
 		sb.WriteString(" private")
 	} else {
 		sb.WriteString(" public")
-	}
-	if m.Modifiers.IsStatic() {
-		sb.WriteString(" static")
 	}
 	sb.WriteString(fmt.Sprintf(" method %s ] {\n", m.Name))
 	if m.Loc != nil {
@@ -709,8 +720,72 @@ func rcFormatMethodShort(zc *phpobj.ZClass, m *phpv.ZClassMethod) string {
 			}
 			sb.WriteString("      }\n")
 		}
+	} else if m.Loc == nil {
+		// Internal methods: show empty parameter list
+		sb.WriteString(fmt.Sprintf("\n      - Parameters [0] {\n"))
+		sb.WriteString("      }\n")
+	}
+	// Show return type if available
+	if m.ReturnType != nil {
+		sb.WriteString(fmt.Sprintf("      - Return [ %s ]\n", m.ReturnType.String()))
 	}
 	sb.WriteString("    }\n")
+	return sb.String()
+}
+
+// rcFormatProperty formats a non-static property for ReflectionClass::__toString().
+// Output format: "    Property [ public [protected(set)] [readonly] [type] $name ]\n"
+func rcFormatProperty(prop *phpv.ZClassProp) string {
+	var sb strings.Builder
+	sb.WriteString("    Property [ ")
+	sb.WriteString(rcAccessStr(prop.Modifiers))
+	// Asymmetric set visibility (PHP 8.4)
+	if prop.SetModifiers != 0 {
+		setVis := "public"
+		if prop.SetModifiers.IsProtected() {
+			setVis = "protected"
+		} else if prop.SetModifiers.IsPrivate() {
+			setVis = "private"
+		}
+		sb.WriteString(" ")
+		sb.WriteString(setVis)
+		sb.WriteString("(set)")
+	}
+	if prop.Modifiers.Has(phpv.ZAttrReadonly) {
+		sb.WriteString(" readonly")
+	}
+	if prop.TypeHint != nil {
+		sb.WriteString(" " + prop.TypeHint.String())
+	}
+	sb.WriteString(fmt.Sprintf(" $%s", prop.VarName))
+	if prop.HasHooks {
+		sb.WriteString(" {")
+		if prop.GetHook != nil {
+			sb.WriteString(" get;")
+		}
+		if prop.SetHook != nil {
+			sb.WriteString(" set;")
+		}
+		sb.WriteString(" }")
+	}
+	sb.WriteString(" ]\n")
+	return sb.String()
+}
+
+// rcFormatStaticProperty formats a static property for ReflectionClass::__toString().
+func rcFormatStaticProperty(prop *phpv.ZClassProp) string {
+	var sb strings.Builder
+	sb.WriteString("    Property [ ")
+	sb.WriteString(rcAccessStr(prop.Modifiers))
+	sb.WriteString(" static")
+	if prop.Modifiers.Has(phpv.ZAttrReadonly) {
+		sb.WriteString(" readonly")
+	}
+	if prop.TypeHint != nil {
+		sb.WriteString(" " + prop.TypeHint.String())
+	}
+	sb.WriteString(fmt.Sprintf(" $%s", prop.VarName))
+	sb.WriteString(" ]\n")
 	return sb.String()
 }
 

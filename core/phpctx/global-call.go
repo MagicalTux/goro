@@ -62,14 +62,17 @@ func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, o
 		}
 
 		isRefParam := false
+		isPreferRef := false
 		if funcArgs != nil && i < len(funcArgs) && funcArgs[i].Ref {
 			isRefParam = true
+			isPreferRef = funcArgs[i].PreferRef
 		} else if funcArgs != nil && len(funcArgs) > 0 {
 			// Check if the last parameter is a variadic by-ref param;
 			// if so, all args from that index onward are by-ref.
 			last := funcArgs[len(funcArgs)-1]
 			if last.Variadic && last.Ref && i >= len(funcArgs)-1 {
 				isRefParam = true
+				isPreferRef = last.PreferRef
 			}
 		}
 		if !isRefParam && extArgs != nil && i < len(extArgs) && extArgs[i].Ref {
@@ -112,14 +115,21 @@ func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, o
 			_, isWritable := arg.(phpv.Writable)
 			if !isWritable && !val.IsRef() {
 				// Non-variable, non-reference result passed to a by-ref parameter
-				if _, isFuncCall := arg.(phpv.FuncCallExpression); isFuncCall {
+				if isPreferRef {
+					// ZEND_SEND_PREFER_REF: silently accept non-ref values
+					val = val.Dup()
+					val.Name = nil
+				} else if _, isFuncCall := arg.(phpv.FuncCallExpression); isFuncCall {
 					// Function/method call -> Notice, pass by value
 					// Restore call site location for correct notice line
 					ctx.Tick(ctx, callLoc)
 					ctx.Notice("Only variables should be passed by reference",
 						logopt.NoFuncName(true))
 					val = val.Dup()
-					val.Name = nil // clear Name so CallZVal skips ref processing
+					// Mark as already warned about by-ref issue. Use a sentinel
+					// name so CallZVal knows not to emit a second warning.
+					alreadyWarned := phpv.ZString("\x00ref_warned")
+					val.Name = &alreadyWarned
 				} else {
 					// Literal, assignment, or other non-variable expression -> Error
 					funcName := phpv.CallableDisplayName(f)
@@ -363,11 +373,23 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 			// Since this function was parsed, the parameter info is available
 			if i < len(func_args) && func_args[i].Ref {
 				argName := callCtx.Args[i].GetName()
-				if argName == "" {
+				if argName == "" || argName == "\x00ref_warned" {
 					// No variable name - either handled in Call() with a Notice
 					// (function call result), or a direct CallZVal with a non-variable.
 					// In either case, pass by value instead of by reference.
+					if argName == "\x00ref_warned" {
+						// Already warned by Call() with "Only variables should be
+						// passed by reference" Notice - skip the second warning.
+						callCtx.Args[i] = callCtx.Args[i].Dup()
+						continue
+					}
 					if !callCtx.Args[i].IsRef() {
+						// PreferRef params (ZEND_SEND_PREFER_REF) silently accept
+						// non-ref values without warning (e.g. array_multisort).
+						if func_args[i].PreferRef {
+							callCtx.Args[i] = callCtx.Args[i].Dup()
+							continue
+						}
 						// Emit "must be passed by reference, value given" warning
 						// (e.g. when call_user_func_array passes non-ref to a ref param)
 						funcName := callCtx.GetFuncName()

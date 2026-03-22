@@ -207,6 +207,17 @@ func (r *runAttributeValidatedFunc) Dump(w io.Writer) error {
 	return r.inner.Dump(w)
 }
 
+// noDiscardAliasName stores an alias method name for NoDiscard warnings.
+// When __call() or __callStatic() is invoked, the caller sets this to
+// the original method name (e.g., "test") so the warning says
+// "method Clazz::test()" instead of "method Clazz::__call()".
+var noDiscardAliasName string
+
+// SetNoDiscardAlias sets the alias name for the next NoDiscard check.
+func SetNoDiscardAlias(name string) {
+	noDiscardAliasName = name
+}
+
 type runNoDiscardStatement struct {
 	inner phpv.Runnable
 }
@@ -236,10 +247,18 @@ func (r *runNoDiscardStatement) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 }
 func (r *runNoDiscardStatement) Dump(w io.Writer) error { return r.inner.Dump(w) }
 func getNoDiscardInfo(c phpv.Callable) ([]*phpv.ZAttribute, string, string) {
+	// Consume any alias name
+	alias := noDiscardAliasName
+	noDiscardAliasName = ""
+
 	if bc, ok := c.(*phpv.BoundedCallable); ok {
 		innerAttrs, _, _ := getNoDiscardInfo(bc.Callable)
 		if innerAttrs != nil {
 			name := bc.Callable.Name()
+			// Use alias name for __call/__callStatic
+			if alias != "" && (name == "__call" || name == "__callStatic" || name == "__callstatic") {
+				name = alias
+			}
 			lbl := "function"
 			if bc.This != nil {
 				lbl = "method"
@@ -251,14 +270,26 @@ func getNoDiscardInfo(c phpv.Callable) ([]*phpv.ZAttribute, string, string) {
 	}
 	if mc, ok := c.(*phpv.MethodCallable); ok {
 		innerAttrs, _, _ := getNoDiscardInfo(mc.Callable)
-		if innerAttrs != nil { return innerAttrs, string(mc.Class.GetName()) + "::" + mc.Callable.Name(), "method" }
+		if innerAttrs != nil {
+			name := mc.Callable.Name()
+			if alias != "" && (name == "__call" || name == "__callStatic" || name == "__callstatic") {
+				name = alias
+			}
+			return innerAttrs, string(mc.Class.GetName()) + "::" + name, "method"
+		}
 		return nil, "", ""
 	}
 	if ag, ok := c.(phpv.AttributeGetter); ok {
 		attrs := ag.GetAttributes()
 		name := c.Name()
+		if alias != "" && (name == "__call" || name == "__callStatic" || name == "__callstatic") {
+			name = alias
+		}
 		lbl := "function"
-		if zc, ok := c.(phpv.ZClosure); ok && zc.GetClass() != nil { lbl = "method"; name = string(zc.GetClass().GetName()) + "::" + name }
+		if zc, ok := c.(phpv.ZClosure); ok && zc.GetClass() != nil {
+			lbl = "method"
+			name = string(zc.GetClass().GetName()) + "::" + name
+		}
 		return attrs, name, lbl
 	}
 	return nil, "", ""

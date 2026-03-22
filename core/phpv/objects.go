@@ -63,6 +63,8 @@ type ZClassMethod struct {
 	Loc        *Loc
 	Attributes []*ZAttribute // PHP 8.0 attributes
 	FromTrait  ZClass        // non-nil if this method was imported from a trait
+	Prototype  ZClass        // interface/class that defines the prototype for this method
+	ReturnType *TypeHint     // return type hint for the method (for reflection)
 }
 
 type ZClassConst struct {

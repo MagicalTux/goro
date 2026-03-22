@@ -84,6 +84,17 @@ func callDestructorIfNeeded(ctx phpv.Context, zv *phpv.ZVal) error {
 	return nil
 }
 
+// isTemporaryExpr checks if an expression produces a temporary value that
+// cannot be used in a write context (e.g., class constants, function calls).
+func isTemporaryExpr(r phpv.Runnable) bool {
+	switch r.(type) {
+	case *runClassStaticObjRef:
+		// Foo::Bar is a class constant - property access on it produces a temporary
+		return true
+	}
+	return false
+}
+
 func compileUnset(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	var err error
 	un := &runnableUnset{l: i.Loc()}
@@ -101,6 +112,19 @@ func compileUnset(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			}
 			c.Global().LogError(phpErr)
 			return nil, phpv.ExitError(255)
+		}
+		// Check for temporary expression in write context
+		// e.g. unset(Foo::Bar->value) where Foo::Bar is a class constant
+		if ov, ok := arg.(*runObjectVar); ok {
+			if isTemporaryExpr(ov.ref) {
+				phpErr := &phpv.PhpError{
+					Err:  fmt.Errorf("Cannot use temporary expression in write context"),
+					Code: phpv.E_ERROR,
+					Loc:  i.Loc(),
+				}
+				c.Global().LogError(phpErr)
+				return nil, phpv.ExitError(255)
+			}
 		}
 	}
 	return un, nil

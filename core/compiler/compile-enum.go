@@ -437,9 +437,10 @@ func compileEnum(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 
 	// Add virtual name property so ReflectionClass::getProperties() works for enums.
 	class.Props = append(class.Props, &phpv.ZClassProp{
-		VarName:   "name",
-		Modifiers: phpv.ZAttrPublic | phpv.ZAttrReadonly,
-		TypeHint:  phpv.ParseTypeHint("string"),
+		VarName:      "name",
+		Modifiers:    phpv.ZAttrPublic | phpv.ZAttrReadonly,
+		SetModifiers: phpv.ZAttrProtected,
+		TypeHint:     phpv.ParseTypeHint("string"),
 	})
 	if backingType != 0 {
 		btName := phpv.ZString("int")
@@ -447,9 +448,10 @@ func compileEnum(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			btName = "string"
 		}
 		class.Props = append(class.Props, &phpv.ZClassProp{
-			VarName:   "value",
-			Modifiers: phpv.ZAttrPublic | phpv.ZAttrReadonly,
-			TypeHint:  phpv.ParseTypeHint(btName),
+			VarName:      "value",
+			Modifiers:    phpv.ZAttrPublic | phpv.ZAttrReadonly,
+			SetModifiers: phpv.ZAttrProtected,
+			TypeHint:     phpv.ParseTypeHint(btName),
 		})
 	}
 
@@ -538,8 +540,10 @@ func compileEnum(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	// cases() - returns array of all enum cases
 	if _, exists := class.Methods["cases"]; !exists {
 		class.Methods["cases"] = &phpv.ZClassMethod{
-			Name:      "cases",
-			Modifiers: phpv.ZAttrPublic | phpv.ZAttrStatic,
+			Name:       "cases",
+			Modifiers:  phpv.ZAttrPublic | phpv.ZAttrStatic,
+			Prototype:  phpobj.UnitEnum,
+			ReturnType: phpv.ParseTypeHint("array"),
 			Method: phpobj.NativeStaticMethod(func(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				cls := ctx.Class()
 				if cls == nil {

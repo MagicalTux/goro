@@ -326,41 +326,12 @@ func exceptionConstruct(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.
 		o.SetOpaque(o.GetClass(), trace)
 	}
 
-	// Store the trace array in the hash table (private property) so that
-	// getTraceAsString() can read it even if modified by user code.
-	traceArr := getExceptionTrace(ctx, trace)
-	// Find the mangled key for the private trace property
-	traceMangledKey := phpv.ZString("*" + string(Exception.GetName()) + ":trace")
-	if o.GetClass().InstanceOf(Error) && !o.GetClass().InstanceOf(Exception) {
-		traceMangledKey = phpv.ZString("*" + string(Error.GetName()) + ":trace")
-	}
-	o.HashTable().SetString(traceMangledKey, traceArr.ZVal())
-
 	return phpv.ZNULL.ZVal(), nil
 }
 
 func exceptionGetTraceAsString(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	maxLen := getExceptionStringParamMaxLen(ctx)
 
-	// Check if the trace property has been modified in the hash table.
-	// The trace property is private to Exception/Error, so it's stored under the mangled name.
-	// Check both the Exception and Error mangled names.
-	var traceVal *phpv.ZVal
-	for _, className := range []string{"Exception", "Error"} {
-		mangledKey := phpv.ZString("*" + className + ":trace")
-		v := o.HashTable().GetString(mangledKey)
-		if v != nil && v.GetType() == phpv.ZtArray {
-			traceVal = v
-			break
-		}
-	}
-
-	if traceVal != nil {
-		traceArr := traceVal.Value().(*phpv.ZArray)
-		return getTraceAsStringFromArray(ctx, traceArr, maxLen).ZVal(), nil
-	}
-
-	// Fall back to opaque storage
 	opaque := o.GetOpaque(Exception)
 	if opaque == nil {
 		return phpv.ZString("#0 {main}").ZVal(), nil

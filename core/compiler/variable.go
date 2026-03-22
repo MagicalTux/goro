@@ -128,6 +128,10 @@ func (r *runVariable) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			if t.ref != r {
 				write = true
 			}
+		case *runObjectVar:
+			// $var->prop in property access context is a write context
+			// (PHP doesn't warn about undefined $var when used as $var->prop = ...)
+			write = true
 		case *runRef:
 			// &$var reference creation is a write context
 			write = true

@@ -3,6 +3,7 @@ package phpv
 type FuncArg struct {
 	VarName            ZString
 	Ref                bool
+	PreferRef          bool // ZEND_SEND_PREFER_REF: silently accepts non-ref values (no warning)
 	Required           bool
 	Variadic           bool        // ...param (collects remaining args into array)
 	DefaultValue       Val

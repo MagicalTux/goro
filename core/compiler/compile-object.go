@@ -756,6 +756,7 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 					a.OffsetSet(ctx, key, val)
 				}
 				SetDeprecationAlias(string(op))
+				SetNoDiscardAlias(string(op))
 				return ctx.CallZVal(ctx, phpv.BindClass(callStaticMethod.Method, callClass, true), callArgs, objI)
 			}
 		}
@@ -787,8 +788,9 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 					a.OffsetSet(ctx, key, val.Dup())
 				}
 				callArgs := []*phpv.ZVal{op.ZVal(), a.ZVal()}
-				// Set deprecation alias so __call() deprecation says the called method name
+				// Set deprecation/NoDiscard alias so warnings say the called method name
 				SetDeprecationAlias(string(op))
+				SetNoDiscardAlias(string(op))
 				// Wrap in BoundedCallable so stack trace shows class and -> type
 				return ctx.CallZVal(ctx, phpv.Bind(callMethod.Method, callObj), callArgs, callObj)
 			}
@@ -816,8 +818,9 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 					}
 					a.OffsetSet(ctx, key, val)
 				}
-				// Set deprecation alias so __callStatic() deprecation says the called method name
+				// Set deprecation/NoDiscard alias so warnings say the called method name
 				SetDeprecationAlias(string(op))
+				SetNoDiscardAlias(string(op))
 				// Wrap in MethodCallable so stack trace shows class and :: type
 				return ctx.CallZVal(ctx, phpv.BindClass(callStaticMethod.Method, callClass, true), callArgs, objI)
 			}
@@ -885,6 +888,7 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 					a.OffsetSet(ctx, nil, val)
 				}
 				SetDeprecationAlias(string(op))
+				SetNoDiscardAlias(string(op))
 				return ctx.CallZVal(ctx, phpv.BindClass(callStaticMethod.Method, class, true), callArgs, nil)
 			}
 		}
@@ -910,6 +914,7 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 					a.OffsetSet(ctx, nil, sub.Dup())
 				}
 				callArgs := []*phpv.ZVal{op.ZVal(), a.ZVal()}
+				SetNoDiscardAlias(string(op))
 				return ctx.CallZVal(ctx, callMethod.Method, callArgs, callObj)
 			}
 		}
@@ -1403,6 +1408,8 @@ func (r *runObjectDynFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 					}
 					a.OffsetSet(ctx, nil, v)
 				}
+				SetDeprecationAlias(string(methodName))
+				SetNoDiscardAlias(string(methodName))
 				return ctx.CallZVal(ctx, method.Method, callArgs, objI)
 			}
 			// Try __call on instance
@@ -1418,6 +1425,8 @@ func (r *runObjectDynFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 						}
 						a.OffsetSet(ctx, nil, v)
 					}
+					SetDeprecationAlias(string(methodName))
+					SetNoDiscardAlias(string(methodName))
 					return ctx.CallZVal(ctx, method.Method, callArgs, objI)
 				}
 			}
@@ -1443,6 +1452,8 @@ func (r *runObjectDynFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 				}
 				a.OffsetSet(ctx, nil, v)
 			}
+			SetDeprecationAlias(string(methodName))
+			SetNoDiscardAlias(string(methodName))
 			return ctx.CallZVal(ctx, method.Method, callArgs, objZ)
 		}
 		return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Call to undefined method %s::%s()", objZ.GetClass().GetName(), methodName))

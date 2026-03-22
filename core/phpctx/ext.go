@@ -52,9 +52,10 @@ func (e *ExtFunction) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, err
 }
 
 type ExtFunctionArg struct {
-	ArgName  string // without the $ sign
-	Ref      bool
-	Optional bool // is this argument optional?
+	ArgName   string // without the $ sign
+	Ref       bool
+	PreferRef bool // like Ref but silently accepts non-ref values (ZEND_SEND_PREFER_REF)
+	Optional  bool // is this argument optional?
 }
 
 // GetArgs implements phpv.FuncGetArgs, returning cached parameter metadata.
@@ -73,9 +74,10 @@ func (e *ExtFunction) buildFuncArgs() {
 	e.funcArgs = make([]*phpv.FuncArg, len(e.Args))
 	for i, a := range e.Args {
 		e.funcArgs[i] = &phpv.FuncArg{
-			VarName:  phpv.ZString(a.ArgName),
-			Required: !a.Optional,
-			Ref:      a.Ref,
+			VarName:   phpv.ZString(a.ArgName),
+			Required:  !a.Optional,
+			Ref:       a.Ref || a.PreferRef,
+			PreferRef: a.PreferRef,
 		}
 	}
 }

@@ -1,7 +1,6 @@
 package compiler
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -33,7 +32,13 @@ func (r *runClassStaticVarRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	case phpv.ZtString:
 		class, err = ctx.Global().GetClass(ctx, className.AsString(ctx), true)
 	default:
-		return nil, errors.New("invalid method receiver type: " + className.GetName().String())
+		phpErr := &phpv.PhpError{
+			Err:  fmt.Errorf("Illegal class name"),
+			Code: phpv.E_ERROR,
+			Loc:  r.l,
+		}
+		ctx.Global().LogError(phpErr)
+		return nil, phpv.ExitError(255)
 	}
 
 	if err != nil {
@@ -155,7 +160,13 @@ func (r *runClassStaticDynVarRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	case phpv.ZtString:
 		class, err = ctx.Global().GetClass(ctx, className.AsString(ctx), true)
 	default:
-		return nil, errors.New("invalid method receiver type: " + className.GetName().String())
+		phpErr := &phpv.PhpError{
+			Err:  fmt.Errorf("Illegal class name"),
+			Code: phpv.E_ERROR,
+			Loc:  r.l,
+		}
+		ctx.Global().LogError(phpErr)
+		return nil, phpv.ExitError(255)
 	}
 	if err != nil {
 		return nil, err
@@ -298,7 +309,13 @@ func (r *runClassStaticObjRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	case phpv.ZtString:
 		class, err = ctx.Global().GetClass(ctx, className.AsString(ctx), true)
 	default:
-		return nil, errors.New("invalid method receiver type: " + className.GetName().String())
+		phpErr := &phpv.PhpError{
+			Err:  fmt.Errorf("Illegal class name"),
+			Code: phpv.E_ERROR,
+			Loc:  r.l,
+		}
+		ctx.Global().LogError(phpErr)
+		return nil, phpv.ExitError(255)
 	}
 
 	if err != nil {

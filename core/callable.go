@@ -325,14 +325,9 @@ func spawnCallableInternal(ctx phpv.Context, v *phpv.ZVal, paramNo int) (phpv.Ca
 					}
 					return phpv.BindClass(wrapper, class, true), nil
 				}
-				if callMethod, hasCall := class.GetMethod("__call"); hasCall {
-					origMethodName := methodName.AsString(ctx)
-					wrapper := &magicCallWrapper{
-						callMethod: callMethod.Method,
-						methodName: origMethodName,
-					}
-					return phpv.BindClass(wrapper, class, false), nil
-				}
+				// Note: __call only applies to instance context, NOT static string context.
+				// is_callable(['ClassName', 'method']) should return false if only __call exists
+				// (no __callStatic). PHP only invokes __call via instances.
 			}
 			callerFunc := ctx.GetFuncName()
 			if callerFunc == "" {
