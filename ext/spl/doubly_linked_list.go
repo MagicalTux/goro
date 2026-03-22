@@ -581,6 +581,57 @@ func makeSplDllMethods(cls *phpobj.ZClass, defaultMode int) map[phpv.ZString]*ph
 				return nil, nil
 			}),
 		},
+		"__serialize": {Name: "__serialize", Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+			d := getData(o)
+			result := phpv.NewZArray()
+			flags := 0
+			if d != nil {
+				flags = d.mode
+			}
+			result.OffsetSet(ctx, phpv.ZInt(0), phpv.ZInt(flags).ZVal())
+			dataArr := phpv.NewZArray()
+			if d != nil {
+				for i, v := range d.data {
+					if v == nil {
+						dataArr.OffsetSet(ctx, phpv.ZInt(i), phpv.ZNULL.ZVal())
+					} else {
+						dataArr.OffsetSet(ctx, phpv.ZInt(i), v)
+					}
+				}
+			}
+			result.OffsetSet(ctx, phpv.ZInt(1), dataArr.ZVal())
+			result.OffsetSet(ctx, phpv.ZInt(2), phpv.NewZArray().ZVal())
+			return result.ZVal(), nil
+		})},
+		"__unserialize": {Name: "__unserialize", Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+			d := getData(o)
+			if d == nil {
+				d = &splDllData{mode: defaultMode}
+				o.SetOpaque(cls, d)
+			}
+			if len(args) == 0 || args[0] == nil {
+				return nil, nil
+			}
+			arr := args[0].AsArray(ctx)
+			if arr == nil {
+				return nil, nil
+			}
+			if flagsVal, err := arr.OffsetGet(ctx, phpv.ZInt(0).ZVal()); err == nil && flagsVal != nil {
+				d.mode = int(flagsVal.AsInt(ctx))
+			}
+			if dataVal, err := arr.OffsetGet(ctx, phpv.ZInt(1).ZVal()); err == nil && dataVal != nil {
+				dataArr := dataVal.AsArray(ctx)
+				if dataArr != nil {
+					d.data = nil
+					it := dataArr.NewIterator()
+					for ; it.Valid(ctx); it.Next(ctx) {
+						v, _ := it.Current(ctx)
+						d.data = append(d.data, v)
+					}
+				}
+			}
+			return nil, nil
+		})},
 		"add": {
 			Name: "add",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {

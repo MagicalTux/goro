@@ -33,7 +33,7 @@ func checkDateTimeInitialized(ctx phpv.Context, obj *phpobj.ZObject) error {
 	if isDateTimeInitialized(obj) {
 		return nil
 	}
-	className := obj.GetClass().GetName()
+	className := obj.Class.GetName()
 	// Determine the base class (DateTime or DateTimeImmutable)
 	baseClass := "DateTimeImmutable"
 	if obj.Class.InstanceOf(DateTime) && !obj.Class.InstanceOf(DateTimeImmutable) {
@@ -57,10 +57,10 @@ func checkDateIntervalInitialized(ctx phpv.Context, obj *phpobj.ZObject) error {
 	}
 	// If the class is exactly DateInterval (not a subclass), it's always initialized
 	// because our constructor is always called for direct instantiation.
-	if string(obj.GetClass().GetName()) == "DateInterval" {
+	className := obj.Class.GetName()
+	if string(className) == "DateInterval" {
 		return nil
 	}
-	className := obj.GetClass().GetName()
 	return phpobj.ThrowError(ctx, DateObjectError,
 		fmt.Sprintf("Object of type %s (inheriting DateInterval) has not been correctly initialized by calling parent::__construct() in its constructor", className))
 }
@@ -75,7 +75,7 @@ func checkDatePeriodInitialized(ctx phpv.Context, obj *phpobj.ZObject) error {
 	if startVal != nil && !startVal.IsNull() {
 		return nil
 	}
-	className := obj.GetClass().GetName()
+	className := obj.Class.GetName()
 	if string(className) == "DatePeriod" {
 		return phpobj.ThrowError(ctx, DateObjectError,
 			fmt.Sprintf("Object of type DatePeriod has not been correctly initialized by calling parent::__construct() in its constructor"))
@@ -613,7 +613,8 @@ func createFromFormatStaticFor(targetClass *phpobj.ZClass) func(ctx phpv.Context
 			return phpv.ZBool(false).ZVal(), nil
 		}
 
-		obj, err := phpobj.NewZObject(ctx, targetClass)
+		actualClass := getCalledClassForStatic(ctx, targetClass)
+		obj, err := phpobj.NewZObject(ctx, actualClass)
 		if err != nil {
 			return nil, err
 		}
@@ -979,7 +980,8 @@ func createFromTimestampStatic(targetClass *phpobj.ZClass) func(ctx phpv.Context
 			t = time.Unix(int64(ts), 0).UTC()
 		}
 
-		obj, err := phpobj.NewZObject(ctx, targetClass)
+		actualClass := getCalledClassForStatic(ctx, targetClass)
+		obj, err := phpobj.NewZObject(ctx, actualClass)
 		if err != nil {
 			return nil, err
 		}
@@ -1529,11 +1531,58 @@ func dateTimeDebugInfo(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal
 	return arr.ZVal(), nil
 }
 
+// getTimezoneType returns the PHP timezone type for a location.
+func getTimezoneType(loc *time.Location) int {
+	name := loc.String()
+	if name == "UTC" || name == "Local" {
+		return 3
+	}
+	if len(name) > 0 && (name[0] == '+' || name[0] == '-') {
+		return 1
+	}
+	if strings.Contains(name, "/") {
+		return 3
+	}
+	if len(name) <= 6 {
+		return 2
+	}
+	return 3
+}
+
+// dateTimeZoneCompare handles comparison of DateTimeZone objects.
+func dateTimeZoneCompare(ctx phpv.Context, a, b phpv.ZObject) (int, error) {
+	aObj, aOk := a.(*phpobj.ZObject)
+	bObj, bOk := b.(*phpobj.ZObject)
+	if !aOk || !bOk {
+		return phpv.CompareUncomparable, nil
+	}
+	_, aInit := aObj.Opaque[DateTimeZone]
+	_, bInit := bObj.Opaque[DateTimeZone]
+	if !aInit || !bInit {
+		return 0, phpobj.ThrowError(ctx, DateObjectError, "Trying to compare uninitialized DateTimeZone objects")
+	}
+	aLoc := aObj.Opaque[DateTimeZone].(*time.Location)
+	bLoc := bObj.Opaque[DateTimeZone].(*time.Location)
+	aType := getTimezoneType(aLoc)
+	bType := getTimezoneType(bLoc)
+	if aType != bType {
+		return 0, phpobj.ThrowError(ctx, DateException, "Cannot compare two different kinds of DateTimeZone objects")
+	}
+	if aLoc.String() == bLoc.String() {
+		return 0, nil
+	}
+	if aLoc.String() < bLoc.String() {
+		return -1, nil
+	}
+	return 1, nil
+}
+
 func init() {
 	// DateTimeZone class
 	DateTimeZone = &phpobj.ZClass{
 		Name:  "DateTimeZone",
 		Props: []*phpv.ZClassProp{},
+		H:     &phpv.ZClassHandlers{HandleCompare: dateTimeZoneCompare},
 		Methods: map[phpv.ZString]*phpv.ZClassMethod{
 			"__construct": {
 				Name:      "__construct",

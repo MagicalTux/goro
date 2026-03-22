@@ -1685,6 +1685,30 @@ func initRecursiveIteratorIterator() {
 				return nil, nil
 			}),
 		},
+		"getsubpath": {Name: "getSubPath", Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+			d := getRecursiveIteratorIteratorData(o)
+			if d == nil || len(d.stack) == 0 {
+				return phpv.ZStr(""), nil
+			}
+			top := d.stack[len(d.stack)-1]
+			result, err := top.CallMethod(ctx, "getSubPath")
+			if err != nil {
+				return phpv.ZStr(""), nil
+			}
+			return result, nil
+		})},
+		"getsubpathname": {Name: "getSubPathname", Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+			d := getRecursiveIteratorIteratorData(o)
+			if d == nil || len(d.stack) == 0 {
+				return phpv.ZStr(""), nil
+			}
+			top := d.stack[len(d.stack)-1]
+			result, err := top.CallMethod(ctx, "getSubPathname")
+			if err != nil {
+				return phpv.ZStr(""), nil
+			}
+			return result, nil
+		})},
 	}
 }
 

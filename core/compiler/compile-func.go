@@ -167,6 +167,10 @@ func (r *runnableFunctionCallRef) Run(ctx phpv.Context) (l *phpv.ZVal, err error
 		// Check for __invoke method on objects (user-defined classes with __invoke)
 		if obj, ok := v.Value().(phpv.ZObject); ok {
 			if invokeMethod, hasInvoke := obj.GetClass().GetMethod("__invoke"); hasInvoke {
+				// Emit NoDiscard warning before __invoke body runs
+				if ndErr := EmitNoDiscardForMagicCall(ctx, invokeMethod.Method, obj.GetClass().GetName(), "__invoke"); ndErr != nil {
+					return nil, ndErr
+				}
 				return ctx.Call(ctx, invokeMethod.Method, r.args, obj)
 			}
 		}

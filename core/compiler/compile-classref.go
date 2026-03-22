@@ -754,12 +754,9 @@ func (r *runClassNameOf) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		if typeName == "null" {
 			return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "Cannot use \"::class\" on null")
 		}
-		// For non-string, non-object types, PHP raises a fatal error.
-		// PHP uses "Illegal class name" for simple literal values, but
-		// "Cannot use ::class on TYPE" for computed expressions.
-		// We use the latter as it's the more descriptive form.
+		// PHP raises a fatal error when ::class is used on non-string, non-object types.
 		phpErr := &phpv.PhpError{
-			Err:  fmt.Errorf("Illegal class name"),
+			Err:  fmt.Errorf("Cannot use \"::class\" on %s", typeName),
 			Code: phpv.E_ERROR,
 			Loc:  r.l,
 		}

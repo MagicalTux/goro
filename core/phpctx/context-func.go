@@ -47,7 +47,9 @@ func (c *FuncContext) Release() error {
 		// during scope cleanup creates an exception, the stack trace should
 		// show the original call site (e.g., the line that created the
 		// outer object), not the last-executed line inside the function.
-		if c.loc != nil {
+		// Skip for internal calls (loc is "Unknown:0") to avoid clobbering
+		// the global location tracker.
+		if c.loc != nil && !c.isInternal {
 			c.Context.Tick(c.Context, c.loc)
 		}
 		it := c.h.NewIterator()

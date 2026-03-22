@@ -367,12 +367,16 @@ func initSplFixedArray() {
 						iter.Next(ctx)
 					}
 
+					// Check for integer overflow before computing size
+					if int64(maxKey) == int64(^uint(0)>>1) || int64(maxKey)+1 < 0 {
+						return nil, phpobj.ThrowError(ctx, phpobj.InvalidArgumentException, "integer overflow detected")
+					}
 					size := int(maxKey) + 1
 					if count == 0 {
 						size = 0
 					}
 					if size < 0 || size > 1<<30 {
-						return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "SplFixedArray::fromArray(): array too large")
+						return nil, phpobj.ThrowError(ctx, phpobj.InvalidArgumentException, "integer overflow detected")
 					}
 
 					d := &splFixedArrayData{
