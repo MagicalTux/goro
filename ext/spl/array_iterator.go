@@ -273,6 +273,10 @@ func initArrayIterator() {
 					return nil, nil
 				}
 				position := int(args[0].AsInt(ctx))
+				if position < 0 {
+					return nil, phpobj.ThrowError(ctx, phpobj.Exception,
+						fmt.Sprintf("Seek position %d is out of range", position))
+				}
 				d.iter.Reset(ctx)
 				for i := 0; i < position; i++ {
 					if !d.iter.Valid(ctx) {
