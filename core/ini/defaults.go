@@ -162,6 +162,7 @@ var Defaults = map[string]*IniDirective{
 	"mbstring.strict_detection":             {`"0"`, INI_ALL},
 	"mbstring.regex_retry_limit":            {`"1000000"`, INI_ALL},
 	"mbstring.regex_stack_limit":            {`"100000"`, INI_ALL},
+	"mbstring._illegal_chars":               {`"0"`, INI_ALL},
 	"mcrypt.algorithms_dir":                 {`null`, INI_ALL},
 	"mcrypt.modes_dir":                      {`null`, INI_ALL},
 	"memcache.allow_failover":               {`"1"`, INI_ALL},
