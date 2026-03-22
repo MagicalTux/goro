@@ -1922,7 +1922,18 @@ func (o *ZObject) ObjectSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) er
 	// Only emit when creating a NEW property that is not declared in the class.
 	// Don't warn for declared properties that were temporarily unset.
 	// Don't warn if the class has __get or __set magic methods (implicit dynamic property support).
-	if value != nil && !o.allowsDynamicProperties() && o.findDeclaredProp(keyStr) == nil {
+	// Private properties from parent classes are not visible to subclasses,
+	// so creating a same-named property on the subclass IS a dynamic property creation.
+	declaredProp := o.findDeclaredProp(keyStr)
+	if declaredProp != nil && declaredProp.Modifiers.IsPrivate() {
+		// Check if the caller's class is the declaring class
+		callerClass := ctx.Class()
+		declaringClass := o.findDeclaringClass(keyStr)
+		if callerClass == nil || (declaringClass != nil && callerClass.GetName() != declaringClass.GetName()) {
+			declaredProp = nil // treat as undeclared for deprecation purposes
+		}
+	}
+	if value != nil && !o.allowsDynamicProperties() && declaredProp == nil {
 		hasMagicProp := false
 		if zc, ok := o.Class.(*ZClass); ok {
 			_, hasGet := zc.Methods["__get"]
@@ -2259,6 +2270,22 @@ func (o *ZObject) findDeclaredProp(keyStr phpv.ZString) *phpv.ZClassProp {
 		for _, prop := range cur.Props {
 			if prop.VarName == keyStr {
 				return prop
+			}
+		}
+	}
+	return nil
+}
+
+// findDeclaringClass returns the ZClass that declares the given property.
+func (o *ZObject) findDeclaringClass(keyStr phpv.ZString) *ZClass {
+	class, ok := o.Class.(*ZClass)
+	if !ok {
+		return nil
+	}
+	for cur := class; cur != nil; cur = cur.Extends {
+		for _, prop := range cur.Props {
+			if prop.VarName == keyStr {
+				return cur
 			}
 		}
 	}

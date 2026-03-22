@@ -13,6 +13,7 @@ const (
 	splDllItModeLifo   = 2
 	splDllItModeDelete = 1
 	splDllItModeKeep   = 0
+	splDllItModeFix    = 4 // internal flag always set by PHP
 )
 
 // splDllIterState stores saved iterator state for nested foreach support
@@ -734,14 +735,14 @@ func initSplDoublyLinkedList() {
 		"IT_MODE_DELETE": {Value: phpv.ZInt(splDllItModeDelete)},
 		"IT_MODE_KEEP":   {Value: phpv.ZInt(splDllItModeKeep)},
 	}
-	SplStackClass.Methods = makeSplDllMethods(SplStackClass, splDllItModeLifo|splDllItModeKeep)
+	SplStackClass.Methods = makeSplDllMethods(SplStackClass, splDllItModeLifo|splDllItModeKeep|splDllItModeFix)
 
-	// SplQueue: same methods but default mode is FIFO + KEEP
+	// SplQueue: same methods but default mode is FIFO + KEEP + FIX
 	SplQueueClass.Const = map[phpv.ZString]*phpv.ZClassConst{
 		"IT_MODE_LIFO":   {Value: phpv.ZInt(splDllItModeLifo)},
 		"IT_MODE_FIFO":   {Value: phpv.ZInt(splDllItModeFifo)},
 		"IT_MODE_DELETE": {Value: phpv.ZInt(splDllItModeDelete)},
 		"IT_MODE_KEEP":   {Value: phpv.ZInt(splDllItModeKeep)},
 	}
-	SplQueueClass.Methods = makeSplDllMethods(SplQueueClass, splDllItModeFifo|splDllItModeKeep)
+	SplQueueClass.Methods = makeSplDllMethods(SplQueueClass, splDllItModeFifo|splDllItModeKeep|splDllItModeFix)
 }
