@@ -252,6 +252,7 @@ func EmitNoDiscardForMagicCall(ctx phpv.Context, method phpv.Callable, className
 						msg += ", " + customMsg
 					}
 				}
+				noDiscardAlreadyEmitted = true
 				return ctx.Warn("%s", msg, logopt.NoFuncName(true), logopt.ErrType(phpv.E_USER_WARNING))
 			}
 		}

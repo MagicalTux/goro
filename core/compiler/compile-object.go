@@ -757,6 +757,9 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 				}
 				SetDeprecationAlias(string(op))
 				SetNoDiscardAlias(string(op))
+				if err := EmitNoDiscardForMagicCall(ctx, callStaticMethod.Method, callClass.GetName(), string(op)); err != nil {
+					return nil, err
+				}
 				return ctx.CallZVal(ctx, phpv.BindClass(callStaticMethod.Method, callClass, true), callArgs, objI)
 			}
 		}
@@ -791,6 +794,10 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 				// Set deprecation/NoDiscard alias so warnings say the called method name
 				SetDeprecationAlias(string(op))
 				SetNoDiscardAlias(string(op))
+				// Emit NoDiscard warning before the call body executes
+				if err := EmitNoDiscardForMagicCall(ctx, callMethod.Method, callClass.GetName(), string(op)); err != nil {
+					return nil, err
+				}
 				// Wrap in BoundedCallable so stack trace shows class and -> type
 				return ctx.CallZVal(ctx, phpv.Bind(callMethod.Method, callObj), callArgs, callObj)
 			}
@@ -821,6 +828,9 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 				// Set deprecation/NoDiscard alias so warnings say the called method name
 				SetDeprecationAlias(string(op))
 				SetNoDiscardAlias(string(op))
+				if err := EmitNoDiscardForMagicCall(ctx, callStaticMethod.Method, callClass.GetName(), string(op)); err != nil {
+					return nil, err
+				}
 				// Wrap in MethodCallable so stack trace shows class and :: type
 				return ctx.CallZVal(ctx, phpv.BindClass(callStaticMethod.Method, callClass, true), callArgs, objI)
 			}
@@ -889,6 +899,9 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 				}
 				SetDeprecationAlias(string(op))
 				SetNoDiscardAlias(string(op))
+				if err := EmitNoDiscardForMagicCall(ctx, callStaticMethod.Method, class.GetName(), string(op)); err != nil {
+					return nil, err
+				}
 				return ctx.CallZVal(ctx, phpv.BindClass(callStaticMethod.Method, class, true), callArgs, nil)
 			}
 		}
@@ -915,6 +928,9 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 				}
 				callArgs := []*phpv.ZVal{op.ZVal(), a.ZVal()}
 				SetNoDiscardAlias(string(op))
+				if err := EmitNoDiscardForMagicCall(ctx, callMethod.Method, callClass.GetName(), string(op)); err != nil {
+					return nil, err
+				}
 				return ctx.CallZVal(ctx, callMethod.Method, callArgs, callObj)
 			}
 		}
