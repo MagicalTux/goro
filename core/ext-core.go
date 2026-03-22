@@ -67,6 +67,8 @@ func init() {
 			phpobj.UnitEnum,
 			phpobj.BackedEnum,
 			phpobj.ValueError,
+			phpobj.WeakMapClass,
+			phpobj.WeakReferenceClass,
 			phpobj.IncompleteClass,
 		},
 		// Note: ExtFunctionArg is currently unused
@@ -239,6 +241,7 @@ func init() {
 			"PHP_RELEASE_VERSION":            PHP_RELEASE_VERSION,
 			"PHP_VERSION":                    PHP_VERSION,
 			"PHP_VERSION_ID":                 PHP_VERSION_ID,
+			"PHP_DEBUG":                      PHP_DEBUG,
 			"PHP_ZTS":                        PHP_ZTS,
 			"PM_STR":                         locale.PM_STR,
 			"RADIXCHAR":                      locale.RADIXCHAR,

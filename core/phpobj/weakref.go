@@ -53,6 +53,7 @@ func InitWeakReference() {
 	}
 }
 
+// > class WeakReference
 var WeakReferenceClass = &ZClass{Name: "WeakReference", Attr: phpv.ZClassFinal}
 
 type weakMapEntry struct {
@@ -176,4 +177,10 @@ func InitWeakMap() {
 	}
 }
 
+// > class WeakMap
 var WeakMapClass = &ZClass{Name: "WeakMap", Attr: phpv.ZClassFinal, Implementations: []*ZClass{ArrayAccess, IteratorAggregate}}
+
+func init() {
+	InitWeakReference()
+	InitWeakMap()
+}

@@ -1213,6 +1213,27 @@ func (g *Global) LogError(err *phpv.PhpError, optionArg ...logopt.Data) {
 		}
 	}
 
+	// When fatal_error_backtraces=On, include stack trace for fatal errors
+	if (err.Code == phpv.E_ERROR || err.Code == phpv.E_COMPILE_ERROR) && len(err.PhpStackTrace) > 0 {
+		fatalBacktraces := g.GetConfig("fatal_error_backtraces", phpv.ZBool(false).ZVal())
+		if fatalBacktraces != nil && bool(fatalBacktraces.AsBool(g)) {
+			// Check zend.exception_ignore_args for fatal error backtraces
+			ignoreArgs := false
+			ignoreVal := g.GetConfig("zend.exception_ignore_args", phpv.ZBool(false).ZVal())
+			if ignoreVal != nil && bool(ignoreVal.AsBool(g)) {
+				ignoreArgs = true
+			}
+			if ignoreArgs {
+				// Strip args from trace entries
+				for _, entry := range err.PhpStackTrace {
+					entry.Args = nil
+				}
+			}
+			output.WriteString("\nStack trace:\n")
+			output.WriteString(string(phpv.StackTrace(err.PhpStackTrace).FormatWithMaxLen(phpv.TraceArgMaxLen)))
+		}
+	}
+
 	if htmlErrors {
 		g.Write([]byte("<br />\n"))
 		g.Write(output.Bytes())

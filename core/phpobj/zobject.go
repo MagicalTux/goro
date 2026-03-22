@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 
 	"github.com/MagicalTux/goro/core/logopt"
+	"github.com/MagicalTux/goro/core/phperr"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -687,6 +688,18 @@ func (o *ZObject) init(ctx phpv.Context) error {
 	// This ensures forward-referenced constants throw errors at instantiation time
 	// if the referenced class/constant doesn't exist.
 	if err := o.GetClass().(*ZClass).ResolveConstants(ctx); err != nil {
+		return err
+	}
+
+	// Ensure static property defaults are resolved eagerly.
+	// PHP resolves these when the class is first used (linked),
+	// so errors like undefined constants in static defaults
+	// should be thrown at instantiation time.
+	if _, err := o.GetClass().(*ZClass).GetStaticProps(ctx); err != nil {
+		// Add [constant expression] stack frame to match PHP behavior
+		if ex, ok := err.(*phperr.PhpThrow); ok {
+			AddConstantExpressionFrame(ex, ctx)
+		}
 		return err
 	}
 

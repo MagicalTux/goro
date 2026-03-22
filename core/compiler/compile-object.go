@@ -385,6 +385,20 @@ func compileNew(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			constructorArgs: constructorArgs,
 			l:               n.l,
 		}, nil
+	} else if next.IsSingle('(') {
+		// new (EXPR) — dynamic class name from expression (PHP 8.5+)
+		expr, err := compileExpr(nil, c)
+		if err != nil {
+			return nil, err
+		}
+		closeP, err := c.NextItem()
+		if err != nil {
+			return nil, err
+		}
+		if !closeP.IsSingle(')') {
+			return nil, closeP.Unexpected()
+		}
+		n.cl = expr
 	} else if next.Type == tokenizer.T_VARIABLE {
 		v := phpv.Runnable(&runVariable{v: phpv.ZString(next.Data[1:]), l: next.Loc()})
 		// Check for property access or array subscript like $this->name or $a[0][1]

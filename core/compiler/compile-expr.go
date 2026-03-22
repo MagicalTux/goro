@@ -203,7 +203,8 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		if next.Type == tokenizer.T_PAAMAYIM_NEKUDOTAYIM {
 			return &runZVal{phpv.ZString(name), l}, nil
 		}
-		return &runConstant{name, l}, nil
+		// namespace\ prefix means explicitly qualified — no global fallback
+		return &runConstant{c: name, l: l, noFallback: true}, nil
 	case tokenizer.T_NS_SEPARATOR:
 		// Fully-qualified name like \TypeError or \PHP_EOL
 		// PHP 8.5: \clone($obj) is a function-call syntax for clone
@@ -249,7 +250,8 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		if next.Type == tokenizer.T_PAAMAYIM_NEKUDOTAYIM {
 			return &runZVal{phpv.ZString(name), l}, nil
 		}
-		return &runConstant{name, l}, nil
+		// Fully qualified name — no global fallback
+		return &runConstant{c: name, l: l, noFallback: true}, nil
 	case tokenizer.T_ENUM:
 		// `enum` used as identifier in expression context — treat as T_STRING
 		i.Data = "enum"
@@ -297,11 +299,11 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		if next.IsSingle('(') {
 			// Will be resolved as function name in compilePostExpr
 			resolved := c.resolveFunctionName(phpv.ZString(name))
-			return &runConstant{string(resolved), l}, nil
+			return &runConstant{c: string(resolved), l: l}, nil
 		}
 		// Constant: resolve through namespace
 		resolved := c.resolveConstantName(name)
-		return &runConstant{resolved, l}, nil
+		return &runConstant{c: resolved, l: l}, nil
 
 	case tokenizer.T_CONSTANT_ENCAPSED_STRING:
 		return compileQuoteConstant(i, c)

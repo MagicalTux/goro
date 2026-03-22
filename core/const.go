@@ -15,6 +15,7 @@ const (
 	FALSE                = phpv.ZBool(false)
 	ZEND_THREAD_SAFE     = phpv.ZBool(true) // consider things thread safe
 	PHP_ZTS              = phpv.ZInt(1)
+	PHP_DEBUG            = phpv.ZInt(0)
 	DEFAULT_INCLUDE_PATH = phpv.ZString(".:")
 	DIRECTORY_SEPARATOR  = phpv.ZString("/")
 	PHP_EOL              = phpv.ZString("\n")

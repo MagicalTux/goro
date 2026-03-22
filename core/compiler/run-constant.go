@@ -11,8 +11,9 @@ import (
 )
 
 type runConstant struct {
-	c string
-	l *phpv.Loc
+	c          string
+	l          *phpv.Loc
+	noFallback bool // when true, do not fall back to global namespace
 }
 
 func (r *runConstant) Dump(w io.Writer) error {
@@ -61,7 +62,8 @@ func (r *runConstant) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 	}
 
 	// Namespace fallback: if Foo\BAR is not found, try BAR (global)
-	if short != r.c {
+	// Skip fallback for explicitly qualified names (namespace\FOO or \Foo\BAR)
+	if short != r.c && !r.noFallback {
 		shortName := phpv.ZString(short)
 		z, ok = ctx.Global().ConstantGet(shortName)
 		if ok {

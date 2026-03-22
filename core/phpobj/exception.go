@@ -320,6 +320,16 @@ func exceptionConstruct(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.
 	}
 
 	trace := ctx.GetStackTrace(ctx)
+
+	// When zend.exception_ignore_args is enabled, strip args from the trace
+	if ignoreVal := ctx.GetConfig("zend.exception_ignore_args", phpv.ZBool(false).ZVal()); ignoreVal != nil {
+		if ignoreVal.AsBool(ctx) {
+			for _, entry := range trace {
+				entry.Args = nil
+			}
+		}
+	}
+
 	o.SetOpaque(Exception, trace)
 	// Also store under the actual class so ErrorTrace can find it
 	// (Error doesn't extend Exception, so walking the hierarchy won't find it)

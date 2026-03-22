@@ -381,6 +381,14 @@ func (closure *ZClosure) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 	if !c.isStatic && c.class == nil && ctx.Class() != nil {
 		c.class = ctx.Class()
 	}
+	// For closures in property initializers (const expressions), capture the
+	// compiling class scope. This allows closures defined as property defaults
+	// to access private members of their defining class.
+	if c.class == nil {
+		if compilingClass := ctx.Global().GetCompilingClass(); compilingClass != nil {
+			c.class = compilingClass
+		}
+	}
 	// Capture the called class for late static binding (static::class).
 	// For instance method contexts, the called class is the actual runtime class
 	// of $this (unwrapped to get the real class, not the narrowed "kin" class).
@@ -449,7 +457,12 @@ func (c *ZClosure) Compile(ctx phpv.Context) error {
 		if r, ok := a.DefaultValue.(*phpv.CompileDelayed); ok {
 			z, err := r.Run(ctx)
 			if err != nil {
-				return err
+				// If the default value can't be resolved at compile time
+				// (e.g., "new parent" in a class with no parent), leave it
+				// as CompileDelayed for lazy resolution at call time.
+				// This matches PHP behavior where defaults like "new parent"
+				// or "new self" are only evaluated when the function is called.
+				continue
 			}
 			a.DefaultValue = z.Value()
 		}

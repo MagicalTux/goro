@@ -2219,9 +2219,10 @@ func (c *ZClass) fatalError(ctx phpv.Context, msg string) error {
 
 func (c *ZClass) fatalErrorAt(ctx phpv.Context, msg string, loc *phpv.Loc) error {
 	phpErr := &phpv.PhpError{
-		Err:  fmt.Errorf("%s", msg),
-		Code: phpv.E_ERROR,
-		Loc:  loc,
+		Err:           fmt.Errorf("%s", msg),
+		Code:          phpv.E_ERROR,
+		Loc:           loc,
+		PhpStackTrace: ctx.GetStackTrace(ctx),
 	}
 	ctx.Global().LogError(phpErr)
 	return phpv.ExitError(255)

@@ -121,6 +121,61 @@ func setTimezoneLoc(obj *phpobj.ZObject, loc *time.Location) {
 	obj.Opaque[DateTimeZone] = loc
 }
 
+// timezoneAbbreviationOffsets maps timezone abbreviations to their UTC offsets in seconds.
+// These are treated as type 2 (abbreviation) timezones in PHP.
+var timezoneAbbreviationOffsets = map[string]int{
+	"ACDT":  37800,  // +10:30
+	"ACST":  34200,  // +09:30
+	"ADT":   -10800, // -03:00
+	"AEDT":  39600,  // +11:00
+	"AEST":  36000,  // +10:00
+	"AKDT":  -28800, // -08:00
+	"AKST":  -32400, // -09:00
+	"AST":   -14400, // -04:00
+	"AWST":  28800,  // +08:00
+	"BST":   3600,   // +01:00
+	"CAT":   7200,   // +02:00
+	"CDT":   -18000, // -05:00
+	"CEST":  7200,   // +02:00
+	"CET":   3600,   // +01:00
+	"CST":   -21600, // -06:00
+	"EAT":   10800,  // +03:00
+	"EDT":   -14400, // -04:00
+	"EEST":  10800,  // +03:00
+	"EET":   7200,   // +02:00
+	"EST":   -18000, // -05:00
+	"GMT":   0,
+	"HDT":   -32400, // -09:00
+	"HKT":   28800,  // +08:00
+	"HST":   -36000, // -10:00
+	"ICT":   25200,  // +07:00
+	"IDT":   10800,  // +03:00
+	"IST":   19800,  // +05:30
+	"JST":   32400,  // +09:00
+	"KST":   32400,  // +09:00
+	"MDT":   -21600, // -06:00
+	"MET":   3600,   // +01:00
+	"MEST":  7200,   // +02:00
+	"MSK":   10800,  // +03:00
+	"MST":   -25200, // -07:00
+	"NDT":   -9000,  // -02:30
+	"NST":   -12600, // -03:30
+	"NZDT":  46800,  // +13:00
+	"NZST":  43200,  // +12:00
+	"PDT":   -25200, // -07:00
+	"PKT":   18000,  // +05:00
+	"PST":   -28800, // -08:00
+	"SGT":   28800,  // +08:00
+	"UTC":   0,
+	"WAT":   3600,   // +01:00
+	"WAST":  7200,   // +02:00
+	"WET":   0,
+	"WEST":  3600,   // +01:00
+	"WIB":   25200,  // +07:00
+	"WIT":   32400,  // +09:00
+	"WITA":  28800,  // +08:00
+}
+
 // parseTzName handles offset strings like "+05:30" or "-02:00" in addition to named zones
 func parseTzName(tzName string) (*time.Location, error) {
 	if loc, err := time.LoadLocation(tzName); err == nil {
@@ -140,6 +195,10 @@ func parseTzName(tzName string) (*time.Location, error) {
 				return makeFixedZone(offset), nil
 			}
 		}
+	}
+	// Try timezone abbreviations (PHP type 2)
+	if offset, ok := timezoneAbbreviationOffsets[upper]; ok {
+		return time.FixedZone(tzName, offset), nil
 	}
 	return nil, fmt.Errorf("unknown timezone: %s", tzName)
 }
@@ -281,7 +340,7 @@ func datetimezoneListAbbreviations(ctx phpv.Context, args []*phpv.ZVal) (*phpv.Z
 		offset int
 		tzId   string
 	}{
-		"utc":  {{0, "UTC"}},
+		"utc":  {{0, "Etc/Universal"}, {0, "Etc/UTC"}, {0, "Etc/Zulu"}, {0, "UTC"}, {0, "UTC"}},
 		"gmt":  {{0, "UTC"}},
 		"est":  {{-18000, "America/New_York"}},
 		"edt":  {{-14400, "America/New_York"}},
@@ -361,7 +420,12 @@ func fncTimezoneOffsetGet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, erro
 	}
 	tzObj, ok := args[0].Value().(*phpobj.ZObject)
 	if !ok {
-		return phpv.ZBool(false).ZVal(), nil
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("timezone_offset_get(): Argument #1 ($object) must be of type DateTimeZone, %s given", args[0].GetType().TypeName()))
+	}
+	// Verify it's actually a DateTimeZone
+	if !tzObj.Class.InstanceOf(DateTimeZone) {
+		className := tzObj.GetClass().GetName()
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("timezone_offset_get(): Argument #1 ($object) must be of type DateTimeZone, %s given", className))
 	}
 	return datetimezoneGetOffset(ctx, tzObj, args[1:])
 }
