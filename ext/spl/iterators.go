@@ -1991,7 +1991,7 @@ func initCallbackFilterIterator() {
 			Name: "__construct",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				if len(args) < 2 {
-					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "CallbackFilterIterator::__construct() expects exactly 2 arguments")
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("CallbackFilterIterator::__construct() expects exactly 2 arguments, %d given", len(args)))
 				}
 				if args[0] == nil || args[0].GetType() != phpv.ZtObject {
 					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "CallbackFilterIterator::__construct(): Argument #1 ($iterator) must be of type Iterator")
@@ -2003,7 +2003,18 @@ func initCallbackFilterIterator() {
 				// Resolve the callback (handles arrays like [$obj, 'method'], strings, closures, etc.)
 				callback, err := core.SpawnCallable(ctx, args[1])
 				if err != nil {
-					return nil, err
+					// Wrap the error in a proper TypeError with function context
+					errMsg := err.Error()
+					if strings.Contains(errMsg, "array callback must have exactly two") {
+						return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+							"CallbackFilterIterator::__construct(): Argument #2 ($callback) must be a valid callback, array callback must have exactly two members")
+					}
+					if args[1].GetType() == phpv.ZtArray || args[1].GetType() == phpv.ZtString {
+						return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+							"CallbackFilterIterator::__construct(): Argument #2 ($callback) must be a valid callback, no array or string given")
+					}
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+						"CallbackFilterIterator::__construct(): Argument #2 ($callback) must be a valid callback, no array or string given")
 				}
 				o.SetOpaque(CallbackFilterIteratorClass, &callbackFilterIteratorData{
 					inner:    inner,
