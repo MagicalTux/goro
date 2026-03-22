@@ -632,13 +632,15 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	// before operatorIncDec so doInc doesn't modify the original value
 	// returned by offsetGet. If &offsetGet returns by reference, doInc should
 	// modify in-place through the reference.
-	// Also dup for object properties so in-place doInc doesn't leak when
-	// the write-back fails (e.g., asymmetric visibility check).
+	// Also dup for object properties and static properties so in-place doInc
+	// doesn't leak when the write-back fails (e.g., asymmetric visibility check).
 	if r.op == tokenizer.T_INC || r.op == tokenizer.T_DEC {
 		if r.a != nil {
 			if ac, isAA := r.a.(*runArrayAccess); isAA && ac.lastContainerIsOverloaded && !ac.lastContainerOffsetGetReturnsRef {
 				a = a.Dup()
 			} else if _, isOV := r.a.(*runObjectVar); isOV {
+				a = a.Dup()
+			} else if _, isSV := r.a.(*runClassStaticVarRef); isSV {
 				a = a.Dup()
 			}
 		} else if r.b != nil {
@@ -646,6 +648,29 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 				b = b.Dup()
 			} else if _, isOV := r.b.(*runObjectVar); isOV {
 				b = b.Dup()
+			} else if _, isSV := r.b.(*runClassStaticVarRef); isSV {
+				b = b.Dup()
+			}
+		}
+	}
+
+	// For ++/-- on static properties, check asymmetric set visibility
+	// before modifying, and use "Cannot indirectly modify" message.
+	if r.op == tokenizer.T_INC || r.op == tokenizer.T_DEC {
+		target := r.a
+		if target == nil {
+			target = r.b
+		}
+		if sv, isSV := target.(*runClassStaticVarRef); isSV {
+			classNameVal, err2 := sv.className.Run(ctx)
+			if err2 == nil {
+				class, err2 := ctx.Global().GetClass(ctx, classNameVal.AsString(ctx), true)
+				if err2 == nil {
+					zc := class.(*phpobj.ZClass)
+					if visErr := phpobj.CheckStaticPropIndirectSetVisibility(ctx, zc, sv.varName); visErr != "" {
+						return nil, phpobj.ThrowError(ctx, phpobj.Error, visErr)
+					}
+				}
 			}
 		}
 	}

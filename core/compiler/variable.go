@@ -211,26 +211,27 @@ func (r *runVariableRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 
 	// Check if this variable-variable is in a write context (like runVariable does)
 	write := false
-	switch t := r.Parent.(type) {
-	case *runOperator:
-		write = t.opD.write
-		if (t.op == tokenizer.T_COALESCE_EQUAL || t.op == tokenizer.T_COALESCE) && t.b == r {
-			write = false
-		}
-	case *runArrayAccess, *runDestructure:
+	if r.Parent == nil {
+		// If parent is unknown (e.g., used by global statement), treat as write
 		write = true
-	case *runnableFunctionCall:
-		write = true
-	case *runnableFunctionCallRef:
-		if t.name != r {
+	} else {
+		switch t := r.Parent.(type) {
+		case *runOperator:
+			write = t.opD.write
+			if (t.op == tokenizer.T_COALESCE_EQUAL || t.op == tokenizer.T_COALESCE) && t.b == r {
+				write = false
+			}
+		case *runArrayAccess, *runDestructure:
+			write = true
+		case *runRef:
+			write = true
+		case *runnableUnset:
+			write = true
+		case *runGlobal:
+			write = true
+		case phpv.Runnables:
 			write = true
 		}
-	case *runRef:
-		write = true
-	case *runnableUnset:
-		write = true
-	case phpv.Runnables:
-		write = true
 	}
 
 	res, exists, err := ctx.OffsetCheck(ctx, name)

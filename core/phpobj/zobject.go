@@ -2245,6 +2245,11 @@ func getOwnProp(class *ZClass, name phpv.ZString) (*phpv.ZClassProp, bool) {
 }
 
 // findDeclaredProp walks the class hierarchy to find a declared property by name.
+// FindDeclaredProp looks up a declared class property by name.
+func (o *ZObject) FindDeclaredProp(keyStr phpv.ZString) *phpv.ZClassProp {
+	return o.findDeclaredProp(keyStr)
+}
+
 func (o *ZObject) findDeclaredProp(keyStr phpv.ZString) *phpv.ZClassProp {
 	class, ok := o.Class.(*ZClass)
 	if !ok {

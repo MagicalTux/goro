@@ -2398,6 +2398,69 @@ func CheckStaticPropVisibility(ctx phpv.Context, c *ZClass, name phpv.ZString) s
 	return ""
 }
 
+// CheckStaticPropSetVisibility checks asymmetric set visibility for static properties.
+// Returns an error message string if the set visibility is violated, empty string otherwise.
+func CheckStaticPropSetVisibility(ctx phpv.Context, c *ZClass, name phpv.ZString) string {
+	for cur := c; cur != nil; cur = cur.Extends {
+		for _, p := range cur.Props {
+			if p.VarName == name && p.Modifiers.IsStatic() {
+				if p.SetModifiers == 0 {
+					return "" // no asymmetric visibility
+				}
+				callerClass := ctx.Class()
+				if p.SetModifiers.IsPrivate() {
+					if callerClass != nil && callerClass.GetName() == cur.GetName() {
+						return ""
+					}
+					return fmt.Sprintf("Cannot modify private(set) property %s::$%s from %s",
+						cur.GetName(), name, ScopeName(callerClass))
+				}
+				if p.SetModifiers.IsProtected() {
+					if callerClass != nil && (callerClass.InstanceOf(cur) || cur.InstanceOf(callerClass)) {
+						return ""
+					}
+					return fmt.Sprintf("Cannot modify protected(set) property %s::$%s from %s",
+						cur.GetName(), name, ScopeName(callerClass))
+				}
+				return ""
+			}
+		}
+	}
+	return ""
+}
+
+// CheckStaticPropIndirectSetVisibility checks asymmetric set visibility for indirect
+// modification of static properties (++, +=, .=, [], &$ref, etc.).
+// Returns an error message string if violated, empty string otherwise.
+func CheckStaticPropIndirectSetVisibility(ctx phpv.Context, c *ZClass, name phpv.ZString) string {
+	for cur := c; cur != nil; cur = cur.Extends {
+		for _, p := range cur.Props {
+			if p.VarName == name && p.Modifiers.IsStatic() {
+				if p.SetModifiers == 0 {
+					return ""
+				}
+				callerClass := ctx.Class()
+				if p.SetModifiers.IsPrivate() {
+					if callerClass != nil && callerClass.GetName() == cur.GetName() {
+						return ""
+					}
+					return fmt.Sprintf("Cannot indirectly modify private(set) property %s::$%s from %s",
+						cur.GetName(), name, ScopeName(callerClass))
+				}
+				if p.SetModifiers.IsProtected() {
+					if callerClass != nil && (callerClass.InstanceOf(cur) || cur.InstanceOf(callerClass)) {
+						return ""
+					}
+					return fmt.Sprintf("Cannot indirectly modify protected(set) property %s::$%s from %s",
+						cur.GetName(), name, ScopeName(callerClass))
+				}
+				return ""
+			}
+		}
+	}
+	return ""
+}
+
 // ResolveConstants resolves any remaining CompileDelayed constants in the class
 // and its parent classes. Called when the class is first instantiated.
 func (c *ZClass) ResolveConstants(ctx phpv.Context) error {

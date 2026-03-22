@@ -363,6 +363,10 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			write = true
 		}
 		if !write {
+			// PHP 8: For strings, throw a runtime Error (catchable exception)
+			if v.GetType() == phpv.ZtString {
+				return nil, phpobj.ThrowError(ctx, phpobj.Error, "[] operator not supported for strings")
+			}
 			return nil, &phpv.PhpError{
 				Err:  fmt.Errorf("Cannot use [] for reading"),
 				Code: phpv.E_ERROR,
@@ -476,11 +480,19 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		}
 
 		if !write {
+			// PHP 8: For strings, throw a runtime Error (catchable exception)
+			if v.GetType() == phpv.ZtString {
+				return nil, phpobj.ThrowError(ctx, phpobj.Error, "[] operator not supported for strings")
+			}
 			return nil, &phpv.PhpError{
 				Err:  fmt.Errorf("Cannot use [] for reading"),
 				Code: phpv.E_ERROR,
 				Loc:  ac.l,
 			}
+		}
+		// PHP 8: For strings, write with [] is not supported
+		if v.GetType() == phpv.ZtString {
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, "[] operator not supported for strings")
 		}
 		// For compound assignments ($arr[] += 5) on ArrayAccess objects,
 		// we need to call offsetGet(NULL) to read the current value.
@@ -523,6 +535,10 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			s := strings.TrimSpace(string(offset.AsString(ctx)))
 			if len(s) > 0 && !isLeadingNumeric(s) {
 				return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "Cannot access offset of type string on string")
+			}
+			// Convert numeric string to int to avoid "Illegal string offset" warning
+			if offset.AsString(ctx).IsNumeric() {
+				offset = offset.AsInt(ctx).ZVal()
 			}
 		}
 		return v.AsString(ctx).Array().OffsetGet(ctx, offset)
@@ -729,9 +745,33 @@ func (ac *runArrayAccess) writeValueToString(ctx phpv.Context, value *phpv.ZVal)
 		return phpobj.ThrowError(ctx, phpobj.TypeError,
 			fmt.Sprintf("Cannot access offset of type %s on string", offset.Value().(phpv.ZObject).GetClass().GetName()))
 	}
+	// PHP 8: array offsets on strings are not allowed
+	if offset.GetType() == phpv.ZtArray {
+		return phpobj.ThrowError(ctx, phpobj.TypeError, "Cannot access offset of type array on string")
+	}
+	// PHP 8: completely non-numeric string offsets on strings throw TypeError
+	if offset.GetType() == phpv.ZtString {
+		s := strings.TrimSpace(string(offset.AsString(ctx)))
+		if len(s) > 0 && !isLeadingNumeric(s) {
+			return phpobj.ThrowError(ctx, phpobj.TypeError, "Cannot access offset of type string on string")
+		}
+	}
 
 	if phpv.IsNull(offset) {
 		return errors.New("[] operator not supported for string")
+	}
+
+	// Check for negative offsets that are out of bounds on the string.
+	// When this happens, PHP warns and the assignment expression evaluates to NULL.
+	if offset.GetType() == phpv.ZtInt {
+		i := int(offset.Value().(phpv.ZInt))
+		str := v.AsString(ctx)
+		if i < 0 && i+len(str) < 0 {
+			ctx.Warn("Illegal string offset %d", i, logopt.NoFuncName(true))
+			// Set value to NULL to reflect the failed assignment
+			value.Set(phpv.ZNULL.ZVal())
+			return nil
+		}
 	}
 
 	// PHP: when assigning to a string offset, only the first byte of the

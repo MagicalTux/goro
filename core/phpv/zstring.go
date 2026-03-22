@@ -374,7 +374,13 @@ func (z ZStringArray) OffsetSet(ctx Context, key Val, value *ZVal) error {
 	}
 
 	if i < 0 {
+		origI := i
 		i = len(s) + i
+		if i < 0 {
+			// Negative offset that's out of bounds
+			ctx.Warn("Illegal string offset %d", origI, logopt.NoFuncName(true))
+			return nil
+		}
 	} else if i >= len(s) {
 		s = s + ZString(strings.Repeat(" ", i-len(s)+1))
 	}

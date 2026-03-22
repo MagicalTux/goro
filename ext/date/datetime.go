@@ -95,6 +95,15 @@ func checkDateTimeZoneInitialized(ctx phpv.Context, obj *phpobj.ZObject) error {
 
 // getCalledClassForStatic gets the late-static-binding class from context, or returns the fallback.
 func getCalledClassForStatic(ctx phpv.Context, fallback *phpobj.ZClass) *phpobj.ZClass {
+	// Try the current context first (for static method calls, the class is set on callCtx)
+	if cc, ok := ctx.(interface{ CalledClass() phpv.ZClass }); ok {
+		if called := cc.CalledClass(); called != nil {
+			if zc, ok := called.(*phpobj.ZClass); ok {
+				return zc
+			}
+		}
+	}
+	// Then try the parent context
 	parent := ctx.Parent(1)
 	if parent != nil {
 		if cc, ok := parent.(interface{ CalledClass() phpv.ZClass }); ok {
@@ -1530,12 +1539,26 @@ func init() {
 				Modifiers: phpv.ZAttrPublic,
 				Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 					arr := phpv.NewZArray()
+					// Include user-defined properties first (for subclasses)
+					for prop := range o.IterProps(ctx) {
+						pName := prop.VarName
+						if pName == "timezone_type" || pName == "timezone" {
+							continue
+						}
+						v := o.HashTable().GetString(pName)
+						if v != nil {
+							arr.OffsetSet(ctx, phpv.ZString(pName), v)
+						}
+					}
+					// Then include timezone info from opaque data
 					opaque := o.GetOpaque(DateTimeZone)
 					if loc, ok := opaque.(*time.Location); ok && loc != nil {
 						name := loc.String()
 						// Determine timezone_type: 3=identifier, 2=abbreviation, 1=offset
 						tzType := 3
-						if len(name) <= 5 && name != "Local" {
+						if len(name) > 0 && (name[0] == '+' || name[0] == '-') {
+							tzType = 1
+						} else if len(name) <= 5 && name != "Local" && name != "UTC" && !strings.Contains(name, "/") {
 							tzType = 2
 						}
 						arr.OffsetSet(ctx, phpv.ZString("timezone_type"), phpv.ZInt(tzType).ZVal())
@@ -1601,6 +1624,29 @@ func init() {
 		Methods: map[phpv.ZString]*phpv.ZClassMethod{
 			"__construct":        {Name: "__construct", Method: phpobj.NativeMethod(dateIntervalConstruct)},
 			"format":             {Name: "format", Method: phpobj.NativeMethod(dateIntervalFormat)},
+			"__debuginfo": {
+				Name:      "__debugInfo",
+				Modifiers: phpv.ZAttrPublic,
+				Method: phpobj.NativeMethod(func(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+					arr := phpv.NewZArray()
+					fromStr := this.HashTable().GetString("from_string")
+					if fromStr != nil && bool(fromStr.AsBool(ctx)) {
+						arr.OffsetSet(ctx, phpv.ZString("from_string"), phpv.ZBool(true).ZVal())
+						ds := this.HashTable().GetString("date_string")
+						if ds != nil {
+							arr.OffsetSet(ctx, phpv.ZString("date_string"), ds)
+						}
+					} else {
+						for _, key := range []string{"y", "m", "d", "h", "i", "s", "f", "invert", "days", "from_string"} {
+							v := this.HashTable().GetString(phpv.ZString(key))
+							if v != nil {
+								arr.OffsetSet(ctx, phpv.ZString(key), v)
+							}
+						}
+					}
+					return arr.ZVal(), nil
+				}),
+			},
 			"__unserialize": {
 				Name:      "__unserialize",
 				Modifiers: phpv.ZAttrPublic,
@@ -2109,6 +2155,9 @@ func init() {
 				Name:      "getStartDate",
 				Modifiers: phpv.ZAttrPublic,
 				Method: phpobj.NativeMethod(func(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+					if err := checkDatePeriodInitialized(ctx, this); err != nil {
+						return nil, err
+					}
 					v, _ := this.ObjectGet(ctx, phpv.ZString("start"))
 					if v == nil {
 						return phpv.ZNULL.ZVal(), nil
@@ -2120,6 +2169,7 @@ func init() {
 				Name:      "getEndDate",
 				Modifiers: phpv.ZAttrPublic,
 				Method: phpobj.NativeMethod(func(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+					// getEndDate and getRecurrences are allowed to return NULL on uninitialized objects
 					v, _ := this.ObjectGet(ctx, phpv.ZString("end"))
 					if v == nil {
 						return phpv.ZNULL.ZVal(), nil
@@ -2131,6 +2181,9 @@ func init() {
 				Name:      "getDateInterval",
 				Modifiers: phpv.ZAttrPublic,
 				Method: phpobj.NativeMethod(func(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+					if err := checkDatePeriodInitialized(ctx, this); err != nil {
+						return nil, err
+					}
 					v, _ := this.ObjectGet(ctx, phpv.ZString("interval"))
 					if v == nil {
 						return phpv.ZNULL.ZVal(), nil
@@ -2160,6 +2213,44 @@ func init() {
 				Name:      "getIterator",
 				Modifiers: phpv.ZAttrPublic,
 				Method:    phpobj.NativeMethod(datePeriodGetIterator),
+			},
+			"__serialize": {
+				Name:      "__serialize",
+				Modifiers: phpv.ZAttrPublic,
+				Method: phpobj.NativeMethod(func(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+					if err := checkDatePeriodInitialized(ctx, this); err != nil {
+						return nil, err
+					}
+					result := phpv.NewZArray()
+					for _, key := range []string{"start", "current", "end", "interval", "recurrences", "include_start_date", "include_end_date"} {
+						v, _ := this.ObjectGet(ctx, phpv.ZString(key))
+						if v != nil {
+							result.OffsetSet(ctx, phpv.ZString(key), v)
+						} else {
+							result.OffsetSet(ctx, phpv.ZString(key), phpv.ZNULL.ZVal())
+						}
+					}
+					return result.ZVal(), nil
+				}),
+			},
+			"__unserialize": {
+				Name:      "__unserialize",
+				Modifiers: phpv.ZAttrPublic,
+				Method: phpobj.NativeMethod(func(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+					if len(args) < 1 || args[0].GetType() != phpv.ZtArray {
+						return nil, nil
+					}
+					arr := args[0].Value().(*phpv.ZArray)
+					for _, key := range []string{"start", "current", "end", "interval", "recurrences", "include_start_date", "include_end_date"} {
+						v, _ := arr.OffsetGet(ctx, phpv.ZString(key).ZVal())
+						if v != nil && !v.IsNull() {
+							this.ObjectSet(ctx, phpv.ZString(key), v)
+						}
+					}
+					// Mark as initialized
+					this.SetOpaque(DatePeriod, true)
+					return nil, nil
+				}),
 			},
 		},
 	}
@@ -2434,6 +2525,9 @@ func initDatePeriodIterator() {
 
 // datePeriodGetIterator implements DatePeriod::getIterator()
 func datePeriodGetIterator(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if err := checkDatePeriodInitialized(ctx, this); err != nil {
+		return nil, err
+	}
 	dates, err := datePeriodGenerateDates(ctx, this)
 	if err != nil {
 		return nil, err

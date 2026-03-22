@@ -1063,6 +1063,18 @@ func (r *runObjectVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 				return nil, err
 			}
 			if !found {
+				// Before auto-vivifying, check asymmetric visibility.
+				// If the property has private(set) or protected(set) and we're
+				// outside the allowed scope, the auto-vivification would be
+				// an indirect modification.
+				if zobj, ok2 := objI.(*phpobj.ZObject); ok2 {
+					propName := r.varName
+					if len(propName) > 0 && propName[0] != '$' {
+						if err := checkAsymmetricVisibilityIndirect(ctx, zobj, propName); err != nil {
+							return nil, err
+						}
+					}
+				}
 				// Auto-create the property for return-by-reference and
 				// write-context auto-vivification. This matches PHP behavior
 				// where accessing an undefined property in write/ref context
@@ -1129,7 +1141,16 @@ func (r *runObjectVar) CheckReadonlyRef(ctx phpv.Context) error {
 		return phpobj.ThrowError(ctx, phpobj.Error,
 			fmt.Sprintf("Cannot indirectly modify readonly property %s::$%s", zobj.GetClass().GetName(), propName))
 	}
-	// Check asymmetric visibility for reference creation
+	// Check asymmetric visibility for reference creation.
+	// For object-typed properties, PHP returns a copy of the object handle
+	// instead of throwing, so the reference just points to a local copy.
+	// We only throw for non-object property types.
+	if prop := zobj.FindDeclaredProp(propName); prop != nil && prop.TypeHint != nil {
+		if prop.TypeHint.Type() == phpv.ZtObject || prop.TypeHint.ClassName() != "" {
+			// Object-typed property with private(set): return copy, not error
+			return nil
+		}
+	}
 	if err := checkAsymmetricVisibilityIndirect(ctx, zobj, propName); err != nil {
 		return err
 	}

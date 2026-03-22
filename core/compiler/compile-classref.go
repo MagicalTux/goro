@@ -92,6 +92,11 @@ func (r *runClassStaticVarRef) WriteValue(ctx phpv.Context, value *phpv.ZVal) er
 		return phpobj.ThrowError(ctx, phpobj.Error, visErr)
 	}
 
+	// Check asymmetric set visibility for static properties (PHP 8.4)
+	if visErr := phpobj.CheckStaticPropSetVisibility(ctx, zc, r.varName); visErr != "" {
+		return phpobj.ThrowError(ctx, phpobj.Error, visErr)
+	}
+
 	p, found, err := zc.FindStaticProp(ctx, r.varName)
 	if err != nil {
 		return err

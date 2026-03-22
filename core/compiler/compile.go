@@ -561,7 +561,13 @@ func GetChildren(r phpv.Runnable) []phpv.Runnable {
 	case *runInstanceOf:
 		return rt{t.v}
 	case *runGlobal:
-		return nil
+		var res rt
+		for _, gv := range t.vars {
+			if gv.dynamic != nil {
+				res = append(res, gv.dynamic)
+			}
+		}
+		return res
 	case *runnableFunctionCall:
 		res := rt{}
 		for _, e := range t.args {
