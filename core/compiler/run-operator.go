@@ -494,6 +494,15 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		}
 	}
 
+	// PHP 8: compound assignment operators (+=, -=, .=, etc.) are not allowed on string offsets
+	if op.write && op.op != nil && r.a != nil {
+		if ac, isAA := r.a.(*runArrayAccess); isAA {
+			if ac.cachedContainer != nil && ac.cachedContainer.GetType() == phpv.ZtString {
+				return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot use assign-op operators with string offsets")
+			}
+		}
+	}
+
 	// short-circuit evaluation
 	switch r.op {
 	case tokenizer.T_LOGICAL_AND, tokenizer.T_BOOLEAN_AND:

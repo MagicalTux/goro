@@ -497,12 +497,16 @@ func fncArrayWalkRecursive(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, err
 		callbackArgs = append(callbackArgs, *userdata)
 	}
 
+	var loopErr error
 	var loop func(*phpv.ZArray, int)
 	loop = func(array *phpv.ZArray, depth int) {
-		if depth > 256 {
+		if depth > 256 || loopErr != nil {
 			return
 		}
 		for k, v := range array.Iterate(ctx) {
+			if loopErr != nil {
+				return
+			}
 			if v.GetType() == phpv.ZtArray {
 				loop(v.AsArray(ctx), depth+1)
 				continue
@@ -510,12 +514,15 @@ func fncArrayWalkRecursive(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, err
 
 			callbackArgs[0] = v
 			callbackArgs[1] = k
-			ctx.CallZValInternal(ctx, callback, callbackArgs)
+			_, loopErr = ctx.CallZValInternal(ctx, callback, callbackArgs)
 		}
 	}
 
 	loop(array.Get(), 0)
 
+	if loopErr != nil {
+		return nil, loopErr
+	}
 	return phpv.ZTrue.ZVal(), nil
 }
 
@@ -650,10 +657,18 @@ func fncRange(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
+	// Check if both start and end are single-byte strings BEFORE coercion.
+	// PHP treats range("1", "9") as a character range producing strings,
+	// not a numeric range producing integers.
+	isSingleByteRange := rangeIsSingleByteString(start, end)
+
 	// Convert numeric strings to their numeric equivalents.
 	// PHP's range() treats "2003" as int 2003 and "1.5" as float 1.5.
-	start = rangeCoerceNumericString(start)
-	end = rangeCoerceNumericString(end)
+	// But NOT single-byte digit strings when both args are single-byte.
+	if !isSingleByteRange {
+		start = rangeCoerceNumericString(start)
+		end = rangeCoerceNumericString(end)
+	}
 
 	// Determine if we should use the float path:
 	// if any of start, end, or step is a float, use float arithmetic.
@@ -866,18 +881,21 @@ func rangeCoerceNumericString(v *phpv.ZVal) *phpv.ZVal {
 	if v.GetType() != phpv.ZtString {
 		return v
 	}
-	s := string(v.AsString(nil))
-	// Single-character strings are treated as character ranges (including digits)
-	// e.g. range("1", "9") produces ["1", "2", ..., "9"] not [1, 2, ..., 9]
-	if len(s) == 1 {
-		return v
-	}
-	zs := phpv.ZString(s)
-	numVal, err := zs.AsNumeric()
+	s := phpv.ZString(v.String())
+	numVal, err := s.AsNumeric()
 	if err != nil {
 		return v
 	}
 	return numVal.ZVal()
+}
+
+// rangeIsSingleByteString checks if BOTH start and end are single-byte strings
+// (including digit characters). In that case, range() produces character output.
+func rangeIsSingleByteString(start, end *phpv.ZVal) bool {
+	if start.GetType() != phpv.ZtString || end.GetType() != phpv.ZtString {
+		return false
+	}
+	return len(start.String()) == 1 && len(end.String()) == 1
 }
 
 // > func mixed array_shift ( array &$array )

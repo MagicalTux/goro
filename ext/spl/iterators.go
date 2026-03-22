@@ -2364,6 +2364,14 @@ func filterIteratorSkipToAccepted(ctx phpv.Context, o *phpobj.ZObject, d *filter
 		if err != nil || !bool(v.AsBool(ctx)) {
 			return err
 		}
+		// PHP calls current() and key() on the inner iterator before accept()
+		// to fetch/cache the current element
+		if _, err := d.inner.CallMethod(ctx, "current"); err != nil {
+			return err
+		}
+		if _, err := d.inner.CallMethod(ctx, "key"); err != nil {
+			return err
+		}
 		// Call accept() on the FilterIterator subclass (not the inner iterator)
 		accepted, err := realObj.CallMethod(ctx, "accept")
 		if err != nil {

@@ -46,8 +46,23 @@ func fncSplAutoload(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return nil, nil // silently fail (PHP behavior for spl_autoload)
 }
 
+// splAutoloadCallable wraps fncSplAutoload as a Callable for use as the default autoloader.
+type splAutoloadCallable struct {
+	phpv.CallableVal
+}
+
+func (s *splAutoloadCallable) Name() string { return "spl_autoload" }
+func (s *splAutoloadCallable) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	return fncSplAutoload(ctx, args)
+}
+
 // > func void spl_autoload_register ([ callable $autoload_function [, bool $throw = true [, bool $prepend = false ]]] )
 func fncSplAutoloadRegister(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) == 0 || args[0].IsNull() {
+		// Register the default spl_autoload function
+		ctx.Global().RegisterAutoload(&splAutoloadCallable{})
+		return nil, nil
+	}
 	var handler phpv.Callable
 	_, err := Expand(ctx, args, &handler)
 	if err != nil {

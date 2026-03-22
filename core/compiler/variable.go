@@ -97,7 +97,13 @@ func (r *runVariable) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			if (t.op == tokenizer.T_COALESCE_EQUAL || t.op == tokenizer.T_COALESCE) && t.b == r {
 				write = false
 			}
-		case *runArrayAccess, *runDestructure:
+		case *runArrayAccess:
+			// Only suppress for the container variable, not the offset.
+			// In $a[$c], $a is in write context but $c is in read context.
+			if t.value == r {
+				write = true
+			}
+		case *runDestructure:
 			write = true
 		case *runnableFunctionCall:
 			// Undefined variable warnings for function call args are handled
@@ -129,9 +135,9 @@ func (r *runVariable) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 				write = true
 			}
 		case *runObjectVar:
-			// $var->prop in property access context is a write context
-			// (PHP doesn't warn about undefined $var when used as $var->prop = ...)
-			write = true
+			// PHP 8 does warn about undefined $var when used as $var->prop
+			// in both read and write contexts (the variable itself is still "read").
+			write = false
 		case *runRef:
 			// &$var reference creation is a write context
 			write = true
@@ -314,6 +320,12 @@ func (r *runRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	if acc, ok := r.v.(*runArrayAccess); ok {
 		acc.SetWriteContext(true)
 		defer acc.SetWriteContext(false)
+	}
+	// For object property references, set writeContext so that
+	// "Attempt to modify property" is used instead of "Attempt to read property"
+	if ov, ok := r.v.(*runObjectVar); ok {
+		ov.writeContext = true
+		defer func() { ov.writeContext = false }()
 	}
 
 	// Check if creating a reference would violate readonly constraints

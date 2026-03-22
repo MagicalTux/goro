@@ -16,14 +16,20 @@ type dirHandle struct {
 	pos     int
 	path    string
 	id      int
+	closed  bool
 }
 
-func (d *dirHandle) GetType() phpv.ZType                { return phpv.ZtResource }
-func (d *dirHandle) ZVal() *phpv.ZVal                   { return phpv.NewZVal(d) }
-func (d *dirHandle) Value() phpv.Val                    { return d }
-func (d *dirHandle) String() string                     { return fmt.Sprintf("Resource id #%d", d.id) }
-func (d *dirHandle) GetResourceType() phpv.ResourceType { return phpv.ResourceStream }
-func (d *dirHandle) GetResourceID() int                 { return d.id }
+func (d *dirHandle) GetType() phpv.ZType { return phpv.ZtResource }
+func (d *dirHandle) ZVal() *phpv.ZVal    { return phpv.NewZVal(d) }
+func (d *dirHandle) Value() phpv.Val     { return d }
+func (d *dirHandle) String() string      { return fmt.Sprintf("Resource id #%d", d.id) }
+func (d *dirHandle) GetResourceType() phpv.ResourceType {
+	if d.closed {
+		return phpv.ResourceUnknown
+	}
+	return phpv.ResourceStream
+}
+func (d *dirHandle) GetResourceID() int { return d.id }
 func (d *dirHandle) AsVal(ctx phpv.Context, t phpv.ZType) (phpv.Val, error) {
 	switch t {
 	case phpv.ZtResource:
@@ -80,7 +86,7 @@ func fncReaddir(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	dh, ok := args[0].Value().(*dirHandle)
-	if !ok {
+	if !ok || dh.closed {
 		return phpv.ZFalse.ZVal(), nil
 	}
 
@@ -103,7 +109,17 @@ func fncReaddir(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 // > func void closedir ( [ resource $dir_handle ] )
 func fncClosedir(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	// Nothing to actually close since we used ReadDir
+	if len(args) == 0 {
+		return phpv.ZNULL.ZVal(), nil
+	}
+
+	dh, ok := args[0].Value().(*dirHandle)
+	if !ok {
+		return phpv.ZNULL.ZVal(), nil
+	}
+
+	dh.closed = true
+	dh.entries = nil
 	return phpv.ZNULL.ZVal(), nil
 }
 

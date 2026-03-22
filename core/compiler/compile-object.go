@@ -1186,8 +1186,12 @@ func (r *runObjectVar) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 	if !ok {
 		// PHP 8: attempting to set property of non-object throws Error
 		typeName := phpValueTypeName(obj)
+		verb := "assign"
+		if value != nil && value.IsRef() {
+			verb = "modify"
+		}
 		return phpobj.ThrowError(ctx, phpobj.Error,
-			fmt.Sprintf("Attempt to assign property \"%s\" on %s", r.varName, typeName))
+			fmt.Sprintf("Attempt to %s property \"%s\" on %s", verb, r.varName, typeName))
 	}
 
 	// offset set
