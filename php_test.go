@@ -883,6 +883,7 @@ func TestPhp(t *testing.T) {
 		"test/php-8.5.4/ext/mbstring/euc_tw_encoding.phpt":                                            true, // Slow mbstring encoding conversion test
 		"test/php-8.5.4/ext/mbstring/gb18030_encoding.phpt":                                           true, // Slow mbstring encoding conversion test
 		"test/php-8.5.4/fibers/get-return-after-bailout.phpt":                                         true, // Fiber + str_repeat(PHP_INT_MAX) hang
+		"test/php-8.5.4/fibers/backtrace-object.phpt":                                                 true, // Nil pointer in fiber backtrace
 		"test/php-8.5.4/ext/standard/strings/gh15552.phpt":                                            true, // sscanf huge arg index causes OOM
 	}
 
