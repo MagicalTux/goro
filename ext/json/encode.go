@@ -81,7 +81,22 @@ func appendJsonEncodeState(ctx phpv.Context, r []byte, v *phpv.ZVal, opt JsonEnc
 		s := strconv.FormatFloat(float64(v.Value().(phpv.ZFloat)), 'g', p, 64)
 		return append(r, []byte(s)...), nil
 	case phpv.ZtString:
-		return appendJsonString(r, string(v.Value().(phpv.ZString)), opt)
+		s := v.Value().(phpv.ZString)
+		if opt&NumericCheck != 0 && s.IsNumeric() {
+			// JSON_NUMERIC_CHECK: encode numeric strings as numbers
+			numVal, err := s.AsNumeric()
+			if err == nil {
+				switch nv := numVal.(type) {
+				case phpv.ZInt:
+					return append(r, []byte(strconv.FormatInt(int64(nv), 10))...), nil
+				case phpv.ZFloat:
+					p := phpv.GetSerializePrecision(ctx)
+					fs := strconv.FormatFloat(float64(nv), 'g', p, 64)
+					return append(r, []byte(fs)...), nil
+				}
+			}
+		}
+		return appendJsonString(r, string(s), opt)
 	case phpv.ZtArray:
 		a := v.Value().(*phpv.ZArray)
 		if a.HasStringKeys() || (opt&ForceObject != 0 && a.Count(ctx) > 0) {
@@ -196,7 +211,7 @@ func (st *jsonState) unmarkObject(obj phpv.ZObject) {
 
 func appendJsonArray(ctx phpv.Context, r []byte, it phpv.ZIterator, opt JsonEncOpt, depth int, st *jsonState) ([]byte, error) {
 	depth = depth - 1
-	if depth <= 0 {
+	if depth < 0 {
 		return r, ErrDepth
 	}
 	pretty := opt&PrettyPrint != 0
@@ -238,7 +253,7 @@ func appendJsonArray(ctx phpv.Context, r []byte, it phpv.ZIterator, opt JsonEncO
 
 func appendJsonObject(ctx phpv.Context, r []byte, it phpv.ZIterator, opt JsonEncOpt, depth int, st *jsonState) ([]byte, error) {
 	depth = depth - 1
-	if depth <= 0 {
+	if depth < 0 {
 		return r, ErrDepth
 	}
 	pretty := opt&PrettyPrint != 0

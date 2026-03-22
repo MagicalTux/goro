@@ -628,15 +628,23 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		}
 	}
 
-	// For ++/-- on overloaded ArrayAccess, dup the value before operatorIncDec
-	// so doInc doesn't modify the original value returned by offsetGet.
+	// For ++/-- on overloaded ArrayAccess (without &offsetGet), dup the value
+	// before operatorIncDec so doInc doesn't modify the original value
+	// returned by offsetGet. If &offsetGet returns by reference, doInc should
+	// modify in-place through the reference.
+	// Also dup for object properties so in-place doInc doesn't leak when
+	// the write-back fails (e.g., asymmetric visibility check).
 	if r.op == tokenizer.T_INC || r.op == tokenizer.T_DEC {
 		if r.a != nil {
-			if ac, isAA := r.a.(*runArrayAccess); isAA && ac.lastContainerIsOverloaded {
+			if ac, isAA := r.a.(*runArrayAccess); isAA && ac.lastContainerIsOverloaded && !ac.lastContainerOffsetGetReturnsRef {
+				a = a.Dup()
+			} else if _, isOV := r.a.(*runObjectVar); isOV {
 				a = a.Dup()
 			}
 		} else if r.b != nil {
-			if ac, isAA := r.b.(*runArrayAccess); isAA && ac.lastContainerIsOverloaded {
+			if ac, isAA := r.b.(*runArrayAccess); isAA && ac.lastContainerIsOverloaded && !ac.lastContainerOffsetGetReturnsRef {
+				b = b.Dup()
+			} else if _, isOV := r.b.(*runObjectVar); isOV {
 				b = b.Dup()
 			}
 		}
@@ -657,27 +665,48 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	if r.op == tokenizer.T_INC || r.op == tokenizer.T_DEC {
 		if r.a != nil {
 			if w, ok := r.a.(phpv.Writable); ok && a != nil {
-				// PHP: compound ops on ArrayAccess elements don't call offsetSet
+				// PHP: compound ops on ArrayAccess elements without &offsetGet
+				// don't call offsetSet — emit "Indirect modification" notice.
+				// But if offsetGet returns by reference, the modification went
+				// through the reference, so no notice is needed and we write back.
 				if ac, isAA := r.a.(*runArrayAccess); isAA && ac.lastContainerIsOverloaded {
-					if err := ctx.Notice("Indirect modification of overloaded element of %s has no effect", ac.lastContainerClassName, logopt.Data{Loc: r.l, NoFuncName: true}); err != nil {
-						return nil, err
+					if ac.lastContainerOffsetGetReturnsRef {
+						// &offsetGet: write back the modified value via offsetSet
+						v := a.Value().ZVal()
+						if err := w.WriteValue(ctx, v); err != nil {
+							return nil, err
+						}
+					} else {
+						if err := ctx.Notice("Indirect modification of overloaded element of %s has no effect", ac.lastContainerClassName, logopt.Data{Loc: r.l, NoFuncName: true}); err != nil {
+							return nil, err
+						}
 					}
 				} else {
 					// Create a clean ZVal without variable name to avoid spurious warnings
 					v := a.Value().ZVal()
-					w.WriteValue(ctx, v)
+					if err := w.WriteValue(ctx, v); err != nil {
+						return nil, err
+					}
 				}
 			}
 		} else if r.b != nil {
 			if w, ok := r.b.(phpv.Writable); ok && b != nil {
-				// PHP: compound ops on ArrayAccess elements don't call offsetSet
 				if ac, isAA := r.b.(*runArrayAccess); isAA && ac.lastContainerIsOverloaded {
-					if err := ctx.Notice("Indirect modification of overloaded element of %s has no effect", ac.lastContainerClassName, logopt.Data{Loc: r.l, NoFuncName: true}); err != nil {
-						return nil, err
+					if ac.lastContainerOffsetGetReturnsRef {
+						v := b.Value().ZVal()
+						if err := w.WriteValue(ctx, v); err != nil {
+							return nil, err
+						}
+					} else {
+						if err := ctx.Notice("Indirect modification of overloaded element of %s has no effect", ac.lastContainerClassName, logopt.Data{Loc: r.l, NoFuncName: true}); err != nil {
+							return nil, err
+						}
 					}
 				} else {
 					v := b.Value().ZVal()
-					w.WriteValue(ctx, v)
+					if err := w.WriteValue(ctx, v); err != nil {
+						return nil, err
+					}
 				}
 			}
 		}

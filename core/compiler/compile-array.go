@@ -262,6 +262,10 @@ type runArrayAccess struct {
 	// Used by runOperator to emit "Indirect modification" notices for compound ops.
 	lastContainerIsOverloaded bool
 	lastContainerClassName    string
+	// True when the ArrayAccess object's offsetGet method returns by reference (&offsetGet).
+	// When true, indirect modifications go through the reference and have effect,
+	// so the "Indirect modification has no effect" notice should be suppressed.
+	lastContainerOffsetGetReturnsRef bool
 
 	// PrepareWrite caching
 	prepared     bool
@@ -317,6 +321,7 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	// Reset overloaded container tracking
 	ac.lastContainerIsOverloaded = false
 	ac.lastContainerClassName = ""
+	ac.lastContainerOffsetGetReturnsRef = false
 
 	// Propagate writeContext down the chain to suppress warnings during auto-vivification
 	if ac.writeContext {
@@ -372,7 +377,12 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	case phpv.ZtObject:
 		// Track if container is an ArrayAccess object (not a plain array)
 		ac.lastContainerIsOverloaded = true
-		ac.lastContainerClassName = string(v.AsObject(ctx).GetClass().GetName())
+		obj := v.AsObject(ctx)
+		ac.lastContainerClassName = string(obj.GetClass().GetName())
+		// Check if offsetGet returns by reference (&offsetGet)
+		if zo, ok := obj.(*phpobj.ZObject); ok {
+			ac.lastContainerOffsetGetReturnsRef = zo.OffsetGetReturnsByRef()
+		}
 	case phpv.ZtNull:
 		// Check if this is a compound write context (e.g. $a[$b] += 1)
 		isCompoundWrite := false
@@ -456,9 +466,11 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 
 	if ac.offset == nil {
 		write := false
+		isCompound := false
 		switch t := ac.Parent.(type) {
 		case *runOperator:
 			write = t.opD.write
+			isCompound = t.opD.write && t.opD.op != nil // compound op like +=, .=
 		case *runArrayAccess, *runnableForeach, *runDestructure:
 			write = true
 		}
@@ -468,6 +480,15 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 				Err:  fmt.Errorf("Cannot use [] for reading"),
 				Code: phpv.E_ERROR,
 				Loc:  ac.l,
+			}
+		}
+		// For compound assignments ($arr[] += 5) on ArrayAccess objects,
+		// we need to call offsetGet(NULL) to read the current value.
+		// Only pure write (=) treats [] as append-only.
+		if isCompound && v.GetType() == phpv.ZtObject {
+			array := v.Array()
+			if array != nil {
+				return array.OffsetGet(ctx, phpv.ZNULL.ZVal())
 			}
 		}
 		return nil, nil
@@ -572,7 +593,9 @@ func (ac *runArrayAccess) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 	// modification — offsetGet returns by value, so the write has no effect.
 	// But if offsetGet returned an object (e.g. another ArrayAccess), writes to it
 	// go through that object's offsetSet and work correctly.
-	if inner, ok := ac.value.(*runArrayAccess); ok && inner.lastContainerIsOverloaded && v.GetType() != phpv.ZtObject {
+	// Also skip the notice if offsetGet returns by reference (&offsetGet),
+	// since modifications through the reference are effective.
+	if inner, ok := ac.value.(*runArrayAccess); ok && inner.lastContainerIsOverloaded && v.GetType() != phpv.ZtObject && !inner.lastContainerOffsetGetReturnsRef {
 		return ctx.Notice("Indirect modification of overloaded element of %s has no effect", inner.lastContainerClassName, logopt.Data{Loc: ac.l, NoFuncName: true})
 	}
 
@@ -601,6 +624,11 @@ func (ac *runArrayAccess) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 			return err
 		}
 		return array.OffsetUnset(ctx, offset)
+	}
+
+	// Handle nil v (e.g., from $arr[] in write context where the element doesn't exist yet)
+	if v == nil {
+		v = phpv.ZNULL.ZVal()
 	}
 
 	switch v.GetType() {
@@ -812,6 +840,7 @@ func compileArray(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		return nil, i.Unexpected()
 	}
 
+	var lastCommaLoc *phpv.Loc
 	for {
 		i, err := c.NextItem()
 		if err != nil {
@@ -824,10 +853,14 @@ func compileArray(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 
 		// Detect empty array elements (e.g., [1, , 3])
 		if i.IsSingle(',') {
+			errLoc := i.Loc()
+			if lastCommaLoc != nil {
+				errLoc = lastCommaLoc
+			}
 			return nil, &phpv.PhpError{
 				Err:  fmt.Errorf("Cannot use empty array elements in arrays"),
 				Code: phpv.E_COMPILE_ERROR,
-				Loc:  i.Loc(),
+				Loc:  errLoc,
 			}
 		}
 
@@ -861,6 +894,8 @@ func compileArray(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 				return nil, err
 			}
 			if i.IsSingle(',') {
+				loc := i.Loc()
+				lastCommaLoc = loc
 				continue
 			}
 			if i.IsSingle(array_type) {
@@ -881,6 +916,8 @@ func compileArray(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		}
 
 		if i.IsSingle(',') {
+			loc := i.Loc()
+			lastCommaLoc = loc
 			res.e = append(res.e, &arrayEntry{v: k})
 			continue
 		}
@@ -909,6 +946,8 @@ func compileArray(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		}
 
 		if i.IsSingle(',') {
+			loc := i.Loc()
+			lastCommaLoc = loc
 			continue
 		}
 

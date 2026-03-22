@@ -999,6 +999,23 @@ func (o *ZObject) OffsetCheck(ctx phpv.Context, key phpv.Val) (*phpv.ZVal, bool,
 	return val, true, nil
 }
 
+// OffsetGetReturnsByRef checks whether the ArrayAccess offsetGet method
+// on this object is declared with a return-by-reference signature (&offsetGet).
+// When true, indirect modifications (++, +=, etc.) go through the reference
+// and actually work, so the "Indirect modification has no effect" notice
+// should be suppressed.
+func (o *ZObject) OffsetGetReturnsByRef() bool {
+	class := o.GetClass().(*ZClass)
+	m, ok := class.Methods["offsetget"]
+	if !ok {
+		return false
+	}
+	if rr, ok2 := m.Method.(interface{ ReturnsByRef() bool }); ok2 {
+		return rr.ReturnsByRef()
+	}
+	return false
+}
+
 func (o *ZObject) GetMethod(method phpv.ZString, ctx phpv.Context) (phpv.Callable, error) {
 	class := o.GetClass().(*ZClass)
 	m, ok := class.Methods[method.ToLower()]

@@ -166,6 +166,14 @@ func checkEmpty(ctx phpv.Context, v phpv.Runnable) (bool, error) {
 		// For arrays and strings, check existence then value
 		var arr phpv.ZArrayAccess
 		if value.GetType() == phpv.ZtString {
+			// For string access with non-numeric keys, treat as empty
+			// (PHP silently returns empty for non-numeric string keys in empty())
+			if key.GetType() == phpv.ZtString {
+				s := key.AsString(ctx)
+				if !s.IsNumeric() {
+					return true, nil
+				}
+			}
 			str := value.AsString(ctx)
 			arr = phpv.ZStringArray{ZString: &str}
 		} else {

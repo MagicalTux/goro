@@ -172,7 +172,7 @@ func jsonDecodeAny(ctx phpv.Context, r *strings.Reader, depth int, opt JsonDecOp
 
 func jsonDecodeObject(ctx phpv.Context, r *strings.Reader, depth int, opt JsonDecOpt) (*phpv.ZVal, error) {
 	depth -= 1
-	if depth <= 0 {
+	if depth < 0 {
 		return nil, ErrDepth
 	}
 
@@ -249,7 +249,7 @@ func jsonDecodeObject(ctx phpv.Context, r *strings.Reader, depth int, opt JsonDe
 
 func jsonDecodeArray(ctx phpv.Context, r *strings.Reader, depth int, opt JsonDecOpt) (*phpv.ZVal, error) {
 	depth -= 1
-	if depth <= 0 {
+	if depth < 0 {
 		return nil, ErrDepth
 	}
 
@@ -412,8 +412,8 @@ func jsonDecodeNumeric(ctx phpv.Context, r *strings.Reader, depth int, opt JsonD
 		return nil, ErrSyntax
 	}
 
-	if p < 1 {
-		// int value
+	if p <= 1 {
+		// int value (p=0 means no digits yet which shouldn't happen, p=1 means pure integer)
 		v, err := strconv.ParseInt(string(buf), 10, 64)
 		if err == nil {
 			return phpv.ZInt(v).ZVal(), nil

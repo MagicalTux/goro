@@ -208,15 +208,53 @@ func (r *runVariableRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		return nil, err
 	}
 	name := phpv.ZString(v.String())
-	v, err = ctx.OffsetGet(ctx, v)
-	if v != nil {
-		v = v.Nude()
+
+	// Check if this variable-variable is in a write context (like runVariable does)
+	write := false
+	switch t := r.Parent.(type) {
+	case *runOperator:
+		write = t.opD.write
+		if (t.op == tokenizer.T_COALESCE_EQUAL || t.op == tokenizer.T_COALESCE) && t.b == r {
+			write = false
+		}
+	case *runArrayAccess, *runDestructure:
+		write = true
+	case *runnableFunctionCall:
+		write = true
+	case *runnableFunctionCallRef:
+		if t.name != r {
+			write = true
+		}
+	case *runRef:
+		write = true
+	case *runnableUnset:
+		write = true
+	case phpv.Runnables:
+		write = true
+	}
+
+	res, exists, err := ctx.OffsetCheck(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+
+	if !exists && !write {
+		if err := ctx.Warn("Undefined variable $%s",
+			name, logopt.NoFuncName(true)); err != nil {
+			v = phpv.NewZVal(phpv.ZNULL)
+			v.Name = &name
+			return v, err
+		}
+	}
+
+	if res != nil {
+		v = res.Nude()
 		v.Name = &name
 	} else {
 		v = phpv.NewZVal(phpv.ZNULL)
 		v.Name = &name
 	}
-	return v, err
+	return v, nil
 }
 
 func (r *runVariableRef) PrepareWrite(ctx phpv.Context) error {
