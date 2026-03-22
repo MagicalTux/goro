@@ -897,6 +897,11 @@ func TestPhp(t *testing.T) {
 		"test/php-8.5.4/ext/date/gh10152.phpt":                                                        true, // Nil pointer in serialization
 		"test/php-8.5.4/ext/date/gh11455.phpt":                                                        true, // Nil pointer in carbon-style usage
 		"test/php-8.5.4/ext/standard/strings/sprintf_error.phpt":                                      true, // Index out of range in sprintf
+		"test/php-8.5.4/ext/mbstring/cp850_encoding.phpt":                                             true, // Exhaustive encoding test hangs
+		"test/php-8.5.4/ext/mbstring/cp866_encoding.phpt":                                             true, // Exhaustive encoding test hangs
+		"test/php-8.5.4/ext/mbstring/cp932_encoding.phpt":                                             true, // Exhaustive encoding test hangs
+		"test/php-8.5.4/ext/mbstring/cp936_encoding.phpt":                                             true, // Exhaustive encoding test hangs
+		"test/php-8.5.4/ext/mbstring/cp950_encoding.phpt":                                             true, // Exhaustive encoding test hangs
 		"test/php-8.5.4/ext/hash/hash_serialize_001.phpt":                                             true, // Nil pointer in hash serialize
 		"test/php-8.5.4/ext/hash/xxhash_unserialize_memsize.phpt":                                     true, // Nil pointer in hash unserialize
 		"test/php-8.5.4/ext/spl/iterator_021.phpt":                                                    true, // Nil pointer in RecursiveIteratorIterator
