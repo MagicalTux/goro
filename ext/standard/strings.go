@@ -88,11 +88,11 @@ func fncStrAddCSlashes(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 
 		if c2 == '.' && c3 == '.' {
 			if i+3 >= len(charlist) {
-				// TODO: show warning: addcslashes(): Invalid '..'-range, no character to the right of '..'
+				ctx.Warn("Invalid '..'-range, no character to the right of '..'")
 				escaped['.'] = struct{}{}
 			}
 			if c4 < c {
-				// TODO: show warning: addcslashes(): Invalid '..'-range, no character to the right of '..'
+				ctx.Warn("Invalid '..'-range, '..'-range needs to be incrementing")
 				escaped[c] = struct{}{}
 			} else {
 				for ch := c; ch <= c4; ch++ {
@@ -356,10 +356,17 @@ func fncStrImplode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		}
 	} else {
 		if !arg2.HasArg() {
-			return phpv.ZStr(""), ctx.Warn("Argument must be an array")
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "implode(): If argument #1 ($separator) is of type string, argument #2 ($array) must be of type array, null given")
 		}
 		sep = arg1.AsString(ctx)
-		array = arg2.Get().AsArray(ctx)
+		arg2Val := arg2.Get()
+		if arg2Val.GetType() == phpv.ZtArray {
+			array = arg2Val.AsArray(ctx)
+		} else if arg2Val.GetType() == phpv.ZtNull {
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "implode(): If argument #1 ($separator) is of type string, argument #2 ($array) must be of type array, null given")
+		} else {
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("implode(): Argument #2 ($array) must be of type ?array, %s given", strings.ToLower(arg2Val.GetType().String())))
+		}
 	}
 
 	var buf bytes.Buffer
@@ -1380,11 +1387,12 @@ func fncStrStr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZStr(string(result)), nil
 }
 
-// > func string|false strrchr ( string $haystack, string $needle )
+// > func string|false strrchr ( string $haystack, string $needle, bool $before_needle = false )
 func fncStrRChr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var haystackArg phpv.ZString
 	var needleArg *phpv.ZVal
-	_, err := core.Expand(ctx, args, &haystackArg, &needleArg)
+	var beforeNeedle core.Optional[phpv.ZBool]
+	_, err := core.Expand(ctx, args, &haystackArg, &needleArg, &beforeNeedle)
 	if err != nil {
 		return phpv.ZBool(false).ZVal(), err
 	}
@@ -1407,8 +1415,10 @@ func fncStrRChr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZBool(false).ZVal(), nil
 	}
 
-	result := haystack[i:]
-	return phpv.ZStr(string(result)), nil
+	if bool(beforeNeedle.GetOrDefault(false)) {
+		return phpv.ZStr(string(haystack[:i])), nil
+	}
+	return phpv.ZStr(string(haystack[i:])), nil
 }
 
 // > func string strtr ( string $str , string $from , string $to )
@@ -1567,12 +1577,37 @@ func fncStripTags(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	for i < n {
 		c := s[i]
 		if c == '<' && i+1 < n {
-			// Check for PHP open tag: <?
+			// Check for PHP open tag: <? (but NOT <?x where x is alpha - XML PI)
 			if s[i+1] == '?' {
-				// Skip until ?>
+				isXmlPI := i+2 < n && ((s[i+2] >= 'a' && s[i+2] <= 'z') || (s[i+2] >= 'A' && s[i+2] <= 'Z'))
+				if !isXmlPI {
+					j := i + 2
+					for j < n {
+						if s[j] == '?' && j+1 < n && s[j+1] == '>' {
+							j += 2
+							break
+						}
+						j++
+					}
+					i = j
+					continue
+				}
+				// XML PI: skip until >
+				j := i + 2
+				for j < n && s[j] != '>' {
+					j++
+				}
+				if j < n {
+					j++
+				}
+				i = j
+				continue
+			}
+			// Check for ASP-style tag: <% ... %>
+			if s[i+1] == '%' {
 				j := i + 2
 				for j < n {
-					if s[j] == '?' && j+1 < n && s[j+1] == '>' {
+					if s[j] == '%' && j+1 < n && s[j+1] == '>' {
 						j += 2
 						break
 					}
@@ -2462,7 +2497,7 @@ func fncWordWrap(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		lastSpace := -1
 		for current < textLen {
 			if str[current] == ' ' {
-				if lineLen >= width {
+				if lineLen > width {
 					// We need to break. If we've seen a space on this line, break at last space.
 					if lastSpace != -1 {
 						buf.Write(str[lastStart:lastSpace])
@@ -2477,7 +2512,7 @@ func fncWordWrap(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			current++
 		}
 		// If we exceeded width and there's a pending space
-		if lineLen >= width && lastSpace >= lastStart {
+		if lineLen > width && lastSpace >= lastStart {
 			buf.Write(str[lastStart:lastSpace])
 			buf.Write(brk)
 			lastStart = lastSpace + 1
@@ -2956,8 +2991,12 @@ func escapeByte(b byte) []byte {
 		return []byte(`\b`)
 	case '\f':
 		return []byte(`\f`)
+	case 0:
+		return []byte(`\000`)
 	}
-
+	if b < 32 || b == 127 {
+		return []byte(fmt.Sprintf(`\%03o`, b))
+	}
 	return []byte{'\\', b}
 }
 

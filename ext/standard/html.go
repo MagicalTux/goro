@@ -453,7 +453,7 @@ type translationEntry struct {
 func getHtmlTranslationTable(table phpv.ZInt, flags phpv.ZInt) []*translationEntry {
 	entries := []*translationEntry{}
 	quoteFlags := flags & (ENT_HTML_QUOTE_DOUBLE | ENT_HTML_QUOTE_SINGLE)
-	flags &= ^(ENT_HTML_QUOTE_DOUBLE | ENT_HTML_QUOTE_SINGLE)
+	flags &= ENT_HTML_DOC_TYPE_MASK
 
 	if quoteFlags&ENT_HTML_QUOTE_DOUBLE > 0 {
 		entries = append(entries, &translationEntry{`"`, `&quot;`})
@@ -563,7 +563,7 @@ func fncHtmlSpecialChars(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error
 	// TODO: encoding := encodingArgs.GetOrDefault("UTF-8")
 	// }
 
-	flags := flagsArg.GetOrDefault(ENT_COMPAT | ENT_HTML401)
+	flags := flagsArg.GetOrDefault(ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML401)
 	doubleEncode := bool(doubleEncodeArg.GetOrDefault(true))
 
 	escape := map[string]string{}

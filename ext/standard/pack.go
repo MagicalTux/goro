@@ -444,7 +444,9 @@ func fncUnpack(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				count = len(d) - pos
 			}
 			if pos+count > len(d) {
-				return nil, fmt.Errorf("unpack(): Type %c: not enough input", code)
+				ctx.Warn(fmt.Sprintf("unpack(): Type %c: not enough input values, need %d values but only %d were provided", code, count, len(d)-pos))
+				return phpv.ZBool(false).ZVal(), nil
+				// was: return nil, fmt.Errorf("unpack(): Type %c: not enough input", code)
 			}
 			s := string(d[pos : pos+count])
 			if code == 'A' {
