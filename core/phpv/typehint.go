@@ -53,6 +53,89 @@ func (h *TypeHint) IsNullable() bool {
 	return false
 }
 
+// CheckStrict returns true if the value matches this type hint using strict_types rules.
+// In strict mode, only exact type matches are allowed (no coercion), except:
+// - int is accepted for float parameters (int-to-float widening)
+// - null is accepted for nullable parameters
+func (h *TypeHint) CheckStrict(ctx Context, val *ZVal) bool {
+	if h == nil {
+		return true
+	}
+
+	// Nullable types accept null
+	if h.Nullable && val.IsNull() {
+		return true
+	}
+
+	// Union type: check each alternative (any must match in strict mode)
+	if len(h.Union) > 0 {
+		for _, alt := range h.Union {
+			if alt.CheckStrict(ctx, val) {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Intersection type: all must match
+	if len(h.Intersection) > 0 {
+		for _, part := range h.Intersection {
+			if !part.CheckStrict(ctx, val) {
+				return false
+			}
+		}
+		return true
+	}
+
+	if h.t == ZtObject {
+		// callable and iterable are handled same as weak mode
+		if h.s == "callable" {
+			return h.Check(ctx, val)
+		}
+		if h.s == "iterable" {
+			return val.GetType() == ZtArray || val.GetType() == ZtObject
+		}
+		// Class/interface type hint
+		if val.GetType() != ZtObject {
+			return false
+		}
+		if h.s == "" {
+			return true
+		}
+		if h.s == "self" {
+			return true
+		}
+		obj := val.AsObject(ctx)
+		if obj == nil {
+			return false
+		}
+		return classNameMatch(obj.GetClass(), h.s, ctx)
+	}
+
+	// "mixed" accepts anything
+	if h.t == ZtMixed {
+		return true
+	}
+
+	// Handle "false" and "true" standalone types
+	if h.t == ZtBool && h.s == "false" {
+		return val.GetType() == ZtBool && !bool(val.Value().(ZBool))
+	}
+	if h.t == ZtBool && h.s == "true" {
+		return val.GetType() == ZtBool && bool(val.Value().(ZBool))
+	}
+
+	// Strict mode: only exact type match, except int->float widening
+	valType := val.GetType()
+	switch h.t {
+	case ZtFloat:
+		// float accepts both float and int in strict mode (int-to-float widening)
+		return valType == ZtFloat || valType == ZtInt
+	default:
+		return valType == h.t
+	}
+}
+
 // Check returns true if the value matches this type hint
 func (h *TypeHint) Check(ctx Context, val *ZVal) bool {
 	if h == nil {
@@ -206,6 +289,13 @@ func (h *TypeHint) Check(ctx Context, val *ZVal) bool {
 		switch valType {
 		case ZtString, ZtInt, ZtFloat, ZtBool:
 			return true
+		case ZtObject:
+			// PHP weak mode: Stringable objects are accepted for string type hints
+			if obj := val.AsObject(ctx); obj != nil {
+				if _, hasToString := obj.GetClass().GetMethod("__tostring"); hasToString {
+					return true
+				}
+			}
 		}
 		return false
 	case ZtBool:

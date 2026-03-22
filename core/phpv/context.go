@@ -157,6 +157,9 @@ type GlobalContext interface {
 	UnregisterTickFunction(cb Callable)
 	CallTickFunctions(ctx Context) error
 	HasTickFunctions() bool
+
+	SetStrictTypes(v bool)
+	GetStrictTypes() bool
 }
 
 type FuncContext interface {

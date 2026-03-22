@@ -54,6 +54,14 @@ func initReflectionFunction() {
 			"getfilename":                   {Name: "getFileName", Method: phpobj.NativeMethod(reflectionFunctionGetFileName)},
 			"getextensionname":              {Name: "getExtensionName", Method: phpobj.NativeMethod(reflectionFunctionGetExtensionName)},
 			"getstaticvariables":            {Name: "getStaticVariables", Method: phpobj.NativeMethod(reflectionFunctionGetStaticVariables)},
+			"isgenerator":                   {Name: "isGenerator", Method: phpobj.NativeMethod(reflectionFunctionIsGenerator)},
+			"isdisabled":                    {Name: "isDisabled", Method: phpobj.NativeMethod(reflectionFunctionIsDisabled)},
+			"getextension":                  {Name: "getExtension", Method: phpobj.NativeMethod(reflectionFunctionGetExtension)},
+			"getclosurecalledclass":         {Name: "getClosureCalledClass", Method: phpobj.NativeMethod(reflectionFunctionGetClosureCalledClass)},
+			"returnsreference":              {Name: "returnsReference", Method: phpobj.NativeMethod(reflectionFunctionReturnsReference)},
+			"__tostring":                    {Name: "__toString", Method: phpobj.NativeMethod(reflectionFunctionToString)},
+			"getstartline":                  {Name: "getStartLine", Method: phpobj.NativeMethod(reflectionFunctionGetStartLine)},
+			"getendline":                    {Name: "getEndLine", Method: phpobj.NativeMethod(reflectionFunctionGetEndLine)},
 		},
 	}
 }

@@ -141,6 +141,25 @@ func compileDeclare(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	// Set strict_types on the compile context so attribute constructors can check it
 	for _, d := range directives {
 		if d.name == "strict_types" {
+			// Validate: strict_types must be the very first statement in the script.
+			// It cannot appear inside a function, class, or after any other statement
+			// (including inline HTML from a second <?php block).
+			if !c.isTopLevel() || c.getFunc() != nil {
+				return nil, &phpv.PhpError{
+					Err:  fmt.Errorf("strict_types declaration must be the very first statement in the script"),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  l,
+				}
+			}
+			if rc, ok := c.(*compileRootCtx); ok {
+				if rc.hasStatements {
+					return nil, &phpv.PhpError{
+						Err:  fmt.Errorf("strict_types declaration must be the very first statement in the script"),
+						Code: phpv.E_COMPILE_ERROR,
+						Loc:  l,
+					}
+				}
+			}
 			if lit, ok := d.val.(*runZVal); ok {
 				if lit.v == phpv.ZInt(1) || lit.v == phpv.ZBool(true) {
 					if rc, ok := c.(*compileRootCtx); ok {
@@ -226,11 +245,10 @@ type declareDirective struct {
 }
 
 func buildDeclareRunnable(directives []declareDirective, body phpv.Runnable, l *phpv.Loc) phpv.Runnable {
-	// For strict_types and encoding, there's nothing to do at runtime
-	// (strict_types is handled at compile time in type checking).
 	// For ticks, wrap the body in a ticking handler.
 	var ticksVal int64
 	hasTicks := false
+	hasStrictTypes := false
 	for _, d := range directives {
 		if d.name == "ticks" {
 			hasTicks = true
@@ -243,10 +261,22 @@ func buildDeclareRunnable(directives []declareDirective, body phpv.Runnable, l *
 				}
 			}
 		}
+		if d.name == "strict_types" {
+			if lit, ok := d.val.(*runZVal); ok {
+				if lit.v == phpv.ZInt(1) || lit.v == phpv.ZBool(true) {
+					hasStrictTypes = true
+				}
+			}
+		}
 	}
 
 	if hasTicks && body != nil && ticksVal > 0 {
 		return &runnableDeclareTicks{body: body, ticks: ticksVal, l: l}
+	}
+
+	// For strict_types, emit a runtime setter so the flag is active during execution
+	if hasStrictTypes {
+		return &runnableDeclareStrictTypes{l: l}
 	}
 
 	if body != nil {
@@ -254,6 +284,21 @@ func buildDeclareRunnable(directives []declareDirective, body phpv.Runnable, l *
 	}
 
 	return nil
+}
+
+// runnableDeclareStrictTypes sets the strict_types flag on the global context at runtime.
+type runnableDeclareStrictTypes struct {
+	l *phpv.Loc
+}
+
+func (r *runnableDeclareStrictTypes) Run(ctx phpv.Context) (*phpv.ZVal, error) {
+	ctx.Global().SetStrictTypes(true)
+	return nil, nil
+}
+
+func (r *runnableDeclareStrictTypes) Dump(w io.Writer) error {
+	_, err := w.Write([]byte("declare(strict_types=1)"))
+	return err
 }
 
 // runnableDeclareTicks wraps a body and calls tick functions after every N statements

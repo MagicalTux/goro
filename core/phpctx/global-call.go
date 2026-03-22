@@ -403,6 +403,8 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 	}
 
 	// Check type hints
+	// strict_types comes from the CALLING file (ctx), not the callee
+	isStrict := c.StrictTypes
 	if fga, ok := f.(phpv.FuncGetArgs); ok {
 		funcArgs := fga.GetArgs()
 		for i, fa := range funcArgs {
@@ -419,8 +421,17 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 				if arr != nil {
 					elemIdx := 0
 					for _, elem := range arr.Iterate(callCtx) {
-						if !fa.Hint.Check(callCtx, elem) {
+						var typeOk bool
+						if isStrict {
+							typeOk = fa.Hint.CheckStrict(callCtx, elem)
+						} else {
+							typeOk = fa.Hint.Check(callCtx, elem)
+						}
+						if !typeOk {
 							actualType := phpTypeName(elem)
+							if isStrict {
+								actualType = phpTypeNameDetailed(elem)
+							}
 							funcName := callCtx.GetFuncName()
 							msg := fmt.Sprintf("%s(): Argument #%d ($%s) must be of type %s, %s given", funcName, i+elemIdx+1, fa.VarName, fa.Hint.String(), actualType)
 							var defLoc *phpv.Loc
@@ -443,9 +454,18 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 			if val.IsNull() && !fa.Required {
 				continue // allow null for optional params
 			}
-			if !fa.Hint.Check(callCtx, val) {
+			var typeOk bool
+			if isStrict {
+				typeOk = fa.Hint.CheckStrict(callCtx, val)
+			} else {
+				typeOk = fa.Hint.Check(callCtx, val)
+			}
+			if !typeOk {
 				// Get the actual type name for the error
 				actualType := phpTypeName(val)
+				if isStrict {
+					actualType = phpTypeNameDetailed(val)
+				}
 				funcName := callCtx.GetFuncName()
 				msg := fmt.Sprintf("%s(): Argument #%d ($%s) must be of type %s, %s given", funcName, i+1, fa.VarName, fa.Hint.String(), actualType)
 				// Add call location and definition location
@@ -628,6 +648,12 @@ func phpTypeName(val *phpv.ZVal) string {
 		}
 	}
 	return val.GetType().TypeName()
+}
+
+// phpTypeNameDetailed returns the PHP type name with "true"/"false" for booleans
+// (used in strict mode error messages).
+func phpTypeNameDetailed(val *phpv.ZVal) string {
+	return phpv.ZValTypeNameDetailed(val)
 }
 
 func (c *Global) Parent(n int) phpv.Context {

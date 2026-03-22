@@ -2,6 +2,7 @@ package reflection
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
@@ -38,8 +39,13 @@ func initReflectionParameter() {
 			"getattributes":       {Name: "getAttributes", Method: phpobj.NativeMethod(reflectionParameterGetAttributes)},
 			"hastype":                  {Name: "hasType", Method: phpobj.NativeMethod(reflectionParameterHasType)},
 			"__tostring":               {Name: "__toString", Method: phpobj.NativeMethod(reflectionParameterToString)},
-			"isdefaultvalueavailable":  {Name: "isDefaultValueAvailable", Method: phpobj.NativeMethod(reflectionParameterIsDefaultValueAvailable)},
-			"getdeclaringfunction":     {Name: "getDeclaringFunction", Method: phpobj.NativeMethod(reflectionParameterGetDeclaringFunction)},
+			"isdefaultvalueavailable":      {Name: "isDefaultValueAvailable", Method: phpobj.NativeMethod(reflectionParameterIsDefaultValueAvailable)},
+			"getdeclaringfunction":         {Name: "getDeclaringFunction", Method: phpobj.NativeMethod(reflectionParameterGetDeclaringFunction)},
+			"getdeclaringclass":            {Name: "getDeclaringClass", Method: phpobj.NativeMethod(reflectionParameterGetDeclaringClass)},
+			"ispromoted":                   {Name: "isPromoted", Method: phpobj.NativeMethod(reflectionParameterIsPromoted)},
+			"isdefaultvalueconstant":       {Name: "isDefaultValueConstant", Method: phpobj.NativeMethod(reflectionParameterIsDefaultValueConstant)},
+			"getdefaultvalueconstantname":  {Name: "getDefaultValueConstantName", Method: phpobj.NativeMethod(reflectionParameterGetDefaultValueConstantName)},
+			"canbepassedbyvalue":           {Name: "canBePassedByValue", Method: phpobj.NativeMethod(reflectionParameterCanBePassedByValue)},
 		},
 	}
 }
@@ -177,6 +183,8 @@ func reflectionParameterHasDefaultValue(ctx phpv.Context, o *phpobj.ZObject, arg
 	if data == nil {
 		return phpv.ZBool(false).ZVal(), nil
 	}
+	// DefaultValue != nil means the parameter has a default
+	// This covers both regular values and CompileDelayed values
 	return phpv.ZBool(data.arg.DefaultValue != nil).ZVal(), nil
 }
 
@@ -184,6 +192,14 @@ func reflectionParameterGetDefaultValue(ctx phpv.Context, o *phpobj.ZObject, arg
 	data := getParamData(o)
 	if data == nil || data.arg.DefaultValue == nil {
 		return nil, phpobj.ThrowError(ctx, ReflectionException, "Internal error: Failed to retrieve the default value")
+	}
+	// Resolve CompileDelayed values
+	if cd, ok := data.arg.DefaultValue.(*phpv.CompileDelayed); ok {
+		resolved, err := cd.Run(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return resolved, nil
 	}
 	return data.arg.DefaultValue.ZVal(), nil
 }
@@ -255,6 +271,56 @@ func createReflectionParameterObjects(ctx phpv.Context, funcArgs []*phpv.FuncArg
 		arr.OffsetSet(ctx, nil, obj.ZVal())
 	}
 	return arr.ZVal(), nil
+}
+
+func reflectionParameterGetDeclaringClass(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	data := getParamData(o)
+	if data == nil {
+		return phpv.ZNULL.ZVal(), nil
+	}
+	if strings.Contains(string(data.funcName), "::") {
+		parts := strings.SplitN(string(data.funcName), "::", 2)
+		class, err := ctx.Global().GetClass(ctx, phpv.ZString(parts[0]), false)
+		if err == nil {
+			return createReflectionClassObject(ctx, class)
+		}
+	}
+	return phpv.ZNULL.ZVal(), nil
+}
+
+func reflectionParameterIsPromoted(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	data := getParamData(o)
+	if data == nil {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	return phpv.ZBool(data.arg.Promotion != 0).ZVal(), nil
+}
+
+func reflectionParameterIsDefaultValueConstant(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	data := getParamData(o)
+	if data == nil || data.arg.DefaultValue == nil {
+		return nil, phpobj.ThrowError(ctx, ReflectionException, "Internal error: Failed to retrieve the default value")
+	}
+	// We don't track whether a default value came from a constant expression,
+	// so return false for now
+	return phpv.ZBool(false).ZVal(), nil
+}
+
+func reflectionParameterGetDefaultValueConstantName(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	data := getParamData(o)
+	if data == nil || data.arg.DefaultValue == nil {
+		return nil, phpobj.ThrowError(ctx, ReflectionException, "Internal error: Failed to retrieve the default value")
+	}
+	return phpv.ZBool(false).ZVal(), nil
+}
+
+func reflectionParameterCanBePassedByValue(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	data := getParamData(o)
+	if data == nil {
+		return phpv.ZBool(true).ZVal(), nil
+	}
+	// canBePassedByValue returns true if the parameter is NOT a reference parameter
+	return phpv.ZBool(!data.arg.Ref).ZVal(), nil
 }
 
 func reflectionParameterGetAttributes(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {

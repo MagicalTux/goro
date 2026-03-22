@@ -76,7 +76,16 @@ func reflectionClassGetDefaultProperties(ctx phpv.Context, o *phpobj.ZObject, ar
 			if val == nil {
 				val = phpv.ZNULL.ZVal()
 			}
-			arr.OffsetSet(ctx, prop.VarName, val.ZVal())
+			// Resolve CompileDelayed values
+			if cd, ok := val.(*phpv.CompileDelayed); ok {
+				resolved, err := cd.Run(ctx)
+				if err != nil {
+					continue
+				}
+				arr.OffsetSet(ctx, prop.VarName, resolved)
+			} else {
+				arr.OffsetSet(ctx, prop.VarName, val.ZVal())
+			}
 		}
 		parent := cur.GetParent()
 		if phpv.IsNilClass(parent) {
@@ -394,6 +403,67 @@ func reflectionClassGetInterfaces(ctx phpv.Context, o *phpobj.ZObject, args []*p
 		}
 	}
 	collectInterfaces(zc)
+	return arr.ZVal(), nil
+}
+
+func reflectionClassGetTraits(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	zc := getZClass(o)
+	if zc == nil {
+		return phpv.NewZArray().ZVal(), nil
+	}
+	arr := phpv.NewZArray()
+	for _, traitUse := range zc.TraitUses {
+		for _, traitName := range traitUse.TraitNames {
+			traitClass, err := ctx.Global().GetClass(ctx, traitName, false)
+			if err != nil {
+				continue
+			}
+			val, err := createReflectionClassObject(ctx, traitClass)
+			if err == nil {
+				arr.OffsetSet(ctx, traitClass.GetName(), val)
+			}
+		}
+	}
+	return arr.ZVal(), nil
+}
+
+func reflectionClassGetTraitNames(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	zc := getZClass(o)
+	if zc == nil {
+		return phpv.NewZArray().ZVal(), nil
+	}
+	arr := phpv.NewZArray()
+	for _, traitUse := range zc.TraitUses {
+		for _, traitName := range traitUse.TraitNames {
+			traitClass, err := ctx.Global().GetClass(ctx, traitName, false)
+			if err != nil {
+				arr.OffsetSet(ctx, nil, traitName.ZVal())
+			} else {
+				arr.OffsetSet(ctx, nil, traitClass.GetName().ZVal())
+			}
+		}
+	}
+	return arr.ZVal(), nil
+}
+
+func reflectionClassGetTraitAliases(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	zc := getZClass(o)
+	if zc == nil {
+		return phpv.NewZArray().ZVal(), nil
+	}
+	arr := phpv.NewZArray()
+	for _, traitUse := range zc.TraitUses {
+		for _, alias := range traitUse.Aliases {
+			if alias.NewName != "" {
+				traitName := alias.TraitName
+				if traitName == "" && len(traitUse.TraitNames) > 0 {
+					traitName = traitUse.TraitNames[0]
+				}
+				// Key is the alias name, value is "TraitName::methodName"
+				arr.OffsetSet(ctx, alias.NewName, phpv.ZString(string(traitName)+"::"+string(alias.MethodName)).ZVal())
+			}
+		}
+	}
 	return arr.ZVal(), nil
 }
 
@@ -715,13 +785,25 @@ func reflectionPropertyHasDefaultValue(ctx phpv.Context, o *phpobj.ZObject, args
 	if data == nil {
 		return phpv.ZBool(false).ZVal(), nil
 	}
-	return phpv.ZBool(data.prop.Default != nil).ZVal(), nil
+	// Typed properties without an explicit default don't have a default value
+	if data.prop.Default == nil {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	return phpv.ZBool(true).ZVal(), nil
 }
 
 func reflectionPropertyGetDefaultValue(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	data := getPropData(o)
 	if data == nil || data.prop.Default == nil {
-		return phpv.ZNULL.ZVal(), nil
+		return nil, phpobj.ThrowError(ctx, ReflectionException, "Property does not have a default value")
+	}
+	// Resolve CompileDelayed values
+	if cd, ok := data.prop.Default.(*phpv.CompileDelayed); ok {
+		resolved, err := cd.Run(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return resolved, nil
 	}
 	return data.prop.Default.ZVal(), nil
 }
@@ -783,7 +865,14 @@ func reflectionParameterToString(ctx phpv.Context, o *phpobj.ZObject, args []*ph
 	}
 	sb.WriteString(fmt.Sprintf("$%s", data.arg.VarName))
 	if data.arg.DefaultValue != nil {
-		sb.WriteString(fmt.Sprintf(" = %s", data.arg.DefaultValue.String()))
+		if cd, ok := data.arg.DefaultValue.(*phpv.CompileDelayed); ok {
+			resolved, err := cd.Run(ctx)
+			if err == nil && resolved != nil {
+				sb.WriteString(fmt.Sprintf(" = %s", resolved.String()))
+			}
+		} else {
+			sb.WriteString(fmt.Sprintf(" = %s", data.arg.DefaultValue.String()))
+		}
 	}
 	sb.WriteString(" ]")
 	return phpv.ZString(sb.String()).ZVal(), nil
@@ -855,11 +944,146 @@ func reflectionFunctionIsAnonymous(ctx phpv.Context, o *phpobj.ZObject, args []*
 }
 
 func reflectionFunctionGetFileName(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	data := getFuncData(o)
+	if data == nil {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	type locGetter interface {
+		Loc() *phpv.Loc
+	}
+	if lg, ok := data.callable.(locGetter); ok {
+		loc := lg.Loc()
+		if loc != nil && loc.Filename != "" {
+			return phpv.ZString(loc.Filename).ZVal(), nil
+		}
+	}
 	return phpv.ZBool(false).ZVal(), nil
 }
 
 func reflectionFunctionGetStaticVariables(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.NewZArray().ZVal(), nil
+}
+
+func reflectionFunctionIsGenerator(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	data := getFuncData(o)
+	if data == nil {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	type generatorChecker interface {
+		IsGenerator() bool
+	}
+	if gc, ok := data.callable.(generatorChecker); ok {
+		return phpv.ZBool(gc.IsGenerator()).ZVal(), nil
+	}
+	return phpv.ZBool(false).ZVal(), nil
+}
+
+func reflectionFunctionIsDisabled(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	// No function disabling mechanism in goro
+	// In PHP 8.0+, this is deprecated and always returns false
+	_ = ctx.Deprecated("ReflectionFunction::isDisabled() is deprecated")
+	return phpv.ZBool(false).ZVal(), nil
+}
+
+func reflectionFunctionGetExtension(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	return phpv.ZNULL.ZVal(), nil
+}
+
+func reflectionFunctionGetClosureCalledClass(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	data := getFuncData(o)
+	if data == nil || data.closure == nil {
+		return phpv.ZNULL.ZVal(), nil
+	}
+	class := data.closure.GetClass()
+	if class == nil {
+		return phpv.ZNULL.ZVal(), nil
+	}
+	return createReflectionClassObject(ctx, class)
+}
+
+func reflectionFunctionReturnsReference(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	data := getFuncData(o)
+	if data == nil {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	type refGetter interface {
+		ReturnsRef() bool
+	}
+	if rg, ok := data.callable.(refGetter); ok {
+		return phpv.ZBool(rg.ReturnsRef()).ZVal(), nil
+	}
+	return phpv.ZBool(false).ZVal(), nil
+}
+
+func reflectionFunctionToString(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	data := getFuncData(o)
+	if data == nil {
+		return phpv.ZString("Function [ ]").ZVal(), nil
+	}
+
+	var sb strings.Builder
+	origin := "<user>"
+
+	if data.closure != nil {
+		sb.WriteString(fmt.Sprintf("Closure [ %s closure %s ] {\n", origin, data.name))
+	} else {
+		sb.WriteString(fmt.Sprintf("Function [ %s function %s ] {\n", origin, data.name))
+	}
+
+	if data.args != nil && len(data.args) > 0 {
+		sb.WriteString(fmt.Sprintf("\n  - Parameters [%d] {\n", len(data.args)))
+		for i, arg := range data.args {
+			sb.WriteString(fmt.Sprintf("    Parameter #%d [ ", i))
+			if !arg.Required {
+				sb.WriteString("<optional> ")
+			} else {
+				sb.WriteString("<required> ")
+			}
+			if arg.Hint != nil {
+				sb.WriteString(arg.Hint.String() + " ")
+			}
+			sb.WriteString(fmt.Sprintf("$%s", arg.VarName))
+			sb.WriteString(" ]\n")
+		}
+		sb.WriteString("  }\n")
+	}
+	sb.WriteString("}\n")
+
+	return phpv.ZString(sb.String()).ZVal(), nil
+}
+
+func reflectionFunctionGetStartLine(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	data := getFuncData(o)
+	if data == nil {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	type locGetter interface {
+		Loc() *phpv.Loc
+	}
+	if lg, ok := data.callable.(locGetter); ok {
+		loc := lg.Loc()
+		if loc != nil {
+			return phpv.ZInt(loc.Line).ZVal(), nil
+		}
+	}
+	return phpv.ZBool(false).ZVal(), nil
+}
+
+func reflectionFunctionGetEndLine(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	data := getFuncData(o)
+	if data == nil {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	type locGetter interface {
+		Loc() *phpv.Loc
+	}
+	if lg, ok := data.callable.(locGetter); ok {
+		loc := lg.Loc()
+		if loc != nil {
+			return phpv.ZInt(loc.Line).ZVal(), nil
+		}
+	}
+	return phpv.ZBool(false).ZVal(), nil
 }
 
 func reflectionFunctionHasReturnType(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {

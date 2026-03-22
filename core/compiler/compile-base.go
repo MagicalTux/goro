@@ -235,6 +235,15 @@ func compileBaseUntil(i *tokenizer.Item, c compileCtx, until tokenizer.ItemType)
 
 		t, err := compileBaseSingle(i, c)
 		if t != nil {
+			// Track that we've seen a statement (for strict_types validation)
+			if rc, ok := c.(*compileRootCtx); ok {
+				// Only set hasStatements for non-declare runnables.
+				// declare(strict_types=1) itself doesn't count as "a statement"
+				// that would prevent subsequent declare(strict_types).
+				if _, isDeclareStrict := t.(*runnableDeclareStrictTypes); !isDeclareStrict {
+					rc.hasStatements = true
+				}
+			}
 			// Check for duplicate static variable declarations
 			if sv, ok := t.(*runStaticVar); ok {
 				if declaredStaticVars == nil {

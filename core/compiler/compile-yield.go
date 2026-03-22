@@ -286,6 +286,10 @@ func (g *generatorClosure) Name() string {
 	return g.ZClosure.Name()
 }
 
+func (g *generatorClosure) IsGenerator() bool {
+	return true
+}
+
 func (g *generatorClosure) GetType() phpv.ZType {
 	return phpv.ZtCallable
 }

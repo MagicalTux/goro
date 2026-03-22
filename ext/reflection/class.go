@@ -63,6 +63,9 @@ func initReflectionClass() {
 		"getmodifiers":            {Name: "getModifiers", Method: phpobj.NativeMethod(reflectionClassGetModifiers)},
 		"getextension":            {Name: "getExtension", Method: phpobj.NativeMethod(reflectionClassGetExtension)},
 		"getextensionname":        {Name: "getExtensionName", Method: phpobj.NativeMethod(reflectionClassGetExtensionName)},
+		"gettraits":               {Name: "getTraits", Method: phpobj.NativeMethod(reflectionClassGetTraits)},
+		"gettraitnames":           {Name: "getTraitNames", Method: phpobj.NativeMethod(reflectionClassGetTraitNames)},
+		"gettraitaliases":         {Name: "getTraitAliases", Method: phpobj.NativeMethod(reflectionClassGetTraitAliases)},
 	}
 }
 

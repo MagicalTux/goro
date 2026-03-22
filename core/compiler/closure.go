@@ -924,9 +924,10 @@ func (z *ZClosure) callBody(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 			ctx.OffsetSet(ctx, a.VarName.ZVal(), args[i].Ref())
 		} else {
 			argVal := args[i].Nude().Dup()
-			// Coerce value to match type hint (PHP non-strict mode)
+			// Coerce value to match type hint (PHP non-strict mode only)
+			// In strict mode, type checking is done in callZValImpl, no coercion needed
 			// Skip coercion for union/intersection types - they handle their own checking
-			if a.Hint != nil && argVal.GetType() != phpv.ZtNull && len(a.Hint.Union) == 0 && len(a.Hint.Intersection) == 0 {
+			if a.Hint != nil && argVal.GetType() != phpv.ZtNull && len(a.Hint.Union) == 0 && len(a.Hint.Intersection) == 0 && !ctx.Global().GetStrictTypes() {
 				hintType := a.Hint.Type()
 				if hintType != phpv.ZtMixed && hintType != phpv.ZtObject && argVal.GetType() != hintType {
 					// Emit implicit conversion deprecation for float->int
@@ -936,8 +937,21 @@ func (z *ZClosure) callBody(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 							return nil, err2
 						}
 						argVal = v.ZVal()
-					} else if coerced, err2 := argVal.As(ctx, hintType); err2 == nil && coerced != nil {
-						argVal = coerced.ZVal()
+					} else {
+						// PHP 8.4: warn when NAN is coerced to string or bool
+						if argVal.GetType() == phpv.ZtFloat {
+							f := float64(argVal.Value().(phpv.ZFloat))
+							if f != f { // NaN check
+								if hintType == phpv.ZtString {
+									ctx.Warn("unexpected NAN value was coerced to string")
+								} else if hintType == phpv.ZtBool {
+									ctx.Warn("unexpected NAN value was coerced to bool")
+								}
+							}
+						}
+						if coerced, err2 := argVal.As(ctx, hintType); err2 == nil && coerced != nil {
+							argVal = coerced.ZVal()
+						}
 					}
 				}
 			}
@@ -1156,6 +1170,10 @@ func (z *ZClosure) GetCalledClass() phpv.ZClass {
 
 func (z *ZClosure) IsStatic() bool {
 	return z.isStatic
+}
+
+func (z *ZClosure) IsGenerator() bool {
+	return z.isGenerator
 }
 
 func (z *ZClosure) GetThis() phpv.ZObject {

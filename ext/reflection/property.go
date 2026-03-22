@@ -2,6 +2,7 @@ package reflection
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
@@ -38,6 +39,12 @@ func initReflectionProperty() {
 		"hasdefaultvalue":   {Name: "hasDefaultValue", Method: phpobj.NativeMethod(reflectionPropertyHasDefaultValue)},
 		"getdefaultvalue":   {Name: "getDefaultValue", Method: phpobj.NativeMethod(reflectionPropertyGetDefaultValue)},
 		"getmodifiers":      {Name: "getModifiers", Method: phpobj.NativeMethod(reflectionPropertyGetModifiers)},
+		"ispromoted":        {Name: "isPromoted", Method: phpobj.NativeMethod(reflectionPropertyIsPromoted)},
+		"__tostring":        {Name: "__toString", Method: phpobj.NativeMethod(reflectionPropertyToString)},
+		"setaccessible":     {Name: "setAccessible", Method: phpobj.NativeMethod(reflectionPropertySetAccessible)},
+		"isfinal":           {Name: "isFinal", Method: phpobj.NativeMethod(reflectionPropertyIsFinal)},
+		"isdynamic":         {Name: "isDynamic", Method: phpobj.NativeMethod(reflectionPropertyIsDynamic)},
+		"isinitialized":     {Name: "isInitialized", Method: phpobj.NativeMethod(reflectionPropertyIsInitialized)},
 	}
 }
 
@@ -207,6 +214,113 @@ func reflectionPropertyGetDeclaringClass(ctx phpv.Context, o *phpobj.ZObject, ar
 		return phpv.ZNULL.ZVal(), nil
 	}
 	return createReflectionClassObject(ctx, data.class)
+}
+
+func reflectionPropertyIsPromoted(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	data := getPropData(o)
+	if data == nil {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	// A property is "promoted" if it has a Promotion modifier set
+	// (constructor promotion like public function __construct(public string $name) {})
+	// We check if any constructor args have Promotion set for this property name
+	if data.class != nil {
+		if m, ok := data.class.GetMethod("__construct"); ok {
+			if fga, ok2 := m.Method.(phpv.FuncGetArgs); ok2 {
+				for _, arg := range fga.GetArgs() {
+					if arg.VarName == data.prop.VarName && arg.Promotion != 0 {
+						return phpv.ZBool(true).ZVal(), nil
+					}
+				}
+			}
+		}
+	}
+	return phpv.ZBool(false).ZVal(), nil
+}
+
+func reflectionPropertyToString(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	data := getPropData(o)
+	if data == nil {
+		return phpv.ZString("Property [ ]").ZVal(), nil
+	}
+
+	var sb strings.Builder
+	sb.WriteString("Property [ ")
+
+	access := data.prop.Modifiers.Access()
+	if access == phpv.ZAttrProtected {
+		sb.WriteString("protected")
+	} else if access == phpv.ZAttrPrivate {
+		sb.WriteString("private")
+	} else {
+		sb.WriteString("public")
+	}
+	if data.prop.Modifiers.IsReadonly() {
+		sb.WriteString(" readonly")
+	}
+	if data.prop.Modifiers.IsStatic() {
+		sb.WriteString(" static")
+	}
+	if data.prop.TypeHint != nil {
+		sb.WriteString(" " + data.prop.TypeHint.String())
+	}
+	sb.WriteString(fmt.Sprintf(" $%s", data.prop.VarName))
+	sb.WriteString(" ]\n")
+
+	return phpv.ZString(sb.String()).ZVal(), nil
+}
+
+func reflectionPropertySetAccessible(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	// setAccessible has no effect since PHP 8.1
+	return phpv.ZNULL.ZVal(), nil
+}
+
+func reflectionPropertyIsFinal(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	data := getPropData(o)
+	if data == nil {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	return phpv.ZBool(data.prop.Modifiers.Has(phpv.ZAttrFinal)).ZVal(), nil
+}
+
+func reflectionPropertyIsDynamic(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	// All properties we reflect from ZClassProp are declared (not dynamic)
+	return phpv.ZBool(false).ZVal(), nil
+}
+
+func reflectionPropertyIsInitialized(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	data := getPropData(o)
+	if data == nil {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+
+	// For static properties
+	if data.prop.Modifiers.IsStatic() {
+		staticProps, err := data.class.GetStaticProps(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if staticProps != nil {
+			v := staticProps.GetString(data.prop.VarName)
+			if v != nil {
+				return phpv.ZBool(true).ZVal(), nil
+			}
+		}
+		return phpv.ZBool(data.prop.Default != nil).ZVal(), nil
+	}
+
+	// For instance properties, need an object argument
+	if len(args) < 1 || args[0].GetType() != phpv.ZtObject {
+		// No object provided - just check if there's a default
+		return phpv.ZBool(data.prop.Default != nil).ZVal(), nil
+	}
+
+	obj := args[0].AsObject(ctx)
+	v, err := obj.ObjectGet(ctx, data.prop.VarName)
+	if err != nil {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	return phpv.ZBool(v != nil).ZVal(), nil
 }
 
 func reflectionPropertyGetAttributes(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {

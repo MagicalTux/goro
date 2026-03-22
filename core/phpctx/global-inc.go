@@ -147,6 +147,11 @@ func (c *Global) Include(ctx phpv.Context, fn phpv.ZString) (*phpv.ZVal, error) 
 		return nil, err
 	}
 
+	// Save and restore strict_types per file (each file has its own strict_types setting)
+	savedStrict := c.StrictTypes
+	c.StrictTypes = false // new file starts in weak mode
+	defer func() { c.StrictTypes = savedStrict }()
+
 	return phperr.CatchReturn(code.Run(ctx))
 }
 
@@ -207,6 +212,11 @@ func (c *Global) Require(ctx phpv.Context, fn phpv.ZString) (*phpv.ZVal, error) 
 		return nil, err
 	}
 
+	// Save and restore strict_types per file
+	savedStrict := c.StrictTypes
+	c.StrictTypes = false
+	defer func() { c.StrictTypes = savedStrict }()
+
 	return phperr.CatchReturn(code.Run(ctx))
 }
 
@@ -263,6 +273,11 @@ func (c *Global) IncludeOnce(ctx phpv.Context, fn phpv.ZString) (*phpv.ZVal, err
 		return nil, err
 	}
 
+	// Save and restore strict_types per file
+	savedStrict := c.StrictTypes
+	c.StrictTypes = false
+	defer func() { c.StrictTypes = savedStrict }()
+
 	return phperr.CatchReturn(code.Run(ctx))
 }
 
@@ -298,6 +313,11 @@ func (c *Global) RequireOnce(ctx phpv.Context, fn phpv.ZString) (*phpv.ZVal, err
 	if err != nil {
 		return nil, err
 	}
+
+	// Save and restore strict_types per file
+	savedStrict := c.StrictTypes
+	c.StrictTypes = false
+	defer func() { c.StrictTypes = savedStrict }()
 
 	return phperr.CatchReturn(code.Run(ctx))
 }

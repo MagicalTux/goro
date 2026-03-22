@@ -132,6 +132,10 @@ type Global struct {
 	// Serialize recursion detection across nested serialize calls
 	// (especially Serializable::serialize() calling serialize() internally)
 	SerializeSeenObjects map[phpv.ZObject]bool
+
+	// StrictTypes tracks whether the currently executing file has declare(strict_types=1).
+	// This is a per-file flag that affects type coercion at call sites.
+	StrictTypes bool
 }
 
 type tickFuncEntry struct {
@@ -194,6 +198,7 @@ func createGlobal(p *Process) *Global {
 	g.streamHandlers["file"] = g.fileHandler
 	g.streamHandlers["php"] = stream.PhpHandler()
 	g.streamHandlers["http"] = stream.NewHttpHandler()
+	g.streamHandlers["data"] = stream.DataHandler
 
 	g.initLocale()
 
@@ -1662,6 +1667,16 @@ func (g *Global) CallTickFunctions(ctx phpv.Context) error {
 // HasTickFunctions returns true if any tick functions are registered
 func (g *Global) HasTickFunctions() bool {
 	return len(g.tickFuncs) > 0
+}
+
+// SetStrictTypes sets the strict_types flag for the current execution context.
+func (g *Global) SetStrictTypes(v bool) {
+	g.StrictTypes = v
+}
+
+// GetStrictTypes returns the current strict_types flag.
+func (g *Global) GetStrictTypes() bool {
+	return g.StrictTypes
 }
 
 func (g *Global) Close() error {

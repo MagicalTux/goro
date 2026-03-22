@@ -695,7 +695,7 @@ func mathPow(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	exp := float64(expArg.AsFloat(ctx))
 	// PHP 8.4: pow(0, negative) is deprecated
 	if base == 0 && exp < 0 {
-		ctx.Deprecated("Power of base 0 and negative exponent is deprecated", logopt.NoFuncName(true))
+		ctx.Deprecated("Power of base 0 and negative exponent is deprecated")
 	}
 	result := math.Pow(base, exp)
 

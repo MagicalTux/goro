@@ -63,6 +63,7 @@ type compileRootCtx struct {
 	useConstMap  map[phpv.ZString]phpv.ZString // use const aliases
 	nsClassNames map[phpv.ZString]bool         // short class names defined in current namespace
 	strictTypes  bool                          // declare(strict_types=1) in effect
+	hasStatements bool                         // true after the first PHP statement has been compiled
 }
 
 func (c *compileRootCtx) ExpectSingle(r rune) error {
