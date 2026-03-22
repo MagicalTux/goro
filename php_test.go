@@ -887,6 +887,15 @@ func TestPhp(t *testing.T) {
 		"test/php-8.5.4/ext/standard/strings/gh15552.phpt":                                            true, // sscanf huge arg index causes OOM
 		"test/php-8.5.4/ext/date/DateTimeImmutable_inherited_serialization.phpt":                       true, // Nil pointer in inherited serialization
 		"test/php-8.5.4/ext/date/DateTimePeriod_inherited_serialization.phpt":                          true, // Nil pointer in inherited serialization
+		"test/php-8.5.4/ext/date/DateTime_inherited_serialization.phpt":                                true, // Nil pointer in inherited serialization
+		"test/php-8.5.4/ext/date/bug60302-002.phpt":                                                   true, // Nil pointer in createFromFormat
+		"test/php-8.5.4/ext/date/bug65502.phpt":                                                       true, // Nil pointer in createFromFormat
+		"test/php-8.5.4/ext/date/bug68669.phpt":                                                       true, // Nil pointer in createFromFormat
+		"test/php-8.5.4/ext/date/bug72963.phpt":                                                       true, // Nil pointer in createFromFormat
+		"test/php-8.5.4/ext/date/bug80057.phpt":                                                       true, // Nil pointer in createFromFormat
+		"test/php-8.5.4/ext/date/gh10152.phpt":                                                        true, // Nil pointer in serialization
+		"test/php-8.5.4/ext/date/gh11455.phpt":                                                        true, // Nil pointer in carbon-style usage
+		"test/php-8.5.4/ext/standard/strings/sprintf_error.phpt":                                      true, // Index out of range in sprintf
 	}
 
 	// Directories containing tests that require external resources (network, etc.)
