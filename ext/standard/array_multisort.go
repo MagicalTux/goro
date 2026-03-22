@@ -165,9 +165,15 @@ func fncArrayMultiSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 			case SORT_NATURAL:
 				s1 := string(a.AsString(ctx))
 				s2 := string(b.AsString(ctx))
-				a := []byte(s1)
-				b := []byte(s2)
-				return natCmp(a, b, false) < 0
+				cmp = natCmp([]byte(s1), []byte(s2), true)
+			case SORT_NATURAL | SORT_FLAG_CASE:
+				s1 := string(a.AsString(ctx))
+				s2 := string(b.AsString(ctx))
+				cmp = natCmp([]byte(s1), []byte(s2), false)
+			case SORT_STRING | SORT_FLAG_CASE:
+				x := strings.ToLower(string(a.AsString(ctx)))
+				y := strings.ToLower(string(b.AsString(ctx)))
+				cmp = strings.Compare(x, y)
 
 			default:
 				fallthrough

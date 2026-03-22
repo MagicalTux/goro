@@ -481,6 +481,13 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 
 	// read a and b
 	if r.a != nil && !(op.write && op.op == nil) {
+		// For ++/-- on object properties, set incDecCtx to get proper error message
+		if r.op == tokenizer.T_INC || r.op == tokenizer.T_DEC {
+			if ov, ok := r.a.(*runObjectVar); ok {
+				ov.incDecCtx = true
+				defer func() { ov.incDecCtx = false }()
+			}
+		}
 		a, err = r.a.Run(ctx)
 		if err != nil {
 			return nil, err
@@ -500,6 +507,13 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	}
 
 	if r.b != nil {
+		// For ++/-- on object properties (postfix), set incDecCtx
+		if r.op == tokenizer.T_INC || r.op == tokenizer.T_DEC {
+			if ov, ok := r.b.(*runObjectVar); ok {
+				ov.incDecCtx = true
+				defer func() { ov.incDecCtx = false }()
+			}
+		}
 		b, err = r.b.Run(ctx)
 		if err != nil {
 			return nil, err

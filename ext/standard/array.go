@@ -440,6 +440,10 @@ func fncArrayFilter(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 // > func bool array_walk ( array &$array , callable $callback [, mixed $userdata = NULL ] )
 func fncArrayWalk(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) > 3 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError,
+			fmt.Sprintf("array_walk() expects at most 3 arguments, %d given", len(args)))
+	}
 	var array core.Ref[*phpv.ZArray]
 	var callback phpv.Callable
 	var userdata **phpv.ZVal
@@ -447,8 +451,6 @@ func fncArrayWalk(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	// TODO: error if len(callbackArgs) is more than callback expects
 
 	callbackArgs := make([]*phpv.ZVal, 2)
 	if userdata != nil {
@@ -478,6 +480,10 @@ func fncArrayWalk(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 // > func bool array_walk_recursive ( array &$array , callable $callback [, mixed $userdata = NULL ] )
 func fncArrayWalkRecursive(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) > 3 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError,
+			fmt.Sprintf("array_walk_recursive() expects at most 3 arguments, %d given", len(args)))
+	}
 	var array core.Ref[*phpv.ZArray]
 	var callback phpv.Callable
 	var userdata **phpv.ZVal
@@ -485,8 +491,6 @@ func fncArrayWalkRecursive(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, err
 	if err != nil {
 		return nil, err
 	}
-
-	// TODO: error if len(callbackArgs) is more than callback expects
 
 	callbackArgs := make([]*phpv.ZVal, 2)
 	if userdata != nil {
@@ -1049,17 +1053,17 @@ func fncArraySlice(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			lengthIsNull = true
 		} else {
 			t := args[2].GetType()
-			if t == phpv.ZtArray || t == phpv.ZtObject {
+			switch t {
+			case phpv.ZtArray, phpv.ZtObject, phpv.ZtString:
 				return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
 					fmt.Sprintf("array_slice(): Argument #3 ($length) must be of type ?int, %s given",
 						phpv.ZValTypeName(args[2])))
-			}
-			// In strict_types mode, float is also rejected for int parameters
-			if t == phpv.ZtFloat {
+			case phpv.ZtFloat:
+				// In strict_types mode, float is also rejected for int parameters
 				strictTypes := ctx.GetConfig("strict_types", phpv.ZInt(0).ZVal())
 				if strictTypes != nil && strictTypes.AsInt(ctx) == 1 {
 					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
-						fmt.Sprintf("array_slice(): Argument #3 ($length) must be of type ?int, float given"))
+						"array_slice(): Argument #3 ($length) must be of type ?int, float given")
 				}
 			}
 		}

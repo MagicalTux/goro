@@ -489,6 +489,7 @@ type runObjectVar struct {
 	varName      phpv.ZString
 	l            *phpv.Loc
 	writeContext bool // set when reading as part of a write chain (suppress undefined property warnings)
+	incDecCtx    bool // set when in a ++/-- context (for "Attempt to increment/decrement property" error)
 	nullsafe     bool
 	nullChain    bool // propagate null from inner nullsafe chain
 
@@ -1031,6 +1032,11 @@ func (r *runObjectVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			// PHP 8: modifying property of non-object in a write chain throws Error
 			return nil, phpobj.ThrowError(ctx, phpobj.Error,
 				fmt.Sprintf("Attempt to modify property \"%s\" on %s", r.varName, typeName))
+		}
+		// PHP 8: check if this is a ++/-- context
+		if r.incDecCtx {
+			return nil, phpobj.ThrowError(ctx, phpobj.Error,
+				fmt.Sprintf("Attempt to increment/decrement property \"%s\" on %s", r.varName, typeName))
 		}
 		// PHP 8: reading property of non-object is a warning, returns null
 		ctx.Warn("Attempt to read property \"%s\" on %s", r.varName, typeName, logopt.NoFuncName(true))
