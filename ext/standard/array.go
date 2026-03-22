@@ -657,11 +657,19 @@ func fncRange(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	// Determine if we should use the float path:
 	// if any of start, end, or step is a float, use float arithmetic.
+	// Exception: if start and end are ints and step is a whole number float,
+	// PHP 8.4+ treats it as an integer step and produces integer results.
 	useFloat := start.GetType() == phpv.ZtFloat || end.GetType() == phpv.ZtFloat
 	if stepArgVal.HasArg() {
 		coerced := rangeCoerceNumericString(stepArgVal.Get())
 		if coerced.GetType() == phpv.ZtFloat {
-			useFloat = true
+			f := float64(coerced.AsFloat(ctx))
+			if start.GetType() != phpv.ZtFloat && end.GetType() != phpv.ZtFloat &&
+				f == math.Trunc(f) && !math.IsInf(f, 0) && !math.IsNaN(f) {
+				// Whole number float step with int endpoints -> use int path
+			} else {
+				useFloat = true
+			}
 		}
 	}
 
@@ -858,8 +866,14 @@ func rangeCoerceNumericString(v *phpv.ZVal) *phpv.ZVal {
 	if v.GetType() != phpv.ZtString {
 		return v
 	}
-	s := phpv.ZString(v.String())
-	numVal, err := s.AsNumeric()
+	s := string(v.AsString(nil))
+	// Single-character strings are treated as character ranges (including digits)
+	// e.g. range("1", "9") produces ["1", "2", ..., "9"] not [1, 2, ..., 9]
+	if len(s) == 1 {
+		return v
+	}
+	zs := phpv.ZString(s)
+	numVal, err := zs.AsNumeric()
 	if err != nil {
 		return v
 	}
