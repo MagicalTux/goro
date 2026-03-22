@@ -75,12 +75,18 @@ func (z ZString) AsVal(ctx Context, t ZType) (Val, error) {
 	return nil, nil
 }
 
-func (s ZString) ToLower() ZString {
-	return ZString(strings.ToLower(string(s)))
+func (s ZString) ToLower() ZString { // PHP ASCII-only
+	b := []byte(s); for i, c := range b { if c >= 'A' && c <= 'Z' { b[i] = c + 32 } }; return ZString(b)
 }
 
 func (s ZString) ToUpper() ZString {
-	return ZString(strings.ToUpper(string(s)))
+	b := []byte(s)
+	for i, c := range b {
+		if c >= 'a' && c <= 'z' {
+			b[i] = c - 32
+		}
+	}
+	return ZString(b)
 }
 
 func (s ZString) LooksInt() bool {
