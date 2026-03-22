@@ -298,8 +298,8 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 			hc.SendHeaders(g)
 		}
 		closeErr := g.Close()
-		if closeErr != nil {
-			fmt.Fprintf(os.Stderr, "DEBUG closeErr: %T: %v\n", closeErr, closeErr)
+		if closeErr != nil && strings.Contains(p.path, "closure_064") {
+			fmt.Fprintf(os.Stderr, "DEBUG closeErr [%s]: %T: %v\n", p.path, closeErr, closeErr)
 		}
 		if err == nil && closeErr != nil {
 			// Handle fatal errors from output buffer callbacks during close

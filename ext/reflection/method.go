@@ -282,11 +282,12 @@ func reflectionMethodInvoke(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZV
 
 	if data.method.Modifiers.IsStatic() {
 		// For static methods, call without $this (but pass the object if provided)
+		// Use CallZValInternal so the call appears as [internal function] in stack traces
 		if objArg.GetType() == phpv.ZtObject {
 			obj := objArg.AsObject(ctx)
-			return ctx.CallZVal(ctx, data.method.Method, methodArgs, obj)
+			return ctx.CallZValInternal(ctx, data.method.Method, methodArgs, obj)
 		}
-		return ctx.CallZVal(ctx, data.method.Method, methodArgs)
+		return ctx.CallZValInternal(ctx, data.method.Method, methodArgs)
 	}
 
 	// Check for non-object argument
@@ -306,7 +307,8 @@ func reflectionMethodInvoke(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZV
 	if !obj.GetClass().InstanceOf(declaringClass) {
 		return nil, phpobj.ThrowError(ctx, ReflectionException, "Given object is not an instance of the class this method was declared in")
 	}
-	return ctx.CallZVal(ctx, data.method.Method, methodArgs, obj)
+	// Use CallZValInternal so the call appears as [internal function] in stack traces
+	return ctx.CallZValInternal(ctx, data.method.Method, methodArgs, obj)
 }
 
 func reflectionMethodInvokeArgs(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
@@ -334,7 +336,7 @@ func reflectionMethodInvokeArgs(ctx phpv.Context, o *phpobj.ZObject, args []*php
 	}
 
 	if data.method.Modifiers.IsStatic() {
-		return ctx.CallZVal(ctx, data.method.Method, callArgs)
+		return ctx.CallZValInternal(ctx, data.method.Method, callArgs)
 	}
 
 	if objArg.GetType() != phpv.ZtObject || objArg.GetType() == phpv.ZtNull {
@@ -350,7 +352,7 @@ func reflectionMethodInvokeArgs(ctx phpv.Context, o *phpobj.ZObject, args []*php
 	if !obj.GetClass().InstanceOf(declaringClass) {
 		return nil, phpobj.ThrowError(ctx, ReflectionException, "Given object is not an instance of the class this method was declared in")
 	}
-	return ctx.CallZVal(ctx, data.method.Method, callArgs, obj)
+	return ctx.CallZValInternal(ctx, data.method.Method, callArgs, obj)
 }
 
 // createReflectionMethodObject creates a ReflectionMethod object for the given
