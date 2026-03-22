@@ -2,6 +2,7 @@ package standard
 
 import (
 	"bytes"
+	"fmt"
 	"slices"
 	"sort"
 	"strconv"
@@ -560,9 +561,12 @@ func fncHtmlSpecialChars(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error
 		return nil, err
 	}
 
-	// if encodingArg.HasArg() && strings.ToUpper(string(encodingArg.Get())) != "UTF-8" {
-	// TODO: encoding := encodingArgs.GetOrDefault("UTF-8")
-	// }
+	if encodingArg.HasArg() {
+		enc := string(encodingArg.Get())
+		if !isSupportedHtmlCharset(enc) && enc != "" {
+			ctx.Warn("htmlspecialchars(): Charset \"%s\" is not supported, assuming UTF-8", enc)
+		}
+	}
 
 	flags := flagsArg.GetOrDefault(ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML401)
 	doubleEncode := bool(doubleEncodeArg.GetOrDefault(true))
@@ -762,20 +766,26 @@ func fncHtmlEntityDecode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error
 		}
 
 		// Try numeric entity &#123; or &#x1A;
-		inner := s[i+2 : end]
-		if len(inner) > 0 && s[i+1] == '#' {
-			var codepoint int64
-			var parseErr error
-			if len(inner) > 0 && (inner[0] == 'x' || inner[0] == 'X') {
-				codepoint, parseErr = strconv.ParseInt(inner[1:], 16, 64)
-			} else {
-				codepoint, parseErr = strconv.ParseInt(inner, 10, 64)
-			}
-			if parseErr == nil && codepoint >= 0 {
-				if isAllowedCodepoint(codepoint, docType) {
-					buf.WriteRune(rune(codepoint))
-					i = end
-					continue
+		if end > i+2 && s[i+1] == '#' {
+			inner := s[i+2 : end]
+			if len(inner) > 0 {
+				var codepoint int64
+				var parseErr error
+				if inner[0] == 'x' || inner[0] == 'X' {
+					if len(inner) > 1 {
+						codepoint, parseErr = strconv.ParseInt(inner[1:], 16, 64)
+					} else {
+						parseErr = fmt.Errorf("empty hex")
+					}
+				} else {
+					codepoint, parseErr = strconv.ParseInt(inner, 10, 64)
+				}
+				if parseErr == nil && codepoint >= 0 {
+					if isAllowedCodepoint(codepoint, docType) {
+						buf.WriteRune(rune(codepoint))
+						i = end
+						continue
+					}
 				}
 			}
 		}
@@ -844,4 +854,36 @@ func isAllowedCodepoint(cp int64, docType phpv.ZInt) bool {
 	}
 
 	return true
+}
+
+// isSupportedHtmlCharset checks if a charset name is supported by html functions
+func isSupportedHtmlCharset(charset string) bool {
+	upper := strings.ToUpper(strings.ReplaceAll(charset, "-", ""))
+	supported := map[string]bool{
+		"UTF8":        true,
+		"ISO88591":    true,
+		"ISO885915":   true,
+		"ISO88595":    true,
+		"CP1252":      true,
+		"WINDOWS1252": true,
+		"1252":        true,
+		"CP1251":      true,
+		"WINDOWS1251": true,
+		"1251":        true,
+		"CP866":       true,
+		"866":         true,
+		"IBM866":      true,
+		"KOI8R":       true,
+		"KOI8RU":      true,
+		"MACROMAN":    true,
+		"SJIS":        true,
+		"SHIFTJIS":    true,
+		"932":         true,
+		"EUCJP":       true,
+		"BIG5":        true,
+		"950":         true,
+		"GB2312":      true,
+		"ASCII":       true,
+	}
+	return supported[upper]
 }

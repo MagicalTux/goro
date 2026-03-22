@@ -2197,37 +2197,64 @@ func fncSubstrCount(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 // > func mixed substr_replace ( mixed $string , mixed $replacement , mixed $start [, mixed $length ] )
 func fncSubstrReplace(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	var inputArg, replacementArg *phpv.ZVal
-	var startArg phpv.ZInt
-	var lengthArg *phpv.ZInt
-	_, err := core.Expand(ctx, args, &inputArg, &replacementArg, &startArg, &lengthArg)
-	if err != nil {
-		return phpv.ZBool(false).ZVal(), err
+	if len(args) < 3 {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+
+	inputArg := args[0]
+	replacementArg := args[1]
+	startArg := args[2]
+	var lengthArg *phpv.ZVal
+	if len(args) > 3 {
+		lengthArg = args[3]
 	}
 
 	var buf bytes.Buffer
-	start := int(startArg)
+
+	getStart := func(index int) (int, error) {
+		if startArg.GetType() == phpv.ZtArray {
+			val, err := startArg.Array().OffsetGet(ctx, phpv.ZInt(index).Value())
+			if err != nil || val == nil {
+				return 0, nil
+			}
+			v, _ := val.As(ctx, phpv.ZtInt)
+			return int(v.Value().(phpv.ZInt)), nil
+		}
+		v, _ := startArg.As(ctx, phpv.ZtInt)
+		return int(v.Value().(phpv.ZInt)), nil
+	}
+
+	getLength := func(index int, inputLen int) (int, error) {
+		if lengthArg == nil {
+			return inputLen, nil
+		}
+		if lengthArg.GetType() == phpv.ZtArray {
+			val, err := lengthArg.Array().OffsetGet(ctx, phpv.ZInt(index).Value())
+			if err != nil || val == nil {
+				return inputLen, nil
+			}
+			v, _ := val.As(ctx, phpv.ZtInt)
+			return int(v.Value().(phpv.ZInt)), nil
+		}
+		v, _ := lengthArg.As(ctx, phpv.ZtInt)
+		return int(v.Value().(phpv.ZInt)), nil
+	}
 
 	getReplacement := func(index int) ([]byte, error) {
-		var replacement []byte
-		if replacementArg.GetType() == phpv.ZtString {
-			replacement = []byte(replacementArg.AsString(ctx))
-		} else {
+		if replacementArg.GetType() == phpv.ZtArray {
 			val, err := replacementArg.Array().OffsetGet(ctx, phpv.ZInt(index).Value())
-			if err != nil {
-				return nil, err
+			if err != nil || val == nil {
+				return nil, nil
 			}
-			replacement = []byte(val.String())
+			return []byte(val.String()), nil
 		}
-		return replacement, nil
+		return []byte(replacementArg.AsString(ctx)), nil
 	}
 
 	if inputArg.GetType() == phpv.ZtString {
 		input := []byte(inputArg.AsString(ctx))
-		length := len(input)
-		if lengthArg != nil {
-			length = int(*lengthArg)
-		}
+		start, _ := getStart(0)
+		length, _ := getLength(0, len(input))
 
 		replacement, err := getReplacement(0)
 		if err != nil {
@@ -2242,21 +2269,23 @@ func fncSubstrReplace(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZStr(buf.String()), nil
 	}
 
-	res := inputArg.Dup()
+	res := phpv.NewZArray()
 
 	i := 0
-	it := res.NewIterator()
+	it := inputArg.NewIterator()
 	for ; it.Valid(ctx); it.Next(ctx) {
 		v, err := it.Current(ctx)
 		if err != nil {
 			return nil, err
 		}
+		k, err := it.Key(ctx)
+		if err != nil {
+			return nil, err
+		}
 
 		input := []byte(v.String())
-		length := len(input)
-		if lengthArg != nil {
-			length = int(*lengthArg)
-		}
+		start, _ := getStart(i)
+		length, _ := getLength(i, len(input))
 
 		replacement, err := getReplacement(i)
 		if err != nil {
@@ -2267,13 +2296,13 @@ func fncSubstrReplace(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		buf.Write(left)
 		buf.Write(replacement)
 		buf.Write(right)
-		v.Set(phpv.ZStr(buf.String()))
+		res.OffsetSet(ctx, k, phpv.ZStr(buf.String()))
 		buf.Reset()
 
 		i++
 	}
 
-	return res, nil
+	return res.ZVal(), nil
 }
 
 // > func string ucfirst ( string $str )

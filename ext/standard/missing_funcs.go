@@ -623,48 +623,211 @@ func metaphone(word string, maxPhonemes int) string {
 	n := len(w)
 	var result []byte
 	isV := func(c byte) bool { return c == 'A' || c == 'E' || c == 'I' || c == 'O' || c == 'U' }
-	add := func(c byte) { if maxPhonemes <= 0 || len(result) < maxPhonemes { result = append(result, c) } }
-	at := func(i int) byte { if i < 0 || i >= n { return 0 }; return w[i] }
+	add := func(c byte) {
+		if maxPhonemes <= 0 || len(result) < maxPhonemes {
+			result = append(result, c)
+		}
+	}
+	at := func(i int) byte {
+		if i < 0 || i >= n {
+			return 0
+		}
+		return w[i]
+	}
+
 	i := 0
-	if n >= 2 { switch string(w[:2]) { case "AE","GN","KN","PN","WR": i = 1 } }
+	// Skip initial silent letters
+	if n >= 2 {
+		switch string(w[:2]) {
+		case "AE", "GN", "KN", "PN", "WR":
+			i = 1
+		}
+	}
+
+	// Track effective start for vowel handling
+	startPos := i
+
 	for i < n {
-		if maxPhonemes > 0 && len(result) >= maxPhonemes { break }
+		if maxPhonemes > 0 && len(result) >= maxPhonemes {
+			break
+		}
 		c := w[i]
-		if c < 'A' || c > 'Z' { i++; continue }
-		if c != 'C' && i > 0 && at(i-1) == c { i++; continue }
-		if isV(c) { if i == 0 { add(c) }; i++; continue }
+		if c < 'A' || c > 'Z' {
+			i++
+			continue
+		}
+		// Skip doubled letters (except C)
+		if c != 'C' && i > 0 && at(i-1) == c {
+			i++
+			continue
+		}
+		// Vowels: only emit if at effective start of word
+		if isV(c) {
+			if i == startPos {
+				add(c)
+			}
+			i++
+			continue
+		}
 		switch c {
-		case 'B': if !(i > 0 && at(i-1) == 'M' && i+1 >= n) { add('B') }
+		case 'B':
+			if !(i > 0 && at(i-1) == 'M' && i+1 >= n) {
+				add('B')
+			}
 		case 'C':
-			nx := at(i+1)
-			if nx=='I'||nx=='E'||nx=='Y' { if nx=='I'&&at(i+2)=='A' { add('X'); i+=2 } else { add('S'); i++ } } else { add('K') }
-		case 'D': if at(i+1)=='G' { nx2:=at(i+2); if nx2=='E'||nx2=='I'||nx2=='Y' { add('J'); i+=2 } else { add('T') } } else { add('T') }
-		case 'F': add('F')
+			nx := at(i + 1)
+			if nx == 'I' || nx == 'E' || nx == 'Y' {
+				if nx == 'I' && at(i+2) == 'A' {
+					add('X')
+					i += 2
+				} else {
+					add('S')
+					i++
+				}
+			} else {
+				add('K')
+			}
+		case 'D':
+			if at(i+1) == 'G' {
+				nx2 := at(i + 2)
+				if nx2 == 'E' || nx2 == 'I' || nx2 == 'Y' {
+					add('J')
+					i += 2
+				} else {
+					add('T')
+				}
+			} else {
+				add('T')
+			}
+		case 'F':
+			add('F')
 		case 'G':
-			nx := at(i+1)
-			if i+1<n && nx=='H' { nx2:=at(i+2); if nx2!=0&&!isV(nx2) { i++ } else if i==0 { if nx2=='O'{i++}else{add('K');i++} } else { i++ }
-			} else if nx=='N' { if i+2>=n||(i+2<n&&at(i+2)=='E'&&i+3>=n) { } else if i==0 { } else { add('K') }
-			} else if i>0&&at(i-1)=='G' { add('K')
-			} else { pv:=at(i-1); if i>0&&(nx=='E'||nx=='I'||nx=='Y')&&pv!='G' { add('J') } else if i==0||pv!='G' { add('K') } }
-		case 'H': if isV(at(i+1)) { pv:=at(i-1); if i==0||(pv!='C'&&pv!='G'&&pv!='P'&&pv!='S'&&pv!='T') { add('H') } }
-		case 'J': add('J')
-		case 'K': if i==0||at(i-1)!='C' { add('K') }
-		case 'L': add('L')
-		case 'M': add('M')
-		case 'N': add('N')
-		case 'P': if at(i+1)=='H' { add('F'); i++ } else { add('P') }
-		case 'Q': add('K')
-		case 'R': add('R')
+			nx := at(i + 1)
+			if i+1 < n && nx == 'H' {
+				nx2 := at(i + 2)
+				if nx2 != 0 && !isV(nx2) {
+					// GH before non-vowel: silent
+					i++
+				} else if i == 0 {
+					if nx2 == 'O' {
+						// GHO: silent G
+						i++
+					} else {
+						add('K')
+						i++
+					}
+				} else {
+					// GH after vowel: silent
+					i++
+				}
+			} else if nx == 'N' {
+				if i+2 >= n || (i+2 < n && at(i+2) == 'E' && i+3 >= n) {
+					// GN at end or GNE at end: silent
+				} else if i == 0 {
+					// Initial GN: silent G
+				} else {
+					add('K')
+				}
+			} else if i > 0 && at(i-1) == 'G' {
+				add('K')
+			} else {
+				pv := at(i - 1)
+				if i > 0 && (nx == 'E' || nx == 'I' || nx == 'Y') && pv != 'G' {
+					add('J')
+				} else if i == 0 || pv != 'G' {
+					add('K')
+				}
+			}
+		case 'H':
+			if isV(at(i + 1)) {
+				pv := at(i - 1)
+				if i == 0 || (pv != 'C' && pv != 'G' && pv != 'P' && pv != 'S' && pv != 'T') {
+					add('H')
+				}
+			}
+		case 'J':
+			add('J')
+		case 'K':
+			if i == 0 || at(i-1) != 'C' {
+				add('K')
+			}
+		case 'L':
+			add('L')
+		case 'M':
+			add('M')
+		case 'N':
+			add('N')
+		case 'P':
+			if at(i+1) == 'H' {
+				add('F')
+				i++
+			} else {
+				add('P')
+			}
+		case 'Q':
+			add('K')
+		case 'R':
+			add('R')
 		case 'S':
-			nx:=at(i+1)
-			if nx=='H'||(nx=='I'&&(at(i+2)=='A'||at(i+2)=='O')) { add('X'); if nx=='H'{i++}else{i+=2} } else if nx=='C'&&at(i+2)=='H' { add('S'); add('K'); i+=2 } else { add('S') }
+			nx := at(i + 1)
+			if nx == 'H' || (nx == 'I' && (at(i+2) == 'A' || at(i+2) == 'O')) {
+				add('X')
+				if nx == 'H' {
+					i++
+				} else {
+					i += 2
+				}
+			} else if nx == 'C' && at(i+2) == 'H' {
+				add('S')
+				add('K')
+				i += 2
+			} else {
+				add('S')
+			}
 		case 'T':
-			nx:=at(i+1)
-			if nx=='H' { add('0'); i++ } else if nx=='I'&&(at(i+2)=='A'||at(i+2)=='O') { add('X'); i++ } else { add('T') }
-		case 'V': add('F')
-		case 'W','Y': if isV(at(i+1)) { add(c) }
-		case 'X': add('K'); add('S')
-		case 'Z': add('S')
+			nx := at(i + 1)
+			if nx == 'H' {
+				add('0')
+				i++
+			} else if nx == 'C' && at(i+2) == 'H' {
+				// TCH -> X (like "scratch", "match")
+				add('X')
+				i += 2
+			} else if nx == 'I' && (at(i+2) == 'A' || at(i+2) == 'O') {
+				add('X')
+				i++
+			} else {
+				add('T')
+			}
+		case 'V':
+			add('F')
+		case 'W':
+			if at(i+1) == 'H' {
+				// WH -> W (treat like W + vowel)
+				if isV(at(i + 2)) {
+					add('W')
+					i++ // skip H
+				} else if i == 0 {
+					add('W')
+					i++ // skip H
+				}
+			} else if isV(at(i + 1)) {
+				add('W')
+			}
+		case 'Y':
+			if isV(at(i + 1)) {
+				add('Y')
+			}
+		case 'X':
+			if i == 0 {
+				// Initial X sounds like S
+				add('S')
+			} else {
+				add('K')
+				add('S')
+			}
+		case 'Z':
+			add('S')
 		}
 		i++
 	}
