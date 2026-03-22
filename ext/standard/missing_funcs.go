@@ -214,7 +214,8 @@ func ParseCsvLine(ctx phpv.Context, line string, sep, enc, esc byte) (*phpv.ZVal
 			var field []byte
 			for i < len(line) {
 				if esc != 0 && esc != enc && line[i] == esc && i+1 < len(line) {
-					// Escape character followed by another char
+					// Escape character followed by another char - keep both chars
+					field = append(field, line[i])
 					i++
 					field = append(field, line[i])
 					i++
@@ -330,10 +331,9 @@ func BuildCsvLine(ctx phpv.Context, fields *phpv.ZArray, sep, enc, esc byte) ([]
 		field := val.String()
 
 		// Check if enclosure is needed (matches PHP's php_fputcsv behavior)
+		// PHP encloses fields that contain the separator, enclosure, or whitespace chars.
+		// The escape character does NOT trigger enclosure and is NOT escaped in the output.
 		needsEnclose := strings.ContainsAny(field, string([]byte{sep, enc, '\n', '\r', '\t', ' '}))
-		if esc != 0 && esc != enc {
-			needsEnclose = needsEnclose || strings.ContainsRune(field, rune(esc))
-		}
 
 		if needsEnclose {
 			buf.WriteByte(enc)
@@ -343,9 +343,6 @@ func BuildCsvLine(ctx phpv.Context, fields *phpv.ZArray, sep, enc, esc byte) ([]
 					// PHP always doubles the enclosure character
 					buf.WriteByte(enc)
 					buf.WriteByte(enc)
-				} else if c == esc && esc != enc && esc != 0 {
-					buf.WriteByte(esc)
-					buf.WriteByte(c)
 				} else {
 					buf.WriteByte(c)
 				}

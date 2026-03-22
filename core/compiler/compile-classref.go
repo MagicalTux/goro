@@ -709,20 +709,12 @@ func (r *runClassNameOf) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			}
 			cls := ctx.Class()
 			if cls == nil {
-				// Differentiate: top-level (no function context) says "in the global scope",
-				// inside a function it says "when no class scope is active"
-				if ctx.Func() == nil {
-					return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot use \"self\" in the global scope")
-				}
 				return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot use \"self\" when no class scope is active")
 			}
 			return phpv.ZString(cls.GetName()).ZVal(), nil
 		case "parent":
 			cls := ctx.Class()
 			if cls == nil {
-				if ctx.Func() == nil {
-					return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot use \"parent\" in the global scope")
-				}
 				return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot use \"parent\" when no class scope is active")
 			}
 			parent := cls.GetParent()

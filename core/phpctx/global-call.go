@@ -224,7 +224,11 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 	callCtx := GetFuncContext()
 	callCtx.Context = ctx
 	callCtx.c = f
-	callCtx.loc = ctx.Loc()
+	if isInternal {
+		callCtx.loc = &phpv.Loc{Filename: "Unknown", Line: 0}
+	} else {
+		callCtx.loc = ctx.Loc()
+	}
 	callCtx.isInternal = isInternal
 	// Release() may trigger destructor errors during scope cleanup.
 	// Named return values let the defer closure chain those errors

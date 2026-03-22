@@ -260,8 +260,14 @@ func fncPhpCredits(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 // > func void register_shutdown_function ( callable $callback [, mixed $... ]  )
 func registerShutdownFunction(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	// Resolve the callable in the caller's scope so that "self" and
+	// visibility checks are evaluated from the correct context.
+	callerCtx := ctx.Parent(1)
+	if callerCtx == nil {
+		callerCtx = ctx
+	}
 	var callback phpv.Callable
-	_, err := core.Expand(ctx, args, &callback)
+	_, err := core.Expand(callerCtx, args, &callback)
 	if err != nil {
 		return phpv.ZFalse.ZVal(), err
 	}

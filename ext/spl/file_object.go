@@ -393,7 +393,7 @@ func sfoFgetcsv(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.Z
 
 	// If escape was never set (not via setCsvControl, not via argument), emit deprecation
 	if !escapeSet {
-		ctx.Deprecated("SplFileObject::fgetcsv(): the $escape parameter must be provided, as its default value will change, either explicitly or via SplFileObject::setCsvControl()")
+		ctx.Deprecated("the $escape parameter must be provided, as its default value will change, either explicitly or via SplFileObject::setCsvControl()")
 	}
 
 	line := d.curLine

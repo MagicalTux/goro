@@ -141,6 +141,17 @@ func (c *FuncContext) This() phpv.ZObject {
 	return c.this
 }
 
+// Loc returns the current execution location. For internal calls (e.g.,
+// exception/error handlers invoked by the runtime), it returns "Unknown:0".
+// For normal calls, it delegates to the parent context which tracks the
+// current execution position via Tick().
+func (c *FuncContext) Loc() *phpv.Loc {
+	if c.isInternal && c.loc != nil {
+		return c.loc
+	}
+	return c.Context.Loc()
+}
+
 func (c *FuncContext) Class() phpv.ZClass {
 	return c.class
 }
