@@ -87,14 +87,17 @@ func compilePropertyHooks(prop *phpv.ZClassProp, class *phpobj.ZClass, c compile
 			if i.IsSingle(';') {
 				continue // abstract get
 			}
+			// Wrap compilation in a function context so __FUNCTION__ resolves to $prop::get
+			hookClosure := &ZClosure{name: phpv.ZString(fmt.Sprintf("$%s::get", prop.VarName))}
+			hookCtx := &zclosureCompileCtx{c, hookClosure}
 			if i.IsSingle('{') {
-				body, err := compileBase(i, c)
+				body, err := compileBase(i, hookCtx)
 				if err != nil {
 					return err
 				}
 				prop.GetHook = body
 			} else if i.Type == tokenizer.T_DOUBLE_ARROW {
-				expr, err := compileExpr(nil, c)
+				expr, err := compileExpr(nil, hookCtx)
 				if err != nil {
 					return err
 				}
@@ -146,14 +149,17 @@ func compilePropertyHooks(prop *phpv.ZClassProp, class *phpobj.ZClass, c compile
 			if i.IsSingle(';') {
 				continue // abstract set
 			}
+			// Wrap compilation in a function context so __FUNCTION__ resolves to $prop::set
+			setHookClosure := &ZClosure{name: phpv.ZString(fmt.Sprintf("$%s::set", prop.VarName))}
+			setHookCtx := &zclosureCompileCtx{c, setHookClosure}
 			if i.IsSingle('{') {
-				body, err := compileBase(i, c)
+				body, err := compileBase(i, setHookCtx)
 				if err != nil {
 					return err
 				}
 				prop.SetHook = body
 			} else if i.Type == tokenizer.T_DOUBLE_ARROW {
-				expr, err := compileExpr(nil, c)
+				expr, err := compileExpr(nil, setHookCtx)
 				if err != nil {
 					return err
 				}

@@ -171,10 +171,13 @@ func fncCallUserFunc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	// (e.g. private/protected methods) are evaluated from the correct context.
 	// For example, call_user_func([$this, 'privateMethod']) from inside a class
 	// should succeed because the caller has access to the private method.
+	// Wrap with WithFuncName so that error messages say "call_user_func()" not
+	// the caller's function name.
 	callerCtx := ctx.Parent(1)
 	if callerCtx == nil {
 		callerCtx = ctx
 	}
+	callerCtx = phpctx.WithFuncName(callerCtx, "call_user_func")
 	var callback phpv.Callable
 	_, err := core.Expand(callerCtx, args, &callback)
 	if err != nil {
@@ -191,17 +194,24 @@ func fncCallUserFunc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		cbArgs[i] = a.Dup()
 		cbArgs[i].Name = nil
 	}
-	return ctx.CallZVal(callerCtx, callback, cbArgs, nil)
+	origCallerCtx := ctx.Parent(1)
+	if origCallerCtx == nil {
+		origCallerCtx = ctx
+	}
+	return ctx.CallZVal(origCallerCtx, callback, cbArgs, nil)
 }
 
 // > func mixed call_user_func_array ( callable $callback , array $param_arr )
 func fncCallUserFuncArray(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	// Resolve the callback in the caller's scope so that visibility checks
 	// (e.g. private/protected methods) are evaluated from the correct context.
+	// Wrap with WithFuncName so that error messages say "call_user_func_array()" not
+	// the caller's function name.
 	callerCtx := ctx.Parent(1)
 	if callerCtx == nil {
 		callerCtx = ctx
 	}
+	callerCtx = phpctx.WithFuncName(callerCtx, "call_user_func_array")
 	// Validate second argument is an array before expansion
 	if len(args) >= 2 && args[1] != nil && args[1].GetType() != phpv.ZtArray {
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
@@ -230,7 +240,11 @@ func fncCallUserFuncArray(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, erro
 			cbArgs = append(cbArgs, dup)
 		}
 	}
-	return ctx.CallZVal(callerCtx, callback, cbArgs, nil)
+	origCallerCtx := ctx.Parent(1)
+	if origCallerCtx == nil {
+		origCallerCtx = ctx
+	}
+	return ctx.CallZVal(origCallerCtx, callback, cbArgs, nil)
 }
 
 // > func string inet_ntop ( string $in_addr )

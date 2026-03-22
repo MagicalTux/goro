@@ -350,8 +350,9 @@ func spawnCallableInternal(ctx phpv.Context, v *phpv.ZVal, paramNo int) (phpv.Ca
 			if callerFunc == "" {
 				callerFunc = "call_user_func"
 			}
+			// Use the resolved method name (without parent::/self:: prefix)
 			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
-				fmt.Sprintf("%s(): Argument #1 ($callback) must be a valid callback, class %s does not have a method \"%s\"", callerFunc, class.GetName(), methodName.AsString(ctx)))
+				fmt.Sprintf("%s(): Argument #1 ($callback) must be a valid callback, class %s does not have a method \"%s\"", callerFunc, class.GetName(), name))
 		}
 
 		// Check if the method is abstract - abstract methods cannot be called directly

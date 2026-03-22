@@ -62,24 +62,39 @@ func (r *runnableUnset) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 
 // callDestructorIfNeeded checks if a ZVal holds an object with __destruct,
 // and if so, decrements the reference count and calls the destructor if
-// the count reaches zero.
+// the count reaches zero. For arrays, it recursively processes all elements.
 func callDestructorIfNeeded(ctx phpv.Context, zv *phpv.ZVal) error {
-	if zv == nil || zv.GetType() != phpv.ZtObject {
+	if zv == nil {
 		return nil
 	}
-	obj := zv.Value()
-	// Call HandleDecRef if the class defines it (e.g. Closure releasing captured $this)
-	if zobj, ok := obj.(phpv.ZObject); ok {
-		if cls := zobj.GetClass(); cls != nil {
-			if h := cls.Handlers(); h != nil && h.HandleDecRef != nil {
-				h.HandleDecRef(ctx, zobj)
+	switch zv.GetType() {
+	case phpv.ZtObject:
+		obj := zv.Value()
+		// Call HandleDecRef if the class defines it (e.g. Closure releasing captured $this)
+		if zobj, ok := obj.(phpv.ZObject); ok {
+			if cls := zobj.GetClass(); cls != nil {
+				if h := cls.Handlers(); h != nil && h.HandleDecRef != nil {
+					h.HandleDecRef(ctx, zobj)
+				}
 			}
 		}
-	}
-	if refObj, ok := obj.(interface {
-		DecRef(phpv.Context) error
-	}); ok {
-		return refObj.DecRef(ctx)
+		if refObj, ok := obj.(interface {
+			DecRef(phpv.Context) error
+		}); ok {
+			return refObj.DecRef(ctx)
+		}
+	case phpv.ZtArray:
+		zArr, ok := zv.Value().(*phpv.ZArray)
+		if !ok || zArr == nil {
+			return nil
+		}
+		// Iterate array elements and call destructors on objects.
+		// Return the first destructor error (which becomes the uncaught exception).
+		for _, elem := range zArr.Iterate(ctx) {
+			if err := callDestructorIfNeeded(ctx, elem); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }
