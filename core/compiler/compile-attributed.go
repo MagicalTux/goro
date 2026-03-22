@@ -213,9 +213,54 @@ func (r *runAttributeValidatedFunc) Dump(w io.Writer) error {
 // "method Clazz::test()" instead of "method Clazz::__call()".
 var noDiscardAliasName string
 
+// noDiscardAlreadyEmitted is set to true when the NoDiscard warning was
+// already emitted before the magic method call, so runNoDiscardStatement
+// doesn't emit it again.
+var noDiscardAlreadyEmitted bool
+
+// inNoDiscardContext is true when the current execution is inside a
+// runNoDiscardStatement (i.e., the call result is being discarded).
+var inNoDiscardContext bool
+
 // SetNoDiscardAlias sets the alias name for the next NoDiscard check.
 func SetNoDiscardAlias(name string) {
 	noDiscardAliasName = name
+}
+
+// EmitNoDiscardForMagicCall checks if a magic method (__call/__callStatic) has
+// #[\NoDiscard] and if so, emits the warning using the virtual method name.
+// This is called BEFORE the magic method body executes so the warning appears
+// before any output from the method body.
+func EmitNoDiscardForMagicCall(ctx phpv.Context, method phpv.Callable, className phpv.ZString, virtualMethodName string) error {
+	if !inNoDiscardContext {
+		return nil // Only emit when the result is being discarded
+	}
+	if ag, ok := method.(phpv.AttributeGetter); ok {
+		for _, attr := range ag.GetAttributes() {
+			if attr.ClassName == "NoDiscard" || attr.ClassName == "\\NoDiscard" {
+				if err := ResolveAttrArgs(ctx, attr); err != nil {
+					return err
+				}
+				if err := ValidateNoDiscardArgs(ctx, attr); err != nil {
+					return err
+				}
+				funcName := string(className) + "::" + virtualMethodName
+				msg := fmt.Sprintf("The return value of method %s() should either be used or intentionally ignored by casting it as (void)", funcName)
+				if len(attr.Args) > 0 && attr.Args[0] != nil && attr.Args[0].GetType() != phpv.ZtNull {
+					customMsg := attr.Args[0].String()
+					if customMsg != "" {
+						msg += ", " + customMsg
+					}
+				}
+				return ctx.Warn("%s", msg, logopt.NoFuncName(true), logopt.ErrType(phpv.E_USER_WARNING))
+			}
+		}
+	}
+	// Also check if callable is a BoundedCallable wrapping the method
+	if bc, ok := method.(*phpv.BoundedCallable); ok {
+		return EmitNoDiscardForMagicCall(ctx, bc.Callable, className, virtualMethodName)
+	}
+	return nil
 }
 
 type runNoDiscardStatement struct {
@@ -223,8 +268,17 @@ type runNoDiscardStatement struct {
 }
 func (r *runNoDiscardStatement) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	ctx.Global().ClearLastCallable()
+	noDiscardAlreadyEmitted = false
+	inNoDiscardContext = true
 	result, err := r.inner.Run(ctx)
+	inNoDiscardContext = false
 	if err != nil { return result, err }
+	// If the NoDiscard warning was already emitted before the call (e.g., for __call/__callStatic),
+	// don't emit it again.
+	if noDiscardAlreadyEmitted {
+		noDiscardAlreadyEmitted = false
+		return result, nil
+	}
 	callable := ctx.Global().LastCallable()
 	if callable == nil { return result, nil }
 	attrs, funcName, label := getNoDiscardInfo(callable)
