@@ -21,10 +21,31 @@ var compareDepth int
 // (all ordered comparisons return false) for <, >, <=, >=.
 const CompareUncomparable = 2
 
+// findCompareHandler walks up the class hierarchy to find a HandleCompare handler.
+func findCompareHandler(c ZClass) func(Context, ZObject, ZObject) (int, error) {
+	for c != nil {
+		if h := c.Handlers(); h != nil && h.HandleCompare != nil {
+			return h.HandleCompare
+		}
+		c = c.GetParent()
+	}
+	return nil
+}
+
 func CompareObject(ctx Context, ao, bo ZObject) (int, error) {
 	// Same instance - always equal
 	if ao == bo {
 		return 0, nil
+	}
+
+	// Check for custom comparison handlers first - walk up the class hierarchy.
+	// This allows subclasses to inherit compare handlers from parent classes
+	// (e.g., MyDateTimeZone extends DateTimeZone).
+	if handler := findCompareHandler(ao.GetClass()); handler != nil {
+		return handler(ctx, ao, bo)
+	}
+	if handler := findCompareHandler(bo.GetClass()); handler != nil {
+		return handler(ctx, ao, bo)
 	}
 
 	if ao.GetClass() != bo.GetClass() {
@@ -34,11 +55,6 @@ func CompareObject(ctx Context, ao, bo ZObject) (int, error) {
 	// Enum cases: different cases of the same enum are not orderable
 	if ao.GetClass().GetType().Has(ZClassTypeEnum) {
 		return CompareUncomparable, nil
-	}
-
-	// Check for custom comparison handler (e.g., Closure)
-	if h := ao.GetClass().Handlers(); h != nil && h.HandleCompare != nil {
-		return h.HandleCompare(ctx, ao, bo)
 	}
 
 	compareDepth++

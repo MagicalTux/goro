@@ -1441,12 +1441,12 @@ func (o *ZObject) runSetHook(ctx phpv.Context, keyStr phpv.ZString, prop *phpv.Z
 	}
 
 	// For short arrow set hooks (set => expr), the expression result is assigned
-	// to the backing property. We detect this by checking if the hook produced
-	// a non-nil, non-null result. Short set hooks compile to just the expression
-	// Runnable (not a block), so they return the expression value directly.
-	// Block set hooks use "return" which is caught by CatchReturn in CallZVal,
-	// but typically don't return values (they assign to $this->prop directly).
-	if result != nil && !result.IsNull() {
+	// to the backing property. Block set hooks (set { ... }) assign to
+	// $this->prop directly inside the body; their return value is ignored.
+	// Block hooks compile to phpv.Runnables (a []Runnable); arrow hooks compile
+	// to a single expression Runnable.
+	_, isBlock := prop.SetHook.(phpv.Runnables)
+	if !isBlock && result != nil && !result.IsNull() {
 		o.objectSetBacking(keyStr, result)
 	}
 
