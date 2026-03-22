@@ -177,7 +177,7 @@ func reflectionClassConstruct(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "ReflectionClass::__construct() expects exactly 1 argument, 0 given")
 	}
 	if len(args) > 1 {
-		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "ReflectionClass::__construct() expects exactly 1 argument, 2 given")
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("ReflectionClass::__construct() expects exactly 1 argument, %d given", len(args)))
 	}
 	arg := args[0]
 	var class phpv.ZClass
@@ -187,6 +187,9 @@ func reflectionClassConstruct(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.
 	} else if arg.GetType() == phpv.ZtArray {
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "ReflectionClass::__construct(): Argument #1 ($objectOrClass) must be of type object|string, array given")
 	} else {
+		if arg.GetType() == phpv.ZtNull {
+			_ = ctx.Deprecated("ReflectionClass::__construct(): Passing null to parameter #1 ($objectOrClass) of type object|string is deprecated")
+		}
 		className := arg.AsString(ctx)
 		var err error
 		class, err = resolveClass(ctx, className)
@@ -202,7 +205,10 @@ func reflectionClassConstruct(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.
 
 func reflectionClassImplementsInterface(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
-		return nil, phpobj.ThrowError(ctx, phpobj.Error, "ReflectionClass::implementsInterface() expects exactly 1 argument, 0 given")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "ReflectionClass::implementsInterface() expects exactly 1 argument, 0 given")
+	}
+	if len(args) > 1 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, fmt.Sprintf("ReflectionClass::implementsInterface() expects exactly 1 argument, %d given", len(args)))
 	}
 
 	var iface phpv.ZClass

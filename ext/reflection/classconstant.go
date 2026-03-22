@@ -49,6 +49,8 @@ func initReflectionClassConstant() {
 		"getattributes":     {Name: "getAttributes", Method: phpobj.NativeMethod(reflectionClassConstantGetAttributes)},
 		"__tostring":        {Name: "__toString", Method: phpobj.NativeMethod(reflectionClassConstantToString)},
 		"getdoccomment":     {Name: "getDocComment", Method: phpobj.NativeMethod(reflectionClassConstantGetDocComment)},
+		"hastype":           {Name: "hasType", Method: phpobj.NativeMethod(reflectionClassConstantHasType)},
+		"gettype":           {Name: "getType", Method: phpobj.NativeMethod(reflectionClassConstantGetType)},
 	}
 }
 
@@ -266,6 +268,22 @@ func reflectionClassConstantToString(ctx phpv.Context, o *phpobj.ZObject, args [
 	return phpv.ZString(fmt.Sprintf("Constant [ %s %s %s ] { %s }", modStr, "mixed", data.constName, data.constName)).ZVal(), nil
 }
 
+func reflectionClassConstantHasType(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	data := getClassConstData(o)
+	if data == nil || data.constVal.TypeHint == nil {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	return phpv.ZBool(true).ZVal(), nil
+}
+
+func reflectionClassConstantGetType(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	data := getClassConstData(o)
+	if data == nil || data.constVal.TypeHint == nil {
+		return phpv.ZNULL.ZVal(), nil
+	}
+	return createReflectionTypeObject(ctx, data.constVal.TypeHint)
+}
+
 // createReflectionClassConstantObject creates a ReflectionClassConstant object
 // for the given class and constant, without going through __construct.
 func createReflectionClassConstantObject(ctx phpv.Context, class *phpobj.ZClass, name phpv.ZString, constVal *phpv.ZClassConst) (*phpv.ZVal, error) {
@@ -357,7 +375,7 @@ func reflectionClassGetReflectionConstants(ctx phpv.Context, o *phpobj.ZObject, 
 				if err != nil {
 					return nil, err
 				}
-				arr.OffsetSet(ctx, name, val)
+				arr.OffsetSet(ctx, nil, val)
 			}
 		}
 		parent := cur.GetParent()

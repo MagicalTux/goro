@@ -40,6 +40,7 @@ func reflectionClassGetConstant(ctx phpv.Context, o *phpobj.ZObject, args []*php
 	name := args[0].AsString(ctx)
 	constVal, found := lookupClassConst(zc, name)
 	if !found {
+		_ = ctx.Deprecated("ReflectionClass::getConstant() for a non-existent constant is deprecated, use ReflectionClass::hasConstant() to check if the constant exists")
 		return phpv.ZBool(false).ZVal(), nil
 	}
 	if constVal.Value == nil {
@@ -122,10 +123,16 @@ func reflectionClassGetStaticProperties(ctx phpv.Context, o *phpobj.ZObject, arg
 
 func reflectionClassGetStaticPropertyValue(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
-		return nil, phpobj.ThrowError(ctx, phpobj.Error, "ReflectionClass::getStaticPropertyValue() expects at least 1 argument, 0 given")
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "ReflectionClass::getStaticPropertyValue() expects at least 1 argument, 0 given")
 	}
 	if len(args) > 2 {
-		return nil, phpobj.ThrowError(ctx, phpobj.Error, "ReflectionClass::getStaticPropertyValue() expects at most 2 arguments, 3 given")
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("ReflectionClass::getStaticPropertyValue() expects at most 2 arguments, %d given", len(args)))
+	}
+	if args[0].GetType() == phpv.ZtArray {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "ReflectionClass::getStaticPropertyValue(): Argument #1 ($name) must be of type string, array given")
+	}
+	if args[0].GetType() == phpv.ZtNull {
+		_ = ctx.Deprecated("ReflectionClass::getStaticPropertyValue(): Passing null to parameter #1 ($name) of type string is deprecated")
 	}
 	zc := getZClass(o)
 	if zc == nil {
@@ -150,10 +157,10 @@ func reflectionClassGetStaticPropertyValue(ctx phpv.Context, o *phpobj.ZObject, 
 
 func reflectionClassSetStaticPropertyValue(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 2 {
-		return nil, phpobj.ThrowError(ctx, phpobj.Error, "ReflectionClass::setStaticPropertyValue() expects exactly 2 arguments, 0 given")
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("ReflectionClass::setStaticPropertyValue() expects exactly 2 arguments, %d given", len(args)))
 	}
 	if len(args) > 2 {
-		return nil, phpobj.ThrowError(ctx, phpobj.Error, "ReflectionClass::setStaticPropertyValue() expects exactly 2 arguments, 3 given")
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("ReflectionClass::setStaticPropertyValue() expects exactly 2 arguments, %d given", len(args)))
 	}
 	zc := getZClass(o)
 	if zc == nil {
@@ -178,13 +185,31 @@ func reflectionClassNewInstanceArgs(ctx phpv.Context, o *phpobj.ZObject, args []
 	var constructArgs []*phpv.ZVal
 	if len(args) > 0 {
 		if args[0].GetType() != phpv.ZtArray {
-			return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "ReflectionClass::newInstanceArgs(): Argument #1 ($args) must be of type array, string given")
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("ReflectionClass::newInstanceArgs(): Argument #1 ($args) must be of type array, %s given", args[0].GetType().String()))
 		}
 		arr := args[0].Value().(*phpv.ZArray)
 		for _, v := range arr.Iterate(ctx) {
 			constructArgs = append(constructArgs, v)
 		}
 	}
+
+	// Check if constructor exists and is accessible
+	zc, _ := class.(*phpobj.ZClass)
+	if zc != nil {
+		var hasConstructor bool
+		if zc.Handlers() != nil && zc.Handlers().Constructor != nil {
+			hasConstructor = true
+		} else if m, ok := zc.GetMethod("__construct"); ok {
+			hasConstructor = true
+			if m.Modifiers.IsPrivate() || m.Modifiers.IsProtected() {
+				return nil, phpobj.ThrowError(ctx, ReflectionException, fmt.Sprintf("Access to non-public constructor of class %s", class.GetName()))
+			}
+		}
+		if !hasConstructor && len(constructArgs) > 0 {
+			return nil, phpobj.ThrowError(ctx, ReflectionException, fmt.Sprintf("Class %s does not have a constructor, so you cannot pass any constructor arguments", class.GetName()))
+		}
+	}
+
 	obj, err := phpobj.NewZObject(ctx, class, constructArgs...)
 	if err != nil {
 		return nil, err
@@ -244,14 +269,19 @@ func reflectionClassIsReadOnly(ctx phpv.Context, o *phpobj.ZObject, args []*phpv
 }
 
 func reflectionClassIsIterable(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	class := getClassData(o)
-	if class == nil {
+	zc := getZClass(o)
+	if zc == nil {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	// Interfaces and traits are not iterable
+	if zc.Type == phpv.ZClassTypeInterface || zc.Type.Has(phpv.ZClassTypeTrait) {
 		return phpv.ZBool(false).ZVal(), nil
 	}
 	traversable, err := ctx.Global().GetClass(ctx, "Traversable", false)
 	if err != nil {
 		return phpv.ZBool(false).ZVal(), nil
 	}
+	var class phpv.ZClass = zc
 	return phpv.ZBool(class.InstanceOf(traversable)).ZVal(), nil
 }
 
@@ -320,16 +350,14 @@ func reflectionClassGetModifiers(ctx phpv.Context, o *phpobj.ZObject, args []*ph
 	}
 	var modifiers int64
 	if zc.Attr.Has(phpv.ZClassAttr(phpv.ZClassExplicitAbstract)) {
-		modifiers |= 64
+		modifiers |= 64 // IS_EXPLICIT_ABSTRACT
 	}
-	if zc.Type == phpv.ZClassTypeInterface {
-		modifiers |= 16
-	}
+	// Note: interfaces do NOT have IS_IMPLICIT_ABSTRACT in PHP 8.x
 	if zc.Attr.Has(phpv.ZClassFinal) {
-		modifiers |= 32
+		modifiers |= 32 // IS_FINAL
 	}
 	if zc.Attr.Has(phpv.ZClassReadonly) {
-		modifiers |= 65536
+		modifiers |= 65536 // IS_READONLY
 	}
 	return phpv.ZInt(modifiers).ZVal(), nil
 }

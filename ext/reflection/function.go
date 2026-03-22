@@ -74,10 +74,19 @@ func reflectionFunctionGetDocComment(ctx phpv.Context, o *phpobj.ZObject, args [
 
 func reflectionFunctionConstruct(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
-		return nil, phpobj.ThrowError(ctx, phpobj.Error, "ReflectionFunction::__construct() expects exactly 1 argument, 0 given")
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "ReflectionFunction::__construct() expects exactly 1 argument, 0 given")
+	}
+	if len(args) > 1 {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("ReflectionFunction::__construct() expects exactly 1 argument, %d given", len(args)))
 	}
 
 	arg := args[0]
+
+	// Check for invalid argument types
+	if arg.GetType() == phpv.ZtArray {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "ReflectionFunction::__construct(): Argument #1 ($function) must be of type Closure|string, array given")
+	}
+
 	data := &reflectionFunctionData{}
 
 	if arg.GetType() == phpv.ZtString {

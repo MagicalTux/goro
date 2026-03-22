@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/MagicalTux/goro/core"
@@ -660,13 +661,187 @@ func fncHtmlSpecialCharsDecode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal,
 
 // > func string htmlentities ( string $string [, int $flags = ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML401 [, string $encoding = ini_get("default_charset") [, bool $double_encode = TRUE ]]] )
 func fncHtmlEntities(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	// htmlentities encodes all applicable characters, not just the special ones
-	// For now, delegate to htmlspecialchars (covers the most common cases)
-	// A full implementation would encode all characters with HTML entities
-	return fncHtmlSpecialChars(ctx, args)
+	var str phpv.ZString
+	var flagsArg core.Optional[phpv.ZInt]
+	var encodingArg core.Optional[phpv.ZString]
+	var doubleEncodeArg core.Optional[phpv.ZBool]
+	_, err := core.Expand(ctx, args, &str, &flagsArg, &encodingArg, &doubleEncodeArg)
+	if err != nil {
+		return nil, err
+	}
+
+	flags := flagsArg.GetOrDefault(ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML401)
+	doubleEncode := bool(doubleEncodeArg.GetOrDefault(true))
+
+	escape := map[string]string{}
+	for _, e := range getHtmlTranslationTable(HTML_ENTITIES, flags) {
+		escape[e.key] = e.value
+	}
+
+	var buf bytes.Buffer
+	chars := []rune(str)
+	for i := 0; i < len(chars); i++ {
+		c := chars[i]
+
+		if c == '&' && !doubleEncode {
+			valid := false
+			var j int
+			var sub string
+			if k := slices.Index(chars[i:], ';'); k >= 0 {
+				j = min(i+k+1, len(chars))
+				sub = string(chars[i:j])
+				_, valid = entitySet[sub]
+			}
+			if valid {
+				i = j - 1
+				buf.WriteString(sub)
+				continue
+			}
+		}
+
+		if repl, ok := escape[string(c)]; ok {
+			buf.WriteString(repl)
+		} else {
+			buf.WriteRune(c)
+		}
+	}
+
+	return phpv.ZStr(buf.String()), nil
 }
 
 // > func string html_entity_decode ( string $string [, int $flags = ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML401 [, string $encoding = "UTF-8" ]] )
 func fncHtmlEntityDecode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	return fncHtmlSpecialCharsDecode(ctx, args)
+	var str phpv.ZString
+	var flagsArg core.Optional[phpv.ZInt]
+	var encodingArg core.Optional[phpv.ZString]
+	_, err := core.Expand(ctx, args, &str, &flagsArg, &encodingArg)
+	if err != nil {
+		return nil, err
+	}
+
+	flags := flagsArg.GetOrDefault(ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML401)
+
+	// Build reverse mapping from entity to character
+	unescape := map[string]string{}
+	for _, e := range getHtmlTranslationTable(HTML_ENTITIES, flags) {
+		unescape[e.value] = e.key
+	}
+
+	// Also add special chars decode
+	for _, e := range getHtmlTranslationTable(HTML_SPECIALCHARS, flags) {
+		unescape[e.value] = e.key
+	}
+
+	docType := flags & ENT_HTML_DOC_TYPE_MASK
+
+	var buf bytes.Buffer
+	s := string(str)
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+
+		if c != '&' {
+			buf.WriteByte(c)
+			continue
+		}
+
+		// Find the ';'
+		end := strings.IndexByte(s[i:], ';')
+		if end < 0 {
+			buf.WriteByte(c)
+			continue
+		}
+		end += i
+
+		entity := s[i : end+1]
+
+		// Try named entity lookup
+		if repl, ok := unescape[entity]; ok {
+			buf.WriteString(repl)
+			i = end
+			continue
+		}
+
+		// Try numeric entity &#123; or &#x1A;
+		inner := s[i+2 : end]
+		if len(inner) > 0 && s[i+1] == '#' {
+			var codepoint int64
+			var parseErr error
+			if len(inner) > 0 && (inner[0] == 'x' || inner[0] == 'X') {
+				codepoint, parseErr = strconv.ParseInt(inner[1:], 16, 64)
+			} else {
+				codepoint, parseErr = strconv.ParseInt(inner, 10, 64)
+			}
+			if parseErr == nil && codepoint >= 0 {
+				if isAllowedCodepoint(codepoint, docType) {
+					buf.WriteRune(rune(codepoint))
+					i = end
+					continue
+				}
+			}
+		}
+
+		// Not decoded, output as-is
+		buf.WriteByte(c)
+	}
+
+	return phpv.ZStr(buf.String()), nil
+}
+
+// isAllowedCodepoint checks if a numeric entity codepoint should be decoded
+// based on the document type. Different doc types have different rules about
+// which codepoints are allowed.
+func isAllowedCodepoint(cp int64, docType phpv.ZInt) bool {
+	// Null is never allowed
+	if cp == 0 {
+		return false
+	}
+
+	// C0 range (1-31): only certain chars allowed depending on doc type
+	if cp >= 1 && cp <= 31 {
+		if docType == ENT_HTML5 {
+			// HTML5: allow 0x09, 0x0A, 0x0C but NOT 0x0D
+			return cp == 0x09 || cp == 0x0A || cp == 0x0C
+		}
+		// HTML 4.01, XML 1.0, XHTML: allow 0x09, 0x0A, 0x0D
+		return cp == 0x09 || cp == 0x0A || cp == 0x0D
+	}
+
+	// DEL (0x7F)
+	if cp == 0x7F {
+		if docType == ENT_HTML401 || docType == ENT_HTML5 {
+			return false
+		}
+		return true // XML1, XHTML allow it
+	}
+
+	// C1 range (0x80-0x9F)
+	if cp >= 0x80 && cp <= 0x9F {
+		if docType == ENT_HTML401 || docType == ENT_HTML5 {
+			return false
+		}
+		return true // XML1, XHTML allow it
+	}
+
+	// Surrogates (0xD800-0xDFFF) - never allowed
+	if cp >= 0xD800 && cp <= 0xDFFF {
+		return false
+	}
+
+	// Noncharacters
+	if docType == ENT_HTML5 {
+		// HTML5 forbids noncharacters
+		if cp >= 0xFDD0 && cp <= 0xFDEF {
+			return false
+		}
+		if cp&0xFFFF == 0xFFFE || cp&0xFFFF == 0xFFFF {
+			return false
+		}
+	} else if docType == ENT_XHTML || docType == ENT_XML1 {
+		// XHTML and XML 1.0 forbid 0xFFFE and 0xFFFF
+		if cp == 0xFFFE || cp == 0xFFFF {
+			return false
+		}
+	}
+
+	return true
 }

@@ -4,7 +4,11 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"strconv"
+	"strings"
+	"unicode"
 
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -17,74 +21,331 @@ func (err *errBadScanChar) Error() string {
 }
 
 func skipWhitespaces(r *bufio.Reader) error {
+	_, err := skipWhitespacesTracked(r)
+	return err
+}
+
+func skipWhitespacesTracked(r *bufio.Reader) (int, error) {
+	count := 0
 	for {
 		c, err := r.ReadByte()
 		if err != nil {
 			if err == io.EOF {
-				return nil
+				return count, nil
 			}
-			return err
+			return count, err
 		}
 		switch c {
-		case ' ', '\n', '\t':
+		case ' ', '\n', '\t', '\r', '\f', '\v':
+			count++
 		default:
 			r.UnreadByte()
-			return nil
+			return count, nil
 		}
 	}
+}
+
+func isWhitespace(c byte) bool {
+	return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v'
 }
 
 func countRemainingScanCodes(format phpv.ZString, startIndex int) int {
 	count := 0
 	for i := startIndex; i < len(format); i++ {
-		switch format[i] {
-		case '%':
+		if format[i] == '%' {
 			i++
-			if i < len(format) {
-				count++
+			if i >= len(format) {
+				break
 			}
-		default:
-			continue
+			if format[i] == '%' {
+				continue // literal %
+			}
+			// skip position specifier like 1$
+			j := i
+			for j < len(format) && format[j] >= '0' && format[j] <= '9' {
+				j++
+			}
+			if j < len(format) && j > i && format[j] == '$' {
+				i = j + 1
+				if i >= len(format) {
+					break
+				}
+			}
+			// skip width
+			for i < len(format) && format[i] >= '0' && format[i] <= '9' {
+				i++
+			}
+			if i >= len(format) {
+				break
+			}
+			// skip suppression
+			if format[i] == '*' {
+				i++
+				if i >= len(format) {
+					break
+				}
+			}
+			c := format[i]
+			if c == '[' {
+				// skip past character class
+				i++
+				if i < len(format) && format[i] == '^' {
+					i++
+				}
+				if i < len(format) && format[i] == ']' {
+					i++
+				}
+				for i < len(format) && format[i] != ']' {
+					i++
+				}
+			}
+			count++
+		}
+	}
+	return count
+}
+
+// scanReadInt reads an integer from buf with optional width limit
+func scanReadInt(buf *bufio.Reader, base int, width int) (int64, bool) {
+	var s []byte
+	// Read optional sign
+	c, err := buf.ReadByte()
+	if err != nil {
+		return 0, false
+	}
+	if c == '-' || c == '+' {
+		s = append(s, c)
+		width--
+	} else {
+		buf.UnreadByte()
+	}
+
+	if width == 0 {
+		return 0, false
+	}
+
+	// For hex, skip optional 0x prefix
+	if base == 16 {
+		c, err := buf.ReadByte()
+		if err == nil {
+			if c == '0' {
+				c2, err2 := buf.ReadByte()
+				if err2 == nil && (c2 == 'x' || c2 == 'X') {
+					width -= 2
+				} else {
+					if err2 == nil {
+						buf.UnreadByte()
+					}
+					buf.UnreadByte()
+				}
+			} else {
+				buf.UnreadByte()
+			}
 		}
 	}
 
-	return count
+	// For octal, skip optional 0 prefix
+	if base == 8 {
+		c, err := buf.ReadByte()
+		if err == nil {
+			if c == '0' {
+				width--
+				// just consume it
+			} else {
+				buf.UnreadByte()
+			}
+		}
+	}
+
+	gotDigit := false
+	for width != 0 {
+		c, err := buf.ReadByte()
+		if err != nil {
+			break
+		}
+		valid := false
+		switch base {
+		case 2:
+			valid = c == '0' || c == '1'
+		case 8:
+			valid = c >= '0' && c <= '7'
+		case 10:
+			valid = c >= '0' && c <= '9'
+		case 16:
+			valid = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
+		}
+		if !valid {
+			buf.UnreadByte()
+			break
+		}
+		s = append(s, c)
+		gotDigit = true
+		width--
+	}
+
+	if !gotDigit {
+		return 0, false
+	}
+
+	n, err2 := strconv.ParseInt(string(s), base, 64)
+	if err2 != nil {
+		// Try unsigned
+		un, err3 := strconv.ParseUint(string(s), base, 64)
+		if err3 != nil {
+			return 0, false
+		}
+		return int64(un), true
+	}
+	return n, true
+}
+
+// scanReadFloat reads a float from buf with optional width limit
+func scanReadFloat(buf *bufio.Reader, width int) (float64, bool) {
+	var s []byte
+
+	// Read optional sign
+	c, err := buf.ReadByte()
+	if err != nil {
+		return 0, false
+	}
+	if c == '-' || c == '+' {
+		s = append(s, c)
+		width--
+	} else {
+		buf.UnreadByte()
+	}
+
+	gotDigit := false
+	gotDot := false
+	gotE := false
+
+	for width != 0 {
+		c, err := buf.ReadByte()
+		if err != nil {
+			break
+		}
+		if c >= '0' && c <= '9' {
+			s = append(s, c)
+			gotDigit = true
+			width--
+		} else if c == '.' && !gotDot && !gotE {
+			s = append(s, c)
+			gotDot = true
+			width--
+		} else if (c == 'e' || c == 'E') && !gotE && gotDigit {
+			s = append(s, c)
+			gotE = true
+			width--
+			// Read optional sign after e
+			if width != 0 {
+				c2, err2 := buf.ReadByte()
+				if err2 == nil {
+					if c2 == '+' || c2 == '-' {
+						s = append(s, c2)
+						width--
+					} else {
+						buf.UnreadByte()
+					}
+				}
+			}
+		} else {
+			buf.UnreadByte()
+			break
+		}
+	}
+
+	if !gotDigit {
+		return 0, false
+	}
+
+	f, err2 := strconv.ParseFloat(string(s), 64)
+	if err2 != nil {
+		return 0, false
+	}
+	return f, true
+}
+
+// scanReadString reads a non-whitespace string with optional width limit
+func scanReadString(buf *bufio.Reader, width int) (string, bool) {
+	var s []byte
+	for width != 0 {
+		c, err := buf.ReadByte()
+		if err != nil {
+			break
+		}
+		if isWhitespace(c) {
+			buf.UnreadByte()
+			break
+		}
+		s = append(s, c)
+		width--
+	}
+	if len(s) == 0 {
+		return "", false
+	}
+	return string(s), true
+}
+
+// inputBytesConsumed is a counting reader wrapper to track bytes read
+type countingReader struct {
+	r     *bufio.Reader
+	count int
+}
+
+func (cr *countingReader) ReadByte() (byte, error) {
+	b, err := cr.r.ReadByte()
+	if err == nil {
+		cr.count++
+	}
+	return b, err
+}
+
+func (cr *countingReader) UnreadByte() error {
+	err := cr.r.UnreadByte()
+	if err == nil {
+		cr.count--
+	}
+	return err
 }
 
 func zscanRead(r io.Reader, format phpv.ZString) ([]*phpv.ZVal, int, error) {
 	buf := bufio.NewReader(r)
-	argNum := 0
-	var pos int
+	inputConsumed := 0
 	failed := false
 	result := []*phpv.ZVal{}
+	var pos int
 
 Loop:
 	for pos = 0; pos < len(format); pos++ {
 		c := format[pos]
 
 		switch c {
-		case ' ', '\t', '\n':
-			err := skipWhitespaces(buf)
+		case ' ', '\t', '\n', '\r', '\f', '\v':
+			// Whitespace in format: skip whitespace in input
+			n, err := skipWhitespacesTracked(buf)
 			if err != nil {
 				return nil, 0, err
 			}
-			continue
-		default:
-			var c2 byte
-			c2, err := buf.ReadByte()
-			if err != nil {
-				if err != io.EOF {
-					return nil, 0, err
-				}
-			}
-			if c != c2 {
-				break Loop
-			}
-
+			inputConsumed += n
 			continue
 
 		case '%':
 			// proceed below
+
+		default:
+			// Literal character: must match in input
+			c2, err := buf.ReadByte()
+			if err != nil {
+				if err == io.EOF {
+					break Loop
+				}
+				return nil, 0, err
+			}
+			inputConsumed++
+			if c != c2 {
+				break Loop
+			}
+			continue
 		}
 
 		pos++
@@ -92,74 +353,506 @@ Loop:
 			break
 		}
 
-		err := skipWhitespaces(buf)
-		if err != nil {
-			return nil, 0, err
+		// Check for literal %%
+		if format[pos] == '%' {
+			c2, err := buf.ReadByte()
+			if err != nil {
+				break Loop
+			}
+			inputConsumed++
+			if c2 != '%' {
+				break Loop
+			}
+			continue
 		}
 
-		var val *phpv.ZVal
-		c = format[pos]
+		// Parse position specifier like %1$s
+		posSpec := -1
+		{
+			j := pos
+			for j < len(format) && format[j] >= '0' && format[j] <= '9' {
+				j++
+			}
+			if j > pos && j < len(format) && format[j] == '$' {
+				n, _ := strconv.Atoi(string(format[pos:j]))
+				posSpec = n
+				pos = j + 1
+				if pos >= len(format) {
+					break
+				}
+			}
+		}
 
-		switch c {
-		default:
-			return nil, 0, &errBadScanChar{c}
+		// Parse suppression flag
+		suppress := false
+		if pos < len(format) && format[pos] == '*' {
+			suppress = true
+			pos++
+			if pos >= len(format) {
+				break
+			}
+		}
+
+		// Parse width
+		width := -1 // -1 means unlimited
+		{
+			j := pos
+			for j < len(format) && format[j] >= '0' && format[j] <= '9' {
+				j++
+			}
+			if j > pos {
+				w, _ := strconv.Atoi(string(format[pos:j]))
+				width = w
+				pos = j
+			}
+		}
+
+		if pos >= len(format) {
+			break
+		}
+
+		// Skip length modifiers (h, l, L, ll, hh) - they're no-ops in PHP
+		if pos < len(format) && (format[pos] == 'h' || format[pos] == 'l' || format[pos] == 'L') {
+			pos++
+			// handle ll, hh
+			if pos < len(format) && (format[pos] == 'h' || format[pos] == 'l') {
+				pos++
+			}
+		}
+
+		if pos >= len(format) {
+			break
+		}
+
+		fChar := format[pos]
+
+		var val *phpv.ZVal
+
+		switch fChar {
 		case 'n':
-			val = phpv.ZInt(pos + 1).ZVal()
+			// %n: number of characters consumed from input so far
+			// Count actual input consumed
+			consumed := inputConsumed
+			// Also count what's buffered
+			val = phpv.ZInt(consumed).ZVal()
 
 		case 'c':
-			b, err := buf.ReadByte()
-			if err != nil {
-				failed = true
-				break Loop
+			// %c: read exact number of characters (default 1)
+			count := 1
+			if width > 0 {
+				count = width
 			}
-			val = phpv.ZStr(string(b))
-		case 's':
-			var word string
-			_, err := fmt.Fscanf(buf, "%s", &word)
-			if err != nil {
-				failed = true
-				break Loop
+			var s []byte
+			for i := 0; i < count; i++ {
+				b, err := buf.ReadByte()
+				if err != nil {
+					if len(s) == 0 {
+						failed = true
+						break Loop
+					}
+					break
+				}
+				s = append(s, b)
+				inputConsumed++
 			}
-			val = phpv.ZStr(word)
+			val = phpv.ZStr(string(s))
 
-		case 'f', 'e', 'E':
-			var n phpv.ZFloat
-			_, err := fmt.Fscanf(buf, "%"+string(c), &n)
+		case 's':
+			// %s: read non-whitespace string
+			// Skip leading whitespace first
+			wn, err := skipWhitespacesTracked(buf)
 			if err != nil {
+				return nil, 0, err
+			}
+			inputConsumed += wn
+			w := width
+			var s []byte
+			for w != 0 {
+				b, err := buf.ReadByte()
+				if err != nil {
+					break
+				}
+				if isWhitespace(b) {
+					buf.UnreadByte()
+					break
+				}
+				s = append(s, b)
+				inputConsumed++
+				w--
+			}
+			if len(s) == 0 {
 				failed = true
 				break Loop
 			}
-			val = phpv.ZFloat(n).ZVal()
-		case 'd', 'o', 'x', 'X':
-			var n int
-			_, err := fmt.Fscanf(buf, "%"+string(c), &n)
+			val = phpv.ZStr(string(s))
+
+		case 'd':
+			// %d: decimal integer
+			wn, err := skipWhitespacesTracked(buf)
 			if err != nil {
+				return nil, 0, err
+			}
+			inputConsumed += wn
+			n, ok := scanReadIntTracked(buf, 10, width, &inputConsumed)
+			if !ok {
 				failed = true
 				break Loop
 			}
 			val = phpv.ZInt(n).ZVal()
 
 		case 'i':
-			// TODO: copy PHP's scanf base detection
+			// %i: integer with auto-detected base
+			wn, err := skipWhitespacesTracked(buf)
+			if err != nil {
+				return nil, 0, err
+			}
+			inputConsumed += wn
+			// Peek to detect base
+			base := 10
+			c1, err1 := buf.ReadByte()
+			if err1 != nil {
+				failed = true
+				break Loop
+			}
+			if c1 == '0' {
+				c2, err2 := buf.ReadByte()
+				if err2 == nil {
+					if c2 == 'x' || c2 == 'X' {
+						base = 16
+						buf.UnreadByte()
+						buf.UnreadByte()
+					} else if c2 >= '0' && c2 <= '7' {
+						base = 8
+						buf.UnreadByte()
+						buf.UnreadByte()
+					} else {
+						buf.UnreadByte()
+						buf.UnreadByte()
+					}
+				} else {
+					buf.UnreadByte()
+				}
+			} else {
+				buf.UnreadByte()
+			}
+			n, ok := scanReadIntTracked(buf, base, width, &inputConsumed)
+			if !ok {
+				failed = true
+				break Loop
+			}
+			val = phpv.ZInt(n).ZVal()
+
+		case 'o':
+			// %o: octal integer
+			wn, err := skipWhitespacesTracked(buf)
+			if err != nil {
+				return nil, 0, err
+			}
+			inputConsumed += wn
+			n, ok := scanReadIntTracked(buf, 8, width, &inputConsumed)
+			if !ok {
+				failed = true
+				break Loop
+			}
+			val = phpv.ZInt(n).ZVal()
+
+		case 'x', 'X':
+			// %x: hexadecimal integer
+			wn, err := skipWhitespacesTracked(buf)
+			if err != nil {
+				return nil, 0, err
+			}
+			inputConsumed += wn
+			n, ok := scanReadIntTracked(buf, 16, width, &inputConsumed)
+			if !ok {
+				failed = true
+				break Loop
+			}
+			val = phpv.ZInt(n).ZVal()
+
+		case 'f', 'e', 'E':
+			// %f: float
+			wn, err := skipWhitespacesTracked(buf)
+			if err != nil {
+				return nil, 0, err
+			}
+			inputConsumed += wn
+			f, ok := scanReadFloatTracked(buf, width, &inputConsumed)
+			if !ok {
+				failed = true
+				break Loop
+			}
+			val = phpv.ZFloat(f).ZVal()
+
+		case '[':
+			// %[...]: character class
+			pos++ // skip '['
+			negate := false
+			if pos < len(format) && format[pos] == '^' {
+				negate = true
+				pos++
+			}
+			// Build set of characters
+			var charSet []byte
+			// First character can be ']' and is literal
+			if pos < len(format) && format[pos] == ']' {
+				charSet = append(charSet, ']')
+				pos++
+			}
+			for pos < len(format) && format[pos] != ']' {
+				if pos+2 < len(format) && format[pos+1] == '-' && format[pos+2] != ']' {
+					// range like a-z
+					for c := format[pos]; c <= format[pos+2]; c++ {
+						charSet = append(charSet, c)
+					}
+					pos += 3
+				} else {
+					charSet = append(charSet, format[pos])
+					pos++
+				}
+			}
+			// pos now points at ']' (or past end)
+
+			w := width
+			var s []byte
+			for w != 0 {
+				b, err := buf.ReadByte()
+				if err != nil {
+					break
+				}
+				inSet := false
+				for _, sc := range charSet {
+					if b == sc {
+						inSet = true
+						break
+					}
+				}
+				if negate {
+					inSet = !inSet
+				}
+				if !inSet {
+					buf.UnreadByte()
+					break
+				}
+				s = append(s, b)
+				inputConsumed++
+				w--
+			}
+			if len(s) == 0 {
+				failed = true
+				break Loop
+			}
+			val = phpv.ZStr(string(s))
+
+		default:
+			return nil, 0, &errBadScanChar{fChar}
 		}
 
-		result = append(result, val)
-		argNum++
+		if suppress {
+			// Don't store the value
+			continue
+		}
+
+		if posSpec > 0 {
+			// Position specifier: store at specific index
+			for len(result) < posSpec {
+				result = append(result, nil)
+			}
+			result[posSpec-1] = val
+		} else {
+			result = append(result, val)
+		}
 	}
 
-	if failed {
-		// +1 to include failed scan field
-		argNum += countRemainingScanCodes(format, pos) + 1
+	// Count total expected fields (for null-filling)
+	totalFields := countRemainingScanCodes(format, 0)
+	if failed && totalFields > len(result) {
+		// Fill remaining with nil
 	}
 
-	return result, argNum, nil
+	return result, totalFields, nil
+}
+
+// scanReadIntTracked reads an int and tracks inputConsumed
+func scanReadIntTracked(buf *bufio.Reader, base int, width int, consumed *int) (int64, bool) {
+	var s []byte
+
+	// Read optional sign
+	c, err := buf.ReadByte()
+	if err != nil {
+		return 0, false
+	}
+	if c == '-' || c == '+' {
+		s = append(s, c)
+		*consumed++
+		if width > 0 {
+			width--
+		}
+	} else {
+		buf.UnreadByte()
+	}
+
+	if width == 0 {
+		return 0, false
+	}
+
+	// For hex, skip optional 0x prefix
+	if base == 16 {
+		c, err := buf.ReadByte()
+		if err == nil {
+			if c == '0' {
+				c2, err2 := buf.ReadByte()
+				if err2 == nil && (c2 == 'x' || c2 == 'X') {
+					*consumed += 2
+					if width > 0 {
+						width -= 2
+					}
+				} else {
+					if err2 == nil {
+						buf.UnreadByte()
+					}
+					buf.UnreadByte()
+				}
+			} else {
+				buf.UnreadByte()
+			}
+		}
+	}
+
+	gotDigit := false
+	for width != 0 {
+		c, err := buf.ReadByte()
+		if err != nil {
+			break
+		}
+		valid := false
+		switch base {
+		case 2:
+			valid = c == '0' || c == '1'
+		case 8:
+			valid = c >= '0' && c <= '7'
+		case 10:
+			valid = c >= '0' && c <= '9'
+		case 16:
+			valid = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
+		}
+		if !valid {
+			buf.UnreadByte()
+			break
+		}
+		s = append(s, c)
+		gotDigit = true
+		*consumed++
+		if width > 0 {
+			width--
+		}
+	}
+
+	if !gotDigit {
+		// If we had a sign but no digits, unread the sign
+		if len(s) > 0 && !gotDigit {
+			// Can't easily unread multiple bytes, just return false
+		}
+		return 0, false
+	}
+
+	n, err2 := strconv.ParseInt(string(s), base, 64)
+	if err2 != nil {
+		un, err3 := strconv.ParseUint(strings.TrimPrefix(string(s), "+"), base, 64)
+		if err3 != nil {
+			return 0, false
+		}
+		return int64(un), true
+	}
+	return n, true
+}
+
+// scanReadFloatTracked reads a float and tracks inputConsumed
+func scanReadFloatTracked(buf *bufio.Reader, width int, consumed *int) (float64, bool) {
+	var s []byte
+
+	// Read optional sign
+	c, err := buf.ReadByte()
+	if err != nil {
+		return 0, false
+	}
+	if c == '-' || c == '+' {
+		s = append(s, c)
+		*consumed++
+		if width > 0 {
+			width--
+		}
+	} else {
+		buf.UnreadByte()
+	}
+
+	gotDigit := false
+	gotDot := false
+	gotE := false
+
+	for width != 0 {
+		c, err := buf.ReadByte()
+		if err != nil {
+			break
+		}
+		if c >= '0' && c <= '9' {
+			s = append(s, c)
+			gotDigit = true
+			*consumed++
+			if width > 0 {
+				width--
+			}
+		} else if c == '.' && !gotDot && !gotE {
+			s = append(s, c)
+			gotDot = true
+			*consumed++
+			if width > 0 {
+				width--
+			}
+		} else if (c == 'e' || c == 'E') && !gotE && gotDigit {
+			s = append(s, c)
+			gotE = true
+			*consumed++
+			if width > 0 {
+				width--
+			}
+			// Read optional sign after e
+			if width != 0 {
+				c2, err2 := buf.ReadByte()
+				if err2 == nil {
+					if c2 == '+' || c2 == '-' {
+						s = append(s, c2)
+						*consumed++
+						if width > 0 {
+							width--
+						}
+					} else {
+						buf.UnreadByte()
+					}
+				}
+			}
+		} else {
+			buf.UnreadByte()
+			break
+		}
+	}
+
+	if !gotDigit {
+		return 0, false
+	}
+
+	f, err2 := strconv.ParseFloat(string(s), 64)
+	if err2 != nil {
+		return 0, false
+	}
+	return f, true
 }
 
 func zscanfIntoArray(ctx phpv.Context, r io.Reader, format phpv.ZString) (*phpv.ZVal, error) {
 	values, count, err := zscanRead(r, format)
 	if err != nil {
-		if _, ok := err.(*errBadScanChar); ok {
-			return nil, ctx.Warn(err.Error())
+		if bsc, ok := err.(*errBadScanChar); ok {
+			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, bsc.Error())
 		}
 		return nil, err
 	}
@@ -178,29 +871,95 @@ func zscanfIntoArray(ctx phpv.Context, r io.Reader, format phpv.ZString) (*phpv.
 func zscanfIntoRef(ctx phpv.Context, r io.Reader, format phpv.ZString, args ...*phpv.ZVal) (*phpv.ZVal, error) {
 	values, count, err := zscanRead(r, format)
 	if err != nil {
-		if _, ok := err.(*errBadScanChar); ok {
-			return nil, ctx.Warn(err.Error())
+		if bsc, ok := err.(*errBadScanChar); ok {
+			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, bsc.Error())
 		}
 		return nil, err
 	}
 
-	count = countRemainingScanCodes(format, 0)
+	_ = count
 
-	if count < len(args) {
-		if err = ctx.Warn("Variable is not assigned by any conversion specifiers"); err != nil {
-			return nil, err
+	// Count total specifiers (excluding suppressed ones)
+	totalSpecs := 0
+	for i := 0; i < len(format); i++ {
+		if format[i] == '%' {
+			i++
+			if i >= len(format) {
+				break
+			}
+			if format[i] == '%' {
+				continue
+			}
+			// skip position specifier
+			j := i
+			for j < len(format) && format[j] >= '0' && format[j] <= '9' {
+				j++
+			}
+			if j > i && j < len(format) && format[j] == '$' {
+				i = j + 1
+				if i >= len(format) {
+					break
+				}
+			}
+			// check for suppression
+			if i < len(format) && format[i] == '*' {
+				// Skip width and format char
+				i++
+				for i < len(format) && format[i] >= '0' && format[i] <= '9' {
+					i++
+				}
+				if i < len(format) && format[i] == '[' {
+					i++
+					if i < len(format) && format[i] == '^' {
+						i++
+					}
+					if i < len(format) && format[i] == ']' {
+						i++
+					}
+					for i < len(format) && format[i] != ']' {
+						i++
+					}
+				}
+				continue // suppressed, don't count
+			}
+			// skip width
+			for i < len(format) && format[i] >= '0' && format[i] <= '9' {
+				i++
+			}
+			if i >= len(format) {
+				break
+			}
+			if format[i] == '[' {
+				i++
+				if i < len(format) && format[i] == '^' {
+					i++
+				}
+				if i < len(format) && format[i] == ']' {
+					i++
+				}
+				for i < len(format) && format[i] != ']' {
+					i++
+				}
+			}
+			totalSpecs++
 		}
-		return phpv.ZInt(-1).ZVal(), nil
 	}
 
-	if count > len(args) {
-		if err = ctx.Warn("Different numbers of variable names and field specifiers"); err != nil {
-			return nil, err
-		}
-		return phpv.ZInt(-1).ZVal(), nil
+	if totalSpecs < len(args) {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "Variable is not assigned by any conversion specifiers")
+	}
+
+	if totalSpecs > len(args) {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "Different numbers of variable names and field specifiers")
 	}
 
 	for i, val := range values {
+		if i >= len(args) {
+			break
+		}
+		if val == nil {
+			continue
+		}
 		varName := args[i].Name
 		if varName != nil {
 			ctx.Parent(1).OffsetSet(ctx, *varName, val)
@@ -217,3 +976,27 @@ func Zscanf(ctx phpv.Context, r io.Reader, format phpv.ZString, args ...*phpv.ZV
 		return zscanfIntoArray(ctx, r, format)
 	}
 }
+
+// Helper to check if a character is in a set (used by %[ ])
+func charInSet(c byte, set []byte) bool {
+	for _, s := range set {
+		if c == s {
+			return true
+		}
+	}
+	return false
+}
+
+// isDigit checks if a byte is an ASCII digit
+func isDigitByte(c byte) bool {
+	return c >= '0' && c <= '9'
+}
+
+// isHexDigit checks if a byte is a hex digit
+func isHexDigit(c byte) bool {
+	return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
+}
+
+// Ensure unused imports are satisfied
+var _ = unicode.IsDigit
+var _ = strings.TrimSpace

@@ -79,6 +79,14 @@ func reflectionEnumUnitCaseConstruct(ctx phpv.Context, o *phpobj.ZObject, args [
 	if args[0].GetType() == phpv.ZtObject { class = args[0].AsObject(ctx).GetClass() } else { className := args[0].AsString(ctx); class, err = resolveClass(ctx, className); if err != nil { return nil, err } }
 	caseName := args[1].AsString(ctx); zc, ok := class.(*phpobj.ZClass); if !ok { return nil, phpobj.ThrowError(ctx, ReflectionException, fmt.Sprintf("Class \"%s\" does not have a constant \"%s\"", class.GetName(), caseName)) }
 	constVal, found := lookupClassConst(zc, caseName); if !found { return nil, phpobj.ThrowError(ctx, ReflectionException, fmt.Sprintf("Constant %s::%s does not exist", class.GetName(), caseName)) }
+	// Check that the constant is actually an enum case
+	isCase := false
+	for _, cn := range zc.EnumCases {
+		if cn == caseName { isCase = true; break }
+	}
+	if !isCase {
+		return nil, phpobj.ThrowError(ctx, ReflectionException, fmt.Sprintf("Constant %s::%s is not a case", class.GetName(), caseName))
+	}
 	data := &reflectionClassConstantData{constName: caseName, constVal: constVal, class: zc}
 	o.HashTable().SetString("name", caseName.ZVal()); o.HashTable().SetString("class", class.GetName().ZVal()); o.SetOpaque(ReflectionClassConstant, data); return nil, nil
 }

@@ -151,6 +151,11 @@ func reflectionClassGetMethods(ctx phpv.Context, o *phpobj.ZObject, args []*phpv
 	arr := phpv.NewZArray()
 
 	for _, method := range methods {
+		// Skip private methods inherited from parent classes
+		if method.Class != nil && method.Class.GetName() != class.GetName() && method.Modifiers.IsPrivate() {
+			continue
+		}
+
 		if filter != -1 && !methodMatchesFilter(method, phpv.ZObjectAttr(filter)) {
 			continue
 		}
@@ -219,12 +224,28 @@ const (
 
 func reflectionClassGetMethod(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
-		return nil, phpobj.ThrowError(ctx, phpobj.Error, "ReflectionClass::getMethod() expects exactly 1 argument, 0 given")
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "ReflectionClass::getMethod() expects exactly 1 argument, 0 given")
+	}
+	if len(args) > 1 {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("ReflectionClass::getMethod() expects exactly 1 argument, %d given", len(args)))
+	}
+
+	// Check argument type
+	if args[0].GetType() == phpv.ZtArray {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "ReflectionClass::getMethod(): Argument #1 ($name) must be of type string, array given")
+	}
+	if args[0].GetType() == phpv.ZtObject {
+		obj := args[0].AsObject(ctx)
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("ReflectionClass::getMethod(): Argument #1 ($name) must be of type string, %s given", obj.GetClass().GetName()))
 	}
 
 	class := getClassData(o)
 	if class == nil {
 		return phpv.ZNULL.ZVal(), nil
+	}
+
+	if args[0].GetType() == phpv.ZtNull {
+		_ = ctx.Deprecated("ReflectionClass::getMethod(): Passing null to parameter #1 ($name) of type string is deprecated")
 	}
 
 	methodName := args[0].AsString(ctx)
@@ -238,7 +259,7 @@ func reflectionClassGetMethod(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.
 
 func reflectionClassHasMethod(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
-		return nil, phpobj.ThrowError(ctx, phpobj.Error, "ReflectionClass::hasMethod() expects exactly 1 argument, 0 given")
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "ReflectionClass::hasMethod() expects exactly 1 argument, 0 given")
 	}
 
 	class := getClassData(o)
@@ -273,13 +294,18 @@ func reflectionClassGetProperties(ctx phpv.Context, o *phpobj.ZObject, args []*p
 			if seen[key] {
 				continue
 			}
+			// Private properties from parent classes are not visible
+			if cur != zc && prop.Modifiers.IsPrivate() {
+				continue
+			}
 			seen[key] = true
 
 			if filter != -1 && !propertyMatchesFilter(prop, phpv.ZObjectAttr(filter)) {
 				continue
 			}
 
-			val, err := createReflectionPropertyObject(ctx, zc, prop)
+			// Use the actual declaring class for the property
+			val, err := createReflectionPropertyObject(ctx, cur, prop)
 			if err != nil {
 				return nil, err
 			}
@@ -289,7 +315,11 @@ func reflectionClassGetProperties(ctx phpv.Context, o *phpobj.ZObject, args []*p
 		if phpv.IsNilClass(parent) {
 			break
 		}
-		cur = parent.(*phpobj.ZClass)
+		var ok bool
+		cur, ok = parent.(*phpobj.ZClass)
+		if !ok {
+			break
+		}
 	}
 
 	return arr.ZVal(), nil
@@ -332,14 +362,35 @@ func reflectionClassHasProperty(ctx phpv.Context, o *phpobj.ZObject, args []*php
 		return nil, phpobj.ThrowError(ctx, phpobj.Error, "ReflectionClass::hasProperty() expects exactly 1 argument, 0 given")
 	}
 
-	class := getClassData(o)
-	if class == nil {
+	zc := getZClass(o)
+	if zc == nil {
 		return phpv.ZBool(false).ZVal(), nil
 	}
 
 	propName := args[0].AsString(ctx)
-	_, found := class.GetProp(propName)
-	return phpv.ZBool(found).ZVal(), nil
+
+	// Walk the class hierarchy, skipping private properties from parent classes
+	for cur := zc; cur != nil; {
+		for _, prop := range cur.Props {
+			if prop.VarName == propName {
+				// Private properties from parent classes are not visible
+				if cur != zc && prop.Modifiers.IsPrivate() {
+					continue
+				}
+				return phpv.ZBool(true).ZVal(), nil
+			}
+		}
+		parent := cur.GetParent()
+		if phpv.IsNilClass(parent) {
+			break
+		}
+		var ok bool
+		cur, ok = parent.(*phpobj.ZClass)
+		if !ok {
+			break
+		}
+	}
+	return phpv.ZBool(false).ZVal(), nil
 }
 
 func reflectionClassGetConstants(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
@@ -385,8 +436,9 @@ func reflectionClassIsAbstract(ctx phpv.Context, o *phpobj.ZObject, args []*phpv
 	if zc == nil {
 		return phpv.ZBool(false).ZVal(), nil
 	}
-	// Check for explicit abstract or interface (interfaces are implicitly abstract)
-	isAbstract := zc.Attr&phpv.ZClassAttr(phpv.ZClassExplicitAbstract) != 0 || zc.Type == phpv.ZClassTypeInterface
+	// Only explicitly abstract classes return true
+	// Interfaces are NOT considered abstract by ReflectionClass::isAbstract() in PHP 8.x
+	isAbstract := zc.Attr&phpv.ZClassAttr(phpv.ZClassExplicitAbstract) != 0
 	return phpv.ZBool(isAbstract).ZVal(), nil
 }
 
@@ -434,7 +486,10 @@ func reflectionClassIsInstantiable(ctx phpv.Context, o *phpobj.ZObject, args []*
 
 func reflectionClassIsSubclassOf(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
-		return nil, phpobj.ThrowError(ctx, phpobj.Error, "ReflectionClass::isSubclassOf() expects exactly 1 argument, 0 given")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "ReflectionClass::isSubclassOf() expects exactly 1 argument, 0 given")
+	}
+	if len(args) > 1 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, fmt.Sprintf("ReflectionClass::isSubclassOf() expects exactly 1 argument, %d given", len(args)))
 	}
 
 	class := getClassData(o)
@@ -457,6 +512,9 @@ func reflectionClassIsSubclassOf(ctx phpv.Context, o *phpobj.ZObject, args []*ph
 	}
 
 	if targetClass == nil {
+		if args[0].GetType() == phpv.ZtNull {
+			_ = ctx.Deprecated("ReflectionClass::isSubclassOf(): Passing null to parameter #1 ($class) of type ReflectionClass|string is deprecated")
+		}
 		className := args[0].AsString(ctx)
 		targetClass, err = resolveClass(ctx, className)
 		if err != nil {
@@ -477,6 +535,23 @@ func reflectionClassNewInstance(ctx phpv.Context, o *phpobj.ZObject, args []*php
 	class := getClassData(o)
 	if class == nil {
 		return nil, phpobj.ThrowError(ctx, ReflectionException, "Internal error: Failed to retrieve the reflection object")
+	}
+
+	// Check if constructor exists and is accessible
+	zc, _ := class.(*phpobj.ZClass)
+	if zc != nil {
+		var hasConstructor bool
+		if zc.Handlers() != nil && zc.Handlers().Constructor != nil {
+			hasConstructor = true
+		} else if m, ok := zc.GetMethod("__construct"); ok {
+			hasConstructor = true
+			if m.Modifiers.IsPrivate() || m.Modifiers.IsProtected() {
+				return nil, phpobj.ThrowError(ctx, ReflectionException, fmt.Sprintf("Access to non-public constructor of class %s", class.GetName()))
+			}
+		}
+		if !hasConstructor && len(args) > 0 {
+			return nil, phpobj.ThrowError(ctx, ReflectionException, fmt.Sprintf("Class %s does not have a constructor, so you cannot pass any constructor arguments", class.GetName()))
+		}
 	}
 
 	obj, err := phpobj.NewZObject(ctx, class, args...)
@@ -539,33 +614,101 @@ func createReflectionPropertyObject(ctx phpv.Context, class *phpobj.ZClass, prop
 	return obj.ZVal(), nil
 }
 
-// Override the original reflectionClassGetProperty to use the new property lookup
+// reflectionClassGetProperty handles both plain property names and ClassName::propName syntax
 func reflectionClassGetProperty(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
-		return nil, phpobj.ThrowError(ctx, phpobj.Error, "ReflectionClass::getProperty() expects exactly 1 argument, 0 given")
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "ReflectionClass::getProperty() expects exactly 1 argument, 0 given")
+	}
+	if len(args) > 1 {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("ReflectionClass::getProperty() expects exactly 1 argument, %d given", len(args)))
+	}
+	if args[0].GetType() == phpv.ZtArray {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "ReflectionClass::getProperty(): Argument #1 ($name) must be of type string, array given")
+	}
+	if args[0].GetType() == phpv.ZtNull {
+		_ = ctx.Deprecated("ReflectionClass::getProperty(): Passing null to parameter #1 ($name) of type string is deprecated")
 	}
 	name := args[0].AsString(ctx)
-
-	// Check if the name contains "::" (class::property syntax)
-	if idx := strings.Index(string(name), "::"); idx != -1 {
-		className := phpv.ZString(strings.ToLower(string(name[:idx])))
-		_, err := resolveClass(ctx, className)
-		if err != nil {
-			return nil, err
-		}
-	}
 
 	zc := getZClass(o)
 	if zc == nil {
 		return nil, phpobj.ThrowError(ctx, ReflectionException, fmt.Sprintf("Property %s does not exist", name))
 	}
 
-	prop, found := zc.GetProp(name)
-	if !found {
-		return nil, phpobj.ThrowError(ctx, ReflectionException, fmt.Sprintf("Property %s::$%s does not exist", zc.GetName(), name))
+	// Check if the name contains "::" (class::property syntax)
+	if idx := strings.Index(string(name), "::"); idx != -1 {
+		className := phpv.ZString(name[:idx])
+		propName := phpv.ZString(name[idx+2:])
+		// Strip leading $ if present
+		if len(propName) > 0 && propName[0] == '$' {
+			propName = propName[1:]
+		}
+
+		// Resolve the specified class
+		specClass, err := resolveClass(ctx, className)
+		if err != nil {
+			return nil, err
+		}
+
+		// Check that the specified class is in the hierarchy of the reflected class
+		specZc, ok := specClass.(*phpobj.ZClass)
+		if !ok {
+			return nil, phpobj.ThrowError(ctx, ReflectionException, fmt.Sprintf("Property %s::$%s does not exist", specClass.GetName(), propName))
+		}
+
+		// Check if specClass is the same or a parent of the reflected class
+		isInHierarchy := false
+		for cur := zc; cur != nil; {
+			if cur.GetName().ToLower() == specZc.GetName().ToLower() {
+				isInHierarchy = true
+				break
+			}
+			parent := cur.GetParent()
+			if phpv.IsNilClass(parent) {
+				break
+			}
+			var ok2 bool
+			cur, ok2 = parent.(*phpobj.ZClass)
+			if !ok2 {
+				break
+			}
+		}
+
+		if !isInHierarchy {
+			return nil, phpobj.ThrowError(ctx, ReflectionException, fmt.Sprintf("Fully qualified property name %s::$%s does not specify a base class of %s", specClass.GetName(), propName, zc.GetName()))
+		}
+
+		// Look for the property in the specified class
+		for _, prop := range specZc.Props {
+			if prop.VarName == propName {
+				return createReflectionPropertyObject(ctx, specZc, prop)
+			}
+		}
+		return nil, phpobj.ThrowError(ctx, ReflectionException, fmt.Sprintf("Property %s::$%s does not exist", specClass.GetName(), propName))
 	}
 
-	return createReflectionPropertyObject(ctx, zc, prop)
+	// Walk the class hierarchy, skipping private properties from parent classes
+	for cur := zc; cur != nil; {
+		for _, prop := range cur.Props {
+			if prop.VarName == name {
+				if cur != zc && prop.Modifiers.IsPrivate() {
+					continue
+				}
+				return createReflectionPropertyObject(ctx, cur, prop)
+			}
+		}
+		parent := cur.GetParent()
+		if phpv.IsNilClass(parent) {
+			break
+		}
+		var ok bool
+		cur, ok = parent.(*phpobj.ZClass)
+		if !ok {
+			break
+		}
+	}
+
+	return nil, phpobj.ThrowError(ctx, ReflectionException, fmt.Sprintf("Property %s::$%s does not exist", zc.GetName(), name))
 }
 
 func reflectionClassGetAttributes(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {

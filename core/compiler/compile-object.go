@@ -378,6 +378,7 @@ func compileNew(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			prefix = string(class.ImplementsStr[0])
 		}
 		class.Name = phpv.ZString(fmt.Sprintf("%s@anonymous\x00%s:%d$0", prefix, n.l.Filename, n.l.Line))
+		class.Attr |= phpv.ZClassAnon
 
 		return &runNewAnonymousClass{
 			class:           class,

@@ -70,6 +70,7 @@ type ZClassConst struct {
 	Modifiers  ZObjectAttr
 	Resolving  bool           // true while the constant is being resolved (circular reference detection)
 	Attributes []*ZAttribute  // PHP 8.0 attributes
+	TypeHint   *TypeHint      // PHP 8.3 typed class constants
 }
 
 type ZClassHandlers struct {

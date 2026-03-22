@@ -46,6 +46,9 @@ func initReflectionParameter() {
 			"isdefaultvalueconstant":       {Name: "isDefaultValueConstant", Method: phpobj.NativeMethod(reflectionParameterIsDefaultValueConstant)},
 			"getdefaultvalueconstantname":  {Name: "getDefaultValueConstantName", Method: phpobj.NativeMethod(reflectionParameterGetDefaultValueConstantName)},
 			"canbepassedbyvalue":           {Name: "canBePassedByValue", Method: phpobj.NativeMethod(reflectionParameterCanBePassedByValue)},
+			"isarray":                     {Name: "isArray", Method: phpobj.NativeMethod(reflectionParameterIsArray)},
+			"iscallable":                  {Name: "isCallable", Method: phpobj.NativeMethod(reflectionParameterIsCallable)},
+			"getclass":                    {Name: "getClass", Method: phpobj.NativeMethod(reflectionParameterGetClass)},
 		},
 	}
 }
@@ -321,6 +324,55 @@ func reflectionParameterCanBePassedByValue(ctx phpv.Context, o *phpobj.ZObject, 
 	}
 	// canBePassedByValue returns true if the parameter is NOT a reference parameter
 	return phpv.ZBool(!data.arg.Ref).ZVal(), nil
+}
+
+func reflectionParameterIsArray(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	_ = ctx.Deprecated("Method ReflectionParameter::isArray() is deprecated since 8.0, use ReflectionParameter::getType() instead")
+	data := getParamData(o)
+	if data == nil || data.arg.Hint == nil {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	// Check if the type hint is exactly "array" (not a union type containing array)
+	if data.arg.Hint.Type() == phpv.ZtArray && len(data.arg.Hint.Union) == 0 {
+		return phpv.ZBool(true).ZVal(), nil
+	}
+	return phpv.ZBool(false).ZVal(), nil
+}
+
+func reflectionParameterIsCallable(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	_ = ctx.Deprecated("Method ReflectionParameter::isCallable() is deprecated since 8.0, use ReflectionParameter::getType() instead")
+	data := getParamData(o)
+	if data == nil || data.arg.Hint == nil {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	if data.arg.Hint.ClassName() == "callable" && len(data.arg.Hint.Union) == 0 {
+		return phpv.ZBool(true).ZVal(), nil
+	}
+	return phpv.ZBool(false).ZVal(), nil
+}
+
+func reflectionParameterGetClass(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	_ = ctx.Deprecated("Method ReflectionParameter::getClass() is deprecated since 8.0, use ReflectionParameter::getType() instead")
+	data := getParamData(o)
+	if data == nil || data.arg.Hint == nil {
+		return phpv.ZNULL.ZVal(), nil
+	}
+	// Only return a class for class/interface type hints (not built-in types)
+	className := data.arg.Hint.ClassName()
+	if className == "" || className == "callable" || className == "iterable" {
+		return phpv.ZNULL.ZVal(), nil
+	}
+	// Check if it's a built-in type
+	switch data.arg.Hint.Type() {
+	case phpv.ZtBool, phpv.ZtInt, phpv.ZtFloat, phpv.ZtString, phpv.ZtArray, phpv.ZtNull, phpv.ZtVoid, phpv.ZtNever, phpv.ZtMixed:
+		return phpv.ZNULL.ZVal(), nil
+	}
+	// Try to resolve the class
+	class, err := ctx.Global().GetClass(ctx, phpv.ZString(className), true)
+	if err != nil {
+		return phpv.ZNULL.ZVal(), nil
+	}
+	return createReflectionClassObject(ctx, class)
 }
 
 func reflectionParameterGetAttributes(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {

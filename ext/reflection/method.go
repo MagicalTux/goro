@@ -123,8 +123,15 @@ func reflectionMethodConstructFull(ctx phpv.Context, o *phpobj.ZObject, args []*
 		method: method,
 		class:  class,
 	}
+
+	// The "class" property should show the declaring class
+	declaringClassName := class.GetName()
+	if method.Class != nil {
+		declaringClassName = method.Class.GetName()
+	}
+
 	o.HashTable().SetString("name", method.Name.ZVal())
-	o.HashTable().SetString("class", class.GetName().ZVal())
+	o.HashTable().SetString("class", declaringClassName.ZVal())
 	o.SetOpaque(ReflectionMethod, data)
 	return nil, nil
 }
@@ -266,7 +273,7 @@ func reflectionMethodInvoke(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZV
 	}
 
 	if len(args) < 1 {
-		return nil, phpobj.ThrowError(ctx, phpobj.Error, "ReflectionMethod::invoke() expects at least 1 argument")
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "ReflectionMethod::invoke() expects at least 1 argument, 0 given")
 	}
 
 	// First argument is the object instance (or null for static methods)
@@ -274,15 +281,31 @@ func reflectionMethodInvoke(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZV
 	methodArgs := args[1:]
 
 	if data.method.Modifiers.IsStatic() {
-		// For static methods, call without $this
+		// For static methods, call without $this (but pass the object if provided)
+		if objArg.GetType() == phpv.ZtObject {
+			obj := objArg.AsObject(ctx)
+			return ctx.CallZVal(ctx, data.method.Method, methodArgs, obj)
+		}
 		return ctx.CallZVal(ctx, data.method.Method, methodArgs)
 	}
 
+	// Check for non-object argument
 	if objArg.GetType() != phpv.ZtObject {
+		if objArg.GetType() == phpv.ZtNull {
+			return nil, phpobj.ThrowError(ctx, ReflectionException, fmt.Sprintf("Trying to invoke non static method %s::%s() without an object", data.class.GetName(), data.method.Name))
+		}
 		return nil, phpobj.ThrowError(ctx, ReflectionException, fmt.Sprintf("Trying to invoke non static method %s::%s() without an object", data.class.GetName(), data.method.Name))
 	}
 
 	obj := objArg.AsObject(ctx)
+	// Check that the object is an instance of the declaring class
+	declaringClass := data.class
+	if data.method.Class != nil {
+		declaringClass = data.method.Class
+	}
+	if !obj.GetClass().InstanceOf(declaringClass) {
+		return nil, phpobj.ThrowError(ctx, ReflectionException, "Given object is not an instance of the class this method was declared in")
+	}
 	return ctx.CallZVal(ctx, data.method.Method, methodArgs, obj)
 }
 
@@ -314,11 +337,19 @@ func reflectionMethodInvokeArgs(ctx phpv.Context, o *phpobj.ZObject, args []*php
 		return ctx.CallZVal(ctx, data.method.Method, callArgs)
 	}
 
-	if objArg.GetType() != phpv.ZtObject {
+	if objArg.GetType() != phpv.ZtObject || objArg.GetType() == phpv.ZtNull {
 		return nil, phpobj.ThrowError(ctx, ReflectionException, fmt.Sprintf("Trying to invoke non static method %s::%s() without an object", data.class.GetName(), data.method.Name))
 	}
 
 	obj := objArg.AsObject(ctx)
+	// Check that the object is an instance of the declaring class
+	declaringClass := data.class
+	if data.method.Class != nil {
+		declaringClass = data.method.Class
+	}
+	if !obj.GetClass().InstanceOf(declaringClass) {
+		return nil, phpobj.ThrowError(ctx, ReflectionException, "Given object is not an instance of the class this method was declared in")
+	}
 	return ctx.CallZVal(ctx, data.method.Method, callArgs, obj)
 }
 
@@ -333,8 +364,15 @@ func createReflectionMethodObject(ctx phpv.Context, class phpv.ZClass, method *p
 		method: method,
 		class:  class,
 	}
+
+	// The "class" property should show the declaring class (where the method was actually defined)
+	declaringClassName := class.GetName()
+	if method.Class != nil {
+		declaringClassName = method.Class.GetName()
+	}
+
 	obj.HashTable().SetString("name", method.Name.ZVal())
-	obj.HashTable().SetString("class", class.GetName().ZVal())
+	obj.HashTable().SetString("class", declaringClassName.ZVal())
 	obj.SetOpaque(ReflectionMethod, data)
 	return obj.ZVal(), nil
 }
@@ -524,7 +562,8 @@ func reflectionMethodGetExtensionName(ctx phpv.Context, o *phpobj.ZObject, args 
 }
 
 func reflectionMethodSetAccessible(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	// setAccessible has no effect since PHP 8.1 (always accessible via reflection)
+	// setAccessible has no effect since PHP 8.1, deprecated since 8.5
+	_ = ctx.Deprecated("Method ReflectionMethod::setAccessible() is deprecated since 8.5, as it has no effect since PHP 8.1")
 	return phpv.ZNULL.ZVal(), nil
 }
 

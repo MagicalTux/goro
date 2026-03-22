@@ -271,7 +271,8 @@ func reflectionPropertyToString(ctx phpv.Context, o *phpobj.ZObject, args []*php
 }
 
 func reflectionPropertySetAccessible(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	// setAccessible has no effect since PHP 8.1
+	// setAccessible has no effect since PHP 8.1, deprecated since 8.5
+	_ = ctx.Deprecated("Method ReflectionProperty::setAccessible() is deprecated since 8.5, as it has no effect since PHP 8.1")
 	return phpv.ZNULL.ZVal(), nil
 }
 
