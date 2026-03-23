@@ -455,7 +455,11 @@ func (r *runClassStaticObjRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		// Save and restore previous value to avoid disrupting outer scope.
 		prevCompiling := ctx.Global().GetCompilingClass()
 		ctx.Global().SetCompilingClass(class.(*phpobj.ZClass))
-		resolved, err := cd.Run(ctx)
+		// Call cd.V.Run directly (bypassing CompileDelayed.resolving guard)
+		// because re-entrant access to this constant is legitimate when
+		// autoloading satisfies the dependency (see GH-10709). The
+		// cc.Resolving flag above guards against true circular references.
+		resolved, err := cd.V.Run(ctx)
 		ctx.Global().SetCompilingClass(prevCompiling)
 		cc.Resolving = false
 		if err != nil {
@@ -653,7 +657,8 @@ func (r *runClassDynConst) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		cc.Resolving = true
 		prevCompiling := ctx.Global().GetCompilingClass()
 		ctx.Global().SetCompilingClass(zclass)
-		resolved, err := cd.Run(ctx)
+		// Call cd.V.Run directly for consistency with runClassStaticObjRef (GH-10709)
+		resolved, err := cd.V.Run(ctx)
 		ctx.Global().SetCompilingClass(prevCompiling)
 		cc.Resolving = false
 		if err != nil {

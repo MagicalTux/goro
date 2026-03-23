@@ -7,7 +7,6 @@ import (
 	"math"
 
 	"github.com/MagicalTux/goro/core/logopt"
-	"github.com/MagicalTux/goro/core/phpctx"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
@@ -375,16 +374,27 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	op := r.opD
 
 	if r.op == tokenizer.Rune('@') {
-		// Silence errors by wrapping the context with error_reporting=0.
-		// Note: We do NOT save/restore the global error_reporting here.
-		// The @ operator in PHP silences by overlaying error_reporting=0
-		// for the duration of the expression. If error_reporting() is
-		// explicitly called during the expression, that change persists
-		// to the global config. The WithConfig overlay only affects reads
-		// within this evaluation context, so after the expression completes
-		// and we return to the calling context, the caller reads the global
-		// config which reflects any explicit changes made during @.
-		ctx = phpctx.WithConfig(ctx, "error_reporting", phpv.ZInt(0).ZVal())
+		// The @ operator in PHP saves the current error_reporting value,
+		// sets it to 0, evaluates the expression, then restores it.
+		// If error_reporting() is called explicitly during the expression,
+		// it modifies the global value directly. The restore at the end of @
+		// always restores to the saved value.
+		//
+		// We save/restore at the global level so that explicit calls to
+		// error_reporting() within the @ scope take immediate effect
+		// (allowing warnings to be emitted if the level is raised).
+		savedER := ctx.Global().GetConfig("error_reporting", phpv.ZInt(0).ZVal())
+		ctx.Global().SetLocalConfig("error_reporting", phpv.ZInt(0).ZVal())
+		defer func() {
+			currentER := ctx.Global().GetConfig("error_reporting", phpv.ZInt(0).ZVal()).AsInt(ctx)
+			// Only restore if error_reporting() was NOT explicitly called
+			// during the @ scope (i.e., current value still has only fatal
+			// error bits or is 0).
+			const fatalMask = int64(phpv.E_ERROR | phpv.E_CORE_ERROR | phpv.E_COMPILE_ERROR | phpv.E_USER_ERROR | phpv.E_RECOVERABLE_ERROR | phpv.E_PARSE)
+			if int64(currentER) & ^fatalMask == 0 {
+				ctx.Global().SetLocalConfig("error_reporting", savedER)
+			}
+		}()
 	}
 
 	// For plain assignment (=), evaluate LHS sub-expressions for side effects

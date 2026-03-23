@@ -250,11 +250,12 @@ func isDeprecatedEncoding(name string) bool {
 	return false
 }
 
-// isDeprecatedEncodingForCheck checks if the encoding triggers deprecation for mb_check_encoding
+// isDeprecatedEncodingForCheck checks if the encoding triggers deprecation for mb_check_encoding.
+// In PHP 8.x, only HTML-ENTITIES triggers deprecation warnings for mb_check_encoding.
+// 7bit, 8bit, BASE64, etc. are accepted without deprecation warnings.
 func isDeprecatedEncodingForCheck(name string) bool {
 	switch name {
-	case "HTML-ENTITIES", "QPRINT", "BASE64", "UUENCODE",
-		"7BIT", "8BIT", "BYTE":
+	case "HTML-ENTITIES":
 		return true
 	}
 	return false
@@ -304,7 +305,7 @@ func normalizeEncodingName(name string) string {
 	case "US-ASCII", "USASCII", "ANSI_X3.4-1968", "ANSI_X3.4-1986",
 		"ISO_646.IRV:1991", "ISO646-US":
 		return "ASCII"
-	case "HTML-ENTITIES", "HTMLENTITIES":
+	case "HTML", "HTML-ENTITIES", "HTMLENTITIES":
 		return "HTML-ENTITIES"
 	case "QUOTED-PRINTABLE", "QUOTEDPRINTABLE", "QPRINT":
 		return "QPRINT"
@@ -488,9 +489,10 @@ func decodeToUTF8(input []byte, encName string) ([]byte, int, error) {
 	}
 
 	// Handle 8bit (pass-through, all byte values are valid)
+	// 8bit means raw bytes -- no conversion to UTF-8.
+	// We return the bytes as-is; they'll be passed directly to the encoder.
 	if encName == "8BIT" || encName == "BYTE" {
-		// 8bit is essentially ISO-8859-1 / Latin1 for decode purposes
-		return decodeToUTF8(input, "ISO-8859-1")
+		return input, 0, nil
 	}
 
 	// Handle HTML-ENTITIES
@@ -604,9 +606,9 @@ func encodeFromUTF8(input []byte, encName string) ([]byte, int, error) {
 		return encodeFromUTF8(input, "ASCII")
 	}
 
-	// Handle 8bit (encode to ISO-8859-1 / Latin1)
+	// Handle 8bit (pass-through, raw bytes)
 	if encName == "8BIT" || encName == "BYTE" {
-		return encodeFromUTF8(input, "ISO-8859-1")
+		return input, 0, nil
 	}
 
 	// Handle HTML-ENTITIES

@@ -146,7 +146,7 @@ func stdFuncEval(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	return c.Run(ctx.Parent(1))
+	return c.Run(ctx)
 }
 
 // > func mixed hrtime ([ bool $get_as_number = FALSE ] )

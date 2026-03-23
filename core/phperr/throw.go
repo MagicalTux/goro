@@ -44,12 +44,32 @@ func (e *PhpThrow) ThrownLine() int {
 	return 0
 }
 
-func (e *PhpThrow) ErrorTrace(ctx phpv.Context) string {
-	// Use __toString() which handles the full $previous chain,
-	// then prepend "Uncaught " to the first line.
-	toStr := e.Obj.ZVal().AsString(ctx)
-	s := string(toStr)
-	return "Uncaught " + s
+// ErrorTrace formats the exception for uncaught-exception output.
+// It calls __toString() on the exception object, which handles the full
+// $previous chain. If __toString() itself throws (e.g. because the
+// message property is a non-stringifiable object), the *new* error is
+// returned as the fatal error string, matching PHP behaviour.
+//
+// The returned *PhpThrow (if non-nil) indicates that __toString() threw,
+// and the caller should use this replacement exception for file/line info.
+func (e *PhpThrow) ErrorTrace(ctx phpv.Context) (string, *PhpThrow) {
+	toStr, err := e.Obj.ZVal().As(ctx, phpv.ZtString)
+	if err != nil {
+		// __toString() threw an error. PHP displays the conversion
+		// error as the fatal error, with location "[no active file]:0".
+		if inner, ok := phpv.UnwrapError(err).(*PhpThrow); ok {
+			// Format the inner exception the normal way (recursive).
+			s, replacement := inner.ErrorTrace(ctx)
+			if replacement != nil {
+				return s, replacement
+			}
+			return s, inner
+		}
+		// Fall back to the raw Go error text
+		return "Uncaught Error: " + err.Error(), nil
+	}
+	s := string(toStr.Value().(phpv.ZString))
+	return "Uncaught " + s, nil
 }
 
 func (e *PhpThrow) Error() string {

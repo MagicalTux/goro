@@ -683,12 +683,17 @@ func (g *Global) handleUncaughtException(err error) error {
 
 // formatUncaughtFatal formats an uncaught exception as a PHP Fatal error to stderr.
 func (g *Global) formatUncaughtFatal(ex *phperr.PhpThrow) {
-	trace := ex.ErrorTrace(g)
-	thrownFile := ex.ThrownFile()
+	trace, replacement := ex.ErrorTrace(g)
+	// If __toString() threw, use the replacement exception for file/line
+	src := ex
+	if replacement != nil {
+		src = replacement
+	}
+	thrownFile := src.ThrownFile()
 	if thrownFile == "" {
 		thrownFile = "Unknown"
 	}
-	g.WriteErr([]byte(fmt.Sprintf("\nFatal error: %s\n  thrown in %s on line %d\n", trace, thrownFile, ex.ThrownLine())))
+	g.WriteErr([]byte(fmt.Sprintf("\nFatal error: %s\n  thrown in %s on line %d\n", trace, thrownFile, src.ThrownLine())))
 }
 
 func (g *Global) Write(v []byte) (int, error) {
