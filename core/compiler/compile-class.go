@@ -717,6 +717,17 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 						}
 					}
 
+					// Validate abstract property: must have at least one abstract hook
+					if prop.Modifiers.Has(phpv.ZAttrAbstract) {
+						if !prop.GetIsAbstract && !prop.SetIsAbstract {
+							return nil, &phpv.PhpError{
+								Err:  fmt.Errorf("Abstract property %s::$%s must specify at least one abstract hook", class.Name, prop.VarName),
+								Code: phpv.E_COMPILE_ERROR,
+								Loc:  l,
+							}
+						}
+					}
+
 					class.Props = append(class.Props, prop)
 					break
 				}

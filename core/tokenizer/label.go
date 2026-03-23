@@ -77,6 +77,7 @@ var phpMagicKeywords = map[string]ItemType{
 	"throw":           T_THROW,
 	"trait":           T_TRAIT,
 	"__TRAIT__":       T_TRAIT_C,
+	"__PROPERTY__":    T_PROPERTY_C,
 	"try":             T_TRY,
 	"unset":           T_UNSET,
 	"use":             T_USE,
@@ -97,6 +98,7 @@ var phpMagicConstantKeywords = map[string]ItemType{
 	"__method__":    T_METHOD_C,
 	"__namespace__": T_NS_C,
 	"__trait__":     T_TRAIT_C,
+	"__property__":  T_PROPERTY_C,
 }
 
 func lexPhpVariable(l *Lexer) lexState {

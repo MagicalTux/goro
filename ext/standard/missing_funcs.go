@@ -193,15 +193,17 @@ func fncFgetcsv(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var line []byte
 	inQuotes := false
 	totalRead := 0
+	gotData := false // track if we read any bytes (to distinguish blank line from EOF)
 
 	for {
 		b, readErr := file.ReadByte()
 		if readErr != nil {
-			if len(line) == 0 {
+			if !gotData {
 				return phpv.ZFalse.ZVal(), nil
 			}
 			break
 		}
+		gotData = true
 		totalRead++
 
 		if !inQuotes {

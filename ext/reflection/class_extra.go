@@ -990,9 +990,29 @@ func reflectionMethodHasPrototype(ctx phpv.Context, o *phpobj.ZObject, args []*p
 	if data == nil {
 		return phpv.ZBool(false).ZVal(), nil
 	}
-	if data.method.Class != nil && data.method.Class.GetName() != data.class.GetName() {
-		return phpv.ZBool(true).ZVal(), nil
+
+	// A method has a prototype if it overrides a method from a parent class or interface
+	methodNameLower := data.method.Name.ToLower()
+
+	zc, ok := data.class.(*phpobj.ZClass)
+	if !ok {
+		return phpv.ZBool(false).ZVal(), nil
 	}
+
+	// Check parent classes
+	if zc.Extends != nil {
+		if _, ok := zc.Extends.GetMethod(methodNameLower); ok {
+			return phpv.ZBool(true).ZVal(), nil
+		}
+	}
+
+	// Check interfaces
+	for _, impl := range zc.Implementations {
+		if _, ok := impl.GetMethod(methodNameLower); ok {
+			return phpv.ZBool(true).ZVal(), nil
+		}
+	}
+
 	return phpv.ZBool(false).ZVal(), nil
 }
 
@@ -1050,8 +1070,13 @@ func reflectionPropertyHasDefaultValue(ctx phpv.Context, o *phpobj.ZObject, args
 
 func reflectionPropertyGetDefaultValue(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	data := getPropData(o)
-	if data == nil || data.prop.Default == nil {
-		return nil, phpobj.ThrowError(ctx, ReflectionException, "Property does not have a default value")
+	if data == nil {
+		return phpv.ZNULL.ZVal(), nil
+	}
+	if data.prop.Default == nil {
+		// PHP 8.5: return NULL with a deprecation notice instead of throwing
+		_ = ctx.Deprecated("ReflectionProperty::getDefaultValue() for a property without a default value is deprecated, use ReflectionProperty::hasDefaultValue() to check if the default value exists", logopt.NoFuncName(true))
+		return phpv.ZNULL.ZVal(), nil
 	}
 	// Resolve CompileDelayed values
 	if cd, ok := data.prop.Default.(*phpv.CompileDelayed); ok {

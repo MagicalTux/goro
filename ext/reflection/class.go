@@ -66,6 +66,7 @@ func initReflectionClass() {
 		"gettraits":               {Name: "getTraits", Method: phpobj.NativeMethod(reflectionClassGetTraits)},
 		"gettraitnames":           {Name: "getTraitNames", Method: phpobj.NativeMethod(reflectionClassGetTraitNames)},
 		"gettraitaliases":         {Name: "getTraitAliases", Method: phpobj.NativeMethod(reflectionClassGetTraitAliases)},
+		"__clone":                 {Name: "__clone", Modifiers: phpv.ZAttrPrivate, Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) { return nil, nil })},
 	}
 }
 

@@ -381,6 +381,17 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			return &runZVal{class.Name, l}, nil
 		}
 		return &runZVal{phpv.ZString(""), l}, nil
+	case tokenizer.T_PROPERTY_C:
+		// __PROPERTY__ returns the property name when inside a property hook, "" otherwise.
+		// The hook function name format is "$propName::get" or "$propName::set".
+		f := c.getFunc()
+		if f != nil && len(f.name) > 0 && f.name[0] == '$' {
+			parts := strings.SplitN(string(f.name), "::", 2)
+			if len(parts) >= 2 {
+				return &runZVal{phpv.ZString(parts[0][1:]), l}, nil // strip leading $
+			}
+		}
+		return &runZVal{phpv.ZString(""), l}, nil
 	case tokenizer.T_UNSET_CAST:
 		phpErr := &phpv.PhpError{
 			Err:  fmt.Errorf("The (unset) cast is no longer supported"),

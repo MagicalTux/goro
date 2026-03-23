@@ -25,11 +25,15 @@ type ZClassProp struct {
 	Attributes    []*ZAttribute // PHP 8.0 attributes
 
 	// Property hooks (PHP 8.4)
-	GetHook    Runnable // get { ... } hook body
-	SetHook    Runnable // set($value) { ... } hook body
-	SetParam   ZString  // parameter name for set hook (default "$value")
-	HasHooks   bool     // true if property declared with hook syntax (even abstract)
-	IsBacked   bool     // true if hooks reference $this->prop (backing store exists)
+	GetHook         Runnable // get { ... } hook body
+	SetHook         Runnable // set($value) { ... } hook body
+	SetParam        ZString  // parameter name for set hook (default "$value")
+	HasHooks        bool     // true if property declared with hook syntax (even abstract)
+	IsBacked        bool     // true if hooks reference $this->prop (backing store exists)
+	GetIsAbstract   bool     // true if get hook is abstract (get;)
+	SetIsAbstract   bool     // true if set hook is abstract (set;)
+	HasGetDeclared  bool     // true if get hook was declared (even abstract)
+	HasSetDeclared  bool     // true if set hook was declared (even abstract)
 }
 
 // IsVirtual returns true if this property is virtual (has hooks but no backing store).

@@ -845,6 +845,13 @@ func (pi *propIterator) yield(yield func(*phpv.ZClassProp) bool) {
 			if p.Modifiers.IsStatic() {
 				continue
 			}
+			// PHP 8.4: Virtual hooked properties have no backing store - skip in iteration/var_dump
+			if p.IsVirtual() && !o.h.HasString(p.VarName) {
+				if !p.Modifiers.IsPrivate() {
+					shown[p.VarName.String()] = struct{}{}
+				}
+				continue
+			}
 			if !p.Modifiers.IsPrivate() {
 				if _, ok := shown[p.VarName.String()]; ok {
 					continue
@@ -1104,7 +1111,10 @@ func (o *ZObject) HasProp(ctx phpv.Context, key phpv.Val) (bool, error) {
 
 	// PHP 8.4: Property hooks - isset() on a hooked property calls the get hook
 	// and checks if the result is non-null. Write-only properties throw Error.
-	if o.getHookGuard == nil || !o.getHookGuard[keyStr] {
+	// When inside ANY hook for this property, bypass hook dispatch.
+	issetInsideHook := (o.getHookGuard != nil && o.getHookGuard[keyStr]) ||
+		(o.setHookGuard != nil && o.setHookGuard[keyStr])
+	if !issetInsideHook {
 		if prop := o.findPropWithHook(keyStr); prop != nil {
 			if prop.GetHook != nil {
 				// Call the get hook and check if result is non-null
@@ -1567,8 +1577,11 @@ func (o *ZObject) ObjectGet(ctx phpv.Context, key phpv.Val) (*phpv.ZVal, error) 
 		return nil, visErr
 	}
 
-	// Check for property get hook (PHP 8.4) - only if not already inside a hook for this property
-	if o.getHookGuard == nil || !o.getHookGuard[keyStr] {
+	// Check for property get hook (PHP 8.4) - only if not inside ANY hook for this property.
+	// When inside either get or set hook, $this->prop accesses the backing store directly.
+	getInsideHook := (o.getHookGuard != nil && o.getHookGuard[keyStr]) ||
+		(o.setHookGuard != nil && o.setHookGuard[keyStr])
+	if !getInsideHook {
 		if prop := o.findPropWithHook(keyStr); prop != nil {
 			if prop.GetHook != nil {
 				return o.runGetHook(ctx, keyStr, prop.GetHook)
@@ -1657,8 +1670,10 @@ func (o *ZObject) ObjectGetQuiet(ctx phpv.Context, key phpv.Val) (*phpv.ZVal, bo
 
 	keyStr := key.(phpv.ZString)
 
-	// Check for property get hook (PHP 8.4) - only if not already inside a hook for this property
-	if o.getHookGuard == nil || !o.getHookGuard[keyStr] {
+	// Check for property get hook (PHP 8.4) - only if not inside ANY hook for this property
+	qInsideHook := (o.getHookGuard != nil && o.getHookGuard[keyStr]) ||
+		(o.setHookGuard != nil && o.setHookGuard[keyStr])
+	if !qInsideHook {
 		if prop := o.findPropWithHook(keyStr); prop != nil {
 			if prop.GetHook != nil {
 				result, err := o.runGetHook(ctx, keyStr, prop.GetHook)

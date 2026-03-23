@@ -170,7 +170,7 @@ func reflectionPropertyGetValue(ctx phpv.Context, o *phpobj.ZObject, args []*php
 		return phpv.ZNULL.ZVal(), nil
 	}
 
-	// For static properties
+	// For static properties - getValue() with no args or getValue(null) both work
 	if data.prop.Modifiers.IsStatic() {
 		staticProps, err := data.class.GetStaticProps(ctx)
 		if err != nil {
@@ -179,6 +179,16 @@ func reflectionPropertyGetValue(ctx phpv.Context, o *phpobj.ZObject, args []*php
 		v := staticProps.GetString(data.prop.VarName)
 		if v != nil {
 			return v, nil
+		}
+		// Check default value
+		if data.prop.Default != nil {
+			if cd, ok := data.prop.Default.(*phpv.CompileDelayed); ok {
+				resolved, err := cd.Run(ctx)
+				if err == nil {
+					return resolved, nil
+				}
+			}
+			return data.prop.Default.ZVal(), nil
 		}
 		return phpv.ZNULL.ZVal(), nil
 	}
@@ -207,7 +217,16 @@ func reflectionPropertySetValue(ctx phpv.Context, o *phpobj.ZObject, args []*php
 		if err != nil {
 			return nil, err
 		}
-		return nil, staticProps.SetString(data.prop.VarName, args[0])
+		// For static properties: setValue($value) or setValue($obj_or_null, $value)
+		// When called with 1 arg, that arg is the value (deprecated since 8.5)
+		// When called with 2 args, the second arg is the value (first is ignored)
+		val := args[0]
+		if len(args) >= 2 {
+			val = args[1]
+		} else {
+			_ = ctx.Deprecated("Calling ReflectionProperty::setValue() with a single argument is deprecated", logopt.NoFuncName(true))
+		}
+		return nil, staticProps.SetString(data.prop.VarName, val)
 	}
 
 	// For instance properties

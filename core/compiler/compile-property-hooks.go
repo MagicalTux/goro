@@ -134,10 +134,41 @@ func compilePropertyHooks(prop *phpv.ZClassProp, class *phpobj.ZClass, c compile
 		}
 
 		// Parse optional modifiers before hook name (final, abstract)
+		hookIsFinal := false
+		hookIsAbstract := false
 		for i.Type == tokenizer.T_FINAL || i.Type == tokenizer.T_ABSTRACT {
+			if i.Type == tokenizer.T_FINAL {
+				hookIsFinal = true
+			}
+			if i.Type == tokenizer.T_ABSTRACT {
+				hookIsAbstract = true
+			}
 			i, err = c.NextItem()
 			if err != nil {
 				return err
+			}
+		}
+
+		// Validate modifier combinations
+		if hookIsAbstract && hookIsFinal {
+			return &phpv.PhpError{
+				Err:  fmt.Errorf("Property hook cannot be both abstract and final"),
+				Code: phpv.E_COMPILE_ERROR,
+				Loc:  i.Loc(),
+			}
+		}
+		if hookIsAbstract && prop.Modifiers.IsPrivate() {
+			return &phpv.PhpError{
+				Err:  fmt.Errorf("Property hook cannot be both abstract and private"),
+				Code: phpv.E_COMPILE_ERROR,
+				Loc:  i.Loc(),
+			}
+		}
+		if hookIsFinal && prop.Modifiers.IsPrivate() {
+			return &phpv.PhpError{
+				Err:  fmt.Errorf("Property hook cannot be both final and private"),
+				Code: phpv.E_COMPILE_ERROR,
+				Loc:  i.Loc(),
 			}
 		}
 
@@ -164,6 +195,7 @@ func compilePropertyHooks(prop *phpv.ZClassProp, class *phpobj.ZClass, c compile
 				}
 			}
 			hasGet = true
+			prop.HasGetDeclared = true
 
 			i, err = c.NextItem()
 			if err != nil {
@@ -180,8 +212,11 @@ func compilePropertyHooks(prop *phpv.ZClassProp, class *phpobj.ZClass, c compile
 			}
 
 			if i.IsSingle(';') {
+				prop.GetIsAbstract = true
 				continue // abstract get
 			}
+			// If hook is declared abstract but has a body, the "abstract property must have abstract hook" error
+			// will be caught later
 			// Wrap compilation in a function context so __FUNCTION__ resolves to $prop::get
 			hookClosure := &ZClosure{name: phpv.ZString(fmt.Sprintf("$%s::get", prop.VarName))}
 			hookCtx := &zclosureCompileCtx{c, hookClosure}
@@ -218,6 +253,7 @@ func compilePropertyHooks(prop *phpv.ZClassProp, class *phpobj.ZClass, c compile
 				}
 			}
 			hasSet = true
+			prop.HasSetDeclared = true
 
 			prop.SetParam = "value"
 			i, err = c.NextItem()
@@ -282,6 +318,7 @@ func compilePropertyHooks(prop *phpv.ZClassProp, class *phpobj.ZClass, c compile
 				}
 			}
 			if i.IsSingle(';') {
+				prop.SetIsAbstract = true
 				continue // abstract set
 			}
 			// Wrap compilation in a function context so __FUNCTION__ resolves to $prop::set
