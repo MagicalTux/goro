@@ -157,7 +157,7 @@ func init() {
 			"feof":                       {Func: fncFeof, Args: []*phpctx.ExtFunctionArg{}},
 			"fflush":                     {Func: fncFflush, Args: []*phpctx.ExtFunctionArg{}},
 			"fgetc":                      {Func: fncFgetc, Args: []*phpctx.ExtFunctionArg{}},
-			"fgetcsv":                    {Func: fncFgetcsv, Args: []*phpctx.ExtFunctionArg{}},
+			"fgetcsv":                    {Func: fncFgetcsv, Args: []*phpctx.ExtFunctionArg{{ArgName: "stream"}, {ArgName: "length", Optional: true}, {ArgName: "separator", Optional: true}, {ArgName: "enclosure", Optional: true}, {ArgName: "escape", Optional: true}}},
 			"fgets":                      {Func: fncFgets, Args: []*phpctx.ExtFunctionArg{}},
 			"file":                       {Func: fncFile, Args: []*phpctx.ExtFunctionArg{}},
 			"file_exists":                {Func: fncFileExists, Args: []*phpctx.ExtFunctionArg{}},
@@ -184,7 +184,7 @@ func init() {
 			"fmod":                       {Func: mathFmod, Args: []*phpctx.ExtFunctionArg{}},
 			"fopen":                      {Func: fncFileOpen, Args: []*phpctx.ExtFunctionArg{}},
 			"fprintf":                    {Func: fncFPrintf, Args: []*phpctx.ExtFunctionArg{}},
-			"fputcsv":                    {Func: fncFputcsv, Args: []*phpctx.ExtFunctionArg{}},
+			"fputcsv":                    {Func: fncFputcsv, Args: []*phpctx.ExtFunctionArg{{ArgName: "stream"}, {ArgName: "fields"}, {ArgName: "separator", Optional: true}, {ArgName: "enclosure", Optional: true}, {ArgName: "escape", Optional: true}}},
 			"fstat":                      {Func: fncFstat, Args: []*phpctx.ExtFunctionArg{}},
 			"fputs":                      {Func: fncFwrite, Args: []*phpctx.ExtFunctionArg{}}, // alias
 			"fread":                      {Func: fncFread, Args: []*phpctx.ExtFunctionArg{}},

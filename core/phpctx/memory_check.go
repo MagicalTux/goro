@@ -69,7 +69,13 @@ func (g *Global) checkMemoryLimit() error {
 	}
 	g.lastMemCheck = currentAlloc
 
-	if usage > uint64(limit) {
+	// Use a generous multiplier (3x) for the runtime safety-net check,
+	// since runtime.MemStats.Alloc includes Go runtime overhead, GC metadata,
+	// and allocations from other parts of the process that aren't PHP-level.
+	// This prevents false OOM kills during legitimate operations like large
+	// string concatenations (e.g., $x .= $x doubling a 16MB string).
+	runtimeLimit := uint64(limit) * 3
+	if usage > runtimeLimit {
 		return &phpv.PhpError{
 			Err:  fmt.Errorf("Allowed memory size of %d bytes exhausted (tried to allocate %d bytes)", limit, usage-uint64(limit)),
 			Code: phpv.E_ERROR,

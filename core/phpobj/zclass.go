@@ -345,6 +345,20 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 				}
 			}
 
+			// PHP 8.4: Inherit un-overridden hooks from parent
+			if childProp.HasHooks && parentProp.HasHooks {
+				if childProp.GetHook == nil && parentProp.GetHook != nil {
+					childProp.GetHook = parentProp.GetHook
+				}
+				if childProp.SetHook == nil && parentProp.SetHook != nil {
+					childProp.SetHook = parentProp.SetHook
+				}
+				// Recompute IsBacked flag after inheritance
+				if parentProp.IsBacked {
+					childProp.IsBacked = true
+				}
+			}
+
 			// Check asymmetric set visibility override compatibility
 			childSetAccess := childProp.SetModifiers & phpv.ZAttrAccess
 

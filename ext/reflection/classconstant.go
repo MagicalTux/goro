@@ -265,7 +265,23 @@ func reflectionClassConstantToString(ctx phpv.Context, o *phpobj.ZObject, args [
 		modStr = "public"
 	}
 
-	return phpv.ZString(fmt.Sprintf("Constant [ %s %s %s ] { %s }", modStr, "mixed", data.constName, data.constName)).ZVal(), nil
+	typeStr := "mixed"
+	if data.constVal.TypeHint != nil {
+		typeStr = data.constVal.TypeHint.String()
+	}
+	valStr := string(data.constName) // fallback
+	if data.constVal.Value != nil {
+		if cd, ok := data.constVal.Value.(*phpv.CompileDelayed); ok {
+			resolved, err := cd.Run(ctx)
+			if err == nil && resolved != nil {
+				valStr = formatConstantValue(ctx, resolved)
+			}
+		} else {
+			valStr = formatConstantValue(ctx, data.constVal.Value.ZVal())
+		}
+	}
+
+	return phpv.ZString(fmt.Sprintf("Constant [ %s %s %s ] { %s }\n", modStr, typeStr, data.constName, valStr)).ZVal(), nil
 }
 
 func reflectionClassConstantHasType(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {

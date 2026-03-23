@@ -619,14 +619,6 @@ func fncFilePutContents(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 		return nil, err
 	}
 	defer fh.Close()
-	ss, _ := fh.(*stream.Stream)
-	if ss == nil {
-		return nil, errors.New("file_put_contents: cannot get stream")
-	}
-	r := ss.UnderlyingFile()
-	if r == nil {
-		return nil, errors.New("file_put_contents: cannot get underlying file handle")
-	}
 
 	written := 0
 	switch data.GetType() {
@@ -643,7 +635,7 @@ func fncFilePutContents(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 		if rerr != nil {
 			return nil, rerr
 		}
-		if written, err = r.Write(rbuf); err != nil {
+		if written, err = fh.Write(rbuf); err != nil {
 			return nil, err
 		}
 
@@ -657,7 +649,7 @@ func fncFilePutContents(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 					return nil, ierr
 				}
 				sv := val.String()
-				wn, werr := r.Write([]byte(sv))
+				wn, werr := fh.Write([]byte(sv))
 				if werr != nil {
 					return nil, werr
 				}
@@ -666,8 +658,13 @@ func fncFilePutContents(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 		}
 	default:
 		str := data.String()
-		if written, err = r.Write([]byte(str)); err != nil {
+		dataBytes := []byte(str)
+		if written, err = fh.Write(dataBytes); err != nil {
 			return nil, err
+		}
+		// Check for partial write (disk full etc.)
+		if written < len(dataBytes) {
+			ctx.Warn("file_put_contents(): Only %d of %d bytes written, possibly out of free disk space", written, len(dataBytes), logopt.NoFuncName(true))
 		}
 
 	}

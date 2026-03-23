@@ -1877,8 +1877,12 @@ func (o *ZObject) ObjectSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) er
 		return err
 	}
 
-	// PHP 8.4 property hooks: check for unset and read-only (get-only) virtual properties
-	if o.setHookGuard == nil || !o.setHookGuard[keyStr] {
+	// PHP 8.4 property hooks: check for unset and read-only (get-only) virtual properties.
+	// When inside EITHER hook for this property (get or set guard active), skip hook
+	// dispatch and access the backing store directly.
+	insideHook := (o.getHookGuard != nil && o.getHookGuard[keyStr]) ||
+		(o.setHookGuard != nil && o.setHookGuard[keyStr])
+	if !insideHook {
 		if prop := o.findPropWithHook(keyStr); prop != nil {
 			// Hooked properties cannot be unset
 			if value == nil {
@@ -1907,8 +1911,8 @@ func (o *ZObject) ObjectSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) er
 		}
 	}
 
-	// Check for property set hook (PHP 8.4) - only if not already inside a hook for this property
-	if o.setHookGuard == nil || !o.setHookGuard[keyStr] {
+	// Check for property set hook (PHP 8.4) - only if not inside ANY hook for this property
+	if !insideHook {
 		if prop := o.findPropWithHook(keyStr); prop != nil && prop.SetHook != nil {
 			return o.runSetHook(ctx, keyStr, prop, value)
 		}

@@ -664,8 +664,36 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 
 				// Property hooks: $prop { get { } set { } }
 				if i.IsSingle('{') {
+					// Hooked properties cannot be readonly
+					if prop.Modifiers.IsReadonly() {
+						return nil, &phpv.PhpError{
+							Err:  fmt.Errorf("Hooked properties cannot be readonly"),
+							Code: phpv.E_COMPILE_ERROR,
+							Loc:  l,
+						}
+					}
+
+					// Static properties cannot have hooks
+					if prop.Modifiers.IsStatic() {
+						return nil, &phpv.PhpError{
+							Err:  fmt.Errorf("Cannot declare hooks for static property"),
+							Code: phpv.E_COMPILE_ERROR,
+							Loc:  l,
+						}
+					}
+
 					if err := compilePropertyHooks(prop, class, c); err != nil {
 						return nil, err
+					}
+
+					// Virtual property with default value is not allowed.
+					// A property is virtual if its hooks never reference the backing store.
+					if prop.Default != nil && !prop.IsBacked {
+						return nil, &phpv.PhpError{
+							Err:  fmt.Errorf("Cannot specify default value for virtual hooked property %s::$%s", class.Name, prop.VarName),
+							Code: phpv.E_COMPILE_ERROR,
+							Loc:  l,
+						}
 					}
 
 					// Validate asymmetric visibility on virtual properties (PHP 8.4)

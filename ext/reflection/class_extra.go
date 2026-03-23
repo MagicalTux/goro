@@ -612,7 +612,22 @@ func formatReflectionClass(ctx phpv.Context, zc *phpobj.ZClass) string {
 			} else if c.Modifiers.IsPrivate() {
 				modStr = "private"
 			}
-			sb.WriteString(fmt.Sprintf("    Constant [ %s %s %s ] { %s }\n", modStr, "mixed", name, name))
+			typeStr := "mixed"
+			if c.TypeHint != nil {
+				typeStr = c.TypeHint.String()
+			}
+			valStr := string(name) // fallback
+			if c.Value != nil {
+				if cd, ok := c.Value.(*phpv.CompileDelayed); ok {
+					resolved, err := cd.Run(ctx)
+					if err == nil && resolved != nil {
+						valStr = formatConstantValue(ctx, resolved)
+					}
+				} else {
+					valStr = formatConstantValue(ctx, c.Value.ZVal())
+				}
+			}
+			sb.WriteString(fmt.Sprintf("    Constant [ %s %s %s ] { %s }\n", modStr, typeStr, name, valStr))
 		}
 	}
 	sb.WriteString("  }\n\n")
@@ -628,7 +643,7 @@ func formatReflectionClass(ctx phpv.Context, zc *phpobj.ZClass) string {
 		if !prop.Modifiers.IsStatic() {
 			continue
 		}
-		sb.WriteString(rcFormatStaticProperty(prop))
+		sb.WriteString(rcFormatStaticProperty(ctx, prop))
 	}
 	sb.WriteString("  }\n\n")
 
@@ -658,7 +673,7 @@ func formatReflectionClass(ctx phpv.Context, zc *phpobj.ZClass) string {
 		if prop.Modifiers.IsStatic() {
 			continue
 		}
-		sb.WriteString(rcFormatProperty(prop))
+		sb.WriteString(rcFormatProperty(ctx, prop))
 	}
 	sb.WriteString("  }\n\n")
 
@@ -680,6 +695,34 @@ func formatReflectionClass(ctx phpv.Context, zc *phpobj.ZClass) string {
 	return sb.String()
 }
 
+// formatConstantValue formats a constant value for ReflectionClass::__toString() output.
+func formatConstantValue(ctx phpv.Context, val *phpv.ZVal) string {
+	if val == nil {
+		return "NULL"
+	}
+	switch val.GetType() {
+	case phpv.ZtNull:
+		return "NULL"
+	case phpv.ZtBool:
+		if val.AsBool(ctx) {
+			return "true"
+		}
+		return "false"
+	case phpv.ZtInt:
+		return fmt.Sprintf("%d", val.AsInt(ctx))
+	case phpv.ZtFloat:
+		return fmt.Sprintf("%g", val.AsFloat(ctx))
+	case phpv.ZtString:
+		return string(val.AsString(ctx))
+	case phpv.ZtArray:
+		return "Array"
+	case phpv.ZtObject:
+		return "Object"
+	default:
+		return val.String()
+	}
+}
+
 func rcAccessStr(mod phpv.ZObjectAttr) string {
 	if mod.IsProtected() {
 		return "protected"
@@ -697,8 +740,28 @@ func rcFormatMethodShort(zc *phpobj.ZClass, m *phpv.ZClassMethod) string {
 	if m.Loc == nil {
 		origin = "<internal"
 	}
+	// Check for "overwrites" - method is defined in this class but also exists in parent
+	if m.Class != nil && m.Class.GetName() == zc.GetName() && zc.Extends != nil {
+		if _, ok := zc.Extends.GetMethod(m.Name.ToLower()); ok {
+			origin += ", overwrites " + string(zc.Extends.GetName())
+		}
+	}
 	if m.Prototype != nil {
 		origin += ", prototype " + string(m.Prototype.GetName())
+	} else if m.Class != nil && m.Class.GetName() == zc.GetName() {
+		// Check if any interface defines this method (as prototype)
+		for _, impl := range zc.Implementations {
+			if _, ok := impl.GetMethod(m.Name.ToLower()); ok {
+				origin += ", prototype " + string(impl.GetName())
+				break
+			}
+		}
+		// Check parent for prototype
+		if zc.Extends != nil && !strings.Contains(origin, "prototype") {
+			if _, ok := zc.Extends.GetMethod(m.Name.ToLower()); ok {
+				origin += ", prototype " + string(zc.Extends.GetName())
+			}
+		}
 	}
 	if m.Class != nil && m.Class.GetName() != zc.GetName() {
 		origin += ", inherits " + string(m.Class.GetName())
@@ -765,8 +828,8 @@ func rcFormatMethodShort(zc *phpobj.ZClass, m *phpv.ZClassMethod) string {
 }
 
 // rcFormatProperty formats a non-static property for ReflectionClass::__toString().
-// Output format: "    Property [ public [protected(set)] [readonly] [type] $name ]\n"
-func rcFormatProperty(prop *phpv.ZClassProp) string {
+// Output format: "    Property [ public [protected(set)] [readonly] [type] $name [= default] ]\n"
+func rcFormatProperty(ctx phpv.Context, prop *phpv.ZClassProp) string {
 	var sb strings.Builder
 	sb.WriteString("    Property [ ")
 	sb.WriteString(rcAccessStr(prop.Modifiers))
@@ -789,6 +852,37 @@ func rcFormatProperty(prop *phpv.ZClassProp) string {
 		sb.WriteString(" " + prop.TypeHint.String())
 	}
 	sb.WriteString(fmt.Sprintf(" $%s", prop.VarName))
+	// Show default value: always for untyped properties (defaults to NULL),
+	// only when explicitly set for typed properties
+	if prop.TypeHint == nil {
+		// Untyped: always show default
+		if prop.Default != nil {
+			val := prop.Default
+			if cd, ok := val.(*phpv.CompileDelayed); ok {
+				resolved, err := cd.Run(ctx)
+				if err == nil && resolved != nil {
+					sb.WriteString(" = " + formatConstantValue(ctx, resolved))
+				} else {
+					sb.WriteString(" = NULL")
+				}
+			} else {
+				sb.WriteString(" = " + formatConstantValue(ctx, val.ZVal()))
+			}
+		} else {
+			sb.WriteString(" = NULL")
+		}
+	} else if prop.Default != nil {
+		// Typed with default
+		val := prop.Default
+		if cd, ok := val.(*phpv.CompileDelayed); ok {
+			resolved, err := cd.Run(ctx)
+			if err == nil && resolved != nil {
+				sb.WriteString(" = " + formatConstantValue(ctx, resolved))
+			}
+		} else {
+			sb.WriteString(" = " + formatConstantValue(ctx, val.ZVal()))
+		}
+	}
 	if prop.HasHooks {
 		sb.WriteString(" {")
 		if prop.GetHook != nil {
@@ -804,7 +898,7 @@ func rcFormatProperty(prop *phpv.ZClassProp) string {
 }
 
 // rcFormatStaticProperty formats a static property for ReflectionClass::__toString().
-func rcFormatStaticProperty(prop *phpv.ZClassProp) string {
+func rcFormatStaticProperty(ctx phpv.Context, prop *phpv.ZClassProp) string {
 	var sb strings.Builder
 	sb.WriteString("    Property [ ")
 	sb.WriteString(rcAccessStr(prop.Modifiers))
@@ -816,6 +910,34 @@ func rcFormatStaticProperty(prop *phpv.ZClassProp) string {
 		sb.WriteString(" " + prop.TypeHint.String())
 	}
 	sb.WriteString(fmt.Sprintf(" $%s", prop.VarName))
+	// Show default value: always for untyped properties, only when set for typed
+	if prop.TypeHint == nil {
+		if prop.Default != nil {
+			val := prop.Default
+			if cd, ok := val.(*phpv.CompileDelayed); ok {
+				resolved, err := cd.Run(ctx)
+				if err == nil && resolved != nil {
+					sb.WriteString(" = " + formatConstantValue(ctx, resolved))
+				} else {
+					sb.WriteString(" = NULL")
+				}
+			} else {
+				sb.WriteString(" = " + formatConstantValue(ctx, val.ZVal()))
+			}
+		} else {
+			sb.WriteString(" = NULL")
+		}
+	} else if prop.Default != nil {
+		val := prop.Default
+		if cd, ok := val.(*phpv.CompileDelayed); ok {
+			resolved, err := cd.Run(ctx)
+			if err == nil && resolved != nil {
+				sb.WriteString(" = " + formatConstantValue(ctx, resolved))
+			}
+		} else {
+			sb.WriteString(" = " + formatConstantValue(ctx, val.ZVal()))
+		}
+	}
 	sb.WriteString(" ]\n")
 	return sb.String()
 }
@@ -881,8 +1003,8 @@ func reflectionMethodCreateFromMethodName(ctx phpv.Context, o *phpobj.ZObject, a
 	methodStr := string(args[0].AsString(ctx))
 	parts := strings.SplitN(methodStr, "::", 2)
 	if len(parts) != 2 {
-		return nil, phpobj.ThrowError(ctx, phpobj.Error,
-			fmt.Sprintf("ReflectionMethod::__construct(): Argument #1 ($objectOrMethod) must be a valid method name"))
+		return nil, phpobj.ThrowError(ctx, ReflectionException,
+			fmt.Sprintf("ReflectionMethod::createFromMethodName(): Argument #1 ($method) must be a valid method name"))
 	}
 	class, err := resolveClass(ctx, phpv.ZString(parts[0]))
 	if err != nil {

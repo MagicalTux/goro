@@ -2,6 +2,7 @@ package standard
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"strings"
 
@@ -145,6 +146,21 @@ func fncFgetcsv(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZFalse.ZVal(), nil
 	}
 
+	// Validate length
+	if lengthArg != nil && *lengthArg < 0 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, fmt.Sprintf("fgetcsv(): Argument #2 ($length) must be between 0 and %d", core.PHP_MAXPATHLEN))
+	}
+
+	// Validate separator
+	if sepArg != nil && len(*sepArg) != 1 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "fgetcsv(): Argument #3 ($separator) must be a single character")
+	}
+
+	// Validate enclosure
+	if encArg != nil && len(*encArg) != 1 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "fgetcsv(): Argument #4 ($enclosure) must be a single character")
+	}
+
 	sep := byte(',')
 	enc := byte('"')
 	esc := byte('\\')
@@ -161,6 +177,9 @@ func fncFgetcsv(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		} else {
 			esc = 0 // empty string means no escape
 		}
+	} else {
+		// PHP 8.5: deprecation warning when escape param is not explicitly provided
+		ctx.Deprecated("fgetcsv(): the $escape parameter must be provided as its default value will change", logopt.NoFuncName(true))
 	}
 
 	maxLen := 0
@@ -245,6 +264,12 @@ func fncFgetcsv(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	// Parse CSV
+	// PHP returns [NULL] for blank lines (line that was just \n)
+	if len(line) == 0 {
+		result := phpv.NewZArray()
+		result.OffsetSet(ctx, nil, phpv.ZNULL.ZVal())
+		return result.ZVal(), nil
+	}
 	return ParseCsvLine(ctx, string(line), sep, enc, esc)
 }
 

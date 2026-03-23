@@ -522,6 +522,13 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		if err != nil {
 			return nil, err
 		}
+		// For .= (concat-assign), snapshot the LHS value before evaluating
+		// the RHS. Side effects during RHS evaluation (ob callbacks,
+		// error handlers, __toString) can modify the variable that a points
+		// to, but PHP's concat_function captures the LHS string first.
+		if r.op == tokenizer.T_CONCAT_EQUAL && a != nil {
+			a = a.Dup()
+		}
 	}
 
 	// PHP 8: compound assignment operators (+=, -=, .=, etc.) are not allowed on string offsets

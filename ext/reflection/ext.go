@@ -116,6 +116,7 @@ func init() {
 	initReflectionAttribute()
 	initReflectionExtension()
 	initReflectionStatic()
+	initReflectionGenerator()
 
 	// Initialize methods on pre-declared classes
 	initReflectionClass()
@@ -160,6 +161,9 @@ func init() {
 			ReflectionUnionType,
 			ReflectionIntersectionType,
 			ReflectionAttribute,
+			ReflectionGenerator,
+			ReflectionFiber,
+			ReflectionReference,
 		},
 	})
 }

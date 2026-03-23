@@ -34,6 +34,9 @@ func hookReferencesBacking(r phpv.Runnable, propName phpv.ZString) bool {
 // after a property declaration (PHP 8.4 property hooks).
 func compilePropertyHooks(prop *phpv.ZClassProp, class *phpobj.ZClass, c compileCtx) error {
 	prop.HasHooks = true
+	hasGet := false
+	hasSet := false
+	hookCount := 0
 	for {
 		i, err := c.NextItem()
 		if err != nil {
@@ -41,6 +44,15 @@ func compilePropertyHooks(prop *phpv.ZClassProp, class *phpobj.ZClass, c compile
 		}
 
 		if i.IsSingle('}') {
+			// Empty hook list is not allowed
+			if hookCount == 0 {
+				return &phpv.PhpError{
+					Err:  fmt.Errorf("Property hook list must not be empty"),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  i.Loc(),
+				}
+			}
+
 			// After parsing all hooks, determine if the property is backed.
 			// A property is backed if:
 			// - Any hook references $this->propName (backing store access), OR
@@ -58,6 +70,8 @@ func compilePropertyHooks(prop *phpv.ZClassProp, class *phpobj.ZClass, c compile
 			}
 			return nil
 		}
+
+		hookCount++
 
 		// Parse optional attributes before hook name
 		var hookAttrs []*phpv.ZAttribute
@@ -95,7 +109,31 @@ func compilePropertyHooks(prop *phpv.ZClassProp, class *phpobj.ZClass, c compile
 			}
 		}
 
-		// Skip optional modifiers before hook name
+		// Check for visibility modifiers (not allowed on hooks)
+		if i.Type == tokenizer.T_PUBLIC || i.Type == tokenizer.T_PROTECTED || i.Type == tokenizer.T_PRIVATE {
+			modName := "public"
+			if i.Type == tokenizer.T_PROTECTED {
+				modName = "protected"
+			} else if i.Type == tokenizer.T_PRIVATE {
+				modName = "private"
+			}
+			return &phpv.PhpError{
+				Err:  fmt.Errorf("Cannot use the %s modifier on a property hook", modName),
+				Code: phpv.E_COMPILE_ERROR,
+				Loc:  i.Loc(),
+			}
+		}
+
+		// Check for static modifier (not allowed on hooks)
+		if i.Type == tokenizer.T_STATIC {
+			return &phpv.PhpError{
+				Err:  fmt.Errorf("Cannot use the static modifier on a property hook"),
+				Code: phpv.E_COMPILE_ERROR,
+				Loc:  i.Loc(),
+			}
+		}
+
+		// Parse optional modifiers before hook name (final, abstract)
 		for i.Type == tokenizer.T_FINAL || i.Type == tokenizer.T_ABSTRACT {
 			i, err = c.NextItem()
 			if err != nil {
@@ -117,10 +155,30 @@ func compilePropertyHooks(prop *phpv.ZClassProp, class *phpobj.ZClass, c compile
 
 		switch i.Data {
 		case "get":
+			// Check for duplicate get hook
+			if hasGet {
+				return &phpv.PhpError{
+					Err:  fmt.Errorf("Cannot redeclare property hook \"get\""),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  i.Loc(),
+				}
+			}
+			hasGet = true
+
 			i, err = c.NextItem()
 			if err != nil {
 				return err
 			}
+
+			// get hook must not have a parameter list
+			if i.IsSingle('(') {
+				return &phpv.PhpError{
+					Err:  fmt.Errorf("get hook of property %s::$%s must not have a parameter list", class.Name, prop.VarName),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  i.Loc(),
+				}
+			}
+
 			if i.IsSingle(';') {
 				continue // abstract get
 			}
@@ -151,24 +209,64 @@ func compilePropertyHooks(prop *phpv.ZClassProp, class *phpobj.ZClass, c compile
 			}
 
 		case "set":
+			// Check for duplicate set hook
+			if hasSet {
+				return &phpv.PhpError{
+					Err:  fmt.Errorf("Cannot redeclare property hook \"set\""),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  i.Loc(),
+				}
+			}
+			hasSet = true
+
 			prop.SetParam = "value"
 			i, err = c.NextItem()
 			if err != nil {
 				return err
 			}
 			if i.IsSingle('(') {
-				// Parse set parameter - skip type hints, get variable name
+				// Parse set parameter with validation
 				for {
 					i, err = c.NextItem()
 					if err != nil {
 						return err
 					}
+
+					// Check for variadic parameter (not allowed)
+					if i.Type == tokenizer.T_ELLIPSIS {
+						return &phpv.PhpError{
+							Err:  fmt.Errorf("Parameter $%s of set hook %s::$%s must not be variadic", prop.SetParam, class.Name, prop.VarName),
+							Code: phpv.E_COMPILE_ERROR,
+							Loc:  i.Loc(),
+						}
+					}
+
+					// Check for by-reference parameter (not allowed)
+					if i.IsSingle('&') {
+						// Peek at next to get the variable name
+						return &phpv.PhpError{
+							Err:  fmt.Errorf("Parameter $%s of set hook %s::$%s must not be pass-by-reference", prop.SetParam, class.Name, prop.VarName),
+							Code: phpv.E_COMPILE_ERROR,
+							Loc:  i.Loc(),
+						}
+					}
+
 					if i.Type == tokenizer.T_VARIABLE {
 						prop.SetParam = phpv.ZString(i.Data[1:])
 						i, err = c.NextItem()
 						if err != nil {
 							return err
 						}
+
+						// Check for default value (not allowed)
+						if i.IsSingle('=') {
+							return &phpv.PhpError{
+								Err:  fmt.Errorf("Parameter $%s of set hook %s::$%s must not have a default value", prop.SetParam, class.Name, prop.VarName),
+								Code: phpv.E_COMPILE_ERROR,
+								Loc:  i.Loc(),
+							}
+						}
+
 						break
 					}
 					if i.IsSingle(')') {
@@ -214,7 +312,7 @@ func compilePropertyHooks(prop *phpv.ZClassProp, class *phpobj.ZClass, c compile
 
 		default:
 			return &phpv.PhpError{
-				Err:  fmt.Errorf("Unknown property hook '%s'", i.Data),
+				Err:  fmt.Errorf("Unknown hook \"%s\" for property %s::$%s, expected \"get\" or \"set\"", i.Data, class.Name, prop.VarName),
 				Code: phpv.E_COMPILE_ERROR,
 				Loc:  i.Loc(),
 			}
