@@ -1,10 +1,10 @@
 package gmp
 
 import (
-	"errors"
 	"math/big"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -23,7 +23,7 @@ func gmpFact(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	if i.Sign() < 0 {
-		return nil, errors.New("Number has to be greater than or equal to 0")
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "gmp_fact(): Argument #1 ($num) must be greater than or equal to 0")
 	}
 
 	r := &big.Int{}

@@ -29,6 +29,7 @@ func init() {
 			"gmp_div_q":          {Func: gmpDivQ, Args: []*phpctx.ExtFunctionArg{}},
 			"gmp_div_qr":         {Func: gmpDivQR, Args: []*phpctx.ExtFunctionArg{}},
 			"gmp_div_r":          {Func: gmpDivR, Args: []*phpctx.ExtFunctionArg{}},
+			"gmp_divexact":       {Func: gmpDivexact, Args: []*phpctx.ExtFunctionArg{}},
 			"gmp_export":         {Func: gmpExport, Args: []*phpctx.ExtFunctionArg{}},
 			"gmp_fact":           {Func: gmpFact, Args: []*phpctx.ExtFunctionArg{}},
 			"gmp_gcd":            {Func: gmpGcd, Args: []*phpctx.ExtFunctionArg{}},

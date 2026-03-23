@@ -161,3 +161,31 @@ func gmpDivQR(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	return arr.ZVal(), nil
 }
+
+// > func GMP gmp_divexact ( GMP $a , GMP $b )
+func gmpDivexact(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var a, b *phpv.ZVal
+
+	_, err := core.Expand(ctx, args, &a, &b)
+	if err != nil {
+		return nil, err
+	}
+
+	ia, err := readInt(ctx, a)
+	if err != nil {
+		return nil, err
+	}
+	ib, err := readInt(ctx, b)
+	if err != nil {
+		return nil, err
+	}
+
+	if ib.Sign() == 0 {
+		return nil, phpobj.ThrowError(ctx, phpobj.DivisionByZeroError, "gmp_divexact(): Argument #2 ($num2) Division by zero")
+	}
+
+	r := &big.Int{}
+	r.Quo(ia, ib) // exact division (same as Quo for integers)
+
+	return returnInt(ctx, r)
+}
