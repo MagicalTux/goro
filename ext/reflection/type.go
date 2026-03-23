@@ -78,8 +78,11 @@ func createReflectionNamedTypeObject(ctx phpv.Context, hint *phpv.TypeHint) (*ph
 	if hint.Nullable && len(typeName) > 0 && typeName[0] == '?' { typeName = typeName[1:] }
 	data.name = phpv.ZString(typeName)
 	switch hint.Type() {
-	case phpv.ZtBool, phpv.ZtInt, phpv.ZtFloat, phpv.ZtString, phpv.ZtArray, phpv.ZtNull, phpv.ZtVoid, phpv.ZtNever, phpv.ZtMixed:
+	case phpv.ZtBool, phpv.ZtInt, phpv.ZtFloat, phpv.ZtString, phpv.ZtArray, phpv.ZtVoid, phpv.ZtNever, phpv.ZtMixed:
 		data.builtin = true
+	case phpv.ZtNull:
+		data.builtin = true
+		data.nullable = true // null type always allows null
 	case phpv.ZtObject:
 		if hint.ClassName() == "" || hint.ClassName() == "callable" || hint.ClassName() == "iterable" { data.builtin = true }
 	}

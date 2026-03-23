@@ -10,16 +10,12 @@ import (
 )
 
 // readInt converts a ZVal to *big.Int for GMP operations.
-// It uses the calling function name from ctx.FuncName() for error messages.
+// It automatically generates proper error messages using the calling function name from context.
 func readInt(ctx phpv.Context, v *phpv.ZVal) (*big.Int, error) {
-	var i *big.Int
-	var err error
-
 	switch v.GetType() {
 	case phpv.ZtInt:
 		return big.NewInt(int64(v.Value().(phpv.ZInt))), nil
 	case phpv.ZtNull:
-		// PHP GMP functions accept null as 0 for compat, but newer PHP throws TypeError
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
 			fmt.Sprintf("Number must be of type GMP|string|int, null given"))
 	case phpv.ZtBool:
@@ -46,6 +42,7 @@ func readInt(ctx phpv.Context, v *phpv.ZVal) (*big.Int, error) {
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
 			fmt.Sprintf("Number must be of type GMP|string|int, object given"))
 	default:
+		var err error
 		v, err = v.As(ctx, phpv.ZtString)
 		if err != nil {
 			return nil, err
@@ -55,7 +52,7 @@ func readInt(ctx phpv.Context, v *phpv.ZVal) (*big.Int, error) {
 		if s == "" {
 			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "Number is not an integer string")
 		}
-		i = &big.Int{}
+		i := &big.Int{}
 		_, ok := i.SetString(s, 0)
 		if !ok {
 			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "Number is not an integer string")

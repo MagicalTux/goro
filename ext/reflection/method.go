@@ -354,12 +354,20 @@ func reflectionMethodInvokeArgs(ctx phpv.Context, o *phpobj.ZObject, args []*php
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("ReflectionMethod::invokeArgs(): Argument #1 ($object) must be of type ?object, %s given", typeName))
 	}
 
-	// Second argument is the array of arguments
-	arrVal, err := args[1].As(ctx, phpv.ZtArray)
-	if err != nil {
-		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "ReflectionMethod::invokeArgs(): Argument #2 ($args) must be of type array")
+	// Second argument must be an array
+	if args[1].GetType() != phpv.ZtArray {
+		typeName := args[1].GetType().String()
+		switch args[1].GetType() {
+		case phpv.ZtBool:
+			if args[1].AsBool(ctx) {
+				typeName = "true"
+			} else {
+				typeName = "false"
+			}
+		}
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("ReflectionMethod::invokeArgs(): Argument #2 ($args) must be of type array, %s given", typeName))
 	}
-	arr := arrVal.Value().(*phpv.ZArray)
+	arr := args[1].Value().(*phpv.ZArray)
 	var callArgs []*phpv.ZVal
 	for _, v := range arr.Iterate(ctx) {
 		callArgs = append(callArgs, v)

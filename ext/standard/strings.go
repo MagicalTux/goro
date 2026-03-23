@@ -1587,11 +1587,45 @@ func fncStripTags(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	for i < n {
 		c := s[i]
 		if c == '<' && i+1 < n {
-			// Check for PHP/XML processing instruction: <? ... ?>
-			// PHP's strip_tags treats ALL <?...?> sequences the same way,
-			// including <?php, <?xml, <?= etc. - skip to closing ?>
-			// Supports nested <? ?> (e.g. <?= '<?= 1 ?>' ?>)
+			// Check for PHP open tag or XML processing instruction
 			if s[i+1] == '?' {
+				// Determine if this is a PHP tag or XML PI.
+				// PHP tags: <?, <?=, <?php (skip to ?>)
+				// XML PIs: <?name where name is alpha and NOT "php" (skip to >)
+				isXmlPI := false
+				if i+2 < n {
+					c2 := s[i+2]
+					isAlpha := (c2 >= 'a' && c2 <= 'z') || (c2 >= 'A' && c2 <= 'Z')
+					if isAlpha {
+						// Check if it's <?php (case insensitive)
+						rest := string(s[i+2:])
+						if len(rest) >= 3 && strings.EqualFold(rest[:3], "php") {
+							// Check that after "php" there's a non-alpha char (whitespace, newline, etc.)
+							if len(rest) == 3 || !((rest[3] >= 'a' && rest[3] <= 'z') || (rest[3] >= 'A' && rest[3] <= 'Z')) {
+								isXmlPI = false // This is <?php, treat as PHP tag
+							} else {
+								isXmlPI = true // e.g. <?phpx, treat as XML PI
+							}
+						} else {
+							isXmlPI = true // e.g. <?xml, <?XML, etc.
+						}
+					}
+				}
+
+				if isXmlPI {
+					// XML Processing Instruction: skip until >
+					j := i + 2
+					for j < n && s[j] != '>' {
+						j++
+					}
+					if j < n {
+						j++ // skip >
+					}
+					i = j
+					continue
+				}
+
+				// PHP open tag: skip to ?> with nesting support
 				depth := 1
 				j := i + 2
 				for j < n && depth > 0 {
