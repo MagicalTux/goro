@@ -168,30 +168,78 @@ func fncFgetcsv(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		maxLen = int(*lengthArg)
 	}
 
-	// Read a line from the file
+	// PHP's fgetcsv reads across multiple lines when inside a quoted field.
+	// We read bytes one at a time, tracking quote state, so newlines within
+	// quoted fields are included in the data rather than terminating the record.
 	var line []byte
+	inQuotes := false
+	totalRead := 0
+
 	for {
-		b, err := file.ReadByte()
-		if err != nil {
+		b, readErr := file.ReadByte()
+		if readErr != nil {
 			if len(line) == 0 {
 				return phpv.ZFalse.ZVal(), nil
 			}
 			break
 		}
-		if b == '\n' {
-			break
-		}
-		if b == '\r' {
-			// Check for \r\n
-			nb, err := file.ReadByte()
-			if err == nil && nb != '\n' {
-				// Not \r\n, seek back 1 byte
-				file.Seek(-1, io.SeekCurrent)
+		totalRead++
+
+		if !inQuotes {
+			if b == '\n' {
+				break
 			}
-			break
+			if b == '\r' {
+				// Check for \r\n
+				nb, err := file.ReadByte()
+				if err == nil && nb != '\n' {
+					file.Seek(-1, io.SeekCurrent)
+				}
+				break
+			}
+			if b == enc {
+				inQuotes = true
+			}
+			line = append(line, b)
+		} else {
+			// Inside quotes: newlines are part of the field
+			if esc != 0 && esc != enc && b == esc {
+				// Escape char: include it and the next char
+				line = append(line, b)
+				nb, readErr2 := file.ReadByte()
+				if readErr2 == nil {
+					line = append(line, nb)
+					totalRead++
+				}
+				if maxLen > 0 && totalRead >= maxLen-1 {
+					break
+				}
+				continue
+			}
+			if b == enc {
+				line = append(line, b)
+				// Check for doubled enclosure
+				nb, readErr2 := file.ReadByte()
+				if readErr2 != nil {
+					// EOF after closing quote
+					inQuotes = false
+					break
+				}
+				if nb == enc {
+					// Doubled enclosure - still inside quotes
+					line = append(line, nb)
+					totalRead++
+				} else {
+					// End of quoted field - push back next byte
+					inQuotes = false
+					file.Seek(-1, io.SeekCurrent)
+				}
+			} else {
+				line = append(line, b)
+			}
 		}
-		line = append(line, b)
-		if maxLen > 0 && len(line) >= maxLen-1 {
+
+		if maxLen > 0 && totalRead >= maxLen-1 {
 			break
 		}
 	}
@@ -218,13 +266,23 @@ func ParseCsvLine(ctx phpv.Context, line string, sep, enc, esc byte) (*phpv.ZVal
 			var field []byte
 			for i < len(line) {
 				if esc != 0 && esc != enc && line[i] == esc && i+1 < len(line) {
-					// Escape character followed by another char: keep both chars
-					field = append(field, line[i])
-					i++
-					field = append(field, line[i])
-					i++
+					if line[i+1] == enc || line[i+1] == esc {
+						// Escape followed by enclosure or escape: emit escaped char only
+						field = append(field, line[i+1])
+						i += 2
+					} else {
+						// Escape followed by other char: keep both
+						field = append(field, line[i])
+						i++
+						field = append(field, line[i])
+						i++
+					}
 				} else if line[i] == enc {
-					if i+1 < len(line) && line[i+1] == enc {
+					if esc == enc && i+1 < len(line) && line[i+1] == enc {
+						// Doubled enclosure used as escape = literal enclosure
+						field = append(field, enc)
+						i += 2
+					} else if esc != enc && i+1 < len(line) && line[i+1] == enc {
 						// Doubled enclosure = literal enclosure
 						field = append(field, enc)
 						i += 2
@@ -377,7 +435,8 @@ func BuildCsvLine(ctx phpv.Context, fields *phpv.ZArray, sep, enc, esc byte) ([]
 func fncFlock(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var handle phpv.Resource
 	var operation phpv.ZInt
-	_, err := core.Expand(ctx, args, &handle, &operation)
+	var wouldblock core.OptionalRef[phpv.ZInt]
+	_, err := core.Expand(ctx, args, &handle, &operation, &wouldblock)
 	if err != nil {
 		return nil, err
 	}
@@ -386,8 +445,8 @@ func fncFlock(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	// Set wouldblock to 0 if passed by reference
-	if len(args) > 2 && args[2] != nil {
-		args[2].Set(phpv.ZInt(0).ZVal())
+	if wouldblock.HasArg() {
+		wouldblock.Set(ctx, phpv.ZInt(0))
 	}
 
 	return phpv.ZTrue.ZVal(), nil

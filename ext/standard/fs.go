@@ -47,6 +47,11 @@ func fncDirname(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
+	// PHP: dirname("") returns ""
+	if p == "" {
+		return phpv.ZString("").ZVal(), nil
+	}
+
 	for {
 		if len(p) <= 1 {
 			break
@@ -556,14 +561,14 @@ func fncFileGetContents(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 		return phpv.ZStr(string(buf)), nil
 	}
 
-	buf := make([]byte, maxlen.Get())
+	ml := maxlen.Get()
+	if ml == 0 {
+		return phpv.ZStr(""), nil
+	}
+	buf := make([]byte, ml)
 	n, err := f.Read(buf)
 	if err != nil && err != io.EOF {
 		return nil, err
-	}
-	if n == 0 {
-		// Nothing was read (e.g. offset past end of stream) — PHP returns false
-		return phpv.ZFalse.ZVal(), nil
 	}
 
 	return phpv.ZStr(string(buf[:n])), nil

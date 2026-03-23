@@ -31,6 +31,33 @@ type ZClassProp struct {
 	HasHooks bool     // true if property declared with hook syntax (even abstract)
 }
 
+// IsVirtual returns true if this property is virtual (has hooks but no backing store).
+// A virtual property has hooks and no default value, and the hooks don't reference
+// the backing store (approximated here as: hooks present, no default, and typed or untyped).
+// For practical purposes: get-only virtual (no set, no default), set-only virtual (no get, no default),
+// or both hooks with no default = virtual.
+func (p *ZClassProp) IsVirtual() bool {
+	if !p.HasHooks || p.Default != nil {
+		return false
+	}
+	// If both hooks are present, it's virtual (no backing store)
+	if p.GetHook != nil && p.SetHook != nil {
+		return true
+	}
+	// Get-only (no set hook, no default) = virtual read-only
+	if p.GetHook != nil && p.SetHook == nil {
+		return true
+	}
+	// Set-only (no get hook, no default) = virtual write-only
+	if p.SetHook == nil && p.GetHook == nil {
+		return false // no hooks means not virtual
+	}
+	if p.SetHook != nil && p.GetHook == nil {
+		return true
+	}
+	return false
+}
+
 // ZClassTraitUse represents a single "use TraitA, TraitB { ... }" statement in a class body.
 type ZClassTraitUse struct {
 	TraitNames []ZString

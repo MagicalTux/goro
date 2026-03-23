@@ -735,7 +735,13 @@ func (o *ZObject) init(ctx phpv.Context) error {
 			if p.Modifiers.IsStatic() {
 				continue
 			}
-			// Debug line removed
+			// PHP 8.4: Virtual hooked properties have no backing store - skip initialization
+			if p.IsVirtual() {
+				if p.Modifiers.IsPrivate() {
+					o.hasPrivate[p.VarName] = struct{}{}
+				}
+				continue
+			}
 			if p.Modifiers.IsPrivate() {
 				// Private properties are stored ONLY under their mangled name
 				// to avoid collisions with same-named properties in parent/child classes.
@@ -1095,6 +1101,29 @@ func (o *ZObject) HasProp(ctx phpv.Context, key phpv.Val) (bool, error) {
 
 	// Note: isset() does NOT emit "Accessing static property as non-static" notice
 	// (unlike ObjectGet/ObjectSet which do). This is PHP behavior.
+
+	// PHP 8.4: Property hooks - isset() on a hooked property calls the get hook
+	// and checks if the result is non-null. Write-only properties throw Error.
+	if o.getHookGuard == nil || !o.getHookGuard[keyStr] {
+		if prop := o.findPropWithHook(keyStr); prop != nil {
+			if prop.GetHook != nil {
+				// Call the get hook and check if result is non-null
+				result, err := o.runGetHook(ctx, keyStr, prop.GetHook)
+				if err != nil {
+					return false, err
+				}
+				if result == nil || result.IsNull() {
+					return false, nil
+				}
+				return true, nil
+			}
+			// Write-only virtual property: isset() throws Error
+			if prop.SetHook != nil && prop.Default == nil && !o.h.HasString(keyStr) {
+				return false, ThrowError(ctx, Error,
+					fmt.Sprintf("Property %s::$%s is write-only", o.Class.GetName(), keyStr))
+			}
+		}
+	}
 
 	// Check if property is visible from the calling context.
 	// If the property is declared private/protected and the caller doesn't have
@@ -1540,8 +1569,16 @@ func (o *ZObject) ObjectGet(ctx phpv.Context, key phpv.Val) (*phpv.ZVal, error) 
 
 	// Check for property get hook (PHP 8.4) - only if not already inside a hook for this property
 	if o.getHookGuard == nil || !o.getHookGuard[keyStr] {
-		if prop := o.findPropWithHook(keyStr); prop != nil && prop.GetHook != nil {
-			return o.runGetHook(ctx, keyStr, prop.GetHook)
+		if prop := o.findPropWithHook(keyStr); prop != nil {
+			if prop.GetHook != nil {
+				return o.runGetHook(ctx, keyStr, prop.GetHook)
+			}
+			// Set-only virtual property (has hooks, set hook but no get hook, no default = virtual)
+			// Reading a write-only property throws an Error
+			if prop.SetHook != nil && prop.Default == nil && !o.h.HasString(keyStr) {
+				return nil, ThrowError(ctx, Error,
+					fmt.Sprintf("Property %s::$%s is write-only", o.Class.GetName(), keyStr))
+			}
 		}
 	}
 
@@ -1621,12 +1658,19 @@ func (o *ZObject) ObjectGetQuiet(ctx phpv.Context, key phpv.Val) (*phpv.ZVal, bo
 
 	// Check for property get hook (PHP 8.4) - only if not already inside a hook for this property
 	if o.getHookGuard == nil || !o.getHookGuard[keyStr] {
-		if prop := o.findPropWithHook(keyStr); prop != nil && prop.GetHook != nil {
-			result, err := o.runGetHook(ctx, keyStr, prop.GetHook)
-			if err != nil {
-				return nil, false, err
+		if prop := o.findPropWithHook(keyStr); prop != nil {
+			if prop.GetHook != nil {
+				result, err := o.runGetHook(ctx, keyStr, prop.GetHook)
+				if err != nil {
+					return nil, false, err
+				}
+				return result, true, nil
 			}
-			return result, true, nil
+			// Write-only virtual property
+			if prop.SetHook != nil && prop.Default == nil && !o.h.HasString(keyStr) {
+				return nil, false, ThrowError(ctx, Error,
+					fmt.Sprintf("Property %s::$%s is write-only", o.Class.GetName(), keyStr))
+			}
 		}
 	}
 
@@ -1830,6 +1874,23 @@ func (o *ZObject) ObjectSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) er
 	// Check readonly property enforcement
 	if err := o.checkReadonlyWrite(ctx, keyStr); err != nil {
 		return err
+	}
+
+	// PHP 8.4 property hooks: check for unset and read-only (get-only) virtual properties
+	if o.setHookGuard == nil || !o.setHookGuard[keyStr] {
+		if prop := o.findPropWithHook(keyStr); prop != nil {
+			// Hooked properties cannot be unset
+			if value == nil {
+				return ThrowError(ctx, Error,
+					fmt.Sprintf("Cannot unset hooked property %s::$%s", o.Class.GetName(), keyStr))
+			}
+			// Get-only virtual property (has get hook but no set hook, no default = virtual)
+			// Writing to a read-only property throws an Error
+			if prop.GetHook != nil && prop.SetHook == nil && prop.Default == nil && !o.h.HasString(keyStr) {
+				return ThrowError(ctx, Error,
+					fmt.Sprintf("Property %s::$%s is read-only", o.Class.GetName(), keyStr))
+			}
+		}
 	}
 
 	// Enforce typed property type checking (PHP 8.0+)
