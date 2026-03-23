@@ -625,7 +625,7 @@ func compileFunctionWithName(name phpv.ZString, c compileCtx, l *phpv.Loc, rref 
 			if cls := c.Global().GetCompilingClass(); cls != nil {
 				funcName = string(cls.GetName()) + "::" + funcName
 			}
-			c.Deprecated("%s(): Implicitly marking parameter $%s as nullable is deprecated, the explicit nullable type must be used instead", funcName, arg.VarName)
+			c.Deprecated("%s(): Implicitly marking parameter $%s as nullable is deprecated, the explicit nullable type must be used instead", funcName, arg.VarName, logopt.Data{Loc: l})
 		}
 	}
 

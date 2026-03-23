@@ -48,10 +48,18 @@ func fncJsonEncode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				}
 				return nil, phpobj.ThrowError(ctx, JsonException, msg)
 			}
+			// JSON_PARTIAL_OUTPUT_ON_ERROR: return partial output with null
+			// substituted for the failing value
+			if o&PartialOutputOnError != 0 {
+				return phpv.ZString("null").ZVal(), nil
+			}
 			return phpv.ZBool(false).ZVal(), nil
 		}
 		// Unknown error type
 		setLastJsonError(ctx, ErrUnsupportedType)
+		if o&PartialOutputOnError != 0 {
+			return phpv.ZString("null").ZVal(), nil
+		}
 		return phpv.ZBool(false).ZVal(), nil
 	}
 	setLastJsonError(ctx, ErrNone)

@@ -1093,7 +1093,11 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 		_, hasNewSerialize := c.GetMethod("__serialize")
 		_, hasNewUnserialize := c.GetMethod("__unserialize")
 		if !hasNewSerialize || !hasNewUnserialize {
-			_ = ctx.Deprecated("%s implements the Serializable interface, which is deprecated. Implement __serialize() and __unserialize() instead (or in addition, if support for old PHP versions is necessary)", c.Name)
+			locOpt := []any{}
+			if c.L != nil {
+				locOpt = append(locOpt, logopt.Data{Loc: c.L})
+			}
+			_ = ctx.Deprecated("%s implements the Serializable interface, which is deprecated. Implement __serialize() and __unserialize() instead (or in addition, if support for old PHP versions is necessary)", append([]any{c.Name}, locOpt...)...)
 		}
 	}
 
