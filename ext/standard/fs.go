@@ -974,6 +974,16 @@ func fncGetResourceType(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	return phpv.ZStr(rtype).ZVal(), nil
 }
 
+// > func int get_resource_id ( resource $resource )
+func fncGetResourceId(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var handle phpv.Resource
+	_, err := core.Expand(ctx, args, &handle)
+	if err != nil {
+		return nil, err
+	}
+	return phpv.ZInt(handle.GetResourceID()).ZVal(), nil
+}
+
 // > func bool ftruncate ( resource $handle , int $size )
 func fncFtruncate(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var handle phpv.Resource

@@ -106,7 +106,7 @@ func fncHashHmacFile(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	algN, ok := algos[algo.ToLower()]
 	if !ok {
-		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "hash_hmac_file(): Argument #1 ($algo) must be a valid hashing algorithm")
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "hash_hmac_file(): Argument #1 ($algo) must be a valid cryptographic hashing algorithm")
 	}
 	if nonCryptoAlgos[algo.ToLower()] {
 		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "hash_hmac_file(): Argument #1 ($algo) must be a valid cryptographic hashing algorithm")

@@ -213,6 +213,7 @@ func init() {
 			"get_mangled_object_vars":    {Func: stdGetMangledObjectVars, Args: []*phpctx.ExtFunctionArg{}},
 			"get_object_vars":            {Func: stdGetObjectVars, Args: []*phpctx.ExtFunctionArg{}},
 			"get_parent_class":           {Func: stdGetParentClass, Args: []*phpctx.ExtFunctionArg{}},
+			"get_resource_id":            {Func: fncGetResourceId, Args: []*phpctx.ExtFunctionArg{}},
 			"get_resource_type":          {Func: fncGetResourceType, Args: []*phpctx.ExtFunctionArg{}},
 			"getcwd":                     {Func: fncGetcwd, Args: []*phpctx.ExtFunctionArg{}},
 			"glob":                       {Func: fncGlob, Args: []*phpctx.ExtFunctionArg{}},

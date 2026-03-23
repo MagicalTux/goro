@@ -101,36 +101,110 @@ func readFormatOptions(in []byte) (*formatOptions, []byte, error) {
 	return nil, nil, nil
 }
 
-func readFormatWidth(in []byte) (int, int, []byte) {
+// formatWidthResult holds the parsed width/precision and whether they use star (*) specifiers
+type formatWidthResult struct {
+	width     int
+	precision int
+	widthStar bool // width uses * (take from argument)
+	precStar  bool // precision uses * (take from argument)
+	// Position specifiers for star args (e.g., %*2$d means width from arg 2)
+	widthStarPos int // 0 = sequential, >0 = positional
+	precStarPos  int // 0 = sequential, >0 = positional
+}
+
+func readFormatWidth(in []byte) (formatWidthResult, []byte) {
+	r := formatWidthResult{width: 0, precision: -1}
 	if len(in) == 0 {
-		return -1, -1, in
+		return r, in
 	}
 
-	i := 0
-
-	for unicode.IsDigit(rune(in[i])) {
-		i++
-		if i >= len(in) {
-			return -1, -1, nil
-		}
-	}
-	width, _ := strconv.ParseInt(string(in[:i]), 10, 32)
-	precision := int64(-1)
-
-	in = in[i:]
-	if in[0] == '.' {
-		i = 1
-		for unicode.IsDigit(rune(in[i])) {
-			i++
-			if i >= len(in) {
-				return -1, -1, nil
+	// Check for star width
+	if in[0] == '*' {
+		r.widthStar = true
+		in = in[1:]
+		// Check for positional specifier after star: *2$
+		if len(in) > 0 {
+			pos, rest := readStarPositionSpecifier(in)
+			if pos > 0 {
+				r.widthStarPos = pos
+				in = rest
 			}
 		}
-		precision, _ = strconv.ParseInt(string(in[1:i]), 10, 32)
-		in = in[i:]
+	} else {
+		// Parse numeric width
+		i := 0
+		for i < len(in) && unicode.IsDigit(rune(in[i])) {
+			i++
+		}
+		if i > 0 {
+			w, _ := strconv.ParseInt(string(in[:i]), 10, 64)
+			r.width = int(w)
+			in = in[i:]
+		}
 	}
 
-	return int(width), int(precision), in
+	if len(in) == 0 {
+		r.width = -1
+		r.precision = -1
+		return r, nil
+	}
+
+	// Check for precision
+	if in[0] == '.' {
+		in = in[1:]
+		if len(in) == 0 {
+			r.width = -1
+			r.precision = -1
+			return r, nil
+		}
+		// Check for star precision
+		if in[0] == '*' {
+			r.precStar = true
+			in = in[1:]
+			// Check for positional specifier after star: .*2$
+			if len(in) > 0 {
+				pos, rest := readStarPositionSpecifier(in)
+				if pos > 0 {
+					r.precStarPos = pos
+					in = rest
+				}
+			}
+		} else {
+			// Parse numeric precision
+			i := 0
+			for i < len(in) && unicode.IsDigit(rune(in[i])) {
+				i++
+			}
+			if i > 0 {
+				p, _ := strconv.ParseInt(string(in[:i]), 10, 64)
+				r.precision = int(p)
+			} else {
+				r.precision = 0
+			}
+			in = in[i:]
+		}
+	}
+
+	if len(in) == 0 {
+		r.width = -1
+		r.precision = -1
+		return r, nil
+	}
+
+	return r, in
+}
+
+// readStarPositionSpecifier reads a positional specifier after a star: e.g. "2$" returns (2, rest)
+func readStarPositionSpecifier(in []byte) (int, []byte) {
+	i := 0
+	for i < len(in) && unicode.IsDigit(rune(in[i])) {
+		i++
+	}
+	if i > 0 && i < len(in) && in[i] == '$' {
+		n, _ := strconv.Atoi(string(in[:i]))
+		return n, in[i+1:]
+	}
+	return 0, in
 }
 
 // Zprintf implements printf with zvals
@@ -188,7 +262,6 @@ func ZFprintf(ctx phpv.Context, w printfWriter, format phpv.ZString, arg ...*php
 		}
 
 		var options *formatOptions
-		var minWidth, precision int
 		var fmtErr error
 		options, in, fmtErr = readFormatOptions(in)
 		if fmtErr == errMissingPadChar {
@@ -197,15 +270,86 @@ func ZFprintf(ctx phpv.Context, w printfWriter, format phpv.ZString, arg ...*php
 		if options == nil {
 			goto Return
 		}
-		minWidth, precision, in = readFormatWidth(in)
-		if minWidth < 0 {
+		var fmtWidth formatWidthResult
+		fmtWidth, in = readFormatWidth(in)
+		if fmtWidth.width < 0 {
 			goto Return
+		}
+
+		// Resolve star width from arguments
+		minWidth := fmtWidth.width
+		if fmtWidth.widthStar {
+			var widthVal *phpv.ZVal
+			if fmtWidth.widthStarPos > 0 {
+				if fmtWidth.widthStarPos-1 >= len(arg) {
+					return bytesWritten.Value, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, fmt.Sprintf("%d arguments are required, %d given", fmtWidth.widthStarPos+1, len(arg)+1))
+				}
+				widthVal = arg[fmtWidth.widthStarPos-1]
+			} else {
+				if posSpec < 0 {
+					if argp >= len(arg) {
+						return bytesWritten.Value, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, fmt.Sprintf("%d arguments are required, %d given", argp+2, len(arg)+1))
+					}
+					widthVal = arg[argp]
+					argp++
+				} else {
+					// Star with positional format arg: use next sequential arg
+					if argp >= len(arg) {
+						return bytesWritten.Value, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, fmt.Sprintf("%d arguments are required, %d given", argp+2, len(arg)+1))
+					}
+					widthVal = arg[argp]
+					argp++
+				}
+			}
+			wv, convErr := widthVal.As(ctx, phpv.ZtInt)
+			if convErr != nil {
+				return bytesWritten.Value, phpobj.ThrowError(ctx, phpobj.ValueError, "Width must be an integer")
+			}
+			w := int(wv.Value().(phpv.ZInt))
+			if w < 0 || w > 2147483646 {
+				return bytesWritten.Value, phpobj.ThrowError(ctx, phpobj.ValueError, "Width must be between 0 and 2147483647")
+			}
+			minWidth = w
+		}
+
+		// Resolve star precision from arguments
+		precision := fmtWidth.precision
+		if fmtWidth.precStar {
+			var precVal *phpv.ZVal
+			if fmtWidth.precStarPos > 0 {
+				if fmtWidth.precStarPos-1 >= len(arg) {
+					return bytesWritten.Value, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, fmt.Sprintf("%d arguments are required, %d given", fmtWidth.precStarPos+1, len(arg)+1))
+				}
+				precVal = arg[fmtWidth.precStarPos-1]
+			} else {
+				if posSpec < 0 {
+					if argp >= len(arg) {
+						return bytesWritten.Value, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, fmt.Sprintf("%d arguments are required, %d given", argp+2, len(arg)+1))
+					}
+					precVal = arg[argp]
+					argp++
+				} else {
+					if argp >= len(arg) {
+						return bytesWritten.Value, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, fmt.Sprintf("%d arguments are required, %d given", argp+2, len(arg)+1))
+					}
+					precVal = arg[argp]
+					argp++
+				}
+			}
+			pv, convErr := precVal.As(ctx, phpv.ZtInt)
+			if convErr != nil {
+				return bytesWritten.Value, phpobj.ThrowError(ctx, phpobj.ValueError, "Precision must be an integer")
+			}
+			precision = int(pv.Value().(phpv.ZInt))
 		}
 
 		var v *phpv.ZVal
 		if posSpec > 0 {
 			v = arg[posSpec-1]
 		} else {
+			if argp >= len(arg) {
+				return bytesWritten.Value, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, fmt.Sprintf("%d arguments are required, %d given", argp+2, len(arg)+1))
+			}
 			v = arg[argp]
 			argp++
 		}
@@ -250,7 +394,7 @@ func ZFprintf(ctx phpv.Context, w printfWriter, format phpv.ZString, arg ...*php
 				goto Return
 			}
 			output = strconv.FormatInt(int64(v.Value().(phpv.ZInt)), 10)
-		case 'e', 'E', 'g', 'G':
+		case 'e', 'E', 'g', 'G', 'h', 'H':
 			signed = true
 			// next arg is a float
 			v, err = v.As(ctx, phpv.ZtFloat)
@@ -271,13 +415,33 @@ func ZFprintf(ctx phpv.Context, w printfWriter, format phpv.ZString, arg ...*php
 					expPrecision = precision
 				}
 
+				// Map format character to Go format
+				goFmt := fChar
+				if fChar == 'h' {
+					goFmt = 'g'
+				} else if fChar == 'H' {
+					goFmt = 'G'
+				}
+
+				// precision -1 means "as many digits as needed" (round-trip accuracy)
+				if precision == -1 && (fChar == 'g' || fChar == 'G' || fChar == 'h' || fChar == 'H') {
+					expPrecision = -1
+				}
+
 				// In Go, the exponent has a leading 0 if it's less than 10
 				//   Go:  1.123456E+01
 				//   PHP: 1.123456E+1
-				output = strconv.FormatFloat(f, fChar, expPrecision, 64)
+				output = strconv.FormatFloat(f, byte(goFmt), expPrecision, 64)
 				plusIndex := strings.LastIndexByte(output, '+')
 				if plusIndex >= 0 && plusIndex < len(output)-1 && output[plusIndex+1] == '0' {
 					output = output[0:plusIndex+1] + output[plusIndex+2:]
+				}
+				// Also strip leading zero from negative exponents
+				minusIndex := strings.LastIndexByte(output, '-')
+				if minusIndex > 0 && minusIndex < len(output)-1 && output[minusIndex-1] == 'e' || (minusIndex > 0 && minusIndex < len(output)-1 && output[minusIndex-1] == 'E') {
+					if minusIndex+1 < len(output) && output[minusIndex+1] == '0' {
+						output = output[0:minusIndex+1] + output[minusIndex+2:]
+					}
 				}
 			}
 		case 'f', 'F':
