@@ -104,7 +104,7 @@ func pregMatch(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			byteOffset = 0
 		}
 		if byteOffset > subLen {
-			return phpv.ZInt(0).ZVal(), nil
+			return phpv.ZBool(false).ZVal(), nil
 		}
 		sliceOffset = int(byteOffset)
 		subjectStr = subjectStr[sliceOffset:]
@@ -123,14 +123,24 @@ func pregMatch(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 		// Build the match string array from loc
 		numGroups := len(loc) / 2
-		m := make([]string, numGroups)
-		for i := 0; i < numGroups; i++ {
+
+		// PHP trims trailing unmatched groups (unless PREG_UNMATCHED_AS_NULL is set)
+		unmatchedAsNull := flags&phpv.ZInt(PREG_UNMATCHED_AS_NULL) != 0
+		trimmedGroups := numGroups
+		if !unmatchedAsNull {
+			for trimmedGroups > 1 && loc[(trimmedGroups-1)*2] < 0 {
+				trimmedGroups--
+			}
+		}
+
+		m := make([]string, trimmedGroups)
+		for i := 0; i < trimmedGroups; i++ {
 			if loc[i*2] >= 0 {
 				m[i] = subjectStr[loc[i*2]:loc[i*2+1]]
 			}
 		}
 
-		addNamedCaptures(ctx, matches, re, m, flags, loc, sliceOffset)
+		addNamedCaptures(ctx, matches, re, m, flags, loc[:trimmedGroups*2], sliceOffset)
 		matchesArg.Set(ctx, matches)
 	}
 

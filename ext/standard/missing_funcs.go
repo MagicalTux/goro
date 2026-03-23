@@ -266,17 +266,12 @@ func ParseCsvLine(ctx phpv.Context, line string, sep, enc, esc byte) (*phpv.ZVal
 			var field []byte
 			for i < len(line) {
 				if esc != 0 && esc != enc && line[i] == esc && i+1 < len(line) {
-					if line[i+1] == enc || line[i+1] == esc {
-						// Escape followed by enclosure or escape: emit escaped char only
-						field = append(field, line[i+1])
-						i += 2
-					} else {
-						// Escape followed by other char: keep both
-						field = append(field, line[i])
-						i++
-						field = append(field, line[i])
-						i++
-					}
+					// Escape character: the next char is escaped (not a field terminator if it's enc)
+					// PHP keeps both the escape char and the escaped char in the output
+					field = append(field, line[i])
+					i++
+					field = append(field, line[i])
+					i++
 				} else if line[i] == enc {
 					if esc == enc && i+1 < len(line) && line[i+1] == enc {
 						// Doubled enclosure used as escape = literal enclosure

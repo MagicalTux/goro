@@ -8,6 +8,28 @@ import (
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
 
+// hookReferencesBacking checks if a compiled Runnable references $this->propName,
+// which means the property has a backing store and is not virtual.
+// This recursively walks the compiled AST tree.
+func hookReferencesBacking(r phpv.Runnable, propName phpv.ZString) bool {
+	if r == nil {
+		return false
+	}
+	// Check if this is a $this->prop access (read or write)
+	if ov, ok := r.(*runObjectVar); ok {
+		if rv, ok2 := ov.ref.(*runVariable); ok2 && rv.v == "this" && ov.varName == propName {
+			return true
+		}
+	}
+	// Recursively check all children using the existing GetChildren helper
+	for _, child := range GetChildren(r) {
+		if hookReferencesBacking(child, propName) {
+			return true
+		}
+	}
+	return false
+}
+
 // compilePropertyHooks parses the { get { ... } set($value) { ... } } block
 // after a property declaration (PHP 8.4 property hooks).
 func compilePropertyHooks(prop *phpv.ZClassProp, class *phpobj.ZClass, c compileCtx) error {
@@ -19,6 +41,21 @@ func compilePropertyHooks(prop *phpv.ZClassProp, class *phpobj.ZClass, c compile
 		}
 
 		if i.IsSingle('}') {
+			// After parsing all hooks, determine if the property is backed.
+			// A property is backed if:
+			// - Any hook references $this->propName (backing store access), OR
+			// - The set hook is an arrow expression (set => expr), which implicitly
+			//   writes the result to the backing store.
+			if hookReferencesBacking(prop.GetHook, prop.VarName) ||
+				hookReferencesBacking(prop.SetHook, prop.VarName) {
+				prop.IsBacked = true
+			}
+			// Arrow set hooks (not Runnables/block) always write to backing store
+			if prop.SetHook != nil {
+				if _, isBlock := prop.SetHook.(phpv.Runnables); !isBlock {
+					prop.IsBacked = true
+				}
+			}
 			return nil
 		}
 

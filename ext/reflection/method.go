@@ -83,6 +83,9 @@ func reflectionMethodConstructFull(ctx phpv.Context, o *phpobj.ZObject, args []*
 
 	if len(args) == 1 {
 		// Single argument form: "ClassName::methodName"
+		// Emit deprecation notice first (before validation)
+		_ = ctx.Deprecated("Calling ReflectionMethod::__construct() with 1 argument is deprecated, use ReflectionMethod::createFromMethodName() instead", logopt.NoFuncName(true))
+
 		methodStr := string(args[0].AsString(ctx))
 		parts := strings.SplitN(methodStr, "::", 2)
 		if len(parts) != 2 {
@@ -90,16 +93,8 @@ func reflectionMethodConstructFull(ctx phpv.Context, o *phpobj.ZObject, args []*
 				fmt.Sprintf("ReflectionMethod::__construct(): Argument #1 ($objectOrMethod) must be a valid method name"))
 		}
 
-		// Emit deprecation notice (ignore error - it's just a notice)
-		_ = ctx.Deprecated("Calling ReflectionMethod::__construct() with 1 argument is deprecated, use ReflectionMethod::createFromMethodName() instead", logopt.NoFuncName(true))
-
 		className := phpv.ZString(parts[0])
 		methodName = phpv.ZString(parts[1])
-
-		if string(className) == "" {
-			return nil, phpobj.ThrowError(ctx, ReflectionException,
-				"ReflectionMethod::__construct(): Argument #1 ($objectOrMethod) must be a valid method name")
-		}
 
 		class, err = resolveClass(ctx, className)
 		if err != nil {

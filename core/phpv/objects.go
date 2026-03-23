@@ -25,37 +25,25 @@ type ZClassProp struct {
 	Attributes    []*ZAttribute // PHP 8.0 attributes
 
 	// Property hooks (PHP 8.4)
-	GetHook  Runnable // get { ... } hook body
-	SetHook  Runnable // set($value) { ... } hook body
-	SetParam ZString  // parameter name for set hook (default "$value")
-	HasHooks bool     // true if property declared with hook syntax (even abstract)
+	GetHook    Runnable // get { ... } hook body
+	SetHook    Runnable // set($value) { ... } hook body
+	SetParam   ZString  // parameter name for set hook (default "$value")
+	HasHooks   bool     // true if property declared with hook syntax (even abstract)
+	IsBacked   bool     // true if hooks reference $this->prop (backing store exists)
 }
 
 // IsVirtual returns true if this property is virtual (has hooks but no backing store).
-// A virtual property has hooks and no default value, and the hooks don't reference
-// the backing store (approximated here as: hooks present, no default, and typed or untyped).
-// For practical purposes: get-only virtual (no set, no default), set-only virtual (no get, no default),
-// or both hooks with no default = virtual.
+// A virtual property has hooks, no default value, and its hooks never reference
+// the backing store ($this->propName). The IsBacked flag is set at compile time
+// by analyzing the hook bodies.
 func (p *ZClassProp) IsVirtual() bool {
-	if !p.HasHooks || p.Default != nil {
+	if !p.HasHooks {
 		return false
 	}
-	// If both hooks are present, it's virtual (no backing store)
-	if p.GetHook != nil && p.SetHook != nil {
-		return true
+	if p.Default != nil || p.IsBacked {
+		return false
 	}
-	// Get-only (no set hook, no default) = virtual read-only
-	if p.GetHook != nil && p.SetHook == nil {
-		return true
-	}
-	// Set-only (no get hook, no default) = virtual write-only
-	if p.SetHook == nil && p.GetHook == nil {
-		return false // no hooks means not virtual
-	}
-	if p.SetHook != nil && p.GetHook == nil {
-		return true
-	}
-	return false
+	return true
 }
 
 // ZClassTraitUse represents a single "use TraitA, TraitB { ... }" statement in a class body.
