@@ -9,6 +9,9 @@ import (
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
+// validMatchFlags are the valid flags for preg_match/preg_match_all
+const validMatchFlags = PREG_PATTERN_ORDER | PREG_SET_ORDER | PREG_OFFSET_CAPTURE | PREG_UNMATCHED_AS_NULL
+
 // makeMatchVal creates a single match value, handling PREG_OFFSET_CAPTURE and PREG_UNMATCHED_AS_NULL.
 func makeMatchVal(ctx phpv.Context, elem string, matched bool, loc int, offsetCapture, unmatchedAsNull bool) *phpv.ZVal {
 	if !matched {
@@ -146,6 +149,11 @@ func pregMatchAll(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	flags := core.Deref(flagsArg, 0)
 	offset := core.Deref(offsetArg, 0)
+
+	// Validate flags
+	if flags & ^validMatchFlags != 0 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "preg_match_all(): Argument #4 ($flags) must be a PREG_* constant")
+	}
 
 	re, pcreErr := prepareRegexp(string(pattern))
 	if pcreErr != nil {
@@ -367,36 +375,7 @@ func pregSplit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		}
 	}
 
-	// Find all matches to properly handle zero-length matches
-	allLocs := re.FindAllStringSubmatchIndex(subjectStr, -1)
-	if allLocs == nil {
-		// No matches; return the entire subject
-		addPart(subjectStr, 0)
-		return result.ZVal(), nil
-	}
-
-	nSplits := 0
-	pos := 0
-	lastMatchEnd := -1
-
-	for _, loc := range allLocs {
-		if maxSplits > 0 && nSplits >= maxSplits-1 {
-			break
-		}
-
-		matchStart := loc[0]
-		matchEnd := loc[1]
-
-		// Skip zero-length matches at the same position as previous match end
-		// to avoid infinite splitting
-		if matchStart == matchEnd && matchStart == lastMatchEnd {
-			continue
-		}
-
-		addPart(subjectStr[pos:matchStart], pos)
-		nSplits++
-
-		// Add captured delimiters if PREG_SPLIT_DELIM_CAPTURE
+	addDelimCaptures := func(loc []int) {
 		if delimCapture {
 			numGroups := len(loc) / 2
 			for i := 1; i < numGroups; i++ {
@@ -412,9 +391,38 @@ func pregSplit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				}
 			}
 		}
+	}
 
-		pos = matchEnd
-		lastMatchEnd = matchEnd
+	// PHP PCRE behavior: find matches at every position, including zero-length matches.
+	// Go's FindAll skips positions after zero-length matches, so we use findAllPCRE
+	// to emulate PCRE's behavior of finding zero-length matches at every position.
+	allLocs := findAllPCRE(re, subjectStr)
+	if allLocs == nil {
+		// No matches; return the entire subject
+		addPart(subjectStr, 0)
+		return result.ZVal(), nil
+	}
+
+	nSplits := 0
+	pos := 0
+
+	for _, loc := range allLocs {
+		if maxSplits > 0 && nSplits >= maxSplits-1 {
+			break
+		}
+
+		matchStart := loc[0]
+		matchEnd := loc[1]
+
+		addPart(subjectStr[pos:matchStart], pos)
+		nSplits++
+		addDelimCaptures(loc)
+
+		if matchStart == matchEnd {
+			// Zero-length match: don't advance pos
+		} else {
+			pos = matchEnd
+		}
 	}
 
 	// Add the remaining part

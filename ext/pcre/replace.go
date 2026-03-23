@@ -254,6 +254,9 @@ func prepareRegexp(pattern string) (*regexp.Regexp, *pcreError) {
 		}
 	}
 
+	// Strip \r from flags (PHP ignores \r in modifier section)
+	flags = strings.ReplaceAll(flags, "\r", "")
+
 	// Convert PHP regex syntax to Go
 	// 1. Convert (?'name'...) to (?P<name>...)
 	regexBody = convertNamedCaptures(regexBody)
@@ -287,12 +290,16 @@ func prepareRegexp(pattern string) (*regexp.Regexp, *pcreError) {
 			}
 		case 'D': // dollar end only
 			// In Go regexp, $ already only matches end of string by default (without m flag)
+			// But if 'm' flag is present, we need to handle this differently.
+			// For now, $ in Go matches end of text by default, so D is effectively the default.
 		case 'S': // study - optimization hint, ignored
 		case 'X': // extra - PCRE_EXTRA, mostly ignored in modern PHP
 		case 'J': // allow duplicate named groups - not supported in Go
 			// Just ignore for now
 		case 'n': // non-capture modifier - convert unnamed groups to non-capturing
 			regexBody = convertUnnamedToNonCapture(regexBody)
+		case ' ', '\t', '\n': // whitespace in modifiers is ignored by PHP
+			// Ignore whitespace in modifier section
 		default:
 			return nil, &pcreError{kind: pcreErrUnknownModifier, modifier: f}
 		}
