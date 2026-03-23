@@ -195,10 +195,15 @@ func mathRound(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		n *= shift
 		// Pre-round: fix floating point precision issues where the
 		// multiply introduces errors (e.g., 2e-23 * 1e23 = 1.9999999999999998).
-		// If n is very close to an integer, snap it before the half-rounding logic.
-		rounded := math.Round(n)
-		if rounded != 0 && math.Abs(n-rounded)/math.Abs(rounded) < 1e-9 {
-			n = rounded
+		// If n is very close to an integer (fractional part near 0 or 1),
+		// snap it to avoid misrounding. But do NOT snap values near 0.5
+		// as that would affect half-rounding mode decisions.
+		frac := math.Abs(n - math.Trunc(n))
+		if frac < 1e-9 || frac > 1-1e-9 {
+			rounded := math.Round(n)
+			if rounded != 0 {
+				n = rounded
+			}
 		}
 	}
 
