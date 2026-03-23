@@ -599,16 +599,13 @@ func fncArrayMap(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				}
 			}
 			// Convert to TypeError with proper array_map() prefix
-			cbStr := ""
 			if args[0].GetType() == phpv.ZtString {
-				cbStr = args[0].String()
-			}
-			if cbStr != "" {
+				cbStr := args[0].String()
 				return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
 					fmt.Sprintf("array_map(): Argument #1 ($callback) must be a valid callback or null, function \"%s\" not found or invalid function name", cbStr))
 			}
 			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
-				fmt.Sprintf("array_map(): Argument #1 ($callback) must be a valid callback or null, no array, string or object given"))
+				fmt.Sprintf("array_map(): Argument #1 ($callback) must be a valid callback or null, no array or string given"))
 		}
 	}
 

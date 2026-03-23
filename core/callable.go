@@ -190,10 +190,16 @@ func spawnCallableInternal(ctx phpv.Context, v *phpv.ZVal, paramNo int) (phpv.Ca
 		has0, _ := array.OffsetExists(ctx, phpv.ZInt(0).ZVal())
 		has1, _ := array.OffsetExists(ctx, phpv.ZInt(1).ZVal())
 		if !has0 || !has1 {
-			if countable, ok := array.(phpv.ZCountable); !ok || countable.Count(ctx) != 2 {
-				return nil, phpobj.ThrowError(ctx, phpobj.Error, "Array callback must have exactly two elements")
+			callerFunc := ctx.GetFuncName()
+			if callerFunc == "" {
+				callerFunc = "call_user_func"
 			}
-			return nil, phpobj.ThrowError(ctx, phpobj.Error, "Array callback has to contain indices 0 and 1")
+			if countable, ok := array.(phpv.ZCountable); !ok || countable.Count(ctx) != 2 {
+				return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+					fmt.Sprintf("%s(): Argument #%d ($callback) must be a valid callback, array callback must have exactly two members", callerFunc, paramNo))
+			}
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+				fmt.Sprintf("%s(): Argument #%d ($callback) must be a valid callback, array callback has to contain indices 0 and 1", callerFunc, paramNo))
 		}
 		firstArg, err := array.OffsetGet(ctx, phpv.ZInt(0))
 		if err != nil {
@@ -254,7 +260,8 @@ func spawnCallableInternal(ctx phpv.Context, v *phpv.ZVal, paramNo int) (phpv.Ca
 			class = instance.GetClass()
 		}
 
-		name := methodName.AsString(ctx).ToLower()
+		origName := methodName.AsString(ctx)
+		name := origName.ToLower()
 		if index := strings.Index(string(name), "::"); index >= 0 {
 			// handle className::method
 			className := name[0:index]
@@ -350,9 +357,9 @@ func spawnCallableInternal(ctx phpv.Context, v *phpv.ZVal, paramNo int) (phpv.Ca
 			if callerFunc == "" {
 				callerFunc = "call_user_func"
 			}
-			// Use the resolved method name (without parent::/self:: prefix)
+			// Use the original method name (preserving case) for the error message
 			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
-				fmt.Sprintf("%s(): Argument #1 ($callback) must be a valid callback, class %s does not have a method \"%s\"", callerFunc, class.GetName(), name))
+				fmt.Sprintf("%s(): Argument #1 ($callback) must be a valid callback, class %s does not have a method \"%s\"", callerFunc, class.GetName(), origName))
 		}
 
 		// Check if the method is abstract - abstract methods cannot be called directly
@@ -451,7 +458,7 @@ func spawnCallableInternal(ctx phpv.Context, v *phpv.ZVal, paramNo int) (phpv.Ca
 			callerFunc = "call_user_func"
 		}
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
-			fmt.Sprintf("%s(): Argument #%d ($callback) must be a valid callback, no array, string, or closure given", callerFunc, paramNo))
+			fmt.Sprintf("%s(): Argument #%d ($callback) must be a valid callback, no array or string given", callerFunc, paramNo))
 	}
 }
 

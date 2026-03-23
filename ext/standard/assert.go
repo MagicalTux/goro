@@ -10,18 +10,20 @@ import (
 const (
 	ASSERT_ACTIVE     phpv.ZInt = 1
 	ASSERT_WARNING    phpv.ZInt = 2
-	ASSERT_BAIL       phpv.ZInt = 3
-	ASSERT_EXCEPTION  phpv.ZInt = 4
-	ASSERT_CALLBACK   phpv.ZInt = 5
+	ASSERT_CALLBACK   phpv.ZInt = 3
+	ASSERT_BAIL       phpv.ZInt = 4
+	ASSERT_QUIET_EVAL phpv.ZInt = 5
+	ASSERT_EXCEPTION  phpv.ZInt = 6
 )
 
 // assert_options INI key mapping
 var assertOptionKeys = map[phpv.ZInt]string{
 	ASSERT_ACTIVE:    "assert.active",
 	ASSERT_WARNING:   "assert.warning",
-	ASSERT_BAIL:      "assert.bail",
-	ASSERT_EXCEPTION: "assert.exception",
 	ASSERT_CALLBACK:  "assert.callback",
+	ASSERT_BAIL:      "assert.bail",
+	ASSERT_QUIET_EVAL: "assert.quiet_eval",
+	ASSERT_EXCEPTION: "assert.exception",
 }
 
 // > func mixed assert_options ( int $option [, mixed $value ] )
