@@ -84,9 +84,9 @@ func fncJsonLastErrorMsg(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error
 	case ErrDepth:
 		msg = "Maximum stack depth exceeded"
 	case ErrStateMismatch:
-		msg = "Underflow or the modes mismatch"
+		msg = "State mismatch (invalid or malformed JSON)"
 	case ErrCtrlChar:
-		msg = "Unexpected control character found"
+		msg = "Control character error, possibly incorrectly encoded"
 	case ErrSyntax:
 		msg = "Syntax error"
 	case ErrUtf8:
@@ -124,7 +124,8 @@ func fncJsonValidate(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		d = int(*depth)
 	}
 
-	_, jsonErr := jsonDecodeAny(ctx, strings.NewReader(string(json)), d, 0)
+	// Subtract 1 to align with PHP's depth semantics (same as json_decode)
+	_, jsonErr := jsonDecodeAny(ctx, strings.NewReader(string(json)), d-1, 0)
 	if jsonErr != nil {
 		if je, ok := jsonErr.(JsonError); ok {
 			setLastJsonError(ctx, je)
@@ -252,6 +253,8 @@ func jsonDecodeObject(ctx phpv.Context, r *strings.Reader, depth int, opt JsonDe
 		if b == '}' {
 			return final, nil
 		}
+		// Expected ',' or '}' but got something else (e.g., ']')
+		return nil, ErrStateMismatch
 	}
 }
 
@@ -293,7 +296,7 @@ func jsonDecodeArray(ctx phpv.Context, r *strings.Reader, depth int, opt JsonDec
 
 		b, err = nextRune(r)
 		if err != nil {
-			return nil, err
+			return nil, ErrSyntax
 		}
 		if b == ',' {
 			continue
@@ -301,6 +304,8 @@ func jsonDecodeArray(ctx phpv.Context, r *strings.Reader, depth int, opt JsonDec
 		if b == ']' {
 			return a.ZVal(), nil
 		}
+		// Expected ',' or ']' but got something else (e.g., '}')
+		return nil, ErrStateMismatch
 	}
 }
 
@@ -326,6 +331,10 @@ func jsonDecodeString(ctx phpv.Context, r *strings.Reader, depth int, opt JsonDe
 		}
 
 		if c != '\\' {
+			// Control characters (0x00-0x1F) are not allowed unescaped in JSON strings
+			if c < 0x20 {
+				return nil, ErrCtrlChar
+			}
 			buf = append(buf, c)
 			continue
 		}
