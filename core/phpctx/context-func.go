@@ -88,6 +88,7 @@ func (c *FuncContext) Release() error {
 	c.calledClass = nil
 	c.methodType = ""
 	c.isInternal = false
+	c.useParentScope = false
 	funcContextPool.Put(c)
 	return releaseErr
 }
@@ -106,7 +107,8 @@ type FuncContext struct {
 	calledClass phpv.ZClass // for late static binding (static::class)
 	methodType  string
 
-	isInternal bool // true when called from internal code (e.g., output buffer callbacks)
+	isInternal     bool // true when called from internal code (e.g., output buffer callbacks)
+	useParentScope bool // true for eval() - delegate variable access to parent context
 
 	foreachRefCleanups []func() // cleanup functions for foreach-by-reference iterators
 }
@@ -116,6 +118,14 @@ type FuncContext struct {
 // iterator references.
 func (c *FuncContext) RegisterForeachRefCleanup(fn func()) {
 	c.foreachRefCleanups = append(c.foreachRefCleanups, fn)
+}
+
+// SetUseParentScope sets whether this FuncContext should delegate variable
+// access (OffsetGet/OffsetSet/OffsetCheck/OffsetUnset/OffsetExists) to the
+// parent context. Used by eval() so that variables are accessible in the
+// calling scope while the eval FuncContext remains visible in stack traces.
+func (c *FuncContext) SetUseParentScope(v bool) {
+	c.useParentScope = v
 }
 
 func (c *FuncContext) AsVal(ctx phpv.Context, t phpv.ZType) (phpv.Val, error) {
@@ -145,12 +155,11 @@ func (c *FuncContext) This() phpv.ZObject {
 
 // Loc returns the current execution location. For internal calls (e.g.,
 // exception/error handlers invoked by the runtime), it returns "Unknown:0".
-// For normal calls, it delegates to the parent context which tracks the
-// current execution position via Tick().
+// Loc returns the current source-code location.
+// It always delegates to the parent context which tracks the current
+// execution position via Tick(). The isInternal flag only affects stack
+// trace formatting (showing "[internal function]"), not Loc().
 func (c *FuncContext) Loc() *phpv.Loc {
-	if c.isInternal && c.loc != nil {
-		return c.loc
-	}
 	return c.Context.Loc()
 }
 
@@ -166,6 +175,9 @@ func (c *FuncContext) CalledClass() phpv.ZClass {
 }
 
 func (c *FuncContext) OffsetExists(ctx phpv.Context, name phpv.Val) (bool, error) {
+	if c.useParentScope {
+		return c.Context.OffsetExists(ctx, name)
+	}
 	nameStr, ok := name.(phpv.ZString)
 	if !ok {
 		var err error
@@ -191,6 +203,9 @@ func (c *FuncContext) OffsetExists(ctx phpv.Context, name phpv.Val) (bool, error
 }
 
 func (c *FuncContext) OffsetGet(ctx phpv.Context, name phpv.Val) (*phpv.ZVal, error) {
+	if c.useParentScope {
+		return c.Context.OffsetGet(ctx, name)
+	}
 	nameStr, ok := name.(phpv.ZString)
 	if !ok {
 		var err error
@@ -214,6 +229,9 @@ func (c *FuncContext) OffsetGet(ctx phpv.Context, name phpv.Val) (*phpv.ZVal, er
 }
 
 func (c *FuncContext) OffsetCheck(ctx phpv.Context, name phpv.Val) (*phpv.ZVal, bool, error) {
+	if c.useParentScope {
+		return c.Context.OffsetCheck(ctx, name)
+	}
 	nameStr, ok := name.(phpv.ZString)
 	if !ok {
 		var err error
@@ -242,6 +260,9 @@ func (c *FuncContext) OffsetCheck(ctx phpv.Context, name phpv.Val) (*phpv.ZVal, 
 }
 
 func (c *FuncContext) OffsetSet(ctx phpv.Context, name phpv.Val, v *phpv.ZVal) error {
+	if c.useParentScope {
+		return c.Context.OffsetSet(ctx, name, v)
+	}
 	nameStr, ok := name.(phpv.ZString)
 	if !ok {
 		var err error
@@ -291,6 +312,9 @@ func (c *FuncContext) OffsetSet(ctx phpv.Context, name phpv.Val, v *phpv.ZVal) e
 
 
 func (c *FuncContext) OffsetUnset(ctx phpv.Context, name phpv.Val) error {
+	if c.useParentScope {
+		return c.Context.OffsetUnset(ctx, name)
+	}
 	nameStr, ok := name.(phpv.ZString)
 	if !ok {
 		var err error

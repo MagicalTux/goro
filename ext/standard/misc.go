@@ -146,7 +146,13 @@ func stdFuncEval(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	return c.Run(ctx.Parent(1))
+	// Run the compiled code in the current context (eval FuncContext).
+	// Set useParentScope so that variable access delegates to the caller's
+	// scope while keeping the eval frame visible in stack traces.
+	if fc, ok := ctx.(interface{ SetUseParentScope(bool) }); ok {
+		fc.SetUseParentScope(true)
+	}
+	return c.Run(ctx)
 }
 
 // > func mixed hrtime ([ bool $get_as_number = FALSE ] )

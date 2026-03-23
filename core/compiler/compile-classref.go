@@ -324,6 +324,22 @@ func (r *runClassStaticObjRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	}
 
 	if err != nil {
+		// If the error is a thrown exception (e.g. "Class not found") and we
+		// have a compile-time location (r.l), update the exception's file/line
+		// to point to where the class reference appears in source code,
+		// not where the constant expression is being evaluated from (GH-7771).
+		if r.l != nil {
+			if ex, ok := err.(*phperr.PhpThrow); ok {
+				if ex.Loc == nil || (ex.Loc.Filename != r.l.Filename || ex.Loc.Line != r.l.Line) {
+					ex.Loc = r.l
+					// Also update the exception object's file/line properties
+					if ex.Obj != nil {
+						ex.Obj.HashTable().SetString("file", phpv.ZString(r.l.Filename).ZVal())
+						ex.Obj.HashTable().SetString("line", phpv.ZInt(r.l.Line).ZVal())
+					}
+				}
+			}
+		}
 		return nil, err
 	}
 
@@ -766,8 +782,10 @@ func (r *runClassNameOf) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "Cannot use \"::class\" on null")
 		}
 		// PHP raises a fatal error when ::class is used on non-string, non-object types.
+		// PHP 8: when a non-string/non-object value is used with ::class at runtime,
+		// it's treated like an illegal class name.
 		phpErr := &phpv.PhpError{
-			Err:  fmt.Errorf("Cannot use \"::class\" on %s", typeName),
+			Err:  fmt.Errorf("Illegal class name"),
 			Code: phpv.E_ERROR,
 			Loc:  r.l,
 		}

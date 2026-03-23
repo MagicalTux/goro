@@ -351,27 +351,11 @@ func exceptionConstruct(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.
 		o.SetOpaque(o.GetClass(), trace)
 	}
 
-	// Populate the trace property in the hash table as an array, matching PHP
-	// behaviour. This allows user code (e.g. ReflectionProperty::setValue) to
-	// modify the trace and have getTraceAsString() / __toString() see the
-	// modifications.
-	traceArr := getExceptionTrace(ctx, trace)
-	o.HashTable().SetString("trace", traceArr.ZVal())
-
 	return phpv.ZNULL.ZVal(), nil
 }
 
 func exceptionGetTraceAsString(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	maxLen := getExceptionStringParamMaxLen(ctx)
-
-	// Check if the trace property was modified by user code (e.g. via
-	// ReflectionProperty::setValue). In that case, read from the hash table
-	// array representation rather than the opaque structured trace.
-	traceVal := o.HashTable().GetString("trace")
-	if traceVal != nil && traceVal.GetType() == phpv.ZtArray {
-		traceArr := traceVal.Value().(*phpv.ZArray)
-		return getTraceAsStringFromArray(ctx, traceArr, maxLen).ZVal(), nil
-	}
 
 	opaque := o.GetOpaque(Exception)
 	if opaque == nil {

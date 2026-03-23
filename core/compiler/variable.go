@@ -93,6 +93,12 @@ func (r *runVariable) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		switch t := r.Parent.(type) {
 		case *runOperator:
 			write = t.opD.write
+			// For compound assignments (+=, -=, .=, /=, etc.), the LHS is
+			// in read+write context, so undefined variable warnings should
+			// still be emitted. Compound ops have both write=true and op!=nil.
+			if t.opD.write && t.opD.op != nil && t.a == r {
+				write = false
+			}
 			// For ??=, the RHS (r.b) is a read context — don't suppress warnings
 			if (t.op == tokenizer.T_COALESCE_EQUAL || t.op == tokenizer.T_COALESCE) && t.b == r {
 				write = false
@@ -224,6 +230,10 @@ func (r *runVariableRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		switch t := r.Parent.(type) {
 		case *runOperator:
 			write = t.opD.write
+			// Compound assignments (+=, /=, etc.) read then write, so warn
+			if t.opD.write && t.opD.op != nil && t.a == r {
+				write = false
+			}
 			if (t.op == tokenizer.T_COALESCE_EQUAL || t.op == tokenizer.T_COALESCE) && t.b == r {
 				write = false
 			}

@@ -2464,6 +2464,12 @@ func CheckStaticPropIndirectSetVisibility(ctx phpv.Context, c *ZClass, name phpv
 // ResolveConstants resolves any remaining CompileDelayed constants in the class
 // and its parent classes. Called when the class is first instantiated.
 func (c *ZClass) ResolveConstants(ctx phpv.Context) error {
+	// Save the caller's location before resolution. During constant
+	// expression evaluation, ctx.Loc() may change to the definition
+	// file. The [constant expression] stack frame should show the
+	// call site (e.g., where "new Foo()" appears), not the definition.
+	callerLoc := ctx.Loc()
+
 	for cur := c; cur != nil; cur = cur.Extends {
 		ctx.Global().SetCompilingClass(cur)
 		for _, k := range cur.ConstOrder {
@@ -2478,7 +2484,7 @@ func (c *ZClass) ResolveConstants(ctx phpv.Context) error {
 					// Add a synthetic [constant expression] frame to the stack trace
 					// to match PHP's behavior when constant expression evaluation fails.
 					if ex, ok := err.(*phperr.PhpThrow); ok {
-						AddConstantExpressionFrame(ex, ctx)
+						AddConstantExpressionFrameAt(ex, callerLoc)
 					}
 					return err
 				}
@@ -2492,10 +2498,16 @@ func (c *ZClass) ResolveConstants(ctx phpv.Context) error {
 
 // AddConstantExpressionFrame prepends a [constant expression]() frame to an
 // exception's stack trace, matching PHP's behavior for errors during class
-// constant expression evaluation.
+// constant expression evaluation. Uses ctx.Loc() for the frame location.
 func AddConstantExpressionFrame(ex *phperr.PhpThrow, ctx phpv.Context) {
-	// Get caller location for the frame
-	loc := ctx.Loc()
+	AddConstantExpressionFrameAt(ex, ctx.Loc())
+}
+
+// AddConstantExpressionFrameAt prepends a [constant expression]() frame at
+// the specified location. This variant is used when the caller's location
+// needs to be captured before constant expression evaluation (which may
+// change ctx.Loc() to the definition file).
+func AddConstantExpressionFrameAt(ex *phperr.PhpThrow, loc *phpv.Loc) {
 	filename := ""
 	line := 0
 	if loc != nil {

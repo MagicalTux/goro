@@ -608,6 +608,8 @@ func GetChildren(r phpv.Runnable) []phpv.Runnable {
 		return t
 	case *ZClosure:
 		return rt{t.code}
+	case *runArrowReturn:
+		return rt{t.expr}
 	case *phpobj.ZClass:
 		res := rt{}
 		for _, v := range t.Methods {

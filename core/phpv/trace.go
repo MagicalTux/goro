@@ -49,11 +49,12 @@ func (st StackTrace) formatInternal(includeMain bool, maxLen int, ignoreArgs boo
 	for _, e := range st {
 		argsBuf.Reset()
 		if !ignoreArgs {
-			// Include/require are language constructs; PHP omits their args
-			// from debug_print_backtrace() output.
-			isInclude := e.FuncName == "include" || e.FuncName == "require" ||
-				e.FuncName == "include_once" || e.FuncName == "require_once"
-			if !isInclude {
+			// Include/require/eval are language constructs; PHP omits their
+			// args from backtrace output.
+			isLangConstruct := e.FuncName == "include" || e.FuncName == "require" ||
+				e.FuncName == "include_once" || e.FuncName == "require_once" ||
+				e.FuncName == "eval"
+			if !isLangConstruct {
 				for i, arg := range e.Args {
 					argsBuf.WriteString(TraceArgStringMaxLen(arg, maxLen))
 					if i < len(e.Args)-1 {

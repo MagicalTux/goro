@@ -211,6 +211,10 @@ func operatorSymbol(op tokenizer.ItemType) string {
 		return "(array)"
 	case tokenizer.T_OBJECT_CAST:
 		return "(object)"
+	case tokenizer.Rune('!'):
+		return "!"
+	case tokenizer.Rune('@'):
+		return "@"
 	default:
 		// Single-character operators like +, -, *, /, %, etc.
 		if r := op.Rune(); r != 0 {

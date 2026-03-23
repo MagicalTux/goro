@@ -1731,7 +1731,13 @@ func (g *Global) Close() error {
 		}
 		err := g.buf.Close()
 		if err != nil {
-			return err
+			// Try to handle exceptions from OB callbacks via the
+			// exception handler (GH-10695). If the handler catches
+			// the exception, continue closing remaining buffers.
+			handled := g.handleUncaughtException(err)
+			if handled != nil {
+				return handled
+			}
 		}
 	}
 }

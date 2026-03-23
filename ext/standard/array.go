@@ -231,12 +231,25 @@ func fncInArray(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // > func bool array_key_exists (  mixed $key , array $array )
 // > alias key_exists
 func fncArrayKeyExists(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	var key *phpv.ZVal
-	var array *phpv.ZArray
-	_, err := core.Expand(ctx, args, &key, &array)
-	if err != nil {
-		return nil, err
+	if len(args) < 2 {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "array_key_exists() expects exactly 2 arguments")
 	}
+
+	key := args[0]
+	arrayArg := args[1]
+
+	// Check key type - array keys are not allowed
+	if key.GetType() == phpv.ZtArray {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "Cannot access offset of type array on array")
+	}
+
+	// Check second argument must be an array
+	if arrayArg.GetType() != phpv.ZtArray {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("array_key_exists(): Argument #2 ($array) must be of type array, %s given", phpv.ZValTypeNameDetailed(arrayArg)))
+	}
+
+	array := arrayArg.AsArray(ctx)
 
 	if _, ok := key.Value().(phpv.ZNull); ok {
 		if err := ctx.Deprecated("Using null as the key parameter for array_key_exists() is deprecated, use an empty string instead", logopt.NoFuncName(true)); err != nil {
@@ -1437,6 +1450,17 @@ func fncArrayReverse(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 // > func array array_change_key_case ( array $array1 [, int $case = CASE_LOWER ] )
 func fncArrayChangeKeyCase(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	// Validate $case parameter type before Expand (PHP 8 strict typing)
+	if len(args) >= 2 && args[1] != nil {
+		switch args[1].GetType() {
+		case phpv.ZtInt, phpv.ZtBool, phpv.ZtNull, phpv.ZtFloat:
+			// These are accepted (with implicit conversion)
+		default:
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+				fmt.Sprintf("array_change_key_case(): Argument #2 ($case) must be of type int, %s given", phpv.ZValTypeNameDetailed(args[1])))
+		}
+	}
+
 	var array *phpv.ZArray
 	var keyCaseArg *phpv.ZInt
 	_, err := core.Expand(ctx, args, &array, &keyCaseArg)
@@ -1542,6 +1566,27 @@ func getArrayKeyValue(ctx phpv.Context, s *phpv.ZVal) (*phpv.ZVal, error) {
 
 // > func array array_column ( array $input , mixed $column_key [, mixed $index_key = NULL ] )
 func fncArrayColumn(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	// Validate column_key type (must be string|int|null)
+	if len(args) >= 2 && args[1] != nil && !args[1].IsNull() {
+		switch args[1].GetType() {
+		case phpv.ZtString, phpv.ZtInt, phpv.ZtFloat, phpv.ZtBool:
+			// These are accepted
+		default:
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+				fmt.Sprintf("array_column(): Argument #2 ($column_key) must be of type string|int|null, %s given", phpv.ZValTypeNameDetailed(args[1])))
+		}
+	}
+	// Validate index_key type (must be string|int|null)
+	if len(args) >= 3 && args[2] != nil && !args[2].IsNull() {
+		switch args[2].GetType() {
+		case phpv.ZtString, phpv.ZtInt, phpv.ZtFloat, phpv.ZtBool:
+			// These are accepted
+		default:
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+				fmt.Sprintf("array_column(): Argument #3 ($index_key) must be of type string|int|null, %s given", phpv.ZValTypeNameDetailed(args[2])))
+		}
+	}
+
 	var array *phpv.ZArray
 	var columnKeyArg *phpv.ZVal
 	var indexKeyArg core.Optional[*phpv.ZVal]

@@ -684,6 +684,11 @@ func dupDefault(v phpv.Val) *phpv.ZVal {
 }
 
 func (o *ZObject) init(ctx phpv.Context) error {
+	// Save the caller's location. During constant/property default resolution,
+	// ctx.Loc() may change to the definition file. The [constant expression]
+	// stack frame should show the call site (e.g., where "new Foo()" appears).
+	callerLoc := ctx.Loc()
+
 	// Resolve any pending CompileDelayed constants when the class is first used.
 	// This ensures forward-referenced constants throw errors at instantiation time
 	// if the referenced class/constant doesn't exist.
@@ -698,7 +703,7 @@ func (o *ZObject) init(ctx phpv.Context) error {
 	if _, err := o.GetClass().(*ZClass).GetStaticProps(ctx); err != nil {
 		// Add [constant expression] stack frame to match PHP behavior
 		if ex, ok := err.(*phperr.PhpThrow); ok {
-			AddConstantExpressionFrame(ex, ctx)
+			AddConstantExpressionFrameAt(ex, callerLoc)
 		}
 		return err
 	}
@@ -733,6 +738,9 @@ func (o *ZObject) init(ctx phpv.Context) error {
 					if cd, ok := p.Default.(*phpv.CompileDelayed); ok {
 						z, err := cd.Run(ctx)
 						if err != nil {
+							if ex, ok2 := err.(*phperr.PhpThrow); ok2 {
+								AddConstantExpressionFrameAt(ex, callerLoc)
+							}
 							return err
 						}
 						p.Default = z.Value()
@@ -751,6 +759,9 @@ func (o *ZObject) init(ctx phpv.Context) error {
 					if cd, ok := p.Default.(*phpv.CompileDelayed); ok {
 						z, err := cd.Run(ctx)
 						if err != nil {
+							if ex, ok2 := err.(*phperr.PhpThrow); ok2 {
+								AddConstantExpressionFrameAt(ex, callerLoc)
+							}
 							return err
 						}
 						p.Default = z.Value()
