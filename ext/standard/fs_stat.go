@@ -469,6 +469,9 @@ func fncDiskFreeSpace(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var stat syscall.Statfs_t
 	err = syscall.Statfs(p, &stat)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return phpv.ZFalse.ZVal(), ctx.Warn("No such file or directory")
+		}
 		return phpv.ZFalse.ZVal(), ctx.Warn("%s", err)
 	}
 
@@ -491,6 +494,9 @@ func fncDiskTotalSpace(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 	var stat syscall.Statfs_t
 	err = syscall.Statfs(p, &stat)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return phpv.ZFalse.ZVal(), ctx.Warn("No such file or directory")
+		}
 		return phpv.ZFalse.ZVal(), ctx.Warn("%s", err)
 	}
 

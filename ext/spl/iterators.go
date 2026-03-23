@@ -1254,6 +1254,10 @@ func initRecursiveArrayIterator() {
 	RecursiveArrayIteratorClass.H = &phpv.ZClassHandlers{
 		HandleForeachByRef: func(ctx phpv.Context, o phpv.ZObject) (*phpv.ZArray, error) {
 			if zo, ok := o.(*phpobj.ZObject); ok {
+				// Subclasses that override current() cannot use foreach by reference
+				if overridesMethod(zo, RecursiveArrayIteratorClass, "current") {
+					return nil, nil
+				}
 				d := getRecursiveArrayIteratorData(zo)
 				if d != nil {
 					return d.array, nil

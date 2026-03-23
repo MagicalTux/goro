@@ -899,13 +899,20 @@ func fncFgets(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZFalse.ZVal(), nil
 	}
 
-	maxLen := 1024
+	if length != nil && int(*length) <= 0 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "fgets(): Argument #2 ($length) must be greater than 0")
+	}
+
+	maxLen := 0 // 0 means no limit (read until \n or EOF)
 	if length != nil && int(*length) > 0 {
 		maxLen = int(*length) - 1 // PHP's fgets includes the length-1 limit
 	}
 
 	var buf []byte
-	for i := 0; i < maxLen; i++ {
+	for {
+		if maxLen > 0 && len(buf) >= maxLen {
+			break
+		}
 		b, err := file.ReadByte()
 		if err != nil {
 			break
@@ -1335,7 +1342,7 @@ func fncCopy(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZFalse.ZVal(), ctx.Warn("copy(%s): Failed to open stream: %s", src, err, logopt.NoFuncName(true))
 	}
 	if srcStat.IsDir() {
-		return phpv.ZFalse.ZVal(), ctx.Warn("The first argument to copy() function cannot be a directory", logopt.NoFuncName(true))
+		return phpv.ZFalse.ZVal(), ctx.Warn("copy(): The first argument to copy() function cannot be a directory")
 	}
 
 	// Check if source and dest are the same file - PHP silently returns false

@@ -865,6 +865,13 @@ func initArrayObject() {
 				if d.flags&ArrayObjectARRAY_AS_PROPS != 0 {
 					return d.array.OffsetGetWarn(ctx, args[0])
 				}
+				// When ARRAY_AS_PROPS is not set, check dynamic properties
+				propName := args[0].AsString(ctx)
+				v := o.HashTable().GetString(propName)
+				if v != nil {
+					return v, nil
+				}
+				ctx.Warn("Undefined property: %s::$%s", o.GetClass().GetName(), propName, logopt.NoFuncName(true))
 				return phpv.ZNULL.ZVal(), nil
 			}),
 		},
@@ -880,7 +887,29 @@ func initArrayObject() {
 				if d.flags&ArrayObjectARRAY_AS_PROPS != 0 {
 					return nil, d.array.OffsetSet(ctx, args[0], args[1])
 				}
-				return nil, nil
+				// When ARRAY_AS_PROPS is not set, set as a dynamic property
+				// on the object itself. Emit deprecation warning for PHP 8.2+.
+				propName := args[0].AsString(ctx)
+				// Check if this is a declared property on the class
+				isDeclared := false
+				if zc, ok := o.GetClass().(*phpobj.ZClass); ok {
+					for cur := zc; cur != nil; cur = cur.Extends {
+						for _, p := range cur.Props {
+							if p.VarName == propName {
+								isDeclared = true
+								break
+							}
+						}
+						if isDeclared {
+							break
+						}
+					}
+				}
+				if !isDeclared {
+					ctx.Deprecated("Creation of dynamic property %s::$%s is deprecated",
+						o.GetClass().GetName(), propName, logopt.NoFuncName(true))
+				}
+				return nil, o.HashTable().SetString(propName, args[1])
 			}),
 		},
 
@@ -899,7 +928,10 @@ func initArrayObject() {
 					}
 					return phpv.ZBool(exists).ZVal(), nil
 				}
-				return phpv.ZFalse.ZVal(), nil
+				// Check dynamic properties on the object
+				propName := args[0].AsString(ctx)
+				v := o.HashTable().GetString(propName)
+				return phpv.ZBool(v != nil && !v.IsNull()).ZVal(), nil
 			}),
 		},
 
@@ -914,6 +946,9 @@ func initArrayObject() {
 				if d.flags&ArrayObjectARRAY_AS_PROPS != 0 {
 					return nil, d.array.OffsetUnset(ctx, args[0])
 				}
+				// Unset dynamic property
+				propName := args[0].AsString(ctx)
+				o.HashTable().UnsetString(propName)
 				return nil, nil
 			}),
 		},
