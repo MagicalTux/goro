@@ -178,6 +178,9 @@ func fncMbStrrpos(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if err != nil {
 		return nil, err
 	}
+	if enc != nil && !isValidEncoding(string(*enc)) {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, fmt.Sprintf("mb_strrpos(): Argument #4 ($encoding) must be a valid encoding, \"%s\" given", string(*enc)))
+	}
 	hRunes := []rune(string(haystack))
 	nRunes := []rune(string(needle))
 

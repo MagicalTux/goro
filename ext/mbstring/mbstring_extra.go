@@ -346,6 +346,10 @@ func fncMbStrstr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
+	if enc != nil && !isValidEncoding(string(*enc)) {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, fmt.Sprintf("mb_strstr(): Argument #4 ($encoding) must be a valid encoding, \"%s\" given", string(*enc)))
+	}
+
 	before := core.Deref(beforeNeedle, false)
 
 	h := string(haystack)
@@ -371,6 +375,10 @@ func fncMbStristr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	_, err := core.Expand(ctx, args, &haystack, &needle, &beforeNeedle, &enc)
 	if err != nil {
 		return nil, err
+	}
+
+	if enc != nil && !isValidEncoding(string(*enc)) {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, fmt.Sprintf("mb_stristr(): Argument #4 ($encoding) must be a valid encoding, \"%s\" given", string(*enc)))
 	}
 
 	before := core.Deref(beforeNeedle, false)
@@ -440,6 +448,10 @@ func fncMbOrd(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
+	if enc != nil && !isValidEncoding(string(*enc)) {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, fmt.Sprintf("mb_ord(): Argument #2 ($encoding) must be a valid encoding, \"%s\" given", string(*enc)))
+	}
+
 	str := string(s)
 	if len(str) == 0 {
 		return phpv.ZFalse.ZVal(), nil
@@ -461,6 +473,10 @@ func fncMbChr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	_, err := core.Expand(ctx, args, &codepoint, &enc)
 	if err != nil {
 		return nil, err
+	}
+
+	if enc != nil && !isValidEncoding(string(*enc)) {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, fmt.Sprintf("mb_chr(): Argument #2 ($encoding) must be a valid encoding, \"%s\" given", string(*enc)))
 	}
 
 	r := rune(codepoint)
@@ -621,6 +637,12 @@ func fncMbEncodeNumericentity(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, 
 	if len(args) < 2 {
 		return nil, ctx.Errorf("mb_encode_numericentity() expects at least 2 arguments")
 	}
+	if len(args) > 2 && args[2] != nil && args[2].GetType() == phpv.ZtString {
+		encStr := args[2].String()
+		if !isValidEncoding(encStr) {
+			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, fmt.Sprintf("mb_encode_numericentity(): Argument #3 ($encoding) must be a valid encoding, \"%s\" given", encStr))
+		}
+	}
 	str := args[0].String()
 	convmap := args[1]
 	if convmap.GetType() != phpv.ZtArray {
@@ -660,6 +682,12 @@ func fncMbEncodeNumericentity(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, 
 func fncMbDecodeNumericentity(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 2 {
 		return nil, ctx.Errorf("mb_decode_numericentity() expects at least 2 arguments")
+	}
+	if len(args) > 2 && args[2] != nil && args[2].GetType() == phpv.ZtString {
+		encStr := args[2].String()
+		if !isValidEncoding(encStr) {
+			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, fmt.Sprintf("mb_decode_numericentity(): Argument #3 ($encoding) must be a valid encoding, \"%s\" given", encStr))
+		}
 	}
 	str := args[0].String()
 	convmap := args[1]
@@ -890,6 +918,9 @@ func fncMbConvertKana(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	_, err := core.Expand(ctx, args, &s, &option, &enc)
 	if err != nil {
 		return nil, err
+	}
+	if enc != nil && !isValidEncoding(string(*enc)) {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, fmt.Sprintf("mb_convert_kana(): Argument #3 ($encoding) must be a valid encoding, \"%s\" given", string(*enc)))
 	}
 	return s.ZVal(), nil
 }

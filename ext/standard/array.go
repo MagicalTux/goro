@@ -375,6 +375,14 @@ func fncArrayFilter(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) >= 2 && args[1] != nil && args[1].GetType() != phpv.ZtNull {
 		cb, err := core.SpawnCallableParam(ctx, args[1], 2)
 		if err != nil {
+			// Rewrite "must be a valid callback" to "must be a valid callback or null"
+			if throwErr, ok := err.(*phperr.PhpThrow); ok {
+				msg := throwErr.Obj.HashTable().GetString("message").String()
+				newMsg := strings.Replace(msg, "must be a valid callback,", "must be a valid callback or null,", 1)
+				if newMsg != msg {
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, newMsg)
+				}
+			}
 			return nil, err
 		}
 		callback = cb
@@ -555,6 +563,13 @@ func fncArrayMap(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				msg := throwErr.Obj.HashTable().GetString("message").String()
 				if strings.HasPrefix(msg, "Cannot call ") && strings.HasSuffix(msg, " dynamically") {
 					return nil, err
+				}
+				// Re-format the error with array_map() prefix and "or null" suffix
+				// Extract the detail part after "must be a valid callback, "
+				if idx := strings.Index(msg, "must be a valid callback, "); idx >= 0 {
+					detail := msg[idx+len("must be a valid callback, "):]
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+						fmt.Sprintf("array_map(): Argument #1 ($callback) must be a valid callback or null, %s", detail))
 				}
 			}
 			// Convert to TypeError with proper array_map() prefix

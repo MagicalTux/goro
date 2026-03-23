@@ -1525,8 +1525,10 @@ func (g *Global) GetClass(ctx phpv.Context, name phpv.ZString, autoload bool) (p
 	}
 	// Try autoload
 	nameLower := name.ToLower()
-	// PHP does not call autoloaders for empty class names or names containing path separators or NUL bytes
-	if name == "" || strings.ContainsAny(string(name), "/\\\x00") {
+	// PHP does not call autoloaders for empty class names or names containing NUL bytes.
+	// Note: backslashes are normal namespace separators (e.g. "space1\C") and must NOT
+	// prevent autoloading. Forward slashes are also allowed in autoloader calls.
+	if name == "" || strings.ContainsRune(string(name), '\x00') {
 		autoload = false
 	}
 	if autoload && len(g.autoloadFuncs) > 0 {

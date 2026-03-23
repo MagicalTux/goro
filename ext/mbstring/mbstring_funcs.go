@@ -130,6 +130,9 @@ func fncMbStrripos(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if err != nil {
 		return nil, err
 	}
+	if enc != nil && !isValidEncoding(string(*enc)) {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, fmt.Sprintf("mb_strripos(): Argument #4 ($encoding) must be a valid encoding, \"%s\" given", string(*enc)))
+	}
 	hRunes := []rune(strings.ToLower(string(haystack)))
 	nRunes := []rune(strings.ToLower(string(needle)))
 
@@ -578,6 +581,9 @@ func fncMbStrwidth(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var s phpv.ZString; var enc *phpv.ZString
 	_, err := core.Expand(ctx, args, &s, &enc)
 	if err != nil { return nil, err }
+	if enc != nil && !isValidEncoding(string(*enc)) {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, fmt.Sprintf("mb_strwidth(): Argument #2 ($encoding) must be a valid encoding, \"%s\" given", string(*enc)))
+	}
 	width := 0; for _, r := range string(s) { width += runeWidth(r) }
 	return phpv.ZInt(width).ZVal(), nil
 }
