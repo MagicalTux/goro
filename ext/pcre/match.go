@@ -3,6 +3,7 @@ package pcre
 import (
 	"fmt"
 	"regexp"
+	"unicode/utf8"
 
 	"github.com/MagicalTux/goro/core"
 	"github.com/MagicalTux/goro/core/phpobj"
@@ -554,10 +555,14 @@ func doReplaceCallback(ctx phpv.Context, pattern *phpv.ZVal, callback phpv.Calla
 		r = append(r, []byte(result.AsString(ctx))...)
 		pos = loc[1]
 
-		// For zero-length matches, advance by one byte to avoid infinite loop
+		// For zero-length matches, advance by one rune to avoid infinite loop
 		if loc[0] == loc[1] && pos < len(in) {
-			r = append(r, in[pos])
-			pos++
+			_, size := utf8.DecodeRune(in[pos:])
+			if size == 0 {
+				size = 1
+			}
+			r = append(r, in[pos:pos+size]...)
+			pos += size
 		}
 	}
 	r = append(r, in[pos:]...)

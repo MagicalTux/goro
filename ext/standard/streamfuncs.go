@@ -291,3 +291,69 @@ func fncStreamGetLine(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 	return phpv.ZString(buf).ZVal(), nil
 }
+
+// > func bool stream_context_set_params ( resource $stream_or_context , array $params )
+func fncStreamContextSetParams(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var handle phpv.Resource
+	var params *phpv.ZArray
+	_, err := core.Expand(ctx, args, &handle, &params)
+	if err != nil {
+		return nil, err
+	}
+	streamCtx, ok := handle.(*stream.Context)
+	if !ok {
+		return phpv.ZFalse.ZVal(), nil
+	}
+	if params != nil {
+		streamCtx.SetParams(ctx, params)
+	}
+	return phpv.ZTrue.ZVal(), nil
+}
+
+// > func array stream_context_get_params ( resource $stream_or_context )
+func fncStreamContextGetParams(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var handle phpv.Resource
+	_, err := core.Expand(ctx, args, &handle)
+	if err != nil {
+		return nil, err
+	}
+	streamCtx, ok := handle.(*stream.Context)
+	if !ok {
+		return phpv.ZFalse.ZVal(), nil
+	}
+	return streamCtx.GetParams(ctx).ZVal(), nil
+}
+
+// > func array stream_get_filters ( void )
+func fncStreamGetFilters(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	// Return a basic list of built-in stream filters
+	result := phpv.NewZArray()
+	builtinFilters := []string{
+		"string.rot13",
+		"string.toupper",
+		"string.tolower",
+		"string.strip_tags",
+		"convert.iconv.*",
+		"convert.base64-encode",
+		"convert.base64-decode",
+		"convert.quoted-printable-encode",
+		"convert.quoted-printable-decode",
+		"zlib.*",
+		"bzip2.*",
+	}
+	for _, f := range builtinFilters {
+		result.OffsetSet(ctx, nil, phpv.ZString(f).ZVal())
+	}
+	return result.ZVal(), nil
+}
+
+// > func bool stream_wrapper_unregister ( string $protocol )
+func fncStreamWrapperUnregister(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	// Stub: we don't have user stream wrappers yet, but acknowledge the call
+	return phpv.ZTrue.ZVal(), nil
+}
+
+// > func bool stream_wrapper_restore ( string $protocol )
+func fncStreamWrapperRestore(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	return phpv.ZTrue.ZVal(), nil
+}

@@ -440,13 +440,18 @@ func init() {
 			"stream_context_get_options": {Func: fncStreamContextGetOptions, Args: []*phpctx.ExtFunctionArg{}},
 			"stream_context_set_default": {Func: fncStreamContextGetDefault, Args: []*phpctx.ExtFunctionArg{}}, // alias
 			"stream_context_set_option":  {Func: fncStreamContextSetOption, Args: []*phpctx.ExtFunctionArg{}},
+			"stream_context_set_params":  {Func: fncStreamContextSetParams, Args: []*phpctx.ExtFunctionArg{}},
+			"stream_context_get_params":  {Func: fncStreamContextGetParams, Args: []*phpctx.ExtFunctionArg{}},
 			"stream_copy_to_stream":      {Func: fncStreamCopyToStream, Args: []*phpctx.ExtFunctionArg{}},
 			"stream_get_contents":        {Func: fncStreamGetContents, Args: []*phpctx.ExtFunctionArg{}},
+			"stream_get_filters":         {Func: fncStreamGetFilters, Args: []*phpctx.ExtFunctionArg{}},
 			"stream_get_line":            {Func: fncStreamGetLine, Args: []*phpctx.ExtFunctionArg{}},
 			"stream_get_meta_data":       {Func: fncStreamGetMetaData, Args: []*phpctx.ExtFunctionArg{}},
 			"stream_is_local":            {Func: fncStreamIsLocal, Args: []*phpctx.ExtFunctionArg{}},
 			"stream_isatty":              {Func: fncStreamIsatty, Args: []*phpctx.ExtFunctionArg{}},
 			"stream_wrapper_register":    {Func: fncStreamWrapperRegister, Args: []*phpctx.ExtFunctionArg{}},
+			"stream_wrapper_unregister":  {Func: fncStreamWrapperUnregister, Args: []*phpctx.ExtFunctionArg{}},
+			"stream_wrapper_restore":     {Func: fncStreamWrapperRestore, Args: []*phpctx.ExtFunctionArg{}},
 			"stream_register_wrapper":    {Func: fncStreamWrapperRegister, Args: []*phpctx.ExtFunctionArg{}}, // alias
 			"strip_tags":                 {Func: fncStripTags, Args: []*phpctx.ExtFunctionArg{}},
 			"stripcslashes":              {Func: fncStripCSlashes, Args: []*phpctx.ExtFunctionArg{}},

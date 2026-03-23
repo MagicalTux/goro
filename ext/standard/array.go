@@ -2238,7 +2238,7 @@ func fncArrayReduce(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, ctx.FuncError(err)
 	}
 
-	accumulator := core.Deref(initialArg, phpv.ZNULL.ZVal())
+	accumulator := core.Deref(initialArg, phpv.ZNULL.ZVal()).Dup()
 
 	cbArgs := make([]*phpv.ZVal, 2)
 	for _, v := range array.Iterate(ctx) {

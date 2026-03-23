@@ -98,6 +98,52 @@ func NewContextFromZArray(ctx phpv.Context, options *phpv.ZArray, params *phpv.Z
 	return streamCtx
 }
 
+// SetParams sets the params of a stream context from a PHP array
+func (c *Context) SetParams(ctx phpv.Context, params *phpv.ZArray) {
+	if params == nil {
+		return
+	}
+	v, _ := params.OffsetGet(ctx, phpv.ZStr("notification"))
+	if v != nil && !v.IsNull() {
+		if fn, ok := v.Value().(phpv.Callable); ok {
+			c.NotifParam = fn
+		}
+	}
+	// Store options if provided within params
+	opts, _ := params.OffsetGet(ctx, phpv.ZStr("options"))
+	if opts != nil && opts.GetType() == phpv.ZtArray {
+		optArr := opts.AsArray(ctx)
+		for k1, entries := range optArr.Iterate(ctx) {
+			wrapperName := k1.AsString(ctx)
+			if _, ok := c.Options[wrapperName]; !ok {
+				c.Options[wrapperName] = ContextOptions{}
+			}
+			for option, value := range entries.AsArray(ctx).Iterate(ctx) {
+				option := option.AsString(ctx)
+				c.Options[wrapperName][option] = value
+			}
+		}
+	}
+}
+
+// GetParams returns a PHP array with the params of a stream context
+func (c *Context) GetParams(ctx phpv.Context) *phpv.ZArray {
+	result := phpv.NewZArray()
+	options := phpv.NewZArray()
+	for wrapperName, entries := range c.Options {
+		wrapperOptions := phpv.NewZArray()
+		options.OffsetSet(ctx, wrapperName.ZVal(), wrapperOptions.ZVal())
+		for k, v := range entries {
+			wrapperOptions.OffsetSet(ctx, k.ZVal(), v)
+		}
+	}
+	result.OffsetSet(ctx, phpv.ZStr("options"), options.ZVal())
+	if c.NotifParam != nil {
+		result.OffsetSet(ctx, phpv.ZStr("notification"), c.NotifParam.ZVal())
+	}
+	return result
+}
+
 func (c *Context) ToZArray(ctx phpv.Context) (options *phpv.ZArray, params *phpv.ZArray) {
 	options = phpv.NewZArray()
 	params = phpv.NewZArray()

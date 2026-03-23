@@ -168,11 +168,11 @@ func jsonDecodeAny(ctx phpv.Context, r *strings.Reader, depth int, opt JsonDecOp
 		return jsonDecodeString(ctx, r, depth, opt)
 	case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '-':
 		return jsonDecodeNumeric(ctx, r, depth, opt)
-	case 't', 'T':
+	case 't':
 		return jsonDecodeExpectValue(ctx, r, "true", phpv.ZBool(true), depth, opt)
-	case 'f', 'F':
+	case 'f':
 		return jsonDecodeExpectValue(ctx, r, "false", phpv.ZBool(false), depth, opt)
-	case 'n', 'N':
+	case 'n':
 		return jsonDecodeExpectValue(ctx, r, "null", phpv.ZNULL, depth, opt)
 	default:
 		return nil, ErrSyntax
@@ -444,7 +444,12 @@ func jsonDecodeNumeric(ctx phpv.Context, r *strings.Reader, depth int, opt JsonD
 	// float
 	v, err := strconv.ParseFloat(string(buf), 64)
 	if err != nil {
-		return nil, err
+		// strconv.ParseFloat returns an error for overflow (e.g., 1e666)
+		// but PHP decodes these as +/-INF
+		if numErr, ok := err.(*strconv.NumError); ok && numErr.Err == strconv.ErrRange {
+			return phpv.ZFloat(v).ZVal(), nil // v is +/-Inf
+		}
+		return nil, ErrSyntax
 	}
 	return phpv.ZFloat(v).ZVal(), nil
 }
@@ -455,7 +460,7 @@ func jsonDecodeExpectValue(ctx phpv.Context, r *strings.Reader, expect string, v
 	if err != nil {
 		return nil, err
 	}
-	if strings.ToLower(string(b)) != expect {
+	if string(b) != expect {
 		return nil, ErrSyntax
 	}
 
