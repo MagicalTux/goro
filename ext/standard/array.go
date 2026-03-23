@@ -1589,11 +1589,22 @@ func getArrayKeyValue(ctx phpv.Context, s *phpv.ZVal) (*phpv.ZVal, error) {
 
 // > func array array_column ( array $input , mixed $column_key [, mixed $index_key = NULL ] )
 func fncArrayColumn(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	// Check strict_types mode for type validation
+	strictTypes := false
+	if st := ctx.GetConfig("strict_types", phpv.ZInt(0).ZVal()); st != nil && st.AsInt(ctx) == 1 {
+		strictTypes = true
+	}
 	// Validate column_key type (must be string|int|null, or object with __toString)
 	if len(args) >= 2 && args[1] != nil && !args[1].IsNull() {
 		switch args[1].GetType() {
-		case phpv.ZtString, phpv.ZtInt, phpv.ZtFloat, phpv.ZtBool:
-			// These are accepted
+		case phpv.ZtString, phpv.ZtInt:
+			// Always accepted
+		case phpv.ZtFloat, phpv.ZtBool:
+			// In strict_types mode, float and bool are rejected for string|int|null
+			if strictTypes {
+				return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+					fmt.Sprintf("array_column(): Argument #2 ($column_key) must be of type string|int|null, %s given", phpv.ZValTypeNameDetailed(args[1])))
+			}
 		case phpv.ZtObject:
 			// Objects with __toString are accepted; convert to string
 			if obj := args[1].AsObject(ctx); obj != nil {
@@ -1612,8 +1623,14 @@ func fncArrayColumn(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	// Validate index_key type (must be string|int|null, or object with __toString)
 	if len(args) >= 3 && args[2] != nil && !args[2].IsNull() {
 		switch args[2].GetType() {
-		case phpv.ZtString, phpv.ZtInt, phpv.ZtFloat, phpv.ZtBool:
-			// These are accepted
+		case phpv.ZtString, phpv.ZtInt:
+			// Always accepted
+		case phpv.ZtFloat, phpv.ZtBool:
+			// In strict_types mode, float and bool are rejected for string|int|null
+			if strictTypes {
+				return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+					fmt.Sprintf("array_column(): Argument #3 ($index_key) must be of type string|int|null, %s given", phpv.ZValTypeNameDetailed(args[2])))
+			}
 		case phpv.ZtObject:
 			// Objects with __toString are accepted; convert to string
 			if obj := args[2].AsObject(ctx); obj != nil {
@@ -2274,6 +2291,11 @@ func fncArrayReduce(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	accumulator := core.Deref(initialArg, phpv.ZNULL.ZVal()).Dup()
+	// Force COW separation so that mutations to the accumulator's array
+	// don't affect the original initial value (e.g., $w[$v]++ in callback)
+	if accumulator.GetType() == phpv.ZtArray {
+		accumulator.AsArray(ctx).SeparateCow()
+	}
 
 	cbArgs := make([]*phpv.ZVal, 2)
 	for _, v := range array.Iterate(ctx) {

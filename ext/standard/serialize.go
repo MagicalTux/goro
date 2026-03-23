@@ -94,13 +94,25 @@ func fncUnserialize(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 type serializeSeen struct {
 	arrays  map[*phpv.ZArray]bool
 	objects map[phpv.ZObject]bool
+	// Object reference tracking for r: references
+	// Maps object identity to the 1-based reference index
+	objRefs map[phpv.ZObject]int
+	// Counter for reference tracking (1-based, increments for each value)
+	refCount int
 }
 
 func newSerializeSeen() *serializeSeen {
 	return &serializeSeen{
 		arrays:  make(map[*phpv.ZArray]bool),
 		objects: make(map[phpv.ZObject]bool),
+		objRefs: make(map[phpv.ZObject]int),
 	}
+}
+
+// nextRef increments and returns the next reference index (1-based)
+func (s *serializeSeen) nextRef() int {
+	s.refCount++
+	return s.refCount
 }
 
 func serialize(ctx phpv.Context, value *phpv.ZVal) (string, error) {
@@ -134,12 +146,15 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seen *ser
 	var result string
 	switch value.GetType() {
 	case phpv.ZtNull:
+		seen.nextRef() // NULL still gets a reference slot
 		result = "N;"
 	case phpv.ZtResource:
+		seen.nextRef()
 		// PHP serializes resources as their integer ID
 		r := value.Value().(phpv.Resource)
 		result = "i:" + strconv.Itoa(r.GetResourceID()) + ";"
 	case phpv.ZtBool:
+		seen.nextRef()
 		switch value.AsBool(ctx) {
 		case true:
 			result = "b:1;"
@@ -147,9 +162,11 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seen *ser
 			result = "b:0;"
 		}
 	case phpv.ZtInt:
+		seen.nextRef()
 		n := value.AsInt(ctx)
 		result = "i:" + strconv.FormatInt(int64(n), 10) + ";"
 	case phpv.ZtFloat:
+		seen.nextRef()
 		n := value.AsFloat(ctx)
 		p := phpv.GetSerializePrecision(ctx)
 		var s string
@@ -162,6 +179,7 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seen *ser
 		}
 		result = "d:" + s + ";"
 	case phpv.ZtString:
+		seen.nextRef()
 		s := value.AsString(ctx)
 		result = fmt.Sprintf(`s:%d:"%s";`, len(s), s)
 	case phpv.ZtArray:
@@ -174,6 +192,8 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seen *ser
 		seen.arrays[arr] = true
 		defer delete(seen.arrays, arr)
 
+		seen.nextRef() // array gets a reference slot
+
 		count := strconv.FormatInt(int64(arr.Count(ctx)), 10)
 
 		var buf bytes.Buffer
@@ -181,26 +201,7 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seen *ser
 		buf.WriteString(count)
 		buf.WriteString(":{")
 
-		refs := map[*phpv.ZVal]int{}
-
-		i := -1
 		for k, v := range arr.Iterate(ctx) {
-
-			if j, ok := refs[v.Nude()]; ok {
-				sub, err := serializeWithDepth(ctx, k, depth+1, seen)
-				if err != nil {
-					return "", err
-				}
-				buf.WriteString(sub)
-				buf.WriteString("R:")
-				buf.WriteString(strconv.Itoa(j + 2))
-				buf.WriteString(";")
-				continue
-			} else {
-				i++
-				refs[v.Nude()] = i
-			}
-
 			sub, err := serializeWithDepth(ctx, k, depth+1, seen)
 			if err != nil {
 				return "", err
@@ -217,13 +218,22 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seen *ser
 	case phpv.ZtObject:
 		obj := value.AsObject(ctx)
 
+		// Check if we've already fully serialized this object - produce r:N; reference
+		if refIdx, ok := seen.objRefs[obj]; ok {
+			return "r:" + strconv.Itoa(refIdx) + ";", nil
+		}
+
 		// Detect object cycles to prevent infinite recursion
 		// (especially with Serializable::serialize() calling serialize() internally)
 		if seen.objects[obj] {
 			return "N;", nil
 		}
 		seen.objects[obj] = true
-		defer delete(seen.objects, obj)
+
+		// Assign reference number for this object
+		objRefIdx := seen.nextRef()
+		// Register in objRefs so future encounters produce r:N;
+		seen.objRefs[obj] = objRefIdx
 
 		// Enum serialization: E:length:"ClassName:CaseName";
 		if obj.GetClass().GetType().Has(phpv.ZClassTypeEnum) {
