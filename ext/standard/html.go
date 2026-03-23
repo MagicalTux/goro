@@ -568,7 +568,7 @@ func fncHtmlSpecialChars(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error
 		}
 	}
 
-	flags := flagsArg.GetOrDefault(ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML401)
+	flags := flagsArg.GetOrDefault(ENT_COMPAT | ENT_SUBSTITUTE | ENT_HTML401)
 	doubleEncode := bool(doubleEncodeArg.GetOrDefault(true))
 
 	escape := map[string]string{}

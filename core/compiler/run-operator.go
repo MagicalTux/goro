@@ -566,6 +566,14 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	// still go through the standard numeric conversion for proper warnings.
 	if r.a == nil && (r.op == tokenizer.Rune('-') || r.op == tokenizer.Rune('+')) {
 		bType := b.GetType()
+		// Check for object with HandleDoOperation (e.g., GMP unary -/+)
+		if bType == phpv.ZtObject {
+			if obj, ok := b.Value().(phpv.ZObject); ok {
+				if h := obj.GetClass().Handlers(); h != nil && h.HandleDoOperation != nil {
+					return h.HandleDoOperation(ctx, int(r.op), a, b)
+				}
+			}
+		}
 		if bType == phpv.ZtInt || bType == phpv.ZtFloat {
 			if r.op == tokenizer.Rune('-') {
 				switch v := b.Value().(type) {
@@ -619,7 +627,30 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			if aType == phpv.ZtArray || bType == phpv.ZtArray {
 				return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Unsupported operand types: %s %s %s", phpTypeName(a), r.op.OpString(), phpTypeName(b)))
 			}
+			// Check for objects with HandleDoOperation (e.g., GMP operator overloading)
 			if aType == phpv.ZtObject || bType == phpv.ZtObject {
+				var handler func(phpv.Context, int, *phpv.ZVal, *phpv.ZVal) (*phpv.ZVal, error)
+				if aType == phpv.ZtObject {
+					if obj, ok := a.Value().(phpv.ZObject); ok {
+						if h := obj.GetClass().Handlers(); h != nil && h.HandleDoOperation != nil {
+							handler = h.HandleDoOperation
+						}
+					}
+				}
+				if handler == nil && bType == phpv.ZtObject {
+					if obj, ok := b.Value().(phpv.ZObject); ok {
+						if h := obj.GetClass().Handlers(); h != nil && h.HandleDoOperation != nil {
+							handler = h.HandleDoOperation
+						}
+					}
+				}
+				if handler != nil {
+					res, err = handler(ctx, int(r.op), a, b)
+					if err != nil {
+						return nil, err
+					}
+					goto writeBack
+				}
 				return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Unsupported operand types: %s %s %s", phpTypeName(a), r.op.OpString(), phpTypeName(b)))
 			}
 			if aType == phpv.ZtResource || bType == phpv.ZtResource {

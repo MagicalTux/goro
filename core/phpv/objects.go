@@ -81,6 +81,8 @@ type ZClassHandlers struct {
 	HandleDecRef     func(ctx Context, o ZObject) // called when object refcount is decremented during scope cleanup
 	HandleCastArray  func(ctx Context, o ZObject) (*ZArray, error) // override (array) cast
 	HandleCompare    func(ctx Context, a, b ZObject) (int, error)  // override == comparison; return 0=equal, non-0=not-equal
+	HandleCast       func(ctx Context, o ZObject, t ZType) (Val, error)          // override type casting (int, float, bool)
+	HandleDoOperation func(ctx Context, op int, a, b *ZVal) (*ZVal, error)       // override arithmetic/bitwise operators; op is tokenizer.ItemType
 }
 
 type ZClass interface {

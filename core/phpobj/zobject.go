@@ -248,6 +248,13 @@ func (z *ZObject) SetOpaque(c phpv.ZClass, v interface{}) {
 }
 
 func (z *ZObject) AsVal(ctx phpv.Context, t phpv.ZType) (phpv.Val, error) {
+	// Check for custom cast handler (e.g., GMP)
+	if h := z.Class.Handlers(); h != nil && h.HandleCast != nil {
+		if t == phpv.ZtInt || t == phpv.ZtFloat || t == phpv.ZtBool {
+			return h.HandleCast(ctx, z, t)
+		}
+	}
+
 	switch t {
 	case phpv.ZtString:
 		if m, ok := z.Class.GetMethod("__tostring"); ok {
