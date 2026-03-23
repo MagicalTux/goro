@@ -417,12 +417,7 @@ func pregSplit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		addPart(subjectStr[pos:matchStart], pos)
 		nSplits++
 		addDelimCaptures(loc)
-
-		if matchStart == matchEnd {
-			// Zero-length match: don't advance pos
-		} else {
-			pos = matchEnd
-		}
+		pos = matchEnd
 	}
 
 	// Add the remaining part

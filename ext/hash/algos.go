@@ -88,7 +88,7 @@ func (j *joaatHash) Sum(in []byte) []byte {
 	h ^= h >> 11
 	h += h << 15
 	b := make([]byte, 4)
-	binary.LittleEndian.PutUint32(b, h)
+	binary.BigEndian.PutUint32(b, h)
 	return append(in, b...)
 }
 

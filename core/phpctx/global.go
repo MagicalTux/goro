@@ -66,6 +66,7 @@ type Global struct {
 
 	globalClasses   map[phpv.ZString]*phpobj.ZClass // TODO replace *ZClass with a nice interface
 	classOrigNames  map[phpv.ZString]phpv.ZString  // lowercase -> original-case name for class aliases
+	classOrder      []phpv.ZString                 // ordered list of class names (lowercase) for get_declared_classes()
 	shutdownFuncs []phpv.Callable
 	callDepth     int
 	constant      map[phpv.ZString]phpv.Val
@@ -1615,6 +1616,7 @@ func (g *Global) RegisterClass(name phpv.ZString, c phpv.ZClass) error {
 	}
 	g.globalClasses[lowerName] = c.(*phpobj.ZClass)
 	g.classOrigNames[lowerName] = name
+	g.classOrder = append(g.classOrder, lowerName)
 	delete(g.globalLazyClass, lowerName)
 	return nil
 }
@@ -1632,8 +1634,12 @@ func (g *Global) GetCompilingClass() phpv.ZClass {
 }
 
 func (g *Global) GetDeclaredClasses() []phpv.ZString {
-	result := make([]phpv.ZString, 0, len(g.globalClasses))
-	for lowerName := range g.globalClasses {
+	result := make([]phpv.ZString, 0, len(g.classOrder))
+	for _, lowerName := range g.classOrder {
+		// Skip classes that have been unregistered
+		if _, exists := g.globalClasses[lowerName]; !exists {
+			continue
+		}
 		if origName, ok := g.classOrigNames[lowerName]; ok {
 			result = append(result, origName)
 		} else {
