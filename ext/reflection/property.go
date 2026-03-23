@@ -285,6 +285,19 @@ func reflectionPropertyToString(ctx phpv.Context, o *phpobj.ZObject, args []*php
 	} else {
 		sb.WriteString("public")
 	}
+	// Asymmetric set visibility
+	if data.prop.SetModifiers != 0 {
+		setVis := "public"
+		if data.prop.SetModifiers.IsProtected() {
+			setVis = "protected"
+		} else if data.prop.SetModifiers.IsPrivate() {
+			setVis = "private"
+		}
+		sb.WriteString(" " + setVis + "(set)")
+	} else if data.prop.Modifiers.IsReadonly() && !data.prop.Modifiers.IsPrivate() {
+		// PHP 8.4: readonly implies protected(set)
+		sb.WriteString(" protected(set)")
+	}
 	if data.prop.Modifiers.IsReadonly() {
 		sb.WriteString(" readonly")
 	}
@@ -407,6 +420,10 @@ func reflectionPropertyIsProtectedSet(ctx phpv.Context, o *phpobj.ZObject, args 
 	}
 	if data.prop.SetModifiers != 0 {
 		return phpv.ZBool(data.prop.SetModifiers.IsProtected()).ZVal(), nil
+	}
+	// readonly implies protected(set)
+	if data.prop.Modifiers.IsReadonly() && !data.prop.Modifiers.IsPrivate() {
+		return phpv.ZBool(true).ZVal(), nil
 	}
 	return phpv.ZBool(data.prop.Modifiers.IsProtected()).ZVal(), nil
 }

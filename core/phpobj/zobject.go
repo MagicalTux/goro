@@ -1127,8 +1127,8 @@ func (o *ZObject) HasProp(ctx phpv.Context, key phpv.Val) (bool, error) {
 				}
 				return true, nil
 			}
-			// Write-only: set hook but no get hook and no backing value
-			if prop.SetHook != nil && prop.GetHook == nil && !o.h.HasString(keyStr) {
+			// Write-only virtual: set hook but no get hook, not backed, and no backing value
+			if prop.SetHook != nil && prop.GetHook == nil && !prop.IsBacked && !o.h.HasString(keyStr) {
 				return false, ThrowError(ctx, Error,
 					fmt.Sprintf("Property %s::$%s is write-only", o.Class.GetName(), keyStr))
 			}
@@ -1586,10 +1586,10 @@ func (o *ZObject) ObjectGet(ctx phpv.Context, key phpv.Val) (*phpv.ZVal, error) 
 			if prop.GetHook != nil {
 				return o.runGetHook(ctx, keyStr, prop.GetHook)
 			}
-			// Set-only property without a backing value: reading throws Error.
-			// If the set hook has written to the backing store (via $this->prop),
-			// the value is in the hash table and we let the read fall through.
-			if prop.SetHook != nil && prop.GetHook == nil && !o.h.HasString(keyStr) {
+			// Set-only virtual property without a backing value: reading throws Error.
+			// Backed properties (IsBacked=true) fall through to normal property lookup
+			// (which may throw "uninitialized typed property" if no value has been set yet).
+			if prop.SetHook != nil && prop.GetHook == nil && !prop.IsBacked && !o.h.HasString(keyStr) {
 				return nil, ThrowError(ctx, Error,
 					fmt.Sprintf("Property %s::$%s is write-only", o.Class.GetName(), keyStr))
 			}
@@ -1682,8 +1682,8 @@ func (o *ZObject) ObjectGetQuiet(ctx phpv.Context, key phpv.Val) (*phpv.ZVal, bo
 				}
 				return result, true, nil
 			}
-			// Write-only: set hook but no get hook and no backing value
-			if prop.SetHook != nil && prop.GetHook == nil && !o.h.HasString(keyStr) {
+			// Write-only virtual: set hook but no get hook, not backed, and no backing value
+			if prop.SetHook != nil && prop.GetHook == nil && !prop.IsBacked && !o.h.HasString(keyStr) {
 				return nil, false, ThrowError(ctx, Error,
 					fmt.Sprintf("Property %s::$%s is write-only", o.Class.GetName(), keyStr))
 			}

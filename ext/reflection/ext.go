@@ -63,11 +63,16 @@ func init() {
 	ReflectionProperty = &phpobj.ZClass{
 		Name: "ReflectionProperty",
 		Const: map[phpv.ZString]*phpv.ZClassConst{
-			"IS_STATIC":    {Value: phpv.ZInt(ReflectionMethodIS_STATIC)},
-			"IS_PUBLIC":    {Value: phpv.ZInt(ReflectionMethodIS_PUBLIC)},
-			"IS_PROTECTED": {Value: phpv.ZInt(ReflectionMethodIS_PROTECTED)},
-			"IS_PRIVATE":   {Value: phpv.ZInt(ReflectionMethodIS_PRIVATE)},
-			"IS_READONLY":  {Value: phpv.ZInt(128)},
+			"IS_STATIC":        {Value: phpv.ZInt(ReflectionMethodIS_STATIC)},
+			"IS_PUBLIC":        {Value: phpv.ZInt(ReflectionMethodIS_PUBLIC)},
+			"IS_PROTECTED":     {Value: phpv.ZInt(ReflectionMethodIS_PROTECTED)},
+			"IS_PRIVATE":       {Value: phpv.ZInt(ReflectionMethodIS_PRIVATE)},
+			"IS_READONLY":      {Value: phpv.ZInt(128)},
+			"IS_VIRTUAL":       {Value: phpv.ZInt(512)},
+			"IS_PROTECTED_SET": {Value: phpv.ZInt(256)},
+			"IS_PRIVATE_SET":   {Value: phpv.ZInt(1024)},
+			"IS_ABSTRACT":      {Value: phpv.ZInt(ReflectionMethodIS_ABSTRACT)},
+			"IS_FINAL":         {Value: phpv.ZInt(ReflectionMethodIS_FINAL)},
 		},
 		// Methods will be set by initReflectionProperty()
 		Methods: map[phpv.ZString]*phpv.ZClassMethod{},

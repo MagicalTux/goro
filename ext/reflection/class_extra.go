@@ -982,7 +982,16 @@ func reflectionMethodIsDeprecated(ctx phpv.Context, o *phpobj.ZObject, args []*p
 	if data == nil {
 		return phpv.ZBool(false).ZVal(), nil
 	}
-	return phpv.ZBool(data.method.Modifiers.Has(phpv.ZAttrDeprecated)).ZVal(), nil
+	if data.method.Modifiers.Has(phpv.ZAttrDeprecated) {
+		return phpv.ZBool(true).ZVal(), nil
+	}
+	// Check for #[Deprecated] attribute
+	for _, attr := range data.method.Attributes {
+		if attr.ClassName == "Deprecated" || attr.ClassName == "\\Deprecated" {
+			return phpv.ZBool(true).ZVal(), nil
+		}
+	}
+	return phpv.ZBool(false).ZVal(), nil
 }
 
 func reflectionMethodHasPrototype(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
@@ -1196,6 +1205,21 @@ func reflectionParameterGetDeclaringFunction(ctx phpv.Context, o *phpobj.ZObject
 // --- Additional methods for ReflectionFunction ---
 
 func reflectionFunctionIsDeprecated(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	data := getFuncData(o)
+	if data == nil {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	// Check for #[Deprecated] attribute
+	type attrGetter interface {
+		GetAttributes() []*phpv.ZAttribute
+	}
+	if ag, ok := data.callable.(attrGetter); ok {
+		for _, attr := range ag.GetAttributes() {
+			if attr.ClassName == "Deprecated" || attr.ClassName == "\\Deprecated" {
+				return phpv.ZBool(true).ZVal(), nil
+			}
+		}
+	}
 	return phpv.ZBool(false).ZVal(), nil
 }
 

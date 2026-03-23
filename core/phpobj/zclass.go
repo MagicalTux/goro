@@ -1324,6 +1324,38 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 		}
 	}
 
+	// PHP 8.4: Validate abstract property hooks - non-abstract classes must not have abstract hooks
+	if c.Type != phpv.ZClassTypeInterface && c.Type != phpv.ZClassTypeTrait && c.Attr&phpv.ZClassAttr(phpv.ZClassExplicitAbstract) == 0 {
+		var abstractHooks []string
+		for _, prop := range c.Props {
+			if prop.GetIsAbstract && prop.GetHook == nil {
+				abstractHooks = append(abstractHooks, string(c.Name)+"::$"+string(prop.VarName)+"::get")
+			}
+			if prop.SetIsAbstract && prop.SetHook == nil {
+				abstractHooks = append(abstractHooks, string(c.Name)+"::$"+string(prop.VarName)+"::set")
+			}
+		}
+		if len(abstractHooks) > 0 {
+			msg := fmt.Sprintf("Class %s contains %d abstract method", c.GetName(), len(abstractHooks))
+			if len(abstractHooks) > 1 {
+				msg += "s"
+			}
+			msg += " and must therefore be declared abstract or implement the remaining method"
+			if len(abstractHooks) > 1 {
+				msg += "s"
+			}
+			msg += " ("
+			for i, h := range abstractHooks {
+				if i > 0 {
+					msg += ", "
+				}
+				msg += h
+			}
+			msg += ")"
+			return c.fatalError(ctx, msg)
+		}
+	}
+
 	// Validate #[\Override] attribute: methods with this attribute must have a
 	// matching method in a parent class, implemented interface, or abstract trait method.
 	if c.Type != phpv.ZClassTypeTrait {

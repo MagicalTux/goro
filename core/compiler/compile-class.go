@@ -609,6 +609,15 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 					}
 				}
 
+				// Validate final+private property combination (not allowed)
+				if prop.Modifiers.Has(phpv.ZAttrFinal) && prop.Modifiers.IsPrivate() {
+					return nil, &phpv.PhpError{
+						Err:  fmt.Errorf("Property cannot be both final and private"),
+						Code: phpv.E_COMPILE_ERROR,
+						Loc:  l,
+					}
+				}
+
 				// Validate readonly property constraints
 				if prop.Modifiers.IsReadonly() {
 					if prop.TypeHint == nil {
@@ -682,6 +691,24 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 						}
 					}
 
+					// Interface-specific property validations
+					if class.Type == phpv.ZClassTypeInterface {
+						if prop.Modifiers.IsPrivate() || prop.Modifiers.IsProtected() {
+							return nil, &phpv.PhpError{
+								Err:  fmt.Errorf("Property in interface cannot be protected or private"),
+								Code: phpv.E_COMPILE_ERROR,
+								Loc:  l,
+							}
+						}
+						if prop.Modifiers.Has(phpv.ZAttrAbstract) {
+							return nil, &phpv.PhpError{
+								Err:  fmt.Errorf("Property in interface cannot be explicitly abstract. All interface members are implicitly abstract"),
+								Code: phpv.E_COMPILE_ERROR,
+								Loc:  l,
+							}
+						}
+					}
+
 					if err := compilePropertyHooks(prop, class, c); err != nil {
 						return nil, err
 					}
@@ -700,15 +727,15 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 					// A virtual property with only a get hook is "read-only virtual"
 					// A virtual property with only a set hook is "write-only virtual"
 					// Neither should specify asymmetric visibility.
-					if prop.SetModifiers != 0 {
-						if prop.GetHook != nil && prop.SetHook == nil && prop.Default == nil {
+					if prop.SetModifiers != 0 && prop.IsVirtual() {
+						if prop.GetHook != nil && prop.SetHook == nil {
 							return nil, &phpv.PhpError{
 								Err:  fmt.Errorf("Read-only virtual property %s::$%s must not specify asymmetric visibility", class.Name, prop.VarName),
 								Code: phpv.E_COMPILE_ERROR,
 								Loc:  l,
 							}
 						}
-						if prop.SetHook != nil && prop.GetHook == nil && prop.Default == nil {
+						if prop.SetHook != nil && prop.GetHook == nil {
 							return nil, &phpv.PhpError{
 								Err:  fmt.Errorf("Write-only virtual property %s::$%s must not specify asymmetric visibility", class.Name, prop.VarName),
 								Code: phpv.E_COMPILE_ERROR,

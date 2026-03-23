@@ -151,13 +151,17 @@ func fncFgetcsv(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, fmt.Sprintf("fgetcsv(): Argument #2 ($length) must be between 0 and %d", core.PHP_MAXPATHLEN))
 	}
 
-	// Validate separator
-	if sepArg != nil && len(*sepArg) != 1 {
+	// Check for raw ZVal types: NULL means "use default" for separator/enclosure
+	sepIsNull := len(args) > 2 && args[2] != nil && args[2].GetType() == phpv.ZtNull
+	encIsNull := len(args) > 3 && args[3] != nil && args[3].GetType() == phpv.ZtNull
+
+	// Validate separator (only if explicitly provided and not NULL)
+	if sepArg != nil && !sepIsNull && len(*sepArg) != 1 {
 		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "fgetcsv(): Argument #3 ($separator) must be a single character")
 	}
 
-	// Validate enclosure
-	if encArg != nil && len(*encArg) != 1 {
+	// Validate enclosure (only if explicitly provided and not NULL)
+	if encArg != nil && !encIsNull && len(*encArg) != 1 {
 		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "fgetcsv(): Argument #4 ($enclosure) must be a single character")
 	}
 
@@ -165,10 +169,10 @@ func fncFgetcsv(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	enc := byte('"')
 	esc := byte('\\')
 
-	if sepArg != nil && len(*sepArg) > 0 {
+	if sepArg != nil && !sepIsNull && len(*sepArg) > 0 {
 		sep = (*sepArg)[0]
 	}
-	if encArg != nil && len(*encArg) > 0 {
+	if encArg != nil && !encIsNull && len(*encArg) > 0 {
 		enc = (*encArg)[0]
 	}
 	if escArg != nil {

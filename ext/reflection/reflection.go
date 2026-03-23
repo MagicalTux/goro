@@ -45,6 +45,15 @@ func reflectionGetModifierNames(ctx phpv.Context, o *phpobj.ZObject, args []*php
 	if modifiers&128 != 0 { // IS_READONLY
 		arr.OffsetSet(ctx, nil, phpv.ZString("readonly").ZVal())
 	}
+	if modifiers&512 != 0 { // IS_VIRTUAL
+		arr.OffsetSet(ctx, nil, phpv.ZString("virtual").ZVal())
+	}
+	if modifiers&256 != 0 { // IS_PROTECTED_SET
+		arr.OffsetSet(ctx, nil, phpv.ZString("protected(set)").ZVal())
+	}
+	if modifiers&1024 != 0 { // IS_PRIVATE_SET
+		arr.OffsetSet(ctx, nil, phpv.ZString("private(set)").ZVal())
+	}
 
 	return arr.ZVal(), nil
 }

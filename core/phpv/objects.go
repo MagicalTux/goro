@@ -37,14 +37,15 @@ type ZClassProp struct {
 }
 
 // IsVirtual returns true if this property is virtual (has hooks but no backing store).
-// A virtual property has hooks, no default value, and its hooks never reference
-// the backing store ($this->propName). The IsBacked flag is set at compile time
-// by analyzing the hook bodies.
+// A virtual property has hooks and its hooks never reference the backing store
+// ($this->propName). The IsBacked flag is set at compile time by analyzing the hook bodies.
+// Note: a property with a default value can still be virtual if the hooks don't
+// reference the backing store (this is an error caught separately at compile time).
 func (p *ZClassProp) IsVirtual() bool {
 	if !p.HasHooks {
 		return false
 	}
-	if p.Default != nil || p.IsBacked {
+	if p.IsBacked {
 		return false
 	}
 	return true

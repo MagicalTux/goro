@@ -149,15 +149,18 @@ func compilePropertyHooks(prop *phpv.ZClassProp, class *phpobj.ZClass, c compile
 			}
 		}
 
+		// Hook inherits abstract from property modifier
+		effectiveAbstract := hookIsAbstract || prop.Modifiers.Has(phpv.ZAttrAbstract)
+
 		// Validate modifier combinations
-		if hookIsAbstract && hookIsFinal {
+		if effectiveAbstract && hookIsFinal {
 			return &phpv.PhpError{
 				Err:  fmt.Errorf("Property hook cannot be both abstract and final"),
 				Code: phpv.E_COMPILE_ERROR,
 				Loc:  i.Loc(),
 			}
 		}
-		if hookIsAbstract && prop.Modifiers.IsPrivate() {
+		if effectiveAbstract && prop.Modifiers.IsPrivate() {
 			return &phpv.PhpError{
 				Err:  fmt.Errorf("Property hook cannot be both abstract and private"),
 				Code: phpv.E_COMPILE_ERROR,
