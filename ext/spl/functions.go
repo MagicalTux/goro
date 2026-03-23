@@ -359,7 +359,7 @@ func resolveClass(ctx phpv.Context, z *phpv.ZVal, autoload bool, funcName ...str
 // > func array|false class_implements ( object|string $object_or_class [, bool $autoload = true ] )
 func classImplements(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
-		return nil, ctx.Errorf("class_implements() expects at least 1 argument, 0 given")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "class_implements() expects at least 1 argument, 0 given")
 	}
 
 	autoload := true
@@ -403,7 +403,7 @@ func collectInterfaces(cls *phpobj.ZClass, result *phpv.ZArray, ctx phpv.Context
 // > func array|false class_parents ( object|string $object_or_class [, bool $autoload = true ] )
 func classParents(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
-		return nil, ctx.Errorf("class_parents() expects at least 1 argument, 0 given")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "class_parents() expects at least 1 argument, 0 given")
 	}
 
 	autoload := true
@@ -439,7 +439,7 @@ func classParents(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // > func array|false class_uses ( object|string $object_or_class [, bool $autoload = true ] )
 func classUses(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
-		return nil, ctx.Errorf("class_uses() expects at least 1 argument, 0 given")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "class_uses() expects at least 1 argument, 0 given")
 	}
 
 	autoload := true

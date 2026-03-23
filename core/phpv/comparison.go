@@ -422,16 +422,34 @@ func Compare(ctx Context, a, b *ZVal) (int, error) {
 	}
 
 	if a.GetType() == ZtObject {
-		if b.GetType() != ZtObject {
-			return 1, nil
+		if b.GetType() == ZtObject {
+			return CompareObject(ctx, a.AsObject(ctx), b.AsObject(ctx))
 		}
-		return CompareObject(ctx, a.AsObject(ctx), b.AsObject(ctx))
+		// Check if object has HandleCast (e.g., GMP) for numeric comparison with scalars
+		ao := a.AsObject(ctx)
+		if h := ao.GetClass().Handlers(); h != nil && h.HandleCast != nil {
+			// Try to cast to int for comparison
+			val, err := h.HandleCast(ctx, ao, ZtInt)
+			if err == nil {
+				return Compare(ctx, val.ZVal(), b)
+			}
+		}
+		return 1, nil
 	}
 	if b.GetType() == ZtObject {
-		if a.GetType() != ZtObject {
-			return -1, nil
+		if a.GetType() == ZtObject {
+			return CompareObject(ctx, a.AsObject(ctx), b.AsObject(ctx))
 		}
-		return CompareObject(ctx, b.AsObject(ctx), a.AsObject(ctx))
+		// Check if object has HandleCast (e.g., GMP) for numeric comparison with scalars
+		bo := b.AsObject(ctx)
+		if h := bo.GetClass().Handlers(); h != nil && h.HandleCast != nil {
+			// Try to cast to int for comparison
+			val, err := h.HandleCast(ctx, bo, ZtInt)
+			if err == nil {
+				return Compare(ctx, a, val.ZVal())
+			}
+		}
+		return -1, nil
 	}
 
 CompareStrings:

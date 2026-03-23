@@ -211,10 +211,17 @@ func (a runArray) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 
 		// Preserve references (e.g., array(&$a)) by not calling v.ZVal()
 		// which would unwrap the reference. Pass the ref ZVal directly.
+		var setErr error
 		if v.IsRef() {
-			array.OffsetSet(ctx, k, v)
+			setErr = array.OffsetSet(ctx, k, v)
 		} else {
-			array.OffsetSet(ctx, k, v.ZVal())
+			setErr = array.OffsetSet(ctx, k, v.ZVal())
+		}
+		if setErr != nil {
+			if setErr == phpv.ErrNextElementOccupied {
+				return nil, phpobj.ThrowError(ctx, phpobj.Error, setErr.Error())
+			}
+			return nil, setErr
 		}
 	}
 

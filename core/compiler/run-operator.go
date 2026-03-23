@@ -645,11 +645,18 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 					}
 				}
 				if handler != nil {
-					res, err = handler(ctx, int(r.op), a, b)
-					if err != nil {
-						return nil, err
+					handlerRes, handlerErr := handler(ctx, int(r.op), a, b)
+					if handlerErr != nil {
+						return nil, handlerErr
 					}
-					goto writeBack
+					// For compound assignment operators, write back
+					if op.write {
+						w, ok := r.a.(phpv.Writable)
+						if ok {
+							return handlerRes, w.WriteValue(ctx, handlerRes.ZVal())
+						}
+					}
+					return handlerRes, nil
 				}
 				return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Unsupported operand types: %s %s %s", phpTypeName(a), r.op.OpString(), phpTypeName(b)))
 			}
@@ -1132,6 +1139,15 @@ func operatorLogicalXor(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal
 }
 
 func operatorMathLogic(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*phpv.ZVal, error) {
+	// Check for unary ~ on objects with HandleDoOperation (e.g., GMP)
+	if a == nil && b != nil && b.GetType() == phpv.ZtObject {
+		if obj, ok := b.Value().(phpv.ZObject); ok {
+			if h := obj.GetClass().Handlers(); h != nil && h.HandleDoOperation != nil {
+				return h.HandleDoOperation(ctx, int(op), nil, b)
+			}
+		}
+	}
+
 	if a == nil {
 		a = b
 	}
@@ -1450,10 +1466,28 @@ func operatorCompare(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (
 	}
 
 	// PHP 8: string vs object -> no numeric conversion, objects are greater than strings
+	// But objects with HandleCast (like GMP) can be compared to strings
 	if (a.GetType() == phpv.ZtString && b.GetType() == phpv.ZtObject) ||
 		(a.GetType() == phpv.ZtObject && b.GetType() == phpv.ZtString) {
-		// Skip numeric comparison, fall through to object > scalar comparison
-		goto ObjectScalarCompare
+		// Check if the object has HandleCast for numeric comparison
+		var objVal *phpv.ZVal
+		if a.GetType() == phpv.ZtObject {
+			ao := a.AsObject(ctx)
+			if h := ao.GetClass().Handlers(); h != nil && h.HandleCast != nil {
+				objVal = a
+			}
+		}
+		if b.GetType() == phpv.ZtObject {
+			bo := b.AsObject(ctx)
+			if h := bo.GetClass().Handlers(); h != nil && h.HandleCast != nil {
+				objVal = b
+			}
+		}
+		if objVal == nil {
+			// Skip numeric comparison, fall through to object > scalar comparison
+			goto ObjectScalarCompare
+		}
+		// Let the numeric comparison path handle it - the HandleCast will be used there
 	}
 
 	// PHP 8: when either operand is bool or null, always use bool comparison
@@ -1466,24 +1500,52 @@ func operatorCompare(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (
 		// if either part is a numeric, force the other one as numeric too and go through comparison
 		if ia == nil {
 			if a.GetType() == phpv.ZtObject {
-				// Object in comparison: emit Notice (not Warning) with appropriate target type
-				targetType := phpv.ZtInt
-				if ib != nil && ib.GetType() == phpv.ZtFloat {
-					targetType = phpv.ZtFloat
+				ao := a.AsObject(ctx)
+				// Check for HandleCast (e.g., GMP) before generic object-to-numeric
+				if h := ao.GetClass().Handlers(); h != nil && h.HandleCast != nil {
+					targetType := phpv.ZtInt
+					if ib != nil && ib.GetType() == phpv.ZtFloat {
+						targetType = phpv.ZtFloat
+					}
+					val, err := h.HandleCast(ctx, ao, targetType)
+					if err == nil {
+						ia = val.ZVal()
+					}
 				}
-				ia = phpv.CompareObjectToNumeric(ctx, a, targetType)
+				if ia == nil {
+					// Object in comparison: emit Notice (not Warning) with appropriate target type
+					targetType := phpv.ZtInt
+					if ib != nil && ib.GetType() == phpv.ZtFloat {
+						targetType = phpv.ZtFloat
+					}
+					ia = phpv.CompareObjectToNumeric(ctx, a, targetType)
+				}
 			} else {
 				ia, _ = a.AsNumeric(ctx)
 			}
 		}
 		if ib == nil {
 			if b.GetType() == phpv.ZtObject {
-				// Object in comparison: emit Notice (not Warning) with appropriate target type
-				targetType := phpv.ZtInt
-				if ia != nil && ia.GetType() == phpv.ZtFloat {
-					targetType = phpv.ZtFloat
+				bo := b.AsObject(ctx)
+				// Check for HandleCast (e.g., GMP) before generic object-to-numeric
+				if h := bo.GetClass().Handlers(); h != nil && h.HandleCast != nil {
+					targetType := phpv.ZtInt
+					if ia != nil && ia.GetType() == phpv.ZtFloat {
+						targetType = phpv.ZtFloat
+					}
+					val, err := h.HandleCast(ctx, bo, targetType)
+					if err == nil {
+						ib = val.ZVal()
+					}
 				}
-				ib = phpv.CompareObjectToNumeric(ctx, b, targetType)
+				if ib == nil {
+					// Object in comparison: emit Notice (not Warning) with appropriate target type
+					targetType := phpv.ZtInt
+					if ia != nil && ia.GetType() == phpv.ZtFloat {
+						targetType = phpv.ZtFloat
+					}
+					ib = phpv.CompareObjectToNumeric(ctx, b, targetType)
+				}
 			} else {
 				ib, _ = b.AsNumeric(ctx)
 			}
@@ -1624,7 +1686,17 @@ func operatorCompare(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (
 
 ObjectScalarCompare:
 	// PHP 8: objects are greater than all scalar types
+	// But objects with HandleCompare (like GMP) can use their comparison handler
 	if a.GetType() == phpv.ZtObject && b.GetType() != phpv.ZtObject {
+		ao := a.AsObject(ctx)
+		if h := ao.GetClass().Handlers(); h != nil && h.HandleCompare != nil {
+			// For GMP-like objects: try to convert scalar to same type for comparison
+			// Use the Compare function which handles HandleCast
+			cmp, err := phpv.Compare(ctx, a, b)
+			if err == nil {
+				return operatorCompareResult(op, cmp)
+			}
+		}
 		switch op {
 		case tokenizer.Rune('<'):
 			return phpv.ZBool(false).ZVal(), nil
@@ -1645,6 +1717,13 @@ ObjectScalarCompare:
 		}
 	}
 	if b.GetType() == phpv.ZtObject && a.GetType() != phpv.ZtObject {
+		bo := b.AsObject(ctx)
+		if h := bo.GetClass().Handlers(); h != nil && h.HandleCompare != nil {
+			cmp, err := phpv.Compare(ctx, a, b)
+			if err == nil {
+				return operatorCompareResult(op, cmp)
+			}
+		}
 		switch op {
 		case tokenizer.Rune('<'):
 			return phpv.ZBool(true).ZVal(), nil
@@ -1881,6 +1960,28 @@ func operatorCompareBool(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVa
 		return phpv.ZInt(0).ZVal(), nil
 	default:
 		return nil, ctx.Errorf("unsupported operator %s", op)
+	}
+}
+
+// operatorCompareResult converts a comparison result (cmp) to a ZVal based on the operator.
+func operatorCompareResult(op tokenizer.ItemType, cmp int) (*phpv.ZVal, error) {
+	switch op {
+	case tokenizer.Rune('<'):
+		return phpv.ZBool(cmp < 0).ZVal(), nil
+	case tokenizer.Rune('>'):
+		return phpv.ZBool(cmp > 0).ZVal(), nil
+	case tokenizer.T_IS_SMALLER_OR_EQUAL:
+		return phpv.ZBool(cmp <= 0).ZVal(), nil
+	case tokenizer.T_IS_GREATER_OR_EQUAL:
+		return phpv.ZBool(cmp >= 0).ZVal(), nil
+	case tokenizer.T_IS_EQUAL:
+		return phpv.ZBool(cmp == 0).ZVal(), nil
+	case tokenizer.T_IS_NOT_EQUAL:
+		return phpv.ZBool(cmp != 0).ZVal(), nil
+	case tokenizer.T_SPACESHIP:
+		return phpv.ZInt(cmp).ZVal(), nil
+	default:
+		return phpv.ZBool(false).ZVal(), nil
 	}
 }
 
