@@ -193,10 +193,9 @@ func mathRound(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			return phpv.ZFloat(n).ZVal(), nil
 		}
 		n *= shift
-		// Pre-round to fix floating point precision issues.
-		// e.g., 2e-23 * 1e23 = 1.9999999999999998 instead of 2.0.
-		// If the value is very close to an integer (within 1e-9 relative error),
-		// snap it to that integer before the half-rounding logic.
+		// Pre-round: fix floating point precision issues where the
+		// multiply introduces errors (e.g., 2e-23 * 1e23 = 1.9999999999999998).
+		// If n is very close to an integer, snap it before the half-rounding logic.
 		rounded := math.Round(n)
 		if rounded != 0 && math.Abs(n-rounded)/math.Abs(rounded) < 1e-9 {
 			n = rounded
