@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
@@ -327,7 +328,7 @@ func reflectionParameterCanBePassedByValue(ctx phpv.Context, o *phpobj.ZObject, 
 }
 
 func reflectionParameterIsArray(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	_ = ctx.Deprecated("Method ReflectionParameter::isArray() is deprecated since 8.0, use ReflectionParameter::getType() instead")
+	_ = ctx.Deprecated("Method ReflectionParameter::isArray() is deprecated since 8.0, use ReflectionParameter::getType() instead", logopt.NoFuncName(true))
 	data := getParamData(o)
 	if data == nil || data.arg.Hint == nil {
 		return phpv.ZBool(false).ZVal(), nil
@@ -340,7 +341,7 @@ func reflectionParameterIsArray(ctx phpv.Context, o *phpobj.ZObject, args []*php
 }
 
 func reflectionParameterIsCallable(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	_ = ctx.Deprecated("Method ReflectionParameter::isCallable() is deprecated since 8.0, use ReflectionParameter::getType() instead")
+	_ = ctx.Deprecated("Method ReflectionParameter::isCallable() is deprecated since 8.0, use ReflectionParameter::getType() instead", logopt.NoFuncName(true))
 	data := getParamData(o)
 	if data == nil || data.arg.Hint == nil {
 		return phpv.ZBool(false).ZVal(), nil
@@ -352,7 +353,7 @@ func reflectionParameterIsCallable(ctx phpv.Context, o *phpobj.ZObject, args []*
 }
 
 func reflectionParameterGetClass(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	_ = ctx.Deprecated("Method ReflectionParameter::getClass() is deprecated since 8.0, use ReflectionParameter::getType() instead")
+	_ = ctx.Deprecated("Method ReflectionParameter::getClass() is deprecated since 8.0, use ReflectionParameter::getType() instead", logopt.NoFuncName(true))
 	data := getParamData(o)
 	if data == nil || data.arg.Hint == nil {
 		return phpv.ZNULL.ZVal(), nil

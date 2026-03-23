@@ -13,7 +13,10 @@ func (m NativeMethod) Name() string { return "" }
 func (m NativeMethod) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	this := ctx.This()
 	if this == nil {
-		return nil, ctx.Errorf("Non-static method cannot be called statically")
+		// Allow static calls on NativeMethod - pass nil object.
+		// The engine already checks IsStatic() before allowing :: calls,
+		// so if we reach here it's a legitimate static method call.
+		return m(ctx, nil, args)
 	}
 
 	return m(ctx, this.(*ZObject), args)

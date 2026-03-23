@@ -245,7 +245,7 @@ func reflectionClassGetMethod(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.
 	}
 
 	if args[0].GetType() == phpv.ZtNull {
-		_ = ctx.Deprecated("ReflectionClass::getMethod(): Passing null to parameter #1 ($name) of type string is deprecated")
+		_ = ctx.Deprecated("Passing null to parameter #1 ($name) of type string is deprecated")
 	}
 
 	methodName := args[0].AsString(ctx)
@@ -513,7 +513,7 @@ func reflectionClassIsSubclassOf(ctx phpv.Context, o *phpobj.ZObject, args []*ph
 
 	if targetClass == nil {
 		if args[0].GetType() == phpv.ZtNull {
-			_ = ctx.Deprecated("ReflectionClass::isSubclassOf(): Passing null to parameter #1 ($class) of type ReflectionClass|string is deprecated")
+			_ = ctx.Deprecated("Passing null to parameter #1 ($class) of type ReflectionClass|string is deprecated")
 		}
 		className := args[0].AsString(ctx)
 		targetClass, err = resolveClass(ctx, className)
@@ -626,7 +626,7 @@ func reflectionClassGetProperty(ctx phpv.Context, o *phpobj.ZObject, args []*php
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "ReflectionClass::getProperty(): Argument #1 ($name) must be of type string, array given")
 	}
 	if args[0].GetType() == phpv.ZtNull {
-		_ = ctx.Deprecated("ReflectionClass::getProperty(): Passing null to parameter #1 ($name) of type string is deprecated")
+		_ = ctx.Deprecated("Passing null to parameter #1 ($name) of type string is deprecated")
 	}
 	name := args[0].AsString(ctx)
 

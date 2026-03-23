@@ -53,6 +53,15 @@ func initReflectionExtension() {
 				name, _ := o.GetOpaque(ReflectionExtension).(phpv.ZString)
 				return phpv.ZString("Extension [ <persistent> extension #0 " + string(name) + " version  ] {\n}\n").ZVal(), nil
 			})},
+			"ispersistent": {Name: "isPersistent", Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				return phpv.ZBool(true).ZVal(), nil
+			})},
+			"istemporary": {Name: "isTemporary", Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				return phpv.ZBool(false).ZVal(), nil
+			})},
+			"getdependencies": {Name: "getDependencies", Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				return phpv.NewZArray().ZVal(), nil
+			})},
 		},
 	}
 }

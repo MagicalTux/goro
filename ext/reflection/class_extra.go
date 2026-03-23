@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
@@ -40,7 +41,7 @@ func reflectionClassGetConstant(ctx phpv.Context, o *phpobj.ZObject, args []*php
 	name := args[0].AsString(ctx)
 	constVal, found := lookupClassConst(zc, name)
 	if !found {
-		_ = ctx.Deprecated("ReflectionClass::getConstant() for a non-existent constant is deprecated, use ReflectionClass::hasConstant() to check if the constant exists")
+		_ = ctx.Deprecated("ReflectionClass::getConstant() for a non-existent constant is deprecated, use ReflectionClass::hasConstant() to check if the constant exists", logopt.NoFuncName(true))
 		return phpv.ZBool(false).ZVal(), nil
 	}
 	if constVal.Value == nil {
@@ -132,7 +133,7 @@ func reflectionClassGetStaticPropertyValue(ctx phpv.Context, o *phpobj.ZObject, 
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "ReflectionClass::getStaticPropertyValue(): Argument #1 ($name) must be of type string, array given")
 	}
 	if args[0].GetType() == phpv.ZtNull {
-		_ = ctx.Deprecated("ReflectionClass::getStaticPropertyValue(): Passing null to parameter #1 ($name) of type string is deprecated")
+		_ = ctx.Deprecated("Passing null to parameter #1 ($name) of type string is deprecated")
 	}
 	zc := getZClass(o)
 	if zc == nil {

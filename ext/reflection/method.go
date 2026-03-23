@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
@@ -58,6 +59,10 @@ func initReflectionMethod() {
 		"setaccessible":                 {Name: "setAccessible", Method: phpobj.NativeMethod(reflectionMethodSetAccessible)},
 		"__tostring":                    {Name: "__toString", Method: phpobj.NativeMethod(reflectionMethodToString)},
 		"createfrommethodname":          {Name: "createFromMethodName", Method: phpobj.NativeMethod(reflectionMethodCreateFromMethodName), Modifiers: phpv.ZAttrPublic | phpv.ZAttrStatic},
+		"isgenerator":                   {Name: "isGenerator", Method: phpobj.NativeMethod(reflectionMethodIsGenerator)},
+		"getshortname":                  {Name: "getShortName", Method: phpobj.NativeMethod(reflectionMethodGetShortName)},
+		"getnamespacename":              {Name: "getNamespaceName", Method: phpobj.NativeMethod(reflectionMethodGetNamespaceName)},
+		"innamespace":                   {Name: "inNamespace", Method: phpobj.NativeMethod(reflectionMethodInNamespace)},
 	}
 }
 
@@ -86,7 +91,7 @@ func reflectionMethodConstructFull(ctx phpv.Context, o *phpobj.ZObject, args []*
 		}
 
 		// Emit deprecation notice (ignore error - it's just a notice)
-		_ = ctx.Deprecated("Calling ReflectionMethod::__construct() with 1 argument is deprecated, use ReflectionMethod::createFromMethodName() instead")
+		_ = ctx.Deprecated("Calling ReflectionMethod::__construct() with 1 argument is deprecated, use ReflectionMethod::createFromMethodName() instead", logopt.NoFuncName(true))
 
 		className := phpv.ZString(parts[0])
 		methodName = phpv.ZString(parts[1])
@@ -640,4 +645,35 @@ func reflectionMethodToString(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.
 	sb.WriteString("}\n")
 
 	return phpv.ZString(sb.String()).ZVal(), nil
+}
+
+func reflectionMethodIsGenerator(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	data := getMethodData(o)
+	if data == nil {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	type generatorChecker interface {
+		IsGenerator() bool
+	}
+	if gc, ok := data.method.Method.(generatorChecker); ok {
+		return phpv.ZBool(gc.IsGenerator()).ZVal(), nil
+	}
+	return phpv.ZBool(false).ZVal(), nil
+}
+
+func reflectionMethodGetShortName(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	data := getMethodData(o)
+	if data == nil {
+		return phpv.ZString("").ZVal(), nil
+	}
+	return data.method.Name.ZVal(), nil
+}
+
+func reflectionMethodGetNamespaceName(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	// Methods don't have namespaces (only their classes do)
+	return phpv.ZString("").ZVal(), nil
+}
+
+func reflectionMethodInNamespace(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	return phpv.ZBool(false).ZVal(), nil
 }

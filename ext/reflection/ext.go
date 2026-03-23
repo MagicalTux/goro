@@ -188,7 +188,7 @@ func reflectionClassConstruct(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "ReflectionClass::__construct(): Argument #1 ($objectOrClass) must be of type object|string, array given")
 	} else {
 		if arg.GetType() == phpv.ZtNull {
-			_ = ctx.Deprecated("ReflectionClass::__construct(): Passing null to parameter #1 ($objectOrClass) of type object|string is deprecated")
+			_ = ctx.Deprecated("Passing null to parameter #1 ($objectOrClass) of type object|string is deprecated")
 		}
 		className := arg.AsString(ctx)
 		var err error

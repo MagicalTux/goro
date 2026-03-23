@@ -1871,29 +1871,38 @@ func fncArrayMergeRecursive(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 	}
 
 	result := phpv.NewZArray()
-	arrayRecursiveMerge(ctx, result, array)
+	if err := arrayRecursiveMerge(ctx, result, array); err != nil {
+		return nil, err
+	}
 	for _, elem := range args[1:] {
 		arr, err := elem.As(ctx, phpv.ZtArray)
 		if err != nil {
 			return nil, ctx.FuncError(err)
 		}
-		arrayRecursiveMerge(ctx, result, arr.AsArray(ctx))
+		if err := arrayRecursiveMerge(ctx, result, arr.AsArray(ctx)); err != nil {
+			return nil, err
+		}
 	}
 
 	return result.ZVal(), nil
 }
 
-func arrayRecursiveMerge(ctx phpv.Context, result, array *phpv.ZArray, depth ...int) {
+func arrayRecursiveMerge(ctx phpv.Context, result, array *phpv.ZArray, depth ...int) error {
 	d := 0
 	if len(depth) > 0 {
 		d = depth[0]
 	}
 	if d > 256 {
-		return
+		return nil
 	}
 	for k, v := range array.Iterate(ctx) {
 		if k.GetType() == phpv.ZtInt {
-			result.OffsetSet(ctx, nil, v)
+			if err := result.OffsetSet(ctx, nil, v); err != nil {
+				if err == phpv.ErrNextElementOccupied {
+					return phpobj.ThrowError(ctx, phpobj.Error, err.Error())
+				}
+				return err
+			}
 			continue
 		}
 
@@ -1907,7 +1916,9 @@ func arrayRecursiveMerge(ctx phpv.Context, result, array *phpv.ZArray, depth ...
 				array = cur.AsArray(ctx)
 			}
 
-			arrayRecursiveMerge(ctx, array, v.AsArray(ctx), d+1)
+			if err := arrayRecursiveMerge(ctx, array, v.AsArray(ctx), d+1); err != nil {
+				return err
+			}
 			continue
 		}
 
@@ -1928,6 +1939,7 @@ func arrayRecursiveMerge(ctx phpv.Context, result, array *phpv.ZArray, depth ...
 
 		result.OffsetSet(ctx, k, v)
 	}
+	return nil
 }
 
 // > func array array_replace_recursive ( array $array1 [, array $... ] )

@@ -30,19 +30,23 @@ func shortName(name string) string {
 }
 
 func (r *runConstant) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
-	// Check special constants using the short (unqualified) name
 	short := shortName(r.c)
-	switch strings.ToLower(short) {
-	case "null":
-		return phpv.ZNull{}.ZVal(), nil
-	case "true":
-		return phpv.ZBool(true).ZVal(), nil
-	case "false":
-		return phpv.ZBool(false).ZVal(), nil
-	case "self":
-		return phpv.ZString("self").ZVal(), nil
-	case "parent":
-		return phpv.ZString("parent").ZVal(), nil
+	isQualified := short != r.c
+
+	// For unqualified names, check special constants immediately
+	if !isQualified {
+		switch strings.ToLower(short) {
+		case "null":
+			return phpv.ZNull{}.ZVal(), nil
+		case "true":
+			return phpv.ZBool(true).ZVal(), nil
+		case "false":
+			return phpv.ZBool(false).ZVal(), nil
+		case "self":
+			return phpv.ZString("self").ZVal(), nil
+		case "parent":
+			return phpv.ZString("parent").ZVal(), nil
+		}
 	}
 
 	// Try the full (possibly namespaced) name first
@@ -63,7 +67,7 @@ func (r *runConstant) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 
 	// Namespace fallback: if Foo\BAR is not found, try BAR (global)
 	// Skip fallback for explicitly qualified names (namespace\FOO or \Foo\BAR)
-	if short != r.c && !r.noFallback {
+	if isQualified && !r.noFallback {
 		shortName := phpv.ZString(short)
 		z, ok = ctx.Global().ConstantGet(shortName)
 		if ok {
@@ -71,6 +75,15 @@ func (r *runConstant) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 				return nil, err
 			}
 			return z.ZVal(), nil
+		}
+		// For qualified names, fall back to built-in constants after lookup
+		switch strings.ToLower(short) {
+		case "null":
+			return phpv.ZNull{}.ZVal(), nil
+		case "true":
+			return phpv.ZBool(true).ZVal(), nil
+		case "false":
+			return phpv.ZBool(false).ZVal(), nil
 		}
 	}
 

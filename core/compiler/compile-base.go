@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpobj"
@@ -408,7 +409,13 @@ func (r *runTopLevelConst) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	if err != nil {
 		return nil, err
 	}
-	ok := ctx.Global().ConstantSet(r.name, v.Value())
+	// Normalize the namespace part to lowercase for storage (PHP namespaces are case-insensitive,
+	// but constant names are case-sensitive). This ensures A\FOO and a\FOO refer to the same constant.
+	storeName := r.name
+	if idx := strings.LastIndex(string(storeName), "\\"); idx >= 0 {
+		storeName = phpv.ZString(strings.ToLower(string(storeName[:idx]))) + storeName[idx:]
+	}
+	ok := ctx.Global().ConstantSet(storeName, v.Value())
 	if !ok {
 		// Constant already defined - emit a warning (will become an error in PHP 9)
 		if err := ctx.Warn("Constant %s already defined, this will be an error in PHP 9", r.name, logopt.Data{NoFuncName: true, Loc: r.l}); err != nil {
@@ -418,7 +425,7 @@ func (r *runTopLevelConst) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	} else {
 		// Store attributes for reflection access (only on first definition)
 		if len(r.attrs) > 0 {
-			ctx.Global().ConstantSetAttributes(r.name, r.attrs)
+			ctx.Global().ConstantSetAttributes(storeName, r.attrs)
 		}
 	}
 	return nil, nil
