@@ -24,7 +24,7 @@ go install github.com/MagicalTux/goro/sapi/php-cli@latest
 
 ## Status
 
-Goro passes **6,350 of 12,110 tests** (52.4%) from the PHP 8.5.4 test suite. First 2,000 tests: **1,658/2,000 (85.2%)**. All 24 batches complete, zero OOM. PHP memory_limit enforcement (128MB default).
+Goro passes **6,400 of 12,110 tests** (52.8%) from the PHP 8.5.4 test suite. First 2,000 tests: **1,658/2,000 (85.2%)**. All 24 batches complete, zero OOM. PHP memory_limit enforcement (128MB default).
 
 ### Language Features
 
@@ -70,7 +70,7 @@ Goro passes **6,350 of 12,110 tests** (52.4%) from the PHP 8.5.4 test suite. Fir
 | json | 5 | 100% | json_encode, json_decode, json_validate, error handling |
 | pcre | 11 | 90% | preg_match, preg_replace, preg_split, preg_grep, preg_filter, callbacks |
 | hash | 11 | 80% | hash, hash_hmac, hash_file, hash_hmac_file, hash_pbkdf2, hash_hkdf, incremental |
-| gmp | 31 | 45% | Arithmetic, division, modular, bitwise, primes, GCD/LCM, factorial |
+| gmp | 45+ | 55% | Arithmetic, division, modular, bitwise, primes, GCD/LCM, factorial, operator overloading, import/export |
 | mbstring | 40+ | 60% | strlen, substr, strpos, strtolower/upper, convert_encoding, convert_case, convert_variables, detect_encoding, check_encoding, str_split, str_pad, strimwidth, output_handler, encode/decode_mimeheader, encode/decode_numericentity |
 | date | 18+ | 35% | date, time, strtotime, mktime, strftime, getdate, checkdate, DateTime, DateInterval, DatePeriod |
 | bz2 | 1 | 10% | Decompression only (Go stdlib lacks bzip2 writer) |
