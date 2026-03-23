@@ -263,9 +263,19 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 						fmt.Fprintf(g, "\nParse error: %s in %s on line %d\n", message, fileLoc, lineLoc)
 					}
 				} else if htmlErrors {
-					fmt.Fprintf(g, "<br />\n<b>Fatal error</b>:  %s\n  thrown in <b>%s</b> on line <b>%d</b><br />\n", ex.ErrorTrace(g), ex.ThrownFile(), ex.ThrownLine())
+					traceStr, replacement := ex.ErrorTrace(g)
+					displayEx := ex
+					if replacement != nil {
+						displayEx = replacement
+					}
+					fmt.Fprintf(g, "<br />\n<b>Fatal error</b>:  %s\n  thrown in <b>%s</b> on line <b>%d</b><br />\n", traceStr, displayEx.ThrownFile(), displayEx.ThrownLine())
 				} else {
-					fmt.Fprintf(g, "\nFatal error: %s\n  thrown in %s on line %d\n", ex.ErrorTrace(g), ex.ThrownFile(), ex.ThrownLine())
+					traceStr, replacement := ex.ErrorTrace(g)
+					displayEx := ex
+					if replacement != nil {
+						displayEx = replacement
+					}
+					fmt.Fprintf(g, "\nFatal error: %s\n  thrown in %s on line %d\n", traceStr, displayEx.ThrownFile(), displayEx.ThrownLine())
 				}
 				err = nil
 			} else if timeout, ok := phperr.CatchTimeout(err).(*phperr.PhpTimeout); ok && timeout != nil {
@@ -308,7 +318,12 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 				}
 				closeErr = nil
 			} else if ex, ok := closeErr.(*phperr.PhpThrow); ok {
-				fmt.Fprintf(p.output, "\nFatal error: %s\n  thrown in %s on line %d\n", ex.ErrorTrace(g), ex.ThrownFile(), ex.ThrownLine())
+				traceStr, replacement := ex.ErrorTrace(g)
+				displayEx := ex
+				if replacement != nil {
+					displayEx = replacement
+				}
+				fmt.Fprintf(p.output, "\nFatal error: %s\n  thrown in %s on line %d\n", traceStr, displayEx.ThrownFile(), displayEx.ThrownLine())
 				closeErr = nil
 			}
 			if closeErr != nil {
