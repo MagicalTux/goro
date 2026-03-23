@@ -358,10 +358,10 @@ func (z *ZHashTable) SetInt(k ZInt, v *ZVal) error {
 	nt := &hashTableVal{k: k, v: v}
 	z.count += 1
 
-	// Update the next free element counter using unsigned comparison,
-	// matching PHP's zend_hash behavior:
-	// if (h >= (zend_ulong)ht->nNextFreeElement) { nNextFreeElement = h + 1; }
-	if uint64(k) >= uint64(z.inc) {
+	// Update the next free element counter.
+	// PHP uses signed comparison for nNextFreeElement: negative keys
+	// never advance the counter past positive values.
+	if k >= z.inc {
 		if k < ZInt(math.MaxInt64) {
 			z.inc = k + 1
 		} else {

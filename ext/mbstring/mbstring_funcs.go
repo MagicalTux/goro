@@ -195,6 +195,9 @@ func fncMbStrrchr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var haystack, needle phpv.ZString; var beforeNeedle *phpv.ZBool; var enc *phpv.ZString
 	_, err := core.Expand(ctx, args, &haystack, &needle, &beforeNeedle, &enc)
 	if err != nil { return nil, err }
+	if enc != nil && !isValidEncoding(string(*enc)) {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, fmt.Sprintf("mb_strrchr(): Argument #4 ($encoding) must be a valid encoding, \"%s\" given", string(*enc)))
+	}
 	before := core.Deref(beforeNeedle, false)
 	h, n := string(haystack), string(needle)
 	if len(n) > 0 { r, _ := utf8.DecodeRuneInString(n); n = string(r) }
@@ -208,6 +211,9 @@ func fncMbStrrichr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var haystack, needle phpv.ZString; var beforeNeedle *phpv.ZBool; var enc *phpv.ZString
 	_, err := core.Expand(ctx, args, &haystack, &needle, &beforeNeedle, &enc)
 	if err != nil { return nil, err }
+	if enc != nil && !isValidEncoding(string(*enc)) {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, fmt.Sprintf("mb_strrichr(): Argument #4 ($encoding) must be a valid encoding, \"%s\" given", string(*enc)))
+	}
 	before := core.Deref(beforeNeedle, false)
 	h, n := string(haystack), string(needle)
 	if len(n) > 0 { r, _ := utf8.DecodeRuneInString(n); n = string(r) }
@@ -224,6 +230,9 @@ func fncMbStrimwidth(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	_, err := core.Expand(ctx, args, &s, &start, &width, &trimmarker, &enc)
 	if err != nil {
 		return nil, err
+	}
+	if enc != nil && !isValidEncoding(string(*enc)) {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, fmt.Sprintf("mb_strimwidth(): Argument #5 ($encoding) must be a valid encoding, \"%s\" given", string(*enc)))
 	}
 	runes := []rune(string(s))
 	// Calculate total display width of the string
@@ -322,6 +331,9 @@ func fncMbStrcut(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var s phpv.ZString; var start phpv.ZInt; var length *phpv.ZInt; var enc *phpv.ZString
 	_, err := core.Expand(ctx, args, &s, &start, &length, &enc)
 	if err != nil { return nil, err }
+	if enc != nil && !isValidEncoding(string(*enc)) {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, fmt.Sprintf("mb_strcut(): Argument #4 ($encoding) must be a valid encoding, \"%s\" given", string(*enc)))
+	}
 	str := string(s); st := int(start)
 	if st < 0 { st = len(str) + st }; if st < 0 { st = 0 }; if st > len(str) { return phpv.ZString("").ZVal(), nil }
 	for st > 0 && st < len(str) && !utf8.RuneStart(str[st]) { st-- }

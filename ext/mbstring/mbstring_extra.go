@@ -306,6 +306,10 @@ func fncMbConvertCase(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
+	if enc != nil && !isValidEncoding(string(*enc)) {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, fmt.Sprintf("mb_convert_case(): Argument #3 ($encoding) must be a valid encoding, \"%s\" given", string(*enc)))
+	}
+
 	str := string(s)
 	switch int(mode) {
 	case mbCaseUpper: // MB_CASE_UPPER - full mapping

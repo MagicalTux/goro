@@ -73,10 +73,16 @@ func fncArrayIntersect(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 	}
 	result := phpv.NewZArray()
 
+	// PHP's array_intersect compares values by string cast: (string)$a === (string)$b
 	for k1, v1 := range array.Iterate(ctx) {
+		v1Str := v1.AsString(ctx)
 		foundInAll := core.Every(otherArrays, func(arr *phpv.ZArray) bool {
-			found, _ := arr.OffsetContains(ctx, v1)
-			return found
+			for _, v2 := range arr.Iterate(ctx) {
+				if v2.AsString(ctx) == v1Str {
+					return true
+				}
+			}
+			return false
 		})
 		if foundInAll {
 			result.OffsetSet(ctx, k1, v1)
@@ -251,21 +257,18 @@ func fncArrayIntersectAssoc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 	}
 
 	result := phpv.NewZArray()
-	containsArgs := containsEntryArgs{
-		KeyEquals: func(a, b *phpv.ZVal) bool {
-			ok, _ := phpv.StrictEquals(ctx, a, b)
-			return ok
-		},
-		ValEquals: func(a, b *phpv.ZVal) bool {
-			ok, _ := phpv.Equals(ctx, a, b)
-			return ok
-		},
-	}
 
+	// PHP's array_intersect_assoc compares keys by string cast and values by string cast
 	for k1, v1 := range array.Iterate(ctx) {
+		k1Str := k1.AsString(ctx)
+		v1Str := v1.AsString(ctx)
 		foundInAll := core.Every(otherArrays, func(arr *phpv.ZArray) bool {
-			found := arrayContainsEntry(ctx, arr, k1, v1, containsArgs)
-			return found
+			for k2, v2 := range arr.Iterate(ctx) {
+				if k2.AsString(ctx) == k1Str && v2.AsString(ctx) == v1Str {
+					return true
+				}
+			}
+			return false
 		})
 		if foundInAll {
 			result.OffsetSet(ctx, k1, v1)
@@ -277,24 +280,40 @@ func fncArrayIntersectAssoc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 
 // > func array array_intersect_uassoc ( array $array1 , array $array2 [, array $... ], callable $key_compare_func )
 func fncArrayIntersectUAssoc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) < 3 {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("array_intersect_uassoc() requires at least 3 arguments, %d given", len(args)))
+	}
+
+	if args[0].GetType() != phpv.ZtArray {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("array_intersect_uassoc(): Argument #1 ($array) must be of type array, %s given", args[0].GetType().TypeName()))
+	}
+
+	lastArg := args[len(args)-1]
+	keyCompare, err := core.SpawnCallable(ctx, lastArg)
+	if err != nil {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("array_intersect_uassoc(): Argument #%d must be a valid callback, %s", len(args), err.Error()))
+	}
+
 	var array *phpv.ZArray
-	_, err := core.Expand(ctx, args, &array)
+	_, err = core.Expand(ctx, args, &array)
 	if err != nil {
-		return nil, ctx.FuncError(err)
+		return nil, err
 	}
 
-	if len(args) < 2 {
-		return nil, ctx.Warn("at least 3 parameters are required, %d given", len(args))
-	}
-
-	keyCompare, err := core.SpawnCallable(ctx, args[len(args)-1])
-	if err != nil {
-		return nil, ctx.Warn("expects parameter 3 to be a valid callback, no array or string given")
+	// Validate middle arguments are arrays
+	for i := 1; i < len(args)-1; i++ {
+		if args[i].GetType() != phpv.ZtArray {
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+				fmt.Sprintf("array_intersect_uassoc(): Argument #%d must be of type array, %s given", i+1, args[i].GetType().TypeName()))
+		}
 	}
 
 	otherArrays, err := expandArrayArgs(ctx, args[1:len(args)-1])
 	if err != nil {
-		return nil, ctx.FuncError(err)
+		return nil, err
 	}
 
 	result := phpv.NewZArray()
@@ -355,24 +374,40 @@ func fncArrayIntersectKey(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, erro
 
 // > func array array_intersect_ukey ( array $array1 , array $array2 [, array $... ], callable $key_compare_func )
 func fncArrayIntersectUKey(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) < 3 {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("array_intersect_ukey() requires at least 3 arguments, %d given", len(args)))
+	}
+
+	if args[0].GetType() != phpv.ZtArray {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("array_intersect_ukey(): Argument #1 ($array) must be of type array, %s given", args[0].GetType().TypeName()))
+	}
+
+	lastArg := args[len(args)-1]
+	keyCompare, err := core.SpawnCallable(ctx, lastArg)
+	if err != nil {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("array_intersect_ukey(): Argument #%d must be a valid callback, %s", len(args), err.Error()))
+	}
+
 	var array *phpv.ZArray
-	_, err := core.Expand(ctx, args, &array)
+	_, err = core.Expand(ctx, args, &array)
 	if err != nil {
-		return nil, ctx.FuncError(err)
+		return nil, err
 	}
 
-	if len(args) < 2 {
-		return nil, ctx.Warn("at least 3 parameters are required, %d given", len(args))
-	}
-
-	keyCompare, err := core.SpawnCallable(ctx, args[len(args)-1])
-	if err != nil {
-		return nil, ctx.Warn("expects parameter 3 to be a valid callback, no array or string given")
+	// Validate middle arguments are arrays
+	for i := 1; i < len(args)-1; i++ {
+		if args[i].GetType() != phpv.ZtArray {
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+				fmt.Sprintf("array_intersect_ukey(): Argument #%d must be of type array, %s given", i+1, args[i].GetType().TypeName()))
+		}
 	}
 
 	otherArrays, err := expandArrayArgs(ctx, args[1:len(args)-1])
 	if err != nil {
-		return nil, ctx.FuncError(err)
+		return nil, err
 	}
 
 	result := phpv.NewZArray()

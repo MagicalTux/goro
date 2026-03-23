@@ -454,12 +454,20 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 				// For ??, evaluate the LHS directly
 				a, err = r.a.Run(ctx)
 				if err != nil {
+					// Don't swallow fatal errors (e.g. "Cannot use [] for reading")
+					if isFatalPhpError(err) {
+						return nil, err
+					}
 					a = nil
 					err = nil
 				}
 			} else if exists {
 				a, err = r.a.Run(ctx)
 				if err != nil {
+					// Don't swallow fatal errors
+					if isFatalPhpError(err) {
+						return nil, err
+					}
 					a = nil
 					err = nil
 				}
@@ -1879,3 +1887,14 @@ func implicitToInt(ctx phpv.Context, z *phpv.ZVal) (*phpv.ZVal, error) {
 }
 
 // isLeadingNumeric is defined in compile-array.go
+
+// isFatalPhpError returns true if the error is a PHP fatal error (E_ERROR
+// or E_COMPILE_ERROR) that should not be silently swallowed by operators
+// like ?? that normally suppress errors on their LHS.
+func isFatalPhpError(err error) bool {
+	var phpErr *phpv.PhpError
+	if errors.As(err, &phpErr) {
+		return phpErr.Code == phpv.E_ERROR || phpErr.Code == phpv.E_COMPILE_ERROR
+	}
+	return false
+}

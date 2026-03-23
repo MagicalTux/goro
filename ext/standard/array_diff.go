@@ -232,35 +232,43 @@ func fncArrayUDiffUAssoc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error
 
 // > func array array_diff_ukey ( array $array1 , array $array2 [, array $... ], callable $key_compare_func )
 func fncArrayDiffUKey(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	var array *phpv.ZArray
-	_, err := core.Expand(ctx, args, &array)
-	if err != nil {
-		return nil, ctx.FuncError(err)
+	if len(args) < 3 {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("array_diff_ukey() requires at least 3 arguments, %d given", len(args)))
 	}
 
-	if len(args) < 2 {
-		return nil, ctx.Errorf("at least 2 parameters are required, %d given", len(args))
+	if args[0].GetType() != phpv.ZtArray {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("array_diff_ukey(): Argument #1 ($array) must be of type array, %s given", args[0].GetType().TypeName()))
 	}
 
 	lastArg := args[len(args)-1]
-	switch lastArg.GetType() {
-	case phpv.ZtString:
-	case phpv.ZtArray:
-	case phpv.ZtObject:
-	default:
-		return nil, ctx.FuncErrorf("expects parameter %d to be a valid callback, no array or string given", len(args)-1)
+	keyCompareFunc, err := core.SpawnCallable(ctx, lastArg)
+	if err != nil {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("array_diff_ukey(): Argument #%d must be a valid callback, %s", len(args), err.Error()))
 	}
 
-	valueCompareFunc, err := core.SpawnCallable(ctx, lastArg)
+	var array *phpv.ZArray
+	_, err = core.Expand(ctx, args, &array)
 	if err != nil {
-		return nil, ctx.FuncError(err)
+		return nil, err
 	}
+
+	// Validate middle arguments are arrays
+	for i := 1; i < len(args)-1; i++ {
+		if args[i].GetType() != phpv.ZtArray {
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+				fmt.Sprintf("array_diff_ukey(): Argument #%d must be of type array, %s given", i+1, args[i].GetType().TypeName()))
+		}
+	}
+
 	funcArgs := make([]*phpv.ZVal, 2)
 	result := array.Dup()
-	err = arrayDiff(ctx, result, args[1:len(args)-1], func(k1, v1, k2, v2 *phpv.ZVal) (bool, error) {
+	err = arrayDiffNamed(ctx, "array_diff_ukey", 2, result, args[1:len(args)-1], func(k1, v1, k2, v2 *phpv.ZVal) (bool, error) {
 		funcArgs[0] = k1
 		funcArgs[1] = k2
-		ret, err := ctx.CallZValInternal(ctx, valueCompareFunc, funcArgs)
+		ret, err := ctx.CallZValInternal(ctx, keyCompareFunc, funcArgs)
 		if err != nil {
 			return false, err
 		}
@@ -268,40 +276,48 @@ func fncArrayDiffUKey(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return ret.AsInt(ctx) == 0, nil
 	})
 	if err != nil {
-		return nil, ctx.FuncError(err)
+		return nil, err
 	}
 
 	return result.ZVal(), nil
 }
 
-// > func array array_diff_uassoc ( array $array1 , array $array2 [, array $... ], callable $value_compare_func )
+// > func array array_diff_uassoc ( array $array1 , array $array2 [, array $... ], callable $key_compare_func )
 func fncArrayDiffUAssoc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	var array *phpv.ZArray
-	_, err := core.Expand(ctx, args, &array)
-	if err != nil {
-		return nil, ctx.FuncError(err)
+	if len(args) < 3 {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("array_diff_uassoc() requires at least 3 arguments, %d given", len(args)))
 	}
 
-	if len(args) < 2 {
-		return nil, ctx.Errorf("at least 2 parameters are required, %d given", len(args))
+	if args[0].GetType() != phpv.ZtArray {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("array_diff_uassoc(): Argument #1 ($array) must be of type array, %s given", args[0].GetType().TypeName()))
 	}
 
 	lastArg := args[len(args)-1]
-	switch lastArg.GetType() {
-	case phpv.ZtString:
-	case phpv.ZtArray:
-	case phpv.ZtObject:
-	default:
-		return nil, ctx.FuncErrorf("expects parameter %d to be a valid callback, no array or string given", len(args)-1)
-	}
-
 	valueCompareFunc, err := core.SpawnCallable(ctx, lastArg)
 	if err != nil {
-		return nil, ctx.FuncError(err)
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("array_diff_uassoc(): Argument #%d must be a valid callback, %s", len(args), err.Error()))
 	}
+
+	var array *phpv.ZArray
+	_, err = core.Expand(ctx, args, &array)
+	if err != nil {
+		return nil, err
+	}
+
+	// Validate middle arguments are arrays
+	for i := 1; i < len(args)-1; i++ {
+		if args[i].GetType() != phpv.ZtArray {
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+				fmt.Sprintf("array_diff_uassoc(): Argument #%d must be of type array, %s given", i+1, args[i].GetType().TypeName()))
+		}
+	}
+
 	funcArgs := make([]*phpv.ZVal, 2)
 	result := array.Dup()
-	err = arrayDiff(ctx, result, args[1:len(args)-1], func(k1, v1, k2, v2 *phpv.ZVal) (bool, error) {
+	err = arrayDiffNamed(ctx, "array_diff_uassoc", 2, result, args[1:len(args)-1], func(k1, v1, k2, v2 *phpv.ZVal) (bool, error) {
 		if v1.AsString(ctx) != v2.AsString(ctx) {
 			return false, nil
 		}
@@ -316,7 +332,7 @@ func fncArrayDiffUAssoc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 		return ret.AsInt(ctx) == 0, nil
 	})
 	if err != nil {
-		return nil, ctx.FuncError(err)
+		return nil, err
 	}
 
 	return result.ZVal(), nil

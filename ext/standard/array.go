@@ -287,13 +287,11 @@ func fncArrayKeys(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	// TODO: implement strict checking
-	_ = strict
-
 	result := phpv.NewZArray()
 	iter := array.NewIterator()
 
 	if searchVal != nil {
+		useStrict := strict != nil && bool(*strict)
 		for ; iter.Valid(ctx); iter.Next(ctx) {
 			key, err := iter.Key(ctx)
 			if err != nil {
@@ -304,7 +302,13 @@ func fncArrayKeys(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				return nil, err
 			}
 
-			if val.Value() == (*searchVal).Value() {
+			var match bool
+			if useStrict {
+				match, _ = phpv.StrictEquals(ctx, val, *searchVal)
+			} else {
+				match, _ = phpv.Equals(ctx, val, *searchVal)
+			}
+			if match {
 				result.OffsetSet(ctx, nil, key)
 			}
 		}
