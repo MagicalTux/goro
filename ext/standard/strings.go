@@ -2245,7 +2245,9 @@ func fncSubstrCount(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	haystack = haystack[offset:]
 
-	if lengthArg != nil {
+	// If length is explicitly null, treat as not passed (search to end of string)
+	lengthIsNull := len(args) > 3 && args[3] != nil && args[3].GetType() == phpv.ZtNull
+	if lengthArg != nil && !lengthIsNull {
 		length := int(*lengthArg)
 		if length < 0 {
 			length = len(haystack) + length
@@ -2257,13 +2259,11 @@ func fncSubstrCount(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	count := 0
-	for len(haystack) > 0 {
-		if bytes.Index(haystack, needle) == 0 {
-			count++
-			haystack = haystack[len(needle):]
-		} else {
-			haystack = haystack[1:]
-		}
+	idx := bytes.Index(haystack, needle)
+	for idx >= 0 {
+		count++
+		haystack = haystack[idx+len(needle):]
+		idx = bytes.Index(haystack, needle)
 	}
 
 	return phpv.ZInt(count).ZVal(), nil

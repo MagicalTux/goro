@@ -110,6 +110,11 @@ func fncArrayCombine(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 const arrayMergeMaxElements = 1<<31 - 1 // ~2 billion, matches PHP's HT_MAX_SIZE
 
 func fncArrayMerge(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	// PHP 8.0+: array_merge() with no arguments returns an empty array
+	if len(args) == 0 {
+		return phpv.NewZArray().ZVal(), nil
+	}
+
 	// Validate all arguments are arrays first
 	for i, arg := range args {
 		if arg.GetType() != phpv.ZtArray {
@@ -624,14 +629,21 @@ func fncArrayMap(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			}
 		} else {
 			// Multiple arrays: zip into arrays of corresponding elements
+			// PHP iterates each array by internal order (like foreach), not by integer index.
+			// Collect all values from each array into slices first.
+			arrayValues := make([][]*phpv.ZVal, len(arrays))
+			for j, arr := range arrays {
+				for _, v := range arr.Iterate(ctx) {
+					arrayValues[j] = append(arrayValues[j], v)
+				}
+			}
 			for i := 0; i < maxLen; i++ {
 				sub := phpv.NewZArray()
-				for _, arr := range arrays {
-					val, err := arr.OffsetGet(ctx, phpv.ZInt(i))
-					if err != nil {
-						sub.OffsetSet(ctx, nil, phpv.ZNULL.ZVal())
+				for j := range arrays {
+					if i < len(arrayValues[j]) {
+						sub.OffsetSet(ctx, nil, arrayValues[j][i].Dup())
 					} else {
-						sub.OffsetSet(ctx, nil, val.Dup())
+						sub.OffsetSet(ctx, nil, phpv.ZNULL.ZVal())
 					}
 				}
 				result.OffsetSet(ctx, nil, sub.ZVal())
@@ -651,15 +663,21 @@ func fncArrayMap(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			}
 		}
 	} else {
-		// Multiple arrays: iterate by sequential integer index
+		// Multiple arrays with callback: iterate by internal order (like foreach),
+		// not by integer index. PHP iterates each array simultaneously.
+		arrayValues := make([][]*phpv.ZVal, len(arrays))
+		for j, arr := range arrays {
+			for _, v := range arr.Iterate(ctx) {
+				arrayValues[j] = append(arrayValues[j], v)
+			}
+		}
 		for i := 0; i < maxLen; i++ {
 			var callArgs []*phpv.ZVal
-			for _, arr := range arrays {
-				val, err := arr.OffsetGet(ctx, phpv.ZInt(i))
-				if err != nil {
-					callArgs = append(callArgs, phpv.ZNULL.ZVal())
+			for j := range arrays {
+				if i < len(arrayValues[j]) {
+					callArgs = append(callArgs, arrayValues[j][i])
 				} else {
-					callArgs = append(callArgs, val)
+					callArgs = append(callArgs, phpv.ZNULL.ZVal())
 				}
 			}
 			val, err := ctx.CallZValInternal(ctx, callback, callArgs)
@@ -1856,6 +1874,11 @@ func fncArrayKeyLast(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 // > func array array_merge_recursive ( array $array1 [, array $... ] )
 func fncArrayMergeRecursive(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	// PHP 8.0+: array_merge_recursive() with no arguments returns an empty array
+	if len(args) == 0 {
+		return phpv.NewZArray().ZVal(), nil
+	}
+
 	// Validate all arguments are arrays first
 	for i, arg := range args {
 		if arg.GetType() != phpv.ZtArray {
