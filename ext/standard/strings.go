@@ -1866,8 +1866,14 @@ func fncStrRPos(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		if n < 0 {
 			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, fmt.Sprintf("strrpos(): Argument #3 ($offset) must be contained in argument #1 ($haystack)"))
 		}
-		result := bytes.LastIndex(haystack[:n], needle)
-		if result < 0 {
+		// Search for last occurrence starting at or before position n
+		// We need to include matches that start at position n, so slice up to n+len(needle)
+		endPos := n + len(needle)
+		if endPos > hsLen {
+			endPos = hsLen
+		}
+		result := bytes.LastIndex(haystack[:endPos], needle)
+		if result < 0 || result > n {
 			return phpv.ZBool(false).ZVal(), nil
 		}
 		return phpv.ZInt(result).ZVal(), nil
@@ -1903,8 +1909,13 @@ func fncStrIRPos(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		if n < 0 {
 			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, fmt.Sprintf("strripos(): Argument #3 ($offset) must be contained in argument #1 ($haystack)"))
 		}
-		result := strings.LastIndex(haystack[:n], needle)
-		if result < 0 {
+		// Search for last occurrence starting at or before position n
+		endPos := n + len(needle)
+		if endPos > hsLen {
+			endPos = hsLen
+		}
+		result := strings.LastIndex(haystack[:endPos], needle)
+		if result < 0 || result > n {
 			return phpv.ZBool(false).ZVal(), nil
 		}
 		return phpv.ZInt(result).ZVal(), nil

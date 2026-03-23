@@ -60,13 +60,14 @@ func isWordInternalPunct(r rune) bool {
 }
 
 // shouldBeFinalSigma determines if the sigma at position idx in runes should be final sigma.
-// PHP uses a context window: scan back up to 63 positions for a cased letter (skipping case-ignorable),
+// PHP uses a context window: scan back up to 63 characters for a cased letter (skipping case-ignorable),
 // and scan forward with no limit.
 func shouldBeFinalSigma(runes []rune, idx int) bool {
 	// Must be preceded by a cased letter (possibly with case-ignorable in between)
+	// PHP scans back at least 63 characters (so up to 64 positions back)
 	foundCasedBefore := false
-	limit := 63
-	for i := idx - 1; i >= 0 && (idx-1-i) < limit; i-- {
+	limit := 64
+	for i := idx - 1; i >= 0 && (idx-i) <= limit; i-- {
 		if isCaseIgnorable(runes[i]) {
 			continue
 		}
@@ -110,10 +111,23 @@ func fullToUpper(r rune) string {
 		return "ST"
 	case '\uFB06': // ﬆ -> ST
 		return "ST"
-	case '\u0587': // ﬓ Armenian ew -> ԵՒ
+	case '\u0587': // Armenian ew -> ԵՒ
 		return "\u0535\u0552"
 	case '\u1E9E': // Capital sharp S -> SS
 		return "SS"
+	// Greek with ypogegrammeni/prosgegrammeni -> uppercase + Iota
+	case '\u1FB3': // ᾳ -> ΑΙ
+		return "\u0391\u0399"
+	case '\u1FBC': // ᾼ -> ΑΙ
+		return "\u0391\u0399"
+	case '\u1FC3': // ῃ -> ΗΙ
+		return "\u0397\u0399"
+	case '\u1FCC': // ῌ -> ΗΙ
+		return "\u0397\u0399"
+	case '\u1FF3': // ῳ -> ΩΙ
+		return "\u03A9\u0399"
+	case '\u1FFC': // ῼ -> ΩΙ
+		return "\u03A9\u0399"
 	default:
 		return string(unicode.ToUpper(r))
 	}
@@ -157,6 +171,13 @@ func fullCaseFold(r rune) string {
 		return "st"
 	case '\uFB06': // ﬆ -> st
 		return "st"
+	// Greek with prosgegrammeni -> lowercase + iota
+	case '\u1FBC': // ᾼ -> ᾳ
+		return "\u1FB3"
+	case '\u1FCC': // ῌ -> ῃ
+		return "\u1FC3"
+	case '\u1FFC': // ῼ -> ῳ
+		return "\u1FF3"
 	default:
 		return string(unicode.ToLower(r))
 	}
@@ -181,6 +202,13 @@ func fullToTitle(r rune) string {
 		return "St"
 	case '\uFB06': // ﬆ -> St
 		return "St"
+	// Greek with ypogegrammeni -> titlecase (capital + prosgegrammeni)
+	case '\u1FB3': // ᾳ -> ᾼ
+		return "\u1FBC"
+	case '\u1FC3': // ῃ -> ῌ
+		return "\u1FCC"
+	case '\u1FF3': // ῳ -> ῼ
+		return "\u1FFC"
 	default:
 		return string(unicode.ToTitle(r))
 	}
