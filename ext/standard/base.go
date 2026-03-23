@@ -123,7 +123,8 @@ func fncGettype(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // > func bool settype ( mixed &$var , string $type )
 func fncSettype(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 2 {
-		return nil, ctx.Errorf("settype() expects exactly 2 arguments, %d given", len(args))
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError,
+			fmt.Sprintf("settype() expects exactly 2 arguments, %d given", len(args)))
 	}
 
 	typeName := args[1].AsString(ctx)

@@ -1,6 +1,7 @@
 package stream
 
 import (
+	"fmt"
 	"net/url"
 	"os"
 	"path"
@@ -126,6 +127,13 @@ func (f *FileHandler) OpenFile(ctx phpv.Context, fname string, mode string, _ ..
 		flags = os.O_RDWR | os.O_CREATE
 	case "e":
 		flags = os.O_RDONLY | os.O_CREATE
+	default:
+		// Invalid mode - determine the first invalid character
+		invalidChar := mode
+		if len(invalidChar) > 0 {
+			invalidChar = string(invalidChar[0])
+		}
+		return nil, fmt.Errorf("`%s' is not a valid mode for fopen", invalidChar)
 	}
 
 	res, err := os.OpenFile(fname, flags, 0644)
