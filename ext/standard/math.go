@@ -188,7 +188,19 @@ func mathRound(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	shift := float64(1)
 	if precision != 0 {
 		shift = math.Pow10(int(precision))
+		if math.IsInf(shift, 0) {
+			// Precision too large, value is already as precise as float64 allows
+			return phpv.ZFloat(n).ZVal(), nil
+		}
 		n *= shift
+		// Pre-round to fix floating point precision issues.
+		// e.g., 2e-23 * 1e23 = 1.9999999999999998 instead of 2.0.
+		// If the value is very close to an integer (within 1e-9 relative error),
+		// snap it to that integer before the half-rounding logic.
+		rounded := math.Round(n)
+		if rounded != 0 && math.Abs(n-rounded)/math.Abs(rounded) < 1e-9 {
+			n = rounded
+		}
 	}
 
 	t := math.Trunc(n)
@@ -236,6 +248,9 @@ func roundWithPrecisionCeil(n float64, precision int) float64 {
 		return math.Ceil(n)
 	}
 	shift := math.Pow10(precision)
+	if math.IsInf(shift, 0) {
+		return n
+	}
 	return math.Ceil(n*shift) / shift
 }
 
@@ -245,6 +260,9 @@ func roundWithPrecisionFloor(n float64, precision int) float64 {
 		return math.Floor(n)
 	}
 	shift := math.Pow10(precision)
+	if math.IsInf(shift, 0) {
+		return n
+	}
 	return math.Floor(n*shift) / shift
 }
 
@@ -254,6 +272,9 @@ func roundWithPrecisionTrunc(n float64, precision int) float64 {
 		return math.Trunc(n)
 	}
 	shift := math.Pow10(precision)
+	if math.IsInf(shift, 0) {
+		return n
+	}
 	return math.Trunc(n*shift) / shift
 }
 
@@ -266,6 +287,9 @@ func roundWithPrecisionAwayFromZero(n float64, precision int) float64 {
 		return math.Floor(n)
 	}
 	shift := math.Pow10(precision)
+	if math.IsInf(shift, 0) {
+		return n
+	}
 	v := n * shift
 	if v >= 0 {
 		v = math.Ceil(v)
@@ -693,9 +717,15 @@ func mathPow(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	extType := expArg.GetType()
 	base := float64(baseArg.AsFloat(ctx))
 	exp := float64(expArg.AsFloat(ctx))
-	// PHP 8.4: pow(0, negative) is deprecated
+	// PHP 8.4+: pow(0, negative) is deprecated.
+	// The deprecation message in PHP 8.5.4 does NOT include the function name prefix.
+	// Test files confirm: "Deprecated: Power of base 0..." not "Deprecated: pow(): Power of..."
+	// See test/php-8.5.4/ext/standard/math/is_nan_basic.phpt line 27
 	if base == 0 && exp < 0 {
-		ctx.Deprecated("Power of base 0 and negative exponent is deprecated", logopt.NoFuncName(true))
+		suppressFuncName := logopt.NoFuncName(true)
+		if err := ctx.Deprecated("Power of base 0 and negative exponent is deprecated", suppressFuncName); err != nil {
+			return nil, err
+		}
 	}
 	result := math.Pow(base, exp)
 
@@ -727,6 +757,11 @@ func mathLog(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	base := core.Deref(baseArg, M_E)
+
+	// PHP 8: base must be greater than 0
+	if float64(base) <= 0 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "log(): Argument #2 ($base) must be greater than 0")
+	}
 
 	result := math.Log(float64(val)) / math.Log(float64(base))
 	return phpv.ZFloat(result).ZVal(), nil

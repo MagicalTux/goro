@@ -285,6 +285,20 @@ func reflectionMethodInvoke(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZV
 	objArg := args[0]
 	methodArgs := args[1:]
 
+	// Validate first argument type - must be ?object
+	if objArg.GetType() != phpv.ZtObject && objArg.GetType() != phpv.ZtNull {
+		typeName := objArg.GetType().String()
+		switch objArg.GetType() {
+		case phpv.ZtBool:
+			if objArg.AsBool(ctx) {
+				typeName = "true"
+			} else {
+				typeName = "false"
+			}
+		}
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("ReflectionMethod::invoke(): Argument #1 ($object) must be of type ?object, %s given", typeName))
+	}
+
 	if data.method.Modifiers.IsStatic() {
 		// For static methods, call without $this (but pass the object if provided)
 		// Use CallZValInternal so the call appears as [internal function] in stack traces
@@ -295,11 +309,8 @@ func reflectionMethodInvoke(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZV
 		return ctx.CallZValInternal(ctx, data.method.Method, methodArgs)
 	}
 
-	// Check for non-object argument
+	// Check for non-object argument (null for non-static method)
 	if objArg.GetType() != phpv.ZtObject {
-		if objArg.GetType() == phpv.ZtNull {
-			return nil, phpobj.ThrowError(ctx, ReflectionException, fmt.Sprintf("Trying to invoke non static method %s::%s() without an object", data.class.GetName(), data.method.Name))
-		}
 		return nil, phpobj.ThrowError(ctx, ReflectionException, fmt.Sprintf("Trying to invoke non static method %s::%s() without an object", data.class.GetName(), data.method.Name))
 	}
 
@@ -329,6 +340,20 @@ func reflectionMethodInvokeArgs(ctx phpv.Context, o *phpobj.ZObject, args []*php
 	// First argument is the object instance (or null for static methods)
 	objArg := args[0]
 
+	// Validate first argument type - must be ?object
+	if objArg.GetType() != phpv.ZtObject && objArg.GetType() != phpv.ZtNull {
+		typeName := objArg.GetType().String()
+		switch objArg.GetType() {
+		case phpv.ZtBool:
+			if objArg.AsBool(ctx) {
+				typeName = "true"
+			} else {
+				typeName = "false"
+			}
+		}
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("ReflectionMethod::invokeArgs(): Argument #1 ($object) must be of type ?object, %s given", typeName))
+	}
+
 	// Second argument is the array of arguments
 	arrVal, err := args[1].As(ctx, phpv.ZtArray)
 	if err != nil {
@@ -341,10 +366,13 @@ func reflectionMethodInvokeArgs(ctx phpv.Context, o *phpobj.ZObject, args []*php
 	}
 
 	if data.method.Modifiers.IsStatic() {
+		if objArg.GetType() == phpv.ZtObject {
+			return ctx.CallZValInternal(ctx, data.method.Method, callArgs, objArg.AsObject(ctx))
+		}
 		return ctx.CallZValInternal(ctx, data.method.Method, callArgs)
 	}
 
-	if objArg.GetType() != phpv.ZtObject || objArg.GetType() == phpv.ZtNull {
+	if objArg.GetType() != phpv.ZtObject {
 		return nil, phpobj.ThrowError(ctx, ReflectionException, fmt.Sprintf("Trying to invoke non static method %s::%s() without an object", data.class.GetName(), data.method.Name))
 	}
 
@@ -570,7 +598,7 @@ func reflectionMethodGetExtensionName(ctx phpv.Context, o *phpobj.ZObject, args 
 
 func reflectionMethodSetAccessible(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	// setAccessible has no effect since PHP 8.1, deprecated since 8.5
-	_ = ctx.Deprecated("Method ReflectionMethod::setAccessible() is deprecated since 8.5, as it has no effect since PHP 8.1")
+	_ = ctx.Deprecated("Method ReflectionMethod::setAccessible() is deprecated since 8.5, as it has no effect since PHP 8.1", logopt.NoFuncName(true))
 	return phpv.ZNULL.ZVal(), nil
 }
 

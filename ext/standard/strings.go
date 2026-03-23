@@ -290,7 +290,7 @@ func fncStrCountChars(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZStr(buf.String()), nil
 
 	default:
-		return nil, errors.New(`Argument #2 ($mode) must be between 0 and 4 (inclusive)`)
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "count_chars(): Argument #2 ($mode) must be between 0 and 4 (inclusive)")
 	}
 }
 
@@ -595,15 +595,25 @@ func fncStrNumberFormat(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 
 	// Handle negative decimals: round to the left of the decimal point
 	if decimals < 0 {
-		shift := math.Pow10(-decimals)
-		f = phpRoundHalfAwayFromZero(f/shift) * shift
+		// For extremely negative decimals (e.g. PHP_INT_MIN), Pow10 overflows
+		// to +Inf causing 0*Inf=NaN. Any value rounded to 10^N where N > ~18
+		// will always be 0 for finite floats.
+		if decimals < -308 {
+			f = 0
+		} else {
+			shift := math.Pow10(-decimals)
+			f = phpRoundHalfAwayFromZero(f/shift) * shift
+		}
 		decimals = 0
 	}
 
 	// Pre-round with PHP's "round half away from zero" mode before formatting,
 	// because Go's strconv.FormatFloat uses "round half to even" (banker's rounding)
 	// which differs from PHP's behavior.
-	if decimals >= 0 {
+	// Only pre-round when the shift factor won't overflow to Inf (decimals <= 308).
+	// For larger decimals, the value already has enough precision and FormatFloat
+	// will pad with zeros.
+	if decimals >= 0 && decimals <= 308 {
 		shift := math.Pow10(decimals)
 		f = phpRoundHalfAwayFromZero(f*shift) / shift
 	}
@@ -1577,27 +1587,24 @@ func fncStripTags(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	for i < n {
 		c := s[i]
 		if c == '<' && i+1 < n {
-			// Check for PHP open tag: <? (but NOT <?x where x is alpha - XML PI)
+			// Check for PHP/XML processing instruction: <? ... ?>
+			// PHP's strip_tags treats ALL <?...?> sequences the same way,
+			// including <?php, <?xml, <?= etc. - skip to closing ?>
+			// Supports nested <? ?> (e.g. <?= '<?= 1 ?>' ?>)
 			if s[i+1] == '?' {
-				isXmlPI := i+2 < n && ((s[i+2] >= 'a' && s[i+2] <= 'z') || (s[i+2] >= 'A' && s[i+2] <= 'Z'))
-				if !isXmlPI {
-					j := i + 2
-					for j < n {
-						if s[j] == '?' && j+1 < n && s[j+1] == '>' {
-							j += 2
-							break
-						}
-						j++
-					}
-					i = j
-					continue
-				}
-				// XML PI: skip until >
+				depth := 1
 				j := i + 2
-				for j < n && s[j] != '>' {
-					j++
-				}
-				if j < n {
+				for j < n && depth > 0 {
+					if s[j] == '<' && j+1 < n && s[j+1] == '?' {
+						depth++
+						j += 2
+						continue
+					}
+					if s[j] == '?' && j+1 < n && s[j+1] == '>' {
+						depth--
+						j += 2
+						continue
+					}
 					j++
 				}
 				i = j
@@ -1664,7 +1671,16 @@ func fncStripTags(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				continue
 			}
 
-			// Now find the end of the tag, handling quotes
+			// Check for malformed self-closing: <tag/other> is not valid
+			// Only <tag/> or <tag / > are valid self-closing forms
+			tagMalformed := false
+			if j < n && s[j] == '/' {
+				if j+1 >= n || s[j+1] != '>' {
+					tagMalformed = true
+				}
+			}
+
+			// Now find the end of the tag, handling quotes and nested PI
 			for j < n {
 				if s[j] == '\'' {
 					j++
@@ -1682,6 +1698,17 @@ func fncStripTags(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 					if j < n {
 						j++ // skip closing quote
 					}
+				} else if s[j] == '<' && j+1 < n && s[j+1] == '?' {
+					// Nested PHP/XML processing instruction inside tag body
+					// Skip to ?> then continue looking for tag's >
+					j += 2
+					for j < n {
+						if s[j] == '?' && j+1 < n && s[j+1] == '>' {
+							j += 2
+							break
+						}
+						j++
+					}
 				} else if s[j] == '>' {
 					j++ // skip >
 					break
@@ -1690,9 +1717,11 @@ func fncStripTags(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				}
 			}
 
-			// Check if tag is allowed
-			if _, allowed := allowedTags[tagName]; allowed {
-				buf.Write(s[i:j])
+			// Check if tag is allowed (malformed tags are never allowed)
+			if !tagMalformed {
+				if _, allowed := allowedTags[tagName]; allowed {
+					buf.Write(s[i:j])
+				}
 			}
 			i = j
 			continue

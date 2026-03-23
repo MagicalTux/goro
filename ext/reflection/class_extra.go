@@ -163,6 +163,12 @@ func reflectionClassSetStaticPropertyValue(ctx phpv.Context, o *phpobj.ZObject, 
 	if len(args) > 2 {
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("ReflectionClass::setStaticPropertyValue() expects exactly 2 arguments, %d given", len(args)))
 	}
+	if args[0].GetType() == phpv.ZtArray {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "ReflectionClass::setStaticPropertyValue(): Argument #1 ($name) must be of type string, array given")
+	}
+	if args[0].GetType() == phpv.ZtNull {
+		_ = ctx.Deprecated("Passing null to parameter #1 ($name) of type string is deprecated")
+	}
 	zc := getZClass(o)
 	if zc == nil {
 		return nil, phpobj.ThrowError(ctx, ReflectionException, "Internal error: Failed to retrieve the reflection object")
@@ -173,7 +179,31 @@ func reflectionClassSetStaticPropertyValue(ctx phpv.Context, o *phpobj.ZObject, 
 		return nil, err
 	}
 	if staticProps != nil {
-		return nil, staticProps.SetString(name, args[1])
+		// Check if the property exists as a static property first
+		found := false
+		for cur := zc; cur != nil; {
+			for _, prop := range cur.Props {
+				if prop.VarName == name && prop.Modifiers.IsStatic() {
+					found = true
+					break
+				}
+			}
+			if found {
+				break
+			}
+			parent := cur.GetParent()
+			if phpv.IsNilClass(parent) {
+				break
+			}
+			var ok bool
+			cur, ok = parent.(*phpobj.ZClass)
+			if !ok {
+				break
+			}
+		}
+		if found {
+			return nil, staticProps.SetString(name, args[1])
+		}
 	}
 	return nil, phpobj.ThrowError(ctx, ReflectionException, fmt.Sprintf("Class %s does not have a property named %s", zc.GetName(), name))
 }
@@ -1085,7 +1115,7 @@ func reflectionFunctionIsGenerator(ctx phpv.Context, o *phpobj.ZObject, args []*
 func reflectionFunctionIsDisabled(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	// No function disabling mechanism in goro
 	// In PHP 8.0+, this is deprecated and always returns false
-	_ = ctx.Deprecated("ReflectionFunction::isDisabled() is deprecated")
+	_ = ctx.Deprecated("Method ReflectionFunction::isDisabled() is deprecated since 8.0, as ReflectionFunction can no longer be constructed for disabled functions", logopt.NoFuncName(true))
 	return phpv.ZBool(false).ZVal(), nil
 }
 

@@ -62,6 +62,8 @@ func initReflectionFunction() {
 			"__tostring":                    {Name: "__toString", Method: phpobj.NativeMethod(reflectionFunctionToString)},
 			"getstartline":                  {Name: "getStartLine", Method: phpobj.NativeMethod(reflectionFunctionGetStartLine)},
 			"getendline":                    {Name: "getEndLine", Method: phpobj.NativeMethod(reflectionFunctionGetEndLine)},
+			"isinternal":                    {Name: "isInternal", Method: phpobj.NativeMethod(reflectionFunctionIsInternal)},
+			"isuserdefined":                 {Name: "isUserDefined", Method: phpobj.NativeMethod(reflectionFunctionIsUserDefined)},
 		},
 	}
 }
@@ -362,6 +364,48 @@ func reflectionFunctionGetReturnType(ctx phpv.Context, o *phpobj.ZObject, args [
 func closureFromCallableHelper(ctx phpv.Context, callable phpv.Callable, name phpv.ZString, funcArgs []*phpv.FuncArg) (*phpv.ZVal, error) {
 	// Use Closure::fromCallable to create a proper Closure object
 	return closureFromCallableVal(ctx, name.ZVal())
+}
+
+func reflectionFunctionIsInternal(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	data := getFuncData(o)
+	if data == nil {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	// A function is internal if it doesn't have a location (i.e., not user-defined)
+	type locGetter interface {
+		Loc() *phpv.Loc
+	}
+	if lg, ok := data.callable.(locGetter); ok {
+		loc := lg.Loc()
+		if loc != nil && loc.Filename != "" {
+			return phpv.ZBool(false).ZVal(), nil
+		}
+	}
+	// If no closure and no Loc, it's internal
+	if data.closure != nil {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	return phpv.ZBool(true).ZVal(), nil
+}
+
+func reflectionFunctionIsUserDefined(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	data := getFuncData(o)
+	if data == nil {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	type locGetter interface {
+		Loc() *phpv.Loc
+	}
+	if lg, ok := data.callable.(locGetter); ok {
+		loc := lg.Loc()
+		if loc != nil && loc.Filename != "" {
+			return phpv.ZBool(true).ZVal(), nil
+		}
+	}
+	if data.closure != nil {
+		return phpv.ZBool(true).ZVal(), nil
+	}
+	return phpv.ZBool(false).ZVal(), nil
 }
 
 // closureFromCallableVal is a helper that calls through to the Closure class's fromCallable method

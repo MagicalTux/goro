@@ -10,8 +10,9 @@ import (
 
 // reflectionConstantData is stored as opaque data on ReflectionConstant objects
 type reflectionConstantData struct {
-	name  phpv.ZString
-	value phpv.Val
+	name       phpv.ZString // Display name (original case)
+	lookupName phpv.ZString // Normalized name for lookups (lowercase namespace)
+	value      phpv.Val
 }
 
 func initReflectionConstant() {
@@ -41,15 +42,21 @@ func reflectionConstantConstruct(ctx phpv.Context, o *phpobj.ZObject, args []*ph
 	name := args[0].AsString(ctx)
 
 	// Look up the global constant
+	// Normalize namespace part for case-insensitive namespace lookup
+	lookupName := name
+	if idx := strings.LastIndex(string(lookupName), "\\"); idx >= 0 {
+		lookupName = phpv.ZString(strings.ToLower(string(lookupName[:idx]))) + lookupName[idx:]
+	}
 	g := ctx.Global()
-	val, ok := g.ConstantGet(name)
+	val, ok := g.ConstantGet(lookupName)
 	if !ok {
 		return nil, phpobj.ThrowError(ctx, ReflectionException, fmt.Sprintf("Constant \"%s\" does not exist", name))
 	}
 
 	data := &reflectionConstantData{
-		name:  name,
-		value: val,
+		name:       name,
+		lookupName: lookupName,
+		value:      val,
 	}
 	o.HashTable().SetString("name", name.ZVal())
 	o.SetOpaque(ReflectionConstant, data)
@@ -88,7 +95,7 @@ func reflectionConstantGetAttributes(ctx phpv.Context, o *phpobj.ZObject, args [
 	if data == nil {
 		return phpv.NewZArray().ZVal(), nil
 	}
-	attrs := ctx.Global().ConstantGetAttributes(data.name)
+	attrs := ctx.Global().ConstantGetAttributes(data.lookupName)
 	if len(attrs) == 0 {
 		return phpv.NewZArray().ZVal(), nil
 	}

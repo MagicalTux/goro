@@ -32,13 +32,15 @@ func init() {
 	ReflectionClass = &phpobj.ZClass{
 		Name: "ReflectionClass",
 		Props: []*phpv.ZClassProp{
-			{VarName: "name", Default: phpv.ZStr("").ZVal(), Modifiers: phpv.ZAttrPublic},
+			{VarName: "name", Default: phpv.ZStr("").ZVal(), Modifiers: phpv.ZAttrPublic, TypeHint: phpv.ParseTypeHint("string")},
 		},
 		Const: map[phpv.ZString]*phpv.ZClassConst{
-			"IS_IMPLICIT_ABSTRACT": {Value: phpv.ZInt(16)},
-			"IS_EXPLICIT_ABSTRACT": {Value: phpv.ZInt(64)},
-			"IS_FINAL":             {Value: phpv.ZInt(32)},
-			"IS_READONLY":          {Value: phpv.ZInt(65536)},
+			"IS_IMPLICIT_ABSTRACT":            {Value: phpv.ZInt(16)},
+			"IS_EXPLICIT_ABSTRACT":            {Value: phpv.ZInt(64)},
+			"IS_FINAL":                        {Value: phpv.ZInt(32)},
+			"IS_READONLY":                     {Value: phpv.ZInt(65536)},
+			"SKIP_INITIALIZATION_ON_SERIALIZE": {Value: phpv.ZInt(8)},
+			"SKIP_DESTRUCTOR":                 {Value: phpv.ZInt(16)},
 		},
 		// Methods will be set by initReflectionClass()
 		Methods: map[phpv.ZString]*phpv.ZClassMethod{},

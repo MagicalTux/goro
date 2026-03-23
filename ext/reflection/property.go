@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
@@ -282,7 +283,7 @@ func reflectionPropertyToString(ctx phpv.Context, o *phpobj.ZObject, args []*php
 
 func reflectionPropertySetAccessible(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	// setAccessible has no effect since PHP 8.1, deprecated since 8.5
-	_ = ctx.Deprecated("Method ReflectionProperty::setAccessible() is deprecated since 8.5, as it has no effect since PHP 8.1")
+	_ = ctx.Deprecated("Method ReflectionProperty::setAccessible() is deprecated since 8.5, as it has no effect since PHP 8.1", logopt.NoFuncName(true))
 	return phpv.ZNULL.ZVal(), nil
 }
 

@@ -147,7 +147,17 @@ func reflectionClassGetMethods(ctx phpv.Context, o *phpobj.ZObject, args []*phpv
 		filter = int64(args[0].AsInt(ctx))
 	}
 
-	methods := class.GetMethods()
+	// Use GetMethodsOrdered() for declaration-order iteration when available
+	var methods []*phpv.ZClassMethod
+	if zc, ok := class.(*phpobj.ZClass); ok {
+		methods = zc.GetMethodsOrdered()
+	} else {
+		// Fallback for non-ZClass
+		for _, method := range class.GetMethods() {
+			methods = append(methods, method)
+		}
+	}
+
 	arr := phpv.NewZArray()
 
 	for _, method := range methods {
@@ -469,6 +479,16 @@ func reflectionClassIsInstantiable(ctx phpv.Context, o *phpobj.ZObject, args []*
 		return phpv.ZBool(false).ZVal(), nil
 	}
 
+	// Traits are not instantiable
+	if zc.Type.Has(phpv.ZClassTypeTrait) {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+
+	// Enums are not instantiable
+	if zc.Type.Has(phpv.ZClassTypeEnum) {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+
 	// Abstract classes are not instantiable
 	if zc.Attr&phpv.ZClassAttr(phpv.ZClassExplicitAbstract) != 0 {
 		return phpv.ZBool(false).ZVal(), nil
@@ -624,6 +644,10 @@ func reflectionClassGetProperty(ctx phpv.Context, o *phpobj.ZObject, args []*php
 	}
 	if args[0].GetType() == phpv.ZtArray {
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "ReflectionClass::getProperty(): Argument #1 ($name) must be of type string, array given")
+	}
+	if args[0].GetType() == phpv.ZtObject {
+		obj := args[0].AsObject(ctx)
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("ReflectionClass::getProperty(): Argument #1 ($name) must be of type string, %s given", obj.GetClass().GetName()))
 	}
 	if args[0].GetType() == phpv.ZtNull {
 		_ = ctx.Deprecated("Passing null to parameter #1 ($name) of type string is deprecated")
