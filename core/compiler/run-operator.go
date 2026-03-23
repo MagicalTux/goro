@@ -526,8 +526,10 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		// the RHS. Side effects during RHS evaluation (ob callbacks,
 		// error handlers, __toString) can modify the variable that a points
 		// to, but PHP's concat_function captures the LHS string first.
+		// Use NewZVal to create a lightweight snapshot (shares the Go value
+		// but disconnects from the variable's ZVal pointer).
 		if r.op == tokenizer.T_CONCAT_EQUAL && a != nil {
-			a = a.Dup()
+			a = phpv.NewZVal(a.Value())
 		}
 	}
 

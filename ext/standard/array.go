@@ -243,9 +243,17 @@ func fncArrayKeyExists(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 	key := args[0]
 	arrayArg := args[1]
 
-	// Check key type - array keys are not allowed
+	// Check key type - array and object keys are not allowed
 	if key.GetType() == phpv.ZtArray {
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "Cannot access offset of type array on array")
+	}
+	if key.GetType() == phpv.ZtObject {
+		typeName := "object"
+		if obj := key.AsObject(ctx); obj != nil {
+			typeName = string(obj.GetClass().GetName())
+		}
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("Cannot access offset of type %s on array", typeName))
 	}
 
 	// Check second argument must be an array
@@ -1584,21 +1592,41 @@ func getArrayKeyValue(ctx phpv.Context, s *phpv.ZVal) (*phpv.ZVal, error) {
 
 // > func array array_column ( array $input , mixed $column_key [, mixed $index_key = NULL ] )
 func fncArrayColumn(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	// Validate column_key type (must be string|int|null)
+	// Validate column_key type (must be string|int|null, or object with __toString)
 	if len(args) >= 2 && args[1] != nil && !args[1].IsNull() {
 		switch args[1].GetType() {
 		case phpv.ZtString, phpv.ZtInt, phpv.ZtFloat, phpv.ZtBool:
 			// These are accepted
+		case phpv.ZtObject:
+			// Objects with __toString are accepted; convert to string
+			if obj := args[1].AsObject(ctx); obj != nil {
+				if _, ok := obj.GetClass().GetMethod("__tostring"); ok {
+					args[1] = args[1].AsString(ctx).ZVal()
+				} else {
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+						fmt.Sprintf("array_column(): Argument #2 ($column_key) must be of type string|int|null, %s given", phpv.ZValTypeNameDetailed(args[1])))
+				}
+			}
 		default:
 			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
 				fmt.Sprintf("array_column(): Argument #2 ($column_key) must be of type string|int|null, %s given", phpv.ZValTypeNameDetailed(args[1])))
 		}
 	}
-	// Validate index_key type (must be string|int|null)
+	// Validate index_key type (must be string|int|null, or object with __toString)
 	if len(args) >= 3 && args[2] != nil && !args[2].IsNull() {
 		switch args[2].GetType() {
 		case phpv.ZtString, phpv.ZtInt, phpv.ZtFloat, phpv.ZtBool:
 			// These are accepted
+		case phpv.ZtObject:
+			// Objects with __toString are accepted; convert to string
+			if obj := args[2].AsObject(ctx); obj != nil {
+				if _, ok := obj.GetClass().GetMethod("__tostring"); ok {
+					args[2] = args[2].AsString(ctx).ZVal()
+				} else {
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+						fmt.Sprintf("array_column(): Argument #3 ($index_key) must be of type string|int|null, %s given", phpv.ZValTypeNameDetailed(args[2])))
+				}
+			}
 		default:
 			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
 				fmt.Sprintf("array_column(): Argument #3 ($index_key) must be of type string|int|null, %s given", phpv.ZValTypeNameDetailed(args[2])))
