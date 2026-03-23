@@ -10,13 +10,13 @@ include 'fixtures/folder3/fixture.inc';
 include 'fixtures/folder4/fixture.inc';
 ?>
 --EXPECTF--
-%stests%sconstants
-%stests%sconstants
-%stests%sconstants%sfixtures%sfolder1
-%stests%sconstants%sfixtures%sfolder1
-%stests%sconstants%sfixtures%sfolder2
-%stests%sconstants%sfixtures%sfolder2
-%stests%sconstants%sfixtures%sfolder3
-%stests%sconstants%sfixtures%sfolder3
-%stests%sconstants%sfixtures%sfolder4
-%stests%sconstants%sfixtures%sfolder4
+%stest%sconstants
+%stest%sconstants
+%stest%sconstants%sfixtures%sfolder1
+%stest%sconstants%sfixtures%sfolder1
+%stest%sconstants%sfixtures%sfolder2
+%stest%sconstants%sfixtures%sfolder2
+%stest%sconstants%sfixtures%sfolder3
+%stest%sconstants%sfixtures%sfolder3
+%stest%sconstants%sfixtures%sfolder4
+%stest%sconstants%sfixtures%sfolder4
