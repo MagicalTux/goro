@@ -19,6 +19,14 @@ import (
 	"github.com/MagicalTux/goro/core/stream"
 )
 
+// stripFileScheme removes a file:// prefix from a path if present.
+func stripFileScheme(p string) string {
+	if strings.HasPrefix(p, "file://") {
+		return p[7:]
+	}
+	return p
+}
+
 // > const
 const (
 	FILE_USE_INCLUDE_PATH   phpv.ZInt = 1
@@ -335,26 +343,27 @@ func fncRealPath(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZFalse.ZVal(), nil
 	}
 
-	if regexp.MustCompile(`$\w+:\/\/`).MatchString(filename) {
+	if regexp.MustCompile(`^\w+://`).MatchString(filename) {
 		return phpv.ZFalse.ZVal(), nil
 	}
 
 	filename = resolveFilePath(ctx, filename)
 
-	_, err = os.Stat(filename)
+	// filepath.EvalSymlinks resolves symlinks and also verifies existence
+	resolved, err := filepath.EvalSymlinks(filename)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return phpv.ZFalse.ZVal(), nil
 		}
-		return nil, err
+		return phpv.ZFalse.ZVal(), nil
 	}
 
-	filename, err = filepath.Abs(filename)
+	resolved, err = filepath.Abs(resolved)
 	if err != nil {
 		return nil, err
 	}
 
-	return phpv.ZStr(filename), nil
+	return phpv.ZStr(resolved), nil
 }
 
 // > func string unlink ( string $filename [, resource $context ] )
@@ -407,6 +416,9 @@ func fncMkdir(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
+	// Strip file:// scheme if present
+	pathname = stripFileScheme(pathname)
+
 	if err := ctx.Global().CheckOpenBasedir(ctx, pathname, "mkdir"); err != nil {
 		return phpv.ZFalse.ZVal(), nil
 	}
@@ -438,9 +450,10 @@ func fncRmdir(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	if context != nil {
-		return nil, ctx.Errorf("context resource is not yet supported, must be NULL")
-	}
+	// Strip file:// scheme if present
+	dirname = stripFileScheme(dirname)
+
+	// context parameter is ignored (PHP accepts NULL)
 
 	if err := ctx.Global().CheckOpenBasedir(ctx, dirname, "rmdir"); err != nil {
 		return phpv.ZFalse.ZVal(), nil
@@ -734,6 +747,10 @@ func fncFwrite(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZFalse.ZVal(), nil
 	}
 
+	if handle.GetResourceType() == phpv.ResourceUnknown {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "fwrite(): Argument #1 ($stream) must be an open stream resource")
+	}
+
 	var file phpv.Stream
 	switch handle.GetResourceType() {
 	case phpv.ResourceStream:
@@ -773,6 +790,10 @@ func fncFread(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 	if handle == nil {
 		return phpv.ZFalse.ZVal(), nil
+	}
+
+	if handle.GetResourceType() == phpv.ResourceUnknown {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "fread(): Argument #1 ($stream) must be an open stream resource")
 	}
 
 	var file phpv.Stream
@@ -838,6 +859,10 @@ func fncFgetc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZFalse.ZVal(), nil
 	}
 
+	if handle.GetResourceType() == phpv.ResourceUnknown {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "fgetc(): Argument #1 ($stream) must be an open stream resource")
+	}
+
 	var file *stream.Stream
 	if handle.GetResourceType() == phpv.ResourceStream {
 		file, _ = handle.(*stream.Stream)
@@ -863,6 +888,10 @@ func fncFgets(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 	if handle == nil {
 		return phpv.ZFalse.ZVal(), nil
+	}
+
+	if handle.GetResourceType() == phpv.ResourceUnknown {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "fgets(): Argument #1 ($stream) must be an open stream resource")
 	}
 
 	var file *stream.Stream
@@ -1061,6 +1090,66 @@ func fncFflush(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZTrue.ZVal(), nil
 }
 
+// > func bool fdatasync ( resource $stream )
+func fncFdatasync(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var handle phpv.Resource
+	_, err := core.Expand(ctx, args, &handle)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	if handle == nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	s, ok := handle.(*stream.Stream)
+	if !ok {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	f := s.UnderlyingFile()
+	if f == nil {
+		ctx.Warn("Can't fsync this stream!")
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	// fdatasync flushes data only (not metadata)
+	// In Go, os.File doesn't have a direct fdatasync, use Sync() as best approximation
+	if err := f.Sync(); err != nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+	return phpv.ZTrue.ZVal(), nil
+}
+
+// > func bool fsync ( resource $stream )
+func fncFsync(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var handle phpv.Resource
+	_, err := core.Expand(ctx, args, &handle)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	if handle == nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	s, ok := handle.(*stream.Stream)
+	if !ok {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	f := s.UnderlyingFile()
+	if f == nil {
+		ctx.Warn("Can't fsync this stream!")
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	if err := f.Sync(); err != nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+	return phpv.ZTrue.ZVal(), nil
+}
+
 // > func bool rewind ( resource $handle)
 func fncRewind(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var handle phpv.Resource
@@ -1203,7 +1292,13 @@ func fncChmod(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	err = os.Chmod(p, os.FileMode(mode))
 	if err != nil {
-		ctx.Warn("chmod(): %s", err)
+		if os.IsNotExist(err) {
+			ctx.Warn("No such file or directory")
+		} else if os.IsPermission(err) {
+			ctx.Warn("Operation not permitted")
+		} else {
+			ctx.Warn("%s", err)
+		}
 		return phpv.ZFalse.ZVal(), nil
 	}
 	return phpv.ZTrue.ZVal(), nil
@@ -1234,15 +1329,37 @@ func fncCopy(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		dstPath = filepath.Join(string(ctx.Global().Getwd()), dstPath)
 	}
 
+	// Check if source is a directory
+	srcStat, err := os.Stat(srcPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return phpv.ZFalse.ZVal(), ctx.Warn("copy(%s): Failed to open stream: No such file or directory", src, logopt.NoFuncName(true))
+		}
+		return phpv.ZFalse.ZVal(), ctx.Warn("copy(%s): Failed to open stream: %s", src, err, logopt.NoFuncName(true))
+	}
+	if srcStat.IsDir() {
+		return phpv.ZFalse.ZVal(), ctx.Warn("The first argument to copy() function cannot be a directory", logopt.NoFuncName(true))
+	}
+
+	// Check if source and dest are the same file
+	dstStat, dstErr := os.Stat(dstPath)
+	if dstErr == nil {
+		srcSys, srcOk := srcStat.Sys().(*syscall.Stat_t)
+		dstSys, dstOk := dstStat.Sys().(*syscall.Stat_t)
+		if srcOk && dstOk && srcSys.Dev == dstSys.Dev && srcSys.Ino == dstSys.Ino {
+			return phpv.ZFalse.ZVal(), ctx.Warn("copy(%s): The first and second arguments to copy() function cannot refer to the same file", src, logopt.NoFuncName(true))
+		}
+	}
+
 	in, err := os.Open(srcPath)
 	if err != nil {
-		return phpv.ZFalse.ZVal(), ctx.Warn("copy(%s): Failed to open stream: %s", src, err)
+		return phpv.ZFalse.ZVal(), ctx.Warn("copy(%s): Failed to open stream: %s", src, err, logopt.NoFuncName(true))
 	}
 	defer in.Close()
 
 	out, err := os.Create(dstPath)
 	if err != nil {
-		return phpv.ZFalse.ZVal(), ctx.Warn("copy(%s,%s): Failed to open stream: %s", src, dst, err)
+		return phpv.ZFalse.ZVal(), ctx.Warn("copy(%s,%s): Failed to open stream: %s", src, dst, err, logopt.NoFuncName(true))
 	}
 	defer out.Close()
 
@@ -1452,7 +1569,13 @@ func fncChown(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	uid := int(user.AsInt(ctx))
 
 	if err := os.Chown(p, uid, -1); err != nil {
-		ctx.Warn("Operation not permitted")
+		if os.IsNotExist(err) {
+			ctx.Warn("No such file or directory")
+		} else if os.IsPermission(err) {
+			ctx.Warn("Operation not permitted")
+		} else {
+			ctx.Warn("%s", err)
+		}
 		return phpv.ZFalse.ZVal(), nil
 	}
 	return phpv.ZTrue.ZVal(), nil
@@ -1471,7 +1594,13 @@ func fncChgrp(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	gid := int(group.AsInt(ctx))
 
 	if err := os.Chown(p, -1, gid); err != nil {
-		ctx.Warn("Operation not permitted")
+		if os.IsNotExist(err) {
+			ctx.Warn("No such file or directory")
+		} else if os.IsPermission(err) {
+			ctx.Warn("Operation not permitted")
+		} else {
+			ctx.Warn("%s", err)
+		}
 		return phpv.ZFalse.ZVal(), nil
 	}
 	return phpv.ZTrue.ZVal(), nil

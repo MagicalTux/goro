@@ -1117,8 +1117,8 @@ func (o *ZObject) HasProp(ctx phpv.Context, key phpv.Val) (bool, error) {
 				}
 				return true, nil
 			}
-			// Write-only virtual property: isset() throws Error
-			if prop.SetHook != nil && prop.Default == nil && !o.h.HasString(keyStr) {
+			// Write-only: set hook but no get hook and no backing value
+			if prop.SetHook != nil && prop.GetHook == nil && !o.h.HasString(keyStr) {
 				return false, ThrowError(ctx, Error,
 					fmt.Sprintf("Property %s::$%s is write-only", o.Class.GetName(), keyStr))
 			}
@@ -1573,9 +1573,10 @@ func (o *ZObject) ObjectGet(ctx phpv.Context, key phpv.Val) (*phpv.ZVal, error) 
 			if prop.GetHook != nil {
 				return o.runGetHook(ctx, keyStr, prop.GetHook)
 			}
-			// Set-only virtual property (has hooks, set hook but no get hook, no default = virtual)
-			// Reading a write-only property throws an Error
-			if prop.SetHook != nil && prop.Default == nil && !o.h.HasString(keyStr) {
+			// Set-only property without a backing value: reading throws Error.
+			// If the set hook has written to the backing store (via $this->prop),
+			// the value is in the hash table and we let the read fall through.
+			if prop.SetHook != nil && prop.GetHook == nil && !o.h.HasString(keyStr) {
 				return nil, ThrowError(ctx, Error,
 					fmt.Sprintf("Property %s::$%s is write-only", o.Class.GetName(), keyStr))
 			}
@@ -1666,8 +1667,8 @@ func (o *ZObject) ObjectGetQuiet(ctx phpv.Context, key phpv.Val) (*phpv.ZVal, bo
 				}
 				return result, true, nil
 			}
-			// Write-only virtual property
-			if prop.SetHook != nil && prop.Default == nil && !o.h.HasString(keyStr) {
+			// Write-only: set hook but no get hook and no backing value
+			if prop.SetHook != nil && prop.GetHook == nil && !o.h.HasString(keyStr) {
 				return nil, false, ThrowError(ctx, Error,
 					fmt.Sprintf("Property %s::$%s is write-only", o.Class.GetName(), keyStr))
 			}
@@ -1884,9 +1885,11 @@ func (o *ZObject) ObjectSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) er
 				return ThrowError(ctx, Error,
 					fmt.Sprintf("Cannot unset hooked property %s::$%s", o.Class.GetName(), keyStr))
 			}
-			// Get-only virtual property (has get hook but no set hook, no default = virtual)
-			// Writing to a read-only property throws an Error
-			if prop.GetHook != nil && prop.SetHook == nil && prop.Default == nil && !o.h.HasString(keyStr) {
+			// Get-only virtual property: writing throws Error.
+			// A property is virtual get-only if it has a get hook but no set hook
+			// and no backing store. If the get hook references $this->prop, the property
+			// has a backing store and allows implicit set (writing directly to backing).
+			if prop.GetHook != nil && prop.SetHook == nil && prop.IsVirtual() {
 				return ThrowError(ctx, Error,
 					fmt.Sprintf("Property %s::$%s is read-only", o.Class.GetName(), keyStr))
 			}
