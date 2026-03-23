@@ -357,6 +357,21 @@ func exceptionConstruct(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.
 func exceptionGetTraceAsString(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	maxLen := getExceptionStringParamMaxLen(ctx)
 
+	// Read from the hash table trace property (which may have been modified
+	// by user code via ReflectionProperty::setValue). Use the private property
+	// mangled name since trace is a private property of Exception.
+	traceVal := o.HashTable().GetString("trace")
+	if traceVal == nil {
+		// Try the mangled private name
+		mangledKey := phpv.ZString("*" + string(Exception.GetName()) + ":trace")
+		traceVal = o.HashTable().GetString(mangledKey)
+	}
+	if traceVal != nil && traceVal.GetType() == phpv.ZtArray {
+		traceArr := traceVal.Value().(*phpv.ZArray)
+		return getTraceAsStringFromArray(ctx, traceArr, maxLen).ZVal(), nil
+	}
+
+	// Fall back to opaque trace if no array in hash table
 	opaque := o.GetOpaque(Exception)
 	if opaque == nil {
 		return phpv.ZString("#0 {main}").ZVal(), nil
