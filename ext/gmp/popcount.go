@@ -63,3 +63,38 @@ func gmpTestbit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	return phpv.ZFalse.ZVal(), nil
 }
+
+// > func int gmp_hamdist ( GMP $a , GMP $b )
+func gmpHamdist(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var a, b *phpv.ZVal
+
+	_, err := core.Expand(ctx, args, &a, &b)
+	if err != nil {
+		return nil, err
+	}
+
+	ia, err := readInt(ctx, a)
+	if err != nil {
+		return nil, err
+	}
+	ib, err := readInt(ctx, b)
+	if err != nil {
+		return nil, err
+	}
+
+	// If either is negative, return -1 (like popcount for negative)
+	if ia.Sign() < 0 || ib.Sign() < 0 {
+		return phpv.ZInt(-1).ZVal(), nil
+	}
+
+	// Hamming distance = popcount(a XOR b)
+	xor := new(big.Int).Xor(ia, ib)
+
+	count := 0
+	for xor.Sign() > 0 {
+		count += int(xor.Bit(0))
+		xor.Rsh(xor, 1)
+	}
+
+	return phpv.ZInt(count).ZVal(), nil
+}

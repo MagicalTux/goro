@@ -1,7 +1,10 @@
 package gmp
 
 import (
+	"strings"
+
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -28,15 +31,21 @@ func gmpStrval(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	b := int(*base)
 	// Validate base: must be 2-62 or -36 to -2
 	if (b < 2 || b > 62) && (b < -36 || b > -2) {
-		return nil, ctx.FuncErrorf("gmp_strval(): Argument #2 ($base) must be between 2 and 62, or between -2 and -36")
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "gmp_strval(): Argument #2 ($base) must be between 2 and 62, or -2 and -36")
 	}
 
 	// Negative base means uppercase letters
+	uppercase := b < 0
 	if b < 0 {
 		b = -b
 	}
 
-	return phpv.ZString(i.Text(b)).ZVal(), nil
+	result := i.Text(b)
+	if uppercase {
+		result = strings.ToUpper(result)
+	}
+
+	return phpv.ZString(result).ZVal(), nil
 }
 
 // > func int gmp_intval ( GMP $gmpnumber )

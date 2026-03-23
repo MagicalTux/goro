@@ -3,6 +3,7 @@ package gmp
 import (
 	"errors"
 	"math/big"
+	"strings"
 
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
@@ -24,13 +25,7 @@ func readInt(ctx phpv.Context, v *phpv.ZVal) (*big.Int, error) {
 		obj, ok := v.Value().(*phpobj.ZObject)
 		if ok && obj.Class == GMP { // TODO check via instanceof (to be created)
 			// this is a gmp object
-			opaque := obj.GetOpaque(GMP)
-			if opaque == nil {
-				// Uninitialized GMP object, treat as zero
-				return big.NewInt(0), nil
-			}
-			i = opaque.(*big.Int)
-			return i, nil
+			return getGMPInt(obj), nil
 		}
 		fallthrough
 	default:
@@ -38,8 +33,10 @@ func readInt(ctx phpv.Context, v *phpv.ZVal) (*big.Int, error) {
 		if err != nil {
 			return nil, err
 		}
+		s := string(v.AsString(ctx))
+		s = strings.TrimSpace(s)
 		i = &big.Int{}
-		_, ok := i.SetString(string(v.AsString(ctx)), 0)
+		_, ok := i.SetString(s, 0)
 		if !ok {
 			return nil, errors.New("Unable to convert variable to GMP - string is not an integer")
 		}

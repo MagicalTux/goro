@@ -1,10 +1,11 @@
 package gmp
 
 import (
-	"errors"
 	"math/big"
+	"strings"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -16,6 +17,21 @@ func gmpInit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	_, err := core.Expand(ctx, args, &num, &base)
 	if err != nil {
 		return nil, err
+	}
+
+	// Check if num is a GMP object - PHP disallows this
+	if num.GetType() == phpv.ZtObject {
+		if obj, ok := num.Value().(*phpobj.ZObject); ok && obj.Class == GMP {
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "gmp_init(): Argument #1 ($num) must be of type string|int, GMP given")
+		}
+	}
+
+	// Validate base
+	if base != nil {
+		b := int(*base)
+		if b != 0 && (b < 2 || b > 62) {
+			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "gmp_init(): Argument #2 ($base) must be between 2 and 62, or 0")
+		}
 	}
 
 	var i *big.Int
@@ -32,17 +48,19 @@ func gmpInit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		if err != nil {
 			return nil, err
 		}
+		s := string(num.AsString(ctx))
+		s = strings.TrimSpace(s)
 		i = &big.Int{}
-		if base == nil {
-			_, ok := i.SetString(string(num.AsString(ctx)), 0)
-			if !ok {
-				return nil, errors.New("failed to parse integer")
-			}
-		} else {
-			_, ok := i.SetString(string(num.AsString(ctx)), int(*base))
-			if !ok {
-				return nil, errors.New("failed to parse integer")
-			}
+		b := 0
+		if base != nil {
+			b = int(*base)
+		}
+		if s == "" {
+			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "gmp_init(): Argument #1 ($num) is not an integer string")
+		}
+		_, ok := i.SetString(s, b)
+		if !ok {
+			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "gmp_init(): Argument #1 ($num) is not an integer string")
 		}
 	}
 

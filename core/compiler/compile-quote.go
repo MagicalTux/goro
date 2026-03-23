@@ -2,13 +2,37 @@ package compiler
 
 import (
 	"bytes"
+	"io"
 	"strconv"
 	"strings"
 	"unicode/utf8"
 
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
+
+// runDollarBraceDeprecated wraps a variable expression from "${var}" syntax
+// and emits a deprecation warning at runtime.
+type runDollarBraceDeprecated struct {
+	inner phpv.Runnable
+	l     *phpv.Loc
+}
+
+func (r *runDollarBraceDeprecated) Run(ctx phpv.Context) (*phpv.ZVal, error) {
+	if err := ctx.Deprecated("Using ${var} in strings is deprecated, use {$var} instead", logopt.NoFuncName(true)); err != nil {
+		return nil, err
+	}
+	return r.inner.Run(ctx)
+}
+
+func (r *runDollarBraceDeprecated) Loc() *phpv.Loc {
+	return r.l
+}
+
+func (r *runDollarBraceDeprecated) Dump(w io.Writer) error {
+	return r.inner.Dump(w)
+}
 
 func compileQuoteConstant(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	// i.Data is a string such as 'a string' (quotes included)
@@ -148,11 +172,36 @@ func compileQuoteEncapsed(i *tokenizer.Item, c compileCtx, q rune) (phpv.Runnabl
 		case tokenizer.Rune('$'):
 			switch c.peekType() {
 			case tokenizer.Rune('{'):
-				v, err := compileOneExpr(i, c)
-				if err != nil {
-					return nil, err
+				// Deprecated ${var} syntax - treat as variable interpolation
+				// Consume the '{' token
+				c.NextItem() // consume '{'
+				// Parse the inner expression as a variable reference
+				// For simple ${var}, the next token will be T_STRING "var" followed by '}'
+				// For complex ${var[0]}, we need full expression parsing
+				innerItem, innerErr := c.NextItem()
+				if innerErr != nil {
+					return nil, innerErr
 				}
-				res = append(res, v)
+				if innerItem.Type == tokenizer.T_STRING && c.peekType() == tokenizer.Rune('}') {
+					// Simple ${var} case - emit deprecation and treat as $var
+					v := phpv.Runnable(&runVariable{v: phpv.ZString(innerItem.Data), l: innerItem.Loc()})
+					// Consume the '}' token
+					c.NextItem()
+					// Wrap in a runnable that emits deprecation at runtime
+					res = append(res, &runDollarBraceDeprecated{inner: v, l: i.Loc()})
+				} else {
+					// Complex ${expr} case - put the inner item back and parse as expression
+					c.backup()
+					innerExpr, exprErr := compileExpr(nil, c)
+					if exprErr != nil {
+						return nil, exprErr
+					}
+					// Consume the '}' token
+					c.NextItem()
+					// Use as variable variable: ${expr} means the variable named by expr
+					rv := &runVariableRef{v: innerExpr, l: i.Loc()}
+					res = append(res, &runDollarBraceDeprecated{inner: rv, l: i.Loc()})
+				}
 			default:
 				// just add $ if it's not followed by a valid PHP label
 				res = append(res, &runZVal{phpv.ZString(i.Data), i.Loc()})

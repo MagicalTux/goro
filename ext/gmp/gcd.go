@@ -68,3 +68,47 @@ func gmpLcm(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	return returnInt(ctx, r)
 }
+
+// > func array gmp_gcdext ( GMP $a , GMP $b )
+func gmpGcdext(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var a, b *phpv.ZVal
+
+	_, err := core.Expand(ctx, args, &a, &b)
+	if err != nil {
+		return nil, err
+	}
+
+	ia, err := readInt(ctx, a)
+	if err != nil {
+		return nil, err
+	}
+	ib, err := readInt(ctx, b)
+	if err != nil {
+		return nil, err
+	}
+
+	g := &big.Int{}
+	s := &big.Int{}
+	t := &big.Int{}
+	g.GCD(s, t, ia, ib)
+
+	gv, err := returnInt(ctx, g)
+	if err != nil {
+		return nil, err
+	}
+	sv, err := returnInt(ctx, s)
+	if err != nil {
+		return nil, err
+	}
+	tv, err := returnInt(ctx, t)
+	if err != nil {
+		return nil, err
+	}
+
+	arr := phpv.NewZArray()
+	arr.OffsetSet(ctx, phpv.ZString("g").ZVal(), gv)
+	arr.OffsetSet(ctx, phpv.ZString("s").ZVal(), sv)
+	arr.OffsetSet(ctx, phpv.ZString("t").ZVal(), tv)
+
+	return arr.ZVal(), nil
+}

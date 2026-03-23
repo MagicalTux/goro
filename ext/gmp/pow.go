@@ -1,10 +1,10 @@
 package gmp
 
 import (
-	"errors"
 	"math/big"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -24,7 +24,7 @@ func gmpPow(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	if exp < 0 {
-		return nil, errors.New("Negative exponent is not supported")
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "gmp_pow(): Argument #2 ($exponent) must be greater than or equal to 0")
 	}
 
 	r := &big.Int{}
@@ -56,7 +56,19 @@ func gmpPowm(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	if imod.Sign() == 0 {
-		return nil, errors.New("Division by zero")
+		return nil, phpobj.ThrowError(ctx, phpobj.DivisionByZeroError, "gmp_powm(): Argument #3 ($modulus) Division by zero")
+	}
+
+	// For negative exponents, we need to compute the modular inverse first
+	if iexp.Sign() < 0 {
+		// base^(-exp) mod m = (base^(-1))^exp mod m
+		inv := new(big.Int).ModInverse(ibase, imod)
+		if inv == nil {
+			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "gmp_powm(): Argument #1 ($num) is not invertible modulo argument #3 ($modulus)")
+		}
+		posExp := new(big.Int).Neg(iexp)
+		r := new(big.Int).Exp(inv, posExp, imod)
+		return returnInt(ctx, r)
 	}
 
 	r := &big.Int{}

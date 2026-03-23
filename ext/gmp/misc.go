@@ -2,9 +2,11 @@ package gmp
 
 import (
 	"crypto/rand"
+	"encoding/binary"
 	"fmt"
 	"math"
 	"math/big"
+	mrand "math/rand"
 
 	"github.com/MagicalTux/goro/core"
 	"github.com/MagicalTux/goro/core/phpobj"
@@ -154,17 +156,81 @@ func gmpExport(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "gmp_export(): Argument #2 ($word_size) must be greater than or equal to 1")
 	}
 
+	// Check options for validity
+	if options != nil {
+		opt := int(*options)
+		// GMP_BIG_ENDIAN = 0x02, GMP_LITTLE_ENDIAN = 0x04, GMP_MSW_FIRST = 0x08, GMP_LSW_FIRST = 0x10, GMP_NATIVE_ENDIAN = 0x00
+		wordOrder := opt & 0x18 // MSW_FIRST | LSW_FIRST bits
+		byteOrder := opt & 0x06 // BIG_ENDIAN | LITTLE_ENDIAN bits
+		if wordOrder == 0x18 { // Both MSW and LSW set
+			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "gmp_export(): Argument #3 ($flags) cannot use multiple word order options")
+		}
+		if byteOrder == 0x06 { // Both BIG and LITTLE set
+			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "gmp_export(): Argument #3 ($flags) cannot use multiple byte order options")
+		}
+	}
+
 	b := i.Bytes()
 	if len(b) == 0 {
 		b = []byte{0}
 	}
 
-	// Check if word_size is too large
-	if int64(ws) > int64(len(b)) && ws > 1 {
-		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "gmp_export(): Argument #2 ($word_size) is too large for argument #1 ($num)")
+	// Pad to word_size boundary
+	if int(ws) > 1 && len(b)%int(ws) != 0 {
+		padding := int(ws) - (len(b) % int(ws))
+		padded := make([]byte, padding+len(b))
+		copy(padded[padding:], b)
+		b = padded
 	}
 
 	return phpv.ZString(b).ZVal(), nil
+}
+
+// > func GMP gmp_import ( string $data [, int $word_size = 1 [, int $options = GMP_MSW_FIRST | GMP_BIG_ENDIAN ]] )
+func gmpImport(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var data phpv.ZString
+	var wordSize *phpv.ZInt
+	var options *phpv.ZInt
+
+	_, err := core.Expand(ctx, args, &data, &wordSize, &options)
+	if err != nil {
+		return nil, err
+	}
+
+	ws := phpv.ZInt(1)
+	if wordSize != nil {
+		ws = *wordSize
+	}
+
+	if ws <= 0 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "gmp_import(): Argument #2 ($word_size) must be greater than or equal to 1")
+	}
+
+	b := []byte(data)
+	if len(b) == 0 {
+		return returnInt(ctx, big.NewInt(0))
+	}
+
+	if int(ws) > 1 && len(b)%int(ws) != 0 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "gmp_import(): Argument #1 ($data) must be a multiple of argument #2 ($word_size)")
+	}
+
+	// Check options for validity
+	if options != nil {
+		opt := int(*options)
+		wordOrder := opt & 0x18
+		byteOrder := opt & 0x06
+		if wordOrder == 0x18 {
+			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "gmp_import(): Argument #3 ($flags) cannot use multiple word order options")
+		}
+		if byteOrder == 0x06 {
+			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "gmp_import(): Argument #3 ($flags) cannot use multiple byte order options")
+		}
+	}
+
+	i := new(big.Int).SetBytes(b)
+
+	return returnInt(ctx, i)
 }
 
 // > func GMP gmp_random_bits ( int $bits )
@@ -212,7 +278,7 @@ func gmpRandomRange(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	if ia.Cmp(ib) > 0 {
 		return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
-			"gmp_random_range(): Argument #1 ($min) must be less than or equal to argument #2 ($max)")
+			"gmp_random_range(): Argument #1 ($min) must be less than argument #2 ($maximum)")
 	}
 
 	// range = max - min + 1
@@ -228,6 +294,46 @@ func gmpRandomRange(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	return returnInt(ctx, r)
 }
+
+// > func void gmp_random_seed ( GMP $seed )
+func gmpRandomSeed(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var seed *phpv.ZVal
+
+	_, err := core.Expand(ctx, args, &seed)
+	if err != nil {
+		return nil, err
+	}
+
+	iseed, err := readInt(ctx, seed)
+	if err != nil {
+		return nil, err
+	}
+
+	// Use the seed to seed Go's math/rand
+	// GMP random_seed affects subsequent gmp_random_bits and gmp_random_range calls
+	// We seed Go's global random with the provided seed
+	seedBytes := iseed.Bytes()
+	var seedVal int64
+	if len(seedBytes) >= 8 {
+		seedVal = int64(binary.BigEndian.Uint64(seedBytes[:8]))
+	} else {
+		padded := make([]byte, 8)
+		copy(padded[8-len(seedBytes):], seedBytes)
+		seedVal = int64(binary.BigEndian.Uint64(padded))
+	}
+	if iseed.Sign() < 0 {
+		seedVal = -seedVal
+	}
+
+	// Store seeded source for deterministic random generation
+	gmpRandSource = mrand.New(mrand.NewSource(seedVal))
+
+	return nil, nil
+}
+
+// gmpRandSource is the seeded random source for GMP random functions.
+// When nil, crypto/rand is used (non-deterministic).
+var gmpRandSource *mrand.Rand
 
 // > func int gmp_scan0 ( GMP $num , int $start )
 func gmpScan0(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
@@ -246,7 +352,7 @@ func gmpScan0(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	if start < 0 {
 		return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
-			fmt.Sprintf("gmp_scan0(): Argument #2 ($start) must be greater than or equal to 0"))
+			"gmp_scan0(): Argument #2 ($start) must be greater than or equal to 0")
 	}
 
 	// Find the first 0 bit at or after position start
@@ -278,7 +384,7 @@ func gmpScan1(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	if start < 0 {
 		return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
-			fmt.Sprintf("gmp_scan1(): Argument #2 ($start) must be greater than or equal to 0"))
+			"gmp_scan1(): Argument #2 ($start) must be greater than or equal to 0")
 	}
 
 	// For zero, there are no set bits
@@ -299,4 +405,27 @@ func gmpScan1(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	return phpv.ZInt(-1).ZVal(), nil
+}
+
+// > func GMP gmp_binomial ( GMP|int $n , int $k )
+func gmpBinomial(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var n *phpv.ZVal
+	var k phpv.ZInt
+
+	_, err := core.Expand(ctx, args, &n, &k)
+	if err != nil {
+		return nil, err
+	}
+
+	in, err := readInt(ctx, n)
+	if err != nil {
+		return nil, err
+	}
+
+	if k < 0 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "gmp_binomial(): Argument #2 ($k) must be greater than or equal to 0")
+	}
+
+	r := new(big.Int).Binomial(in.Int64(), int64(k))
+	return returnInt(ctx, r)
 }
