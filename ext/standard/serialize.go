@@ -508,12 +508,12 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 		// i:123456;
 		semicIndex := indexOf(str, ";", i)
 		if semicIndex < 0 {
-			return nil, offset, readError
+			return nil, offset, &unserializeError{offset, len(str)}
 		}
 		s := str[i:semicIndex]
 		n, err := strconv.ParseInt(s, 10, 64)
 		if err != nil {
-			return nil, offset, readError
+			return nil, offset, &unserializeError{offset, len(str)}
 		}
 		val := phpv.ZInt(n).ZVal()
 		d.addRef(val)
@@ -554,7 +554,6 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 		if err != nil || strLen < 0 {
 			return nil, offset, readError
 		}
-		readError.offset = 2
 
 		startQuote := j + 1
 		content := j + 2
@@ -563,15 +562,13 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 
 		switch {
 		case content+int(strLen) >= len(str):
-			return nil, offset, readError
+			return nil, offset, &unserializeError{offset + 2, len(str)}
 		case core.StrIdx(str, startQuote) != '"':
-			readError.offset = startQuote
-			return nil, offset, readError
+			return nil, offset, &unserializeError{startQuote, len(str)}
 		case core.StrIdx(str, endQuote) != '"':
-			readError.offset = endQuote
-			return nil, offset, readError
+			return nil, offset, &unserializeError{endQuote, len(str)}
 		case core.StrIdx(str, semi) != ';':
-			return nil, offset, readError
+			return nil, offset, &unserializeError{semi, len(str)}
 		}
 
 		s = str[content : content+int(strLen)]
@@ -689,8 +686,6 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 		}
 		i = j + 2
 
-		readError.offset = 2
-
 		arr := phpv.NewZArray()
 		// Register the array in refs before parsing its contents
 		d.addRef(arr.ZVal())
@@ -699,22 +694,30 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 			var key, value *phpv.ZVal
 			key, i, err = d.parseKey(ctx, str, i)
 			if err != nil {
-				return nil, offset, readError
+				// Propagate the inner error offset if available
+				if ue, ok := err.(*unserializeError); ok {
+					return nil, offset, ue
+				}
+				return nil, offset, &unserializeError{i, len(str)}
 			}
 
 			if i >= len(str) {
-				return nil, offset, readError
+				return nil, offset, &unserializeError{i, len(str)}
 			}
 
 			value, i, err = d.parse(ctx, str, i)
 			if err != nil {
-				return nil, offset, readError
+				// Propagate the inner error offset if available
+				if ue, ok := err.(*unserializeError); ok {
+					return nil, offset, ue
+				}
+				return nil, offset, &unserializeError{i, len(str)}
 			}
 			arr.OffsetSet(ctx, key, value)
 			numItems--
 		}
 		if core.StrIdx(str, i) != '}' {
-			return nil, offset, readError
+			return nil, offset, &unserializeError{i, len(str)}
 		}
 
 		return arr.ZVal(), i + 1, nil
@@ -817,7 +820,6 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 		if err != nil || strLen < 0 {
 			return nil, offset, readError
 		}
-		readError.offset = 2
 
 		startQuote := j + 1
 		content := j + 2
@@ -825,36 +827,34 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 
 		switch {
 		case content+int(strLen) >= len(str):
-			return nil, offset, readError
+			return nil, offset, &unserializeError{offset + 2, len(str)}
 		case core.StrIdx(str, startQuote) != '"':
-			readError.offset = startQuote
-			return nil, offset, readError
+			return nil, offset, &unserializeError{startQuote, len(str)}
 		case core.StrIdx(str, endQuote) != '"':
-			readError.offset = endQuote
-			return nil, offset, readError
+			return nil, offset, &unserializeError{endQuote, len(str)}
 		}
 
 		className := str[content : content+int(strLen)]
 		i = endQuote + 1
 		if core.StrIdx(str, i) != ':' {
-			return nil, offset, readError
+			return nil, offset, &unserializeError{i, len(str)}
 		}
 		i++
 		j = indexOf(str, ":", i)
 		if j < 0 || j < i+1 {
-			return nil, offset, readError
+			return nil, offset, &unserializeError{i, len(str)}
 		}
 		numPropsStr := str[i:j]
 		if len(numPropsStr) > 0 && (numPropsStr[0] == '+' || numPropsStr[0] == '-') {
-			return nil, offset, readError
+			return nil, offset, &unserializeError{i, len(str)}
 		}
 		numProps, err := strconv.Atoi(numPropsStr)
 		if err != nil || numProps < 0 {
-			return nil, offset, readError
+			return nil, offset, &unserializeError{i, len(str)}
 		}
 
 		if core.StrIdx(str, j+1) != '{' {
-			return nil, offset, readError
+			return nil, offset, &unserializeError{j + 1, len(str)}
 		}
 
 		allowedClass := d.allowAllClasses
@@ -913,11 +913,22 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 				var key, value *phpv.ZVal
 				key, i, err = d.parseKey(ctx, str, i)
 				if err != nil {
-					return nil, offset, readError
+					// PHP emits "Unexpected end of serialized data" warning
+					if i >= len(str) || (i < len(str) && str[i] == '}') {
+						ctx.Warn("Unexpected end of serialized data")
+						return nil, offset, &unserializeError{i, len(str)}
+					}
+					if ue, ok := err.(*unserializeError); ok {
+						return nil, offset, ue
+					}
+					return nil, offset, &unserializeError{i, len(str)}
 				}
 				value, i, err = d.parse(ctx, str, i)
 				if err != nil {
-					return nil, offset, readError
+					if ue, ok := err.(*unserializeError); ok {
+						return nil, offset, ue
+					}
+					return nil, offset, &unserializeError{i, len(str)}
 				}
 				arr.OffsetSet(ctx, key, value)
 				numProps--
@@ -932,11 +943,17 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 				var key, value *phpv.ZVal
 				key, i, err = d.parseKey(ctx, str, i)
 				if err != nil {
-					return nil, offset, readError
+					if ue, ok := err.(*unserializeError); ok {
+						return nil, offset, ue
+					}
+					return nil, offset, &unserializeError{i, len(str)}
 				}
 				value, i, err = d.parse(ctx, str, i)
 				if err != nil {
-					return nil, offset, readError
+					if ue, ok := err.(*unserializeError); ok {
+						return nil, offset, ue
+					}
+					return nil, offset, &unserializeError{i, len(str)}
 				}
 				unserializeSetProperty(ctx, obj, key.AsString(ctx), value)
 				numProps--
@@ -988,19 +1005,27 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 		if j < 0 || j < i+1 {
 			return nil, offset, readError
 		}
-		dataLen, err := strconv.Atoi(str[i:j])
-		if err != nil {
-			return nil, offset, readError
+		dataLenStr := str[i:j]
+		dataLen64, err := strconv.ParseInt(dataLenStr, 10, 64)
+		if err != nil || dataLen64 < 0 {
+			return nil, offset, &unserializeError{i, len(str)}
+		}
+		dataLen := int(dataLen64)
+		// Check for integer overflow or unreasonable size
+		if int64(dataLen) != dataLen64 || dataLen > len(str) {
+			// PHP emits a warning about insufficient data when dataLen is huge
+			ctx.Warn("Insufficient data for unserializing - %d required, %d present", dataLen64, len(str)-(j+2))
+			return nil, offset, &unserializeError{j + 2 + dataLen, len(str)}
 		}
 
 		if core.StrIdx(str, j+1) != '{' {
-			return nil, offset, readError
+			return nil, offset, &unserializeError{j + 1, len(str)}
 		}
 
 		dataStart := j + 2
 		dataEnd := dataStart + dataLen
 		if dataEnd >= len(str) || core.StrIdx(str, dataEnd) != '}' {
-			return nil, offset, readError
+			return nil, offset, &unserializeError{dataEnd, len(str)}
 		}
 		data := str[dataStart:dataEnd]
 

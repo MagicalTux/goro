@@ -74,7 +74,12 @@ func createReflectionTypeObject(ctx phpv.Context, hint *phpv.TypeHint) (*phpv.ZV
 
 func createReflectionNamedTypeObject(ctx phpv.Context, hint *phpv.TypeHint) (*phpv.ZVal, error) {
 	data := &reflectionTypeData{nullable: hint.Nullable}
+	// For reflection, use ClassName() for special types like "iterable" instead of String()
+	// which may expand iterable to "Traversable|array"
 	typeName := hint.String()
+	if hint.ClassName() == "iterable" {
+		typeName = "iterable"
+	}
 	if hint.Nullable && len(typeName) > 0 && typeName[0] == '?' { typeName = typeName[1:] }
 	data.name = phpv.ZString(typeName)
 	switch hint.Type() {

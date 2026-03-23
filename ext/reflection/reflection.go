@@ -42,7 +42,7 @@ func reflectionGetModifierNames(ctx phpv.Context, o *phpobj.ZObject, args []*php
 	if modifiers&ReflectionMethodIS_STATIC != 0 {
 		arr.OffsetSet(ctx, nil, phpv.ZString("static").ZVal())
 	}
-	if modifiers&128 != 0 { // IS_READONLY
+	if modifiers&128 != 0 || modifiers&65536 != 0 { // IS_READONLY (property=128, class=65536)
 		arr.OffsetSet(ctx, nil, phpv.ZString("readonly").ZVal())
 	}
 	if modifiers&512 != 0 { // IS_VIRTUAL

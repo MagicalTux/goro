@@ -714,8 +714,12 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 					}
 
 					// Virtual property with default value is not allowed.
-					// A property is virtual if its hooks never reference the backing store.
-					if prop.Default != nil && !prop.IsBacked {
+					// A property is virtual when both hooks are present and neither
+					// references the backing store. Get-only or set-only properties
+					// with defaults are always backed.
+					if prop.Default != nil && !prop.IsBacked &&
+						(prop.HasGetDeclared || prop.GetHook != nil) &&
+						(prop.HasSetDeclared || prop.SetHook != nil) {
 						return nil, &phpv.PhpError{
 							Err:  fmt.Errorf("Cannot specify default value for virtual hooked property %s::$%s", class.Name, prop.VarName),
 							Code: phpv.E_COMPILE_ERROR,

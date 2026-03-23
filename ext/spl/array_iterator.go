@@ -32,7 +32,44 @@ func getArrayIteratorData(o *phpobj.ZObject) *arrayIteratorData {
 	return d.(*arrayIteratorData)
 }
 
+// overridesMethod checks if an object's class overrides the given method
+// from the specified base class. Returns true if a subclass defines its own version.
+func overridesMethod(o *phpobj.ZObject, baseClass *phpobj.ZClass, methodName string) bool {
+	cls := o.GetClass()
+	if cls == baseClass {
+		return false // it IS the base class, not overridden
+	}
+	// Check if the actual class has its own definition of the method
+	m, ok := cls.GetMethod(phpv.ZString(methodName))
+	if !ok {
+		return false
+	}
+	// Check if it's defined on the base class
+	baseM, ok := baseClass.GetMethod(phpv.ZString(methodName))
+	if !ok {
+		return false
+	}
+	// If the method pointers differ, it's overridden
+	return m != baseM
+}
+
 func initArrayIterator() {
+	ArrayIteratorClass.H = &phpv.ZClassHandlers{
+		HandleForeachByRef: func(ctx phpv.Context, o phpv.ZObject) (*phpv.ZArray, error) {
+			if zo, ok := o.(*phpobj.ZObject); ok {
+				// Subclasses that override current() cannot use foreach by reference
+				if overridesMethod(zo, ArrayIteratorClass, "current") {
+					return nil, nil
+				}
+				d := getArrayIteratorData(zo)
+				if d != nil {
+					return d.array, nil
+				}
+			}
+			return nil, nil
+		},
+	}
+
 	ArrayIteratorClass.Implementations = []*phpobj.ZClass{
 		phpobj.Iterator,
 		phpobj.ArrayAccess,

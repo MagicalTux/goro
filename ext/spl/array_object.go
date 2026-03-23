@@ -127,6 +127,15 @@ func initArrayObject() {
 			}
 			return phpv.NewZArray(), nil
 		},
+		HandleForeachByRef: func(ctx phpv.Context, o phpv.ZObject) (*phpv.ZArray, error) {
+			if zo, ok := o.(*phpobj.ZObject); ok {
+				d := getArrayObjectData(zo)
+				if d != nil {
+					return d.array, nil
+				}
+			}
+			return nil, nil
+		},
 	}
 
 	ArrayObjectClass.Implementations = []*phpobj.ZClass{

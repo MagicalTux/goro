@@ -640,26 +640,117 @@ func fncQuotedPrintableEncode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, 
 	if err != nil {
 		return nil, err
 	}
+
+	input := []byte(s)
 	var result []byte
 	lineLen := 0
-	for _, b := range []byte(s) {
-		if (b >= 33 && b <= 126 && b != '=') || b == '\t' || b == ' ' {
-			result = append(result, b)
-			lineLen++
-		} else if b == '\r' || b == '\n' {
-			result = append(result, b)
+	const maxLineLen = 75 // soft line break at 75 chars (76th is '=')
+
+	for i := 0; i < len(input); i++ {
+		b := input[i]
+
+		// Handle CRLF: pass through as-is and reset line length
+		if b == '\r' && i+1 < len(input) && input[i+1] == '\n' {
+			// Trailing whitespace before CRLF must be encoded
+			if lineLen > 0 {
+				last := result[len(result)-1]
+				if last == ' ' || last == '\t' {
+					result = result[:len(result)-1]
+					lineLen--
+					encoded := []byte{'=', "0123456789ABCDEF"[last>>4], "0123456789ABCDEF"[last&0xf]}
+					if lineLen+3 > maxLineLen {
+						result = append(result, '=', '\r', '\n')
+						lineLen = 0
+					}
+					result = append(result, encoded...)
+					lineLen += 3
+				}
+			}
+			result = append(result, '\r', '\n')
 			lineLen = 0
-		} else {
-			result = append(result, '=')
-			result = append(result, "0123456789ABCDEF"[b>>4])
-			result = append(result, "0123456789ABCDEF"[b&0xf])
-			lineLen += 3
+			i++ // skip \n
+			continue
 		}
-		if lineLen >= 75 {
+
+		// Bare LF
+		if b == '\n' {
+			// Trailing whitespace before LF must be encoded
+			if lineLen > 0 {
+				last := result[len(result)-1]
+				if last == ' ' || last == '\t' {
+					result = result[:len(result)-1]
+					lineLen--
+					encoded := []byte{'=', "0123456789ABCDEF"[last>>4], "0123456789ABCDEF"[last&0xf]}
+					if lineLen+3 > maxLineLen {
+						result = append(result, '=', '\r', '\n')
+						lineLen = 0
+					}
+					result = append(result, encoded...)
+					lineLen += 3
+				}
+			}
+			result = append(result, '\r', '\n')
+			lineLen = 0
+			continue
+		}
+
+		// Bare CR
+		if b == '\r' {
+			// Trailing whitespace before CR must be encoded
+			if lineLen > 0 {
+				last := result[len(result)-1]
+				if last == ' ' || last == '\t' {
+					result = result[:len(result)-1]
+					lineLen--
+					encoded := []byte{'=', "0123456789ABCDEF"[last>>4], "0123456789ABCDEF"[last&0xf]}
+					if lineLen+3 > maxLineLen {
+						result = append(result, '=', '\r', '\n')
+						lineLen = 0
+					}
+					result = append(result, encoded...)
+					lineLen += 3
+				}
+			}
+			result = append(result, '\r', '\n')
+			lineLen = 0
+			continue
+		}
+
+		// Determine if byte needs encoding
+		var encoded []byte
+		encLen := 0
+		if (b >= 33 && b <= 126 && b != '=') || b == '\t' || b == ' ' {
+			encoded = []byte{b}
+			encLen = 1
+		} else {
+			encoded = []byte{'=', "0123456789ABCDEF"[b>>4], "0123456789ABCDEF"[b&0xf]}
+			encLen = 3
+		}
+
+		// Check if we need a soft line break before this character
+		if lineLen+encLen > maxLineLen {
 			result = append(result, '=', '\r', '\n')
 			lineLen = 0
 		}
+
+		result = append(result, encoded...)
+		lineLen += encLen
 	}
+
+	// Handle trailing whitespace at end of string
+	if lineLen > 0 {
+		last := result[len(result)-1]
+		if last == ' ' || last == '\t' {
+			result = result[:len(result)-1]
+			lineLen--
+			encoded := []byte{'=', "0123456789ABCDEF"[last>>4], "0123456789ABCDEF"[last&0xf]}
+			if lineLen+3 > maxLineLen {
+				result = append(result, '=', '\r', '\n')
+			}
+			result = append(result, encoded...)
+		}
+	}
+
 	return phpv.ZString(result).ZVal(), nil
 }
 

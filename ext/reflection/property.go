@@ -199,6 +199,15 @@ func reflectionPropertyGetValue(ctx phpv.Context, o *phpobj.ZObject, args []*php
 	}
 
 	obj := args[0].AsObject(ctx)
+	// Reflection bypasses visibility - use GetPropValue for direct access
+	zobj, ok := obj.(*phpobj.ZObject)
+	if ok {
+		v := zobj.GetPropValue(data.prop)
+		if v != nil {
+			return v, nil
+		}
+	}
+	// Fall back to ObjectGet for __get magic and other special cases
 	return obj.ObjectGet(ctx, data.prop.VarName)
 }
 
@@ -235,6 +244,21 @@ func reflectionPropertySetValue(ctx phpv.Context, o *phpobj.ZObject, args []*php
 	}
 
 	obj := args[0].AsObject(ctx)
+	// Check readonly - reflection cannot modify readonly properties that are already initialized
+	if data.prop.Modifiers.IsReadonly() {
+		zobj, ok := obj.(*phpobj.ZObject)
+		if ok {
+			v := zobj.GetPropValue(data.prop)
+			if v != nil {
+				return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Cannot modify readonly property %s::$%s", data.class.GetName(), data.prop.VarName))
+			}
+		}
+	}
+	// Reflection bypasses visibility since PHP 8.1 - use hash table directly
+	zobj, ok := obj.(*phpobj.ZObject)
+	if ok {
+		return nil, zobj.HashTable().SetString(data.prop.VarName, args[1])
+	}
 	return nil, obj.ObjectSet(ctx, data.prop.VarName, args[1])
 }
 

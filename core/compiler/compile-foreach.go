@@ -56,6 +56,18 @@ func (r *runnableForeach) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 		}
 	}
 
+	// For foreach by-reference on objects, check if the class provides an
+	// internal array (e.g., ArrayObject, ArrayIterator). If so, use the
+	// internal array directly for by-reference iteration.
+	if r.ref && z.GetType() == phpv.ZtObject {
+		if obj, ok := z.Value().(*phpobj.ZObject); ok {
+			if internalArr := getForeachByRefArray(ctx, obj); internalArr != nil {
+				z = internalArr.ZVal()
+				z.HashTable().SeparateCow()
+			}
+		}
+	}
+
 	var it phpv.ZIterator
 	if z.GetType() == phpv.ZtObject {
 		obj, ok := z.Value().(*phpobj.ZObject)
@@ -266,6 +278,23 @@ func (r *runnableForeach) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 	}
 
 	return nil, nil
+}
+
+// getForeachByRefArray checks if an object provides an internal array for
+// foreach by-reference iteration (e.g., ArrayObject, ArrayIterator).
+// It walks up the class hierarchy checking for HandleForeachByRef handlers.
+func getForeachByRefArray(ctx phpv.Context, obj *phpobj.ZObject) *phpv.ZArray {
+	cls := obj.GetClass()
+	for cls != nil {
+		if h := cls.Handlers(); h != nil && h.HandleForeachByRef != nil {
+			arr, err := h.HandleForeachByRef(ctx, obj)
+			if err == nil && arr != nil {
+				return arr
+			}
+		}
+		cls = cls.GetParent()
+	}
+	return nil
 }
 
 // phpObjectIterator wraps a PHP Iterator object to implement phpv.ZIterator

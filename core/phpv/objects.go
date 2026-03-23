@@ -37,15 +37,16 @@ type ZClassProp struct {
 }
 
 // IsVirtual returns true if this property is virtual (has hooks but no backing store).
-// A virtual property has hooks and its hooks never reference the backing store
-// ($this->propName). The IsBacked flag is set at compile time by analyzing the hook bodies.
-// Note: a property with a default value can still be virtual if the hooks don't
-// reference the backing store (this is an error caught separately at compile time).
+// A property is virtual if:
+// - It has hooks, AND
+// - It has no default value, AND
+// - Its hooks never reference the backing store ($this->propName).
+// The IsBacked flag is set at compile time by analyzing the hook bodies.
 func (p *ZClassProp) IsVirtual() bool {
 	if !p.HasHooks {
 		return false
 	}
-	if p.IsBacked {
+	if p.Default != nil || p.IsBacked {
 		return false
 	}
 	return true
@@ -103,6 +104,7 @@ type ZClassHandlers struct {
 	HandleCompare    func(ctx Context, a, b ZObject) (int, error)  // override == comparison; return 0=equal, non-0=not-equal
 	HandleCast       func(ctx Context, o ZObject, t ZType) (Val, error)          // override type casting (int, float, bool)
 	HandleDoOperation func(ctx Context, op int, a, b *ZVal) (*ZVal, error)       // override arithmetic/bitwise operators; op is tokenizer.ItemType
+	HandleForeachByRef func(ctx Context, o ZObject) (*ZArray, error)            // provide internal array for foreach by-reference (e.g., ArrayObject/ArrayIterator)
 }
 
 type ZClass interface {

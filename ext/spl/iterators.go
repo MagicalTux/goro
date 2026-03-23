@@ -1251,6 +1251,18 @@ func getRecursiveArrayIteratorData(o *phpobj.ZObject) *recursiveArrayIteratorDat
 }
 
 func initRecursiveArrayIterator() {
+	RecursiveArrayIteratorClass.H = &phpv.ZClassHandlers{
+		HandleForeachByRef: func(ctx phpv.Context, o phpv.ZObject) (*phpv.ZArray, error) {
+			if zo, ok := o.(*phpobj.ZObject); ok {
+				d := getRecursiveArrayIteratorData(zo)
+				if d != nil {
+					return d.array, nil
+				}
+			}
+			return nil, nil
+		},
+	}
+
 	RecursiveArrayIteratorClass.Methods = map[phpv.ZString]*phpv.ZClassMethod{
 		"__construct": {
 			Name: "__construct",

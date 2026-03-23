@@ -723,6 +723,44 @@ func formatConstantValue(ctx phpv.Context, val *phpv.ZVal) string {
 	}
 }
 
+// findMethodPrototype walks up the class hierarchy to find the earliest
+// class/interface that declares the given method. Returns empty if no prototype found.
+func findMethodPrototype(zc *phpobj.ZClass, methodNameLower phpv.ZString) phpv.ZString {
+	// Check interfaces first - they are the earliest prototype
+	for _, impl := range zc.Implementations {
+		if _, ok := impl.GetMethod(methodNameLower); ok {
+			return impl.GetName()
+		}
+	}
+
+	// Walk up parent chain to find the earliest declaration
+	var earliest phpv.ZString
+	for cur := zc.Extends; cur != nil; {
+		if _, ok := cur.GetMethod(methodNameLower); ok {
+			// Check interfaces of this parent
+			for _, impl := range cur.Implementations {
+				if _, ok := impl.GetMethod(methodNameLower); ok {
+					return impl.GetName()
+				}
+			}
+			earliest = cur.GetName()
+			// Keep going up
+			parent := cur.GetParent()
+			if phpv.IsNilClass(parent) {
+				break
+			}
+			var ok2 bool
+			cur, ok2 = parent.(*phpobj.ZClass)
+			if !ok2 {
+				break
+			}
+		} else {
+			break
+		}
+	}
+	return earliest
+}
+
 func rcAccessStr(mod phpv.ZObjectAttr) string {
 	if mod.IsProtected() {
 		return "protected"
@@ -740,31 +778,44 @@ func rcFormatMethodShort(zc *phpobj.ZClass, m *phpv.ZClassMethod) string {
 	if m.Loc == nil {
 		origin = "<internal"
 	}
-	// Check for "overwrites" - method is defined in this class but also exists in parent
-	if m.Class != nil && m.Class.GetName() == zc.GetName() && zc.Extends != nil {
-		if _, ok := zc.Extends.GetMethod(m.Name.ToLower()); ok {
-			origin += ", overwrites " + string(zc.Extends.GetName())
+	methodNameLower := m.Name.ToLower()
+	isOwnMethod := m.Class == nil || m.Class.GetName() == zc.GetName()
+
+	if isOwnMethod && zc.Extends != nil {
+		// Method is defined in this class - check if parent also has it ("overwrites")
+		if parentMethod, ok := zc.Extends.GetMethod(methodNameLower); ok {
+			// "overwrites" shows the class that actually declares the method
+			declaringClass := zc.Extends.GetName()
+			if parentMethod.Class != nil {
+				declaringClass = parentMethod.Class.GetName()
+			}
+			origin += ", overwrites " + string(declaringClass)
 		}
 	}
-	if m.Prototype != nil {
+
+	// Find prototype: walk up the full hierarchy to find the earliest declaration
+	if isOwnMethod {
+		protoName := findMethodPrototype(zc, methodNameLower)
+		if protoName != "" {
+			origin += ", prototype " + string(protoName)
+		}
+	} else if m.Prototype != nil {
 		origin += ", prototype " + string(m.Prototype.GetName())
-	} else if m.Class != nil && m.Class.GetName() == zc.GetName() {
-		// Check if any interface defines this method (as prototype)
-		for _, impl := range zc.Implementations {
-			if _, ok := impl.GetMethod(m.Name.ToLower()); ok {
-				origin += ", prototype " + string(impl.GetName())
-				break
-			}
-		}
-		// Check parent for prototype
-		if zc.Extends != nil && !strings.Contains(origin, "prototype") {
-			if _, ok := zc.Extends.GetMethod(m.Name.ToLower()); ok {
-				origin += ", prototype " + string(zc.Extends.GetName())
-			}
-		}
 	}
-	if m.Class != nil && m.Class.GetName() != zc.GetName() {
-		origin += ", inherits " + string(m.Class.GetName())
+
+	if !isOwnMethod {
+		// Method is inherited
+		declaringClass := m.Class.GetName()
+		origin += ", inherits " + string(declaringClass)
+		// Find prototype for inherited method
+		if m.Prototype != nil {
+			origin += ", prototype " + string(m.Prototype.GetName())
+		} else {
+			protoName := findMethodPrototype(zc, methodNameLower)
+			if protoName != "" {
+				origin += ", prototype " + string(protoName)
+			}
+		}
 	}
 	// Check if this is a constructor
 	nameLower := strings.ToLower(string(m.Name))

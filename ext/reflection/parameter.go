@@ -117,7 +117,10 @@ func reflectionParameterConstruct(ctx phpv.Context, o *phpobj.ZObject, args []*p
 	if param.GetType() == phpv.ZtInt {
 		// Position-based lookup
 		pos := int(param.AsInt(ctx))
-		if funcArgs == nil || pos < 0 || pos >= len(funcArgs) {
+		if pos < 0 {
+			return nil, phpobj.ThrowError(ctx, ReflectionException, "ReflectionParameter::__construct(): Argument #2 ($param) must be greater than or equal to 0")
+		}
+		if funcArgs == nil || pos >= len(funcArgs) {
 			return nil, phpobj.ThrowError(ctx, ReflectionException, fmt.Sprintf("The parameter specified by its index does not exist"))
 		}
 		paramData = &reflectionParameterData{

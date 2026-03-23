@@ -2091,8 +2091,18 @@ func fncArrayProduct(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var floatProduct phpv.ZFloat = 1
 	for _, v := range array.Iterate(ctx) {
 		switch v.GetType() {
-		case phpv.ZtArray, phpv.ZtObject:
-			if err := ctx.Warn("Multiplication is not supported on type %s", v.GetType().TypeName()); err != nil {
+		case phpv.ZtArray:
+			if err := ctx.Warn("Multiplication is not supported on type array"); err != nil {
+				return nil, err
+			}
+			continue
+		case phpv.ZtObject:
+			// PHP uses the class name, not "object"
+			typeName := "object"
+			if obj := v.AsObject(ctx); obj != nil {
+				typeName = string(obj.GetClass().GetName())
+			}
+			if err := ctx.Warn("Multiplication is not supported on type %s", typeName); err != nil {
 				return nil, err
 			}
 			continue

@@ -1338,13 +1338,13 @@ func fncCopy(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZFalse.ZVal(), ctx.Warn("The first argument to copy() function cannot be a directory", logopt.NoFuncName(true))
 	}
 
-	// Check if source and dest are the same file
+	// Check if source and dest are the same file - PHP silently returns false
 	dstStat, dstErr := os.Stat(dstPath)
 	if dstErr == nil {
 		srcSys, srcOk := srcStat.Sys().(*syscall.Stat_t)
 		dstSys, dstOk := dstStat.Sys().(*syscall.Stat_t)
 		if srcOk && dstOk && srcSys.Dev == dstSys.Dev && srcSys.Ino == dstSys.Ino {
-			return phpv.ZFalse.ZVal(), ctx.Warn("copy(%s): The first and second arguments to copy() function cannot refer to the same file", src, logopt.NoFuncName(true))
+			return phpv.ZFalse.ZVal(), nil
 		}
 	}
 
