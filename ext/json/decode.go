@@ -14,6 +14,11 @@ import (
 
 // > func mixed json_decode ( string $json [, bool $assoc = FALSE [, int $depth = 512 [, int $options = 0 ]]] )
 func fncJsonDecode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	// PHP 8.1+: Passing null to json_decode() is deprecated
+	if len(args) > 0 && args[0] != nil && args[0].GetType() == phpv.ZtNull {
+		ctx.Deprecated("json_decode(): Passing null to parameter #1 ($json) of type string is deprecated")
+	}
+
 	var json phpv.ZString
 	var assoc *phpv.ZBool
 	var depth, opt *phpv.ZInt
