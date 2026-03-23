@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -37,7 +38,7 @@ func fncHash(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	algN, ok := algos[algo.ToLower()]
 	if !ok {
-		return nil, fmt.Errorf("Unknown hashing algorithm: %s", algo)
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "hash(): Argument #1 ($algo) must be a valid hashing algorithm")
 	}
 
 	a := algN()
@@ -70,7 +71,7 @@ func fncHashFile(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	algN, ok := algos[algo.ToLower()]
 	if !ok {
-		return nil, fmt.Errorf("Unknown hashing algorithm: %s", algo)
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "hash_file(): Argument #1 ($algo) must be a valid hashing algorithm")
 	}
 
 	f, err := openFileChecked(ctx, string(filename), "hash_file")
@@ -105,7 +106,10 @@ func fncHashHmacFile(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	algN, ok := algos[algo.ToLower()]
 	if !ok {
-		return nil, fmt.Errorf("Unknown hashing algorithm: %s", algo)
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "hash_hmac_file(): Argument #1 ($algo) must be a valid hashing algorithm")
+	}
+	if nonCryptoAlgos[algo.ToLower()] {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "hash_hmac_file(): Argument #1 ($algo) must be a valid cryptographic hashing algorithm")
 	}
 
 	f, err := openFileChecked(ctx, string(filename), "hash_hmac_file")
@@ -128,12 +132,22 @@ func fncHashHmacFile(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 // > func bool hash_equals ( string $known_string , string $user_string )
 func fncHashEquals(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	var known, user phpv.ZString
-
-	_, err := core.Expand(ctx, args, &known, &user)
-	if err != nil {
-		return nil, err
+	if len(args) < 2 {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "hash_equals() expects exactly 2 arguments, "+fmt.Sprintf("%d", len(args))+" given")
 	}
+
+	// Strict type checking: must be string, no coercion from int/null/etc.
+	if args[0].GetType() != phpv.ZtString {
+		typeName := phpv.ZValTypeName(args[0])
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("hash_equals(): Argument #1 ($known_string) must be of type string, %s given", typeName))
+	}
+	if args[1].GetType() != phpv.ZtString {
+		typeName := phpv.ZValTypeName(args[1])
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("hash_equals(): Argument #2 ($user_string) must be of type string, %s given", typeName))
+	}
+
+	known := args[0].Value().(phpv.ZString)
+	user := args[1].Value().(phpv.ZString)
 
 	r := subtle.ConstantTimeCompare([]byte(known), []byte(user))
 

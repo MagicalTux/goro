@@ -2,8 +2,6 @@ package hash
 
 import (
 	"crypto/hmac"
-	"errors"
-	"fmt"
 	gohash "hash"
 
 	"github.com/MagicalTux/goro/core"
@@ -27,26 +25,36 @@ func fncHashInit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	algN, ok := algos[algo.ToLower()]
 	if !ok {
-		return nil, fmt.Errorf("Unknown hashing algorithm: %s", algo)
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "hash_init(): Argument #1 ($algo) must be a valid hashing algorithm")
 	}
 
 	var h gohash.Hash
+	var isHmac bool
+	var hmacKey []byte
 
 	if opt != nil && *opt == 1 {
 		// HMAC
-		var k []byte
-		if key == nil {
-			return nil, errors.New("HMAC requested without a key") // TODO make this a warning
-		} else {
-			k = []byte(*key)
+		if nonCryptoAlgos[algo.ToLower()] {
+			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "hash_init(): Argument #1 ($algo) must be a cryptographic hashing algorithm if HMAC is requested")
 		}
-
-		h = hmac.New(algN, k)
+		if key == nil || len(*key) == 0 {
+			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "hash_init(): Argument #3 ($key) must not be empty when HMAC is requested")
+		}
+		hmacKey = []byte(*key)
+		h = hmac.New(algN, hmacKey)
+		isHmac = true
 	} else {
 		h = algN()
 	}
 
-	z, err := phpobj.NewZObjectOpaque(ctx, HashContext, h)
+	hcd := &hashContextData{
+		Hash:    h,
+		algo:    algo.ToLower(),
+		isHmac:  isHmac,
+		hmacKey: hmacKey,
+	}
+
+	z, err := phpobj.NewZObjectOpaque(ctx, HashContext, hcd)
 	if err != nil {
 		return nil, err
 	}

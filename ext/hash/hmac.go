@@ -3,9 +3,9 @@ package hash
 import (
 	"crypto/hmac"
 	"encoding/hex"
-	"fmt"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -23,7 +23,10 @@ func fncHashHmac(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	algN, ok := algos[algo.ToLower()]
 	if !ok {
-		return nil, fmt.Errorf("Unknown hashing algorithm: %s", algo)
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "hash_hmac(): Argument #1 ($algo) must be a valid cryptographic hashing algorithm")
+	}
+	if nonCryptoAlgos[algo.ToLower()] {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "hash_hmac(): Argument #1 ($algo) must be a valid cryptographic hashing algorithm")
 	}
 
 	a := hmac.New(algN, []byte(key))

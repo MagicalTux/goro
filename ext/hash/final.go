@@ -2,7 +2,6 @@ package hash
 
 import (
 	"encoding/hex"
-	gohash "hash"
 
 	"github.com/MagicalTux/goro/core"
 	"github.com/MagicalTux/goro/core/phpobj"
@@ -19,8 +18,22 @@ func fncHashFinal(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	h := obj.GetOpaque(HashContext).(gohash.Hash)
+	opaque := obj.GetOpaque(HashContext)
+	if opaque == nil {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "hash_final(): Argument #1 ($context) must be a valid, non-finalized HashContext")
+	}
+
+	h := getHash(opaque)
+	if h == nil {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "hash_final(): Argument #1 ($context) must be a valid, non-finalized HashContext")
+	}
+
 	r := h.Sum(nil)
+
+	// Mark as finalized
+	if hcd, ok := opaque.(*hashContextData); ok {
+		hcd.finalized = true
+	}
 
 	if raw != nil && *raw {
 		// return as raw

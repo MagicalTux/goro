@@ -722,8 +722,7 @@ func mathPow(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	base := float64(baseArg.AsFloat(ctx))
 	exp := float64(expArg.AsFloat(ctx))
 	// PHP 8.4+: pow(0, negative) is deprecated.
-	// The deprecation message in PHP 8.5.4 does NOT include the function name prefix.
-	// Test files confirm: "Deprecated: Power of base 0..." not "Deprecated: pow(): Power of..."
+	// In PHP 8.5, the deprecation message does NOT include the function name prefix.
 	// See test/php-8.5.4/ext/standard/math/is_nan_basic.phpt line 27
 	if base == 0 && exp < 0 {
 		suppressFuncName := logopt.NoFuncName(true)
