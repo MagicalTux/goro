@@ -99,7 +99,7 @@ func appendJsonEncodeState(ctx phpv.Context, r []byte, v *phpv.ZVal, opt JsonEnc
 		return appendJsonString(r, string(s), opt)
 	case phpv.ZtArray:
 		a := v.Value().(*phpv.ZArray)
-		if a.HasStringKeys() || (opt&ForceObject != 0 && a.Count(ctx) > 0) {
+		if a.HasStringKeys() || opt&ForceObject != 0 {
 			return appendJsonObject(ctx, r, a.NewIterator(), opt, depth, st)
 		} else {
 			return appendJsonArray(ctx, r, a.NewIterator(), opt, depth, st)

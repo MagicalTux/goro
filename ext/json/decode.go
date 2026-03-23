@@ -41,7 +41,10 @@ func fncJsonDecode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		o |= ObjectAsArray
 	}
 
-	result, jsonErr := jsonDecodeAny(ctx, strings.NewReader(string(json)), d, o)
+	// PHP's depth semantics: depth=N allows nesting up to N-1 levels.
+	// Our decoder decrements depth on entering arrays/objects and checks < 0.
+	// Subtract 1 to align with PHP's behavior.
+	result, jsonErr := jsonDecodeAny(ctx, strings.NewReader(string(json)), d-1, o)
 	if jsonErr != nil {
 		if je, ok := jsonErr.(JsonError); ok {
 			setLastJsonError(ctx, je)
