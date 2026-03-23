@@ -60,9 +60,14 @@ func main() {
 			}
 
 			if ex, ok := err.(*phperr.PhpThrow); ok && bool(displayErrors) {
+				trace, replacement := ex.ErrorTrace(ctx)
+				src := ex
+				if replacement != nil {
+					src = replacement
+				}
 				ctx.Write([]byte("\nFatal error: "))
-				ctx.Write([]byte(ex.ErrorTrace(ctx)))
-				s := fmt.Sprintf("\n  thrown in %s on line %d", ex.ThrownFile(), ex.ThrownLine())
+				ctx.Write([]byte(trace))
+				s := fmt.Sprintf("\n  thrown in %s on line %d", src.ThrownFile(), src.ThrownLine())
 				ctx.Write([]byte(s))
 			} else {
 				if phpErr, ok := err.(*phpv.PhpError); ok {
