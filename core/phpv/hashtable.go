@@ -35,6 +35,7 @@ type ZHashTable struct {
 	inc         ZInt
 	count       ZInt
 	cow         bool
+	incInit     bool // whether inc has been initialized by an explicit int key
 
 	_idx_s map[ZString]*hashTableVal
 	_idx_i map[ZInt]*hashTableVal
@@ -107,6 +108,7 @@ func (z *ZHashTable) Clear() {
 	}
 	z.count = 0
 	z.inc = 0
+	z.incInit = false
 	z.first = nil
 	z.last = nil
 	z.mainIterator.cur = nil
@@ -130,6 +132,7 @@ func (z *ZHashTable) Empty() {
 
 	z.count = 0
 	z.inc = 0
+	z.incInit = false
 	z.first = nil
 	z.last = nil
 	z.mainIterator.cur = nil
@@ -359,9 +362,10 @@ func (z *ZHashTable) SetInt(k ZInt, v *ZVal) error {
 	z.count += 1
 
 	// Update the next free element counter.
-	// PHP uses signed comparison for nNextFreeElement: negative keys
-	// never advance the counter past positive values.
-	if k >= z.inc {
+	// PHP 8.1+: the first explicit integer key always sets nNextFreeElement,
+	// even if negative. After that, only keys >= nNextFreeElement advance it.
+	if !z.incInit || k >= z.inc {
+		z.incInit = true
 		if k < ZInt(math.MaxInt64) {
 			z.inc = k + 1
 		} else {

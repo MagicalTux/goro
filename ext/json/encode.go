@@ -39,31 +39,23 @@ func fncJsonEncode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	if jsonErr != nil {
 		if je, ok := jsonErr.(JsonError); ok {
-			setLastJsonError(ctx, je)
 			if o&JsonEncOpt(ThrowOnError) != 0 {
-				msg := ""
-				switch je {
-				case ErrNonBackedEnum:
-					msg = "Non-backed enums have no default serialization"
-				default:
-					msg = je.Error()
-				}
-				return nil, phpobj.ThrowError(ctx, JsonException, msg)
+				// JSON_THROW_ON_ERROR: throw exception without modifying global error state
+				return nil, throwJsonException(ctx, je)
 			}
+			setLastJsonError(ctx, je)
 			if o&PartialOutputOnError != 0 {
-				if len(r) == 0 {
-					return phpv.ZString("null").ZVal(), nil
-				}
-				return phpv.ZString(r).ZVal(), nil
+				// For partial output, return "null" for top-level encoding failures.
+				// The partial buffer from array/object sub-elements is handled
+				// inside appendJsonArray/appendJsonObject. Here at the top level
+				// we always substitute "null" for the failing value.
+				return phpv.ZString("null").ZVal(), nil
 			}
 			return phpv.ZBool(false).ZVal(), nil
 		}
 		setLastJsonError(ctx, ErrUnsupportedType)
 		if o&PartialOutputOnError != 0 {
-			if len(r) == 0 {
-				return phpv.ZString("null").ZVal(), nil
-			}
-			return phpv.ZString(r).ZVal(), nil
+			return phpv.ZString("null").ZVal(), nil
 		}
 		return phpv.ZBool(false).ZVal(), nil
 	}
@@ -120,7 +112,7 @@ func appendJsonEncodeState(ctx phpv.Context, r []byte, v *phpv.ZVal, opt JsonEnc
 			return r, ErrRecursion
 		}
 		defer st.unmarkArray(a)
-		if a.HasStringKeys() || opt&ForceObject != 0 {
+		if opt&ForceObject != 0 || !isJsonList(ctx, a) {
 			return appendJsonObject(ctx, r, a.NewIterator(), opt, depth, st)
 		} else {
 			return appendJsonArray(ctx, r, a.NewIterator(), opt, depth, st)
@@ -246,6 +238,28 @@ func formatJsonFloat(ctx phpv.Context, f float64, opt JsonEncOpt) string {
 		}
 	}
 	return s
+}
+
+// isJsonList checks if an array should be encoded as a JSON array (list).
+// An array is a list if it has sequential integer keys starting from 0.
+func isJsonList(ctx phpv.Context, a *phpv.ZArray) bool {
+	if a.HasStringKeys() {
+		return false
+	}
+	expectedKey := phpv.ZInt(0)
+	it := a.NewIterator()
+	for it.Valid(ctx) {
+		k, err := it.Key(ctx)
+		if err != nil {
+			return false
+		}
+		if k.GetType() != phpv.ZtInt || k.Value().(phpv.ZInt) != expectedKey {
+			return false
+		}
+		expectedKey++
+		it.Next(ctx)
+	}
+	return true
 }
 
 func appendJsonArray(ctx phpv.Context, r []byte, it phpv.ZIterator, opt JsonEncOpt, depth int, st *jsonState) ([]byte, error) {

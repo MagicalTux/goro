@@ -1749,7 +1749,7 @@ func compilePaamayimNekudotayim(v phpv.Runnable, i *tokenizer.Item, c compileCtx
 		}
 		c.backup()
 		// $obj::class or ClassName::class → get class name
-		return &runClassNameOf{v, l}, nil
+		return &runClassNameOf{className: v, l: l}, nil
 
 	default:
 		// Semi-reserved keywords can be used as static method/constant names (Foo::exit, Foo::die(), etc.)

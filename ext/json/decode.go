@@ -37,22 +37,38 @@ func fncJsonDecode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if d <= 0 {
 		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "json_decode(): Argument #3 ($depth) must be greater than 0")
 	}
+	var rawOpt int
 	if opt != nil {
-		o = JsonDecOpt(*opt)
+		rawOpt = int(*opt)
+		o = JsonDecOpt(rawOpt)
 	}
+	throwOnError := rawOpt&ThrowOnError != 0
 	if assoc != nil && *assoc {
 		o |= ObjectAsArray
+	}
+
+	// Check for invalid UTF-8 in the input (PHP returns JSON_ERROR_UTF8 for this)
+	if !utf8.ValidString(string(json)) {
+		jsonErrCode := ErrUtf8
+		if throwOnError {
+			return nil, throwJsonException(ctx, jsonErrCode)
+		}
+		setLastJsonError(ctx, jsonErrCode)
+		return phpv.ZNULL.ZVal(), nil
 	}
 
 	// PHP's depth semantics: depth=N allows nesting up to N-1 levels.
 	reader := strings.NewReader(string(json))
 	result, jsonErr := jsonDecodeAny(ctx, reader, d-1, o)
 	if jsonErr != nil {
+		jsonErrCode := ErrSyntax
 		if je, ok := jsonErr.(JsonError); ok {
-			setLastJsonError(ctx, je)
-			return phpv.ZNULL.ZVal(), nil
+			jsonErrCode = je
 		}
-		setLastJsonError(ctx, ErrSyntax)
+		if throwOnError {
+			return nil, throwJsonException(ctx, jsonErrCode)
+		}
+		setLastJsonError(ctx, jsonErrCode)
 		return phpv.ZNULL.ZVal(), nil
 	}
 
@@ -63,10 +79,16 @@ func fncJsonDecode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			break
 		}
 		if readErr != nil {
+			if throwOnError {
+				return nil, throwJsonException(ctx, ErrSyntax)
+			}
 			setLastJsonError(ctx, ErrSyntax)
 			return phpv.ZNULL.ZVal(), nil
 		}
 		if b != ' ' && b != '\t' && b != '\r' && b != '\n' {
+			if throwOnError {
+				return nil, throwJsonException(ctx, ErrSyntax)
+			}
 			setLastJsonError(ctx, ErrSyntax)
 			return phpv.ZNULL.ZVal(), nil
 		}
@@ -78,6 +100,44 @@ func fncJsonDecode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 func setLastJsonError(ctx phpv.Context, err JsonError) {
 	ctx.Global().OffsetSet(ctx, phpv.ZString("__json_last_error"), phpv.ZInt(int64(err)).ZVal())
+}
+
+// throwJsonException throws a JsonException with the given error code and message.
+// This does NOT modify the global json_last_error state (per PHP spec).
+func throwJsonException(ctx phpv.Context, err JsonError) error {
+	msg := jsonErrorMessage(err)
+	return phpobj.ThrowErrorCode(ctx, JsonException, int(err), msg)
+}
+
+func jsonErrorMessage(err JsonError) string {
+	switch err {
+	case ErrNone:
+		return "No error"
+	case ErrDepth:
+		return "Maximum stack depth exceeded"
+	case ErrStateMismatch:
+		return "State mismatch (invalid or malformed JSON)"
+	case ErrCtrlChar:
+		return "Control character error, possibly incorrectly encoded"
+	case ErrSyntax:
+		return "Syntax error"
+	case ErrUtf8:
+		return "Malformed UTF-8 characters, possibly incorrectly encoded"
+	case ErrRecursion:
+		return "Recursion detected"
+	case ErrInfOrNan:
+		return "Inf and NaN cannot be JSON encoded"
+	case ErrUnsupportedType:
+		return "Type is not supported"
+	case ErrInvalidPropName:
+		return "The decoded property name is not valid for PHP"
+	case ErrUtf16:
+		return "Single unpaired UTF-16 surrogate in unicode escape"
+	case ErrNonBackedEnum:
+		return "Non-backed enums have no default serialization"
+	default:
+		return "Unknown error"
+	}
 }
 
 func getLastJsonError(ctx phpv.Context) JsonError {
@@ -142,7 +202,7 @@ func fncJsonValidate(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if depth != nil {
 		d = int(*depth)
 	}
-	if d <= 0 {
+	if d == 0 {
 		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "json_validate(): Argument #2 ($depth) must be greater than 0")
 	}
 

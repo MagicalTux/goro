@@ -970,7 +970,7 @@ func stdGetMangledObjectVars(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, e
 
 	if obj.GetType() != phpv.ZtObject {
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
-			fmt.Sprintf("get_mangled_object_vars(): Argument #1 ($object) must be of type object, %s given", obj.GetType().TypeName()))
+			fmt.Sprintf("get_mangled_object_vars(): Argument #1 ($object) must be of type object, %s given", phpv.ZValTypeNameDetailed(obj)))
 	}
 
 	o := obj.AsObject(ctx)

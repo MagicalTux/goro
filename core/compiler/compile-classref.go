@@ -790,7 +790,7 @@ func (r *runClassNameOf) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
 				fmt.Sprintf("Cannot use \"::class\" on %s", typeName))
 		}
-		// Other non-object/non-string types produce a fatal error
+		// Other non-object/non-string types produce a fatal error.
 		phpErr := &phpv.PhpError{
 			Err:  fmt.Errorf("Cannot use \"::class\" on %s", typeName),
 			Code: phpv.E_ERROR,

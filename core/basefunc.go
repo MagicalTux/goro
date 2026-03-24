@@ -166,6 +166,12 @@ func fncCount(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		mode = *modeArg
 	}
 
+	// Validate mode
+	if mode != COUNT_NORMAL && mode != COUNT_RECURSIVE {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+			"count(): Argument #2 ($mode) must be either COUNT_NORMAL or COUNT_RECURSIVE")
+	}
+
 	if mode == COUNT_RECURSIVE && countable.GetType() == phpv.ZtArray {
 		visisted := map[uintptr]struct{}{}
 		count, err := recursiveCount(ctx, countable.AsArray(ctx), visisted)
@@ -175,30 +181,58 @@ func fncCount(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZInt(count).ZVal(), nil
 	}
 
+	// For arrays, use the ZCountable interface (ZArray implements it)
+	if countable.GetType() == phpv.ZtArray {
+		if v, ok := countable.Value().(phpv.ZCountable); ok {
+			return v.Count(ctx).ZVal(), nil
+		}
+	}
+
 	// For objects implementing the PHP Countable interface, call their count() method
 	if countable.GetType() == phpv.ZtObject {
 		if obj, ok := countable.Value().(*phpobj.ZObject); ok {
-			if m, hasCount := obj.GetClass().GetMethod("count"); hasCount {
-				result, err := ctx.CallZVal(ctx, m.Method, nil, obj)
-				if err != nil {
-					return nil, err
+			// Check if the class implements the PHP Countable interface
+			if implementsCountable(obj.GetClass()) {
+				if m, hasCount := obj.GetClass().GetMethod("count"); hasCount {
+					result, err := ctx.CallZVal(ctx, m.Method, nil, obj)
+					if err != nil {
+						return nil, err
+					}
+					if result != nil {
+						return phpv.ZInt(result.AsInt(ctx)).ZVal(), nil
+					}
+					return phpv.ZInt(0).ZVal(), nil
 				}
-				if result != nil {
-					return phpv.ZInt(result.AsInt(ctx)).ZVal(), nil
-				}
-				return phpv.ZInt(0).ZVal(), nil
 			}
 		}
 	}
 
-	if v, ok := countable.Value().(phpv.ZCountable); ok {
-		return v.Count(ctx).ZVal(), nil
-	}
+	// PHP 8.0+: TypeError for non-countable types
+	typeName := phpv.ZValTypeNameDetailed(countable)
+	return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+		fmt.Sprintf("count(): Argument #1 ($value) must be of type Countable|array, %s given", typeName))
+}
 
-	if err := ctx.Warn("Parameter must be an array or an object that implements Countable"); err != nil {
-		return nil, err
+// implementsCountable checks if a class implements the Countable interface
+func implementsCountable(c phpv.ZClass) bool {
+	if c == nil {
+		return false
 	}
-	return phpv.ZInt(1).ZVal(), nil
+	if strings.EqualFold(string(c.GetName()), "countable") {
+		return true
+	}
+	// Check concrete *phpobj.ZClass for Implementations and Extends fields
+	if zc, ok := c.(*phpobj.ZClass); ok {
+		for _, impl := range zc.Implementations {
+			if implementsCountable(impl) {
+				return true
+			}
+		}
+		if zc.Extends != nil {
+			return implementsCountable(zc.Extends)
+		}
+	}
+	return false
 }
 
 func recursiveCount(ctx phpv.Context, array *phpv.ZArray, visited map[uintptr]struct{}) (int, error) {

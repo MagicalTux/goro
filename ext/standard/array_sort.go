@@ -59,7 +59,7 @@ func fncArrayRSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	for _, v := range core.IterateBackwards(entries) {
+	for _, v := range entries {
 		array.Get().OffsetSet(ctx, nil, v.item)
 	}
 
@@ -120,11 +120,11 @@ func fncArrayUASort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, ctx.FuncError(err)
 	}
 
+	if err = array.Get().Clear(ctx); err != nil {
+		return nil, err
+	}
 	for _, entry := range entries {
-		k := entry.data
-		v := entry.item
-		array.Get().OffsetUnset(ctx, k)
-		array.Get().OffsetSet(ctx, k, v)
+		array.Get().OffsetSet(ctx, entry.data, entry.item)
 	}
 
 	return phpv.ZTrue.ZVal(), nil
@@ -152,11 +152,11 @@ func fncArrayUKSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, ctx.FuncError(err)
 	}
 
+	if err = array.Get().Clear(ctx); err != nil {
+		return nil, err
+	}
 	for _, entry := range entries {
-		k := entry.item
-		v := entry.data
-		array.Get().OffsetUnset(ctx, k)
-		array.Get().OffsetSet(ctx, k, v)
+		array.Get().OffsetSet(ctx, entry.item, entry.data)
 	}
 
 	return phpv.ZTrue.ZVal(), nil
@@ -181,11 +181,11 @@ func fncArrayKSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	arraySort(ctx, entries, sortFlagsArg.GetOrDefault(SORT_REGULAR), false)
 
+	if err = array.Get().Clear(ctx); err != nil {
+		return nil, err
+	}
 	for _, entry := range entries {
-		k := entry.item
-		v := entry.data
-		array.Get().OffsetUnset(ctx, k)
-		array.Get().OffsetSet(ctx, k, v)
+		array.Get().OffsetSet(ctx, entry.item, entry.data)
 	}
 
 	return phpv.ZTrue.ZVal(), nil
@@ -210,11 +210,11 @@ func fncArrayKRSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	arraySort(ctx, entries, sortFlagsArg.GetOrDefault(SORT_REGULAR), true)
 
-	for _, entry := range core.IterateBackwards(entries) {
-		k := entry.item
-		v := entry.data
-		array.Get().OffsetUnset(ctx, k)
-		array.Get().OffsetSet(ctx, k, v)
+	if err = array.Get().Clear(ctx); err != nil {
+		return nil, err
+	}
+	for _, entry := range entries {
+		array.Get().OffsetSet(ctx, entry.item, entry.data)
 	}
 
 	return phpv.ZTrue.ZVal(), nil
@@ -239,11 +239,11 @@ func fncArrayASort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	arraySort(ctx, entries, sortFlagsArg.GetOrDefault(SORT_REGULAR), false)
 
+	if err = array.Get().Clear(ctx); err != nil {
+		return nil, err
+	}
 	for _, entry := range entries {
-		k := entry.data
-		v := entry.item
-		array.Get().OffsetUnset(ctx, k)
-		array.Get().OffsetSet(ctx, k, v)
+		array.Get().OffsetSet(ctx, entry.data, entry.item)
 	}
 
 	return phpv.ZTrue.ZVal(), nil
@@ -268,11 +268,11 @@ func fncArrayARSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	arraySort(ctx, entries, sortFlagsArg.GetOrDefault(SORT_REGULAR), true)
 
-	for _, entry := range core.IterateBackwards(entries) {
-		k := entry.data
-		v := entry.item
-		array.Get().OffsetUnset(ctx, k)
-		array.Get().OffsetSet(ctx, k, v)
+	if err = array.Get().Clear(ctx); err != nil {
+		return nil, err
+	}
+	for _, entry := range entries {
+		array.Get().OffsetSet(ctx, entry.data, entry.item)
 	}
 
 	return phpv.ZTrue.ZVal(), nil
@@ -297,11 +297,11 @@ func fncArrayNatSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	arraySort(ctx, entries, SORT_NATURAL, false)
 
+	if err = array.Get().Clear(ctx); err != nil {
+		return nil, err
+	}
 	for _, entry := range entries {
-		k := entry.data
-		v := entry.item
-		array.Get().OffsetUnset(ctx, k)
-		array.Get().OffsetSet(ctx, k, v)
+		array.Get().OffsetSet(ctx, entry.data, entry.item)
 	}
 
 	return phpv.ZTrue.ZVal(), nil
@@ -327,11 +327,11 @@ func fncArrayNatCaseSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error
 	sortFlags := SORT_NATURAL | SORT_FLAG_CASE
 	arraySort(ctx, entries, sortFlags, false)
 
+	if err = array.Get().Clear(ctx); err != nil {
+		return nil, err
+	}
 	for _, entry := range entries {
-		k := entry.data
-		v := entry.item
-		array.Get().OffsetUnset(ctx, k)
-		array.Get().OffsetSet(ctx, k, v)
+		array.Get().OffsetSet(ctx, entry.data, entry.item)
 	}
 
 	return phpv.ZTrue.ZVal(), nil
@@ -355,7 +355,7 @@ func arraySort(ctx phpv.Context, entries []compareEntry, sortFlags phpv.ZInt, re
 		sortFn = sortBy.regular
 	}
 
-	sort.Slice(entries, sortFn)
+	sort.SliceStable(entries, sortFn)
 }
 
 func arrayUSort(ctx phpv.Context, entries []compareEntry, compare phpv.Callable, funcName ...string) error {
@@ -365,7 +365,7 @@ func arrayUSort(ctx phpv.Context, entries []compareEntry, compare phpv.Callable,
 	if len(funcName) > 0 {
 		fname = funcName[0]
 	}
-	sort.Slice(entries, func(i, j int) bool {
+	sort.SliceStable(entries, func(i, j int) bool {
 		if err != nil {
 			return false
 		}
@@ -407,44 +407,57 @@ type zSortComparer struct {
 	reversed        bool
 }
 
-func (zv zSortComparer) regular(i, j int) bool {
-	cmp, _ := phpv.Compare(zv.ctx, zv.values[i].item, zv.values[j].item)
+func (c *zSortComparer) regular(i, j int) bool {
+	a := c.values[i].item
+	b := c.values[j].item
+
+	if c.caseInsensitive {
+		a = phpv.ZStr(strings.ToLower(a.String()))
+		b = phpv.ZStr(strings.ToLower(b.String()))
+	}
+
+	cmp, err := phpv.Compare(c.ctx, a, b)
+	if err != nil {
+		return false
+	}
+	if c.reversed {
+		return cmp > 0
+	}
 	return cmp < 0
 }
 
-func (zv zSortComparer) numerically(i, j int) bool {
-	a := float64(zv.values[i].item.AsFloat(zv.ctx))
-	b := float64(zv.values[j].item.AsFloat(zv.ctx))
+func (c *zSortComparer) numerically(i, j int) bool {
+	a := c.values[i].item.AsFloat(c.ctx)
+	b := c.values[j].item.AsFloat(c.ctx)
+
+	if c.reversed {
+		return a > b
+	}
 	return a < b
 }
 
-func (zv zSortComparer) stringly(i, j int) bool {
-	a := string(zv.values[i].item.AsString(zv.ctx))
-	b := string(zv.values[j].item.AsString(zv.ctx))
-	if zv.caseInsensitive {
-		// this is to handle cases where
-		// ["Orange", "orange"] is backwards,
-		// this fixes rsort, arsort and krsort
-		a = strings.ToUpper(a)
-		b = strings.ToUpper(b)
-		if a == b {
-			return zv.reversed
-		}
+func (c *zSortComparer) stringly(i, j int) bool {
+	a := c.values[i].item.AsString(c.ctx)
+	b := c.values[j].item.AsString(c.ctx)
+
+	if c.caseInsensitive {
+		a = phpv.ZString(strings.ToLower(string(a)))
+		b = phpv.ZString(strings.ToLower(string(b)))
 	}
-	return strings.Compare(a, b) < 0
+
+	if c.reversed {
+		return a > b
+	}
+	return a < b
 }
 
-func (zv zSortComparer) naturally(i, j int) bool {
-	s1 := string(zv.values[i].item.AsString(zv.ctx))
-	s2 := string(zv.values[j].item.AsString(zv.ctx))
-	if zv.caseInsensitive {
-		s1 = strings.ToUpper(s1)
-		s2 = strings.ToUpper(s2)
-		if s1 == s2 {
-			return zv.reversed
-		}
+func (c *zSortComparer) naturally(i, j int) bool {
+	a := string(c.values[i].item.AsString(c.ctx))
+	b := string(c.values[j].item.AsString(c.ctx))
+
+	cmp := natCmp([]byte(a), []byte(b), !c.caseInsensitive)
+	if c.reversed {
+		return cmp > 0
 	}
-	a := []byte(s1)
-	b := []byte(s2)
-	return natCmp(a, b, !zv.caseInsensitive) < 0
+	return cmp < 0
 }

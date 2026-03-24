@@ -138,6 +138,21 @@ func spawnCallableInternal(ctx phpv.Context, v *phpv.ZVal, paramNo int) (phpv.Ca
 					if !accessible && member.Class != nil {
 						accessible = callerClass.InstanceOf(member.Class) || member.Class.InstanceOf(callerClass)
 					}
+					// Also check if caller and target share a common ancestor that declares this method
+					// (handles sibling classes, e.g., B1 and B2 both extend A)
+					if !accessible && member.Class != nil {
+						rootClass := member.Class
+						for rootClass.GetParent() != nil {
+							if pm, ok := rootClass.GetParent().GetMethod(member.Name); ok && pm.Modifiers.Has(phpv.ZAttrProtected) {
+								rootClass = rootClass.GetParent()
+							} else {
+								break
+							}
+						}
+						if callerClass.InstanceOf(rootClass) {
+							accessible = true
+						}
+					}
 				}
 				if !accessible {
 					callerFunc := ctx.GetFuncName()
@@ -393,7 +408,24 @@ func spawnCallableInternal(ctx phpv.Context, v *phpv.ZVal, paramNo int) (phpv.Ca
 		} else if member.Modifiers.IsProtected() {
 			// Protected: only accessible from same class or subclass
 			if callerClass == nil || (!callerClass.InstanceOf(declaringClass) && !declaringClass.InstanceOf(callerClass)) {
-				methodNotVisible = true
+				// Check if caller and target share a common ancestor (sibling classes)
+				visible := false
+				if callerClass != nil && member.Class != nil {
+					rootClass := member.Class
+					for rootClass.GetParent() != nil {
+						if pm, ok := rootClass.GetParent().GetMethod(member.Name); ok && pm.Modifiers.Has(phpv.ZAttrProtected) {
+							rootClass = rootClass.GetParent()
+						} else {
+							break
+						}
+					}
+					if callerClass.InstanceOf(rootClass) {
+						visible = true
+					}
+				}
+				if !visible {
+					methodNotVisible = true
+				}
 			}
 		}
 		if methodNotVisible {

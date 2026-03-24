@@ -1331,7 +1331,20 @@ func fncChmod(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		p = filepath.Join(string(ctx.Global().Getwd()), p)
 	}
 
-	err = os.Chmod(p, os.FileMode(mode))
+	// Convert Unix mode bits to Go's os.FileMode
+	// PHP passes raw Unix mode (e.g. 07777) but Go's FileMode uses different bit positions
+	// for setuid/setgid/sticky
+	goMode := os.FileMode(mode & 0o777) // standard permission bits
+	if mode&0o4000 != 0 {
+		goMode |= os.ModeSetuid
+	}
+	if mode&0o2000 != 0 {
+		goMode |= os.ModeSetgid
+	}
+	if mode&0o1000 != 0 {
+		goMode |= os.ModeSticky
+	}
+	err = os.Chmod(p, goMode)
 	if err != nil {
 		if os.IsNotExist(err) {
 			ctx.Warn("No such file or directory")

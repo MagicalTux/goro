@@ -109,12 +109,20 @@ func fncReaddir(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 // > func void closedir ( [ resource $dir_handle ] )
 func fncClosedir(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	if len(args) == 0 {
+	if len(args) == 0 || args[0] == nil || args[0].IsNull() {
+		ctx.Deprecated("closedir(): Passing null is deprecated, instead the last opened directory stream should be provided", logopt.NoFuncName(true))
 		return phpv.ZNULL.ZVal(), nil
 	}
 
 	dh, ok := args[0].Value().(*dirHandle)
 	if !ok {
+		// Not a directory handle - could be a file stream or other resource
+		ctx.Warn("closedir(): Argument #1 ($dir_handle) must be a valid Directory resource", logopt.NoFuncName(true))
+		return phpv.ZNULL.ZVal(), nil
+	}
+
+	if dh.closed {
+		ctx.Warn("closedir(): Argument #1 ($dir_handle) must be an open stream resource", logopt.NoFuncName(true))
 		return phpv.ZNULL.ZVal(), nil
 	}
 

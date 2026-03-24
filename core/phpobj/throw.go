@@ -369,6 +369,15 @@ func ThrowError(ctx phpv.Context, class *ZClass, msg string) error {
 	return &phperr.PhpThrow{Obj: o, Loc: ctx.Loc()}
 }
 
+// ThrowErrorCode creates an Error (or subclass) object with a specific error code and throws it
+func ThrowErrorCode(ctx phpv.Context, class *ZClass, code int, msg string) error {
+	o, err := NewZObject(ctx, class, phpv.ZString(msg).ZVal(), phpv.ZInt(code).ZVal())
+	if err != nil {
+		return ctx.Errorf("%s", msg)
+	}
+	return &phperr.PhpThrow{Obj: o, Loc: ctx.Loc()}
+}
+
 func ThrowErrorAt(ctx phpv.Context, class *ZClass, msg string, loc *phpv.Loc) error {
 	o, err := NewZObject(ctx, class, phpv.ZString(msg).ZVal())
 	if err != nil {

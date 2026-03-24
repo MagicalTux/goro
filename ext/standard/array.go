@@ -119,7 +119,7 @@ func fncArrayMerge(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	for i, arg := range args {
 		if arg.GetType() != phpv.ZtArray {
 			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
-				fmt.Sprintf("array_merge(): Argument #%d must be of type array, %s given", i+1, arg.GetType().TypeName()))
+				fmt.Sprintf("array_merge(): Argument #%d must be of type array, %s given", i+1, phpv.ZValTypeNameDetailed(arg)))
 		}
 	}
 
@@ -190,6 +190,12 @@ func fncArrayReplace(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 // > func bool in_array ( mixed $needle , array $haystack [, bool $strict = FALSE ] )
 func fncInArray(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	// Check that haystack (arg #2) is actually an array before expanding
+	if len(args) >= 2 && args[1] != nil && args[1].GetType() != phpv.ZtArray {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("in_array(): Argument #2 ($haystack) must be of type array, %s given",
+				phpv.ZValTypeNameDetailed(args[1])))
+	}
 	var needle *phpv.ZVal
 	var haystack *phpv.ZArray
 	var strictArg *phpv.ZBool
@@ -721,6 +727,16 @@ func fncRange(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
+	// PHP 8.3+: deprecation for null arguments
+	if start.IsNull() {
+		ctx.Deprecated("range(): Passing null to parameter #1 ($start) of type string|int|float is deprecated", logopt.NoFuncName(true))
+		start = phpv.ZInt(0).ZVal()
+	}
+	if end.IsNull() {
+		ctx.Deprecated("range(): Passing null to parameter #2 ($end) of type string|int|float is deprecated", logopt.NoFuncName(true))
+		end = phpv.ZInt(0).ZVal()
+	}
+
 	// Check if both start and end are single-byte strings BEFORE coercion.
 	// PHP treats range("1", "9") as a character range producing strings,
 	// not a numeric range producing integers.
@@ -786,9 +802,31 @@ func fncRange(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		s1 := []byte(start.AsString(ctx))
 		s2 := []byte(end.AsString(ctx))
 
+		// Warn if multi-byte strings are passed (only first byte is used)
+		if len(s1) > 1 {
+			ctx.Warn("range(): Argument #1 ($start) must be a single byte, subsequent bytes are ignored", logopt.NoFuncName(true))
+		}
+		if len(s2) > 1 {
+			ctx.Warn("range(): Argument #2 ($end) must be a single byte, subsequent bytes are ignored", logopt.NoFuncName(true))
+		}
+
 		// use only first character of the string
 
 		if len(s1) == 0 || len(s2) == 0 {
+			if len(s1) == 0 {
+				ctx.Warn("range(): Argument #1 ($start) must not be empty, casted to 0", logopt.NoFuncName(true))
+			}
+			if len(s2) == 0 {
+				ctx.Warn("range(): Argument #2 ($end) must not be empty, casted to 0", logopt.NoFuncName(true))
+			}
+			// If one is empty and the other is a single byte, warn about conversion
+			if (len(s1) == 0 && len(s2) > 0) || (len(s1) > 0 && len(s2) == 0) {
+				if len(s1) == 0 {
+					ctx.Warn("range(): Argument #1 ($start) must be a single byte string if argument #2 ($end) is a single byte string, argument #2 ($end) converted to 0", logopt.NoFuncName(true))
+				} else {
+					ctx.Warn("range(): Argument #2 ($end) must be a single byte string if argument #1 ($start) is a single byte string, argument #1 ($start) converted to 0", logopt.NoFuncName(true))
+				}
+			}
 			if err := result.OffsetSet(ctx, nil, phpv.ZInt(0).ZVal()); err != nil {
 				return nil, err
 			}
@@ -1934,7 +1972,7 @@ func fncArrayMergeRecursive(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 	for i, arg := range args {
 		if arg.GetType() != phpv.ZtArray {
 			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
-				fmt.Sprintf("array_merge_recursive(): Argument #%d must be of type array, %s given", i+1, arg.GetType().TypeName()))
+				fmt.Sprintf("array_merge_recursive(): Argument #%d must be of type array, %s given", i+1, phpv.ZValTypeNameDetailed(arg)))
 		}
 	}
 
@@ -2500,9 +2538,7 @@ func arrayRecursiveCompact(funcCtx phpv.Context, ctx phpv.Context, result *phpv.
 			}
 		}
 	default:
-		// PHP 8.3+: warn about non-string, non-array values
-		funcCtx.Warn("compact(): Argument #%d must be string or array of strings, %s given",
-			argNum, phpv.ZValTypeNameDetailed(varName), logopt.NoFuncName(true))
+		// Silently skip non-string, non-array values (PHP behavior)
 	}
 
 	return nil
