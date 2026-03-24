@@ -103,7 +103,18 @@ func fncDefine(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZBool(false).ZVal(), nil
 	}
 
-	ok := g.ConstantSet(name, value.Value())
+	// For arrays, deep-copy and strip references (PHP define() removes
+	// references from constant values so they don't mutate after definition).
+	// Also check for recursive arrays which are not allowed.
+	constVal := value.Value()
+	if arr, ok := constVal.(*phpv.ZArray); ok {
+		if arr.IsRecursive() {
+			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "define(): Argument #2 ($value) cannot be a recursive array")
+		}
+		constVal = arr.DeepCopyStripRefs(ctx)
+	}
+
+	ok := g.ConstantSet(name, constVal)
 	if !ok {
 		if err := ctx.Warn("Constant %s already defined, this will be an error in PHP 9", name, logopt.NoFuncName(true)); err != nil {
 			return nil, err

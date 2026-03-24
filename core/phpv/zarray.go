@@ -93,6 +93,54 @@ func (a *ZArray) Dup() *ZArray {
 	return &ZArray{h: a.h.Dup()}
 }
 
+// IsRecursive checks if the array contains a reference to itself (directly or indirectly).
+func (a *ZArray) IsRecursive() bool {
+	return a.isRecursiveWith(make(map[*ZHashTable]bool))
+}
+
+func (a *ZArray) isRecursiveWith(seen map[*ZHashTable]bool) bool {
+	if seen[a.h] {
+		return true
+	}
+	seen[a.h] = true
+	for cur := a.h.first; cur != nil; cur = cur.next {
+		val := cur.v
+		if val == nil {
+			continue
+		}
+		resolved := val.Nude()
+		if innerArr, ok := resolved.Value().(*ZArray); ok {
+			if innerArr.isRecursiveWith(seen) {
+				return true
+			}
+		}
+	}
+	delete(seen, a.h)
+	return false
+}
+
+// DeepCopyStripRefs creates a deep copy of the array with all references
+// resolved to plain values. Used by define() to snapshot constant arrays.
+func (a *ZArray) DeepCopyStripRefs(ctx Context) *ZArray {
+	result := NewZArray()
+	for key, val := range a.Iterate(ctx) {
+		if val == nil {
+			continue
+		}
+		// Dereference any ZVal reference chains
+		resolved := val.Nude()
+		// Deep copy: if the inner value is an array, recursively strip refs
+		if innerArr, ok := resolved.Value().(*ZArray); ok {
+			stripped := innerArr.DeepCopyStripRefs(ctx)
+			result.OffsetSet(ctx, key.Value(), stripped.ZVal())
+		} else {
+			// Create a fresh ZVal with the resolved value (no reference)
+			result.OffsetSet(ctx, key.Value(), NewZVal(resolved.Value()))
+		}
+	}
+	return result
+}
+
 // SeparateCow forces copy-on-write separation if needed. This must be called
 // before taking references to hash table entries (e.g., for by-ref spread)
 // to avoid modifying data shared with other arrays.
