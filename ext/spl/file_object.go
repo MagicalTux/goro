@@ -151,6 +151,15 @@ func initSplFileObject() {
 	}
 }
 
+// applyMaxLineLen truncates a line if maxLineLen is set (>0).
+// PHP's maxLineLen limits the total number of bytes read per line (including newline).
+func applyMaxLineLen(line string, maxLineLen int) string {
+	if maxLineLen > 0 && len(line) > maxLineLen {
+		return line[:maxLineLen]
+	}
+	return line
+}
+
 // ensureFirstLineRead performs the deferred first-line read for SplFileObject.
 // This must be called before any operation that depends on curLine (iteration,
 // current(), fgets, etc.), but NOT before raw file operations (fread, fpassthru, etc.).
@@ -160,7 +169,7 @@ func ensureFirstLineRead(d *splFileObjectData) {
 	}
 	d.firstLineRead = true
 	if d.scanner.Scan() {
-		d.curLine = d.scanner.Text() + "\n"
+		d.curLine = applyMaxLineLen(d.scanner.Text()+"\n", d.maxLineLen)
 	} else {
 		d.eof = true
 	}
@@ -350,7 +359,7 @@ func sfoFgets(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVa
 	}
 	line := d.curLine
 	if d.scanner.Scan() {
-		d.curLine = d.scanner.Text() + "\n"
+		d.curLine = applyMaxLineLen(d.scanner.Text()+"\n", d.maxLineLen)
 		d.line++
 	} else {
 		d.eof = true
@@ -431,7 +440,7 @@ func sfoFgetcsv(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.Z
 
 	// Advance to next line
 	if d.scanner.Scan() {
-		d.curLine = d.scanner.Text() + "\n"
+		d.curLine = applyMaxLineLen(d.scanner.Text()+"\n", d.maxLineLen)
 		d.line++
 	} else {
 		d.eof = true
@@ -869,7 +878,7 @@ func sfoNext(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal
 	ensureFirstLineRead(d)
 	for {
 		if d.scanner.Scan() {
-			d.curLine = d.scanner.Text() + "\n"
+			d.curLine = applyMaxLineLen(d.scanner.Text()+"\n", d.maxLineLen)
 			d.line++
 		} else {
 			d.eof = true

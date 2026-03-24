@@ -488,6 +488,96 @@ func initObjectStorage() {
 				return phpv.ZInt(count).ZVal(), nil
 			}),
 		},
+		"__serialize": {
+			Name: "__serialize",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				d := getObjectStorageData(o)
+				result := phpv.NewZArray()
+
+				// Key 0: flat array of [obj, info, obj, info, ...]
+				storage := phpv.NewZArray()
+				if d != nil {
+					idx := 0
+					for _, hash := range d.order {
+						entry, exists := d.entries[hash]
+						if !exists {
+							continue
+						}
+						storage.OffsetSet(ctx, phpv.ZInt(idx), entry.obj.ZVal())
+						idx++
+						storage.OffsetSet(ctx, phpv.ZInt(idx), entry.info)
+						idx++
+					}
+				}
+				result.OffsetSet(ctx, phpv.ZInt(0), storage.ZVal())
+
+				// Key 1: member properties (dynamic properties of the object)
+				memberProps := phpv.NewZArray()
+				for prop := range o.IterProps(ctx) {
+					if prop.Modifiers.IsPublic() || (!prop.Modifiers.IsPrivate() && !prop.Modifiers.IsProtected()) {
+						v := o.GetPropValue(prop)
+						memberProps.OffsetSet(ctx, prop.VarName.ZVal(), v)
+					}
+				}
+				result.OffsetSet(ctx, phpv.ZInt(1), memberProps.ZVal())
+
+				return result.ZVal(), nil
+			}),
+		},
+		"__unserialize": {
+			Name: "__unserialize",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				if len(args) == 0 || args[0] == nil {
+					return nil, nil
+				}
+				arr := args[0].AsArray(ctx)
+				if arr == nil {
+					return nil, phpobj.ThrowError(ctx, phpobj.UnexpectedValueException,
+						"Invalid serialization data for SplObjectStorage object")
+				}
+
+				d := &splObjectStorageData{
+					entries: make(map[string]*splObjectStorageEntry),
+					order:   nil,
+					pos:     0,
+				}
+				o.SetOpaque(SplObjectStorageClass, d)
+
+				// Key 0: flat array [obj, info, obj, info, ...]
+				storageVal, err := arr.OffsetGet(ctx, phpv.ZInt(0).ZVal())
+				if err == nil && storageVal != nil && storageVal.GetType() == phpv.ZtArray {
+					storageArr := storageVal.AsArray(ctx)
+					count := int(storageArr.Count(ctx))
+					for i := 0; i < count; i += 2 {
+						objVal, err1 := storageArr.OffsetGet(ctx, phpv.ZInt(i).ZVal())
+						infoVal, err2 := storageArr.OffsetGet(ctx, phpv.ZInt(i+1).ZVal())
+						if err1 != nil || err2 != nil || objVal == nil || objVal.GetType() != phpv.ZtObject {
+							continue
+						}
+						obj, ok := objVal.Value().(*phpobj.ZObject)
+						if !ok {
+							continue
+						}
+						hash := objectHash(obj)
+						if _, exists := d.entries[hash]; !exists {
+							d.order = append(d.order, hash)
+						}
+						d.entries[hash] = &splObjectStorageEntry{obj: obj, info: infoVal}
+					}
+				}
+
+				// Key 1: member properties
+				memberVal, err := arr.OffsetGet(ctx, phpv.ZInt(1).ZVal())
+				if err == nil && memberVal != nil && memberVal.GetType() == phpv.ZtArray {
+					memberArr := memberVal.AsArray(ctx)
+					for k, v := range memberArr.Iterate(ctx) {
+						o.ObjectSet(ctx, k, v)
+					}
+				}
+
+				return nil, nil
+			}),
+		},
 		"__debuginfo": {
 			Name: "__debugInfo",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {

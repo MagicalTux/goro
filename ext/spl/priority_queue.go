@@ -374,7 +374,21 @@ func initPriorityQueue() {
 				return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException, "Heap is corrupted, heap properties are no longer ensured.")
 			}
 			result := phpv.NewZArray()
-			result.OffsetSet(ctx, phpv.ZInt(0), phpv.NewZArray().ZVal())
+			// Key 0: member (user/dynamic) properties
+			memberProps := phpv.NewZArray()
+			for prop := range o.IterProps(ctx) {
+				v := o.GetPropValue(prop)
+				if prop.Modifiers.IsPrivate() {
+					key := "\x00" + string(o.GetClass().GetName()) + "\x00" + string(prop.VarName)
+					memberProps.OffsetSet(ctx, phpv.ZString(key), v)
+				} else if prop.Modifiers.IsProtected() {
+					key := "\x00*\x00" + string(prop.VarName)
+					memberProps.OffsetSet(ctx, phpv.ZString(key), v)
+				} else {
+					memberProps.OffsetSet(ctx, prop.VarName.ZVal(), v)
+				}
+			}
+			result.OffsetSet(ctx, phpv.ZInt(0), memberProps.ZVal())
 			internalData := phpv.NewZArray()
 			flags := splPriorityQueueExtrData
 			if d != nil {
@@ -403,6 +417,16 @@ func initPriorityQueue() {
 				return nil, phpobj.ThrowError(ctx, phpobj.UnexpectedValueException,
 					fmt.Sprintf("Invalid serialization data for %s object", o.GetClass().GetName()))
 			}
+
+			// Key 0: member properties
+			memberVal, merr := arr.OffsetGet(ctx, phpv.ZInt(0).ZVal())
+			if merr == nil && memberVal != nil && memberVal.GetType() == phpv.ZtArray {
+				memberArr := memberVal.AsArray(ctx)
+				for k, v := range memberArr.Iterate(ctx) {
+					o.ObjectSet(ctx, k, v)
+				}
+			}
+
 			internalVal, err := arr.OffsetGet(ctx, phpv.ZInt(1).ZVal())
 			if err != nil || internalVal == nil || internalVal.GetType() != phpv.ZtArray {
 				return nil, phpobj.ThrowError(ctx, phpobj.UnexpectedValueException,
