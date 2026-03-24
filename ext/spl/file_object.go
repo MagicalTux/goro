@@ -264,8 +264,11 @@ func sfoConstruct(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv
 	o.SetOpaque(SplFileInfoClass, &data.splFileInfoData)
 	o.SetOpaque(SplFileObjectClass, data)
 
-	// Only read first line for readable modes
-	isReadable := flag&os.O_RDONLY == os.O_RDONLY || flag&os.O_RDWR != 0
+	// Only read first line for readable modes.
+	// Note: O_RDONLY is 0, so we cannot use flag&O_RDONLY==O_RDONLY (always true).
+	// Instead, check that the access mode is not write-only.
+	accessMode := flag & (os.O_RDONLY | os.O_WRONLY | os.O_RDWR)
+	isReadable := accessMode != os.O_WRONLY
 	if isReadable {
 		if data.scanner.Scan() {
 			data.curLine = data.scanner.Text() + "\n"
@@ -479,6 +482,9 @@ func sfoFputcsv(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.Z
 		return phpv.ZBool(false).ZVal(), nil
 	}
 
+	// After writing, eof is no longer true (position is valid, we just wrote data)
+	d.eof = false
+
 	// Invalidate scanner after write - recreate at current position
 	d.scanner = bufio.NewScanner(d.file)
 
@@ -574,6 +580,8 @@ func sfoFwrite(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZV
 	}
 
 	n, _ := d.file.Write(writeData)
+	// After writing, eof is no longer true
+	d.eof = false
 	// Invalidate scanner after write
 	d.scanner = bufio.NewScanner(d.file)
 	return phpv.ZInt(n).ZVal(), nil

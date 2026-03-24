@@ -42,6 +42,17 @@ func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, o
 		if namedErr != nil {
 			return nil, namedErr
 		}
+	} else if extArgs != nil {
+		// For Go-implemented ext functions, also support named argument reordering
+		funcName := ""
+		if fn, ok := f.(interface{ GetFuncName() phpv.ZString }); ok {
+			funcName = string(fn.GetFuncName())
+		}
+		var namedErr error
+		args, namedErr = reorderExtNamedArgs(ctx, extArgs, args, funcName)
+		if namedErr != nil {
+			return nil, namedErr
+		}
 	}
 
 	// Save call site location (arg evaluation may change global location)
@@ -658,6 +669,90 @@ func reorderNamedArgs(ctx phpv.Context, funcArgs []*phpv.FuncArg, args []phpv.Ru
 				result = append(result, arg)
 			} else {
 				// Unknown named parameter
+				return nil, phpobj.ThrowError(ctx, phpobj.Error,
+					fmt.Sprintf("Unknown named parameter $%s", name))
+			}
+		}
+	}
+
+	// Trim trailing nil entries
+	for len(result) > 0 && result[len(result)-1] == nil {
+		result = result[:len(result)-1]
+	}
+
+	return result, nil
+}
+
+// reorderExtNamedArgs reorders function call arguments for Go-implemented ext functions
+// using ExtFunctionArg metadata. Similar to reorderNamedArgs but uses ExtFunctionArg.
+func reorderExtNamedArgs(ctx phpv.Context, extArgs []*ExtFunctionArg, args []phpv.Runnable, funcName string) ([]phpv.Runnable, error) {
+	// Check if any args are named
+	hasNamed := false
+	for _, arg := range args {
+		if _, ok := arg.(phpv.NamedArgument); ok {
+			hasNamed = true
+			break
+		}
+	}
+	if !hasNamed {
+		return args, nil
+	}
+
+	// Build result array
+	size := len(extArgs)
+	if len(args) > size {
+		size = len(args)
+	}
+	result := make([]phpv.Runnable, size)
+	filled := make([]bool, size)
+
+	// Place positional arguments first
+	positionalEnd := 0
+	for i, arg := range args {
+		if _, ok := arg.(phpv.NamedArgument); ok {
+			break
+		}
+		if i < len(result) {
+			result[i] = arg
+			filled[i] = true
+		}
+		positionalEnd = i + 1
+	}
+
+	// Check if the last extArg is variadic
+	hasVariadic := false
+	if len(extArgs) > 0 {
+		hasVariadic = extArgs[len(extArgs)-1].Variadic
+	}
+
+	// Place named arguments at their parameter positions
+	for _, arg := range args[positionalEnd:] {
+		na, ok := arg.(phpv.NamedArgument)
+		if !ok {
+			continue
+		}
+		name := na.ArgName()
+		found := false
+		for j, ea := range extArgs {
+			if phpv.ZString(ea.ArgName) == name {
+				if j < len(result) && filled[j] {
+					return nil, phpobj.ThrowError(ctx, phpobj.Error,
+						fmt.Sprintf("Named parameter $%s overwrites previous argument", name))
+				}
+				for len(result) <= j {
+					result = append(result, nil)
+					filled = append(filled, false)
+				}
+				result[j] = arg
+				filled[j] = true
+				found = true
+				break
+			}
+		}
+		if !found {
+			if hasVariadic {
+				result = append(result, arg)
+			} else {
 				return nil, phpobj.ThrowError(ctx, phpobj.Error,
 					fmt.Sprintf("Unknown named parameter $%s", name))
 			}
