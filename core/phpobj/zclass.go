@@ -753,7 +753,12 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 					}
 				}
 				if !found {
-					c.Props = append(c.Props, tp)
+					// Copy the trait property so each using class has its own instance.
+					// This is necessary because CompileDelayed defaults are resolved
+					// in-place, and shared trait properties would otherwise resolve
+					// __CLASS__ once and cache the wrong value for subsequent classes.
+					propCopy := *tp
+					c.Props = append(c.Props, &propCopy)
 					propSources[tp.VarName] = &propSourceInfo{traitName: tc.Name}
 				}
 			}

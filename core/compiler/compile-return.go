@@ -20,16 +20,27 @@ func compileReturn(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	l := i.Loc()
 
 	if i.IsSingle(';') {
-		// bare "return;" - check if never return type (never cannot have any return)
-		if fn := c.getFunc(); fn != nil && fn.returnType != nil && fn.returnType.Type() == phpv.ZtNever {
-			label := "function"
-			if c.getClass() != nil {
-				label = "method"
+		// bare "return;" - check return type constraints
+		if fn := c.getFunc(); fn != nil && fn.returnType != nil {
+			rt := fn.returnType.Type()
+			if rt == phpv.ZtNever {
+				label := "function"
+				if c.getClass() != nil {
+					label = "method"
+				}
+				return nil, &phpv.PhpError{
+					Err:  fmt.Errorf("A never-returning %s must not return", label),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  l,
+				}
 			}
-			return nil, &phpv.PhpError{
-				Err:  fmt.Errorf("A never-returning %s must not return", label),
-				Code: phpv.E_COMPILE_ERROR,
-				Loc:  l,
+			// PHP 8.0+: bare "return;" in a function with any non-void return type is an error
+			if rt != phpv.ZtVoid {
+				return nil, &phpv.PhpError{
+					Err:  fmt.Errorf("A function with return type must return a value (did you mean \"return null;\" instead of \"return;\"?)"),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  l,
+				}
 			}
 		}
 		return &runReturn{nil, l}, nil // return nothing
