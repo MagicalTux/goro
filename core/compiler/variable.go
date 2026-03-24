@@ -121,6 +121,11 @@ func (r *runVariable) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			// in Call() which has access to parameter metadata (ref vs value).
 			// Suppress warnings here for all function calls.
 			write = true
+		case *NamedArg:
+			// Named arguments are wrapped in NamedArg; the parent of the inner
+			// variable is the NamedArg, not the function call. Undefined variable
+			// warnings for named args are handled in Call() just like positional args.
+			write = true
 		case *runnableFunctionCallRef:
 			// For dynamic function calls ($foo()), don't suppress warnings
 			// when this variable is the function name itself. PHP triggers
