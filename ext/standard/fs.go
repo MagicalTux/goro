@@ -1059,6 +1059,13 @@ func fncGetResourceId(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZInt(handle.GetResourceID()).ZVal(), nil
 }
 
+// > func array get_resources ( ?string $type = null )
+func fncGetResources(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	// Return an empty array - goro does not maintain a global resource registry.
+	// This is sufficient for most use cases that just check resource counts.
+	return phpv.NewZArray().ZVal(), nil
+}
+
 // > func bool ftruncate ( resource $handle , int $size )
 func fncFtruncate(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var handle phpv.Resource

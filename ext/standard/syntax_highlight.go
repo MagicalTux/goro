@@ -123,6 +123,52 @@ func fncHighlightString(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	return nil, nil
 }
 
+// > func string php_strip_whitespace ( string $filename )
+func fncPhpStripWhitespace(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var filename phpv.ZString
+	_, err := core.Expand(ctx, args, &filename)
+	if err != nil {
+		return nil, ctx.FuncError(err)
+	}
+
+	file, err := ctx.Global().Open(ctx, filename, "r", true)
+	if err != nil {
+		return phpv.ZStr(""), nil
+	}
+	defer file.Close()
+
+	lexer := tokenizer.NewLexer(file, string(filename))
+	var buf bytes.Buffer
+
+	for {
+		t, err := lexer.NextItem()
+		if err != nil {
+			break
+		}
+		if t.Type == tokenizer.T_EOF {
+			break
+		}
+
+		switch t.Type {
+		case tokenizer.T_COMMENT:
+			// Strip comments entirely
+		case tokenizer.T_DOC_COMMENT:
+			// Strip doc comments entirely
+		case tokenizer.T_WHITESPACE:
+			// Collapse whitespace to a single space, but preserve newlines
+			if strings.Contains(t.Data, "\n") {
+				buf.WriteByte('\n')
+			} else {
+				buf.WriteByte(' ')
+			}
+		default:
+			buf.WriteString(t.Data)
+		}
+	}
+
+	return phpv.ZStr(buf.String()), nil
+}
+
 // > func mixed highlight_file ( string $filename [, bool $return = FALSE ] )
 // > alias show_source
 func fncHighlightFile(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {

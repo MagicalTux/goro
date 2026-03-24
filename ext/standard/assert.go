@@ -117,7 +117,11 @@ func fncAssert(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		// Check assert.warning (default 1)
 		assertWarning := ctx.GetConfig("assert.warning", phpv.ZInt(1).ZVal()).AsInt(ctx)
 		if assertWarning != 0 {
-			ctx.Warn("%s failed", msg)
+			if msg == "Assertion failed" {
+				ctx.Warn("%s", msg)
+			} else {
+				ctx.Warn("%s failed", msg)
+			}
 		}
 
 		// Check assert.callback - stored as a callable via assert_options()

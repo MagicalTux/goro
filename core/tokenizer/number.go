@@ -93,19 +93,22 @@ func lexNumber(l *Lexer) lexState {
 			// underscore adjacent to decimal point
 			return l.error("syntax error, unexpected identifier")
 		}
-		// Check underscore adjacent to exponent marker
-		for i := 0; i < len(valPart)-1; i++ {
-			if valPart[i] == '_' && (valPart[i+1] == 'e' || valPart[i+1] == 'E') {
-				return l.error("syntax error, unexpected identifier")
-			}
-			if (valPart[i] == 'e' || valPart[i] == 'E') && i+1 < len(valPart) {
-				next := valPart[i+1]
-				if next == '_' {
+		// Check underscore adjacent to exponent marker (only for decimal numbers,
+		// not hex/binary/octal where 'e'/'E' are valid digits)
+		if allowDecimal {
+			for i := 0; i < len(valPart)-1; i++ {
+				if valPart[i] == '_' && (valPart[i+1] == 'e' || valPart[i+1] == 'E') {
 					return l.error("syntax error, unexpected identifier")
 				}
-				// Also check after sign: e+_ or e-_
-				if (next == '+' || next == '-') && i+2 < len(valPart) && valPart[i+2] == '_' {
-					return l.error("syntax error, unexpected identifier")
+				if (valPart[i] == 'e' || valPart[i] == 'E') && i+1 < len(valPart) {
+					next := valPart[i+1]
+					if next == '_' {
+						return l.error("syntax error, unexpected identifier")
+					}
+					// Also check after sign: e+_ or e-_
+					if (next == '+' || next == '-') && i+2 < len(valPart) && valPart[i+2] == '_' {
+						return l.error("syntax error, unexpected identifier")
+					}
 				}
 			}
 		}

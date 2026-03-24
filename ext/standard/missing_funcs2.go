@@ -301,3 +301,4 @@ func fncPhpSapiName(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 func fncGetmygid(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZInt(os.Getgid()).ZVal(), nil
 }
+
