@@ -778,6 +778,13 @@ func (r *runClassNameOf) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		return v, nil
 	default:
 		typeName := v.GetType().TypeName()
+		if typeName == "bool" {
+			if v.AsBool(ctx) {
+				typeName = "true"
+			} else {
+				typeName = "false"
+			}
+		}
 		if typeName == "null" {
 			// null::class throws TypeError (catchable)
 			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
@@ -785,7 +792,7 @@ func (r *runClassNameOf) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		}
 		// Other non-object/non-string types produce a fatal error
 		phpErr := &phpv.PhpError{
-			Err:  fmt.Errorf("Illegal class name"),
+			Err:  fmt.Errorf("Cannot use \"::class\" on %s", typeName),
 			Code: phpv.E_ERROR,
 			Loc:  r.l,
 		}

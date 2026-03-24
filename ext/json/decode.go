@@ -34,6 +34,9 @@ func fncJsonDecode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if depth != nil {
 		d = int(*depth)
 	}
+	if d <= 0 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "json_decode(): Argument #3 ($depth) must be greater than 0")
+	}
 	if opt != nil {
 		o = JsonDecOpt(*opt)
 	}
@@ -128,9 +131,9 @@ func fncJsonLastErrorMsg(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error
 // > func bool json_validate ( string $json [, int $depth = 512 [, int $flags = 0 ]] )
 func fncJsonValidate(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var json phpv.ZString
-	var depth *phpv.ZInt
+	var depth, flags *phpv.ZInt
 
-	_, err := core.Expand(ctx, args, &json, &depth)
+	_, err := core.Expand(ctx, args, &json, &depth, &flags)
 	if err != nil {
 		return nil, err
 	}
@@ -138,6 +141,17 @@ func fncJsonValidate(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	d := 512
 	if depth != nil {
 		d = int(*depth)
+	}
+	if d <= 0 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "json_validate(): Argument #2 ($depth) must be greater than 0")
+	}
+
+	// Validate flags: only JSON_INVALID_UTF8_IGNORE is allowed
+	if flags != nil && int(*flags) != 0 {
+		f := int(*flags)
+		if f != InvalidUtf8Ignore {
+			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "json_validate(): Argument #3 ($flags) must be a valid flag (allowed flags: JSON_INVALID_UTF8_IGNORE)")
+		}
 	}
 
 	reader := strings.NewReader(string(json))

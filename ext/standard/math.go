@@ -1,6 +1,7 @@
 package standard
 
 import (
+	"fmt"
 	"math"
 
 	"github.com/MagicalTux/goro/core"
@@ -570,10 +571,16 @@ func mathMax(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	max := phpv.ZNULL.ZVal()
-	if len(args) == 1 && firstArg.GetType() == phpv.ZtArray {
+	if len(args) == 1 {
+		if firstArg.GetType() != phpv.ZtArray {
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+				fmt.Sprintf("max(): Argument #1 ($value) must be of type array, %s given",
+					phpv.ZValTypeNameDetailed(firstArg)))
+		}
 		array := firstArg.AsArray(ctx)
 		if array.Count(ctx) == 0 {
-			return max, nil
+			return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+				"max(): Argument #1 ($value) must contain at least one element")
 		}
 		for _, v := range array.Iterate(ctx) {
 			max = v
@@ -614,10 +621,16 @@ func mathMin(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	min := phpv.ZNULL.ZVal()
-	if len(args) == 1 && firstArg.GetType() == phpv.ZtArray {
+	if len(args) == 1 {
+		if firstArg.GetType() != phpv.ZtArray {
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+				fmt.Sprintf("min(): Argument #1 ($value) must be of type array, %s given",
+					phpv.ZValTypeNameDetailed(firstArg)))
+		}
 		array := firstArg.AsArray(ctx)
 		if array.Count(ctx) == 0 {
-			return min, nil
+			return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+				"min(): Argument #1 ($value) must contain at least one element")
 		}
 		for _, v := range array.Iterate(ctx) {
 			min = v

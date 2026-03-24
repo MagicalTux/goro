@@ -205,7 +205,7 @@ func recursiveCount(ctx phpv.Context, array *phpv.ZArray, visited map[uintptr]st
 	var err error
 	ptr := uintptr(unsafe.Pointer(array))
 	if _, seen := visited[ptr]; seen {
-		if err = ctx.Warn("recursive loop detected while counting"); err != nil {
+		if err = ctx.Warn("count(): Recursion detected", logopt.NoFuncName(true)); err != nil {
 			return 0, err
 		}
 		return 0, nil

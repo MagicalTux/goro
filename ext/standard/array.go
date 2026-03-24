@@ -567,7 +567,7 @@ func fncArrayWalkRecursive(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, err
 // > func array array_map ( callable $callback , array $array1 [, array $... ] )
 func fncArrayMap(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 2 {
-		return nil, ctx.Errorf("array_map() expects at least 2 arguments, %d given", len(args))
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, fmt.Sprintf("array_map() expects at least 2 arguments, %d given", len(args)))
 	}
 
 	// Check if callback is null (special zip mode)
@@ -2466,6 +2466,19 @@ func fncArrayCompact(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 func arrayRecursiveCompact(funcCtx phpv.Context, ctx phpv.Context, result *phpv.ZArray, varName *phpv.ZVal, depth int, argNum int) error {
 	switch varName.GetType() {
 	case phpv.ZtString:
+		name := varName.String()
+		// Special handling: "this" outside object context is silently ignored
+		if name == "this" {
+			if ok, _ := ctx.OffsetExists(ctx, varName); ok {
+				value, err := ctx.OffsetGet(ctx, varName)
+				if err != nil {
+					return err
+				}
+				result.OffsetSet(ctx, varName, value)
+			}
+			// No warning for $this when not available
+			return nil
+		}
 		if ok, _ := ctx.OffsetExists(ctx, varName); ok {
 			value, err := ctx.OffsetGet(ctx, varName)
 			if err != nil {
@@ -2473,7 +2486,7 @@ func arrayRecursiveCompact(funcCtx phpv.Context, ctx phpv.Context, result *phpv.
 			}
 			result.OffsetSet(ctx, varName, value)
 		} else {
-			funcCtx.Notice("compact(): Undefined variable: %s", varName, logopt.NoFuncName(true))
+			funcCtx.Warn("compact(): Undefined variable $%s", name, logopt.NoFuncName(true))
 		}
 	case phpv.ZtArray:
 		if depth >= compactMaxDepth {
@@ -2487,7 +2500,9 @@ func arrayRecursiveCompact(funcCtx phpv.Context, ctx phpv.Context, result *phpv.
 			}
 		}
 	default:
-		// PHP silently ignores non-string, non-array values
+		// PHP 8.3+: warn about non-string, non-array values
+		funcCtx.Warn("compact(): Argument #%d must be string or array of strings, %s given",
+			argNum, phpv.ZValTypeNameDetailed(varName), logopt.NoFuncName(true))
 	}
 
 	return nil

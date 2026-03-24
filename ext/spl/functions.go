@@ -604,7 +604,7 @@ func splAutoloadCall(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 }
 
 // splAutoloadExtensionsValue stores the current file extensions for spl_autoload
-var splAutoloadExtensionsValue = ".php,.inc"
+var splAutoloadExtensionsValue = ".inc,.php"
 
 // > func string spl_autoload_extensions ( [string $file_extensions] )
 func splAutoloadExtensions(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {

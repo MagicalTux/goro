@@ -128,6 +128,7 @@ func initObjectStorage() {
 		"contains": {
 			Name: "contains",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				ctx.Deprecated("Method SplObjectStorage::contains() is deprecated since 8.5, use method SplObjectStorage::offsetExists() instead")
 				d := getObjectStorageData(o)
 				if d == nil {
 					return phpv.ZFalse.ZVal(), nil
