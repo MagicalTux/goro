@@ -91,18 +91,27 @@ func fncAssert(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				return nil, phpobj.ThrowObject(ctx, description)
 			}
 
-			// Use description string as the message, or default to "assert(false)"
+			// Use description string as the message
 			msg := "assert(false)"
-			if description != nil && !description.IsNull() {
+			if description != nil && description.IsNull() {
+				msg = "Assertion failed"
+			} else if description != nil && !description.IsNull() {
 				msg = description.AsString(ctx).String()
 			}
 			return nil, phpobj.ThrowError(ctx, phpobj.AssertionError, msg)
 		}
 
 		// When assert.exception=0, issue a warning and optionally call callback
-		msg := "assert(false)"
+		// When description is explicitly null or not provided:
+		//   - PHP 8.5+ with null: "Assertion failed"
+		//   - PHP 8.5+ without description: "assert(expression) failed" (we don't have expression, use generic)
+		msg := "Assertion failed"
 		if description != nil && !description.IsNull() && description.GetType() == phpv.ZtString {
 			msg = description.AsString(ctx).String()
+		} else if description == nil {
+			// No description argument provided - use assert(false) format
+			// (In PHP this would show the actual expression, but we don't have it)
+			msg = "assert(false)"
 		}
 
 		// Check assert.warning (default 1)

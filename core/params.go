@@ -3,6 +3,7 @@ package core
 import (
 	"errors"
 	"reflect"
+	"strings"
 
 	"github.com/MagicalTux/goro/core/phperr"
 	"github.com/MagicalTux/goro/core/phpobj"
@@ -376,9 +377,35 @@ func ExpandAt(ctx phpv.Context, args []*phpv.ZVal, i int, out interface{}) error
 }
 
 func Expand(ctx phpv.Context, args []*phpv.ZVal, out ...interface{}) (int, error) {
+	// Count required vs optional params for accurate error messages
+	requiredCount := 0
+	for _, o := range out {
+		switch o.(type) {
+		case optionalReferable, optionable:
+			// optional
+		default:
+			rv := reflect.ValueOf(o)
+			if rv.Kind() == reflect.Ptr && rv.Type().Elem().Kind() == reflect.Ptr {
+				// pointer-to-pointer = optional
+			} else {
+				requiredCount++
+			}
+		}
+	}
+
 	for i := range out {
 		err := ExpandAt(ctx, args, i, out[i])
 		if err != nil {
+			// Fix "expects at least" → "expects exactly" when all params are required
+			if requiredCount == len(out) {
+				if throwErr, ok := err.(*phperr.PhpThrow); ok {
+					msg := throwErr.Obj.HashTable().GetString("message").String()
+					fixed := strings.Replace(msg, "expects at least", "expects exactly", 1)
+					if fixed != msg {
+						return i, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, fixed)
+					}
+				}
+			}
 			return i, err
 		}
 	}

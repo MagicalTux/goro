@@ -407,7 +407,7 @@ func ZFprintf(ctx phpv.Context, w printfWriter, format phpv.ZString, arg ...*php
 			} else if math.IsInf(f, -1) {
 				output = "-INF"
 			} else if math.IsNaN(f) {
-				output = "NAN"
+				output = "NaN"
 			} else {
 				// Use precision if specified, otherwise default to 6
 				expPrecision := 6
@@ -458,7 +458,7 @@ func ZFprintf(ctx phpv.Context, w printfWriter, format phpv.ZString, arg ...*php
 			} else if math.IsInf(f, -1) {
 				output = "-INF"
 			} else if math.IsNaN(f) {
-				output = "NAN"
+				output = "NaN"
 			} else {
 				output = strconv.FormatFloat(f, 'f', floatPrecision, 64)
 				if fChar == 'f' {
