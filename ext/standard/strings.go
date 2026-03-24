@@ -187,6 +187,11 @@ func fncStrChunkSplit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		}
 	}
 
+	// Empty string: still return the separator (PHP behavior)
+	if len(str) == 0 {
+		return phpv.ZString(sep).ZVal(), nil
+	}
+
 	var buf bytes.Buffer
 	for index := 0; index < len(str); {
 		j := min(len(str), index+length)
@@ -1613,13 +1618,18 @@ func fncStripTags(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				}
 
 				if isXmlPI {
-					// XML Processing Instruction: skip until >
+					// XML Processing Instruction: skip until ?> (same as PHP tags)
 					j := i + 2
-					for j < n && s[j] != '>' {
+					for j < n {
+						if s[j] == '?' && j+1 < n && s[j+1] == '>' {
+							j += 2
+							break
+						}
+						if s[j] == '>' {
+							j++ // fallback: skip to > if no ?> found
+							break
+						}
 						j++
-					}
-					if j < n {
-						j++ // skip >
 					}
 					i = j
 					continue
@@ -1714,7 +1724,7 @@ func fncStripTags(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				}
 			}
 
-			// Now find the end of the tag, handling quotes and nested PI
+			// Now find the end of the tag, handling quotes and nested constructs
 			for j < n {
 				if s[j] == '\'' {
 					j++
@@ -1743,6 +1753,12 @@ func fncStripTags(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 						}
 						j++
 					}
+				} else if s[j] == '<' {
+					// Another '<' inside a tag - PHP discards the current partial tag
+					// and starts processing from the new '<'. This means we strip
+					// everything from the original '<' to here, then let the outer
+					// loop handle the new '<'.
+					break
 				} else if s[j] == '>' {
 					j++ // skip >
 					break

@@ -55,7 +55,7 @@ func fncSetErrorHandler(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	}
 
 	// Get previous error handler before setting the new one
-	prevErrHandler, _ := ctx.Global().GetUserErrorHandler()
+	_, _, prevOriginalVal := ctx.Global().GetUserErrorHandler()
 
 	// PHP accepts null to reset the error handler
 	if args[0].IsNull() {
@@ -64,11 +64,11 @@ func fncSetErrorHandler(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 			Expand(ctx, args[1:], &errorTypeArg)
 		}
 		errorType := errorTypeArg.GetOrDefault(E_ALL | E_STRICT)
-		ctx.Global().SetUserErrorHandler(nil, phpv.PhpErrorType(errorType))
-		if prevErrHandler == nil {
+		ctx.Global().SetUserErrorHandler(nil, phpv.PhpErrorType(errorType), nil)
+		if prevOriginalVal == nil {
 			return phpv.ZNULL.ZVal(), nil
 		}
-		return prevErrHandler.ZVal(), nil
+		return prevOriginalVal, nil
 	}
 
 	var handler phpv.Callable
@@ -79,12 +79,12 @@ func fncSetErrorHandler(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	}
 
 	errorType := errorTypeArg.GetOrDefault(E_ALL | E_STRICT)
-	ctx.Global().SetUserErrorHandler(handler, phpv.PhpErrorType(errorType))
+	ctx.Global().SetUserErrorHandler(handler, phpv.PhpErrorType(errorType), args[0])
 
-	if prevErrHandler == nil {
+	if prevOriginalVal == nil {
 		return phpv.ZNULL.ZVal(), nil
 	}
-	return prevErrHandler.ZVal(), nil
+	return prevOriginalVal, nil
 }
 
 // > func callable|null set_exception_handler ( callable|null $exception_handler )

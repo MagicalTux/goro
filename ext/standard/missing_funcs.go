@@ -191,92 +191,187 @@ func fncFgetcsv(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		maxLen = int(*lengthArg)
 	}
 
-	// PHP's fgetcsv reads across multiple lines when inside a quoted field.
-	// We read bytes one at a time, tracking quote state, so newlines within
-	// quoted fields are included in the data rather than terminating the record.
-	var line []byte
-	inQuotes := false
+	// PHP's fgetcsv: we parse fields inline as we read bytes from the stream.
+	// This avoids the two-pass problem where line-reading and field-parsing disagree.
+	result := phpv.NewZArray()
 	totalRead := 0
-	gotData := false // track if we read any bytes (to distinguish blank line from EOF)
+	gotData := false
+	recordDone := false
 
-	for {
-		b, readErr := file.ReadByte()
-		if readErr != nil {
-			if !gotData {
-				return phpv.ZFalse.ZVal(), nil
+	for !recordDone {
+		// Read one field
+		var field []byte
+		inQuotes := false
+		fieldStarted := false
+		trailingEncl := false // true if field was enclosed in quotes
+
+		// Skip leading whitespace before a potentially quoted field
+		var pendingSpaces []byte
+
+		for {
+			if maxLen > 0 && totalRead >= maxLen-1 {
+				recordDone = true
+				break
 			}
-			break
-		}
-		gotData = true
-		totalRead++
 
-		if !inQuotes {
+			b, readErr := file.ReadByte()
+			if readErr != nil {
+				if !gotData && !fieldStarted {
+					// EOF at very start - no data
+					return phpv.ZFalse.ZVal(), nil
+				}
+				recordDone = true
+				break
+			}
+			gotData = true
+			totalRead++
+
+			if !fieldStarted {
+				// Before field content starts
+				if !inQuotes {
+					if b == '\n' {
+						if len(result.Array()) == 0 && len(field) == 0 && len(pendingSpaces) == 0 {
+							// Blank line
+							result.OffsetSet(ctx, nil, phpv.ZNULL.ZVal())
+							return result.ZVal(), nil
+						}
+						recordDone = true
+						break
+					}
+					if b == '\r' {
+						nb, err := file.ReadByte()
+						if err == nil && nb != '\n' {
+							file.Seek(-1, io.SeekCurrent)
+						}
+						if len(result.Array()) == 0 && len(field) == 0 && len(pendingSpaces) == 0 {
+							result.OffsetSet(ctx, nil, phpv.ZNULL.ZVal())
+							return result.ZVal(), nil
+						}
+						recordDone = true
+						break
+					}
+					if b == sep {
+						// Empty field
+						result.OffsetSet(ctx, nil, phpv.ZString("").ZVal())
+						fieldStarted = false
+						field = nil
+						pendingSpaces = nil
+						continue
+					}
+					if b == enc {
+						// Start of enclosed field
+						inQuotes = true
+						fieldStarted = true
+						pendingSpaces = nil
+						continue
+					}
+					// Regular char - start unquoted field
+					// Any pending spaces become part of the field
+					if len(pendingSpaces) > 0 {
+						field = append(field, pendingSpaces...)
+						pendingSpaces = nil
+					}
+					fieldStarted = true
+					field = append(field, b)
+					continue
+				}
+			}
+
+			if inQuotes {
+				// Inside enclosed field
+				if esc != 0 && esc != enc && b == esc {
+					// Escape character: include both esc and next char
+					field = append(field, b)
+					nb, readErr2 := file.ReadByte()
+					if readErr2 != nil {
+						recordDone = true
+						break
+					}
+					totalRead++
+					field = append(field, nb)
+					continue
+				}
+				if b == enc {
+					// Check for doubled enclosure
+					nb, readErr2 := file.ReadByte()
+					if readErr2 != nil {
+						// EOF after closing quote
+						trailingEncl = true
+						inQuotes = false
+						recordDone = true
+						break
+					}
+					totalRead++
+					if nb == enc {
+						// Doubled enclosure = literal enclosure char
+						field = append(field, enc)
+						continue
+					}
+					// Closing enclosure
+					inQuotes = false
+					trailingEncl = true
+					// Push back the byte we peeked
+					file.Seek(-1, io.SeekCurrent)
+					totalRead--
+					// Now read until separator or end of line
+					continue
+				}
+				// Regular char inside quotes (including newlines)
+				field = append(field, b)
+				continue
+			}
+
+			// Outside quotes (either unenclosed field or after closing enclosure)
+			if trailingEncl {
+				// After closing enclosure, skip to separator or EOL
+				if b == sep {
+					// End of field
+					break
+				}
+				if b == '\n' {
+					recordDone = true
+					break
+				}
+				if b == '\r' {
+					nb, err := file.ReadByte()
+					if err == nil && nb != '\n' {
+						file.Seek(-1, io.SeekCurrent)
+					}
+					recordDone = true
+					break
+				}
+				// Garbage after closing enclosure - skip
+				continue
+			}
+
+			// Unenclosed field
+			if b == sep {
+				break
+			}
 			if b == '\n' {
+				recordDone = true
 				break
 			}
 			if b == '\r' {
-				// Check for \r\n
 				nb, err := file.ReadByte()
 				if err == nil && nb != '\n' {
 					file.Seek(-1, io.SeekCurrent)
 				}
+				recordDone = true
 				break
 			}
-			if b == enc {
-				inQuotes = true
-			}
-			line = append(line, b)
-		} else {
-			// Inside quotes: newlines are part of the field
-			if esc != 0 && esc != enc && b == esc {
-				// Escape char: include it and the next char
-				line = append(line, b)
-				nb, readErr2 := file.ReadByte()
-				if readErr2 == nil {
-					line = append(line, nb)
-					totalRead++
-				}
-				if maxLen > 0 && totalRead >= maxLen-1 {
-					break
-				}
-				continue
-			}
-			if b == enc {
-				line = append(line, b)
-				// Check for doubled enclosure
-				nb, readErr2 := file.ReadByte()
-				if readErr2 != nil {
-					// EOF after closing quote
-					inQuotes = false
-					break
-				}
-				if nb == enc {
-					// Doubled enclosure - still inside quotes
-					line = append(line, nb)
-					totalRead++
-				} else {
-					// End of quoted field - push back next byte
-					inQuotes = false
-					file.Seek(-1, io.SeekCurrent)
-				}
-			} else {
-				line = append(line, b)
-			}
+			field = append(field, b)
 		}
 
-		if maxLen > 0 && totalRead >= maxLen-1 {
-			break
+		if gotData || fieldStarted || len(result.Array()) > 0 {
+			result.OffsetSet(ctx, nil, phpv.ZString(field).ZVal())
 		}
 	}
 
-	// Parse CSV
-	// PHP returns [NULL] for blank lines (line that was just \n)
-	if len(line) == 0 {
-		result := phpv.NewZArray()
-		result.OffsetSet(ctx, nil, phpv.ZNULL.ZVal())
-		return result.ZVal(), nil
+	if len(result.Array()) == 0 {
+		return phpv.ZFalse.ZVal(), nil
 	}
-	return ParseCsvLine(ctx, string(line), sep, enc, esc)
+	return result.ZVal(), nil
 }
 
 func ParseCsvLine(ctx phpv.Context, line string, sep, enc, esc byte) (*phpv.ZVal, error) {

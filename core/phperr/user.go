@@ -12,7 +12,7 @@ var ErrHandledByUser = errors.New("handled by user error handler")
 
 func HandleUserError(ctx phpv.Context, err *phpv.PhpError) error {
 	var returnErr error = err
-	errHandler, filterType := ctx.Global().GetUserErrorHandler()
+	errHandler, filterType, originalVal := ctx.Global().GetUserErrorHandler()
 
 	// If there's no user error handler, use default behavior
 	if errHandler == nil {
@@ -58,7 +58,7 @@ func HandleUserError(ctx phpv.Context, err *phpv.PhpError) error {
 		}
 
 		// Restore the user error handler by pushing it back
-		ctx.Global().SetUserErrorHandler(errHandler, filterType)
+		ctx.Global().SetUserErrorHandler(errHandler, filterType, originalVal)
 
 		if err2 != nil {
 			returnErr = err2

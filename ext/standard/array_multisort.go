@@ -22,21 +22,39 @@ type ztable struct {
 }
 
 func (t *ztable) CommitChanges(ctx phpv.Context) {
-	for j := 0; j < t.CountColumns(ctx); j++ {
-		numRows := t.CountRows(ctx)
-		dup := t.columns[j].Dup()
-		t.columns[j].Clear(ctx)
+	numRows := len(t.indexMap)
+
+	// First, collect all keys and values from each column in original order
+	type entry struct {
+		key *phpv.ZVal
+		val *phpv.ZVal
+	}
+	originalData := make([][]entry, len(t.columns))
+	for j, col := range t.columns {
+		originalData[j] = make([]entry, 0, numRows)
+		for k, v := range col.Iterate(ctx) {
+			originalData[j] = append(originalData[j], entry{key: k, val: v})
+		}
+	}
+
+	// Now rewrite each column according to the sorted indexMap
+	for j, col := range t.columns {
+		col.Clear(ctx)
 		for i := 0; i < numRows; i++ {
-			newKey, newVal, _ := dup.OffsetAt(ctx, t.indexMap[i])
-			if newKey.GetType() == phpv.ZtInt {
-				t.columns[j].OffsetSet(ctx, nil, newVal)
+			srcIdx := t.indexMap[i]
+			if srcIdx >= len(originalData[j]) {
+				continue
+			}
+			e := originalData[j][srcIdx]
+			if e.key.GetType() == phpv.ZtInt {
+				col.OffsetSet(ctx, nil, e.val)
 			} else {
-				t.columns[j].OffsetSet(ctx, newKey, newVal)
+				col.OffsetSet(ctx, e.key, e.val)
 			}
 		}
 	}
 
-	// resest indexMap
+	// Reset indexMap
 	for i := range t.indexMap {
 		t.indexMap[i] = i
 	}

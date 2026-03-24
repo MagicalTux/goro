@@ -56,6 +56,7 @@ type ExtFunctionArg struct {
 	Ref       bool
 	PreferRef bool // like Ref but silently accepts non-ref values (ZEND_SEND_PREFER_REF)
 	Optional  bool // is this argument optional?
+	Variadic  bool // is this a variadic parameter? (applies to all remaining args)
 }
 
 // GetArgs implements phpv.FuncGetArgs, returning cached parameter metadata.
@@ -78,6 +79,7 @@ func (e *ExtFunction) buildFuncArgs() {
 			Required:  !a.Optional,
 			Ref:       a.Ref || a.PreferRef,
 			PreferRef: a.PreferRef,
+			Variadic:  a.Variadic,
 		}
 	}
 }

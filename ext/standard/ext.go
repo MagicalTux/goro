@@ -57,7 +57,7 @@ func init() {
 			"array_map":                  {Func: fncArrayMap, Args: []*phpctx.ExtFunctionArg{}},
 			"array_merge":                {Func: fncArrayMerge, Args: []*phpctx.ExtFunctionArg{}},
 			"array_merge_recursive":      {Func: fncArrayMergeRecursive, Args: []*phpctx.ExtFunctionArg{}},
-			"array_multisort":            {Func: fncArrayMultiSort, Args: []*phpctx.ExtFunctionArg{{ArgName: "array", PreferRef: true}}},
+			"array_multisort":            {Func: fncArrayMultiSort, Args: []*phpctx.ExtFunctionArg{{ArgName: "array", PreferRef: true, Variadic: true}}},
 			"array_pad":                  {Func: fncArrayPad, Args: []*phpctx.ExtFunctionArg{}},
 			"array_pop":                  {Func: fncArrayPop, Args: []*phpctx.ExtFunctionArg{{ArgName: "array", Ref: true}}},
 			"array_product":              {Func: fncArrayProduct, Args: []*phpctx.ExtFunctionArg{}},

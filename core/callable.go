@@ -53,10 +53,13 @@ func spawnCallableInternal(ctx phpv.Context, v *phpv.ZVal, paramNo int) (phpv.Ca
 				var err error
 				class, err = ctx.Global().GetClass(ctx, className, true)
 				if err != nil {
-					// Convert class-not-found errors into a TypeError for callback context
-					if _, ok := err.(*phperr.PhpThrow); ok {
-						return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
-							fmt.Sprintf("call_user_func(): Argument #1 ($callback) must be a valid callback, class \"%s\" not found", className))
+					// Convert class-not-found errors into a TypeError for callback context.
+					// But if the autoloader threw a user exception (not an Error), propagate it.
+					if pt, ok := err.(*phperr.PhpThrow); ok {
+						if isClassNotFoundError(pt) {
+							return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+								fmt.Sprintf("call_user_func(): Argument #1 ($callback) must be a valid callback, class \"%s\" not found", className))
+						}
 					}
 					return nil, err
 				}
@@ -249,8 +252,10 @@ func spawnCallableInternal(ctx phpv.Context, v *phpv.ZVal, paramNo int) (phpv.Ca
 			} else {
 				class, err = ctx.Global().GetClass(ctx, className, true)
 				if err != nil {
-					if _, ok := err.(*phperr.PhpThrow); ok {
-						return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("call_user_func(): Argument #1 ($callback) must be a valid callback, class \"%s\" not found", className))
+					if pt, ok := err.(*phperr.PhpThrow); ok {
+						if isClassNotFoundError(pt) {
+							return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("call_user_func(): Argument #1 ($callback) must be a valid callback, class \"%s\" not found", className))
+						}
 					}
 					return nil, err
 				}
@@ -516,4 +521,18 @@ func (w *magicCallWrapper) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal
 	}
 	callArgs := []*phpv.ZVal{w.methodName.ZVal(), a.ZVal()}
 	return w.callMethod.Call(ctx, callArgs)
+}
+
+// isClassNotFoundError checks if a PhpThrow represents a class-not-found Error
+// (as opposed to a user exception thrown from an autoloader).
+func isClassNotFoundError(pt *phperr.PhpThrow) bool {
+	if pt.Obj == nil {
+		return false
+	}
+	obj, ok := pt.Obj.(phpv.ZObject)
+	if !ok {
+		return false
+	}
+	// Class-not-found errors are Error instances, not Exception instances
+	return obj.GetClass().InstanceOf(phpobj.Error)
 }

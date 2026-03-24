@@ -32,8 +32,9 @@ type globalLazyOffset struct {
 }
 
 type errorHandlerEntry struct {
-	handler phpv.Callable
-	filter  phpv.PhpErrorType
+	handler     phpv.Callable
+	filter      phpv.PhpErrorType
+	originalVal *phpv.ZVal // original ZVal passed to set_error_handler
 }
 
 type exceptionHandlerEntry struct {
@@ -1911,17 +1912,17 @@ func (g *Global) Random() *random.State {
 	return g.rand
 }
 
-func (g *Global) GetUserErrorHandler() (phpv.Callable, phpv.PhpErrorType) {
+func (g *Global) GetUserErrorHandler() (phpv.Callable, phpv.PhpErrorType, *phpv.ZVal) {
 	if len(g.userErrorHandlerStack) == 0 {
-		return nil, 0
+		return nil, 0, nil
 	}
 	top := g.userErrorHandlerStack[len(g.userErrorHandlerStack)-1]
-	return top.handler, top.filter
+	return top.handler, top.filter, top.originalVal
 }
 
-func (g *Global) SetUserErrorHandler(handler phpv.Callable, filter phpv.PhpErrorType) {
+func (g *Global) SetUserErrorHandler(handler phpv.Callable, filter phpv.PhpErrorType, originalVal *phpv.ZVal) {
 	// Push onto the stack (even null entries, to match PHP behavior)
-	g.userErrorHandlerStack = append(g.userErrorHandlerStack, errorHandlerEntry{handler: handler, filter: filter})
+	g.userErrorHandlerStack = append(g.userErrorHandlerStack, errorHandlerEntry{handler: handler, filter: filter, originalVal: originalVal})
 }
 
 func (g *Global) RestoreUserErrorHandler() {

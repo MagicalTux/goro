@@ -115,8 +115,8 @@ type GlobalContext interface {
 
 	Random() *random.State
 
-	GetUserErrorHandler() (Callable, PhpErrorType)
-	SetUserErrorHandler(Callable, PhpErrorType)
+	GetUserErrorHandler() (Callable, PhpErrorType, *ZVal)
+	SetUserErrorHandler(handler Callable, filter PhpErrorType, originalVal *ZVal)
 	RestoreUserErrorHandler()
 	SetUserExceptionHandler(handler Callable, originalVal *ZVal) *ZVal
 	RestoreUserExceptionHandler()

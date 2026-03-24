@@ -700,7 +700,7 @@ func fncFileOpen(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		if errors.Is(err, os.ErrNotExist) {
 			return phpv.ZFalse.ZVal(), ctx.Warn("%s(%s): Failed to open stream: No such file or directory", ctx.GetFuncName(), filename, logopt.NoFuncName(true))
 		}
-		return nil, ctx.Error(err)
+		return phpv.ZFalse.ZVal(), ctx.Warn("%s(%s): Failed to open stream: %s", ctx.GetFuncName(), filename, err.Error(), logopt.NoFuncName(true))
 	}
 
 	return f.ZVal(), nil
@@ -1308,10 +1308,11 @@ func fncChmod(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZTrue.ZVal(), nil
 }
 
-// > func bool copy ( string $source , string $dest )
+// > func bool copy ( string $source , string $dest [, resource $context ] )
 func fncCopy(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var src, dst phpv.ZString
-	_, err := core.Expand(ctx, args, &src, &dst)
+	var context **phpv.ZVal // optional context parameter (accepts NULL)
+	_, err := core.Expand(ctx, args, &src, &dst, &context)
 	if err != nil {
 		return nil, err
 	}
