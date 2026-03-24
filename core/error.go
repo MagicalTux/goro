@@ -48,10 +48,16 @@ func fncTriggerError(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZBool(true).ZVal(), nil
 }
 
-// > func mixed set_error_handler ( callable $error_handler [, int $error_types = E_ALL | E_STRICT ] )
+// > func mixed set_error_handler ( callable|null $error_handler [, int $error_types = E_ALL | E_STRICT ] )
 func fncSetErrorHandler(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	// PHP 8: calling with no args resets the error handler (same as passing null)
 	if len(args) == 0 {
-		return nil, fmt.Errorf("set_error_handler() expects at least 1 argument, 0 given")
+		_, _, prevOriginalVal := ctx.Global().GetUserErrorHandler()
+		ctx.Global().SetUserErrorHandler(nil, phpv.PhpErrorType(E_ALL|E_STRICT), nil)
+		if prevOriginalVal == nil {
+			return phpv.ZNULL.ZVal(), nil
+		}
+		return prevOriginalVal, nil
 	}
 
 	// Get previous error handler before setting the new one

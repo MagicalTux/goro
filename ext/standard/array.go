@@ -2456,6 +2456,10 @@ func fncArrayExtract(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		}
 
 		if doSet && extractIsValidVarName(targetName) {
+			// When EXTR_REFS is not set, break references by copying the value
+			if flags&EXTR_REFS == 0 {
+				v = v.Dup()
+			}
 			parentCtx.OffsetSet(parentCtx, phpv.ZString(targetName).ZVal(), v)
 			count++
 		}
@@ -2522,7 +2526,8 @@ func arrayRecursiveCompact(funcCtx phpv.Context, ctx phpv.Context, result *phpv.
 			if err != nil {
 				return err
 			}
-			result.OffsetSet(ctx, varName, value)
+			// compact() copies values, never references (PHP behavior since PHP 7.3)
+			result.OffsetSet(ctx, varName, value.Dup())
 		} else {
 			funcCtx.Warn("compact(): Undefined variable $%s", name, logopt.NoFuncName(true))
 		}

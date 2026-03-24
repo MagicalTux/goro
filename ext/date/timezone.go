@@ -736,7 +736,7 @@ func fncDateGetLastErrors(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, erro
 
 func fncDateParse(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
-		return nil, ctx.Errorf("date_parse() expects exactly 1 argument")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "date_parse() expects exactly 1 argument, 0 given")
 	}
 	datetime := string(args[0].AsString(ctx))
 	result := phpv.NewZArray()
@@ -767,7 +767,7 @@ func fncDateParse(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 func fncDateParseFromFormat(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 2 {
-		return nil, ctx.Errorf("date_parse_from_format() expects exactly 2 arguments")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, fmt.Sprintf("date_parse_from_format() expects exactly 2 arguments, %d given", len(args)))
 	}
 	format := string(args[0].AsString(ctx))
 	datetime := string(args[1].AsString(ctx))
