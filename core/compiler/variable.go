@@ -92,7 +92,12 @@ func (r *runVariable) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		write := false
 		switch t := r.Parent.(type) {
 		case *runOperator:
-			write = t.opD.write
+			// For assignment operators, only the LHS is in write context.
+			// The RHS is always in read context, so undefined variable warnings
+			// should be emitted. Mark write=true only when this variable is the LHS.
+			if t.opD.write && t.a == r {
+				write = true
+			}
 			// For compound assignments (+=, -=, .=, /=, etc.), the LHS is
 			// in read+write context, so undefined variable warnings should
 			// still be emitted. Compound ops have both write=true and op!=nil.

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -123,7 +124,14 @@ func (t *ztable) StringTransposed(ctx phpv.Context) string {
 // > func bool array_multisort ( array &$array1 [, mixed $array1_sort_order = SORT_ASC [, mixed $array1_sort_flags = SORT_REGULAR [, mixed $... ]]] )
 func fncArrayMultiSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) == 0 {
-		return phpv.ZFalse.ZVal(), ctx.FuncErrorf("Must be 1 length")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError,
+			"array_multisort() expects at least 1 argument, 0 given")
+	}
+
+	// First arg must be an array
+	if args[0].GetType() != phpv.ZtArray {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("array_multisort(): Argument #1 ($array) must be an array or a sort flag"))
 	}
 
 	expectedRowSize := args[0].AsArray(ctx).Count(ctx)
@@ -132,16 +140,19 @@ func fncArrayMultiSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		if arg.GetType() != phpv.ZtArray {
-			return phpv.ZFalse.ZVal(), ctx.FuncErrorf("array expected")
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+				fmt.Sprintf("array_multisort(): Argument #%d ($array) must be an array or a sort flag", i+1))
 		}
 		arr := arg.AsArray(ctx)
 		if arr.Count(ctx) != expectedRowSize {
-			return phpv.ZFalse.ZVal(), ctx.Warn("Array sizes are inconsistent")
+			return phpv.ZFalse.ZVal(), ctx.Warn("array_multisort(): Array sizes are inconsistent")
 		}
 
 		sortFlag := SORT_REGULAR
 		sortOrder := SORT_ASC
 		read := 0
+		hasOrder := false
+		hasFlag := false
 
 	GetOptionalSortOrderFlags:
 		for j := 1; j <= 2; j++ {
@@ -149,11 +160,22 @@ func fncArrayMultiSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 			if next.GetType() != phpv.ZtInt {
 				break GetOptionalSortOrderFlags
 			}
-			switch n := next.AsInt(ctx); n {
+			n := next.AsInt(ctx)
+			switch n {
 			case SORT_ASC, SORT_DESC:
+				if hasOrder {
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+						fmt.Sprintf("array_multisort(): Argument #%d must be an array or a sort flag that has not already been specified", i+j+1))
+				}
 				sortOrder = n
+				hasOrder = true
 			default:
+				if hasFlag {
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+						fmt.Sprintf("array_multisort(): Argument #%d must be an array or a sort flag that has not already been specified", i+j+1))
+				}
 				sortFlag = n
+				hasFlag = true
 			}
 			read++
 		}

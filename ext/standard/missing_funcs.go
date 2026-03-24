@@ -230,7 +230,7 @@ func fncFgetcsv(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				// Before field content starts
 				if !inQuotes {
 					if b == '\n' {
-						if len(result.Array()) == 0 && len(field) == 0 && len(pendingSpaces) == 0 {
+						if int(result.Count(ctx)) == 0 && len(field) == 0 && len(pendingSpaces) == 0 {
 							// Blank line
 							result.OffsetSet(ctx, nil, phpv.ZNULL.ZVal())
 							return result.ZVal(), nil
@@ -243,7 +243,7 @@ func fncFgetcsv(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 						if err == nil && nb != '\n' {
 							file.Seek(-1, io.SeekCurrent)
 						}
-						if len(result.Array()) == 0 && len(field) == 0 && len(pendingSpaces) == 0 {
+						if int(result.Count(ctx)) == 0 && len(field) == 0 && len(pendingSpaces) == 0 {
 							result.OffsetSet(ctx, nil, phpv.ZNULL.ZVal())
 							return result.ZVal(), nil
 						}
@@ -259,10 +259,16 @@ func fncFgetcsv(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 						continue
 					}
 					if b == enc {
-						// Start of enclosed field
+						// Start of enclosed field - discard any leading spaces
 						inQuotes = true
 						fieldStarted = true
 						pendingSpaces = nil
+						continue
+					}
+					// Accumulate leading whitespace - if enclosure follows,
+					// they'll be discarded; otherwise they're part of unquoted field
+					if b == ' ' || b == '\t' {
+						pendingSpaces = append(pendingSpaces, b)
 						continue
 					}
 					// Regular char - start unquoted field
@@ -363,12 +369,17 @@ func fncFgetcsv(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			field = append(field, b)
 		}
 
-		if gotData || fieldStarted || len(result.Array()) > 0 {
+		// Flush any pending spaces into the field
+		if len(pendingSpaces) > 0 && !inQuotes {
+			field = append(pendingSpaces, field...)
+			fieldStarted = true
+		}
+		if gotData || fieldStarted || int(result.Count(ctx)) > 0 {
 			result.OffsetSet(ctx, nil, phpv.ZString(field).ZVal())
 		}
 	}
 
-	if len(result.Array()) == 0 {
+	if int(result.Count(ctx)) == 0 {
 		return phpv.ZFalse.ZVal(), nil
 	}
 	return result.ZVal(), nil

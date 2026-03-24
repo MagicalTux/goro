@@ -5,7 +5,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -46,6 +45,40 @@ const (
 	LOCK_UN phpv.ZInt = 8
 )
 
+// phpDirname implements PHP's dirname() behavior which differs from Go's path.Dir:
+// - Does NOT normalize multiple slashes (e.g. // stays //)
+// - Only uses / as separator on Linux (not \)
+// - Returns "." for paths with no separator
+func phpDirname(p string) string {
+	if p == "" {
+		return ""
+	}
+
+	// Strip trailing slashes (but keep at least 1 char)
+	end := len(p) - 1
+	for end > 0 && p[end] == '/' {
+		end--
+	}
+	p = p[:end+1]
+
+	// Find last /
+	lastSlash := strings.LastIndexByte(p, '/')
+	if lastSlash < 0 {
+		return "."
+	}
+	if lastSlash == 0 {
+		return "/"
+	}
+
+	// Strip trailing slashes from result (but keep at least 1 char)
+	result := p[:lastSlash]
+	end = len(result) - 1
+	for end > 0 && result[end] == '/' {
+		end--
+	}
+	return result[:end+1]
+}
+
 // > func string dirname ( string $path [, int $levels = 1 ] )
 func fncDirname(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var p string
@@ -60,18 +93,8 @@ func fncDirname(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZString("").ZVal(), nil
 	}
 
-	for {
-		if len(p) <= 1 {
-			break
-		}
-		if p[len(p)-1] != '/' {
-			break
-		}
-		p = p[:len(p)-1]
-	}
-
 	if lvl == nil {
-		return phpv.ZString(path.Dir(p)).ZVal(), nil
+		return phpv.ZString(phpDirname(p)).ZVal(), nil
 	}
 
 	levels := *lvl
@@ -81,7 +104,7 @@ func fncDirname(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	for i := phpv.ZInt(0); i < levels; i++ {
 		prev := p
-		p = path.Dir(p)
+		p = phpDirname(p)
 		if p == prev {
 			break // reached root, no point continuing
 		}

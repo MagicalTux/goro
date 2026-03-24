@@ -586,6 +586,15 @@ func fncArrayMap(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		if err != nil {
 			// If it's a "Cannot call X() dynamically" error, pass through as-is
 			if throwErr, ok := err.(*phperr.PhpThrow); ok {
+				// If the thrown exception is NOT an Error/TypeError (e.g., a user Exception
+				// from an autoloader), propagate it as-is.
+				if throwErr.Obj != nil {
+					if obj, ok := throwErr.Obj.(phpv.ZObject); ok {
+						if !obj.GetClass().InstanceOf(phpobj.Error) {
+							return nil, err
+						}
+					}
+				}
 				msg := throwErr.Obj.HashTable().GetString("message").String()
 				if strings.HasPrefix(msg, "Cannot call ") && strings.HasSuffix(msg, " dynamically") {
 					return nil, err
