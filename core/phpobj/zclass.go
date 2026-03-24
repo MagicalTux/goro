@@ -631,6 +631,36 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 						}
 					}
 					// Keep class's own method, don't import trait method
+				} else if existsInClass && existing.FromTrait != nil && !existing.Empty && !m.Empty {
+					// Cross-use-statement conflict: the method was imported from a different trait
+					// in a previous "use" statement and is concrete, and the current method is also concrete.
+					// Both abstract: OK
+					if m.Modifiers.Has(phpv.ZAttrAbstract) && existing.Modifiers.Has(phpv.ZAttrAbstract) {
+						// both abstract, skip
+					} else if m.Modifiers.Has(phpv.ZAttrAbstract) && !existing.Modifiers.Has(phpv.ZAttrAbstract) {
+						// current is abstract, existing is concrete - keep existing
+					} else if !m.Modifiers.Has(phpv.ZAttrAbstract) && existing.Modifiers.Has(phpv.ZAttrAbstract) {
+						// current is concrete, existing is abstract - replace
+						methodCopy := &phpv.ZClassMethod{
+							Name:       m.Name,
+							Modifiers:  m.Modifiers,
+							Method:     m.Method,
+							Class:      c,
+							Empty:      m.Empty,
+							Loc:        m.Loc,
+							Attributes: m.Attributes,
+							FromTrait:  tc,
+						}
+						c.Methods[name] = methodCopy
+						if name == "__construct" {
+							c.Handlers().Constructor = methodCopy
+						}
+					} else if existing.Method == m.Method {
+						// Same underlying method (diamond inheritance through traits) - no conflict
+					} else {
+						return c.fatalError(ctx, fmt.Sprintf("Trait method %s::%s has not been applied as %s::%s, because of collision with %s::%s",
+							tc.Name, m.Name, c.Name, m.Name, existing.FromTrait.GetName(), m.Name))
+					}
 				} else if !existsInClass || (existing.Class != nil && existing.Class != c && !(m.Empty && m.Modifiers.Has(phpv.ZAttrAbstract) && !existing.Empty)) {
 					// Check if the inherited method is final (cannot be overridden by trait)
 					if existsInClass && existing.Modifiers.Has(phpv.ZAttrFinal) && !m.Empty {

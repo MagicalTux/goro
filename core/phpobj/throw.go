@@ -338,9 +338,16 @@ func errorExceptionConstruct(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*
 		o.HashTable().SetString("severity", phpv.ZInt(int64(phpv.E_ERROR)).ZVal())
 	}
 
-	// Override file/line if provided
+	// Override file/line if provided.
+	// When $filename is explicitly provided (non-null), the line number defaults
+	// to 0 (not the caller's line) unless $line is also explicitly provided.
 	if len(args) > 3 && !args[3].IsNull() {
 		o.HashTable().SetString("file", args[3])
+		// When file is overridden but line is not provided or is null,
+		// PHP defaults the line to 0 (not the caller's line).
+		if len(args) <= 4 || args[4].IsNull() {
+			o.HashTable().SetString("line", phpv.ZInt(0).ZVal())
+		}
 	}
 	if len(args) > 4 && !args[4].IsNull() {
 		o.HashTable().SetString("line", args[4])

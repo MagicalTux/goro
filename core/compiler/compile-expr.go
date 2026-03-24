@@ -702,6 +702,12 @@ func (r *runClassConstant) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	if class != nil {
 		return class.GetName().ZVal(), nil
 	}
+	// Fall back to compiling class (used when evaluating property defaults
+	// inherited from traits, where ctx.Class() may be nil but the compiling
+	// class is set to the using class)
+	if cc := ctx.Global().GetCompilingClass(); cc != nil {
+		return cc.GetName().ZVal(), nil
+	}
 	return phpv.ZString("").ZVal(), nil
 }
 
