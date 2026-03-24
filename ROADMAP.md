@@ -1,6 +1,6 @@
 # Goro Roadmap
 
-**Current state (March 2026):** 6,630 / 12,110 tests passing (54.7%). First 2,000: 1,676/2,000 (86.2%). All 24 batches complete, zero OOM. PHP memory_limit enforcement.
+**Current state (March 2026):** 6,650 / 12,110 tests passing (54.9%). First 2,000: 1,680/2,000 (86.4%). All 24 batches complete, zero OOM. PHP memory_limit enforcement.
 
 This document tracks the major work areas needed to reach full PHP 8.5 compatibility, organized by impact (number of test fixes) and estimated effort.
 
