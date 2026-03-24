@@ -791,8 +791,25 @@ func (r *runClassNameOf) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 				fmt.Sprintf("Cannot use \"::class\" on %s", typeName))
 		}
 		// Other non-object/non-string types produce a fatal error.
+		// If the expression is a literal (compile-time constant), use "Illegal class name"
+		// as PHP does at compile time. Otherwise, use the runtime error format.
+		isLiteral := false
+		switch cn := r.className.(type) {
+		case *runZVal:
+			isLiteral = true
+		case *runParentheses:
+			if _, ok := cn.r.(*runZVal); ok {
+				isLiteral = true
+			}
+		}
+		var errMsg string
+		if isLiteral {
+			errMsg = "Illegal class name"
+		} else {
+			errMsg = fmt.Sprintf("Cannot use \"::class\" on %s", typeName)
+		}
 		phpErr := &phpv.PhpError{
-			Err:  fmt.Errorf("Illegal class name"),
+			Err:  fmt.Errorf("%s", errMsg),
 			Code: phpv.E_ERROR,
 			Loc:  r.l,
 		}

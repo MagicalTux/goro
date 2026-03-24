@@ -78,7 +78,7 @@ func init() {
 			"array_uintersect":           {Func: fncArrayUIntersect, Args: []*phpctx.ExtFunctionArg{}},
 			"array_uintersect_assoc":     {Func: fncArrayUIntersectAssoc, Args: []*phpctx.ExtFunctionArg{}},
 			"array_uintersect_uassoc":    {Func: fncArrayUIntersectUAssoc, Args: []*phpctx.ExtFunctionArg{}},
-			"array_unique":               {Func: fncArrayUnique, Args: []*phpctx.ExtFunctionArg{}},
+			"array_unique":               {Func: fncArrayUnique, Args: []*phpctx.ExtFunctionArg{{ArgName: "array"}, {ArgName: "flags", Optional: true}}},
 			"array_unshift":              {Func: fncArrayUnshift, Args: []*phpctx.ExtFunctionArg{{ArgName: "array", Ref: true}}},
 			"array_values":               {Func: fncArrayValues, Args: []*phpctx.ExtFunctionArg{}},
 			"array_walk":                 {Func: fncArrayWalk, Args: []*phpctx.ExtFunctionArg{{ArgName: "array", Ref: true}, {ArgName: "callback"}, {ArgName: "arg", Optional: true}}},

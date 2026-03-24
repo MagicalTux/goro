@@ -686,6 +686,11 @@ func reorderNamedArgs(ctx phpv.Context, funcArgs []*phpv.FuncArg, args []phpv.Ru
 // reorderExtNamedArgs reorders function call arguments for Go-implemented ext functions
 // using ExtFunctionArg metadata. Similar to reorderNamedArgs but uses ExtFunctionArg.
 func reorderExtNamedArgs(ctx phpv.Context, extArgs []*ExtFunctionArg, args []phpv.Runnable, funcName string) ([]phpv.Runnable, error) {
+	// If no arg metadata, pass through as-is (legacy behavior for functions without metadata)
+	if len(extArgs) == 0 {
+		return args, nil
+	}
+
 	// Check if any args are named
 	hasNamed := false
 	for _, arg := range args {
