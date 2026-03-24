@@ -139,6 +139,23 @@ func serialize(ctx phpv.Context, value *phpv.ZVal) (string, error) {
 
 const maxSerializeDepth = 128
 
+// serializeKey serializes an array key (int or string) WITHOUT consuming a reference slot.
+// In PHP, array keys do not participate in reference counting.
+func serializeKey(ctx phpv.Context, value *phpv.ZVal) string {
+	switch value.GetType() {
+	case phpv.ZtInt:
+		n := value.AsInt(ctx)
+		return "i:" + strconv.FormatInt(int64(n), 10) + ";"
+	case phpv.ZtString:
+		s := value.AsString(ctx)
+		return fmt.Sprintf(`s:%d:"%s";`, len(s), s)
+	default:
+		// Fallback: cast to string
+		s := value.AsString(ctx)
+		return fmt.Sprintf(`s:%d:"%s";`, len(s), s)
+	}
+}
+
 func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seen *serializeSeen) (string, error) {
 	if depth > maxSerializeDepth {
 		return "N;", nil // prevent infinite recursion
@@ -202,12 +219,9 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seen *ser
 		buf.WriteString(":{")
 
 		for k, v := range arr.Iterate(ctx) {
-			sub, err := serializeWithDepth(ctx, k, depth+1, seen)
-			if err != nil {
-				return "", err
-			}
-			buf.WriteString(sub)
-			sub, err = serializeWithDepth(ctx, v, depth+1, seen)
+			// Array keys don't consume reference slots in PHP
+			buf.WriteString(serializeKey(ctx, k))
+			sub, err := serializeWithDepth(ctx, v, depth+1, seen)
 			if err != nil {
 				return "", err
 			}
@@ -264,12 +278,9 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seen *ser
 			var buf bytes.Buffer
 			propCount := 0
 			for k, v := range arr.Iterate(ctx) {
-				sub, err := serializeWithDepth(ctx, k, depth+1, seen)
-				if err != nil {
-					return "", err
-				}
-				buf.WriteString(sub)
-				sub, err = serializeWithDepth(ctx, v, depth+1, seen)
+				// Property keys don't consume reference slots
+				buf.WriteString(serializeKey(ctx, k))
+				sub, err := serializeWithDepth(ctx, v, depth+1, seen)
 				if err != nil {
 					return "", err
 				}
