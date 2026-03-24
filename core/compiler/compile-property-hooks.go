@@ -291,8 +291,8 @@ func compilePropertyHooks(prop *phpv.ZClassProp, class *phpobj.ZClass, c compile
 			}
 		}
 
-		// Hook inherits abstract from property modifier
-		effectiveAbstract := hookIsAbstract || prop.Modifiers.Has(phpv.ZAttrAbstract)
+		// Hook inherits abstract from property modifier or interface context
+		effectiveAbstract := hookIsAbstract || prop.Modifiers.Has(phpv.ZAttrAbstract) || class.Type == phpv.ZClassTypeInterface
 
 		// Validate modifier combinations
 		if effectiveAbstract && hookIsFinal {
@@ -341,6 +341,9 @@ func compilePropertyHooks(prop *phpv.ZClassProp, class *phpobj.ZClass, c compile
 			}
 			hasGet = true
 			prop.HasGetDeclared = true
+			if hookIsFinal {
+				prop.GetIsFinal = true
+			}
 
 			i, err = c.NextItem()
 			if err != nil {
@@ -399,6 +402,9 @@ func compilePropertyHooks(prop *phpv.ZClassProp, class *phpobj.ZClass, c compile
 			}
 			hasSet = true
 			prop.HasSetDeclared = true
+			if hookIsFinal {
+				prop.SetIsFinal = true
+			}
 
 			prop.SetParam = "value"
 			i, err = c.NextItem()

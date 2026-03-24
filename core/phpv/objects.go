@@ -32,6 +32,8 @@ type ZClassProp struct {
 	IsBacked        bool     // true if hooks reference $this->prop (backing store exists)
 	GetIsAbstract   bool     // true if get hook is abstract (get;)
 	SetIsAbstract   bool     // true if set hook is abstract (set;)
+	GetIsFinal      bool     // true if get hook is declared final
+	SetIsFinal      bool     // true if set hook is declared final
 	HasGetDeclared  bool     // true if get hook was declared (even abstract)
 	HasSetDeclared  bool     // true if set hook was declared (even abstract)
 }

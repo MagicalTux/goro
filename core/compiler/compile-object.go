@@ -1634,6 +1634,15 @@ func compilePaamayimNekudotayim(v phpv.Runnable, i *tokenizer.Item, c compileCtx
 					if hookName == "get" || hookName == "set" {
 						propName := phpv.ZString(ident[1:]) // strip $ prefix
 
+						// Compile-time validation: must be inside a class context
+						if c.getClass() == nil {
+							return nil, &phpv.PhpError{
+								Err:  fmt.Errorf("Cannot use \"parent\" when no class scope is active"),
+								Code: phpv.E_COMPILE_ERROR,
+								Loc:  l,
+							}
+						}
+
 						// Compile-time validation: must be inside a property hook
 						hookFunc := c.getFunc()
 						if hookFunc == nil {

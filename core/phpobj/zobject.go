@@ -507,7 +507,12 @@ func NewZObject(ctx phpv.Context, c phpv.ZClass, args ...*phpv.ZVal) (*ZObject, 
 				}
 
 				propName := phpv.ZString(arg.VarName)
-				if arg.Promotion.IsPrivate() {
+				// If this promoted property has hooks, use ObjectSet to invoke hooks
+				if arg.PromotionHooks != nil && arg.PromotionHooks.HasHooks && arg.PromotionHooks.SetHook != nil {
+					if err := n.ObjectSet(ctx, propName, val); err != nil {
+						return nil, err
+					}
+				} else if arg.Promotion.IsPrivate() {
 					mangledName := getPrivatePropName(c, propName)
 					n.h.SetString(mangledName, val)
 				} else {
@@ -1647,12 +1652,12 @@ func (o *ZObject) ReadParentBacking(ctx phpv.Context, keyStr phpv.ZString, declC
 		return phpv.NewZVal(v.Value()), nil
 	}
 
-	// Check for uninitialized typed property
+	// Check for uninitialized typed property - use the child class name (object's actual class)
 	for _, p := range declClass.Props {
 		if p.VarName == keyStr && p.TypeHint != nil {
 			return nil, ThrowError(ctx, Error,
 				fmt.Sprintf("Typed property %s::$%s must not be accessed before initialization",
-					declClass.GetName(), keyStr))
+					o.Class.GetName(), keyStr))
 		}
 	}
 

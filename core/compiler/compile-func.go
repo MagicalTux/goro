@@ -1370,7 +1370,12 @@ func compileFunctionArgs(c compileCtx) (res []*phpv.FuncArg, err error) {
 		}
 
 		// PHP 8.4: Property hooks in constructor promoted properties
-		if i.IsSingle('{') && arg.Promotion != 0 {
+		// A { after a parameter implies promotion even without visibility keyword
+		if i.IsSingle('{') && (arg.Promotion != 0 || c.getClass() != nil) {
+			// If no explicit visibility, imply public promotion
+			if arg.Promotion == 0 {
+				arg.Promotion = phpv.ZAttrPublic
+			}
 			// Parse property hooks for promoted parameter
 			hookProp := &phpv.ZClassProp{
 				VarName:   arg.VarName,

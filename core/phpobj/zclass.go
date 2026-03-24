@@ -711,6 +711,14 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 							}
 							return c.fatalError(ctx, fmt.Sprintf("%s and %s define the same property ($%s) in the composition of %s. However, the definition differs and is considered incompatible. Class was composed", firstProvider, tc.Name, tp.VarName, c.Name))
 						}
+						// Check for hooked property conflicts - both have hooks, conflict resolution not supported
+						if cp.HasHooks && tp.HasHooks {
+							firstProvider := c.Name
+							if src, ok := propSources[cp.VarName]; ok {
+								firstProvider = src.traitName
+							}
+							return c.fatalError(ctx, fmt.Sprintf("%s and %s define the same hooked property ($%s) in the composition of %s. Conflict resolution between hooked properties is currently not supported. Class was composed", firstProvider, tc.Name, tp.VarName, c.Name))
+						}
 						break
 					}
 				}
@@ -1338,29 +1346,44 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 			}
 		}
 
-		// Check inherited abstract hooks from parent classes and interfaces
-		implementedProps := make(map[phpv.ZString]*phpv.ZClassProp)
+		// Build a map of properties declared in this class (own only, not inherited)
+		ownProps := make(map[phpv.ZString]*phpv.ZClassProp)
 		for _, prop := range c.Props {
-			implementedProps[prop.VarName] = prop
+			ownProps[prop.VarName] = prop
 		}
 
-		// Walk the parent chain
+		// Build a complete map of all properties available in this class (own + inherited)
+		allProps := make(map[phpv.ZString]*phpv.ZClassProp)
+		// Walk parent chain from furthest to closest so child overrides parent
+		var parentChain []*ZClass
+		for parent := c.Extends; parent != nil; parent = parent.Extends {
+			parentChain = append(parentChain, parent)
+		}
+		for i := len(parentChain) - 1; i >= 0; i-- {
+			for _, prop := range parentChain[i].Props {
+				allProps[prop.VarName] = prop
+			}
+		}
+		for _, prop := range c.Props {
+			allProps[prop.VarName] = prop
+		}
+
+		// Check inherited abstract hooks from parent classes
 		for parent := c.Extends; parent != nil; parent = parent.Extends {
 			for _, parentProp := range parent.Props {
-				if ownProp, ok := implementedProps[parentProp.VarName]; ok {
-					// We have an override - check if the abstract hook is satisfied
-					if parentProp.GetIsAbstract && (ownProp.GetHook == nil && !ownProp.HasGetDeclared) {
+				// Use OWN props to check if the child has a concrete implementation
+				concrete := ownProps[parentProp.VarName]
+				// A plain property (not hooked) satisfies any abstract hook
+				if concrete != nil && !concrete.HasHooks {
+					continue
+				}
+				if parentProp.GetIsAbstract && parentProp.GetHook == nil {
+					if concrete == nil || (concrete.GetHook == nil && !concrete.HasGetDeclared) {
 						abstractHooks = append(abstractHooks, string(parent.Name)+"::$"+string(parentProp.VarName)+"::get")
 					}
-					if parentProp.SetIsAbstract && (ownProp.SetHook == nil && !ownProp.HasSetDeclared) {
-						abstractHooks = append(abstractHooks, string(parent.Name)+"::$"+string(parentProp.VarName)+"::set")
-					}
-				} else {
-					// No override - inherit abstract hooks
-					if parentProp.GetIsAbstract && parentProp.GetHook == nil {
-						abstractHooks = append(abstractHooks, string(parent.Name)+"::$"+string(parentProp.VarName)+"::get")
-					}
-					if parentProp.SetIsAbstract && parentProp.SetHook == nil {
+				}
+				if parentProp.SetIsAbstract && parentProp.SetHook == nil {
+					if concrete == nil || (concrete.SetHook == nil && !concrete.HasSetDeclared) {
 						abstractHooks = append(abstractHooks, string(parent.Name)+"::$"+string(parentProp.VarName)+"::set")
 					}
 				}
@@ -1369,32 +1392,26 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 
 		// Check interface properties with hooks
 		for _, impl := range c.Implementations {
+			if impl.Type != phpv.ZClassTypeInterface {
+				continue
+			}
 			for _, ifaceProp := range impl.Props {
-				if ownProp, ok := implementedProps[ifaceProp.VarName]; ok {
-					// Check get hook
-					if ifaceProp.HasGetDeclared && (ownProp.GetHook == nil && !ownProp.HasGetDeclared) {
-						// Interface requires get but implementation doesn't have it
-						// A plain property satisfies a get-only interface requirement
-						if ifaceProp.HasSetDeclared {
-							// Both get and set required - check each
-							if ownProp.GetHook == nil && !ownProp.HasGetDeclared {
-								abstractHooks = append(abstractHooks, string(impl.Name)+"::$"+string(ifaceProp.VarName)+"::get")
-							}
-						}
-					}
-					if ifaceProp.HasSetDeclared && (ownProp.SetHook == nil && !ownProp.HasSetDeclared) {
-						if ifaceProp.HasGetDeclared {
-							if ownProp.SetHook == nil && !ownProp.HasSetDeclared {
-								abstractHooks = append(abstractHooks, string(impl.Name)+"::$"+string(ifaceProp.VarName)+"::set")
-							}
-						}
-					}
-				} else {
-					// No matching property - interface hooks are unimplemented
-					if ifaceProp.HasGetDeclared {
+				if !ifaceProp.HasHooks {
+					continue
+				}
+				// Check own props AND all props (including inherited from parent)
+				concrete := allProps[ifaceProp.VarName]
+				// A plain property (not hooked) satisfies any interface hook requirement
+				if concrete != nil && !concrete.HasHooks {
+					continue
+				}
+				if ifaceProp.HasGetDeclared {
+					if concrete == nil || (concrete.GetHook == nil && !concrete.HasGetDeclared && concrete.Modifiers.Has(phpv.ZAttrAbstract)) {
 						abstractHooks = append(abstractHooks, string(impl.Name)+"::$"+string(ifaceProp.VarName)+"::get")
 					}
-					if ifaceProp.HasSetDeclared {
+				}
+				if ifaceProp.HasSetDeclared {
+					if concrete == nil || (concrete.SetHook == nil && !concrete.HasSetDeclared && concrete.Modifiers.Has(phpv.ZAttrAbstract)) {
 						abstractHooks = append(abstractHooks, string(impl.Name)+"::$"+string(ifaceProp.VarName)+"::set")
 					}
 				}
@@ -1419,6 +1436,29 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 			}
 			msg += ")"
 			return c.fatalError(ctx, msg)
+		}
+	}
+
+	// PHP 8.4: Check for overriding final property hooks
+	if c.Extends != nil {
+		for _, prop := range c.Props {
+			if !prop.HasHooks {
+				continue
+			}
+			// Find the same property in the parent hierarchy
+			for parent := c.Extends; parent != nil; parent = parent.Extends {
+				for _, parentProp := range parent.Props {
+					if parentProp.VarName != prop.VarName {
+						continue
+					}
+					if parentProp.GetIsFinal && prop.HasGetDeclared {
+						return c.fatalError(ctx, fmt.Sprintf("Cannot override final property hook %s::$%s::get()", parent.GetName(), prop.VarName))
+					}
+					if parentProp.SetIsFinal && prop.HasSetDeclared {
+						return c.fatalError(ctx, fmt.Sprintf("Cannot override final property hook %s::$%s::set()", parent.GetName(), prop.VarName))
+					}
+				}
+			}
 		}
 	}
 

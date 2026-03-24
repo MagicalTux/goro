@@ -582,6 +582,11 @@ func sfoFread(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVa
 		return nil, err
 	}
 
+	if length <= 0 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+			"SplFileObject::fread(): Argument #1 ($length) must be greater than 0")
+	}
+
 	buf := make([]byte, int(length))
 	n, err2 := d.file.Read(buf)
 	if err2 != nil && n == 0 {

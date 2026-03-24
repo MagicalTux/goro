@@ -673,6 +673,15 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 
 				// Property hooks: $prop { get { } set { } }
 				if i.IsSingle('{') {
+					// Abstract properties cannot be final
+					if prop.Modifiers.Has(phpv.ZAttrAbstract) && prop.Modifiers.Has(phpv.ZAttrFinal) {
+						return nil, &phpv.PhpError{
+							Err:  fmt.Errorf("Cannot use the final modifier on an abstract property"),
+							Code: phpv.E_COMPILE_ERROR,
+							Loc:  l,
+						}
+					}
+
 					// Hooked properties cannot be readonly
 					if prop.Modifiers.IsReadonly() {
 						return nil, &phpv.PhpError{
@@ -703,6 +712,13 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 						if prop.Modifiers.Has(phpv.ZAttrAbstract) {
 							return nil, &phpv.PhpError{
 								Err:  fmt.Errorf("Property in interface cannot be explicitly abstract. All interface members are implicitly abstract"),
+								Code: phpv.E_COMPILE_ERROR,
+								Loc:  l,
+							}
+						}
+						if prop.Modifiers.Has(phpv.ZAttrFinal) {
+							return nil, &phpv.PhpError{
+								Err:  fmt.Errorf("Property in interface cannot be final"),
 								Code: phpv.E_COMPILE_ERROR,
 								Loc:  l,
 							}

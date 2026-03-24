@@ -1060,6 +1060,14 @@ func stdGetClassVars(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	// Iterate over class properties and check visibility
 	if zc, ok := class.(*phpobj.ZClass); ok {
 		for _, prop := range zc.Props {
+			// Skip virtual properties (hooked properties without backing store)
+			if prop.IsVirtual() {
+				continue
+			}
+			// Skip static properties
+			if prop.Modifiers.IsStatic() {
+				continue
+			}
 			// Check visibility
 			if prop.Modifiers.IsPrivate() {
 				if scope == nil || scope.GetName() != class.GetName() {
