@@ -2009,7 +2009,7 @@ func arrayRecursiveMerge(ctx phpv.Context, result, array *phpv.ZArray, depth ...
 		d = depth[0]
 	}
 	if d > 256 {
-		return nil
+		return phpobj.ThrowError(ctx, phpobj.Error, "Recursion detected")
 	}
 	for k, v := range array.Iterate(ctx) {
 		if k.GetType() == phpv.ZtInt {

@@ -792,7 +792,7 @@ func (r *runClassNameOf) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		}
 		// Other non-object/non-string types produce a fatal error.
 		phpErr := &phpv.PhpError{
-			Err:  fmt.Errorf("Cannot use \"::class\" on %s", typeName),
+			Err:  fmt.Errorf("Illegal class name"),
 			Code: phpv.E_ERROR,
 			Loc:  r.l,
 		}

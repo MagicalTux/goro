@@ -972,8 +972,14 @@ func (z *ZClosure) callBody(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 						requiredCount++
 					}
 				}
-				// Build the error message (PHP doesn't include call location in exception message)
-				msg := fmt.Sprintf("Too few arguments to function %s(), %d passed", funcName, len(args))
+				// Build the error message with call location
+				callLoc := ctx.Loc()
+				var msg string
+				if callLoc != nil && callLoc.Filename != "" {
+					msg = fmt.Sprintf("Too few arguments to function %s(), %d passed in %s on line %d", funcName, len(args), callLoc.Filename, callLoc.Line)
+				} else {
+					msg = fmt.Sprintf("Too few arguments to function %s(), %d passed", funcName, len(args))
+				}
 				if requiredCount < len(z.args) {
 					msg += fmt.Sprintf(" and at least %d expected", requiredCount)
 				} else {

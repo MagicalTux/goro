@@ -1,6 +1,8 @@
 package core
 
 import (
+	"github.com/MagicalTux/goro/core/logopt"
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -39,6 +41,16 @@ func fncAssertOptions(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	_, err := Expand(ctx, args, &option, &value)
 	if err != nil {
 		return nil, err
+	}
+
+	// assert_options() is deprecated since PHP 8.3
+	if err := ctx.Deprecated("Function assert_options() is deprecated since 8.3", logopt.NoFuncName(true)); err != nil {
+		return nil, err
+	}
+
+	// Validate option - must be one of the ASSERT_* constants
+	if _, ok := assertOptionToIni[option]; !ok && option != ASSERT_CALLBACK {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "assert_options(): Argument #1 ($option) must be an ASSERT_* constant")
 	}
 
 	if option == ASSERT_CALLBACK {
