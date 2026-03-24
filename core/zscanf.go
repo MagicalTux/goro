@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"os"
 	"strconv"
 	"strings"
 	"unicode"
@@ -994,8 +995,16 @@ func zscanfIntoRef(ctx phpv.Context, r io.Reader, format phpv.ZString, args ...*
 		// use OffsetSet to modify the variable in the calling scope. Otherwise,
 		// use Set() which handles ZVal references properly.
 		if args[i].Name != nil {
-			ctx.Parent(1).OffsetSet(ctx, *args[i].Name, val)
+			fmt.Fprintf(os.Stderr, "DEBUG zscanf: setting var %q to %v, parent=%T\n", *args[i].Name, val, ctx.Parent(1))
+			parent := ctx.Parent(1)
+			if parent == nil {
+				fmt.Fprintf(os.Stderr, "DEBUG zscanf: parent is nil! using ctx directly\n")
+				ctx.OffsetSet(ctx, *args[i].Name, val)
+			} else {
+				parent.OffsetSet(ctx, *args[i].Name, val)
+			}
 		} else {
+			fmt.Fprintf(os.Stderr, "DEBUG zscanf: no name, using Set()\n")
 			args[i].Set(val)
 		}
 	}

@@ -343,14 +343,19 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 	if c, ok := f.(phpv.FuncGetArgs); ok {
 		func_args = c.GetArgs()
 	}
+	_, isExtFunc := f.(*ExtFunction)
 	if func_args != nil {
 
 		// Handle variadic parameter: pack remaining args into an array
+		// Skip packing for ext (Go-implemented) functions - they handle
+		// variadic args in their own Go code via args[n:].
 		variadicIdx := -1
-		for i, fa := range func_args {
-			if fa.Variadic {
-				variadicIdx = i
-				break
+		if !isExtFunc {
+			for i, fa := range func_args {
+				if fa.Variadic {
+					variadicIdx = i
+					break
+				}
 			}
 		}
 
