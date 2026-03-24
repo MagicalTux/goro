@@ -68,7 +68,7 @@ func (lb *limitedBuffer) String() string { return lb.buf.String() }
 // truncatedDiff computes a diff but truncates inputs to avoid O(n²) blowup
 // on large outputs with many differences.
 func truncatedDiff(expected, actual string) string {
-	const maxLines = 40
+	const maxLines = 80
 	truncate := func(s string) string {
 		lines := strings.SplitN(s, "\n", maxLines+1)
 		if len(lines) > maxLines {

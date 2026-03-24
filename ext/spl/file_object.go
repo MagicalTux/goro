@@ -211,6 +211,7 @@ func sfoConstruct(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv
 			csvEnc:          '"',
 			csvEsc:          '\\',
 			openMode:        openMode,
+			isReadable:      true, // php://temp and php://memory are always readable
 		}
 		o.SetOpaque(SplFileInfoClass, &data.splFileInfoData)
 		o.SetOpaque(SplFileObjectClass, data)

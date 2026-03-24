@@ -1327,6 +1327,8 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 	// PHP 8.4: Validate abstract property hooks - non-abstract classes must not have abstract hooks
 	if c.Type != phpv.ZClassTypeInterface && c.Type != phpv.ZClassTypeTrait && c.Attr&phpv.ZClassAttr(phpv.ZClassExplicitAbstract) == 0 {
 		var abstractHooks []string
+
+		// Check own props for abstract hooks
 		for _, prop := range c.Props {
 			if prop.GetIsAbstract && prop.GetHook == nil {
 				abstractHooks = append(abstractHooks, string(c.Name)+"::$"+string(prop.VarName)+"::get")
@@ -1335,6 +1337,70 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 				abstractHooks = append(abstractHooks, string(c.Name)+"::$"+string(prop.VarName)+"::set")
 			}
 		}
+
+		// Check inherited abstract hooks from parent classes and interfaces
+		implementedProps := make(map[phpv.ZString]*phpv.ZClassProp)
+		for _, prop := range c.Props {
+			implementedProps[prop.VarName] = prop
+		}
+
+		// Walk the parent chain
+		for parent := c.Extends; parent != nil; parent = parent.Extends {
+			for _, parentProp := range parent.Props {
+				if ownProp, ok := implementedProps[parentProp.VarName]; ok {
+					// We have an override - check if the abstract hook is satisfied
+					if parentProp.GetIsAbstract && (ownProp.GetHook == nil && !ownProp.HasGetDeclared) {
+						abstractHooks = append(abstractHooks, string(parent.Name)+"::$"+string(parentProp.VarName)+"::get")
+					}
+					if parentProp.SetIsAbstract && (ownProp.SetHook == nil && !ownProp.HasSetDeclared) {
+						abstractHooks = append(abstractHooks, string(parent.Name)+"::$"+string(parentProp.VarName)+"::set")
+					}
+				} else {
+					// No override - inherit abstract hooks
+					if parentProp.GetIsAbstract && parentProp.GetHook == nil {
+						abstractHooks = append(abstractHooks, string(parent.Name)+"::$"+string(parentProp.VarName)+"::get")
+					}
+					if parentProp.SetIsAbstract && parentProp.SetHook == nil {
+						abstractHooks = append(abstractHooks, string(parent.Name)+"::$"+string(parentProp.VarName)+"::set")
+					}
+				}
+			}
+		}
+
+		// Check interface properties with hooks
+		for _, impl := range c.Implementations {
+			for _, ifaceProp := range impl.Props {
+				if ownProp, ok := implementedProps[ifaceProp.VarName]; ok {
+					// Check get hook
+					if ifaceProp.HasGetDeclared && (ownProp.GetHook == nil && !ownProp.HasGetDeclared) {
+						// Interface requires get but implementation doesn't have it
+						// A plain property satisfies a get-only interface requirement
+						if ifaceProp.HasSetDeclared {
+							// Both get and set required - check each
+							if ownProp.GetHook == nil && !ownProp.HasGetDeclared {
+								abstractHooks = append(abstractHooks, string(impl.Name)+"::$"+string(ifaceProp.VarName)+"::get")
+							}
+						}
+					}
+					if ifaceProp.HasSetDeclared && (ownProp.SetHook == nil && !ownProp.HasSetDeclared) {
+						if ifaceProp.HasGetDeclared {
+							if ownProp.SetHook == nil && !ownProp.HasSetDeclared {
+								abstractHooks = append(abstractHooks, string(impl.Name)+"::$"+string(ifaceProp.VarName)+"::set")
+							}
+						}
+					}
+				} else {
+					// No matching property - interface hooks are unimplemented
+					if ifaceProp.HasGetDeclared {
+						abstractHooks = append(abstractHooks, string(impl.Name)+"::$"+string(ifaceProp.VarName)+"::get")
+					}
+					if ifaceProp.HasSetDeclared {
+						abstractHooks = append(abstractHooks, string(impl.Name)+"::$"+string(ifaceProp.VarName)+"::set")
+					}
+				}
+			}
+		}
+
 		if len(abstractHooks) > 0 {
 			msg := fmt.Sprintf("Class %s contains %d abstract method", c.GetName(), len(abstractHooks))
 			if len(abstractHooks) > 1 {
