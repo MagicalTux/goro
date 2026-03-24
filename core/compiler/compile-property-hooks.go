@@ -2,11 +2,153 @@ package compiler
 
 import (
 	"fmt"
+	"io"
 
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
+
+// runParentPropHookCall implements parent::$prop::get() and parent::$prop::set()
+// in property hooks. At runtime, it resolves the parent class, finds the property,
+// and calls the parent's hook (or accesses the backing value for plain properties).
+type runParentPropHookCall struct {
+	propName phpv.ZString    // property name (without $)
+	hookType string          // "get" or "set"
+	argExprs phpv.Runnables  // argument expressions
+	l        *phpv.Loc
+}
+
+func (r *runParentPropHookCall) Dump(w io.Writer) error {
+	if r.hookType == "set" {
+		_, err := fmt.Fprintf(w, "parent::$%s::set(...)", r.propName)
+		return err
+	}
+	_, err := fmt.Fprintf(w, "parent::$%s::get()", r.propName)
+	return err
+}
+
+func (r *runParentPropHookCall) Loc() *phpv.Loc {
+	return r.l
+}
+
+func (r *runParentPropHookCall) Run(ctx phpv.Context) (*phpv.ZVal, error) {
+	// Resolve parent class
+	cls := ctx.Class()
+	if cls == nil {
+		return nil, phpobj.ThrowError(ctx, phpobj.Error,
+			fmt.Sprintf("Cannot use \"parent\" when no class scope is active"))
+	}
+	parentCls := cls.GetParent()
+	if parentCls == nil {
+		return nil, phpobj.ThrowError(ctx, phpobj.Error,
+			"Cannot use \"parent\" when current class scope has no parent")
+	}
+
+	parentZC, ok := parentCls.(*phpobj.ZClass)
+	if !ok {
+		return nil, phpobj.ThrowError(ctx, phpobj.Error,
+			"Cannot use \"parent\" when current class scope has no parent")
+	}
+
+	// Find the property in the parent class hierarchy
+	var prop *phpv.ZClassProp
+	var declClass *phpobj.ZClass
+	for cur := parentZC; cur != nil; cur = cur.Extends {
+		for _, p := range cur.Props {
+			if p.VarName == r.propName {
+				prop = p
+				declClass = cur
+				break
+			}
+		}
+		if prop != nil {
+			break
+		}
+	}
+
+	if prop == nil {
+		return nil, phpobj.ThrowError(ctx, phpobj.Error,
+			fmt.Sprintf("Undefined property %s::$%s", parentZC.GetName(), r.propName))
+	}
+
+	// Evaluate argument expressions
+	args := make([]*phpv.ZVal, len(r.argExprs))
+	for i, expr := range r.argExprs {
+		v, err := expr.Run(ctx)
+		if err != nil {
+			return nil, err
+		}
+		args[i] = v
+	}
+
+	// Get $this
+	this := ctx.This()
+	if this == nil {
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, "Using $this when not in object context")
+	}
+
+	obj, ok := this.(*phpobj.ZObject)
+	if !ok {
+		if uw, ok2 := this.(interface{ Unwrap() phpv.ZObject }); ok2 {
+			obj, ok = uw.Unwrap().(*phpobj.ZObject)
+		}
+	}
+	if obj == nil {
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, "Using $this when not in object context")
+	}
+
+	if r.hookType == "get" {
+		// parent::$prop::get()
+		if prop.HasHooks && prop.GetHook != nil {
+			// Parent has a get hook — call it
+			if len(args) > 0 {
+				return nil, phpobj.ThrowError(ctx, phpobj.Error,
+					fmt.Sprintf("%s::$%s::get() expects exactly 0 arguments, %d given",
+						declClass.GetName(), r.propName, len(args)))
+			}
+			return obj.RunParentGetHook(ctx, r.propName, prop.GetHook, declClass)
+		}
+		// Parent has no get hook (plain property or hooked without get) — read backing value
+		if len(args) > 0 {
+			return nil, phpobj.ThrowError(ctx, phpobj.Error,
+				fmt.Sprintf("%s::$%s::get() expects exactly 0 arguments, %d given",
+					declClass.GetName(), r.propName, len(args)))
+		}
+		return obj.ReadParentBacking(ctx, r.propName, declClass)
+	}
+
+	// parent::$prop::set($value)
+	if prop.HasHooks && prop.SetHook != nil {
+		// Parent has a set hook — call it
+		// For user-defined hooks, extra args are tolerated (they are user functions)
+		if len(args) == 0 {
+			return nil, phpobj.ThrowError(ctx, phpobj.Error,
+				fmt.Sprintf("%s::$%s::set() expects exactly 1 argument, 0 given",
+					declClass.GetName(), r.propName))
+		}
+		err := obj.RunParentSetHook(ctx, r.propName, prop, args[0], declClass)
+		if err != nil {
+			return nil, err
+		}
+		// parent::$prop::set() returns the value that was set
+		return args[0], nil
+	}
+	// Parent has no set hook (plain property) — write backing value directly
+	if len(args) != 1 {
+		expected := 1
+		return nil, phpobj.ThrowError(ctx, phpobj.Error,
+			fmt.Sprintf("%s::$%s::set() expects exactly %d argument, %d given",
+				declClass.GetName(), r.propName, expected, len(args)))
+	}
+	obj.WriteParentBacking(ctx, r.propName, args[0], declClass)
+	return args[0], nil
+}
+
+// IsFuncCallExpression marks this as a function call expression so that
+// ++parent::$prop::get() correctly produces the "Can't use method return value in write context" error.
+func (r *runParentPropHookCall) IsFuncCallExpression() {}
+
 
 // hookReferencesBacking checks if a compiled Runnable references $this->propName,
 // which means the property has a backing store and is not virtual.

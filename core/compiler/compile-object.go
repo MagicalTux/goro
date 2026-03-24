@@ -1594,6 +1594,91 @@ func compilePaamayimNekudotayim(v phpv.Runnable, i *tokenizer.Item, c compileCtx
 			}
 			return &runObjectFunc{ref: v, op: ident, args: args, l: l, static: true, isThisRef: isThisVariable(v)}, err
 		}
+
+		// Check for parent::$prop::get()/::set() — property hook parent call
+		if i.Type == tokenizer.T_PAAMAYIM_NEKUDOTAYIM {
+			// Check if v is "parent"
+			isParent := false
+			if zv, ok := v.(*runZVal); ok {
+				if s, ok2 := zv.v.(phpv.ZString); ok2 && strings.EqualFold(string(s), "parent") {
+					isParent = true
+				}
+			}
+			if isParent {
+				// Look for get/set identifier
+				hookItem, err := c.NextItem()
+				if err != nil {
+					return nil, err
+				}
+				if hookItem.Type == tokenizer.T_STRING {
+					hookName := strings.ToLower(hookItem.Data)
+					if hookName == "get" || hookName == "set" {
+						propName := phpv.ZString(ident[1:]) // strip $ prefix
+
+						// Compile-time validation: must be inside a property hook
+						hookFunc := c.getFunc()
+						if hookFunc == nil {
+							return nil, &phpv.PhpError{
+								Err:  fmt.Errorf("Must not use parent::$%s::%s() outside a property hook", propName, hookName),
+								Code: phpv.E_COMPILE_ERROR,
+								Loc:  l,
+							}
+						}
+						funcName := string(hookFunc.name)
+						// Hook functions are named "$propName::get" or "$propName::set"
+						if !strings.HasPrefix(funcName, "$") || !strings.Contains(funcName, "::") {
+							return nil, &phpv.PhpError{
+								Err:  fmt.Errorf("Must not use parent::$%s::%s() outside a property hook", propName, hookName),
+								Code: phpv.E_COMPILE_ERROR,
+								Loc:  l,
+							}
+						}
+						parts := strings.SplitN(funcName[1:], "::", 2) // strip $ and split
+						currentProp := parts[0]
+						currentHook := parts[1]
+
+						// Must be same property
+						if currentProp != string(propName) {
+							return nil, &phpv.PhpError{
+								Err:  fmt.Errorf("Must not use parent::$%s::%s() in a different property ($%s)", propName, hookName, currentProp),
+								Code: phpv.E_COMPILE_ERROR,
+								Loc:  l,
+							}
+						}
+
+						// Must be same hook type
+						if currentHook != hookName {
+							return nil, &phpv.PhpError{
+								Err:  fmt.Errorf("Must not use parent::$%s::%s() in a different property hook (%s)", propName, hookName, currentHook),
+								Code: phpv.E_COMPILE_ERROR,
+								Loc:  l,
+							}
+						}
+
+						// Parse arguments: parent::$prop::get() or parent::$prop::set($value)
+						hookArgs, err := compileFuncPassedArgs(c)
+						if err != nil {
+							return nil, err
+						}
+
+						return &runParentPropHookCall{
+							propName: propName,
+							hookType: hookName,
+							argExprs: hookArgs,
+							l:        l,
+						}, nil
+					}
+				}
+				// Not get/set — back up both tokens and fall through to normal static var ref
+				c.backup() // back up the hookItem
+				c.backup() // back up the ::
+				return &runClassStaticVarRef{v, ident[1:], l}, nil
+			}
+			// Not parent — back up the :: and fall through
+			c.backup()
+			return &runClassStaticVarRef{v, ident[1:], l}, nil
+		}
+
 		c.backup()
 		return &runClassStaticVarRef{v, ident[1:], l}, nil
 

@@ -327,12 +327,19 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seen *ser
 
 		if props != nil {
 			zobj := obj.(*phpobj.ZObject)
+			sleepSeen := make(map[phpv.ZString]bool)
 			for _, prop := range props.Iterate(ctx) {
 				if prop.GetType() != phpv.ZtString {
 					ctx.Warn("%s::__sleep() should return an array only containing the names of instance-variables to serialize", obj.GetClass().GetName())
 					continue
 				}
 				propName := prop.AsString(ctx)
+				// Detect duplicate property names from __sleep()
+				if sleepSeen[propName] {
+					ctx.Warn("\"%s\" is returned from __sleep() multiple times", propName)
+					continue
+				}
+				sleepSeen[propName] = true
 				// Look up the actual property to determine visibility
 				classProp, found := obj.GetClass().GetProp(propName)
 				if !found {

@@ -837,7 +837,8 @@ func fncFread(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		if err == io.EOF {
 			return phpv.ZString("").ZVal(), nil
 		}
-		ctx.Notice("fread(): Read of %d bytes failed with errno=9 Bad file descriptor", length, logopt.NoFuncName(true))
+		// PHP reports the internal buffer size (8192) in the error, not the requested length
+		ctx.Notice("fread(): Read of 8192 bytes failed with errno=9 Bad file descriptor", logopt.NoFuncName(true))
 		return phpv.ZFalse.ZVal(), nil
 	}
 	return phpv.ZString(buf[:n]).ZVal(), nil
@@ -893,6 +894,9 @@ func fncFgetc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	b, err := file.ReadByte()
 	if err != nil {
+		if err != io.EOF {
+			ctx.Notice("fgetc(): Read of 8192 bytes failed with errno=9 Bad file descriptor", logopt.NoFuncName(true))
+		}
 		return phpv.ZFalse.ZVal(), nil
 	}
 	return phpv.ZString([]byte{b}).ZVal(), nil
@@ -932,12 +936,14 @@ func fncFgets(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	var buf []byte
+	var readErr error
 	for {
 		if maxLen > 0 && len(buf) >= maxLen {
 			break
 		}
 		b, err := file.ReadByte()
 		if err != nil {
+			readErr = err
 			break
 		}
 		buf = append(buf, b)
@@ -947,6 +953,9 @@ func fncFgets(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	if len(buf) == 0 {
+		if readErr != nil && readErr != io.EOF {
+			ctx.Notice("fgets(): Read of 8192 bytes failed with errno=9 Bad file descriptor", logopt.NoFuncName(true))
+		}
 		return phpv.ZFalse.ZVal(), nil
 	}
 	return phpv.ZString(buf).ZVal(), nil

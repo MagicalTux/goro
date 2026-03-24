@@ -3,6 +3,7 @@ package standard
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -417,6 +418,9 @@ func fncFile(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	result := phpv.NewZArray()
 
+	ignoreNewLines := flags != nil && *flags&FILE_IGNORE_NEW_LINES != 0
+	skipEmpty := flags != nil && *flags&FILE_SKIP_EMPTY_LINES != 0
+
 	var buf []byte
 	b := make([]byte, 1)
 	for {
@@ -425,12 +429,17 @@ func fncFile(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			buf = append(buf, b[0])
 			if b[0] == '\n' {
 				line := string(buf)
-				if flags != nil && *flags&FILE_IGNORE_NEW_LINES != 0 {
-					line = line[:len(line)-1]
+				if ignoreNewLines {
+					// Strip trailing \n and also \r before it
+					line = strings.TrimRight(line, "\r\n")
 				}
-				if flags != nil && *flags&FILE_SKIP_EMPTY_LINES != 0 && line == "" {
-					buf = buf[:0]
-					continue
+				if skipEmpty {
+					// Skip lines that are empty or contain only whitespace/newlines
+					trimmed := strings.TrimRight(line, "\r\n")
+					if trimmed == "" {
+						buf = buf[:0]
+						continue
+					}
 				}
 				result.OffsetSet(ctx, nil, phpv.ZString(line).ZVal())
 				buf = buf[:0]
@@ -444,7 +453,10 @@ func fncFile(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	// Handle last line without trailing newline
 	if len(buf) > 0 {
 		line := string(buf)
-		if !(flags != nil && *flags&FILE_SKIP_EMPTY_LINES != 0 && line == "") {
+		if ignoreNewLines {
+			line = strings.TrimRight(line, "\r\n")
+		}
+		if !(skipEmpty && strings.TrimRight(line, "\r\n") == "") {
 			result.OffsetSet(ctx, nil, phpv.ZString(line).ZVal())
 		}
 	}

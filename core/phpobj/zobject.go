@@ -1529,6 +1529,109 @@ func (o *ZObject) objectSetBacking(keyStr phpv.ZString, value *phpv.ZVal) {
 	o.h.SetString(keyStr, value)
 }
 
+// RunParentGetHook executes a parent class's get hook on this object.
+// Used by parent::$prop::get() in property hooks.
+func (o *ZObject) RunParentGetHook(ctx phpv.Context, keyStr phpv.ZString, hook phpv.Runnable, declClass *ZClass) (*phpv.ZVal, error) {
+	// Set recursion guard
+	if o.getHookGuard == nil {
+		o.getHookGuard = make(map[phpv.ZString]bool)
+	}
+	o.getHookGuard[keyStr] = true
+	defer delete(o.getHookGuard, keyStr)
+
+	hookCallable := &phpv.MethodCallable{
+		Callable: &phpv.HookCallable{
+			Hook:     hook,
+			HookName: fmt.Sprintf("%s::$%s::get", declClass.GetName(), keyStr),
+		},
+		Class: declClass,
+	}
+
+	result, err := ctx.CallZVal(ctx, hookCallable, nil, o)
+	if err != nil {
+		return nil, err
+	}
+	if result == nil {
+		result = phpv.ZNULL.ZVal()
+	}
+	return result, nil
+}
+
+// RunParentSetHook executes a parent class's set hook on this object.
+// Used by parent::$prop::set() in property hooks.
+func (o *ZObject) RunParentSetHook(ctx phpv.Context, keyStr phpv.ZString, prop *phpv.ZClassProp, value *phpv.ZVal, declClass *ZClass) error {
+	// Set recursion guard
+	if o.setHookGuard == nil {
+		o.setHookGuard = make(map[phpv.ZString]bool)
+	}
+	o.setHookGuard[keyStr] = true
+	defer delete(o.setHookGuard, keyStr)
+
+	paramName := prop.SetParam
+	if paramName == "" {
+		paramName = "value"
+	}
+
+	hookCallable := &phpv.MethodCallable{
+		Callable: &phpv.HookCallable{
+			Hook:     prop.SetHook,
+			HookName: fmt.Sprintf("%s::$%s::set", declClass.GetName(), keyStr),
+			Params: []*phpv.FuncArg{
+				{VarName: paramName},
+			},
+		},
+		Class: declClass,
+	}
+
+	result, err := ctx.CallZVal(ctx, hookCallable, []*phpv.ZVal{value}, o)
+	if err != nil {
+		return err
+	}
+
+	// For short arrow set hooks, the result is assigned to the backing property
+	_, isBlock := prop.SetHook.(phpv.Runnables)
+	if !isBlock && result != nil && !result.IsNull() {
+		o.objectSetBacking(keyStr, result)
+	}
+
+	return nil
+}
+
+// ReadParentBacking reads the backing value of a parent property directly.
+// Used by parent::$prop::get() when the parent has no get hook.
+func (o *ZObject) ReadParentBacking(ctx phpv.Context, keyStr phpv.ZString, declClass *ZClass) (*phpv.ZVal, error) {
+	// Check private properties with name mangling
+	if _, ok := o.hasPrivate[keyStr]; ok {
+		propName := getPrivatePropName(declClass, keyStr)
+		if o.h.HasString(propName) {
+			v := o.h.GetString(propName)
+			return phpv.NewZVal(v.Value()), nil
+		}
+	}
+
+	if o.h.HasString(keyStr) {
+		v := o.h.GetString(keyStr)
+		return phpv.NewZVal(v.Value()), nil
+	}
+
+	// Check for uninitialized typed property
+	for _, p := range declClass.Props {
+		if p.VarName == keyStr && p.TypeHint != nil {
+			return nil, ThrowError(ctx, Error,
+				fmt.Sprintf("Typed property %s::$%s must not be accessed before initialization",
+					declClass.GetName(), keyStr))
+		}
+	}
+
+	return phpv.ZNULL.ZVal(), nil
+}
+
+// WriteParentBacking writes directly to the backing value of a parent property.
+// Used by parent::$prop::set() when the parent has no set hook.
+func (o *ZObject) WriteParentBacking(ctx phpv.Context, keyStr phpv.ZString, value *phpv.ZVal, declClass *ZClass) {
+	o.objectSetBacking(keyStr, value)
+}
+
 // ScopeName returns a human-readable scope name for error messages.
 func ScopeName(class phpv.ZClass) string {
 	if class == nil {
