@@ -866,7 +866,11 @@ func fncFeof(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZTrue.ZVal(), nil
 	}
 
-	return phpv.ZBool(file.Eof()).ZVal(), nil
+	eof, err := file.EofCheck()
+	if err != nil {
+		return nil, err
+	}
+	return phpv.ZBool(eof).ZVal(), nil
 }
 
 // > func string|false fgetc ( resource $handle )
