@@ -42,9 +42,8 @@ func fncJsonDecode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	// PHP's depth semantics: depth=N allows nesting up to N-1 levels.
-	// Our decoder decrements depth on entering arrays/objects and checks < 0.
-	// Subtract 1 to align with PHP's behavior.
-	result, jsonErr := jsonDecodeAny(ctx, strings.NewReader(string(json)), d-1, o)
+	reader := strings.NewReader(string(json))
+	result, jsonErr := jsonDecodeAny(ctx, reader, d-1, o)
 	if jsonErr != nil {
 		if je, ok := jsonErr.(JsonError); ok {
 			setLastJsonError(ctx, je)
@@ -53,6 +52,23 @@ func fncJsonDecode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		setLastJsonError(ctx, ErrSyntax)
 		return phpv.ZNULL.ZVal(), nil
 	}
+
+	// Check for trailing non-whitespace content (invalid JSON)
+	for {
+		b, readErr := reader.ReadByte()
+		if readErr == io.EOF {
+			break
+		}
+		if readErr != nil {
+			setLastJsonError(ctx, ErrSyntax)
+			return phpv.ZNULL.ZVal(), nil
+		}
+		if b != ' ' && b != '\t' && b != '\r' && b != '\n' {
+			setLastJsonError(ctx, ErrSyntax)
+			return phpv.ZNULL.ZVal(), nil
+		}
+	}
+
 	setLastJsonError(ctx, ErrNone)
 	return result, nil
 }
@@ -124,8 +140,8 @@ func fncJsonValidate(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		d = int(*depth)
 	}
 
-	// Subtract 1 to align with PHP's depth semantics (same as json_decode)
-	_, jsonErr := jsonDecodeAny(ctx, strings.NewReader(string(json)), d-1, 0)
+	reader := strings.NewReader(string(json))
+	_, jsonErr := jsonDecodeAny(ctx, reader, d-1, 0)
 	if jsonErr != nil {
 		if je, ok := jsonErr.(JsonError); ok {
 			setLastJsonError(ctx, je)
@@ -134,11 +150,27 @@ func fncJsonValidate(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		}
 		return phpv.ZBool(false).ZVal(), nil
 	}
+
+	// Check for trailing non-whitespace content
+	for {
+		b, readErr := reader.ReadByte()
+		if readErr == io.EOF {
+			break
+		}
+		if readErr != nil {
+			setLastJsonError(ctx, ErrSyntax)
+			return phpv.ZBool(false).ZVal(), nil
+		}
+		if b != ' ' && b != '\t' && b != '\r' && b != '\n' {
+			setLastJsonError(ctx, ErrSyntax)
+			return phpv.ZBool(false).ZVal(), nil
+		}
+	}
+
 	setLastJsonError(ctx, ErrNone)
 	return phpv.ZBool(true).ZVal(), nil
 }
 
-// nextRune returns the next non-space rune
 func nextRune(r *strings.Reader) (rune, error) {
 	for {
 		r, _, err := r.ReadRune()
@@ -156,7 +188,6 @@ func jsonDecodeAny(ctx phpv.Context, r *strings.Reader, depth int, opt JsonDecOp
 	if err != nil {
 		return nil, err
 	}
-	// unread right after reading, we only want to know what we are reading
 	r.UnreadRune()
 
 	switch b {
@@ -201,9 +232,8 @@ func jsonDecodeObject(ctx phpv.Context, r *strings.Reader, depth int, opt JsonDe
 		set = a.OffsetSet
 		final = a.ZVal()
 	} else {
-		o, err := phpobj.NewZObject(ctx, nil) // nil means stdClass
+		o, err := phpobj.NewZObject(ctx, nil)
 		if err != nil {
-			// should never happen for stdClass
 			return nil, err
 		}
 		set = o.ObjectSet
@@ -211,7 +241,6 @@ func jsonDecodeObject(ctx phpv.Context, r *strings.Reader, depth int, opt JsonDe
 	}
 
 	for {
-		// remove spaces and check for empty objects
 		b, err = nextRune(r)
 		if err != nil {
 			return nil, err
@@ -253,7 +282,6 @@ func jsonDecodeObject(ctx phpv.Context, r *strings.Reader, depth int, opt JsonDe
 		if b == '}' {
 			return final, nil
 		}
-		// Expected ',' or '}' but got something else (e.g., ']')
 		return nil, ErrStateMismatch
 	}
 }
@@ -275,7 +303,6 @@ func jsonDecodeArray(ctx phpv.Context, r *strings.Reader, depth int, opt JsonDec
 	a := phpv.NewZArray()
 
 	for {
-		// remove spaces and check for empty arrays/etc
 		b, err = nextRune(r)
 		if err != nil {
 			return nil, err
@@ -304,7 +331,6 @@ func jsonDecodeArray(ctx phpv.Context, r *strings.Reader, depth int, opt JsonDec
 		if b == ']' {
 			return a.ZVal(), nil
 		}
-		// Expected ',' or ']' but got something else (e.g., '}')
 		return nil, ErrStateMismatch
 	}
 }
@@ -326,12 +352,10 @@ func jsonDecodeString(ctx phpv.Context, r *strings.Reader, depth int, opt JsonDe
 			return nil, err
 		}
 		if c == '"' {
-			// end of string
 			return phpv.ZString(buf).ZVal(), nil
 		}
 
 		if c != '\\' {
-			// Control characters (0x00-0x1F) are not allowed unescaped in JSON strings
 			if c < 0x20 {
 				return nil, ErrCtrlChar
 			}
@@ -351,21 +375,56 @@ func jsonDecodeString(ctx phpv.Context, r *strings.Reader, depth int, opt JsonDe
 			buf = append(buf, '\r')
 		case 't':
 			buf = append(buf, '\t')
+		case 'b':
+			buf = append(buf, '\b')
+		case 'f':
+			buf = append(buf, '\f')
 		case '\\', '/', '"':
 			buf = append(buf, c)
 		case 'u':
-			// unicode
-			cp := make([]byte, 4) // 4 bytes length
-			_, err = r.Read(cp)
+			cp := make([]byte, 4)
+			_, err = io.ReadFull(r, cp)
 			if err != nil {
 				return nil, err
 			}
-			v, err := strconv.ParseInt(string(cp), 16, 16)
+			v, err := strconv.ParseUint(string(cp), 16, 32)
 			if err != nil {
 				return nil, ErrSyntax
 			}
-			s := utf8.EncodeRune(cp, rune(v))
-			buf = append(buf, cp[:s]...)
+			codepoint := rune(v)
+			// Handle UTF-16 surrogate pairs
+			if codepoint >= 0xD800 && codepoint <= 0xDBFF {
+				b1, serr := r.ReadByte()
+				if serr != nil {
+					return nil, ErrUtf8
+				}
+				b2, serr := r.ReadByte()
+				if serr != nil {
+					return nil, ErrUtf8
+				}
+				if b1 != '\\' || b2 != 'u' {
+					return nil, ErrUtf8
+				}
+				cp2 := make([]byte, 4)
+				_, serr = io.ReadFull(r, cp2)
+				if serr != nil {
+					return nil, ErrUtf8
+				}
+				v2, serr := strconv.ParseUint(string(cp2), 16, 32)
+				if serr != nil {
+					return nil, ErrSyntax
+				}
+				lo := rune(v2)
+				if lo < 0xDC00 || lo > 0xDFFF {
+					return nil, ErrUtf16
+				}
+				codepoint = 0x10000 + (codepoint-0xD800)*0x400 + (lo - 0xDC00)
+			} else if codepoint >= 0xDC00 && codepoint <= 0xDFFF {
+				return nil, ErrUtf16
+			}
+			var ubuf [4]byte
+			s := utf8.EncodeRune(ubuf[:], codepoint)
+			buf = append(buf, ubuf[:s]...)
 		default:
 			return nil, ErrSyntax
 		}
@@ -373,11 +432,8 @@ func jsonDecodeString(ctx phpv.Context, r *strings.Reader, depth int, opt JsonDe
 }
 
 func jsonDecodeNumeric(ctx phpv.Context, r *strings.Reader, depth int, opt JsonDecOpt) (*phpv.ZVal, error) {
-	// we have a numeric value, read it
 	var buf []byte
-
 	p := 0
-
 	for {
 		c, err := r.ReadByte()
 		if err != nil {
@@ -386,7 +442,6 @@ func jsonDecodeNumeric(ctx phpv.Context, r *strings.Reader, depth int, opt JsonD
 			}
 			return nil, err
 		}
-
 		if c >= '0' && c <= '9' {
 			if p == 0 || p == 3 {
 				p++
@@ -424,30 +479,22 @@ func jsonDecodeNumeric(ctx phpv.Context, r *strings.Reader, depth int, opt JsonD
 		r.UnreadByte()
 		break
 	}
-
 	if buf == nil {
 		return nil, ErrSyntax
 	}
-
 	if p <= 1 {
-		// int value (p=0 means no digits yet which shouldn't happen, p=1 means pure integer)
 		v, err := strconv.ParseInt(string(buf), 10, 64)
 		if err == nil {
 			return phpv.ZInt(v).ZVal(), nil
 		}
-		// too large? check if BigintAsString is set
 		if opt&BigintAsString == BigintAsString {
 			return phpv.ZString(buf).ZVal(), nil
 		}
-		// if not set, attempt to parse as float
 	}
-	// float
 	v, err := strconv.ParseFloat(string(buf), 64)
 	if err != nil {
-		// strconv.ParseFloat returns an error for overflow (e.g., 1e666)
-		// but PHP decodes these as +/-INF
 		if numErr, ok := err.(*strconv.NumError); ok && numErr.Err == strconv.ErrRange {
-			return phpv.ZFloat(v).ZVal(), nil // v is +/-Inf
+			return phpv.ZFloat(v).ZVal(), nil
 		}
 		return nil, ErrSyntax
 	}
@@ -463,6 +510,5 @@ func jsonDecodeExpectValue(ctx phpv.Context, r *strings.Reader, expect string, v
 	if string(b) != expect {
 		return nil, ErrSyntax
 	}
-
 	return value.ZVal(), nil
 }

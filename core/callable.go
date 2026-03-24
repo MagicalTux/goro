@@ -272,6 +272,8 @@ func spawnCallableInternal(ctx phpv.Context, v *phpv.ZVal, paramNo int) (phpv.Ca
 			className := name[0:index]
 			methodNamePart := name[index+2:]
 			name = methodNamePart
+			// Also update origName to strip the prefix for error messages
+			origName = origName[index+2:]
 
 			// Emit deprecated warning about this callable form
 			// Use the actual runtime class name for objects, not CurrentClass.

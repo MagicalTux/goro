@@ -884,11 +884,30 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			methodNotVisible = true
 			visErrMsg = fmt.Sprintf("Call to protected method %s::%s() from global scope", class.GetName(), method.Name)
 		} else if !callerClass.InstanceOf(method.Class) && !method.Class.InstanceOf(callerClass) && !callerClass.InstanceOf(class) && !class.InstanceOf(callerClass) {
-			if method.Name == "__construct" {
-				return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Call to protected %s::__construct() from scope %s", class.GetName(), callerClass.GetName()))
+			// Also check if caller and target share a common ancestor that declares this method.
+			// This handles sibling classes (e.g., B1 and B2 both extend A, B2 calls B1::method
+			// where method was originally declared in A).
+			protectedVisible := false
+			if method.Class != nil {
+				rootClass := method.Class
+				for rootClass.GetParent() != nil {
+					if pm, ok := rootClass.GetParent().GetMethod(method.Name); ok && pm.Modifiers.Has(phpv.ZAttrProtected) {
+						rootClass = rootClass.GetParent()
+					} else {
+						break
+					}
+				}
+				if callerClass.InstanceOf(rootClass) {
+					protectedVisible = true
+				}
 			}
-			methodNotVisible = true
-			visErrMsg = fmt.Sprintf("Call to protected method %s::%s() from scope %s", class.GetName(), method.Name, callerClass.GetName())
+			if !protectedVisible {
+				if method.Name == "__construct" {
+					return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Call to protected %s::__construct() from scope %s", class.GetName(), callerClass.GetName()))
+				}
+				methodNotVisible = true
+				visErrMsg = fmt.Sprintf("Call to protected method %s::%s() from scope %s", class.GetName(), method.Name, callerClass.GetName())
+			}
 		}
 	}
 	if methodNotVisible {
