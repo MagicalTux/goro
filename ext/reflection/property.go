@@ -54,8 +54,11 @@ func initReflectionProperty() {
 		"ispublicset":       {Name: "isPublicSet", Method: phpobj.NativeMethod(reflectionPropertyIsPublicSet)},
 		"getsettabletype":   {Name: "getSettableType", Method: phpobj.NativeMethod(reflectionPropertyGetSettableType)},
 		"gethook":           {Name: "getHook", Method: phpobj.NativeMethod(reflectionPropertyGetHook)},
+		"gethooks":          {Name: "getHooks", Method: phpobj.NativeMethod(reflectionPropertyGetHooks)},
 		"hashook":           {Name: "hasHook", Method: phpobj.NativeMethod(reflectionPropertyHasHook)},
 		"hashooks":          {Name: "hasHooks", Method: phpobj.NativeMethod(reflectionPropertyHasHooks)},
+		"isvirtual":         {Name: "isVirtual", Method: phpobj.NativeMethod(reflectionPropertyIsVirtual)},
+		"isabstract":        {Name: "isAbstract", Method: phpobj.NativeMethod(reflectionPropertyIsAbstract)},
 	}
 }
 
@@ -71,10 +74,12 @@ func reflectionPropertyConstructFull(ctx phpv.Context, o *phpobj.ZObject, args [
 	}
 
 	var class phpv.ZClass
+	var obj phpv.ZObject
 	var err error
 
 	if args[0].GetType() == phpv.ZtObject {
-		class = args[0].AsObject(ctx).GetClass()
+		obj = args[0].AsObject(ctx)
+		class = obj.GetClass()
 	} else {
 		className := args[0].AsString(ctx)
 		class, err = resolveClass(ctx, className)
@@ -86,7 +91,22 @@ func reflectionPropertyConstructFull(ctx phpv.Context, o *phpobj.ZObject, args [
 	propName := args[1].AsString(ctx)
 	prop, found := class.GetProp(propName)
 	if !found {
-		return nil, phpobj.ThrowError(ctx, ReflectionException, fmt.Sprintf("Property %s::$%s does not exist", class.GetName(), propName))
+		// Check for dynamic properties on the object instance
+		if obj != nil {
+			if zobj, ok := obj.(*phpobj.ZObject); ok {
+				if v := zobj.HashTable().GetString(propName); v != nil {
+					// Dynamic property found - create a synthetic prop entry
+					prop = &phpv.ZClassProp{
+						VarName:   propName,
+						Modifiers: phpv.ZAttrPublic,
+					}
+					found = true
+				}
+			}
+		}
+		if !found {
+			return nil, phpobj.ThrowError(ctx, ReflectionException, fmt.Sprintf("Property %s::$%s does not exist", class.GetName(), propName))
+		}
 	}
 
 	zc, ok := class.(*phpobj.ZClass)
@@ -199,15 +219,7 @@ func reflectionPropertyGetValue(ctx phpv.Context, o *phpobj.ZObject, args []*php
 	}
 
 	obj := args[0].AsObject(ctx)
-	// Reflection bypasses visibility - use GetPropValue for direct access
-	zobj, ok := obj.(*phpobj.ZObject)
-	if ok {
-		v := zobj.GetPropValue(data.prop)
-		if v != nil {
-			return v, nil
-		}
-	}
-	// Fall back to ObjectGet for __get magic and other special cases
+	// ReflectionProperty::getValue() invokes hooks - use ObjectGet which goes through hooks
 	return obj.ObjectGet(ctx, data.prop.VarName)
 }
 
@@ -244,21 +256,7 @@ func reflectionPropertySetValue(ctx phpv.Context, o *phpobj.ZObject, args []*php
 	}
 
 	obj := args[0].AsObject(ctx)
-	// Check readonly - reflection cannot modify readonly properties that are already initialized
-	if data.prop.Modifiers.IsReadonly() {
-		zobj, ok := obj.(*phpobj.ZObject)
-		if ok {
-			v := zobj.GetPropValue(data.prop)
-			if v != nil {
-				return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Cannot modify readonly property %s::$%s", data.class.GetName(), data.prop.VarName))
-			}
-		}
-	}
-	// Reflection bypasses visibility since PHP 8.1 - use hash table directly
-	zobj, ok := obj.(*phpobj.ZObject)
-	if ok {
-		return nil, zobj.HashTable().SetString(data.prop.VarName, args[1])
-	}
+	// ReflectionProperty::setValue() invokes hooks - use ObjectSet which goes through hooks
 	return nil, obj.ObjectSet(ctx, data.prop.VarName, args[1])
 }
 
@@ -400,13 +398,91 @@ func reflectionPropertyGetAttributes(ctx phpv.Context, o *phpobj.ZObject, args [
 	return filterAttributes(ctx, data.prop.Attributes, phpobj.AttributeTARGET_PROPERTY, name, flags)
 }
 
-// getRawValue/setRawValue - bypasses hooks (in goro, same as getValue/setValue since hooks aren't fully supported)
+// getRawValue bypasses hooks and reads the backing value directly
 func reflectionPropertyGetRawValue(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	return reflectionPropertyGetValue(ctx, o, args)
+	data := getPropData(o)
+	if data == nil {
+		return phpv.ZNULL.ZVal(), nil
+	}
+
+	if data.prop.Modifiers.IsStatic() {
+		staticProps, err := data.class.GetStaticProps(ctx)
+		if err != nil {
+			return nil, err
+		}
+		v := staticProps.GetString(data.prop.VarName)
+		if v != nil {
+			return v, nil
+		}
+		if data.prop.Default != nil {
+			if cd, ok := data.prop.Default.(*phpv.CompileDelayed); ok {
+				resolved, err := cd.Run(ctx)
+				if err == nil {
+					return resolved, nil
+				}
+			}
+			return data.prop.Default.ZVal(), nil
+		}
+		return phpv.ZNULL.ZVal(), nil
+	}
+
+	if len(args) < 1 || args[0].GetType() != phpv.ZtObject {
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, "ReflectionProperty::getRawValue(): argument must be an object for non-static properties")
+	}
+
+	obj := args[0].AsObject(ctx)
+	// getRawValue bypasses hooks - read directly from hash table
+	if data.prop.HasHooks && !data.prop.IsBacked {
+		// Virtual property - cannot read raw value
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Must not write to virtual property %s::$%s", data.class.GetName(), data.prop.VarName))
+	}
+	zobj, ok := obj.(*phpobj.ZObject)
+	if ok {
+		v := zobj.GetPropValue(data.prop)
+		if v != nil {
+			return v, nil
+		}
+	}
+	return phpv.ZNULL.ZVal(), nil
 }
 
+// setRawValue bypasses hooks and writes the backing value directly
 func reflectionPropertySetRawValue(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	return reflectionPropertySetValue(ctx, o, args)
+	data := getPropData(o)
+	if data == nil {
+		return nil, phpobj.ThrowError(ctx, ReflectionException, "Internal error: Failed to retrieve the reflection object")
+	}
+
+	if data.prop.Modifiers.IsStatic() {
+		if len(args) < 1 {
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, "ReflectionProperty::setRawValue() expects at least 1 argument for static properties")
+		}
+		staticProps, err := data.class.GetStaticProps(ctx)
+		if err != nil {
+			return nil, err
+		}
+		val := args[0]
+		if len(args) >= 2 {
+			val = args[1]
+		}
+		return nil, staticProps.SetString(data.prop.VarName, val)
+	}
+
+	if len(args) < 2 || args[0].GetType() != phpv.ZtObject {
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, "ReflectionProperty::setRawValue() expects an object and a value for non-static properties")
+	}
+
+	obj := args[0].AsObject(ctx)
+	if data.prop.HasHooks && !data.prop.IsBacked {
+		// Virtual property - cannot write raw value
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Must not write to virtual property %s::$%s", data.class.GetName(), data.prop.VarName))
+	}
+	// setRawValue bypasses hooks - write directly to hash table
+	zobj, ok := obj.(*phpobj.ZObject)
+	if ok {
+		return nil, zobj.HashTable().SetString(data.prop.VarName, args[1])
+	}
+	return nil, obj.ObjectSet(ctx, data.prop.VarName, args[1])
 }
 
 // getMangledName returns the internal mangled name of the property.
@@ -475,7 +551,92 @@ func reflectionPropertyGetSettableType(ctx phpv.Context, o *phpobj.ZObject, args
 	return createReflectionTypeObject(ctx, data.prop.TypeHint)
 }
 
-// getHook returns a ReflectionMethod for the specified hook type ("get" or "set")
+// resolveHookType extracts the hook type string ("get" or "set") from a PropertyHookType enum or string argument.
+func resolveHookType(ctx phpv.Context, arg *phpv.ZVal) string {
+	if arg.GetType() == phpv.ZtObject {
+		obj := arg.AsObject(ctx)
+		if obj != nil {
+			// PropertyHookType enum - get the backing value
+			if backingVal := obj.HashTable().GetString("value"); backingVal != nil {
+				return string(backingVal.AsString(ctx))
+			}
+			// Fallback to name
+			if nameVal := obj.HashTable().GetString("name"); nameVal != nil {
+				name := string(nameVal.AsString(ctx))
+				switch name {
+				case "Get":
+					return "get"
+				case "Set":
+					return "set"
+				}
+			}
+		}
+	}
+	return string(arg.AsString(ctx))
+}
+
+// createHookReflectionMethod creates a ReflectionMethod object for a property hook.
+func createHookReflectionMethod(ctx phpv.Context, data *reflectionPropertyData, hookType string) (*phpv.ZVal, error) {
+	var hook phpv.Runnable
+	var hookName phpv.ZString
+
+	switch hookType {
+	case "get":
+		hook = data.prop.GetHook
+		hookName = phpv.ZString(fmt.Sprintf("$%s::get", data.prop.VarName))
+	case "set":
+		hook = data.prop.SetHook
+		hookName = phpv.ZString(fmt.Sprintf("$%s::set", data.prop.VarName))
+	}
+	if hook == nil {
+		return phpv.ZNULL.ZVal(), nil
+	}
+
+	// Create a ZClassMethod that wraps the hook
+	var method *phpv.ZClassMethod
+	if hookType == "get" {
+		method = &phpv.ZClassMethod{
+			Name:  hookName,
+			Class: data.class,
+			Method: &phpv.HookCallable{
+				Hook:     hook,
+				HookName: string(data.class.GetName()) + "::$" + string(data.prop.VarName) + "::get",
+			},
+		}
+	} else {
+		paramName := data.prop.SetParam
+		if paramName == "" {
+			paramName = "value"
+		}
+		method = &phpv.ZClassMethod{
+			Name:  hookName,
+			Class: data.class,
+			Method: &phpv.HookCallable{
+				Hook:     hook,
+				HookName: string(data.class.GetName()) + "::$" + string(data.prop.VarName) + "::set",
+				Params: []*phpv.FuncArg{
+					{VarName: paramName},
+				},
+			},
+		}
+	}
+
+	// Create a ReflectionMethod object
+	obj, err := phpobj.CreateZObject(ctx, ReflectionMethod)
+	if err != nil {
+		return nil, err
+	}
+	obj.HashTable().SetString("name", hookName.ZVal())
+	obj.HashTable().SetString("class", data.class.GetName().ZVal())
+	methodData := &reflectionMethodData{
+		method: method,
+		class:  data.class,
+	}
+	obj.SetOpaque(ReflectionMethod, methodData)
+	return obj.ZVal(), nil
+}
+
+// getHook returns a ReflectionMethod for the specified hook type (PropertyHookType::Get or PropertyHookType::Set)
 func reflectionPropertyGetHook(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "ReflectionProperty::getHook() expects exactly 1 argument, 0 given")
@@ -484,20 +645,46 @@ func reflectionPropertyGetHook(ctx phpv.Context, o *phpobj.ZObject, args []*phpv
 	if data == nil {
 		return phpv.ZNULL.ZVal(), nil
 	}
-	hookType := string(args[0].AsString(ctx))
+	hookType := resolveHookType(ctx, args[0])
 	switch hookType {
 	case "get":
-		if data.prop.GetHook != nil {
-			// TODO: create proper ReflectionMethod for hook
-			return phpv.ZNULL.ZVal(), nil
+		if data.prop.GetHook != nil || data.prop.GetIsAbstract {
+			return createHookReflectionMethod(ctx, data, "get")
 		}
 	case "set":
-		if data.prop.SetHook != nil {
-			// TODO: create proper ReflectionMethod for hook
-			return phpv.ZNULL.ZVal(), nil
+		if data.prop.SetHook != nil || data.prop.SetIsAbstract {
+			return createHookReflectionMethod(ctx, data, "set")
 		}
 	}
 	return phpv.ZNULL.ZVal(), nil
+}
+
+// getHooks returns an array of PropertyHookType => ReflectionMethod for all hooks
+func reflectionPropertyGetHooks(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	data := getPropData(o)
+	if data == nil {
+		return phpv.NewZArray().ZVal(), nil
+	}
+	arr := phpv.NewZArray()
+	if data.prop.GetHook != nil || data.prop.GetIsAbstract {
+		rm, err := createHookReflectionMethod(ctx, data, "get")
+		if err != nil {
+			return nil, err
+		}
+		if !rm.IsNull() {
+			arr.OffsetSet(ctx, phpv.ZString("get").ZVal(), rm)
+		}
+	}
+	if data.prop.SetHook != nil || data.prop.SetIsAbstract {
+		rm, err := createHookReflectionMethod(ctx, data, "set")
+		if err != nil {
+			return nil, err
+		}
+		if !rm.IsNull() {
+			arr.OffsetSet(ctx, phpv.ZString("set").ZVal(), rm)
+		}
+	}
+	return arr.ZVal(), nil
 }
 
 // hasHook checks if the property has a specific hook type
@@ -509,12 +696,12 @@ func reflectionPropertyHasHook(ctx phpv.Context, o *phpobj.ZObject, args []*phpv
 	if data == nil {
 		return phpv.ZBool(false).ZVal(), nil
 	}
-	hookType := string(args[0].AsString(ctx))
+	hookType := resolveHookType(ctx, args[0])
 	switch hookType {
 	case "get":
-		return phpv.ZBool(data.prop.GetHook != nil).ZVal(), nil
+		return phpv.ZBool(data.prop.GetHook != nil || data.prop.GetIsAbstract || data.prop.HasGetDeclared).ZVal(), nil
 	case "set":
-		return phpv.ZBool(data.prop.SetHook != nil).ZVal(), nil
+		return phpv.ZBool(data.prop.SetHook != nil || data.prop.SetIsAbstract || data.prop.HasSetDeclared).ZVal(), nil
 	}
 	return phpv.ZBool(false).ZVal(), nil
 }
@@ -526,4 +713,26 @@ func reflectionPropertyHasHooks(ctx phpv.Context, o *phpobj.ZObject, args []*php
 		return phpv.ZBool(false).ZVal(), nil
 	}
 	return phpv.ZBool(data.prop.HasHooks).ZVal(), nil
+}
+
+// isVirtual checks if the property is virtual (has hooks but no backing store)
+func reflectionPropertyIsVirtual(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	data := getPropData(o)
+	if data == nil {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	// A property is virtual if it has hooks and no backing store
+	if !data.prop.HasHooks {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	return phpv.ZBool(!data.prop.IsBacked).ZVal(), nil
+}
+
+// isAbstract checks if the property is abstract
+func reflectionPropertyIsAbstract(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	data := getPropData(o)
+	if data == nil {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	return phpv.ZBool(data.prop.Modifiers.Has(phpv.ZAttrAbstract)).ZVal(), nil
 }

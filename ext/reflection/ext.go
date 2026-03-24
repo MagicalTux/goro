@@ -2,6 +2,7 @@ package reflection
 
 import (
 	"fmt"
+	"io"
 
 	"github.com/MagicalTux/goro/core"
 	"github.com/MagicalTux/goro/core/phpctx"
@@ -10,6 +11,8 @@ import (
 )
 
 var ReflectionException *phpobj.ZClass
+
+var PropertyHookType *phpobj.ZClass
 
 var ReflectionClass *phpobj.ZClass
 var ReflectionClassConstant *phpobj.ZClass
@@ -22,6 +25,23 @@ var ReflectionObject *phpobj.ZClass
 var ReflectionProperty *phpobj.ZClass
 
 func init() {
+	// PropertyHookType is a string-backed enum with cases Get and Set (PHP 8.4+)
+	PropertyHookType = &phpobj.ZClass{
+		Name: "PropertyHookType",
+		Type: phpv.ZClassTypeEnum,
+		Const: map[phpv.ZString]*phpv.ZClassConst{
+			"Get": {Value: &phpv.CompileDelayed{V: &builtinEnumCaseInit{caseName: "Get", backingValue: "get"}}, Modifiers: phpv.ZAttrPublic},
+			"Set": {Value: &phpv.CompileDelayed{V: &builtinEnumCaseInit{caseName: "Set", backingValue: "set"}}, Modifiers: phpv.ZAttrPublic},
+		},
+		ConstOrder:      []phpv.ZString{"Get", "Set"},
+		EnumBackingType: phpv.ZtString,
+		EnumCases:       []phpv.ZString{"Get", "Set"},
+		Methods:         map[phpv.ZString]*phpv.ZClassMethod{},
+	}
+	// Set the enum class reference on the const initializers (needs to be done after PropertyHookType is created)
+	PropertyHookType.Const["Get"].Value.(*phpv.CompileDelayed).V.(*builtinEnumCaseInit).enumClass = PropertyHookType
+	PropertyHookType.Const["Set"].Value.(*phpv.CompileDelayed).V.(*builtinEnumCaseInit).enumClass = PropertyHookType
+
 	ReflectionException = &phpobj.ZClass{
 		Name:    "ReflectionException",
 		Extends: phpobj.Exception,
@@ -147,6 +167,7 @@ func init() {
 		Name:    "Reflection",
 		Version: core.VERSION,
 		Classes: []*phpobj.ZClass{
+			PropertyHookType,
 			ReflectionException,
 			ReflectionClass,
 			ReflectionClassConstant,
@@ -171,6 +192,25 @@ func init() {
 			ReflectionReference,
 		},
 	})
+}
+
+// builtinEnumCaseInit is a Runnable that lazily creates a built-in enum case object.
+type builtinEnumCaseInit struct {
+	enumClass    *phpobj.ZClass
+	caseName     phpv.ZString
+	backingValue phpv.ZString
+}
+
+func (b *builtinEnumCaseInit) Dump(w io.Writer) error {
+	_, err := fmt.Fprintf(w, "%s::%s", b.enumClass.Name, b.caseName)
+	return err
+}
+
+func (b *builtinEnumCaseInit) Run(ctx phpv.Context) (*phpv.ZVal, error) {
+	obj := phpobj.NewZObjectEnum(ctx, b.enumClass)
+	obj.HashTable().SetString("name", b.caseName.ZVal())
+	obj.HashTable().SetString("value", b.backingValue.ZVal())
+	return obj.ZVal(), nil
 }
 
 // resolveClass tries to find a class by name, triggering autoload.

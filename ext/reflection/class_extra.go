@@ -1176,6 +1176,16 @@ func reflectionPropertyGetModifiers(ctx phpv.Context, o *phpobj.ZObject, args []
 	if data.prop.Modifiers.IsReadonly() {
 		mods |= 128
 	}
+	if data.prop.Modifiers.Has(phpv.ZAttrAbstract) {
+		mods |= ReflectionMethodIS_ABSTRACT
+	}
+	if data.prop.Modifiers.Has(phpv.ZAttrFinal) {
+		mods |= ReflectionMethodIS_FINAL
+	}
+	// IS_VIRTUAL = 512
+	if data.prop.HasHooks && !data.prop.IsBacked {
+		mods |= 512
+	}
 	return phpv.ZInt(mods).ZVal(), nil
 }
 

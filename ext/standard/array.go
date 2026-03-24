@@ -547,18 +547,27 @@ func fncArrayWalkRecursive(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, err
 		if depth > 256 || loopErr != nil {
 			return
 		}
-		for k, v := range array.Iterate(ctx) {
+		it := array.NewIterator()
+		for it.Valid(ctx) {
 			if loopErr != nil {
 				return
 			}
+			k, _ := it.Key(ctx)
+			v, _ := it.Current(ctx)
 			if v.GetType() == phpv.ZtArray {
 				loop(v.AsArray(ctx), depth+1)
+				it.Next(ctx)
 				continue
 			}
 
-			callbackArgs[0] = v
+			// Pass by reference like array_walk does
+			vRef, _ := it.(interface {
+				CurrentMakeRef(phpv.Context) (*phpv.ZVal, error)
+			}).CurrentMakeRef(ctx)
+			callbackArgs[0] = vRef
 			callbackArgs[1] = k
 			_, loopErr = ctx.CallZValInternal(ctx, callback, callbackArgs)
+			it.Next(ctx)
 		}
 	}
 
