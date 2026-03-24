@@ -63,6 +63,14 @@ func (sl stringLexer) lexStringWhitespace(l *Lexer) lexState {
 				l.next() // the escaped char
 			}
 		case '$':
+			// Check if $ is followed by a valid variable name start or '{'
+			// If not, treat it as a literal '$' character
+			ps := l.peekString(2)
+			if len(ps) < 2 || !isVarStartChar(ps[1]) {
+				l.next() // consume '$' as literal content
+				continue
+			}
+
 			// this is a variable
 			if l.pos > l.start {
 				l.emit(T_ENCAPSED_AND_WHITESPACE)

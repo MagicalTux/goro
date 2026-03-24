@@ -123,9 +123,12 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			i.Data[1] == 'o' || i.Data[1] == 'O') {
 			uv, uerr := strconv.ParseUint(i.Data, 0, 64)
 			if uerr == nil {
-				// PHP interprets binary/hex/octal literals as signed int64
-				// via two's complement (e.g. 0xFFFFFFFFFFFFFFFF = -1)
-				return &runZVal{phpv.ZInt(int64(uv)), l}, nil
+				// PHP treats values > INT64_MAX as float, not as two's complement int.
+				// Only values that fit in signed int64 remain int.
+				if uv <= math.MaxInt64 {
+					return &runZVal{phpv.ZInt(int64(uv)), l}, nil
+				}
+				return &runZVal{phpv.ZFloat(float64(uv)), l}, nil
 			}
 			// truly huge: parse manually for float approximation
 			f := parseBigLiteral(i.Data)

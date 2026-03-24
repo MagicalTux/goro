@@ -377,7 +377,10 @@ func ExpandAt(ctx phpv.Context, args []*phpv.ZVal, i int, out interface{}) error
 }
 
 func Expand(ctx phpv.Context, args []*phpv.ZVal, out ...interface{}) (int, error) {
-	// Count required vs optional params for accurate error messages
+	// Count required vs optional params for accurate error messages.
+	// Optional params: optionalReferable, optionable, or pointer-to-pointer
+	// (EXCEPT *phpv.ZVal which is always required since ZVal is a reference type).
+	zvalPtrType := reflect.TypeOf((*phpv.ZVal)(nil)) // type: *phpv.ZVal
 	requiredCount := 0
 	for _, o := range out {
 		switch o.(type) {
@@ -386,7 +389,11 @@ func Expand(ctx phpv.Context, args []*phpv.ZVal, out ...interface{}) (int, error
 		default:
 			rv := reflect.ValueOf(o)
 			if rv.Kind() == reflect.Ptr && rv.Type().Elem().Kind() == reflect.Ptr {
-				// pointer-to-pointer = optional
+				// pointer-to-pointer: optional UNLESS inner type is *phpv.ZVal
+				if rv.Type().Elem() == zvalPtrType {
+					requiredCount++
+				}
+				// else optional (e.g., **phpv.ZInt)
 			} else {
 				requiredCount++
 			}
