@@ -154,12 +154,13 @@ func (c *FuncContext) This() phpv.ZObject {
 }
 
 // Loc returns the current execution location. For internal calls (e.g.,
-// exception/error handlers invoked by the runtime), it returns "Unknown:0".
-// Loc returns the current source-code location.
-// It always delegates to the parent context which tracks the current
-// execution position via Tick(). The isInternal flag only affects stack
-// trace formatting (showing "[internal function]"), not Loc().
+// exception/error handlers invoked by the runtime), it returns "Unknown:0"
+// so that warnings/deprecations from engine-invoked callbacks show the
+// correct "[internal]" location rather than the last user-code location.
 func (c *FuncContext) Loc() *phpv.Loc {
+	if c.isInternal && c.loc != nil {
+		return c.loc
+	}
 	return c.Context.Loc()
 }
 

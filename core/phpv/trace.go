@@ -102,7 +102,7 @@ func traceArgString(arg *ZVal) string {
 // truncating string values to maxLen characters.
 func TraceArgStringMaxLen(arg *ZVal, maxLen int) string {
 	if arg == nil {
-		return ""
+		return "NULL"
 	}
 	switch arg.GetType() {
 	case ZtObject:

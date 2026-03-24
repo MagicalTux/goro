@@ -60,10 +60,11 @@ func initDirectoryIterator() {
 	}
 
 	DirectoryIteratorClass = &phpobj.ZClass{
-		Name:    "DirectoryIterator",
-		Extends: SplFileInfoClass,
-		Methods: diMethods,
-		H:       &phpv.ZClassHandlers{},
+		Name:            "DirectoryIterator",
+		Extends:         SplFileInfoClass,
+		Implementations: []*phpobj.ZClass{SeekableIterator, phpobj.Stringable},
+		Methods:         diMethods,
+		H:               &phpv.ZClassHandlers{},
 	}
 
 	// Build FilesystemIterator methods: DirectoryIterator + FilesystemIterator's own
