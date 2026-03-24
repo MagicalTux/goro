@@ -1034,6 +1034,10 @@ func (g *Global) Errorf(format string, a ...any) error {
 }
 
 func (g *Global) FuncError(err error, t ...phpv.PhpErrorType) error {
+	// If the error is already a catchable exception (PhpThrow), pass it through.
+	if _, ok := err.(*phperr.PhpThrow); ok {
+		return err
+	}
 	wrappedErr := g.l.Error(g, err, t...)
 	wrappedErr.FuncName = g.GetFuncName()
 	result := phperr.HandleUserError(g, wrappedErr)

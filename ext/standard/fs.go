@@ -930,9 +930,14 @@ func fncFgets(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "fgets(): Argument #2 ($length) must be greater than 0")
 	}
 
-	maxLen := 0 // 0 means no limit (read until \n or EOF)
+	maxLen := -1 // -1 means no limit (read until \n or EOF)
 	if length != nil && int(*length) > 0 {
-		maxLen = int(*length) - 1 // PHP's fgets includes the length-1 limit
+		maxLen = int(*length) - 1 // PHP's fgets reads at most length-1 bytes
+	}
+
+	// If maxLen is 0 (length=1), return false immediately
+	if maxLen == 0 {
+		return phpv.ZFalse.ZVal(), nil
 	}
 
 	var buf []byte

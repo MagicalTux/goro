@@ -55,7 +55,12 @@ func (s *Stream) Seek(offset int64, whence int) (int64, error) {
 	if sk, ok := s.f.(io.Seeker); ok {
 		pos, err := sk.Seek(offset, whence)
 		if err == nil {
-			s.eof = false // seeking clears EOF
+			// Only clear EOF when actually moving the position.
+			// Seek(0, SeekCurrent) is just a position query (used by ftell)
+			// and should not reset the EOF flag.
+			if !(offset == 0 && whence == io.SeekCurrent) {
+				s.eof = false
+			}
 		}
 		return pos, err
 	}

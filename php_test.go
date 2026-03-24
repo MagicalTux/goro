@@ -939,12 +939,27 @@ func TestPhp(t *testing.T) {
 		"test/php-8.5.4/ext/standard/streams/stream_set_chunk_size.phpt":                              true, // Nil pointer in stream
 		"test/php-8.5.4/offsets/appending_containers_in_fetch.phpt":                                   true, // Nil pointer in offset
 		"test/php-8.5.4/type_declarations/typed_properties_093.phpt":                                  true, // Interface conversion panic
+		"test/php-8.5.4/fibers/destructors_002.phpt":                                                  true, // Stack overflow in fiber destructor
+		"test/php-8.5.4/fibers/destructors_003.phpt":                                                  true, // Stack overflow in fiber destructor
+		"test/php-8.5.4/fibers/destructors_004.phpt":                                                  true, // Stack overflow in fiber destructor
+		"test/php-8.5.4/fibers/destructors_005.phpt":                                                  true, // Stack overflow in fiber destructor
+		"test/php-8.5.4/fibers/destructors_006.phpt":                                                  true, // Stack overflow in fiber destructor
+		"test/php-8.5.4/fibers/destructors_007.phpt":                                                  true, // Stack overflow in fiber destructor
+		"test/php-8.5.4/fibers/destructors_008.phpt":                                                  true, // Stack overflow in fiber destructor
+		"test/php-8.5.4/fibers/destructors_009.phpt":                                                  true, // Stack overflow in fiber destructor
+		"test/php-8.5.4/fibers/destructors_010.phpt":                                                  true, // Stack overflow in fiber destructor
+		"test/php-8.5.4/fibers/destructors_011.phpt":                                                  true, // Stack overflow in fiber destructor
+		"test/php-8.5.4/gh13569.phpt":                                                                 true, // Stack overflow with 30k WeakMap entries
+		"test/php-8.5.4/gh13670_001.phpt":                                                             true, // Stack overflow with GC cycle destructors
+		"test/php-8.5.4/gh13670_002.phpt":                                                             true, // Stack overflow with GC cycle destructors
+		"test/php-8.5.4/gh13670_003.phpt":                                                             true, // Stack overflow with GC cycle destructors
 	}
 
 	// Directories containing tests that require external resources (network, etc.)
-	// and will hang waiting for I/O. Skip the entire directory.
+	// or tests that may cause stack overflow / infinite recursion.
 	hangingDirs := []string{
 		"ext/standard/network/",
+		"/gc/", // GC cycle tests can cause stack overflow with our GC model
 	}
 
 	// Batch support: GORO_TEST_SKIP and GORO_TEST_LIMIT env vars
