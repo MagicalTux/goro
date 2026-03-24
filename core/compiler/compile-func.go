@@ -1369,6 +1369,35 @@ func compileFunctionArgs(c compileCtx) (res []*phpv.FuncArg, err error) {
 			}
 		}
 
+		// PHP 8.4: Property hooks in constructor promoted properties
+		if i.IsSingle('{') && arg.Promotion != 0 {
+			// Parse property hooks for promoted parameter
+			hookProp := &phpv.ZClassProp{
+				VarName:   arg.VarName,
+				Modifiers: arg.Promotion,
+				TypeHint:  arg.Hint,
+			}
+			// We need a class context for compilePropertyHooks
+			cls := c.getClass()
+			if cls == nil {
+				return nil, &phpv.PhpError{
+					Err:  fmt.Errorf("Cannot declare property hooks outside of a class context"),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  i.Loc(),
+				}
+			}
+			err = compilePropertyHooks(hookProp, cls, c)
+			if err != nil {
+				return nil, err
+			}
+			arg.PromotionHooks = hookProp
+			// Read the next token after the closing }
+			i, err = c.NextItem()
+			if err != nil {
+				return nil, err
+			}
+		}
+
 		if i.IsSingle(',') {
 			// read and parse next argument
 			i, err = c.NextItem()

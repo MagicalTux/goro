@@ -44,6 +44,10 @@ type splFileObjectData struct {
 
 	// Open mode
 	openMode string
+
+	// Whether the first line has been read (lazy initialization)
+	firstLineRead bool
+	isReadable    bool
 }
 
 var SplFileObjectClass *phpobj.ZClass
@@ -144,6 +148,21 @@ func initSplFileObject() {
 		Extends: SplFileObjectClass,
 		Methods: stfoMethods,
 		H:       &phpv.ZClassHandlers{},
+	}
+}
+
+// ensureFirstLineRead performs the deferred first-line read for SplFileObject.
+// This must be called before any operation that depends on curLine (iteration,
+// current(), fgets, etc.), but NOT before raw file operations (fread, fpassthru, etc.).
+func ensureFirstLineRead(d *splFileObjectData) {
+	if d == nil || d.firstLineRead || !d.isReadable {
+		return
+	}
+	d.firstLineRead = true
+	if d.scanner.Scan() {
+		d.curLine = d.scanner.Text() + "\n"
+	} else {
+		d.eof = true
 	}
 }
 
@@ -264,18 +283,15 @@ func sfoConstruct(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv
 	o.SetOpaque(SplFileInfoClass, &data.splFileInfoData)
 	o.SetOpaque(SplFileObjectClass, data)
 
-	// Only read first line for readable modes.
+	// Determine if file is readable (for lazy first-line read).
 	// Note: O_RDONLY is 0, so we cannot use flag&O_RDONLY==O_RDONLY (always true).
 	// Instead, check that the access mode is not write-only.
 	accessMode := flag & (os.O_RDONLY | os.O_WRONLY | os.O_RDWR)
-	isReadable := accessMode != os.O_WRONLY
-	if isReadable {
-		if data.scanner.Scan() {
-			data.curLine = data.scanner.Text() + "\n"
-		} else {
-			data.eof = true
-		}
-	}
+	data.isReadable = accessMode != os.O_WRONLY
+
+	// Don't pre-read the first line here. Reading is deferred to the first
+	// access via current()/iteration/fgets to avoid advancing the file position
+	// before fread/fpassthru/ftell can use it.
 
 	return nil, nil
 }
@@ -315,6 +331,7 @@ func stfoConstruct(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*php
 		csvEnc:          '"',
 		csvEsc:          '\\',
 		openMode:        "wb",
+		isReadable:      true, // temp files are always read-write
 	}
 	o.SetOpaque(SplFileInfoClass, &data.splFileInfoData)
 	o.SetOpaque(SplFileObjectClass, data)
@@ -323,7 +340,11 @@ func stfoConstruct(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*php
 
 func sfoFgets(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	d := getSFOData(o)
-	if d == nil || d.eof {
+	if d == nil {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	ensureFirstLineRead(d)
+	if d.eof {
 		return phpv.ZBool(false).ZVal(), nil
 	}
 	line := d.curLine
@@ -354,7 +375,11 @@ func sfoFgetc(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVa
 
 func sfoFgetcsv(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	d := getSFOData(o)
-	if d == nil || d.eof {
+	if d == nil {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	ensureFirstLineRead(d)
+	if d.eof {
 		return phpv.ZBool(false).ZVal(), nil
 	}
 
@@ -497,16 +522,23 @@ func sfoFpassthru(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv
 		return phpv.ZBool(false).ZVal(), nil
 	}
 
+	// fpassthru reads directly from the file - don't call ensureFirstLineRead
+	// so the file position stays at where it was last left.
 	n, err := io.Copy(ctx, d.file)
 	if err != nil {
 		return phpv.ZInt(0).ZVal(), nil
 	}
+	d.eof = true
 	return phpv.ZInt(n).ZVal(), nil
 }
 
 func sfoFscanf(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	d := getSFOData(o)
-	if d == nil || d.eof {
+	if d == nil {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	ensureFirstLineRead(d)
+	if d.eof {
 		return phpv.ZBool(false).ZVal(), nil
 	}
 
@@ -753,6 +785,7 @@ func sfoSeek(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal
 	d.scanner = bufio.NewScanner(d.file)
 	d.line = 0
 	d.eof = false
+	d.firstLineRead = true
 
 	if d.scanner.Scan() {
 		d.curLine = d.scanner.Text() + "\n"
@@ -783,6 +816,7 @@ func sfoRewind(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZV
 	d.scanner = bufio.NewScanner(d.file)
 	d.line = 0
 	d.eof = false
+	d.firstLineRead = true
 	if d.scanner.Scan() {
 		d.curLine = d.scanner.Text() + "\n"
 	} else {
@@ -793,7 +827,11 @@ func sfoRewind(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZV
 
 func sfoCurrent(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	d := getSFOData(o)
-	if d == nil || d.eof {
+	if d == nil {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	ensureFirstLineRead(d)
+	if d.eof {
 		return phpv.ZBool(false).ZVal(), nil
 	}
 	if d.flags&sfoReadCsv != 0 {
@@ -813,6 +851,7 @@ func sfoKey(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal,
 	if d == nil {
 		return phpv.ZInt(0).ZVal(), nil
 	}
+	ensureFirstLineRead(d)
 	return phpv.ZInt(d.line).ZVal(), nil
 }
 
@@ -821,6 +860,7 @@ func sfoNext(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal
 	if d == nil || d.eof {
 		return nil, nil
 	}
+	ensureFirstLineRead(d)
 	for {
 		if d.scanner.Scan() {
 			d.curLine = d.scanner.Text() + "\n"
@@ -847,6 +887,9 @@ func sfoNext(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal
 
 func sfoValid(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	d := getSFOData(o)
+	if d != nil {
+		ensureFirstLineRead(d)
+	}
 	return phpv.ZBool(d != nil && !d.eof).ZVal(), nil
 }
 

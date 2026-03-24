@@ -1118,7 +1118,7 @@ func (o *ZObject) HasProp(ctx phpv.Context, key phpv.Val) (bool, error) {
 		if prop := o.findPropWithHook(keyStr); prop != nil {
 			if prop.GetHook != nil {
 				// Call the get hook and check if result is non-null
-				result, err := o.runGetHook(ctx, keyStr, prop.GetHook)
+				result, err := o.runGetHook(ctx, keyStr, prop)
 				if err != nil {
 					return false, err
 				}
@@ -1431,7 +1431,8 @@ func (o *ZObject) findPropWithHook(keyStr phpv.ZString) *phpv.ZClassProp {
 
 // runGetHook executes a property get hook in the context of this object.
 // It uses CallZVal with a HookCallable to create a proper FuncContext with $this bound.
-func (o *ZObject) runGetHook(ctx phpv.Context, keyStr phpv.ZString, hook phpv.Runnable) (*phpv.ZVal, error) {
+func (o *ZObject) runGetHook(ctx phpv.Context, keyStr phpv.ZString, prop *phpv.ZClassProp) (*phpv.ZVal, error) {
+	hook := prop.GetHook
 	// Set recursion guard so $this->propName inside the hook accesses the backing value
 	if o.getHookGuard == nil {
 		o.getHookGuard = make(map[phpv.ZString]bool)
@@ -1457,6 +1458,38 @@ func (o *ZObject) runGetHook(ctx phpv.Context, keyStr phpv.ZString, hook phpv.Ru
 	if result == nil {
 		result = phpv.ZNULL.ZVal()
 	}
+
+	// Type-check the return value against the property type
+	if prop.TypeHint != nil && result != nil && !result.IsNull() {
+		hint := prop.TypeHint
+		if hint.Check(ctx, result) {
+			// For scalar types, coerce the value to the exact type
+			hintType := hint.Type()
+			valType := result.GetType()
+			if hintType != phpv.ZtMixed && hintType != phpv.ZtObject && valType != hintType {
+				if hintType == phpv.ZtInt && valType == phpv.ZtFloat {
+					v, err := phpv.FloatToIntImplicit(ctx, result.Value().(phpv.ZFloat))
+					if err != nil {
+						return nil, err
+					}
+					result = v.ZVal()
+				} else if coerced, err := result.Value().AsVal(ctx, hintType); err == nil && coerced != nil {
+					result = coerced.ZVal()
+				}
+			}
+		} else {
+			returnTypeName := phpv.ZValTypeName(result)
+			return nil, ThrowError(ctx, TypeError,
+				fmt.Sprintf("%s::$%s::get(): Return value must be of type %s, %s returned",
+					o.Class.GetName(), keyStr, hint.String(), returnTypeName))
+		}
+	} else if prop.TypeHint != nil && (result == nil || result.IsNull()) && !prop.TypeHint.IsNullable() {
+		// Null returned for non-nullable type
+		return nil, ThrowError(ctx, TypeError,
+			fmt.Sprintf("%s::$%s::get(): Return value must be of type %s, null returned",
+				o.Class.GetName(), keyStr, prop.TypeHint.String()))
+	}
+
 	return result, nil
 }
 
@@ -1687,7 +1720,7 @@ func (o *ZObject) ObjectGet(ctx phpv.Context, key phpv.Val) (*phpv.ZVal, error) 
 	if !getInsideHook {
 		if prop := o.findPropWithHook(keyStr); prop != nil {
 			if prop.GetHook != nil {
-				return o.runGetHook(ctx, keyStr, prop.GetHook)
+				return o.runGetHook(ctx, keyStr, prop)
 			}
 			// Set-only virtual property without a backing value: reading throws Error.
 			// Backed properties (IsBacked=true) fall through to normal property lookup
@@ -1779,7 +1812,7 @@ func (o *ZObject) ObjectGetQuiet(ctx phpv.Context, key phpv.Val) (*phpv.ZVal, bo
 	if !qInsideHook {
 		if prop := o.findPropWithHook(keyStr); prop != nil {
 			if prop.GetHook != nil {
-				result, err := o.runGetHook(ctx, keyStr, prop.GetHook)
+				result, err := o.runGetHook(ctx, keyStr, prop)
 				if err != nil {
 					return nil, false, err
 				}

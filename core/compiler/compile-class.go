@@ -1398,6 +1398,18 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 								TypeHint:     arg.Hint,
 								Attributes:   arg.Attributes,
 							}
+							// Copy property hooks from promoted property (PHP 8.4)
+							if arg.PromotionHooks != nil {
+								prop.HasHooks = arg.PromotionHooks.HasHooks
+								prop.GetHook = arg.PromotionHooks.GetHook
+								prop.SetHook = arg.PromotionHooks.SetHook
+								prop.SetParam = arg.PromotionHooks.SetParam
+								prop.HasGetDeclared = arg.PromotionHooks.HasGetDeclared
+								prop.HasSetDeclared = arg.PromotionHooks.HasSetDeclared
+								prop.GetIsAbstract = arg.PromotionHooks.GetIsAbstract
+								prop.SetIsAbstract = arg.PromotionHooks.SetIsAbstract
+								prop.IsBacked = arg.PromotionHooks.IsBacked
+							}
 							class.Props = append(class.Props, prop)
 						}
 					}
