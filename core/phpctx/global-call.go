@@ -395,8 +395,26 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 			if callCtx.Args[i] == nil {
 				continue
 			}
-			// Since this function was parsed, the parameter info is available
+			// Since this function was parsed, the parameter info is available.
+			// Check if this arg is by-ref: either directly from func_args,
+			// or from the variadic param if beyond the declared parameter count.
+			isRef := false
+			isPreferRefArg := false
+			varNameForArg := phpv.ZString("")
 			if i < len(func_args) && func_args[i].Ref {
+				isRef = true
+				isPreferRefArg = func_args[i].PreferRef
+				varNameForArg = func_args[i].VarName
+			} else if i >= len(func_args) && len(func_args) > 0 {
+				// Check if the last parameter is variadic and by-ref
+				last := func_args[len(func_args)-1]
+				if last.Variadic && last.Ref {
+					isRef = true
+					isPreferRefArg = last.PreferRef
+					varNameForArg = last.VarName
+				}
+			}
+			if isRef {
 				argName := callCtx.Args[i].GetName()
 				if argName == "" || argName == "\x00ref_warned" {
 					// No variable name - either handled in Call() with a Notice
@@ -411,7 +429,7 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 					if !callCtx.Args[i].IsRef() {
 						// PreferRef params (ZEND_SEND_PREFER_REF) silently accept
 						// non-ref values without warning (e.g. array_multisort).
-						if func_args[i].PreferRef {
+						if isPreferRefArg {
 							callCtx.Args[i] = callCtx.Args[i].Dup()
 							continue
 						}
@@ -419,7 +437,7 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 						// (e.g. when call_user_func_array passes non-ref to a ref param)
 						funcName := callCtx.GetFuncName()
 						ctx.Warn("%s(): Argument #%d ($%s) must be passed by reference, value given",
-							funcName, i+1, func_args[i].VarName, logopt.NoFuncName(true))
+							funcName, i+1, varNameForArg, logopt.NoFuncName(true))
 						callCtx.Args[i] = callCtx.Args[i].Dup()
 						continue
 					}
