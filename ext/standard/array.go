@@ -1101,8 +1101,12 @@ func fncArrayPop(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, ctx.Error(err)
 	}
 
-	// Reset the next integer key counter after pop, matching PHP behavior
-	arr.HashTable().RecalcNextIntKey()
+	// Adjust the next integer key counter after pop, matching PHP behavior.
+	// If the popped key was an integer, use AdjustNextIntKeyAfterPop to
+	// properly handle negative indices (e.g., popping [-1] should set inc=-1).
+	if key.GetType() == phpv.ZtInt {
+		arr.HashTable().AdjustNextIntKeyAfterPop(key.AsInt(ctx))
+	}
 
 	// Reset the internal array pointer after pop, matching PHP behavior
 	arr.MainIterator().Reset(ctx)

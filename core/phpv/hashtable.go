@@ -439,6 +439,7 @@ func (z *ZHashTable) RecalcNextIntKey() {
 
 	if len(z._idx_i) == 0 {
 		z.inc = 0
+		z.incInit = false
 		return
 	}
 	var maxKey ZInt
@@ -453,6 +454,19 @@ func (z *ZHashTable) RecalcNextIntKey() {
 		z.inc = maxKey + 1
 	} else {
 		z.inc = maxKey
+	}
+}
+
+// AdjustNextIntKeyAfterPop adjusts the next integer key counter after removing
+// an element with array_pop(). In PHP, if the popped key was an integer and
+// equals nNextFreeElement - 1, nNextFreeElement is decremented to match
+// the popped key, preserving negative index behavior.
+func (z *ZHashTable) AdjustNextIntKeyAfterPop(poppedKey ZInt) {
+	z.lock.Lock()
+	defer z.lock.Unlock()
+
+	if poppedKey+1 == z.inc {
+		z.inc = poppedKey
 	}
 }
 

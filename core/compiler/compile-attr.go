@@ -128,12 +128,18 @@ func parseAttributes(c compileCtx) ([]*phpv.ZAttribute, error) {
 	return attrs, nil
 }
 
+// orderedNamedArg is a name-value pair for named arguments, preserving insertion order.
+type orderedNamedArg struct {
+	Name phpv.ZString
+	Val  *phpv.ZVal
+}
+
 // parseAttributeArgs parses the arguments inside #[Attr(...)].
 // Called after the opening '(' has been consumed.
 // Returns the parsed argument values, expression runnables for lazy evaluation,
 // and named arguments. Named arguments (e.g., message: "foo") are collected
-// and returned separately via namedArgs.
-func parseAttributeArgs(c compileCtx) (args []*phpv.ZVal, argExprs []phpv.Runnable, namedArgs map[phpv.ZString]*phpv.ZVal, err error) {
+// and returned separately via namedArgs (in insertion order).
+func parseAttributeArgs(c compileCtx) (args []*phpv.ZVal, argExprs []phpv.Runnable, namedArgs []orderedNamedArg, err error) {
 	// Check for empty args: ()
 	i, err := c.NextItem()
 	if err != nil {
@@ -196,10 +202,7 @@ func parseAttributeArgs(c compileCtx) (args []*phpv.ZVal, argExprs []phpv.Runnab
 				val = phpv.ZNULL.ZVal()
 			}
 
-			if namedArgs == nil {
-				namedArgs = make(map[phpv.ZString]*phpv.ZVal)
-			}
-			namedArgs[argName] = val
+			namedArgs = append(namedArgs, orderedNamedArg{Name: argName, Val: val})
 		} else {
 			// Positional argument - pass i as the already-read first token
 			// if it was a label (to avoid needing double backup), or back up
@@ -282,7 +285,7 @@ func parseAttributeArgs(c compileCtx) (args []*phpv.ZVal, argExprs []phpv.Runnab
 // resolveAttributeNamedArgs resolves named arguments into positional arguments
 // for known built-in attribute classes. Unknown attributes have their named
 // args appended after positional args.
-func resolveAttributeNamedArgs(className phpv.ZString, args []*phpv.ZVal, namedArgs map[phpv.ZString]*phpv.ZVal) []*phpv.ZVal {
+func resolveAttributeNamedArgs(className phpv.ZString, args []*phpv.ZVal, namedArgs []orderedNamedArg) []*phpv.ZVal {
 	if len(namedArgs) == 0 {
 		return args
 	}
@@ -299,16 +302,17 @@ func resolveAttributeNamedArgs(className phpv.ZString, args []*phpv.ZVal, namedA
 		paramMap = map[phpv.ZString]int{"message": 0}
 	default:
 		// For unknown attribute classes, append named args after positional args
-		for _, v := range namedArgs {
-			args = append(args, v)
+		// (in the order they were specified)
+		for _, na := range namedArgs {
+			args = append(args, na.Val)
 		}
 		return args
 	}
 
 	// Find max position needed
 	maxPos := len(args) - 1
-	for name := range namedArgs {
-		if pos, ok := paramMap[name]; ok && pos > maxPos {
+	for _, na := range namedArgs {
+		if pos, ok := paramMap[na.Name]; ok && pos > maxPos {
 			maxPos = pos
 		}
 	}
@@ -319,9 +323,9 @@ func resolveAttributeNamedArgs(className phpv.ZString, args []*phpv.ZVal, namedA
 	}
 
 	// Place named args at their correct positions
-	for name, val := range namedArgs {
-		if pos, ok := paramMap[name]; ok {
-			args[pos] = val
+	for _, na := range namedArgs {
+		if pos, ok := paramMap[na.Name]; ok {
+			args[pos] = na.Val
 		}
 	}
 
@@ -330,7 +334,7 @@ func resolveAttributeNamedArgs(className phpv.ZString, args []*phpv.ZVal, namedA
 
 // resolveAttributeNamedArgsWithNames is like resolveAttributeNamedArgs but also
 // returns the argument names (for reflection). Empty string = positional.
-func resolveAttributeNamedArgsWithNames(className phpv.ZString, args []*phpv.ZVal, namedArgs map[phpv.ZString]*phpv.ZVal) ([]*phpv.ZVal, []phpv.ZString) {
+func resolveAttributeNamedArgsWithNames(className phpv.ZString, args []*phpv.ZVal, namedArgs []orderedNamedArg) ([]*phpv.ZVal, []phpv.ZString) {
 	if len(namedArgs) == 0 {
 		return args, nil
 	}
@@ -347,19 +351,19 @@ func resolveAttributeNamedArgsWithNames(className phpv.ZString, args []*phpv.ZVa
 		paramMap = map[phpv.ZString]int{"message": 0}
 	default:
 		// For unknown attribute classes, append named args after positional args
-		// Build names list: empty for positional, name for named
+		// Build names list: empty for positional, name for named (in insertion order)
 		names := make([]phpv.ZString, len(args))
-		for name, v := range namedArgs {
-			args = append(args, v)
-			names = append(names, name)
+		for _, na := range namedArgs {
+			args = append(args, na.Val)
+			names = append(names, na.Name)
 		}
 		return args, names
 	}
 
 	// Find max position needed
 	maxPos := len(args) - 1
-	for name := range namedArgs {
-		if pos, ok := paramMap[name]; ok && pos > maxPos {
+	for _, na := range namedArgs {
+		if pos, ok := paramMap[na.Name]; ok && pos > maxPos {
 			maxPos = pos
 		}
 	}
@@ -372,13 +376,13 @@ func resolveAttributeNamedArgsWithNames(className phpv.ZString, args []*phpv.ZVa
 	}
 
 	// Place named args at their correct positions
-	for name, val := range namedArgs {
-		if pos, ok := paramMap[name]; ok {
-			args[pos] = val
+	for _, na := range namedArgs {
+		if pos, ok := paramMap[na.Name]; ok {
+			args[pos] = na.Val
 			for len(names) <= pos {
 				names = append(names, "")
 			}
-			names[pos] = name
+			names[pos] = na.Name
 		}
 	}
 

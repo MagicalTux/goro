@@ -189,7 +189,7 @@ func init() {
 			"fputs":                      {Func: fncFwrite, Args: []*phpctx.ExtFunctionArg{}}, // alias
 			"fread":                      {Func: fncFread, Args: []*phpctx.ExtFunctionArg{}},
 			"fseek":                      {Func: fncFseek, Args: []*phpctx.ExtFunctionArg{}},
-			"fscanf":                     {Func: fncFscanf, Args: []*phpctx.ExtFunctionArg{}},
+			"fscanf":                     {Func: fncFscanf, Args: []*phpctx.ExtFunctionArg{{ArgName: "stream"}, {ArgName: "format"}, {ArgName: "vars", Ref: true, Variadic: true, Optional: true}}},
 			"fsync":                      {Func: fncFsync, Args: []*phpctx.ExtFunctionArg{}},
 			"ftell":                      {Func: fncFtell, Args: []*phpctx.ExtFunctionArg{}},
 			"ftruncate":                  {Func: fncFtruncate, Args: []*phpctx.ExtFunctionArg{}},
@@ -416,7 +416,7 @@ func init() {
 			"sprintf":                    {Func: fncSprintf, Args: []*phpctx.ExtFunctionArg{}},
 			"sqrt":                       {Func: mathSqrt, Args: []*phpctx.ExtFunctionArg{}},
 			"srand":                      {Func: mathMtSRand, Args: []*phpctx.ExtFunctionArg{}}, // alias
-			"sscanf":                     {Func: fncSscanf, Args: []*phpctx.ExtFunctionArg{}},
+			"sscanf":                     {Func: fncSscanf, Args: []*phpctx.ExtFunctionArg{{ArgName: "string"}, {ArgName: "format"}, {ArgName: "vars", Ref: true, Variadic: true, Optional: true}}},
 			"stat":                       {Func: fncStat, Args: []*phpctx.ExtFunctionArg{}},
 			"str_contains":               {Func: fncStrContains, Args: []*phpctx.ExtFunctionArg{}},
 			"str_decrement":              {Func: fncStrDecrement, Args: []*phpctx.ExtFunctionArg{}},

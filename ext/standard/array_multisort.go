@@ -130,6 +130,14 @@ func fncArrayMultiSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 
 	// First arg must be an array
 	if args[0].GetType() != phpv.ZtArray {
+		// If it's an integer that could be a sort flag, give the "already specified" message
+		if args[0].GetType() == phpv.ZtInt {
+			n := args[0].AsInt(ctx)
+			if n == SORT_ASC || n == SORT_DESC || (n >= SORT_REGULAR && n <= SORT_NATURAL) || n == SORT_FLAG_CASE {
+				return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+					fmt.Sprintf("array_multisort(): Argument #1 ($array) must be an array or a sort flag that has not already been specified"))
+			}
+		}
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
 			fmt.Sprintf("array_multisort(): Argument #1 ($array) must be an array or a sort flag"))
 	}
@@ -145,7 +153,7 @@ func fncArrayMultiSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 		}
 		arr := arg.AsArray(ctx)
 		if arr.Count(ctx) != expectedRowSize {
-			return phpv.ZFalse.ZVal(), ctx.Warn("array_multisort(): Array sizes are inconsistent")
+			return phpv.ZFalse.ZVal(), ctx.Warn("Array sizes are inconsistent")
 		}
 
 		sortFlag := SORT_REGULAR
