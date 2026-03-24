@@ -2089,15 +2089,23 @@ func parseReturnType(c compileCtx) (*phpv.TypeHint, error) {
 	}
 	th := phpv.ParseTypeHint(phpv.ZString(resolvedHint))
 
-	// Check for self/parent outside of class scope (only for named functions, not closures)
+	// Check for self/parent/static outside of class scope
 	if th.Type() == phpv.ZtObject {
 		cn := th.ClassName()
-		if cn == "self" || cn == "parent" {
-			fn := c.getFunc()
-			isNamedFunction := fn != nil && fn.name != ""
-			if isNamedFunction && c.Global().GetCompilingClass() == nil {
+		if cn == "self" || cn == "parent" || cn == "static" {
+			class := c.getClass()
+			if class == nil {
+				// Not inside a class/interface/trait at all
 				return nil, &phpv.PhpError{
 					Err:  fmt.Errorf("Cannot use \"%s\" when no class scope is active", cn),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  i.Loc(),
+				}
+			}
+			// "parent" inside an interface or a class with no parent
+			if cn == "parent" && class.Type == phpv.ZClassTypeInterface {
+				return nil, &phpv.PhpError{
+					Err:  fmt.Errorf("Cannot use \"parent\" when current class scope has no parent"),
 					Code: phpv.E_COMPILE_ERROR,
 					Loc:  i.Loc(),
 				}

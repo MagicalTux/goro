@@ -33,7 +33,7 @@ func spawnCallableInternal(ctx phpv.Context, v *phpv.ZVal, paramNo int) (phpv.Ca
 
 			var class phpv.ZClass
 			classNameLower := className.ToLower()
-			if classNameLower == "self" || classNameLower == "parent" {
+			if classNameLower == "self" || classNameLower == "parent" || classNameLower == "static" {
 				if err := ctx.Deprecated("Use of \"%s\" in callables is deprecated", className, logopt.NoFuncName(true)); err != nil {
 					return nil, err
 				}
@@ -45,6 +45,13 @@ func spawnCallableInternal(ctx phpv.Context, v *phpv.ZVal, paramNo int) (phpv.Ca
 					class = callerClass.GetParent()
 					if class == nil {
 						return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot use \"parent\" when current class scope has no parent")
+					}
+				} else if classNameLower == "static" {
+					// "static" uses late static binding - resolve to the actual runtime class
+					if this := ctx.This(); this != nil {
+						class = this.GetClass()
+					} else {
+						class = callerClass
 					}
 				} else {
 					class = callerClass
@@ -248,7 +255,7 @@ func spawnCallableInternal(ctx phpv.Context, v *phpv.ZVal, paramNo int) (phpv.Ca
 		if firstArg.GetType() == phpv.ZtString {
 			className := firstArg.AsString(ctx)
 			classNameLower := className.ToLower()
-			if classNameLower == "self" || classNameLower == "parent" {
+			if classNameLower == "self" || classNameLower == "parent" || classNameLower == "static" {
 				if err := ctx.Deprecated("Use of \"%s\" in callables is deprecated", className, logopt.NoFuncName(true)); err != nil {
 					return nil, err
 				}
@@ -260,6 +267,13 @@ func spawnCallableInternal(ctx phpv.Context, v *phpv.ZVal, paramNo int) (phpv.Ca
 					class = callerClass.GetParent()
 					if class == nil {
 						return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot use \"parent\" when current class scope has no parent")
+					}
+				} else if classNameLower == "static" {
+					// "static" uses late static binding
+					if this := ctx.This(); this != nil {
+						class = this.GetClass()
+					} else {
+						class = callerClass
 					}
 				} else {
 					class = callerClass

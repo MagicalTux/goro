@@ -1560,9 +1560,9 @@ func closureFromCallable(ctx phpv.Context, arg *phpv.ZVal) (*phpv.ZVal, error) {
 	if arg.GetType() == phpv.ZtString {
 		s := arg.AsString(ctx)
 
-		// Handle "self::" and "parent::" in string callables
+		// Handle "self::", "parent::", and "static::" in string callables
 		sLower := s.ToLower()
-		if strings.HasPrefix(string(sLower), "self::") || strings.HasPrefix(string(sLower), "parent::") {
+		if strings.HasPrefix(string(sLower), "self::") || strings.HasPrefix(string(sLower), "parent::") || strings.HasPrefix(string(sLower), "static::") {
 			prefix := string(s[:strings.Index(string(s), "::")])
 			methodName := s[strings.Index(string(s), "::")+2:]
 
@@ -1579,6 +1579,13 @@ func closureFromCallable(ctx phpv.Context, arg *phpv.ZVal) (*phpv.ZVal, error) {
 				if class == nil {
 					return nil, phpobj.ThrowError(ctx, phpobj.Error,
 						fmt.Sprintf("Cannot use \"parent\" when current class scope has no parent"))
+				}
+			} else if strings.EqualFold(prefix, "static") {
+				// "static" uses late static binding
+				if this := ctx.This(); this != nil {
+					class = this.GetClass()
+				} else {
+					class = callerCls
 				}
 			} else {
 				class = callerCls

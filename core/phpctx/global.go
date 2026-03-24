@@ -1142,6 +1142,13 @@ func logWarning(ctx phpv.Context, format string, a ...any) error {
 	if l, ok := option.Loc.(*phpv.Loc); ok && l != nil {
 		loc = l
 	}
+	// For internal calls (engine-invoked callbacks like exception handlers),
+	// use the internal location (Unknown:0) for deprecation/warning messages.
+	if fc, ok := ctx.Func().(*FuncContext); ok && fc != nil {
+		if intLoc := fc.InternalLoc(); intLoc != nil {
+			loc = intLoc
+		}
+	}
 	if option.NoFuncName {
 		funcName = ""
 	}
