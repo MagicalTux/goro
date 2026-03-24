@@ -116,14 +116,19 @@ func lexPhpHeredoc(l *Lexer) lexState {
 			l.error("unexpected eof in string")
 			return nil
 		case '\\':
-			// handle case where "\$" == "$"
+			// handle escape sequences in heredoc
 			if l.hasPrefix(`\$`) {
 				l.next()
 				l.next()
 			} else {
-				// advance (ignore) one
-				l.next() // \
-				l.next() // the escaped char
+				// Consume the backslash. If the next character is a newline,
+				// do NOT consume it - let the outer loop handle it so the
+				// end marker check can fire on the next line.
+				l.next() // consume \
+				nextCh := l.peek()
+				if nextCh != '\n' && nextCh != '\r' && nextCh != eof {
+					l.next() // consume the escaped char (but not newlines)
+				}
 			}
 		case '$':
 			// Check if $ is followed by a valid variable name start or '{'

@@ -16,6 +16,7 @@ func init() {
 		Classes: []*phpobj.ZClass{
 			DirectoryClass,
 			RoundingModeEnum,
+			PhpUserFilterClass,
 		},
 		// Note: ExtFunctionArg is currently unused
 		Functions: map[string]*phpctx.ExtFunction{

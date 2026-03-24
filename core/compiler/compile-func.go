@@ -1543,6 +1543,15 @@ func validateTypeHint(th *phpv.TypeHint, loc *phpv.Loc) error {
 		}
 	}
 
+	// null cannot be marked as nullable
+	if th.Nullable && th.Type() == phpv.ZtNull {
+		return &phpv.PhpError{
+			Err:  fmt.Errorf("null cannot be marked as nullable"),
+			Code: phpv.E_COMPILE_ERROR,
+			Loc:  loc,
+		}
+	}
+
 	// Union type validations
 	if len(th.Union) > 0 {
 		for _, u := range th.Union {
@@ -1629,6 +1638,78 @@ func validateTypeHint(th *phpv.TypeHint, loc *phpv.Loc) error {
 		if hasTrue && hasFalse {
 			return &phpv.PhpError{
 				Err:  fmt.Errorf("Type contains both true and false, bool must be used instead"),
+				Code: phpv.E_COMPILE_ERROR,
+				Loc:  loc,
+			}
+		}
+
+		// Check for semantic redundancies
+		hasIterable := false
+		hasArray := false
+		hasObject := false // object type (matches any object)
+		hasNull := false
+		hasTraversable := false
+		hasStatic := false
+		var classNames []string // non-special class names in the union
+
+		for _, u := range th.Union {
+			lowerName := strings.ToLower(string(u.ClassName()))
+			switch {
+			case u.Type() == phpv.ZtObject && u.ClassName() == "iterable":
+				hasIterable = true
+			case u.Type() == phpv.ZtArray:
+				hasArray = true
+			case u.Type() == phpv.ZtObject && u.ClassName() == "":
+				hasObject = true
+			case u.Type() == phpv.ZtNull:
+				hasNull = true
+			case u.Type() == phpv.ZtObject && lowerName == "traversable":
+				hasTraversable = true
+			case u.Type() == phpv.ZtObject && u.ClassName() == "static":
+				hasStatic = true
+			case u.Type() == phpv.ZtObject && u.ClassName() != "" &&
+				u.ClassName() != "self" && u.ClassName() != "parent" && u.ClassName() != "static" &&
+				u.ClassName() != "iterable" && u.ClassName() != "callable":
+				classNames = append(classNames, string(u.ClassName()))
+			}
+		}
+
+		// iterable already includes array
+		if hasIterable && hasArray {
+			return &phpv.PhpError{
+				Err:  fmt.Errorf("Duplicate type array is redundant"),
+				Code: phpv.E_COMPILE_ERROR,
+				Loc:  loc,
+			}
+		}
+		// iterable already includes Traversable
+		if hasIterable && hasTraversable {
+			return &phpv.PhpError{
+				Err:  fmt.Errorf("Duplicate type Traversable is redundant"),
+				Code: phpv.E_COMPILE_ERROR,
+				Loc:  loc,
+			}
+		}
+		// object includes all class types
+		if hasObject && len(classNames) > 0 {
+			return &phpv.PhpError{
+				Err:  fmt.Errorf("Duplicate type %s is redundant", classNames[0]),
+				Code: phpv.E_COMPILE_ERROR,
+				Loc:  loc,
+			}
+		}
+		// object includes static
+		if hasObject && hasStatic {
+			return &phpv.PhpError{
+				Err:  fmt.Errorf("Duplicate type static is redundant"),
+				Code: phpv.E_COMPILE_ERROR,
+				Loc:  loc,
+			}
+		}
+		// nullable + null in union
+		if th.Nullable && hasNull {
+			return &phpv.PhpError{
+				Err:  fmt.Errorf("null cannot be marked as nullable"),
 				Code: phpv.E_COMPILE_ERROR,
 				Loc:  loc,
 			}

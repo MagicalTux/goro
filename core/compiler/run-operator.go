@@ -959,6 +959,12 @@ func doInc(ctx phpv.Context, v *phpv.ZVal, inc bool) error {
 		}
 
 		// do string increment...
+		// Handle empty string: "" → "1"
+		if len(s) == 0 {
+			v.Set(phpv.ZString("1").ZVal())
+			return nil
+		}
+
 		var c byte
 		n := []byte(s)
 

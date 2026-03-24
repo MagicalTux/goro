@@ -134,12 +134,16 @@ func lexPhpString(l *Lexer) lexState {
 	t := labelType(lbl)
 
 	// PHP supports b"..." and b'...' as binary string prefix (no-op since PHP 6 was cancelled).
-	// When the label is exactly "b" or "B" and followed by a quote, discard the prefix
-	// and treat it as a regular string literal.
+	// When the label is exactly "b" or "B" and followed by a quote or heredoc, discard the prefix
+	// and treat it as a regular string literal or heredoc.
 	if t == T_STRING && (lbl == "b" || lbl == "B") {
 		if c := l.peek(); c == '"' || c == '\'' || c == '`' {
 			l.ignore() // drop the "b" prefix
 			return lexPhpStringConst
+		}
+		if l.hasPrefix("<<<") {
+			l.ignore() // drop the "b" prefix
+			return lexPhpHeredoc
 		}
 	}
 

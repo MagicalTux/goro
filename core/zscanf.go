@@ -990,9 +990,13 @@ func zscanfIntoRef(ctx phpv.Context, r io.Reader, format phpv.ZString, args ...*
 		if val == nil {
 			continue
 		}
-		varName := args[i].Name
-		if varName != nil {
-			ctx.Parent(1).OffsetSet(ctx, *varName, val)
+		// Set the by-reference arg directly. If the arg has a Name (variable name),
+		// use OffsetSet to modify the variable in the calling scope. Otherwise,
+		// use Set() which handles ZVal references properly.
+		if args[i].Name != nil {
+			ctx.Parent(1).OffsetSet(ctx, *args[i].Name, val)
+		} else {
+			args[i].Set(val)
 		}
 	}
 

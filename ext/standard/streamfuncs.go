@@ -420,3 +420,26 @@ func fncStreamBucketNew(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	obj.OffsetSet(ctx, phpv.ZStr("datalen"), phpv.ZInt(len(buffer)).ZVal())
 	return obj.ZVal(), nil
 }
+
+// PhpUserFilterClass is the built-in php_user_filter class that user-defined
+// stream filters extend.
+var PhpUserFilterClass = &phpobj.ZClass{
+		Name: "php_user_filter",
+		Props: []*phpv.ZClassProp{
+			{VarName: "filtername", Default: phpv.ZStr("").ZVal(), Modifiers: phpv.ZAttrPublic},
+			{VarName: "params", Default: phpv.ZStr("").ZVal(), Modifiers: phpv.ZAttrPublic},
+			{VarName: "stream", Default: phpv.ZNULL.ZVal(), Modifiers: phpv.ZAttrPublic},
+		},
+		Methods: map[phpv.ZString]*phpv.ZClassMethod{
+			"filter": {Name: "filter", Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				// PSFS_FEED_ME = 1 by default
+				return phpv.ZInt(1).ZVal(), nil
+			})},
+			"oncreate": {Name: "onCreate", Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				return phpv.ZTrue.ZVal(), nil
+			})},
+			"onclose": {Name: "onClose", Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				return nil, nil
+			})},
+		},
+	}

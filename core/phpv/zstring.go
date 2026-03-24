@@ -409,7 +409,11 @@ func (z ZStringArray) OffsetExists(ctx Context, key Val) (bool, error) {
 		return false, nil
 	}
 	i := valToInt(val)
-	return i >= 0 && i < len(*z.ZString), nil
+	s := *z.ZString
+	if i < 0 {
+		i = len(s) + i
+	}
+	return i >= 0 && i < len(s), nil
 }
 
 func (z ZStringArray) OffsetCheck(ctx Context, key Val) (*ZVal, bool, error) {
