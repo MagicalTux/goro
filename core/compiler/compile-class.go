@@ -836,13 +836,137 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 				c.Global().LogError(phpErr)
 				return nil, phpv.ExitError(255)
 			}
-			// const K = V [, K2 = V2 ...];
-			for {
-				// get const name
-				i, err = c.NextItem()
-				if err != nil {
-					return nil, err
+			// const [TYPE] K = V [, K2 = V2 ...];
+			// PHP 8.3+ typed class constants: const TYPE NAME = VALUE;
+
+			// Parse optional type hint before the constant name(s).
+			var constTypeHint *phpv.TypeHint
+
+			i, err = c.NextItem()
+			if err != nil {
+				return nil, err
+			}
+
+			if i.IsSingle('(') {
+				// DNF type starting with '(' e.g. const (A&B)|C NAME = value;
+				intersect, next, pErr := parseParenIntersection(c)
+				if pErr != nil {
+					return nil, pErr
 				}
+				if next.IsSingle('|') {
+					constTypeHint, i, err = parseUnionTypeHint(intersect, c)
+					if err != nil {
+						return nil, err
+					}
+				} else {
+					constTypeHint = intersect
+					i = next
+				}
+			} else if i.IsSingle('?') {
+				// Nullable type: const ?TYPE NAME = value;
+				ni, nErr := c.NextItem()
+				if nErr != nil {
+					return nil, nErr
+				}
+				hint := ni.Data
+				for {
+					peek, pErr := c.NextItem()
+					if pErr != nil {
+						return nil, pErr
+					}
+					if peek.Type == tokenizer.T_NS_SEPARATOR {
+						next2, nErr2 := c.NextItem()
+						if nErr2 != nil {
+							return nil, nErr2
+						}
+						hint = hint + "\\" + next2.Data
+					} else {
+						i = peek
+						break
+					}
+				}
+				if i.IsSingle('|') {
+					constTypeHint = phpv.ParseTypeHint(phpv.ZString(hint))
+					constTypeHint.Nullable = true
+					constTypeHint, i, err = parseUnionTypeHint(constTypeHint, c)
+					if err != nil {
+						return nil, err
+					}
+				} else {
+					resolvedHint := string(c.resolveClassName(phpv.ZString(hint)))
+					constTypeHint = phpv.ParseTypeHint(phpv.ZString(resolvedHint))
+					constTypeHint.Nullable = true
+				}
+			} else if i.IsSemiReserved() || i.Type == tokenizer.T_NS_SEPARATOR {
+				// Could be a const name (untyped) or a type hint (typed).
+				firstToken := i
+				hint := firstToken.Data
+
+				if firstToken.Type == tokenizer.T_NS_SEPARATOR {
+					ni, nErr := c.NextItem()
+					if nErr != nil {
+						return nil, nErr
+					}
+					hint = "\\" + ni.Data
+				}
+
+				// Consume namespace parts
+				for {
+					peek, pErr := c.NextItem()
+					if pErr != nil {
+						return nil, pErr
+					}
+					if peek.Type == tokenizer.T_NS_SEPARATOR {
+						next2, nErr := c.NextItem()
+						if nErr != nil {
+							return nil, nErr
+						}
+						hint = hint + "\\" + next2.Data
+					} else {
+						i = peek
+						break
+					}
+				}
+
+				if i.IsSingle('=') {
+					// No type hint, 'hint' is the const name
+					c.backup()
+					i = firstToken
+					i.Data = hint
+				} else if i.IsSingle('|') {
+					// Union type
+					constTypeHint = phpv.ParseTypeHint(phpv.ZString(c.resolveClassName(phpv.ZString(hint))))
+					constTypeHint, i, err = parseUnionTypeHint(constTypeHint, c)
+					if err != nil {
+						return nil, err
+					}
+				} else if i.IsSingle('&') {
+					// Intersection type
+					constTypeHint = phpv.ParseTypeHint(phpv.ZString(c.resolveClassName(phpv.ZString(hint))))
+					constTypeHint, i, err = parseIntersectionTypeHint(constTypeHint, i, c)
+					if err != nil {
+						return nil, err
+					}
+					if i.IsSingle('|') {
+						constTypeHint, i, err = parseUnionTypeHint(constTypeHint, c)
+						if err != nil {
+							return nil, err
+						}
+					}
+				} else if i.IsSemiReserved() {
+					// 'hint' was the type, i is the const name
+					resolvedHint := string(c.resolveClassName(phpv.ZString(hint)))
+					constTypeHint = phpv.ParseTypeHint(phpv.ZString(resolvedHint))
+				} else {
+					return nil, i.Unexpected()
+				}
+			} else {
+				return nil, i.Unexpected()
+			}
+
+			// TODO: Validate constant type hint if present
+
+			for {
 				if !i.IsSemiReserved() {
 					return nil, i.Unexpected()
 				}
@@ -960,6 +1084,7 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 					Value:      &phpv.CompileDelayed{V: v},
 					Modifiers:  attr,
 					Attributes: memberAttrs,
+					TypeHint:   constTypeHint,
 				}
 				class.ConstOrder = append(class.ConstOrder, cn)
 
@@ -972,6 +1097,12 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 				}
 				if !i.IsSingle(',') {
 					return nil, i.Unexpected()
+				}
+
+				// For comma-separated constants, read the next const name
+				i, err = c.NextItem()
+				if err != nil {
+					return nil, err
 				}
 			}
 		case tokenizer.T_USE:

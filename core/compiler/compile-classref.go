@@ -499,6 +499,10 @@ func (r *runClassStaticObjRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			}
 			return nil, err
 		}
+		// Coerce value to match typed class constant type hint (e.g., int→float)
+		if cc.TypeHint != nil {
+			resolved = coerceConstToTypeHint(ctx, resolved, cc.TypeHint)
+		}
 		cc.Value = resolved.Value()
 		return resolved, nil
 	}
@@ -825,4 +829,45 @@ func (r *runClassNameOf) Loc() *phpv.Loc {
 func (r *runClassNameOf) Dump(w io.Writer) error {
 	_, err := fmt.Fprintf(w, "%s::class", r.className)
 	return err
+}
+
+// coerceConstToTypeHint coerces a resolved class constant value to match its type hint.
+// For example, int(3) with a float type hint becomes float(3).
+func coerceConstToTypeHint(ctx phpv.Context, val *phpv.ZVal, th *phpv.TypeHint) *phpv.ZVal {
+	if th == nil || val == nil {
+		return val
+	}
+	v := val.Value()
+	vt := v.GetType()
+
+	// Direct float type: coerce int to float
+	if th.Type() == phpv.ZtFloat && len(th.Union) == 0 && len(th.Intersection) == 0 {
+		if vt == phpv.ZtInt {
+			f, _ := v.AsVal(ctx, phpv.ZtFloat)
+			return f.ZVal()
+		}
+		return val
+	}
+
+	// Union types: check if any member is float and value is int
+	if len(th.Union) > 0 {
+		for _, u := range th.Union {
+			if u.Type() == phpv.ZtFloat && vt == phpv.ZtInt {
+				// Only coerce if int is not also in the union
+				hasInt := false
+				for _, u2 := range th.Union {
+					if u2.Type() == phpv.ZtInt {
+						hasInt = true
+						break
+					}
+				}
+				if !hasInt {
+					f, _ := v.AsVal(ctx, phpv.ZtFloat)
+					return f.ZVal()
+				}
+			}
+		}
+	}
+
+	return val
 }
