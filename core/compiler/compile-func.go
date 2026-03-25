@@ -1598,7 +1598,7 @@ func validateTypeHint(th *phpv.TypeHint, loc *phpv.Loc) error {
 			// void cannot be in union: "Void can only be used as a standalone type"
 			if u.Type() == phpv.ZtVoid {
 				return &phpv.PhpError{
-					Err:  fmt.Errorf("Type void can only be used as a standalone type"),
+					Err:  fmt.Errorf("Void can only be used as a standalone type"),
 					Code: phpv.E_COMPILE_ERROR,
 					Loc:  loc,
 				}
@@ -1618,7 +1618,7 @@ func validateTypeHint(th *phpv.TypeHint, loc *phpv.Loc) error {
 		for _, u := range th.Union {
 			if u.Type() == phpv.ZtNever {
 				return &phpv.PhpError{
-					Err:  fmt.Errorf("Type never can only be used as a standalone type"),
+					Err:  fmt.Errorf("never can only be used as a standalone type"),
 					Code: phpv.E_COMPILE_ERROR,
 					Loc:  loc,
 				}
@@ -1722,20 +1722,24 @@ func validateTypeHint(th *phpv.TypeHint, loc *phpv.Loc) error {
 				Loc:  loc,
 			}
 		}
-		// object includes all class types
-		if hasObject && len(classNames) > 0 {
-			return &phpv.PhpError{
-				Err:  fmt.Errorf("Duplicate type %s is redundant", classNames[0]),
-				Code: phpv.E_COMPILE_ERROR,
-				Loc:  loc,
+		// object includes all class types (including intersection types and static)
+		if hasObject {
+			hasClassType := len(classNames) > 0 || hasStatic
+			// Also check for intersection types (DNF)
+			if !hasClassType {
+				for _, u := range th.Union {
+					if len(u.Intersection) > 0 {
+						hasClassType = true
+						break
+					}
+				}
 			}
-		}
-		// object includes static
-		if hasObject && hasStatic {
-			return &phpv.PhpError{
-				Err:  fmt.Errorf("Duplicate type static is redundant"),
-				Code: phpv.E_COMPILE_ERROR,
-				Loc:  loc,
+			if hasClassType {
+				return &phpv.PhpError{
+					Err:  fmt.Errorf("Type %s contains both object and a class type, which is redundant", th.String()),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  loc,
+				}
 			}
 		}
 		// nullable + null in union

@@ -14,8 +14,14 @@ func lexNumber(l *Lexer) lexState {
 		if l.accept("xX") {
 			// hex - underscore must not come immediately after 0x
 			if l.peek() == '_' {
+				prefix := l.output.String()
+				suffix := string(prefix[len(prefix)-1]) // x or X
 				l.next()
-				return l.error("syntax error, unexpected identifier")
+				suffix += "_"
+				for isAlphaNumeric(l.peek()) || l.peek() == '_' {
+					suffix += string(l.next())
+				}
+				return l.error("syntax error, unexpected identifier \"%s\"", suffix)
 			}
 			digits = "0123456789abcdefABCDEF_"
 			allowDecimal = false
@@ -23,8 +29,14 @@ func lexNumber(l *Lexer) lexState {
 		} else if l.accept("bB") {
 			// binary - underscore must not come immediately after 0b
 			if l.peek() == '_' {
+				prefix := l.output.String()
+				suffix := string(prefix[len(prefix)-1]) // b or B
 				l.next()
-				return l.error("syntax error, unexpected identifier")
+				suffix += "_"
+				for isAlphaNumeric(l.peek()) || l.peek() == '_' {
+					suffix += string(l.next())
+				}
+				return l.error("syntax error, unexpected identifier \"%s\"", suffix)
 			}
 			digits = "01_"
 			allowDecimal = false
@@ -32,8 +44,14 @@ func lexNumber(l *Lexer) lexState {
 		} else if l.accept("oO") {
 			// explicit octal (PHP 8.1+) - underscore must not come immediately after 0o
 			if l.peek() == '_' {
+				prefix := l.output.String()
+				suffix := string(prefix[len(prefix)-1]) // o or O
 				l.next()
-				return l.error("syntax error, unexpected identifier")
+				suffix += "_"
+				for isAlphaNumeric(l.peek()) || l.peek() == '_' {
+					suffix += string(l.next())
+				}
+				return l.error("syntax error, unexpected identifier \"%s\"", suffix)
 			}
 			digits = "01234567_"
 			allowDecimal = false
@@ -81,33 +99,57 @@ func lexNumber(l *Lexer) lexState {
 		for len(valPart) > 0 && (valPart[0] == '+' || valPart[0] == '-') {
 			valPart = valPart[1:]
 		}
+
+		// identSuffix computes the identifier that PHP would report in the error,
+		// starting from the bad underscore position and consuming remaining alnum/_ chars.
+		identSuffix := func(from int) string {
+			// Consume any remaining alphanumeric/underscore characters from the input
+			extra := ""
+			for isAlphaNumeric(l.peek()) || l.peek() == '_' {
+				extra += string(l.next())
+			}
+			suffix := valPart[from:] + extra
+			return suffix
+		}
+
 		if len(valPart) > 0 && valPart[len(valPart)-1] == '_' {
-			// trailing underscore
-			return l.error("syntax error, unexpected identifier")
+			// trailing underscore - consume any remaining identifier chars
+			suffix := identSuffix(len(valPart) - 1)
+			return l.error("syntax error, unexpected identifier \"%s\"", suffix)
 		}
-		if strings.Contains(valPart, "__") {
+		if idx := strings.Index(valPart, "__"); idx >= 0 {
 			// adjacent underscores
-			return l.error("syntax error, unexpected identifier")
+			suffix := identSuffix(idx)
+			return l.error("syntax error, unexpected identifier \"%s\"", suffix)
 		}
-		if strings.Contains(valPart, "_.") || strings.Contains(valPart, "._") {
-			// underscore adjacent to decimal point
-			return l.error("syntax error, unexpected identifier")
+		if idx := strings.Index(valPart, "_."); idx >= 0 {
+			// underscore before decimal point
+			suffix := identSuffix(idx)
+			return l.error("syntax error, unexpected identifier \"%s\"", suffix)
+		}
+		if idx := strings.Index(valPart, "._"); idx >= 0 {
+			// underscore after decimal point
+			suffix := identSuffix(idx + 1)
+			return l.error("syntax error, unexpected identifier \"%s\"", suffix)
 		}
 		// Check underscore adjacent to exponent marker (only for decimal numbers,
 		// not hex/binary/octal where 'e'/'E' are valid digits)
 		if allowDecimal {
 			for i := 0; i < len(valPart)-1; i++ {
 				if valPart[i] == '_' && (valPart[i+1] == 'e' || valPart[i+1] == 'E') {
-					return l.error("syntax error, unexpected identifier")
+					suffix := identSuffix(i)
+					return l.error("syntax error, unexpected identifier \"%s\"", suffix)
 				}
 				if (valPart[i] == 'e' || valPart[i] == 'E') && i+1 < len(valPart) {
 					next := valPart[i+1]
 					if next == '_' {
-						return l.error("syntax error, unexpected identifier")
+						suffix := identSuffix(i)
+						return l.error("syntax error, unexpected identifier \"%s\"", suffix)
 					}
 					// Also check after sign: e+_ or e-_
 					if (next == '+' || next == '-') && i+2 < len(valPart) && valPart[i+2] == '_' {
-						return l.error("syntax error, unexpected identifier")
+						suffix := identSuffix(i)
+						return l.error("syntax error, unexpected identifier \"%s\"", suffix)
 					}
 				}
 			}
