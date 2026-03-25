@@ -21,10 +21,12 @@ var_dump(srand(false));
 var_dump(srand(NULL));
 ?>
 ===Done===
---EXPECT--
+--EXPECTF--
 *** Testing srand() : basic functionality ***
 NULL
 NULL
+
+Deprecated: Implicit conversion from float 500.1 to int loses precision in %s on line %d
 NULL
 NULL
 NULL

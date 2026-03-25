@@ -43,7 +43,7 @@ func compileReturn(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 				}
 			}
 		}
-		return &runReturn{nil, l}, nil // return nothing
+		return &runReturn{nil, l, nil}, nil // return nothing
 	}
 
 	// Check for void return type - cannot return a value
@@ -86,12 +86,18 @@ func compileReturn(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		return nil, err
 	}
 
-	return &runReturn{v, l}, nil
+	var rt *phpv.TypeHint
+	if fn := c.getFunc(); fn != nil {
+		rt = fn.returnType
+	}
+
+	return &runReturn{v, l, rt}, nil
 }
 
 type runReturn struct {
-	v phpv.Runnable
-	l *phpv.Loc
+	v          phpv.Runnable
+	l          *phpv.Loc
+	returnType *phpv.TypeHint // return type for early coercion (before finally)
 }
 
 func (r *runReturn) isReturnExprVariableLike() bool {
@@ -157,6 +163,27 @@ func (r *runReturn) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			ctx.Tick(ctx, r.l)
 			ctx.Notice("Only variable references should be returned by reference",
 				logopt.NoFuncName(true))
+		}
+	}
+
+	// Early return type coercion: coerce the return value BEFORE the finally block
+	// runs (PHP behavior per bug #72347). This ensures deprecation warnings like
+	// "Implicit conversion from float to int" fire at the return statement.
+	if r.returnType != nil && ret != nil && !ret.IsNull() && !ctx.Global().GetStrictTypes() {
+		rt := r.returnType
+		if rt.Type() != phpv.ZtVoid && rt.Type() != phpv.ZtNever && rt.Type() != phpv.ZtMixed &&
+			len(rt.Union) == 0 && len(rt.Intersection) == 0 && rt.Type() != phpv.ZtObject {
+			hintType := rt.Type()
+			if hintType != 0 && ret.GetType() != hintType {
+				if hintType == phpv.ZtInt && ret.GetType() == phpv.ZtFloat {
+					v, _ := phpv.FloatToIntImplicit(ctx, ret.Value().(phpv.ZFloat))
+					ret = v.ZVal()
+				} else if hintType == phpv.ZtInt || hintType == phpv.ZtFloat || hintType == phpv.ZtString || hintType == phpv.ZtBool {
+					if coerced, err := ret.As(ctx, hintType); err == nil && coerced != nil {
+						ret = coerced
+					}
+				}
+			}
 		}
 	}
 

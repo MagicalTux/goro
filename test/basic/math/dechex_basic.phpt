@@ -22,9 +22,13 @@ for ($i = 0; $i < count($values); $i++) {
 	var_dump($res);
 }
 ?>
---EXPECT--
+--EXPECTF--
 string(1) "a"
+
+Deprecated: Implicit conversion from float 3950.5 to int loses precision in %s on line %d
 string(3) "f6e"
+
+Deprecated: Implicit conversion from float 3950.5 to int loses precision in %s on line %d
 string(3) "f6e"
 string(1) "3"
 string(2) "5f"

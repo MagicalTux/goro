@@ -150,6 +150,16 @@ func zvalStore(ctx phpv.Context, i int, args []*phpv.ZVal, out interface{}) (php
 		*tgt = v
 		return v, nil
 	case *int:
+		// Use FloatToIntImplicit for float->int to emit precision-loss deprecation
+		if z.GetType() == phpv.ZtFloat {
+			f := z.Value().(phpv.ZFloat)
+			v, err := phpv.FloatToIntImplicit(ctx, f)
+			if err != nil {
+				return nil, err
+			}
+			*tgt = int(v)
+			return v, nil
+		}
 		s, err := z.As(ctx, phpv.ZtInt)
 		if err != nil {
 			return nil, err
@@ -158,6 +168,16 @@ func zvalStore(ctx phpv.Context, i int, args []*phpv.ZVal, out interface{}) (php
 		*tgt = int(v)
 		return v, nil
 	case *phpv.ZInt:
+		// Use FloatToIntImplicit for float->int to emit precision-loss deprecation
+		if z.GetType() == phpv.ZtFloat {
+			f := z.Value().(phpv.ZFloat)
+			v, err := phpv.FloatToIntImplicit(ctx, f)
+			if err != nil {
+				return nil, err
+			}
+			*tgt = v
+			return v, nil
+		}
 		s, err := z.As(ctx, phpv.ZtInt)
 		if err != nil {
 			return nil, err

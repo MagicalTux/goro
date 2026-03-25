@@ -24,15 +24,15 @@ echo "\nrand() tests with defined min and max value\n";
 
 $min = array(10,
 			 100,
-			 10.5,
-			 10.5e3,
+			 (int)10.5,
+			 (int)10.5e3,
 			 0x10,
 			 0400);
 
 $max = array(100,
 			 1000,
-			 19.5,
-			 10.5e5,
+			 (int)19.5,
+			 (int)10.5e5,
 			 0x10000,
 			 0700);
 
@@ -56,7 +56,7 @@ $min = array(true,
 			 false,
 			 null,
 			 "10",
-			 "10.5");
+			 "10");
 
 // Eexepcted numerical equivalent of above non-numerics
 $minval = array(1,

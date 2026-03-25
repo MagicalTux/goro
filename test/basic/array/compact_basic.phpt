@@ -76,7 +76,6 @@ array(2) {
   ["b"]=>
   float(0.2)
 }
-
 array(0) {
 }
 array(0) {
