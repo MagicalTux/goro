@@ -282,6 +282,11 @@ type runArrayAccess struct {
 	// from the read phase so WriteValue doesn't re-evaluate the chain.
 	compoundCache    bool      // set by runOperator to enable caching
 	cachedContainer  *phpv.ZVal // cached result of ac.value.Run(ctx) from Run()
+
+	// Compound offset caching: for compound ops, cache the offset evaluated
+	// during Read so WriteValue doesn't re-evaluate it (avoiding duplicate warnings).
+	compoundCachedOffset    *phpv.ZVal
+	compoundOffsetFromCache bool // set when getArrayOffset used compound cache
 }
 
 func (r *runArrayAccess) isNullSafeChain() bool { return r.nullChain }
@@ -523,6 +528,11 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
+	// For compound assignments, cache the offset so WriteValue doesn't re-evaluate it
+	if ac.cachedContainer != nil && ac.compoundCachedOffset == nil {
+		ac.compoundCachedOffset = offset.Dup()
+	}
+
 	// PHP 8.1: Deprecation warning for null array offsets (read).
 	// Only applies to string and array containers, not objects (ArrayAccess).
 	if offset.GetType() == phpv.ZtNull && (v.GetType() == phpv.ZtString || v.GetType() == phpv.ZtArray) {
@@ -727,7 +737,8 @@ func (ac *runArrayAccess) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 	}
 
 	// PHP 8.1: Deprecation warning for null array offsets (write)
-	if offset.GetType() == phpv.ZtNull && v.GetType() != phpv.ZtObject {
+	// Skip if offset was cached from compound assignment read phase (warning already emitted)
+	if offset.GetType() == phpv.ZtNull && v.GetType() != phpv.ZtObject && !ac.compoundOffsetFromCache {
 		if err := ctx.Deprecated("Using null as an array offset is deprecated, use an empty string instead", logopt.NoFuncName(true)); err != nil {
 			return err
 		}
@@ -839,7 +850,13 @@ func (ac *runArrayAccess) PrepareWrite(ctx phpv.Context) error {
 func (ac *runArrayAccess) getArrayOffset(ctx phpv.Context) (*phpv.ZVal, error) {
 	var offset *phpv.ZVal
 	var err error
-	if ac.prepared {
+	ac.compoundOffsetFromCache = false
+	if ac.compoundCachedOffset != nil {
+		// Use compound-cached offset from the read phase of a compound assignment
+		offset = ac.compoundCachedOffset
+		ac.compoundCachedOffset = nil
+		ac.compoundOffsetFromCache = true
+	} else if ac.prepared {
 		offset = ac.cachedOffset
 		ac.prepared = false
 		ac.cachedOffset = nil
