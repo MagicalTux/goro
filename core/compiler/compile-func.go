@@ -1927,6 +1927,12 @@ func parseUnionTypeHint(first *phpv.TypeHint, c compileCtx) (*phpv.TypeHint, *to
 			union.Union = append(union.Union, parsedHint)
 		}
 		if !i.IsSingle('|') {
+			// If the result is a Union with a single Intersection member,
+			// unwrap it to a plain Intersection type. This happens when
+			// parsing standalone intersection types like X&Y&Z (not DNF).
+			if len(union.Union) == 1 && len(union.Union[0].Intersection) > 0 {
+				return union.Union[0], i, nil
+			}
 			return union, i, nil
 		}
 	}

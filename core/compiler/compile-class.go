@@ -480,8 +480,8 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 					}
 				}
 
-				if i.IsSingle('|') || i.IsSingle('&') {
-					// Union (int|string) or intersection (A&B) type hint
+				if i.IsSingle('|') {
+					// Union type hint (int|string)
 					propTypeHint = phpv.ParseTypeHint(phpv.ZString(hint))
 					if isNullable {
 						propTypeHint.Nullable = true
@@ -489,6 +489,28 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 					propTypeHint, i, err = parseUnionTypeHint(propTypeHint, c)
 					if err != nil {
 						return nil, err
+					}
+				} else if i.IsSingle('&') {
+					// Intersection type hint (A&B)
+					propTypeHint = phpv.ParseTypeHint(phpv.ZString(hint))
+					if isNullable {
+						propTypeHint.Nullable = true
+					}
+					// Read the next token (the type name after &)
+					nextTok, nextErr := c.NextItem()
+					if nextErr != nil {
+						return nil, nextErr
+					}
+					propTypeHint, i, err = parseIntersectionTypeHint(propTypeHint, nextTok, c)
+					if err != nil {
+						return nil, err
+					}
+					// After intersection, check if followed by | for DNF: A&B|C
+					if i.IsSingle('|') {
+						propTypeHint, i, err = parseUnionTypeHint(propTypeHint, c)
+						if err != nil {
+							return nil, err
+						}
 					}
 				}
 				if i.Type == tokenizer.T_VARIABLE {

@@ -627,7 +627,11 @@ func compilePostExpr(v phpv.Runnable, i *tokenizer.Item, c compileCtx) (phpv.Run
 			// Name was already resolved through resolveFunctionName in compileOneExpr
 			funcName := phpv.ZString(constant.c)
 			// PHP 8: assert() auto-generates description from the AST of its argument
-			if strings.ToLower(string(funcName)) == "assert" && len(args) == 1 {
+			// In a namespace, the function name is resolved to "Namespace\assert",
+			// but assert is a language construct that should always be recognized.
+			funcNameLower := strings.ToLower(string(funcName))
+			isAssert := funcNameLower == "assert" || strings.HasSuffix(funcNameLower, "\\assert")
+			if isAssert && len(args) == 1 {
 				var buf strings.Builder
 				buf.WriteString("assert(")
 				if err := args[0].Dump(&buf); err == nil {
