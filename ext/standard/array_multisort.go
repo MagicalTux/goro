@@ -195,6 +195,10 @@ func fncArrayMultiSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 				sortOrder = n
 				hasOrder = true
 			default:
+				if !isValidSortFlag(n) {
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+						fmt.Sprintf("array_multisort(): Argument #%d must be a valid sort flag", i+j+1))
+				}
 				if hasFlag {
 					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
 						fmt.Sprintf("array_multisort(): Argument #%d must be an array or a sort flag that has not already been specified", i+j+1))

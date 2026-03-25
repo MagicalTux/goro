@@ -3,6 +3,7 @@ package spl
 import (
 	"fmt"
 
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
@@ -102,13 +103,15 @@ func initSplFixedArray() {
 			Name: "__construct",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				size := 0
+				if len(args) > 0 && args[0] != nil && args[0].IsNull() {
+					// Passing null to a non-nullable int param is deprecated in PHP 8.1+
+					ctx.Deprecated("SplFixedArray::__construct(): Passing null to parameter #1 ($size) of type int is deprecated", logopt.NoFuncName(true))
+				}
 				if len(args) > 0 && args[0] != nil && !args[0].IsNull() {
 					// Type check: must be int
 					switch args[0].GetType() {
 					case phpv.ZtInt, phpv.ZtFloat, phpv.ZtBool:
 						// Acceptable types (will be converted to int)
-					case phpv.ZtNull:
-						// null is deprecated in PHP 8.4+ but accepted
 					default:
 						typeName := args[0].GetType().TypeName()
 						if args[0].GetType() == phpv.ZtObject {
@@ -160,6 +163,9 @@ func initSplFixedArray() {
 				}
 				if len(args) == 0 || args[0] == nil {
 					return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "SplFixedArray::setSize(): Argument #1 ($size) must be greater than or equal to 0")
+				}
+				if args[0].IsNull() {
+					ctx.Deprecated("SplFixedArray::setSize(): Passing null to parameter #1 ($size) of type int is deprecated", logopt.NoFuncName(true))
 				}
 				newSize := int(args[0].AsInt(ctx))
 				if newSize < 0 || newSize > 1<<30 {

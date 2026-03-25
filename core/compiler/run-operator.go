@@ -518,6 +518,15 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 				defer func() { ov.incDecCtx = false }()
 			}
 		}
+		// For compound assignment operators (+=, -=, .=, etc.) on object
+		// properties, set compoundWriteCtx so that null receiver produces
+		// "Attempt to assign property" instead of "Attempt to read property".
+		if op.write && op.op != nil {
+			if ov, ok := r.a.(*runObjectVar); ok {
+				ov.compoundWriteCtx = true
+				defer func() { ov.compoundWriteCtx = false }()
+			}
+		}
 		a, err = r.a.Run(ctx)
 		if err != nil {
 			return nil, err

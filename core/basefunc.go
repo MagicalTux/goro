@@ -403,6 +403,12 @@ func fncIniSet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		}
 	}
 
+	// Emit deprecation warning for deprecated directives (auto_detect_line_endings, etc.)
+	switch string(varName) {
+	case "auto_detect_line_endings", "report_memleaks":
+		ctx.Deprecated("%s is deprecated", varName, logopt.NoFuncName(true))
+	}
+
 	oldValue, ok := ctx.Global().SetLocalConfig(varName, newValue.ZVal())
 	if !ok {
 		return phpv.ZFalse.ZVal(), nil

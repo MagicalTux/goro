@@ -220,7 +220,7 @@ func (c *Config) Parse(ctx phpv.Context, r io.Reader) error {
 		}
 		// Emit deprecation warning for deprecated directives (startup only).
 		if DeprecatedDirectives[k] {
-			fmt.Fprintf(ctx, "\nDeprecated: PHP Startup: Directive '%s' is deprecated in Unknown on line 0\n", k)
+			fmt.Fprintf(ctx, "\nDeprecated: %s is deprecated in Unknown on line 0\n", k)
 		}
 		// Emit deprecation for deprecated INI settings (assert.*) only when
 		// the value differs from the default (PHP 8.3+ behavior).

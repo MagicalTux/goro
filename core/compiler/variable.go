@@ -154,8 +154,8 @@ func (r *runVariable) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			// PHP 8 warns about undefined $var when used as $var->prop in READ context,
 			// but NOT in write context. In write context (e.g. $null->a = 42),
 			// only the "Attempt to assign/modify property" error is produced.
-			// Similarly, for ++/-- ($null->a++), suppress the undefined var warning.
-			if t.writeContext || t.incDecCtx {
+			// Similarly, for ++/-- and compound assignment, suppress the warning.
+			if t.writeContext || t.incDecCtx || t.compoundWriteCtx {
 				write = true
 			}
 		case *runRef:

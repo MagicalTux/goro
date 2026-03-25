@@ -550,13 +550,14 @@ func isThisVariable(r phpv.Runnable) bool {
 }
 
 type runObjectVar struct {
-	ref          phpv.Runnable
-	varName      phpv.ZString
-	l            *phpv.Loc
-	writeContext bool // set when reading as part of a write chain (suppress undefined property warnings)
-	incDecCtx    bool // set when in a ++/-- context (for "Attempt to increment/decrement property" error)
-	nullsafe     bool
-	nullChain    bool // propagate null from inner nullsafe chain
+	ref              phpv.Runnable
+	varName          phpv.ZString
+	l                *phpv.Loc
+	writeContext     bool // set when reading as part of a write chain (suppress undefined property warnings)
+	compoundWriteCtx bool // set for compound assignment (+=, etc.) on null receiver
+	incDecCtx        bool // set when in a ++/-- context (for "Attempt to increment/decrement property" error)
+	nullsafe         bool
+	nullChain        bool // propagate null from inner nullsafe chain
 
 	// PrepareWrite caching
 	prepared   bool
@@ -1101,6 +1102,11 @@ func (r *runObjectVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	objI, ok := obj.Value().(phpv.ZObjectAccess)
 	if !ok {
 		typeName := phpValueTypeName(obj)
+		if r.compoundWriteCtx {
+			// PHP 8: compound assignment (+=, -=, /=, etc.) on null receiver
+			return nil, phpobj.ThrowError(ctx, phpobj.Error,
+				fmt.Sprintf("Attempt to modify property \"%s\" on %s", r.varName, typeName))
+		}
 		if r.writeContext {
 			// PHP 8: modifying property of non-object in a write chain throws Error
 			return nil, phpobj.ThrowError(ctx, phpobj.Error,
