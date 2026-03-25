@@ -383,6 +383,12 @@ func (ctx *FuncContext) GetFuncNameForTrace() string {
 }
 
 func (ctx *FuncContext) Error(err error, t ...phpv.PhpErrorType) error {
+	// If the error is already a catchable exception (PhpThrow), pass it through
+	// directly. This preserves the exception type (e.g., ArgumentCountError,
+	// TypeError) so try/catch can handle it.
+	if _, ok := err.(*phperr.PhpThrow); ok {
+		return err
+	}
 	wrappedErr := ctx.Loc().Error(ctx, err, t...)
 	result := phperr.HandleUserError(ctx, wrappedErr)
 	if result == phperr.ErrHandledByUser {

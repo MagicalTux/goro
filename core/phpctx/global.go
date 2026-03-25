@@ -1016,6 +1016,11 @@ func (g *Global) Loc() *phpv.Loc {
 }
 
 func (g *Global) Error(err error, t ...phpv.PhpErrorType) error {
+	// If the error is already a catchable exception (PhpThrow), pass it through
+	// directly. This preserves the exception type so try/catch can handle it.
+	if _, ok := err.(*phperr.PhpThrow); ok {
+		return err
+	}
 	wrappedErr := g.l.Error(g, err, t...)
 	result := phperr.HandleUserError(g, wrappedErr)
 	if result == phperr.ErrHandledByUser {

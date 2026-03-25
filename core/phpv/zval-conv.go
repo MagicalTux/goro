@@ -29,10 +29,14 @@ func (z *ZVal) AsVal(ctx Context, t ZType) (Val, error) {
 		return z.Value(), nil
 	}
 	if t == ZtNull {
-		// For NAN float->null, the NAN warning is emitted by ZFloat.AsVal
-		if z != nil && z.v != nil {
-			if _, err := z.v.AsVal(ctx, t); err != nil {
-				return ZNull{}, err
+		// PHP 8.5+: Emit NAN warning when coercing NAN float to null
+		// Unwrap references to get the actual value
+		actual := z.Nude()
+		if actual != nil && actual.v != nil {
+			if f, ok := actual.v.(ZFloat); ok {
+				if _, err := f.AsVal(ctx, t); err != nil {
+					return ZNull{}, err
+				}
 			}
 		}
 		return ZNull{}, nil

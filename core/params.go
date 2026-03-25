@@ -380,7 +380,12 @@ func Expand(ctx phpv.Context, args []*phpv.ZVal, out ...interface{}) (int, error
 	// Count required vs optional params for accurate error messages.
 	// Optional params: optionalReferable, optionable, or pointer-to-pointer
 	// (EXCEPT *phpv.ZVal which is always required since ZVal is a reference type).
-	zvalPtrType := reflect.TypeOf((*phpv.ZVal)(nil)) // type: *phpv.ZVal
+	// Types that are pointer-to-pointer but still required (not optional)
+	requiredPtrTypes := map[reflect.Type]bool{
+		reflect.TypeOf((*phpv.ZVal)(nil)):      true,
+		reflect.TypeOf((*phpv.ZArray)(nil)):     true,
+		reflect.TypeOf((*phpobj.ZObject)(nil)):  true,
+	}
 	requiredCount := 0
 	for _, o := range out {
 		switch o.(type) {
@@ -389,8 +394,8 @@ func Expand(ctx phpv.Context, args []*phpv.ZVal, out ...interface{}) (int, error
 		default:
 			rv := reflect.ValueOf(o)
 			if rv.Kind() == reflect.Ptr && rv.Type().Elem().Kind() == reflect.Ptr {
-				// pointer-to-pointer: optional UNLESS inner type is *phpv.ZVal
-				if rv.Type().Elem() == zvalPtrType {
+				// pointer-to-pointer: optional UNLESS it's a known required pointer type
+				if requiredPtrTypes[rv.Type().Elem()] {
 					requiredCount++
 				}
 				// else optional (e.g., **phpv.ZInt)
@@ -403,11 +408,22 @@ func Expand(ctx phpv.Context, args []*phpv.ZVal, out ...interface{}) (int, error
 	for i := range out {
 		err := ExpandAt(ctx, args, i, out[i])
 		if err != nil {
-			// Fix "expects at least" → "expects exactly" when all params are required
-			if requiredCount == len(out) {
-				if throwErr, ok := err.(*phperr.PhpThrow); ok {
-					msg := throwErr.Obj.HashTable().GetString("message").String()
-					fixed := strings.Replace(msg, "expects at least", "expects exactly", 1)
+			if throwErr, ok := err.(*phperr.PhpThrow); ok {
+				msg := throwErr.Obj.HashTable().GetString("message").String()
+				// Fix argument count in the error message to use the actual required count
+				// instead of the index+1 that ExpandAt reports.
+				wrongCount := " at least " + phpv.ZInt(i+1).String() + " argument"
+				if requiredCount == len(out) {
+					// All params are required: use "exactly N"
+					rightCount := " exactly " + phpv.ZInt(requiredCount).String() + " argument"
+					fixed := strings.Replace(msg, wrongCount, rightCount, 1)
+					if fixed != msg {
+						return i, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, fixed)
+					}
+				} else if requiredCount > i+1 {
+					// The error reports too few at index i, but we know more are required
+					rightCount := " at least " + phpv.ZInt(requiredCount).String() + " argument"
+					fixed := strings.Replace(msg, wrongCount, rightCount, 1)
 					if fixed != msg {
 						return i, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, fixed)
 					}
