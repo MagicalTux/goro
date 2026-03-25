@@ -463,6 +463,15 @@ func compileBaseSingle(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		ok = true
 	}
 
+	// Special case: T_FN followed by T_NS_SEPARATOR is a qualified name (fn\test()),
+	// not an arrow function. Convert to T_STRING and handle as expression.
+	if i.Type == tokenizer.T_FN && c.peekType() == tokenizer.T_NS_SEPARATOR {
+		i.Type = tokenizer.T_STRING
+		i.Data = "fn"
+		h = &compileFuncCb{f: compileExpr}
+		ok = true
+	}
+
 	// is it a single char item?
 	if !ok {
 		h, ok = itemTypeHandler[i.Type]

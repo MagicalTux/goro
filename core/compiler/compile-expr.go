@@ -265,6 +265,26 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			i.Data = "readonly"
 		}
 		fallthrough
+	case tokenizer.T_FN:
+		if i.Type == tokenizer.T_FN {
+			// `fn` used as identifier in expression context (e.g. fn\test()) — treat as T_STRING
+			// Only when followed by T_NS_SEPARATOR; otherwise fall through to default handler
+			next, err := c.NextItem()
+			if err != nil {
+				return nil, err
+			}
+			c.backup()
+			if next.Type != tokenizer.T_NS_SEPARATOR {
+				// Not a namespace-qualified name — handle as arrow function
+				h, ok := itemTypeHandler[i.Type]
+				if ok && h != nil {
+					return h.f(i, c)
+				}
+				return nil, i.Unexpected()
+			}
+			i.Data = "fn"
+		}
+		fallthrough
 	case tokenizer.T_STRING:
 		// Check for qualified names: T_STRING followed by T_NS_SEPARATOR
 		name := i.Data

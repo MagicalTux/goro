@@ -190,10 +190,13 @@ func compileUse(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			}
 		}
 
-		if next.Type != tokenizer.T_STRING {
+		// Accept semi-reserved keywords as use declaration names
+		// (e.g. use fn\test; use self\test;)
+		if !next.IsSemiReserved() {
 			return nil, next.Unexpected()
 		}
 
+		useLoc := next.Loc()
 		fullName = phpv.ZString(next.Data)
 
 		for {
@@ -229,7 +232,8 @@ func compileUse(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 					}
 					return nil, next.Unexpected()
 				}
-				if peek.Type != tokenizer.T_STRING {
+				// Allow semi-reserved keywords as parts of use declarations
+				if !peek.IsSemiReserved() {
 					return nil, peek.Unexpected()
 				}
 				fullName = fullName + "\\" + phpv.ZString(peek.Data)
@@ -265,7 +269,7 @@ func compileUse(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		// the alias creates a meaningful mapping even for non-compound names.
 		if !strings.Contains(string(fullName), "\\") && root.namespace == "" && alias == lastPart(fullName) {
 			ctx := c.(phpv.Context)
-			ctx.Warn("The use statement with non-compound name '%s' has no effect", fullName, logopt.NoFuncName(true))
+			ctx.Warn("The use statement with non-compound name '%s' has no effect", fullName, logopt.Data{Loc: useLoc, NoFuncName: true})
 		}
 
 		// Check for name conflicts with classes defined in the current namespace.

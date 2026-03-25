@@ -2,6 +2,7 @@ package phpctx
 
 import (
 	"errors"
+	"fmt"
 	"os"
 
 	"github.com/MagicalTux/goro/core/logopt"
@@ -185,8 +186,32 @@ func (c *Global) requireMain(fn phpv.ZString) (*phpv.ZVal, error) {
 
 func (c *Global) Require(ctx phpv.Context, fn phpv.ZString) (*phpv.ZVal, error) {
 	f, err := c.openForInclusion(ctx, fn)
-	if err != nil {
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, c.FuncError(err)
+	}
+
+	if f == nil {
+		// PHP require emits two messages: first a warning (which the error
+		// handler can intercept), then a fatal error.
+		warnOpt := logopt.Data{NoFuncName: true, Loc: ctx.Loc()}
+		if err := ctx.Warn(
+			"require(%s): Failed to open stream: No such file or directory",
+			string(fn),
+			warnOpt,
+		); err != nil {
+			return nil, err
+		}
+		includePath := ctx.GetConfig("include_path", phpv.ZStr("."))
+		if err := ctx.Warn(
+			"require(%s): Failed opening '%s' for inclusion (include_path='%s')",
+			string(fn),
+			string(fn),
+			includePath.String(),
+			warnOpt,
+		); err != nil {
+			return nil, err
+		}
+		return nil, c.FuncError(fmt.Errorf("require(): Failed opening required '%s'", string(fn)))
 	}
 	defer f.Close()
 
@@ -283,8 +308,30 @@ func (c *Global) IncludeOnce(ctx phpv.Context, fn phpv.ZString) (*phpv.ZVal, err
 
 func (c *Global) RequireOnce(ctx phpv.Context, fn phpv.ZString) (*phpv.ZVal, error) {
 	f, err := c.openForInclusion(ctx, fn)
-	if err != nil {
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, c.FuncError(err)
+	}
+
+	if f == nil {
+		warnOpt := logopt.Data{NoFuncName: true, Loc: ctx.Loc()}
+		if err := ctx.Warn(
+			"require_once(%s): Failed to open stream: No such file or directory",
+			string(fn),
+			warnOpt,
+		); err != nil {
+			return nil, err
+		}
+		includePath := ctx.GetConfig("include_path", phpv.ZStr("."))
+		if err := ctx.Warn(
+			"require_once(%s): Failed opening '%s' for inclusion (include_path='%s')",
+			string(fn),
+			string(fn),
+			includePath.String(),
+			warnOpt,
+		); err != nil {
+			return nil, err
+		}
+		return nil, c.FuncError(fmt.Errorf("require_once(): Failed opening required '%s'", string(fn)))
 	}
 	defer f.Close()
 

@@ -622,7 +622,14 @@ func compileFunctionWithName(name phpv.ZString, c compileCtx, l *phpv.Loc, rref 
 				}
 			}
 			funcName := string(name)
-			if cls := c.Global().GetCompilingClass(); cls != nil {
+			if funcName == "" {
+				// Anonymous closure: use {closure:file:line} format
+				if l != nil && l.Filename != "" {
+					funcName = fmt.Sprintf("{closure:%s:%d}", l.Filename, l.Line)
+				} else {
+					funcName = "{closure}"
+				}
+			} else if cls := c.Global().GetCompilingClass(); cls != nil {
 				funcName = string(cls.GetName()) + "::" + funcName
 			}
 			c.Deprecated("%s(): Implicitly marking parameter $%s as nullable is deprecated, the explicit nullable type must be used instead", funcName, arg.VarName, logopt.Data{Loc: l})
@@ -1085,11 +1092,27 @@ func compileFunctionArgs(c compileCtx) (res []*phpv.FuncArg, err error) {
 
 		// Handle leading namespace separator: \ClassName
 		hintFullyQualified := false
+		hintNamespaceRelative := false
 		if arg.Hint == nil && i.Type == tokenizer.T_NS_SEPARATOR {
 			hintFullyQualified = true
 			i, err = c.NextItem()
 			if err != nil {
 				return nil, err
+			}
+		} else if arg.Hint == nil && i.Type == tokenizer.T_NAMESPACE {
+			// namespace\ClassName - namespace-relative type hint
+			peek, peekErr := c.NextItem()
+			if peekErr != nil {
+				return nil, peekErr
+			}
+			if peek.Type == tokenizer.T_NS_SEPARATOR {
+				hintNamespaceRelative = true
+				i, err = c.NextItem()
+				if err != nil {
+					return nil, err
+				}
+			} else {
+				c.backup()
 			}
 		}
 
@@ -1123,6 +1146,14 @@ func compileFunctionArgs(c compileCtx) (res []*phpv.FuncArg, err error) {
 			resolvedHint := hint
 			if hintFullyQualified {
 				resolvedHint = string(c.resolveClassName("\\" + phpv.ZString(hint)))
+			} else if hintNamespaceRelative {
+				// namespace\X resolves to CurrentNamespace\X (ns-relative name)
+				root := getRootCtx(c)
+				if root != nil && root.namespace != "" {
+					resolvedHint = string(root.namespace) + "\\" + hint
+				} else {
+					resolvedHint = hint
+				}
 			} else {
 				resolvedHint = string(c.resolveClassName(phpv.ZString(hint)))
 			}

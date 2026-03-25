@@ -3,7 +3,6 @@ package phpv
 import (
 	"math"
 	"reflect"
-	"sort"
 	"strings"
 )
 
@@ -365,9 +364,6 @@ func (h *TypeHint) String() string {
 			}
 			parts[i] = s
 		}
-		sort.SliceStable(parts, func(i, j int) bool {
-			return typeHintSortOrder(h.Union[i]) < typeHintSortOrder(h.Union[j])
-		})
 		return strings.Join(parts, "|")
 	}
 	if len(h.Intersection) > 0 {

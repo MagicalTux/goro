@@ -238,10 +238,15 @@ func iniStripComment(value string) string {
 	if len(value) == 0 {
 		return value
 	}
+	// Determine if the value starts with a quote (quoted value).
+	// Only track quotes if the value begins with a quote character.
+	// For unquoted values, any `;` is a comment start, even if the value
+	// contains quote characters (they are treated as literal characters).
+	startsQuoted := value[0] == '"'
 	inQuote := false
 	for i := 0; i < len(value); i++ {
 		ch := value[i]
-		if ch == '"' {
+		if ch == '"' && startsQuoted {
 			if inQuote {
 				// End of quoted section - look for `;` after the closing quote
 				// Return everything up to and including the closing quote,

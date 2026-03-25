@@ -151,9 +151,13 @@ func (r *runVariable) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 				write = true
 			}
 		case *runObjectVar:
-			// PHP 8 does warn about undefined $var when used as $var->prop
-			// in both read and write contexts (the variable itself is still "read").
-			write = false
+			// PHP 8 warns about undefined $var when used as $var->prop in READ context,
+			// but NOT in write context. In write context (e.g. $null->a = 42),
+			// only the "Attempt to assign/modify property" error is produced.
+			// Similarly, for ++/-- ($null->a++), suppress the undefined var warning.
+			if t.writeContext || t.incDecCtx {
+				write = true
+			}
 		case *runRef:
 			// &$var reference creation is a write context
 			write = true
