@@ -866,7 +866,7 @@ func fncFeof(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZTrue.ZVal(), nil
 	}
 
-	eof, err := file.EofCheck()
+	eof, err := file.EofCheck(ctx)
 	if err != nil {
 		return nil, err
 	}

@@ -102,6 +102,13 @@ func parseIniString(ctx phpv.Context, data string, processSections bool, mode ph
 				continue
 			}
 			sectionName := strings.TrimSpace(line[1:end])
+			// Strip surrounding quotes from section names
+			if len(sectionName) >= 2 {
+				if (sectionName[0] == '"' && sectionName[len(sectionName)-1] == '"') ||
+					(sectionName[0] == '\'' && sectionName[len(sectionName)-1] == '\'') {
+					sectionName = sectionName[1 : len(sectionName)-1]
+				}
+			}
 			if processSections {
 				currentSection = phpv.NewZArray()
 				result.OffsetSet(ctx, phpv.ZString(sectionName).ZVal(), currentSection.ZVal())
@@ -117,6 +124,10 @@ func parseIniString(ctx phpv.Context, data string, processSections bool, mode ph
 
 		key := strings.TrimSpace(line[:eqIdx])
 		value := strings.TrimSpace(line[eqIdx+1:])
+
+		// Strip inline comments (;) while respecting quoted strings.
+		// A semicolon inside quotes is literal; outside quotes it starts a comment.
+		value = iniStripComment(value)
 
 		// Remove surrounding quotes from value
 		if len(value) >= 2 {
@@ -200,6 +211,18 @@ func iniProcessValue(ctx phpv.Context, value string, mode phpv.ZInt) *phpv.ZVal 
 		return phpv.ZString("").ZVal()
 	}
 
+	// In TYPED mode, convert numeric strings to int or float
+	if mode == INI_SCANNER_TYPED {
+		// Try integer first
+		if n, err := strconv.ParseInt(value, 10, 64); err == nil {
+			return phpv.ZInt(n).ZVal()
+		}
+		// Try float
+		if f, err := strconv.ParseFloat(value, 64); err == nil {
+			return phpv.ZFloat(f).ZVal()
+		}
+	}
+
 	// In NORMAL mode, evaluate bitwise expressions (|, &, ~, ^, !)
 	if mode == INI_SCANNER_NORMAL && containsIniOperator(value) {
 		result := iniEvalExpression(value)
@@ -207,6 +230,35 @@ func iniProcessValue(ctx phpv.Context, value string, mode phpv.ZInt) *phpv.ZVal 
 	}
 
 	return phpv.ZString(value).ZVal()
+}
+
+// iniStripComment strips an inline comment from an INI value, respecting
+// quoted strings. A `;` outside of double quotes starts a comment.
+func iniStripComment(value string) string {
+	if len(value) == 0 {
+		return value
+	}
+	inQuote := false
+	for i := 0; i < len(value); i++ {
+		ch := value[i]
+		if ch == '"' {
+			if inQuote {
+				// End of quoted section - look for `;` after the closing quote
+				// Return everything up to and including the closing quote,
+				// then strip trailing whitespace
+				rest := strings.TrimSpace(value[i+1:])
+				if len(rest) > 0 && rest[0] == ';' {
+					return strings.TrimSpace(value[:i+1])
+				}
+				inQuote = false
+			} else {
+				inQuote = true
+			}
+		} else if ch == ';' && !inQuote {
+			return strings.TrimSpace(value[:i])
+		}
+	}
+	return value
 }
 
 // containsIniOperator checks if the value string contains INI bitwise operators.

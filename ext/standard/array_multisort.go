@@ -153,7 +153,7 @@ func fncArrayMultiSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 		}
 		arr := arg.AsArray(ctx)
 		if arr.Count(ctx) != expectedRowSize {
-			return phpv.ZFalse.ZVal(), ctx.Warn("Array sizes are inconsistent")
+			return phpv.ZFalse.ZVal(), phpobj.ThrowError(ctx, phpobj.ValueError, "Array sizes are inconsistent")
 		}
 
 		sortFlag := SORT_REGULAR

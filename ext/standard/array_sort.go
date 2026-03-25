@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -378,9 +379,12 @@ func arrayUSort(ctx phpv.Context, entries []compareEntry, compare phpv.Callable,
 			return false
 		}
 		// PHP 8.2+ deprecation: comparison functions should not return bool
+		// Note: this deprecation should be shown once per usort/uksort/uasort call,
+		// not just once for the entire program. We use Warn with E_DEPRECATED type
+		// directly to avoid the global ShownDeprecated deduplication.
 		if ret != nil && ret.GetType() == phpv.ZtBool && !boolDeprecated {
 			boolDeprecated = true
-			_ = ctx.Deprecated(fname + "(): Returning bool from comparison function is deprecated, return an integer less than, equal to, or greater than zero")
+			_ = ctx.Warn(fname+"(): Returning bool from comparison function is deprecated, return an integer less than, equal to, or greater than zero", logopt.ErrType(phpv.E_DEPRECATED), logopt.NoFuncName(true))
 		}
 		return ret.AsInt(ctx) < 0
 	})
