@@ -310,37 +310,33 @@ func (h *TypeHint) Check(ctx Context, val *ZVal) bool {
 	return valType == h.t
 }
 
-// typeHintSortOrder returns the sort key for a type hint in union display order.
-// PHP displays union types in canonical order: object types, then array, then scalars.
+// typeHintSortOrder returns a sort key for canonical union display order.
+// PHP normalizes union types so that class types and intersection groups preserve
+// their relative declaration order, but scalar types (int, string, float, bool,
+// true, false, array) sort after them, and null always goes last.
 func typeHintSortOrder(h *TypeHint) int {
 	if len(h.Intersection) > 0 {
-		return 4 // intersection groups before regular types
+		return 0 // intersection groups: preserve position among class types
 	}
 	switch h.t {
 	case ZtObject:
-		if h.s == "self" || h.s == "static" || h.s == "callable" || h.s == "iterable" {
-			return 10
-		}
-		if h.s == "" {
-			return 10 // bare "object"
-		}
-		return 5 // named class types first
+		return 0 // class/object types: preserve position
 	case ZtArray:
-		return 20
+		return 10
 	case ZtString:
-		return 30
+		return 20
 	case ZtInt:
-		return 31
+		return 21
 	case ZtFloat:
-		return 32
+		return 22
 	case ZtBool:
 		if h.s == "false" {
-			return 41
+			return 31
 		}
 		if h.s == "true" {
-			return 40
+			return 30
 		}
-		return 33
+		return 23
 	case ZtNull:
 		return 50
 	case ZtVoid:

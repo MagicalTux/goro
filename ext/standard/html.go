@@ -564,7 +564,7 @@ func fncHtmlSpecialChars(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error
 	if encodingArg.HasArg() {
 		enc := string(encodingArg.Get())
 		if !isSupportedHtmlCharset(enc) && enc != "" {
-			ctx.Warn("htmlspecialchars(): Charset \"%s\" is not supported, assuming UTF-8", enc)
+			ctx.Warn("Charset \"%s\" is not supported, assuming UTF-8", enc)
 		}
 	}
 
