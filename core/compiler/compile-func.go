@@ -1288,7 +1288,7 @@ func compileFunctionArgs(c compileCtx) (res []*phpv.FuncArg, err error) {
 
 		// Validate type hint
 		if arg.Hint != nil {
-			if err := validateTypeHint(arg.Hint, i.Loc()); err != nil {
+			if err := validateTypeHint(arg.Hint, i.Loc(), classNamesFromCtx(c)...); err != nil {
 				return nil, err
 			}
 		}
@@ -1616,9 +1616,27 @@ func compileFunctionUse(c compileCtx) (res []*phpv.FuncUse, err error) {
 	}
 }
 
+// classNamesFromCtx extracts the current class name and parent class name
+// from a compile context, for use with validateTypeHint.
+func classNamesFromCtx(c compileCtx) []phpv.ZString {
+	cls := c.getClass()
+	if cls == nil {
+		return nil
+	}
+	names := []phpv.ZString{cls.Name}
+	if cls.Extends != nil {
+		names = append(names, cls.Extends.Name)
+	} else {
+		names = append(names, "")
+	}
+	return names
+}
+
 // validateTypeHint checks a parsed TypeHint for PHP compile-time validity rules.
 // It returns a compile error if the type is invalid (e.g., ?mixed, mixed|X, ?void).
-func validateTypeHint(th *phpv.TypeHint, loc *phpv.Loc) error {
+// className is the current class name (for resolving self/parent); may be empty.
+// parentClassName is the parent class name; may be empty.
+func validateTypeHint(th *phpv.TypeHint, loc *phpv.Loc, className ...phpv.ZString) error {
 	if th == nil {
 		return nil
 	}
@@ -1691,13 +1709,35 @@ func validateTypeHint(th *phpv.TypeHint, loc *phpv.Loc) error {
 			}
 		}
 
-		// Check for duplicate types and bool/true/false conflicts
+		// Check for duplicate types and bool/true/false conflicts.
+		// Resolve self/parent to the actual class name for duplicate detection.
+		var curClassName, curParentName phpv.ZString
+		if len(className) > 0 {
+			curClassName = className[0]
+		}
+		if len(className) > 1 {
+			curParentName = className[1]
+		}
+
+		resolveKey := func(u *phpv.TypeHint) (key string, displayName string) {
+			if u.Type() == phpv.ZtObject {
+				lowerName := strings.ToLower(string(u.ClassName()))
+				if lowerName == "self" && curClassName != "" {
+					return strings.ToLower(string(curClassName)), string(curClassName)
+				}
+				if lowerName == "parent" && curParentName != "" {
+					return strings.ToLower(string(curParentName)), string(curParentName)
+				}
+			}
+			return strings.ToLower(u.String()), u.String()
+		}
+
 		seen := make(map[string]bool)
 		hasFalse := false
 		hasTrue := false
 		hasBool := false
 		for _, u := range th.Union {
-			key := strings.ToLower(u.String())
+			key, displayName := resolveKey(u)
 			if u.Type() == phpv.ZtBool {
 				if u.ClassName() == "false" {
 					hasFalse = true
@@ -1712,7 +1752,7 @@ func validateTypeHint(th *phpv.TypeHint, loc *phpv.Loc) error {
 			}
 			if seen[key] {
 				return &phpv.PhpError{
-					Err:  fmt.Errorf("Duplicate type %s is redundant", u.String()),
+					Err:  fmt.Errorf("Duplicate type %s is redundant", displayName),
 					Code: phpv.E_COMPILE_ERROR,
 					Loc:  loc,
 				}

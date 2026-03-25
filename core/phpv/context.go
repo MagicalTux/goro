@@ -80,8 +80,10 @@ type GlobalContext interface {
 	SetCompilingClass(c ZClass)
 	GetCompilingClass() ZClass
 
-	RegisterAutoload(handler Callable)
+	RegisterAutoload(handler Callable, prepend bool)
 	UnregisterAutoload(handler Callable) bool
+	UnregisterAutoloadByName(name string) bool
+	ClearAutoloadFunctions()
 	GetAutoloadFunctions() []Callable
 
 	RestoreConfig(name ZString)

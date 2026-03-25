@@ -1974,18 +1974,38 @@ func (g *Global) RestoreUserExceptionHandler() {
 	}
 }
 
-func (g *Global) RegisterAutoload(handler phpv.Callable) {
-	g.autoloadFuncs = append(g.autoloadFuncs, handler)
+func (g *Global) RegisterAutoload(handler phpv.Callable, prepend bool) {
+	// Check for duplicate by comparing callable names
+	name := phpv.CallableDisplayName(handler)
+	for _, f := range g.autoloadFuncs {
+		if phpv.CallableDisplayName(f) == name {
+			return // already registered, skip
+		}
+	}
+	if prepend {
+		g.autoloadFuncs = append([]phpv.Callable{handler}, g.autoloadFuncs...)
+	} else {
+		g.autoloadFuncs = append(g.autoloadFuncs, handler)
+	}
 }
 
 func (g *Global) UnregisterAutoload(handler phpv.Callable) bool {
+	name := phpv.CallableDisplayName(handler)
+	return g.UnregisterAutoloadByName(name)
+}
+
+func (g *Global) UnregisterAutoloadByName(name string) bool {
 	for i, f := range g.autoloadFuncs {
-		if f == handler {
+		if phpv.CallableDisplayName(f) == name {
 			g.autoloadFuncs = append(g.autoloadFuncs[:i], g.autoloadFuncs[i+1:]...)
 			return true
 		}
 	}
 	return false
+}
+
+func (g *Global) ClearAutoloadFunctions() {
+	g.autoloadFuncs = nil
 }
 
 func (g *Global) GetAutoloadFunctions() []phpv.Callable {

@@ -477,7 +477,38 @@ func splAutoloadFunctions(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, erro
 	result := phpv.NewZArray()
 
 	for _, loader := range loaders {
-		result.OffsetSet(ctx, nil, loader.ZVal())
+		// Convert callable to the PHP representation:
+		// - Named functions: string (function name)
+		// - Method callables: [object/class, method] array
+		// - Closures: Closure object
+		var entry *phpv.ZVal
+		switch c := loader.(type) {
+		case *phpv.MethodCallable:
+			arr := phpv.NewZArray()
+			if c.Static {
+				arr.OffsetSet(ctx, nil, phpv.ZString(c.Class.GetName()).ZVal())
+			} else if bc, ok := loader.(*phpv.BoundedCallable); ok && bc.This != nil {
+				arr.OffsetSet(ctx, nil, bc.This.ZVal())
+			} else {
+				arr.OffsetSet(ctx, nil, phpv.ZString(c.Class.GetName()).ZVal())
+			}
+			arr.OffsetSet(ctx, nil, phpv.ZString(c.Callable.Name()).ZVal())
+			entry = arr.ZVal()
+		case *phpv.BoundedCallable:
+			if c.This != nil {
+				arr := phpv.NewZArray()
+				arr.OffsetSet(ctx, nil, c.This.ZVal())
+				arr.OffsetSet(ctx, nil, phpv.ZString(c.Callable.Name()).ZVal())
+				entry = arr.ZVal()
+			} else {
+				entry = phpv.ZString(c.Name()).ZVal()
+			}
+		default:
+			// For named functions (including spl_autoload), return the name as string
+			name := phpv.CallableDisplayName(loader)
+			entry = phpv.ZString(name).ZVal()
+		}
+		result.OffsetSet(ctx, nil, entry)
 	}
 
 	return result.ZVal(), nil
