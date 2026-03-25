@@ -501,16 +501,21 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 					if nextErr != nil {
 						return nil, nextErr
 					}
-					propTypeHint, i, err = parseIntersectionTypeHint(propTypeHint, nextTok, c)
-					if err != nil {
-						return nil, err
-					}
-					// After intersection, check if followed by | for DNF: A&B|C
-					if i.IsSingle('|') {
-						propTypeHint, i, err = parseUnionTypeHint(propTypeHint, c)
+					if nextTok.Type == tokenizer.T_STRING || nextTok.Type == tokenizer.T_ARRAY || nextTok.Type == tokenizer.T_CALLABLE || nextTok.Type == tokenizer.T_STATIC {
+						propTypeHint, i, err = parseIntersectionTypeHint(propTypeHint, nextTok, c)
 						if err != nil {
 							return nil, err
 						}
+						// After intersection, check if followed by | for DNF: A&B|C
+						if i.IsSingle('|') {
+							propTypeHint, i, err = parseUnionTypeHint(propTypeHint, c)
+							if err != nil {
+								return nil, err
+							}
+						}
+					} else {
+						// Invalid token after &, return parse error
+						return nil, nextTok.Unexpected()
 					}
 				}
 				if i.Type == tokenizer.T_VARIABLE {
@@ -965,7 +970,11 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 				} else if i.IsSingle('&') {
 					// Intersection type
 					constTypeHint = phpv.ParseTypeHint(phpv.ZString(c.resolveClassName(phpv.ZString(hint))))
-					constTypeHint, i, err = parseIntersectionTypeHint(constTypeHint, i, c)
+					nextTok, nextErr := c.NextItem()
+					if nextErr != nil {
+						return nil, nextErr
+					}
+					constTypeHint, i, err = parseIntersectionTypeHint(constTypeHint, nextTok, c)
 					if err != nil {
 						return nil, err
 					}

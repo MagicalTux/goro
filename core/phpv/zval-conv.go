@@ -29,7 +29,12 @@ func (z *ZVal) AsVal(ctx Context, t ZType) (Val, error) {
 		return z.Value(), nil
 	}
 	if t == ZtNull {
-		// cast to NULL can only result into null
+		// For NAN float->null, the NAN warning is emitted by ZFloat.AsVal
+		if z != nil && z.v != nil {
+			if _, err := z.v.AsVal(ctx, t); err != nil {
+				return ZNull{}, err
+			}
+		}
 		return ZNull{}, nil
 	}
 

@@ -11,7 +11,8 @@ import (
 type runInstanceOf struct {
 	v        phpv.Runnable
 	l        *phpv.Loc
-	c        phpv.ZString  // static class name
+	c        phpv.ZString  // static class name (resolved)
+	cSrc     phpv.ZString  // original source class name for AST pretty-printing
 	classVar phpv.Runnable // dynamic class name (variable)
 }
 
@@ -30,7 +31,7 @@ func compileInstanceOf(v phpv.Runnable, i *tokenizer.Item, c compileCtx) (phpv.R
 	}
 
 	c.backup()
-	r.c, err = compileClassName(c)
+	r.c, r.cSrc, err = compileClassNameWithSource(c)
 	if err != nil {
 		return nil, err
 	}
@@ -49,7 +50,11 @@ func (r *runInstanceOf) Dump(w io.Writer) error {
 	if r.classVar != nil {
 		return r.classVar.Dump(w)
 	}
-	_, err = w.Write([]byte(r.c))
+	name := r.cSrc
+	if name == "" {
+		name = r.c
+	}
+	_, err = w.Write([]byte(name))
 	return err
 }
 

@@ -187,12 +187,40 @@ func (z ZFloat) ZVal() *ZVal {
 
 func (z ZFloat) AsVal(ctx Context, t ZType) (Val, error) {
 	f := float64(z)
+	// PHP 8.5+: Warn when coercing NAN to any non-float type
+	if math.IsNaN(f) && ctx != nil && t != ZtFloat {
+		targetName := t.TypeName()
+		if err := ctx.Warn("unexpected NAN value was coerced to %s", targetName, logopt.NoFuncName(true)); err != nil {
+			// If the error handler modified the value or threw, still
+			// perform the coercion but propagate the error.
+			switch t {
+			case ZtBool:
+				return ZBool(true), err
+			case ZtInt:
+				return ZInt(0), err
+			case ZtString:
+				prec := 14
+				prec = GetPrecision(ctx)
+				return ZString(FormatFloatPrecision(f, prec)), err
+			case ZtArray:
+				arr := NewZArray()
+				arr.OffsetSet(ctx, nil, z.ZVal())
+				return arr, err
+			case ZtObject:
+				v, _ := scalarToObject(ctx, z.ZVal())
+				return v, err
+			case ZtNull:
+				return ZNull{}, err
+			}
+			return nil, err
+		}
+	}
 	switch t {
 	case ZtBool:
 		return ZBool(z != 0), nil
 	case ZtInt:
 		if math.IsNaN(f) || math.IsInf(f, 0) || f > math.MaxInt64 || f < math.MinInt64 {
-			if ctx != nil {
+			if ctx != nil && !math.IsNaN(f) {
 				if err := ctx.Warn("The float %s is not representable as an int, cast occurred", FormatFloat(f), logopt.NoFuncName(true)); err != nil {
 					return ZInt(0), err
 				}

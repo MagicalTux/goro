@@ -89,16 +89,21 @@ func (r *runNullChainWrap) Dump(w io.Writer) error {
 }
 
 type runNewObject struct {
-	obj    phpv.ZString
-	cl     phpv.Runnable // for anonymous
-	newArg phpv.Runnables
-	l      *phpv.Loc
+	obj     phpv.ZString
+	objSrc  phpv.ZString  // original source name for AST pretty-printing
+	cl      phpv.Runnable // for anonymous
+	newArg  phpv.Runnables
+	l       *phpv.Loc
 }
 
 func (*runNewObject) IsFuncCallExpression() {}
 
 func (r *runNewObject) Dump(w io.Writer) error {
-	_, err := fmt.Fprintf(w, "new %s(", r.obj)
+	name := r.objSrc
+	if name == "" {
+		name = r.obj
+	}
+	_, err := fmt.Fprintf(w, "new %s(", name)
 	if err != nil {
 		return err
 	}
@@ -444,7 +449,7 @@ func compileNew(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		n.obj = phpv.ZString("static")
 	} else {
 		c.backup()
-		n.obj, err = compileClassName(c)
+		n.obj, n.objSrc, err = compileClassNameWithSource(c)
 		if err != nil {
 			return nil, err
 		}
@@ -2047,49 +2052,56 @@ func (r *runFirstClassDynMethodCallable) Dump(w io.Writer) error {
 }
 
 func compileClassName(c compileCtx) (phpv.ZString, error) {
+	resolved, _, err := compileClassNameWithSource(c)
+	return resolved, err
+}
+
+// compileClassNameWithSource parses a class name and returns both the resolved
+// name (for runtime use) and the source name as written (for AST pretty-printing).
+func compileClassNameWithSource(c compileCtx) (phpv.ZString, phpv.ZString, error) {
 	var r phpv.ZString
 	fullyQualified := false
 
 	i, err := c.NextItem()
 	if err != nil {
-		return r, err
+		return r, r, err
 	}
 
 	if i.Type == tokenizer.T_NS_SEPARATOR {
 		fullyQualified = true
 		i, err = c.NextItem()
 		if err != nil {
-			return r, err
+			return r, r, err
 		}
 	}
 
 	for {
 		// Semi-reserved keywords (like 'enum') can be used as class names
 		if i.Type != tokenizer.T_STRING && !i.IsSemiReserved() {
-			return r, i.Unexpected()
+			return r, r, i.Unexpected()
 		}
 
 		r = r + phpv.ZString(i.Data)
 
 		i, err = c.NextItem()
 		if err != nil {
-			return r, err
+			return r, r, err
 		}
 		if i.Type == tokenizer.T_NS_SEPARATOR {
 			r = r + "\\"
 			// Read the next part after the separator
 			i, err = c.NextItem()
 			if err != nil {
-				return r, err
+				return r, r, err
 			}
 			continue
 		}
 		// Not a namespace separator — done
 		c.backup()
 		if fullyQualified {
-			return c.resolveClassName("\\" + r), nil
+			return c.resolveClassName("\\" + r), "\\" + r, nil
 		}
-		return c.resolveClassName(r), nil
+		return c.resolveClassName(r), r, nil
 	}
 }
 
