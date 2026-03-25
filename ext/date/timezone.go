@@ -92,7 +92,7 @@ func fncDateDefaultTimezoneGet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal,
 // > func DateInterval date_diff ( DateTimeInterface $datetime1 , DateTimeInterface $datetime2 [, bool $absolute = false ] )
 func fncDateDiff(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 2 {
-		return nil, ctx.Errorf("date_diff() expects at least 2 parameters, %d given", len(args))
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, fmt.Sprintf("date_diff() expects at least 2 parameters, %d given", len(args)))
 	}
 
 	obj1, ok := args[0].Value().(phpv.ZObject)
@@ -206,7 +206,7 @@ func parseTzName(tzName string) (*time.Location, error) {
 // datetimezoneConstruct implements DateTimeZone::__construct(string $timezone)
 func datetimezoneConstruct(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
-		return nil, ctx.Errorf("DateTimeZone::__construct() expects exactly 1 argument, 0 given")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "DateTimeZone::__construct() expects exactly 1 argument, 0 given")
 	}
 	tzName := string(args[0].AsString(ctx))
 
@@ -382,7 +382,7 @@ func datetimezoneListAbbreviations(ctx phpv.Context, args []*phpv.ZVal) (*phpv.Z
 // > func DateTimeZone timezone_open ( string $timezone )
 func fncTimezoneOpen(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
-		return nil, ctx.Errorf("timezone_open() expects exactly 1 argument, 0 given")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "timezone_open() expects exactly 1 argument, 0 given")
 	}
 	obj, err := phpobj.NewZObject(ctx, DateTimeZone, args[0])
 	if err != nil {
@@ -395,7 +395,7 @@ func fncTimezoneOpen(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // > func string timezone_name_get ( DateTimeZone $object )
 func fncTimezoneNameGet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
-		return nil, ctx.Errorf("timezone_name_get() expects exactly 1 argument, 0 given")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "timezone_name_get() expects exactly 1 argument, 0 given")
 	}
 	tzObj, ok := args[0].Value().(*phpobj.ZObject)
 	if !ok {
@@ -416,7 +416,7 @@ func fncTimezoneIdentifiersList(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal
 // > func int timezone_offset_get ( DateTimeZone $object , DateTimeInterface $datetime )
 func fncTimezoneOffsetGet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 2 {
-		return nil, ctx.Errorf("timezone_offset_get() expects exactly 2 arguments")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "timezone_offset_get() expects exactly 2 argument")
 	}
 	tzObj, ok := args[0].Value().(*phpobj.ZObject)
 	if !ok {
@@ -566,7 +566,7 @@ func fncDateCreateImmutable(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 // > func string date_format ( DateTimeInterface $object , string $format )
 func fncDateFormat(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 2 {
-		return nil, ctx.Errorf("date_format() expects exactly 2 arguments")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "date_format() expects exactly 2 argument")
 	}
 	dtObj, ok := args[0].Value().(*phpobj.ZObject)
 	if !ok {
@@ -578,7 +578,7 @@ func fncDateFormat(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // > func int date_timestamp_get ( DateTimeInterface $object )
 func fncDateTimestampGet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
-		return nil, ctx.Errorf("date_timestamp_get() expects exactly 1 argument")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "date_timestamp_get() expects exactly 1 argument")
 	}
 	dtObj, ok := args[0].Value().(*phpobj.ZObject)
 	if !ok {
@@ -590,7 +590,7 @@ func fncDateTimestampGet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error
 // > func int date_offset_get ( DateTimeInterface $object )
 func fncDateOffsetGet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
-		return nil, ctx.Errorf("date_offset_get() expects exactly 1 argument")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "date_offset_get() expects exactly 1 argument")
 	}
 	dtObj, ok := args[0].Value().(*phpobj.ZObject)
 	if !ok {
@@ -602,7 +602,7 @@ func fncDateOffsetGet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // > func DateTime date_modify ( DateTime $object , string $modifier )
 func fncDateModify(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 2 {
-		return nil, ctx.Errorf("date_modify() expects exactly 2 arguments")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "date_modify() expects exactly 2 argument")
 	}
 	dtObj, ok := args[0].Value().(*phpobj.ZObject)
 	if !ok {
@@ -614,7 +614,7 @@ func fncDateModify(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // > func DateTimeZone date_timezone_get ( DateTimeInterface $object )
 func fncDateTimezoneGet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
-		return nil, ctx.Errorf("date_timezone_get() expects exactly 1 argument")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "date_timezone_get() expects exactly 1 argument")
 	}
 	dtObj, ok := args[0].Value().(*phpobj.ZObject)
 	if !ok {
@@ -626,7 +626,7 @@ func fncDateTimezoneGet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 // > func DateTime date_timezone_set ( DateTime $object , DateTimeZone $timezone )
 func fncDateTimezoneSet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 2 {
-		return nil, ctx.Errorf("date_timezone_set() expects exactly 2 arguments")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "date_timezone_set() expects exactly 2 argument")
 	}
 	dtObj, ok := args[0].Value().(*phpobj.ZObject)
 	if !ok {
@@ -638,7 +638,7 @@ func fncDateTimezoneSet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 // > func DateTime date_date_set ( DateTime $object , int $year , int $month , int $day )
 func fncDateDateSet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 4 {
-		return nil, ctx.Errorf("date_date_set() expects exactly 4 arguments")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "date_date_set() expects exactly 4 argument")
 	}
 	dtObj, ok := args[0].Value().(*phpobj.ZObject)
 	if !ok {
@@ -650,7 +650,7 @@ func fncDateDateSet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // > func DateTime date_time_set ( DateTime $object , int $hour , int $minute [, int $second = 0 [, int $microsecond = 0 ]] )
 func fncDateTimeSet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 3 {
-		return nil, ctx.Errorf("date_time_set() expects at least 3 arguments")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "date_time_set() expects at least 3 argument")
 	}
 	dtObj, ok := args[0].Value().(*phpobj.ZObject)
 	if !ok {
@@ -662,7 +662,7 @@ func fncDateTimeSet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // > func DateTime date_timestamp_set ( DateTime $object , int $timestamp )
 func fncDateTimestampSet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 2 {
-		return nil, ctx.Errorf("date_timestamp_set() expects exactly 2 arguments")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "date_timestamp_set() expects exactly 2 argument")
 	}
 	dtObj, ok := args[0].Value().(*phpobj.ZObject)
 	if !ok {
@@ -673,7 +673,7 @@ func fncDateTimestampSet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error
 
 func fncDateAdd(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 2 {
-		return nil, ctx.Errorf("date_add() expects exactly 2 arguments")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "date_add() expects exactly 2 argument")
 	}
 	dtObj, ok := args[0].Value().(*phpobj.ZObject)
 	if !ok {
@@ -684,7 +684,7 @@ func fncDateAdd(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 func fncDateSub(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 2 {
-		return nil, ctx.Errorf("date_sub() expects exactly 2 arguments")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "date_sub() expects exactly 2 argument")
 	}
 	dtObj, ok := args[0].Value().(*phpobj.ZObject)
 	if !ok {
@@ -703,14 +703,14 @@ func fncDateCreateImmutableFromFormat(ctx phpv.Context, args []*phpv.ZVal) (*php
 
 func fncDateIntervalCreateFromDateString(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
-		return nil, ctx.Errorf("date_interval_create_from_date_string() expects exactly 1 argument")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "date_interval_create_from_date_string() expects exactly 1 argument")
 	}
 	return createDateIntervalFromString(ctx, string(args[0].AsString(ctx)))
 }
 
 func fncDateIntervalFormat(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 2 {
-		return nil, ctx.Errorf("date_interval_format() expects exactly 2 arguments")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "date_interval_format() expects exactly 2 argument")
 	}
 	intObj, ok := args[0].Value().(*phpobj.ZObject)
 	if !ok {
@@ -721,7 +721,7 @@ func fncDateIntervalFormat(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, err
 
 func fncDateISODateSet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 3 {
-		return nil, ctx.Errorf("date_isodate_set() expects at least 3 arguments")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "date_isodate_set() expects at least 3 argument")
 	}
 	dtObj, ok := args[0].Value().(*phpobj.ZObject)
 	if !ok {
@@ -821,7 +821,7 @@ func fncTimezoneVersionGet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, err
 
 func fncTimezoneLocationGet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
-		return nil, ctx.Errorf("timezone_location_get() expects exactly 1 argument")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "timezone_location_get() expects exactly 1 argument")
 	}
 	result := phpv.NewZArray()
 	result.OffsetSet(ctx, phpv.ZString("country_code"), phpv.ZString("??").ZVal())
@@ -833,7 +833,7 @@ func fncTimezoneLocationGet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 
 func fncTimezoneTransitionsGet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
-		return nil, ctx.Errorf("timezone_transitions_get() expects at least 1 argument")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "timezone_transitions_get() expects at least 1 argument")
 	}
 	tzObj, ok := args[0].Value().(*phpobj.ZObject)
 	if !ok {
@@ -921,7 +921,7 @@ func dateSunFunc(ctx phpv.Context, args []*phpv.ZVal, isSunrise bool) (*phpv.ZVa
 	}
 	ctx.Deprecated(fmt.Sprintf("Function %s() is deprecated since 8.1", funcName))
 	if len(args) < 1 {
-		return nil, ctx.Errorf("%s() expects at least 1 argument", funcName)
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, fmt.Sprintf("%s() expects at least 1 argument", funcName))
 	}
 	timestamp := int64(args[0].AsInt(ctx))
 	returnFormat := 1

@@ -262,7 +262,7 @@ func setTimeVal(this *phpobj.ZObject, t time.Time) {
 // formatMethod implements DateTime::format(string $format): string
 func formatMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
-		return nil, ctx.Errorf("DateTime::format() expects exactly 1 argument, 0 given")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "DateTime::format() expects exactly 1 argument, 0 given")
 	}
 	if err := checkDateTimeInitialized(ctx, this); err != nil {
 		return nil, err
@@ -291,7 +291,7 @@ func getTimestampMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVa
 // modifyMethod implements DateTime::modify(string $modifier): DateTime|false
 func modifyMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
-		return nil, ctx.Errorf("DateTime::modify() expects exactly 1 argument, 0 given")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "DateTime::modify() expects exactly 1 argument, 0 given")
 	}
 	if err := checkDateTimeInitialized(ctx, this); err != nil {
 		return nil, err
@@ -320,7 +320,7 @@ func modifyMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*p
 // modifyImmutableMethod implements DateTimeImmutable::modify() - returns new instance
 func modifyImmutableMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
-		return nil, ctx.Errorf("DateTimeImmutable::modify() expects exactly 1 argument, 0 given")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "DateTimeImmutable::modify() expects exactly 1 argument, 0 given")
 	}
 	if err := checkDateTimeInitialized(ctx, this); err != nil {
 		return nil, err
@@ -352,7 +352,7 @@ func modifyImmutableMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.
 // setDateMethod implements DateTime::setDate(int $year, int $month, int $day): DateTime
 func setDateMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 3 {
-		return nil, ctx.Errorf("DateTime::setDate() expects exactly 3 arguments")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "DateTime::setDate() expects exactly 3 arguments")
 	}
 	if err := checkDateTimeInitialized(ctx, this); err != nil {
 		return nil, err
@@ -373,7 +373,7 @@ func setDateMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*
 // setDateImmutableMethod implements DateTimeImmutable::setDate() - returns new instance
 func setDateImmutableMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 3 {
-		return nil, ctx.Errorf("DateTimeImmutable::setDate() expects exactly 3 arguments")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "DateTimeImmutable::setDate() expects exactly 3 arguments")
 	}
 	if err := checkDateTimeInitialized(ctx, this); err != nil {
 		return nil, err
@@ -398,7 +398,7 @@ func setDateImmutableMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv
 // setTimeMethod implements DateTime::setTime(int $hour, int $minute, int $second = 0, int $microsecond = 0): DateTime
 func setTimeMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 2 {
-		return nil, ctx.Errorf("DateTime::setTime() expects at least 2 arguments")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "DateTime::setTime() expects at least 2 arguments")
 	}
 	if err := checkDateTimeInitialized(ctx, this); err != nil {
 		return nil, err
@@ -426,7 +426,7 @@ func setTimeMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*
 // setTimeImmutableMethod implements DateTimeImmutable::setTime() - returns new instance
 func setTimeImmutableMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 2 {
-		return nil, ctx.Errorf("DateTimeImmutable::setTime() expects at least 2 arguments")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "DateTimeImmutable::setTime() expects at least 2 arguments")
 	}
 	if err := checkDateTimeInitialized(ctx, this); err != nil {
 		return nil, err
@@ -471,7 +471,7 @@ func getOffsetMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) 
 // setTimezoneMethod implements DateTime::setTimezone(DateTimeZone $timezone): DateTime
 func setTimezoneMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
-		return nil, ctx.Errorf("DateTime::setTimezone() expects exactly 1 argument, 0 given")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "DateTime::setTimezone() expects exactly 1 argument, 0 given")
 	}
 	if err := checkDateTimeInitialized(ctx, this); err != nil {
 		return nil, err
@@ -482,7 +482,7 @@ func setTimezoneMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal
 	}
 	tzObj, ok := args[0].Value().(*phpobj.ZObject)
 	if !ok {
-		return nil, ctx.Errorf("DateTime::setTimezone() expects parameter 1 to be DateTimeZone")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "DateTime::setTimezone() expects parameter 1 to be DateTimeZone")
 	}
 	loc, ok := getTimezoneLoc(tzObj)
 	if !ok {
@@ -495,7 +495,7 @@ func setTimezoneMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal
 // setTimezoneImmutableMethod implements DateTimeImmutable::setTimezone() - returns new instance
 func setTimezoneImmutableMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
-		return nil, ctx.Errorf("DateTimeImmutable::setTimezone() expects exactly 1 argument, 0 given")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "DateTimeImmutable::setTimezone() expects exactly 1 argument, 0 given")
 	}
 	if err := checkDateTimeInitialized(ctx, this); err != nil {
 		return nil, err
@@ -506,7 +506,7 @@ func setTimezoneImmutableMethod(ctx phpv.Context, this *phpobj.ZObject, args []*
 	}
 	tzObj, ok := args[0].Value().(*phpobj.ZObject)
 	if !ok {
-		return nil, ctx.Errorf("DateTimeImmutable::setTimezone() expects parameter 1 to be DateTimeZone")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "DateTimeImmutable::setTimezone() expects parameter 1 to be DateTimeZone")
 	}
 	loc, ok := getTimezoneLoc(tzObj)
 	if !ok {
@@ -539,7 +539,7 @@ func getTimezoneMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal
 // setTimestampMethod implements DateTime::setTimestamp(int $timestamp): DateTime
 func setTimestampMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
-		return nil, ctx.Errorf("DateTime::setTimestamp() expects exactly 1 argument, 0 given")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "DateTime::setTimestamp() expects exactly 1 argument, 0 given")
 	}
 	if err := checkDateTimeInitialized(ctx, this); err != nil {
 		return nil, err
@@ -557,7 +557,7 @@ func setTimestampMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVa
 // setTimestampImmutableMethod implements DateTimeImmutable::setTimestamp() - returns new instance
 func setTimestampImmutableMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
-		return nil, ctx.Errorf("DateTimeImmutable::setTimestamp() expects exactly 1 argument, 0 given")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "DateTimeImmutable::setTimestamp() expects exactly 1 argument, 0 given")
 	}
 	if err := checkDateTimeInitialized(ctx, this); err != nil {
 		return nil, err
@@ -580,7 +580,7 @@ func setTimestampImmutableMethod(ctx phpv.Context, this *phpobj.ZObject, args []
 func createFromFormatStaticFor(targetClass *phpobj.ZClass) func(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return func(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		if len(args) < 2 {
-			return nil, ctx.Errorf("%s::createFromFormat() expects at least 2 arguments", targetClass.Name)
+			return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, fmt.Sprintf("%s::createFromFormat() expects at least 2 arguments", targetClass.Name))
 		}
 
 		format := string(args[0].AsString(ctx))
@@ -626,7 +626,7 @@ func createFromFormatStaticFor(targetClass *phpobj.ZClass) func(ctx phpv.Context
 // diffMethod computes the difference between two DateTime-like objects
 func diffMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
-		return nil, ctx.Errorf("DateTime::diff() expects at least 1 parameter, 0 given")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "DateTime::diff() expects at least 1 parameter, 0 given")
 	}
 
 	if err := checkDateTimeInitialized(ctx, this); err != nil {
@@ -640,7 +640,7 @@ func diffMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*php
 
 	targetObj, ok := args[0].Value().(phpv.ZObject)
 	if !ok {
-		return nil, ctx.Errorf("DateTime::diff() expects parameter 1 to be DateTimeInterface, %s given", args[0].GetType())
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("DateTime::diff() expects parameter 1 to be DateTimeInterface, %s given", args[0].GetType()))
 	}
 
 	targetZObj, ok := targetObj.(*phpobj.ZObject)
@@ -798,7 +798,7 @@ func addIntervalToTime(ctx phpv.Context, t time.Time, intervalObj *phpobj.ZObjec
 // addMethod implements DateTime::add(DateInterval $interval): DateTime
 func addMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
-		return nil, ctx.Errorf("DateTime::add() expects exactly 1 argument, 0 given")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "DateTime::add() expects exactly 1 argument, 0 given")
 	}
 	if err := checkDateTimeInitialized(ctx, this); err != nil {
 		return nil, err
@@ -809,7 +809,7 @@ func addMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv
 	}
 	intervalObj, ok := args[0].Value().(*phpobj.ZObject)
 	if !ok {
-		return nil, ctx.Errorf("DateTime::add() expects parameter 1 to be DateInterval")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "DateTime::add() expects parameter 1 to be DateInterval")
 	}
 	newT := addIntervalToTime(ctx, t, intervalObj, false)
 	setTimeVal(this, newT)
@@ -819,7 +819,7 @@ func addMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv
 // addImmutableMethod implements DateTimeImmutable::add() - returns new instance
 func addImmutableMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
-		return nil, ctx.Errorf("DateTimeImmutable::add() expects exactly 1 argument, 0 given")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "DateTimeImmutable::add() expects exactly 1 argument, 0 given")
 	}
 	if err := checkDateTimeInitialized(ctx, this); err != nil {
 		return nil, err
@@ -830,7 +830,7 @@ func addImmutableMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVa
 	}
 	intervalObj, ok := args[0].Value().(*phpobj.ZObject)
 	if !ok {
-		return nil, ctx.Errorf("DateTimeImmutable::add() expects parameter 1 to be DateInterval")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "DateTimeImmutable::add() expects parameter 1 to be DateInterval")
 	}
 	newT := addIntervalToTime(ctx, t, intervalObj, false)
 	newObj, err := phpobj.NewZObject(ctx, DateTimeImmutable)
@@ -844,7 +844,7 @@ func addImmutableMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVa
 // subMethod implements DateTime::sub(DateInterval $interval): DateTime
 func subMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
-		return nil, ctx.Errorf("DateTime::sub() expects exactly 1 argument, 0 given")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "DateTime::sub() expects exactly 1 argument, 0 given")
 	}
 	if err := checkDateTimeInitialized(ctx, this); err != nil {
 		return nil, err
@@ -855,7 +855,7 @@ func subMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv
 	}
 	intervalObj, ok := args[0].Value().(*phpobj.ZObject)
 	if !ok {
-		return nil, ctx.Errorf("DateTime::sub() expects parameter 1 to be DateInterval")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "DateTime::sub() expects parameter 1 to be DateInterval")
 	}
 	newT := addIntervalToTime(ctx, t, intervalObj, true)
 	setTimeVal(this, newT)
@@ -865,7 +865,7 @@ func subMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv
 // subImmutableMethod implements DateTimeImmutable::sub() - returns new instance
 func subImmutableMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
-		return nil, ctx.Errorf("DateTimeImmutable::sub() expects exactly 1 argument, 0 given")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "DateTimeImmutable::sub() expects exactly 1 argument, 0 given")
 	}
 	if err := checkDateTimeInitialized(ctx, this); err != nil {
 		return nil, err
@@ -876,7 +876,7 @@ func subImmutableMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVa
 	}
 	intervalObj, ok := args[0].Value().(*phpobj.ZObject)
 	if !ok {
-		return nil, ctx.Errorf("DateTimeImmutable::sub() expects parameter 1 to be DateInterval")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "DateTimeImmutable::sub() expects parameter 1 to be DateInterval")
 	}
 	newT := addIntervalToTime(ctx, t, intervalObj, true)
 	newObj, err := phpobj.NewZObject(ctx, DateTimeImmutable)
@@ -890,7 +890,7 @@ func subImmutableMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVa
 // setISODateMethod implements DateTime::setISODate(int $year, int $week, int $dayOfWeek = 1): DateTime
 func setISODateMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 2 {
-		return nil, ctx.Errorf("DateTime::setISODate() expects at least 2 arguments")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "DateTime::setISODate() expects at least 2 arguments")
 	}
 	if err := checkDateTimeInitialized(ctx, this); err != nil {
 		return nil, err
@@ -922,7 +922,7 @@ func setISODateMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal)
 // setISODateImmutableMethod implements DateTimeImmutable::setISODate() - returns new instance
 func setISODateImmutableMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 2 {
-		return nil, ctx.Errorf("DateTimeImmutable::setISODate() expects at least 2 arguments")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "DateTimeImmutable::setISODate() expects at least 2 arguments")
 	}
 	if err := checkDateTimeInitialized(ctx, this); err != nil {
 		return nil, err
@@ -1902,7 +1902,7 @@ func init() {
 				Modifiers: phpv.ZAttrPublic | phpv.ZAttrStatic,
 				Method: phpobj.NativeStaticMethod(func(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 					if len(args) < 1 {
-						return nil, ctx.Errorf("DateInterval::createFromDateString() expects exactly 1 argument")
+						return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "DateInterval::createFromDateString() expects exactly 1 argument")
 					}
 					dateStr := string(args[0].AsString(ctx))
 					return createDateIntervalFromString(ctx, dateStr)
@@ -2231,7 +2231,7 @@ func init() {
 	DateTimeImmutable.Methods["createfrominterface"].Method = phpobj.NativeStaticMethod(createFromInterfaceStatic(DateTimeImmutable))
 	DateTimeImmutable.Methods["createfrommutable"].Method = phpobj.NativeStaticMethod(func(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		if len(args) < 1 {
-			return nil, ctx.Errorf("DateTimeImmutable::createFromMutable() expects exactly 1 argument, 0 given")
+			return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "DateTimeImmutable::createFromMutable() expects exactly 1 argument, 0 given")
 		}
 		if args[0].GetType() != phpv.ZtObject {
 			return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "DateTimeImmutable::createFromMutable(): Argument #1 ($object) must be of type DateTime, "+args[0].GetType().TypeName()+" given")
@@ -3011,7 +3011,7 @@ func dateIntervalConstruct(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.
 
 func dateIntervalFormat(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
-		return nil, ctx.Errorf("DateInterval::format() expects exactly 1 argument")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "DateInterval::format() expects exactly 1 argument")
 	}
 	if err := checkDateIntervalInitialized(ctx, this); err != nil {
 		return nil, err

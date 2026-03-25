@@ -1207,8 +1207,7 @@ func fncArraySlice(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 						phpv.ZValTypeName(args[2])))
 			case phpv.ZtFloat:
 				// In strict_types mode, float is also rejected for int parameters
-				strictTypes := ctx.GetConfig("strict_types", phpv.ZInt(0).ZVal())
-				if strictTypes != nil && strictTypes.AsInt(ctx) == 1 {
+				if ctx.Global().GetStrictTypes() {
 					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
 						"array_slice(): Argument #3 ($length) must be of type ?int, float given")
 				}
@@ -1650,10 +1649,7 @@ func getArrayKeyValue(ctx phpv.Context, s *phpv.ZVal) (*phpv.ZVal, error) {
 // > func array array_column ( array $input , mixed $column_key [, mixed $index_key = NULL ] )
 func fncArrayColumn(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	// Check strict_types mode for type validation
-	strictTypes := false
-	if st := ctx.GetConfig("strict_types", phpv.ZInt(0).ZVal()); st != nil && st.AsInt(ctx) == 1 {
-		strictTypes = true
-	}
+	strictTypes := ctx.Global().GetStrictTypes()
 	// Validate column_key type (must be string|int|null, or object with __toString)
 	if len(args) >= 2 && args[1] != nil && !args[1].IsNull() {
 		switch args[1].GetType() {
