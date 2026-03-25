@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/MagicalTux/goro/core/logopt"
+	"github.com/MagicalTux/goro/core/phpctx"
 	"github.com/MagicalTux/goro/core/phperr"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
@@ -972,10 +973,18 @@ func (z *ZClosure) callBody(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 						requiredCount++
 					}
 				}
-				// Build the error message with call location
+				// Build the error message with call location.
+				// When the function is called from an internal context (e.g., array_walk callback),
+				// PHP omits the "in FILE on line LINE" from the exception message.
 				callLoc := ctx.Loc()
+				isInternalCall := false
+				if fc, ok := ctx.(*phpctx.FuncContext); ok {
+					if fc.InternalLoc() != nil {
+						isInternalCall = true
+					}
+				}
 				var msg string
-				if callLoc != nil && callLoc.Filename != "" {
+				if !isInternalCall && callLoc != nil && callLoc.Filename != "" {
 					msg = fmt.Sprintf("Too few arguments to function %s(), %d passed in %s on line %d", funcName, len(args), callLoc.Filename, callLoc.Line)
 				} else {
 					msg = fmt.Sprintf("Too few arguments to function %s(), %d passed", funcName, len(args))
