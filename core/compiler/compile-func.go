@@ -1626,6 +1626,9 @@ func classNamesFromCtx(c compileCtx) []phpv.ZString {
 	names := []phpv.ZString{cls.Name}
 	if cls.Extends != nil {
 		names = append(names, cls.Extends.Name)
+	} else if cls.ExtendsStr != "" {
+		// Parent class might not be resolved yet, but we have the name string
+		names = append(names, cls.ExtendsStr)
 	} else {
 		names = append(names, "")
 	}
@@ -1722,11 +1725,18 @@ func validateTypeHint(th *phpv.TypeHint, loc *phpv.Loc, className ...phpv.ZStrin
 		resolveKey := func(u *phpv.TypeHint) (key string, displayName string) {
 			if u.Type() == phpv.ZtObject {
 				lowerName := strings.ToLower(string(u.ClassName()))
-				if lowerName == "self" && curClassName != "" {
-					return strings.ToLower(string(curClassName)), string(curClassName)
+				if lowerName == "self" {
+					if curClassName != "" {
+						return strings.ToLower(string(curClassName)), string(curClassName)
+					}
+					// Even without class context, normalize "SELF" -> "self" for duplicate detection
+					return "self", "self"
 				}
-				if lowerName == "parent" && curParentName != "" {
-					return strings.ToLower(string(curParentName)), string(curParentName)
+				if lowerName == "parent" {
+					if curParentName != "" {
+						return strings.ToLower(string(curParentName)), string(curParentName)
+					}
+					return "parent", "parent"
 				}
 			}
 			return strings.ToLower(u.String()), u.String()
