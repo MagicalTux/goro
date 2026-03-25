@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/MagicalTux/goro/core/logopt"
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -69,11 +71,25 @@ func fncSplAutoloadRegister(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 		prepend = bool(args[2].AsBool(ctx))
 	}
 
+	// Emit notice if $throw=false is explicitly passed (PHP 8.x always throws)
+	if len(args) >= 2 && !args[1].AsBool(ctx) {
+		ctx.Notice("Argument #2 ($do_throw) has been ignored, spl_autoload_register() will always throw")
+	}
+
 	if len(args) == 0 || args[0].IsNull() {
 		// Register the default spl_autoload function
 		ctx.Global().RegisterAutoload(&splAutoloadCallable{}, prepend)
 		return nil, nil
 	}
+
+	// Reject spl_autoload_call as an autoloader
+	if args[0].GetType() == phpv.ZtString {
+		name := string(args[0].AsString(ctx))
+		if strings.EqualFold(name, "spl_autoload_call") {
+			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "spl_autoload_register(): Argument #1 ($callback) must not be the spl_autoload_call() function")
+		}
+	}
+
 	var handler phpv.Callable
 	_, err := Expand(ctx, args, &handler)
 	if err != nil {
@@ -96,7 +112,7 @@ func fncSplAutoloadUnregister(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, 
 
 		// Special case: spl_autoload_call unregisters all autoloaders (deprecated)
 		if strings.EqualFold(name, "spl_autoload_call") {
-			ctx.Deprecated("spl_autoload_unregister(): Using spl_autoload_call() as a callback for spl_autoload_unregister() is deprecated, to remove all registered autoloaders, call spl_autoload_unregister() for all values returned from spl_autoload_functions()")
+			ctx.Deprecated("Using spl_autoload_call() as a callback for spl_autoload_unregister() is deprecated, to remove all registered autoloaders, call spl_autoload_unregister() for all values returned from spl_autoload_functions()", logopt.NoFuncName(true))
 			ctx.Global().ClearAutoloadFunctions()
 			return phpv.ZTrue.ZVal(), nil
 		}

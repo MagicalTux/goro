@@ -501,12 +501,32 @@ func splAutoloadFunctions(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, erro
 				arr.OffsetSet(ctx, nil, phpv.ZString(c.Callable.Name()).ZVal())
 				entry = arr.ZVal()
 			} else {
-				entry = phpv.ZString(c.Name()).ZVal()
+				// Check if the inner callable is a closure (has Spawn)
+				if spawner, ok := c.Callable.(interface {
+					Spawn(phpv.Context) (*phpv.ZVal, error)
+				}); ok {
+					if v, err := spawner.Spawn(ctx); err == nil {
+						entry = v
+					}
+				}
+				if entry == nil {
+					entry = phpv.ZString(c.Name()).ZVal()
+				}
 			}
 		default:
-			// For named functions (including spl_autoload), return the name as string
-			name := phpv.CallableDisplayName(loader)
-			entry = phpv.ZString(name).ZVal()
+			// Check if this is a closure (has Spawn method)
+			if spawner, ok := loader.(interface {
+				Spawn(phpv.Context) (*phpv.ZVal, error)
+			}); ok {
+				if v, err := spawner.Spawn(ctx); err == nil {
+					entry = v
+				}
+			}
+			if entry == nil {
+				// For named functions (including spl_autoload), return the name as string
+				name := phpv.CallableDisplayName(loader)
+				entry = phpv.ZString(name).ZVal()
+			}
 		}
 		result.OffsetSet(ctx, nil, entry)
 	}
