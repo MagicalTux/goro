@@ -1211,6 +1211,7 @@ func compileFunctionArgs(c compileCtx) (res []*phpv.FuncArg, err error) {
 		}
 
 		arg.VarName = phpv.ZString(i.Data[1:]) // skip $
+		arg.Loc = i.Loc()
 
 		if arg.VarName == "this" {
 			phpErr := &phpv.PhpError{

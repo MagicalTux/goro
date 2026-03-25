@@ -93,18 +93,18 @@ func (s *Stream) ReadByte() (byte, error) {
 // EofChecker is an optional interface for stream backends that need custom EOF logic
 // (e.g., user-space stream wrappers that implement stream_eof).
 type EofChecker interface {
-	Eof() (bool, error)
+	EofCheck(ctx phpv.Context) (bool, error)
 }
 
 func (s *Stream) Eof() bool {
 	return s.eof
 }
 
-// EofCheck checks EOF status, calling the underlying stream's Eof() method if available.
+// EofCheck checks EOF status, calling the underlying stream's EofCheck() method if available.
 // This returns an error for user-space stream wrappers that may throw exceptions.
-func (s *Stream) EofCheck() (bool, error) {
+func (s *Stream) EofCheck(ctx phpv.Context) (bool, error) {
 	if ec, ok := s.f.(EofChecker); ok {
-		return ec.Eof()
+		return ec.EofCheck(ctx)
 	}
 	return s.eof, nil
 }

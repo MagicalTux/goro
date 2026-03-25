@@ -1482,10 +1482,14 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 							}
 							// callable type cannot be used as property type
 							if arg.Hint != nil && arg.Hint.String() == "callable" {
+								argLoc := l
+								if arg.Loc != nil {
+									argLoc = arg.Loc
+								}
 								return nil, &phpv.PhpError{
 									Err:  fmt.Errorf("Property %s::$%s cannot have type callable", class.Name, arg.VarName),
 									Code: phpv.E_COMPILE_ERROR,
-									Loc:  l,
+									Loc:  argLoc,
 								}
 							}
 							// Check for duplicate property names

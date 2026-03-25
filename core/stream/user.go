@@ -110,23 +110,23 @@ func (u *UserStream) Write(p []byte) (int, error) {
 	return int(result.AsInt(u.ctx)), nil
 }
 
-// Eof calls the PHP stream wrapper's stream_eof method to check if the stream
+// EofCheck calls the PHP stream wrapper's stream_eof method to check if the stream
 // has reached end-of-file. Returns true if at EOF or if stream_eof is not defined.
-func (u *UserStream) Eof() (bool, error) {
+func (u *UserStream) EofCheck(ctx phpv.Context) (bool, error) {
 	if u.obj == nil {
 		return true, nil
 	}
 	if _, ok := u.obj.Class.GetMethod("stream_eof"); !ok {
 		return true, nil
 	}
-	result, err := u.obj.CallMethod(u.ctx, "stream_eof")
+	result, err := u.obj.CallMethod(ctx, "stream_eof")
 	if err != nil {
 		return false, err
 	}
 	if result == nil {
 		return false, nil
 	}
-	return bool(result.AsBool(u.ctx)), nil
+	return bool(result.AsBool(ctx)), nil
 }
 
 func (u *UserStream) Close() (retErr error) {
