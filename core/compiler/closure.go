@@ -1032,17 +1032,8 @@ func (z *ZClosure) callBody(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 						}
 						argVal = v.ZVal()
 					} else {
-						// PHP 8.4: warn when NAN is coerced to string or bool
-						if argVal.GetType() == phpv.ZtFloat {
-							f := float64(argVal.Value().(phpv.ZFloat))
-							if f != f { // NaN check
-								if hintType == phpv.ZtString {
-									ctx.Warn("unexpected NAN value was coerced to string")
-								} else if hintType == phpv.ZtBool {
-									ctx.Warn("unexpected NAN value was coerced to bool")
-								}
-							}
-						}
+						// NAN coercion warnings are handled by ZFloat.AsVal
+						// which is called through argVal.As()
 						if coerced, err2 := argVal.As(ctx, hintType); err2 == nil && coerced != nil {
 							argVal = coerced.ZVal()
 						}

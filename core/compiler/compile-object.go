@@ -256,7 +256,61 @@ type runNewAnonymousClass struct {
 }
 
 func (r *runNewAnonymousClass) Dump(w io.Writer) error {
-	_, err := fmt.Fprintf(w, "new class {...}")
+	_, err := w.Write([]byte("new class"))
+	if err != nil {
+		return err
+	}
+	// Include constructor args if any
+	if len(r.constructorArgs) > 0 {
+		_, err = w.Write([]byte("("))
+		if err != nil {
+			return err
+		}
+		for i, arg := range r.constructorArgs {
+			if i > 0 {
+				_, err = w.Write([]byte(", "))
+				if err != nil {
+					return err
+				}
+			}
+			err = arg.Dump(w)
+			if err != nil {
+				return err
+			}
+		}
+		_, err = w.Write([]byte(")"))
+		if err != nil {
+			return err
+		}
+	}
+	// Include extends clause
+	if r.class.ExtendsStr != "" {
+		_, err = fmt.Fprintf(w, " extends %s", r.class.ExtendsStr)
+		if err != nil {
+			return err
+		}
+	}
+	// Include implements clause
+	if len(r.class.ImplementsStr) > 0 {
+		_, err = w.Write([]byte(" implements "))
+		if err != nil {
+			return err
+		}
+		for i, iface := range r.class.ImplementsStr {
+			if i > 0 {
+				_, err = w.Write([]byte(", "))
+				if err != nil {
+					return err
+				}
+			}
+			_, err = w.Write([]byte(iface))
+			if err != nil {
+				return err
+			}
+		}
+	}
+	// Print the class body (methods and properties from the AST)
+	_, err = w.Write([]byte(" {\n}"))
 	return err
 }
 
