@@ -88,7 +88,7 @@ func (c *compileRootCtx) getNamespace() phpv.ZString {
 func isBuiltinType(lower phpv.ZString) bool {
 	switch lower {
 	case "self", "parent", "static",
-		"int", "integer", "float", "double", "string", "bool", "boolean",
+		"int", "float", "string", "bool",
 		"array", "callable", "void", "mixed", "never", "null", "object",
 		"iterable", "true", "false":
 		return true

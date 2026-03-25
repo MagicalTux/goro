@@ -1235,6 +1235,24 @@ func operatorMathLogic(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal)
 		}
 		return operatorMathLogic(ctx, op, a, b)
 	case phpv.ZtString:
+		// In PHP, bitwise ops on two strings do character-by-character operations.
+		// But if the other operand is not a string (int/float/bool/null), both
+		// should be converted to int for numeric bitwise. Also, shift and modulo
+		// operators always work numerically even with strings.
+		if b.GetType() != phpv.ZtString || op == tokenizer.T_SL || op == tokenizer.T_SL_EQUAL ||
+			op == tokenizer.T_SR || op == tokenizer.T_SR_EQUAL ||
+			op == tokenizer.Rune('%') || op == tokenizer.T_MOD_EQUAL {
+			var err error
+			a, err = implicitToInt(ctx, a)
+			if err != nil {
+				return nil, err
+			}
+			b, err = implicitToInt(ctx, b)
+			if err != nil {
+				return nil, err
+			}
+			return operatorMathLogic(ctx, op, a, b)
+		}
 		b, _ = b.As(ctx, phpv.ZtString) // force b to be string
 		a := []byte(a.Value().(phpv.ZString))
 		b := []byte(b.Value().(phpv.ZString))

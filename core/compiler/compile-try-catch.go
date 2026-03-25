@@ -316,6 +316,15 @@ func compileCatch(i *tokenizer.Item, c compileCtx) (*runnableCatch, error) {
 
 	res.varname = phpv.ZString(i.Data)[1:]
 
+	// Cannot re-assign $this in catch
+	if res.varname == "this" {
+		return nil, &phpv.PhpError{
+			Err:  fmt.Errorf("Cannot re-assign $this"),
+			Code: phpv.E_COMPILE_ERROR,
+			Loc:  i.Loc(),
+		}
+	}
+
 	i, err = c.NextItem()
 	if err != nil {
 		return nil, err

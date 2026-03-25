@@ -636,6 +636,37 @@ func compileFunctionWithName(name phpv.ZString, c compileCtx, l *phpv.Loc, rref 
 		}
 	}
 
+	// PHP 8.0: Emit deprecation for optional parameters before required parameters
+	lastRequiredIdx := -1
+	for idx := len(args) - 1; idx >= 0; idx-- {
+		if args[idx].Required && !args[idx].Variadic {
+			lastRequiredIdx = idx
+			break
+		}
+	}
+	if lastRequiredIdx > 0 {
+		for idx := 0; idx < lastRequiredIdx; idx++ {
+			arg := args[idx]
+			if arg.Required || arg.Variadic {
+				continue
+			}
+			if arg.ImplicitlyNullable {
+				continue
+			}
+			funcName := string(name)
+			if funcName == "" {
+				if l != nil && l.Filename != "" {
+					funcName = fmt.Sprintf("{closure:%s:%d}", l.Filename, l.Line)
+				} else {
+					funcName = "{closure}"
+				}
+			} else if cls := c.Global().GetCompilingClass(); cls != nil {
+				funcName = string(cls.GetName()) + "::" + funcName
+			}
+			c.Deprecated("%s(): Optional parameter $%s declared before required parameter $%s is implicitly treated as a required parameter", funcName, arg.VarName, args[lastRequiredIdx].VarName, logopt.Data{Loc: l})
+		}
+	}
+
 	i, err := c.NextItem()
 	if err != nil {
 		return nil, err
@@ -1157,6 +1188,41 @@ func compileFunctionArgs(c compileCtx) (res []*phpv.FuncArg, err error) {
 			} else {
 				resolvedHint = string(c.resolveClassName(phpv.ZString(hint)))
 			}
+
+			// PHP 8.1: Warn for confusable type names (integer, double, boolean, resource)
+			if !hintFullyQualified && !hintNamespaceRelative && !strings.Contains(hint, "\\") {
+				hintLower := strings.ToLower(hint)
+				ns := string(c.getNamespace())
+				naturalResolved := hint
+				if ns != "" {
+					naturalResolved = ns + "\\" + hint
+				}
+				if strings.EqualFold(resolvedHint, naturalResolved) {
+					var confusableOf string
+					switch hintLower {
+					case "integer":
+						confusableOf = "int"
+					case "double":
+						confusableOf = "float"
+					case "boolean":
+						confusableOf = "bool"
+					}
+					if confusableOf != "" {
+						if ns != "" {
+							c.Warn("\"%s\" will be interpreted as a class name. Did you mean \"%s\"? Write \"\\%s\\%s\" or import the class with \"use\" to suppress this warning", hint, confusableOf, ns, hint)
+						} else {
+							c.Warn("\"%s\" will be interpreted as a class name. Did you mean \"%s\"? Write \"\\%s\" to suppress this warning", hint, confusableOf, hint)
+						}
+					} else if hintLower == "resource" {
+						if ns != "" {
+							c.Warn("\"%s\" is not a supported builtin type and will be interpreted as a class name. Write \"\\%s\\%s\" or import the class with \"use\" to suppress this warning", hint, ns, hint)
+						} else {
+							c.Warn("\"%s\" is not a supported builtin type and will be interpreted as a class name. Write \"\\%s\" to suppress this warning", hint, hint)
+						}
+					}
+				}
+			}
+
 			arg.Hint = phpv.ParseTypeHint(phpv.ZString(resolvedHint))
 
 			// void and never cannot be used as parameter types
