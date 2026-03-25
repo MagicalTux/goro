@@ -2329,6 +2329,16 @@ func typeHintContains(ctx phpv.Context, h *phpv.TypeHint, target *phpv.TypeHint)
 		return false
 	}
 
+	// "callable" contains "Closure" (Closure is a subtype of callable)
+	if h.Type() == phpv.ZtObject && h.ClassName() == "callable" {
+		if target.Type() == phpv.ZtObject && target.ClassName().ToLower() == "closure" {
+			return true
+		}
+	}
+	// "Closure" does NOT contain "callable" (callable is wider than Closure)
+	// but "callable" contains any class with __invoke, so "callable" contains "object" in a sense
+	// In variance context: callable is wider, so it "contains" Closure for type checking.
+
 	// Compare single types
 	if h.Type() != target.Type() {
 		return false
@@ -2346,6 +2356,10 @@ func typeHintContains(ctx phpv.Context, h *phpv.TypeHint, target *phpv.TypeHint)
 		}
 		// Direct name comparison first
 		if h.ClassName().ToLower() == target.ClassName().ToLower() {
+			return true
+		}
+		// "callable" contains Closure
+		if h.ClassName() == "callable" && target.ClassName().ToLower() == "closure" {
 			return true
 		}
 		// Check if the class names resolve to the same class (handles class_alias)

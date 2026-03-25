@@ -551,13 +551,101 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 
 		switch i.Type {
 		case tokenizer.T_VAR:
-			// class variable, with possible default value
+			// class variable, with possible default value and optional type hint
 			i, err = c.NextItem()
 			if err != nil {
 				return nil, err
 			}
-			if i.Type != tokenizer.T_VARIABLE {
-				return nil, i.Unexpected()
+			// After 'var', a type hint may appear before the $variable
+			if propTypeHint == nil && i.Type != tokenizer.T_VARIABLE {
+				// Try to parse a type hint
+				if i.IsSingle('(') {
+					// DNF type: var (A&B)|C $prop
+					intersect, next, pErr := parseParenIntersection(c)
+					if pErr != nil {
+						return nil, pErr
+					}
+					if next.IsSingle('|') {
+						propTypeHint, i, err = parseUnionTypeHint(intersect, c)
+						if err != nil {
+							return nil, err
+						}
+					} else {
+						propTypeHint = intersect
+						i = next
+					}
+				} else if i.Type == tokenizer.T_STRING || i.Type == tokenizer.T_ARRAY || i.Type == tokenizer.T_CALLABLE || i.IsSingle('?') || i.Type == tokenizer.T_STATIC {
+					isNullable := i.IsSingle('?')
+					hint := i.Data
+					if isNullable {
+						i, err = c.NextItem()
+						if err != nil {
+							return nil, err
+						}
+						hint = i.Data
+					}
+					if i.Type == tokenizer.T_STRING || i.Type == tokenizer.T_ARRAY || i.Type == tokenizer.T_CALLABLE || i.Type == tokenizer.T_STATIC {
+						// Consume namespace parts
+						for {
+							peek, err := c.NextItem()
+							if err != nil {
+								return nil, err
+							}
+							if peek.Type == tokenizer.T_NS_SEPARATOR {
+								next, err := c.NextItem()
+								if err != nil {
+									return nil, err
+								}
+								hint = hint + "\\" + next.Data
+							} else {
+								i = peek
+								break
+							}
+						}
+						if i.IsSingle('|') {
+							propTypeHint = phpv.ParseTypeHint(phpv.ZString(hint))
+							if isNullable {
+								propTypeHint.Nullable = true
+							}
+							propTypeHint, i, err = parseUnionTypeHint(propTypeHint, c)
+							if err != nil {
+								return nil, err
+							}
+						} else if i.IsSingle('&') {
+							propTypeHint = phpv.ParseTypeHint(phpv.ZString(hint))
+							if isNullable {
+								propTypeHint.Nullable = true
+							}
+							nextTok, nextErr := c.NextItem()
+							if nextErr != nil {
+								return nil, nextErr
+							}
+							if nextTok.Type == tokenizer.T_STRING || nextTok.Type == tokenizer.T_ARRAY || nextTok.Type == tokenizer.T_CALLABLE || nextTok.Type == tokenizer.T_STATIC {
+								propTypeHint, i, err = parseIntersectionTypeHint(propTypeHint, nextTok, c)
+								if err != nil {
+									return nil, err
+								}
+								if i.IsSingle('|') {
+									propTypeHint, i, err = parseUnionTypeHint(propTypeHint, c)
+									if err != nil {
+										return nil, err
+									}
+								}
+							} else {
+								return nil, nextTok.Unexpected()
+							}
+						} else if i.Type == tokenizer.T_VARIABLE {
+							resolvedHint := string(c.resolveClassName(phpv.ZString(hint)))
+							propTypeHint = phpv.ParseTypeHint(phpv.ZString(resolvedHint))
+							if isNullable {
+								propTypeHint.Nullable = true
+							}
+						}
+					}
+				}
+				if i.Type != tokenizer.T_VARIABLE {
+					return nil, i.Unexpected()
+				}
 			}
 			fallthrough
 		case tokenizer.T_VARIABLE:

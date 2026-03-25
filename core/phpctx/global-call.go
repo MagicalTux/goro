@@ -58,6 +58,17 @@ func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, o
 	// Save call site location (arg evaluation may change global location)
 	callLoc := ctx.Loc()
 
+	// Determine variadic index so we can preserve named arg keys for variadic params
+	variadicIdxForNames := -1
+	if funcArgs != nil {
+		for vi, fa := range funcArgs {
+			if fa.Variadic {
+				variadicIdxForNames = vi
+				break
+			}
+		}
+	}
+
 	var zArgs []*phpv.ZVal
 	var byRefCleanups []*phpv.ZVal
 	for i, arg := range args {
@@ -67,8 +78,15 @@ func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, o
 			zArgs = append(zArgs, nil)
 			continue
 		}
-		// Unwrap named arguments (already reordered to correct position)
+		// Unwrap named arguments (already reordered to correct position).
+		// For extra named args destined for a variadic parameter, preserve
+		// the name on the ZVal so that the variadic packing code can use it
+		// as the array key (PHP 8.0 named variadic args).
+		var namedArgKey phpv.ZString
 		if na, ok := arg.(phpv.NamedArgument); ok {
+			if variadicIdxForNames >= 0 && i >= variadicIdxForNames {
+				namedArgKey = na.ArgName()
+			}
 			arg = na.Inner()
 		}
 
@@ -199,6 +217,12 @@ func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, o
 		// Dup would break array internal pointer sharing.
 		if !isRefParam && funcArgs != nil {
 			val = val.Dup()
+		}
+
+		// Tag variadic named args with their key name so the packing code
+		// can use it as the array key instead of a numeric index.
+		if namedArgKey != "" {
+			val.Name = &namedArgKey
 		}
 
 		zArgs = append(zArgs, val)
@@ -367,14 +391,19 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 				if a == nil {
 					continue // skip nil gaps from named arg reordering
 				}
+				// Use the Name field as the array key for named variadic args
+				var key *phpv.ZVal
+				if a.Name != nil && *a.Name != "" && (*a.Name)[0] != 0 {
+					key = (*a.Name).ZVal()
+				}
 				if isRefVariadic {
 					// For by-ref variadic, make each element a reference so that
 					// modifications inside the function propagate back to the
 					// source array (when spread from a variable).
 					a.MakeRef()
-					varArray.OffsetSet(nil, nil, a.Ref())
+					varArray.OffsetSet(nil, key, a.Ref())
 				} else {
-					varArray.OffsetSet(nil, nil, a.Dup())
+					varArray.OffsetSet(nil, key, a.Dup())
 				}
 			}
 			// Replace args: keep args before variadic, then add the packed array

@@ -92,7 +92,8 @@ func compileNamespace(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			if err != nil {
 				return nil, err
 			}
-			if part.Type != tokenizer.T_STRING {
+			// Allow semi-reserved keywords as namespace parts (e.g. namespace iter\fn { })
+			if !part.IsSemiReserved() {
 				return nil, part.Unexpected()
 			}
 			nsName = nsName + "\\" + phpv.ZString(part.Data)
