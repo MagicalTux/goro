@@ -1,6 +1,9 @@
 package compiler
 
-import "github.com/MagicalTux/goro/core/phpv"
+import (
+	"github.com/MagicalTux/goro/core/phpobj"
+	"github.com/MagicalTux/goro/core/phpv"
+)
 
 type zclosureCompileCtx struct {
 	compileCtx
@@ -9,6 +12,10 @@ type zclosureCompileCtx struct {
 
 func (z *zclosureCompileCtx) getFunc() *ZClosure {
 	return z.closure
+}
+
+func (z *zclosureCompileCtx) getClass() *phpobj.ZClass {
+	return z.compileCtx.getClass()
 }
 
 func (z *zclosureCompileCtx) getNamespace() phpv.ZString {

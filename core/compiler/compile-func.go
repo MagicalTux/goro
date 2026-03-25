@@ -1816,9 +1816,16 @@ func validateTypeHint(th *phpv.TypeHint, loc *phpv.Loc, className ...phpv.ZStrin
 			case u.Type() == phpv.ZtObject && u.ClassName() == "static":
 				hasStatic = true
 			case u.Type() == phpv.ZtObject && u.ClassName() != "" &&
-				u.ClassName() != "self" && u.ClassName() != "parent" && u.ClassName() != "static" &&
+				u.ClassName() != "static" &&
 				u.ClassName() != "iterable" && u.ClassName() != "callable":
-				classNames = append(classNames, string(u.ClassName()))
+				lnm := strings.ToLower(string(u.ClassName()))
+				if lnm == "self" && curClassName != "" {
+					classNames = append(classNames, string(curClassName))
+				} else if lnm == "parent" && curParentName != "" {
+					classNames = append(classNames, string(curParentName))
+				} else if lnm != "self" && lnm != "parent" {
+					classNames = append(classNames, string(u.ClassName()))
+				}
 			}
 		}
 
@@ -2183,13 +2190,13 @@ func parseReturnType(c compileCtx) (*phpv.TypeHint, error) {
 				return nil, pErr2
 			}
 			c.backup()
-			if err := validateTypeHint(th, next2.Loc()); err != nil {
+			if err := validateTypeHint(th, next2.Loc(), classNamesFromCtx(c)...); err != nil {
 				return nil, err
 			}
 			return th, nil
 		}
 		c.backup()
-		if err := validateTypeHint(intersect, next.Loc()); err != nil {
+		if err := validateTypeHint(intersect, next.Loc(), classNamesFromCtx(c)...); err != nil {
 			return nil, err
 		}
 		return intersect, nil
@@ -2282,7 +2289,7 @@ func parseReturnType(c compileCtx) (*phpv.TypeHint, error) {
 			return nil, err
 		}
 		c.backup()
-		if err := validateTypeHint(th, i.Loc()); err != nil {
+		if err := validateTypeHint(th, i.Loc(), classNamesFromCtx(c)...); err != nil {
 			return nil, err
 		}
 		return th, nil
@@ -2300,7 +2307,7 @@ func parseReturnType(c compileCtx) (*phpv.TypeHint, error) {
 				return nil, err
 			}
 			c.backup()
-			if err := validateTypeHint(th, i.Loc()); err != nil {
+			if err := validateTypeHint(th, i.Loc(), classNamesFromCtx(c)...); err != nil {
 				return nil, err
 			}
 			return th, nil
@@ -2310,7 +2317,7 @@ func parseReturnType(c compileCtx) (*phpv.TypeHint, error) {
 
 	// Not a type continuation - put it back and we're done
 	c.backup()
-	if err := validateTypeHint(th, i.Loc()); err != nil {
+	if err := validateTypeHint(th, i.Loc(), classNamesFromCtx(c)...); err != nil {
 		return nil, err
 	}
 	return th, nil
