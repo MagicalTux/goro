@@ -7,6 +7,7 @@ import (
 	"math"
 
 	"github.com/MagicalTux/goro/core/logopt"
+	"github.com/MagicalTux/goro/core/phperr"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
@@ -1360,8 +1361,31 @@ func operatorPipe(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*ph
 	}
 	callable, err := PipeResolveCallable(ctx, b)
 	if err != nil {
+		// PHP 8.5: pipe operator converts "function not found" TypeErrors
+		// into plain Errors with "Call to undefined function" message
+		if pt, ok := phpv.UnwrapError(err).(*phperr.PhpThrow); ok {
+			if obj, ok2 := pt.Obj.(phpv.ZObject); ok2 && obj.GetClass().InstanceOf(phpobj.TypeError) {
+				// Extract function name from the callable value
+				if b.GetType() == phpv.ZtString {
+					funcName := b.Value().(phpv.ZString)
+					return nil, phpobj.ThrowError(ctx, phpobj.Error,
+						fmt.Sprintf("Call to undefined function %s()", funcName))
+				}
+			}
+		}
 		return nil, err
 	}
+
+	// PHP 8.5: pipe operator rejects callables with by-reference first parameter
+	if fga, ok := callable.(phpv.FuncGetArgs); ok {
+		args := fga.GetArgs()
+		if len(args) > 0 && args[0].Ref {
+			funcName := callable.Name()
+			return nil, phpobj.ThrowError(ctx, phpobj.Error,
+				fmt.Sprintf("%s(): Argument #1 ($%s) could not be passed by reference", funcName, args[0].VarName))
+		}
+	}
+
 	// Call the callable with a as the first argument
 	return ctx.CallZVal(ctx, callable, []*phpv.ZVal{a})
 }

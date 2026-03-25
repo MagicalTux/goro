@@ -705,6 +705,17 @@ func compilePostExpr(v phpv.Runnable, i *tokenizer.Item, c compileCtx) (phpv.Run
 				return nil, err
 			}
 
+			// PHP 8.5: Arrow functions on the RHS of |> must be parenthesized
+			if i.Type == tokenizer.T_PIPE {
+				if zc, ok := t_v.(*ZClosure); ok && zc.isArrow {
+					return nil, &phpv.PhpError{
+						Err:  fmt.Errorf("Arrow functions on the right hand side of |> must be parenthesized"),
+						Code: phpv.E_COMPILE_ERROR,
+						Loc:  l,
+					}
+				}
+			}
+
 			return spawnOperator(c, i.Type, v, t_v, l)
 		}
 	}
