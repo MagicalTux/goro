@@ -3,6 +3,7 @@ package phpv
 import (
 	"math"
 	"reflect"
+	"sort"
 	"strings"
 )
 
@@ -40,7 +41,7 @@ func (h *TypeHint) IsNullable() bool {
 	// Union types: nullability is determined by members, not the wrapper's zero-value t field
 	if len(h.Union) > 0 {
 		for _, u := range h.Union {
-			if u.t == ZtNull || u.IsNullable() {
+			if u.IsNullable() {
 				return true
 			}
 		}
@@ -355,14 +356,25 @@ func typeHintSortOrder(h *TypeHint) int {
 // String returns the PHP type name for error messages
 func (h *TypeHint) String() string {
 	if len(h.Union) > 0 {
-		parts := make([]string, len(h.Union))
+		type sortEntry struct {
+			s     string
+			order int
+		}
+		entries := make([]sortEntry, len(h.Union))
 		for i, alt := range h.Union {
 			s := alt.String()
 			// Wrap intersection groups in parentheses for DNF display
 			if len(alt.Intersection) > 0 {
 				s = "(" + s + ")"
 			}
-			parts[i] = s
+			entries[i] = sortEntry{s: s, order: typeHintSortOrder(alt)}
+		}
+		sort.SliceStable(entries, func(i, j int) bool {
+			return entries[i].order < entries[j].order
+		})
+		parts := make([]string, len(entries))
+		for i, e := range entries {
+			parts[i] = e.s
 		}
 		return strings.Join(parts, "|")
 	}

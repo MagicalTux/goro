@@ -2297,6 +2297,16 @@ func typeHintContains(ctx phpv.Context, h *phpv.TypeHint, target *phpv.TypeHint)
 		if target.Type() == phpv.ZtObject && (target.ClassName() == "iterable" || target.ClassName().ToLower() == "traversable") {
 			return true
 		}
+		// target could be a class that implements Traversable
+		if target.Type() == phpv.ZtObject && target.ClassName() != "" && ctx != nil {
+			tClass, err1 := ctx.Global().GetClass(ctx, target.ClassName(), false)
+			traversable, err2 := ctx.Global().GetClass(ctx, "traversable", false)
+			if err1 == nil && err2 == nil && !phpv.IsNilClass(tClass) && !phpv.IsNilClass(traversable) {
+				if tClass.InstanceOf(traversable) {
+					return true
+				}
+			}
+		}
 		return false
 	}
 	if target.Type() == phpv.ZtObject && target.ClassName() == "iterable" {
