@@ -85,7 +85,7 @@ func fncArrayUDiff(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	valueCompareFunc, err := core.SpawnCallable(ctx, lastArg)
 	if err != nil {
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
-			fmt.Sprintf("array_udiff(): Argument #%d must be a valid callback, %s", len(args), err.Error()))
+			fmt.Sprintf("array_udiff(): Argument #%d must be a valid callback, %s", len(args), core.CallbackErrorReason(err)))
 	}
 
 	var array *phpv.ZArray
@@ -129,7 +129,7 @@ func fncArrayUDiffAssoc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	valueCompareFunc, err := core.SpawnCallable(ctx, lastArg)
 	if err != nil {
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
-			fmt.Sprintf("array_udiff_assoc(): Argument #%d must be a valid callback, %s", len(args), err.Error()))
+			fmt.Sprintf("array_udiff_assoc(): Argument #%d must be a valid callback, %s", len(args), core.CallbackErrorReason(err)))
 	}
 
 	var array *phpv.ZArray
@@ -175,12 +175,12 @@ func fncArrayUDiffUAssoc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error
 	valueCompareFunc, err := core.SpawnCallable(ctx, args[len(args)-2])
 	if err != nil {
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
-			fmt.Sprintf("array_udiff_uassoc(): Argument #%d must be a valid callback, %s", len(args)-1, err.Error()))
+			fmt.Sprintf("array_udiff_uassoc(): Argument #%d must be a valid callback, %s", len(args)-1, core.CallbackErrorReason(err)))
 	}
 	keyCompareFunc, err := core.SpawnCallable(ctx, args[len(args)-1])
 	if err != nil {
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
-			fmt.Sprintf("array_udiff_uassoc(): Argument #%d must be a valid callback, %s", len(args), err.Error()))
+			fmt.Sprintf("array_udiff_uassoc(): Argument #%d must be a valid callback, %s", len(args), core.CallbackErrorReason(err)))
 	}
 
 	var array *phpv.ZArray
@@ -237,7 +237,7 @@ func fncArrayDiffUKey(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	keyCompareFunc, err := core.SpawnCallable(ctx, lastArg)
 	if err != nil {
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
-			fmt.Sprintf("array_diff_ukey(): Argument #%d must be a valid callback, %s", len(args), err.Error()))
+			fmt.Sprintf("array_diff_ukey(): Argument #%d must be a valid callback, %s", len(args), core.CallbackErrorReason(err)))
 	}
 
 	var array *phpv.ZArray
@@ -289,7 +289,7 @@ func fncArrayDiffUAssoc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	valueCompareFunc, err := core.SpawnCallable(ctx, lastArg)
 	if err != nil {
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
-			fmt.Sprintf("array_diff_uassoc(): Argument #%d must be a valid callback, %s", len(args), err.Error()))
+			fmt.Sprintf("array_diff_uassoc(): Argument #%d must be a valid callback, %s", len(args), core.CallbackErrorReason(err)))
 	}
 
 	var array *phpv.ZArray

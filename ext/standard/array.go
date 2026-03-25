@@ -1855,13 +1855,14 @@ func fncArrayFill(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			"array_fill(): Argument #2 ($count) is too large")
 	}
 	result := phpv.NewZArrayTracked(ctx.Global().MemMgrTracker())
-	for i := startIndex; i < startIndex+num; i++ {
-		if i%10000 == 0 {
+	for j := phpv.ZInt(0); j < num; j++ {
+		idx := startIndex + j
+		if j%10000 == 0 {
 			if err := ctx.Tick(ctx, nil); err != nil {
 				return nil, err
 			}
 		}
-		if err := result.OffsetSet(ctx, phpv.ZInt(i), fillValue); err != nil {
+		if err := result.OffsetSet(ctx, phpv.ZInt(idx), fillValue); err != nil {
 			return nil, err
 		}
 	}

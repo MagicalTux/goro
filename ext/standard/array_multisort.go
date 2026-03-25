@@ -121,6 +121,12 @@ func (t *ztable) StringTransposed(ctx phpv.Context) string {
 	return buf.String()
 }
 
+// isValidSortFlag checks if n is a valid SORT_* constant value.
+func isValidSortFlag(n phpv.ZInt) bool {
+	return n == SORT_ASC || n == SORT_DESC || (n >= SORT_REGULAR && n <= SORT_NATURAL) || n == SORT_FLAG_CASE ||
+		n == (SORT_NATURAL|SORT_FLAG_CASE) || n == (SORT_STRING|SORT_FLAG_CASE)
+}
+
 // > func bool array_multisort ( array &$array1 [, mixed $array1_sort_order = SORT_ASC [, mixed $array1_sort_flags = SORT_REGULAR [, mixed $... ]]] )
 func fncArrayMultiSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) == 0 {
@@ -133,10 +139,13 @@ func fncArrayMultiSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 		// If it's an integer that could be a sort flag, give the "already specified" message
 		if args[0].GetType() == phpv.ZtInt {
 			n := args[0].AsInt(ctx)
-			if n == SORT_ASC || n == SORT_DESC || (n >= SORT_REGULAR && n <= SORT_NATURAL) || n == SORT_FLAG_CASE {
+			if isValidSortFlag(n) {
 				return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
 					fmt.Sprintf("array_multisort(): Argument #1 ($array) must be an array or a sort flag that has not already been specified"))
 			}
+			// Integer but not a valid sort flag
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+				fmt.Sprintf("array_multisort(): Argument #1 ($array) must be a valid sort flag"))
 		}
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
 			fmt.Sprintf("array_multisort(): Argument #1 ($array) must be an array or a sort flag"))
@@ -148,6 +157,14 @@ func fncArrayMultiSort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		if arg.GetType() != phpv.ZtArray {
+			// For non-first arguments that aren't arrays, check if it's a valid sort flag
+			if arg.GetType() == phpv.ZtInt {
+				n := arg.AsInt(ctx)
+				if !isValidSortFlag(n) {
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+						fmt.Sprintf("array_multisort(): Argument #%d must be a valid sort flag", i+1))
+				}
+			}
 			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
 				fmt.Sprintf("array_multisort(): Argument #%d ($array) must be an array or a sort flag", i+1))
 		}

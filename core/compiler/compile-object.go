@@ -604,17 +604,6 @@ func (r *runObjectVar) Dump(w io.Writer) error {
 func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	ctx.Tick(ctx, r.l)
 
-	// For :: calls with a variable receiver, emit "Undefined variable" warning
-	// before evaluating. The variable's parent is runObjectFunc which suppresses
-	// the warning in runVariable.Run, so we must check it here.
-	if r.static {
-		if uc, ok := r.ref.(phpv.UndefinedChecker); ok {
-			if uc.IsUnDefined(ctx) {
-				ctx.Warn("Undefined variable $%s", uc.VarName(), logopt.NoFuncName(true))
-			}
-		}
-	}
-
 	// fetch object
 	obj, err := r.ref.Run(ctx)
 	if err != nil {
@@ -1252,6 +1241,9 @@ func (r *runObjectVar) SetWriteContext(v bool) {
 }
 
 func (r *runObjectVar) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
+	// Set write context so that child runVariable (the receiver) suppresses
+	// "Undefined variable" warnings — PHP only emits the property-level error.
+	r.writeContext = true
 	// Set write context on the ref chain so intermediate property accesses
 	// produce "Attempt to modify property" errors instead of "Attempt to read" warnings.
 	if wcs, ok := r.ref.(phpv.WriteContextSetter); ok {
@@ -1259,6 +1251,7 @@ func (r *runObjectVar) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 	}
 	// write object property
 	obj, err := r.ref.Run(ctx)
+	r.writeContext = false
 	if wcs, ok := r.ref.(phpv.WriteContextSetter); ok {
 		wcs.SetWriteContext(false)
 	}

@@ -108,7 +108,7 @@ func fncArrayUIntersect(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	valueCompare, err := core.SpawnCallable(ctx, args[len(args)-1])
 	if err != nil {
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
-			fmt.Sprintf("array_uintersect(): Argument #%d must be a valid callback, %s", len(args), err.Error()))
+			fmt.Sprintf("array_uintersect(): Argument #%d must be a valid callback, %s", len(args), core.CallbackErrorReason(err)))
 	}
 
 	var array *phpv.ZArray
@@ -158,7 +158,7 @@ func fncArrayUIntersectAssoc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, e
 	valueCompare, err := core.SpawnCallable(ctx, args[len(args)-1])
 	if err != nil {
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
-			fmt.Sprintf("array_uintersect_assoc(): Argument #%d must be a valid callback, %s", len(args), err.Error()))
+			fmt.Sprintf("array_uintersect_assoc(): Argument #%d must be a valid callback, %s", len(args), core.CallbackErrorReason(err)))
 	}
 
 	var array *phpv.ZArray
@@ -212,13 +212,13 @@ func fncArrayUIntersectUAssoc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, 
 	valueCompare, err := core.SpawnCallable(ctx, args[len(args)-2])
 	if err != nil {
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
-			fmt.Sprintf("array_uintersect_uassoc(): Argument #%d must be a valid callback, %s", len(args)-1, err.Error()))
+			fmt.Sprintf("array_uintersect_uassoc(): Argument #%d must be a valid callback, %s", len(args)-1, core.CallbackErrorReason(err)))
 	}
 
 	keyCompare, err := core.SpawnCallable(ctx, args[len(args)-1])
 	if err != nil {
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
-			fmt.Sprintf("array_uintersect_uassoc(): Argument #%d must be a valid callback, %s", len(args), err.Error()))
+			fmt.Sprintf("array_uintersect_uassoc(): Argument #%d must be a valid callback, %s", len(args), core.CallbackErrorReason(err)))
 	}
 
 	var array *phpv.ZArray
@@ -317,7 +317,7 @@ func fncArrayIntersectUAssoc(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, e
 	keyCompare, err := core.SpawnCallable(ctx, lastArg)
 	if err != nil {
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
-			fmt.Sprintf("array_intersect_uassoc(): Argument #%d must be a valid callback, %s", len(args), err.Error()))
+			fmt.Sprintf("array_intersect_uassoc(): Argument #%d must be a valid callback, %s", len(args), core.CallbackErrorReason(err)))
 	}
 
 	var array *phpv.ZArray
@@ -411,7 +411,7 @@ func fncArrayIntersectUKey(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, err
 	keyCompare, err := core.SpawnCallable(ctx, lastArg)
 	if err != nil {
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
-			fmt.Sprintf("array_intersect_ukey(): Argument #%d must be a valid callback, %s", len(args), err.Error()))
+			fmt.Sprintf("array_intersect_ukey(): Argument #%d must be a valid callback, %s", len(args), core.CallbackErrorReason(err)))
 	}
 
 	var array *phpv.ZArray

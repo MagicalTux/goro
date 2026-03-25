@@ -204,7 +204,22 @@ func spawnCallableInternal(ctx phpv.Context, v *phpv.ZVal, paramNo int) (phpv.Ca
 				fmt.Sprintf("%s(): Argument #%d ($callback) must be a valid callback, function \"%s\" not found or invalid function name", callerFunc, paramNo, s))
 		}
 
-		return ctx.Global().GetFunction(ctx, s)
+		fn, fnErr := ctx.Global().GetFunction(ctx, s)
+		if fnErr != nil {
+			// Convert "Call to undefined function" errors to the proper callback error format
+			if pt, ok := fnErr.(*phperr.PhpThrow); ok {
+				if obj, ok2 := pt.Obj.(phpv.ZObject); ok2 && obj.GetClass().InstanceOf(phpobj.Error) {
+					callerFunc := ctx.GetFuncName()
+					if callerFunc == "" {
+						callerFunc = "call_user_func"
+					}
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+						fmt.Sprintf("%s(): Argument #%d ($callback) must be a valid callback, function \"%s\" not found or invalid function name", callerFunc, paramNo, s))
+				}
+			}
+			return nil, fnErr
+		}
+		return fn, nil
 
 	case phpv.ZtArray:
 		// array is either:
@@ -583,4 +598,30 @@ func isClassNotFoundError(pt *phperr.PhpThrow) bool {
 	}
 	// Class-not-found errors are Error instances, not Exception instances
 	return obj.GetClass().InstanceOf(phpobj.Error)
+}
+
+// CallbackErrorReason extracts the reason portion from a SpawnCallable error.
+// SpawnCallable errors are typically formatted as:
+//   "funcName(): Argument #N ($callback) must be a valid callback, <reason>"
+// This function returns just the "<reason>" part for re-wrapping by callers.
+// If the error is not a callback error, it returns the full error string.
+func CallbackErrorReason(err error) string {
+	if err == nil {
+		return ""
+	}
+	msg := err.Error()
+	// Try to extract from PhpThrow message
+	if pt, ok := err.(*phperr.PhpThrow); ok {
+		if obj, ok2 := pt.Obj.(phpv.ZObject); ok2 {
+			if msgVal := obj.HashTable().GetString("message"); msgVal != nil {
+				msg = msgVal.String()
+			}
+		}
+	}
+	// Look for "must be a valid callback, " and extract everything after it
+	const marker = "must be a valid callback, "
+	if idx := strings.Index(msg, marker); idx >= 0 {
+		return msg[idx+len(marker):]
+	}
+	return msg
 }
