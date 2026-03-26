@@ -956,6 +956,11 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 					ctx.Global().CallZVal(ctx, cbCallable, []*phpv.ZVal{phpv.ZStr(className)})
 					// Try again after callback
 					class, err = ctx.Global().GetClass(ctx, phpv.ZString(className), true)
+					if err != nil || class == nil {
+						ctx.Warn("Function %s() hasn't defined the class it was called for", cbName)
+					}
+				} else {
+					ctx.Warn("Invalid callback %s, function \"%s\" not found or invalid function name", cbName, cbName)
 				}
 			}
 		}

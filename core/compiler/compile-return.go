@@ -36,8 +36,12 @@ func compileReturn(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			}
 			// PHP 8.0+: bare "return;" in a function with any non-void return type is an error
 			if rt != phpv.ZtVoid {
+				errMsg := "A function with return type must return a value"
+				if fn.returnType.IsNullable() {
+					errMsg = "A function with return type must return a value (did you mean \"return null;\" instead of \"return;\"?)"
+				}
 				return nil, &phpv.PhpError{
-					Err:  fmt.Errorf("A function with return type must return a value (did you mean \"return null;\" instead of \"return;\"?)"),
+					Err:  fmt.Errorf("%s", errMsg),
 					Code: phpv.E_COMPILE_ERROR,
 					Loc:  l,
 				}
