@@ -2387,18 +2387,25 @@ func parseReturnType(c compileCtx) (*phpv.TypeHint, error) {
 	th := phpv.ParseTypeHint(phpv.ZString(resolvedHint))
 
 	// Check for self/parent/static outside of class scope
-	// Note: closures are allowed to use self/parent/static since they may be bound
-	// to a class later via Closure::bind() or Closure::bindTo().
+	// Note: anonymous closures are allowed to use self/parent/static since they may
+	// be bound to a class later via Closure::bind() or Closure::bindTo().
+	// Named functions outside a class must NOT use these.
 	if th.Type() == phpv.ZtObject {
 		cn := th.ClassName()
 		if cn == "self" || cn == "parent" || cn == "static" {
 			class := c.getClass()
-			if class == nil && c.getFunc() == nil {
-				// Not inside a class/interface/trait AND not inside a closure
-				return nil, &phpv.PhpError{
-					Err:  fmt.Errorf("Cannot use \"%s\" when no class scope is active", cn),
-					Code: phpv.E_COMPILE_ERROR,
-					Loc:  i.Loc(),
+			if class == nil {
+				// Check if we're inside an anonymous closure (which can be bound later)
+				isAnonymousClosure := false
+				if f := c.getFunc(); f != nil && f.name == "" {
+					isAnonymousClosure = true
+				}
+				if !isAnonymousClosure {
+					return nil, &phpv.PhpError{
+						Err:  fmt.Errorf("Cannot use \"%s\" when no class scope is active", cn),
+						Code: phpv.E_COMPILE_ERROR,
+						Loc:  i.Loc(),
+					}
 				}
 			}
 			// "parent" inside an interface or a class with no parent

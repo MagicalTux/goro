@@ -795,7 +795,19 @@ func (o *ZObject) init(ctx phpv.Context) error {
 						}
 						p.Default = z.Value()
 					}
+					// Enforce typed property type checking on resolved defaults
+				if p.TypeHint != nil {
+					defVal := dupDefault(p.Default)
+					if coerced, err := o.enforcePropertyType(ctx, p.VarName, p, defVal); err != nil {
+						return err
+					} else if coerced != nil {
+						o.h.SetString(k, coerced)
+					} else {
+						o.h.SetString(k, defVal)
+					}
+				} else {
 					o.h.SetString(k, dupDefault(p.Default))
+				}
 				} else if p.TypeHint == nil {
 					// Untyped properties without default get null
 					o.h.SetString(k, phpv.ZNULL.ZVal())
@@ -816,7 +828,19 @@ func (o *ZObject) init(ctx phpv.Context) error {
 						}
 						p.Default = z.Value()
 					}
+					// Enforce typed property type checking on resolved defaults
+				if p.TypeHint != nil {
+					defVal := dupDefault(p.Default)
+					if coerced, err := o.enforcePropertyType(ctx, p.VarName, p, defVal); err != nil {
+						return err
+					} else if coerced != nil {
+						o.h.SetString(p.VarName, coerced)
+					} else {
+						o.h.SetString(p.VarName, defVal)
+					}
+				} else {
 					o.h.SetString(p.VarName, dupDefault(p.Default))
+				}
 				} else if p.TypeHint == nil {
 					// Untyped properties without default get null
 					o.h.SetString(p.VarName, phpv.ZNULL.ZVal())
@@ -1323,7 +1347,8 @@ func (o *ZObject) checkPropertyVisibility(ctx phpv.Context, keyStr phpv.ZString,
 				if callerClass == nil {
 					return ThrowError(ctx, Error, fmt.Sprintf("Cannot access protected property %s::$%s", o.Class.GetName(), keyStr))
 				}
-				if !callerClass.InstanceOf(class) && !class.InstanceOf(callerClass) {
+				if !callerClass.InstanceOf(class) && !class.InstanceOf(callerClass) &&
+					!sharesProtectedPropertyPrototype(callerClass, concreteClass, keyStr) {
 					return ThrowError(ctx, Error, fmt.Sprintf("Cannot access protected property %s::$%s", o.Class.GetName(), keyStr))
 				}
 			}
@@ -1440,7 +1465,8 @@ func (o *ZObject) checkSetVisibility(ctx phpv.Context, keyStr phpv.ZString, isUn
 					alreadyInit := o.readonlyInit != nil && o.readonlyInit[keyStr]
 					if !alreadyInit {
 						callerClass := ctx.Class()
-						if callerClass == nil || (!callerClass.InstanceOf(cur) && !cur.InstanceOf(callerClass)) {
+						if callerClass == nil || (!callerClass.InstanceOf(cur) && !cur.InstanceOf(callerClass) &&
+						!sharesProtectedPropertyPrototype(callerClass, class, keyStr)) {
 							return ThrowError(ctx, Error,
 								fmt.Sprintf("Cannot %s protected(set) readonly property %s::$%s from %s",
 									verb, cur.GetName(), keyStr, scopeName(callerClass)))
@@ -1460,8 +1486,11 @@ func (o *ZObject) checkSetVisibility(ctx phpv.Context, keyStr phpv.ZString, isUn
 						verb, cur.GetName(), keyStr, scopeName(callerClass)))
 			}
 			if prop.SetModifiers.IsProtected() {
-				// The declaring class and subclasses can write
-				if callerClass != nil && (callerClass.InstanceOf(cur) || cur.InstanceOf(callerClass)) {
+				// The declaring class and subclasses can write.
+				// Also allow access if the caller and object share a common ancestor
+				// that declares the property (prototype-based scoping, GH-19044).
+				if callerClass != nil && (callerClass.InstanceOf(cur) || cur.InstanceOf(callerClass) ||
+					sharesProtectedPropertyPrototype(callerClass, class, keyStr)) {
 					return nil
 				}
 				readonlyStr := ""
@@ -1476,6 +1505,35 @@ func (o *ZObject) checkSetVisibility(ctx phpv.Context, keyStr phpv.ZString, isUn
 		}
 	}
 	return nil
+}
+
+// sharesProtectedPropertyPrototype checks if two classes share a common ancestor
+// that declares a property. In PHP 8.4+, protected property scoping is based on
+// the property's prototype - the most ancestral class that declares the property.
+// If both the caller and the object's class descend from a class that declares
+// the property, access is allowed even for sibling classes.
+func sharesProtectedPropertyPrototype(callerClass phpv.ZClass, objectClass *ZClass, keyStr phpv.ZString) bool {
+	// Find the most ancestral class that declares this property
+	var findPrototype func(c *ZClass) *ZClass
+	findPrototype = func(c *ZClass) *ZClass {
+		var deepest *ZClass
+		for cur := c; cur != nil; cur = cur.Extends {
+			for _, prop := range cur.Props {
+				if prop.VarName == keyStr && !prop.Modifiers.IsPrivate() {
+					deepest = cur
+				}
+			}
+		}
+		return deepest
+	}
+
+	proto := findPrototype(objectClass)
+	if proto == nil {
+		return false
+	}
+
+	// Check if the caller class is an instance of the prototype
+	return callerClass.InstanceOf(proto)
 }
 
 // findPropWithHook looks up a class property by name, walking the class hierarchy.
@@ -2599,6 +2657,7 @@ func (o *ZObject) findDeclaringClass(keyStr phpv.ZString) *ZClass {
 
 // enforcePropertyType checks that a value is compatible with a typed property's type hint.
 // Returns a coerced value if coercion is needed and possible, or an error if the type is incompatible.
+// In strict_types=1 mode, no coercion is performed (except int->float widening).
 func (o *ZObject) enforcePropertyType(ctx phpv.Context, keyStr phpv.ZString, prop *phpv.ZClassProp, value *phpv.ZVal) (*phpv.ZVal, error) {
 	hint := prop.TypeHint
 	if hint == nil {
@@ -2615,12 +2674,34 @@ func (o *ZObject) enforcePropertyType(ctx phpv.Context, keyStr phpv.ZString, pro
 				o.Class.GetName(), keyStr, hint.String()))
 	}
 
-	// Check if value matches the type hint
+	// strict_types applies to the file where the assignment happens
+	isStrict := ctx.Global().GetStrictTypes()
+
+	if isStrict {
+		// In strict mode, use strict type checking (no coercion except int->float)
+		if hint.CheckStrict(ctx, value) {
+			// Even in strict mode, int values assigned to float properties get widened
+			hintType := hint.Type()
+			if hintType == phpv.ZtFloat && value.GetType() == phpv.ZtInt && len(hint.Union) == 0 && len(hint.Intersection) == 0 {
+				if coerced, err := value.Value().AsVal(ctx, phpv.ZtFloat); err == nil && coerced != nil {
+					return coerced.ZVal(), nil
+				}
+			}
+			return nil, nil
+		}
+		// Strict type mismatch
+		typeName := phpv.ZValTypeNameDetailed(value)
+		return nil, ThrowError(ctx, TypeError,
+			fmt.Sprintf("Cannot assign %s to property %s::$%s of type %s",
+				typeName, o.Class.GetName(), keyStr, hint.String()))
+	}
+
+	// Weak mode: check if value matches the type hint
 	if hint.Check(ctx, value) {
 		// For scalar types, coerce the value to the exact type
 		hintType := hint.Type()
 		valType := value.GetType()
-		if hintType != phpv.ZtMixed && hintType != phpv.ZtObject && valType != hintType {
+		if hintType != phpv.ZtMixed && hintType != phpv.ZtObject && valType != hintType && len(hint.Union) == 0 && len(hint.Intersection) == 0 {
 			// Emit implicit conversion deprecation for float->int
 			if hintType == phpv.ZtInt && valType == phpv.ZtFloat {
 				v, err := phpv.FloatToIntImplicit(ctx, value.Value().(phpv.ZFloat))

@@ -1010,6 +1010,12 @@ func (z *ZClosure) callBody(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 					a.DefaultValue = z.Value()
 				}
 				args[i] = a.DefaultValue.ZVal()
+				// Coerce int default to float when the type hint is float (applies even in strict mode)
+				if a.Hint != nil && a.Hint.Type() == phpv.ZtFloat && len(a.Hint.Union) == 0 && len(a.Hint.Intersection) == 0 && args[i].GetType() == phpv.ZtInt {
+					if coerced, err2 := args[i].As(ctx, phpv.ZtFloat); err2 == nil && coerced != nil {
+						args[i] = coerced.ZVal()
+					}
+				}
 			} else {
 				continue
 			}
@@ -1169,7 +1175,11 @@ func (z *ZClosure) coerceReturnValue(ctx phpv.Context, r *phpv.ZVal) *phpv.ZVal 
 			return r
 		}
 		// Try coercing to each scalar union member
+		// Skip literal types (false, true) - they should not accept coerced values
 		for _, alt := range rt.Union {
+			if alt.Type() == phpv.ZtBool && (alt.ClassName() == "false" || alt.ClassName() == "true") {
+				continue // literal false/true do not accept coerced values
+			}
 			if alt.Type() == phpv.ZtBool || alt.Type() == phpv.ZtInt || alt.Type() == phpv.ZtFloat || alt.Type() == phpv.ZtString {
 				if coerced, err := r.As(ctx, alt.Type()); err == nil && coerced != nil {
 					if alt.Check(ctx, coerced) {
