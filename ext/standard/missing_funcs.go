@@ -607,9 +607,9 @@ func fncFlock(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "flock(): Argument #1 ($stream) must be an open stream resource")
 	}
 
-	// Validate operation: strip LOCK_NB flag, then check base operation
-	op := int(operation) &^ int(LOCK_NB)
-	if op != int(LOCK_SH) && op != int(LOCK_EX) && op != int(LOCK_UN) {
+	// Validate operation: PHP masks with LOCK_UN (3) to get base operation (1=SH, 2=EX, 3=UN)
+	op := int(operation) & int(LOCK_UN)
+	if op < 1 || op > 3 {
 		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "flock(): Argument #2 ($operation) must be one of LOCK_SH, LOCK_EX, or LOCK_UN")
 	}
 

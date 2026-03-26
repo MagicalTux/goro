@@ -282,6 +282,10 @@ func fncGlob(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			}
 			return result.ZVal(), nil
 		}
+		// Single expanded pattern - use it instead of the original
+		if len(patterns) == 1 {
+			pat = patterns[0]
+		}
 	}
 
 	paths, err := globMatch(ctx, pat, cwd, flags, hasBasedir)

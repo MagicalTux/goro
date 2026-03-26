@@ -1257,14 +1257,27 @@ func (g *Global) LogError(err *phpv.PhpError, optionArg ...logopt.Data) {
 		}
 	}
 
-	if htmlErrors {
-		g.Write([]byte("<br />\n"))
-		g.Write(output.Bytes())
-		g.Write([]byte("<br />\n"))
-	} else {
-		g.Write([]byte("\n"))
-		g.Write(output.Bytes())
-		g.Write([]byte("\n"))
+	// Check display_errors setting before outputting
+	displayErrors := g.GetConfig("display_errors", phpv.ZBool(true).ZVal())
+	shouldDisplay := true
+	if displayErrors != nil {
+		dv := displayErrors.String()
+		// PHP treats "0", "", "false", "off" as disabled; "stderr" means display to stderr
+		if dv == "0" || dv == "" || dv == "Off" || dv == "off" || dv == "false" {
+			shouldDisplay = false
+		}
+	}
+
+	if shouldDisplay {
+		if htmlErrors {
+			g.Write([]byte("<br />\n"))
+			g.Write(output.Bytes())
+			g.Write([]byte("<br />\n"))
+		} else {
+			g.Write([]byte("\n"))
+			g.Write(output.Bytes())
+			g.Write([]byte("\n"))
+		}
 	}
 }
 

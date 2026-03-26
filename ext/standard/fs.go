@@ -213,19 +213,17 @@ func fncIsDir(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZFalse.ZVal(), nil
 	}
 
-	r, err := ctx.Global().Open(ctx, filename, "r", true)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return phpv.ZFalse.ZVal(), nil
-		}
-		return nil, err
-	}
-	stat, err := r.Stat()
-	if err != nil {
-		return nil, err
+	p := string(filename)
+	if !filepath.IsAbs(p) {
+		p = filepath.Join(string(ctx.Global().Getwd()), p)
 	}
 
-	return phpv.ZBool(stat.IsDir()).ZVal(), nil
+	fi, err := os.Stat(p)
+	if err != nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	return phpv.ZBool(fi.IsDir()).ZVal(), nil
 }
 
 // > func bool is_file ( string $filename )
@@ -248,19 +246,17 @@ func fncIsFile(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZFalse.ZVal(), nil
 	}
 
-	r, err := ctx.Global().Open(ctx, filename, "r", true)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return phpv.ZFalse.ZVal(), nil
-		}
-		return nil, err
-	}
-	stat, err := r.Stat()
-	if err != nil {
-		return nil, err
+	p := string(filename)
+	if !filepath.IsAbs(p) {
+		p = filepath.Join(string(ctx.Global().Getwd()), p)
 	}
 
-	return phpv.ZBool(stat.Mode().IsRegular()).ZVal(), nil
+	fi, err := os.Stat(p)
+	if err != nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	return phpv.ZBool(fi.Mode().IsRegular()).ZVal(), nil
 }
 
 // > func bool is_readable ( string $filename )
@@ -633,13 +629,16 @@ func fncFileGetContents(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	if ml == 0 {
 		return phpv.ZStr(""), nil
 	}
-	buf := make([]byte, ml)
-	n, err := f.Read(buf)
-	if err != nil && err != io.EOF {
-		return nil, err
+	// Use io.LimitReader to avoid allocating huge buffers when length > file size
+	buf, err := io.ReadAll(io.LimitReader(f, int64(ml)))
+	if err != nil {
+		if errors.Is(err, syscall.EISDIR) {
+			return phpv.ZFalse.ZVal(), ctx.Notice("%s(): Read of 8192 bytes failed with errno=21 Is a directory", ctx.GetFuncName(), logopt.NoFuncName(true))
+		}
+		return phpv.ZFalse.ZVal(), ctx.Warn("%s(%s): Failed to read stream: %s", ctx.GetFuncName(), filename, err, logopt.NoFuncName(true))
 	}
 
-	return phpv.ZStr(string(buf[:n])), nil
+	return phpv.ZStr(string(buf)), nil
 }
 
 // > func int file_put_contents ( string $filename , mixed $data [, int $flags = 0 [, resource $context ]]
@@ -650,6 +649,20 @@ func fncFilePutContents(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	_, err := core.Expand(ctx, args, &filename, &data, &flagsArg)
 	if err != nil {
 		return nil, err
+	}
+
+	// Handle context parameter (4th arg)
+	if len(args) >= 4 && args[3] != nil && args[3].GetType() != phpv.ZtNull {
+		ctxVal := args[3]
+		if ctxVal.GetType() == phpv.ZtResource {
+			res, ok := ctxVal.Value().(phpv.Resource)
+			if !ok {
+				return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "file_put_contents(): supplied resource is not a valid Stream-Context resource")
+			}
+			if _, ok := res.(*stream.Context); !ok {
+				return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "file_put_contents(): supplied resource is not a valid Stream-Context resource")
+			}
+		}
 	}
 
 	// Empty path throws ValueError
@@ -684,11 +697,11 @@ func fncFilePutContents(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	case phpv.ZtResource:
 		res, rok := data.Value().(phpv.Resource)
 		if !rok {
-			return nil, errors.New("data resource is not a valid resource")
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "file_put_contents(): supplied resource is not a valid stream resource")
 		}
 		stm, sok := res.(*stream.Stream)
 		if !sok {
-			return nil, errors.New("data resource is not a stream")
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "file_put_contents(): supplied resource is not a valid stream resource")
 		}
 		rbuf, rerr := io.ReadAll(stm)
 		if rerr != nil {
@@ -736,8 +749,16 @@ func fncFileOpen(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var filename phpv.ZString
 	var mode phpv.ZString
 	var useIncludePathArg core.Optional[phpv.ZBool]
+
+	// Handle the optional 4th argument (context) manually to allow NULL
+	// PHP allows NULL as the context parameter (Bug #74719)
+	expandArgs := args
+	if len(args) >= 4 && args[3] != nil && args[3].GetType() == phpv.ZtNull {
+		expandArgs = args[:3]
+	}
+
 	var contextResource core.Optional[phpv.Resource]
-	_, err := core.Expand(ctx, args, &filename, &mode, &useIncludePathArg, &contextResource)
+	_, err := core.Expand(ctx, expandArgs, &filename, &mode, &useIncludePathArg, &contextResource)
 	if err != nil {
 		return nil, err
 	}

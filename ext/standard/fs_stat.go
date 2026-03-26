@@ -344,6 +344,11 @@ func fncTouch(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
+	// PHP: touch("") and touch(false) return false
+	if filename == "" {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
 	if err := ctx.Global().CheckOpenBasedir(ctx, filename, "touch"); err != nil {
 		return phpv.ZFalse.ZVal(), nil
 	}
