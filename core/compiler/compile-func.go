@@ -1441,6 +1441,14 @@ func compileFunctionArgs(c compileCtx) (res []*phpv.FuncArg, err error) {
 				} else if _, ok := r.(runConcat); ok {
 					// Double-quoted strings compile to runConcat; the result is always a string
 					valTypeName = "string"
+				} else if rc, ok := r.(*runConstant); ok {
+					// Handle true/false/null constants
+					switch strings.ToLower(shortName(rc.c)) {
+					case "true", "false":
+						valTypeName = "bool"
+					case "null":
+						// null is handled by the nullable check above
+					}
 				}
 				if valTypeName != "" {
 					hintType := arg.Hint.Type()
