@@ -675,23 +675,37 @@ var PhpUserFilterClass = &phpobj.ZClass{
 	Methods: map[phpv.ZString]*phpv.ZClassMethod{
 		"filter": {
 			Name: "filter",
-			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				return phpv.ZInt(stream.PSFS_FEED_ME).ZVal(), nil
-			}),
+			Method: &phpobj.NativeMethodNamed{
+				Fn: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+					return phpv.ZInt(stream.PSFS_FEED_ME).ZVal(), nil
+				}),
+				Args: []*phpv.FuncArg{
+					{VarName: "in", Required: true},
+					{VarName: "out", Required: true},
+					{VarName: "consumed", Required: true, Ref: true},
+					{VarName: "closing", Required: true, Hint: phpv.ParseTypeHint("bool")},
+				},
+			},
 			ReturnType: phpv.ParseTypeHint("int"),
 		},
 		"oncreate": {
 			Name: "onCreate",
-			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				return phpv.ZTrue.ZVal(), nil
-			}),
+			Method: &phpobj.NativeMethodNamed{
+				Fn: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+					return phpv.ZTrue.ZVal(), nil
+				}),
+				Args: []*phpv.FuncArg{},
+			},
 			ReturnType: phpv.ParseTypeHint("bool"),
 		},
 		"onclose": {
 			Name: "onClose",
-			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				return nil, nil
-			}),
+			Method: &phpobj.NativeMethodNamed{
+				Fn: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+					return nil, nil
+				}),
+				Args: []*phpv.FuncArg{},
+			},
 			ReturnType: phpv.ParseTypeHint("void"),
 		},
 	},

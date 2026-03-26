@@ -23,9 +23,44 @@ func (g *Global) getIncludePath() []string {
 type OpenContext int
 
 func (g *Global) getHandler(fn phpv.ZString) (stream.Handler, *url.URL, error) {
-	u, err := url.Parse(string(fn))
+	fnStr := string(fn)
+
+	u, err := url.Parse(fnStr)
 	if err != nil {
-		return nil, nil, err
+		// Go's url.Parse rejects control characters (e.g. \r, \n) in URLs.
+		// PHP is more permissive, especially for data: URIs.
+		// Try to extract the scheme manually and build a minimal URL.
+		if idx := strings.Index(fnStr, ":"); idx > 0 {
+			scheme := strings.ToLower(fnStr[:idx])
+			// Only use this fallback for known schemes with opaque data
+			if scheme == "data" || scheme == "php" {
+				u = &url.URL{
+					Scheme: scheme,
+					Opaque: fnStr[idx+1:],
+				}
+				// For php: scheme, also parse host/path
+				if scheme == "php" {
+					rest := fnStr[idx+1:]
+					if strings.HasPrefix(rest, "//") {
+						rest = rest[2:]
+						slashIdx := strings.Index(rest, "/")
+						if slashIdx >= 0 {
+							u.Host = rest[:slashIdx]
+							u.Path = rest[slashIdx:]
+							u.Opaque = ""
+						} else {
+							u.Host = rest
+							u.Path = ""
+							u.Opaque = ""
+						}
+					}
+				}
+				err = nil
+			}
+		}
+		if err != nil {
+			return nil, nil, err
+		}
 	}
 
 	s := u.Scheme

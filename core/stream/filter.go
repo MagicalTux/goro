@@ -2,10 +2,22 @@ package stream
 
 import (
 	"encoding/base64"
+	"fmt"
 	"strings"
 
 	"github.com/MagicalTux/goro/core/phpv"
 )
+
+// FilterWarning is an error that carries both the filtered output and a warning message.
+// The caller should emit the warning but still use the output data.
+type FilterWarning struct {
+	Message string
+	Data    []byte
+}
+
+func (e *FilterWarning) Error() string {
+	return e.Message
+}
 
 // PSFS return codes from filter() method
 const (
@@ -403,6 +415,7 @@ func (f *QuotedPrintableDecodeFilter) Process(data []byte, closing bool) ([]byte
 	f.buf = nil
 
 	var result []byte
+	hasInvalid := false
 	i := 0
 	for i < len(input) {
 		if input[i] == '=' {
@@ -414,6 +427,11 @@ func (f *QuotedPrintableDecodeFilter) Process(data []byte, closing bool) ([]byte
 					i += 3
 					continue
 				}
+				if h1 == '\n' {
+					// Soft line break (bare LF)
+					i += 2
+					continue
+				}
 				v1 := unhex(h1)
 				v2 := unhex(h2)
 				if v1 >= 0 && v2 >= 0 {
@@ -421,21 +439,39 @@ func (f *QuotedPrintableDecodeFilter) Process(data []byte, closing bool) ([]byte
 					i += 3
 					continue
 				}
-				// Invalid sequence - pass through
+				// Invalid sequence - pass through the = and flag warning
+				hasInvalid = true
 				result = append(result, input[i])
 				i++
+			} else if i+1 < len(input) && input[i+1] == '\n' {
+				// Soft line break (bare LF)
+				i += 2
+				continue
 			} else if !closing {
 				// Not enough data, buffer for next call
 				f.buf = input[i:]
+				if hasInvalid {
+					return result, &FilterWarning{
+						Message: fmt.Sprintf("Stream filter (convert.quoted-printable-decode): invalid byte sequence"),
+						Data:    result,
+					}
+				}
 				return result, nil
 			} else {
 				// Closing with incomplete sequence
+				hasInvalid = true
 				result = append(result, input[i])
 				i++
 			}
 		} else {
 			result = append(result, input[i])
 			i++
+		}
+	}
+	if hasInvalid {
+		return result, &FilterWarning{
+			Message: fmt.Sprintf("Stream filter (convert.quoted-printable-decode): invalid byte sequence"),
+			Data:    result,
 		}
 	}
 	return result, nil

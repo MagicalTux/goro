@@ -2009,7 +2009,11 @@ func (o *ZObject) ObjectGet(ctx phpv.Context, key phpv.Val) (*phpv.ZVal, error) 
 
 	if o.h.HasString(keyStr) {
 		v := o.h.GetString(keyStr)
-		return phpv.NewZVal(v.Value()), nil
+		// Return the actual ZVal pointer from the hash table so that
+		// by-reference access (e.g., func(&$obj->prop)) can modify
+		// the property in-place. PHP's COW semantics handle the case
+		// where the value is assigned to a separate variable.
+		return v, nil
 	}
 
 	// Check for uninitialized typed property - throws Error instead of calling __get,

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/MagicalTux/goro/core/phperr"
 	"github.com/MagicalTux/goro/core/phpobj"
 
 	"github.com/MagicalTux/goro/core"
@@ -589,6 +590,11 @@ func fncFileGetContents(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 		f, err = ctx.Global().Open(ctx, filename, "r", useIncludePath)
 	}
 	if err != nil {
+		// If the error is a PHP exception (e.g., from filter object creation failure),
+		// let it propagate to the caller's try/catch
+		if _, isThrow := err.(*phperr.PhpThrow); isThrow {
+			return nil, err
+		}
 		if errors.Is(err, os.ErrNotExist) {
 			return phpv.ZFalse.ZVal(), ctx.Warn("%s(%s): Failed to open stream: No such file or directory", ctx.GetFuncName(), filename, logopt.NoFuncName(true))
 		}
@@ -799,6 +805,11 @@ func fncFileClose(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	if f, ok := handle.(*stream.Stream); ok {
+		// Prevent closing a stream from within its own filter
+		if f.InFilter {
+			ctx.Warn("fclose(): cannot close the provided stream, as it must not be manually closed", logopt.NoFuncName(true))
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "fclose(): Argument #1 ($stream) must be an open stream resource")
+		}
 		err = f.Close()
 		if err != nil {
 			return phpv.ZFalse.ZVal(), nil
@@ -852,6 +863,11 @@ func fncFwrite(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 	n, err := file.Write(b)
 	if err != nil {
+		// Check for filter warnings (e.g., QP decode invalid byte sequence)
+		if fw, ok := err.(*stream.FilterWarning); ok {
+			ctx.Warn("fwrite(): %s", fw.Message, logopt.NoFuncName(true))
+			return phpv.ZInt(n).ZVal(), nil
+		}
 		ctx.Notice("fwrite(): Write of %d bytes failed with errno=9 Bad file descriptor", len(b), logopt.NoFuncName(true))
 		return phpv.ZFalse.ZVal(), nil
 	}

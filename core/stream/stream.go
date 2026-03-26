@@ -26,6 +26,7 @@ type Stream struct {
 	writeFilters []filterEntry
 	readBuf      []byte // buffered filtered read data
 	filterCtx    phpv.Context // context for calling user filters
+	InFilter     bool   // true while a user filter's filter() method is executing
 }
 
 func streamFinalizer(s *Stream) {
@@ -132,11 +133,22 @@ func (s *Stream) Write(p []byte) (n int, err error) {
 // filteredWrite applies write filters before writing to the underlying stream
 func (s *Stream) filteredWrite(p []byte) (int, error) {
 	filtered, err := s.ApplyWriteFilters(p, false)
+	// Handle FilterWarning: still write the data but propagate the warning
+	var fw *FilterWarning
 	if err != nil {
-		return 0, err
+		var ok bool
+		if fw, ok = err.(*FilterWarning); ok {
+			filtered = fw.Data
+			// Continue with the write, will return the warning as error after
+		} else {
+			return 0, err
+		}
 	}
 	if len(filtered) == 0 {
 		// Filters consumed data but produced no output (e.g., buffering)
+		if fw != nil {
+			return len(p), fw
+		}
 		return len(p), nil
 	}
 	w, ok := s.f.(io.Writer)
@@ -146,6 +158,9 @@ func (s *Stream) filteredWrite(p []byte) (int, error) {
 	_, werr := w.Write(filtered)
 	if werr != nil {
 		return 0, werr
+	}
+	if fw != nil {
+		return len(p), fw
 	}
 	return len(p), nil
 }

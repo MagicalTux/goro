@@ -235,18 +235,21 @@ func (h *phpHandler) openFilter(ctx phpv.Context, p *url.URL, mode string) (*Str
 				class, err := ctx.Global().GetClass(ctx, phpv.ZString(className), true)
 				if err != nil {
 					ctx.Warn("Unable to create or locate filter \"%s\"", filterName)
+					ctx.Warn("Unable to create filter (%s)", filterName)
 					s.Close()
-					return nil, fmt.Errorf("Unable to create filter (%s)", filterName)
+					return nil, err
 				}
 				obj, err := newFilterObject(ctx, class, filterName)
 				if err != nil {
 					ctx.Warn("Unable to create or locate filter \"%s\"", filterName)
+					ctx.Warn("Unable to create filter (%s)", filterName)
 					s.Close()
-					return nil, fmt.Errorf("Unable to create filter (%s)", filterName)
+					return nil, err
 				}
 				filter = NewUserFilter(ctx, obj, s, filterName, nil)
 			} else {
 				ctx.Warn("Unable to create or locate filter \"%s\"", filterName)
+				ctx.Warn("Unable to create filter (%s)", filterName)
 				s.Close()
 				return nil, fmt.Errorf("Unable to create filter (%s)", filterName)
 			}

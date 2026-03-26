@@ -58,6 +58,12 @@ func (f *UserFilter) Process(data []byte, closing bool) ([]byte, error) {
 	// Set the stream property on the filter object (if the property exists and is appropriate)
 	f.setStreamProperty()
 
+	// Mark the stream as being inside a filter operation
+	if f.stream != nil {
+		f.stream.InFilter = true
+		defer func() { f.stream.InFilter = false }()
+	}
+
 	// Call filter($in, $out, &$consumed, $closing)
 	result, err := f.obj.CallMethod(ctx, "filter",
 		inBrigade.ZVal(),
