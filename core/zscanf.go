@@ -584,14 +584,20 @@ Loop:
 			val = phpv.ZInt(consumed).ZVal()
 
 		case 'c':
-			// %c: In PHP's scanf, %c (without width) reads 1 non-whitespace character.
-			// If the next character is whitespace, returns "" without consuming it.
-			// With width N, reads up to N non-whitespace characters (stopping at whitespace).
-			// Unlike other specifiers, %c always "succeeds" (returns empty string
-			// rather than causing a NULL result for empty input).
+			// %c: In PHP's scanf, %c reads non-whitespace characters.
+			// Without width: reads 1 non-whitespace char; returns "" if next char is whitespace.
+			// With width N: reads up to N non-whitespace chars (stopping at whitespace).
+			// If input is fully exhausted (EOF), %c fails like other specifiers.
+			// But if there's still data (even whitespace), %c "succeeds" with empty string.
 			count := 1
 			if width > 0 {
 				count = width
+			}
+			// Check if there's any input remaining (even whitespace)
+			if _, peekErr := buf.Peek(1); peekErr != nil {
+				// Input exhausted → fail
+				failed = true
+				break Loop
 			}
 			var s []byte
 			for i := 0; i < count; i++ {

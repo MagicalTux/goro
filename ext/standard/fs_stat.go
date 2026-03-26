@@ -469,7 +469,8 @@ func fncFile(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZFalse.ZVal(), nil
 	}
 
-	f, err := ctx.Global().Open(ctx, filename, "r", false)
+	useIncludePath := flags != nil && *flags&FILE_USE_INCLUDE_PATH != 0
+	f, err := ctx.Global().Open(ctx, filename, "r", useIncludePath)
 	if err != nil {
 		errMsg := err.Error()
 		if os.IsNotExist(err) {
