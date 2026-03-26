@@ -152,7 +152,8 @@ func (r *runParentPropHookCall) IsFuncCallExpression() {}
 
 // hookReferencesBacking checks if a compiled Runnable references $this->propName,
 // which means the property has a backing store and is not virtual.
-// This recursively walks the compiled AST tree.
+// This recursively walks the compiled AST tree but stops at scope boundaries
+// (closures, arrow functions, anonymous classes) since those have their own $this.
 func hookReferencesBacking(r phpv.Runnable, propName phpv.ZString) bool {
 	if r == nil {
 		return false
@@ -162,6 +163,14 @@ func hookReferencesBacking(r phpv.Runnable, propName phpv.ZString) bool {
 		if rv, ok2 := ov.ref.(*runVariable); ok2 && rv.v == "this" && ov.varName == propName {
 			return true
 		}
+	}
+	// Stop at scope boundaries - closures and anonymous classes have their
+	// own $this context, so $this->prop references inside them do not count.
+	switch r.(type) {
+	case *ZClosure:
+		return false
+	case *phpobj.ZClass:
+		return false
 	}
 	// Recursively check all children using the existing GetChildren helper
 	for _, child := range GetChildren(r) {

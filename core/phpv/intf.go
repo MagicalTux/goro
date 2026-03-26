@@ -27,6 +27,7 @@ type ZIterator interface {
 	End(ctx Context) (*ZVal, error)
 	Valid(ctx Context) bool
 	Iterate(ctx Context) iter.Seq2[*ZVal, *ZVal]
+	IterateRaw(ctx Context) iter.Seq2[*ZVal, *ZVal]
 }
 
 type ZCountable interface {

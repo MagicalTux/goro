@@ -155,3 +155,19 @@ func (a *zhashtableIterator) Iterate(ctx Context) iter.Seq2[*ZVal, *ZVal] {
 		}
 	}
 }
+
+// IterateRaw returns an iterator that yields raw ZVals from the hash table
+// without copying, preserving reference wrappers. This is used by serialize()
+// to detect PHP references (& references) between values.
+func (a *zhashtableIterator) IterateRaw(ctx Context) iter.Seq2[*ZVal, *ZVal] {
+	return func(yield func(*ZVal, *ZVal) bool) {
+		for ; a.Valid(ctx); a.Next(ctx) {
+			key, _ := a.Key(ctx)
+			value, _ := a.CurrentRef(ctx)
+
+			if !yield(key.Dup(), value) {
+				break
+			}
+		}
+	}
+}

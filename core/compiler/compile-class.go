@@ -653,6 +653,13 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 				prop := &phpv.ZClassProp{Modifiers: attr, SetModifiers: setModifiers, TypeHint: propTypeHint, Attributes: memberAttrs}
 				prop.VarName = phpv.ZString(i.Data[1:])
 
+				// PHP: certain types cannot be used for properties
+				if propTypeHint != nil {
+					if err := validatePropertyTypeHint(propTypeHint, class.Name, prop.VarName, i.Loc()); err != nil {
+						return nil, err
+					}
+				}
+
 				// Check for duplicate property declaration
 				for _, existing := range class.Props {
 					if existing.VarName == prop.VarName {
@@ -717,6 +724,13 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 					}
 					// parse default value for class variable
 					prop.Default = &phpv.CompileDelayed{V: r}
+
+					// Validate property default value against type hint at compile time
+					if prop.TypeHint != nil {
+						if err := validatePropertyDefault(r, prop.TypeHint, class.Name, prop.VarName, l); err != nil {
+							return nil, err
+						}
+					}
 
 					i, err = c.NextItem()
 					if err != nil {
@@ -1083,13 +1097,25 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 				return nil, i.Unexpected()
 			}
 
-			// TODO: Validate constant type hint if present
+			// Validate constant type hint if present
+			if constTypeHint != nil {
+				if err := validateTypeHint(constTypeHint, i.Loc()); err != nil {
+					return nil, err
+				}
+			}
 
 			for {
 				if !i.IsSemiReserved() {
 					return nil, i.Unexpected()
 				}
 				constName := i.Data
+
+				// Validate class constant type restrictions
+				if constTypeHint != nil {
+					if err := validateClassConstTypeHint(constTypeHint, class.Name, constName, i.Loc()); err != nil {
+						return nil, err
+					}
+				}
 
 				// 'class' is reserved for class name fetching (Foo::class)
 				if phpv.ZString(constName).ToLower() == "class" {
@@ -2212,4 +2238,189 @@ func isObjectLikeReturnType(rt *phpv.TypeHint) bool {
 		return true
 	}
 	return false
+}
+
+// validatePropertyDefault checks if a property's default value is compatible with its type hint.
+// Only checks literal values (runZVal) at compile time.
+func validatePropertyDefault(r phpv.Runnable, th *phpv.TypeHint, className phpv.ZString, varName phpv.ZString, loc *phpv.Loc) error {
+	if th == nil || r == nil {
+		return nil
+	}
+
+	// Only validate literal values
+	zv, ok := r.(*runZVal)
+	if !ok {
+		return nil
+	}
+
+	val := zv.v
+
+	// Special case: null default value on non-nullable type
+	isNull := val == nil || val.GetType() == phpv.ZtNull
+	if isNull {
+		if !th.IsNullable() {
+			// Object type hint: special message
+			if th.Type() == phpv.ZtObject && th.ClassName() != "" && th.ClassName() != "callable" && th.ClassName() != "iterable" {
+				return &phpv.PhpError{
+					Err:  fmt.Errorf("Default value for property of type %s may not be null. Use the nullable type ?%s to allow null default value", th.String(), th.String()),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  loc,
+				}
+			}
+			// For scalar types
+			return &phpv.PhpError{
+				Err:  fmt.Errorf("Default value for property of type %s may not be null. Use the nullable type ?%s to allow null default value", th.String(), th.String()),
+				Code: phpv.E_COMPILE_ERROR,
+				Loc:  loc,
+			}
+		}
+		return nil
+	}
+
+	// Skip complex types (unions, intersections) for now - too complex for compile-time validation
+	if len(th.Union) > 0 || len(th.Intersection) > 0 {
+		return nil
+	}
+
+	// Check if the default literal type matches the property type
+	valType := val.GetType()
+	hintType := th.Type()
+
+	// For object type hints (class names), only null can be a default (checked above)
+	if hintType == phpv.ZtObject {
+		return nil
+	}
+
+	// mixed accepts anything
+	if hintType == phpv.ZtMixed {
+		return nil
+	}
+
+	// Type compatibility checks
+	compatible := false
+	switch hintType {
+	case phpv.ZtInt:
+		compatible = valType == phpv.ZtInt
+	case phpv.ZtFloat:
+		// float accepts int and float
+		compatible = valType == phpv.ZtFloat || valType == phpv.ZtInt
+	case phpv.ZtString:
+		compatible = valType == phpv.ZtString
+	case phpv.ZtBool:
+		compatible = valType == phpv.ZtBool
+	case phpv.ZtArray:
+		compatible = valType == phpv.ZtArray
+	case phpv.ZtNull:
+		compatible = true // null type only accepts null, already checked above
+	default:
+		compatible = true // unknown types, let it pass
+	}
+
+	if !compatible {
+		return &phpv.PhpError{
+			Err:  fmt.Errorf("Cannot use %s as default value for property %s::$%s of type %s", valType.TypeName(), className, varName, th.String()),
+			Code: phpv.E_COMPILE_ERROR,
+			Loc:  loc,
+		}
+	}
+
+	return nil
+}
+
+// validatePropertyTypeHint checks that a type hint is valid for a property declaration.
+// PHP disallows callable, void, and never as property types.
+func validatePropertyTypeHint(th *phpv.TypeHint, className phpv.ZString, varName phpv.ZString, loc *phpv.Loc) error {
+	if th == nil {
+		return nil
+	}
+	// Check union members
+	if len(th.Union) > 0 {
+		for _, u := range th.Union {
+			if err := validatePropertyTypeHint(u, className, varName, loc); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	// Check intersection members
+	if len(th.Intersection) > 0 {
+		for _, part := range th.Intersection {
+			if err := validatePropertyTypeHint(part, className, varName, loc); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	if th.Type() == phpv.ZtObject && th.ClassName() == "callable" {
+		return &phpv.PhpError{
+			Err:  fmt.Errorf("Property %s::$%s cannot have type callable", className, varName),
+			Code: phpv.E_COMPILE_ERROR,
+			Loc:  loc,
+		}
+	}
+	if th.Type() == phpv.ZtVoid {
+		return &phpv.PhpError{
+			Err:  fmt.Errorf("Property %s::$%s cannot have type void", className, varName),
+			Code: phpv.E_COMPILE_ERROR,
+			Loc:  loc,
+		}
+	}
+	if th.Type() == phpv.ZtNever {
+		return &phpv.PhpError{
+			Err:  fmt.Errorf("Property %s::$%s cannot have type never", className, varName),
+			Code: phpv.E_COMPILE_ERROR,
+			Loc:  loc,
+		}
+	}
+	return nil
+}
+
+// validateClassConstTypeHint checks that a type hint is valid for a class constant.
+// PHP disallows callable, void, and never as class constant types.
+func validateClassConstTypeHint(th *phpv.TypeHint, className phpv.ZString, constName string, loc *phpv.Loc) error {
+	if th == nil {
+		return nil
+	}
+	// Check union members
+	if len(th.Union) > 0 {
+		for _, u := range th.Union {
+			if err := validateClassConstTypeHint(u, className, constName, loc); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	// Check intersection members
+	if len(th.Intersection) > 0 {
+		for _, part := range th.Intersection {
+			if err := validateClassConstTypeHint(part, className, constName, loc); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	if th.Type() == phpv.ZtObject && th.ClassName() == "callable" {
+		return &phpv.PhpError{
+			Err:  fmt.Errorf("Class constant %s::%s cannot have type callable", className, constName),
+			Code: phpv.E_COMPILE_ERROR,
+			Loc:  loc,
+		}
+	}
+	if th.Type() == phpv.ZtVoid {
+		return &phpv.PhpError{
+			Err:  fmt.Errorf("Class constant %s::%s cannot have type void", className, constName),
+			Code: phpv.E_COMPILE_ERROR,
+			Loc:  loc,
+		}
+	}
+	if th.Type() == phpv.ZtNever {
+		return &phpv.PhpError{
+			Err:  fmt.Errorf("Class constant %s::%s cannot have type never", className, constName),
+			Code: phpv.E_COMPILE_ERROR,
+			Loc:  loc,
+		}
+	}
+	return nil
 }

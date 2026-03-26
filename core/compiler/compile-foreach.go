@@ -422,6 +422,10 @@ func (it *phpObjectIterator) Iterate(ctx phpv.Context) iter.Seq2[*phpv.ZVal, *ph
 	}
 }
 
+func (it *phpObjectIterator) IterateRaw(ctx phpv.Context) iter.Seq2[*phpv.ZVal, *phpv.ZVal] {
+	return it.Iterate(ctx)
+}
+
 func (r *runnableForeach) Dump(w io.Writer) error {
 	_, err := w.Write([]byte("foreach("))
 	if err != nil {

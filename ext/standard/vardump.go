@@ -237,7 +237,14 @@ func doVarDump(ctx phpv.Context, z *phpv.ZVal, linePfx string, recurs map[uintpt
 				}
 				fmt.Fprintf(ctx, "%s[\"%s\"%s]=>\n", localPfx, prop.VarName, suffix)
 
-				if prop.TypeHint != nil && !obj.HasPropValue(prop) {
+				// Try to get value, calling get hooks for virtual hooked properties
+				val, hasVal, hookErr := obj.GetPropValueOrHook(ctx, prop)
+				if hookErr != nil {
+					return hookErr
+				}
+				if hasVal {
+					doVarDump(ctx, val, localPfx, recurs)
+				} else if prop.TypeHint != nil {
 					// Typed property that has not been initialized
 					fmt.Fprintf(ctx, "%suninitialized(%s)\n", localPfx, prop.TypeHint.String())
 				} else {

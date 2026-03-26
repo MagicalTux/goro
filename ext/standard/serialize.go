@@ -97,6 +97,9 @@ type serializeSeen struct {
 	// Object reference tracking for r: references
 	// Maps object identity to the 1-based reference index
 	objRefs map[phpv.ZObject]int
+	// PHP reference tracking for R: references
+	// Maps inner ZVal pointer (the shared reference target) to the 1-based reference index
+	valRefs map[*phpv.ZVal]int
 	// Counter for reference tracking (1-based, increments for each value)
 	refCount int
 }
@@ -106,6 +109,7 @@ func newSerializeSeen() *serializeSeen {
 		arrays:  make(map[*phpv.ZArray]bool),
 		objects: make(map[phpv.ZObject]bool),
 		objRefs: make(map[phpv.ZObject]int),
+		valRefs: make(map[*phpv.ZVal]int),
 	}
 }
 
@@ -134,7 +138,7 @@ func serialize(ctx phpv.Context, value *phpv.ZVal) (string, error) {
 			defer g.SetSerializeSeenObjects(nil)
 		}
 	}
-	return serializeWithDepth(ctx, value, 0, seen)
+	return serializeValue(ctx, value, 0, seen)
 }
 
 const maxSerializeDepth = 128
@@ -154,6 +158,36 @@ func serializeKey(ctx phpv.Context, value *phpv.ZVal) string {
 		s := value.AsString(ctx)
 		return fmt.Sprintf(`s:%d:"%s";`, len(s), s)
 	}
+}
+
+// serializeValue serializes a raw ZVal (which may be a reference wrapper).
+// This handles R: reference detection for PHP & references.
+func serializeValue(ctx phpv.Context, rawZVal *phpv.ZVal, depth int, seen *serializeSeen) (string, error) {
+	if depth > maxSerializeDepth {
+		return "N;", nil // prevent infinite recursion
+	}
+
+	// Check for PHP reference (R:N;) - if rawZVal is a reference wrapper,
+	// its inner ZVal is the shared target. If we've seen it before, produce R:N;
+	if rawZVal.IsRef() {
+		inner := rawZVal.RefTarget()
+		if inner == nil {
+			return serializeWithDepth(ctx, rawZVal, depth, seen)
+		}
+		if refIdx, ok := seen.valRefs[inner]; ok {
+			// This reference target was already serialized; produce R:N;
+			return "R:" + strconv.Itoa(refIdx) + ";", nil
+		}
+		// First time seeing this reference target - the ref index will be assigned
+		// inside serializeWithDepth and we register it here
+		// Peek at what index will be assigned and register the inner ZVal
+		nextIdx := seen.refCount + 1
+		seen.valRefs[inner] = nextIdx
+		// Serialize the unwrapped value (serializeWithDepth will assign the same index)
+		return serializeWithDepth(ctx, inner, depth, seen)
+	}
+
+	return serializeWithDepth(ctx, rawZVal, depth, seen)
 }
 
 func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seen *serializeSeen) (string, error) {
@@ -202,7 +236,7 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seen *ser
 	case phpv.ZtArray:
 		arr := value.AsArray(ctx)
 
-		// Detect array cycles to prevent infinite recursion
+		// Detect array cycles - for references to the same array, produce R:N;
 		if seen.arrays[arr] {
 			return "N;", nil
 		}
@@ -218,10 +252,10 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seen *ser
 		buf.WriteString(count)
 		buf.WriteString(":{")
 
-		for k, v := range arr.Iterate(ctx) {
+		for k, v := range arr.IterateRaw(ctx) {
 			// Array keys don't consume reference slots in PHP
 			buf.WriteString(serializeKey(ctx, k))
-			sub, err := serializeWithDepth(ctx, v, depth+1, seen)
+			sub, err := serializeValue(ctx, v, depth+1, seen)
 			if err != nil {
 				return "", err
 			}
@@ -277,10 +311,10 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seen *ser
 
 			var buf bytes.Buffer
 			propCount := 0
-			for k, v := range arr.Iterate(ctx) {
+			for k, v := range arr.IterateRaw(ctx) {
 				// Property keys don't consume reference slots
 				buf.WriteString(serializeKey(ctx, k))
-				sub, err := serializeWithDepth(ctx, v, depth+1, seen)
+				sub, err := serializeValue(ctx, v, depth+1, seen)
 				if err != nil {
 					return "", err
 				}
@@ -306,6 +340,17 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seen *ser
 					return "", err
 				}
 				if val.IsNull() {
+					// Serializable::serialize() returned null - remove object from objRefs
+					// so that other references to this object also serialize as N;
+					// Also remove any valRefs entries pointing to the same ref index,
+					// so that PHP references (&) to this object also produce N;
+					refIdx := seen.objRefs[obj]
+					delete(seen.objRefs, obj)
+					for k, v := range seen.valRefs {
+						if v == refIdx {
+							delete(seen.valRefs, k)
+						}
+					}
 					return "N;", nil
 				}
 				if val.GetType() != phpv.ZtString {
@@ -340,10 +385,7 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seen *ser
 			zobj := obj.(*phpobj.ZObject)
 			sleepSeen := make(map[phpv.ZString]bool)
 			for _, prop := range props.Iterate(ctx) {
-				if prop.GetType() != phpv.ZtString {
-					ctx.Warn("%s::__sleep() should return an array only containing the names of instance-variables to serialize", obj.GetClass().GetName())
-					continue
-				}
+				// Cast non-string elements to string (PHP does this)
 				propName := prop.AsString(ctx)
 				// Detect duplicate property names from __sleep()
 				if sleepSeen[propName] {
@@ -351,8 +393,21 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seen *ser
 					continue
 				}
 				sleepSeen[propName] = true
-				// Look up the actual property to determine visibility
+				// Look up the actual property to determine visibility.
+				// For private properties, we need to check if the property is
+				// accessible from the object's actual class (not a parent's private).
 				classProp, found := obj.GetClass().GetProp(propName)
+				// Private properties from parent classes are not accessible by name
+				// from the child class context in __sleep
+				if found && classProp.Modifiers.IsPrivate() {
+					// Check if the property is declared in the object's own class
+					// (not inherited from a parent class)
+					declClass := zobj.GetDeclClassName(classProp)
+					if declClass != obj.GetClass().GetName() {
+						// Private property in parent class - not accessible by simple name
+						found = false
+					}
+				}
 				if !found {
 					// Check if it's a dynamic property on the object
 					if zobj.HashTable().HasString(propName) {
@@ -360,7 +415,7 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seen *ser
 						sub := fmt.Sprintf(`s:%d:"%s";`, len(mangledName), mangledName)
 						buf.WriteString(sub)
 						v := zobj.HashTable().GetString(propName)
-						sub2, err := serializeWithDepth(ctx, v, depth+1, seen)
+						sub2, err := serializeValue(ctx, v, depth+1, seen)
 						if err != nil {
 							return "", err
 						}
@@ -388,7 +443,7 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seen *ser
 				buf.WriteString(sub)
 
 				v := zobj.GetPropValue(classProp)
-				sub2, err := serializeWithDepth(ctx, v, depth+1, seen)
+				sub2, err := serializeValue(ctx, v, depth+1, seen)
 				if err != nil {
 					return "", err
 				}
@@ -412,7 +467,7 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seen *ser
 				buf.WriteString(sub)
 
 				v := zobj.GetPropValue(prop)
-				sub2, err := serializeWithDepth(ctx, v, depth+1, seen)
+				sub2, err := serializeValue(ctx, v, depth+1, seen)
 				if err != nil {
 					return "", err
 				}

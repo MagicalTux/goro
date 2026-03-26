@@ -234,6 +234,10 @@ func (w *phpIteratorWrapper) Iterate(ctx phpv.Context) iter.Seq2[*phpv.ZVal, *ph
 	}
 }
 
+func (w *phpIteratorWrapper) IterateRaw(ctx phpv.Context) iter.Seq2[*phpv.ZVal, *phpv.ZVal] {
+	return w.Iterate(ctx)
+}
+
 // > func int iterator_count ( Traversable|array $iterator )
 func iteratorCount(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {

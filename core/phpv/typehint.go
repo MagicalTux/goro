@@ -109,7 +109,7 @@ func (h *TypeHint) CheckStrict(ctx Context, val *ZVal) bool {
 		if obj == nil {
 			return false
 		}
-		return classNameMatch(obj.GetClass(), h.s, ctx)
+		return ClassNameMatch(obj.GetClass(), h.s, ctx)
 	}
 
 	// "mixed" accepts anything
@@ -237,7 +237,7 @@ func (h *TypeHint) Check(ctx Context, val *ZVal) bool {
 		if obj == nil {
 			return false
 		}
-		return classNameMatch(obj.GetClass(), h.s, ctx)
+		return ClassNameMatch(obj.GetClass(), h.s, ctx)
 	}
 
 	// "mixed" accepts anything
@@ -414,7 +414,7 @@ func (h *TypeHint) String() string {
 	return prefix + h.t.TypeName()
 }
 
-func classNameMatch(c ZClass, name ZString, ctx Context) bool {
+func ClassNameMatch(c ZClass, name ZString, ctx Context) bool {
 	if IsNilClass(c) {
 		return false
 	}

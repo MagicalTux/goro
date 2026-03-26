@@ -332,8 +332,11 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 				return c.fatalError(ctx, fmt.Sprintf("Cannot override final property %s::$%s", c.Extends.Name, childProp.VarName))
 			}
 
-			// Check property type invariance: child type must match parent type exactly
-			// (bidirectional check: both must accept the same set of values)
+			// Check property type compatibility.
+			// PHP 8.4: Hooked properties have relaxed variance rules:
+			// - Get-only (virtual, no set): covariant (child type can be narrower)
+			// - Set-only (no get): contravariant (child type can be wider)
+			// - Both get+set or plain: invariant (child type must match parent exactly)
 			if parentProp.TypeHint != nil || childProp.TypeHint != nil {
 				if parentProp.TypeHint == nil && childProp.TypeHint != nil {
 					return c.fatalError(ctx, fmt.Sprintf("Type of %s::$%s must be omitted to match the parent definition in class %s", c.Name, childProp.VarName, c.Extends.Name))
@@ -342,10 +345,47 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 					return c.fatalError(ctx, fmt.Sprintf("Type of %s::$%s must be %s (as in class %s)", c.Name, childProp.VarName, parentProp.TypeHint.String(), c.Extends.Name))
 				}
 				if parentProp.TypeHint != nil && childProp.TypeHint != nil {
-					// Semantic comparison: each must be a widening of the other (both directions)
-					if !typeHintIsWidening(ctx, childProp.TypeHint, parentProp.TypeHint) ||
-						!typeHintIsWidening(ctx, parentProp.TypeHint, childProp.TypeHint) {
-						return c.fatalError(ctx, fmt.Sprintf("Type of %s::$%s must be %s (as in class %s)", c.Name, childProp.VarName, parentProp.TypeHint.String(), c.Extends.Name))
+					// Determine variance mode based on hooks
+					parentGetOnly := parentProp.HasHooks && (parentProp.GetHook != nil || parentProp.GetIsAbstract || parentProp.HasGetDeclared) &&
+						parentProp.SetHook == nil && !parentProp.SetIsAbstract && !parentProp.HasSetDeclared && !parentProp.IsBacked
+					parentSetOnly := parentProp.HasHooks && (parentProp.SetHook != nil || parentProp.SetIsAbstract || parentProp.HasSetDeclared) &&
+						parentProp.GetHook == nil && !parentProp.GetIsAbstract && !parentProp.HasGetDeclared
+
+					childGetOnly := childProp.HasHooks && (childProp.GetHook != nil || childProp.GetIsAbstract || childProp.HasGetDeclared) &&
+						childProp.SetHook == nil && !childProp.SetIsAbstract && !childProp.HasSetDeclared && !childProp.IsBacked
+					childSetOnly := childProp.HasHooks && (childProp.SetHook != nil || childProp.SetIsAbstract || childProp.HasSetDeclared) &&
+						childProp.GetHook == nil && !childProp.GetIsAbstract && !childProp.HasGetDeclared
+
+					if parentGetOnly && childGetOnly {
+						// Covariant: child type must be subtype of parent type
+						if !typeHintIsWidening(ctx, parentProp.TypeHint, childProp.TypeHint) {
+							return c.fatalError(ctx, fmt.Sprintf("Declaration of %s::$%s::get(): %s must be compatible with %s::$%s::get(): %s",
+								c.Name, childProp.VarName, childProp.TypeHint.String(),
+								c.Extends.Name, parentProp.VarName, parentProp.TypeHint.String()))
+						}
+					} else if parentSetOnly && childSetOnly {
+						// Contravariant: child type must be supertype of parent type
+						if !typeHintIsWidening(ctx, childProp.TypeHint, parentProp.TypeHint) {
+							return c.fatalError(ctx, fmt.Sprintf("Declaration of %s::$%s::set(%s $value): void must be compatible with %s::$%s::set(%s $value): void",
+								c.Name, childProp.VarName, childProp.TypeHint.String(),
+								c.Extends.Name, parentProp.VarName, parentProp.TypeHint.String()))
+						}
+					} else if parentSetOnly && !childSetOnly && childProp.HasHooks && (childProp.HasGetDeclared || childProp.GetHook != nil) {
+						// Child adds get to set-only parent: set part must be contravariant
+						if !typeHintIsWidening(ctx, childProp.TypeHint, parentProp.TypeHint) {
+							return c.fatalError(ctx, fmt.Sprintf("Type of %s::$%s must be %s (as in class %s)", c.Name, childProp.VarName, parentProp.TypeHint.String(), c.Extends.Name))
+						}
+					} else if parentGetOnly && !childGetOnly && childProp.HasHooks && (childProp.HasSetDeclared || childProp.SetHook != nil) {
+						// Child adds set to get-only parent: get part must be covariant
+						if !typeHintIsWidening(ctx, parentProp.TypeHint, childProp.TypeHint) {
+							return c.fatalError(ctx, fmt.Sprintf("Type of %s::$%s must be %s (as in class %s)", c.Name, childProp.VarName, parentProp.TypeHint.String(), c.Extends.Name))
+						}
+					} else {
+						// Invariant: child type must match parent type exactly
+						if !typeHintIsWidening(ctx, childProp.TypeHint, parentProp.TypeHint) ||
+							!typeHintIsWidening(ctx, parentProp.TypeHint, childProp.TypeHint) {
+							return c.fatalError(ctx, fmt.Sprintf("Type of %s::$%s must be %s (as in class %s)", c.Name, childProp.VarName, parentProp.TypeHint.String(), c.Extends.Name))
+						}
 					}
 				}
 			}
@@ -663,6 +703,24 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 						}
 					} else if existing.Method == m.Method {
 						// Same underlying method (diamond inheritance through traits) - no conflict
+						// But if the trait version has different modifiers (e.g., wider visibility),
+						// update the method to use the trait's version
+						if existing.Modifiers != m.Modifiers || existing.Class != c {
+							methodCopy := &phpv.ZClassMethod{
+								Name:       m.Name,
+								Modifiers:  m.Modifiers,
+								Method:     m.Method,
+								Class:      c,
+								Empty:      m.Empty,
+								Loc:        m.Loc,
+								Attributes: m.Attributes,
+								FromTrait:  tc,
+							}
+							c.Methods[name] = methodCopy
+							if name == "__construct" {
+								c.Handlers().Constructor = methodCopy
+							}
+						}
 					} else {
 						return c.fatalError(ctx, fmt.Sprintf("Trait method %s::%s has not been applied as %s::%s, because of collision with %s::%s",
 							tc.Name, m.Name, c.Name, m.Name, existing.FromTrait.GetName(), m.Name))
@@ -876,47 +934,71 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 					}
 				}
 
-				if m, ok := c.Methods[srcName]; ok {
-					// If a trait name was specified, verify it matches
-					if alias.TraitName != "" {
-						if m.Class == nil || m.Class.GetName().ToLower() != alias.TraitName.ToLower() {
-							// Try to find the method from the specific trait
-							traitClass, err := ctx.Global().GetClass(ctx, alias.TraitName, true)
-							if err == nil {
-								tc := traitClass.(*ZClass)
-								if tm, ok := tc.Methods[srcName]; ok {
-									m = &phpv.ZClassMethod{
-										Name:      tm.Name,
-										Modifiers: tm.Modifiers,
-										Method:    tm.Method,
-										Class:     c,
-										Empty:     tm.Empty,
-										Loc:       tm.Loc,
-									}
-								}
-							}
+				// Check for ambiguity: method exists in multiple traits without resolution
+				if alias.TraitName == "" {
+					// Count how many traits have this method
+					conflictTraits := []phpv.ZString{}
+					for _, tc := range resolvedTraits {
+						if _, ok := tc.Methods[srcName]; ok {
+							conflictTraits = append(conflictTraits, tc.Name)
 						}
 					}
+					if len(conflictTraits) > 1 {
+						return c.fatalError(ctx, fmt.Sprintf("An alias was defined for method %s(), which exists in both %s and %s. Use %s::%s or %s::%s to resolve the ambiguity",
+							alias.MethodName, conflictTraits[0], conflictTraits[1], conflictTraits[0], alias.MethodName, conflictTraits[1], alias.MethodName))
+					}
+				}
 
-					// Check for ambiguity: method exists in multiple traits without resolution
-					if alias.TraitName == "" {
-						// Count how many traits have this method
-						conflictTraits := []phpv.ZString{}
-						for _, tc := range resolvedTraits {
-							if _, ok := tc.Methods[srcName]; ok {
-								conflictTraits = append(conflictTraits, tc.Name)
+				// Look up the method from the trait directly (not from c.Methods which may be the class's own method)
+				var m *phpv.ZClassMethod
+				if alias.TraitName != "" {
+					traitNameLower := alias.TraitName.ToLower()
+					for _, tc := range resolvedTraits {
+						if tc.Name.ToLower() == traitNameLower {
+							if tm, ok := tc.Methods[srcName]; ok {
+								m = tm
 							}
-						}
-						if len(conflictTraits) > 1 {
-							return c.fatalError(ctx, fmt.Sprintf("An alias was defined for method %s(), which exists in both %s and %s. Use %s::%s or %s::%s to resolve the ambiguity",
-								alias.MethodName, conflictTraits[0], conflictTraits[1], conflictTraits[0], alias.MethodName, conflictTraits[1], alias.MethodName))
+							break
 						}
 					}
+				} else {
+					// No trait specified - find the method from the first trait that has it
+					for _, tc := range resolvedTraits {
+						if tm, ok := tc.Methods[srcName]; ok {
+							m = tm
+							break
+						}
+					}
+				}
 
+				// Fall back to c.Methods if trait didn't have it (shouldn't happen after validation)
+				if m == nil {
+					m = c.Methods[srcName]
+				}
+
+				if m != nil {
 					// Determine source trait for the aliased method
 					aliasTrait := m.FromTrait
 					if aliasTrait == nil && m.Class != nil && m.Class != c {
 						aliasTrait = m.Class
+					}
+					// For trait methods, determine the trait from resolvedTraits
+					if aliasTrait == nil {
+						if alias.TraitName != "" {
+							for _, tc := range resolvedTraits {
+								if tc.Name.ToLower() == alias.TraitName.ToLower() {
+									aliasTrait = tc
+									break
+								}
+							}
+						} else {
+							for _, tc := range resolvedTraits {
+								if _, ok := tc.Methods[srcName]; ok {
+									aliasTrait = tc
+									break
+								}
+							}
+						}
 					}
 					newMethod := &phpv.ZClassMethod{
 						Name:      alias.NewName,
@@ -1259,6 +1341,26 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 			if ours, gotit := c.Methods[n]; !gotit {
 				c.Methods[n] = m
 			} else {
+				// Check access level: interface methods are implicitly public,
+				// so implementing class methods must also be public
+				if !m.Modifiers.Has(phpv.ZAttrPrivate) {
+					// Interface method is public (or protected for abstract)
+					intfAccess := m.Modifiers.Access()
+					if intfAccess == 0 {
+						intfAccess = phpv.ZAttrPublic // interface methods default to public
+					}
+					oursAccess := ours.Modifiers.Access()
+					if oursAccess == 0 {
+						oursAccess = phpv.ZAttrPublic
+					}
+					if intfAccess == phpv.ZAttrPublic && oursAccess != phpv.ZAttrPublic {
+						loc := ours.Loc
+						if loc == nil {
+							loc = c.L
+						}
+						return c.fatalErrorAt(ctx, fmt.Sprintf("Access level to %s::%s() must be public (as in class %s)", c.Name, ours.Name, intf.Name), loc)
+					}
+				}
 				// Check method signature compatibility for interface implementations
 				if err := c.checkMethodCompatibility(ctx, ours, m); err != nil {
 					return err
@@ -1309,7 +1411,11 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 		}
 		if len(privateUnimpl) > 0 {
 			displayName := c.GetName()
-			msg := fmt.Sprintf("Class %s must implement %d abstract method", displayName, len(privateUnimpl))
+			msg := fmt.Sprintf("Class %s contains %d abstract method", displayName, len(privateUnimpl))
+			if len(privateUnimpl) > 1 {
+				msg += "s"
+			}
+			msg += " and must therefore be declared abstract or implement the remaining method"
 			if len(privateUnimpl) > 1 {
 				msg += "s"
 			}
@@ -1357,7 +1463,11 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 		}
 		if len(unimplemented) > 0 {
 			displayName := c.GetName()
-			msg := fmt.Sprintf("Class %s must implement %d abstract method", displayName, len(unimplemented))
+			msg := fmt.Sprintf("Class %s contains %d abstract method", displayName, len(unimplemented))
+			if len(unimplemented) > 1 {
+				msg += "s"
+			}
+			msg += " and must therefore be declared abstract or implement the remaining method"
 			if len(unimplemented) > 1 {
 				msg += "s"
 			}

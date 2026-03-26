@@ -850,12 +850,18 @@ func (pi *propIterator) yield(yield func(*phpv.ZClassProp) bool) {
 			if p.Modifiers.IsStatic() {
 				continue
 			}
-			// PHP 8.4: Virtual hooked properties have no backing store - skip in iteration/var_dump
+			// PHP 8.4: Virtual hooked properties with no get hook (set-only) are
+			// skipped in iteration. Virtual properties with a get hook are included
+			// (the get hook is called to produce the value by the caller).
 			if p.IsVirtual() && !o.h.HasString(p.VarName) {
-				if !p.Modifiers.IsPrivate() {
-					shown[p.VarName.String()] = struct{}{}
+				if p.GetHook == nil {
+					// Set-only virtual property: skip
+					if !p.Modifiers.IsPrivate() {
+						shown[p.VarName.String()] = struct{}{}
+					}
+					continue
 				}
-				continue
+				// Virtual property with get hook: include it in iteration
 			}
 			if !p.Modifiers.IsPrivate() {
 				if _, ok := shown[p.VarName.String()]; ok {
@@ -948,6 +954,26 @@ func (o *ZObject) GetPropValue(p *phpv.ZClassProp) *phpv.ZVal {
 		}
 	}
 	return o.h.GetString(p.VarName)
+}
+
+// GetPropValueOrHook returns the value for a class property. For virtual
+// hooked properties with a get hook, it calls the get hook. For backed
+// properties or properties without hooks, it returns the hash table value.
+// Returns (value, hasValue, error).
+func (o *ZObject) GetPropValueOrHook(ctx phpv.Context, p *phpv.ZClassProp) (*phpv.ZVal, bool, error) {
+	// If this is a virtual hooked property with a get hook, call the hook
+	if p.HasHooks && p.GetHook != nil && p.IsVirtual() && !o.HasPropValue(p) {
+		val, err := o.runGetHook(ctx, p.VarName, p)
+		if err != nil {
+			return nil, false, err
+		}
+		return val, true, nil
+	}
+	// For backed/normal properties, read from hash table
+	if o.HasPropValue(p) {
+		return o.GetPropValue(p), true, nil
+	}
+	return nil, false, nil
 }
 
 // GetDeclClassName returns the declaring class name for a private property.
@@ -2384,6 +2410,10 @@ func (it *zobjectIterator) Iterate(ctx phpv.Context) iter.Seq2[*phpv.ZVal, *phpv
 	}
 }
 
+func (it *zobjectIterator) IterateRaw(ctx phpv.Context) iter.Seq2[*phpv.ZVal, *phpv.ZVal] {
+	return it.Iterate(ctx)
+}
+
 func (a *ZObject) Count(ctx phpv.Context) phpv.ZInt {
 	// Count non-static declared properties across the class hierarchy,
 	// plus any dynamic properties set on the instance.
@@ -2575,7 +2605,7 @@ func (o *ZObject) enforcePropertyType(ctx phpv.Context, keyStr phpv.ZString, pro
 	}
 
 	// Type mismatch - throw TypeError
-	typeName := phpv.ZValTypeName(value)
+	typeName := phpv.ZValTypeNameDetailed(value)
 	return nil, ThrowError(ctx, TypeError,
 		fmt.Sprintf("Cannot assign %s to property %s::$%s of type %s",
 			typeName, o.Class.GetName(), keyStr, hint.String()))

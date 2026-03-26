@@ -883,3 +883,7 @@ func (it *generatorIterator) Iterate(ctx phpv.Context) iter.Seq2[*phpv.ZVal, *ph
 		}
 	}
 }
+
+func (it *generatorIterator) IterateRaw(ctx phpv.Context) iter.Seq2[*phpv.ZVal, *phpv.ZVal] {
+	return it.Iterate(ctx)
+}

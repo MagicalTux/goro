@@ -1223,6 +1223,14 @@ func compileFunctionArgs(c compileCtx) (res []*phpv.FuncArg, err error) {
 				}
 			}
 
+			// Check for reserved type names in namespace-qualified positions
+			// e.g., bar\int is invalid because "int" is reserved
+			if strings.Contains(hint, "\\") {
+				if err := checkReservedTypeInNamespace(hint, i.Loc()); err != nil {
+					return nil, err
+				}
+			}
+
 			arg.Hint = phpv.ParseTypeHint(phpv.ZString(resolvedHint))
 
 			// void and never cannot be used as parameter types
@@ -1438,20 +1446,35 @@ func compileFunctionArgs(c compileCtx) (res []*phpv.FuncArg, err error) {
 					hintType := arg.Hint.Type()
 					hintName := arg.Hint.String()
 					incompatible := false
-					switch hintType {
-					case phpv.ZtObject:
-						// class-typed parameter cannot have a scalar default
-						if arg.Hint.ClassName() != "" {
-							incompatible = true
-							// Use String() for iterable (displays as "Traversable|array"),
-							// otherwise use raw class name
-							if arg.Hint.ClassName() != "iterable" {
-								hintName = string(arg.Hint.ClassName())
+					// Skip union/intersection types - too complex for compile-time
+					if len(arg.Hint.Union) == 0 && len(arg.Hint.Intersection) == 0 {
+						switch hintType {
+						case phpv.ZtObject:
+							// class-typed parameter cannot have a scalar default
+							if arg.Hint.ClassName() != "" {
+								incompatible = true
+								// Use String() for iterable (displays as "Traversable|array"),
+								// otherwise use raw class name
+								if arg.Hint.ClassName() != "iterable" {
+									hintName = string(arg.Hint.ClassName())
+								}
 							}
+						case phpv.ZtArray:
+							incompatible = true
+							hintName = "array"
+						case phpv.ZtInt:
+							// int only accepts int literal defaults
+							incompatible = valTypeName != "int"
+						case phpv.ZtFloat:
+							// float accepts int and float literal defaults
+							incompatible = valTypeName != "float" && valTypeName != "int"
+						case phpv.ZtString:
+							// string only accepts string literal defaults
+							incompatible = valTypeName != "string"
+						case phpv.ZtBool:
+							// bool only accepts bool literal defaults
+							incompatible = valTypeName != "bool"
 						}
-					case phpv.ZtArray:
-						incompatible = true
-						hintName = "array"
 					}
 					if incompatible {
 						phpErr := &phpv.PhpError{
@@ -1701,6 +1724,28 @@ func validateTypeHint(th *phpv.TypeHint, loc *phpv.Loc, className ...phpv.ZStrin
 					if err := validateIntersectionMember(part, loc); err != nil {
 						return err
 					}
+					// self/parent cannot be part of intersection types if not resolvable
+					if part.Type() == phpv.ZtObject {
+						cn := strings.ToLower(string(part.ClassName()))
+						if cn == "self" || cn == "parent" {
+							canResolve := false
+							if len(className) > 0 && className[0] != "" {
+								if cn == "self" {
+									canResolve = true
+								}
+								if cn == "parent" && len(className) > 1 && className[1] != "" {
+									canResolve = true
+								}
+							}
+							if !canResolve {
+								return &phpv.PhpError{
+									Err:  fmt.Errorf("Type %s cannot be part of an intersection type", part.ClassName()),
+									Code: phpv.E_COMPILE_ERROR,
+									Loc:  loc,
+								}
+							}
+						}
+					}
 				}
 			}
 		}
@@ -1907,6 +1952,31 @@ func validateTypeHint(th *phpv.TypeHint, loc *phpv.Loc, className ...phpv.ZStrin
 			if err := validateIntersectionMember(part, loc); err != nil {
 				return err
 			}
+			// self/parent cannot be part of intersection types if not resolvable
+			if part.Type() == phpv.ZtObject {
+				cn := strings.ToLower(string(part.ClassName()))
+				if cn == "self" || cn == "parent" {
+					// Check if we have a class context and it's not a trait
+					canResolve := false
+					if len(className) > 0 && className[0] != "" {
+						// self is resolvable
+						if cn == "self" {
+							canResolve = true
+						}
+						// parent is resolvable only if there's a parent
+						if cn == "parent" && len(className) > 1 && className[1] != "" {
+							canResolve = true
+						}
+					}
+					if !canResolve {
+						return &phpv.PhpError{
+							Err:  fmt.Errorf("Type %s cannot be part of an intersection type", part.ClassName()),
+							Code: phpv.E_COMPILE_ERROR,
+							Loc:  loc,
+						}
+					}
+				}
+			}
 		}
 		// Check for duplicate types in intersection
 		seen := make(map[string]bool)
@@ -1976,6 +2046,27 @@ func validateIntersectionMember(part *phpv.TypeHint, loc *phpv.Loc) error {
 	if errType != "" {
 		return &phpv.PhpError{
 			Err:  fmt.Errorf("Type %s cannot be part of an intersection type", errType),
+			Code: phpv.E_COMPILE_ERROR,
+			Loc:  loc,
+		}
+	}
+	return nil
+}
+
+// checkReservedTypeInNamespace checks if a namespace-qualified type name ends with a
+// reserved type name (e.g., bar\int, foo\string). PHP does not allow such usage.
+func checkReservedTypeInNamespace(hint string, loc *phpv.Loc) error {
+	parts := strings.Split(hint, "\\")
+	if len(parts) < 2 {
+		return nil
+	}
+	lastPart := strings.ToLower(parts[len(parts)-1])
+	switch lastPart {
+	case "int", "float", "string", "bool", "array", "object", "mixed",
+		"void", "never", "null", "true", "false", "callable", "iterable",
+		"self", "parent", "static":
+		return &phpv.PhpError{
+			Err:  fmt.Errorf("Cannot use \"%s\" as a type name as it is reserved", hint),
 			Code: phpv.E_COMPILE_ERROR,
 			Loc:  loc,
 		}
@@ -2271,6 +2362,13 @@ func parseReturnType(c compileCtx) (*phpv.TypeHint, error) {
 		break
 	}
 
+	// Check for reserved type names in namespace-qualified positions
+	if strings.Contains(hint, "\\") {
+		if err := checkReservedTypeInNamespace(hint, i.Loc()); err != nil {
+			return nil, err
+		}
+	}
+
 	// Resolve the type hint through namespace
 	resolvedHint := hint
 	if hintFullyQualified {
@@ -2281,12 +2379,14 @@ func parseReturnType(c compileCtx) (*phpv.TypeHint, error) {
 	th := phpv.ParseTypeHint(phpv.ZString(resolvedHint))
 
 	// Check for self/parent/static outside of class scope
+	// Note: closures are allowed to use self/parent/static since they may be bound
+	// to a class later via Closure::bind() or Closure::bindTo().
 	if th.Type() == phpv.ZtObject {
 		cn := th.ClassName()
 		if cn == "self" || cn == "parent" || cn == "static" {
 			class := c.getClass()
-			if class == nil {
-				// Not inside a class/interface/trait at all
+			if class == nil && c.getFunc() == nil {
+				// Not inside a class/interface/trait AND not inside a closure
 				return nil, &phpv.PhpError{
 					Err:  fmt.Errorf("Cannot use \"%s\" when no class scope is active", cn),
 					Code: phpv.E_COMPILE_ERROR,
@@ -2294,7 +2394,7 @@ func parseReturnType(c compileCtx) (*phpv.TypeHint, error) {
 				}
 			}
 			// "parent" inside an interface or a class with no parent
-			if cn == "parent" && class.Type == phpv.ZClassTypeInterface {
+			if class != nil && cn == "parent" && class.Type == phpv.ZClassTypeInterface {
 				return nil, &phpv.PhpError{
 					Err:  fmt.Errorf("Cannot use \"parent\" when current class scope has no parent"),
 					Code: phpv.E_COMPILE_ERROR,

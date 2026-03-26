@@ -499,9 +499,16 @@ func (r *runClassStaticObjRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			}
 			return nil, err
 		}
-		// Coerce value to match typed class constant type hint (e.g., int→float)
+		// Coerce and validate value against typed class constant type hint
 		if cc.TypeHint != nil {
-			resolved = coerceConstToTypeHint(ctx, resolved, cc.TypeHint)
+			coerced, cerr := coerceConstToTypeHint(ctx, resolved, cc.TypeHint)
+			if cerr != nil {
+				typeName := phpv.ZValTypeName(resolved)
+				return nil, phpobj.ThrowError(ctx, phpobj.Error,
+					fmt.Sprintf("Cannot assign %s to class constant %s::%s of type %s",
+						typeName, errorClassName, r.objName, cc.TypeHint.String()))
+			}
+			resolved = coerced
 		}
 		cc.Value = resolved.Value()
 		return resolved, nil
@@ -518,7 +525,20 @@ func (r *runClassStaticObjRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		}
 	}
 
-	return v.ZVal(), nil
+	// Validate and coerce value against type hint for already-resolved constants
+	result := v.ZVal()
+	if cc.TypeHint != nil {
+		coerced, cerr := coerceConstToTypeHint(ctx, result, cc.TypeHint)
+		if cerr != nil {
+			typeName := phpv.ZValTypeName(result)
+			return nil, phpobj.ThrowError(ctx, phpobj.Error,
+				fmt.Sprintf("Cannot assign %s to class constant %s::%s of type %s",
+					typeName, errorClassName, r.objName, cc.TypeHint.String()))
+		}
+		result = coerced
+	}
+
+	return result, nil
 }
 
 func (r *runClassStaticObjRef) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
@@ -833,9 +853,10 @@ func (r *runClassNameOf) Dump(w io.Writer) error {
 
 // coerceConstToTypeHint coerces a resolved class constant value to match its type hint.
 // For example, int(3) with a float type hint becomes float(3).
-func coerceConstToTypeHint(ctx phpv.Context, val *phpv.ZVal, th *phpv.TypeHint) *phpv.ZVal {
+// It also validates that the value matches the type hint and returns an error if not.
+func coerceConstToTypeHint(ctx phpv.Context, val *phpv.ZVal, th *phpv.TypeHint) (*phpv.ZVal, error) {
 	if th == nil || val == nil {
-		return val
+		return val, nil
 	}
 	v := val.Value()
 	vt := v.GetType()
@@ -844,9 +865,13 @@ func coerceConstToTypeHint(ctx phpv.Context, val *phpv.ZVal, th *phpv.TypeHint) 
 	if th.Type() == phpv.ZtFloat && len(th.Union) == 0 && len(th.Intersection) == 0 {
 		if vt == phpv.ZtInt {
 			f, _ := v.AsVal(ctx, phpv.ZtFloat)
-			return f.ZVal()
+			return f.ZVal(), nil
 		}
-		return val
+		if vt == phpv.ZtFloat {
+			return val, nil
+		}
+		// Type mismatch
+		return nil, fmt.Errorf("type mismatch for float constant: got %s", vt.TypeName())
 	}
 
 	// Union types: check if any member is float and value is int
@@ -863,11 +888,100 @@ func coerceConstToTypeHint(ctx phpv.Context, val *phpv.ZVal, th *phpv.TypeHint) 
 				}
 				if !hasInt {
 					f, _ := v.AsVal(ctx, phpv.ZtFloat)
-					return f.ZVal()
+					return f.ZVal(), nil
 				}
 			}
 		}
 	}
 
-	return val
+	// Validate that the value matches the type hint
+	if !constValueMatchesTypeHint(ctx, val, th) {
+		typeName := phpv.ZValTypeName(val)
+		return nil, fmt.Errorf("type mismatch: got %s", typeName)
+	}
+
+	return val, nil
+}
+
+// constValueMatchesTypeHint checks if a constant value matches a type hint (strict check).
+func constValueMatchesTypeHint(ctx phpv.Context, val *phpv.ZVal, th *phpv.TypeHint) bool {
+	if th == nil {
+		return true
+	}
+
+	// Nullable check
+	if th.IsNullable() && val.IsNull() {
+		return true
+	}
+
+	// Union type: any member must match
+	if len(th.Union) > 0 {
+		for _, u := range th.Union {
+			if constValueMatchesTypeHint(ctx, val, u) {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Intersection type: all must match
+	if len(th.Intersection) > 0 {
+		for _, part := range th.Intersection {
+			if !constValueMatchesTypeHint(ctx, val, part) {
+				return false
+			}
+		}
+		return true
+	}
+
+	vt := val.GetType()
+
+	// mixed accepts anything
+	if th.Type() == phpv.ZtMixed {
+		return true
+	}
+
+	// null type
+	if th.Type() == phpv.ZtNull {
+		return val.IsNull()
+	}
+
+	// Handle false/true standalone types
+	if th.Type() == phpv.ZtBool && th.ClassName() == "false" {
+		return vt == phpv.ZtBool && !bool(val.Value().(phpv.ZBool))
+	}
+	if th.Type() == phpv.ZtBool && th.ClassName() == "true" {
+		return vt == phpv.ZtBool && bool(val.Value().(phpv.ZBool))
+	}
+
+	// Object type: check class match
+	if th.Type() == phpv.ZtObject {
+		if th.ClassName() == "" {
+			return vt == phpv.ZtObject
+		}
+		if vt != phpv.ZtObject {
+			return false
+		}
+		// Check class name match
+		if obj, ok := val.Value().(phpv.ZObject); ok {
+			return phpv.ClassNameMatch(obj.GetClass(), th.ClassName(), ctx)
+		}
+		return false
+	}
+
+	// Scalar types: strict matching (no coercion for constants)
+	switch th.Type() {
+	case phpv.ZtInt:
+		return vt == phpv.ZtInt
+	case phpv.ZtFloat:
+		return vt == phpv.ZtFloat || vt == phpv.ZtInt // int→float is allowed
+	case phpv.ZtString:
+		return vt == phpv.ZtString
+	case phpv.ZtBool:
+		return vt == phpv.ZtBool
+	case phpv.ZtArray:
+		return vt == phpv.ZtArray
+	}
+
+	return vt == th.Type()
 }

@@ -129,6 +129,19 @@ func (z *ZVal) MakeRef() {
 	z.v = &ZVal{v: z.v, refCount: 1}
 }
 
+// RefTarget returns the inner ZVal of a reference without incrementing refCount.
+// Used for identity comparison (e.g. serialize() detecting shared references).
+// Returns nil if not a reference.
+func (z *ZVal) RefTarget() *ZVal {
+	if z == nil {
+		return nil
+	}
+	if inner, ok := z.v.(*ZVal); ok {
+		return inner
+	}
+	return nil
+}
+
 // RefInner returns the inner ZVal of a reference and increments its refCount.
 // This should be called when creating a new alias to the inner value
 // (e.g. $this->prop = &$param). Returns nil if not a reference.

@@ -370,6 +370,13 @@ func (a *ZArray) Iterate(ctx Context) iter.Seq2[*ZVal, *ZVal] {
 	return a.h.NewIterator().Iterate(ctx)
 }
 
+// IterateRaw returns an iterator that yields raw ZVals from the hash table
+// without copying, preserving reference wrappers. Used by serialize() to
+// detect PHP references (& references) between values.
+func (a *ZArray) IterateRaw(ctx Context) iter.Seq2[*ZVal, *ZVal] {
+	return a.h.NewIterator().IterateRaw(ctx)
+}
+
 func (a *ZArray) Clear(ctx Context) error {
 	a.h.Clear()
 	return nil
