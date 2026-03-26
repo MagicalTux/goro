@@ -24,7 +24,7 @@ go install github.com/MagicalTux/goro/sapi/php-cli@latest
 
 ## Status
 
-Goro passes **6,908 of 12,110 tests** (57.0%) from the PHP 8.5.4 test suite. First 2,000 tests: **1,695/2,000 (87.2%)**. All 24 batches complete, zero OOM. PHP memory_limit enforcement (128MB default).
+Goro passes **6,940 of 12,110 tests** (57.3%) from the PHP 8.5.4 test suite. First 2,000 tests: **1,696/2,000 (87.2%)**. All 24 batches complete, zero OOM. PHP memory_limit enforcement (128MB default).
 
 ### Language Features
 
