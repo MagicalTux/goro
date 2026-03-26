@@ -51,6 +51,9 @@ func (o *ZObject) MakeLazyGhost(initializer *phpv.ZVal) {
 	// Clear all property values - lazy objects start with no properties
 	o.h = phpv.NewHashTable()
 
+	// Clear readonly tracking so properties can be re-initialized
+	o.readonlyInit = nil
+
 	// If the class has no non-static, non-virtual properties, auto-realize immediately
 	o.checkAutoRealizeNoProps()
 }
@@ -65,6 +68,9 @@ func (o *ZObject) MakeLazyProxy(factory *phpv.ZVal) {
 
 	// Clear all property values
 	o.h = phpv.NewHashTable()
+
+	// Clear readonly tracking
+	o.readonlyInit = nil
 
 	// If the class has no non-static, non-virtual properties, auto-realize immediately
 	o.checkAutoRealizeNoProps()

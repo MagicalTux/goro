@@ -159,7 +159,6 @@ func (bb *BucketBrigade) MakeWriteable(ctx phpv.Context) *phpv.ZVal {
 
 	// Create or return the bucket object with data/datalen properties
 	if b.obj != nil {
-		// Update data/datalen from the bucket in case they were modified
 		return b.obj.ZVal()
 	}
 
@@ -167,8 +166,9 @@ func (bb *BucketBrigade) MakeWriteable(ctx phpv.Context) *phpv.ZVal {
 	if err != nil {
 		return phpv.ZNULL.ZVal()
 	}
-	obj.OffsetSet(ctx, phpv.ZStr("data"), phpv.ZString(b.Data).ZVal())
-	obj.OffsetSet(ctx, phpv.ZStr("datalen"), phpv.ZInt(len(b.Data)).ZVal())
+	// Use ObjectSet for property access ($bucket->data), not OffsetSet (which is for $bucket['data'])
+	obj.ObjectSet(ctx, phpv.ZStr("data"), phpv.ZString(b.Data).ZVal())
+	obj.ObjectSet(ctx, phpv.ZStr("datalen"), phpv.ZInt(len(b.Data)).ZVal())
 	b.obj = obj
 	return obj.ZVal()
 }

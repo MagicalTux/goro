@@ -20,6 +20,41 @@ const (
 	lazyResetValidMask     = LazyObjectSkipInitOnSerialize | LazyObjectSkipDestructor
 )
 
+// isDeclaredProp checks if a property is declared (not dynamic) in the class hierarchy.
+func isDeclaredProp(class *phpobj.ZClass, name phpv.ZString) bool {
+	for cur := class; cur != nil; cur = cur.Extends {
+		for _, p := range cur.Props {
+			if p.VarName == name {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// checkNoInternalClass checks if the class or any parent class is internal (defined in Go).
+// Returns an error if so, nil otherwise.
+func checkNoInternalClass(ctx phpv.Context, class phpv.ZClass) error {
+	zc, ok := class.(*phpobj.ZClass)
+	if !ok {
+		return nil
+	}
+	// Check the class itself
+	if zc.L == nil {
+		return phpobj.ThrowError(ctx, phpobj.Error,
+			fmt.Sprintf("Cannot make instance of internal class lazy: %s is internal", class.GetName()))
+	}
+	// Check parent classes
+	for cur := zc.Extends; cur != nil; cur = cur.Extends {
+		if cur.L == nil {
+			return phpobj.ThrowError(ctx, phpobj.Error,
+				fmt.Sprintf("Cannot make instance of internal class lazy: %s inherits internal class %s",
+					class.GetName(), cur.GetName()))
+		}
+	}
+	return nil
+}
+
 func initLazyObjectMethods() {
 	// Add lazy object methods to ReflectionClass
 	ReflectionClass.Methods["newlazyghost"] = &phpv.ZClassMethod{
@@ -103,9 +138,8 @@ func reflectionClassNewLazyGhost(ctx phpv.Context, o *phpobj.ZObject, args []*ph
 	}
 
 	// Check for internal classes (classes defined in Go have no source location)
-	if zc, ok := class.(*phpobj.ZClass); ok && zc.L == nil {
-		return nil, phpobj.ThrowError(ctx, phpobj.Error,
-			fmt.Sprintf("Cannot make instance of internal class lazy: %s is internal", class.GetName()))
+	if err := checkNoInternalClass(ctx, class); err != nil {
+		return nil, err
 	}
 
 	// Create the object without calling constructor
@@ -144,9 +178,8 @@ func reflectionClassNewLazyProxy(ctx phpv.Context, o *phpobj.ZObject, args []*ph
 	}
 
 	// Check for internal classes (classes defined in Go have no source location)
-	if zc, ok := class.(*phpobj.ZClass); ok && zc.L == nil {
-		return nil, phpobj.ThrowError(ctx, phpobj.Error,
-			fmt.Sprintf("Cannot make instance of internal class lazy: %s is internal", class.GetName()))
+	if err := checkNoInternalClass(ctx, class); err != nil {
+		return nil, err
 	}
 
 	// Create the object without calling constructor
@@ -278,6 +311,11 @@ func reflectionClassResetAsLazyGhost(ctx phpv.Context, o *phpobj.ZObject, args [
 				class.GetName(), obj.Class.GetName()))
 	}
 
+	// Cannot reset an already lazy object
+	if obj.IsLazy() {
+		return nil, phpobj.ThrowError(ctx, ReflectionException, "Object is already lazy")
+	}
+
 	// Call destructor if not skipped
 	if options&int64(LazyObjectSkipDestructor) == 0 {
 		_ = obj.CallImplicitDestructor(ctx)
@@ -330,6 +368,11 @@ func reflectionClassResetAsLazyProxy(ctx phpv.Context, o *phpobj.ZObject, args [
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
 			fmt.Sprintf("ReflectionClass::resetAsLazyProxy(): Argument #1 ($object) must be of type %s, %s given",
 				class.GetName(), obj.Class.GetName()))
+	}
+
+	// Cannot reset an already lazy object (but initialized proxies can be re-reset)
+	if obj.IsLazy() {
+		return nil, phpobj.ThrowError(ctx, ReflectionException, "Object is already lazy")
 	}
 
 	// Call destructor if not skipped
@@ -410,6 +453,13 @@ func reflectionPropertySkipLazyInitialization(ctx phpv.Context, o *phpobj.ZObjec
 				propClass.GetName(), prop.VarName))
 	}
 
+	// Cannot use on dynamic properties
+	if propData.class == nil || !isDeclaredProp(propData.class, prop.VarName) {
+		return nil, phpobj.ThrowError(ctx, ReflectionException,
+			fmt.Sprintf("Can not use skipLazyInitialization on dynamic property %s::$%s",
+				propClass.GetName(), prop.VarName))
+	}
+
 	obj, ok := args[0].Value().(*phpobj.ZObject)
 	if !ok {
 		return nil, nil
@@ -459,6 +509,13 @@ func reflectionPropertySetRawValueWithoutLazyInitialization(ctx phpv.Context, o 
 	if prop.IsVirtual() {
 		return nil, phpobj.ThrowError(ctx, ReflectionException,
 			fmt.Sprintf("Can not use setRawValueWithoutLazyInitialization on virtual property %s::$%s",
+				propClass.GetName(), prop.VarName))
+	}
+
+	// Cannot use on dynamic properties (check if this is a declared property)
+	if propData.class == nil || !isDeclaredProp(propData.class, prop.VarName) {
+		return nil, phpobj.ThrowError(ctx, ReflectionException,
+			fmt.Sprintf("Can not use setRawValueWithoutLazyInitialization on dynamic property %s::$%s",
 				propClass.GetName(), prop.VarName))
 	}
 

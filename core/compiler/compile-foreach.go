@@ -136,9 +136,20 @@ func (r *runnableForeach) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 		// For objects, use scope-aware iteration to handle property visibility
 		if z.GetType() == phpv.ZtObject {
 			if obj, ok := z.Value().(*phpobj.ZObject); ok {
+				// Lazy objects: foreach triggers initialization
+				if obj.IsLazy() {
+					if err := obj.TriggerLazyInit(ctx); err != nil {
+						return nil, err
+					}
+				}
+				// For initialized proxies, iterate the real instance
+				target := obj
+				if obj.LazyState == phpobj.LazyProxyInitialized && obj.LazyInstance != nil {
+					target = obj.ResolveProxy()
+				}
 				// Use the defining class of the current method as the scope
 				scope := ctx.Class()
-				it = obj.NewIteratorInScope(scope)
+				it = target.NewIteratorInScope(scope)
 			}
 		}
 		if it == nil {

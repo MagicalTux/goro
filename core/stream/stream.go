@@ -237,6 +237,10 @@ func (s *Stream) EofCheck(ctx phpv.Context) (bool, error) {
 }
 
 func (s *Stream) Close() error {
+	// Track user filters we've already called onClose on to avoid duplicates
+	// (a filter with STREAM_FILTER_ALL appears in both read and write chains)
+	closedFilters := make(map[StreamFilter]bool)
+
 	// Flush write filters before closing
 	if len(s.writeFilters) > 0 {
 		flushed, _ := s.FlushWriteFilters()
@@ -245,20 +249,25 @@ func (s *Stream) Close() error {
 				w.Write(flushed)
 			}
 		}
-		// Call onClose for user filters
 		for _, entry := range s.writeFilters {
 			if uf, ok := entry.filter.(*UserFilter); ok {
-				uf.OnClose()
+				if !closedFilters[entry.filter] {
+					closedFilters[entry.filter] = true
+					uf.OnClose()
+				}
 			}
 		}
 		s.writeFilters = nil
 	}
 
-	// Call onClose for read filters
+	// Call onClose for read filters (skip already-closed ones)
 	if len(s.readFilters) > 0 {
 		for _, entry := range s.readFilters {
 			if uf, ok := entry.filter.(*UserFilter); ok {
-				uf.OnClose()
+				if !closedFilters[entry.filter] {
+					closedFilters[entry.filter] = true
+					uf.OnClose()
+				}
 			}
 		}
 		s.readFilters = nil
