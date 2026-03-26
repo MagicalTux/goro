@@ -1408,11 +1408,8 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 		}
 		if len(privateUnimpl) > 0 {
 			displayName := c.GetName()
-			msg := fmt.Sprintf("Class %s contains %d abstract method", displayName, len(privateUnimpl))
-			if len(privateUnimpl) > 1 {
-				msg += "s"
-			}
-			msg += " and must therefore be declared abstract or implement the remaining method"
+			// Private abstract trait methods use "must implement" format (not "contains")
+			msg := fmt.Sprintf("Class %s must implement %d abstract method", displayName, len(privateUnimpl))
 			if len(privateUnimpl) > 1 {
 				msg += "s"
 			}
