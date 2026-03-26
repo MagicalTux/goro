@@ -1093,10 +1093,12 @@ func (z *ZClosure) callBody(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 func (z *ZClosure) checkReturnTypeNone(ctx phpv.Context) error {
 	rt := z.returnType
 
-	// mixed type: includes null, so implicit return (falling through) is allowed.
-	// The function implicitly returns null which satisfies the mixed type.
+	// mixed type: PHP requires explicit return for mixed return type.
+	// Falling through without returning throws TypeError.
 	if rt.Type() == phpv.ZtMixed && len(rt.Union) == 0 && len(rt.Intersection) == 0 {
-		return nil
+		funcName := ctx.GetFuncName()
+		return phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("%s(): Return value must be of type %s, none returned", funcName, rt.String()))
 	}
 
 	// nullable types accept null/none (fall-through returns null implicitly)

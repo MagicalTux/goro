@@ -1443,7 +1443,11 @@ func compileFunctionArgs(c compileCtx) (res []*phpv.FuncArg, err error) {
 						// class-typed parameter cannot have a scalar default
 						if arg.Hint.ClassName() != "" {
 							incompatible = true
-							hintName = string(arg.Hint.ClassName())
+							// Use String() for iterable (displays as "Traversable|array"),
+							// otherwise use raw class name
+							if arg.Hint.ClassName() != "iterable" {
+								hintName = string(arg.Hint.ClassName())
+							}
 						}
 					case phpv.ZtArray:
 						incompatible = true
@@ -1759,6 +1763,28 @@ func validateTypeHint(th *phpv.TypeHint, loc *phpv.Loc, className ...phpv.ZStrin
 					hasBool = true
 					key = "bool"
 				}
+			}
+			// Expand iterable into Traversable and array for duplicate detection.
+			// PHP expands iterable at compile time, so iterable|iterable detects
+			// "Duplicate type array is redundant" since array is checked first.
+			if u.Type() == phpv.ZtObject && u.ClassName() == "iterable" {
+				if seen["array"] {
+					return &phpv.PhpError{
+						Err:  fmt.Errorf("Duplicate type array is redundant"),
+						Code: phpv.E_COMPILE_ERROR,
+						Loc:  loc,
+					}
+				}
+				if seen["traversable"] {
+					return &phpv.PhpError{
+						Err:  fmt.Errorf("Duplicate type Traversable is redundant"),
+						Code: phpv.E_COMPILE_ERROR,
+						Loc:  loc,
+					}
+				}
+				seen["traversable"] = true
+				seen["array"] = true
+				continue
 			}
 			if seen[key] {
 				return &phpv.PhpError{

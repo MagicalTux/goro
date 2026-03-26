@@ -203,6 +203,16 @@ func (a runArray) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 					return nil, err
 				}
 			}
+			// Resource used as array key: emit warning and cast to integer
+			if k.GetType() == phpv.ZtResource {
+				if r, ok := k.Value().(phpv.Resource); ok {
+					id := r.GetResourceID()
+					if err := ctx.Warn("Resource ID#%d used as offset, casting to integer (%d)", id, id); err != nil {
+						return nil, err
+					}
+					k = phpv.ZInt(id).ZVal()
+				}
+			}
 		}
 		v, err = e.v.Run(ctx)
 		if err != nil {
@@ -868,7 +878,18 @@ func (ac *runArrayAccess) getArrayOffset(ctx phpv.Context) (*phpv.ZVal, error) {
 	}
 
 	switch offset.GetType() {
-	case phpv.ZtResource, phpv.ZtFloat:
+	case phpv.ZtResource:
+		if r, ok := offset.Value().(phpv.Resource); ok {
+			id := r.GetResourceID()
+			if err := ctx.Warn("Resource ID#%d used as offset, casting to integer (%d)", id, id); err != nil {
+				return nil, err
+			}
+		}
+		offset, err = offset.As(ctx, phpv.ZtInt)
+		if err != nil {
+			return nil, err
+		}
+	case phpv.ZtFloat:
 		offset, err = offset.As(ctx, phpv.ZtInt)
 		if err != nil {
 			return nil, err

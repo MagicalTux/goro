@@ -124,6 +124,11 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 			return c.fatalError(ctx, fmt.Sprintf("Class %s cannot extend interface %s", c.Name, c.Extends.Name))
 		}
 
+		// Check if an interface is trying to extend a non-interface class
+		if c.Type == phpv.ZClassTypeInterface && c.Extends.Type != phpv.ZClassTypeInterface {
+			return c.fatalError(ctx, fmt.Sprintf("%s cannot implement %s - it is not an interface", c.Name, c.Extends.Name))
+		}
+
 		// Check if trying to extend a trait (use "use" instead)
 		if c.Extends.Type == phpv.ZClassTypeTrait {
 			return c.fatalError(ctx, fmt.Sprintf("Class %s cannot extend trait %s", c.Name, c.Extends.Name))
@@ -616,6 +621,7 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 							Class:     tc,
 							Empty:     m.Empty,
 							Loc:       m.Loc,
+							FromTrait: tc,
 						}
 						if err := c.checkMethodCompatibility(ctx, existing, traitMethod); err != nil {
 							return err
@@ -1041,8 +1047,8 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 			return ThrowError(ctx, Error, fmt.Sprintf("Interface \"%s\" not found", impl))
 		}
 		intfClass := intf.(*ZClass)
-		// Check that we're implementing an interface, not a regular class
-		if c.Type != phpv.ZClassTypeInterface && intfClass.Type != phpv.ZClassTypeInterface {
+		// Check that we're implementing/extending an interface, not a regular class
+		if intfClass.Type != phpv.ZClassTypeInterface {
 			return c.fatalError(ctx, fmt.Sprintf("%s cannot implement %s - it is not an interface", c.Name, intfClass.Name))
 		}
 		// Check for duplicate interface implementation (including aliases that resolve to the same interface)
@@ -1303,11 +1309,7 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 		}
 		if len(privateUnimpl) > 0 {
 			displayName := c.GetName()
-			msg := fmt.Sprintf("Class %s contains %d abstract method", displayName, len(privateUnimpl))
-			if len(privateUnimpl) > 1 {
-				msg += "s"
-			}
-			msg += " and must therefore be declared abstract or implement the remaining method"
+			msg := fmt.Sprintf("Class %s must implement %d abstract method", displayName, len(privateUnimpl))
 			if len(privateUnimpl) > 1 {
 				msg += "s"
 			}
@@ -1726,16 +1728,16 @@ func (c *ZClass) checkMethodCompatibility(ctx phpv.Context, child *phpv.ZClassMe
 	childArgs := childFGA.GetArgs()
 	parentArgs := parentFGA.GetArgs()
 
-	// Count required args
+	// Count required args (variadic params are never required)
 	childRequired := 0
 	for _, a := range childArgs {
-		if a.Required {
+		if a.Required && !a.Variadic {
 			childRequired++
 		}
 	}
 	parentRequired := 0
 	for _, a := range parentArgs {
-		if a.Required {
+		if a.Required && !a.Variadic {
 			parentRequired++
 		}
 	}
@@ -1879,15 +1881,25 @@ func (c *ZClass) checkMethodCompatibility(ctx phpv.Context, child *phpv.ZClassMe
 		if loc == nil {
 			loc = c.L
 		}
-		childSig := formatMethodSignature(c.Name, child)
-		parentSig := formatMethodSignature(parent.Class.GetName(), parent)
+		childSig := formatMethodSignature(c.Name, child, "")
+		selfResolve := phpv.ZString("")
+		if parent.FromTrait != nil {
+			selfResolve = c.Name
+		}
+		parentSig := formatMethodSignature(parent.Class.GetName(), parent, selfResolve)
 		return c.fatalErrorAt(ctx, fmt.Sprintf("Declaration of %s must be compatible with %s", childSig, parentSig), loc)
 	}
 	return nil
 }
 
-func formatMethodSignature(className phpv.ZString, m *phpv.ZClassMethod) string {
-	// Check if method returns by reference
+func formatMethodSignature(className phpv.ZString, m *phpv.ZClassMethod, selfResolveTo phpv.ZString) string {
+	fmtHint := func(h *phpv.TypeHint) string {
+		if selfResolveTo != "" {
+			return phpv.ResolveTypeHintSelf(h, selfResolveTo)
+		}
+		return h.String()
+	}
+
 	retByRef := ""
 	if rr, ok := m.Method.(interface{ ReturnsByRef() bool }); ok && rr.ReturnsByRef() {
 		retByRef = "& "
@@ -1900,7 +1912,7 @@ func formatMethodSignature(className phpv.ZString, m *phpv.ZClassMethod) string 
 				sig += ", "
 			}
 			if a.Hint != nil {
-				sig += a.Hint.String() + " "
+				sig += fmtHint(a.Hint) + " "
 			}
 			if a.Variadic {
 				sig += "..."
@@ -1915,12 +1927,11 @@ func formatMethodSignature(className phpv.ZString, m *phpv.ZClassMethod) string 
 		}
 	}
 	sig += ")"
-	// Include return type if available
 	if rt, ok := m.Method.(interface {
 		GetReturnType() *phpv.TypeHint
 	}); ok {
 		if retType := rt.GetReturnType(); retType != nil {
-			sig += ": " + retType.String()
+			sig += ": " + fmtHint(retType)
 		}
 	}
 	return sig

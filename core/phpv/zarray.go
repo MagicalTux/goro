@@ -44,6 +44,11 @@ func getArrayKeyValue(s Val) (ZInt, ZString, bool) {
 		return ZInt(n), "", true
 	case ZtInt:
 		return s.Value().(ZInt), "", true
+	case ZtResource:
+		if r, ok := s.Value().(Resource); ok {
+			return ZInt(r.GetResourceID()), "", true
+		}
+		return 0, "", true
 	case ZtString:
 		str := s.String()
 		if ZString(str).LooksInt() {

@@ -311,16 +311,22 @@ func (h *TypeHint) Check(ctx Context, val *ZVal) bool {
 }
 
 // typeHintSortOrder returns a sort key for canonical union display order.
-// PHP normalizes union types so that class types and intersection groups preserve
-// their relative declaration order, but scalar types (int, string, float, bool,
-// true, false, array) sort after them, and null always goes last.
+// PHP normalizes union types so that named class types and intersection groups
+// preserve their relative declaration order. Bare "object" sorts after named
+// class types but before scalars. Scalar types sort after them, and null last.
 func typeHintSortOrder(h *TypeHint) int {
 	if len(h.Intersection) > 0 {
 		return 0 // intersection groups: preserve position among class types
 	}
 	switch h.t {
 	case ZtObject:
-		return 0 // class/object types: preserve position
+		if h.s == "" {
+			return 5 // bare "object" after named class types, before scalars
+		}
+		if h.s == "callable" {
+			return 6 // callable after object
+		}
+		return 0 // named class/interface types preserve declaration order
 	case ZtArray:
 		return 10
 	case ZtString:
@@ -356,14 +362,24 @@ func (h *TypeHint) String() string {
 			s     string
 			order int
 		}
-		entries := make([]sortEntry, len(h.Union))
-		for i, alt := range h.Union {
+		var entries []sortEntry
+		for _, alt := range h.Union {
+			// Expand iterable into Traversable and array as separate entries
+			// so they sort independently (Traversable with class types, array
+			// with scalars), matching PHP's internal expansion of iterable.
+			if alt.t == ZtObject && alt.s == "iterable" {
+				entries = append(entries,
+					sortEntry{s: "Traversable", order: 0},
+					sortEntry{s: "array", order: 10},
+				)
+				continue
+			}
 			s := alt.String()
 			// Wrap intersection groups in parentheses for DNF display
 			if len(alt.Intersection) > 0 {
 				s = "(" + s + ")"
 			}
-			entries[i] = sortEntry{s: s, order: typeHintSortOrder(alt)}
+			entries = append(entries, sortEntry{s: s, order: typeHintSortOrder(alt)})
 		}
 		sort.SliceStable(entries, func(i, j int) bool {
 			return entries[i].order < entries[j].order
@@ -428,6 +444,7 @@ func IsNilClass(c ZClass) bool {
 	return reflect.ValueOf(c).IsNil()
 }
 
+// ParseTypeHint converts a type name string to a TypeHint struct.
 func ParseTypeHint(s ZString) *TypeHint {
 	switch s.ToLower() {
 	case "self":
@@ -465,4 +482,35 @@ func ParseTypeHint(s ZString) *TypeHint {
 	default:
 		return &TypeHint{t: ZtObject, s: s}
 	}
+}
+
+// ResolveTypeHintSelf returns the string representation of the type hint
+// with "self" resolved to the given class name. This is used for error
+// messages when trait methods use "self" in their signatures.
+func ResolveTypeHintSelf(h *TypeHint, className ZString) string {
+	if h == nil {
+		return ""
+	}
+	if h.t == ZtObject && h.s == "self" {
+		prefix := ""
+		if h.Nullable {
+			prefix = "?"
+		}
+		return prefix + string(className)
+	}
+	if len(h.Union) > 0 {
+		parts := make([]string, len(h.Union))
+		for i, alt := range h.Union {
+			parts[i] = ResolveTypeHintSelf(alt, className)
+		}
+		return strings.Join(parts, "|")
+	}
+	if len(h.Intersection) > 0 {
+		parts := make([]string, len(h.Intersection))
+		for i, part := range h.Intersection {
+			parts[i] = ResolveTypeHintSelf(part, className)
+		}
+		return strings.Join(parts, "&")
+	}
+	return h.String()
 }
