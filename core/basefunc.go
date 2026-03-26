@@ -149,6 +149,10 @@ func fncDefined(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			return phpv.ZBool(false).ZVal(), nil
 		}
 		if zc, ok := class.(*phpobj.ZClass); ok {
+			// Trait constants cannot be accessed directly - defined() returns false for them
+			if zc.Type == phpv.ZClassTypeTrait {
+				return phpv.ZBool(false).ZVal(), nil
+			}
 			_, exists := zc.Const[constName]
 			return phpv.ZBool(exists).ZVal(), nil
 		}

@@ -410,11 +410,12 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 			if parentSetAccess != 0 || childSetAccess != 0 {
 				// Parent has no explicit set modifier — child cannot add one
 				// (adding a set restriction narrows access)
-				// Exception: if the parent property is a virtual (get-only) property
-				// with no set semantics, the child may add set visibility when adding
-				// a backing store.
-				parentIsVirtualGetOnly := parentProp.HasHooks && parentProp.GetHook != nil && parentProp.SetHook == nil && parentProp.Default == nil
-				if parentSetAccess == 0 && childSetAccess != 0 && !parentIsVirtualGetOnly {
+				// Exception: if the parent property is a get-only property (virtual or abstract)
+				// with no set semantics, the child may add set visibility when adding set capability.
+				parentHasGet := parentProp.HasHooks && (parentProp.GetHook != nil || parentProp.GetIsAbstract || parentProp.HasGetDeclared)
+				parentHasSet := parentProp.SetHook != nil || parentProp.SetIsAbstract || parentProp.HasSetDeclared
+				parentIsGetOnly := parentHasGet && !parentHasSet && parentProp.Default == nil
+				if parentSetAccess == 0 && childSetAccess != 0 && !parentIsGetOnly {
 					return c.fatalError(ctx, fmt.Sprintf("Set access level of %s::$%s must be omitted (as in class %s)", c.Name, childProp.VarName, c.Extends.Name))
 				}
 				// Parent has set modifier, child doesn't — OK (widening)
@@ -788,14 +789,8 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 							incompatible = true
 						}
 						// Check default value compatibility
-						if !incompatible && cp.Default != nil && tp.Default != nil {
-							ev := fmt.Sprintf("%v", cp.Default)
-							tv := fmt.Sprintf("%v", tp.Default)
-							if ev != tv {
-								incompatible = true
-							}
-						} else if !incompatible && ((cp.Default == nil) != (tp.Default == nil)) {
-							incompatible = true
+						if !incompatible {
+							incompatible = !arePropertyDefaultsCompatible(ctx, cp.Default, tp.Default)
 						}
 						if incompatible {
 							// Use the trait name that originally provided the property, not "c.Name"
@@ -2997,4 +2992,79 @@ func (c *ZClass) NextInstanceID() int {
 	c.nextIntanceID++
 	id := c.nextIntanceID
 	return id
+}
+
+// arePropertyDefaultsCompatible checks whether two property default values are
+// compatible for trait composition. PHP considers properties incompatible if they
+// have different default values (strict identity check, not loose equality).
+func arePropertyDefaultsCompatible(ctx phpv.Context, a, b phpv.Val) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if (a == nil) != (b == nil) {
+		return false
+	}
+
+	// Resolve CompileDelayed values
+	aResolved := resolveDefault(ctx, a)
+	bResolved := resolveDefault(ctx, b)
+
+	if aResolved == nil && bResolved == nil {
+		return true
+	}
+	if (aResolved == nil) != (bResolved == nil) {
+		return false
+	}
+
+	// Compare resolved values: must be identical type and value
+	aVal := aResolved.Value()
+	bVal := bResolved.Value()
+	if aVal == nil && bVal == nil {
+		return true
+	}
+	if (aVal == nil) != (bVal == nil) {
+		return false
+	}
+	if aVal.GetType() != bVal.GetType() {
+		return false
+	}
+
+	// Compare by string representation for the same type
+	switch av := aVal.(type) {
+	case phpv.ZBool:
+		bv, ok := bVal.(phpv.ZBool)
+		return ok && av == bv
+	case phpv.ZInt:
+		bv, ok := bVal.(phpv.ZInt)
+		return ok && av == bv
+	case phpv.ZFloat:
+		bv, ok := bVal.(phpv.ZFloat)
+		return ok && av == bv
+	case phpv.ZString:
+		bv, ok := bVal.(phpv.ZString)
+		return ok && av == bv
+	case phpv.ZNull:
+		_, ok := bVal.(phpv.ZNull)
+		return ok
+	default:
+		// For complex types (arrays, objects), fall back to string comparison
+		return fmt.Sprintf("%v", aVal) == fmt.Sprintf("%v", bVal)
+	}
+}
+
+func resolveDefault(ctx phpv.Context, v phpv.Val) *phpv.ZVal {
+	if v == nil {
+		return nil
+	}
+	if cd, ok := v.(*phpv.CompileDelayed); ok {
+		z, err := cd.Run(ctx)
+		if err != nil {
+			return nil
+		}
+		return z
+	}
+	if zv, ok := v.(*phpv.ZVal); ok {
+		return zv
+	}
+	return phpv.NewZVal(v)
 }

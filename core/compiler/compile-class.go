@@ -449,9 +449,10 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 				propTypeHint = intersect
 				i = next
 			}
-		} else if i.Type == tokenizer.T_STRING || i.Type == tokenizer.T_ARRAY || i.Type == tokenizer.T_CALLABLE || i.IsSingle('?') || i.Type == tokenizer.T_STATIC {
+		} else if i.Type == tokenizer.T_STRING || i.Type == tokenizer.T_ARRAY || i.Type == tokenizer.T_CALLABLE || i.IsSingle('?') {
 			// Could be a type hint for a property, or a regular class name
 			// Peek ahead to check if a T_VARIABLE follows (possibly after namespace parts)
+			// Note: T_STATIC is NOT accepted here - "static" is not a valid property type
 			isNullable := i.IsSingle('?')
 			hint := i.Data
 			if isNullable {
@@ -461,7 +462,7 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 				}
 				hint = i.Data
 			}
-			if i.Type == tokenizer.T_STRING || i.Type == tokenizer.T_ARRAY || i.Type == tokenizer.T_CALLABLE || i.Type == tokenizer.T_STATIC {
+			if i.Type == tokenizer.T_STRING || i.Type == tokenizer.T_ARRAY || i.Type == tokenizer.T_CALLABLE {
 				// Consume namespace parts
 				for {
 					peek, err := c.NextItem()
@@ -501,7 +502,7 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 					if nextErr != nil {
 						return nil, nextErr
 					}
-					if nextTok.Type == tokenizer.T_STRING || nextTok.Type == tokenizer.T_ARRAY || nextTok.Type == tokenizer.T_CALLABLE || nextTok.Type == tokenizer.T_STATIC {
+					if nextTok.Type == tokenizer.T_STRING || nextTok.Type == tokenizer.T_ARRAY || nextTok.Type == tokenizer.T_CALLABLE {
 						propTypeHint, i, err = parseIntersectionTypeHint(propTypeHint, nextTok, c)
 						if err != nil {
 							return nil, err
@@ -574,7 +575,7 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 						propTypeHint = intersect
 						i = next
 					}
-				} else if i.Type == tokenizer.T_STRING || i.Type == tokenizer.T_ARRAY || i.Type == tokenizer.T_CALLABLE || i.IsSingle('?') || i.Type == tokenizer.T_STATIC {
+				} else if i.Type == tokenizer.T_STRING || i.Type == tokenizer.T_ARRAY || i.Type == tokenizer.T_CALLABLE || i.IsSingle('?') {
 					isNullable := i.IsSingle('?')
 					hint := i.Data
 					if isNullable {
@@ -584,7 +585,7 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 						}
 						hint = i.Data
 					}
-					if i.Type == tokenizer.T_STRING || i.Type == tokenizer.T_ARRAY || i.Type == tokenizer.T_CALLABLE || i.Type == tokenizer.T_STATIC {
+					if i.Type == tokenizer.T_STRING || i.Type == tokenizer.T_ARRAY || i.Type == tokenizer.T_CALLABLE {
 						// Consume namespace parts
 						for {
 							peek, err := c.NextItem()
@@ -620,7 +621,7 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 							if nextErr != nil {
 								return nil, nextErr
 							}
-							if nextTok.Type == tokenizer.T_STRING || nextTok.Type == tokenizer.T_ARRAY || nextTok.Type == tokenizer.T_CALLABLE || nextTok.Type == tokenizer.T_STATIC {
+							if nextTok.Type == tokenizer.T_STRING || nextTok.Type == tokenizer.T_ARRAY || nextTok.Type == tokenizer.T_CALLABLE {
 								propTypeHint, i, err = parseIntersectionTypeHint(propTypeHint, nextTok, c)
 								if err != nil {
 									return nil, err
@@ -1696,6 +1697,14 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 							}
 							// Copy property hooks from promoted property (PHP 8.4)
 							if arg.PromotionHooks != nil {
+								// Hooked properties cannot be readonly
+								if modifiers.IsReadonly() {
+									return nil, &phpv.PhpError{
+										Err:  fmt.Errorf("Hooked properties cannot be readonly"),
+										Code: phpv.E_COMPILE_ERROR,
+										Loc:  l,
+									}
+								}
 								prop.HasHooks = arg.PromotionHooks.HasHooks
 								prop.GetHook = arg.PromotionHooks.GetHook
 								prop.SetHook = arg.PromotionHooks.SetHook

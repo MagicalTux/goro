@@ -266,8 +266,13 @@ func doDebugZvalDump(ctx phpv.Context, z *phpv.ZVal, linePfx string, topLevel bo
 					suffix = ":protected"
 				}
 				fmt.Fprintf(ctx, "%s[\"%s\"%s]=>\n", localPfx, prop.VarName, suffix)
-				pv := obj.GetPropValue(prop)
-				doDebugZvalDump(ctx, pv, localPfx, false)
+				val, hasVal, _ := obj.GetPropValueOrHook(ctx, prop)
+				if hasVal {
+					doDebugZvalDump(ctx, val, localPfx, false)
+				} else {
+					pv := obj.GetPropValue(prop)
+					doDebugZvalDump(ctx, pv, localPfx, false)
+				}
 			}
 			fmt.Fprintf(ctx, "%s}\n", linePfx)
 		}
