@@ -127,6 +127,22 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		p.req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		return nil
 	case "FILE", "FILEEOF":
+		// Fix permissions on any files in the test directory that may have been
+		// left by previous tests with restrictive permissions (e.g., chmod tests).
+		{
+			cleanDir := filepath.Dir(func() string { p, _ := filepath.Abs(p.path); return p }())
+			if entries, err := os.ReadDir(cleanDir); err == nil {
+				for _, entry := range entries {
+					if !entry.IsDir() {
+						fp := filepath.Join(cleanDir, entry.Name())
+						if info, err := entry.Info(); err == nil && info.Mode().Perm() == 0 {
+							os.Chmod(fp, 0644)
+						}
+					}
+				}
+			}
+		}
+
 		// pass data to the engine
 		var g *phpctx.Global
 		if p.cliMode {
@@ -172,7 +188,10 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		// Use .php extension for the script filename (tests expect .php, not .phpt)
 		scriptPath := strings.TrimSuffix(absPath, "t")
 
-		// Write the .php file to disk so functions like show_source(__FILE__) can re-read it
+		// Write the .php file to disk so functions like show_source(__FILE__) can re-read it.
+		// Remove first in case a stale copy from a crashed run has restrictive permissions.
+		os.Chmod(scriptPath, 0644) // fix perms if needed
+		os.Remove(scriptPath)
 		os.WriteFile(scriptPath, b.Bytes(), 0644)
 		defer os.Remove(scriptPath)
 
