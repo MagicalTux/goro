@@ -122,6 +122,55 @@ func (r *runClassStaticVarRef) WriteValue(ctx phpv.Context, value *phpv.ZVal) er
 		}
 	}
 
+	// Enforce typed property type checking for static properties
+	if prop := zc.FindDeclaredProp(r.varName); prop != nil && prop.TypeHint != nil {
+		hint := prop.TypeHint
+		if value.IsNull() {
+			if !hint.IsNullable() {
+				return phpobj.ThrowError(ctx, phpobj.TypeError,
+					fmt.Sprintf("Cannot assign null to property %s::$%s of type %s",
+						class.GetName(), r.varName, hint.String()))
+			}
+		} else {
+			isStrict := ctx.Global().GetStrictTypes()
+			if isStrict {
+				if !hint.CheckStrict(ctx, value) {
+					typeName := phpv.ZValTypeNameDetailed(value)
+					return phpobj.ThrowError(ctx, phpobj.TypeError,
+						fmt.Sprintf("Cannot assign %s to property %s::$%s of type %s",
+							typeName, class.GetName(), r.varName, hint.String()))
+				}
+				// int->float widening in strict mode
+				if hint.Type() == phpv.ZtFloat && value.GetType() == phpv.ZtInt && len(hint.Union) == 0 && len(hint.Intersection) == 0 {
+					if coerced, err2 := value.Value().AsVal(ctx, phpv.ZtFloat); err2 == nil && coerced != nil {
+						value = coerced.ZVal()
+					}
+				}
+			} else {
+				if !hint.Check(ctx, value) {
+					typeName := phpv.ZValTypeNameDetailed(value)
+					return phpobj.ThrowError(ctx, phpobj.TypeError,
+						fmt.Sprintf("Cannot assign %s to property %s::$%s of type %s",
+							typeName, class.GetName(), r.varName, hint.String()))
+				}
+				// Coerce scalar types in weak mode
+				hintType := hint.Type()
+				valType := value.GetType()
+				if hintType != phpv.ZtMixed && hintType != phpv.ZtObject && valType != hintType && len(hint.Union) == 0 && len(hint.Intersection) == 0 {
+					if hintType == phpv.ZtInt && valType == phpv.ZtFloat {
+						v, err2 := phpv.FloatToIntImplicit(ctx, value.Value().(phpv.ZFloat))
+						if err2 != nil {
+							return err2
+						}
+						value = v.ZVal()
+					} else if coerced, err2 := value.Value().AsVal(ctx, hintType); err2 == nil && coerced != nil {
+						value = coerced.ZVal()
+					}
+				}
+			}
+		}
+	}
+
 	err = p.SetString(r.varName, value)
 	if err != nil {
 		return err

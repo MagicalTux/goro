@@ -2,7 +2,6 @@ package standard
 
 import (
 	"net/url"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -520,6 +519,68 @@ func queryEncode(s string, enc phpv.ZInt) string {
 	return url.QueryEscape(s)
 }
 
+// phpPathinfo computes PHP-compatible pathinfo components.
+// PHP only uses '/' as separator on Linux, preserves multiple slashes in dirname,
+// and only includes "extension" in the array when there is one.
+func phpPathinfo(pathStr string) (dir, base, ext, filename string, hasExt bool) {
+	// Special case: empty string
+	if pathStr == "" {
+		return "", "", "", "", false
+	}
+
+	// Strip trailing slashes for basename computation (but keep at least 1 char)
+	stripped := pathStr
+	for len(stripped) > 1 && stripped[len(stripped)-1] == '/' {
+		stripped = stripped[:len(stripped)-1]
+	}
+
+	// Find last slash in stripped path
+	lastSlash := strings.LastIndexByte(stripped, '/')
+	if lastSlash >= 0 {
+		base = stripped[lastSlash+1:]
+		// dirname: everything before last slash
+		dir = stripped[:lastSlash]
+		if dir == "" {
+			dir = "/"
+		}
+	} else {
+		// No slash found
+		base = stripped
+		dir = "."
+	}
+
+	// Special case: path is only slashes (e.g. "/", "//", "///")
+	if base == "" && dir != "" {
+		// dirname stays as computed, basename is empty
+	}
+
+	// Find extension: last dot in basename
+	dotIdx := strings.LastIndexByte(base, '.')
+	if dotIdx > 0 {
+		// Has extension (dot not at position 0 - ".hidden" has no extension in PHP)
+		ext = base[dotIdx+1:]
+		filename = base[:dotIdx]
+		hasExt = true
+	} else if dotIdx == 0 {
+		// Starts with dot (e.g. ".hidden") - no extension
+		ext = ""
+		filename = base
+		hasExt = false
+	} else {
+		// No dot at all
+		ext = ""
+		filename = base
+		hasExt = false
+	}
+
+	// Special case: empty path should return empty dirname
+	if pathStr == "" {
+		dir = ""
+	}
+
+	return
+}
+
 // > func mixed pathinfo ( string $path [, int $flags = PATHINFO_ALL ] )
 func fncPathinfo(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var pathStr string
@@ -534,14 +595,7 @@ func fncPathinfo(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		f = *flags
 	}
 
-	dir := filepath.Dir(pathStr)
-	base := filepath.Base(pathStr)
-	ext := filepath.Ext(pathStr)
-	filename := base
-	if ext != "" {
-		filename = strings.TrimSuffix(base, ext)
-		ext = ext[1:] // remove leading dot
-	}
+	dir, base, ext, filename, hasExt := phpPathinfo(pathStr)
 
 	// If a single flag is specified, return just that component as a string
 	if f != PATHINFO_ALL {
@@ -558,13 +612,16 @@ func fncPathinfo(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	result := phpv.NewZArray()
-	if f&PATHINFO_DIRNAME != 0 {
+
+	// PHP only includes dirname in array if path is not empty
+	if f&PATHINFO_DIRNAME != 0 && dir != "" {
 		result.OffsetSet(ctx, phpv.ZString("dirname"), phpv.ZString(dir).ZVal())
 	}
 	if f&PATHINFO_BASENAME != 0 {
 		result.OffsetSet(ctx, phpv.ZString("basename"), phpv.ZString(base).ZVal())
 	}
-	if f&PATHINFO_EXTENSION != 0 {
+	// PHP only includes extension key when there IS an extension
+	if f&PATHINFO_EXTENSION != 0 && hasExt {
 		result.OffsetSet(ctx, phpv.ZString("extension"), phpv.ZString(ext).ZVal())
 	}
 	if f&PATHINFO_FILENAME != 0 {

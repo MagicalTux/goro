@@ -2718,6 +2718,18 @@ func (c *ZClass) FindStaticProp(ctx phpv.Context, name phpv.ZString) (*phpv.ZHas
 	return nil, false, nil
 }
 
+// FindDeclaredProp walks the class hierarchy to find a declared property by name.
+func (c *ZClass) FindDeclaredProp(name phpv.ZString) *phpv.ZClassProp {
+	for cur := c; cur != nil; cur = cur.Extends {
+		for _, prop := range cur.Props {
+			if prop.VarName == name {
+				return prop
+			}
+		}
+	}
+	return nil
+}
+
 // IsStaticPropAccessible checks whether the calling context has visibility
 // access to a static property on the given class. Returns true when the
 // property is public, when no declaration is found (the caller will handle

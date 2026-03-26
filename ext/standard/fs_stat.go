@@ -1,6 +1,7 @@
 package standard
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +13,61 @@ import (
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
+
+// phpErrMsg extracts just the human-readable error message from a Go error,
+// stripping the syscall name and path information that Go includes.
+// For example, converts "symlink /path/a /path/b: file exists" to "File exists"
+// and "readlink /path/a: no such file or directory" to "No such file or directory".
+func phpErrMsg(err error) string {
+	// Try to extract the underlying syscall.Errno or PathError
+	var pathErr *os.PathError
+	var linkErr *os.LinkError
+	var errno syscall.Errno
+
+	if errors.As(err, &linkErr) {
+		errno, _ = linkErr.Err.(syscall.Errno)
+	} else if errors.As(err, &pathErr) {
+		errno, _ = pathErr.Err.(syscall.Errno)
+	} else if errors.As(err, &errno) {
+		// direct errno
+	} else {
+		return err.Error()
+	}
+
+	// Map common errno values to PHP-style capitalized messages
+	switch errno {
+	case syscall.ENOENT:
+		return "No such file or directory"
+	case syscall.EEXIST:
+		return "File exists"
+	case syscall.EACCES:
+		return "Permission denied"
+	case syscall.ENOTDIR:
+		return "Not a directory"
+	case syscall.EISDIR:
+		return "Is a directory"
+	case syscall.ENOTEMPTY:
+		return "Directory not empty"
+	case syscall.EPERM:
+		return "Operation not permitted"
+	case syscall.EINVAL:
+		return "Invalid argument"
+	case syscall.ENAMETOOLONG:
+		return "File name too long"
+	case syscall.ELOOP:
+		return "Too many levels of symbolic links"
+	case syscall.ENOSPC:
+		return "No space left on device"
+	case syscall.EROFS:
+		return "Read-only file system"
+	case syscall.EXDEV:
+		return "Invalid cross-device link"
+	case syscall.EMLINK:
+		return "Too many links"
+	default:
+		return errno.Error()
+	}
+}
 
 // resolveFilePath resolves a filename relative to the cwd from the global context.
 func resolveFilePath(ctx phpv.Context, filename string) string {
@@ -444,7 +500,7 @@ func fncLink(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	err = os.Link(target, link)
 	if err != nil {
-		return phpv.ZFalse.ZVal(), ctx.Warn("%s", err)
+		return phpv.ZFalse.ZVal(), ctx.Warn("%s(): %s", ctx.GetFuncName(), phpErrMsg(err), logopt.NoFuncName(true))
 	}
 	return phpv.ZTrue.ZVal(), nil
 }

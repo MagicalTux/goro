@@ -437,19 +437,14 @@ func fncUnlink(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	// Use Lstat so broken symlinks can still be unlinked
 	stat, err := os.Lstat(p)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			err = ctx.Warn("unlink(%s): No such file or directory", filename, logopt.NoFuncName(true))
-		} else {
-			err = ctx.Warn("unlink(%s): %s", filename, err.Error(), logopt.NoFuncName(true))
-		}
-		return phpv.ZFalse.ZVal(), err
+		return phpv.ZFalse.ZVal(), ctx.Warn("unlink(%s): %s", filename, phpErrMsg(err), logopt.NoFuncName(true))
 	}
 	if stat.Mode()&os.ModeSymlink == 0 && stat.IsDir() {
 		return phpv.ZFalse.ZVal(), ctx.Warn("unlink(%s): Is a directory", filename, logopt.NoFuncName(true))
 	}
 
 	if err := os.Remove(p); err != nil {
-		return phpv.ZFalse.ZVal(), ctx.Warn("unlink(%s): %s", filename, err.Error(), logopt.NoFuncName(true))
+		return phpv.ZFalse.ZVal(), ctx.Warn("unlink(%s): %s", filename, phpErrMsg(err), logopt.NoFuncName(true))
 	}
 
 	return phpv.ZTrue.ZVal(), nil
@@ -485,7 +480,7 @@ func fncMkdir(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	if err != nil {
-		return phpv.ZFalse.ZVal(), ctx.Warn("%s", err.Error())
+		return phpv.ZFalse.ZVal(), ctx.Warn("mkdir(): %s", phpErrMsg(err), logopt.NoFuncName(true))
 	}
 
 	return phpv.ZTrue.ZVal(), nil
@@ -509,23 +504,19 @@ func fncRmdir(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZFalse.ZVal(), nil
 	}
 
+	origDirname := dirname
 	dirname = resolveFilePath(ctx, dirname)
 
 	stat, err := os.Stat(dirname)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			err = ctx.Warn("No such file or directory")
-		} else {
-			err = ctx.Warn(err.Error())
-		}
-		return phpv.ZFalse.ZVal(), err
+		return phpv.ZFalse.ZVal(), ctx.Warn("rmdir(%s): %s", origDirname, phpErrMsg(err), logopt.NoFuncName(true))
 	}
 	if !stat.IsDir() {
-		return phpv.ZFalse.ZVal(), ctx.Warn("Not a directory")
+		return phpv.ZFalse.ZVal(), ctx.Warn("rmdir(%s): Not a directory", origDirname, logopt.NoFuncName(true))
 	}
 
 	if err := os.Remove(dirname); err != nil {
-		return phpv.ZFalse.ZVal(), ctx.Warn(err.Error())
+		return phpv.ZFalse.ZVal(), ctx.Warn("rmdir(%s): %s", origDirname, phpErrMsg(err), logopt.NoFuncName(true))
 	}
 
 	return phpv.ZTrue.ZVal(), nil
@@ -1358,44 +1349,43 @@ func fncRename(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	oldName := resolveFilePath(ctx, string(oldNameArg))
 	newName := resolveFilePath(ctx, string(newNameArg))
 
-	oldStat, err := os.Stat(oldName)
+	// Use Lstat so symlinks to non-existent targets can still be renamed
+	oldStat, err := os.Lstat(oldName)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, ctx.Warn("%s(%s,%s): No such file or directory",
-				ctx.GetFuncName(), oldNameArg, newNameArg, logopt.NoFuncName(true))
-		}
-		return nil, ctx.FuncError(err)
+		return phpv.ZFalse.ZVal(), ctx.Warn("%s(%s,%s): %s",
+			ctx.GetFuncName(), oldNameArg, newNameArg, phpErrMsg(err), logopt.NoFuncName(true))
 	}
 
-	newStat, err := os.Stat(newName)
-	if err != nil && !os.IsNotExist(err) {
-		return nil, ctx.FuncError(err)
-	}
-
-	if os.IsExist(err) {
-		if oldStat.IsDir() && newStat.IsDir() {
+	newStat, newErr := os.Lstat(newName)
+	if newErr == nil {
+		// Destination exists - check compatibility
+		oldIsDir := oldStat.IsDir()
+		newIsDir := newStat.IsDir()
+		if oldIsDir && newIsDir {
 			files, err := os.ReadDir(newName)
 			if err != nil {
-				return nil, ctx.FuncError(err)
+				return phpv.ZFalse.ZVal(), ctx.Warn("%s(%s,%s): %s",
+					ctx.GetFuncName(), oldNameArg, newNameArg, phpErrMsg(err), logopt.NoFuncName(true))
 			}
 			if len(files) > 0 {
-				return nil, ctx.Warn("%s(%s,%s): Directory not empty",
+				return phpv.ZFalse.ZVal(), ctx.Warn("%s(%s,%s): Directory not empty",
 					ctx.GetFuncName(), oldNameArg, newNameArg, logopt.NoFuncName(true))
 			}
 		}
-		if !oldStat.IsDir() && newStat.IsDir() {
-			return nil, ctx.Warn("%s(%s,%s): Is a directory",
+		if !oldIsDir && newIsDir {
+			return phpv.ZFalse.ZVal(), ctx.Warn("%s(%s,%s): Is a directory",
 				ctx.GetFuncName(), oldNameArg, newNameArg, logopt.NoFuncName(true))
 		}
-		if oldStat.IsDir() && !newStat.IsDir() {
-			return nil, ctx.Warn("%s(%s,%s): Not a directory",
+		if oldIsDir && !newIsDir {
+			return phpv.ZFalse.ZVal(), ctx.Warn("%s(%s,%s): Not a directory",
 				ctx.GetFuncName(), oldNameArg, newNameArg, logopt.NoFuncName(true))
 		}
 	}
 
 	err = os.Rename(oldName, newName)
 	if err != nil {
-		return nil, ctx.FuncError(err)
+		return phpv.ZFalse.ZVal(), ctx.Warn("%s(%s,%s): %s",
+			ctx.GetFuncName(), oldNameArg, newNameArg, phpErrMsg(err), logopt.NoFuncName(true))
 	}
 
 	return phpv.ZTrue.ZVal(), nil
@@ -1547,7 +1537,7 @@ func fncSymlink(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	// Create symlink with original target (symlink targets are relative to symlink location)
 	err = os.Symlink(target, resolvedLink)
 	if err != nil {
-		return phpv.ZFalse.ZVal(), ctx.Warn("%s(): %s", ctx.GetFuncName(), err.Error(), logopt.NoFuncName(true))
+		return phpv.ZFalse.ZVal(), ctx.Warn("%s(): %s", ctx.GetFuncName(), phpErrMsg(err), logopt.NoFuncName(true))
 	}
 	return phpv.ZTrue.ZVal(), nil
 }
@@ -1567,7 +1557,7 @@ func fncReadlink(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	p = resolveFilePath(ctx, p)
 	target, err := os.Readlink(p)
 	if err != nil {
-		return phpv.ZFalse.ZVal(), ctx.Warn("%s(): %s", ctx.GetFuncName(), err.Error(), logopt.NoFuncName(true))
+		return phpv.ZFalse.ZVal(), ctx.Warn("%s(): %s", ctx.GetFuncName(), phpErrMsg(err), logopt.NoFuncName(true))
 	}
 	return phpv.ZString(target).ZVal(), nil
 }
@@ -1587,10 +1577,15 @@ func fncLinkinfo(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	p = resolveFilePath(ctx, p)
 	fi, err := os.Lstat(p)
 	if err != nil {
-		return phpv.ZInt(-1).ZVal(), ctx.Warn("%s(): %s", ctx.GetFuncName(), err.Error(), logopt.NoFuncName(true))
+		return phpv.ZInt(-1).ZVal(), ctx.Warn("%s(): %s", ctx.GetFuncName(), phpErrMsg(err), logopt.NoFuncName(true))
 	}
 
-	return phpv.ZInt(int64(fi.Mode())).ZVal(), nil
+	// PHP's linkinfo() returns st_dev (device number), not file mode
+	st, ok := fi.Sys().(*syscall.Stat_t)
+	if !ok {
+		return phpv.ZInt(-1).ZVal(), nil
+	}
+	return phpv.ZInt(int64(st.Dev)).ZVal(), nil
 }
 
 // > func bool is_uploaded_file ( string $filename )

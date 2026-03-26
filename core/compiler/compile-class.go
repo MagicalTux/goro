@@ -3,6 +3,7 @@ package compiler
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpobj"
@@ -2256,13 +2257,29 @@ func validatePropertyDefault(r phpv.Runnable, th *phpv.TypeHint, className phpv.
 		return nil
 	}
 
-	// Only validate literal values
-	zv, ok := r.(*runZVal)
-	if !ok {
+	// Validate literal values, double-quoted string constants (runConcat),
+	// and null/true/false constants (runConstant)
+	var val phpv.Val
+	if zv, ok := r.(*runZVal); ok {
+		val = zv.v
+	} else if _, ok := r.(runConcat); ok {
+		// Double-quoted strings compile to runConcat; treat as string type
+		val = phpv.ZString("")
+	} else if rc, ok := r.(*runConstant); ok {
+		// Handle null/true/false constants
+		switch strings.ToLower(shortName(rc.c)) {
+		case "null":
+			val = phpv.ZNull{}
+		case "true":
+			val = phpv.ZBool(true)
+		case "false":
+			val = phpv.ZBool(false)
+		default:
+			return nil // other constants can't be validated at compile time
+		}
+	} else {
 		return nil
 	}
-
-	val := zv.v
 
 	// Special case: null default value on non-nullable type
 	isNull := val == nil || val.GetType() == phpv.ZtNull
@@ -2362,8 +2379,12 @@ func validatePropertyTypeHint(th *phpv.TypeHint, className phpv.ZString, varName
 	}
 
 	if th.Type() == phpv.ZtObject && th.ClassName() == "callable" {
+		typeName := "callable"
+		if th.Nullable {
+			typeName = "?callable"
+		}
 		return &phpv.PhpError{
-			Err:  fmt.Errorf("Property %s::$%s cannot have type callable", className, varName),
+			Err:  fmt.Errorf("Property %s::$%s cannot have type %s", className, varName, typeName),
 			Code: phpv.E_COMPILE_ERROR,
 			Loc:  loc,
 		}

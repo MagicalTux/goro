@@ -395,7 +395,11 @@ func (h *TypeHint) String() string {
 		for i, part := range h.Intersection {
 			parts[i] = part.String()
 		}
-		return strings.Join(parts, "&")
+		result := strings.Join(parts, "&")
+		if h.Nullable {
+			return "(" + result + ")|null"
+		}
+		return result
 	}
 	// iterable is displayed as Traversable|array in error messages (PHP 8.4+)
 	if h.s == "iterable" {

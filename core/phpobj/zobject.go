@@ -1871,23 +1871,32 @@ func (o *ZObject) ObjectGet(ctx phpv.Context, key phpv.Val) (*phpv.ZVal, error) 
 		return phpv.NewZVal(v.Value()), nil
 	}
 
-	// Check for uninitialized typed property - throws Error instead of calling __get
+	// Check for uninitialized typed property - throws Error instead of calling __get,
+	// UNLESS the property was explicitly unset AND the class has __get (fallback allowed).
 	if prop := o.findDeclaredProp(keyStr); prop != nil && prop.TypeHint != nil {
-		// Find the declaring class for the error message
-		declClass := o.Class.GetName()
-		if zc, ok := o.Class.(*ZClass); ok {
-			for cur := zc; cur != nil; cur = cur.Extends {
-				for _, cp := range cur.Props {
-					if cp.VarName == keyStr {
-						declClass = cur.GetName()
-						goto foundDecl
+		// If the property was explicitly unset and __get exists, allow __get fallback
+		explicitlyUnset := o.typedPropUnset != nil && (*o.typedPropUnset)[keyStr]
+		hasGetMethod := false
+		if zc, ok2 := o.Class.(*ZClass); ok2 {
+			_, hasGetMethod = zc.Methods["__get"]
+		}
+		if !(explicitlyUnset && hasGetMethod) {
+			// Find the declaring class for the error message
+			declClass := o.Class.GetName()
+			if zc, ok := o.Class.(*ZClass); ok {
+				for cur := zc; cur != nil; cur = cur.Extends {
+					for _, cp := range cur.Props {
+						if cp.VarName == keyStr {
+							declClass = cur.GetName()
+							goto foundDecl
+						}
 					}
 				}
 			}
+		foundDecl:
+			return nil, ThrowError(ctx, Error,
+				fmt.Sprintf("Typed property %s::$%s must not be accessed before initialization", declClass, keyStr))
 		}
-	foundDecl:
-		return nil, ThrowError(ctx, Error,
-			fmt.Sprintf("Typed property %s::$%s must not be accessed before initialization", declClass, keyStr))
 	}
 
 	// Property not found, try __get magic method
@@ -1903,7 +1912,34 @@ func (o *ZObject) ObjectGet(ctx phpv.Context, key phpv.Val) (*phpv.ZVal, error) 
 			if result == nil && err == nil {
 				result = phpv.ZNULL.ZVal()
 			}
-			return result, err
+			if err != nil {
+				return result, err
+			}
+			// Check type compatibility of __get() return value for unset typed properties
+			if prop := o.findDeclaredProp(keyStr); prop != nil && prop.TypeHint != nil {
+				if o.typedPropUnset != nil && (*o.typedPropUnset)[keyStr] {
+					hint := prop.TypeHint
+					if result.IsNull() && !hint.IsNullable() {
+						return nil, ThrowError(ctx, TypeError,
+							fmt.Sprintf("Value of type null returned from %s::__get() must be compatible with unset property %s::$%s of type %s",
+								o.Class.GetName(), o.Class.GetName(), keyStr, hint.String()))
+					}
+					if !result.IsNull() && !hint.Check(ctx, result) {
+						typeName := phpv.ZValTypeNameDetailed(result)
+						return nil, ThrowError(ctx, TypeError,
+							fmt.Sprintf("Value of type %s returned from %s::__get() must be compatible with unset property %s::$%s of type %s",
+								typeName, o.Class.GetName(), o.Class.GetName(), keyStr, hint.String()))
+					}
+					// Coerce to matching type in weak mode
+					if !ctx.Global().GetStrictTypes() && hint.Type() != phpv.ZtMixed && hint.Type() != phpv.ZtObject &&
+						len(hint.Union) == 0 && len(hint.Intersection) == 0 && result.GetType() != hint.Type() {
+						if coerced, err2 := result.As(ctx, hint.Type()); err2 == nil && coerced != nil {
+							result = coerced.ZVal()
+						}
+					}
+				}
+			}
+			return result, nil
 		}
 		// __get guard fired (recursion detected) - return null without warning
 		// to match PHP behavior where recursive __get silently returns null
@@ -2311,15 +2347,36 @@ func (o *ZObject) NewIterator() phpv.ZIterator {
 	return o.NewIteratorInScope(nil)
 }
 
+// classHasHooks checks if any class in the hierarchy has hooked properties.
+func (o *ZObject) classHasHooks() bool {
+	class := o.Class.(*ZClass)
+	for cur := class; cur != nil; cur = cur.Extends {
+		for _, p := range cur.Props {
+			if p.HasHooks {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // NewIteratorInScope creates an iterator that respects property visibility
 // relative to the given scope class. If scope is nil, only public properties
 // are visible (external access). If scope matches the object's class or a
 // parent, protected/private properties become visible accordingly.
 //
+// For objects with hooked properties, this builds an ordered list of entries
+// that includes virtual hooked properties (calling get hooks to produce values).
+//
 // Property keys in the hash table:
 // - Public/Protected: bare "name"
 // - Private: "*ClassName:name"
 func (o *ZObject) NewIteratorInScope(scope phpv.ZClass) phpv.ZIterator {
+	// If the class has hooked properties, use the hook-aware iterator
+	if o.classHasHooks() {
+		return newHookedObjectIterator(o, scope)
+	}
+
 	// Build set of protected property names to know which bare names are non-public
 	protectedProps := make(map[phpv.ZString]struct{})
 	class := o.Class.(*ZClass)
@@ -2340,6 +2397,290 @@ func (o *ZObject) NewIteratorInScope(scope phpv.ZClass) phpv.ZIterator {
 		}
 	}
 	return &zobjectIterator{obj: o, inner: o.h.NewIterator(), scope: scope, protectedProps: protectedProps}
+}
+
+// hookedObjEntry represents a single property in the iteration order for
+// objects with hooked properties.
+type hookedObjEntry struct {
+	key   phpv.ZString
+	prop  *phpv.ZClassProp // non-nil for declared properties; nil for dynamic
+	class *ZClass          // declaring class (for private property lookup)
+}
+
+// hookedObjectIterator iterates objects with property hooks in proper PHP order.
+// It pre-computes the list of visible entries on construction so that the
+// iteration order is stable and includes virtual hooked properties.
+type hookedObjectIterator struct {
+	obj     *ZObject
+	entries []hookedObjEntry
+	pos     int
+}
+
+// newHookedObjectIterator builds the iteration list for an object with hooks.
+func newHookedObjectIterator(o *ZObject, scope phpv.ZClass) *hookedObjectIterator {
+	it := &hookedObjectIterator{obj: o}
+
+	// Build lineage from current class to root
+	var lineage []*ZClass
+	class := o.Class.(*ZClass)
+	for cur := class; cur != nil; cur = cur.Extends {
+		lineage = append(lineage, cur)
+	}
+
+	// Build most-derived map for non-private properties
+	mostDerived := map[string]*phpv.ZClassProp{}
+	mostDerivedClass := map[string]*ZClass{}
+	for _, cl := range lineage {
+		for _, p := range cl.Props {
+			if p.Modifiers.IsStatic() {
+				continue
+			}
+			if !p.Modifiers.IsPrivate() {
+				if _, ok := mostDerived[p.VarName.String()]; !ok {
+					mostDerived[p.VarName.String()] = p
+					mostDerivedClass[p.VarName.String()] = cl
+				}
+			}
+		}
+	}
+
+	// Collect declared properties in order (root to leaf)
+	shown := map[string]struct{}{}
+	for i := len(lineage) - 1; i >= 0; i-- {
+		cl := lineage[i]
+		for _, p := range cl.Props {
+			if p.Modifiers.IsStatic() {
+				continue
+			}
+
+			// Virtual set-only properties (no get hook): skip
+			if p.IsVirtual() && !o.h.HasString(p.VarName) {
+				if p.GetHook == nil {
+					if !p.Modifiers.IsPrivate() {
+						shown[p.VarName.String()] = struct{}{}
+					}
+					continue
+				}
+			}
+
+			if !p.Modifiers.IsPrivate() {
+				if _, ok := shown[p.VarName.String()]; ok {
+					continue
+				}
+				// Use the most-derived version
+				derived, hasDerived := mostDerived[p.VarName.String()]
+				derivedClass := mostDerivedClass[p.VarName.String()]
+				if hasDerived {
+					p = derived
+					cl = derivedClass
+				}
+
+				// Check visibility
+				if !it.isVisibleNonPrivate(p, scope, class) {
+					shown[p.VarName.String()] = struct{}{}
+					continue
+				}
+
+				// Skip non-typed unhooked properties that have been unset
+				if !p.HasHooks && !o.h.HasString(p.VarName) && p.TypeHint == nil {
+					shown[p.VarName.String()] = struct{}{}
+					continue
+				}
+
+				shown[p.VarName.String()] = struct{}{}
+				it.entries = append(it.entries, hookedObjEntry{key: p.VarName, prop: p, class: cl})
+			} else {
+				// Private property - check visibility
+				if scope == nil || scope.GetName() != cl.GetName() {
+					continue
+				}
+				propName := getPrivatePropName(cl, p.VarName)
+				if !p.HasHooks && !o.h.HasString(propName) && p.TypeHint == nil {
+					continue
+				}
+				shown[p.VarName.String()] = struct{}{}
+				it.entries = append(it.entries, hookedObjEntry{key: p.VarName, prop: p, class: cl})
+			}
+		}
+	}
+
+	// Add dynamic properties (in hash table but not declared)
+	htIt := o.h.NewIterator()
+	for htIt.Valid(nil) {
+		k, _ := htIt.Key(nil)
+		if k != nil {
+			key := k.AsString(nil)
+			// Skip private property keys (start with *)
+			if len(key) > 0 && key[0] == '*' {
+				htIt.Next(nil)
+				continue
+			}
+			if _, ok := shown[string(key)]; !ok {
+				it.entries = append(it.entries, hookedObjEntry{key: key})
+			}
+		}
+		htIt.Next(nil)
+	}
+
+	return it
+}
+
+// isVisibleNonPrivate checks if a non-private property is visible from the given scope.
+func (it *hookedObjectIterator) isVisibleNonPrivate(p *phpv.ZClassProp, scope phpv.ZClass, objClass *ZClass) bool {
+	if p.Modifiers.IsPublic() {
+		return true
+	}
+	if p.Modifiers.IsProtected() {
+		if scope == nil {
+			return false
+		}
+		// Check if scope is related to the object class
+		return scope.InstanceOf(objClass) || objClass.InstanceOf(scope)
+	}
+	return true // default: visible
+}
+
+func (it *hookedObjectIterator) Valid(ctx phpv.Context) bool {
+	return it.pos < len(it.entries)
+}
+
+func (it *hookedObjectIterator) Current(ctx phpv.Context) (*phpv.ZVal, error) {
+	if it.pos >= len(it.entries) {
+		return nil, nil
+	}
+	e := it.entries[it.pos]
+	return it.getValue(ctx, e)
+}
+
+func (it *hookedObjectIterator) getValue(ctx phpv.Context, e hookedObjEntry) (*phpv.ZVal, error) {
+	if e.prop != nil {
+		// Declared property - check for get hook
+		if e.prop.HasHooks && e.prop.GetHook != nil {
+			val, _, err := it.obj.GetPropValueOrHook(ctx, e.prop)
+			if err != nil {
+				return nil, err
+			}
+			if val != nil {
+				return val, nil
+			}
+		}
+		// Private property: look up with mangled name
+		if e.prop.Modifiers.IsPrivate() && e.class != nil {
+			propName := getPrivatePropName(e.class, e.key)
+			if it.obj.h.HasString(propName) {
+				return it.obj.h.GetString(propName), nil
+			}
+		}
+	}
+	// Regular property or dynamic property: look up in hash table
+	if it.obj.h.HasString(e.key) {
+		return it.obj.h.GetString(e.key), nil
+	}
+	return phpv.ZNULL.ZVal(), nil
+}
+
+func (it *hookedObjectIterator) Key(ctx phpv.Context) (*phpv.ZVal, error) {
+	if it.pos >= len(it.entries) {
+		return nil, nil
+	}
+	return it.entries[it.pos].key.ZVal(), nil
+}
+
+func (it *hookedObjectIterator) Next(ctx phpv.Context) (*phpv.ZVal, error) {
+	it.pos++
+	if it.pos >= len(it.entries) {
+		return nil, nil
+	}
+	return it.getValue(ctx, it.entries[it.pos])
+}
+
+func (it *hookedObjectIterator) Prev(ctx phpv.Context) (*phpv.ZVal, error) {
+	if it.pos > 0 {
+		it.pos--
+	}
+	if it.pos < len(it.entries) {
+		return it.getValue(ctx, it.entries[it.pos])
+	}
+	return nil, nil
+}
+
+func (it *hookedObjectIterator) Reset(ctx phpv.Context) (*phpv.ZVal, error) {
+	it.pos = 0
+	if len(it.entries) > 0 {
+		return it.getValue(ctx, it.entries[0])
+	}
+	return nil, nil
+}
+
+func (it *hookedObjectIterator) ResetIfEnd(ctx phpv.Context) (*phpv.ZVal, error) {
+	if it.pos >= len(it.entries) {
+		return it.Reset(ctx)
+	}
+	return nil, nil
+}
+
+func (it *hookedObjectIterator) End(ctx phpv.Context) (*phpv.ZVal, error) {
+	if len(it.entries) > 0 {
+		it.pos = len(it.entries) - 1
+		return it.getValue(ctx, it.entries[it.pos])
+	}
+	return nil, nil
+}
+
+func (it *hookedObjectIterator) Iterate(ctx phpv.Context) iter.Seq2[*phpv.ZVal, *phpv.ZVal] {
+	return func(yield func(*phpv.ZVal, *phpv.ZVal) bool) {
+		for i, e := range it.entries {
+			it.pos = i
+			v, err := it.getValue(ctx, e)
+			if err != nil {
+				continue
+			}
+			if !yield(e.key.ZVal(), v) {
+				return
+			}
+		}
+	}
+}
+
+func (it *hookedObjectIterator) IterateRaw(ctx phpv.Context) iter.Seq2[*phpv.ZVal, *phpv.ZVal] {
+	return it.Iterate(ctx)
+}
+
+func (it *hookedObjectIterator) CurrentMakeRef(ctx phpv.Context) (*phpv.ZVal, error) {
+	if it.pos >= len(it.entries) {
+		return nil, nil
+	}
+	e := it.entries[it.pos]
+
+	// Check for readonly property
+	if it.obj.IsReadonlyProperty(e.key) && it.obj.IsReadonlyPropertyInitialized(e.key) {
+		return nil, ThrowError(nil, Error,
+			fmt.Sprintf("Cannot acquire reference to readonly property %s::$%s", it.obj.GetClass().GetName(), e.key))
+	}
+
+	// For virtual hooked properties, cannot take a reference
+	if e.prop != nil && e.prop.HasHooks && e.prop.GetHook != nil && e.prop.IsVirtual() && !it.obj.h.HasString(e.key) {
+		return nil, ThrowError(ctx, Error,
+			fmt.Sprintf("Cannot create reference to property %s::$%s", it.obj.GetClass().GetName(), e.key))
+	}
+
+	// For private properties, get from mangled name
+	if e.prop != nil && e.prop.Modifiers.IsPrivate() && e.class != nil {
+		propName := getPrivatePropName(e.class, e.key)
+		if it.obj.h.HasString(propName) {
+			return it.obj.h.GetString(propName), nil
+		}
+	}
+
+	// Regular property: return reference from hash table
+	if it.obj.h.HasString(e.key) {
+		return it.obj.h.GetString(e.key), nil
+	}
+	return phpv.ZNULL.ZVal(), nil
+}
+
+func (it *hookedObjectIterator) CleanupRef() {
+	// No cleanup needed for pre-computed entries
 }
 
 type zobjectIterator struct {
@@ -2664,6 +3005,12 @@ func (o *ZObject) enforcePropertyType(ctx phpv.Context, keyStr phpv.ZString, pro
 		return nil, nil
 	}
 
+	// Use the declaring class name for error messages (not the runtime class)
+	declClassName := o.Class.GetName()
+	if dc := o.findDeclaringClass(keyStr); dc != nil {
+		declClassName = dc.GetName()
+	}
+
 	// Null check
 	if value.IsNull() {
 		if hint.IsNullable() {
@@ -2671,7 +3018,7 @@ func (o *ZObject) enforcePropertyType(ctx phpv.Context, keyStr phpv.ZString, pro
 		}
 		return nil, ThrowError(ctx, TypeError,
 			fmt.Sprintf("Cannot assign null to property %s::$%s of type %s",
-				o.Class.GetName(), keyStr, hint.String()))
+				declClassName, keyStr, hint.String()))
 	}
 
 	// strict_types applies to the file where the assignment happens
@@ -2693,7 +3040,7 @@ func (o *ZObject) enforcePropertyType(ctx phpv.Context, keyStr phpv.ZString, pro
 		typeName := phpv.ZValTypeNameDetailed(value)
 		return nil, ThrowError(ctx, TypeError,
 			fmt.Sprintf("Cannot assign %s to property %s::$%s of type %s",
-				typeName, o.Class.GetName(), keyStr, hint.String()))
+				typeName, declClassName, keyStr, hint.String()))
 	}
 
 	// Weak mode: check if value matches the type hint
@@ -2721,7 +3068,7 @@ func (o *ZObject) enforcePropertyType(ctx phpv.Context, keyStr phpv.ZString, pro
 	typeName := phpv.ZValTypeNameDetailed(value)
 	return nil, ThrowError(ctx, TypeError,
 		fmt.Sprintf("Cannot assign %s to property %s::$%s of type %s",
-			typeName, o.Class.GetName(), keyStr, hint.String()))
+			typeName, declClassName, keyStr, hint.String()))
 }
 
 // allowsDynamicProperties checks if the object's class allows dynamic property creation.
