@@ -2481,8 +2481,10 @@ func newHookedObjectIterator(o *ZObject, scope phpv.ZClass) *hookedObjectIterato
 					continue
 				}
 
-				// Skip non-typed unhooked properties that have been unset
-				if !p.HasHooks && !o.h.HasString(p.VarName) && p.TypeHint == nil {
+				// Skip properties with no value and no get hook.
+				// Properties with get hooks are always included (hook provides value).
+				// Properties without get hooks must have a value in the hash table.
+				if !o.h.HasString(p.VarName) && (p.GetHook == nil) {
 					shown[p.VarName.String()] = struct{}{}
 					continue
 				}

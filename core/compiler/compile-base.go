@@ -234,6 +234,14 @@ func compileBaseUntil(i *tokenizer.Item, c compileCtx, until tokenizer.ItemType)
 			return res, nil
 		}
 
+		// Track namespace/use statements as "seen statements" for strict_types validation
+		// (these return nil runnables but still preclude strict_types)
+		if rc, ok := c.(*compileRootCtx); ok {
+			if i.Type == tokenizer.T_NAMESPACE || i.Type == tokenizer.T_USE {
+				rc.hasStatements = true
+			}
+		}
+
 		t, err := compileBaseSingle(i, c)
 		if t != nil {
 			// Track that we've seen a statement (for strict_types validation)

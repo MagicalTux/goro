@@ -1860,8 +1860,8 @@ func parseClassLine(class *phpobj.ZClass, c compileCtx) error {
 		if ns != "" {
 			className = ns + "\\" + className
 		}
-		// Check reserved class names
-		lowerName := className.ToLower()
+		// Check reserved class names (use the short name, not the namespace-qualified name)
+		lowerName := phpv.ZString(strings.ToLower(i.Data))
 		classKind := "class"
 		if class.Type == phpv.ZClassTypeInterface {
 			classKind = "interface"

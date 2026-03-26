@@ -288,6 +288,24 @@ func compileUse(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			}
 		}
 
+		// Check that the alias is not a reserved type name
+		if useType == "class" {
+			switch strings.ToLower(string(alias)) {
+			case "int", "float", "string", "bool", "null", "void", "true", "false", "never", "mixed", "array", "object", "callable", "iterable":
+				return nil, &phpv.PhpError{
+					Err:  fmt.Errorf("Cannot use %s as %s because '%s' is a special class name", fullName, alias, alias),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  useLoc,
+				}
+			case "self", "parent", "static":
+				return nil, &phpv.PhpError{
+					Err:  fmt.Errorf("Cannot use %s as %s because '%s' is a special class name", fullName, alias, alias),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  useLoc,
+				}
+			}
+		}
+
 		// Register the alias
 		switch useType {
 		case "class":
