@@ -101,15 +101,12 @@ func (r *runParentPropHookCall) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	if r.hookType == "get" {
 		// parent::$prop::get()
 		if prop.HasHooks && prop.GetHook != nil {
-			// Parent has a get hook — call it
-			if len(args) > 0 {
-				return nil, phpobj.ThrowError(ctx, phpobj.Error,
-					fmt.Sprintf("%s::$%s::get() expects exactly 0 arguments, %d given",
-						declClass.GetName(), r.propName, len(args)))
-			}
+			// Parent has a user-defined get hook -- call it.
+			// Extra args are tolerated for user-defined hooks.
 			return obj.RunParentGetHook(ctx, r.propName, prop.GetHook, declClass)
 		}
-		// Parent has no get hook (plain property or hooked without get) — read backing value
+		// Parent has no get hook (plain property or hooked without get) -- read backing value.
+		// This is an internal operation, so extra args are NOT tolerated.
 		if len(args) > 0 {
 			return nil, phpobj.ThrowError(ctx, phpobj.Error,
 				fmt.Sprintf("%s::$%s::get() expects exactly 0 arguments, %d given",
@@ -120,8 +117,8 @@ func (r *runParentPropHookCall) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 
 	// parent::$prop::set($value)
 	if prop.HasHooks && prop.SetHook != nil {
-		// Parent has a set hook — call it
-		// For user-defined hooks, extra args are tolerated (they are user functions)
+		// Parent has a user-defined set hook -- call it.
+		// Extra args are tolerated for user-defined hooks.
 		if len(args) == 0 {
 			return nil, phpobj.ThrowError(ctx, phpobj.Error,
 				fmt.Sprintf("%s::$%s::set() expects exactly 1 argument, 0 given",
@@ -134,7 +131,8 @@ func (r *runParentPropHookCall) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		// parent::$prop::set() returns the value that was set
 		return args[0], nil
 	}
-	// Parent has no set hook (plain property) — write backing value directly
+	// Parent has no set hook (plain property) -- write backing value directly.
+	// This is an internal operation, so extra args are NOT tolerated.
 	if len(args) != 1 {
 		expected := 1
 		return nil, phpobj.ThrowError(ctx, phpobj.Error,
@@ -421,7 +419,9 @@ func compilePropertyHooks(prop *phpv.ZClassProp, class *phpobj.ZClass, c compile
 				return err
 			}
 			if i.IsSingle('(') {
-				// Parse set parameter with validation
+				// Parse set parameter with validation.
+				hasParamType := false
+				paramTypeLoc := i.Loc()
 				for {
 					i, err = c.NextItem()
 					if err != nil {
@@ -439,7 +439,6 @@ func compilePropertyHooks(prop *phpv.ZClassProp, class *phpobj.ZClass, c compile
 
 					// Check for by-reference parameter (not allowed)
 					if i.IsSingle('&') {
-						// Peek at next to get the variable name
 						return &phpv.PhpError{
 							Err:  fmt.Errorf("Parameter $%s of set hook %s::$%s must not be pass-by-reference", prop.SetParam, class.Name, prop.VarName),
 							Code: phpv.E_COMPILE_ERROR,
@@ -468,10 +467,27 @@ func compilePropertyHooks(prop *phpv.ZClassProp, class *phpobj.ZClass, c compile
 					if i.IsSingle(')') {
 						break
 					}
+					// Any token before $variable is part of a type hint
+					if !hasParamType {
+						hasParamType = true
+						paramTypeLoc = i.Loc()
+					}
 				}
 				if !i.IsSingle(')') {
 					return i.Unexpected()
 				}
+
+				// PHP 8.4: If the set hook parameter has an explicit type and the
+				// property has no type, that's always invalid.
+				if hasParamType && prop.TypeHint == nil {
+					return &phpv.PhpError{
+						Err:  fmt.Errorf("Type of parameter $%s of hook %s::$%s::set must be compatible with property type", prop.SetParam, class.Name, prop.VarName),
+						Code: phpv.E_COMPILE_ERROR,
+						Loc:  paramTypeLoc,
+					}
+				}
+				prop.SetParamHasType = hasParamType
+
 				i, err = c.NextItem()
 				if err != nil {
 					return err

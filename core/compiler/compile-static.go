@@ -9,9 +9,10 @@ import (
 )
 
 type staticVarInfo struct {
-	varName phpv.ZString
-	def     phpv.Runnable
-	z       *phpv.ZVal
+	varName  phpv.ZString
+	def      phpv.Runnable
+	z        *phpv.ZVal
+	perClass map[phpv.ZString]*phpv.ZVal // per-class storage for trait method isolation
 }
 
 type runStaticVar struct {
@@ -55,21 +56,49 @@ func (r *runStaticVar) Dump(w io.Writer) error {
 }
 
 func (r *runStaticVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {
-	// set vars in ctx
 	for _, v := range r.vars {
-		if v.z == nil {
-			if v.def == nil {
-				v.z = phpv.ZNull{}.ZVal()
+		// Use per-class storage when inside a class method (for trait isolation)
+		var classKey phpv.ZString
+		if cls := ctx.Class(); cls != nil {
+			classKey = cls.GetName()
+		}
+
+		var z *phpv.ZVal
+		if classKey != "" {
+			if v.perClass == nil {
+				v.perClass = make(map[phpv.ZString]*phpv.ZVal)
+			}
+			if existing, ok := v.perClass[classKey]; ok {
+				z = existing
 			} else {
-				var err error
-				v.z, err = v.def.Run(ctx)
-				if err != nil {
-					return nil, err
+				if v.def == nil {
+					z = phpv.ZNull{}.ZVal()
+				} else {
+					var err error
+					z, err = v.def.Run(ctx)
+					if err != nil {
+						return nil, err
+					}
+				}
+				v.perClass[classKey] = z
+			}
+		} else {
+			if v.z == nil {
+				if v.def == nil {
+					v.z = phpv.ZNull{}.ZVal()
+				} else {
+					var err error
+					v.z, err = v.def.Run(ctx)
+					if err != nil {
+						return nil, err
+					}
 				}
 			}
+			z = v.z
 		}
+
 		ctx.OffsetUnset(ctx, v.varName.ZVal())
-		ctx.OffsetSet(ctx, v.varName.ZVal(), v.z)
+		ctx.OffsetSet(ctx, v.varName.ZVal(), z)
 	}
 	return nil, nil
 }

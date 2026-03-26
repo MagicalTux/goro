@@ -35,11 +35,13 @@ func (h *UserStreamHandler) Open(ctx phpv.Context, path *url.URL, mode string, s
 	// Call stream_open($path, $mode, $options, &$opened_path)
 	fullPath := path.String()
 
+	openedPath := phpv.ZString("").ZVal()
+	openedPath.MakeRef()
 	result, err := obj.CallMethod(ctx, "stream_open",
 		phpv.ZString(fullPath).ZVal(),
 		phpv.ZString(mode).ZVal(),
 		phpv.ZInt(0).ZVal(),
-		phpv.ZNULL.ZVal(),
+		openedPath,
 	)
 	if err != nil {
 		return nil, err
@@ -49,12 +51,19 @@ func (h *UserStreamHandler) Open(ctx phpv.Context, path *url.URL, mode string, s
 		return nil, os.ErrNotExist
 	}
 
-	// Create a stream wrapping the PHP object
+	globalCtx, ok := ctx.Global().(phpv.Context)
+	if !ok {
+		globalCtx = ctx
+	}
 	us := &UserStream{
-		ctx: ctx,
+		ctx: globalCtx,
 		obj: obj,
 	}
 	s := NewStream(us)
+	s.SetAttr("wrapper_type", "user-space")
+	s.SetAttr("mode", mode)
+	s.SetAttr("seekable", true)
+	s.SetAttr("uri", fullPath)
 	s.ResourceType = phpv.ResourceStream
 	s.ResourceID = ctx.Global().NextResourceID()
 	return s, nil

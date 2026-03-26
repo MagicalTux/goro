@@ -316,13 +316,15 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 				return c.fatalError(ctx, fmt.Sprintf("Access level to %s::$%s must be protected (as in class %s) or weaker", c.Name, childProp.VarName, c.Extends.Name))
 			}
 
-			// Check readonly mismatch
+			// Check readonly mismatch.
+			// Exception: abstract hooked properties allow readonly mismatch.
 			parentReadonly := parentProp.Modifiers.IsReadonly()
 			childReadonly := childProp.Modifiers.IsReadonly()
-			if parentReadonly && !childReadonly {
+			parentIsAbstractHooked := parentProp.HasHooks && parentProp.Modifiers.Has(phpv.ZAttrAbstract)
+			if parentReadonly && !childReadonly && !parentIsAbstractHooked {
 				return c.fatalError(ctx, fmt.Sprintf("Cannot redeclare readonly property %s::$%s as non-readonly %s::$%s", c.Extends.Name, childProp.VarName, c.Name, childProp.VarName))
 			}
-			if !parentReadonly && childReadonly {
+			if !parentReadonly && childReadonly && !parentIsAbstractHooked {
 				return c.fatalError(ctx, fmt.Sprintf("Cannot redeclare non-readonly property %s::$%s as readonly %s::$%s", c.Extends.Name, childProp.VarName, c.Name, childProp.VarName))
 			}
 
@@ -1514,23 +1516,61 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 			allProps[prop.VarName] = prop
 		}
 
-		// Check inherited abstract hooks from parent classes
+		// Check inherited abstract hooks from parent classes.
+		// Check ownProps first, then intermediate parents for concrete implementations.
+		seenAbstractHook := make(map[string]bool)
 		for parent := c.Extends; parent != nil; parent = parent.Extends {
 			for _, parentProp := range parent.Props {
-				// Use OWN props to check if the child has a concrete implementation
 				concrete := ownProps[parentProp.VarName]
-				// A plain property (not hooked) satisfies any abstract hook
-				if concrete != nil && !concrete.HasHooks {
+				// A plain non-hooked non-readonly property satisfies any abstract hook.
+				if concrete != nil && !concrete.HasHooks && !concrete.Modifiers.IsReadonly() {
 					continue
 				}
+				// If no own prop, check intermediate parents
+				if concrete == nil {
+					for mid := c.Extends; mid != nil && mid != parent; mid = mid.Extends {
+						for _, midProp := range mid.Props {
+							if midProp.VarName == parentProp.VarName {
+								concrete = midProp
+								break
+							}
+						}
+						if concrete != nil {
+							break
+						}
+					}
+					if concrete != nil && !concrete.HasHooks && !concrete.Modifiers.IsReadonly() {
+						continue
+					}
+				}
 				if parentProp.GetIsAbstract && parentProp.GetHook == nil {
-					if concrete == nil || (concrete.GetHook == nil && !concrete.HasGetDeclared) {
-						abstractHooks = append(abstractHooks, string(parent.Name)+"::$"+string(parentProp.VarName)+"::get")
+					hookKey := string(parentProp.VarName) + "::get"
+					if !seenAbstractHook[hookKey] {
+						seenAbstractHook[hookKey] = true
+						satisfied := false
+						if concrete != nil {
+							if concrete.GetHook != nil || (concrete.HasGetDeclared && !concrete.GetIsAbstract) || concrete.Modifiers.IsReadonly() || !concrete.HasHooks {
+								satisfied = true
+							}
+						}
+						if !satisfied {
+							abstractHooks = append(abstractHooks, string(parent.Name)+"::$"+string(parentProp.VarName)+"::get")
+						}
 					}
 				}
 				if parentProp.SetIsAbstract && parentProp.SetHook == nil {
-					if concrete == nil || (concrete.SetHook == nil && !concrete.HasSetDeclared) {
-						abstractHooks = append(abstractHooks, string(parent.Name)+"::$"+string(parentProp.VarName)+"::set")
+					hookKey := string(parentProp.VarName) + "::set"
+					if !seenAbstractHook[hookKey] {
+						seenAbstractHook[hookKey] = true
+						satisfied := false
+						if concrete != nil {
+							if concrete.SetHook != nil || (concrete.HasSetDeclared && !concrete.SetIsAbstract) || (!concrete.HasHooks && !concrete.Modifiers.IsReadonly()) {
+								satisfied = true
+							}
+						}
+						if !satisfied {
+							abstractHooks = append(abstractHooks, string(parent.Name)+"::$"+string(parentProp.VarName)+"::set")
+						}
 					}
 				}
 			}

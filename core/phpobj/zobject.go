@@ -733,6 +733,33 @@ func (o *ZObject) init(ctx phpv.Context) error {
 		class = parent.(*ZClass)
 	}
 
+	// PHP 8.4: Build a set of property names where a child class overrides
+	// with a virtual hooked property (no default value). The parent's default
+	// should NOT be inherited in this case.
+	virtualOverrides := make(map[phpv.ZString]bool)
+	// lineage[0] is the most-derived class (child), iterate from child to parent
+	for i, cl := range lineage {
+		if i == 0 {
+			continue // skip the most-derived class itself, only check overrides
+		}
+		for _, p := range lineage[0].Props { // check child's props
+			if p.Modifiers.IsStatic() || p.Modifiers.IsPrivate() {
+				continue
+			}
+			if p.HasHooks && p.Default == nil {
+				// Check if a parent has this property with a default
+				for j := i; j < len(lineage); j++ {
+					for _, pp := range lineage[j].Props {
+						if pp.VarName == p.VarName && pp.Default != nil {
+							virtualOverrides[p.VarName] = true
+						}
+					}
+				}
+			}
+		}
+		_ = cl
+	}
+
 	for _, class := range slices.Backward(lineage) {
 		// Set compiling class for self::/parent:: resolution in property defaults
 		ctx.Global().SetCompilingClass(class)
@@ -745,6 +772,11 @@ func (o *ZObject) init(ctx phpv.Context) error {
 				if p.Modifiers.IsPrivate() {
 					o.hasPrivate[p.VarName] = struct{}{}
 				}
+				continue
+			}
+			// PHP 8.4: If a child class overrides this property with a hooked property
+			// that has no default value, skip the parent's default initialization.
+			if virtualOverrides[p.VarName] && class != lineage[0] {
 				continue
 			}
 			if p.Modifiers.IsPrivate() {

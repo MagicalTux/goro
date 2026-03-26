@@ -215,6 +215,18 @@ func (g *Global) RegisterStreamHandler(scheme string, handler stream.Handler) {
 	g.streamHandlers[scheme] = handler
 }
 
+// HasStreamHandler checks if a scheme has a registered stream handler.
+func (g *Global) HasStreamHandler(scheme string) bool {
+	_, ok := g.streamHandlers[scheme]
+	return ok
+}
+
+// GetStreamHandler returns the registered stream handler for a scheme.
+func (g *Global) GetStreamHandler(scheme string) (stream.Handler, bool) {
+	h, ok := g.streamHandlers[scheme]
+	return h, ok
+}
+
 func (g *Global) UnregisterStreamHandler(scheme string) bool {
 	if _, ok := g.streamHandlers[scheme]; !ok {
 		return false

@@ -34,8 +34,9 @@ type ZClassProp struct {
 	SetIsAbstract   bool     // true if set hook is abstract (set;)
 	GetIsFinal      bool     // true if get hook is declared final
 	SetIsFinal      bool     // true if set hook is declared final
-	HasGetDeclared  bool     // true if get hook was declared (even abstract)
-	HasSetDeclared  bool     // true if set hook was declared (even abstract)
+	HasGetDeclared   bool     // true if get hook was declared (even abstract)
+	HasSetDeclared   bool     // true if set hook was declared (even abstract)
+	SetParamHasType  bool     // true if set hook parameter has explicit type hint
 }
 
 // IsVirtual returns true if this property is virtual (has hooks but no backing store).

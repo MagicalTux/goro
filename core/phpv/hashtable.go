@@ -285,6 +285,51 @@ func (z *ZHashTable) SetString(k ZString, v *ZVal) error {
 	return nil
 }
 
+// ForceSetString replaces the ZVal for a key entirely, bypassing the
+// reference-preserving behavior of Set(). This is used by unserialize() to
+// overwrite properties that may be references without updating through them.
+func (z *ZHashTable) ForceSetString(k ZString, v *ZVal) error {
+	if v == nil {
+		return z.UnsetString(k)
+	}
+
+	z.lock.Lock()
+	defer z.lock.Unlock()
+
+	if z.cow {
+		z.doCopy()
+	}
+
+	t, ok := z._idx_s[k]
+	if ok {
+		// Replace the ZVal pointer entirely, breaking any reference
+		t.v = v
+		return nil
+	}
+
+	// Track new element allocation
+	if z.memTracker != nil {
+		if err := z.memTracker.MemAlloc(memEstimatePerElement); err != nil {
+			return err
+		}
+	}
+
+	// append
+	nt := &hashTableVal{k: k, v: v}
+	z.count += 1
+	z._idx_s[k] = nt
+	if z.last == nil {
+		z.mainIterator.cur = nt
+		z.first = nt
+		z.last = nt
+		return nil
+	}
+	z.last.next = nt
+	nt.prev = z.last
+	z.last = nt
+	return nil
+}
+
 func (z *ZHashTable) UnsetString(k ZString) error {
 	z.lock.Lock()
 	defer z.lock.Unlock()
