@@ -33,14 +33,23 @@ func (f *UserFilter) GetObject() *phpobj.ZObject {
 
 // Process implements StreamFilter by calling the PHP filter() method
 func (f *UserFilter) Process(data []byte, closing bool) ([]byte, error) {
+	// Use the stream's filter context if available (it's set from the calling code),
+	// falling back to the stored context from filter creation
+	ctx := f.ctx
+	if f.stream != nil && f.stream.filterCtx != nil {
+		ctx = f.stream.filterCtx
+	}
+
 	// Create input brigade (list of buckets)
 	inBrigade := NewBucketBrigade()
+	inBrigade.SetCtx(ctx)
 	if len(data) > 0 {
 		inBrigade.Append(&Bucket{Data: data})
 	}
 
 	// Create output brigade
 	outBrigade := NewBucketBrigade()
+	outBrigade.SetCtx(ctx)
 
 	// Create consumed reference
 	consumed := phpv.ZInt(0).ZVal()
@@ -50,7 +59,7 @@ func (f *UserFilter) Process(data []byte, closing bool) ([]byte, error) {
 	f.setStreamProperty()
 
 	// Call filter($in, $out, &$consumed, $closing)
-	result, err := f.obj.CallMethod(f.ctx, "filter",
+	result, err := f.obj.CallMethod(ctx, "filter",
 		inBrigade.ZVal(),
 		outBrigade.ZVal(),
 		consumed,
@@ -63,7 +72,7 @@ func (f *UserFilter) Process(data []byte, closing bool) ([]byte, error) {
 	// Check return value
 	retCode := PSFS_FEED_ME
 	if result != nil {
-		retCode = int(result.AsInt(f.ctx))
+		retCode = int(result.AsInt(ctx))
 	}
 
 	switch retCode {
@@ -92,13 +101,14 @@ func (f *UserFilter) OnClose() {
 }
 
 // setStreamProperty sets $this->stream to the stream resource if the property
-// is declared and compatible
+// is declared and compatible. It recovers from any panics caused by type
+// mismatches or missing contexts.
 func (f *UserFilter) setStreamProperty() {
-	if f.stream == nil || f.obj == nil {
+	if f.stream == nil || f.obj == nil || f.ctx == nil {
 		return
 	}
-	// Try to set the stream property - if it's a typed property that doesn't
-	// accept resources, that will fail naturally when PHP code accesses it
+	// Recover from panics - OffsetSet might trigger ThrowError for typed properties
+	defer func() { recover() }()
 	f.obj.OffsetSet(f.ctx, phpv.ZStr("stream"), f.stream.ZVal())
 }
 
@@ -113,6 +123,7 @@ type Bucket struct {
 // BucketBrigade represents a chain of buckets passed between filters
 type BucketBrigade struct {
 	buckets []*Bucket
+	ctx     phpv.Context
 	id      int
 }
 
@@ -123,6 +134,11 @@ func NewBucketBrigade() *BucketBrigade {
 	return &BucketBrigade{
 		id: nextBrigadeID,
 	}
+}
+
+// SetCtx sets the context for the brigade (used for collecting data)
+func (bb *BucketBrigade) SetCtx(ctx phpv.Context) {
+	bb.ctx = ctx
 }
 
 func (bb *BucketBrigade) Append(b *Bucket) {
@@ -163,8 +179,8 @@ func (bb *BucketBrigade) CollectData() []byte {
 	for _, b := range bb.buckets {
 		if b.obj != nil {
 			// Read data from the PHP object (it may have been modified)
-			if dataVal, err := b.obj.OffsetGet(nil, phpv.ZStr("data")); err == nil && dataVal != nil {
-				result = append(result, []byte(dataVal.AsString(nil))...)
+			if dataVal, err := b.obj.OffsetGet(bb.ctx, phpv.ZStr("data")); err == nil && dataVal != nil {
+				result = append(result, []byte(dataVal.AsString(bb.ctx))...)
 				continue
 			}
 		}

@@ -132,6 +132,17 @@ func doVarExport(ctx phpv.Context, w io.Writer, z *phpv.ZVal, linePfx string, re
 		}
 		fmt.Fprintf(w, "%s)", linePfx)
 	case phpv.ZtObject:
+		// Lazy objects: var_export triggers initialization
+		if obj, ok := z.Value().(*phpobj.ZObject); ok && obj.IsLazy() {
+			if err := obj.TriggerLazyInit(ctx); err != nil {
+				return err
+			}
+		}
+		// For initialized proxies, use the real instance
+		if obj, ok := z.Value().(*phpobj.ZObject); ok && obj.LazyState == phpobj.LazyProxyInitialized && obj.LazyInstance != nil {
+			z = obj.LazyInstance.ZVal()
+		}
+
 		if obj, ok := z.Value().(*phpobj.ZObject); ok {
 			recurs[uintptr(unsafe.Pointer(obj))] = true
 		} else {

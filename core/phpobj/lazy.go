@@ -2,6 +2,7 @@ package phpobj
 
 import (
 	"fmt"
+	"iter"
 
 	"github.com/MagicalTux/goro/core/phpv"
 )
@@ -49,6 +50,9 @@ func (o *ZObject) MakeLazyGhost(initializer *phpv.ZVal) {
 
 	// Clear all property values - lazy objects start with no properties
 	o.h = phpv.NewHashTable()
+
+	// If the class has no non-static, non-virtual properties, auto-realize immediately
+	o.checkAutoRealizeNoProps()
 }
 
 // MakeLazyProxy sets up this object as a lazy proxy with the given factory.
@@ -61,6 +65,41 @@ func (o *ZObject) MakeLazyProxy(factory *phpv.ZVal) {
 
 	// Clear all property values
 	o.h = phpv.NewHashTable()
+
+	// If the class has no non-static, non-virtual properties, auto-realize immediately
+	o.checkAutoRealizeNoProps()
+}
+
+// checkAutoRealizeNoProps checks if the class has zero non-static, non-virtual
+// properties, and if so marks the lazy object as initialized immediately.
+func (o *ZObject) checkAutoRealizeNoProps() {
+	if !o.IsLazy() {
+		return
+	}
+	zc, ok := o.Class.(*ZClass)
+	if !ok {
+		// Non-ZClass (e.g. stdClass) has no declared properties
+		o.LazyState = LazyGhostInitialized
+		o.LazyInitializer = nil
+		return
+	}
+
+	for cur := zc; cur != nil; cur = cur.Extends {
+		for _, p := range cur.Props {
+			if p.Modifiers.IsStatic() || p.IsVirtual() {
+				continue
+			}
+			return // Has at least one non-static, non-virtual property
+		}
+	}
+
+	// No non-static, non-virtual properties - realize immediately
+	if o.LazyState == LazyGhostUninitialized {
+		o.LazyState = LazyGhostInitialized
+	} else if o.LazyState == LazyProxyUninitialized {
+		o.LazyState = LazyProxyInitialized
+	}
+	o.LazyInitializer = nil
 }
 
 // IsPropertySkippedForLazy checks if a property has been marked as "skipped"
@@ -165,6 +204,8 @@ func (o *ZObject) SetRawValueWithoutLazyInit(ctx phpv.Context, propName phpv.ZSt
 					} else {
 						o.h.SetString(p.VarName, value)
 					}
+					// Check auto-realize after setting
+					o.checkAutoRealize(ctx)
 					return
 				}
 			}
@@ -173,6 +214,7 @@ func (o *ZObject) SetRawValueWithoutLazyInit(ctx phpv.Context, propName phpv.ZSt
 
 	// Dynamic property or fallback
 	o.h.SetString(propName, value)
+	o.checkAutoRealize(ctx)
 }
 
 // TriggerLazyInit triggers lazy initialization if the object is lazy and
@@ -222,10 +264,22 @@ func (o *ZObject) doLazyInit(ctx phpv.Context) error {
 func (o *ZObject) doGhostInit(ctx phpv.Context) error {
 	// Save current state for rollback on exception
 	savedH := o.h.Dup()
+	savedState := o.LazyState
+
+	// Initialize properties to their default values BEFORE calling the initializer.
+	// The initializer sees the object with default values already set.
+	o.initDefaultProps(ctx)
+
+	// Mark as initialized before calling the initializer so that property
+	// accesses inside the initializer don't trigger recursive initialization.
+	o.LazyState = LazyGhostInitialized
 
 	// Resolve the initializer ZVal to a Callable
 	callable, resolveErr := FiberResolveCallable(ctx, o.LazyInitializer)
 	if resolveErr != nil {
+		// Rollback: restore saved state, object remains lazy
+		o.h = savedH
+		o.LazyState = savedState
 		return resolveErr
 	}
 
@@ -234,6 +288,7 @@ func (o *ZObject) doGhostInit(ctx phpv.Context) error {
 	if err != nil {
 		// Rollback: restore saved state, object remains lazy
 		o.h = savedH
+		o.LazyState = savedState
 		return err
 	}
 
@@ -241,15 +296,12 @@ func (o *ZObject) doGhostInit(ctx phpv.Context) error {
 	if result != nil && !result.IsNull() {
 		// Rollback
 		o.h = savedH
+		o.LazyState = savedState
 		return ThrowError(ctx, TypeError, "Lazy object initializer must return NULL or no value")
 	}
 
 	// Mark as initialized
-	o.LazyState = LazyGhostInitialized
 	o.LazyInitializer = nil
-
-	// Initialize any remaining properties that weren't set by the initializer
-	o.initDefaultProps(ctx)
 
 	return nil
 }
@@ -474,4 +526,140 @@ func (o *ZObject) ResolveProxy() *ZObject {
 	// If the resolved instance is itself a lazy proxy that needs initialization,
 	// return it so the caller can trigger init
 	return cur
+}
+
+// lazyObjectIterator wraps an iterator that triggers lazy initialization on
+// first use (e.g., foreach on a lazy object).
+type lazyObjectIterator struct {
+	obj     *ZObject
+	scope   phpv.ZClass
+	inner   phpv.ZIterator
+	initErr error
+}
+
+func (it *lazyObjectIterator) ensureInit(ctx phpv.Context) {
+	if it.inner != nil || it.initErr != nil {
+		return
+	}
+	if it.obj.IsLazy() {
+		it.initErr = it.obj.TriggerLazyInit(ctx)
+		if it.initErr != nil {
+			return
+		}
+	}
+	// After init, delegate to the real object's iterator
+	target := it.obj
+	if target.LazyState == LazyProxyInitialized && target.LazyInstance != nil {
+		target = target.ResolveProxy()
+	}
+	it.inner = target.NewIteratorInScope(it.scope)
+}
+
+func (it *lazyObjectIterator) Current(ctx phpv.Context) (*phpv.ZVal, error) {
+	it.ensureInit(ctx)
+	if it.initErr != nil {
+		return nil, it.initErr
+	}
+	if it.inner == nil {
+		return nil, nil
+	}
+	return it.inner.Current(ctx)
+}
+
+func (it *lazyObjectIterator) Key(ctx phpv.Context) (*phpv.ZVal, error) {
+	it.ensureInit(ctx)
+	if it.initErr != nil {
+		return nil, it.initErr
+	}
+	if it.inner == nil {
+		return nil, nil
+	}
+	return it.inner.Key(ctx)
+}
+
+func (it *lazyObjectIterator) Next(ctx phpv.Context) (*phpv.ZVal, error) {
+	it.ensureInit(ctx)
+	if it.initErr != nil {
+		return nil, it.initErr
+	}
+	if it.inner == nil {
+		return nil, nil
+	}
+	return it.inner.Next(ctx)
+}
+
+func (it *lazyObjectIterator) Prev(ctx phpv.Context) (*phpv.ZVal, error) {
+	it.ensureInit(ctx)
+	if it.initErr != nil {
+		return nil, it.initErr
+	}
+	if it.inner == nil {
+		return nil, nil
+	}
+	return it.inner.Prev(ctx)
+}
+
+func (it *lazyObjectIterator) Reset(ctx phpv.Context) (*phpv.ZVal, error) {
+	it.ensureInit(ctx)
+	if it.initErr != nil {
+		return nil, it.initErr
+	}
+	if it.inner == nil {
+		return nil, nil
+	}
+	return it.inner.Reset(ctx)
+}
+
+func (it *lazyObjectIterator) ResetIfEnd(ctx phpv.Context) (*phpv.ZVal, error) {
+	it.ensureInit(ctx)
+	if it.initErr != nil {
+		return nil, it.initErr
+	}
+	if it.inner == nil {
+		return nil, nil
+	}
+	return it.inner.ResetIfEnd(ctx)
+}
+
+func (it *lazyObjectIterator) End(ctx phpv.Context) (*phpv.ZVal, error) {
+	it.ensureInit(ctx)
+	if it.initErr != nil {
+		return nil, it.initErr
+	}
+	if it.inner == nil {
+		return nil, nil
+	}
+	return it.inner.End(ctx)
+}
+
+func (it *lazyObjectIterator) Valid(ctx phpv.Context) bool {
+	it.ensureInit(ctx)
+	if it.initErr != nil {
+		return false
+	}
+	if it.inner == nil {
+		return false
+	}
+	return it.inner.Valid(ctx)
+}
+
+func (it *lazyObjectIterator) Iterate(ctx phpv.Context) iter.Seq2[*phpv.ZVal, *phpv.ZVal] {
+	it.ensureInit(ctx)
+	if it.initErr != nil || it.inner == nil {
+		return func(yield func(*phpv.ZVal, *phpv.ZVal) bool) {}
+	}
+	return it.inner.Iterate(ctx)
+}
+
+func (it *lazyObjectIterator) IterateRaw(ctx phpv.Context) iter.Seq2[*phpv.ZVal, *phpv.ZVal] {
+	it.ensureInit(ctx)
+	if it.initErr != nil || it.inner == nil {
+		return func(yield func(*phpv.ZVal, *phpv.ZVal) bool) {}
+	}
+	return it.inner.IterateRaw(ctx)
+}
+
+// Err returns any pending error from lazy initialization.
+func (it *lazyObjectIterator) Err() error {
+	return it.initErr
 }

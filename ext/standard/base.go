@@ -916,6 +916,17 @@ func stdGetObjectVars(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZFalse.ZVal(), nil
 	}
 
+	// Trigger lazy initialization for lazy objects
+	if zo, ok := o.(*phpobj.ZObject); ok && zo.IsLazy() {
+		if err := zo.TriggerLazyInit(ctx); err != nil {
+			return nil, err
+		}
+	}
+	// For initialized proxies, delegate to the real instance
+	if zo, ok := o.(*phpobj.ZObject); ok && zo.LazyState == phpobj.LazyProxyInitialized && zo.LazyInstance != nil {
+		o = zo.LazyInstance
+	}
+
 	// Use the calling scope's class for visibility checks.
 	// Use Parent(1) since we're inside the get_object_vars function context.
 	callerCtx := ctx.Parent(1)

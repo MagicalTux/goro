@@ -88,6 +88,10 @@ func (z *ZObject) CallDestructor(ctx phpv.Context) error {
 	if z.IsDestructed() {
 		return nil
 	}
+	// Lazy objects that were never initialized should not have their destructor called
+	if z.IsLazy() {
+		return nil
+	}
 	m, ok := z.Class.GetMethod("__destruct")
 	if !ok {
 		return nil
@@ -134,6 +138,10 @@ func (z *ZObject) CallDestructor(ctx phpv.Context) error {
 // PHP always allows the destructor to run regardless of visibility.
 func (z *ZObject) CallImplicitDestructor(ctx phpv.Context) error {
 	if z.IsDestructed() {
+		return nil
+	}
+	// Lazy objects that were never initialized should not have their destructor called
+	if z.IsLazy() {
 		return nil
 	}
 	m, ok := z.Class.GetMethod("__destruct")
@@ -324,8 +332,27 @@ func (z *ZObject) AsVal(ctx phpv.Context, t phpv.ZType) (phpv.Val, error) {
 	return nil, ctx.Errorf("failed to convert object to %s", t)
 }
 
-// toArray converts an object to an array with PHP's property name mangling
+// toArray converts an object to an array with PHP's property name mangling.
+// For uninitialized lazy objects, returns only the currently-set properties
+// (does NOT trigger initialization).
 func (z *ZObject) toArray(ctx phpv.Context) *phpv.ZArray {
+	// For uninitialized lazy objects, return only the hash table entries
+	if z.IsLazy() {
+		arr := phpv.NewZArray()
+		it := z.h.NewIterator()
+		for it.Valid(ctx) {
+			k, _ := it.Key(ctx)
+			v, _ := it.Current(ctx)
+			arr.OffsetSet(ctx, k, v)
+			it.Next(ctx)
+		}
+		return arr
+	}
+	// For initialized proxies, delegate to the real instance
+	if z.LazyState == LazyProxyInitialized && z.LazyInstance != nil {
+		return z.LazyInstance.toArray(ctx)
+	}
+
 	arr := phpv.NewZArray()
 	for prop := range z.IterProps(ctx) {
 		var key phpv.ZString
@@ -2473,6 +2500,14 @@ func (o *ZObject) ObjectSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) er
 }
 
 func (o *ZObject) NewIterator() phpv.ZIterator {
+	// Lazy objects: foreach triggers initialization
+	if o.IsLazy() {
+		// Create a lazy-aware iterator that triggers init on first access
+		return &lazyObjectIterator{obj: o, scope: nil}
+	}
+	if o.LazyState == LazyProxyInitialized && o.LazyInstance != nil {
+		return o.LazyInstance.NewIterator()
+	}
 	return o.NewIteratorInScope(nil)
 }
 
@@ -2493,6 +2528,7 @@ func (o *ZObject) classHasHooks() bool {
 // relative to the given scope class. If scope is nil, only public properties
 // are visible (external access). If scope matches the object's class or a
 // parent, protected/private properties become visible accordingly.
+// For lazy objects, this triggers initialization (e.g., for get_object_vars).
 //
 // For objects with hooked properties, this builds an ordered list of entries
 // that includes virtual hooked properties (calling get hooks to produce values).

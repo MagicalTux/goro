@@ -76,8 +76,9 @@ type Global struct {
 	included      map[phpv.ZString]bool // included files (used for require_once, etc)
 	includePath   []string              // TODO: initialize
 
-	streamHandlers map[string]stream.Handler
-	fileHandler    *stream.FileHandler
+	streamHandlers      map[string]stream.Handler
+	fileHandler         *stream.FileHandler
+	StreamFilterRegistry *stream.FilterRegistry
 
 	globalLazyFunc  map[phpv.ZString]*globalLazyOffset
 	globalLazyClass map[phpv.ZString]*globalLazyOffset
@@ -201,6 +202,7 @@ func createGlobal(p *Process) *Global {
 	g.streamHandlers["php"] = stream.PhpHandler()
 	g.streamHandlers["http"] = stream.NewHttpHandler()
 	g.streamHandlers["data"] = stream.DataHandler
+	g.StreamFilterRegistry = stream.NewFilterRegistry()
 
 	g.initLocale()
 

@@ -11,11 +11,16 @@ type FilterRegistry struct {
 	filters  map[string]string // filter name -> class name
 }
 
-var globalFilterRegistry = &FilterRegistry{
-	filters: make(map[string]string),
+// NewFilterRegistry creates a new per-request filter registry
+func NewFilterRegistry() *FilterRegistry {
+	return &FilterRegistry{
+		filters: make(map[string]string),
+	}
 }
 
-// GetFilterRegistry returns the global filter registry
+var globalFilterRegistry = NewFilterRegistry()
+
+// GetFilterRegistry returns the global filter registry (deprecated, prefer per-request registry)
 func GetFilterRegistry() *FilterRegistry {
 	return globalFilterRegistry
 }

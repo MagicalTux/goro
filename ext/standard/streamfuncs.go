@@ -13,6 +13,14 @@ import (
 	"github.com/MagicalTux/goro/core/stream"
 )
 
+// getFilterRegistry returns the per-request stream filter registry from the context
+func getFilterRegistry(ctx phpv.Context) *stream.FilterRegistry {
+	if g, ok := ctx.Global().(*phpctx.Global); ok && g.StreamFilterRegistry != nil {
+		return g.StreamFilterRegistry
+	}
+	return getFilterRegistry(ctx)
+}
+
 // > func resource stream_context_create ([ array $options [, array $params ]] )
 func fncStreamContextCreate(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var options core.Optional[*phpv.ZArray]
@@ -346,7 +354,7 @@ func fncStreamGetFilters(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error
 		result.OffsetSet(ctx, nil, phpv.ZString(f).ZVal())
 	}
 	// Add registered user filters
-	for _, f := range stream.GetFilterRegistry().GetAll() {
+	for _, f := range getFilterRegistry(ctx).GetAll() {
 		result.OffsetSet(ctx, nil, phpv.ZString(f).ZVal())
 	}
 	return result.ZVal(), nil
@@ -399,23 +407,23 @@ func streamFilterAttach(ctx phpv.Context, args []*phpv.ZVal, prepend bool) (*php
 
 	if filter == nil {
 		// Try user-registered filter
-		className, found := stream.GetFilterRegistry().Lookup(name)
+		className, found := getFilterRegistry(ctx).Lookup(name)
 		if !found {
-			ctx.Warn("%s(): Unable to create or locate filter \"%s\"", funcName, name)
+			ctx.Warn("Unable to create or locate filter \"%s\"", name)
 			return phpv.ZFalse.ZVal(), nil
 		}
 
 		// Get the class
 		class, err := ctx.Global().GetClass(ctx, phpv.ZString(className), true)
 		if err != nil {
-			ctx.Warn("%s(): Unable to create or locate filter \"%s\"", funcName, name)
+			ctx.Warn("Unable to create or locate filter \"%s\"", name)
 			return phpv.ZFalse.ZVal(), nil
 		}
 
 		// Create an instance
 		obj, err := phpobj.NewZObject(ctx, class)
 		if err != nil {
-			ctx.Warn("%s(): Unable to create or locate filter \"%s\"", funcName, name)
+			ctx.Warn("Unable to create or locate filter \"%s\"", name)
 			return phpv.ZFalse.ZVal(), nil
 		}
 
@@ -430,11 +438,11 @@ func streamFilterAttach(ctx phpv.Context, args []*phpv.ZVal, prepend bool) (*php
 		// Call onCreate()
 		onCreateResult, err := obj.CallMethod(ctx, "onCreate")
 		if err != nil {
-			ctx.Warn("%s(): Unable to create or locate filter \"%s\"", funcName, name)
+			ctx.Warn("Unable to create or locate filter \"%s\"", name)
 			return phpv.ZFalse.ZVal(), nil
 		}
 		if onCreateResult != nil && !onCreateResult.AsBool(ctx) {
-			ctx.Warn("%s(): Unable to create or locate filter \"%s\"", funcName, name)
+			ctx.Warn("Unable to create or locate filter \"%s\"", name)
 			return phpv.ZFalse.ZVal(), nil
 		}
 
@@ -443,7 +451,12 @@ func streamFilterAttach(ctx phpv.Context, args []*phpv.ZVal, prepend bool) (*php
 			paramsVal = params.Get()
 		}
 
-		filter = stream.NewUserFilter(ctx, obj, s, name, paramsVal)
+		// Use the Global context so the filter survives beyond the current function scope
+		globalCtx, ok := ctx.Global().(phpv.Context)
+		if !ok {
+			globalCtx = ctx
+		}
+		filter = stream.NewUserFilter(globalCtx, obj, s, name, paramsVal)
 	}
 
 	// Create the filter resource
@@ -456,8 +469,12 @@ func streamFilterAttach(ctx phpv.Context, args []*phpv.ZVal, prepend bool) (*php
 		Stream:       s,
 	}
 
-	// Attach the filter
-	s.SetFilterCtx(ctx)
+	// Attach the filter - use Global context so it persists
+	globalCtx, ok := ctx.Global().(phpv.Context)
+	if !ok {
+		globalCtx = ctx
+	}
+	s.SetFilterCtx(globalCtx)
 	if dir&stream.FilterRead != 0 {
 		s.AddReadFilter(filterRes, prepend)
 	}
@@ -561,7 +578,7 @@ func fncStreamFilterRegister(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, e
 	}
 
 	// Register
-	ok := stream.GetFilterRegistry().Register(string(filterName), string(className))
+	ok := getFilterRegistry(ctx).Register(string(filterName), string(className))
 	if !ok {
 		return phpv.ZFalse.ZVal(), nil
 	}

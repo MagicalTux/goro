@@ -89,6 +89,11 @@ func reflectionClassNewLazyGhost(ctx phpv.Context, o *phpobj.ZObject, args []*ph
 		options = int64(args[1].AsInt(ctx))
 	}
 	if options&^int64(lazyNewGhostValidMask) != 0 {
+		// Check if there are completely invalid bits (outside all known flags)
+		if options&^int64(lazyResetValidMask) != 0 {
+			return nil, phpobj.ThrowError(ctx, ReflectionException,
+				"ReflectionClass::newLazyGhost(): Argument #2 ($options) contains invalid flags")
+		}
 		if options&int64(LazyObjectSkipDestructor) != 0 {
 			return nil, phpobj.ThrowError(ctx, ReflectionException,
 				"ReflectionClass::newLazyGhost(): Argument #2 ($options) does not accept ReflectionClass::SKIP_DESTRUCTOR")
@@ -97,8 +102,8 @@ func reflectionClassNewLazyGhost(ctx phpv.Context, o *phpobj.ZObject, args []*ph
 			"ReflectionClass::newLazyGhost(): Argument #2 ($options) contains invalid flags")
 	}
 
-	// Check for internal classes
-	if zc, ok := class.(*phpobj.ZClass); ok && zc.InternalOnly {
+	// Check for internal classes (classes defined in Go have no source location)
+	if zc, ok := class.(*phpobj.ZClass); ok && zc.L == nil {
 		return nil, phpobj.ThrowError(ctx, phpobj.Error,
 			fmt.Sprintf("Cannot make instance of internal class lazy: %s is internal", class.GetName()))
 	}
@@ -138,8 +143,8 @@ func reflectionClassNewLazyProxy(ctx phpv.Context, o *phpobj.ZObject, args []*ph
 			"ReflectionClass::newLazyProxy(): Argument #2 ($options) contains invalid flags")
 	}
 
-	// Check for internal classes
-	if zc, ok := class.(*phpobj.ZClass); ok && zc.InternalOnly {
+	// Check for internal classes (classes defined in Go have no source location)
+	if zc, ok := class.(*phpobj.ZClass); ok && zc.L == nil {
 		return nil, phpobj.ThrowError(ctx, phpobj.Error,
 			fmt.Sprintf("Cannot make instance of internal class lazy: %s is internal", class.GetName()))
 	}
@@ -269,7 +274,8 @@ func reflectionClassResetAsLazyGhost(ctx phpv.Context, o *phpobj.ZObject, args [
 	// Validate class compatibility: the object must be an instance of this class
 	if !obj.Class.InstanceOf(class) && obj.Class.GetName() != class.GetName() {
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
-			fmt.Sprintf("Object is not an instance of %s", class.GetName()))
+			fmt.Sprintf("ReflectionClass::resetAsLazyGhost(): Argument #1 ($object) must be of type %s, %s given",
+				class.GetName(), obj.Class.GetName()))
 	}
 
 	// Call destructor if not skipped
@@ -322,7 +328,8 @@ func reflectionClassResetAsLazyProxy(ctx phpv.Context, o *phpobj.ZObject, args [
 	// Validate class compatibility
 	if !obj.Class.InstanceOf(class) && obj.Class.GetName() != class.GetName() {
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
-			fmt.Sprintf("Object is not an instance of %s", class.GetName()))
+			fmt.Sprintf("ReflectionClass::resetAsLazyProxy(): Argument #1 ($object) must be of type %s, %s given",
+				class.GetName(), obj.Class.GetName()))
 	}
 
 	// Call destructor if not skipped

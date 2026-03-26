@@ -122,6 +122,16 @@ func appendJsonEncodeState(ctx phpv.Context, r []byte, v *phpv.ZVal, opt JsonEnc
 		if obj == nil {
 			return r, ErrUnsupportedType
 		}
+		// Lazy objects: json_encode triggers initialization
+		if zo, ok := obj.(*phpobj.ZObject); ok && zo.IsLazy() {
+			if err := zo.TriggerLazyInit(ctx); err != nil {
+				return r, err
+			}
+		}
+		// For initialized proxies, use the real instance
+		if zo, ok := obj.(*phpobj.ZObject); ok && zo.LazyState == phpobj.LazyProxyInitialized && zo.LazyInstance != nil {
+			obj = zo.LazyInstance
+		}
 		if st.markObject(obj) {
 			return r, ErrRecursion
 		}

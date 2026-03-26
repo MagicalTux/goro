@@ -266,6 +266,17 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seen *ser
 	case phpv.ZtObject:
 		obj := value.AsObject(ctx)
 
+		// Lazy objects: serialize triggers initialization
+		if zo, ok := obj.(*phpobj.ZObject); ok && zo.IsLazy() {
+			if err := zo.TriggerLazyInit(ctx); err != nil {
+				return "", err
+			}
+		}
+		// For initialized proxies, serialize the real instance
+		if zo, ok := obj.(*phpobj.ZObject); ok && zo.LazyState == phpobj.LazyProxyInitialized && zo.LazyInstance != nil {
+			obj = zo.LazyInstance
+		}
+
 		// Check if we've already fully serialized this object - produce r:N; reference
 		if refIdx, ok := seen.objRefs[obj]; ok {
 			return "r:" + strconv.Itoa(refIdx) + ";", nil
