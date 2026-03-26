@@ -458,6 +458,22 @@ func fncTempnam(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
+	// Check for null bytes in prefix
+	if strings.ContainsRune(prefix, 0) {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "tempnam(): Argument #2 ($prefix) must not contain any null bytes")
+	}
+
+	// PHP uses only the basename of the prefix (strips directory component)
+	if strings.ContainsRune(prefix, '/') {
+		idx := strings.LastIndexByte(prefix, '/')
+		prefix = prefix[idx+1:]
+	}
+
+	// PHP truncates prefix to 63 characters
+	if len(prefix) > 63 {
+		prefix = prefix[:63]
+	}
+
 	// Empty dir means system temp directory
 	if dir == "" {
 		dir = os.TempDir()
@@ -469,12 +485,27 @@ func fncTempnam(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	p := resolveFilePath(ctx, dir)
 
+	// Check if directory exists, fall back to system temp dir if not
+	if st, err := os.Stat(p); err != nil || !st.IsDir() {
+		ctx.Notice("tempnam(): file created in the system's temporary directory", logopt.NoFuncName(true))
+		p = os.TempDir()
+	}
+
 	f, err := os.CreateTemp(p, prefix)
 	if err != nil {
-		return phpv.ZFalse.ZVal(), ctx.Warn("%s", err)
+		// Fall back to system temp dir
+		ctx.Notice("tempnam(): file created in the system's temporary directory", logopt.NoFuncName(true))
+		f, err = os.CreateTemp(os.TempDir(), prefix)
+		if err != nil {
+			return phpv.ZFalse.ZVal(), ctx.Warn("%s", err)
+		}
 	}
 	name := f.Name()
 	f.Close()
+
+	// Set file permissions to 0600 (PHP's default for tempnam)
+	os.Chmod(name, 0600)
+
 	return phpv.ZString(name).ZVal(), nil
 }
 

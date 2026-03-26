@@ -221,7 +221,7 @@ func (f *FileHandler) OpenFile(ctx phpv.Context, fname string, mode string, _ ..
 		return nil, fmt.Errorf("`%s' is not a valid mode for fopen", invalidChar)
 	}
 
-	res, err := os.OpenFile(fname, flags, 0644)
+	res, err := os.OpenFile(fname, flags, 0666)
 	if err != nil {
 		return nil, err
 	}

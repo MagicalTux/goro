@@ -601,6 +601,60 @@ func initObjectStorage() {
 				return result.ZVal(), nil
 			}),
 		},
+		"serialize": {
+			Name: "serialize",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				d := getObjectStorageData(o)
+				count := 0
+				if d != nil {
+					count = len(d.order)
+				}
+				buf := fmt.Sprintf("x:i:%d;", count)
+				buf += "m:a:0:{}"
+				return phpv.ZString(buf).ZVal(), nil
+			}),
+		},
+		"unserialize": {
+			Name: "unserialize",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				if len(args) == 0 || args[0] == nil {
+					return nil, phpobj.ThrowError(ctx, phpobj.UnexpectedValueException,
+						"Error at offset 0 of 0 bytes")
+				}
+				ser := args[0].AsString(ctx)
+				if len(ser) == 0 {
+					return nil, nil
+				}
+				if len(ser) < 4 || string(ser[:2]) != "x:" {
+					return nil, phpobj.ThrowError(ctx, phpobj.UnexpectedValueException,
+						fmt.Sprintf("Error at offset 0 of %d bytes", len(ser)))
+				}
+				d := &splObjectStorageData{
+					entries: make(map[string]*splObjectStorageEntry),
+					pos:     0,
+				}
+				o.SetOpaque(SplObjectStorageClass, d)
+				offset := 2
+				if offset >= len(ser) || ser[offset] != 'i' {
+					return nil, phpobj.ThrowError(ctx, phpobj.UnexpectedValueException,
+						fmt.Sprintf("Error at offset %d of %d bytes", offset, len(ser)))
+				}
+				offset++
+				if offset >= len(ser) || ser[offset] != ':' {
+					return nil, phpobj.ThrowError(ctx, phpobj.UnexpectedValueException,
+						fmt.Sprintf("Error at offset %d of %d bytes", offset, len(ser)))
+				}
+				offset++
+				for offset < len(ser) && ser[offset] >= '0' && ser[offset] <= '9' {
+					offset++
+				}
+				if offset >= len(ser) || ser[offset] != ';' {
+					return nil, phpobj.ThrowError(ctx, phpobj.UnexpectedValueException,
+						fmt.Sprintf("Error at offset %d of %d bytes", offset, len(ser)))
+				}
+				return nil, nil
+			}),
+		},
 	}
 }
 
@@ -620,5 +674,5 @@ func callGetHash(ctx phpv.Context, storage *phpobj.ZObject, obj *phpobj.ZObject)
 
 var SplObjectStorageClass = &phpobj.ZClass{
 	Name:            "SplObjectStorage",
-	Implementations: []*phpobj.ZClass{Countable, phpobj.Iterator, phpobj.ArrayAccess},
+	Implementations: []*phpobj.ZClass{Countable, phpobj.Iterator, phpobj.ArrayAccess, phpobj.Serializable},
 }

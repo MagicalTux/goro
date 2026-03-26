@@ -554,20 +554,16 @@ func phpPathinfo(pathStr string) (dir, base, ext, filename string, hasExt bool) 
 		// dirname stays as computed, basename is empty
 	}
 
-	// Find extension: last dot in basename
+	// Find extension: last dot in basename.
+	// PHP treats ANY dot position (including 0) as an extension separator.
+	// E.g. ".cvsignore" -> extension="cvsignore", filename=""
+	// E.g. "." -> extension="", filename=""
 	dotIdx := strings.LastIndexByte(base, '.')
-	if dotIdx > 0 {
-		// Has extension (dot not at position 0 - ".hidden" has no extension in PHP)
+	if dotIdx >= 0 {
 		ext = base[dotIdx+1:]
 		filename = base[:dotIdx]
 		hasExt = true
-	} else if dotIdx == 0 {
-		// Starts with dot (e.g. ".hidden") - no extension
-		ext = ""
-		filename = base
-		hasExt = false
 	} else {
-		// No dot at all
 		ext = ""
 		filename = base
 		hasExt = false
