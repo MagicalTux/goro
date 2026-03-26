@@ -95,21 +95,78 @@ func (f *UserFilter) OnClose() {
 	if f.obj == nil {
 		return
 	}
+	// Only call onClose if the method exists
+	if _, ok := f.obj.Class.GetMethod("onclose"); !ok {
+		return
+	}
 	// Call onClose safely
 	defer func() { recover() }()
-	f.obj.CallMethod(f.ctx, "onClose")
+	ctx := f.ctx
+	if f.stream != nil && f.stream.filterCtx != nil {
+		ctx = f.stream.filterCtx
+	}
+	f.obj.CallMethod(ctx, "onClose")
 }
 
 // setStreamProperty sets $this->stream to the stream resource if the property
-// is declared and compatible. It recovers from any panics caused by type
-// mismatches or missing contexts.
+// is declared (or is a dynamic property) and compatible.
 func (f *UserFilter) setStreamProperty() {
 	if f.stream == nil || f.obj == nil || f.ctx == nil {
 		return
 	}
-	// Recover from panics - OffsetSet might trigger ThrowError for typed properties
+
+	ctx := f.ctx
+	if f.stream.filterCtx != nil {
+		ctx = f.stream.filterCtx
+	}
+
+	// Check if the class has a "stream" property declared
+	// If not, don't create it dynamically (PHP 8.2+ deprecates dynamic properties)
+	class := f.obj.Class
+	hasProp := false
+	if zc, ok := class.(*phpobj.ZClass); ok {
+		for _, p := range zc.Props {
+			if p.VarName == "stream" {
+				hasProp = true
+				break
+			}
+		}
+		// Also check parent class
+		if !hasProp {
+			parent := zc.GetParent()
+			for parent != nil {
+				if pzc, ok := parent.(*phpobj.ZClass); ok {
+					for _, p := range pzc.Props {
+						if p.VarName == "stream" {
+							hasProp = true
+							break
+						}
+					}
+					if hasProp {
+						break
+					}
+					parent = pzc.GetParent()
+				} else {
+					break
+				}
+			}
+		}
+	}
+
+	// Also check if the property was dynamically created (e.g., in onCreate)
+	if !hasProp {
+		if exists, _ := f.obj.HasProp(ctx, phpv.ZStr("stream")); exists {
+			hasProp = true
+		}
+	}
+
+	if !hasProp {
+		return
+	}
+
+	// Recover from panics - ObjectSet might trigger ThrowError for typed properties
 	defer func() { recover() }()
-	f.obj.OffsetSet(f.ctx, phpv.ZStr("stream"), f.stream.ZVal())
+	f.obj.ObjectSet(ctx, phpv.ZStr("stream"), f.stream.ZVal())
 }
 
 // --- Bucket Brigade ---
@@ -177,9 +234,9 @@ func (bb *BucketBrigade) MakeWriteable(ctx phpv.Context) *phpv.ZVal {
 func (bb *BucketBrigade) CollectData() []byte {
 	var result []byte
 	for _, b := range bb.buckets {
-		if b.obj != nil {
-			// Read data from the PHP object (it may have been modified)
-			if dataVal, err := b.obj.OffsetGet(bb.ctx, phpv.ZStr("data")); err == nil && dataVal != nil {
+		if b.obj != nil && bb.ctx != nil {
+			// Read data from the PHP object's "data" property (it may have been modified by user code)
+			if dataVal, err := b.obj.ObjectGet(bb.ctx, phpv.ZStr("data")); err == nil && dataVal != nil {
 				result = append(result, []byte(dataVal.AsString(bb.ctx))...)
 				continue
 			}
@@ -207,14 +264,30 @@ func (bb *BucketBrigade) AsVal(ctx phpv.Context, t phpv.ZType) (phpv.Val, error)
 	return nil, ErrNotSupported
 }
 
-// AppendBucketObj appends a PHP bucket object to the brigade
+// AppendBucketObj appends a PHP bucket object to the brigade.
+// If the object is already in the brigade, it is moved to the end (like PHP's linked list behavior).
 func (bb *BucketBrigade) AppendBucketObj(obj *phpobj.ZObject) {
+	// Remove existing entry with same object (PHP moves the bucket rather than duplicating)
+	bb.removeBucketObj(obj)
 	b := &Bucket{obj: obj}
 	bb.buckets = append(bb.buckets, b)
 }
 
-// PrependBucketObj prepends a PHP bucket object to the brigade
+// PrependBucketObj prepends a PHP bucket object to the brigade.
+// If the object is already in the brigade, it is moved to the front.
 func (bb *BucketBrigade) PrependBucketObj(obj *phpobj.ZObject) {
+	bb.removeBucketObj(obj)
 	b := &Bucket{obj: obj}
 	bb.buckets = append([]*Bucket{b}, bb.buckets...)
+}
+
+// removeBucketObj removes any bucket with the given object from the brigade
+func (bb *BucketBrigade) removeBucketObj(obj *phpobj.ZObject) {
+	newBuckets := make([]*Bucket, 0, len(bb.buckets))
+	for _, b := range bb.buckets {
+		if b.obj != obj {
+			newBuckets = append(newBuckets, b)
+		}
+	}
+	bb.buckets = newBuckets
 }

@@ -61,7 +61,8 @@ type ZObject struct {
 	// Stored as a pointer so wrapper objects share the same counter.
 	serializeApplyCount *int32
 
-	// Lazy object support (PHP 8.4)
+	// Lazy object support (PHP 8.4) - these fields are propagated to wrapper objects
+	// by the new() method so that wrappers share lazy state with the original.
 	// LazyState tracks whether this is a lazy ghost/proxy and its initialization state.
 	// 0 = not lazy, 1 = lazy ghost (uninitialized), 2 = lazy proxy (uninitialized),
 	// 3 = lazy ghost (initialized), 4 = lazy proxy (initialized)
@@ -631,6 +632,11 @@ func (z *ZObject) Unwrap() phpv.ZObject {
 	if z.CurrentClass == nil {
 		return z
 	}
+	// For lazy objects, return self to preserve the lazy state pointer.
+	// Creating a wrapper would lose lazy state synchronization.
+	if z.IsLazy() || z.LazyState != LazyNone {
+		return z
+	}
 	return z.new(nil)
 }
 
@@ -661,6 +667,12 @@ func (z *ZObject) new(class *ZClass) *ZObject {
 		destructed:          z.destructed,
 		jsonApplyCount:      z.jsonApplyCount,
 		serializeApplyCount: z.serializeApplyCount,
+		// Propagate lazy state so wrapper objects share it with the original
+		LazyState:        z.LazyState,
+		LazyInitializer:  z.LazyInitializer,
+		LazyInstance:     z.LazyInstance,
+		LazySkippedProps: z.LazySkippedProps,
+		LazyInitializing: z.LazyInitializing,
 	}
 }
 

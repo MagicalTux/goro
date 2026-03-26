@@ -2,11 +2,13 @@ package stream
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"net/url"
 	"os"
 	"strings"
 
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -67,7 +69,33 @@ type StdinProvider interface {
 	GetStdin() *Stream
 }
 
+// FilterOpener is implemented by Global to open streams with applied filters.
+type FilterOpener interface {
+	Open(ctx phpv.Context, fn phpv.ZString, mode phpv.ZString, useIncludePath bool, streamContext ...phpv.Resource) (phpv.Stream, error)
+}
+
+// FilterRegistryProvider provides access to the per-request filter registry
+type FilterRegistryProvider interface {
+	GetFilterRegistry() *FilterRegistry
+}
+
+// getRegistry returns the per-request filter registry if available, else the global one
+func getRegistry(ctx phpv.Context) *FilterRegistry {
+	if g := ctx.Global(); g != nil {
+		if p, ok := g.(FilterRegistryProvider); ok {
+			return p.GetFilterRegistry()
+		}
+	}
+	return GetFilterRegistry()
+}
+
 func (h *phpHandler) Open(ctx phpv.Context, p *url.URL, mode string, _ ...phpv.Resource) (*Stream, error) {
+	// Handle php://filter/... before the regular path switch
+	// For php://filter/read=.../resource=..., Host is "filter" and Path has the filter spec
+	if p.Host == "filter" || strings.HasPrefix(h.getPath(p), "filter") {
+		return h.openFilter(ctx, p, mode)
+	}
+
 	switch h.getPath(p) {
 	case "stdin":
 		// Check for context-specific stdin (e.g., test STDIN section)
@@ -126,6 +154,153 @@ func (h *phpHandler) Open(ctx phpv.Context, p *url.URL, mode string, _ ...phpv.R
 	default:
 		return nil, os.ErrNotExist
 	}
+}
+
+// openFilter implements php://filter/read=.../resource=... URL handling
+func (h *phpHandler) openFilter(ctx phpv.Context, p *url.URL, mode string) (*Stream, error) {
+	// Reconstruct the full path from the URL parts
+	// url.Parse of "php://filter/read=foo/resource=/path/to/file" gives:
+	// Scheme=php, Host=filter, Path=/read=foo/resource=/path/to/file
+	fullPath := ""
+	if p.Host == "filter" {
+		fullPath = strings.TrimPrefix(p.Path, "/")
+	} else {
+		// Fallback: host might not be "filter" if URL was parsed differently
+		fullPath = strings.TrimPrefix(p.Host+p.Path, "filter/")
+	}
+
+	var readFilters, writeFilters []string
+	var resourcePath string
+
+	// First, extract the resource= part (everything after "resource=")
+	// since the resource path may contain "/"
+	if idx := strings.Index(fullPath, "resource="); idx >= 0 {
+		resourcePath = fullPath[idx+len("resource="):]
+		fullPath = fullPath[:idx]
+	}
+
+	// Now parse the remaining parts for filter names
+	parts := strings.Split(strings.TrimSuffix(fullPath, "/"), "/")
+	for _, part := range parts {
+		if strings.HasPrefix(part, "read=") {
+			filters := strings.TrimPrefix(part, "read=")
+			for _, f := range strings.Split(filters, "|") {
+				if f != "" {
+					readFilters = append(readFilters, f)
+				}
+			}
+		} else if strings.HasPrefix(part, "write=") {
+			filters := strings.TrimPrefix(part, "write=")
+			for _, f := range strings.Split(filters, "|") {
+				if f != "" {
+					writeFilters = append(writeFilters, f)
+				}
+			}
+		} else if part != "" {
+			// Bare filter name (applies to both read and write)
+			readFilters = append(readFilters, part)
+			writeFilters = append(writeFilters, part)
+		}
+	}
+
+	if resourcePath == "" {
+		return nil, os.ErrNotExist
+	}
+
+	// Open the underlying resource
+	opener, ok := ctx.Global().(FilterOpener)
+	if !ok {
+		return nil, os.ErrNotExist
+	}
+
+	streamVal, err := opener.Open(ctx, phpv.ZString(resourcePath), phpv.ZString(mode), false)
+	if err != nil {
+		return nil, err
+	}
+
+	s, ok := streamVal.(*Stream)
+	if !ok {
+		return nil, os.ErrNotExist
+	}
+
+	s.SetFilterCtx(ctx)
+
+	// Apply read filters
+	for _, filterName := range readFilters {
+		filter := CreateBuiltinFilter(filterName, nil)
+		if filter == nil {
+			// Try user filter
+			reg := getRegistry(ctx)
+			if className, found := reg.Lookup(filterName); found {
+				class, err := ctx.Global().GetClass(ctx, phpv.ZString(className), true)
+				if err != nil {
+					ctx.Warn("Unable to create or locate filter \"%s\"", filterName)
+					s.Close()
+					return nil, fmt.Errorf("Unable to create filter (%s)", filterName)
+				}
+				obj, err := newFilterObject(ctx, class, filterName)
+				if err != nil {
+					ctx.Warn("Unable to create or locate filter \"%s\"", filterName)
+					s.Close()
+					return nil, fmt.Errorf("Unable to create filter (%s)", filterName)
+				}
+				filter = NewUserFilter(ctx, obj, s, filterName, nil)
+			} else {
+				ctx.Warn("Unable to create or locate filter \"%s\"", filterName)
+				s.Close()
+				return nil, fmt.Errorf("Unable to create filter (%s)", filterName)
+			}
+		}
+		filterRes := &StreamFilterResource{
+			ResourceID:   ctx.Global().NextResourceID(),
+			ResourceType: phpv.ResourceStreamFilter,
+			FilterName:   filterName,
+			Direction:    FilterRead,
+			Filter:       filter,
+			Stream:       s,
+		}
+		s.AddReadFilter(filterRes, false)
+	}
+
+	// Apply write filters
+	for _, filterName := range writeFilters {
+		filter := CreateBuiltinFilter(filterName, nil)
+		if filter == nil {
+			// Try user filter (similar to above)
+			continue
+		}
+		filterRes := &StreamFilterResource{
+			ResourceID:   ctx.Global().NextResourceID(),
+			ResourceType: phpv.ResourceStreamFilter,
+			FilterName:   filterName,
+			Direction:    FilterWrite,
+			Filter:       filter,
+			Stream:       s,
+		}
+		s.AddWriteFilter(filterRes, false)
+	}
+
+	return s, nil
+}
+
+// newFilterObject creates a new instance of a user filter class
+func newFilterObject(ctx phpv.Context, class phpv.ZClass, filterName string) (*phpobj.ZObject, error) {
+	obj, err := phpobj.NewZObject(ctx, class)
+	if err != nil {
+		return nil, err
+	}
+	obj.ObjectSet(ctx, phpv.ZStr("filtername"), phpv.ZString(filterName).ZVal())
+	obj.ObjectSet(ctx, phpv.ZStr("params"), phpv.ZStr("").ZVal())
+
+	// Call onCreate
+	result, err := obj.CallMethod(ctx, "onCreate")
+	if err != nil {
+		return nil, err
+	}
+	if result != nil && !result.AsBool(ctx) {
+		return nil, fmt.Errorf("onCreate returned false")
+	}
+	return obj, nil
 }
 
 func (h *phpHandler) Exists(p *url.URL) (bool, error) {

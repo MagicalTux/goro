@@ -217,6 +217,15 @@ func (g *Global) RegisterStreamHandler(scheme string, handler stream.Handler) {
 	g.streamHandlers[scheme] = handler
 }
 
+// GetFilterRegistry returns the per-request stream filter registry.
+// Implements stream.FilterRegistryProvider.
+func (g *Global) GetFilterRegistry() *stream.FilterRegistry {
+	if g.StreamFilterRegistry == nil {
+		g.StreamFilterRegistry = stream.NewFilterRegistry()
+	}
+	return g.StreamFilterRegistry
+}
+
 // HasStreamHandler checks if a scheme has a registered stream handler.
 func (g *Global) HasStreamHandler(scheme string) bool {
 	_, ok := g.streamHandlers[scheme]
@@ -2130,6 +2139,10 @@ func (g *Global) CallDestructors() {
 		zobj, isZObj := obj.(*phpobj.ZObject)
 		if isZObj && zobj.IsDestructed() {
 			continue // Already destructed (e.g. during variable reassignment)
+		}
+		// Skip destructors for uninitialized lazy objects
+		if isZObj && zobj.IsLazy() {
+			continue
 		}
 		if m, ok := obj.GetClass().GetMethod("__destruct"); ok {
 			if isZObj {

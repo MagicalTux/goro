@@ -39,13 +39,20 @@ func checkNoInternalClass(ctx phpv.Context, class phpv.ZClass) error {
 	if !ok {
 		return nil
 	}
+	// stdClass (and its subclasses) are allowed to be lazy despite being internal
+	if zc == phpobj.StdClass {
+		return nil
+	}
 	// Check the class itself
 	if zc.L == nil {
 		return phpobj.ThrowError(ctx, phpobj.Error,
 			fmt.Sprintf("Cannot make instance of internal class lazy: %s is internal", class.GetName()))
 	}
-	// Check parent classes
+	// Check parent classes (but stdClass as parent is OK)
 	for cur := zc.Extends; cur != nil; cur = cur.Extends {
+		if cur == phpobj.StdClass {
+			continue // stdClass is OK
+		}
 		if cur.L == nil {
 			return phpobj.ThrowError(ctx, phpobj.Error,
 				fmt.Sprintf("Cannot make instance of internal class lazy: %s inherits internal class %s",

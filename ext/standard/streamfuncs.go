@@ -427,23 +427,26 @@ func streamFilterAttach(ctx phpv.Context, args []*phpv.ZVal, prepend bool) (*php
 			return phpv.ZFalse.ZVal(), nil
 		}
 
-		// Set filtername and params on the object
-		obj.OffsetSet(ctx, phpv.ZStr("filtername"), phpv.ZString(name).ZVal())
+		// Set filtername and params on the object (use ObjectSet for property access)
+		// These might fail silently if the class doesn't have these properties
+		obj.ObjectSet(ctx, phpv.ZStr("filtername"), phpv.ZString(name).ZVal())
 		if params.HasArg() {
-			obj.OffsetSet(ctx, phpv.ZStr("params"), params.Get())
+			obj.ObjectSet(ctx, phpv.ZStr("params"), params.Get())
 		} else {
-			obj.OffsetSet(ctx, phpv.ZStr("params"), phpv.ZStr("").ZVal())
+			obj.ObjectSet(ctx, phpv.ZStr("params"), phpv.ZStr("").ZVal())
 		}
 
-		// Call onCreate()
-		onCreateResult, err := obj.CallMethod(ctx, "onCreate")
-		if err != nil {
-			ctx.Warn("Unable to create or locate filter \"%s\"", name)
-			return phpv.ZFalse.ZVal(), nil
-		}
-		if onCreateResult != nil && !onCreateResult.AsBool(ctx) {
-			ctx.Warn("Unable to create or locate filter \"%s\"", name)
-			return phpv.ZFalse.ZVal(), nil
+		// Call onCreate() if it exists
+		if _, hasOnCreate := class.GetMethod("oncreate"); hasOnCreate {
+			onCreateResult, err := obj.CallMethod(ctx, "onCreate")
+			if err != nil {
+				ctx.Warn("Unable to create or locate filter \"%s\"", name)
+				return phpv.ZFalse.ZVal(), nil
+			}
+			if onCreateResult != nil && !onCreateResult.AsBool(ctx) {
+				ctx.Warn("Unable to create or locate filter \"%s\"", name)
+				return phpv.ZFalse.ZVal(), nil
+			}
 		}
 
 		var paramsVal *phpv.ZVal
@@ -600,8 +603,8 @@ func fncStreamBucketNew(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	if err != nil {
 		return nil, err
 	}
-	obj.OffsetSet(ctx, phpv.ZStr("data"), phpv.ZString(buffer).ZVal())
-	obj.OffsetSet(ctx, phpv.ZStr("datalen"), phpv.ZInt(len(buffer)).ZVal())
+	obj.ObjectSet(ctx, phpv.ZStr("data"), phpv.ZString(buffer).ZVal())
+	obj.ObjectSet(ctx, phpv.ZStr("datalen"), phpv.ZInt(len(buffer)).ZVal())
 	return obj.ZVal(), nil
 }
 
