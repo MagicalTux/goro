@@ -7,5 +7,8 @@ func (s *Stream) UnderlyingFile() *os.File {
 	if f, ok := s.f.(*os.File); ok {
 		return f
 	}
+	if af, ok := s.f.(*appendFile); ok {
+		return af.f
+	}
 	return nil
 }

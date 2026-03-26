@@ -419,18 +419,28 @@ func validateScanFormat(format phpv.ZString) error {
 	return nil
 }
 
-// zscanRead returns: values, totalSpecifierCount, inputWasEmpty, scanFailed, error
-func zscanRead(r io.Reader, format phpv.ZString) ([]*phpv.ZVal, int, bool, bool, error) {
+// zscanRead returns: values, totalSpecifierCount, inputWasEmpty, inputAllWhitespace, scanFailed, error
+func zscanRead(r io.Reader, format phpv.ZString) ([]*phpv.ZVal, int, bool, bool, bool, error) {
 	buf := bufio.NewReader(r)
 	inputConsumed := 0
 	failed := false
 	result := []*phpv.ZVal{}
 
-	// Check if input is truly empty (zero bytes).
-	// PHP returns NULL when the input string is empty.
+	// Check if input is truly empty or all-whitespace.
 	inputEmpty := false
-	if _, err := buf.Peek(1); err == io.EOF {
+	inputAllWhitespace := false
+	if peeked, _ := buf.Peek(4096); len(peeked) == 0 {
 		inputEmpty = true
+		inputAllWhitespace = true
+	} else {
+		allWs := true
+		for _, b := range peeked {
+			if !isWhitespace(b) {
+				allWs = false
+				break
+			}
+		}
+		inputAllWhitespace = allWs
 	}
 	var pos int
 
@@ -443,7 +453,7 @@ Loop:
 			// Whitespace in format: skip whitespace in input
 			n, err := skipWhitespacesTracked(buf)
 			if err != nil {
-				return nil, 0, inputEmpty, false, err
+				return nil, 0, inputEmpty, inputAllWhitespace, false, err
 			}
 			inputConsumed += n
 			continue
@@ -458,7 +468,7 @@ Loop:
 				if err == io.EOF {
 					break Loop
 				}
-				return nil, 0, inputEmpty, false, err
+				return nil, 0, inputEmpty, inputAllWhitespace, false, err
 			}
 			inputConsumed++
 			if c != c2 {
@@ -496,7 +506,7 @@ Loop:
 				n, _ := strconv.Atoi(string(format[pos:j]))
 				if n > 100000 || n < 0 {
 					// Argument index out of range - use errBadScanChar to trigger ValueError in caller
-					return nil, 0, inputEmpty, false, &errArgIndexOutOfRange{}
+					return nil, 0, inputEmpty, inputAllWhitespace, false, &errArgIndexOutOfRange{}
 				}
 				posSpec = n
 				pos = j + 1
@@ -595,7 +605,7 @@ Loop:
 			// Skip leading whitespace first
 			wn, err := skipWhitespacesTracked(buf)
 			if err != nil {
-				return nil, 0, inputEmpty, false, err
+				return nil, 0, inputEmpty, inputAllWhitespace, false, err
 			}
 			inputConsumed += wn
 			w := width
@@ -623,7 +633,7 @@ Loop:
 			// %d: decimal integer
 			wn, err := skipWhitespacesTracked(buf)
 			if err != nil {
-				return nil, 0, inputEmpty, false, err
+				return nil, 0, inputEmpty, inputAllWhitespace, false, err
 			}
 			inputConsumed += wn
 			n, ok := scanReadIntTracked(buf, 10, width, &inputConsumed)
@@ -637,7 +647,7 @@ Loop:
 			// %i: integer with auto-detected base
 			wn, err := skipWhitespacesTracked(buf)
 			if err != nil {
-				return nil, 0, inputEmpty, false, err
+				return nil, 0, inputEmpty, inputAllWhitespace, false, err
 			}
 			inputConsumed += wn
 			// Peek to detect base
@@ -679,7 +689,7 @@ Loop:
 			// %o: octal integer
 			wn, err := skipWhitespacesTracked(buf)
 			if err != nil {
-				return nil, 0, inputEmpty, false, err
+				return nil, 0, inputEmpty, inputAllWhitespace, false, err
 			}
 			inputConsumed += wn
 			n, ok := scanReadIntTracked(buf, 8, width, &inputConsumed)
@@ -693,7 +703,7 @@ Loop:
 			// %x: hexadecimal integer
 			wn, err := skipWhitespacesTracked(buf)
 			if err != nil {
-				return nil, 0, inputEmpty, false, err
+				return nil, 0, inputEmpty, inputAllWhitespace, false, err
 			}
 			inputConsumed += wn
 			n, ok := scanReadIntTracked(buf, 16, width, &inputConsumed)
@@ -707,7 +717,7 @@ Loop:
 			// %u: unsigned decimal integer
 			wn, err := skipWhitespacesTracked(buf)
 			if err != nil {
-				return nil, 0, inputEmpty, false, err
+				return nil, 0, inputEmpty, inputAllWhitespace, false, err
 			}
 			inputConsumed += wn
 			n, ok := scanReadUintTracked(buf, width, &inputConsumed)
@@ -727,7 +737,7 @@ Loop:
 			// %f/%e/%E/%g: float
 			wn, err := skipWhitespacesTracked(buf)
 			if err != nil {
-				return nil, 0, inputEmpty, false, err
+				return nil, 0, inputEmpty, inputAllWhitespace, false, err
 			}
 			inputConsumed += wn
 			f, ok := scanReadFloatTracked(buf, width, &inputConsumed)
@@ -800,7 +810,7 @@ Loop:
 			}
 
 		default:
-			return nil, 0, inputEmpty, false, &errBadScanChar{fChar}
+			return nil, 0, inputEmpty, inputAllWhitespace, false, &errBadScanChar{fChar}
 		}
 
 		if suppress {
@@ -825,7 +835,7 @@ Loop:
 		// Fill remaining with nil
 	}
 
-	return result, totalFields, inputEmpty, failed, nil
+	return result, totalFields, inputEmpty, inputAllWhitespace, failed, nil
 }
 
 // scanReadIntTracked reads an int and tracks inputConsumed
@@ -1033,7 +1043,7 @@ func scanReadFloatTracked(buf *bufio.Reader, width int, consumed *int) (float64,
 }
 
 func zscanfIntoArray(ctx phpv.Context, r io.Reader, format phpv.ZString) (*phpv.ZVal, error) {
-	values, count, inputEmpty, scanFailed, err := zscanRead(r, format)
+	values, count, inputEmpty, inputAllWhitespace, scanFailed, err := zscanRead(r, format)
 	if err != nil {
 		if bsc, ok := err.(*errBadScanChar); ok {
 			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, bsc.Error())
@@ -1046,13 +1056,14 @@ func zscanfIntoArray(ctx phpv.Context, r io.Reader, format phpv.ZString) (*phpv.
 
 	// Return NULL in the following cases (matching PHP behavior):
 	// 1. Input is truly empty (zero bytes) → always NULL
-	// 2. Scan failed (a specifier couldn't match) and no values were produced
-	//    This covers whitespace-only input with %d/%s etc. where whitespace is skipped
-	//    but no actual value could be read.
+	// 2. Scan failed at a specifier and no values were produced AND
+	//    input was all-whitespace. This covers "%d" on "\n" returning NULL.
+	//    But "%d" on "hello\n" returns array(1){[0]=>NULL} because input
+	//    had non-whitespace content.
 	if inputEmpty && len(values) == 0 {
 		return phpv.ZNULL.ZVal(), nil
 	}
-	if scanFailed && len(values) == 0 {
+	if scanFailed && len(values) == 0 && inputAllWhitespace {
 		return phpv.ZNULL.ZVal(), nil
 	}
 
@@ -1070,7 +1081,7 @@ func zscanfIntoArray(ctx phpv.Context, r io.Reader, format phpv.ZString) (*phpv.
 }
 
 func zscanfIntoRef(ctx phpv.Context, r io.Reader, format phpv.ZString, args ...*phpv.ZVal) (*phpv.ZVal, error) {
-	values, count, _, _, err := zscanRead(r, format)
+	values, count, _, _, _, err := zscanRead(r, format)
 	if err != nil {
 		if bsc, ok := err.(*errBadScanChar); ok {
 			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, bsc.Error())

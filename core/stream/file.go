@@ -2,6 +2,7 @@ package stream
 
 import (
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"path"
@@ -10,6 +11,82 @@ import (
 
 	"github.com/MagicalTux/goro/core/phpv"
 )
+
+// appendFile wraps an *os.File opened in append mode.
+// PHP's append mode writes always go to the end of file, but the reported
+// position (ftell) tracks from 0 and advances by the number of bytes written.
+// This differs from OS O_APPEND which reports position at end-of-file after writes.
+type appendFile struct {
+	f   *os.File
+	pos int64 // virtual position for ftell
+}
+
+func (a *appendFile) Read(p []byte) (int, error) {
+	// Seek to the virtual position before reading
+	a.f.Seek(a.pos, io.SeekStart)
+	n, err := a.f.Read(p)
+	a.pos += int64(n)
+	return n, err
+}
+
+func (a *appendFile) Write(p []byte) (int, error) {
+	// Seek to end for the actual write
+	a.f.Seek(0, io.SeekEnd)
+	n, err := a.f.Write(p)
+	// Advance virtual position by bytes written
+	a.pos += int64(n)
+	return n, err
+}
+
+func (a *appendFile) Seek(offset int64, whence int) (int64, error) {
+	switch whence {
+	case io.SeekStart:
+		if offset < 0 {
+			return a.pos, ErrNotSupported
+		}
+		a.pos = offset
+	case io.SeekCurrent:
+		newPos := a.pos + offset
+		if newPos < 0 {
+			return a.pos, ErrNotSupported
+		}
+		a.pos = newPos
+	case io.SeekEnd:
+		// Get actual file size
+		info, err := a.f.Stat()
+		if err != nil {
+			return a.pos, err
+		}
+		newPos := info.Size() + offset
+		if newPos < 0 {
+			return a.pos, ErrNotSupported
+		}
+		a.pos = newPos
+	default:
+		return a.pos, ErrNotSupported
+	}
+	return a.pos, nil
+}
+
+func (a *appendFile) Close() error {
+	return a.f.Close()
+}
+
+func (a *appendFile) Stat() (os.FileInfo, error) {
+	return a.f.Stat()
+}
+
+func (a *appendFile) Truncate(size int64) error {
+	return a.f.Truncate(size)
+}
+
+func (a *appendFile) Flush() error {
+	return a.f.Sync()
+}
+
+func (a *appendFile) Sync() error {
+	return a.f.Sync()
+}
 
 // TODO: remove cwd state here
 type FileHandler struct {
@@ -109,19 +186,22 @@ func (f *FileHandler) OpenFile(ctx phpv.Context, fname string, mode string, _ ..
 	}
 	mode = cleaned
 
+	appendMode := false
 	switch mode {
 	case "r":
 		flags = os.O_RDONLY
 	case "w":
 		flags = os.O_WRONLY | os.O_CREATE | os.O_TRUNC
 	case "a":
-		flags = os.O_WRONLY | os.O_CREATE | os.O_APPEND
+		flags = os.O_WRONLY | os.O_CREATE
+		appendMode = true
 	case "r+":
 		flags = os.O_RDWR
 	case "w+":
 		flags = os.O_RDWR | os.O_CREATE | os.O_TRUNC
 	case "a+":
-		flags = os.O_RDWR | os.O_CREATE | os.O_APPEND
+		flags = os.O_RDWR | os.O_CREATE
+		appendMode = true
 	case "x":
 		flags = os.O_CREATE | os.O_EXCL | os.O_WRONLY
 	case "x+":
@@ -146,7 +226,17 @@ func (f *FileHandler) OpenFile(ctx phpv.Context, fname string, mode string, _ ..
 		return nil, err
 	}
 
-	s := NewStream(res)
+	var streamBackend interface{}
+	if appendMode {
+		// Wrap in appendFile for PHP-compatible position tracking.
+		// PHP's append mode reports position from 0, advancing by bytes written,
+		// while actual writes go to end of file.
+		streamBackend = &appendFile{f: res, pos: 0}
+	} else {
+		streamBackend = res
+	}
+
+	s := NewStream(streamBackend)
 	s.SetAttr("wrapper_type", "plainfile")
 	s.SetAttr("stream_type", "Go")
 	s.SetAttr("mode", mode)

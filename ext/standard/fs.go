@@ -911,6 +911,18 @@ func fncFread(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		ctx.Notice("fread(): Read of 8192 bytes failed with errno=9 Bad file descriptor", logopt.NoFuncName(true))
 		return phpv.ZFalse.ZVal(), nil
 	}
+	// If we read fewer bytes than requested and no error yet,
+	// try reading more to properly detect EOF (PHP sets feof after partial reads)
+	if n > 0 && n < int(length) && err == nil {
+		remaining := buf[n:]
+		n2, err2 := file.Read(remaining)
+		n += n2
+		if err2 == io.EOF && n2 == 0 {
+			// EOF detected but we already have data, just mark EOF internally
+			// The stream's Read method sets the eof flag on io.EOF
+		}
+		_ = err2
+	}
 	return phpv.ZString(buf[:n]).ZVal(), nil
 }
 
