@@ -359,7 +359,7 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 			// If SKIPIF code errors at runtime, skip the test (PHP's run-tests does the same)
 			return skipError{reason: "SKIPIF runtime error: " + err.Error()}
 		}
-		if bytes.HasPrefix(output.Bytes(), []byte("skip ")) {
+		if bytes.HasPrefix(bytes.ToLower(output.Bytes()), []byte("skip")) {
 			return skipError{reason: "SKIPIF: " + strings.TrimSpace(string(output.Bytes()))}
 		}
 		return nil
@@ -509,7 +509,10 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		g.SetOutput(io.Discard)
 		absPath, _ := filepath.Abs(p.path)
 		g.Chdir(phpv.ZString(filepath.Dir(absPath)))
-		t := tokenizer.NewLexer(b, strings.TrimSuffix(absPath, "t"))
+		// PHP runs CLEAN sections from <test>.clean.php, not <test>.php
+		// This matters because CLEAN scripts use basename(__FILE__, ".clean.php")
+		cleanFileName := strings.TrimSuffix(absPath, ".phpt") + ".clean.php"
+		t := tokenizer.NewLexer(b, cleanFileName)
 		if c, err := compiler.Compile(g, t); err == nil {
 			c.Run(g)
 		}

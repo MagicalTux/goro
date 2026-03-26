@@ -150,20 +150,11 @@ func scanReadInt(buf *bufio.Reader, base int, width int) (int64, bool) {
 
 	// For hex, skip optional 0x prefix
 	if base == 16 {
-		c, err := buf.ReadByte()
-		if err == nil {
-			if c == '0' {
-				c2, err2 := buf.ReadByte()
-				if err2 == nil && (c2 == 'x' || c2 == 'X') {
-					width -= 2
-				} else {
-					if err2 == nil {
-						buf.UnreadByte()
-					}
-					buf.UnreadByte()
-				}
-			} else {
-				buf.UnreadByte()
+		if peeked, err := buf.Peek(2); err == nil && len(peeked) == 2 {
+			if peeked[0] == '0' && (peeked[1] == 'x' || peeked[1] == 'X') {
+				buf.ReadByte()
+				buf.ReadByte()
+				width -= 2
 			}
 		}
 	}
@@ -435,26 +426,11 @@ func zscanRead(r io.Reader, format phpv.ZString) ([]*phpv.ZVal, int, bool, bool,
 	failed := false
 	result := []*phpv.ZVal{}
 
-	// Check if input is empty or contains only whitespace.
-	// PHP returns NULL when the input to sscanf is empty or all-whitespace.
+	// Check if input is truly empty (zero bytes).
+	// PHP returns NULL when the input string is empty.
 	inputEmpty := false
-	// Try to peek the entire input. fscanf lines are typically short.
-	// Peek as much as we can; Peek may return ErrBufferFull or io.EOF,
-	// both are fine as long as we get the peeked data.
-	peeked, _ := buf.Peek(4096)
-	if len(peeked) == 0 {
+	if _, err := buf.Peek(1); err == io.EOF {
 		inputEmpty = true
-	} else {
-		allWhitespace := true
-		for _, b := range peeked {
-			if !isWhitespace(b) {
-				allWhitespace = false
-				break
-			}
-		}
-		if allWhitespace {
-			inputEmpty = true
-		}
 	}
 	var pos int
 
@@ -877,23 +853,17 @@ func scanReadIntTracked(buf *bufio.Reader, base int, width int, consumed *int) (
 
 	// For hex, skip optional 0x prefix
 	if base == 16 {
-		c, err := buf.ReadByte()
-		if err == nil {
-			if c == '0' {
-				c2, err2 := buf.ReadByte()
-				if err2 == nil && (c2 == 'x' || c2 == 'X') {
-					*consumed += 2
-					if width > 0 {
-						width -= 2
-					}
-				} else {
-					if err2 == nil {
-						buf.UnreadByte()
-					}
-					buf.UnreadByte()
+		// Peek at the first 2 bytes to check for 0x/0X prefix
+		// We use Peek to avoid the double-UnreadByte problem
+		if peeked, err := buf.Peek(2); err == nil && len(peeked) == 2 {
+			if peeked[0] == '0' && (peeked[1] == 'x' || peeked[1] == 'X') {
+				// Consume the 0x prefix
+				buf.ReadByte()
+				buf.ReadByte()
+				*consumed += 2
+				if width > 0 {
+					width -= 2
 				}
-			} else {
-				buf.UnreadByte()
 			}
 		}
 	}
@@ -1074,15 +1044,15 @@ func zscanfIntoArray(ctx phpv.Context, r io.Reader, format phpv.ZString) (*phpv.
 		return nil, err
 	}
 
-	// If input was empty and the scan failed (nothing could be matched),
-	// return NULL regardless of whether fields are suppressed or not.
-	// Exception: specifiers like %c and %[...] that "succeed" on empty input
-	// won't set scanFailed, so they still return an array.
-	if inputEmpty && scanFailed && len(values) == 0 {
+	// Return NULL in the following cases (matching PHP behavior):
+	// 1. Input is truly empty (zero bytes) → always NULL
+	// 2. Scan failed (a specifier couldn't match) and no values were produced
+	//    This covers whitespace-only input with %d/%s etc. where whitespace is skipped
+	//    but no actual value could be read.
+	if inputEmpty && len(values) == 0 {
 		return phpv.ZNULL.ZVal(), nil
 	}
-	// If no values matched and input was empty with non-suppressed fields, return NULL
-	if len(values) == 0 && inputEmpty && count > 0 {
+	if scanFailed && len(values) == 0 {
 		return phpv.ZNULL.ZVal(), nil
 	}
 

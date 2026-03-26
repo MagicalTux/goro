@@ -554,9 +554,9 @@ func sfoFscanf(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZV
 			"SplFileObject::fscanf() expects at least 1 argument")
 	}
 
-	// Get the current line
+	// Get the current line (keep the trailing newline for PHP compatibility,
+	// as PHP's fscanf passes the line including \n to the scanf logic)
 	line := d.curLine
-	line = strings.TrimRight(line, "\r\n")
 
 	// Advance to next line
 	if d.scanner.Scan() {

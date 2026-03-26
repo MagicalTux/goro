@@ -1067,10 +1067,15 @@ func fncFseek(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	w := io.SeekStart
 	if whence != nil {
 		switch int(*whence) {
+		case 0:
+			w = io.SeekStart
 		case 1:
 			w = io.SeekCurrent
 		case 2:
 			w = io.SeekEnd
+		default:
+			// Invalid whence value: return -1 without moving the pointer
+			return phpv.ZInt(-1).ZVal(), nil
 		}
 	}
 

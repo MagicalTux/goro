@@ -469,6 +469,12 @@ func fncFputcsv(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var handle phpv.Resource
 	var fields *phpv.ZArray
 	var sepArg, encArg, escArg, eolArg *phpv.ZString
+
+	// Check which args were explicitly provided (not NULL from named arg gaps)
+	sepIsNull := len(args) > 2 && (args[2] == nil || args[2].GetType() == phpv.ZtNull)
+	encIsNull := len(args) > 3 && (args[3] == nil || args[3].GetType() == phpv.ZtNull)
+	escProvided := len(args) > 4 && args[4] != nil && args[4].GetType() != phpv.ZtNull
+
 	_, err := core.Expand(ctx, args, &handle, &fields, &sepArg, &encArg, &escArg, &eolArg)
 	if err != nil {
 		return nil, err
@@ -485,13 +491,13 @@ func fncFputcsv(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZFalse.ZVal(), nil
 	}
 
-	// Validate separator
-	if sepArg != nil && len(*sepArg) != 1 {
+	// Validate separator (only if explicitly provided and not NULL)
+	if sepArg != nil && !sepIsNull && len(*sepArg) != 1 {
 		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "fputcsv(): Argument #3 ($separator) must be a single character")
 	}
 
-	// Validate enclosure
-	if encArg != nil && len(*encArg) != 1 {
+	// Validate enclosure (only if explicitly provided and not NULL)
+	if encArg != nil && !encIsNull && len(*encArg) != 1 {
 		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "fputcsv(): Argument #4 ($enclosure) must be a single character")
 	}
 
@@ -500,19 +506,19 @@ func fncFputcsv(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	esc := byte('\\')
 	eol := "\n"
 
-	if sepArg != nil && len(*sepArg) > 0 {
+	if sepArg != nil && !sepIsNull && len(*sepArg) > 0 {
 		sep = (*sepArg)[0]
 	}
-	if encArg != nil && len(*encArg) > 0 {
+	if encArg != nil && !encIsNull && len(*encArg) > 0 {
 		enc = (*encArg)[0]
 	}
-	if escArg != nil {
+	if escProvided && escArg != nil {
 		if len(*escArg) > 0 {
 			esc = (*escArg)[0]
 		} else {
 			esc = 0 // empty string means no escape
 		}
-	} else {
+	} else if !escProvided {
 		// PHP 8.5: deprecation warning when escape param is not explicitly provided
 		ctx.Deprecated("fputcsv(): the $escape parameter must be provided as its default value will change", logopt.NoFuncName(true))
 	}
@@ -567,15 +573,19 @@ func BuildCsvLine(ctx phpv.Context, fields *phpv.ZArray, sep, enc, esc byte, eol
 
 		if needsEnclose {
 			buf.WriteByte(enc)
+			escaped := false
 			for i := 0; i < len(field); i++ {
 				c := field[i]
-				if c == enc {
-					// PHP always doubles the enclosure character
-					buf.WriteByte(enc)
+				if esc != 0 && c == esc {
+					// Escape char: set escaped flag, write the char
+					escaped = true
+				} else if !escaped && c == enc {
+					// Enclosure char (not escaped): double it
 					buf.WriteByte(enc)
 				} else {
-					buf.WriteByte(c)
+					escaped = false
 				}
+				buf.WriteByte(c)
 			}
 			buf.WriteByte(enc)
 		} else {
