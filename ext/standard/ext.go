@@ -185,7 +185,7 @@ func init() {
 			"fmod":                       {Func: mathFmod, Args: []*phpctx.ExtFunctionArg{}},
 			"fopen":                      {Func: fncFileOpen, Args: []*phpctx.ExtFunctionArg{}},
 			"fprintf":                    {Func: fncFPrintf, Args: []*phpctx.ExtFunctionArg{}},
-			"fputcsv":                    {Func: fncFputcsv, Args: []*phpctx.ExtFunctionArg{{ArgName: "stream"}, {ArgName: "fields"}, {ArgName: "separator", Optional: true}, {ArgName: "enclosure", Optional: true}, {ArgName: "escape", Optional: true}}},
+			"fputcsv":                    {Func: fncFputcsv, Args: []*phpctx.ExtFunctionArg{{ArgName: "stream"}, {ArgName: "fields"}, {ArgName: "separator", Optional: true}, {ArgName: "enclosure", Optional: true}, {ArgName: "escape", Optional: true}, {ArgName: "eol", Optional: true}}},
 			"fstat":                      {Func: fncFstat, Args: []*phpctx.ExtFunctionArg{}},
 			"fputs":                      {Func: fncFwrite, Args: []*phpctx.ExtFunctionArg{}}, // alias
 			"fread":                      {Func: fncFread, Args: []*phpctx.ExtFunctionArg{}},

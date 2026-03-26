@@ -17,6 +17,10 @@ type errBadScanChar struct {
 }
 
 func (err *errBadScanChar) Error() string {
+	if err.Code == 0 {
+		// End of format string after % → PHP outputs just an opening quote
+		return `Bad scan conversion character "`
+	}
 	return fmt.Sprintf(`Bad scan conversion character "%c"`, err.Code)
 }
 
@@ -280,6 +284,26 @@ func scanReadFloat(buf *bufio.Reader, width int) (float64, bool) {
 
 	f, err2 := strconv.ParseFloat(string(s), 64)
 	if err2 != nil {
+		// If the string ends with an incomplete exponent, strip and retry
+		stripped := string(s)
+		stripCount := 0
+		if len(stripped) > 0 && (stripped[len(stripped)-1] == '+' || stripped[len(stripped)-1] == '-') {
+			stripped = stripped[:len(stripped)-1]
+			stripCount++
+		}
+		if len(stripped) > 0 && (stripped[len(stripped)-1] == 'e' || stripped[len(stripped)-1] == 'E') {
+			stripped = stripped[:len(stripped)-1]
+			stripCount++
+		}
+		if stripCount > 0 && len(stripped) > 0 {
+			f2, err3 := strconv.ParseFloat(stripped, 64)
+			if err3 == nil {
+				for i := 0; i < stripCount; i++ {
+					buf.UnreadByte()
+				}
+				return f2, true
+			}
+		}
 		return 0, false
 	}
 	return f, true
@@ -328,6 +352,82 @@ func (cr *countingReader) UnreadByte() error {
 	return err
 }
 
+// validateScanFormat checks the format string for invalid conversion characters.
+// PHP validates the entire format string before scanning and throws an error
+// for any invalid specifier, even if earlier specifiers would fail first.
+func validateScanFormat(format phpv.ZString) error {
+	for i := 0; i < len(format); i++ {
+		if format[i] != '%' {
+			continue
+		}
+		i++
+		if i >= len(format) {
+			// Trailing "%" with nothing after → bad scan char (empty)
+			return &errBadScanChar{0}
+		}
+		if format[i] == '%' {
+			continue // literal %%
+		}
+		// skip position specifier like 1$
+		j := i
+		for j < len(format) && format[j] >= '0' && format[j] <= '9' {
+			j++
+		}
+		if j > i && j < len(format) && format[j] == '$' {
+			i = j + 1
+			if i >= len(format) {
+				return &errBadScanChar{0}
+			}
+		}
+		// skip suppression
+		if i < len(format) && format[i] == '*' {
+			i++
+			if i >= len(format) {
+				return &errBadScanChar{0}
+			}
+		}
+		// skip width
+		for i < len(format) && format[i] >= '0' && format[i] <= '9' {
+			i++
+		}
+		if i >= len(format) {
+			return &errBadScanChar{0}
+		}
+		// skip length modifiers (h, l, L, hh, ll)
+		if i < len(format) && (format[i] == 'h' || format[i] == 'l' || format[i] == 'L') {
+			i++
+			if i < len(format) && (format[i] == 'h' || format[i] == 'l') {
+				i++
+			}
+		}
+		if i >= len(format) {
+			// Format string ended after length modifier (e.g., "%h") → bad scan char
+			return &errBadScanChar{0}
+		}
+		c := format[i]
+		switch c {
+		case 'd', 'i', 'o', 'x', 'X', 'u', 'f', 'e', 'E', 'g', 's', 'c', 'n', '[':
+			// Valid format specifiers
+			if c == '[' {
+				// skip past character class
+				i++
+				if i < len(format) && format[i] == '^' {
+					i++
+				}
+				if i < len(format) && format[i] == ']' {
+					i++
+				}
+				for i < len(format) && format[i] != ']' {
+					i++
+				}
+			}
+		default:
+			return &errBadScanChar{c}
+		}
+	}
+	return nil
+}
+
 // zscanRead returns: values, totalSpecifierCount, inputWasEmpty, scanFailed, error
 func zscanRead(r io.Reader, format phpv.ZString) ([]*phpv.ZVal, int, bool, bool, error) {
 	buf := bufio.NewReader(r)
@@ -335,10 +435,26 @@ func zscanRead(r io.Reader, format phpv.ZString) ([]*phpv.ZVal, int, bool, bool,
 	failed := false
 	result := []*phpv.ZVal{}
 
-	// Check if input is empty
+	// Check if input is empty or contains only whitespace.
+	// PHP returns NULL when the input to sscanf is empty or all-whitespace.
 	inputEmpty := false
-	if _, err := buf.Peek(1); err == io.EOF {
+	// Try to peek the entire input. fscanf lines are typically short.
+	// Peek as much as we can; Peek may return ErrBufferFull or io.EOF,
+	// both are fine as long as we get the peeked data.
+	peeked, _ := buf.Peek(4096)
+	if len(peeked) == 0 {
 		inputEmpty = true
+	} else {
+		allWhitespace := true
+		for _, b := range peeked {
+			if !isWhitespace(b) {
+				allWhitespace = false
+				break
+			}
+		}
+		if allWhitespace {
+			inputEmpty = true
+		}
 	}
 	var pos int
 
@@ -468,9 +584,11 @@ Loop:
 			val = phpv.ZInt(consumed).ZVal()
 
 		case 'c':
-			// %c: read exact number of characters (default 1)
-			// Unlike other specifiers, %c always succeeds even with empty input
-			// (returns empty string rather than NULL)
+			// %c: In PHP's scanf, %c (without width) reads 1 non-whitespace character.
+			// If the next character is whitespace, returns "" without consuming it.
+			// With width N, reads up to N non-whitespace characters (stopping at whitespace).
+			// Unlike other specifiers, %c always "succeeds" (returns empty string
+			// rather than causing a NULL result for empty input).
 			count := 1
 			if width > 0 {
 				count = width
@@ -479,6 +597,10 @@ Loop:
 			for i := 0; i < count; i++ {
 				b, err := buf.ReadByte()
 				if err != nil {
+					break
+				}
+				if isWhitespace(b) {
+					buf.UnreadByte()
 					break
 				}
 				s = append(s, b)
@@ -906,6 +1028,29 @@ func scanReadFloatTracked(buf *bufio.Reader, width int, consumed *int) (float64,
 
 	f, err2 := strconv.ParseFloat(string(s), 64)
 	if err2 != nil {
+		// If the string ends with an incomplete exponent (e.g., "1.0E" or "1.0E+"),
+		// strip the exponent part and unread those characters, then try again.
+		stripped := string(s)
+		stripCount := 0
+		if len(stripped) > 0 && (stripped[len(stripped)-1] == '+' || stripped[len(stripped)-1] == '-') {
+			stripped = stripped[:len(stripped)-1]
+			stripCount++
+		}
+		if len(stripped) > 0 && (stripped[len(stripped)-1] == 'e' || stripped[len(stripped)-1] == 'E') {
+			stripped = stripped[:len(stripped)-1]
+			stripCount++
+		}
+		if stripCount > 0 && len(stripped) > 0 {
+			f2, err3 := strconv.ParseFloat(stripped, 64)
+			if err3 == nil {
+				// Unread the stripped characters
+				*consumed -= stripCount
+				for i := 0; i < stripCount; i++ {
+					buf.UnreadByte()
+				}
+				return f2, true
+			}
+		}
 		return 0, false
 	}
 	return f, true
@@ -1062,6 +1207,15 @@ func zscanfIntoRef(ctx phpv.Context, r io.Reader, format phpv.ZString, args ...*
 }
 
 func Zscanf(ctx phpv.Context, r io.Reader, format phpv.ZString, args ...*phpv.ZVal) (*phpv.ZVal, error) {
+	// Validate the entire format string before scanning (PHP behavior:
+	// the entire format is validated upfront before any scanning occurs)
+	if err := validateScanFormat(format); err != nil {
+		if bsc, ok := err.(*errBadScanChar); ok {
+			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, bsc.Error())
+		}
+		return nil, err
+	}
+
 	if len(args) > 0 {
 		return zscanfIntoRef(ctx, r, format, args...)
 	} else {

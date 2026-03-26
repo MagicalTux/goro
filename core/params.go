@@ -319,6 +319,14 @@ func ExpandAt(ctx phpv.Context, args []*phpv.ZVal, i int, out interface{}) error
 			// no more args and this is optional, so no error
 			return nil
 		}
+		// For optional resource parameters, NULL means "not provided" (e.g. ?resource $context = null)
+		if args[i] != nil && args[i].GetType() == phpv.ZtNull {
+			optVal := r.getOptionalValue()
+			rv := reflect.ValueOf(optVal)
+			if rv.Kind() == reflect.Ptr && rv.Type().Elem().Implements(reflect.TypeOf((*phpv.Resource)(nil)).Elem()) {
+				return nil
+			}
+		}
 		out = r.getOptionalValue()
 	default:
 		rv := reflect.ValueOf(out)

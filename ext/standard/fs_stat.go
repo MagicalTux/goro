@@ -496,13 +496,10 @@ func fncFile(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 					// Strip trailing \n and also \r before it
 					line = strings.TrimRight(line, "\r\n")
 				}
-				if skipEmpty {
-					// Skip lines that are empty or contain only whitespace/newlines
-					trimmed := strings.TrimRight(line, "\r\n")
-					if trimmed == "" {
-						buf = buf[:0]
-						continue
-					}
+				if skipEmpty && line == "" {
+					// Skip lines that are empty after processing
+					buf = buf[:0]
+					continue
 				}
 				result.OffsetSet(ctx, nil, phpv.ZString(line).ZVal())
 				buf = buf[:0]
@@ -519,7 +516,7 @@ func fncFile(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		if ignoreNewLines {
 			line = strings.TrimRight(line, "\r\n")
 		}
-		if !(skipEmpty && strings.TrimRight(line, "\r\n") == "") {
+		if !(skipEmpty && line == "") {
 			result.OffsetSet(ctx, nil, phpv.ZString(line).ZVal())
 		}
 	}

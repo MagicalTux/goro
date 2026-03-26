@@ -558,6 +558,11 @@ func fncFileGetContents(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "Path must not be empty")
 	}
 
+	// Check for null bytes in filename
+	if strings.ContainsRune(string(filename), 0) {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "file_get_contents(): Argument #1 ($filename) must not contain any null bytes")
+	}
+
 	useIncludePath := useIncludePathArg != nil && bool(*useIncludePathArg)
 
 	if err := ctx.Global().CheckOpenBasedir(ctx, string(filename), "file_get_contents"); err != nil {
@@ -670,6 +675,11 @@ func fncFilePutContents(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "Path must not be empty")
 	}
 
+	// Check for null bytes in filename
+	if strings.ContainsRune(string(filename), 0) {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "file_put_contents(): Argument #1 ($filename) must not contain any null bytes")
+	}
+
 	if err := ctx.Global().CheckOpenBasedir(ctx, string(filename), "file_put_contents"); err != nil {
 		ctx.Warn("%s(%s): Failed to open stream: Operation not permitted", ctx.GetFuncName(), filename, logopt.NoFuncName(true))
 		return phpv.ZFalse.ZVal(), nil
@@ -728,6 +738,17 @@ func fncFilePutContents(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 				written += wn
 			}
 		}
+	case phpv.ZtObject:
+		// Try to convert to string via __toString
+		strVal, cerr := data.As(ctx, phpv.ZtString)
+		if cerr != nil {
+			// Object without __toString - return false
+			return phpv.ZFalse.ZVal(), nil
+		}
+		dataBytes := []byte(strVal.String())
+		if written, err = fh.Write(dataBytes); err != nil {
+			return nil, err
+		}
 	default:
 		str := data.String()
 		dataBytes := []byte(str)
@@ -749,16 +770,8 @@ func fncFileOpen(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var filename phpv.ZString
 	var mode phpv.ZString
 	var useIncludePathArg core.Optional[phpv.ZBool]
-
-	// Handle the optional 4th argument (context) manually to allow NULL
-	// PHP allows NULL as the context parameter (Bug #74719)
-	expandArgs := args
-	if len(args) >= 4 && args[3] != nil && args[3].GetType() == phpv.ZtNull {
-		expandArgs = args[:3]
-	}
-
 	var contextResource core.Optional[phpv.Resource]
-	_, err := core.Expand(ctx, expandArgs, &filename, &mode, &useIncludePathArg, &contextResource)
+	_, err := core.Expand(ctx, args, &filename, &mode, &useIncludePathArg, &contextResource)
 	if err != nil {
 		return nil, err
 	}
@@ -1151,26 +1164,17 @@ func fncFtruncate(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZFalse.ZVal(), nil
 	}
 
-	// Try the stream's Truncate method first (works for *os.File, readWriteBuffer, etc.)
+	// Try the stream's Truncate method (works for *os.File, readWriteBuffer, etc.)
 	err = s.Truncate(int64(size))
 	if err == nil {
 		return phpv.ZTrue.ZVal(), nil
 	}
-
-	// Fall back to os.Truncate by filename if the stream doesn't support Truncate directly
-	var filename string
-	if f, ok := s.Attr("uri").(string); ok {
-		filename = f
-	}
-	if filename == "" {
+	// If the error is because truncation isn't supported by this stream type,
+	// report it as unsupported. Otherwise (e.g., read-only fd), return false.
+	if err == stream.ErrNotSupported {
 		ctx.Warn("resource type not yet supported:" + handle.GetResourceType().String())
-		return phpv.ZFalse.ZVal(), nil
 	}
-	err = os.Truncate(filename, int64(size))
-	if err != nil {
-		return phpv.ZFalse.ZVal(), nil
-	}
-	return phpv.ZTrue.ZVal(), nil
+	return phpv.ZFalse.ZVal(), nil
 }
 
 // > func bool fflush ( resource $handle )

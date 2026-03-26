@@ -199,6 +199,11 @@ func (b *readWriteBuffer) Truncate(size int64) error {
 	} else if s > len(b.data) {
 		b.data = append(b.data, make([]byte, s-len(b.data))...)
 	}
+	// For in-memory streams, if position is beyond the new size,
+	// move it to the new size (matches PHP's php://memory behavior)
+	if b.pos > len(b.data) {
+		b.pos = len(b.data)
+	}
 	return nil
 }
 

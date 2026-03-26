@@ -40,24 +40,30 @@ func fncFscanf(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "fscanf(): supplied resource is not a valid File-Handle resource")
 	}
 
-	// Read one line from the stream
+	// Read one line from the stream (including the trailing newline,
+	// matching PHP's fgets behavior which fscanf relies on)
 	var buf []byte
+	gotNewline := false
 	for {
 		b, err := file.ReadByte()
 		if err != nil {
 			break
 		}
+		buf = append(buf, b)
 		if b == '\n' {
+			gotNewline = true
 			break
 		}
-		buf = append(buf, b)
 	}
 
 	if len(buf) == 0 && file.Eof() {
 		return phpv.ZFalse.ZVal(), nil
 	}
 
+	// If the line doesn't end with newline (last line of file), don't add one
+	// PHP's fgets returns the line with \n if present
 	line := string(buf)
+	_ = gotNewline
 	r := strings.NewReader(line)
 	output, err := core.Zscanf(ctx, r, fmt, args[n:]...)
 	if err != nil {
@@ -528,6 +534,8 @@ func fncFputcsv(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 }
 
 // BuildCsvLine builds a CSV line from a ZArray of fields. Returns the line as bytes (including trailing eol).
+// PHP's fputcsv always doubles the enclosure character to escape it.
+// The escape parameter does NOT change how enclosures are escaped in output.
 func BuildCsvLine(ctx phpv.Context, fields *phpv.ZArray, sep, enc, esc byte, eol string) ([]byte, error) {
 	var buf bytes.Buffer
 	first := true
@@ -551,7 +559,7 @@ func BuildCsvLine(ctx phpv.Context, fields *phpv.ZArray, sep, enc, esc byte, eol
 		field := val.String()
 
 		// Check if enclosure is needed (matches PHP 8.5's php_fputcsv behavior)
-		// PHP encloses fields containing separator, enclosure, escape, newlines, or whitespace.
+		// PHP encloses fields containing separator, enclosure, escape char, newlines, or whitespace.
 		needsEnclose := strings.ContainsAny(field, string([]byte{sep, enc, '\n', '\r', '\t', ' '}))
 		if esc != 0 && esc != enc {
 			needsEnclose = needsEnclose || strings.ContainsRune(field, rune(esc))
@@ -562,23 +570,9 @@ func BuildCsvLine(ctx phpv.Context, fields *phpv.ZArray, sep, enc, esc byte, eol
 			for i := 0; i < len(field); i++ {
 				c := field[i]
 				if c == enc {
-					if esc != 0 && esc == enc {
-						// When escape == enclosure (e.g., both are "), double the enclosure
-						buf.WriteByte(enc)
-						buf.WriteByte(enc)
-					} else if esc != 0 {
-						// When escape != enclosure, use escape char before enclosure
-						buf.WriteByte(esc)
-						buf.WriteByte(c)
-					} else {
-						// No escape char (empty escape), double the enclosure
-						buf.WriteByte(enc)
-						buf.WriteByte(enc)
-					}
-				} else if esc != 0 && c == esc && esc != enc {
-					// Escape the escape character itself
-					buf.WriteByte(esc)
-					buf.WriteByte(c)
+					// PHP always doubles the enclosure character
+					buf.WriteByte(enc)
+					buf.WriteByte(enc)
 				} else {
 					buf.WriteByte(c)
 				}
