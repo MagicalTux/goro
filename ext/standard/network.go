@@ -282,6 +282,7 @@ const (
 	STREAM_SERVER_BIND phpv.ZInt = 4; STREAM_SERVER_LISTEN phpv.ZInt = 8; STREAM_CLIENT_CONNECT phpv.ZInt = 4
 	STREAM_FILTER_READ phpv.ZInt = 1; STREAM_FILTER_WRITE phpv.ZInt = 2; STREAM_FILTER_ALL phpv.ZInt = 3
 	STREAM_IS_URL phpv.ZInt = 1
+	PSFS_PASS_ON phpv.ZInt = 2; PSFS_FEED_ME phpv.ZInt = 0; PSFS_ERR_FATAL phpv.ZInt = 1
 	STREAM_SHUT_RD phpv.ZInt = 0; STREAM_SHUT_WR phpv.ZInt = 1; STREAM_SHUT_RDWR phpv.ZInt = 2
 	DNS_A phpv.ZInt = 1; DNS_NS phpv.ZInt = 2; DNS_CNAME phpv.ZInt = 16; DNS_SOA phpv.ZInt = 32
 	DNS_PTR phpv.ZInt = 2048; DNS_HINFO phpv.ZInt = 4096; DNS_CAA phpv.ZInt = 8192; DNS_MX phpv.ZInt = 16384

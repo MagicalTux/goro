@@ -170,6 +170,77 @@ func doVarDump(ctx phpv.Context, z *phpv.ZVal, linePfx string, recurs map[uintpt
 		}
 
 		if obj, ok := v.(*phpobj.ZObject); ok {
+			// Lazy object: special var_dump format
+			if obj.LazyState == phpobj.LazyGhostUninitialized {
+				// Uninitialized ghost: "lazy ghost object(C)#N (count) { ... }"
+				count := obj.Count(ctx)
+				fmt.Fprintf(ctx, "%s%slazy ghost object(%s)#%d (%d) {\n", linePfx, isRef, obj.Class.GetName(), obj.ID, count)
+				localPfx := linePfx + "  "
+				for prop := range obj.IterProps(ctx) {
+					suffix := ""
+					switch {
+					case prop.Modifiers.IsPrivate():
+						className := string(obj.GetDeclClassName(prop))
+						suffix = `:"` + className + `":private`
+					case prop.Modifiers.IsProtected():
+						suffix = ":protected"
+					}
+					fmt.Fprintf(ctx, "%s[\"%s\"%s]=>\n", localPfx, prop.VarName, suffix)
+					val, hasVal, hookErr := obj.GetPropValueOrHook(ctx, prop)
+					if hookErr != nil {
+						return hookErr
+					}
+					if hasVal {
+						doVarDump(ctx, val, localPfx, recurs)
+					} else if prop.TypeHint != nil {
+						fmt.Fprintf(ctx, "%suninitialized(%s)\n", localPfx, prop.TypeHint.String())
+					} else {
+						vv := obj.GetPropValue(prop)
+						doVarDump(ctx, vv, localPfx, recurs)
+					}
+				}
+				fmt.Fprintf(ctx, "%s}\n", linePfx)
+				return nil
+			} else if obj.LazyState == phpobj.LazyProxyUninitialized {
+				// Uninitialized proxy: "lazy proxy object(C)#N (count) { ... }"
+				count := obj.Count(ctx)
+				fmt.Fprintf(ctx, "%s%slazy proxy object(%s)#%d (%d) {\n", linePfx, isRef, obj.Class.GetName(), obj.ID, count)
+				localPfx := linePfx + "  "
+				for prop := range obj.IterProps(ctx) {
+					suffix := ""
+					switch {
+					case prop.Modifiers.IsPrivate():
+						className := string(obj.GetDeclClassName(prop))
+						suffix = `:"` + className + `":private`
+					case prop.Modifiers.IsProtected():
+						suffix = ":protected"
+					}
+					fmt.Fprintf(ctx, "%s[\"%s\"%s]=>\n", localPfx, prop.VarName, suffix)
+					val, hasVal, hookErr := obj.GetPropValueOrHook(ctx, prop)
+					if hookErr != nil {
+						return hookErr
+					}
+					if hasVal {
+						doVarDump(ctx, val, localPfx, recurs)
+					} else if prop.TypeHint != nil {
+						fmt.Fprintf(ctx, "%suninitialized(%s)\n", localPfx, prop.TypeHint.String())
+					} else {
+						vv := obj.GetPropValue(prop)
+						doVarDump(ctx, vv, localPfx, recurs)
+					}
+				}
+				fmt.Fprintf(ctx, "%s}\n", linePfx)
+				return nil
+			} else if obj.LazyState == phpobj.LazyProxyInitialized && obj.LazyInstance != nil {
+				// Initialized proxy: "lazy proxy object(C)#N (1) { ["instance"]=> object(...) }"
+				fmt.Fprintf(ctx, "%s%slazy proxy object(%s)#%d (1) {\n", linePfx, isRef, obj.Class.GetName(), obj.ID)
+				localPfx := linePfx + "  "
+				fmt.Fprintf(ctx, "%s[\"instance\"]=>\n", localPfx)
+				doVarDump(ctx, obj.LazyInstance.ZVal(), localPfx, recurs)
+				fmt.Fprintf(ctx, "%s}\n", linePfx)
+				return nil
+			}
+
 			count := obj.Count(ctx)
 			if debugInfoArr != nil {
 				count = phpv.ZInt(debugInfoArr.Count(ctx))

@@ -21,6 +21,11 @@ type Stream struct {
 	ResourceType phpv.ResourceType
 	ResourceID   int
 	Context      *Context
+
+	readFilters  []filterEntry
+	writeFilters []filterEntry
+	readBuf      []byte // buffered filtered read data
+	filterCtx    phpv.Context // context for calling user filters
 }
 
 func streamFinalizer(s *Stream) {
@@ -34,6 +39,10 @@ func NewStream(f interface{}) *Stream {
 }
 
 func (s *Stream) Read(p []byte) (int, error) {
+	// If we have read filters, use filtered reading
+	if len(s.readFilters) > 0 {
+		return s.filteredRead(p)
+	}
 	if r, ok := s.f.(io.Reader); ok {
 		n, err := r.Read(p)
 		if err == io.EOF {
@@ -44,11 +53,101 @@ func (s *Stream) Read(p []byte) (int, error) {
 	return 0, ErrNotSupported
 }
 
+// filteredRead reads from the underlying stream, applies read filters, and returns the result
+func (s *Stream) filteredRead(p []byte) (int, error) {
+	// If we have enough buffered filtered data, return from buffer
+	if len(s.readBuf) >= len(p) {
+		n := copy(p, s.readBuf)
+		s.readBuf = s.readBuf[n:]
+		return n, nil
+	}
+
+	// If we already have some buffered data and underlying is EOF, drain buffer
+	if s.eof && len(s.readBuf) > 0 {
+		n := copy(p, s.readBuf)
+		s.readBuf = s.readBuf[n:]
+		if len(s.readBuf) == 0 {
+			return n, io.EOF
+		}
+		return n, nil
+	}
+	if s.eof && len(s.readBuf) == 0 {
+		return 0, io.EOF
+	}
+
+	// Read from underlying stream
+	r, ok := s.f.(io.Reader)
+	if !ok {
+		return 0, ErrNotSupported
+	}
+
+	buf := make([]byte, 8192)
+	n, err := r.Read(buf)
+	atEOF := err == io.EOF
+
+	if n > 0 {
+		filtered, ferr := s.ApplyReadFilters(buf[:n], false)
+		if ferr != nil {
+			return 0, ferr
+		}
+		s.readBuf = append(s.readBuf, filtered...)
+	}
+
+	if atEOF {
+		// Send closing signal through filters
+		closing, ferr := s.ApplyReadFilters(nil, true)
+		if ferr != nil {
+			return 0, ferr
+		}
+		s.readBuf = append(s.readBuf, closing...)
+		s.eof = true
+	}
+
+	if len(s.readBuf) > 0 {
+		nc := copy(p, s.readBuf)
+		s.readBuf = s.readBuf[nc:]
+		if len(s.readBuf) == 0 && s.eof {
+			// All data consumed and at EOF - don't return EOF yet
+			// since we did return some data. Next call will return 0, EOF.
+		}
+		return nc, nil
+	}
+
+	if s.eof {
+		return 0, io.EOF
+	}
+	return 0, err
+}
+
 func (s *Stream) Write(p []byte) (n int, err error) {
+	if len(s.writeFilters) > 0 {
+		return s.filteredWrite(p)
+	}
 	if w, ok := s.f.(io.Writer); ok {
 		return w.Write(p)
 	}
 	return 0, ErrNotSupported
+}
+
+// filteredWrite applies write filters before writing to the underlying stream
+func (s *Stream) filteredWrite(p []byte) (int, error) {
+	filtered, err := s.ApplyWriteFilters(p, false)
+	if err != nil {
+		return 0, err
+	}
+	if len(filtered) == 0 {
+		// Filters consumed data but produced no output (e.g., buffering)
+		return len(p), nil
+	}
+	w, ok := s.f.(io.Writer)
+	if !ok {
+		return 0, ErrNotSupported
+	}
+	_, werr := w.Write(filtered)
+	if werr != nil {
+		return 0, werr
+	}
+	return len(p), nil
 }
 
 func (s *Stream) Seek(offset int64, whence int) (int64, error) {
@@ -68,6 +167,19 @@ func (s *Stream) Seek(offset int64, whence int) (int64, error) {
 }
 
 func (s *Stream) ReadByte() (byte, error) {
+	// When we have read filters, always go through filtered Read
+	if len(s.readFilters) > 0 {
+		b := make([]byte, 1)
+		n, err := s.Read(b)
+		if err == io.EOF {
+			s.eof = true
+		}
+		if err == nil && n == 0 {
+			return 0, ErrNotSupported
+		}
+		return b[0], err
+	}
+
 	if rb, ok := s.f.(io.ByteReader); ok {
 		b, err := rb.ReadByte()
 		if err == io.EOF {
@@ -90,6 +202,21 @@ func (s *Stream) ReadByte() (byte, error) {
 	return b[0], err
 }
 
+// SetFilterCtx sets the PHP context for calling user filters
+func (s *Stream) SetFilterCtx(ctx phpv.Context) {
+	s.filterCtx = ctx
+}
+
+// GetFilterCtx returns the PHP context for calling user filters
+func (s *Stream) GetFilterCtx() phpv.Context {
+	return s.filterCtx
+}
+
+// Underlying returns the underlying io interface of the stream
+func (s *Stream) Underlying() interface{} {
+	return s.f
+}
+
 // EofChecker is an optional interface for stream backends that need custom EOF logic
 // (e.g., user-space stream wrappers that implement stream_eof).
 type EofChecker interface {
@@ -110,6 +237,33 @@ func (s *Stream) EofCheck(ctx phpv.Context) (bool, error) {
 }
 
 func (s *Stream) Close() error {
+	// Flush write filters before closing
+	if len(s.writeFilters) > 0 {
+		flushed, _ := s.FlushWriteFilters()
+		if len(flushed) > 0 {
+			if w, ok := s.f.(io.Writer); ok {
+				w.Write(flushed)
+			}
+		}
+		// Call onClose for user filters
+		for _, entry := range s.writeFilters {
+			if uf, ok := entry.filter.(*UserFilter); ok {
+				uf.OnClose()
+			}
+		}
+		s.writeFilters = nil
+	}
+
+	// Call onClose for read filters
+	if len(s.readFilters) > 0 {
+		for _, entry := range s.readFilters {
+			if uf, ok := entry.filter.(*UserFilter); ok {
+				uf.OnClose()
+			}
+		}
+		s.readFilters = nil
+	}
+
 	if cl, ok := s.f.(io.Closer); ok {
 		return cl.Close()
 	}

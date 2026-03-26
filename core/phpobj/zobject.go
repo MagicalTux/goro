@@ -60,6 +60,26 @@ type ZObject struct {
 	// serializeApplyCount tracks recursive serialize depth.
 	// Stored as a pointer so wrapper objects share the same counter.
 	serializeApplyCount *int32
+
+	// Lazy object support (PHP 8.4)
+	// LazyState tracks whether this is a lazy ghost/proxy and its initialization state.
+	// 0 = not lazy, 1 = lazy ghost (uninitialized), 2 = lazy proxy (uninitialized),
+	// 3 = lazy ghost (initialized), 4 = lazy proxy (initialized)
+	LazyState int
+
+	// LazyInitializer is the callback for ghost objects or the factory for proxy objects.
+	LazyInitializer *phpv.ZVal
+
+	// LazyInstance holds the real object for initialized proxy objects.
+	LazyInstance *ZObject
+
+	// LazySkippedProps tracks properties that have been skipped via
+	// ReflectionProperty::skipLazyInitialization() - accessing these does not trigger init.
+	LazySkippedProps map[phpv.ZString]bool
+
+	// LazyInitializing is true while the initializer/factory is being called,
+	// to prevent recursive initialization.
+	LazyInitializing bool
 }
 
 // CallDestructor calls __destruct on this object if it hasn't been called yet.
@@ -618,6 +638,13 @@ func (z *ZObject) new(class *ZClass) *ZObject {
 }
 
 func (z *ZObject) Clone(ctx phpv.Context) (phpv.ZObject, error) {
+	// Lazy objects: clone triggers initialization
+	if z.IsLazy() {
+		if err := z.TriggerLazyInit(ctx); err != nil {
+			return nil, err
+		}
+	}
+
 	opaque := map[phpv.ZClass]any{}
 	if len(z.Opaque) != 0 {
 		for class, thing := range z.Opaque {
@@ -626,6 +653,28 @@ func (z *ZObject) Clone(ctx phpv.Context) (phpv.ZObject, error) {
 			}
 			opaque[class] = thing
 		}
+	}
+
+	// For initialized proxies, the clone preserves the proxy structure
+	if z.LazyState == LazyProxyInitialized && z.LazyInstance != nil {
+		// Clone the proxy shell
+		n := &ZObject{
+			Class:        z.Class,
+			CurrentClass: z.CurrentClass,
+			h:            z.h.Dup(),
+			hasPrivate:   maps.Clone(z.hasPrivate),
+			Opaque:       opaque,
+			ID:           ctx.Global().NextObjectID(),
+			refCount:     new(int32),
+			LazyState:    LazyProxyInitialized,
+		}
+		// Clone the real instance
+		clonedReal, err := z.LazyInstance.Clone(ctx)
+		if err != nil {
+			return nil, err
+		}
+		n.LazyInstance = clonedReal.(*ZObject)
+		return n, nil
 	}
 
 	n := &ZObject{
@@ -1192,6 +1241,32 @@ func (o *ZObject) HasProp(ctx phpv.Context, key phpv.Val) (bool, error) {
 	}
 
 	keyStr := key.(phpv.ZString)
+
+	// Lazy object: trigger initialization on isset (unless skipped)
+	if o.IsLazy() && !o.IsPropertySkippedForLazy(keyStr) {
+		if err := o.TriggerLazyInitForProp(ctx, keyStr); err != nil {
+			return false, err
+		}
+		if o.LazyState == LazyProxyInitialized && o.LazyInstance != nil {
+			target := o.ResolveProxy()
+			if target.IsLazy() {
+				if err := target.TriggerLazyInit(ctx); err != nil {
+					return false, err
+				}
+				target = target.ResolveProxy()
+			}
+			return target.HasProp(ctx, keyStr)
+		}
+	} else if o.LazyState == LazyProxyInitialized && o.LazyInstance != nil && !o.IsPropertySkippedForLazy(keyStr) {
+		target := o.ResolveProxy()
+		if target.IsLazy() {
+			if err := target.TriggerLazyInit(ctx); err != nil {
+				return false, err
+			}
+			target = target.ResolveProxy()
+		}
+		return target.HasProp(ctx, keyStr)
+	}
 
 	// Note: isset() does NOT emit "Accessing static property as non-static" notice
 	// (unlike ObjectGet/ObjectSet which do). This is PHP behavior.
@@ -1808,6 +1883,33 @@ func (o *ZObject) ObjectGet(ctx phpv.Context, key phpv.Val) (*phpv.ZVal, error) 
 
 	keyStr := key.(phpv.ZString)
 
+	// Lazy object: trigger initialization on property access (unless skipped)
+	if o.IsLazy() && !o.IsPropertySkippedForLazy(keyStr) {
+		if err := o.TriggerLazyInitForProp(ctx, keyStr); err != nil {
+			return nil, err
+		}
+		// After proxy init, delegate to the real instance
+		if o.LazyState == LazyProxyInitialized && o.LazyInstance != nil {
+			target := o.ResolveProxy()
+			if target.IsLazy() {
+				if err := target.TriggerLazyInit(ctx); err != nil {
+					return nil, err
+				}
+				target = target.ResolveProxy()
+			}
+			return target.ObjectGet(ctx, keyStr)
+		}
+	} else if o.LazyState == LazyProxyInitialized && o.LazyInstance != nil && !o.IsPropertySkippedForLazy(keyStr) {
+		target := o.ResolveProxy()
+		if target.IsLazy() {
+			if err := target.TriggerLazyInit(ctx); err != nil {
+				return nil, err
+			}
+			target = target.ResolveProxy()
+		}
+		return target.ObjectGet(ctx, keyStr)
+	}
+
 	// Check if accessing a static property as non-static
 	o.checkStaticPropertyAccess(ctx, keyStr)
 
@@ -2026,6 +2128,33 @@ func (o *ZObject) ObjectSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) er
 	}
 
 	keyStr := key.(phpv.ZString)
+
+	// Lazy object: trigger initialization on property write (unless skipped)
+	if o.IsLazy() && !o.IsPropertySkippedForLazy(keyStr) {
+		if err := o.TriggerLazyInitForProp(ctx, keyStr); err != nil {
+			return err
+		}
+		// After proxy init, delegate to the real instance
+		if o.LazyState == LazyProxyInitialized && o.LazyInstance != nil {
+			target := o.ResolveProxy()
+			if target.IsLazy() {
+				if err := target.TriggerLazyInit(ctx); err != nil {
+					return err
+				}
+				target = target.ResolveProxy()
+			}
+			return target.ObjectSet(ctx, keyStr, value)
+		}
+	} else if o.LazyState == LazyProxyInitialized && o.LazyInstance != nil && !o.IsPropertySkippedForLazy(keyStr) {
+		target := o.ResolveProxy()
+		if target.IsLazy() {
+			if err := target.TriggerLazyInit(ctx); err != nil {
+				return err
+			}
+			target = target.ResolveProxy()
+		}
+		return target.ObjectSet(ctx, keyStr, value)
+	}
 
 	// PHP: property names starting with \0 are not allowed
 	if len(keyStr) > 0 && keyStr[0] == 0 {
@@ -2948,6 +3077,12 @@ func (o *ZObject) checkStaticPropertyAccess(ctx phpv.Context, keyStr phpv.ZStrin
 
 func getPrivatePropName(class phpv.ZClass, name phpv.ZString) phpv.ZString {
 	return phpv.ZString(fmt.Sprintf("*%s:%s", class.GetName(), name))
+}
+
+// GetPrivatePropNameExt is the exported version of getPrivatePropName for use
+// by other packages (e.g., the reflection extension).
+func GetPrivatePropNameExt(class phpv.ZClass, name phpv.ZString) phpv.ZString {
+	return getPrivatePropName(class, name)
 }
 
 // getOwnProp checks only this class's directly declared Props (NOT walking

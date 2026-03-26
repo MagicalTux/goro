@@ -150,6 +150,9 @@ func init() {
 	initReflectionClassConstant()
 	initReflectionConstant()
 
+	// Initialize lazy object methods on ReflectionClass and ReflectionProperty
+	initLazyObjectMethods()
+
 	// Copy methods to classes that inherit from ReflectionClass (after it's fully initialized)
 	ReflectionEnum.Methods = phpobj.CopyMethods(ReflectionClass.Methods)
 	ReflectionEnum.Props = ReflectionClass.Props

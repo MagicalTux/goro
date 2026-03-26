@@ -6,6 +6,7 @@ const (
 	ResourceUnknown = iota
 	ResourceStream
 	ResourceContext
+	ResourceStreamFilter
 )
 
 func (rs ResourceType) String() string {
@@ -14,6 +15,8 @@ func (rs ResourceType) String() string {
 		return "stream"
 	case ResourceContext:
 		return "stream-context"
+	case ResourceStreamFilter:
+		return "stream filter"
 	}
 	return "Unknown"
 }

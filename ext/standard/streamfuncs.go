@@ -327,7 +327,6 @@ func fncStreamContextGetParams(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal,
 
 // > func array stream_get_filters ( void )
 func fncStreamGetFilters(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	// Return a basic list of built-in stream filters
 	result := phpv.NewZArray()
 	builtinFilters := []string{
 		"string.rot13",
@@ -339,10 +338,15 @@ func fncStreamGetFilters(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error
 		"convert.base64-decode",
 		"convert.quoted-printable-encode",
 		"convert.quoted-printable-decode",
+		"dechunk",
 		"zlib.*",
 		"bzip2.*",
 	}
 	for _, f := range builtinFilters {
+		result.OffsetSet(ctx, nil, phpv.ZString(f).ZVal())
+	}
+	// Add registered user filters
+	for _, f := range stream.GetFilterRegistry().GetAll() {
 		result.OffsetSet(ctx, nil, phpv.ZString(f).ZVal())
 	}
 	return result.ZVal(), nil
@@ -359,50 +363,213 @@ func fncStreamWrapperRestore(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, e
 	return phpv.ZTrue.ZVal(), nil
 }
 
-// > func resource stream_filter_append ( resource $stream , string $filtername [, int $read_write [, mixed $params ]] )
-func fncStreamFilterAppend(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+// streamFilterAttach is the shared implementation for stream_filter_append and stream_filter_prepend
+func streamFilterAttach(ctx phpv.Context, args []*phpv.ZVal, prepend bool) (*phpv.ZVal, error) {
 	var handle phpv.Resource
 	var filtername phpv.ZString
-	_, err := core.Expand(ctx, args, &handle, &filtername)
+	var readWrite core.Optional[phpv.ZInt]
+	var params core.Optional[*phpv.ZVal]
+	_, err := core.Expand(ctx, args, &handle, &filtername, &readWrite, &params)
 	if err != nil {
 		return nil, err
 	}
 
-	s, ok := handle.(*stream.Stream)
-	if !ok {
-		return phpv.ZFalse.ZVal(), ctx.Warn("stream_filter_append(): Argument #1 ($stream) is not a valid stream resource")
+	funcName := "stream_filter_append"
+	if prepend {
+		funcName = "stream_filter_prepend"
 	}
 
-	// Stub: record the filter but don't actually apply it
-	// This allows tests that check for filter registration to pass
-	_ = s
-	_ = filtername
+	s, ok := handle.(*stream.Stream)
+	if !ok {
+		return phpv.ZFalse.ZVal(), ctx.Warn("%s(): Argument #1 ($stream) is not a valid stream resource", funcName)
+	}
 
-	// Return a fake resource for the filter
-	filterRes := stream.NewStream(nil)
-	filterRes.ResourceType = phpv.ResourceStream
-	filterRes.ResourceID = ctx.Global().NextResourceID()
-	filterRes.SetAttr("filter_name", string(filtername))
+	// Determine direction
+	dir := stream.FilterAll
+	if readWrite.HasArg() {
+		dir = stream.FilterDirection(readWrite.Get())
+	}
+
+	// Extract params as a map for built-in filters
+	filterParams := extractFilterParams(ctx, params)
+
+	// Try to create a built-in filter first
+	name := string(filtername)
+	filter := stream.CreateBuiltinFilter(name, filterParams)
+
+	if filter == nil {
+		// Try user-registered filter
+		className, found := stream.GetFilterRegistry().Lookup(name)
+		if !found {
+			ctx.Warn("%s(): Unable to create or locate filter \"%s\"", funcName, name)
+			return phpv.ZFalse.ZVal(), nil
+		}
+
+		// Get the class
+		class, err := ctx.Global().GetClass(ctx, phpv.ZString(className), true)
+		if err != nil {
+			ctx.Warn("%s(): Unable to create or locate filter \"%s\"", funcName, name)
+			return phpv.ZFalse.ZVal(), nil
+		}
+
+		// Create an instance
+		obj, err := phpobj.NewZObject(ctx, class)
+		if err != nil {
+			ctx.Warn("%s(): Unable to create or locate filter \"%s\"", funcName, name)
+			return phpv.ZFalse.ZVal(), nil
+		}
+
+		// Set filtername and params on the object
+		obj.OffsetSet(ctx, phpv.ZStr("filtername"), phpv.ZString(name).ZVal())
+		if params.HasArg() {
+			obj.OffsetSet(ctx, phpv.ZStr("params"), params.Get())
+		} else {
+			obj.OffsetSet(ctx, phpv.ZStr("params"), phpv.ZStr("").ZVal())
+		}
+
+		// Call onCreate()
+		onCreateResult, err := obj.CallMethod(ctx, "onCreate")
+		if err != nil {
+			ctx.Warn("%s(): Unable to create or locate filter \"%s\"", funcName, name)
+			return phpv.ZFalse.ZVal(), nil
+		}
+		if onCreateResult != nil && !onCreateResult.AsBool(ctx) {
+			ctx.Warn("%s(): Unable to create or locate filter \"%s\"", funcName, name)
+			return phpv.ZFalse.ZVal(), nil
+		}
+
+		var paramsVal *phpv.ZVal
+		if params.HasArg() {
+			paramsVal = params.Get()
+		}
+
+		filter = stream.NewUserFilter(ctx, obj, s, name, paramsVal)
+	}
+
+	// Create the filter resource
+	filterRes := &stream.StreamFilterResource{
+		ResourceID:   ctx.Global().NextResourceID(),
+		ResourceType: phpv.ResourceStreamFilter,
+		FilterName:   name,
+		Direction:    dir,
+		Filter:       filter,
+		Stream:       s,
+	}
+
+	// Attach the filter
+	s.SetFilterCtx(ctx)
+	if dir&stream.FilterRead != 0 {
+		s.AddReadFilter(filterRes, prepend)
+	}
+	if dir&stream.FilterWrite != 0 {
+		s.AddWriteFilter(filterRes, prepend)
+	}
+
 	return filterRes.ZVal(), nil
+}
+
+// extractFilterParams converts the optional params ZVal into a map for built-in filters
+func extractFilterParams(ctx phpv.Context, params core.Optional[*phpv.ZVal]) map[string]interface{} {
+	result := make(map[string]interface{})
+	if !params.HasArg() || params.Get() == nil || params.Get().GetType() == phpv.ZtNull {
+		return result
+	}
+	p := params.Get()
+	if p.GetType() == phpv.ZtArray {
+		arr := p.AsArray(ctx)
+		for k, v := range arr.Iterate(ctx) {
+			key := string(k.AsString(ctx))
+			switch v.GetType() {
+			case phpv.ZtInt:
+				result[key] = int(v.AsInt(ctx))
+			case phpv.ZtString:
+				result[key] = string(v.AsString(ctx))
+			case phpv.ZtBool:
+				result[key] = bool(v.AsBool(ctx))
+			default:
+				result[key] = v.String()
+			}
+		}
+	}
+	return result
+}
+
+// > func resource stream_filter_append ( resource $stream , string $filtername [, int $read_write [, mixed $params ]] )
+func fncStreamFilterAppend(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	return streamFilterAttach(ctx, args, false)
 }
 
 // > func resource stream_filter_prepend ( resource $stream , string $filtername [, int $read_write [, mixed $params ]] )
 func fncStreamFilterPrepend(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	return fncStreamFilterAppend(ctx, args)
+	return streamFilterAttach(ctx, args, true)
 }
 
 // > func bool stream_filter_remove ( resource $stream_filter )
 func fncStreamFilterRemove(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var handle phpv.Resource
+	_, err := core.Expand(ctx, args, &handle)
+	if err != nil {
+		return nil, err
+	}
+
+	filterRes, ok := handle.(*stream.StreamFilterResource)
+	if !ok || filterRes.Removed {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			"stream_filter_remove(): supplied resource is not a valid stream filter resource")
+	}
+
+	// Check if the stream is still valid
+	if filterRes.Stream == nil || filterRes.Stream.GetResourceType() == phpv.ResourceUnknown {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			"stream_filter_remove(): supplied resource is not a valid stream filter resource")
+	}
+
+	// Remove the filter from the stream
+	filterRes.Stream.RemoveFilter(filterRes)
+	filterRes.Removed = true
+
+	// Call onClose for user filters
+	if uf, ok := filterRes.Filter.(*stream.UserFilter); ok {
+		uf.OnClose()
+	}
+
 	return phpv.ZTrue.ZVal(), nil
 }
 
 // > func bool stream_filter_register ( string $filter_name , string $class_name )
 func fncStreamFilterRegister(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	// Stub: acknowledge registration but don't implement filter functionality
+	var filterName phpv.ZString
+	var className phpv.ZString
+	_, err := core.Expand(ctx, args, &filterName, &className)
+	if err != nil {
+		return nil, err
+	}
+
+	// Validate arguments
+	if len(filterName) == 0 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+			"stream_filter_register(): Argument #1 ($filter_name) must be a non-empty string")
+	}
+	if len(className) == 0 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+			"stream_filter_register(): Argument #2 ($class) must be a non-empty string")
+	}
+
+	// Check if it's already a built-in filter name
+	if stream.IsBuiltinFilter(string(filterName)) {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	// Register
+	ok := stream.GetFilterRegistry().Register(string(filterName), string(className))
+	if !ok {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
 	return phpv.ZTrue.ZVal(), nil
 }
 
-// > func resource stream_bucket_new ( resource $stream , string $buffer )
+// > func object stream_bucket_new ( resource $stream , string $buffer )
 func fncStreamBucketNew(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var handle phpv.Resource
 	var buffer phpv.ZString
@@ -411,7 +578,7 @@ func fncStreamBucketNew(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 		return nil, err
 	}
 
-	// Create a simple bucket object
+	// Create a bucket object with data and datalen properties
 	obj, err := phpobj.NewZObject(ctx, phpobj.StdClass)
 	if err != nil {
 		return nil, err
@@ -421,25 +588,91 @@ func fncStreamBucketNew(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	return obj.ZVal(), nil
 }
 
+// > func void stream_bucket_append ( resource $brigade , object $bucket )
+func fncStreamBucketAppend(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) < 2 {
+		return nil, ctx.FuncErrorf("expects exactly 2 arguments")
+	}
+
+	brigade := args[0].Value()
+	bb, ok := brigade.(*stream.BucketBrigade)
+	if !ok {
+		return nil, nil
+	}
+
+	bucketZVal := args[1]
+	if bucketZVal.GetType() == phpv.ZtObject {
+		obj := bucketZVal.Value().(*phpobj.ZObject)
+		bb.AppendBucketObj(obj)
+	}
+	return nil, nil
+}
+
+// > func void stream_bucket_prepend ( resource $brigade , object $bucket )
+func fncStreamBucketPrepend(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) < 2 {
+		return nil, ctx.FuncErrorf("expects exactly 2 arguments")
+	}
+
+	brigade := args[0].Value()
+	bb, ok := brigade.(*stream.BucketBrigade)
+	if !ok {
+		return nil, nil
+	}
+
+	bucketZVal := args[1]
+	if bucketZVal.GetType() == phpv.ZtObject {
+		obj := bucketZVal.Value().(*phpobj.ZObject)
+		bb.PrependBucketObj(obj)
+	}
+	return nil, nil
+}
+
+// > func object stream_bucket_make_writeable ( resource $brigade )
+func fncStreamBucketMakeWriteable(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) < 1 {
+		return nil, ctx.FuncErrorf("expects exactly 1 argument")
+	}
+
+	brigade := args[0].Value()
+	bb, ok := brigade.(*stream.BucketBrigade)
+	if !ok {
+		return phpv.ZNULL.ZVal(), nil
+	}
+
+	return bb.MakeWriteable(ctx), nil
+}
+
 // PhpUserFilterClass is the built-in php_user_filter class that user-defined
 // stream filters extend.
 var PhpUserFilterClass = &phpobj.ZClass{
-		Name: "php_user_filter",
-		Props: []*phpv.ZClassProp{
-			{VarName: "filtername", Default: phpv.ZStr("").ZVal(), Modifiers: phpv.ZAttrPublic},
-			{VarName: "params", Default: phpv.ZStr("").ZVal(), Modifiers: phpv.ZAttrPublic},
-			{VarName: "stream", Default: phpv.ZNULL.ZVal(), Modifiers: phpv.ZAttrPublic},
+	Name: "php_user_filter",
+	Props: []*phpv.ZClassProp{
+		{VarName: "filtername", Default: phpv.ZStr("").ZVal(), Modifiers: phpv.ZAttrPublic},
+		{VarName: "params", Default: phpv.ZStr("").ZVal(), Modifiers: phpv.ZAttrPublic},
+		{VarName: "stream", Default: phpv.ZNULL.ZVal(), Modifiers: phpv.ZAttrPublic},
+	},
+	Methods: map[phpv.ZString]*phpv.ZClassMethod{
+		"filter": {
+			Name: "filter",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				return phpv.ZInt(stream.PSFS_FEED_ME).ZVal(), nil
+			}),
+			ReturnType: phpv.ParseTypeHint("int"),
 		},
-		Methods: map[phpv.ZString]*phpv.ZClassMethod{
-			"filter": {Name: "filter", Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				// PSFS_FEED_ME = 1 by default
-				return phpv.ZInt(1).ZVal(), nil
-			})},
-			"oncreate": {Name: "onCreate", Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+		"oncreate": {
+			Name: "onCreate",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				return phpv.ZTrue.ZVal(), nil
-			})},
-			"onclose": {Name: "onClose", Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				return nil, nil
-			})},
+			}),
+			ReturnType: phpv.ParseTypeHint("bool"),
 		},
-	}
+		"onclose": {
+			Name: "onClose",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				return nil, nil
+			}),
+			ReturnType: phpv.ParseTypeHint("void"),
+		},
+	},
+}
