@@ -2069,12 +2069,18 @@ func formatMethodSignature(className phpv.ZString, m *phpv.ZClassMethod, selfRes
 		}
 	}
 	sig += ")"
+	// Check for return type: first from the Method's GetReturnType(), then from ZClassMethod.ReturnType
+	var retType *phpv.TypeHint
 	if rt, ok := m.Method.(interface {
 		GetReturnType() *phpv.TypeHint
 	}); ok {
-		if retType := rt.GetReturnType(); retType != nil {
-			sig += ": " + fmtHint(retType)
-		}
+		retType = rt.GetReturnType()
+	}
+	if retType == nil && m.ReturnType != nil {
+		retType = m.ReturnType
+	}
+	if retType != nil {
+		sig += ": " + fmtHint(retType)
 	}
 	return sig
 }

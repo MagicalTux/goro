@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpctx"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
@@ -480,6 +481,24 @@ func streamFilterAttach(ctx phpv.Context, args []*phpv.ZVal, prepend bool) (*php
 	s.SetFilterCtx(globalCtx)
 	if dir&stream.FilterRead != 0 {
 		s.AddReadFilter(filterRes, prepend)
+
+		// If the stream has pre-buffered read data, try to process it through the new filter
+		if preBuffered := s.GetReadBuffer(); len(preBuffered) > 0 {
+			filtered, ferr := filter.Process(preBuffered, false)
+			if ferr != nil {
+				if fw, ok := ferr.(*stream.FilterWarning); ok {
+					ctx.Warn("%s(): %s", funcName, fw.Message, logopt.NoFuncName(true))
+				}
+				if _, ok := ferr.(*stream.FilterFatalError); ok {
+					if fe, ok2 := ferr.(*stream.FilterFatalError); ok2 && fe.UnprocessedBuckets {
+						ctx.Warn("%s(): Unprocessed filter buckets remaining on input brigade", funcName, logopt.NoFuncName(true))
+					}
+					ctx.Warn("%s(): Filter failed to process pre-buffered data", funcName, logopt.NoFuncName(true))
+				}
+			} else if filtered != nil {
+				s.SetReadBuffer(filtered)
+			}
+		}
 	}
 	if dir&stream.FilterWrite != 0 {
 		s.AddWriteFilter(filterRes, prepend)
@@ -542,6 +561,18 @@ func fncStreamFilterRemove(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, err
 	if filterRes.Stream == nil || filterRes.Stream.GetResourceType() == phpv.ResourceUnknown {
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
 			"stream_filter_remove(): supplied resource is not a valid stream filter resource")
+	}
+
+	// Try to flush the filter before removing (call with closing=true).
+	// If the filter returns a fatal error, warn and don't remove.
+	if uf, ok := filterRes.Filter.(*stream.UserFilter); ok {
+		_, flushErr := uf.Process(nil, true)
+		if flushErr != nil {
+			if _, ok := flushErr.(*stream.FilterFatalError); ok {
+				ctx.Warn("stream_filter_remove(): Unable to flush filter, not removing", logopt.NoFuncName(true))
+				return phpv.ZFalse.ZVal(), nil
+			}
+		}
 	}
 
 	// Remove the filter from the stream

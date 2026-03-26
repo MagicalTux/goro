@@ -86,21 +86,41 @@ func (s *Stream) filteredRead(p []byte) (int, error) {
 	n, err := r.Read(buf)
 	atEOF := err == io.EOF
 
+	var filterErr error
 	if n > 0 {
 		filtered, ferr := s.ApplyReadFilters(buf[:n], false)
 		if ferr != nil {
-			return 0, ferr
+			// For filter warnings, still use the data
+			if fw, ok := ferr.(*FilterWarning); ok {
+				s.readBuf = append(s.readBuf, fw.Data...)
+				filterErr = ferr
+			} else if _, ok := ferr.(*FilterFatalError); ok {
+				filterErr = ferr
+			} else {
+				return 0, ferr
+			}
+		} else {
+			s.readBuf = append(s.readBuf, filtered...)
 		}
-		s.readBuf = append(s.readBuf, filtered...)
 	}
 
 	if atEOF {
 		// Send closing signal through filters
 		closing, ferr := s.ApplyReadFilters(nil, true)
 		if ferr != nil {
-			return 0, ferr
+			if fw, ok := ferr.(*FilterWarning); ok {
+				s.readBuf = append(s.readBuf, fw.Data...)
+			} else if _, ok := ferr.(*FilterFatalError); ok {
+				// Fatal error on close
+				if filterErr == nil {
+					filterErr = ferr
+				}
+			} else {
+				return 0, ferr
+			}
+		} else {
+			s.readBuf = append(s.readBuf, closing...)
 		}
-		s.readBuf = append(s.readBuf, closing...)
 		s.eof = true
 	}
 
@@ -111,9 +131,15 @@ func (s *Stream) filteredRead(p []byte) (int, error) {
 			// All data consumed and at EOF - don't return EOF yet
 			// since we did return some data. Next call will return 0, EOF.
 		}
+		if filterErr != nil {
+			return nc, filterErr
+		}
 		return nc, nil
 	}
 
+	if filterErr != nil {
+		return 0, filterErr
+	}
 	if s.eof {
 		return 0, io.EOF
 	}
@@ -217,6 +243,16 @@ func (s *Stream) ReadByte() (byte, error) {
 	return b[0], err
 }
 
+// GetReadBuffer returns any pre-buffered read data (used by stream_filter_append)
+func (s *Stream) GetReadBuffer() []byte {
+	return s.readBuf
+}
+
+// SetReadBuffer replaces the pre-buffered read data (used after filter processes pre-buffered data)
+func (s *Stream) SetReadBuffer(data []byte) {
+	s.readBuf = data
+}
+
 // SetFilterCtx sets the PHP context for calling user filters
 func (s *Stream) SetFilterCtx(ctx phpv.Context) {
 	s.filterCtx = ctx
@@ -258,7 +294,17 @@ func (s *Stream) Close() error {
 
 	// Flush write filters before closing
 	if len(s.writeFilters) > 0 {
-		flushed, _ := s.FlushWriteFilters()
+		flushed, flushErr := s.FlushWriteFilters()
+		if flushErr != nil {
+			// Check for PHP exceptions (TypeError from typed property in filter)
+			// Let them propagate to the caller
+			s.writeFilters = nil
+			s.readFilters = nil
+			if cl, ok := s.f.(io.Closer); ok {
+				cl.Close()
+			}
+			return flushErr
+		}
 		if len(flushed) > 0 {
 			if w, ok := s.f.(io.Writer); ok {
 				w.Write(flushed)

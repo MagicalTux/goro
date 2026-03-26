@@ -8,11 +8,12 @@ import (
 // UserFilter wraps a PHP user filter object (extending php_user_filter)
 // to implement the StreamFilter interface.
 type UserFilter struct {
-	ctx        phpv.Context
-	obj        *phpobj.ZObject
-	stream     *Stream
-	filterName string
-	params     *phpv.ZVal
+	ctx          phpv.Context
+	obj          *phpobj.ZObject
+	stream       *Stream
+	filterName   string
+	params       *phpv.ZVal
+	lastStreamErr error // error from setStreamProperty (e.g., TypeError for typed properties)
 }
 
 // NewUserFilter creates a new user filter instance.
@@ -56,7 +57,11 @@ func (f *UserFilter) Process(data []byte, closing bool) ([]byte, error) {
 	consumed.MakeRef()
 
 	// Set the stream property on the filter object (if the property exists and is appropriate)
+	f.lastStreamErr = nil
 	f.setStreamProperty()
+	if f.lastStreamErr != nil {
+		return nil, f.lastStreamErr
+	}
 
 	// Mark the stream as being inside a filter operation
 	if f.stream != nil {
@@ -84,13 +89,28 @@ func (f *UserFilter) Process(data []byte, closing bool) ([]byte, error) {
 	switch retCode {
 	case PSFS_PASS_ON:
 		// Collect output from out brigade
+		// Check if there are unprocessed buckets remaining on the input brigade
+		if len(inBrigade.buckets) > 0 {
+			// There are unprocessed input buckets - this is a warning condition
+			return outBrigade.CollectData(), &FilterWarning{
+				Message: "Unprocessed filter buckets remaining on input brigade",
+				Data:    outBrigade.CollectData(),
+			}
+		}
 		return outBrigade.CollectData(), nil
 	case PSFS_FEED_ME:
 		// Filter needs more data, return nothing
 		return nil, nil
 	case PSFS_ERR_FATAL:
-		// Fatal error
-		return nil, nil
+		// Fatal error - check for unprocessed input buckets
+		if len(inBrigade.buckets) > 0 {
+			return nil, &FilterFatalError{
+				UnprocessedBuckets: true,
+			}
+		}
+		return nil, &FilterFatalError{
+			UnprocessedBuckets: false,
+		}
 	}
 
 	return nil, nil
@@ -170,7 +190,23 @@ func (f *UserFilter) setStreamProperty() {
 		return
 	}
 
-	// Recover from panics - ObjectSet might trigger ThrowError for typed properties
+	// Check if the property has a type hint that is incompatible with resource
+	if zc, ok := class.(*phpobj.ZClass); ok {
+		for _, p := range zc.Props {
+			if p.VarName == "stream" && p.TypeHint != nil {
+				// Has a type hint - check if resource is compatible
+				// If the type is not "resource" and not mixed/null, skip setting
+				th := p.TypeHint.String()
+				if th != "" && th != "mixed" && th != "resource" {
+					// Will throw TypeError - let it propagate
+					f.lastStreamErr = f.obj.ObjectSet(ctx, phpv.ZStr("stream"), f.stream.ZVal())
+					return
+				}
+			}
+		}
+	}
+
+	// No type conflict - set directly (recover from any unexpected panics)
 	defer func() { recover() }()
 	f.obj.ObjectSet(ctx, phpv.ZStr("stream"), f.stream.ZVal())
 }

@@ -19,6 +19,15 @@ func (e *FilterWarning) Error() string {
 	return e.Message
 }
 
+// FilterFatalError indicates a user filter returned PSFS_ERR_FATAL.
+type FilterFatalError struct {
+	UnprocessedBuckets bool
+}
+
+func (e *FilterFatalError) Error() string {
+	return "filter returned PSFS_ERR_FATAL"
+}
+
 // PSFS return codes from filter() method
 const (
 	PSFS_PASS_ON    = 2
@@ -422,20 +431,16 @@ func (f *QuotedPrintableDecodeFilter) Process(data []byte, closing bool) ([]byte
 			if i+2 < len(input) {
 				h1 := input[i+1]
 				h2 := input[i+2]
-				if h1 == '\r' && h2 == '\n' {
-					// Soft line break
-					i += 3
-					continue
-				}
-				if h1 == '\n' {
-					// Soft line break (bare LF)
-					i += 2
-					continue
-				}
+				// Check for valid hex-encoded byte first
 				v1 := unhex(h1)
 				v2 := unhex(h2)
 				if v1 >= 0 && v2 >= 0 {
 					result = append(result, byte(v1<<4|v2))
+					i += 3
+					continue
+				}
+				// Check for soft line break =\r\n
+				if h1 == '\r' && h2 == '\n' {
 					i += 3
 					continue
 				}
@@ -458,10 +463,8 @@ func (f *QuotedPrintableDecodeFilter) Process(data []byte, closing bool) ([]byte
 				}
 				return result, nil
 			} else {
-				// Closing with incomplete sequence
-				hasInvalid = true
-				result = append(result, input[i])
-				i++
+				// Closing with incomplete sequence - treat as soft line break
+				i = len(input) // skip remaining
 			}
 		} else {
 			result = append(result, input[i])

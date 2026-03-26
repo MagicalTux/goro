@@ -812,6 +812,10 @@ func fncFileClose(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		}
 		err = f.Close()
 		if err != nil {
+			// Check for PHP exceptions (e.g., TypeError from filter's typed property)
+			if _, isThrow := err.(*phperr.PhpThrow); isThrow {
+				return nil, err
+			}
 			return phpv.ZFalse.ZVal(), nil
 		}
 		// Mark the resource as closed (type becomes "Unknown")
@@ -863,6 +867,12 @@ func fncFwrite(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 	n, err := file.Write(b)
 	if err != nil {
+		// Check for PHP exceptions (e.g., TypeError from typed property assignment in filters)
+		if _, isThrow := err.(*phperr.PhpThrow); isThrow {
+			// Emit warning about unprocessed filter buckets before propagating
+			ctx.Warn("fwrite(): Unprocessed filter buckets remaining on input brigade", logopt.NoFuncName(true))
+			return nil, err
+		}
 		// Check for filter warnings (e.g., QP decode invalid byte sequence)
 		if fw, ok := err.(*stream.FilterWarning); ok {
 			ctx.Warn("fwrite(): %s", fw.Message, logopt.NoFuncName(true))
@@ -1337,7 +1347,14 @@ func fncStreamGetContents(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, erro
 		contents = contents[:n]
 	}
 	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
-		return nil, ctx.FuncError(err)
+		// Check for filter errors
+		if fw, ok := err.(*stream.FilterWarning); ok {
+			ctx.Warn("stream_get_contents(): %s", fw.Message, logopt.NoFuncName(true))
+		} else if _, ok := err.(*stream.FilterFatalError); ok {
+			ctx.Warn("stream_get_contents(): Unprocessed filter buckets remaining on input brigade", logopt.NoFuncName(true))
+		} else {
+			return nil, ctx.FuncError(err)
+		}
 	}
 
 	return phpv.ZStr(string(contents)), nil
