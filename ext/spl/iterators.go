@@ -1216,13 +1216,16 @@ var RegexIteratorClass = &phpobj.ZClass{
 	Name:            "RegexIterator",
 	Extends:         nil, // Would extend FilterIterator in full impl
 	Implementations: []*phpobj.ZClass{OuterIterator},
+	Props: []*phpv.ZClassProp{
+		{VarName: "replacement", Modifiers: phpv.ZAttrPublic}, // PHP has public $replacement
+	},
 	Const: map[phpv.ZString]*phpv.ZClassConst{
-		"MATCH":        {Value: phpv.ZInt(regexIteratorMatch)},
-		"GET_MATCH":    {Value: phpv.ZInt(regexIteratorGetMatch)},
-		"ALL_MATCHES":  {Value: phpv.ZInt(regexIteratorAllMatches)},
-		"SPLIT":        {Value: phpv.ZInt(regexIteratorSplit)},
-		"REPLACE":      {Value: phpv.ZInt(regexIteratorReplace)},
-		"USE_KEY":      {Value: phpv.ZInt(regexIteratorUseKey)},
+		"MATCH":       {Value: phpv.ZInt(regexIteratorMatch)},
+		"GET_MATCH":   {Value: phpv.ZInt(regexIteratorGetMatch)},
+		"ALL_MATCHES": {Value: phpv.ZInt(regexIteratorAllMatches)},
+		"SPLIT":       {Value: phpv.ZInt(regexIteratorSplit)},
+		"REPLACE":     {Value: phpv.ZInt(regexIteratorReplace)},
+		"USE_KEY":     {Value: phpv.ZInt(regexIteratorUseKey)},
 	},
 }
 

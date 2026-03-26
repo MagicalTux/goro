@@ -112,7 +112,7 @@ func fncSplAutoloadUnregister(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, 
 
 		// Special case: spl_autoload_call unregisters all autoloaders (deprecated)
 		if strings.EqualFold(name, "spl_autoload_call") {
-			ctx.Deprecated("Using spl_autoload_call() as a callback for spl_autoload_unregister() is deprecated, to remove all registered autoloaders, call spl_autoload_unregister() for all values returned from spl_autoload_functions()", logopt.NoFuncName(true))
+			ctx.Deprecated("Using spl_autoload_call() as a callback for spl_autoload_unregister() is deprecated, to remove all registered autoloaders, call spl_autoload_unregister() for all values returned from spl_autoload_functions()", logopt.NoFuncName(false))
 			ctx.Global().ClearAutoloadFunctions()
 			return phpv.ZTrue.ZVal(), nil
 		}

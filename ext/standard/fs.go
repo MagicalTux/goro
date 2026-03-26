@@ -781,10 +781,7 @@ func fncFileOpen(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	f, err := ctx.Global().Open(ctx, filename, mode, useIncludePath)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return phpv.ZFalse.ZVal(), ctx.Warn("%s(%s): Failed to open stream: No such file or directory", ctx.GetFuncName(), filename, logopt.NoFuncName(true))
-		}
-		return phpv.ZFalse.ZVal(), ctx.Warn("%s(%s): Failed to open stream: %s", ctx.GetFuncName(), filename, err.Error(), logopt.NoFuncName(true))
+		return phpv.ZFalse.ZVal(), ctx.Warn("%s(%s): Failed to open stream: %s", ctx.GetFuncName(), filename, phpErrMsg(err), logopt.NoFuncName(true))
 	}
 
 	return f.ZVal(), nil
@@ -1568,6 +1565,11 @@ func fncLinkinfo(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	_, err := core.Expand(ctx, args, &p)
 	if err != nil {
 		return nil, err
+	}
+
+	// PHP: linkinfo('') and linkinfo(false) emit a warning and return -1
+	if p == "" {
+		return phpv.ZInt(-1).ZVal(), ctx.Warn("%s(): No such file or directory", ctx.GetFuncName(), logopt.NoFuncName(true))
 	}
 
 	if err := ctx.Global().CheckOpenBasedir(ctx, p, "linkinfo"); err != nil {

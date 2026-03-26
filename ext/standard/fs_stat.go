@@ -517,6 +517,14 @@ func fncLink(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
+	// PHP: empty target or link should fail with "No such file or directory"
+	if target == "" {
+		return phpv.ZFalse.ZVal(), ctx.Warn("%s(): No such file or directory", ctx.GetFuncName(), logopt.NoFuncName(true))
+	}
+	if link == "" {
+		return phpv.ZFalse.ZVal(), ctx.Warn("%s(): No such file or directory", ctx.GetFuncName(), logopt.NoFuncName(true))
+	}
+
 	// link() resolves paths before basedir check (PHP shows absolute paths in warnings)
 	// Check link (dest) first, then target (source), matching PHP's order
 	target = resolveFilePath(ctx, target)
