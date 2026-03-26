@@ -237,7 +237,7 @@ func fncFilesize(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	p := resolveFilePath(ctx, filename)
 	fi, err := os.Stat(p)
 	if err != nil {
-		return phpv.ZFalse.ZVal(), ctx.Warn("stat failed for %s", filename)
+		return phpv.ZFalse.ZVal(), ctx.Warn("filesize(): stat failed for %s", filename, logopt.NoFuncName(true))
 	}
 
 	return phpv.ZInt(fi.Size()).ZVal(), nil
@@ -405,6 +405,16 @@ func fncTouch(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZFalse.ZVal(), nil
 	}
 
+	// PHP 8.x: if mtime is null but atime is provided, throw ValueError
+	// Check raw args to distinguish "not passed" from "passed as null"
+	if len(args) >= 3 && args[2] != nil && args[2].GetType() != phpv.ZtNull {
+		// atime was provided
+		if len(args) >= 2 && args[1] != nil && args[1].GetType() == phpv.ZtNull {
+			// mtime was explicitly null
+			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "touch(): Argument #2 ($mtime) cannot be null when argument #3 ($atime) is an integer")
+		}
+	}
+
 	if err := ctx.Global().CheckOpenBasedir(ctx, filename, "touch"); err != nil {
 		return phpv.ZFalse.ZVal(), nil
 	}
@@ -415,13 +425,7 @@ func fncTouch(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if _, err := os.Stat(p); os.IsNotExist(err) {
 		f, err := os.Create(p)
 		if err != nil {
-			errMsg := err.Error()
-			if os.IsNotExist(err) {
-				errMsg = "No such file or directory"
-			} else if os.IsPermission(err) {
-				errMsg = "Permission denied"
-			}
-			return phpv.ZFalse.ZVal(), ctx.Warn("Unable to create file %s because %s", filename, errMsg)
+			return phpv.ZFalse.ZVal(), ctx.Warn("touch(): Unable to create file %s because %s", filename, phpErrMsg(err), logopt.NoFuncName(true))
 		}
 		f.Close()
 	}

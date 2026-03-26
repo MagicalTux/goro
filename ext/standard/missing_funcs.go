@@ -93,11 +93,16 @@ func fncReadfile(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
+	// PHP: empty path throws ValueError
+	if string(filename) == "" {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "Path must not be empty")
+	}
+
 	usePath := useIncludePath != nil && bool(*useIncludePath)
 
 	f, err := ctx.Global().Open(ctx, filename, "r", usePath)
 	if err != nil {
-		return phpv.ZFalse.ZVal(), ctx.Warn("readfile(%s): Failed to open stream: %s", filename, err)
+		return phpv.ZFalse.ZVal(), ctx.Warn("readfile(%s): Failed to open stream: %s", filename, phpErrMsg(err), logopt.NoFuncName(true))
 	}
 	defer f.Close()
 

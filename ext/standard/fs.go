@@ -213,7 +213,7 @@ func fncIsDir(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZFalse.ZVal(), nil
 	}
 
-	p := string(filename)
+	p := stripFileScheme(string(filename))
 	if !filepath.IsAbs(p) {
 		p = filepath.Join(string(ctx.Global().Getwd()), p)
 	}
@@ -246,7 +246,7 @@ func fncIsFile(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZFalse.ZVal(), nil
 	}
 
-	p := string(filename)
+	p := stripFileScheme(string(filename))
 	if !filepath.IsAbs(p) {
 		p = filepath.Join(string(ctx.Global().Getwd()), p)
 	}
