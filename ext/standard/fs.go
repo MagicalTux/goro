@@ -41,8 +41,8 @@ const (
 const (
 	LOCK_SH phpv.ZInt = 1
 	LOCK_EX phpv.ZInt = 2
+	LOCK_UN phpv.ZInt = 3
 	LOCK_NB phpv.ZInt = 4
-	LOCK_UN phpv.ZInt = 8
 )
 
 // phpDirname implements PHP's dirname() behavior which differs from Go's path.Dir:
@@ -163,6 +163,11 @@ func fncFileExists(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZFalse.ZVal(), nil
 	}
 
+	// Null bytes in filename: return false (bug #39863)
+	if strings.ContainsRune(string(filename), 0) {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
 	// Check for path length exceeding system maximum
 	p := string(filename)
 	if !filepath.IsAbs(p) {
@@ -200,6 +205,10 @@ func fncIsDir(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZFalse.ZVal(), nil
 	}
 
+	if strings.ContainsRune(string(filename), 0) {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
 	if err := ctx.Global().CheckOpenBasedir(ctx, string(filename), "is_dir"); err != nil {
 		return phpv.ZFalse.ZVal(), nil
 	}
@@ -231,6 +240,10 @@ func fncIsFile(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZFalse.ZVal(), nil
 	}
 
+	if strings.ContainsRune(string(filename), 0) {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
 	if err := ctx.Global().CheckOpenBasedir(ctx, string(filename), "is_file"); err != nil {
 		return phpv.ZFalse.ZVal(), nil
 	}
@@ -247,7 +260,7 @@ func fncIsFile(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	return phpv.ZBool(!stat.IsDir()).ZVal(), nil
+	return phpv.ZBool(stat.Mode().IsRegular()).ZVal(), nil
 }
 
 // > func bool is_readable ( string $filename )
@@ -258,15 +271,27 @@ func fncIsReadable(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
+	if string(filename) == "" {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	if strings.ContainsRune(string(filename), 0) {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
 	if err := ctx.Global().CheckOpenBasedir(ctx, string(filename), "is_readable"); err != nil {
 		return phpv.ZFalse.ZVal(), nil
 	}
 
-	r, err := ctx.Global().Open(ctx, filename, "r", true)
-	if err != nil {
+	p := string(filename)
+	if !filepath.IsAbs(p) {
+		p = filepath.Join(string(ctx.Global().Getwd()), p)
+	}
+
+	// Use syscall.Access with R_OK (0x4) to check real read permission
+	if err := syscall.Access(p, 0x4); err != nil {
 		return phpv.ZFalse.ZVal(), nil
 	}
-	r.Close()
 	return phpv.ZTrue.ZVal(), nil
 }
 
@@ -278,25 +303,28 @@ func fncIsWritable(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
+	if string(filename) == "" {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	if strings.ContainsRune(string(filename), 0) {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
 	if err := ctx.Global().CheckOpenBasedir(ctx, string(filename), "is_writable"); err != nil {
 		return phpv.ZFalse.ZVal(), nil
 	}
 
-	r, err := ctx.Global().Open(ctx, filename, "r", true)
-	if err != nil {
-		return phpv.ZFalse.ZVal(), nil
-	}
-	stat, err := r.Stat()
-	r.Close()
-	if err != nil {
-		return phpv.ZFalse.ZVal(), nil
+	p := string(filename)
+	if !filepath.IsAbs(p) {
+		p = filepath.Join(string(ctx.Global().Getwd()), p)
 	}
 
-	mode := stat.Mode()
-	if mode&0200 != 0 {
-		return phpv.ZTrue.ZVal(), nil
+	// Use syscall.Access with W_OK (0x2) to check real write permission
+	if err := syscall.Access(p, 0x2); err != nil {
+		return phpv.ZFalse.ZVal(), nil
 	}
-	return phpv.ZFalse.ZVal(), nil
+	return phpv.ZTrue.ZVal(), nil
 }
 
 // > func bool is_executable ( string $filename )
@@ -307,25 +335,28 @@ func fncIsExecutable(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
+	if string(filename) == "" {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	if strings.ContainsRune(string(filename), 0) {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
 	if err := ctx.Global().CheckOpenBasedir(ctx, string(filename), "is_executable"); err != nil {
 		return phpv.ZFalse.ZVal(), nil
 	}
 
-	r, err := ctx.Global().Open(ctx, filename, "r", true)
-	if err != nil {
-		return phpv.ZFalse.ZVal(), nil
-	}
-	stat, err := r.Stat()
-	r.Close()
-	if err != nil {
-		return phpv.ZFalse.ZVal(), nil
+	p := string(filename)
+	if !filepath.IsAbs(p) {
+		p = filepath.Join(string(ctx.Global().Getwd()), p)
 	}
 
-	mode := stat.Mode()
-	if mode&0111 != 0 {
-		return phpv.ZTrue.ZVal(), nil
+	// Use syscall.Access with X_OK (0x1) to check real execute permission
+	if err := syscall.Access(p, 0x1); err != nil {
+		return phpv.ZFalse.ZVal(), nil
 	}
-	return phpv.ZFalse.ZVal(), nil
+	return phpv.ZTrue.ZVal(), nil
 }
 
 // > func bool is_link ( string $filename )
@@ -531,10 +562,7 @@ func fncFileGetContents(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "Path must not be empty")
 	}
 
-	if useIncludePathArg != nil && *useIncludePathArg {
-		// TODO: handle use_include_path
-		return nil, errors.New("use_include_path is not yet supported, set to false")
-	}
+	useIncludePath := useIncludePathArg != nil && bool(*useIncludePathArg)
 
 	if err := ctx.Global().CheckOpenBasedir(ctx, string(filename), "file_get_contents"); err != nil {
 		ctx.Warn("%s(%s): Failed to open stream: Operation not permitted", ctx.GetFuncName(), filename, logopt.NoFuncName(true))
@@ -564,9 +592,9 @@ func fncFileGetContents(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 
 	var f phpv.Stream
 	if contextResource != nil {
-		f, err = ctx.Global().Open(ctx, filename, "r", true, contextResource)
+		f, err = ctx.Global().Open(ctx, filename, "r", useIncludePath, contextResource)
 	} else {
-		f, err = ctx.Global().Open(ctx, filename, "r", true)
+		f, err = ctx.Global().Open(ctx, filename, "r", useIncludePath)
 	}
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -592,6 +620,10 @@ func fncFileGetContents(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	if !maxlen.HasArg() {
 		buf, err := io.ReadAll(f)
 		if err != nil {
+			// Check for EISDIR (errno=21) - PHP emits a Notice for this
+			if errors.Is(err, syscall.EISDIR) {
+				return phpv.ZFalse.ZVal(), ctx.Notice("%s(): Read of 8192 bytes failed with errno=21 Is a directory", ctx.GetFuncName(), logopt.NoFuncName(true))
+			}
 			return phpv.ZFalse.ZVal(), ctx.Warn("%s(%s): Failed to read stream: %s", ctx.GetFuncName(), filename, err, logopt.NoFuncName(true))
 		}
 		return phpv.ZStr(string(buf)), nil
@@ -631,13 +663,17 @@ func fncFilePutContents(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	}
 
 	openMode := phpv.ZString("w")
+	useIncludePath := false
 	if flagsArg != nil {
 		if (*flagsArg & FILE_APPEND) != 0 {
 			openMode = "a"
 		}
+		if (*flagsArg & FILE_USE_INCLUDE_PATH) != 0 {
+			useIncludePath = true
+		}
 	}
 
-	fh, err := ctx.Global().Open(ctx, filename, openMode, false)
+	fh, err := ctx.Global().Open(ctx, filename, openMode, useIncludePath)
 	if err != nil {
 		return nil, err
 	}
@@ -1093,13 +1129,14 @@ func fncFtruncate(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		ctx.Warn("resource type not yet supported:" + handle.GetResourceType().String())
 		return phpv.ZFalse.ZVal(), nil
 	}
-	if f := s.UnderlyingFile(); f != nil {
-		err = f.Truncate(int64(size))
-		if err != nil {
-			return phpv.ZFalse.ZVal(), nil
-		}
+
+	// Try the stream's Truncate method first (works for *os.File, readWriteBuffer, etc.)
+	err = s.Truncate(int64(size))
+	if err == nil {
 		return phpv.ZTrue.ZVal(), nil
 	}
+
+	// Fall back to os.Truncate by filename if the stream doesn't support Truncate directly
 	var filename string
 	if f, ok := s.Attr("uri").(string); ok {
 		filename = f
@@ -1208,6 +1245,10 @@ func fncRewind(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	_, err := core.Expand(ctx, args, &handle)
 	if err != nil {
 		return nil, ctx.FuncError(err)
+	}
+
+	if handle == nil || handle.GetResourceType() == phpv.ResourceUnknown {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "rewind(): Argument #1 ($stream) must be an open stream resource")
 	}
 
 	s, ok := handle.(*stream.Stream)
@@ -1404,11 +1445,16 @@ func fncCopy(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZFalse.ZVal(), ctx.Warn("copy(%s): Failed to open stream: %s", src, err, logopt.NoFuncName(true))
 	}
 	if srcStat.IsDir() {
-		return phpv.ZFalse.ZVal(), ctx.Warn("copy(): The first argument to copy() function cannot be a directory")
+		return phpv.ZFalse.ZVal(), ctx.Warn("copy(): The first argument to copy() function cannot be a directory", logopt.NoFuncName(true))
+	}
+
+	// Check if destination is a directory
+	dstStat, dstErr := os.Stat(dstPath)
+	if dstErr == nil && dstStat.IsDir() {
+		return phpv.ZFalse.ZVal(), ctx.Warn("copy(): The second argument to copy() function cannot be a directory", logopt.NoFuncName(true))
 	}
 
 	// Check if source and dest are the same file - PHP silently returns false
-	dstStat, dstErr := os.Stat(dstPath)
 	if dstErr == nil {
 		srcSys, srcOk := srcStat.Sys().(*syscall.Stat_t)
 		dstSys, dstOk := dstStat.Sys().(*syscall.Stat_t)
@@ -1570,6 +1616,10 @@ func fncFstat(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZFalse.ZVal(), nil
 	}
 
+	if handle.GetResourceType() == phpv.ResourceUnknown {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "fstat(): Argument #1 ($stream) must be an open stream resource")
+	}
+
 	var file *stream.Stream
 	if handle.GetResourceType() == phpv.ResourceStream {
 		file, _ = handle.(*stream.Stream)
@@ -1588,38 +1638,7 @@ func fncFstat(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZFalse.ZVal(), nil
 	}
 
-	// Build stat array (same format as stat())
-	result := phpv.NewZArray()
-	sys := info.Sys()
-	if sysstat, ok := sys.(*syscall.Stat_t); ok {
-		result.OffsetSet(ctx, phpv.ZInt(0).ZVal(), phpv.ZInt(sysstat.Dev).ZVal())
-		result.OffsetSet(ctx, phpv.ZString("dev").ZVal(), phpv.ZInt(sysstat.Dev).ZVal())
-		result.OffsetSet(ctx, phpv.ZInt(1).ZVal(), phpv.ZInt(sysstat.Ino).ZVal())
-		result.OffsetSet(ctx, phpv.ZString("ino").ZVal(), phpv.ZInt(sysstat.Ino).ZVal())
-		result.OffsetSet(ctx, phpv.ZInt(2).ZVal(), phpv.ZInt(sysstat.Mode).ZVal())
-		result.OffsetSet(ctx, phpv.ZString("mode").ZVal(), phpv.ZInt(sysstat.Mode).ZVal())
-		result.OffsetSet(ctx, phpv.ZInt(3).ZVal(), phpv.ZInt(sysstat.Nlink).ZVal())
-		result.OffsetSet(ctx, phpv.ZString("nlink").ZVal(), phpv.ZInt(sysstat.Nlink).ZVal())
-		result.OffsetSet(ctx, phpv.ZInt(4).ZVal(), phpv.ZInt(sysstat.Uid).ZVal())
-		result.OffsetSet(ctx, phpv.ZString("uid").ZVal(), phpv.ZInt(sysstat.Uid).ZVal())
-		result.OffsetSet(ctx, phpv.ZInt(5).ZVal(), phpv.ZInt(sysstat.Gid).ZVal())
-		result.OffsetSet(ctx, phpv.ZString("gid").ZVal(), phpv.ZInt(sysstat.Gid).ZVal())
-		result.OffsetSet(ctx, phpv.ZInt(6).ZVal(), phpv.ZInt(sysstat.Rdev).ZVal())
-		result.OffsetSet(ctx, phpv.ZString("rdev").ZVal(), phpv.ZInt(sysstat.Rdev).ZVal())
-		result.OffsetSet(ctx, phpv.ZInt(7).ZVal(), phpv.ZInt(sysstat.Size).ZVal())
-		result.OffsetSet(ctx, phpv.ZString("size").ZVal(), phpv.ZInt(sysstat.Size).ZVal())
-		result.OffsetSet(ctx, phpv.ZInt(8).ZVal(), phpv.ZInt(sysstat.Atim.Sec).ZVal())
-		result.OffsetSet(ctx, phpv.ZString("atime").ZVal(), phpv.ZInt(sysstat.Atim.Sec).ZVal())
-		result.OffsetSet(ctx, phpv.ZInt(9).ZVal(), phpv.ZInt(sysstat.Mtim.Sec).ZVal())
-		result.OffsetSet(ctx, phpv.ZString("mtime").ZVal(), phpv.ZInt(sysstat.Mtim.Sec).ZVal())
-		result.OffsetSet(ctx, phpv.ZInt(10).ZVal(), phpv.ZInt(sysstat.Ctim.Sec).ZVal())
-		result.OffsetSet(ctx, phpv.ZString("ctime").ZVal(), phpv.ZInt(sysstat.Ctim.Sec).ZVal())
-		result.OffsetSet(ctx, phpv.ZInt(11).ZVal(), phpv.ZInt(sysstat.Blksize).ZVal())
-		result.OffsetSet(ctx, phpv.ZString("blksize").ZVal(), phpv.ZInt(sysstat.Blksize).ZVal())
-		result.OffsetSet(ctx, phpv.ZInt(12).ZVal(), phpv.ZInt(sysstat.Blocks).ZVal())
-		result.OffsetSet(ctx, phpv.ZString("blocks").ZVal(), phpv.ZInt(sysstat.Blocks).ZVal())
-	}
-	return result.ZVal(), nil
+	return buildStatArray(ctx, info), nil
 }
 
 // > func bool chown ( string $filename , string|int $user )

@@ -14,3 +14,8 @@ type Stater interface {
 type Syncer interface {
 	Sync() error
 }
+
+// Truncater is a stream that supports truncation (e.g., os.File, readWriteBuffer)
+type Truncater interface {
+	Truncate(size int64) error
+}

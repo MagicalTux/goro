@@ -192,6 +192,16 @@ func (b *readWriteBuffer) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+func (b *readWriteBuffer) Truncate(size int64) error {
+	s := int(size)
+	if s < len(b.data) {
+		b.data = b.data[:s]
+	} else if s > len(b.data) {
+		b.data = append(b.data, make([]byte, s-len(b.data))...)
+	}
+	return nil
+}
+
 func (b *readWriteBuffer) Seek(offset int64, whence int) (int64, error) {
 	var newPos int64
 	switch whence {

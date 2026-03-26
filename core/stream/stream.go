@@ -206,5 +206,12 @@ func (s *Stream) String() string {
 	return fmt.Sprintf("Resource id #%d", s.ResourceID)
 }
 
+func (s *Stream) Truncate(size int64) error {
+	if t, ok := s.f.(Truncater); ok {
+		return t.Truncate(size)
+	}
+	return ErrNotSupported
+}
+
 func (s *Stream) GetResourceType() phpv.ResourceType { return s.ResourceType }
 func (s *Stream) GetResourceID() int                 { return s.ResourceID }

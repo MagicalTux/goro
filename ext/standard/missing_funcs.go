@@ -36,7 +36,8 @@ func fncFscanf(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		file, _ = handle.(*stream.Stream)
 	}
 	if file == nil {
-		return phpv.ZFalse.ZVal(), nil
+		// Resource exists but is not a valid stream (e.g., closed file handle)
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "fscanf(): supplied resource is not a valid File-Handle resource")
 	}
 
 	// Read one line from the stream
@@ -457,12 +458,12 @@ func ParseCsvLine(ctx phpv.Context, line string, sep, enc, esc byte) (*phpv.ZVal
 	return result.ZVal(), nil
 }
 
-// > func int|false fputcsv ( resource $handle , array $fields [, string $separator = "," [, string $enclosure = '"' [, string $escape = "\\" ]]] )
+// > func int|false fputcsv ( resource $handle , array $fields [, string $separator = "," [, string $enclosure = '"' [, string $escape = "\\" [, string $eol = "\n" ]]]] )
 func fncFputcsv(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var handle phpv.Resource
 	var fields *phpv.ZArray
-	var sepArg, encArg, escArg *phpv.ZString
-	_, err := core.Expand(ctx, args, &handle, &fields, &sepArg, &encArg, &escArg)
+	var sepArg, encArg, escArg, eolArg *phpv.ZString
+	_, err := core.Expand(ctx, args, &handle, &fields, &sepArg, &encArg, &escArg, &eolArg)
 	if err != nil {
 		return nil, err
 	}
@@ -478,9 +479,20 @@ func fncFputcsv(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZFalse.ZVal(), nil
 	}
 
+	// Validate separator
+	if sepArg != nil && len(*sepArg) != 1 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "fputcsv(): Argument #3 ($separator) must be a single character")
+	}
+
+	// Validate enclosure
+	if encArg != nil && len(*encArg) != 1 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "fputcsv(): Argument #4 ($enclosure) must be a single character")
+	}
+
 	sep := byte(',')
 	enc := byte('"')
 	esc := byte('\\')
+	eol := "\n"
 
 	if sepArg != nil && len(*sepArg) > 0 {
 		sep = (*sepArg)[0]
@@ -488,11 +500,21 @@ func fncFputcsv(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if encArg != nil && len(*encArg) > 0 {
 		enc = (*encArg)[0]
 	}
-	if escArg != nil && len(*escArg) > 0 {
-		esc = (*escArg)[0]
+	if escArg != nil {
+		if len(*escArg) > 0 {
+			esc = (*escArg)[0]
+		} else {
+			esc = 0 // empty string means no escape
+		}
+	} else {
+		// PHP 8.5: deprecation warning when escape param is not explicitly provided
+		ctx.Deprecated("fputcsv(): the $escape parameter must be provided as its default value will change", logopt.NoFuncName(true))
+	}
+	if eolArg != nil {
+		eol = string(*eolArg)
 	}
 
-	lineBytes, err := BuildCsvLine(ctx, fields, sep, enc, esc)
+	lineBytes, err := BuildCsvLine(ctx, fields, sep, enc, esc, eol)
 	if err != nil {
 		return nil, err
 	}
@@ -505,8 +527,8 @@ func fncFputcsv(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZInt(n).ZVal(), nil
 }
 
-// BuildCsvLine builds a CSV line from a ZArray of fields. Returns the line as bytes (including trailing newline).
-func BuildCsvLine(ctx phpv.Context, fields *phpv.ZArray, sep, enc, esc byte) ([]byte, error) {
+// BuildCsvLine builds a CSV line from a ZArray of fields. Returns the line as bytes (including trailing eol).
+func BuildCsvLine(ctx phpv.Context, fields *phpv.ZArray, sep, enc, esc byte, eol string) ([]byte, error) {
 	var buf bytes.Buffer
 	first := true
 
@@ -524,12 +546,12 @@ func BuildCsvLine(ctx phpv.Context, fields *phpv.ZArray, sep, enc, esc byte) ([]
 
 		// Convert non-string values to string, emit warning for arrays
 		if val.GetType() == phpv.ZtArray {
-			ctx.Warn("Array to string conversion")
+			ctx.Warn("Array to string conversion", logopt.NoFuncName(true))
 		}
 		field := val.String()
 
 		// Check if enclosure is needed (matches PHP 8.5's php_fputcsv behavior)
-		// PHP encloses fields containing separator, enclosure, escape, or whitespace chars.
+		// PHP encloses fields containing separator, enclosure, escape, newlines, or whitespace.
 		needsEnclose := strings.ContainsAny(field, string([]byte{sep, enc, '\n', '\r', '\t', ' '}))
 		if esc != 0 && esc != enc {
 			needsEnclose = needsEnclose || strings.ContainsRune(field, rune(esc))
@@ -540,16 +562,24 @@ func BuildCsvLine(ctx phpv.Context, fields *phpv.ZArray, sep, enc, esc byte) ([]
 			for i := 0; i < len(field); i++ {
 				c := field[i]
 				if c == enc {
-					// Double the enclosure unless preceded by escape char
-					if esc != 0 && esc != enc && i > 0 && field[i-1] == esc {
-						// Escape char already escapes this enclosure, write as-is
+					if esc != 0 && esc == enc {
+						// When escape == enclosure (e.g., both are "), double the enclosure
+						buf.WriteByte(enc)
+						buf.WriteByte(enc)
+					} else if esc != 0 {
+						// When escape != enclosure, use escape char before enclosure
+						buf.WriteByte(esc)
 						buf.WriteByte(c)
 					} else {
+						// No escape char (empty escape), double the enclosure
 						buf.WriteByte(enc)
 						buf.WriteByte(enc)
 					}
+				} else if esc != 0 && c == esc && esc != enc {
+					// Escape the escape character itself
+					buf.WriteByte(esc)
+					buf.WriteByte(c)
 				} else {
-					// Write all other chars (including escape) as-is
 					buf.WriteByte(c)
 				}
 			}
@@ -558,7 +588,7 @@ func BuildCsvLine(ctx phpv.Context, fields *phpv.ZArray, sep, enc, esc byte) ([]
 			buf.WriteString(field)
 		}
 	}
-	buf.WriteByte('\n')
+	buf.WriteString(eol)
 	return buf.Bytes(), nil
 }
 
@@ -572,13 +602,25 @@ func fncFlock(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if err != nil {
 		return nil, err
 	}
-	if handle == nil {
-		return phpv.ZFalse.ZVal(), nil
+
+	if handle == nil || handle.GetResourceType() == phpv.ResourceUnknown {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "flock(): Argument #1 ($stream) must be an open stream resource")
+	}
+
+	// Validate operation: strip LOCK_NB flag, then check base operation
+	op := int(operation) &^ int(LOCK_NB)
+	if op != int(LOCK_SH) && op != int(LOCK_EX) && op != int(LOCK_UN) {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "flock(): Argument #2 ($operation) must be one of LOCK_SH, LOCK_EX, or LOCK_UN")
 	}
 
 	// Set wouldblock to 0 if passed by reference
 	if wouldblock.HasArg() {
 		wouldblock.Set(ctx, phpv.ZInt(0))
+	}
+
+	// Directory handles don't support flock
+	if _, ok := handle.(*stream.Stream); !ok {
+		return phpv.ZFalse.ZVal(), nil
 	}
 
 	return phpv.ZTrue.ZVal(), nil

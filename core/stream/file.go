@@ -94,15 +94,20 @@ func (f *FileHandler) OpenFile(ctx phpv.Context, fname string, mode string, _ ..
 
 	flags := 0
 
+	// Strip binary/text flag from mode string.
+	// PHP accepts b/t at any position: "rb", "wb+", "r+b", "w+t", etc.
 	flag := ""
-	if len(mode) > 0 {
-		i := len(mode) - 1
-		c := mode[i]
-		if c == 'b' || c == 't' {
-			flag = string(c)
-			mode = mode[:i]
+	cleaned := ""
+	for i := 0; i < len(mode); i++ {
+		if mode[i] == 'b' || mode[i] == 't' {
+			if flag == "" {
+				flag = string(mode[i])
+			}
+		} else {
+			cleaned += string(mode[i])
 		}
 	}
+	mode = cleaned
 
 	switch mode {
 	case "r":
@@ -156,6 +161,11 @@ func (f *FileHandler) OpenFile(ctx phpv.Context, fname string, mode string, _ ..
 }
 
 func (f *FileHandler) Open(ctx phpv.Context, p *url.URL, mode string, streamCtx ...phpv.Resource) (*Stream, error) {
+	// Check for remote host in file:// URIs - only localhost and empty host are allowed
+	if p.Scheme == "file" && p.Host != "" && p.Host != "localhost" {
+		ctx.Warn("Remote host file access not supported, %s", p.String())
+		return nil, fmt.Errorf("no suitable wrapper could be found")
+	}
 	return f.OpenFile(ctx, p.Path, mode, streamCtx...)
 }
 

@@ -21,12 +21,30 @@ func resolveFilePath(ctx phpv.Context, filename string) string {
 	return filename
 }
 
+// checkStatFilename validates a filename for stat-family functions.
+// Returns true if the filename is valid, false if it should return false early.
+// When false is returned, appropriate warnings have already been emitted.
+func checkStatFilename(ctx phpv.Context, filename string, funcName string) bool {
+	if filename == "" {
+		return false
+	}
+	if strings.ContainsRune(filename, 0) {
+		ctx.Warn("%s(): Filename contains null byte", funcName, logopt.NoFuncName(true))
+		return false
+	}
+	return true
+}
+
 // > func array stat ( string $filename )
 func fncStat(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var filename string
 	_, err := core.Expand(ctx, args, &filename)
 	if err != nil {
 		return nil, err
+	}
+
+	if !checkStatFilename(ctx, filename, "stat") {
+		return phpv.ZFalse.ZVal(), nil
 	}
 
 	if err := ctx.Global().CheckOpenBasedir(ctx, filename, "stat"); err != nil {
@@ -50,6 +68,10 @@ func fncLstat(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
+	if !checkStatFilename(ctx, filename, "lstat") {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
 	if err := ctx.Global().CheckOpenBasedir(ctx, filename, "lstat"); err != nil {
 		return phpv.ZFalse.ZVal(), nil
 	}
@@ -69,6 +91,10 @@ func fncFileatime(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	_, err := core.Expand(ctx, args, &filename)
 	if err != nil {
 		return nil, err
+	}
+
+	if !checkStatFilename(ctx, filename, "fileatime") {
+		return phpv.ZFalse.ZVal(), nil
 	}
 
 	if err := ctx.Global().CheckOpenBasedir(ctx, filename, "fileatime"); err != nil {
@@ -93,6 +119,10 @@ func fncFilectime(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
+	if !checkStatFilename(ctx, filename, "filectime") {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
 	if err := ctx.Global().CheckOpenBasedir(ctx, filename, "filectime"); err != nil {
 		return phpv.ZFalse.ZVal(), nil
 	}
@@ -113,6 +143,10 @@ func fncFilemtime(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	_, err := core.Expand(ctx, args, &filename)
 	if err != nil {
 		return nil, err
+	}
+
+	if !checkStatFilename(ctx, filename, "filemtime") {
+		return phpv.ZFalse.ZVal(), nil
 	}
 
 	if err := ctx.Global().CheckOpenBasedir(ctx, filename, "filemtime"); err != nil {
@@ -136,6 +170,10 @@ func fncFilesize(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
+	if !checkStatFilename(ctx, filename, "filesize") {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
 	if err := ctx.Global().CheckOpenBasedir(ctx, filename, "filesize"); err != nil {
 		return phpv.ZFalse.ZVal(), nil
 	}
@@ -155,6 +193,10 @@ func fncFiletype(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	_, err := core.Expand(ctx, args, &filename)
 	if err != nil {
 		return nil, err
+	}
+
+	if !checkStatFilename(ctx, filename, "filetype") {
+		return phpv.ZFalse.ZVal(), nil
 	}
 
 	if err := ctx.Global().CheckOpenBasedir(ctx, filename, "filetype"); err != nil {
@@ -196,6 +238,10 @@ func fncFileperms(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
+	if !checkStatFilename(ctx, filename, "fileperms") {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
 	if err := ctx.Global().CheckOpenBasedir(ctx, filename, "fileperms"); err != nil {
 		return phpv.ZFalse.ZVal(), nil
 	}
@@ -216,6 +262,10 @@ func fncFileowner(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	_, err := core.Expand(ctx, args, &filename)
 	if err != nil {
 		return nil, err
+	}
+
+	if !checkStatFilename(ctx, filename, "fileowner") {
+		return phpv.ZFalse.ZVal(), nil
 	}
 
 	if err := ctx.Global().CheckOpenBasedir(ctx, filename, "fileowner"); err != nil {
@@ -240,6 +290,10 @@ func fncFilegroup(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
+	if !checkStatFilename(ctx, filename, "filegroup") {
+		return phpv.ZFalse.ZVal(), nil
+	}
+
 	if err := ctx.Global().CheckOpenBasedir(ctx, filename, "filegroup"); err != nil {
 		return phpv.ZFalse.ZVal(), nil
 	}
@@ -260,6 +314,10 @@ func fncFileinode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	_, err := core.Expand(ctx, args, &filename)
 	if err != nil {
 		return nil, err
+	}
+
+	if !checkStatFilename(ctx, filename, "fileinode") {
+		return phpv.ZFalse.ZVal(), nil
 	}
 
 	if err := ctx.Global().CheckOpenBasedir(ctx, filename, "fileinode"); err != nil {

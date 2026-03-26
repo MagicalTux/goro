@@ -498,18 +498,15 @@ func sfoFputcsv(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.Z
 		}
 	}
 
-	lineBytes, err := standard.BuildCsvLine(ctx, fields, sep, enc, esc)
-	if err != nil {
-		return nil, err
-	}
-
+	eol := "\n"
 	// Check for eol parameter (5th arg)
 	if len(args) > 4 && args[4] != nil {
-		eol := string(args[4].AsString(ctx))
-		// Replace the trailing \n with the custom eol
-		if len(lineBytes) > 0 && lineBytes[len(lineBytes)-1] == '\n' {
-			lineBytes = append(lineBytes[:len(lineBytes)-1], []byte(eol)...)
-		}
+		eol = string(args[4].AsString(ctx))
+	}
+
+	lineBytes, err := standard.BuildCsvLine(ctx, fields, sep, enc, esc, eol)
+	if err != nil {
+		return nil, err
 	}
 
 	n, err := d.file.Write(lineBytes)

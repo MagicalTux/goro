@@ -77,6 +77,15 @@ func countRemainingScanCodes(format phpv.ZString, startIndex int) int {
 					break
 				}
 			}
+			// check suppression (comes before width)
+			suppressed := false
+			if format[i] == '*' {
+				suppressed = true
+				i++
+				if i >= len(format) {
+					break
+				}
+			}
 			// skip width
 			for i < len(format) && format[i] >= '0' && format[i] <= '9' {
 				i++
@@ -84,12 +93,15 @@ func countRemainingScanCodes(format phpv.ZString, startIndex int) int {
 			if i >= len(format) {
 				break
 			}
-			// skip suppression
-			if format[i] == '*' {
+			// skip length modifiers (h, l, L, hh, ll)
+			if i < len(format) && (format[i] == 'h' || format[i] == 'l' || format[i] == 'L') {
 				i++
-				if i >= len(format) {
-					break
+				if i < len(format) && (format[i] == 'h' || format[i] == 'l') {
+					i++
 				}
+			}
+			if i >= len(format) {
+				break
 			}
 			c := format[i]
 			if c == '[' {
@@ -105,7 +117,9 @@ func countRemainingScanCodes(format phpv.ZString, startIndex int) int {
 					i++
 				}
 			}
-			count++
+			if !suppressed {
+				count++
+			}
 		}
 	}
 	return count
@@ -455,6 +469,8 @@ Loop:
 
 		case 'c':
 			// %c: read exact number of characters (default 1)
+			// Unlike other specifiers, %c always succeeds even with empty input
+			// (returns empty string rather than NULL)
 			count := 1
 			if width > 0 {
 				count = width
@@ -463,10 +479,6 @@ Loop:
 			for i := 0; i < count; i++ {
 				b, err := buf.ReadByte()
 				if err != nil {
-					if len(s) == 0 {
-						failed = true
-						break Loop
-					}
 					break
 				}
 				s = append(s, b)
@@ -587,8 +599,28 @@ Loop:
 			}
 			val = phpv.ZInt(n).ZVal()
 
-		case 'f', 'e', 'E':
-			// %f: float
+		case 'u':
+			// %u: unsigned decimal integer
+			wn, err := skipWhitespacesTracked(buf)
+			if err != nil {
+				return nil, 0, inputEmpty, err
+			}
+			inputConsumed += wn
+			n, ok := scanReadUintTracked(buf, width, &inputConsumed)
+			if !ok {
+				failed = true
+				break Loop
+			}
+			// If it fits in int64 (non-negative), return as int
+			if n <= 9223372036854775807 {
+				val = phpv.ZInt(int64(n)).ZVal()
+			} else {
+				// Return as string for values > max int64
+				val = phpv.ZStr(strconv.FormatUint(n, 10))
+			}
+
+		case 'f', 'e', 'E', 'g':
+			// %f/%e/%E/%g: float
 			wn, err := skipWhitespacesTracked(buf)
 			if err != nil {
 				return nil, 0, inputEmpty, err
@@ -784,6 +816,18 @@ func scanReadIntTracked(buf *bufio.Reader, base int, width int, consumed *int) (
 	return n, true
 }
 
+// scanReadUintTracked reads an unsigned decimal integer and tracks inputConsumed.
+// It reads a signed decimal number and interprets the result as unsigned (like PHP's %u).
+func scanReadUintTracked(buf *bufio.Reader, width int, consumed *int) (uint64, bool) {
+	// Read the value as a signed int64 first (handles sign)
+	n, ok := scanReadIntTracked(buf, 10, width, consumed)
+	if !ok {
+		return 0, false
+	}
+	// Reinterpret as unsigned (matching PHP behavior: -1 becomes 18446744073709551615)
+	return uint64(n), true
+}
+
 // scanReadFloatTracked reads a float and tracks inputConsumed
 func scanReadFloatTracked(buf *bufio.Reader, width int, consumed *int) (float64, bool) {
 	var s []byte
@@ -877,8 +921,9 @@ func zscanfIntoArray(ctx phpv.Context, r io.Reader, format phpv.ZString) (*phpv.
 		return nil, err
 	}
 
-	// If no values matched at all and input was empty, return NULL
-	if len(values) == 0 && inputEmpty {
+	// If no values matched at all and input was empty, and there were
+	// non-suppressed fields expected, return NULL (like PHP)
+	if len(values) == 0 && inputEmpty && count > 0 {
 		return phpv.ZNULL.ZVal(), nil
 	}
 
