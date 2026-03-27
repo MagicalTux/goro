@@ -33,7 +33,7 @@ func fncHeader(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			file = h.OutputOrigin.Filename
 			line = h.OutputOrigin.Line
 		}
-		ctx.Warn("Cannot modify header information - headers already sent by (output started at %s:%d)", file, line)
+		ctx.Warn("Cannot modify header information - headers already sent by (output started at %s:%d)", file, line, logopt.NoFuncName(true))
 		return nil, nil
 	}
 

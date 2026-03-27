@@ -3292,39 +3292,44 @@ func expandCharacterRangesCtx(ctx phpv.Context, funcName string, str string) str
 	var buf bytes.Buffer
 	b := []byte(str)
 	for i := 0; i < len(b); i++ {
-		if i+2 < len(b) && b[i+1] == '.' && b[i+2] == '.' {
-			if i == 0 {
-				// No character to the left of '..'
-				if ctx != nil {
-					ctx.Warn("%s(): Invalid '..'-range, no character to the left of '..'", funcName)
-				}
-				// Skip the '..' and continue
-				i += 2
-				continue
+		// Check for '..' pattern starting at current position (no left side)
+		if b[i] == '.' && i+1 < len(b) && b[i+1] == '.' {
+			if ctx != nil {
+				ctx.Warn("Invalid '..'-range, no character to the left of '..'")
 			}
+			i++ // skip second '.'
+			continue
+		}
+		// Check if next two chars are '..' (this char is the left side of a range)
+		if i+2 < len(b) && b[i+1] == '.' && b[i+2] == '.' {
 			if i+3 >= len(b) {
 				// No character to the right of '..'
 				if ctx != nil {
-					ctx.Warn("%s(): Invalid '..'-range, no character to the right of '..'", funcName)
+					ctx.Warn("Invalid '..'-range, no character to the right of '..'")
 				}
-				i += 2
+				i += 2 // skip the '..' (from char already consumed by loop)
 				continue
 			}
 			from := b[i]
 			to := b[i+3]
 			if to < from {
 				if ctx != nil {
-					ctx.Warn("%s(): Invalid '..'-range, '..'-range needs to be incrementing", funcName)
+					ctx.Warn("Invalid '..'-range, '..'-range needs to be incrementing")
 				}
 				i += 3
 				continue
 			}
 			// Check for chained ranges like a..b..c
-			if i+6 < len(b) && b[i+4] == '.' && b[i+5] == '.' {
+			if i+5 < len(b) && b[i+4] == '.' && b[i+5] == '.' {
 				if ctx != nil {
-					ctx.Warn("%s(): Invalid '..'-range", funcName)
+					ctx.Warn("Invalid '..'-range")
 				}
-				i += 3
+				// Skip past a..b..c entirely (consume through the second range)
+				if i+6 < len(b) {
+					i += 6
+				} else {
+					i += 5
+				}
 				continue
 			}
 			for c := from; c <= to; c++ {

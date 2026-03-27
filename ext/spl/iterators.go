@@ -1914,6 +1914,12 @@ func recursiveIteratorDescend(ctx phpv.Context, d *recursiveIteratorIteratorData
 			return err
 		}
 
+		// In SELF_FIRST mode, stop here - the current node should be yielded first.
+		// Descending into children happens on next().
+		if d.mode == recursiveIteratorSelfFirst && len(d.stack) > 1 {
+			return nil
+		}
+
 		// Check maxDepth limit
 		currentDepth := len(d.stack) - 1
 		if d.maxDepth >= 0 && currentDepth >= d.maxDepth {
@@ -1937,6 +1943,11 @@ func recursiveIteratorDescend(ctx phpv.Context, d *recursiveIteratorIteratorData
 		}
 		if !hasChildren {
 			return nil // Leaf node
+		}
+
+		// In SELF_FIRST mode at root level, stop here to yield the parent first
+		if d.mode == recursiveIteratorSelfFirst {
+			return nil
 		}
 
 		// Get children iterator (use callGetChildren on outer if overridden)
@@ -1977,6 +1988,57 @@ func recursiveIteratorNext(ctx phpv.Context, d *recursiveIteratorIteratorData, o
 	}
 
 	top := d.stack[len(d.stack)-1]
+
+	// In SELF_FIRST mode, try to descend into children first before advancing
+	if d.mode == recursiveIteratorSelfFirst {
+		currentDepth := len(d.stack) - 1
+		canDescend := d.maxDepth < 0 || currentDepth < d.maxDepth
+
+		if canDescend {
+			var hasChildren bool
+			if outer != nil {
+				hasChildrenResult, err := outer.Unwrap().(*phpobj.ZObject).CallMethod(ctx, "callHasChildren")
+				if err == nil {
+					hasChildren = bool(hasChildrenResult.AsBool(ctx))
+				}
+			} else {
+				hasChildrenResult, err := top.CallMethod(ctx, "hasChildren")
+				if err == nil {
+					hasChildren = bool(hasChildrenResult.AsBool(ctx))
+				}
+			}
+			if hasChildren {
+				var childResult *phpv.ZVal
+				var err error
+				if outer != nil {
+					childResult, err = outer.Unwrap().(*phpobj.ZObject).CallMethod(ctx, "callGetChildren")
+				} else {
+					childResult, err = top.CallMethod(ctx, "getChildren")
+				}
+				if err == nil && childResult != nil && childResult.GetType() == phpv.ZtObject {
+					if child, ok := childResult.Value().(*phpobj.ZObject); ok {
+						_, err = child.CallMethod(ctx, "rewind")
+						if err == nil {
+							d.stack = append(d.stack, child)
+							d.depth++
+							if outer != nil {
+								outer.Unwrap().(*phpobj.ZObject).CallMethod(ctx, "beginChildren")
+							}
+							// Check if child is valid
+							v, _ := child.CallMethod(ctx, "valid")
+							if v != nil && bool(v.AsBool(ctx)) {
+								return nil // Stay at the child's first element
+							}
+							// Child is empty, pop it back
+							d.stack = d.stack[:len(d.stack)-1]
+							d.depth--
+						}
+					}
+				}
+			}
+		}
+	}
+
 	_, err := top.CallMethod(ctx, "next")
 	if err != nil {
 		return err
@@ -2009,6 +2071,19 @@ func recursiveIteratorNext(ctx phpv.Context, d *recursiveIteratorIteratorData, o
 			break
 		}
 		top = d.stack[len(d.stack)-1]
+
+		// In CHILD_FIRST mode, we need to yield the parent after children
+		if d.mode == recursiveIteratorChildFirst {
+			// Check if current position is valid
+			v, err = top.CallMethod(ctx, "valid")
+			if err != nil {
+				return err
+			}
+			if bool(v.AsBool(ctx)) {
+				return nil // Yield the parent
+			}
+		}
+
 		_, err = top.CallMethod(ctx, "next")
 		if err != nil {
 			return err
