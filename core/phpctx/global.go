@@ -1199,6 +1199,9 @@ func logWarning(ctx phpv.Context, format string, a ...any) error {
 		return err
 	}
 
+	// Always track last error for error_get_last(), even if suppressed by @
+	ctx.Global().(*Global).LastError = phpErr
+
 	errorLevel := ctx.GetConfig("error_reporting", phpv.ZInt(0).ZVal()).AsInt(ctx)
 	logError := int(errorLevel)&int(phpErr.Code) > 0
 

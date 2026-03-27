@@ -102,8 +102,12 @@ func spawnCallableInternal(ctx phpv.Context, v *phpv.ZVal, paramNo int) (phpv.Ca
 				if callerFunc == "" {
 					callerFunc = "call_user_func"
 				}
+				orNull := ""
+				if callerFunc == "spl_autoload_register" {
+					orNull = " or null"
+				}
 				return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
-					fmt.Sprintf("%s(): Argument #1 ($callback) must be a valid callback, class \"%s\" does not have a method \"%s\"", callerFunc, className, methodName))
+					fmt.Sprintf("%s(): Argument #1 ($callback) must be a valid callback%s, class %s does not have a method \"%s\"", callerFunc, orNull, className, methodName))
 			}
 
 			// Check if the method is abstract (cannot be called directly)

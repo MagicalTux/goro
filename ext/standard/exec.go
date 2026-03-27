@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"os/exec"
 	"strings"
@@ -27,6 +28,13 @@ func fncEscapeshellarg(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 			"escapeshellarg(): Argument #1 ($arg) must not contain any null bytes")
 	}
 
+	// Check length limit (4096 bytes on most systems)
+	const maxLen = 4096
+	if len(arg) > maxLen {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+			fmt.Sprintf("Argument exceeds the allowed length of %d bytes", maxLen))
+	}
+
 	// Escape single quotes and wrap in single quotes
 	s := string(arg)
 	s = strings.ReplaceAll(s, "'", "'\\''")
@@ -45,6 +53,13 @@ func fncEscapeshellcmd(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 	if strings.ContainsRune(string(cmd), 0) {
 		return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
 			"escapeshellcmd(): Argument #1 ($command) must not contain any null bytes")
+	}
+
+	// Check length limit
+	const maxLen = 4096
+	if len(cmd) > maxLen {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+			fmt.Sprintf("Command exceeds the allowed length of %d bytes", maxLen))
 	}
 
 	// Escape shell metacharacters

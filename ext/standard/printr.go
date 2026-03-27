@@ -63,29 +63,31 @@ func doPrintR(ctx phpv.Context, z *phpv.ZVal, linePfx string, recurs map[uintptr
 		// because references create different ZVal wrappers for the same array
 		arrayPtr := uintptr(unsafe.Pointer(z.Value().(*phpv.ZArray)))
 		if _, n := recurs[arrayPtr]; n {
-			fmt.Fprintf(ctx, "%s*RECURSION*\n", linePfx)
+			// PHP prints: "Array\n *RECURSION*\n"
+			fmt.Fprintf(ctx, "%sArray\n", isRef)
+			fmt.Fprintf(ctx, "%s *RECURSION*\n", linePfx)
 			return nil
-		} else {
-			recurs[arrayPtr] = true
 		}
+		recurs[arrayPtr] = true
 	case phpv.ZtObject:
 		// Track by underlying object pointer for objects
 		if obj, ok := z.Value().(*phpobj.ZObject); ok {
 			objPtr := uintptr(unsafe.Pointer(obj))
 			if _, n := recurs[objPtr]; n {
-				fmt.Fprintf(ctx, "%s*RECURSION*\n", linePfx)
+				// PHP prints: "ClassName Object\n *RECURSION*\n"
+				fmt.Fprintf(ctx, "%s%s Object\n", isRef, obj.Class.GetName())
+				fmt.Fprintf(ctx, "%s *RECURSION*\n", linePfx)
 				return nil
-			} else {
-				recurs[objPtr] = true
 			}
+			recurs[objPtr] = true
 		} else {
 			v := uintptr(unsafe.Pointer(z))
 			if _, n := recurs[v]; n {
-				fmt.Fprintf(ctx, "%s*RECURSION*\n", linePfx)
+				fmt.Fprintf(ctx, "? object(?)\n")
+				fmt.Fprintf(ctx, "%s *RECURSION*\n", linePfx)
 				return nil
-			} else {
-				recurs[v] = true
 			}
+			recurs[v] = true
 		}
 	}
 

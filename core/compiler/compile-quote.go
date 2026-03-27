@@ -277,19 +277,35 @@ func unescapePhpQuotedString(in string) phpv.ZString {
 			}
 			t.WriteByte(byte(oct))
 		case 'x':
-			if len(in) < 3 {
+			// PHP allows 1 or 2 hex digits after \x
+			if len(in) < 2 {
 				t.WriteByte('\\')
 				t.WriteByte(in[0])
 				break
 			}
-			i, err := strconv.ParseUint(in[1:3], 16, 8)
+			// Try to consume up to 2 hex digits
+			hexLen := 0
+			for j := 1; j <= 2 && j < len(in); j++ {
+				c := in[j]
+				if (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F') {
+					hexLen = j
+				} else {
+					break
+				}
+			}
+			if hexLen == 0 {
+				t.WriteByte('\\')
+				t.WriteByte(in[0])
+				break
+			}
+			i, err := strconv.ParseUint(in[1:hexLen+1], 16, 8)
 			if err != nil {
 				t.WriteByte('\\')
 				t.WriteByte(in[0])
 				break
 			}
 			t.WriteByte(byte(i))
-			in = in[2:]
+			in = in[hexLen:]
 		case 'u':
 			if len(in) < 3 || in[1] != '{' {
 				// too short

@@ -798,113 +798,65 @@ func fncQuotedPrintableEncode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, 
 		return nil, err
 	}
 
+	// Faithful reimplementation of PHP's ext/standard/quot_print.c php_quot_print_encode
 	input := []byte(s)
+	const maxl = 75
+	hex := "0123456789ABCDEF"
+
 	var result []byte
-	lineLen := 0
-	const maxLineLen = 75 // soft line break at 75 chars (76th is '=')
+	lp := 0
 
 	for i := 0; i < len(input); i++ {
-		b := input[i]
+		c := input[i]
 
-		// Handle CRLF: pass through as-is and reset line length
-		if b == '\r' && i+1 < len(input) && input[i+1] == '\n' {
-			// Trailing whitespace before CRLF must be encoded
-			if lineLen > 0 {
-				last := result[len(result)-1]
-				if last == ' ' || last == '\t' {
-					result = result[:len(result)-1]
-					lineLen--
-					encoded := []byte{'=', "0123456789ABCDEF"[last>>4], "0123456789ABCDEF"[last&0xf]}
-					if lineLen+3 > maxLineLen {
-						result = append(result, '=', '\r', '\n')
-						lineLen = 0
-					}
-					result = append(result, encoded...)
-					lineLen += 3
-				}
-			}
-			result = append(result, '\r', '\n')
-			lineLen = 0
-			i++ // skip \n
+		// Handle CRLF: pass through as-is and reset line position
+		if c == '\r' && i+1 < len(input) && input[i+1] == '\n' {
+			result = append(result, '\r', input[i+1])
+			i++
+			lp = 0
 			continue
 		}
 
-		// Bare LF
-		if b == '\n' {
-			// Trailing whitespace before LF must be encoded
-			if lineLen > 0 {
-				last := result[len(result)-1]
-				if last == ' ' || last == '\t' {
-					result = result[:len(result)-1]
-					lineLen--
-					encoded := []byte{'=', "0123456789ABCDEF"[last>>4], "0123456789ABCDEF"[last&0xf]}
-					if lineLen+3 > maxLineLen {
-						result = append(result, '=', '\r', '\n')
-						lineLen = 0
-					}
-					result = append(result, encoded...)
-					lineLen += 3
-				}
+		// Check if byte needs encoding:
+		// control chars, DEL (0x7f), high-bit chars, '=', or space before CR
+		nextByte := byte(0)
+		if i+1 < len(input) {
+			nextByte = input[i+1]
+		}
+		if c < 32 || c == 0x7f || c >= 0x80 || c == '=' || (c == ' ' && nextByte == '\r') {
+			// Encoded character (=XX), takes 3 positions
+			lp += 3
+
+			// Check if we need a soft line break before this encoded char.
+			// PHP is multibyte-aware: it keeps UTF-8 sequences together.
+			needBreak := false
+			if lp > maxl && c <= 0x7f {
+				needBreak = true
+			} else if c > 0x7f && c <= 0xdf && (lp+3) > maxl {
+				// 2-byte UTF-8 sequence start: ensure next byte fits too
+				needBreak = true
+			} else if c > 0xdf && c <= 0xef && (lp+6) > maxl {
+				// 3-byte UTF-8 sequence start: ensure next 2 bytes fit
+				needBreak = true
+			} else if c > 0xef && c <= 0xf4 && (lp+9) > maxl {
+				// 4-byte UTF-8 sequence start: ensure next 3 bytes fit
+				needBreak = true
 			}
-			result = append(result, '\r', '\n')
-			lineLen = 0
-			continue
-		}
 
-		// Bare CR
-		if b == '\r' {
-			// Trailing whitespace before CR must be encoded
-			if lineLen > 0 {
-				last := result[len(result)-1]
-				if last == ' ' || last == '\t' {
-					result = result[:len(result)-1]
-					lineLen--
-					encoded := []byte{'=', "0123456789ABCDEF"[last>>4], "0123456789ABCDEF"[last&0xf]}
-					if lineLen+3 > maxLineLen {
-						result = append(result, '=', '\r', '\n')
-						lineLen = 0
-					}
-					result = append(result, encoded...)
-					lineLen += 3
-				}
-			}
-			result = append(result, '\r', '\n')
-			lineLen = 0
-			continue
-		}
-
-		// Determine if byte needs encoding
-		var encoded []byte
-		encLen := 0
-		if (b >= 33 && b <= 126 && b != '=') || b == '\t' || b == ' ' {
-			encoded = []byte{b}
-			encLen = 1
-		} else {
-			encoded = []byte{'=', "0123456789ABCDEF"[b>>4], "0123456789ABCDEF"[b&0xf]}
-			encLen = 3
-		}
-
-		// Check if we need a soft line break before this character
-		if lineLen+encLen > maxLineLen {
-			result = append(result, '=', '\r', '\n')
-			lineLen = 0
-		}
-
-		result = append(result, encoded...)
-		lineLen += encLen
-	}
-
-	// Handle trailing whitespace at end of string
-	if lineLen > 0 {
-		last := result[len(result)-1]
-		if last == ' ' || last == '\t' {
-			result = result[:len(result)-1]
-			lineLen--
-			encoded := []byte{'=', "0123456789ABCDEF"[last>>4], "0123456789ABCDEF"[last&0xf]}
-			if lineLen+3 > maxLineLen {
+			if needBreak {
 				result = append(result, '=', '\r', '\n')
+				lp = 3
 			}
-			result = append(result, encoded...)
+
+			result = append(result, '=', hex[c>>4], hex[c&0xf])
+		} else {
+			// Literal character, takes 1 position
+			lp++
+			if lp > maxl {
+				result = append(result, '=', '\r', '\n')
+				lp = 1
+			}
+			result = append(result, c)
 		}
 	}
 
@@ -950,13 +902,18 @@ func fncUtf8Encode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // > func string metaphone ( string $string [, int $max_phonemes = 0 ] )
 func fncMetaphone(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var s phpv.ZString
-	_, err := core.Expand(ctx, args, &s)
+	var maxPhonemesArg *phpv.ZInt
+	_, err := core.Expand(ctx, args, &s, &maxPhonemesArg)
 	if err != nil {
 		return nil, err
 	}
-	var maxPhonemes core.Optional[phpv.ZInt]
-	core.Expand(ctx, args[1:], &maxPhonemes)
-	maxP := int(maxPhonemes.GetOrDefault(0))
+	maxP := 0
+	if maxPhonemesArg != nil {
+		maxP = int(*maxPhonemesArg)
+		if maxP < 0 {
+			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "metaphone(): Argument #2 ($max_phonemes) must be greater than or equal to 0")
+		}
+	}
 	result := metaphone(strings.ToUpper(string(s)), maxP)
 	return phpv.ZString(result).ZVal(), nil
 }

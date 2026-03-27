@@ -57,9 +57,9 @@ func lexNumber(l *Lexer) lexState {
 			allowDecimal = false
 			hasPrefix = true
 		} else if l.peek() != '.' {
-			// octal
-			digits = "01234567_"
-			allowDecimal = false
+			// octal - but allow fallback to decimal if we see a decimal point or 8/9
+			digits = "0123456789_" // accept all digits; we validate octal later
+			allowDecimal = true    // allow decimal point to create float
 		}
 	}
 	_ = hasPrefix

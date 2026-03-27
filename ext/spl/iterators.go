@@ -631,7 +631,16 @@ func initCachingIterator() {
 			Name: "__toString",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				d := getCachingIteratorData(o)
-				if d == nil || d.currentVal == nil {
+				if d == nil {
+					return phpv.ZString("").ZVal(), nil
+				}
+				// Check if any toString flag is set
+				toStringFlags := d.flags & (cachingIteratorCallToString | cachingIteratorToStringUseKey | cachingIteratorToStringUseCurrent | cachingIteratorToStringUseInner)
+				if toStringFlags == 0 {
+					return nil, phpobj.ThrowError(ctx, phpobj.BadMethodCallException,
+						fmt.Sprintf("%s does not fetch string value (see CachingIterator::__construct)", o.GetClass().GetName()))
+				}
+				if d.currentVal == nil {
 					return phpv.ZString("").ZVal(), nil
 				}
 				if d.flags&cachingIteratorToStringUseKey != 0 && d.currentKey != nil {
@@ -651,7 +660,7 @@ func initCachingIterator() {
 					return phpv.ZInt(0).ZVal(), nil
 				}
 				if d.flags&cachingIteratorFullCache == 0 {
-					return nil, phpobj.ThrowError(ctx, phpobj.BadMethodCallException, "CachingIterator does not use a full cache (see CachingIterator::__construct)")
+					return nil, phpobj.ThrowError(ctx, phpobj.BadMethodCallException, fmt.Sprintf("%s does not use a full cache (see CachingIterator::__construct)", o.GetClass().GetName()))
 				}
 				return d.cache.Count(ctx).ZVal(), nil
 			}),
@@ -664,7 +673,7 @@ func initCachingIterator() {
 					return phpv.NewZArray().ZVal(), nil
 				}
 				if d.flags&cachingIteratorFullCache == 0 {
-					return nil, phpobj.ThrowError(ctx, phpobj.BadMethodCallException, "CachingIterator does not use a full cache (see CachingIterator::__construct)")
+					return nil, phpobj.ThrowError(ctx, phpobj.BadMethodCallException, fmt.Sprintf("%s does not use a full cache (see CachingIterator::__construct)", o.GetClass().GetName()))
 				}
 				return d.cache.ZVal(), nil
 			}),
@@ -677,7 +686,7 @@ func initCachingIterator() {
 					return phpv.ZNULL.ZVal(), nil
 				}
 				if d.flags&cachingIteratorFullCache == 0 {
-					return nil, phpobj.ThrowError(ctx, phpobj.BadMethodCallException, "CachingIterator does not use a full cache (see CachingIterator::__construct)")
+					return nil, phpobj.ThrowError(ctx, phpobj.BadMethodCallException, fmt.Sprintf("%s does not use a full cache (see CachingIterator::__construct)", o.GetClass().GetName()))
 				}
 				return d.cache.OffsetGet(ctx, args[0].Value())
 			}),
@@ -690,7 +699,7 @@ func initCachingIterator() {
 					return nil, nil
 				}
 				if d.flags&cachingIteratorFullCache == 0 {
-					return nil, phpobj.ThrowError(ctx, phpobj.BadMethodCallException, "CachingIterator does not use a full cache (see CachingIterator::__construct)")
+					return nil, phpobj.ThrowError(ctx, phpobj.BadMethodCallException, fmt.Sprintf("%s does not use a full cache (see CachingIterator::__construct)", o.GetClass().GetName()))
 				}
 				d.cache.OffsetSet(ctx, args[0].Value(), args[1])
 				return nil, nil
@@ -704,7 +713,7 @@ func initCachingIterator() {
 					return phpv.ZFalse.ZVal(), nil
 				}
 				if d.flags&cachingIteratorFullCache == 0 {
-					return nil, phpobj.ThrowError(ctx, phpobj.BadMethodCallException, "CachingIterator does not use a full cache (see CachingIterator::__construct)")
+					return nil, phpobj.ThrowError(ctx, phpobj.BadMethodCallException, fmt.Sprintf("%s does not use a full cache (see CachingIterator::__construct)", o.GetClass().GetName()))
 				}
 				exists, _ := d.cache.OffsetExists(ctx, args[0])
 				return phpv.ZBool(exists).ZVal(), nil
@@ -718,7 +727,7 @@ func initCachingIterator() {
 					return nil, nil
 				}
 				if d.flags&cachingIteratorFullCache == 0 {
-					return nil, phpobj.ThrowError(ctx, phpobj.BadMethodCallException, "CachingIterator does not use a full cache (see CachingIterator::__construct)")
+					return nil, phpobj.ThrowError(ctx, phpobj.BadMethodCallException, fmt.Sprintf("%s does not use a full cache (see CachingIterator::__construct)", o.GetClass().GetName()))
 				}
 				d.cache.OffsetUnset(ctx, args[0].Value())
 				return nil, nil
@@ -790,11 +799,15 @@ func initAppendIterator() {
 					return nil, nil
 				}
 				if len(args) == 0 || args[0] == nil || args[0].GetType() != phpv.ZtObject {
-					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "AppendIterator::append(): Argument #1 ($iterator) must be of type Iterator")
+					typeName := "null"
+					if len(args) > 0 && args[0] != nil {
+						typeName = args[0].GetType().TypeName()
+					}
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("AppendIterator::append(): Argument #1 ($iterator) must be of type Iterator, %s given", typeName))
 				}
 				inner, ok := args[0].Value().(*phpobj.ZObject)
 				if !ok {
-					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "AppendIterator::append(): Argument #1 ($iterator) must be of type Iterator")
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "AppendIterator::append(): Argument #1 ($iterator) must be of type Iterator, object given")
 				}
 				d.iterators = append(d.iterators, inner)
 				// Rewind the newly appended iterator
@@ -918,11 +931,12 @@ const (
 )
 
 type regexIteratorData struct {
-	inner     *phpobj.ZObject
-	pattern   phpv.ZString
-	mode      int
-	flags     int
-	pregFlags int
+	inner         *phpobj.ZObject
+	pattern       phpv.ZString
+	mode          int
+	flags         int
+	pregFlags     int
+	currentResult *phpv.ZVal // cached result for GET_MATCH, ALL_MATCHES, SPLIT, REPLACE modes
 }
 
 func (d *regexIteratorData) Clone() any {
@@ -1010,6 +1024,11 @@ func initRegexIterator() {
 				d := getRegexIteratorData(o)
 				if d == nil {
 					return phpv.ZFalse.ZVal(), nil
+				}
+				// For GET_MATCH, ALL_MATCHES, SPLIT, and REPLACE modes,
+				// return the cached result from accept()
+				if d.currentResult != nil && d.mode != regexIteratorMatch {
+					return d.currentResult, nil
 				}
 				return d.inner.CallMethod(ctx, "current")
 			}),
@@ -1252,18 +1271,110 @@ func parsePCREPattern(pattern string) (*regexp.Regexp, error) {
 }
 
 // accept checks if the current inner element matches the regex pattern.
+// It also stores the match result for use by current() in non-MATCH modes.
 func (d *regexIteratorData) accept(ctx phpv.Context) bool {
-	val, err := d.inner.CallMethod(ctx, "current")
-	if err != nil || val == nil {
-		return false
+	d.currentResult = nil
+
+	// Determine subject based on USE_KEY flag
+	var subject string
+	if d.flags&regexIteratorUseKey != 0 {
+		keyVal, err := d.inner.CallMethod(ctx, "key")
+		if err != nil || keyVal == nil {
+			return false
+		}
+		subject = string(keyVal.AsString(ctx))
+	} else {
+		val, err := d.inner.CallMethod(ctx, "current")
+		if err != nil || val == nil {
+			return false
+		}
+		subject = string(val.AsString(ctx))
 	}
-	subject := string(val.AsString(ctx))
 
 	re, err := parsePCREPattern(string(d.pattern))
 	if err != nil || re == nil {
 		return false
 	}
-	return re.MatchString(subject)
+
+	invertMatch := d.flags&2 != 0 // INVERT_MATCH = 2
+
+	switch d.mode {
+	case regexIteratorMatch:
+		matched := re.MatchString(subject)
+		if invertMatch {
+			matched = !matched
+		}
+		return matched
+
+	case regexIteratorGetMatch:
+		matches := re.FindStringSubmatch(subject)
+		if matches == nil {
+			return invertMatch
+		}
+		if invertMatch {
+			return false
+		}
+		// Build result array
+		result := phpv.NewZArray()
+		for i, m := range matches {
+			result.OffsetSet(ctx, phpv.ZInt(i), phpv.ZString(m).ZVal())
+		}
+		d.currentResult = result.ZVal()
+		return true
+
+	case regexIteratorAllMatches:
+		allMatches := re.FindAllStringSubmatch(subject, -1)
+		if len(allMatches) == 0 {
+			return invertMatch
+		}
+		if invertMatch {
+			return false
+		}
+		// Build result as array of arrays (transposed: by capture group)
+		numGroups := len(allMatches[0])
+		result := phpv.NewZArray()
+		for g := 0; g < numGroups; g++ {
+			groupArr := phpv.NewZArray()
+			for _, match := range allMatches {
+				if g < len(match) {
+					groupArr.OffsetSet(ctx, nil, phpv.ZString(match[g]).ZVal())
+				}
+			}
+			result.OffsetSet(ctx, phpv.ZInt(g), groupArr.ZVal())
+		}
+		d.currentResult = result.ZVal()
+		return true
+
+	case regexIteratorSplit:
+		parts := re.Split(subject, -1)
+		result := phpv.NewZArray()
+		for i, p := range parts {
+			result.OffsetSet(ctx, phpv.ZInt(i), phpv.ZString(p).ZVal())
+		}
+		d.currentResult = result.ZVal()
+		// SPLIT always matches (returns the split result)
+		if invertMatch {
+			return !re.MatchString(subject)
+		}
+		return true
+
+	case regexIteratorReplace:
+		// Get the replacement string - default is empty
+		replacement := ""
+		replaced := re.ReplaceAllString(subject, replacement)
+		d.currentResult = phpv.ZString(replaced).ZVal()
+		if invertMatch {
+			return !re.MatchString(subject)
+		}
+		return re.MatchString(subject)
+
+	default:
+		matched := re.MatchString(subject)
+		if invertMatch {
+			matched = !matched
+		}
+		return matched
+	}
 }
 
 var RegexIteratorClass = &phpobj.ZClass{

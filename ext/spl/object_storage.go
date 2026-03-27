@@ -80,13 +80,19 @@ func initObjectStorage() {
 				return phpv.CompareUncomparable, nil
 			}
 			// Two SplObjectStorage are equal only if they contain the same objects
-			// (regardless of associated info). A is equal to B if every object in A
-			// is also in B and every object in B is also in A.
+			// with the same associated info. A is equal to B if every object in A
+			// is also in B with equal info, and vice versa.
 			if len(ad.entries) != len(bd.entries) {
 				return 1, nil // not equal
 			}
-			for hash := range ad.entries {
-				if _, exists := bd.entries[hash]; !exists {
+			for hash, aEntry := range ad.entries {
+				bEntry, exists := bd.entries[hash]
+				if !exists {
+					return 1, nil // not equal
+				}
+				// Compare associated info
+				cmp, err := phpv.Compare(ctx, aEntry.info, bEntry.info)
+				if err != nil || cmp != 0 {
 					return 1, nil // not equal
 				}
 			}

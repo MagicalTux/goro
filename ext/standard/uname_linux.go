@@ -32,8 +32,8 @@ func fncUname(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	mode := core.Deref(modeArg, "a")
 
-	// Validate mode
-	if len(mode) > 1 {
+	// Validate mode - must be exactly one character
+	if len(mode) != 1 {
 		return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
 			"php_uname(): Argument #1 ($mode) must be a single character")
 	}

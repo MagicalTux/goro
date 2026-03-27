@@ -851,6 +851,33 @@ func fncStrGetCsv(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZBool(false).ZVal(), err
 	}
 
+	sep := byte(',')
+	enc := byte('"')
+	esc := byte('\\')
+	hasEsc := true
+
+	if sepArg != nil {
+		if len(*sepArg) != 1 {
+			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "str_getcsv(): Argument #2 ($separator) must be a single character")
+		}
+		sep = (*sepArg)[0]
+	}
+	if encArg != nil {
+		if len(*encArg) != 1 {
+			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "str_getcsv(): Argument #3 ($enclosure) must be a single character")
+		}
+		enc = (*encArg)[0]
+	}
+	if escArg != nil {
+		if len(*escArg) == 0 {
+			hasEsc = false
+		} else if len(*escArg) != 1 {
+			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "str_getcsv(): Argument #4 ($escape) must be empty or a single character")
+		} else {
+			esc = (*escArg)[0]
+		}
+	}
+
 	if str == "" {
 		// return an array with only a NULL element
 		result := phpv.NewZArray()
@@ -858,70 +885,99 @@ func fncStrGetCsv(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return result.ZVal(), nil
 	}
 
-	sep := ","
-	enc := "\""
-	esc := "\\"
-
-	if sepArg != nil {
-		sep = string(*sepArg)
-	}
-	if encArg != nil {
-		enc = string(*encArg)
-	}
-	if escArg != nil {
-		esc = string(*escArg)
-	}
-
 	result := phpv.NewZArray()
-
+	input := []byte(str)
 	var buf bytes.Buffer
+	i := 0
+	fieldStart := true
+	needFinalField := true
 
-	escapeIndex := -1
-	skippedSpcs := 0
-	inserted := false
-	enclosed := false
+	for i < len(input) {
+		c := input[i]
 
-	// Not explicitly documented, but str_getcsv (weirdly) behaves as follows:
-	// - enclosure only applies right after comma, or at beginning of the string
-	//     so  'a,"b,c",d' == array('a', 'b,c', d)
-	//     but 'a,b",c",d' == array('a', 'b"','c"', d)
-	// - spaces before a valid enclosure is discarded
-	//     so  'a,  "b,c",d' == array('a', 'b,c', d)
-	//     but 'a,  b",c",d' == array('a', '  b"','c"', d)
-	// - if enclosure is not valid, it should be added as part of the string
-	// - it wasn't clearly stated, but escape only applies to enclosure, not to separators
-	//     so  'a,"b\",c",d' == array('a', 'b",c', d)
-	//     but 'a\,b,c,d' == array('a\', 'b', 'c', 'd')
+		// At field start, skip spaces if followed by enclosure
+		if fieldStart && c == ' ' {
+			// Look ahead to see if there's an enclosure after spaces
+			j := i
+			for j < len(input) && input[j] == ' ' {
+				j++
+			}
+			if j < len(input) && input[j] == enc {
+				i = j // skip to the enclosure
+				c = input[i]
+			}
+		}
 
-	for i, b := range []byte(str) {
-		ch := string(b)
-		if ch == sep && !enclosed {
+		if fieldStart && c == enc {
+			// Start of enclosed field
+			i++
+			for i < len(input) {
+				c = input[i]
+				if hasEsc && c == esc && esc != enc && i+1 < len(input) && input[i+1] == enc {
+					// Escaped enclosure via escape char (when esc != enc)
+					buf.WriteByte(enc)
+					i += 2
+					continue
+				}
+				if hasEsc && c == esc && esc == enc && i+1 < len(input) && input[i+1] == enc {
+					// Doubled enclosure as escape when esc == enc
+					buf.WriteByte(enc)
+					i += 2
+					continue
+				}
+				if !hasEsc && c == enc && i+1 < len(input) && input[i+1] == enc {
+					// Doubled enclosure (when escape is empty)
+					buf.WriteByte(enc)
+					i += 2
+					continue
+				}
+				if c == enc {
+					// End of enclosed field
+					i++
+					break
+				}
+				if hasEsc && c == esc && esc != enc && i+1 < len(input) {
+					// Escape any char inside enclosed field
+					i++
+					buf.WriteByte(input[i])
+					i++
+					continue
+				}
+				buf.WriteByte(c)
+				i++
+			}
+			// Skip to separator or end
+			for i < len(input) && input[i] != sep {
+				i++
+			}
 			result.OffsetSet(ctx, nil, phpv.ZStr(buf.String()))
 			buf.Reset()
-			inserted = false
-		} else if ch == enc && !inserted && escapeIndex != i {
-			enclosed = true
-			skippedSpcs = 0
-		} else if ch == enc && enclosed && escapeIndex != i {
-			enclosed = false
-		} else if ch == esc {
-			escapeIndex = i + 1
-		} else {
-			if !inserted && ch == " " {
-				skippedSpcs++
-			} else {
-				for i := 0; i < skippedSpcs; i++ {
-					buf.WriteRune(' ')
-				}
-				buf.WriteString(ch)
-				inserted = true
-				skippedSpcs = 0
+			fieldStart = true
+			needFinalField = false
+			if i < len(input) {
+				i++ // skip separator
+				needFinalField = true
 			}
-
+			continue
 		}
+
+		if c == sep {
+			result.OffsetSet(ctx, nil, phpv.ZStr(buf.String()))
+			buf.Reset()
+			fieldStart = true
+			needFinalField = true
+			i++
+			continue
+		}
+
+		buf.WriteByte(c)
+		fieldStart = false
+		needFinalField = true
+		i++
 	}
 
-	if buf.Len() > 0 || !inserted {
+	// Add final field if needed (unenclosed field at end, or trailing separator)
+	if needFinalField {
 		result.OffsetSet(ctx, nil, phpv.ZStr(buf.String()))
 	}
 
@@ -2460,46 +2516,73 @@ func fncSoundex(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, ctx.FuncError(err)
 	}
 
-	// Skip non-alpha characters at the start to find the first letter
-	// Return empty string if no alpha characters found
-	if len(str) == 0 {
-		return phpv.ZStr("").ZVal(), nil
+	// PHP soundex table: maps uppercase letter to soundex code
+	// 0 = vowel/skip, 1-6 = consonant codes
+	soundexTable := [26]byte{
+		0, '1', '2', '3', 0, '1', '2', 0, 0, '2', '2', '4', '5',
+		'5', 0, '1', '2', '6', '2', '3', 0, '1', 0, '2', 0, '2',
 	}
 
-	numeric := func(ch byte) byte {
-		switch unicode.ToLower(rune(ch)) {
-		case 'a', 'e', 'h', 'i', 'o', 'u', 'w', 'y':
-			return '0'
-		case 'b', 'f', 'p', 'v':
-			return '1'
-		case 'c', 'g', 'j', 'k', 'q', 's', 'x', 'z':
-			return '2'
-		case 'd', 't':
-			return '3'
-		case 'l':
-			return '4'
-		case 'm', 'n':
-			return '5'
-		case 'r':
-			return '6'
+	soundexCode := func(ch byte) byte {
+		if ch >= 'A' && ch <= 'Z' {
+			return soundexTable[ch-'A']
+		}
+		if ch >= 'a' && ch <= 'z' {
+			return soundexTable[ch-'a']
 		}
 		return 0
 	}
 
-	code := []byte{str[0], '0', '0', '0'}
-
-	j := 1
 	chars := []byte(str)
-	for i := 1; i < len(chars) && j < 4; i++ {
-		cur := numeric(chars[i])
-		prev := numeric(chars[i-1])
-		if cur > 0 && cur != prev && cur != '0' {
-			code[j] = cur
-			j++
+
+	// Find the first alphabetic character
+	startIdx := -1
+	for i, c := range chars {
+		if (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') {
+			startIdx = i
+			break
 		}
 	}
 
-	return phpv.ZStr(string(code)), nil
+	if startIdx < 0 {
+		// No alphabetic character found
+		return phpv.ZStr("0000"), nil
+	}
+
+	// First character of soundex is the uppercase first letter
+	code := [4]byte{chars[startIdx], '0', '0', '0'}
+	if code[0] >= 'a' && code[0] <= 'z' {
+		code[0] -= 32 // to uppercase
+	}
+
+	// Track the last non-zero soundex code to suppress adjacent duplicates
+	lastCode := soundexCode(chars[startIdx])
+	j := 1
+
+	for i := startIdx + 1; i < len(chars) && j < 4; i++ {
+		c := chars[i]
+		sc := soundexCode(c)
+		if sc == 0 {
+			// Vowel or non-alpha: reset lastCode only for vowels (not H/W)
+			// H and W don't reset the lastCode (they act as separators that
+			// allow same-coded adjacent consonants to be treated as one)
+			upper := c
+			if upper >= 'a' && upper <= 'z' {
+				upper -= 32
+			}
+			if upper != 'H' && upper != 'W' {
+				lastCode = 0
+			}
+			continue
+		}
+		if sc != lastCode {
+			code[j] = sc
+			j++
+			lastCode = sc
+		}
+	}
+
+	return phpv.ZStr(string(code[:])), nil
 }
 
 // > func string similar_text ( string $first , string $second [, float &$percent ] )
@@ -2591,116 +2674,80 @@ func fncWordWrap(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZStr(""), nil
 	}
 
-	// Faithful reimplementation of PHP's ext/standard/string.c php_wordwrap
+	// Faithful reimplementation of PHP's ext/standard/string.c wordwrap
 	brk := []byte(breakStr)
 	textLen := len(str)
 
-	if width > 0 && !cut && textLen <= width {
-		return phpv.ZStr(string(str)), nil
+	// Special case for a single-character break with no cut
+	if len(brk) == 1 && !cut {
+		// PHP optimizes this: copy text, replace spaces in-place
+		newtext := make([]byte, textLen)
+		copy(newtext, str)
+
+		var laststart, lastspace int
+		for current := 0; current < textLen; current++ {
+			if str[current] == brk[0] {
+				laststart = current + 1
+				lastspace = current + 1
+			} else if str[current] == ' ' {
+				if current-laststart >= width {
+					newtext[current] = brk[0]
+					laststart = current + 1
+				}
+				lastspace = current
+			} else if current-laststart >= width && laststart != lastspace {
+				newtext[lastspace] = brk[0]
+				laststart = lastspace + 1
+			}
+		}
+		return phpv.ZStr(string(newtext)), nil
 	}
 
+	// Multiple character line break or forced cut
 	var buf bytes.Buffer
 	buf.Grow(textLen + textLen/max(width, 1)*len(brk) + len(brk))
 
-	if !cut {
-		// Non-cut mode: only break at existing spaces
-		// PHP algorithm: walk through the string tracking line position.
-		// When we encounter a space and the current line position exceeds width,
-		// replace the last space with a break.
-		lastStart := 0
-		lastSpace := -1
-		current := 0
-		linePos := 0
-
-		for current < textLen {
-			if str[current] == '\n' {
-				// Newline resets line position
-				buf.Write(str[lastStart : current+1])
-				lastStart = current + 1
-				lastSpace = -1
-				linePos = 0
-			} else if str[current] == ' ' {
-				if linePos >= width && lastSpace != -1 {
-					buf.Write(str[lastStart:lastSpace])
-					buf.Write(brk)
-					lastStart = lastSpace + 1
-					linePos = current - lastStart
-				}
-				lastSpace = current
+	var laststart, lastspace int
+	for current := 0; current < textLen; current++ {
+		// When we hit an existing break, copy to new buffer, and
+		// fix up laststart and lastspace
+		if str[current] == brk[0] &&
+			current+len(brk) <= textLen &&
+			string(str[current:current+len(brk)]) == breakStr {
+			buf.Write(str[laststart : current+len(brk)])
+			current += len(brk) - 1
+			laststart = current + 1
+			lastspace = current + 1
+			continue
+		}
+		// If it is a space, check if it is at the line boundary,
+		// copy and insert a break, or just keep track of it
+		if str[current] == ' ' {
+			if current-laststart >= width {
+				buf.Write(str[laststart:current])
+				buf.Write(brk)
+				laststart = current + 1
 			}
-			linePos++
-			current++
-		}
-		// Handle remaining text
-		if linePos >= width && lastSpace != -1 && lastSpace >= lastStart {
-			buf.Write(str[lastStart:lastSpace])
+			lastspace = current
+		} else if current-laststart >= width && cut && laststart >= lastspace {
+			// Cutting: accumulated enough chars and no space for this line
+			buf.Write(str[laststart:current])
 			buf.Write(brk)
-			lastStart = lastSpace + 1
+			laststart = current
+			lastspace = current
+		} else if current-laststart >= width && laststart < lastspace {
+			// Current word puts us over the linelength, copy back up
+			// until the last space, insert a break, and move up laststart
+			buf.Write(str[laststart:lastspace])
+			buf.Write(brk)
+			laststart = lastspace + 1
+			lastspace = lastspace + 1
 		}
-		buf.Write(str[lastStart:textLen])
-	} else {
-		// Cut mode: break long words at exact width boundaries
-		lastStart := 0
-		lastSpace := -1
-		current := 0
-		linePos := 0
+	}
 
-		for current < textLen {
-			if str[current] == '\n' {
-				buf.Write(str[lastStart : current+1])
-				lastStart = current + 1
-				lastSpace = -1
-				linePos = 0
-			} else if str[current] == ' ' {
-				if linePos >= width {
-					if lastSpace != -1 && lastSpace >= lastStart {
-						buf.Write(str[lastStart:lastSpace])
-						buf.Write(brk)
-						lastStart = lastSpace + 1
-						linePos = current - lastStart
-					} else {
-						buf.Write(str[lastStart:current])
-						buf.Write(brk)
-						lastStart = current + 1
-						linePos = 0
-						current++
-						continue
-					}
-				}
-				lastSpace = current
-			} else if linePos >= width {
-				// Force cut in the middle of a word
-				if lastSpace != -1 && lastSpace >= lastStart {
-					// Break at last space first
-					buf.Write(str[lastStart:lastSpace])
-					buf.Write(brk)
-					lastStart = lastSpace + 1
-					lastSpace = -1
-					linePos = current - lastStart
-					// After breaking at space, check if we still need to cut
-					if linePos >= width {
-						buf.Write(str[lastStart:current])
-						buf.Write(brk)
-						lastStart = current
-						linePos = 0
-					}
-				} else {
-					buf.Write(str[lastStart:current])
-					buf.Write(brk)
-					lastStart = current
-					linePos = 0
-				}
-			}
-			linePos++
-			current++
-		}
-		// Handle remaining text
-		if linePos >= width && lastSpace != -1 && lastSpace >= lastStart {
-			buf.Write(str[lastStart:lastSpace])
-			buf.Write(brk)
-			lastStart = lastSpace + 1
-		}
-		buf.Write(str[lastStart:textLen])
+	// Copy over any stragglers
+	if laststart != textLen {
+		buf.Write(str[laststart:textLen])
 	}
 
 	return phpv.ZStr(buf.String()), nil
@@ -2712,6 +2759,22 @@ func strReplaceCommon(ctx phpv.Context, args []*phpv.ZVal, caseSensitive bool) (
 	_, err := core.Expand(ctx, args, &search, &replace, &subject, &count)
 	if err != nil {
 		return nil, err
+	}
+
+	funcName := "str_replace"
+	if !caseSensitive {
+		funcName = "str_ireplace"
+	}
+
+	// PHP 8: validate types - resource is not accepted
+	if search.GetType() == phpv.ZtResource {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("%s(): Argument #1 ($search) must be of type array|string, resource given", funcName))
+	}
+	if replace.GetType() == phpv.ZtResource {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("%s(): Argument #2 ($replace) must be of type array|string, resource given", funcName))
+	}
+	if subject.GetType() == phpv.ZtResource {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("%s(): Argument #3 ($subject) must be of type array|string, resource given", funcName))
 	}
 
 	if count.HasArg() {

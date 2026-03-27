@@ -134,7 +134,9 @@ func makeSplDllMethods(cls *phpobj.ZClass, defaultMode int) map[phpv.ZString]*ph
 		return getSplDllData(o, cls)
 	}
 
-	clsName := string(cls.Name)
+	// Always use "SplDoublyLinkedList" for error messages since the methods
+	// are defined on that class (PHP behavior: error messages show the declaring class)
+	clsName := "SplDoublyLinkedList"
 
 	return map[phpv.ZString]*phpv.ZClassMethod{
 		"__construct": {
