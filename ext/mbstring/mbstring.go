@@ -336,7 +336,7 @@ func fncMbInternalEncoding(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, err
 func fncMbDetectEncoding(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var s phpv.ZString
 	if len(args) < 1 {
-		return nil, ctx.Errorf("mb_detect_encoding() expects at least 1 argument")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "mb_detect_encoding() expects at least 1 argument, 0 given")
 	}
 	_, err := core.Expand(ctx, args, &s)
 	if err != nil {
@@ -460,7 +460,7 @@ func fncMbCheckEncoding(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 
 func fncMbConvertEncoding(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 2 {
-		return nil, ctx.Errorf("mb_convert_encoding() expects at least 2 arguments")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, fmt.Sprintf("mb_convert_encoding() expects at least 2 arguments, %d given", len(args)))
 	}
 	toEnc := args[1].String()
 	if !isValidEncoding(toEnc) {

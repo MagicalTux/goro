@@ -349,7 +349,7 @@ func fncMbStrcut(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 func fncMbConvertVariables(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 3 {
-		return nil, ctx.Errorf("mb_convert_variables() expects at least 3 arguments")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, fmt.Sprintf("mb_convert_variables() expects at least 3 arguments, %d given", len(args)))
 	}
 
 	toEnc := args[0].String()
@@ -616,7 +616,7 @@ func isEastAsianWide(r rune) bool {
 }
 
 func fncMbParseStr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	if len(args) < 2 { return nil, ctx.Errorf("mb_parse_str() expects exactly 2 arguments, %d given", len(args)) }
+	if len(args) < 2 { return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, fmt.Sprintf("mb_parse_str() expects exactly 2 arguments, %d given", len(args))) }
 	var s phpv.ZString
 	_, err := core.Expand(ctx, args, &s)
 	if err != nil { return nil, err }

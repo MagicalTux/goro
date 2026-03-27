@@ -29,7 +29,7 @@ var assertOptionKeys = map[phpv.ZInt]string{
 // > func mixed assert_options ( int $option [, mixed $value ] )
 func fncAssertOptions(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
-		return nil, ctx.Errorf("assert_options() expects at least 1 argument, 0 given")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "assert_options() expects at least 1 argument, 0 given")
 	}
 
 	// Emit deprecation warning (PHP 8.3+)
@@ -55,7 +55,7 @@ func fncAssertOptions(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // > func bool assert ( mixed $assertion [, Throwable|string|null $description = null] )
 func fncAssert(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
-		return nil, ctx.Errorf("assert() expects at least 1 argument, 0 given")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "assert() expects at least 1 argument, 0 given")
 	}
 
 	// Check assert.active INI setting (default is 1)

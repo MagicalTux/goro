@@ -635,7 +635,7 @@ var encodingToMime = map[string]string{
 
 func fncMbEncodeNumericentity(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 2 {
-		return nil, ctx.Errorf("mb_encode_numericentity() expects at least 2 arguments")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, fmt.Sprintf("mb_encode_numericentity() expects at least 2 arguments, %d given", len(args)))
 	}
 	if len(args) > 2 && args[2] != nil && args[2].GetType() == phpv.ZtString {
 		encStr := args[2].String()
@@ -681,7 +681,7 @@ func fncMbEncodeNumericentity(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, 
 
 func fncMbDecodeNumericentity(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 2 {
-		return nil, ctx.Errorf("mb_decode_numericentity() expects at least 2 arguments")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, fmt.Sprintf("mb_decode_numericentity() expects at least 2 arguments, %d given", len(args)))
 	}
 	if len(args) > 2 && args[2] != nil && args[2].GetType() == phpv.ZtString {
 		encStr := args[2].String()
