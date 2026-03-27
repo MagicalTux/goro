@@ -209,7 +209,7 @@ func getSFOData(o *phpobj.ZObject) *splFileObjectData {
 func sfoConstruct(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	// Validate argument count first (before double construction check)
 	if len(args) == 0 {
-		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError,
 			"SplFileObject::__construct() expects at least 1 argument, 0 given")
 	}
 
@@ -906,8 +906,6 @@ func sfoSeek(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal
 		} else {
 			d.eof = true
 			d.curLine = ""
-			// When seeking past EOF, set line to target so key() returns the sought position
-			d.line = target
 		}
 	}
 

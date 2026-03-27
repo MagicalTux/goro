@@ -132,6 +132,11 @@ func getDIData(o *phpobj.ZObject) *directoryIteratorData {
 }
 
 func diConstruct(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	// Check if already initialized
+	if getDIData(o) != nil {
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, "Directory object is already initialized")
+	}
+
 	var path phpv.ZString
 	_, err := core.Expand(ctx, args, &path)
 	if err != nil {

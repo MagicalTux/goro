@@ -245,7 +245,8 @@ func initLimitIterator() {
 						return nil, err
 					}
 					if !bool(v.AsBool(ctx)) {
-						break
+						return nil, phpobj.ThrowError(ctx, phpobj.OutOfBoundsException,
+							fmt.Sprintf("Seek position %d is out of range", d.offset))
 					}
 					_, err = d.inner.CallMethod(ctx, "next")
 					if err != nil {
@@ -473,7 +474,7 @@ func initCachingIterator() {
 					bitCount++
 				}
 				if bitCount > 1 {
-					return nil, phpobj.ThrowError(ctx, phpobj.InvalidArgumentException,
+					return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
 						"CachingIterator::__construct(): Argument #2 ($flags) must contain only one of CachingIterator::CALL_TOSTRING, CachingIterator::TOSTRING_USE_KEY, CachingIterator::TOSTRING_USE_CURRENT, or CachingIterator::TOSTRING_USE_INNER")
 				}
 				o.SetOpaque(CachingIteratorClass, &cachingIteratorData{

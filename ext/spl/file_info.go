@@ -162,6 +162,9 @@ func sfiGetPath(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.Z
 	if err != nil {
 		return nil, err
 	}
+	if d.path == "" {
+		return phpv.ZStr(""), nil
+	}
 	return phpv.ZStr(filepath.Dir(d.path)), nil
 }
 

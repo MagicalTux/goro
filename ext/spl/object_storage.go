@@ -560,13 +560,21 @@ func initObjectStorage() {
 				}
 				result.OffsetSet(ctx, phpv.ZInt(0), storage.ZVal())
 
-				// Key 1: member properties (dynamic properties of the object)
+				// Key 1: member properties of the object
 				memberProps := phpv.NewZArray()
 				for prop := range o.IterProps(ctx) {
-					if prop.Modifiers.IsPublic() || (!prop.Modifiers.IsPrivate() && !prop.Modifiers.IsProtected()) {
-						v := o.GetPropValue(prop)
-						memberProps.OffsetSet(ctx, prop.VarName.ZVal(), v)
+					v := o.GetPropValue(prop)
+					// Use visibility-tagged key names
+					var key phpv.ZString
+					if prop.Modifiers.IsProtected() {
+						key = phpv.ZString("\x00*\x00" + string(prop.VarName))
+					} else if prop.Modifiers.IsPrivate() {
+						className := o.GetClass().GetName()
+						key = phpv.ZString("\x00" + string(className) + "\x00" + string(prop.VarName))
+					} else {
+						key = prop.VarName
 					}
+					memberProps.OffsetSet(ctx, key, v)
 				}
 				result.OffsetSet(ctx, phpv.ZInt(1), memberProps.ZVal())
 
@@ -633,12 +641,21 @@ func initObjectStorage() {
 				d := getOrInitObjectStorageData(o)
 				result := phpv.NewZArray()
 
-				// Include public/dynamic properties from the object (for subclasses)
+				// Include all properties from the object (for subclasses)
 				for prop := range o.IterProps(ctx) {
-					if prop.Modifiers.IsPublic() || (!prop.Modifiers.IsPrivate() && !prop.Modifiers.IsProtected()) {
-						v := o.GetPropValue(prop)
-						result.OffsetSet(ctx, prop.VarName.ZVal(), v)
+					v := o.GetPropValue(prop)
+					// Use visibility-tagged key names for protected/private
+					var key phpv.ZString
+					if prop.Modifiers.IsProtected() {
+						key = phpv.ZString("\x00*\x00" + string(prop.VarName))
+					} else if prop.Modifiers.IsPrivate() {
+						// Get the declaring class name for private properties
+						className := o.GetClass().GetName()
+						key = phpv.ZString("\x00" + string(className) + "\x00" + string(prop.VarName))
+					} else {
+						key = prop.VarName
 					}
+					result.OffsetSet(ctx, key, v)
 				}
 
 				// Build the storage array with obj/inf pairs
@@ -694,10 +711,17 @@ func initObjectStorage() {
 				// Member properties
 				memberProps := phpv.NewZArray()
 				for prop := range o.IterProps(ctx) {
-					if prop.Modifiers.IsPublic() || (!prop.Modifiers.IsPrivate() && !prop.Modifiers.IsProtected()) {
-						v := o.GetPropValue(prop)
-						memberProps.OffsetSet(ctx, prop.VarName.ZVal(), v)
+					v := o.GetPropValue(prop)
+					var key phpv.ZString
+					if prop.Modifiers.IsProtected() {
+						key = phpv.ZString("\x00*\x00" + string(prop.VarName))
+					} else if prop.Modifiers.IsPrivate() {
+						className := o.GetClass().GetName()
+						key = phpv.ZString("\x00" + string(className) + "\x00" + string(prop.VarName))
+					} else {
+						key = prop.VarName
 					}
+					memberProps.OffsetSet(ctx, key, v)
 				}
 				memberSer, err := ctx.CallZVal(ctx, serializeFn, []*phpv.ZVal{memberProps.ZVal()})
 				if err != nil {

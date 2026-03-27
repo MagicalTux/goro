@@ -70,7 +70,9 @@ func rdiConstruct(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv
 		return nil, err
 	}
 
-	flags := fsIterKeyAsPathname | fsIterCurrentAsFileinfo | fsIterSkipDots
+	// RecursiveDirectoryIterator default flags do NOT include SKIP_DOTS
+	// (unlike FilesystemIterator which does include SKIP_DOTS by default)
+	flags := fsIterKeyAsPathname | fsIterCurrentAsFileinfo
 	if len(args) > 1 {
 		flags = int(args[1].AsInt(ctx))
 	}
