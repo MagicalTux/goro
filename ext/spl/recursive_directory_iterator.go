@@ -126,9 +126,10 @@ func rdiConstruct(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv
 
 func updateRDISFI(o *phpobj.ZObject, d *recursiveDirectoryIteratorData) {
 	if d.pos < len(d.entries) {
-		entryPath := filepath.Join(d.path, d.entries[d.pos].Name())
-		info, _ := os.Stat(entryPath)
-		o.SetOpaque(SplFileInfoClass, &splFileInfoData{path: entryPath, resolvedPath: entryPath, info: info})
+		entryPath := entryFullPath(d.path, d.entries[d.pos].Name())
+		resolvedPath := filepath.Join(d.path, d.entries[d.pos].Name())
+		info, _ := os.Stat(resolvedPath)
+		o.SetOpaque(SplFileInfoClass, &splFileInfoData{path: entryPath, resolvedPath: resolvedPath, info: info})
 	}
 }
 
@@ -139,14 +140,14 @@ func rdiCurrent(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.Z
 	}
 
 	if d.flags&fsIterCurrentAsPathname != 0 {
-		return phpv.ZStr(filepath.Join(d.path, d.entries[d.pos].Name())), nil
+		return phpv.ZStr(entryFullPath(d.path, d.entries[d.pos].Name())), nil
 	}
 	if d.flags&fsIterCurrentAsSelf != 0 {
 		return o.ZVal(), nil
 	}
 
 	// Default: CURRENT_AS_FILEINFO
-	entryPath := filepath.Join(d.path, d.entries[d.pos].Name())
+	entryPath := entryFullPath(d.path, d.entries[d.pos].Name())
 	infoObj, err := phpobj.NewZObject(ctx, SplFileInfoClass, phpv.ZString(entryPath).ZVal())
 	if err != nil {
 		return nil, err
@@ -163,7 +164,7 @@ func rdiKey(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal,
 	if d.flags&fsIterKeyAsFilename != 0 {
 		return phpv.ZStr(d.entries[d.pos].Name()), nil
 	}
-	return phpv.ZStr(filepath.Join(d.path, d.entries[d.pos].Name())), nil
+	return phpv.ZStr(entryFullPath(d.path, d.entries[d.pos].Name())), nil
 }
 
 func rdiNext(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
@@ -234,7 +235,7 @@ func rdiToString(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.
 	if d == nil || d.pos >= len(d.entries) {
 		return phpv.ZStr(""), nil
 	}
-	return phpv.ZStr(filepath.Join(d.path, d.entries[d.pos].Name())), nil
+	return phpv.ZStr(entryFullPath(d.path, d.entries[d.pos].Name())), nil
 }
 
 func rdiHasChildren(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
@@ -248,7 +249,7 @@ func rdiHasChildren(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*ph
 		return phpv.ZFalse.ZVal(), nil
 	}
 
-	entryPath := filepath.Join(d.path, name)
+	entryPath := filepath.Join(d.path, name) // resolved path for OS operations
 
 	// If FOLLOW_SYMLINKS is set, use os.Stat (follows symlinks)
 	// Otherwise, use os.Lstat (does not follow)

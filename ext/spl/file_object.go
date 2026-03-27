@@ -207,15 +207,15 @@ func getSFOData(o *phpobj.ZObject) *splFileObjectData {
 }
 
 func sfoConstruct(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	// Prevent double construction
-	if getSFOData(o) != nil {
-		return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot call constructor twice")
-	}
-
-	// Validate argument count
+	// Validate argument count first (before double construction check)
 	if len(args) == 0 {
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
 			"SplFileObject::__construct() expects at least 1 argument, 0 given")
+	}
+
+	// Prevent double construction
+	if getSFOData(o) != nil {
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot call constructor twice")
 	}
 
 	// Validate mode type before Expand (which would silently convert)
@@ -899,6 +899,8 @@ func sfoSeek(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal
 		} else {
 			d.eof = true
 			d.curLine = ""
+			// When seeking past EOF, set line to target so key() returns the sought position
+			d.line = target
 		}
 	}
 
@@ -958,10 +960,15 @@ func sfoKey(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal,
 
 func sfoNext(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	d := getSFOData(o)
-	if d == nil || d.eof {
+	if d == nil {
 		return nil, nil
 	}
 	ensureFirstLineRead(d)
+	if d.eof {
+		// Even at EOF, advance the line counter (PHP behavior)
+		d.line++
+		return nil, nil
+	}
 	for {
 		nextLine, ok := d.readLine()
 		if ok {

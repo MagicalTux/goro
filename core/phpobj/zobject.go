@@ -3277,6 +3277,11 @@ func (o *ZObject) enforcePropertyType(ctx phpv.Context, keyStr phpv.ZString, pro
 
 // allowsDynamicProperties checks if the object's class allows dynamic property creation.
 // stdClass, classes with #[AllowDynamicProperties], and their descendants are exempt.
+// AllowsDynamicProperties returns true if the object's class allows dynamic property creation.
+func (o *ZObject) AllowsDynamicProperties() bool {
+	return o.allowsDynamicProperties()
+}
+
 func (o *ZObject) allowsDynamicProperties() bool {
 	class, ok := o.Class.(*ZClass)
 	if !ok {

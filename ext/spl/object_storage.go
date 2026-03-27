@@ -716,9 +716,16 @@ func initObjectStorage() {
 
 // callGetHash calls the getHash method on the SplObjectStorage object.
 // This supports overridden getHash methods in subclasses.
+// We must use the real class (storage.Class) not GetClass() because the object
+// may be a parent-scoped view from a parent:: call.
 func callGetHash(ctx phpv.Context, storage *phpobj.ZObject, obj *phpobj.ZObject) (string, error) {
-	// Call the getHash method (may be overridden)
-	result, err := storage.CallMethod(ctx, "getHash", obj.ZVal())
+	// Look up getHash in the real class (not the CurrentClass which may be parent-scoped)
+	realClass := storage.Class.(*phpobj.ZClass)
+	m, ok := realClass.GetMethod("getHash")
+	if !ok {
+		return objectHash(obj), nil
+	}
+	result, err := ctx.CallZVal(ctx, m.Method, []*phpv.ZVal{obj.ZVal()}, storage)
 	if err != nil {
 		return "", err
 	}
@@ -729,7 +736,7 @@ func callGetHash(ctx phpv.Context, storage *phpobj.ZObject, obj *phpobj.ZObject)
 	if result.GetType() != phpv.ZtString {
 		return "", phpobj.ThrowError(ctx, phpobj.TypeError,
 			fmt.Sprintf("%s::getHash(): Return value must be of type string, %s returned",
-				storage.GetClass().GetName(), result.GetType().TypeName()))
+				realClass.GetName(), result.GetType().TypeName()))
 	}
 	return string(result.AsString(ctx)), nil
 }
@@ -743,8 +750,8 @@ func sosUnserialize(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*ph
 	ser := string(args[0].AsString(ctx))
 	totalLen := len(ser)
 	if totalLen == 0 {
-		return nil, phpobj.ThrowError(ctx, phpobj.UnexpectedValueException,
-			"Error at offset 0 of 0 bytes")
+		// Empty string is a no-op (does not throw)
+		return nil, nil
 	}
 	errAtOffset := func(offset int) error {
 		return phpobj.ThrowError(ctx, phpobj.UnexpectedValueException,

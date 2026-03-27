@@ -68,6 +68,21 @@ func getSFIData(o *phpobj.ZObject) *splFileInfoData {
 	return nil
 }
 
+// sfiCheckInitialized checks if SplFileInfo is initialized. Returns the data, or throws an error.
+func sfiCheckInitialized(ctx phpv.Context, o *phpobj.ZObject) (*splFileInfoData, error) {
+	d := getSFIData(o)
+	if d == nil {
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, "Object not initialized")
+	}
+	return d, nil
+}
+
+// sfiIsEmpty returns true if the SplFileInfo is set up but has no associated file
+// (e.g., GlobIterator with no matches). In this case, stat-based methods return false.
+func sfiIsEmpty(d *splFileInfoData) bool {
+	return d.path == "" && d.info == nil
+}
+
 func sfiConstruct(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var filename phpv.ZString
 	_, err := core.Expand(ctx, args, &filename)
@@ -99,17 +114,17 @@ func sfiConstruct(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv
 }
 
 func sfiGetFilename(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	d := getSFIData(o)
-	if d == nil {
-		return phpv.ZStr(""), nil
+	d, err := sfiCheckInitialized(ctx, o)
+	if err != nil {
+		return nil, err
 	}
 	return phpv.ZStr(sfiBaseName(d.path)), nil
 }
 
 func sfiGetExtension(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	d := getSFIData(o)
-	if d == nil {
-		return phpv.ZStr(""), nil
+	d, err := sfiCheckInitialized(ctx, o)
+	if err != nil {
+		return nil, err
 	}
 	ext := filepath.Ext(d.path)
 	if len(ext) > 0 {
@@ -119,9 +134,9 @@ func sfiGetExtension(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*p
 }
 
 func sfiGetBasename(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	d := getSFIData(o)
-	if d == nil {
-		return phpv.ZStr(""), nil
+	d, err := sfiCheckInitialized(ctx, o)
+	if err != nil {
+		return nil, err
 	}
 	base := filepath.Base(d.path)
 	if len(args) > 0 && args[0] != nil {
@@ -169,9 +184,12 @@ func sfiGetRealPath(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*ph
 func sfiGetSize(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	d := getSFIData(o)
 	if d == nil {
-		return phpv.ZFalse.ZVal(), nil
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, "Object not initialized")
 	}
 	if d.info == nil {
+		if d.path == "" {
+			return phpv.ZFalse.ZVal(), nil
+		}
 		return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException,
 			fmt.Sprintf("SplFileInfo::getSize(): stat failed for %s", sfiPathOrEmpty(d)))
 	}

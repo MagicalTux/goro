@@ -451,7 +451,11 @@ func initCachingIterator() {
 		"__construct": {
 			Name: "__construct",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				if len(args) == 0 || args[0] == nil || args[0].GetType() != phpv.ZtObject {
+				if len(args) == 0 {
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+						fmt.Sprintf("%s::__construct() expects at least 1 argument, 0 given", o.GetClass().GetName()))
+				}
+				if args[0] == nil || args[0].GetType() != phpv.ZtObject {
 					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "CachingIterator::__construct(): Argument #1 ($iterator) must be of type Iterator")
 				}
 				inner, ok := args[0].Value().(*phpobj.ZObject)
@@ -1711,7 +1715,11 @@ func initRecursiveIteratorIterator() {
 		"__construct": {
 			Name: "__construct",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				if len(args) == 0 || args[0] == nil || args[0].GetType() != phpv.ZtObject {
+				if len(args) == 0 {
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+						fmt.Sprintf("%s::__construct() expects at least 1 argument, 0 given", o.GetClass().GetName()))
+				}
+				if args[0] == nil || args[0].GetType() != phpv.ZtObject {
 					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "RecursiveIteratorIterator::__construct(): Argument #1 ($iterator) must be of type RecursiveIterator|IteratorAggregate")
 				}
 				inner, ok := args[0].Value().(*phpobj.ZObject)
@@ -1736,7 +1744,10 @@ func initRecursiveIteratorIterator() {
 			Name: "rewind",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				d := getRecursiveIteratorIteratorData(o)
-				if d == nil || len(d.stack) == 0 {
+				if d == nil {
+					return nil, phpobj.ThrowError(ctx, phpobj.Error, "Object is not initialized")
+				}
+				if len(d.stack) == 0 {
 					return nil, nil
 				}
 				// Reset to just the root iterator
@@ -2182,7 +2193,10 @@ func initNoRewindIterator() {
 		"__construct": {
 			Name: "__construct",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				if len(args) == 0 || args[0] == nil || args[0].GetType() != phpv.ZtObject {
+				if len(args) == 0 {
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "NoRewindIterator::__construct() expects exactly 1 argument, 0 given")
+				}
+				if args[0] == nil || args[0].GetType() != phpv.ZtObject {
 					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "NoRewindIterator::__construct(): Argument #1 ($iterator) must be of type Iterator")
 				}
 				inner, ok := args[0].Value().(*phpobj.ZObject)

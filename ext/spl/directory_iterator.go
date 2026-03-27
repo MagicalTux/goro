@@ -101,7 +101,7 @@ func initDirectoryIterator() {
 			"UNIX_PATHS":          {Value: phpv.ZInt(fsIterUnixPaths)},
 			"CURRENT_MODE_MASK":   {Value: phpv.ZInt(0x00F0)},
 			"KEY_MODE_MASK":       {Value: phpv.ZInt(0x0F00)},
-			"OTHER_MODE_MASK":     {Value: phpv.ZInt(0xF000)},
+			"OTHER_MODE_MASK":     {Value: phpv.ZInt(0x7000)},
 		},
 		Methods: fsiMethods,
 		H:       &phpv.ZClassHandlers{},
@@ -182,11 +182,26 @@ func diConstruct(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.
 	return nil, nil
 }
 
+// entryFullPath constructs the full path for a directory entry, preserving . and .. in the path.
+// Unlike filepath.Join, this does not normalize away . and .. entries.
+func entryFullPath(dirPath, entryName string) string {
+	if dirPath == "" {
+		return entryName
+	}
+	// Use path concatenation that preserves . and ..
+	if dirPath[len(dirPath)-1] == '/' || dirPath[len(dirPath)-1] == filepath.Separator {
+		return dirPath + entryName
+	}
+	return dirPath + string(filepath.Separator) + entryName
+}
+
 func updateDISFI(o *phpobj.ZObject, d *directoryIteratorData) {
 	if d.pos < len(d.entries) {
-		entryPath := filepath.Join(d.path, d.entries[d.pos].Name())
-		info, _ := os.Stat(entryPath)
-		o.SetOpaque(SplFileInfoClass, &splFileInfoData{path: entryPath, resolvedPath: entryPath, info: info})
+		entryPath := entryFullPath(d.path, d.entries[d.pos].Name())
+		// Use filepath.Join for the resolved path (used for actual file operations)
+		resolvedPath := filepath.Join(d.path, d.entries[d.pos].Name())
+		info, _ := os.Stat(resolvedPath)
+		o.SetOpaque(SplFileInfoClass, &splFileInfoData{path: entryPath, resolvedPath: resolvedPath, info: info})
 	}
 }
 
@@ -402,14 +417,14 @@ func fsiCurrent(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.Z
 	}
 
 	if d.flags&fsIterCurrentAsPathname != 0 {
-		return phpv.ZStr(filepath.Join(d.path, d.entries[d.pos].Name())), nil
+		return phpv.ZStr(entryFullPath(d.path, d.entries[d.pos].Name())), nil
 	}
 	if d.flags&fsIterCurrentAsSelf != 0 {
 		return o.ZVal(), nil
 	}
 
 	// Default: CURRENT_AS_FILEINFO - return a new SplFileInfo object
-	entryPath := filepath.Join(d.path, d.entries[d.pos].Name())
+	entryPath := entryFullPath(d.path, d.entries[d.pos].Name())
 	infoObj, err := phpobj.NewZObject(ctx, SplFileInfoClass, phpv.ZString(entryPath).ZVal())
 	if err != nil {
 		return nil, err
@@ -427,7 +442,7 @@ func fsiKey(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal,
 		return phpv.ZStr(d.entries[d.pos].Name()), nil
 	}
 	// Default: KEY_AS_PATHNAME
-	return phpv.ZStr(filepath.Join(d.path, d.entries[d.pos].Name())), nil
+	return phpv.ZStr(entryFullPath(d.path, d.entries[d.pos].Name())), nil
 }
 
 func fsiRewind(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
@@ -476,7 +491,9 @@ func fsiGetFlags(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.
 	if d == nil {
 		return phpv.ZInt(0).ZVal(), nil
 	}
-	return phpv.ZInt(d.flags).ZVal(), nil
+	// PHP masks the returned flags to only include the mode bits
+	const flagsMask = 0x00F0 | 0x0F00 | 0x7000 // CURRENT_MODE_MASK | KEY_MODE_MASK | OTHER_MODE_MASK
+	return phpv.ZInt(d.flags & flagsMask).ZVal(), nil
 }
 
 func fsiSetFlags(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
@@ -498,7 +515,7 @@ func fsiToString(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.
 	if d == nil || d.pos >= len(d.entries) {
 		return phpv.ZStr(""), nil
 	}
-	return phpv.ZStr(filepath.Join(d.path, d.entries[d.pos].Name())), nil
+	return phpv.ZStr(entryFullPath(d.path, d.entries[d.pos].Name())), nil
 }
 
 // ---- GlobIterator ----
@@ -550,6 +567,10 @@ func globIterInit(ctx phpv.Context, o *phpobj.ZObject, pattern string, args []*p
 	o.SetOpaque(DirectoryIteratorClass, data)
 	if len(entries) > 0 {
 		updateDISFI(o, data)
+	} else {
+		// Even with no entries, set up empty SplFileInfo to distinguish
+		// "properly constructed but empty" from "never constructed"
+		o.SetOpaque(SplFileInfoClass, &splFileInfoData{})
 	}
 	return nil, nil
 }

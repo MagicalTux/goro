@@ -583,14 +583,9 @@ func initArrayIterator() {
 					case phpv.ZtObject:
 						ctx.Deprecated("ArrayIterator::__unserialize(): Using an object as a backing array for ArrayIterator is deprecated, as it allows violating class constraints and invariants", logopt.NoFuncName(true))
 						obj := storageVal.Value().(*phpobj.ZObject)
-						viewArr := phpv.NewZArray()
-						for prop := range obj.IterProps(ctx) {
-							if prop.Modifiers.IsPublic() || (!prop.Modifiers.IsPrivate() && !prop.Modifiers.IsProtected()) {
-								v := obj.GetPropValue(prop)
-								viewArr.OffsetSet(ctx, prop.VarName.ZVal(), v)
-							}
-						}
-						d.array = viewArr
+						d.objectBacked = true
+						// If the object is an ArrayObject/ArrayIterator, use its internal array
+						d.array = objectStorageGetArray(ctx, obj)
 					default:
 						d.array = phpv.NewZArray()
 					}

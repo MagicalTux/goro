@@ -316,8 +316,7 @@ func initArrayObject() {
 					}
 					// For plain objects, check the hash table directly
 					key := args[0].AsString(ctx)
-					v := d.objectStorage.HashTable().GetString(key)
-					return phpv.ZBool(v != nil).ZVal(), nil
+					return phpv.ZBool(d.objectStorage.HashTable().HasString(key)).ZVal(), nil
 				}
 				exists, err := d.array.OffsetExists(ctx, args[0])
 				if err != nil {
@@ -347,8 +346,8 @@ func initArrayObject() {
 					}
 					// For plain objects, access the hash table directly (bypasses hooks/magic)
 					key := args[0].AsString(ctx)
-					v := d.objectStorage.HashTable().GetString(key)
-					if v == nil {
+					v, ok := d.objectStorage.HashTable().GetStringB(key)
+					if !ok {
 						ctx.Warn("Undefined array key \"%s\"", key, logopt.NoFuncName(true))
 						return phpv.ZNULL.ZVal(), nil
 					}
@@ -456,19 +455,29 @@ func initArrayObject() {
 					return nil, err
 				}
 
-				// Determine what to pass to the iterator constructor
-				var iterArg *phpv.ZVal
+				// Create the iterator
+				var iterObj *phpobj.ZObject
 				if d.objectStorage != nil {
 					// Build a fresh array from the object's public properties
-					iterArg = objectStorageGetArray(ctx, d.objectStorage).ZVal()
+					iterArg := objectStorageGetArray(ctx, d.objectStorage).ZVal()
+					var err2 error
+					iterObj, err2 = phpobj.NewZObject(ctx, iterClass, iterArg)
+					if err2 != nil {
+						return nil, err2
+					}
 				} else {
-					iterArg = d.array.ZVal()
-				}
-
-				// Create the iterator with the array as argument
-				iterObj, err := phpobj.NewZObject(ctx, iterClass, iterArg)
-				if err != nil {
-					return nil, err
+					// For array-backed storage, create the iterator with a shared array reference
+					var err2 error
+					iterObj, err2 = phpobj.NewZObject(ctx, iterClass, d.array.ZVal())
+					if err2 != nil {
+						return nil, err2
+					}
+					// Replace the duped array with a reference to the same array
+					iterData2 := getArrayIteratorData(iterObj)
+					if iterData2 != nil {
+						iterData2.array = d.array
+						iterData2.iter = d.array.NewIterator()
+					}
 				}
 
 				// Copy flags to the iterator
@@ -970,8 +979,8 @@ func initArrayObject() {
 					if d.objectStorage != nil {
 						// Read from object's hash table
 						key := args[0].AsString(ctx)
-						v := d.objectStorage.HashTable().GetString(key)
-						if v == nil {
+						v, ok := d.objectStorage.HashTable().GetStringB(key)
+						if !ok {
 							ctx.Warn("Undefined array key \"%s\"", key, logopt.NoFuncName(true))
 							return phpv.ZNULL.ZVal(), nil
 						}
@@ -1024,7 +1033,7 @@ func initArrayObject() {
 						}
 					}
 				}
-				if !isDeclared {
+				if !isDeclared && !o.AllowsDynamicProperties() {
 					ctx.Deprecated("Creation of dynamic property %s::$%s is deprecated",
 						o.GetClass().GetName(), propName, logopt.NoFuncName(true))
 				}
@@ -1043,8 +1052,7 @@ func initArrayObject() {
 				if d.flags&ArrayObjectARRAY_AS_PROPS != 0 {
 					if d.objectStorage != nil {
 						key := args[0].AsString(ctx)
-						v := d.objectStorage.HashTable().GetString(key)
-						return phpv.ZBool(v != nil).ZVal(), nil
+						return phpv.ZBool(d.objectStorage.HashTable().HasString(key)).ZVal(), nil
 					}
 					exists, err := d.array.OffsetExists(ctx, args[0])
 					if err != nil {
