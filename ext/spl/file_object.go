@@ -28,6 +28,7 @@ type splFileObjectData struct {
 	splFileInfoData
 	file    *os.File
 	scanner *bufio.Scanner
+	reader  *bufio.Reader
 	line    int
 	curLine string
 	eof     bool
@@ -48,6 +49,24 @@ type splFileObjectData struct {
 	// Whether the first line has been read (lazy initialization)
 	firstLineRead bool
 	isReadable    bool
+}
+
+// readLine reads the next line from the file using the bufio.Reader.
+// Unlike Scanner.Text() + "\n", this preserves the actual line ending
+// (or lack thereof for the last line of a file).
+func (d *splFileObjectData) readLine() (string, bool) {
+	if d.reader == nil {
+		d.reader = bufio.NewReader(d.file)
+	}
+	line, err := d.reader.ReadString('\n')
+	if err != nil {
+		if len(line) > 0 {
+			// Got partial line at EOF
+			return line, true
+		}
+		return "", false
+	}
+	return line, true
 }
 
 var SplFileObjectClass *phpobj.ZClass
@@ -168,8 +187,9 @@ func ensureFirstLineRead(d *splFileObjectData) {
 		return
 	}
 	d.firstLineRead = true
-	if d.scanner.Scan() {
-		d.curLine = applyMaxLineLen(d.scanner.Text()+"\n", d.maxLineLen)
+	line, ok := d.readLine()
+	if ok {
+		d.curLine = applyMaxLineLen(line, d.maxLineLen)
 	} else {
 		d.eof = true
 	}
@@ -358,8 +378,9 @@ func sfoFgets(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVa
 		return phpv.ZBool(false).ZVal(), nil
 	}
 	line := d.curLine
-	if d.scanner.Scan() {
-		d.curLine = applyMaxLineLen(d.scanner.Text()+"\n", d.maxLineLen)
+	nextLine, ok := d.readLine()
+	if ok {
+		d.curLine = applyMaxLineLen(nextLine, d.maxLineLen)
 		d.line++
 	} else {
 		d.eof = true
@@ -439,8 +460,9 @@ func sfoFgetcsv(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.Z
 	line = strings.TrimRight(line, "\r\n")
 
 	// Advance to next line
-	if d.scanner.Scan() {
-		d.curLine = applyMaxLineLen(d.scanner.Text()+"\n", d.maxLineLen)
+	nextLine, ok := d.readLine()
+	if ok {
+		d.curLine = applyMaxLineLen(nextLine, d.maxLineLen)
 		d.line++
 	} else {
 		d.eof = true
@@ -517,8 +539,9 @@ func sfoFputcsv(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.Z
 	// After writing, eof is no longer true (position is valid, we just wrote data)
 	d.eof = false
 
-	// Invalidate scanner after write - recreate at current position
+	// Invalidate scanner/reader after write - recreate at current position
 	d.scanner = bufio.NewScanner(d.file)
+	d.reader = bufio.NewReader(d.file)
 
 	return phpv.ZInt(n).ZVal(), nil
 }
@@ -559,8 +582,9 @@ func sfoFscanf(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZV
 	line := d.curLine
 
 	// Advance to next line
-	if d.scanner.Scan() {
-		d.curLine = d.scanner.Text() + "\n"
+	nextLine, ok := d.readLine()
+	if ok {
+		d.curLine = nextLine
 		d.line++
 	} else {
 		d.eof = true
@@ -626,8 +650,9 @@ func sfoFwrite(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZV
 	n, _ := d.file.Write(writeData)
 	// After writing, eof is no longer true
 	d.eof = false
-	// Invalidate scanner after write
+	// Invalidate scanner/reader after write
 	d.scanner = bufio.NewScanner(d.file)
+	d.reader = bufio.NewReader(d.file)
 	return phpv.ZInt(n).ZVal(), nil
 }
 
@@ -765,6 +790,7 @@ func sfoFseek(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVa
 		return phpv.ZInt(-1).ZVal(), nil
 	}
 	d.scanner = bufio.NewScanner(d.file)
+	d.reader = bufio.NewReader(d.file)
 	d.eof = false
 	return phpv.ZInt(0).ZVal(), nil
 }
@@ -795,20 +821,23 @@ func sfoSeek(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal
 	// Rewind to beginning
 	d.file.Seek(0, 0)
 	d.scanner = bufio.NewScanner(d.file)
+	d.reader = bufio.NewReader(d.file)
 	d.line = 0
 	d.eof = false
 	d.firstLineRead = true
 
-	if d.scanner.Scan() {
-		d.curLine = d.scanner.Text() + "\n"
+	nextLine, ok := d.readLine()
+	if ok {
+		d.curLine = nextLine
 	} else {
 		d.eof = true
 		d.curLine = ""
 	}
 
 	for d.line < target && !d.eof {
-		if d.scanner.Scan() {
-			d.curLine = d.scanner.Text() + "\n"
+		nextLine, ok := d.readLine()
+		if ok {
+			d.curLine = nextLine
 			d.line++
 		} else {
 			d.eof = true
@@ -825,12 +854,14 @@ func sfoRewind(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZV
 		return nil, nil
 	}
 	d.file.Seek(0, 0)
+	d.reader = bufio.NewReader(d.file)
 	d.scanner = bufio.NewScanner(d.file)
 	d.line = 0
 	d.eof = false
 	d.firstLineRead = true
-	if d.scanner.Scan() {
-		d.curLine = d.scanner.Text() + "\n"
+	line, ok := d.readLine()
+	if ok {
+		d.curLine = line
 	} else {
 		d.eof = true
 	}
@@ -874,8 +905,9 @@ func sfoNext(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal
 	}
 	ensureFirstLineRead(d)
 	for {
-		if d.scanner.Scan() {
-			d.curLine = applyMaxLineLen(d.scanner.Text()+"\n", d.maxLineLen)
+		nextLine, ok := d.readLine()
+		if ok {
+			d.curLine = applyMaxLineLen(nextLine, d.maxLineLen)
 			d.line++
 		} else {
 			d.eof = true

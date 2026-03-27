@@ -356,7 +356,7 @@ func resolveClass(ctx phpv.Context, z *phpv.ZVal, autoload bool, funcName ...str
 		}
 		return c, nil
 	default:
-		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("%s(): Argument #1 ($object_or_class) must be of type object|string, %s given", fn, z.GetType().TypeName()))
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("%s(): Argument #1 ($object_or_class) must be of type object|string, %s given", fn, phpv.ZValTypeNameDetailed(z)))
 	}
 }
 

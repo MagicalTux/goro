@@ -276,6 +276,9 @@ func doDebugZvalDump(ctx phpv.Context, z *phpv.ZVal, linePfx string, topLevel bo
 			}
 			fmt.Fprintf(ctx, "%s}\n", linePfx)
 		}
+	case phpv.ZtResource:
+		r := z.Value().(phpv.Resource)
+		fmt.Fprintf(ctx, "%sresource(%d) of type (%s) refcount(%d)\n", linePfx, r.GetResourceID(), r.GetResourceType(), 2)
 	}
 }
 

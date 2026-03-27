@@ -192,7 +192,10 @@ func initLimitIterator() {
 		"__construct": {
 			Name: "__construct",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				if len(args) == 0 || args[0] == nil || args[0].GetType() != phpv.ZtObject {
+				if len(args) == 0 {
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "LimitIterator::__construct() expects at least 1 argument, 0 given")
+				}
+				if args[0] == nil || args[0].GetType() != phpv.ZtObject {
 					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "LimitIterator::__construct(): Argument #1 ($iterator) must be of type Iterator")
 				}
 				inner, ok := args[0].Value().(*phpobj.ZObject)
@@ -1346,16 +1349,20 @@ func (d *regexIteratorData) accept(ctx phpv.Context) bool {
 		return true
 
 	case regexIteratorSplit:
+		// SPLIT mode: only accept if the regex matches the subject
+		matched := re.MatchString(subject)
+		if invertMatch {
+			matched = !matched
+		}
+		if !matched {
+			return false
+		}
 		parts := re.Split(subject, -1)
 		result := phpv.NewZArray()
 		for i, p := range parts {
 			result.OffsetSet(ctx, phpv.ZInt(i), phpv.ZString(p).ZVal())
 		}
 		d.currentResult = result.ZVal()
-		// SPLIT always matches (returns the split result)
-		if invertMatch {
-			return !re.MatchString(subject)
-		}
 		return true
 
 	case regexIteratorReplace:
@@ -2613,7 +2620,10 @@ func initFilterIterator() {
 		"__construct": {
 			Name: "__construct",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				if len(args) == 0 || args[0] == nil || args[0].GetType() != phpv.ZtObject {
+				if len(args) == 0 {
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "FilterIterator::__construct() expects exactly 1 argument, 0 given")
+				}
+				if args[0] == nil || args[0].GetType() != phpv.ZtObject {
 					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "FilterIterator::__construct(): Argument #1 ($iterator) must be of type Iterator")
 				}
 				inner, ok := args[0].Value().(*phpobj.ZObject)
@@ -2903,6 +2913,24 @@ func initParentIterator() {
 	ParentIteratorClass.Methods = make(map[phpv.ZString]*phpv.ZClassMethod)
 	for k, v := range RecursiveFilterIteratorClass.Methods {
 		ParentIteratorClass.Methods[k] = v
+	}
+	// Override __construct to use ParentIterator name in error messages
+	ParentIteratorClass.Methods["__construct"] = &phpv.ZClassMethod{
+		Name: "__construct",
+		Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+			if len(args) == 0 {
+				return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "ParentIterator::__construct() expects exactly 1 argument, 0 given")
+			}
+			if args[0] == nil || args[0].GetType() != phpv.ZtObject {
+				return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "ParentIterator::__construct(): Argument #1 ($iterator) must be of type RecursiveIterator")
+			}
+			inner, ok := args[0].Value().(*phpobj.ZObject)
+			if !ok {
+				return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "ParentIterator::__construct(): Argument #1 ($iterator) must be of type RecursiveIterator")
+			}
+			o.SetOpaque(FilterIteratorClass, &filterIteratorData{inner: inner})
+			return nil, nil
+		}),
 	}
 	// Override accept to return hasChildren()
 	ParentIteratorClass.Methods["accept"] = &phpv.ZClassMethod{

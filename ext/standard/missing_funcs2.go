@@ -25,8 +25,14 @@ func fncIsCountable(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZTrue.ZVal(), nil
 	}
 	if z.GetType() == phpv.ZtObject {
-		if _, ok := z.Value().(phpv.ZCountable); ok {
-			return phpv.ZTrue.ZVal(), nil
+		// Check if the object implements the Countable PHP interface
+		obj := z.AsObject(ctx)
+		if obj != nil {
+			cls := obj.GetClass()
+			countable, err := ctx.Global().GetClass(ctx, "Countable", false)
+			if err == nil && cls.InstanceOf(countable) {
+				return phpv.ZTrue.ZVal(), nil
+			}
 		}
 	}
 	return phpv.ZFalse.ZVal(), nil
@@ -323,7 +329,7 @@ func fncPhpinfo(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	if flags&32 != 0 { // INFO_VARIABLES
-		fmt.Fprintf(ctx, "PHP Variables\n\n")
+		fmt.Fprintf(ctx, "\nPHP Variables\n\n")
 	}
 
 	if flags&64 != 0 { // INFO_LICENSE
@@ -390,7 +396,8 @@ func fncGetDebugType(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	case phpv.ZtArray:
 		return phpv.ZString("array").ZVal(), nil
 	case phpv.ZtResource:
-		return phpv.ZString("resource").ZVal(), nil
+		r := z.Value().(phpv.Resource)
+		return phpv.ZString(fmt.Sprintf("resource (%s)", r.GetResourceType())).ZVal(), nil
 	case phpv.ZtObject:
 		obj, ok := z.Value().(phpv.ZObject)
 		if ok {

@@ -528,7 +528,7 @@ func init() {
 			"var_dump":                   {Func: stdFuncVarDump, Args: []*phpctx.ExtFunctionArg{}},
 			"version_compare":            {Func: fncVersionCompare, Args: []*phpctx.ExtFunctionArg{}},
 			"var_export":                 {Func: stdFuncVarExport, Args: []*phpctx.ExtFunctionArg{}},
-			"vfprintf":                   {Func: fncVFPrintf, Args: []*phpctx.ExtFunctionArg{}},
+			"vfprintf":                   {Func: fncVFPrintf, MinArgs: 3, MaxArgs: 3, Args: []*phpctx.ExtFunctionArg{}},
 			"vprintf":                    {Func: fncVPrintf, Args: []*phpctx.ExtFunctionArg{}},
 			"vsprintf":                   {Func: fncVSprintf, Args: []*phpctx.ExtFunctionArg{}},
 			"wordwrap":                   {Func: fncWordWrap, Args: []*phpctx.ExtFunctionArg{}},

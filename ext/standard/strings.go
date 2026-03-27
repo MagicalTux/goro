@@ -425,7 +425,7 @@ func fncStrLtrim(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	chars := expandCharacterRanges(string(charsArg.GetOrDefault(trimChars)))
+	chars := expandCharacterRangesCtx(ctx, "ltrim", string(charsArg.GetOrDefault(trimChars)))
 	result := strings.TrimLeft(string(str), chars)
 	return phpv.ZString(result).ZVal(), nil
 }
@@ -440,7 +440,7 @@ func fncStrRtrim(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	chars := expandCharacterRanges(string(charsArg.GetOrDefault(trimChars)))
+	chars := expandCharacterRangesCtx(ctx, "rtrim", string(charsArg.GetOrDefault(trimChars)))
 	result := strings.TrimRight(string(str), chars)
 	return phpv.ZString(result).ZVal(), nil
 }
@@ -454,7 +454,7 @@ func fncStrTrim(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	chars := expandCharacterRanges(string(charsArg.GetOrDefault(trimChars)))
+	chars := expandCharacterRangesCtx(ctx, "trim", string(charsArg.GetOrDefault(trimChars)))
 	result := strings.Trim(string(str), chars)
 	return phpv.ZString(result).ZVal(), nil
 }
@@ -3285,17 +3285,54 @@ func safeIndex[T any](xs []T, index int, defaultVal ...T) T {
 // example:
 // expandCharacterRanges("abc..ghx..z") == "abcdefghxyz"
 func expandCharacterRanges(str string) string {
+	return expandCharacterRangesCtx(nil, "", str)
+}
+
+func expandCharacterRangesCtx(ctx phpv.Context, funcName string, str string) string {
 	var buf bytes.Buffer
-	bytes := []byte(str)
-	for i := 0; i < len(bytes); i++ {
-		if core.Idx(bytes, i+1) == '.' && core.Idx(bytes, i+2) == '.' && i+3 < len(bytes) {
-			from := bytes[i]
-			to := bytes[i+3]
+	b := []byte(str)
+	for i := 0; i < len(b); i++ {
+		if i+2 < len(b) && b[i+1] == '.' && b[i+2] == '.' {
+			if i == 0 {
+				// No character to the left of '..'
+				if ctx != nil {
+					ctx.Warn("%s(): Invalid '..'-range, no character to the left of '..'", funcName)
+				}
+				// Skip the '..' and continue
+				i += 2
+				continue
+			}
+			if i+3 >= len(b) {
+				// No character to the right of '..'
+				if ctx != nil {
+					ctx.Warn("%s(): Invalid '..'-range, no character to the right of '..'", funcName)
+				}
+				i += 2
+				continue
+			}
+			from := b[i]
+			to := b[i+3]
+			if to < from {
+				if ctx != nil {
+					ctx.Warn("%s(): Invalid '..'-range, '..'-range needs to be incrementing", funcName)
+				}
+				i += 3
+				continue
+			}
+			// Check for chained ranges like a..b..c
+			if i+6 < len(b) && b[i+4] == '.' && b[i+5] == '.' {
+				if ctx != nil {
+					ctx.Warn("%s(): Invalid '..'-range", funcName)
+				}
+				i += 3
+				continue
+			}
 			for c := from; c <= to; c++ {
 				buf.WriteByte(c)
 			}
+			i += 3 // skip from, .., to (loop will increment i again)
 		} else {
-			buf.WriteByte(bytes[i])
+			buf.WriteByte(b[i])
 		}
 	}
 	return buf.String()
@@ -3436,12 +3473,16 @@ func fncStrDecrement(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		}
 	}
 
-	// Check for underflow (single character at lowest value)
+	// Check for underflow:
+	// - Single character at lowest value (a, A, 0)
+	// - Any string starting with '0' (like "00", "0a", "0A")
 	if len(str) == 1 {
 		c := str[0]
 		if c == 'a' || c == 'A' || c == '0' {
 			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, fmt.Sprintf("str_decrement(): Argument #1 ($string) \"%s\" is out of decrement range", string(str)))
 		}
+	} else if str[0] == '0' {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, fmt.Sprintf("str_decrement(): Argument #1 ($string) \"%s\" is out of decrement range", string(str)))
 	}
 
 	chars := []byte(str)
@@ -3473,8 +3514,14 @@ func fncStrDecrement(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		}
 	}
 
-	// Remove leading character if it became 'a'/'A'/'0' after borrow
+	// Remove leading character if it underflowed (borrow past the front)
 	if borrow && len(chars) > 1 {
+		chars = chars[1:]
+	}
+
+	// Remove leading '0' if the string now starts with '0' and has more than 1 char
+	// (e.g., "10" -> "09" -> strip to "9")
+	if len(chars) > 1 && chars[0] == '0' {
 		chars = chars[1:]
 	}
 

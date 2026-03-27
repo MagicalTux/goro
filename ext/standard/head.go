@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -38,7 +39,7 @@ func fncHeader(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	// Check for multi-line header (CR or LF in the header value)
 	if strings.ContainsAny(string(header), "\r\n") {
-		ctx.Warn("Header may not contain more than a single header, new line detected")
+		ctx.Warn("Header may not contain more than a single header, new line detected", logopt.NoFuncName(true))
 		return nil, nil
 	}
 

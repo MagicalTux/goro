@@ -371,6 +371,17 @@ func fncIniRestore(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // > func string ini_set ( string $varname, string $newvalue )
 // > alias ini_alter
 func fncIniSet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	// Validate argument types before expanding
+	if len(args) >= 2 && args[1] != nil {
+		switch args[1].GetType() {
+		case phpv.ZtString, phpv.ZtInt, phpv.ZtFloat, phpv.ZtBool, phpv.ZtNull:
+			// OK
+		default:
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+				"ini_set(): Argument #2 ($value) must be of type string|int|float|bool|null")
+		}
+	}
+
 	var varName phpv.ZString
 	var newValue phpv.ZString
 	_, err := Expand(ctx, args, &varName, &newValue)
