@@ -136,16 +136,24 @@ func initIteratorIterator() {
 				if d == nil || len(args) < 2 {
 					return phpv.ZNULL.ZVal(), nil
 				}
-				methodName := args[0].AsString(ctx)
+				methodName := string(args[0].AsString(ctx))
 				callArgs := args[1].AsArray(ctx)
-				if callArgs == nil {
-					return d.inner.CallMethod(ctx, string(methodName))
-				}
 				var fwdArgs []*phpv.ZVal
-				for _, v := range callArgs.Iterate(ctx) {
-					fwdArgs = append(fwdArgs, v)
+				if callArgs != nil {
+					for _, v := range callArgs.Iterate(ctx) {
+						fwdArgs = append(fwdArgs, v)
+					}
 				}
-				return d.inner.CallMethod(ctx, string(methodName), fwdArgs...)
+				result, err := d.inner.CallMethod(ctx, methodName, fwdArgs...)
+				if err != nil {
+					errStr := err.Error()
+					if strings.Contains(errStr, "Call to undefined method") {
+						return nil, phpobj.ThrowError(ctx, phpobj.Error,
+							fmt.Sprintf("Call to undefined method %s::%s()", o.GetClass().GetName(), methodName))
+					}
+					return nil, err
+				}
+				return result, nil
 			}),
 		},
 	}
@@ -363,16 +371,24 @@ func initLimitIterator() {
 				if d == nil || len(args) < 2 {
 					return phpv.ZNULL.ZVal(), nil
 				}
-				methodName := args[0].AsString(ctx)
+				methodName := string(args[0].AsString(ctx))
 				callArgs := args[1].AsArray(ctx)
-				if callArgs == nil {
-					return d.inner.CallMethod(ctx, string(methodName))
-				}
 				var fwdArgs []*phpv.ZVal
-				for _, v := range callArgs.Iterate(ctx) {
-					fwdArgs = append(fwdArgs, v)
+				if callArgs != nil {
+					for _, v := range callArgs.Iterate(ctx) {
+						fwdArgs = append(fwdArgs, v)
+					}
 				}
-				return d.inner.CallMethod(ctx, string(methodName), fwdArgs...)
+				result, err := d.inner.CallMethod(ctx, methodName, fwdArgs...)
+				if err != nil {
+					errStr := err.Error()
+					if strings.Contains(errStr, "Call to undefined method") {
+						return nil, phpobj.ThrowError(ctx, phpobj.Error,
+							fmt.Sprintf("Call to undefined method %s::%s()", o.GetClass().GetName(), methodName))
+					}
+					return nil, err
+				}
+				return result, nil
 			}),
 		},
 	}
@@ -706,25 +722,6 @@ func initCachingIterator() {
 				}
 				d.cache.OffsetUnset(ctx, args[0].Value())
 				return nil, nil
-			}),
-		},
-		"__call": {
-			Name: "__call",
-			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				d := getCachingIteratorData(o)
-				if d == nil || len(args) < 2 {
-					return phpv.ZNULL.ZVal(), nil
-				}
-				methodName := args[0].AsString(ctx)
-				callArgs := args[1].AsArray(ctx)
-				if callArgs == nil {
-					return d.inner.CallMethod(ctx, string(methodName))
-				}
-				var fwdArgs []*phpv.ZVal
-				for _, v := range callArgs.Iterate(ctx) {
-					fwdArgs = append(fwdArgs, v)
-				}
-				return d.inner.CallMethod(ctx, string(methodName), fwdArgs...)
 			}),
 		},
 	}

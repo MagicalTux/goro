@@ -166,13 +166,40 @@ func checkEmpty(ctx phpv.Context, v phpv.Runnable) (bool, error) {
 		// For arrays and strings, check existence then value
 		var arr phpv.ZArrayAccess
 		if value.GetType() == phpv.ZtString {
-			// For string access with non-numeric keys, treat as empty
-			// (PHP silently returns empty for non-numeric string keys in empty())
+			// For string access in empty() context:
+			// - non-numeric string keys → empty (e.g. empty($str['good']))
+			// - non-integer numeric string keys → empty (e.g. empty($str['1.5']))
+			// - valid integer string keys → check bounds and value without warnings
 			if key.GetType() == phpv.ZtString {
 				s := key.AsString(ctx)
 				if !s.IsNumeric() {
 					return true, nil
 				}
+				// Check if it's a float-like numeric string (has '.' or 'e/E')
+				// PHP only accepts integer offsets for strings
+				sStr := string(s)
+				isFloat := false
+				for _, ch := range sStr {
+					if ch == '.' || ch == 'e' || ch == 'E' {
+						isFloat = true
+						break
+					}
+				}
+				if isFloat {
+					return true, nil
+				}
+				// Valid integer string key - check bounds without warnings
+				str := value.AsString(ctx)
+				strLen := len(str)
+				idx := int(key.AsInt(ctx))
+				if idx < 0 {
+					idx = strLen + idx
+				}
+				if idx < 0 || idx >= strLen {
+					return true, nil
+				}
+				ch := phpv.ZString(string(str[idx]))
+				return ch == "" || ch == "0", nil
 			}
 			str := value.AsString(ctx)
 			arr = phpv.ZStringArray{ZString: &str}
