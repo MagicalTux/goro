@@ -426,24 +426,31 @@ func sfoFgetc(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVa
 		return phpv.ZBool(false).ZVal(), nil
 	}
 
-	// Use the buffered reader to maintain consistent position with line-based reads
-	if d.reader == nil {
-		d.reader = bufio.NewReader(d.file)
+	// fgetc reads a single byte directly from the file at the current raw position.
+	// It does NOT use the buffered reader (which may have read ahead for line-based ops).
+	// We need to seek to the actual position first if the buffered reader was used.
+	if !d.firstLineRead {
+		// First access: file is at position 0, read directly
+		d.firstLineRead = true
 	}
 
-	c, err := d.reader.ReadByte()
-	if err != nil {
+	// Read one byte directly from the file
+	buf := make([]byte, 1)
+	n, err := d.file.Read(buf)
+	if err != nil || n == 0 {
 		d.eof = true
 		return phpv.ZBool(false).ZVal(), nil
 	}
 
 	// Track line numbers: increment after reading a newline
-	if c == '\n' {
+	if buf[0] == '\n' {
 		d.line++
 	}
-	d.firstLineRead = true
 
-	return phpv.ZStr(string(c)), nil
+	// Invalidate the buffered reader since we've changed the file position
+	d.reader = nil
+
+	return phpv.ZStr(string(buf[:n])), nil
 }
 
 func sfoFgetcsv(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
@@ -954,7 +961,6 @@ func sfoKey(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal,
 	if d == nil {
 		return phpv.ZInt(0).ZVal(), nil
 	}
-	ensureFirstLineRead(d)
 	return phpv.ZInt(d.line).ZVal(), nil
 }
 
