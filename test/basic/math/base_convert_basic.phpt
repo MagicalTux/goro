@@ -22,7 +22,7 @@ for ($f= 0; $f < count($frombase); $f++) {
 	for ($t= 0; $t < count($tobase); $t++) {
 		echo "......to base is ", $tobase[$t], "\n";
 		for ($i =0; $i < count($values); $i++){
-			$res = base_convert($values[$i],$frombase[$f],$tobase[$t]);
+			$res = @base_convert($values[$i],$frombase[$f],$tobase[$t]);
 			echo ".........value= ", $values[$i], " res = ", $res, "\n";
 		}
 	}

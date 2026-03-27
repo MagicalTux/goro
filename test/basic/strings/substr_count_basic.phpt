@@ -4,17 +4,17 @@ Test substr_count() function (basic)
 <?php
 
 echo "***Testing basic operations ***\n";
-var_dump(@substr_count("", ""));
-var_dump(@substr_count("a", ""));
-var_dump(@substr_count("", "a"));
-var_dump(@substr_count("", "a"));
-var_dump(@substr_count("", chr(0)));
+try { var_dump(substr_count("", "")); } catch (ValueError $e) { echo $e->getMessage(), "\n"; }
+try { var_dump(substr_count("a", "")); } catch (ValueError $e) { echo $e->getMessage(), "\n"; }
+var_dump(substr_count("", "a"));
+var_dump(substr_count("", "a"));
+var_dump(substr_count("", chr(0)));
 
 $a = str_repeat("abcacba", 100);
-var_dump(@substr_count($a, "bca"));
+var_dump(substr_count($a, "bca"));
 
 $a = str_repeat("abcacbabca", 100);
-var_dump(@substr_count($a, "bca"));
+var_dump(substr_count($a, "bca"));
 var_dump(substr_count($a, "bca", 200));
 var_dump(substr_count($a, "bca", 200, 50));
 var_dump(substr_count($a, "bca", -200));
@@ -26,8 +26,8 @@ echo "Done\n";
 ?>
 --EXPECT--
 ***Testing basic operations ***
-NULL
-NULL
+substr_count(): Argument #2 ($needle) must not be empty
+substr_count(): Argument #2 ($needle) must not be empty
 int(0)
 int(0)
 int(0)
