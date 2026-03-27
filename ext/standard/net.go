@@ -86,7 +86,13 @@ func fncHttpResponseCode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error
 
 	// Check if headers are already sent
 	if h.Sent {
-		return phpv.ZFalse.ZVal(), ctx.Warn("http_response_code(): Cannot set response code - headers already sent")
+		file := "Unknown"
+		line := 0
+		if h.OutputOrigin != nil {
+			file = h.OutputOrigin.Filename
+			line = h.OutputOrigin.Line
+		}
+		return phpv.ZFalse.ZVal(), ctx.Warn("http_response_code(): Cannot set response code - headers already sent (output started at %s:%d)", file, line)
 	}
 
 	code := int(*responseCode)

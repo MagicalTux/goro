@@ -409,37 +409,57 @@ func initPriorityQueue() {
 			return result.ZVal(), nil
 		})},
 		"__unserialize": {Name: "__unserialize", Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-			if len(args) == 0 || args[0] == nil {
-				return nil, nil
-			}
-			arr := args[0].AsArray(ctx)
-			if arr == nil {
+			invalidErr := func() (*phpv.ZVal, error) {
 				return nil, phpobj.ThrowError(ctx, phpobj.UnexpectedValueException,
 					fmt.Sprintf("Invalid serialization data for %s object", o.GetClass().GetName()))
 			}
+			if len(args) == 0 || args[0] == nil {
+				return invalidErr()
+			}
+			arr := args[0].AsArray(ctx)
+			if arr == nil {
+				return invalidErr()
+			}
 
-			// Key 0: member properties
+			// Must have exactly 2 elements
+			if int(arr.Count(ctx)) != 2 {
+				return invalidErr()
+			}
+
+			// Key 0: member properties - must be array
 			memberVal, merr := arr.OffsetGet(ctx, phpv.ZInt(0).ZVal())
-			if merr == nil && memberVal != nil && memberVal.GetType() == phpv.ZtArray {
-				memberArr := memberVal.AsArray(ctx)
-				for k, v := range memberArr.Iterate(ctx) {
-					o.ObjectSet(ctx, k, v)
-				}
+			if merr != nil || memberVal == nil || memberVal.GetType() != phpv.ZtArray {
+				return invalidErr()
+			}
+			memberArr := memberVal.AsArray(ctx)
+			for k, v := range memberArr.Iterate(ctx) {
+				o.ObjectSet(ctx, k, v)
 			}
 
 			internalVal, err := arr.OffsetGet(ctx, phpv.ZInt(1).ZVal())
 			if err != nil || internalVal == nil || internalVal.GetType() != phpv.ZtArray {
-				return nil, phpobj.ThrowError(ctx, phpobj.UnexpectedValueException,
-					fmt.Sprintf("Invalid serialization data for %s object", o.GetClass().GetName()))
+				return invalidErr()
 			}
 			internal := internalVal.AsArray(ctx)
-			d := initPriorityQueueData(ctx, o)
-			if flagsVal, err2 := internal.OffsetGet(ctx, phpv.ZString("flags").ZVal()); err2 == nil && flagsVal != nil {
-				d.extractFlags = int(flagsVal.AsInt(ctx))
+
+			// Must have "flags" key
+			flagsVal, err2 := internal.OffsetGet(ctx, phpv.ZString("flags").ZVal())
+			if err2 != nil || flagsVal == nil {
+				return invalidErr()
 			}
+			rawFlags := int(flagsVal.AsInt(ctx))
+			// Mask to valid range (1-3) and reject zero
+			maskedFlags := rawFlags & 3
+			if maskedFlags == 0 {
+				return invalidErr()
+			}
+
+			d := initPriorityQueueData(ctx, o)
+			d.extractFlags = maskedFlags
+
 			heapElementsVal, err := internal.OffsetGet(ctx, phpv.ZString("heap_elements").ZVal())
 			if err != nil || heapElementsVal == nil || heapElementsVal.GetType() != phpv.ZtArray {
-				return nil, nil
+				return invalidErr()
 			}
 			elements := heapElementsVal.AsArray(ctx)
 			it := elements.NewIterator()
@@ -447,12 +467,12 @@ func initPriorityQueue() {
 				v, _ := it.Current(ctx)
 				pairArr := v.AsArray(ctx)
 				if pairArr == nil {
-					continue
+					return invalidErr()
 				}
 				dataVal, _ := pairArr.OffsetGet(ctx, phpv.ZString("data").ZVal())
 				priorityVal, _ := pairArr.OffsetGet(ctx, phpv.ZString("priority").ZVal())
 				if dataVal == nil || priorityVal == nil {
-					continue
+					return invalidErr()
 				}
 				d.heap.Push(&priorityEntry{value: dataVal, priority: priorityVal, index: d.nextIndex})
 				d.nextIndex++

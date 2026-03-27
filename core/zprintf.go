@@ -110,7 +110,12 @@ type formatWidthResult struct {
 	// Position specifiers for star args (e.g., %*2$d means width from arg 2)
 	widthStarPos int // 0 = sequential, >0 = positional
 	precStarPos  int // 0 = sequential, >0 = positional
+	// Overflow flags for numeric values that exceed int range
+	widthOverflow bool
+	precOverflow  bool
 }
+
+const maxSprintfWidth = 2147483647
 
 func readFormatWidth(in []byte) (formatWidthResult, []byte) {
 	r := formatWidthResult{width: 0, precision: -1}
@@ -137,8 +142,13 @@ func readFormatWidth(in []byte) (formatWidthResult, []byte) {
 			i++
 		}
 		if i > 0 {
-			w, _ := strconv.ParseInt(string(in[:i]), 10, 64)
-			r.width = int(w)
+			w, err := strconv.ParseInt(string(in[:i]), 10, 64)
+			if err != nil || w < 0 || w > maxSprintfWidth {
+				r.widthOverflow = true
+				r.width = 0
+			} else {
+				r.width = int(w)
+			}
 			in = in[i:]
 		}
 	}
@@ -176,8 +186,13 @@ func readFormatWidth(in []byte) (formatWidthResult, []byte) {
 				i++
 			}
 			if i > 0 {
-				p, _ := strconv.ParseInt(string(in[:i]), 10, 64)
-				r.precision = int(p)
+				p, err := strconv.ParseInt(string(in[:i]), 10, 64)
+				if err != nil || p < 0 || p > maxSprintfWidth {
+					r.precOverflow = true
+					r.precision = 0
+				} else {
+					r.precision = int(p)
+				}
 			} else {
 				r.precision = 0
 			}
@@ -276,6 +291,14 @@ func ZFprintf(ctx phpv.Context, w printfWriter, format phpv.ZString, arg ...*php
 			goto Return
 		}
 
+		// Check for overflow in numeric width/precision
+		if fmtWidth.widthOverflow {
+			return bytesWritten.Value, phpobj.ThrowError(ctx, phpobj.ValueError, "Width must be between 0 and 2147483647")
+		}
+		if fmtWidth.precOverflow {
+			return bytesWritten.Value, phpobj.ThrowError(ctx, phpobj.ValueError, "Precision must be between 0 and 2147483647")
+		}
+
 		// Resolve star width from arguments
 		minWidth := fmtWidth.width
 		if fmtWidth.widthStar {
@@ -336,11 +359,34 @@ func ZFprintf(ctx phpv.Context, w printfWriter, format phpv.ZString, arg ...*php
 					argp++
 				}
 			}
-			pv, convErr := precVal.As(ctx, phpv.ZtInt)
-			if convErr != nil {
+			// PHP requires the precision star value to be an integer type (or numeric)
+			switch precVal.GetType() {
+			case phpv.ZtInt:
+				precision = int(precVal.Value().(phpv.ZInt))
+			case phpv.ZtFloat:
+				precision = int(precVal.Value().(phpv.ZFloat))
+			case phpv.ZtBool:
+				if precVal.Value().(phpv.ZBool) {
+					precision = 1
+				} else {
+					precision = 0
+				}
+			case phpv.ZtString:
+				s := string(precVal.Value().(phpv.ZString))
+				// Check if the string is numeric
+				n, err := strconv.ParseInt(s, 10, 64)
+				if err != nil {
+					return bytesWritten.Value, phpobj.ThrowError(ctx, phpobj.ValueError, "Precision must be an integer")
+				}
+				precision = int(n)
+			default:
 				return bytesWritten.Value, phpobj.ThrowError(ctx, phpobj.ValueError, "Precision must be an integer")
 			}
-			precision = int(pv.Value().(phpv.ZInt))
+
+			// Validate precision range: must be >= -1 for g/G/h/H, >= 0 for others
+			if precision < -1 || precision > 2147483646 {
+				return bytesWritten.Value, phpobj.ThrowError(ctx, phpobj.ValueError, "Precision must be between -1 and 2147483647")
+			}
 		}
 
 		var v *phpv.ZVal
@@ -366,6 +412,16 @@ func ZFprintf(ctx phpv.Context, w printfWriter, format phpv.ZString, arg ...*php
 		if fChar == 'l' && len(in) > 0 {
 			fChar = in[0]
 			in = in[1:]
+		}
+
+		// Check that precision -1 is only valid for g/G/h/H
+		if precision == -1 && fmtWidth.precStar {
+			switch fChar {
+			case 'g', 'G', 'h', 'H':
+				// OK, -1 is valid for these formats
+			default:
+				return bytesWritten.Value, phpobj.ThrowError(ctx, phpobj.ValueError, fmt.Sprintf("Precision -1 is only supported for %%g, %%G, %%h and %%H"))
+			}
 		}
 
 		signed := false
@@ -438,9 +494,16 @@ func ZFprintf(ctx phpv.Context, w printfWriter, format phpv.ZString, arg ...*php
 				}
 				// Also strip leading zero from negative exponents
 				minusIndex := strings.LastIndexByte(output, '-')
-				if minusIndex > 0 && minusIndex < len(output)-1 && output[minusIndex-1] == 'e' || (minusIndex > 0 && minusIndex < len(output)-1 && output[minusIndex-1] == 'E') {
+				if minusIndex > 0 && minusIndex < len(output)-1 && (output[minusIndex-1] == 'e' || output[minusIndex-1] == 'E') {
 					if minusIndex+1 < len(output) && output[minusIndex+1] == '0' {
 						output = output[0:minusIndex+1] + output[minusIndex+2:]
+					}
+				}
+				// Apply locale for g/G and e/E (but NOT h/H which are locale-independent)
+				if fChar == 'g' || fChar == 'G' || fChar == 'e' || fChar == 'E' {
+					lc := locale.Localeconv()
+					if lc.DecimalPoint != "" && lc.DecimalPoint != "." {
+						output = strings.Replace(output, ".", lc.DecimalPoint, 1)
 					}
 				}
 			}

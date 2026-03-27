@@ -104,8 +104,25 @@ func fncConnectionStatus(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error
 
 // > func int|bool ignore_user_abort ([ bool $enable ] )
 func fncIgnoreUserAbort(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	// Always return 0 (previous setting was "don't ignore")
-	return phpv.ZInt(0).ZVal(), nil
+	// Get the current value from INI
+	oldVal := ctx.GetConfig("ignore_user_abort", phpv.ZInt(0).ZVal())
+	oldInt := oldVal.AsInt(ctx)
+
+	if len(args) > 0 && args[0] != nil {
+		var enable phpv.ZBool
+		_, err := core.Expand(ctx, args, &enable)
+		if err != nil {
+			return nil, err
+		}
+		// Set the new value in INI
+		if enable {
+			ctx.Global().SetLocalConfig("ignore_user_abort", phpv.ZString("1").ZVal())
+		} else {
+			ctx.Global().SetLocalConfig("ignore_user_abort", phpv.ZString("0").ZVal())
+		}
+	}
+
+	return phpv.ZInt(oldInt).ZVal(), nil
 }
 
 // > func array sys_getloadavg ( void )
@@ -234,24 +251,117 @@ func fncGetExtensionFuncs(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, erro
 
 // > func bool phpinfo ([ int $what = INFO_ALL ] )
 func fncPhpinfo(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	// Output a basic phpinfo page
-	fmt.Fprintf(ctx, "phpinfo()\nPHP Version => %s\n\nSystem => %s %s %s %s\n",
-		core.VERSION, runtime.GOOS, "", runtime.GOARCH, runtime.Version())
-	fmt.Fprintf(ctx, "Build Date => %s\nServer API => %s\n",
-		"unknown", "goro")
-	fmt.Fprintf(ctx, "PHP API => 20210902\n")
+	var what *phpv.ZInt
+	_, err := core.Expand(ctx, args, &what)
+	if err != nil {
+		return nil, err
+	}
+
+	flags := -1 // INFO_ALL
+	if what != nil {
+		flags = int(*what)
+	}
+
+	fmt.Fprintf(ctx, "phpinfo()\n")
+
+	if flags == 0 {
+		return phpv.ZTrue.ZVal(), nil
+	}
+
+	if flags&1 != 0 { // INFO_GENERAL
+		hostname, _ := os.Hostname()
+		fmt.Fprintf(ctx, "PHP Version => %s\n\n", core.VERSION)
+		fmt.Fprintf(ctx, "System => %s %s %s\n", runtime.GOOS, hostname, runtime.GOARCH)
+		fmt.Fprintf(ctx, "Build Date => Jan  1 2024\n")
+		fmt.Fprintf(ctx, "Configure Command => goro\n")
+		fmt.Fprintf(ctx, "Server API => Command Line Interface\n")
+		fmt.Fprintf(ctx, "Virtual Directory Support => disabled\n")
+		fmt.Fprintf(ctx, "Configuration File (php.ini) Path => \n")
+		fmt.Fprintf(ctx, "Loaded Configuration File => (none)\n")
+		fmt.Fprintf(ctx, "Scan this dir for additional .ini files => (none)\n")
+		fmt.Fprintf(ctx, "Additional .ini files parsed => (none)\n")
+		fmt.Fprintf(ctx, "PHP API => 20230831\n")
+		fmt.Fprintf(ctx, "PHP Extension => 20230831\n")
+		fmt.Fprintf(ctx, "Zend Extension => 420230831\n")
+		fmt.Fprintf(ctx, "Zend Extension Build => API420230831,NTS\n")
+		fmt.Fprintf(ctx, "PHP Extension Build => API20230831,NTS\n")
+		fmt.Fprintf(ctx, "PHP Integer Size => 8 bits\n")
+		fmt.Fprintf(ctx, "Debug Build => no\n")
+		fmt.Fprintf(ctx, "Thread Safety => disabled\n")
+		fmt.Fprintf(ctx, "Zend Signal Handling => enabled\n")
+		fmt.Fprintf(ctx, "Zend Memory Manager => enabled\n")
+		fmt.Fprintf(ctx, "Zend Multibyte Support => provided by mbstring\n")
+		fmt.Fprintf(ctx, "Zend Max Execution Timers => disabled\n")
+		fmt.Fprintf(ctx, "IPv6 Support => enabled\n")
+		fmt.Fprintf(ctx, "DTrace Support => disabled\n\n")
+		fmt.Fprintf(ctx, "Registered PHP Streams => php, file, http, https\n")
+		fmt.Fprintf(ctx, "Registered Stream Socket Transports => tcp, udp\n")
+		fmt.Fprintf(ctx, "Registered Stream Filters => string.rot13, string.toupper, string.tolower, convert.base64-encode, convert.base64-decode\n\n")
+		fmt.Fprintf(ctx, "Goro PHP Engine\n")
+		fmt.Fprintf(ctx, " _______________________________________________________________________\n\n\n")
+	}
+
+	if flags&4 != 0 { // INFO_CONFIGURATION
+		fmt.Fprintf(ctx, "Configuration\n\n")
+		fmt.Fprintf(ctx, "Core\n\n")
+	}
+
+	if flags&8 != 0 { // INFO_MODULES
+		fmt.Fprintf(ctx, "Additional Modules\n\n")
+	}
+
+	if flags&16 != 0 { // INFO_ENVIRONMENT
+		fmt.Fprintf(ctx, "Environment\n\n")
+		for _, envVar := range os.Environ() {
+			pos := strings.IndexByte(envVar, '=')
+			if pos == -1 {
+				continue
+			}
+			fmt.Fprintf(ctx, "%s => %s\n", envVar[:pos], envVar[pos+1:])
+		}
+		fmt.Fprintf(ctx, "\n")
+	}
+
+	if flags&32 != 0 { // INFO_VARIABLES
+		fmt.Fprintf(ctx, "PHP Variables\n\n")
+	}
+
+	if flags&64 != 0 { // INFO_LICENSE
+		fmt.Fprintf(ctx, "PHP License\n")
+		fmt.Fprintf(ctx, "This program is free software; you can redistribute it and/or modify\n")
+		fmt.Fprintf(ctx, "it under the terms of the PHP License as published by the PHP Group\n")
+		fmt.Fprintf(ctx, "and included in the distribution in the file:  LICENSE\n\n")
+	}
+
+	if flags&2 != 0 { // INFO_CREDITS
+		doPhpCredits(ctx, -1) // CREDITS_ALL
+	}
+
 	return phpv.ZTrue.ZVal(), nil
 }
 
 // > func bool proc_nice ( int $priority )
 func fncProcNice(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	var priority phpv.ZInt
-	_, err := core.Expand(ctx, args, &priority)
+	var increment phpv.ZInt
+	_, err := core.Expand(ctx, args, &increment)
 	if err != nil {
 		return nil, err
 	}
 
-	err2 := syscall.Setpriority(syscall.PRIO_PROCESS, 0, int(priority))
+	// proc_nice adjusts by an increment (like nice(2)), not absolute value.
+	// Get current priority, add increment, and set the result.
+	currentPrio, err2 := syscall.Getpriority(syscall.PRIO_PROCESS, 0)
+	if err2 != nil {
+		return phpv.ZFalse.ZVal(), ctx.Warn("proc_nice(): Permission denied")
+	}
+	newPrio := currentPrio + int(increment)
+	if newPrio > 19 {
+		newPrio = 19
+	}
+	if newPrio < -20 {
+		newPrio = -20
+	}
+	err2 = syscall.Setpriority(syscall.PRIO_PROCESS, 0, newPrio)
 	if err2 != nil {
 		return phpv.ZFalse.ZVal(), ctx.Warn("proc_nice(): Permission denied")
 	}

@@ -69,6 +69,20 @@ func getArrayObjectData(o *phpobj.ZObject) *arrayObjectData {
 	return d.(*arrayObjectData)
 }
 
+// getOrInitArrayObjectData returns the opaque data, auto-initializing if needed.
+// This handles the case where a subclass constructor doesn't call parent::__construct().
+func getOrInitArrayObjectData(o *phpobj.ZObject) *arrayObjectData {
+	d := getArrayObjectData(o)
+	if d == nil {
+		d = &arrayObjectData{
+			array:         phpv.NewZArray(),
+			iteratorClass: "ArrayIterator",
+		}
+		o.SetOpaque(ArrayObjectClass, d)
+	}
+	return d
+}
+
 // validateIteratorClass checks that the given class name is a valid iterator class
 // (must be ArrayIterator or a subclass of it). Returns an error if invalid.
 func validateIteratorClass(ctx phpv.Context, className phpv.ZString, methodName string) error {
@@ -213,7 +227,7 @@ func initArrayObject() {
 		"offsetexists": {
 			Name: "offsetExists",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				d := getArrayObjectData(o)
+				d := getOrInitArrayObjectData(o)
 				if d == nil {
 					return phpv.ZFalse.ZVal(), nil
 				}
@@ -261,7 +275,7 @@ func initArrayObject() {
 		"offsetget": {
 			Name: "offsetGet",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				d := getArrayObjectData(o)
+				d := getOrInitArrayObjectData(o)
 				if d == nil {
 					return phpv.ZNULL.ZVal(), nil
 				}
@@ -290,7 +304,7 @@ func initArrayObject() {
 		"offsetset": {
 			Name: "offsetSet",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				d := getArrayObjectData(o)
+				d := getOrInitArrayObjectData(o)
 				if d == nil {
 					return nil, nil
 				}
@@ -328,7 +342,7 @@ func initArrayObject() {
 		"offsetunset": {
 			Name: "offsetUnset",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				d := getArrayObjectData(o)
+				d := getOrInitArrayObjectData(o)
 				if d == nil {
 					return nil, nil
 				}
@@ -360,7 +374,7 @@ func initArrayObject() {
 		"count": {
 			Name: "count",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				d := getArrayObjectData(o)
+				d := getOrInitArrayObjectData(o)
 				if d == nil {
 					return phpv.ZInt(0).ZVal(), nil
 				}
@@ -377,7 +391,7 @@ func initArrayObject() {
 		"getiterator": {
 			Name: "getIterator",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				d := getArrayObjectData(o)
+				d := getOrInitArrayObjectData(o)
 				if d == nil {
 					return phpv.ZNULL.ZVal(), nil
 				}
@@ -409,7 +423,7 @@ func initArrayObject() {
 		"append": {
 			Name: "append",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				d := getArrayObjectData(o)
+				d := getOrInitArrayObjectData(o)
 				if d == nil {
 					return nil, nil
 				}
@@ -424,7 +438,7 @@ func initArrayObject() {
 		"getarraycopy": {
 			Name: "getArrayCopy",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				d := getArrayObjectData(o)
+				d := getOrInitArrayObjectData(o)
 				if d == nil {
 					return phpv.NewZArray().ZVal(), nil
 				}
@@ -435,7 +449,7 @@ func initArrayObject() {
 		"exchangearray": {
 			Name: "exchangeArray",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				d := getArrayObjectData(o)
+				d := getOrInitArrayObjectData(o)
 				if d == nil {
 					return phpv.NewZArray().ZVal(), nil
 				}
@@ -481,7 +495,7 @@ func initArrayObject() {
 		"setflags": {
 			Name: "setFlags",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				d := getArrayObjectData(o)
+				d := getOrInitArrayObjectData(o)
 				if d == nil {
 					return nil, nil
 				}
@@ -496,7 +510,7 @@ func initArrayObject() {
 		"getflags": {
 			Name: "getFlags",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				d := getArrayObjectData(o)
+				d := getOrInitArrayObjectData(o)
 				if d == nil {
 					return phpv.ZInt(0).ZVal(), nil
 				}
@@ -509,7 +523,7 @@ func initArrayObject() {
 		"asort": {
 			Name: "asort",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				d := getArrayObjectData(o)
+				d := getOrInitArrayObjectData(o)
 				if d == nil {
 					return phpv.ZTrue.ZVal(), nil
 				}
@@ -529,7 +543,7 @@ func initArrayObject() {
 		"ksort": {
 			Name: "ksort",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				d := getArrayObjectData(o)
+				d := getOrInitArrayObjectData(o)
 				if d == nil {
 					return phpv.ZTrue.ZVal(), nil
 				}
@@ -549,7 +563,7 @@ func initArrayObject() {
 		"natsort": {
 			Name: "natsort",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				d := getArrayObjectData(o)
+				d := getOrInitArrayObjectData(o)
 				if d == nil {
 					return phpv.ZTrue.ZVal(), nil
 				}
@@ -565,7 +579,7 @@ func initArrayObject() {
 		"natcasesort": {
 			Name: "natcasesort",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				d := getArrayObjectData(o)
+				d := getOrInitArrayObjectData(o)
 				if d == nil {
 					return phpv.ZTrue.ZVal(), nil
 				}
@@ -581,7 +595,7 @@ func initArrayObject() {
 		"uasort": {
 			Name: "uasort",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				d := getArrayObjectData(o)
+				d := getOrInitArrayObjectData(o)
 				if d == nil {
 					return phpv.ZTrue.ZVal(), nil
 				}
@@ -605,7 +619,7 @@ func initArrayObject() {
 		"uksort": {
 			Name: "uksort",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				d := getArrayObjectData(o)
+				d := getOrInitArrayObjectData(o)
 				if d == nil {
 					return phpv.ZTrue.ZVal(), nil
 				}
@@ -631,7 +645,7 @@ func initArrayObject() {
 		"setiteratorclass": {
 			Name: "setIteratorClass",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				d := getArrayObjectData(o)
+				d := getOrInitArrayObjectData(o)
 				if d == nil {
 					return nil, nil
 				}
@@ -650,7 +664,7 @@ func initArrayObject() {
 		"getiteratorclass": {
 			Name: "getIteratorClass",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				d := getArrayObjectData(o)
+				d := getOrInitArrayObjectData(o)
 				if d == nil {
 					return phpv.ZString("ArrayIterator").ZVal(), nil
 				}
@@ -663,7 +677,7 @@ func initArrayObject() {
 		"serialize": {
 			Name: "serialize",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				d := getArrayObjectData(o)
+				d := getOrInitArrayObjectData(o)
 				if d == nil {
 					return phpv.ZString("").ZVal(), nil
 				}
@@ -682,7 +696,7 @@ func initArrayObject() {
 		"unserialize": {
 			Name: "unserialize",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				d := getArrayObjectData(o)
+				d := getOrInitArrayObjectData(o)
 				if d == nil {
 					d = &arrayObjectData{
 						array:         phpv.NewZArray(),
@@ -713,7 +727,7 @@ func initArrayObject() {
 		"__serialize": {
 			Name: "__serialize",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				d := getArrayObjectData(o)
+				d := getOrInitArrayObjectData(o)
 				if d == nil {
 					d = &arrayObjectData{
 						array:         phpv.NewZArray(),
@@ -815,7 +829,7 @@ func initArrayObject() {
 			Name:      "__debugInfo",
 			Modifiers: phpv.ZAttrPublic,
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				d := getArrayObjectData(o)
+				d := getOrInitArrayObjectData(o)
 				if d == nil {
 					return phpv.NewZArray().ZVal(), nil
 				}
@@ -858,7 +872,7 @@ func initArrayObject() {
 			Name:      "__get",
 			Modifiers: phpv.ZAttrPublic,
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				d := getArrayObjectData(o)
+				d := getOrInitArrayObjectData(o)
 				if d == nil || len(args) < 1 {
 					return phpv.ZNULL.ZVal(), nil
 				}
@@ -880,7 +894,7 @@ func initArrayObject() {
 			Name:      "__set",
 			Modifiers: phpv.ZAttrPublic,
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				d := getArrayObjectData(o)
+				d := getOrInitArrayObjectData(o)
 				if d == nil || len(args) < 2 {
 					return nil, nil
 				}
@@ -917,7 +931,7 @@ func initArrayObject() {
 			Name:      "__isset",
 			Modifiers: phpv.ZAttrPublic,
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				d := getArrayObjectData(o)
+				d := getOrInitArrayObjectData(o)
 				if d == nil || len(args) < 1 {
 					return phpv.ZFalse.ZVal(), nil
 				}
@@ -939,7 +953,7 @@ func initArrayObject() {
 			Name:      "__unset",
 			Modifiers: phpv.ZAttrPublic,
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				d := getArrayObjectData(o)
+				d := getOrInitArrayObjectData(o)
 				if d == nil || len(args) < 1 {
 					return nil, nil
 				}

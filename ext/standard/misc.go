@@ -259,9 +259,50 @@ func exit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 // > func bool phpcredits ([ int $flag = CREDITS_ALL ] )
 func fncPhpCredits(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	// Output a minimal credits string; PHP's real phpcredits() outputs HTML.
-	ctx.Write([]byte("Goro PHP Engine\n"))
+	var flag *phpv.ZInt
+	_, err := core.Expand(ctx, args, &flag)
+	if err != nil {
+		return nil, err
+	}
+
+	flags := -1 // CREDITS_ALL
+	if flag != nil {
+		flags = int(*flag)
+	}
+
+	doPhpCredits(ctx, flags)
 	return phpv.ZBool(true).ZVal(), nil
+}
+
+func doPhpCredits(ctx phpv.Context, flags int) {
+	fmt.Fprintf(ctx, "PHP Credits\n")
+
+	if flags == 0 {
+		return
+	}
+
+	if flags&1 != 0 { // CREDITS_GROUP
+		fmt.Fprintf(ctx, "\nPHP Group\nThies C. Arntzen, Stig Bakken, Shane Caraveo, Andi Gutmans, Rasmus Lerdorf, Sam Ruby, Sascha Schumann, Zeev Suraski, Jim Winstead, Andrei Zmievski\n")
+	}
+
+	if flags&2 != 0 { // CREDITS_GENERAL
+		fmt.Fprintf(ctx, "\nLanguage Design & Concept\nAndi Gutmans, Rasmus Lerdorf, Zeev Suraski, Marcus Boerger\n")
+	}
+
+	if flags&4 != 0 || flags&8 != 0 || flags&16 != 0 || flags&2 != 0 { // CREDITS_SAPI, CREDITS_MODULES, CREDITS_DOCS, CREDITS_GENERAL
+		fmt.Fprintf(ctx, "\n PHP Authors \nContribution, Authors\n")
+		fmt.Fprintf(ctx, "\n SAPI Modules \nContribution, Authors\nCLI, Edin Kadribasic, Marcus Boerger, Johannes Schlueter, Moriyoshi Koizumi, Xinchen Hui\n")
+		fmt.Fprintf(ctx, "\n Module Authors \nModule, Authors\n")
+		fmt.Fprintf(ctx, "\n PHP Documentation \nAuthors\n")
+	}
+
+	if flags&64 != 0 { // CREDITS_QA
+		fmt.Fprintf(ctx, "\nPHP Quality Assurance Team\nIlia Alshanetsky, Joris van de Sande, Florian Anderiasch, Daniel Convissor, Sean Coates\n")
+	}
+
+	if flags&2 != 0 || flags&1 != 0 { // CREDITS_GENERAL or CREDITS_GROUP
+		fmt.Fprintf(ctx, "\n Websites and Infrastructure team \nPHP Websites Team, Peter Cowburn, Bjorn Ramsey, Hannes Magnusson\n")
+	}
 }
 
 // > func void register_shutdown_function ( callable $callback [, mixed $... ]  )

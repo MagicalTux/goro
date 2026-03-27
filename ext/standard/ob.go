@@ -192,6 +192,7 @@ func fncObGetFlush(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	buf := ctx.Global().(*phpctx.Global).Buffer()
 	if buf == nil {
+		ctx.Notice("Failed to delete and flush buffer. No buffer to delete or flush")
 		return phpv.ZBool(false).ZVal(), nil
 	}
 

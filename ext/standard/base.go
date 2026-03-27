@@ -96,7 +96,7 @@ func stdFuncGetCfgVar(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if err != nil {
 		return nil, err
 	}
-	return ctx.Global().GetGlobalConfig(v, phpv.ZNull{}.ZVal()), nil
+	return ctx.Global().GetGlobalConfig(v, phpv.ZBool(false).ZVal()), nil
 }
 
 // > func string php_sapi_name ( void )
@@ -1117,6 +1117,11 @@ func stdGetClassVars(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 // > func ?array error_get_last ( void )
 func stdErrorGetLast(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) > 0 {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("error_get_last() expects exactly 0 arguments, %d given", len(args)))
+	}
+
 	g, ok := ctx.Global().(*phpctx.Global)
 	if !ok || g.LastError == nil {
 		return phpv.ZNULL.ZVal(), nil

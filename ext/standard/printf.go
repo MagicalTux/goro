@@ -27,10 +27,11 @@ func checkPrintfFormat(ctx phpv.Context, funcName string, arg *phpv.ZVal) error 
 
 // > func string printf ( string $format [, mixed $args [, mixed $... ]] )
 func fncPrintf(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	if len(args) > 0 {
-		if err := checkPrintfFormat(ctx, "printf", args[0]); err != nil {
-			return nil, err
-		}
+	if len(args) == 0 {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "printf() expects at least 1 argument, 0 given")
+	}
+	if err := checkPrintfFormat(ctx, "printf", args[0]); err != nil {
+		return nil, err
 	}
 	var fmt phpv.ZString
 	n, err := core.Expand(ctx, args, &fmt)
@@ -51,10 +52,11 @@ func fncPrintf(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 // > func string sprintf ( string $format [, mixed $args [, mixed $... ]] )
 func fncSprintf(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	if len(args) > 0 {
-		if err := checkPrintfFormat(ctx, "sprintf", args[0]); err != nil {
-			return nil, err
-		}
+	if len(args) == 0 {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "sprintf() expects at least 1 argument, 0 given")
+	}
+	if err := checkPrintfFormat(ctx, "sprintf", args[0]); err != nil {
+		return nil, err
 	}
 	var fmt phpv.ZString
 	n, err := core.Expand(ctx, args, &fmt)

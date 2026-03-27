@@ -384,35 +384,50 @@ func initSplHeap() {
 			return result.ZVal(), nil
 		})},
 		"__unserialize": {Name: "__unserialize", Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+			invalidErr := func() (*phpv.ZVal, error) {
+				return nil, phpobj.ThrowError(ctx, phpobj.UnexpectedValueException,
+					fmt.Sprintf("Invalid serialization data for %s object", o.GetClass().GetName()))
+			}
 			if len(args) == 0 || args[0] == nil {
-				return nil, nil
+				return invalidErr()
 			}
 			arr := args[0].AsArray(ctx)
 			if arr == nil {
-				return nil, phpobj.ThrowError(ctx, phpobj.UnexpectedValueException,
-					fmt.Sprintf("Invalid serialization data for %s object", o.GetClass().GetName()))
+				return invalidErr()
 			}
 
-			// Key 0: member properties
+			// Must have exactly 2 elements
+			if int(arr.Count(ctx)) != 2 {
+				return invalidErr()
+			}
+
+			// Key 0: member properties - must be an array
 			memberVal, merr := arr.OffsetGet(ctx, phpv.ZInt(0).ZVal())
-			if merr == nil && memberVal != nil && memberVal.GetType() == phpv.ZtArray {
-				memberArr := memberVal.AsArray(ctx)
-				for k, v := range memberArr.Iterate(ctx) {
-					o.ObjectSet(ctx, k, v)
-				}
+			if merr != nil || memberVal == nil || memberVal.GetType() != phpv.ZtArray {
+				return invalidErr()
+			}
+			memberArr := memberVal.AsArray(ctx)
+			for k, v := range memberArr.Iterate(ctx) {
+				o.ObjectSet(ctx, k, v)
 			}
 
-			// Key 1: internal data
+			// Key 1: internal data - must be an array
 			internalVal, err := arr.OffsetGet(ctx, phpv.ZInt(1).ZVal())
 			if err != nil || internalVal == nil || internalVal.GetType() != phpv.ZtArray {
-				return nil, phpobj.ThrowError(ctx, phpobj.UnexpectedValueException,
-					fmt.Sprintf("Invalid serialization data for %s object", o.GetClass().GetName()))
+				return invalidErr()
 			}
 			internal := internalVal.AsArray(ctx)
+
+			// Must have "flags" key
+			flagsVal, err := internal.OffsetGet(ctx, phpv.ZString("flags").ZVal())
+			if err != nil || flagsVal == nil {
+				return invalidErr()
+			}
+
+			// Must have "heap_elements" key and it must be an array
 			heapElementsVal, err := internal.OffsetGet(ctx, phpv.ZString("heap_elements").ZVal())
 			if err != nil || heapElementsVal == nil || heapElementsVal.GetType() != phpv.ZtArray {
-				return nil, phpobj.ThrowError(ctx, phpobj.UnexpectedValueException,
-					fmt.Sprintf("Invalid serialization data for %s object", o.GetClass().GetName()))
+				return invalidErr()
 			}
 			elements := heapElementsVal.AsArray(ctx)
 			// Determine compare function based on class

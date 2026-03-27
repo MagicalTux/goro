@@ -40,11 +40,26 @@ func (d *splObjectStorageData) Clone() any {
 }
 
 func getObjectStorageData(o *phpobj.ZObject) *splObjectStorageData {
-	d := o.GetOpaque(SplObjectStorageClass)
+	d := o.GetOpaqueByName("SplObjectStorage")
 	if d == nil {
 		return nil
 	}
 	return d.(*splObjectStorageData)
+}
+
+// getOrInitObjectStorageData returns the opaque data, auto-initializing if needed.
+// This handles the case where a subclass constructor doesn't call parent::__construct().
+func getOrInitObjectStorageData(o *phpobj.ZObject) *splObjectStorageData {
+	d := getObjectStorageData(o)
+	if d == nil {
+		d = &splObjectStorageData{
+			entries: make(map[string]*splObjectStorageEntry),
+			order:   nil,
+			pos:     0,
+		}
+		o.SetOpaque(SplObjectStorageClass, d)
+	}
+	return d
 }
 
 func objectHash(obj *phpobj.ZObject) string {
@@ -52,6 +67,33 @@ func objectHash(obj *phpobj.ZObject) string {
 }
 
 func initObjectStorage() {
+	SplObjectStorageClass.H = &phpv.ZClassHandlers{
+		HandleCompare: func(ctx phpv.Context, a, b phpv.ZObject) (int, error) {
+			ao, aok := a.(*phpobj.ZObject)
+			bo, bok := b.(*phpobj.ZObject)
+			if !aok || !bok {
+				return phpv.CompareUncomparable, nil
+			}
+			ad := getObjectStorageData(ao)
+			bd := getObjectStorageData(bo)
+			if ad == nil || bd == nil {
+				return phpv.CompareUncomparable, nil
+			}
+			// Two SplObjectStorage are equal only if they contain the same objects
+			// (regardless of associated info). A is equal to B if every object in A
+			// is also in B and every object in B is also in A.
+			if len(ad.entries) != len(bd.entries) {
+				return 1, nil // not equal
+			}
+			for hash := range ad.entries {
+				if _, exists := bd.entries[hash]; !exists {
+					return 1, nil // not equal
+				}
+			}
+			return 0, nil // equal
+		},
+	}
+
 	SplObjectStorageClass.Methods = map[phpv.ZString]*phpv.ZClassMethod{
 		"__construct": {
 			Name: "__construct",
@@ -68,7 +110,7 @@ func initObjectStorage() {
 		"attach": {
 			Name: "attach",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				d := getObjectStorageData(o)
+				d := getOrInitObjectStorageData(o)
 				if d == nil {
 					return nil, nil
 				}
@@ -98,7 +140,7 @@ func initObjectStorage() {
 		"detach": {
 			Name: "detach",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				d := getObjectStorageData(o)
+				d := getOrInitObjectStorageData(o)
 				if d == nil {
 					return nil, nil
 				}
@@ -129,7 +171,7 @@ func initObjectStorage() {
 			Name: "contains",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				ctx.Deprecated("Method SplObjectStorage::contains() is deprecated since 8.5, use method SplObjectStorage::offsetExists() instead")
-				d := getObjectStorageData(o)
+				d := getOrInitObjectStorageData(o)
 				if d == nil {
 					return phpv.ZFalse.ZVal(), nil
 				}
@@ -151,7 +193,7 @@ func initObjectStorage() {
 		"count": {
 			Name: "count",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				d := getObjectStorageData(o)
+				d := getOrInitObjectStorageData(o)
 				if d == nil {
 					return phpv.ZInt(0).ZVal(), nil
 				}
@@ -161,7 +203,7 @@ func initObjectStorage() {
 		"getinfo": {
 			Name: "getInfo",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				d := getObjectStorageData(o)
+				d := getOrInitObjectStorageData(o)
 				if d == nil || d.pos < 0 || d.pos >= len(d.order) {
 					return phpv.ZNULL.ZVal(), nil
 				}
@@ -176,7 +218,7 @@ func initObjectStorage() {
 		"setinfo": {
 			Name: "setInfo",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				d := getObjectStorageData(o)
+				d := getOrInitObjectStorageData(o)
 				if d == nil || d.pos < 0 || d.pos >= len(d.order) {
 					return nil, nil
 				}
@@ -194,7 +236,7 @@ func initObjectStorage() {
 		"rewind": {
 			Name: "rewind",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				d := getObjectStorageData(o)
+				d := getOrInitObjectStorageData(o)
 				if d == nil {
 					return nil, nil
 				}
@@ -205,7 +247,7 @@ func initObjectStorage() {
 		"current": {
 			Name: "current",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				d := getObjectStorageData(o)
+				d := getOrInitObjectStorageData(o)
 				if d == nil || d.pos < 0 || d.pos >= len(d.order) {
 					return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException, "Called current() on invalid iterator")
 				}
@@ -220,7 +262,7 @@ func initObjectStorage() {
 		"key": {
 			Name: "key",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				d := getObjectStorageData(o)
+				d := getOrInitObjectStorageData(o)
 				if d == nil {
 					return phpv.ZInt(0).ZVal(), nil
 				}
@@ -230,7 +272,7 @@ func initObjectStorage() {
 		"next": {
 			Name: "next",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				d := getObjectStorageData(o)
+				d := getOrInitObjectStorageData(o)
 				if d == nil {
 					return nil, nil
 				}
@@ -241,7 +283,7 @@ func initObjectStorage() {
 		"valid": {
 			Name: "valid",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				d := getObjectStorageData(o)
+				d := getOrInitObjectStorageData(o)
 				if d == nil {
 					return phpv.ZFalse.ZVal(), nil
 				}
@@ -252,7 +294,7 @@ func initObjectStorage() {
 		"seek": {
 			Name: "seek",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				d := getObjectStorageData(o)
+				d := getOrInitObjectStorageData(o)
 				if d == nil {
 					return nil, phpobj.ThrowError(ctx, phpobj.OutOfBoundsException, "Seek position 0 is out of range")
 				}
@@ -283,7 +325,7 @@ func initObjectStorage() {
 		"offsetexists": {
 			Name: "offsetExists",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				d := getObjectStorageData(o)
+				d := getOrInitObjectStorageData(o)
 				if d == nil {
 					return phpv.ZFalse.ZVal(), nil
 				}
@@ -305,7 +347,7 @@ func initObjectStorage() {
 		"offsetget": {
 			Name: "offsetGet",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				d := getObjectStorageData(o)
+				d := getOrInitObjectStorageData(o)
 				if d == nil {
 					return phpv.ZNULL.ZVal(), nil
 				}
@@ -330,7 +372,7 @@ func initObjectStorage() {
 		"offsetset": {
 			Name: "offsetSet",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				d := getObjectStorageData(o)
+				d := getOrInitObjectStorageData(o)
 				if d == nil {
 					return nil, nil
 				}
@@ -359,7 +401,7 @@ func initObjectStorage() {
 		"offsetunset": {
 			Name: "offsetUnset",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				d := getObjectStorageData(o)
+				d := getOrInitObjectStorageData(o)
 				if d == nil {
 					return nil, nil
 				}
@@ -389,7 +431,7 @@ func initObjectStorage() {
 		"addall": {
 			Name: "addAll",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				d := getObjectStorageData(o)
+				d := getOrInitObjectStorageData(o)
 				if d == nil {
 					return phpv.ZInt(0).ZVal(), nil
 				}
@@ -419,7 +461,7 @@ func initObjectStorage() {
 		"removeall": {
 			Name: "removeAll",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				d := getObjectStorageData(o)
+				d := getOrInitObjectStorageData(o)
 				if d == nil {
 					return phpv.ZInt(0).ZVal(), nil
 				}
@@ -453,7 +495,7 @@ func initObjectStorage() {
 		"removeallexcept": {
 			Name: "removeAllExcept",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				d := getObjectStorageData(o)
+				d := getOrInitObjectStorageData(o)
 				if d == nil {
 					return phpv.ZInt(0).ZVal(), nil
 				}
@@ -491,7 +533,7 @@ func initObjectStorage() {
 		"__serialize": {
 			Name: "__serialize",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				d := getObjectStorageData(o)
+				d := getOrInitObjectStorageData(o)
 				result := phpv.NewZArray()
 
 				// Key 0: flat array of [obj, info, obj, info, ...]
@@ -581,7 +623,7 @@ func initObjectStorage() {
 		"__debuginfo": {
 			Name: "__debugInfo",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				d := getObjectStorageData(o)
+				d := getOrInitObjectStorageData(o)
 				result := phpv.NewZArray()
 				// Build the storage array with obj/inf pairs
 				storage := phpv.NewZArray()
@@ -604,7 +646,7 @@ func initObjectStorage() {
 		"serialize": {
 			Name: "serialize",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				d := getObjectStorageData(o)
+				d := getOrInitObjectStorageData(o)
 				count := 0
 				if d != nil {
 					count = len(d.order)

@@ -48,16 +48,44 @@ func doPrintR(ctx phpv.Context, z *phpv.ZVal, linePfx string, recurs map[uintptr
 
 	if recurs == nil {
 		recurs = make(map[uintptr]bool)
+	} else {
+		// duplicate to avoid side effects across siblings
+		n := make(map[uintptr]bool)
+		for k, v := range recurs {
+			n[k] = v
+		}
+		recurs = n
 	}
 
 	switch z.GetType() {
-	case phpv.ZtArray, phpv.ZtObject:
-		v := uintptr(unsafe.Pointer(z))
-		if _, n := recurs[v]; n {
+	case phpv.ZtArray:
+		// Track by underlying ZArray pointer for arrays, not ZVal pointer,
+		// because references create different ZVal wrappers for the same array
+		arrayPtr := uintptr(unsafe.Pointer(z.Value().(*phpv.ZArray)))
+		if _, n := recurs[arrayPtr]; n {
 			fmt.Fprintf(ctx, "%s*RECURSION*\n", linePfx)
 			return nil
 		} else {
-			recurs[v] = true
+			recurs[arrayPtr] = true
+		}
+	case phpv.ZtObject:
+		// Track by underlying object pointer for objects
+		if obj, ok := z.Value().(*phpobj.ZObject); ok {
+			objPtr := uintptr(unsafe.Pointer(obj))
+			if _, n := recurs[objPtr]; n {
+				fmt.Fprintf(ctx, "%s*RECURSION*\n", linePfx)
+				return nil
+			} else {
+				recurs[objPtr] = true
+			}
+		} else {
+			v := uintptr(unsafe.Pointer(z))
+			if _, n := recurs[v]; n {
+				fmt.Fprintf(ctx, "%s*RECURSION*\n", linePfx)
+				return nil
+			} else {
+				recurs[v] = true
+			}
 		}
 	}
 

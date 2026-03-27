@@ -269,6 +269,21 @@ func (z *ZObject) GetOpaque(c phpv.ZClass) interface{} {
 	return v
 }
 
+// GetOpaqueByName looks up opaque data by class name instead of class pointer.
+// This is useful to break initialization cycles where the class variable isn't
+// available yet during init.
+func (z *ZObject) GetOpaqueByName(name string) interface{} {
+	if z.Opaque == nil {
+		return nil
+	}
+	for c, v := range z.Opaque {
+		if c.GetName() == phpv.ZString(name) {
+			return v
+		}
+	}
+	return nil
+}
+
 func (z *ZObject) SetOpaque(c phpv.ZClass, v interface{}) {
 	if z.Opaque == nil {
 		z.Opaque = make(map[phpv.ZClass]interface{})

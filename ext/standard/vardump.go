@@ -43,17 +43,18 @@ func doVarDump(ctx phpv.Context, z *phpv.ZVal, linePfx string, recurs map[uintpt
 		recurs = n
 	}
 
-	// Track recursion by ZVal pointer AND by object pointer for objects.
-	// This prevents infinite recursion when the same object is referenced
-	// via different ZVals (e.g., closures with use(&$self) in __debugInfo).
-	v := uintptr(unsafe.Pointer(z))
-	if _, n := recurs[v]; n {
-		fmt.Fprintf(ctx, "%s*RECURSION*\n", linePfx)
-		return nil
-	} else {
-		recurs[v] = true
-	}
-	if z.GetType() == phpv.ZtObject {
+	// Track recursion by underlying value pointer for arrays and objects.
+	// This prevents infinite recursion when the same array/object is referenced
+	// via different ZVals (e.g., references, closures with use(&$self) in __debugInfo).
+	switch z.GetType() {
+	case phpv.ZtArray:
+		arrayPtr := uintptr(unsafe.Pointer(z.Value().(*phpv.ZArray)))
+		if _, n := recurs[arrayPtr]; n {
+			fmt.Fprintf(ctx, "%s*RECURSION*\n", linePfx)
+			return nil
+		}
+		recurs[arrayPtr] = true
+	case phpv.ZtObject:
 		if obj, ok := z.Value().(*phpobj.ZObject); ok {
 			objPtr := uintptr(unsafe.Pointer(obj))
 			if _, n := recurs[objPtr]; n {
@@ -61,6 +62,13 @@ func doVarDump(ctx phpv.Context, z *phpv.ZVal, linePfx string, recurs map[uintpt
 				return nil
 			}
 			recurs[objPtr] = true
+		} else {
+			v := uintptr(unsafe.Pointer(z))
+			if _, n := recurs[v]; n {
+				fmt.Fprintf(ctx, "%s*RECURSION*\n", linePfx)
+				return nil
+			}
+			recurs[v] = true
 		}
 	}
 

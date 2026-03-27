@@ -23,9 +23,32 @@ func fncHeader(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, nil
 	}
 
-	fields := strings.Split(string(header), ":")
+	// Check if headers were already sent (output has started)
+	if h.Sent {
+		// Get the location where output started
+		file := "Unknown"
+		line := 0
+		if h.OutputOrigin != nil {
+			file = h.OutputOrigin.Filename
+			line = h.OutputOrigin.Line
+		}
+		ctx.Warn("Cannot modify header information - headers already sent by (output started at %s:%d)", file, line)
+		return nil, nil
+	}
+
+	// Check for multi-line header (CR or LF in the header value)
+	if strings.ContainsAny(string(header), "\r\n") {
+		ctx.Warn("Header may not contain more than a single header, new line detected")
+		return nil, nil
+	}
+
+	fields := strings.SplitN(string(header), ":", 2)
 	if len(fields) < 2 {
-		return phpv.ZFalse.ZVal(), nil
+		// HTTP status line or invalid header - handle HTTP response code
+		if responseCode.HasArg() {
+			h.StatusCode = int(responseCode.Get())
+		}
+		return nil, nil
 	}
 	key := strings.TrimSpace(fields[0])
 	value := strings.TrimSpace(fields[1])

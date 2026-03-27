@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/md5"
 	"crypto/sha1"
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -183,7 +182,7 @@ func fncStrChunkSplit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if lengthArg != nil {
 		length = int(*lengthArg)
 		if length <= 0 {
-			return nil, errors.New("Argument #2 ($length) must be greater than 0")
+			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "chunk_split(): Argument #2 ($length) must be greater than 0")
 		}
 	}
 
@@ -350,15 +349,15 @@ func fncStrImplode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var sep phpv.ZString
 	var array *phpv.ZArray
 
-	// Note from the docs:
-	// implode() can, for historical reasons, accept its parameters in either order.
+	// PHP 8: implode(separator, array) or implode(array) only.
+	// The legacy implode(array, separator) form is no longer supported.
 	if arg1.GetType() == phpv.ZtArray {
-		array = arg1.AsArray(ctx)
 		if arg2.HasArg() {
-			sep = arg2.Get().AsString(ctx)
-		} else {
-			sep = phpv.ZString("")
+			// PHP 8: implode(array, ...) with two args is TypeError - array not valid as separator
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "implode(): Argument #1 ($separator) must be of type string, array given")
 		}
+		array = arg1.AsArray(ctx)
+		sep = phpv.ZString("")
 	} else {
 		if !arg2.HasArg() {
 			return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "implode(): If argument #1 ($separator) is of type string, argument #2 ($array) must be of type array, null given")
@@ -2585,7 +2584,7 @@ func fncWordWrap(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	if len(breakStr) == 0 {
-		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "wordwrap(): Argument #3 ($break) cannot be empty")
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "wordwrap(): Argument #3 ($break) must not be empty")
 	}
 
 	if len(str) == 0 {
@@ -2597,101 +2596,106 @@ func fncWordWrap(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	textLen := len(str)
 
 	if width > 0 && !cut && textLen <= width {
-		// If the whole string fits in the width, no wrapping needed.
 		return phpv.ZStr(string(str)), nil
 	}
 
-	// Allocate result buffer
 	var buf bytes.Buffer
 	buf.Grow(textLen + textLen/max(width, 1)*len(brk) + len(brk))
 
-	// current = pointer walking through the input
-	// lastStart = start of the current chunk to be written
-	current := 0
-	lastStart := 0
-	lineLen := 0
-
 	if !cut {
-		// Non-cut mode: only break at spaces
+		// Non-cut mode: only break at existing spaces
+		// PHP algorithm: walk through the string tracking line position.
+		// When we encounter a space and the current line position exceeds width,
+		// replace the last space with a break.
+		lastStart := 0
 		lastSpace := -1
+		current := 0
+		linePos := 0
+
 		for current < textLen {
-			if str[current] == ' ' {
-				if lineLen > width {
-					// We need to break. If we've seen a space on this line, break at last space.
-					if lastSpace != -1 {
-						buf.Write(str[lastStart:lastSpace])
-						buf.Write(brk)
-						lastStart = lastSpace + 1
-						lineLen = current - lastStart
-					}
+			if str[current] == '\n' {
+				// Newline resets line position
+				buf.Write(str[lastStart : current+1])
+				lastStart = current + 1
+				lastSpace = -1
+				linePos = 0
+			} else if str[current] == ' ' {
+				if linePos >= width && lastSpace != -1 {
+					buf.Write(str[lastStart:lastSpace])
+					buf.Write(brk)
+					lastStart = lastSpace + 1
+					linePos = current - lastStart
 				}
 				lastSpace = current
 			}
-			lineLen++
+			linePos++
 			current++
 		}
-		// If we exceeded width and there's a pending space
-		if lineLen > width && lastSpace >= lastStart {
+		// Handle remaining text
+		if linePos >= width && lastSpace != -1 && lastSpace >= lastStart {
 			buf.Write(str[lastStart:lastSpace])
 			buf.Write(brk)
 			lastStart = lastSpace + 1
 		}
 		buf.Write(str[lastStart:textLen])
 	} else {
-		// Cut mode: Faithful reimplementation of PHP's ext/standard/string.c php_wordwrap.
-		// PHP uses the raw width value (can be negative). When negative, every character
-		// exceeds the width limit, producing a break before each character.
+		// Cut mode: break long words at exact width boundaries
+		lastStart := 0
 		lastSpace := -1
+		current := 0
+		linePos := 0
+
 		for current < textLen {
-			if str[current] == ' ' {
-				if lineLen >= width {
-					// Line is already at or over width. Break before this space.
-					if lastSpace >= lastStart {
-						// Break at the last space we saw
+			if str[current] == '\n' {
+				buf.Write(str[lastStart : current+1])
+				lastStart = current + 1
+				lastSpace = -1
+				linePos = 0
+			} else if str[current] == ' ' {
+				if linePos >= width {
+					if lastSpace != -1 && lastSpace >= lastStart {
 						buf.Write(str[lastStart:lastSpace])
 						buf.Write(brk)
 						lastStart = lastSpace + 1
-						lineLen = current - lastStart
+						linePos = current - lastStart
 					} else {
-						// No space on this line - force break at current position
 						buf.Write(str[lastStart:current])
 						buf.Write(brk)
 						lastStart = current + 1
-						lineLen = 0
+						linePos = 0
 						current++
 						continue
 					}
 				}
 				lastSpace = current
-			}
-			lineLen++
-			if lineLen > width && str[current] != ' ' {
-				// Force break in the middle of a word
-				// First, if there's a pending space break, use it
-				if lastSpace >= lastStart {
+			} else if linePos >= width {
+				// Force cut in the middle of a word
+				if lastSpace != -1 && lastSpace >= lastStart {
+					// Break at last space first
 					buf.Write(str[lastStart:lastSpace])
 					buf.Write(brk)
 					lastStart = lastSpace + 1
-					lineLen = current - lastStart + 1
 					lastSpace = -1
-					// Check if we still exceed width after breaking at space
-					if lineLen > width {
+					linePos = current - lastStart
+					// After breaking at space, check if we still need to cut
+					if linePos >= width {
 						buf.Write(str[lastStart:current])
 						buf.Write(brk)
 						lastStart = current
-						lineLen = 1
+						linePos = 0
 					}
 				} else {
 					buf.Write(str[lastStart:current])
 					buf.Write(brk)
 					lastStart = current
-					lineLen = 1
+					linePos = 0
 				}
 			}
+			linePos++
 			current++
 		}
 		// Handle remaining text
-		if lineLen >= width && lastSpace >= lastStart {
+		if linePos >= width && lastSpace != -1 && lastSpace >= lastStart {
 			buf.Write(str[lastStart:lastSpace])
 			buf.Write(brk)
 			lastStart = lastSpace + 1
