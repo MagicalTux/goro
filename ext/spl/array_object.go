@@ -351,10 +351,9 @@ func initArrayObject() {
 						"Cannot access offset of type array on ArrayObject")
 				}
 				if d.objectStorage != nil {
-					// Set directly on the object's properties via ObjectSet
-					// (which handles declared props, dynamic props, hooks, etc.)
+					// Write directly to the object's hash table, bypassing magic methods and hooks
 					keyStr := key.AsString(ctx)
-					return nil, d.objectStorage.ObjectSet(ctx, keyStr, value)
+					return nil, d.objectStorage.HashTable().SetString(keyStr, value)
 				}
 				// If key is null, append (like $arr[] = value)
 				if key.GetType() == phpv.ZtNull {
@@ -380,9 +379,10 @@ func initArrayObject() {
 						"Cannot unset offset of type array on ArrayObject")
 				}
 				if d.objectStorage != nil {
-					// Unset the property on the object directly (ObjectSet with nil = unset)
+					// Unset the property directly from the object's hash table
 					keyStr := args[0].AsString(ctx)
-					return nil, d.objectStorage.ObjectSet(ctx, keyStr, nil)
+					d.objectStorage.HashTable().UnsetString(keyStr)
+					return nil, nil
 				}
 				err := d.array.OffsetUnset(ctx, args[0])
 				return nil, err
@@ -967,9 +967,9 @@ func initArrayObject() {
 				}
 				if d.flags&ArrayObjectARRAY_AS_PROPS != 0 {
 					if d.objectStorage != nil {
-						// Write to the object's properties directly
+						// Write directly to the object's hash table, bypassing magic methods
 						keyStr := args[0].AsString(ctx)
-						return nil, d.objectStorage.ObjectSet(ctx, keyStr, args[1])
+						return nil, d.objectStorage.HashTable().SetString(keyStr, args[1])
 					}
 					return nil, d.array.OffsetSet(ctx, args[0], args[1])
 				}

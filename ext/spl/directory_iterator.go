@@ -191,13 +191,17 @@ func updateDISFI(o *phpobj.ZObject, d *directoryIteratorData) {
 }
 
 func diCurrent(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	d := getDIData(o)
+	if d == nil {
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, "Object not initialized")
+	}
 	return o.ZVal(), nil // DirectoryIterator returns $this
 }
 
 func diKey(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	d := getDIData(o)
 	if d == nil {
-		return phpv.ZInt(0).ZVal(), nil
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, "Object not initialized")
 	}
 	return phpv.ZInt(d.pos).ZVal(), nil
 }
@@ -205,7 +209,7 @@ func diKey(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, 
 func diNext(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	d := getDIData(o)
 	if d == nil {
-		return nil, nil
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, "Object not initialized")
 	}
 	d.pos++
 	updateDISFI(o, d)
@@ -215,7 +219,7 @@ func diNext(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal,
 func diRewind(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	d := getDIData(o)
 	if d == nil {
-		return nil, nil
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, "Object not initialized")
 	}
 	d.pos = 0
 	updateDISFI(o, d)
@@ -224,12 +228,18 @@ func diRewind(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVa
 
 func diValid(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	d := getDIData(o)
-	return phpv.ZBool(d != nil && d.pos < len(d.entries)).ZVal(), nil
+	if d == nil {
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, "Object not initialized")
+	}
+	return phpv.ZBool(d.pos < len(d.entries)).ZVal(), nil
 }
 
 func diIsDot(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	d := getDIData(o)
-	if d == nil || d.pos >= len(d.entries) {
+	if d == nil {
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, "Object not initialized")
+	}
+	if d.pos >= len(d.entries) {
 		return phpv.ZBool(false).ZVal(), nil
 	}
 	name := d.entries[d.pos].Name()
@@ -261,7 +271,10 @@ func diSeek(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal,
 
 func diGetFilename(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	d := getDIData(o)
-	if d == nil || d.pos >= len(d.entries) {
+	if d == nil {
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, "Object not initialized")
+	}
+	if d.pos >= len(d.entries) {
 		return phpv.ZStr(""), nil
 	}
 	return phpv.ZStr(d.entries[d.pos].Name()), nil
@@ -269,7 +282,10 @@ func diGetFilename(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*php
 
 func diGetExtension(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	d := getDIData(o)
-	if d == nil || d.pos >= len(d.entries) {
+	if d == nil {
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, "Object not initialized")
+	}
+	if d.pos >= len(d.entries) {
 		return phpv.ZStr(""), nil
 	}
 	name := d.entries[d.pos].Name()
@@ -282,7 +298,10 @@ func diGetExtension(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*ph
 
 func diGetBasename(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	d := getDIData(o)
-	if d == nil || d.pos >= len(d.entries) {
+	if d == nil {
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, "Object not initialized")
+	}
+	if d.pos >= len(d.entries) {
 		return phpv.ZStr(""), nil
 	}
 	name := d.entries[d.pos].Name()
@@ -535,7 +554,7 @@ func globIterInit(ctx phpv.Context, o *phpobj.ZObject, pattern string, args []*p
 func globIterCount(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	d := getDIData(o)
 	if d == nil {
-		return phpv.ZInt(0).ZVal(), nil
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, "GlobIterator is not initialized")
 	}
 	return phpv.ZInt(len(d.entries)).ZVal(), nil
 }

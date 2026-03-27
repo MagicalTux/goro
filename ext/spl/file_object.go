@@ -352,6 +352,11 @@ func sfoConstruct(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv
 }
 
 func stfoConstruct(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	// Prevent double construction
+	if getSFOData(o) != nil {
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot call constructor twice")
+	}
+
 	// SplTempFileObject accepts an optional maxMemory argument
 	maxMemory := 2 * 1024 * 1024 // default: 2MB
 	if len(args) > 0 && args[0] != nil {
@@ -916,6 +921,7 @@ func sfoRewind(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZV
 		d.curLine = line
 	} else {
 		d.eof = true
+		d.curLine = ""
 	}
 	return nil, nil
 }

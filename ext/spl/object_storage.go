@@ -863,14 +863,14 @@ func sosUnserialize(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*ph
 
 // sosUnserializeAt unserializes a PHP value starting at the given offset in the string.
 // It returns the unserialized value, the number of bytes consumed, and any error.
-func sosUnserializeAt(ctx phpv.Context, unserializeFn *phpv.ZVal, ser string, offset int) (*phpv.ZVal, int, error) {
+func sosUnserializeAt(ctx phpv.Context, unserializeFn phpv.Callable, ser string, offset int) (*phpv.ZVal, int, error) {
 	// Extract the serialized value substring from offset
 	// PHP serialized values have predictable end markers, so we try to find the extent
 	// We use the unserialize function on the substring and detect how many bytes were consumed
 	sub := ser[offset:]
 
 	// Try unserializing the substring
-	result, err := ctx.CallZVal(ctx, unserializeFn, []*phpv.ZVal{phpv.ZString(sub).ZVal()})
+	result, err := unserializeFn.Call(ctx, []*phpv.ZVal{phpv.ZString(sub).ZVal()})
 	if err != nil {
 		return nil, 0, err
 	}
