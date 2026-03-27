@@ -45,6 +45,7 @@ func (d *dirHandle) AsVal(ctx phpv.Context, t phpv.ZType) (phpv.Val, error) {
 }
 
 var nextDirHandleID = 1000
+var lastDirHandle *dirHandle
 
 // > func resource opendir ( string $path [, resource $context ] )
 func fncOpendir(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
@@ -76,17 +77,23 @@ func fncOpendir(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		id:      nextDirHandleID,
 	}
 	nextDirHandleID++
+	lastDirHandle = dh
 	return dh.ZVal(), nil
 }
 
 // > func string readdir ( [ resource $dir_handle ] )
 func fncReaddir(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	if len(args) == 0 {
-		return phpv.ZFalse.ZVal(), nil
+	var dh *dirHandle
+	if len(args) == 0 || args[0] == nil || args[0].IsNull() {
+		dh = lastDirHandle
+	} else {
+		var ok bool
+		dh, ok = args[0].Value().(*dirHandle)
+		if !ok {
+			return phpv.ZFalse.ZVal(), nil
+		}
 	}
-
-	dh, ok := args[0].Value().(*dirHandle)
-	if !ok || dh.closed {
+	if dh == nil || dh.closed {
 		return phpv.ZFalse.ZVal(), nil
 	}
 
@@ -111,6 +118,11 @@ func fncReaddir(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 func fncClosedir(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) == 0 || args[0] == nil || args[0].IsNull() {
 		ctx.Deprecated("closedir(): Passing null is deprecated, instead the last opened directory stream should be provided", logopt.NoFuncName(true))
+		// Use the last opened directory handle
+		if lastDirHandle != nil && !lastDirHandle.closed {
+			lastDirHandle.closed = true
+			lastDirHandle.entries = nil
+		}
 		return phpv.ZNULL.ZVal(), nil
 	}
 
@@ -133,12 +145,17 @@ func fncClosedir(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 // > func void rewinddir ( [ resource $dir_handle ] )
 func fncRewinddir(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	if len(args) == 0 {
-		return phpv.ZNULL.ZVal(), nil
+	var dh *dirHandle
+	if len(args) == 0 || args[0] == nil || args[0].IsNull() {
+		dh = lastDirHandle
+	} else {
+		var ok bool
+		dh, ok = args[0].Value().(*dirHandle)
+		if !ok {
+			return phpv.ZNULL.ZVal(), nil
+		}
 	}
-
-	dh, ok := args[0].Value().(*dirHandle)
-	if !ok {
+	if dh == nil || dh.closed {
 		return phpv.ZNULL.ZVal(), nil
 	}
 

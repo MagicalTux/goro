@@ -518,6 +518,10 @@ func fncArrayWalk(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		}
 		it.Next(ctx)
 	}
+	// Clean up the reference from the last iterated element
+	if cleaner, ok := it.(interface{ CleanupRef() }); ok {
+		cleaner.CleanupRef()
+	}
 
 	return phpv.ZTrue.ZVal(), nil
 }
@@ -568,6 +572,10 @@ func fncArrayWalkRecursive(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, err
 			callbackArgs[1] = k
 			_, loopErr = ctx.CallZValInternal(ctx, callback, callbackArgs)
 			it.Next(ctx)
+		}
+		// Clean up the reference from the last iterated element
+		if cleaner, ok := it.(interface{ CleanupRef() }); ok {
+			cleaner.CleanupRef()
 		}
 	}
 
@@ -2404,8 +2412,22 @@ func fncArrayExtract(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	count := phpv.ZInt(0)
+	useRefs := flags&EXTR_REFS != 0
 
-	for k, v := range array.Get().Iterate(ctx) {
+	arr := array.Get()
+	it := arr.NewIterator()
+	for it.Valid(ctx) {
+		k, _ := it.Key(ctx)
+		var v *phpv.ZVal
+		if useRefs {
+			// For EXTR_REFS, create a reference to the array element
+			v, _ = it.(interface {
+				CurrentMakeRef(phpv.Context) (*phpv.ZVal, error)
+			}).CurrentMakeRef(ctx)
+		} else {
+			v, _ = it.Current(ctx)
+		}
+
 		varName := string(k.AsString(ctx))
 
 		invalidVarName := k.GetType() == phpv.ZtInt
@@ -2416,6 +2438,7 @@ func fncArrayExtract(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		switch baseFlags {
 		case EXTR_OVERWRITE, EXTR_SKIP, EXTR_IF_EXISTS:
 			if invalidVarName {
+				it.Next(ctx)
 				continue
 			}
 		}
@@ -2467,12 +2490,13 @@ func fncArrayExtract(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 		if doSet && extractIsValidVarName(targetName) {
 			// When EXTR_REFS is not set, break references by copying the value
-			if flags&EXTR_REFS == 0 {
+			if !useRefs {
 				v = v.Dup()
 			}
 			parentCtx.OffsetSet(parentCtx, phpv.ZString(targetName).ZVal(), v)
 			count++
 		}
+		it.Next(ctx)
 	}
 
 	return count.ZVal(), nil
