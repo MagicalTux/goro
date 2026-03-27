@@ -49,6 +49,7 @@ type splFileObjectData struct {
 	// Whether the first line has been read (lazy initialization)
 	firstLineRead bool
 	isReadable    bool
+	isWritable    bool
 }
 
 // readLine reads the next line from the file using the bufio.Reader.
@@ -136,6 +137,9 @@ func initSplFileObject() {
 		"getchildren":    {Name: "getChildren", Method: phpobj.NativeMethod(sfoGetChildren)},
 		"__tostring":     {Name: "__toString", Method: phpobj.NativeMethod(sfoToString)},
 		"__debuginfo":    {Name: "__debugInfo", Method: phpobj.NativeMethod(sfoDebugInfo)},
+		"__clone": {Name: "__clone", Modifiers: phpv.ZAttrPrivate, Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, "Trying to clone an uncloneable object of class SplFileObject")
+		})},
 	}
 	for k, v := range sfoOwnMethods {
 		sfoMethods[k] = v
@@ -144,7 +148,7 @@ func initSplFileObject() {
 	SplFileObjectClass = &phpobj.ZClass{
 		Name:            "SplFileObject",
 		Extends:         SplFileInfoClass,
-		Implementations: []*phpobj.ZClass{},
+		Implementations: []*phpobj.ZClass{RecursiveIterator, SeekableIterator},
 		Const: map[phpv.ZString]*phpv.ZClassConst{
 			"DROP_NEW_LINE": {Value: phpv.ZInt(sfoDropNewLine)},
 			"READ_AHEAD":    {Value: phpv.ZInt(sfoReadAhead)},
@@ -203,6 +207,23 @@ func getSFOData(o *phpobj.ZObject) *splFileObjectData {
 }
 
 func sfoConstruct(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	// Prevent double construction
+	if getSFOData(o) != nil {
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot call constructor twice")
+	}
+
+	// Validate argument count
+	if len(args) == 0 {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			"SplFileObject::__construct() expects at least 1 argument, 0 given")
+	}
+
+	// Validate mode type before Expand (which would silently convert)
+	if len(args) > 1 && args[1] != nil && args[1].GetType() == phpv.ZtArray {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			"SplFileObject::__construct(): Argument #2 ($mode) must be of type string, array given")
+	}
+
 	var filename phpv.ZString
 	var mode *phpv.ZString
 	_, err := core.Expand(ctx, args, &filename, &mode)
@@ -232,6 +253,8 @@ func sfoConstruct(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv
 				fmt.Sprintf("SplFileObject::__construct(%s): Failed to open stream: %s", path, err))
 		}
 		info, _ := file.Stat()
+		// Determine readability/writability from mode
+		isWritable := openMode != "r" && openMode != "rb" && openMode != "rt"
 		data := &splFileObjectData{
 			splFileInfoData: splFileInfoData{path: path, resolvedPath: file.Name(), info: info},
 			file:            file,
@@ -241,6 +264,7 @@ func sfoConstruct(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv
 			csvEsc:          '\\',
 			openMode:        openMode,
 			isReadable:      true, // php://temp and php://memory are always readable
+			isWritable:      isWritable,
 		}
 		o.SetOpaque(SplFileInfoClass, &data.splFileInfoData)
 		o.SetOpaque(SplFileObjectClass, data)
@@ -313,11 +337,12 @@ func sfoConstruct(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv
 	o.SetOpaque(SplFileInfoClass, &data.splFileInfoData)
 	o.SetOpaque(SplFileObjectClass, data)
 
-	// Determine if file is readable (for lazy first-line read).
+	// Determine if file is readable/writable (for lazy first-line read and write checks).
 	// Note: O_RDONLY is 0, so we cannot use flag&O_RDONLY==O_RDONLY (always true).
 	// Instead, check that the access mode is not write-only.
 	accessMode := flag & (os.O_RDONLY | os.O_WRONLY | os.O_RDWR)
 	data.isReadable = accessMode != os.O_WRONLY
+	data.isWritable = accessMode != os.O_RDONLY
 
 	// Don't pre-read the first line here. Reading is deferred to the first
 	// access via current()/iteration/fgets to avoid advancing the file position
@@ -362,6 +387,7 @@ func stfoConstruct(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*php
 		csvEsc:          '\\',
 		openMode:        "wb",
 		isReadable:      true, // temp files are always read-write
+		isWritable:      true,
 	}
 	o.SetOpaque(SplFileInfoClass, &data.splFileInfoData)
 	o.SetOpaque(SplFileObjectClass, data)
@@ -395,13 +421,24 @@ func sfoFgetc(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVa
 		return phpv.ZBool(false).ZVal(), nil
 	}
 
-	// Read one byte from the file
-	buf := make([]byte, 1)
-	n, err := d.file.Read(buf)
-	if err != nil || n == 0 {
+	// Use the buffered reader to maintain consistent position with line-based reads
+	if d.reader == nil {
+		d.reader = bufio.NewReader(d.file)
+	}
+
+	c, err := d.reader.ReadByte()
+	if err != nil {
+		d.eof = true
 		return phpv.ZBool(false).ZVal(), nil
 	}
-	return phpv.ZStr(string(buf[:n])), nil
+
+	// Track line numbers: increment after reading a newline
+	if c == '\n' {
+		d.line++
+	}
+	d.firstLineRead = true
+
+	return phpv.ZStr(string(c)), nil
 }
 
 func sfoFgetcsv(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
@@ -469,12 +506,27 @@ func sfoFgetcsv(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.Z
 		d.curLine = ""
 	}
 
+	// If SKIP_EMPTY is set and the line is empty, return false
+	if d.flags&sfoSkipEmpty != 0 && line == "" {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+
+	// Empty line returns array(NULL) per PHP behavior
+	if line == "" {
+		result := phpv.NewZArray()
+		result.OffsetSet(ctx, nil, phpv.ZNULL.ZVal())
+		return result.ZVal(), nil
+	}
+
 	return standard.ParseCsvLine(ctx, line, sep, enc, esc)
 }
 
 func sfoFputcsv(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	d := getSFOData(o)
 	if d == nil || d.file == nil {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	if !d.isWritable {
 		return phpv.ZBool(false).ZVal(), nil
 	}
 
@@ -1060,7 +1112,11 @@ func sfoGetChildren(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*ph
 
 func sfoToString(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	d := getSFOData(o)
-	if d == nil || d.eof {
+	if d == nil {
+		return phpv.ZStr(""), nil
+	}
+	ensureFirstLineRead(d)
+	if d.eof {
 		return phpv.ZStr(""), nil
 	}
 	return phpv.ZStr(d.curLine), nil

@@ -1853,6 +1853,12 @@ func (g *Global) UnregisterUploadedFile(path string) {
 }
 
 // IsObDisabled returns whether the OB system has been disabled.
+// IsFunctionDisabled returns true if the named function is disabled via disable_functions INI.
+func (g *Global) IsFunctionDisabled(name phpv.ZString) bool {
+	_, ok := g.disabledFuncs[name]
+	return ok
+}
+
 func (g *Global) IsObDisabled() bool {
 	return g.obDisabled
 }

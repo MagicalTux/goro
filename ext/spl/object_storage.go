@@ -2,6 +2,7 @@ package spl
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
@@ -631,6 +632,15 @@ func initObjectStorage() {
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				d := getOrInitObjectStorageData(o)
 				result := phpv.NewZArray()
+
+				// Include public/dynamic properties from the object (for subclasses)
+				for prop := range o.IterProps(ctx) {
+					if prop.Modifiers.IsPublic() || (!prop.Modifiers.IsPrivate() && !prop.Modifiers.IsProtected()) {
+						v := o.GetPropValue(prop)
+						result.OffsetSet(ctx, prop.VarName.ZVal(), v)
+					}
+				}
+
 				// Build the storage array with obj/inf pairs
 				storage := phpv.NewZArray()
 				if d != nil {
@@ -657,51 +667,49 @@ func initObjectStorage() {
 				if d != nil {
 					count = len(d.order)
 				}
+				serializeFn, err := ctx.Global().GetFunction(ctx, "serialize")
+				if err != nil {
+					return phpv.ZString("").ZVal(), nil
+				}
 				buf := fmt.Sprintf("x:i:%d;", count)
-				buf += "m:a:0:{}"
+				if d != nil {
+					for _, hash := range d.order {
+						entry, exists := d.entries[hash]
+						if !exists {
+							continue
+						}
+						// Serialize object
+						objSer, err := ctx.CallZVal(ctx, serializeFn, []*phpv.ZVal{entry.obj.ZVal()})
+						if err != nil {
+							return nil, err
+						}
+						// Serialize info
+						infoSer, err := ctx.CallZVal(ctx, serializeFn, []*phpv.ZVal{entry.info})
+						if err != nil {
+							return nil, err
+						}
+						buf += objSer.AsString(ctx).String() + "," + infoSer.AsString(ctx).String() + ";"
+					}
+				}
+				// Member properties
+				memberProps := phpv.NewZArray()
+				for prop := range o.IterProps(ctx) {
+					if prop.Modifiers.IsPublic() || (!prop.Modifiers.IsPrivate() && !prop.Modifiers.IsProtected()) {
+						v := o.GetPropValue(prop)
+						memberProps.OffsetSet(ctx, prop.VarName.ZVal(), v)
+					}
+				}
+				memberSer, err := ctx.CallZVal(ctx, serializeFn, []*phpv.ZVal{memberProps.ZVal()})
+				if err != nil {
+					return nil, err
+				}
+				buf += "m:" + memberSer.AsString(ctx).String()
 				return phpv.ZString(buf).ZVal(), nil
 			}),
 		},
 		"unserialize": {
 			Name: "unserialize",
-			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				if len(args) == 0 || args[0] == nil {
-					return nil, phpobj.ThrowError(ctx, phpobj.UnexpectedValueException,
-						"Error at offset 0 of 0 bytes")
-				}
-				ser := args[0].AsString(ctx)
-				if len(ser) == 0 {
-					return nil, nil
-				}
-				if len(ser) < 4 || string(ser[:2]) != "x:" {
-					return nil, phpobj.ThrowError(ctx, phpobj.UnexpectedValueException,
-						fmt.Sprintf("Error at offset 0 of %d bytes", len(ser)))
-				}
-				d := &splObjectStorageData{
-					entries: make(map[string]*splObjectStorageEntry),
-					pos:     0,
-				}
-				o.SetOpaque(SplObjectStorageClass, d)
-				offset := 2
-				if offset >= len(ser) || ser[offset] != 'i' {
-					return nil, phpobj.ThrowError(ctx, phpobj.UnexpectedValueException,
-						fmt.Sprintf("Error at offset %d of %d bytes", offset, len(ser)))
-				}
-				offset++
-				if offset >= len(ser) || ser[offset] != ':' {
-					return nil, phpobj.ThrowError(ctx, phpobj.UnexpectedValueException,
-						fmt.Sprintf("Error at offset %d of %d bytes", offset, len(ser)))
-				}
-				offset++
-				for offset < len(ser) && ser[offset] >= '0' && ser[offset] <= '9' {
-					offset++
-				}
-				if offset >= len(ser) || ser[offset] != ';' {
-					return nil, phpobj.ThrowError(ctx, phpobj.UnexpectedValueException,
-						fmt.Sprintf("Error at offset %d of %d bytes", offset, len(ser)))
-				}
-				return nil, nil
-			}),
+			Method: phpobj.NativeMethod(sosUnserialize),
 		},
 	}
 }
@@ -717,7 +725,400 @@ func callGetHash(ctx phpv.Context, storage *phpobj.ZObject, obj *phpobj.ZObject)
 	if result == nil {
 		return objectHash(obj), nil
 	}
+	// Validate return type - must be string
+	if result.GetType() != phpv.ZtString {
+		return "", phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("%s::getHash(): Return value must be of type string, %s returned",
+				storage.GetClass().GetName(), result.GetType().TypeName()))
+	}
 	return string(result.AsString(ctx)), nil
+}
+
+// sosUnserialize implements SplObjectStorage::unserialize()
+func sosUnserialize(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) == 0 || args[0] == nil {
+		return nil, phpobj.ThrowError(ctx, phpobj.UnexpectedValueException,
+			"Error at offset 0 of 0 bytes")
+	}
+	ser := string(args[0].AsString(ctx))
+	totalLen := len(ser)
+	if totalLen == 0 {
+		return nil, phpobj.ThrowError(ctx, phpobj.UnexpectedValueException,
+			"Error at offset 0 of 0 bytes")
+	}
+	errAtOffset := func(offset int) error {
+		return phpobj.ThrowError(ctx, phpobj.UnexpectedValueException,
+			fmt.Sprintf("Error at offset %d of %d bytes", offset, totalLen))
+	}
+	if len(ser) < 4 || ser[:2] != "x:" {
+		return nil, errAtOffset(0)
+	}
+	offset := 2
+	if offset >= len(ser) || ser[offset] != 'i' {
+		return nil, errAtOffset(offset)
+	}
+	offset++
+	if offset >= len(ser) || ser[offset] != ':' {
+		return nil, errAtOffset(offset)
+	}
+	offset++
+	numStart := offset
+	for offset < len(ser) && ser[offset] >= '0' && ser[offset] <= '9' {
+		offset++
+	}
+	if offset == numStart || offset >= len(ser) || ser[offset] != ';' {
+		return nil, errAtOffset(offset)
+	}
+	countStr := ser[numStart:offset]
+	count, _ := strconv.Atoi(countStr)
+	offset++ // skip ';'
+
+	d := &splObjectStorageData{
+		entries: make(map[string]*splObjectStorageEntry),
+		pos:     0,
+	}
+	o.SetOpaque(SplObjectStorageClass, d)
+
+	unserializeFn, err := ctx.Global().GetFunction(ctx, "unserialize")
+	if err != nil {
+		return nil, errAtOffset(offset)
+	}
+
+	// Parse each object,data; pair
+	for i := 0; i < count; i++ {
+		if offset >= len(ser) {
+			return nil, errAtOffset(offset)
+		}
+
+		// Unserialize the object from current offset
+		objResult, consumed, uErr := sosUnserializeAt(ctx, unserializeFn, ser, offset)
+		if uErr != nil || objResult == nil || objResult.GetType() != phpv.ZtObject {
+			return nil, errAtOffset(offset)
+		}
+		offset += consumed
+
+		// Expect comma separator
+		if offset >= len(ser) || ser[offset] != ',' {
+			return nil, errAtOffset(offset)
+		}
+		offset++ // skip ','
+
+		// Parse info value
+		infoResult, consumed, uErr := sosUnserializeAt(ctx, unserializeFn, ser, offset)
+		if uErr != nil {
+			return nil, errAtOffset(offset)
+		}
+		offset += consumed
+
+		// Expect semicolon separator
+		if offset >= len(ser) || ser[offset] != ';' {
+			return nil, errAtOffset(offset)
+		}
+		offset++ // skip ';'
+
+		obj, ok := objResult.Value().(*phpobj.ZObject)
+		if !ok {
+			return nil, errAtOffset(offset)
+		}
+
+		hash := objectHash(obj)
+		// Check for duplicates
+		if _, exists := d.entries[hash]; exists {
+			return nil, errAtOffset(offset)
+		}
+		d.order = append(d.order, hash)
+		d.entries[hash] = &splObjectStorageEntry{obj: obj, info: infoResult}
+	}
+
+	// Parse member properties: m:serialized_array
+	if offset >= len(ser) || ser[offset] != 'm' {
+		return nil, errAtOffset(offset)
+	}
+	offset++
+	if offset >= len(ser) || ser[offset] != ':' {
+		return nil, errAtOffset(offset)
+	}
+	offset++
+
+	memberResult, consumed, uErr := sosUnserializeAt(ctx, unserializeFn, ser, offset)
+	if uErr != nil {
+		return nil, errAtOffset(offset)
+	}
+	offset += consumed
+
+	// Check that there's no extra data
+	if offset < len(ser) {
+		return nil, errAtOffset(offset)
+	}
+
+	if memberResult != nil && memberResult.GetType() == phpv.ZtArray {
+		memberArr := memberResult.AsArray(ctx)
+		for k, v := range memberArr.Iterate(ctx) {
+			o.ObjectSet(ctx, k, v)
+		}
+	}
+
+	return nil, nil
+}
+
+// sosUnserializeAt unserializes a PHP value starting at the given offset in the string.
+// It returns the unserialized value, the number of bytes consumed, and any error.
+func sosUnserializeAt(ctx phpv.Context, unserializeFn *phpv.ZVal, ser string, offset int) (*phpv.ZVal, int, error) {
+	// Extract the serialized value substring from offset
+	// PHP serialized values have predictable end markers, so we try to find the extent
+	// We use the unserialize function on the substring and detect how many bytes were consumed
+	sub := ser[offset:]
+
+	// Try unserializing the substring
+	result, err := ctx.CallZVal(ctx, unserializeFn, []*phpv.ZVal{phpv.ZString(sub).ZVal()})
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Determine how many bytes were consumed by analyzing the serialized format
+	consumed := serializedValueLength(sub)
+	if consumed == 0 {
+		return nil, 0, fmt.Errorf("could not determine serialized value length")
+	}
+
+	return result, consumed, nil
+}
+
+// serializedValueLength returns the length of the first complete serialized PHP value in s.
+func serializedValueLength(s string) int {
+	if len(s) == 0 {
+		return 0
+	}
+	switch s[0] {
+	case 'N': // N;
+		if len(s) >= 2 && s[1] == ';' {
+			return 2
+		}
+		return 0
+	case 'b': // b:0; or b:1;
+		if len(s) >= 4 && s[1] == ':' && s[3] == ';' {
+			return 4
+		}
+		return 0
+	case 'i': // i:NUM;
+		if len(s) < 3 || s[1] != ':' {
+			return 0
+		}
+		i := 2
+		if i < len(s) && s[i] == '-' {
+			i++
+		}
+		for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+			i++
+		}
+		if i < len(s) && s[i] == ';' {
+			return i + 1
+		}
+		return 0
+	case 'd': // d:NUM;
+		if len(s) < 3 || s[1] != ':' {
+			return 0
+		}
+		i := 2
+		if i < len(s) && s[i] == '-' {
+			i++
+		}
+		for i < len(s) && ((s[i] >= '0' && s[i] <= '9') || s[i] == '.' || s[i] == 'E' || s[i] == 'e' || s[i] == '+' || s[i] == '-') {
+			i++
+		}
+		if i < len(s) && s[i] == ';' {
+			return i + 1
+		}
+		return 0
+	case 's': // s:LEN:"...";
+		if len(s) < 4 || s[1] != ':' {
+			return 0
+		}
+		i := 2
+		for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+			i++
+		}
+		if i >= len(s) || s[i] != ':' {
+			return 0
+		}
+		slen, _ := strconv.Atoi(s[2:i])
+		i++ // skip ':'
+		if i >= len(s) || s[i] != '"' {
+			return 0
+		}
+		i++ // skip '"'
+		i += slen
+		if i >= len(s) || s[i] != '"' {
+			return 0
+		}
+		i++ // skip '"'
+		if i >= len(s) || s[i] != ';' {
+			return 0
+		}
+		return i + 1
+	case 'a': // a:COUNT:{...}
+		return serializedCompoundLength(s)
+	case 'O': // O:LEN:"classname":COUNT:{...}
+		return serializedObjectLength(s)
+	case 'r', 'R': // r:NUM; or R:NUM;
+		if len(s) < 3 || s[1] != ':' {
+			return 0
+		}
+		i := 2
+		for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+			i++
+		}
+		if i < len(s) && s[i] == ';' {
+			return i + 1
+		}
+		return 0
+	case 'C': // C:LEN:"classname":LEN:{...}
+		return serializedCustomObjectLength(s)
+	}
+	return 0
+}
+
+// serializedCompoundLength returns the length of a serialized array a:N:{...}
+func serializedCompoundLength(s string) int {
+	if len(s) < 4 || s[0] != 'a' || s[1] != ':' {
+		return 0
+	}
+	i := 2
+	for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+		i++
+	}
+	if i >= len(s) || s[i] != ':' {
+		return 0
+	}
+	count, _ := strconv.Atoi(s[2:i])
+	i++ // skip ':'
+	if i >= len(s) || s[i] != '{' {
+		return 0
+	}
+	i++ // skip '{'
+	for j := 0; j < count; j++ {
+		// key
+		kl := serializedValueLength(s[i:])
+		if kl == 0 {
+			return 0
+		}
+		i += kl
+		// value
+		vl := serializedValueLength(s[i:])
+		if vl == 0 {
+			return 0
+		}
+		i += vl
+	}
+	if i >= len(s) || s[i] != '}' {
+		return 0
+	}
+	return i + 1
+}
+
+// serializedObjectLength returns the length of a serialized object O:LEN:"classname":COUNT:{...}
+func serializedObjectLength(s string) int {
+	if len(s) < 4 || s[0] != 'O' || s[1] != ':' {
+		return 0
+	}
+	i := 2
+	for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+		i++
+	}
+	if i >= len(s) || s[i] != ':' {
+		return 0
+	}
+	nameLen, _ := strconv.Atoi(s[2:i])
+	i++ // skip ':'
+	if i >= len(s) || s[i] != '"' {
+		return 0
+	}
+	i++ // skip '"'
+	i += nameLen
+	if i >= len(s) || s[i] != '"' {
+		return 0
+	}
+	i++ // skip '"'
+	if i >= len(s) || s[i] != ':' {
+		return 0
+	}
+	i++ // skip ':'
+	countStart := i
+	for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+		i++
+	}
+	if i >= len(s) || s[i] != ':' {
+		return 0
+	}
+	propCount, _ := strconv.Atoi(s[countStart:i])
+	i++ // skip ':'
+	if i >= len(s) || s[i] != '{' {
+		return 0
+	}
+	i++ // skip '{'
+	for j := 0; j < propCount; j++ {
+		kl := serializedValueLength(s[i:])
+		if kl == 0 {
+			return 0
+		}
+		i += kl
+		vl := serializedValueLength(s[i:])
+		if vl == 0 {
+			return 0
+		}
+		i += vl
+	}
+	if i >= len(s) || s[i] != '}' {
+		return 0
+	}
+	return i + 1
+}
+
+// serializedCustomObjectLength returns the length of C:LEN:"classname":LEN:{...}
+func serializedCustomObjectLength(s string) int {
+	if len(s) < 4 || s[0] != 'C' || s[1] != ':' {
+		return 0
+	}
+	i := 2
+	for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+		i++
+	}
+	if i >= len(s) || s[i] != ':' {
+		return 0
+	}
+	nameLen, _ := strconv.Atoi(s[2:i])
+	i++ // skip ':'
+	if i >= len(s) || s[i] != '"' {
+		return 0
+	}
+	i++ // skip '"'
+	i += nameLen
+	if i >= len(s) || s[i] != '"' {
+		return 0
+	}
+	i++ // skip '"'
+	if i >= len(s) || s[i] != ':' {
+		return 0
+	}
+	i++ // skip ':'
+	dataLenStart := i
+	for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+		i++
+	}
+	if i >= len(s) || s[i] != ':' {
+		return 0
+	}
+	dataLen, _ := strconv.Atoi(s[dataLenStart:i])
+	i++ // skip ':'
+	if i >= len(s) || s[i] != '{' {
+		return 0
+	}
+	i++ // skip '{'
+	i += dataLen
+	if i >= len(s) || s[i] != '}' {
+		return 0
+	}
+	return i + 1
 }
 
 var SplObjectStorageClass = &phpobj.ZClass{

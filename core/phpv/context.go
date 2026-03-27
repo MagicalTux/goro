@@ -162,6 +162,8 @@ type GlobalContext interface {
 
 	SetStrictTypes(v bool)
 	GetStrictTypes() bool
+
+	IsFunctionDisabled(name ZString) bool
 }
 
 type FuncContext interface {
