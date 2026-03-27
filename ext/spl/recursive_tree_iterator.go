@@ -20,12 +20,14 @@ const (
 type recursiveTreeIteratorData struct {
 	flags   int
 	prefix  [6]string
+	postfix string
 }
 
 func (d *recursiveTreeIteratorData) Clone() any {
 	nd := &recursiveTreeIteratorData{
-		flags:  d.flags,
-		prefix: d.prefix,
+		flags:   d.flags,
+		prefix:  d.prefix,
+		postfix: d.postfix,
 	}
 	return nd
 }
@@ -169,7 +171,24 @@ func initRecursiveTreeIterator() {
 		"getpostfix": {
 			Name: "getPostfix",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				return phpv.ZStr(""), nil
+				td := getRecursiveTreeIteratorData(o)
+				if td == nil {
+					return phpv.ZStr(""), nil
+				}
+				return phpv.ZStr(td.postfix), nil
+			}),
+		},
+		"setpostfix": {
+			Name: "setPostfix",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				td := getRecursiveTreeIteratorData(o)
+				if td == nil {
+					return nil, nil
+				}
+				if len(args) > 0 {
+					td.postfix = string(args[0].AsString(ctx))
+				}
+				return nil, nil
 			}),
 		},
 		"current": {

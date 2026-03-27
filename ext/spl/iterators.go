@@ -238,23 +238,8 @@ func initLimitIterator() {
 					return nil, err
 				}
 				d.pos = 0
-				// Skip to offset
-				for d.pos < d.offset {
-					v, err := d.inner.CallMethod(ctx, "valid")
-					if err != nil {
-						return nil, err
-					}
-					if !bool(v.AsBool(ctx)) {
-						return nil, phpobj.ThrowError(ctx, phpobj.OutOfBoundsException,
-							fmt.Sprintf("Seek position %d is out of range", d.offset))
-					}
-					_, err = d.inner.CallMethod(ctx, "next")
-					if err != nil {
-						return nil, err
-					}
-					d.pos++
-				}
-				return nil, nil
+				// Seek to offset using the common seek logic
+				return nil, limitIteratorSeekTo(ctx, d, d.offset)
 			}),
 		},
 		"current": {
@@ -352,21 +337,7 @@ func initLimitIterator() {
 					return nil, err
 				}
 				d.pos = 0
-				for d.pos < position {
-					v, err := d.inner.CallMethod(ctx, "valid")
-					if err != nil {
-						return nil, err
-					}
-					if !bool(v.AsBool(ctx)) {
-						return nil, phpobj.ThrowError(ctx, phpobj.OutOfBoundsException, fmt.Sprintf("Cannot seek to %d which is behind the last element", position))
-					}
-					_, err = d.inner.CallMethod(ctx, "next")
-					if err != nil {
-						return nil, err
-					}
-					d.pos++
-				}
-				return nil, nil
+				return nil, limitIteratorSeekTo(ctx, d, position)
 			}),
 		},
 		"__call": {
@@ -397,6 +368,30 @@ func initLimitIterator() {
 			}),
 		},
 	}
+}
+
+// limitIteratorSeekTo seeks the inner iterator to the given position.
+// It advances from current position d.pos to target, calling next/valid on inner.
+// After reaching target, it calls valid one final time (matching PHP behavior).
+func limitIteratorSeekTo(ctx phpv.Context, d *limitIteratorData, target int) error {
+	for d.pos < target {
+		v, err := d.inner.CallMethod(ctx, "valid")
+		if err != nil {
+			return err
+		}
+		if !bool(v.AsBool(ctx)) {
+			return phpobj.ThrowError(ctx, phpobj.OutOfBoundsException,
+				fmt.Sprintf("Seek position %d is out of range", target))
+		}
+		_, err = d.inner.CallMethod(ctx, "next")
+		if err != nil {
+			return err
+		}
+		d.pos++
+	}
+	// Final valid check at the target position (matches PHP behavior)
+	d.inner.CallMethod(ctx, "valid")
+	return nil
 }
 
 var LimitIteratorClass = &phpobj.ZClass{
