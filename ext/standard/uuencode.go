@@ -17,7 +17,8 @@ func convertUuEncode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	if len(dataArg) == 0 {
-		return phpv.ZFalse.ZVal(), nil
+		// Empty string encodes to just a length byte (0 -> space) + newline + end marker
+		return phpv.ZString(" \n`\n").ZVal(), nil
 	}
 
 	var buf bytes.Buffer

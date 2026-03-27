@@ -91,6 +91,9 @@ func fncPack(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			if repeat == -1 {
 				repeat = len(s)
 			}
+			if repeat > len(s) {
+				ctx.Warn("Type %c: not enough characters in string", code)
+			}
 			nibbles := repeat
 			for j := 0; j < nibbles; j += 2 {
 				var hi, lo byte
@@ -444,7 +447,12 @@ func fncUnpack(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				count = len(d) - pos
 			}
 			if pos+count > len(d) {
-				ctx.Warn(fmt.Sprintf("unpack(): Type %c: not enough input values, need %d values but only %d were provided", code, count, len(d)-pos))
+				avail := len(d) - pos
+				wasWere := "were"
+				if avail == 1 {
+					wasWere = "was"
+				}
+				ctx.Warn("Type %c: not enough input values, need %d values but only %d %s provided", code, count, avail, wasWere)
 				return phpv.ZBool(false).ZVal(), nil
 				// was: return nil, fmt.Errorf("unpack(): Type %c: not enough input", code)
 			}
@@ -468,7 +476,8 @@ func fncUnpack(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			}
 			bytesNeeded := (count + 1) / 2
 			if pos+bytesNeeded > len(d) {
-				return nil, fmt.Errorf("unpack(): Type %c: not enough input", code)
+				ctx.Warn("Type %c: not enough input, need %d, have %d", code, bytesNeeded, len(d)-pos)
+				return phpv.ZBool(false).ZVal(), nil
 			}
 			var hex strings.Builder
 			for j := 0; j < count; j++ {
