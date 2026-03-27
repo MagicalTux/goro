@@ -5,6 +5,7 @@ import (
 	"iter"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
@@ -376,9 +377,9 @@ func classImplements(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		if args[0].GetType() == phpv.ZtString {
 			className := args[0].AsString(ctx)
 			if autoload {
-				ctx.Warn("class_implements(): Class %s does not exist and could not be loaded", className)
+				ctx.Warn("class_implements(): Class %s does not exist and could not be loaded", className, logopt.NoFuncName(true))
 			} else {
-				ctx.Warn("class_implements(): Class %s does not exist", className)
+				ctx.Warn("class_implements(): Class %s does not exist", className, logopt.NoFuncName(true))
 			}
 			return phpv.ZFalse.ZVal(), nil
 		}
@@ -420,9 +421,9 @@ func classParents(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		if args[0].GetType() == phpv.ZtString {
 			className := args[0].AsString(ctx)
 			if autoload {
-				ctx.Warn("class_parents(): Class %s does not exist and could not be loaded", className)
+				ctx.Warn("class_parents(): Class %s does not exist and could not be loaded", className, logopt.NoFuncName(true))
 			} else {
-				ctx.Warn("class_parents(): Class %s does not exist", className)
+				ctx.Warn("class_parents(): Class %s does not exist", className, logopt.NoFuncName(true))
 			}
 			return phpv.ZFalse.ZVal(), nil
 		}
@@ -456,9 +457,9 @@ func classUses(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		if args[0].GetType() == phpv.ZtString {
 			className := args[0].AsString(ctx)
 			if autoload {
-				ctx.Warn("class_uses(): Class %s does not exist and could not be loaded", className)
+				ctx.Warn("class_uses(): Class %s does not exist and could not be loaded", className, logopt.NoFuncName(true))
 			} else {
-				ctx.Warn("class_uses(): Class %s does not exist", className)
+				ctx.Warn("class_uses(): Class %s does not exist", className, logopt.NoFuncName(true))
 			}
 			return phpv.ZFalse.ZVal(), nil
 		}

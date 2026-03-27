@@ -480,7 +480,8 @@ func ZFprintf(ctx phpv.Context, w printfWriter, format phpv.ZString, arg ...*php
 				}
 
 				// precision -1 means "as many digits as needed" (round-trip accuracy)
-				if precision == -1 && (fChar == 'g' || fChar == 'G' || fChar == 'h' || fChar == 'H') {
+				// This only applies when explicitly set via star specifier, not the default
+				if precision == -1 && fmtWidth.precStar && (fChar == 'g' || fChar == 'G' || fChar == 'h' || fChar == 'H') {
 					expPrecision = -1
 				}
 
@@ -499,8 +500,8 @@ func ZFprintf(ctx phpv.Context, w printfWriter, format phpv.ZString, arg ...*php
 						output = output[0:minusIndex+1] + output[minusIndex+2:]
 					}
 				}
-				// Apply locale for g/G and e/E (but NOT h/H which are locale-independent)
-				if fChar == 'g' || fChar == 'G' || fChar == 'e' || fChar == 'E' {
+				// Apply locale for g/G (but NOT h/H which are locale-independent, and NOT e/E)
+				if fChar == 'g' || fChar == 'G' {
 					lc := locale.Localeconv()
 					if lc.DecimalPoint != "" && lc.DecimalPoint != "." {
 						output = strings.Replace(output, ".", lc.DecimalPoint, 1)
