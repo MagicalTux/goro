@@ -129,6 +129,25 @@ func initIteratorIterator() {
 				return d.inner.ZVal(), nil
 			}),
 		},
+		"__call": {
+			Name: "__call",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				d := getIteratorIteratorData(o, IteratorIteratorClass)
+				if d == nil || len(args) < 2 {
+					return phpv.ZNULL.ZVal(), nil
+				}
+				methodName := args[0].AsString(ctx)
+				callArgs := args[1].AsArray(ctx)
+				if callArgs == nil {
+					return d.inner.CallMethod(ctx, string(methodName))
+				}
+				var fwdArgs []*phpv.ZVal
+				for _, v := range callArgs.Iterate(ctx) {
+					fwdArgs = append(fwdArgs, v)
+				}
+				return d.inner.CallMethod(ctx, string(methodName), fwdArgs...)
+			}),
+		},
 	}
 }
 
@@ -335,6 +354,25 @@ func initLimitIterator() {
 					d.pos++
 				}
 				return nil, nil
+			}),
+		},
+		"__call": {
+			Name: "__call",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				d := getLimitIteratorData(o)
+				if d == nil || len(args) < 2 {
+					return phpv.ZNULL.ZVal(), nil
+				}
+				methodName := args[0].AsString(ctx)
+				callArgs := args[1].AsArray(ctx)
+				if callArgs == nil {
+					return d.inner.CallMethod(ctx, string(methodName))
+				}
+				var fwdArgs []*phpv.ZVal
+				for _, v := range callArgs.Iterate(ctx) {
+					fwdArgs = append(fwdArgs, v)
+				}
+				return d.inner.CallMethod(ctx, string(methodName), fwdArgs...)
 			}),
 		},
 	}
@@ -668,6 +706,25 @@ func initCachingIterator() {
 				}
 				d.cache.OffsetUnset(ctx, args[0].Value())
 				return nil, nil
+			}),
+		},
+		"__call": {
+			Name: "__call",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				d := getCachingIteratorData(o)
+				if d == nil || len(args) < 2 {
+					return phpv.ZNULL.ZVal(), nil
+				}
+				methodName := args[0].AsString(ctx)
+				callArgs := args[1].AsArray(ctx)
+				if callArgs == nil {
+					return d.inner.CallMethod(ctx, string(methodName))
+				}
+				var fwdArgs []*phpv.ZVal
+				for _, v := range callArgs.Iterate(ctx) {
+					fwdArgs = append(fwdArgs, v)
+				}
+				return d.inner.CallMethod(ctx, string(methodName), fwdArgs...)
 			}),
 		},
 	}
@@ -1220,12 +1277,13 @@ var RegexIteratorClass = &phpobj.ZClass{
 		{VarName: "replacement", Modifiers: phpv.ZAttrPublic}, // PHP has public $replacement
 	},
 	Const: map[phpv.ZString]*phpv.ZClassConst{
-		"MATCH":       {Value: phpv.ZInt(regexIteratorMatch)},
-		"GET_MATCH":   {Value: phpv.ZInt(regexIteratorGetMatch)},
-		"ALL_MATCHES": {Value: phpv.ZInt(regexIteratorAllMatches)},
-		"SPLIT":       {Value: phpv.ZInt(regexIteratorSplit)},
-		"REPLACE":     {Value: phpv.ZInt(regexIteratorReplace)},
-		"USE_KEY":     {Value: phpv.ZInt(regexIteratorUseKey)},
+		"MATCH":        {Value: phpv.ZInt(regexIteratorMatch)},
+		"GET_MATCH":    {Value: phpv.ZInt(regexIteratorGetMatch)},
+		"ALL_MATCHES":  {Value: phpv.ZInt(regexIteratorAllMatches)},
+		"SPLIT":        {Value: phpv.ZInt(regexIteratorSplit)},
+		"REPLACE":      {Value: phpv.ZInt(regexIteratorReplace)},
+		"USE_KEY":      {Value: phpv.ZInt(regexIteratorUseKey)},
+		"INVERT_MATCH": {Value: phpv.ZInt(2)},
 	},
 }
 
@@ -1855,9 +1913,10 @@ var RecursiveIteratorIteratorClass = &phpobj.ZClass{
 	Name:            "RecursiveIteratorIterator",
 	Implementations: []*phpobj.ZClass{OuterIterator},
 	Const: map[phpv.ZString]*phpv.ZClassConst{
-		"LEAVES_ONLY": {Value: phpv.ZInt(recursiveIteratorLeavesOnly)},
-		"SELF_FIRST":  {Value: phpv.ZInt(recursiveIteratorSelfFirst)},
-		"CHILD_FIRST": {Value: phpv.ZInt(recursiveIteratorChildFirst)},
+		"LEAVES_ONLY":   {Value: phpv.ZInt(recursiveIteratorLeavesOnly)},
+		"SELF_FIRST":    {Value: phpv.ZInt(recursiveIteratorSelfFirst)},
+		"CHILD_FIRST":   {Value: phpv.ZInt(recursiveIteratorChildFirst)},
+		"CATCH_GET_CHILD": {Value: phpv.ZInt(16)},
 	},
 }
 

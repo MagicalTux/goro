@@ -1457,13 +1457,23 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 		}
 		if len(unimplemented) > 0 {
 			displayName := c.GetName()
-			msg := fmt.Sprintf("Class %s contains %d abstract method", displayName, len(unimplemented))
-			if len(unimplemented) > 1 {
-				msg += "s"
-			}
-			msg += " and must therefore be declared abstract or implement the remaining method"
-			if len(unimplemented) > 1 {
-				msg += "s"
+			isAnon := strings.Contains(string(c.Name), "@anonymous")
+			var msg string
+			if isAnon {
+				// PHP 8.5: Anonymous classes use shorter "must implement" format since they can't be declared abstract
+				msg = fmt.Sprintf("Class %s must implement %d abstract method", displayName, len(unimplemented))
+				if len(unimplemented) > 1 {
+					msg += "s"
+				}
+			} else {
+				msg = fmt.Sprintf("Class %s contains %d abstract method", displayName, len(unimplemented))
+				if len(unimplemented) > 1 {
+					msg += "s"
+				}
+				msg += " and must therefore be declared abstract or implement the remaining method"
+				if len(unimplemented) > 1 {
+					msg += "s"
+				}
 			}
 			msg += " ("
 			for i, u := range unimplemented {

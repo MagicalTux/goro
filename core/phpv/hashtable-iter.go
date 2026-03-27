@@ -90,18 +90,32 @@ func (z *zhashtableIterator) Next(ctx Context) (*ZVal, error) {
 }
 
 func (z *zhashtableIterator) Prev(ctx Context) (*ZVal, error) {
-	for {
+	if z.cur == nil {
+		// Past end of array - go back to last element
+		z.cur = z.t.last
+		// Skip deleted entries
+		for z.cur != nil && z.cur.deleted {
+			z.cur = z.cur.prev
+		}
 		if z.cur == nil {
 			return nil, nil
 		}
-		if z.cur.deleted {
-			z.cur = z.cur.prev
-			continue
-		}
-		break
+		return z.cur.v, nil
+	}
+
+	for z.cur != nil && z.cur.deleted {
+		z.cur = z.cur.prev
+	}
+
+	if z.cur == nil {
+		return nil, nil
 	}
 
 	z.cur = z.cur.prev
+	// Skip deleted entries
+	for z.cur != nil && z.cur.deleted {
+		z.cur = z.cur.prev
+	}
 	if z.cur == nil {
 		return nil, nil
 	}

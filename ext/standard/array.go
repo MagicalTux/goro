@@ -2026,6 +2026,8 @@ func arrayRecursiveMerge(ctx phpv.Context, result, array *phpv.ZArray, depth ...
 		return phpobj.ThrowError(ctx, phpobj.Error, "Recursion detected")
 	}
 	for k, v := range array.Iterate(ctx) {
+		// Break references - array_merge_recursive does not preserve them
+		v = v.Dup()
 		if k.GetType() == phpv.ZtInt {
 			if err := result.OffsetSet(ctx, nil, v); err != nil {
 				if err == phpv.ErrNextElementOccupied {
