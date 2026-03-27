@@ -11,9 +11,10 @@ import (
 
 // arrayIteratorData holds the internal state for an ArrayIterator instance
 type arrayIteratorData struct {
-	array *phpv.ZArray
-	iter  phpv.ZIterator
-	flags phpv.ZInt
+	array        *phpv.ZArray
+	iter         phpv.ZIterator
+	flags        phpv.ZInt
+	objectBacked bool // true when constructed from an object (not an array)
 }
 
 func (d *arrayIteratorData) Clone() any {
@@ -109,6 +110,7 @@ func initArrayIterator() {
 						ctx.Deprecated("ArrayIterator::__construct(): Using an object as a backing array for ArrayIterator is deprecated, as it allows violating class constraints and invariants", logopt.NoFuncName(true))
 						// Extract public properties for iteration
 						obj := args[0].Value().(*phpobj.ZObject)
+						d.objectBacked = true
 						// Inherit flags from wrapped ArrayObject if flags not explicitly set
 						if len(args) <= 1 || args[1] == nil {
 							innerData := obj.GetOpaque(ArrayObjectClass)
@@ -306,6 +308,14 @@ func initArrayIterator() {
 				}
 				if len(args) < 1 {
 					return nil, nil
+				}
+				// Check if backed by an object (objectStorage flag)
+				// ArrayIterator doesn't have objectStorage field, but if flags indicate
+				// object backing, we should throw an error
+				// For now, check via the flag that gets set when constructing from object
+				if d.objectBacked {
+					return nil, phpobj.ThrowError(ctx, phpobj.Error,
+						"Cannot append properties to objects, use ArrayIterator::offsetSet() instead")
 				}
 				err := d.array.OffsetSet(ctx, nil, args[0])
 				return nil, err

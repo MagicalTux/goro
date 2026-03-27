@@ -154,7 +154,18 @@ func isOverloadedArrayAccess(obj *phpobj.ZObject) bool {
 
 // objectStorageGetArray builds a temporary array from the object's public properties
 // for operations that need array semantics (like sort, count, getArrayCopy).
+// For ArrayIterator/ArrayObject-backed objects, uses their internal array.
 func objectStorageGetArray(ctx phpv.Context, obj *phpobj.ZObject) *phpv.ZArray {
+	// Check if the object is an ArrayIterator - use its internal array
+	if aiData := getArrayIteratorData(obj); aiData != nil {
+		return aiData.array.Dup()
+	}
+	// Check if the object is an ArrayObject - use its internal array
+	if aoData := getArrayObjectData(obj); aoData != nil {
+		if aoData.array != nil {
+			return aoData.array.Dup()
+		}
+	}
 	arr := phpv.NewZArray()
 	for prop := range obj.IterProps(ctx) {
 		if prop.Modifiers.IsPublic() || (!prop.Modifiers.IsPrivate() && !prop.Modifiers.IsProtected()) {
@@ -295,7 +306,15 @@ func initArrayObject() {
 						"Cannot access offset of type array in isset or empty")
 				}
 				if d.objectStorage != nil {
-					// Check if the property exists in the object's hash table
+					// If the wrapped object implements ArrayAccess, delegate
+					if d.objectStorage != o && d.objectStorage.GetClass().Implements(phpobj.ArrayAccess) {
+						result, err := d.objectStorage.CallMethod(ctx, "offsetExists", args[0])
+						if err != nil {
+							return phpv.ZFalse.ZVal(), nil
+						}
+						return result, nil
+					}
+					// For plain objects, check the hash table directly
 					key := args[0].AsString(ctx)
 					v := d.objectStorage.HashTable().GetString(key)
 					return phpv.ZBool(v != nil).ZVal(), nil
@@ -322,7 +341,11 @@ func initArrayObject() {
 						"Cannot access offset of type array on ArrayObject")
 				}
 				if d.objectStorage != nil {
-					// Access the object's hash table directly (bypasses hooks/magic)
+					// If the wrapped object implements ArrayAccess, delegate
+					if d.objectStorage != o && d.objectStorage.GetClass().Implements(phpobj.ArrayAccess) {
+						return d.objectStorage.CallMethod(ctx, "offsetGet", args[0])
+					}
+					// For plain objects, access the hash table directly (bypasses hooks/magic)
 					key := args[0].AsString(ctx)
 					v := d.objectStorage.HashTable().GetString(key)
 					if v == nil {
@@ -351,7 +374,12 @@ func initArrayObject() {
 						"Cannot access offset of type array on ArrayObject")
 				}
 				if d.objectStorage != nil {
-					// Write directly to the object's hash table, bypassing magic methods and hooks
+					// If the wrapped object implements ArrayAccess, delegate
+					if d.objectStorage != o && d.objectStorage.GetClass().Implements(phpobj.ArrayAccess) {
+						_, err := d.objectStorage.CallMethod(ctx, "offsetSet", key, value)
+						return nil, err
+					}
+					// For plain objects, write directly to the hash table (bypasses magic)
 					keyStr := key.AsString(ctx)
 					return nil, d.objectStorage.HashTable().SetString(keyStr, value)
 				}
@@ -379,7 +407,12 @@ func initArrayObject() {
 						"Cannot unset offset of type array on ArrayObject")
 				}
 				if d.objectStorage != nil {
-					// Unset the property directly from the object's hash table
+					// If the wrapped object implements ArrayAccess, delegate
+					if d.objectStorage != o && d.objectStorage.GetClass().Implements(phpobj.ArrayAccess) {
+						_, err := d.objectStorage.CallMethod(ctx, "offsetUnset", args[0])
+						return nil, err
+					}
+					// For plain objects, unset directly from the hash table
 					keyStr := args[0].AsString(ctx)
 					d.objectStorage.HashTable().UnsetString(keyStr)
 					return nil, nil
@@ -1037,7 +1070,8 @@ func initArrayObject() {
 				if d.flags&ArrayObjectARRAY_AS_PROPS != 0 {
 					if d.objectStorage != nil {
 						keyStr := args[0].AsString(ctx)
-						return nil, d.objectStorage.ObjectSet(ctx, keyStr, nil)
+						d.objectStorage.HashTable().UnsetString(keyStr)
+						return nil, nil
 					}
 					return nil, d.array.OffsetUnset(ctx, args[0])
 				}

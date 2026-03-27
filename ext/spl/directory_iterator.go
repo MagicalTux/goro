@@ -316,7 +316,10 @@ func diGetBasename(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*php
 
 func diToString(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	d := getDIData(o)
-	if d == nil || d.pos >= len(d.entries) {
+	if d == nil {
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, "Object not initialized")
+	}
+	if d.pos >= len(d.entries) {
 		return phpv.ZStr(""), nil
 	}
 	return phpv.ZStr(d.entries[d.pos].Name()), nil

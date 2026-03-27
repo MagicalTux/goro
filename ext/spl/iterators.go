@@ -7,6 +7,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
@@ -1409,6 +1410,7 @@ var RegexIteratorClass = &phpobj.ZClass{
 type recursiveArrayIteratorData struct {
 	array *phpv.ZArray
 	iter  phpv.ZIterator
+	flags phpv.ZInt
 }
 
 func (d *recursiveArrayIteratorData) Clone() any {
@@ -1443,15 +1445,41 @@ func initRecursiveArrayIterator() {
 		},
 	}
 
+	RecursiveArrayIteratorClass.Const = map[phpv.ZString]*phpv.ZClassConst{
+		"CHILD_ARRAYS_ONLY": {Value: phpv.ZInt(4)},
+		"STD_PROP_LIST":     {Value: phpv.ZInt(1)},
+		"ARRAY_AS_PROPS":    {Value: phpv.ZInt(2)},
+	}
+
 	RecursiveArrayIteratorClass.Methods = map[phpv.ZString]*phpv.ZClassMethod{
 		"__construct": {
 			Name: "__construct",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				d := &recursiveArrayIteratorData{}
-				if len(args) > 0 && args[0] != nil && args[0].GetType() == phpv.ZtArray {
-					d.array = args[0].Value().(*phpv.ZArray).Dup()
+				if len(args) > 0 && args[0] != nil {
+					switch args[0].GetType() {
+					case phpv.ZtArray:
+						d.array = args[0].Value().(*phpv.ZArray).Dup()
+					case phpv.ZtObject:
+						// Emit deprecation for object backing
+						ctx.Deprecated("ArrayIterator::__construct(): Using an object as a backing array for ArrayIterator is deprecated, as it allows violating class constraints and invariants", logopt.NoFuncName(true))
+						obj := args[0].Value().(*phpobj.ZObject)
+						arr := phpv.NewZArray()
+						for prop := range obj.IterProps(ctx) {
+							if prop.Modifiers.IsPublic() || (!prop.Modifiers.IsPrivate() && !prop.Modifiers.IsProtected()) {
+								v := obj.GetPropValue(prop)
+								arr.OffsetSet(ctx, prop.VarName.ZVal(), v)
+							}
+						}
+						d.array = arr
+					default:
+						d.array = phpv.NewZArray()
+					}
 				} else {
 					d.array = phpv.NewZArray()
+				}
+				if len(args) > 1 && args[1] != nil {
+					d.flags = args[1].AsInt(ctx)
 				}
 				d.iter = d.array.NewIterator()
 				o.SetOpaque(RecursiveArrayIteratorClass, d)
@@ -1521,7 +1549,14 @@ func initRecursiveArrayIterator() {
 				if err != nil {
 					return phpv.ZFalse.ZVal(), nil
 				}
-				return phpv.ZBool(v.GetType() == phpv.ZtArray).ZVal(), nil
+				if v.GetType() == phpv.ZtArray {
+					return phpv.ZTrue.ZVal(), nil
+				}
+				// Objects are considered children unless CHILD_ARRAYS_ONLY is set
+				if v.GetType() == phpv.ZtObject && d.flags&4 == 0 {
+					return phpv.ZTrue.ZVal(), nil
+				}
+				return phpv.ZFalse.ZVal(), nil
 			}),
 		},
 		"getchildren": {
@@ -1535,14 +1570,26 @@ func initRecursiveArrayIterator() {
 				if err != nil {
 					return phpv.ZNULL.ZVal(), nil
 				}
-				if v.GetType() != phpv.ZtArray {
+				switch v.GetType() {
+				case phpv.ZtArray:
+					child, err := phpobj.NewZObject(ctx, RecursiveArrayIteratorClass, v, d.flags.ZVal())
+					if err != nil {
+						return phpv.ZNULL.ZVal(), err
+					}
+					return child.ZVal(), nil
+				case phpv.ZtObject:
+					if d.flags&4 == 0 {
+						// Wrap object in a new RecursiveArrayIterator
+						child, err := phpobj.NewZObject(ctx, RecursiveArrayIteratorClass, v, d.flags.ZVal())
+						if err != nil {
+							return phpv.ZNULL.ZVal(), err
+						}
+						return child.ZVal(), nil
+					}
+					return phpv.ZNULL.ZVal(), nil
+				default:
 					return phpv.ZNULL.ZVal(), nil
 				}
-				child, err := phpobj.NewZObject(ctx, RecursiveArrayIteratorClass, v)
-				if err != nil {
-					return phpv.ZNULL.ZVal(), err
-				}
-				return child.ZVal(), nil
 			}),
 		},
 		"count": {

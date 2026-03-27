@@ -168,7 +168,10 @@ func sfiGetRealPath(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*ph
 
 func sfiGetSize(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	d := getSFIData(o)
-	if d == nil || d.info == nil {
+	if d == nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+	if d.info == nil {
 		return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException,
 			fmt.Sprintf("SplFileInfo::getSize(): stat failed for %s", sfiPathOrEmpty(d)))
 	}
@@ -177,7 +180,10 @@ func sfiGetSize(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.Z
 
 func sfiGetType(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	d := getSFIData(o)
-	if d == nil || d.info == nil {
+	if d == nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+	if d.info == nil {
 		return phpv.ZStr("unknown"), nil
 	}
 	// Check for symlink using Lstat
@@ -249,7 +255,10 @@ func sfiIsExecutable(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*p
 
 func sfiGetATime(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	d := getSFIData(o)
-	if d == nil || d.info == nil {
+	if d == nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+	if d.info == nil {
 		return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException,
 			fmt.Sprintf("SplFileInfo::getATime(): stat failed for %s", sfiPathOrEmpty(d)))
 	}
@@ -258,7 +267,10 @@ func sfiGetATime(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.
 
 func sfiGetMTime(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	d := getSFIData(o)
-	if d == nil || d.info == nil {
+	if d == nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+	if d.info == nil {
 		return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException,
 			fmt.Sprintf("SplFileInfo::getMTime(): stat failed for %s", sfiPathOrEmpty(d)))
 	}
@@ -267,7 +279,10 @@ func sfiGetMTime(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.
 
 func sfiGetCTime(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	d := getSFIData(o)
-	if d == nil || d.info == nil {
+	if d == nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+	if d.info == nil {
 		return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException,
 			fmt.Sprintf("SplFileInfo::getCTime(): stat failed for %s", sfiPathOrEmpty(d)))
 	}
@@ -276,7 +291,10 @@ func sfiGetCTime(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.
 
 func sfiGetPerms(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	d := getSFIData(o)
-	if d == nil || d.info == nil {
+	if d == nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+	if d.info == nil {
 		return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException,
 			fmt.Sprintf("SplFileInfo::getPerms(): stat failed for %s", sfiPathOrEmpty(d)))
 	}
@@ -290,7 +308,10 @@ func sfiGetPerms(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.
 
 func sfiGetInode(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	d := getSFIData(o)
-	if d == nil || d.info == nil {
+	if d == nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+	if d.info == nil {
 		return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException,
 			fmt.Sprintf("SplFileInfo::getInode(): stat failed for %s", sfiPathOrEmpty(d)))
 	}
@@ -303,7 +324,10 @@ func sfiGetInode(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.
 
 func sfiGetOwner(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	d := getSFIData(o)
-	if d == nil || d.info == nil {
+	if d == nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+	if d.info == nil {
 		return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException,
 			fmt.Sprintf("SplFileInfo::getOwner(): stat failed for %s", sfiPathOrEmpty(d)))
 	}
@@ -316,7 +340,10 @@ func sfiGetOwner(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.
 
 func sfiGetGroup(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	d := getSFIData(o)
-	if d == nil || d.info == nil {
+	if d == nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+	if d.info == nil {
 		return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException,
 			fmt.Sprintf("SplFileInfo::getGroup(): stat failed for %s", sfiPathOrEmpty(d)))
 	}
@@ -330,8 +357,7 @@ func sfiGetGroup(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.
 func sfiGetLinkTarget(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	d := getSFIData(o)
 	if d == nil {
-		return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException,
-			"SplFileInfo::getLinkTarget(): Empty filename")
+		return phpv.ZFalse.ZVal(), nil
 	}
 	target, err := os.Readlink(sfiResolved(d))
 	if err != nil {
