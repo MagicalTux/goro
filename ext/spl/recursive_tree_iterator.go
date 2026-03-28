@@ -1,6 +1,8 @@
 package spl
 
 import (
+	"fmt"
+
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
@@ -130,6 +132,13 @@ func initRecursiveTreeIterator() {
 							inner = io
 						}
 					}
+				}
+
+				// PHP wraps the inner iterator in RecursiveCachingIterator.
+				// The RecursiveCachingIterator constructor requires RecursiveIterator.
+				if !inner.GetClass().Implements(RecursiveIterator) {
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+						fmt.Sprintf("RecursiveCachingIterator::__construct(): Argument #1 ($iterator) must be of type RecursiveIterator, %s given", inner.GetClass().GetName()))
 				}
 
 				// Set up parent RecursiveIteratorIterator data

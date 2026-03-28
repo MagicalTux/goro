@@ -433,9 +433,7 @@ func initPriorityQueue() {
 				return invalidErr()
 			}
 			memberArr := memberVal.AsArray(ctx)
-			for k, v := range memberArr.Iterate(ctx) {
-				o.ObjectSet(ctx, k, v)
-			}
+			restoreMemberProperties(ctx, o, memberArr)
 
 			internalVal, err := arr.OffsetGet(ctx, phpv.ZInt(1).ZVal())
 			if err != nil || internalVal == nil || internalVal.GetType() != phpv.ZtArray {

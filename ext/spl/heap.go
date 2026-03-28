@@ -407,9 +407,7 @@ func initSplHeap() {
 				return invalidErr()
 			}
 			memberArr := memberVal.AsArray(ctx)
-			for k, v := range memberArr.Iterate(ctx) {
-				o.ObjectSet(ctx, k, v)
-			}
+			restoreMemberProperties(ctx, o, memberArr)
 
 			// Key 1: internal data - must be an array
 			internalVal, err := arr.OffsetGet(ctx, phpv.ZInt(1).ZVal())

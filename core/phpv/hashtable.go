@@ -331,9 +331,13 @@ func (z *ZHashTable) SetString(k ZString, v *ZVal) error {
 		z.last = nt
 		return nil
 	}
+	pastEnd := z.mainIterator.cur == nil
 	z.last.next = nt
 	nt.prev = z.last
 	z.last = nt
+	if pastEnd {
+		z.mainIterator.cur = nt
+	}
 	return nil
 }
 
@@ -477,9 +481,14 @@ func (z *ZHashTable) SetInt(k ZInt, v *ZVal) error {
 		z.last = nt
 		return nil
 	}
+	// If the mainIterator is past the end, update it to the new element
+	pastEnd := z.mainIterator.cur == nil
 	z.last.next = nt
 	nt.prev = z.last
 	z.last = nt
+	if pastEnd {
+		z.mainIterator.cur = nt
+	}
 	return nil
 }
 
@@ -608,9 +617,13 @@ func (z *ZHashTable) Append(v *ZVal) error {
 		z.last = nt
 		return nil
 	}
+	pastEnd := z.mainIterator.cur == nil
 	z.last.next = nt
 	nt.prev = z.last
 	z.last = nt
+	if pastEnd {
+		z.mainIterator.cur = nt
+	}
 	return nil
 }
 

@@ -138,7 +138,15 @@ func sfiGetBasename(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*ph
 	if err != nil {
 		return nil, err
 	}
-	base := filepath.Base(d.path)
+	// PHP's getBasename: strip trailing slashes, then get last component
+	// For paths like "///", PHP returns ""
+	p := strings.TrimRight(d.path, "/\\")
+	var base string
+	if p == "" {
+		base = ""
+	} else {
+		base = filepath.Base(p)
+	}
 	if len(args) > 0 && args[0] != nil {
 		suffix := string(args[0].AsString(ctx))
 		// PHP: suffix is only stripped if the result would be non-empty

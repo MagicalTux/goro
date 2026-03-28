@@ -1524,9 +1524,12 @@ func (d *regexIteratorData) accept(ctx phpv.Context, obj ...*phpobj.ZObject) boo
 	case regexIteratorGetMatch:
 		matches := re.FindStringSubmatch(subject)
 		if matches == nil {
+			// No match - set empty result (matching PHP behavior)
+			d.currentResult = phpv.NewZArray().ZVal()
 			return invertMatch
 		}
 		if invertMatch {
+			d.currentResult = phpv.NewZArray().ZVal()
 			return false
 		}
 		// Build result array
@@ -1539,14 +1542,9 @@ func (d *regexIteratorData) accept(ctx phpv.Context, obj ...*phpobj.ZObject) boo
 
 	case regexIteratorAllMatches:
 		allMatches := re.FindAllStringSubmatch(subject, -1)
-		if len(allMatches) == 0 {
-			return invertMatch
-		}
-		if invertMatch {
-			return false
-		}
-		// Build result as array of arrays (transposed: by capture group)
-		numGroups := len(allMatches[0])
+		// Always build the result array (matching PHP's preg_match_all behavior)
+		// Even when no matches, create empty sub-arrays for each capture group
+		numGroups := 1 + re.NumSubexp()
 		result := phpv.NewZArray()
 		for g := 0; g < numGroups; g++ {
 			groupArr := phpv.NewZArray()
@@ -1558,6 +1556,12 @@ func (d *regexIteratorData) accept(ctx phpv.Context, obj ...*phpobj.ZObject) boo
 			result.OffsetSet(ctx, phpv.ZInt(g), groupArr.ZVal())
 		}
 		d.currentResult = result.ZVal()
+		if len(allMatches) == 0 {
+			return invertMatch
+		}
+		if invertMatch {
+			return false
+		}
 		return true
 
 	case regexIteratorSplit:
@@ -1567,6 +1571,10 @@ func (d *regexIteratorData) accept(ctx phpv.Context, obj ...*phpobj.ZObject) boo
 			matched = !matched
 		}
 		if !matched {
+			// Set result to array with just the subject (matching PHP preg_split behavior for no match)
+			noMatchResult := phpv.NewZArray()
+			noMatchResult.OffsetSet(ctx, phpv.ZInt(0), phpv.ZString(subject).ZVal())
+			d.currentResult = noMatchResult.ZVal()
 			return false
 		}
 		parts := re.Split(subject, -1)
@@ -2035,7 +2043,17 @@ func initRecursiveIteratorIterator() {
 						return nil, phpobj.ThrowError(ctx, phpobj.LogicException,
 							fmt.Sprintf("%s::getIterator() must return an object that implements Traversable", inner.GetClass().GetName()))
 					}
+					// Check if the resulting iterator implements RecursiveIterator
+					if !io.GetClass().Implements(RecursiveIterator) {
+						return nil, phpobj.ThrowError(ctx, phpobj.InvalidArgumentException,
+							"An instance of RecursiveIterator or IteratorAggregate creating it is required")
+					}
 					inner = io
+				}
+				// Also check non-IteratorAggregate case
+				if !inner.GetClass().Implements(RecursiveIterator) && !inner.GetClass().Implements(phpobj.IteratorAggregate) {
+					return nil, phpobj.ThrowError(ctx, phpobj.InvalidArgumentException,
+						"An instance of RecursiveIterator or IteratorAggregate creating it is required")
 				}
 				d := &recursiveIteratorIteratorData{
 					stack:         []*phpobj.ZObject{inner},
@@ -2053,7 +2071,7 @@ func initRecursiveIteratorIterator() {
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				d := getRecursiveIteratorIteratorData(o)
 				if d == nil {
-					return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("The %s instance wasn't initialized properly", o.GetClass().GetName()))
+					return nil, phpobj.ThrowError(ctx, phpobj.Error, "Object is not initialized")
 				}
 				if len(d.stack) == 0 {
 					return nil, nil
@@ -2080,6 +2098,9 @@ func initRecursiveIteratorIterator() {
 				if v != nil && bool(v.AsBool(ctx)) {
 					_, err = o.Unwrap().(*phpobj.ZObject).CallMethod(ctx, "nextElement")
 					if err != nil {
+						if d.catchGetChild {
+							return nil, nil
+						}
 						return nil, err
 					}
 				}
@@ -2124,6 +2145,10 @@ func initRecursiveIteratorIterator() {
 				if v != nil && bool(v.AsBool(ctx)) {
 					_, err = o.Unwrap().(*phpobj.ZObject).CallMethod(ctx, "nextElement")
 					if err != nil {
+						if d.catchGetChild {
+							// CATCH_GET_CHILD catches exceptions from hooks
+							return nil, nil
+						}
 						return nil, err
 					}
 				}
@@ -2150,6 +2175,34 @@ func initRecursiveIteratorIterator() {
 					}
 				}
 				return v, nil
+			}),
+		},
+		"seek": {
+			Name: "seek",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				if len(args) == 0 {
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "RecursiveIteratorIterator::seek() expects exactly 1 argument, 0 given")
+				}
+				position := int(args[0].AsInt(ctx))
+				// Rewind first
+				_, err := o.CallMethod(ctx, "rewind")
+				if err != nil {
+					return nil, err
+				}
+				for i := 0; i < position; i++ {
+					v, err := o.CallMethod(ctx, "valid")
+					if err != nil {
+						return nil, err
+					}
+					if !bool(v.AsBool(ctx)) {
+						return nil, phpobj.ThrowError(ctx, phpobj.OutOfBoundsException, fmt.Sprintf("Seek position %d is out of range", position))
+					}
+					_, err = o.CallMethod(ctx, "next")
+					if err != nil {
+						return nil, err
+					}
+				}
+				return nil, nil
 			}),
 		},
 		"getdepth": {
