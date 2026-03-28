@@ -17,11 +17,34 @@ import (
 // ============================================================================
 
 type iteratorIteratorData struct {
-	inner *phpobj.ZObject
+	inner      *phpobj.ZObject
+	currentVal *phpv.ZVal
+	currentKey *phpv.ZVal
+	valid      bool
 }
 
 func (d *iteratorIteratorData) Clone() any {
-	return &iteratorIteratorData{inner: d.inner}
+	return &iteratorIteratorData{
+		inner:      d.inner,
+		currentVal: d.currentVal,
+		currentKey: d.currentKey,
+		valid:      d.valid,
+	}
+}
+
+// iteratorIteratorFetchCache fetches current and key from the inner iterator and caches them.
+// This matches PHP's C-level behavior where IteratorIterator caches these values during rewind/next.
+func iteratorIteratorFetchCache(ctx phpv.Context, d *iteratorIteratorData) {
+	v, err := d.inner.CallMethod(ctx, "valid")
+	if err != nil || !bool(v.AsBool(ctx)) {
+		d.valid = false
+		d.currentVal = nil
+		d.currentKey = nil
+		return
+	}
+	d.valid = true
+	d.currentVal, _ = d.inner.CallMethod(ctx, "current")
+	d.currentKey, _ = d.inner.CallMethod(ctx, "key")
 }
 
 func getIteratorIteratorData(o *phpobj.ZObject, class *phpobj.ZClass) *iteratorIteratorData {
@@ -69,10 +92,18 @@ func initIteratorIterator() {
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				d := getIteratorIteratorData(o, IteratorIteratorClass)
 				if d == nil {
-					return nil, nil
+					return nil, phpobj.ThrowError(ctx, phpobj.Error, "The object is in an invalid state as the parent constructor was not called")
 				}
 				_, err := d.inner.CallMethod(ctx, "rewind")
-				return nil, err
+				if err != nil {
+					d.valid = false
+					d.currentVal = nil
+					d.currentKey = nil
+					return nil, err
+				}
+				// Cache current/key from inner (matches PHP C behavior)
+				iteratorIteratorFetchCache(ctx, d)
+				return nil, nil
 			}),
 		},
 		"current": {
@@ -82,7 +113,10 @@ func initIteratorIterator() {
 				if d == nil {
 					return phpv.ZFalse.ZVal(), nil
 				}
-				return d.inner.CallMethod(ctx, "current")
+				if d.currentVal == nil {
+					return phpv.ZNULL.ZVal(), nil
+				}
+				return d.currentVal, nil
 			}),
 		},
 		"key": {
@@ -92,7 +126,10 @@ func initIteratorIterator() {
 				if d == nil {
 					return phpv.ZNULL.ZVal(), nil
 				}
-				return d.inner.CallMethod(ctx, "key")
+				if d.currentKey == nil {
+					return phpv.ZNULL.ZVal(), nil
+				}
+				return d.currentKey, nil
 			}),
 		},
 		"next": {
@@ -103,7 +140,15 @@ func initIteratorIterator() {
 					return nil, nil
 				}
 				_, err := d.inner.CallMethod(ctx, "next")
-				return nil, err
+				if err != nil {
+					d.valid = false
+					d.currentVal = nil
+					d.currentKey = nil
+					return nil, err
+				}
+				// Cache current/key from inner (matches PHP C behavior)
+				iteratorIteratorFetchCache(ctx, d)
+				return nil, nil
 			}),
 		},
 		"valid": {
@@ -113,11 +158,7 @@ func initIteratorIterator() {
 				if d == nil {
 					return phpv.ZFalse.ZVal(), nil
 				}
-				v, err := d.inner.CallMethod(ctx, "valid")
-				if err != nil {
-					return phpv.ZFalse.ZVal(), err
-				}
-				return v, nil
+				return phpv.ZBool(d.valid).ZVal(), nil
 			}),
 		},
 		"getinneriterator": {
@@ -231,7 +272,7 @@ func initLimitIterator() {
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				d := getLimitIteratorData(o)
 				if d == nil {
-					return nil, nil
+					return nil, phpobj.ThrowError(ctx, phpobj.Error, "The object is in an invalid state as the parent constructor was not called")
 				}
 				_, err := d.inner.CallMethod(ctx, "rewind")
 				if err != nil {
@@ -371,9 +412,18 @@ func initLimitIterator() {
 }
 
 // limitIteratorSeekTo seeks the inner iterator to the given position.
-// It advances from current position d.pos to target, calling next/valid on inner.
-// After reaching target, it calls valid one final time (matching PHP behavior).
+// If the inner implements SeekableIterator, it uses seek() directly.
+// Otherwise, it advances from current position d.pos to target, calling next/valid on inner.
 func limitIteratorSeekTo(ctx phpv.Context, d *limitIteratorData, target int) error {
+	// Check if inner implements SeekableIterator - use seek() if so
+	if d.inner.GetClass().Implements(SeekableIterator) {
+		_, err := d.inner.CallMethod(ctx, "seek", phpv.ZInt(target).ZVal())
+		if err != nil {
+			return err
+		}
+		d.pos = target
+		return nil
+	}
 	for d.pos < target {
 		v, err := d.inner.CallMethod(ctx, "valid")
 		if err != nil {
@@ -449,7 +499,7 @@ func initCachingIterator() {
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				if len(args) == 0 {
 					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
-						fmt.Sprintf("%s::__construct() expects at least 1 argument, 0 given", o.GetClass().GetName()))
+						"CachingIterator::__construct() expects at least 1 argument, 0 given")
 				}
 				if args[0] == nil || args[0].GetType() != phpv.ZtObject {
 					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "CachingIterator::__construct(): Argument #1 ($iterator) must be of type Iterator")
@@ -487,7 +537,7 @@ func initCachingIterator() {
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				d := getCachingIteratorData(o)
 				if d == nil {
-					return nil, nil
+					return nil, phpobj.ThrowError(ctx, phpobj.Error, "The object is in an invalid state as the parent constructor was not called")
 				}
 				_, err := d.inner.CallMethod(ctx, "rewind")
 				if err != nil {
@@ -836,7 +886,7 @@ func initAppendIterator() {
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				d := getAppendIteratorData(o)
 				if d == nil {
-					return nil, nil
+					return nil, phpobj.ThrowError(ctx, phpobj.Error, "The object is in an invalid state as the parent constructor was not called")
 				}
 				if len(args) == 0 || args[0] == nil || args[0].GetType() != phpv.ZtObject {
 					typeName := "null"
@@ -860,7 +910,7 @@ func initAppendIterator() {
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				d := getAppendIteratorData(o)
 				if d == nil {
-					return nil, nil
+					return nil, phpobj.ThrowError(ctx, phpobj.Error, "The object is in an invalid state as the parent constructor was not called")
 				}
 				d.current = 0
 				if len(d.iterators) > 0 {
@@ -1054,7 +1104,7 @@ func initRegexIterator() {
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				d := getRegexIteratorData(o)
 				if d == nil {
-					return nil, nil
+					return nil, phpobj.ThrowError(ctx, phpobj.Error, "The object is in an invalid state as the parent constructor was not called")
 				}
 				_, err := d.inner.CallMethod(ctx, "rewind")
 				if err != nil {
@@ -2511,7 +2561,7 @@ func initNoRewindIterator() {
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				d := getNoRewindIteratorData(o)
 				if d == nil {
-					return phpv.ZFalse.ZVal(), nil
+					return nil, phpobj.ThrowError(ctx, phpobj.Error, "The object is in an invalid state as the parent constructor was not called")
 				}
 				return d.inner.CallMethod(ctx, "valid")
 			}),
@@ -3183,7 +3233,7 @@ func initFilterIterator() {
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				d := getFilterIteratorData(o)
 				if d == nil {
-					return nil, nil
+					return nil, phpobj.ThrowError(ctx, phpobj.Error, "The object is in an invalid state as the parent constructor was not called")
 				}
 				_, err := d.inner.CallMethod(ctx, "rewind")
 				if err != nil {
@@ -3276,7 +3326,7 @@ func initRecursiveFilterIterator() {
 		Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			d := getFilterIteratorData(o)
 			if d == nil {
-				return phpv.ZFalse.ZVal(), nil
+				return nil, phpobj.ThrowError(ctx, phpobj.Error, "The object is in an invalid state as the parent constructor was not called")
 			}
 			return d.inner.CallMethod(ctx, "hasChildren")
 		}),
@@ -3320,6 +3370,44 @@ func initRecursiveCachingIterator() {
 	RecursiveCachingIteratorClass.Methods = make(map[phpv.ZString]*phpv.ZClassMethod)
 	for k, v := range CachingIteratorClass.Methods {
 		RecursiveCachingIteratorClass.Methods[k] = v
+	}
+	// Override __construct to use the correct class name in error messages
+	RecursiveCachingIteratorClass.Methods["__construct"] = &phpv.ZClassMethod{
+		Name: "__construct",
+		Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+			if len(args) == 0 {
+				return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+					"RecursiveCachingIterator::__construct() expects at least 1 argument, 0 given")
+			}
+			if args[0] == nil || args[0].GetType() != phpv.ZtObject {
+				return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "RecursiveCachingIterator::__construct(): Argument #1 ($iterator) must be of type Iterator")
+			}
+			inner, ok := args[0].Value().(*phpobj.ZObject)
+			if !ok {
+				return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "RecursiveCachingIterator::__construct(): Argument #1 ($iterator) must be of type Iterator")
+			}
+			flags := cachingIteratorCallToString
+			if len(args) > 1 {
+				flags = int(args[1].AsInt(ctx))
+			}
+			toStringFlags := flags & (cachingIteratorCallToString | cachingIteratorToStringUseKey | cachingIteratorToStringUseCurrent | cachingIteratorToStringUseInner)
+			bitCount := 0
+			for tf := toStringFlags; tf != 0; tf &= tf - 1 {
+				bitCount++
+			}
+			if bitCount > 1 {
+				return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+					"RecursiveCachingIterator::__construct(): Argument #2 ($flags) must contain only one of CachingIterator::CALL_TOSTRING, CachingIterator::TOSTRING_USE_KEY, CachingIterator::TOSTRING_USE_CURRENT, or CachingIterator::TOSTRING_USE_INNER")
+			}
+			o.SetOpaque(CachingIteratorClass, &cachingIteratorData{
+				inner:   inner,
+				flags:   flags,
+				hasNext: false,
+				started: false,
+				cache:   phpv.NewZArray(),
+			})
+			return nil, nil
+		}),
 	}
 	// Add recursive methods
 	RecursiveCachingIteratorClass.Methods["haschildren"] = &phpv.ZClassMethod{
@@ -3378,7 +3466,7 @@ func initRecursiveRegexIterator() {
 		Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			d := getRegexIteratorData(o)
 			if d == nil {
-				return phpv.ZFalse.ZVal(), nil
+				return nil, phpobj.ThrowError(ctx, phpobj.Error, "The object is in an invalid state as the parent constructor was not called")
 			}
 			return d.inner.CallMethod(ctx, "hasChildren")
 		}),
@@ -3493,7 +3581,7 @@ func initParentIterator() {
 		Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			d := getFilterIteratorData(o)
 			if d == nil {
-				return phpv.ZFalse.ZVal(), nil
+				return nil, phpobj.ThrowError(ctx, phpobj.Error, "The object is in an invalid state as the parent constructor was not called")
 			}
 			return d.inner.CallMethod(ctx, "hasChildren")
 		}),

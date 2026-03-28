@@ -404,7 +404,26 @@ func checkExistence(ctx phpv.Context, v phpv.Runnable, subExpr bool) (bool, erro
 			}
 		}
 
-		return arr.OffsetExists(ctx, key)
+		// For objects with HandleIssetDim (like ArrayObject), use the special handler
+		// which checks for null values (PHP's has_dimension with isset mode).
+		if value.GetType() == phpv.ZtObject {
+			if obj, ok := value.Value().(*phpobj.ZObject); ok {
+				if h := phpobj.FindIssetDimHandler(obj.GetClass()); h != nil {
+					return h(ctx, obj, key)
+				}
+			}
+		}
+		// For arrays (and any ZArrayAccess), isset checks both key existence
+		// AND that the value is not null.
+		exists, existsErr := arr.OffsetExists(ctx, key)
+		if !exists || existsErr != nil {
+			return false, existsErr
+		}
+		val, valErr := arr.OffsetGet(ctx, key)
+		if valErr != nil {
+			return false, nil
+		}
+		return val != nil && !phpv.IsNull(val), nil
 
 	case *runObjectVar:
 		exists, err := checkExistence(ctx, t.ref, true)

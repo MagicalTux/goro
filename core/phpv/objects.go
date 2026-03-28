@@ -108,6 +108,10 @@ type ZClassHandlers struct {
 	HandleCast       func(ctx Context, o ZObject, t ZType) (Val, error)          // override type casting (int, float, bool)
 	HandleDoOperation func(ctx Context, op int, a, b *ZVal) (*ZVal, error)       // override arithmetic/bitwise operators; op is tokenizer.ItemType
 	HandleForeachByRef func(ctx Context, o ZObject) (*ZArray, error)            // provide internal array for foreach by-reference (e.g., ArrayObject/ArrayIterator)
+	// HandleIssetDim overrides isset($obj[$key]) behavior. Return true if the key exists
+	// and the value is considered "set" (not null). Only called for isset(), not for direct
+	// offsetExists() calls.
+	HandleIssetDim func(ctx Context, o ZObject, key *ZVal) (bool, error)
 	// HandlePropGet intercepts property read access before __get. Return (nil, nil) to fall through to normal handling.
 	HandlePropGet   func(ctx Context, o ZObject, key ZString) (*ZVal, error)
 	// HandlePropSet intercepts property write access before __set. Return false to fall through to normal handling.

@@ -251,6 +251,34 @@ func initArrayObject() {
 			}
 			return nil, nil
 		},
+		// Override isset($ao[$key]) to check for null (PHP behavior for ArrayObject)
+		HandleIssetDim: func(ctx phpv.Context, o phpv.ZObject, key *phpv.ZVal) (bool, error) {
+			zo := o.(*phpobj.ZObject)
+			d := getArrayObjectData(zo)
+			if d == nil {
+				return false, nil
+			}
+			if d.objectStorage != nil {
+				keyStr := key.AsString(ctx)
+				v, ok := d.objectStorage.HashTable().GetStringB(keyStr)
+				if !ok {
+					return false, nil
+				}
+				return v != nil && !v.IsNull(), nil
+			}
+			if d.array == nil {
+				return false, nil
+			}
+			exists, err := d.array.OffsetExists(ctx, key)
+			if err != nil || !exists {
+				return false, err
+			}
+			val, err := d.array.OffsetGet(ctx, key)
+			if err != nil {
+				return false, err
+			}
+			return val != nil && !val.IsNull(), nil
+		},
 		// Intercept property access for ARRAY_AS_PROPS support.
 		// These handlers fire before __get/__set/__isset/__unset, so subclasses
 		// that override those magic methods do NOT have them called when ARRAY_AS_PROPS is set.
@@ -598,9 +626,8 @@ func initArrayObject() {
 					return nil, phpobj.ThrowError(ctx, phpobj.Error,
 						"Cannot append properties to objects, use ArrayObject::offsetSet() instead")
 				}
-				// Call offsetSet(null, value) through the object so that overridden
-				// offsetSet in subclasses is properly invoked.
-				_, err := o.CallMethod(ctx, "offsetSet", phpv.ZNULL.ZVal(), args[0])
+				// Directly append to the array (PHP's append does not call offsetSet)
+				err := d.array.OffsetSet(ctx, nil, args[0])
 				return nil, err
 			}),
 		},

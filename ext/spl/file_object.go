@@ -283,12 +283,39 @@ func sfoConstruct(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv
 		return nil, nil
 	}
 
+	// Check for include_path usage (3rd argument)
+	useIncludePath := false
+	if len(args) > 2 && args[2] != nil {
+		useIncludePath = args[2].AsBool(ctx) == true
+	}
+
 	// Resolve relative paths against PHP CWD
 	resolvedPath := path
 	if !filepath.IsAbs(resolvedPath) && !strings.Contains(path, "://") {
 		cwd := string(ctx.Global().Getwd())
 		if cwd != "" {
 			resolvedPath = filepath.Join(cwd, resolvedPath)
+		}
+		// If useIncludePath is set and the file doesn't exist at the resolved path,
+		// search the include_path directories
+		if useIncludePath {
+			if _, statErr := os.Stat(resolvedPath); statErr != nil {
+				includePath := string(ctx.GetConfig("include_path", phpv.ZStr(".")).AsString(ctx))
+				for _, dir := range strings.Split(includePath, string(os.PathListSeparator)) {
+					dir = strings.TrimSpace(dir)
+					if dir == "" {
+						continue
+					}
+					if !filepath.IsAbs(dir) {
+						dir = filepath.Join(cwd, dir)
+					}
+					candidate := filepath.Join(dir, path)
+					if _, err := os.Stat(candidate); err == nil {
+						resolvedPath = candidate
+						break
+					}
+				}
+			}
 		}
 	}
 
@@ -969,7 +996,10 @@ func sfoSeek(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal
 
 func sfoRewind(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	d := getSFOData(o)
-	if d == nil || d.file == nil {
+	if d == nil {
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, "The object is in an invalid state as the parent constructor was not called")
+	}
+	if d.file == nil {
 		return nil, nil
 	}
 	d.file.Seek(0, 0)

@@ -39,7 +39,7 @@ func initInfiniteIterator() {
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				d := getInfiniteIteratorData(o)
 				if d == nil {
-					return nil, nil
+					return nil, phpobj.ThrowError(ctx, phpobj.Error, "The object is in an invalid state as the parent constructor was not called")
 				}
 				_, err := d.inner.CallMethod(ctx, "rewind")
 				return nil, err

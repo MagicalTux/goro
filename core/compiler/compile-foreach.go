@@ -221,6 +221,7 @@ func (r *runnableForeach) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 			break
 		}
 
+		// PHP always calls key() on Iterator objects in foreach, even when no key variable
 		if r.k != nil {
 			k, err := it.Key(ctx)
 			if err != nil {
@@ -230,6 +231,12 @@ func (r *runnableForeach) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 				return nil, errors.New("foreach key must be writable")
 			} else {
 				w.WriteValue(ctx, k.Dup())
+			}
+		} else if _, isPhpIter := it.(*phpObjectIterator); isPhpIter {
+			// For PHP Iterator objects, always call key() to maintain correct method call sequence
+			_, err = it.Key(ctx)
+			if err != nil {
+				return nil, err
 			}
 		}
 

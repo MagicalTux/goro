@@ -564,7 +564,7 @@ func iteratorApply(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var extraArgs []*phpv.ZVal
 	if len(args) > 2 {
 		if args[2].GetType() != phpv.ZtArray && !args[2].IsNull() {
-			return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("iterator_apply(): Argument #3 ($args) must be of type ?array, %s given", args[2].GetType()))
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("iterator_apply(): Argument #3 ($args) must be of type ?array, %s given", args[2].GetType().TypeName()))
 		}
 		if args[2].GetType() == phpv.ZtArray {
 			arr := args[2].Value().(*phpv.ZArray)
@@ -580,7 +580,7 @@ func iteratorApply(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	// Resolve callback
-	cb, err := core.SpawnCallable(ctx, callback)
+	cb, err := core.SpawnCallableParam(ctx, callback, 2)
 	if err != nil {
 		return nil, err
 	}

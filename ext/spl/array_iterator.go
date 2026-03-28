@@ -314,9 +314,8 @@ func initArrayIterator() {
 					return nil, phpobj.ThrowError(ctx, phpobj.Error,
 						"Cannot append properties to objects, use ArrayIterator::offsetSet() instead")
 				}
-				// Call offsetSet(null, value) through the object so that overridden
-				// offsetSet in subclasses is properly invoked.
-				_, err := o.CallMethod(ctx, "offsetSet", phpv.ZNULL.ZVal(), args[0])
+				// Directly append to the array (PHP's append does not call offsetSet)
+				err := d.array.OffsetSet(ctx, nil, args[0])
 				return nil, err
 			}),
 		},

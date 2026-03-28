@@ -544,8 +544,7 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	}
 
 	// PHP 8.1: Deprecation warning for null array offsets (read).
-	// Only applies to string and array containers, not objects (ArrayAccess).
-	if offset.GetType() == phpv.ZtNull && (v.GetType() == phpv.ZtString || v.GetType() == phpv.ZtArray) {
+	if offset.GetType() == phpv.ZtNull && (v.GetType() == phpv.ZtString || v.GetType() == phpv.ZtArray || v.GetType() == phpv.ZtObject) {
 		if err := ctx.Deprecated("Using null as an array offset is deprecated, use an empty string instead", logopt.NoFuncName(true)); err != nil {
 			return nil, err
 		}
