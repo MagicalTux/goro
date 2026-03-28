@@ -429,6 +429,7 @@ type cachingIteratorData struct {
 	hasNext    bool
 	started    bool
 	cache      *phpv.ZArray
+	cachedStr  string // cached __toString result for CALL_TOSTRING/TOSTRING_USE_INNER modes
 }
 
 func (d *cachingIteratorData) Clone() any {
@@ -440,6 +441,7 @@ func (d *cachingIteratorData) Clone() any {
 		hasNext:    d.hasNext,
 		started:    d.started,
 		cache:      d.cache,
+		cachedStr:  d.cachedStr,
 	}
 }
 
@@ -512,6 +514,8 @@ func initCachingIterator() {
 				if bool(v.AsBool(ctx)) {
 					d.currentVal, _ = d.inner.CallMethod(ctx, "current")
 					d.currentKey, _ = d.inner.CallMethod(ctx, "key")
+					// Cache the __toString result before advancing the inner iterator
+					cachingIteratorCaptureStr(ctx, d)
 					// Store in cache if FULL_CACHE
 					if d.flags&cachingIteratorFullCache != 0 && d.currentKey != nil {
 						d.cache.OffsetSet(ctx, d.currentKey.Value(), d.currentVal)
@@ -568,6 +572,8 @@ func initCachingIterator() {
 				if bool(v.AsBool(ctx)) {
 					d.currentVal, _ = d.inner.CallMethod(ctx, "current")
 					d.currentKey, _ = d.inner.CallMethod(ctx, "key")
+					// Cache the __toString result before advancing the inner iterator
+					cachingIteratorCaptureStr(ctx, d)
 					// Store in cache if FULL_CACHE
 					if d.flags&cachingIteratorFullCache != 0 && d.currentKey != nil {
 						d.cache.OffsetSet(ctx, d.currentKey.Value(), d.currentVal)
@@ -672,7 +678,7 @@ func initCachingIterator() {
 				toStringFlags := d.flags & (cachingIteratorCallToString | cachingIteratorToStringUseKey | cachingIteratorToStringUseCurrent | cachingIteratorToStringUseInner)
 				if toStringFlags == 0 {
 					return nil, phpobj.ThrowError(ctx, phpobj.BadMethodCallException,
-						fmt.Sprintf("%s does not fetch string value (see CachingIterator::__construct)", o.GetClass().GetName()))
+						fmt.Sprintf("%s does not fetch string value (see CachingIterator::__construct)", o.Class.GetName()))
 				}
 				if d.currentVal == nil {
 					return phpv.ZString("").ZVal(), nil
@@ -684,19 +690,12 @@ func initCachingIterator() {
 					return phpv.ZString(d.currentVal.AsString(ctx)).ZVal(), nil
 				}
 				if d.flags&cachingIteratorToStringUseInner != 0 {
-					// Call __toString on the inner iterator
-					result, err := d.inner.CallMethod(ctx, "__toString")
-					if err != nil {
-						return nil, err
-					}
-					if result != nil {
-						return phpv.ZString(result.AsString(ctx)).ZVal(), nil
-					}
-					return phpv.ZString("").ZVal(), nil
+					// Return the cached __toString result (captured before advancing inner)
+					return phpv.ZString(d.cachedStr).ZVal(), nil
 				}
-				// CALL_TOSTRING: call __toString on the current value
+				// CALL_TOSTRING: return the cached string representation
 				if d.flags&cachingIteratorCallToString != 0 {
-					return phpv.ZString(d.currentVal.AsString(ctx)).ZVal(), nil
+					return phpv.ZString(d.cachedStr).ZVal(), nil
 				}
 				return phpv.ZString(d.currentVal.AsString(ctx)).ZVal(), nil
 			}),
@@ -709,7 +708,7 @@ func initCachingIterator() {
 					return phpv.ZInt(0).ZVal(), nil
 				}
 				if d.flags&cachingIteratorFullCache == 0 {
-					return nil, phpobj.ThrowError(ctx, phpobj.BadMethodCallException, fmt.Sprintf("%s does not use a full cache (see CachingIterator::__construct)", o.GetClass().GetName()))
+					return nil, phpobj.ThrowError(ctx, phpobj.BadMethodCallException, fmt.Sprintf("%s does not use a full cache (see CachingIterator::__construct)", o.Class.GetName()))
 				}
 				return d.cache.Count(ctx).ZVal(), nil
 			}),
@@ -722,7 +721,7 @@ func initCachingIterator() {
 					return phpv.NewZArray().ZVal(), nil
 				}
 				if d.flags&cachingIteratorFullCache == 0 {
-					return nil, phpobj.ThrowError(ctx, phpobj.BadMethodCallException, fmt.Sprintf("%s does not use a full cache (see CachingIterator::__construct)", o.GetClass().GetName()))
+					return nil, phpobj.ThrowError(ctx, phpobj.BadMethodCallException, fmt.Sprintf("%s does not use a full cache (see CachingIterator::__construct)", o.Class.GetName()))
 				}
 				return d.cache.ZVal(), nil
 			}),
@@ -735,7 +734,7 @@ func initCachingIterator() {
 					return phpv.ZNULL.ZVal(), nil
 				}
 				if d.flags&cachingIteratorFullCache == 0 {
-					return nil, phpobj.ThrowError(ctx, phpobj.BadMethodCallException, fmt.Sprintf("%s does not use a full cache (see CachingIterator::__construct)", o.GetClass().GetName()))
+					return nil, phpobj.ThrowError(ctx, phpobj.BadMethodCallException, fmt.Sprintf("%s does not use a full cache (see CachingIterator::__construct)", o.Class.GetName()))
 				}
 				return d.cache.OffsetGet(ctx, args[0].Value())
 			}),
@@ -748,7 +747,7 @@ func initCachingIterator() {
 					return nil, nil
 				}
 				if d.flags&cachingIteratorFullCache == 0 {
-					return nil, phpobj.ThrowError(ctx, phpobj.BadMethodCallException, fmt.Sprintf("%s does not use a full cache (see CachingIterator::__construct)", o.GetClass().GetName()))
+					return nil, phpobj.ThrowError(ctx, phpobj.BadMethodCallException, fmt.Sprintf("%s does not use a full cache (see CachingIterator::__construct)", o.Class.GetName()))
 				}
 				d.cache.OffsetSet(ctx, args[0].Value(), args[1])
 				return nil, nil
@@ -762,7 +761,7 @@ func initCachingIterator() {
 					return phpv.ZFalse.ZVal(), nil
 				}
 				if d.flags&cachingIteratorFullCache == 0 {
-					return nil, phpobj.ThrowError(ctx, phpobj.BadMethodCallException, fmt.Sprintf("%s does not use a full cache (see CachingIterator::__construct)", o.GetClass().GetName()))
+					return nil, phpobj.ThrowError(ctx, phpobj.BadMethodCallException, fmt.Sprintf("%s does not use a full cache (see CachingIterator::__construct)", o.Class.GetName()))
 				}
 				exists, _ := d.cache.OffsetExists(ctx, args[0])
 				return phpv.ZBool(exists).ZVal(), nil
@@ -776,12 +775,27 @@ func initCachingIterator() {
 					return nil, nil
 				}
 				if d.flags&cachingIteratorFullCache == 0 {
-					return nil, phpobj.ThrowError(ctx, phpobj.BadMethodCallException, fmt.Sprintf("%s does not use a full cache (see CachingIterator::__construct)", o.GetClass().GetName()))
+					return nil, phpobj.ThrowError(ctx, phpobj.BadMethodCallException, fmt.Sprintf("%s does not use a full cache (see CachingIterator::__construct)", o.Class.GetName()))
 				}
 				d.cache.OffsetUnset(ctx, args[0].Value())
 				return nil, nil
 			}),
 		},
+	}
+}
+
+// cachingIteratorCaptureStr captures the string representation for CALL_TOSTRING or TOSTRING_USE_INNER modes.
+// This must be called BEFORE advancing the inner iterator.
+func cachingIteratorCaptureStr(ctx phpv.Context, d *cachingIteratorData) {
+	if d.flags&cachingIteratorToStringUseInner != 0 {
+		r, e := d.inner.CallMethod(ctx, "__toString")
+		if e == nil && r != nil {
+			d.cachedStr = string(r.AsString(ctx))
+		} else {
+			d.cachedStr = ""
+		}
+	} else if d.flags&cachingIteratorCallToString != 0 && d.currentVal != nil {
+		d.cachedStr = string(d.currentVal.AsString(ctx))
 	}
 }
 
@@ -2866,10 +2880,13 @@ func initMultipleIterator() {
 						return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
 							fmt.Sprintf("MultipleIterator::attachIterator(): Argument #2 ($info) must be of type string|int|null, %s given", args[1].GetType().TypeName()))
 					}
-					// Check for duplicate info (but not for the same iterator being re-attached)
+					// Check for duplicate info (strict type+value comparison).
+					// In PHP, string "2" and int 2 are different info values, so attaching
+					// two iterators with those keys does NOT throw a duplication error.
+					// Only same-type, same-value duplicates cause an error.
 					for _, e := range d.entries {
 						if e.iterator != inner && e.info != nil && info != nil {
-							if string(e.info.AsString(ctx)) == string(info.AsString(ctx)) {
+							if e.info.GetType() == info.GetType() && string(e.info.AsString(ctx)) == string(info.AsString(ctx)) {
 								return nil, phpobj.ThrowError(ctx, phpobj.InvalidArgumentException, "Key duplication error")
 							}
 						}

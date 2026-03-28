@@ -98,8 +98,9 @@ func initInfiniteIterator() {
 				if d == nil {
 					return phpv.ZFalse.ZVal(), nil
 				}
-				// InfiniteIterator delegates valid() to the inner iterator
-				return d.inner.CallMethod(ctx, "valid")
+				// InfiniteIterator is always valid - the inner iterator gets
+				// rewound when it becomes invalid, so we just return true
+				return phpv.ZTrue.ZVal(), nil
 			}),
 		},
 		"getinneriterator": {

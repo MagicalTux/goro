@@ -169,7 +169,10 @@ func initSplFixedArray() {
 					ctx.Deprecated("SplFixedArray::setSize(): Passing null to parameter #1 ($size) of type int is deprecated", logopt.NoFuncName(true))
 				}
 				newSize := int(args[0].AsInt(ctx))
-				if newSize < 0 || newSize > 1<<30 {
+				if newSize < 0 {
+					return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "SplFixedArray::setSize(): Argument #1 ($size) must be greater than or equal to 0")
+				}
+				if newSize > 1<<30 {
 					return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "SplFixedArray::setSize(): Argument #1 ($size) must be greater than or equal to 0")
 				}
 				oldSize := len(d.data)

@@ -256,18 +256,11 @@ func initArrayObject() {
 		// overridden, we let the normal ArrayAccess path handle it.
 		HandleIssetDim: func(ctx phpv.Context, o phpv.ZObject, key *phpv.ZVal) (bool, error) {
 			zo := o.(*phpobj.ZObject)
-			// If the subclass overrides offsetExists, fall through to normal handling
+			// If the subclass overrides offsetExists, delegate to the overridden
+			// offsetExists. We do NOT call offsetGet here because checkExistence
+			// will evaluate the value separately if needed (for nested access).
 			if overridesMethod(zo, ArrayObjectClass, "offsetExists") {
-				// Still need the null check: call offsetExists, then offsetGet
-				exists, err := zo.OffsetExists(ctx, key)
-				if err != nil || !exists {
-					return false, err
-				}
-				val, err := zo.OffsetGet(ctx, key)
-				if err != nil {
-					return false, nil
-				}
-				return val != nil && !val.IsNull(), nil
+				return zo.OffsetExists(ctx, key)
 			}
 			d := getArrayObjectData(zo)
 			if d == nil {

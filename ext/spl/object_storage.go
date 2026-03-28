@@ -338,7 +338,12 @@ func initObjectStorage() {
 					return phpv.ZFalse.ZVal(), nil
 				}
 				if len(args) == 0 || args[0] == nil || args[0].GetType() != phpv.ZtObject {
-					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "SplObjectStorage::offsetExists(): Argument #1 ($object) must be of type object")
+					givenType := "null"
+					if len(args) > 0 && args[0] != nil {
+						givenType = args[0].GetType().TypeName()
+					}
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+						fmt.Sprintf("SplObjectStorage::offsetExists(): Argument #1 ($object) must be of type object, %s given", givenType))
 				}
 				obj, ok := args[0].Value().(*phpobj.ZObject)
 				if !ok {
@@ -385,7 +390,12 @@ func initObjectStorage() {
 					return nil, nil
 				}
 				if len(args) == 0 || args[0] == nil || args[0].GetType() != phpv.ZtObject {
-					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "SplObjectStorage::offsetSet(): Argument #1 ($object) must be of type object")
+					givenType := "null"
+					if len(args) > 0 && args[0] != nil {
+						givenType = args[0].GetType().TypeName()
+					}
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+						fmt.Sprintf("SplObjectStorage::offsetSet(): Argument #1 ($object) must be of type object, %s given", givenType))
 				}
 				obj, ok := args[0].Value().(*phpobj.ZObject)
 				if !ok {
@@ -620,7 +630,11 @@ func initObjectStorage() {
 						if _, exists := d.entries[hash]; !exists {
 							d.order = append(d.order, hash)
 						}
-						d.entries[hash] = &splObjectStorageEntry{obj: obj, info: infoVal}
+						// Dereference the info value to strip references (PHP behavior)
+					if infoVal != nil {
+						infoVal = infoVal.Dup()
+					}
+					d.entries[hash] = &splObjectStorageEntry{obj: obj, info: infoVal}
 					}
 				}
 

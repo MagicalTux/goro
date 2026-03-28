@@ -912,7 +912,12 @@ func sfoFseek(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVa
 }
 
 func sfoFlock(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	// Stub - flock is not easily portable
+	d := getSFOData(o)
+	if d == nil || d.file == nil {
+		return nil, phpobj.ThrowError(ctx, phpobj.LogicException,
+			"The parent constructor was not called: the object is in an invalid state")
+	}
+	// Stub - flock is not easily portable on all platforms
 	return phpv.ZBool(true).ZVal(), nil
 }
 
