@@ -145,7 +145,7 @@ func initPriorityQueue() {
 					data:    d,
 				}
 				// Check if the user has overridden the compare method
-				cls := o.GetClass()
+				cls := o.Class
 				if cls != SplPriorityQueueClass {
 					// User subclass - call PHP compare() method
 					h.compareFn = func(ctx phpv.Context, a, b *phpv.ZVal) (int, error) {

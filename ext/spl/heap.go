@@ -161,7 +161,7 @@ func initSplHeap() {
 			Name: "__construct",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				// Determine compare function based on actual class
-				cls := o.GetClass()
+				cls := o.Class
 				var compareFn func(phpv.Context, *phpv.ZVal, *phpv.ZVal) (int, error)
 
 				if cls == SplMinHeapClass {

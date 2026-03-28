@@ -2072,8 +2072,8 @@ func initRecursiveIteratorIterator() {
 					d.maxDepth = -1
 				} else {
 					depth := int(args[0].AsInt(ctx))
-					if depth < 0 {
-						return nil, phpobj.ThrowError(ctx, phpobj.OutOfRangeException, "Parameter max_depth must be >= -1")
+					if depth < -1 {
+						return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "RecursiveIteratorIterator::setMaxDepth(): Argument #1 ($maxDepth) must be greater than or equal to -1")
 					}
 					d.maxDepth = depth
 				}

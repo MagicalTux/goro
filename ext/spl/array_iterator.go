@@ -95,7 +95,6 @@ func initArrayIterator() {
 		phpobj.Iterator,
 		phpobj.ArrayAccess,
 		Countable,
-		phpobj.Serializable,
 	}
 
 	ArrayIteratorClass.Const = map[phpv.ZString]*phpv.ZClassConst{
