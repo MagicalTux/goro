@@ -659,15 +659,14 @@ func splAutoloadCall(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return nil, nil
 }
 
-// splAutoloadExtensionsValue stores the current file extensions for spl_autoload
-var splAutoloadExtensionsValue = ".inc,.php"
-
 // > func string spl_autoload_extensions ( [string $file_extensions] )
 func splAutoloadExtensions(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) > 0 {
-		splAutoloadExtensionsValue = string(args[0].AsString(ctx))
+		newVal := string(args[0].AsString(ctx))
+		ctx.Global().SetConfig("spl_autoload_extensions", phpv.ZString(newVal).ZVal())
 	}
-	return phpv.ZString(splAutoloadExtensionsValue).ZVal(), nil
+	val := ctx.Global().GetConfig("spl_autoload_extensions", phpv.ZString(".inc,.php").ZVal())
+	return val, nil
 }
 
 // > func array spl_classes ( void )

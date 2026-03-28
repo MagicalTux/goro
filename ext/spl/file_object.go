@@ -906,7 +906,7 @@ func sfoSeek(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal
 			"SplFileObject::seek(): Argument #1 ($line) must be greater than or equal to 0")
 	}
 
-	// Rewind to beginning - matches PHP's spl_filesystem_file_rewind
+	// Rewind to beginning
 	d.file.Seek(0, 0)
 	d.scanner = bufio.NewScanner(d.file)
 	d.reader = bufio.NewReader(d.file)
@@ -917,44 +917,50 @@ func sfoSeek(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal
 	d.curLine = ""
 
 	// PHP's seek loop: for (i = 0; i < line_pos; i++) { read_line(); }
-	// Each read_line increments current_line_num by 1 (except the very first read
-	// which increments by 0 since there's no previous line).
-	// If a read fails (EOF), the loop exits early.
+	// The first read has line_add=0 (doesn't increment), subsequent reads
+	// increment. PHP streams allow one empty read past the last real line
+	// before truly hitting EOF. After the loop completes normally, there's
+	// an additional line_num++ (post-loop increment).
 	earlyExit := false
 	for i := 0; i < target; i++ {
-		line, ok := d.readLine()
-		if ok {
-			d.curLine = line
-			if i > 0 {
-				d.line++
-			}
-		} else {
-			// Even if readLine fails, PHP may still count one more read attempt
-			// that returns empty. On the NEXT attempt, it truly fails.
-			// This happens because php_stream_eof returns true only after a failed
-			// read, not after reading the last line.
-			if !d.eof {
-				// First failed read: set curLine to empty, increment (if not first)
-				d.eof = true
-				d.curLine = ""
-				if i > 0 {
-					d.line++
-				}
-				// Continue the loop - the next iteration will hit the eof check
-				continue
-			}
-			// Second failed read (eof was already true): exit early
+		if d.eof {
+			// Stream is truly at EOF (second failed read)
 			earlyExit = true
 			break
 		}
+		line, ok := d.readLine()
+		if ok {
+			if i > 0 {
+				d.line++
+			}
+			d.curLine = line
+		} else {
+			// First failed read: PHP treats this as a successful empty read
+			// (stream eof not set until NEXT read attempt)
+			if i > 0 {
+				d.line++
+			}
+			d.curLine = ""
+			d.eof = true
+			// Don't break - PHP's loop continues since this read "succeeded"
+		}
 	}
 
-	// After the loop (if not early exit), PHP does one more increment
-	// (matching: intern->u.file.current_line_num++ after the for loop)
+	// Post-loop increment: PHP increments line_num after the seek loop
+	// completes normally (not on early exit due to eof)
 	if !earlyExit && target > 0 {
 		d.line++
-		// Free the line (PHP behavior: after seek, the line is freed)
-		d.curLine = ""
+	}
+
+	// After seek, read the current line for subsequent current() calls
+	if !d.eof {
+		line, ok := d.readLine()
+		if ok {
+			d.curLine = line
+		} else {
+			d.eof = true
+			d.curLine = ""
+		}
 	}
 
 	return nil, nil
