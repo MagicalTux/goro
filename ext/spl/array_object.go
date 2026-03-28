@@ -252,8 +252,23 @@ func initArrayObject() {
 			return nil, nil
 		},
 		// Override isset($ao[$key]) to check for null (PHP behavior for ArrayObject)
+		// Only used when offsetExists is NOT overridden by a subclass; when
+		// overridden, we let the normal ArrayAccess path handle it.
 		HandleIssetDim: func(ctx phpv.Context, o phpv.ZObject, key *phpv.ZVal) (bool, error) {
 			zo := o.(*phpobj.ZObject)
+			// If the subclass overrides offsetExists, fall through to normal handling
+			if overridesMethod(zo, ArrayObjectClass, "offsetExists") {
+				// Still need the null check: call offsetExists, then offsetGet
+				exists, err := zo.OffsetExists(ctx, key)
+				if err != nil || !exists {
+					return false, err
+				}
+				val, err := zo.OffsetGet(ctx, key)
+				if err != nil {
+					return false, nil
+				}
+				return val != nil && !val.IsNull(), nil
+			}
 			d := getArrayObjectData(zo)
 			if d == nil {
 				return false, nil
@@ -627,7 +642,7 @@ func initArrayObject() {
 						"Cannot append properties to objects, use ArrayObject::offsetSet() instead")
 				}
 				// Directly append to the array (PHP's append does not call offsetSet)
-				err := d.array.OffsetSet(ctx, nil, args[0])
+				err := d.array.OffsetSet(ctx, nil, args[0].Dup())
 				return nil, err
 			}),
 		},

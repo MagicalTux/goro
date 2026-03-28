@@ -17,34 +17,11 @@ import (
 // ============================================================================
 
 type iteratorIteratorData struct {
-	inner      *phpobj.ZObject
-	currentVal *phpv.ZVal
-	currentKey *phpv.ZVal
-	valid      bool
+	inner *phpobj.ZObject
 }
 
 func (d *iteratorIteratorData) Clone() any {
-	return &iteratorIteratorData{
-		inner:      d.inner,
-		currentVal: d.currentVal,
-		currentKey: d.currentKey,
-		valid:      d.valid,
-	}
-}
-
-// iteratorIteratorFetchCache fetches current and key from the inner iterator and caches them.
-// This matches PHP's C-level behavior where IteratorIterator caches these values during rewind/next.
-func iteratorIteratorFetchCache(ctx phpv.Context, d *iteratorIteratorData) {
-	v, err := d.inner.CallMethod(ctx, "valid")
-	if err != nil || !bool(v.AsBool(ctx)) {
-		d.valid = false
-		d.currentVal = nil
-		d.currentKey = nil
-		return
-	}
-	d.valid = true
-	d.currentVal, _ = d.inner.CallMethod(ctx, "current")
-	d.currentKey, _ = d.inner.CallMethod(ctx, "key")
+	return &iteratorIteratorData{inner: d.inner}
 }
 
 func getIteratorIteratorData(o *phpobj.ZObject, class *phpobj.ZClass) *iteratorIteratorData {
@@ -95,15 +72,7 @@ func initIteratorIterator() {
 					return nil, phpobj.ThrowError(ctx, phpobj.Error, "The object is in an invalid state as the parent constructor was not called")
 				}
 				_, err := d.inner.CallMethod(ctx, "rewind")
-				if err != nil {
-					d.valid = false
-					d.currentVal = nil
-					d.currentKey = nil
-					return nil, err
-				}
-				// Cache current/key from inner (matches PHP C behavior)
-				iteratorIteratorFetchCache(ctx, d)
-				return nil, nil
+				return nil, err
 			}),
 		},
 		"current": {
@@ -113,10 +82,7 @@ func initIteratorIterator() {
 				if d == nil {
 					return phpv.ZFalse.ZVal(), nil
 				}
-				if d.currentVal == nil {
-					return phpv.ZNULL.ZVal(), nil
-				}
-				return d.currentVal, nil
+				return d.inner.CallMethod(ctx, "current")
 			}),
 		},
 		"key": {
@@ -126,10 +92,7 @@ func initIteratorIterator() {
 				if d == nil {
 					return phpv.ZNULL.ZVal(), nil
 				}
-				if d.currentKey == nil {
-					return phpv.ZNULL.ZVal(), nil
-				}
-				return d.currentKey, nil
+				return d.inner.CallMethod(ctx, "key")
 			}),
 		},
 		"next": {
@@ -140,15 +103,7 @@ func initIteratorIterator() {
 					return nil, nil
 				}
 				_, err := d.inner.CallMethod(ctx, "next")
-				if err != nil {
-					d.valid = false
-					d.currentVal = nil
-					d.currentKey = nil
-					return nil, err
-				}
-				// Cache current/key from inner (matches PHP C behavior)
-				iteratorIteratorFetchCache(ctx, d)
-				return nil, nil
+				return nil, err
 			}),
 		},
 		"valid": {
@@ -158,7 +113,11 @@ func initIteratorIterator() {
 				if d == nil {
 					return phpv.ZFalse.ZVal(), nil
 				}
-				return phpv.ZBool(d.valid).ZVal(), nil
+				v, err := d.inner.CallMethod(ctx, "valid")
+				if err != nil {
+					return phpv.ZFalse.ZVal(), err
+				}
+				return v, nil
 			}),
 		},
 		"getinneriterator": {
@@ -1046,6 +1005,7 @@ type regexIteratorData struct {
 	flags         int
 	pregFlags     int
 	currentResult *phpv.ZVal // cached result for GET_MATCH, ALL_MATCHES, SPLIT, REPLACE modes
+	initialized   bool       // true after rewind() has been called
 }
 
 func (d *regexIteratorData) Clone() any {
@@ -1106,6 +1066,7 @@ func initRegexIterator() {
 				if d == nil {
 					return nil, phpobj.ThrowError(ctx, phpobj.Error, "The object is in an invalid state as the parent constructor was not called")
 				}
+				d.initialized = true
 				_, err := d.inner.CallMethod(ctx, "rewind")
 				if err != nil {
 					return nil, err
@@ -1384,6 +1345,13 @@ func parsePCREPattern(pattern string) (*regexp.Regexp, error) {
 // The optional obj parameter is used to read $replacement property for REPLACE mode.
 func (d *regexIteratorData) accept(ctx phpv.Context, obj ...*phpobj.ZObject) bool {
 	d.currentResult = nil
+
+	// If not initialized (rewind not called), always return false
+	// This matches PHP behavior where RegexIterator extends FilterIterator extends
+	// IteratorIterator, and IteratorIterator returns NULL for current() before rewind.
+	if !d.initialized {
+		return false
+	}
 
 	// Determine subject based on USE_KEY flag
 	var subject string
@@ -1839,6 +1807,7 @@ var RecursiveIterator = &phpobj.ZClass{
 
 var RecursiveArrayIteratorClass = &phpobj.ZClass{
 	Name:            "RecursiveArrayIterator",
+	Extends:         ArrayIteratorClass,
 	Implementations: []*phpobj.ZClass{RecursiveIterator, Countable, phpobj.ArrayAccess},
 }
 

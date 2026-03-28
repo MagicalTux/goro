@@ -315,7 +315,7 @@ func initArrayIterator() {
 						"Cannot append properties to objects, use ArrayIterator::offsetSet() instead")
 				}
 				// Directly append to the array (PHP's append does not call offsetSet)
-				err := d.array.OffsetSet(ctx, nil, args[0])
+				err := d.array.OffsetSet(ctx, nil, args[0].Dup())
 				return nil, err
 			}),
 		},

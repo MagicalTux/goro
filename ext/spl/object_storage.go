@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
@@ -177,7 +178,7 @@ func initObjectStorage() {
 		"contains": {
 			Name: "contains",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				ctx.Deprecated("Method SplObjectStorage::contains() is deprecated since 8.5, use method SplObjectStorage::offsetExists() instead")
+				ctx.Deprecated("Method SplObjectStorage::contains() is deprecated since 8.5, use method SplObjectStorage::offsetExists() instead", logopt.NoFuncName(true))
 				d := getOrInitObjectStorageData(o)
 				if d == nil {
 					return phpv.ZFalse.ZVal(), nil
