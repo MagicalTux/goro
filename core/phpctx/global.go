@@ -98,6 +98,7 @@ type Global struct {
 
 	autoloadFuncs    []phpv.Callable
 	autoloadingClass map[phpv.ZString]bool // prevent infinite recursion in autoload
+	autoloadExts     string                // file extensions for spl_autoload (default ".inc,.php")
 
 	header *phpv.HeaderContext
 
@@ -2055,6 +2056,17 @@ func (g *Global) ClearAutoloadFunctions() {
 
 func (g *Global) GetAutoloadFunctions() []phpv.Callable {
 	return g.autoloadFuncs
+}
+
+func (g *Global) GetAutoloadExtensions() string {
+	if g.autoloadExts == "" {
+		return ".inc,.php"
+	}
+	return g.autoloadExts
+}
+
+func (g *Global) SetAutoloadExtensions(exts string) {
+	g.autoloadExts = exts
 }
 
 func (g *Global) GetStackTrace(ctx phpv.Context) []*phpv.StackTraceEntry {

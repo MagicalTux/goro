@@ -85,6 +85,8 @@ type GlobalContext interface {
 	UnregisterAutoloadByName(name string) bool
 	ClearAutoloadFunctions()
 	GetAutoloadFunctions() []Callable
+	GetAutoloadExtensions() string
+	SetAutoloadExtensions(exts string)
 
 	RestoreConfig(name ZString)
 	SetLocalConfig(name ZString, value *ZVal) (*ZVal, bool)

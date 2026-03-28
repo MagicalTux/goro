@@ -663,10 +663,9 @@ func splAutoloadCall(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 func splAutoloadExtensions(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) > 0 {
 		newVal := string(args[0].AsString(ctx))
-		ctx.Global().SetConfig("spl_autoload_extensions", phpv.ZString(newVal).ZVal())
+		ctx.Global().SetAutoloadExtensions(newVal)
 	}
-	val := ctx.Global().GetConfig("spl_autoload_extensions", phpv.ZString(".inc,.php").ZVal())
-	return val, nil
+	return phpv.ZString(ctx.Global().GetAutoloadExtensions()).ZVal(), nil
 }
 
 // > func array spl_classes ( void )

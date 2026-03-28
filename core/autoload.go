@@ -19,7 +19,7 @@ func fncSplAutoload(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	exts := ".php,.inc"
+	exts := ctx.Global().GetAutoloadExtensions()
 	if extensions != nil {
 		exts = string(*extensions)
 	}
