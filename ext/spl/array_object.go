@@ -296,6 +296,14 @@ func initArrayObject() {
 			if d == nil || d.flags&ArrayObjectARRAY_AS_PROPS == 0 {
 				return nil, nil // fall through
 			}
+			// If a subclass overrides offsetGet, delegate to the overridden method
+			if overridesMethod(zo, ArrayObjectClass, "offsetGet") {
+				result, err := zo.OffsetGet(ctx, key)
+				if err != nil {
+					return nil, err
+				}
+				return result, nil
+			}
 			if d.objectStorage != nil {
 				v, ok := d.objectStorage.HashTable().GetStringB(key)
 				if !ok {
@@ -312,6 +320,10 @@ func initArrayObject() {
 			if d == nil || d.flags&ArrayObjectARRAY_AS_PROPS == 0 {
 				return false, nil // fall through
 			}
+			// If a subclass overrides offsetSet, delegate to the overridden method
+			if overridesMethod(zo, ArrayObjectClass, "offsetSet") {
+				return true, zo.OffsetSet(ctx, key, value)
+			}
 			if d.objectStorage != nil {
 				return true, d.objectStorage.HashTable().SetString(key, value)
 			}
@@ -322,6 +334,14 @@ func initArrayObject() {
 			d := getArrayObjectData(zo)
 			if d == nil || d.flags&ArrayObjectARRAY_AS_PROPS == 0 {
 				return false, false, nil // fall through
+			}
+			// If a subclass overrides offsetExists, delegate
+			if overridesMethod(zo, ArrayObjectClass, "offsetExists") {
+				exists, err := zo.OffsetExists(ctx, key)
+				if err != nil {
+					return false, false, err
+				}
+				return exists, true, nil
 			}
 			if d.objectStorage != nil {
 				return d.objectStorage.HashTable().HasString(key), true, nil
@@ -337,6 +357,10 @@ func initArrayObject() {
 			d := getArrayObjectData(zo)
 			if d == nil || d.flags&ArrayObjectARRAY_AS_PROPS == 0 {
 				return false, nil // fall through
+			}
+			// If a subclass overrides offsetUnset, delegate
+			if overridesMethod(zo, ArrayObjectClass, "offsetUnset") {
+				return true, zo.OffsetUnset(ctx, key)
 			}
 			if d.objectStorage != nil {
 				d.objectStorage.HashTable().UnsetString(key)

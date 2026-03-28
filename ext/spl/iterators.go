@@ -1903,11 +1903,16 @@ func initRecursiveIteratorIterator() {
 					if err != nil {
 						return nil, err
 					}
-					if iterResult != nil && iterResult.GetType() == phpv.ZtObject {
-						if io, ok := iterResult.Value().(*phpobj.ZObject); ok {
-							inner = io
-						}
+					if iterResult == nil || iterResult.GetType() != phpv.ZtObject {
+						return nil, phpobj.ThrowError(ctx, phpobj.LogicException,
+							fmt.Sprintf("%s::getIterator() must return an object that implements Traversable", inner.GetClass().GetName()))
 					}
+					io, ok := iterResult.Value().(*phpobj.ZObject)
+					if !ok {
+						return nil, phpobj.ThrowError(ctx, phpobj.LogicException,
+							fmt.Sprintf("%s::getIterator() must return an object that implements Traversable", inner.GetClass().GetName()))
+					}
+					inner = io
 				}
 				d := &recursiveIteratorIteratorData{
 					stack:         []*phpobj.ZObject{inner},
