@@ -6,6 +6,7 @@ import (
 	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
+	extjson "github.com/MagicalTux/goro/ext/json"
 )
 
 // splFixedArrayData holds the internal state for an SplFixedArray instance
@@ -442,6 +443,24 @@ func initSplFixedArray() {
 				return arr.ZVal(), nil
 			}),
 		},
+		"jsonserialize": {
+			Name: "jsonSerialize",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				d := getSplFixedArrayData(o)
+				if d == nil {
+					return phpv.NewZArray().ZVal(), nil
+				}
+				arr := phpv.NewZArray()
+				for i, v := range d.data {
+					if v == nil {
+						arr.OffsetSet(ctx, phpv.ZInt(i), phpv.ZNULL.ZVal())
+					} else {
+						arr.OffsetSet(ctx, phpv.ZInt(i), v)
+					}
+				}
+				return arr.ZVal(), nil
+			}),
+		},
 		"__serialize": {Name: "__serialize", Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			d := getSplFixedArrayData(o)
 			result := phpv.NewZArray()
@@ -509,6 +528,6 @@ func initSplFixedArray() {
 
 var SplFixedArrayClass = &phpobj.ZClass{
 	Name:            "SplFixedArray",
-	Implementations: []*phpobj.ZClass{phpobj.Iterator, Countable, phpobj.ArrayAccess},
+	Implementations: []*phpobj.ZClass{phpobj.Iterator, Countable, phpobj.ArrayAccess, extjson.JsonSerializable},
 }
 

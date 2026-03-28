@@ -9,10 +9,26 @@ import (
 
 	"github.com/MagicalTux/goro/core"
 	"github.com/MagicalTux/goro/core/logopt"
+	"github.com/MagicalTux/goro/core/phperr"
 	"github.com/MagicalTux/goro/core/phpctx"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
+
+// isClassNotFoundError checks if an error is a "class not found" Error thrown by GetClass.
+// User exceptions (Exception and subclasses) thrown by autoloaders should be propagated,
+// while "Class not found" errors should be swallowed (returning false).
+func isClassNotFoundError(err error) bool {
+	unwrapped := phpv.UnwrapError(err)
+	if pt, ok := unwrapped.(*phperr.PhpThrow); ok {
+		if pt.Obj != nil && pt.Obj.GetClass().InstanceOf(phpobj.Error) {
+			return true
+		}
+		return false
+	}
+	// Non-PhpThrow errors (shouldn't happen, but treat as class not found)
+	return true
+}
 
 // > func bool dl ( string $library )
 func stdFuncDl(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
@@ -526,6 +542,11 @@ func stdClassExists(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	cls, err := ctx.Global().GetClass(ctx, className, autoload)
 	if err != nil {
+		// Propagate user exceptions from autoloaders (Exception subclasses)
+		// but swallow "class not found" errors (Error subclasses)
+		if !isClassNotFoundError(err) {
+			return nil, err
+		}
 		return phpv.ZFalse.ZVal(), nil
 	}
 	// class_exists returns false for interfaces, traits, and enums
@@ -553,6 +574,9 @@ func stdEnumExists(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	class, err := ctx.Global().GetClass(ctx, className, autoload)
 	if err != nil {
+		if !isClassNotFoundError(err) {
+			return nil, err
+		}
 		return phpv.ZFalse.ZVal(), nil
 	}
 	if class.GetType()&phpv.ZClassTypeEnum != 0 {
@@ -864,7 +888,13 @@ func stdInterfaceExists(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	}
 
 	class, err := ctx.Global().GetClass(ctx, name, autoload)
-	if err != nil || class == nil {
+	if err != nil {
+		if !isClassNotFoundError(err) {
+			return nil, err
+		}
+		return phpv.ZFalse.ZVal(), nil
+	}
+	if class == nil {
 		return phpv.ZFalse.ZVal(), nil
 	}
 
@@ -889,7 +919,13 @@ func stdTraitExists(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	class, err := ctx.Global().GetClass(ctx, name, autoload)
-	if err != nil || class == nil {
+	if err != nil {
+		if !isClassNotFoundError(err) {
+			return nil, err
+		}
+		return phpv.ZFalse.ZVal(), nil
+	}
+	if class == nil {
 		return phpv.ZFalse.ZVal(), nil
 	}
 

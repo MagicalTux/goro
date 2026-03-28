@@ -47,9 +47,10 @@ type splFileObjectData struct {
 	openMode string
 
 	// Whether the first line has been read (lazy initialization)
-	firstLineRead bool
-	isReadable    bool
-	isWritable    bool
+	firstLineRead      bool
+	emptyFileFirstLine bool // empty file: first line is "" but not eof yet
+	isReadable         bool
+	isWritable         bool
 }
 
 // readLine reads the next line from the file using the bufio.Reader.
@@ -195,7 +196,18 @@ func ensureFirstLineRead(d *splFileObjectData) {
 	if ok {
 		d.curLine = applyMaxLineLen(line, d.maxLineLen)
 	} else {
-		d.eof = true
+		// If the file is at position 0 and truly empty, treat it as having
+		// one empty line (PHP behavior: empty files produce one empty-line read)
+		pos, _ := d.file.Seek(0, 1) // get current position
+		if pos == 0 {
+			d.curLine = ""
+			// Don't set eof yet; the first read of the empty line will consume it,
+			// then subsequent reads will find eof.
+			// BUT we do need to flag that the next read should set eof.
+			d.emptyFileFirstLine = true
+		} else {
+			d.eof = true
+		}
 	}
 }
 
@@ -409,13 +421,19 @@ func sfoFgets(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVa
 		return phpv.ZBool(false).ZVal(), nil
 	}
 	line := d.curLine
-	nextLine, ok := d.readLine()
-	if ok {
-		d.curLine = applyMaxLineLen(nextLine, d.maxLineLen)
-		d.line++
-	} else {
+	if d.emptyFileFirstLine {
+		d.emptyFileFirstLine = false
 		d.eof = true
 		d.curLine = ""
+	} else {
+		nextLine, ok := d.readLine()
+		if ok {
+			d.curLine = applyMaxLineLen(nextLine, d.maxLineLen)
+			d.line++
+		} else {
+			d.eof = true
+			d.curLine = ""
+		}
 	}
 	return phpv.ZStr(line), nil
 }
@@ -509,13 +527,19 @@ func sfoFgetcsv(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.Z
 	line = strings.TrimRight(line, "\r\n")
 
 	// Advance to next line
-	nextLine, ok := d.readLine()
-	if ok {
-		d.curLine = applyMaxLineLen(nextLine, d.maxLineLen)
-		d.line++
-	} else {
+	if d.emptyFileFirstLine {
+		d.emptyFileFirstLine = false
 		d.eof = true
 		d.curLine = ""
+	} else {
+		nextLine, ok := d.readLine()
+		if ok {
+			d.curLine = applyMaxLineLen(nextLine, d.maxLineLen)
+			d.line++
+		} else {
+			d.eof = true
+			d.curLine = ""
+		}
 	}
 
 	// If SKIP_EMPTY is set and the line is empty, return false
@@ -882,31 +906,55 @@ func sfoSeek(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal
 			"SplFileObject::seek(): Argument #1 ($line) must be greater than or equal to 0")
 	}
 
-	// Rewind to beginning
+	// Rewind to beginning - matches PHP's spl_filesystem_file_rewind
 	d.file.Seek(0, 0)
 	d.scanner = bufio.NewScanner(d.file)
 	d.reader = bufio.NewReader(d.file)
 	d.line = 0
 	d.eof = false
+	d.emptyFileFirstLine = false
 	d.firstLineRead = true
+	d.curLine = ""
 
-	nextLine, ok := d.readLine()
-	if ok {
-		d.curLine = nextLine
-	} else {
-		d.eof = true
-		d.curLine = ""
+	// PHP's seek loop: for (i = 0; i < line_pos; i++) { read_line(); }
+	// Each read_line increments current_line_num by 1 (except the very first read
+	// which increments by 0 since there's no previous line).
+	// If a read fails (EOF), the loop exits early.
+	earlyExit := false
+	for i := 0; i < target; i++ {
+		line, ok := d.readLine()
+		if ok {
+			d.curLine = line
+			if i > 0 {
+				d.line++
+			}
+		} else {
+			// Even if readLine fails, PHP may still count one more read attempt
+			// that returns empty. On the NEXT attempt, it truly fails.
+			// This happens because php_stream_eof returns true only after a failed
+			// read, not after reading the last line.
+			if !d.eof {
+				// First failed read: set curLine to empty, increment (if not first)
+				d.eof = true
+				d.curLine = ""
+				if i > 0 {
+					d.line++
+				}
+				// Continue the loop - the next iteration will hit the eof check
+				continue
+			}
+			// Second failed read (eof was already true): exit early
+			earlyExit = true
+			break
+		}
 	}
 
-	for d.line < target && !d.eof {
-		nextLine, ok := d.readLine()
-		if ok {
-			d.curLine = nextLine
-			d.line++
-		} else {
-			d.eof = true
-			d.curLine = ""
-		}
+	// After the loop (if not early exit), PHP does one more increment
+	// (matching: intern->u.file.current_line_num++ after the for loop)
+	if !earlyExit && target > 0 {
+		d.line++
+		// Free the line (PHP behavior: after seek, the line is freed)
+		d.curLine = ""
 	}
 
 	return nil, nil
@@ -922,14 +970,9 @@ func sfoRewind(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZV
 	d.scanner = bufio.NewScanner(d.file)
 	d.line = 0
 	d.eof = false
-	d.firstLineRead = true
-	line, ok := d.readLine()
-	if ok {
-		d.curLine = line
-	} else {
-		d.eof = true
-		d.curLine = ""
-	}
+	d.emptyFileFirstLine = false
+	d.firstLineRead = false
+	ensureFirstLineRead(d)
 	return nil, nil
 }
 
@@ -971,6 +1014,12 @@ func sfoNext(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal
 	if d.eof {
 		// Even at EOF, advance the line counter (PHP behavior)
 		d.line++
+		return nil, nil
+	}
+	if d.emptyFileFirstLine {
+		d.emptyFileFirstLine = false
+		d.eof = true
+		d.curLine = ""
 		return nil, nil
 	}
 	for {
