@@ -1061,7 +1061,14 @@ func initArrayObject() {
 				// Index 2: member properties
 				if memberVal, err := arr.OffsetGet(ctx, phpv.ZInt(2).ZVal()); err == nil && memberVal != nil && memberVal.GetType() == phpv.ZtArray {
 					memberArr := memberVal.Value().(*phpv.ZArray)
-					restoreMemberProperties(ctx, o, memberArr)
+					for k, v := range memberArr.Iterate(ctx) {
+						key := string(k.AsString(ctx))
+						if len(key) > 0 && key[0] == 0 {
+							o.HashTable().SetString(phpv.ZString(key), v)
+						} else {
+							o.ObjectSet(ctx, k.AsString(ctx), v)
+						}
+					}
 				}
 
 				// Index 3: iterator class (null means default)

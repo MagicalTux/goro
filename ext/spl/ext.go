@@ -1,51 +1,11 @@
 package spl
 
 import (
-	"strings"
-
 	"github.com/MagicalTux/goro/core"
 	"github.com/MagicalTux/goro/core/phpctx"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
-
-// restoreMemberProperties restores member properties from a serialized array
-// during __unserialize. Handles mangled property names with NUL bytes:
-// - \0*\0name -> protected property
-// - \0ClassName\0name -> private property
-// - name -> public/dynamic property
-func restoreMemberProperties(ctx phpv.Context, o *phpobj.ZObject, memberArr *phpv.ZArray) {
-	for k, v := range memberArr.Iterate(ctx) {
-		key := string(k.AsString(ctx))
-		if len(key) > 0 && key[0] == 0 {
-			// Mangled name - set directly on hash table
-			// \0*\0name = protected, \0ClassName\0name = private
-			if len(key) > 2 && key[1] == '*' && key[2] == 0 {
-				// Protected property: \0*\0name -> set as bare name
-				propName := phpv.ZString(key[3:])
-				o.HashTable().SetString(propName, v)
-			} else {
-				// Private property: \0ClassName\0name
-				idx := strings.IndexByte(key[1:], 0)
-				if idx >= 0 {
-					propName := phpv.ZString(key[idx+2:])
-					// Store with the mangled key in the hash table
-					// so var_dump shows the correct visibility
-					storageKey := "*" + key[1:idx+1] + ":" + key[idx+2:]
-					o.HashTable().SetString(phpv.ZString(storageKey), v)
-					// Also try to set on the declared property
-					o.HashTable().SetString(propName, v)
-				} else {
-					// Malformed - just set as-is
-					o.HashTable().SetString(phpv.ZString(key), v)
-				}
-			}
-		} else {
-			// Public/dynamic property - use ObjectSet
-			o.ObjectSet(ctx, k, v)
-		}
-	}
-}
 
 func init() {
 	initArrayIterator()

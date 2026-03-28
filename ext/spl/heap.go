@@ -407,7 +407,15 @@ func initSplHeap() {
 				return invalidErr()
 			}
 			memberArr := memberVal.AsArray(ctx)
-			restoreMemberProperties(ctx, o, memberArr)
+			for k, v := range memberArr.Iterate(ctx) {
+				key := string(k.AsString(ctx))
+				if len(key) > 0 && key[0] == 0 {
+					// Mangled name (protected/private) - set directly on hash table
+					o.HashTable().SetString(phpv.ZString(key), v)
+				} else {
+					o.ObjectSet(ctx, k, v)
+				}
+			}
 
 			// Key 1: internal data - must be an array
 			internalVal, err := arr.OffsetGet(ctx, phpv.ZInt(1).ZVal())
