@@ -1027,7 +1027,10 @@ func sfoCurrent(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.Z
 	// Check if the subclass overrides getCurrentLine. If so, call the override
 	// and validate the return type.
 	if overridesMethod(o, SplFileObjectClass, "getCurrentLine") {
-		result, err := o.CallMethod(ctx, "getCurrentLine")
+		// Look up the method on the real class (not CurrentClass which may be the parent)
+		realClass := o.Class.(*phpobj.ZClass)
+		m, _ := realClass.GetMethod("getCurrentLine")
+		result, err := ctx.CallZVal(ctx, m.Method, nil, o)
 		if err != nil {
 			return nil, err
 		}
@@ -1035,7 +1038,7 @@ func sfoCurrent(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.Z
 		if result != nil && result.GetType() != phpv.ZtString {
 			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
 				fmt.Sprintf("%s::getCurrentLine(): Return value must be of type string, %s returned",
-					o.GetClass().GetName(), result.GetType().TypeName()))
+					realClass.GetName(), result.GetType().TypeName()))
 		}
 		return result, nil
 	}

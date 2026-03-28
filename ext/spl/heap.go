@@ -459,6 +459,21 @@ func initSplHeap() {
 				d := getHeapData(o)
 				result := phpv.NewZArray()
 
+				// Include user-defined properties first (from dynamic properties on the object)
+				for prop := range o.IterProps(ctx) {
+					v := o.GetPropValue(prop)
+					var mangledName string
+					if prop.Modifiers.IsPrivate() {
+						className := string(o.GetDeclClassName(prop))
+						mangledName = "\x00" + className + "\x00" + string(prop.VarName)
+					} else if prop.Modifiers.IsProtected() {
+						mangledName = "\x00*\x00" + string(prop.VarName)
+					} else {
+						mangledName = string(prop.VarName)
+					}
+					result.OffsetSet(ctx, phpv.ZString(mangledName), v)
+				}
+
 				// Determine class name for private property prefix
 				className := "SplHeap"
 

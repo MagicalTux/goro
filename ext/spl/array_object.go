@@ -361,7 +361,13 @@ func initArrayObject() {
 	ArrayObjectClass.Methods = map[phpv.ZString]*phpv.ZClassMethod{
 		"__construct": {
 			Name: "__construct",
-			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+			Method: &phpobj.NativeMethodNamed{
+				Args: []*phpv.FuncArg{
+					{VarName: "array"},
+					{VarName: "flags"},
+					{VarName: "iteratorClass"},
+				},
+				Fn: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				// Validate arg count FIRST: at most 3
 				if len(args) > 3 {
 					return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError,
@@ -413,7 +419,7 @@ func initArrayObject() {
 
 				o.SetOpaque(ArrayObjectClass, d)
 				return nil, nil
-			}),
+			})},
 		},
 
 		// ---- ArrayAccess methods ----

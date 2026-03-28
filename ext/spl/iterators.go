@@ -2399,6 +2399,18 @@ func recursiveIteratorNext(ctx phpv.Context, d *recursiveIteratorIteratorData, o
 			newTop := d.stack[len(d.stack)-1]
 			vv, _ := newTop.CallMethod(ctx, "valid")
 			if vv != nil && bool(vv.AsBool(ctx)) {
+				// In LEAVES_ONLY mode, check if the current element is actually a leaf.
+				// If maxDepth prevented descent but the element has children, skip it.
+				if d.mode == recursiveIteratorLeavesOnly {
+					currentDepth := len(d.stack) - 1
+					if d.maxDepth >= 0 && currentDepth >= d.maxDepth {
+						hasChildren, hcErr := recursiveIteratorCallHasChildren(ctx, d, outer, newTop)
+						if hcErr == nil && hasChildren {
+							// This element has children but we can't descend - skip it
+							return recursiveIteratorNext(ctx, d, outer)
+						}
+					}
+				}
 				return nil // Valid position after descent
 			}
 		}

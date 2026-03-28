@@ -49,10 +49,12 @@ func getOrInitArrayIteratorData(o *phpobj.ZObject) *arrayIteratorData {
 // overridesMethod checks if an object's class overrides the given method
 // from the specified base class. Returns true if a subclass defines its own version.
 func overridesMethod(o *phpobj.ZObject, baseClass *phpobj.ZClass, methodName string) bool {
-	// Use the real class (o.Class), not CurrentClass which may be a parent scope
-	// when the native method is defined on the base class.
-	cls, ok := o.Class.(*phpobj.ZClass)
-	if !ok || cls == nil {
+	// Use the real class (o.Class), not CurrentClass/GetClass() which may be
+	// a parent scope when the native method is defined on the base class.
+	var cls *phpobj.ZClass
+	if c, ok := o.Class.(*phpobj.ZClass); ok && c != nil {
+		cls = c
+	} else {
 		return false
 	}
 	if cls == baseClass {
