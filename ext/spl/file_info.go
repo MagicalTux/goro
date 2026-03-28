@@ -629,6 +629,9 @@ func sfiBaseName(path string) string {
 	if strings.Contains(path, "://") {
 		return path
 	}
+	if path == "" {
+		return ""
+	}
 	return filepath.Base(path)
 }
 
