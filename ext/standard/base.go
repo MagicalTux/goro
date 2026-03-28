@@ -1077,6 +1077,12 @@ func stdPropertyExists(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 			if _, found := obj.HashTable().GetStringB(propName); found {
 				return phpv.ZTrue.ZVal(), nil
 			}
+			// For ArrayObject with ARRAY_AS_PROPS, check the internal array
+			if h := phpobj.FindPropHandlers(obj.GetClass()); h != nil && h.HandlePropIsset != nil {
+				if result, handled, err := h.HandlePropIsset(ctx, obj, propName); handled && err == nil && result {
+					return phpv.ZTrue.ZVal(), nil
+				}
+			}
 		}
 	}
 

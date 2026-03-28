@@ -988,6 +988,23 @@ func sfoCurrent(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.Z
 	if d == nil {
 		return phpv.ZBool(false).ZVal(), nil
 	}
+
+	// Check if the subclass overrides getCurrentLine. If so, call the override
+	// and validate the return type.
+	if overridesMethod(o, SplFileObjectClass, "getCurrentLine") {
+		result, err := o.CallMethod(ctx, "getCurrentLine")
+		if err != nil {
+			return nil, err
+		}
+		// Validate: getCurrentLine() must return string
+		if result != nil && result.GetType() != phpv.ZtString {
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+				fmt.Sprintf("%s::getCurrentLine(): Return value must be of type string, %s returned",
+					o.GetClass().GetName(), result.GetType().TypeName()))
+		}
+		return result, nil
+	}
+
 	ensureFirstLineRead(d)
 	if d.eof {
 		return phpv.ZBool(false).ZVal(), nil

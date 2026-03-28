@@ -188,6 +188,41 @@ func (d *arrayObjectData) getWorkingArray(ctx phpv.Context) *phpv.ZArray {
 func initArrayObject() {
 	// Set up the array cast handler for (array) support
 	ArrayObjectClass.H = &phpv.ZClassHandlers{
+		HandleCompare: func(ctx phpv.Context, a, b phpv.ZObject) (int, error) {
+			ao, aok := a.(*phpobj.ZObject)
+			bo, bok := b.(*phpobj.ZObject)
+			if !aok || !bok {
+				return phpv.CompareUncomparable, nil
+			}
+			ad := getArrayObjectData(ao)
+			bd := getArrayObjectData(bo)
+			if ad == nil || bd == nil {
+				return phpv.CompareUncomparable, nil
+			}
+			// Compare internal arrays
+			aArr := ad.getEffectiveArray(ctx)
+			bArr := bd.getEffectiveArray(ctx)
+			if aArr == nil || bArr == nil {
+				if aArr == bArr {
+					return 0, nil
+				}
+				return 1, nil
+			}
+			// Also compare dynamic properties
+			aDynCount := 0
+			for range ao.IterProps(ctx) {
+				aDynCount++
+			}
+			bDynCount := 0
+			for range bo.IterProps(ctx) {
+				bDynCount++
+			}
+			if aDynCount != bDynCount {
+				return 1, nil
+			}
+			// Compare the arrays element by element
+			return phpv.CompareArray(ctx, aArr, bArr)
+		},
 		HandleCastArray: func(ctx phpv.Context, o phpv.ZObject) (*phpv.ZArray, error) {
 			if zo, ok := o.(*phpobj.ZObject); ok {
 				d := zo.GetOpaque(ArrayObjectClass)
@@ -215,6 +250,63 @@ func initArrayObject() {
 				}
 			}
 			return nil, nil
+		},
+		// Intercept property access for ARRAY_AS_PROPS support.
+		// These handlers fire before __get/__set/__isset/__unset, so subclasses
+		// that override those magic methods do NOT have them called when ARRAY_AS_PROPS is set.
+		HandlePropGet: func(ctx phpv.Context, o phpv.ZObject, key phpv.ZString) (*phpv.ZVal, error) {
+			zo := o.(*phpobj.ZObject)
+			d := getArrayObjectData(zo)
+			if d == nil || d.flags&ArrayObjectARRAY_AS_PROPS == 0 {
+				return nil, nil // fall through
+			}
+			if d.objectStorage != nil {
+				v, ok := d.objectStorage.HashTable().GetStringB(key)
+				if !ok {
+					ctx.Warn("Undefined array key \"%s\"", key, logopt.NoFuncName(true))
+					return phpv.ZNULL.ZVal(), nil
+				}
+				return v, nil
+			}
+			return d.array.OffsetGetWarn(ctx, key.ZVal())
+		},
+		HandlePropSet: func(ctx phpv.Context, o phpv.ZObject, key phpv.ZString, value *phpv.ZVal) (bool, error) {
+			zo := o.(*phpobj.ZObject)
+			d := getArrayObjectData(zo)
+			if d == nil || d.flags&ArrayObjectARRAY_AS_PROPS == 0 {
+				return false, nil // fall through
+			}
+			if d.objectStorage != nil {
+				return true, d.objectStorage.HashTable().SetString(key, value)
+			}
+			return true, d.array.OffsetSet(ctx, key.ZVal(), value)
+		},
+		HandlePropIsset: func(ctx phpv.Context, o phpv.ZObject, key phpv.ZString) (bool, bool, error) {
+			zo := o.(*phpobj.ZObject)
+			d := getArrayObjectData(zo)
+			if d == nil || d.flags&ArrayObjectARRAY_AS_PROPS == 0 {
+				return false, false, nil // fall through
+			}
+			if d.objectStorage != nil {
+				return d.objectStorage.HashTable().HasString(key), true, nil
+			}
+			exists, err := d.array.OffsetExists(ctx, key.ZVal())
+			if err != nil {
+				return false, false, err
+			}
+			return exists, true, nil
+		},
+		HandlePropUnset: func(ctx phpv.Context, o phpv.ZObject, key phpv.ZString) (bool, error) {
+			zo := o.(*phpobj.ZObject)
+			d := getArrayObjectData(zo)
+			if d == nil || d.flags&ArrayObjectARRAY_AS_PROPS == 0 {
+				return false, nil // fall through
+			}
+			if d.objectStorage != nil {
+				d.objectStorage.HashTable().UnsetString(key)
+				return true, nil
+			}
+			return true, d.array.OffsetUnset(ctx, key.ZVal())
 		},
 	}
 
@@ -506,7 +598,9 @@ func initArrayObject() {
 					return nil, phpobj.ThrowError(ctx, phpobj.Error,
 						"Cannot append properties to objects, use ArrayObject::offsetSet() instead")
 				}
-				err := d.array.OffsetSet(ctx, nil, args[0])
+				// Call offsetSet(null, value) through the object so that overridden
+				// offsetSet in subclasses is properly invoked.
+				_, err := o.CallMethod(ctx, "offsetSet", phpv.ZNULL.ZVal(), args[0])
 				return nil, err
 			}),
 		},

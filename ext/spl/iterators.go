@@ -626,7 +626,28 @@ func initCachingIterator() {
 					return nil, nil
 				}
 				if len(args) > 0 {
-					d.flags = int(args[0].AsInt(ctx))
+					newFlags := int(args[0].AsInt(ctx))
+					// Validate that only one toString flag is set
+					toStringFlags := newFlags & (cachingIteratorCallToString | cachingIteratorToStringUseKey | cachingIteratorToStringUseCurrent | cachingIteratorToStringUseInner)
+					bitCount := 0
+					for tf := toStringFlags; tf != 0; tf &= tf - 1 {
+						bitCount++
+					}
+					if bitCount > 1 {
+						return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+							"CachingIterator::setFlags(): Argument #1 ($flags) must contain only one of CachingIterator::CALL_TOSTRING, CachingIterator::TOSTRING_USE_KEY, CachingIterator::TOSTRING_USE_CURRENT, or CachingIterator::TOSTRING_USE_INNER")
+					}
+					// Cannot unset CALL_TOSTRING if it was set
+					if d.flags&cachingIteratorCallToString != 0 && newFlags&cachingIteratorCallToString == 0 {
+						return nil, phpobj.ThrowError(ctx, phpobj.InvalidArgumentException,
+							"Unsetting flag CALL_TO_STRING is not possible")
+					}
+					// Cannot unset TOSTRING_USE_INNER if it was set
+					if d.flags&cachingIteratorToStringUseInner != 0 && newFlags&cachingIteratorToStringUseInner == 0 {
+						return nil, phpobj.ThrowError(ctx, phpobj.InvalidArgumentException,
+							"Unsetting flag TOSTRING_USE_INNER is not possible")
+					}
+					d.flags = newFlags
 				}
 				return nil, nil
 			}),
@@ -651,6 +672,21 @@ func initCachingIterator() {
 					return phpv.ZString(d.currentKey.AsString(ctx)).ZVal(), nil
 				}
 				if d.flags&cachingIteratorToStringUseCurrent != 0 && d.currentVal != nil {
+					return phpv.ZString(d.currentVal.AsString(ctx)).ZVal(), nil
+				}
+				if d.flags&cachingIteratorToStringUseInner != 0 {
+					// Call __toString on the inner iterator
+					result, err := d.inner.CallMethod(ctx, "__toString")
+					if err != nil {
+						return nil, err
+					}
+					if result != nil {
+						return phpv.ZString(result.AsString(ctx)).ZVal(), nil
+					}
+					return phpv.ZString("").ZVal(), nil
+				}
+				// CALL_TOSTRING: call __toString on the current value
+				if d.flags&cachingIteratorCallToString != 0 {
 					return phpv.ZString(d.currentVal.AsString(ctx)).ZVal(), nil
 				}
 				return phpv.ZString(d.currentVal.AsString(ctx)).ZVal(), nil

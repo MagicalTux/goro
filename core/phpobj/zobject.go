@@ -1373,6 +1373,13 @@ func (o *ZObject) HasProp(ctx phpv.Context, key phpv.Val) (bool, error) {
 		}
 	}
 
+	// Property not found; check for class-level property isset handler before __isset
+	if h := FindPropHandlers(o.Class); h != nil && h.HandlePropIsset != nil {
+		if result, handled, err := h.HandlePropIsset(ctx, o, keyStr); handled || err != nil {
+			return result, err
+		}
+	}
+
 	// Property not found or not visible, try __isset magic method
 	class := o.GetClass().(*ZClass)
 	if m, ok := class.Methods["__isset"]; ok {
@@ -1393,6 +1400,21 @@ func (o *ZObject) HasProp(ctx phpv.Context, key phpv.Val) (bool, error) {
 	}
 
 	return false, nil
+}
+
+// FindPropHandlers walks up the class hierarchy looking for a class that has
+// property access handlers defined. Returns the first non-nil ZClassHandlers
+// that has at least one property handler, or nil if none found.
+func FindPropHandlers(cls phpv.ZClass) *phpv.ZClassHandlers {
+	for cls != nil {
+		if h := cls.Handlers(); h != nil {
+			if h.HandlePropGet != nil || h.HandlePropSet != nil || h.HandlePropIsset != nil || h.HandlePropUnset != nil {
+				return h
+			}
+		}
+		cls = cls.GetParent()
+	}
+	return nil
 }
 
 // isPropertyHidden returns true if the property is declared with restricted visibility
@@ -2059,6 +2081,15 @@ func (o *ZObject) ObjectGet(ctx phpv.Context, key phpv.Val) (*phpv.ZVal, error) 
 		}
 	}
 
+	// Property not found; check for class-level property handler before __get
+	// Walk up the class hierarchy to find handlers (subclasses inherit parent handlers)
+	if h := FindPropHandlers(o.Class); h != nil && h.HandlePropGet != nil {
+		if result, err := h.HandlePropGet(ctx, o, keyStr); result != nil || err != nil {
+			return result, err
+		}
+		// (nil, nil) means fall through to normal handling
+	}
+
 	// Property not found, try __get magic method
 	class := o.GetClass().(*ZClass)
 	if m, ok := class.Methods["__get"]; ok {
@@ -2153,6 +2184,13 @@ func (o *ZObject) ObjectGetQuiet(ctx phpv.Context, key phpv.Val) (*phpv.ZVal, bo
 
 	if o.h.HasString(keyStr) {
 		return o.h.GetString(keyStr), true, nil
+	}
+
+	// Property not found; check for class-level property handler before __get
+	if h := FindPropHandlers(o.Class); h != nil && h.HandlePropGet != nil {
+		if result, err := h.HandlePropGet(ctx, o, keyStr); result != nil || err != nil {
+			return result, err != nil, err
+		}
 	}
 
 	// Property not found, try __get magic method
@@ -2452,6 +2490,23 @@ func (o *ZObject) ObjectSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) er
 			delete(*o.typedPropUnset, keyStr)
 		}
 		return o.h.SetString(keyStr, value)
+	}
+
+	// Property not found; check for class-level property handler before magic methods
+	if h := FindPropHandlers(o.Class); h != nil {
+		if value == nil {
+			if h.HandlePropUnset != nil {
+				if handled, err := h.HandlePropUnset(ctx, o, keyStr); handled || err != nil {
+					return err
+				}
+			}
+		} else {
+			if h.HandlePropSet != nil {
+				if handled, err := h.HandlePropSet(ctx, o, keyStr, value); handled || err != nil {
+					return err
+				}
+			}
+		}
 	}
 
 	// Property not found, try magic methods

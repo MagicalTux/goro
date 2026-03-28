@@ -310,14 +310,13 @@ func initArrayIterator() {
 					return nil, nil
 				}
 				// Check if backed by an object (objectStorage flag)
-				// ArrayIterator doesn't have objectStorage field, but if flags indicate
-				// object backing, we should throw an error
-				// For now, check via the flag that gets set when constructing from object
 				if d.objectBacked {
 					return nil, phpobj.ThrowError(ctx, phpobj.Error,
 						"Cannot append properties to objects, use ArrayIterator::offsetSet() instead")
 				}
-				err := d.array.OffsetSet(ctx, nil, args[0])
+				// Call offsetSet(null, value) through the object so that overridden
+				// offsetSet in subclasses is properly invoked.
+				_, err := o.CallMethod(ctx, "offsetSet", phpv.ZNULL.ZVal(), args[0])
 				return nil, err
 			}),
 		},
