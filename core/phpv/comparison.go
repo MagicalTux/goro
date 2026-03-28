@@ -64,13 +64,32 @@ func CompareObject(ctx Context, ao, bo ZObject) (int, error) {
 	}
 	defer func() { compareDepth-- }()
 
-	aIter := ao.NewIterator()
-	bIter := bo.NewIterator()
-	for aIter.Valid(ctx) && bIter.Valid(ctx) {
-		av, _ := aIter.Current(ctx)
-		bv, _ := bIter.Current(ctx)
+	// PHP's == operator compares ALL properties (public, protected, private),
+	// not just public ones. Use the internal hash table which stores all
+	// properties with their storage keys. Since both objects are of the same
+	// class, they have the same key scheme.
+	aHT := ao.HashTable()
+	bHT := bo.HashTable()
 
-		cmp, err := Compare(ctx, av, bv)
+	if aHT.Count() != bHT.Count() {
+		if aHT.Count() > bHT.Count() {
+			return 1, nil
+		}
+		return -1, nil
+	}
+
+	// Compare all entries
+	aIter := aHT.NewIterator()
+	for aIter.Valid(ctx) {
+		aKey, _ := aIter.Key(ctx)
+		aVal, _ := aIter.Current(ctx)
+
+		bVal, ok := bHT.GetStringB(aKey.AsString(ctx))
+		if !ok {
+			return 1, nil // a has a key b doesn't
+		}
+
+		cmp, err := Compare(ctx, aVal, bVal)
 		if err != nil {
 			return -1, err
 		}
@@ -79,15 +98,6 @@ func CompareObject(ctx Context, ao, bo ZObject) (int, error) {
 		}
 
 		aIter.Next(ctx)
-		bIter.Next(ctx)
-	}
-
-	// Check if one has more properties than the other
-	if aIter.Valid(ctx) {
-		return 1, nil
-	}
-	if bIter.Valid(ctx) {
-		return -1, nil
 	}
 
 	return 0, nil

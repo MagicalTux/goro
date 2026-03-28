@@ -2021,10 +2021,11 @@ func (g *Global) RestoreUserExceptionHandler() {
 }
 
 func (g *Global) RegisterAutoload(handler phpv.Callable, prepend bool) {
-	// Check for duplicate by comparing callable names
-	name := phpv.CallableDisplayName(handler)
+	// Check for duplicate - PHP considers two autoloaders identical only if they
+	// are the same function name, or the same object instance + method name.
+	// Two different instances of the same class with the same method are NOT duplicates.
 	for _, f := range g.autoloadFuncs {
-		if phpv.CallableDisplayName(f) == name {
+		if autoloadCallablesEqual(f, handler) {
 			return // already registered, skip
 		}
 	}
@@ -2035,7 +2036,52 @@ func (g *Global) RegisterAutoload(handler phpv.Callable, prepend bool) {
 	}
 }
 
+// autoloadCallablesEqual returns true if two callables represent the same autoloader.
+// For plain functions: same name. For object methods: same object instance AND same method.
+// For static methods: same class AND same method.
+func autoloadCallablesEqual(a, b phpv.Callable) bool {
+	// Unwrap to get the inner callable and object
+	aObj, aName := autoloadCallableIdentity(a)
+	bObj, bName := autoloadCallableIdentity(b)
+
+	if aName != bName {
+		return false
+	}
+	// If both have object identity, compare by object pointer
+	if aObj != nil && bObj != nil {
+		return aObj == bObj
+	}
+	// If neither has object identity, same name means same callable
+	if aObj == nil && bObj == nil {
+		return true
+	}
+	return false
+}
+
+// autoloadCallableIdentity returns the bound object (if any) and a canonical name for matching.
+func autoloadCallableIdentity(c phpv.Callable) (phpv.ZObject, string) {
+	switch v := c.(type) {
+	case *phpv.BoundedCallable:
+		if v.This != nil {
+			return v.This, string(v.This.GetClass().GetName()) + "::" + v.Callable.Name()
+		}
+		return autoloadCallableIdentity(v.Callable)
+	case *phpv.MethodCallable:
+		// Static method - no object instance
+		return nil, string(v.Class.GetName()) + "::" + v.Callable.Name()
+	default:
+		return nil, phpv.CallableDisplayName(c)
+	}
+}
+
 func (g *Global) UnregisterAutoload(handler phpv.Callable) bool {
+	for i, f := range g.autoloadFuncs {
+		if autoloadCallablesEqual(f, handler) {
+			g.autoloadFuncs = append(g.autoloadFuncs[:i], g.autoloadFuncs[i+1:]...)
+			return true
+		}
+	}
+	// Fall back to name-based matching
 	name := phpv.CallableDisplayName(handler)
 	return g.UnregisterAutoloadByName(name)
 }

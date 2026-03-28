@@ -110,7 +110,7 @@ func initHeapData(ctx phpv.Context, o *phpobj.ZObject, compareFn func(phpv.Conte
 	return d
 }
 
-// userCompare calls the PHP-level compare() method on the object
+// userCompare calls the PHP-level compare() method on the object.
 func userCompare(ctx phpv.Context, o *phpobj.ZObject, a, b *phpv.ZVal) (int, error) {
 	result, err := o.CallMethod(ctx, "compare", a, b)
 	if err != nil {

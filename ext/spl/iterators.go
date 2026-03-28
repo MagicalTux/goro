@@ -17,11 +17,48 @@ import (
 // ============================================================================
 
 type iteratorIteratorData struct {
-	inner *phpobj.ZObject
+	inner      *phpobj.ZObject
+	cachedVal  *phpv.ZVal // cached current value after rewind/next
+	cachedKey  *phpv.ZVal // cached key value after rewind/next
+	cachedValid bool       // cached valid state
+	started    bool        // true after first rewind
 }
 
 func (d *iteratorIteratorData) Clone() any {
-	return &iteratorIteratorData{inner: d.inner}
+	return &iteratorIteratorData{
+		inner:       d.inner,
+		cachedVal:   d.cachedVal,
+		cachedKey:   d.cachedKey,
+		cachedValid: d.cachedValid,
+		started:     d.started,
+	}
+}
+
+// iteratorIteratorFetchCache fetches and caches valid/current/key from the inner iterator.
+// This matches PHP's IteratorIterator behavior of eagerly fetching after rewind/next.
+func iteratorIteratorFetchCache(ctx phpv.Context, d *iteratorIteratorData) error {
+	v, err := d.inner.CallMethod(ctx, "valid")
+	if err != nil {
+		d.cachedValid = false
+		d.cachedVal = nil
+		d.cachedKey = nil
+		return err
+	}
+	d.cachedValid = v != nil && bool(v.AsBool(ctx))
+	if d.cachedValid {
+		d.cachedVal, err = d.inner.CallMethod(ctx, "current")
+		if err != nil {
+			return err
+		}
+		d.cachedKey, err = d.inner.CallMethod(ctx, "key")
+		if err != nil {
+			return err
+		}
+	} else {
+		d.cachedVal = nil
+		d.cachedKey = nil
+	}
+	return nil
 }
 
 func getIteratorIteratorData(o *phpobj.ZObject, class *phpobj.ZClass) *iteratorIteratorData {
@@ -72,7 +109,11 @@ func initIteratorIterator() {
 					return nil, phpobj.ThrowError(ctx, phpobj.Error, "The object is in an invalid state as the parent constructor was not called")
 				}
 				_, err := d.inner.CallMethod(ctx, "rewind")
-				return nil, err
+				if err != nil {
+					return nil, err
+				}
+				d.started = true
+				return nil, iteratorIteratorFetchCache(ctx, d)
 			}),
 		},
 		"current": {
@@ -82,7 +123,10 @@ func initIteratorIterator() {
 				if d == nil {
 					return phpv.ZFalse.ZVal(), nil
 				}
-				return d.inner.CallMethod(ctx, "current")
+				if d.cachedVal != nil {
+					return d.cachedVal, nil
+				}
+				return phpv.ZFalse.ZVal(), nil
 			}),
 		},
 		"key": {
@@ -92,7 +136,10 @@ func initIteratorIterator() {
 				if d == nil {
 					return phpv.ZNULL.ZVal(), nil
 				}
-				return d.inner.CallMethod(ctx, "key")
+				if d.cachedKey != nil {
+					return d.cachedKey, nil
+				}
+				return phpv.ZNULL.ZVal(), nil
 			}),
 		},
 		"next": {
@@ -103,7 +150,10 @@ func initIteratorIterator() {
 					return nil, nil
 				}
 				_, err := d.inner.CallMethod(ctx, "next")
-				return nil, err
+				if err != nil {
+					return nil, err
+				}
+				return nil, iteratorIteratorFetchCache(ctx, d)
 			}),
 		},
 		"valid": {
@@ -113,11 +163,7 @@ func initIteratorIterator() {
 				if d == nil {
 					return phpv.ZFalse.ZVal(), nil
 				}
-				v, err := d.inner.CallMethod(ctx, "valid")
-				if err != nil {
-					return phpv.ZFalse.ZVal(), err
-				}
-				return v, nil
+				return phpv.ZBool(d.cachedValid).ZVal(), nil
 			}),
 		},
 		"getinneriterator": {

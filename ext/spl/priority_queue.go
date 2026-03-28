@@ -35,7 +35,8 @@ func (h *priorityHeap) Less(i, j int) bool {
 	var cmp int
 	var err error
 	if h.compareFn != nil {
-		cmp, err = h.compareFn(h.ctx, h.entries[i].priority, h.entries[j].priority)
+		// PHP passes arguments in reverse order (j, i) to match PHP's heap convention
+		cmp, err = h.compareFn(h.ctx, h.entries[j].priority, h.entries[i].priority)
 	} else {
 		// Higher priority comes first (max-heap)
 		cmp, err = phpv.Compare(h.ctx, h.entries[i].priority, h.entries[j].priority)

@@ -221,7 +221,6 @@ func (r *runnableForeach) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 			break
 		}
 
-		// PHP always calls key() on Iterator objects in foreach, even when no key variable
 		if r.k != nil {
 			k, err := it.Key(ctx)
 			if err != nil {
@@ -232,11 +231,15 @@ func (r *runnableForeach) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 			} else {
 				w.WriteValue(ctx, k.Dup())
 			}
-		} else if _, isPhpIter := it.(*phpObjectIterator); isPhpIter {
-			// For PHP Iterator objects, always call key() to maintain correct method call sequence
-			_, err = it.Key(ctx)
-			if err != nil {
-				return nil, err
+		} else if poi, isPhpIter := it.(*phpObjectIterator); isPhpIter {
+			// PHP calls key() on Iterator objects in foreach even without a key variable.
+			// The exception is ArrayIterator (and RecursiveArrayIterator) which use
+			// internal C-level iteration handlers that bypass the PHP key() method.
+			if !extendsArrayIterator(poi.obj) {
+				_, err = it.Key(ctx)
+				if err != nil {
+					return nil, err
+				}
 			}
 		}
 
@@ -306,6 +309,23 @@ func getForeachByRefArray(ctx phpv.Context, obj *phpobj.ZObject) *phpv.ZArray {
 		cls = cls.GetParent()
 	}
 	return nil
+}
+
+// extendsArrayIterator checks if the object's class is or extends ArrayIterator
+// or RecursiveArrayIterator. These internal SPL classes use C-level iteration
+// handlers that bypass the PHP-level key()/current() method calls during foreach.
+// Other SPL iterator classes (IteratorIterator, CachingIterator, etc.) DO have
+// key() called during their rewind/next caching cycle, which is visible to PHP.
+func extendsArrayIterator(obj *phpobj.ZObject) bool {
+	cls := obj.GetClass()
+	for cls != nil {
+		name := cls.GetName()
+		if name == "ArrayIterator" || name == "RecursiveArrayIterator" {
+			return true
+		}
+		cls = cls.GetParent()
+	}
+	return false
 }
 
 // phpObjectIterator wraps a PHP Iterator object to implement phpv.ZIterator

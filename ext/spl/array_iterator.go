@@ -18,11 +18,13 @@ type arrayIteratorData struct {
 }
 
 func (d *arrayIteratorData) Clone() any {
-	return &arrayIteratorData{
-		array: d.array.Dup(),
-		iter:  nil, // reset iterator on clone
+	// ArrayIterator clone shares the underlying array (unlike ArrayObject which copies)
+	nd := &arrayIteratorData{
+		array: d.array,
 		flags: d.flags,
 	}
+	nd.iter = nd.array.NewIterator()
+	return nd
 }
 
 func getArrayIteratorData(o *phpobj.ZObject) *arrayIteratorData {
@@ -40,7 +42,7 @@ func getOrInitArrayIteratorData(o *phpobj.ZObject) *arrayIteratorData {
 		d = &arrayIteratorData{
 			array: phpv.NewZArray(),
 		}
-		d.iter = d.array.NewIterator()
+		d.iter = d.array.MainIterator()
 		o.SetOpaque(ArrayIteratorClass, d)
 	}
 	return d
@@ -111,7 +113,7 @@ func initArrayIterator() {
 					switch args[0].GetType() {
 					case phpv.ZtArray:
 						d.array = args[0].Value().(*phpv.ZArray).Dup()
-					case phpv.ZtObject:
+	case phpv.ZtObject:
 						// Emit deprecation for object backing
 						ctx.Deprecated("ArrayIterator::__construct(): Using an object as a backing array for ArrayIterator is deprecated, as it allows violating class constraints and invariants", logopt.NoFuncName(true))
 						// Extract public properties for iteration
@@ -141,7 +143,7 @@ func initArrayIterator() {
 				if len(args) > 1 && args[1] != nil {
 					d.flags = args[1].AsInt(ctx)
 				}
-				d.iter = d.array.NewIterator()
+				d.iter = d.array.MainIterator()
 				o.SetOpaque(ArrayIteratorClass, d)
 				return nil, nil
 			}),
@@ -536,7 +538,7 @@ func initArrayIterator() {
 				}
 				if result != nil && result.GetType() == phpv.ZtArray {
 					d.array = result.Value().(*phpv.ZArray)
-					d.iter = d.array.NewIterator()
+					d.iter = d.array.MainIterator()
 				}
 				return nil, nil
 			}),
@@ -597,7 +599,7 @@ func initArrayIterator() {
 					d.array = phpv.NewZArray()
 				}
 
-				d.iter = d.array.NewIterator()
+				d.iter = d.array.MainIterator()
 				o.SetOpaque(ArrayIteratorClass, d)
 				return nil, nil
 			}),
@@ -607,4 +609,8 @@ func initArrayIterator() {
 
 var ArrayIteratorClass = &phpobj.ZClass{
 	Name: "ArrayIterator",
+	Const: map[phpv.ZString]*phpv.ZClassConst{
+		"STD_PROP_LIST":  {Value: phpv.ZInt(1)},
+		"ARRAY_AS_PROPS": {Value: phpv.ZInt(2)},
+	},
 }

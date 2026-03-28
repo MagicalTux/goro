@@ -3,6 +3,7 @@ package spl
 import (
 	"fmt"
 	"iter"
+	"strings"
 
 	"github.com/MagicalTux/goro/core"
 	"github.com/MagicalTux/goro/core/logopt"
@@ -482,61 +483,73 @@ func splAutoloadFunctions(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, erro
 	result := phpv.NewZArray()
 
 	for _, loader := range loaders {
-		// Convert callable to the PHP representation:
-		// - Named functions: string (function name)
-		// - Method callables: [object/class, method] array
-		// - Closures: Closure object
-		var entry *phpv.ZVal
-		switch c := loader.(type) {
-		case *phpv.MethodCallable:
-			arr := phpv.NewZArray()
-			if c.Static {
-				arr.OffsetSet(ctx, nil, phpv.ZString(c.Class.GetName()).ZVal())
-			} else if bc, ok := loader.(*phpv.BoundedCallable); ok && bc.This != nil {
-				arr.OffsetSet(ctx, nil, bc.This.ZVal())
-			} else {
-				arr.OffsetSet(ctx, nil, phpv.ZString(c.Class.GetName()).ZVal())
-			}
-			arr.OffsetSet(ctx, nil, phpv.ZString(c.Callable.Name()).ZVal())
-			entry = arr.ZVal()
-		case *phpv.BoundedCallable:
-			if c.This != nil {
-				arr := phpv.NewZArray()
-				arr.OffsetSet(ctx, nil, c.This.ZVal())
-				arr.OffsetSet(ctx, nil, phpv.ZString(c.Callable.Name()).ZVal())
-				entry = arr.ZVal()
-			} else {
-				// Check if the inner callable is a closure (has Spawn)
-				if spawner, ok := c.Callable.(interface {
-					Spawn(phpv.Context) (*phpv.ZVal, error)
-				}); ok {
-					if v, err := spawner.Spawn(ctx); err == nil {
-						entry = v
-					}
-				}
-				if entry == nil {
-					entry = phpv.ZString(c.Name()).ZVal()
-				}
-			}
-		default:
-			// Check if this is a closure (has Spawn method)
-			if spawner, ok := loader.(interface {
-				Spawn(phpv.Context) (*phpv.ZVal, error)
-			}); ok {
-				if v, err := spawner.Spawn(ctx); err == nil {
-					entry = v
-				}
-			}
-			if entry == nil {
-				// For named functions (including spl_autoload), return the name as string
-				name := phpv.CallableDisplayName(loader)
-				entry = phpv.ZString(name).ZVal()
-			}
-		}
+		entry := autoloadCallableToZVal(ctx, loader)
 		result.OffsetSet(ctx, nil, entry)
 	}
 
 	return result.ZVal(), nil
+}
+
+// autoloadCallableToZVal converts a registered autoload callable to the PHP representation:
+// - Named functions: string (function name)
+// - Method callables: [object/class, method] array
+// - Closures: Closure object
+func autoloadCallableToZVal(ctx phpv.Context, loader phpv.Callable) *phpv.ZVal {
+	switch c := loader.(type) {
+	case *phpv.BoundedCallable:
+		if c.This != nil {
+			// Check if inner is a MethodCallable
+			if mc, ok := c.Callable.(*phpv.MethodCallable); ok {
+				arr := phpv.NewZArray()
+				arr.OffsetSet(ctx, nil, c.This.ZVal())
+				arr.OffsetSet(ctx, nil, phpv.ZString(mc.Callable.Name()).ZVal())
+				return arr.ZVal()
+			}
+			arr := phpv.NewZArray()
+			arr.OffsetSet(ctx, nil, c.This.ZVal())
+			arr.OffsetSet(ctx, nil, phpv.ZString(c.Callable.Name()).ZVal())
+			return arr.ZVal()
+		}
+		// No $this - check if this is an anonymous closure or a named function
+		return autoloadCallableToZVal(ctx, c.Callable)
+	case *phpv.MethodCallable:
+		arr := phpv.NewZArray()
+		if c.Static {
+			arr.OffsetSet(ctx, nil, phpv.ZString(c.Class.GetName()).ZVal())
+		} else {
+			arr.OffsetSet(ctx, nil, phpv.ZString(c.Class.GetName()).ZVal())
+		}
+		arr.OffsetSet(ctx, nil, phpv.ZString(c.Callable.Name()).ZVal())
+		return arr.ZVal()
+	default:
+		// Check if this is an anonymous closure (name contains '{closure}' or similar)
+		name := loader.Name()
+		if isAnonymousClosure(name) {
+			// Return as a Closure object
+			if spawner, ok := loader.(interface {
+				Spawn(phpv.Context) (*phpv.ZVal, error)
+			}); ok {
+				if v, err := spawner.Spawn(ctx); err == nil {
+					return v
+				}
+			}
+		}
+		// Named function - return as string
+		return phpv.ZString(name).ZVal()
+	}
+}
+
+// isAnonymousClosure checks if a callable name looks like an anonymous closure
+func isAnonymousClosure(name string) bool {
+	if name == "" {
+		return true
+	}
+	for _, marker := range []string{"{closure}", "{closure:", "Closure"} {
+		if strings.Contains(name, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 // > func int iterator_apply ( Traversable $iterator , callable $callback [, array $args = [] ] )

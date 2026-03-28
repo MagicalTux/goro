@@ -5,9 +5,13 @@ import (
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
-// infiniteIteratorData holds the internal state for an InfiniteIterator instance
+// infiniteIteratorData holds the internal state for an InfiniteIterator instance.
+// InfiniteIterator extends IteratorIterator in PHP and inherits its caching behavior.
 type infiniteIteratorData struct {
-	inner *phpobj.ZObject
+	inner       *phpobj.ZObject
+	cachedVal   *phpv.ZVal
+	cachedKey   *phpv.ZVal
+	cachedValid bool
 }
 
 func getInfiniteIteratorData(o *phpobj.ZObject) *infiniteIteratorData {
@@ -16,6 +20,31 @@ func getInfiniteIteratorData(o *phpobj.ZObject) *infiniteIteratorData {
 		return nil
 	}
 	return d.(*infiniteIteratorData)
+}
+
+func infiniteIteratorFetchCache(ctx phpv.Context, d *infiniteIteratorData) error {
+	v, err := d.inner.CallMethod(ctx, "valid")
+	if err != nil {
+		d.cachedValid = false
+		d.cachedVal = nil
+		d.cachedKey = nil
+		return err
+	}
+	d.cachedValid = v != nil && bool(v.AsBool(ctx))
+	if d.cachedValid {
+		d.cachedVal, err = d.inner.CallMethod(ctx, "current")
+		if err != nil {
+			return err
+		}
+		d.cachedKey, err = d.inner.CallMethod(ctx, "key")
+		if err != nil {
+			return err
+		}
+	} else {
+		d.cachedVal = nil
+		d.cachedKey = nil
+	}
+	return nil
 }
 
 func initInfiniteIterator() {
@@ -31,6 +60,8 @@ func initInfiniteIterator() {
 					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "InfiniteIterator::__construct(): Argument #1 ($iterator) must be of type Iterator")
 				}
 				o.SetOpaque(InfiniteIteratorClass, &infiniteIteratorData{inner: inner})
+				// Also set IteratorIterator opaque so parent methods work
+				o.SetOpaque(IteratorIteratorClass, &iteratorIteratorData{inner: inner})
 				return nil, nil
 			}),
 		},
@@ -42,7 +73,10 @@ func initInfiniteIterator() {
 					return nil, phpobj.ThrowError(ctx, phpobj.Error, "The object is in an invalid state as the parent constructor was not called")
 				}
 				_, err := d.inner.CallMethod(ctx, "rewind")
-				return nil, err
+				if err != nil {
+					return nil, err
+				}
+				return nil, infiniteIteratorFetchCache(ctx, d)
 			}),
 		},
 		"current": {
@@ -52,7 +86,10 @@ func initInfiniteIterator() {
 				if d == nil {
 					return phpv.ZFalse.ZVal(), nil
 				}
-				return d.inner.CallMethod(ctx, "current")
+				if d.cachedVal != nil {
+					return d.cachedVal, nil
+				}
+				return phpv.ZFalse.ZVal(), nil
 			}),
 		},
 		"key": {
@@ -62,7 +99,10 @@ func initInfiniteIterator() {
 				if d == nil {
 					return phpv.ZNULL.ZVal(), nil
 				}
-				return d.inner.CallMethod(ctx, "key")
+				if d.cachedKey != nil {
+					return d.cachedKey, nil
+				}
+				return phpv.ZNULL.ZVal(), nil
 			}),
 		},
 		"next": {
@@ -77,16 +117,30 @@ func initInfiniteIterator() {
 				if err != nil {
 					return nil, err
 				}
-				// If inner is no longer valid, rewind it
+				// Check if inner is still valid
 				v, err := d.inner.CallMethod(ctx, "valid")
 				if err != nil {
 					return nil, err
 				}
-				if v == nil || !bool(v.AsBool(ctx)) {
+				isValid := v != nil && bool(v.AsBool(ctx))
+				if !isValid {
+					// Inner exhausted, rewind it
 					_, err = d.inner.CallMethod(ctx, "rewind")
 					if err != nil {
 						return nil, err
 					}
+					// After rewind, re-check valid and fetch cache
+					return nil, infiniteIteratorFetchCache(ctx, d)
+				}
+				// Inner is valid - cache current/key without re-checking valid
+				d.cachedValid = true
+				d.cachedVal, err = d.inner.CallMethod(ctx, "current")
+				if err != nil {
+					return nil, err
+				}
+				d.cachedKey, err = d.inner.CallMethod(ctx, "key")
+				if err != nil {
+					return nil, err
 				}
 				return nil, nil
 			}),
@@ -98,10 +152,7 @@ func initInfiniteIterator() {
 				if d == nil {
 					return phpv.ZFalse.ZVal(), nil
 				}
-				// InfiniteIterator delegates valid() to the inner iterator.
-				// After next() rewinds the inner when it becomes invalid,
-				// valid() should return the inner's state.
-				return d.inner.CallMethod(ctx, "valid")
+				return phpv.ZBool(d.cachedValid).ZVal(), nil
 			}),
 		},
 		"getinneriterator": {

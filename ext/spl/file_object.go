@@ -177,6 +177,37 @@ func initSplFileObject() {
 
 // applyMaxLineLen truncates a line if maxLineLen is set (>0).
 // PHP's maxLineLen limits the total number of bytes read per line (including newline).
+// csvHasUnclosedQuote checks if a CSV line has an unclosed enclosure character.
+// This is used to detect multi-line quoted fields that need additional lines to be read.
+func csvHasUnclosedQuote(line string, enc byte, esc byte) bool {
+	if enc == 0 {
+		return false
+	}
+	inQuote := false
+	for i := 0; i < len(line); i++ {
+		if inQuote {
+			if esc != 0 && esc != enc && line[i] == esc && i+1 < len(line) {
+				// Escape character: skip next char
+				i++
+				continue
+			}
+			if line[i] == enc {
+				if esc == enc && i+1 < len(line) && line[i+1] == enc {
+					// Doubled enclosure = escaped literal
+					i++
+					continue
+				}
+				inQuote = false
+			}
+		} else {
+			if line[i] == enc {
+				inQuote = true
+			}
+		}
+	}
+	return inQuote
+}
+
 func applyMaxLineLen(line string, maxLineLen int) string {
 	if maxLineLen > 0 && len(line) > maxLineLen {
 		return line[:maxLineLen]
@@ -550,6 +581,18 @@ func sfoFgetcsv(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.Z
 	}
 
 	line := d.curLine
+
+	// Handle multi-line CSV fields: if a quoted field is not closed,
+	// continue reading more lines until the quote is closed or EOF.
+	for csvHasUnclosedQuote(line, enc, esc) {
+		nextLine, ok := d.readLine()
+		if !ok {
+			break
+		}
+		d.line++
+		line += nextLine
+	}
+
 	// Strip trailing newline for CSV parsing
 	line = strings.TrimRight(line, "\r\n")
 
