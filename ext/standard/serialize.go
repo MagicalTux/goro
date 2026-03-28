@@ -151,12 +151,12 @@ func serializeKey(ctx phpv.Context, value *phpv.ZVal) string {
 		n := value.AsInt(ctx)
 		return "i:" + strconv.FormatInt(int64(n), 10) + ";"
 	case phpv.ZtString:
-		s := value.AsString(ctx)
-		return fmt.Sprintf(`s:%d:"%s";`, len(s), s)
+		s := string(value.AsString(ctx))
+		return "s:" + strconv.Itoa(len(s)) + ":\"" + s + "\";"
 	default:
 		// Fallback: cast to string
-		s := value.AsString(ctx)
-		return fmt.Sprintf(`s:%d:"%s";`, len(s), s)
+		s := string(value.AsString(ctx))
+		return "s:" + strconv.Itoa(len(s)) + ":\"" + s + "\";"
 	}
 }
 
@@ -231,8 +231,8 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seen *ser
 		result = "d:" + s + ";"
 	case phpv.ZtString:
 		seen.nextRef()
-		s := value.AsString(ctx)
-		result = fmt.Sprintf(`s:%d:"%s";`, len(s), s)
+		s := string(value.AsString(ctx))
+		result = "s:" + strconv.Itoa(len(s)) + ":\"" + s + "\";"
 	case phpv.ZtArray:
 		arr := value.AsArray(ctx)
 
@@ -336,7 +336,7 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seen *ser
 			contents := buf.String()
 			buf.Reset()
 			className := string(obj.GetClass().GetName())
-			buf.WriteString(fmt.Sprintf(`O:%d:"%s":%d:`, len(className), className, propCount))
+			buf.WriteString("O:" + strconv.Itoa(len(className)) + ":\"" + className + "\":" + strconv.Itoa(propCount) + ":")
 			buf.WriteString("{")
 			buf.WriteString(contents)
 			buf.WriteString("}")
@@ -367,9 +367,9 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seen *ser
 				if val.GetType() != phpv.ZtString {
 					return "", phpobj.ThrowError(ctx, phpobj.Exception, fmt.Sprintf("%s::serialize() must return a string or NULL", obj.GetClass().GetName()))
 				}
-				data := val.AsString(ctx)
+				data := string(val.AsString(ctx))
 				className := string(obj.GetClass().GetName())
-				result = fmt.Sprintf(`C:%d:"%s":%d:{%s}`, len(className), className, len(data), string(data))
+				result = "C:" + strconv.Itoa(len(className)) + ":\"" + className + "\":" + strconv.Itoa(len(data)) + ":{" + data + "}"
 				return result, nil
 			}
 		}
@@ -423,7 +423,7 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seen *ser
 					// Check if it's a dynamic property on the object
 					if zobj.HashTable().HasString(propName) {
 						mangledName := string(propName)
-						sub := fmt.Sprintf(`s:%d:"%s";`, len(mangledName), mangledName)
+						sub := "s:" + strconv.Itoa(len(mangledName)) + ":\"" + mangledName + "\";"
 						buf.WriteString(sub)
 						v := zobj.HashTable().GetString(propName)
 						sub2, err := serializeValue(ctx, v, depth+1, seen)
@@ -450,7 +450,7 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seen *ser
 				} else {
 					mangledName = string(classProp.VarName)
 				}
-				sub := fmt.Sprintf(`s:%d:"%s";`, len(mangledName), mangledName)
+				sub := "s:" + strconv.Itoa(len(mangledName)) + ":\"" + mangledName + "\";"
 				buf.WriteString(sub)
 
 				v := zobj.GetPropValue(classProp)
@@ -474,7 +474,7 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seen *ser
 				} else {
 					mangledName = string(prop.VarName)
 				}
-				sub := fmt.Sprintf(`s:%d:"%s";`, len(mangledName), mangledName)
+				sub := "s:" + strconv.Itoa(len(mangledName)) + ":\"" + mangledName + "\";"
 				buf.WriteString(sub)
 
 				v := zobj.GetPropValue(prop)
@@ -491,7 +491,7 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seen *ser
 		contents := buf.String()
 		buf.Reset()
 		className := string(obj.GetClass().GetName())
-		buf.WriteString(fmt.Sprintf(`O:%d:"%s":%d:`, len(className), className, propCount))
+		buf.WriteString("O:" + strconv.Itoa(len(className)) + ":\"" + className + "\":" + strconv.Itoa(propCount) + ":")
 		buf.WriteString("{")
 		buf.WriteString(contents)
 		buf.WriteString("}")

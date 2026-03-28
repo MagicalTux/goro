@@ -121,12 +121,12 @@ func initIteratorIterator() {
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				d := getIteratorIteratorData(o, IteratorIteratorClass)
 				if d == nil {
-					return phpv.ZFalse.ZVal(), nil
+					return phpv.ZNULL.ZVal(), nil
 				}
 				if d.cachedVal != nil {
 					return d.cachedVal, nil
 				}
-				return phpv.ZFalse.ZVal(), nil
+				return phpv.ZNULL.ZVal(), nil
 			}),
 		},
 		"key": {
@@ -216,14 +216,44 @@ var IteratorIteratorClass = &phpobj.ZClass{
 // ============================================================================
 
 type limitIteratorData struct {
-	inner  *phpobj.ZObject
-	offset int
-	limit  int
-	pos    int
+	inner       *phpobj.ZObject
+	offset      int
+	limit       int
+	pos         int
+	cachedVal   *phpv.ZVal
+	cachedKey   *phpv.ZVal
+	cachedValid bool
 }
 
 func (d *limitIteratorData) Clone() any {
-	return &limitIteratorData{inner: d.inner, offset: d.offset, limit: d.limit, pos: d.pos}
+	return &limitIteratorData{inner: d.inner, offset: d.offset, limit: d.limit, pos: d.pos,
+		cachedVal: d.cachedVal, cachedKey: d.cachedKey, cachedValid: d.cachedValid}
+}
+
+// limitIteratorFetchCache fetches and caches valid/current/key from the inner iterator.
+func limitIteratorFetchCache(ctx phpv.Context, d *limitIteratorData) error {
+	v, err := d.inner.CallMethod(ctx, "valid")
+	if err != nil {
+		d.cachedValid = false
+		d.cachedVal = nil
+		d.cachedKey = nil
+		return err
+	}
+	d.cachedValid = v != nil && bool(v.AsBool(ctx))
+	if d.cachedValid {
+		d.cachedVal, err = d.inner.CallMethod(ctx, "current")
+		if err != nil {
+			return err
+		}
+		d.cachedKey, err = d.inner.CallMethod(ctx, "key")
+		if err != nil {
+			return err
+		}
+	} else {
+		d.cachedVal = nil
+		d.cachedKey = nil
+	}
+	return nil
 }
 
 func getLimitIteratorData(o *phpobj.ZObject) *limitIteratorData {
@@ -285,7 +315,14 @@ func initLimitIterator() {
 				}
 				d.pos = 0
 				// Seek to offset using the common seek logic
-				return nil, limitIteratorSeekTo(ctx, d, d.offset)
+				err = limitIteratorSeekTo(ctx, d, d.offset)
+				if err != nil {
+					return nil, err
+				}
+				// For non-seekable iterators, PHP's spl_dual_it_fetch(check_more=1)
+				// calls valid() after seeking. This is already handled by the foreach
+				// iterator's ensureStarted and fetchCache, so no additional action needed.
+				return nil, nil
 			}),
 		},
 		"current": {
@@ -420,7 +457,7 @@ func initLimitIterator() {
 // If the inner implements SeekableIterator, it uses seek() directly.
 // Otherwise, it advances from current position d.pos to target, calling next/valid on inner.
 func limitIteratorSeekTo(ctx phpv.Context, d *limitIteratorData, target int) error {
-	// Check if inner implements SeekableIterator - use seek() if so
+	// Check if inner implements SeekableIterator - use seek() directly
 	if d.inner.GetClass().Implements(SeekableIterator) {
 		_, err := d.inner.CallMethod(ctx, "seek", phpv.ZInt(target).ZVal())
 		if err != nil {
@@ -444,8 +481,8 @@ func limitIteratorSeekTo(ctx phpv.Context, d *limitIteratorData, target int) err
 		}
 		d.pos++
 	}
-	// Final valid check at the target position (matches PHP behavior)
-	d.inner.CallMethod(ctx, "valid")
+	// For non-seekable iterators, PHP's internal handler fetches valid/current/key here
+	// via spl_dual_it_fetch(check_more=1). This adds an extra valid() call.
 	return nil
 }
 
@@ -827,6 +864,33 @@ func initCachingIterator() {
 				return nil, nil
 			}),
 		},
+		"__call": {
+			Name: "__call",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				d := getCachingIteratorData(o)
+				if d == nil || len(args) < 2 {
+					return phpv.ZNULL.ZVal(), nil
+				}
+				methodName := string(args[0].AsString(ctx))
+				callArgs := args[1].AsArray(ctx)
+				var fwdArgs []*phpv.ZVal
+				if callArgs != nil {
+					for _, v := range callArgs.Iterate(ctx) {
+						fwdArgs = append(fwdArgs, v)
+					}
+				}
+				result, err := d.inner.CallMethod(ctx, methodName, fwdArgs...)
+				if err != nil {
+					errStr := err.Error()
+					if strings.Contains(errStr, "Call to undefined method") {
+						return nil, phpobj.ThrowError(ctx, phpobj.Error,
+							fmt.Sprintf("Call to undefined method %s::%s()", o.GetClass().GetName(), methodName))
+					}
+					return nil, err
+				}
+				return result, nil
+			}),
+		},
 	}
 }
 
@@ -1137,7 +1201,12 @@ func initRegexIterator() {
 					if err != nil || !bool(v.AsBool(ctx)) {
 						break
 					}
-					if d.accept(ctx, o) {
+					// Call accept() through PHP method dispatch so subclass overrides work
+					acceptResult, err := o.CallMethod(ctx, "accept")
+					if err != nil {
+						return nil, err
+					}
+					if acceptResult != nil && bool(acceptResult.AsBool(ctx)) {
 						break
 					}
 					_, err = d.inner.CallMethod(ctx, "next")
@@ -1193,8 +1262,12 @@ func initRegexIterator() {
 					if !bool(v.AsBool(ctx)) {
 						break
 					}
-					// Check if current element matches the regex
-					if d.accept(ctx, o) {
+					// Call accept() through PHP method dispatch so subclass overrides work
+					acceptResult, err := o.CallMethod(ctx, "accept")
+					if err != nil {
+						return nil, err
+					}
+					if acceptResult != nil && bool(acceptResult.AsBool(ctx)) {
 						break
 					}
 				}
@@ -1424,6 +1497,10 @@ func (d *regexIteratorData) accept(ctx phpv.Context, obj ...*phpobj.ZObject) boo
 	} else {
 		val, err := d.inner.CallMethod(ctx, "current")
 		if err != nil || val == nil {
+			return false
+		}
+		// PHP silently skips non-scalar values (arrays, objects) - they can't match a regex
+		if val.GetType() == phpv.ZtArray || val.GetType() == phpv.ZtObject {
 			return false
 		}
 		subject = string(val.AsString(ctx))
@@ -1976,7 +2053,7 @@ func initRecursiveIteratorIterator() {
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				d := getRecursiveIteratorIteratorData(o)
 				if d == nil {
-					return nil, phpobj.ThrowError(ctx, phpobj.Error, "Object is not initialized")
+					return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("The %s instance wasn't initialized properly", o.GetClass().GetName()))
 				}
 				if len(d.stack) == 0 {
 					return nil, nil

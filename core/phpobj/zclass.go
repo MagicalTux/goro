@@ -2981,8 +2981,13 @@ func (c *ZClass) GetProp(name phpv.ZString) (*phpv.ZClassProp, bool) {
 
 func (c *ZClass) GetMethod(name phpv.ZString) (*phpv.ZClassMethod, bool) {
 	name = name.ToLower()
-	r, ok := c.Methods[name]
-	return r, ok
+	// Search this class and all parent classes
+	for cls := c; cls != nil; cls = cls.Extends {
+		if r, ok := cls.Methods[name]; ok {
+			return r, true
+		}
+	}
+	return nil, false
 }
 
 func (c *ZClass) GetMethods() map[phpv.ZString]*phpv.ZClassMethod {

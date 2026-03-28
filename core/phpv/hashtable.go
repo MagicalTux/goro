@@ -90,6 +90,58 @@ func (z *ZHashTable) Dup() *ZHashTable {
 	return n
 }
 
+// DeepCopy creates an immediate independent copy of the hash table without
+// using COW. The original is not marked as COW so its iterators remain stable.
+// This is used by ArrayIterator and similar structures that need an independent
+// copy while keeping their iterators pointing at the correct entries.
+func (z *ZHashTable) DeepCopy() *ZHashTable {
+	z.lock.RLock()
+	defer z.lock.RUnlock()
+
+	n := &ZHashTable{
+		inc:        z.inc,
+		_idx_s:     make(map[ZString]*hashTableVal),
+		_idx_i:     make(map[ZInt]*hashTableVal),
+		memTracker: z.memTracker,
+	}
+
+	var last *hashTableVal
+	for c := z.first; c != nil; c = c.next {
+		if c.deleted {
+			continue
+		}
+		val := c.v
+		if !c.v.IsRef() {
+			val = c.v.ZVal()
+		}
+		nc := &hashTableVal{
+			k:    c.k,
+			v:    val,
+			prev: last,
+		}
+		n.count++
+		if n.first == nil {
+			n.first = nc
+		}
+		if last != nil {
+			last.next = nc
+		}
+		last = nc
+		switch k := nc.k.(type) {
+		case ZInt:
+			n._idx_i[k] = nc
+		case ZString:
+			n._idx_s[k] = nc
+		}
+	}
+	n.last = last
+
+	// Initialize the main iterator
+	n.mainIterator = &zhashtableIterator{t: n, cur: n.first}
+
+	return n
+}
+
 func (z *ZHashTable) Clear() {
 	z.lock.Lock()
 	defer z.lock.Unlock()

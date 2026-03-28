@@ -233,9 +233,9 @@ func (r *runnableForeach) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 			}
 		} else if poi, isPhpIter := it.(*phpObjectIterator); isPhpIter {
 			// PHP calls key() on Iterator objects in foreach even without a key variable.
-			// The exception is ArrayIterator (and RecursiveArrayIterator) which use
-			// internal C-level iteration handlers that bypass the PHP key() method.
-			if !extendsArrayIterator(poi.obj) {
+			// Built-in SPL iterator classes use internal C-level iteration handlers that
+			// cache key/current during rewind/next, so foreach doesn't call key() separately.
+			if !extendsInternalSPLIterator(poi.obj) {
 				_, err = it.Key(ctx)
 				if err != nil {
 					return nil, err
@@ -311,16 +311,53 @@ func getForeachByRefArray(ctx phpv.Context, obj *phpobj.ZObject) *phpv.ZArray {
 	return nil
 }
 
-// extendsArrayIterator checks if the object's class is or extends ArrayIterator
-// or RecursiveArrayIterator. These internal SPL classes use C-level iteration
-// handlers that bypass the PHP-level key()/current() method calls during foreach.
-// Other SPL iterator classes (IteratorIterator, CachingIterator, etc.) DO have
-// key() called during their rewind/next caching cycle, which is visible to PHP.
-func extendsArrayIterator(obj *phpobj.ZObject) bool {
+// extendsInternalSPLIterator checks if the object's class is or extends one of
+// the built-in SPL iterator classes. These classes have C-level get_iterator
+// handlers that use internal caching for current/key, so the PHP-level key()
+// method is NOT called by foreach when there's no key variable. Instead,
+// key() is called during the internal caching step (rewind/next).
+func extendsInternalSPLIterator(obj *phpobj.ZObject) bool {
+	internalNames := map[phpv.ZString]bool{
+		"ArrayIterator":                    true,
+		"RecursiveArrayIterator":           true,
+		"IteratorIterator":                 true,
+		"FilterIterator":                   true,
+		"RecursiveFilterIterator":          true,
+		"CallbackFilterIterator":           true,
+		"RecursiveCallbackFilterIterator":  true,
+		"ParentIterator":                   true,
+		"RegexIterator":                    true,
+		"RecursiveRegexIterator":           true,
+		"NoRewindIterator":                 true,
+		"InfiniteIterator":                 true,
+		"LimitIterator":                    true,
+		"CachingIterator":                  true,
+		"RecursiveCachingIterator":         true,
+		"RecursiveIteratorIterator":        true,
+		"RecursiveTreeIterator":            true,
+		"AppendIterator":                   true,
+		"EmptyIterator":                    true,
+		"DirectoryIterator":                true,
+		"FilesystemIterator":               true,
+		"RecursiveDirectoryIterator":       true,
+		"GlobIterator":                     true,
+		"SplFileObject":                    true,
+		"SplTempFileObject":               true,
+		"SplFixedArray":                    true,
+		"SplDoublyLinkedList":              true,
+		"SplStack":                         true,
+		"SplQueue":                         true,
+		"SplPriorityQueue":                 true,
+		"SplHeap":                          true,
+		"SplMinHeap":                       true,
+		"SplMaxHeap":                       true,
+		"SplObjectStorage":                 true,
+		"MultipleIterator":                 true,
+	}
+
 	cls := obj.GetClass()
 	for cls != nil {
-		name := cls.GetName()
-		if name == "ArrayIterator" || name == "RecursiveArrayIterator" {
+		if internalNames[cls.GetName()] {
 			return true
 		}
 		cls = cls.GetParent()
@@ -337,12 +374,18 @@ type phpObjectIterator struct {
 	needsValid      bool // set after Next() to defer valid() call to Valid()
 	err             error
 	fromGetIterator bool // true if created from IteratorAggregate::getIterator()
+	// For SPL internal iterator classes, cache current/key after valid check
+	isSPLInternal   bool
+	cachedCurrent   *phpv.ZVal
+	cachedKey       *phpv.ZVal
+	hasCached       bool
 }
 
 func (it *phpObjectIterator) ensureStarted() {
 	if !it.started {
 		it.started = true
 		it.needsValid = false
+		it.isSPLInternal = extendsInternalSPLIterator(it.obj)
 		_, it.err = it.obj.CallMethod(it.ctx, "rewind")
 		if it.err == nil {
 			v, err := it.obj.CallMethod(it.ctx, "valid")
@@ -352,10 +395,60 @@ func (it *phpObjectIterator) ensureStarted() {
 			} else {
 				it.valid = v != nil && bool(v.AsBool(it.ctx))
 			}
+			// For SPL internal classes, fetch current/key after valid check.
+			// PHP's internal iteration handler caches current/key after rewind.
+			if it.valid && it.isSPLInternal {
+				it.fetchCache()
+			}
 		} else {
 			it.valid = false
 		}
 	}
+}
+
+// fetchCache calls current() and key() on the iterator and caches the results.
+// This matches PHP's spl_dual_it_fetch(check_more=0) behavior.
+func (it *phpObjectIterator) fetchCache() {
+	it.hasCached = false
+	var err error
+	it.cachedCurrent, err = it.obj.CallMethod(it.ctx, "current")
+	if err != nil {
+		it.err = err
+		return
+	}
+	it.cachedKey, err = it.obj.CallMethod(it.ctx, "key")
+	if err != nil {
+		it.err = err
+		return
+	}
+	it.hasCached = true
+}
+
+// fetchCacheWithValidCheck calls valid(), current(), and key() on the iterator.
+// This matches PHP's spl_dual_it_fetch(check_more=1) behavior used during rewind.
+func (it *phpObjectIterator) fetchCacheWithValidCheck() {
+	it.hasCached = false
+	v, err := it.obj.CallMethod(it.ctx, "valid")
+	if err != nil {
+		it.err = err
+		it.valid = false
+		return
+	}
+	if v == nil || !bool(v.AsBool(it.ctx)) {
+		it.valid = false
+		return
+	}
+	it.cachedCurrent, err = it.obj.CallMethod(it.ctx, "current")
+	if err != nil {
+		it.err = err
+		return
+	}
+	it.cachedKey, err = it.obj.CallMethod(it.ctx, "key")
+	if err != nil {
+		it.err = err
+		return
+	}
+	it.hasCached = true
 }
 
 func (it *phpObjectIterator) Current(ctx phpv.Context) (*phpv.ZVal, error) {
@@ -365,6 +458,9 @@ func (it *phpObjectIterator) Current(ctx phpv.Context) (*phpv.ZVal, error) {
 	}
 	if !it.valid {
 		return nil, nil
+	}
+	if it.hasCached {
+		return it.cachedCurrent, nil
 	}
 	return it.obj.CallMethod(ctx, "current")
 }
@@ -377,6 +473,9 @@ func (it *phpObjectIterator) Key(ctx phpv.Context) (*phpv.ZVal, error) {
 	if !it.valid {
 		return nil, nil
 	}
+	if it.hasCached {
+		return it.cachedKey, nil
+	}
 	return it.obj.CallMethod(ctx, "key")
 }
 
@@ -385,6 +484,7 @@ func (it *phpObjectIterator) Next(ctx phpv.Context) (*phpv.ZVal, error) {
 	if it.err != nil {
 		return nil, it.err
 	}
+	it.hasCached = false // invalidate cache before next
 	_, err := it.obj.CallMethod(ctx, "next")
 	if err != nil {
 		it.err = err
@@ -431,6 +531,10 @@ func (it *phpObjectIterator) Valid(ctx phpv.Context) bool {
 			return false
 		}
 		it.valid = v != nil && bool(v.AsBool(ctx))
+		// For SPL internal classes, cache current/key after valid check
+		if it.valid && it.isSPLInternal {
+			it.fetchCache()
+		}
 	}
 	return it.valid
 }
@@ -713,3 +817,4 @@ func compileForeach(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 
 	return r, nil
 }
+

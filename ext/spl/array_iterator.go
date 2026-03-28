@@ -112,7 +112,7 @@ func initArrayIterator() {
 				if len(args) > 0 && args[0] != nil {
 					switch args[0].GetType() {
 					case phpv.ZtArray:
-						d.array = args[0].Value().(*phpv.ZArray).Dup()
+						d.array = args[0].Value().(*phpv.ZArray).DeepCopy()
 	case phpv.ZtObject:
 						// Emit deprecation for object backing
 						ctx.Deprecated("ArrayIterator::__construct(): Using an object as a backing array for ArrayIterator is deprecated, as it allows violating class constraints and invariants", logopt.NoFuncName(true))

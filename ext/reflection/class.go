@@ -416,25 +416,41 @@ func reflectionClassGetConstants(ctx phpv.Context, o *phpobj.ZObject, args []*ph
 	}
 
 	arr := phpv.NewZArray()
-	if zc.Const != nil {
-		for _, name := range zc.ConstOrder {
-			c := zc.Const[name]
-			if c == nil || c.Value == nil {
-				continue
+	// Collect constants from parent classes first, then override with child
+	// Walk from the root parent to the current class so child constants win
+	var classChain []*phpobj.ZClass
+	for cls := zc; cls != nil; cls = cls.Extends {
+		classChain = append(classChain, cls)
+	}
+	// Process from root parent to current class
+	for i := len(classChain) - 1; i >= 0; i-- {
+		cls := classChain[i]
+		if cls.Const != nil {
+			// Use ConstOrder if available, otherwise iterate the map
+			names := cls.ConstOrder
+			if len(names) == 0 {
+				for n := range cls.Const {
+					names = append(names, n)
+				}
 			}
-			if filter != -1 && !classConstMatchesFilter(c, filter) {
-				continue
-			}
-			// Resolve CompileDelayed values
-			val := c.Value
-			if cd, ok := val.(*phpv.CompileDelayed); ok {
-				resolved, err := cd.Run(ctx)
-				if err != nil {
+			for _, name := range names {
+				c := cls.Const[name]
+				if c == nil || c.Value == nil {
 					continue
 				}
-				arr.OffsetSet(ctx, name, resolved)
-			} else {
-				arr.OffsetSet(ctx, name, val.ZVal())
+				if filter != -1 && !classConstMatchesFilter(c, filter) {
+					continue
+				}
+				val := c.Value
+				if cd, ok := val.(*phpv.CompileDelayed); ok {
+					resolved, err := cd.Run(ctx)
+					if err != nil {
+						continue
+					}
+					arr.OffsetSet(ctx, name, resolved)
+				} else {
+					arr.OffsetSet(ctx, name, val.ZVal())
+				}
 			}
 		}
 	}

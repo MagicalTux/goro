@@ -172,8 +172,10 @@ func initSplFixedArray() {
 				if newSize < 0 {
 					return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "SplFixedArray::setSize(): Argument #1 ($size) must be greater than or equal to 0")
 				}
-				if newSize > 1<<30 {
-					return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "SplFixedArray::setSize(): Argument #1 ($size) must be greater than or equal to 0")
+				// Check for integer overflow in memory allocation (PHP emits a fatal error for this)
+				ptrSize := 8 // pointer size on 64-bit
+				if int64(newSize)*int64(ptrSize) < 0 || newSize > 1<<30 {
+					return nil, ctx.Error(fmt.Errorf("Possible integer overflow in memory allocation (%d * %d + 0)", newSize, ptrSize), phpv.E_ERROR)
 				}
 				oldSize := len(d.data)
 				if newSize == oldSize {

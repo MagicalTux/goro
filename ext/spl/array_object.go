@@ -36,7 +36,7 @@ func (d *arrayObjectData) Clone() any {
 		// When cloning, keep reference to the same object (PHP behavior)
 		cloned.objectStorage = d.objectStorage
 	} else if d.array != nil {
-		cloned.array = d.array.Dup()
+		cloned.array = d.array.DeepCopy()
 	}
 	return cloned
 }
@@ -420,7 +420,7 @@ func initArrayObject() {
 				if len(args) > 0 && args[0] != nil {
 					switch args[0].GetType() {
 					case phpv.ZtArray:
-						d.array = args[0].Value().(*phpv.ZArray).Dup()
+						d.array = args[0].Value().(*phpv.ZArray).DeepCopy()
 					case phpv.ZtObject:
 						obj := args[0].Value().(*phpobj.ZObject)
 						// If wrapping an ArrayObject/ArrayIterator and flags were not explicitly set,
@@ -634,7 +634,7 @@ func initArrayObject() {
 					iterData2 := getArrayIteratorData(iterObj)
 					if iterData2 != nil {
 						iterData2.array = d.array
-						iterData2.iter = d.array.NewIterator()
+						iterData2.iter = d.array.MainIterator()
 					}
 				}
 
@@ -701,14 +701,14 @@ func initArrayObject() {
 				if d.objectStorage != nil {
 					oldArr = objectStorageGetArray(ctx, d.objectStorage)
 				} else if d.array != nil {
-					oldArr = d.array.Dup()
+					oldArr = d.array.DeepCopy()
 				} else {
 					oldArr = phpv.NewZArray()
 				}
 
 				switch args[0].GetType() {
 				case phpv.ZtArray:
-					d.array = args[0].Value().(*phpv.ZArray).Dup()
+					d.array = args[0].Value().(*phpv.ZArray).DeepCopy()
 					d.objectStorage = nil
 				case phpv.ZtObject:
 					obj := args[0].Value().(*phpobj.ZObject)

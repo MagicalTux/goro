@@ -98,6 +98,12 @@ func (a *ZArray) Dup() *ZArray {
 	return &ZArray{h: a.h.Dup()}
 }
 
+// DeepCopy creates an immediate independent copy without using COW.
+// The original array's iterators remain stable.
+func (a *ZArray) DeepCopy() *ZArray {
+	return &ZArray{h: a.h.DeepCopy()}
+}
+
 // IsRecursive checks if the array contains a reference to itself (directly or indirectly).
 func (a *ZArray) IsRecursive() bool {
 	return a.isRecursiveWith(make(map[*ZHashTable]bool))
