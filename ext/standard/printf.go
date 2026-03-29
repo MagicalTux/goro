@@ -98,6 +98,12 @@ func fncVPrintf(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
+	// PHP requires $values to be an array
+	if len(args) >= 2 && args[1] != nil && args[1].GetType() != phpv.ZtArray {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			"vprintf(): Argument #2 ($values) must be of type array, "+args[1].GetType().String()+" given")
+	}
+
 	var array []*phpv.ZVal
 	iter := arrayArgs.NewIterator()
 	for ; iter.Valid(ctx); iter.Next(ctx) {
@@ -156,6 +162,12 @@ func fncVFPrintf(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	_, err := core.Expand(ctx, args, &handle, &fmt, &arrayArgs)
 	if err != nil {
 		return nil, err
+	}
+
+	// PHP requires $args to be an array
+	if len(args) >= 3 && args[2] != nil && args[2].GetType() != phpv.ZtArray {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			"vfprintf(): Argument #3 ($values) must be of type array, "+args[2].GetType().String()+" given")
 	}
 
 	var array []*phpv.ZVal

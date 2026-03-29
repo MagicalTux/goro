@@ -32,7 +32,7 @@ for ($i = 0; $i < count($values); $i++) {
 }
 ?>
 ===Done===
---EXPECT--
+--EXPECTF--
 *** Testing abs() : basic functionality ***
 int(23)
 int(23)
@@ -45,6 +45,8 @@ int(23)
 float(23.45)
 float(23.45)
 float(23.45)
+
+Deprecated: abs(): Passing null to parameter #1 ($num) of type int|float is deprecated in %s on line %d
 int(0)
 int(1)
 int(0)
