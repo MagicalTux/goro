@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"unsafe"
 
 	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpctx"
@@ -640,8 +641,42 @@ func (c *ZClosure) Dump(w io.Writer) error {
 		return c.code.Dump(w)
 	}
 
-	// Regular closure: function(args) use(...) { ... }
-	_, err := w.Write([]byte("function"))
+	// Regular closure: [#[Attr(...)]] [static] function[(name)](args) [use(...)] [: type] { body }
+	// Print attributes if present (e.g. #[Attr(static function ($foo) { ... })])
+	for _, attr := range c.attributes {
+		if _, err := fmt.Fprintf(w, "#[%s", attr.ClassName); err != nil {
+			return err
+		}
+		if len(attr.ArgExprs) > 0 {
+			if _, err := w.Write([]byte("(")); err != nil {
+				return err
+			}
+			for j, argExpr := range attr.ArgExprs {
+				if j > 0 {
+					if _, err := w.Write([]byte(", ")); err != nil {
+						return err
+					}
+				}
+				if err := argExpr.Dump(w); err != nil {
+					return err
+				}
+			}
+			if _, err := w.Write([]byte(")")); err != nil {
+				return err
+			}
+		}
+		if _, err := w.Write([]byte("] ")); err != nil {
+			return err
+		}
+	}
+	// Print static keyword for static closures
+	var err error
+	if c.isStatic {
+		if _, err = w.Write([]byte("static ")); err != nil {
+			return err
+		}
+	}
+	_, err = w.Write([]byte("function"))
 	if c.name != "" {
 		_, err = w.Write([]byte{' '})
 		if err != nil {
@@ -649,6 +684,11 @@ func (c *ZClosure) Dump(w io.Writer) error {
 		}
 		_, err = w.Write([]byte(c.name))
 		if err != nil {
+			return err
+		}
+	} else {
+		// Anonymous function: add space before ( to match PHP's AST dump format
+		if _, err = w.Write([]byte{' '}); err != nil {
 			return err
 		}
 	}
@@ -696,12 +736,67 @@ func (c *ZClosure) Dump(w io.Writer) error {
 		return err
 	}
 
-	err = c.code.Dump(w)
+	// Indent the closure body by 4 spaces (matches PHP's AST dump format)
+	iw := &indentWriter{w: w, prefix: []byte("    "), atLineStart: true}
+	err = c.code.Dump(iw)
 	if err != nil {
 		return err
 	}
-	_, err = w.Write([]byte("\n}"))
+	// Only add a newline before } if the body wrote some content
+	if iw.wroteContent {
+		_, err = w.Write([]byte("\n}"))
+	} else {
+		_, err = w.Write([]byte("}"))
+	}
 	return err
+}
+
+// indentWriter wraps an io.Writer and adds a prefix at the start of each line.
+type indentWriter struct {
+	w            io.Writer
+	prefix       []byte
+	atLineStart  bool
+	wroteContent bool // true if any non-empty bytes were written
+}
+
+func (iw *indentWriter) Write(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	iw.wroteContent = true
+	total := 0
+	for len(p) > 0 {
+		if iw.atLineStart && p[0] != '\n' {
+			_, err := iw.w.Write(iw.prefix)
+			if err != nil {
+				return total, err
+			}
+			iw.atLineStart = false
+		}
+		// Find next newline
+		idx := -1
+		for i, b := range p {
+			if b == '\n' {
+				idx = i
+				break
+			}
+		}
+		var chunk []byte
+		if idx == -1 {
+			chunk = p
+			p = nil
+		} else {
+			chunk = p[:idx+1]
+			p = p[idx+1:]
+			iw.atLineStart = true
+		}
+		n, err := iw.w.Write(chunk)
+		total += n
+		if err != nil {
+			return total, err
+		}
+	}
+	return total, nil
 }
 
 func (z *ZClosure) GetArgs() []*phpv.FuncArg {
@@ -1037,7 +1132,10 @@ func (z *ZClosure) callBody(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 			// Coerce value to match type hint (PHP non-strict mode only)
 			// In strict mode, type checking is done in callZValImpl, no coercion needed
 			// Skip coercion for union/intersection types - they handle their own checking
-			if a.Hint != nil && argVal.GetType() != phpv.ZtNull && len(a.Hint.Union) == 0 && len(a.Hint.Intersection) == 0 && !ctx.Global().GetStrictTypes() {
+			// Skip coercion for variadic parameters: the type hint applies to each element
+			// of the packed array, not to the array itself. Coercing the array would
+			// incorrectly convert it to "Array" string (triggering "Array to string" warning).
+			if !a.Variadic && a.Hint != nil && argVal.GetType() != phpv.ZtNull && len(a.Hint.Union) == 0 && len(a.Hint.Intersection) == 0 && !ctx.Global().GetStrictTypes() {
 				hintType := a.Hint.Type()
 				if hintType != phpv.ZtMixed && hintType != phpv.ZtObject && argVal.GetType() != hintType {
 					// Emit implicit conversion deprecation for float->int
@@ -1296,6 +1394,14 @@ func (z *ZClosure) ReturnsByRef() bool {
 // GetAttributes returns the PHP attributes on this function/closure.
 func (z *ZClosure) GetAttributes() []*phpv.ZAttribute {
 	return z.attributes
+}
+
+// ClosureInstanceKey returns a unique key for this closure instance.
+// This implements phpv.ClosureInstanceKeyProvider and is used by runStaticVar
+// to maintain per-closure-instance static variable storage, so that each
+// closure instance created by a factory function has independent static vars.
+func (z *ZClosure) ClosureInstanceKey() uintptr {
+	return uintptr(unsafe.Pointer(z))
 }
 
 // closureBind implements Closure::bind($closure, $newThis, $newScope = "static")
@@ -1963,7 +2069,15 @@ func closureDebugInfo(ctx phpv.Context, o *phpobj.ZObject) (*phpv.ZVal, error) {
 				for _, sv := range staticVars {
 					val := sv.z
 					if val == nil {
-						val = phpv.ZNULL.ZVal()
+						if sv.def != nil {
+							var err error
+							val, err = sv.def.Run(ctx)
+							if err != nil || val == nil {
+								val = phpv.ZNULL.ZVal()
+							}
+						} else {
+							val = phpv.ZNULL.ZVal()
+						}
 					}
 					staticArr.OffsetSet(ctx, sv.varName, val)
 				}
@@ -2033,12 +2147,30 @@ func closureDebugInfo(ctx phpv.Context, o *phpobj.ZObject) (*phpv.ZVal, error) {
 
 	// Static variables from the function body (static $x = ...)
 	if z.code != nil {
+		closureKey := uintptr(unsafe.Pointer(z))
 		staticVars := collectStaticVars(z.code)
 		for _, sv := range staticVars {
 			hasStatic = true
-			val := sv.z
-			if val == nil {
-				val = phpv.ZNULL.ZVal()
+			var val *phpv.ZVal
+
+			// First check per-closure storage (used when closureKey != 0, i.e. always for ZClosure)
+			if existing, loaded := sv.perClosure.Load(closureKey); loaded {
+				val = existing.(*phpv.ZVal)
+			} else if sv.z != nil {
+				// Fall back to global static storage (used when called without closure key)
+				val = sv.z
+			} else {
+				// Not yet initialized — evaluate the default expression to show the
+				// initial value (PHP shows the default, not NULL, before first call).
+				if sv.def != nil {
+					var err error
+					val, err = sv.def.Run(ctx)
+					if err != nil || val == nil {
+						val = phpv.ZNULL.ZVal()
+					}
+				} else {
+					val = phpv.ZNULL.ZVal()
+				}
 			}
 			staticArr.OffsetSet(ctx, sv.varName, val)
 		}

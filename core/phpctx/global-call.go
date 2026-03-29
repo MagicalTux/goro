@@ -335,10 +335,6 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 		} else if this != nil {
 			callCtx.class = this.GetClass()
 		}
-		// Set per-closure-instance static variable key for runStaticVar isolation
-		if ikp, ok2 := f.(phpv.ClosureInstanceKeyProvider); ok2 {
-			callCtx.closureStaticVarKey = ikp.ClosureInstanceKey()
-		}
 		if this != nil {
 			callCtx.methodType = "->"
 		} else if callCtx.class != nil {
@@ -349,6 +345,13 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 	} else if this != nil {
 		callCtx.class = this.GetClass()
 		callCtx.methodType = "->"
+	}
+
+	// Set per-closure-instance static variable key for runStaticVar isolation.
+	// This applies to both ZClosure callables (PHP closures) and generatorBodyCallable
+	// (generator body runners), so it's checked unconditionally here.
+	if ikp, ok := f.(phpv.ClosureInstanceKeyProvider); ok {
+		callCtx.closureStaticVarKey = ikp.ClosureInstanceKey()
 	}
 
 	// For closures with a class scope but no $this, set the class on the call context

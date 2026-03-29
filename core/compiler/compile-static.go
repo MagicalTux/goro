@@ -65,7 +65,6 @@ func (r *runStaticVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	if cvkp, ok := ctx.(phpv.ClosureStaticVarKeyProvider); ok {
 		closureKey = cvkp.ClosureStaticVarKey()
 	}
-	fmt.Printf("DEBUG runStaticVar.Run: ctx type=%T, closureKey=0x%x\n", ctx, closureKey)
 
 	for _, v := range r.vars {
 		// Use per-closure storage when inside a closure instance (for closure isolation)

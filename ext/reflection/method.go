@@ -11,8 +11,9 @@ import (
 
 // reflectionMethodData is stored as opaque data on ReflectionMethod objects
 type reflectionMethodData struct {
-	method *phpv.ZClassMethod
-	class  phpv.ZClass
+	method          *phpv.ZClassMethod
+	class           phpv.ZClass
+	closureCallable phpv.FuncGetArgs // non-nil when reflecting __invoke on a Closure instance
 }
 
 func initReflectionMethod() {
@@ -122,6 +123,22 @@ func reflectionMethodConstructFull(ctx phpv.Context, o *phpobj.ZObject, args []*
 	data := &reflectionMethodData{
 		method: method,
 		class:  class,
+	}
+
+	// When reflecting __invoke on a Closure instance, capture the underlying
+	// callable so that getParameters() can return the closure's actual parameters
+	// (not the parameters of the NativeMethod wrapper).
+	if args[0].GetType() == phpv.ZtObject && methodName == "__invoke" {
+		obj, ok2 := args[0].AsObject(ctx).(*phpobj.ZObject)
+		if ok2 {
+			// Iterate through opaque map to find FuncGetArgs implementor
+			for _, v := range obj.Opaque {
+				if fga, ok3 := v.(phpv.FuncGetArgs); ok3 {
+					data.closureCallable = fga
+					break
+				}
+			}
+		}
 	}
 
 	// The "class" property should show the declaring class
@@ -258,6 +275,11 @@ func reflectionMethodGetParameters(ctx phpv.Context, o *phpobj.ZObject, args []*
 	data := getMethodData(o)
 	if data == nil {
 		return phpv.NewZArray().ZVal(), nil
+	}
+	// When reflecting __invoke on a Closure, use the closure's actual args.
+	if data.closureCallable != nil {
+		funcName := phpv.ZString(string(data.class.GetName()) + "::" + string(data.method.Name))
+		return createReflectionParameterObjects(ctx, data.closureCallable.GetArgs(), funcName)
 	}
 	if fga, ok := data.method.Method.(phpv.FuncGetArgs); ok {
 		funcName := phpv.ZString(string(data.class.GetName()) + "::" + string(data.method.Name))

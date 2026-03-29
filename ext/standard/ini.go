@@ -137,7 +137,7 @@ func parseIniString(ctx phpv.Context, data string, processSections bool, mode ph
 			q := value[0]
 			if q == '"' || q == '\'' {
 				if len(value) < 2 || value[len(value)-1] != q {
-					ctx.Warn("syntax error, unexpected '%c' in Unknown on line %d\n",
+					ctx.Warn("syntax error, unexpected '%c' in Unknown on line %d",
 						q, lineNo, logopt.NoFuncName(true))
 					return phpv.ZBool(false).ZVal(), nil
 				}

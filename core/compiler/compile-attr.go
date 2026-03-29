@@ -248,7 +248,10 @@ func parseAttributeArgs(c compileCtx) (args []*phpv.ZVal, argExprs []phpv.Runnab
 				hasLazy = true
 			} else {
 				args = append(args, val)
-				argExprs = append(argExprs, nil)
+				// Always store the expression even when successfully evaluated at compile time,
+				// so that AST dump (used by assert() description) can print the source form.
+				argExprs = append(argExprs, expr)
+				hasLazy = true // ensure argExprs is not discarded below
 			}
 		}
 

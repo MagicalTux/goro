@@ -455,7 +455,7 @@ func (it *phpObjectIterator) callKeyMethod() (*phpv.ZVal, error) {
 		return nil, err
 	}
 	msg := msgVal.String()
-	if len(msg) > 14 && msg[len(msg)-14:] == "none returned" {
+	if len(msg) >= 13 && msg[len(msg)-13:] == "none returned" {
 		return phpv.ZNULL.ZVal(), nil
 	}
 	return nil, err

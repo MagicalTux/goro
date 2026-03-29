@@ -128,6 +128,13 @@ func (c *FuncContext) RegisterForeachRefCleanup(fn func()) {
 	c.foreachRefCleanups = append(c.foreachRefCleanups, fn)
 }
 
+// ClosureStaticVarKey returns the per-closure-instance key for static variable storage.
+// This implements phpv.ClosureStaticVarKeyProvider.
+// Returns 0 when not running inside a closure instance (e.g. named functions, class methods).
+func (c *FuncContext) ClosureStaticVarKey() uintptr {
+	return c.closureStaticVarKey
+}
+
 // SetUseParentScope sets whether this FuncContext should delegate variable
 // access (OffsetGet/OffsetSet/OffsetCheck/OffsetUnset/OffsetExists) to the
 // parent context. Used by eval() so that variables are accessible in the
@@ -155,13 +162,6 @@ func (c *FuncContext) Func() phpv.FuncContext {
 
 func (c *FuncContext) Callable() phpv.Callable {
 	return c.c
-}
-
-// ClosureStaticVarKey returns the unique per-instance key for the closure
-// currently being executed. Returns 0 if not running inside a closure.
-// Implements phpv.ClosureStaticVarKeyProvider.
-func (c *FuncContext) ClosureStaticVarKey() uintptr {
-	return c.closureStaticVarKey
 }
 
 func (c *FuncContext) This() phpv.ZObject {

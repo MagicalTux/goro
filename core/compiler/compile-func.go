@@ -35,10 +35,39 @@ func (r *runnableFunctionCall) Dump(w io.Writer) error {
 	if name == "exit" || name == "die" {
 		name = "\\exit"
 	}
+
+	// Language constructs like echo/print/include use keyword syntax (no parens)
+	// in PHP's AST dump format.
+	isLangConstruct := false
+	switch name {
+	case "echo", "print", "include", "require", "include_once", "require_once":
+		isLangConstruct = true
+	}
+
 	_, err := w.Write([]byte(name))
 	if err != nil {
 		return err
 	}
+
+	if isLangConstruct {
+		// Write args separated by commas (echo can have multiple), with a space before first arg
+		for i, a := range r.args {
+			if i == 0 {
+				if _, err = w.Write([]byte{' '}); err != nil {
+					return err
+				}
+			} else {
+				if _, err = w.Write([]byte(", ")); err != nil {
+					return err
+				}
+			}
+			if err = a.Dump(w); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
 	_, err = w.Write([]byte{'('})
 	if err != nil {
 		return err

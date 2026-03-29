@@ -283,6 +283,9 @@ type runArrayAccess struct {
 	// When true, indirect modifications go through the reference and have effect,
 	// so the "Indirect modification has no effect" notice should be suppressed.
 	lastContainerOffsetGetReturnsRef bool
+	// True when the container was a string. Used by runVariableRef to detect
+	// "Cannot create references to/from string offsets".
+	lastContainerWasString bool
 
 	// PrepareWrite caching
 	prepared     bool
@@ -406,8 +409,23 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		}
 	}
 
+	// Track whether container was a string, for "Cannot use string offset as an array" detection.
+	ac.lastContainerWasString = (v.GetType() == phpv.ZtString)
+
 	switch v.GetType() {
 	case phpv.ZtString:
+		// PHP 8: compound assignment operators (+=, -=, .=, etc.) are not allowed on string offsets.
+		// Check this BEFORE evaluating the offset to prevent spurious "Uninitialized string offset" warnings.
+		if op, ok := ac.Parent.(*runOperator); ok && op.opD != nil && op.opD.write && op.opD.op != nil && op.a == ac {
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot use assign-op operators with string offsets")
+		}
+		// When writing through a string access ($str[0][1] = 'a'), throw "Cannot use string offset as an array".
+		// This is detected in WriteValue when inner is a string access; mark container as string here.
+		if ac.writeContext {
+			// In write context on a string container, return the container itself so the outer
+			// WriteValue can detect that this is a string and throw the appropriate error.
+			return v, nil
+		}
 	case phpv.ZtArray:
 	case phpv.ZtObject:
 		// Track if container is an ArrayAccess object (not a plain array)
@@ -692,6 +710,11 @@ func (ac *runArrayAccess) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 
 	switch v.GetType() {
 	case phpv.ZtString:
+		// If the container expression is itself a string array access ($str[0][1] = val),
+		// this is "Cannot use string offset as an array" - not a simple string offset write.
+		if _, ok := ac.value.(*runArrayAccess); ok {
+			return phpobj.ThrowError(ctx, phpobj.Error, "Cannot use string offset as an array")
+		}
 		return ac.writeValueToString(ctx, value)
 
 	case phpv.ZtArray:
