@@ -87,7 +87,9 @@ func parseIniString(ctx phpv.Context, data string, processSections bool, mode ph
 	var currentSection *phpv.ZArray
 
 	scanner := bufio.NewScanner(strings.NewReader(data))
+	lineNo := 0
 	for scanner.Scan() {
+		lineNo++
 		line := strings.TrimSpace(scanner.Text())
 
 		// Skip empty lines and comments
@@ -128,6 +130,19 @@ func parseIniString(ctx phpv.Context, data string, processSections bool, mode ph
 		// Strip inline comments (;) while respecting quoted strings.
 		// A semicolon inside quotes is literal; outside quotes it starts a comment.
 		value = iniStripComment(value)
+
+		// Detect unclosed quotes: if value starts with a quote but does not end
+		// with the same quote char, it's a syntax error (multi-line values not allowed).
+		if len(value) >= 1 {
+			q := value[0]
+			if q == '"' || q == '\'' {
+				if len(value) < 2 || value[len(value)-1] != q {
+					ctx.Warn("syntax error, unexpected '%c' in Unknown on line %d\n",
+						q, lineNo, logopt.NoFuncName(true))
+					return phpv.ZBool(false).ZVal(), nil
+				}
+			}
+		}
 
 		// Remove surrounding quotes from value
 		if len(value) >= 2 {

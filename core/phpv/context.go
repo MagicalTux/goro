@@ -174,3 +174,11 @@ type GlobalContext interface {
 type FuncContext interface {
 	Context
 }
+
+// ClosureStaticVarKeyProvider is an optional interface implemented by FuncContext
+// when running inside a specific closure instance. The key is a uintptr that
+// uniquely identifies the closure instance (typically its pointer address).
+// This is used by runStaticVar to provide per-closure-instance static variable storage.
+type ClosureStaticVarKeyProvider interface {
+	ClosureStaticVarKey() uintptr
+}

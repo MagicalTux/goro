@@ -90,6 +90,7 @@ func (c *FuncContext) Release() error {
 	c.isInternal = false
 	c.suppressCalledIn = false
 	c.useParentScope = false
+	c.closureStaticVarKey = 0
 	funcContextPool.Put(c)
 	return releaseErr
 }
@@ -113,6 +114,11 @@ type FuncContext struct {
 	useParentScope   bool // true for eval() - delegate variable access to parent context
 
 	foreachRefCleanups []func() // cleanup functions for foreach-by-reference iterators
+
+	// closureStaticVarKey is the unique identifier for the closure instance currently
+	// being executed. Non-zero when running inside a closure (not a class method or
+	// named function). Used by runStaticVar to provide per-closure-instance static vars.
+	closureStaticVarKey uintptr
 }
 
 // RegisterForeachRefCleanup registers a cleanup function to be called when
@@ -149,6 +155,13 @@ func (c *FuncContext) Func() phpv.FuncContext {
 
 func (c *FuncContext) Callable() phpv.Callable {
 	return c.c
+}
+
+// ClosureStaticVarKey returns the unique per-instance key for the closure
+// currently being executed. Returns 0 if not running inside a closure.
+// Implements phpv.ClosureStaticVarKeyProvider.
+func (c *FuncContext) ClosureStaticVarKey() uintptr {
+	return c.closureStaticVarKey
 }
 
 func (c *FuncContext) This() phpv.ZObject {

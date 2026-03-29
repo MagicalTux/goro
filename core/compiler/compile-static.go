@@ -3,16 +3,18 @@ package compiler
 import (
 	"fmt"
 	"io"
+	"sync"
 
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
 
 type staticVarInfo struct {
-	varName  phpv.ZString
-	def      phpv.Runnable
-	z        *phpv.ZVal
-	perClass map[phpv.ZString]*phpv.ZVal // per-class storage for trait method isolation
+	varName    phpv.ZString
+	def        phpv.Runnable
+	z          *phpv.ZVal
+	perClass   map[phpv.ZString]*phpv.ZVal // per-class storage for trait method isolation
+	perClosure sync.Map                    // per-closure-instance storage: uintptr -> *phpv.ZVal
 }
 
 type runStaticVar struct {
@@ -56,7 +58,39 @@ func (r *runStaticVar) Dump(w io.Writer) error {
 }
 
 func (r *runStaticVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {
+	// Check if we're running inside a specific closure instance.
+	// If so, use per-closure static variable storage so that different
+	// closure instances have independent static variables.
+	var closureKey uintptr
+	if cvkp, ok := ctx.(phpv.ClosureStaticVarKeyProvider); ok {
+		closureKey = cvkp.ClosureStaticVarKey()
+	}
+	fmt.Printf("DEBUG runStaticVar.Run: ctx type=%T, closureKey=0x%x\n", ctx, closureKey)
+
 	for _, v := range r.vars {
+		// Use per-closure storage when inside a closure instance (for closure isolation)
+		if closureKey != 0 {
+			existing, loaded := v.perClosure.Load(closureKey)
+			var z *phpv.ZVal
+			if loaded {
+				z = existing.(*phpv.ZVal)
+			} else {
+				if v.def == nil {
+					z = phpv.ZNull{}.ZVal()
+				} else {
+					var err error
+					z, err = v.def.Run(ctx)
+					if err != nil {
+						return nil, err
+					}
+				}
+				v.perClosure.Store(closureKey, z)
+			}
+			ctx.OffsetUnset(ctx, v.varName.ZVal())
+			ctx.OffsetSet(ctx, v.varName.ZVal(), z)
+			continue
+		}
+
 		// Use per-class storage when inside a class method (for trait isolation)
 		var classKey phpv.ZString
 		if cls := ctx.Class(); cls != nil {

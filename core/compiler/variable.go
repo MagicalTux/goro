@@ -339,14 +339,6 @@ func (r *runRef) isVariableLike() bool {
 }
 
 func (r *runRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
-	// Check if trying to reference a string offset — not allowed in PHP.
-	if acc, ok := r.v.(*runArrayAccess); ok {
-		container, containerErr := acc.value.Run(ctx)
-		if containerErr == nil && container != nil && container.GetType() == phpv.ZtString {
-			return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot create references to/from string offsets")
-		}
-	}
-
 	// Reference creation is a write context — suppress "Undefined array key" warnings
 	// since the element will be created by the reference.
 	if acc, ok := r.v.(*runArrayAccess); ok {
@@ -368,9 +360,39 @@ func (r *runRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		}
 	}
 
+	// For array accesses, enable compound caching so that Run() caches the
+	// container and offset. WriteValue (called below) will then use the cached
+	// values and won't re-evaluate expressions like out(expr).
+	// This prevents $a[] = &$a[out(expr)] from calling out(expr) twice.
+	if acc, ok := r.v.(*runArrayAccess); ok {
+		acc.compoundCache = true
+	}
+
+	// Check if the container is a string BEFORE running the full access.
+	// For string offsets, PHP first emits "Illegal string offset" (which may become
+	// an exception via error handler), and only then fails with the reference error.
+	// But if the offset is a valid integer, it still fails with "Cannot create references".
+	if acc, ok := r.v.(*runArrayAccess); ok {
+		container, containerErr := acc.value.Run(ctx)
+		if containerErr == nil && container != nil && container.GetType() == phpv.ZtString {
+			// Let the regular Run() proceed - it may emit "Illegal string offset"
+			// which the error handler can convert to an exception.
+			// The "Cannot create references to/from string offsets" error fires after.
+		}
+	}
+
 	z, err := r.v.Run(ctx)
 	if err != nil {
 		return nil, err
+	}
+
+	// Check if trying to reference a string offset — not allowed in PHP.
+	// This check runs after Run() so that "Illegal string offset" warnings can
+	// fire first (and be converted to exceptions by error handlers).
+	if acc, ok := r.v.(*runArrayAccess); ok {
+		if acc.lastContainerWasString {
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot create references to/from string offsets")
+		}
 	}
 
 	// For non-variable expressions (e.g. function calls), check if the result

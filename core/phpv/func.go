@@ -64,3 +64,10 @@ type ZClosure interface {
 type AttributeGetter interface {
 	GetAttributes() []*ZAttribute
 }
+
+// ClosureInstanceKeyProvider is implemented by closure instances that support
+// per-instance static variable storage. The key uniquely identifies this
+// specific closure instance (distinct from other closures defined in the same source).
+type ClosureInstanceKeyProvider interface {
+	ClosureInstanceKey() uintptr
+}

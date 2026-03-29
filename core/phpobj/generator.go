@@ -150,14 +150,21 @@ type GeneratorBodyFunc func(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 // can be called through CallZVal (which sets up a proper FuncContext).
 type generatorBodyCallable struct {
 	phpv.CallableVal
-	fn          GeneratorBodyFunc
-	name        string
-	class       phpv.ZClass // class scope for the generator
-	calledClass phpv.ZClass // called class for late static binding
+	fn               GeneratorBodyFunc
+	name             string
+	class            phpv.ZClass // class scope for the generator
+	calledClass      phpv.ZClass // called class for late static binding
+	closureInstanceKey uintptr   // per-closure-instance key for static var isolation (0 if not a closure)
 }
 
 func (g *generatorBodyCallable) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return g.fn(ctx, args)
+}
+
+// ClosureInstanceKey implements phpv.ClosureInstanceKeyProvider so that
+// static variables inside generator bodies have per-closure-instance storage.
+func (g *generatorBodyCallable) ClosureInstanceKey() uintptr {
+	return g.closureInstanceKey
 }
 
 func (g *generatorBodyCallable) Name() string {
@@ -190,6 +197,13 @@ func SpawnGeneratorNamed(ctx phpv.Context, bodyFn GeneratorBodyFunc, args []*php
 		if cc, ok := fc.(interface{ CalledClass() phpv.ZClass }); ok {
 			calledClassCtx = cc.CalledClass()
 		}
+	}
+
+	// Capture closure instance key for per-closure-instance static variable isolation.
+	// This is set by callZValImpl when the generator is spawned from a closure call.
+	var closureInstanceKey uintptr
+	if cvkp, ok := ctx.(phpv.ClosureStaticVarKeyProvider); ok {
+		closureInstanceKey = cvkp.ClosureStaticVarKey()
 	}
 
 	state := &GeneratorState{
@@ -238,7 +252,7 @@ func SpawnGeneratorNamed(ctx phpv.Context, bodyFn GeneratorBodyFunc, args []*php
 
 		// Wrap the body in a Callable and use CallZVal to get a proper
 		// FuncContext (needed for Tick, Loc, etc).
-		callable := &generatorBodyCallable{fn: bodyFn, name: state.funcName, class: classCtx, calledClass: calledClassCtx}
+		callable := &generatorBodyCallable{fn: bodyFn, name: state.funcName, class: classCtx, calledClass: calledClassCtx, closureInstanceKey: closureInstanceKey}
 		var result *phpv.ZVal
 		var err error
 		if thisObj != nil {

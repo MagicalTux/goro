@@ -810,6 +810,15 @@ func NewZObjectEnum(ctx phpv.Context, c phpv.ZClass) *ZObject {
 }
 
 func NewZObjectOpaque(ctx phpv.Context, c phpv.ZClass, v interface{}) (*ZObject, error) {
+	// Track memory allocation for opaque objects (e.g. Closure).
+	// This must happen before init() so that memory-limit errors are raised during
+	// object construction, matching PHP behaviour.
+	if mt := ctx.Global().MemMgrTracker(); mt != nil {
+		if err := mt.MemAlloc(256); err != nil {
+			return nil, err
+		}
+	}
+
 	n := &ZObject{
 		h:          phpv.NewHashTable(),
 		Class:      c,

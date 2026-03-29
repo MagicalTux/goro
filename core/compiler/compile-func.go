@@ -938,6 +938,7 @@ func collectVarsWalk(r phpv.Runnable, seen map[phpv.ZString]bool, result *[]phpv
 			collectVarsWalk(arg, seen, result)
 		}
 	case *runnableFunctionCallRef:
+		collectVarsWalk(v.name, seen, result)
 		for _, arg := range v.args {
 			collectVarsWalk(arg, seen, result)
 		}
