@@ -438,9 +438,9 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			}
 		}
 		if r.a != nil {
-			exists, checkErr := checkExistence(ctx, r.a, false)
+			exists, cachedVal, checkErr := checkExistenceAndGet(ctx, r.a, false)
 			if checkErr != nil {
-				// checkExistence doesn't handle non-variable expressions
+				// checkExistenceAndGet doesn't handle non-variable expressions
 				// (literals, function calls, etc.). For ??, evaluate directly
 				// and check for null. For ??=, generate a write-context error.
 				if r.op == tokenizer.T_COALESCE_EQUAL {
@@ -467,14 +467,20 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 					err = nil
 				}
 			} else if exists {
-				a, err = r.a.Run(ctx)
-				if err != nil {
-					// Don't swallow fatal errors
-					if isFatalPhpError(err) {
-						return nil, err
+				if cachedVal != nil {
+					// Value was already fetched during existence check — reuse it
+					// to avoid a double offsetGet call (important for ArrayAccess).
+					a = cachedVal
+				} else {
+					a, err = r.a.Run(ctx)
+					if err != nil {
+						// Don't swallow fatal errors
+						if isFatalPhpError(err) {
+							return nil, err
+						}
+						a = nil
+						err = nil
 					}
-					a = nil
-					err = nil
 				}
 			}
 			if a != nil && !a.Nude().IsNull() {

@@ -905,6 +905,12 @@ func (ac *runArrayAccess) getArrayOffset(ctx phpv.Context) (*phpv.ZVal, error) {
 		if err != nil {
 			return nil, err
 		}
+	case phpv.ZtBool:
+		// Bool is silently coerced to int: true→1, false→0
+		offset, err = offset.As(ctx, phpv.ZtInt)
+		if err != nil {
+			return nil, err
+		}
 	case phpv.ZtString:
 	case phpv.ZtInt:
 	case phpv.ZtNull:

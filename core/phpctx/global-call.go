@@ -114,8 +114,10 @@ func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, o
 		if !isRefParam {
 			if uc, ok := arg.(phpv.UndefinedChecker); ok {
 				if uc.IsUnDefined(ctx) {
-					ctx.Warn("Undefined variable $%s",
-						uc.VarName(), logopt.NoFuncName(true))
+					if warnErr := ctx.Warn("Undefined variable $%s",
+						uc.VarName(), logopt.NoFuncName(true)); warnErr != nil {
+						return nil, warnErr
+					}
 				}
 			}
 		}

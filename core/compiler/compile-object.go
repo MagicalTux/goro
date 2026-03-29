@@ -787,12 +787,8 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		}
 
 		// Check for __invoke method on objects with HandleInvoke
-		// Suppress "called in" suffix on type errors for __invoke method dispatch (PHP behavior)
 		if objI != nil && op.ToLower() == "__invoke" && class.Handlers() != nil && class.Handlers().HandleInvoke != nil {
-			ctx.Global().SetNextCallSuppressCalledIn(true)
-			res, err := class.Handlers().HandleInvoke(ctx, objI, r.args)
-			ctx.Global().SetNextCallSuppressCalledIn(false)
-			return res, err
+			return class.Handlers().HandleInvoke(ctx, objI, r.args)
 		}
 
 		// For :: syntax on an object variable that is NOT $this (e.g. $a::method()),
@@ -1071,12 +1067,8 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	// For Closure::__invoke() calls (e.g. $closure->__invoke($arg) or $closure->__INVOKE($arg)),
 	// delegate to the HandleInvoke handler so that by-ref parameters work correctly.
 	// The NativeMethod wrapper for __invoke doesn't carry parameter info.
-	// When called as a method, suppress "called in" suffix on type errors (PHP behavior).
 	if method.Name.ToLower() == "__invoke" && class.Handlers() != nil && class.Handlers().HandleInvoke != nil {
-		ctx.Global().SetNextCallSuppressCalledIn(true)
-		res, err := class.Handlers().HandleInvoke(ctx, objI, r.args)
-		ctx.Global().SetNextCallSuppressCalledIn(false)
-		return res, err
+		return class.Handlers().HandleInvoke(ctx, objI, r.args)
 	}
 
 	// For trait methods, the callable (ZClosure) may report the trait class via GetClass(),

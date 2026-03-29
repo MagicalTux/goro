@@ -195,10 +195,19 @@ func spawnCallableInternal(ctx phpv.Context, v *phpv.ZVal, paramNo int) (phpv.Ca
 			return phpv.BindClass(member.Method, class, false), nil
 		}
 
-		// PHP 8: scope-dependent functions cannot be called dynamically
+		// PHP 8: scope-dependent functions cannot be called dynamically.
+		// Defer the error to call time so that register_shutdown_function etc. succeed.
 		sLower := s.ToLower()
-		if sLower == "extract" || sLower == "compact" || sLower == "get_defined_vars" || sLower == "func_get_args" || sLower == "func_get_arg" || sLower == "func_num_args" {
-			return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Cannot call %s() dynamically", s))
+		switch sLower {
+		case "func_get_args", "func_num_args", "get_defined_vars":
+			// These functions take 0 arguments; if called with args, throw ArgumentCountError.
+			return &deferredErrorCallable{funcName: string(s), maxArgs: 0}, nil
+		case "func_get_arg":
+			// Takes exactly 1 argument; check arg count first.
+			return &deferredErrorCallable{funcName: string(s), maxArgs: 1}, nil
+		case "extract", "compact":
+			// These take variable args; only throw "cannot call dynamically".
+			return &deferredErrorCallable{funcName: string(s), maxArgs: -1}, nil
 		}
 
 		// Language constructs cannot be used as callbacks
@@ -558,6 +567,33 @@ func spawnCallableInternal(ctx phpv.Context, v *phpv.ZVal, paramNo int) (phpv.Ca
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
 			fmt.Sprintf("%s(): Argument #%d ($callback) must be a valid callback, no array or string given", callerFunc, paramNo))
 	}
+}
+
+// deferredErrorCallable is a callable that always throws an error when called.
+// Used for scope-dependent functions (get_defined_vars, func_get_args, etc.)
+// that cannot be called dynamically - the error is deferred to call time.
+type deferredErrorCallable struct {
+	phpv.CallableVal
+	funcName string
+	maxArgs  int // expected argument count (0 = none, -1 = unchecked)
+}
+
+func (d *deferredErrorCallable) Name() string {
+	return d.funcName
+}
+
+func (d *deferredErrorCallable) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	// If the function has a fixed argument count and was called with wrong number of args,
+	// throw ArgumentCountError (mirrors PHP behavior for built-in functions).
+	if d.maxArgs >= 0 && len(args) > d.maxArgs {
+		s := ""
+		if d.maxArgs != 1 {
+			s = "s"
+		}
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("%s() expects exactly %d argument%s, %d given", d.funcName, d.maxArgs, s, len(args)))
+	}
+	return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Cannot call %s() dynamically", d.funcName))
 }
 
 // invokeWrapper wraps an object's HandleInvoke handler as a Callable.

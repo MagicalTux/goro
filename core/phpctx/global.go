@@ -590,8 +590,12 @@ func (g *Global) RunFile(fn string) error {
 
 	if len(g.shutdownFuncs) > 0 {
 		g.ResetDeadline()
+		noActiveFile := &phpv.Loc{Filename: "[no active file]", Line: 0}
 		for _, fn := range g.shutdownFuncs {
-			_, serr := g.CallZVal(g, fn, nil, nil)
+			// Reset location before each shutdown function so that exceptions
+			// thrown by shutdown functions report "[no active file]:0".
+			g.l = noActiveFile
+			_, serr := g.CallZValInternal(g, fn, nil)
 			if serr != nil {
 				if phpv.IsExit(serr) {
 					break

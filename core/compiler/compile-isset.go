@@ -5,6 +5,7 @@ import (
 	"io"
 
 	"github.com/MagicalTux/goro/core/logopt"
+	"github.com/MagicalTux/goro/core/phperr"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
@@ -185,16 +186,35 @@ func checkEmpty(ctx phpv.Context, v phpv.Runnable) (bool, error) {
 		var arr phpv.ZArrayAccess
 		if value.GetType() == phpv.ZtString {
 			// For string access in empty() context:
-			// - non-numeric string keys → empty (e.g. empty($str['good']))
-			// - non-integer numeric string keys → empty (e.g. empty($str['1.5']))
-			// - valid integer string keys → check bounds and value without warnings
-			if key.GetType() == phpv.ZtString {
+			// PHP converts key to integer index, with specific rules per type.
+			// Array/object/resource keys → empty (true) without warnings.
+			// Float keys → deprecation, then truncate to int.
+			// Bool/null keys → silent coercion to int.
+			// Non-numeric string keys → empty (true).
+			var idx int
+			switch key.GetType() {
+			case phpv.ZtInt:
+				idx = int(key.Value().(phpv.ZInt))
+			case phpv.ZtBool:
+				if key.Value().(phpv.ZBool) {
+					idx = 1
+				} else {
+					idx = 0
+				}
+			case phpv.ZtNull:
+				idx = 0
+			case phpv.ZtFloat:
+				fval := float64(key.Value().(phpv.ZFloat))
+				if err := ctx.Deprecated("Implicit conversion from float %v to int loses precision", fval, logopt.NoFuncName(true)); err != nil {
+					return false, err
+				}
+				idx = int(key.AsInt(ctx))
+			case phpv.ZtString:
 				s := key.AsString(ctx)
 				if !s.IsNumeric() {
 					return true, nil
 				}
 				// Check if it's a float-like numeric string (has '.' or 'e/E')
-				// PHP only accepts integer offsets for strings
 				sStr := string(s)
 				isFloat := false
 				for _, ch := range sStr {
@@ -206,21 +226,22 @@ func checkEmpty(ctx phpv.Context, v phpv.Runnable) (bool, error) {
 				if isFloat {
 					return true, nil
 				}
-				// Valid integer string key - check bounds without warnings
-				str := value.AsString(ctx)
-				strLen := len(str)
-				idx := int(key.AsInt(ctx))
-				if idx < 0 {
-					idx = strLen + idx
-				}
-				if idx < 0 || idx >= strLen {
-					return true, nil
-				}
-				ch := phpv.ZString(string(str[idx]))
-				return ch == "" || ch == "0", nil
+				idx = int(key.AsInt(ctx))
+			default:
+				// Array, object, resource → empty without warnings
+				return true, nil
 			}
+			// Check bounds without warnings
 			str := value.AsString(ctx)
-			arr = phpv.ZStringArray{ZString: &str}
+			strLen := len(str)
+			if idx < 0 {
+				idx = strLen + idx
+			}
+			if idx < 0 || idx >= strLen {
+				return true, nil
+			}
+			ch := phpv.ZString(string(str[idx]))
+			return ch == "" || ch == "0", nil
 		} else {
 			var ok bool
 			arr, ok = value.Value().(phpv.ZArrayAccess)
@@ -338,13 +359,21 @@ func checkExistence(ctx phpv.Context, v phpv.Runnable, subExpr bool) (bool, erro
 		return val != nil && !phpv.IsNull(val), nil
 
 	case *runArrayAccess:
-		exists, err := checkExistence(ctx, t.value, true)
-		if !exists || err != nil {
-			return exists, err
+		// Use checkExistenceAndGet to get the container value without double evaluation
+		containerExists, containerVal, containerErr := checkExistenceAndGet(ctx, t.value, true)
+		if !containerExists || containerErr != nil {
+			return containerExists, containerErr
 		}
-		value, err := t.value.Run(ctx)
-		if err != nil {
-			return false, err
+		var value *phpv.ZVal
+		var err error
+		if containerVal != nil {
+			// Reuse cached value (avoids double offsetGet for nested ArrayAccess)
+			value = containerVal
+		} else {
+			value, err = t.value.Run(ctx)
+			if err != nil {
+				return false, err
+			}
 		}
 
 		if t.offset == nil {
@@ -362,6 +391,10 @@ func checkExistence(ctx phpv.Context, v phpv.Runnable, subExpr bool) (bool, erro
 		} else {
 			key, err = t.offset.Run(ctx)
 			if err != nil {
+				// Exceptions (PhpThrow) must propagate; non-exception errors return false.
+				if _, isThrow := phpv.UnwrapError(err).(*phperr.PhpThrow); isThrow {
+					return false, err
+				}
 				return false, nil
 			}
 		}
@@ -422,17 +455,20 @@ func checkExistence(ctx phpv.Context, v phpv.Runnable, subExpr bool) (bool, erro
 			}
 		}
 
-		// For objects with HandleIssetDim (like ArrayObject), use the special handler
-		// which checks for null values (PHP's has_dimension with isset mode).
+		// For objects with HandleIssetDim (like ArrayObject), use the special handler.
 		if value.GetType() == phpv.ZtObject {
 			if obj, ok := value.Value().(*phpobj.ZObject); ok {
 				if h := phpobj.FindIssetDimHandler(obj.GetClass()); h != nil {
 					return h(ctx, obj, key)
 				}
+				// For ArrayAccess objects without a special handler, PHP's isset() ONLY
+				// calls offsetExists() — not offsetGet() for a null check.
+				// The contract is that offsetExists() returns false if value is null.
+				return obj.OffsetExists(ctx, key)
 			}
 		}
-		// For arrays (and any ZArrayAccess), isset checks both key existence
-		// AND that the value is not null.
+		// For regular PHP arrays (ZArrayAccess, not objects), isset checks both
+		// key existence AND that the value is not null.
 		exists, existsErr := arr.OffsetExists(ctx, key)
 		if !exists || existsErr != nil {
 			return false, existsErr
@@ -549,5 +585,193 @@ func checkExistence(ctx phpv.Context, v phpv.Runnable, subExpr bool) (bool, erro
 			return false, ctx.Errorf(`Cannot use isset() on the result of an expression (you can use "null !== expression" instead)`)
 		}
 		return true, nil
+	}
+}
+
+// checkExistenceAndGet is like checkExistence but also returns the fetched value
+// when it has to read it (e.g., to navigate into a nested structure or check for null).
+// This avoids double offsetGet calls in the ?? and ??= operators.
+// Returns (exists bool, val *phpv.ZVal, err error).
+// When exists=false, val is nil. When exists=true, val may be nil if not fetched.
+func checkExistenceAndGet(ctx phpv.Context, v phpv.Runnable, subExpr bool) (bool, *phpv.ZVal, error) {
+	switch t := v.(type) {
+	case *runVariable:
+		exists, err := ctx.OffsetExists(ctx, t.v.ZVal())
+		if !exists || err != nil {
+			return false, nil, err
+		}
+		val, err := ctx.OffsetGet(ctx, t.v.ZVal())
+		if err != nil {
+			return false, nil, err
+		}
+		if val == nil || phpv.IsNull(val) {
+			return false, nil, nil
+		}
+		return true, val, nil
+
+	case *runVariableRef:
+		vv, err := t.v.Run(ctx)
+		if err != nil {
+			return false, nil, err
+		}
+		name := phpv.ZString(vv.String())
+		exists, err := ctx.OffsetExists(ctx, name.ZVal())
+		if !exists || err != nil {
+			return false, nil, err
+		}
+		val, err := ctx.OffsetGet(ctx, name.ZVal())
+		if err != nil {
+			return false, nil, err
+		}
+		if val == nil || phpv.IsNull(val) {
+			return false, nil, nil
+		}
+		return true, val, nil
+
+	case *runArrayAccess:
+		var value *phpv.ZVal
+		var err error
+		// Try to get the container value from the recursive existence check,
+		// to avoid double offsetGet on ArrayAccess objects.
+		containerExists, containerVal, containerErr := checkExistenceAndGet(ctx, t.value, true)
+		if !containerExists || containerErr != nil {
+			return containerExists, nil, containerErr
+		}
+		if containerVal != nil {
+			// Reuse the value already fetched during existence check
+			value = containerVal
+		} else {
+			// Container exists but value wasn't cached (e.g., plain variable) — fetch it
+			value, err = t.value.Run(ctx)
+			if err != nil {
+				return false, nil, err
+			}
+		}
+
+		if t.offset == nil {
+			return false, nil, &phpv.PhpError{
+				Err:  fmt.Errorf("Cannot use [] for reading"),
+				Code: phpv.E_COMPILE_ERROR,
+				Loc:  t.l,
+			}
+		}
+		var key *phpv.ZVal
+		if t.prepared && t.cachedOffset != nil {
+			key = t.cachedOffset
+		} else {
+			key, err = t.offset.Run(ctx)
+			if err != nil {
+				return false, nil, nil
+			}
+		}
+
+		if key.GetType() == phpv.ZtNull {
+			if err := ctx.Deprecated("Using null as an array offset is deprecated, use an empty string instead", logopt.NoFuncName(true)); err != nil {
+				return false, nil, err
+			}
+			key = phpv.ZString("").ZVal()
+		}
+
+		if value.GetType() == phpv.ZtObject {
+			if obj, ok := value.Value().(*phpobj.ZObject); ok {
+				if obj.GetClass().Implements(phpobj.ArrayAccess) {
+					if h := phpobj.FindIssetDimHandler(obj.GetClass()); h != nil {
+						// Has special isset handler — use it for existence check
+						existsVal, hErr := h(ctx, obj, key)
+						if hErr != nil || !existsVal {
+							return false, nil, hErr
+						}
+						// Now get the value (for null check and for reuse)
+						if rh := phpobj.FindReadDimHandler(obj.GetClass()); rh != nil {
+							val, rErr := rh(ctx, obj, key)
+							if rErr != nil {
+								return false, nil, nil
+							}
+							if val == nil || phpv.IsNull(val) {
+								return false, nil, nil
+							}
+							return true, val, nil
+						}
+						// Fall back to offsetGet
+						val, oErr := obj.OffsetGet(ctx, key)
+						if oErr != nil {
+							return false, nil, nil
+						}
+						if val == nil || phpv.IsNull(val) {
+							return false, nil, nil
+						}
+						return true, val, nil
+					}
+					// No special handler: use offsetExists + offsetGet
+					existsVal, eErr := obj.OffsetExists(ctx, key)
+					if eErr != nil || !existsVal {
+						return false, nil, eErr
+					}
+					val, oErr := obj.OffsetGet(ctx, key)
+					if oErr != nil {
+						return false, nil, nil
+					}
+					if val == nil || phpv.IsNull(val) {
+						return false, nil, nil
+					}
+					return true, val, nil
+				}
+			}
+		}
+
+		var arr phpv.ZArrayAccess
+		if value.GetType() == phpv.ZtString {
+			switch key.GetType() {
+			case phpv.ZtInt:
+			case phpv.ZtString:
+				s := key.AsString(ctx)
+				if !s.IsNumeric() {
+					return false, nil, nil
+				}
+				for _, c := range string(s) {
+					if c == '.' || c == 'e' || c == 'E' {
+						return false, nil, nil
+					}
+				}
+				key = key.AsInt(ctx).ZVal()
+			case phpv.ZtBool:
+				if key.Value().(phpv.ZBool) {
+					key = phpv.ZInt(1).ZVal()
+				} else {
+					key = phpv.ZInt(0).ZVal()
+				}
+			case phpv.ZtFloat:
+				key = key.AsInt(ctx).ZVal()
+			case phpv.ZtNull:
+				key = phpv.ZInt(0).ZVal()
+			default:
+				return false, nil, nil
+			}
+			str := value.AsString(ctx)
+			arr = phpv.ZStringArray{ZString: &str}
+		} else {
+			var ok bool
+			arr, ok = value.Value().(phpv.ZArrayAccess)
+			if !ok {
+				return false, nil, nil
+			}
+		}
+		existsVal, existsErr := arr.OffsetExists(ctx, key)
+		if !existsVal || existsErr != nil {
+			return false, nil, existsErr
+		}
+		val, valErr := arr.OffsetGet(ctx, key)
+		if valErr != nil {
+			return false, nil, nil
+		}
+		if val == nil || phpv.IsNull(val) {
+			return false, nil, nil
+		}
+		return true, val, nil
+
+	default:
+		// For everything else, fall back to checkExistence (no value caching)
+		exists, err := checkExistence(ctx, v, subExpr)
+		return exists, nil, err
 	}
 }
