@@ -41,10 +41,9 @@ func fncPrintR(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 }
 
 func doPrintR(ctx phpv.Context, z *phpv.ZVal, linePfx string, recurs map[uintptr]bool) error {
-	var isRef string
-	if z.IsRef() {
-		isRef = "&"
-	}
+	// PHP's print_r does not show "&" prefix for reference values (unlike var_dump).
+	// References are transparent in print_r output.
+	const isRef = ""
 
 	if recurs == nil {
 		recurs = make(map[uintptr]bool)
