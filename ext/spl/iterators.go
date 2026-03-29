@@ -2035,6 +2035,7 @@ type recursiveIteratorIteratorData struct {
 	maxDepth        int // -1 means no limit
 	catchGetChild   bool
 	endIterCalled   bool // prevents calling endIteration more than once
+	inIteration     bool // true after beginIteration called, false after endIteration
 	// hasNextAtDepth tracks whether there's a next sibling at each depth level
 	// (used by RecursiveTreeIterator for prefix generation)
 	hasNextAtDepth []bool
@@ -2149,6 +2150,7 @@ func initRecursiveIteratorIterator() {
 				}
 				// Call beginIteration hook
 				o.Unwrap().(*phpobj.ZObject).CallMethod(ctx, "beginIteration")
+				d.inIteration = true
 				// Descend into children if needed
 				err = recursiveIteratorDescend(ctx, d, o)
 				if err != nil {
@@ -2232,6 +2234,7 @@ func initRecursiveIteratorIterator() {
 					// Call endIteration hook (only once)
 					if !d.endIterCalled {
 						d.endIterCalled = true
+						d.inIteration = false
 						o.Unwrap().(*phpobj.ZObject).CallMethod(ctx, "endIteration")
 					}
 				}

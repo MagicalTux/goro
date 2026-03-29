@@ -434,16 +434,21 @@ func initSplFixedArray() {
 			Name: "__debugInfo",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				d := getSplFixedArrayData(o)
-				if d == nil {
-					return phpv.NewZArray().ZVal(), nil
-				}
 				arr := phpv.NewZArray()
-				for i, v := range d.data {
-					if v == nil {
-						arr.OffsetSet(ctx, phpv.ZInt(i), phpv.ZNULL.ZVal())
-					} else {
-						arr.OffsetSet(ctx, phpv.ZInt(i), v)
+				// Add array elements first
+				if d != nil {
+					for i, v := range d.data {
+						if v == nil {
+							arr.OffsetSet(ctx, phpv.ZInt(i), phpv.ZNULL.ZVal())
+						} else {
+							arr.OffsetSet(ctx, phpv.ZInt(i), v)
+						}
 					}
+				}
+				// Add declared subclass properties and dynamic properties
+				for prop := range o.IterProps(ctx) {
+					v := o.GetPropValue(prop)
+					arr.OffsetSet(ctx, prop.VarName, v)
 				}
 				return arr.ZVal(), nil
 			}),

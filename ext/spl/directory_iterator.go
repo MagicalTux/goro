@@ -114,6 +114,29 @@ func initDirectoryIterator() {
 	}
 	globMethods["__construct"] = &phpv.ZClassMethod{Name: "__construct", Method: phpobj.NativeMethod(globIterConstruct)}
 	globMethods["count"] = &phpv.ZClassMethod{Name: "count", Method: phpobj.NativeMethod(globIterCount)}
+	globMethods["__debuginfo"] = &phpv.ZClassMethod{Name: "__debugInfo", Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+		d := getDIData(o)
+		sfiData := getSFIData(o)
+		result := phpv.NewZArray()
+		// SplFileInfo private properties
+		path := ""
+		fileName := ""
+		if sfiData != nil {
+			path = sfiData.path
+			fileName = sfiBaseName(sfiData.path)
+		}
+		result.OffsetSet(ctx, phpv.ZString("\x00SplFileInfo\x00pathName"), phpv.ZStr(path))
+		result.OffsetSet(ctx, phpv.ZString("\x00SplFileInfo\x00fileName"), phpv.ZStr(fileName))
+		// DirectoryIterator private: glob path
+		globPath := ""
+		if d != nil {
+			globPath = "glob://" + d.path
+		}
+		result.OffsetSet(ctx, phpv.ZString("\x00DirectoryIterator\x00glob"), phpv.ZStr(globPath))
+		// RecursiveDirectoryIterator private: subPathName
+		result.OffsetSet(ctx, phpv.ZString("\x00RecursiveDirectoryIterator\x00subPathName"), phpv.ZStr(""))
+		return result.ZVal(), nil
+	})}
 
 	GlobIteratorClass = &phpobj.ZClass{
 		Name:            "GlobIterator",
