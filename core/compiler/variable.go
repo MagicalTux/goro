@@ -421,6 +421,13 @@ func (r *runRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		// such that var_dump($foo) will show something like
 		// int(0) => &string("x")
 		acc.WriteValue(ctx, ref)
+	} else if ov, ok := r.v.(*runObjectVar); ok {
+		// An object property is referenced — make the property itself a reference.
+		// For instance:
+		//   $a->x0->y1 =& $a->x0;
+		// The property $a->x0 is now a reference, so var_dump($a) shows
+		//   ["x0"]=> &object(...)
+		ov.WriteValue(ctx, ref)
 	}
 
 	// embed zval into another zval
