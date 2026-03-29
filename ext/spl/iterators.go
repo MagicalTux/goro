@@ -2183,8 +2183,15 @@ func initRecursiveIteratorIterator() {
 					return nil, err
 				}
 				// Call nextElement hook after first element is ready
-				v, _ := o.CallMethod(ctx, "valid")
-				if v != nil && bool(v.AsBool(ctx)) {
+				// Use internal stack state instead of calling user-level valid()
+				// to avoid extra calls that could produce side effects.
+				isValid := len(d.stack) > 0
+				if isValid {
+					top := d.stack[len(d.stack)-1]
+					vv, _ := top.CallMethod(ctx, "valid")
+					isValid = vv != nil && bool(vv.AsBool(ctx))
+				}
+				if isValid {
 					_, err = o.Unwrap().(*phpobj.ZObject).CallMethod(ctx, "nextElement")
 					if err != nil {
 						if d.catchGetChild {
@@ -2230,8 +2237,15 @@ func initRecursiveIteratorIterator() {
 					return nil, err
 				}
 				// Call nextElement hook after next element is ready
-				v, _ := o.CallMethod(ctx, "valid")
-				if v != nil && bool(v.AsBool(ctx)) {
+				// Use internal stack state instead of calling user-level valid()
+				// to avoid extra calls that could produce side effects.
+				isValid := len(d.stack) > 0
+				if isValid {
+					top := d.stack[len(d.stack)-1]
+					v, _ := top.CallMethod(ctx, "valid")
+					isValid = v != nil && bool(v.AsBool(ctx))
+				}
+				if isValid {
 					_, err = o.Unwrap().(*phpobj.ZObject).CallMethod(ctx, "nextElement")
 					if err != nil {
 						if d.catchGetChild {
