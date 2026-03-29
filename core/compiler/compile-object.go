@@ -331,18 +331,63 @@ func (r *runNewAnonymousClass) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		r.compiled = true
 	}
 
-	// Evaluate constructor arguments
+	// Determine constructor parameter info for by-ref handling
+	var funcArgs []*phpv.FuncArg
+	if constructor := getConstructor(r.class); constructor != nil {
+		if fga, ok := constructor.(phpv.FuncGetArgs); ok {
+			funcArgs = fga.GetArgs()
+		}
+	}
+
+	// Evaluate constructor arguments, handling by-reference params
 	var args []*phpv.ZVal
-	for _, a := range r.constructorArgs {
+	var byRefCleanups []*phpv.ZVal
+	for i, a := range r.constructorArgs {
+		isRefParam := funcArgs != nil && i < len(funcArgs) && funcArgs[i].Ref
+
+		// For by-ref params, enable write context for auto-vivification
+		if isRefParam {
+			if wcs, ok := a.(phpv.WriteContextSetter); ok {
+				wcs.SetWriteContext(true)
+			}
+		}
+
 		v, err := a.Run(ctx)
 		if err != nil {
+			if isRefParam {
+				if wcs, ok := a.(phpv.WriteContextSetter); ok {
+					wcs.SetWriteContext(false)
+				}
+			}
 			return nil, err
 		}
+
+		if isRefParam {
+			if cw, isCW := a.(phpv.CompoundWritable); isCW && !v.IsRef() {
+				// Ensure the element exists (auto-vivification for $undef[0])
+				cw.WriteValue(ctx, v.Dup())
+				// Re-read to get the actual hash table entry
+				v, _ = a.Run(ctx)
+				// Make the hash table entry into a reference in-place
+				v.MakeRef()
+				byRefCleanups = append(byRefCleanups, v)
+			}
+			if wcs, ok := a.(phpv.WriteContextSetter); ok {
+				wcs.SetWriteContext(false)
+			}
+		}
+
 		args = append(args, v)
 	}
 
 	// Create instance
 	obj, err := phpobj.NewZObject(ctx, r.class, args...)
+
+	// Unwrap by-ref hash table entries after constructor returns
+	for _, ref := range byRefCleanups {
+		ref.UnRefIfAlone()
+	}
+
 	if err != nil {
 		return nil, err
 	}

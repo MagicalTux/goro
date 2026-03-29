@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/MagicalTux/goro/core/phperr"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
@@ -62,28 +63,73 @@ func (r *runnableUnset) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 
 // callDestructorIfNeeded checks if a ZVal holds an object with __destruct,
 // and if so, decrements the reference count and calls the destructor if
-// the count reaches zero.
-// IMPORTANT: Do NOT add recursive array traversal here. Arrays can contain
-// circular references (e.g. $a = []; $a[] = &$a) which would cause an
-// infinite recursion and stack overflow crash.
+// the count reaches zero. For arrays, it calls destructors for all object
+// elements that are exclusively owned by this array (not shared references).
+// Circular references in arrays are handled by a visited set.
 func callDestructorIfNeeded(ctx phpv.Context, zv *phpv.ZVal) error {
-	if zv == nil || zv.GetType() != phpv.ZtObject {
+	return callDestructorIfNeededVisited(ctx, zv, nil)
+}
+
+func callDestructorIfNeededVisited(ctx phpv.Context, zv *phpv.ZVal, visited map[*phpv.ZArray]bool) error {
+	if zv == nil {
 		return nil
 	}
-	obj := zv.Value()
-	if zobj, ok := obj.(phpv.ZObject); ok {
-		if cls := zobj.GetClass(); cls != nil {
-			if h := cls.Handlers(); h != nil && h.HandleDecRef != nil {
-				h.HandleDecRef(ctx, zobj)
+	switch zv.GetType() {
+	case phpv.ZtObject:
+		obj := zv.Value()
+		if zobj, ok := obj.(phpv.ZObject); ok {
+			if cls := zobj.GetClass(); cls != nil {
+				if h := cls.Handlers(); h != nil && h.HandleDecRef != nil {
+					h.HandleDecRef(ctx, zobj)
+				}
 			}
 		}
-	}
-	if refObj, ok := obj.(interface {
-		DecRef(phpv.Context) error
-	}); ok {
-		return refObj.DecRef(ctx)
+		if refObj, ok := obj.(interface {
+			DecRef(phpv.Context) error
+		}); ok {
+			return refObj.DecRef(ctx)
+		}
+	case phpv.ZtArray:
+		// For arrays, recursively call destructors for object elements.
+		// We track visited arrays to prevent infinite loops from circular references.
+		arr, ok := zv.Value().(*phpv.ZArray)
+		if !ok {
+			return nil
+		}
+		if visited == nil {
+			visited = make(map[*phpv.ZArray]bool)
+		}
+		if visited[arr] {
+			return nil
+		}
+		visited[arr] = true
+		var pendingErr error
+		for _, elem := range arr.Iterate(ctx) {
+			err := callDestructorIfNeededVisited(ctx, elem, visited)
+			if err != nil {
+				if pendingErr != nil {
+					// Chain: new error becomes outer, pending becomes its previous.
+					// This matches PHP's behavior when multiple destructors throw.
+					err = chainDestructorErrors(err, pendingErr)
+				}
+				pendingErr = err
+			}
+		}
+		return pendingErr
 	}
 	return nil
+}
+
+// chainDestructorErrors chains two PHP exceptions when multiple destructors throw.
+// The new error becomes the outer exception, and the pending error becomes its previous.
+// This matches PHP's behavior: each new destructor exception wraps the previous one.
+func chainDestructorErrors(newErr, pendingErr error) error {
+	nThrow, nok := phpv.UnwrapError(newErr).(*phperr.PhpThrow)
+	pThrow, pok := phpv.UnwrapError(pendingErr).(*phperr.PhpThrow)
+	if nok && pok && nThrow.Obj != nil && pThrow.Obj != nil {
+		nThrow.Obj.HashTable().SetString("previous", pThrow.Obj.ZVal())
+	}
+	return newErr
 }
 
 // isTemporaryExpr checks if an expression produces a temporary value that

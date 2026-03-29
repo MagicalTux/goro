@@ -14,6 +14,7 @@ type runnableCatch struct {
 	typeNames []phpv.ZString
 	varname   phpv.ZString
 	body      phpv.Runnable
+	l         *phpv.Loc
 }
 
 type runnableTry struct {
@@ -114,8 +115,21 @@ func (rt *runnableTry) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			}
 
 			if match {
+				// Update the execution location to the catch statement so that
+				// destructor calls triggered by variable reassignment show the
+				// correct location in the stack trace.
+				if c.l != nil {
+					ctx.Tick(ctx, c.l)
+				}
 				if c.varname != "" {
-					ctx.OffsetSet(ctx, c.varname, throwErr.Obj.ZVal())
+					if setErr := ctx.OffsetSet(ctx, c.varname, throwErr.Obj.ZVal()); setErr != nil {
+						// OffsetSet can fail if assigning to $e triggers a destructor
+						// on the old value that throws (e.g., bug53511). This new
+						// exception should propagate, replacing the caught one.
+						pendingErr = setErr
+						caught = true
+						break
+					}
 				}
 				_, err = c.body.Run(ctx)
 				if err != nil {
@@ -360,11 +374,13 @@ func compileTry(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 
 		switch i.Type {
 		case tokenizer.T_CATCH:
+			catchLoc := i.Loc()
 			var catch *runnableCatch
 			catch, err = compileCatch(nil, c)
 			if err != nil {
 				return nil, err
 			}
+			catch.l = catchLoc
 			res.catches = append(res.catches, catch)
 		case tokenizer.T_FINALLY:
 			res.finally, err = compileBaseSingle(nil, c)

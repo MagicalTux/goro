@@ -49,6 +49,13 @@ func mathAbs(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, ctx.FuncError(err)
 	}
 
+	if z.GetType() == phpv.ZtNull {
+		if err := ctx.Deprecated("abs(): Passing null to parameter #1 ($num) of type int|float is deprecated", logopt.NoFuncName(true)); err != nil {
+			return nil, err
+		}
+		return phpv.ZInt(0).ZVal(), nil
+	}
+
 	z, err = z.AsNumeric(ctx)
 	if err != nil {
 		return nil, ctx.FuncError(err)
@@ -80,6 +87,13 @@ func mathCeil(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, ctx.FuncError(err)
 	}
 
+	if z.GetType() == phpv.ZtNull {
+		if err := ctx.Deprecated("ceil(): Passing null to parameter #1 ($num) of type int|float is deprecated", logopt.NoFuncName(true)); err != nil {
+			return nil, err
+		}
+		return phpv.ZFloat(0).ZVal(), nil
+	}
+
 	z, err = z.AsNumeric(ctx)
 	if err != nil {
 		return nil, ctx.FuncError(err)
@@ -95,6 +109,13 @@ func mathFloor(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	_, err := core.Expand(ctx, args, &z)
 	if err != nil {
 		return nil, ctx.FuncError(err)
+	}
+
+	if z.GetType() == phpv.ZtNull {
+		if err := ctx.Deprecated("floor(): Passing null to parameter #1 ($num) of type int|float is deprecated", logopt.NoFuncName(true)); err != nil {
+			return nil, err
+		}
+		return phpv.ZFloat(0).ZVal(), nil
 	}
 
 	z, err = z.AsNumeric(ctx)
