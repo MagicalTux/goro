@@ -186,7 +186,12 @@ func spawnCallableInternal(ctx phpv.Context, v *phpv.ZVal, paramNo int) (phpv.Ca
 			if this := ctx.This(); this != nil && this.GetClass().InstanceOf(class) {
 				return phpv.Bind(member.Method, this), nil
 			}
-			// Non-static method called without instance context — deprecated in PHP 8
+			// Non-static method called without instance context — error for spl_autoload_register
+			callerFunc := ctx.GetFuncName()
+			if callerFunc == "spl_autoload_register" {
+				return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+					fmt.Sprintf("%s(): Argument #1 ($callback) must be a valid callback or null, non-static method %s::%s() cannot be called statically", callerFunc, class.GetName(), member.Name))
+			}
 			return phpv.BindClass(member.Method, class, false), nil
 		}
 
@@ -412,9 +417,13 @@ func spawnCallableInternal(ctx phpv.Context, v *phpv.ZVal, paramNo int) (phpv.Ca
 			if callerFunc == "" {
 				callerFunc = "call_user_func"
 			}
+			orNull := ""
+			if callerFunc == "spl_autoload_register" {
+				orNull = " or null"
+			}
 			// Use the original method name (preserving case) for the error message
 			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
-				fmt.Sprintf("%s(): Argument #1 ($callback) must be a valid callback, class %s does not have a method \"%s\"", callerFunc, class.GetName(), origName))
+				fmt.Sprintf("%s(): Argument #1 ($callback) must be a valid callback%s, class %s does not have a method \"%s\"", callerFunc, orNull, class.GetName(), origName))
 		}
 
 		// Check if the method is abstract - abstract methods cannot be called directly
@@ -473,20 +482,20 @@ func spawnCallableInternal(ctx phpv.Context, v *phpv.ZVal, paramNo int) (phpv.Ca
 					return phpv.Bind(wrapper, instance), nil
 				}
 			}
-			if member.Modifiers.IsPrivate() {
-				callerFunc := ctx.GetFuncName()
-				if callerFunc == "" {
-					callerFunc = "call_user_func"
-				}
-				return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
-					fmt.Sprintf("%s(): Argument #1 ($callback) must be a valid callback, cannot access private method %s::%s()", callerFunc, class.GetName(), member.Name))
-			}
 			callerFunc := ctx.GetFuncName()
 			if callerFunc == "" {
 				callerFunc = "call_user_func"
 			}
+			orNull := ""
+			if callerFunc == "spl_autoload_register" {
+				orNull = " or null"
+			}
+			if member.Modifiers.IsPrivate() {
+				return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+					fmt.Sprintf("%s(): Argument #1 ($callback) must be a valid callback%s, cannot access private method %s::%s()", callerFunc, orNull, class.GetName(), member.Name))
+			}
 			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
-				fmt.Sprintf("%s(): Argument #1 ($callback) must be a valid callback, cannot access protected method %s::%s()", callerFunc, class.GetName(), member.Name))
+				fmt.Sprintf("%s(): Argument #1 ($callback) must be a valid callback%s, cannot access protected method %s::%s()", callerFunc, orNull, class.GetName(), member.Name))
 		}
 
 		if instance != nil {
@@ -496,6 +505,23 @@ func spawnCallableInternal(ctx phpv.Context, v *phpv.ZVal, paramNo int) (phpv.Ca
 			}
 			method := phpv.Bind(member.Method, instance)
 			return method, nil
+		}
+		// Non-static method with class name string (no instance): throw TypeError
+		if !member.Modifiers.IsStatic() {
+			// Check if $this is available and is an instance of the class
+			if this := ctx.This(); this != nil && this.GetClass().InstanceOf(class) {
+				return phpv.Bind(member.Method, this), nil
+			}
+			callerFunc := ctx.GetFuncName()
+			if callerFunc == "" {
+				callerFunc = "call_user_func"
+			}
+			orNull := ""
+			if callerFunc == "spl_autoload_register" {
+				orNull = " or null"
+			}
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+				fmt.Sprintf("%s(): Argument #1 ($callback) must be a valid callback%s, non-static method %s::%s() cannot be called statically", callerFunc, orNull, class.GetName(), member.Name))
 		}
 		return phpv.BindClass(member.Method, class, true), nil
 

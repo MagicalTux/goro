@@ -394,10 +394,14 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			if v.GetType() == phpv.ZtString {
 				return nil, phpobj.ThrowError(ctx, phpobj.Error, "[] operator not supported for strings")
 			}
-			return nil, &phpv.PhpError{
-				Err:  fmt.Errorf("Cannot use [] for reading"),
-				Code: phpv.E_ERROR,
-				Loc:  ac.l,
+			// For objects implementing ArrayAccess, let offsetGet handle the null key
+			// (e.g. SplFixedArray throws "[] operator not supported for SplFixedArray")
+			if v.GetType() != phpv.ZtObject {
+				return nil, &phpv.PhpError{
+					Err:  fmt.Errorf("Cannot use [] for reading"),
+					Code: phpv.E_ERROR,
+					Loc:  ac.l,
+				}
 			}
 		}
 	}
@@ -510,6 +514,14 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			// PHP 8: For strings, throw a runtime Error (catchable exception)
 			if v.GetType() == phpv.ZtString {
 				return nil, phpobj.ThrowError(ctx, phpobj.Error, "[] operator not supported for strings")
+			}
+			// For objects implementing ArrayAccess, call offsetGet(null)
+			// which lets the object throw its own error (e.g. SplFixedArray)
+			if v.GetType() == phpv.ZtObject {
+				array := v.Array()
+				if array != nil {
+					return array.OffsetGet(ctx, phpv.ZNULL.ZVal())
+				}
 			}
 			return nil, &phpv.PhpError{
 				Err:  fmt.Errorf("Cannot use [] for reading"),

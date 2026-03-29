@@ -1414,6 +1414,18 @@ func FindIssetDimHandler(cls phpv.ZClass) func(phpv.Context, phpv.ZObject, *phpv
 	return nil
 }
 
+// FindReadDimHandler walks up the class hierarchy looking for a HandleReadDim handler.
+// Returns the handler function or nil if none found.
+func FindReadDimHandler(cls phpv.ZClass) func(phpv.Context, phpv.ZObject, *phpv.ZVal) (*phpv.ZVal, error) {
+	for cls != nil {
+		if h := cls.Handlers(); h != nil && h.HandleReadDim != nil {
+			return h.HandleReadDim
+		}
+		cls = cls.GetParent()
+	}
+	return nil
+}
+
 // FindPropHandlers walks up the class hierarchy looking for a class that has
 // property access handlers defined. Returns the first non-nil ZClassHandlers
 // that has at least one property handler, or nil if none found.

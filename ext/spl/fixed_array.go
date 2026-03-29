@@ -99,6 +99,62 @@ func validateFixedArrayIndex(ctx phpv.Context, d *splFixedArrayData, indexVal *p
 }
 
 func initSplFixedArray() {
+	SplFixedArrayClass.H = &phpv.ZClassHandlers{
+		HandleCastArray: func(ctx phpv.Context, o phpv.ZObject) (*phpv.ZArray, error) {
+			d := getSplFixedArrayData(o.(*phpobj.ZObject))
+			if d == nil {
+				return phpv.NewZArray(), nil
+			}
+			arr := phpv.NewZArray()
+			for i, v := range d.data {
+				if v == nil {
+					arr.OffsetSet(ctx, phpv.ZInt(i), phpv.ZNULL.ZVal())
+				} else {
+					arr.OffsetSet(ctx, phpv.ZInt(i), v)
+				}
+			}
+			return arr, nil
+		},
+		HandleIssetDim: func(ctx phpv.Context, o phpv.ZObject, key *phpv.ZVal) (bool, error) {
+			zo := o.(*phpobj.ZObject)
+			// If the subclass overrides offsetExists, delegate to the overridden method
+			if overridesMethod(zo, SplFixedArrayClass, "offsetExists") {
+				return zo.OffsetExists(ctx, key)
+			}
+			d := getSplFixedArrayData(zo)
+			if d == nil {
+				return false, nil
+			}
+			if key == nil || key.IsNull() {
+				return false, nil
+			}
+			idx := int(key.AsInt(ctx))
+			if idx < 0 || idx >= len(d.data) {
+				return false, nil
+			}
+			return d.data[idx] != nil, nil
+		},
+		HandleReadDim: func(ctx phpv.Context, o phpv.ZObject, key *phpv.ZVal) (*phpv.ZVal, error) {
+			// Always use internal data access (never call PHP-level offsetGet)
+			// This matches PHP's C behavior where has_dimension with check_empty
+			// reads the value internally without triggering the override.
+			d := getSplFixedArrayData(o.(*phpobj.ZObject))
+			if d == nil {
+				return phpv.ZNULL.ZVal(), nil
+			}
+			if key == nil || key.IsNull() {
+				return phpv.ZNULL.ZVal(), nil
+			}
+			idx := int(key.AsInt(ctx))
+			if idx < 0 || idx >= len(d.data) {
+				return phpv.ZNULL.ZVal(), nil
+			}
+			if d.data[idx] == nil {
+				return phpv.ZNULL.ZVal(), nil
+			}
+			return d.data[idx], nil
+		},
+	}
 	SplFixedArrayClass.Methods = map[phpv.ZString]*phpv.ZClassMethod{
 		"__construct": {
 			Name: "__construct",
@@ -217,6 +273,10 @@ func initSplFixedArray() {
 				}
 				if len(args) == 0 {
 					return nil, phpobj.ThrowError(ctx, phpobj.OutOfBoundsException, "Index invalid or out of range")
+				}
+				// null key (append) is not supported for SplFixedArray
+				if args[0] == nil || args[0].IsNull() {
+					return nil, phpobj.ThrowError(ctx, phpobj.Error, "[] operator not supported for SplFixedArray")
 				}
 				idx, err := validateFixedArrayIndex(ctx, d, args[0])
 				if err != nil {

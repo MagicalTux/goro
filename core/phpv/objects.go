@@ -112,6 +112,9 @@ type ZClassHandlers struct {
 	// and the value is considered "set" (not null). Only called for isset(), not for direct
 	// offsetExists() calls.
 	HandleIssetDim func(ctx Context, o ZObject, key *ZVal) (bool, error)
+	// HandleReadDim provides internal dimension read without going through PHP-level offsetGet.
+	// Used by empty() to get values without triggering user-level method calls.
+	HandleReadDim func(ctx Context, o ZObject, key *ZVal) (*ZVal, error)
 	// HandlePropGet intercepts property read access before __get. Return (nil, nil) to fall through to normal handling.
 	HandlePropGet   func(ctx Context, o ZObject, key ZString) (*ZVal, error)
 	// HandlePropSet intercepts property write access before __set. Return false to fall through to normal handling.
