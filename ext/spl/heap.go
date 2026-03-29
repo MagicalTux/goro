@@ -77,14 +77,19 @@ func (d *splHeapData) Clone() any {
 
 func (d *splHeapData) makeLess() func(a, b *splHeapEntry) bool {
 	return func(a, b *splHeapEntry) bool {
-		cmp, err := d.compareFn(d.ctx, a.value, b.value)
+		// PHP's compare is called with (existing, new) = (parent, child) during sift-up.
+		// Go's Less(i, j) has i=child(a) j=parent(b), so we call compareFn(b, a)
+		// to match PHP's convention. The result is also negated since PHP's convention
+		// returns positive when first arg has higher priority, but we need positive
+		// when child (a) has higher priority.
+		cmp, err := d.compareFn(d.ctx, b.value, a.value)
 		if err != nil {
 			d.corrupted = true
 			d.compareErr = err
 			return false
 		}
 		if cmp != 0 {
-			return cmp > 0
+			return cmp < 0 // negated: PHP returns negative when second arg (child) has higher priority
 		}
 		// Stable: earlier insertions come first
 		return a.index < b.index
@@ -400,6 +405,10 @@ func initSplHeap() {
 			invalidErr := func() (*phpv.ZVal, error) {
 				return nil, phpobj.ThrowError(ctx, phpobj.UnexpectedValueException,
 					fmt.Sprintf("Invalid serialization data for %s object", o.GetClass().GetName()))
+			}
+			// Check if the heap is currently being modified (re-entrant modification)
+			if d := getHeapData(o); d != nil && d.modifying {
+				return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException, "Heap cannot be changed when it is already being modified.")
 			}
 			if len(args) == 0 || args[0] == nil {
 				return invalidErr()

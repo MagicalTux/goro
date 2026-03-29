@@ -133,12 +133,12 @@ func spawnCallableInternal(ctx phpv.Context, v *phpv.ZVal, paramNo int) (phpv.Ca
 					if callerFunc == "" {
 						callerFunc = "call_user_func"
 					}
-					scope := "global scope"
-					if callerClass != nil {
-						scope = "scope " + string(callerClass.GetName())
+					orNull := ""
+					if callerFunc == "spl_autoload_register" {
+						orNull = " or null"
 					}
 					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
-						fmt.Sprintf("%s(): Argument #%d ($callback) must be a valid callback, cannot access private method %s::%s() from %s", callerFunc, paramNo, class.GetName(), member.Name, scope))
+						fmt.Sprintf("%s(): Argument #%d ($callback) must be a valid callback%s, cannot access private method %s::%s()", callerFunc, paramNo, orNull, class.GetName(), member.Name))
 				}
 			} else if member.Modifiers.Has(phpv.ZAttrProtected) {
 				accessible := false
@@ -170,12 +170,12 @@ func spawnCallableInternal(ctx phpv.Context, v *phpv.ZVal, paramNo int) (phpv.Ca
 					if callerFunc == "" {
 						callerFunc = "call_user_func"
 					}
-					scope := "global scope"
-					if callerClass != nil {
-						scope = "scope " + string(callerClass.GetName())
+					orNull := ""
+					if callerFunc == "spl_autoload_register" {
+						orNull = " or null"
 					}
 					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
-						fmt.Sprintf("%s(): Argument #%d ($callback) must be a valid callback, cannot access protected method %s::%s() from %s", callerFunc, paramNo, class.GetName(), member.Name, scope))
+						fmt.Sprintf("%s(): Argument #%d ($callback) must be a valid callback%s, cannot access protected method %s::%s()", callerFunc, paramNo, orNull, class.GetName(), member.Name))
 				}
 			}
 

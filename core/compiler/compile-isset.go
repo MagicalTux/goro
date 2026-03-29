@@ -148,30 +148,23 @@ func checkEmpty(ctx phpv.Context, v phpv.Runnable) (bool, error) {
 		if value.GetType() == phpv.ZtObject {
 			obj, ok := value.Value().(*phpobj.ZObject)
 			if ok && obj.GetClass().Implements(phpobj.ArrayAccess) {
-				// Use HandleIssetDim + HandleReadDim if available (e.g. SplFixedArray)
-				// This avoids calling PHP-level offsetExists/offsetGet
+				// If HandleIssetDim + HandleReadDim are both available (e.g. SplFixedArray),
+				// use internal data access to avoid PHP-level offsetExists/offsetGet calls.
 				if h := phpobj.FindIssetDimHandler(obj.GetClass()); h != nil {
-					result, err := h(ctx, obj, key)
-					if err != nil {
-						return true, nil
-					}
-					if !result {
-						return true, nil
-					}
-					// For empty(), we also need to check if the value is empty
-					// Use internal data access (HandleReadDim) if available
 					if rh := phpobj.FindReadDimHandler(obj.GetClass()); rh != nil {
+						result, err := h(ctx, obj, key)
+						if err != nil {
+							return true, nil
+						}
+						if !result {
+							return true, nil
+						}
 						val, err := rh(ctx, obj, key)
 						if err != nil {
 							return true, nil
 						}
 						return isValueEmpty(ctx, val), nil
 					}
-					val, err := obj.OffsetGet(ctx, key)
-					if err != nil {
-						return true, nil
-					}
-					return isValueEmpty(ctx, val), nil
 				}
 				exists, err := obj.OffsetExists(ctx, key)
 				if err != nil {
@@ -438,14 +431,8 @@ func checkExistence(ctx phpv.Context, v phpv.Runnable, subExpr bool) (bool, erro
 				}
 			}
 		}
-		// For arrays (and any ZArrayAccess), isset checks key existence
-		// For objects implementing ArrayAccess, only call offsetExists (not offsetGet)
-		// as PHP's isset() only calls offsetExists() on ArrayAccess objects.
-		if value.GetType() == phpv.ZtObject {
-			exists, existsErr := arr.OffsetExists(ctx, key)
-			return exists, existsErr
-		}
-		// For plain arrays, check both existence and null
+		// For arrays (and any ZArrayAccess), isset checks both key existence
+		// AND that the value is not null.
 		exists, existsErr := arr.OffsetExists(ctx, key)
 		if !exists || existsErr != nil {
 			return false, existsErr

@@ -142,6 +142,27 @@ func iteratorToArray(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				if err != nil {
 					return nil, err
 				}
+				// Validate key type: arrays and objects cannot be used as array keys
+				switch key.GetType() {
+				case phpv.ZtArray:
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "Cannot access offset of type array on array")
+				case phpv.ZtObject:
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+						fmt.Sprintf("Cannot access offset of type %s on array", key.Value().(phpv.ZObject).GetClass().GetName()))
+				case phpv.ZtFloat:
+					// Float keys produce a deprecation warning about precision loss
+					f := key.Value().(phpv.ZFloat)
+					intF := phpv.ZInt(f)
+					if phpv.ZFloat(intF) != f {
+						if err := ctx.Deprecated("Implicit conversion from float %s to int loses precision", key.String(), logopt.NoFuncName(true)); err != nil {
+							return nil, err
+						}
+					}
+				case phpv.ZtNull:
+					if err := ctx.Deprecated("Using null as an array offset is deprecated, use an empty string instead", logopt.NoFuncName(true)); err != nil {
+						return nil, err
+					}
+				}
 				result.OffsetSet(ctx, key.Value(), value)
 			} else {
 				result.OffsetSet(ctx, phpv.ZInt(idx), value)
