@@ -160,8 +160,32 @@ func (r *runnableFunctionCallRef) Run(ctx phpv.Context) (l *phpv.ZVal, err error
 			return nil, err
 		}
 
-		if f, ok := v.Value().(*phpobj.ZObject); ok && f.Class.Handlers() != nil && f.Class.Handlers().HandleInvoke != nil {
-			return f.Class.Handlers().HandleInvoke(ctx, f, r.args)
+		if obj, ok := v.Value().(*phpobj.ZObject); ok && obj.Class.Handlers() != nil && obj.Class.Handlers().HandleInvoke != nil {
+			// For direct closure call $f($args), extract the callable from
+			// the closure object and call it directly via ctx.Call so that
+			// type error messages include "called in" (matching PHP behavior).
+			// Method dispatch ($f->__invoke($args)) uses HandleInvoke with
+			// CallZValNoCalledIn which suppresses "called in".
+			opaque := obj.GetOpaque(Closure)
+			switch z := opaque.(type) {
+			case *ZClosure:
+				if z.this != nil {
+					return ctx.Call(ctx, z, r.args, z.this)
+				}
+				return ctx.Call(ctx, z, r.args, nil)
+			case *generatorClosure:
+				if z.this != nil {
+					return ctx.Call(ctx, z, r.args, z.this)
+				}
+				return ctx.Call(ctx, z, r.args, nil)
+			case *wrappedClosure:
+				if z.this != nil {
+					return ctx.Call(ctx, z, r.args, z.this)
+				}
+				return ctx.Call(ctx, z, r.args, nil)
+			default:
+				return obj.Class.Handlers().HandleInvoke(ctx, obj, r.args)
+			}
 		}
 
 		// Check for __invoke method on objects (user-defined classes with __invoke)

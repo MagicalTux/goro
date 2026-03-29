@@ -88,6 +88,7 @@ func (c *FuncContext) Release() error {
 	c.calledClass = nil
 	c.methodType = ""
 	c.isInternal = false
+	c.suppressCalledIn = false
 	c.useParentScope = false
 	funcContextPool.Put(c)
 	return releaseErr
@@ -107,8 +108,9 @@ type FuncContext struct {
 	calledClass phpv.ZClass // for late static binding (static::class)
 	methodType  string
 
-	isInternal     bool // true when called from internal code (e.g., output buffer callbacks)
-	useParentScope bool // true for eval() - delegate variable access to parent context
+	isInternal       bool // true when called from internal code (e.g., output buffer callbacks)
+	suppressCalledIn bool // true when "called in" should not be appended to type error messages
+	useParentScope   bool // true for eval() - delegate variable access to parent context
 
 	foreachRefCleanups []func() // cleanup functions for foreach-by-reference iterators
 }

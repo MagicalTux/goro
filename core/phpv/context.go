@@ -56,6 +56,7 @@ type Context interface {
 	Call(ctx Context, f Callable, args []Runnable, this ...ZObject) (*ZVal, error)
 	CallZVal(ctx Context, f Callable, args []*ZVal, this ...ZObject) (*ZVal, error)
 	CallZValInternal(ctx Context, f Callable, args []*ZVal, this ...ZObject) (*ZVal, error)
+	CallZValNoCalledIn(ctx Context, f Callable, args []*ZVal, this ...ZObject) (*ZVal, error)
 
 	GetStackTrace(ctx Context) []*StackTraceEntry
 

@@ -594,6 +594,11 @@ func (r *zvalRunnable) Dump(w io.Writer) error {
 	return err
 }
 
+// IsFuncCallExpression marks zvalRunnable as a pre-evaluated value.
+// This causes the call infrastructure to emit a Warning (not Fatal Error)
+// when a zvalRunnable is passed to a by-reference parameter.
+func (r *zvalRunnable) IsFuncCallExpression() {}
+
 // magicCallWrapper wraps a __call magic method to be used as a Callable.
 // When called, it packages the arguments into the __call($methodName, $args) format.
 type magicCallWrapper struct {

@@ -243,14 +243,21 @@ func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, o
 // CallZValInternal is like CallZVal but marks the call as internal (e.g., from output buffer callbacks).
 // This causes the stack trace entry to show "[internal function]" instead of the filename.
 func (c *Global) CallZValInternal(ctx phpv.Context, f phpv.Callable, args []*phpv.ZVal, optionalThis ...phpv.ZObject) (*phpv.ZVal, error) {
-	return c.callZValImpl(ctx, f, args, true, optionalThis...)
+	return c.callZValImpl(ctx, f, args, true, false, optionalThis...)
 }
 
 func (c *Global) CallZVal(ctx phpv.Context, f phpv.Callable, args []*phpv.ZVal, optionalThis ...phpv.ZObject) (*phpv.ZVal, error) {
-	return c.callZValImpl(ctx, f, args, false, optionalThis...)
+	return c.callZValImpl(ctx, f, args, false, false, optionalThis...)
 }
 
-func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZVal, isInternal bool, optionalThis ...phpv.ZObject) (callResult *phpv.ZVal, callErr error) {
+// CallZValNoCalledIn is like CallZVal but suppresses the "called in" suffix in
+// type error messages. Used when invoking closures via __invoke method dispatch,
+// where PHP does not append "called in" to type error messages.
+func (c *Global) CallZValNoCalledIn(ctx phpv.Context, f phpv.Callable, args []*phpv.ZVal, optionalThis ...phpv.ZObject) (*phpv.ZVal, error) {
+	return c.callZValImpl(ctx, f, args, false, true, optionalThis...)
+}
+
+func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZVal, isInternal bool, suppressCalledIn bool, optionalThis ...phpv.ZObject) (callResult *phpv.ZVal, callErr error) {
 	c.callDepth++
 	if c.callDepth > 4096 {
 		c.callDepth--
@@ -265,6 +272,7 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 		callCtx.loc = ctx.Loc()
 	}
 	callCtx.isInternal = isInternal
+	callCtx.suppressCalledIn = suppressCalledIn
 	// Release() may trigger destructor errors during scope cleanup.
 	// Named return values let the defer closure chain those errors
 	// with any pending call error before the function returns.
@@ -543,7 +551,7 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 							if dl, ok := f.(interface{ Loc() *phpv.Loc }); ok {
 								defLoc = dl.Loc()
 							}
-							if !callCtx.isInternal {
+							if !callCtx.isInternal && !callCtx.suppressCalledIn {
 								if callLoc := ctx.Loc(); callLoc != nil {
 									msg += fmt.Sprintf(", called in %s on line %d", callLoc.Filename, callLoc.Line)
 								}
@@ -578,7 +586,7 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 				if dl, ok := f.(interface{ Loc() *phpv.Loc }); ok {
 					defLoc = dl.Loc()
 				}
-				if !callCtx.isInternal {
+				if !callCtx.isInternal && !callCtx.suppressCalledIn {
 					if callLoc := ctx.Loc(); callLoc != nil {
 						msg += fmt.Sprintf(", called in %s on line %d", callLoc.Filename, callLoc.Line)
 					}
