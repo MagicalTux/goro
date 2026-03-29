@@ -2189,6 +2189,7 @@ func initRecursiveIteratorIterator() {
 				d.depth = 0
 				d.hasNextAtDepth = nil
 				d.endIterCalled = false
+				d.rewindAttempted = true // mark that rewind was called (even in native handler)
 				_, err := root.CallMethod(ctx, "rewind")
 				if err != nil {
 					return nil, err
@@ -2254,7 +2255,8 @@ func initRecursiveIteratorIterator() {
 					return nil, nil
 				}
 				// Auto-rewind if next() is called before rewind()
-				if !d.inIteration {
+				if !d.rewindAttempted {
+					d.rewindAttempted = true
 					_, err := o.CallMethod(ctx, "rewind")
 					if err != nil {
 						return nil, err

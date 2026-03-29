@@ -18,34 +18,25 @@ func fncSplAutoload(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	exts := ctx.Global().GetAutoloadExtensions()
-	if extensions != nil {
-		exts = string(*extensions)
+	// Check if extensions argument was explicitly provided and is not null
+	if len(args) > 1 && args[1] != nil && !args[1].IsNull() {
+		if extensions != nil {
+			exts = string(*extensions)
+		}
 	}
 
 	// Convert class name to lowercase filename (PHP default autoload behavior)
 	filename := strings.ToLower(string(className))
 
-	// Try each extension using the include path.
-	// Use Open with useIncludePath=true to find the file (no warnings), then
-	// Include the resolved path. This matches PHP's spl_autoload behavior.
+	// PHP's spl_autoload searches the include_path for files.
+	// Use Include with the relative path, which handles include_path, script
+	// directory, and CWD resolution. Silently ignore missing-file errors.
 	for _, ext := range strings.Split(exts, ",") {
 		relPath := filename + ext
-		// Try to open with include path to find the file
-		f, openErr := ctx.Global().Open(ctx, phpv.ZString(relPath), "r", true)
-		if openErr != nil || f == nil {
-			continue // file not found, try next extension
-		}
-		// Get the resolved URI/path
-		var fullPath string
-		if uri, ok := f.Attr("uri").(string); ok {
-			fullPath = uri
-		} else {
-			fullPath = relPath
-		}
-		f.Close()
-		// Include the file using the resolved path
-		_, err := ctx.Global().Include(ctx, phpv.ZString(fullPath))
-		if err == nil {
+		// Use Include which handles include_path, script dir, and CWD.
+		// Errors (including missing-file warnings) are silently ignored.
+		_, inclErr := ctx.Global().Include(ctx, phpv.ZString(relPath))
+		if inclErr == nil {
 			return nil, nil
 		}
 	}
