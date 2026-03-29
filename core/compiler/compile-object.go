@@ -256,8 +256,38 @@ type runNewAnonymousClass struct {
 }
 
 func (r *runNewAnonymousClass) Dump(w io.Writer) error {
-	_, err := w.Write([]byte("new class"))
+	_, err := w.Write([]byte("new "))
 	if err != nil {
+		return err
+	}
+	// Print class-level attributes between "new" and "class" (e.g. new #[Attr(...)] class {})
+	for _, attr := range r.class.Attributes {
+		if _, err = fmt.Fprintf(w, "#[%s", attr.ClassName); err != nil {
+			return err
+		}
+		if len(attr.ArgExprs) > 0 {
+			if _, err = w.Write([]byte("(")); err != nil {
+				return err
+			}
+			for j, argExpr := range attr.ArgExprs {
+				if j > 0 {
+					if _, err = w.Write([]byte(", ")); err != nil {
+						return err
+					}
+				}
+				if err = argExpr.Dump(w); err != nil {
+					return err
+				}
+			}
+			if _, err = w.Write([]byte(")")); err != nil {
+				return err
+			}
+		}
+		if _, err = w.Write([]byte("] ")); err != nil {
+			return err
+		}
+	}
+	if _, err = w.Write([]byte("class")); err != nil {
 		return err
 	}
 	// Include constructor args if any
