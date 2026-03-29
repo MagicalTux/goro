@@ -218,9 +218,23 @@ func reflectionPropertyGetValue(ctx phpv.Context, o *phpobj.ZObject, args []*php
 		return nil, phpobj.ThrowError(ctx, ReflectionException, "ReflectionProperty::getValue(): argument must be an object for non-static properties")
 	}
 
-	obj := args[0].AsObject(ctx)
-	// ReflectionProperty::getValue() invokes hooks - use ObjectGet which goes through hooks
-	return obj.ObjectGet(ctx, data.prop.VarName)
+	obj := args[0].Value().(*phpobj.ZObject)
+	if obj == nil {
+		return nil, phpobj.ThrowError(ctx, ReflectionException, "ReflectionProperty::getValue(): argument must be an object for non-static properties")
+	}
+	// ReflectionProperty::getValue() bypasses visibility (PHP 8.1+).
+	// Read directly using GetPropValue which handles private name mangling.
+	v := obj.GetPropValue(data.prop)
+	if v == nil {
+		// Property not initialized - check for typed property error or return default
+		if data.prop.TypeHint != nil {
+			return nil, phpobj.ThrowError(ctx, phpobj.Error,
+				fmt.Sprintf("Typed property %s::$%s must not be accessed before initialization",
+					data.class.Name, data.prop.VarName))
+		}
+		return phpv.ZNULL.ZVal(), nil
+	}
+	return v, nil
 }
 
 func reflectionPropertySetValue(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
@@ -255,9 +269,24 @@ func reflectionPropertySetValue(ctx phpv.Context, o *phpobj.ZObject, args []*php
 		return nil, phpobj.ThrowError(ctx, phpobj.Error, "ReflectionProperty::setValue() expects an object and a value for non-static properties")
 	}
 
-	obj := args[0].AsObject(ctx)
-	// ReflectionProperty::setValue() invokes hooks - use ObjectSet which goes through hooks
-	return nil, obj.ObjectSet(ctx, data.prop.VarName, args[1])
+	obj := args[0].Value().(*phpobj.ZObject)
+	if obj == nil {
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, "ReflectionProperty::setValue() expects an object and a value for non-static properties")
+	}
+
+	// ReflectionProperty::setValue() bypasses visibility (PHP 8.1+).
+	// Enforce typed property type checking before setting.
+	value := args[1]
+	if data.prop.TypeHint != nil {
+		if coerced, err := obj.EnforcePropertyType(ctx, data.prop.VarName, data.prop, value); err != nil {
+			return nil, err
+		} else if coerced != nil {
+			value = coerced
+		}
+	}
+
+	// Set directly, bypassing visibility checks
+	return nil, obj.SetPropValueDirect(data.prop, value)
 }
 
 func reflectionPropertyGetDeclaringClass(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {

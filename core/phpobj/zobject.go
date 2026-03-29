@@ -1142,6 +1142,29 @@ func (o *ZObject) GetPropValue(p *phpv.ZClassProp) *phpv.ZVal {
 	return o.h.GetString(p.VarName)
 }
 
+// SetPropValueDirect sets a property value directly, bypassing visibility checks.
+// For private properties, it finds the declaring class and uses the mangled name.
+// This is used by Reflection to set properties regardless of visibility.
+func (o *ZObject) SetPropValueDirect(prop *phpv.ZClassProp, value *phpv.ZVal) error {
+	if prop.Modifiers.IsPrivate() {
+		class := o.Class.(*ZClass)
+		for class != nil {
+			for _, cp := range class.Props {
+				if cp == prop {
+					k := getPrivatePropName(class, prop.VarName)
+					return o.h.SetString(k, value)
+				}
+			}
+			parent := class.GetParent()
+			if parent == nil {
+				break
+			}
+			class = parent.(*ZClass)
+		}
+	}
+	return o.h.SetString(prop.VarName, value)
+}
+
 // GetPropValueOrHook returns the value for a class property. For virtual
 // hooked properties with a get hook, it calls the get hook. For backed
 // properties or properties without hooks, it returns the hash table value.
@@ -3309,6 +3332,12 @@ func (o *ZObject) findDeclaringClass(keyStr phpv.ZString) *ZClass {
 // enforcePropertyType checks that a value is compatible with a typed property's type hint.
 // Returns a coerced value if coercion is needed and possible, or an error if the type is incompatible.
 // In strict_types=1 mode, no coercion is performed (except int->float widening).
+// EnforcePropertyType is the exported wrapper for enforcePropertyType,
+// used by the reflection extension to validate types before direct property writes.
+func (o *ZObject) EnforcePropertyType(ctx phpv.Context, keyStr phpv.ZString, prop *phpv.ZClassProp, value *phpv.ZVal) (*phpv.ZVal, error) {
+	return o.enforcePropertyType(ctx, keyStr, prop, value)
+}
+
 func (o *ZObject) enforcePropertyType(ctx phpv.Context, keyStr phpv.ZString, prop *phpv.ZClassProp, value *phpv.ZVal) (*phpv.ZVal, error) {
 	hint := prop.TypeHint
 	if hint == nil {

@@ -2076,6 +2076,7 @@ type recursiveIteratorIteratorData struct {
 	catchGetChild   bool
 	endIterCalled   bool // prevents calling endIteration more than once
 	inIteration     bool // true after beginIteration called, false after endIteration
+	rewindAttempted bool // true after rewind() has been called (even if user override doesn't call parent)
 	// hasNextAtDepth tracks whether there's a next sibling at each depth level
 	// (used by RecursiveTreeIterator for prefix generation)
 	hasNextAtDepth []bool
