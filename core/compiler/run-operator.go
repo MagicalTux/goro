@@ -413,10 +413,23 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		}
 	}
 
-	// For compound write ops (.= += etc.), enable container caching on ArrayAccess LHS
-	// so WriteValue doesn't re-evaluate the container chain (avoiding extra offsetGet calls)
+	// For compound write ops (.= += etc.) and ++/--, enable container caching on ArrayAccess LHS
+	// so WriteValue doesn't re-evaluate the container chain (avoiding extra offsetGet calls).
+	// This also ensures the array key is captured before any error handlers modify the key variable.
 	if op.write && op.op != nil {
 		if ac, ok := r.a.(*runArrayAccess); ok {
+			ac.compoundCache = true
+		}
+	}
+	// For T_INC/T_DEC (post-increment/decrement), also cache the array container and offset
+	// so that error handlers triggered during read (e.g. "Undefined array key") cannot change
+	// the key variable and cause the write to use a different key.
+	if r.op == tokenizer.T_INC || r.op == tokenizer.T_DEC {
+		target := r.a
+		if target == nil {
+			target = r.b
+		}
+		if ac, ok := target.(*runArrayAccess); ok {
 			ac.compoundCache = true
 		}
 	}
