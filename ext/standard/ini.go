@@ -56,7 +56,7 @@ func fncParseIniFile(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZFalse.ZVal(), nil
 	}
 
-	return parseIniString(ctx, string(data), sections, mode)
+	return parseIniContent(ctx, string(data), sections, mode, path)
 }
 
 // > func array|false parse_ini_string ( string $ini_string [, bool $process_sections = false [, int $scanner_mode = INI_SCANNER_NORMAL ]] )
@@ -78,11 +78,12 @@ func fncParseIniString(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 		return phpv.ZFalse.ZVal(), nil
 	}
 
-	return parseIniString(ctx, string(iniString), sections, mode)
+	return parseIniContent(ctx, string(iniString), sections, mode, "Unknown")
 }
 
-// parseIniString parses an INI-format string and returns a PHP array.
-func parseIniString(ctx phpv.Context, data string, processSections bool, mode phpv.ZInt) (*phpv.ZVal, error) {
+// parseIniContent parses an INI-format string and returns a PHP array.
+// sourceFile is the name of the ini source (path for parse_ini_file, "Unknown" for parse_ini_string).
+func parseIniContent(ctx phpv.Context, data string, processSections bool, mode phpv.ZInt, sourceFile string) (*phpv.ZVal, error) {
 	result := phpv.NewZArray()
 	var currentSection *phpv.ZArray
 
@@ -101,6 +102,14 @@ func parseIniString(ctx phpv.Context, data string, processSections bool, mode ph
 		if line[0] == '[' {
 			end := strings.IndexByte(line, ']')
 			if end == -1 {
+				// Unclosed section header. If it contains "${", it's an unterminated
+				// variable reference in the section name (PHP's ini scanner error:
+				// "unexpected end of file, expecting TC_FALLBACK or '}'").
+				if strings.Contains(line, "${") {
+					ctx.Warn("syntax error, unexpected end of file, expecting TC_FALLBACK or '}' in %s on line %d",
+						sourceFile, lineNo, logopt.NoFuncName(true), logopt.LocNewLine(true))
+					return phpv.ZBool(false).ZVal(), nil
+				}
 				continue
 			}
 			sectionName := strings.TrimSpace(line[1:end])
@@ -137,8 +146,8 @@ func parseIniString(ctx phpv.Context, data string, processSections bool, mode ph
 			q := value[0]
 			if q == '"' || q == '\'' {
 				if len(value) < 2 || value[len(value)-1] != q {
-					ctx.Warn("syntax error, unexpected '%c' in Unknown on line %d",
-						q, lineNo, logopt.NoFuncName(true))
+					ctx.Warn("syntax error, unexpected '%c' in %s on line %d",
+						q, sourceFile, lineNo, logopt.NoFuncName(true), logopt.LocNewLine(true))
 					return phpv.ZBool(false).ZVal(), nil
 				}
 			}

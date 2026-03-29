@@ -1161,11 +1161,14 @@ func getLogArgs(args []any) (logopt.Data, []any) {
 			option.NoLoc = bool(t)
 		case logopt.IsInternal:
 			option.IsInternal = bool(t)
+		case logopt.LocNewLine:
+			option.LocNewLine = bool(t)
 		case logopt.Data:
 			option.ErrType = t.ErrType
 			option.NoFuncName = t.NoFuncName
 			option.NoLoc = t.NoLoc
 			option.IsInternal = t.IsInternal
+			option.LocNewLine = t.LocNewLine
 			if t.Loc != nil {
 				option.Loc = t.Loc
 			}
@@ -1268,10 +1271,17 @@ func (g *Global) LogError(err *phpv.PhpError, optionArg ...logopt.Data) {
 	}
 	output.WriteString(msg)
 	if !option.NoLoc && err.Loc != nil {
+		// When LocNewLine is set (e.g. for INI parser errors that already contain their
+		// own "in <file> on line <N>" info), put the PHP script location on a new line
+		// starting with " in" rather than appending directly after the message.
+		locSep := " "
+		if option.LocNewLine {
+			locSep = "\n "
+		}
 		if htmlErrors {
-			output.WriteString(fmt.Sprintf(" in <b>%s</b> on line <b>%d</b>", htmlEscapeString(err.Loc.Filename), err.Loc.Line))
+			output.WriteString(fmt.Sprintf("%sin <b>%s</b> on line <b>%d</b>", locSep, htmlEscapeString(err.Loc.Filename), err.Loc.Line))
 		} else {
-			output.WriteString(fmt.Sprintf(" in %s on line %d", err.Loc.Filename, err.Loc.Line))
+			output.WriteString(fmt.Sprintf("%sin %s on line %d", locSep, err.Loc.Filename, err.Loc.Line))
 		}
 	}
 

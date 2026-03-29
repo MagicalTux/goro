@@ -630,19 +630,21 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 		}
 	}
 
-	// For functions that do NOT return by reference, separate array values
-	// so that writing to the returned array doesn't modify the original
-	// (PHP copy-on-write semantics). Objects are excluded since they always
-	// have reference semantics.
-	if callErr == nil && callResult != nil && callResult.GetType() == phpv.ZtArray {
+	// For functions that do NOT return by reference, separate the returned value
+	// so that in-place modifications (e.g. $foo->f1()[0] = 1) don't modify the
+	// original variable that the function returned (PHP copy-on-write semantics).
+	// Objects are excluded since they always have reference semantics.
+	// Null values also need separation so CastTo doesn't modify the source ZVal.
+	if callErr == nil && callResult != nil {
 		returnsByRef := false
 		if rr, ok := f.(interface{ ReturnsByRef() bool }); ok {
 			returnsByRef = rr.ReturnsByRef()
 		}
-		if !returnsByRef {
+		if !returnsByRef && callResult.GetType() != phpv.ZtObject {
 			// Dup creates a COW clone; force a full separation so that
-			// in-place modifications (e.g. doInc on $foo->f1()[0]++)
-			// don't affect the original array's elements via shared ZVal pointers.
+			// in-place modifications (e.g. doInc on $foo->f1()[0]++,
+			// $foo->f1()[0] = 1 where f1 returns null) don't affect
+			// the original variable's ZVal pointer.
 			callResult = callResult.Dup()
 			if za, ok := callResult.Value().(*phpv.ZArray); ok {
 				za.SeparateCow()

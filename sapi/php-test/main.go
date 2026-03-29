@@ -18,6 +18,7 @@ import (
 
 	"github.com/MagicalTux/goro/core/compiler"
 	"github.com/MagicalTux/goro/core/ini"
+	"github.com/MagicalTux/goro/core/phperr"
 	"github.com/MagicalTux/goro/core/phpctx"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
@@ -116,6 +117,47 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		}
 		_, err = c.Run(g)
 		g.Close()
+		// Handle uncaught exceptions and fatal errors: in PHP, these produce
+		// "Fatal error: ..." output and terminate the script. For test purposes,
+		// we treat this as a successful run (the fatal error text is in the output).
+		if ex, ok := err.(*phperr.PhpThrow); ok {
+			// Write "Fatal error: Uncaught ..." to output (matches PHP CLI behavior)
+			trace, _ := ex.ErrorTrace(g)
+			thrownFile := ex.ThrownFile()
+			if thrownFile == "" {
+				thrownFile = "Unknown"
+			}
+			fmt.Fprintf(p.output, "\nFatal error: %s in %s on line %d\nStack trace:\n#0 {main}\n  thrown in %s on line %d\n",
+				trace, thrownFile, ex.ThrownLine(), thrownFile, ex.ThrownLine())
+			return nil
+		}
+		if phpErr, ok := err.(*phpv.PhpError); ok && phpErr.Code == phpv.E_ERROR {
+			// Fatal PHP errors (E_ERROR) terminate the script and output the error message.
+			// For test purposes, write the error to output and return nil.
+			loc := phpErr.Loc
+			file, line := "[unknown]", 0
+			if loc != nil {
+				file, line = loc.Filename, loc.Line
+			} else if l := g.Loc(); l != nil {
+				file, line = l.Filename, l.Line
+			}
+			fmt.Fprintf(p.output, "\nFatal error: %s in %s on line %d\n", phpErr.Err.Error(), file, line)
+			return nil
+		}
+		// Also handle PhpError wrapped inside a PhpError
+		if outer, ok := err.(*phpv.PhpError); ok {
+			if phpErr, ok := outer.Err.(*phpv.PhpError); ok && phpErr.Code == phpv.E_ERROR {
+				loc := phpErr.Loc
+				file, line := "[unknown]", 0
+				if loc != nil {
+					file, line = loc.Filename, loc.Line
+				} else if l := g.Loc(); l != nil {
+					file, line = l.Filename, l.Line
+				}
+				fmt.Fprintf(p.output, "\nFatal error: %s in %s on line %d\n", phpErr.Err.Error(), file, line)
+				return nil
+			}
+		}
 		return phpv.FilterExitError(err)
 	case "EXPECT":
 		// compare p.output with b

@@ -369,7 +369,36 @@ func reflectionAttributeToString(ctx phpv.Context, o *phpobj.ZObject, args []*ph
 	for i, arg := range data.attr.Args {
 		sb.WriteString(fmt.Sprintf("    Argument #%d [ ", i))
 		if arg != nil {
-			sb.WriteString(arg.String())
+			if arg.GetType() == phpv.ZtObject {
+				// For object arguments, show ClassName(stringRepresentation)
+				obj, ok := arg.Value().(phpv.ZObject)
+				if ok {
+					className := string(obj.GetClass().GetName())
+					// Try to get a meaningful string representation
+					objStr := ""
+					if ag, ok2 := obj.GetOpaque(obj.GetClass()).(interface {
+						Name() string
+					}); ok2 {
+						objStr = ag.Name()
+					} else {
+						// Try __toString if available
+						if m, hasToStr := obj.GetClass().GetMethod("__tostring"); hasToStr {
+							if strVal, err := ctx.CallZValInternal(ctx, m.Method, nil, obj); err == nil && strVal != nil {
+								objStr = strVal.String()
+							}
+						}
+					}
+					if objStr != "" {
+						sb.WriteString(fmt.Sprintf("%s(%s)", className, objStr))
+					} else {
+						sb.WriteString(className)
+					}
+				} else {
+					sb.WriteString("Object")
+				}
+			} else {
+				sb.WriteString(arg.String())
+			}
 		}
 		sb.WriteString(" ]\n")
 	}

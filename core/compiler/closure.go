@@ -1482,6 +1482,13 @@ func closureBind(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				return phpv.ZNULL.ZVal(), nil
 			}
 
+			// Cannot unbind $this from instance method (checked BEFORE scope rebind)
+			// PHP prioritizes this check when both $this and scope would change.
+			if newThis.GetType() == phpv.ZtNull && w.this != nil {
+				ctx.Warn("Cannot unbind $this of method, this will be an error in PHP 9", logopt.NoFuncName(true))
+				return phpv.ZNULL.ZVal(), nil
+			}
+
 			// Cannot rebind scope (any scope change)
 			if scopeIsExplicit || (!scopeIsStatic && !scopeIsExplicit) {
 				resolvedScope := w.class
@@ -1492,12 +1499,6 @@ func closureBind(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 					ctx.Warn("Cannot rebind scope of closure created from method, this will be an error in PHP 9", logopt.NoFuncName(true))
 					return phpv.ZNULL.ZVal(), nil
 				}
-			}
-
-			// Cannot unbind $this from instance method
-			if newThis.GetType() == phpv.ZtNull && w.this != nil {
-				ctx.Warn("Cannot unbind $this of method, this will be an error in PHP 9", logopt.NoFuncName(true))
-				return phpv.ZNULL.ZVal(), nil
 			}
 
 			// Cannot bind to incompatible object
