@@ -26,6 +26,7 @@ type arrayObjectData struct {
 	objectStorage *phpobj.ZObject // non-nil when wrapping an object
 	flags         phpv.ZInt
 	iteratorClass phpv.ZString
+	sorting       bool // true while a sort operation is in progress
 }
 
 func (d *arrayObjectData) Clone() any {
@@ -34,8 +35,24 @@ func (d *arrayObjectData) Clone() any {
 		iteratorClass: d.iteratorClass,
 	}
 	if d.objectStorage != nil {
-		// When cloning, keep reference to the same object (PHP behavior)
-		cloned.objectStorage = d.objectStorage
+		// When cloning an object-backed ArrayObject, take a snapshot of the
+		// object's current properties as an array (PHP 8 behavior). The clone
+		// no longer shares the object reference; instead it becomes array-backed.
+		// We use the raw HashTable (which contains all dynamic properties) since
+		// we don't have a context here to filter by visibility. For the typical
+		// usage pattern (plain objects with only public/dynamic properties) this
+		// is correct. Private/protected props would require ctx-aware filtering.
+		arr := phpv.NewZArray()
+		if ht := d.objectStorage.HashTable(); ht != nil {
+			for it := ht.NewIterator(); it.Valid(nil); it.Next(nil) {
+				k, _ := it.Key(nil)
+				v, _ := it.Current(nil)
+				if k != nil && v != nil {
+					arr.OffsetSet(nil, k, v)
+				}
+			}
+		}
+		cloned.array = arr
 	} else if d.array != nil {
 		cloned.array = d.array.DeepCopy()
 	}

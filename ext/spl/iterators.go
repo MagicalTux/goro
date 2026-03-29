@@ -2110,6 +2110,53 @@ func getRecursiveIteratorIteratorData(o *phpobj.ZObject) *recursiveIteratorItera
 	return d.(*recursiveIteratorIteratorData)
 }
 
+// recursiveIteratorDoRewind performs the actual rewind logic for RecursiveIteratorIterator.
+// It is extracted as a helper so it can be called directly from next() (auto-rewind)
+// without adding an extra PHP stack frame for the internal rewind call.
+func recursiveIteratorDoRewind(ctx phpv.Context, d *recursiveIteratorIteratorData, o *phpobj.ZObject) error {
+	if len(d.stack) == 0 {
+		return nil
+	}
+	// Reset to just the root iterator
+	root := d.stack[0]
+	d.stack = []*phpobj.ZObject{root}
+	d.depth = 0
+	d.hasNextAtDepth = nil
+	d.endIterCalled = false
+	d.rewindAttempted = true // mark that rewind was called (even in native handler)
+	_, err := root.CallMethod(ctx, "rewind")
+	if err != nil {
+		return err
+	}
+	// Call beginIteration hook only if not already in iteration
+	if !d.inIteration {
+		o.Unwrap().(*phpobj.ZObject).CallMethod(ctx, "beginIteration")
+		d.inIteration = true
+	}
+	// Descend into children if needed
+	err = recursiveIteratorDescend(ctx, d, o)
+	if err != nil {
+		return err
+	}
+	// Call nextElement hook after first element is ready
+	isValid := len(d.stack) > 0
+	if isValid {
+		top := d.stack[len(d.stack)-1]
+		vv, _ := top.CallMethod(ctx, "valid")
+		isValid = vv != nil && bool(vv.AsBool(ctx))
+	}
+	if isValid {
+		_, err = o.Unwrap().(*phpobj.ZObject).CallMethodInternal(ctx, "nextElement")
+		if err != nil {
+			if d.catchGetChild {
+				return nil
+			}
+			return err
+		}
+	}
+	return nil
+}
+
 func initRecursiveIteratorIterator() {
 	RecursiveIteratorIteratorClass.Methods = map[phpv.ZString]*phpv.ZClassMethod{
 		"__construct": {
@@ -2180,49 +2227,7 @@ func initRecursiveIteratorIterator() {
 				if d == nil {
 					return nil, phpobj.ThrowError(ctx, phpobj.Error, "Object is not initialized")
 				}
-				if len(d.stack) == 0 {
-					return nil, nil
-				}
-				// Reset to just the root iterator
-				root := d.stack[0]
-				d.stack = []*phpobj.ZObject{root}
-				d.depth = 0
-				d.hasNextAtDepth = nil
-				d.endIterCalled = false
-				d.rewindAttempted = true // mark that rewind was called (even in native handler)
-				_, err := root.CallMethod(ctx, "rewind")
-				if err != nil {
-					return nil, err
-				}
-				// Call beginIteration hook only if not already in iteration
-				if !d.inIteration {
-					o.Unwrap().(*phpobj.ZObject).CallMethod(ctx, "beginIteration")
-					d.inIteration = true
-				}
-				// Descend into children if needed
-				err = recursiveIteratorDescend(ctx, d, o)
-				if err != nil {
-					return nil, err
-				}
-				// Call nextElement hook after first element is ready
-				// Use internal stack state instead of calling user-level valid()
-				// to avoid extra calls that could produce side effects.
-				isValid := len(d.stack) > 0
-				if isValid {
-					top := d.stack[len(d.stack)-1]
-					vv, _ := top.CallMethod(ctx, "valid")
-					isValid = vv != nil && bool(vv.AsBool(ctx))
-				}
-				if isValid {
-					_, err = o.Unwrap().(*phpobj.ZObject).CallMethod(ctx, "nextElement")
-					if err != nil {
-						if d.catchGetChild {
-							return nil, nil
-						}
-						return nil, err
-					}
-				}
-				return nil, nil
+				return nil, recursiveIteratorDoRewind(ctx, d, o)
 			}),
 		},
 		"current": {
@@ -2257,7 +2262,8 @@ func initRecursiveIteratorIterator() {
 				// Auto-rewind if next() is called before rewind()
 				if !d.rewindAttempted {
 					d.rewindAttempted = true
-					_, err := o.CallMethod(ctx, "rewind")
+					// Call rewind logic directly without creating extra PHP stack frames
+					err := recursiveIteratorDoRewind(ctx, d, o)
 					if err != nil {
 						return nil, err
 					}
@@ -2279,7 +2285,7 @@ func initRecursiveIteratorIterator() {
 					isValid = v != nil && bool(v.AsBool(ctx))
 				}
 				if isValid {
-					_, err = o.Unwrap().(*phpobj.ZObject).CallMethod(ctx, "nextElement")
+					_, err = o.Unwrap().(*phpobj.ZObject).CallMethodInternal(ctx, "nextElement")
 					if err != nil {
 						if d.catchGetChild {
 							// CATCH_GET_CHILD catches exceptions from hooks
@@ -2527,7 +2533,7 @@ func recursiveIteratorCallHasChildren(ctx phpv.Context, d *recursiveIteratorIter
 	var err error
 	if outer != nil {
 		var result *phpv.ZVal
-		result, err = outer.Unwrap().(*phpobj.ZObject).CallMethod(ctx, "callHasChildren")
+		result, err = outer.Unwrap().(*phpobj.ZObject).CallMethodInternal(ctx, "callHasChildren")
 		if err != nil {
 			if d.catchGetChild {
 				return false, nil
@@ -2578,7 +2584,7 @@ func recursiveIteratorCallGetChildren(ctx phpv.Context, d *recursiveIteratorIter
 // recursiveIteratorBeginChildren calls beginChildren hook, handling CATCH_GET_CHILD.
 func recursiveIteratorBeginChildren(ctx phpv.Context, d *recursiveIteratorIteratorData, outer *phpobj.ZObject) error {
 	if outer != nil {
-		_, err := outer.Unwrap().(*phpobj.ZObject).CallMethod(ctx, "beginChildren")
+		_, err := outer.Unwrap().(*phpobj.ZObject).CallMethodInternal(ctx, "beginChildren")
 		if err != nil {
 			if d.catchGetChild {
 				return nil
@@ -3223,7 +3229,7 @@ func initMultipleIterator() {
 					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "MultipleIterator::attachIterator(): Argument #1 ($iterator) must be of type Iterator")
 				}
 				inner, ok := args[0].Value().(*phpobj.ZObject)
-				if !ok {
+				if !ok || !inner.GetClass().Implements(phpobj.Iterator) {
 					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "MultipleIterator::attachIterator(): Argument #1 ($iterator) must be of type Iterator")
 				}
 				var info *phpv.ZVal
@@ -3488,12 +3494,125 @@ func initMultipleIterator() {
 				return nil, nil
 			}),
 		},
+		// ArrayAccess: offsetSet($iterator, $infos) — maps to attachIterator
+		"offsetset": {
+			Name: "offsetSet",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				d := getMultipleIteratorData(o)
+				if d == nil {
+					return nil, nil
+				}
+				if len(args) == 0 || args[0] == nil || args[0].GetType() != phpv.ZtObject {
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "Can only attach objects that implement the Iterator interface")
+				}
+				inner, ok := args[0].Value().(*phpobj.ZObject)
+				if !ok || !inner.GetClass().Implements(phpobj.Iterator) {
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "Can only attach objects that implement the Iterator interface")
+				}
+				var info *phpv.ZVal
+				if len(args) > 1 && args[1] != nil && !args[1].IsNull() {
+					info = args[1]
+				}
+				for i, e := range d.entries {
+					if e.iterator == inner {
+						d.entries[i].info = info
+						return nil, nil
+					}
+				}
+				d.entries = append(d.entries, multipleIteratorEntry{iterator: inner, info: info})
+				return nil, nil
+			}),
+		},
+		// ArrayAccess: offsetGet($iterator) — returns the associated info
+		"offsetget": {
+			Name: "offsetGet",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				d := getMultipleIteratorData(o)
+				if d == nil {
+					return phpv.ZNULL.ZVal(), nil
+				}
+				if len(args) == 0 || args[0] == nil || args[0].GetType() != phpv.ZtObject {
+					return phpv.ZNULL.ZVal(), nil
+				}
+				inner, ok := args[0].Value().(*phpobj.ZObject)
+				if !ok {
+					return phpv.ZNULL.ZVal(), nil
+				}
+				for _, e := range d.entries {
+					if e.iterator == inner {
+						if e.info != nil {
+							return e.info, nil
+						}
+						return phpv.ZNULL.ZVal(), nil
+					}
+				}
+				return phpv.ZNULL.ZVal(), nil
+			}),
+		},
+		// ArrayAccess: offsetExists($iterator) — returns true if iterator is attached
+		"offsetexists": {
+			Name: "offsetExists",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				d := getMultipleIteratorData(o)
+				if d == nil {
+					return phpv.ZFalse.ZVal(), nil
+				}
+				if len(args) == 0 || args[0] == nil || args[0].GetType() != phpv.ZtObject {
+					return phpv.ZFalse.ZVal(), nil
+				}
+				inner, ok := args[0].Value().(*phpobj.ZObject)
+				if !ok {
+					return phpv.ZFalse.ZVal(), nil
+				}
+				for _, e := range d.entries {
+					if e.iterator == inner {
+						return phpv.ZTrue.ZVal(), nil
+					}
+				}
+				return phpv.ZFalse.ZVal(), nil
+			}),
+		},
+		// ArrayAccess: offsetUnset($iterator) — maps to detachIterator
+		"offsetunset": {
+			Name: "offsetUnset",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				d := getMultipleIteratorData(o)
+				if d == nil {
+					return nil, nil
+				}
+				if len(args) == 0 || args[0] == nil || args[0].GetType() != phpv.ZtObject {
+					return nil, nil
+				}
+				inner, ok := args[0].Value().(*phpobj.ZObject)
+				if !ok {
+					return nil, nil
+				}
+				for i, e := range d.entries {
+					if e.iterator == inner {
+						d.entries = append(d.entries[:i], d.entries[i+1:]...)
+						break
+					}
+				}
+				return nil, nil
+			}),
+		},
+		// Countable: count() — returns number of attached iterators
+		"count": {
+			Name: "count",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				d := getMultipleIteratorData(o)
+				if d == nil {
+					return phpv.ZInt(0).ZVal(), nil
+				}
+				return phpv.ZInt(len(d.entries)).ZVal(), nil
+			}),
+		},
 	}
 }
 
 var MultipleIteratorClass = &phpobj.ZClass{
 	Name:            "MultipleIterator",
-	Implementations: []*phpobj.ZClass{phpobj.Iterator},
+	Implementations: []*phpobj.ZClass{phpobj.Iterator, phpobj.ArrayAccess, Countable},
 	Const: map[phpv.ZString]*phpv.ZClassConst{
 		"MIT_NEED_ANY":     {Value: phpv.ZInt(multipleIteratorMitNeedAny)},
 		"MIT_NEED_ALL":     {Value: phpv.ZInt(multipleIteratorMitNeedAll)},

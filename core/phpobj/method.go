@@ -65,6 +65,22 @@ func (m *NativeMethodNamed) String() string {
 	return "Callable"
 }
 
+// namedCallable wraps any Callable with an explicit name for stack trace display.
+// Used by GetMethod to preserve the declared method name for native methods that
+// return "" from Name() (e.g. NativeMethod, NativeStaticMethod, NativeMethodNamed).
+type namedCallable struct {
+	phpv.Callable
+	name string
+}
+
+func (n *namedCallable) Name() string { return n.name }
+func (n *namedCallable) GetType() phpv.ZType { return phpv.ZtCallable }
+func (n *namedCallable) ZVal() *phpv.ZVal    { return phpv.NewZVal(n) }
+func (n *namedCallable) Value() phpv.Val     { return n }
+func (n *namedCallable) AsVal(ctx phpv.Context, t phpv.ZType) (phpv.Val, error) {
+	return n.Callable.AsVal(ctx, t)
+}
+
 // NativeStaticMethod is like NativeMethod but for static methods.
 // It receives the class from context instead of requiring $this.
 type NativeStaticMethod func(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)

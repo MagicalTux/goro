@@ -104,6 +104,7 @@ type Global struct {
 
 	nextResourceID int
 	nextObjectID   int
+	freeObjectIDs  []int // recycled object IDs (free list)
 
 	DefaultStreamContext *stream.Context
 
@@ -2186,12 +2187,19 @@ func (g *Global) NextResourceID() int {
 }
 
 func (g *Global) NextObjectID() int {
+	if n := len(g.freeObjectIDs); n > 0 {
+		id := g.freeObjectIDs[n-1]
+		g.freeObjectIDs = g.freeObjectIDs[:n-1]
+		return id
+	}
 	g.nextObjectID++
 	return g.nextObjectID
 }
 
 func (g *Global) ReleaseObjectID(id int) {
-	// No-op for now: Go GC doesn't provide deterministic object lifecycle
+	if id > 0 {
+		g.freeObjectIDs = append(g.freeObjectIDs, id)
+	}
 }
 
 func (g *Global) RegisterDestructor(obj phpv.ZObject) {

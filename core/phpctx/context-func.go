@@ -150,6 +150,9 @@ func (c *FuncContext) Callable() phpv.Callable {
 }
 
 func (c *FuncContext) This() phpv.ZObject {
+	if c.this == nil && c.useParentScope {
+		return c.Context.This()
+	}
 	return c.this
 }
 

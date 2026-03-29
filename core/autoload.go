@@ -31,15 +31,20 @@ func fncSplAutoload(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	// PHP's spl_autoload searches the include_path for files.
 	// Use Include with the relative path, which handles include_path, script
 	// directory, and CWD resolution. Silently ignore missing-file errors.
+	// Suppress warnings during include attempts (PHP spl_autoload behavior).
+	savedER := ctx.Global().GetConfig("error_reporting", phpv.ZInt(0).ZVal())
+	ctx.Global().SetLocalConfig("error_reporting", phpv.ZInt(0).ZVal())
 	for _, ext := range strings.Split(exts, ",") {
 		relPath := filename + ext
 		// Use Include which handles include_path, script dir, and CWD.
 		// Errors (including missing-file warnings) are silently ignored.
 		_, inclErr := ctx.Global().Include(ctx, phpv.ZString(relPath))
 		if inclErr == nil {
+			ctx.Global().SetLocalConfig("error_reporting", savedER)
 			return nil, nil
 		}
 	}
+	ctx.Global().SetLocalConfig("error_reporting", savedER)
 
 	return nil, nil // silently fail (PHP behavior for spl_autoload)
 }

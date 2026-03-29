@@ -11,11 +11,12 @@ import (
 
 // arrayIteratorData holds the internal state for an ArrayIterator instance
 type arrayIteratorData struct {
-	array        *phpv.ZArray
-	iter         phpv.ZIterator
-	flags        phpv.ZInt
-	objectBacked bool // true when constructed from an object (not an array)
-	sorting      bool // true while a sort operation is in progress (prevents re-entrant modification)
+	array         *phpv.ZArray
+	iter          phpv.ZIterator
+	flags         phpv.ZInt
+	objectBacked  bool            // true when constructed from an object (not an array)
+	sorting       bool            // true while a sort operation is in progress (prevents re-entrant modification)
+	backingObject *phpobj.ZObject // set when iterator was created via ArrayObject::getIterator(), points to the ArrayObject
 }
 
 func (d *arrayIteratorData) Clone() any {
@@ -494,7 +495,12 @@ func initArrayIterator() {
 
 				result := phpv.NewZArray()
 				storageKey := "\x00ArrayIterator\x00storage"
-				result.OffsetSet(ctx, phpv.ZString(storageKey).ZVal(), d.array.ZVal())
+				// When created via ArrayObject::getIterator(), show the ArrayObject as storage
+				if d.backingObject != nil {
+					result.OffsetSet(ctx, phpv.ZString(storageKey).ZVal(), d.backingObject.ZVal())
+				} else {
+					result.OffsetSet(ctx, phpv.ZString(storageKey).ZVal(), d.array.ZVal())
+				}
 
 				return result.ZVal(), nil
 			}),

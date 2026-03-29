@@ -171,7 +171,13 @@ func (z *ZObject) DecRef(ctx phpv.Context) error {
 	}
 	n := atomic.AddInt32(z.refCount, -1)
 	if n <= 0 {
-		return z.CallDestructor(ctx)
+		err := z.CallDestructor(ctx)
+		// Release the object ID if not resurrected inside the destructor.
+		// Resurrection increments refCount back above zero.
+		if atomic.LoadInt32(z.refCount) <= 0 {
+			ctx.Global().ReleaseObjectID(z.ID)
+		}
+		return err
 	}
 	return nil
 }
@@ -185,7 +191,12 @@ func (z *ZObject) DecRefImplicit(ctx phpv.Context) error {
 	}
 	n := atomic.AddInt32(z.refCount, -1)
 	if n <= 0 {
-		return z.CallImplicitDestructor(ctx)
+		err := z.CallImplicitDestructor(ctx)
+		// Release the object ID if not resurrected inside the destructor.
+		if atomic.LoadInt32(z.refCount) <= 0 {
+			ctx.Global().ReleaseObjectID(z.ID)
+		}
+		return err
 	}
 	return nil
 }
@@ -317,8 +328,12 @@ func (z *ZObject) AsVal(ctx phpv.Context, t phpv.ZType) (phpv.Val, error) {
 
 	switch t {
 	case phpv.ZtString:
-		if m, ok := z.Class.GetMethod("__tostring"); ok {
-			result, err := ctx.CallZVal(ctx, m.Method, nil, z)
+		if _, ok := z.Class.GetMethod("__tostring"); ok {
+			toStringCallable, getErr := z.GetMethod("__tostring", ctx)
+			if getErr != nil {
+				return nil, getErr
+			}
+			result, err := ctx.CallZVal(ctx, toStringCallable, nil, z)
 			if err != nil {
 				return nil, err
 			}
@@ -1215,6 +1230,18 @@ func (o *ZObject) CallMethod(ctx phpv.Context, methodName string, args ...*phpv.
 	return ctx.CallZVal(ctx, m, args, o)
 }
 
+// CallMethodInternal is like CallMethod but marks the call as coming from
+// internal code, so that the stack trace entry shows "[internal function]"
+// instead of the filename. Use this when native (Go) implementations of SPL
+// classes call user-overridable hook methods (e.g. beginChildren, endChildren).
+func (o *ZObject) CallMethodInternal(ctx phpv.Context, methodName string, args ...*phpv.ZVal) (*phpv.ZVal, error) {
+	m, err := o.GetMethod(phpv.ZString(methodName), ctx)
+	if err != nil {
+		return nil, err
+	}
+	return ctx.CallZValInternal(ctx, m, args, o)
+}
+
 func (o *ZObject) OffsetGet(ctx phpv.Context, key phpv.Val) (*phpv.ZVal, error) {
 	if !o.implementsArrayAccess() {
 		return nil, ThrowError(ctx, Error, fmt.Sprintf("Cannot use object of type %s as array", o.Class.GetName()))
@@ -1300,6 +1327,13 @@ func (o *ZObject) GetMethod(method phpv.ZString, ctx phpv.Context) (phpv.Callabl
 	// Note: #[\Deprecated] check for user methods is handled by ZClosure.Call()
 	// which fires when the method body is actually invoked.
 	// TODO check method access
+	//
+	// For native methods (NativeMethod, NativeMethodNamed, NativeStaticMethod),
+	// Name() returns "". Wrap them with a namedCallable so that the method name
+	// is available in stack traces instead of being defaulted to "__construct".
+	if m.Method.Name() == "" && string(m.Name) != "" {
+		return &namedCallable{Callable: m.Method, name: string(m.Name)}, nil
+	}
 	return m.Method, nil
 }
 

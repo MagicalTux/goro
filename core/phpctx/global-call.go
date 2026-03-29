@@ -359,6 +359,17 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 		}
 	}
 
+	// For built-in (ExtFunction) calls, inherit the caller's class scope so
+	// that self:: / parent:: / static:: resolution works correctly inside
+	// built-in functions that accept callables (e.g. spl_autoload_register).
+	// Without this, ctx.Class() inside the built-in returns nil, so
+	// SpawnCallable cannot resolve 'self' to the actual calling class.
+	if _, ok := f.(*ExtFunction); ok && callCtx.class == nil {
+		if callerClass := ctx.Class(); callerClass != nil {
+			callCtx.class = callerClass
+		}
+	}
+
 	callCtx.this = this
 
 	// collect args

@@ -392,6 +392,12 @@ func (r *zvalRunnable) Dump(w io.Writer) error {
 	return err
 }
 
+// IsFuncCallExpression marks zvalRunnable as a pre-evaluated value expression.
+// This causes the call infrastructure to emit a Warning (not Fatal Error)
+// when a zvalRunnable is passed to a by-reference parameter, matching PHP's
+// behavior when call_user_func() passes non-variable arguments to by-ref params.
+func (r *zvalRunnable) IsFuncCallExpression() {}
+
 func (z *ZClosure) Spawn(ctx phpv.Context) (*phpv.ZVal, error) {
 	o, err := phpobj.NewZObjectOpaque(ctx, Closure, z)
 	if err != nil {

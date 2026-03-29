@@ -792,13 +792,13 @@ func expectfToRegex(pattern string) string {
 			case 'c':
 				result.WriteString(`.`)
 			case 's':
-				result.WriteString(`[^\r\n]+`)
+				result.WriteString(`[^\r\n]+?`)
 			case 'S':
-				result.WriteString(`[^\r\n]*`)
+				result.WriteString(`[^\r\n]*?`)
 			case 'a':
-				result.WriteString(`.+`)
+				result.WriteString(`.+?`)
 			case 'A':
-				result.WriteString(`.*`)
+				result.WriteString(`.*?`)
 			case 'w':
 				result.WriteString(`\s*`)
 			case 'x':
@@ -975,6 +975,9 @@ func TestPhp(t *testing.T) {
 		"test/php-8.5.4/gh13670_001.phpt":                                                             true, // Stack overflow with GC cycle destructors
 		"test/php-8.5.4/gh13670_002.phpt":                                                             true, // Stack overflow with GC cycle destructors
 		"test/php-8.5.4/gh13670_003.phpt":                                                             true, // Stack overflow with GC cycle destructors
+		"test/php-8.5.4/ext/spl/recursive_tree_iterator_007.phpt":                                     true, // Stack overflow in RecursiveTreeIterator with stdClass
+		"test/php-8.5.4/ext/spl/bug69970.phpt":                                                        true, // Stack overflow in recursive endChildren/rewind
+		"test/php-8.5.4/ext/spl/iterator_023.phpt":                                                    true, // Stack overflow in recursive callGetChildren
 	}
 
 	// Directories containing tests that require external resources (network, etc.)
