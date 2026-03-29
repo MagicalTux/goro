@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"iter"
-	"os"
 
 	"github.com/MagicalTux/goro/core/phperr"
 	"github.com/MagicalTux/goro/core/phpobj"
