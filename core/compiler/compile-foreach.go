@@ -431,6 +431,32 @@ func (it *phpObjectIterator) ensureStarted() {
 	}
 }
 
+// callKeyMethod calls key() on the iterator object, suppressing TypeErrors
+// about return type mismatch. PHP's C-level Iterator interface does not
+// enforce return types for key(), so "none returned" TypeErrors are ignored.
+func (it *phpObjectIterator) callKeyMethod() (*phpv.ZVal, error) {
+	v, err := it.obj.CallMethod(it.ctx, "key")
+	if err == nil {
+		return v, nil
+	}
+	ex, isThrow := err.(*phperr.PhpThrow)
+	if !isThrow || ex.Obj == nil {
+		return nil, err
+	}
+	if ex.Obj.GetClass().GetName() != "TypeError" {
+		return nil, err
+	}
+	msgVal := ex.Obj.HashTable().GetString("message")
+	if msgVal == nil {
+		return nil, err
+	}
+	msg := msgVal.String()
+	if len(msg) > 14 && msg[len(msg)-14:] == "none returned" {
+		return phpv.ZNULL.ZVal(), nil
+	}
+	return nil, err
+}
+
 // fetchCache calls current() and key() on the iterator and caches the results.
 // This matches PHP's spl_dual_it_fetch(check_more=0) behavior.
 func (it *phpObjectIterator) fetchCache() {
@@ -441,7 +467,7 @@ func (it *phpObjectIterator) fetchCache() {
 		it.err = err
 		return
 	}
-	it.cachedKey, err = it.obj.CallMethod(it.ctx, "key")
+	it.cachedKey, err = it.callKeyMethod()
 	if err != nil {
 		it.err = err
 		return
@@ -468,7 +494,7 @@ func (it *phpObjectIterator) fetchCacheWithValidCheck() {
 		it.err = err
 		return
 	}
-	it.cachedKey, err = it.obj.CallMethod(it.ctx, "key")
+	it.cachedKey, err = it.callKeyMethod()
 	if err != nil {
 		it.err = err
 		return
@@ -501,26 +527,7 @@ func (it *phpObjectIterator) Key(ctx phpv.Context) (*phpv.ZVal, error) {
 	if it.hasCached {
 		return it.cachedKey, nil
 	}
-	v, err := it.obj.CallMethod(ctx, "key")
-	if err != nil {
-		// PHP's C-level Iterator interface does not enforce return type checking
-		// when calling key(). If key() throws a TypeError about return type
-		// (e.g. "Return value must be of type mixed, none returned"), treat it
-		// as returning null, matching PHP's C-level behavior.
-		if ex, ok := err.(*phperr.PhpThrow); ok {
-			if ex.Obj != nil && ex.Obj.GetClass().GetName() == "TypeError" {
-				// Check if this is a return type error by looking at the message
-				if msgVal := ex.Obj.HashTable().GetString("message"); msgVal != nil {
-					msg := msgVal.String()
-					if len(msg) > 14 && msg[len(msg)-14:] == "none returned" {
-						return phpv.ZNULL.ZVal(), nil
-					}
-				}
-			}
-		}
-		return nil, err
-	}
-	return v, nil
+	return it.callKeyMethod()
 }
 
 func (it *phpObjectIterator) Next(ctx phpv.Context) (*phpv.ZVal, error) {
