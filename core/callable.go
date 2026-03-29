@@ -635,10 +635,11 @@ func (r *zvalRunnable) Dump(w io.Writer) error {
 	return err
 }
 
-// IsFuncCallExpression marks zvalRunnable as a pre-evaluated value.
-// This causes the call infrastructure to emit a Warning (not Fatal Error)
-// when a zvalRunnable is passed to a by-reference parameter.
-func (r *zvalRunnable) IsFuncCallExpression() {}
+// IsPreEvaluatedArg marks zvalRunnable as a pre-evaluated argument (from call_user_func).
+// When passed to a by-reference parameter, this causes the call infrastructure to emit
+// a Warning ("FuncName(): Argument #N must be passed by reference, value given")
+// rather than a Notice or Fatal Error, matching PHP's call_user_func behavior.
+func (r *zvalRunnable) IsPreEvaluatedArg() {}
 
 // magicCallWrapper wraps a __call magic method to be used as a Callable.
 // When called, it packages the arguments into the __call($methodName, $args) format.

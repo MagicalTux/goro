@@ -42,6 +42,14 @@ type ParenthesizedExpression interface {
 	IsParenthesizedExpression()
 }
 
+// PreEvaluatedArg is a marker interface for pre-evaluated arguments (e.g.,
+// those passed via call_user_func). When passed to a by-reference parameter,
+// these produce a Warning ("FuncName(): Argument #N must be passed by reference,
+// value given") rather than a Notice or Fatal Error.
+type PreEvaluatedArg interface {
+	IsPreEvaluatedArg()
+}
+
 type ZClosure interface {
 	FuncGetArgs
 	Callable

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"iter"
+	"os"
 
 	"github.com/MagicalTux/goro/core/phperr"
 	"github.com/MagicalTux/goro/core/phpobj"
@@ -440,10 +441,14 @@ func (it *phpObjectIterator) callKeyMethod() (*phpv.ZVal, error) {
 		return v, nil
 	}
 	ex, isThrow := err.(*phperr.PhpThrow)
-	if !isThrow || ex.Obj == nil {
+	if !isThrow {
 		return nil, err
 	}
-	if ex.Obj.GetClass().GetName() != "TypeError" {
+	if ex.Obj == nil {
+		return nil, err
+	}
+	className := ex.Obj.GetClass().GetName()
+	if className != "TypeError" {
 		return nil, err
 	}
 	msgVal := ex.Obj.HashTable().GetString("message")

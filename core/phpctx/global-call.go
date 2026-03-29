@@ -150,6 +150,12 @@ func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, o
 					// ZEND_SEND_PREFER_REF: silently accept non-ref values
 					val = val.Dup()
 					val.Name = nil
+				} else if _, isPreEval := arg.(phpv.PreEvaluatedArg); isPreEval {
+					// Pre-evaluated argument (from call_user_func): pass by value,
+					// warning is deferred to callZValImpl which emits the proper
+					// "FuncName(): Argument #N must be passed by reference, value given" warning.
+					val = val.Dup()
+					val.Name = nil
 				} else if _, isFuncCall := arg.(phpv.FuncCallExpression); isFuncCall {
 					// Function/method call or parenthesized expression -> Notice, pass by value
 					ctx.Tick(ctx, callLoc)
