@@ -136,6 +136,12 @@ func iteratorClassArgNum(methodName string) string {
 func setObjectStorage(ctx phpv.Context, d *arrayObjectData, obj *phpobj.ZObject, methodName string) error {
 	ctx.Deprecated("%s: Using an object as a backing array for ArrayObject is deprecated, as it allows violating class constraints and invariants", methodName, logopt.NoFuncName(true))
 
+	// Enums are not compatible with ArrayObject
+	if obj.GetClass().GetType()&phpv.ZClassTypeEnum != 0 {
+		return phpobj.ThrowError(ctx, phpobj.InvalidArgumentException,
+			"Enums are not compatible with ArrayObject")
+	}
+
 	// Check for overloaded objects (like SplFixedArray) that are incompatible
 	if obj.GetClass().Implements(phpobj.ArrayAccess) {
 		// SplFixedArray and similar overloaded ArrayAccess objects are not compatible
@@ -274,6 +280,11 @@ func initArrayObject() {
 		// overridden, we let the normal ArrayAccess path handle it.
 		HandleIssetDim: func(ctx phpv.Context, o phpv.ZObject, key *phpv.ZVal) (bool, error) {
 			zo := o.(*phpobj.ZObject)
+			// Array-type keys are not valid offsets - throw TypeError
+			if key.GetType() == phpv.ZtArray {
+				return false, phpobj.ThrowError(ctx, phpobj.TypeError,
+					"Cannot access offset of type array in isset or empty")
+			}
 			// If the subclass overrides offsetExists, delegate to the overridden
 			// offsetExists. We do NOT call offsetGet here because checkExistence
 			// will evaluate the value separately if needed (for nested access).
@@ -646,37 +657,57 @@ func initArrayObject() {
 					return nil, err
 				}
 
-				// Create the iterator
-				var iterObj *phpobj.ZObject
+				// Create the iterator WITHOUT calling the user constructor.
+				// PHP's ArrayObject::getIterator() bypasses __construct entirely:
+				// it directly sets the iterator's internal storage to point at
+				// this ArrayObject itself (not a copy of the array). This means:
+				// 1. The iterator reflects live changes to the ArrayObject.
+				// 2. User-defined __construct() on the iterator class is NOT called.
+				// 3. var_dump shows the ArrayObject as the iterator's storage.
+
+				// Determine the effective array to iterate (for object-backed, use a snapshot)
+				var backingArray *phpv.ZArray
 				if d.objectStorage != nil {
-					// Build a fresh array from the object's public properties
-					iterArg := objectStorageGetArray(ctx, d.objectStorage).ZVal()
-					var err2 error
-					iterObj, err2 = phpobj.NewZObject(ctx, iterClass, iterArg)
-					if err2 != nil {
-						return nil, err2
-					}
+					backingArray = objectStorageGetArray(ctx, d.objectStorage)
 				} else {
-					// For array-backed storage, create the iterator with a shared array reference
-					var err2 error
-					iterObj, err2 = phpobj.NewZObject(ctx, iterClass, d.array.ZVal())
-					if err2 != nil {
-						return nil, err2
-					}
-					// Replace the duped array with a reference to the same array
-					// but use NewIterator() for an independent iteration position
-					// (so nested foreach loops don't clobber each other)
-					iterData2 := getArrayIteratorData(iterObj)
-					if iterData2 != nil {
-						iterData2.array = d.array
-						iterData2.iter = d.array.NewIterator()
-					}
+					backingArray = d.array
 				}
 
-				// Copy flags to the iterator
-				iterData := getArrayIteratorData(iterObj)
-				if iterData != nil {
-					iterData.flags = d.flags
+				// Build the internal data directly (skip constructor).
+				// Use recursiveArrayIteratorData when the class is RecursiveArrayIterator
+				// or a subclass, so getRecursiveArrayIteratorData() works.
+				var iterObj *phpobj.ZObject
+				if iterClass.InstanceOf(RecursiveArrayIteratorClass) || iterClass == RecursiveArrayIteratorClass {
+					rData := &recursiveArrayIteratorData{
+						array: backingArray,
+						flags: d.flags,
+					}
+					rData.iter = backingArray.NewIterator()
+					var err2 error
+					iterObj, err2 = phpobj.NewZObjectOpaque(ctx, iterClass, rData)
+					if err2 != nil {
+						return nil, err2
+					}
+					if iterClass != RecursiveArrayIteratorClass {
+						iterObj.SetOpaque(RecursiveArrayIteratorClass, rData)
+					}
+				} else {
+					iterData := &arrayIteratorData{
+						array:         backingArray,
+						flags:         d.flags,
+						backingObject: o, // store ArrayObject reference for var_dump display
+					}
+					iterData.iter = backingArray.NewIterator()
+					var err2 error
+					iterObj, err2 = phpobj.NewZObjectOpaque(ctx, iterClass, iterData)
+					if err2 != nil {
+						return nil, err2
+					}
+					// Ensure the opaque data is stored under ArrayIteratorClass key so
+					// getArrayIteratorData() can find it regardless of the actual class.
+					if iterClass != ArrayIteratorClass {
+						iterObj.SetOpaque(ArrayIteratorClass, iterData)
+					}
 				}
 
 				return iterObj.ZVal(), nil
@@ -725,6 +756,10 @@ func initArrayObject() {
 				d := getOrInitArrayObjectData(o)
 				if d == nil {
 					return phpv.NewZArray().ZVal(), nil
+				}
+				if d.sorting {
+					return nil, phpobj.ThrowError(ctx, phpobj.Error,
+						"Modification of ArrayObject during sorting is prohibited")
 				}
 				if len(args) < 1 {
 					return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError,
@@ -814,7 +849,13 @@ func initArrayObject() {
 					}
 					sortFlags = args[0].AsInt(ctx)
 				}
-				arrayObjectSort(ctx, d.array, sortFlags, sortByValue, false)
+				if d.objectStorage != nil {
+					arrayObjectSortObject(ctx, d.objectStorage, sortFlags, sortByValue, false)
+				} else {
+					d.sorting = true
+					arrayObjectSort(ctx, d.array, sortFlags, sortByValue, false)
+					d.sorting = false
+				}
 				return phpv.ZTrue.ZVal(), nil
 			}),
 		},
@@ -838,7 +879,13 @@ func initArrayObject() {
 					}
 					sortFlags = args[0].AsInt(ctx)
 				}
-				arrayObjectSort(ctx, d.array, sortFlags, sortByKey, false)
+				if d.objectStorage != nil {
+					arrayObjectSortObject(ctx, d.objectStorage, sortFlags, sortByKey, false)
+				} else {
+					d.sorting = true
+					arrayObjectSort(ctx, d.array, sortFlags, sortByKey, false)
+					d.sorting = false
+				}
 				return phpv.ZTrue.ZVal(), nil
 			}),
 		},
@@ -858,7 +905,13 @@ func initArrayObject() {
 					return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError,
 						fmt.Sprintf("ArrayObject::natsort() expects exactly 0 arguments, %d given", len(args)))
 				}
-				arrayObjectSort(ctx, d.array, 6, sortByValue, false)
+				if d.objectStorage != nil {
+					arrayObjectSortObject(ctx, d.objectStorage, 6, sortByValue, false)
+				} else {
+					d.sorting = true
+					arrayObjectSort(ctx, d.array, 6, sortByValue, false)
+					d.sorting = false
+				}
 				return phpv.ZTrue.ZVal(), nil
 			}),
 		},
@@ -878,7 +931,13 @@ func initArrayObject() {
 					return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError,
 						fmt.Sprintf("ArrayObject::natcasesort() expects exactly 0 arguments, %d given", len(args)))
 				}
-				arrayObjectSort(ctx, d.array, 6|8, sortByValue, false)
+				if d.objectStorage != nil {
+					arrayObjectSortObject(ctx, d.objectStorage, 6|8, sortByValue, false)
+				} else {
+					d.sorting = true
+					arrayObjectSort(ctx, d.array, 6|8, sortByValue, false)
+					d.sorting = false
+				}
 				return phpv.ZTrue.ZVal(), nil
 			}),
 		},
@@ -903,7 +962,9 @@ func initArrayObject() {
 					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
 						"ArrayObject::uasort(): Argument #1 ($callback) must be a valid callback")
 				}
+				d.sorting = true
 				err = arrayObjectUSort(ctx, d.array, cb, sortByValue)
+				d.sorting = false
 				if err != nil {
 					return nil, err
 				}
@@ -931,7 +992,9 @@ func initArrayObject() {
 					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
 						"ArrayObject::uksort(): Argument #1 ($callback) must be a valid callback")
 				}
+				d.sorting = true
 				err = arrayObjectUSort(ctx, d.array, cb, sortByKey)
+				d.sorting = false
 				if err != nil {
 					return nil, err
 				}
@@ -1532,6 +1595,73 @@ func arrayObjectSort(ctx phpv.Context, array *phpv.ZArray, sortFlags phpv.ZInt, 
 	array.Clear(ctx)
 	for _, e := range entries {
 		array.OffsetSet(ctx, e.key, e.value)
+	}
+}
+
+// arrayObjectSortObject sorts the backing object's hashtable in-place.
+// Unlike arrayObjectSort (which operates on a ZArray), this operates directly
+// on the object's property hash table. All properties (including private/protected)
+// are included in the sort, matching PHP's behavior.
+func arrayObjectSortObject(ctx phpv.Context, obj *phpobj.ZObject, sortFlags phpv.ZInt, mode sortMode, reversed bool) {
+	ht := obj.HashTable()
+	if ht == nil {
+		return
+	}
+	// Collect all entries from the hashtable
+	var entries []aoSortEntry
+	for it := ht.NewIterator(); it.Valid(ctx); it.Next(ctx) {
+		k, _ := it.Key(ctx)
+		v, _ := it.Current(ctx)
+		if k != nil && v != nil {
+			entries = append(entries, aoSortEntry{key: k, value: v})
+		}
+	}
+
+	caseInsensitive := sortFlags&8 != 0
+	baseFlags := sortFlags &^ 8
+
+	sort.SliceStable(entries, func(i, j int) bool {
+		var a, b *phpv.ZVal
+		if mode == sortByKey {
+			a, b = entries[i].key, entries[j].key
+		} else {
+			a, b = entries[i].value, entries[j].value
+		}
+
+		var less bool
+		switch baseFlags {
+		case 1:
+			less = a.AsInt(ctx) < b.AsInt(ctx)
+		case 2:
+			sa := string(a.AsString(ctx))
+			sb := string(b.AsString(ctx))
+			if caseInsensitive {
+				sa = strings.ToUpper(sa)
+				sb = strings.ToUpper(sb)
+			}
+			less = strings.Compare(sa, sb) < 0
+		case 6:
+			sa := string(a.AsString(ctx))
+			sb := string(b.AsString(ctx))
+			if caseInsensitive {
+				sa = strings.ToUpper(sa)
+				sb = strings.ToUpper(sb)
+			}
+			less = natCmp([]byte(sa), []byte(sb)) < 0
+		default:
+			cmp, _ := phpv.Compare(ctx, a, b)
+			less = cmp < 0
+		}
+		if reversed {
+			return !less
+		}
+		return less
+	})
+
+	// Rebuild the object's hashtable in the sorted order
+	ht.Clear()
+	for _, e := range entries {
+		ht.SetString(e.key.AsString(ctx), e.value)
 	}
 }
 
