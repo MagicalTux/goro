@@ -985,6 +985,12 @@ func stdGetObjectVars(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			if err != nil {
 				continue
 			}
+			// For referenced properties, use the inner ZVal (Nude) so that
+			// modifications via the reference are visible in the returned array,
+			// but print_r doesn't show the "&" reference prefix.
+			if v.IsRef() {
+				v = v.Nude()
+			}
 			result.OffsetSet(ctx, k, v)
 		}
 	} else {
@@ -997,6 +1003,9 @@ func stdGetObjectVars(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			v, err := it.Current(ctx)
 			if err != nil {
 				continue
+			}
+			if v.IsRef() {
+				v = v.Nude()
 			}
 			result.OffsetSet(ctx, k, v)
 		}

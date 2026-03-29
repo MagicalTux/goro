@@ -129,8 +129,14 @@ func compileAttributed(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		// Store attributes on the closure
 		if zc, ok := r.(*ZClosure); ok {
 			zc.attributes = attrs
-			// For named functions, wrap with attribute validation
+			// For named functions, set enclosingFunc on closures in attribute ArgExprs
+			// so they get the correct name (e.g. {closure:foo():3} instead of {closure:file:3})
 			if zc.name != "" {
+				encName := string(zc.name) + "()"
+				if cls := c.getClass(); cls != nil {
+					encName = string(cls.GetName()) + "::" + encName
+				}
+				setAttrClosureEnclosingFunc(attrs, encName)
 				return &runAttributeValidatedFunc{inner: r, attrs: attrs, target: phpobj.AttributeTARGET_FUNCTION}, nil
 			}
 		}
@@ -349,6 +355,39 @@ func getNoDiscardInfo(c phpv.Callable) ([]*phpv.ZAttribute, string, string) {
 		return attrs, name, lbl
 	}
 	return nil, "", ""
+}
+
+// setAttrClosureEnclosingFunc sets the enclosingFunc of any ZClosure literals in
+// attribute ArgExprs and their corresponding evaluated Args (if already spawned).
+// This is called after we know the function name, so that closures in attribute
+// arguments get named like {closure:funcName():line} rather than {closure:file:line}.
+func setAttrClosureEnclosingFunc(attrs []*phpv.ZAttribute, encName string) {
+	for _, attr := range attrs {
+		for i, expr := range attr.ArgExprs {
+			if zc, ok := expr.(*ZClosure); ok && zc.enclosingFunc == "" {
+				zc.enclosingFunc = encName
+			}
+			// Also update already-evaluated closures in Args
+			if i < len(attr.Args) && attr.Args[i] != nil {
+				if attr.Args[i].GetType() == phpv.ZtObject {
+					if obj, ok2 := attr.Args[i].Value().(phpv.ZObject); ok2 {
+						if opaque := obj.GetOpaque(obj.GetClass()); opaque != nil {
+							switch v := opaque.(type) {
+							case *ZClosure:
+								if v.enclosingFunc == "" {
+									v.enclosingFunc = encName
+								}
+							case *generatorClosure:
+								if v.ZClosure.enclosingFunc == "" {
+									v.ZClosure.enclosingFunc = encName
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
 }
 
 // hasDelayedTargetValidationAttr checks if an attribute list contains #[DelayedTargetValidation].
