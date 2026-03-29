@@ -26,7 +26,8 @@ func fncBzDecompress(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	in := bytes.NewBuffer([]byte(src))
 	b, err := ioutil.ReadAll(bzip2.NewReader(in))
 	if err != nil {
-		return nil, err
+		// PHP bzdecompress() returns false on decompression failure
+		return phpv.ZBool(false).ZVal(), nil
 	}
 	err = ctx.MemAlloc(ctx, uint64(len(b)))
 

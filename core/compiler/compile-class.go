@@ -108,6 +108,29 @@ func containsNewExpr(r phpv.Runnable) bool {
 	return false
 }
 
+// checkReadEmptySubscript checks if the expression is or contains a runArrayAccess
+// with nil offset (i.e. "[]" subscript) in a read context, which generates a
+// "Cannot use [] for reading" fatal error. This is detected at compile time for
+// class property defaults.
+func checkReadEmptySubscript(r phpv.Runnable) error {
+	if r == nil {
+		return nil
+	}
+	if ac, ok := r.(*runArrayAccess); ok {
+		if ac.offset == nil {
+			// This is a [] subscript in read context
+			return &phpv.PhpError{
+				Err:  fmt.Errorf("Cannot use [] for reading"),
+				Code: phpv.E_COMPILE_ERROR,
+				Loc:  ac.l,
+			}
+		}
+		// Recurse into the value part of the array access
+		return checkReadEmptySubscript(ac.value)
+	}
+	return nil
+}
+
 // checkStaticClassInConstExpr checks if a compiled expression contains static::class
 // or static::CONST which cannot be used in compile-time class name resolution.
 // Returns the location of the static:: if found, nil otherwise.
@@ -723,6 +746,11 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 								Loc:  l,
 							}
 						}
+					}
+					// Check for "Cannot use [] for reading" - empty subscript in read context
+					// e.g. public $a=[][] should fail at class-definition time (E_ERROR)
+					if err := checkReadEmptySubscript(r); err != nil {
+						return nil, err
 					}
 					// parse default value for class variable
 					prop.Default = &phpv.CompileDelayed{V: r}

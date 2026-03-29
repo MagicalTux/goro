@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phperr"
 	"github.com/MagicalTux/goro/core/phpv"
 )
@@ -360,18 +361,30 @@ func exceptionGetTraceAsString(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) 
 	// Read from the hash table trace property (which may have been modified
 	// by user code via ReflectionProperty::setValue). Use the private property
 	// mangled name since trace is a private property of Exception.
-	traceVal := o.HashTable().GetString("trace")
-	if traceVal == nil {
-		// Try the mangled private name
+	// Use GetStringB (returns bool) to distinguish "not found" from "found as null".
+	var traceVal *phpv.ZVal
+	if tv, ok := o.HashTable().GetStringB("trace"); ok {
+		traceVal = tv
+	} else {
+		// Try the mangled private name ("*Exception:trace")
 		mangledKey := phpv.ZString("*" + string(Exception.GetName()) + ":trace")
-		traceVal = o.HashTable().GetString(mangledKey)
+		if tv, ok := o.HashTable().GetStringB(mangledKey); ok {
+			traceVal = tv
+		}
 	}
 	if traceVal != nil && traceVal.GetType() == phpv.ZtArray {
 		traceArr := traceVal.Value().(*phpv.ZArray)
-		return getTraceAsStringFromArray(ctx, traceArr, maxLen).ZVal(), nil
+		// Only use the hash-table trace if it is non-empty (user explicitly set it)
+		// or if there is no opaque trace available. An empty array means the property
+		// still holds its default value — in that case, use the opaque trace instead.
+		opaqueTrace := o.GetOpaque(Exception)
+		hasOpaqueTrace := opaqueTrace != nil
+		if traceArr.Count(ctx) > 0 || !hasOpaqueTrace {
+			return getTraceAsStringFromArray(ctx, traceArr, maxLen).ZVal(), nil
+		}
 	}
 
-	// Fall back to opaque trace if no array in hash table
+	// Fall back to opaque trace if no array in hash table or array was default empty
 	opaque := o.GetOpaque(Exception)
 	if opaque == nil {
 		return phpv.ZString("#0 {main}").ZVal(), nil
@@ -393,14 +406,17 @@ func getTraceAsStringFromArray(ctx phpv.Context, traceArr *phpv.ZArray, maxLen i
 	for _, frame := range traceArr.Iterate(ctx) {
 		// Each frame should be an array
 		if frame == nil || frame.GetType() != phpv.ZtArray {
-			ctx.Warn("Expected array for frame %d", frameIdx)
+			ctx.Warn("Expected array for frame %d", frameIdx, logopt.NoFuncName(true))
 			frameIdx++
 			continue
 		}
 		frameIdx++
 		frameArr := frame.Value().(*phpv.ZArray)
 
-		// Read frame fields with validation
+		// Read frame fields with validation.
+		// Use HasString to distinguish "key present with NULL value" from "key absent".
+		// PHP warns when key is present but has wrong type (including NULL), except for "line".
+		ht := frameArr.HashTable()
 		fileVal, _ := frameArr.OffsetGet(ctx, phpv.ZString("file"))
 		lineVal, _ := frameArr.OffsetGet(ctx, phpv.ZString("line"))
 		funcVal, _ := frameArr.OffsetGet(ctx, phpv.ZString("function"))
@@ -408,11 +424,14 @@ func getTraceAsStringFromArray(ctx phpv.Context, traceArr *phpv.ZArray, maxLen i
 		typeVal, _ := frameArr.OffsetGet(ctx, phpv.ZString("type"))
 		argsVal, _ := frameArr.OffsetGet(ctx, phpv.ZString("args"))
 
-		// Validate and extract values
+		// Validate and extract values.
+		// Warning order matches PHP: file, class, type, function, args.
+		// filePresent tracks whether the "file" key existed (even if NULL/invalid).
+		filePresent := ht.HasString("file")
 		file := ""
-		if fileVal != nil && fileVal.GetType() != phpv.ZtNull {
-			if fileVal.GetType() != phpv.ZtString {
-				ctx.Warn("File name is not a string")
+		if filePresent {
+			if fileVal == nil || fileVal.GetType() != phpv.ZtString {
+				ctx.Warn("File name is not a string", logopt.NoFuncName(true))
 				file = "[unknown file]"
 			} else {
 				file = fileVal.String()
@@ -424,20 +443,10 @@ func getTraceAsStringFromArray(ctx phpv.Context, traceArr *phpv.ZArray, maxLen i
 			lineNum = int(lineVal.AsInt(ctx))
 		}
 
-		funcName := ""
-		if funcVal != nil && funcVal.GetType() != phpv.ZtNull {
-			if funcVal.GetType() != phpv.ZtString {
-				ctx.Warn("Value for function is not a string")
-				funcName = "[unknown]"
-			} else {
-				funcName = funcVal.String()
-			}
-		}
-
 		className := ""
-		if classVal != nil && classVal.GetType() != phpv.ZtNull {
-			if classVal.GetType() != phpv.ZtString {
-				ctx.Warn("Value for class is not a string")
+		if ht.HasString("class") {
+			if classVal == nil || classVal.GetType() != phpv.ZtString {
+				ctx.Warn("Value for class is not a string", logopt.NoFuncName(true))
 				className = "[unknown]"
 			} else {
 				className = classVal.String()
@@ -445,20 +454,30 @@ func getTraceAsStringFromArray(ctx phpv.Context, traceArr *phpv.ZArray, maxLen i
 		}
 
 		methodType := ""
-		if typeVal != nil && typeVal.GetType() != phpv.ZtNull {
-			if typeVal.GetType() != phpv.ZtString {
-				ctx.Warn("Value for type is not a string")
+		if ht.HasString("type") {
+			if typeVal == nil || typeVal.GetType() != phpv.ZtString {
+				ctx.Warn("Value for type is not a string", logopt.NoFuncName(true))
 				methodType = "[unknown]"
 			} else {
 				methodType = typeVal.String()
 			}
 		}
 
+		funcName := ""
+		if ht.HasString("function") {
+			if funcVal == nil || funcVal.GetType() != phpv.ZtString {
+				ctx.Warn("Value for function is not a string", logopt.NoFuncName(true))
+				funcName = "[unknown]"
+			} else {
+				funcName = funcVal.String()
+			}
+		}
+
 		// Format args
 		argsStr := ""
-		if argsVal != nil && argsVal.GetType() != phpv.ZtNull {
-			if argsVal.GetType() != phpv.ZtArray {
-				ctx.Warn("args element is not an array")
+		if ht.HasString("args") {
+			if argsVal == nil || argsVal.GetType() != phpv.ZtArray {
+				ctx.Warn("args element is not an array", logopt.NoFuncName(true))
 			} else {
 				argsArr := argsVal.Value().(*phpv.ZArray)
 				var argsBuf bytes.Buffer
@@ -480,11 +499,17 @@ func getTraceAsStringFromArray(ctx phpv.Context, traceArr *phpv.ZArray, maxLen i
 			fullFunc = className + methodType + funcName
 		}
 
-		// Format the line
-		if file == "" {
+		// Format the line.
+		// - file key absent: "[internal function]: funcname(args)"
+		// - file key present and valid string: "file(line): funcname(args)"
+		// - file key present but invalid (NULL/non-string): "[unknown file]: funcname(args)" (no line number)
+		if !filePresent {
 			buf.WriteString(fmt.Sprintf("#%d [internal function]: %s(%s)\n", level, fullFunc, argsStr))
-		} else {
+		} else if file != "" && fileVal != nil && fileVal.GetType() == phpv.ZtString {
 			buf.WriteString(fmt.Sprintf("#%d %s(%d): %s(%s)\n", level, file, lineNum, fullFunc, argsStr))
+		} else {
+			// file key was present but invalid - no line number
+			buf.WriteString(fmt.Sprintf("#%d %s: %s(%s)\n", level, file, fullFunc, argsStr))
 		}
 		level++
 	}

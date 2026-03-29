@@ -429,7 +429,8 @@ func fncIniSet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZFalse.ZVal(), nil
 	}
 
-	return oldValue.ZVal(), nil
+	// ini_set always returns the old value as a string (like ini_get), or false on failure
+	return oldValue.AsString(ctx).ZVal(), nil
 }
 
 // > func array ini_get_all ([ string $extension [, bool $details = TRUE ]] )

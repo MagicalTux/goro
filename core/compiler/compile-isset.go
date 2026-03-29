@@ -407,6 +407,21 @@ func checkExistence(ctx phpv.Context, v phpv.Runnable, subExpr bool) (bool, erro
 			key = phpv.ZString("").ZVal()
 		}
 
+		// PHP 8.0+: array/object as array offset in isset/empty throws TypeError
+		// (only when the container is an actual PHP array or string, not an object with ArrayAccess)
+		if value.GetType() != phpv.ZtObject {
+			switch key.GetType() {
+			case phpv.ZtArray:
+				return false, phpobj.ThrowError(ctx, phpobj.TypeError, "Cannot access offset of type array in isset or empty")
+			case phpv.ZtObject:
+				typeName := "object"
+				if obj, ok := key.Value().(phpv.ZObject); ok {
+					typeName = string(obj.GetClass().GetName())
+				}
+				return false, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Cannot access offset of type %s in isset or empty", typeName))
+			}
+		}
+
 		var arr phpv.ZArrayAccess
 		if value.GetType() == phpv.ZtString {
 			// PHP isset on string offsets accepts various key types:

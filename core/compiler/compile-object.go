@@ -1909,9 +1909,10 @@ func compileObjectOperator(v phpv.Runnable, i *tokenizer.Item, c compileCtx, nul
 	// After ->, PHP keywords can be used as property/method names
 	switch i.Type {
 	case tokenizer.Rune('$'):
-		// $obj->${expr} or $obj->$var — variable-variable property access
-		// ${expr} evaluates expr, uses result as a variable name, looks up
-		// that variable, and uses its value as the property name.
+		// $obj->$$var or $obj->${expr} — variable-variable property/method access.
+		// The leading $ was already consumed, so we now have:
+		//   - $$var   → next token is T_VARIABLE($var) → runVariableRef wrapping runVariable
+		//   - ${expr} → next token is '{' → use compileRunVariableRef
 		i, err = c.NextItem()
 		if err != nil {
 			return nil, err
@@ -1934,23 +1935,26 @@ func compileObjectOperator(v phpv.Runnable, i *tokenizer.Item, c compileCtx, nul
 			}
 			return &runObjectDynVar{ref: v, nameExpr: varRef, l: l, nullsafe: nullsafe, nullChain: chainProp}, nil
 		}
-		// $obj->$var — indirect property, variable contains property name
+		// $obj->$$var — double dollar: the outer $ was consumed, inner $var is next.
+		// We need to build runVariableRef{v: inner_expr} for proper double-dereference.
+		// Back up to the inner $var token and compile it as a variable reference.
 		c.backup()
-		expr, err := compileExpr(nil, c)
+		innerExpr, err := compileOneExpr(nil, c)
 		if err != nil {
 			return nil, err
 		}
+		varRef := &runVariableRef{v: innerExpr, l: l}
 		i, err = c.NextItem()
 		if err != nil {
 			return nil, err
 		}
 		c.backup()
 		if i.IsSingle('(') {
-			dynFunc := &runObjectDynFunc{ref: v, nameExpr: expr, l: l, nullsafe: nullsafe, nullChain: chainProp}
+			dynFunc := &runObjectDynFunc{ref: v, nameExpr: varRef, l: l, nullsafe: nullsafe, nullChain: chainProp}
 			dynFunc.args, err = compileFuncPassedArgs(c)
 			return dynFunc, err
 		}
-		return &runObjectDynVar{ref: v, nameExpr: expr, l: l, nullsafe: nullsafe, nullChain: chainProp}, nil
+		return &runObjectDynVar{ref: v, nameExpr: varRef, l: l, nullsafe: nullsafe, nullChain: chainProp}, nil
 	case tokenizer.Rune('{'):
 		// Dynamic property/method: $obj->{expr}
 		expr, err := compileExpr(nil, c)

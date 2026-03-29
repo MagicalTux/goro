@@ -2418,6 +2418,9 @@ func fncSubstrReplace(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	i := 0
 	it := inputArg.NewIterator()
+	if it == nil {
+		return res.ZVal(), nil
+	}
 	for ; it.Valid(ctx); it.Next(ctx) {
 		v, err := it.Current(ctx)
 		if err != nil {

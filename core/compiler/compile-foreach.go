@@ -501,7 +501,26 @@ func (it *phpObjectIterator) Key(ctx phpv.Context) (*phpv.ZVal, error) {
 	if it.hasCached {
 		return it.cachedKey, nil
 	}
-	return it.obj.CallMethod(ctx, "key")
+	v, err := it.obj.CallMethod(ctx, "key")
+	if err != nil {
+		// PHP's C-level Iterator interface does not enforce return type checking
+		// when calling key(). If key() throws a TypeError about return type
+		// (e.g. "Return value must be of type mixed, none returned"), treat it
+		// as returning null, matching PHP's C-level behavior.
+		if ex, ok := err.(*phperr.PhpThrow); ok {
+			if ex.Obj != nil && ex.Obj.GetClass().GetName() == "TypeError" {
+				// Check if this is a return type error by looking at the message
+				if msgVal := ex.Obj.HashTable().GetString("message"); msgVal != nil {
+					msg := msgVal.String()
+					if len(msg) > 14 && msg[len(msg)-14:] == "none returned" {
+						return phpv.ZNULL.ZVal(), nil
+					}
+				}
+			}
+		}
+		return nil, err
+	}
+	return v, nil
 }
 
 func (it *phpObjectIterator) Next(ctx phpv.Context) (*phpv.ZVal, error) {

@@ -3,6 +3,7 @@ package date
 import (
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 	"time"
 
@@ -152,6 +153,42 @@ func parseDateTimeWithTz(ctx phpv.Context, args []*phpv.ZVal) (time.Time, error)
 		base := time.Now().In(loc)
 		if parsed, ok := strToTime(s, base); ok {
 			return parsed, nil
+		}
+		// For simple date-only format (YYYY-MM-DD), if strToTime rejected it (e.g., day out of range),
+		// skip the strtotime library since it normalizes overflows rather than erroring.
+		// This ensures "9999-11-33" throws an exception instead of silently becoming "9999-12-03".
+		if matches := reDateOnly.FindStringSubmatch(s); matches != nil {
+			// strToTime already tried and failed this format - compute error position and throw
+			year, _ := strconv.Atoi(matches[1])
+			month, _ := strconv.Atoi(matches[2])
+			day, _ := strconv.Atoi(matches[3])
+			// Find exact error position: scan through the string to locate the last char
+			// of the invalid field (month or day). Position is 0-based index of last char read.
+			pos := 0
+			ch := ""
+			// Find positions: year ends at len(matches[1])-1, month starts after first '-'
+			yearEnd := len(matches[1]) // index of first '-'
+			monthStart := yearEnd + 1
+			monthEnd := monthStart + len(matches[2]) // index of second '-'
+			dayStart := monthEnd + 1
+			dayEnd := dayStart + len(matches[3]) - 1 // last char of day (0-based)
+			if month < 1 || month > 12 {
+				// Month field is invalid: point to last char of month
+				pos = monthEnd - 1
+				if pos >= 0 && pos < len(s) {
+					ch = string(s[pos])
+				}
+			} else {
+				// Day field is invalid: point to last char of day
+				pos = dayEnd
+				if pos >= 0 && pos < len(s) {
+					ch = string(s[pos])
+				}
+				_ = year // suppress unused warning
+				_ = day
+			}
+			msg := fmt.Sprintf("Failed to parse time string (%s) at position %d (%s): Unexpected character", s, pos, ch)
+			return t, phpobj.ThrowError(ctx, DateMalformedStringException, msg)
 		}
 		// Use strtotime library for relative dates and complex formats
 		if parsed, stErr := strtotime.StrToTime(s, strtotime.InTZ(loc), strtotime.Rel(base)); stErr == nil {

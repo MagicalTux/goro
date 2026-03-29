@@ -1360,7 +1360,16 @@ func parseDateTimeWithOffset(input string, loc *time.Location) (time.Time, bool)
 		year, _ := strconv.Atoi(matches[1])
 		month, _ := strconv.Atoi(matches[2])
 		day, _ := strconv.Atoi(matches[3])
-		return time.Date(year, time.Month(month), day, 0, 0, 0, 0, loc), true
+		// Validate that month/day are in valid range to avoid Go's date normalization
+		// (e.g. 9999-11-33 would silently become 9999-12-03)
+		if month < 1 || month > 12 || day < 1 {
+			return time.Time{}, false
+		}
+		t := time.Date(year, time.Month(month), day, 0, 0, 0, 0, loc)
+		if t.Year() != year || int(t.Month()) != month || t.Day() != day {
+			return time.Time{}, false
+		}
+		return t, true
 	}
 
 	// Try compact date-time: YYYYMMDDTHHMMSS[+-offset]

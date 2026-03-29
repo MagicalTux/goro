@@ -339,6 +339,14 @@ func (r *runRef) isVariableLike() bool {
 }
 
 func (r *runRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
+	// Check if trying to reference a string offset — not allowed in PHP.
+	if acc, ok := r.v.(*runArrayAccess); ok {
+		container, containerErr := acc.value.Run(ctx)
+		if containerErr == nil && container != nil && container.GetType() == phpv.ZtString {
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot create references to/from string offsets")
+		}
+	}
+
 	// Reference creation is a write context — suppress "Undefined array key" warnings
 	// since the element will be created by the reference.
 	if acc, ok := r.v.(*runArrayAccess); ok {
