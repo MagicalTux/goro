@@ -1262,6 +1262,8 @@ func initRegexIterator() {
 					if err != nil || !bool(v.AsBool(ctx)) {
 						break
 					}
+					// Clear cached result before calling accept (which may be overridden)
+					d.currentResult = nil
 					// Call accept() through PHP method dispatch so subclass overrides work
 					acceptResult, err := o.CallMethod(ctx, "accept")
 					if err != nil {
@@ -1323,6 +1325,8 @@ func initRegexIterator() {
 					if !bool(v.AsBool(ctx)) {
 						break
 					}
+					// Clear cached result before calling accept (which may be overridden)
+					d.currentResult = nil
 					// Call accept() through PHP method dispatch so subclass overrides work
 					acceptResult, err := o.CallMethod(ctx, "accept")
 					if err != nil {
@@ -2041,6 +2045,10 @@ type recursiveIteratorIteratorData struct {
 	hasNextAtDepth []bool
 }
 
+func (d *recursiveIteratorIteratorData) IsInIteration() bool {
+	return d.inIteration
+}
+
 func (d *recursiveIteratorIteratorData) Clone() any {
 	nd := &recursiveIteratorIteratorData{
 		stack:         make([]*phpobj.ZObject, len(d.stack)),
@@ -2148,9 +2156,11 @@ func initRecursiveIteratorIterator() {
 				if err != nil {
 					return nil, err
 				}
-				// Call beginIteration hook
-				o.Unwrap().(*phpobj.ZObject).CallMethod(ctx, "beginIteration")
-				d.inIteration = true
+				// Call beginIteration hook only if not already in iteration
+				if !d.inIteration {
+					o.Unwrap().(*phpobj.ZObject).CallMethod(ctx, "beginIteration")
+					d.inIteration = true
+				}
 				// Descend into children if needed
 				err = recursiveIteratorDescend(ctx, d, o)
 				if err != nil {

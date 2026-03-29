@@ -54,6 +54,24 @@ func initDirectoryIterator() {
 		"getextension": {Name: "getExtension", Method: phpobj.NativeMethod(diGetExtension)},
 		"getbasename":  {Name: "getBasename", Method: phpobj.NativeMethod(diGetBasename)},
 		"__tostring":   {Name: "__toString", Method: phpobj.NativeMethod(diToString)},
+		"__debuginfo": {Name: "__debugInfo", Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+			sfiData := getSFIData(o)
+			result := phpv.NewZArray()
+			// SplFileInfo private properties
+			path := ""
+			fileName := ""
+			if sfiData != nil {
+				path = sfiData.path
+				fileName = sfiBaseName(sfiData.path)
+			}
+			result.OffsetSet(ctx, phpv.ZString("\x00SplFileInfo\x00pathName"), phpv.ZStr(path))
+			result.OffsetSet(ctx, phpv.ZString("\x00SplFileInfo\x00fileName"), phpv.ZStr(fileName))
+			// DirectoryIterator private: glob (always false for DirectoryIterator)
+			result.OffsetSet(ctx, phpv.ZString("\x00DirectoryIterator\x00glob"), phpv.ZBool(false).ZVal())
+			// RecursiveDirectoryIterator private: subPathName
+			result.OffsetSet(ctx, phpv.ZString("\x00RecursiveDirectoryIterator\x00subPathName"), phpv.ZStr(""))
+			return result.ZVal(), nil
+		})},
 	}
 	for k, v := range diOwnMethods {
 		diMethods[k] = v

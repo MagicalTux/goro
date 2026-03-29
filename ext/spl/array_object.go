@@ -1026,54 +1026,89 @@ func initArrayObject() {
 		"__unserialize": {
 			Name: "__unserialize",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				invalidErr := func() (*phpv.ZVal, error) {
+					return nil, phpobj.ThrowError(ctx, phpobj.UnexpectedValueException, "Incomplete or ill-typed serialization data")
+				}
 				if len(args) < 1 || args[0].GetType() != phpv.ZtArray {
-					return nil, nil
+					return invalidErr()
 				}
 
 				arr := args[0].Value().(*phpv.ZArray)
+				count := int(arr.Count(ctx))
+
+				// Must have at least 3 elements (flags, storage, member_properties)
+				if count < 3 {
+					return invalidErr()
+				}
 
 				d := &arrayObjectData{
 					iteratorClass: "ArrayIterator",
 				}
 
-				// Index 0: flags
-				if flagsVal, err := arr.OffsetGet(ctx, phpv.ZInt(0).ZVal()); err == nil && flagsVal != nil {
-					d.flags = flagsVal.AsInt(ctx)
+				// Index 0: flags (must be int)
+				flagsVal, err := arr.OffsetGet(ctx, phpv.ZInt(0).ZVal())
+				if err != nil || flagsVal == nil || flagsVal.GetType() != phpv.ZtInt {
+					return invalidErr()
+				}
+				d.flags = flagsVal.AsInt(ctx)
+
+				// Index 1: storage (must be array or object)
+				storageVal, err := arr.OffsetGet(ctx, phpv.ZInt(1).ZVal())
+				if err != nil || storageVal == nil {
+					return invalidErr()
+				}
+				switch storageVal.GetType() {
+				case phpv.ZtArray:
+					d.array = storageVal.Value().(*phpv.ZArray)
+				case phpv.ZtObject:
+					obj := storageVal.Value().(*phpobj.ZObject)
+					ctx.Deprecated("ArrayObject::__unserialize(): Using an object as a backing array for ArrayObject is deprecated, as it allows violating class constraints and invariants", logopt.NoFuncName(true))
+					d.objectStorage = obj
+					d.array = nil
+				default:
+					return nil, phpobj.ThrowError(ctx, phpobj.UnexpectedValueException, "Passed variable is not an array or object")
 				}
 
-				// Index 1: storage (array or object)
-				if storageVal, err := arr.OffsetGet(ctx, phpv.ZInt(1).ZVal()); err == nil && storageVal != nil {
-					switch storageVal.GetType() {
-					case phpv.ZtArray:
-						d.array = storageVal.Value().(*phpv.ZArray)
-					case phpv.ZtObject:
-						obj := storageVal.Value().(*phpobj.ZObject)
-						ctx.Deprecated("ArrayObject::__unserialize(): Using an object as a backing array for ArrayObject is deprecated, as it allows violating class constraints and invariants", logopt.NoFuncName(true))
-						d.objectStorage = obj
-						d.array = nil // operate directly on object
-					default:
-						d.array = phpv.NewZArray()
+				// Index 2: member properties (must be array)
+				memberVal, err := arr.OffsetGet(ctx, phpv.ZInt(2).ZVal())
+				if err != nil || memberVal == nil || memberVal.GetType() != phpv.ZtArray {
+					return invalidErr()
+				}
+				memberArr := memberVal.Value().(*phpv.ZArray)
+				for k, v := range memberArr.Iterate(ctx) {
+					key := string(k.AsString(ctx))
+					if len(key) > 0 && key[0] == 0 {
+						o.HashTable().SetString(phpv.ZString(key), v)
+					} else {
+						o.ObjectSet(ctx, k.AsString(ctx), v)
 					}
-				} else {
-					d.array = phpv.NewZArray()
 				}
 
-				// Index 2: member properties
-				if memberVal, err := arr.OffsetGet(ctx, phpv.ZInt(2).ZVal()); err == nil && memberVal != nil && memberVal.GetType() == phpv.ZtArray {
-					memberArr := memberVal.Value().(*phpv.ZArray)
-					for k, v := range memberArr.Iterate(ctx) {
-						key := string(k.AsString(ctx))
-						if len(key) > 0 && key[0] == 0 {
-							o.HashTable().SetString(phpv.ZString(key), v)
-						} else {
-							o.ObjectSet(ctx, k.AsString(ctx), v)
+				// Index 3: iterator class (optional, string or null)
+				if count >= 4 {
+					iterVal, err := arr.OffsetGet(ctx, phpv.ZInt(3).ZVal())
+					if err != nil || iterVal == nil {
+						return invalidErr()
+					}
+					// NULL means default iterator class
+					if iterVal.IsNull() {
+						// keep default "ArrayIterator"
+					} else if iterVal.GetType() != phpv.ZtString {
+						return invalidErr()
+					} else {
+						iterClassName := iterVal.AsString(ctx)
+						// Validate the iterator class exists and implements Iterator
+						cls, clsErr := ctx.Global().GetClass(ctx, iterClassName, true)
+						if clsErr != nil || cls == nil {
+							return nil, phpobj.ThrowError(ctx, phpobj.UnexpectedValueException,
+								fmt.Sprintf("Cannot deserialize %s with iterator class '%s'; no such class exists", o.GetClass().GetName(), iterClassName))
 						}
+						if !cls.Implements(phpobj.Iterator) {
+							return nil, phpobj.ThrowError(ctx, phpobj.UnexpectedValueException,
+								fmt.Sprintf("Cannot deserialize %s with iterator class '%s'; this class does not implement the Iterator interface", o.GetClass().GetName(), iterClassName))
+						}
+						d.iteratorClass = iterClassName
 					}
-				}
-
-				// Index 3: iterator class (null means default)
-				if iterVal, err := arr.OffsetGet(ctx, phpv.ZInt(3).ZVal()); err == nil && iterVal != nil && !iterVal.IsNull() {
-					d.iteratorClass = iterVal.AsString(ctx)
 				}
 
 				o.SetOpaque(ArrayObjectClass, d)

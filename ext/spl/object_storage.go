@@ -596,13 +596,26 @@ func initObjectStorage() {
 		"__unserialize": {
 			Name: "__unserialize",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				if len(args) == 0 || args[0] == nil {
-					return nil, nil
+				invalidErr := func(msg string) (*phpv.ZVal, error) {
+					return nil, phpobj.ThrowError(ctx, phpobj.UnexpectedValueException, msg)
+				}
+				if len(args) == 0 || args[0] == nil || args[0].GetType() != phpv.ZtArray {
+					return invalidErr("Incomplete or ill-typed serialization data")
 				}
 				arr := args[0].AsArray(ctx)
-				if arr == nil {
-					return nil, phpobj.ThrowError(ctx, phpobj.UnexpectedValueException,
-						"Invalid serialization data for SplObjectStorage object")
+				if arr == nil || int(arr.Count(ctx)) < 2 {
+					return invalidErr("Incomplete or ill-typed serialization data")
+				}
+
+				// Key 0: must be an array
+				storageVal, err := arr.OffsetGet(ctx, phpv.ZInt(0).ZVal())
+				if err != nil || storageVal == nil || storageVal.GetType() != phpv.ZtArray {
+					return invalidErr("Incomplete or ill-typed serialization data")
+				}
+				// Key 1: must be an array
+				memberVal, err := arr.OffsetGet(ctx, phpv.ZInt(1).ZVal())
+				if err != nil || memberVal == nil || memberVal.GetType() != phpv.ZtArray {
+					return invalidErr("Incomplete or ill-typed serialization data")
 				}
 
 				d := &splObjectStorageData{
@@ -613,35 +626,34 @@ func initObjectStorage() {
 				o.SetOpaque(SplObjectStorageClass, d)
 
 				// Key 0: flat array [obj, info, obj, info, ...]
-				storageVal, err := arr.OffsetGet(ctx, phpv.ZInt(0).ZVal())
-				if err == nil && storageVal != nil && storageVal.GetType() == phpv.ZtArray {
-					storageArr := storageVal.AsArray(ctx)
-					count := int(storageArr.Count(ctx))
-					for i := 0; i < count; i += 2 {
-						objVal, err1 := storageArr.OffsetGet(ctx, phpv.ZInt(i).ZVal())
-						infoVal, err2 := storageArr.OffsetGet(ctx, phpv.ZInt(i+1).ZVal())
-						if err1 != nil || err2 != nil || objVal == nil || objVal.GetType() != phpv.ZtObject {
-							continue
-						}
-						obj, ok := objVal.Value().(*phpobj.ZObject)
-						if !ok {
-							continue
-						}
-						hash := objectHash(obj)
-						if _, exists := d.entries[hash]; !exists {
-							d.order = append(d.order, hash)
-						}
-						// Dereference the info value to strip references (PHP behavior)
+				storageArr := storageVal.AsArray(ctx)
+				count := int(storageArr.Count(ctx))
+				if count%2 != 0 {
+					return invalidErr("Odd number of elements")
+				}
+				for i := 0; i < count; i += 2 {
+					objVal, err1 := storageArr.OffsetGet(ctx, phpv.ZInt(i).ZVal())
+					infoVal, err2 := storageArr.OffsetGet(ctx, phpv.ZInt(i+1).ZVal())
+					if err1 != nil || err2 != nil || objVal == nil || objVal.GetType() != phpv.ZtObject {
+						return invalidErr("Non-object key")
+					}
+					obj, ok := objVal.Value().(*phpobj.ZObject)
+					if !ok {
+						return invalidErr("Non-object key")
+					}
+					hash := objectHash(obj)
+					if _, exists := d.entries[hash]; !exists {
+						d.order = append(d.order, hash)
+					}
+					// Dereference the info value to strip references (PHP behavior)
 					if infoVal != nil {
 						infoVal = infoVal.Dup()
 					}
 					d.entries[hash] = &splObjectStorageEntry{obj: obj, info: infoVal}
-					}
 				}
 
-				// Key 1: member properties
-				memberVal, err := arr.OffsetGet(ctx, phpv.ZInt(1).ZVal())
-				if err == nil && memberVal != nil && memberVal.GetType() == phpv.ZtArray {
+				// Key 1: member properties (already validated above)
+				{
 					memberArr := memberVal.AsArray(ctx)
 					for k, v := range memberArr.Iterate(ctx) {
 						key := string(k.AsString(ctx))
