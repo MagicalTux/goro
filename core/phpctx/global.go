@@ -715,7 +715,13 @@ func (g *Global) handleUncaughtException(err error) error {
 
 // formatUncaughtFatal formats an uncaught exception as a PHP Fatal error to stderr.
 func (g *Global) formatUncaughtFatal(ex *phperr.PhpThrow) {
+	// Set location to "[no active file]:0" before calling ErrorTrace so that
+	// any errors thrown inside __toString() during formatting get that location.
+	savedLoc := g.l
+	noActiveFile := &phpv.Loc{Filename: "[no active file]", Line: 0}
+	g.l = noActiveFile
 	trace, replacement := ex.ErrorTrace(g)
+	g.l = savedLoc
 	// If __toString() threw, use the replacement exception for file/line
 	src := ex
 	if replacement != nil {
@@ -1356,8 +1362,12 @@ func (g *Global) RunShutdownFunctions() {
 		return
 	}
 	g.ResetDeadline()
+	noActiveFile := &phpv.Loc{Filename: "[no active file]", Line: 0}
 	for _, fn := range g.shutdownFuncs {
-		_, err := g.CallZVal(g, fn, nil, nil)
+		// Reset location before each shutdown function so that exceptions
+		// thrown by shutdown functions report "[no active file]:0".
+		g.l = noActiveFile
+		_, err := g.CallZValInternal(g, fn, nil)
 		if err != nil {
 			if phpv.IsExit(err) {
 				break
@@ -1367,9 +1377,25 @@ func (g *Global) RunShutdownFunctions() {
 				g.WriteErr([]byte(timeout.String()))
 				break
 			}
-			// Handle uncaught exceptions from shutdown functions via the
-			// exception handler (GH-10695)
-			g.handleUncaughtException(err)
+			// Handle uncaught exceptions from shutdown functions.
+			// Write to main output (not stderr) so test infrastructure can capture it.
+			result := g.HandleUncaughtException(err)
+			if result == nil {
+				continue
+			}
+			if ex, ok := result.(*phperr.PhpThrow); ok {
+				trace, replacement := ex.ErrorTrace(g)
+				src := ex
+				if replacement != nil {
+					src = replacement
+				}
+				thrownFile := src.ThrownFile()
+				if thrownFile == "" {
+					thrownFile = "Unknown"
+				}
+				g.Write([]byte(fmt.Sprintf("\nFatal error: %s\n  thrown in %s on line %d\n", trace, thrownFile, src.ThrownLine())))
+				break
+			}
 		}
 	}
 	g.shutdownFuncs = nil
