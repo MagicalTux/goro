@@ -516,30 +516,28 @@ func makeSplDllMethods(cls *phpobj.ZClass, defaultMode int) map[phpv.ZString]*ph
 				if d == nil {
 					return phpv.ZString("i:0;").ZVal(), nil
 				}
-				// PHP serializes as: i:<mode>;:<count>:{<serialized elements>}
+				// PHP serializes as: i:<mode>;:<serialized_element1><serialized_element2>...
 				var sb strings.Builder
 				sb.WriteString(fmt.Sprintf("i:%d;", d.mode))
-				for _, v := range d.data {
+				// Iterate by index; the list may be modified during serialization
+				// (e.g., by __serialize callbacks calling pop()), so re-check length each time
+				for i := 0; i < len(d.data); i++ {
+					v := d.data[i]
 					if v == nil || v.IsNull() {
 						sb.WriteString("N;")
 					} else {
-						switch v.GetType() {
-						case phpv.ZtInt:
-							sb.WriteString(fmt.Sprintf("i:%d;", v.AsInt(ctx)))
-						case phpv.ZtString:
-							s := v.AsString(ctx)
-							sb.WriteString(fmt.Sprintf("s:%d:\"%s\";", len(s), s))
-						case phpv.ZtFloat:
-							sb.WriteString(fmt.Sprintf("d:%v;", v.Value().(phpv.ZFloat)))
-						case phpv.ZtBool:
-							if v.AsBool(ctx) {
-								sb.WriteString("b:1;")
-							} else {
-								sb.WriteString("b:0;")
-							}
-						default:
+						// Use PHP's serialize function for proper format
+						fn, err := ctx.Global().GetFunction(ctx, "serialize")
+						if err != nil {
 							sb.WriteString("N;")
+							continue
 						}
+						result, err := ctx.CallZVal(ctx, fn, []*phpv.ZVal{v})
+						if err != nil {
+							sb.WriteString("N;")
+							continue
+						}
+						sb.WriteString(":" + string(result.AsString(ctx)))
 					}
 				}
 				return phpv.ZString(sb.String()).ZVal(), nil
@@ -569,8 +567,16 @@ func makeSplDllMethods(cls *phpobj.ZClass, defaultMode int) map[phpv.ZString]*ph
 					}
 				}
 				// Parse remaining serialized values
+				// Format: each value may be prefixed with ':' (PHP uses :<serialized_value>)
 				d.data = nil
 				for len(s) > 0 {
+					// Skip leading ':' separator if present
+					if s[0] == ':' {
+						s = s[1:]
+						if len(s) == 0 {
+							break
+						}
+					}
 					v, rest := unserializeValue(ctx, s)
 					if rest == s {
 						break // no progress

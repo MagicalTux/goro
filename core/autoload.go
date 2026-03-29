@@ -79,7 +79,7 @@ func fncSplAutoloadRegister(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 	if len(args) == 0 || args[0].IsNull() {
 		// Register the default spl_autoload function
 		ctx.Global().RegisterAutoload(&splAutoloadCallable{}, prepend)
-		return nil, nil
+		return phpv.ZTrue.ZVal(), nil
 	}
 
 	// Reject spl_autoload_call as an autoloader
@@ -97,7 +97,7 @@ func fncSplAutoloadRegister(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 	}
 
 	ctx.Global().RegisterAutoload(handler, prepend)
-	return nil, nil
+	return phpv.ZTrue.ZVal(), nil
 }
 
 // > func bool spl_autoload_unregister ( mixed $autoload_function )

@@ -216,23 +216,25 @@ var IteratorIteratorClass = &phpobj.ZClass{
 // ============================================================================
 
 type limitIteratorData struct {
-	inner       *phpobj.ZObject
-	offset      int
-	limit       int
-	pos         int
-	cachedVal   *phpv.ZVal
-	cachedKey   *phpv.ZVal
-	cachedValid bool
+	inner          *phpobj.ZObject
+	offset         int
+	limit          int
+	pos            int
+	cachedVal      *phpv.ZVal
+	cachedKey      *phpv.ZVal
+	cachedValid    bool
+	cachePopulated bool // true when full fetch (valid+current+key) has been done
 }
 
 func (d *limitIteratorData) Clone() any {
 	return &limitIteratorData{inner: d.inner, offset: d.offset, limit: d.limit, pos: d.pos,
-		cachedVal: d.cachedVal, cachedKey: d.cachedKey, cachedValid: d.cachedValid}
+		cachedVal: d.cachedVal, cachedKey: d.cachedKey, cachedValid: d.cachedValid, cachePopulated: d.cachePopulated}
 }
 
 // limitIteratorFetchCache fetches valid/current/key from the inner iterator and caches them.
 // This matches PHP's spl_dual_it_fetch(check_more=1) called by spl_limit_it_valid.
 func limitIteratorFetchCache(ctx phpv.Context, d *limitIteratorData) error {
+	d.cachePopulated = false
 	v, err := d.inner.CallMethod(ctx, "valid")
 	if err != nil {
 		d.cachedValid = false
@@ -250,10 +252,23 @@ func limitIteratorFetchCache(ctx phpv.Context, d *limitIteratorData) error {
 		if err != nil {
 			return err
 		}
+		d.cachePopulated = true
 	} else {
 		d.cachedVal = nil
 		d.cachedKey = nil
 	}
+	return nil
+}
+
+// limitIteratorCheckValid only checks the inner iterator's valid state (no current/key fetch).
+// Used by rewind and the seek loop, matching PHP's spl_dual_it_fetch behavior during rewind.
+func limitIteratorCheckValid(ctx phpv.Context, d *limitIteratorData) error {
+	v, err := d.inner.CallMethod(ctx, "valid")
+	if err != nil {
+		d.cachedValid = false
+		return err
+	}
+	d.cachedValid = v != nil && bool(v.AsBool(ctx))
 	return nil
 }
 
@@ -313,13 +328,21 @@ func initLimitIterator() {
 				d.cachedVal = nil
 				d.cachedKey = nil
 				d.cachedValid = false
+				d.cachePopulated = false
 				_, err := d.inner.CallMethod(ctx, "rewind")
 				if err != nil {
 					return nil, err
 				}
 				d.pos = 0
-				// Seek to offset using the common seek logic
-				// (no fetch here - valid() will fetch when called)
+				// For non-seekable inner, check valid after rewind (matches PHP's
+				// spl_dual_it_fetch called by spl_dual_it_rewind).
+				// For seekable inner, skip this - the seek will position directly.
+				if !d.inner.GetClass().Implements(SeekableIterator) {
+					if err := limitIteratorCheckValid(ctx, d); err != nil {
+						return nil, err
+					}
+				}
+				// Seek to offset
 				return nil, limitIteratorSeekTo(ctx, d, d.offset)
 			}),
 		},
@@ -360,6 +383,7 @@ func initLimitIterator() {
 				d.cachedVal = nil
 				d.cachedKey = nil
 				d.cachedValid = false
+				d.cachePopulated = false
 				_, err := d.inner.CallMethod(ctx, "next")
 				if err != nil {
 					return nil, err
@@ -381,11 +405,14 @@ func initLimitIterator() {
 				if d.limit >= 0 && (d.pos-d.offset) >= d.limit {
 					return phpv.ZFalse.ZVal(), nil
 				}
-				// Fetch valid/current/key from inner iterator (matches PHP's
-				// spl_limit_it_valid which calls spl_dual_it_fetch).
-				err := limitIteratorFetchCache(ctx, d)
-				if err != nil {
-					return phpv.ZFalse.ZVal(), err
+				// Only fetch if cache is not already populated (matches PHP's
+				// spl_limit_it_valid which calls spl_dual_it_fetch, but fetch
+				// is a no-op if data is already cached).
+				if !d.cachePopulated {
+					err := limitIteratorFetchCache(ctx, d)
+					if err != nil {
+						return phpv.ZFalse.ZVal(), err
+					}
 				}
 				return phpv.ZBool(d.cachedValid).ZVal(), nil
 			}),
@@ -424,16 +451,34 @@ func initLimitIterator() {
 				if d.limit >= 0 && position >= d.offset+d.limit {
 					return nil, phpobj.ThrowError(ctx, phpobj.OutOfBoundsException, fmt.Sprintf("Cannot seek to %d which is behind offset %d plus count %d", position, d.offset, d.limit))
 				}
-				// Rewind and advance to position
-				_, err := d.inner.CallMethod(ctx, "rewind")
-				if err != nil {
-					return nil, err
-				}
-				d.pos = 0
 				d.cachedVal = nil
 				d.cachedKey = nil
 				d.cachedValid = false
-				return nil, limitIteratorSeekTo(ctx, d, position)
+				if d.inner.GetClass().Implements(SeekableIterator) {
+					// For seekable iterators, just seek directly (no rewind needed)
+					_, err := d.inner.CallMethod(ctx, "seek", phpv.ZInt(position).ZVal())
+					if err != nil {
+						return nil, err
+					}
+					d.pos = position
+				} else {
+					// For non-seekable iterators, rewind and advance
+					_, err := d.inner.CallMethod(ctx, "rewind")
+					if err != nil {
+						return nil, err
+					}
+					d.pos = 0
+					// Check valid after rewind (matches PHP's spl_dual_it_fetch in rewind)
+					if err := limitIteratorCheckValid(ctx, d); err != nil {
+						return nil, err
+					}
+					err = limitIteratorSeekTo(ctx, d, position)
+					if err != nil {
+						return nil, err
+					}
+				}
+				// After seeking, do a full fetch (valid+current+key)
+				return nil, limitIteratorFetchCache(ctx, d)
 			}),
 		},
 		"__call": {
@@ -480,19 +525,22 @@ func limitIteratorSeekTo(ctx phpv.Context, d *limitIteratorData, target int) err
 		return nil
 	}
 	for d.pos < target {
-		v, err := d.inner.CallMethod(ctx, "valid")
-		if err != nil {
-			return err
-		}
-		if !bool(v.AsBool(ctx)) {
+		// Check if still valid before advancing (using cached state from
+		// the previous rewind-fetch or next-fetch)
+		if !d.cachedValid {
 			return phpobj.ThrowError(ctx, phpobj.OutOfBoundsException,
 				fmt.Sprintf("Seek position %d is out of range", target))
 		}
-		_, err = d.inner.CallMethod(ctx, "next")
+		_, err := d.inner.CallMethod(ctx, "next")
 		if err != nil {
 			return err
 		}
 		d.pos++
+		// After each advance, check valid (matches PHP's spl_dual_it_next
+		// which calls spl_dual_it_fetch after move_forward)
+		if err := limitIteratorCheckValid(ctx, d); err != nil {
+			return err
+		}
 	}
 	// For non-seekable iterators, PHP's internal handler fetches valid/current/key here
 	// via spl_dual_it_fetch(check_more=1). This adds an extra valid() call.
@@ -3567,7 +3615,10 @@ func initRecursiveFilterIterator() {
 				return phpv.ZNULL.ZVal(), nil
 			}
 			childObj := children.Value().(*phpobj.ZObject)
-			result, err := phpobj.NewZObject(ctx, RecursiveFilterIteratorClass, childObj.ZVal())
+			// Use the actual class of the current object (not base class)
+			// so user subclasses (Filter1, Filter2) are properly instantiated
+			cls := o.GetClass()
+			result, err := phpobj.NewZObject(ctx, cls, childObj.ZVal())
 			if err != nil {
 				return nil, err
 			}

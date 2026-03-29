@@ -489,6 +489,10 @@ func initSplFixedArray() {
 			if len(args) == 0 || args[0] == nil {
 				return nil, nil
 			}
+			// __unserialize is a no-op on an already-initialized SplFixedArray (PHP behavior)
+			if d := getSplFixedArrayData(o); d != nil && len(d.data) > 0 {
+				return nil, nil
+			}
 			arr := args[0].AsArray(ctx)
 			if arr == nil {
 				return nil, nil

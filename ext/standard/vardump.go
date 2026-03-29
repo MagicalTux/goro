@@ -148,8 +148,8 @@ func doVarDump(ctx phpv.Context, z *phpv.ZVal, linePfx string, recurs map[uintpt
 		// Check for __debugInfo() method - if present, use its return value
 		var debugInfoArr *phpv.ZArray
 		if obj, ok := v.(*phpobj.ZObject); ok {
-			if debugInfoMethod, hasDebugInfo := obj.GetClass().GetMethod("__debuginfo"); hasDebugInfo {
-				result, err := ctx.Global().CallZVal(ctx, debugInfoMethod.Method, nil, obj)
+			if _, hasDebugInfo := obj.GetClass().GetMethod("__debuginfo"); hasDebugInfo {
+				result, err := obj.CallMethod(ctx, "__debugInfo")
 				if err != nil {
 					return err
 				}
@@ -163,14 +163,10 @@ func doVarDump(ctx phpv.Context, z *phpv.ZVal, linePfx string, recurs map[uintpt
 						debugInfoArr = phpv.NewZArray()
 					default:
 						// Non-array, non-null return is a fatal error
-						loc := debugInfoMethod.Loc
-						if loc == nil {
-							loc = ctx.Loc()
-						}
 						return &phpv.PhpError{
 							Err:  fmt.Errorf("__debuginfo() must return an array"),
 							Code: phpv.E_ERROR,
-							Loc:  loc,
+							Loc:  ctx.Loc(),
 						}
 					}
 				}

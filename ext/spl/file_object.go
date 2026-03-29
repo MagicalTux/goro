@@ -393,6 +393,11 @@ func sfoConstruct(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv
 		flag = os.O_RDONLY
 	}
 
+	// Check if the path is a directory before opening
+	if pathInfo, statErr := os.Stat(resolvedPath); statErr == nil && pathInfo.IsDir() {
+		return nil, phpobj.ThrowError(ctx, phpobj.LogicException, "Cannot use SplFileObject with directories")
+	}
+
 	file, err2 := os.OpenFile(resolvedPath, flag, 0644)
 	if err2 != nil {
 		return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException,
@@ -963,8 +968,7 @@ func sfoFseek(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVa
 func sfoFlock(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	d := getSFOData(o)
 	if d == nil || d.file == nil {
-		return nil, phpobj.ThrowError(ctx, phpobj.LogicException,
-			"The parent constructor was not called: the object is in an invalid state")
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, "Object not initialized")
 	}
 	// Stub - flock is not easily portable on all platforms
 	return phpv.ZBool(true).ZVal(), nil
@@ -1141,20 +1145,8 @@ func sfoNext(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal
 			d.curLine = applyMaxLineLen(nextLine, d.maxLineLen)
 			d.line++
 		} else {
-			// PHP streams yield one empty read past the last line before EOF.
-			// On the first failed read, set curLine="" but don't set eof yet.
-			// On the second failed read (emptyFileFirstLine is true), actually set eof.
-			if d.emptyFileFirstLine {
-				// This is the second failed read; truly EOF now.
-				d.emptyFileFirstLine = false
-				d.eof = true
-				d.curLine = ""
-			} else {
-				// First failed read: yield empty string, mark for next time.
-				d.emptyFileFirstLine = true
-				d.curLine = ""
-				d.line++
-			}
+			d.eof = true
+			d.curLine = ""
 			break
 		}
 		// Handle SKIP_EMPTY flag

@@ -1596,7 +1596,11 @@ func (g *Global) GetClass(ctx phpv.Context, name phpv.ZString, autoload bool) (p
 		if !g.autoloadingClass[nameLower] {
 			g.autoloadingClass[nameLower] = true
 			defer delete(g.autoloadingClass, nameLower)
-			for _, loader := range g.autoloadFuncs {
+			// Iterate by index: new autoloaders registered during the loop
+			// (e.g., by the first autoloader calling spl_autoload_register)
+			// should be tried in the same cycle.
+			for i := 0; i < len(g.autoloadFuncs); i++ {
+				loader := g.autoloadFuncs[i]
 				// Check deadline before calling each autoloader
 				if err := g.Tick(ctx, g.l); err != nil {
 					return nil, err
@@ -2087,8 +2091,18 @@ func (g *Global) UnregisterAutoload(handler phpv.Callable) bool {
 }
 
 func (g *Global) UnregisterAutoloadByName(name string) bool {
+	// Strip leading backslash for comparison (PHP normalizes class names)
+	normName := name
+	if len(normName) > 0 && normName[0] == '\\' {
+		normName = normName[1:]
+	}
 	for i, f := range g.autoloadFuncs {
-		if phpv.CallableDisplayName(f) == name {
+		displayName := phpv.CallableDisplayName(f)
+		normDisplay := displayName
+		if len(normDisplay) > 0 && normDisplay[0] == '\\' {
+			normDisplay = normDisplay[1:]
+		}
+		if normDisplay == normName || displayName == name {
 			g.autoloadFuncs = append(g.autoloadFuncs[:i], g.autoloadFuncs[i+1:]...)
 			return true
 		}
