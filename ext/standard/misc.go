@@ -134,14 +134,20 @@ func stdFuncEval(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		if err == nil {
 			return phpv.ZBool(false).ZVal(), nil
 		}
-		if phpErr, ok := err.(*phpv.PhpError); ok && phpErr.Code == phpv.E_PARSE {
-			// PHP 8: eval() parse errors throw ParseError instead of logging
+		if phpErr, ok := err.(*phpv.PhpError); ok {
 			msg := phpErr.Err.Error()
 			loc := phpErr.Loc
 			if loc == nil {
 				loc = ctx.Loc()
 			}
-			return nil, phpobj.ThrowErrorAt(ctx, phpobj.ParseError, msg, loc)
+			switch phpErr.Code {
+			case phpv.E_PARSE:
+				// PHP 8: eval() parse errors throw ParseError
+				return nil, phpobj.ThrowErrorAt(ctx, phpobj.ParseError, msg, loc)
+			case phpv.E_COMPILE_ERROR, phpv.E_COMPILE_WARNING:
+				// PHP 8: eval() compile errors throw CompileError
+				return nil, phpobj.ThrowErrorAt(ctx, phpobj.CompileError, msg, loc)
+			}
 		}
 		return nil, err
 	}
