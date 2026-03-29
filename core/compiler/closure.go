@@ -349,13 +349,17 @@ func init() {
 			Name:      "__invoke",
 			Modifiers: phpv.ZAttrPublic,
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				// Delegate to the HandleInvoke handler which knows how to call the closure
+				// Delegate to the HandleInvoke handler which knows how to call the closure.
+				// Suppress "called in" suffix since this is __invoke method dispatch (PHP behavior).
 				if Closure.H != nil && Closure.H.HandleInvoke != nil {
 					runnables := make([]phpv.Runnable, len(args))
 					for i, a := range args {
 						runnables[i] = &zvalRunnable{v: a}
 					}
-					return Closure.H.HandleInvoke(ctx, o, runnables)
+					ctx.Global().SetNextCallSuppressCalledIn(true)
+					res, err := Closure.H.HandleInvoke(ctx, o, runnables)
+					ctx.Global().SetNextCallSuppressCalledIn(false)
+					return res, err
 				}
 				return nil, fmt.Errorf("Closure::__invoke(): internal error")
 			}),

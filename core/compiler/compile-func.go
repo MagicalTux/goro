@@ -259,7 +259,11 @@ func (r *runnableFunctionCallRef) Run(ctx phpv.Context) (l *phpv.ZVal, err error
 						f = phpv.Bind(method.Method, obj)
 					} else if methodName.ToLower() == "__invoke" && class.Handlers() != nil && class.Handlers().HandleInvoke != nil {
 						// Handle __invoke via HandleInvoke (e.g., Closure::__invoke)
-						return class.Handlers().HandleInvoke(ctx, obj, r.args)
+						// Suppress "called in" suffix on type errors (PHP behavior)
+						ctx.Global().SetNextCallSuppressCalledIn(true)
+						res, err := class.Handlers().HandleInvoke(ctx, obj, r.args)
+						ctx.Global().SetNextCallSuppressCalledIn(false)
+						return res, err
 					} else if callMethod, hasCall := class.GetMethod("__call"); hasCall {
 						// Fall back to __call magic method
 						var zArgs []*phpv.ZVal

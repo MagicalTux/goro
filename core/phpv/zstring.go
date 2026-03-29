@@ -332,7 +332,21 @@ func valToInt(val Val) int {
 }
 
 func (z ZStringArray) OffsetGet(ctx Context, key Val) (*ZVal, error) {
-	if key.GetType() != ZtInt {
+	// Bool and null keys are silently coerced to int (no warning).
+	// Float keys emit a deprecation (implicit int cast).
+	// Only non-numeric string keys trigger the "Illegal string offset" warning.
+	switch key.GetType() {
+	case ZtInt:
+		// ok
+	case ZtBool, ZtNull:
+		// silent coercion to int — no warning
+	case ZtFloat:
+		// PHP 8.1+: deprecation for float string offset
+		fval := float64(key.Value().(ZFloat))
+		if err := ctx.Deprecated("Implicit conversion from float %v to int loses precision", fval, logopt.NoFuncName(true)); err != nil {
+			return nil, err
+		}
+	default:
 		if err := ctx.Warn("Illegal string offset \"%s\"", key.String(), logopt.NoFuncName(true)); err != nil {
 			return nil, err
 		}

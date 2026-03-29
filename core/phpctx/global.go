@@ -110,8 +110,9 @@ type Global struct {
 
 	destructObjects []phpv.ZObject // objects with __destruct to call at shutdown
 
-	compilingClass   phpv.ZClass
-	noDiscardPending bool // class currently being compiled (for self:: resolution)
+	compilingClass              phpv.ZClass
+	noDiscardPending            bool // class currently being compiled (for self:: resolution)
+	nextCallSuppressCalledIn    bool // suppress "called in" for next Call
 
 	rawRequestBody []byte // stored POST body for php://input
 
@@ -2200,6 +2201,10 @@ func (g *Global) ReleaseObjectID(id int) {
 	if id > 0 {
 		g.freeObjectIDs = append(g.freeObjectIDs, id)
 	}
+}
+
+func (g *Global) SetNextCallSuppressCalledIn(v bool) {
+	g.nextCallSuppressCalledIn = v
 }
 
 func (g *Global) RegisterDestructor(obj phpv.ZObject) {

@@ -169,7 +169,9 @@ func (a *ZArray) AsVal(ctx Context, t ZType) (Val, error) {
 		}
 	case ZtString:
 		if ctx != nil {
-			ctx.Warn("Array to string conversion", logopt.NoFuncName(true))
+			if err := ctx.Warn("Array to string conversion", logopt.NoFuncName(true)); err != nil {
+				return nil, err
+			}
 		}
 		return ZString("Array"), nil
 	case ZtArray:

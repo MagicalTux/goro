@@ -167,6 +167,8 @@ type GlobalContext interface {
 	GetStrictTypes() bool
 
 	IsFunctionDisabled(name ZString) bool
+
+	SetNextCallSuppressCalledIn(v bool)
 }
 
 type FuncContext interface {

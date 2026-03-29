@@ -577,7 +577,12 @@ func (w *invokeWrapper) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, e
 	for i, a := range args {
 		runnables[i] = &zvalRunnable{v: a}
 	}
-	return w.handler(ctx, w.obj, runnables)
+	// When calling __invoke via method dispatch (e.g., call_user_func([$f, '__invoke'], ...)),
+	// suppress "called in" suffix on type errors (PHP behavior).
+	ctx.Global().SetNextCallSuppressCalledIn(true)
+	res, err := w.handler(ctx, w.obj, runnables)
+	ctx.Global().SetNextCallSuppressCalledIn(false)
+	return res, err
 }
 
 // zvalRunnable wraps a *ZVal as a Runnable (for passing pre-evaluated values as Runnable args)

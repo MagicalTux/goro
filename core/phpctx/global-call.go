@@ -247,7 +247,11 @@ func (c *Global) CallZValInternal(ctx phpv.Context, f phpv.Callable, args []*php
 }
 
 func (c *Global) CallZVal(ctx phpv.Context, f phpv.Callable, args []*phpv.ZVal, optionalThis ...phpv.ZObject) (*phpv.ZVal, error) {
-	return c.callZValImpl(ctx, f, args, false, false, optionalThis...)
+	suppress := c.nextCallSuppressCalledIn
+	if suppress {
+		c.nextCallSuppressCalledIn = false
+	}
+	return c.callZValImpl(ctx, f, args, false, suppress, optionalThis...)
 }
 
 // CallZValNoCalledIn is like CallZVal but suppresses the "called in" suffix in
