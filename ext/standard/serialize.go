@@ -1206,3 +1206,33 @@ func unserializeSetProperty(ctx phpv.Context, obj phpv.ZObject, key phpv.ZString
 	obj.ObjectSet(ctx, key, value)
 }
 
+// StreamDeserializer provides sequential unserialize operations with shared
+// reference tracking. This is needed by SplObjectStorage::unserialize() and
+// ArrayObject::unserialize() which parse multiple PHP values from a single
+// serialized stream while maintaining cross-reference integrity.
+type StreamDeserializer struct {
+	d *deserializer
+}
+
+// NewStreamDeserializer creates a StreamDeserializer that allows all classes.
+func NewStreamDeserializer() *StreamDeserializer {
+	return &StreamDeserializer{
+		d: &deserializer{
+			allowAllClasses: true,
+			allowedClasses:  map[phpv.ZString]struct{}{},
+		},
+	}
+}
+
+// ParseAt unserializes a single PHP value starting at the given offset in str.
+// It returns the parsed value and the offset immediately after the consumed data.
+// Reference tracking is shared across all calls on the same StreamDeserializer.
+func (sd *StreamDeserializer) ParseAt(ctx phpv.Context, str string, offset int) (*phpv.ZVal, int, error) {
+	return sd.d.parse(ctx, str, offset)
+}
+
+// ParseKeyAt parses a value without registering it in the reference table (for keys).
+func (sd *StreamDeserializer) ParseKeyAt(ctx phpv.Context, str string, offset int) (*phpv.ZVal, int, error) {
+	return sd.d.parseKey(ctx, str, offset)
+}
+

@@ -8,7 +8,7 @@ var Countable = &phpobj.ZClass{
 	Type: phpv.ZClassTypeInterface,
 	Name: "Countable",
 	Methods: map[phpv.ZString]*phpv.ZClassMethod{
-		"count": {Name: "count", Modifiers: phpv.ZAttrPublic, Empty: true},
+		"count": {Name: "count", Modifiers: phpv.ZAttrPublic, Empty: true, ReturnType: phpv.ParseTypeHint("int"), TentativeReturnType: true},
 	},
 }
 

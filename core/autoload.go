@@ -1,8 +1,6 @@
 package core
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/MagicalTux/goro/core/logopt"
@@ -27,27 +25,28 @@ func fncSplAutoload(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	// Convert class name to lowercase filename (PHP default autoload behavior)
 	filename := strings.ToLower(string(className))
 
-	// Try each extension in the include path
-	includePath := string(ctx.Global().GetConfig("include_path", phpv.ZStr(".")).AsString(ctx))
-	paths := strings.Split(includePath, string(filepath.ListSeparator))
-
+	// Try each extension using the include path.
+	// Use Open with useIncludePath=true to find the file (no warnings), then
+	// Include the resolved path. This matches PHP's spl_autoload behavior.
 	for _, ext := range strings.Split(exts, ",") {
-		for _, dir := range paths {
-			fullPath := filepath.Join(dir, filename+ext)
-			// Resolve relative to working directory
-			if !filepath.IsAbs(fullPath) {
-				fullPath = filepath.Join(string(ctx.Global().Getwd()), fullPath)
-			}
-			// Check if file exists before including (spl_autoload silently
-			// skips missing files, unlike regular include which emits warnings)
-			if _, statErr := os.Stat(fullPath); statErr != nil {
-				continue
-			}
-			// Try to include the file
-			_, err := ctx.Global().Include(ctx, phpv.ZString(fullPath))
-			if err == nil {
-				return nil, nil // successfully included
-			}
+		relPath := filename + ext
+		// Try to open with include path to find the file
+		f, openErr := ctx.Global().Open(ctx, phpv.ZString(relPath), "r", true)
+		if openErr != nil || f == nil {
+			continue // file not found, try next extension
+		}
+		// Get the resolved URI/path
+		var fullPath string
+		if uri, ok := f.Attr("uri").(string); ok {
+			fullPath = uri
+		} else {
+			fullPath = relPath
+		}
+		f.Close()
+		// Include the file using the resolved path
+		_, err := ctx.Global().Include(ctx, phpv.ZString(fullPath))
+		if err == nil {
+			return nil, nil
 		}
 	}
 

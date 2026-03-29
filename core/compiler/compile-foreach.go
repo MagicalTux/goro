@@ -106,9 +106,17 @@ func (r *runnableForeach) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 					return nil, iteratorErr(obj.GetClass().GetName())
 				}
 				if r.ref {
-					return nil, phpobj.ThrowError(ctx, phpobj.Error, "An iterator cannot be used with foreach by reference")
+					// Check if the returned iterator supports by-reference foreach
+					// (e.g., ArrayIterator backed by an object or array)
+					if refArr := getForeachByRefArray(ctx, iterObj); refArr != nil {
+						z = refArr.ZVal()
+						z.HashTable().SeparateCow()
+					} else {
+						return nil, phpobj.ThrowError(ctx, phpobj.Error, "An iterator cannot be used with foreach by reference")
+					}
+				} else {
+					it = &phpObjectIterator{ctx: ctx, obj: iterObj, started: false, fromGetIterator: true}
 				}
-				it = &phpObjectIterator{ctx: ctx, obj: iterObj, started: false, fromGetIterator: true}
 			} else if obj.GetClass().Implements(phpobj.Iterator) {
 				if r.ref {
 					return nil, phpobj.ThrowError(ctx, phpobj.Error, "An iterator cannot be used with foreach by reference")

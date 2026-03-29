@@ -8,6 +8,7 @@ import (
 	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/MagicalTux/goro/ext/standard"
 )
 
 // splObjectStorageEntry holds an object and its associated info
@@ -811,6 +812,9 @@ func callGetHash(ctx phpv.Context, storage *phpobj.ZObject, obj *phpobj.ZObject)
 }
 
 // sosUnserialize implements SplObjectStorage::unserialize()
+// The old Serializable format is: x:i:COUNT;obj1,info1;obj2,info2;...;m:members
+// All values share a single reference table, so we use a StreamDeserializer
+// to maintain cross-reference integrity across entries.
 func sosUnserialize(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) == 0 || args[0] == nil {
 		return nil, phpobj.ThrowError(ctx, phpobj.UnexpectedValueException,
@@ -819,7 +823,6 @@ func sosUnserialize(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*ph
 	ser := string(args[0].AsString(ctx))
 	totalLen := len(ser)
 	if totalLen == 0 {
-		// Empty string is a no-op (does not throw)
 		return nil, nil
 	}
 	errAtOffset := func(offset int) error {
@@ -847,7 +850,7 @@ func sosUnserialize(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*ph
 	}
 	countStr := ser[numStart:offset]
 	count, _ := strconv.Atoi(countStr)
-	offset++ // skip ';'
+	offset++
 
 	d := &splObjectStorageData{
 		entries: make(map[string]*splObjectStorageEntry),
@@ -855,42 +858,39 @@ func sosUnserialize(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*ph
 	}
 	o.SetOpaque(SplObjectStorageClass, d)
 
-	unserializeFn, err := ctx.Global().GetFunction(ctx, "unserialize")
-	if err != nil {
-		return nil, errAtOffset(offset)
-	}
+	// Use a StreamDeserializer for shared reference tracking across all values
+	sd := standard.NewStreamDeserializer()
 
-	// Parse each object,data; pair
 	for i := 0; i < count; i++ {
 		if offset >= len(ser) {
 			return nil, errAtOffset(offset)
 		}
 
-		// Unserialize the object from current offset
-		objResult, consumed, uErr := sosUnserializeAt(ctx, unserializeFn, ser, offset)
+		// Parse object value
+		objResult, nextOffset, uErr := sd.ParseAt(ctx, ser, offset)
 		if uErr != nil || objResult == nil || objResult.GetType() != phpv.ZtObject {
 			return nil, errAtOffset(offset)
 		}
-		offset += consumed
+		offset = nextOffset
 
 		// Expect comma separator
 		if offset >= len(ser) || ser[offset] != ',' {
 			return nil, errAtOffset(offset)
 		}
-		offset++ // skip ','
+		offset++
 
 		// Parse info value
-		infoResult, consumed, uErr := sosUnserializeAt(ctx, unserializeFn, ser, offset)
+		infoResult, nextOffset, uErr := sd.ParseAt(ctx, ser, offset)
 		if uErr != nil {
 			return nil, errAtOffset(offset)
 		}
-		offset += consumed
+		offset = nextOffset
 
 		// Expect semicolon separator
 		if offset >= len(ser) || ser[offset] != ';' {
 			return nil, errAtOffset(offset)
 		}
-		offset++ // skip ';'
+		offset++
 
 		obj, ok := objResult.Value().(*phpobj.ZObject)
 		if !ok {
@@ -898,7 +898,6 @@ func sosUnserialize(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*ph
 		}
 
 		hash := objectHash(obj)
-		// Check for duplicates
 		if _, exists := d.entries[hash]; exists {
 			return nil, errAtOffset(offset)
 		}
@@ -916,13 +915,13 @@ func sosUnserialize(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*ph
 	}
 	offset++
 
-	memberResult, consumed, uErr := sosUnserializeAt(ctx, unserializeFn, ser, offset)
+	memberResult, nextOffset, uErr := sd.ParseAt(ctx, ser, offset)
 	if uErr != nil {
 		return nil, errAtOffset(offset)
 	}
-	offset += consumed
+	offset = nextOffset
 
-	// Check that there's no extra data
+	// Check for extra data
 	if offset < len(ser) {
 		return nil, errAtOffset(offset)
 	}
@@ -940,21 +939,19 @@ func sosUnserialize(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*ph
 // sosUnserializeAt unserializes a PHP value starting at the given offset in the string.
 // It returns the unserialized value, the number of bytes consumed, and any error.
 func sosUnserializeAt(ctx phpv.Context, unserializeFn phpv.Callable, ser string, offset int) (*phpv.ZVal, int, error) {
-	// Extract the serialized value substring from offset
-	// PHP serialized values have predictable end markers, so we try to find the extent
-	// We use the unserialize function on the substring and detect how many bytes were consumed
 	sub := ser[offset:]
 
-	// Try unserializing the substring
-	result, err := unserializeFn.Call(ctx, []*phpv.ZVal{phpv.ZString(sub).ZVal()})
-	if err != nil {
-		return nil, 0, err
-	}
-
-	// Determine how many bytes were consumed by analyzing the serialized format
+	// Determine the exact length of the serialized value to avoid "extra data" warnings
 	consumed := serializedValueLength(sub)
 	if consumed == 0 {
 		return nil, 0, fmt.Errorf("could not determine serialized value length")
+	}
+
+	// Extract only the exact value to unserialize (no trailing data)
+	exact := sub[:consumed]
+	result, err := unserializeFn.Call(ctx, []*phpv.ZVal{phpv.ZString(exact).ZVal()})
+	if err != nil {
+		return nil, 0, err
 	}
 
 	return result, consumed, nil

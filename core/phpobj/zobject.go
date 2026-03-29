@@ -214,6 +214,22 @@ func (z *ZObject) SetDestructed(v bool) {
 	*z.destructed = v
 }
 
+// setPropRefTracked sets a property on the hash table while tracking object
+// reference counts. When a new object is stored, IncRef is called. When an old
+// object value is replaced or removed (value == nil), the old object's refcount
+// is not decremented here -- callers can do that separately if needed.
+// This ensures that objects stored in properties don't get their destructors
+// fired prematurely when the source variable goes out of scope.
+func (z *ZObject) setPropRefTracked(key phpv.ZString, value *phpv.ZVal) error {
+	// IncRef the new value if it's an object
+	if value != nil && value.GetType() == phpv.ZtObject {
+		if obj, ok := value.Value().(*ZObject); ok {
+			obj.IncRef()
+		}
+	}
+	return z.h.SetString(key, value)
+}
+
 // IncrJsonApplyCount increments the json_encode recursion guard counter.
 // Returns the count BEFORE incrementing. If > 0, the object is already being json-encoded.
 func (z *ZObject) IncrJsonApplyCount() int32 {
@@ -656,15 +672,26 @@ func (z *ZObject) Unwrap() phpv.ZObject {
 }
 
 func (z *ZObject) GetParent() phpv.ZObject {
-	class := z.GetClass().(*ZClass)
+	if z == nil || z.Class == nil {
+		return nil
+	}
+	class, ok := z.GetClass().(*ZClass)
+	if !ok || class == nil {
+		return nil
+	}
 	if z.CurrentClass != nil {
-		class = z.CurrentClass.(*ZClass)
+		if cc, ok := z.CurrentClass.(*ZClass); ok && cc != nil {
+			class = cc
+		}
 	}
 	parent := class.GetParent()
 	if parent == nil {
 		return nil
 	}
-	parentClass := parent.(*ZClass)
+	parentClass, ok := parent.(*ZClass)
+	if !ok || parentClass == nil {
+		return nil
+	}
 	return z.new(parentClass)
 }
 
@@ -2481,7 +2508,7 @@ func (o *ZObject) ObjectSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) er
 		resolveClass := o.resolvePrivateClass(ctx, keyStr)
 		propName := getPrivatePropName(resolveClass, keyStr)
 		if o.h.HasString(propName) {
-			return o.h.SetString(propName, value)
+			return o.setPropRefTracked(propName, value)
 		}
 	}
 
@@ -2513,7 +2540,7 @@ func (o *ZObject) ObjectSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) er
 		if o.typedPropUnset != nil {
 			delete(*o.typedPropUnset, keyStr)
 		}
-		return o.h.SetString(keyStr, value)
+		return o.setPropRefTracked(keyStr, value)
 	}
 
 	// Property not found; check for class-level property handler before magic methods
@@ -2572,7 +2599,7 @@ func (o *ZObject) ObjectSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) er
 			if callerZClass, ok := callerClass.(*ZClass); ok {
 				if prop, ok := getOwnProp(callerZClass, keyStr); ok && prop.Modifiers.IsPrivate() {
 					propName := getPrivatePropName(callerClass, keyStr)
-					return o.h.SetString(propName, value)
+					return o.setPropRefTracked(propName, value)
 				}
 			}
 		}
@@ -2606,7 +2633,7 @@ func (o *ZObject) ObjectSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) er
 		}
 	}
 
-	return o.h.SetString(keyStr, value)
+	return o.setPropRefTracked(keyStr, value)
 }
 
 func (o *ZObject) NewIterator() phpv.ZIterator {

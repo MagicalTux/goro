@@ -9,6 +9,19 @@ import (
 	extjson "github.com/MagicalTux/goro/ext/json"
 )
 
+// callImplicitDestructorOnZVal triggers an immediate implicit destructor call
+// on a ZVal if it contains an object with a __destruct method. This is used
+// by SPL container classes (SplFixedArray, etc.) when they replace or remove
+// stored values, to match PHP's immediate destruction behavior.
+func callImplicitDestructorOnZVal(ctx phpv.Context, z *phpv.ZVal) {
+	if z == nil || z.GetType() != phpv.ZtObject {
+		return
+	}
+	if obj, ok := z.Value().(*phpobj.ZObject); ok {
+		obj.CallImplicitDestructor(ctx)
+	}
+}
+
 // splFixedArrayData holds the internal state for an SplFixedArray instance
 type splFixedArrayData struct {
 	data     []*phpv.ZVal
@@ -238,7 +251,17 @@ func initSplFixedArray() {
 					return phpv.ZTrue.ZVal(), nil
 				}
 				if newSize < oldSize {
+					// Save elements that will be removed for destructor calls
+					removed := make([]*phpv.ZVal, oldSize-newSize)
+					copy(removed, d.data[newSize:])
 					d.data = d.data[:newSize]
+					// Call destructors on removed elements after resize
+					// (so destructors see the resized array)
+					for _, old := range removed {
+						if old != nil {
+							callImplicitDestructorOnZVal(ctx, old)
+						}
+					}
 				} else {
 					nd := make([]*phpv.ZVal, newSize)
 					copy(nd, d.data)
@@ -306,7 +329,14 @@ func initSplFixedArray() {
 				if err != nil {
 					return nil, err
 				}
+				// Save old value and replace before calling destructor,
+				// so the destructor sees the new state (PHP behavior).
+				old := d.data[idx]
 				d.data[idx] = args[1]
+				// Trigger immediate destructor on the replaced object
+				if old != nil {
+					callImplicitDestructorOnZVal(ctx, old)
+				}
 				return nil, nil
 			}),
 		},
@@ -324,7 +354,12 @@ func initSplFixedArray() {
 				if err != nil {
 					return nil, err
 				}
+				old := d.data[idx]
 				d.data[idx] = nil
+				// Trigger immediate destructor on the removed object
+				if old != nil {
+					callImplicitDestructorOnZVal(ctx, old)
+				}
 				return nil, nil
 			}),
 		},

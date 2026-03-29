@@ -9,6 +9,7 @@ import (
 	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/MagicalTux/goro/ext/standard"
 )
 
 // ArrayObject constants
@@ -571,10 +572,25 @@ func initArrayObject() {
 					}
 					// For plain objects, unset directly from the hash table
 					keyStr := args[0].AsString(ctx)
+					// Get old value before unsetting for destructor call
+					old := d.objectStorage.HashTable().GetString(keyStr)
 					d.objectStorage.HashTable().UnsetString(keyStr)
+					// Trigger immediate destructor on the removed object
+					if old != nil {
+						callImplicitDestructorOnZVal(ctx, old)
+					}
 					return nil, nil
 				}
+				// For array-backed storage, get old value before unsetting
+				old, _ := d.array.OffsetGet(ctx, args[0])
 				err := d.array.OffsetUnset(ctx, args[0])
+				if err != nil {
+					return nil, err
+				}
+				// Trigger immediate destructor on the removed object
+				if old != nil {
+					callImplicitDestructorOnZVal(ctx, old)
+				}
 				return nil, err
 			}),
 		},
@@ -631,10 +647,12 @@ func initArrayObject() {
 						return nil, err2
 					}
 					// Replace the duped array with a reference to the same array
+					// but use NewIterator() for an independent iteration position
+					// (so nested foreach loops don't clobber each other)
 					iterData2 := getArrayIteratorData(iterObj)
 					if iterData2 != nil {
 						iterData2.array = d.array
-						iterData2.iter = d.array.MainIterator()
+						iterData2.iter = d.array.NewIterator()
 					}
 				}
 
@@ -698,8 +716,10 @@ func initArrayObject() {
 
 				// Save old storage for return (convert to array now, before swap)
 				var oldArr *phpv.ZArray
+				var oldObjStorage *phpobj.ZObject
 				if d.objectStorage != nil {
 					oldArr = objectStorageGetArray(ctx, d.objectStorage)
+					oldObjStorage = d.objectStorage
 				} else if d.array != nil {
 					oldArr = d.array.DeepCopy()
 				} else {
@@ -718,6 +738,12 @@ func initArrayObject() {
 				default:
 					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
 						fmt.Sprintf("ArrayObject::exchangeArray(): Argument #1 ($array) must be of type array, %s given", args[0].GetType().TypeName()))
+				}
+
+				// Trigger immediate destructor on the old backing object
+				// after the swap, so the destructor sees the new state.
+				if oldObjStorage != nil {
+					oldObjStorage.CallImplicitDestructor(ctx)
 				}
 
 				return oldArr.ZVal(), nil
@@ -963,17 +989,102 @@ func initArrayObject() {
 				if len(args) < 1 {
 					return nil, nil
 				}
-				fn, err := ctx.Global().GetFunction(ctx, "unserialize")
-				if err != nil {
-					return nil, err
+				ser := string(args[0].AsString(ctx))
+				totalLen := len(ser)
+				if totalLen == 0 {
+					return nil, nil
 				}
-				result, err := ctx.CallZVal(ctx, fn, []*phpv.ZVal{args[0]})
-				if err != nil {
-					return nil, err
+				errAtOffset := func(offset int) error {
+					return phpobj.ThrowError(ctx, phpobj.UnexpectedValueException,
+						fmt.Sprintf("Error at offset %d of %d bytes", offset, totalLen))
 				}
-				if result != nil && result.GetType() == phpv.ZtArray {
-					d.array = result.Value().(*phpv.ZArray)
+
+				// Format: x:flags_serialized;[storage_serialized;]m:members_serialized
+				if len(ser) < 2 || ser[0] != 'x' || ser[1] != ':' {
+					return nil, errAtOffset(0)
 				}
+
+				offset := 2
+				const splArrayIsSelf = phpv.ZInt(0x01000000)
+				const splArrayIntMask = phpv.ZInt(0xFFFF0000)
+
+				// Use StreamDeserializer for shared reference tracking
+				sd := standard.NewStreamDeserializer()
+
+				// Parse flags
+				flagsResult, nextOffset, uErr := sd.ParseAt(ctx, ser, offset)
+				if uErr != nil || flagsResult == nil || flagsResult.GetType() != phpv.ZtInt {
+					return nil, errAtOffset(offset)
+				}
+				offset = nextOffset
+				rawFlags := flagsResult.AsInt(ctx)
+				isSelf := rawFlags&splArrayIsSelf != 0
+				d.flags = rawFlags & ^splArrayIntMask
+
+				if !isSelf {
+					// Parse storage (array or object)
+					if offset >= totalLen {
+						return nil, errAtOffset(offset)
+					}
+					storageResult, nextOffset, uErr := sd.ParseAt(ctx, ser, offset)
+					if uErr != nil {
+						return nil, errAtOffset(offset)
+					}
+					offset = nextOffset
+
+					if storageResult != nil {
+						switch storageResult.GetType() {
+						case phpv.ZtArray:
+							d.array = storageResult.Value().(*phpv.ZArray)
+						case phpv.ZtObject:
+							obj := storageResult.Value().(*phpobj.ZObject)
+							if err := setObjectStorage(ctx, d, obj, "ArrayObject::unserialize()"); err != nil {
+								return nil, err
+							}
+						default:
+							return nil, errAtOffset(offset)
+						}
+					}
+
+					// Skip ';' separator
+					if offset < totalLen && ser[offset] == ';' {
+						offset++
+					}
+				}
+
+				// Parse members: m:serialized_array
+				if offset >= totalLen || ser[offset] != 'm' {
+					return nil, errAtOffset(offset)
+				}
+				offset++
+				if offset >= totalLen || ser[offset] != ':' {
+					return nil, errAtOffset(offset)
+				}
+				offset++
+
+				memberResult, nextOffset, uErr := sd.ParseAt(ctx, ser, offset)
+				if uErr != nil {
+					return nil, errAtOffset(offset)
+				}
+				_ = nextOffset
+
+				if memberResult != nil && memberResult.GetType() == phpv.ZtArray {
+					memberArr := memberResult.Value().(*phpv.ZArray)
+					for k, v := range memberArr.Iterate(ctx) {
+						key := string(k.AsString(ctx))
+						if len(key) > 0 && key[0] == 0 {
+							o.HashTable().SetString(phpv.ZString(key), v)
+						} else {
+							o.ObjectSet(ctx, k.AsString(ctx), v)
+						}
+					}
+				}
+
+				if isSelf {
+					d.objectStorage = o
+					d.array = nil
+				}
+
 				return nil, nil
 			}),
 		},
@@ -993,22 +1104,43 @@ func initArrayObject() {
 
 				// PHP serializes ArrayObject as: {0: flags, 1: storage, 2: member_properties, 3: iterator_class_or_null}
 				result := phpv.NewZArray()
-				result.OffsetSet(ctx, phpv.ZInt(0).ZVal(), d.flags.ZVal())
+
+				// SPL_ARRAY_IS_SELF = 0x01000000 - when the ArrayObject wraps itself
+				const splArrayIsSelf = 0x01000000
+				flags := d.flags
 
 				// Storage: array or object (use the actual wrapped object if object-backed)
-				if d.objectStorage != nil {
+				if d.objectStorage != nil && d.objectStorage == o {
+					// Self-referencing: set SPL_ARRAY_IS_SELF flag and store null
+					flags |= splArrayIsSelf
+					result.OffsetSet(ctx, phpv.ZInt(0).ZVal(), flags.ZVal())
+					result.OffsetSet(ctx, phpv.ZInt(1).ZVal(), phpv.ZNULL.ZVal())
+				} else if d.objectStorage != nil {
+					result.OffsetSet(ctx, phpv.ZInt(0).ZVal(), flags.ZVal())
 					result.OffsetSet(ctx, phpv.ZInt(1).ZVal(), d.objectStorage.ZVal())
 				} else if d.array != nil {
+					result.OffsetSet(ctx, phpv.ZInt(0).ZVal(), flags.ZVal())
 					result.OffsetSet(ctx, phpv.ZInt(1).ZVal(), d.array.ZVal())
 				} else {
+					result.OffsetSet(ctx, phpv.ZInt(0).ZVal(), flags.ZVal())
 					result.OffsetSet(ctx, phpv.ZInt(1).ZVal(), phpv.NewZArray().ZVal())
 				}
 
 				// Member properties (dynamic properties on the ArrayObject itself)
+				// Use visibility-tagged key names for proper serialization
 				memberProps := phpv.NewZArray()
 				for prop := range o.IterProps(ctx) {
 					v := o.GetPropValue(prop)
-					memberProps.OffsetSet(ctx, prop.VarName.ZVal(), v)
+					var key phpv.ZString
+					if prop.Modifiers.IsProtected() {
+						key = phpv.ZString("\x00*\x00" + string(prop.VarName))
+					} else if prop.Modifiers.IsPrivate() {
+						className := o.GetDeclClassName(prop)
+						key = phpv.ZString("\x00" + string(className) + "\x00" + string(prop.VarName))
+					} else {
+						key = prop.VarName
+					}
+					memberProps.OffsetSet(ctx, key, v)
 				}
 				result.OffsetSet(ctx, phpv.ZInt(2).ZVal(), memberProps.ZVal())
 
@@ -1050,23 +1182,35 @@ func initArrayObject() {
 				if err != nil || flagsVal == nil || flagsVal.GetType() != phpv.ZtInt {
 					return invalidErr()
 				}
-				d.flags = flagsVal.AsInt(ctx)
+				rawFlags := flagsVal.AsInt(ctx)
 
-				// Index 1: storage (must be array or object)
+				// SPL_ARRAY_IS_SELF = 0x01000000 - when the ArrayObject wraps itself
+				const splArrayIsSelf = phpv.ZInt(0x01000000)
+				const splArrayIntMask = phpv.ZInt(0xFFFF0000)
+				isSelf := rawFlags&splArrayIsSelf != 0
+				d.flags = rawFlags & ^splArrayIntMask // strip internal flags, keep user flags
+
+				// Index 1: storage (must be array or object, or null when is-self)
 				storageVal, err := arr.OffsetGet(ctx, phpv.ZInt(1).ZVal())
 				if err != nil || storageVal == nil {
 					return invalidErr()
 				}
-				switch storageVal.GetType() {
-				case phpv.ZtArray:
-					d.array = storageVal.Value().(*phpv.ZArray)
-				case phpv.ZtObject:
-					obj := storageVal.Value().(*phpobj.ZObject)
-					ctx.Deprecated("ArrayObject::__unserialize(): Using an object as a backing array for ArrayObject is deprecated, as it allows violating class constraints and invariants", logopt.NoFuncName(true))
-					d.objectStorage = obj
-					d.array = nil
-				default:
-					return nil, phpobj.ThrowError(ctx, phpobj.UnexpectedValueException, "Passed variable is not an array or object")
+				if isSelf {
+					// Self-referencing: the storage is the object itself
+					// We need to set this up after member properties are restored
+					d.array = phpv.NewZArray() // temporary; will be replaced
+				} else {
+					switch storageVal.GetType() {
+					case phpv.ZtArray:
+						d.array = storageVal.Value().(*phpv.ZArray)
+					case phpv.ZtObject:
+						obj := storageVal.Value().(*phpobj.ZObject)
+						ctx.Deprecated("ArrayObject::__unserialize(): Using an object as a backing array for ArrayObject is deprecated, as it allows violating class constraints and invariants", logopt.NoFuncName(true))
+						d.objectStorage = obj
+						d.array = nil
+					default:
+						return nil, phpobj.ThrowError(ctx, phpobj.UnexpectedValueException, "Passed variable is not an array or object")
+					}
 				}
 
 				// Index 2: member properties (must be array)
@@ -1112,6 +1256,16 @@ func initArrayObject() {
 				}
 
 				o.SetOpaque(ArrayObjectClass, d)
+
+				// If SPL_ARRAY_IS_SELF was set, the object wraps itself
+				if isSelf {
+					// Set up self-referencing without emitting the deprecation
+					// that setObjectStorage() would emit (PHP only emits it
+					// for the dynamic property creation in the member props)
+					d.objectStorage = o
+					d.array = nil
+				}
+
 				return nil, nil
 			}),
 		},

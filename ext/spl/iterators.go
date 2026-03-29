@@ -880,10 +880,18 @@ func initCachingIterator() {
 				if d.flags&cachingIteratorFullCache == 0 {
 					return nil, phpobj.ThrowError(ctx, phpobj.BadMethodCallException, fmt.Sprintf("%s does not use a full cache (see CachingIterator::__construct)", o.Class.GetName()))
 				}
-				// PHP requires string keys for CachingIterator
+				// PHP requires string keys for CachingIterator; objects without __toString throw TypeError
 				if args[0].GetType() == phpv.ZtObject {
-					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
-						fmt.Sprintf("CachingIterator::offsetGet(): Argument #1 ($key) must be of type string, %s given", args[0].Value().(phpv.ZObject).GetClass().GetName()))
+					obj := args[0].Value().(phpv.ZObject)
+					if _, hasToStr := obj.GetClass().GetMethod("__tostring"); !hasToStr {
+						return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+							fmt.Sprintf("CachingIterator::offsetGet(): Argument #1 ($key) must be of type string, %s given", obj.GetClass().GetName()))
+					}
+				}
+				if args[0].IsNull() {
+					if err := ctx.Deprecated("Passing null to parameter #1 ($key) of type string is deprecated", logopt.NoFuncName(false)); err != nil {
+						return nil, err
+					}
 				}
 				key := args[0].AsString(ctx)
 				exists, _ := d.cache.OffsetExists(ctx, key.ZVal())
@@ -904,7 +912,7 @@ func initCachingIterator() {
 				if d.flags&cachingIteratorFullCache == 0 {
 					return nil, phpobj.ThrowError(ctx, phpobj.BadMethodCallException, fmt.Sprintf("%s does not use a full cache (see CachingIterator::__construct)", o.Class.GetName()))
 				}
-				d.cache.OffsetSet(ctx, args[0].Value(), args[1])
+				d.cache.OffsetSet(ctx, args[0].Value(), args[1].Dup())
 				return nil, nil
 			}),
 		},
@@ -918,12 +926,21 @@ func initCachingIterator() {
 				if d.flags&cachingIteratorFullCache == 0 {
 					return nil, phpobj.ThrowError(ctx, phpobj.BadMethodCallException, fmt.Sprintf("%s does not use a full cache (see CachingIterator::__construct)", o.Class.GetName()))
 				}
-				// PHP requires string keys for CachingIterator
+				// PHP requires string keys for CachingIterator; objects without __toString throw TypeError
 				if args[0].GetType() == phpv.ZtObject {
-					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
-						fmt.Sprintf("CachingIterator::offsetExists(): Argument #1 ($key) must be of type string, %s given", args[0].Value().(phpv.ZObject).GetClass().GetName()))
+					obj := args[0].Value().(phpv.ZObject)
+					if _, hasToStr := obj.GetClass().GetMethod("__tostring"); !hasToStr {
+						return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+							fmt.Sprintf("CachingIterator::offsetExists(): Argument #1 ($key) must be of type string, %s given", obj.GetClass().GetName()))
+					}
 				}
-				exists, _ := d.cache.OffsetExists(ctx, args[0])
+				if args[0].IsNull() {
+					if err := ctx.Deprecated("Passing null to parameter #1 ($key) of type string is deprecated", logopt.NoFuncName(false)); err != nil {
+						return nil, err
+					}
+				}
+				key := args[0].AsString(ctx)
+				exists, _ := d.cache.OffsetExists(ctx, key.ZVal())
 				return phpv.ZBool(exists).ZVal(), nil
 			}),
 		},
@@ -1876,9 +1893,12 @@ func initRecursiveArrayIterator() {
 				if err != nil {
 					return phpv.ZNULL.ZVal(), nil
 				}
+				// Use late static binding: create a child of the same class
+				// as the current object (not always RecursiveArrayIteratorClass)
+				childClass := o.GetClass().(*phpobj.ZClass)
 				switch v.GetType() {
 				case phpv.ZtArray:
-					child, err := phpobj.NewZObject(ctx, RecursiveArrayIteratorClass, v, d.flags.ZVal())
+					child, err := phpobj.NewZObject(ctx, childClass, v, d.flags.ZVal())
 					if err != nil {
 						return phpv.ZNULL.ZVal(), err
 					}
@@ -1886,7 +1906,7 @@ func initRecursiveArrayIterator() {
 				case phpv.ZtObject:
 					if d.flags&4 == 0 {
 						// Wrap object in a new RecursiveArrayIterator
-						child, err := phpobj.NewZObject(ctx, RecursiveArrayIteratorClass, v, d.flags.ZVal())
+						child, err := phpobj.NewZObject(ctx, childClass, v, d.flags.ZVal())
 						if err != nil {
 							return phpv.ZNULL.ZVal(), err
 						}
@@ -2230,6 +2250,16 @@ func initRecursiveIteratorIterator() {
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				d := getRecursiveIteratorIteratorData(o)
 				if d == nil || len(d.stack) == 0 {
+					return nil, nil
+				}
+				// Auto-rewind if next() is called before rewind()
+				if !d.inIteration {
+					_, err := o.CallMethod(ctx, "rewind")
+					if err != nil {
+						return nil, err
+					}
+					// After auto-rewind, we're positioned at the first element.
+					// Don't advance further - PHP behavior is to just position.
 					return nil, nil
 				}
 				err := recursiveIteratorNext(ctx, d, o)

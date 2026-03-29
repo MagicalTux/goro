@@ -89,6 +89,7 @@ type ZClassMethod struct {
 	FromTrait  ZClass        // non-nil if this method was imported from a trait
 	Prototype  ZClass        // interface/class that defines the prototype for this method
 	ReturnType *TypeHint     // return type hint for the method (for reflection)
+	TentativeReturnType bool // if true, ReturnType is a tentative return type (PHP 8.1)
 }
 
 type ZClassConst struct {

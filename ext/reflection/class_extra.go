@@ -546,7 +546,11 @@ func formatReflectionClass(ctx phpv.Context, zc *phpobj.ZClass) string {
 
 	origin := "<user>"
 	if zc.L == nil {
-		origin = "<internal>"
+		if zc.Ext != "" {
+			origin = "<internal:" + zc.Ext + ">"
+		} else {
+			origin = "<internal:Core>"
+		}
 	}
 
 	iterateable := ""
@@ -776,7 +780,11 @@ func rcFormatMethodShort(zc *phpobj.ZClass, m *phpv.ZClassMethod) string {
 	sb.WriteString("    Method [ ")
 	origin := "<user"
 	if m.Loc == nil {
-		origin = "<internal"
+		if zc.Ext != "" {
+			origin = "<internal:" + zc.Ext
+		} else {
+			origin = "<internal:Core"
+		}
 	}
 	methodNameLower := m.Name.ToLower()
 	isOwnMethod := m.Class == nil || m.Class.GetName() == zc.GetName()
@@ -872,7 +880,11 @@ func rcFormatMethodShort(zc *phpobj.ZClass, m *phpv.ZClassMethod) string {
 	}
 	// Show return type if available
 	if m.ReturnType != nil {
-		sb.WriteString(fmt.Sprintf("      - Return [ %s ]\n", m.ReturnType.String()))
+		if m.TentativeReturnType {
+			sb.WriteString(fmt.Sprintf("      - Tentative return [ %s ]\n", m.ReturnType.String()))
+		} else {
+			sb.WriteString(fmt.Sprintf("      - Return [ %s ]\n", m.ReturnType.String()))
+		}
 	}
 	sb.WriteString("    }\n")
 	return sb.String()

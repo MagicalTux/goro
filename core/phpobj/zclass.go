@@ -42,6 +42,9 @@ type ZClass struct {
 	// InternalOnly prevents user classes from implementing/extending this class
 	InternalOnly bool
 
+	// Ext is the extension name for internal classes (e.g. "SPL", "Core", "date")
+	Ext string
+
 	// Enum support (PHP 8.1)
 	EnumBackingType phpv.ZType     // 0 for unit enums, ZtString or ZtInt for backed enums
 	EnumCases       []phpv.ZString // ordered list of case names
@@ -3041,7 +3044,7 @@ func (c *ZClass) Handlers() *phpv.ZClassHandlers {
 }
 
 func (c *ZClass) GetParent() phpv.ZClass {
-	if c.Extends == nil {
+	if c == nil || c.Extends == nil {
 		return nil
 	}
 	return c.Extends

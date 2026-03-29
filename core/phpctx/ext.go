@@ -91,6 +91,9 @@ func RegisterExt(e *Ext) {
 		fn.buildFuncArgs()
 	}
 	for _, class := range e.Classes {
+		if class.Ext == "" {
+			class.Ext = e.Name
+		}
 		for _, m := range class.Methods {
 			if m.Class == nil {
 				m.Class = class
