@@ -49,6 +49,10 @@ func mathAbs(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, ctx.FuncError(err)
 	}
 
+	if z != nil && z.GetType() == phpv.ZtNull {
+		ctx.Deprecated("abs(): Passing null to parameter #1 ($num) of type int|float is deprecated", logopt.NoFuncName(true))
+	}
+
 	z, err = z.AsNumeric(ctx)
 	if err != nil {
 		return nil, ctx.FuncError(err)
@@ -146,6 +150,10 @@ func mathRound(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	_, err := core.Expand(ctx, args, &val, &precisionArg)
 	if err != nil {
 		return nil, ctx.FuncError(err)
+	}
+
+	if val != nil && val.GetType() == phpv.ZtNull {
+		ctx.Deprecated("round(): Passing null to parameter #1 ($num) of type int|float is deprecated", logopt.NoFuncName(true))
 	}
 
 	precision := core.Deref(precisionArg, 0)
