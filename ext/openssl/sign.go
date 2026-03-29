@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -65,7 +66,7 @@ func getSignatureHash(ctx phpv.Context, args []*phpv.ZVal, argIndex int) crypto.
 // > func bool openssl_sign ( string $data , string &$signature , OpenSSLAsymmetricKey|string $private_key [, int|string $algorithm = OPENSSL_ALGO_SHA1 ] )
 func fncOpensslSign(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 3 {
-		return nil, fmt.Errorf("openssl_sign() expects at least 3 arguments")
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("openssl_sign() expects at least 3 arguments, %d given", len(args)))
 	}
 
 	var data phpv.ZString
@@ -121,7 +122,8 @@ func fncOpensslSign(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // Returns 1 on success, 0 on failure, -1 on error
 func fncOpensslVerify(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 3 {
-		return nil, fmt.Errorf("openssl_verify() expects at least 3 arguments")
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("openssl_verify() expects at least 3 arguments, %d given", len(args)))
 	}
 
 	var data phpv.ZString

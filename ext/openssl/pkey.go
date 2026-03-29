@@ -135,7 +135,7 @@ func fncOpensslPkeyNew(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 // > func bool openssl_pkey_export ( OpenSSLAsymmetricKey $key , string &$output [, string $passphrase [, array $options ]] )
 func fncOpensslPkeyExport(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 2 {
-		return nil, fmt.Errorf("openssl_pkey_export() expects at least 2 arguments")
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("openssl_pkey_export() expects at least 2 arguments, %d given", len(args)))
 	}
 
 	keyVal := args[0]
@@ -194,7 +194,7 @@ func fncOpensslPkeyExport(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, erro
 // > func array openssl_pkey_get_details ( OpenSSLAsymmetricKey $key )
 func fncOpensslPkeyGetDetails(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
-		return nil, fmt.Errorf("openssl_pkey_get_details() expects exactly 1 argument")
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("openssl_pkey_get_details() expects exactly 1 argument, %d given", len(args)))
 	}
 
 	pd, err := resolvePkey(ctx, args[0])
@@ -246,7 +246,7 @@ func fncOpensslPkeyGetDetails(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, 
 // > func OpenSSLAsymmetricKey openssl_pkey_get_public ( string $public_key )
 func fncOpensslPkeyGetPublic(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
-		return nil, fmt.Errorf("openssl_pkey_get_public() expects exactly 1 argument")
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("openssl_pkey_get_public() expects exactly 1 argument, %d given", len(args)))
 	}
 
 	val := args[0]
@@ -297,7 +297,7 @@ func fncOpensslPkeyGetPublic(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, e
 // > func OpenSSLAsymmetricKey openssl_pkey_get_private ( string $private_key [, string $passphrase = "" ] )
 func fncOpensslPkeyGetPrivate(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
-		return nil, fmt.Errorf("openssl_pkey_get_private() expects at least 1 argument")
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("openssl_pkey_get_private() expects at least 1 argument, %d given", len(args)))
 	}
 
 	val := args[0]
