@@ -3,6 +3,7 @@ package spl
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpobj"
@@ -643,7 +644,24 @@ func initObjectStorage() {
 				if err == nil && memberVal != nil && memberVal.GetType() == phpv.ZtArray {
 					memberArr := memberVal.AsArray(ctx)
 					for k, v := range memberArr.Iterate(ctx) {
-						o.ObjectSet(ctx, k, v)
+						key := string(k.AsString(ctx))
+						if len(key) > 0 && key[0] == 0 {
+							// Mangled name: \0*\0propName (protected) or \0ClassName\0propName (private)
+							// Extract the plain property name and set it on the object
+							plainName := key
+							if strings.HasPrefix(key, "\x00*\x00") {
+								plainName = key[3:]
+							} else {
+								// \0ClassName\0propName - find second \0
+								idx := strings.IndexByte(key[1:], 0)
+								if idx >= 0 {
+									plainName = key[idx+2:]
+								}
+							}
+							o.ObjectSet(ctx, phpv.ZString(plainName), v)
+						} else {
+							o.ObjectSet(ctx, k, v)
+						}
 					}
 				}
 

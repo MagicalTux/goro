@@ -51,6 +51,11 @@ type splFileObjectData struct {
 	emptyFileFirstLine bool // empty file: first line is "" but not eof yet
 	isReadable         bool
 	isWritable         bool
+
+	// lastLineHadNewline tracks whether the last successfully read line ended with \n.
+	// When true and the next read returns EOF, we yield one more empty string before EOF
+	// (matching PHP's fgets behavior for files with trailing newlines).
+	lastLineHadNewline bool
 }
 
 // readLine reads the next line from the file using the bufio.Reader.
@@ -951,6 +956,7 @@ func sfoFseek(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVa
 	d.scanner = bufio.NewScanner(d.file)
 	d.reader = bufio.NewReader(d.file)
 	d.eof = false
+	d.lastLineHadNewline = false
 	return phpv.ZInt(0).ZVal(), nil
 }
 
@@ -990,6 +996,7 @@ func sfoSeek(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal
 	d.eof = false
 	d.emptyFileFirstLine = false
 	d.firstLineRead = true
+	d.lastLineHadNewline = false
 	d.curLine = ""
 
 	// PHP's seek loop: for (i = 0; i < line_pos; i++) { read_line(); }
@@ -1057,6 +1064,7 @@ func sfoRewind(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZV
 	d.eof = false
 	d.emptyFileFirstLine = false
 	d.firstLineRead = false
+	d.lastLineHadNewline = false
 	ensureFirstLineRead(d)
 	return nil, nil
 }
@@ -1133,8 +1141,20 @@ func sfoNext(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal
 			d.curLine = applyMaxLineLen(nextLine, d.maxLineLen)
 			d.line++
 		} else {
-			d.eof = true
-			d.curLine = ""
+			// PHP streams yield one empty read past the last line before EOF.
+			// On the first failed read, set curLine="" but don't set eof yet.
+			// On the second failed read (emptyFileFirstLine is true), actually set eof.
+			if d.emptyFileFirstLine {
+				// This is the second failed read; truly EOF now.
+				d.emptyFileFirstLine = false
+				d.eof = true
+				d.curLine = ""
+			} else {
+				// First failed read: yield empty string, mark for next time.
+				d.emptyFileFirstLine = true
+				d.curLine = ""
+				d.line++
+			}
 			break
 		}
 		// Handle SKIP_EMPTY flag

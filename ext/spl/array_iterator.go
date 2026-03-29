@@ -15,6 +15,7 @@ type arrayIteratorData struct {
 	iter         phpv.ZIterator
 	flags        phpv.ZInt
 	objectBacked bool // true when constructed from an object (not an array)
+	sorting      bool // true while a sort operation is in progress (prevents re-entrant modification)
 }
 
 func (d *arrayIteratorData) Clone() any {
@@ -444,7 +445,9 @@ func initArrayIterator() {
 					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
 						"ArrayIterator::uksort(): Argument #1 ($callback) must be a valid callback")
 				}
+				d.sorting = true
 				err = arrayObjectUSort(ctx, d.array, cb, sortByKey)
+				d.sorting = false
 				if err != nil {
 					return nil, err
 				}
@@ -468,7 +471,9 @@ func initArrayIterator() {
 					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
 						"ArrayIterator::uasort(): Argument #1 ($callback) must be a valid callback")
 				}
+				d.sorting = true
 				err = arrayObjectUSort(ctx, d.array, cb, sortByValue)
+				d.sorting = false
 				if err != nil {
 					return nil, err
 				}
@@ -524,6 +529,9 @@ func initArrayIterator() {
 						array: phpv.NewZArray(),
 					}
 					o.SetOpaque(ArrayIteratorClass, d)
+				}
+				if d.sorting {
+					return nil, phpobj.ThrowError(ctx, phpobj.Error, "Modification of ArrayObject during sorting is prohibited")
 				}
 				if len(args) < 1 {
 					return nil, nil

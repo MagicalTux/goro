@@ -143,6 +143,10 @@ func runCloneWithValues(ctx phpv.Context, v *phpv.ZVal, withProps *phpv.ZVal) (*
 			callerClass := ctx.Class()
 			if m.Modifiers.IsPrivate() {
 				if callerClass == nil || callerClass.GetName() != obj.GetClass().GetName() {
+					// If __clone is a native (internal) private method, treat as uncloneable
+					if _, isNative := m.Method.(phpobj.NativeMethod); isNative {
+						return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Trying to clone an uncloneable object of class %s", obj.GetClass().GetName()))
+					}
 					return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Call to private method %s::__clone() from global scope", obj.GetClass().GetName()))
 				}
 			} else {

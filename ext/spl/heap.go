@@ -48,6 +48,7 @@ type splHeapData struct {
 	heap      *splHeapImpl
 	nextIndex int
 	corrupted bool
+	modifying bool // true while insert/extract/next are in progress (prevents re-entrant modification)
 	// compare is the Go-level compare function.
 	// For SplMinHeap/SplMaxHeap it uses phpv.Compare directly.
 	// For user-extended classes, it calls the PHP compare() method.
@@ -193,17 +194,22 @@ func initSplHeap() {
 				if d.corrupted {
 					return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException, "Heap is corrupted, heap properties are no longer ensured.")
 				}
+				if d.modifying {
+					return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException, "Heap cannot be changed when it is already being modified.")
+				}
 				if len(args) == 0 {
 					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "SplHeap::insert() expects exactly 1 argument")
 				}
 				d.ctx = ctx
 				d.compareErr = nil
+				d.modifying = true
 				entry := &splHeapEntry{
 					value: args[0].Dup(),
 					index: d.nextIndex,
 				}
 				d.nextIndex++
 				heap.Push(d.heap, entry)
+				d.modifying = false
 				if d.compareErr != nil {
 					err := d.compareErr
 					d.compareErr = nil
@@ -222,9 +228,14 @@ func initSplHeap() {
 				if d.corrupted {
 					return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException, "Heap is corrupted, heap properties are no longer ensured.")
 				}
+				if d.modifying {
+					return nil, phpobj.ThrowError(ctx, phpobj.RuntimeException, "Heap cannot be changed when it is already being modified.")
+				}
 				d.ctx = ctx
 				d.compareErr = nil
+				d.modifying = true
 				entry := heap.Pop(d.heap).(*splHeapEntry)
+				d.modifying = false
 				if d.compareErr != nil {
 					err := d.compareErr
 					d.compareErr = nil
@@ -296,7 +307,9 @@ func initSplHeap() {
 				}
 				d.ctx = ctx
 				d.compareErr = nil
+				d.modifying = true
 				heap.Pop(d.heap)
+				d.modifying = false
 				if d.compareErr != nil {
 					err := d.compareErr
 					d.compareErr = nil

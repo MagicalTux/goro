@@ -514,6 +514,10 @@ func initSplFixedArray() {
 			for ; it.Valid(ctx); it.Next(ctx) {
 				k, _ := it.Key(ctx)
 				v, _ := it.Current(ctx)
+				// Dereference references - SplFixedArray stores plain values
+				if v != nil {
+					v = v.Dup()
+				}
 				if k != nil && k.GetType() == phpv.ZtInt {
 					idx := int(k.Value().(phpv.ZInt))
 					if idx >= 0 && idx < len(d.data) {

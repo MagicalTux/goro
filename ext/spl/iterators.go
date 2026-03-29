@@ -230,7 +230,8 @@ func (d *limitIteratorData) Clone() any {
 		cachedVal: d.cachedVal, cachedKey: d.cachedKey, cachedValid: d.cachedValid}
 }
 
-// limitIteratorFetchCache fetches and caches valid/current/key from the inner iterator.
+// limitIteratorFetchCache fetches valid/current/key from the inner iterator and caches them.
+// This matches PHP's spl_dual_it_fetch(check_more=1) called by spl_limit_it_valid.
 func limitIteratorFetchCache(ctx phpv.Context, d *limitIteratorData) error {
 	v, err := d.inner.CallMethod(ctx, "valid")
 	if err != nil {
@@ -309,20 +310,17 @@ func initLimitIterator() {
 				if d == nil {
 					return nil, phpobj.ThrowError(ctx, phpobj.Error, "The object is in an invalid state as the parent constructor was not called")
 				}
+				d.cachedVal = nil
+				d.cachedKey = nil
+				d.cachedValid = false
 				_, err := d.inner.CallMethod(ctx, "rewind")
 				if err != nil {
 					return nil, err
 				}
 				d.pos = 0
 				// Seek to offset using the common seek logic
-				err = limitIteratorSeekTo(ctx, d, d.offset)
-				if err != nil {
-					return nil, err
-				}
-				// For non-seekable iterators, PHP's spl_dual_it_fetch(check_more=1)
-				// calls valid() after seeking. This is already handled by the foreach
-				// iterator's ensureStarted and fetchCache, so no additional action needed.
-				return nil, nil
+				// (no fetch here - valid() will fetch when called)
+				return nil, limitIteratorSeekTo(ctx, d, d.offset)
 			}),
 		},
 		"current": {
@@ -331,6 +329,9 @@ func initLimitIterator() {
 				d := getLimitIteratorData(o)
 				if d == nil {
 					return phpv.ZFalse.ZVal(), nil
+				}
+				if d.cachedVal != nil {
+					return d.cachedVal, nil
 				}
 				return d.inner.CallMethod(ctx, "current")
 			}),
@@ -342,6 +343,9 @@ func initLimitIterator() {
 				if d == nil {
 					return phpv.ZNULL.ZVal(), nil
 				}
+				if d.cachedKey != nil {
+					return d.cachedKey, nil
+				}
 				return d.inner.CallMethod(ctx, "key")
 			}),
 		},
@@ -352,6 +356,10 @@ func initLimitIterator() {
 				if d == nil {
 					return nil, nil
 				}
+				// Invalidate cache before advancing
+				d.cachedVal = nil
+				d.cachedKey = nil
+				d.cachedValid = false
 				_, err := d.inner.CallMethod(ctx, "next")
 				if err != nil {
 					return nil, err
@@ -373,11 +381,13 @@ func initLimitIterator() {
 				if d.limit >= 0 && (d.pos-d.offset) >= d.limit {
 					return phpv.ZFalse.ZVal(), nil
 				}
-				v, err := d.inner.CallMethod(ctx, "valid")
+				// Fetch valid/current/key from inner iterator (matches PHP's
+				// spl_limit_it_valid which calls spl_dual_it_fetch).
+				err := limitIteratorFetchCache(ctx, d)
 				if err != nil {
 					return phpv.ZFalse.ZVal(), err
 				}
-				return v, nil
+				return phpv.ZBool(d.cachedValid).ZVal(), nil
 			}),
 		},
 		"getinneriterator": {
@@ -420,6 +430,9 @@ func initLimitIterator() {
 					return nil, err
 				}
 				d.pos = 0
+				d.cachedVal = nil
+				d.cachedKey = nil
+				d.cachedValid = false
 				return nil, limitIteratorSeekTo(ctx, d, position)
 			}),
 		},
@@ -2351,6 +2364,35 @@ func initRecursiveIteratorIterator() {
 			}
 			return result, nil
 		})},
+		"__call": {
+			Name: "__call",
+			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				d := getRecursiveIteratorIteratorData(o)
+				if d == nil || len(d.stack) == 0 || len(args) < 2 {
+					return phpv.ZNULL.ZVal(), nil
+				}
+				methodName := string(args[0].AsString(ctx))
+				callArgs := args[1].AsArray(ctx)
+				var fwdArgs []*phpv.ZVal
+				if callArgs != nil {
+					for _, v := range callArgs.Iterate(ctx) {
+						fwdArgs = append(fwdArgs, v)
+					}
+				}
+				// Forward to current inner iterator
+				top := d.stack[len(d.stack)-1]
+				result, err := top.CallMethod(ctx, methodName, fwdArgs...)
+				if err != nil {
+					errStr := err.Error()
+					if strings.Contains(errStr, "Call to undefined method") {
+						return nil, phpobj.ThrowError(ctx, phpobj.Error,
+							fmt.Sprintf("Call to undefined method %s::%s()", o.GetClass().GetName(), methodName))
+					}
+					return nil, err
+				}
+				return result, nil
+			}),
+		},
 	}
 }
 

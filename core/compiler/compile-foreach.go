@@ -388,17 +388,28 @@ func (it *phpObjectIterator) ensureStarted() {
 		it.isSPLInternal = extendsInternalSPLIterator(it.obj)
 		_, it.err = it.obj.CallMethod(it.ctx, "rewind")
 		if it.err == nil {
-			v, err := it.obj.CallMethod(it.ctx, "valid")
-			if err != nil {
-				it.err = err
-				it.valid = false
+			if it.isSPLInternal {
+				// For SPL internal iterator classes, rewind() already calls
+				// valid/current/key on the inner iterator (spl_dual_it_fetch).
+				// We call valid() on the OUTER SPL class which returns cached state
+				// without triggering extra calls on the inner iterator.
+				v, err := it.obj.CallMethod(it.ctx, "valid")
+				if err != nil {
+					it.err = err
+					it.valid = false
+				} else {
+					it.valid = v != nil && bool(v.AsBool(it.ctx))
+				}
+				// No fetchCache - SPL rewind already cached the state.
+				// The foreach loop will call the SPL methods which return cached values.
 			} else {
-				it.valid = v != nil && bool(v.AsBool(it.ctx))
-			}
-			// For SPL internal classes, fetch current/key after valid check.
-			// PHP's internal iteration handler caches current/key after rewind.
-			if it.valid && it.isSPLInternal {
-				it.fetchCache()
+				v, err := it.obj.CallMethod(it.ctx, "valid")
+				if err != nil {
+					it.err = err
+					it.valid = false
+				} else {
+					it.valid = v != nil && bool(v.AsBool(it.ctx))
+				}
 			}
 		} else {
 			it.valid = false
@@ -531,10 +542,8 @@ func (it *phpObjectIterator) Valid(ctx phpv.Context) bool {
 			return false
 		}
 		it.valid = v != nil && bool(v.AsBool(ctx))
-		// For SPL internal classes, cache current/key after valid check
-		if it.valid && it.isSPLInternal {
-			it.fetchCache()
-		}
+		// For SPL internal classes, next() already cached valid/current/key,
+		// so no additional fetchCache is needed here.
 	}
 	return it.valid
 }
