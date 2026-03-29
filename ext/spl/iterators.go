@@ -886,12 +886,12 @@ func initCachingIterator() {
 						fmt.Sprintf("CachingIterator::offsetGet(): Argument #1 ($key) must be of type string, %s given", args[0].Value().(phpv.ZObject).GetClass().GetName()))
 				}
 				key := args[0].AsString(ctx)
-				v, ok := d.cache.GetStringB(key)
-				if !ok {
+				exists, _ := d.cache.OffsetExists(ctx, key.ZVal())
+				if !exists {
 					ctx.Warn("Undefined array key \"%s\"", key, logopt.NoFuncName(true))
 					return phpv.ZNULL.ZVal(), nil
 				}
-				return v, nil
+				return d.cache.OffsetGet(ctx, key.ZVal())
 			}),
 		},
 		"offsetset": {
@@ -917,6 +917,11 @@ func initCachingIterator() {
 				}
 				if d.flags&cachingIteratorFullCache == 0 {
 					return nil, phpobj.ThrowError(ctx, phpobj.BadMethodCallException, fmt.Sprintf("%s does not use a full cache (see CachingIterator::__construct)", o.Class.GetName()))
+				}
+				// PHP requires string keys for CachingIterator
+				if args[0].GetType() == phpv.ZtObject {
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+						fmt.Sprintf("CachingIterator::offsetExists(): Argument #1 ($key) must be of type string, %s given", args[0].Value().(phpv.ZObject).GetClass().GetName()))
 				}
 				exists, _ := d.cache.OffsetExists(ctx, args[0])
 				return phpv.ZBool(exists).ZVal(), nil
