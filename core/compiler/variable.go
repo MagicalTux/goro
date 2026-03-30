@@ -18,10 +18,12 @@ type runVariable struct {
 
 type runVariableRef struct {
 	runnableChild
-	v         phpv.Runnable
-	l         *phpv.Loc
-	prepared  bool
-	cachedKey phpv.Val
+	v            phpv.Runnable
+	l            *phpv.Loc
+	prepared     bool
+	cachedKey    phpv.Val
+	reReadKey    phpv.ZString // used for post-RHS re-read in compound assignments
+	hasReReadKey bool
 }
 
 func (rv *runVariable) VarName() phpv.ZString {
@@ -231,18 +233,31 @@ func (r *runVariableRef) Dump(w io.Writer) error {
 }
 
 func (r *runVariableRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
-	v, err := r.v.Run(ctx)
-	if err != nil {
-		return nil, err
-	}
-	name := phpv.ZString(v.String())
+	var name phpv.ZString
+	if r.prepared {
+		// Use cached key (set by PrepareWrite for container array access, or by a
+		// previous Run() call for compound assignment operators). This ensures that
+		// if $n was captured early (e.g., PrepareWrite captured 'a' before ++$n ran),
+		// both Run() and WriteValue() use the same captured key.
+		name = r.cachedKey.(phpv.ZString)
+	} else {
+		v, err := r.v.Run(ctx)
+		if err != nil {
+			return nil, err
+		}
+		name = phpv.ZString(v.String())
 
-	// Cache the variable name for potential subsequent WriteValue call.
-	// This allows compound assignment operators ($$n .= rhs) to write back
-	// to the SAME variable that was read, even if $n is modified during RHS
-	// evaluation (e.g., by ++$n inside the RHS expression).
-	r.prepared = true
-	r.cachedKey = name
+		// Store the pre-RHS key for compound write LHS ($$n .= rhs) so that
+		// run-operator.go can re-read the current value of $$n after the RHS.
+		// We use a SEPARATE field (reReadKey) to avoid interfering with WriteValue,
+		// which should use the POST-RHS value of $n (so writes go to the current $$n).
+		if op, ok := r.Parent.(*runOperator); ok {
+			if op.opD != nil && op.opD.write && op.opD.op != nil && op.a == r {
+				r.reReadKey = name
+				r.hasReReadKey = true
+			}
+		}
+	}
 
 	// Check if this variable-variable is in a write context (like runVariable does)
 	write := false
@@ -253,10 +268,11 @@ func (r *runVariableRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		switch t := r.Parent.(type) {
 		case *runOperator:
 			write = t.opD.write
-			// Compound assignments (+=, /=, etc.) read then write, so warn
-			if t.opD.write && t.opD.op != nil && t.a == r {
-				write = false
-			}
+			// For compound assignments (+=, /=, .=, etc.) on runVariableRef ($$n),
+			// PHP uses FETCH_W which auto-creates the slot silently, so treat as write
+			// (suppress "Undefined variable" warning). This differs from runVariable ($a)
+			// where compound assignments do emit the warning.
+			// Note: for ??= (coalesce-equal) RHS, always suppress.
 			if (t.op == tokenizer.T_COALESCE_EQUAL || t.op == tokenizer.T_COALESCE) && t.b == r {
 				write = false
 			}
@@ -281,28 +297,40 @@ func (r *runVariableRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	if !exists && !write {
 		if err := ctx.Warn("Undefined variable $%s",
 			name, logopt.NoFuncName(true)); err != nil {
-			v = phpv.NewZVal(phpv.ZNULL)
-			v.Name = &name
-			return v, err
+			nv := phpv.NewZVal(phpv.ZNULL)
+			nv.Name = &name
+			return nv, err
 		}
 	}
 
 	if res != nil {
-		v = res.Nude()
-		v.Name = &name
-	} else {
-		v = phpv.NewZVal(phpv.ZNULL)
-		v.Name = &name
+		nv := res.Nude()
+		nv.Name = &name
+		return nv, nil
 	}
-	return v, nil
+	nv := phpv.NewZVal(phpv.ZNULL)
+	nv.Name = &name
+	return nv, nil
 }
 
 func (r *runVariableRef) PrepareWrite(ctx phpv.Context) error {
-	// Do NOT pre-evaluate the variable-variable key. PHP evaluates $$n write
-	// targets AFTER the RHS, so the key reflects any side effects (e.g. ++$n)
-	// from the RHS expression. This matches PHP's evaluation order:
-	//   $$n = $$n[++$n] = "test"
-	// should write to $h (the post-increment value of $n), not $g (pre-increment).
+	// For variable variables used as ARRAY CONTAINERS ($$n[offset] = rhs),
+	// we must evaluate $$n (capture the current $n) BEFORE the offset is
+	// evaluated. For example, $$n[++$n] = "test" must use $n BEFORE ++$n runs.
+	//
+	// For variable variables used as DIRECT WRITE TARGETS ($$n = rhs),
+	// do NOT pre-evaluate. PHP evaluates the write target AFTER the RHS,
+	// so $$n = $$n[++$n] = "test" should write to the post-increment $n value.
+	switch r.Parent.(type) {
+	case *runArrayAccess, *runDestructure:
+		// Container of an array access or destructure: evaluate and cache key now
+		v, err := r.v.Run(ctx)
+		if err != nil {
+			return err
+		}
+		r.prepared = true
+		r.cachedKey = phpv.ZString(v.String())
+	}
 	return nil
 }
 

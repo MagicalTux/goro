@@ -611,6 +611,25 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		}
 	}
 
+	// For compound assignment on a variable variable ($$n .= rhs), PHP uses a
+	// reference to the LHS slot, so if the RHS modifies the variable (e.g.
+	// $$n[++$n] = "test" auto-vivifies $n to an array), the compound op sees
+	// the updated value. In goro, we simulate this by re-reading the variable
+	// with the PRE-RHS key after the RHS has run.
+	// The write target is determined by the POST-RHS value of $n (handled in
+	// WriteValue which re-evaluates $n at write time).
+	if op.write && op.op != nil && r.a != nil {
+		if vref, ok := r.a.(*runVariableRef); ok && vref.hasReReadKey {
+			// Re-read the variable using the key captured before RHS.
+			// This ensures the compound op sees the current value of the named var.
+			reReadKey := vref.reReadKey
+			vref.hasReReadKey = false
+			if reReadRes, reReadExists, reReadErr := ctx.OffsetCheck(ctx, reReadKey); reReadErr == nil && reReadExists && reReadRes != nil {
+				a = reReadRes.Nude()
+			}
+		}
+	}
+
 	// Handle unary minus/plus on numeric types directly (r.a == nil = prefix unary).
 	// For unary minus on floats, we must use Go negation (not 0-x) to produce
 	// negative zero: -0.0 must yield float(-0), but 0.0-0.0 yields float(0).
@@ -660,7 +679,13 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 					result.OffsetSet(ctx, k, v)
 				}
 			}
-			return result.ZVal(), nil
+			res = result.ZVal()
+			// For compound assignments (+=), skip the normal op.op call below
+			// and jump directly to the write-back.
+			if op.write {
+				goto doWrite
+			}
+			return res, nil
 		}
 
 		// Bitwise operators on strings: PHP operates on the raw bytes directly
@@ -872,6 +897,7 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		return res, nil
 	}
 
+doWrite:
 	if op.write {
 		w, ok := r.a.(phpv.Writable)
 		if !ok {
@@ -885,7 +911,6 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			}
 			return nil, ctx.Errorf("Can't use %s in write context", what)
 		}
-
 		// Check for reference assignment to ArrayAccess element
 		if res.IsRef() {
 			if acc, isAA := r.a.(*runArrayAccess); isAA {

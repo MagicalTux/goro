@@ -489,7 +489,14 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			return phpv.ZNULL.ZVal(), nil
 		}
 	case phpv.ZtBool:
+		// Check for compound write context ($bool[x] += val)
+		isCompoundBoolWrite := false
 		if !ac.writeContext {
+			if op, ok := ac.Parent.(*runOperator); ok && op.opD != nil && op.opD.write && op.opD.op != nil && op.a == ac {
+				isCompoundBoolWrite = true
+			}
+		}
+		if !ac.writeContext && !isCompoundBoolWrite {
 			boolName := "true"
 			if !bool(v.AsBool(ctx)) {
 				boolName = "false"
@@ -499,6 +506,11 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			}
 			return phpv.ZNULL.ZVal(), nil
 		}
+		// In write context (including compound), true cannot be used as array
+		if bool(v.AsBool(ctx)) {
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot use a scalar value as an array")
+		}
+		// false in write context: auto-vivify with deprecation warning
 		v, err = v.As(ctx, phpv.ZtArray)
 		if err != nil {
 			return nil, err
@@ -959,6 +971,23 @@ func (ac *runArrayAccess) PrepareWrite(ctx phpv.Context) error {
 		}
 		ac.prepared = true
 		ac.cachedOffset = offset.Dup()
+	} else {
+		// For [] (append), pre-check if the array would overflow. PHP evaluates
+		// the LHS target before the RHS expression, so the overflow error must
+		// fire before "Only variables should be assigned by reference" notices.
+		v, err := ac.value.Run(ctx)
+		if err != nil {
+			return err
+		}
+		if v != nil && v.GetType() == phpv.ZtArray {
+			if za, ok := v.Array().(*phpv.ZArray); ok {
+				if za.WouldOverflow() {
+					return phpobj.ThrowError(ctx, phpobj.Error, phpv.ErrNextElementOccupied.Error())
+				}
+				// Cache the container to avoid re-evaluating it in WriteValue
+				ac.cachedContainer = v
+			}
+		}
 	}
 	return nil
 }

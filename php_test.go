@@ -295,6 +295,14 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 						displayEx = replacement
 					}
 					fmt.Fprintf(g, "\nFatal error: %s\n  thrown in %s on line %d\n", traceStr, displayEx.ThrownFile(), displayEx.ThrownLine())
+					// Set LastError so that error_get_last() in shutdown functions returns this fatal error.
+					// The message is "trace\n  thrown" (truncated at "thrown"), matching PHP's behavior.
+					msg := traceStr + "\n  thrown"
+					g.LastError = &phpv.PhpError{
+						Err:  fmt.Errorf("%s", msg),
+						Code: phpv.E_ERROR,
+						Loc:  &phpv.Loc{Filename: displayEx.ThrownFile(), Line: displayEx.ThrownLine()},
+					}
 				}
 				err = nil
 			} else if timeout, ok := phperr.CatchTimeout(err).(*phperr.PhpTimeout); ok && timeout != nil {
