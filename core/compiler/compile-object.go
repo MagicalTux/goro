@@ -633,6 +633,8 @@ type runObjectVar struct {
 	incDecCtx        bool // set when in a ++/-- context (for "Attempt to increment/decrement property" error)
 	nullsafe         bool
 	nullChain        bool // propagate null from inner nullsafe chain
+	suppressReadWarn bool // set on intermediate accesses in write chains to suppress "Attempt to read property" without suppressing "Undefined variable"
+	unsetChain       bool // set when evaluating chain for unset (suppress "Attempt to modify" errors, just return null)
 
 	// PrepareWrite caching
 	prepared   bool
@@ -640,6 +642,24 @@ type runObjectVar struct {
 }
 
 func (r *runObjectVar) isNullSafeChain() bool { return r.nullsafe || r.nullChain }
+
+// setSuppressReadWarn sets the suppressReadWarn flag on this runObjectVar
+// and propagates it recursively to inner runObjectVar accesses.
+func (r *runObjectVar) setSuppressReadWarn(v bool) {
+	r.suppressReadWarn = v
+	if inner, ok := r.ref.(*runObjectVar); ok {
+		inner.setSuppressReadWarn(v)
+	}
+}
+
+// setUnsetChain sets the unsetChain flag on this runObjectVar
+// and propagates it recursively to inner runObjectVar accesses.
+func (r *runObjectVar) setUnsetChain(v bool) {
+	r.unsetChain = v
+	if inner, ok := r.ref.(*runObjectVar); ok {
+		inner.setUnsetChain(v)
+	}
+}
 
 func (r *runObjectFunc) Dump(w io.Writer) error {
 	err := r.ref.Dump(w)
@@ -1173,6 +1193,17 @@ func (r *runObjectVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			defer wcs.SetWriteContext(false)
 		}
 	}
+	// For compound write context ($u4->a->a += 5), propagate suppressReadWarn
+	// to intermediate accesses so reading $u4->a doesn't warn "Attempt to read
+	// property on null" — but the "Undefined variable" warning is still emitted
+	// for $u4 (we intentionally don't propagate writeContext here so the variable
+	// check in runVariable.Run() sees writeContext=false on its parent).
+	if r.compoundWriteCtx {
+		if inner, ok := r.ref.(*runObjectVar); ok {
+			inner.setSuppressReadWarn(true)
+			defer inner.setSuppressReadWarn(false)
+		}
+	}
 	// fetch object property
 	obj, err := r.ref.Run(ctx)
 	if err != nil {
@@ -1194,6 +1225,11 @@ func (r *runObjectVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			return phpv.ZNULL.ZVal(), nil
 		}
 		if r.writeContext {
+			// For unset chains (unset($a->b->c->d) where $a->b is null),
+			// return null silently instead of throwing "Attempt to modify".
+			if r.unsetChain {
+				return phpv.ZNULL.ZVal(), nil
+			}
 			// PHP 8: modifying property of non-object in a write chain throws Error
 			return nil, phpobj.ThrowError(ctx, phpobj.Error,
 				fmt.Sprintf("Attempt to modify property \"%s\" on %s", r.varName, typeName))
@@ -1202,6 +1238,11 @@ func (r *runObjectVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		if r.incDecCtx {
 			return nil, phpobj.ThrowError(ctx, phpobj.Error,
 				fmt.Sprintf("Attempt to increment/decrement property \"%s\" on %s", r.varName, typeName))
+		}
+		// For intermediate accesses in write chains (e.g. $u4->a in $u4->a->a += 5),
+		// suppress the "Attempt to read property" warning and return null silently.
+		if r.suppressReadWarn {
+			return phpv.ZNULL.ZVal(), nil
 		}
 		// PHP 8: reading property of non-object is a warning, returns null
 		ctx.Warn("Attempt to read property \"%s\" on %s", r.varName, typeName, logopt.NoFuncName(true))
@@ -1308,6 +1349,40 @@ func (r *runObjectVar) CheckReadonlyRef(ctx phpv.Context) error {
 		// Dynamic property name - skip check
 		return nil
 	}
+
+	// Check if this is an overloaded property access (class has __get but not a
+	// real/declared property). PHP throws "Cannot assign by reference to overloaded
+	// object" when trying to assign by reference to an overloaded property.
+	// First check: property not directly accessible (not in hash table, not declared with real value)
+	ht := zobj.HashTable()
+	propExists := ht != nil && ht.HasString(propName)
+	if !propExists {
+		if decl := zobj.FindDeclaredProp(propName); decl != nil {
+			propExists = true
+		}
+	}
+	if !propExists {
+		class := zobj.GetClass()
+		_, hasGet := class.GetMethod("__get")
+		if hasGet {
+			// This is an overloaded property. PHP behavior:
+			// 1. Call __get to trigger any side effects (e.g. "Undefined property" warning)
+			// 2. Emit "Indirect modification of overloaded property ... has no effect"
+			// 3. Throw "Cannot assign by reference to overloaded object"
+			objI, ok2 := obj.Value().(phpv.ZObjectAccess)
+			if ok2 {
+				// Call ObjectGet to trigger __get (may produce side effect warnings)
+				objI.ObjectGet(ctx, propName)
+			}
+			// Emit: Indirect modification of overloaded property ... has no effect
+			if err2 := ctx.Notice("Indirect modification of overloaded property %s::$%s has no effect",
+				class.GetName(), propName, logopt.NoFuncName(true)); err2 != nil {
+				return err2
+			}
+			return phpobj.ThrowError(ctx, phpobj.Error, "Cannot assign by reference to overloaded object")
+		}
+	}
+
 	if zobj.IsReadonlyProperty(propName) && zobj.IsReadonlyPropertyInitialized(propName) {
 		return phpobj.ThrowError(ctx, phpobj.Error,
 			fmt.Sprintf("Cannot indirectly modify readonly property %s::$%s", zobj.GetClass().GetName(), propName))
@@ -1335,11 +1410,24 @@ func (r *runObjectVar) SetWriteContext(v bool) {
 func (r *runObjectVar) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 	// Set write context so that child runVariable (the receiver) suppresses
 	// "Undefined variable" warnings — PHP only emits the property-level error.
+	// We always set writeContext=true on this node and propagate to the ref chain.
+	// For unset (value==nil), we also mark intermediate runObjectVar accesses with
+	// unsetChain so that encountering a null/non-object returns NULL silently
+	// instead of throwing "Attempt to modify property" (PHP 8 behavior).
 	r.writeContext = true
 	// Set write context on the ref chain so intermediate property accesses
-	// produce "Attempt to modify property" errors instead of "Attempt to read" warnings.
+	// auto-vivify (for unset) or produce "Attempt to modify property" errors
+	// (for assignment).
 	if wcs, ok := r.ref.(phpv.WriteContextSetter); ok {
 		wcs.SetWriteContext(true)
+	}
+	// For unset: mark inner runObjectVar chain with unsetChain so hitting
+	// null returns silently.
+	if value == nil {
+		if inner, ok := r.ref.(*runObjectVar); ok {
+			inner.setUnsetChain(true)
+			defer inner.setUnsetChain(false)
+		}
 	}
 	// write object property
 	obj, err := r.ref.Run(ctx)
@@ -1348,15 +1436,24 @@ func (r *runObjectVar) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 		wcs.SetWriteContext(false)
 	}
 	if err != nil {
+		// For unset($a->b->c->d) where chain hits errors, silently ignore.
+		if value == nil {
+			return nil
+		}
 		return err
 	}
 
 	objI, ok := obj.Value().(phpv.ZObjectAccess)
 	if !ok {
+		// PHP 8: attempting to unset a property on a null/non-object in a chain
+		// (e.g. unset($a->b->c->d) where $a->b is null) is silently ignored.
+		if value == nil {
+			return nil
+		}
 		// PHP 8: attempting to set property of non-object throws Error
 		typeName := phpValueTypeName(obj)
 		verb := "assign"
-		if value != nil && value.IsRef() {
+		if value.IsRef() {
 			verb = "modify"
 		}
 		return phpobj.ThrowError(ctx, phpobj.Error,

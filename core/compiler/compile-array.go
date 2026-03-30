@@ -724,6 +724,13 @@ func (ac *runArrayAccess) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 		if inner, ok := ac.value.(*runObjectVar); ok {
 			inner.writeContext = true
 			defer func() { inner.writeContext = false }()
+			// For unset($a->b->c['d']) where $a->b is null, mark the object chain
+			// with unsetChain so that hitting a null/non-object returns NULL silently
+			// instead of throwing "Attempt to modify property".
+			if value == nil {
+				inner.setUnsetChain(true)
+				defer inner.setUnsetChain(false)
+			}
 		}
 		v, err = ac.value.Run(ctx)
 		if err != nil {

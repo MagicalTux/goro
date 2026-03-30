@@ -343,7 +343,19 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 			callCtx.methodType = "::"
 		}
 	} else if this != nil {
-		callCtx.class = this.GetClass()
+		// For BoundedCallable wrapping a ZClosure (method), use the declaring class
+		// from the closure rather than the instance's class. This ensures error messages
+		// like "ClassName::method(): Argument #N must be passed by reference" use
+		// the DECLARING class name (PHP behavior), not the runtime object class.
+		declaringClass := this.GetClass()
+		if bc, ok := f.(*phpv.BoundedCallable); ok {
+			if zc, ok := bc.Callable.(phpv.ZClosure); ok {
+				if cls := zc.GetClass(); cls != nil {
+					declaringClass = cls
+				}
+			}
+		}
+		callCtx.class = declaringClass
 		callCtx.methodType = "->"
 	}
 
@@ -503,8 +515,10 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 						// Emit "must be passed by reference, value given" warning
 						// (e.g. when call_user_func_array passes non-ref to a ref param)
 						funcName := callCtx.GetFuncName()
-						ctx.Warn("%s(): Argument #%d ($%s) must be passed by reference, value given",
-							funcName, i+1, varNameForArg, logopt.NoFuncName(true))
+						if warnErr := ctx.Warn("%s(): Argument #%d ($%s) must be passed by reference, value given",
+							funcName, i+1, varNameForArg, logopt.NoFuncName(true)); warnErr != nil {
+							return nil, warnErr
+						}
 						callCtx.Args[i] = callCtx.Args[i].Dup()
 						continue
 					}
