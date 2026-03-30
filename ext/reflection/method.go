@@ -68,9 +68,15 @@ func initReflectionMethod() {
 }
 
 // reflectionMethodGetDocComment returns the doc comment for a method.
-// Doc comments are not preserved during compilation, so this always returns false.
 func reflectionMethodGetDocComment(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	return phpv.ZFalse.ZVal(), nil
+	data, ok := o.GetOpaque(ReflectionMethod).(*reflectionMethodData)
+	if !ok || data == nil || data.method == nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+	if data.method.DocComment == "" {
+		return phpv.ZFalse.ZVal(), nil
+	}
+	return data.method.DocComment.ZVal(), nil
 }
 
 func reflectionMethodConstructFull(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {

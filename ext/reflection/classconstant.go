@@ -319,15 +319,27 @@ func createReflectionClassConstantObject(ctx phpv.Context, class *phpobj.ZClass,
 }
 
 // reflectionClassConstantGetDocComment returns the doc comment for a class constant.
-// Doc comments are not preserved during compilation, so this always returns false.
 func reflectionClassConstantGetDocComment(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	return phpv.ZFalse.ZVal(), nil
+	data, ok := o.GetOpaque(ReflectionClassConstant).(*reflectionClassConstantData)
+	if !ok || data == nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+	if data.constVal.DocComment == "" {
+		return phpv.ZFalse.ZVal(), nil
+	}
+	return data.constVal.DocComment.ZVal(), nil
 }
 
 // reflectionClassGetDocComment returns the doc comment for a class.
-// Doc comments are not preserved during compilation, so this always returns false.
 func reflectionClassGetDocComment(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	return phpv.ZFalse.ZVal(), nil
+	zc := getZClass(o)
+	if zc == nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+	if zc.DocComment == "" {
+		return phpv.ZFalse.ZVal(), nil
+	}
+	return zc.DocComment.ZVal(), nil
 }
 
 // reflectionClassGetReflectionConstant returns a ReflectionClassConstant for the named constant.

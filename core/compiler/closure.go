@@ -403,6 +403,11 @@ func (r *zvalRunnable) Dump(w io.Writer) error {
 // rather than a Notice or Fatal Error, matching PHP's call_user_func behavior.
 func (r *zvalRunnable) IsPreEvaluatedArg() {}
 
+// GetDeclLoc implements phpv.FuncDeclLoc, returning the function's declaration location.
+func (z *ZClosure) GetDeclLoc() *phpv.Loc {
+	return z.start
+}
+
 func (z *ZClosure) Spawn(ctx phpv.Context) (*phpv.ZVal, error) {
 	o, err := phpobj.NewZObjectOpaque(ctx, Closure, z)
 	if err != nil {

@@ -74,6 +74,12 @@ type Callable interface {
 	Call(ctx Context, args []*ZVal) (*ZVal, error)
 }
 
+// FuncDeclLoc is implemented by named function callables that know their
+// declaration location. Used for "Cannot redeclare function" error messages.
+type FuncDeclLoc interface {
+	GetDeclLoc() *Loc
+}
+
 type Cloneable interface {
 	Clone() any
 }

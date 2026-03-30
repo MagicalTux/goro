@@ -135,5 +135,12 @@ func returnInt(ctx phpv.Context, i *big.Int) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
+	// Register as a temporary object so its ID can be recycled at the next
+	// statement boundary if it was not stored in a PHP variable (refcount == 0).
+	id := z.ID
+	ctx.Global().RegisterTempObject(id, func() bool {
+		return z.RefCount() <= 0
+	})
+
 	return z.ZVal(), nil
 }

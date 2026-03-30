@@ -53,6 +53,17 @@ func (r *runnableForeach) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 			// For non-reference foreach, snapshot the array so modifications
 			// during iteration don't affect the loop (PHP copy-on-write semantics).
 			z = z.Dup()
+			// Increment reference counts for all objects in the snapshot array.
+			// This prevents premature destruction of objects that are stored in
+			// both the original array and the loop variable. Without this, an
+			// object stored only in an array (which doesn't track refs) would
+			// be destroyed when the loop variable is reassigned.
+			if arr, ok := z.Value().(*phpv.ZArray); ok {
+				arr.IncRefObjects()
+				defer func() {
+					arr.DecRefObjects(ctx)
+				}()
+			}
 		}
 	}
 

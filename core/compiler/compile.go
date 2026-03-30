@@ -40,6 +40,7 @@ type compileCtx interface {
 	resolveFunctionName(name phpv.ZString) phpv.ZString
 	resolveConstantName(name string) string
 	isTopLevel() bool // true when at the outermost scope (not inside any block or function)
+	takeDocComment() phpv.ZString // returns and clears the most recently seen doc comment
 }
 
 type bracketEntry struct {
@@ -65,6 +66,8 @@ type compileRootCtx struct {
 	nsClassNames map[phpv.ZString]bool         // short class names defined in current namespace
 	strictTypes  bool                          // declare(strict_types=1) in effect
 	hasStatements bool                         // true after the first PHP statement has been compiled
+
+	lastDocComment phpv.ZString // most recent doc comment seen (/** ... */); cleared by takeDocComment()
 }
 
 func (c *compileRootCtx) ExpectSingle(r rune) error {
@@ -264,6 +267,12 @@ func (c *compileRootCtx) peekType() tokenizer.ItemType {
 	}
 }
 
+func (c *compileRootCtx) takeDocComment() phpv.ZString {
+	doc := c.lastDocComment
+	c.lastDocComment = ""
+	return doc
+}
+
 func (c *compileRootCtx) NextItem() (*tokenizer.Item, error) {
 	var i *tokenizer.Item
 	if c.next != nil {
@@ -276,9 +285,15 @@ func (c *compileRootCtx) NextItem() (*tokenizer.Item, error) {
 			if err != nil {
 				return i, err
 			}
-			if i.Type != tokenizer.T_WHITESPACE && i.Type != tokenizer.T_COMMENT {
-				break
+			if i.Type == tokenizer.T_WHITESPACE || i.Type == tokenizer.T_COMMENT {
+				continue
 			}
+			if i.Type == tokenizer.T_DOC_COMMENT {
+				// Save the most recent doc comment; it will be consumed by takeDocComment().
+				c.lastDocComment = phpv.ZString(i.Data)
+				continue
+			}
+			break
 		}
 	}
 

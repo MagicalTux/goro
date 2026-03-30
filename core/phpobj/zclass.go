@@ -46,6 +46,9 @@ type ZClass struct {
 	// Ext is the extension name for internal classes (e.g. "SPL", "Core", "date")
 	Ext string
 
+	// DocComment is the doc comment (/** ... */) associated with this class
+	DocComment phpv.ZString
+
 	// Enum support (PHP 8.1)
 	EnumBackingType phpv.ZType     // 0 for unit enums, ZtString or ZtInt for backed enums
 	EnumCases       []phpv.ZString // ordered list of case names
@@ -2016,14 +2019,60 @@ func (c *ZClass) checkMethodCompatibility(ctx phpv.Context, child *phpv.ZClassMe
 			childRT = rtg.GetReturnType()
 		}
 		if parentRT != nil && childRT != nil {
-			// Both have return types — child's return type must be a subtype of parent's
-			// (covariance: child must be narrower or equal)
-			// Special case: 'never' is the bottom type, always a valid covariant return type
-			// Special case: 'void' can only be returned by void parents (not mixed)
-			if childRT.Type() == phpv.ZtVoid && parentRT.Type() != phpv.ZtVoid {
-				incompatible = true
-			} else if childRT.Type() != phpv.ZtNever && childRT.Type() != phpv.ZtVoid && !typeHintIsWidening(ctx, parentRT, childRT) {
-				incompatible = true
+			// Detect unavailable intersection classes.
+			// Rule:
+			// 1. If the PARENT type has an intersection with unavailable members → error.
+			// 2. If the CHILD type has an intersection with unavailable members:
+			//    a. If there is a loadable child intersection member that satisfies the parent → OK.
+			//    b. Otherwise → error.
+			unavailParent := firstUnavailableIntersectionClass(ctx, parentRT)
+			if unavailParent != "" {
+				loc := child.Loc
+				if loc == nil {
+					loc = c.L
+				}
+				childSig := formatMethodSignature(c.Name, child, "")
+				selfResolve := phpv.ZString("")
+				if parent.FromTrait != nil {
+					selfResolve = c.Name
+				}
+				parentSig := formatMethodSignature(parent.Class.GetName(), parent, selfResolve)
+				return c.fatalErrorAt(ctx,
+					fmt.Sprintf("Could not check compatibility between %s and %s, because class %s is not available",
+						childSig, parentSig, unavailParent),
+					loc)
+			}
+			unavailChild := firstUnavailableIntersectionClass(ctx, childRT)
+			if unavailChild != "" {
+				// Check if any loadable member of the child intersection satisfies the parent type.
+				canVerify := intersectionHasLoadableMemberSatisfying(ctx, childRT, parentRT)
+				if !canVerify {
+					loc := child.Loc
+					if loc == nil {
+						loc = c.L
+					}
+					childSig := formatMethodSignature(c.Name, child, "")
+					selfResolve := phpv.ZString("")
+					if parent.FromTrait != nil {
+						selfResolve = c.Name
+					}
+					parentSig := formatMethodSignature(parent.Class.GetName(), parent, selfResolve)
+					return c.fatalErrorAt(ctx,
+						fmt.Sprintf("Could not check compatibility between %s and %s, because class %s is not available",
+							childSig, parentSig, unavailChild),
+						loc)
+				}
+				// A loadable member satisfies the parent — skip regular covariance check.
+			} else {
+				// Both have return types — child's return type must be a subtype of parent's
+				// (covariance: child must be narrower or equal)
+				// Special case: 'never' is the bottom type, always a valid covariant return type
+				// Special case: 'void' can only be returned by void parents (not mixed)
+				if childRT.Type() == phpv.ZtVoid && parentRT.Type() != phpv.ZtVoid {
+					incompatible = true
+				} else if childRT.Type() != phpv.ZtNever && childRT.Type() != phpv.ZtVoid && !typeHintIsWidening(ctx, parentRT, childRT) {
+					incompatible = true
+				}
 			}
 		} else if parentRT != nil && childRT == nil {
 			// Parent has return type, child drops it — incompatible
@@ -2354,6 +2403,70 @@ func (c *ZClass) warnNonPublicMagicMethods(ctx phpv.Context) {
 	}
 }
 
+// firstUnavailableIntersectionClass returns the name of the first class within
+// any intersection group in the type hint that cannot be loaded from the context.
+// Returns "" if all classes are available or there are no intersection groups.
+func firstUnavailableIntersectionClass(ctx phpv.Context, h *phpv.TypeHint) phpv.ZString {
+	if h == nil || ctx == nil {
+		return ""
+	}
+	if len(h.Union) > 0 {
+		for _, u := range h.Union {
+			if name := firstUnavailableIntersectionClass(ctx, u); name != "" {
+				return name
+			}
+		}
+		return ""
+	}
+	if len(h.Intersection) > 0 {
+		for _, part := range h.Intersection {
+			if part.Type() == phpv.ZtObject && part.ClassName() != "" {
+				cls, err := ctx.Global().GetClass(ctx, part.ClassName(), false)
+				if err != nil || phpv.IsNilClass(cls) {
+					return part.ClassName()
+				}
+			}
+		}
+	}
+	return ""
+}
+
+// intersectionHasLoadableMemberSatisfying returns true if the intersection type h
+// contains at least one loadable class member that satisfies the parent type constraint.
+// This is used when the intersection has unavailable classes: if a loadable member can
+// satisfy the parent, the compatibility check can be considered done.
+func intersectionHasLoadableMemberSatisfying(ctx phpv.Context, childHint, parentHint *phpv.TypeHint) bool {
+	// Collect the intersection members to check (from union groups or direct intersection)
+	var checkHints []*phpv.TypeHint
+	if len(childHint.Union) > 0 {
+		for _, u := range childHint.Union {
+			if len(u.Intersection) > 0 {
+				checkHints = append(checkHints, u)
+			}
+		}
+	} else if len(childHint.Intersection) > 0 {
+		checkHints = []*phpv.TypeHint{childHint}
+	}
+
+	for _, intersect := range checkHints {
+		for _, member := range intersect.Intersection {
+			if member.Type() != phpv.ZtObject || member.ClassName() == "" {
+				continue
+			}
+			// Check if the member class is loadable
+			cls, err := ctx.Global().GetClass(ctx, member.ClassName(), false)
+			if err != nil || phpv.IsNilClass(cls) {
+				continue // unavailable, skip
+			}
+			// Check if this loadable member satisfies the parent constraint
+			if typeHintContains(ctx, parentHint, member) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // typeHintIsWidening checks if childHint accepts at least everything parentHint accepts.
 // This implements contravariance for parameter types: the child can accept more types.
 func typeHintIsWidening(ctx phpv.Context, childHint, parentHint *phpv.TypeHint) bool {
@@ -2558,8 +2671,9 @@ func typeHintContains(ctx phpv.Context, h *phpv.TypeHint, target *phpv.TypeHint)
 				if hClass == tClass {
 					return true
 				}
-				// Also check instanceof relationship for inheritance
-				if hClass.InstanceOf(tClass) || tClass.InstanceOf(hClass) {
+				// target is a subtype of h: every target value is also an h value,
+				// so h "contains" target.
+				if tClass.InstanceOf(hClass) {
 					return true
 				}
 			}

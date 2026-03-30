@@ -119,6 +119,54 @@ func fncGetmxrr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZFalse.ZVal(), nil
 }
 
+// persistentSockets is the global pool of persistent socket connections.
+var persistentSockets = map[string]*stream.Stream{}
+
+func fncPfsockopen(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	var hostname phpv.ZString
+	var port core.Optional[phpv.ZInt]
+	_, err := core.Expand(ctx, args, &hostname, &port)
+	if err != nil {
+		return nil, err
+	}
+	host := string(hostname)
+	if strings.ContainsRune(host, 0) {
+		return phpv.ZFalse.ZVal(), ctx.Warn("pfsockopen(): Argument #1 ($hostname) must not contain any null bytes")
+	}
+	proto := "tcp"
+	if strings.HasPrefix(host, "tcp://") {
+		host = host[6:]
+	} else if strings.HasPrefix(host, "udp://") {
+		proto = "udp"
+		host = host[6:]
+	}
+	p := 0
+	if port.HasArg() {
+		p = int(port.Get())
+	}
+	addr := fmt.Sprintf("%s:%d", host, p)
+	key := proto + "://" + addr
+
+	// Check if we have an existing persistent connection that is still open
+	if s, ok := persistentSockets[key]; ok {
+		if s.GetResourceType() != phpv.ResourceUnknown {
+			return s.ZVal(), nil
+		}
+		// Stale connection, remove from pool
+		delete(persistentSockets, key)
+	}
+
+	conn, de := net.DialTimeout(proto, addr, 60*time.Second)
+	if de != nil {
+		return phpv.ZFalse.ZVal(), ctx.Warn("pfsockopen(): Unable to connect to %s (%s)", addr, de.Error())
+	}
+	s := stream.NewStream(conn)
+	s.ResourceType = phpv.ResourceStream
+	s.ResourceID = ctx.Global().NextResourceID()
+	persistentSockets[key] = s
+	return s.ZVal(), nil
+}
+
 func fncFsockopen(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var hostname phpv.ZString
 	var port core.Optional[phpv.ZInt]

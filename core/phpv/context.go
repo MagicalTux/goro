@@ -133,6 +133,14 @@ type GlobalContext interface {
 	NextObjectID() int
 	ReleaseObjectID(id int)
 
+	// RegisterTempObject registers an object ID as a "temporary" that should be
+	// released if it has refcount 0 at the next statement boundary.
+	// isFree should return true if the object has no PHP references (refcount == 0).
+	RegisterTempObject(id int, isFree func() bool)
+	// DrainTempObjects checks all registered temporary objects and releases any
+	// that are still unreferenced (refcount == 0). Called at statement boundaries.
+	DrainTempObjects()
+
 	GetDeclaredClasses() []ZString
 	GetDefinedFunctions(ctx Context, excludeDisabled bool) (*ZArray, error)
 

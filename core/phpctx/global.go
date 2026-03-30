@@ -63,6 +63,8 @@ type Global struct {
 	// this is the actual environment (defined functions, classes, etc)
 	globalInternalFuncs map[phpv.ZString]phpv.Callable
 	globalUserFuncs     map[phpv.ZString]phpv.Callable
+	globalUserFuncLocs  map[phpv.ZString]*phpv.Loc // declaration locations for user functions
+	globalUserFuncNames map[phpv.ZString]phpv.ZString // canonical (original-case) function names
 	disabledFuncs       map[phpv.ZString]struct{}
 
 	globalClasses   map[phpv.ZString]*phpobj.ZClass // TODO replace *ZClass with a nice interface
@@ -105,6 +107,10 @@ type Global struct {
 	nextResourceID int
 	nextObjectID   int
 	freeObjectIDs  []int // recycled object IDs (free list)
+
+	// tempObjects tracks potentially-temporary objects for ID recycling at statement boundaries.
+	// Each entry is a pair: (id, isFree func() bool).
+	tempObjects []tempObjectEntry
 
 	DefaultStreamContext *stream.Context
 
@@ -178,6 +184,8 @@ func createGlobal(p *Process) *Global {
 		l:                   &phpv.Loc{Filename: "unknown", Line: 1},
 		globalInternalFuncs: make(map[phpv.ZString]phpv.Callable),
 		globalUserFuncs:     make(map[phpv.ZString]phpv.Callable),
+		globalUserFuncLocs:  make(map[phpv.ZString]*phpv.Loc),
+		globalUserFuncNames: make(map[phpv.ZString]phpv.ZString),
 		disabledFuncs:       make(map[phpv.ZString]struct{}),
 		globalClasses:       make(map[phpv.ZString]*phpobj.ZClass),
 		classOrigNames:      make(map[phpv.ZString]phpv.ZString),
@@ -1386,12 +1394,32 @@ func (g *Global) Class() phpv.ZClass {
 }
 
 func (g *Global) RegisterFunction(name phpv.ZString, f phpv.Callable) error {
-	name = name.ToLower()
-	if _, exists := g.globalUserFuncs[name]; exists {
-		return g.Errorf("duplicate function name in declaration")
+	lcName := name.ToLower()
+	if _, exists := g.globalUserFuncs[lcName]; exists {
+		// Build PHP-compatible error: "Cannot redeclare function foo() (previously declared in file:line)"
+		canonName := g.globalUserFuncNames[lcName]
+		if canonName == "" {
+			canonName = name
+		}
+		prevLoc := ""
+		if loc, ok := g.globalUserFuncLocs[lcName]; ok && loc != nil {
+			prevLoc = fmt.Sprintf(" (previously declared in %s:%d)", loc.Filename, loc.Line)
+		}
+		return &phpv.PhpError{
+			Err:  fmt.Errorf("Cannot redeclare function %s()%s", canonName, prevLoc),
+			Code: phpv.E_ERROR,
+			Loc:  g.l,
+		}
 	}
-	g.globalUserFuncs[name] = f
-	delete(g.globalLazyFunc, name)
+	g.globalUserFuncs[lcName] = f
+	g.globalUserFuncNames[lcName] = name
+	// Store declaration location for better error messages on redeclaration
+	if dl, ok := f.(phpv.FuncDeclLoc); ok {
+		if loc := dl.GetDeclLoc(); loc != nil {
+			g.globalUserFuncLocs[lcName] = loc
+		}
+	}
+	delete(g.globalLazyFunc, lcName)
 	return nil
 }
 
@@ -2273,6 +2301,35 @@ func (g *Global) ReleaseObjectID(id int) {
 	if id > 0 {
 		g.freeObjectIDs = append(g.freeObjectIDs, id)
 	}
+}
+
+// tempObjectEntry is a (id, isFree) pair for temporary object tracking.
+type tempObjectEntry struct {
+	id     int
+	isFree func() bool
+}
+
+// RegisterTempObject registers an object ID as a "temporary" that should be
+// released if it has refcount 0 at the next statement boundary.
+func (g *Global) RegisterTempObject(id int, isFree func() bool) {
+	g.tempObjects = append(g.tempObjects, tempObjectEntry{id: id, isFree: isFree})
+}
+
+// DrainTempObjects checks all registered temporary objects and releases any
+// that are still unreferenced (refcount == 0). Called at statement boundaries.
+func (g *Global) DrainTempObjects() {
+	if len(g.tempObjects) == 0 {
+		return
+	}
+	remaining := g.tempObjects[:0]
+	for _, e := range g.tempObjects {
+		if e.isFree() {
+			g.ReleaseObjectID(e.id)
+		} else {
+			remaining = append(remaining, e)
+		}
+	}
+	g.tempObjects = remaining
 }
 
 func (g *Global) SetNextCallSuppressCalledIn(v bool) {

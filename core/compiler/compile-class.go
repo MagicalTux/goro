@@ -352,6 +352,7 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		}
 	}
 
+	classDoc := c.takeDocComment()
 	class := &phpobj.ZClass{
 		L:          i.Loc(),
 		Attr:       attr,
@@ -359,6 +360,7 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		Const:      make(map[phpv.ZString]*phpv.ZClassConst),
 		H:          &phpv.ZClassHandlers{},
 		Attributes: classAttrs,
+		DocComment: classDoc,
 	}
 
 	switch i.Type {
@@ -412,19 +414,15 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			return nil, err
 		}
 
-		// Skip doc comments
-		for i.Type == tokenizer.T_DOC_COMMENT || i.Type == tokenizer.T_COMMENT {
-			i, err = c.NextItem()
-			if err != nil {
-				return nil, err
-			}
-		}
-
 		if i.IsSingle('}') {
 			// end of class
 			class.LEnd = i.Loc()
 			break
 		}
+
+		// Capture the doc comment that appeared before this member (NextItem already saved it).
+		memberDoc := c.takeDocComment()
+
 		l := i.Loc()
 		c.backup()
 
@@ -676,7 +674,7 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			fallthrough
 		case tokenizer.T_VARIABLE:
 			for {
-				prop := &phpv.ZClassProp{Modifiers: attr, SetModifiers: setModifiers, TypeHint: propTypeHint, Attributes: memberAttrs}
+				prop := &phpv.ZClassProp{Modifiers: attr, SetModifiers: setModifiers, TypeHint: propTypeHint, Attributes: memberAttrs, DocComment: memberDoc}
 				prop.VarName = phpv.ZString(i.Data[1:])
 
 				// PHP: certain types cannot be used for properties
@@ -1261,6 +1259,7 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 					Modifiers:  attr,
 					Attributes: memberAttrs,
 					TypeHint:   constTypeHint,
+					DocComment: memberDoc,
 				}
 				class.ConstOrder = append(class.ConstOrder, cn)
 
@@ -1629,6 +1628,7 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 				Empty:      emptyBody,
 				Loc:        l,
 				Attributes: memberAttrs,
+				DocComment: memberDoc,
 			}
 			if zc, ok := f.(*ZClosure); ok {
 				method.LocEnd = zc.end

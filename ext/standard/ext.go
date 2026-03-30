@@ -545,6 +545,7 @@ func init() {
 			"dns_get_record":             {Func: fncDnsGetRecord, Args: []*phpctx.ExtFunctionArg{}},
 			"getmxrr":                    {Func: fncGetmxrr, Args: []*phpctx.ExtFunctionArg{}},
 			"fsockopen":                  {Func: fncFsockopen, Args: []*phpctx.ExtFunctionArg{}},
+			"pfsockopen":                 {Func: fncPfsockopen, Args: []*phpctx.ExtFunctionArg{}},
 			"stream_socket_server":       {Func: fncStreamSocketServer, Args: []*phpctx.ExtFunctionArg{}},
 			"stream_socket_client":       {Func: fncStreamSocketClient, Args: []*phpctx.ExtFunctionArg{}},
 			"stream_socket_accept":       {Func: fncStreamSocketAccept, Args: []*phpctx.ExtFunctionArg{}},

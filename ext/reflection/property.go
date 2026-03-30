@@ -63,9 +63,15 @@ func initReflectionProperty() {
 }
 
 // reflectionPropertyGetDocComment returns the doc comment for a property.
-// Doc comments are not preserved during compilation, so this always returns false.
 func reflectionPropertyGetDocComment(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	return phpv.ZFalse.ZVal(), nil
+	data, ok := o.GetOpaque(ReflectionProperty).(*reflectionPropertyData)
+	if !ok || data == nil || data.prop == nil {
+		return phpv.ZFalse.ZVal(), nil
+	}
+	if data.prop.DocComment == "" {
+		return phpv.ZFalse.ZVal(), nil
+	}
+	return data.prop.DocComment.ZVal(), nil
 }
 
 func reflectionPropertyConstructFull(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {

@@ -5,8 +5,13 @@ import "io"
 type Runnables []Runnable
 
 func (r Runnables) Run(ctx Context) (l *ZVal, err error) {
+	g := ctx.Global()
 	for _, v := range r {
 		l, err = v.Run(ctx)
+		// After each statement, release any temporary objects (e.g., GMP results
+		// that were passed to var_dump/echo but never stored in a PHP variable).
+		// This mimics PHP's deterministic refcount-based freeing.
+		g.DrainTempObjects()
 		if err != nil {
 			return
 		}

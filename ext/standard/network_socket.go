@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/stream"
 )
@@ -100,6 +101,14 @@ func fncStreamSocketServer(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, err
 			}
 		}
 	} else {
+		// For unix sockets, check if path is too long and truncate with notice (like PHP does)
+		if network == "unix" {
+			const maxUnixSocketPath = 107 // 108 - 1 for null terminator (Linux sockaddr_un.sun_path)
+			if len(addr) > maxUnixSocketPath {
+				ctx.Notice("stream_socket_server(): socket path exceeded the maximum allowed length of %d bytes and was truncated", maxUnixSocketPath, logopt.NoFuncName(true))
+				addr = addr[:maxUnixSocketPath]
+			}
+		}
 		ln, listenErr = net.Listen(network, addr)
 	}
 

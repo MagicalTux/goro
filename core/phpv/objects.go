@@ -23,6 +23,7 @@ type ZClassProp struct {
 	SetModifiers  ZObjectAttr // PHP 8.4 asymmetric visibility: separate write visibility (0 = same as Modifiers)
 	TypeHint      *TypeHint
 	Attributes    []*ZAttribute // PHP 8.0 attributes
+	DocComment    ZString       // doc comment (/** ... */) associated with this property
 
 	// Property hooks (PHP 8.4)
 	GetHook         Runnable // get { ... } hook body
@@ -91,6 +92,7 @@ type ZClassMethod struct {
 	Prototype  ZClass        // interface/class that defines the prototype for this method
 	ReturnType *TypeHint     // return type hint for the method (for reflection)
 	TentativeReturnType bool // if true, ReturnType is a tentative return type (PHP 8.1)
+	DocComment ZString       // doc comment (/** ... */) associated with this method
 }
 
 type ZClassConst struct {
@@ -99,6 +101,7 @@ type ZClassConst struct {
 	Resolving  bool           // true while the constant is being resolved (circular reference detection)
 	Attributes []*ZAttribute  // PHP 8.0 attributes
 	TypeHint   *TypeHint      // PHP 8.3 typed class constants
+	DocComment ZString        // doc comment (/** ... */) associated with this constant
 }
 
 type ZClassHandlers struct {

@@ -406,6 +406,54 @@ func (a *ZArray) NewIterator() ZIterator {
 	return a.h.NewIterator()
 }
 
+// IncRefObjects increments the reference count of all ZObject values
+// stored in this array. Used by foreach to keep array elements alive
+// while they are being iterated (preventing premature destruction).
+func (a *ZArray) IncRefObjects() {
+	for cur := a.h.first; cur != nil; cur = cur.next {
+		if cur.v == nil || cur.deleted {
+			continue
+		}
+		v := cur.v
+		// Unwrap references
+		if inner, ok := v.v.(*ZVal); ok {
+			v = inner
+		}
+		if v.GetType() == ZtObject {
+			if obj, ok := v.Value().(interface{ IncRef() }); ok {
+				obj.IncRef()
+			}
+		}
+	}
+}
+
+// DecRefObjects decrements the reference count of all ZObject values
+// stored in this array. Used by foreach cleanup after IncRefObjects.
+// Returns the last error from any destructor that fired.
+func (a *ZArray) DecRefObjects(ctx Context) error {
+	type decReffer interface {
+		DecRef(Context) error
+	}
+	var lastErr error
+	for cur := a.h.first; cur != nil; cur = cur.next {
+		if cur.v == nil || cur.deleted {
+			continue
+		}
+		v := cur.v
+		if inner, ok := v.v.(*ZVal); ok {
+			v = inner
+		}
+		if v.GetType() == ZtObject {
+			if obj, ok := v.Value().(decReffer); ok {
+				if err := obj.DecRef(ctx); err != nil {
+					lastErr = err
+				}
+			}
+		}
+	}
+	return lastErr
+}
+
 func (a *ZArray) MainIterator() ZIterator {
 	return a.h.mainIterator
 }

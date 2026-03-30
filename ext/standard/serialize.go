@@ -160,6 +160,25 @@ func serializeKey(ctx phpv.Context, value *phpv.ZVal) string {
 	}
 }
 
+// refChaseInner follows a chain of reference wrappers to find the ultimate
+// non-reference inner ZVal. This handles multi-level references like:
+//   outerRef = NewZVal(v1) where v1 = {v: inner} (v1 is also a ref)
+// Both v1 and outerRef have the same ultimate inner, so they represent
+// the same PHP reference target.
+func refChaseInner(z *phpv.ZVal) *phpv.ZVal {
+	cur := z
+	for {
+		next := cur.RefTarget()
+		if next == nil {
+			return cur
+		}
+		if !next.IsRef() {
+			return next
+		}
+		cur = next
+	}
+}
+
 // serializeValue serializes a raw ZVal (which may be a reference wrapper).
 // This handles R: reference detection for PHP & references.
 func serializeValue(ctx phpv.Context, rawZVal *phpv.ZVal, depth int, seen *serializeSeen) (string, error) {
@@ -170,21 +189,21 @@ func serializeValue(ctx phpv.Context, rawZVal *phpv.ZVal, depth int, seen *seria
 	// Check for PHP reference (R:N;) - if rawZVal is a reference wrapper,
 	// its inner ZVal is the shared target. If we've seen it before, produce R:N;
 	if rawZVal.IsRef() {
-		inner := rawZVal.RefTarget()
-		if inner == nil {
+		// Chase the reference chain to find the ultimate non-ref inner ZVal.
+		// This handles cases where refs are stacked (e.g., outerRef -> v1 -> inner).
+		ultimate := refChaseInner(rawZVal)
+		if ultimate == nil || ultimate == rawZVal {
 			return serializeWithDepth(ctx, rawZVal, depth, seen)
 		}
-		if refIdx, ok := seen.valRefs[inner]; ok {
+		if refIdx, ok := seen.valRefs[ultimate]; ok {
 			// This reference target was already serialized; produce R:N;
 			return "R:" + strconv.Itoa(refIdx) + ";", nil
 		}
-		// First time seeing this reference target - the ref index will be assigned
-		// inside serializeWithDepth and we register it here
-		// Peek at what index will be assigned and register the inner ZVal
+		// First time seeing this reference target - register it before serializing
 		nextIdx := seen.refCount + 1
-		seen.valRefs[inner] = nextIdx
+		seen.valRefs[ultimate] = nextIdx
 		// Serialize the unwrapped value (serializeWithDepth will assign the same index)
-		return serializeWithDepth(ctx, inner, depth, seen)
+		return serializeWithDepth(ctx, ultimate, depth, seen)
 	}
 
 	// Non-ref path: also check if rawZVal is itself in valRefs (meaning a ref

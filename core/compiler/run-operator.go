@@ -1232,6 +1232,26 @@ func operatorMathLogic(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal)
 		}
 	}
 
+	// Check for binary operators (|, ^, &, etc.) on objects with HandleDoOperation (e.g., GMP).
+	// This path is for operators that don't have numeric:true in operatorList,
+	// so they bypass the check in Run().
+	if a != nil {
+		if a.GetType() == phpv.ZtObject {
+			if obj, ok := a.Value().(phpv.ZObject); ok {
+				if h := obj.GetClass().Handlers(); h != nil && h.HandleDoOperation != nil {
+					return h.HandleDoOperation(ctx, int(op), a, b)
+				}
+			}
+		}
+		if b != nil && b.GetType() == phpv.ZtObject {
+			if obj, ok := b.Value().(phpv.ZObject); ok {
+				if h := obj.GetClass().Handlers(); h != nil && h.HandleDoOperation != nil {
+					return h.HandleDoOperation(ctx, int(op), a, b)
+				}
+			}
+		}
+	}
+
 	if a == nil {
 		a = b
 	}

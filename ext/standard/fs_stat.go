@@ -677,39 +677,65 @@ func fncDiskTotalSpace(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 
 // buildStatArray creates a PHP stat() result array from os.FileInfo.
 func buildStatArray(ctx phpv.Context, fi os.FileInfo) *phpv.ZVal {
-	st := fi.Sys().(*syscall.Stat_t)
-
 	result := phpv.NewZArray()
 
+	// Try to get the underlying syscall.Stat_t for full data
+	var dev, ino, mode, nlink, uid, gid, rdev, size, atime, mtime, ctime, blksize, blocks int64
+
+	if st, ok := fi.Sys().(*syscall.Stat_t); ok && st != nil {
+		dev = int64(st.Dev)
+		ino = int64(st.Ino)
+		mode = int64(st.Mode)
+		nlink = int64(st.Nlink)
+		uid = int64(st.Uid)
+		gid = int64(st.Gid)
+		rdev = int64(st.Rdev)
+		size = st.Size
+		atime = st.Atim.Sec
+		mtime = st.Mtim.Sec
+		ctime = st.Ctim.Sec
+		blksize = int64(st.Blksize)
+		blocks = st.Blocks
+	} else {
+		// Fallback for user stream wrappers that don't have full stat data
+		size = fi.Size()
+		mtime = fi.ModTime().Unix()
+		atime = mtime
+		ctime = mtime
+		mode = int64(fi.Mode())
+		blksize = 4096
+		blocks = (size + 511) / 512
+	}
+
 	// Numeric indices 0-12
-	result.OffsetSet(ctx, phpv.ZInt(0).ZVal(), phpv.ZInt(int64(st.Dev)).ZVal())      // dev
-	result.OffsetSet(ctx, phpv.ZInt(1).ZVal(), phpv.ZInt(int64(st.Ino)).ZVal())      // ino
-	result.OffsetSet(ctx, phpv.ZInt(2).ZVal(), phpv.ZInt(int64(st.Mode)).ZVal())     // mode
-	result.OffsetSet(ctx, phpv.ZInt(3).ZVal(), phpv.ZInt(int64(st.Nlink)).ZVal())    // nlink
-	result.OffsetSet(ctx, phpv.ZInt(4).ZVal(), phpv.ZInt(int64(st.Uid)).ZVal())      // uid
-	result.OffsetSet(ctx, phpv.ZInt(5).ZVal(), phpv.ZInt(int64(st.Gid)).ZVal())      // gid
-	result.OffsetSet(ctx, phpv.ZInt(6).ZVal(), phpv.ZInt(int64(st.Rdev)).ZVal())     // rdev
-	result.OffsetSet(ctx, phpv.ZInt(7).ZVal(), phpv.ZInt(st.Size).ZVal())            // size
-	result.OffsetSet(ctx, phpv.ZInt(8).ZVal(), phpv.ZInt(st.Atim.Sec).ZVal())        // atime
-	result.OffsetSet(ctx, phpv.ZInt(9).ZVal(), phpv.ZInt(st.Mtim.Sec).ZVal())        // mtime
-	result.OffsetSet(ctx, phpv.ZInt(10).ZVal(), phpv.ZInt(st.Ctim.Sec).ZVal())       // ctime
-	result.OffsetSet(ctx, phpv.ZInt(11).ZVal(), phpv.ZInt(int64(st.Blksize)).ZVal()) // blksize
-	result.OffsetSet(ctx, phpv.ZInt(12).ZVal(), phpv.ZInt(st.Blocks).ZVal())         // blocks
+	result.OffsetSet(ctx, phpv.ZInt(0).ZVal(), phpv.ZInt(dev).ZVal())      // dev
+	result.OffsetSet(ctx, phpv.ZInt(1).ZVal(), phpv.ZInt(ino).ZVal())      // ino
+	result.OffsetSet(ctx, phpv.ZInt(2).ZVal(), phpv.ZInt(mode).ZVal())     // mode
+	result.OffsetSet(ctx, phpv.ZInt(3).ZVal(), phpv.ZInt(nlink).ZVal())    // nlink
+	result.OffsetSet(ctx, phpv.ZInt(4).ZVal(), phpv.ZInt(uid).ZVal())      // uid
+	result.OffsetSet(ctx, phpv.ZInt(5).ZVal(), phpv.ZInt(gid).ZVal())      // gid
+	result.OffsetSet(ctx, phpv.ZInt(6).ZVal(), phpv.ZInt(rdev).ZVal())     // rdev
+	result.OffsetSet(ctx, phpv.ZInt(7).ZVal(), phpv.ZInt(size).ZVal())     // size
+	result.OffsetSet(ctx, phpv.ZInt(8).ZVal(), phpv.ZInt(atime).ZVal())    // atime
+	result.OffsetSet(ctx, phpv.ZInt(9).ZVal(), phpv.ZInt(mtime).ZVal())    // mtime
+	result.OffsetSet(ctx, phpv.ZInt(10).ZVal(), phpv.ZInt(ctime).ZVal())   // ctime
+	result.OffsetSet(ctx, phpv.ZInt(11).ZVal(), phpv.ZInt(blksize).ZVal()) // blksize
+	result.OffsetSet(ctx, phpv.ZInt(12).ZVal(), phpv.ZInt(blocks).ZVal())  // blocks
 
 	// Named indices (same data, different keys)
-	result.OffsetSet(ctx, phpv.ZStr("dev"), phpv.ZInt(int64(st.Dev)).ZVal())
-	result.OffsetSet(ctx, phpv.ZStr("ino"), phpv.ZInt(int64(st.Ino)).ZVal())
-	result.OffsetSet(ctx, phpv.ZStr("mode"), phpv.ZInt(int64(st.Mode)).ZVal())
-	result.OffsetSet(ctx, phpv.ZStr("nlink"), phpv.ZInt(int64(st.Nlink)).ZVal())
-	result.OffsetSet(ctx, phpv.ZStr("uid"), phpv.ZInt(int64(st.Uid)).ZVal())
-	result.OffsetSet(ctx, phpv.ZStr("gid"), phpv.ZInt(int64(st.Gid)).ZVal())
-	result.OffsetSet(ctx, phpv.ZStr("rdev"), phpv.ZInt(int64(st.Rdev)).ZVal())
-	result.OffsetSet(ctx, phpv.ZStr("size"), phpv.ZInt(st.Size).ZVal())
-	result.OffsetSet(ctx, phpv.ZStr("atime"), phpv.ZInt(st.Atim.Sec).ZVal())
-	result.OffsetSet(ctx, phpv.ZStr("mtime"), phpv.ZInt(st.Mtim.Sec).ZVal())
-	result.OffsetSet(ctx, phpv.ZStr("ctime"), phpv.ZInt(st.Ctim.Sec).ZVal())
-	result.OffsetSet(ctx, phpv.ZStr("blksize"), phpv.ZInt(int64(st.Blksize)).ZVal())
-	result.OffsetSet(ctx, phpv.ZStr("blocks"), phpv.ZInt(st.Blocks).ZVal())
+	result.OffsetSet(ctx, phpv.ZStr("dev"), phpv.ZInt(dev).ZVal())
+	result.OffsetSet(ctx, phpv.ZStr("ino"), phpv.ZInt(ino).ZVal())
+	result.OffsetSet(ctx, phpv.ZStr("mode"), phpv.ZInt(mode).ZVal())
+	result.OffsetSet(ctx, phpv.ZStr("nlink"), phpv.ZInt(nlink).ZVal())
+	result.OffsetSet(ctx, phpv.ZStr("uid"), phpv.ZInt(uid).ZVal())
+	result.OffsetSet(ctx, phpv.ZStr("gid"), phpv.ZInt(gid).ZVal())
+	result.OffsetSet(ctx, phpv.ZStr("rdev"), phpv.ZInt(rdev).ZVal())
+	result.OffsetSet(ctx, phpv.ZStr("size"), phpv.ZInt(size).ZVal())
+	result.OffsetSet(ctx, phpv.ZStr("atime"), phpv.ZInt(atime).ZVal())
+	result.OffsetSet(ctx, phpv.ZStr("mtime"), phpv.ZInt(mtime).ZVal())
+	result.OffsetSet(ctx, phpv.ZStr("ctime"), phpv.ZInt(ctime).ZVal())
+	result.OffsetSet(ctx, phpv.ZStr("blksize"), phpv.ZInt(blksize).ZVal())
+	result.OffsetSet(ctx, phpv.ZStr("blocks"), phpv.ZInt(blocks).ZVal())
 
 	return result.ZVal()
 }
