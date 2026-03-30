@@ -70,6 +70,16 @@ type GeneratorState struct {
 	// Whether the generator is being force-closed (e.g. via unset/$gen = null)
 	// When true, yield inside finally blocks is forbidden.
 	forceClosing bool
+
+	// Delegation state: set when this generator is executing "yield from $inner".
+	// When non-nil, current()/key()/valid()/next()/send() calls are proxied to
+	// the inner generator directly, without running through this generator's goroutine.
+	// This supports the PHP semantics where yield-from is a transparent proxy.
+	delegate    *GeneratorState // the inner generator being delegated to
+	delegateObj *ZObject        // the inner generator ZObject (needed for force-close)
+	// delegateDone receives a signal when delegation should end.
+	// This is sent by the external iteration code when the delegate is exhausted.
+	delegateDone chan generatorMsg
 }
 
 // generatorExecContext wraps a phpv.Context to carry the GeneratorState via Go context.Value.
@@ -434,41 +444,57 @@ func generatorYieldFromGenerator(ctx phpv.Context, obj *ZObject, innerState *Gen
 		}
 	}
 
-	for innerState.valid {
-		// Yield the inner generator's current value (using Delegated to preserve outer key counter)
-		result, err := GeneratorYieldDelegated(ctx, innerState.currentKey, innerState.currentValue)
-		if err != nil {
-			// If the outer generator is being force-closed, force-close the inner generator
-			// first so its finally blocks run before the outer generator's finally blocks.
-			if _, isClose := err.(*phperr.GeneratorForceClose); isClose {
-				generatorForceClose(ctx, innerState)
-				return nil, err
-			}
-			// Forward throw to inner generator
-			if _, ok := err.(*phperr.PhpThrow); ok {
-				throwResult, throwErr := generatorThrowInner(ctx, obj, innerState, err)
-				if throwErr != nil {
-					return nil, throwErr
-				}
-				_ = throwResult
-				continue
-			}
-			return nil, err
+	// Get the outer generator's state from the context
+	outerStateVal := ctx.Value(generatorContextKey{})
+	if outerStateVal == nil {
+		return nil, fmt.Errorf("yield from used outside of a generator")
+	}
+	outerState := outerStateVal.(*GeneratorState)
+
+	if !innerState.valid {
+		// Inner generator is already exhausted: return its return value immediately
+		if innerState.genErr != nil {
+			return nil, innerState.genErr
 		}
-		// Forward send value to inner generator
-		if err := generatorAdvance(ctx, innerState, result); err != nil {
-			return nil, err
+		if innerState.returnVal != nil {
+			return innerState.returnVal, nil
 		}
+		return phpv.ZNULL.ZVal(), nil
 	}
 
-	// Return the inner generator's return value
-	if innerState.genErr != nil {
-		return nil, innerState.genErr
+	// Set up delegation: outer generator now proxies the inner generator.
+	// The outer generator's goroutine (this code) will suspend on delegateDone,
+	// while external callers interact with outerState.delegate directly.
+	doneCh := make(chan generatorMsg, 1)
+	outerState.delegate = innerState
+	outerState.delegateObj = obj
+	outerState.delegateDone = doneCh
+
+	// Sync the outer state with the inner's current position for the initial yield.
+	// The caller (generatorEnsureStarted/generatorAdvance) will read these from
+	// outerState.yieldCh below. But first, we yield the first delegated value.
+	// Send the initial yield to the outer generator's caller via yieldCh.
+	outerState.status = GeneratorSuspended
+	outerState.currentKey = innerState.currentKey
+	outerState.currentValue = innerState.currentValue
+	outerState.valid = true
+	outerState.yieldCh <- &GeneratorYield{Key: innerState.currentKey, Value: innerState.currentValue}
+
+	// Suspend: wait for the delegation to complete.
+	// The external iteration code will signal us via delegateDone when:
+	// 1. The inner generator is exhausted (returns the return value or error)
+	// 2. The outer generator is force-closed
+	doneMsg := <-doneCh
+
+	// Clear delegation state
+	outerState.delegate = nil
+	outerState.delegateObj = nil
+	outerState.delegateDone = nil
+
+	if doneMsg.err != nil {
+		return nil, doneMsg.err
 	}
-	if innerState.returnVal != nil {
-		return innerState.returnVal, nil
-	}
-	return phpv.ZNULL.ZVal(), nil
+	return doneMsg.val, nil
 }
 
 func generatorYieldFromIterator(ctx phpv.Context, obj *ZObject) (*phpv.ZVal, error) {
@@ -576,6 +602,15 @@ func generatorAdvance(ctx phpv.Context, state *GeneratorState, sendVal *phpv.ZVa
 	}
 
 	state.advanced = true
+
+	// If delegating to an inner generator, advance the inner generator directly
+	// instead of resuming the outer goroutine. This supports PHP's "yield from"
+	// proxy semantics where the outer generator transparently delegates all
+	// iteration calls to the inner generator, even when the inner is shared.
+	if state.delegate != nil {
+		return generatorAdvanceDelegated(ctx, state, sendVal, false, nil)
+	}
+
 	state.status = GeneratorRunning
 
 	if sendVal == nil {
@@ -601,10 +636,96 @@ func generatorAdvance(ctx phpv.Context, state *GeneratorState, sendVal *phpv.ZVa
 	return nil
 }
 
+// generatorAdvanceDelegated advances the inner (delegate) generator and
+// updates the outer generator's state to reflect the new position.
+// When the inner generator is exhausted, it signals the outer goroutine to
+// continue execution past the "yield from" and waits for its next action.
+// isThrow/throwErr: if true, inject a throw into the inner generator instead of send.
+func generatorAdvanceDelegated(ctx phpv.Context, outerState *GeneratorState, sendVal *phpv.ZVal, isThrow bool, throwErr error) error {
+	innerState := outerState.delegate
+	innerObj := outerState.delegateObj
+	doneCh := outerState.delegateDone
+
+	var advErr error
+	if isThrow {
+		_, advErr = generatorThrowInner(ctx, innerObj, innerState, throwErr)
+	} else {
+		advErr = generatorAdvance(ctx, innerState, sendVal)
+	}
+
+	if advErr != nil {
+		// Inner generator threw an exception.
+		// Signal the outer goroutine that delegation ended with an error.
+		doneCh <- generatorMsg{err: advErr}
+		// Wait for the outer goroutine to resume and yield or complete.
+		return generatorWaitAfterDelegateDone(ctx, outerState)
+	}
+
+	if !innerState.valid {
+		// Inner generator is exhausted: finalize delegation.
+		var retVal *phpv.ZVal
+		if innerState.genErr != nil {
+			// Inner generator had an unhandled error
+			doneCh <- generatorMsg{err: innerState.genErr}
+			return generatorWaitAfterDelegateDone(ctx, outerState)
+		}
+		if innerState.returnVal != nil {
+			retVal = innerState.returnVal
+		}
+		// Signal outer goroutine that delegation is done with the return value.
+		doneCh <- generatorMsg{val: retVal}
+		return generatorWaitAfterDelegateDone(ctx, outerState)
+	}
+
+	// Inner generator yielded: update outer state to reflect new position.
+	// The outer generator is still delegating (not yet done).
+	outerState.currentKey = innerState.currentKey
+	outerState.currentValue = innerState.currentValue
+	outerState.valid = true
+	outerState.status = GeneratorSuspended
+	return nil
+}
+
+// generatorWaitAfterDelegateDone waits for the outer generator's goroutine to
+// yield or complete after the delegation has ended (delegateDone was signaled).
+// The outer goroutine clears the delegate and then continues executing.
+func generatorWaitAfterDelegateDone(ctx phpv.Context, outerState *GeneratorState) error {
+	outerState.status = GeneratorRunning
+	select {
+	case doneMsg := <-outerState.doneCh:
+		outerState.valid = false
+		outerState.status = GeneratorClosed
+		if doneMsg.err != nil {
+			outerState.genErr = doneMsg.err
+			return doneMsg.err
+		}
+	case yield := <-outerState.yieldCh:
+		outerState.currentKey = yield.Key
+		outerState.currentValue = yield.Value
+		outerState.valid = true
+		outerState.status = GeneratorSuspended
+	}
+	return nil
+}
+
 // generatorThrowInner throws an exception into a generator.
 func generatorThrowInner(ctx phpv.Context, obj *ZObject, state *GeneratorState, err error) (*phpv.ZVal, error) {
 	if state.status != GeneratorSuspended {
 		return nil, err
+	}
+
+	state.advanced = true
+
+	// If the outer generator is delegating, forward the throw to the inner generator.
+	if state.delegate != nil {
+		advErr := generatorAdvanceDelegated(ctx, state, nil, true, err)
+		if advErr != nil {
+			return nil, advErr
+		}
+		if state.valid {
+			return state.currentValue, nil
+		}
+		return phpv.ZNULL.ZVal(), nil
 	}
 
 	state.status = GeneratorRunning
@@ -642,6 +763,15 @@ func generatorCurrent(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZV
 		return phpv.ZNULL.ZVal(), nil
 	}
 
+	// When delegating, return the delegate's current value (which may have changed
+	// if the delegate was advanced externally since our last yield).
+	if state.delegate != nil {
+		if !state.delegate.valid {
+			return phpv.ZNULL.ZVal(), nil
+		}
+		return state.delegate.currentValue, nil
+	}
+
 	return state.currentValue, nil
 }
 
@@ -657,6 +787,14 @@ func generatorKey(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, 
 
 	if !state.valid {
 		return phpv.ZNULL.ZVal(), nil
+	}
+
+	// When delegating, return the delegate's current key.
+	if state.delegate != nil {
+		if !state.delegate.valid {
+			return phpv.ZNULL.ZVal(), nil
+		}
+		return state.delegate.currentKey, nil
 	}
 
 	return state.currentKey, nil
@@ -712,6 +850,11 @@ func generatorValid(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal
 
 	if err := generatorEnsureStarted(ctx, state); err != nil {
 		return nil, err
+	}
+
+	// When delegating, the outer generator is valid as long as the delegate is valid.
+	if state.delegate != nil {
+		return phpv.ZBool(state.delegate.valid).ZVal(), nil
 	}
 
 	return phpv.ZBool(state.valid).ZVal(), nil
@@ -867,6 +1010,47 @@ func generatorForceClose(ctx phpv.Context, state *GeneratorState) error {
 
 	state.forceClosing = true
 	state.status = GeneratorRunning
+
+	// If delegating to an inner generator, handle the force-close carefully.
+	// We need to force-close the inner generator FIRST (so its finally blocks run
+	// before ours), but ONLY if it's exclusively owned by us (refCount == 0).
+	// If the inner generator is referenced externally (refCount > 0), it's shared
+	// and we must not close it; just let our goroutine unwind without it.
+	if state.delegate != nil {
+		innerState := state.delegate
+		doneCh := state.delegateDone
+		// Check if the inner generator is exclusively owned (no external references).
+		// When refCount == 0, the inner is a temp created inline in a yield-from expr.
+		// When refCount > 0, the inner is shared (e.g., passed as argument to multiple generators).
+		innerExclusive := false
+		if state.delegateObj != nil {
+			if state.delegateObj.RefCount() <= 0 {
+				innerExclusive = true
+			}
+		}
+		if innerExclusive {
+			// Force-close the inner generator first (runs its finally blocks in order)
+			generatorForceClose(ctx, innerState)
+		}
+		// Signal the outer goroutine that delegation ended with force-close
+		doneCh <- generatorMsg{err: generatorCloseErr}
+		// Wait for the outer generator to finish its cleanup
+		select {
+		case doneMsg := <-state.doneCh:
+			state.valid = false
+			state.status = GeneratorClosed
+			if doneMsg.err != nil {
+				if _, isClose := doneMsg.err.(*phperr.GeneratorForceClose); !isClose {
+					return doneMsg.err
+				}
+			}
+		case yield := <-state.yieldCh:
+			state.valid = false
+			state.status = GeneratorClosed
+			_ = yield
+		}
+		return nil
+	}
 
 	// Send the force-close signal into the generator goroutine.
 	// The generator will propagate GeneratorForceClose through try/finally blocks.

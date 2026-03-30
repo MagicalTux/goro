@@ -98,6 +98,13 @@ func readIntArg(ctx phpv.Context, v *phpv.ZVal, funcName string, argNum int, arg
 			}
 			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "Number is not an integer string")
 		}
+		// PHP does not accept leading '+' sign in GMP number strings
+		if strings.HasPrefix(s, "+") {
+			if prefix != "" {
+				return nil, phpobj.ThrowError(ctx, phpobj.ValueError, prefix+"is not an integer string")
+			}
+			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "Number is not an integer string")
+		}
 		i := &big.Int{}
 		_, ok := i.SetString(s, 0)
 		if !ok {

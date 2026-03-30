@@ -102,7 +102,7 @@ func (h *TypeHint) CheckStrict(ctx Context, val *ZVal) bool {
 		if h.s == "" {
 			return true
 		}
-		if h.s == "self" {
+		if strings.ToLower(string(h.s)) == "self" {
 			return true
 		}
 		obj := val.AsObject(ctx)
@@ -229,7 +229,7 @@ func (h *TypeHint) Check(ctx Context, val *ZVal) bool {
 		if h.s == "" {
 			return true // any object
 		}
-		if h.s == "self" {
+		if strings.ToLower(string(h.s)) == "self" {
 			return true // TODO: proper check
 		}
 		// Check instanceof by class name
@@ -452,7 +452,11 @@ func IsNilClass(c ZClass) bool {
 func ParseTypeHint(s ZString) *TypeHint {
 	switch s.ToLower() {
 	case "self":
-		return &TypeHint{t: ZtObject, s: "self"}
+		// Preserve original case (e.g. SELF) for accurate error messages.
+		return &TypeHint{t: ZtObject, s: s}
+	case "parent":
+		// Preserve original case (e.g. PARENT) for accurate error messages.
+		return &TypeHint{t: ZtObject, s: s}
 	case "static":
 		return &TypeHint{t: ZtObject, s: "static"}
 	case "iterable":
@@ -495,7 +499,7 @@ func ResolveTypeHintSelf(h *TypeHint, className ZString) string {
 	if h == nil {
 		return ""
 	}
-	if h.t == ZtObject && h.s == "self" {
+	if h.t == ZtObject && strings.ToLower(string(h.s)) == "self" {
 		prefix := ""
 		if h.Nullable {
 			prefix = "?"

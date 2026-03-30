@@ -17,7 +17,104 @@ func reflectionClassToString(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.Z
 	}
 	// Check if this is a ReflectionObject (uses "Object of class" prefix)
 	isReflectionObj := o.GetClass() == ReflectionObject
-	return phpv.ZString(formatReflectionClass(ctx, zc, isReflectionObj, nil)).ZVal(), nil
+	var dynamicProps []phpv.ZString
+	if isReflectionObj {
+		// Collect dynamic (non-declared) public properties from the reflected object instance.
+		if instanceOpaque := o.GetOpaque(ReflectionObject); instanceOpaque != nil {
+			if instance, ok := instanceOpaque.(phpv.ZObject); ok {
+				dynamicProps = collectDynamicProps(zc, instance)
+			}
+		}
+	}
+	return phpv.ZString(formatReflectionClass(ctx, zc, isReflectionObj, dynamicProps)).ZVal(), nil
+}
+
+// collectDynamicProps returns the names of properties on obj that are not declared in the class.
+// Only public dynamic properties are included (matching PHP's behavior).
+func collectDynamicProps(zc *phpobj.ZClass, obj phpv.ZObject) []phpv.ZString {
+	// Build a set of declared property names (from all levels of the hierarchy)
+	declared := make(map[phpv.ZString]bool)
+	for cur := zc; cur != nil; {
+		for _, prop := range cur.Props {
+			declared[prop.VarName] = true
+		}
+		parent := cur.GetParent()
+		if phpv.IsNilClass(parent) {
+			break
+		}
+		if pc, ok := parent.(*phpobj.ZClass); ok {
+			cur = pc
+		} else {
+			break
+		}
+	}
+	// Iterate the object's hash table and find entries not in declared
+	var result []phpv.ZString
+	ht := obj.HashTable()
+	if ht == nil {
+		return result
+	}
+	it := ht.NewIterator()
+	for range it.Iterate(nil) {
+		keyVal, err := it.Key(nil)
+		if err != nil || keyVal == nil {
+			continue
+		}
+		if keyVal.GetType() != phpv.ZtString {
+			continue
+		}
+		name := keyVal.AsString(nil)
+		// Skip mangled property names (private/protected props stored with mangled keys
+		// like "*ClassName:propName" or similar internal representations)
+		if strings.HasPrefix(string(name), "*") || strings.Contains(string(name), "\x00") {
+			continue
+		}
+		if !declared[name] {
+			result = append(result, name)
+		}
+	}
+	return result
+}
+
+// collectVisibleProps returns all properties visible for a class:
+// the class's own properties (including private) plus inherited public/protected
+// from parent classes (not private inherited).
+// Properties are returned in the same order as PHP's reflection: own props first,
+// then parent props (excluding private).
+func collectVisibleProps(zc *phpobj.ZClass) []*phpv.ZClassProp {
+	// Collect own props + inherited public/protected from parents
+	var result []*phpv.ZClassProp
+	seen := make(map[phpv.ZString]bool)
+
+	// Own properties first
+	for _, prop := range zc.Props {
+		seen[prop.VarName] = true
+		result = append(result, prop)
+	}
+
+	// Walk up the hierarchy and include public/protected (not private) props
+	for parent := zc.GetParent(); !phpv.IsNilClass(parent); {
+		pc, ok := parent.(*phpobj.ZClass)
+		if !ok {
+			break
+		}
+		for _, prop := range pc.Props {
+			if seen[prop.VarName] {
+				continue
+			}
+			// Skip private props from parent classes
+			if prop.Modifiers.IsPrivate() {
+				continue
+			}
+			seen[prop.VarName] = true
+			result = append(result, prop)
+		}
+		parent = pc.GetParent()
+		if phpv.IsNilClass(parent) {
+			break
+		}
+	}
+	return result
 }
 
 func reflectionClassHasConstant(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
@@ -691,6 +788,7 @@ func formatReflectionClass(ctx phpv.Context, zc *phpobj.ZClass, isObject bool, d
 		staticMethodCount++
 	}
 	sb.WriteString(fmt.Sprintf("  - Static methods [%d] {\n", staticMethodCount))
+	firstStaticMethod := true
 	for _, m := range allMethods {
 		if !m.Modifiers.IsStatic() {
 			continue
@@ -698,18 +796,25 @@ func formatReflectionClass(ctx phpv.Context, zc *phpobj.ZClass, isObject bool, d
 		if m.Class != nil && m.Class.GetName() != zc.GetName() && m.Modifiers.IsPrivate() {
 			continue
 		}
+		if !firstStaticMethod {
+			sb.WriteString("\n")
+		}
+		firstStaticMethod = false
 		sb.WriteString(rcFormatMethodShort(ctx, zc, m))
 	}
 	sb.WriteString("  }\n\n")
 
+	// Collect all non-static properties visible for this class:
+	// own properties + inherited public/protected (not private) from parents.
+	visibleProps := collectVisibleProps(zc)
 	nonStaticProps := 0
-	for _, prop := range zc.Props {
+	for _, prop := range visibleProps {
 		if !prop.Modifiers.IsStatic() {
 			nonStaticProps++
 		}
 	}
 	sb.WriteString(fmt.Sprintf("  - Properties [%d] {\n", nonStaticProps))
-	for _, prop := range zc.Props {
+	for _, prop := range visibleProps {
 		if prop.Modifiers.IsStatic() {
 			continue
 		}
@@ -738,6 +843,7 @@ func formatReflectionClass(ctx phpv.Context, zc *phpobj.ZClass, isObject bool, d
 		nonStaticMethods++
 	}
 	sb.WriteString(fmt.Sprintf("  - Methods [%d] {\n", nonStaticMethods))
+	firstNonStaticMethod := true
 	for _, m := range allMethods {
 		if m.Modifiers.IsStatic() {
 			continue
@@ -745,6 +851,10 @@ func formatReflectionClass(ctx phpv.Context, zc *phpobj.ZClass, isObject bool, d
 		if m.Class != nil && m.Class.GetName() != zc.GetName() && m.Modifiers.IsPrivate() {
 			continue
 		}
+		if !firstNonStaticMethod {
+			sb.WriteString("\n")
+		}
+		firstNonStaticMethod = false
 		sb.WriteString(rcFormatMethodShort(ctx, zc, m))
 	}
 	sb.WriteString("  }\n}\n")
@@ -775,6 +885,13 @@ func inferTypeFromValue(val *phpv.ZVal) string {
 	}
 }
 
+// phpEscapeSingleQuote escapes single quotes and backslashes for PHP single-quoted string literals.
+func phpEscapeSingleQuote(s string) string {
+	s = strings.ReplaceAll(s, "\\", "\\\\")
+	s = strings.ReplaceAll(s, "'", "\\'")
+	return s
+}
+
 // formatParamDefault returns the string representation of a parameter default value
 // for use in reflection __toString output (e.g. " = NULL", " = 'hello'", " = K").
 func formatParamDefault(ctx phpv.Context, arg *phpv.FuncArg) string {
@@ -783,10 +900,10 @@ func formatParamDefault(ctx phpv.Context, arg *phpv.FuncArg) string {
 	}
 	cd, ok := arg.DefaultValue.(*phpv.CompileDelayed)
 	if !ok {
-		// Direct value
-		return " = " + formatConstantValue(ctx, arg.DefaultValue.ZVal())
+		// Direct value (already evaluated at compile time)
+		return " = " + formatParamValue(ctx, arg.DefaultValue.ZVal())
 	}
-	// Use Dump() to get the PHP source representation
+	// Use Dump() to get the PHP source representation (preserves constant names, quoted strings)
 	var buf bytes.Buffer
 	if err := cd.V.Dump(&buf); err == nil {
 		s := buf.String()
@@ -799,15 +916,16 @@ func formatParamDefault(ctx phpv.Context, arg *phpv.FuncArg) string {
 		}
 		return " = " + s
 	}
-	// Fallback: evaluate
+	// Fallback: evaluate and format
 	if resolved, err := cd.Run(ctx); err == nil && resolved != nil {
-		return " = " + formatConstantValue(ctx, resolved)
+		return " = " + formatParamValue(ctx, resolved)
 	}
 	return " = <default>"
 }
 
-// formatConstantValue formats a constant value for ReflectionClass::__toString() output.
-func formatConstantValue(ctx phpv.Context, val *phpv.ZVal) string {
+// formatParamValue formats an evaluated value for parameter default display.
+// Like formatConstantValue but always single-quotes strings (matching PHP reflection output).
+func formatParamValue(ctx phpv.Context, val *phpv.ZVal) string {
 	if val == nil {
 		return "NULL"
 	}
@@ -819,6 +937,35 @@ func formatConstantValue(ctx phpv.Context, val *phpv.ZVal) string {
 			return "true"
 		}
 		return "false"
+	case phpv.ZtInt:
+		return fmt.Sprintf("%d", val.AsInt(ctx))
+	case phpv.ZtFloat:
+		return fmt.Sprintf("%g", val.AsFloat(ctx))
+	case phpv.ZtString:
+		return "'" + phpEscapeSingleQuote(string(val.AsString(ctx))) + "'"
+	case phpv.ZtArray:
+		return "Array"
+	case phpv.ZtObject:
+		return "Object"
+	default:
+		return val.String()
+	}
+}
+
+// formatConstantValue formats a constant value for ReflectionClass::__toString() output.
+func formatConstantValue(ctx phpv.Context, val *phpv.ZVal) string {
+	if val == nil {
+		return "NULL"
+	}
+	switch val.GetType() {
+	case phpv.ZtNull:
+		return "NULL"
+	case phpv.ZtBool:
+		// PHP reflection uses integer string representation for booleans in constant values
+		if val.AsBool(ctx) {
+			return "1"
+		}
+		return ""
 	case phpv.ZtInt:
 		return fmt.Sprintf("%d", val.AsInt(ctx))
 	case phpv.ZtFloat:

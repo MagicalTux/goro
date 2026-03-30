@@ -204,24 +204,15 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seen *ser
 	var result string
 	switch value.GetType() {
 	case phpv.ZtNull:
-		idx := seen.nextRef() // NULL still gets a reference slot
-		if _, already := seen.valRefs[value]; !already {
-			seen.valRefs[value] = idx
-		}
+		seen.nextRef() // NULL still gets a reference slot
 		result = "N;"
 	case phpv.ZtResource:
-		idx := seen.nextRef()
-		if _, already := seen.valRefs[value]; !already {
-			seen.valRefs[value] = idx
-		}
+		seen.nextRef()
 		// PHP serializes resources as their integer ID
 		r := value.Value().(phpv.Resource)
 		result = "i:" + strconv.Itoa(r.GetResourceID()) + ";"
 	case phpv.ZtBool:
-		idx := seen.nextRef()
-		if _, already := seen.valRefs[value]; !already {
-			seen.valRefs[value] = idx
-		}
+		seen.nextRef()
 		switch value.AsBool(ctx) {
 		case true:
 			result = "b:1;"
@@ -229,17 +220,11 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seen *ser
 			result = "b:0;"
 		}
 	case phpv.ZtInt:
-		idx := seen.nextRef()
-		if _, already := seen.valRefs[value]; !already {
-			seen.valRefs[value] = idx
-		}
+		seen.nextRef()
 		n := value.AsInt(ctx)
 		result = "i:" + strconv.FormatInt(int64(n), 10) + ";"
 	case phpv.ZtFloat:
-		idx := seen.nextRef()
-		if _, already := seen.valRefs[value]; !already {
-			seen.valRefs[value] = idx
-		}
+		seen.nextRef()
 		n := value.AsFloat(ctx)
 		p := phpv.GetSerializePrecision(ctx)
 		var s string
@@ -252,10 +237,7 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seen *ser
 		}
 		result = "d:" + s + ";"
 	case phpv.ZtString:
-		idx := seen.nextRef()
-		if _, already := seen.valRefs[value]; !already {
-			seen.valRefs[value] = idx
-		}
+		seen.nextRef()
 		s := string(value.AsString(ctx))
 		result = "s:" + strconv.Itoa(len(s)) + ":\"" + s + "\";"
 	case phpv.ZtArray:
@@ -268,10 +250,7 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seen *ser
 		seen.arrays[arr] = true
 		defer delete(seen.arrays, arr)
 
-		idx := seen.nextRef() // array gets a reference slot
-		if _, already := seen.valRefs[value]; !already {
-			seen.valRefs[value] = idx
-		}
+		seen.nextRef() // array gets a reference slot
 
 		count := strconv.FormatInt(int64(arr.Count(ctx)), 10)
 

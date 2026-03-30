@@ -815,6 +815,112 @@ func applyRelativeUnit(t time.Time, amount int, unit string) time.Time {
 	return t
 }
 
+// parsePHPCompoundModifier handles PHP-specific compound date modifiers like:
+// "first day of next month", "last thursday of next month", "3 tuesday"
+// Input should already be lowercased and trimmed.
+func parsePHPCompoundModifier(input string, base time.Time) (time.Time, bool) {
+	loc := base.Location()
+
+	// Parse "N weekday" where N is an ordinal (1..5) - finds the Nth weekday in current month
+	// e.g. "3 tuesday" = 3rd Tuesday of the current month
+	reOrdinalWeekday := regexp.MustCompile(`^(\d+)\s+(sunday|monday|tuesday|wednesday|thursday|friday|saturday)$`)
+	if m := reOrdinalWeekday.FindStringSubmatch(input); m != nil {
+		n, _ := strconv.Atoi(m[1])
+		wd, ok := parseWeekday(m[2])
+		if ok && n >= 1 {
+			y, mo, _ := base.Date()
+			// Find the Nth occurrence of wd in month mo of year y
+			// Start from day 1 of the month
+			first := time.Date(y, mo, 1, base.Hour(), base.Minute(), base.Second(), base.Nanosecond(), loc)
+			// Find first occurrence of the weekday
+			diff := int(wd) - int(first.Weekday())
+			if diff < 0 {
+				diff += 7
+			}
+			result := first.AddDate(0, 0, diff+(n-1)*7)
+			// Make sure we're still in the same month
+			if result.Month() == mo {
+				return result, true
+			}
+		}
+	}
+
+	// Handle "last weekday of [period]" e.g. "last thursday of next month"
+	reLastWD := regexp.MustCompile(`^last\s+(sunday|monday|tuesday|wednesday|thursday|friday|saturday)\s+of\s+(.+)$`)
+	if m := reLastWD.FindStringSubmatch(input); m != nil {
+		wd, ok := parseWeekday(m[1])
+		if ok {
+			// Get the target month
+			var targetMonth time.Time
+			period := strings.TrimSpace(m[2])
+			switch period {
+			case "this month":
+				y, mo, _ := base.Date()
+				targetMonth = time.Date(y, mo, 1, 0, 0, 0, 0, loc)
+			case "next month":
+				y, mo, _ := base.Date()
+				targetMonth = time.Date(y, mo+1, 1, 0, 0, 0, 0, loc)
+			case "last month":
+				y, mo, _ := base.Date()
+				targetMonth = time.Date(y, mo-1, 1, 0, 0, 0, 0, loc)
+			}
+			if !targetMonth.IsZero() {
+				// Find last day of targetMonth
+				lastDay := time.Date(targetMonth.Year(), targetMonth.Month()+1, 0, 0, 0, 0, 0, loc)
+				// Find last occurrence of wd
+				diff := int(lastDay.Weekday()) - int(wd)
+				if diff < 0 {
+					diff += 7
+				}
+				result := lastDay.AddDate(0, 0, -diff)
+				return result, true
+			}
+		}
+	}
+
+	// Handle "first/last day of [period]" e.g. "first day of next month"
+	reFirstLastDay := regexp.MustCompile(`^(first|last)\s+day\s+of\s+(.+)$`)
+	if m := reFirstLastDay.FindStringSubmatch(input); m != nil {
+		isFirst := m[1] == "first"
+		period := strings.TrimSpace(m[2])
+		y, mo, _ := base.Date()
+		switch period {
+		case "this month":
+			if isFirst {
+				return time.Date(y, mo, 1, base.Hour(), base.Minute(), base.Second(), 0, loc), true
+			}
+			// last day of this month
+			last := time.Date(y, mo+1, 0, base.Hour(), base.Minute(), base.Second(), 0, loc)
+			return last, true
+		case "next month":
+			if isFirst {
+				return time.Date(y, mo+1, 1, base.Hour(), base.Minute(), base.Second(), 0, loc), true
+			}
+			// last day of next month
+			last := time.Date(y, mo+2, 0, base.Hour(), base.Minute(), base.Second(), 0, loc)
+			return last, true
+		case "last month":
+			if isFirst {
+				return time.Date(y, mo-1, 1, base.Hour(), base.Minute(), base.Second(), 0, loc), true
+			}
+			last := time.Date(y, mo, 0, base.Hour(), base.Minute(), base.Second(), 0, loc)
+			return last, true
+		case "january", "february", "march", "april", "may", "june",
+			"july", "august", "september", "october", "november", "december":
+			mo2, ok := parseMonth(period)
+			if ok {
+				if isFirst {
+					return time.Date(y, mo2, 1, base.Hour(), base.Minute(), base.Second(), 0, loc), true
+				}
+				last := time.Date(y, mo2+1, 0, base.Hour(), base.Minute(), base.Second(), 0, loc)
+				return last, true
+			}
+		}
+	}
+
+	return time.Time{}, false
+}
+
 // strToTime parses a date/time string relative to a base time.
 func strToTime(input string, base time.Time) (time.Time, bool) {
 	input = strings.TrimSpace(input)
@@ -883,6 +989,14 @@ func strToTime(input string, base time.Time) (time.Time, bool) {
 	if matches := reAgo.FindStringSubmatch(input); matches != nil {
 		amount, _ := strconv.Atoi(matches[1])
 		return applyRelativeUnit(base, -amount, matches[2]), true
+	}
+
+	// PHP-specific compound modifiers: "first/last day of [this/next/last] month"
+	// and "N weekday of [this/next/last] month" and "last thursday of next month"
+	// Must be checked BEFORE reNextLast to avoid "last thursday" matching without "of next month"
+	lowerInput := strings.ToLower(strings.TrimSpace(input))
+	if t, ok := parsePHPCompoundModifier(lowerInput, base); ok {
+		return t, true
 	}
 
 	// "next/last weekday"

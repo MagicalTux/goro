@@ -48,19 +48,32 @@ func checkDateTimeInitialized(ctx phpv.Context, obj *phpobj.ZObject) error {
 		fmt.Sprintf("Object of type %s (inheriting %s) has not been correctly initialized by calling parent::__construct() in its constructor", className, baseClass))
 }
 
-// checkDateIntervalInitialized throws DateObjectError if the DateInterval object is not initialized.
-func checkDateIntervalInitialized(ctx phpv.Context, obj *phpobj.ZObject) error {
-	// A DateInterval is initialized if its constructor was called.
-	// We check if the class is a subclass and if the object's properties look uninitialized.
-	// In PHP, DateInterval stores internal data; we check via a special opaque key.
-	if _, ok := obj.Opaque[DateInterval]; ok {
+// checkDateTimeInterfaceInitialized is like checkDateTimeInitialized but uses "DateTimeInterface"
+// as the type name in the error message, as expected when validating DatePeriod constructor args.
+func checkDateTimeInterfaceInitialized(ctx phpv.Context, obj *phpobj.ZObject) error {
+	if isDateTimeInitialized(obj) {
 		return nil
 	}
-	// If the class is exactly DateInterval (not a subclass), it's always initialized
-	// because our constructor is always called for direct instantiation.
+	return phpobj.ThrowError(ctx, DateObjectError,
+		"Object of type DateTimeInterface has not been correctly initialized by calling parent::__construct() in its constructor")
+}
+
+// isDateIntervalInitialized checks if a DateInterval object has been properly initialized.
+func isDateIntervalInitialized(obj *phpobj.ZObject) bool {
+	_, ok := obj.Opaque[DateInterval]
+	return ok
+}
+
+// checkDateIntervalInitialized throws DateObjectError if the DateInterval object is not initialized.
+func checkDateIntervalInitialized(ctx phpv.Context, obj *phpobj.ZObject) error {
+	// A DateInterval is initialized if its constructor was called (opaque key set).
+	if isDateIntervalInitialized(obj) {
+		return nil
+	}
 	className := obj.Class.GetName()
 	if string(className) == "DateInterval" {
-		return nil
+		return phpobj.ThrowError(ctx, DateObjectError,
+			fmt.Sprintf("Object of type DateInterval has not been correctly initialized by calling parent::__construct() in its constructor"))
 	}
 	return phpobj.ThrowError(ctx, DateObjectError,
 		fmt.Sprintf("Object of type %s (inheriting DateInterval) has not been correctly initialized by calling parent::__construct() in its constructor", className))
@@ -792,6 +805,25 @@ func diffMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*php
 // addIntervalToTime adds a DateInterval to a time.Time and returns the result
 func addIntervalToTime(ctx phpv.Context, t time.Time, intervalObj *phpobj.ZObject, subtract bool) time.Time {
 	ht := intervalObj.HashTable()
+
+	// Handle from_string mode (DateInterval::createFromDateString)
+	fromStrVal := ht.GetString("from_string")
+	if fromStrVal != nil && bool(fromStrVal.AsBool(ctx)) {
+		dateStrVal := ht.GetString("date_string")
+		if dateStrVal != nil && !dateStrVal.IsNull() {
+			dateStr := string(dateStrVal.AsString(ctx))
+			// Try strtotime library first, then fall back to custom parser
+			newT, stErr := strtotime.StrToTime(dateStr, strtotime.InTZ(t.Location()), strtotime.Rel(t))
+			if stErr == nil {
+				return newT
+			}
+			// Fallback to custom parser (handles PHP-specific patterns like "first day of next month")
+			if newT2, ok := strToTime(dateStr, t); ok {
+				return newT2
+			}
+		}
+	}
+
 	years := int(ht.GetString("y").AsInt(ctx))
 	months := int(ht.GetString("m").AsInt(ctx))
 	days := int(ht.GetString("d").AsInt(ctx))
@@ -2375,7 +2407,8 @@ func init() {
 				Method: phpobj.NativeMethod(func(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 					// getRecurrences() returns NULL when the period was created with an end date
 					// (even though the property $recurrences is 1 in that case)
-					if opaque := this.GetOpaque(DatePeriod); opaque != nil {
+					opaque := this.GetOpaque(DatePeriod)
+					if opaque != nil {
 						if explicit, ok := opaque.(bool); ok && !explicit {
 							return phpv.ZNULL.ZVal(), nil
 						}
@@ -2384,7 +2417,22 @@ func init() {
 					if v == nil || v.IsNull() {
 						return phpv.ZNULL.ZVal(), nil
 					}
-					return v, nil
+					// Stored recurrences = original + (1 if include_start) + (1 if include_end)
+					// Return the original count to the caller
+					storedRec := int(v.AsInt(ctx))
+					includeStartV, _ := this.ObjectGet(ctx, phpv.ZString("include_start_date"))
+					if includeStartV != nil && !includeStartV.IsNull() && bool(includeStartV.AsBool(ctx)) {
+						if storedRec > 0 {
+							storedRec--
+						}
+					}
+					includeEndV, _ := this.ObjectGet(ctx, phpv.ZString("include_end_date"))
+					if includeEndV != nil && !includeEndV.IsNull() && bool(includeEndV.AsBool(ctx)) {
+						if storedRec > 0 {
+							storedRec--
+						}
+					}
+					return phpv.ZInt(storedRec).ZVal(), nil
 				}),
 			},
 			"getiterator": {
@@ -2427,33 +2475,33 @@ func init() {
 					startV, _ := arr.OffsetGet(ctx, phpv.ZString("start").ZVal())
 					if startV != nil && !startV.IsNull() {
 						startObj, ok := startV.Value().(*phpobj.ZObject)
-						if !ok {
+						if !ok || !startObj.Class.InstanceOf(DateTimeInterface) {
 							return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DatePeriod object")
 						}
-						if err := checkDateTimeInitialized(ctx, startObj); err != nil {
-							return nil, err
+						if !isDateTimeInitialized(startObj) {
+							return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DatePeriod object")
 						}
 					}
 					// Validate end
 					endV, _ := arr.OffsetGet(ctx, phpv.ZString("end").ZVal())
 					if endV != nil && !endV.IsNull() {
 						endObj, ok := endV.Value().(*phpobj.ZObject)
-						if !ok {
+						if !ok || !endObj.Class.InstanceOf(DateTimeInterface) {
 							return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DatePeriod object")
 						}
-						if err := checkDateTimeInitialized(ctx, endObj); err != nil {
-							return nil, err
+						if !isDateTimeInitialized(endObj) {
+							return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DatePeriod object")
 						}
 					}
 					// Validate current
 					currentV, _ := arr.OffsetGet(ctx, phpv.ZString("current").ZVal())
 					if currentV != nil && !currentV.IsNull() {
 						curObj, ok := currentV.Value().(*phpobj.ZObject)
-						if !ok {
+						if !ok || !curObj.Class.InstanceOf(DateTimeInterface) {
 							return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DatePeriod object")
 						}
-						if err := checkDateTimeInitialized(ctx, curObj); err != nil {
-							return nil, err
+						if !isDateTimeInitialized(curObj) {
+							return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DatePeriod object")
 						}
 					}
 					// Validate interval
@@ -2461,6 +2509,9 @@ func init() {
 					if intervalV != nil && !intervalV.IsNull() {
 						intObj, ok := intervalV.Value().(*phpobj.ZObject)
 						if !ok || !intObj.Class.InstanceOf(DateInterval) {
+							return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DatePeriod object")
+						}
+						if !isDateIntervalInitialized(intObj) {
 							return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DatePeriod object")
 						}
 					}
@@ -2644,7 +2695,7 @@ func datePeriodConstruct(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZV
 
 	// Validate start is a DateTime object
 	if startObj, ok := args[0].Value().(*phpobj.ZObject); ok {
-		if err := checkDateTimeInitialized(ctx, startObj); err != nil {
+		if err := checkDateTimeInterfaceInitialized(ctx, startObj); err != nil {
 			return nil, err
 		}
 	}
@@ -2668,10 +2719,13 @@ func datePeriodConstruct(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZV
 			return nil, phpobj.ThrowError(ctx, DateException,
 				fmt.Sprintf("DatePeriod::__construct(): Recurrence count must be greater or equal to 1 and lower than %d", int(^uint(0)>>1)))
 		}
-		// Store recurrences: PHP stores recurrences+1 when including start, recurrences when excluding
+		// Store recurrences: PHP stores recurrences + (1 if includeStart) + (1 if includeEnd)
 		storedRec := recCount
 		if includeStart {
-			storedRec = recCount + 1
+			storedRec++
+		}
+		if includeEnd {
+			storedRec++
 		}
 		this.ObjectSet(ctx, phpv.ZString("recurrences"), phpv.ZInt(storedRec).ZVal())
 		// Opaque true = recurrences were explicitly given
@@ -2679,7 +2733,7 @@ func datePeriodConstruct(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZV
 	} else {
 		// Validate end is a DateTime object if provided
 		if endObj, ok := args[2].Value().(*phpobj.ZObject); ok {
-			if err := checkDateTimeInitialized(ctx, endObj); err != nil {
+			if err := checkDateTimeInterfaceInitialized(ctx, endObj); err != nil {
 				return nil, err
 			}
 		}
@@ -2750,10 +2804,13 @@ func datePeriodInitFromISOCaller(ctx phpv.Context, this *phpobj.ZObject, isoStr 
 		this.ObjectSet(ctx, phpv.ZString("recurrences"), phpv.ZInt(endRecurrences).ZVal())
 		this.SetOpaque(DatePeriod, false)
 	} else if recurrences >= 0 {
-		// R4 means 4 repetitions; store as recurrences+1 when including start
+		// R4 means 4 repetitions; store as recurrences+1 when including start, +1 more if includeEnd
 		storedRec := recurrences
 		if includeStart {
-			storedRec = recurrences + 1
+			storedRec++
+		}
+		if includeEnd {
+			storedRec++
 		}
 		this.ObjectSet(ctx, phpv.ZString("recurrences"), phpv.ZInt(storedRec).ZVal())
 		this.SetOpaque(DatePeriod, true)
@@ -2900,6 +2957,13 @@ func datePeriodGenerateDates(ctx phpv.Context, this *phpobj.ZObject) ([]*phpv.ZV
 		return nil, nil, nil
 	}
 
+	// Determine the class to use for yielded dates (DateTime or DateTimeImmutable)
+	// PHP preserves the type of the start date object
+	yieldClass := DateTimeImmutable
+	if startObj.Class.InstanceOf(DateTime) && !startObj.Class.InstanceOf(DateTimeImmutable) {
+		yieldClass = DateTime
+	}
+
 	intervalObj, ok := intervalVal.Value().(*phpobj.ZObject)
 	if !ok {
 		return nil, nil, nil
@@ -2983,7 +3047,7 @@ func datePeriodGenerateDates(ctx phpv.Context, this *phpobj.ZObject) ([]*phpv.ZV
 					break
 				}
 				// includeEnd: yield this date and stop
-				dateObj, err := phpobj.NewZObject(ctx, DateTimeImmutable)
+				dateObj, err := phpobj.NewZObject(ctx, yieldClass)
 				if err != nil {
 					return nil, nil, err
 				}
@@ -3002,7 +3066,7 @@ func datePeriodGenerateDates(ctx phpv.Context, this *phpobj.ZObject) ([]*phpv.ZV
 			continue
 		}
 
-		dateObj, err := phpobj.NewZObject(ctx, DateTimeImmutable)
+		dateObj, err := phpobj.NewZObject(ctx, yieldClass)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -3018,7 +3082,7 @@ func datePeriodGenerateDates(ctx phpv.Context, this *phpobj.ZObject) ([]*phpv.ZV
 	var nextCurrent *phpv.ZVal
 	if len(results) > 0 {
 		// current is already one step past the last yielded date
-		nextObj, err := phpobj.NewZObject(ctx, DateTimeImmutable)
+		nextObj, err := phpobj.NewZObject(ctx, yieldClass)
 		if err == nil {
 			setTimeVal(nextObj, current)
 			nextCurrent = nextObj.ZVal()
@@ -3454,9 +3518,14 @@ func createDateIntervalFromString(ctx phpv.Context, dateStr string) (*phpv.ZVal,
 		// Try to use strtotime to parse relative expressions
 		_, stErr := strtotime.StrToTime(dateStr)
 		if stErr != nil {
-			return nil, phpobj.ThrowError(ctx, DateMalformedIntervalStringException,
-				fmt.Sprintf("Unknown or bad format (%s) at position 0 (%s): The timezone could not be found in the database",
-					dateStr, string(dateStr[0:1])))
+			// Fall back to custom parser for PHP-specific patterns like "first day of next month"
+			now := time.Now()
+			_, customOk := strToTime(trimmed, now)
+			if !customOk {
+				return nil, phpobj.ThrowError(ctx, DateMalformedIntervalStringException,
+					fmt.Sprintf("Unknown or bad format (%s) at position 0 (%s): The timezone could not be found in the database",
+						dateStr, string(dateStr[0:1])))
+			}
 		}
 	}
 

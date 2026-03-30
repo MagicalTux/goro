@@ -86,6 +86,13 @@ func addNamedCaptures(ctx phpv.Context, matches *phpv.ZArray, re *gopcre2.Regexp
 
 // > func int preg_match ( string $pattern , string $subject [, array &$matches [, int $flags = 0 [, int $offset = 0 ]]] )
 func pregMatch(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	// Check pattern type BEFORE core.Expand to avoid initializing $matches ref
+	if len(args) > 0 && args[0] != nil {
+		if err := checkStringArg(ctx, args[0], "preg_match", 1, "$pattern"); err != nil {
+			return nil, err
+		}
+	}
+
 	var patternVal *phpv.ZVal
 	var subject phpv.ZString
 	var matchesArg core.OptionalRef[*phpv.ZArray]
@@ -96,10 +103,6 @@ func pregMatch(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZFalse.ZVal(), err
 	}
 
-	if err := checkStringArg(ctx, patternVal, "preg_match", 1, "$pattern"); err != nil {
-		return nil, err
-	}
-
 	flags := core.Deref(flagsArg, 0)
 	offset := core.Deref(offsetArg, 0)
 	pattern := patternVal.AsString(ctx)
@@ -108,6 +111,9 @@ func pregMatch(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if pcreErr != nil {
 		ctx.Warn("%s", pcreErr.Warning("preg_match"))
 		setLastPCREError(ctx, pcreInternalError)
+		if matchesArg.HasArg() {
+			matchesArg.SetNull(ctx)
+		}
 		return phpv.ZBool(false).ZVal(), nil
 	}
 
@@ -200,6 +206,13 @@ func pregMatch(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 // > func int preg_match_all ( string $pattern , string $subject [, array &$matches [, int $flags = 0 [, int $offset = 0 ]]] )
 func pregMatchAll(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	// Check pattern type BEFORE core.Expand to avoid initializing $matches ref
+	if len(args) > 0 && args[0] != nil {
+		if err := checkStringArg(ctx, args[0], "preg_match_all", 1, "$pattern"); err != nil {
+			return nil, err
+		}
+	}
+
 	var patternVal *phpv.ZVal
 	var subject phpv.ZString
 	var matchesArg core.OptionalRef[*phpv.ZArray]
@@ -208,10 +221,6 @@ func pregMatchAll(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	_, err := core.Expand(ctx, args, &patternVal, &subject, &matchesArg, &flagsArg, &offsetArg)
 	if err != nil {
 		return phpv.ZFalse.ZVal(), err
-	}
-
-	if err := checkStringArg(ctx, patternVal, "preg_match_all", 1, "$pattern"); err != nil {
-		return nil, err
 	}
 
 	flags := core.Deref(flagsArg, 0)
@@ -227,6 +236,9 @@ func pregMatchAll(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if pcreErr != nil {
 		ctx.Warn("%s", pcreErr.Warning("preg_match_all"))
 		setLastPCREError(ctx, pcreInternalError)
+		if matchesArg.HasArg() {
+			matchesArg.SetNull(ctx)
+		}
 		return phpv.ZBool(false).ZVal(), nil
 	}
 

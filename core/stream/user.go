@@ -152,11 +152,19 @@ func (h *UserStreamHandler) OpenDir(ctx phpv.Context, path *url.URL, streamCtx p
 // UserStream wraps a PHP object that implements the stream wrapper protocol,
 // delegating io operations to PHP method calls.
 type UserStream struct {
-	ctx phpv.Context
-	obj *phpobj.ZObject
+	ctx  phpv.Context
+	obj  *phpobj.ZObject
+	rbuf []byte // buffer for data returned by stream_read but not yet consumed
 }
 
 func (u *UserStream) Read(p []byte) (int, error) {
+	// If we have buffered data, serve from buffer first
+	if len(u.rbuf) > 0 {
+		n := copy(p, u.rbuf)
+		u.rbuf = u.rbuf[n:]
+		return n, nil
+	}
+
 	result, err := u.obj.CallMethod(u.ctx, "stream_read",
 		phpv.ZInt(len(p)).ZVal(),
 	)
@@ -171,6 +179,10 @@ func (u *UserStream) Read(p []byte) (int, error) {
 		return 0, io.EOF
 	}
 	n := copy(p, data)
+	// If stream_read returned more than we can consume, buffer the rest
+	if n < len(data) {
+		u.rbuf = append(u.rbuf[:0], data[n:]...)
+	}
 	return n, nil
 }
 

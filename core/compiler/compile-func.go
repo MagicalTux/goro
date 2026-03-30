@@ -791,11 +791,7 @@ func compileFunctionWithName(name phpv.ZString, c compileCtx, l *phpv.Loc, rref 
 					}
 				}
 			}
-			i, err = c.NextItem()
-			if err != nil {
-				return nil, err
-			}
-			c.backup()
+			// For abstract methods, end line is the line of the semicolon.
 			zc.end = i.Loc()
 			zc.code = phpv.RunNull{}
 			return zc, nil
@@ -820,6 +816,10 @@ func compileFunctionWithName(name phpv.ZString, c compileCtx, l *phpv.Loc, rref 
 		return nil, err
 	}
 
+	// Capture the end location from the closing } (which compileBase just consumed).
+	// c.lastLoc() returns the location of the last consumed token, which is the }.
+	zc.end = c.lastLoc()
+
 	// Validate break/continue usage: they must be inside a loop or switch
 	if breakErr := validateBreakContinue(zc.code, 0); breakErr != nil {
 		return nil, breakErr
@@ -834,13 +834,6 @@ func compileFunctionWithName(name phpv.ZString, c compileCtx, l *phpv.Loc, rref 
 			}
 		}
 	}
-
-	i, err = c.NextItem()
-	if err != nil {
-		return nil, err
-	}
-	c.backup()
-	zc.end = i.Loc()
 
 	return zc, nil
 }
@@ -1720,6 +1713,7 @@ func compileFunctionUse(c compileCtx) (res []*phpv.FuncUse, err error) {
 
 // classNamesFromCtx extracts the current class name and parent class name
 // from a compile context, for use with validateTypeHint.
+// Returns [className, parentName, "trait"] where "trait" is present only if in a trait context.
 func classNamesFromCtx(c compileCtx) []phpv.ZString {
 	cls := c.getClass()
 	if cls == nil {
@@ -1733,6 +1727,10 @@ func classNamesFromCtx(c compileCtx) []phpv.ZString {
 		names = append(names, cls.ExtendsStr)
 	} else {
 		names = append(names, "")
+	}
+	// Signal trait context so validateTypeHint can reject self/parent in intersections.
+	if cls.Type == phpv.ZClassTypeTrait {
+		names = append(names, "trait")
 	}
 	return names
 }
@@ -1799,12 +1797,14 @@ func validateTypeHint(th *phpv.TypeHint, loc *phpv.Loc, className ...phpv.ZStrin
 					if err := validateIntersectionMember(part, loc); err != nil {
 						return err
 					}
-					// self/parent cannot be part of intersection types if not resolvable
+					// self/parent cannot be part of intersection types if not resolvable.
+					// In a trait, self cannot be resolved at compile time.
 					if part.Type() == phpv.ZtObject {
 						cn := strings.ToLower(string(part.ClassName()))
 						if cn == "self" || cn == "parent" {
+							isTrait := len(className) > 2 && className[2] == "trait"
 							canResolve := false
-							if len(className) > 0 && className[0] != "" {
+							if !isTrait && len(className) > 0 && className[0] != "" {
 								if cn == "self" {
 									canResolve = true
 								}
@@ -1871,6 +1871,12 @@ func validateTypeHint(th *phpv.TypeHint, loc *phpv.Loc, className ...phpv.ZStrin
 		hasTrue := false
 		hasBool := false
 		for _, u := range th.Union {
+			// Skip intersection groups (DNF members like (A&B)) — they are
+			// handled by validateDNFRedundancy which produces the correct error
+			// message format: "Type A&B is redundant with type A&B".
+			if len(u.Intersection) > 0 {
+				continue
+			}
 			key, displayName := resolveKey(u)
 			if u.Type() == phpv.ZtBool {
 				if u.ClassName() == "false" {
@@ -2040,10 +2046,12 @@ func validateTypeHint(th *phpv.TypeHint, loc *phpv.Loc, className ...phpv.ZStrin
 			if part.Type() == phpv.ZtObject {
 				cn := strings.ToLower(string(part.ClassName()))
 				if cn == "self" || cn == "parent" {
-					// Check if we have a class context and it's not a trait
+					// Check if we have a class context and it's not a trait.
+					// In a trait, self cannot be resolved at compile time.
+					isTrait := len(className) > 2 && className[2] == "trait"
 					canResolve := false
-					if len(className) > 0 && className[0] != "" {
-						// self is resolvable
+					if !isTrait && len(className) > 0 && className[0] != "" {
+						// self is resolvable in a concrete class
 						if cn == "self" {
 							canResolve = true
 						}

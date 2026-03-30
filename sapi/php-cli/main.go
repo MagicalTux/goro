@@ -42,7 +42,6 @@ func main() {
 	ctx := phpctx.NewGlobal(context.Background(), p, cfg)
 
 	if options.RunCode != "" {
-		fmt.Printf("options: %+v\n", options)
 		_, err = ctx.DoString(ctx, phpv.ZString(options.RunCode))
 		if err != nil {
 			println("error:", err.Error())

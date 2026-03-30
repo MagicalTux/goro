@@ -695,6 +695,10 @@ func fncFilePutContents(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 
 	fh, err := ctx.Global().Open(ctx, filename, openMode, useIncludePath)
 	if err != nil {
+		if errors.Is(err, stream.ErrNotSupported) {
+			ctx.Notice("file_put_contents(): Stream is not writable", logopt.NoFuncName(true))
+			return phpv.ZFalse.ZVal(), nil
+		}
 		return nil, err
 	}
 	defer fh.Close()
@@ -750,6 +754,10 @@ func fncFilePutContents(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 		str := data.String()
 		dataBytes := []byte(str)
 		if written, err = fh.Write(dataBytes); err != nil {
+			if errors.Is(err, stream.ErrNotSupported) || errors.Is(err, stream.ErrReadOnly) {
+				ctx.Notice("file_put_contents(): Stream is not writable", logopt.NoFuncName(true))
+				return phpv.ZFalse.ZVal(), nil
+			}
 			return nil, err
 		}
 		// Check for partial write (disk full etc.)
@@ -881,6 +889,10 @@ func fncFwrite(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		if fw, ok := err.(*stream.FilterWarning); ok {
 			ctx.Warn("fwrite(): %s", fw.Message, logopt.NoFuncName(true))
 			return phpv.ZInt(n).ZVal(), nil
+		}
+		// Read-only stream: silently return false (no notice)
+		if errors.Is(err, stream.ErrReadOnly) {
+			return phpv.ZFalse.ZVal(), nil
 		}
 		ctx.Notice("fwrite(): Write of %d bytes failed with errno=9 Bad file descriptor", len(b), logopt.NoFuncName(true))
 		return phpv.ZFalse.ZVal(), nil
@@ -1356,6 +1368,9 @@ func fncStreamGetContents(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, erro
 			ctx.Warn("stream_get_contents(): %s", fw.Message, logopt.NoFuncName(true))
 		} else if _, ok := err.(*stream.FilterFatalError); ok {
 			ctx.Warn("stream_get_contents(): Unprocessed filter buckets remaining on input brigade", logopt.NoFuncName(true))
+		} else if errors.Is(err, syscall.EBADF) {
+			// Write-only or closed stream: emit Notice like PHP does
+			ctx.Notice("stream_get_contents(): Read of 8192 bytes failed with errno=9 Bad file descriptor", logopt.NoFuncName(true))
 		} else {
 			return nil, ctx.FuncError(err)
 		}

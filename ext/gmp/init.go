@@ -58,7 +58,47 @@ func gmpInit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		if s == "" {
 			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "gmp_init(): Argument #1 ($num) is not an integer string")
 		}
-		_, ok := i.SetString(s, b)
+		// PHP does not accept leading '+' sign
+		if strings.HasPrefix(s, "+") || strings.HasPrefix(s, "-+") {
+			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "gmp_init(): Argument #1 ($num) is not an integer string")
+		}
+		// When an explicit base is given, allow matching prefix (0b for base 2, 0x for base 16, 0o/0 for base 8)
+		// Go's big.Int.SetString only recognizes these prefixes with base 0
+		parseStr := s
+		parseBase := b
+		if b != 0 {
+			neg := strings.HasPrefix(s, "-")
+			body := s
+			if neg {
+				body = s[1:]
+			}
+			switch b {
+			case 2:
+				if strings.HasPrefix(strings.ToLower(body), "0b") {
+					body = body[2:]
+					parseBase = 2
+				}
+			case 16:
+				if strings.HasPrefix(strings.ToLower(body), "0x") {
+					body = body[2:]
+					parseBase = 16
+				}
+			case 8:
+				if strings.HasPrefix(strings.ToLower(body), "0o") {
+					body = body[2:]
+					parseBase = 8
+				} else if strings.HasPrefix(body, "0") && len(body) > 1 {
+					body = body[1:]
+					parseBase = 8
+				}
+			}
+			if neg {
+				parseStr = "-" + body
+			} else {
+				parseStr = body
+			}
+		}
+		_, ok := i.SetString(parseStr, parseBase)
 		if !ok {
 			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "gmp_init(): Argument #1 ($num) is not an integer string")
 		}

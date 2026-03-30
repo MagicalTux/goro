@@ -10,10 +10,9 @@ import (
 
 // > func GMP gmp_pow ( GMP $base , int $exp )
 func gmpPow(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	var base *phpv.ZVal
-	var exp phpv.ZInt
+	var base, expVal *phpv.ZVal
 
-	_, err := core.Expand(ctx, args, &base, &exp)
+	_, err := core.Expand(ctx, args, &base, &expVal)
 	if err != nil {
 		return nil, err
 	}
@@ -22,6 +21,42 @@ func gmpPow(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// Validate exponent type: must be int (PHP 8 rejects arrays/objects)
+	if expVal == nil {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			"gmp_pow(): Argument #2 ($exponent) must be of type int, null given")
+	}
+	switch expVal.GetType() {
+	case phpv.ZtInt:
+		// ok
+	case phpv.ZtFloat:
+		// float is allowed with deprecation for whole numbers
+	case phpv.ZtArray:
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			"gmp_pow(): Argument #2 ($exponent) must be of type int, array given")
+	case phpv.ZtObject:
+		obj, ok := expVal.Value().(*phpobj.ZObject)
+		typeName := "object"
+		if ok {
+			typeName = string(obj.Class.GetName())
+		}
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			"gmp_pow(): Argument #2 ($exponent) must be of type int, "+typeName+" given")
+	case phpv.ZtBool:
+		bname := "false"
+		if expVal.Value().(phpv.ZBool) {
+			bname = "true"
+		}
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			"gmp_pow(): Argument #2 ($exponent) must be of type int, "+bname+" given")
+	}
+
+	expZ, err := expVal.As(ctx, phpv.ZtInt)
+	if err != nil {
+		return nil, err
+	}
+	exp := expZ.Value().(phpv.ZInt)
 
 	if exp < 0 {
 		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "gmp_pow(): Argument #2 ($exponent) must be greater than or equal to 0")
@@ -56,19 +91,12 @@ func gmpPowm(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	if imod.Sign() == 0 {
-		return nil, phpobj.ThrowError(ctx, phpobj.DivisionByZeroError, "gmp_powm(): Argument #3 ($modulus) Division by zero")
+		return nil, phpobj.ThrowError(ctx, phpobj.DivisionByZeroError, "Modulo by zero")
 	}
 
-	// For negative exponents, we need to compute the modular inverse first
+	// Negative exponents are not supported
 	if iexp.Sign() < 0 {
-		// base^(-exp) mod m = (base^(-1))^exp mod m
-		inv := new(big.Int).ModInverse(ibase, imod)
-		if inv == nil {
-			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "gmp_powm(): Argument #1 ($num) is not invertible modulo argument #3 ($modulus)")
-		}
-		posExp := new(big.Int).Neg(iexp)
-		r := new(big.Int).Exp(inv, posExp, imod)
-		return returnInt(ctx, r)
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "gmp_powm(): Argument #2 ($exponent) must be greater than or equal to 0")
 	}
 
 	r := &big.Int{}

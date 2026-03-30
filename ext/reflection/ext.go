@@ -254,6 +254,11 @@ func reflectionClassConstruct(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.
 
 	o.HashTable().SetString("name", class.GetName().ZVal())
 	o.SetOpaque(ReflectionClass, class)
+	// For ReflectionObject, also store the actual object instance so we can
+	// collect its dynamic properties for __toString output.
+	if o.GetClass() == ReflectionObject && arg.GetType() == phpv.ZtObject {
+		o.SetOpaque(ReflectionObject, arg.AsObject(ctx))
+	}
 	return nil, nil
 }
 

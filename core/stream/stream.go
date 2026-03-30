@@ -13,6 +13,10 @@ import (
 
 var ErrNotSupported = errors.New("stream: method or operation not supported")
 
+// ErrReadOnly is returned when a write is attempted on a read-only stream.
+// Callers should return false silently (no warning/notice).
+var ErrReadOnly = errors.New("stream: stream is read-only")
+
 type Stream struct {
 	f    interface{}
 	attr map[string]interface{}

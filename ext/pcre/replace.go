@@ -171,6 +171,56 @@ func doPregReplaceArraySubject(ctx phpv.Context, pattern, replacement, subject *
 	return result.ZVal(), nil
 }
 
+// convertToNonCapturing transforms a regex body so that all plain capturing
+// groups `(...)` become non-capturing `(?:...)`. Named groups `(?P<...>...)`,
+// `(?<...>...)`, and `(?'...'...)` are left capturing. Groups that already
+// start with `(?` are left unchanged. Handles escape sequences and character classes.
+func convertToNonCapturing(body string) string {
+	var out strings.Builder
+	out.Grow(len(body) + 8)
+	inClass := false
+	i := 0
+	for i < len(body) {
+		c := body[i]
+		if c == '\\' && i+1 < len(body) {
+			// Escaped character - copy both and skip
+			out.WriteByte(c)
+			i++
+			out.WriteByte(body[i])
+			i++
+			continue
+		}
+		if c == '[' && !inClass {
+			inClass = true
+			out.WriteByte(c)
+			i++
+			continue
+		}
+		if c == ']' && inClass {
+			inClass = false
+			out.WriteByte(c)
+			i++
+			continue
+		}
+		if c == '(' && !inClass {
+			// Check if next char is '?'
+			if i+1 < len(body) && body[i+1] == '?' {
+				// Already has '?' prefix - leave as is (non-capture, named, etc.)
+				out.WriteByte(c)
+				i++
+				continue
+			}
+			// Plain capturing group - convert to non-capturing
+			out.WriteString("(?:")
+			i++
+			continue
+		}
+		out.WriteByte(c)
+		i++
+	}
+	return out.String()
+}
+
 // hasUTFFlag quickly checks if a PHP regex pattern has the 'u' (UTF-8) modifier.
 func hasUTFFlag(pattern string) bool {
 	trimmed := strings.TrimLeftFunc(pattern, unicode.IsSpace)
@@ -323,6 +373,7 @@ func prepareRegexp(pattern string) (*gopcre2.Regexp, *pcreError) {
 	// Map PHP flags to gopcre2 flags
 	var flags gopcre2.Flag
 	anchored := false
+	noAutoCapture := false
 	for _, f := range phpFlags {
 		switch f {
 		case 'i': // case insensitive
@@ -343,8 +394,8 @@ func prepareRegexp(pattern string) (*gopcre2.Regexp, *pcreError) {
 			flags |= gopcre2.DollarEndOnly
 		case 'J': // allow duplicate named groups
 			flags |= gopcre2.DupNames
-		case 'n': // no auto capture
-			flags |= gopcre2.NoAutoCapture
+		case 'n': // no auto capture - workaround: prepend (?n) since gopcre2 compile flag is broken
+			noAutoCapture = true
 		case 'S': // study - optimization hint, ignored
 		case 'X': // extra - PCRE_EXTRA, mostly ignored in modern PHP
 		case ' ', '\t', '\n': // whitespace in modifiers is ignored by PHP
@@ -358,6 +409,11 @@ func prepareRegexp(pattern string) (*gopcre2.Regexp, *pcreError) {
 	compiledBody := regexBody
 	if anchored && !strings.HasPrefix(regexBody, `\A`) && !strings.HasPrefix(regexBody, "^") {
 		compiledBody = `\A(?:` + regexBody + `)`
+	}
+	// Workaround for gopcre2 not honoring NoAutoCapture compile flag:
+	// Transform plain `(` to `(?:` to make them non-capturing.
+	if noAutoCapture {
+		compiledBody = convertToNonCapturing(compiledBody)
 	}
 
 	re, err := gopcre2.Compile(compiledBody, flags)

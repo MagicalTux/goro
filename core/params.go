@@ -104,6 +104,11 @@ func (rp *Ref[T]) Set(ctx phpv.Context, value T) {
 	rp.Value = value
 }
 
+// SetNull sets the referenced variable to NULL in the parent scope.
+func (rp *Ref[T]) SetNull(ctx phpv.Context) {
+	ctx.Parent(1).OffsetSet(ctx, rp.name, phpv.ZNULL.ZVal())
+}
+
 type optionalReferable interface {
 	referable
 	setHasValue(bool)

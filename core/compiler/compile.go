@@ -31,6 +31,7 @@ type compileCtx interface {
 	ExpectSingle(r rune) error
 	NextItem() (*tokenizer.Item, error)
 	backup()
+	lastLoc() *phpv.Loc // location of the last consumed token
 	getClass() *phpobj.ZClass
 	getFunc() *ZClosure
 	peekType() tokenizer.ItemType
@@ -372,6 +373,14 @@ func (c *compileRootCtx) backup() {
 	}
 	c.lastBracketOp = 0
 	c.next, c.last = c.last, nil
+}
+
+// lastLoc returns the location of the last consumed token (before any backup).
+func (c *compileRootCtx) lastLoc() *phpv.Loc {
+	if c.last != nil {
+		return c.last.Loc()
+	}
+	return nil
 }
 
 func init() {

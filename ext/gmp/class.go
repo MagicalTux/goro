@@ -140,7 +140,46 @@ func init() {
 					if s == "" {
 						return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "GMP::__construct(): Argument #1 ($num) is not an integer string")
 					}
-					_, ok := i.SetString(s, b)
+					// PHP does not accept leading '+' sign
+					if strings.HasPrefix(s, "+") {
+						return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "GMP::__construct(): Argument #1 ($num) is not an integer string")
+					}
+					// Allow matching prefix with explicit base
+					parseStr := s
+					parseBase := b
+					if b != 0 {
+						neg := strings.HasPrefix(s, "-")
+						body := s
+						if neg {
+							body = s[1:]
+						}
+						switch b {
+						case 2:
+							if strings.HasPrefix(strings.ToLower(body), "0b") {
+								body = body[2:]
+								parseBase = 2
+							}
+						case 16:
+							if strings.HasPrefix(strings.ToLower(body), "0x") {
+								body = body[2:]
+								parseBase = 16
+							}
+						case 8:
+							if strings.HasPrefix(strings.ToLower(body), "0o") {
+								body = body[2:]
+								parseBase = 8
+							} else if strings.HasPrefix(body, "0") && len(body) > 1 {
+								body = body[1:]
+								parseBase = 8
+							}
+						}
+						if neg {
+							parseStr = "-" + body
+						} else {
+							parseStr = body
+						}
+					}
+					_, ok := i.SetString(parseStr, parseBase)
 					if !ok {
 						return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "GMP::__construct(): Argument #1 ($num) is not an integer string")
 					}
@@ -274,10 +313,31 @@ func gmpHandleCast(ctx phpv.Context, o phpv.ZObject, t phpv.ZType) (phpv.Val, er
 	}
 }
 
-// gmpHandleCompare handles comparison between GMP objects (and GMP vs scalars).
+// gmpHandleCompare handles comparison between two GMP objects.
+// Both a and b must be GMP objects. If either is not GMP, this throws an appropriate error.
 func gmpHandleCompare(ctx phpv.Context, a, b phpv.ZObject) (int, error) {
-	ia := getGMPInt(a)
-	ib := getGMPInt(b)
+	// Validate that a is a GMP object
+	aObj, aOk := a.(*phpobj.ZObject)
+	if !aOk || aObj.Class != GMP {
+		typeName := "object"
+		if aOk {
+			typeName = string(aObj.Class.GetName())
+		}
+		return 0, phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("Number must be of type GMP|string|int, %s given", typeName))
+	}
+	// Validate that b is a GMP object
+	bObj, bOk := b.(*phpobj.ZObject)
+	if !bOk || bObj.Class != GMP {
+		typeName := "object"
+		if bOk {
+			typeName = string(bObj.Class.GetName())
+		}
+		return 0, phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("Number must be of type GMP|string|int, %s given", typeName))
+	}
+	ia := getGMPInt(aObj)
+	ib := getGMPInt(bObj)
 	return ia.Cmp(ib), nil
 }
 
@@ -355,6 +415,31 @@ func gmpHandleDoOperation(ctx phpv.Context, op int, a, b *phpv.ZVal) (*phpv.ZVal
 			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "Shift must be greater than or equal to 0")
 		}
 		r.Rsh(ia, uint(ib.Int64()))
+	case tokenizer.Rune('<'), tokenizer.T_IS_SMALLER_OR_EQUAL,
+		tokenizer.Rune('>'), tokenizer.T_IS_GREATER_OR_EQUAL,
+		tokenizer.T_IS_EQUAL, tokenizer.T_IS_NOT_EQUAL,
+		tokenizer.T_SPACESHIP, tokenizer.T_IS_IDENTICAL, tokenizer.T_IS_NOT_IDENTICAL:
+		// Comparison operators: convert both sides to GMP, then compare.
+		// If conversion fails (e.g. non-numeric string), error propagates.
+		cmp := ia.Cmp(ib)
+		var res bool
+		switch itemOp {
+		case tokenizer.Rune('<'):
+			res = cmp < 0
+		case tokenizer.T_IS_SMALLER_OR_EQUAL:
+			res = cmp <= 0
+		case tokenizer.Rune('>'):
+			res = cmp > 0
+		case tokenizer.T_IS_GREATER_OR_EQUAL:
+			res = cmp >= 0
+		case tokenizer.T_IS_EQUAL, tokenizer.T_IS_IDENTICAL:
+			res = cmp == 0
+		case tokenizer.T_IS_NOT_EQUAL, tokenizer.T_IS_NOT_IDENTICAL:
+			res = cmp != 0
+		case tokenizer.T_SPACESHIP:
+			return phpv.ZInt(phpv.ZInt(cmp)).ZVal(), nil
+		}
+		return phpv.ZBool(res).ZVal(), nil
 	default:
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Unsupported operand types: GMP %s GMP", itemOp.OpString()))
 	}

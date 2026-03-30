@@ -700,11 +700,8 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		_ = skipNumericConversion // used below
 
 		if !skipNumericConversion {
-			// PHP 8: throw TypeError for unsupported operand types in arithmetic
-			if aType == phpv.ZtArray || bType == phpv.ZtArray {
-				return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Unsupported operand types: %s %s %s", phpTypeName(a), r.op.OpString(), phpTypeName(b)))
-			}
-			// Check for objects with HandleDoOperation (e.g., GMP operator overloading)
+			// Check for objects with HandleDoOperation first (e.g., GMP operator overloading).
+			// This must come before the array check so GMP can provide its own error for "GMP + array".
 			if aType == phpv.ZtObject || bType == phpv.ZtObject {
 				var handler func(phpv.Context, int, *phpv.ZVal, *phpv.ZVal) (*phpv.ZVal, error)
 				if aType == phpv.ZtObject {
@@ -735,6 +732,10 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 					}
 					return handlerRes, nil
 				}
+				return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Unsupported operand types: %s %s %s", phpTypeName(a), r.op.OpString(), phpTypeName(b)))
+			}
+			// PHP 8: throw TypeError for unsupported operand types in arithmetic
+			if aType == phpv.ZtArray || bType == phpv.ZtArray {
 				return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Unsupported operand types: %s %s %s", phpTypeName(a), r.op.OpString(), phpTypeName(b)))
 			}
 			if aType == phpv.ZtResource || bType == phpv.ZtResource {
@@ -1810,15 +1811,26 @@ func operatorCompare(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (
 
 ObjectScalarCompare:
 	// PHP 8: objects are greater than all scalar types
-	// But objects with HandleCompare (like GMP) can use their comparison handler
+	// But objects with HandleDoOperation or HandleCompare (like GMP) can use their comparison handler
 	if a.GetType() == phpv.ZtObject && b.GetType() != phpv.ZtObject {
 		ao := a.AsObject(ctx)
-		if h := ao.GetClass().Handlers(); h != nil && h.HandleCompare != nil {
-			// For GMP-like objects: try to convert scalar to same type for comparison
-			// Use the Compare function which handles HandleCast
-			cmp, err := phpv.Compare(ctx, a, b)
-			if err == nil {
-				return operatorCompareResult(op, cmp)
+		if h := ao.GetClass().Handlers(); h != nil {
+			// For GMP-like objects with HandleDoOperation: use it for comparisons to allow proper error propagation
+			if h.HandleDoOperation != nil {
+				res, err := h.HandleDoOperation(ctx, int(op), a, b)
+				if err != nil {
+					return nil, err
+				}
+				if res != nil {
+					return res, nil
+				}
+			} else if h.HandleCompare != nil {
+				// For GMP-like objects: try to convert scalar to same type for comparison
+				// Use the Compare function which handles HandleCast
+				cmp, err := phpv.Compare(ctx, a, b)
+				if err == nil {
+					return operatorCompareResult(op, cmp)
+				}
 			}
 		}
 		switch op {
@@ -1842,10 +1854,21 @@ ObjectScalarCompare:
 	}
 	if b.GetType() == phpv.ZtObject && a.GetType() != phpv.ZtObject {
 		bo := b.AsObject(ctx)
-		if h := bo.GetClass().Handlers(); h != nil && h.HandleCompare != nil {
-			cmp, err := phpv.Compare(ctx, a, b)
-			if err == nil {
-				return operatorCompareResult(op, cmp)
+		if h := bo.GetClass().Handlers(); h != nil {
+			// For GMP-like objects with HandleDoOperation: use it for comparisons to allow proper error propagation
+			if h.HandleDoOperation != nil {
+				res, err := h.HandleDoOperation(ctx, int(op), a, b)
+				if err != nil {
+					return nil, err
+				}
+				if res != nil {
+					return res, nil
+				}
+			} else if h.HandleCompare != nil {
+				cmp, err := phpv.Compare(ctx, a, b)
+				if err == nil {
+					return operatorCompareResult(op, cmp)
+				}
 			}
 		}
 		switch op {

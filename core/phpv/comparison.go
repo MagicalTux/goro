@@ -343,24 +343,52 @@ func Compare(ctx Context, a, b *ZVal) (int, error) {
 		// if either part is a numeric, force the other one as numeric too and go through comparison
 		if ia == nil {
 			if a.GetType() == ZtObject {
-				// Object in comparison: emit Notice (not Warning) with appropriate target type
-				targetType := ZtInt
-				if ib != nil && ib.GetType() == ZtFloat {
-					targetType = ZtFloat
+				ao := a.AsObject(ctx)
+				if h := ao.GetClass().Handlers(); h != nil && h.HandleCast != nil {
+					// GMP-like objects: use HandleCast to get numeric value without notice
+					targetType := ZtInt
+					if ib != nil && ib.GetType() == ZtFloat {
+						targetType = ZtFloat
+					}
+					if val, err := h.HandleCast(ctx, ao, targetType); err == nil {
+						ia = val.ZVal()
+					} else {
+						ia = CompareObjectToNumeric(ctx, a, targetType)
+					}
+				} else {
+					// Object in comparison: emit Notice (not Warning) with appropriate target type
+					targetType := ZtInt
+					if ib != nil && ib.GetType() == ZtFloat {
+						targetType = ZtFloat
+					}
+					ia = CompareObjectToNumeric(ctx, a, targetType)
 				}
-				ia = CompareObjectToNumeric(ctx, a, targetType)
 			} else {
 				ia, _ = a.AsNumeric(ctx)
 			}
 		}
 		if ib == nil {
 			if b.GetType() == ZtObject {
-				// Object in comparison: emit Notice (not Warning) with appropriate target type
-				targetType := ZtInt
-				if ia != nil && ia.GetType() == ZtFloat {
-					targetType = ZtFloat
+				bo := b.AsObject(ctx)
+				if h := bo.GetClass().Handlers(); h != nil && h.HandleCast != nil {
+					// GMP-like objects: use HandleCast to get numeric value without notice
+					targetType := ZtInt
+					if ia != nil && ia.GetType() == ZtFloat {
+						targetType = ZtFloat
+					}
+					if val, err := h.HandleCast(ctx, bo, targetType); err == nil {
+						ib = val.ZVal()
+					} else {
+						ib = CompareObjectToNumeric(ctx, b, targetType)
+					}
+				} else {
+					// Object in comparison: emit Notice (not Warning) with appropriate target type
+					targetType := ZtInt
+					if ia != nil && ia.GetType() == ZtFloat {
+						targetType = ZtFloat
+					}
+					ib = CompareObjectToNumeric(ctx, b, targetType)
 				}
-				ib = CompareObjectToNumeric(ctx, b, targetType)
 			} else {
 				ib, _ = b.AsNumeric(ctx)
 			}
