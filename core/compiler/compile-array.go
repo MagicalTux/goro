@@ -300,6 +300,12 @@ type runArrayAccess struct {
 	// during Read so WriteValue doesn't re-evaluate it (avoiding duplicate warnings).
 	compoundCachedOffset    *phpv.ZVal
 	compoundOffsetFromCache bool // set when getArrayOffset used compound cache
+
+	// readKeyWasUndefined is set when an undefined array key was read during
+	// a compound assignment (e.g. $a['b'] += 1 where 'b' doesn't exist).
+	// If the error handler then creates the key, the write-back is skipped
+	// to match PHP behavior where the error handler's value wins.
+	readKeyWasUndefined bool
 }
 
 func (r *runArrayAccess) isNullSafeChain() bool { return r.nullChain }
@@ -568,6 +574,17 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
+	// If the container was mutated by an error handler during offset evaluation
+	// (e.g. $a[$c] .= 'x' where $a was auto-vivified to array but error handler
+	// reset $a = null), abort gracefully and return null. WriteValue will also
+	// bail out when it sees the scalar cachedContainer.
+	if ac.cachedContainer != nil {
+		vt := v.GetType()
+		if vt != phpv.ZtArray && vt != phpv.ZtObject && vt != phpv.ZtString {
+			return phpv.ZNULL.ZVal(), nil
+		}
+	}
+
 	// For compound assignments, cache the offset so WriteValue doesn't re-evaluate it
 	if ac.cachedContainer != nil && ac.compoundCachedOffset == nil {
 		ac.compoundCachedOffset = offset.Dup()
@@ -626,6 +643,15 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	// but not when this access is part of a write chain (auto-vivification)
 	if !ac.writeContext {
 		if za, ok := array.(*phpv.ZArray); ok {
+			// For compound assignment (cachedContainer is set), track whether the
+			// key is undefined before the error handler runs. If error handler creates
+			// the key, the write-back in WriteValue will be skipped (PHP behavior).
+			if ac.cachedContainer != nil {
+				_, keyExists, _ := za.OffsetCheck(ctx, offset)
+				if !keyExists {
+					ac.readKeyWasUndefined = true
+				}
+			}
 			return za.OffsetGetWarn(ctx, offset)
 		}
 	}
@@ -650,6 +676,45 @@ func (ac *runArrayAccess) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 	if ac.cachedContainer != nil {
 		v = ac.cachedContainer
 		ac.cachedContainer = nil
+		// If an error handler changed the container to a scalar (e.g. $my_var[0] .= "xyz"
+		// where $my_var was null, auto-vivified to array, then error handler set $my_var = 0),
+		// abort the write silently to match PHP behavior (the write is lost, handler wins).
+		if v != nil {
+			vt := v.GetType()
+			if vt != phpv.ZtArray && vt != phpv.ZtObject && vt != phpv.ZtNull && vt != phpv.ZtString {
+				ac.readKeyWasUndefined = false
+				return nil
+			}
+		}
+		// If the key was undefined during read but the error handler created it,
+		// abort the write so the error handler's value wins (PHP behavior: the
+		// write goes to an orphaned zval in PHP C, so the array retains the
+		// error handler's value).
+		if ac.readKeyWasUndefined && v != nil && v.GetType() == phpv.ZtArray {
+			ac.readKeyWasUndefined = false
+			// Use the compoundCachedOffset (without consuming it) to check existence
+			var checkOffset *phpv.ZVal
+			if ac.compoundCachedOffset != nil {
+				checkOffset = ac.compoundCachedOffset
+			} else if ac.cachedOffset != nil {
+				checkOffset = ac.cachedOffset
+			}
+			if checkOffset != nil {
+				za, ok := v.Array().(*phpv.ZArray)
+				if ok {
+					_, exists, _ := za.OffsetCheck(ctx, checkOffset)
+					if exists {
+						// Key was created by error handler - abort write
+						// (clear the cached offsets too to prevent re-use)
+						ac.compoundCachedOffset = nil
+						ac.cachedOffset = nil
+						return nil
+					}
+				}
+			}
+		} else {
+			ac.readKeyWasUndefined = false
+		}
 	} else {
 		// Suppress undefined key/property warnings for inner accesses in write context
 		if inner, ok := ac.value.(*runArrayAccess); ok {

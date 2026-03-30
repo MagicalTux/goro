@@ -731,7 +731,16 @@ func (g *Global) formatUncaughtFatal(ex *phperr.PhpThrow) {
 	if thrownFile == "" {
 		thrownFile = "Unknown"
 	}
-	g.WriteErr([]byte(fmt.Sprintf("\nFatal error: %s\n  thrown in %s on line %d\n", trace, thrownFile, src.ThrownLine())))
+	thrownLine := src.ThrownLine()
+	g.WriteErr([]byte(fmt.Sprintf("\nFatal error: %s\n  thrown in %s on line %d\n", trace, thrownFile, thrownLine)))
+	// Update LastError so that error_get_last() in shutdown functions returns this fatal error.
+	// The message is "trace\n  thrown" (truncated at "thrown"), matching PHP's behavior.
+	msg := trace + "\n  thrown"
+	g.LastError = &phpv.PhpError{
+		Err:  fmt.Errorf("%s", msg),
+		Code: phpv.E_ERROR,
+		Loc:  &phpv.Loc{Filename: thrownFile, Line: thrownLine},
+	}
 }
 
 func (g *Global) Write(v []byte) (int, error) {
