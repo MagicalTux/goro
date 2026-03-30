@@ -17,7 +17,7 @@ func gmpSqrt(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	i, err := readInt(ctx, a)
+	i, err := readIntArg(ctx, a, "gmp_sqrt", 1, "num")
 	if err != nil {
 		return nil, err
 	}
@@ -41,7 +41,7 @@ func gmpSqrtrem(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	i, err := readInt(ctx, a)
+	i, err := readIntArg(ctx, a, "gmp_sqrtrem", 1, "num")
 	if err != nil {
 		return nil, err
 	}
@@ -79,17 +79,17 @@ func gmpRoot(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	i, err := readInt(ctx, a)
+	i, err := readIntArg(ctx, a, "gmp_root", 1, "num")
 	if err != nil {
 		return nil, err
 	}
 
 	if nth <= 0 {
-		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "gmp_root(): Argument #2 ($nth) must be positive")
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "gmp_root(): Argument #2 ($nth) must be greater than 0")
 	}
 
 	if i.Sign() < 0 && nth%2 == 0 {
-		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "gmp_root(): Argument #1 ($num) must be positive if argument #2 ($nth) is even")
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "gmp_root(): Argument #2 ($nth) must be odd if argument #1 ($a) is negative")
 	}
 
 	negative := i.Sign() < 0
@@ -113,17 +113,17 @@ func gmpRootrem(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	i, err := readInt(ctx, a)
+	i, err := readIntArg(ctx, a, "gmp_rootrem", 1, "num")
 	if err != nil {
 		return nil, err
 	}
 
 	if nth <= 0 {
-		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "gmp_rootrem(): Argument #2 ($nth) must be positive")
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "gmp_rootrem(): Argument #2 ($nth) must be greater than or equal to 1")
 	}
 
 	if i.Sign() < 0 && nth%2 == 0 {
-		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "gmp_rootrem(): Argument #1 ($num) must be positive if argument #2 ($nth) is even")
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "gmp_rootrem(): Argument #2 ($nth) must be odd if argument #1 ($a) is negative")
 	}
 
 	negative := i.Sign() < 0

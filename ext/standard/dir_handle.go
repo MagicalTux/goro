@@ -2,12 +2,16 @@ package standard
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/MagicalTux/goro/core"
 	"github.com/MagicalTux/goro/core/logopt"
+	"github.com/MagicalTux/goro/core/phpctx"
 	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/MagicalTux/goro/core/stream"
 )
 
 // dirHandle represents an open directory resource for opendir/readdir/closedir
@@ -17,6 +21,37 @@ type dirHandle struct {
 	path    string
 	id      int
 	closed  bool
+}
+
+// getUserDirHandler checks if a path uses a registered user stream wrapper and
+// returns the handler if found.
+func getUserDirHandler(ctx phpv.Context, path string) *stream.UserStreamHandler {
+	idx := strings.Index(path, "://")
+	if idx < 1 {
+		return nil
+	}
+	scheme := path[:idx]
+	switch scheme {
+	case "file", "php", "http", "https", "data", "glob", "phar", "ftp", "ftps",
+		"zlib", "compress.zlib", "compress.bzip2":
+		return nil
+	}
+	g := ctx.Global().(*phpctx.Global)
+	if h, ok := g.GetStreamHandler(scheme); ok {
+		if ush, ok := h.(*stream.UserStreamHandler); ok {
+			return ush
+		}
+	}
+	return nil
+}
+
+// openUserDir opens a directory on a user stream wrapper.
+func openUserDir(ctx phpv.Context, path string, ush *stream.UserStreamHandler, streamCtxRes phpv.Resource) (*stream.UserDirHandle, error) {
+	u, err := url.Parse(path)
+	if err != nil {
+		return nil, err
+	}
+	return ush.OpenDir(ctx, u, streamCtxRes)
 }
 
 func (d *dirHandle) GetType() phpv.ZType { return phpv.ZtResource }
@@ -46,21 +81,41 @@ func (d *dirHandle) AsVal(ctx phpv.Context, t phpv.ZType) (phpv.Val, error) {
 
 var nextDirHandleID = 1000
 var lastDirHandle *dirHandle
+var lastUserDirHandle *stream.UserDirHandle
 
 // > func resource opendir ( string $path [, resource $context ] )
 func fncOpendir(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var path phpv.ZString
-	_, err := core.Expand(ctx, args, &path)
+	var contextArg core.Optional[phpv.Resource]
+	_, err := core.Expand(ctx, args, &path, &contextArg)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := ctx.Global().CheckOpenBasedir(ctx, string(path), "opendir"); err != nil {
+	var streamCtxRes phpv.Resource
+	if contextArg.HasArg() {
+		streamCtxRes = contextArg.Get()
+	}
+
+	pathStr := string(path)
+
+	// Check for user stream wrapper
+	if ush := getUserDirHandler(ctx, pathStr); ush != nil {
+		udh, err := openUserDir(ctx, pathStr, ush, streamCtxRes)
+		if err != nil {
+			return phpv.ZFalse.ZVal(), ctx.Warn("opendir(%s): Failed to open dir: operation failed", path, logopt.NoFuncName(true))
+		}
+		lastUserDirHandle = udh
+		lastDirHandle = nil
+		return udh.ZVal(), nil
+	}
+
+	if err := ctx.Global().CheckOpenBasedir(ctx, pathStr, "opendir"); err != nil {
 		ctx.Warn("opendir(%s): Failed to open directory: Operation not permitted", path, logopt.NoFuncName(true))
 		return phpv.ZFalse.ZVal(), nil
 	}
 
-	p := string(path)
+	p := pathStr
 	if !filepath.IsAbs(p) {
 		p = filepath.Join(string(ctx.Global().Getwd()), p)
 	}
@@ -78,51 +133,76 @@ func fncOpendir(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 	nextDirHandleID++
 	lastDirHandle = dh
+	lastUserDirHandle = nil
 	return dh.ZVal(), nil
 }
 
 // > func string readdir ( [ resource $dir_handle ] )
 func fncReaddir(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	var dh *dirHandle
 	if len(args) == 0 || args[0] == nil || args[0].IsNull() {
-		dh = lastDirHandle
-	} else {
-		var ok bool
-		dh, ok = args[0].Value().(*dirHandle)
-		if !ok {
+		// Use last opened handle (either user or regular)
+		if lastUserDirHandle != nil {
+			return lastUserDirHandle.Readdir(), nil
+		}
+		dh := lastDirHandle
+		if dh == nil || dh.closed {
 			return phpv.ZFalse.ZVal(), nil
 		}
+		return readFromDirHandle(dh), nil
+	}
+
+	// Check for user dir handle
+	if udh, ok := args[0].Value().(*stream.UserDirHandle); ok {
+		return udh.Readdir(), nil
+	}
+
+	dh, ok := args[0].Value().(*dirHandle)
+	if !ok {
+		return phpv.ZFalse.ZVal(), nil
 	}
 	if dh == nil || dh.closed {
 		return phpv.ZFalse.ZVal(), nil
 	}
+	return readFromDirHandle(dh), nil
+}
 
+func readFromDirHandle(dh *dirHandle) *phpv.ZVal {
 	if dh.pos == -2 {
 		dh.pos = -1
-		return phpv.ZStr("."), nil
+		return phpv.ZStr(".")
 	}
 	if dh.pos == -1 {
 		dh.pos = 0
-		return phpv.ZStr(".."), nil
+		return phpv.ZStr("..")
 	}
 	if dh.pos >= len(dh.entries) {
-		return phpv.ZFalse.ZVal(), nil
+		return phpv.ZFalse.ZVal()
 	}
-
 	name := dh.entries[dh.pos].Name()
 	dh.pos++
-	return phpv.ZString(name).ZVal(), nil
+	return phpv.ZString(name).ZVal()
 }
 
 // > func void closedir ( [ resource $dir_handle ] )
 func fncClosedir(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) == 0 || args[0] == nil || args[0].IsNull() {
 		ctx.Deprecated("closedir(): Passing null is deprecated, instead the last opened directory stream should be provided", logopt.NoFuncName(true))
-		// Use the last opened directory handle
+		// Use the last opened directory handle (user or regular)
+		if lastUserDirHandle != nil {
+			lastUserDirHandle.Close()
+			lastUserDirHandle = nil
+			return phpv.ZNULL.ZVal(), nil
+		}
 		if lastDirHandle != nil && !lastDirHandle.closed {
 			lastDirHandle.closed = true
 			lastDirHandle.entries = nil
 		}
+		return phpv.ZNULL.ZVal(), nil
+	}
+
+	// Check for user dir handle
+	if udh, ok := args[0].Value().(*stream.UserDirHandle); ok {
+		udh.Close()
 		return phpv.ZNULL.ZVal(), nil
 	}
 
@@ -145,20 +225,32 @@ func fncClosedir(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 // > func void rewinddir ( [ resource $dir_handle ] )
 func fncRewinddir(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	var dh *dirHandle
 	if len(args) == 0 || args[0] == nil || args[0].IsNull() {
-		dh = lastDirHandle
-	} else {
-		var ok bool
-		dh, ok = args[0].Value().(*dirHandle)
-		if !ok {
+		if lastUserDirHandle != nil {
+			lastUserDirHandle.Rewinddir()
 			return phpv.ZNULL.ZVal(), nil
 		}
+		dh := lastDirHandle
+		if dh == nil || dh.closed {
+			return phpv.ZNULL.ZVal(), nil
+		}
+		dh.pos = -2
+		return phpv.ZNULL.ZVal(), nil
+	}
+
+	// Check for user dir handle
+	if udh, ok := args[0].Value().(*stream.UserDirHandle); ok {
+		udh.Rewinddir()
+		return phpv.ZNULL.ZVal(), nil
+	}
+
+	dh, ok := args[0].Value().(*dirHandle)
+	if !ok {
+		return phpv.ZNULL.ZVal(), nil
 	}
 	if dh == nil || dh.closed {
 		return phpv.ZNULL.ZVal(), nil
 	}
-
 	dh.pos = -2
 	return phpv.ZNULL.ZVal(), nil
 }

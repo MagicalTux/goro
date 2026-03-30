@@ -160,6 +160,7 @@ func compileEnum(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		}
 
 		if i.IsSingle('}') {
+			class.LEnd = i.Loc()
 			break
 		}
 

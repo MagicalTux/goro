@@ -178,6 +178,14 @@ func compileYield(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		return &runYield{l: l}, nil
 	}
 
+	// If the token is a binary-only operator (cannot start an expression),
+	// yield null and leave the operator for the outer expression context.
+	// PHP parses "yield * -1" as "(yield null) * (-1)" — Bug #69160.
+	if isBinaryOnlyOperator(next) {
+		c.backup()
+		return &runYield{l: l}, nil
+	}
+
 	// yield has a value. Parse it.
 	c.backup()
 	value, err := compileExpr(nil, c)
@@ -328,6 +336,35 @@ func (g *generatorClosure) Loc() *phpv.Loc {
 
 func (g *generatorClosure) ReturnsByRef() bool {
 	return g.ZClosure.ReturnsByRef()
+}
+
+// isBinaryOnlyOperator returns true if the token is a binary operator that
+// cannot start an expression (i.e., cannot be used as a unary operator).
+// When yield is followed by such a token, yield should yield null (PHP bug #69160).
+func isBinaryOnlyOperator(item *tokenizer.Item) bool {
+	// Single-char binary-only operators
+	if item.IsSingle('*') || item.IsSingle('/') || item.IsSingle('%') ||
+		item.IsSingle('.') {
+		return true
+	}
+	// Multi-char binary-only operators
+	switch item.Type {
+	case tokenizer.T_POW,       // **
+		tokenizer.T_SL,         // <<
+		tokenizer.T_SR,         // >>
+		tokenizer.T_IS_EQUAL,   // ==
+		tokenizer.T_IS_IDENTICAL, // ===
+		tokenizer.T_IS_NOT_EQUAL, // !=, <>
+		tokenizer.T_IS_NOT_IDENTICAL, // !==
+		tokenizer.T_IS_GREATER_OR_EQUAL, // >=
+		tokenizer.T_IS_SMALLER_OR_EQUAL, // <=
+		tokenizer.T_SPACESHIP,  // <=>
+		tokenizer.T_BOOLEAN_AND, // &&
+		tokenizer.T_BOOLEAN_OR,  // ||
+		tokenizer.T_COALESCE:    // ??
+		return true
+	}
+	return false
 }
 
 // isValidGeneratorReturnType checks if a type hint is valid as a generator return type.

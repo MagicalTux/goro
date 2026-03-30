@@ -256,6 +256,15 @@ func (g *Global) UnregisterStreamHandler(scheme string) bool {
 	return true
 }
 
+// GetStreamHandlers returns all registered stream handler scheme names.
+func (g *Global) GetStreamHandlers() []string {
+	names := make([]string, 0, len(g.streamHandlers))
+	for name := range g.streamHandlers {
+		names = append(names, name)
+	}
+	return names
+}
+
 func (g *Global) AppendBuffer() *Buffer {
 	b := makeBuffer(g, g.out)
 	g.out = b

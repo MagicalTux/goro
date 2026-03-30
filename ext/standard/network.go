@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpctx"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/stream"
@@ -211,7 +212,16 @@ func fncStreamGetTransports(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 
 func fncStreamGetWrappers(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	r := phpv.NewZArray()
-	for _, w := range []string{"php","file","glob","data","http","ftp"} { r.OffsetSet(ctx, nil, phpv.ZString(w).ZVal()) }
+	// Return all registered stream handler schemes
+	if g, ok := ctx.Global().(*phpctx.Global); ok {
+		for _, w := range g.GetStreamHandlers() {
+			r.OffsetSet(ctx, nil, phpv.ZString(w).ZVal())
+		}
+	} else {
+		for _, w := range []string{"php", "file", "glob", "data", "http", "ftp"} {
+			r.OffsetSet(ctx, nil, phpv.ZString(w).ZVal())
+		}
+	}
 	return r.ZVal(), nil
 }
 

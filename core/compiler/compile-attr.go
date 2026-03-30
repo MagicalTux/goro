@@ -493,6 +493,9 @@ func parseZObjectAttrFull(a *phpv.ZObjectAttr, setModifiers *phpv.ZObjectAttr, a
 	// parse method attributes (public/protected/private, abstract or final)
 	// and PHP 8.0 #[...] attributes
 	// Also handles PHP 8.4 asymmetric visibility: public private(set)
+	// Reset the global flag so a prior DNF-type '(' parse doesn't bleed into
+	// the next class member if that member starts without an access modifier.
+	parenConsumedByAsymmetric = false
 	for {
 		i, err := c.NextItem()
 		if err != nil {

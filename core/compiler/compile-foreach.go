@@ -168,6 +168,18 @@ func (r *runnableForeach) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 		return nil, nil
 	}
 
+	// When foreach iterates a generator (via phpObjectIterator), force-close it
+	// when the loop exits. This ensures finally blocks in the generator run
+	// before any exception from the loop body propagates (PHP behavior:
+	// generator destructor runs during stack unwinding when it goes out of scope).
+	if poi, ok := it.(*phpObjectIterator); ok {
+		if genState := phpobj.GetGeneratorStateFromObject(poi.obj); genState != nil {
+			defer func() {
+				phpobj.GeneratorForceCloseState(ctx, genState)
+			}()
+		}
+	}
+
 	// Eagerly call __destruct on iterator objects created by getIterator()
 	// when the foreach loop ends, since these temporary objects have no other references.
 	if poi, ok := it.(*phpObjectIterator); ok && poi.fromGetIterator {

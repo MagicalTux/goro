@@ -16,7 +16,7 @@ func gmpNextprime(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	i, err := readInt(ctx, a)
+	i, err := readIntArg(ctx, a, "gmp_nextprime", 1, "num")
 	if err != nil {
 		return nil, err
 	}
@@ -47,7 +47,7 @@ func gmpProbPrime(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	i, err := readInt(ctx, a)
+	i, err := readIntArg(ctx, a, "gmp_prob_prime", 1, "num")
 	if err != nil {
 		return nil, err
 	}
@@ -101,7 +101,7 @@ func gmpPerfectSquare(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	i, err := readInt(ctx, a)
+	i, err := readIntArg(ctx, a, "gmp_perfect_square", 1, "num")
 	if err != nil {
 		return nil, err
 	}

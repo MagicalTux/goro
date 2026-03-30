@@ -149,6 +149,18 @@ func getGeneratorState(o *ZObject) *GeneratorState {
 	return opaque.(*GeneratorState)
 }
 
+// GetGeneratorStateFromObject returns the GeneratorState for a Generator object,
+// or nil if the object is not a generator.
+func GetGeneratorStateFromObject(o *ZObject) *GeneratorState {
+	return getGeneratorState(o)
+}
+
+// GeneratorForceCloseState force-closes a generator given its state directly.
+// This is called by foreach when the loop exits while the generator is suspended.
+func GeneratorForceCloseState(ctx phpv.Context, state *GeneratorState) error {
+	return generatorForceClose(ctx, state)
+}
+
 // GeneratorBodyFunc is the type for the function body of a generator.
 // It takes a context and arguments and returns a value and error.
 // This function type is used to pass the actual body execution (bypassing
@@ -426,6 +438,12 @@ func generatorYieldFromGenerator(ctx phpv.Context, obj *ZObject, innerState *Gen
 		// Yield the inner generator's current value (using Delegated to preserve outer key counter)
 		result, err := GeneratorYieldDelegated(ctx, innerState.currentKey, innerState.currentValue)
 		if err != nil {
+			// If the outer generator is being force-closed, force-close the inner generator
+			// first so its finally blocks run before the outer generator's finally blocks.
+			if _, isClose := err.(*phperr.GeneratorForceClose); isClose {
+				generatorForceClose(ctx, innerState)
+				return nil, err
+			}
 			// Forward throw to inner generator
 			if _, ok := err.(*phperr.PhpThrow); ok {
 				throwResult, throwErr := generatorThrowInner(ctx, obj, innerState, err)
@@ -979,18 +997,4 @@ func (it *generatorIterator) Iterate(ctx phpv.Context) iter.Seq2[*phpv.ZVal, *ph
 
 func (it *generatorIterator) IterateRaw(ctx phpv.Context) iter.Seq2[*phpv.ZVal, *phpv.ZVal] {
 	return it.Iterate(ctx)
-}
-
-// ForceClose implements the GeneratorForceCloser interface.
-// It force-closes the generator, running finally blocks.
-func (it *generatorIterator) ForceClose(ctx phpv.Context) error {
-	return generatorForceClose(ctx, it.state)
-}
-
-// GeneratorForceCloser is an interface implemented by generator iterators.
-// It is used by foreach to force-close a suspended generator when the loop
-// exits (e.g., due to an exception), ensuring finally blocks run before
-// the exception propagates.
-type GeneratorForceCloser interface {
-	ForceClose(ctx phpv.Context) error
 }

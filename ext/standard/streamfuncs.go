@@ -56,7 +56,18 @@ func fncStreamContextGetDefault(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal
 
 	streamCtx := g.DefaultStreamContext
 	if options.HasArg() {
+		// Validate: options must have the form ["wrappername"]["optionname"] = $value
 		for wrapperName, wrapperOptions := range options.Get().Iterate(ctx) {
+			// Wrapper name must be a string key
+			if wrapperName.GetType() != phpv.ZtString {
+				return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+					"Options should have the form [\"wrappername\"][\"optionname\"] = $value")
+			}
+			// The value for each wrapper must be an array
+			if wrapperOptions.GetType() != phpv.ZtArray {
+				return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+					"Options should have the form [\"wrappername\"][\"optionname\"] = $value")
+			}
 			for key, val := range wrapperOptions.AsArray(ctx).Iterate(ctx) {
 				streamCtx.SetOption(wrapperName.AsString(ctx), key.AsString(ctx), val)
 			}
@@ -282,9 +293,11 @@ func fncStreamGetLine(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	maxLen := int(length)
 	// In PHP, length=0 means "unlimited" - read until delimiter or EOF
 	unlimited := maxLen <= 0
+	hitEOF := false
 	for i := 0; unlimited || i < maxLen; i++ {
 		b, berr := file.ReadByte()
 		if berr != nil {
+			hitEOF = true
 			break
 		}
 		buf = append(buf, b)
@@ -296,8 +309,20 @@ func fncStreamGetLine(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			}
 		}
 	}
-	if len(buf) == 0 && file.Eof() {
-		return phpv.ZFalse.ZVal(), nil
+	if len(buf) == 0 {
+		// Check EOF - use EofCheck for user streams, fallback to Eof() flag
+		if hitEOF {
+			isEof, eofErr := file.EofCheck(ctx)
+			if eofErr == nil && isEof {
+				return phpv.ZFalse.ZVal(), nil
+			}
+			if file.Eof() {
+				return phpv.ZFalse.ZVal(), nil
+			}
+		}
+		if file.Eof() {
+			return phpv.ZFalse.ZVal(), nil
+		}
 	}
 	return phpv.ZString(buf).ZVal(), nil
 }
@@ -315,6 +340,12 @@ func fncStreamContextSetParams(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal,
 		return phpv.ZFalse.ZVal(), nil
 	}
 	if params != nil {
+		// Validate: "options" key, if present, must be an array
+		if opts, opterr := params.OffsetGet(ctx, phpv.ZStr("options")); opterr == nil && opts != nil && !opts.IsNull() {
+			if opts.GetType() != phpv.ZtArray {
+				return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "Invalid stream/context parameter")
+			}
+		}
 		streamCtx.SetParams(ctx, params)
 	}
 	return phpv.ZTrue.ZVal(), nil

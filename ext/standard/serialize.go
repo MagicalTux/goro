@@ -187,6 +187,13 @@ func serializeValue(ctx phpv.Context, rawZVal *phpv.ZVal, depth int, seen *seria
 		return serializeWithDepth(ctx, inner, depth, seen)
 	}
 
+	// Non-ref path: also check if rawZVal is itself in valRefs (meaning a ref
+	// wrapper pointing to rawZVal was seen before this direct occurrence).
+	// This can happen if a ref to this value was serialized before the value itself.
+	if refIdx, ok := seen.valRefs[rawZVal]; ok {
+		return "R:" + strconv.Itoa(refIdx) + ";", nil
+	}
+
 	return serializeWithDepth(ctx, rawZVal, depth, seen)
 }
 
@@ -197,15 +204,24 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seen *ser
 	var result string
 	switch value.GetType() {
 	case phpv.ZtNull:
-		seen.nextRef() // NULL still gets a reference slot
+		idx := seen.nextRef() // NULL still gets a reference slot
+		if _, already := seen.valRefs[value]; !already {
+			seen.valRefs[value] = idx
+		}
 		result = "N;"
 	case phpv.ZtResource:
-		seen.nextRef()
+		idx := seen.nextRef()
+		if _, already := seen.valRefs[value]; !already {
+			seen.valRefs[value] = idx
+		}
 		// PHP serializes resources as their integer ID
 		r := value.Value().(phpv.Resource)
 		result = "i:" + strconv.Itoa(r.GetResourceID()) + ";"
 	case phpv.ZtBool:
-		seen.nextRef()
+		idx := seen.nextRef()
+		if _, already := seen.valRefs[value]; !already {
+			seen.valRefs[value] = idx
+		}
 		switch value.AsBool(ctx) {
 		case true:
 			result = "b:1;"
@@ -213,11 +229,17 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seen *ser
 			result = "b:0;"
 		}
 	case phpv.ZtInt:
-		seen.nextRef()
+		idx := seen.nextRef()
+		if _, already := seen.valRefs[value]; !already {
+			seen.valRefs[value] = idx
+		}
 		n := value.AsInt(ctx)
 		result = "i:" + strconv.FormatInt(int64(n), 10) + ";"
 	case phpv.ZtFloat:
-		seen.nextRef()
+		idx := seen.nextRef()
+		if _, already := seen.valRefs[value]; !already {
+			seen.valRefs[value] = idx
+		}
 		n := value.AsFloat(ctx)
 		p := phpv.GetSerializePrecision(ctx)
 		var s string
@@ -230,20 +252,26 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seen *ser
 		}
 		result = "d:" + s + ";"
 	case phpv.ZtString:
-		seen.nextRef()
+		idx := seen.nextRef()
+		if _, already := seen.valRefs[value]; !already {
+			seen.valRefs[value] = idx
+		}
 		s := string(value.AsString(ctx))
 		result = "s:" + strconv.Itoa(len(s)) + ":\"" + s + "\";"
 	case phpv.ZtArray:
 		arr := value.AsArray(ctx)
 
-		// Detect array cycles - for references to the same array, produce R:N;
+		// Detect array cycles (circular references) - emit N; to prevent infinite recursion.
 		if seen.arrays[arr] {
 			return "N;", nil
 		}
 		seen.arrays[arr] = true
 		defer delete(seen.arrays, arr)
 
-		seen.nextRef() // array gets a reference slot
+		idx := seen.nextRef() // array gets a reference slot
+		if _, already := seen.valRefs[value]; !already {
+			seen.valRefs[value] = idx
+		}
 
 		count := strconv.FormatInt(int64(arr.Count(ctx)), 10)
 

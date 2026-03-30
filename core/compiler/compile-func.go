@@ -3,6 +3,7 @@ package compiler
 import (
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 
 	"github.com/MagicalTux/goro/core/logopt"
@@ -1323,13 +1324,21 @@ func compileFunctionArgs(c compileCtx) (res []*phpv.FuncArg, err error) {
 		if i.IsSingle('&') {
 			// Disambiguate: &$var (reference) vs Type&Type2 (intersection type)
 			if arg.Hint != nil {
-				// We have a type hint already. Peek to see if this is an intersection type.
-				peek, peekErr := c.NextItem()
-				if peekErr != nil {
-					return nil, peekErr
+				// We have a type hint already. Peek (skipping comments) to see if this is an intersection type.
+				var peek *tokenizer.Item
+				var peekErr error
+				for {
+					peek, peekErr = c.NextItem()
+					if peekErr != nil {
+						return nil, peekErr
+					}
+					if peek.Type != tokenizer.T_COMMENT && peek.Type != tokenizer.T_DOC_COMMENT {
+						break
+					}
+					// skip comment and continue
 				}
 				if peek.Type == tokenizer.T_STRING || peek.Type == tokenizer.T_ARRAY || peek.Type == tokenizer.T_CALLABLE {
-					// Intersection type: A&B — treat like union for now (either type accepted)
+					// Intersection type: A&B
 					arg.Hint, i, err = parseIntersectionTypeHint(arg.Hint, peek, c)
 					if err != nil {
 						return nil, err
@@ -2010,6 +2019,15 @@ func validateTypeHint(th *phpv.TypeHint, loc *phpv.Loc, className ...phpv.ZStrin
 				Loc:  loc,
 			}
 		}
+
+		// DNF redundancy checks: detect redundant intersection groups in union types.
+		// Rules:
+		//   (A&B)|(A&B)      → "Type A&B is redundant with type A&B"
+		//   (A&B)|A           → "Type A&B is redundant as it is more restrictive than type A"
+		//   (A&B)|(A&B&C)    → "Type A&B&C is redundant as it is more restrictive than type A&B"
+		if err := validateDNFRedundancy(th.Union, loc); err != nil {
+			return err
+		}
 	}
 
 	// Intersection type validations (standalone, not within a union)
@@ -2119,6 +2137,118 @@ func validateIntersectionMember(part *phpv.TypeHint, loc *phpv.Loc) error {
 	return nil
 }
 
+// intersectionKey returns a canonical (sorted, lowercase) string key for an
+// intersection type hint, suitable for duplicate detection.
+func intersectionKey(h *phpv.TypeHint) string {
+	members := make([]string, len(h.Intersection))
+	for i, part := range h.Intersection {
+		members[i] = strings.ToLower(part.String())
+	}
+	sort.Strings(members)
+	return strings.Join(members, "&")
+}
+
+// intersectionContainsAll checks whether every class in `small` (by lowercase name)
+// is also present in `large`.  If so, `large` is at least as restrictive as `small`
+// (every value satisfying `large` also satisfies `small`), making `large` redundant.
+func intersectionContainsAll(large, small []*phpv.TypeHint) bool {
+	for _, need := range small {
+		found := false
+		needKey := strings.ToLower(need.String())
+		for _, have := range large {
+			if strings.ToLower(have.String()) == needKey {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
+}
+
+// validateDNFRedundancy checks for redundant intersection groups inside a union
+// (Disjunctive Normal Form).  Returns a compile error if redundancy is found.
+func validateDNFRedundancy(union []*phpv.TypeHint, loc *phpv.Loc) error {
+	// Collect all intersection groups and plain (non-null) types.
+	type group struct {
+		h   *phpv.TypeHint
+		key string // canonical lowercase sorted key
+	}
+	var intersections []group
+	var plains []*phpv.TypeHint // non-intersection, non-null
+
+	for _, u := range union {
+		if len(u.Intersection) > 0 {
+			intersections = append(intersections, group{h: u, key: intersectionKey(u)})
+		} else if u.Type() != phpv.ZtNull {
+			plains = append(plains, u)
+		}
+	}
+
+	if len(intersections) == 0 {
+		return nil // no intersection groups → nothing to check
+	}
+
+	// 1. Duplicate intersection groups: (A&B)|(A&B) → error "Type A&B is redundant with type A&B"
+	seenKeys := make(map[string]string) // key → displayName of first occurrence
+	for _, g := range intersections {
+		if prev, ok := seenKeys[g.key]; ok {
+			return &phpv.PhpError{
+				Err:  fmt.Errorf("Type %s is redundant with type %s", g.h.String(), prev),
+				Code: phpv.E_COMPILE_ERROR,
+				Loc:  loc,
+			}
+		}
+		seenKeys[g.key] = g.h.String()
+	}
+
+	// 2. Intersection is more restrictive than a plain type in the same union.
+	//    (A&B)|A → "Type A&B is redundant as it is more restrictive than type A"
+	//    An intersection I is more restrictive than plain type T if T is one of
+	//    the members of I.
+	for _, g := range intersections {
+		for _, plain := range plains {
+			plainKey := strings.ToLower(plain.String())
+			for _, member := range g.h.Intersection {
+				if strings.ToLower(member.String()) == plainKey {
+					return &phpv.PhpError{
+						Err:  fmt.Errorf("Type %s is redundant as it is more restrictive than type %s", g.h.String(), plain.String()),
+						Code: phpv.E_COMPILE_ERROR,
+						Loc:  loc,
+					}
+				}
+			}
+		}
+	}
+
+	// 3. One intersection is more restrictive than another: (A&B)|(A&B&C)
+	//    I2 is redundant if every member of I1 is in I2 (I1 ⊆ I2 member-wise → I2 ⊆ I1 value-wise).
+	for i := 0; i < len(intersections); i++ {
+		for j := 0; j < len(intersections); j++ {
+			if i == j {
+				continue
+			}
+			// Check if intersections[j] is more restrictive than intersections[i]:
+			// all members of intersections[i] appear in intersections[j], AND
+			// intersections[j] has more members (strictly more restrictive).
+			gi := intersections[i]
+			gj := intersections[j]
+			if len(gj.h.Intersection) > len(gi.h.Intersection) &&
+				intersectionContainsAll(gj.h.Intersection, gi.h.Intersection) {
+				return &phpv.PhpError{
+					Err:  fmt.Errorf("Type %s is redundant as it is more restrictive than type %s", gj.h.String(), gi.h.String()),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  loc,
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
 // checkReservedTypeInNamespace checks if a namespace-qualified type name ends with a
 // reserved type name (e.g., bar\int, foo\string). PHP does not allow such usage.
 func checkReservedTypeInNamespace(hint string, loc *phpv.Loc) error {
@@ -2179,7 +2309,8 @@ func parseParenIntersection(c compileCtx) (*phpv.TypeHint, *tokenizer.Item, erro
 			}
 			hint = hint + "\\" + i.Data
 		}
-		intersection.Intersection = append(intersection.Intersection, phpv.ParseTypeHint(phpv.ZString(hint)))
+		resolvedHint := string(c.resolveClassName(phpv.ZString(hint)))
+		intersection.Intersection = append(intersection.Intersection, phpv.ParseTypeHint(phpv.ZString(resolvedHint)))
 		if i.IsSingle(')') {
 			// End of group, get next token
 			next, err := c.NextItem()
@@ -2306,13 +2437,20 @@ func parseIntersectionTypeHint(first *phpv.TypeHint, secondToken *tokenizer.Item
 		}
 		hint = hint + "\\" + i.Data
 	}
-	intersection.Intersection = append(intersection.Intersection, phpv.ParseTypeHint(phpv.ZString(hint)))
+	resolvedHint := string(c.resolveClassName(phpv.ZString(hint)))
+	intersection.Intersection = append(intersection.Intersection, phpv.ParseTypeHint(phpv.ZString(resolvedHint)))
 
 	// Check for more & types
 	for i.IsSingle('&') {
-		i, err = c.NextItem()
-		if err != nil {
-			return nil, nil, err
+		// Skip comments between & and the next type name
+		for {
+			i, err = c.NextItem()
+			if err != nil {
+				return nil, nil, err
+			}
+			if i.Type != tokenizer.T_COMMENT && i.Type != tokenizer.T_DOC_COMMENT {
+				break
+			}
 		}
 		if i.Type != tokenizer.T_STRING && i.Type != tokenizer.T_ARRAY && i.Type != tokenizer.T_CALLABLE && i.Type != tokenizer.T_STATIC {
 			return nil, nil, i.Unexpected()
@@ -2335,7 +2473,8 @@ func parseIntersectionTypeHint(first *phpv.TypeHint, secondToken *tokenizer.Item
 			}
 			hint = hint + "\\" + i.Data
 		}
-		intersection.Intersection = append(intersection.Intersection, phpv.ParseTypeHint(phpv.ZString(hint)))
+		resolvedHint = string(c.resolveClassName(phpv.ZString(hint)))
+		intersection.Intersection = append(intersection.Intersection, phpv.ParseTypeHint(phpv.ZString(resolvedHint)))
 	}
 
 	return intersection, i, nil
@@ -2495,6 +2634,11 @@ func parseReturnType(c compileCtx) (*phpv.TypeHint, error) {
 	}
 
 	if i.IsSingle('&') {
+		// Nullable prefix (?Type) cannot be combined with intersection types.
+		// PHP produces: "syntax error, unexpected token '&', expecting '{'"
+		if isNullable {
+			return nil, i.Unexpected()
+		}
 		// Intersection type in return position: Type1&Type2
 		peek, peekErr := c.NextItem()
 		if peekErr != nil {

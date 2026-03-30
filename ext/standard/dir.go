@@ -11,6 +11,7 @@ import (
 	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/MagicalTux/goro/core/stream"
 )
 
 // > const
@@ -47,28 +48,24 @@ func init() {
 				if handleZv == nil || handleZv.GetType() != phpv.ZtResource {
 					return phpv.ZFalse.ZVal(), nil
 				}
+				// Check for user dir handle
+				if udh, ok := handleZv.Value().(*stream.UserDirHandle); ok {
+					return udh.Readdir(), nil
+				}
 				dh, ok := handleZv.Value().(*dirHandle)
 				if !ok {
 					return phpv.ZFalse.ZVal(), nil
 				}
-				if dh.pos == -2 {
-					dh.pos = -1
-					return phpv.ZStr("."), nil
-				}
-				if dh.pos == -1 {
-					dh.pos = 0
-					return phpv.ZStr(".."), nil
-				}
-				if dh.pos >= len(dh.entries) {
-					return phpv.ZFalse.ZVal(), nil
-				}
-				name := dh.entries[dh.pos].Name()
-				dh.pos++
-				return phpv.ZString(name).ZVal(), nil
+				return readFromDirHandle(dh), nil
 			})},
 			"rewind": {Name: "rewind", Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				handleZv := o.HashTable().GetString("handle")
 				if handleZv == nil || handleZv.GetType() != phpv.ZtResource {
+					return phpv.ZNULL.ZVal(), nil
+				}
+				// Check for user dir handle
+				if udh, ok := handleZv.Value().(*stream.UserDirHandle); ok {
+					udh.Rewinddir()
 					return phpv.ZNULL.ZVal(), nil
 				}
 				dh, ok := handleZv.Value().(*dirHandle)
@@ -79,6 +76,12 @@ func init() {
 				return phpv.ZNULL.ZVal(), nil
 			})},
 			"close": {Name: "close", Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				handleZv := o.HashTable().GetString("handle")
+				if handleZv != nil && handleZv.GetType() == phpv.ZtResource {
+					if udh, ok := handleZv.Value().(*stream.UserDirHandle); ok {
+						udh.Close()
+					}
+				}
 				return phpv.ZNULL.ZVal(), nil
 			})},
 		},
@@ -183,17 +186,44 @@ func fncScanDir(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // > func Directory|false dir ( string $directory [, resource $context ] )
 func fncDir(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var dirPath phpv.ZString
-	_, err := core.Expand(ctx, args, &dirPath)
+	var contextArg core.Optional[phpv.Resource]
+	_, err := core.Expand(ctx, args, &dirPath, &contextArg)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := ctx.Global().CheckOpenBasedir(ctx, string(dirPath), "dir"); err != nil {
+	var streamCtxRes phpv.Resource
+	if contextArg.HasArg() {
+		streamCtxRes = contextArg.Get()
+	}
+
+	pathStr := string(dirPath)
+
+	// Check for user stream wrapper
+	if ush := getUserDirHandler(ctx, pathStr); ush != nil {
+		udh, err := openUserDir(ctx, pathStr, ush, streamCtxRes)
+		if err != nil {
+			ctx.Warn("dir(%s): Failed to open directory: operation failed", dirPath, logopt.NoFuncName(true))
+			return phpv.ZFalse.ZVal(), nil
+		}
+		lastUserDirHandle = udh
+		lastDirHandle = nil
+
+		obj, objErr := phpobj.NewZObject(ctx, DirectoryClass)
+		if objErr != nil {
+			return nil, objErr
+		}
+		obj.HashTable().SetString("path", phpv.ZString(pathStr).ZVal())
+		obj.HashTable().SetString("handle", udh.ZVal())
+		return obj.ZVal(), nil
+	}
+
+	if err := ctx.Global().CheckOpenBasedir(ctx, pathStr, "dir"); err != nil {
 		ctx.Warn("dir(%s): Failed to open directory: Operation not permitted", dirPath, logopt.NoFuncName(true))
 		return phpv.ZFalse.ZVal(), nil
 	}
 
-	p := string(dirPath)
+	p := pathStr
 	if !filepath.IsAbs(p) {
 		p = filepath.Join(string(ctx.Global().Getwd()), p)
 	}

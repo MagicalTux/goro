@@ -785,7 +785,11 @@ func fncFileOpen(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZFalse.ZVal(), nil
 	}
 
-	f, err := ctx.Global().Open(ctx, filename, mode, useIncludePath)
+	var streamCtxArgs []phpv.Resource
+	if contextResource.HasArg() && contextResource.Get() != nil {
+		streamCtxArgs = []phpv.Resource{contextResource.Get()}
+	}
+	f, err := ctx.Global().Open(ctx, filename, mode, useIncludePath, streamCtxArgs...)
 	if err != nil {
 		return phpv.ZFalse.ZVal(), ctx.Warn("%s(%s): Failed to open stream: %s", ctx.GetFuncName(), filename, phpErrMsg(err), logopt.NoFuncName(true))
 	}

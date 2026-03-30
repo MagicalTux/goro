@@ -1,6 +1,7 @@
 package reflection
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
 
@@ -14,7 +15,9 @@ func reflectionClassToString(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.Z
 	if zc == nil {
 		return phpv.ZString("").ZVal(), nil
 	}
-	return phpv.ZString(formatReflectionClass(ctx, zc)).ZVal(), nil
+	// Check if this is a ReflectionObject (uses "Object of class" prefix)
+	isReflectionObj := o.GetClass() == ReflectionObject
+	return phpv.ZString(formatReflectionClass(ctx, zc, isReflectionObj, nil)).ZVal(), nil
 }
 
 func reflectionClassHasConstant(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
@@ -371,6 +374,9 @@ func reflectionClassGetEndLine(ctx phpv.Context, o *phpobj.ZObject, args []*phpv
 	if zc == nil || zc.L == nil {
 		return phpv.ZBool(false).ZVal(), nil
 	}
+	if zc.LEnd != nil {
+		return phpv.ZInt(zc.LEnd.Line).ZVal(), nil
+	}
 	return phpv.ZInt(zc.L.Line).ZVal(), nil
 }
 
@@ -527,7 +533,9 @@ func reflectionClassGetTraitAliases(ctx phpv.Context, o *phpobj.ZObject, args []
 }
 
 // formatReflectionClass generates a PHP-compatible string representation of a ReflectionClass.
-func formatReflectionClass(ctx phpv.Context, zc *phpobj.ZClass) string {
+// isObject: if true, use "Object of class [" prefix (ReflectionObject::__toString)
+// dynamicProps: optional list of dynamic property names to show in the output (ReflectionObject only)
+func formatReflectionClass(ctx phpv.Context, zc *phpobj.ZClass, isObject bool, dynamicProps []phpv.ZString) string {
 	var sb strings.Builder
 
 	kind := "Class"
@@ -574,8 +582,13 @@ func formatReflectionClass(ctx phpv.Context, zc *phpobj.ZClass) string {
 		modifiers += " readonly"
 	}
 
-	sb.WriteString(fmt.Sprintf("%s [ %s%s%s %s %s",
-		kind, origin, iterateable, modifiers, kindLower, string(zc.GetName())))
+	if isObject {
+		sb.WriteString(fmt.Sprintf("Object of class [ %s%s%s %s %s",
+			origin, iterateable, modifiers, kindLower, string(zc.GetName())))
+	} else {
+		sb.WriteString(fmt.Sprintf("%s [ %s%s%s %s %s",
+			kind, origin, iterateable, modifiers, kindLower, string(zc.GetName())))
+	}
 
 	if zc.Extends != nil {
 		sb.WriteString(" extends " + string(zc.Extends.GetName()))
@@ -595,7 +608,11 @@ func formatReflectionClass(ctx phpv.Context, zc *phpobj.ZClass) string {
 	}
 	sb.WriteString(" ] {\n")
 	if zc.L != nil {
-		sb.WriteString(fmt.Sprintf("  @@ %s %d-%d\n", zc.L.Filename, zc.L.Line, zc.L.Line))
+		endLine := zc.L.Line
+		if zc.LEnd != nil {
+			endLine = zc.LEnd.Line
+		}
+		sb.WriteString(fmt.Sprintf("  @@ %s %d-%d\n", zc.L.Filename, zc.L.Line, endLine))
 	}
 	sb.WriteString("\n")
 
@@ -621,15 +638,22 @@ func formatReflectionClass(ctx phpv.Context, zc *phpobj.ZClass) string {
 				typeStr = c.TypeHint.String()
 			}
 			valStr := string(name) // fallback
+			var resolvedVal *phpv.ZVal
 			if c.Value != nil {
 				if cd, ok := c.Value.(*phpv.CompileDelayed); ok {
 					resolved, err := cd.Run(ctx)
 					if err == nil && resolved != nil {
+						resolvedVal = resolved
 						valStr = formatConstantValue(ctx, resolved)
 					}
 				} else {
-					valStr = formatConstantValue(ctx, c.Value.ZVal())
+					resolvedVal = c.Value.ZVal()
+					valStr = formatConstantValue(ctx, resolvedVal)
 				}
+			}
+			// Infer type from value when no explicit TypeHint
+			if c.TypeHint == nil && resolvedVal != nil {
+				typeStr = inferTypeFromValue(resolvedVal)
 			}
 			sb.WriteString(fmt.Sprintf("    Constant [ %s %s %s ] { %s }\n", modStr, typeStr, name, valStr))
 		}
@@ -651,18 +675,30 @@ func formatReflectionClass(ctx phpv.Context, zc *phpobj.ZClass) string {
 	}
 	sb.WriteString("  }\n\n")
 
+	// Get all methods in declaration order
+	allMethods := zc.GetMethodsOrdered()
+
+	// Count static methods (excluding private inherited)
 	staticMethodCount := 0
-	for _, m := range zc.Methods {
-		if m.Modifiers.IsStatic() {
-			staticMethodCount++
-		}
-	}
-	sb.WriteString(fmt.Sprintf("  - Static methods [%d] {\n", staticMethodCount))
-	for _, m := range zc.Methods {
+	for _, m := range allMethods {
 		if !m.Modifiers.IsStatic() {
 			continue
 		}
-		sb.WriteString(rcFormatMethodShort(zc, m))
+		// Skip private methods from parent classes
+		if m.Class != nil && m.Class.GetName() != zc.GetName() && m.Modifiers.IsPrivate() {
+			continue
+		}
+		staticMethodCount++
+	}
+	sb.WriteString(fmt.Sprintf("  - Static methods [%d] {\n", staticMethodCount))
+	for _, m := range allMethods {
+		if !m.Modifiers.IsStatic() {
+			continue
+		}
+		if m.Class != nil && m.Class.GetName() != zc.GetName() && m.Modifiers.IsPrivate() {
+			continue
+		}
+		sb.WriteString(rcFormatMethodShort(ctx, zc, m))
 	}
 	sb.WriteString("  }\n\n")
 
@@ -681,22 +717,93 @@ func formatReflectionClass(ctx phpv.Context, zc *phpobj.ZClass) string {
 	}
 	sb.WriteString("  }\n\n")
 
-	nonStaticMethods := 0
-	for _, m := range zc.Methods {
-		if !m.Modifiers.IsStatic() {
-			nonStaticMethods++
+	// Dynamic properties section (ReflectionObject only)
+	if len(dynamicProps) > 0 {
+		sb.WriteString(fmt.Sprintf("  - Dynamic properties [%d] {\n", len(dynamicProps)))
+		for _, name := range dynamicProps {
+			sb.WriteString(fmt.Sprintf("    Property [ <dynamic> public $%s ]\n", name))
 		}
+		sb.WriteString("  }\n\n")
 	}
-	sb.WriteString(fmt.Sprintf("  - Methods [%d] {\n", nonStaticMethods))
-	for _, m := range zc.Methods {
+
+	// Count non-static methods (excluding private inherited)
+	nonStaticMethods := 0
+	for _, m := range allMethods {
 		if m.Modifiers.IsStatic() {
 			continue
 		}
-		sb.WriteString(rcFormatMethodShort(zc, m))
+		if m.Class != nil && m.Class.GetName() != zc.GetName() && m.Modifiers.IsPrivate() {
+			continue
+		}
+		nonStaticMethods++
+	}
+	sb.WriteString(fmt.Sprintf("  - Methods [%d] {\n", nonStaticMethods))
+	for _, m := range allMethods {
+		if m.Modifiers.IsStatic() {
+			continue
+		}
+		if m.Class != nil && m.Class.GetName() != zc.GetName() && m.Modifiers.IsPrivate() {
+			continue
+		}
+		sb.WriteString(rcFormatMethodShort(ctx, zc, m))
 	}
 	sb.WriteString("  }\n}\n")
 
 	return sb.String()
+}
+
+// inferTypeFromValue infers a PHP type name string from a ZVal for constant type display.
+func inferTypeFromValue(val *phpv.ZVal) string {
+	if val == nil {
+		return "mixed"
+	}
+	switch val.GetType() {
+	case phpv.ZtNull:
+		return "null"
+	case phpv.ZtBool:
+		return "bool"
+	case phpv.ZtInt:
+		return "int"
+	case phpv.ZtFloat:
+		return "float"
+	case phpv.ZtString:
+		return "string"
+	case phpv.ZtArray:
+		return "array"
+	default:
+		return "mixed"
+	}
+}
+
+// formatParamDefault returns the string representation of a parameter default value
+// for use in reflection __toString output (e.g. " = NULL", " = 'hello'", " = K").
+func formatParamDefault(ctx phpv.Context, arg *phpv.FuncArg) string {
+	if arg.DefaultValue == nil {
+		return ""
+	}
+	cd, ok := arg.DefaultValue.(*phpv.CompileDelayed)
+	if !ok {
+		// Direct value
+		return " = " + formatConstantValue(ctx, arg.DefaultValue.ZVal())
+	}
+	// Use Dump() to get the PHP source representation
+	var buf bytes.Buffer
+	if err := cd.V.Dump(&buf); err == nil {
+		s := buf.String()
+		if s == "" {
+			return " = NULL"
+		}
+		// null -> NULL (PHP reflection always uppercases null)
+		if strings.EqualFold(s, "null") {
+			return " = NULL"
+		}
+		return " = " + s
+	}
+	// Fallback: evaluate
+	if resolved, err := cd.Run(ctx); err == nil && resolved != nil {
+		return " = " + formatConstantValue(ctx, resolved)
+	}
+	return " = <default>"
 }
 
 // formatConstantValue formats a constant value for ReflectionClass::__toString() output.
@@ -775,57 +882,57 @@ func rcAccessStr(mod phpv.ZObjectAttr) string {
 	return "public"
 }
 
-func rcFormatMethodShort(zc *phpobj.ZClass, m *phpv.ZClassMethod) string {
+func rcFormatMethodShort(ctx phpv.Context, zc *phpobj.ZClass, m *phpv.ZClassMethod) string {
 	var sb strings.Builder
 	sb.WriteString("    Method [ ")
+	methodNameLower := m.Name.ToLower()
+	isOwnMethod := m.Class == nil || m.Class.GetName() == zc.GetName()
+
+	// Determine the origin prefix
+	isInternal := m.Loc == nil
 	origin := "<user"
-	if m.Loc == nil {
+	if isInternal {
 		if zc.Ext != "" {
 			origin = "<internal:" + zc.Ext
 		} else {
 			origin = "<internal:Core"
 		}
 	}
-	methodNameLower := m.Name.ToLower()
-	isOwnMethod := m.Class == nil || m.Class.GetName() == zc.GetName()
 
-	if isOwnMethod && zc.Extends != nil {
-		// Method is defined in this class - check if parent also has it ("overwrites")
-		if parentMethod, ok := zc.Extends.GetMethod(methodNameLower); ok {
-			// "overwrites" shows the class that actually declares the method
-			declaringClass := zc.Extends.GetName()
-			if parentMethod.Class != nil {
-				declaringClass = parentMethod.Class.GetName()
-			}
-			origin += ", overwrites " + string(declaringClass)
-		}
-	}
-
-	// Find prototype: walk up the full hierarchy to find the earliest declaration
 	if isOwnMethod {
+		if zc.Extends != nil {
+			// Method is defined in this class - check if parent also has it ("overwrites")
+			if parentMethod, ok := zc.Extends.GetMethod(methodNameLower); ok {
+				// "overwrites" shows the class that actually declares the method in the parent chain
+				declaringClass := zc.Extends.GetName()
+				if parentMethod.Class != nil {
+					declaringClass = parentMethod.Class.GetName()
+				}
+				origin += ", overwrites " + string(declaringClass)
+			}
+		}
+		// Find prototype: walk up the full hierarchy to find the earliest declaration
 		protoName := findMethodPrototype(zc, methodNameLower)
 		if protoName != "" {
 			origin += ", prototype " + string(protoName)
 		}
-	} else if m.Prototype != nil {
-		origin += ", prototype " + string(m.Prototype.GetName())
-	}
-
-	if !isOwnMethod {
-		// Method is inherited
+	} else {
+		// Method is inherited from another class
 		declaringClass := m.Class.GetName()
 		origin += ", inherits " + string(declaringClass)
-		// Find prototype for inherited method
+		// Find prototype for inherited method - only show if different from declaring class
+		var protoName phpv.ZString
 		if m.Prototype != nil {
-			origin += ", prototype " + string(m.Prototype.GetName())
+			protoName = m.Prototype.GetName()
 		} else {
-			protoName := findMethodPrototype(zc, methodNameLower)
-			if protoName != "" {
-				origin += ", prototype " + string(protoName)
-			}
+			protoName = findMethodPrototype(zc, methodNameLower)
+		}
+		if protoName != "" && protoName != declaringClass {
+			origin += ", prototype " + string(protoName)
 		}
 	}
-	// Check if this is a constructor
+
+	// Check if this is a constructor or destructor
 	nameLower := strings.ToLower(string(m.Name))
 	if nameLower == "__construct" {
 		origin += ", ctor"
@@ -852,30 +959,35 @@ func rcFormatMethodShort(zc *phpobj.ZClass, m *phpv.ZClassMethod) string {
 	}
 	sb.WriteString(fmt.Sprintf(" method %s ] {\n", m.Name))
 	if m.Loc != nil {
-		sb.WriteString(fmt.Sprintf("      @@ %s %d - %d\n", m.Loc.Filename, m.Loc.Line, m.Loc.Line))
+		endLine := m.Loc.Line
+		if m.LocEnd != nil {
+			endLine = m.LocEnd.Line
+		} else {
+			// Try to get end line from the callable
+			type locEndGetter interface {
+				LocEnd() *phpv.Loc
+			}
+			if leg, ok := m.Method.(locEndGetter); ok {
+				if loc := leg.LocEnd(); loc != nil {
+					endLine = loc.Line
+				}
+			}
+		}
+		sb.WriteString(fmt.Sprintf("      @@ %s %d - %d\n", m.Loc.Filename, m.Loc.Line, endLine))
 	}
+
 	if fga, ok := m.Method.(phpv.FuncGetArgs); ok {
 		funcArgs := fga.GetArgs()
-		if len(funcArgs) > 0 {
+		if len(funcArgs) > 0 || isInternal {
 			sb.WriteString(fmt.Sprintf("\n      - Parameters [%d] {\n", len(funcArgs)))
 			for i, arg := range funcArgs {
-				sb.WriteString(fmt.Sprintf("        Parameter #%d [ ", i))
-				if !arg.Required {
-					sb.WriteString("<optional> ")
-				} else {
-					sb.WriteString("<required> ")
-				}
-				if arg.Hint != nil {
-					sb.WriteString(arg.Hint.String() + " ")
-				}
-				sb.WriteString(fmt.Sprintf("$%s", arg.VarName))
-				sb.WriteString(" ]\n")
+				sb.WriteString(rcFormatParameter(ctx, i, arg, "        "))
 			}
 			sb.WriteString("      }\n")
 		}
-	} else if m.Loc == nil {
-		// Internal methods: show empty parameter list
-		sb.WriteString(fmt.Sprintf("\n      - Parameters [0] {\n"))
+	} else if isInternal {
+		// Internal methods without FuncGetArgs: show empty parameter list
+		sb.WriteString("\n      - Parameters [0] {\n")
 		sb.WriteString("      }\n")
 	}
 	// Show return type if available
@@ -887,6 +999,36 @@ func rcFormatMethodShort(zc *phpobj.ZClass, m *phpv.ZClassMethod) string {
 		}
 	}
 	sb.WriteString("    }\n")
+	return sb.String()
+}
+
+// rcFormatParameter formats a single parameter for reflection output.
+// Used by both rcFormatMethodShort and reflectionMethodToString.
+func rcFormatParameter(ctx phpv.Context, idx int, arg *phpv.FuncArg, indent string) string {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("%sParameter #%d [ ", indent, idx))
+	if arg.Variadic {
+		// Variadic parameters are always optional
+		sb.WriteString("<optional> ")
+	} else if !arg.Required {
+		sb.WriteString("<optional> ")
+	} else {
+		sb.WriteString("<required> ")
+	}
+	if arg.Hint != nil {
+		sb.WriteString(arg.Hint.String() + " ")
+	}
+	if arg.Variadic {
+		sb.WriteString("...")
+	}
+	if arg.Ref {
+		sb.WriteString("&")
+	}
+	sb.WriteString(fmt.Sprintf("$%s", arg.VarName))
+	if !arg.Required {
+		sb.WriteString(formatParamDefault(ctx, arg))
+	}
+	sb.WriteString(" ]\n")
 	return sb.String()
 }
 
@@ -1451,6 +1593,15 @@ func reflectionFunctionGetEndLine(ctx phpv.Context, o *phpobj.ZObject, args []*p
 	data := getFuncData(o)
 	if data == nil {
 		return phpv.ZBool(false).ZVal(), nil
+	}
+	type locEndGetter interface {
+		LocEnd() *phpv.Loc
+	}
+	if leg, ok := data.callable.(locEndGetter); ok {
+		loc := leg.LocEnd()
+		if loc != nil {
+			return phpv.ZInt(loc.Line).ZVal(), nil
+		}
 	}
 	type locGetter interface {
 		Loc() *phpv.Loc

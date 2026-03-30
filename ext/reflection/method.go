@@ -581,6 +581,18 @@ func reflectionMethodGetEndLine(ctx phpv.Context, o *phpobj.ZObject, args []*php
 	if data == nil || data.method.Loc == nil {
 		return phpv.ZBool(false).ZVal(), nil
 	}
+	if data.method.LocEnd != nil {
+		return phpv.ZInt(data.method.LocEnd.Line).ZVal(), nil
+	}
+	// fallback: try to get end line from the callable
+	type locEndGetter interface {
+		LocEnd() *phpv.Loc
+	}
+	if leg, ok := data.method.Method.(locEndGetter); ok {
+		if loc := leg.LocEnd(); loc != nil {
+			return phpv.ZInt(loc.Line).ZVal(), nil
+		}
+	}
 	return phpv.ZInt(data.method.Loc.Line).ZVal(), nil
 }
 
@@ -633,26 +645,82 @@ func reflectionMethodToString(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.
 		return phpv.ZString("Method [ ]").ZVal(), nil
 	}
 
+	m := data.method
+	class := data.class
+	methodNameLower := m.Name.ToLower()
+	isOwnMethod := m.Class == nil || m.Class.GetName() == class.GetName()
+	isInternal := m.Loc == nil
+
 	var sb strings.Builder
 	sb.WriteString("Method [ ")
 
-	origin := "<user>"
-	if data.method.Loc == nil {
-		origin = "<internal>"
+	origin := "<user"
+	if isInternal {
+		if zc, ok := class.(*phpobj.ZClass); ok && zc.Ext != "" {
+			origin = "<internal:" + zc.Ext
+		} else {
+			origin = "<internal>"
+			// For internal methods, skip the rest of origin building
+			sb.WriteString(origin)
+			goto writeModifiers
+		}
 	}
-	if data.method.Class != nil && data.method.Class.GetName() != data.class.GetName() {
-		origin += ", inherits " + string(data.method.Class.GetName())
+
+	if isOwnMethod {
+		// Check if this method overwrites a parent method
+		if zc, ok := class.(*phpobj.ZClass); ok && zc.Extends != nil {
+			if parentMethod, ok2 := zc.Extends.GetMethod(methodNameLower); ok2 {
+				declaringClass := zc.Extends.GetName()
+				if parentMethod.Class != nil {
+					declaringClass = parentMethod.Class.GetName()
+				}
+				origin += ", overwrites " + string(declaringClass)
+			}
+		}
+		// Find prototype
+		if zc, ok := class.(*phpobj.ZClass); ok {
+			protoName := findMethodPrototype(zc, methodNameLower)
+			if protoName != "" {
+				origin += ", prototype " + string(protoName)
+			}
+		}
+	} else {
+		// Inherited method
+		declaringClass := m.Class.GetName()
+		origin += ", inherits " + string(declaringClass)
+		// Find prototype - only show if different from declaring class
+		var protoName phpv.ZString
+		if m.Prototype != nil {
+			protoName = m.Prototype.GetName()
+		} else if zc, ok := class.(*phpobj.ZClass); ok {
+			protoName = findMethodPrototype(zc, methodNameLower)
+		}
+		if protoName != "" && protoName != declaringClass {
+			origin += ", prototype " + string(protoName)
+		}
 	}
+
+	// ctor/dtor suffix
+	{
+		nameLower := strings.ToLower(string(m.Name))
+		if nameLower == "__construct" {
+			origin += ", ctor"
+		} else if nameLower == "__destruct" {
+			origin += ", dtor"
+		}
+	}
+	origin += ">"
 	sb.WriteString(origin)
 
-	if data.method.Modifiers.Has(phpv.ZAttrAbstract) || data.method.Empty {
+writeModifiers:
+	if m.Modifiers.Has(phpv.ZAttrAbstract) || m.Empty {
 		sb.WriteString(" abstract")
 	}
-	if data.method.Modifiers.Has(phpv.ZAttrFinal) {
+	if m.Modifiers.Has(phpv.ZAttrFinal) {
 		sb.WriteString(" final")
 	}
 
-	access := data.method.Modifiers.Access()
+	access := m.Modifiers.Access()
 	if access == phpv.ZAttrProtected {
 		sb.WriteString(" protected")
 	} else if access == phpv.ZAttrPrivate {
@@ -661,40 +729,53 @@ func reflectionMethodToString(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.
 		sb.WriteString(" public")
 	}
 
-	if data.method.Modifiers.IsStatic() {
+	if m.Modifiers.IsStatic() {
 		sb.WriteString(" static")
 	}
 
-	sb.WriteString(fmt.Sprintf(" method %s ] {\n", data.method.Name))
+	sb.WriteString(fmt.Sprintf(" method %s ] {\n", m.Name))
 
-	if data.method.Loc != nil {
-		sb.WriteString(fmt.Sprintf("  @@ %s %d - %d\n", data.method.Loc.Filename, data.method.Loc.Line, data.method.Loc.Line))
+	if m.Loc != nil {
+		endLine := m.Loc.Line
+		if m.LocEnd != nil {
+			endLine = m.LocEnd.Line
+		} else {
+			type locEndGetter interface {
+				LocEnd() *phpv.Loc
+			}
+			if leg, ok := m.Method.(locEndGetter); ok {
+				if loc := leg.LocEnd(); loc != nil {
+					endLine = loc.Line
+				}
+			}
+		}
+		sb.WriteString(fmt.Sprintf("  @@ %s %d - %d\n", m.Loc.Filename, m.Loc.Line, endLine))
 	}
 
-	if fga, ok := data.method.Method.(phpv.FuncGetArgs); ok {
+	if fga, ok := m.Method.(phpv.FuncGetArgs); ok {
 		funcArgs := fga.GetArgs()
-		required := 0
-		for _, a := range funcArgs {
-			if a.Required {
-				required++
+		if len(funcArgs) > 0 || isInternal {
+			sb.WriteString(fmt.Sprintf("\n  - Parameters [%d] {\n", len(funcArgs)))
+			for i, arg := range funcArgs {
+				sb.WriteString(rcFormatParameter(ctx, i, arg, "    "))
 			}
+			sb.WriteString("  }\n")
 		}
-		sb.WriteString(fmt.Sprintf("\n  - Parameters [%d] {\n", len(funcArgs)))
-		for i, arg := range funcArgs {
-			sb.WriteString(fmt.Sprintf("    Parameter #%d [ ", i))
-			if !arg.Required {
-				sb.WriteString("<optional> ")
-			} else {
-				sb.WriteString("<required> ")
-			}
-			if arg.Hint != nil {
-				sb.WriteString(arg.Hint.String() + " ")
-			}
-			sb.WriteString(fmt.Sprintf("$%s", arg.VarName))
-			sb.WriteString(" ]\n")
-		}
+	} else if isInternal {
+		// Internal methods without FuncGetArgs
+		sb.WriteString("\n  - Parameters [0] {\n")
 		sb.WriteString("  }\n")
 	}
+
+	// Return type
+	if m.ReturnType != nil {
+		if m.TentativeReturnType {
+			sb.WriteString(fmt.Sprintf("  - Tentative return [ %s ]\n", m.ReturnType.String()))
+		} else {
+			sb.WriteString(fmt.Sprintf("  - Return [ %s ]\n", m.ReturnType.String()))
+		}
+	}
+
 	sb.WriteString("}\n")
 
 	return phpv.ZString(sb.String()).ZVal(), nil

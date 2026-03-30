@@ -145,10 +145,19 @@ func (h *phpHandler) Open(ctx phpv.Context, p *url.URL, mode string, _ ...phpv.R
 		// php://temp and php://memory both provide read-write temporary streams
 		// php://temp may use a temporary file for large data, but we use in-memory for both
 		appendMode := strings.Contains(mode, "a")
-		buf := &readWriteBuffer{appendMode: appendMode}
+		// Determine read/write capabilities based on mode
+		readable := !strings.Contains(mode, "w") || strings.Contains(mode, "+")
+		writable := strings.Contains(mode, "w") || strings.Contains(mode, "a") || strings.Contains(mode, "+")
+		// "r" without "+" is read-only
+		if mode == "r" || mode == "rb" {
+			readable = true
+			writable = false
+		}
+		buf := &readWriteBuffer{appendMode: appendMode, readable: readable, writable: writable}
 		s := NewStream(buf)
 		s.SetAttr("stream_type", "TEMP")
 		s.SetAttr("mode", mode)
+		s.SetAttr("seekable", true)
 		s.ResourceType = phpv.ResourceStream
 		return s, nil
 	default:
@@ -329,9 +338,14 @@ type readWriteBuffer struct {
 	data       []byte
 	pos        int
 	appendMode bool // when true, writes always go to the end (like "a+" mode)
+	readable   bool // whether reads are permitted
+	writable   bool // whether writes are permitted
 }
 
 func (b *readWriteBuffer) Read(p []byte) (int, error) {
+	if !b.readable {
+		return 0, ErrNotSupported
+	}
 	if b.pos >= len(b.data) {
 		return 0, io.EOF
 	}
@@ -341,6 +355,9 @@ func (b *readWriteBuffer) Read(p []byte) (int, error) {
 }
 
 func (b *readWriteBuffer) Write(p []byte) (int, error) {
+	if !b.writable {
+		return 0, ErrNotSupported
+	}
 	if len(p) == 0 {
 		return 0, nil
 	}

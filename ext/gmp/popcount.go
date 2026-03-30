@@ -57,7 +57,8 @@ func gmpTestbit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	if index < 0 {
-		return phpv.ZFalse.ZVal(), nil
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+			fmt.Sprintf("gmp_testbit(): Argument #2 ($index) must be between 0 and %d * %d", math.MaxInt64, 8))
 	}
 
 	if i.Bit(int(index)) != 0 {

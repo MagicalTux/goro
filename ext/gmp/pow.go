@@ -18,7 +18,7 @@ func gmpPow(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	ibase, err := readInt(ctx, base)
+	ibase, err := readIntArg(ctx, base, "gmp_pow", 1, "num")
 	if err != nil {
 		return nil, err
 	}
@@ -42,15 +42,15 @@ func gmpPowm(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	ibase, err := readInt(ctx, base)
+	ibase, err := readIntArg(ctx, base, "gmp_powm", 1, "num")
 	if err != nil {
 		return nil, err
 	}
-	iexp, err := readInt(ctx, exp)
+	iexp, err := readIntArg(ctx, exp, "gmp_powm", 2, "exponent")
 	if err != nil {
 		return nil, err
 	}
-	imod, err := readInt(ctx, mod)
+	imod, err := readIntArg(ctx, mod, "gmp_powm", 3, "modulus")
 	if err != nil {
 		return nil, err
 	}

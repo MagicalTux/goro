@@ -19,6 +19,20 @@ func NewUserStreamHandler(className phpv.ZString) *UserStreamHandler {
 	return &UserStreamHandler{ClassName: className}
 }
 
+// setContextOnObject assigns the stream context resource to $this->context on the wrapper object.
+func setContextOnObject(ctx phpv.Context, obj *phpobj.ZObject, streamCtx phpv.Resource) {
+	if streamCtx == nil {
+		return
+	}
+	// Only set if the class has a "context" property (typed or otherwise)
+	if obj.Class == nil {
+		return
+	}
+	contextVal := phpv.NewZVal(streamCtx)
+	// Use ObjectSet which handles type checking; silently ignore errors
+	obj.ObjectSet(ctx, phpv.ZStr("context"), contextVal)
+}
+
 func (h *UserStreamHandler) Open(ctx phpv.Context, path *url.URL, mode string, streamCtx ...phpv.Resource) (*Stream, error) {
 	// Look up the class
 	class, err := ctx.Global().GetClass(ctx, h.ClassName, true)
@@ -30,6 +44,15 @@ func (h *UserStreamHandler) Open(ctx phpv.Context, path *url.URL, mode string, s
 	obj, err := phpobj.NewZObject(ctx, class)
 	if err != nil {
 		return nil, err
+	}
+
+	// Set $this->context if a stream context was provided
+	var ctxRes phpv.Resource
+	if len(streamCtx) > 0 && streamCtx[0] != nil {
+		ctxRes = streamCtx[0]
+	}
+	if ctxRes != nil {
+		setContextOnObject(ctx, obj, ctxRes)
 	}
 
 	// Call stream_open($path, $mode, $options, &$opened_path)
@@ -66,6 +89,11 @@ func (h *UserStreamHandler) Open(ctx phpv.Context, path *url.URL, mode string, s
 	s.SetAttr("uri", fullPath)
 	s.ResourceType = phpv.ResourceStream
 	s.ResourceID = ctx.Global().NextResourceID()
+	if ctxRes != nil {
+		if sc, ok := ctxRes.(*Context); ok {
+			s.Context = sc
+		}
+	}
 	return s, nil
 }
 
@@ -79,6 +107,46 @@ func (h *UserStreamHandler) Stat(path *url.URL) (os.FileInfo, error) {
 
 func (h *UserStreamHandler) Lstat(path *url.URL) (os.FileInfo, error) {
 	return nil, ErrNotSupported
+}
+
+// OpenDir opens a directory using the user stream wrapper's dir_opendir method.
+// Returns a *UserDirHandle that implements the directory handle protocol.
+func (h *UserStreamHandler) OpenDir(ctx phpv.Context, path *url.URL, streamCtx phpv.Resource) (*UserDirHandle, error) {
+	class, err := ctx.Global().GetClass(ctx, h.ClassName, true)
+	if err != nil {
+		return nil, err
+	}
+
+	obj, err := phpobj.NewZObject(ctx, class)
+	if err != nil {
+		return nil, err
+	}
+
+	if streamCtx != nil {
+		setContextOnObject(ctx, obj, streamCtx)
+	}
+
+	fullPath := path.String()
+	result, err := obj.CallMethod(ctx, "dir_opendir",
+		phpv.ZString(fullPath).ZVal(),
+		phpv.ZInt(0).ZVal(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	if result == nil || !result.AsBool(ctx) {
+		return nil, os.ErrNotExist
+	}
+
+	globalCtx, ok := ctx.Global().(phpv.Context)
+	if !ok {
+		globalCtx = ctx
+	}
+	return &UserDirHandle{
+		ctx: globalCtx,
+		obj: obj,
+		id:  ctx.Global().NextResourceID(),
+	}, nil
 }
 
 // UserStream wraps a PHP object that implements the stream wrapper protocol,

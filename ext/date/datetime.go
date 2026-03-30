@@ -2416,14 +2416,72 @@ func init() {
 				Modifiers: phpv.ZAttrPublic,
 				Method: phpobj.NativeMethod(func(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 					if len(args) < 1 || args[0].GetType() != phpv.ZtArray {
-						return nil, nil
+						return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DatePeriod object")
 					}
 					arr := args[0].Value().(*phpv.ZArray)
+					// Must have at least a start key (even if null)
+					if arr.Count(ctx) == 0 {
+						return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DatePeriod object")
+					}
+					// Validate start
+					startV, _ := arr.OffsetGet(ctx, phpv.ZString("start").ZVal())
+					if startV != nil && !startV.IsNull() {
+						startObj, ok := startV.Value().(*phpobj.ZObject)
+						if !ok {
+							return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DatePeriod object")
+						}
+						if err := checkDateTimeInitialized(ctx, startObj); err != nil {
+							return nil, err
+						}
+					}
+					// Validate end
+					endV, _ := arr.OffsetGet(ctx, phpv.ZString("end").ZVal())
+					if endV != nil && !endV.IsNull() {
+						endObj, ok := endV.Value().(*phpobj.ZObject)
+						if !ok {
+							return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DatePeriod object")
+						}
+						if err := checkDateTimeInitialized(ctx, endObj); err != nil {
+							return nil, err
+						}
+					}
+					// Validate current
+					currentV, _ := arr.OffsetGet(ctx, phpv.ZString("current").ZVal())
+					if currentV != nil && !currentV.IsNull() {
+						curObj, ok := currentV.Value().(*phpobj.ZObject)
+						if !ok {
+							return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DatePeriod object")
+						}
+						if err := checkDateTimeInitialized(ctx, curObj); err != nil {
+							return nil, err
+						}
+					}
+					// Validate interval
+					intervalV, _ := arr.OffsetGet(ctx, phpv.ZString("interval").ZVal())
+					if intervalV != nil && !intervalV.IsNull() {
+						intObj, ok := intervalV.Value().(*phpobj.ZObject)
+						if !ok || !intObj.Class.InstanceOf(DateInterval) {
+							return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DatePeriod object")
+						}
+					}
+					// Set properties
 					for _, key := range []string{"start", "current", "end", "interval", "recurrences", "include_start_date", "include_end_date"} {
 						v, _ := arr.OffsetGet(ctx, phpv.ZString(key).ZVal())
-						if v != nil && !v.IsNull() {
+						if v != nil {
 							this.ObjectSet(ctx, phpv.ZString(key), v)
 						}
+					}
+					// Set extra (subclass) properties
+					builtinKeys2 := map[string]bool{"start": true, "current": true, "end": true, "interval": true, "recurrences": true, "include_start_date": true, "include_end_date": true}
+					it := arr.NewIterator()
+					for it.Valid(ctx) {
+						k, _ := it.Key(ctx)
+						v, _ := it.Current(ctx)
+						ks := k.String()
+						if !builtinKeys2[ks] {
+							this.ObjectSet(ctx, phpv.ZString(ks), v)
+						}
+						it.Next(ctx)
 					}
 					// Mark as initialized
 					this.SetOpaque(DatePeriod, true)
@@ -2437,14 +2495,30 @@ func init() {
 	DatePeriod.Methods["createfromiso8601string"].Method = phpobj.NativeStaticMethod(datePeriodCreateFromISO8601String)
 }
 
+// errISOMissingInterval is returned when an ISO 8601 period string is valid but missing the interval part
+var errISOMissingInterval = fmt.Errorf("ISO interval must contain an interval")
+
 // parseISO8601Period parses ISO 8601 repeating interval strings like "R2/2012-07-01T00:00:00Z/P7D"
 // Returns recurrences, start time, interval duration spec, and end time (if any)
+// Returns a special errISOMissingInterval if the string is missing the interval part.
 func parseISO8601Period(ctx phpv.Context, isoStr string) (recurrences int, start time.Time, intervalObj *phpobj.ZObject, hasEnd bool, end time.Time, err error) {
 	recurrences = -1 // -1 means not specified
 
 	// Format: R[n]/start/interval or R[n]/start/end or R[n]/interval/end
 	parts := strings.SplitN(isoStr, "/", 3)
 	if len(parts) < 3 {
+		// If we have exactly 2 parts (R/start format), return a special error
+		if len(parts) == 2 {
+			// Parse recurrences and start, but missing interval
+			rPart2 := parts[0]
+			if len(rPart2) > 0 && (rPart2[0] == 'R' || rPart2[0] == 'r') {
+				_, parseErr := parseISO8601DateTime(parts[1])
+				if parseErr == nil {
+					err = errISOMissingInterval
+					return
+				}
+			}
+		}
 		err = fmt.Errorf("invalid ISO 8601 period string: %s", isoStr)
 		return
 	}
@@ -2519,11 +2593,18 @@ func datePeriodConstruct(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZV
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "DatePeriod::__construct() accepts (DateTimeInterface, DateInterval, int [, int]), or (DateTimeInterface, DateInterval, DateTime [, int]), or (string [, int]) as arguments")
 	}
 
-	// Check if first arg is a string (ISO 8601 period string)
-	if args[0].GetType() == phpv.ZtString {
+	// Check if first arg is a string or null (ISO 8601 period string - deprecated)
+	if args[0].GetType() == phpv.ZtString || args[0].IsNull() {
 		// String form only accepts 1 or 2 arguments (string [, int])
 		if len(args) > 2 {
 			return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "DatePeriod::__construct() accepts (DateTimeInterface, DateInterval, int [, int]), or (DateTimeInterface, DateInterval, DateTime [, int]), or (string [, int]) as arguments")
+		}
+
+		if args[0].IsNull() {
+			// Deprecation for passing null
+			if err := ctx.Deprecated("DatePeriod::__construct(): Passing null to parameter #1 ($start) of type string is deprecated", logopt.NoFuncName(true)); err != nil {
+				return nil, err
+			}
 		}
 
 		isoStr := string(args[0].AsString(ctx))
@@ -2545,38 +2626,57 @@ func datePeriodConstruct(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZV
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "DatePeriod::__construct() accepts (DateTimeInterface, DateInterval, int [, int]), or (DateTimeInterface, DateInterval, DateTime [, int]), or (string [, int]) as arguments")
 	}
 
+	// Validate start is a DateTime object
+	if startObj, ok := args[0].Value().(*phpobj.ZObject); ok {
+		if err := checkDateTimeInitialized(ctx, startObj); err != nil {
+			return nil, err
+		}
+	}
+
 	this.ObjectSet(ctx, phpv.ZString("start"), args[0])
 	this.ObjectSet(ctx, phpv.ZString("interval"), args[1])
 
 	options := 0
 
-	if len(args) >= 3 {
-		// Third arg could be end DateTime or recurrence count
-		if args[2].GetType() == phpv.ZtInt {
-			recCount := int(args[2].AsInt(ctx))
-			if recCount < 1 {
-				return nil, phpobj.ThrowError(ctx, DateException,
-					fmt.Sprintf("DatePeriod::__construct(): Recurrence count must be greater or equal to 1 and lower than %d", int(^uint(0)>>1)))
-			}
-			this.ObjectSet(ctx, phpv.ZString("recurrences"), args[2])
-			// Opaque true = recurrences were explicitly given
-			this.SetOpaque(DatePeriod, true)
-			if len(args) >= 4 {
-				options = int(args[3].AsInt(ctx))
-			}
-		} else {
-			this.ObjectSet(ctx, phpv.ZString("end"), args[2])
-			// When end date is given, recurrences property is 1 but getRecurrences() returns NULL
-			this.ObjectSet(ctx, phpv.ZString("recurrences"), phpv.ZInt(1).ZVal())
-			this.SetOpaque(DatePeriod, false)
-			if len(args) >= 4 {
-				options = int(args[3].AsInt(ctx))
-			}
-		}
+	if len(args) >= 4 {
+		options = int(args[3].AsInt(ctx))
 	}
 
 	includeStart := options&1 == 0 // EXCLUDE_START_DATE = 1
 	includeEnd := options&2 != 0   // INCLUDE_END_DATE = 2
+
+	// Third arg could be end DateTime or recurrence count
+	if args[2].GetType() == phpv.ZtInt {
+		recCount := int(args[2].AsInt(ctx))
+		if recCount < 1 {
+			return nil, phpobj.ThrowError(ctx, DateException,
+				fmt.Sprintf("DatePeriod::__construct(): Recurrence count must be greater or equal to 1 and lower than %d", int(^uint(0)>>1)))
+		}
+		// Store recurrences: PHP stores recurrences+1 when including start, recurrences when excluding
+		storedRec := recCount
+		if includeStart {
+			storedRec = recCount + 1
+		}
+		this.ObjectSet(ctx, phpv.ZString("recurrences"), phpv.ZInt(storedRec).ZVal())
+		// Opaque true = recurrences were explicitly given
+		this.SetOpaque(DatePeriod, true)
+	} else {
+		// Validate end is a DateTime object if provided
+		if endObj, ok := args[2].Value().(*phpobj.ZObject); ok {
+			if err := checkDateTimeInitialized(ctx, endObj); err != nil {
+				return nil, err
+			}
+		}
+		this.ObjectSet(ctx, phpv.ZString("end"), args[2])
+		// When end date is given, recurrences = 1 if including start, 0 if excluding
+		endRecurrences := 1
+		if !includeStart {
+			endRecurrences = 0
+		}
+		this.ObjectSet(ctx, phpv.ZString("recurrences"), phpv.ZInt(endRecurrences).ZVal())
+		this.SetOpaque(DatePeriod, false)
+	}
+
 	this.ObjectSet(ctx, phpv.ZString("include_start_date"), phpv.ZBool(includeStart).ZVal())
 	this.ObjectSet(ctx, phpv.ZString("include_end_date"), phpv.ZBool(includeEnd).ZVal())
 
@@ -2584,10 +2684,20 @@ func datePeriodConstruct(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZV
 }
 
 // datePeriodInitFromISO initializes a DatePeriod from an ISO 8601 string
+// datePeriodInitFromISO initializes a DatePeriod from an ISO 8601 string
+// callerName is used in error messages (e.g., "DatePeriod::__construct()" or "DatePeriod::createFromISO8601String()")
 func datePeriodInitFromISO(ctx phpv.Context, this *phpobj.ZObject, isoStr string, options int) (*phpv.ZVal, error) {
+	return datePeriodInitFromISOCaller(ctx, this, isoStr, options, "DatePeriod::__construct()")
+}
+
+func datePeriodInitFromISOCaller(ctx phpv.Context, this *phpobj.ZObject, isoStr string, options int, callerName string) (*phpv.ZVal, error) {
 	recurrences, start, intervalObj, hasEnd, end, err := parseISO8601Period(ctx, isoStr)
 	if err != nil {
-		return nil, phpobj.ThrowError(ctx, DateMalformedPeriodStringException, fmt.Sprintf("DatePeriod::__construct(): Unknown or bad format (%s)", isoStr))
+		if err == errISOMissingInterval {
+			return nil, phpobj.ThrowError(ctx, DateMalformedPeriodStringException,
+				fmt.Sprintf("%s: ISO interval must contain an interval, %q given", callerName, isoStr))
+		}
+		return nil, phpobj.ThrowError(ctx, DateMalformedPeriodStringException, fmt.Sprintf("%s: Unknown or bad format (%s)", callerName, isoStr))
 	}
 
 	// Create start DateTimeImmutable
@@ -2602,6 +2712,9 @@ func datePeriodInitFromISO(ctx phpv.Context, this *phpobj.ZObject, isoStr string
 		this.ObjectSet(ctx, phpv.ZString("interval"), intervalObj.ZVal())
 	}
 
+	includeStart := options&1 == 0
+	includeEnd := options&2 != 0
+
 	if hasEnd {
 		endObj, err := phpobj.NewZObject(ctx, DateTimeImmutable)
 		if err != nil {
@@ -2609,14 +2722,23 @@ func datePeriodInitFromISO(ctx phpv.Context, this *phpobj.ZObject, isoStr string
 		}
 		setTimeVal(endObj, end)
 		this.ObjectSet(ctx, phpv.ZString("end"), endObj.ZVal())
+		// With end date: recurrences = 1 if including start, 0 if excluding
+		endRecurrences := 1
+		if !includeStart {
+			endRecurrences = 0
+		}
+		this.ObjectSet(ctx, phpv.ZString("recurrences"), phpv.ZInt(endRecurrences).ZVal())
+		this.SetOpaque(DatePeriod, false)
+	} else if recurrences >= 0 {
+		// R4 means 4 repetitions; store as recurrences+1 when including start
+		storedRec := recurrences
+		if includeStart {
+			storedRec = recurrences + 1
+		}
+		this.ObjectSet(ctx, phpv.ZString("recurrences"), phpv.ZInt(storedRec).ZVal())
+		this.SetOpaque(DatePeriod, true)
 	}
 
-	if recurrences >= 0 {
-		this.ObjectSet(ctx, phpv.ZString("recurrences"), phpv.ZInt(recurrences).ZVal())
-	}
-
-	includeStart := options&1 == 0
-	includeEnd := options&2 != 0
 	this.ObjectSet(ctx, phpv.ZString("include_start_date"), phpv.ZBool(includeStart).ZVal())
 	this.ObjectSet(ctx, phpv.ZString("include_end_date"), phpv.ZBool(includeEnd).ZVal())
 
@@ -2625,8 +2747,10 @@ func datePeriodInitFromISO(ctx phpv.Context, this *phpobj.ZObject, isoStr string
 
 // datePeriodIteratorData holds the state of a DatePeriod iterator
 type datePeriodIteratorData struct {
-	dates []*phpv.ZVal
-	pos   int
+	dates      []*phpv.ZVal
+	pos        int
+	nextCurrent *phpv.ZVal // the "current" value (one step past last date) to set on the parent
+	parent     *phpobj.ZObject
 }
 
 // DatePeriodIterator is an internal Iterator class for DatePeriod
@@ -2671,6 +2795,10 @@ func initDatePeriodIterator() {
 					d, _ := o.GetOpaque(DatePeriodIterator).(*datePeriodIteratorData)
 					if d != nil {
 						d.pos++
+						// When advancing past the last date, update parent's current property
+						if d.pos >= len(d.dates) && d.nextCurrent != nil && d.parent != nil {
+							d.parent.ObjectSet(ctx, phpv.ZString("current"), d.nextCurrent)
+						}
 					}
 					return nil, nil
 				}),
@@ -2692,6 +2820,10 @@ func initDatePeriodIterator() {
 				Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 					d, _ := o.GetOpaque(DatePeriodIterator).(*datePeriodIteratorData)
 					if d == nil || d.pos < 0 || d.pos >= len(d.dates) {
+						// When iteration ends, update parent's current property
+						if d != nil && d.nextCurrent != nil && d.parent != nil {
+							d.parent.ObjectSet(ctx, phpv.ZString("current"), d.nextCurrent)
+						}
 						return phpv.ZBool(false).ZVal(), nil
 					}
 					return phpv.ZBool(true).ZVal(), nil
@@ -2703,10 +2835,15 @@ func initDatePeriodIterator() {
 
 // datePeriodGetIterator implements DatePeriod::getIterator()
 func datePeriodGetIterator(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	if err := checkDatePeriodInitialized(ctx, this); err != nil {
-		return nil, err
+	// Use DatePeriod class name for this error specifically (matching PHP behavior)
+	if _, ok := this.Opaque[DatePeriod]; !ok {
+		startVal := this.HashTable().GetString("start")
+		if startVal == nil || startVal.IsNull() {
+			return nil, phpobj.ThrowError(ctx, DateObjectError,
+				"Object of type DatePeriod has not been correctly initialized by calling parent::__construct() in its constructor")
+		}
 	}
-	dates, err := datePeriodGenerateDates(ctx, this)
+	dates, nextCurrent, err := datePeriodGenerateDates(ctx, this)
 	if err != nil {
 		return nil, err
 	}
@@ -2715,35 +2852,37 @@ func datePeriodGetIterator(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.
 	if err != nil {
 		return nil, err
 	}
-	iterObj.SetOpaque(DatePeriodIterator, &datePeriodIteratorData{dates: dates, pos: 0})
+	iterObj.SetOpaque(DatePeriodIterator, &datePeriodIteratorData{dates: dates, pos: 0, nextCurrent: nextCurrent, parent: this})
 	return iterObj.ZVal(), nil
 }
 
 // datePeriodGenerateDates generates all dates in a DatePeriod
-func datePeriodGenerateDates(ctx phpv.Context, this *phpobj.ZObject) ([]*phpv.ZVal, error) {
+// Returns the dates slice and the "nextCurrent" (one step past the last date)
+func datePeriodGenerateDates(ctx phpv.Context, this *phpobj.ZObject) ([]*phpv.ZVal, *phpv.ZVal, error) {
 	startVal, _ := this.ObjectGet(ctx, phpv.ZString("start"))
 	intervalVal, _ := this.ObjectGet(ctx, phpv.ZString("interval"))
 	endVal, _ := this.ObjectGet(ctx, phpv.ZString("end"))
 	recurrencesVal, _ := this.ObjectGet(ctx, phpv.ZString("recurrences"))
 	includeStartVal, _ := this.ObjectGet(ctx, phpv.ZString("include_start_date"))
 	includeEndVal, _ := this.ObjectGet(ctx, phpv.ZString("include_end_date"))
+	currentVal, _ := this.ObjectGet(ctx, phpv.ZString("current"))
 
 	if startVal == nil || startVal.IsNull() || intervalVal == nil || intervalVal.IsNull() {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	startObj, ok := startVal.Value().(*phpobj.ZObject)
 	if !ok {
-		return nil, nil
+		return nil, nil, nil
 	}
 	startTime, ok := getTime(startObj)
 	if !ok {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	intervalObj, ok := intervalVal.Value().(*phpobj.ZObject)
 	if !ok {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	includeStart := true
@@ -2756,82 +2895,117 @@ func datePeriodGenerateDates(ctx phpv.Context, this *phpobj.ZObject) ([]*phpv.ZV
 		includeEnd = bool(includeEndVal.AsBool(ctx))
 	}
 
+	// Determine the starting point for iteration.
+	// If the DatePeriod has a "current" value set (from prior iteration or unserialization),
+	// use that as the starting point instead of start.
+	// The "current" property stores the next-to-yield value.
+	var iterStart time.Time
+	hasCurrentVal := currentVal != nil && !currentVal.IsNull()
+	if hasCurrentVal {
+		if curObj, ok2 := currentVal.Value().(*phpobj.ZObject); ok2 {
+			if curTime, ok3 := getTime(curObj); ok3 {
+				iterStart = curTime
+				// When resuming from current, we don't include the start date again
+				hasCurrentVal = !curTime.IsZero()
+			}
+		}
+	}
+	_ = hasCurrentVal // suppress unused warning
+
 	var results []*phpv.ZVal
 	current := startTime
 
 	// Determine iteration limit
 	hasEnd := endVal != nil && !endVal.IsNull()
 	var endTime time.Time
-	maxRecurrences := -1
+	maxCount := -1 // -1 = unlimited (use end date)
 
 	if hasEnd {
-		endObj, ok := endVal.Value().(*phpobj.ZObject)
-		if ok {
+		if endObj, ok2 := endVal.Value().(*phpobj.ZObject); ok2 {
 			endTime, _ = getTime(endObj)
 		}
 	}
 
 	if recurrencesVal != nil && !recurrencesVal.IsNull() && recurrencesVal.GetType() == phpv.ZtInt {
-		maxRecurrences = int(recurrencesVal.AsInt(ctx))
+		maxCount = int(recurrencesVal.AsInt(ctx))
 	}
 
-	// Safety limit
-	maxIter := 1000
-	if maxRecurrences >= 0 && !hasEnd {
-		maxIter = maxRecurrences + 1 // +1 because recurrences doesn't include start
+	// Safety limit for end-date based iteration
+	maxIter := 10000
+	if !hasEnd && maxCount >= 0 {
+		// For recurrence-based: maxCount is the total number of dates to yield
+		maxIter = maxCount
+	}
+
+	// If resuming from a serialized "current" position, start from there
+	// Otherwise start from the start date
+	if !iterStart.IsZero() {
+		current = iterStart
+		// Don't include start date since we're resuming
+		// Generate up to remaining recurrences
+		// (For now, just start from current and apply same logic)
 	}
 
 	count := 0
-	for i := 0; i < maxIter; i++ {
-		if i == 0 {
-			// First iteration is the start date
-			if includeStart {
+	for i := 0; i < maxIter+1; i++ {
+		// Check if we've yielded enough
+		if !hasEnd && maxCount >= 0 && count >= maxCount {
+			break
+		}
+
+		// Check end condition for end-date based iteration
+		if hasEnd {
+			if current.After(endTime) {
+				break
+			}
+			if current.Equal(endTime) {
+				if !includeEnd {
+					break
+				}
+				// includeEnd: yield this date and stop
 				dateObj, err := phpobj.NewZObject(ctx, DateTimeImmutable)
 				if err != nil {
-					return nil, err
+					return nil, nil, err
 				}
 				setTimeVal(dateObj, current)
 				results = append(results, dateObj.ZVal())
-				count++
+				// Advance current one more step for "nextCurrent"
+				current = addIntervalToTime(ctx, current, intervalObj, false)
+				break
 			}
-			// Advance to next
+		}
+
+		// For the first position: handle include_start_date
+		if i == 0 && !includeStart {
+			// Skip start date - advance and continue
 			current = addIntervalToTime(ctx, current, intervalObj, false)
 			continue
 		}
 
-		// Check end condition
-		if hasEnd {
-			if current.After(endTime) || (!includeEnd && current.Equal(endTime)) {
-				break
-			}
-			if includeEnd && current.Equal(endTime) {
-				dateObj, err := phpobj.NewZObject(ctx, DateTimeImmutable)
-				if err != nil {
-					return nil, err
-				}
-				setTimeVal(dateObj, current)
-				results = append(results, dateObj.ZVal())
-				break
-			}
-		}
-
-		if maxRecurrences >= 0 && !hasEnd && count > maxRecurrences {
-			break
-		}
-
 		dateObj, err := phpobj.NewZObject(ctx, DateTimeImmutable)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		setTimeVal(dateObj, current)
 		results = append(results, dateObj.ZVal())
 		count++
 
-		// Advance
+		// Advance to next position
 		current = addIntervalToTime(ctx, current, intervalObj, false)
 	}
 
-	return results, nil
+	// Build the nextCurrent value (current position after iteration)
+	var nextCurrent *phpv.ZVal
+	if len(results) > 0 {
+		// current is already one step past the last yielded date
+		nextObj, err := phpobj.NewZObject(ctx, DateTimeImmutable)
+		if err == nil {
+			setTimeVal(nextObj, current)
+			nextCurrent = nextObj.ZVal()
+		}
+	}
+
+	return results, nextCurrent, nil
 }
 
 // datePeriodSetState implements DatePeriod::__set_state
@@ -2840,38 +3014,111 @@ func datePeriodSetState(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 		return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DatePeriod object")
 	}
 	arr := args[0].Value().(*phpv.ZArray)
-	start, _ := arr.OffsetGet(ctx, phpv.ZString("start").ZVal())
-	interval, _ := arr.OffsetGet(ctx, phpv.ZString("interval").ZVal())
-	end, _ := arr.OffsetGet(ctx, phpv.ZString("end").ZVal())
-	recurrences, _ := arr.OffsetGet(ctx, phpv.ZString("recurrences").ZVal())
 
-	var ctorArgs []*phpv.ZVal
-	if start != nil && !start.IsNull() {
-		ctorArgs = append(ctorArgs, start)
-		if interval != nil && !interval.IsNull() {
-			ctorArgs = append(ctorArgs, interval)
-			if end != nil && !end.IsNull() {
-				ctorArgs = append(ctorArgs, end)
-			} else if recurrences != nil && !recurrences.IsNull() {
-				ctorArgs = append(ctorArgs, recurrences)
-			}
+	// Validate and extract fields
+	startVal, _ := arr.OffsetGet(ctx, phpv.ZString("start").ZVal())
+	endVal, _ := arr.OffsetGet(ctx, phpv.ZString("end").ZVal())
+	currentVal, _ := arr.OffsetGet(ctx, phpv.ZString("current").ZVal())
+	intervalVal, _ := arr.OffsetGet(ctx, phpv.ZString("interval").ZVal())
+	recurrencesVal, _ := arr.OffsetGet(ctx, phpv.ZString("recurrences").ZVal())
+	includeStartVal, _ := arr.OffsetGet(ctx, phpv.ZString("include_start_date").ZVal())
+	includeEndVal, _ := arr.OffsetGet(ctx, phpv.ZString("include_end_date").ZVal())
+
+	// Validate start: must be null or DateTimeInterface
+	if startVal != nil && !startVal.IsNull() {
+		if _, ok := startVal.Value().(*phpobj.ZObject); !ok {
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DatePeriod object")
 		}
 	}
-	if len(ctorArgs) == 0 {
-		ctorArgs = []*phpv.ZVal{phpv.ZString("R1/2000-01-01T00:00:00Z/P1D").ZVal()}
+	// Validate end: must be null or DateTimeInterface
+	if endVal != nil && !endVal.IsNull() {
+		if _, ok := endVal.Value().(*phpobj.ZObject); !ok {
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DatePeriod object")
+		}
 	}
-	obj, err := phpobj.NewZObject(ctx, DatePeriod, ctorArgs...)
+	// Validate current: must be null or DateTimeInterface
+	if currentVal != nil && !currentVal.IsNull() {
+		if _, ok := currentVal.Value().(*phpobj.ZObject); !ok {
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DatePeriod object")
+		}
+	}
+	// Validate interval: must be null or DateInterval
+	if intervalVal != nil && !intervalVal.IsNull() {
+		obj, ok := intervalVal.Value().(*phpobj.ZObject)
+		if !ok || !obj.Class.InstanceOf(DateInterval) {
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DatePeriod object")
+		}
+	}
+	// Validate recurrences: must be int >= 0
+	if recurrencesVal != nil && !recurrencesVal.IsNull() {
+		if recurrencesVal.GetType() != phpv.ZtInt {
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DatePeriod object")
+		}
+		if recurrencesVal.AsInt(ctx) < 0 {
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DatePeriod object")
+		}
+	}
+	// Validate include_start_date: must be bool
+	if includeStartVal != nil && !includeStartVal.IsNull() {
+		if includeStartVal.GetType() != phpv.ZtBool {
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DatePeriod object")
+		}
+	}
+	// Validate include_end_date: must be bool
+	if includeEndVal != nil && !includeEndVal.IsNull() {
+		if includeEndVal.GetType() != phpv.ZtBool {
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DatePeriod object")
+		}
+	}
+
+	// Create a DatePeriod object without calling constructor
+	actualClass := getCalledClassForStatic(ctx, DatePeriod)
+	obj, err := phpobj.NewZObjectOpaque(ctx, actualClass, true)
 	if err != nil {
 		return nil, err
 	}
-	includeStart, _ := arr.OffsetGet(ctx, phpv.ZString("include_start_date").ZVal())
-	if includeStart != nil {
-		obj.ObjectSet(ctx, phpv.ZString("include_start_date"), includeStart)
+	obj.SetOpaque(DatePeriod, true)
+
+	// Set properties directly
+	if startVal != nil {
+		obj.ObjectSet(ctx, phpv.ZString("start"), startVal)
 	}
-	includeEnd, _ := arr.OffsetGet(ctx, phpv.ZString("include_end_date").ZVal())
-	if includeEnd != nil {
-		obj.ObjectSet(ctx, phpv.ZString("include_end_date"), includeEnd)
+	if endVal != nil {
+		obj.ObjectSet(ctx, phpv.ZString("end"), endVal)
 	}
+	if currentVal != nil {
+		obj.ObjectSet(ctx, phpv.ZString("current"), currentVal)
+	}
+	if intervalVal != nil {
+		obj.ObjectSet(ctx, phpv.ZString("interval"), intervalVal)
+	}
+	if recurrencesVal != nil {
+		obj.ObjectSet(ctx, phpv.ZString("recurrences"), recurrencesVal)
+	}
+	if includeStartVal != nil {
+		obj.ObjectSet(ctx, phpv.ZString("include_start_date"), includeStartVal)
+	} else {
+		obj.ObjectSet(ctx, phpv.ZString("include_start_date"), phpv.ZBool(true).ZVal())
+	}
+	if includeEndVal != nil {
+		obj.ObjectSet(ctx, phpv.ZString("include_end_date"), includeEndVal)
+	} else {
+		obj.ObjectSet(ctx, phpv.ZString("include_end_date"), phpv.ZBool(false).ZVal())
+	}
+
+	// Set any extra properties from subclasses
+	builtinKeys := map[string]bool{"start": true, "end": true, "current": true, "interval": true, "recurrences": true, "include_start_date": true, "include_end_date": true}
+	it := arr.NewIterator()
+	for it.Valid(ctx) {
+		k, _ := it.Key(ctx)
+		v, _ := it.Current(ctx)
+		ks := k.String()
+		if !builtinKeys[ks] {
+			obj.ObjectSet(ctx, phpv.ZString(ks), v)
+		}
+		it.Next(ctx)
+	}
+
 	return obj.ZVal(), nil
 }
 
@@ -2890,14 +3137,13 @@ func datePeriodCreateFromISO8601String(ctx phpv.Context, args []*phpv.ZVal) (*ph
 	actualClass := getCalledClassForStatic(ctx, DatePeriod)
 
 	// Create the DatePeriod without calling the constructor.
-	// NewZObjectOpaque skips the constructor and sets Opaque[class]=value.
 	obj, err := phpobj.NewZObjectOpaque(ctx, actualClass, true)
 	if err != nil {
 		return nil, err
 	}
 	// Ensure the DatePeriod opaque key is set for initialization checks
 	obj.SetOpaque(DatePeriod, true)
-	_, err = datePeriodInitFromISO(ctx, obj, isoStr, options)
+	_, err = datePeriodInitFromISOCaller(ctx, obj, isoStr, options, "DatePeriod::createFromISO8601String()")
 	if err != nil {
 		return nil, err
 	}
