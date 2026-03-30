@@ -21,6 +21,7 @@ func pregGrep(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	re, pcreErr := prepareRegexp(string(pattern))
 	if pcreErr != nil {
 		ctx.Warn("%s", pcreErr.Warning("preg_grep"))
+		setLastPCREError(ctx, pcreInternalError)
 		return phpv.ZBool(false).ZVal(), nil
 	}
 
@@ -36,5 +37,6 @@ func pregGrep(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		}
 	}
 
+	setLastPCREError(ctx, pcreNoError)
 	return result.ZVal(), nil
 }

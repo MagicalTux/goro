@@ -16,11 +16,11 @@ func gmpAnd(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	ia, err := readInt(ctx, a)
+	ia, err := readIntArg(ctx, a, "gmp_and", 1, "num1")
 	if err != nil {
 		return nil, err
 	}
-	ib, err := readInt(ctx, b)
+	ib, err := readIntArg(ctx, b, "gmp_and", 2, "num2")
 	if err != nil {
 		return nil, err
 	}
@@ -40,11 +40,11 @@ func gmpOr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	ia, err := readInt(ctx, a)
+	ia, err := readIntArg(ctx, a, "gmp_or", 1, "num1")
 	if err != nil {
 		return nil, err
 	}
-	ib, err := readInt(ctx, b)
+	ib, err := readIntArg(ctx, b, "gmp_or", 2, "num2")
 	if err != nil {
 		return nil, err
 	}
@@ -64,11 +64,11 @@ func gmpXor(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	ia, err := readInt(ctx, a)
+	ia, err := readIntArg(ctx, a, "gmp_xor", 1, "num1")
 	if err != nil {
 		return nil, err
 	}
-	ib, err := readInt(ctx, b)
+	ib, err := readIntArg(ctx, b, "gmp_xor", 2, "num2")
 	if err != nil {
 		return nil, err
 	}
@@ -88,7 +88,7 @@ func gmpCom(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	i, err := readInt(ctx, a)
+	i, err := readIntArg(ctx, a, "gmp_com", 1, "num")
 	if err != nil {
 		return nil, err
 	}

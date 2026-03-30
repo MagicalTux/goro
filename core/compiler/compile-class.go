@@ -422,6 +422,7 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 
 		if i.IsSingle('}') {
 			// end of class
+			class.LEnd = i.Loc()
 			break
 		}
 		l := i.Loc()
@@ -1629,6 +1630,9 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 				Loc:        l,
 				Attributes: memberAttrs,
 			}
+			if zc, ok := f.(*ZClosure); ok {
+				method.LocEnd = zc.end
+			}
 
 			if x := method.Name.ToLower(); x == "__construct" {
 				//if class.Constructor != nil {
@@ -2313,15 +2317,27 @@ func validatePropertyDefault(r phpv.Runnable, th *phpv.TypeHint, className phpv.
 	isNull := val == nil || val.GetType() == phpv.ZtNull
 	if isNull {
 		if !th.IsNullable() {
-			// Object type hint: special message
-			if th.Type() == phpv.ZtObject && th.ClassName() != "" && th.ClassName() != "callable" && th.ClassName() != "iterable" {
+			// Intersection types (A&B) use a different error message format
+			if len(th.Intersection) > 0 {
 				return &phpv.PhpError{
-					Err:  fmt.Errorf("Default value for property of type %s may not be null. Use the nullable type ?%s to allow null default value", th.String(), th.String()),
+					Err:  fmt.Errorf("Cannot use null as default value for property %s::$%s of type %s", className, varName, th.String()),
 					Code: phpv.E_COMPILE_ERROR,
 					Loc:  loc,
 				}
 			}
-			// For scalar types
+			// Union types containing intersection groups (DNF) also use the intersection message
+			if len(th.Union) > 0 {
+				for _, u := range th.Union {
+					if len(u.Intersection) > 0 {
+						return &phpv.PhpError{
+							Err:  fmt.Errorf("Cannot use null as default value for property %s::$%s of type %s", className, varName, th.String()),
+							Code: phpv.E_COMPILE_ERROR,
+							Loc:  loc,
+						}
+					}
+				}
+			}
+			// For object type hints and scalar types
 			return &phpv.PhpError{
 				Err:  fmt.Errorf("Default value for property of type %s may not be null. Use the nullable type ?%s to allow null default value", th.String(), th.String()),
 				Code: phpv.E_COMPILE_ERROR,

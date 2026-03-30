@@ -171,6 +171,69 @@ func doPregReplaceArraySubject(ctx phpv.Context, pattern, replacement, subject *
 	return result.ZVal(), nil
 }
 
+// hasUTFFlag quickly checks if a PHP regex pattern has the 'u' (UTF-8) modifier.
+func hasUTFFlag(pattern string) bool {
+	trimmed := strings.TrimLeftFunc(pattern, unicode.IsSpace)
+	if len(trimmed) == 0 {
+		return false
+	}
+	delimiter, d_len := utf8.DecodeRuneInString(trimmed)
+	if delimiter == 0 || delimiter == '\\' || unicode.IsLetter(delimiter) || unicode.IsDigit(delimiter) {
+		return false
+	}
+	rest := trimmed[d_len:]
+	end_delimiter := delimiter
+	switch delimiter {
+	case '(':
+		end_delimiter = ')'
+	case '{':
+		end_delimiter = '}'
+	case '[':
+		end_delimiter = ']'
+	case '<':
+		end_delimiter = '>'
+	}
+	var skip, found bool
+	var stack, pos int
+	for i, c := range rest {
+		if skip {
+			skip = false
+			continue
+		}
+		switch c {
+		case '\\':
+			skip = true
+		case delimiter:
+			if delimiter != end_delimiter {
+				stack++
+				break
+			}
+			fallthrough
+		case end_delimiter:
+			if stack > 0 {
+				stack--
+			} else {
+				found = true
+				pos = i
+			}
+		}
+		if found {
+			break
+		}
+	}
+	if !found {
+		return false
+	}
+	phpFlags := rest[pos+utf8.RuneLen(end_delimiter):]
+	phpFlags = strings.ReplaceAll(phpFlags, "\r", "")
+	for _, f := range phpFlags {
+		if f == 'u' {
+			return true
+		}
+	}
+	return false
+}
+
 // prepareRegexp parses a PHP-style regex pattern with delimiters and flags,
 // and returns a compiled PCRE2 regexp. On error, it returns a *pcreError that
 // should be turned into a PHP warning (not a fatal error).
@@ -259,6 +322,7 @@ func prepareRegexp(pattern string) (*gopcre2.Regexp, *pcreError) {
 
 	// Map PHP flags to gopcre2 flags
 	var flags gopcre2.Flag
+	anchored := false
 	for _, f := range phpFlags {
 		switch f {
 		case 'i': // case insensitive
@@ -273,8 +337,8 @@ func prepareRegexp(pattern string) (*gopcre2.Regexp, *pcreError) {
 			flags |= gopcre2.UTF | gopcre2.UCP
 		case 'U': // ungreedy
 			flags |= gopcre2.Ungreedy
-		case 'A': // anchored
-			flags |= gopcre2.Anchored
+		case 'A': // anchored - work around gopcre2 not honoring Anchored flag
+			anchored = true
 		case 'D': // dollar end only
 			flags |= gopcre2.DollarEndOnly
 		case 'J': // allow duplicate named groups
@@ -289,9 +353,31 @@ func prepareRegexp(pattern string) (*gopcre2.Regexp, *pcreError) {
 		}
 	}
 
-	re, err := gopcre2.Compile(regexBody, flags)
+	// Workaround for gopcre2 not honoring the Anchored compile flag:
+	// prepend \A to the body to force matching at start of subject.
+	compiledBody := regexBody
+	if anchored && !strings.HasPrefix(regexBody, `\A`) && !strings.HasPrefix(regexBody, "^") {
+		compiledBody = `\A(?:` + regexBody + `)`
+	}
+
+	re, err := gopcre2.Compile(compiledBody, flags)
 	if err != nil {
 		return nil, &pcreError{kind: pcreErrCompile, compileErr: err}
+	}
+
+	// PHP requires named capture groups to start with a letter or underscore.
+	// gopcre2 allows numeric names like (?P<1>...) which PHP rejects.
+	// Validate after compilation by checking SubexpNames().
+	for _, name := range re.SubexpNames() {
+		if name == "" {
+			continue
+		}
+		if len(name) > 0 && (name[0] >= '0' && name[0] <= '9') {
+			return nil, &pcreError{
+				kind:       pcreErrCompile,
+				compileErr: &gopcre2.CompileError{Message: "subpattern name must start with a non-digit", Offset: 0},
+			}
+		}
 	}
 
 	// Set match limits to prevent ReDoS (backtracking explosion)
@@ -310,6 +396,7 @@ func doPregReplace(ctx phpv.Context, pattern, replacement, subject *phpv.ZVal, l
 	re, pcreErr := prepareRegexp(string(patternStr.AsString(ctx)))
 	if pcreErr != nil {
 		ctx.Warn("%s", pcreErr.Warning("preg_replace"))
+		setLastPCREError(ctx, pcreInternalError)
 		return phpv.ZNULL.ZVal(), nil
 	}
 

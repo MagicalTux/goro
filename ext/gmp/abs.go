@@ -16,7 +16,7 @@ func gmpAbs(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	i, err := readInt(ctx, gmpnum)
+	i, err := readIntArg(ctx, gmpnum, "gmp_abs", 1, "num")
 	if err != nil {
 		return nil, err
 	}

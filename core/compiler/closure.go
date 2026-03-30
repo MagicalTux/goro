@@ -811,6 +811,10 @@ func (z *ZClosure) Loc() *phpv.Loc {
 	return z.start
 }
 
+func (z *ZClosure) LocEnd() *phpv.Loc {
+	return z.end
+}
+
 func (z *ZClosure) Name() string {
 	if z.name == "" {
 		if z.start != nil {

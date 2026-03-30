@@ -14,6 +14,7 @@ import (
 type ZClass struct {
 	Name phpv.ZString
 	L    *phpv.Loc
+	LEnd *phpv.Loc // end line of the class declaration
 	Type phpv.ZClassType
 	Attr phpv.ZClassAttr
 

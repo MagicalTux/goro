@@ -22,7 +22,7 @@ func gmpPerfectPower(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	i, err := readInt(ctx, a)
+	i, err := readIntArg(ctx, a, "gmp_perfect_power", 1, "num")
 	if err != nil {
 		return nil, err
 	}
@@ -142,7 +142,7 @@ func gmpExport(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	i, err := readInt(ctx, a)
+	i, err := readIntArg(ctx, a, "gmp_export", 1, "num")
 	if err != nil {
 		return nil, err
 	}
@@ -166,7 +166,7 @@ func gmpExport(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "gmp_export(): Argument #3 ($flags) cannot use multiple word order options")
 		}
 		if byteOrder == 0x06 { // Both BIG and LITTLE set
-			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "gmp_export(): Argument #3 ($flags) cannot use multiple byte order options")
+			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "gmp_export(): Argument #3 ($flags) cannot use multiple endian options")
 		}
 	}
 
@@ -175,10 +175,23 @@ func gmpExport(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		b = []byte{0}
 	}
 
+	// Safety check: word_size must not be larger than the actual data
+	// (PHP throws ValueError if word_size is larger than the number's byte representation)
+	const maxExportBytes = 1 << 26 // 64MB limit
+	if int64(ws) > int64(len(b)) && int64(ws) > maxExportBytes {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+			"gmp_export(): Argument #2 ($word_size) is too large for argument #1 ($num)")
+	}
+
 	// Pad to word_size boundary
 	if int(ws) > 1 && len(b)%int(ws) != 0 {
 		padding := int(ws) - (len(b) % int(ws))
-		padded := make([]byte, padding+len(b))
+		newLen := padding + len(b)
+		if newLen < 0 || newLen > maxExportBytes {
+			return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+				"gmp_export(): Argument #2 ($word_size) is too large for argument #1 ($num)")
+		}
+		padded := make([]byte, newLen)
 		copy(padded[padding:], b)
 		b = padded
 	}
@@ -224,7 +237,7 @@ func gmpImport(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "gmp_import(): Argument #3 ($flags) cannot use multiple word order options")
 		}
 		if byteOrder == 0x06 {
-			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "gmp_import(): Argument #3 ($flags) cannot use multiple byte order options")
+			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "gmp_import(): Argument #3 ($flags) cannot use multiple endian options")
 		}
 	}
 
@@ -267,11 +280,11 @@ func gmpRandomRange(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	ia, err := readInt(ctx, a)
+	ia, err := readIntArg(ctx, a, "gmp_random_range", 1, "min")
 	if err != nil {
 		return nil, err
 	}
-	ib, err := readInt(ctx, b)
+	ib, err := readIntArg(ctx, b, "gmp_random_range", 2, "max")
 	if err != nil {
 		return nil, err
 	}
@@ -304,7 +317,7 @@ func gmpRandomSeed(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	iseed, err := readInt(ctx, seed)
+	iseed, err := readIntArg(ctx, seed, "gmp_random_seed", 1, "seed")
 	if err != nil {
 		return nil, err
 	}
@@ -345,14 +358,14 @@ func gmpScan0(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	i, err := readInt(ctx, a)
+	i, err := readIntArg(ctx, a, "gmp_scan0", 1, "num1")
 	if err != nil {
 		return nil, err
 	}
 
 	if start < 0 {
 		return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
-			"gmp_scan0(): Argument #2 ($start) must be greater than or equal to 0")
+			fmt.Sprintf("gmp_scan0(): Argument #2 ($start) must be between 0 and %d * %d", math.MaxInt64, 8))
 	}
 
 	// Find the first 0 bit at or after position start
@@ -377,14 +390,14 @@ func gmpScan1(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	i, err := readInt(ctx, a)
+	i, err := readIntArg(ctx, a, "gmp_scan1", 1, "num1")
 	if err != nil {
 		return nil, err
 	}
 
 	if start < 0 {
 		return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
-			"gmp_scan1(): Argument #2 ($start) must be greater than or equal to 0")
+			fmt.Sprintf("gmp_scan1(): Argument #2 ($start) must be between 0 and %d * %d", math.MaxInt64, 8))
 	}
 
 	// For zero, there are no set bits
@@ -417,7 +430,7 @@ func gmpBinomial(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	in, err := readInt(ctx, n)
+	in, err := readIntArg(ctx, n, "gmp_binomial", 1, "n")
 	if err != nil {
 		return nil, err
 	}

@@ -1,9 +1,12 @@
 package gmp
 
 import (
+	"fmt"
+	"math"
 	"math/big"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -16,7 +19,7 @@ func gmpPopcount(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	i, err := readInt(ctx, a)
+	i, err := readIntArg(ctx, a, "gmp_popcount", 1, "num")
 	if err != nil {
 		return nil, err
 	}
@@ -48,7 +51,7 @@ func gmpTestbit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	i, err := readInt(ctx, a)
+	i, err := readIntArg(ctx, a, "gmp_testbit", 1, "num")
 	if err != nil {
 		return nil, err
 	}
@@ -73,11 +76,11 @@ func gmpHamdist(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	ia, err := readInt(ctx, a)
+	ia, err := readIntArg(ctx, a, "gmp_hamdist", 1, "num1")
 	if err != nil {
 		return nil, err
 	}
-	ib, err := readInt(ctx, b)
+	ib, err := readIntArg(ctx, b, "gmp_hamdist", 2, "num2")
 	if err != nil {
 		return nil, err
 	}

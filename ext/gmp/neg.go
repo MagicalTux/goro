@@ -16,7 +16,7 @@ func gmpNeg(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	i, err := readInt(ctx, a)
+	i, err := readIntArg(ctx, a, "gmp_neg", 1, "num")
 	if err != nil {
 		return nil, err
 	}

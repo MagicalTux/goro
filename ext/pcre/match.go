@@ -1,7 +1,6 @@
 package pcre
 
 import (
-	"fmt"
 	"unicode/utf8"
 
 	"github.com/KarpelesLab/gopcre2"
@@ -82,10 +81,12 @@ func pregMatch(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	re, pcreErr := prepareRegexp(string(pattern))
 	if pcreErr != nil {
 		ctx.Warn("%s", pcreErr.Warning("preg_match"))
+		setLastPCREError(ctx, pcreInternalError)
 		return phpv.ZBool(false).ZVal(), nil
 	}
 
 	subjectStr := string(subject)
+	utfMode := hasUTFFlag(string(pattern))
 
 	// Handle offset parameter
 	var sliceOffset int
@@ -93,18 +94,40 @@ func pregMatch(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		byteOffset := int64(offset)
 		subLen := int64(len(subjectStr))
 		if byteOffset < 0 {
-			byteOffset = subLen + byteOffset
-		}
-		if byteOffset < 0 {
-			// Check for extreme underflow (e.g., PHP_INT_MIN)
-			if int64(offset) < -subLen {
+			// Check for potential integer overflow (e.g., PHP_INT_MIN):
+			// If offset is so negative it could cause issues, throw ValueError.
+			// PHP's rule: only throw for extreme underflow (near INT_MIN), not for
+			// ordinary negative offsets that simply exceed string length.
+			// We detect overflow by checking: subLen + byteOffset would overflow int64?
+			// Since Go int64 min is -9223372036854775808, and subLen <= MaxInt32,
+			// overflow happens when byteOffset < -9223372036854775807 + subLen ≈ math.MinInt64.
+			// Practically: throw only when byteOffset <= math.MinInt64/2.
+			const overflowThreshold = int64(-4611686018427387904) // math.MinInt64 / 2
+			if byteOffset < overflowThreshold {
 				return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
-					fmt.Sprintf("preg_match(): Argument #5 ($offset) must be greater than or equal to %d", -subLen))
+					"preg_match(): Argument #5 ($offset) must be greater than or equal to -9223372036854775808")
 			}
-			byteOffset = 0
+			byteOffset = subLen + byteOffset
+			if byteOffset < 0 {
+				byteOffset = 0
+			}
 		}
 		if byteOffset > subLen {
+			setLastPCREError(ctx, pcreNoError)
 			return phpv.ZBool(false).ZVal(), nil
+		}
+		// When /u flag is set, check that offset is at a valid UTF-8 boundary
+		if utfMode && byteOffset > 0 && byteOffset < subLen {
+			// Check if subjectStr[byteOffset] is a continuation byte (10xxxxxx)
+			b := subjectStr[byteOffset]
+			if b >= 0x80 && b < 0xC0 {
+				// In the middle of a multi-byte sequence
+				if matchesArg.Value != nil {
+					matchesArg.Set(ctx, phpv.NewZArray())
+				}
+				setLastPCREError(ctx, pcreBadUtf8OffsetError)
+				return phpv.ZBool(false).ZVal(), nil
+			}
 		}
 		sliceOffset = int(byteOffset)
 		subjectStr = subjectStr[sliceOffset:]
@@ -115,6 +138,7 @@ func pregMatch(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		if matchesArg.Value != nil {
 			matchesArg.Set(ctx, phpv.NewZArray())
 		}
+		setLastPCREError(ctx, pcreNoError)
 		return phpv.ZInt(0).ZVal(), nil
 	}
 
@@ -144,6 +168,7 @@ func pregMatch(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		matchesArg.Set(ctx, matches)
 	}
 
+	setLastPCREError(ctx, pcreNoError)
 	return phpv.ZInt(1).ZVal(), nil
 }
 
@@ -169,6 +194,7 @@ func pregMatchAll(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	re, pcreErr := prepareRegexp(string(pattern))
 	if pcreErr != nil {
 		ctx.Warn("%s", pcreErr.Warning("preg_match_all"))
+		setLastPCREError(ctx, pcreInternalError)
 		return phpv.ZBool(false).ZVal(), nil
 	}
 
@@ -179,15 +205,15 @@ func pregMatchAll(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		byteOffset := int64(offset)
 		subLen := int64(len(subjectStr))
 		if byteOffset < 0 {
-			byteOffset = subLen + byteOffset
-		}
-		if byteOffset < 0 {
-			// Check for extreme underflow (e.g., PHP_INT_MIN)
-			if int64(offset) < -subLen {
+			const overflowThreshold = int64(-4611686018427387904) // math.MinInt64 / 2
+			if byteOffset < overflowThreshold {
 				return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
-					fmt.Sprintf("preg_match_all(): Argument #5 ($offset) must be greater than or equal to %d", -subLen))
+					"preg_match_all(): Argument #5 ($offset) must be greater than or equal to -9223372036854775808")
 			}
-			byteOffset = 0
+			byteOffset = subLen + byteOffset
+			if byteOffset < 0 {
+				byteOffset = 0
+			}
 		}
 		if byteOffset >= subLen {
 			if matchesArg.Value != nil {
@@ -338,6 +364,7 @@ func pregMatchAll(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		matchesArg.Set(ctx, matches)
 	}
 
+	setLastPCREError(ctx, pcreNoError)
 	return phpv.ZInt(len(allLocs)).ZVal(), nil
 }
 
@@ -357,6 +384,7 @@ func pregSplit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	re, pcreErr := prepareRegexp(string(pattern))
 	if pcreErr != nil {
 		ctx.Warn("%s", pcreErr.Warning("preg_split"))
+		setLastPCREError(ctx, pcreInternalError)
 		return phpv.ZBool(false).ZVal(), nil
 	}
 
@@ -493,6 +521,7 @@ func doReplaceCallback(ctx phpv.Context, pattern *phpv.ZVal, callback phpv.Calla
 	re, pcreErr := prepareRegexp(string(pattern.AsString(ctx)))
 	if pcreErr != nil {
 		ctx.Warn("%s", pcreErr.Warning("preg_replace_callback"))
+		setLastPCREError(ctx, pcreInternalError)
 		return phpv.ZNULL.ZVal(), nil
 	}
 

@@ -16,11 +16,11 @@ func gmpJacobi(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	ia, err := readInt(ctx, a)
+	ia, err := readIntArg(ctx, a, "gmp_jacobi", 1, "num1")
 	if err != nil {
 		return nil, err
 	}
-	ib, err := readInt(ctx, b)
+	ib, err := readIntArg(ctx, b, "gmp_jacobi", 2, "num2")
 	if err != nil {
 		return nil, err
 	}
@@ -39,11 +39,11 @@ func gmpLegendre(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	ia, err := readInt(ctx, a)
+	ia, err := readIntArg(ctx, a, "gmp_legendre", 1, "num1")
 	if err != nil {
 		return nil, err
 	}
-	ib, err := readInt(ctx, b)
+	ib, err := readIntArg(ctx, b, "gmp_legendre", 2, "num2")
 	if err != nil {
 		return nil, err
 	}
@@ -62,11 +62,11 @@ func gmpKronecker(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	ia, err := readInt(ctx, a)
+	ia, err := readIntArg(ctx, a, "gmp_kronecker", 1, "num1")
 	if err != nil {
 		return nil, err
 	}
-	ib, err := readInt(ctx, b)
+	ib, err := readIntArg(ctx, b, "gmp_kronecker", 2, "num2")
 	if err != nil {
 		return nil, err
 	}

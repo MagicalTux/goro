@@ -85,6 +85,7 @@ type ZClassMethod struct {
 	Class      ZClass
 	Empty      bool
 	Loc        *Loc
+	LocEnd     *Loc  // end line of the method body
 	Attributes []*ZAttribute // PHP 8.0 attributes
 	FromTrait  ZClass        // non-nil if this method was imported from a trait
 	Prototype  ZClass        // interface/class that defines the prototype for this method

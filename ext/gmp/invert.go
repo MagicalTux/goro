@@ -17,11 +17,11 @@ func gmpInvert(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	ia, err := readInt(ctx, a)
+	ia, err := readIntArg(ctx, a, "gmp_invert", 1, "num1")
 	if err != nil {
 		return nil, err
 	}
-	ib, err := readInt(ctx, b)
+	ib, err := readIntArg(ctx, b, "gmp_invert", 2, "num2")
 	if err != nil {
 		return nil, err
 	}
