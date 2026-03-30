@@ -25,6 +25,15 @@ type xmlNode struct {
 // SimpleXMLElementClass is the PHP class object
 var SimpleXMLElementClass *phpobj.ZClass
 
+// countableInterface is the PHP Countable interface (name-based so count() recognizes it)
+var countableInterface = &phpobj.ZClass{
+	Type: phpv.ZClassTypeInterface,
+	Name: "Countable",
+	Methods: map[phpv.ZString]*phpv.ZClassMethod{
+		"count": {Name: "count", Modifiers: phpv.ZAttrPublic, Empty: true},
+	},
+}
+
 // simpleXMLData holds the internal state of a SimpleXMLElement instance.
 // The iterator behaviour depends on the mode:
 //   - Normal mode (siblingFilter == ""): iterates over all children of node
@@ -198,6 +207,7 @@ func initSimpleXML() {
 			phpobj.Iterator,
 			phpobj.ArrayAccess,
 			phpobj.Stringable,
+			countableInterface,
 		},
 		Methods: map[phpv.ZString]*phpv.ZClassMethod{
 			"__construct": {

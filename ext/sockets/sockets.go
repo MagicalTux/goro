@@ -1,7 +1,6 @@
 package sockets
 
 import (
-	"fmt"
 	"net"
 	"strconv"
 	"strings"
@@ -120,7 +119,7 @@ func fncSocketBind(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if sd.domain == AF_UNIX {
 		addr = string(address)
 	} else {
-		addr = fmt.Sprintf("%s:%d", string(address), portNum)
+		addr = net.JoinHostPort(string(address), strconv.Itoa(portNum))
 	}
 
 	network := socketDomainNetwork(sd.domain, sd.sockType)
@@ -239,7 +238,7 @@ func fncSocketConnect(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		if port.HasArg() {
 			portNum = int(port.Get())
 		}
-		addr = fmt.Sprintf("%s:%d", string(address), portNum)
+		addr = net.JoinHostPort(string(address), strconv.Itoa(portNum))
 	}
 
 	network := socketDomainNetwork(sd.domain, sd.sockType)
@@ -805,7 +804,7 @@ func fncSocketSendto(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		portNum = int(port.Get())
 	}
 
-	addr := fmt.Sprintf("%s:%d", string(address), portNum)
+	addr := net.JoinHostPort(string(address), strconv.Itoa(portNum))
 	writeData := []byte(data)
 	if int(length) < len(writeData) {
 		writeData = writeData[:int(length)]
@@ -959,6 +958,5 @@ func formatStreamAddr(addr net.Addr) string {
 	}
 }
 
-// Unused import prevention for fmt/strings
-var _ = fmt.Sprintf
+// Ensure unused imports are referenced
 var _ = strings.HasPrefix
