@@ -583,6 +583,20 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		}
 	}
 
+	// For reference assignment (=&), check if the LHS is an overloaded object
+	// property BEFORE evaluating the RHS. PHP throws "Cannot assign by reference
+	// to overloaded object" in this case, and the overloaded property check must
+	// happen before the "Only variables should be assigned by reference" notice.
+	if op.write && op.op == nil {
+		if _, isRef := r.b.(*runRef); isRef {
+			if rc, ok := r.a.(phpv.ReadonlyRefChecker); ok {
+				if err := rc.CheckReadonlyRef(ctx); err != nil {
+					return nil, err
+				}
+			}
+		}
+	}
+
 	if r.b != nil {
 		// For ++/-- on object properties (postfix), set incDecCtx
 		if r.op == tokenizer.T_INC || r.op == tokenizer.T_DEC {

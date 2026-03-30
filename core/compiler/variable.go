@@ -237,6 +237,13 @@ func (r *runVariableRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	}
 	name := phpv.ZString(v.String())
 
+	// Cache the variable name for potential subsequent WriteValue call.
+	// This allows compound assignment operators ($$n .= rhs) to write back
+	// to the SAME variable that was read, even if $n is modified during RHS
+	// evaluation (e.g., by ++$n inside the RHS expression).
+	r.prepared = true
+	r.cachedKey = name
+
 	// Check if this variable-variable is in a write context (like runVariable does)
 	write := false
 	if r.Parent == nil {
@@ -291,12 +298,11 @@ func (r *runVariableRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 }
 
 func (r *runVariableRef) PrepareWrite(ctx phpv.Context) error {
-	v, err := r.v.Run(ctx)
-	if err != nil {
-		return err
-	}
-	r.prepared = true
-	r.cachedKey = v.Dup()
+	// Do NOT pre-evaluate the variable-variable key. PHP evaluates $$n write
+	// targets AFTER the RHS, so the key reflects any side effects (e.g. ++$n)
+	// from the RHS expression. This matches PHP's evaluation order:
+	//   $$n = $$n[++$n] = "test"
+	// should write to $h (the post-increment value of $n), not $g (pre-increment).
 	return nil
 }
 

@@ -2249,9 +2249,8 @@ func (o *ZObject) ObjectGet(ctx phpv.Context, key phpv.Val) (*phpv.ZVal, error) 
 			}
 			return result, nil
 		}
-		// __get guard fired (recursion detected) - return null without warning
-		// to match PHP behavior where recursive __get silently returns null
-		return phpv.ZNULL.ZVal(), nil
+		// __get guard fired (recursion detected) - PHP emits "Undefined property"
+		// warning and returns null (it does NOT silently return null)
 	}
 
 	// Emit "Undefined property" warning
