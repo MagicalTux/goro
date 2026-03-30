@@ -1164,6 +1164,15 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 }
 
 func (r *runObjectVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {
+	// Propagate writeContext down the chain so intermediate property accesses
+	// (e.g. $null->a in $null->a->b['hello'] = 42) produce "Attempt to modify"
+	// instead of "Attempt to read" warnings.
+	if r.writeContext {
+		if wcs, ok := r.ref.(phpv.WriteContextSetter); ok {
+			wcs.SetWriteContext(true)
+			defer wcs.SetWriteContext(false)
+		}
+	}
 	// fetch object property
 	obj, err := r.ref.Run(ctx)
 	if err != nil {
@@ -1178,9 +1187,11 @@ func (r *runObjectVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	if !ok {
 		typeName := phpValueTypeName(obj)
 		if r.compoundWriteCtx {
-			// PHP 8: compound assignment (+=, -=, /=, etc.) on null receiver
-			return nil, phpobj.ThrowError(ctx, phpobj.Error,
-				fmt.Sprintf("Attempt to modify property \"%s\" on %s", r.varName, typeName))
+			// PHP 8: compound assignment (+=, -=, /=, etc.) on null receiver.
+			// The read phase returns null silently (warning already emitted for
+			// undefined variable above). The write phase (WriteValue) will throw
+			// "Attempt to assign property" which is the correct error.
+			return phpv.ZNULL.ZVal(), nil
 		}
 		if r.writeContext {
 			// PHP 8: modifying property of non-object in a write chain throws Error
