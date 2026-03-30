@@ -1108,8 +1108,20 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 			return nil, offset, readError
 		}
 		dataLenStr := str[i:j]
-		dataLen64, err := strconv.ParseInt(dataLenStr, 10, 64)
-		if err != nil || dataLen64 < 0 {
+		// Try parsing as int64 first; if it overflows, treat it as a very large number
+		dataLen64, parseErr := strconv.ParseInt(dataLenStr, 10, 64)
+		if parseErr != nil {
+			// Could be an overflow (very large number) — try uint64
+			dataLen64u, uerr := strconv.ParseUint(dataLenStr, 10, 64)
+			if uerr != nil || dataLenStr[0] == '-' {
+				return nil, offset, &unserializeError{i, len(str)}
+			}
+			// dataLen is huge — warn about insufficient data and return error
+			available := len(str) - (j + 2)
+			ctx.Warn("Insufficient data for unserializing - %d required, %d present", dataLen64u, available)
+			return nil, offset, &unserializeError{j + 2, len(str)}
+		}
+		if dataLen64 < 0 {
 			return nil, offset, &unserializeError{i, len(str)}
 		}
 		dataLen := int(dataLen64)

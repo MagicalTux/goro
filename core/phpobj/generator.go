@@ -745,29 +745,25 @@ func generatorThrow(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal
 	exc := args[0]
 	excObj, ok := exc.Value().(phpv.ZObject)
 	if !ok {
-		return nil, ThrowError(ctx, TypeError, fmt.Sprintf("Generator::throw() expects parameter 1 to be Throwable, %s given", exc.GetType()))
+		return nil, ThrowError(ctx, TypeError, fmt.Sprintf("Generator::throw(): Argument #1 ($exception) must be of type Throwable, %s given", exc.GetType().TypeName()))
+	}
+	// Verify the object implements Throwable
+	if zobj, ok2 := excObj.(*ZObject); ok2 {
+		if !zobj.GetClass().Implements(Throwable) && !zobj.GetClass().InstanceOf(Exception) && !zobj.GetClass().InstanceOf(Error) {
+			return nil, ThrowError(ctx, TypeError, fmt.Sprintf("Generator::throw(): Argument #1 ($exception) must be of type Throwable, %s given", zobj.GetClass().GetName()))
+		}
 	}
 	throwErr := &phperr.PhpThrow{Obj: excObj}
 
 	if !state.started {
-		// Start the generator with a throw
-		state.started = true
-		state.status = GeneratorRunning
-
-		state.resumeCh <- generatorMsg{err: throwErr}
-
-		select {
-		case doneMsg := <-state.doneCh:
-			state.valid = false
-			if doneMsg.err != nil {
-				return nil, doneMsg.err
-			}
-			return phpv.ZNULL.ZVal(), nil
-		case yield := <-state.yieldCh:
-			state.currentKey = yield.Key
-			state.currentValue = yield.Value
-			state.valid = true
-			return state.currentValue, nil
+		// PHP behavior: throw() on an unstarted generator first primes it
+		// (executes until the first yield), then injects the exception at that yield.
+		if err := generatorEnsureStarted(ctx, state); err != nil {
+			return nil, err
+		}
+		// If generator closed without yielding, throw the exception directly
+		if state.status == GeneratorClosed {
+			return nil, throwErr
 		}
 	}
 

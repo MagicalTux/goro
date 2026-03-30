@@ -2764,21 +2764,7 @@ func strReplaceCommon(ctx phpv.Context, args []*phpv.ZVal, caseSensitive bool) (
 		return nil, err
 	}
 
-	funcName := "str_replace"
-	if !caseSensitive {
-		funcName = "str_ireplace"
-	}
-
-	// PHP 8: validate types - resource is not accepted
-	if search.GetType() == phpv.ZtResource {
-		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("%s(): Argument #1 ($search) must be of type array|string, resource given", funcName))
-	}
-	if replace.GetType() == phpv.ZtResource {
-		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("%s(): Argument #2 ($replace) must be of type array|string, resource given", funcName))
-	}
-	if subject.GetType() == phpv.ZtResource {
-		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("%s(): Argument #3 ($subject) must be of type array|string, resource given", funcName))
-	}
+	// Resources are cast to strings (e.g. "Resource id #1") - no type error
 
 	if count.HasArg() {
 		count.Set(ctx, 0)
