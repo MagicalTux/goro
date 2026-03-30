@@ -9,6 +9,19 @@ import (
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
+// resolveCallable converts a ZVal to a phpv.Callable.
+// Handles PHP closures, function name strings, and native Callables.
+func resolveCallable(ctx phpv.Context, v *phpv.ZVal) (phpv.Callable, bool) {
+	if v == nil || v.IsNull() {
+		return nil, true // null = no handler (success)
+	}
+	c, err := core.SpawnCallable(ctx, v)
+	if err != nil {
+		return nil, false
+	}
+	return c, true
+}
+
 // xmlParserResource implements phpv.Resource for xml_parser_create
 type xmlParserResource struct {
 	id         int
@@ -205,21 +218,13 @@ func fncXMLSetElementHandler(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, e
 	}
 
 	// Start handler
-	if args[1] != nil && !args[1].IsNull() {
-		if c, ok := args[1].Value().(phpv.Callable); ok {
-			res.startHandler = c
-		}
-	} else {
-		res.startHandler = nil
+	if c, ok := resolveCallable(ctx, args[1]); ok {
+		res.startHandler = c
 	}
 
 	// End handler
-	if args[2] != nil && !args[2].IsNull() {
-		if c, ok := args[2].Value().(phpv.Callable); ok {
-			res.endHandler = c
-		}
-	} else {
-		res.endHandler = nil
+	if c, ok := resolveCallable(ctx, args[2]); ok {
+		res.endHandler = c
 	}
 
 	return phpv.ZTrue.ZVal(), nil
@@ -236,12 +241,8 @@ func fncXMLSetCharacterDataHandler(ctx phpv.Context, args []*phpv.ZVal) (*phpv.Z
 		return phpv.ZFalse.ZVal(), nil
 	}
 
-	if args[1] != nil && !args[1].IsNull() {
-		if c, ok := args[1].Value().(phpv.Callable); ok {
-			res.charDataHandler = c
-		}
-	} else {
-		res.charDataHandler = nil
+	if c, ok := resolveCallable(ctx, args[1]); ok {
+		res.charDataHandler = c
 	}
 
 	return phpv.ZTrue.ZVal(), nil

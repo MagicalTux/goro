@@ -323,7 +323,3 @@ func fncStreamSocketGetName(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 	return phpv.ZString(addr.String()).ZVal(), nil
 }
 
-// Ensure unused imports are referenced
-var _ = fmt.Sprintf
-var _ = strings.HasPrefix
-var _ = time.Second
