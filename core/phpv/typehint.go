@@ -449,7 +449,31 @@ func IsNilClass(c ZClass) bool {
 }
 
 // ParseTypeHint converts a type name string to a TypeHint struct.
+// It supports union types like "int|string" and nullable types like "?int".
 func ParseTypeHint(s ZString) *TypeHint {
+	// Handle union types (e.g. "int|string", "object|string|null")
+	if idx := strings.IndexByte(string(s), '|'); idx >= 0 {
+		parts := strings.Split(string(s), "|")
+		union := make([]*TypeHint, 0, len(parts))
+		nullable := false
+		for _, part := range parts {
+			part = strings.TrimSpace(part)
+			if strings.ToLower(part) == "null" {
+				nullable = true
+				union = append(union, &TypeHint{t: ZtNull})
+				continue
+			}
+			union = append(union, ParseTypeHint(ZString(part)))
+		}
+		h := &TypeHint{Union: union, Nullable: nullable}
+		return h
+	}
+	// Handle nullable types (e.g. "?int")
+	if len(s) > 0 && s[0] == '?' {
+		inner := ParseTypeHint(s[1:])
+		inner.Nullable = true
+		return inner
+	}
 	switch s.ToLower() {
 	case "self":
 		// Preserve original case (e.g. SELF) for accurate error messages.

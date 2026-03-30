@@ -846,13 +846,16 @@ func (z *ZClosure) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	// executing the function body directly.
 	if z.isGenerator {
 		name := z.Name()
+		opts := phpobj.SpawnGeneratorOptions{
+			FuncName:  name,
+			YieldsRef: z.ReturnsByRef(),
+		}
 		if z.this != nil {
-			return phpobj.SpawnGeneratorNamed(ctx, z.callBody, args, name, z.this)
+			opts.This = z.this
+		} else if ctx.This() != nil {
+			opts.This = ctx.This()
 		}
-		if ctx.This() != nil {
-			return phpobj.SpawnGeneratorNamed(ctx, z.callBody, args, name, ctx.This())
-		}
-		return phpobj.SpawnGeneratorNamed(ctx, z.callBody, args, name)
+		return phpobj.SpawnGeneratorWithOptions(ctx, z.callBody, args, opts)
 	}
 
 	return z.callBody(ctx, args)

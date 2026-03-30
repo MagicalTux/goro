@@ -130,7 +130,15 @@ func (r *runnableForeach) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 				}
 			} else if obj.GetClass().Implements(phpobj.Iterator) {
 				if r.ref {
-					return nil, phpobj.ThrowError(ctx, phpobj.Error, "An iterator cannot be used with foreach by reference")
+					// Check if this is a Generator - generators have specific by-ref rules
+					if obj.GetClass() == phpobj.Generator {
+						if !phpobj.GeneratorYieldsRef(obj) {
+							return nil, phpobj.ThrowError(ctx, phpobj.Exception, "You can only iterate a generator by-reference if it declared that it yields by-reference")
+						}
+						// Generator yields by ref - allow, fall through to set up iteration
+					} else {
+						return nil, phpobj.ThrowError(ctx, phpobj.Error, "An iterator cannot be used with foreach by reference")
+					}
 				}
 				// Save iterator state for nested foreach support.
 				// SPL classes like SplDoublyLinkedList, SplFixedArray use
@@ -546,6 +554,27 @@ func (it *phpObjectIterator) Current(ctx phpv.Context) (*phpv.ZVal, error) {
 		return it.cachedCurrent, nil
 	}
 	return it.obj.CallMethod(ctx, "current")
+}
+
+// CurrentMakeRef returns the current value as a reference. For Generator objects
+// where the generator was declared as function &gen(), the currentValue is already
+// a reference (set up by runYield.Run when yieldsRef is true). This enables
+// "foreach ($gen as &$val)" to alias the yielded value.
+func (it *phpObjectIterator) CurrentMakeRef(ctx phpv.Context) (*phpv.ZVal, error) {
+	v, err := it.Current(ctx)
+	if err != nil || v == nil {
+		return v, err
+	}
+	if !v.IsRef() {
+		// Not a reference: make it one in-place.
+		v.MakeRef()
+	}
+	// Return a new outer ZVal pointing to the same inner value.
+	inner := v.RefTarget()
+	if inner == nil {
+		return v, nil
+	}
+	return phpv.NewZVal(inner), nil
 }
 
 func (it *phpObjectIterator) Key(ctx phpv.Context) (*phpv.ZVal, error) {

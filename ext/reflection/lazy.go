@@ -63,38 +63,78 @@ func checkNoInternalClass(ctx phpv.Context, class phpv.ZClass) error {
 }
 
 func initLazyObjectMethods() {
-	// Add lazy object methods to ReflectionClass
+	// Add lazy object methods to ReflectionClass with proper arginfo and return types
 	ReflectionClass.Methods["newlazyghost"] = &phpv.ZClassMethod{
-		Name:   "newLazyGhost",
-		Method: phpobj.NativeMethod(reflectionClassNewLazyGhost),
+		Name:      "newLazyGhost",
+		Modifiers: phpv.ZAttrPublic,
+		Method: &phpobj.NativeMethodNamed{
+			Fn:   phpobj.NativeMethod(reflectionClassNewLazyGhost),
+			Args: []*phpv.FuncArg{requiredArg("initializer", "callable"), optionalArgInt("options", "int", 0)},
+		},
+		ReturnType: phpv.ParseTypeHint("object"),
 	}
 	ReflectionClass.Methods["newlazyproxy"] = &phpv.ZClassMethod{
-		Name:   "newLazyProxy",
-		Method: phpobj.NativeMethod(reflectionClassNewLazyProxy),
+		Name:      "newLazyProxy",
+		Modifiers: phpv.ZAttrPublic,
+		Method: &phpobj.NativeMethodNamed{
+			Fn:   phpobj.NativeMethod(reflectionClassNewLazyProxy),
+			Args: []*phpv.FuncArg{requiredArg("factory", "callable"), optionalArgInt("options", "int", 0)},
+		},
+		ReturnType: phpv.ParseTypeHint("object"),
 	}
 	ReflectionClass.Methods["isuninitializedlazyobject"] = &phpv.ZClassMethod{
-		Name:   "isUninitializedLazyObject",
-		Method: phpobj.NativeMethod(reflectionClassIsUninitializedLazyObject),
+		Name:      "isUninitializedLazyObject",
+		Modifiers: phpv.ZAttrPublic,
+		Method: &phpobj.NativeMethodNamed{
+			Fn:   phpobj.NativeMethod(reflectionClassIsUninitializedLazyObject),
+			Args: []*phpv.FuncArg{requiredArg("object", "object")},
+		},
+		ReturnType: phpv.ParseTypeHint("bool"),
 	}
 	ReflectionClass.Methods["initializelazyobject"] = &phpv.ZClassMethod{
-		Name:   "initializeLazyObject",
-		Method: phpobj.NativeMethod(reflectionClassInitializeLazyObject),
+		Name:      "initializeLazyObject",
+		Modifiers: phpv.ZAttrPublic,
+		Method: &phpobj.NativeMethodNamed{
+			Fn:   phpobj.NativeMethod(reflectionClassInitializeLazyObject),
+			Args: []*phpv.FuncArg{requiredArg("object", "object")},
+		},
+		ReturnType: phpv.ParseTypeHint("object"),
 	}
 	ReflectionClass.Methods["marklazyobjectasinitialized"] = &phpv.ZClassMethod{
-		Name:   "markLazyObjectAsInitialized",
-		Method: phpobj.NativeMethod(reflectionClassMarkLazyObjectAsInitialized),
+		Name:      "markLazyObjectAsInitialized",
+		Modifiers: phpv.ZAttrPublic,
+		Method: &phpobj.NativeMethodNamed{
+			Fn:   phpobj.NativeMethod(reflectionClassMarkLazyObjectAsInitialized),
+			Args: []*phpv.FuncArg{requiredArg("object", "object")},
+		},
+		ReturnType: phpv.ParseTypeHint("object"),
 	}
 	ReflectionClass.Methods["resetaslazyghost"] = &phpv.ZClassMethod{
-		Name:   "resetAsLazyGhost",
-		Method: phpobj.NativeMethod(reflectionClassResetAsLazyGhost),
+		Name:      "resetAsLazyGhost",
+		Modifiers: phpv.ZAttrPublic,
+		Method: &phpobj.NativeMethodNamed{
+			Fn:   phpobj.NativeMethod(reflectionClassResetAsLazyGhost),
+			Args: []*phpv.FuncArg{requiredArg("object", "object"), requiredArg("initializer", "callable"), optionalArgInt("options", "int", 0)},
+		},
+		ReturnType: phpv.ParseTypeHint("void"),
 	}
 	ReflectionClass.Methods["resetaslazyproxy"] = &phpv.ZClassMethod{
-		Name:   "resetAsLazyProxy",
-		Method: phpobj.NativeMethod(reflectionClassResetAsLazyProxy),
+		Name:      "resetAsLazyProxy",
+		Modifiers: phpv.ZAttrPublic,
+		Method: &phpobj.NativeMethodNamed{
+			Fn:   phpobj.NativeMethod(reflectionClassResetAsLazyProxy),
+			Args: []*phpv.FuncArg{requiredArg("object", "object"), requiredArg("factory", "callable"), optionalArgInt("options", "int", 0)},
+		},
+		ReturnType: phpv.ParseTypeHint("void"),
 	}
 	ReflectionClass.Methods["getlazyinitializer"] = &phpv.ZClassMethod{
-		Name:   "getLazyInitializer",
-		Method: phpobj.NativeMethod(reflectionClassGetLazyInitializer),
+		Name:      "getLazyInitializer",
+		Modifiers: phpv.ZAttrPublic,
+		Method: &phpobj.NativeMethodNamed{
+			Fn:   phpobj.NativeMethod(reflectionClassGetLazyInitializer),
+			Args: []*phpv.FuncArg{requiredArg("object", "object")},
+		},
+		ReturnType: phpv.ParseTypeHint("?callable"),
 	}
 
 	// Add lazy object methods to ReflectionProperty

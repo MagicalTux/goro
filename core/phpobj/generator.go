@@ -60,6 +60,9 @@ type GeneratorState struct {
 	// Function name for stack traces and __debugInfo
 	funcName string
 
+	// Whether the generator yields by reference (declared as function &gen())
+	yieldsRef bool
+
 	// Whether the generator has been started (first next/send/rewind was called)
 	started bool
 	// Whether the generator has been advanced past initial state (next/send was called)
@@ -165,6 +168,15 @@ func GetGeneratorStateFromObject(o *ZObject) *GeneratorState {
 	return getGeneratorState(o)
 }
 
+// GeneratorYieldsRef returns true if the generator was declared to yield by reference.
+func GeneratorYieldsRef(o *ZObject) bool {
+	state := getGeneratorState(o)
+	if state == nil {
+		return false
+	}
+	return state.yieldsRef
+}
+
 // GeneratorForceCloseState force-closes a generator given its state directly.
 // This is called by foreach when the loop exits while the generator is suspended.
 func GeneratorForceCloseState(ctx phpv.Context, state *GeneratorState) error {
@@ -215,9 +227,26 @@ func SpawnGenerator(ctx phpv.Context, bodyFn GeneratorBodyFunc, args []*phpv.ZVa
 	return SpawnGeneratorNamed(ctx, bodyFn, args, "")
 }
 
+// SpawnGeneratorOptions contains options for spawning a generator.
+type SpawnGeneratorOptions struct {
+	FuncName  string
+	YieldsRef bool
+	This      phpv.ZObject
+}
+
 // SpawnGeneratorNamed is like SpawnGenerator but also sets the function name
 // for stack traces and __debugInfo, and accepts optional $this for method generators.
 func SpawnGeneratorNamed(ctx phpv.Context, bodyFn GeneratorBodyFunc, args []*phpv.ZVal, funcName string, optionalThis ...phpv.ZObject) (*phpv.ZVal, error) {
+	opts := SpawnGeneratorOptions{FuncName: funcName}
+	if len(optionalThis) > 0 {
+		opts.This = optionalThis[0]
+	}
+	return SpawnGeneratorWithOptions(ctx, bodyFn, args, opts)
+}
+
+// SpawnGeneratorWithOptions creates a new Generator object with full options.
+func SpawnGeneratorWithOptions(ctx phpv.Context, bodyFn GeneratorBodyFunc, args []*phpv.ZVal, opts SpawnGeneratorOptions) (*phpv.ZVal, error) {
+	funcName := opts.FuncName
 	// Capture class context from calling scope for get_class()/self::/static::
 	var classCtx phpv.ZClass
 	var calledClassCtx phpv.ZClass
@@ -239,6 +268,7 @@ func SpawnGeneratorNamed(ctx phpv.Context, bodyFn GeneratorBodyFunc, args []*php
 
 	state := &GeneratorState{
 		funcName:  funcName,
+		yieldsRef: opts.YieldsRef,
 		status:    GeneratorCreated,
 		resumeCh:  make(chan generatorMsg),
 		yieldCh:   make(chan *GeneratorYield),
@@ -247,10 +277,7 @@ func SpawnGeneratorNamed(ctx phpv.Context, bodyFn GeneratorBodyFunc, args []*php
 	}
 
 	// Capture $this if provided
-	var thisObj phpv.ZObject
-	if len(optionalThis) > 0 {
-		thisObj = optionalThis[0]
-	}
+	thisObj := opts.This
 
 	// Capture the Global context now, while ctx is still valid.
 	// The ctx may be a temporary FuncContext that gets cleaned up after

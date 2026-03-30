@@ -280,16 +280,31 @@ func serializeValue(ctx phpv.Context, rawZVal *phpv.ZVal, depth int, seen *seria
 			// This reference target was already serialized; produce R:N;
 			return "R:" + strconv.Itoa(refIdx) + ";", nil
 		}
+		// If this is a PHP reference to an object that was already serialized (in objRefs),
+		// produce R:N using the object's reference index (not r:N which is object identity).
+		// In PHP: $obj->a = &$obj serializes as R:1 (PHP reference), not r:1 (object copy).
+		if ultimate.GetType() == phpv.ZtObject {
+			if obj := ultimate.AsObject(ctx); obj != nil {
+				if refIdx, ok := seen.objRefs[obj]; ok {
+					// Register in valRefs too so future refs also produce R:N
+					seen.valRefs[ultimate] = refIdx
+					return "R:" + strconv.Itoa(refIdx) + ";", nil
+				}
+			}
+		}
 		// First time seeing this reference target - register it before serializing
 		nextIdx := seen.refCount + 1
 		seen.valRefs[ultimate] = nextIdx
 		// If the reference target is an array currently being serialized (circular ref),
 		// temporarily remove it from the active stack so it can be serialized in full.
 		// The inner self-references will produce R:N; via valRefs.
+		// Note: we must use SameData comparison because Dup() (used when passing arrays
+		// to functions like serialize()) creates a COW copy with a different *ZArray
+		// pointer but sharing the same underlying data.
 		if ultimate.GetType() == phpv.ZtArray {
 			if arr := ultimate.AsArray(ctx); arr != nil {
 				for i, activeArr := range seen.activeArrays {
-					if activeArr == arr {
+					if activeArr == arr || activeArr.HashTable().SameData(arr.HashTable()) {
 						// Temporarily remove from active stack
 						seen.activeArrays = append(seen.activeArrays[:i], seen.activeArrays[i+1:]...)
 						result, err := serializeWithDepth(ctx, ultimate, depth, seen)
@@ -364,8 +379,9 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seen *ser
 		// We only consider it a cycle if the array is CURRENTLY being iterated on the
 		// active call stack. COW-shared arrays that appear via different object paths
 		// are not cycles and should be serialized fresh.
+		// Use SameData comparison to handle COW copies (Dup'd arrays share same underlying data).
 		for _, activeArr := range seen.activeArrays {
-			if activeArr == arr {
+			if activeArr == arr || activeArr.HashTable().SameData(arr.HashTable()) {
 				return "N;", nil
 			}
 		}
@@ -417,6 +433,7 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seen *ser
 		// Detect object cycles to prevent infinite recursion
 		// (especially with Serializable::serialize() calling serialize() internally)
 		if seen.objects[obj] {
+			seen.nextRef() // N; still consumes a reference slot
 			return "N;", nil
 		}
 		seen.objects[obj] = true

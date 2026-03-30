@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
@@ -14,9 +15,29 @@ import (
 // yield $key => $value -- yields with an explicit key
 // yield (no value) -- yields null
 type runYield struct {
-	key   phpv.Runnable // nil if no explicit key
-	value phpv.Runnable // nil means yield null
-	l     *phpv.Loc
+	key        phpv.Runnable // nil if no explicit key
+	value      phpv.Runnable // nil means yield null
+	warnNotRef bool          // true when in &-generator and value is not reference-eligible
+	yieldsRef  bool          // true when this is a &-generator (value should be yielded by reference)
+	l          *phpv.Loc
+}
+
+// isYieldValueReferenceEligible returns true if the expression can be yielded
+// by reference without a Notice. Variables, array offsets, object properties,
+// and by-reference function calls are eligible; literals and regular calls are not.
+func isYieldValueReferenceEligible(r phpv.Runnable) bool {
+	if r == nil {
+		return false
+	}
+	switch r.(type) {
+	case *runVariable, *runVariableRef,
+		*runArrayAccess,
+		*runObjectVar, *runObjectDynVar,
+		*runClassStaticVarRef, *runClassStaticDynVarRef,
+		*runnableFunctionCallRef:
+		return true
+	}
+	return false
 }
 
 func (r *runYield) Run(ctx phpv.Context) (*phpv.ZVal, error) {
@@ -43,6 +64,21 @@ func (r *runYield) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		if err != nil {
 			return nil, err
 		}
+	}
+
+	// In a &-generator, warn if yielding a non-reference-eligible value.
+	if r.warnNotRef {
+		if value == nil || !value.IsRef() {
+			ctx.Tick(ctx, r.l)
+			ctx.Notice("Only variable references should be yielded by reference",
+				logopt.NoFuncName(true))
+		}
+	}
+
+	// In a &-generator with a reference-eligible value, make the value a reference
+	// so that the caller can modify it through foreach &$val or $gen->current().
+	if r.yieldsRef && !r.warnNotRef && value != nil {
+		value.MakeRef()
 	}
 
 	// Call into the generator runtime to yield the value and suspend
@@ -156,6 +192,14 @@ func compileYield(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	}
 
 	if isYieldFrom {
+		// yield from is not allowed in a by-reference generator
+		if f.rref {
+			return nil, &phpv.PhpError{
+				Err:  fmt.Errorf("Cannot use \"yield from\" inside a by-reference generator"),
+				Code: phpv.E_COMPILE_ERROR,
+				Loc:  l,
+			}
+		}
 		// yield from <expr>
 		expr, err := compileExpr(nil, c)
 		if err != nil {
@@ -224,11 +268,13 @@ func compileYield(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 				Loc:  l,
 			}
 		}
-		return &runYield{key: key, value: value, l: l}, nil
+		warnNotRef := f.rref && !isYieldValueReferenceEligible(value)
+		return &runYield{key: key, value: value, warnNotRef: warnNotRef, yieldsRef: f.rref, l: l}, nil
 	}
 
 	c.backup()
-	return &runYield{value: value, l: l}, nil
+	warnNotRef := f.rref && !isYieldValueReferenceEligible(value)
+	return &runYield{value: value, warnNotRef: warnNotRef, yieldsRef: f.rref, l: l}, nil
 }
 
 // compileYieldExpr compiles yield as an expression (used in compileOneExpr).
@@ -280,14 +326,16 @@ func (g *generatorClosure) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal
 	// Use callBody to bypass the generator check in ZClosure.Call.
 	// Pass $this so that method generators and closures can access $this.
 	name := g.ZClosure.Name()
+	opts := phpobj.SpawnGeneratorOptions{
+		FuncName:  name,
+		YieldsRef: g.ZClosure.ReturnsByRef(),
+	}
 	if g.ZClosure.this != nil {
-		return phpobj.SpawnGeneratorNamed(ctx, g.ZClosure.callBody, args, name, g.ZClosure.this)
+		opts.This = g.ZClosure.this
+	} else if ctx.This() != nil {
+		opts.This = ctx.This()
 	}
-	// Also check the calling context for $this (e.g., method generators)
-	if ctx.This() != nil {
-		return phpobj.SpawnGeneratorNamed(ctx, g.ZClosure.callBody, args, name, ctx.This())
-	}
-	return phpobj.SpawnGeneratorNamed(ctx, g.ZClosure.callBody, args, name)
+	return phpobj.SpawnGeneratorWithOptions(ctx, g.ZClosure.callBody, args, opts)
 }
 
 func (g *generatorClosure) Name() string {

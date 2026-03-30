@@ -8,6 +8,7 @@ type FuncArg struct {
 	Variadic           bool        // ...param (collects remaining args into array)
 	DefaultValue       Val
 	Hint               *TypeHint
+	SkipTypeCheck      bool        // if true, the Hint is used for display only (no type enforcement)
 	Promotion          ZObjectAttr // Non-zero if this is a constructor promoted property
 	SetPromotion       ZObjectAttr // PHP 8.4 asymmetric visibility for CPP (0 = same as Promotion)
 	ImplicitlyNullable bool        // type hint + NULL default without explicit ?

@@ -354,9 +354,18 @@ func gmpRandomBits(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	// Generate a random number with the given number of bits
 	max := new(big.Int).Lsh(big.NewInt(1), uint(bits))
-	r, err2 := rand.Int(rand.Reader, max)
-	if err2 != nil {
-		return nil, err2
+
+	var r *big.Int
+	if gmpRandSource != nil {
+		// Use seeded deterministic source
+		r = new(big.Int)
+		r.Rand(gmpRandSource, max)
+	} else {
+		var err2 error
+		r, err2 = rand.Int(rand.Reader, max)
+		if err2 != nil {
+			return nil, err2
+		}
 	}
 
 	return returnInt(ctx, r)
@@ -389,9 +398,16 @@ func gmpRandomRange(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	rangeVal := new(big.Int).Sub(ib, ia)
 	rangeVal.Add(rangeVal, big.NewInt(1))
 
-	r, err2 := rand.Int(rand.Reader, rangeVal)
-	if err2 != nil {
-		return nil, err2
+	var r *big.Int
+	if gmpRandSource != nil {
+		r = new(big.Int)
+		r.Rand(gmpRandSource, rangeVal)
+	} else {
+		var err2 error
+		r, err2 = rand.Int(rand.Reader, rangeVal)
+		if err2 != nil {
+			return nil, err2
+		}
 	}
 
 	r.Add(r, ia)

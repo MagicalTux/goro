@@ -1985,22 +1985,7 @@ func init() {
 		Name:            "DateTime",
 		Implementations: []*phpobj.ZClass{DateTimeInterface},
 		Props:           []*phpv.ZClassProp{},
-		Const: map[phpv.ZString]*phpv.ZClassConst{
-			"ATOM":              {Value: phpv.ZString("Y-m-d\\TH:i:sP")},
-			"COOKIE":            {Value: phpv.ZString("l, d-M-Y H:i:s T")},
-			"ISO8601":           {Value: phpv.ZString("Y-m-d\\TH:i:sO")},
-			"ISO8601_EXPANDED":  {Value: phpv.ZString("X-m-d\\TH:i:sP")},
-			"RFC822":            {Value: phpv.ZString("D, d M y H:i:s O")},
-			"RFC850":            {Value: phpv.ZString("l, d-M-y H:i:s T")},
-			"RFC1036":           {Value: phpv.ZString("D, d M y H:i:s O")},
-			"RFC1123":           {Value: phpv.ZString("D, d M Y H:i:s O")},
-			"RFC7231": {Value: phpv.ZString("D, d M Y H:i:s \\G\\M\\T"), Attributes: []*phpv.ZAttribute{{ClassName: "Deprecated", Args: []*phpv.ZVal{phpv.ZString("as this format ignores the associated timezone and always uses GMT").ZVal(), phpv.ZString("8.5").ZVal()}}}},
-			"RFC2822":           {Value: phpv.ZString("D, d M Y H:i:s O")},
-			"RFC3339":           {Value: phpv.ZString("Y-m-d\\TH:i:sP")},
-			"RFC3339_EXTENDED":  {Value: phpv.ZString("Y-m-d\\TH:i:s.vP")},
-			"RSS":               {Value: phpv.ZString("D, d M Y H:i:s O")},
-			"W3C":               {Value: phpv.ZString("Y-m-d\\TH:i:sP")},
-		},
+		Const:           map[phpv.ZString]*phpv.ZClassConst{},
 		Methods: map[phpv.ZString]*phpv.ZClassMethod{
 			"__construct": {
 				Name:      "__construct",

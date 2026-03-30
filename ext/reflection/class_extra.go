@@ -893,9 +893,13 @@ func phpEscapeSingleQuote(s string) string {
 }
 
 // formatParamDefault returns the string representation of a parameter default value
-// for use in reflection __toString output (e.g. " = NULL", " = 'hello'", " = K").
+// for use in reflection __toString output (e.g. " = null", " = 'hello'", " = K").
 func formatParamDefault(ctx phpv.Context, arg *phpv.FuncArg) string {
 	if arg.DefaultValue == nil {
+		if !arg.Required && !arg.Variadic {
+			// Optional non-variadic parameter with no explicit default: show " = <default>"
+			return " = <default>"
+		}
 		return ""
 	}
 	cd, ok := arg.DefaultValue.(*phpv.CompileDelayed)
@@ -910,7 +914,7 @@ func formatParamDefault(ctx phpv.Context, arg *phpv.FuncArg) string {
 		if s == "" {
 			return " = NULL"
 		}
-		// null -> NULL (PHP reflection always uppercases null)
+		// null -> NULL (PHP reflection uppercases null for user-defined code)
 		if strings.EqualFold(s, "null") {
 			return " = NULL"
 		}
@@ -927,11 +931,11 @@ func formatParamDefault(ctx phpv.Context, arg *phpv.FuncArg) string {
 // Like formatConstantValue but always single-quotes strings (matching PHP reflection output).
 func formatParamValue(ctx phpv.Context, val *phpv.ZVal) string {
 	if val == nil {
-		return "NULL"
+		return "null"
 	}
 	switch val.GetType() {
 	case phpv.ZtNull:
-		return "NULL"
+		return "null"
 	case phpv.ZtBool:
 		if val.AsBool(ctx) {
 			return "true"
@@ -944,6 +948,14 @@ func formatParamValue(ctx phpv.Context, val *phpv.ZVal) string {
 	case phpv.ZtString:
 		return "'" + phpEscapeSingleQuote(string(val.AsString(ctx))) + "'"
 	case phpv.ZtArray:
+		// PHP reflection shows [] for empty arrays in parameter defaults
+		arr := val.Array()
+		if arr == nil {
+			return "[]"
+		}
+		if cnt, ok := arr.(phpv.ZCountable); ok && cnt.Count(ctx) == 0 {
+			return "[]"
+		}
 		return "Array"
 	case phpv.ZtObject:
 		return "Object"
@@ -1047,35 +1059,45 @@ func rcFormatMethodShort(ctx phpv.Context, zc *phpobj.ZClass, m *phpv.ZClassMeth
 	}
 
 	if isOwnMethod {
-		if zc.Extends != nil {
+		// Private methods do NOT show "overwrites" or "prototype" - they are not polymorphic
+		if !m.Modifiers.IsPrivate() && zc.Extends != nil {
 			// Method is defined in this class - check if parent also has it ("overwrites")
 			if parentMethod, ok := zc.Extends.GetMethod(methodNameLower); ok {
-				// "overwrites" shows the class that actually declares the method in the parent chain
-				declaringClass := zc.Extends.GetName()
-				if parentMethod.Class != nil {
-					declaringClass = parentMethod.Class.GetName()
+				// Only show "overwrites" if the parent method is NOT private
+				if !parentMethod.Modifiers.IsPrivate() {
+					// "overwrites" shows the class that actually declares the method in the parent chain
+					declaringClass := zc.Extends.GetName()
+					if parentMethod.Class != nil {
+						declaringClass = parentMethod.Class.GetName()
+					}
+					origin += ", overwrites " + string(declaringClass)
 				}
-				origin += ", overwrites " + string(declaringClass)
 			}
 		}
 		// Find prototype: walk up the full hierarchy to find the earliest declaration
-		protoName := findMethodPrototype(zc, methodNameLower)
-		if protoName != "" {
-			origin += ", prototype " + string(protoName)
+		// Private methods have no prototype
+		if !m.Modifiers.IsPrivate() {
+			protoName := findMethodPrototype(zc, methodNameLower)
+			if protoName != "" {
+				origin += ", prototype " + string(protoName)
+			}
 		}
 	} else {
 		// Method is inherited from another class
 		declaringClass := m.Class.GetName()
 		origin += ", inherits " + string(declaringClass)
 		// Find prototype for inherited method - only show if different from declaring class
-		var protoName phpv.ZString
-		if m.Prototype != nil {
-			protoName = m.Prototype.GetName()
-		} else {
-			protoName = findMethodPrototype(zc, methodNameLower)
-		}
-		if protoName != "" && protoName != declaringClass {
-			origin += ", prototype " + string(protoName)
+		// Private methods have no prototype
+		if !m.Modifiers.IsPrivate() {
+			var protoName phpv.ZString
+			if m.Prototype != nil {
+				protoName = m.Prototype.GetName()
+			} else {
+				protoName = findMethodPrototype(zc, methodNameLower)
+			}
+			if protoName != "" && protoName != declaringClass {
+				origin += ", prototype " + string(protoName)
+			}
 		}
 	}
 

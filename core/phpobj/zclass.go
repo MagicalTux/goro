@@ -3124,13 +3124,14 @@ func (c *ZClass) GetMethodsOrdered() []*phpv.ZClassMethod {
 		// Use MethodOrder if available (compilation order)
 		if len(cur.MethodOrder) > 0 {
 			for _, name := range cur.MethodOrder {
-				if seen[name] {
+				nameLower := name.ToLower()
+				if seen[nameLower] {
 					continue
 				}
-				if m, ok := cur.Methods[name]; ok {
+				if m, ok := cur.Methods[nameLower]; ok {
 					// Only include if this class actually declares this method
 					if m.Class == nil || m.Class.GetName() == cur.GetName() {
-						seen[name] = true
+						seen[nameLower] = true
 						result = append(result, m)
 					}
 				}

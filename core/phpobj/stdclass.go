@@ -79,6 +79,16 @@ var Stringable = &ZClass{
 	},
 }
 
+// > interface Reflector extends Stringable
+var Reflector = &ZClass{
+	Type:    phpv.ZClassTypeInterface,
+	Name:    "Reflector",
+	Extends: Stringable,
+	Methods: map[phpv.ZString]*phpv.ZClassMethod{
+		"__tostring": {Name: "__toString", Modifiers: phpv.ZAttrPublic, Empty: true},
+	},
+}
+
 // > interface UnitEnum
 // All PHP enums implicitly implement UnitEnum
 var UnitEnum = &ZClass{

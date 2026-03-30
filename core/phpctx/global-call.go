@@ -583,7 +583,7 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 	if fga, ok := f.(phpv.FuncGetArgs); ok {
 		funcArgs := fga.GetArgs()
 		for i, fa := range funcArgs {
-			if fa.Hint == nil {
+			if fa.Hint == nil || fa.SkipTypeCheck {
 				continue
 			}
 			if i >= len(callCtx.Args) {

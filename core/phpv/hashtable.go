@@ -65,6 +65,20 @@ func (z *ZHashTable) GetMemTracker() MemTracker {
 	return z.memTracker
 }
 
+// SameData returns true if this hash table shares the same underlying data
+// as another hash table (i.e., they are COW copies of the same array).
+// This is used for detecting circular references during serialization.
+func (z *ZHashTable) SameData(other *ZHashTable) bool {
+	if z == other {
+		return true
+	}
+	if z == nil || other == nil {
+		return false
+	}
+	// COW copies share the same first node pointer
+	return z.first != nil && z.first == other.first
+}
+
 func (z *ZHashTable) Dup() *ZHashTable {
 	z.lock.Lock()
 	defer z.lock.Unlock()

@@ -9,6 +9,7 @@ import (
 
 	"github.com/KarpelesLab/strtotime"
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -398,6 +399,12 @@ func fncIdate(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 // > func int mktime ( [ int $hour = date("H") [, int $minute = date("i") [, int $second = date("s") [, int $month = date("n") [, int $day = date("j") [, int $year = date("Y") ]]]]]]] )
 func fncMktime(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) == 0 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "mktime() expects at least 1 argument, 0 given")
+	}
+	if len(args) > 6 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, fmt.Sprintf("mktime() expects at most 6 arguments, %d given", len(args)))
+	}
 	var hourArg, minArg, secArg, monthArg, dayArg, yearArg *int
 	_, err := core.Expand(ctx, args, &hourArg, &minArg, &secArg, &monthArg, &dayArg, &yearArg)
 	if err != nil {
@@ -611,10 +618,10 @@ var (
 	reISOWeek = regexp.MustCompile(`^(\d{4})W(\d{2})(\d)?(?:T(\d{2}):?(\d{2})?:?(\d{2})?)?(.*)?$`)
 
 	// "Mon DD HH:MM:SS YYYY" e.g. "Sep 04 16:39:45 2001"
-	reMonDTimeY = regexp.MustCompile(`(?i)^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+(\d{1,2})\s+(\d{1,2}):(\d{2}):(\d{2})\s+(\d{4})$`)
+	reMonDTimeY = regexp.MustCompile(`(?i)^(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{1,2})\s+(\d{1,2}):(\d{2}):(\d{2})\s+(\d{4})$`)
 
 	// "Mon DD, YYYY HH:MM:SS TZ" e.g. "Nov 19, 2003 16:20:42 -0500"
-	reMonDYTimeTZ = regexp.MustCompile(`(?i)^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+(\d{1,2}),?\s+(\d{4})\s+(\d{1,2}):(\d{2}):?(\d{2})?\s*([+-]\d{2}:?\d{2})?$`)
+	reMonDYTimeTZ = regexp.MustCompile(`(?i)^(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{1,2}),?\s+(\d{4})\s+(\d{1,2}):(\d{2}):?(\d{2})?\s*([+-]\d{2}:?\d{2})?$`)
 
 	// YYYY-MM format
 	reYearMonthOnly = regexp.MustCompile(`^(\d{4})-(\d{2})$`)
@@ -627,7 +634,7 @@ var (
 	reDayNameDate = regexp.MustCompile(`(?i)^(?:sunday|monday|tuesday|wednesday|thursday|friday|saturday|sun|mon|tue|wed|thu|fri|sat),?\s+(.*\d.*)$`)
 
 	// RFC2822 with trailing timezone name: "Sun, 21 Dec 2003 20:38:33 +0000 GMT"
-	reRFC2822Extra = regexp.MustCompile(`(?i)^[a-z]+,\s+(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+(\d{4})\s+(\d{2}):(\d{2}):(\d{2})\s+([+-]\d{4})\s+\(?[a-z]+\)?$`)
+	reRFC2822Extra = regexp.MustCompile(`(?i)^[a-z]+,\s+(\d{1,2})\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{4})\s+(\d{2}):(\d{2}):(\d{2})\s+([+-]\d{4})\s+\(?[a-z]+\)?$`)
 
 	// Timestamp with timezone comment: "Thu Nov 10 21:09:30 EST 2005" (like "Thu Nov 10 21:09:30 2005")
 	// or  "Mon, 14 Nov 2005 09:05:00 +0000 (PST)" - offset with timezone comment in parens
@@ -1511,12 +1518,12 @@ func parseDateTimeWithOffset(input string, loc *time.Location) (time.Time, bool)
 }
 
 // reMonthNameFull matches "Mon DD YYYY HH:MM", "Mon DD YYYY", "Mon DD HH:MM"
-var reMonthNameDateFull = regexp.MustCompile(`(?i)^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+(\d{1,2})\s+(\d{4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?$`)
-var reMonthNameDateNoTime = regexp.MustCompile(`(?i)^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+(\d{1,2})\s+(\d{4})$`)
-var reMonthNameTime = regexp.MustCompile(`(?i)^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+(\d{1,2})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?$`)
-var reMonthYear = regexp.MustCompile(`(?i)^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+(\d{4})$`)
-var reYearMonth = regexp.MustCompile(`(?i)^(\d{4})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*$`)
-var reMonthDay = regexp.MustCompile(`(?i)^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+(\d{1,2})$`)
+var reMonthNameDateFull = regexp.MustCompile(`(?i)^(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{1,2})\s+(\d{4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?$`)
+var reMonthNameDateNoTime = regexp.MustCompile(`(?i)^(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{1,2})\s+(\d{4})$`)
+var reMonthNameTime = regexp.MustCompile(`(?i)^(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{1,2})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?$`)
+var reMonthYear = regexp.MustCompile(`(?i)^(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{4})$`)
+var reYearMonth = regexp.MustCompile(`(?i)^(\d{4})\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)$`)
+var reMonthDay = regexp.MustCompile(`(?i)^(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{1,2})$`)
 
 func parseMonthNameDate(input string, base time.Time, loc *time.Location) (time.Time, bool) {
 	// "Mon DD YYYY HH:MM[:SS]"

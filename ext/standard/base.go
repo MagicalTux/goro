@@ -1110,47 +1110,68 @@ func stdGetClassVars(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		scope = callerCtx.Class()
 	}
 
-	// Iterate over class properties and check visibility
+	// Iterate over class properties and check visibility (including inherited)
 	if zc, ok := class.(*phpobj.ZClass); ok {
-		for _, prop := range zc.Props {
-			// Skip virtual properties (hooked properties without backing store)
-			if prop.IsVirtual() {
-				continue
-			}
-			// Skip static properties
-			if prop.Modifiers.IsStatic() {
-				continue
-			}
-			// Check visibility
-			if prop.Modifiers.IsPrivate() {
-				if scope == nil || scope.GetName() != class.GetName() {
+		seen := make(map[phpv.ZString]bool)
+		for cur := zc; cur != nil; {
+			for _, prop := range cur.Props {
+				// Skip virtual properties (hooked properties without backing store)
+				if prop.IsVirtual() {
 					continue
 				}
-			} else if prop.Modifiers.IsProtected() {
-				if scope == nil || (!scope.InstanceOf(class) && !class.InstanceOf(scope)) {
+				// Skip static properties
+				if prop.Modifiers.IsStatic() {
 					continue
 				}
-			}
-			// Get default value
-			def := phpv.ZNULL.ZVal()
-			if prop.Default != nil {
-				// Resolve CompileDelayed values (e.g., constants used as default values)
-				if cd, ok := prop.Default.(*phpv.CompileDelayed); ok {
-					// Set compiling class so self:: resolves correctly
-					prevCompiling := ctx.Global().GetCompilingClass()
-					ctx.Global().SetCompilingClass(zc)
-					resolved, err := cd.Run(ctx)
-					ctx.Global().SetCompilingClass(prevCompiling)
-					if err != nil {
-						return nil, err
+				// Skip if already seen (child prop takes precedence)
+				if seen[prop.VarName] {
+					continue
+				}
+				// Private props from parent classes are not visible
+				if cur != zc && prop.Modifiers.IsPrivate() {
+					continue
+				}
+				seen[prop.VarName] = true
+				// Check visibility
+				if prop.Modifiers.IsPrivate() {
+					if scope == nil || scope.GetName() != phpv.ZString(cur.Name) {
+						continue
 					}
-					prop.Default = resolved.Value()
-					def = resolved
-				} else {
-					def = prop.Default.ZVal()
+				} else if prop.Modifiers.IsProtected() {
+					if scope == nil || (!scope.InstanceOf(class) && !class.InstanceOf(scope)) {
+						continue
+					}
 				}
+				// Get default value
+				def := phpv.ZNULL.ZVal()
+				if prop.Default != nil {
+					// Resolve CompileDelayed values (e.g., constants used as default values)
+					if cd, ok := prop.Default.(*phpv.CompileDelayed); ok {
+						// Set compiling class so self:: resolves correctly
+						prevCompiling := ctx.Global().GetCompilingClass()
+						ctx.Global().SetCompilingClass(cur)
+						resolved, err := cd.Run(ctx)
+						ctx.Global().SetCompilingClass(prevCompiling)
+						if err != nil {
+							return nil, err
+						}
+						prop.Default = resolved.Value()
+						def = resolved
+					} else {
+						def = prop.Default.ZVal()
+					}
+				}
+				result.OffsetSet(ctx, prop.VarName.ZVal(), def)
 			}
-			result.OffsetSet(ctx, prop.VarName.ZVal(), def)
+			parent := cur.GetParent()
+			if phpv.IsNilClass(parent) {
+				break
+			}
+			var ok2 bool
+			cur, ok2 = parent.(*phpobj.ZClass)
+			if !ok2 {
+				break
+			}
 		}
 	}
 

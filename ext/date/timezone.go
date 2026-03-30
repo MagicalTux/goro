@@ -208,6 +208,9 @@ func datetimezoneConstruct(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.
 	if len(args) < 1 {
 		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "DateTimeZone::__construct() expects exactly 1 argument, 0 given")
 	}
+	if len(args) > 1 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, fmt.Sprintf("DateTimeZone::__construct() expects exactly 1 argument, %d given", len(args)))
+	}
 	tzName := string(args[0].AsString(ctx))
 
 	// Validate timezone offset ranges - minutes must be < 60
