@@ -1,3 +1,5 @@
+github.com/KarpelesLab/gobzip2 v0.0.0-20260330172500-4c38ea919286 h1:3RCQ/dyIuGPQEWbVYvuW+pCMofs3yxr0+B408Ez55Oc=
+github.com/KarpelesLab/gobzip2 v0.0.0-20260330172500-4c38ea919286/go.mod h1:5v5i0AelH26iGSMNde1j+gqLh48Bljx6gEwLMUNIWWo=
 github.com/KarpelesLab/gopcre2 v0.1.0 h1:ksv0iCXdL/Pu4Eyzv9X5Z6guoyzXtDucNrGs02LPhYE=
 github.com/KarpelesLab/gopcre2 v0.1.0/go.mod h1:w4Ja96AdGHjoVq4sGo4CNzMCtuJ3ScjeDYWc1G+GWuc=
 github.com/KarpelesLab/strftime v1.0.1 h1:PH1ZhqAAI1zcJQh4DUydpp5O2qO3KlFvR5rHCLdlqJk=

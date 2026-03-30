@@ -9,12 +9,33 @@ import (
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
+	"github.com/MagicalTux/goro/ext/standard"
 )
 
 // > class GMP
 var GMP = &phpobj.ZClass{
 	Name: "GMP",
 	Attr: phpv.ZClassFinal,
+}
+
+// namedMethod wraps a NativeMethod with a proper name for stack traces.
+// This ensures that when serialize.go calls method.Method directly,
+// the stack trace shows the correct method name instead of "__construct".
+type namedMethod struct {
+	phpobj.NativeMethod
+	name string
+}
+
+func (n *namedMethod) Name() string { return n.name }
+func (n *namedMethod) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	return n.NativeMethod.Call(ctx, args)
+}
+func (n *namedMethod) GetType() phpv.ZType                       { return phpv.ZtCallable }
+func (n *namedMethod) ZVal() *phpv.ZVal                          { return phpv.NewZVal(n) }
+func (n *namedMethod) Value() phpv.Val                           { return n }
+func (n *namedMethod) String() string                            { return "Callable" }
+func (n *namedMethod) AsVal(ctx phpv.Context, t phpv.ZType) (phpv.Val, error) {
+	return n.NativeMethod.AsVal(ctx, t)
 }
 
 // getGMPInt extracts the *big.Int from a GMP object.
@@ -87,6 +108,12 @@ func init() {
 		"__construct": {
 			Name: "__construct",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				// GMP::__construct() accepts 0 or more args
+				if len(args) == 0 {
+					o.SetOpaque(GMP, big.NewInt(0))
+					return nil, nil
+				}
+
 				var num *phpv.ZVal
 				var base *phpv.ZInt
 
@@ -153,6 +180,8 @@ func init() {
 						if neg {
 							body = s[1:]
 						}
+						// PHP GMP allows whitespace throughout the string - strip internal whitespace
+						body = stripWhitespace(body)
 						switch b {
 						case 2:
 							if strings.HasPrefix(strings.ToLower(body), "0b") {
@@ -201,6 +230,15 @@ func init() {
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				i := getGMPInt(o)
 				arr := phpv.NewZArray()
+				// Include dynamic properties first, then the GMP numeric value
+				ht := o.HashTable()
+				it := ht.NewIterator()
+				for it.Valid(ctx) {
+					k, _ := it.Key(ctx)
+					v, _ := it.Current(ctx)
+					arr.OffsetSet(ctx, k, v)
+					it.Next(ctx)
+				}
 				arr.OffsetSet(ctx, phpv.ZString("num").ZVal(), phpv.ZString(i.String()).ZVal())
 				return arr.ZVal(), nil
 			}),
@@ -248,6 +286,115 @@ func init() {
 				return arr.ZVal(), nil
 			}),
 		},
+		"unserialize": {
+			Name:      "unserialize",
+			Modifiers: phpv.ZAttrPublic,
+			Method: &namedMethod{name: "unserialize", NativeMethod: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				// Legacy Serializable::unserialize() for C: format backward compatibility.
+				// The data format is: s:N:"hex_or_decimal_number";a:M:{...properties...}
+				var data *phpv.ZVal
+				_, err := core.Expand(ctx, args, &data)
+				if err != nil {
+					return nil, err
+				}
+				if data == nil || data.GetType() != phpv.ZtString {
+					return nil, phpobj.ThrowError(ctx, phpobj.Exception, "Could not unserialize number")
+				}
+				rawData := string(data.AsString(ctx))
+
+				// Step 1: Parse the number part: s:N:"value";
+				if len(rawData) < 2 || rawData[0] != 's' || rawData[1] != ':' {
+					return nil, phpobj.ThrowError(ctx, phpobj.Exception, "Could not unserialize number")
+				}
+				colonIdx := strings.Index(rawData[2:], ":")
+				if colonIdx < 0 {
+					return nil, phpobj.ThrowError(ctx, phpobj.Exception, "Could not unserialize number")
+				}
+				lenStr := rawData[2 : 2+colonIdx]
+				numLen := 0
+				for _, c := range lenStr {
+					if c >= '0' && c <= '9' {
+						numLen = numLen*10 + int(c-'0')
+					} else {
+						return nil, phpobj.ThrowError(ctx, phpobj.Exception, "Could not unserialize number")
+					}
+				}
+				afterColon := 2 + colonIdx + 1 // position after the colon following length
+				if afterColon+numLen+2 > len(rawData) ||
+					rawData[afterColon] != '"' || rawData[afterColon+numLen+1] != '"' {
+					return nil, phpobj.ThrowError(ctx, phpobj.Exception, "Could not unserialize number")
+				}
+				numStr := rawData[afterColon+1 : afterColon+1+numLen]
+				if numStr == "" {
+					return nil, phpobj.ThrowError(ctx, phpobj.Exception, "Could not unserialize number")
+				}
+				i := &big.Int{}
+				// Try parsing as decimal first (legacy format), then hex
+				if _, ok := i.SetString(numStr, 10); !ok {
+					if _, ok := i.SetString(numStr, 16); !ok {
+						return nil, phpobj.ThrowError(ctx, phpobj.Exception, "Could not unserialize number")
+					}
+				}
+				// afterNumber points to the char after the closing '"' and ';'
+				// i.e., afterColon+numLen+2 is the closing '"', +1 is ';'
+				afterNumber := afterColon + numLen + 2 // position of ';'
+				if afterNumber >= len(rawData) || rawData[afterNumber] != ';' {
+					return nil, phpobj.ThrowError(ctx, phpobj.Exception, "Could not unserialize number")
+				}
+				afterNumber++ // skip ';'
+
+				// Step 2: Parse the properties array: a:N:{...}
+				// The rest of rawData should be an array serialization.
+				rest := rawData[afterNumber:]
+				if len(rest) == 0 || rest[0] != 'a' {
+					return nil, phpobj.ThrowError(ctx, phpobj.Exception, "Could not unserialize properties")
+				}
+				// Parse a:N:{...} minimally to extract properties
+				// a:N:{...} - N items in array
+				if len(rest) < 4 || rest[1] != ':' {
+					return nil, phpobj.ThrowError(ctx, phpobj.Exception, "Could not unserialize properties")
+				}
+				// Find the count and opening brace
+				braceIdx := strings.Index(rest[2:], ":{")
+				if braceIdx < 0 {
+					return nil, phpobj.ThrowError(ctx, phpobj.Exception, "Could not unserialize properties")
+				}
+				// Verify the closing brace
+				if rest[len(rest)-1] != '}' {
+					return nil, phpobj.ThrowError(ctx, phpobj.Exception, "Could not unserialize properties")
+				}
+
+				// Set the GMP value
+				o.SetOpaque(GMP, i)
+
+				// Parse properties from the inner content of a:N:{...}
+				inner := rest[2+braceIdx+2 : len(rest)-1]
+				if len(inner) > 0 {
+					// Use the standard PHP deserializer to parse the inner content as pairs
+					d := standard.NewStreamDeserializer()
+					pos := 0
+					for pos < len(inner) {
+						// Parse key
+						kv, nextPos, kErr := d.ParseKeyAt(ctx, inner, pos)
+						if kErr != nil || kv == nil {
+							break
+						}
+						pos = nextPos
+						// Parse value
+						vv, nextPos2, vErr := d.ParseAt(ctx, inner, pos)
+						if vErr != nil || vv == nil {
+							break
+						}
+						pos = nextPos2
+						// Set as dynamic property
+						if kv.GetType() == phpv.ZtString {
+							o.ObjectSet(ctx, kv.Value(), vv)
+						}
+					}
+				}
+				return nil, nil
+			})},
+		},
 		"__unserialize": {
 			Name:      "__unserialize",
 			Modifiers: phpv.ZAttrPublic,
@@ -283,8 +430,12 @@ func init() {
 				if propsVal != nil && propsVal.GetType() == phpv.ZtArray {
 					propsArr := propsVal.AsArray(ctx)
 					for k, v := range propsArr.Iterate(ctx) {
-						if k.GetType() == phpv.ZtString {
+						switch k.GetType() {
+						case phpv.ZtString:
 							o.ObjectSet(ctx, k.Value(), v)
+						case phpv.ZtInt:
+							// Integer-keyed dynamic property: convert key to string name
+							o.ObjectSet(ctx, phpv.ZString(fmt.Sprintf("%d", k.Value().(phpv.ZInt))), v)
 						}
 					}
 				} else if propsVal != nil && !propsVal.IsNull() {
@@ -341,6 +492,30 @@ func gmpHandleCompare(ctx phpv.Context, a, b phpv.ZObject) (int, error) {
 	return ia.Cmp(ib), nil
 }
 
+// gmpTypeName returns the type name for an invalid operand error message.
+func gmpTypeName(v *phpv.ZVal) string {
+	if v == nil {
+		return "null"
+	}
+	switch v.GetType() {
+	case phpv.ZtArray:
+		return "array"
+	case phpv.ZtNull:
+		return "null"
+	case phpv.ZtBool:
+		return "bool"
+	case phpv.ZtResource:
+		return "resource"
+	case phpv.ZtObject:
+		if obj, ok := v.Value().(*phpobj.ZObject); ok {
+			return string(obj.Class.GetName())
+		}
+		return "object"
+	default:
+		return v.GetType().String()
+	}
+}
+
 // gmpHandleDoOperation handles arithmetic/bitwise operator overloading for GMP.
 func gmpHandleDoOperation(ctx phpv.Context, op int, a, b *phpv.ZVal) (*phpv.ZVal, error) {
 	itemOp := tokenizer.ItemType(op)
@@ -366,13 +541,79 @@ func gmpHandleDoOperation(ctx phpv.Context, op int, a, b *phpv.ZVal) (*phpv.ZVal
 		}
 	}
 
-	ia, err := readOperand(ctx, a)
-	if err != nil {
-		return nil, err
+	// For power and shift operators, invalid operand types throw "Unsupported operand types" instead of "Number must be of type..."
+	switch itemOp {
+	case tokenizer.T_POW, tokenizer.T_POW_EQUAL,
+		tokenizer.T_SL, tokenizer.T_SL_EQUAL,
+		tokenizer.T_SR, tokenizer.T_SR_EQUAL:
+		// Determine type names for the error message
+		aTypeName := "GMP"
+		if a != nil {
+			if a.GetType() != phpv.ZtObject {
+				aTypeName = gmpTypeName(a)
+			} else if obj, ok := a.Value().(*phpobj.ZObject); !ok || obj.Class != GMP {
+				aTypeName = gmpTypeName(a)
+			}
+		}
+		bTypeName := gmpTypeName(b)
+		// Check if b is an unsupported type (not GMP, int, float, string)
+		if b != nil {
+			switch b.GetType() {
+			case phpv.ZtArray, phpv.ZtNull, phpv.ZtResource, phpv.ZtBool:
+				return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+					fmt.Sprintf("Unsupported operand types: %s %s %s", aTypeName, itemOp.OpString(), bTypeName))
+			case phpv.ZtObject:
+				if obj, ok := b.Value().(*phpobj.ZObject); !ok || obj.Class != GMP {
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+						fmt.Sprintf("Unsupported operand types: %s %s %s", aTypeName, itemOp.OpString(), bTypeName))
+				}
+			}
+		}
 	}
-	ib, err := readOperand(ctx, b)
-	if err != nil {
-		return nil, err
+
+	// For comparison operators, null is treated as 0 (PHP's standard comparison semantics)
+	isComparison := false
+	switch itemOp {
+	case tokenizer.Rune('<'), tokenizer.T_IS_SMALLER_OR_EQUAL,
+		tokenizer.Rune('>'), tokenizer.T_IS_GREATER_OR_EQUAL,
+		tokenizer.T_IS_EQUAL, tokenizer.T_IS_NOT_EQUAL,
+		tokenizer.T_SPACESHIP, tokenizer.T_IS_IDENTICAL, tokenizer.T_IS_NOT_IDENTICAL:
+		isComparison = true
+	}
+
+	var ia, ib *big.Int
+	var err error
+
+	if isComparison && a != nil && a.GetType() == phpv.ZtNull {
+		ia = big.NewInt(0)
+	} else {
+		ia, err = readOperand(ctx, a)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// For ** and shift operators, convert float without emitting a Deprecated warning
+	noDeprecatedFloat := itemOp == tokenizer.T_POW || itemOp == tokenizer.T_POW_EQUAL ||
+		itemOp == tokenizer.T_SL || itemOp == tokenizer.T_SL_EQUAL ||
+		itemOp == tokenizer.T_SR || itemOp == tokenizer.T_SR_EQUAL
+	if noDeprecatedFloat {
+		if b != nil && b.GetType() == phpv.ZtFloat {
+			f := float64(b.Value().(phpv.ZFloat))
+			ib = big.NewInt(int64(f))
+		} else {
+			ib, err = readOperand(ctx, b)
+			if err != nil {
+				return nil, err
+			}
+		}
+	} else if isComparison && b != nil && b.GetType() == phpv.ZtNull {
+		ib = big.NewInt(0)
+	} else {
+		ib, err = readOperand(ctx, b)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	r := new(big.Int)
@@ -396,7 +637,7 @@ func gmpHandleDoOperation(ctx phpv.Context, op int, a, b *phpv.ZVal) (*phpv.ZVal
 		r.Rem(ia, ib)
 	case tokenizer.T_POW, tokenizer.T_POW_EQUAL:
 		if ib.Sign() < 0 {
-			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "Negative exponent is not supported")
+			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "Exponent must be greater than or equal to 0")
 		}
 		r.Exp(ia, ib, nil)
 	case tokenizer.Rune('|'), tokenizer.T_OR_EQUAL:

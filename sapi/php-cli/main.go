@@ -9,6 +9,7 @@ import (
 	"github.com/MagicalTux/goro/core/phpctx"
 	"github.com/MagicalTux/goro/core/phperr"
 	"github.com/MagicalTux/goro/core/phpv"
+	_ "github.com/MagicalTux/goro/ext/bz2"
 	_ "github.com/MagicalTux/goro/ext/curl"
 	_ "github.com/MagicalTux/goro/ext/ctype"
 	_ "github.com/MagicalTux/goro/ext/date"

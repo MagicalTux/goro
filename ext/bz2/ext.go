@@ -17,6 +17,7 @@ func init() {
 		// Note: ExtFunctionArg is currently unused
 		Functions: map[string]*phpctx.ExtFunction{
 			"bzdecompress": {Func: fncBzDecompress, Args: []*phpctx.ExtFunctionArg{}},
+			"bzcompress":   {Func: fncBzCompress, Args: []*phpctx.ExtFunctionArg{}},
 		},
 		Constants: map[phpv.ZString]phpv.Val{},
 	})

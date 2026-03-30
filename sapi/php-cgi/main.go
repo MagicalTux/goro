@@ -7,6 +7,7 @@ import (
 
 	"github.com/MagicalTux/goro/core/ini"
 	"github.com/MagicalTux/goro/core/phpctx"
+	_ "github.com/MagicalTux/goro/ext/bz2"
 	_ "github.com/MagicalTux/goro/ext/curl"
 	_ "github.com/MagicalTux/goro/ext/ctype"
 	_ "github.com/MagicalTux/goro/ext/date"

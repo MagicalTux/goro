@@ -13,6 +13,7 @@ require (
 )
 
 require (
+	github.com/KarpelesLab/gobzip2 v0.0.0-20260330172500-4c38ea919286 // indirect
 	github.com/sergi/go-diff v1.3.1 // indirect
 	golang.org/x/sys v0.40.0 // indirect
 )

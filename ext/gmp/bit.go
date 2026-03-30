@@ -2,7 +2,6 @@ package gmp
 
 import (
 	"fmt"
-	"math"
 	"math/big"
 
 	"github.com/MagicalTux/goro/core"
@@ -49,11 +48,18 @@ func gmpSetbit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	// Limit to ~512MB of memory (max bit index ~4 billion)
-	const maxBitIndex = 4294967295 // 0xFFFFFFFF
-	if index < 0 || int64(index) > maxBitIndex {
+	// PHP's GMP limits bit indices to GMP_MAX_BITCOUNT = INT_MAX * GMP_NUMB_BITS.
+	// On 64-bit systems: 2147483647 * 64 = 137438953408.
+	// This matches PHP behavior: values up to 0x3FFFFFFFF (17179869183) pass,
+	// while 0x3FFFFFFFFF (274877906943) triggers the error.
+	const (
+		intMax      = phpv.ZInt(2147483647) // INT_MAX (32-bit C int)
+		gmpNumbBits = phpv.ZInt(64)         // GMP_NUMB_BITS on 64-bit systems
+		maxBitIndex = intMax * gmpNumbBits  // 137438953408
+	)
+	if index < 0 || index > maxBitIndex {
 		return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
-			fmt.Sprintf("gmp_setbit(): Argument #2 ($index) must be between 0 and %d * %d", math.MaxInt64, 8))
+			fmt.Sprintf("gmp_setbit(): Argument #2 ($index) must be between 0 and %d * %d", intMax, gmpNumbBits))
 	}
 
 	opaque := a.GetOpaque(GMP)
@@ -92,11 +98,11 @@ func gmpClrbit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	// Limit to ~512MB of memory (max bit index ~4 billion)
-	const maxBitIndex = 4294967295 // 0xFFFFFFFF
-	if index < 0 || int64(index) > maxBitIndex {
+	// PHP's GMP limits bit indices to GMP_MAX_BITCOUNT = INT_MAX * GMP_NUMB_BITS.
+	const maxBitIndexClr = phpv.ZInt(2147483647) * phpv.ZInt(64) // 137438953408
+	if index < 0 || index > maxBitIndexClr {
 		return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
-			fmt.Sprintf("gmp_clrbit(): Argument #2 ($index) must be between 0 and %d * %d", math.MaxInt64, 8))
+			fmt.Sprintf("gmp_clrbit(): Argument #2 ($index) must be between 0 and %d * %d", phpv.ZInt(2147483647), phpv.ZInt(64)))
 	}
 
 	opaque := a.GetOpaque(GMP)

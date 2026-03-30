@@ -64,7 +64,10 @@ func gmpProbPrime(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	// 0 - definitely not prime
 	// 1 - probably prime
 	// 2 - definitely prime
-	if i.Sign() <= 0 {
+	// GMP treats negative numbers as their absolute value for primality testing
+	absI := new(big.Int).Abs(i)
+
+	if absI.Sign() == 0 {
 		return phpv.ZInt(0).ZVal(), nil
 	}
 
@@ -72,16 +75,13 @@ func gmpProbPrime(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZInt(0).ZVal(), nil
 	}
 
-	if i.ProbablyPrime(n) {
+	if absI.ProbablyPrime(n) {
 		// For small known primes we can return 2 (definitely prime)
 		// For larger numbers return 1 (probably prime)
-		if i.BitLen() <= 63 {
-			v := i.Int64()
+		if absI.BitLen() <= 63 {
+			v := absI.Int64()
 			if v <= 1 {
 				return phpv.ZInt(0).ZVal(), nil
-			}
-			if v <= 3 {
-				return phpv.ZInt(2).ZVal(), nil
 			}
 			// Use a deterministic check for small numbers
 			return phpv.ZInt(2).ZVal(), nil

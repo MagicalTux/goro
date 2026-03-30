@@ -22,6 +22,7 @@ import (
 	"github.com/MagicalTux/goro/core/phpctx"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
+	_ "github.com/MagicalTux/goro/ext/bz2"
 	_ "github.com/MagicalTux/goro/ext/curl"
 	_ "github.com/MagicalTux/goro/ext/ctype"
 	_ "github.com/MagicalTux/goro/ext/date"

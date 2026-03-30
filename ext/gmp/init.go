@@ -3,11 +3,24 @@ package gmp
 import (
 	"math/big"
 	"strings"
+	"unicode"
 
 	"github.com/MagicalTux/goro/core"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
+
+// stripWhitespace removes all whitespace characters from a string.
+// PHP GMP allows whitespace within numeric strings when a base is given.
+func stripWhitespace(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if !unicode.IsSpace(r) {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
 
 // > func GMP gmp_init ( mixed $number [, int $base = 0 ] )
 func gmpInit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
@@ -30,7 +43,7 @@ func gmpInit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if base != nil {
 		b := int(*base)
 		if b != 0 && (b < 2 || b > 62) {
-			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "gmp_init(): Argument #2 ($base) must be between 2 and 62, or 0")
+			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "gmp_init(): Argument #2 ($base) must be 0 or between 2 and 62")
 		}
 	}
 
@@ -72,6 +85,8 @@ func gmpInit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			if neg {
 				body = s[1:]
 			}
+			// PHP GMP allows whitespace throughout the string - strip internal whitespace
+			body = stripWhitespace(body)
 			switch b {
 			case 2:
 				if strings.HasPrefix(strings.ToLower(body), "0b") {

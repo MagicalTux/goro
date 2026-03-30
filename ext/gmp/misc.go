@@ -131,6 +131,63 @@ func nthRoot(x *big.Int, n int) *big.Int {
 	return nil
 }
 
+// gmpExportBytes converts a big.Int to a byte slice with the given word size and ordering options.
+// opts: GMP_BIG_ENDIAN=0x02, GMP_LITTLE_ENDIAN=0x04, GMP_MSW_FIRST=0x08, GMP_LSW_FIRST=0x10
+// Default: GMP_MSW_FIRST | GMP_BIG_ENDIAN
+func gmpExportBytes(num *big.Int, wordSize int, opts int) []byte {
+	// For zero, return empty string (PHP behavior)
+	if num.Sign() == 0 {
+		return []byte{}
+	}
+
+	// Get the big-endian bytes
+	raw := num.Bytes()
+
+	// Pad to multiple of wordSize
+	if wordSize > 1 && len(raw)%wordSize != 0 {
+		padding := wordSize - (len(raw) % wordSize)
+		padded := make([]byte, padding+len(raw))
+		copy(padded[padding:], raw)
+		raw = padded
+	}
+
+	// raw is now MSW-first, big-endian within each word
+	// Apply word ordering and byte ordering
+
+	// Determine word order: LSW_FIRST=0x10, default=MSW_FIRST=0x08
+	lswFirst := (opts & 0x10) != 0
+	// Determine byte order: LITTLE_ENDIAN=0x04, default=BIG_ENDIAN=0x02
+	littleEndian := (opts & 0x04) != 0
+
+	numWords := len(raw) / wordSize
+	result := make([]byte, len(raw))
+
+	for w := 0; w < numWords; w++ {
+		// Source word index (from raw, which is MSW-first)
+		srcWord := w
+		// Dest word index
+		dstWord := w
+		if lswFirst {
+			dstWord = numWords - 1 - w
+		}
+
+		// Copy word bytes from src to dst
+		srcOff := srcWord * wordSize
+		dstOff := dstWord * wordSize
+
+		if littleEndian {
+			// Reverse bytes within the word
+			for j := 0; j < wordSize; j++ {
+				result[dstOff+j] = raw[srcOff+(wordSize-1-j)]
+			}
+		} else {
+			copy(result[dstOff:dstOff+wordSize], raw[srcOff:srcOff+wordSize])
+		}
+	}
+
+	return result
+}
+
 // > func string gmp_export ( GMP $num [, int $word_size = 1 [, int $options = GMP_MSW_FIRST | GMP_BIG_ENDIAN ]] )
 func gmpExport(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var a *phpv.ZVal
@@ -156,12 +213,38 @@ func gmpExport(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "gmp_export(): Argument #2 ($word_size) must be greater than or equal to 1")
 	}
 
-	// Check options for validity
+	// Check that word_size is not too large (would overflow allocation)
+	const maxExportWordSize = 1 << 24 // 16MB max word size
+	if int64(ws) > maxExportWordSize {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+			"gmp_export(): Argument #2 ($word_size) is too large for argument #1 ($num)")
+	}
+
+	// Check that word_size is not larger than the number's byte representation
+	// (PHP throws ValueError: word_size larger than number)
+	if i.Sign() != 0 {
+		numBytes := int64(len(i.Bytes()))
+		wsInt := int64(ws)
+		// Calculate required bytes (padded to word_size boundary)
+		paddedBytes := wsInt
+		if numBytes > wsInt {
+			paddedBytes = ((numBytes + wsInt - 1) / wsInt) * wsInt
+		}
+		if paddedBytes > maxExportWordSize {
+			return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+				"gmp_export(): Argument #2 ($word_size) is too large for argument #1 ($num)")
+		}
+	} else if int64(ws) > 1 {
+		// For zero, word_size > 1 would need padding but PHP returns empty string
+	}
+
+	// Default options: GMP_MSW_FIRST | GMP_BIG_ENDIAN = 0x08 | 0x02 = 0x0a
+	opts := 0x0a
 	if options != nil {
-		opt := int(*options)
-		// GMP_BIG_ENDIAN = 0x02, GMP_LITTLE_ENDIAN = 0x04, GMP_MSW_FIRST = 0x08, GMP_LSW_FIRST = 0x10, GMP_NATIVE_ENDIAN = 0x00
-		wordOrder := opt & 0x18 // MSW_FIRST | LSW_FIRST bits
-		byteOrder := opt & 0x06 // BIG_ENDIAN | LITTLE_ENDIAN bits
+		opts = int(*options)
+		// GMP_BIG_ENDIAN = 0x02, GMP_LITTLE_ENDIAN = 0x04, GMP_MSW_FIRST = 0x08, GMP_LSW_FIRST = 0x10
+		wordOrder := opts & 0x18 // MSW_FIRST | LSW_FIRST bits
+		byteOrder := opts & 0x06 // BIG_ENDIAN | LITTLE_ENDIAN bits
 		if wordOrder == 0x18 { // Both MSW and LSW set
 			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "gmp_export(): Argument #3 ($flags) cannot use multiple word order options")
 		}
@@ -170,32 +253,7 @@ func gmpExport(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		}
 	}
 
-	b := i.Bytes()
-	if len(b) == 0 {
-		b = []byte{0}
-	}
-
-	// Safety check: word_size must not be larger than the actual data
-	// (PHP throws ValueError if word_size is larger than the number's byte representation)
-	const maxExportBytes = 1 << 26 // 64MB limit
-	if int64(ws) > int64(len(b)) && int64(ws) > maxExportBytes {
-		return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
-			"gmp_export(): Argument #2 ($word_size) is too large for argument #1 ($num)")
-	}
-
-	// Pad to word_size boundary
-	if int(ws) > 1 && len(b)%int(ws) != 0 {
-		padding := int(ws) - (len(b) % int(ws))
-		newLen := padding + len(b)
-		if newLen < 0 || newLen > maxExportBytes {
-			return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
-				"gmp_export(): Argument #2 ($word_size) is too large for argument #1 ($num)")
-		}
-		padded := make([]byte, newLen)
-		copy(padded[padding:], b)
-		b = padded
-	}
-
+	b := gmpExportBytes(i, int(ws), opts)
 	return phpv.ZString(b).ZVal(), nil
 }
 
@@ -228,7 +286,8 @@ func gmpImport(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "gmp_import(): Argument #1 ($data) must be a multiple of argument #2 ($word_size)")
 	}
 
-	// Check options for validity
+	// Default options: GMP_MSW_FIRST | GMP_BIG_ENDIAN = 0x0a
+	opts := 0x0a
 	if options != nil {
 		opt := int(*options)
 		wordOrder := opt & 0x18
@@ -239,10 +298,42 @@ func gmpImport(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		if byteOrder == 0x06 {
 			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "gmp_import(): Argument #3 ($flags) cannot use multiple endian options")
 		}
+		opts = opt
 	}
 
-	i := new(big.Int).SetBytes(b)
+	// Convert input bytes to canonical big-endian MSW-first format
+	wordSize2 := int(ws)
+	lswFirst := (opts & 0x10) != 0
+	littleEndian := (opts & 0x04) != 0
 
+	numWords := len(b) / wordSize2
+	canonical := make([]byte, len(b))
+
+	for w := 0; w < numWords; w++ {
+		// Source word in input
+		srcWord := w
+		// In canonical form (MSW-first), dest word position
+		dstWord := w
+		if lswFirst {
+			// Input has LSW first, so word 0 is the least significant
+			// We need to reverse the word order for canonical MSW-first
+			srcWord = numWords - 1 - w
+		}
+
+		srcOff := srcWord * wordSize2
+		dstOff := dstWord * wordSize2
+
+		if littleEndian {
+			// Bytes within word are little-endian (LSB first), reverse them
+			for j := 0; j < wordSize2; j++ {
+				canonical[dstOff+j] = b[srcOff+(wordSize2-1-j)]
+			}
+		} else {
+			copy(canonical[dstOff:dstOff+wordSize2], b[srcOff:srcOff+wordSize2])
+		}
+	}
+
+	i := new(big.Int).SetBytes(canonical)
 	return returnInt(ctx, i)
 }
 
@@ -439,6 +530,21 @@ func gmpBinomial(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "gmp_binomial(): Argument #2 ($k) must be greater than or equal to 0")
 	}
 
-	r := new(big.Int).Binomial(in.Int64(), int64(k))
+	var r *big.Int
+	if in.Sign() < 0 {
+		// For negative n, use the formula: C(-n, k) = (-1)^k * C(n+k-1, k)
+		// where the inner binomial uses positive values.
+		// Equivalently: C(n, k) where n < 0 and k >= 0
+		// = (-1)^k * C(-n+k-1, k)
+		absN := new(big.Int).Neg(in) // -n (positive)
+		// -n + k - 1
+		inner := new(big.Int).Add(absN, big.NewInt(int64(k)-1))
+		r = new(big.Int).Binomial(inner.Int64(), int64(k))
+		if k%2 != 0 {
+			r.Neg(r)
+		}
+	} else {
+		r = new(big.Int).Binomial(in.Int64(), int64(k))
+	}
 	return returnInt(ctx, r)
 }
