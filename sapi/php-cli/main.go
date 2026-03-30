@@ -9,6 +9,7 @@ import (
 	"github.com/MagicalTux/goro/core/phpctx"
 	"github.com/MagicalTux/goro/core/phperr"
 	"github.com/MagicalTux/goro/core/phpv"
+	_ "github.com/MagicalTux/goro/ext/curl"
 	_ "github.com/MagicalTux/goro/ext/ctype"
 	_ "github.com/MagicalTux/goro/ext/date"
 	_ "github.com/MagicalTux/goro/ext/gmp"
@@ -18,8 +19,11 @@ import (
 	_ "github.com/MagicalTux/goro/ext/mbstring"
 	_ "github.com/MagicalTux/goro/ext/pcre"
 	_ "github.com/MagicalTux/goro/ext/reflection"
+	_ "github.com/MagicalTux/goro/ext/session"
+	_ "github.com/MagicalTux/goro/ext/sockets"
 	_ "github.com/MagicalTux/goro/ext/spl"
 	_ "github.com/MagicalTux/goro/ext/standard"
+	_ "github.com/MagicalTux/goro/ext/xml"
 )
 
 func main() {
