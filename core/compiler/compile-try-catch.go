@@ -59,6 +59,27 @@ func (rt *runnableTry) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			if _, isExit := err.(*phpv.PhpExit); isExit {
 				return nil, err
 			}
+			// GeneratorForceClose: run finally blocks but do not catch in PHP catch blocks.
+			// If yield is attempted in finally during force-close, it will be replaced by an error.
+			isForceClose := false
+			if _, isClose := err.(*phperr.GeneratorForceClose); isClose {
+				isForceClose = true
+			} else if inner, _ := phpv.UnwrapError(err).(*phperr.GeneratorForceClose); inner != nil {
+				isForceClose = true
+			}
+			if isForceClose {
+				if rt.finally != nil {
+					_, ferr := rt.finally.Run(ctx)
+					if ferr != nil {
+						// If finally threw a real error, propagate that instead
+						innerFerr := phpv.UnwrapError(ferr)
+						if _, isClose2 := innerFerr.(*phperr.GeneratorForceClose); !isClose2 {
+							return nil, ferr
+						}
+					}
+				}
+				return nil, err
+			}
 			// For return statements, snapshot the return value before running finally
 			// so that modifications in finally don't affect the returned value.
 			// Skip snapshotting for return-by-reference functions.

@@ -731,14 +731,17 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 		if err != nil || index < 1 {
 			return nil, offset, readError
 		}
-		ref := d.getRef(int(index))
-		if ref == nil {
+		orig := d.getRef(int(index))
+		if orig == nil {
 			return nil, offset, readError
 		}
-		// R: creates a reference - make the referred value a reference if not already
-		ref = ref.Ref()
-		d.addRef(ref)
-		return ref, semicIndex + 1, nil
+		// R: creates a PHP reference. MakeRef() converts the original slot
+		// in-place so both the original array entry and this new entry share
+		// the same inner reference cell. Then return the same pointer so the
+		// array entry for this key also points to the same reference.
+		orig.MakeRef()
+		d.addRef(orig)
+		return orig, semicIndex + 1, nil
 
 	case 'r':
 		// r:N; - object reference (reuses the Nth object without creating a PHP reference)
@@ -1171,38 +1174,82 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 // unserializeSetProperty sets a property on an object during unserialization,
 // handling PHP's property name mangling for visibility.
 // Mangled names: "\0ClassName\0prop" for private, "\0*\0prop" for protected
+//
+// Internally, private properties are stored under the key "*ClassName:propName"
+// in the object's hash table. Protected/public properties are stored under
+// their plain name.
 func unserializeSetProperty(ctx phpv.Context, obj phpv.ZObject, key phpv.ZString, value *phpv.ZVal) {
 	keyStr := string(key)
+	zobj, isZObj := obj.(*phpobj.ZObject)
 
-	// Check if this is a mangled property name
+	// Check if this is a mangled property name (\0ClassName\0prop or \0*\0prop)
 	if len(keyStr) > 0 && keyStr[0] == '\x00' {
 		// Find the second \x00
 		secondNull := strings.IndexByte(keyStr[1:], '\x00')
 		if secondNull >= 0 {
+			classOrStar := keyStr[1 : secondNull+1]
 			propName := keyStr[secondNull+2:]
-			if zobj, ok := obj.(*phpobj.ZObject); ok {
-				// Check if the class has a declared property with this name
-				if _, found := obj.GetClass().GetProp(phpv.ZString(propName)); found {
-					// Directly set the property value in the hash table,
-					// bypassing visibility checks (unserialization can set any property)
+
+			if classOrStar == "*" {
+				// Protected: \0*\0propName — stored under plain propName
+				if isZObj {
 					zobj.HashTable().SetString(phpv.ZString(propName), value)
 					return
 				}
-				// Property not declared - set as dynamic property using demangled name
-				zobj.HashTable().SetString(phpv.ZString(propName), value)
-				return
+			} else {
+				// Private: \0ClassName\0propName — stored under *ClassName:propName
+				if isZObj {
+					internalKey := phpobj.GetPrivatePropNameExt(obj.GetClass(), phpv.ZString(propName))
+					// Walk class hierarchy to find the declaring class
+					cls := obj.GetClass()
+					for cls != nil {
+						if string(cls.GetName()) == classOrStar {
+							internalKey = phpobj.GetPrivatePropNameExt(cls, phpv.ZString(propName))
+							break
+						}
+						if p := cls.GetParent(); p != nil {
+							cls = p
+						} else {
+							break
+						}
+					}
+					zobj.HashTable().SetString(internalKey, value)
+					return
+				}
 			}
 		}
 	}
 
 	// Non-mangled name: for declared properties, set directly bypassing visibility
-	if zobj, ok := obj.(*phpobj.ZObject); ok {
-		if _, found := obj.GetClass().GetProp(key); found {
-			zobj.HashTable().SetString(key, value)
+	if isZObj {
+		if prop, found := obj.GetClass().GetProp(key); found {
+			if prop.Modifiers.IsPrivate() {
+				// Private — find declaring class and store under *ClassName:propName
+				declClass := zobj.GetDeclClassName(prop)
+				// Walk hierarchy to get the declaring ZClass
+				var declZClass phpv.ZClass = obj.GetClass()
+				for declZClass != nil {
+					if declZClass.GetName() == declClass {
+						break
+					}
+					declZClass = declZClass.GetParent()
+				}
+				if declZClass == nil {
+					declZClass = obj.GetClass()
+				}
+				internalKey := phpobj.GetPrivatePropNameExt(declZClass, key)
+				zobj.HashTable().SetString(internalKey, value)
+			} else {
+				// Protected/public — store under plain name
+				zobj.HashTable().SetString(key, value)
+			}
 			return
 		}
+		// Not a declared property: dynamic property
+		zobj.HashTable().SetString(key, value)
+		return
 	}
-	// Dynamic property or non-ZObject: use normal ObjectSet
+	// Non-ZObject: use normal ObjectSet
 	obj.ObjectSet(ctx, key, value)
 }
 

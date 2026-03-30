@@ -10,6 +10,10 @@ import (
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
+// generatorCloseErr is a sentinel error that force-closes a generator,
+// running finally blocks but not being caught by PHP catch blocks.
+var generatorCloseErr = &phperr.GeneratorForceClose{}
+
 // GeneratorStatus tracks the state of a Generator.
 type GeneratorStatus int
 
@@ -62,6 +66,10 @@ type GeneratorState struct {
 	advanced bool
 	// Whether we have a valid current value (false after generator closes)
 	valid bool
+
+	// Whether the generator is being force-closed (e.g. via unset/$gen = null)
+	// When true, yield inside finally blocks is forbidden.
+	forceClosing bool
 }
 
 // generatorExecContext wraps a phpv.Context to carry the GeneratorState via Go context.Value.
@@ -121,6 +129,7 @@ func init() {
 			"throw":        {Name: "throw", Modifiers: phpv.ZAttrPublic, Method: NativeMethod(generatorThrow)},
 			"getreturn":    {Name: "getReturn", Modifiers: phpv.ZAttrPublic, Method: NativeMethod(generatorGetReturn)},
 			"__debuginfo":  {Name: "__debugInfo", Modifiers: phpv.ZAttrPublic, Method: NativeMethod(generatorDebugInfo)},
+			"__destruct":   {Name: "__destruct", Modifiers: phpv.ZAttrPublic, Method: NativeMethod(generatorDestruct)},
 		},
 	}
 
@@ -321,6 +330,12 @@ func generatorYieldValueImpl(ctx phpv.Context, key, value *phpv.ZVal, fromDelega
 				state.implicitKey = k + 1
 			}
 		}
+	}
+
+	// If we are being force-closed, do NOT yield - instead raise an error
+	// "Cannot yield from finally in a force-closed generator"
+	if state.forceClosing {
+		return nil, ThrowError(ctx, Error, "Cannot yield from finally in a force-closed generator")
 	}
 
 	state.status = GeneratorSuspended
@@ -780,8 +795,10 @@ func generatorGetReturn(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.
 		return nil, ThrowError(ctx, Error, "Cannot get return value of a generator that hasn't returned")
 	}
 
+	// PHP behavior: if the generator was aborted due to an exception (whether internal
+	// or injected via throw()), getReturn() reports "hasn't returned" not "threw an exception"
 	if state.genErr != nil {
-		return nil, ThrowError(ctx, Error, "Cannot get return value of a generator that threw an exception")
+		return nil, ThrowError(ctx, Error, "Cannot get return value of a generator that hasn't returned")
 	}
 
 	if state.returnVal == nil {
@@ -797,6 +814,57 @@ func generatorDebugInfo(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.
 		arr.OffsetSet(ctx, phpv.ZString("function"), phpv.ZString(state.funcName).ZVal())
 	}
 	return arr.ZVal(), nil
+}
+
+// generatorDestruct is the __destruct for Generator objects.
+// When a generator is garbage-collected while still suspended, we need to
+// force-close it so that finally blocks in the generator body are executed.
+func generatorDestruct(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	state := getGeneratorState(o)
+	if state == nil {
+		return phpv.ZNULL.ZVal(), nil
+	}
+	return phpv.ZNULL.ZVal(), generatorForceClose(ctx, state)
+}
+
+// generatorForceClose sends a force-close signal into a suspended generator,
+// causing it to unwind through finally blocks without running catch blocks.
+// Returns an error only if the generator threw a real PHP exception during cleanup
+// (e.g. "Cannot yield from finally in a force-closed generator").
+func generatorForceClose(ctx phpv.Context, state *GeneratorState) error {
+	if state.status != GeneratorSuspended {
+		return nil
+	}
+
+	state.forceClosing = true
+	state.status = GeneratorRunning
+
+	// Send the force-close signal into the generator goroutine.
+	// The generator will propagate GeneratorForceClose through try/finally blocks.
+	state.resumeCh <- generatorMsg{err: generatorCloseErr}
+
+	// Wait for the generator to finish (it may run finally blocks)
+	select {
+	case doneMsg := <-state.doneCh:
+		state.valid = false
+		state.status = GeneratorClosed
+		if doneMsg.err != nil {
+			// Check if the final error is just the GeneratorForceClose signal
+			// (meaning cleanup completed normally). If it's a real PHP error,
+			// propagate it (e.g., "Cannot yield from finally in a force-closed generator").
+			if _, isClose := doneMsg.err.(*phperr.GeneratorForceClose); !isClose {
+				return doneMsg.err
+			}
+		}
+	case yield := <-state.yieldCh:
+		// This should not happen normally - yield in finally during force-close is
+		// detected and converted to a PHP Error before reaching here.
+		// But consume it defensively.
+		state.valid = false
+		state.status = GeneratorClosed
+		_ = yield
+	}
+	return nil
 }
 
 // generatorIterator implements phpv.ZIterator for Generator objects.
