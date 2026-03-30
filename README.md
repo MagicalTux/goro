@@ -24,7 +24,7 @@ go install github.com/MagicalTux/goro/sapi/php-cli@latest
 
 ## Status
 
-Goro passes **~8,200 of 12,110 tests** (67.7%) from the PHP 8.5.4 test suite. First 2,000 tests: **1,747/2,000 (89.8%)**. PHP memory_limit enforcement (128MB default). Includes ext/openssl (Go crypto), getimagesize (16 formats, 35/35 pass), stream filters (73%), lazy objects (62%), and comprehensive SPL support (82%).
+Goro passes **~8,200 of 12,110 tests** (67.7%) from the PHP 8.5.4 test suite. First 2,000 tests: **1,748/2,000 (89.8%)**. PHP memory_limit enforcement (128MB default). Includes ext/openssl (Go crypto), getimagesize (16 formats, 35/35 pass), stream filters (73%), lazy objects (62%), and comprehensive SPL support (82%).
 
 ### Language Features
 
@@ -74,6 +74,10 @@ Goro passes **~8,200 of 12,110 tests** (67.7%) from the PHP 8.5.4 test suite. Fi
 | mbstring | 40+ | 60% | strlen, substr, strpos, strtolower/upper, convert_encoding, convert_case, convert_variables, detect_encoding, check_encoding, str_split, str_pad, strimwidth, output_handler, encode/decode_mimeheader, encode/decode_numericentity |
 | date | 18+ | 35% | date, time, strtotime, mktime, strftime, getdate, checkdate, DateTime, DateInterval, DatePeriod |
 | bz2 | 1 | 10% | Decompression only (Go stdlib lacks bzip2 writer) |
+| session | 18 | New | session_start, session_id, file-based storage, $_SESSION superglobal |
+| xml | 15+ | New | SimpleXMLElement class, xml_parser_create, xml_parse, simplexml_load_string |
+| curl | 12 | New | CurlHandle class, curl_init/setopt/exec/getinfo via Go net/http |
+| sockets | 20+ | New | Socket class, socket_create/bind/listen/accept/connect, stream_socket_*, fsockopen |
 | spl | 6+ classes | 15% | Countable, OuterIterator, ArrayIterator, InfiniteIterator, SplFixedArray, SplDoublyLinkedList |
 | reflection | 5 classes | 15% | ReflectionClass, ReflectionMethod, ReflectionProperty, ReflectionFunction, ReflectionParameter |
 | pcre | | | Uses Go's `regexp` (RE2 syntax, not PCRE2) |
@@ -82,16 +86,11 @@ Goro passes **~8,200 of 12,110 tests** (67.7%) from the PHP 8.5.4 test suite. Fi
 
 | Extension | Notes |
 |-----------|-------|
-| session | |
 | iconv | Planned via `golang.org/x/text/transform` |
-| curl | Planned via `net/http` |
 | mysqli | |
-| openssl | Planned via `crypto` packages |
-| xml / DOM | |
 | gd | |
 | zlib | |
 | Phar | |
-| sockets | |
 
 ## Architecture
 
