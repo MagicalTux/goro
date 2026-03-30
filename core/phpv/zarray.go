@@ -210,6 +210,12 @@ func (a *ZArray) HasStringKeys() bool {
 	return a.h.HasStringKeys()
 }
 
+// WouldOverflow returns true if the next $arr[] = append would fail
+// with ErrNextElementOccupied (PHP_INT_MAX key slot occupied).
+func (a *ZArray) WouldOverflow() bool {
+	return a.h.WouldOverflow()
+}
+
 func (a *ZArray) OffsetGet(ctx Context, key Val) (*ZVal, error) {
 	if isNilKey(key) {
 		return nil, ctx.Errorf("Cannot use [] for reading")

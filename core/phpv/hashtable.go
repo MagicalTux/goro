@@ -576,6 +576,25 @@ func (z *ZHashTable) AdjustNextIntKeyAfterPop(poppedKey ZInt) {
 	}
 }
 
+// WouldOverflow returns true if the next Append call would fail with
+// ErrNextElementOccupied. Used to pre-check overflow before evaluating
+// the RHS of an assignment.
+func (z *ZHashTable) WouldOverflow() bool {
+	z.lock.RLock()
+	defer z.lock.RUnlock()
+	inc := z.inc
+	for {
+		if _, ok := z._idx_i[inc]; ok {
+			if inc == ZInt(math.MaxInt64) {
+				return true
+			}
+			inc++
+		} else {
+			return false
+		}
+	}
+}
+
 func (z *ZHashTable) Append(v *ZVal) error {
 	z.lock.Lock()
 	defer z.lock.Unlock()
