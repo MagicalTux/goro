@@ -537,8 +537,30 @@ func pregReplaceCallback(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error
 
 	var result *phpv.ZVal
 
-	// Handle array subject
-	if subject.GetType() == phpv.ZtArray {
+	// Handle array pattern with array subject
+	if pattern.GetType() == phpv.ZtArray && subject.GetType() == phpv.ZtArray {
+		subjectArr := subject.Value().(*phpv.ZArray)
+		resultArr := phpv.NewZArray()
+		totalCount := phpv.ZInt(0)
+		for k, v := range subjectArr.Iterate(ctx) {
+			c := phpv.ZInt(0)
+			r, err := doReplaceCallbackArrayPattern(ctx, pattern, callback, v, limit, &c, flags)
+			if err != nil {
+				return nil, err
+			}
+			totalCount += c
+			resultArr.OffsetSet(ctx, k, r)
+		}
+		*count = totalCount
+		result = resultArr.ZVal()
+	} else if pattern.GetType() == phpv.ZtArray {
+		// Array pattern, single subject
+		result, err = doReplaceCallbackArrayPattern(ctx, pattern, callback, subject, limit, count, flags)
+		if err != nil {
+			return nil, err
+		}
+	} else if subject.GetType() == phpv.ZtArray {
+		// Single pattern, array subject
 		subjectArr := subject.Value().(*phpv.ZArray)
 		resultArr := phpv.NewZArray()
 		totalCount := phpv.ZInt(0)
@@ -565,6 +587,28 @@ func pregReplaceCallback(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error
 	}
 
 	return result, nil
+}
+
+// doReplaceCallbackArrayPattern applies each element of the array pattern sequentially
+// to the subject, passing each match to the callback. This mirrors doPregReplaceArrayPattern.
+func doReplaceCallbackArrayPattern(ctx phpv.Context, pattern *phpv.ZVal, callback phpv.Callable, subject *phpv.ZVal, limit phpv.ZInt, count *phpv.ZInt, flags phpv.ZInt) (*phpv.ZVal, error) {
+	patternArr := pattern.Value().(*phpv.ZArray)
+	current := subject
+	totalCount := phpv.ZInt(0)
+	for _, pv := range patternArr.Iterate(ctx) {
+		c := phpv.ZInt(0)
+		var err error
+		current, err = doReplaceCallback(ctx, pv, callback, current, limit, &c, flags)
+		if err != nil {
+			return nil, err
+		}
+		if current == nil {
+			return phpv.ZNULL.ZVal(), nil
+		}
+		totalCount += c
+	}
+	*count = totalCount
+	return current, nil
 }
 
 func doReplaceCallback(ctx phpv.Context, pattern *phpv.ZVal, callback phpv.Callable, subject *phpv.ZVal, limit phpv.ZInt, count *phpv.ZInt, flags phpv.ZInt) (*phpv.ZVal, error) {

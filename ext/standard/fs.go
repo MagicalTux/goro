@@ -1721,7 +1721,12 @@ func fncFstat(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	f := file.UnderlyingFile()
 	if f == nil {
-		return phpv.ZFalse.ZVal(), nil
+		// Try the stream's Stat method (e.g., user stream wrappers with stream_stat())
+		info, statErr := file.Stat()
+		if statErr != nil {
+			return phpv.ZFalse.ZVal(), nil
+		}
+		return buildStatArray(ctx, info), nil
 	}
 
 	info, statErr := f.Stat()

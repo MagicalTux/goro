@@ -294,6 +294,11 @@ const (
 	STREAM_IS_URL phpv.ZInt = 1
 	PSFS_PASS_ON phpv.ZInt = 2; PSFS_FEED_ME phpv.ZInt = 0; PSFS_ERR_FATAL phpv.ZInt = 1
 	STREAM_SHUT_RD phpv.ZInt = 0; STREAM_SHUT_WR phpv.ZInt = 1; STREAM_SHUT_RDWR phpv.ZInt = 2
+	STREAM_PF_UNIX phpv.ZInt = 1; STREAM_PF_INET phpv.ZInt = 2; STREAM_PF_INET6 phpv.ZInt = 10
+	STREAM_SOCK_STREAM phpv.ZInt = 1; STREAM_SOCK_DGRAM phpv.ZInt = 2; STREAM_SOCK_RAW phpv.ZInt = 3
+	STREAM_SOCK_SEQPACKET phpv.ZInt = 5; STREAM_SOCK_RDM phpv.ZInt = 4
+	STREAM_IPPROTO_IP phpv.ZInt = 0; STREAM_IPPROTO_TCP phpv.ZInt = 6; STREAM_IPPROTO_UDP phpv.ZInt = 17
+	STREAM_IPPROTO_ICMP phpv.ZInt = 1; STREAM_IPPROTO_RAW phpv.ZInt = 255
 	DNS_A phpv.ZInt = 1; DNS_NS phpv.ZInt = 2; DNS_CNAME phpv.ZInt = 16; DNS_SOA phpv.ZInt = 32
 	DNS_PTR phpv.ZInt = 2048; DNS_HINFO phpv.ZInt = 4096; DNS_CAA phpv.ZInt = 8192; DNS_MX phpv.ZInt = 16384
 	DNS_TXT phpv.ZInt = 32768; DNS_SRV phpv.ZInt = 33554432; DNS_NAPTR phpv.ZInt = 67108864

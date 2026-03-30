@@ -282,7 +282,14 @@ func (g *Global) init() {
 		g.constant[k] = v
 	}
 	g.constant["STDIN"] = stream.Stdin
-	g.constant["STDOUT"] = stream.Stdout
+	// Create a per-request STDOUT stream that writes to the Global's output buffer
+	// so that stream_copy_to_stream(... , STDOUT, ...) respects the SAPI output (test buffers, etc.)
+	stdoutStream := stream.NewStream(g)
+	stdoutStream.SetAttr("stream_type", "Go")
+	stdoutStream.SetAttr("mode", "w")
+	stdoutStream.ResourceType = phpv.ResourceStream
+	stdoutStream.ResourceID = g.NextResourceID()
+	g.constant["STDOUT"] = stdoutStream
 	g.constant["STDERR"] = stream.Stderr
 
 	// Mark E_STRICT as deprecated (PHP 8.4+)
