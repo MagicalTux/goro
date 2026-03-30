@@ -1,6 +1,15 @@
 # Goro Roadmap
 
-**Current state (March 2026):** ~7,800 / 12,110 tests passing (64.4%). First 2,000: 1,700/2,000 (87.4%). SPL: 633/781 (83.0%). All 24 batches complete, zero OOM. PHP memory_limit enforcement.
+**Current state (March 2026):** ~8,400 / 12,110 tests passing (69.4%). First 2,000: 1,752/2,000 (89.9%). All 24 batches complete, zero OOM. PHP memory_limit enforcement. PCRE2 via gopcre2.
+
+### Recent Progress
+- ext/gmp: 23→59 (60%) — most functions implemented via math/big
+- generators: 96→125 (68%) — yield from, finally, throw improvements
+- ext/pcre: 90→100 (67%) — gopcre2 integration, PCRE2 backreferences/lookahead
+- ext/reflection: 229→244 (52%) — ReflectionClass::__toString() started
+- ext/date: 367→381 (57%) — DatePeriod iteration, strtotime fixes
+- ext/spl: 606→633 (83%) — ArrayObject, iterators, serialization
+- New extensions: session, xml, curl, sockets, zlib (~5,200 lines)
 
 This document tracks the major work areas needed to reach full PHP 8.5 compatibility, organized by impact (number of test fixes) and estimated effort.
 
