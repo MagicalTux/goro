@@ -13,11 +13,14 @@ var (
 )
 
 type Ext struct {
-	Name      string
-	Version   string
-	Functions map[string]*ExtFunction
-	Constants map[phpv.ZString]phpv.Val
-	Classes   []*phpobj.ZClass
+	Name           string
+	Version        string
+	Functions      map[string]*ExtFunction
+	Constants      map[phpv.ZString]phpv.Val
+	Classes        []*phpobj.ZClass
+	// OnGlobalCreate is an optional callback invoked when a new Global context is created.
+	// Extensions can use it to register per-Global resources such as stream handlers.
+	OnGlobalCreate func(g *Global)
 }
 
 type ExtFunction struct {

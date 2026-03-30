@@ -207,6 +207,13 @@ func createGlobal(p *Process) *Global {
 	g.streamHandlers["data"] = stream.DataHandler
 	g.StreamFilterRegistry = stream.NewFilterRegistry()
 
+	// Invoke OnGlobalCreate hooks from registered extensions
+	for _, e := range globalExtMap {
+		if e.OnGlobalCreate != nil {
+			e.OnGlobalCreate(g)
+		}
+	}
+
 	g.initLocale()
 
 	return g

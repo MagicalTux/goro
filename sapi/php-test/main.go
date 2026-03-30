@@ -36,6 +36,7 @@ import (
 	_ "github.com/MagicalTux/goro/ext/spl"
 	_ "github.com/MagicalTux/goro/ext/standard"
 	_ "github.com/MagicalTux/goro/ext/xml"
+	_ "github.com/MagicalTux/goro/ext/zlib"
 	"github.com/andreyvit/diff"
 )
 

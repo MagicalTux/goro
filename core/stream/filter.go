@@ -492,6 +492,20 @@ func unhex(b byte) int {
 	return -1
 }
 
+// builtinFilterFactory is a function type for creating builtin filters by name.
+type builtinFilterFactory func(name string, params map[string]interface{}) StreamFilter
+
+var extraBuiltinFilterFactories []builtinFilterFactory
+var extraBuiltinFilterNames []string
+
+// RegisterBuiltinFilterFactory registers an additional factory function for
+// creating built-in stream filters. Extensions call this in their init() functions
+// to add support for new built-in filter names.
+func RegisterBuiltinFilterFactory(names []string, factory builtinFilterFactory) {
+	extraBuiltinFilterFactories = append(extraBuiltinFilterFactories, factory)
+	extraBuiltinFilterNames = append(extraBuiltinFilterNames, names...)
+}
+
 // CreateBuiltinFilter creates a built-in filter by name, or returns nil if not found.
 func CreateBuiltinFilter(name string, params map[string]interface{}) StreamFilter {
 	switch name {
@@ -510,6 +524,12 @@ func CreateBuiltinFilter(name string, params map[string]interface{}) StreamFilte
 	case "convert.quoted-printable-decode":
 		return &QuotedPrintableDecodeFilter{}
 	}
+	// Try extension-registered factories
+	for _, factory := range extraBuiltinFilterFactories {
+		if f := factory(name, params); f != nil {
+			return f
+		}
+	}
 	return nil
 }
 
@@ -521,6 +541,12 @@ func IsBuiltinFilter(name string) bool {
 		"convert.quoted-printable-encode", "convert.quoted-printable-decode",
 		"dechunk":
 		return true
+	}
+	// Check extension-registered filter names
+	for _, n := range extraBuiltinFilterNames {
+		if n == name {
+			return true
+		}
 	}
 	return false
 }

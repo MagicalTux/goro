@@ -20,6 +20,7 @@ import (
 	_ "github.com/MagicalTux/goro/ext/sockets"
 	_ "github.com/MagicalTux/goro/ext/standard"
 	_ "github.com/MagicalTux/goro/ext/xml"
+	_ "github.com/MagicalTux/goro/ext/zlib"
 )
 
 func main() {
