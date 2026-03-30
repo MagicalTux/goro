@@ -986,6 +986,11 @@ func TestPhp(t *testing.T) {
 		"test/php-8.5.4/ext/spl/recursive_tree_iterator_007.phpt":                                     true, // Stack overflow in RecursiveTreeIterator with stdClass
 		"test/php-8.5.4/ext/spl/bug69970.phpt":                                                        true, // Stack overflow in recursive endChildren/rewind
 		"test/php-8.5.4/ext/spl/iterator_023.phpt":                                                    true, // Stack overflow in recursive callGetChildren
+		"test/php-8.5.4/ext/pcre/bug61780.phpt":                                                        true, // gopcre2 backtracking timeout
+		"test/php-8.5.4/ext/pcre/bug61780_1.phpt":                                                      true, // gopcre2 backtracking timeout
+		"test/php-8.5.4/ext/pcre/bug61780_2.phpt":                                                      true, // gopcre2 backtracking timeout
+		"test/php-8.5.4/ext/pcre/bug63055.phpt":                                                        true, // gopcre2 backtracking timeout
+		"test/php-8.5.4/ext/pcre/bug66121.phpt":                                                        true, // gopcre2 backtracking timeout
 	}
 
 	// Directories containing tests that require external resources (network, etc.)

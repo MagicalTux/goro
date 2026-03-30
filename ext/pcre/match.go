@@ -2,9 +2,9 @@ package pcre
 
 import (
 	"fmt"
-	"regexp"
 	"unicode/utf8"
 
+	"github.com/KarpelesLab/gopcre2"
 	"github.com/MagicalTux/goro/core"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
@@ -43,7 +43,7 @@ func makeMatchVal(ctx phpv.Context, elem string, matched bool, loc int, offsetCa
 // addNamedCaptures adds both numeric and named keys to a matches array,
 // mimicking PHP's behavior where named groups appear as both numeric and string keys.
 // In PHP, for named groups the order is: [0]=full, ["name1"]=group1, [1]=group1, ["name2"]=group2, [2]=group2, ...
-func addNamedCaptures(ctx phpv.Context, matches *phpv.ZArray, re *regexp.Regexp, m []string, flags phpv.ZInt, locs []int, baseOffset int) {
+func addNamedCaptures(ctx phpv.Context, matches *phpv.ZArray, re *gopcre2.Regexp, m []string, flags phpv.ZInt, locs []int, baseOffset int) {
 	names := re.SubexpNames()
 	offsetCapture := flags&phpv.ZInt(PREG_OFFSET_CAPTURE) != 0
 	unmatchedAsNull := flags&phpv.ZInt(PREG_UNMATCHED_AS_NULL) != 0
@@ -216,7 +216,7 @@ func pregMatchAll(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	names := re.SubexpNames()
 
 	// Find all matches with their indices
-	allLocs := re.FindAllStringSubmatchIndex(subjectStr, -1)
+	allLocs := findAllPCRE(re, subjectStr)
 	if allLocs == nil {
 		if matchesArg.Value != nil {
 			newMatches := phpv.NewZArray()
@@ -508,7 +508,7 @@ func doReplaceCallback(ctx phpv.Context, pattern *phpv.ZVal, callback phpv.Calla
 	}
 
 	// Find all matches at once on the original string to preserve anchor semantics
-	allLocs := re.FindAllSubmatchIndex(in, maxReplacements)
+	allLocs := findAllSubmatchIndexBytes(re, in, maxReplacements)
 	if allLocs == nil {
 		*count = 0
 		return phpv.ZString(in).ZVal(), nil

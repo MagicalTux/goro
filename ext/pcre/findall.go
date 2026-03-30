@@ -1,58 +1,67 @@
 package pcre
 
-import "regexp"
+import (
+	"unicode/utf8"
 
-// findAllPCRE emulates PCRE's behavior for finding all matches.
-// Unlike Go's FindAllStringSubmatchIndex which skips the character after a
-// zero-length match, PCRE tries to match at every position. This means
-// zero-length matches can occur at consecutive positions.
-//
-// For example, with pattern /\d*/ on "ab2c3u":
-// Go finds: [0:0], [1:1], [2:3], [4:5], [6:6]  (5 matches)
-// PCRE finds: [0:0], [1:1], [2:3], [3:3], [4:5], [5:5], [6:6]  (7 matches)
-//
-// The difference is that after a non-zero-length match, PCRE also checks
-// for a zero-length match at the end position.
-//
-// IMPORTANT: This function uses FindAllStringSubmatchIndex on the full string
-// to preserve context for assertions like \b, ^, $ etc.
-func findAllPCRE(re *regexp.Regexp, s string) [][]int {
-	// Get all matches that Go's regexp finds on the full string.
-	// This preserves context for assertions like \b.
-	goMatches := re.FindAllStringSubmatchIndex(s, -1)
-	if goMatches == nil {
+	"github.com/KarpelesLab/gopcre2"
+)
+
+// findAllPCRE returns all non-overlapping matches using PCRE2 semantics.
+// It works around a bug in gopcre2's FindAllStringSubmatchIndex that causes
+// duplicate zero-length matches to appear in the result for certain patterns.
+// We implement our own deduplication: skip any match whose start position is
+// before our current scan position.
+func findAllPCRE(re *gopcre2.Regexp, s string) [][]int {
+	return deduplicateMatches(re.FindAllStringSubmatchIndex(s, -1), s)
+}
+
+// findAllSubmatchIndexBytes finds all submatch indices in a byte slice,
+// applying deduplication to work around gopcre2's duplicate zero-length match
+// behavior, and also respecting a limit on the number of matches.
+func findAllSubmatchIndexBytes(re *gopcre2.Regexp, b []byte, n int) [][]int {
+	s := string(b)
+	raw := re.FindAllStringSubmatchIndex(s, -1)
+	result := deduplicateMatches(raw, s)
+	if n >= 0 && len(result) > n {
+		result = result[:n]
+	}
+	return result
+}
+
+// deduplicateMatches removes consecutive duplicate zero-length matches that
+// gopcre2 emits due to its iteration bug. It tracks a scan position and skips
+// any match whose start is behind the current position.
+func deduplicateMatches(raw [][]int, s string) [][]int {
+	if raw == nil {
 		return nil
 	}
 
-	// Build result by iterating Go matches and inserting any missing
-	// zero-length matches that PCRE would find after non-zero-length matches.
 	var result [][]int
-
-	for i, loc := range goMatches {
+	pos := 0
+	for _, loc := range raw {
 		matchStart := loc[0]
 		matchEnd := loc[1]
 
+		// Skip matches that start before our current position.
+		// These are duplicates from gopcre2's buggy zero-length match handling.
+		if matchStart < pos {
+			continue
+		}
+
 		result = append(result, loc)
 
-		// After a non-zero-length match, PCRE checks for a zero-length match
-		// at matchEnd. Go skips this position. We need to insert it if:
-		// 1. This was a non-zero-length match
-		// 2. The next Go match doesn't already start at matchEnd with a zero-length match
-		if matchStart != matchEnd && matchEnd <= len(s) {
-			// Check if Go's next match is already a zero-length match at matchEnd
-			alreadyFound := false
-			if i+1 < len(goMatches) {
-				nextStart := goMatches[i+1][0]
-				nextEnd := goMatches[i+1][1]
-				if nextStart == matchEnd && nextEnd == matchEnd {
-					alreadyFound = true
+		if matchEnd > matchStart {
+			pos = matchEnd
+		} else {
+			// Zero-length match: advance by one rune for the next iteration.
+			if pos < len(s) {
+				_, size := utf8.DecodeRuneInString(s[pos:])
+				if size == 0 {
+					size = 1
 				}
-			}
-			if !alreadyFound {
-				zeroLoc := tryZeroLengthMatch(re, s, matchEnd)
-				if zeroLoc != nil {
-					result = append(result, zeroLoc)
-				}
+				pos = matchStart + size
+			} else {
+				pos = matchStart + 1
 			}
 		}
 	}
@@ -61,33 +70,4 @@ func findAllPCRE(re *regexp.Regexp, s string) [][]int {
 		return nil
 	}
 	return result
-}
-
-// tryZeroLengthMatch checks if the regex can produce a zero-length match
-// at exactly position pos in string s.
-// Note: we use s[pos:] which may lose left-context for some assertions.
-// For assertions like \b, the main matches are found by FindAllStringSubmatchIndex
-// on the full string, so this function only needs to find "bonus" zero-length
-// matches after non-zero-length ones (e.g., /\d*/ matching "" after "2").
-func tryZeroLengthMatch(re *regexp.Regexp, s string, pos int) []int {
-	if pos > len(s) {
-		return nil
-	}
-	loc := re.FindStringSubmatchIndex(s[pos:])
-	if loc == nil {
-		return nil
-	}
-	// Must be a zero-length match at the very start of the substring
-	if loc[0] != 0 || loc[1] != 0 {
-		return nil
-	}
-	// Adjust offsets to full string positions
-	adjusted := make([]int, len(loc))
-	copy(adjusted, loc)
-	for i := range adjusted {
-		if adjusted[i] >= 0 {
-			adjusted[i] += pos
-		}
-	}
-	return adjusted
 }

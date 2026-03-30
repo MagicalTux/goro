@@ -1,9 +1,7 @@
+github.com/KarpelesLab/gopcre2 v0.1.0 h1:ksv0iCXdL/Pu4Eyzv9X5Z6guoyzXtDucNrGs02LPhYE=
+github.com/KarpelesLab/gopcre2 v0.1.0/go.mod h1:w4Ja96AdGHjoVq4sGo4CNzMCtuJ3ScjeDYWc1G+GWuc=
 github.com/KarpelesLab/strftime v1.0.1 h1:PH1ZhqAAI1zcJQh4DUydpp5O2qO3KlFvR5rHCLdlqJk=
 github.com/KarpelesLab/strftime v1.0.1/go.mod h1:xLw9GT4XcAfY1WLTwjqkhAc5jXK1RymeowV4rHm+J+Y=
-github.com/KarpelesLab/strtotime v0.0.2 h1:AGqKU1rSOYPA3ApvYN44fSgFpxHr+vmhceJD/BND00U=
-github.com/KarpelesLab/strtotime v0.0.2/go.mod h1:egoQ8YSX0zVanpJAyWozDjVjlsnYRIDlRdDDiZZ131s=
-github.com/KarpelesLab/strtotime v0.0.3 h1:8+38eggeh409k4tn5CuoBB+i7zP2bDUTpnwRyBbeIgk=
-github.com/KarpelesLab/strtotime v0.0.3/go.mod h1:egoQ8YSX0zVanpJAyWozDjVjlsnYRIDlRdDDiZZ131s=
 github.com/KarpelesLab/strtotime v0.0.4 h1:FP9oOBvrFMHPx0mRCsLi6TByHlmbdndueB4zQ9CI75c=
 github.com/KarpelesLab/strtotime v0.0.4/go.mod h1:egoQ8YSX0zVanpJAyWozDjVjlsnYRIDlRdDDiZZ131s=
 github.com/andreyvit/diff v0.0.0-20170406064948-c7f18ee00883 h1:bvNMNQO63//z+xNgfBlViaCIJKLlCJ6/fmUseuG0wVQ=
