@@ -20,6 +20,12 @@ type ZVal struct {
 	// by-ref args: if refCount > 1 after a call, another location still
 	// references it (e.g. $this->prop = &$param), so don't un-ref.
 	refCount int
+	// typeCheckers holds type constraint functions attached to this inner
+	// reference ZVal. When this ZVal's value is changed through the reference
+	// (e.g. $r = new B where $r is a reference held by typed properties),
+	// all type checkers are evaluated. Only inner ZVals (refCount > 0) should
+	// carry type checkers.
+	typeCheckers []func(Context, Val) error
 }
 
 func NewZVal(v Val) *ZVal {
@@ -226,4 +232,57 @@ func (z *ZVal) Set(nz *ZVal) {
 
 	// simple set
 	z.v = nz.v
+}
+
+// HasTypeCheckers returns true if this ZVal or its referenced inner ZVal has
+// any type constraint checkers registered.
+func (z *ZVal) HasTypeCheckers() bool {
+	if z == nil {
+		return false
+	}
+	if len(z.typeCheckers) > 0 {
+		return true
+	}
+	if inner, ok := z.v.(*ZVal); ok {
+		return inner.HasTypeCheckers()
+	}
+	return false
+}
+
+// AddTypeChecker attaches a type constraint function to this ZVal.
+// The function is called whenever the ZVal's value is changed via SetWithCtx.
+func (z *ZVal) AddTypeChecker(fn func(Context, Val) error) {
+	if z == nil || fn == nil {
+		return
+	}
+	z.typeCheckers = append(z.typeCheckers, fn)
+}
+
+// SetWithCtx sets this ZVal's value (following the reference chain), running
+// any registered type checkers before committing the new value.
+// Returns an error if a type constraint is violated.
+func (z *ZVal) SetWithCtx(ctx Context, nz *ZVal) error {
+	if z == nil || nz == nil {
+		return nil
+	}
+	if _, isRef := nz.v.(*ZVal); isRef {
+		// Assigning a reference: delegate to Set.
+		z.Set(nz)
+		return nil
+	}
+
+	// Follow the reference chain to find the inner ZVal.
+	if rz, isRef := z.v.(*ZVal); isRef {
+		return rz.SetWithCtx(ctx, nz)
+	}
+
+	// z is the inner ZVal. Check type constraints before setting.
+	newVal := nz.v
+	for _, check := range z.typeCheckers {
+		if err := check(ctx, newVal); err != nil {
+			return err
+		}
+	}
+	z.v = newVal
+	return nil
 }

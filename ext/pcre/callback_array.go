@@ -89,6 +89,10 @@ func doCallbackArrayPairs(ctx phpv.Context, pairs []patCallback, subject *phpv.Z
 		if err != nil {
 			return nil, err
 		}
+		// If result is NULL, pattern compilation failed - return NULL immediately (like PHP does)
+		if result != nil && result.GetType() == phpv.ZtNull {
+			return phpv.ZNULL.ZVal(), nil
+		}
 		totalCount += c
 		current = result
 	}

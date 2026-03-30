@@ -254,34 +254,78 @@ func reflectionClassConstantToString(ctx phpv.Context, o *phpobj.ZObject, args [
 		return phpv.ZString("Constant [ ]").ZVal(), nil
 	}
 
-	var modStr string
+	var accessStr string
 	access := data.constVal.Modifiers.Access()
 	switch access {
 	case phpv.ZAttrProtected:
-		modStr = "protected"
+		accessStr = "protected"
 	case phpv.ZAttrPrivate:
-		modStr = "private"
+		accessStr = "private"
 	default:
-		modStr = "public"
+		accessStr = "public"
 	}
 
-	typeStr := "mixed"
-	if data.constVal.TypeHint != nil {
-		typeStr = data.constVal.TypeHint.String()
+	// final modifier comes before access modifier
+	var modStr string
+	if data.constVal.Modifiers.Has(phpv.ZAttrFinal) {
+		modStr = "final " + accessStr
+	} else {
+		modStr = accessStr
 	}
-	valStr := string(data.constName) // fallback
+
+	// Resolve the constant value first
+	var resolved *phpv.ZVal
 	if data.constVal.Value != nil {
 		if cd, ok := data.constVal.Value.(*phpv.CompileDelayed); ok {
-			resolved, err := cd.Run(ctx)
-			if err == nil && resolved != nil {
-				valStr = formatConstantValue(ctx, resolved)
+			r, runErr := cd.Run(ctx)
+			if runErr != nil {
+				return nil, runErr
 			}
+			resolved = r
 		} else {
-			valStr = formatConstantValue(ctx, data.constVal.Value.ZVal())
+			resolved = data.constVal.Value.ZVal()
 		}
 	}
 
-	return phpv.ZString(fmt.Sprintf("Constant [ %s %s %s ] { %s }\n", modStr, typeStr, data.constName, valStr)).ZVal(), nil
+	var typeStr string
+	if data.constVal.TypeHint != nil {
+		typeStr = data.constVal.TypeHint.String()
+	} else if resolved != nil {
+		// Use the type of the actual value
+		switch resolved.GetType() {
+		case phpv.ZtInt:
+			typeStr = "int"
+		case phpv.ZtFloat:
+			typeStr = "float"
+		case phpv.ZtString:
+			typeStr = "string"
+		case phpv.ZtBool:
+			typeStr = "bool"
+		case phpv.ZtNull:
+			typeStr = "null"
+		case phpv.ZtArray:
+			typeStr = "array"
+		default:
+			typeStr = "mixed"
+		}
+	} else {
+		typeStr = "mixed"
+	}
+
+	valStr := string(data.constName) // fallback
+	if resolved != nil {
+		valStr = formatConstantValue(ctx, resolved)
+	}
+
+	// Include doc comment if present
+	docComment := data.constVal.DocComment
+	var result string
+	if docComment != "" {
+		result = fmt.Sprintf("%s\nConstant [ %s %s %s ] { %s }\n", docComment, modStr, typeStr, data.constName, valStr)
+	} else {
+		result = fmt.Sprintf("Constant [ %s %s %s ] { %s }\n", modStr, typeStr, data.constName, valStr)
+	}
+	return phpv.ZString(result).ZVal(), nil
 }
 
 func reflectionClassConstantHasType(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
