@@ -7,17 +7,17 @@ import (
 )
 
 // findAllPCRE returns all non-overlapping matches using PCRE2 semantics.
-// It works around a bug in gopcre2's FindAllStringSubmatchIndex that causes
-// duplicate zero-length matches to appear in the result for certain patterns.
-// We implement our own deduplication: skip any match whose start position is
-// before our current scan position.
+// It deduplicates the results from gopcre2's FindAllStringSubmatchIndex,
+// which can emit duplicate zero-length matches at the same position before
+// advancing its internal pointer. We filter out any match whose start
+// position is behind our current scan cursor.
 func findAllPCRE(re *gopcre2.Regexp, s string) [][]int {
-	return deduplicateMatches(re.FindAllStringSubmatchIndex(s, -1), s)
+	raw := re.FindAllStringSubmatchIndex(s, -1)
+	return deduplicateMatches(raw, s)
 }
 
 // findAllSubmatchIndexBytes finds all submatch indices in a byte slice,
-// applying deduplication to work around gopcre2's duplicate zero-length match
-// behavior, and also respecting a limit on the number of matches.
+// with deduplication and an optional limit on the number of matches.
 func findAllSubmatchIndexBytes(re *gopcre2.Regexp, b []byte, n int) [][]int {
 	s := string(b)
 	raw := re.FindAllStringSubmatchIndex(s, -1)
@@ -28,22 +28,26 @@ func findAllSubmatchIndexBytes(re *gopcre2.Regexp, b []byte, n int) [][]int {
 	return result
 }
 
-// deduplicateMatches removes consecutive duplicate zero-length matches that
-// gopcre2 emits due to its iteration bug. It tracks a scan position and skips
-// any match whose start is behind the current position.
+// deduplicateMatches removes duplicate zero-length matches that gopcre2 emits
+// due to an iteration bug in FindAllStringSubmatchIndex. The bug causes the
+// same empty-match position to appear twice before the engine advances.
+//
+// We track a scan cursor `pos`. Any match whose start is < pos is a
+// duplicate and gets skipped. After a non-empty match ending at E, pos=E.
+// After a zero-length match at P, pos is advanced by one rune from P.
 func deduplicateMatches(raw [][]int, s string) [][]int {
 	if raw == nil {
 		return nil
 	}
 
 	var result [][]int
-	pos := 0
+	pos := 0 // monotonic cursor: skip matches that start before pos
+
 	for _, loc := range raw {
 		matchStart := loc[0]
 		matchEnd := loc[1]
 
-		// Skip matches that start before our current position.
-		// These are duplicates from gopcre2's buggy zero-length match handling.
+		// Skip matches that start before our cursor (duplicates).
 		if matchStart < pos {
 			continue
 		}
@@ -53,10 +57,10 @@ func deduplicateMatches(raw [][]int, s string) [][]int {
 		if matchEnd > matchStart {
 			pos = matchEnd
 		} else {
-			// Zero-length match: advance by one rune for the next iteration.
-			if pos < len(s) {
-				_, size := utf8.DecodeRuneInString(s[pos:])
-				if size == 0 {
+			// Zero-length match: advance cursor by one rune past matchStart.
+			if matchStart < len(s) {
+				_, size := utf8.DecodeRuneInString(s[matchStart:])
+				if size <= 0 {
 					size = 1
 				}
 				pos = matchStart + size
