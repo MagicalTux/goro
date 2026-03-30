@@ -34,8 +34,14 @@ func compileReturn(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 					Loc:  l,
 				}
 			}
-			// PHP 8.0+: bare "return;" in a function with any non-void return type is an error
-			if rt != phpv.ZtVoid {
+			// PHP 8.0+: bare "return;" in a function with any non-void return type is an error.
+			// However, generators are exempt: the return type applies to the Generator
+			// object itself (not the internal generator return value), so "return;" is allowed.
+			// We can't always know at this point if the function is a generator (yield may
+			// appear later), but if the return type is generator-compatible (Generator,
+			// Iterator, Traversable, iterable, mixed, object), allow bare "return;" since
+			// those types are only valid generator return types.
+			if rt != phpv.ZtVoid && !fn.isGenerator && !isValidGeneratorReturnType(fn.returnType) {
 				errMsg := "A function with return type must return a value"
 				if fn.returnType.IsNullable() {
 					errMsg = "A function with return type must return a value (did you mean \"return null;\" instead of \"return;\"?)"

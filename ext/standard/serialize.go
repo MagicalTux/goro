@@ -1182,75 +1182,94 @@ func unserializeSetProperty(ctx phpv.Context, obj phpv.ZObject, key phpv.ZString
 	keyStr := string(key)
 	zobj, isZObj := obj.(*phpobj.ZObject)
 
-	// Check if this is a mangled property name (\0ClassName\0prop or \0*\0prop)
+	// Determine the actual property name (strip mangling) and whether it was
+	// originally private (from a specific class) or protected/public.
+	actualPropName := key
+	origPrivateClass := "" // non-empty if \0ClassName\0prop format
+
 	if len(keyStr) > 0 && keyStr[0] == '\x00' {
 		// Find the second \x00
 		secondNull := strings.IndexByte(keyStr[1:], '\x00')
 		if secondNull >= 0 {
 			classOrStar := keyStr[1 : secondNull+1]
-			propName := keyStr[secondNull+2:]
-
-			if classOrStar == "*" {
-				// Protected: \0*\0propName — stored under plain propName
-				if isZObj {
-					zobj.HashTable().SetString(phpv.ZString(propName), value)
-					return
-				}
-			} else {
-				// Private: \0ClassName\0propName — stored under *ClassName:propName
-				if isZObj {
-					internalKey := phpobj.GetPrivatePropNameExt(obj.GetClass(), phpv.ZString(propName))
-					// Walk class hierarchy to find the declaring class
-					cls := obj.GetClass()
-					for cls != nil {
-						if string(cls.GetName()) == classOrStar {
-							internalKey = phpobj.GetPrivatePropNameExt(cls, phpv.ZString(propName))
-							break
-						}
-						if p := cls.GetParent(); p != nil {
-							cls = p
-						} else {
-							break
-						}
-					}
-					zobj.HashTable().SetString(internalKey, value)
-					return
-				}
+			propName := phpv.ZString(keyStr[secondNull+2:])
+			actualPropName = propName
+			if classOrStar != "*" {
+				origPrivateClass = classOrStar
 			}
 		}
 	}
 
-	// Non-mangled name: for declared properties, set directly bypassing visibility
-	if isZObj {
-		if prop, found := obj.GetClass().GetProp(key); found {
-			if prop.Modifiers.IsPrivate() {
-				// Private — find declaring class and store under *ClassName:propName
-				declClass := zobj.GetDeclClassName(prop)
-				// Walk hierarchy to get the declaring ZClass
-				var declZClass phpv.ZClass = obj.GetClass()
-				for declZClass != nil {
-					if declZClass.GetName() == declClass {
-						break
-					}
-					declZClass = declZClass.GetParent()
-				}
-				if declZClass == nil {
-					declZClass = obj.GetClass()
-				}
-				internalKey := phpobj.GetPrivatePropNameExt(declZClass, key)
-				zobj.HashTable().SetString(internalKey, value)
-			} else {
-				// Protected/public — store under plain name
-				zobj.HashTable().SetString(key, value)
-			}
-			return
-		}
-		// Not a declared property: dynamic property
-		zobj.HashTable().SetString(key, value)
+	if !isZObj {
+		// Non-ZObject: use normal ObjectSet
+		obj.ObjectSet(ctx, key, value)
 		return
 	}
-	// Non-ZObject: use normal ObjectSet
-	obj.ObjectSet(ctx, key, value)
+
+	// If there's an origPrivateClass, first try to find the property declared
+	// exactly in that class (not in subclasses). This handles the case where
+	// a class hierarchy has both a Base::private $id and Derived::protected $id.
+	if origPrivateClass != "" {
+		zclass, ok := obj.GetClass().(*phpobj.ZClass)
+		if ok {
+			// Walk hierarchy to find the specific class
+			for cl := zclass; cl != nil; cl = func() *phpobj.ZClass {
+				if p := cl.GetParent(); p != nil {
+					c, _ := p.(*phpobj.ZClass)
+					return c
+				}
+				return nil
+			}() {
+				if string(cl.GetName()) != origPrivateClass {
+					continue
+				}
+				// Found the original declaring class; look for the property here
+				for _, p := range cl.Props {
+					if p.VarName == actualPropName {
+						// Use its declared visibility in the original class
+						if p.Modifiers.IsPrivate() {
+							internalKey := phpobj.GetPrivatePropNameExt(cl, actualPropName)
+							zobj.HashTable().SetString(internalKey, value)
+						} else {
+							zobj.HashTable().SetString(actualPropName, value)
+						}
+						return
+					}
+				}
+				// Class found but property not there — fall through to regular lookup
+				break
+			}
+		}
+	}
+
+	// Look up the property in the current class hierarchy by plain name
+	prop, found := obj.GetClass().GetProp(actualPropName)
+	if found {
+		if prop.Modifiers.IsPrivate() {
+			// Current class has it as private — store under *DeclaredClass:propName
+			declClass := zobj.GetDeclClassName(prop)
+			var declZClass phpv.ZClass = obj.GetClass()
+			for declZClass != nil {
+				if declZClass.GetName() == declClass {
+					break
+				}
+				declZClass = declZClass.GetParent()
+			}
+			if declZClass == nil {
+				declZClass = obj.GetClass()
+			}
+			internalKey := phpobj.GetPrivatePropNameExt(declZClass, actualPropName)
+			zobj.HashTable().SetString(internalKey, value)
+		} else {
+			// Protected/public — store under plain name
+			zobj.HashTable().SetString(actualPropName, value)
+		}
+		return
+	}
+
+	// Not a declared property: use ObjectSet to emit the deprecation warning
+	// for dynamic property creation (PHP 8.1+).
+	obj.ObjectSet(ctx, actualPropName, value)
 }
 
 // StreamDeserializer provides sequential unserialize operations with shared

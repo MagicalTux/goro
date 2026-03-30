@@ -276,6 +276,11 @@ func (r *runnableForeach) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 				if _, isThrow := err.(*phperr.PhpThrow); isThrow {
 					return nil, err
 				}
+				// Don't wrap GeneratorForceClose - propagate as-is so try/finally
+				// can run cleanup without catch blocks intercepting it
+				if _, isClose := err.(*phperr.GeneratorForceClose); isClose {
+					return nil, err
+				}
 				e := r.l.Error(ctx, err)
 				switch br := e.Err.(type) {
 				case *phperr.PhpBreak:
