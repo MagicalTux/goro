@@ -2498,6 +2498,9 @@ func init() {
 // errISOMissingInterval is returned when an ISO 8601 period string is valid but missing the interval part
 var errISOMissingInterval = fmt.Errorf("ISO interval must contain an interval")
 
+// errISOMissingStartDate is returned when an ISO 8601 period starts with R but has no start date
+var errISOMissingStartDate = fmt.Errorf("ISO interval must contain a start date")
+
 // parseISO8601Period parses ISO 8601 repeating interval strings like "R2/2012-07-01T00:00:00Z/P7D"
 // Returns recurrences, start time, interval duration spec, and end time (if any)
 // Returns a special errISOMissingInterval if the string is missing the interval part.
@@ -2507,9 +2510,15 @@ func parseISO8601Period(ctx phpv.Context, isoStr string) (recurrences int, start
 	// Format: R[n]/start/interval or R[n]/start/end or R[n]/interval/end
 	parts := strings.SplitN(isoStr, "/", 3)
 	if len(parts) < 3 {
-		// If we have exactly 2 parts (R/start format), return a special error
-		if len(parts) == 2 {
-			// Parse recurrences and start, but missing interval
+		if len(parts) == 1 {
+			// Single part: if starts with R, it's missing a start date
+			rPart1 := parts[0]
+			if len(rPart1) > 0 && (rPart1[0] == 'R' || rPart1[0] == 'r') {
+				err = errISOMissingStartDate
+				return
+			}
+		} else if len(parts) == 2 {
+			// Two parts: R/start format is missing interval
 			rPart2 := parts[0]
 			if len(rPart2) > 0 && (rPart2[0] == 'R' || rPart2[0] == 'r') {
 				_, parseErr := parseISO8601DateTime(parts[1])
@@ -2566,18 +2575,25 @@ func parseISO8601Period(ctx phpv.Context, isoStr string) (recurrences int, start
 
 // parseISO8601DateTime parses an ISO 8601 date/time string
 func parseISO8601DateTime(s string) (time.Time, error) {
-	// Try common formats
+	// hasTimezone checks if the string contains a timezone indicator (Z or +/-HH:MM)
+	hasTimezone := len(s) > 0 && (s[len(s)-1] == 'Z' ||
+		(len(s) > 6 && (s[len(s)-6] == '+' || s[len(s)-6] == '-')))
+
+	// Use RFC3339 first: "2006-01-02T15:04:05Z07:00" handles both Z and +HH:MM offsets
+	// RFC3339 parses Z as a zero offset (+00:00), giving timezone_type 1 (offset) in PHP
 	for _, layout := range []string{
-		"2006-01-02T15:04:05Z",
-		"2006-01-02T15:04:05-07:00",
-		"2006-01-02T15:04:05+07:00",
 		time.RFC3339,
+		"2006-01-02T15:04:05-07:00",
 		"2006-01-02T15:04:05",
 		"2006-01-02",
 	} {
 		if t, err := time.Parse(layout, s); err == nil {
-			// Normalize: if the location is empty string from Parse, convert to proper fixed zone
-			if t.Location().String() == "" {
+			// If string has a timezone indicator, normalize to a fixed offset zone
+			// This ensures timezone_type 1 (+00:00) instead of type 3 (UTC name)
+			if hasTimezone && (t.Location().String() == "" || t.Location() == time.UTC) {
+				_, offset := t.Zone()
+				t = t.In(makeFixedZone(offset))
+			} else if t.Location().String() == "" {
 				_, offset := t.Zone()
 				t = t.In(makeFixedZone(offset))
 			}
@@ -2697,7 +2713,11 @@ func datePeriodInitFromISOCaller(ctx phpv.Context, this *phpobj.ZObject, isoStr 
 			return nil, phpobj.ThrowError(ctx, DateMalformedPeriodStringException,
 				fmt.Sprintf("%s: ISO interval must contain an interval, %q given", callerName, isoStr))
 		}
-		return nil, phpobj.ThrowError(ctx, DateMalformedPeriodStringException, fmt.Sprintf("%s: Unknown or bad format (%s)", callerName, isoStr))
+		if err == errISOMissingStartDate {
+			return nil, phpobj.ThrowError(ctx, DateMalformedPeriodStringException,
+				fmt.Sprintf("%s: ISO interval must contain a start date, %q given", callerName, isoStr))
+		}
+		return nil, phpobj.ThrowError(ctx, DateMalformedPeriodStringException, fmt.Sprintf("Unknown or bad format (%s)", isoStr))
 	}
 
 	// Create start DateTimeImmutable

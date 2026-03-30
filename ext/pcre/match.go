@@ -1,6 +1,7 @@
 package pcre
 
 import (
+	"fmt"
 	"unicode/utf8"
 
 	"github.com/KarpelesLab/gopcre2"
@@ -11,6 +12,25 @@ import (
 
 // validMatchFlags are the valid flags for preg_match/preg_match_all
 const validMatchFlags = PREG_PATTERN_ORDER | PREG_SET_ORDER | PREG_OFFSET_CAPTURE | PREG_UNMATCHED_AS_NULL
+
+// checkStringArg checks that a ZVal argument is a string type (not array or object).
+// PHP 8: internal functions throw TypeError when passed array/object where string expected.
+// funcName is like "preg_match", argNo is 1-based, paramName is like "$pattern".
+func checkStringArg(ctx phpv.Context, val *phpv.ZVal, funcName string, argNo int, paramName string) error {
+	if val == nil {
+		return nil
+	}
+	switch val.GetType() {
+	case phpv.ZtArray:
+		return phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("%s(): Argument #%d (%s) must be of type string, array given", funcName, argNo, paramName))
+	case phpv.ZtObject:
+		className := val.Value().(phpv.ZObject).GetClass().GetName()
+		return phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("%s(): Argument #%d (%s) must be of type string, %s given", funcName, argNo, paramName, className))
+	}
+	return nil
+}
 
 // makeMatchVal creates a single match value, handling PREG_OFFSET_CAPTURE and PREG_UNMATCHED_AS_NULL.
 func makeMatchVal(ctx phpv.Context, elem string, matched bool, loc int, offsetCapture, unmatchedAsNull bool) *phpv.ZVal {
@@ -66,17 +86,23 @@ func addNamedCaptures(ctx phpv.Context, matches *phpv.ZArray, re *gopcre2.Regexp
 
 // > func int preg_match ( string $pattern , string $subject [, array &$matches [, int $flags = 0 [, int $offset = 0 ]]] )
 func pregMatch(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	var pattern, subject phpv.ZString
+	var patternVal *phpv.ZVal
+	var subject phpv.ZString
 	var matchesArg core.OptionalRef[*phpv.ZArray]
 	var flagsArg, offsetArg *phpv.ZInt
 
-	_, err := core.Expand(ctx, args, &pattern, &subject, &matchesArg, &flagsArg, &offsetArg)
+	_, err := core.Expand(ctx, args, &patternVal, &subject, &matchesArg, &flagsArg, &offsetArg)
 	if err != nil {
 		return phpv.ZFalse.ZVal(), err
 	}
 
+	if err := checkStringArg(ctx, patternVal, "preg_match", 1, "$pattern"); err != nil {
+		return nil, err
+	}
+
 	flags := core.Deref(flagsArg, 0)
 	offset := core.Deref(offsetArg, 0)
+	pattern := patternVal.AsString(ctx)
 
 	re, pcreErr := prepareRegexp(string(pattern))
 	if pcreErr != nil {
@@ -174,17 +200,23 @@ func pregMatch(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 // > func int preg_match_all ( string $pattern , string $subject [, array &$matches [, int $flags = 0 [, int $offset = 0 ]]] )
 func pregMatchAll(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	var pattern, subject phpv.ZString
+	var patternVal *phpv.ZVal
+	var subject phpv.ZString
 	var matchesArg core.OptionalRef[*phpv.ZArray]
 	var flagsArg, offsetArg *phpv.ZInt
 
-	_, err := core.Expand(ctx, args, &pattern, &subject, &matchesArg, &flagsArg, &offsetArg)
+	_, err := core.Expand(ctx, args, &patternVal, &subject, &matchesArg, &flagsArg, &offsetArg)
 	if err != nil {
 		return phpv.ZFalse.ZVal(), err
 	}
 
+	if err := checkStringArg(ctx, patternVal, "preg_match_all", 1, "$pattern"); err != nil {
+		return nil, err
+	}
+
 	flags := core.Deref(flagsArg, 0)
 	offset := core.Deref(offsetArg, 0)
+	pattern := patternVal.AsString(ctx)
 
 	// Validate flags
 	if flags & ^validMatchFlags != 0 {
@@ -370,14 +402,20 @@ func pregMatchAll(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 // > func array preg_split ( string $pattern , string $subject [, int $limit = -1 [, int $flags = 0 ]] )
 func pregSplit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	var pattern, subject phpv.ZString
+	var patternVal *phpv.ZVal
+	var subject phpv.ZString
 	var limitArg, flagsArg *phpv.ZInt
 
-	_, err := core.Expand(ctx, args, &pattern, &subject, &limitArg, &flagsArg)
+	_, err := core.Expand(ctx, args, &patternVal, &subject, &limitArg, &flagsArg)
 	if err != nil {
 		return phpv.ZFalse.ZVal(), err
 	}
 
+	if err := checkStringArg(ctx, patternVal, "preg_split", 1, "$pattern"); err != nil {
+		return nil, err
+	}
+
+	pattern := patternVal.AsString(ctx)
 	limit := core.Deref(limitArg, -1)
 	flags := core.Deref(flagsArg, 0)
 
