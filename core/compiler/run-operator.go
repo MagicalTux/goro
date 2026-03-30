@@ -1473,6 +1473,33 @@ func operatorPipe(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*ph
 var PipeResolveCallable func(ctx phpv.Context, v *phpv.ZVal) (phpv.Callable, error)
 
 func operatorCompare(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*phpv.ZVal, error) {
+	// If one operand is an object with HandleDoOperation (e.g. GMP), delegate to it BEFORE
+	// the generic array-comparison path, so GMP can throw proper type errors for invalid operands.
+	if a.GetType() == phpv.ZtObject {
+		ao := a.AsObject(ctx)
+		if h := ao.GetClass().Handlers(); h != nil && h.HandleDoOperation != nil {
+			res, err := h.HandleDoOperation(ctx, int(op), a, b)
+			if err != nil {
+				return nil, err
+			}
+			if res != nil {
+				return res, nil
+			}
+		}
+	}
+	if b.GetType() == phpv.ZtObject {
+		bo := b.AsObject(ctx)
+		if h := bo.GetClass().Handlers(); h != nil && h.HandleDoOperation != nil {
+			res, err := h.HandleDoOperation(ctx, int(op), a, b)
+			if err != nil {
+				return nil, err
+			}
+			if res != nil {
+				return res, nil
+			}
+		}
+	}
+
 	// Handle array comparisons first - arrays are always greater than scalars in PHP 8
 	if a.GetType() == phpv.ZtArray || b.GetType() == phpv.ZtArray {
 		cmp, err := phpv.Compare(ctx, a, b)

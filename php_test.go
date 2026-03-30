@@ -992,6 +992,7 @@ func TestPhp(t *testing.T) {
 		"test/php-8.5.4/ext/pcre/bug63055.phpt":                                                       true, // gopcre2 infinite loop on negative lookbehind with multi-byte UTF-8
 		"test/php-8.5.4/ext/pcre/bug66121.phpt":                                                       true, // gopcre2 infinite loop on negative lookbehind with multi-byte UTF-8
 		"test/php-8.5.4/ext/standard/streams/bug51056.phpt":                                            true, // requires ext/openssl/tests/ServerClientTestCase.inc not in test tree
+		"test/php-8.5.4/ext/gmp/gmp_setbit_long.phpt":                                                  true, // requires 8GB+ contiguous memory allocation (Go math/big limitation)
 	}
 
 	// Directories containing tests that require external resources (network, etc.)

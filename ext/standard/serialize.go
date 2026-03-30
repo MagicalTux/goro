@@ -1190,8 +1190,12 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 		}
 		i++
 		j = indexOf(str, ":", i)
-		if j < 0 || j < i+1 {
+		if j < 0 {
 			return nil, offset, &unserializeError{i, len(str)}
+		}
+		if j < i+1 {
+			// Empty numProps string (e.g. "O:2:"yy":: ") - error at position after the colon
+			return nil, offset, &unserializeError{j + 1, len(str)}
 		}
 		numPropsStr := str[i:j]
 		if len(numPropsStr) > 0 && (numPropsStr[0] == '+' || numPropsStr[0] == '-') {
@@ -1204,6 +1208,15 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 
 		if core.StrIdx(str, j+1) != '{' {
 			return nil, offset, &unserializeError{j + 1, len(str)}
+		}
+
+		// Sanity check: each property needs at least 2 bytes (key + value minimum).
+		// If claimed numProps is too large for the remaining data, fail early at j.
+		if numProps > 0 {
+			remaining := len(str) - (j + 2)
+			if numProps > remaining/2 {
+				return nil, offset, &unserializeError{j, len(str)}
+			}
 		}
 
 		allowedClass := d.allowAllClasses
@@ -1582,9 +1595,9 @@ func unserializeSetProperty(ctx phpv.Context, obj phpv.ZObject, key phpv.ZString
 						// Use its declared visibility in the original class
 						if p.Modifiers.IsPrivate() {
 							internalKey := phpobj.GetPrivatePropNameExt(cl, actualPropName)
-							zobj.HashTable().SetString(internalKey, value)
+							zobj.HashTable().ForceSetString(internalKey, value)
 						} else {
-							zobj.HashTable().SetString(actualPropName, value)
+							zobj.HashTable().ForceSetString(actualPropName, value)
 						}
 						return
 					}
@@ -1612,10 +1625,10 @@ func unserializeSetProperty(ctx phpv.Context, obj phpv.ZObject, key phpv.ZString
 				declZClass = obj.GetClass()
 			}
 			internalKey := phpobj.GetPrivatePropNameExt(declZClass, actualPropName)
-			zobj.HashTable().SetString(internalKey, value)
+			zobj.HashTable().ForceSetString(internalKey, value)
 		} else {
 			// Protected/public — store under plain name
-			zobj.HashTable().SetString(actualPropName, value)
+			zobj.HashTable().ForceSetString(actualPropName, value)
 		}
 		return
 	}

@@ -209,6 +209,12 @@ func (z *ZObject) RefCount() int32 {
 	return atomic.LoadInt32(z.refCount)
 }
 
+// GetObjID returns the object's unique ID. Used for temporary object
+// ID recycling when objects are passed as function arguments.
+func (z *ZObject) GetObjID() int {
+	return z.ID
+}
+
 // IsDestructed returns whether the destructor has already been called.
 func (z *ZObject) IsDestructed() bool {
 	if z.destructed == nil {

@@ -3824,6 +3824,7 @@ func initRecursiveFilterIterator() {
 
 var RecursiveFilterIteratorClass = &phpobj.ZClass{
 	Name:            "RecursiveFilterIterator",
+	Type:            phpv.ZClassTypeExplicitAbstract,
 	Extends:         FilterIteratorClass,
 	Implementations: []*phpobj.ZClass{RecursiveIterator, OuterIterator},
 }

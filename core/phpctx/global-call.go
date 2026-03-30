@@ -245,6 +245,35 @@ func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, o
 		ref.UnRefIfAlone()
 	}
 
+	// Release IDs for temporary objects (e.g. `new GMP` passed directly as argument).
+	// PHP's refcount model frees such objects immediately after the call returns.
+	// We approximate this: if the arg is an object whose refcount is still 0
+	// (never stored anywhere), AND it is not the returned value,
+	// release its object ID now so subsequent `new SomeClass` calls can reuse
+	// the same ID (matching PHP's behavior).
+	type refCountedObject interface {
+		phpv.ZObject
+		RefCount() int32
+		GetObjID() int
+	}
+	// Determine the returned object's ID (if any) to avoid releasing it.
+	var resultObjID int
+	if err == nil && result != nil && result.GetType() == phpv.ZtObject {
+		if rc, ok := result.Value().(refCountedObject); ok {
+			resultObjID = rc.GetObjID()
+		}
+	}
+	for _, arg := range zArgs {
+		if arg == nil || arg.GetType() != phpv.ZtObject {
+			continue
+		}
+		if rc, ok := arg.Value().(refCountedObject); ok {
+			if rc.RefCount() <= 0 && rc.GetObjID() != resultObjID {
+				ctx.Global().ReleaseObjectID(rc.GetObjID())
+			}
+		}
+	}
+
 	return result, err
 }
 

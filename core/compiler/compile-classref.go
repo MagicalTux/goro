@@ -688,6 +688,11 @@ func (r *runClassDynConst) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 
 	// Handle "class" as special keyword
 	if strings.EqualFold(string(constName), "class") {
+		// For anonymous classes, return the full internal name (including null byte),
+		// matching PHP behavior where $anon::class includes the null byte separator.
+		if zc, ok2 := class.(*phpobj.ZClass); ok2 {
+			return phpv.ZString(zc.Name).ZVal(), nil
+		}
 		return phpv.ZString(class.GetName()).ZVal(), nil
 	}
 
@@ -791,7 +796,13 @@ func (r *runClassNameOf) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 
 	switch v.GetType() {
 	case phpv.ZtObject:
-		return phpv.ZString(v.AsObject(ctx).GetClass().GetName()).ZVal(), nil
+		// For anonymous classes, return the full internal name (including null byte),
+		// matching PHP behavior where $anon::class includes the null byte separator.
+		objClass := v.AsObject(ctx).GetClass()
+		if zc, ok := objClass.(*phpobj.ZClass); ok {
+			return phpv.ZString(zc.Name).ZVal(), nil
+		}
+		return phpv.ZString(objClass.GetName()).ZVal(), nil
 	case phpv.ZtString:
 		// self::class, parent::class, static::class must resolve at runtime
 		name := v.AsString(ctx)

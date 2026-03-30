@@ -8,6 +8,7 @@ import (
 	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/MagicalTux/goro/core/tokenizer"
 )
 
 // from: http://php.net/manual/en/math.constants.php
@@ -730,6 +731,20 @@ func mathPow(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	_, err := core.Expand(ctx, args, &baseArg, &expArg)
 	if err != nil {
 		return nil, ctx.FuncError(err)
+	}
+
+	// If base is an object with HandleDoOperation (e.g. GMP), delegate to it
+	if baseArg != nil && baseArg.GetType() == phpv.ZtObject {
+		ao := baseArg.AsObject(ctx)
+		if h := ao.GetClass().Handlers(); h != nil && h.HandleDoOperation != nil {
+			res, err := h.HandleDoOperation(ctx, int(tokenizer.T_POW), baseArg, expArg)
+			if err != nil {
+				return nil, err
+			}
+			if res != nil {
+				return res, nil
+			}
+		}
 	}
 
 	baseArg, err = baseArg.AsNumeric(ctx)

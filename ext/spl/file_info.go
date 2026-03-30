@@ -57,7 +57,10 @@ func initFileInfo() {
 			"__tostring":    {Name: "__toString", Method: phpobj.NativeMethod(sfiToString)},
 			"__debuginfo":   {Name: "__debugInfo", Method: phpobj.NativeMethod(sfiDebugInfo)},
 		},
-		H: &phpv.ZClassHandlers{},
+		H: &phpv.ZClassHandlers{
+			DenySerialize:   true,
+			DenyUnserialize: true,
+		},
 	}
 }
 

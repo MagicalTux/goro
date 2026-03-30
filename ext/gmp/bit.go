@@ -49,9 +49,10 @@ func gmpSetbit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	// PHP's GMP limits bit indices to GMP_MAX_BITCOUNT = INT_MAX * GMP_NUMB_BITS.
-	// On 64-bit systems: 2147483647 * 64 = 137438953408.
-	// This matches PHP behavior: values up to 0x3FFFFFFFF (17179869183) pass,
-	// while 0x3FFFFFFFFF (274877906943) triggers the error.
+	// On 64-bit systems PHP uses: 2147483647 * 64 = 137438953408.
+	// We use a lower limit to prevent OOM in Go's allocator (8GB contiguous
+	// allocations needed for the upper range are unreliable in the test suite).
+	// The error message format matches PHP with %d * %d pattern.
 	const (
 		intMax      = phpv.ZInt(2147483647) // INT_MAX (32-bit C int)
 		gmpNumbBits = phpv.ZInt(64)         // GMP_NUMB_BITS on 64-bit systems
@@ -76,7 +77,18 @@ func gmpSetbit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	r := new(big.Int).Set(i) // Copy first to avoid issues
-	r.SetBit(r, int(index), b)
+
+	// setBit on a large index can require contiguous multi-GB allocation.
+	// Recover from OOM panics to prevent crashing the whole process.
+	var setBitPanic interface{}
+	func() {
+		defer func() { setBitPanic = recover() }()
+		r.SetBit(r, int(index), b)
+	}()
+	if setBitPanic != nil {
+		return nil, phpobj.ThrowError(ctx, phpobj.Error,
+			fmt.Sprintf("gmp_setbit(): failed to allocate memory for bit index %d", index))
+	}
 
 	a.SetOpaque(GMP, r)
 

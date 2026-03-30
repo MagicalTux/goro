@@ -2284,25 +2284,112 @@ func fncArraySum(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	floatResult := false
-	var sum phpv.ZFloat = 0
+	var intSum int64 = 0
+	var floatSum float64 = 0
+
+	switchToFloat := func(addFloat float64) {
+		if !floatResult {
+			floatResult = true
+			floatSum = float64(intSum)
+		}
+		floatSum += addFloat
+	}
+
 	for _, v := range array.Iterate(ctx) {
-		if v.GetType() == phpv.ZtArray {
-			continue
+		switch v.GetType() {
+		case phpv.ZtArray:
+			// PHP 8.5: Warning for array values, count as 0
+			if warnErr := ctx.Warn("Addition is not supported on type array"); warnErr != nil {
+				return nil, warnErr
+			}
+		case phpv.ZtObject:
+			ao := v.AsObject(ctx)
+			castDone := false
+			if h := ao.GetClass().Handlers(); h != nil && h.HandleCast != nil {
+				// Try int cast first (for GMP and similar)
+				intVal, castErr := h.HandleCast(ctx, ao, phpv.ZtInt)
+				if castErr == nil && intVal != nil {
+					ib := int64(intVal.(phpv.ZInt))
+					if floatResult {
+						floatSum += float64(ib)
+					} else {
+						c := intSum + ib
+						if (c > intSum) == (ib > 0) {
+							intSum = c
+						} else {
+							switchToFloat(float64(ib))
+						}
+					}
+					castDone = true
+				}
+			}
+			if !castDone {
+				// Object without numeric cast support: warn
+				if warnErr := ctx.Warn("Addition is not supported on type %s", ao.GetClass().GetName()); warnErr != nil {
+					return nil, warnErr
+				}
+			}
+		case phpv.ZtFloat:
+			switchToFloat(float64(v.Value().(phpv.ZFloat)))
+		case phpv.ZtInt:
+			ib := int64(v.Value().(phpv.ZInt))
+			if floatResult {
+				floatSum += float64(ib)
+			} else {
+				c := intSum + ib
+				if (c > intSum) == (ib > 0) {
+					intSum = c
+				} else {
+					switchToFloat(float64(ib))
+				}
+			}
+		case phpv.ZtNull:
+			// null counts as 0
+		case phpv.ZtBool:
+			bv := v.Value().(phpv.ZBool)
+			var ib int64
+			if bv {
+				ib = 1
+			}
+			if floatResult {
+				floatSum += float64(ib)
+			} else {
+				intSum += ib
+			}
+		case phpv.ZtString:
+			// PHP 8.5: non-numeric strings warn and count as 0;
+			// numeric strings are converted to number and added
+			sv := v.Value().(phpv.ZString)
+			if sv.IsNumeric() {
+				numVal, _ := sv.AsNumeric()
+				switch numVal.GetType() {
+				case phpv.ZtInt:
+					ib := int64(numVal.(phpv.ZInt))
+					if floatResult {
+						floatSum += float64(ib)
+					} else {
+						c := intSum + ib
+						if (c > intSum) == (ib > 0) {
+							intSum = c
+						} else {
+							switchToFloat(float64(ib))
+						}
+					}
+				case phpv.ZtFloat:
+					switchToFloat(float64(numVal.(phpv.ZFloat)))
+				}
+			} else {
+				if warnErr := ctx.Warn("Addition is not supported on type string"); warnErr != nil {
+					return nil, warnErr
+				}
+			}
 		}
-
-		floatResult = floatResult || v.GetType() == phpv.ZtFloat
-		sum += v.AsFloat(ctx)
 	}
 
-	if !floatResult {
-		// Check if sum fits in int64 range
-		if sum >= -9223372036854775808 && sum <= 9223372036854775807 {
-			return phpv.ZInt(sum).ZVal(), nil
-		}
-		// Overflow - return as float
+	if floatResult {
+		return phpv.ZFloat(floatSum).ZVal(), nil
 	}
-
-	return sum.ZVal(), nil
+	return phpv.ZInt(intSum).ZVal(), nil
 }
 
 // > func mixed array_rand ( array $array [, int $num = 1 ] )

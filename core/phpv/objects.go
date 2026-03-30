@@ -135,6 +135,13 @@ type ZClassHandlers struct {
 	HandlePropIsset func(ctx Context, o ZObject, key ZString) (bool, bool, error)
 	// HandlePropUnset intercepts unset($obj->prop) before __unset. Return false to fall through.
 	HandlePropUnset func(ctx Context, o ZObject, key ZString) (bool, error)
+	// DenySerialize, when true, causes serialization to throw an Exception with
+	// "Serialization of 'ClassName' is not allowed". This is checked before any
+	// PHP-level __serialize method, so subclass overrides are ignored.
+	DenySerialize bool
+	// DenyUnserialize, when true, causes unserialization to throw an Exception with
+	// "Unserialization of 'ClassName' is not allowed". Checked before __unserialize.
+	DenyUnserialize bool
 }
 
 type ZClass interface {
