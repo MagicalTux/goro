@@ -47,7 +47,7 @@ Goro passes **~8,600 of 12,110 tests** (71.0%) from the PHP 8.5.4 test suite. Fi
 | Readonly properties (PHP 8.1) | Done |
 | Fibers (PHP 8.1) | Done |
 | Union/intersection types | Done |
-| DNF types (`(A&B)|C`, PHP 8.2) | Partial |
+| DNF types (`(A&B)\|C`, PHP 8.2) | Partial |
 | Generators (`yield`, `yield from`) | Done |
 | First-class callables (`strlen(...)`) | Done |
 | Property hooks (PHP 8.4) | Done |
