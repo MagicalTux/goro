@@ -24,7 +24,7 @@ go install github.com/MagicalTux/goro/sapi/php-cli@latest
 
 ## Status
 
-Goro passes **~8,600 of 12,110 tests** (71.0%) from the PHP 8.5.4 test suite. First 2,000 tests: **1,752/2,000 (90.0%)**. PHP memory_limit enforcement (128MB default). Includes ext/openssl (Go crypto), getimagesize (16 formats, 35/35 pass), stream filters (73%), lazy objects (62%), PCRE2 via gopcre2, and 6 new extensions (session, xml, curl, sockets, zlib).
+Goro passes **~8,750 of 12,110 tests** (72.3%) from the PHP 8.5.4 test suite. First 2,000 tests: **1,752/2,000 (90.0%)**. PHP memory_limit enforcement (128MB default). Includes ext/openssl (Go crypto), getimagesize (16 formats, 35/35 pass), stream filters (73%), lazy objects (62%), PCRE2 via gopcre2, and 6 new extensions (session, xml, curl, sockets, zlib).
 
 ### Language Features
 
@@ -75,7 +75,7 @@ Goro passes **~8,600 of 12,110 tests** (71.0%) from the PHP 8.5.4 test suite. Fi
 | json | 5 | 63% | json_encode, json_decode, json_validate, error handling |
 | pcre | 11 | 67% | preg_match, preg_replace, preg_split, preg_grep — **PCRE2 via gopcre2** (backreferences, lookahead) |
 | hash | 11 | 47% | hash, hash_hmac, hash_file, hash_pbkdf2, hash_hkdf, incremental |
-| gmp | 45+ | 60% | Arithmetic, division, modular, bitwise, primes, GCD/LCM, factorial, operator overloading, import/export |
+| gmp | 45+ | 92% | Arithmetic, division, modular, bitwise, primes, GCD/LCM, factorial, operator overloading, import/export |
 | mbstring | 40+ | ~50% | strlen, substr, strpos, strtolower/upper, convert_encoding, detect_encoding, check_encoding |
 | date | 30+ | 62% | date, time, strtotime, mktime, DateTime, DateTimeImmutable, DateInterval, DatePeriod, DateTimeZone |
 | openssl | 12 | — | AES/DES/RSA/ECDSA encryption, signing, key generation via Go crypto |
@@ -88,7 +88,7 @@ Goro passes **~8,600 of 12,110 tests** (71.0%) from the PHP 8.5.4 test suite. Fi
 | mysqli | 30+ | — | mysqli/mysqli_result/mysqli_stmt classes, prepared statements, transactions via go-sql-driver/mysql |
 | sqlite3 | 20+ | — | SQLite3/SQLite3Result/SQLite3Stmt classes, prepared statements via glebarez/go-sqlite (pure Go) |
 | spl | 40+ | 82% | ArrayObject, ArrayIterator, SplFileObject, SplFixedArray, SplHeap, SplObjectStorage, iterators |
-| reflection | 8 classes | 69% | ReflectionClass (with __toString), ReflectionMethod, ReflectionProperty, ReflectionFunction, ReflectionParameter, ReflectionAttribute |
+| reflection | 8 classes | 75% | ReflectionClass (with __toString), ReflectionMethod, ReflectionProperty, ReflectionFunction, ReflectionParameter, ReflectionAttribute |
 | getimagesize | — | 100% | 16 image formats (JPEG, PNG, GIF, BMP, WebP, AVIF, HEIF, TIFF, PSD, etc.) |
 
 ### Not yet implemented
