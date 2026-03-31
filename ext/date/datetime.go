@@ -1772,23 +1772,9 @@ func init() {
 				Name:      "getTransitions",
 				Modifiers: phpv.ZAttrPublic,
 				Method: phpobj.NativeMethod(func(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-					if err := checkDateTimeZoneInitialized(ctx, this); err != nil {
-						return nil, err
-					}
-					loc, _ := getTimezoneLoc(this)
-					// Return a basic transitions array with at least the current offset
-					result := phpv.NewZArray()
-					now := time.Now().In(loc)
-					name, offset := now.Zone()
-					entry := phpv.NewZArray()
-					entry.OffsetSet(ctx, phpv.ZString("ts"), phpv.ZInt(0).ZVal())
-					entry.OffsetSet(ctx, phpv.ZString("time"), phpv.ZString("1970-01-01T00:00:00+00:00").ZVal())
-					entry.OffsetSet(ctx, phpv.ZString("offset"), phpv.ZInt(offset).ZVal())
-					_, stdOffset := time.Date(now.Year(), time.January, 1, 0, 0, 0, 0, loc).Zone()
-					entry.OffsetSet(ctx, phpv.ZString("isdst"), phpv.ZBool(offset != stdOffset).ZVal())
-					entry.OffsetSet(ctx, phpv.ZString("abbr"), phpv.ZString(name).ZVal())
-					result.OffsetSet(ctx, nil, entry.ZVal())
-					return result.ZVal(), nil
+					// Delegate to fncTimezoneTransitionsGet with $this prepended
+					fullArgs := append([]*phpv.ZVal{this.ZVal()}, args...)
+					return fncTimezoneTransitionsGet(ctx, fullArgs)
 				}),
 			},
 			"getlocation": {

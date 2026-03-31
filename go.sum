@@ -4,6 +4,8 @@ github.com/KarpelesLab/gopcre2 v0.1.0 h1:ksv0iCXdL/Pu4Eyzv9X5Z6guoyzXtDucNrGs02L
 github.com/KarpelesLab/gopcre2 v0.1.0/go.mod h1:w4Ja96AdGHjoVq4sGo4CNzMCtuJ3ScjeDYWc1G+GWuc=
 github.com/KarpelesLab/gotz v0.0.0-20260331044548-0249ecf14871 h1:v8Qe0uH4KUee23Mef/p4RLIPVSa3+tAx2Z1Bj6DK51c=
 github.com/KarpelesLab/gotz v0.0.0-20260331044548-0249ecf14871/go.mod h1:20mrJ9XoNEaGc4W2UioCfGIYx6lncr3a9yseSty+dZ0=
+github.com/KarpelesLab/gotz v0.1.0 h1:+6W2nk3yyiDkMnTfkyCa1lV1WdpyManC3PR2ioL17Z0=
+github.com/KarpelesLab/gotz v0.1.0/go.mod h1:20mrJ9XoNEaGc4W2UioCfGIYx6lncr3a9yseSty+dZ0=
 github.com/KarpelesLab/strftime v1.0.1 h1:PH1ZhqAAI1zcJQh4DUydpp5O2qO3KlFvR5rHCLdlqJk=
 github.com/KarpelesLab/strftime v1.0.1/go.mod h1:xLw9GT4XcAfY1WLTwjqkhAc5jXK1RymeowV4rHm+J+Y=
 github.com/KarpelesLab/strtotime v0.0.4 h1:FP9oOBvrFMHPx0mRCsLi6TByHlmbdndueB4zQ9CI75c=

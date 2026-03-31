@@ -963,27 +963,24 @@ func fncTimezoneTransitionsGet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal,
 	}
 
 	types := zone.Types()
-	transitions := zone.Transitions()
 
-	// Add initial type before first transition
-	if len(types) > 0 {
-		initType := types[0]
-		if len(transitions) > 0 && transitions[0].When > tsBegin {
-			entry := phpv.NewZArray()
-			entry.OffsetSet(ctx, phpv.ZString("ts"), phpv.ZInt(transitions[0].When).ZVal())
-			t := time.Unix(transitions[0].When, 0).UTC()
-			entry.OffsetSet(ctx, phpv.ZString("time"), phpv.ZString(t.Format("2006-01-02T15:04:05+00:00")).ZVal())
-			entry.OffsetSet(ctx, phpv.ZString("offset"), phpv.ZInt(initType.Offset).ZVal())
-			entry.OffsetSet(ctx, phpv.ZString("isdst"), phpv.ZBool(initType.IsDST).ZVal())
-			entry.OffsetSet(ctx, phpv.ZString("abbr"), phpv.ZString(initType.Abbrev).ZVal())
-			result.OffsetSet(ctx, nil, entry.ZVal())
-		}
-	}
+	// Use TransitionsForRange to get transitions including POSIX-rule generated ones
+	startTime := time.Unix(tsBegin, 0)
+	endTime := time.Unix(tsEnd, 0)
+	transitions := zone.TransitionsForRange(startTime, endTime)
+
+	// PHP always includes the initial state before the first transition in the range.
+	// Use Lookup to find what zone type is active at the start of the range.
+	initType := zone.Lookup(startTime)
+	entry := phpv.NewZArray()
+	entry.OffsetSet(ctx, phpv.ZString("ts"), phpv.ZInt(tsBegin).ZVal())
+	entry.OffsetSet(ctx, phpv.ZString("time"), phpv.ZString(startTime.UTC().Format("2006-01-02T15:04:05+00:00")).ZVal())
+	entry.OffsetSet(ctx, phpv.ZString("offset"), phpv.ZInt(initType.Offset).ZVal())
+	entry.OffsetSet(ctx, phpv.ZString("isdst"), phpv.ZBool(initType.IsDST).ZVal())
+	entry.OffsetSet(ctx, phpv.ZString("abbr"), phpv.ZString(initType.Abbrev).ZVal())
+	result.OffsetSet(ctx, nil, entry.ZVal())
 
 	for _, tr := range transitions {
-		if tr.When < tsBegin || tr.When > tsEnd {
-			continue
-		}
 		if tr.Type < 0 || tr.Type >= len(types) {
 			continue
 		}
