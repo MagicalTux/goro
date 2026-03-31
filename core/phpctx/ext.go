@@ -9,8 +9,9 @@ import (
 )
 
 var (
-	globalExtMap  map[string]*Ext          = make(map[string]*Ext)
-	globalFuncMap map[string]phpv.Callable = make(map[string]phpv.Callable)
+	globalExtMap         map[string]*Ext          = make(map[string]*Ext)
+	globalFuncMap        map[string]phpv.Callable = make(map[string]phpv.Callable)
+	globalConstantExtMap map[string]string        = make(map[string]string) // constant name → extension name
 )
 
 type Ext struct {
@@ -30,8 +31,9 @@ type ExtFunction struct {
 	Ext      string // extension name, populated by RegisterExt
 	Func     func(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	Args     []*ExtFunctionArg
-	MinArgs  int // minimum required arguments (0 = no check)
-	MaxArgs  int // maximum allowed arguments (0 = no check, -1 = variadic/unlimited)
+	MinArgs  int  // minimum required arguments (0 = no check)
+	MaxArgs  int  // maximum allowed arguments (0 = no check, -1 = variadic/unlimited)
+	ZeroArgs bool // if true, the function accepts exactly 0 arguments (MaxArgs=0 special case)
 	funcArgs []*phpv.FuncArg // cached conversion of Args, populated at registration
 }
 
@@ -45,6 +47,9 @@ func (e *ExtFunction) GetExt() string {
 
 func (e *ExtFunction) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	// PHP 8: strict argument count checking for built-in functions
+	if e.ZeroArgs && len(args) > 0 {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("%s() expects exactly 0 arguments, %d given", e.name, len(args)))
+	}
 	if e.MaxArgs > 0 && len(args) > e.MaxArgs {
 		if e.MinArgs == e.MaxArgs {
 			return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("%s() expects exactly %d argument, %d given", e.name, e.MaxArgs, len(args)))
@@ -110,6 +115,16 @@ func RegisterExt(e *Ext) {
 			}
 		}
 	}
+	// Track which extension owns each constant.
+	for k := range e.Constants {
+		globalConstantExtMap[string(k)] = e.Name
+	}
+}
+
+// GetConstantExtName returns the name of the extension that defines the given
+// constant, or "" if the constant was not registered by any extension.
+func GetConstantExtName(name string) string {
+	return globalConstantExtMap[name]
 }
 
 func HasExt(name string) bool {

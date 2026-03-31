@@ -181,9 +181,17 @@ func (l *Lexer) next() rune {
 
 	var r rune
 	var err error
+	var rawByte byte
+	var isRawByte bool
 
 	if len(l.inputRst) > 0 {
 		r, l.width = utf8.DecodeRune(l.inputRst)
+		// If DecodeRune returns RuneError with width=1, the byte is not valid UTF-8.
+		// Preserve the raw byte so PHP byte-string semantics are maintained.
+		if r == utf8.RuneError && l.width == 1 {
+			rawByte = l.inputRst[0]
+			isRawByte = true
+		}
 		if l.width == len(l.inputRst) {
 			l.inputRst = nil
 		} else {
@@ -197,11 +205,27 @@ func (l *Lexer) next() rune {
 			}
 			return eof // TODO FIXME error reporting?
 		}
+		// If ReadRune returns RuneError with size=1, the byte is not valid UTF-8.
+		// Unread the rune and read it as a raw byte to preserve PHP byte semantics.
+		if r == utf8.RuneError && l.width == 1 {
+			if unreadErr := l.input.UnreadRune(); unreadErr == nil {
+				if b, readErr := l.input.ReadByte(); readErr == nil {
+					rawByte = b
+					isRawByte = true
+				}
+			}
+		}
 	}
 
 	l.pos += l.width
 	l.pLine, l.pChar = l.cLine, l.cChar
-	l.output.WriteRune(r)
+	if isRawByte {
+		// Write the raw byte directly so that the output buffer byte count
+		// matches l.width (1), keeping backup() consistent for non-UTF-8 bytes.
+		l.output.WriteByte(rawByte)
+	} else {
+		l.output.WriteRune(r)
+	}
 	l.cChar += 1 // char counts in characters, not in bytes
 	if r == '\n' {
 		l.cLine += 1

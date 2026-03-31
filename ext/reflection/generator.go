@@ -7,6 +7,19 @@ import (
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
+// getReflectionGenerator retrieves the Generator object from a ReflectionGenerator.
+func getReflectionGeneratorObj(o *phpobj.ZObject) *phpobj.ZObject {
+	v := o.GetOpaque(ReflectionGenerator)
+	if v == nil {
+		return nil
+	}
+	obj, ok := v.(*phpobj.ZObject)
+	if !ok {
+		return nil
+	}
+	return obj
+}
+
 // ReflectionGenerator class - stub implementation
 var ReflectionGenerator *phpobj.ZClass
 
@@ -36,10 +49,26 @@ func initReflectionGenerator() {
 				return nil, nil
 			})},
 			"getexecutingline": {Name: "getExecutingLine", Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				return phpv.ZInt(0).ZVal(), nil
+				genObj := getReflectionGeneratorObj(o)
+				if genObj == nil {
+					return nil, phpobj.ThrowError(ctx, ReflectionException, "Cannot fetch information from a closed Generator")
+				}
+				state := phpobj.GetGeneratorStateFromObject(genObj)
+				if state == nil || state.IsClosed() {
+					return nil, phpobj.ThrowError(ctx, ReflectionException, "Cannot fetch information from a closed Generator")
+				}
+				return phpv.ZInt(state.GetExecutingLine()).ZVal(), nil
 			})},
 			"getexecutingfile": {Name: "getExecutingFile", Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				return phpv.ZString("").ZVal(), nil
+				genObj := getReflectionGeneratorObj(o)
+				if genObj == nil {
+					return nil, phpobj.ThrowError(ctx, ReflectionException, "Cannot fetch information from a closed Generator")
+				}
+				state := phpobj.GetGeneratorStateFromObject(genObj)
+				if state == nil || state.IsClosed() {
+					return nil, phpobj.ThrowError(ctx, ReflectionException, "Cannot fetch information from a closed Generator")
+				}
+				return phpv.ZString(state.GetExecutingFile()).ZVal(), nil
 			})},
 			"getexecutinggenerator": {Name: "getExecutingGenerator", Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				gen := o.GetOpaque(ReflectionGenerator)
@@ -59,7 +88,15 @@ func initReflectionGenerator() {
 				return phpv.NewZArray().ZVal(), nil
 			})},
 			"isclosed": {Name: "isClosed", Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				return phpv.ZBool(false).ZVal(), nil
+				genObj := getReflectionGeneratorObj(o)
+				if genObj == nil {
+					return phpv.ZBool(true).ZVal(), nil
+				}
+				state := phpobj.GetGeneratorStateFromObject(genObj)
+				if state == nil {
+					return phpv.ZBool(true).ZVal(), nil
+				}
+				return phpv.ZBool(state.IsClosed()).ZVal(), nil
 			})},
 		},
 	}

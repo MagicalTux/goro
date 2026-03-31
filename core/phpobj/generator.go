@@ -60,6 +60,10 @@ type GeneratorState struct {
 	// Function name for stack traces and __debugInfo
 	funcName string
 
+	// Current execution position (for ReflectionGenerator::getExecutingLine/File)
+	currentYieldLine int
+	currentYieldFile string
+
 	// Whether the generator yields by reference (declared as function &gen())
 	yieldsRef bool
 
@@ -197,6 +201,34 @@ func GetGeneratorStateFromObject(o *ZObject) *GeneratorState {
 	return getGeneratorState(o)
 }
 
+// IsClosed returns true if the generator has finished (closed or returned).
+func (s *GeneratorState) IsClosed() bool {
+	return s.status == GeneratorClosed
+}
+
+// IsValid returns true if the generator has a current valid value.
+func (s *GeneratorState) IsValid() bool {
+	return s.valid
+}
+
+// GetFuncName returns the function name associated with the generator.
+func (s *GeneratorState) GetFuncName() string {
+	return s.funcName
+}
+
+// GetExecutingLine returns the line where the generator is currently suspended.
+func (s *GeneratorState) GetExecutingLine() int {
+	if s.currentYieldLine > 0 {
+		return s.currentYieldLine
+	}
+	return 0
+}
+
+// GetExecutingFile returns the file where the generator is currently suspended.
+func (s *GeneratorState) GetExecutingFile() string {
+	return s.currentYieldFile
+}
+
 // GeneratorYieldsRef returns true if the generator was declared to yield by reference.
 func GeneratorYieldsRef(o *ZObject) bool {
 	state := getGeneratorState(o)
@@ -305,6 +337,8 @@ type SpawnGeneratorOptions struct {
 	FuncName  string
 	YieldsRef bool
 	This      phpv.ZObject
+	StartLine int
+	StartFile string
 }
 
 // SpawnGeneratorNamed is like SpawnGenerator but also sets the function name
@@ -340,13 +374,15 @@ func SpawnGeneratorWithOptions(ctx phpv.Context, bodyFn GeneratorBodyFunc, args 
 	}
 
 	state := &GeneratorState{
-		funcName:  funcName,
-		yieldsRef: opts.YieldsRef,
-		status:    GeneratorCreated,
-		resumeCh:  make(chan generatorMsg),
-		yieldCh:   make(chan *GeneratorYield),
-		doneCh:    make(chan generatorMsg, 1),
-		returnVal: phpv.ZNULL.ZVal(),
+		funcName:         funcName,
+		yieldsRef:        opts.YieldsRef,
+		status:           GeneratorCreated,
+		resumeCh:         make(chan generatorMsg),
+		yieldCh:          make(chan *GeneratorYield),
+		doneCh:           make(chan generatorMsg, 1),
+		returnVal:        phpv.ZNULL.ZVal(),
+		currentYieldLine: opts.StartLine,
+		currentYieldFile: opts.StartFile,
 	}
 
 	// Capture $this if provided
@@ -466,6 +502,12 @@ func generatorYieldValueImpl(ctx phpv.Context, key, value *phpv.ZVal, fromDelega
 	state.currentKey = key
 	state.currentValue = value
 	state.valid = true
+
+	// Record current execution position for ReflectionGenerator
+	if loc := ctx.Loc(); loc != nil {
+		state.currentYieldLine = int(loc.Line)
+		state.currentYieldFile = string(loc.Filename)
+	}
 
 	// Send the yield to the caller
 	state.yieldCh <- &GeneratorYield{Key: key, Value: value}

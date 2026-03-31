@@ -656,6 +656,18 @@ func propertyMatchesFilter(p *phpv.ZClassProp, filter phpv.ZObjectAttr) bool {
 			match = true
 		}
 	}
+	// IS_VIRTUAL = 512: property is virtual (has hooks but no backing store)
+	if filter&512 != 0 {
+		if p.HasHooks && !p.IsBacked {
+			match = true
+		}
+	}
+	// IS_READONLY = 128: property is readonly
+	if filter&128 != 0 {
+		if p.Modifiers.IsReadonly() {
+			match = true
+		}
+	}
 
 	return match
 }
@@ -1026,8 +1038,8 @@ func reflectionClassGetProperty(ctx phpv.Context, o *phpobj.ZObject, args []*php
 			propName = propName[1:]
 		}
 
-		// Resolve the specified class
-		specClass, err := resolveClass(ctx, className)
+		// Resolve the specified class (use lowercase for error messages, PHP normalizes class names)
+		specClass, err := resolveClass(ctx, className.ToLower())
 		if err != nil {
 			return nil, err
 		}

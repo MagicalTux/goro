@@ -2786,7 +2786,7 @@ var errISOMissingStartDate = fmt.Errorf("ISO interval must contain a start date"
 // parseISO8601Period parses ISO 8601 repeating interval strings like "R2/2012-07-01T00:00:00Z/P7D"
 // Returns recurrences, start time, interval duration spec, and end time (if any)
 // Returns a special errISOMissingInterval if the string is missing the interval part.
-func parseISO8601Period(ctx phpv.Context, isoStr string) (recurrences int, start time.Time, intervalObj *phpobj.ZObject, hasEnd bool, end time.Time, err error) {
+func parseISO8601Period(ctx phpv.Context, isoStr string) (recurrences int, start time.Time, intervalStr string, hasEnd bool, end time.Time, err error) {
 	recurrences = -1 // -1 means not specified
 
 	// Format: R[n]/start/interval or R[n]/start/end or R[n]/interval/end
@@ -2838,11 +2838,8 @@ func parseISO8601Period(ctx phpv.Context, isoStr string) (recurrences int, start
 	// Parse interval or end
 	thirdPart := parts[2]
 	if len(thirdPart) > 0 && (thirdPart[0] == 'P' || thirdPart[0] == 'p') {
-		// It's a duration
-		intervalObj, err = phpobj.NewZObject(ctx, DateInterval, phpv.ZString(thirdPart).ZVal())
-		if err != nil {
-			return
-		}
+		// It's a duration - return as string, caller will create the object
+		intervalStr = thirdPart
 	} else {
 		// It's an end date
 		end, err = parseISO8601DateTime(thirdPart)
@@ -2981,6 +2978,13 @@ func datePeriodConstruct(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZV
 	this.ObjectSet(ctx, phpv.ZString("include_start_date"), phpv.ZBool(includeStart).ZVal())
 	this.ObjectSet(ctx, phpv.ZString("include_end_date"), phpv.ZBool(includeEnd).ZVal())
 
+	// Mark all readonly properties as initialized so that external code gets
+	// "Cannot modify readonly property" instead of "protected(set) readonly" errors.
+	// Properties not set above (current, and end in the recurrence form) are null by default.
+	for _, propName := range []phpv.ZString{"start", "current", "end", "interval", "recurrences", "include_start_date", "include_end_date"} {
+		this.MarkReadonlyInit(propName)
+	}
+
 	return nil, nil
 }
 
@@ -2992,7 +2996,7 @@ func datePeriodInitFromISO(ctx phpv.Context, this *phpobj.ZObject, isoStr string
 }
 
 func datePeriodInitFromISOCaller(ctx phpv.Context, this *phpobj.ZObject, isoStr string, options int, callerName string) (*phpv.ZVal, error) {
-	recurrences, start, intervalObj, hasEnd, end, err := parseISO8601Period(ctx, isoStr)
+	recurrences, start, intervalStr, hasEnd, end, err := parseISO8601Period(ctx, isoStr)
 	if err != nil {
 		if err == errISOMissingInterval {
 			return nil, phpobj.ThrowError(ctx, DateMalformedPeriodStringException,
@@ -3005,7 +3009,7 @@ func datePeriodInitFromISOCaller(ctx phpv.Context, this *phpobj.ZObject, isoStr 
 		return nil, phpobj.ThrowError(ctx, DateMalformedPeriodStringException, fmt.Sprintf("Unknown or bad format (%s)", isoStr))
 	}
 
-	// Create start DateTimeImmutable
+	// Create start DateTimeImmutable first (to get correct object ID ordering)
 	startObj, err := phpobj.NewZObject(ctx, DateTimeImmutable)
 	if err != nil {
 		return nil, err
@@ -3013,7 +3017,12 @@ func datePeriodInitFromISOCaller(ctx phpv.Context, this *phpobj.ZObject, isoStr 
 	setTimeVal(startObj, start)
 	this.ObjectSet(ctx, phpv.ZString("start"), startObj.ZVal())
 
-	if intervalObj != nil {
+	// Create interval object after start (to maintain correct object ID ordering)
+	if intervalStr != "" {
+		intervalObj, err := phpobj.NewZObject(ctx, DateInterval, phpv.ZString(intervalStr).ZVal())
+		if err != nil {
+			return nil, err
+		}
 		this.ObjectSet(ctx, phpv.ZString("interval"), intervalObj.ZVal())
 	}
 
@@ -3049,6 +3058,12 @@ func datePeriodInitFromISOCaller(ctx phpv.Context, this *phpobj.ZObject, isoStr 
 
 	this.ObjectSet(ctx, phpv.ZString("include_start_date"), phpv.ZBool(includeStart).ZVal())
 	this.ObjectSet(ctx, phpv.ZString("include_end_date"), phpv.ZBool(includeEnd).ZVal())
+
+	// Mark all readonly properties as initialized so external writes give the
+	// correct "Cannot modify readonly property" error.
+	for _, propName := range []phpv.ZString{"start", "current", "end", "interval", "recurrences", "include_start_date", "include_end_date"} {
+		this.MarkReadonlyInit(propName)
+	}
 
 	return nil, nil
 }

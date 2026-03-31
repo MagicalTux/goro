@@ -1300,9 +1300,42 @@ func checkReadonlyIndirectModification(ctx phpv.Context, expr phpv.Runnable) err
 				return nil
 			}
 			propName := inner.varName
+			// If varName starts with '$', it's a variable-named property ($obj->$var).
+			// Look up the variable to get the actual property name.
+			if len(propName) > 0 && propName[0] == '$' {
+				varLookup, lookupErr := ctx.OffsetGet(ctx, propName[1:].ZVal())
+				if lookupErr != nil || varLookup == nil {
+					return nil
+				}
+				propName = varLookup.AsString(ctx)
+			}
 			if obj.IsReadonlyProperty(propName) {
 				return phpobj.ThrowError(ctx, phpobj.Error,
-					fmt.Sprintf("Cannot indirectly modify readonly property %s::$%s", obj.GetClass().GetName(), propName))
+					fmt.Sprintf("Cannot modify readonly property %s::$%s", obj.GetClass().GetName(), propName))
+			}
+			// Check asymmetric visibility for indirect modification
+			if err := checkAsymmetricVisibilityIndirect(ctx, obj, propName); err != nil {
+				return err
+			}
+			return nil
+		case *runObjectDynVar:
+			// Dynamic property access: $obj->{expr}[] = val
+			objVal, objErr := inner.ref.Run(ctx)
+			if objErr != nil || objVal == nil || objVal.GetType() != phpv.ZtObject {
+				return nil
+			}
+			obj, objOk := objVal.Value().(*phpobj.ZObject)
+			if !objOk {
+				return nil
+			}
+			nameVal, nameErr := inner.nameExpr.Run(ctx)
+			if nameErr != nil || nameVal == nil {
+				return nil
+			}
+			propName := nameVal.AsString(ctx)
+			if obj.IsReadonlyProperty(propName) {
+				return phpobj.ThrowError(ctx, phpobj.Error,
+					fmt.Sprintf("Cannot modify readonly property %s::$%s", obj.GetClass().GetName(), propName))
 			}
 			// Check asymmetric visibility for indirect modification
 			if err := checkAsymmetricVisibilityIndirect(ctx, obj, propName); err != nil {

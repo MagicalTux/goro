@@ -923,6 +923,17 @@ func (o *ZObject) init(ctx phpv.Context) error {
 	for _, class := range slices.Backward(lineage) {
 		// Set compiling class for self::/parent:: resolution in property defaults
 		ctx.Global().SetCompilingClass(class)
+		// Skip props that are identical (same slice header) to the parent's props.
+		// This happens when a Go-level subclass sets Props = Parent.Props without
+		// adding its own properties. The parent already initialized those properties
+		// in an earlier iteration, and re-processing them would create duplicate
+		// entries for private properties (mangled with the child class name).
+		if class.Extends != nil && len(class.Props) > 0 && len(class.Extends.Props) > 0 &&
+			len(class.Props) == len(class.Extends.Props) &&
+			&class.Props[0] == &class.Extends.Props[0] {
+			// Same Props slice as parent - skip to avoid duplicate initialization
+			continue
+		}
 		for _, p := range class.Props {
 			if p.Modifiers.IsStatic() {
 				continue
@@ -1097,8 +1108,16 @@ func (pi *propIterator) yield(yield func(*phpv.ZClassProp) bool) {
 					p = derived
 				}
 			} else {
-				// Skip private properties that have been unset (unless typed)
-				propName := getPrivatePropName(cl, p.VarName)
+				// Skip private properties that have been unset (unless typed).
+				// Use the most-ancestral declaring class name for the mangled key.
+				declName := o.GetDeclClassName(p)
+				propName := phpv.ZString(fmt.Sprintf("*%s:%s", declName, p.VarName))
+				propKey := string(propName)
+				if _, alreadyShown := shown[propKey]; alreadyShown {
+					// Same private prop (from parent's Props slice shared with child) - skip duplicate
+					continue
+				}
+				shown[propKey] = struct{}{}
 				if !o.h.HasString(propName) {
 					if p.TypeHint == nil {
 						continue
@@ -1172,21 +1191,10 @@ func (o *ZObject) HasPropValue(p *phpv.ZClassProp) bool {
 // name lookup for private properties.
 func (o *ZObject) GetPropValue(p *phpv.ZClassProp) *phpv.ZVal {
 	if p.Modifiers.IsPrivate() {
-		// Find the declaring class by matching the exact prop pointer
-		class := o.Class.(*ZClass)
-		for class != nil {
-			for _, cp := range class.Props {
-				if cp == p {
-					k := getPrivatePropName(class, p.VarName)
-					return o.h.GetString(k)
-				}
-			}
-			parent := class.GetParent()
-			if parent == nil {
-				break
-			}
-			class = parent.(*ZClass)
-		}
+		// Use the most-ancestral declaring class name to look up the mangled key.
+		declName := o.GetDeclClassName(p)
+		k := phpv.ZString(fmt.Sprintf("*%s:%s", declName, p.VarName))
+		return o.h.GetString(k)
 	}
 	return o.h.GetString(p.VarName)
 }
@@ -1196,20 +1204,9 @@ func (o *ZObject) GetPropValue(p *phpv.ZClassProp) *phpv.ZVal {
 // This is used by Reflection to set properties regardless of visibility.
 func (o *ZObject) SetPropValueDirect(prop *phpv.ZClassProp, value *phpv.ZVal) error {
 	if prop.Modifiers.IsPrivate() {
-		class := o.Class.(*ZClass)
-		for class != nil {
-			for _, cp := range class.Props {
-				if cp == prop {
-					k := getPrivatePropName(class, prop.VarName)
-					return o.h.SetString(k, value)
-				}
-			}
-			parent := class.GetParent()
-			if parent == nil {
-				break
-			}
-			class = parent.(*ZClass)
-		}
+		declName := o.GetDeclClassName(prop)
+		k := phpv.ZString(fmt.Sprintf("*%s:%s", declName, prop.VarName))
+		return o.h.SetString(k, value)
 	}
 	return o.h.SetString(prop.VarName, value)
 }
@@ -1235,19 +1232,28 @@ func (o *ZObject) GetPropValueOrHook(ctx phpv.Context, p *phpv.ZClassProp) (*php
 }
 
 // GetDeclClassName returns the declaring class name for a private property.
+// It returns the name of the most-ancestral class in the hierarchy that declares
+// the given property (i.e., its Props slice contains a pointer equal to p).
 func (o *ZObject) GetDeclClassName(p *phpv.ZClassProp) phpv.ZString {
-	class := o.Class.(*ZClass)
-	for class != nil {
-		for _, cp := range class.Props {
-			if cp == p {
-				return class.GetName()
-			}
-		}
-		parent := class.GetParent()
+	// Build lineage from root to most-derived class.
+	var lineage []*ZClass
+	c := o.Class.(*ZClass)
+	for c != nil {
+		lineage = append(lineage, c)
+		parent := c.GetParent()
 		if parent == nil {
 			break
 		}
-		class = parent.(*ZClass)
+		c = parent.(*ZClass)
+	}
+	// Walk from root (last) to most-derived (first) and return the first class
+	// whose Props slice contains the exact pointer p.
+	for i := len(lineage) - 1; i >= 0; i-- {
+		for _, cp := range lineage[i].Props {
+			if cp == p {
+				return lineage[i].GetName()
+			}
+		}
 	}
 	return o.Class.GetName()
 }
@@ -3065,7 +3071,7 @@ func (it *hookedObjectIterator) CurrentMakeRef(ctx phpv.Context) (*phpv.ZVal, er
 	// Check for readonly property
 	if it.obj.IsReadonlyProperty(e.key) && it.obj.IsReadonlyPropertyInitialized(e.key) {
 		return nil, ThrowError(nil, Error,
-			fmt.Sprintf("Cannot acquire reference to readonly property %s::$%s", it.obj.GetClass().GetName(), e.key))
+			fmt.Sprintf("Cannot modify readonly property %s::$%s", it.obj.GetClass().GetName(), e.key))
 	}
 
 	// For virtual hooked properties, cannot take a reference
@@ -3169,7 +3175,7 @@ func (it *zobjectIterator) CurrentMakeRef(ctx phpv.Context) (*phpv.ZVal, error) 
 			}
 			if it.obj.IsReadonlyProperty(keyStr) && it.obj.IsReadonlyPropertyInitialized(keyStr) {
 				return nil, ThrowError(ctx, Error,
-					fmt.Sprintf("Cannot acquire reference to readonly property %s::$%s", it.obj.GetClass().GetName(), keyStr))
+					fmt.Sprintf("Cannot modify readonly property %s::$%s", it.obj.GetClass().GetName(), keyStr))
 			}
 		}
 	}

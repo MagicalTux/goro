@@ -874,6 +874,10 @@ func (z *ZClosure) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 		} else if ctx.This() != nil {
 			opts.This = ctx.This()
 		}
+		if z.start != nil {
+			opts.StartLine = int(z.start.Line)
+			opts.StartFile = string(z.start.Filename)
+		}
 		return phpobj.SpawnGeneratorWithOptions(ctx, z.callBody, args, opts)
 	}
 

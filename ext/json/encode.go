@@ -100,8 +100,12 @@ func appendJsonEncodeState(ctx phpv.Context, r []byte, v *phpv.ZVal, opt JsonEnc
 				case phpv.ZInt:
 					return append(r, []byte(strconv.FormatInt(int64(nv), 10))...), nil
 				case phpv.ZFloat:
-					fs := formatJsonFloat(ctx, float64(nv), opt)
-					return append(r, []byte(fs)...), nil
+					f := float64(nv)
+					// Don't convert to number if it's Inf/NaN (e.g., overflow from huge exponent)
+					if !math.IsInf(f, 0) && !math.IsNaN(f) {
+						fs := formatJsonFloat(ctx, f, opt)
+						return append(r, []byte(fs)...), nil
+					}
 				}
 			}
 		}
@@ -167,6 +171,15 @@ func appendJsonEncodeState(ctx phpv.Context, r []byte, v *phpv.ZVal, opt JsonEnc
 				result, err := ctx.CallZVal(ctx, m.Method, nil, obj)
 				if err != nil {
 					return r, err
+				}
+				// If jsonSerialize() returned $this directly, encode as a plain object
+				// (without calling jsonSerialize again) to avoid infinite loops.
+				if result != nil && result.GetType() == phpv.ZtObject && result.AsObject(ctx) == obj {
+					it := v.NewIterator()
+					if it == nil {
+						return r, ErrUnsupportedType
+					}
+					return appendJsonObject(ctx, r, it, opt, depth, st)
 				}
 				return appendJsonEncodeState(ctx, r, result, opt, depth, st)
 			}
@@ -238,7 +251,11 @@ func formatJsonFloat(ctx phpv.Context, f float64, opt JsonEncOpt) string {
 	p := phpv.GetSerializePrecision(ctx)
 	var s string
 	if p == -1 {
-		s = strconv.FormatFloat(f, 'g', -1, 64)
+		// Use PHP-compatible shortest representation: decimal for reasonable
+		// exponents, scientific notation otherwise. This matches PHP's behavior
+		// where serialize_precision=-1 uses zend_gcvt/David Gay's dtoa.
+		// JSON uses lowercase 'e' for scientific notation.
+		s = strings.ToLower(phpv.FormatFloat(f))
 	} else {
 		s = strconv.FormatFloat(f, 'g', p, 64)
 	}
@@ -295,13 +312,14 @@ func appendJsonArray(ctx phpv.Context, r []byte, it phpv.ZIterator, opt JsonEncO
 			r = append(r, '\n')
 			r = append(r, jsonIndent(st.indent)...)
 		}
+		savedLen := len(r)
 		r, err = appendJsonEncodeState(ctx, r, v, opt, depth, st)
 		if err != nil {
 			if st.partialOutput {
 				if je, ok := err.(JsonError); ok {
 					st.lastError = je
 				}
-				r = append(r, []byte("null")...)
+				r = append(r[:savedLen], []byte("null")...)
 			} else {
 				return r, err
 			}
@@ -347,22 +365,32 @@ func appendJsonObject(ctx phpv.Context, r []byte, it phpv.ZIterator, opt JsonEnc
 			r = append(r, '\n')
 			r = append(r, jsonIndent(st.indent)...)
 		}
+		savedKeyLen := len(r)
 		r, err = appendJsonString(r, string(k.Value().(phpv.ZString)), opt)
 		if err != nil {
-			return r, err
+			if st.partialOutput {
+				// Invalid key: use empty string key in partial output mode
+				if je, ok := err.(JsonError); ok {
+					st.lastError = je
+				}
+				r = append(r[:savedKeyLen], '"', '"')
+			} else {
+				return r, err
+			}
 		}
 		if pretty {
 			r = append(r, ':', ' ')
 		} else {
 			r = append(r, ':')
 		}
+		savedLen := len(r)
 		r, err = appendJsonEncodeState(ctx, r, v, opt, depth, st)
 		if err != nil {
 			if st.partialOutput {
 				if je, ok := err.(JsonError); ok {
 					st.lastError = je
 				}
-				r = append(r, []byte("null")...)
+				r = append(r[:savedLen], []byte("null")...)
 			} else {
 				return r, err
 			}
@@ -458,7 +486,12 @@ func appendJsonString(r []byte, s string, opt JsonEncOpt) ([]byte, error) {
 				r = append(r, []byte(s[start:i])...)
 			}
 			if opt&InvalidUtf8Substitute == InvalidUtf8Substitute {
-				r = append(r, []byte(`\ufffd`)...)
+				if unescUnicode {
+					// With JSON_UNESCAPED_UNICODE, output the actual UTF-8 bytes for U+FFFD
+					r = append(r, 0xEF, 0xBF, 0xBD)
+				} else {
+					r = append(r, []byte(`\ufffd`)...)
+				}
 			} else if opt&InvalidUtf8Ignore == 0 {
 				return r, ErrUtf8
 			}

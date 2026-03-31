@@ -16,7 +16,7 @@ import (
 func fncJsonDecode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	// PHP 8.1+: Passing null to json_decode() is deprecated
 	if len(args) > 0 && args[0] != nil && args[0].GetType() == phpv.ZtNull {
-		ctx.Deprecated("json_decode(): Passing null to parameter #1 ($json) of type string is deprecated")
+		ctx.Deprecated("Passing null to parameter #1 ($json) of type string is deprecated")
 	}
 
 	var json phpv.ZString
@@ -36,6 +36,9 @@ func fncJsonDecode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 	if d <= 0 {
 		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "json_decode(): Argument #3 ($depth) must be greater than 0")
+	}
+	if d > 0x7FFFFFFF {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "json_decode(): Argument #3 ($depth) must be less than 2147483648")
 	}
 	var rawOpt int
 	if opt != nil {
@@ -205,6 +208,9 @@ func fncJsonValidate(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if d == 0 {
 		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "json_validate(): Argument #2 ($depth) must be greater than 0")
 	}
+	if d > 0x7FFFFFFF {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "json_validate(): Argument #2 ($depth) must be less than 2147483648")
+	}
 
 	// Validate flags: only JSON_INVALID_UTF8_IGNORE is allowed
 	if flags != nil && int(*flags) != 0 {
@@ -280,6 +286,9 @@ func jsonDecodeAny(ctx phpv.Context, r *strings.Reader, depth int, opt JsonDecOp
 	case 'n':
 		return jsonDecodeExpectValue(ctx, r, "null", phpv.ZNULL, depth, opt)
 	default:
+		if b >= 0 && b < 0x20 {
+			return nil, ErrCtrlChar
+		}
 		return nil, ErrSyntax
 	}
 }
@@ -351,6 +360,16 @@ func jsonDecodeObject(ctx phpv.Context, r *strings.Reader, depth int, opt JsonDe
 			return nil, err
 		}
 		if b == ',' {
+			// Check for trailing comma: peek at next non-whitespace character
+			next, peekErr := nextRune(r)
+			if peekErr != nil {
+				return nil, ErrSyntax
+			}
+			if next == '}' {
+				// Trailing comma is not valid JSON
+				return nil, ErrSyntax
+			}
+			r.UnreadRune()
 			continue
 		}
 		if b == '}' {
@@ -400,6 +419,16 @@ func jsonDecodeArray(ctx phpv.Context, r *strings.Reader, depth int, opt JsonDec
 			return nil, ErrSyntax
 		}
 		if b == ',' {
+			// Check for trailing comma: peek at next non-whitespace character
+			next, peekErr := nextRune(r)
+			if peekErr != nil {
+				return nil, ErrSyntax
+			}
+			if next == ']' {
+				// Trailing comma is not valid JSON
+				return nil, ErrSyntax
+			}
+			r.UnreadRune()
 			continue
 		}
 		if b == ']' {

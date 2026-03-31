@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/MagicalTux/goro/core/logopt"
+	"github.com/MagicalTux/goro/core/phpctx"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
@@ -1201,11 +1202,11 @@ func formatParamDefault(ctx phpv.Context, arg *phpv.FuncArg) string {
 // Like formatConstantValue but always single-quotes strings (matching PHP reflection output).
 func formatParamValue(ctx phpv.Context, val *phpv.ZVal) string {
 	if val == nil {
-		return "null"
+		return "NULL"
 	}
 	switch val.GetType() {
 	case phpv.ZtNull:
-		return "null"
+		return "NULL"
 	case phpv.ZtBool:
 		if val.AsBool(ctx) {
 			return "true"
@@ -2312,9 +2313,31 @@ func reflectionConstantIsDeprecated(ctx phpv.Context, o *phpobj.ZObject, args []
 }
 
 func reflectionConstantGetExtensionName(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	return phpv.ZBool(false).ZVal(), nil
+	data := getConstData(o)
+	if data == nil {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	extName := phpctx.GetConstantExtName(string(data.name))
+	if extName == "" {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	return phpv.ZString(extName).ZVal(), nil
 }
 
 func reflectionConstantGetExtension(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	return phpv.ZNULL.ZVal(), nil
+	data := getConstData(o)
+	if data == nil {
+		return phpv.ZNULL.ZVal(), nil
+	}
+	extName := phpctx.GetConstantExtName(string(data.name))
+	if extName == "" {
+		return phpv.ZNULL.ZVal(), nil
+	}
+	extObj, err := phpobj.CreateZObject(ctx, ReflectionExtension)
+	if err != nil {
+		return phpv.ZNULL.ZVal(), nil
+	}
+	extObj.HashTable().SetString("name", phpv.ZString(extName).ZVal())
+	extObj.SetOpaque(ReflectionExtension, phpv.ZString(extName))
+	return extObj.ZVal(), nil
 }

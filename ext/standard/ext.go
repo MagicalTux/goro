@@ -144,7 +144,7 @@ func init() {
 			"end":                        {Func: fncArrayEnd, Args: []*phpctx.ExtFunctionArg{{ArgName: "array", Ref: true}}},
 			"enum_exists":                {Func: stdEnumExists, Args: []*phpctx.ExtFunctionArg{}},
 			"error_clear_last":           {Func: stdErrorClearLast, Args: []*phpctx.ExtFunctionArg{}},
-			"error_get_last":             {Func: stdErrorGetLast, Args: []*phpctx.ExtFunctionArg{}, MinArgs: 0, MaxArgs: 0},
+			"error_get_last":             {Func: stdErrorGetLast, Args: []*phpctx.ExtFunctionArg{}, ZeroArgs: true},
 			"escapeshellarg":             {Func: fncEscapeshellarg, Args: []*phpctx.ExtFunctionArg{}},
 			"escapeshellcmd":             {Func: fncEscapeshellcmd, Args: []*phpctx.ExtFunctionArg{}},
 			"exec":                       {Func: fncExec, Args: []*phpctx.ExtFunctionArg{{ArgName: "command"}, {ArgName: "output", Ref: true, Optional: true}, {ArgName: "result_code", Ref: true, Optional: true}}},

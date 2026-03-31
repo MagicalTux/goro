@@ -19,11 +19,11 @@ func init() {
 		},
 		// Note: ExtFunctionArg is currently unused
 		Functions: map[string]*phpctx.ExtFunction{
-			"json_decode":         {Func: fncJsonDecode, Args: []*phpctx.ExtFunctionArg{}},
-			"json_encode":         {Func: fncJsonEncode, Args: []*phpctx.ExtFunctionArg{}},
-			"json_last_error":     {Func: fncJsonLastError, Args: []*phpctx.ExtFunctionArg{}},
-			"json_last_error_msg": {Func: fncJsonLastErrorMsg, Args: []*phpctx.ExtFunctionArg{}},
-			"json_validate":       {Func: fncJsonValidate, Args: []*phpctx.ExtFunctionArg{}},
+			"json_decode":         {Func: fncJsonDecode, MinArgs: 1, MaxArgs: 4},
+			"json_encode":         {Func: fncJsonEncode, MinArgs: 1, MaxArgs: 3},
+			"json_last_error":     {Func: fncJsonLastError, ZeroArgs: true},
+			"json_last_error_msg": {Func: fncJsonLastErrorMsg, ZeroArgs: true},
+			"json_validate":       {Func: fncJsonValidate, MinArgs: 1, MaxArgs: 3},
 		},
 		Constants: map[phpv.ZString]phpv.Val{
 			"JSON_BIGINT_AS_STRING":            JSON_BIGINT_AS_STRING,

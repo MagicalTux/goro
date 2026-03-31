@@ -2044,6 +2044,12 @@ func (g *Global) MarkJsonEncoding(obj phpv.ZObject) bool {
 	return false
 }
 
+// IsJsonEncoding reports whether the object is currently being json-encoded
+// via JsonSerializable (without marking it).
+func (g *Global) IsJsonEncoding(obj phpv.ZObject) bool {
+	return g.jsonEncodingObjects != nil && g.jsonEncodingObjects[obj]
+}
+
 // UnmarkJsonEncoding removes the json-encoding mark from an object.
 func (g *Global) UnmarkJsonEncoding(obj phpv.ZObject) {
 	if g.jsonEncodingObjects != nil {
@@ -2281,8 +2287,35 @@ func (g *Global) GetStackTrace(ctx phpv.Context) []*phpv.StackTraceEntry {
 		} else if gcc, ok := context.(phpv.GeneratorCallerContext); ok {
 			// We've hit the generator's execution context boundary.
 			// Append the calling trace (Generator->method() + outer call stack).
-			if callerTrace := gcc.GetCallingTrace(); len(callerTrace) > 0 {
-				trace = append(trace, callerTrace...)
+			callerTrace := gcc.GetCallingTrace()
+			if len(callerTrace) > 0 {
+				// The first entry in callerTrace is a synthetic "Generator->method()" frame.
+				// PHP's behavior differs based on the trace context:
+				//
+				// Case 1: The generator body is the INNERMOST frame (only one trace entry
+				// collected so far, and it's marked isInternal). This happens when an exception
+				// propagates out of the generator. PHP collapses the trace: the generator body
+				// frame gets the call-site location, and the "Generator->method()" frame is
+				// omitted. The generator function is shown at the resumption call site.
+				//
+				// Case 2: There are inner function calls above the generator body
+				// (e.g., f1() called from inside generator f2()). PHP keeps the generator body
+				// as "[internal function]" and shows the "Generator->method()" frame separately.
+				syntheticEntry := callerTrace[0]
+				isGeneratorBodyInnermost := len(trace) == 1 && trace[0].IsInternal
+				if isGeneratorBodyInnermost {
+					// Collapse: annotate generator body frame with call-site location
+					trace[0].Filename = syntheticEntry.Filename
+					trace[0].Line = syntheticEntry.Line
+					trace[0].IsInternal = false
+					// Append the remaining outer frames (skip the Generator->method() entry)
+					if len(callerTrace) > 1 {
+						trace = append(trace, callerTrace[1:]...)
+					}
+				} else {
+					// Keep as-is: append the full calling trace including Generator->method()
+					trace = append(trace, callerTrace...)
+				}
 			}
 			break
 		}
