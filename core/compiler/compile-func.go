@@ -247,6 +247,25 @@ func (r *runnableFunctionCallRef) Run(ctx phpv.Context) (l *phpv.ZVal, err error
 					if classErr == nil {
 						if method, methodOk := class.GetMethod(methodName.ToLower()); methodOk {
 							f = method.Method
+						} else if callStaticMethod, hasCallStatic := class.GetMethod("__callstatic"); hasCallStatic {
+							// Fall back to __callStatic for "ClassName::method" string callables
+							var zArgs []*phpv.ZVal
+							for _, arg := range r.args {
+								val, err := arg.Run(ctx)
+								if err != nil {
+									return nil, err
+								}
+								zArgs = append(zArgs, val)
+							}
+							a := phpv.NewZArray()
+							for _, sub := range zArgs {
+								a.OffsetSet(ctx, nil, sub.Dup())
+							}
+							callArgs := []*phpv.ZVal{methodName.ZVal(), a.ZVal()}
+							return ctx.CallZVal(ctx, phpv.BindClass(callStaticMethod.Method, class, true), callArgs, nil)
+						} else if _, hasCall := class.GetMethod("__call"); hasCall {
+							// __call exists but no __callStatic: non-static method cannot be called statically
+							return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Non-static method %s::%s() cannot be called statically", className, methodName))
 						} else {
 							return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Call to undefined method %s::%s()", className, methodName))
 						}
@@ -321,6 +340,25 @@ func (r *runnableFunctionCallRef) Run(ctx phpv.Context) (l *phpv.ZVal, err error
 					}
 					if method, ok := class.GetMethod(methodName.ToLower()); ok {
 						f = phpv.BindClass(method.Method, class, true)
+					} else if callStaticMethod, hasCallStatic := class.GetMethod("__callstatic"); hasCallStatic {
+						// Fall back to __callStatic
+						var zArgs []*phpv.ZVal
+						for _, arg := range r.args {
+							val, err := arg.Run(ctx)
+							if err != nil {
+								return nil, err
+							}
+							zArgs = append(zArgs, val)
+						}
+						a := phpv.NewZArray()
+						for _, sub := range zArgs {
+							a.OffsetSet(ctx, nil, sub.Dup())
+						}
+						callArgs := []*phpv.ZVal{methodName.ZVal(), a.ZVal()}
+						return ctx.CallZVal(ctx, phpv.BindClass(callStaticMethod.Method, class, true), callArgs, nil)
+					} else if _, hasCall := class.GetMethod("__call"); hasCall {
+						// __call exists but no __callStatic: non-static method cannot be called statically
+						return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Non-static method %s::%s() cannot be called statically", className, methodName))
 					} else {
 						return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Call to undefined method %s::%s()", className, methodName))
 					}

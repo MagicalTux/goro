@@ -177,6 +177,9 @@ type GlobalContext interface {
 	IsFunctionDisabled(name ZString) bool
 
 	SetNextCallSuppressCalledIn(v bool)
+
+	SetSkipNextDynPropDeprecation(v bool)
+	TakeSkipNextDynPropDeprecation() bool
 }
 
 type FuncContext interface {

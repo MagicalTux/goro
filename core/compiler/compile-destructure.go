@@ -147,8 +147,48 @@ func (a *runDestructure) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 		return nil
 	}
 	if value.GetType() == phpv.ZtObject {
-		// Object type that doesn't implement ArrayAccess: throw Error
+		// Check if the object implements ArrayAccess - if so, use offsetGet for each key
 		obj := value.Value().(phpv.ZObject)
+		if obj.GetClass().Implements(phpobj.ArrayAccess) {
+			for idx, e := range a.e {
+				if e.v == nil {
+					continue // skipped slot
+				}
+				// Determine the array key for this entry
+				var key *phpv.ZVal
+				if e.k != nil {
+					k, err := e.k.Run(ctx)
+					if err != nil {
+						return err
+					}
+					key = k
+				} else {
+					key = phpv.ZInt(idx).ZVal()
+				}
+				// Call offsetGet on the object
+				zobj, ok := obj.(*phpobj.ZObject)
+				if !ok {
+					return phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Cannot use object of type %s as array", obj.GetClass().GetName()))
+				}
+				val, err := zobj.CallMethod(ctx, "offsetGet", key)
+				if err != nil {
+					return err
+				}
+				if w, ok := e.v.(phpv.Writable); ok {
+					if sub, ok2 := e.v.(*runDestructure); ok2 {
+						if serr := sub.WriteValue(ctx, val); serr != nil {
+							return serr
+						}
+					} else {
+						if werr := w.WriteValue(ctx, val); werr != nil {
+							return werr
+						}
+					}
+				}
+			}
+			return nil
+		}
+		// Object type that doesn't implement ArrayAccess: throw Error
 		return phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Cannot use object of type %s as array", obj.GetClass().GetName()))
 	}
 	if value.GetType() != phpv.ZtArray {

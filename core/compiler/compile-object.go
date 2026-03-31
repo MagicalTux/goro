@@ -1182,8 +1182,12 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	// For Closure::__invoke() calls (e.g. $closure->__invoke($arg) or $closure->__INVOKE($arg)),
 	// delegate to the HandleInvoke handler so that by-ref parameters work correctly.
 	// The NativeMethod wrapper for __invoke doesn't carry parameter info.
+	// Suppress "called in" suffix since this is __invoke method dispatch (PHP behavior).
 	if method.Name.ToLower() == "__invoke" && class.Handlers() != nil && class.Handlers().HandleInvoke != nil {
-		return class.Handlers().HandleInvoke(ctx, objI, r.args)
+		ctx.Global().SetNextCallSuppressCalledIn(true)
+		res, err := class.Handlers().HandleInvoke(ctx, objI, r.args)
+		ctx.Global().SetNextCallSuppressCalledIn(false)
+		return res, err
 	}
 
 	// For trait methods, the callable (ZClosure) may report the trait class via GetClass(),
@@ -1328,6 +1332,39 @@ func (r *runObjectVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 				return phpv.ZNULL.ZVal(), nil
 			}
 			return v, nil
+		}
+	}
+
+	// For compound assignment (+=, -=, ++, etc.) on an object property, PHP emits
+	// "Creation of dynamic property" deprecation BEFORE the "Undefined property"
+	// warning. Check if we'll create a new dynamic property and pre-emit the deprecation.
+	if r.compoundWriteCtx || r.incDecCtx {
+		if zobj, ok2 := objI.(*phpobj.ZObject); ok2 {
+			propName := r.varName
+			if len(propName) > 0 && propName[0] != '$' {
+				// Check if property doesn't exist yet (would be dynamically created)
+				if oq, ok3 := objI.(interface {
+					ObjectGetQuiet(ctx phpv.Context, key phpv.Val) (*phpv.ZVal, bool, error)
+				}); ok3 {
+					_, found, _ := oq.ObjectGetQuiet(ctx, offt)
+					if !found && !zobj.AllowsDynamicProperties() {
+						// Check no magic __set method
+						hasMagicSet := false
+						if zc, ok4 := zobj.GetClass().(*phpobj.ZClass); ok4 {
+							_, hasMagicSet = zc.Methods["__set"]
+						}
+						if !hasMagicSet {
+							// Emit deprecation before the undefined property warning,
+							// and set flag to skip duplicate deprecation in ObjectSet.
+							if err := ctx.Deprecated("Creation of dynamic property %s::$%s is deprecated",
+								zobj.GetClass().GetName(), propName, logopt.NoFuncName(true)); err != nil {
+								return nil, err
+							}
+							ctx.Global().SetSkipNextDynPropDeprecation(true)
+						}
+					}
+				}
+			}
 		}
 	}
 

@@ -119,6 +119,7 @@ type Global struct {
 	compilingClass              phpv.ZClass
 	noDiscardPending            bool // class currently being compiled (for self:: resolution)
 	nextCallSuppressCalledIn    bool // suppress "called in" for next Call
+	skipNextDynPropDeprecation  bool // skip "Creation of dynamic property" deprecation in ObjectSet (already emitted)
 
 	rawRequestBody []byte // stored POST body for php://input
 
@@ -144,6 +145,9 @@ type Global struct {
 	// Serialize recursion detection across nested serialize calls
 	// (especially Serializable::serialize() calling serialize() internally)
 	SerializeSeenObjects map[phpv.ZObject]bool
+	// SerializeContext stores a pointer to the current outermost serializeSeen
+	// so that nested serialize() calls (from Serializable::serialize()) can share it.
+	SerializeContext interface{}
 
 	// StrictTypes tracks whether the currently executing file has declare(strict_types=1).
 	// This is a per-file flag that affects type coercion at call sites.
@@ -2057,6 +2061,16 @@ func (g *Global) SetSerializeSeenObjects(m map[phpv.ZObject]bool) {
 	g.SerializeSeenObjects = m
 }
 
+// GetSerializeContext returns the current serialize context (may be nil).
+func (g *Global) GetSerializeContext() interface{} {
+	return g.SerializeContext
+}
+
+// SetSerializeContext sets the serialize context.
+func (g *Global) SetSerializeContext(c interface{}) {
+	g.SerializeContext = c
+}
+
 // GetIncludedFiles returns a list of all included/required file paths.
 func (g *Global) GetIncludedFiles() []string {
 	result := make([]string, 0, len(g.included))
@@ -2334,6 +2348,16 @@ func (g *Global) DrainTempObjects() {
 
 func (g *Global) SetNextCallSuppressCalledIn(v bool) {
 	g.nextCallSuppressCalledIn = v
+}
+
+func (g *Global) SetSkipNextDynPropDeprecation(v bool) {
+	g.skipNextDynPropDeprecation = v
+}
+
+func (g *Global) TakeSkipNextDynPropDeprecation() bool {
+	v := g.skipNextDynPropDeprecation
+	g.skipNextDynPropDeprecation = false
+	return v
 }
 
 func (g *Global) RegisterDestructor(obj phpv.ZObject) {

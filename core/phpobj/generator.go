@@ -74,6 +74,10 @@ type GeneratorState struct {
 	// When true, yield inside finally blocks is forbidden.
 	forceClosing bool
 
+	// Whether the generator was aborted due to an uncaught exception (without a proper return).
+	// When true and the generator is closed/invalid, yield from on this generator should fail.
+	aborted bool
+
 	// Delegation state: set when this generator is executing "yield from $inner".
 	// When non-nil, current()/key()/valid()/next()/send() calls are proxied to
 	// the inner generator directly, without running through this generator's goroutine.
@@ -132,6 +136,10 @@ func init() {
 		Attr:            phpv.ZClassFinal,
 		InternalOnly:    true,
 		Implementations: []*ZClass{Iterator},
+		H: &phpv.ZClassHandlers{
+			DenySerialize:   true,
+			DenyUnserialize: true,
+		},
 		Methods: map[phpv.ZString]*phpv.ZClassMethod{
 			"current":      {Name: "current", Modifiers: phpv.ZAttrPublic, Method: NativeMethod(generatorCurrent)},
 			"key":          {Name: "key", Modifiers: phpv.ZAttrPublic, Method: NativeMethod(generatorKey)},
@@ -327,6 +335,7 @@ func SpawnGeneratorWithOptions(ctx phpv.Context, bodyFn GeneratorBodyFunc, args 
 			ret, retErr := phperr.CatchReturn(result, err)
 			if retErr != nil {
 				state.genErr = retErr
+				state.aborted = true
 				state.doneCh <- generatorMsg{err: retErr}
 			} else {
 				if ret != nil {
@@ -478,10 +487,16 @@ func generatorYieldFromGenerator(ctx phpv.Context, obj *ZObject, innerState *Gen
 	}
 	outerState := outerStateVal.(*GeneratorState)
 
+	// Check if the generator is trying to yield from itself (or a generator that is currently running)
+	if innerState == outerState || innerState.status == GeneratorRunning {
+		return nil, ThrowError(ctx, Error, "Impossible to yield from the Generator being currently run")
+	}
+
 	if !innerState.valid {
-		// Inner generator is already exhausted: return its return value immediately
-		if innerState.genErr != nil {
-			return nil, innerState.genErr
+		// Inner generator is already exhausted: return its return value immediately.
+		if innerState.aborted {
+			// Generator was aborted (exception propagated without a proper return).
+			return nil, ThrowError(ctx, Error, "Generator passed to yield from was aborted without proper return and is unable to continue")
 		}
 		if innerState.returnVal != nil {
 			return innerState.returnVal, nil

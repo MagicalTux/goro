@@ -2727,8 +2727,12 @@ func (o *ZObject) ObjectSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) er
 			hasMagicProp = hasGet || hasSet
 		}
 		if !hasMagicProp {
-			ctx.Deprecated("Creation of dynamic property %s::$%s is deprecated",
-				o.Class.GetName(), keyStr, logopt.NoFuncName(true))
+			// Check if the deprecation was already pre-emitted (e.g. for compound assignments
+			// where PHP shows the deprecation before the "Undefined property" warning).
+			if !ctx.TakeSkipNextDynPropDeprecation() {
+				ctx.Deprecated("Creation of dynamic property %s::$%s is deprecated",
+					o.Class.GetName(), keyStr, logopt.NoFuncName(true))
+			}
 		}
 	}
 

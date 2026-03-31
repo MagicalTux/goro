@@ -183,6 +183,19 @@ func (r *runVariable) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	}
 
 	if res == nil {
+		// When in a reference context (parent is runRef), the variable must be
+		// created in the context so that the reference is linked to the actual
+		// variable slot. Without this, the ref points to an orphaned ZVal and
+		// later assignment to the variable ($arr = ...) doesn't update through it.
+		if _, isRef := r.Parent.(*runRef); isRef {
+			nullVal := phpv.NewZVal(phpv.ZNULL)
+			_ = ctx.OffsetSet(ctx, r.v, nullVal)
+			res2, exists2, _ := ctx.OffsetCheck(ctx, r.v)
+			if exists2 && res2 != nil {
+				res2.Name = &r.v
+				return res2, nil
+			}
+		}
 		res := phpv.NewZVal(phpv.ZNULL)
 		res.Name = &r.v
 		return res, nil
