@@ -1565,11 +1565,11 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 		hasUnserializer := class == phpobj.IncompleteClass || class.Implements(phpobj.Serializable) || classHasUnserializeMethod
 		if !hasUnserializer {
 			// Class exists but doesn't implement Serializable - warn and create object
-			ctx.Warn("Class %s has no unserializer", class.GetName())
+			ctx.Warn("Class %s has no unserializer", class.GetName(), logopt.NoFuncName(true))
 		}
 		if class == phpobj.IncompleteClass {
 			// Class not found at all - warn with __PHP_Incomplete_Class
-			ctx.Warn("Class __PHP_Incomplete_Class has no unserializer")
+			ctx.Warn("Class __PHP_Incomplete_Class has no unserializer", logopt.NoFuncName(true))
 		}
 
 		// Scan digit by digit for the data length field so we can report the exact position
