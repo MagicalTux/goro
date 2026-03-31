@@ -4,6 +4,13 @@ import (
 	"fmt"
 )
 
+// GeneratorBodyCallable is implemented by callables that represent the body of a
+// PHP generator function. Used by GetStackTrace to mark the generator function
+// frame as [internal function] in backtraces, matching PHP's behavior.
+type GeneratorBodyCallable interface {
+	IsGeneratorBody() bool
+}
+
 // Used to make struct Callables satisfy the Val interface
 type CallableVal struct{}
 

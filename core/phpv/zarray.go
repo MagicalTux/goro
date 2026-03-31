@@ -98,6 +98,11 @@ func (a *ZArray) Dup() *ZArray {
 	return &ZArray{h: a.h.Dup()}
 }
 
+// H returns the underlying ZHashTable for direct access.
+func (a *ZArray) H() *ZHashTable {
+	return a.h
+}
+
 // DeepCopy creates an immediate independent copy without using COW.
 // The original array's iterators remain stable.
 func (a *ZArray) DeepCopy() *ZArray {

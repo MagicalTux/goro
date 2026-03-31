@@ -1272,8 +1272,18 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 			z, err := r.Run(ctx)
 			if err == nil {
 				c.Const[k].Value = z.Value()
+			} else {
+				// If resolution fails (e.g. forward reference to a class not yet defined),
+				// leave as CompileDelayed for lazy resolution.
+				// However, if an exception object was created and will be discarded,
+				// release its object ID so it doesn't shift IDs for subsequent objects.
+				if ex, ok2 := err.(*phperr.PhpThrow); ok2 && ex.Obj != nil {
+					type objIDer interface{ GetObjID() int }
+					if idObj, ok3 := ex.Obj.(objIDer); ok3 {
+						ctx.Global().ReleaseObjectID(idObj.GetObjID())
+					}
+				}
 			}
-			// If err != nil, leave as CompileDelayed for lazy resolution
 		}
 	}
 	// Property defaults are resolved lazily in GetStaticProps() and
@@ -1393,6 +1403,8 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 					c.constSource[k] = intf.Name
 				} else if existing == v {
 					// Same constant object (diamond inheritance) - no conflict
+				} else if existing.DeclaringClass != nil && existing.DeclaringClass == v.DeclaringClass {
+					// Same original declaring class via different inheritance paths (diamond) - no conflict
 				} else {
 					// Check visibility: interface constants are implicitly public,
 					// so the implementing class must also make them public

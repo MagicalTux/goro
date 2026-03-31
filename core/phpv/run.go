@@ -24,14 +24,17 @@ func (r Runnables) Dump(w io.Writer) error {
 }
 
 func (r Runnables) DumpWith(w io.Writer, sep []byte) error {
-	for _, s := range r {
+	for i, s := range r {
 		err := s.Dump(w)
 		if err != nil {
 			return err
 		}
-		_, err = w.Write(sep)
-		if err != nil {
-			return err
+		// Only add separator between elements, not after the last one
+		if i < len(r)-1 {
+			_, err = w.Write(sep)
+			if err != nil {
+				return err
+			}
 		}
 	}
 	return nil

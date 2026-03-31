@@ -103,13 +103,17 @@ func (r *runNewObject) Dump(w io.Writer) error {
 	if name == "" {
 		name = r.obj
 	}
+	// Use fully qualified name (with leading backslash) for PHP output format
+	if len(name) > 0 && name[0] != '\\' {
+		name = "\\" + name
+	}
 	_, err := fmt.Fprintf(w, "new %s(", name)
 	if err != nil {
 		return err
 	}
 
 	// newargs
-	err = r.newArg.DumpWith(w, []byte{','})
+	err = r.newArg.DumpWith(w, []byte{',', ' '})
 	if err != nil {
 		return err
 	}

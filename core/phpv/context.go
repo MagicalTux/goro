@@ -63,6 +63,17 @@ type Context interface {
 	HeaderContext() *HeaderContext
 }
 
+// GeneratorCallerContext is implemented by generator execution contexts to provide
+// the calling trace (the external call stack that resumed this generator).
+// This allows GetStackTrace to build complete backtraces that include both the
+// generator's own frames and the external invocation chain.
+type GeneratorCallerContext interface {
+	// GetCallingTrace returns the stack trace entries from the context that
+	// resumed this generator, plus a synthetic Generator->method() frame.
+	// The entries should be appended after the generator's own frames.
+	GetCallingTrace() []*StackTraceEntry
+}
+
 type GlobalContext interface {
 	Context
 
@@ -184,6 +195,14 @@ type GlobalContext interface {
 
 type FuncContext interface {
 	Context
+}
+
+// CallSiteLocProvider is implemented by FuncContext implementations that can
+// return the location where the function was called from (the call site), as
+// opposed to Loc() which returns the current execution position in the parent.
+// This is used by generator backtrace capture to record the exact call site.
+type CallSiteLocProvider interface {
+	CallSiteLoc() *Loc
 }
 
 // ClosureStaticVarKeyProvider is an optional interface implemented by FuncContext

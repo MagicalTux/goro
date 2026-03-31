@@ -281,11 +281,13 @@ func (r *runVariableRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		switch t := r.Parent.(type) {
 		case *runOperator:
 			write = t.opD.write
-			// For compound assignments (+=, /=, .=, etc.) on runVariableRef ($$n),
-			// PHP uses FETCH_W which auto-creates the slot silently, so treat as write
-			// (suppress "Undefined variable" warning). This differs from runVariable ($a)
-			// where compound assignments do emit the warning.
+			// For compound arithmetic assignments (+=, /=, -=, etc.) on runVariableRef ($$n),
+			// emit "Undefined variable" warning like runVariable does.
+			// Exception: .= (string concat) silently creates empty string — no warning.
 			// Note: for ??= (coalesce-equal) RHS, always suppress.
+			if t.opD.write && t.opD.op != nil && t.a == r && t.op != tokenizer.T_CONCAT_EQUAL {
+				write = false
+			}
 			if (t.op == tokenizer.T_COALESCE_EQUAL || t.op == tokenizer.T_COALESCE) && t.b == r {
 				write = false
 			}

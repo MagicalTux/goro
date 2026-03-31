@@ -354,56 +354,68 @@ func reflectionAttributeToString(ctx phpv.Context, o *phpobj.ZObject, args []*ph
 		return phpv.ZString("Attribute [ ]").ZVal(), nil
 	}
 
-	// Resolve lazy argument expressions if needed
-	if err := resolveAttrArgs(ctx, data.attr); err != nil {
-		return nil, err
+	attr := data.attr
+
+	// Determine count from ArgExprs if available (before evaluation), otherwise Args
+	numArgs := len(attr.Args)
+	if attr.ArgExprs != nil {
+		numArgs = len(attr.ArgExprs)
 	}
 
-	if len(data.attr.Args) == 0 {
-		return phpv.ZString(fmt.Sprintf("Attribute [ %s ]\n", data.attr.ClassName)).ZVal(), nil
+	if numArgs == 0 {
+		return phpv.ZString(fmt.Sprintf("Attribute [ %s ]\n", attr.ClassName)).ZVal(), nil
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Attribute [ %s ] {\n", data.attr.ClassName))
-	sb.WriteString(fmt.Sprintf("  - Arguments [%d] {\n", len(data.attr.Args)))
-	for i, arg := range data.attr.Args {
+	sb.WriteString(fmt.Sprintf("Attribute [ %s ] {\n", attr.ClassName))
+	sb.WriteString(fmt.Sprintf("  - Arguments [%d] {\n", numArgs))
+	for i := 0; i < numArgs; i++ {
 		sb.WriteString(fmt.Sprintf("    Argument #%d [ ", i))
-		if arg != nil {
-			if arg.GetType() == phpv.ZtObject {
-				// For object arguments, show ClassName(stringRepresentation)
-				obj, ok := arg.Value().(phpv.ZObject)
-				if ok {
-					className := string(obj.GetClass().GetName())
-					// Try to get a meaningful string representation
-					objStr := ""
-					if ag, ok2 := obj.GetOpaque(obj.GetClass()).(interface {
-						Name() string
-					}); ok2 {
-						objStr = ag.Name()
-					} else {
-						// Try __toString if available
-						if m, hasToStr := obj.GetClass().GetMethod("__tostring"); hasToStr {
-							if strVal, err := ctx.CallZValInternal(ctx, m.Method, nil, obj); err == nil && strVal != nil {
-								objStr = strVal.String()
-							}
-						}
-					}
-					if objStr != "" {
-						sb.WriteString(fmt.Sprintf("%s(%s)", className, objStr))
-					} else {
-						sb.WriteString(className)
-					}
-				} else {
-					sb.WriteString("Object")
-				}
-			} else {
-				sb.WriteString(arg.String())
-			}
+
+		var name phpv.ZString
+		if i < len(attr.ArgNames) {
+			name = attr.ArgNames[i]
 		}
+		if name != "" {
+			sb.WriteString(string(name) + " = ")
+		}
+
+		// Use unevaluated expression source text if available
+		if attr.ArgExprs != nil && i < len(attr.ArgExprs) && attr.ArgExprs[i] != nil {
+			sb.WriteString(phpv.DebugDump(attr.ArgExprs[i]))
+		} else if i < len(attr.Args) && attr.Args[i] != nil {
+			sb.WriteString(formatAttrArgValue(ctx, attr.Args[i]))
+		}
+
 		sb.WriteString(" ]\n")
 	}
 	sb.WriteString("  }\n}\n")
 	return phpv.ZString(sb.String()).ZVal(), nil
+}
+
+func formatAttrArgValue(ctx phpv.Context, val *phpv.ZVal) string {
+	if val == nil {
+		return "NULL"
+	}
+	switch val.GetType() {
+	case phpv.ZtString:
+		return "'" + strings.ReplaceAll(string(val.Value().(phpv.ZString)), "'", "\\'") + "'"
+	case phpv.ZtBool:
+		if bool(val.Value().(phpv.ZBool)) {
+			return "true"
+		}
+		return "false"
+	case phpv.ZtNull:
+		return "NULL"
+	case phpv.ZtObject:
+		obj, ok := val.Value().(phpv.ZObject)
+		if ok {
+			return "new \\" + string(obj.GetClass().GetName()) + "()"
+		}
+		return "Object"
+	default:
+		return val.String()
+	}
 }
 
 func reflectionAttributeDebugInfo(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {

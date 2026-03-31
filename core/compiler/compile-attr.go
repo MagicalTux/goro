@@ -88,7 +88,8 @@ func parseAttributes(c compileCtx) ([]*phpv.ZAttribute, error) {
 				}
 				resolved, argNames := resolveAttributeNamedArgsWithNames(className, args, namedArgs)
 				attr.Args = resolved
-				attr.ArgExprs = argExprs
+				// Extend argExprs to cover lazy named args at their resolved positions
+				attr.ArgExprs = extendArgExprsForNamedArgs(argExprs, args, namedArgs, resolved)
 				attr.ArgNames = argNames
 
 				// Read next token after closing )
@@ -132,6 +133,7 @@ func parseAttributes(c compileCtx) ([]*phpv.ZAttribute, error) {
 type orderedNamedArg struct {
 	Name phpv.ZString
 	Val  *phpv.ZVal
+	Expr phpv.Runnable // nil if already resolved; set if lazy eval needed
 }
 
 // parseAttributeArgs parses the arguments inside #[Attr(...)].
@@ -197,12 +199,15 @@ func parseAttributeArgs(c compileCtx) (args []*phpv.ZVal, argExprs []phpv.Runnab
 				return nil, nil, nil, err
 			}
 
-			val, err := expr.Run(c)
-			if err != nil {
+			val, evalErr := expr.Run(c)
+			if evalErr != nil {
+				// Can't evaluate at compile time; store for lazy eval at runtime
 				val = phpv.ZNULL.ZVal()
+				namedArgs = append(namedArgs, orderedNamedArg{Name: argName, Val: val, Expr: expr})
+				hasLazy = true
+			} else {
+				namedArgs = append(namedArgs, orderedNamedArg{Name: argName, Val: val})
 			}
-
-			namedArgs = append(namedArgs, orderedNamedArg{Name: argName, Val: val})
 		} else {
 			// Positional argument - pass i as the already-read first token
 			// if it was a label (to avoid needing double backup), or back up
@@ -390,6 +395,58 @@ func resolveAttributeNamedArgsWithNames(className phpv.ZString, args []*phpv.ZVa
 	}
 
 	return args, names
+}
+
+// extendArgExprsForNamedArgs extends argExprs to include lazy expressions for named args.
+// After resolveAttributeNamedArgsWithNames, named args are appended to args in order.
+// We need to align argExprs with the final resolved positions.
+func extendArgExprsForNamedArgs(argExprs []phpv.Runnable, positionalArgs []*phpv.ZVal, namedArgs []orderedNamedArg, resolved []*phpv.ZVal) []phpv.Runnable {
+	// Check if there are any lazy named args
+	hasLazyNamed := false
+	for _, na := range namedArgs {
+		if na.Expr != nil {
+			hasLazyNamed = true
+			break
+		}
+	}
+	if !hasLazyNamed && len(argExprs) == 0 {
+		return nil
+	}
+
+	// Build extended argExprs with length matching resolved
+	extended := make([]phpv.Runnable, len(resolved))
+	// Copy existing positional argExprs
+	for i, expr := range argExprs {
+		if i < len(extended) {
+			extended[i] = expr
+		}
+	}
+
+	// For named args that are lazy, find their position in resolved
+	// Named args appear starting at len(positionalArgs) in resolved (for unknown classes)
+	// For known classes (paramMap case), they are placed at their specific positions
+	namedStart := len(positionalArgs)
+	for idx, na := range namedArgs {
+		if na.Expr != nil {
+			pos := namedStart + idx
+			if pos < len(extended) {
+				extended[pos] = na.Expr
+			}
+		}
+	}
+
+	// Check if any are set; if all nil, return nil
+	anySet := false
+	for _, e := range extended {
+		if e != nil {
+			anySet = true
+			break
+		}
+	}
+	if !anySet {
+		return nil
+	}
+	return extended
 }
 
 func parseZClassAttr(a *phpv.ZClassAttr, c compileCtx) error {

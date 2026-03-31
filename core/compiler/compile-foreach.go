@@ -117,9 +117,15 @@ func (r *runnableForeach) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 					return nil, iteratorErr(obj.GetClass().GetName())
 				}
 				if r.ref {
-					// Check if the returned iterator supports by-reference foreach
-					// (e.g., ArrayIterator backed by an object or array)
-					if refArr := getForeachByRefArray(ctx, iterObj); refArr != nil {
+					// Check if the returned iterator supports by-reference foreach.
+					if iterObj.GetClass() == phpobj.Generator {
+						// Generator returned from getIterator() - check if it yields by ref.
+						if !phpobj.GeneratorYieldsRef(iterObj) {
+							return nil, phpobj.ThrowError(ctx, phpobj.Exception, "You can only iterate a generator by-reference if it declared that it yields by-reference")
+						}
+						it = &phpObjectIterator{ctx: ctx, obj: iterObj, started: false, fromGetIterator: true}
+					} else if refArr := getForeachByRefArray(ctx, iterObj); refArr != nil {
+						// ArrayIterator or similar: use internal array for by-ref iteration.
 						z = refArr.ZVal()
 						z.HashTable().SeparateCow()
 					} else {
@@ -215,7 +221,12 @@ func (r *runnableForeach) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 	// on the last iterated element drops to 1 and the reference wrapper
 	// is removed. We register a cleanup function on the FuncContext so
 	// CleanupRef is called when the function returns.
-	if r.ref {
+	//
+	// Exception: inside a generator body, the generator goroutine may finish
+	// (naturally or via force-close) while an OUTER by-ref foreach still holds
+	// a reference to the last element. Running CleanupRef at generator end would
+	// collapse that reference prematurely. Skip the registration in that case.
+	if r.ref && !phpobj.IsInGeneratorContext(ctx) {
 		if cr, ok := it.(interface{ CleanupRef() }); ok {
 			if fc, ok2 := ctx.Func().(interface {
 				RegisterForeachRefCleanup(func())
@@ -423,6 +434,9 @@ type phpObjectIterator struct {
 	cachedCurrent   *phpv.ZVal
 	cachedKey       *phpv.ZVal
 	hasCached       bool
+	// For generator by-ref foreach: tracks the previous yielded reference ZVal
+	// so we can collapse it when the loop advances (simulating PHP's refcount drop).
+	prevGenRef *phpv.ZVal
 }
 
 // IsInIteration is implemented by SPL iterators (e.g. RecursiveIteratorIterator)
@@ -561,6 +575,37 @@ func (it *phpObjectIterator) Current(ctx phpv.Context) (*phpv.ZVal, error) {
 // a reference (set up by runYield.Run when yieldsRef is true). This enables
 // "foreach ($gen as &$val)" to alias the yielded value.
 func (it *phpObjectIterator) CurrentMakeRef(ctx phpv.Context) (*phpv.ZVal, error) {
+	// For Generator objects, access state.currentValue directly to avoid the
+	// copy-on-write Dup that callZValImpl applies to method return values.
+	// Without this, the reference chain from yield-by-ref is broken because
+	// callZValImpl dups the currentValue, detaching it from the array slot.
+	if genState := phpobj.GetGeneratorStateFromObject(it.obj); genState != nil {
+		if err := phpobj.GeneratorEnsureStarted(ctx, it.obj); err != nil {
+			return nil, err
+		}
+		v := phpobj.GeneratorCurrentValueRaw(genState)
+		if v == nil {
+			return phpv.ZNULL.ZVal(), nil
+		}
+
+		// Collapse the previous element's reference (PHP refcount-based separation).
+		// When the loop advances to the next element, the previous element's ref
+		// should be unwrapped (only the array slot holds it, so refcount drops to 1).
+		if it.prevGenRef != nil && it.prevGenRef != v {
+			phpobj.CollapseGeneratorRef(it.prevGenRef)
+		}
+
+		if !v.IsRef() {
+			v.MakeRef()
+		}
+		it.prevGenRef = v
+		inner := v.RefTarget()
+		if inner == nil {
+			return v, nil
+		}
+		return phpv.NewZVal(inner), nil
+	}
+
 	v, err := it.Current(ctx)
 	if err != nil || v == nil {
 		return v, err
@@ -575,6 +620,16 @@ func (it *phpObjectIterator) CurrentMakeRef(ctx phpv.Context) (*phpv.ZVal, error
 		return v, nil
 	}
 	return phpv.NewZVal(inner), nil
+}
+
+// CleanupRef is called when the foreach loop ends to clean up generator references.
+// For generators, we intentionally do nothing: the last element's reference persists
+// as long as the outer loop variable still references it (matching PHP refcount semantics).
+func (it *phpObjectIterator) CleanupRef() {
+	// For generator iterators, do nothing: the last prevGenRef stays as a reference.
+	// PHP keeps the last yielded element as a reference if the loop variable is
+	// still alive. We rely on the foreach engine not calling this for generators,
+	// but if it does, we intentionally skip the collapse to match PHP behavior.
 }
 
 func (it *phpObjectIterator) Key(ctx phpv.Context) (*phpv.ZVal, error) {

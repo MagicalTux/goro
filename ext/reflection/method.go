@@ -351,8 +351,11 @@ func reflectionMethodInvoke(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZV
 	if data.method.Modifiers.IsStatic() {
 		// For static methods, always call without $this regardless of the object argument.
 		// PHP ignores any passed object for static methods.
-		// Use CallZValInternal so the call appears as [internal function] in stack traces
-		return ctx.CallZValInternal(ctx, data.method.Method, methodArgs)
+		// Use BindClassLSB to set the called class for late static binding (static::).
+		// data.class is the class on which the method was reflected (e.g. B when reflecting B::call),
+		// data.method.Class is the declaring class (e.g. A).
+		callable := phpv.BindClassLSB(data.method.Method, data.class, data.class, true)
+		return ctx.CallZValInternal(ctx, callable, methodArgs)
 	}
 
 	// Check for non-object argument (null for non-static method)
@@ -425,10 +428,12 @@ func reflectionMethodInvokeArgs(ctx phpv.Context, o *phpobj.ZObject, args []*php
 	}
 
 	if data.method.Modifiers.IsStatic() {
+		// Use BindClassLSB to support late static binding (static::).
+		callable := phpv.BindClassLSB(data.method.Method, data.class, data.class, true)
 		if objArg.GetType() == phpv.ZtObject {
-			return ctx.CallZValInternal(ctx, data.method.Method, callArgs, objArg.AsObject(ctx))
+			return ctx.CallZValInternal(ctx, callable, callArgs, objArg.AsObject(ctx))
 		}
-		return ctx.CallZValInternal(ctx, data.method.Method, callArgs)
+		return ctx.CallZValInternal(ctx, callable, callArgs)
 	}
 
 	if objArg.GetType() != phpv.ZtObject {

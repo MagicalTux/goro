@@ -31,7 +31,7 @@ func initReflectionClassConstant() {
 		"IS_FINAL":     {Value: phpv.ZInt(ReflectionClassConstantIS_FINAL)},
 	}
 	ReflectionClassConstant.Props = []*phpv.ZClassProp{
-		{VarName: "name", Default: phpv.ZStr("").ZVal(), Modifiers: phpv.ZAttrPublic},
+		{VarName: "name", Default: phpv.ZStr("").ZVal(), Modifiers: phpv.ZAttrPublic, TypeHint: phpv.ParseTypeHint("string")},
 		{VarName: "class", Default: phpv.ZStr("").ZVal(), Modifiers: phpv.ZAttrPublic},
 	}
 	ReflectionClassConstant.Methods = map[phpv.ZString]*phpv.ZClassMethod{
@@ -138,6 +138,10 @@ func getClassConstData(o *phpobj.ZObject) *reflectionClassConstantData {
 }
 
 func reflectionClassConstantGetName(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if !o.HashTable().HasString("name") {
+		return nil, phpobj.ThrowError(ctx, phpobj.Error,
+			"Typed property ReflectionClassConstant::$name must not be accessed before initialization")
+	}
 	data := getClassConstData(o)
 	if data == nil {
 		return phpv.ZString("").ZVal(), nil
@@ -155,14 +159,24 @@ func reflectionClassConstantGetValue(ctx phpv.Context, o *phpobj.ZObject, args [
 	}
 	// Value might be a CompileDelayed, resolve it
 	val := data.constVal.Value
+	var resolved *phpv.ZVal
 	if cd, ok := val.(*phpv.CompileDelayed); ok {
-		resolved, err := cd.Run(ctx)
+		var err error
+		resolved, err = cd.Run(ctx)
 		if err != nil {
 			return nil, err
 		}
-		return resolved, nil
+	} else {
+		resolved = val.ZVal()
 	}
-	return val.ZVal(), nil
+	// Validate type if there's a type hint
+	if data.constVal.TypeHint != nil && resolved != nil && !data.constVal.TypeHint.CheckStrict(ctx, resolved) {
+		typeName := classConstValueTypeName(ctx, resolved)
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("Cannot assign %s to class constant %s::%s of type %s",
+				typeName, data.class.GetName(), data.constName, data.constVal.TypeHint.String()))
+	}
+	return resolved, nil
 }
 
 func reflectionClassConstantGetDeclaringClass(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
@@ -262,6 +276,10 @@ func reflectionClassConstantGetAttributes(ctx phpv.Context, o *phpobj.ZObject, a
 }
 
 func reflectionClassConstantToString(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if !o.HashTable().HasString("name") {
+		return nil, phpobj.ThrowError(ctx, phpobj.Error,
+			"Typed property ReflectionClassConstant::$name must not be accessed before initialization")
+	}
 	data := getClassConstData(o)
 	if data == nil {
 		return phpv.ZString("Constant [ ]").ZVal(), nil
@@ -298,6 +316,14 @@ func reflectionClassConstantToString(ctx phpv.Context, o *phpobj.ZObject, args [
 		} else {
 			resolved = data.constVal.Value.ZVal()
 		}
+	}
+
+	// Validate type if there's a type hint
+	if data.constVal.TypeHint != nil && resolved != nil && !data.constVal.TypeHint.CheckStrict(ctx, resolved) {
+		typeName := classConstValueTypeName(ctx, resolved)
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("Cannot assign %s to class constant %s::%s of type %s",
+				typeName, data.class.GetName(), data.constName, data.constVal.TypeHint.String()))
 	}
 
 	var typeStr string
@@ -522,4 +548,33 @@ func classConstMatchesFilter(c *phpv.ZClassConst, filter int64) bool {
 	}
 
 	return match
+}
+
+// classConstValueTypeName returns a human-readable type name for a ZVal, used in type error messages.
+func classConstValueTypeName(ctx phpv.Context, val *phpv.ZVal) string {
+	if val == nil {
+		return "null"
+	}
+	switch val.GetType() {
+	case phpv.ZtObject:
+		obj := val.AsObject(ctx)
+		if obj != nil {
+			return string(obj.GetClass().GetName())
+		}
+		return "object"
+	case phpv.ZtArray:
+		return "array"
+	case phpv.ZtString:
+		return "string"
+	case phpv.ZtInt:
+		return "int"
+	case phpv.ZtFloat:
+		return "float"
+	case phpv.ZtBool:
+		return "bool"
+	case phpv.ZtNull:
+		return "null"
+	default:
+		return "unknown"
+	}
 }

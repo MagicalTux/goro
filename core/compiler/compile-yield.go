@@ -49,6 +49,16 @@ func (r *runYield) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	var key *phpv.ZVal
 	var value *phpv.ZVal
 
+	// PHP evaluates the key expression before the value expression.
+	// Evaluate key first so that object IDs and side effects are consistent with PHP.
+	if r.key != nil {
+		var err error
+		key, err = r.key.Run(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	if r.value != nil {
 		var err error
 		value, err = r.value.Run(ctx)
@@ -57,14 +67,6 @@ func (r *runYield) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		}
 	} else {
 		value = phpv.ZNULL.ZVal()
-	}
-
-	if r.key != nil {
-		var err error
-		key, err = r.key.Run(ctx)
-		if err != nil {
-			return nil, err
-		}
 	}
 
 	// In a &-generator, warn if yielding a non-reference-eligible value.

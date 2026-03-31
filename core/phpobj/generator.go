@@ -87,12 +87,20 @@ type GeneratorState struct {
 	// delegateDone receives a signal when delegation should end.
 	// This is sent by the external iteration code when the delegate is exhausted.
 	delegateDone chan generatorMsg
+
+	// callingTrace is the stack trace captured from the outer context at the point
+	// where the generator was last resumed. This is used to build complete backtraces
+	// that include both the generator's own frames and the external call chain.
+	// callingMethod is the Generator method name that triggered the resume (rewind/next/send/throw).
+	callingTrace  []*phpv.StackTraceEntry
+	callingMethod string
 }
 
 // generatorExecContext wraps a phpv.Context to carry the GeneratorState via Go context.Value.
 type generatorExecContext struct {
 	phpv.Context
 	goCtx context.Context
+	state *GeneratorState // direct reference for fast access
 }
 
 func (g *generatorExecContext) Deadline() (time.Time, bool) {
@@ -112,6 +120,19 @@ func (g *generatorExecContext) Value(key any) any {
 		return v
 	}
 	return g.Context.Value(key)
+}
+
+// GetCallingTrace implements phpv.GeneratorCallerContext. It returns the stack trace
+// entries that were captured when this generator was last resumed, prepended by a
+// synthetic Generator->method() frame. These entries are appended to the generator's
+// own trace frames so that backtraces inside a generator show the complete call chain.
+func (g *generatorExecContext) GetCallingTrace() []*phpv.StackTraceEntry {
+	if g.state == nil || len(g.state.callingTrace) == 0 {
+		return nil
+	}
+	// The first entry in callingTrace is the Generator->method() call.
+	// The remaining entries are the outer call stack.
+	return g.state.callingTrace
 }
 
 // CallZVal delegates to the Global context to ensure proper FuncContext setup.
@@ -191,6 +212,47 @@ func GeneratorForceCloseState(ctx phpv.Context, state *GeneratorState) error {
 	return generatorForceClose(ctx, state)
 }
 
+// IsInGeneratorContext returns true if ctx is executing inside a generator body.
+// This is used to suppress certain cleanups (e.g. foreach-by-ref ref collapse)
+// that would run at the wrong time due to the generator goroutine's lifecycle.
+func IsInGeneratorContext(ctx phpv.Context) bool {
+	return ctx.Value(generatorContextKey{}) != nil
+}
+
+// GeneratorEnsureStarted ensures the generator has been started (runs until the first yield).
+// This is needed before accessing currentValue from outside the generator.
+func GeneratorEnsureStarted(ctx phpv.Context, obj *ZObject) error {
+	state := getGeneratorState(obj)
+	if state == nil {
+		return nil
+	}
+	return generatorEnsureStarted(ctx, state)
+}
+
+// GeneratorCurrentValueRaw returns the raw currentValue from the generator state,
+// bypassing the copy-on-write dup that callZValImpl applies to method return values.
+// Used by CurrentMakeRef to preserve reference semantics for yield-by-reference generators.
+func GeneratorCurrentValueRaw(state *GeneratorState) *phpv.ZVal {
+	if state == nil || !state.valid {
+		return nil
+	}
+	if state.delegate != nil {
+		if state.delegate.valid {
+			return state.delegate.currentValue
+		}
+		return state.currentValue
+	}
+	return state.currentValue
+}
+
+// CollapseGeneratorRef collapses a reference ZVal that was created during
+// yield-by-reference iteration. When the foreach loop advances past a yielded
+// element, the previous element's reference should be unwrapped (PHP refcount
+// semantics: when only one location holds the reference, it's separated).
+func CollapseGeneratorRef(v *phpv.ZVal) {
+	v.UnRef()
+}
+
 // GeneratorBodyFunc is the type for the function body of a generator.
 // It takes a context and arguments and returns a value and error.
 // This function type is used to pass the actual body execution (bypassing
@@ -227,6 +289,9 @@ func (g *generatorBodyCallable) Name() string {
 
 func (g *generatorBodyCallable) GetClass() phpv.ZClass       { return g.class }
 func (g *generatorBodyCallable) GetCalledClass() phpv.ZClass  { return g.calledClass }
+// IsGeneratorBody marks this callable as a generator body function.
+// Used by GetStackTrace to mark the generator function frame as [internal function].
+func (g *generatorBodyCallable) IsGeneratorBody() bool { return true }
 
 // SpawnGenerator creates a new Generator object. The caller provides a body
 // function that will run in a goroutine. This function is the actual body
@@ -314,6 +379,7 @@ func SpawnGeneratorWithOptions(ctx phpv.Context, bodyFn GeneratorBodyFunc, args 
 		genCtx := &generatorExecContext{
 			Context: globalCtx,
 			goCtx:   context.WithValue(globalCtx, generatorContextKey{}, state),
+			state:   state,
 		}
 
 		// Wrap the body in a Callable and use CallZVal to get a proper
@@ -605,6 +671,54 @@ func generatorYieldFromArray(ctx phpv.Context, arr *phpv.ZVal) (*phpv.ZVal, erro
 	return phpv.ZNULL.ZVal(), nil
 }
 
+// captureCallingTrace captures the current external call stack as the generator's
+// calling trace. This is stored in state.callingTrace and used by GetStackTrace
+// inside the generator goroutine to build complete backtraces.
+//
+// ctx is the current context (e.g., FuncContext for Generator->rewind).
+// methodName is the Generator method being called (e.g., "rewind", "next", "send").
+// args are the arguments to show in the synthetic Generator->method() trace entry.
+func captureCallingTrace(ctx phpv.Context, state *GeneratorState, methodName string, args ...*phpv.ZVal) {
+	if ctx == nil {
+		return
+	}
+	// Use CallSiteLoc() if available (returns the frozen call-site location set at
+	// callZValImpl time), otherwise fall back to Loc() (current parent location).
+	var loc *phpv.Loc
+	if csp, ok := ctx.(phpv.CallSiteLocProvider); ok {
+		loc = csp.CallSiteLoc()
+	}
+	if loc == nil {
+		loc = ctx.Loc()
+	}
+	if loc == nil {
+		return
+	}
+	// Build a synthetic entry for the Generator->method() call.
+	// The location is where the caller invoked $gen->method().
+	syntheticEntry := &phpv.StackTraceEntry{
+		FuncName:     "Generator->" + methodName,
+		BareFuncName: methodName,
+		ClassName:    "Generator",
+		MethodType:   "->",
+		Filename:     loc.Filename,
+		Line:         loc.Line,
+		Args:         args,
+		IsInternal:   false,
+	}
+	// Get the outer call stack (skipping the Generator method's own frame).
+	outerCtx := ctx.Parent(1)
+	var outerTrace []*phpv.StackTraceEntry
+	if outerCtx != nil {
+		outerTrace = ctx.Global().GetStackTrace(outerCtx)
+	}
+	// Combine: [Generator->method entry, outer frames...]
+	callingTrace := make([]*phpv.StackTraceEntry, 0, 1+len(outerTrace))
+	callingTrace = append(callingTrace, syntheticEntry)
+	callingTrace = append(callingTrace, outerTrace...)
+	state.callingTrace = callingTrace
+}
+
 // generatorEnsureStarted kicks off the generator if it hasn't been started yet.
 func generatorEnsureStarted(ctx phpv.Context, state *GeneratorState) error {
 	if state.started || state.status == GeneratorClosed {
@@ -612,6 +726,10 @@ func generatorEnsureStarted(ctx phpv.Context, state *GeneratorState) error {
 	}
 	state.started = true
 	state.status = GeneratorRunning
+
+	// Capture the calling context trace so that debug_print_backtrace() and
+	// exception stack traces inside the generator show the full call chain.
+	captureCallingTrace(ctx, state, "rewind")
 
 	// Resume the generator goroutine (send nil as the initial value)
 	state.resumeCh <- generatorMsg{val: phpv.ZNULL.ZVal()}
@@ -859,6 +977,7 @@ func generatorNext(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal,
 		return nil, err
 	}
 
+	captureCallingTrace(ctx, state, "next")
 	if err := generatorAdvance(ctx, state, nil); err != nil {
 		return nil, err
 	}
@@ -940,6 +1059,7 @@ func generatorSend(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal,
 		// forwards the sent value so the first yield expression receives it.
 		// This advances to the second yield (or completion).
 		if state.valid {
+			captureCallingTrace(ctx, state, "send", sendVal)
 			if err := generatorAdvance(ctx, state, sendVal); err != nil {
 				return nil, err
 			}
@@ -950,6 +1070,7 @@ func generatorSend(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal,
 		return phpv.ZNULL.ZVal(), nil
 	}
 
+	captureCallingTrace(ctx, state, "send", sendVal)
 	if err := generatorAdvance(ctx, state, sendVal); err != nil {
 		return nil, err
 	}
@@ -998,6 +1119,9 @@ func generatorThrow(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal
 	if state.status == GeneratorClosed {
 		return nil, throwErr
 	}
+
+	// Capture calling trace with the thrown exception as the argument.
+	captureCallingTrace(ctx, state, "throw", exc)
 
 	return generatorThrowInner(ctx, o, state, throwErr)
 }

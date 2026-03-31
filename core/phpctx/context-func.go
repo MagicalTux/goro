@@ -179,6 +179,14 @@ func (c *FuncContext) Loc() *phpv.Loc {
 	return c.Context.Loc()
 }
 
+// CallSiteLoc returns the frozen location (file/line) from which this function
+// was called, as set during callZValImpl setup. This differs from Loc() which
+// returns the current execution position in the parent context.
+// Implements phpv.CallSiteLocProvider.
+func (c *FuncContext) CallSiteLoc() *phpv.Loc {
+	return c.loc
+}
+
 // InternalLoc returns the "internal" location (Unknown:0) for internal calls,
 // or nil for regular calls. Used by deprecation/warning logic to report the
 // correct location for engine-invoked callbacks.

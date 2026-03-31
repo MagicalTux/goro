@@ -2258,6 +2258,15 @@ func (g *Global) GetStackTrace(ctx phpv.Context) []*phpv.StackTraceEntry {
 			if bareName == "" && fc.class != nil && fc.methodType != "" {
 				bareName = "__construct"
 			}
+			// Generator body functions are marked as [internal function] in PHP backtraces.
+			// This matches PHP's behavior where the generator function frame shows
+			// "[internal function]" instead of a specific file/line.
+			isInternal := fc.isInternal
+			if !isInternal {
+				if _, isGenBody := fc.c.(phpv.GeneratorBodyCallable); isGenBody {
+					isInternal = true
+				}
+			}
 			trace = append(trace, &phpv.StackTraceEntry{
 				FuncName:     fc.GetFuncNameForTrace(),
 				BareFuncName: bareName,
@@ -2267,8 +2276,15 @@ func (g *Global) GetStackTrace(ctx phpv.Context) []*phpv.StackTraceEntry {
 				Line:         fc.loc.Line,
 				Args:         fc.Args,
 				Object:       fc.this,
-				IsInternal:   fc.isInternal,
+				IsInternal:   isInternal,
 			})
+		} else if gcc, ok := context.(phpv.GeneratorCallerContext); ok {
+			// We've hit the generator's execution context boundary.
+			// Append the calling trace (Generator->method() + outer call stack).
+			if callerTrace := gcc.GetCallingTrace(); len(callerTrace) > 0 {
+				trace = append(trace, callerTrace...)
+			}
+			break
 		}
 		context = context.Parent(1)
 	}

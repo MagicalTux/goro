@@ -405,7 +405,11 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			}
 			// For objects implementing ArrayAccess, let offsetGet handle the null key
 			// (e.g. SplFixedArray throws "[] operator not supported for SplFixedArray")
-			if v.GetType() != phpv.ZtObject {
+			if v.GetType() == phpv.ZtArray {
+				// PHP 8: reading from an array with [] (no index) throws a catchable Error
+				return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot use [] for reading")
+			} else if v.GetType() != phpv.ZtObject {
+				// For null/undefined/other types: plain fatal error
 				return nil, &phpv.PhpError{
 					Err:  fmt.Errorf("Cannot use [] for reading"),
 					Code: phpv.E_ERROR,
@@ -536,7 +540,7 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	}
 
 	if ac.offset == nil {
-		write := false
+		write := ac.writeContext // writeContext from caller (e.g. by-ref function arg)
 		isCompound := false
 		switch t := ac.Parent.(type) {
 		case *runOperator:
@@ -576,6 +580,17 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			array := v.Array()
 			if array != nil {
 				return array.OffsetGet(ctx, phpv.ZNULL.ZVal())
+			}
+		}
+		// If we already appended (from a by-ref WriteValue), use the cached key
+		// to look up the newly-created element instead of returning nil.
+		if ac.prepared && ac.cachedOffset != nil {
+			cachedKey := ac.cachedOffset
+			ac.prepared = false
+			ac.cachedOffset = nil
+			array := v.Array()
+			if array != nil {
+				return array.OffsetGet(ctx, cachedKey)
 			}
 		}
 		return nil, nil
@@ -844,6 +859,14 @@ func (ac *runArrayAccess) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 				return phpobj.ThrowError(ctx, phpobj.Error, err.Error())
 			}
 			return err
+		}
+		// Cache the key of the newly appended element so a subsequent Run()
+		// call (e.g. for by-ref parameter binding) can find the new element.
+		if za, ok := array.(*phpv.ZArray); ok {
+			if lastKey, ok2 := za.H().LastIntKey(); ok2 {
+				ac.prepared = true
+				ac.cachedOffset = phpv.ZInt(lastKey).ZVal()
+			}
 		}
 		return nil
 	}

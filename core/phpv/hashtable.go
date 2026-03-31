@@ -268,6 +268,20 @@ func (z *ZHashTable) NewIterator() ZIterator {
 	return &zhashtableIterator{t: z, cur: z.first}
 }
 
+// LastIntKey returns the integer key of the last element in the hash table.
+// Used by WriteValue after appending with [] to find the newly created element.
+func (z *ZHashTable) LastIntKey() (ZInt, bool) {
+	z.lock.RLock()
+	defer z.lock.RUnlock()
+	if z.last == nil {
+		return 0, false
+	}
+	if ki, ok := z.last.k.(ZInt); ok {
+		return ki, true
+	}
+	return 0, false
+}
+
 // SeparateCow forces a copy-on-write separation if needed. This should be
 // called before creating iterators that will be used alongside write operations
 // on the same hash table (e.g., foreach by-reference), so the iterator points

@@ -37,11 +37,14 @@ func (z *zhashtableIterator) CurrentMakeRef(ctx Context) (*ZVal, error) {
 		return nil, nil
 	}
 	// Unwrap previous entry's reference since the loop variable no longer
-	// points to it (simulates PHP's refcount-based reference collapsing)
+	// points to it (simulates PHP's refcount-based reference collapsing).
+	// Use Value() for deep collapse: when yield-by-reference adds an extra
+	// MakeRef layer (triple chain outer→inner→innermost→value), a one-level
+	// collapse would leave a reference behind. Value() follows the full chain.
 	if z.prevRef != nil && z.prevRef != z.cur {
 		pv := z.prevRef.v
 		if inner, ok := pv.v.(*ZVal); ok {
-			pv.v = inner.v
+			pv.v = inner.Value()
 		}
 	}
 	v := z.cur.v
@@ -58,11 +61,12 @@ func (z *zhashtableIterator) CurrentMakeRef(ctx Context) (*ZVal, error) {
 // CleanupRef unwraps the last reference created by CurrentMakeRef.
 // This should be called after a by-reference foreach loop ends to remove
 // the reference wrapper from the last iterated element.
+// Uses Value() for deep collapse to handle multi-level ref chains (e.g. yield-by-ref).
 func (z *zhashtableIterator) CleanupRef() {
 	if z.prevRef != nil {
 		pv := z.prevRef.v
 		if inner, ok := pv.v.(*ZVal); ok {
-			pv.v = inner.v
+			pv.v = inner.Value()
 		}
 		z.prevRef = nil
 	}

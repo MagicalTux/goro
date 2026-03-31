@@ -26,7 +26,11 @@ func reflectionClassToString(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.Z
 			}
 		}
 	}
-	return phpv.ZString(formatReflectionClass(ctx, zc, isReflectionObj, dynamicProps)).ZVal(), nil
+	s, err := formatReflectionClass(ctx, zc, isReflectionObj, dynamicProps)
+	if err != nil {
+		return nil, err
+	}
+	return phpv.ZString(s).ZVal(), nil
 }
 
 // collectDynamicProps returns the names of properties on obj that are not declared in the class.
@@ -200,14 +204,23 @@ func reflectionClassGetConstant(ctx phpv.Context, o *phpobj.ZObject, args []*php
 	if constVal.Value == nil {
 		return phpv.ZNULL.ZVal(), nil
 	}
+	var resolved *phpv.ZVal
 	if cd, ok := constVal.Value.(*phpv.CompileDelayed); ok {
-		resolved, err := cd.Run(ctx)
+		var err error
+		resolved, err = cd.Run(ctx)
 		if err != nil {
 			return nil, err
 		}
-		return resolved, nil
+	} else {
+		resolved = constVal.Value.ZVal()
 	}
-	return constVal.Value.ZVal(), nil
+	if constVal.TypeHint != nil && resolved != nil && !constVal.TypeHint.CheckStrict(ctx, resolved) {
+		typeName := classConstValueTypeName(ctx, resolved)
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("Cannot assign %s to class constant %s::%s of type %s",
+				typeName, zc.GetName(), name, constVal.TypeHint.String()))
+	}
+	return resolved, nil
 }
 
 func reflectionClassGetDefaultProperties(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
@@ -781,7 +794,7 @@ func reflectionClassGetTraitAliases(ctx phpv.Context, o *phpobj.ZObject, args []
 // formatReflectionClass generates a PHP-compatible string representation of a ReflectionClass.
 // isObject: if true, use "Object of class [" prefix (ReflectionObject::__toString)
 // dynamicProps: optional list of dynamic property names to show in the output (ReflectionObject only)
-func formatReflectionClass(ctx phpv.Context, zc *phpobj.ZClass, isObject bool, dynamicProps []phpv.ZString) string {
+func formatReflectionClass(ctx phpv.Context, zc *phpobj.ZClass, isObject bool, dynamicProps []phpv.ZString) (string, error) {
 	var sb strings.Builder
 
 	kind := "Class"
@@ -945,8 +958,11 @@ func formatReflectionClass(ctx phpv.Context, zc *phpobj.ZClass, isObject bool, d
 			var resolvedVal *phpv.ZVal
 			if c.Value != nil {
 				if cd, ok := c.Value.(*phpv.CompileDelayed); ok {
-					resolved, err := cd.Run(ctx)
-					if err == nil && resolved != nil {
+					resolved, resolveErr := cd.Run(ctx)
+					if resolveErr != nil {
+						return "", resolveErr
+					}
+					if resolved != nil {
 						resolvedVal = resolved
 						valStr = formatConstantValue(ctx, resolved)
 					}
@@ -954,6 +970,13 @@ func formatReflectionClass(ctx phpv.Context, zc *phpobj.ZClass, isObject bool, d
 					resolvedVal = c.Value.ZVal()
 					valStr = formatConstantValue(ctx, resolvedVal)
 				}
+			}
+			// Validate type if there's a type hint
+			if c.TypeHint != nil && resolvedVal != nil && !c.TypeHint.CheckStrict(ctx, resolvedVal) {
+				typeName := classConstValueTypeName(ctx, resolvedVal)
+				return "", phpobj.ThrowError(ctx, phpobj.TypeError,
+					fmt.Sprintf("Cannot assign %s to class constant %s::%s of type %s",
+						typeName, zc.GetName(), name, c.TypeHint.String()))
 			}
 			// Infer type from value when no explicit TypeHint
 			if c.TypeHint == nil && resolvedVal != nil {
@@ -1070,7 +1093,7 @@ func formatReflectionClass(ctx phpv.Context, zc *phpobj.ZClass, isObject bool, d
 	}
 	sb.WriteString("  }\n}\n")
 
-	return sb.String()
+	return sb.String(), nil
 }
 
 // inferTypeFromValue infers a PHP type name string from a ZVal for constant type display.
@@ -1205,6 +1228,10 @@ func formatParamValue(ctx phpv.Context, val *phpv.ZVal) string {
 		}
 		return "Array"
 	case phpv.ZtObject:
+		obj := val.AsObject(ctx)
+		if obj != nil {
+			return fmt.Sprintf("object(%s)", obj.GetClass().GetName())
+		}
 		return "Object"
 	default:
 		return val.String()
