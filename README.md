@@ -85,6 +85,7 @@ Goro passes **~8,600 of 12,110 tests** (71.0%) from the PHP 8.5.4 test suite. Fi
 | xml | 15+ | — | SimpleXMLElement class, xml_parser_create/parse, simplexml_load_string/file |
 | curl | 12 | — | CurlHandle class, curl_init/setopt/exec/getinfo via Go net/http |
 | sockets | 20+ | — | Socket class, socket_create/bind/listen/accept/connect, stream_socket_*, fsockopen |
+| mysqli | 30+ | — | mysqli/mysqli_result/mysqli_stmt classes, prepared statements, transactions via go-sql-driver/mysql |
 | spl | 40+ | 82% | ArrayObject, ArrayIterator, SplFileObject, SplFixedArray, SplHeap, SplObjectStorage, iterators |
 | reflection | 8 classes | 69% | ReflectionClass (with __toString), ReflectionMethod, ReflectionProperty, ReflectionFunction, ReflectionParameter, ReflectionAttribute |
 | getimagesize | — | 100% | 16 image formats (JPEG, PNG, GIF, BMP, WebP, AVIF, HEIF, TIFF, PSD, etc.) |
@@ -93,8 +94,8 @@ Goro passes **~8,600 of 12,110 tests** (71.0%) from the PHP 8.5.4 test suite. Fi
 
 | Extension | Notes |
 |-----------|-------|
+| PDO | Planned via database/sql |
 | iconv | Planned via `golang.org/x/text/transform` |
-| mysqli/PDO | Database extensions |
 | gd | Image processing |
 | intl | Internationalization (ICU) |
 | Phar | PHP archive format |
