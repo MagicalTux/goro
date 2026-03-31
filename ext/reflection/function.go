@@ -170,7 +170,16 @@ func reflectionFunctionGetParameters(ctx phpv.Context, o *phpobj.ZObject, args [
 	if data == nil || data.args == nil {
 		return phpv.NewZArray().ZVal(), nil
 	}
-	return createReflectionParameterObjects(ctx, data.args, data.name)
+	// Pass the closure callable so getDeclaringFunction() works on the returned parameters.
+	var callable phpv.Callable
+	if data.closure != nil {
+		if c, ok := data.closure.(phpv.Callable); ok {
+			callable = c
+		}
+	} else if data.callable != nil {
+		callable = data.callable
+	}
+	return createReflectionParameterObjectsWithCallable(ctx, data.args, data.name, callable)
 }
 
 func reflectionFunctionInvoke(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {

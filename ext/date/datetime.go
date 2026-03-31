@@ -98,15 +98,6 @@ func checkDatePeriodInitialized(ctx phpv.Context, obj *phpobj.ZObject) error {
 		fmt.Sprintf("Object of type %s (inheriting DatePeriod) has not been correctly initialized by calling parent::__construct() in its constructor", className))
 }
 
-// checkDateTimeZoneInitialized checks if a DateTimeZone has been properly initialized.
-func checkDateTimeZoneInitialized(ctx phpv.Context, obj *phpobj.ZObject) error {
-	if _, ok := obj.Opaque[DateTimeZone]; ok {
-		return nil
-	}
-	return phpobj.ThrowError(ctx, DateObjectError,
-		"Trying to compare uninitialized DateTimeZone objects")
-}
-
 // getCalledClassForStatic gets the late-static-binding class from context, or returns the fallback.
 func getCalledClassForStatic(ctx phpv.Context, fallback *phpobj.ZClass) *phpobj.ZClass {
 	// Try the current context first (for static method calls, the class is set on callCtx)
@@ -138,8 +129,12 @@ func parseDateTimeWithTz(ctx phpv.Context, args []*phpv.ZVal) (time.Time, error)
 	loc := getTimezone(ctx)
 	if len(args) > 1 && args[1] != nil && !args[1].IsNull() {
 		if tzObj, ok := args[1].Value().(*phpobj.ZObject); ok {
-			if tzLoc, ok := getTimezoneLoc(tzObj); ok {
+			if tzLoc, tzOk := getTimezoneLoc(tzObj); tzOk {
 				loc = tzLoc
+			} else if tzObj.Class.InstanceOf(DateTimeZone) {
+				// DateTimeZone object but not initialized - throw Error
+				return time.Time{}, phpobj.ThrowError(ctx, phpobj.Error,
+					"The DateTimeZone object has not been correctly initialized by its constructor")
 			}
 		}
 	}
@@ -354,6 +349,13 @@ func modifyMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*p
 	if len(modifier) == 0 {
 		return nil, phpobj.ThrowError(ctx, DateMalformedStringException, "DateTime::modify(): Failed to parse time string () at position 0 ( ): Empty string")
 	}
+	// Handle @timestamp: set to Unix timestamp in UTC (timezone type 1)
+	if len(modifier) > 1 && modifier[0] == '@' {
+		if ts, err := strconv.ParseInt(strings.TrimSpace(string(modifier[1:])), 10, 64); err == nil {
+			setTimeVal(this, time.Unix(ts, 0).UTC())
+			return this.ZVal(), nil
+		}
+	}
 	newT, stErr := strtotime.StrToTime(string(modifier), strtotime.InTZ(t.Location()), strtotime.Rel(t))
 	if stErr != nil {
 		// Fallback to custom parser
@@ -382,6 +384,17 @@ func modifyImmutableMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.
 	modifier := args[0].AsString(ctx)
 	if len(modifier) == 0 {
 		return nil, phpobj.ThrowError(ctx, DateMalformedStringException, "DateTimeImmutable::modify(): Failed to parse time string () at position 0 ( ): Empty string")
+	}
+	// Handle @timestamp: set to Unix timestamp in UTC (timezone type 1)
+	if len(modifier) > 1 && modifier[0] == '@' {
+		if ts, err := strconv.ParseInt(strings.TrimSpace(string(modifier[1:])), 10, 64); err == nil {
+			newObj, err := phpobj.NewZObject(ctx, this.Class)
+			if err != nil {
+				return nil, err
+			}
+			setTimeVal(newObj, time.Unix(ts, 0).UTC())
+			return newObj.ZVal(), nil
+		}
 	}
 	newT, stErr := strtotime.StrToTime(string(modifier), strtotime.InTZ(t.Location()), strtotime.Rel(t))
 	if stErr != nil {
@@ -1193,15 +1206,40 @@ func unserializeMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal
 	}
 	arr := args[0].Value().(*phpv.ZArray)
 	dateVal, _ := arr.OffsetGet(ctx, phpv.ZString("date").ZVal())
-	if dateVal == nil || dateVal.IsNull() || string(dateVal.AsString(ctx)) == "" {
+	if dateVal == nil || dateVal.IsNull() || dateVal.GetType() != phpv.ZtString || string(dateVal.AsString(ctx)) == "" {
 		return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DateTime object")
 	}
 	dateStr := string(dateVal.AsString(ctx))
+
+	// Validate timezone_type: must be integer 1, 2, or 3
+	tzTypeVal, _ := arr.OffsetGet(ctx, phpv.ZString("timezone_type").ZVal())
+	if tzTypeVal != nil && !tzTypeVal.IsNull() {
+		if tzTypeVal.GetType() != phpv.ZtInt {
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DateTime object")
+		}
+		tzType := int(tzTypeVal.AsInt(ctx))
+		if tzType < 1 || tzType > 3 {
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DateTime object")
+		}
+	}
+
 	tzVal, _ := arr.OffsetGet(ctx, phpv.ZString("timezone").ZVal())
 	loc := time.UTC
 	if tzVal != nil && !tzVal.IsNull() {
-		loc = resolveTimezoneForSerialization(string(tzVal.AsString(ctx)))
+		tzStr := string(tzVal.AsString(ctx))
+		loaded := resolveTimezoneForSerialization(tzStr)
+		if loaded == time.UTC && tzStr != "UTC" && tzStr != "GMT" {
+			if _, err := time.LoadLocation(tzStr); err != nil {
+				if _, ok := timezoneAbbreviationOffsets[strings.ToUpper(tzStr)]; !ok {
+					if len(tzStr) < 2 || (tzStr[0] != '+' && tzStr[0] != '-') {
+						return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DateTime object")
+					}
+				}
+			}
+		}
+		loc = loaded
 	}
+
 	parsed, err := time.ParseInLocation("2006-01-02 15:04:05.000000", dateStr, loc)
 	if err != nil {
 		parsed, err = time.ParseInLocation("2006-01-02 15:04:05", dateStr, loc)
@@ -1230,15 +1268,45 @@ func unserializeMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal
 // wakeupMethod implements DateTime::__wakeup() - validates serialization
 func wakeupMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	dateVal := this.HashTable().GetString("date")
-	if dateVal == nil || dateVal.IsNull() || string(dateVal.AsString(ctx)) == "" {
+	if dateVal == nil || dateVal.IsNull() || dateVal.GetType() != phpv.ZtString || string(dateVal.AsString(ctx)) == "" {
 		return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DateTime object")
 	}
 
 	dateStr := string(dateVal.AsString(ctx))
+
+	// Validate timezone_type: must be integer 1, 2, or 3
+	tzTypeVal := this.HashTable().GetString("timezone_type")
+	if tzTypeVal != nil && !tzTypeVal.IsNull() {
+		if tzTypeVal.GetType() != phpv.ZtInt {
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DateTime object")
+		}
+		tzType := int(tzTypeVal.AsInt(ctx))
+		if tzType < 1 || tzType > 3 {
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DateTime object")
+		}
+	}
+
 	tzVal := this.HashTable().GetString("timezone")
 	loc := time.UTC
 	if tzVal != nil && !tzVal.IsNull() {
-		loc = resolveTimezoneForSerialization(string(tzVal.AsString(ctx)))
+		tzStr := string(tzVal.AsString(ctx))
+		// Validate: timezone must be loadable
+		loaded := resolveTimezoneForSerialization(tzStr)
+		// resolveTimezoneForSerialization returns UTC on failure; check if it actually loaded something valid
+		// by verifying the timezone name or offset matches
+		if loaded == time.UTC && tzStr != "UTC" && tzStr != "GMT" {
+			// Try explicit load to see if the timezone is valid
+			if _, err := time.LoadLocation(tzStr); err != nil {
+				// Not a valid named timezone - check if it's a valid abbreviation
+				if _, ok := timezoneAbbreviationOffsets[strings.ToUpper(tzStr)]; !ok {
+					// Not a valid offset either - check if it starts with +/- for fixed offset
+					if len(tzStr) < 2 || (tzStr[0] != '+' && tzStr[0] != '-') {
+						return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DateTime object")
+					}
+				}
+			}
+		}
+		loc = loaded
 	}
 
 	parsed, err := time.ParseInLocation("2006-01-02 15:04:05.000000", dateStr, loc)
@@ -1557,6 +1625,22 @@ func dateTimeDebugInfo(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal
 		return phpv.NewZArray().ZVal(), nil
 	}
 	arr := phpv.NewZArray()
+
+	// Include user-defined properties from the object's hash table that are NOT
+	// the standard DateTime properties (date, timezone_type, timezone).
+	// These should appear first (in declaration order), before the date fields.
+	standardProps := map[string]bool{"date": true, "timezone_type": true, "timezone": true}
+	ht := this.HashTable()
+	iter := ht.NewIterator()
+	for iter.Valid(ctx) {
+		key, _ := iter.Key(ctx)
+		val, _ := iter.Current(ctx)
+		keyStr := key.String()
+		if !standardProps[keyStr] {
+			arr.OffsetSet(ctx, phpv.ZString(keyStr), val)
+		}
+		iter.Next(ctx)
+	}
 	// Format: "2006-12-12 00:00:00.000000"
 	dateStr := fmt.Sprintf("%04d-%02d-%02d %02d:%02d:%02d.%06d",
 		t.Year(), int(t.Month()), t.Day(),
@@ -1640,7 +1724,23 @@ func dateTimeZoneCompare(ctx phpv.Context, a, b phpv.ZObject) (int, error) {
 	if aLoc.String() == bLoc.String() {
 		return 0, nil
 	}
-	if aLoc.String() < bLoc.String() {
+	// Different timezone zones of the same type are not orderable (PHP returns 1 for !=,
+	// but since < and > both return false for unequal timezones, use CompareUncomparable).
+	return phpv.CompareUncomparable, nil
+}
+
+// dateTimeCompare handles comparison of DateTime and DateTimeImmutable objects.
+// PHP compares by Unix timestamp (including sub-second precision via nanoseconds).
+func dateTimeCompare(ctx phpv.Context, a, b phpv.ZObject) (int, error) {
+	aTime, aOk := getTimeFromObj(a)
+	bTime, bOk := getTimeFromObj(b)
+	if !aOk || !bOk {
+		return 0, phpobj.ThrowError(ctx, DateObjectError, "Trying to compare an incomplete DateTime or DateTimeImmutable object")
+	}
+	if aTime.Equal(bTime) {
+		return 0, nil
+	}
+	if aTime.Before(bTime) {
 		return -1, nil
 	}
 	return 1, nil
@@ -1672,10 +1772,10 @@ func init() {
 				Name:      "getTransitions",
 				Modifiers: phpv.ZAttrPublic,
 				Method: phpobj.NativeMethod(func(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-					loc, ok := getTimezoneLoc(this)
-					if !ok {
-						return phpv.ZBool(false).ZVal(), nil
+					if err := checkDateTimeZoneInitialized(ctx, this); err != nil {
+						return nil, err
 					}
+					loc, _ := getTimezoneLoc(this)
 					// Return a basic transitions array with at least the current offset
 					result := phpv.NewZArray()
 					now := time.Now().In(loc)
@@ -1691,6 +1791,21 @@ func init() {
 					return result.ZVal(), nil
 				}),
 			},
+			"getlocation": {
+				Name:      "getLocation",
+				Modifiers: phpv.ZAttrPublic,
+				Method: phpobj.NativeMethod(func(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+					if err := checkDateTimeZoneInitialized(ctx, this); err != nil {
+						return nil, err
+					}
+					result := phpv.NewZArray()
+					result.OffsetSet(ctx, phpv.ZString("country_code"), phpv.ZString("??").ZVal())
+					result.OffsetSet(ctx, phpv.ZString("latitude"), phpv.ZFloat(0).ZVal())
+					result.OffsetSet(ctx, phpv.ZString("longitude"), phpv.ZFloat(0).ZVal())
+					result.OffsetSet(ctx, phpv.ZString("comments"), phpv.ZString("").ZVal())
+					return result.ZVal(), nil
+				}),
+			},
 			"listidentifiers": {
 				Name:      "listIdentifiers",
 				Modifiers: phpv.ZAttrPublic | phpv.ZAttrStatic,
@@ -1700,6 +1815,10 @@ func init() {
 				Name:      "listAbbreviations",
 				Modifiers: phpv.ZAttrPublic | phpv.ZAttrStatic,
 				Method:    phpobj.NativeStaticMethod(datetimezoneListAbbreviations),
+			},
+			"__set_state": {
+				Name:      "__set_state",
+				Modifiers: phpv.ZAttrPublic | phpv.ZAttrStatic,
 			},
 			"__debuginfo": {
 				Name:      "__debugInfo",
@@ -1734,8 +1853,142 @@ func init() {
 					return arr.ZVal(), nil
 				}),
 			},
+			"__serialize": {
+				Name:      "__serialize",
+				Modifiers: phpv.ZAttrPublic,
+				Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+					// Throw if not initialized (constructor not called)
+					if _, ok := o.Opaque[DateTimeZone]; !ok {
+						className := o.Class.GetName()
+						baseClass := "DateTimeZone"
+						if string(className) == baseClass {
+							return nil, phpobj.ThrowError(ctx, DateObjectError,
+								fmt.Sprintf("Object of type %s has not been correctly initialized by calling parent::__construct() in its constructor", className))
+						}
+						return nil, phpobj.ThrowError(ctx, DateObjectError,
+							fmt.Sprintf("Object of type %s (inheriting %s) has not been correctly initialized by calling parent::__construct() in its constructor", className, baseClass))
+					}
+					loc := o.Opaque[DateTimeZone].(*time.Location)
+					name := loc.String()
+					tzType := 3
+					if len(name) > 0 && (name[0] == '+' || name[0] == '-') {
+						tzType = 1
+					} else if len(name) <= 5 && name != "Local" && name != "UTC" && !strings.Contains(name, "/") {
+						tzType = 2
+					}
+					arr := phpv.NewZArray()
+					// Include user-defined properties from subclasses first
+					standardProps := map[string]bool{"timezone_type": true, "timezone": true}
+					ht := o.HashTable()
+					iter := ht.NewIterator()
+					for iter.Valid(ctx) {
+						key, _ := iter.Key(ctx)
+						val, _ := iter.Current(ctx)
+						keyStr := key.String()
+						if !standardProps[keyStr] {
+							arr.OffsetSet(ctx, phpv.ZString(keyStr), val)
+						}
+						iter.Next(ctx)
+					}
+					arr.OffsetSet(ctx, phpv.ZString("timezone_type"), phpv.ZInt(tzType).ZVal())
+					arr.OffsetSet(ctx, phpv.ZString("timezone"), phpv.ZString(name).ZVal())
+					return arr.ZVal(), nil
+				}),
+			},
+			"__unserialize": {
+				Name:      "__unserialize",
+				Modifiers: phpv.ZAttrPublic,
+				Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+					if len(args) < 1 || args[0].GetType() != phpv.ZtArray {
+						return nil, nil
+					}
+					arr := args[0].Value().(*phpv.ZArray)
+					tzVal, _ := arr.OffsetGet(ctx, phpv.ZString("timezone").ZVal())
+					if tzVal == nil || tzVal.IsNull() {
+						return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DateTimeZone object")
+					}
+					tzName := tzVal.AsString(ctx)
+					loc, err := parseTzName(string(tzName))
+					if err != nil {
+						return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DateTimeZone object")
+					}
+					// Normalize offset timezone names to +HH:MM format (same as constructor)
+					tzNameNorm := string(tzName)
+					if len(tzNameNorm) >= 2 && (tzNameNorm[0] == '+' || tzNameNorm[0] == '-') {
+						if offset, ok := parseTZOffset(tzNameNorm); ok {
+							sign := "+"
+							absOffset := offset
+							if offset < 0 {
+								sign = "-"
+								absOffset = -offset
+							}
+							hours := absOffset / 3600
+							mins := (absOffset % 3600) / 60
+							tzNameNorm = fmt.Sprintf("%s%02d:%02d", sign, hours, mins)
+							loc = time.FixedZone(tzNameNorm, offset)
+						}
+					}
+					o.Opaque[DateTimeZone] = loc
+					// Set hash table props for var_dump/var_export
+					tzTypeVal, _ := arr.OffsetGet(ctx, phpv.ZString("timezone_type").ZVal())
+					if tzTypeVal != nil && !tzTypeVal.IsNull() {
+						o.HashTable().SetString("timezone_type", tzTypeVal)
+					}
+					o.HashTable().SetString("timezone", phpv.ZString(tzNameNorm).ZVal())
+					// Also restore any user-defined properties
+					it := arr.NewIterator()
+					for it.Valid(ctx) {
+						k, _ := it.Key(ctx)
+						v, _ := it.Current(ctx)
+						ks := k.String()
+						if ks != "timezone" && ks != "timezone_type" {
+							o.ObjectSet(ctx, phpv.ZString(ks), v)
+						}
+						it.Next(ctx)
+					}
+					return nil, nil
+				}),
+			},
 		},
 	}
+	// Wire up DateTimeZone::__set_state which needs the class reference
+	DateTimeZone.Methods["__set_state"].Method = phpobj.NativeStaticMethod(func(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+		if len(args) < 1 || args[0].GetType() != phpv.ZtArray {
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DateTimeZone object")
+		}
+		arr := args[0].Value().(*phpv.ZArray)
+		// timezone_type must be an integer (not float)
+		tzTypeVal, _ := arr.OffsetGet(ctx, phpv.ZString("timezone_type").ZVal())
+		if tzTypeVal == nil || tzTypeVal.GetType() != phpv.ZtInt {
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DateTimeZone object")
+		}
+		tzType := int(tzTypeVal.Value().(phpv.ZInt))
+		if tzType < 1 || tzType > 3 {
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DateTimeZone object")
+		}
+		// timezone must be a string
+		tzNameVal, _ := arr.OffsetGet(ctx, phpv.ZString("timezone").ZVal())
+		if tzNameVal == nil || tzNameVal.GetType() != phpv.ZtString {
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DateTimeZone object")
+		}
+		tzName := string(tzNameVal.Value().(phpv.ZString))
+		// Must not contain null bytes
+		if strings.Contains(tzName, "\x00") {
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DateTimeZone object")
+		}
+		loc, err := parseTzName(tzName)
+		if err != nil {
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DateTimeZone object")
+		}
+		newObj, objErr := phpobj.NewZObject(ctx, DateTimeZone)
+		if objErr != nil {
+			return nil, objErr
+		}
+		newObj.Opaque[DateTimeZone] = loc
+		newObj.HashTable().SetString("timezone_type", phpv.ZInt(tzType).ZVal())
+		newObj.HashTable().SetString("timezone", phpv.ZString(tzName).ZVal())
+		return newObj.ZVal(), nil
+	})
 
 	// DateTimeInterface - internal-only interface
 	DateTimeInterface = &phpobj.ZClass{
@@ -1986,6 +2239,7 @@ func init() {
 		Implementations: []*phpobj.ZClass{DateTimeInterface},
 		Props:           []*phpv.ZClassProp{},
 		Const:           map[phpv.ZString]*phpv.ZClassConst{},
+		H:               &phpv.ZClassHandlers{HandleCompare: dateTimeCompare},
 		Methods: map[phpv.ZString]*phpv.ZClassMethod{
 			"__construct": {
 				Name:      "__construct",
@@ -2127,8 +2381,11 @@ func init() {
 			return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "DateTime::createFromImmutable(): Argument #1 ($object) must be of type DateTimeImmutable, "+args[0].GetType().TypeName()+" given")
 		}
 		srcObj := args[0].Value().(phpv.ZObject)
-		// Check if source object is properly initialized
+		// Check that source object is a DateTimeImmutable (not just any DateTime)
 		if zo, ok := srcObj.(*phpobj.ZObject); ok {
+			if !zo.GetClass().InstanceOf(DateTimeImmutable) {
+				return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("DateTime::createFromImmutable(): Argument #1 ($object) must be of type DateTimeImmutable, %s given", zo.GetClass().GetName()))
+			}
 			if err := checkDateTimeInitialized(ctx, zo); err != nil {
 				return nil, err
 			}
@@ -2137,7 +2394,9 @@ func init() {
 		if !ok {
 			return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "DateTime::createFromImmutable(): Argument #1 ($object) must be of type DateTimeImmutable")
 		}
-		newObj, err := phpobj.NewZObject(ctx, DateTime)
+		// Use late static binding
+		actualClass := getCalledClassForStatic(ctx, DateTime)
+		newObj, err := phpobj.NewZObject(ctx, actualClass)
 		if err != nil {
 			return nil, err
 		}
@@ -2150,6 +2409,7 @@ func init() {
 		Name:            "DateTimeImmutable",
 		Implementations: []*phpobj.ZClass{DateTimeInterface},
 		Props:           []*phpv.ZClassProp{},
+		H:               &phpv.ZClassHandlers{HandleCompare: dateTimeCompare},
 		Methods: map[phpv.ZString]*phpv.ZClassMethod{
 			"__construct": {
 				Name:      "__construct",
@@ -3204,6 +3464,11 @@ func datePeriodCreateFromISO8601String(ctx phpv.Context, args []*phpv.ZVal) (*ph
 
 	// Use late static binding for subclass support
 	actualClass := getCalledClassForStatic(ctx, DatePeriod)
+
+	// Check if the class is abstract (cannot instantiate abstract class)
+	if actualClass.Attr&phpv.ZClassAttr(phpv.ZClassExplicitAbstract) != 0 {
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Cannot instantiate abstract class %s", actualClass.GetName()))
+	}
 
 	// Create the DatePeriod without calling the constructor.
 	obj, err := phpobj.NewZObjectOpaque(ctx, actualClass, true)

@@ -189,6 +189,12 @@ func (c *FuncContext) InternalLoc() *phpv.Loc {
 	return nil
 }
 
+// SuppressCalledIn reports whether the "called in X on line Y" suffix should be
+// suppressed from argument-count and type error messages for this call.
+func (c *FuncContext) SuppressCalledIn() bool {
+	return c.suppressCalledIn
+}
+
 func (c *FuncContext) Class() phpv.ZClass {
 	return c.class
 }

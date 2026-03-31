@@ -793,10 +793,13 @@ func generatorCurrent(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZV
 	// When delegating, return the delegate's current value (which may have changed
 	// if the delegate was advanced externally since our last yield).
 	if state.delegate != nil {
-		if !state.delegate.valid {
-			return phpv.ZNULL.ZVal(), nil
+		if state.delegate.valid {
+			return state.delegate.currentValue, nil
 		}
-		return state.delegate.currentValue, nil
+		// Delegate exhausted externally: return the outer generator's last known value
+		// (the last value yielded by the delegate before it was exhausted externally).
+		// The outer generator hasn't advanced yet, so its currentValue is the last seen.
+		return state.currentValue, nil
 	}
 
 	return state.currentValue, nil
@@ -879,9 +882,19 @@ func generatorValid(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal
 		return nil, err
 	}
 
-	// When delegating, the outer generator is valid as long as the delegate is valid.
+	// When delegating, the outer generator's validity depends on the delegate.
 	if state.delegate != nil {
-		return phpv.ZBool(state.delegate.valid).ZVal(), nil
+		if state.delegate.valid {
+			return phpv.ZTrue.ZVal(), nil
+		}
+		// Delegate is exhausted (possibly advanced externally).
+		// If the outer goroutine is still suspended (waiting for delegateDone),
+		// the outer generator is still valid — it will resume past "yield from".
+		// Do NOT advance here; the caller must call next()/send() to advance.
+		if state.delegateDone != nil {
+			return phpv.ZTrue.ZVal(), nil
+		}
+		return phpv.ZBool(state.valid).ZVal(), nil
 	}
 
 	return phpv.ZBool(state.valid).ZVal(), nil

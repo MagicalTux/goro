@@ -299,14 +299,21 @@ func doVarDump(ctx phpv.Context, z *phpv.ZVal, linePfx string, recurs map[uintpt
 		} else if obj, ok := v.(*phpobj.ZObject); ok {
 			for prop := range obj.IterProps(ctx) {
 				suffix := ""
+				displayName := prop.VarName
 				switch {
 				case prop.Modifiers.IsPrivate():
 					className := string(obj.GetDeclClassName(prop))
 					suffix = `:"` + className + `":private`
 				case prop.Modifiers.IsProtected():
 					suffix = ":protected"
+					// If VarName is stored as \0*\0propName (dynamic protected property),
+					// strip the mangling prefix for display.
+					vn := string(prop.VarName)
+					if len(vn) >= 3 && vn[0] == '\x00' && vn[1] == '*' && vn[2] == '\x00' {
+						displayName = phpv.ZString(vn[3:])
+					}
 				}
-				fmt.Fprintf(ctx, "%s[\"%s\"%s]=>\n", localPfx, prop.VarName, suffix)
+				fmt.Fprintf(ctx, "%s[\"%s\"%s]=>\n", localPfx, displayName, suffix)
 
 				// Try to get value, calling get hooks for virtual hooked properties
 				val, hasVal, hookErr := obj.GetPropValueOrHook(ctx, prop)

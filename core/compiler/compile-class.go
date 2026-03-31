@@ -1131,6 +1131,11 @@ func compileClass(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 				if err := validateTypeHint(constTypeHint, i.Loc()); err != nil {
 					return nil, err
 				}
+				// A doc comment may have appeared between the type hint and the constant name
+				// (e.g. "const bool /** doc */ NAME = value;"). Capture it now if memberDoc is still empty.
+				if memberDoc == "" {
+					memberDoc = c.takeDocComment()
+				}
 			}
 
 			for {

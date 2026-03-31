@@ -87,7 +87,15 @@ func exceptionEntryToString(ctx phpv.Context, o *ZObject, maxLen int) (string, e
 	if opaque := o.GetOpaque(Exception); opaque != nil {
 		trace, _ = opaque.([]*phpv.StackTraceEntry)
 	}
-	className := o.GetClass().GetName()
+	// Use o.Class (not GetClass) to get the actual class name of the object,
+	// since GetClass() may return the parent class (Exception) when this method
+	// is called in the context of an inherited Exception::__toString method.
+	var className phpv.ZString
+	if o.Class != nil {
+		className = o.Class.GetName()
+	} else {
+		className = o.GetClass().GetName()
+	}
 	messageVal := o.HashTable().GetString("message")
 	file := o.HashTable().GetString("file")
 	line := o.HashTable().GetString("line")

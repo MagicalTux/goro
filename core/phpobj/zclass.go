@@ -2203,13 +2203,14 @@ func formatDelayedDefault(r phpv.Runnable) string {
 func (c *ZClass) validateMagicMethods(ctx phpv.Context) error {
 	// Validate magic method argument counts
 	magicArgCounts := map[phpv.ZString]int{
-		"__call":       2,
-		"__callstatic": 2,
-		"__get":        1,
-		"__set":        2,
-		"__isset":      1,
-		"__unset":      1,
+		"__call":        2,
+		"__callstatic":  2,
+		"__get":         1,
+		"__set":         2,
+		"__isset":       1,
+		"__unset":       1,
 		"__unserialize": 1,
+		"__set_state":   1,
 	}
 
 	for name, requiredArgs := range magicArgCounts {

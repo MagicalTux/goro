@@ -222,22 +222,22 @@ func phpDateFormat(format string, t time.Time) string {
 				buf.WriteString(phpDateFormat("P", t))
 			}
 
-		case 'X': // An expanded full numeric representation of a year, at least 4 digits
+		case 'X': // An expanded full numeric representation of a year, always with sign prefix
 			y := t.Year()
 			if y < 0 {
 				buf.WriteString(fmt.Sprintf("-%04d", -y))
-			} else if y > 9999 {
-				buf.WriteString(fmt.Sprintf("+%d", y))
 			} else {
-				buf.WriteString(fmt.Sprintf("%04d", y))
+				buf.WriteString(fmt.Sprintf("+%04d", y))
 			}
 
 		case 'x': // An expanded full numeric representation if needed, or a standard representation if possible
 			y := t.Year()
-			if y < 0 {
-				buf.WriteString(fmt.Sprintf("-%04d", -y))
-			} else if y > 9999 {
-				buf.WriteString(fmt.Sprintf("+%d", y))
+			if y < 0 || y > 9999 {
+				if y < 0 {
+					buf.WriteString(fmt.Sprintf("-%04d", -y))
+				} else {
+					buf.WriteString(fmt.Sprintf("+%d", y))
+				}
 			} else {
 				buf.WriteString(fmt.Sprintf("%04d", y))
 			}
@@ -935,6 +935,15 @@ func strToTime(input string, base time.Time) (time.Time, bool) {
 		return base, false
 	}
 
+	// ISO 8601 expanded format: "+YYYY-MM-DD..." or "-YYYY-MM-DD..."
+	// Strip the leading "+" for positive years (negative years have "-" which is already handled
+	// by the date parsing code below when it encounters "-YYYY-").
+	if len(input) > 5 && input[0] == '+' && input[1] >= '0' && input[1] <= '9' {
+		if t, ok := strToTime(input[1:], base); ok {
+			return t, true
+		}
+	}
+
 	// Simple keywords
 	switch {
 	case reNow.MatchString(input):
@@ -990,6 +999,19 @@ func strToTime(input string, base time.Time) (time.Time, bool) {
 				return time.Date(y, m, d+diff, 0, 0, 0, 0, base.Location()), true
 			}
 		}
+	}
+
+	// Bare timezone name/abbreviation (e.g., "GMT", "UTC", "CET", "America/New_York")
+	// PHP treats a bare timezone string as "current time in that timezone".
+	upper := strings.ToUpper(input)
+	if offset, ok := timezoneAbbreviationOffsets[upper]; ok {
+		// It's a known timezone abbreviation - return base time in that timezone
+		tzLoc := time.FixedZone(input, offset)
+		return base.In(tzLoc), true
+	}
+	// Try as a named timezone identifier (e.g., "America/New_York", "UTC")
+	if tzLoc, err := time.LoadLocation(input); err == nil {
+		return base.In(tzLoc), true
 	}
 
 	// "N ago" format
@@ -1220,6 +1242,9 @@ func strToTime(input string, base time.Time) (time.Time, bool) {
 		time.RFC1123,
 		time.RFC822Z,
 		time.RFC822,
+		// RFC850 format: "Thursday, 15-Jun-23 12:00:00 CEST"
+		"Monday, 02-Jan-06 15:04:05 MST",
+		"Monday, 02-Jan-06 15:04:05 -0700",
 		time.ANSIC,
 		time.UnixDate,
 		"Jan 2, 2006 15:04:05 MST",

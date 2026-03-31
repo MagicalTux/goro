@@ -258,14 +258,21 @@ func doDebugZvalDump(ctx phpv.Context, z *phpv.ZVal, linePfx string, topLevel bo
 			localPfx := linePfx + "  "
 			for prop := range obj.IterProps(ctx) {
 				suffix := ""
+				displayName := prop.VarName
 				switch {
 				case prop.Modifiers.IsPrivate():
 					className := string(obj.GetDeclClassName(prop))
 					suffix = `:"` + className + `":private`
 				case prop.Modifiers.IsProtected():
 					suffix = ":protected"
+					// If VarName is stored as \0*\0propName (dynamic protected property),
+					// strip the mangling prefix for display.
+					vn := string(prop.VarName)
+					if len(vn) >= 3 && vn[0] == '\x00' && vn[1] == '*' && vn[2] == '\x00' {
+						displayName = phpv.ZString(vn[3:])
+					}
 				}
-				fmt.Fprintf(ctx, "%s[\"%s\"%s]=>\n", localPfx, prop.VarName, suffix)
+				fmt.Fprintf(ctx, "%s[\"%s\"%s]=>\n", localPfx, displayName, suffix)
 				val, hasVal, _ := obj.GetPropValueOrHook(ctx, prop)
 				if hasVal {
 					doDebugZvalDump(ctx, val, localPfx, false)

@@ -5,6 +5,7 @@ import (
 	"io"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpctx"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
@@ -205,6 +206,31 @@ func init() {
 			ReflectionReference,
 		},
 	})
+
+	// Fix declaring class for methods inherited via CopyMethods.
+	// RegisterExt sets m.Class = class for any method with m.Class == nil.
+	// But CopyMethods runs before RegisterExt sets the parent class's m.Class,
+	// so the copies start with m.Class == nil and get set to the child class.
+	// Walk each class's Extends chain and fix up m.Class to the parent's version.
+	fixInheritedMethodClasses(ReflectionObject)
+	fixInheritedMethodClasses(ReflectionEnum)
+}
+
+// fixInheritedMethodClasses corrects the m.Class field for methods that were
+// copied from a parent class via CopyMethods before RegisterExt ran.
+// RegisterExt sets m.Class = child for all nil-class methods, but inherited
+// methods should retain the declaring class (parent). This walks the parent
+// chain and copies the parent's m.Class into the child's copy.
+func fixInheritedMethodClasses(class *phpobj.ZClass) {
+	if class.Extends == nil {
+		return
+	}
+	parent := class.Extends
+	for k, m := range class.Methods {
+		if pm, exists := parent.Methods[k]; exists && pm.Class != nil {
+			m.Class = pm.Class
+		}
+	}
 }
 
 // builtinEnumCaseInit is a Runnable that lazily creates a built-in enum case object.
@@ -252,7 +278,7 @@ func reflectionClassConstruct(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "ReflectionClass::__construct(): Argument #1 ($objectOrClass) must be of type object|string, array given")
 	} else {
 		if arg.GetType() == phpv.ZtNull {
-			_ = ctx.Deprecated("Passing null to parameter #1 ($objectOrClass) of type object|string is deprecated")
+			_ = ctx.Deprecated("ReflectionClass::__construct(): Passing null to parameter #1 ($objectOrClass) of type object|string is deprecated", logopt.NoFuncName(true))
 		}
 		className := arg.AsString(ctx)
 		var err error

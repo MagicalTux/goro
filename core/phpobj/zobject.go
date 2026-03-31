@@ -1116,6 +1116,25 @@ func (pi *propIterator) yield(yield func(*phpv.ZClassProp) bool) {
 		if len(key) > 0 && key[0] == '*' {
 			continue
 		}
+		// Recognize protected-mangled properties stored with \0*\0propName prefix.
+		// These occur when unserializing a property serialized as protected (\0*\0name)
+		// but the class doesn't declare that property. Yield with full mangled VarName
+		// so GetPropValue can find the value using the mangled key.
+		keyStr := string(key)
+		if len(keyStr) >= 3 && keyStr[0] == '\x00' && keyStr[1] == '*' && keyStr[2] == '\x00' {
+			bareName := keyStr[3:]
+			if _, ok := shown[bareName]; !ok {
+				shown[bareName] = struct{}{}
+				p := &phpv.ZClassProp{
+					VarName:   key, // full mangled name: \0*\0propName
+					Modifiers: phpv.ZAttrProtected,
+				}
+				if !yield(p) {
+					break
+				}
+			}
+			continue
+		}
 		if _, ok := shown[string(key)]; !ok {
 			p := &phpv.ZClassProp{
 				VarName: key,
@@ -2111,6 +2130,15 @@ func (o *ZObject) ObjectGet(ctx phpv.Context, key phpv.Val) (*phpv.ZVal, error) 
 
 	// Check if accessing a static property as non-static
 	o.checkStaticPropertyAccess(ctx, keyStr)
+
+	// Eager property handler: if set, the handler is called before hash table lookup.
+	// Used by __PHP_Incomplete_Class to intercept ALL property reads (not just missing ones).
+	if h := FindPropHandlers(o.Class); h != nil && h.HandlePropGet != nil && h.HandlePropGetEager {
+		if result, err := h.HandlePropGet(ctx, o, keyStr); result != nil || err != nil {
+			return result, err
+		}
+		// (nil, nil) means fall through to normal handling
+	}
 
 	// Check property visibility. If the property is not visible but __get exists,
 	// PHP calls __get instead of throwing the visibility error.

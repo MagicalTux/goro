@@ -2,6 +2,7 @@ package phpctx
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
@@ -26,6 +27,7 @@ type Ext struct {
 type ExtFunction struct {
 	phpv.CallableVal
 	name     string
+	Ext      string // extension name, populated by RegisterExt
 	Func     func(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	Args     []*ExtFunctionArg
 	MinArgs  int // minimum required arguments (0 = no check)
@@ -35,6 +37,10 @@ type ExtFunction struct {
 
 func (e *ExtFunction) Name() string {
 	return e.name
+}
+
+func (e *ExtFunction) GetExt() string {
+	return e.Ext
 }
 
 func (e *ExtFunction) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
@@ -91,6 +97,7 @@ func RegisterExt(e *Ext) {
 	globalExtMap[e.Name] = e
 	for name, fn := range e.Functions {
 		fn.name = name
+		fn.Ext = e.Name
 		fn.buildFuncArgs()
 	}
 	for _, class := range e.Classes {
@@ -106,14 +113,29 @@ func RegisterExt(e *Ext) {
 }
 
 func HasExt(name string) bool {
-	_, res := globalExtMap[name]
-	return res
+	if _, res := globalExtMap[name]; res {
+		return true
+	}
+	// Case-insensitive fallback
+	lower := strings.ToLower(name)
+	for k := range globalExtMap {
+		if strings.ToLower(k) == lower {
+			return true
+		}
+	}
+	return false
 }
 
 func GetExt(name string) *Ext {
-	v, ok := globalExtMap[name]
-	if ok {
+	if v, ok := globalExtMap[name]; ok {
 		return v
+	}
+	// Case-insensitive fallback
+	lower := strings.ToLower(name)
+	for k, v := range globalExtMap {
+		if strings.ToLower(k) == lower {
+			return v
+		}
 	}
 	return nil
 }

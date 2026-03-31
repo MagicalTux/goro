@@ -585,32 +585,34 @@ func initArrayIterator() {
 			Name: "__unserialize",
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				if len(args) < 1 || args[0].GetType() != phpv.ZtArray {
-					return nil, nil
+					return nil, phpobj.ThrowError(ctx, phpobj.Exception, "Incomplete or ill-typed serialization data")
 				}
 
 				arr := args[0].Value().(*phpv.ZArray)
 
 				d := &arrayIteratorData{}
 
-				if flagsVal, err := arr.OffsetGet(ctx, phpv.ZInt(0).ZVal()); err == nil && flagsVal != nil {
-					d.flags = flagsVal.AsInt(ctx)
+				flagsVal, flagsErr := arr.OffsetGet(ctx, phpv.ZInt(0).ZVal())
+				if flagsErr != nil || flagsVal == nil || flagsVal.GetType() != phpv.ZtInt {
+					return nil, phpobj.ThrowError(ctx, phpobj.Exception, "Incomplete or ill-typed serialization data")
 				}
+				d.flags = flagsVal.AsInt(ctx)
 
-				if storageVal, err := arr.OffsetGet(ctx, phpv.ZInt(1).ZVal()); err == nil && storageVal != nil {
-					switch storageVal.GetType() {
-					case phpv.ZtArray:
-						d.array = storageVal.Value().(*phpv.ZArray)
-					case phpv.ZtObject:
-						ctx.Deprecated("ArrayIterator::__unserialize(): Using an object as a backing array for ArrayIterator is deprecated, as it allows violating class constraints and invariants", logopt.NoFuncName(true))
-						obj := storageVal.Value().(*phpobj.ZObject)
-						d.objectBacked = true
-						// If the object is an ArrayObject/ArrayIterator, use its internal array
-						d.array = objectStorageGetArray(ctx, obj)
-					default:
-						d.array = phpv.NewZArray()
-					}
-				} else {
-					d.array = phpv.NewZArray()
+				storageVal, storageErr := arr.OffsetGet(ctx, phpv.ZInt(1).ZVal())
+				if storageErr != nil || storageVal == nil {
+					return nil, phpobj.ThrowError(ctx, phpobj.Exception, "Incomplete or ill-typed serialization data")
+				}
+				switch storageVal.GetType() {
+				case phpv.ZtArray:
+					d.array = storageVal.Value().(*phpv.ZArray)
+				case phpv.ZtObject:
+					ctx.Deprecated("ArrayIterator::__unserialize(): Using an object as a backing array for ArrayIterator is deprecated, as it allows violating class constraints and invariants", logopt.NoFuncName(true))
+					obj := storageVal.Value().(*phpobj.ZObject)
+					d.objectBacked = true
+					// If the object is an ArrayObject/ArrayIterator, use its internal array
+					d.array = objectStorageGetArray(ctx, obj)
+				default:
+					return nil, phpobj.ThrowError(ctx, phpobj.Exception, "Incomplete or ill-typed serialization data")
 				}
 
 				d.iter = d.array.MainIterator()

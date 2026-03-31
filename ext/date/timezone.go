@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/phperr"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
@@ -116,9 +117,38 @@ func getTimezoneLoc(obj *phpobj.ZObject) (*time.Location, bool) {
 	return nil, false
 }
 
+// checkDateTimeZoneInitialized throws DateObjectError if the DateTimeZone object is not initialized.
+func checkDateTimeZoneInitialized(ctx phpv.Context, obj *phpobj.ZObject) error {
+	if _, ok := obj.Opaque[DateTimeZone]; ok {
+		return nil
+	}
+	className := obj.Class.GetName()
+	baseClass := "DateTimeZone"
+	if string(className) == baseClass {
+		return phpobj.ThrowError(ctx, DateObjectError,
+			fmt.Sprintf("Object of type %s has not been correctly initialized by calling parent::__construct() in its constructor", className))
+	}
+	return phpobj.ThrowError(ctx, DateObjectError,
+		fmt.Sprintf("Object of type %s (inheriting %s) has not been correctly initialized by calling parent::__construct() in its constructor", className, baseClass))
+}
+
 // setTimezoneLoc stores a *time.Location in a DateTimeZone object.
 func setTimezoneLoc(obj *phpobj.ZObject, loc *time.Location) {
 	obj.Opaque[DateTimeZone] = loc
+}
+
+// setTimezoneProps sets timezone_type and timezone in the object's hash table so
+// var_export / __set_state roundtrip works correctly.
+func setTimezoneProps(obj *phpobj.ZObject, loc *time.Location) {
+	name := loc.String()
+	tzType := 3
+	if len(name) > 0 && (name[0] == '+' || name[0] == '-') {
+		tzType = 1
+	} else if len(name) <= 5 && name != "Local" && name != "UTC" && !strings.Contains(name, "/") {
+		tzType = 2
+	}
+	obj.HashTable().SetString("timezone_type", phpv.ZInt(tzType).ZVal())
+	obj.HashTable().SetString("timezone", phpv.ZString(name).ZVal())
 }
 
 // timezoneAbbreviationOffsets maps timezone abbreviations to their UTC offsets in seconds.
@@ -206,7 +236,11 @@ func parseTzName(tzName string) (*time.Location, error) {
 // datetimezoneConstruct implements DateTimeZone::__construct(string $timezone)
 func datetimezoneConstruct(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
-		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "DateTimeZone::__construct() expects exactly 1 argument, 0 given")
+		// Allow 0 args for internal use (e.g., __set_state creates the object without calling the constructor).
+		// In PHP, DateTimeZone::__construct() actually requires 1 arg and would throw, but since our
+		// NewZObject() always calls the constructor, we allow 0 args here and leave the object uninitialized
+		// (no opaque data set). The object will throw on any method call via checkDateTimeZoneInitialized.
+		return nil, nil
 	}
 	if len(args) > 1 {
 		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, fmt.Sprintf("DateTimeZone::__construct() expects exactly 1 argument, %d given", len(args)))
@@ -259,15 +293,17 @@ func datetimezoneConstruct(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.
 	}
 
 	setTimezoneLoc(this, loc)
+	// Also store timezone_type and timezone in the hash table so var_export works
+	setTimezoneProps(this, loc)
 	return nil, nil
 }
 
 // datetimezoneGetName implements DateTimeZone::getName(): string
 func datetimezoneGetName(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	loc, ok := getTimezoneLoc(this)
-	if !ok {
-		return phpv.ZBool(false).ZVal(), nil
+	if err := checkDateTimeZoneInitialized(ctx, this); err != nil {
+		return nil, err
 	}
+	loc, _ := getTimezoneLoc(this)
 	return phpv.ZString(loc.String()).ZVal(), nil
 }
 
@@ -276,16 +312,19 @@ func datetimezoneGetOffset(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.
 	if len(args) < 1 {
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "DateTimeZone::getOffset() expects exactly 1 argument, 0 given")
 	}
-	loc, ok := getTimezoneLoc(this)
-	if !ok {
-		return phpv.ZBool(false).ZVal(), nil
+	if err := checkDateTimeZoneInitialized(ctx, this); err != nil {
+		return nil, err
 	}
+	loc, _ := getTimezoneLoc(this)
 	dtObj, ok := args[0].Value().(*phpobj.ZObject)
 	if !ok {
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("DateTimeZone::getOffset(): Argument #1 ($datetime) must be of type DateTimeInterface, %s given", args[0].GetType().TypeName()))
 	}
 	t, ok := getTime(dtObj)
 	if !ok {
+		if err := checkDateTimeInitialized(ctx, dtObj); err != nil {
+			return nil, err
+		}
 		return phpv.ZBool(false).ZVal(), nil
 	}
 	// Get offset at the given datetime in this timezone
@@ -389,7 +428,9 @@ func fncTimezoneOpen(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 	obj, err := phpobj.NewZObject(ctx, DateTimeZone, args[0])
 	if err != nil {
-		// timezone_open returns false on failure, unlike the constructor which throws
+		// timezone_open returns false on failure and emits a warning, unlike the constructor which throws
+		tzName := args[0].AsString(ctx)
+		ctx.Warn("Unknown or bad timezone (%s)", tzName)
 		return phpv.ZBool(false).ZVal(), nil
 	}
 	return obj.ZVal(), nil
@@ -403,6 +444,9 @@ func fncTimezoneNameGet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	tzObj, ok := args[0].Value().(*phpobj.ZObject)
 	if !ok {
 		return phpv.ZBool(false).ZVal(), nil
+	}
+	if err := checkDateTimeZoneInitialized(ctx, tzObj); err != nil {
+		return nil, err
 	}
 	loc, ok := getTimezoneLoc(tzObj)
 	if !ok {
@@ -429,6 +473,14 @@ func fncTimezoneOffsetGet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, erro
 	if !tzObj.Class.InstanceOf(DateTimeZone) {
 		className := tzObj.GetClass().GetName()
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("timezone_offset_get(): Argument #1 ($object) must be of type DateTimeZone, %s given", className))
+	}
+	// Check that the datetime argument is a proper DateTimeInterface object too
+	if len(args) > 1 {
+		if dtObj, ok2 := args[1].Value().(*phpobj.ZObject); ok2 {
+			if err := checkDateTimeInitialized(ctx, dtObj); err != nil {
+				return nil, err
+			}
+		}
 	}
 	return datetimezoneGetOffset(ctx, tzObj, args[1:])
 }
@@ -550,7 +602,11 @@ func fncDateCreate(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	// Pass args to NewZObject so the constructor handles them
 	obj, err := phpobj.NewZObject(ctx, DateTime, args...)
 	if err != nil {
-		// date_create returns false on failure, unlike the constructor which throws
+		// Propagate thrown PHP exceptions (like Error for uninitialized DateTimeZone),
+		// but return false for other failures (like invalid date strings).
+		if _, isThrow := phpv.UnwrapError(err).(*phperr.PhpThrow); isThrow {
+			return nil, err
+		}
 		return phpv.ZBool(false).ZVal(), nil
 	}
 	return obj.ZVal(), nil
@@ -561,6 +617,9 @@ func fncDateCreateImmutable(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 	// Pass args to NewZObject so the constructor handles them
 	obj, err := phpobj.NewZObject(ctx, DateTimeImmutable, args...)
 	if err != nil {
+		if _, isThrow := phpv.UnwrapError(err).(*phperr.PhpThrow); isThrow {
+			return nil, err
+		}
 		return phpv.ZBool(false).ZVal(), nil
 	}
 	return obj.ZVal(), nil
@@ -609,6 +668,13 @@ func fncDateModify(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 	dtObj, ok := args[0].Value().(*phpobj.ZObject)
 	if !ok {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	// For the function form, an empty modifier emits a warning and returns false
+	// (unlike the method form which throws DateMalformedStringException).
+	modifier := args[1].AsString(ctx)
+	if len(modifier) == 0 {
+		ctx.Warn("Failed to parse time string () at position 0 ( ): Empty string")
 		return phpv.ZBool(false).ZVal(), nil
 	}
 	return modifyMethod(ctx, dtObj, args[1:])
@@ -826,6 +892,13 @@ func fncTimezoneLocationGet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 	if len(args) < 1 {
 		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "timezone_location_get() expects exactly 1 argument")
 	}
+	tzObj, ok := args[0].Value().(*phpobj.ZObject)
+	if !ok {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	if err := checkDateTimeZoneInitialized(ctx, tzObj); err != nil {
+		return nil, err
+	}
 	result := phpv.NewZArray()
 	result.OffsetSet(ctx, phpv.ZString("country_code"), phpv.ZString("??").ZVal())
 	result.OffsetSet(ctx, phpv.ZString("latitude"), phpv.ZFloat(0).ZVal())
@@ -841,6 +914,9 @@ func fncTimezoneTransitionsGet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal,
 	tzObj, ok := args[0].Value().(*phpobj.ZObject)
 	if !ok {
 		return phpv.ZBool(false).ZVal(), nil
+	}
+	if err := checkDateTimeZoneInitialized(ctx, tzObj); err != nil {
+		return nil, err
 	}
 	loc, ok := getTimezoneLoc(tzObj)
 	if !ok {

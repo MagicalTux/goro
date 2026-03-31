@@ -17,6 +17,9 @@ func init() {
 			DirectoryClass,
 			RoundingModeEnum,
 			PhpUserFilterClass,
+			StreamBucketClass,
+			phpobj.AssertionError,
+			phpobj.IncompleteClass,
 		},
 		// Note: ExtFunctionArg is currently unused
 		Functions: map[string]*phpctx.ExtFunction{
@@ -349,7 +352,7 @@ func init() {
 			"octdec":                     {Func: mathOctDec, Args: []*phpctx.ExtFunctionArg{}},
 			"output_add_rewrite_var":     {Func: fncOutputAddRewriteVar, Args: []*phpctx.ExtFunctionArg{}, MinArgs: 2, MaxArgs: 2},
 			"opendir":                    {Func: fncOpendir, Args: []*phpctx.ExtFunctionArg{}},
-			"ord":                        {Func: fncOrd, Args: []*phpctx.ExtFunctionArg{}},
+			"ord":                        {Func: fncOrd, Args: []*phpctx.ExtFunctionArg{{ArgName: "character"}}},
 			"pack":                       {Func: fncPack, Args: []*phpctx.ExtFunctionArg{}},
 			"passthru":                   {Func: fncPassthru, Args: []*phpctx.ExtFunctionArg{{ArgName: "command"}, {ArgName: "result_code", Ref: true, Optional: true}}},
 			"pclose":                     {Func: fncPclose, Args: []*phpctx.ExtFunctionArg{}},

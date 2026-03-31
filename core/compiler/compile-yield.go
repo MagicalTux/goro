@@ -3,6 +3,7 @@ package compiler
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpobj"
@@ -326,6 +327,18 @@ func (g *generatorClosure) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal
 	// Use callBody to bypass the generator check in ZClosure.Call.
 	// Pass $this so that method generators and closures can access $this.
 	name := g.ZClosure.Name()
+	// For generator methods, build the full qualified name including class name.
+	// For anonymous classes, include the full internal name (path/line info).
+	if g.ZClosure.class != nil && name != "" {
+		var className string
+		if zc, ok := g.ZClosure.class.(*phpobj.ZClass); ok {
+			// Replace null byte to get "class@anonymous/path:line$0" format
+			className = strings.Replace(string(zc.Name), "\x00", "", 1)
+		} else {
+			className = string(g.ZClosure.class.GetName())
+		}
+		name = className + "::" + name
+	}
 	opts := phpobj.SpawnGeneratorOptions{
 		FuncName:  name,
 		YieldsRef: g.ZClosure.ReturnsByRef(),

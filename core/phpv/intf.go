@@ -116,3 +116,16 @@ type ReadonlyRefChecker interface {
 type WriteContextSetter interface {
 	SetWriteContext(bool)
 }
+
+// StaticVarEntry represents a single static variable entry with its name and current value.
+type StaticVarEntry struct {
+	Name ZString
+	Val  *ZVal
+}
+
+// StaticVarGetter is implemented by user-defined functions (ZClosure) to expose
+// their static variables for ReflectionFunction::getStaticVariables().
+// Returns an ordered slice of name-value pairs (declaration order).
+type StaticVarGetter interface {
+	GetStaticVars(ctx Context) []StaticVarEntry
+}

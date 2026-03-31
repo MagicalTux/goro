@@ -11,8 +11,9 @@ import (
 
 // reflectionPropertyData is stored as opaque data on ReflectionProperty objects
 type reflectionPropertyData struct {
-	prop  *phpv.ZClassProp
-	class *phpobj.ZClass
+	prop      *phpv.ZClassProp
+	class     *phpobj.ZClass
+	isDynamic bool // true if this is a dynamic (runtime-added) property
 }
 
 func initReflectionProperty() {
@@ -22,7 +23,11 @@ func initReflectionProperty() {
 		{VarName: "class", Default: phpv.ZStr("").ZVal(), Modifiers: phpv.ZAttrPublic},
 	}
 	ReflectionProperty.Methods = map[phpv.ZString]*phpv.ZClassMethod{
-		"__construct": {Name: "__construct", Method: phpobj.NativeMethod(reflectionPropertyConstructFull)},
+		"__construct": {Name: "__construct", Modifiers: phpv.ZAttrPublic,
+			Method: namedMethod(reflectionPropertyConstructFull,
+				requiredArg("class", "object|string"),
+				requiredArg("property", "string"),
+			)},
 		"getname":     {Name: "getName", Method: phpobj.NativeMethod(reflectionPropertyGetName)},
 		"ispublic":    {Name: "isPublic", Method: phpobj.NativeMethod(reflectionPropertyIsPublic)},
 		"isprotected": {Name: "isProtected", Method: phpobj.NativeMethod(reflectionPropertyIsProtected)},
@@ -75,8 +80,8 @@ func reflectionPropertyGetDocComment(ctx phpv.Context, o *phpobj.ZObject, args [
 }
 
 func reflectionPropertyConstructFull(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	if len(args) < 2 {
-		return nil, phpobj.ThrowError(ctx, phpobj.Error, "ReflectionProperty::__construct() expects exactly 2 arguments")
+	if len(args) != 2 {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("ReflectionProperty::__construct() expects exactly 2 arguments, %d given", len(args)))
 	}
 
 	var class phpv.ZClass
@@ -96,6 +101,7 @@ func reflectionPropertyConstructFull(ctx phpv.Context, o *phpobj.ZObject, args [
 
 	propName := args[1].AsString(ctx)
 	prop, found := class.GetProp(propName)
+	isDynamic := false
 	if !found {
 		// Check for dynamic properties on the object instance
 		if obj != nil {
@@ -107,6 +113,7 @@ func reflectionPropertyConstructFull(ctx phpv.Context, o *phpobj.ZObject, args [
 						Modifiers: phpv.ZAttrPublic,
 					}
 					found = true
+					isDynamic = true
 				}
 			}
 		}
@@ -121,8 +128,9 @@ func reflectionPropertyConstructFull(ctx phpv.Context, o *phpobj.ZObject, args [
 	}
 
 	data := &reflectionPropertyData{
-		prop:  prop,
-		class: zc,
+		prop:      prop,
+		class:     zc,
+		isDynamic: isDynamic,
 	}
 	o.HashTable().SetString("name", prop.VarName.ZVal())
 	o.HashTable().SetString("class", class.GetName().ZVal())
@@ -181,13 +189,12 @@ func reflectionPropertyIsStatic(ctx phpv.Context, o *phpobj.ZObject, args []*php
 
 func reflectionPropertyIsDefault(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	// isDefault returns true if property was declared at compile time (in class definition)
-	// as opposed to dynamically added at runtime. Since all properties we reflect on
-	// come from ZClassProp, they are all declared properties.
+	// as opposed to dynamically added at runtime.
 	data := getPropData(o)
 	if data == nil {
 		return phpv.ZBool(false).ZVal(), nil
 	}
-	return phpv.ZBool(true).ZVal(), nil
+	return phpv.ZBool(!data.isDynamic).ZVal(), nil
 }
 
 func reflectionPropertyGetValue(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
@@ -365,6 +372,35 @@ func reflectionPropertyToString(ctx phpv.Context, o *phpobj.ZObject, args []*php
 		sb.WriteString(" " + data.prop.TypeHint.String())
 	}
 	sb.WriteString(fmt.Sprintf(" $%s", data.prop.VarName))
+	// Show default value (the declared default, not the current value)
+	if data.prop.TypeHint == nil {
+		// Untyped properties always show a default value (NULL if none set)
+		if data.prop.Default != nil {
+			val := data.prop.Default
+			if cd, ok := val.(*phpv.CompileDelayed); ok {
+				if resolved, err := cd.Run(ctx); err == nil && resolved != nil {
+					sb.WriteString(" = " + formatParamValue(ctx, resolved))
+				} else {
+					sb.WriteString(" = NULL")
+				}
+			} else {
+				sb.WriteString(" = " + formatParamValue(ctx, val.ZVal()))
+			}
+		} else if !data.prop.Modifiers.IsStatic() {
+			// Non-static untyped without explicit default defaults to NULL
+			sb.WriteString(" = NULL")
+		}
+	} else if data.prop.Default != nil {
+		// Typed properties only show default if explicitly set
+		val := data.prop.Default
+		if cd, ok := val.(*phpv.CompileDelayed); ok {
+			if resolved, err := cd.Run(ctx); err == nil && resolved != nil {
+				sb.WriteString(" = " + formatParamValue(ctx, resolved))
+			}
+		} else {
+			sb.WriteString(" = " + formatParamValue(ctx, val.ZVal()))
+		}
+	}
 	sb.WriteString(" ]\n")
 
 	return phpv.ZString(sb.String()).ZVal(), nil

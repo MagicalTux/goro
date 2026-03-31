@@ -166,6 +166,9 @@ func compileEnum(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 
 		l := i.Loc()
 
+		// Capture any doc comment that appeared before this member.
+		memberDoc := c.takeDocComment()
+
 		// Parse leading #[...] attributes for enum members (cases, constants)
 		var memberAttrs []*phpv.ZAttribute
 		for i.Type == tokenizer.T_ATTRIBUTE {
@@ -229,11 +232,12 @@ func compileEnum(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 
 			cases = append(cases, enumCase{name: caseName, value: caseValue})
 
-			// Store as class constant with optional attributes
+			// Store as class constant with optional attributes and doc comment
 			class.Const[caseName] = &phpv.ZClassConst{
 				Value:      &phpv.CompileDelayed{V: &runEnumCaseInit{className: class.Name, caseName: caseName, backingValue: caseValue, backingType: backingType}},
 				Modifiers:  phpv.ZAttrPublic,
 				Attributes: memberAttrs,
+				DocComment: memberDoc,
 			}
 			class.ConstOrder = append(class.ConstOrder, caseName)
 

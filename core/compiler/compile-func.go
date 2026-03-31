@@ -954,7 +954,18 @@ func collectVarsWalk(r phpv.Runnable, seen map[phpv.ZString]bool, result *[]phpv
 			*result = append(*result, v.v)
 		}
 	case *runOperator:
-		collectVarsWalk(v.a, seen, result)
+		// For pure-write assignments (e.g. $x = ...), don't collect the direct LHS variable
+		// as an outer-scope capture because it's being written, not read. However, we still
+		// need to walk sub-expressions of the LHS (e.g. $arr[$i] = ... should capture $i).
+		if v.opD != nil && v.opD.write && v.opD.skipA {
+			// Walk LHS only if it's a complex expression (array access, property, etc.)
+			// For a plain *runVariable on the LHS, skip it.
+			if _, isPlainVar := v.a.(*runVariable); !isPlainVar {
+				collectVarsWalk(v.a, seen, result)
+			}
+		} else {
+			collectVarsWalk(v.a, seen, result)
+		}
 		collectVarsWalk(v.b, seen, result)
 	case *runnableFunctionCall:
 		for _, arg := range v.args {
@@ -1469,6 +1480,13 @@ func compileFunctionArgs(c compileCtx) (res []*phpv.FuncArg, err error) {
 
 			arg.DefaultValue = &phpv.CompileDelayed{V: r}
 			arg.Required = false
+			// Capture the PHP source representation of the default expression for reflection.
+			// This must be done before Compile() evaluates and replaces the CompileDelayed.
+			if dumpW := new(strings.Builder); true {
+				if dumpErr := r.Dump(dumpW); dumpErr == nil {
+					arg.DefaultValueExpr = dumpW.String()
+				}
+			}
 
 			// Check for implicitly nullable parameter (type hint + NULL default)
 			isNull := false

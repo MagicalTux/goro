@@ -1117,7 +1117,27 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	if objI == nil && r.static {
 		// :: is used outside of class context
 		if !method.Modifiers.IsStatic() {
-			return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Non-static method %s::%s() cannot be called statically", class.GetName(), method.Name))
+			// PHP reports the declaring class (the earliest ancestor that defines the method),
+			// not the called class. Walk up the hierarchy to find the original definer.
+			declaringClass := class
+			methodNameLower := method.Name.ToLower()
+			if zc, ok := class.(*phpobj.ZClass); ok {
+				for cur := zc; cur != nil; {
+					if _, ok2 := cur.Methods[methodNameLower]; ok2 {
+						declaringClass = cur
+					}
+					parent := cur.GetParent()
+					if phpv.IsNilClass(parent) {
+						break
+					}
+					if pc, ok3 := parent.(*phpobj.ZClass); ok3 {
+						cur = pc
+					} else {
+						break
+					}
+				}
+			}
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Non-static method %s::%s() cannot be called statically", declaringClass.GetName(), method.Name))
 		}
 
 		// Use method.Class (defining class) for self:: resolution,

@@ -162,23 +162,31 @@ func reflectionClassGetDefaultProperties(ctx phpv.Context, o *phpobj.ZObject, ar
 	if zc == nil {
 		return phpv.NewZArray().ZVal(), nil
 	}
+	// PHP returns static properties first (all classes), then instance properties (all classes).
+	// Within each group, properties are ordered by class hierarchy (the class itself first, then parents).
+	// We collect static and instance props separately, then merge.
 	arr := phpv.NewZArray()
-	seen := make(map[string]bool)
+	seenStatic := make(map[string]bool)
+	seenInstance := make(map[string]bool)
+
+	// Collect all static props first (class hierarchy order)
 	for cur := zc; cur != nil; {
 		for _, prop := range cur.Props {
+			if !prop.Modifiers.IsStatic() {
+				continue
+			}
 			key := string(prop.VarName)
-			if seen[key] {
+			if seenStatic[key] {
 				continue
 			}
 			if cur != zc && prop.Modifiers.IsPrivate() {
 				continue
 			}
-			seen[key] = true
+			seenStatic[key] = true
 			val := prop.Default
 			if val == nil {
 				val = phpv.ZNULL.ZVal()
 			}
-			// Resolve CompileDelayed values
 			if cd, ok := val.(*phpv.CompileDelayed); ok {
 				resolved, err := cd.Run(ctx)
 				if err != nil {
@@ -195,6 +203,42 @@ func reflectionClassGetDefaultProperties(ctx phpv.Context, o *phpobj.ZObject, ar
 		}
 		cur = parent.(*phpobj.ZClass)
 	}
+
+	// Then collect all instance props (class hierarchy order)
+	for cur := zc; cur != nil; {
+		for _, prop := range cur.Props {
+			if prop.Modifiers.IsStatic() {
+				continue
+			}
+			key := string(prop.VarName)
+			if seenInstance[key] {
+				continue
+			}
+			if cur != zc && prop.Modifiers.IsPrivate() {
+				continue
+			}
+			seenInstance[key] = true
+			val := prop.Default
+			if val == nil {
+				val = phpv.ZNULL.ZVal()
+			}
+			if cd, ok := val.(*phpv.CompileDelayed); ok {
+				resolved, err := cd.Run(ctx)
+				if err != nil {
+					continue
+				}
+				arr.OffsetSet(ctx, prop.VarName, resolved)
+			} else {
+				arr.OffsetSet(ctx, prop.VarName, val.ZVal())
+			}
+		}
+		parent := cur.GetParent()
+		if phpv.IsNilClass(parent) {
+			break
+		}
+		cur = parent.(*phpobj.ZClass)
+	}
+
 	return arr.ZVal(), nil
 }
 
@@ -203,21 +247,52 @@ func reflectionClassGetStaticProperties(ctx phpv.Context, o *phpobj.ZObject, arg
 	if zc == nil {
 		return phpv.NewZArray().ZVal(), nil
 	}
-	staticProps, err := zc.GetStaticProps(ctx)
-	if err != nil {
-		return nil, err
-	}
 	arr := phpv.NewZArray()
-	if staticProps != nil {
-		it := staticProps.NewIterator()
-		for it.Valid(ctx) {
-			k, _ := it.Key(ctx)
-			v, _ := it.Current(ctx)
-			if v != nil {
-				arr.OffsetSet(ctx, k.Value(), v)
-			}
-			it.Next(ctx)
+	seen := make(map[string]bool)
+	for cur := zc; cur != nil; {
+		staticProps, err := cur.GetStaticProps(ctx)
+		if err != nil {
+			return nil, err
 		}
+		if staticProps != nil {
+			it := staticProps.NewIterator()
+			for it.Valid(ctx) {
+				k, _ := it.Key(ctx)
+				v, _ := it.Current(ctx)
+				key := ""
+				if k.GetType() == phpv.ZtString {
+					key = string(k.Value().(phpv.ZString))
+				}
+				// Skip private properties from parent classes and already seen props
+				if key != "" && !seen[key] {
+					// Check if this prop is private in a parent class
+					if cur != zc {
+						// Find the declaration to check visibility
+						isPrivate := false
+						for _, prop := range cur.Props {
+							if prop.VarName == phpv.ZString(key) && prop.Modifiers.IsPrivate() {
+								isPrivate = true
+								break
+							}
+						}
+						if isPrivate {
+							it.Next(ctx)
+							continue
+						}
+					}
+					seen[key] = true
+					if v != nil {
+						arr.OffsetSet(ctx, k.Value(), v)
+					}
+				}
+				it.Next(ctx)
+			}
+		}
+		parent := cur.GetParent()
+		if phpv.IsNilClass(parent) {
+			break
+		}
+		cur = parent.(*phpobj.ZClass)
 	}
 	return arr.ZVal(), nil
 }
@@ -231,9 +306,6 @@ func reflectionClassGetStaticPropertyValue(ctx phpv.Context, o *phpobj.ZObject, 
 	}
 	if args[0].GetType() == phpv.ZtArray {
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "ReflectionClass::getStaticPropertyValue(): Argument #1 ($name) must be of type string, array given")
-	}
-	if args[0].GetType() == phpv.ZtNull {
-		_ = ctx.Deprecated("Passing null to parameter #1 ($name) of type string is deprecated")
 	}
 	zc := getZClass(o)
 	if zc == nil {
@@ -265,9 +337,6 @@ func reflectionClassSetStaticPropertyValue(ctx phpv.Context, o *phpobj.ZObject, 
 	}
 	if args[0].GetType() == phpv.ZtArray {
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "ReflectionClass::setStaticPropertyValue(): Argument #1 ($name) must be of type string, array given")
-	}
-	if args[0].GetType() == phpv.ZtNull {
-		_ = ctx.Deprecated("Passing null to parameter #1 ($name) of type string is deprecated")
 	}
 	zc := getZClass(o)
 	if zc == nil {
@@ -329,7 +398,11 @@ func reflectionClassNewInstanceArgs(ctx phpv.Context, o *phpobj.ZObject, args []
 	if zc != nil {
 		var hasConstructor bool
 		if zc.Handlers() != nil && zc.Handlers().Constructor != nil {
+			ctorMethod := zc.Handlers().Constructor
 			hasConstructor = true
+			if ctorMethod.Modifiers.IsPrivate() || ctorMethod.Modifiers.IsProtected() {
+				return nil, phpobj.ThrowError(ctx, ReflectionException, fmt.Sprintf("Access to non-public constructor of class %s", class.GetName()))
+			}
 		} else if m, ok := zc.GetMethod("__construct"); ok {
 			hasConstructor = true
 			if m.Modifiers.IsPrivate() || m.Modifiers.IsProtected() {
@@ -341,6 +414,9 @@ func reflectionClassNewInstanceArgs(ctx phpv.Context, o *phpobj.ZObject, args []
 		}
 	}
 
+	// Suppress "called in X on line Y" in constructor errors - when called via
+	// reflection, PHP does not include the call site in argument count errors.
+	ctx.Global().SetNextCallSuppressCalledIn(true)
 	obj, err := phpobj.NewZObject(ctx, class, constructArgs...)
 	if err != nil {
 		return nil, err
@@ -354,6 +430,10 @@ func reflectionClassIsCloneable(ctx phpv.Context, o *phpobj.ZObject, args []*php
 		return phpv.ZBool(false).ZVal(), nil
 	}
 	if zc.Type == phpv.ZClassTypeInterface || zc.Type.Has(phpv.ZClassTypeTrait) {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	// Enums cannot be cloned
+	if zc.Type.Has(phpv.ZClassTypeEnum) {
 		return phpv.ZBool(false).ZVal(), nil
 	}
 	if zc.Attr&phpv.ZClassAttr(phpv.ZClassExplicitAbstract) != 0 {
@@ -545,6 +625,7 @@ func reflectionClassGetInterfaces(ctx phpv.Context, o *phpobj.ZObject, args []*p
 	seen := make(map[string]bool)
 	var collectInterfaces func(c *phpobj.ZClass)
 	collectInterfaces = func(c *phpobj.ZClass) {
+		// Collect directly declared/implemented interfaces
 		for _, impl := range c.Implementations {
 			key := strings.ToLower(string(impl.GetName()))
 			if seen[key] {
@@ -557,10 +638,25 @@ func reflectionClassGetInterfaces(ctx phpv.Context, o *phpobj.ZObject, args []*p
 			}
 			collectInterfaces(impl)
 		}
+		// For interfaces, also collect the parent interface (stored in Extends/parent)
 		parent := c.GetParent()
 		if !phpv.IsNilClass(parent) {
 			if pc, ok := parent.(*phpobj.ZClass); ok {
-				collectInterfaces(pc)
+				// If parent is an interface, add it and recurse
+				if pc.Type == phpv.ZClassTypeInterface {
+					key := strings.ToLower(string(pc.GetName()))
+					if !seen[key] {
+						seen[key] = true
+						rcVal, err := createReflectionClassObject(ctx, pc)
+						if err == nil {
+							arr.OffsetSet(ctx, pc.GetName(), rcVal)
+						}
+					}
+					collectInterfaces(pc)
+				} else {
+					// Regular parent class - recurse to collect its interfaces
+					collectInterfaces(pc)
+				}
 			}
 		}
 	}
@@ -666,6 +762,15 @@ func formatReflectionClass(ctx phpv.Context, zc *phpobj.ZClass, isObject bool, d
 			iterateable = " <iterateable>"
 		}
 	}
+	// PHP 8.4: classes with property hooks are also shown as <iterateable>
+	if iterateable == "" {
+		for _, prop := range zc.Props {
+			if prop.HasHooks {
+				iterateable = " <iterateable>"
+				break
+			}
+		}
+	}
 
 	modifiers := ""
 	if zc.Attr.Has(phpv.ZClassAttr(phpv.ZClassExplicitAbstract)) {
@@ -713,13 +818,62 @@ func formatReflectionClass(ctx phpv.Context, zc *phpobj.ZClass, isObject bool, d
 	}
 	sb.WriteString("\n")
 
+	// Build a set of enum case names for quick lookup
+	enumCaseSet := make(map[phpv.ZString]bool)
+	for _, caseName := range zc.EnumCases {
+		enumCaseSet[caseName] = true
+	}
+
+	// For enum classes, output "Enum cases" section before "Constants"
+	if zc.Type.Has(phpv.ZClassTypeEnum) {
+		sb.WriteString(fmt.Sprintf("  - Enum cases [%d] {\n", len(zc.EnumCases)))
+		for _, caseName := range zc.EnumCases {
+			c := zc.Const[caseName]
+			if c == nil {
+				sb.WriteString(fmt.Sprintf("    Case %s\n", caseName))
+				continue
+			}
+			// For backed enums, resolve the backing value from the enum object
+			var backingStr string
+			if zc.EnumBackingType != 0 && c.Value != nil {
+				var resolvedObj *phpv.ZVal
+				if cd, ok := c.Value.(*phpv.CompileDelayed); ok {
+					resolved, err := cd.Run(ctx)
+					if err == nil && resolved != nil {
+						resolvedObj = resolved
+					}
+				} else {
+					resolvedObj = c.Value.ZVal()
+				}
+				if resolvedObj != nil && resolvedObj.GetType() == phpv.ZtObject {
+					obj := resolvedObj.AsObject(ctx)
+					backingVal := obj.HashTable().GetString("value")
+					if backingVal != nil {
+						backingStr = " = " + formatConstantValue(ctx, backingVal)
+					}
+				}
+			}
+			sb.WriteString(fmt.Sprintf("    Case %s%s\n", caseName, backingStr))
+		}
+		sb.WriteString("  }\n\n")
+	}
+
+	// Count non-enum-case constants
 	constCount := 0
 	if zc.Const != nil {
-		constCount = len(zc.Const)
+		for name := range zc.Const {
+			if !enumCaseSet[name] {
+				constCount++
+			}
+		}
 	}
 	sb.WriteString(fmt.Sprintf("  - Constants [%d] {\n", constCount))
 	if zc.Const != nil {
 		for _, name := range zc.ConstOrder {
+			// Skip enum cases - they are shown in "Enum cases" section
+			if enumCaseSet[name] {
+				continue
+			}
 			c := zc.Const[name]
 			if c == nil {
 				continue
@@ -813,17 +967,19 @@ func formatReflectionClass(ctx phpv.Context, zc *phpobj.ZClass, isObject bool, d
 			nonStaticProps++
 		}
 	}
+	isReadonlyClass := zc.Attr.Has(phpv.ZClassReadonly)
+	isInterface := zc.Type.Has(phpv.ZClassTypeInterface)
 	sb.WriteString(fmt.Sprintf("  - Properties [%d] {\n", nonStaticProps))
 	for _, prop := range visibleProps {
 		if prop.Modifiers.IsStatic() {
 			continue
 		}
-		sb.WriteString(rcFormatProperty(ctx, prop))
+		sb.WriteString(rcFormatProperty(ctx, prop, isReadonlyClass, isInterface))
 	}
 	sb.WriteString("  }\n\n")
 
-	// Dynamic properties section (ReflectionObject only)
-	if len(dynamicProps) > 0 {
+	// Dynamic properties section (ReflectionObject only, shown even if empty)
+	if isObject {
 		sb.WriteString(fmt.Sprintf("  - Dynamic properties [%d] {\n", len(dynamicProps)))
 		for _, name := range dynamicProps {
 			sb.WriteString(fmt.Sprintf("    Property [ <dynamic> public $%s ]\n", name))
@@ -892,6 +1048,29 @@ func phpEscapeSingleQuote(s string) string {
 	return s
 }
 
+// isConstantIdentifier returns true if s looks like a PHP constant name
+// (an identifier possibly with namespace backslashes), not a string literal,
+// number, array, or other expression (e.g. "new Foo()" is NOT a constant).
+func isConstantIdentifier(s string) bool {
+	if len(s) == 0 {
+		return false
+	}
+	switch strings.ToLower(s) {
+	case "null", "true", "false":
+		return false
+	}
+	// A valid constant name only contains letters, digits, underscores, and backslashes.
+	// No spaces, no parens, no quotes.
+	for _, ch := range s {
+		if !((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '_' || ch == '\\') {
+			return false
+		}
+	}
+	// Must start with a letter, underscore, or backslash (not a digit)
+	ch := s[0]
+	return (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || ch == '_' || ch == '\\'
+}
+
 // formatParamDefault returns the string representation of a parameter default value
 // for use in reflection __toString output (e.g. " = null", " = 'hello'", " = K").
 func formatParamDefault(ctx phpv.Context, arg *phpv.FuncArg) string {
@@ -902,10 +1081,23 @@ func formatParamDefault(ctx phpv.Context, arg *phpv.FuncArg) string {
 		}
 		return ""
 	}
+	// If we have a preserved expression string (from before Compile() evaluated it),
+	// use it only if it's a constant name. For other expressions (strings, numbers),
+	// we fall through to use the evaluated value (which Compile() has resolved).
+	if arg.DefaultValueExpr != "" {
+		s := arg.DefaultValueExpr
+		if strings.EqualFold(s, "null") {
+			// null is handled below via the evaluated value
+		} else if isConstantIdentifier(s) {
+			// This is a constant name like "foobar" or "MyClass::CONST"
+			return " = " + s
+		}
+	}
 	cd, ok := arg.DefaultValue.(*phpv.CompileDelayed)
 	if !ok {
-		// Direct value (already evaluated at compile time)
-		return " = " + formatParamValue(ctx, arg.DefaultValue.ZVal())
+		// Direct value (already evaluated at compile time by Compile())
+		val := arg.DefaultValue.ZVal()
+		return " = " + formatParamValue(ctx, val)
 	}
 	// Use Dump() to get the PHP source representation (preserves constant names, quoted strings)
 	var buf bytes.Buffer
@@ -935,7 +1127,7 @@ func formatParamValue(ctx phpv.Context, val *phpv.ZVal) string {
 	}
 	switch val.GetType() {
 	case phpv.ZtNull:
-		return "null"
+		return "NULL"
 	case phpv.ZtBool:
 		if val.AsBool(ctx) {
 			return "true"
@@ -967,11 +1159,11 @@ func formatParamValue(ctx phpv.Context, val *phpv.ZVal) string {
 // formatConstantValue formats a constant value for ReflectionClass::__toString() output.
 func formatConstantValue(ctx phpv.Context, val *phpv.ZVal) string {
 	if val == nil {
-		return "NULL"
+		return ""
 	}
 	switch val.GetType() {
 	case phpv.ZtNull:
-		return "NULL"
+		return ""
 	case phpv.ZtBool:
 		// PHP reflection uses integer string representation for booleans in constant values
 		if val.AsBool(ctx) {
@@ -1051,8 +1243,22 @@ func rcFormatMethodShort(ctx phpv.Context, zc *phpobj.ZClass, m *phpv.ZClassMeth
 	isInternal := m.Loc == nil
 	origin := "<user"
 	if isInternal {
-		if zc.Ext != "" {
-			origin = "<internal:" + zc.Ext
+		// Use the method's own class extension if available, then fall back to the current class's extension.
+		// For methods added to user-defined classes (zc.L != nil), use plain <internal> without suffix.
+		methodExt := ""
+		if m.Class != nil {
+			if mc, ok := m.Class.(*phpobj.ZClass); ok {
+				methodExt = mc.Ext
+			}
+		}
+		if methodExt == "" {
+			methodExt = zc.Ext
+		}
+		if methodExt != "" {
+			origin = "<internal:" + methodExt
+		} else if zc.L != nil {
+			// User-defined class with internal method (e.g., enum built-ins) — no extension suffix
+			origin = "<internal"
 		} else {
 			origin = "<internal:Core"
 		}
@@ -1077,7 +1283,12 @@ func rcFormatMethodShort(ctx phpv.Context, zc *phpobj.ZClass, m *phpv.ZClassMeth
 		// Find prototype: walk up the full hierarchy to find the earliest declaration
 		// Private methods have no prototype
 		if !m.Modifiers.IsPrivate() {
-			protoName := findMethodPrototype(zc, methodNameLower)
+			var protoName phpv.ZString
+			if m.Prototype != nil {
+				protoName = m.Prototype.GetName()
+			} else {
+				protoName = findMethodPrototype(zc, methodNameLower)
+			}
 			if protoName != "" {
 				origin += ", prototype " + string(protoName)
 			}
@@ -1101,12 +1312,10 @@ func rcFormatMethodShort(ctx phpv.Context, zc *phpobj.ZClass, m *phpv.ZClassMeth
 		}
 	}
 
-	// Check if this is a constructor or destructor
+	// Check if this is a constructor (PHP shows ctor but not dtor in reflection output)
 	nameLower := strings.ToLower(string(m.Name))
 	if nameLower == "__construct" {
 		origin += ", ctor"
-	} else if nameLower == "__destruct" {
-		origin += ", dtor"
 	}
 	origin += ">"
 	sb.WriteString(origin)
@@ -1202,10 +1411,15 @@ func rcFormatParameter(ctx phpv.Context, idx int, arg *phpv.FuncArg, indent stri
 }
 
 // rcFormatProperty formats a non-static property for ReflectionClass::__toString().
-// Output format: "    Property [ public [protected(set)] [readonly] [type] $name [= default] ]\n"
-func rcFormatProperty(ctx phpv.Context, prop *phpv.ZClassProp) string {
+// Output format: "    Property [ [abstract] public [protected(set)] [virtual] [readonly] [type] $name [= default] ]\n"
+func rcFormatProperty(ctx phpv.Context, prop *phpv.ZClassProp, isReadonlyClass bool, isInterface bool) string {
 	var sb strings.Builder
 	sb.WriteString("    Property [ ")
+	// Abstract modifier: explicit abstract on class property, or interface property (implicitly abstract)
+	isAbstract := prop.Modifiers.Has(phpv.ZAttrAbstract) || (isInterface && prop.HasHooks)
+	if isAbstract {
+		sb.WriteString("abstract ")
+	}
 	sb.WriteString(rcAccessStr(prop.Modifiers))
 	// Asymmetric set visibility (PHP 8.4)
 	if prop.SetModifiers != 0 {
@@ -1218,6 +1432,14 @@ func rcFormatProperty(ctx phpv.Context, prop *phpv.ZClassProp) string {
 		sb.WriteString(" ")
 		sb.WriteString(setVis)
 		sb.WriteString("(set)")
+	} else if isReadonlyClass && prop.Modifiers.Has(phpv.ZAttrReadonly) && prop.SetModifiers == 0 {
+		// In a readonly class, readonly properties implicitly have protected(set) visibility.
+		// PHP 8.4 shows this explicitly in reflection output.
+		sb.WriteString(" protected(set)")
+	}
+	// Virtual modifier: property has hooks but no backing store
+	if prop.IsVirtual() {
+		sb.WriteString(" virtual")
 	}
 	if prop.Modifiers.Has(phpv.ZAttrReadonly) {
 		sb.WriteString(" readonly")
@@ -1259,11 +1481,19 @@ func rcFormatProperty(ctx phpv.Context, prop *phpv.ZClassProp) string {
 	}
 	if prop.HasHooks {
 		sb.WriteString(" {")
-		if prop.GetHook != nil {
-			sb.WriteString(" get;")
+		if prop.GetHook != nil || prop.GetIsAbstract {
+			if prop.GetIsFinal {
+				sb.WriteString(" final get;")
+			} else {
+				sb.WriteString(" get;")
+			}
 		}
-		if prop.SetHook != nil {
-			sb.WriteString(" set;")
+		if prop.SetHook != nil || prop.SetIsAbstract {
+			if prop.SetIsFinal {
+				sb.WriteString(" final set;")
+			} else {
+				sb.WriteString(" set;")
+			}
 		}
 		sb.WriteString(" }")
 	}
@@ -1351,6 +1581,25 @@ func reflectionMethodHasReturnType(ctx phpv.Context, o *phpobj.ZObject, args []*
 	return phpv.ZBool(false).ZVal(), nil
 }
 
+func reflectionMethodHasTentativeReturnType(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	data := getMethodData(o)
+	if data == nil {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	return phpv.ZBool(data.method.TentativeReturnType && data.method.ReturnType != nil).ZVal(), nil
+}
+
+func reflectionMethodGetTentativeReturnType(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	data := getMethodData(o)
+	if data == nil {
+		return phpv.ZNULL.ZVal(), nil
+	}
+	if data.method.TentativeReturnType && data.method.ReturnType != nil {
+		return createReflectionTypeObject(ctx, data.method.ReturnType)
+	}
+	return phpv.ZNULL.ZVal(), nil
+}
+
 func reflectionMethodIsDeprecated(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	data := getMethodData(o)
 	if data == nil {
@@ -1418,7 +1667,32 @@ func reflectionMethodCreateFromMethodName(ctx phpv.Context, o *phpobj.ZObject, a
 		return nil, phpobj.ThrowError(ctx, ReflectionException,
 			fmt.Sprintf("Method %s::%s() does not exist", parts[0], parts[1]))
 	}
-	return createReflectionMethodObject(ctx, class, method)
+	// Support late static binding: if called on a subclass, create that subclass's instance
+	targetClass := phpv.ZClass(ReflectionMethod)
+	if cc, ok2 := ctx.(interface{ CalledClass() phpv.ZClass }); ok2 {
+		if called := cc.CalledClass(); called != nil && called != ReflectionMethod {
+			if zc, ok3 := called.(*phpobj.ZClass); ok3 && zc.InstanceOf(ReflectionMethod) {
+				targetClass = zc
+			}
+		}
+	}
+	if targetClass == ReflectionMethod {
+		return createReflectionMethodObject(ctx, class, method)
+	}
+	// Create an instance of the LSB class and initialize it
+	obj, err2 := phpobj.CreateZObject(ctx, targetClass)
+	if err2 != nil {
+		return nil, err2
+	}
+	data := &reflectionMethodData{method: method, class: class}
+	declaringClassName := class.GetName()
+	if method.Class != nil {
+		declaringClassName = method.Class.GetName()
+	}
+	obj.HashTable().SetString("name", method.Name.ZVal())
+	obj.HashTable().SetString("class", declaringClassName.ZVal())
+	obj.SetOpaque(ReflectionMethod, data)
+	return obj.ZVal(), nil
 }
 
 // --- Additional methods for ReflectionProperty ---
@@ -1439,16 +1713,32 @@ func reflectionPropertyHasType(ctx phpv.Context, o *phpobj.ZObject, args []*phpv
 	return phpv.ZBool(true).ZVal(), nil
 }
 
+// propertyHasRealDefault returns true if the property has an explicit default value.
+// PHP distinguishes between:
+// - Untyped properties with no default: treated as having null default (hasDefaultValue = true)
+// - Typed properties with no default: truly no default (hasDefaultValue = false)
+// - Dynamic properties: no default (hasDefaultValue = false)
+func propertyHasRealDefault(data *reflectionPropertyData) bool {
+	if data.isDynamic {
+		return false
+	}
+	if data.prop.Default != nil {
+		return true
+	}
+	// Untyped properties without explicit default have an implicit null default
+	if data.prop.TypeHint == nil {
+		return true
+	}
+	// Typed properties without explicit default have no default
+	return false
+}
+
 func reflectionPropertyHasDefaultValue(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	data := getPropData(o)
 	if data == nil {
 		return phpv.ZBool(false).ZVal(), nil
 	}
-	// Typed properties without an explicit default don't have a default value
-	if data.prop.Default == nil {
-		return phpv.ZBool(false).ZVal(), nil
-	}
-	return phpv.ZBool(true).ZVal(), nil
+	return phpv.ZBool(propertyHasRealDefault(data)).ZVal(), nil
 }
 
 func reflectionPropertyGetDefaultValue(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
@@ -1456,9 +1746,13 @@ func reflectionPropertyGetDefaultValue(ctx phpv.Context, o *phpobj.ZObject, args
 	if data == nil {
 		return phpv.ZNULL.ZVal(), nil
 	}
-	if data.prop.Default == nil {
-		// PHP 8.5: return NULL with a deprecation notice instead of throwing
+	if !propertyHasRealDefault(data) {
+		// PHP 8.5: return NULL with a deprecation notice when there's no real default
 		_ = ctx.Deprecated("ReflectionProperty::getDefaultValue() for a property without a default value is deprecated, use ReflectionProperty::hasDefaultValue() to check if the default value exists", logopt.NoFuncName(true))
+		return phpv.ZNULL.ZVal(), nil
+	}
+	if data.prop.Default == nil {
+		// Untyped property with no explicit default - return null (no deprecation)
 		return phpv.ZNULL.ZVal(), nil
 	}
 	// Resolve CompileDelayed values
@@ -1529,7 +1823,8 @@ func reflectionParameterToString(ctx phpv.Context, o *phpobj.ZObject, args []*ph
 	}
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("Parameter #%d [ ", data.position))
-	if !data.arg.Required {
+	// Variadic parameters are always optional in PHP reflection output
+	if !data.arg.Required || data.arg.Variadic {
 		sb.WriteString("<optional> ")
 	} else {
 		sb.WriteString("<required> ")
@@ -1537,16 +1832,12 @@ func reflectionParameterToString(ctx phpv.Context, o *phpobj.ZObject, args []*ph
 	if data.arg.Hint != nil {
 		sb.WriteString(data.arg.Hint.String() + " ")
 	}
+	if data.arg.Variadic {
+		sb.WriteString("...")
+	}
 	sb.WriteString(fmt.Sprintf("$%s", data.arg.VarName))
 	if data.arg.DefaultValue != nil {
-		if cd, ok := data.arg.DefaultValue.(*phpv.CompileDelayed); ok {
-			resolved, err := cd.Run(ctx)
-			if err == nil && resolved != nil {
-				sb.WriteString(fmt.Sprintf(" = %s", resolved.String()))
-			}
-		} else {
-			sb.WriteString(fmt.Sprintf(" = %s", data.arg.DefaultValue.String()))
-		}
+		sb.WriteString(formatParamDefault(ctx, data.arg))
 	}
 	sb.WriteString(" ]")
 	return phpv.ZString(sb.String()).ZVal(), nil
@@ -1572,16 +1863,44 @@ func reflectionParameterGetDeclaringFunction(ctx phpv.Context, o *phpobj.ZObject
 		return nil, err
 	}
 	rfObj.HashTable().SetString("name", data.funcName.ZVal())
-	fn, fnErr := ctx.Global().GetFunction(ctx, data.funcName)
-	if fnErr == nil {
+
+	// If we have a directly-captured callable (e.g., a closure), use it.
+	if data.callable != nil {
 		fData := &reflectionFunctionData{
 			name:     data.funcName,
-			callable: fn,
+			callable: data.callable,
 		}
-		if fga, ok := fn.(phpv.FuncGetArgs); ok {
+		if fga, ok := data.callable.(phpv.FuncGetArgs); ok {
 			fData.args = fga.GetArgs()
 		}
+		// Only set closure field for actual anonymous closures (not named functions).
+		// Anonymous closures have names starting with "{closure".
+		if zcl, ok := data.callable.(phpv.ZClosure); ok {
+			name := zcl.Name()
+			if strings.HasPrefix(name, "{closure") {
+				fData.closure = zcl
+			}
+		}
 		rfObj.SetOpaque(ReflectionFunction, fData)
+	} else {
+		fn, fnErr := ctx.Global().GetFunction(ctx, data.funcName)
+		if fnErr == nil {
+			fData := &reflectionFunctionData{
+				name:     data.funcName,
+				callable: fn,
+			}
+			if fga, ok := fn.(phpv.FuncGetArgs); ok {
+				fData.args = fga.GetArgs()
+			}
+			rfObj.SetOpaque(ReflectionFunction, fData)
+		} else {
+			// Even if the function is not found in the registry (e.g., an anonymous closure
+			// whose name was stored as funcName), create minimal function data so getName() works.
+			fData := &reflectionFunctionData{
+				name: data.funcName,
+			}
+			rfObj.SetOpaque(ReflectionFunction, fData)
+		}
 	}
 	return rfObj.ZVal(), nil
 }
@@ -1608,6 +1927,19 @@ func reflectionFunctionIsDeprecated(ctx phpv.Context, o *phpobj.ZObject, args []
 }
 
 func reflectionFunctionGetExtensionName(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	data := getFuncData(o)
+	if data == nil {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	type extGetter interface {
+		GetExt() string
+	}
+	if eg, ok := data.callable.(extGetter); ok {
+		extName := eg.GetExt()
+		if extName != "" {
+			return phpv.ZString(extName).ZVal(), nil
+		}
+	}
 	return phpv.ZBool(false).ZVal(), nil
 }
 
@@ -1626,10 +1958,19 @@ func reflectionFunctionIsVariadic(ctx phpv.Context, o *phpobj.ZObject, args []*p
 
 func reflectionFunctionIsAnonymous(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	data := getFuncData(o)
-	if data == nil {
+	if data == nil || data.closure == nil {
 		return phpv.ZBool(false).ZVal(), nil
 	}
-	return phpv.ZBool(data.closure != nil).ZVal(), nil
+	// A "wrapped" closure (from first-class callable syntax like strlen(...) or
+	// Closure::fromCallable('strlen')) is NOT anonymous - it wraps a named function.
+	// Anonymous closures are those created with function() {} syntax.
+	type wrappedChecker interface {
+		IsWrapped() bool
+	}
+	if wc, ok := data.closure.(wrappedChecker); ok && wc.IsWrapped() {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	return phpv.ZBool(true).ZVal(), nil
 }
 
 func reflectionFunctionGetFileName(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
@@ -1650,7 +1991,17 @@ func reflectionFunctionGetFileName(ctx phpv.Context, o *phpobj.ZObject, args []*
 }
 
 func reflectionFunctionGetStaticVariables(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	return phpv.NewZArray().ZVal(), nil
+	data := getFuncData(o)
+	arr := phpv.NewZArray()
+	if data == nil || data.callable == nil {
+		return arr.ZVal(), nil
+	}
+	if svg, ok := data.callable.(phpv.StaticVarGetter); ok {
+		for _, entry := range svg.GetStaticVars(ctx) {
+			arr.OffsetSet(ctx, entry.Name.ZVal(), entry.Val)
+		}
+	}
+	return arr.ZVal(), nil
 }
 
 func reflectionFunctionIsGenerator(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
@@ -1675,7 +2026,33 @@ func reflectionFunctionIsDisabled(ctx phpv.Context, o *phpobj.ZObject, args []*p
 }
 
 func reflectionFunctionGetExtension(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	return phpv.ZNULL.ZVal(), nil
+	extName := reflectionFunctionExtName(o)
+	if extName == "" {
+		return phpv.ZNULL.ZVal(), nil
+	}
+	extObj, err := phpobj.CreateZObject(ctx, ReflectionExtension)
+	if err != nil {
+		return phpv.ZNULL.ZVal(), nil
+	}
+	extObj.HashTable().SetString("name", phpv.ZString(extName).ZVal())
+	extObj.SetOpaque(ReflectionExtension, phpv.ZString(extName))
+	return extObj.ZVal(), nil
+}
+
+// reflectionFunctionExtName returns the extension name for a function's callable,
+// or "" if it's user-defined or extension is unknown.
+func reflectionFunctionExtName(o *phpobj.ZObject) string {
+	data := getFuncData(o)
+	if data == nil || data.callable == nil {
+		return ""
+	}
+	type extGetter interface {
+		GetExt() string
+	}
+	if eg, ok := data.callable.(extGetter); ok {
+		return eg.GetExt()
+	}
+	return ""
 }
 
 func reflectionFunctionGetClosureCalledClass(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
@@ -1696,10 +2073,10 @@ func reflectionFunctionReturnsReference(ctx phpv.Context, o *phpobj.ZObject, arg
 		return phpv.ZBool(false).ZVal(), nil
 	}
 	type refGetter interface {
-		ReturnsRef() bool
+		ReturnsByRef() bool
 	}
 	if rg, ok := data.callable.(refGetter); ok {
-		return phpv.ZBool(rg.ReturnsRef()).ZVal(), nil
+		return phpv.ZBool(rg.ReturnsByRef()).ZVal(), nil
 	}
 	return phpv.ZBool(false).ZVal(), nil
 }
@@ -1711,7 +2088,24 @@ func reflectionFunctionToString(ctx phpv.Context, o *phpobj.ZObject, args []*php
 	}
 
 	var sb strings.Builder
+
+	// Determine if internal or user-defined
+	type locGetter interface {
+		Loc() *phpv.Loc
+	}
+	var funcLoc *phpv.Loc
+	isInternal := true
+	if lg, ok := data.callable.(locGetter); ok {
+		funcLoc = lg.Loc()
+		if funcLoc != nil {
+			isInternal = false
+		}
+	}
+
 	origin := "<user>"
+	if isInternal {
+		origin = "<internal>"
+	}
 
 	if data.closure != nil {
 		sb.WriteString(fmt.Sprintf("Closure [ %s closure %s ] {\n", origin, data.name))
@@ -1719,20 +2113,24 @@ func reflectionFunctionToString(ctx phpv.Context, o *phpobj.ZObject, args []*php
 		sb.WriteString(fmt.Sprintf("Function [ %s function %s ] {\n", origin, data.name))
 	}
 
+	// Source location (only for user-defined functions)
+	if funcLoc != nil {
+		type locEndGetter interface {
+			LocEnd() *phpv.Loc
+		}
+		endLine := funcLoc.Line
+		if leg, ok := data.callable.(locEndGetter); ok {
+			if locEnd := leg.LocEnd(); locEnd != nil {
+				endLine = locEnd.Line
+			}
+		}
+		sb.WriteString(fmt.Sprintf("  @@ %s %d - %d\n", funcLoc.Filename, funcLoc.Line, endLine))
+	}
+
 	if data.args != nil && len(data.args) > 0 {
 		sb.WriteString(fmt.Sprintf("\n  - Parameters [%d] {\n", len(data.args)))
 		for i, arg := range data.args {
-			sb.WriteString(fmt.Sprintf("    Parameter #%d [ ", i))
-			if !arg.Required {
-				sb.WriteString("<optional> ")
-			} else {
-				sb.WriteString("<required> ")
-			}
-			if arg.Hint != nil {
-				sb.WriteString(arg.Hint.String() + " ")
-			}
-			sb.WriteString(fmt.Sprintf("$%s", arg.VarName))
-			sb.WriteString(" ]\n")
+			sb.WriteString(rcFormatParameter(ctx, i, arg, "    "))
 		}
 		sb.WriteString("  }\n")
 	}

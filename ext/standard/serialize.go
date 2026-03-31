@@ -58,7 +58,7 @@ func fncUnserialize(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		options := optionsArg.Get()
 		if options.GetType() == phpv.ZtArray {
 			// Parse max_depth option
-			if maxDepthVal, exists := options.AsArray(ctx).OffsetGet(ctx, phpv.ZString("max_depth")); exists != nil && !maxDepthVal.IsNull() {
+			if maxDepthVal, _ := options.AsArray(ctx).OffsetGet(ctx, phpv.ZString("max_depth")); maxDepthVal != nil && !maxDepthVal.IsNull() {
 				// max_depth must be an integer
 				if maxDepthVal.GetType() != phpv.ZtInt {
 					typeName := maxDepthVal.GetType().TypeName()
@@ -71,51 +71,56 @@ func fncUnserialize(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				deserializer.maxDepth = n
 			}
 			arg, _ := options.AsArray(ctx).OffsetGet(ctx, phpv.ZString("allowed_classes"))
-			switch arg.GetType() {
-			case phpv.ZtArray:
-				deserializer.allowAllClasses = false
-				for _, className := range arg.AsArray(ctx).Iterate(ctx) {
-					switch className.GetType() {
-					case phpv.ZtString:
-						// Validate the class name string for invalid patterns
-						cn := string(className.AsString(ctx))
-						if err := validateAllowedClassName(cn); err != nil {
-							return nil, phpobj.ThrowError(ctx, phpobj.ValueError, err.Error())
-						}
-						deserializer.allowedClasses[phpv.ZString(strings.ToLower(cn))] = struct{}{}
-					case phpv.ZtObject:
-						// Object with __toString is OK; call As(ZtString) which triggers __toString
-						sv, err := className.As(ctx, phpv.ZtString)
-						if err != nil {
-							return nil, err
-						}
-						s := sv.Value().(phpv.ZString)
-						deserializer.allowedClasses[phpv.ZString(strings.ToLower(string(s)))] = struct{}{}
-					default:
-						// null, bool, int, float, array, resource → TypeError
-						// PHP uses specific value names: "null", "false", "true", "int", "float", "array", "resource"
-						var typeName string
+			// Only process allowed_classes if the key was actually present in the options array.
+			// Use OffsetExists to distinguish "key not present" from "key is null".
+			hasAllowedClasses, _ := options.AsArray(ctx).OffsetExists(ctx, phpv.ZString("allowed_classes"))
+			if hasAllowedClasses {
+				switch arg.GetType() {
+				case phpv.ZtArray:
+					deserializer.allowAllClasses = false
+					for _, className := range arg.AsArray(ctx).Iterate(ctx) {
 						switch className.GetType() {
-						case phpv.ZtNull:
-							typeName = "null"
-						case phpv.ZtBool:
-							if className.AsBool(ctx) {
-								typeName = "true"
-							} else {
-								typeName = "false"
+						case phpv.ZtString:
+							// Validate the class name string for invalid patterns
+							cn := string(className.AsString(ctx))
+							if err := validateAllowedClassName(cn); err != nil {
+								return nil, phpobj.ThrowError(ctx, phpobj.ValueError, err.Error())
 							}
+							deserializer.allowedClasses[phpv.ZString(strings.ToLower(cn))] = struct{}{}
+						case phpv.ZtObject:
+							// Object with __toString is OK; call As(ZtString) which triggers __toString
+							sv, err := className.As(ctx, phpv.ZtString)
+							if err != nil {
+								return nil, err
+							}
+							s := sv.Value().(phpv.ZString)
+							deserializer.allowedClasses[phpv.ZString(strings.ToLower(string(s)))] = struct{}{}
 						default:
-							typeName = className.GetType().TypeName()
+							// null, bool, int, float, array, resource → TypeError
+							// PHP uses specific value names: "null", "false", "true", "int", "float", "array", "resource"
+							var typeName string
+							switch className.GetType() {
+							case phpv.ZtNull:
+								typeName = "null"
+							case phpv.ZtBool:
+								if className.AsBool(ctx) {
+									typeName = "true"
+								} else {
+									typeName = "false"
+								}
+							default:
+								typeName = className.GetType().TypeName()
+							}
+							return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("unserialize(): Option \"allowed_classes\" must be an array of class names, %s given", typeName))
 						}
-						return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("unserialize(): Option \"allowed_classes\" must be an array of class names, %s given", typeName))
 					}
+				case phpv.ZtBool:
+					deserializer.allowAllClasses = bool(arg.AsBool(ctx))
+				default:
+					// allowed_classes must be bool or array
+					typeName := arg.GetType().TypeName()
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("unserialize(): Option \"allowed_classes\" must be of type array|bool, %s given", typeName))
 				}
-			case phpv.ZtBool:
-				deserializer.allowAllClasses = bool(arg.AsBool(ctx))
-			default:
-				// allowed_classes must be bool or array
-				typeName := arg.GetType().TypeName()
-				return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("unserialize(): Option \"allowed_classes\" must be of type array|bool, %s given", typeName))
 			}
 		}
 	}
@@ -175,7 +180,11 @@ type serializeSeen struct {
 	// We use a slice for O(depth) lookup, which is fine for typical nesting depths.
 	// This prevents detecting "cycles" due to COW-shared arrays across different paths.
 	activeArrays []*phpv.ZArray
-	objects      map[phpv.ZObject]bool
+	// activeArrayRef maps each currently-active array to its reference slot index.
+	// This enables circular-reference detection: when a PHP ref points to an active
+	// array, we can emit R:N where N is the slot of the outer array.
+	activeArrayRef map[*phpv.ZArray]int
+	objects        map[phpv.ZObject]bool
 	// Object reference tracking for r: references
 	// Maps object identity to the 1-based reference index
 	objRefs map[phpv.ZObject]int
@@ -188,9 +197,10 @@ type serializeSeen struct {
 
 func newSerializeSeen() *serializeSeen {
 	return &serializeSeen{
-		objects: make(map[phpv.ZObject]bool),
-		objRefs: make(map[phpv.ZObject]int),
-		valRefs: make(map[*phpv.ZVal]int),
+		activeArrayRef: make(map[*phpv.ZArray]int),
+		objects:        make(map[phpv.ZObject]bool),
+		objRefs:        make(map[phpv.ZObject]int),
+		valRefs:        make(map[*phpv.ZVal]int),
 	}
 }
 
@@ -307,9 +317,12 @@ func serializeValue(ctx phpv.Context, rawZVal *phpv.ZVal, depth int, seen *seria
 					if activeArr == arr || activeArr.HashTable().SameData(arr.HashTable()) {
 						// Temporarily remove from active stack
 						seen.activeArrays = append(seen.activeArrays[:i], seen.activeArrays[i+1:]...)
+						activeSlot := seen.activeArrayRef[activeArr]
+						delete(seen.activeArrayRef, activeArr)
 						result, err := serializeWithDepth(ctx, ultimate, depth, seen)
 						// Restore to active stack (re-insert at same position)
-						seen.activeArrays = append(seen.activeArrays[:i], append([]*phpv.ZArray{arr}, seen.activeArrays[i:]...)...)
+						seen.activeArrays = append(seen.activeArrays[:i], append([]*phpv.ZArray{activeArr}, seen.activeArrays[i:]...)...)
+						seen.activeArrayRef[activeArr] = activeSlot
 						return result, err
 					}
 				}
@@ -375,23 +388,28 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seen *ser
 	case phpv.ZtArray:
 		arr := value.AsArray(ctx)
 
-		// Detect array cycles (circular references) - emit N; to prevent infinite recursion.
+		// Detect array cycles (circular references).
 		// We only consider it a cycle if the array is CURRENTLY being iterated on the
 		// active call stack. COW-shared arrays that appear via different object paths
 		// are not cycles and should be serialized fresh.
 		// Use SameData comparison to handle COW copies (Dup'd arrays share same underlying data).
 		for _, activeArr := range seen.activeArrays {
 			if activeArr == arr || activeArr.HashTable().SameData(arr.HashTable()) {
+				// Circular reference: emit R:N referencing the outer array's slot.
+				if slot, ok := seen.activeArrayRef[activeArr]; ok {
+					return "R:" + strconv.Itoa(slot) + ";", nil
+				}
 				return "N;", nil
 			}
 		}
+		slot := seen.nextRef() // array gets a reference slot
 		seen.activeArrays = append(seen.activeArrays, arr)
+		seen.activeArrayRef[arr] = slot
 		defer func() {
 			// Pop this array from the active stack
 			seen.activeArrays = seen.activeArrays[:len(seen.activeArrays)-1]
+			delete(seen.activeArrayRef, arr)
 		}()
-
-		seen.nextRef() // array gets a reference slot
 
 		count := strconv.FormatInt(int64(arr.Count(ctx)), 10)
 
@@ -458,7 +476,7 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seen *ser
 			zobj := obj.(*phpobj.ZObject)
 			// Get the original class name
 			origClassName := "__PHP_Incomplete_Class"
-			if cnVal := zobj.HashTable().GetString("__PHP_Incomplete_Class_Name"); cnVal != nil {
+			if cnVal, ok := zobj.HashTable().GetStringB("__PHP_Incomplete_Class_Name"); ok && cnVal != nil && !cnVal.IsNull() {
 				origClassName = string(cnVal.AsString(ctx))
 			}
 			// Serialize all dynamic properties except __PHP_Incomplete_Class_Name
@@ -613,6 +631,10 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seen *ser
 			zobj := obj.(*phpobj.ZObject)
 			sleepSeen := make(map[string]bool) // keyed by mangled name
 			for _, prop := range props.Iterate(ctx) {
+				// PHP warns if __sleep() returns an array with non-string elements
+				if prop.GetType() != phpv.ZtString {
+					ctx.Warn("%s::__sleep() should return an array only containing the names of instance-variables to serialize", obj.GetClass().GetName())
+				}
 				// Cast non-string elements to string (PHP does this)
 				propName := prop.AsString(ctx)
 				// Look up the actual property to determine visibility.
@@ -770,11 +792,50 @@ func (d *deserializer) getRef(index int) *phpv.ZVal {
 
 // parseKey parses a value without registering it in the reference table (for array/object keys).
 func (d *deserializer) parseKey(ctx phpv.Context, str string, offset int) (result *phpv.ZVal, nextOffset int, err error) {
+	// PHP only allows integer or string keys in arrays and object properties.
+	// For compound types (arrays, objects, etc.), PHP detects the type byte immediately
+	// and reports the error at the position of the opening '{' in the type header + 1.
+	// This avoids recursively parsing complex structures only to reject them later.
+	if offset < len(str) {
+		typeChar := str[offset]
+		switch typeChar {
+		case 'a', 'O', 'C': // array, object, custom - these are always invalid as keys
+			// Find the first '{' starting from offset and report error there + 1
+			errOffset := offset
+			for pos := offset; pos < len(str); pos++ {
+				if str[pos] == '{' {
+					errOffset = pos + 1
+					break
+				}
+			}
+			// We need nextOffset to point past the key so the caller can skip,
+			// but since we're returning an error, just return offset as nextOffset.
+			return nil, offset, &unserializeError{errOffset, len(str)}
+		}
+	}
+
 	// Save ref count, parse, then restore (keys don't count as references)
 	savedLen := len(d.refs)
 	result, nextOffset, err = d.parse(ctx, str, offset)
-	// Remove any refs that were added during key parsing
 	d.refs = d.refs[:savedLen]
+	if err != nil {
+		return result, nextOffset, err
+	}
+	// Also reject null, bool, float, and object/array types parsed from other type codes.
+	if result != nil {
+		t := result.GetType()
+		if t != phpv.ZtInt && t != phpv.ZtString {
+			// Find the first '{' in range for the error offset
+			errOffset := nextOffset
+			for pos := offset; pos < nextOffset && pos < len(str); pos++ {
+				if str[pos] == '{' {
+					errOffset = pos + 1
+					break
+				}
+			}
+			return nil, nextOffset, &unserializeError{errOffset, len(str)}
+		}
+	}
 	return
 }
 
@@ -978,7 +1039,8 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 		}
 		orig := d.getRef(int(index))
 		if orig == nil {
-			return nil, offset, readError
+			// Invalid reference index - report error at position after the ';'
+			return nil, offset, &unserializeError{semicIndex + 1, len(str)}
 		}
 		// R: creates a PHP reference. MakeRef() converts the original slot
 		// in-place so both the original array entry and this new entry share
@@ -1005,15 +1067,20 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 		}
 		ref := d.getRef(int(index))
 		if ref == nil {
-			return nil, offset, readError
+			// Invalid reference index - report error at position after the ';'
+			return nil, offset, &unserializeError{semicIndex + 1, len(str)}
 		}
 		// r: is only valid for objects (not arrays or scalars)
 		if ref.GetType() != phpv.ZtObject {
 			return nil, offset, &unserializeError{semicIndex + 1, len(str)}
 		}
-		// r: doesn't create a reference, just reuses the value
-		d.addRef(ref)
-		return ref, semicIndex + 1, nil
+		// r: doesn't create a PHP reference, just shares the object identity.
+		// We must return a NEW ZVal wrapping the same object so that reassigning
+		// one slot doesn't affect another (PHP objects are shared by identity,
+		// not by ZVal pointer).
+		refCopy := phpv.NewZVal(ref.Value())
+		d.addRef(refCopy)
+		return refCopy, semicIndex + 1, nil
 
 	case 'a':
 		// "a:2:{i:0;s:1:"x";s:1:"y";s:1:"z";}" == ["x", "y" => z]
@@ -1206,18 +1273,21 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 			return nil, offset, &unserializeError{i, len(str)}
 		}
 		i++
-		j = indexOf(str, ":", i)
-		if j < 0 {
-			return nil, offset, &unserializeError{i, len(str)}
+		// Find the `:` that ends the numProps field.
+		// Scan digit by digit so we can report the exact position of any invalid character.
+		j = i
+		for j < len(str) && str[j] >= '0' && str[j] <= '9' {
+			j++
 		}
-		if j < i+1 {
-			// Empty numProps string (e.g. "O:2:"yy":: ") - error at position after the colon
+		if j >= len(str) || str[j] != ':' {
+			// Invalid character in numProps field - report position of the bad character
+			return nil, offset, &unserializeError{j, len(str)}
+		}
+		if j == i {
+			// Empty numProps (e.g. "O:2:"yy":: ") - error at position after the colon
 			return nil, offset, &unserializeError{j + 1, len(str)}
 		}
 		numPropsStr := str[i:j]
-		if len(numPropsStr) > 0 && (numPropsStr[0] == '+' || numPropsStr[0] == '-') {
-			return nil, offset, &unserializeError{i, len(str)}
-		}
 		numProps, err := strconv.Atoi(numPropsStr)
 		if err != nil || numProps < 0 {
 			return nil, offset, &unserializeError{i, len(str)}
@@ -1227,11 +1297,12 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 			return nil, offset, &unserializeError{j + 1, len(str)}
 		}
 
-		// Sanity check: each property needs at least 2 bytes (key + value minimum).
-		// If claimed numProps is too large for the remaining data, fail early at j.
+		// Sanity check: the remaining bytes (including closing '}') must be at least
+		// as large as the number of properties claimed (each needs at least 1 byte).
+		// This prevents huge allocation attempts without causing premature failures.
 		if numProps > 0 {
-			remaining := len(str) - (j + 2)
-			if numProps > remaining/2 {
+			remaining := len(str) - (j + 1) // bytes from '{' to end of string
+			if remaining <= 0 || numProps > remaining {
 				return nil, offset, &unserializeError{j, len(str)}
 			}
 		}
@@ -1260,6 +1331,12 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 						msgStr == fmt.Sprintf("Class \"%s\" not found", className))
 				if !classNotFound {
 					return nil, offset, err
+				}
+				// Release the ID of the spurious Error object to keep object IDs compact.
+				// Use the GetObjID interface if available.
+				type objIDer interface{ GetObjID() int }
+				if idObj, ok := throw.Obj.(objIDer); ok {
+					ctx.Global().ReleaseObjectID(idObj.GetObjID())
 				}
 			}
 		}
@@ -1452,46 +1529,8 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 			return nil, offset, readError
 		}
 		i++
-		j = indexOf(str, ":", i)
-		if j < 0 || j < i+1 {
-			return nil, offset, readError
-		}
-		dataLenStr := str[i:j]
-		// Try parsing as int64 first; if it overflows, treat it as a very large number
-		dataLen64, parseErr := strconv.ParseInt(dataLenStr, 10, 64)
-		if parseErr != nil {
-			// Could be an overflow (very large number) — try uint64
-			dataLen64u, uerr := strconv.ParseUint(dataLenStr, 10, 64)
-			if uerr != nil || dataLenStr[0] == '-' {
-				return nil, offset, &unserializeError{i, len(str)}
-			}
-			// dataLen is huge — warn about insufficient data and return error
-			available := len(str) - (j + 2)
-			ctx.Warn("Insufficient data for unserializing - %d required, %d present", dataLen64u, available)
-			return nil, offset, &unserializeError{j + 2, len(str)}
-		}
-		if dataLen64 < 0 {
-			return nil, offset, &unserializeError{i, len(str)}
-		}
-		dataLen := int(dataLen64)
-		// Check for integer overflow or unreasonable size
-		if int64(dataLen) != dataLen64 || dataLen > len(str) {
-			// PHP emits a warning about insufficient data when dataLen is huge
-			ctx.Warn("Insufficient data for unserializing - %d required, %d present", dataLen64, len(str)-(j+2))
-			return nil, offset, &unserializeError{j + 2 + dataLen, len(str)}
-		}
 
-		if core.StrIdx(str, j+1) != '{' {
-			return nil, offset, &unserializeError{j + 1, len(str)}
-		}
-
-		dataStart := j + 2
-		dataEnd := dataStart + dataLen
-		if dataEnd >= len(str) || core.StrIdx(str, dataEnd) != '}' {
-			return nil, offset, &unserializeError{dataEnd, len(str)}
-		}
-		data := str[dataStart:dataEnd]
-
+		// Look up class BEFORE checking dataLen so we can warn about missing class first.
 		allowedClass := d.allowAllClasses
 		if !allowedClass {
 			// Case-insensitive class name matching
@@ -1499,6 +1538,15 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 		}
 
 		class, err := ctx.Global().GetClass(ctx, phpv.ZString(className), true)
+		if err != nil {
+			// Release the spurious Error object's ID (class not found) to keep IDs compact.
+			if throw, ok := phpv.UnwrapError(err).(*phperr.PhpThrow); ok {
+				type objIDer interface{ GetObjID() int }
+				if idObj, ok2 := throw.Obj.(objIDer); ok2 {
+					ctx.Global().ReleaseObjectID(idObj.GetObjID())
+				}
+			}
+		}
 		if err != nil || !allowedClass || class == nil {
 			class = phpobj.IncompleteClass
 		}
@@ -1517,12 +1565,60 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 		hasUnserializer := class == phpobj.IncompleteClass || class.Implements(phpobj.Serializable) || classHasUnserializeMethod
 		if !hasUnserializer {
 			// Class exists but doesn't implement Serializable - warn and create object
-			ctx.Warn("Class %s has no unserializer", class.GetName(), logopt.NoFuncName(true))
+			ctx.Warn("Class %s has no unserializer", class.GetName())
 		}
 		if class == phpobj.IncompleteClass {
 			// Class not found at all - warn with __PHP_Incomplete_Class
-			ctx.Warn("Class __PHP_Incomplete_Class has no unserializer", logopt.NoFuncName(true))
+			ctx.Warn("Class __PHP_Incomplete_Class has no unserializer")
 		}
+
+		// Scan digit by digit for the data length field so we can report the exact position
+		// of any invalid character (e.g., 'x' in '3x{...').
+		j = i
+		for j < len(str) && str[j] >= '0' && str[j] <= '9' {
+			j++
+		}
+		if j >= len(str) || str[j] != ':' {
+			return nil, offset, &unserializeError{j, len(str)}
+		}
+		if j == i {
+			return nil, offset, &unserializeError{j + 1, len(str)}
+		}
+		dataLenStr := str[i:j]
+		// Try parsing as int64 first; if it overflows, treat it as a very large number
+		dataLen64, parseErr := strconv.ParseInt(dataLenStr, 10, 64)
+		if parseErr != nil {
+			// Could be an overflow (very large number) — negative sign not allowed
+			if len(dataLenStr) > 0 && dataLenStr[0] == '-' {
+				return nil, offset, &unserializeError{i, len(str)}
+			}
+			// dataLen is huge (overflows even uint64) — warn about insufficient data and return error
+			available := len(str) - (j + 2)
+			// Use a placeholder large number for the warning (actual value overflows any integer type)
+			ctx.Warn("Insufficient data for unserializing - %d required, %d present", uint64(math.MaxUint64), available, logopt.NoFuncName(true))
+			return nil, offset, &unserializeError{j + 2, len(str)}
+		}
+		if dataLen64 < 0 {
+			return nil, offset, &unserializeError{i, len(str)}
+		}
+		dataLen := int(dataLen64)
+		// Check for integer overflow or unreasonable size
+		if int64(dataLen) != dataLen64 || dataLen > len(str) {
+			// PHP emits a warning about insufficient data when dataLen is huge (without function name prefix)
+			ctx.Warn("Insufficient data for unserializing - %d required, %d present", dataLen64, len(str)-(j+2), logopt.NoFuncName(true))
+			return nil, offset, &unserializeError{j + 2, len(str)}
+		}
+
+		if core.StrIdx(str, j+1) != '{' {
+			return nil, offset, &unserializeError{j + 1, len(str)}
+		}
+
+		dataStart := j + 2
+		dataEnd := dataStart + dataLen
+		if dataEnd >= len(str) || core.StrIdx(str, dataEnd) != '}' {
+			return nil, offset, &unserializeError{dataEnd, len(str)}
+		}
+		data := str[dataStart:dataEnd]
 
 		obj, err := phpobj.CreateZObject(ctx, class)
 		if err != nil {
@@ -1569,6 +1665,7 @@ func unserializeSetProperty(ctx phpv.Context, obj phpv.ZObject, key phpv.ZString
 	// originally private (from a specific class) or protected/public.
 	actualPropName := key
 	origPrivateClass := "" // non-empty if \0ClassName\0prop format
+	isProtectedMangled := false
 
 	if len(keyStr) > 0 && keyStr[0] == '\x00' {
 		// Find the second \x00
@@ -1577,7 +1674,9 @@ func unserializeSetProperty(ctx phpv.Context, obj phpv.ZObject, key phpv.ZString
 			classOrStar := keyStr[1 : secondNull+1]
 			propName := phpv.ZString(keyStr[secondNull+2:])
 			actualPropName = propName
-			if classOrStar != "*" {
+			if classOrStar == "*" {
+				isProtectedMangled = true
+			} else {
 				origPrivateClass = classOrStar
 			}
 		}
@@ -1650,8 +1749,35 @@ func unserializeSetProperty(ctx phpv.Context, obj phpv.ZObject, key phpv.ZString
 		return
 	}
 
-	// Not a declared property: use ObjectSet to emit the deprecation warning
-	// for dynamic property creation (PHP 8.1+).
+	// Not a declared property: bypass handlers and store directly for __PHP_Incomplete_Class,
+	// since its HandlePropSet would throw. For other classes, use ObjectSet to emit
+	// the deprecation warning for dynamic property creation (PHP 8.1+).
+	if isZObj && obj.GetClass() == phpobj.IncompleteClass {
+		zobj.HashTable().ForceSetString(actualPropName, value)
+		return
+	}
+	// If the original key used protected mangling (\0*\0propName) but the class doesn't declare
+	// the property, still store it with protected mangling (so var_dump shows it as protected).
+	if isProtectedMangled {
+		protectedKey := phpv.ZString("\x00*\x00" + string(actualPropName))
+		// Emit deprecation for dynamic property creation (PHP 8.2+) only when creating a new property.
+		if isZObj && !zobj.AllowsDynamicProperties() {
+			if _, exists := zobj.HashTable().GetStringB(protectedKey); !exists {
+				hasMagicProp := false
+				if zc, ok := zobj.GetClass().(*phpobj.ZClass); ok {
+					_, hasGet := zc.Methods["__get"]
+					_, hasSet := zc.Methods["__set"]
+					hasMagicProp = hasGet || hasSet
+				}
+				if !hasMagicProp {
+					ctx.Deprecated("Creation of dynamic property %s::$%s is deprecated",
+						zobj.GetClass().GetName(), string(actualPropName), logopt.NoFuncName(true))
+				}
+			}
+		}
+		zobj.HashTable().ForceSetString(protectedKey, value)
+		return
+	}
 	obj.ObjectSet(ctx, actualPropName, value)
 }
 

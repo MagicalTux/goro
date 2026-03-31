@@ -127,6 +127,8 @@ type ZClassHandlers struct {
 	// Used by empty() to get values without triggering user-level method calls.
 	HandleReadDim func(ctx Context, o ZObject, key *ZVal) (*ZVal, error)
 	// HandlePropGet intercepts property read access before __get. Return (nil, nil) to fall through to normal handling.
+	// If HandlePropGetEager is true, HandlePropGet is called before hash table lookup (intercepts ALL property reads).
+	HandlePropGetEager bool
 	HandlePropGet   func(ctx Context, o ZObject, key ZString) (*ZVal, error)
 	// HandlePropSet intercepts property write access before __set. Return false to fall through to normal handling.
 	HandlePropSet   func(ctx Context, o ZObject, key ZString, value *ZVal) (bool, error)

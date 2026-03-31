@@ -582,6 +582,18 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 	isStrict := c.StrictTypes
 	if fga, ok := f.(phpv.FuncGetArgs); ok {
 		funcArgs := fga.GetArgs()
+		// Count required args to detect under-specified calls.
+		// If fewer args are provided than required, skip type checking —
+		// the function itself will emit the "too few arguments" error.
+		requiredArgCount := 0
+		for _, fa := range funcArgs {
+			if fa.Required && !fa.Variadic {
+				requiredArgCount++
+			}
+		}
+		if len(callCtx.Args) < requiredArgCount {
+			goto skipTypeCheck
+		}
 		for i, fa := range funcArgs {
 			if fa.Hint == nil || fa.SkipTypeCheck {
 				continue
@@ -613,7 +625,8 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 							if dl, ok := f.(interface{ Loc() *phpv.Loc }); ok {
 								defLoc = dl.Loc()
 							}
-							if !callCtx.isInternal && !callCtx.suppressCalledIn {
+							// "called in X on line Y" only for user-defined functions
+							if !callCtx.isInternal && !callCtx.suppressCalledIn && defLoc != nil {
 								if callLoc := ctx.Loc(); callLoc != nil {
 									msg += fmt.Sprintf(", called in %s on line %d", callLoc.Filename, callLoc.Line)
 								}
@@ -629,6 +642,13 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 			if val.IsNull() && !fa.Required {
 				continue // allow null for optional params
 			}
+			// Determine if this is a built-in (Go-implemented) function vs user-defined.
+			// Built-in functions have no source location (defLoc == nil).
+			var defLoc *phpv.Loc
+			if dl, ok := f.(interface{ Loc() *phpv.Loc }); ok {
+				defLoc = dl.Loc()
+			}
+			isBuiltin := defLoc == nil
 			var typeOk bool
 			if isStrict {
 				typeOk = fa.Hint.CheckStrict(callCtx, val)
@@ -636,6 +656,18 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 				typeOk = fa.Hint.Check(callCtx, val)
 			}
 			if !typeOk {
+				// PHP 8.1+: passing null to a non-nullable scalar parameter of a
+				// BUILT-IN function emits a deprecated notice (not a TypeError) in
+				// non-strict mode. For user-defined functions, it's always a TypeError.
+				if !isStrict && isBuiltin && val.IsNull() && !fa.Hint.IsNullable() && isNullCoercibleScalar(fa.Hint) {
+					funcName := callCtx.GetFuncName()
+					depMsg := fmt.Sprintf("%s(): Passing null to parameter #%d ($%s) of type %s is deprecated",
+						funcName, i+1, fa.VarName, fa.Hint.String())
+					if depErr := ctx.Deprecated(depMsg, logopt.NoFuncName(true)); depErr != nil {
+						return nil, depErr
+					}
+					continue // allow null to be coerced downstream
+				}
 				// Get the actual type name for the error
 				actualType := phpTypeName(val)
 				if isStrict {
@@ -643,12 +675,10 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 				}
 				funcName := callCtx.GetFuncName()
 				msg := fmt.Sprintf("%s(): Argument #%d ($%s) must be of type %s, %s given", funcName, i+1, fa.VarName, fa.Hint.String(), actualType)
-				// Add call location and definition location
-				var defLoc *phpv.Loc
-				if dl, ok := f.(interface{ Loc() *phpv.Loc }); ok {
-					defLoc = dl.Loc()
-				}
-				if !callCtx.isInternal && !callCtx.suppressCalledIn {
+				// "called in X on line Y" is only added for user-defined functions
+				// (those with a source definition location). Built-in Go functions
+				// have defLoc == nil and should not add "called in".
+				if !callCtx.isInternal && !callCtx.suppressCalledIn && !isBuiltin {
 					if callLoc := ctx.Loc(); callLoc != nil {
 						msg += fmt.Sprintf(", called in %s on line %d", callLoc.Filename, callLoc.Line)
 					}
@@ -657,6 +687,7 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 			}
 		}
 	}
+skipTypeCheck:
 
 	callResult, callErr = phperr.CatchReturn(f.Call(callCtx, callCtx.Args))
 	if hasNoDiscardAttr(f) {
@@ -905,6 +936,33 @@ func reorderExtNamedArgs(ctx phpv.Context, extArgs []*ExtFunctionArg, args []php
 	}
 
 	return result, nil
+}
+
+// isNullCoercibleScalar returns true if the type hint is or contains a
+// non-nullable scalar type that accepts null via deprecated coercion in PHP 8.1+
+// weak mode. These are: string, int, float, bool, or union types containing
+// one of these (e.g. ReflectionClass|string).
+func isNullCoercibleScalar(h *phpv.TypeHint) bool {
+	if h == nil {
+		return false
+	}
+	if len(h.Intersection) > 0 {
+		return false
+	}
+	// Union types: true if any member is a null-coercible scalar
+	if len(h.Union) > 0 {
+		for _, alt := range h.Union {
+			if isNullCoercibleScalar(alt) {
+				return true
+			}
+		}
+		return false
+	}
+	switch h.Type() {
+	case phpv.ZtString, phpv.ZtInt, phpv.ZtFloat, phpv.ZtBool:
+		return true
+	}
+	return false
 }
 
 func phpTypeName(val *phpv.ZVal) string {

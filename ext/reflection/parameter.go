@@ -18,6 +18,7 @@ type reflectionParameterData struct {
 	arg      *phpv.FuncArg
 	position int
 	funcName phpv.ZString
+	callable phpv.Callable // non-nil when the function is a closure (for getDeclaringFunction())
 }
 
 func initReflectionParameter() {
@@ -55,13 +56,14 @@ func initReflectionParameter() {
 }
 
 func reflectionParameterConstruct(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	if len(args) < 2 {
-		return nil, phpobj.ThrowError(ctx, phpobj.Error, "ReflectionParameter::__construct() expects exactly 2 arguments")
+	if len(args) != 2 {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("ReflectionParameter::__construct() expects exactly 2 arguments, %d given", len(args)))
 	}
 
 	// Get the function/method's args
 	var funcArgs []*phpv.FuncArg
 	var funcName phpv.ZString
+	var funcCallable phpv.Callable // non-nil when the param belongs to a closure
 
 	funcVal := args[0]
 	if funcVal.GetType() == phpv.ZtString {
@@ -85,20 +87,49 @@ func reflectionParameterConstruct(ctx phpv.Context, o *phpobj.ZObject, args []*p
 		if classVal == nil || methodVal == nil {
 			return nil, phpobj.ThrowError(ctx, ReflectionException, "ReflectionParameter::__construct(): Expected array with class and method name")
 		}
-		className := classVal.AsString(ctx)
 		methodName := methodVal.AsString(ctx)
-		class, err := ctx.Global().GetClass(ctx, className, true)
-		if err != nil {
-			return nil, phpobj.ThrowError(ctx, ReflectionException, fmt.Sprintf("Class \"%s\" does not exist", className))
+
+		// classVal can be an object (e.g. a closure) or a string class name
+		if classVal.GetType() == phpv.ZtObject {
+			obj := classVal.AsObject(ctx)
+			class := obj.GetClass()
+			method, methodOk := class.GetMethod(methodName)
+			if methodOk {
+				if fga, ok2 := method.Method.(phpv.FuncGetArgs); ok2 {
+					funcArgs = fga.GetArgs()
+				}
+			}
+			// For __invoke on closure objects, if we couldn't get args from the class method
+			// (because it's a NativeMethod wrapper), try the object's opaque FuncGetArgs.
+			if funcArgs == nil {
+				if zo, ok := obj.(*phpobj.ZObject); ok {
+					for _, v := range zo.Opaque {
+						if fga, ok2 := v.(phpv.FuncGetArgs); ok2 {
+							funcArgs = fga.GetArgs()
+							break
+						}
+					}
+				}
+			}
+			if !methodOk && funcArgs == nil {
+				return nil, phpobj.ThrowError(ctx, ReflectionException, fmt.Sprintf("Method %s::%s() does not exist", class.GetName(), methodName))
+			}
+			funcName = phpv.ZString(fmt.Sprintf("%s::%s", class.GetName(), methodName))
+		} else {
+			className := classVal.AsString(ctx)
+			class, err := ctx.Global().GetClass(ctx, className, true)
+			if err != nil {
+				return nil, phpobj.ThrowError(ctx, ReflectionException, fmt.Sprintf("Class \"%s\" does not exist", className))
+			}
+			method, ok := class.GetMethod(methodName)
+			if !ok {
+				return nil, phpobj.ThrowError(ctx, ReflectionException, fmt.Sprintf("Method %s::%s() does not exist", className, methodName))
+			}
+			if fga, ok2 := method.Method.(phpv.FuncGetArgs); ok2 {
+				funcArgs = fga.GetArgs()
+			}
+			funcName = phpv.ZString(fmt.Sprintf("%s::%s", className, methodName))
 		}
-		method, ok := class.GetMethod(methodName)
-		if !ok {
-			return nil, phpobj.ThrowError(ctx, ReflectionException, fmt.Sprintf("Method %s::%s() does not exist", className, methodName))
-		}
-		if fga, ok2 := method.Method.(phpv.FuncGetArgs); ok2 {
-			funcArgs = fga.GetArgs()
-		}
-		funcName = phpv.ZString(fmt.Sprintf("%s::%s", className, methodName))
 	} else if funcVal.GetType() == phpv.ZtObject {
 		// Closure
 		obj := funcVal.AsObject(ctx)
@@ -107,8 +138,26 @@ func reflectionParameterConstruct(ctx phpv.Context, o *phpobj.ZObject, args []*p
 			if closure, ok := opaque.(phpv.ZClosure); ok {
 				funcArgs = closure.GetArgs()
 				funcName = phpv.ZString(closure.Name())
+				funcCallable = closure
 			}
 		}
+	} else {
+		// Invalid type for first argument
+		var typeName string
+		switch funcVal.GetType() {
+		case phpv.ZtInt:
+			typeName = "int"
+		case phpv.ZtFloat:
+			typeName = "float"
+		case phpv.ZtBool:
+			typeName = "bool"
+		case phpv.ZtNull:
+			typeName = "null"
+		default:
+			typeName = funcVal.GetType().String()
+		}
+		return nil, phpobj.ThrowError(ctx, ReflectionException,
+			fmt.Sprintf("ReflectionParameter::__construct(): Argument #1 ($function) must be a string, an array(class, method), or a callable object, %s given", typeName))
 	}
 
 	param := args[1]
@@ -118,7 +167,7 @@ func reflectionParameterConstruct(ctx phpv.Context, o *phpobj.ZObject, args []*p
 		// Position-based lookup
 		pos := int(param.AsInt(ctx))
 		if pos < 0 {
-			return nil, phpobj.ThrowError(ctx, ReflectionException, "ReflectionParameter::__construct(): Argument #2 ($param) must be greater than or equal to 0")
+			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "ReflectionParameter::__construct(): Argument #2 ($param) must be greater than or equal to 0")
 		}
 		if funcArgs == nil || pos >= len(funcArgs) {
 			return nil, phpobj.ThrowError(ctx, ReflectionException, fmt.Sprintf("The parameter specified by its index does not exist"))
@@ -127,6 +176,7 @@ func reflectionParameterConstruct(ctx phpv.Context, o *phpobj.ZObject, args []*p
 			arg:      funcArgs[pos],
 			position: pos,
 			funcName: funcName,
+			callable: funcCallable,
 		}
 	} else {
 		// Name-based lookup
@@ -138,6 +188,7 @@ func reflectionParameterConstruct(ctx phpv.Context, o *phpobj.ZObject, args []*p
 						arg:      a,
 						position: i,
 						funcName: funcName,
+						callable: funcCallable,
 					}
 					break
 				}
@@ -262,6 +313,12 @@ func reflectionParameterIsVariadic(ctx phpv.Context, o *phpobj.ZObject, args []*
 // createReflectionParameterObjects creates an array of ReflectionParameter objects
 // from a slice of FuncArg.
 func createReflectionParameterObjects(ctx phpv.Context, funcArgs []*phpv.FuncArg, funcName phpv.ZString) (*phpv.ZVal, error) {
+	return createReflectionParameterObjectsWithCallable(ctx, funcArgs, funcName, nil)
+}
+
+// createReflectionParameterObjectsWithCallable creates an array of ReflectionParameter objects,
+// optionally storing the callable (for closures) to support getDeclaringFunction().
+func createReflectionParameterObjectsWithCallable(ctx phpv.Context, funcArgs []*phpv.FuncArg, funcName phpv.ZString, callable phpv.Callable) (*phpv.ZVal, error) {
 	arr := phpv.NewZArray()
 	for i, arg := range funcArgs {
 		obj, err := phpobj.CreateZObject(ctx, ReflectionParameter)
@@ -272,6 +329,7 @@ func createReflectionParameterObjects(ctx phpv.Context, funcArgs []*phpv.FuncArg
 			arg:      arg,
 			position: i,
 			funcName: funcName,
+			callable: callable,
 		}
 		obj.HashTable().SetString("name", arg.VarName.ZVal())
 		obj.SetOpaque(ReflectionParameter, data)
@@ -303,14 +361,61 @@ func reflectionParameterIsPromoted(ctx phpv.Context, o *phpobj.ZObject, args []*
 	return phpv.ZBool(data.arg.Promotion != 0).ZVal(), nil
 }
 
+// getDefaultConstantName returns the constant name if the arg's default value
+// is a compile-delayed constant reference, or ("", false) if not.
+// A "constant" here means a named constant (not null/true/false), not arbitrary expressions like new Foo().
+func getDefaultConstantName(arg *phpv.FuncArg) (string, bool) {
+	if arg.DefaultValue == nil {
+		return "", false
+	}
+	// First try the preserved expression string (most reliable, even after Compile())
+	var s string
+	if arg.DefaultValueExpr != "" {
+		s = arg.DefaultValueExpr
+	} else {
+		// Try to get from CompileDelayed (not yet evaluated)
+		cd, ok := arg.DefaultValue.(*phpv.CompileDelayed)
+		if !ok {
+			return "", false
+		}
+		var buf strings.Builder
+		if err := cd.V.Dump(&buf); err != nil {
+			return "", false
+		}
+		s = buf.String()
+	}
+	if s == "" {
+		return "", false
+	}
+	// A constant reference is a pure identifier (letters/digits/underscores/backslashes for namespaces).
+	// Strings start with ' or ", numbers are digits (possibly with . or -), arrays start with [.
+	// PHP considers true/false/null as not "constant names" for isDefaultValueConstant.
+	// Expressions like "new Foo()" are NOT constants.
+	switch strings.ToLower(s) {
+	case "null", "true", "false":
+		return "", false
+	}
+	firstCh := s[0]
+	if firstCh == '\'' || firstCh == '"' || firstCh == '[' || (firstCh >= '0' && firstCh <= '9') || firstCh == '-' {
+		return "", false
+	}
+	// Check that the string is a valid identifier (no spaces, no parens, etc.)
+	// A valid constant name only contains letters, digits, underscores, and backslashes.
+	for _, ch := range s {
+		if !((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '_' || ch == '\\') {
+			return "", false
+		}
+	}
+	return s, true
+}
+
 func reflectionParameterIsDefaultValueConstant(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	data := getParamData(o)
 	if data == nil || data.arg.DefaultValue == nil {
 		return nil, phpobj.ThrowError(ctx, ReflectionException, "Internal error: Failed to retrieve the default value")
 	}
-	// We don't track whether a default value came from a constant expression,
-	// so return false for now
-	return phpv.ZBool(false).ZVal(), nil
+	_, ok := getDefaultConstantName(data.arg)
+	return phpv.ZBool(ok).ZVal(), nil
 }
 
 func reflectionParameterGetDefaultValueConstantName(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
@@ -318,7 +423,11 @@ func reflectionParameterGetDefaultValueConstantName(ctx phpv.Context, o *phpobj.
 	if data == nil || data.arg.DefaultValue == nil {
 		return nil, phpobj.ThrowError(ctx, ReflectionException, "Internal error: Failed to retrieve the default value")
 	}
-	return phpv.ZBool(false).ZVal(), nil
+	name, ok := getDefaultConstantName(data.arg)
+	if !ok {
+		return nil, phpobj.ThrowError(ctx, ReflectionException, "Internal error: Failed to retrieve the default value")
+	}
+	return phpv.ZString(name).ZVal(), nil
 }
 
 func reflectionParameterCanBePassedByValue(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
@@ -374,7 +483,7 @@ func reflectionParameterGetClass(ctx phpv.Context, o *phpobj.ZObject, args []*ph
 	// Try to resolve the class
 	class, err := ctx.Global().GetClass(ctx, phpv.ZString(className), true)
 	if err != nil {
-		return phpv.ZNULL.ZVal(), nil
+		return nil, phpobj.ThrowError(ctx, ReflectionException, fmt.Sprintf("Class \"%s\" does not exist", className))
 	}
 	return createReflectionClassObject(ctx, class)
 }

@@ -26,8 +26,14 @@ func mathMtRand(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	r := ctx.Global().Random()
 	if min.HasArg() || max.HasArg() {
 		a := int64(min.GetOrDefault(phpv.ZInt(0)))
-		b := int64(max.GetOrDefault(phpv.ZInt(0)))
-		n := a + r.Mt.Int64N(b-a)
+		b := int64(max.GetOrDefault(phpv.ZInt(math.MaxInt32)))
+		if a > b {
+			return nil, ctx.FuncErrorf("mt_rand(): Argument #1 ($min) must be less than or equal to argument #2 ($max)")
+		}
+		if a == b {
+			return phpv.ZInt(a).ZVal(), nil
+		}
+		n := a + r.Mt.Int64N(b-a+1)
 		return phpv.ZInt(n).ZVal(), nil
 	}
 

@@ -71,6 +71,13 @@ func (w *wrappedClosure) IsStatic() bool {
 	return w.isStaticW
 }
 
+// IsWrapped returns true, indicating this closure wraps a named function/method.
+// Used by ReflectionFunction::isAnonymous() to distinguish wrapped closures
+// (strlen(...), Closure::fromCallable()) from anonymous function() {} closures.
+func (w *wrappedClosure) IsWrapped() bool {
+	return true
+}
+
 func (w *wrappedClosure) GetThis() phpv.ZObject {
 	return w.this
 }
@@ -846,6 +853,18 @@ func (z *ZClosure) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	// executing the function body directly.
 	if z.isGenerator {
 		name := z.Name()
+		// For generator methods, build the full qualified name including class name.
+		// For anonymous classes, include the full internal name (path/line info).
+		if z.class != nil && name != "" {
+			var className string
+			if zc, ok := z.class.(*phpobj.ZClass); ok {
+				// Replace null byte to get "class@anonymous/path:line$0" format
+				className = strings.Replace(string(zc.Name), "\x00", "", 1)
+			} else {
+				className = string(z.class.GetName())
+			}
+			name = className + "::" + name
+		}
 		opts := phpobj.SpawnGeneratorOptions{
 			FuncName:  name,
 			YieldsRef: z.ReturnsByRef(),
@@ -1096,7 +1115,7 @@ func (z *ZClosure) callBody(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 				callLoc := ctx.Loc()
 				isInternalCall := false
 				if fc, ok := ctx.(*phpctx.FuncContext); ok {
-					if fc.InternalLoc() != nil {
+					if fc.InternalLoc() != nil || fc.SuppressCalledIn() {
 						isInternalCall = true
 					}
 				}
@@ -1414,6 +1433,54 @@ func (z *ZClosure) GetAttributes() []*phpv.ZAttribute {
 // closure instance created by a factory function has independent static vars.
 func (z *ZClosure) ClosureInstanceKey() uintptr {
 	return uintptr(unsafe.Pointer(z))
+}
+
+// GetStaticVars returns the current values of static variables in this function
+// in declaration order.
+// For named functions (not closures), each static var's current value is returned.
+// If a static var has never been set, its default (or NULL) is returned.
+// Defaults are evaluated using the provided context if needed.
+func (z *ZClosure) GetStaticVars(ctx phpv.Context) []phpv.StaticVarEntry {
+	seen := make(map[phpv.ZString]bool)
+	var result []phpv.StaticVarEntry
+	collectStaticVarsFromRunnable(ctx, z.code, &result, seen)
+	return result
+}
+
+// collectStaticVarsFromRunnable walks a Runnable tree collecting static variable info
+// in declaration order.
+func collectStaticVarsFromRunnable(ctx phpv.Context, r phpv.Runnable, result *[]phpv.StaticVarEntry, seen map[phpv.ZString]bool) {
+	if r == nil {
+		return
+	}
+	switch v := r.(type) {
+	case *runStaticVar:
+		for _, sv := range v.vars {
+			if seen[sv.varName] {
+				continue
+			}
+			seen[sv.varName] = true
+			var val *phpv.ZVal
+			if sv.z != nil {
+				val = sv.z
+			} else if sv.def != nil && ctx != nil {
+				// Evaluate the default value expression
+				evaluated, err := sv.def.Run(ctx)
+				if err == nil && evaluated != nil {
+					val = evaluated
+				} else {
+					val = phpv.ZNULL.ZVal()
+				}
+			} else {
+				val = phpv.ZNULL.ZVal()
+			}
+			*result = append(*result, phpv.StaticVarEntry{Name: sv.varName, Val: val})
+		}
+	case phpv.Runnables:
+		for _, child := range v {
+			collectStaticVarsFromRunnable(ctx, child, result, seen)
+		}
+	}
 }
 
 // closureBind implements Closure::bind($closure, $newThis, $newScope = "static")

@@ -772,3 +772,14 @@ var PhpUserFilterClass = &phpobj.ZClass{
 		},
 	},
 }
+
+// StreamBucketClass is the built-in StreamBucket class used by stream filter functions.
+var StreamBucketClass = &phpobj.ZClass{
+	Name: "StreamBucket",
+	Props: []*phpv.ZClassProp{
+		{VarName: "brigade", Default: phpv.ZNULL.ZVal(), Modifiers: phpv.ZAttrPublic},
+		{VarName: "bucket", Default: phpv.ZNULL.ZVal(), Modifiers: phpv.ZAttrPublic},
+		{VarName: "data", Default: phpv.ZStr("").ZVal(), Modifiers: phpv.ZAttrPublic},
+		{VarName: "datalen", Default: phpv.ZInt(0).ZVal(), Modifiers: phpv.ZAttrPublic},
+	},
+}

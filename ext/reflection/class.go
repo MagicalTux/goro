@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
@@ -184,7 +185,9 @@ func initReflectionClass() {
 			Method: phpobj.NativeMethod(reflectionClassGetParentClass), ReturnType: phpv.ParseTypeHint("ReflectionClass|false"), TentativeReturnType: true},
 		"issubclassof": {Name: "isSubclassOf", Modifiers: phpv.ZAttrPublic,
 			Method: namedMethod(reflectionClassIsSubclassOf,
-				requiredArg("class", "ReflectionClass|string"),
+				// SkipTypeCheck: validation done in function body to handle
+				// deprecated null (PHP emits deprecation, not TypeError for null).
+				&phpv.FuncArg{VarName: "class", Required: true, Hint: phpv.ParseTypeHint("ReflectionClass|string"), SkipTypeCheck: true},
 			), ReturnType: phpv.ParseTypeHint("bool"), TentativeReturnType: true},
 		"getstaticproperties": {Name: "getStaticProperties", Modifiers: phpv.ZAttrPublic,
 			Method: phpobj.NativeMethod(reflectionClassGetStaticProperties), ReturnType: phpv.ParseTypeHint("array"), TentativeReturnType: true},
@@ -314,10 +317,15 @@ func getZClass(o *phpobj.ZObject) *phpobj.ZClass {
 	return zc
 }
 
-// createReflectionClassObject creates a ReflectionClass object for the given class,
+// createReflectionClassObject creates a ReflectionClass (or ReflectionEnum) object for the given class,
 // without going through __construct.
 func createReflectionClassObject(ctx phpv.Context, class phpv.ZClass) (*phpv.ZVal, error) {
-	obj, err := phpobj.CreateZObject(ctx, ReflectionClass)
+	// Use ReflectionEnum for enum classes
+	targetClass := ReflectionClass
+	if class.GetType().Has(phpv.ZClassTypeEnum) && ReflectionEnum != nil {
+		targetClass = ReflectionEnum
+	}
+	obj, err := phpobj.CreateZObject(ctx, targetClass)
 	if err != nil {
 		return nil, err
 	}
@@ -352,11 +360,37 @@ func reflectionClassGetInterfaceNames(ctx phpv.Context, o *phpobj.ZObject, args 
 		return phpv.NewZArray().ZVal(), nil
 	}
 
+	// Use the same logic as getInterfaces but return only names
 	arr := phpv.NewZArray()
-	// Collect interface names from Implementations
-	for _, impl := range zc.Implementations {
-		arr.OffsetSet(ctx, nil, impl.GetName().ZVal())
+	seen := make(map[string]bool)
+	var collectInterfaceNames func(c *phpobj.ZClass)
+	collectInterfaceNames = func(c *phpobj.ZClass) {
+		for _, impl := range c.Implementations {
+			key := strings.ToLower(string(impl.GetName()))
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			arr.OffsetSet(ctx, nil, impl.GetName().ZVal())
+			collectInterfaceNames(impl)
+		}
+		parent := c.GetParent()
+		if !phpv.IsNilClass(parent) {
+			if pc, ok := parent.(*phpobj.ZClass); ok {
+				if pc.Type == phpv.ZClassTypeInterface {
+					key := strings.ToLower(string(pc.GetName()))
+					if !seen[key] {
+						seen[key] = true
+						arr.OffsetSet(ctx, nil, pc.GetName().ZVal())
+					}
+					collectInterfaceNames(pc)
+				} else {
+					collectInterfaceNames(pc)
+				}
+			}
+		}
 	}
+	collectInterfaceNames(zc)
 	return arr.ZVal(), nil
 }
 
@@ -394,7 +428,12 @@ func reflectionClassGetMethods(ctx phpv.Context, o *phpobj.ZObject, args []*phpv
 		if filter != -1 && !methodMatchesFilter(method, phpv.ZObjectAttr(filter)) {
 			continue
 		}
-		val, err := createReflectionMethodObject(ctx, class, method)
+		// If this is a ReflectionObject, pass the underlying instance for closure __invoke support.
+		var instance phpv.ZObject
+		if opaque := o.GetOpaque(ReflectionObject); opaque != nil {
+			instance, _ = opaque.(phpv.ZObject)
+		}
+		val, err := createReflectionMethodObjectWithInstance(ctx, class, method, instance)
 		if err != nil {
 			return nil, err
 		}
@@ -439,11 +478,6 @@ func methodMatchesFilter(m *phpv.ZClassMethod, filter phpv.ZObjectAttr) bool {
 		}
 	}
 
-	// If no access/modifier bits were set in the filter, it means show all
-	if filter == 0 {
-		return true
-	}
-
 	return match
 }
 
@@ -479,17 +513,18 @@ func reflectionClassGetMethod(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.
 		return phpv.ZNULL.ZVal(), nil
 	}
 
-	if args[0].GetType() == phpv.ZtNull {
-		_ = ctx.Deprecated("Passing null to parameter #1 ($name) of type string is deprecated")
-	}
-
 	methodName := args[0].AsString(ctx)
 	method, ok := class.GetMethod(methodName)
 	if !ok {
 		return nil, phpobj.ThrowError(ctx, ReflectionException, fmt.Sprintf("Method %s::%s() does not exist", class.GetName(), methodName))
 	}
 
-	return createReflectionMethodObject(ctx, class, method)
+	// If this is a ReflectionObject, pass the underlying instance so __invoke on closures works correctly.
+	var instance phpv.ZObject
+	if opaque := o.GetOpaque(ReflectionObject); opaque != nil {
+		instance, _ = opaque.(phpv.ZObject)
+	}
+	return createReflectionMethodObjectWithInstance(ctx, class, method, instance)
 }
 
 func reflectionClassHasMethod(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
@@ -557,6 +592,37 @@ func reflectionClassGetProperties(ctx phpv.Context, o *phpobj.ZObject, args []*p
 		}
 	}
 
+	// For ReflectionObject, also include dynamic properties from the instance
+	if o.GetClass() == ReflectionObject {
+		if instanceOpaque := o.GetOpaque(ReflectionObject); instanceOpaque != nil {
+			if instance, ok := instanceOpaque.(phpv.ZObject); ok {
+				dynProps := collectDynamicProps(zc, instance)
+				for _, dynName := range dynProps {
+					if seen[string(dynName)] {
+						continue
+					}
+					// Dynamic properties are always public
+					// If filtering by visibility, only include if IS_PUBLIC is in the filter
+					if filter != -1 {
+						dynProp := &phpv.ZClassProp{
+							VarName:   dynName,
+							Modifiers: phpv.ZAttrPublic,
+						}
+						if !propertyMatchesFilter(dynProp, phpv.ZObjectAttr(filter)) {
+							continue
+						}
+					}
+					seen[string(dynName)] = true
+					val, err := createReflectionPropertyObjectDynamic(ctx, zc, dynName)
+					if err != nil {
+						return nil, err
+					}
+					arr.OffsetSet(ctx, nil, val)
+				}
+			}
+		}
+	}
+
 	return arr.ZVal(), nil
 }
 
@@ -583,10 +649,6 @@ func propertyMatchesFilter(p *phpv.ZClassProp, filter phpv.ZObjectAttr) bool {
 		if p.Modifiers.IsStatic() {
 			match = true
 		}
-	}
-
-	if filter == 0 {
-		return true
 	}
 
 	return match
@@ -774,7 +836,8 @@ func reflectionClassIsSubclassOf(ctx phpv.Context, o *phpobj.ZObject, args []*ph
 
 	if targetClass == nil {
 		if args[0].GetType() == phpv.ZtNull {
-			_ = ctx.Deprecated("Passing null to parameter #1 ($class) of type ReflectionClass|string is deprecated")
+			// PHP 8.1 deprecated passing null; emit deprecation and then fail with "Class "" does not exist"
+			_ = ctx.Deprecated("ReflectionClass::isSubclassOf(): Passing null to parameter #1 ($class) of type ReflectionClass|string is deprecated", logopt.NoFuncName(true))
 		}
 		className := args[0].AsString(ctx)
 		targetClass, err = resolveClass(ctx, className)
@@ -798,24 +861,42 @@ func reflectionClassNewInstance(ctx phpv.Context, o *phpobj.ZObject, args []*php
 		return nil, phpobj.ThrowError(ctx, ReflectionException, "Internal error: Failed to retrieve the reflection object")
 	}
 
+	// newInstance is declared with variadicArg("args"), so args[0] is a packed
+	// ZArray containing the user-supplied constructor arguments. Unpack it.
+	var constructArgs []*phpv.ZVal
+	if len(args) > 0 {
+		if arr, ok := args[0].Value().(*phpv.ZArray); ok {
+			for _, v := range arr.Iterate(ctx) {
+				constructArgs = append(constructArgs, v)
+			}
+		}
+	}
+
 	// Check if constructor exists and is accessible
 	zc, _ := class.(*phpobj.ZClass)
 	if zc != nil {
 		var hasConstructor bool
 		if zc.Handlers() != nil && zc.Handlers().Constructor != nil {
+			ctorMethod := zc.Handlers().Constructor
 			hasConstructor = true
+			if ctorMethod.Modifiers.IsPrivate() || ctorMethod.Modifiers.IsProtected() {
+				return nil, phpobj.ThrowError(ctx, ReflectionException, fmt.Sprintf("Access to non-public constructor of class %s", class.GetName()))
+			}
 		} else if m, ok := zc.GetMethod("__construct"); ok {
 			hasConstructor = true
 			if m.Modifiers.IsPrivate() || m.Modifiers.IsProtected() {
 				return nil, phpobj.ThrowError(ctx, ReflectionException, fmt.Sprintf("Access to non-public constructor of class %s", class.GetName()))
 			}
 		}
-		if !hasConstructor && len(args) > 0 {
+		if !hasConstructor && len(constructArgs) > 0 {
 			return nil, phpobj.ThrowError(ctx, ReflectionException, fmt.Sprintf("Class %s does not have a constructor, so you cannot pass any constructor arguments", class.GetName()))
 		}
 	}
 
-	obj, err := phpobj.NewZObject(ctx, class, args...)
+	// Suppress "called in X on line Y" in constructor errors - when called via
+	// reflection, PHP does not include the call site in argument count errors.
+	ctx.Global().SetNextCallSuppressCalledIn(true)
+	obj, err := phpobj.NewZObject(ctx, class, constructArgs...)
 	if err != nil {
 		return nil, err
 	}
@@ -831,6 +912,11 @@ func reflectionClassNewInstanceWithoutConstructor(ctx phpv.Context, o *phpobj.ZO
 	// Enums cannot be instantiated
 	if class.GetType().Has(phpv.ZClassTypeEnum) {
 		return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Cannot instantiate enum %s", class.GetName()))
+	}
+
+	// Internal-only final classes (e.g. Generator) cannot be instantiated without constructor
+	if zc, ok := class.(*phpobj.ZClass); ok && zc.InternalOnly && zc.Attr.Has(phpv.ZClassFinal) {
+		return nil, phpobj.ThrowError(ctx, ReflectionException, fmt.Sprintf("Class %s is an internal class marked as final that cannot be instantiated without invoking its constructor", class.GetName()))
 	}
 
 	obj, err := phpobj.CreateZObject(ctx, class)
@@ -875,6 +961,28 @@ func createReflectionPropertyObject(ctx phpv.Context, class *phpobj.ZClass, prop
 	return obj.ZVal(), nil
 }
 
+// createReflectionPropertyObjectDynamic creates a ReflectionProperty object for a dynamic
+// (runtime-added) property that is not declared in the class definition.
+func createReflectionPropertyObjectDynamic(ctx phpv.Context, class *phpobj.ZClass, propName phpv.ZString) (*phpv.ZVal, error) {
+	obj, err := phpobj.CreateZObject(ctx, ReflectionProperty)
+	if err != nil {
+		return nil, err
+	}
+	prop := &phpv.ZClassProp{
+		VarName:   propName,
+		Modifiers: phpv.ZAttrPublic,
+	}
+	data := &reflectionPropertyData{
+		prop:      prop,
+		class:     class,
+		isDynamic: true,
+	}
+	obj.HashTable().SetString("name", propName.ZVal())
+	obj.HashTable().SetString("class", class.GetName().ZVal())
+	obj.SetOpaque(ReflectionProperty, data)
+	return obj.ZVal(), nil
+}
+
 // reflectionClassGetProperty handles both plain property names and ClassName::propName syntax
 func reflectionClassGetProperty(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
@@ -889,9 +997,6 @@ func reflectionClassGetProperty(ctx phpv.Context, o *phpobj.ZObject, args []*php
 	if args[0].GetType() == phpv.ZtObject {
 		obj := args[0].AsObject(ctx)
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("ReflectionClass::getProperty(): Argument #1 ($name) must be of type string, %s given", obj.GetClass().GetName()))
-	}
-	if args[0].GetType() == phpv.ZtNull {
-		_ = ctx.Deprecated("Passing null to parameter #1 ($name) of type string is deprecated")
 	}
 	name := args[0].AsString(ctx)
 

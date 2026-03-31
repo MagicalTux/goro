@@ -44,6 +44,8 @@ func initReflectionMethod() {
 		"isdeprecated":                  {Name: "isDeprecated", Method: phpobj.NativeMethod(reflectionMethodIsDeprecated)},
 		"getreturntype":                 {Name: "getReturnType", Method: phpobj.NativeMethod(reflectionMethodGetReturnType)},
 		"hasreturntype":                 {Name: "hasReturnType", Method: phpobj.NativeMethod(reflectionMethodHasReturnType)},
+		"hastentativereturntype":        {Name: "hasTentativeReturnType", Method: phpobj.NativeMethod(reflectionMethodHasTentativeReturnType)},
+		"gettentativereturntype":        {Name: "getTentativeReturnType", Method: phpobj.NativeMethod(reflectionMethodGetTentativeReturnType)},
 		"hasprototype":                  {Name: "hasPrototype", Method: phpobj.NativeMethod(reflectionMethodHasPrototype)},
 		"getprototype":                  {Name: "getPrototype", Method: phpobj.NativeMethod(reflectionMethodGetPrototype)},
 		"isdestructor":                  {Name: "isDestructor", Method: phpobj.NativeMethod(reflectionMethodIsDestructor)},
@@ -81,7 +83,10 @@ func reflectionMethodGetDocComment(ctx phpv.Context, o *phpobj.ZObject, args []*
 
 func reflectionMethodConstructFull(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
-		return nil, phpobj.ThrowError(ctx, phpobj.Error, "ReflectionMethod::__construct() expects at least 1 argument, 0 given")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "ReflectionMethod::__construct() expects at least 1 argument, 0 given")
+	}
+	if len(args) > 2 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, fmt.Sprintf("ReflectionMethod::__construct() expects at most 2 arguments, %d given", len(args)))
 	}
 
 	var class phpv.ZClass
@@ -111,12 +116,20 @@ func reflectionMethodConstructFull(ctx phpv.Context, o *phpobj.ZObject, args []*
 		// Two argument form: (class/object, methodName)
 		if args[0].GetType() == phpv.ZtObject {
 			class = args[0].AsObject(ctx).GetClass()
+		} else if args[0].GetType() == phpv.ZtArray {
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+				"ReflectionMethod::__construct(): Argument #1 ($objectOrMethod) must be of type object|string, array given")
 		} else {
 			className := args[0].AsString(ctx)
 			class, err = resolveClass(ctx, className)
 			if err != nil {
 				return nil, err
 			}
+		}
+		// Check methodName type
+		if len(args) > 1 && args[1].GetType() == phpv.ZtArray {
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+				"ReflectionMethod::__construct(): Argument #2 ($method) must be of type ?string, array given")
 		}
 		methodName = args[1].AsString(ctx)
 	}
@@ -254,6 +267,10 @@ func reflectionMethodGetNumberOfParameters(ctx phpv.Context, o *phpobj.ZObject, 
 	if data == nil {
 		return phpv.ZInt(0).ZVal(), nil
 	}
+	// For closures reflected via __invoke, use the closure's actual args.
+	if data.closureCallable != nil {
+		return phpv.ZInt(len(data.closureCallable.GetArgs())).ZVal(), nil
+	}
 	if fga, ok := data.method.Method.(phpv.FuncGetArgs); ok {
 		return phpv.ZInt(len(fga.GetArgs())).ZVal(), nil
 	}
@@ -265,16 +282,20 @@ func reflectionMethodGetNumberOfRequiredParameters(ctx phpv.Context, o *phpobj.Z
 	if data == nil {
 		return phpv.ZInt(0).ZVal(), nil
 	}
-	if fga, ok := data.method.Method.(phpv.FuncGetArgs); ok {
-		count := 0
-		for _, a := range fga.GetArgs() {
-			if a.Required {
-				count++
-			}
-		}
-		return phpv.ZInt(count).ZVal(), nil
+	// For closures reflected via __invoke, use the closure's actual args.
+	var argList []*phpv.FuncArg
+	if data.closureCallable != nil {
+		argList = data.closureCallable.GetArgs()
+	} else if fga, ok := data.method.Method.(phpv.FuncGetArgs); ok {
+		argList = fga.GetArgs()
 	}
-	return phpv.ZInt(0).ZVal(), nil
+	count := 0
+	for _, a := range argList {
+		if a.Required {
+			count++
+		}
+	}
+	return phpv.ZInt(count).ZVal(), nil
 }
 
 func reflectionMethodGetParameters(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
@@ -300,6 +321,11 @@ func reflectionMethodInvoke(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZV
 		return nil, phpobj.ThrowError(ctx, ReflectionException, "Internal error: Failed to retrieve the reflection object")
 	}
 
+	// Cannot invoke abstract methods
+	if data.method.Modifiers.Has(phpv.ZAttrAbstract) {
+		return nil, phpobj.ThrowError(ctx, ReflectionException, fmt.Sprintf("Trying to invoke abstract method %s::%s()", data.class.GetName(), data.method.Name))
+	}
+
 	if len(args) < 1 {
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "ReflectionMethod::invoke() expects at least 1 argument, 0 given")
 	}
@@ -323,12 +349,9 @@ func reflectionMethodInvoke(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZV
 	}
 
 	if data.method.Modifiers.IsStatic() {
-		// For static methods, call without $this (but pass the object if provided)
+		// For static methods, always call without $this regardless of the object argument.
+		// PHP ignores any passed object for static methods.
 		// Use CallZValInternal so the call appears as [internal function] in stack traces
-		if objArg.GetType() == phpv.ZtObject {
-			obj := objArg.AsObject(ctx)
-			return ctx.CallZValInternal(ctx, data.method.Method, methodArgs, obj)
-		}
 		return ctx.CallZValInternal(ctx, data.method.Method, methodArgs)
 	}
 
@@ -354,6 +377,11 @@ func reflectionMethodInvokeArgs(ctx phpv.Context, o *phpobj.ZObject, args []*php
 	data := getMethodData(o)
 	if data == nil {
 		return nil, phpobj.ThrowError(ctx, ReflectionException, "Internal error: Failed to retrieve the reflection object")
+	}
+
+	// Cannot invoke abstract methods
+	if data.method.Modifiers.Has(phpv.ZAttrAbstract) {
+		return nil, phpobj.ThrowError(ctx, ReflectionException, fmt.Sprintf("Trying to invoke abstract method %s::%s()", data.class.GetName(), data.method.Name))
 	}
 
 	if len(args) < 2 {
@@ -422,6 +450,10 @@ func reflectionMethodInvokeArgs(ctx phpv.Context, o *phpobj.ZObject, args []*php
 // createReflectionMethodObject creates a ReflectionMethod object for the given
 // class and method, without going through __construct.
 func createReflectionMethodObject(ctx phpv.Context, class phpv.ZClass, method *phpv.ZClassMethod) (*phpv.ZVal, error) {
+	return createReflectionMethodObjectWithInstance(ctx, class, method, nil)
+}
+
+func createReflectionMethodObjectWithInstance(ctx phpv.Context, class phpv.ZClass, method *phpv.ZClassMethod, instance phpv.ZObject) (*phpv.ZVal, error) {
 	obj, err := phpobj.CreateZObject(ctx, ReflectionMethod)
 	if err != nil {
 		return nil, err
@@ -429,6 +461,19 @@ func createReflectionMethodObject(ctx phpv.Context, class phpv.ZClass, method *p
 	data := &reflectionMethodData{
 		method: method,
 		class:  class,
+	}
+
+	// When reflecting __invoke on a Closure instance, capture the closure's args
+	// so that getParameters()/getNumberOfParameters() work correctly.
+	if instance != nil && method.Name == "__invoke" {
+		if zo, ok := instance.(*phpobj.ZObject); ok {
+			for _, v := range zo.Opaque {
+				if fga, ok2 := v.(phpv.FuncGetArgs); ok2 {
+					data.closureCallable = fga
+					break
+				}
+			}
+		}
 	}
 
 	// The "class" property should show the declaring class (where the method was actually defined)
@@ -453,6 +498,11 @@ func reflectionMethodGetClosure(ctx phpv.Context, o *phpobj.ZObject, args []*php
 	var instance phpv.ZObject
 	if len(args) > 0 && args[0].GetType() == phpv.ZtObject {
 		instance = args[0].AsObject(ctx)
+		// Validate that the instance is of the correct class
+		if instance != nil && !instance.GetClass().InstanceOf(data.class) {
+			return nil, phpobj.ThrowError(ctx, ReflectionException,
+				"Given object is not an instance of the class this method was declared in")
+		}
 	}
 
 	// Build an array callable [$instance, "methodName"] or ["ClassName", "methodName"]
@@ -608,10 +658,10 @@ func reflectionMethodReturnsReference(ctx phpv.Context, o *phpobj.ZObject, args 
 		return phpv.ZBool(false).ZVal(), nil
 	}
 	type refGetter interface {
-		ReturnsRef() bool
+		ReturnsByRef() bool
 	}
 	if rg, ok := data.method.Method.(refGetter); ok {
-		return phpv.ZBool(rg.ReturnsRef()).ZVal(), nil
+		return phpv.ZBool(rg.ReturnsByRef()).ZVal(), nil
 	}
 	return phpv.ZBool(false).ZVal(), nil
 }
@@ -632,7 +682,17 @@ func reflectionMethodIsVariadic(ctx phpv.Context, o *phpobj.ZObject, args []*php
 }
 
 func reflectionMethodGetStaticVariables(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	return phpv.NewZArray().ZVal(), nil
+	data := getMethodData(o)
+	arr := phpv.NewZArray()
+	if data == nil || data.method == nil || data.method.Method == nil {
+		return arr.ZVal(), nil
+	}
+	if svg, ok := data.method.Method.(phpv.StaticVarGetter); ok {
+		for _, entry := range svg.GetStaticVars(ctx) {
+			arr.OffsetSet(ctx, entry.Name.ZVal(), entry.Val)
+		}
+	}
+	return arr.ZVal(), nil
 }
 
 func reflectionMethodGetExtensionName(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
@@ -673,21 +733,32 @@ func reflectionMethodToString(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.
 	}
 
 	if isOwnMethod {
-		// Check if this method overwrites a parent method
-		if zc, ok := class.(*phpobj.ZClass); ok && zc.Extends != nil {
-			if parentMethod, ok2 := zc.Extends.GetMethod(methodNameLower); ok2 {
-				declaringClass := zc.Extends.GetName()
-				if parentMethod.Class != nil {
-					declaringClass = parentMethod.Class.GetName()
+		// Private methods do NOT show "overwrites" or "prototype" - they are not polymorphic
+		if !m.Modifiers.IsPrivate() {
+			// Check if this method overwrites a parent method
+			if zc, ok := class.(*phpobj.ZClass); ok && zc.Extends != nil {
+				if parentMethod, ok2 := zc.Extends.GetMethod(methodNameLower); ok2 {
+					// Only show "overwrites" if the parent method is NOT private
+					if !parentMethod.Modifiers.IsPrivate() {
+						declaringClass := zc.Extends.GetName()
+						if parentMethod.Class != nil {
+							declaringClass = parentMethod.Class.GetName()
+						}
+						origin += ", overwrites " + string(declaringClass)
+					}
 				}
-				origin += ", overwrites " + string(declaringClass)
 			}
-		}
-		// Find prototype
-		if zc, ok := class.(*phpobj.ZClass); ok {
-			protoName := findMethodPrototype(zc, methodNameLower)
-			if protoName != "" {
-				origin += ", prototype " + string(protoName)
+			// Find prototype
+			if zc, ok := class.(*phpobj.ZClass); ok {
+				var protoName phpv.ZString
+				if m.Prototype != nil {
+					protoName = m.Prototype.GetName()
+				} else {
+					protoName = findMethodPrototype(zc, methodNameLower)
+				}
+				if protoName != "" {
+					origin += ", prototype " + string(protoName)
+				}
 			}
 		}
 	} else {
@@ -695,24 +766,25 @@ func reflectionMethodToString(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.
 		declaringClass := m.Class.GetName()
 		origin += ", inherits " + string(declaringClass)
 		// Find prototype - only show if different from declaring class
-		var protoName phpv.ZString
-		if m.Prototype != nil {
-			protoName = m.Prototype.GetName()
-		} else if zc, ok := class.(*phpobj.ZClass); ok {
-			protoName = findMethodPrototype(zc, methodNameLower)
-		}
-		if protoName != "" && protoName != declaringClass {
-			origin += ", prototype " + string(protoName)
+		// Private methods have no prototype
+		if !m.Modifiers.IsPrivate() {
+			var protoName phpv.ZString
+			if m.Prototype != nil {
+				protoName = m.Prototype.GetName()
+			} else if zc, ok := class.(*phpobj.ZClass); ok {
+				protoName = findMethodPrototype(zc, methodNameLower)
+			}
+			if protoName != "" && protoName != declaringClass {
+				origin += ", prototype " + string(protoName)
+			}
 		}
 	}
 
-	// ctor/dtor suffix
+	// ctor suffix (PHP shows ctor for constructors but not dtor for destructors)
 	{
 		nameLower := strings.ToLower(string(m.Name))
 		if nameLower == "__construct" {
 			origin += ", ctor"
-		} else if nameLower == "__destruct" {
-			origin += ", dtor"
 		}
 	}
 	origin += ">"
@@ -726,6 +798,10 @@ writeModifiers:
 		sb.WriteString(" final")
 	}
 
+	if m.Modifiers.IsStatic() {
+		sb.WriteString(" static")
+	}
+
 	access := m.Modifiers.Access()
 	if access == phpv.ZAttrProtected {
 		sb.WriteString(" protected")
@@ -733,10 +809,6 @@ writeModifiers:
 		sb.WriteString(" private")
 	} else {
 		sb.WriteString(" public")
-	}
-
-	if m.Modifiers.IsStatic() {
-		sb.WriteString(" static")
 	}
 
 	sb.WriteString(fmt.Sprintf(" method %s ] {\n", m.Name))

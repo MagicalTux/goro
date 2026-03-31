@@ -1,6 +1,11 @@
 package phpobj
 
-import "github.com/MagicalTux/goro/core/phpv"
+import (
+	"fmt"
+
+	"github.com/MagicalTux/goro/core/logopt"
+	"github.com/MagicalTux/goro/core/phpv"
+)
 
 func init() {
 	phpv.NewStdClassFunc = func(ctx phpv.Context) (phpv.ZObject, error) {
@@ -13,9 +18,52 @@ var StdClass = &ZClass{
 	Name: "stdClass",
 }
 
+// incompleteClassName returns the original class name from a __PHP_Incomplete_Class object.
+// Returns "unknown" if the class name was not stored (e.g. when created directly with new).
+func incompleteClassName(o phpv.ZObject) string {
+	if cnVal, ok := o.HashTable().GetStringB("__PHP_Incomplete_Class_Name"); ok && cnVal != nil && !cnVal.IsNull() {
+		return string(cnVal.Value().(phpv.ZString))
+	}
+	return "unknown"
+}
+
+// incompleteClassWarnFuncName returns "main" if at global scope, otherwise the current function name.
+// This matches PHP behavior where property access on __PHP_Incomplete_Class emits "main():" prefix.
+func incompleteClassWarnFuncName(ctx phpv.Context) string {
+	if name := ctx.GetFuncName(); name != "" {
+		return name
+	}
+	return "main"
+}
+
 // > class __PHP_Incomplete_Class
 var IncompleteClass = &ZClass{
 	Name: "__PHP_Incomplete_Class",
+	H: &phpv.ZClassHandlers{
+		HandlePropGetEager: true,
+		HandlePropSet: func(ctx phpv.Context, o phpv.ZObject, key phpv.ZString, value *phpv.ZVal) (bool, error) {
+			// Allow setting __PHP_Incomplete_Class_Name (used internally by unserialize).
+			if key == "__PHP_Incomplete_Class_Name" {
+				return false, nil // fall through to normal handling
+			}
+			cn := incompleteClassName(o)
+			return true, ThrowError(ctx, Error, fmt.Sprintf(
+				"The script tried to modify a property on an incomplete object. Please ensure that the class definition \"%s\" of the object you are trying to operate on was loaded _before_ unserialize() gets called or provide an autoloader to load the class definition",
+				cn))
+		},
+		HandlePropGet: func(ctx phpv.Context, o phpv.ZObject, key phpv.ZString) (*phpv.ZVal, error) {
+			// Allow reading __PHP_Incomplete_Class_Name (used internally).
+			if key == "__PHP_Incomplete_Class_Name" {
+				return nil, nil // fall through to normal handling
+			}
+			cn := incompleteClassName(o)
+			funcName := incompleteClassWarnFuncName(ctx)
+			// Use NoFuncName to suppress automatic prepending; we include it manually.
+			ctx.Warn("%s(): The script tried to access a property on an incomplete object. Please ensure that the class definition \"%s\" of the object you are trying to operate on was loaded _before_ unserialize() gets called or provide an autoloader to load the class definition",
+				funcName, cn, logopt.NoFuncName(true))
+			return phpv.ZNULL.ZVal(), nil
+		},
+	},
 }
 
 // > class Traversable

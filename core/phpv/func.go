@@ -7,6 +7,7 @@ type FuncArg struct {
 	Required           bool
 	Variadic           bool        // ...param (collects remaining args into array)
 	DefaultValue       Val
+	DefaultValueExpr   string      // PHP source representation of the default value expression (e.g. constant name), preserved for reflection
 	Hint               *TypeHint
 	SkipTypeCheck      bool        // if true, the Hint is used for display only (no type enforcement)
 	Promotion          ZObjectAttr // Non-zero if this is a constructor promoted property
