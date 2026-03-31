@@ -86,6 +86,7 @@ Goro passes **~8,600 of 12,110 tests** (71.0%) from the PHP 8.5.4 test suite. Fi
 | curl | 12 | — | CurlHandle class, curl_init/setopt/exec/getinfo via Go net/http |
 | sockets | 20+ | — | Socket class, socket_create/bind/listen/accept/connect, stream_socket_*, fsockopen |
 | mysqli | 30+ | — | mysqli/mysqli_result/mysqli_stmt classes, prepared statements, transactions via go-sql-driver/mysql |
+| sqlite3 | 20+ | — | SQLite3/SQLite3Result/SQLite3Stmt classes, prepared statements via glebarez/go-sqlite (pure Go) |
 | spl | 40+ | 82% | ArrayObject, ArrayIterator, SplFileObject, SplFixedArray, SplHeap, SplObjectStorage, iterators |
 | reflection | 8 classes | 69% | ReflectionClass (with __toString), ReflectionMethod, ReflectionProperty, ReflectionFunction, ReflectionParameter, ReflectionAttribute |
 | getimagesize | — | 100% | 16 image formats (JPEG, PNG, GIF, BMP, WebP, AVIF, HEIF, TIFF, PSD, etc.) |
@@ -94,7 +95,7 @@ Goro passes **~8,600 of 12,110 tests** (71.0%) from the PHP 8.5.4 test suite. Fi
 
 | Extension | Notes |
 |-----------|-------|
-| PDO | Planned via database/sql |
+| PDO | Planned via database/sql (MySQL + SQLite drivers already available) |
 | iconv | Planned via `golang.org/x/text/transform` |
 | gd | Image processing |
 | intl | Internationalization (ICU) |
