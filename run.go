@@ -17,6 +17,7 @@ import (
 	_ "github.com/MagicalTux/goro/ext/openssl"
 	_ "github.com/MagicalTux/goro/ext/mbstring"
 	_ "github.com/MagicalTux/goro/ext/mysqli"
+	_ "github.com/MagicalTux/goro/ext/sqlite3"
 	_ "github.com/MagicalTux/goro/ext/pcre"
 	_ "github.com/MagicalTux/goro/ext/reflection"
 	_ "github.com/MagicalTux/goro/ext/session"
