@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/KarpelesLab/gotz"
 	"github.com/MagicalTux/goro/core"
 	"github.com/MagicalTux/goro/core/phperr"
 	"github.com/MagicalTux/goro/core/phpobj"
@@ -115,6 +116,14 @@ func getTimezoneLoc(obj *phpobj.ZObject) (*time.Location, bool) {
 		return v.(*time.Location), true
 	}
 	return nil, false
+}
+
+func getTimezoneName(obj *phpobj.ZObject) string {
+	loc, ok := getTimezoneLoc(obj)
+	if !ok {
+		return "UTC"
+	}
+	return loc.String()
 }
 
 // checkDateTimeZoneInitialized throws DateObjectError if the DateTimeZone object is not initialized.
@@ -918,21 +927,77 @@ func fncTimezoneTransitionsGet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal,
 	if err := checkDateTimeZoneInitialized(ctx, tzObj); err != nil {
 		return nil, err
 	}
-	loc, ok := getTimezoneLoc(tzObj)
-	if !ok {
-		return phpv.ZBool(false).ZVal(), nil
+	tzName := getTimezoneName(tzObj)
+
+	// Optional timestamp range filters
+	var tsBegin, tsEnd int64
+	tsBegin = math.MinInt32
+	tsEnd = math.MaxInt32
+	if len(args) > 1 && args[1] != nil && !args[1].IsNull() {
+		tsBegin = int64(args[1].AsInt(ctx))
 	}
+	if len(args) > 2 && args[2] != nil && !args[2].IsNull() {
+		tsEnd = int64(args[2].AsInt(ctx))
+	}
+
 	result := phpv.NewZArray()
-	now := time.Now().In(loc)
-	name, offset := now.Zone()
-	entry := phpv.NewZArray()
-	entry.OffsetSet(ctx, phpv.ZString("ts"), phpv.ZInt(0).ZVal())
-	entry.OffsetSet(ctx, phpv.ZString("time"), phpv.ZString("1970-01-01T00:00:00+00:00").ZVal())
-	entry.OffsetSet(ctx, phpv.ZString("offset"), phpv.ZInt(offset).ZVal())
-	_, stdOffset := time.Date(now.Year(), time.January, 1, 0, 0, 0, 0, loc).Zone()
-	entry.OffsetSet(ctx, phpv.ZString("isdst"), phpv.ZBool(offset != stdOffset).ZVal())
-	entry.OffsetSet(ctx, phpv.ZString("abbr"), phpv.ZString(name).ZVal())
-	result.OffsetSet(ctx, nil, entry.ZVal())
+
+	// Try to load from gotz for full transition data
+	zone, err := gotz.Load(tzName)
+	if err != nil {
+		// Fallback for fixed-offset timezones
+		loc, ok := getTimezoneLoc(tzObj)
+		if !ok {
+			return phpv.ZBool(false).ZVal(), nil
+		}
+		now := time.Now().In(loc)
+		name, offset := now.Zone()
+		entry := phpv.NewZArray()
+		entry.OffsetSet(ctx, phpv.ZString("ts"), phpv.ZInt(0).ZVal())
+		entry.OffsetSet(ctx, phpv.ZString("time"), phpv.ZString("1970-01-01T00:00:00+00:00").ZVal())
+		entry.OffsetSet(ctx, phpv.ZString("offset"), phpv.ZInt(offset).ZVal())
+		entry.OffsetSet(ctx, phpv.ZString("isdst"), phpv.ZBool(false).ZVal())
+		entry.OffsetSet(ctx, phpv.ZString("abbr"), phpv.ZString(name).ZVal())
+		result.OffsetSet(ctx, nil, entry.ZVal())
+		return result.ZVal(), nil
+	}
+
+	types := zone.Types()
+	transitions := zone.Transitions()
+
+	// Add initial type before first transition
+	if len(types) > 0 {
+		initType := types[0]
+		if len(transitions) > 0 && transitions[0].When > tsBegin {
+			entry := phpv.NewZArray()
+			entry.OffsetSet(ctx, phpv.ZString("ts"), phpv.ZInt(transitions[0].When).ZVal())
+			t := time.Unix(transitions[0].When, 0).UTC()
+			entry.OffsetSet(ctx, phpv.ZString("time"), phpv.ZString(t.Format("2006-01-02T15:04:05+00:00")).ZVal())
+			entry.OffsetSet(ctx, phpv.ZString("offset"), phpv.ZInt(initType.Offset).ZVal())
+			entry.OffsetSet(ctx, phpv.ZString("isdst"), phpv.ZBool(initType.IsDST).ZVal())
+			entry.OffsetSet(ctx, phpv.ZString("abbr"), phpv.ZString(initType.Abbrev).ZVal())
+			result.OffsetSet(ctx, nil, entry.ZVal())
+		}
+	}
+
+	for _, tr := range transitions {
+		if tr.When < tsBegin || tr.When > tsEnd {
+			continue
+		}
+		if tr.Type < 0 || tr.Type >= len(types) {
+			continue
+		}
+		zt := types[tr.Type]
+		entry := phpv.NewZArray()
+		entry.OffsetSet(ctx, phpv.ZString("ts"), phpv.ZInt(tr.When).ZVal())
+		t := time.Unix(tr.When, 0).UTC()
+		entry.OffsetSet(ctx, phpv.ZString("time"), phpv.ZString(t.Format("2006-01-02T15:04:05+00:00")).ZVal())
+		entry.OffsetSet(ctx, phpv.ZString("offset"), phpv.ZInt(zt.Offset).ZVal())
+		entry.OffsetSet(ctx, phpv.ZString("isdst"), phpv.ZBool(zt.IsDST).ZVal())
+		entry.OffsetSet(ctx, phpv.ZString("abbr"), phpv.ZString(zt.Abbrev).ZVal())
+		result.OffsetSet(ctx, nil, entry.ZVal())
+	}
+
 	return result.ZVal(), nil
 }
 
