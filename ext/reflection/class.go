@@ -592,11 +592,17 @@ func reflectionClassGetProperties(ctx phpv.Context, o *phpobj.ZObject, args []*p
 		}
 	}
 
-	// For ReflectionObject, also include dynamic properties from the instance
-	if o.GetClass() == ReflectionObject {
+	// For ReflectionObject, also include dynamic properties from the instance.
+	// Use o.Class (not o.GetClass()) because when an inherited method is called,
+	// the engine sets CurrentClass to the declaring class (ReflectionClass), but
+	// o.Class always holds the actual concrete class of the instance.
+	if o.Class == ReflectionObject {
 		if instanceOpaque := o.GetOpaque(ReflectionObject); instanceOpaque != nil {
 			if instance, ok := instanceOpaque.(phpv.ZObject); ok {
-				dynProps := collectDynamicProps(zc, instance)
+				// Use collectDynamicPropsForGetProps which excludes private parent props
+				// from the "declared" set, so dynamic props with the same name as a
+				// private parent prop ARE included (PHP getProperties() behavior).
+				dynProps := collectDynamicPropsForGetProps(zc, instance)
 				for _, dynName := range dynProps {
 					if seen[string(dynName)] {
 						continue
@@ -723,6 +729,12 @@ func reflectionClassGetConstants(ctx phpv.Context, o *phpobj.ZObject, args []*ph
 			for _, name := range names {
 				c := cls.Const[name]
 				if c == nil || c.Value == nil {
+					continue
+				}
+				// Private constants from parent classes are not visible on child classes.
+				// When walking the chain for class B, skip private consts from A (cls != zc).
+				// Also skip inherited copies of private constants (DeclaringClass set).
+				if c.Modifiers.IsPrivate() && (cls != zc || c.DeclaringClass != nil) {
 					continue
 				}
 				if filter != -1 && !classConstMatchesFilter(c, filter) {
@@ -1075,6 +1087,19 @@ func reflectionClassGetProperty(ctx phpv.Context, o *phpobj.ZObject, args []*php
 		cur, ok = parent.(*phpobj.ZClass)
 		if !ok {
 			break
+		}
+	}
+
+	// For ReflectionObject, also check dynamic properties on the instance
+	if o.Class == ReflectionObject {
+		if instanceOpaque := o.GetOpaque(ReflectionObject); instanceOpaque != nil {
+			if instance, ok := instanceOpaque.(phpv.ZObject); ok {
+				if zobj, ok2 := instance.(*phpobj.ZObject); ok2 {
+					if zobj.HashTable().HasString(name) {
+						return createReflectionPropertyObjectDynamic(ctx, zc, name)
+					}
+				}
+			}
 		}
 	}
 

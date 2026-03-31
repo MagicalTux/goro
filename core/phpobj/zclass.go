@@ -266,7 +266,17 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 					return c.fatalError(ctx, fmt.Sprintf("Access level to %s::%s must be %s (as in class %s)%s", c.Name, k, visName, c.Extends.Name, weaker))
 				}
 			} else {
-				c.Const[k] = v
+				// Copy constant from parent, tracking the declaring class.
+				// If v already has a DeclaringClass set, preserve it (it was declared even further up).
+				// Otherwise, the declaring class is the direct parent that holds it.
+				if v.DeclaringClass == nil {
+					// Make a shallow copy so we can set DeclaringClass without modifying the original
+					vCopy := *v
+					vCopy.DeclaringClass = c.Extends
+					c.Const[k] = &vCopy
+				} else {
+					c.Const[k] = v
+				}
 				c.ConstOrder = append(c.ConstOrder, k)
 				// Track that this constant came from the parent class for ambiguity detection
 				if c.constSource == nil {

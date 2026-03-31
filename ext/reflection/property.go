@@ -100,40 +100,58 @@ func reflectionPropertyConstructFull(ctx phpv.Context, o *phpobj.ZObject, args [
 	}
 
 	propName := args[1].AsString(ctx)
-	prop, found := class.GetProp(propName)
 	isDynamic := false
-	if !found {
-		// Check for dynamic properties on the object instance
-		if obj != nil {
-			if zobj, ok := obj.(*phpobj.ZObject); ok {
-				if v := zobj.HashTable().GetString(propName); v != nil {
-					// Dynamic property found - create a synthetic prop entry
-					prop = &phpv.ZClassProp{
-						VarName:   propName,
-						Modifiers: phpv.ZAttrPublic,
-					}
-					found = true
-					isDynamic = true
-				}
-			}
-		}
-		if !found {
-			return nil, phpobj.ThrowError(ctx, ReflectionException, fmt.Sprintf("Property %s::$%s does not exist", class.GetName(), propName))
-		}
-	}
 
 	zc, ok := class.(*phpobj.ZClass)
 	if !ok {
 		return nil, phpobj.ThrowError(ctx, ReflectionException, "Internal error: unexpected class type")
 	}
 
+	// Find the property and its actual declaring class by walking the hierarchy.
+	// This correctly handles inherited properties: D extends C which declares $prop
+	// → declaring class is C, not D.
+	var prop *phpv.ZClassProp
+	var declaringClass *phpobj.ZClass
+	for cur := zc; cur != nil; cur = cur.Extends {
+		for _, p := range cur.Props {
+			if p.VarName == propName {
+				// Skip private properties from parent classes
+				if cur != zc && p.Modifiers.IsPrivate() {
+					continue
+				}
+				prop = p
+				declaringClass = cur
+				goto propFound
+			}
+		}
+	}
+
+	// Check for dynamic properties on the object instance
+	if obj != nil {
+		if zobj, ok2 := obj.(*phpobj.ZObject); ok2 {
+			if zobj.HashTable().HasString(propName) {
+				// Dynamic property found - create a synthetic prop entry
+				prop = &phpv.ZClassProp{
+					VarName:   propName,
+					Modifiers: phpv.ZAttrPublic,
+				}
+				declaringClass = zc
+				isDynamic = true
+				goto propFound
+			}
+		}
+	}
+
+	return nil, phpobj.ThrowError(ctx, ReflectionException, fmt.Sprintf("Property %s::$%s does not exist", class.GetName(), propName))
+
+propFound:
 	data := &reflectionPropertyData{
 		prop:      prop,
-		class:     zc,
+		class:     declaringClass,
 		isDynamic: isDynamic,
 	}
 	o.HashTable().SetString("name", prop.VarName.ZVal())
-	o.HashTable().SetString("class", class.GetName().ZVal())
+	o.HashTable().SetString("class", declaringClass.GetName().ZVal())
 	o.SetOpaque(ReflectionProperty, data)
 	return nil, nil
 }
@@ -203,6 +221,11 @@ func reflectionPropertyGetValue(ctx phpv.Context, o *phpobj.ZObject, args []*php
 		return phpv.ZNULL.ZVal(), nil
 	}
 
+	// Too many args: only 0 or 1 argument is allowed
+	if len(args) > 1 {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("ReflectionProperty::getValue() expects at most 1 argument, %d given", len(args)))
+	}
+
 	// For static properties - getValue() with no args or getValue(null) both work
 	if data.prop.Modifiers.IsStatic() {
 		staticProps, err := data.class.GetStaticProps(ctx)
@@ -227,24 +250,41 @@ func reflectionPropertyGetValue(ctx phpv.Context, o *phpobj.ZObject, args []*php
 	}
 
 	// For instance properties, need an object argument
-	if len(args) < 1 || args[0].GetType() != phpv.ZtObject {
-		return nil, phpobj.ThrowError(ctx, ReflectionException, "ReflectionProperty::getValue(): argument must be an object for non-static properties")
+	if len(args) < 1 || args[0].GetType() == phpv.ZtNull {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "ReflectionProperty::getValue(): Argument #1 ($object) must be provided for instance properties")
+	}
+	if args[0].GetType() != phpv.ZtObject {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("ReflectionProperty::getValue(): Argument #1 ($object) must be of type object, %s given", args[0].GetType().String()))
 	}
 
 	obj := args[0].Value().(*phpobj.ZObject)
 	if obj == nil {
-		return nil, phpobj.ThrowError(ctx, ReflectionException, "ReflectionProperty::getValue(): argument must be an object for non-static properties")
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "ReflectionProperty::getValue(): Argument #1 ($object) must be provided for instance properties")
 	}
+
+	// Validate that the object is an instance of the class the property was declared in
+	if !obj.GetClass().InstanceOf(data.class) {
+		return nil, phpobj.ThrowError(ctx, ReflectionException, "Given object is not an instance of the class this property was declared in")
+	}
+
 	// ReflectionProperty::getValue() bypasses visibility (PHP 8.1+).
 	// Read directly using GetPropValue which handles private name mangling.
-	v := obj.GetPropValue(data.prop)
-	if v == nil {
-		// Property not initialized - check for typed property error or return default
+	// But if the property is not in the hash table (was unset), fall back to
+	// normal object property access which will invoke __get if defined.
+	if !obj.HasPropValue(data.prop) {
+		// Property not in hash table (may have been unset) -
+		// check for typed property error first, then fallback to normal access
 		if data.prop.TypeHint != nil {
+			// Typed property was unset - this throws an error
 			return nil, phpobj.ThrowError(ctx, phpobj.Error,
 				fmt.Sprintf("Typed property %s::$%s must not be accessed before initialization",
 					data.class.Name, data.prop.VarName))
 		}
+		// Use normal property access which invokes __get if defined
+		return obj.ObjectGet(ctx, data.prop.VarName)
+	}
+	v := obj.GetPropValue(data.prop)
+	if v == nil {
 		return phpv.ZNULL.ZVal(), nil
 	}
 	return v, nil
@@ -421,8 +461,11 @@ func reflectionPropertyIsFinal(ctx phpv.Context, o *phpobj.ZObject, args []*phpv
 }
 
 func reflectionPropertyIsDynamic(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	// All properties we reflect from ZClassProp are declared (not dynamic)
-	return phpv.ZBool(false).ZVal(), nil
+	data := getPropData(o)
+	if data == nil {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	return phpv.ZBool(data.isDynamic).ZVal(), nil
 }
 
 func reflectionPropertyIsInitialized(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {

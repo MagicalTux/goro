@@ -1066,8 +1066,31 @@ func stdPropertyExists(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("property_exists(): Argument #1 ($object_or_class) must be of type object|string, %s given", phpv.ZValTypeNameDetailed(args[0])))
 	}
 
-	// Check if the property is declared on the class
-	if _, found := class.GetProp(propName); found {
+	// Check if the property is declared on the class.
+	// For private properties, they must be declared in the exact class (not inherited).
+	// This matches PHP 8.x behavior where property_exists('ChildClass', 'privateParentProp')
+	// returns false because the private property is not visible from the child class.
+	if zc, ok := class.(*phpobj.ZClass); ok {
+		// Walk the hierarchy but skip private props from parent classes
+		found := false
+		for cur := zc; cur != nil; cur = cur.Extends {
+			for _, prop := range cur.Props {
+				if prop.VarName == propName {
+					if cur != zc && prop.Modifiers.IsPrivate() {
+						// Private prop from parent - not accessible
+						break
+					}
+					found = true
+				}
+			}
+			if found {
+				break
+			}
+		}
+		if found {
+			return phpv.ZTrue.ZVal(), nil
+		}
+	} else if _, found := class.GetProp(propName); found {
 		return phpv.ZTrue.ZVal(), nil
 	}
 

@@ -79,28 +79,41 @@ func reflectionClassConstantConstruct(ctx phpv.Context, o *phpobj.ZObject, args 
 		return nil, phpobj.ThrowError(ctx, ReflectionException, fmt.Sprintf("Class \"%s\" does not have a constant \"%s\"", class.GetName(), constName))
 	}
 
-	constVal, found := lookupClassConst(zc, constName)
-	if !found {
+	constVal, declaringClass := lookupClassConstWithDeclaringClass(zc, constName)
+	if constVal == nil {
 		return nil, phpobj.ThrowError(ctx, ReflectionException, fmt.Sprintf("Constant %s::%s does not exist", class.GetName(), constName))
 	}
 
 	data := &reflectionClassConstantData{
 		constName: constName,
 		constVal:  constVal,
-		class:     zc,
+		class:     declaringClass,
 	}
 	o.HashTable().SetString("name", constName.ZVal())
-	o.HashTable().SetString("class", class.GetName().ZVal())
+	o.HashTable().SetString("class", declaringClass.GetName().ZVal())
 	o.SetOpaque(ReflectionClassConstant, data)
 	return nil, nil
 }
 
 // lookupClassConst looks up a constant in the class and its parents.
 func lookupClassConst(zc *phpobj.ZClass, name phpv.ZString) (*phpv.ZClassConst, bool) {
+	v, _ := lookupClassConstWithDeclaringClass(zc, name)
+	return v, v != nil
+}
+
+// lookupClassConstWithDeclaringClass looks up a constant in the class and its parents,
+// returning the constant value and the class that originally declared it.
+func lookupClassConstWithDeclaringClass(zc *phpobj.ZClass, name phpv.ZString) (*phpv.ZClassConst, *phpobj.ZClass) {
 	for cur := zc; cur != nil; {
 		if cur.Const != nil {
 			if v, ok := cur.Const[name]; ok {
-				return v, true
+				// If DeclaringClass is set, the constant was inherited from that class
+				if v.DeclaringClass != nil {
+					if dc, ok2 := v.DeclaringClass.(*phpobj.ZClass); ok2 {
+						return v, dc
+					}
+				}
+				return v, cur
 			}
 		}
 		parent := cur.GetParent()
@@ -113,7 +126,7 @@ func lookupClassConst(zc *phpobj.ZClass, name phpv.ZString) (*phpv.ZClassConst, 
 			break
 		}
 	}
-	return nil, false
+	return nil, nil
 }
 
 func getClassConstData(o *phpobj.ZObject) *reflectionClassConstantData {
@@ -436,6 +449,18 @@ func reflectionClassGetReflectionConstants(ctx phpv.Context, o *phpobj.ZObject, 
 				if seen[key] {
 					continue
 				}
+
+				// Skip private constants that are inherited from parent classes.
+				// Private constants are only accessible on the class that declared them.
+				if c.Modifiers.IsPrivate() && c.DeclaringClass != nil {
+					seen[key] = true // mark as seen to prevent parent from re-adding
+					continue
+				}
+				// When we walk to a parent class, skip its private constants (they're not visible on zc)
+				if c.Modifiers.IsPrivate() && cur != zc {
+					seen[key] = true
+					continue
+				}
 				seen[key] = true
 
 				// Apply filter if provided
@@ -443,7 +468,14 @@ func reflectionClassGetReflectionConstants(ctx phpv.Context, o *phpobj.ZObject, 
 					continue
 				}
 
-				val, err := createReflectionClassConstantObject(ctx, zc, name, c)
+				// Use DeclaringClass if set (constant was inherited), otherwise use cur
+				declaringClass := cur
+				if c.DeclaringClass != nil {
+					if dc, ok2 := c.DeclaringClass.(*phpobj.ZClass); ok2 {
+						declaringClass = dc
+					}
+				}
+				val, err := createReflectionClassConstantObject(ctx, declaringClass, name, c)
 				if err != nil {
 					return nil, err
 				}

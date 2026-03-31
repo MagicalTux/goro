@@ -31,8 +31,10 @@ func reflectionClassToString(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.Z
 
 // collectDynamicProps returns the names of properties on obj that are not declared in the class.
 // Only public dynamic properties are included (matching PHP's behavior).
+// This is used for __toString display - it treats ALL properties in the hierarchy
+// as "declared", so dynamic props with the same name as private parent props are NOT shown.
 func collectDynamicProps(zc *phpobj.ZClass, obj phpv.ZObject) []phpv.ZString {
-	// Build a set of declared property names (from all levels of the hierarchy)
+	// Build a set of declared property names (from all levels of the hierarchy).
 	declared := make(map[phpv.ZString]bool)
 	for cur := zc; cur != nil; {
 		for _, prop := range cur.Props {
@@ -55,9 +57,8 @@ func collectDynamicProps(zc *phpobj.ZClass, obj phpv.ZObject) []phpv.ZString {
 		return result
 	}
 	it := ht.NewIterator()
-	for range it.Iterate(nil) {
-		keyVal, err := it.Key(nil)
-		if err != nil || keyVal == nil {
+	for keyVal, _ := range it.Iterate(nil) {
+		if keyVal == nil {
 			continue
 		}
 		if keyVal.GetType() != phpv.ZtString {
@@ -66,6 +67,58 @@ func collectDynamicProps(zc *phpobj.ZClass, obj phpv.ZObject) []phpv.ZString {
 		name := keyVal.AsString(nil)
 		// Skip mangled property names (private/protected props stored with mangled keys
 		// like "*ClassName:propName" or similar internal representations)
+		if strings.HasPrefix(string(name), "*") || strings.Contains(string(name), "\x00") {
+			continue
+		}
+		if !declared[name] {
+			result = append(result, name)
+		}
+	}
+	return result
+}
+
+// collectDynamicPropsForGetProps returns the names of dynamic properties on obj,
+// similar to collectDynamicProps but used for getProperties(). Unlike collectDynamicProps,
+// private props from parent classes are NOT considered "declared", so dynamic properties
+// with the same name as a parent's private property ARE included.
+func collectDynamicPropsForGetProps(zc *phpobj.ZClass, obj phpv.ZObject) []phpv.ZString {
+	// Build declared set - exclude private props from parent classes.
+	declared := make(map[phpv.ZString]bool)
+	for cur := zc; cur != nil; {
+		isChild := cur == zc
+		for _, prop := range cur.Props {
+			if !isChild && prop.Modifiers.IsPrivate() {
+				// Private props from parent classes use mangled keys; they don't
+				// prevent a dynamic prop with the same unmangled name.
+				continue
+			}
+			declared[prop.VarName] = true
+		}
+		parent := cur.GetParent()
+		if phpv.IsNilClass(parent) {
+			break
+		}
+		if pc, ok := parent.(*phpobj.ZClass); ok {
+			cur = pc
+		} else {
+			break
+		}
+	}
+	// Iterate the object's hash table and find entries not in declared
+	var result []phpv.ZString
+	ht := obj.HashTable()
+	if ht == nil {
+		return result
+	}
+	it := ht.NewIterator()
+	for keyVal, _ := range it.Iterate(nil) {
+		if keyVal == nil {
+			continue
+		}
+		if keyVal.GetType() != phpv.ZtString {
+			continue
+		}
+		name := keyVal.AsString(nil)
 		if strings.HasPrefix(string(name), "*") || strings.Contains(string(name), "\x00") {
 			continue
 		}
@@ -911,14 +964,16 @@ func formatReflectionClass(ctx phpv.Context, zc *phpobj.ZClass, isObject bool, d
 	}
 	sb.WriteString("  }\n\n")
 
+	// Collect static props from this class and inherited public/protected static props from parents
+	visibleStaticProps := collectVisibleProps(zc)
 	staticCount := 0
-	for _, prop := range zc.Props {
+	for _, prop := range visibleStaticProps {
 		if prop.Modifiers.IsStatic() {
 			staticCount++
 		}
 	}
 	sb.WriteString(fmt.Sprintf("  - Static properties [%d] {\n", staticCount))
-	for _, prop := range zc.Props {
+	for _, prop := range visibleStaticProps {
 		if !prop.Modifiers.IsStatic() {
 			continue
 		}
@@ -1106,7 +1161,7 @@ func formatParamDefault(ctx phpv.Context, arg *phpv.FuncArg) string {
 		if s == "" {
 			return " = NULL"
 		}
-		// null -> NULL (PHP reflection uppercases null for user-defined code)
+		// For user-defined code, PHP reflection uses uppercase NULL for null defaults
 		if strings.EqualFold(s, "null") {
 			return " = NULL"
 		}
@@ -1127,7 +1182,7 @@ func formatParamValue(ctx phpv.Context, val *phpv.ZVal) string {
 	}
 	switch val.GetType() {
 	case phpv.ZtNull:
-		return "NULL"
+		return "null"
 	case phpv.ZtBool:
 		if val.AsBool(ctx) {
 			return "true"
@@ -1163,7 +1218,7 @@ func formatConstantValue(ctx phpv.Context, val *phpv.ZVal) string {
 	}
 	switch val.GetType() {
 	case phpv.ZtNull:
-		return ""
+		return "NULL"
 	case phpv.ZtBool:
 		// PHP reflection uses integer string representation for booleans in constant values
 		if val.AsBool(ctx) {
