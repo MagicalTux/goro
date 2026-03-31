@@ -3,22 +3,22 @@ module github.com/MagicalTux/goro
 go 1.25.3
 
 require (
+	github.com/KarpelesLab/gobzip2 v0.0.0-20260330172500-4c38ea919286
 	github.com/KarpelesLab/gopcre2 v0.1.0
+	github.com/KarpelesLab/gotz v0.1.0
 	github.com/KarpelesLab/strftime v1.0.1
 	github.com/KarpelesLab/strtotime v0.1.0
 	github.com/andreyvit/diff v0.0.0-20170406064948-c7f18ee00883
+	github.com/glebarez/go-sqlite v1.22.0
+	github.com/go-sql-driver/mysql v1.9.3
 	github.com/goark/mt v1.0.0
 	golang.org/x/crypto v0.46.0
 	golang.org/x/text v0.33.0
 )
 
 require (
-	filippo.io/edwards25519 v1.1.0 // indirect
-	github.com/KarpelesLab/gobzip2 v0.0.0-20260330172500-4c38ea919286 // indirect
-	github.com/KarpelesLab/gotz v0.1.0 // indirect
+	filippo.io/edwards25519 v1.1.1 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/glebarez/go-sqlite v1.22.0 // indirect
-	github.com/go-sql-driver/mysql v1.9.3 // indirect
 	github.com/google/uuid v1.5.0 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
