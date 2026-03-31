@@ -430,9 +430,20 @@ func spawnCallableInternal(ctx phpv.Context, v *phpv.ZVal, paramNo int) (phpv.Ca
 			if callerFunc == "spl_autoload_register" {
 				orNull = " or null"
 			}
-			// Use the original method name (preserving case) for the error message
+			// Use the original method name (preserving case) for the error message.
+			// For instance calls, use the runtime class name (not the scope class).
+			errorClassName := class.GetName()
+			if instance != nil {
+				// Use the actual runtime class (Class field), not CurrentClass which
+				// may be narrowed to a parent class.
+				if zo, ok := instance.(*phpobj.ZObject); ok {
+					errorClassName = zo.Class.GetName()
+				} else {
+					errorClassName = instance.GetClass().GetName()
+				}
+			}
 			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
-				fmt.Sprintf("%s(): Argument #1 ($callback) must be a valid callback%s, class %s does not have a method \"%s\"", callerFunc, orNull, class.GetName(), origName))
+				fmt.Sprintf("%s(): Argument #1 ($callback) must be a valid callback%s, class %s does not have a method \"%s\"", callerFunc, orNull, errorClassName, origName))
 		}
 
 		// Check if the method is abstract - abstract methods cannot be called directly
