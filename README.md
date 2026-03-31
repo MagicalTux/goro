@@ -46,9 +46,14 @@ Goro passes **~8,600 of 12,110 tests** (71.0%) from the PHP 8.5.4 test suite. Fi
 | Nullsafe operator (`?->`, PHP 8.0) | Done |
 | Readonly properties (PHP 8.1) | Done |
 | Fibers (PHP 8.1) | Done |
-| Union/intersection types | Partial |
-| Generators (`yield`) | Done |
+| Union/intersection types | Done |
+| DNF types (`(A&B)|C`, PHP 8.2) | Partial |
+| Generators (`yield`, `yield from`) | Done |
 | First-class callables (`strlen(...)`) | Done |
+| Property hooks (PHP 8.4) | Done |
+| Asymmetric visibility (PHP 8.4) | Done |
+| Lazy objects (PHP 8.4) | Partial |
+| `clone ... with` (PHP 8.5) | Done |
 | Attributes | Parsed, partially enforced |
 
 ### SAPIs
@@ -63,34 +68,36 @@ Goro passes **~8,600 of 12,110 tests** (71.0%) from the PHP 8.5.4 test suite. Fi
 
 ### Extensions
 
-| Extension | Functions | Status | Notes |
-|-----------|-----------|--------|-------|
+| Extension | Functions | Pass Rate | Notes |
+|-----------|-----------|-----------|-------|
 | standard | 435+ | ~70% | Core functions, arrays, strings, files, math, output buffering, streams |
-| ctype | 11 | 100% | Complete |
-| json | 5 | 100% | json_encode, json_decode, json_validate, error handling |
-| pcre | 11 | 90% | preg_match, preg_replace, preg_split, preg_grep, preg_filter, callbacks |
-| hash | 11 | 80% | hash, hash_hmac, hash_file, hash_hmac_file, hash_pbkdf2, hash_hkdf, incremental |
-| gmp | 45+ | 55% | Arithmetic, division, modular, bitwise, primes, GCD/LCM, factorial, operator overloading, import/export |
-| mbstring | 40+ | 60% | strlen, substr, strpos, strtolower/upper, convert_encoding, convert_case, convert_variables, detect_encoding, check_encoding, str_split, str_pad, strimwidth, output_handler, encode/decode_mimeheader, encode/decode_numericentity |
-| date | 18+ | 35% | date, time, strtotime, mktime, strftime, getdate, checkdate, DateTime, DateInterval, DatePeriod |
-| bz2 | 1 | 10% | Decompression only (Go stdlib lacks bzip2 writer) |
-| session | 18 | New | session_start, session_id, file-based storage, $_SESSION superglobal |
-| xml | 15+ | New | SimpleXMLElement class, xml_parser_create, xml_parse, simplexml_load_string |
-| curl | 12 | New | CurlHandle class, curl_init/setopt/exec/getinfo via Go net/http |
-| sockets | 20+ | New | Socket class, socket_create/bind/listen/accept/connect, stream_socket_*, fsockopen |
-| spl | 6+ classes | 15% | Countable, OuterIterator, ArrayIterator, InfiniteIterator, SplFixedArray, SplDoublyLinkedList |
-| reflection | 5 classes | 15% | ReflectionClass, ReflectionMethod, ReflectionProperty, ReflectionFunction, ReflectionParameter |
-| pcre | | | Uses Go's `regexp` (RE2 syntax, not PCRE2) |
+| ctype | 11 | 98% | Complete |
+| json | 5 | 63% | json_encode, json_decode, json_validate, error handling |
+| pcre | 11 | 67% | preg_match, preg_replace, preg_split, preg_grep — **PCRE2 via gopcre2** (backreferences, lookahead) |
+| hash | 11 | 47% | hash, hash_hmac, hash_file, hash_pbkdf2, hash_hkdf, incremental |
+| gmp | 45+ | 60% | Arithmetic, division, modular, bitwise, primes, GCD/LCM, factorial, operator overloading, import/export |
+| mbstring | 40+ | ~50% | strlen, substr, strpos, strtolower/upper, convert_encoding, detect_encoding, check_encoding |
+| date | 30+ | 62% | date, time, strtotime, mktime, DateTime, DateTimeImmutable, DateInterval, DatePeriod, DateTimeZone |
+| openssl | 12 | — | AES/DES/RSA/ECDSA encryption, signing, key generation via Go crypto |
+| bz2 | 2 | — | Compress (gobzip2) and decompress (Go stdlib) |
+| zlib | 20+ | — | gzcompress/gzencode/gzdeflate, gzip file ops, stream filters, compress.zlib:// |
+| session | 18 | — | session_start/id/destroy, file-based storage, $_SESSION superglobal |
+| xml | 15+ | — | SimpleXMLElement class, xml_parser_create/parse, simplexml_load_string/file |
+| curl | 12 | — | CurlHandle class, curl_init/setopt/exec/getinfo via Go net/http |
+| sockets | 20+ | — | Socket class, socket_create/bind/listen/accept/connect, stream_socket_*, fsockopen |
+| spl | 40+ | 82% | ArrayObject, ArrayIterator, SplFileObject, SplFixedArray, SplHeap, SplObjectStorage, iterators |
+| reflection | 8 classes | 69% | ReflectionClass (with __toString), ReflectionMethod, ReflectionProperty, ReflectionFunction, ReflectionParameter, ReflectionAttribute |
+| getimagesize | — | 100% | 16 image formats (JPEG, PNG, GIF, BMP, WebP, AVIF, HEIF, TIFF, PSD, etc.) |
 
 ### Not yet implemented
 
 | Extension | Notes |
 |-----------|-------|
 | iconv | Planned via `golang.org/x/text/transform` |
-| mysqli | |
-| gd | |
-| zlib | |
-| Phar | |
+| mysqli/PDO | Database extensions |
+| gd | Image processing |
+| intl | Internationalization (ICU) |
+| Phar | PHP archive format |
 
 ## Architecture
 
