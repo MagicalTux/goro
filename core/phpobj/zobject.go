@@ -155,6 +155,12 @@ func (z *ZObject) CallImplicitDestructor(ctx phpv.Context) error {
 	return err
 }
 
+// GetObjectID returns the object's unique ID (handle).
+func (z *ZObject) GetObjectID() int { return z.ID }
+
+// SetObjectID replaces the object's ID (used for catch variable ID recycling).
+func (z *ZObject) SetObjectID(id int) { z.ID = id }
+
 // IncRef increments the object's reference count.
 func (z *ZObject) IncRef() {
 	if z.refCount == nil {
