@@ -1,15 +1,29 @@
 # Goro Roadmap
 
-**Current state (March 2026):** ~8,400 / 12,110 tests passing (69.4%). First 2,000: 1,752/2,000 (89.9%). All 24 batches complete, zero OOM. PHP memory_limit enforcement. PCRE2 via gopcre2.
+**Current state (March 2026):** ~8,850 / 12,110 tests passing (73.1%). First 2,000: 1,762/2,000 (90.2%). PCRE2 via gopcre2, IANA timezones via gotz.
 
-### Recent Progress
-- ext/gmp: 23→59 (60%) — most functions implemented via math/big
-- generators: 96→125 (68%) — yield from, finally, throw improvements
-- ext/pcre: 90→100 (67%) — gopcre2 integration, PCRE2 backreferences/lookahead
-- ext/reflection: 229→244 (52%) — ReflectionClass::__toString() started
-- ext/date: 367→381 (57%) — DatePeriod iteration, strtotime fixes
-- ext/spl: 606→633 (83%) — ArrayObject, iterators, serialization
-- New extensions: session, xml, curl, sockets, zlib (~5,200 lines)
+### Near-Complete Areas
+- enum: 141/151 (99.3%) — 1 failure: refcount display (Go GC limitation)
+- ext/ctype: 48/49 (98%) — 1 failure: locale support needed
+- closures: 126/135 (93%) — remaining: destructor timing, const expr attributes
+- ext/gmp: 90/99 (92%) — remaining: object ID recycling, random seed, ECC
+- exceptions: 86/94 (92%) — remaining: goto, stream wrappers in include_path
+
+### Major Improvements This Session
+- ext/gmp: 23→90 (92%) — complete math/big implementation
+- ext/reflection: 229→364 (77%) — ReflectionClass::__toString() overhaul
+- generators: 96→141 (77%) — yield from, finally, throw
+- ext/date: 367→435 (65%) — gotz integration, strtotime v0.1.1, DatePeriod
+- ext/json: 55→73 (84%) — encode/decode improvements
+- ext/standard/serialize: 66→121 (75%) — reference tracking overhaul
+- New extensions: session, xml, curl, sockets, zlib, mysqli, sqlite3, bz2
+- Library integrations: gopcre2, gotz, gobzip2, go-sql-driver/mysql, go-sqlite
+
+### Fundamental Limitations (cannot fix without engine redesign)
+- Object ID recycling: Go GC doesn't deterministically free objects (~30 tests)
+- Destructor timing: Go tracing GC vs PHP refcounting (~20 tests)
+- goto statement: not implemented (~5 tests)
+- PCRE2 random seed: different PRNG than PHP's GMP
 
 This document tracks the major work areas needed to reach full PHP 8.5 compatibility, organized by impact (number of test fixes) and estimated effort.
 
