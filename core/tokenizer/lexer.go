@@ -375,7 +375,12 @@ func (l *Lexer) acceptUntilFixed(s string) {
 		if rune(c) == s2[p] {
 			p += 1
 		} else {
-			p = 0
+			// Mismatch: restart match, but re-check current char against s2[0]
+			if rune(c) == s2[0] {
+				p = 1
+			} else {
+				p = 0
+			}
 		}
 	}
 }

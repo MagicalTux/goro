@@ -529,11 +529,16 @@ func (r *runClassStaticObjRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		cc.Resolving = false
 		if err != nil {
 			// Add a synthetic [constant expression] frame to match PHP behavior,
-			// but only if one hasn't been added yet (avoid duplicates in circular refs).
+			// but only for errors that are truly "in constant expression" context
+			// (not for simple "Undefined constant" errors which PHP does not wrap).
 			if ex, ok := err.(*phperr.PhpThrow); ok {
-				hasFrame := false
-				if opaque := ex.Obj.GetOpaque(ex.Obj.GetClass()); opaque != nil {
-					if trace, ok2 := opaque.([]*phpv.StackTraceEntry); ok2 {
+				msg := ""
+				if msgVal := ex.Obj.HashTable().GetString("message"); msgVal != nil {
+					msg = msgVal.String()
+				}
+				if !strings.HasPrefix(msg, "Undefined constant") {
+					hasFrame := false
+					if trace, ok2 := ex.Obj.GetOpaque(ex.Obj.GetClass()).([]*phpv.StackTraceEntry); ok2 {
 						for _, e := range trace {
 							if e.FuncName == "[constant expression]" {
 								hasFrame = true
@@ -541,9 +546,9 @@ func (r *runClassStaticObjRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 							}
 						}
 					}
-				}
-				if !hasFrame {
-					phpobj.AddConstantExpressionFrame(ex, ctx)
+					if !hasFrame {
+						phpobj.AddConstantExpressionFrame(ex, ctx)
+					}
 				}
 			}
 			return nil, err

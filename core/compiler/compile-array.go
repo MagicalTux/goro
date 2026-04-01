@@ -448,6 +448,11 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		}
 	case phpv.ZtArray:
 	case phpv.ZtObject:
+		// In constant expression context (class constant/property default evaluation),
+		// [] on objects is not allowed.
+		if ctx.Global().GetCompilingClass() != nil {
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot use [] on objects in constant expression")
+		}
 		// Track if container is an ArrayAccess object (not a plain array)
 		ac.lastContainerIsOverloaded = true
 		obj := v.AsObject(ctx)
@@ -1433,7 +1438,7 @@ func checkReadonlyIndirectModification(ctx phpv.Context, expr phpv.Runnable) err
 			}
 			if obj.IsReadonlyProperty(propName) {
 				return phpobj.ThrowError(ctx, phpobj.Error,
-					fmt.Sprintf("Cannot modify readonly property %s::$%s", obj.GetClass().GetName(), propName))
+					fmt.Sprintf("Cannot indirectly modify readonly property %s::$%s", obj.GetClass().GetName(), propName))
 			}
 			// Check asymmetric visibility for indirect modification
 			if err := checkAsymmetricVisibilityIndirect(ctx, obj, propName); err != nil {
@@ -1457,7 +1462,7 @@ func checkReadonlyIndirectModification(ctx phpv.Context, expr phpv.Runnable) err
 			propName := nameVal.AsString(ctx)
 			if obj.IsReadonlyProperty(propName) {
 				return phpobj.ThrowError(ctx, phpobj.Error,
-					fmt.Sprintf("Cannot modify readonly property %s::$%s", obj.GetClass().GetName(), propName))
+					fmt.Sprintf("Cannot indirectly modify readonly property %s::$%s", obj.GetClass().GetName(), propName))
 			}
 			// Check asymmetric visibility for indirect modification
 			if err := checkAsymmetricVisibilityIndirect(ctx, obj, propName); err != nil {

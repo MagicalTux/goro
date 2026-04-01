@@ -22,6 +22,23 @@ func (r *runEnumCaseInit) Dump(w io.Writer) error {
 	return err
 }
 
+// DumpAsEnumCase outputs "case CaseName;" or "case CaseName = expr;" for use
+// inside an enum body dump (e.g., assert() AST description).
+func (r *runEnumCaseInit) DumpAsEnumCase(w io.Writer) error {
+	if r.backingValue == nil {
+		_, err := fmt.Fprintf(w, "case %s;", r.caseName)
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "case %s = ", r.caseName); err != nil {
+		return err
+	}
+	if err := r.backingValue.Dump(w); err != nil {
+		return err
+	}
+	_, err := fmt.Fprintf(w, ";")
+	return err
+}
+
 func (r *runEnumCaseInit) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	// Look up the enum class
 	class, err := ctx.Global().GetClass(ctx, r.className, false)
@@ -76,6 +93,10 @@ type runEnumRegister struct {
 func (r *runEnumRegister) Dump(w io.Writer) error {
 	return r.class.Dump(w)
 }
+
+// IsCompoundDump marks runEnumRegister as a compound statement (ends with "}"),
+// so DumpStatements appends "\n" not ";\n".
+func (r *runEnumRegister) IsCompoundDump() {}
 
 func (r *runEnumRegister) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	c := r.class

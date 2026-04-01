@@ -2706,7 +2706,7 @@ func parseReturnType(c compileCtx) (*phpv.TypeHint, error) {
 		// Nullable prefix (?Type) cannot be combined with intersection types.
 		// PHP produces: "syntax error, unexpected token '&', expecting '{'"
 		if isNullable {
-			return nil, i.Unexpected()
+			return nil, i.UnexpectedExpecting("\"{\"")
 		}
 		// Intersection type in return position: Type1&Type2
 		peek, peekErr := c.NextItem()

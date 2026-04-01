@@ -103,6 +103,18 @@ func (c *Global) OffsetSet(ctx phpv.Context, name phpv.Val, v *phpv.ZVal) error 
 		}
 	}
 
+	// If the existing slot has type checkers (typed reference), use SetWithCtx
+	// so that type constraints are enforced when the reference value is updated.
+	if old != nil && old.HasTypeCheckers() && v != nil && !v.IsRef() {
+		if err := old.SetWithCtx(ctx, v); err != nil {
+			return err
+		}
+		if oldObj != nil {
+			return oldObj.DecRef(ctx)
+		}
+		return nil
+	}
+
 	err := c.h.SetString(nameStr, v)
 	if err != nil {
 		return err

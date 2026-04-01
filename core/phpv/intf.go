@@ -133,6 +133,13 @@ type StringContainerChecker interface {
 	LastContainerWasString() bool
 }
 
+// EnumCaseDumper is implemented by runnables that represent enum case initializers.
+// It allows ZClass.Dump() to produce proper enum case declarations without
+// needing to import the compiler package.
+type EnumCaseDumper interface {
+	DumpAsEnumCase(w io.Writer) error
+}
+
 // StaticVarEntry represents a single static variable entry with its name and current value.
 type StaticVarEntry struct {
 	Name ZString

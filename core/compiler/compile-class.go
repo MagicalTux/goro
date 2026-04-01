@@ -1877,6 +1877,10 @@ func (r *runClassWithTraitDeprecationCheck) Dump(w io.Writer) error {
 	return r.class.Dump(w)
 }
 
+// IsCompoundDump marks this wrapper as a compound statement (ends with "}"),
+// so DumpStatements appends "\n" not ";\n".
+func (r *runClassWithTraitDeprecationCheck) IsCompoundDump() {}
+
 // GetClass returns the underlying ZClass, used by anonymous class compilation.
 func (r *runClassWithTraitDeprecationCheck) GetClass() *phpobj.ZClass {
 	return r.class

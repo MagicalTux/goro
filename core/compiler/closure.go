@@ -41,6 +41,38 @@ var Closure = &phpobj.ZClass{
 	InternalOnly: true,
 }
 
+// invokeClosureCallable wraps a ZClosure for use when called via the __invoke
+// method, so that error messages say "Closure::__invoke()" instead of the
+// closure's internal name like "{closure:file:line}".
+type invokeClosureCallable struct {
+	phpv.CallableVal
+	inner phpv.Callable
+	args  []*phpv.FuncArg
+}
+
+func (i *invokeClosureCallable) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	return i.inner.Call(ctx, args)
+}
+
+func (i *invokeClosureCallable) GetArgs() []*phpv.FuncArg {
+	return i.args
+}
+
+func (i *invokeClosureCallable) Name() string {
+	return "__invoke"
+}
+
+func (i *invokeClosureCallable) GetClass() phpv.ZClass {
+	return Closure
+}
+
+func (i *invokeClosureCallable) ReturnsByRef() bool {
+	if rbr, ok := i.inner.(interface{ ReturnsByRef() bool }); ok {
+		return rbr.ReturnsByRef()
+	}
+	return false
+}
+
 // wrappedClosure wraps an arbitrary Callable as a Closure object opaque.
 // Used by Closure::fromCallable() to wrap non-closure callables.
 type wrappedClosure struct {
@@ -760,6 +792,37 @@ func (c *ZClosure) Dump(w io.Writer) error {
 	}
 	// DumpStatements ends each statement with ";\n", so we're already at a
 	// new line. Empty bodies have no content. Either way, just close with "}".
+	_, err = w.Write([]byte("}"))
+	return err
+}
+
+// DumpArgsAndBody dumps "(args) [: returnType] {\n    body\n}" for use when
+// the "function name" prefix is already written by the caller (e.g., class method dump).
+func (c *ZClosure) DumpArgsAndBody(w io.Writer) error {
+	if err := c.dumpArgs(w); err != nil {
+		return err
+	}
+	if c.returnType != nil {
+		if _, err := w.Write([]byte(": ")); err != nil {
+			return err
+		}
+		if err := c.dumpTypeHint(w, c.returnType); err != nil {
+			return err
+		}
+	}
+	if _, err := w.Write([]byte(" {\n")); err != nil {
+		return err
+	}
+	iw := &indentWriter{w: w, prefix: []byte("    "), atLineStart: true}
+	var err error
+	if rs, ok := c.code.(phpv.Runnables); ok {
+		err = rs.DumpStatements(iw)
+	} else {
+		err = c.code.Dump(iw)
+	}
+	if err != nil {
+		return err
+	}
 	_, err = w.Write([]byte("}"))
 	return err
 }

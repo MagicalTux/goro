@@ -510,6 +510,16 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			return nil, err
 		}
 
+		// No valid expression after &: treat & itself as unexpected
+		if v == nil {
+			return nil, &phpv.PhpError{
+				Err:          fmt.Errorf("syntax error, unexpected token \"&\""),
+				Code:         phpv.E_PARSE,
+				Loc:          l,
+				GoStackTrace: phpv.GetGoDebugTrace(),
+			}
+		}
+
 		// Cannot take a reference to a class constant
 		if _, ok := v.(*runClassStaticObjRef); ok {
 			phpErr := &phpv.PhpError{
@@ -612,6 +622,11 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		h, ok := itemTypeHandler[i.Type]
 		if ok && h != nil {
 			return h.f(i, c)
+		} else if ok && h == nil {
+			// Token is in the map with nil handler: it's a statement-level terminator
+			// (e.g. T_CLOSE_TAG). Not valid as an expression value.
+			c.backup()
+			return nil, nil
 		} else {
 			return nil, i.Unexpected()
 		}

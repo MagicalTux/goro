@@ -2426,6 +2426,46 @@ func (c *ZClass) warnNonPublicMagicMethods(ctx phpv.Context) {
 	}
 }
 
+// firstUnavailableClass returns the name of the first class/interface in any
+// type hint (including simple class types, unions, and intersection groups) that
+// cannot be loaded from the context. This is used for "Could not check compatibility"
+// error messages. Returns "" if all classes are available.
+func firstUnavailableClass(ctx phpv.Context, h *phpv.TypeHint) phpv.ZString {
+	if h == nil || ctx == nil {
+		return ""
+	}
+	if len(h.Union) > 0 {
+		for _, u := range h.Union {
+			if name := firstUnavailableClass(ctx, u); name != "" {
+				return name
+			}
+		}
+		return ""
+	}
+	if len(h.Intersection) > 0 {
+		for _, part := range h.Intersection {
+			if name := firstUnavailableClass(ctx, part); name != "" {
+				return name
+			}
+		}
+		return ""
+	}
+	// Simple object type (class/interface name)
+	if h.Type() == phpv.ZtObject && h.ClassName() != "" {
+		cn := h.ClassName()
+		switch cn.ToLower() {
+		case "self", "parent", "static", "callable", "iterable", "traversable":
+			// Built-in pseudo-types, always "available"
+			return ""
+		}
+		cls, err := ctx.Global().GetClass(ctx, cn, false)
+		if err != nil || phpv.IsNilClass(cls) {
+			return cn
+		}
+	}
+	return ""
+}
+
 // firstUnavailableIntersectionClass returns the name of the first class within
 // any intersection group in the type hint that cannot be loaded from the context.
 // Returns "" if all classes are available or there are no intersection groups.
@@ -2455,9 +2495,9 @@ func firstUnavailableIntersectionClass(ctx phpv.Context, h *phpv.TypeHint) phpv.
 }
 
 // intersectionHasLoadableMemberSatisfying returns true if the intersection type h
-// contains at least one loadable class member that satisfies the parent type constraint.
-// This is used when the intersection has unavailable classes: if a loadable member can
-// satisfy the parent, the compatibility check can be considered done.
+// contains at least one member (loadable or matching by name) that satisfies the parent
+// type constraint. This is used when the intersection has unavailable classes: if any
+// member can satisfy the parent (even by name match alone), the check can be considered done.
 func intersectionHasLoadableMemberSatisfying(ctx phpv.Context, childHint, parentHint *phpv.TypeHint) bool {
 	// Collect the intersection members to check (from union groups or direct intersection)
 	var checkHints []*phpv.TypeHint
@@ -2476,16 +2516,46 @@ func intersectionHasLoadableMemberSatisfying(ctx phpv.Context, childHint, parent
 			if member.Type() != phpv.ZtObject || member.ClassName() == "" {
 				continue
 			}
-			// Check if the member class is loadable
+			// First try with loadable class (full subtype check)
 			cls, err := ctx.Global().GetClass(ctx, member.ClassName(), false)
-			if err != nil || phpv.IsNilClass(cls) {
-				continue // unavailable, skip
+			if err == nil && !phpv.IsNilClass(cls) {
+				if typeHintContains(ctx, parentHint, member) {
+					return true
+				}
+			} else {
+				// Class not loadable; fall back to name-based match in the parent type.
+				// If the member name appears by name in the parent union/type, treat as satisfied.
+				if typeHintContainsByName(parentHint, member.ClassName()) {
+					return true
+				}
 			}
-			// Check if this loadable member satisfies the parent constraint
-			if typeHintContains(ctx, parentHint, member) {
+		}
+	}
+	return false
+}
+
+// typeHintContainsByName checks if a type hint contains a class name as a direct member
+// (by case-insensitive name comparison, without loading the class). This is used as a
+// fallback when classes are unavailable for full subtype checking.
+func typeHintContainsByName(h *phpv.TypeHint, name phpv.ZString) bool {
+	if h == nil {
+		return false
+	}
+	nameLower := name.ToLower()
+	if len(h.Union) > 0 {
+		for _, u := range h.Union {
+			if typeHintContainsByName(u, name) {
 				return true
 			}
 		}
+		return false
+	}
+	// Handle iterable: check if name is "traversable" or "array"
+	if h.Type() == phpv.ZtObject && h.ClassName() == "iterable" {
+		return nameLower == "traversable" || nameLower == "array"
+	}
+	if h.Type() == phpv.ZtObject && h.ClassName() != "" {
+		return h.ClassName().ToLower() == nameLower
 	}
 	return false
 }
@@ -2815,13 +2885,214 @@ func (c *ZClass) implementsWithGuard(class phpv.ZClass, seen map[phpv.ZClass]boo
 // IsCompoundDump marks ZClass as a compound statement (ends with "}").
 func (c *ZClass) IsCompoundDump() {}
 
-func (c *ZClass) Dump(w io.Writer) error {
-	_, err := fmt.Fprintf(w, "%sclass %s {", c.Attr, c.Name)
-	if err != nil {
-		return err
+// indentDumpWriter wraps an io.Writer and prepends a prefix at each line start.
+type indentDumpWriter struct {
+	w          io.Writer
+	prefix     []byte
+	atLineStart bool
+}
+
+func (iw *indentDumpWriter) Write(p []byte) (int, error) {
+	total := 0
+	for len(p) > 0 {
+		if iw.atLineStart && len(p) > 0 && p[0] != '\n' {
+			if _, err := iw.w.Write(iw.prefix); err != nil {
+				return total, err
+			}
+		}
+		nl := -1
+		for i, b := range p {
+			if b == '\n' {
+				nl = i
+				break
+			}
+		}
+		var chunk []byte
+		if nl < 0 {
+			chunk = p
+			p = nil
+			iw.atLineStart = false
+		} else {
+			chunk = p[:nl+1]
+			p = p[nl+1:]
+			iw.atLineStart = true
+		}
+		n, err := iw.w.Write(chunk)
+		total += n
+		if err != nil {
+			return total, err
+		}
 	}
-	// TODO
-	_, err = fmt.Fprintf(w, "TODO }")
+	return total, nil
+}
+
+func (c *ZClass) Dump(w io.Writer) error {
+	// Output attributes
+	for _, attr := range c.Attributes {
+		if _, err := fmt.Fprintf(w, "#[%s]\n", attr.ClassName); err != nil {
+			return err
+		}
+	}
+
+	// Build keyword + name + type hint
+	isEnum := c.Type.Has(phpv.ZClassTypeEnum)
+	if isEnum {
+		if c.EnumBackingType != 0 {
+			if _, err := fmt.Fprintf(w, "enum %s: %s {\n", c.Name, c.EnumBackingType.TypeName()); err != nil {
+				return err
+			}
+		} else {
+			if _, err := fmt.Fprintf(w, "enum %s {\n", c.Name); err != nil {
+				return err
+			}
+		}
+	} else {
+		attrStr := c.Attr.String()
+		if attrStr != "" {
+			if _, err := fmt.Fprintf(w, "%s class %s {\n", attrStr, c.Name); err != nil {
+				return err
+			}
+		} else {
+			if _, err := fmt.Fprintf(w, "class %s {\n", c.Name); err != nil {
+				return err
+			}
+		}
+	}
+
+	iw := &indentDumpWriter{w: w, prefix: []byte("    "), atLineStart: true}
+
+	if isEnum {
+		// Output enum cases in declaration order
+		for _, k := range c.ConstOrder {
+			cc := c.Const[k]
+			if cc == nil {
+				continue
+			}
+			// Determine if this is an enum case constant
+			isCase := false
+			for _, caseName := range c.EnumCases {
+				if caseName == k {
+					isCase = true
+					break
+				}
+			}
+			if !isCase {
+				continue
+			}
+			// Output attributes for this case
+			for _, attr := range cc.Attributes {
+				if _, err := fmt.Fprintf(iw, "#[%s]\n", attr.ClassName); err != nil {
+					return err
+				}
+			}
+			// Try EnumCaseDumper interface for the backing value expression
+			if cd, ok := cc.Value.(*phpv.CompileDelayed); ok {
+				if ecd, ok2 := cd.V.(phpv.EnumCaseDumper); ok2 {
+					if err := ecd.DumpAsEnumCase(iw); err != nil {
+						return err
+					}
+					if _, err := iw.Write([]byte("\n")); err != nil {
+						return err
+					}
+					continue
+				}
+			}
+			// Fallback: just output case name with no value
+			if _, err := fmt.Fprintf(iw, "case %s;\n", k); err != nil {
+				return err
+			}
+		}
+
+		// Output non-case constants
+		for _, k := range c.ConstOrder {
+			cc := c.Const[k]
+			if cc == nil {
+				continue
+			}
+			isCase := false
+			for _, caseName := range c.EnumCases {
+				if caseName == k {
+					isCase = true
+					break
+				}
+			}
+			if isCase {
+				continue
+			}
+			if _, err := fmt.Fprintf(iw, "const %s = ...\n", k); err != nil {
+				return err
+			}
+		}
+	}
+
+	// Output methods (for both enums and classes)
+	type methodDumper interface {
+		Dump(io.Writer) error
+	}
+	for _, k := range c.MethodOrder {
+		m := c.Methods[k]
+		if m == nil {
+			continue
+		}
+		// Skip synthetic/internal methods that shouldn't appear in source
+		if m.Modifiers.Has(phpv.ZAttrClosure) {
+			continue
+		}
+		// Dump method attributes
+		for _, attr := range m.Attributes {
+			if _, err := fmt.Fprintf(iw, "#[%s]\n", attr.ClassName); err != nil {
+				return err
+			}
+		}
+		// Build method modifiers
+		var mods []string
+		if m.Modifiers.IsPublic() {
+			mods = append(mods, "public")
+		} else if m.Modifiers.IsProtected() {
+			mods = append(mods, "protected")
+		} else if m.Modifiers.IsPrivate() {
+			mods = append(mods, "private")
+		}
+		if m.Modifiers.IsStatic() {
+			mods = append(mods, "static")
+		}
+		if m.Modifiers.Has(phpv.ZAttrAbstract) {
+			mods = append(mods, "abstract")
+		}
+		if m.Modifiers.Has(phpv.ZAttrFinal) {
+			mods = append(mods, "final")
+		}
+		prefix := strings.Join(mods, " ")
+		if prefix != "" {
+			prefix += " "
+		}
+		if d, ok := m.Method.(methodDumper); ok {
+			if _, err := fmt.Fprintf(iw, "%sfunction %s", prefix, m.Name); err != nil {
+				return err
+			}
+			// For ZClosure methods, dump the body using the closure's own Dump
+			// but we need the args/return from the closure, not just the body.
+			// Use a helper to dump just the args + body
+			type argsBodyDumper interface {
+				DumpArgsAndBody(w io.Writer) error
+			}
+			if abd, ok2 := d.(argsBodyDumper); ok2 {
+				if err := abd.DumpArgsAndBody(iw); err != nil {
+					return err
+				}
+			} else {
+				// Just dump the full closure and hope it works
+				if err := d.Dump(iw); err != nil {
+					return err
+				}
+			}
+			if _, err := iw.Write([]byte("\n\n")); err != nil {
+				return err
+			}
+		}
+	}
+
+	_, err := w.Write([]byte("}\n"))
 	return err
 }
 
@@ -3008,12 +3279,6 @@ func CheckStaticPropIndirectSetVisibility(ctx phpv.Context, c *ZClass, name phpv
 // ResolveConstants resolves any remaining CompileDelayed constants in the class
 // and its parent classes. Called when the class is first instantiated.
 func (c *ZClass) ResolveConstants(ctx phpv.Context) error {
-	// Save the caller's location before resolution. During constant
-	// expression evaluation, ctx.Loc() may change to the definition
-	// file. The [constant expression] stack frame should show the
-	// call site (e.g., where "new Foo()" appears), not the definition.
-	callerLoc := ctx.Loc()
-
 	for cur := c; cur != nil; cur = cur.Extends {
 		ctx.Global().SetCompilingClass(cur)
 		for _, k := range cur.ConstOrder {
@@ -3025,11 +3290,6 @@ func (c *ZClass) ResolveConstants(ctx phpv.Context) error {
 				z, err := r.Run(ctx)
 				if err != nil {
 					ctx.Global().SetCompilingClass(nil)
-					// Add a synthetic [constant expression] frame to the stack trace
-					// to match PHP's behavior when constant expression evaluation fails.
-					if ex, ok := err.(*phperr.PhpThrow); ok {
-						AddConstantExpressionFrameAt(ex, callerLoc)
-					}
 					return err
 				}
 				cur.Const[k].Value = z.Value()

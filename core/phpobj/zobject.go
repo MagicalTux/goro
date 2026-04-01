@@ -2604,6 +2604,40 @@ func (o *ZObject) ObjectSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) er
 			} else if coerced != nil {
 				value = coerced
 			}
+			// For reference assignments to typed properties, install a type checker
+			// on the shared reference inner ZVal. This ensures that any future
+			// assignment to the reference (e.g. $r = new B after $prop =& $r)
+			// is checked against the property's type.
+			if value.IsRef() {
+				innerRef := value.RefTarget()
+				if innerRef != nil {
+					hint := prop.TypeHint
+					declClassName := o.Class.GetName()
+					if dc := o.findDeclaringClass(keyStr); dc != nil {
+						declClassName = dc.GetName()
+					}
+					propName := keyStr
+					hintStr := hint.String()
+					innerRef.AddTypeChecker(func(ctx phpv.Context, val phpv.Val) error {
+						valZVal := phpv.NewZVal(val)
+						if valZVal.IsNull() {
+							if hint.IsNullable() {
+								return nil
+							}
+							return ThrowError(ctx, TypeError,
+								fmt.Sprintf("Cannot assign null to reference held by property %s::$%s of type %s",
+									declClassName, propName, hintStr))
+						}
+						if !hint.Check(ctx, valZVal) && !hint.CheckStrict(ctx, valZVal) {
+							typeName := phpv.ZValTypeNameDetailed(valZVal)
+							return ThrowError(ctx, TypeError,
+								fmt.Sprintf("Cannot assign %s to reference held by property %s::$%s of type %s",
+									typeName, declClassName, propName, hintStr))
+						}
+						return nil
+					})
+				}
+			}
 		}
 	}
 
@@ -3078,7 +3112,7 @@ func (it *hookedObjectIterator) CurrentMakeRef(ctx phpv.Context) (*phpv.ZVal, er
 	// Check for readonly property
 	if it.obj.IsReadonlyProperty(e.key) && it.obj.IsReadonlyPropertyInitialized(e.key) {
 		return nil, ThrowError(nil, Error,
-			fmt.Sprintf("Cannot modify readonly property %s::$%s", it.obj.GetClass().GetName(), e.key))
+			fmt.Sprintf("Cannot indirectly modify readonly property %s::$%s", it.obj.GetClass().GetName(), e.key))
 	}
 
 	// For virtual hooked properties, cannot take a reference
@@ -3182,7 +3216,7 @@ func (it *zobjectIterator) CurrentMakeRef(ctx phpv.Context) (*phpv.ZVal, error) 
 			}
 			if it.obj.IsReadonlyProperty(keyStr) && it.obj.IsReadonlyPropertyInitialized(keyStr) {
 				return nil, ThrowError(ctx, Error,
-					fmt.Sprintf("Cannot modify readonly property %s::$%s", it.obj.GetClass().GetName(), keyStr))
+					fmt.Sprintf("Cannot indirectly modify readonly property %s::$%s", it.obj.GetClass().GetName(), keyStr))
 			}
 		}
 	}
