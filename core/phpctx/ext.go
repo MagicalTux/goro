@@ -41,6 +41,9 @@ func (e *ExtFunction) Name() string {
 	return e.name
 }
 
+// IsBuiltinCallable implements phpv.BuiltinCallable, marking ExtFunction as a built-in.
+func (e *ExtFunction) IsBuiltinCallable() {}
+
 func (e *ExtFunction) GetExt() string {
 	return e.Ext
 }
@@ -68,9 +71,10 @@ func (e *ExtFunction) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, err
 type ExtFunctionArg struct {
 	ArgName   string // without the $ sign
 	Ref       bool
-	PreferRef bool // like Ref but silently accepts non-ref values (ZEND_SEND_PREFER_REF)
-	Optional  bool // is this argument optional?
-	Variadic  bool // is this a variadic parameter? (applies to all remaining args)
+	PreferRef bool      // silently accepts non-ref values (ZEND_SEND_PREFER_REF) — like extract()
+	NoticeRef bool      // emits Notice for non-variable (ZEND_SEND_BY_REF) — like array_pop(), sort()
+	Optional  bool      // is this argument optional?
+	Variadic  bool      // is this a variadic parameter? (applies to all remaining args)
 }
 
 // GetArgs implements phpv.FuncGetArgs, returning cached parameter metadata.
@@ -91,8 +95,9 @@ func (e *ExtFunction) buildFuncArgs() {
 		e.funcArgs[i] = &phpv.FuncArg{
 			VarName:   phpv.ZString(a.ArgName),
 			Required:  !a.Optional,
-			Ref:       a.Ref || a.PreferRef,
+			Ref:       a.Ref || a.PreferRef || a.NoticeRef,
 			PreferRef: a.PreferRef,
+			NoticeRef: a.NoticeRef,
 			Variadic:  a.Variadic,
 		}
 	}

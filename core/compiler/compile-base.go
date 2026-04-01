@@ -507,15 +507,11 @@ func compileBaseSingle(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	}
 
 	// Check for "Cannot use [] for reading" - empty subscript in expression statement
-	// (not in write context). e.g. "$a[];" as a statement should fail at compile time.
+	// (not in write context). e.g. "$a[];" or "$b = $a[];" should fail at compile time.
 	// Use E_ERROR (not E_COMPILE_ERROR) so that in eval() context this becomes a
 	// deferred fatal error (matching PHP behavior) rather than a CompileError exception.
-	if ac, ok := r.(*runArrayAccess); ok && ac.offset == nil {
-		return nil, &phpv.PhpError{
-			Err:  fmt.Errorf("Cannot use [] for reading"),
-			Code: phpv.E_ERROR,
-			Loc:  ac.l,
-		}
+	if err := checkEmptySubscriptRead(r, false); err != nil {
+		return nil, err
 	}
 
 	// check for ';'

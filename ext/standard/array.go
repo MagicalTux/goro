@@ -2059,12 +2059,27 @@ func arrayRecursiveMerge(ctx phpv.Context, result, array *phpv.ZArray, depth ...
 			if cur.GetType() != phpv.ZtArray {
 				array := phpv.NewZArray()
 				result.OffsetUnset(ctx, k)
-				array.OffsetSet(ctx, nil, cur)
-				array.OffsetSet(ctx, nil, v)
+				if err := array.OffsetSet(ctx, nil, cur); err != nil {
+					if err == phpv.ErrNextElementOccupied {
+						return phpobj.ThrowError(ctx, phpobj.Error, err.Error())
+					}
+					return err
+				}
+				if err := array.OffsetSet(ctx, nil, v); err != nil {
+					if err == phpv.ErrNextElementOccupied {
+						return phpobj.ThrowError(ctx, phpobj.Error, err.Error())
+					}
+					return err
+				}
 				result.OffsetSet(ctx, k, array.ZVal())
 			} else {
 				array := cur.AsArray(ctx)
-				array.OffsetSet(ctx, nil, v)
+				if err := array.OffsetSet(ctx, nil, v); err != nil {
+					if err == phpv.ErrNextElementOccupied {
+						return phpobj.ThrowError(ctx, phpobj.Error, err.Error())
+					}
+					return err
+				}
 			}
 			continue
 		}

@@ -84,6 +84,8 @@ func compileContinue(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	return &phperr.PhpContinue{L: loc, Intv: phpv.ZInt(intv), Initial: phpv.ZInt(intv)}, nil
 }
 
+func (r *runnableFor) IsCompoundDump() {}
+
 type runnableFor struct {
 	// for (start; cond; each) ...
 	// for($i = 0; $i < 4; $i++) ...

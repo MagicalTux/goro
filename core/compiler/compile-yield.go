@@ -106,8 +106,14 @@ func (r *runYield) Dump(w io.Writer) error {
 		if err != nil {
 			return err
 		}
-	}
-	if r.value != nil {
+		// Value follows directly after " => " (no extra space needed)
+		if r.value != nil {
+			err = r.value.Dump(w)
+			if err != nil {
+				return err
+			}
+		}
+	} else if r.value != nil {
 		_, err = w.Write([]byte{' '})
 		if err != nil {
 			return err

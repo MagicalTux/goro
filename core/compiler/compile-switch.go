@@ -24,6 +24,8 @@ type runSwitch struct {
 	l      *phpv.Loc
 }
 
+func (r runSwitch) IsCompoundDump() {}
+
 func (r runSwitch) Dump(w io.Writer) error {
 	_, err := w.Write([]byte("switch ("))
 	if err != nil {

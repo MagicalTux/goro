@@ -750,16 +750,17 @@ func (c *ZClosure) Dump(w io.Writer) error {
 
 	// Indent the closure body by 4 spaces (matches PHP's AST dump format)
 	iw := &indentWriter{w: w, prefix: []byte("    "), atLineStart: true}
-	err = c.code.Dump(iw)
+	if rs, ok := c.code.(phpv.Runnables); ok {
+		err = rs.DumpStatements(iw)
+	} else {
+		err = c.code.Dump(iw)
+	}
 	if err != nil {
 		return err
 	}
-	// Only add a newline before } if the body wrote some content
-	if iw.wroteContent {
-		_, err = w.Write([]byte("\n}"))
-	} else {
-		_, err = w.Write([]byte("}"))
-	}
+	// DumpStatements ends each statement with ";\n", so we're already at a
+	// new line. Empty bodies have no content. Either way, just close with "}".
+	_, err = w.Write([]byte("}"))
 	return err
 }
 

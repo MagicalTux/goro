@@ -1176,6 +1176,11 @@ func formatParamDefault(ctx phpv.Context, arg *phpv.FuncArg) string {
 	if !ok {
 		// Direct value (already evaluated at compile time by Compile())
 		val := arg.DefaultValue.ZVal()
+		// For internal methods (no DefaultValueExpr), null defaults are shown as lowercase "null".
+		// For user-defined code, formatParamValue returns uppercase "NULL" (handled above via CompileDelayed).
+		if arg.DefaultValueExpr == "" && val.GetType() == phpv.ZtNull {
+			return " = null"
+		}
 		return " = " + formatParamValue(ctx, val)
 	}
 	// Use Dump() to get the PHP source representation (preserves constant names, quoted strings)

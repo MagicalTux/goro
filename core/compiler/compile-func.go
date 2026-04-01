@@ -786,7 +786,7 @@ func compileFunctionWithName(name phpv.ZString, c compileCtx, l *phpv.Loc, rref 
 		if err != nil {
 			return nil, err
 		}
-		// Validate use variables don't conflict with parameter names
+		// Check that no use variable has the same name as a parameter
 		for _, u := range zc.use {
 			for _, a := range zc.args {
 				if u.VarName == a.VarName {
@@ -1413,6 +1413,11 @@ func compileFunctionArgs(c compileCtx) (res []*phpv.FuncArg, err error) {
 		// Handle variadic parameter: ...
 		if i.Type == tokenizer.T_ELLIPSIS {
 			arg.Variadic = true
+			// Variadic by-reference parameters use PREFER_REF semantics:
+			// they silently accept non-reference values without warning.
+			if arg.Ref {
+				arg.PreferRef = true
+			}
 			i, err = c.NextItem()
 			if err != nil {
 				return

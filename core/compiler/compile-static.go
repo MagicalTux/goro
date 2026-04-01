@@ -23,35 +23,30 @@ type runStaticVar struct {
 }
 
 func (r *runStaticVar) Dump(w io.Writer) error {
-	_, err := w.Write([]byte("static "))
-	if err != nil {
-		return err
-	}
-
-	first := true
-	for _, v := range r.vars {
-		if !first {
-			_, err = w.Write([]byte(", "))
-			if err != nil {
+	// PHP's AST dump emits each variable as a separate "static $x" statement.
+	// We emit "static $a;\nstatic $b = 0" so DumpStatements appends the final ";\n".
+	for i, v := range r.vars {
+		if i > 0 {
+			if _, err := w.Write([]byte(";\nstatic ")); err != nil {
+				return err
+			}
+		} else {
+			if _, err := w.Write([]byte("static ")); err != nil {
 				return err
 			}
 		}
-		first = false
-
+		var err error
 		if v.def != nil {
 			_, err = fmt.Fprintf(w, "$%s = ", v.varName)
 			if err != nil {
 				return err
 			}
 			err = v.def.Dump(w)
-			if err != nil {
-				return err
-			}
 		} else {
 			_, err = fmt.Fprintf(w, "$%s", v.varName)
-			if err != nil {
-				return err
-			}
+		}
+		if err != nil {
+			return err
 		}
 	}
 	return nil

@@ -1568,6 +1568,13 @@ func FindPropHandlers(cls phpv.ZClass) *phpv.ZClassHandlers {
 // isPropertyHidden returns true if the property is declared with restricted visibility
 // (private/protected) and the current calling context doesn't have access.
 // Used by HasProp to decide whether to fall through to __isset.
+// IsPropertyHidden reports whether the named property is declared in the class
+// but not accessible from the current context (private/protected visibility).
+// When true, PHP would normally call __get/__set instead of accessing directly.
+func (o *ZObject) IsPropertyHidden(ctx phpv.Context, keyStr phpv.ZString) bool {
+	return o.isPropertyHidden(ctx, keyStr)
+}
+
 func (o *ZObject) isPropertyHidden(ctx phpv.Context, keyStr phpv.ZString) bool {
 	callerClass := ctx.Class()
 

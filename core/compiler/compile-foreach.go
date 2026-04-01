@@ -12,6 +12,8 @@ import (
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
 
+func (r *runnableForeach) IsCompoundDump() {}
+
 type runnableForeach struct {
 	src  phpv.Runnable
 	code phpv.Runnable
@@ -834,6 +836,11 @@ func compileForeach(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	r := &runnableForeach{l: l}
 	r.src, err = compileExpr(nil, c)
 	if err != nil {
+		return nil, err
+	}
+
+	// Check for "Cannot use [] for reading" in the foreach source expression
+	if err := checkEmptySubscriptRead(r.src, false); err != nil {
 		return nil, err
 	}
 

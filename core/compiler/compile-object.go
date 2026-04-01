@@ -1352,19 +1352,26 @@ func (r *runObjectVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 				}); ok3 {
 					_, found, _ := oq.ObjectGetQuiet(ctx, offt)
 					if !found && !zobj.AllowsDynamicProperties() {
-						// Check no magic __set method
-						hasMagicSet := false
-						if zc, ok4 := zobj.GetClass().(*phpobj.ZClass); ok4 {
-							_, hasMagicSet = zc.Methods["__set"]
-						}
-						if !hasMagicSet {
-							// Emit deprecation before the undefined property warning,
-							// and set flag to skip duplicate deprecation in ObjectSet.
-							if err := ctx.Deprecated("Creation of dynamic property %s::$%s is deprecated",
-								zobj.GetClass().GetName(), propName, logopt.NoFuncName(true)); err != nil {
-								return nil, err
+						// Only emit dynamic property deprecation for truly undeclared properties.
+						// If the property is declared in the class (even if uninitialized), skip.
+						isDeclared := zobj.FindDeclaredProp(propName) != nil
+						if !isDeclared {
+							// Check no magic __set or __get method
+							hasMagicSet := false
+							hasMagicGet := false
+							if zc, ok4 := zobj.GetClass().(*phpobj.ZClass); ok4 {
+								_, hasMagicSet = zc.Methods["__set"]
+								_, hasMagicGet = zc.Methods["__get"]
 							}
-							ctx.Global().SetSkipNextDynPropDeprecation(true)
+							if !hasMagicSet && !hasMagicGet {
+								// Emit deprecation before the undefined property warning,
+								// and set flag to skip duplicate deprecation in ObjectSet.
+								if err := ctx.Deprecated("Creation of dynamic property %s::$%s is deprecated",
+									zobj.GetClass().GetName(), propName, logopt.NoFuncName(true)); err != nil {
+									return nil, err
+								}
+								ctx.Global().SetSkipNextDynPropDeprecation(true)
+							}
 						}
 					}
 				}
@@ -1391,6 +1398,55 @@ func (r *runObjectVar) PrepareWrite(ctx phpv.Context) error {
 
 func (r *runObjectVar) IsCompoundWritable() {}
 
+// checkOverloadedRefAssign checks if the object property access represents an
+// overloaded property (class has __get but property is not directly accessible).
+// If so, it throws "Cannot assign by reference to overloaded object".
+// This is called ONLY from =& direct ref assignment context, not from by-ref
+// parameter passing (which passes by value instead).
+func checkOverloadedRefAssign(ctx phpv.Context, r *runObjectVar) error {
+	obj, err := r.ref.Run(ctx)
+	if err != nil {
+		return nil
+	}
+	if obj.GetType() != phpv.ZtObject {
+		return nil
+	}
+	zobj, ok := obj.Value().(*phpobj.ZObject)
+	if !ok {
+		return nil
+	}
+	propName := r.varName
+	if len(propName) > 0 && propName[0] == '$' {
+		return nil // dynamic property name
+	}
+
+	ht := zobj.HashTable()
+	propExists := ht != nil && ht.HasString(propName)
+	if !propExists {
+		if decl := zobj.FindDeclaredProp(phpv.ZString(propName)); decl != nil {
+			if !zobj.IsPropertyHidden(ctx, phpv.ZString(propName)) {
+				propExists = true
+			}
+		}
+	}
+	if !propExists {
+		class := zobj.GetClass()
+		_, hasGet := class.GetMethod("__get")
+		if hasGet {
+			// Actually call __get to let it throw its own exceptions if needed.
+			// If __get throws, propagate that exception.
+			// If __get returns successfully, throw "Cannot assign by reference to overloaded object".
+			_, getErr := r.Run(ctx)
+			if getErr != nil {
+				// __get threw an exception (or some other error) — propagate it.
+				return getErr
+			}
+			return phpobj.ThrowError(ctx, phpobj.Error, "Cannot assign by reference to overloaded object")
+		}
+	}
+	return nil
+}
+
 // CheckReadonlyRef checks if creating a reference to this object property would
 // violate readonly or asymmetric visibility constraints.
 func (r *runObjectVar) CheckReadonlyRef(ctx phpv.Context) error {
@@ -1409,39 +1465,6 @@ func (r *runObjectVar) CheckReadonlyRef(ctx phpv.Context) error {
 	if len(propName) > 0 && propName[0] == '$' {
 		// Dynamic property name - skip check
 		return nil
-	}
-
-	// Check if this is an overloaded property access (class has __get but not a
-	// real/declared property). PHP throws "Cannot assign by reference to overloaded
-	// object" when trying to assign by reference to an overloaded property.
-	// First check: property not directly accessible (not in hash table, not declared with real value)
-	ht := zobj.HashTable()
-	propExists := ht != nil && ht.HasString(propName)
-	if !propExists {
-		if decl := zobj.FindDeclaredProp(propName); decl != nil {
-			propExists = true
-		}
-	}
-	if !propExists {
-		class := zobj.GetClass()
-		_, hasGet := class.GetMethod("__get")
-		if hasGet {
-			// This is an overloaded property. PHP behavior:
-			// 1. Call __get to trigger any side effects (e.g. "Undefined property" warning)
-			// 2. Emit "Indirect modification of overloaded property ... has no effect"
-			// 3. Throw "Cannot assign by reference to overloaded object"
-			objI, ok2 := obj.Value().(phpv.ZObjectAccess)
-			if ok2 {
-				// Call ObjectGet to trigger __get (may produce side effect warnings)
-				objI.ObjectGet(ctx, propName)
-			}
-			// Emit: Indirect modification of overloaded property ... has no effect
-			if err2 := ctx.Notice("Indirect modification of overloaded property %s::$%s has no effect",
-				class.GetName(), propName, logopt.NoFuncName(true)); err2 != nil {
-				return err2
-			}
-			return phpobj.ThrowError(ctx, phpobj.Error, "Cannot assign by reference to overloaded object")
-		}
 	}
 
 	if zobj.IsReadonlyProperty(propName) && zobj.IsReadonlyPropertyInitialized(propName) {

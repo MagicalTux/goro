@@ -247,20 +247,26 @@ func (a runArray) Dump(w io.Writer) error {
 	if err != nil {
 		return err
 	}
-	for _, s := range a.e {
+	for i, s := range a.e {
+		if i > 0 {
+			if _, err = w.Write([]byte(", ")); err != nil {
+				return err
+			}
+		}
 		if s.k != nil {
 			err = s.k.Dump(w)
 			if err != nil {
 				return err
 			}
-			_, err = w.Write([]byte("=>"))
-			if err != nil {
+			if _, err = w.Write([]byte(" => ")); err != nil {
 				return err
 			}
 		}
-		err = s.v.Dump(w)
-		if err != nil {
-			return err
+		if s.v != nil {
+			err = s.v.Dump(w)
+			if err != nil {
+				return err
+			}
 		}
 	}
 	_, err = w.Write([]byte{']'})
@@ -424,6 +430,10 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 
 	switch v.GetType() {
 	case phpv.ZtString:
+		// PHP 8: [] operator (append) is not supported for strings.
+		if ac.offset == nil {
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, "[] operator not supported for strings")
+		}
 		// PHP 8: compound assignment operators (+=, -=, .=, etc.) are not allowed on string offsets.
 		// Check this BEFORE evaluating the offset to prevent spurious "Uninitialized string offset" warnings.
 		if op, ok := ac.Parent.(*runOperator); ok && op.opD != nil && op.opD.write && op.opD.op != nil && op.a == ac {
@@ -687,6 +697,21 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 
 func (a *runArrayAccess) IsCompoundWritable() {}
 
+// LastContainerWasOverloaded implements phpv.OverloadedContainerChecker.
+// Returns true if the most recent Run() call found that the container was
+// an ArrayAccess object (overloaded container).
+func (a *runArrayAccess) LastContainerWasOverloaded() bool {
+	return a.lastContainerIsOverloaded
+}
+
+// LastContainerWasString implements phpv.StringContainerChecker.
+// Returns true if the most recent Run() call found that the container was
+// a string (string offset access). Used to detect "Cannot create references
+// to/from string offsets".
+func (a *runArrayAccess) LastContainerWasString() bool {
+	return a.lastContainerWasString
+}
+
 func (a *runArrayAccess) Loc() *phpv.Loc {
 	return a.l
 }
@@ -790,6 +815,10 @@ func (ac *runArrayAccess) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 				Code: phpv.E_ERROR,
 				Loc:  ac.l,
 			}
+		}
+		// Cannot use string offset as an array (unset on nested string access)
+		if v != nil && v.GetType() == phpv.ZtString {
+			return phpobj.ThrowError(ctx, phpobj.Error, "Cannot use string offset as an array")
 		}
 		array := v.Array()
 		if array == nil {
@@ -998,6 +1027,12 @@ func (ac *runArrayAccess) PrepareWrite(ctx phpv.Context) error {
 		// For [] (append), pre-check if the array would overflow. PHP evaluates
 		// the LHS target before the RHS expression, so the overflow error must
 		// fire before "Only variables should be assigned by reference" notices.
+		// Set writeContext on the inner access to suppress "Undefined array key"
+		// warnings — we're about to write to this location, not read it.
+		if inner, ok := ac.value.(*runArrayAccess); ok {
+			inner.writeContext = true
+			defer func() { inner.writeContext = false }()
+		}
 		v, err := ac.value.Run(ctx)
 		if err != nil {
 			return err
@@ -1212,6 +1247,93 @@ func compileArray(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	}
 
 	return res, nil
+}
+
+// checkEmptySubscriptRead checks an expression for nil-offset array access in
+// read context (e.g. $b = $a[]) and returns a compile-time E_ERROR if found.
+// inWriteContext should be true when the expression is the LHS of an assignment.
+func checkEmptySubscriptRead(r phpv.Runnable, inWriteContext bool) error {
+	if r == nil {
+		return nil
+	}
+	switch t := r.(type) {
+	case *runArray:
+		// Check element expressions inside an array literal
+		for _, e := range t.e {
+			if e.k != nil {
+				if err := checkEmptySubscriptRead(e.k, false); err != nil {
+					return err
+				}
+			}
+			if err := checkEmptySubscriptRead(e.v, false); err != nil {
+				return err
+			}
+		}
+	case *runArrayAccess:
+		if t.offset == nil && !inWriteContext {
+			return &phpv.PhpError{
+				Err:  fmt.Errorf("Cannot use [] for reading"),
+				Code: phpv.E_ERROR,
+				Loc:  t.l,
+			}
+		}
+		// The value (container) is recursed. Only pass inWriteContext down when the
+		// value is itself an array access (to allow nil-offsets in write chains
+		// like $a[][][0] = 1). For other expressions (variables, function calls, etc.),
+		// the inWriteContext check is not needed at this level.
+		innerWriteCtx := false
+		if _, isAA := t.value.(*runArrayAccess); isAA {
+			innerWriteCtx = inWriteContext
+		}
+		if err := checkEmptySubscriptRead(t.value, innerWriteCtx); err != nil {
+			return err
+		}
+		if err := checkEmptySubscriptRead(t.offset, false); err != nil {
+			return err
+		}
+	case *runOperator:
+		// ++/-- (inc/dec) are write operations on their operand; treat both
+		// prefix (r.b) and postfix (r.a) as being in write context so that
+		// $str[]-- is not flagged as "Cannot use [] for reading" at compile time
+		// (it should throw "[] operator not supported for strings" at runtime).
+		isIncDec := t.op == tokenizer.T_INC || t.op == tokenizer.T_DEC
+		if isIncDec {
+			if err := checkEmptySubscriptRead(t.a, true); err != nil {
+				return err
+			}
+			if err := checkEmptySubscriptRead(t.b, true); err != nil {
+				return err
+			}
+		} else if t.opD != nil && t.opD.write {
+			// LHS of write operator is in write context.
+			// First check if the direct LHS is a subscript of a function call result.
+			if ac, ok := t.a.(*runArrayAccess); ok && ac.offset != nil {
+				switch ac.value.(type) {
+				case *runnableFunctionCall, *runnableFunctionCallRef:
+					return &phpv.PhpError{
+						Err:  fmt.Errorf("Cannot use result of built-in function in write context"),
+						Code: phpv.E_ERROR,
+						Loc:  ac.l,
+					}
+				}
+			}
+			if err := checkEmptySubscriptRead(t.a, true); err != nil {
+				return err
+			}
+			// RHS of write operator is in read context
+			if err := checkEmptySubscriptRead(t.b, false); err != nil {
+				return err
+			}
+		} else {
+			if err := checkEmptySubscriptRead(t.a, false); err != nil {
+				return err
+			}
+			if err := checkEmptySubscriptRead(t.b, false); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // isDescendantOf checks whether node is the same as root or is reachable

@@ -23,6 +23,8 @@ type runnableTry struct {
 	finally phpv.Runnable
 }
 
+func (rt *runnableTry) IsCompoundDump() {}
+
 func (rt *runnableTry) Dump(w io.Writer) error {
 	var buf bytes.Buffer
 	buf.WriteString("try { ... }\n")

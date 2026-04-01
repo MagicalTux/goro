@@ -92,9 +92,14 @@ func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, o
 
 		isRefParam := false
 		isPreferRef := false
+		isNoticeRef := false // ZEND_SEND_BY_REF on ext function: Notice (not Fatal) for non-variable
+		_, isCallerInternal := f.(*ExtFunction)
 		if funcArgs != nil && i < len(funcArgs) && funcArgs[i].Ref {
 			isRefParam = true
 			isPreferRef = funcArgs[i].PreferRef
+			if funcArgs[i].NoticeRef && isCallerInternal {
+				isNoticeRef = true
+			}
 		} else if funcArgs != nil && len(funcArgs) > 0 {
 			// Check if the last parameter is a variadic by-ref param;
 			// if so, all args from that index onward are by-ref.
@@ -104,8 +109,14 @@ func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, o
 				isPreferRef = last.PreferRef
 			}
 		}
-		if !isRefParam && extArgs != nil && i < len(extArgs) && extArgs[i].Ref {
+		if !isRefParam && extArgs != nil && i < len(extArgs) && (extArgs[i].Ref || extArgs[i].PreferRef || extArgs[i].NoticeRef) {
 			isRefParam = true
+			if extArgs[i].PreferRef {
+				isPreferRef = true
+			}
+			if extArgs[i].NoticeRef {
+				isNoticeRef = true
+			}
 		}
 
 		// Emit "Undefined variable" warning for by-value params that are
@@ -145,9 +156,28 @@ func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, o
 		if isRefParam {
 			_, isWritable := arg.(phpv.Writable)
 			if !isWritable && !val.IsRef() {
-				// Non-variable, non-reference result passed to a by-ref parameter
+				// Non-variable, non-reference result passed to a by-ref parameter.
+				// Determine the parameter name for error messages.
+				paramName := ""
+				if funcArgs != nil && i < len(funcArgs) {
+					paramName = string(funcArgs[i].VarName)
+				} else if extArgs != nil && i < len(extArgs) {
+					paramName = extArgs[i].ArgName
+				}
 				if isPreferRef {
-					// ZEND_SEND_PREFER_REF: silently accept non-ref values
+					// ZEND_SEND_PREFER_REF: silently accept any non-variable (e.g., extract()).
+					val = val.Dup()
+					val.Name = nil
+				} else if isNoticeRef {
+					// ZEND_SEND_BY_REF on ext function: Notice for function calls,
+					// silently accept other non-vars (literals, property access, etc.).
+					_, isFuncCall := arg.(phpv.FuncCallExpression)
+					_, isParens := arg.(phpv.ParenthesizedExpression)
+					if isFuncCall || isParens {
+						ctx.Tick(ctx, callLoc)
+						ctx.Notice("Only variables should be passed by reference",
+							logopt.NoFuncName(true))
+					}
 					val = val.Dup()
 					val.Name = nil
 				} else if _, isPreEval := arg.(phpv.PreEvaluatedArg); isPreEval {
@@ -156,31 +186,37 @@ func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, o
 					// "FuncName(): Argument #N must be passed by reference, value given" warning.
 					val = val.Dup()
 					val.Name = nil
-				} else if _, isFuncCall := arg.(phpv.FuncCallExpression); isFuncCall {
-					// Function/method call or parenthesized expression -> Notice, pass by value
-					ctx.Tick(ctx, callLoc)
-					ctx.Notice("Only variables should be passed by reference",
-						logopt.NoFuncName(true))
-					val = val.Dup()
-					alreadyWarned := phpv.ZString("\x00ref_warned")
-					val.Name = &alreadyWarned
-				} else if _, isParens := arg.(phpv.ParenthesizedExpression); isParens {
-					// Parenthesized expression -> Notice, pass by value
-					ctx.Tick(ctx, callLoc)
-					ctx.Notice("Only variables should be passed by reference",
-						logopt.NoFuncName(true))
-					val = val.Dup()
-					alreadyWarned := phpv.ZString("\x00ref_warned")
-					val.Name = &alreadyWarned
+				} else if !isCallerInternal {
+					// User-defined function: function calls and parenthesized
+					// expressions only emit a Notice; other non-variables are Fatal.
+					_, isFuncCall := arg.(phpv.FuncCallExpression)
+					_, isParens := arg.(phpv.ParenthesizedExpression)
+					if isFuncCall || isParens {
+						ctx.Tick(ctx, callLoc)
+						ctx.Notice("Only variables should be passed by reference",
+							logopt.NoFuncName(true))
+						val = val.Dup()
+						alreadyWarned := phpv.ZString("\x00ref_warned")
+						val.Name = &alreadyWarned
+					} else {
+						// Literal, assignment, or other non-variable expression -> Fatal Error
+						funcName := phpv.CallableDisplayName(f)
+						if funcName == "" {
+							funcName = "unknown"
+						}
+						return nil, phpobj.ThrowError(ctx, phpobj.Error,
+							fmt.Sprintf("%s(): Argument #%d ($%s) could not be passed by reference",
+								funcName, i+1, paramName))
+					}
 				} else {
-					// Literal, assignment, or other non-variable expression -> Fatal Error
+					// Internal (built-in) function: always Fatal error for non-variable by-ref args.
 					funcName := phpv.CallableDisplayName(f)
 					if funcName == "" {
 						funcName = "unknown"
 					}
 					return nil, phpobj.ThrowError(ctx, phpobj.Error,
 						fmt.Sprintf("%s(): Argument #%d ($%s) could not be passed by reference",
-							funcName, i+1, funcArgs[i].VarName))
+							funcName, i+1, paramName))
 				}
 			} else if isWritable && !val.IsRef() {
 				// For compound writable expressions (array elements, object
@@ -189,6 +225,13 @@ func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, o
 				// up after the call. For simple variables, the existing ref
 				// mechanism in callZValImpl handles everything.
 				if _, isCompound := arg.(phpv.CompoundWritable); isCompound {
+					// Check if container was a string offset — references to string offsets are forbidden.
+					if scc, ok := arg.(phpv.StringContainerChecker); ok && scc.LastContainerWasString() {
+						if wcs, ok2 := arg.(phpv.WriteContextSetter); ok2 {
+							wcs.SetWriteContext(false)
+						}
+						return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot create references to/from string offsets")
+					}
 					// Check if creating a reference would violate readonly constraints
 					if rc, ok := arg.(phpv.ReadonlyRefChecker); ok {
 						if err := rc.CheckReadonlyRef(ctx); err != nil {
@@ -199,17 +242,52 @@ func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, o
 						}
 					}
 					writable := arg.(phpv.Writable)
-					writable.WriteValue(ctx, val.Dup())
-					// Re-read to get the actual hash table entry ZVal.
-					val, _ = arg.Run(ctx)
-					// Make the hash table entry into a reference in-place.
-					val.MakeRef()
-					byRefCleanups = append(byRefCleanups, val)
+					// For ArrayAccess objects (overloaded containers), don't call
+					// WriteValue during by-ref binding — the element already exists
+					// and calling WriteValue would trigger offsetSet() needlessly.
+					// Also skip the re-read (which would call offsetGet again).
+					// Use val from the initial Run() and make it a reference in-place.
+					isOverloaded := false
+					if occ, ok := arg.(phpv.OverloadedContainerChecker); ok {
+						isOverloaded = occ.LastContainerWasOverloaded()
+					}
+					if isOverloaded {
+						// ArrayAccess: use the already-fetched value, make it a ref in-place.
+						val.MakeRef()
+						byRefCleanups = append(byRefCleanups, val)
+					} else {
+						writable.WriteValue(ctx, val.Dup())
+						// Re-read to get the actual hash table entry ZVal.
+						val, _ = arg.Run(ctx)
+						// Make the hash table entry into a reference in-place.
+						val.MakeRef()
+						byRefCleanups = append(byRefCleanups, val)
+					}
 				} else if sv, isSpread := arg.(*spreadZVal); isSpread && !sv.fromLiteral {
 					// Spread from a variable: make the hash table entry a reference
 					// so modifications propagate back to the source array.
 					val.MakeRef()
 					byRefCleanups = append(byRefCleanups, val)
+				} else if sv, isSpreadLit := arg.(*spreadZVal); isSpreadLit && sv.fromLiteral {
+					// Spread from a Traversable/literal - cannot pass by reference.
+					_ = sv
+					if isPreferRef {
+						// PREFER_REF (variadic by-ref) silently accepts non-refs from Traversable spreads.
+						val = val.Dup()
+						val.Name = nil
+					} else {
+						// Regular by-ref param: issue a warning and pass by value.
+						ctx.Tick(ctx, callLoc)
+						funcName := phpv.CallableDisplayName(f)
+						if funcName == "" {
+							funcName = "unknown"
+						}
+						ctx.Warn("Cannot pass by-reference argument %d of %s() by unpacking a Traversable, passing by-value instead",
+							i+1, funcName, logopt.NoFuncName(true))
+						val = val.Dup()
+						alreadyWarned := phpv.ZString("\x00ref_warned")
+						val.Name = &alreadyWarned
+					}
 				}
 			}
 			// Reset write context after all by-ref handling
@@ -511,14 +589,14 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 			varNameForArg := phpv.ZString("")
 			if i < len(func_args) && func_args[i].Ref {
 				isRef = true
-				isPreferRefArg = func_args[i].PreferRef
+				isPreferRefArg = func_args[i].PreferRef || func_args[i].NoticeRef
 				varNameForArg = func_args[i].VarName
 			} else if i >= len(func_args) && len(func_args) > 0 {
 				// Check if the last parameter is variadic and by-ref
 				last := func_args[len(func_args)-1]
 				if last.Variadic && last.Ref {
 					isRef = true
-					isPreferRefArg = last.PreferRef
+					isPreferRefArg = last.PreferRef || last.NoticeRef
 					varNameForArg = last.VarName
 				}
 			}
@@ -620,7 +698,8 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 								actualType = phpTypeNameDetailed(elem)
 							}
 							funcName := callCtx.GetFuncName()
-							msg := fmt.Sprintf("%s(): Argument #%d ($%s) must be of type %s, %s given", funcName, i+elemIdx+1, fa.VarName, fa.Hint.String(), actualType)
+							// PHP omits the parameter name for variadic arguments.
+							msg := fmt.Sprintf("%s(): Argument #%d must be of type %s, %s given", funcName, i+elemIdx+1, fa.Hint.String(), actualType)
 							var defLoc *phpv.Loc
 							if dl, ok := f.(interface{ Loc() *phpv.Loc }); ok {
 								defLoc = dl.Loc()
@@ -1061,7 +1140,9 @@ func expandSpreadArgs(ctx phpv.Context, args []phpv.Runnable) ([]phpv.Runnable, 
 				// From a literal: dup the values
 				seenStringKey := false
 				for k, v := range arr.Iterate(ctx) {
-					entry := phpv.Runnable(&spreadZVal{v: v.Dup(), fromLiteral: true})
+					dupV := v.Dup()
+					dupV.Name = nil // clear variable name to avoid polluting named args
+					entry := phpv.Runnable(&spreadZVal{v: dupV, fromLiteral: true})
 					// String keys become named arguments
 					if k != nil && k.GetType() == phpv.ZtString {
 						entry = &spreadNamedArg{name: phpv.ZString(k.String()), inner: entry}
@@ -1124,7 +1205,9 @@ func expandSpreadArgs(ctx phpv.Context, args []phpv.Runnable) ([]phpv.Runnable, 
 						if err != nil {
 							return nil, err
 						}
-						result = append(result, &spreadZVal{v: value.Dup(), fromLiteral: true})
+						dupVal := value.Dup()
+						dupVal.Name = nil // clear variable name to avoid polluting named args
+						result = append(result, &spreadZVal{v: dupVal, fromLiteral: true})
 						if _, err := obj.CallMethod(ctx, "next"); err != nil {
 							return nil, err
 						}

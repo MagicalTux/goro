@@ -117,6 +117,22 @@ type WriteContextSetter interface {
 	SetWriteContext(bool)
 }
 
+// OverloadedContainerChecker is implemented by array access expressions
+// that can report whether the last Run() accessed an ArrayAccess object
+// (overloaded container). Used to skip needless offsetSet() calls during
+// by-ref parameter binding.
+type OverloadedContainerChecker interface {
+	LastContainerWasOverloaded() bool
+}
+
+// StringContainerChecker is implemented by array access expressions that can
+// report whether the last Run() accessed a string container (string offset).
+// Used to detect "Cannot create references to/from string offsets" in
+// by-ref parameter passing.
+type StringContainerChecker interface {
+	LastContainerWasString() bool
+}
+
 // StaticVarEntry represents a single static variable entry with its name and current value.
 type StaticVarEntry struct {
 	Name ZString

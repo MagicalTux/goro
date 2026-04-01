@@ -327,7 +327,7 @@ func resolveAttributeNamedArgs(className phpv.ZString, args []*phpv.ZVal, namedA
 
 	// Extend args slice to accommodate all positions
 	for len(args) <= maxPos {
-		args = append(args, phpv.ZString("").ZVal())
+		args = append(args, phpv.ZNULL.ZVal())
 	}
 
 	// Place named args at their correct positions
@@ -379,7 +379,7 @@ func resolveAttributeNamedArgsWithNames(className phpv.ZString, args []*phpv.ZVa
 	// Extend args slice to accommodate all positions
 	names := make([]phpv.ZString, len(args))
 	for len(args) <= maxPos {
-		args = append(args, phpv.ZString("").ZVal())
+		args = append(args, phpv.ZNULL.ZVal())
 		names = append(names, "")
 	}
 

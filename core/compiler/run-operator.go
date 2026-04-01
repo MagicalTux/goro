@@ -589,6 +589,12 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	// happen before the "Only variables should be assigned by reference" notice.
 	if op.write && op.op == nil {
 		if _, isRef := r.b.(*runRef); isRef {
+			// Check for overloaded object property assignment by reference
+			if ov, ok := r.a.(*runObjectVar); ok {
+				if err := checkOverloadedRefAssign(ctx, ov); err != nil {
+					return nil, err
+				}
+			}
 			if rc, ok := r.a.(phpv.ReadonlyRefChecker); ok {
 				if err := rc.CheckReadonlyRef(ctx); err != nil {
 					return nil, err
@@ -803,12 +809,24 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	// modify in-place through the reference.
 	// Note: ObjectGet/static prop Read already return detached copies, so no dup needed.
 	if r.op == tokenizer.T_INC || r.op == tokenizer.T_DEC {
+		// PHP 8: cannot increment/decrement string offsets
+		var incDecTarget *runArrayAccess
 		if r.a != nil {
-			if ac, isAA := r.a.(*runArrayAccess); isAA && ac.lastContainerIsOverloaded && !ac.lastContainerOffsetGetReturnsRef {
-				a = a.Dup()
+			if ac, isAA := r.a.(*runArrayAccess); isAA {
+				incDecTarget = ac
 			}
 		} else if r.b != nil {
-			if ac, isAA := r.b.(*runArrayAccess); isAA && ac.lastContainerIsOverloaded && !ac.lastContainerOffsetGetReturnsRef {
+			if ac, isAA := r.b.(*runArrayAccess); isAA {
+				incDecTarget = ac
+			}
+		}
+		if incDecTarget != nil && incDecTarget.lastContainerWasString {
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot increment/decrement string offsets")
+		}
+		if incDecTarget != nil && incDecTarget.lastContainerIsOverloaded && !incDecTarget.lastContainerOffsetGetReturnsRef {
+			if r.a != nil {
+				a = a.Dup()
+			} else {
 				b = b.Dup()
 			}
 		}

@@ -2812,6 +2812,9 @@ func (c *ZClass) implementsWithGuard(class phpv.ZClass, seen map[phpv.ZClass]boo
 	return false
 }
 
+// IsCompoundDump marks ZClass as a compound statement (ends with "}").
+func (c *ZClass) IsCompoundDump() {}
+
 func (c *ZClass) Dump(w io.Writer) error {
 	_, err := fmt.Fprintf(w, "%sclass %s {", c.Attr, c.Name)
 	if err != nil {

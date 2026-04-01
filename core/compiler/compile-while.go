@@ -14,6 +14,8 @@ type runnableWhile struct {
 	l    *phpv.Loc
 }
 
+func (r *runnableWhile) IsCompoundDump() {}
+
 func (r *runnableWhile) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 	for {
 		t, err := r.cond.Run(ctx)

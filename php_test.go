@@ -230,7 +230,7 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 			compileErr = phpv.FilterExitError(compileErr)
 			if compileErr != nil {
 				// Handle parse errors and compile errors by outputting them
-				if phpErr, ok := compileErr.(*phpv.PhpError); ok && (phpErr.Code == phpv.E_PARSE || phpErr.Code == phpv.E_COMPILE_ERROR) {
+				if phpErr, ok := compileErr.(*phpv.PhpError); ok && (phpErr.Code == phpv.E_PARSE || phpErr.Code == phpv.E_COMPILE_ERROR || phpErr.Code == phpv.E_ERROR) {
 					g.LogError(phpErr)
 					g.Close()
 					return nil

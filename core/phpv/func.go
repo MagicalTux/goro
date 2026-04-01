@@ -3,7 +3,8 @@ package phpv
 type FuncArg struct {
 	VarName            ZString
 	Ref                bool
-	PreferRef          bool // ZEND_SEND_PREFER_REF: silently accepts non-ref values (no warning)
+	PreferRef          bool // ZEND_SEND_PREFER_REF: silently accepts non-ref values (no warning) — like extract()
+	NoticeRef          bool // ZEND_SEND_BY_REF: emits Notice for non-variable (not Fatal) — like array_pop(), sort()
 	Required           bool
 	Variadic           bool        // ...param (collects remaining args into array)
 	DefaultValue       Val
@@ -65,6 +66,14 @@ type ZClosure interface {
 // AttributeGetter is implemented by callables that have PHP attributes.
 type AttributeGetter interface {
 	GetAttributes() []*ZAttribute
+}
+
+// BuiltinCallable is a marker interface for Go-implemented (built-in) callables.
+// When a built-in function is used in write context (e.g., $ref =& strlen("foo")),
+// PHP gives a Fatal error rather than a Notice.
+type BuiltinCallable interface {
+	Callable
+	IsBuiltinCallable()
 }
 
 // ClosureInstanceKeyProvider is implemented by closure instances that support

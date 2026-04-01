@@ -82,69 +82,84 @@ func init() {
 			).ZVal()}},
 		},
 		Props: []*phpv.ZClassProp{
-			{VarName: "message", Default: phpv.ZString("").ZVal(), Modifiers: phpv.ZAttrPublic | phpv.ZAttrReadonly},
-			{VarName: "since", Default: phpv.ZString("").ZVal(), Modifiers: phpv.ZAttrPublic | phpv.ZAttrReadonly},
+			{VarName: "message", Default: phpv.ZNULL.ZVal(), Modifiers: phpv.ZAttrPublic | phpv.ZAttrReadonly},
+			{VarName: "since", Default: phpv.ZNULL.ZVal(), Modifiers: phpv.ZAttrPublic | phpv.ZAttrReadonly},
 		},
 		Methods: map[phpv.ZString]*phpv.ZClassMethod{
-			"__construct": {Name: "__construct", Method: NativeMethod(func(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				msg := phpv.ZString("")
-				since := phpv.ZString("")
-				if len(args) > 0 {
-					// Validate type: message must be ?string
-					arg := args[0]
-					switch arg.GetType() {
-					case phpv.ZtNull:
-						// null is OK (nullable)
-					case phpv.ZtString:
-						msg = arg.Value().(phpv.ZString)
-					case phpv.ZtInt, phpv.ZtFloat, phpv.ZtBool:
-						// Scalars are coerced to string in non-strict mode
-						msg = phpv.ZString(arg.String())
-					default:
-						// Array, object, etc. always error
-						typeName := arg.GetType().TypeName()
-						if arg.GetType() == phpv.ZtObject {
-							if obj, ok := arg.Value().(phpv.ZObject); ok {
-								typeName = string(obj.GetClass().GetName())
+			"__construct": {Name: "__construct", Method: &NativeMethodNamed{
+				Fn: NativeMethod(func(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+					msgVal := phpv.ZNULL.ZVal()
+					sinceVal := phpv.ZNULL.ZVal()
+					strictTypes := ctx.Global().GetStrictTypes()
+					if len(args) > 0 {
+						// Validate type: message must be ?string
+						arg := args[0]
+						switch arg.GetType() {
+						case phpv.ZtNull:
+							// null is OK (nullable), keep msgVal as ZNULL
+						case phpv.ZtString:
+							msgVal = arg
+						case phpv.ZtInt, phpv.ZtFloat, phpv.ZtBool:
+							if strictTypes {
+								return nil, ThrowError(ctx, TypeError,
+									fmt.Sprintf("Deprecated::__construct(): Argument #1 ($message) must be of type ?string, %s given", arg.GetType().TypeName()))
 							}
-						}
-						return nil, ThrowError(ctx, TypeError,
-							fmt.Sprintf("Deprecated::__construct(): Argument #1 ($message) must be of type ?string, %s given", typeName))
-					}
-				}
-				if len(args) > 1 {
-					// Validate type: since must be ?string
-					arg := args[1]
-					switch arg.GetType() {
-					case phpv.ZtNull:
-						// null is OK
-					case phpv.ZtString:
-						since = arg.Value().(phpv.ZString)
-					case phpv.ZtInt, phpv.ZtFloat, phpv.ZtBool:
-						since = phpv.ZString(arg.String())
-					default:
-						typeName := arg.GetType().TypeName()
-						if arg.GetType() == phpv.ZtObject {
-							if obj, ok := arg.Value().(phpv.ZObject); ok {
-								typeName = string(obj.GetClass().GetName())
+							// Scalars are coerced to string in non-strict mode
+							msgVal = phpv.ZString(arg.String()).ZVal()
+						default:
+							// Array, object, etc. always error
+							typeName := arg.GetType().TypeName()
+							if arg.GetType() == phpv.ZtObject {
+								if obj, ok := arg.Value().(phpv.ZObject); ok {
+									typeName = string(obj.GetClass().GetName())
+								}
 							}
+							return nil, ThrowError(ctx, TypeError,
+								fmt.Sprintf("Deprecated::__construct(): Argument #1 ($message) must be of type ?string, %s given", typeName))
 						}
-						return nil, ThrowError(ctx, TypeError,
-							fmt.Sprintf("Deprecated::__construct(): Argument #2 ($since) must be of type ?string, %s given", typeName))
 					}
-				}
-				// Check if properties are already initialized (readonly re-assignment)
-				if o.IsReadonlyPropertyInitialized("message") {
-					return nil, ThrowError(ctx, Error,
-						fmt.Sprintf("Cannot modify readonly property Deprecated::$message"))
-				}
-				o.HashTable().SetString("message", msg.ZVal())
-				o.HashTable().SetString("since", since.ZVal())
-				// Mark readonly properties as initialized
-				o.MarkReadonlyInitialized("message")
-				o.MarkReadonlyInitialized("since")
-				return nil, nil
-			})},
+					if len(args) > 1 {
+						// Validate type: since must be ?string
+						arg := args[1]
+						switch arg.GetType() {
+						case phpv.ZtNull:
+							// null is OK, keep sinceVal as ZNULL
+						case phpv.ZtString:
+							sinceVal = arg
+						case phpv.ZtInt, phpv.ZtFloat, phpv.ZtBool:
+							if strictTypes {
+								return nil, ThrowError(ctx, TypeError,
+									fmt.Sprintf("Deprecated::__construct(): Argument #2 ($since) must be of type ?string, %s given", arg.GetType().TypeName()))
+							}
+							sinceVal = phpv.ZString(arg.String()).ZVal()
+						default:
+							typeName := arg.GetType().TypeName()
+							if arg.GetType() == phpv.ZtObject {
+								if obj, ok := arg.Value().(phpv.ZObject); ok {
+									typeName = string(obj.GetClass().GetName())
+								}
+							}
+							return nil, ThrowError(ctx, TypeError,
+								fmt.Sprintf("Deprecated::__construct(): Argument #2 ($since) must be of type ?string, %s given", typeName))
+						}
+					}
+					// Check if properties are already initialized (readonly re-assignment)
+					if o.IsReadonlyPropertyInitialized("message") {
+						return nil, ThrowError(ctx, Error,
+							fmt.Sprintf("Cannot modify readonly property Deprecated::$message"))
+					}
+					o.HashTable().SetString("message", msgVal)
+					o.HashTable().SetString("since", sinceVal)
+					// Mark readonly properties as initialized
+					o.MarkReadonlyInitialized("message")
+					o.MarkReadonlyInitialized("since")
+					return nil, nil
+				}),
+				Args: []*phpv.FuncArg{
+					{VarName: "message", DefaultValue: phpv.ZNULL},
+					{VarName: "since", DefaultValue: phpv.ZNULL},
+				},
+			}},
 		},
 	}
 

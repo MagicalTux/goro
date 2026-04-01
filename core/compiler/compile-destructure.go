@@ -105,27 +105,35 @@ func (rd *runDestructure) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 }
 
 func (a *runDestructure) Dump(w io.Writer) error {
-	_, err := w.Write([]byte("list()"))
+	// PHP's AST dump uses short list syntax: [$a, $b] or [key => $a, ...]
+	// For list() syntax, PHP still dumps as [$a, ...] in PHP 8.
+	_, err := w.Write([]byte{'['})
 	if err != nil {
 		return err
 	}
-	for _, s := range a.e {
+	for i, s := range a.e {
+		if i > 0 {
+			if _, err = w.Write([]byte(", ")); err != nil {
+				return err
+			}
+		}
 		if s.k != nil {
 			err = s.k.Dump(w)
 			if err != nil {
 				return err
 			}
-			_, err = w.Write([]byte("=>"))
+			if _, err = w.Write([]byte(" => ")); err != nil {
+				return err
+			}
+		}
+		if s.v != nil {
+			err = s.v.Dump(w)
 			if err != nil {
 				return err
 			}
 		}
-		err = s.v.Dump(w)
-		if err != nil {
-			return err
-		}
 	}
-	_, err = w.Write([]byte{')'})
+	_, err = w.Write([]byte{']'})
 	return err
 }
 

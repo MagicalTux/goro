@@ -60,25 +60,47 @@ func (g *runGlobal) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 }
 
 func (g *runGlobal) Dump(w io.Writer) error {
-	_, err := w.Write([]byte("global "))
-	first := true
-	for _, gv := range g.vars {
-		if !first {
-			_, err = w.Write([]byte{','})
-			if err != nil {
+	// PHP's AST dump emits each variable as a separate "global $x" statement.
+	// We emit "global $a;\nglobal $b" so that DumpStatements appends the final ";\n".
+	for i, gv := range g.vars {
+		if i > 0 {
+			// Separate previous statement with ";\n" (indentWriter will add indentation)
+			if _, err := w.Write([]byte(";\nglobal ")); err != nil {
+				return err
+			}
+		} else {
+			if _, err := w.Write([]byte("global ")); err != nil {
 				return err
 			}
 		}
-		first = false
+		var err error
 		if gv.dynamic != nil {
-			_, err = w.Write([]byte("$$"))
-			if err != nil {
-				return err
+			// Variable-variable: global $$foo or global ${expr}
+			// Dump as "$" + inner expression (runVariableRef handles $$foo as ${$foo},
+			// but we want $$foo for simple cases, and ${expr} for complex ones).
+			if rv, ok := gv.dynamic.(*runVariableRef); ok {
+				// Check if inner is a simple variable ($$b → "$$b")
+				if innerVar, ok2 := rv.v.(*runVariable); ok2 {
+					_, err = fmt.Fprintf(w, "$$%s", innerVar.VarName())
+				} else {
+					// Complex inner expr: use $${expr} format... actually use ${expr}
+					if _, err = w.Write([]byte("$${")); err != nil {
+						return err
+					}
+					if err = rv.v.Dump(w); err != nil {
+						return err
+					}
+					_, err = w.Write([]byte{'}'})
+				}
+			} else {
+				// Fallback: use $ + dynamic dump
+				if _, err = w.Write([]byte{'$'}); err != nil {
+					return err
+				}
+				err = gv.dynamic.Dump(w)
 			}
-			err = gv.dynamic.Dump(w)
 		} else {
-			_, err = w.Write([]byte{'$'})
-			if err != nil {
+			if _, err = w.Write([]byte{'$'}); err != nil {
 				return err
 			}
 			_, err = w.Write([]byte(gv.static))

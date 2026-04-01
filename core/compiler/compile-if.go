@@ -17,6 +17,9 @@ type runnableIf struct {
 	shortTernary bool // true for short ternary (?:) where yes === cond
 }
 
+// IsCompoundDump marks if/else as a compound statement (ends with "}" not ";").
+func (r *runnableIf) IsCompoundDump() {}
+
 func (r *runnableIf) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 	t, err := r.cond.Run(ctx)
 	if err != nil {
@@ -37,12 +40,19 @@ func (r *runnableIf) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 }
 
 func (r *runnableIf) dumpTernary(w io.Writer) error {
-	_, err := w.Write([]byte("["))
+	err := r.cond.Dump(w)
 	if err != nil {
 		return err
 	}
-	err = r.cond.Dump(w)
-	if err != nil {
+	if r.shortTernary {
+		// Short ternary: $cond ?: $no
+		_, err = w.Write([]byte(" ?: "))
+		if err != nil {
+			return err
+		}
+		if r.no != nil {
+			err = r.no.Dump(w)
+		}
 		return err
 	}
 	_, err = w.Write([]byte(" ? "))
@@ -59,11 +69,7 @@ func (r *runnableIf) dumpTernary(w io.Writer) error {
 			return err
 		}
 		err = r.no.Dump(w)
-		if err != nil {
-			return err
-		}
 	}
-	_, err = w.Write([]byte{']'})
 	return err
 }
 func (r *runnableIf) Dump(w io.Writer) error {
@@ -82,9 +88,11 @@ func (r *runnableIf) Dump(w io.Writer) error {
 	if err != nil {
 		return err
 	}
-	err = r.yes.Dump(w)
-	if err != nil {
-		return err
+	if r.yes != nil {
+		err = r.yes.Dump(w)
+		if err != nil {
+			return err
+		}
 	}
 	if r.no != nil {
 		_, err = w.Write([]byte("} else {"))
@@ -96,7 +104,7 @@ func (r *runnableIf) Dump(w io.Writer) error {
 			return err
 		}
 	}
-	_, err = w.Write([]byte{';'})
+	_, err = w.Write([]byte{'}'})
 	return err
 }
 

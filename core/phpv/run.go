@@ -2,6 +2,12 @@ package phpv
 
 import "io"
 
+// CompoundDumper is implemented by compound statements (if, for, while, foreach, class, etc.)
+// that end with "}" in their Dump output and should not have ";" appended by DumpStatements.
+type CompoundDumper interface {
+	IsCompoundDump()
+}
+
 type Runnables []Runnable
 
 func (r Runnables) Run(ctx Context) (l *ZVal, err error) {
@@ -21,6 +27,26 @@ func (r Runnables) Run(ctx Context) (l *ZVal, err error) {
 
 func (r Runnables) Dump(w io.Writer) error {
 	return r.DumpWith(w, []byte{';'})
+}
+
+// DumpStatements dumps each statement followed by ";\n" for simple statements,
+// or just "\n" for compound statements (if, for, while, class, etc.) that end with "}".
+func (r Runnables) DumpStatements(w io.Writer) error {
+	for _, s := range r {
+		err := s.Dump(w)
+		if err != nil {
+			return err
+		}
+		if _, ok := s.(CompoundDumper); ok {
+			_, err = w.Write([]byte("\n"))
+		} else {
+			_, err = w.Write([]byte(";\n"))
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (r Runnables) DumpWith(w io.Writer, sep []byte) error {

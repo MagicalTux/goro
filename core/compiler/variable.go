@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"fmt"
 	"io"
 
 	"github.com/MagicalTux/goro/core/logopt"
@@ -427,6 +428,16 @@ func (r *runRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		defer func() { ov.writeContext = false }()
 	}
 
+	// For =& assignment to an overloaded object property (class has __get but
+	// property is not directly accessible), PHP throws "Cannot assign by reference
+	// to overloaded object". This check only applies to direct =& assignments,
+	// not to by-ref parameter passing (which passes by value instead).
+	if ov, ok := r.v.(*runObjectVar); ok {
+		if err := checkOverloadedRefAssign(ctx, ov); err != nil {
+			return nil, err
+		}
+	}
+
 	// Check if creating a reference would violate readonly constraints
 	// (e.g., $ref = &$enum->value)
 	if rc, ok := r.v.(phpv.ReadonlyRefChecker); ok {
@@ -454,6 +465,22 @@ func (r *runRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	if !r.isVariableLike() && !z.IsRef() {
 		// Restore location to the =& site (function calls update global loc)
 		ctx.Tick(ctx, r.l)
+		// Named function calls to built-in (ext) functions give a Fatal error.
+		// User-defined function calls give a Notice.
+		if fc, ok := r.v.(*runnableFunctionCall); ok {
+			// Look up the function to check if it's a built-in.
+			name := fc.name
+			if len(name) > 0 {
+				callable, _ := ctx.Global().GetFunction(ctx, name)
+				if _, isBuiltin := callable.(phpv.BuiltinCallable); isBuiltin {
+					return nil, &phpv.PhpError{
+						Err:  fmt.Errorf("Cannot use result of built-in function in write context"),
+						Code: phpv.E_ERROR,
+						Loc:  r.l,
+					}
+				}
+			}
+		}
 		if err := ctx.Notice("Only variables should be assigned by reference",
 			logopt.NoFuncName(true)); err != nil {
 			return nil, err
