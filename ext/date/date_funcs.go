@@ -1656,11 +1656,10 @@ func fncStrtotime(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZInt(t.Unix()).ZVal(), nil
 	}
 
-	// Fall back to the strtotime library for relative dates and complex formats
-	opts := []strtotime.Option{strtotime.InTZ(loc)}
-	if baseTs != nil {
-		opts = append(opts, strtotime.Rel(base))
-	}
+	// Fall back to the strtotime library for relative dates and complex formats.
+	// Always pass Rel(base) so strtotime uses the correct reference time
+	// in the configured timezone (date.timezone INI setting).
+	opts := []strtotime.Option{strtotime.InTZ(loc), strtotime.Rel(base)}
 
 	t, stErr := strtotime.StrToTime(string(datetime), opts...)
 	if stErr != nil {

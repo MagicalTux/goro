@@ -14,6 +14,8 @@ github.com/KarpelesLab/strtotime v0.0.4 h1:FP9oOBvrFMHPx0mRCsLi6TByHlmbdndueB4zQ
 github.com/KarpelesLab/strtotime v0.0.4/go.mod h1:egoQ8YSX0zVanpJAyWozDjVjlsnYRIDlRdDDiZZ131s=
 github.com/KarpelesLab/strtotime v0.1.0 h1:lCRdLCqOaJTN5IZk7Z/nwjp172dMNvUCOefFBQIgWAc=
 github.com/KarpelesLab/strtotime v0.1.0/go.mod h1:egoQ8YSX0zVanpJAyWozDjVjlsnYRIDlRdDDiZZ131s=
+github.com/KarpelesLab/strtotime v0.1.1 h1:nfd9AAZhXhxnxw7vlYkw9BfYumQMYMWlVTED2t62ttc=
+github.com/KarpelesLab/strtotime v0.1.1/go.mod h1:egoQ8YSX0zVanpJAyWozDjVjlsnYRIDlRdDDiZZ131s=
 github.com/andreyvit/diff v0.0.0-20170406064948-c7f18ee00883 h1:bvNMNQO63//z+xNgfBlViaCIJKLlCJ6/fmUseuG0wVQ=
 github.com/andreyvit/diff v0.0.0-20170406064948-c7f18ee00883/go.mod h1:rCTlJbsFo29Kk6CurOXKm700vrz8f0KW0JNfpkRJY/8=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
