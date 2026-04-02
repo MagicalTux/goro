@@ -163,7 +163,7 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		}
 		// Set a 10-second execution deadline per test to prevent
 		// infinite loops from blocking the entire suite.
-		g.SetDeadline(time.Now().Add(30 * time.Second))
+		g.SetDeadline(time.Now().Add(15 * time.Second))
 
 		g.SetOutput(p.output)
 
@@ -918,7 +918,7 @@ func TestPhp(t *testing.T) {
 	// Set RLIMIT_AS as a safety net. Go's virtual memory usage is much
 	// higher than actual RSS, so set this very high (64 GB) to avoid
 	// false triggers while still preventing 191 GB runaway allocations.
-	memLimit := uint64(16 * 1024 * 1024 * 1024) // 16 GB safety net per process
+	memLimit := uint64(8 * 1024 * 1024 * 1024) // 8 GB safety net per process
 	if v := os.Getenv("GORO_TEST_MEMLIMIT"); v != "" {
 		fmt.Sscanf(v, "%d", &memLimit)
 	}
