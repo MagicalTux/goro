@@ -133,7 +133,7 @@ func jsonErrorMessage(err JsonError) string {
 	case ErrUnsupportedType:
 		return "Type is not supported"
 	case ErrInvalidPropName:
-		return "The decoded property name is not valid for PHP"
+		return "The decoded property name is invalid"
 	case ErrUtf16:
 		return "Single unpaired UTF-16 surrogate in unicode escape"
 	case ErrNonBackedEnum:
@@ -180,7 +180,7 @@ func fncJsonLastErrorMsg(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error
 	case ErrUnsupportedType:
 		msg = "Type is not supported"
 	case ErrInvalidPropName:
-		msg = "The decoded property name is not valid for PHP"
+		msg = "The decoded property name is invalid"
 	case ErrUtf16:
 		msg = "Single unpaired UTF-16 surrogate in unicode escape"
 	case ErrNonBackedEnum:
@@ -336,6 +336,11 @@ func jsonDecodeObject(ctx phpv.Context, r *strings.Reader, depth int, opt JsonDe
 		k, err := jsonDecodeString(ctx, r, depth, opt)
 		if err != nil {
 			return nil, err
+		}
+
+		// PHP rejects property names containing null bytes
+		if kStr, ok := k.Value().(phpv.ZString); ok && strings.Contains(string(kStr), "\x00") {
+			return nil, ErrInvalidPropName
 		}
 
 		b, err = nextRune(r)
