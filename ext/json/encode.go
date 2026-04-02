@@ -38,6 +38,11 @@ func fncJsonEncode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	r, jsonErr := appendJsonEncodeState(ctx, r, v, o, d, st)
 
 	if jsonErr != nil {
+		// PHP exceptions from JsonSerializable::jsonSerialize() must propagate
+		// directly, not be wrapped as JSON errors.
+		if _, isPhpThrow := jsonErr.(interface{ ThrownFile() string }); isPhpThrow {
+			return nil, jsonErr
+		}
 		if je, ok := jsonErr.(JsonError); ok {
 			if o&JsonEncOpt(ThrowOnError) != 0 {
 				// JSON_THROW_ON_ERROR: throw exception without modifying global error state
