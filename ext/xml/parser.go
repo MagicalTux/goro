@@ -337,9 +337,9 @@ func fncXMLGetCurrentLineNumber(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal
 	return phpv.ZInt(res.errorLine).ZVal(), nil
 }
 
-// xml_set_object - set object to use for handlers
+// xml_set_object - set object to use for handlers (deprecated since PHP 8.4)
 func fncXMLSetObject(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	// Simplified: just return true
+	ctx.Deprecated("Function xml_set_object() is deprecated since 8.4, provide a proper method callable to xml_set_*_handler() functions")
 	return phpv.ZTrue.ZVal(), nil
 }
 
