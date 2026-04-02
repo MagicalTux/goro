@@ -2156,10 +2156,10 @@ func init() {
 						if ds != nil && !ds.IsNull() {
 							dateStr := string(ds.AsString(ctx))
 							// Validate the date string by attempting to parse it
-							_, stErr := strtotime.StrToTime(dateStr)
+							_, stErr := strtotime.StrToTime(dateStr, strtotime.InTZ(getTimezone(ctx)), strtotime.Rel(time.Now().In(getTimezone(ctx))))
 							if stErr != nil {
 								// Check if it's a valid format
-								_, ok := strToTime(dateStr, time.Now())
+								_, ok := strToTime(dateStr, time.Now().In(getTimezone(ctx)))
 								if !ok {
 									// Find position and character of the error
 									pos := 0
@@ -3767,10 +3767,10 @@ func createDateIntervalFromString(ctx phpv.Context, dateStr string) (*phpv.ZVal,
 
 	if !parsed && len(trimmed) > 0 {
 		// Try to use strtotime to parse relative expressions
-		_, stErr := strtotime.StrToTime(dateStr)
+		_, stErr := strtotime.StrToTime(dateStr, strtotime.InTZ(getTimezone(ctx)), strtotime.Rel(time.Now().In(getTimezone(ctx))))
 		if stErr != nil {
 			// Fall back to custom parser for PHP-specific patterns like "first day of next month"
-			now := time.Now()
+			now := time.Now().In(getTimezone(ctx))
 			_, customOk := strToTime(trimmed, now)
 			if !customOk {
 				return nil, phpobj.ThrowError(ctx, DateMalformedIntervalStringException,
