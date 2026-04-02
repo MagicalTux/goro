@@ -252,6 +252,68 @@ func doDebugZvalDump(ctx phpv.Context, z *phpv.ZVal, linePfx string, topLevel bo
 	case phpv.ZtObject:
 		v := z.Value()
 		if obj, ok := v.(*phpobj.ZObject); ok {
+			// Lazy object: special debug_zval_dump format (does NOT trigger initialization)
+			if obj.LazyState == phpobj.LazyGhostUninitialized {
+				count := obj.Count(ctx)
+				fmt.Fprintf(ctx, "%slazy ghost object(%s)#%d (%d) refcount(%d){\n", linePfx, obj.Class.GetName(), obj.ID, count, 2)
+				localPfx := linePfx + "  "
+				for prop := range obj.IterProps(ctx) {
+					suffix := ""
+					switch {
+					case prop.Modifiers.IsPrivate():
+						className := string(obj.GetDeclClassName(prop))
+						suffix = `:"` + className + `":private`
+					case prop.Modifiers.IsProtected():
+						suffix = ":protected"
+					}
+					fmt.Fprintf(ctx, "%s[\"%s\"%s]=>\n", localPfx, prop.VarName, suffix)
+					val, hasVal, _ := obj.GetPropValueOrHook(ctx, prop)
+					if hasVal {
+						doDebugZvalDump(ctx, val, localPfx, false)
+					} else if prop.TypeHint != nil {
+						fmt.Fprintf(ctx, "%suninitialized(%s)\n", localPfx, prop.TypeHint.String())
+					} else {
+						pv := obj.GetPropValue(prop)
+						doDebugZvalDump(ctx, pv, localPfx, false)
+					}
+				}
+				fmt.Fprintf(ctx, "%s}\n", linePfx)
+				return
+			} else if obj.LazyState == phpobj.LazyProxyUninitialized {
+				count := obj.Count(ctx)
+				fmt.Fprintf(ctx, "%slazy proxy object(%s)#%d (%d) refcount(%d){\n", linePfx, obj.Class.GetName(), obj.ID, count, 2)
+				localPfx := linePfx + "  "
+				for prop := range obj.IterProps(ctx) {
+					suffix := ""
+					switch {
+					case prop.Modifiers.IsPrivate():
+						className := string(obj.GetDeclClassName(prop))
+						suffix = `:"` + className + `":private`
+					case prop.Modifiers.IsProtected():
+						suffix = ":protected"
+					}
+					fmt.Fprintf(ctx, "%s[\"%s\"%s]=>\n", localPfx, prop.VarName, suffix)
+					val, hasVal, _ := obj.GetPropValueOrHook(ctx, prop)
+					if hasVal {
+						doDebugZvalDump(ctx, val, localPfx, false)
+					} else if prop.TypeHint != nil {
+						fmt.Fprintf(ctx, "%suninitialized(%s)\n", localPfx, prop.TypeHint.String())
+					} else {
+						pv := obj.GetPropValue(prop)
+						doDebugZvalDump(ctx, pv, localPfx, false)
+					}
+				}
+				fmt.Fprintf(ctx, "%s}\n", linePfx)
+				return
+			} else if obj.LazyState == phpobj.LazyProxyInitialized && obj.LazyInstance != nil {
+				fmt.Fprintf(ctx, "%slazy proxy object(%s)#%d (1) refcount(%d){\n", linePfx, obj.Class.GetName(), obj.ID, 2)
+				localPfx := linePfx + "  "
+				fmt.Fprintf(ctx, "%s[\"instance\"]=>\n", localPfx)
+				doDebugZvalDump(ctx, obj.LazyInstance.ZVal(), localPfx, false)
+				fmt.Fprintf(ctx, "%s}\n", linePfx)
+				return
+			}
+
 			count := obj.Count(ctx)
 			// refcount(2) is typical: 1 for the variable + 1 for the function argument
 			fmt.Fprintf(ctx, "%sobject(%s)#%d (%d) refcount(%d){\n", linePfx, obj.Class.GetName(), obj.ID, count, 2)

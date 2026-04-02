@@ -70,13 +70,13 @@ func closureName(opaque interface{}) string {
 
 // isCallableSyntax checks if the value has a valid callable syntax and returns
 // whether it is syntactically valid and the name representation.
+// When syntax_only=true, any string (including empty) is considered syntactically valid.
 func isCallableSyntax(ctx phpv.Context, value *phpv.ZVal) (bool, string) {
 	switch value.GetType() {
 	case phpv.ZtString:
 		s := string(value.AsString(ctx))
-		if s == "" {
-			return false, ""
-		}
+		// Any string is syntactically valid as a callable (even empty string).
+		// PHP's is_callable with syntax_only=true accepts any string.
 		return true, s
 	case phpv.ZtArray:
 		arr := value.Array()

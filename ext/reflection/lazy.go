@@ -620,6 +620,11 @@ func reflectionPropertyIsLazy(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.
 		return phpv.ZBool(false).ZVal(), nil
 	}
 
+	// Dynamic properties (not declared in the class) are never lazy
+	if propData.class == nil || !isDeclaredProp(propData.class, prop.VarName) {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+
 	obj, ok := args[0].Value().(*phpobj.ZObject)
 	if !ok {
 		return phpv.ZBool(false).ZVal(), nil

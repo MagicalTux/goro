@@ -217,6 +217,14 @@ func compilePropertyHooks(prop *phpv.ZClassProp, class *phpobj.ZClass, c compile
 					prop.IsBacked = true
 				}
 			}
+			// &get on a backed property that also has a set hook is forbidden
+			if prop.GetIsByRef && prop.IsBacked && prop.SetHook != nil {
+				return &phpv.PhpError{
+					Err:  fmt.Errorf("Get hook of backed property %s::%s with set hook may not return by reference", class.Name, prop.VarName),
+					Code: phpv.E_COMPILE_ERROR,
+					Loc:  i.Loc(),
+				}
+			}
 			return nil
 		}
 
@@ -324,8 +332,10 @@ func compilePropertyHooks(prop *phpv.ZClassProp, class *phpobj.ZClass, c compile
 			}
 		}
 
-		// Skip optional '&' for by-ref hooks
+		// Check for optional '&' for by-ref get hooks
+		hookIsByRef := false
 		if i.IsSingle('&') {
+			hookIsByRef = true
 			i, err = c.NextItem()
 			if err != nil {
 				return err
@@ -348,6 +358,7 @@ func compilePropertyHooks(prop *phpv.ZClassProp, class *phpobj.ZClass, c compile
 			}
 			hasGet = true
 			prop.HasGetDeclared = true
+			prop.GetIsByRef = hookIsByRef
 			if hookIsFinal {
 				prop.GetIsFinal = true
 			}

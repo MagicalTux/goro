@@ -38,6 +38,7 @@ type ZClassProp struct {
 	HasGetDeclared   bool     // true if get hook was declared (even abstract)
 	HasSetDeclared   bool     // true if set hook was declared (even abstract)
 	SetParamHasType  bool     // true if set hook parameter has explicit type hint
+	GetIsByRef      bool     // true if get hook is declared with &get (returns by reference)
 	GetHookLoc      *Loc     // source location of get hook declaration
 	SetHookLoc      *Loc     // source location of set hook declaration
 	GetHookLocEnd   *Loc     // end source location of get hook

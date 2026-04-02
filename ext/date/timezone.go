@@ -3,6 +3,7 @@ package date
 import (
 	"fmt"
 	"math"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -893,8 +894,43 @@ func fncGettimeofday(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return result.ZVal(), nil
 }
 
+// tzdataVersion caches the system timezone database version string.
+var tzdataVersion string
+
+func getTzdataVersion() string {
+	if tzdataVersion != "" {
+		return tzdataVersion
+	}
+	// Try to read version from system tzdata.zi file
+	data, err := os.ReadFile("/usr/share/zoneinfo/tzdata.zi")
+	if err == nil {
+		// File starts with "# version 2025b\n"
+		lines := strings.Split(string(data), "\n")
+		for _, line := range lines {
+			if strings.HasPrefix(line, "# version ") {
+				ver := strings.TrimPrefix(line, "# version ")
+				ver = strings.TrimSpace(ver)
+				// Convert e.g. "2025b" -> "2025.2" (a=1, b=2, c=3, ...)
+				if len(ver) >= 5 {
+					year := ver[:4]
+					letter := ver[4:]
+					if len(letter) > 0 && letter[0] >= 'a' && letter[0] <= 'z' {
+						num := int(letter[0]-'a') + 1
+						tzdataVersion = year + "." + strconv.Itoa(num)
+						return tzdataVersion
+					}
+				}
+				tzdataVersion = ver
+				return tzdataVersion
+			}
+		}
+	}
+	tzdataVersion = "0.system"
+	return tzdataVersion
+}
+
 func fncTimezoneVersionGet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	return phpv.ZString("0.system").ZVal(), nil
+	return phpv.ZString(getTzdataVersion()).ZVal(), nil
 }
 
 func fncTimezoneLocationGet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {

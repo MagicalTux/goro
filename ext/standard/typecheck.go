@@ -80,6 +80,14 @@ func fncIsNumeric(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	switch z.Value().(type) {
 	case phpv.ZInt, phpv.ZFloat:
 		return phpv.ZBool(true).ZVal(), nil
+	case phpv.ZBool, phpv.ZNull:
+		// Booleans and null are not considered numeric by is_numeric()
+		return phpv.ZFalse.ZVal(), nil
+	}
+
+	// Only check strings for numeric-ness; arrays and objects return false
+	if z.GetType() != phpv.ZtString {
+		return phpv.ZFalse.ZVal(), nil
 	}
 
 	s := z.AsString(ctx)
@@ -108,7 +116,17 @@ func fncIsResource(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if err != nil {
 		return nil, err
 	}
-	return phpv.ZBool(z.GetType() == phpv.ZtResource).ZVal(), nil
+	if z.GetType() != phpv.ZtResource {
+		return phpv.ZFalse.ZVal(), nil
+	}
+	// Closed resources (ResourceType == ResourceUnknown) are not "open" resources.
+	// PHP's is_resource() returns false for closed resources.
+	if res, ok := z.Value().(phpv.Resource); ok {
+		if res.GetResourceType() == phpv.ResourceUnknown {
+			return phpv.ZFalse.ZVal(), nil
+		}
+	}
+	return phpv.ZTrue.ZVal(), nil
 }
 
 // > func bool is_scalar ( mixed $var )

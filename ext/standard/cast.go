@@ -49,7 +49,7 @@ func fncIntval(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	// If no base specified (or base=10) and value is not a string, use normal int conversion
-	if base == nil && v.GetType() != phpv.ZtString {
+	if v.GetType() != phpv.ZtString && (base == nil || b == 10) {
 		return v.As(ctx, phpv.ZtInt)
 	}
 

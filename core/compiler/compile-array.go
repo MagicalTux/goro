@@ -984,7 +984,12 @@ func (ac *runArrayAccess) writeValueToString(ctx phpv.Context, value *phpv.ZVal)
 
 	// PHP: when assigning to a string offset, only the first byte of the
 	// value is used. If the value is a multi-character string, warn.
-	valStr := value.AsString(ctx)
+	// Use As() instead of AsString() so that __toString() exceptions propagate.
+	valZVal, err := value.As(ctx, phpv.ZtString)
+	if err != nil {
+		return err
+	}
+	valStr := valZVal.Value().(phpv.ZString)
 	if len(valStr) == 0 {
 		return phpobj.ThrowError(ctx, phpobj.Error, "Cannot assign an empty string to a string offset")
 	} else if len(valStr) > 1 {

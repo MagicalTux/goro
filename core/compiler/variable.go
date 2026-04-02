@@ -259,7 +259,11 @@ func (r *runVariableRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		if err != nil {
 			return nil, err
 		}
-		name = phpv.ZString(v.String())
+		sv, err := v.As(ctx, phpv.ZtString)
+		if err != nil {
+			return nil, err
+		}
+		name = sv.Value().(phpv.ZString)
 
 		// Store the pre-RHS key for compound write LHS ($$n .= rhs) so that
 		// run-operator.go can re-read the current value of $$n after the RHS.
@@ -344,8 +348,12 @@ func (r *runVariableRef) PrepareWrite(ctx phpv.Context) error {
 		if err != nil {
 			return err
 		}
+		sv, err := v.As(ctx, phpv.ZtString)
+		if err != nil {
+			return err
+		}
 		r.prepared = true
-		r.cachedKey = phpv.ZString(v.String())
+		r.cachedKey = sv.Value().(phpv.ZString)
 	}
 	return nil
 }
@@ -371,6 +379,10 @@ func (r *runVariableRef) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 		err = ctx.OffsetSet(ctx, key, value)
 	}
 	if err != nil {
+		// Don't wrap PhpThrow (exceptions) — they must propagate as-is so try/catch can handle them.
+		if _, ok := err.(*phperr.PhpThrow); ok {
+			return err
+		}
 		return r.l.Error(ctx, err)
 	}
 	return nil

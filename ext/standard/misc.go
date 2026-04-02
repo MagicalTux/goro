@@ -10,6 +10,7 @@ import (
 	"github.com/MagicalTux/goro/core"
 	"github.com/MagicalTux/goro/core/compiler"
 	"github.com/MagicalTux/goro/core/logopt"
+	"github.com/MagicalTux/goro/core/phpctx"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
@@ -315,12 +316,15 @@ func doPhpCredits(ctx phpv.Context, flags int) {
 func registerShutdownFunction(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	// Resolve the callable in the caller's scope so that "self" and
 	// visibility checks are evaluated from the correct context.
+	// Use WithFuncName to ensure error messages reference "register_shutdown_function"
+	// rather than "call_user_func" (the default when no function name is in scope).
 	callerCtx := ctx.Parent(1)
 	if callerCtx == nil {
 		callerCtx = ctx
 	}
+	callableCtx := phpctx.WithFuncName(callerCtx, "register_shutdown_function")
 	var callback phpv.Callable
-	_, err := core.Expand(callerCtx, args, &callback)
+	_, err := core.Expand(callableCtx, args, &callback)
 	if err != nil {
 		return phpv.ZFalse.ZVal(), err
 	}

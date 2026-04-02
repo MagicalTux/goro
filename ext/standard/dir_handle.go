@@ -73,8 +73,16 @@ func (d *dirHandle) AsVal(ctx phpv.Context, t phpv.ZType) (phpv.Val, error) {
 		return phpv.ZTrue, nil
 	case phpv.ZtInt:
 		return phpv.ZInt(d.id), nil
+	case phpv.ZtFloat:
+		return phpv.ZFloat(d.id), nil
 	case phpv.ZtString:
 		return phpv.ZString(d.String()), nil
+	case phpv.ZtNull:
+		return phpv.ZNull{}, nil
+	case phpv.ZtArray:
+		arr := phpv.NewZArray()
+		arr.OffsetSet(ctx, nil, d.ZVal())
+		return arr, nil
 	}
 	return nil, fmt.Errorf("cannot convert resource to %s", t)
 }

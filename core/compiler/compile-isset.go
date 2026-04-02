@@ -347,7 +347,11 @@ func checkExistence(ctx phpv.Context, v phpv.Runnable, subExpr bool) (bool, erro
 		if err != nil {
 			return false, err
 		}
-		name := phpv.ZString(v.String())
+		sv, err := v.As(ctx, phpv.ZtString)
+		if err != nil {
+			return false, err
+		}
+		name := sv.Value().(phpv.ZString)
 		exists, err := ctx.OffsetExists(ctx, name.ZVal())
 		if !exists || err != nil {
 			return false, err
@@ -629,7 +633,11 @@ func checkExistenceAndGet(ctx phpv.Context, v phpv.Runnable, subExpr bool) (bool
 		if err != nil {
 			return false, nil, err
 		}
-		name := phpv.ZString(vv.String())
+		svv, err := vv.As(ctx, phpv.ZtString)
+		if err != nil {
+			return false, nil, err
+		}
+		name := svv.Value().(phpv.ZString)
 		exists, err := ctx.OffsetExists(ctx, name.ZVal())
 		if !exists || err != nil {
 			return false, nil, err

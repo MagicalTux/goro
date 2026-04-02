@@ -189,7 +189,20 @@ func doVarExport(ctx phpv.Context, w io.Writer, z *phpv.ZVal, linePfx string, re
 			for prop := range obj.IterProps(ctx) {
 				fmt.Fprintf(w, "%s %s => ", localPfx, varExportString(prop.VarName.String()))
 
-				propVal := obj.GetPropValue(prop)
+				// For hooked properties, call the get hook (var_export shows hook result).
+				// For virtual properties (no backing store) and backed properties with hooks,
+				// the hook result is used (similar to get_object_vars behavior).
+				var propVal *phpv.ZVal
+				if prop.HasHooks && prop.GetHook != nil {
+					var hookErr error
+					propVal, hookErr = obj.RunGetHookForExport(ctx, prop.VarName, prop)
+					if hookErr != nil {
+						return hookErr
+					}
+				}
+				if propVal == nil {
+					propVal = obj.GetPropValue(prop)
+				}
 				if propVal == nil {
 					propVal = phpv.ZNULL.ZVal()
 				}

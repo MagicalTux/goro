@@ -401,8 +401,9 @@ func ExpandAt(ctx phpv.Context, args []*phpv.ZVal, i int, out interface{}) error
 		name := args[i].GetName()
 		outZVal := dest.ZVal()
 		outZVal.Name = &name
-		if name != "GLOBALS" {
+		if name != "GLOBALS" && name != "" {
 			// check if varname is not GLOBALS to avoid infinite loop
+			// and skip empty-string name (non-variable argument, e.g. literal)
 			ctx.Parent(1).OffsetSet(ctx, outZVal.Name, outZVal)
 		}
 	}

@@ -2534,6 +2534,12 @@ func fncArrayExtract(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 		varName := string(k.AsString(ctx))
 
+		// Empty string key is never extractable, regardless of mode
+		if varName == "" {
+			it.Next(ctx)
+			continue
+		}
+
 		invalidVarName := k.GetType() == phpv.ZtInt
 		if !invalidVarName && !extractIsValidVarName(varName) {
 			invalidVarName = true

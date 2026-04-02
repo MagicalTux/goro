@@ -1426,20 +1426,38 @@ func (o *ZObject) HasProp(ctx phpv.Context, key phpv.Val) (bool, error) {
 
 	keyStr := key.(phpv.ZString)
 
-	// Lazy object: trigger initialization on isset (unless skipped)
+	// Lazy object: trigger initialization on isset (unless skipped),
+	// but NOT for virtual properties (get hook, no backing store) or undeclared
+	// properties when __isset exists.
 	if o.IsLazy() && !o.IsPropertySkippedForLazy(keyStr) {
-		if err := o.TriggerLazyInitForProp(ctx, keyStr); err != nil {
-			return false, err
-		}
-		if o.LazyState == LazyProxyInitialized && o.LazyInstance != nil {
-			target := o.ResolveProxy()
-			if target.IsLazy() {
-				if err := target.TriggerLazyInit(ctx); err != nil {
-					return false, err
+		needsInit := true
+		// Virtual property (get hook, no backing): call hook directly without init
+		if prop := o.findPropWithHook(keyStr); prop != nil && prop.GetHook != nil && !prop.IsBacked {
+			needsInit = false
+		} else if prop == nil {
+			// Undeclared property with __isset: don't trigger init
+			if declProp := o.findDeclaredProp(keyStr); declProp == nil {
+				if zc, ok := o.Class.(*ZClass); ok {
+					if _, hasIsset := zc.Methods["__isset"]; hasIsset {
+						needsInit = false
+					}
 				}
-				target = target.ResolveProxy()
 			}
-			return target.HasProp(ctx, keyStr)
+		}
+		if needsInit {
+			if err := o.TriggerLazyInitForProp(ctx, keyStr); err != nil {
+				return false, err
+			}
+			if o.LazyState == LazyProxyInitialized && o.LazyInstance != nil {
+				target := o.ResolveProxy()
+				if target.IsLazy() {
+					if err := target.TriggerLazyInit(ctx); err != nil {
+						return false, err
+					}
+					target = target.ResolveProxy()
+				}
+				return target.HasProp(ctx, keyStr)
+			}
 		}
 	} else if o.LazyState == LazyProxyInitialized && o.LazyInstance != nil && !o.IsPropertySkippedForLazy(keyStr) {
 		target := o.ResolveProxy()
@@ -1864,6 +1882,16 @@ func (o *ZObject) findPropWithHook(keyStr phpv.ZString) *phpv.ZClassProp {
 
 // runGetHook executes a property get hook in the context of this object.
 // It uses CallZVal with a HookCallable to create a proper FuncContext with $this bound.
+// RunGetHookForExport calls the get hook for a property, suitable for use in
+// var_export, get_object_vars, and json_encode (which all show hook results).
+// Returns nil if the property has no get hook.
+func (o *ZObject) RunGetHookForExport(ctx phpv.Context, keyStr phpv.ZString, prop *phpv.ZClassProp) (*phpv.ZVal, error) {
+	if prop == nil || prop.GetHook == nil {
+		return nil, nil
+	}
+	return o.runGetHook(ctx, keyStr, prop)
+}
+
 func (o *ZObject) runGetHook(ctx phpv.Context, keyStr phpv.ZString, prop *phpv.ZClassProp) (*phpv.ZVal, error) {
 	hook := prop.GetHook
 	// Set recursion guard so $this->propName inside the hook accesses the backing value
@@ -2120,21 +2148,46 @@ func (o *ZObject) ObjectGet(ctx phpv.Context, key phpv.Val) (*phpv.ZVal, error) 
 
 	keyStr := key.(phpv.ZString)
 
-	// Lazy object: trigger initialization on property access (unless skipped)
+	// Lazy object: trigger initialization on property access (unless skipped),
+	// but NOT for virtual properties (get hook only, no backing store) or for
+	// undeclared properties when __get exists and we're NOT already inside __get
+	// for this property (those don't observe lazy state directly).
 	if o.IsLazy() && !o.IsPropertySkippedForLazy(keyStr) {
-		if err := o.TriggerLazyInitForProp(ctx, keyStr); err != nil {
-			return nil, err
-		}
-		// After proxy init, delegate to the real instance
-		if o.LazyState == LazyProxyInitialized && o.LazyInstance != nil {
-			target := o.ResolveProxy()
-			if target.IsLazy() {
-				if err := target.TriggerLazyInit(ctx); err != nil {
-					return nil, err
+		needsInit := true
+		// Check if the property is virtual (has get hook, no backing store) - no init needed
+		if prop := o.findPropWithHook(keyStr); prop != nil && prop.GetHook != nil && !prop.IsBacked {
+			needsInit = false
+		} else if prop == nil {
+			// Check if the property is not declared at all and __get exists.
+			// Only skip init for the FIRST call (not when inside __get via getGuard).
+			// If getGuard is active for this property, we're inside __get and normal
+			// init rules apply (the __get body may access $this properties).
+			alreadyInGet := o.getGuard != nil && o.getGuard[keyStr]
+			if !alreadyInGet {
+				if declProp := o.findDeclaredProp(keyStr); declProp == nil {
+					if zc, ok := o.Class.(*ZClass); ok {
+						if _, hasGet := zc.Methods["__get"]; hasGet {
+							needsInit = false
+						}
+					}
 				}
-				target = target.ResolveProxy()
 			}
-			return target.ObjectGet(ctx, keyStr)
+		}
+		if needsInit {
+			if err := o.TriggerLazyInitForProp(ctx, keyStr); err != nil {
+				return nil, err
+			}
+			// After proxy init, delegate to the real instance
+			if o.LazyState == LazyProxyInitialized && o.LazyInstance != nil {
+				target := o.ResolveProxy()
+				if target.IsLazy() {
+					if err := target.TriggerLazyInit(ctx); err != nil {
+						return nil, err
+					}
+					target = target.ResolveProxy()
+				}
+				return target.ObjectGet(ctx, keyStr)
+			}
 		}
 	} else if o.LazyState == LazyProxyInitialized && o.LazyInstance != nil && !o.IsPropertySkippedForLazy(keyStr) {
 		target := o.ResolveProxy()
@@ -2394,21 +2447,45 @@ func (o *ZObject) ObjectSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) er
 
 	keyStr := key.(phpv.ZString)
 
-	// Lazy object: trigger initialization on property write (unless skipped)
+	// Lazy object: trigger initialization on property write (unless skipped),
+	// but NOT for virtual properties or undeclared properties when __set/__unset exists.
 	if o.IsLazy() && !o.IsPropertySkippedForLazy(keyStr) {
-		if err := o.TriggerLazyInitForProp(ctx, keyStr); err != nil {
-			return err
-		}
-		// After proxy init, delegate to the real instance
-		if o.LazyState == LazyProxyInitialized && o.LazyInstance != nil {
-			target := o.ResolveProxy()
-			if target.IsLazy() {
-				if err := target.TriggerLazyInit(ctx); err != nil {
-					return err
+		needsInit := true
+		// Virtual property with set hook: don't trigger init (hook handles it)
+		if prop := o.findPropWithHook(keyStr); prop != nil && prop.SetHook != nil && !prop.IsBacked {
+			needsInit = false
+		} else if prop == nil {
+			// Undeclared property: check for __set (write) or __unset (unset/nil value)
+			if declProp := o.findDeclaredProp(keyStr); declProp == nil {
+				if zc, ok := o.Class.(*ZClass); ok {
+					if value == nil {
+						// unset() call
+						if _, hasUnset := zc.Methods["__unset"]; hasUnset {
+							needsInit = false
+						}
+					} else {
+						if _, hasSet := zc.Methods["__set"]; hasSet {
+							needsInit = false
+						}
+					}
 				}
-				target = target.ResolveProxy()
 			}
-			return target.ObjectSet(ctx, keyStr, value)
+		}
+		if needsInit {
+			if err := o.TriggerLazyInitForProp(ctx, keyStr); err != nil {
+				return err
+			}
+			// After proxy init, delegate to the real instance
+			if o.LazyState == LazyProxyInitialized && o.LazyInstance != nil {
+				target := o.ResolveProxy()
+				if target.IsLazy() {
+					if err := target.TriggerLazyInit(ctx); err != nil {
+						return err
+					}
+					target = target.ResolveProxy()
+				}
+				return target.ObjectSet(ctx, keyStr, value)
+			}
 		}
 	} else if o.LazyState == LazyProxyInitialized && o.LazyInstance != nil && !o.IsPropertySkippedForLazy(keyStr) {
 		target := o.ResolveProxy()
@@ -3018,8 +3095,11 @@ func (it *hookedObjectIterator) Current(ctx phpv.Context) (*phpv.ZVal, error) {
 func (it *hookedObjectIterator) getValue(ctx phpv.Context, e hookedObjEntry) (*phpv.ZVal, error) {
 	if e.prop != nil {
 		// Declared property - check for get hook
+		// For get_object_vars / var_export / json_encode, always call the get hook
+		// (including for backed properties). var_dump uses IterProps+GetPropValueOrHook
+		// which returns raw backing values for backed properties.
 		if e.prop.HasHooks && e.prop.GetHook != nil {
-			val, _, err := it.obj.GetPropValueOrHook(ctx, e.prop)
+			val, err := it.obj.runGetHook(ctx, e.prop.VarName, e.prop)
 			if err != nil {
 				return nil, err
 			}

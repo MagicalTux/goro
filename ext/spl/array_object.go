@@ -433,7 +433,11 @@ func initArrayObject() {
 
 				// Validate $iteratorClass BEFORE processing input (so no deprecation leaks on error)
 				if len(args) > 2 && args[2] != nil {
-					className := args[2].AsString(ctx)
+					classNameZVal, err := args[2].As(ctx, phpv.ZtString)
+					if err != nil {
+						return nil, err
+					}
+					className := classNameZVal.Value().(phpv.ZString)
 					if err := validateIteratorClass(ctx, className, "ArrayObject::__construct()"); err != nil {
 						return nil, err
 					}
