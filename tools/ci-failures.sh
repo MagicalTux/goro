@@ -37,9 +37,11 @@ fi
 echo "$LOG" | strings | grep -oP '\d+ passed \(\d+\.\d+% success\).*' | tail -1
 echo ""
 
-# Extract failing test names
-echo "=== Failing tests (first $LIMIT) ==="
-echo "$LOG" | strings | grep -oP 'Error in test/[^\s:]+\.phpt' | sed 's/Error in //' | sort -u | head -"$LIMIT"
+# Extract failing test names (random sample)
+ALL_FAILS=$(echo "$LOG" | strings | grep -oP 'Error in test/[^\s:]+\.phpt' | sed 's/Error in //' | sort -u)
+TOTAL_FAILS=$(echo "$ALL_FAILS" | wc -l)
+echo "=== Failing tests ($LIMIT random of $TOTAL_FAILS) ==="
+echo "$ALL_FAILS" | shuf | head -"$LIMIT"
 
 echo ""
 echo "=== Sample diffs ==="
