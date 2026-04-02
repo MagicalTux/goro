@@ -504,19 +504,19 @@ func jsonDecodeString(ctx phpv.Context, r *strings.Reader, depth int, opt JsonDe
 			if codepoint >= 0xD800 && codepoint <= 0xDBFF {
 				b1, serr := r.ReadByte()
 				if serr != nil {
-					return nil, ErrUtf8
+					return nil, ErrUtf16
 				}
 				b2, serr := r.ReadByte()
 				if serr != nil {
-					return nil, ErrUtf8
+					return nil, ErrUtf16
 				}
 				if b1 != '\\' || b2 != 'u' {
-					return nil, ErrUtf8
+					return nil, ErrUtf16
 				}
 				cp2 := make([]byte, 4)
 				_, serr = io.ReadFull(r, cp2)
 				if serr != nil {
-					return nil, ErrUtf8
+					return nil, ErrUtf16
 				}
 				v2, serr := strconv.ParseUint(string(cp2), 16, 32)
 				if serr != nil {
