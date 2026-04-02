@@ -440,13 +440,50 @@ func (r *runRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		defer func() { ov.writeContext = false }()
 	}
 
+	// PHP 8.4: taking a reference to a hooked property is an indirect modification
+	// if the get hook returns by value (not by reference). e.g.:
+	//   $ref =& $obj->prop   (where prop has a set-only or by-value get hook)
+	// must throw "Indirect modification of ClassName::$propName is not allowed".
+	// Exception: inside a hook body for this property (e.g. inside set hook doing
+	// $this->prop = &$value), allow the reference write to the backing store.
+	if ov, ok := r.v.(*runObjectVar); ok {
+		if prop, zobj := ov.findHookedProp(ctx); prop != nil && zobj != nil {
+			// Skip the check if we're inside a hook body for this property
+			insideHook := false
+			if zo, ok2 := zobj.(*phpobj.ZObject); ok2 {
+				insideHook = zo.IsInsideHookForProp(prop.VarName)
+			}
+			if !insideHook {
+				if prop.GetHook == nil && prop.SetHook != nil {
+					// Set-only hook: cannot take a reference
+					return nil, phpobj.ThrowError(ctx, phpobj.Error,
+						fmt.Sprintf("Indirect modification of %s::$%s is not allowed",
+							zobj.GetClass().GetName(), prop.VarName))
+				}
+				if prop.GetHook != nil && !prop.GetIsByRef {
+					// By-value get hook: cannot take a reference (returns a copy)
+					return nil, phpobj.ThrowError(ctx, phpobj.Error,
+						fmt.Sprintf("Indirect modification of %s::$%s is not allowed",
+							zobj.GetClass().GetName(), prop.VarName))
+				}
+			}
+		}
+	}
+
 	// For =& assignment to an overloaded object property (class has __get but
 	// property is not directly accessible), PHP throws "Cannot assign by reference
 	// to overloaded object". This check only applies to direct =& assignments,
 	// not to by-ref parameter passing (which passes by value instead).
+	// Skip this check for properties with a &get hook (by-reference get is allowed).
 	if ov, ok := r.v.(*runObjectVar); ok {
-		if err := checkOverloadedRefAssign(ctx, ov); err != nil {
-			return nil, err
+		skip := false
+		if prop, _ := ov.findHookedProp(ctx); prop != nil && prop.GetIsByRef {
+			skip = true
+		}
+		if !skip {
+			if err := checkOverloadedRefAssign(ctx, ov); err != nil {
+				return nil, err
+			}
 		}
 	}
 

@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/KarpelesLab/gotz"
@@ -81,15 +82,31 @@ func fncDateDefaultTimezoneSet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal,
 		return nil, err
 	}
 
-	// Store timezone in global config (stub for now, actual timezone handling TODO)
+	tzStr := string(tz)
+	// Validate the timezone
+	if _, err2 := parseTzName(tzStr); err2 != nil {
+		ctx.Notice("Timezone ID '%s' is invalid", tzStr)
+		return phpv.ZBool(false).ZVal(), nil
+	}
+
 	ctx.Global().SetLocalConfig("date.timezone", tz.ZVal())
 	return phpv.ZBool(true).ZVal(), nil
 }
 
 // > func string date_default_timezone_get ( void )
 func fncDateDefaultTimezoneGet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	tz := ctx.GetConfig("date.timezone", phpv.ZString("UTC").ZVal())
-	return tz.As(ctx, phpv.ZtString)
+	tzVal := ctx.GetConfig("date.timezone", nil)
+	if tzVal == nil || tzVal.IsNull() || tzVal.String() == "" {
+		emitDateStartupWarning(ctx, "")
+		return phpv.ZString("UTC").ZVal(), nil
+	}
+	tz := tzVal.String()
+	// Validate: if timezone is invalid, emit warning and return "UTC"
+	if _, err := parseTzName(tz); err != nil {
+		emitDateStartupWarning(ctx, tz)
+		return phpv.ZString("UTC").ZVal(), nil
+	}
+	return phpv.ZString(tz).ZVal(), nil
 }
 
 // > func DateInterval date_diff ( DateTimeInterface $datetime1 , DateTimeInterface $datetime2 [, bool $absolute = false ] )
@@ -374,11 +391,137 @@ var commonTimezones = []string{
 	"UTC",
 }
 
+// DateTimeZone bitmask constants for listIdentifiers
+const (
+	dtzAfrica     = 1
+	dtzAmerica    = 2
+	dtzAntarctica = 4
+	dtzArctic     = 8
+	dtzAsia       = 16
+	dtzAtlantic   = 32
+	dtzAustralia  = 64
+	dtzEurope     = 128
+	dtzIndian     = 256
+	dtzPacific    = 512
+	dtzUTC        = 1024
+	dtzAll        = 2047
+	dtzAllWithBC  = 4095
+	dtzPerCountry = 4096
+)
+
+// timezonePrefix returns the DateTimeZone bitmask flag for a timezone identifier.
+func timezonePrefix(tz string) int {
+	switch {
+	case strings.HasPrefix(tz, "Africa/"):
+		return dtzAfrica
+	case strings.HasPrefix(tz, "America/"):
+		return dtzAmerica
+	case strings.HasPrefix(tz, "Antarctica/"):
+		return dtzAntarctica
+	case strings.HasPrefix(tz, "Arctic/"):
+		return dtzArctic
+	case strings.HasPrefix(tz, "Asia/"):
+		return dtzAsia
+	case strings.HasPrefix(tz, "Atlantic/"):
+		return dtzAtlantic
+	case strings.HasPrefix(tz, "Australia/"):
+		return dtzAustralia
+	case strings.HasPrefix(tz, "Europe/"):
+		return dtzEurope
+	case strings.HasPrefix(tz, "Indian/"):
+		return dtzIndian
+	case strings.HasPrefix(tz, "Pacific/"):
+		return dtzPacific
+	case tz == "UTC":
+		return dtzUTC
+	}
+	return 0
+}
+
+// getSystemTimezones returns all timezone identifiers from the system tzdata database.
+var systemTimezones []string
+var systemTimezonesOnce sync.Once
+
+func getSystemTimezones() []string {
+	systemTimezonesOnce.Do(func() {
+		// Read from system tzdata.zi which has all timezone names
+		data, err := os.ReadFile("/usr/share/zoneinfo/tzdata.zi")
+		if err == nil {
+			var tzs []string
+			lines := strings.Split(string(data), "\n")
+			for _, line := range lines {
+				// Zone lines: "Z America/New_York ..."
+				if strings.HasPrefix(line, "Z ") {
+					parts := strings.Fields(line)
+					if len(parts) >= 2 {
+						tzs = append(tzs, parts[1])
+					}
+				} else if strings.HasPrefix(line, "L ") {
+					// Link lines: "L Source Target"
+					parts := strings.Fields(line)
+					if len(parts) >= 3 {
+						tzs = append(tzs, parts[2])
+					}
+				}
+			}
+			// Add UTC
+			hasUTC := false
+			for _, tz := range tzs {
+				if tz == "UTC" {
+					hasUTC = true
+					break
+				}
+			}
+			if !hasUTC {
+				tzs = append(tzs, "UTC")
+			}
+			systemTimezones = tzs
+			return
+		}
+		// Fall back to common timezones
+		systemTimezones = commonTimezones
+	})
+	return systemTimezones
+}
+
 // datetimezoneListIdentifiers implements DateTimeZone::listIdentifiers(): array
 func datetimezoneListIdentifiers(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	// Parse timezoneGroup (bitmask) and countryCode arguments
+	timezoneGroup := dtzAll
+	countryCode := ""
+	if len(args) >= 1 && args[0] != nil && !args[0].IsNull() {
+		timezoneGroup = int(args[0].AsInt(ctx))
+	}
+	if len(args) >= 2 && args[1] != nil && !args[1].IsNull() {
+		countryCode = strings.ToUpper(string(args[1].AsString(ctx)))
+	}
+
+	// PER_COUNTRY requires a country code
+	if timezoneGroup == dtzPerCountry {
+		if countryCode == "" {
+			return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+				"DateTimeZone::listIdentifiers(): Argument #1 ($timezoneGroup) must be DateTimeZone::PER_COUNTRY when Argument #2 ($countryCode) is provided")
+		}
+		// Return empty array (we don't have per-country data)
+		return phpv.NewZArray().ZVal(), nil
+	}
+
+	tzList := getSystemTimezones()
 	result := phpv.NewZArray()
-	for _, tz := range commonTimezones {
-		result.OffsetSet(ctx, nil, phpv.ZString(tz).ZVal())
+	for _, tz := range tzList {
+		flag := timezonePrefix(tz)
+		if flag == 0 {
+			// Non-standard timezone (Etc/*, US/*, etc.) - include only in ALL_WITH_BC or special flags
+			if timezoneGroup == dtzAll || timezoneGroup == dtzAllWithBC {
+				// ALL includes UTC but not Etc/* etc; ALL_WITH_BC includes everything
+				// Just skip non-standard ones for ALL unless they're clearly valid
+				continue
+			}
+			continue
+		}
+		if timezoneGroup == dtzAll || timezoneGroup == dtzAllWithBC || (timezoneGroup&flag) != 0 {
+			result.OffsetSet(ctx, nil, phpv.ZString(tz).ZVal())
+		}
 	}
 	return result.ZVal(), nil
 }

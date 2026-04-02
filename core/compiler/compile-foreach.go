@@ -348,6 +348,16 @@ func (r *runnableForeach) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 		it.Next(ctx)
 	}
 
+	// For by-reference foreach, collapse the last element's reference immediately
+	// after the loop ends (PHP collapses references when the loop variable's refcount
+	// drops as the loop exits). This ensures that after the foreach, properties don't
+	// show the & reference marker in var_dump.
+	if r.ref {
+		if cr, ok := it.(interface{ CleanupRef() }); ok {
+			cr.CleanupRef()
+		}
+	}
+
 	return nil, nil
 }
 

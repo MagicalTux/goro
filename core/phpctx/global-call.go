@@ -218,6 +218,18 @@ func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, o
 						fmt.Sprintf("%s(): Argument #%d ($%s) could not be passed by reference",
 							funcName, i+1, paramName))
 				}
+			} else if isWritable && val.IsRef() {
+				// For compound writable expressions (object properties, array elements)
+				// that already returned a reference (e.g. from a &get property hook),
+				// register the value for post-call cleanup. This approximates PHP's
+				// refcount-based un-ref: after the function returns, if no other location
+				// still holds a reference to the inner ZVal (refCount <= 1), the
+				// compound expression's hash table entry is automatically un-referenced.
+				// Example: inc($obj->prop) where prop has a &get hook — after inc returns,
+				// the _prop backing entry should go back to a plain value (not a reference).
+				if _, isCompound := arg.(phpv.CompoundWritable); isCompound {
+					byRefCleanups = append(byRefCleanups, val)
+				}
 			} else if isWritable && !val.IsRef() {
 				// For compound writable expressions (array elements, object
 				// properties), we need to ensure the element exists

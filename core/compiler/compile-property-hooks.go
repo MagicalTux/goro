@@ -72,9 +72,26 @@ func (r *runParentPropHookCall) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			fmt.Sprintf("Undefined property %s::$%s", parentZC.GetName(), r.propName))
 	}
 
-	// Evaluate argument expressions
+	// Evaluate argument expressions, resolving named arguments.
+	// Named arguments (name: value) must match the parameter name; otherwise
+	// throw "Unknown named parameter $name" matching PHP behavior.
 	args := make([]*phpv.ZVal, len(r.argExprs))
 	for i, expr := range r.argExprs {
+		if na, ok := expr.(*NamedArg); ok {
+			// Determine the expected parameter name for validation.
+			// For set hooks, the parameter is prop.SetParam (default "value").
+			// For get hooks, there are no parameters.
+			if r.hookType == "set" {
+				expectedParam := phpv.ZString("value")
+				if prop.SetParam != "" {
+					expectedParam = prop.SetParam
+				}
+				if na.Name != expectedParam {
+					return nil, phpobj.ThrowError(ctx, phpobj.Error,
+						fmt.Sprintf("Unknown named parameter $%s", na.Name))
+				}
+			}
+		}
 		v, err := expr.Run(ctx)
 		if err != nil {
 			return nil, err
@@ -491,6 +508,18 @@ func compilePropertyHooks(prop *phpv.ZClassProp, class *phpobj.ZClass, c compile
 				// PHP 8.4: If the set hook parameter has an explicit type and the
 				// property has no type, that's always invalid.
 				if hasParamType && prop.TypeHint == nil {
+					return &phpv.PhpError{
+						Err:  fmt.Errorf("Type of parameter $%s of hook %s::$%s::set must be compatible with property type", prop.SetParam, class.Name, prop.VarName),
+						Code: phpv.E_COMPILE_ERROR,
+						Loc:  paramTypeLoc,
+					}
+				}
+				// PHP 8.4: If the property is typed and the set hook parameter has NO explicit
+				// type hint (but was explicitly named), that is also invalid.
+				// e.g. public string $prop { set($prop) {} } → error
+				// This does NOT apply to the default parameter name "value" without a type hint
+				// when no explicit parameter declaration was made (i.e. just "set { ... }").
+				if !hasParamType && prop.TypeHint != nil {
 					return &phpv.PhpError{
 						Err:  fmt.Errorf("Type of parameter $%s of hook %s::$%s::set must be compatible with property type", prop.SetParam, class.Name, prop.VarName),
 						Code: phpv.E_COMPILE_ERROR,

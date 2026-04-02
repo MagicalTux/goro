@@ -133,6 +133,11 @@ func fncGettype(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	t := v.GetType()
+	if t == phpv.ZtResource {
+		if res, ok := v.Value().(phpv.Resource); ok && res.GetResourceType() == phpv.ResourceUnknown {
+			return phpv.ZString("resource (closed)").ZVal(), nil
+		}
+	}
 	return phpv.ZString(t.String()).ZVal(), nil
 }
 
@@ -1025,7 +1030,15 @@ func stdGetMangledObjectVars(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, e
 		return phpv.NewZArray().ZVal(), nil
 	}
 
+	// get_mangled_object_vars returns properties with PHP name mangling:
+	// - Private properties: "\0ClassName\0propName"
+	// - Protected properties: "\0*\0propName"
+	// - Public/dynamic properties: plain name
 	result := phpv.NewZArray()
+	if zo, ok := o.(*phpobj.ZObject); ok {
+		// Use GetMangledObjectVars which handles all property types with correct PHP mangling
+		return zo.GetMangledObjectVars(ctx).ZVal(), nil
+	}
 	ht := o.HashTable()
 	if ht != nil {
 		it := ht.NewIterator()

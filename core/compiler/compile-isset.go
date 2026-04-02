@@ -792,6 +792,66 @@ func checkExistenceAndGet(ctx phpv.Context, v phpv.Runnable, subExpr bool) (bool
 		}
 		return true, val, nil
 
+	case *runObjectVar:
+		// Fetch the object property and return its value to avoid double get-hook invocations
+		// when the container of a nested isset (e.g. isset($obj->prop[0])) is an object property
+		// with a get hook. Without caching, checkExistenceAndGet for the outer runArrayAccess
+		// would call checkExistence (which triggers the hook via HasProp) and then call
+		// t.value.Run(ctx) a second time.
+		exists, err := checkExistence(ctx, t.ref, true)
+		if !exists || err != nil {
+			return exists, nil, err
+		}
+		objVal, err := t.ref.Run(ctx)
+		if err != nil {
+			return false, nil, err
+		}
+		if objVal.GetType() != phpv.ZtObject {
+			return false, nil, nil
+		}
+		obj, ok := objVal.AsObject(ctx).(*phpobj.ZObject)
+		if !ok {
+			return false, nil, nil
+		}
+		propName := t.varName
+		if len(propName) > 0 && propName[0] == '$' {
+			propVal, pErr := ctx.OffsetGet(ctx, propName[1:].ZVal())
+			if pErr != nil {
+				return false, nil, nil
+			}
+			propName = propVal.AsString(ctx)
+		}
+		// For hooked properties: the get hook must be called (as HasProp would do),
+		// and we return the value for caching to avoid a second call.
+		// For non-hooked properties: use HasProp first to check existence without
+		// triggering "Undefined property" warnings (e.g. for $obj->unknown ?? null).
+		if hookedProp := obj.FindPropWithHook(propName); hookedProp != nil && hookedProp.GetHook != nil {
+			// Has a get hook: call ObjectGet which invokes the hook once and returns the value.
+			val, pErr := obj.ObjectGet(ctx, propName)
+			if pErr != nil {
+				// Error (e.g. write-only property) means it doesn't "exist" for isset purposes
+				return false, nil, nil
+			}
+			if val == nil || phpv.IsNull(val) {
+				return false, nil, nil
+			}
+			return true, val, nil
+		}
+		// No get hook: check existence via HasProp (no warning for missing props),
+		// then fetch the value.
+		propExists, hErr := obj.HasProp(ctx, propName)
+		if hErr != nil || !propExists {
+			return false, nil, hErr
+		}
+		val, pErr := obj.ObjectGet(ctx, propName)
+		if pErr != nil {
+			return false, nil, nil
+		}
+		if val == nil || phpv.IsNull(val) {
+			return false, nil, nil
+		}
+		return true, val, nil
+
 	default:
 		// For everything else, fall back to checkExistence (no value caching)
 		exists, err := checkExistence(ctx, v, subExpr)

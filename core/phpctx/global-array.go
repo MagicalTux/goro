@@ -141,6 +141,17 @@ func (c *Global) OffsetUnset(ctx phpv.Context, name phpv.Val) error {
 	case "this":
 		return errors.New("Cannot unset $this")
 	}
+	// If the variable being unset is a reference (shared with another location, e.g. an
+	// object property via a &get hook), and the inner ZVal's refCount has dropped to 1
+	// (meaning this is the last alias), un-ref the shared ZVal so that the remaining
+	// location (e.g. the object property) loses its reference wrapper.
+	// This mimics PHP's refcount-based automatic un-ref behavior.
+	if v, ok := c.h.GetStringB(nameStr); ok {
+		// Counterpart of RefInner: when this variable was stored as a reference alias
+		// (which incremented the inner ZVal's refCount via RefInner), decrement the
+		// refCount and un-ref the outer ZVal if no other aliases remain.
+		v.ReleaseRef()
+	}
 	return c.h.UnsetString(nameStr)
 }
 

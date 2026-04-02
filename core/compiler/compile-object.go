@@ -1294,6 +1294,10 @@ func (r *runObjectVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 
 	// In write context (e.g. $a->b[0] = x), suppress "Undefined property" warning
 	// for auto-vivification. PHP silently creates the property in this case.
+	// NOTE: The indirect modification check for hooked properties has been moved
+	// to runArrayAccess.WriteValue() and PrepareWrite(), because the check here
+	// was too broad: it fired for $obj->prop->subprop = val (which is valid) and
+	// also for $obj->prop[k] = val (which needs a runtime check on the returned value).
 	if r.writeContext {
 		if oq, ok := objI.(interface {
 			ObjectGetQuiet(ctx phpv.Context, key phpv.Val) (*phpv.ZVal, bool, error)
@@ -1346,33 +1350,27 @@ func (r *runObjectVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		if zobj, ok2 := objI.(*phpobj.ZObject); ok2 {
 			propName := r.varName
 			if len(propName) > 0 && propName[0] != '$' {
-				// Check if property doesn't exist yet (would be dynamically created)
-				if oq, ok3 := objI.(interface {
-					ObjectGetQuiet(ctx phpv.Context, key phpv.Val) (*phpv.ZVal, bool, error)
-				}); ok3 {
-					_, found, _ := oq.ObjectGetQuiet(ctx, offt)
-					if !found && !zobj.AllowsDynamicProperties() {
-						// Only emit dynamic property deprecation for truly undeclared properties.
-						// If the property is declared in the class (even if uninitialized), skip.
-						isDeclared := zobj.FindDeclaredProp(propName) != nil
-						if !isDeclared {
-							// Check no magic __set or __get method
-							hasMagicSet := false
-							hasMagicGet := false
-							if zc, ok4 := zobj.GetClass().(*phpobj.ZClass); ok4 {
-								_, hasMagicSet = zc.Methods["__set"]
-								_, hasMagicGet = zc.Methods["__get"]
-							}
-							if !hasMagicSet && !hasMagicGet {
-								// Emit deprecation before the undefined property warning,
-								// and set flag to skip duplicate deprecation in ObjectSet.
-								if err := ctx.Deprecated("Creation of dynamic property %s::$%s is deprecated",
-									zobj.GetClass().GetName(), propName, logopt.NoFuncName(true)); err != nil {
-									return nil, err
-								}
-								ctx.Global().SetSkipNextDynPropDeprecation(true)
-							}
+				// Only emit dynamic property deprecation for truly undeclared properties.
+				// If the property is declared in the class (even if uninitialized), skip.
+				// NOTE: Do NOT call ObjectGetQuiet here — it invokes get hooks and causes
+				// double hook invocations for compound-assign / inc-dec operations.
+				isDeclared := zobj.FindDeclaredProp(propName) != nil
+				if !isDeclared && !zobj.AllowsDynamicProperties() {
+					// Check no magic __set or __get method
+					hasMagicSet := false
+					hasMagicGet := false
+					if zc, ok4 := zobj.GetClass().(*phpobj.ZClass); ok4 {
+						_, hasMagicSet = zc.Methods["__set"]
+						_, hasMagicGet = zc.Methods["__get"]
+					}
+					if !hasMagicSet && !hasMagicGet {
+						// Emit deprecation before the undefined property warning,
+						// and set flag to skip duplicate deprecation in ObjectSet.
+						if err := ctx.Deprecated("Creation of dynamic property %s::$%s is deprecated",
+							zobj.GetClass().GetName(), propName, logopt.NoFuncName(true)); err != nil {
+							return nil, err
 						}
+						ctx.Global().SetSkipNextDynPropDeprecation(true)
 					}
 				}
 			}
@@ -1381,6 +1379,28 @@ func (r *runObjectVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 
 	// TODO Check access rights
 	return objI.ObjectGet(ctx, offt)
+}
+
+// findHookedProp resolves the object and finds the hooked property for this
+// runObjectVar. Returns (nil, nil) if the prop doesn't have hooks or can't
+// be resolved. Used by runArrayAccess.PrepareWrite for indirect-modification checks.
+func (r *runObjectVar) findHookedProp(ctx phpv.Context) (*phpv.ZClassProp, phpv.ZObject) {
+	if r.varName == "" || r.varName[0] == '$' {
+		return nil, nil
+	}
+	obj, err := r.ref.Run(ctx)
+	if err != nil || obj == nil {
+		return nil, nil
+	}
+	zobj, ok := obj.Value().(*phpobj.ZObject)
+	if !ok {
+		return nil, nil
+	}
+	prop := zobj.FindPropWithHook(r.varName)
+	if prop == nil {
+		return nil, nil
+	}
+	return prop, zobj
 }
 
 func (r *runObjectVar) PrepareWrite(ctx phpv.Context) error {
@@ -1399,9 +1419,11 @@ func (r *runObjectVar) PrepareWrite(ctx phpv.Context) error {
 func (r *runObjectVar) IsCompoundWritable() {}
 
 // checkOverloadedRefAssign checks if the object property access represents an
-// overloaded property (class has __get but property is not directly accessible).
+// overloaded property (class has __get but property is not directly accessible)
+// or a hooked property that cannot be assigned by reference.
 // If so, it throws "Cannot assign by reference to overloaded object".
-// This is called ONLY from =& direct ref assignment context, not from by-ref
+// This is called ONLY from =& direct ref assignment context (when the hooked
+// property is the LHS of =&, e.g. $obj->prop =& $ref), not from by-ref
 // parameter passing (which passes by value instead).
 func checkOverloadedRefAssign(ctx phpv.Context, r *runObjectVar) error {
 	obj, err := r.ref.Run(ctx)
@@ -1418,6 +1440,18 @@ func checkOverloadedRefAssign(ctx phpv.Context, r *runObjectVar) error {
 	propName := r.varName
 	if len(propName) > 0 && propName[0] == '$' {
 		return nil // dynamic property name
+	}
+
+	// PHP 8.4: hooked properties cannot be assigned by reference on the LHS
+	// UNLESS the property has a by-reference get hook (&get { ... }).
+	// e.g. $obj->prop =& $ref where prop has hooks (but not &get) → error.
+	// e.g. $prop = &$obj->prop where prop has &get hook → allowed.
+	// Exception: inside a hook body for this property (setHookGuard/getHookGuard active),
+	// allow reference writes to the backing store (e.g. $this->prop = &$value inside set hook).
+	if prop := zobj.FindPropWithHook(phpv.ZString(propName)); prop != nil {
+		if prop.HasHooks && !prop.GetIsByRef && !zobj.IsInsideHookForProp(phpv.ZString(propName)) {
+			return phpobj.ThrowError(ctx, phpobj.Error, "Cannot assign by reference to overloaded object")
+		}
 	}
 
 	ht := zobj.HashTable()
