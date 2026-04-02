@@ -156,15 +156,9 @@ func parseDateTimeWithTz(ctx phpv.Context, args []*phpv.ZVal) (time.Time, error)
 			}
 		}
 
-		// Try our custom parser first - it handles timezone abbreviations correctly
-		// (the strtotime library converts abbreviations to full timezone names)
 		base := time.Now().In(loc)
-		if parsed, ok := strToTime(s, base); ok {
-			return parsed, nil
-		}
-		// For simple date-only format (YYYY-MM-DD), if strToTime rejected it (e.g., day out of range),
-		// skip the strtotime library since it normalizes overflows rather than erroring.
-		// This ensures "9999-11-33" throws an exception instead of silently becoming "9999-12-03".
+		// For simple date-only format (YYYY-MM-DD), validate before parsing
+		// to reject overflow dates like "9999-11-33" instead of normalizing.
 		if matches := reDateOnly.FindStringSubmatch(s); matches != nil {
 			// strToTime already tried and failed this format - compute error position and throw
 			year, _ := strconv.Atoi(matches[1])
@@ -358,12 +352,7 @@ func modifyMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*p
 	}
 	newT, stErr := strtotime.StrToTime(string(modifier), strtotime.InTZ(t.Location()), strtotime.Rel(t))
 	if stErr != nil {
-		// Fallback to custom parser
-		var ok bool
-		newT, ok = strToTime(string(modifier), t)
-		if !ok {
-			return nil, phpobj.ThrowError(ctx, DateMalformedStringException, fmt.Sprintf("DateTime::modify(): Failed to parse time string (%s) at position 0 (%s): Unexpected character", modifier, string(modifier[0:1])))
-		}
+		return nil, phpobj.ThrowError(ctx, DateMalformedStringException, fmt.Sprintf("DateTime::modify(): Failed to parse time string (%s) at position 0 (%s): Unexpected character", modifier, string(modifier[0:1])))
 	}
 	setTimeVal(this, newT)
 	return this.ZVal(), nil
@@ -398,11 +387,7 @@ func modifyImmutableMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.
 	}
 	newT, stErr := strtotime.StrToTime(string(modifier), strtotime.InTZ(t.Location()), strtotime.Rel(t))
 	if stErr != nil {
-		var ok bool
-		newT, ok = strToTime(string(modifier), t)
-		if !ok {
-			return nil, phpobj.ThrowError(ctx, DateMalformedStringException, fmt.Sprintf("DateTimeImmutable::modify(): Failed to parse time string (%s) at position 0 (%s): Unexpected character", modifier, string(modifier[0:1])))
-		}
+		return nil, phpobj.ThrowError(ctx, DateMalformedStringException, fmt.Sprintf("DateTimeImmutable::modify(): Failed to parse time string (%s) at position 0 (%s): Unexpected character", modifier, string(modifier[0:1])))
 	}
 	newObj, err := phpobj.NewZObject(ctx, DateTimeImmutable)
 	if err != nil {
@@ -829,10 +814,6 @@ func addIntervalToTime(ctx phpv.Context, t time.Time, intervalObj *phpobj.ZObjec
 			newT, stErr := strtotime.StrToTime(dateStr, strtotime.InTZ(t.Location()), strtotime.Rel(t))
 			if stErr == nil {
 				return newT
-			}
-			// Fallback to custom parser (handles PHP-specific patterns like "first day of next month")
-			if newT2, ok := strToTime(dateStr, t); ok {
-				return newT2
 			}
 		}
 	}
@@ -2158,9 +2139,7 @@ func init() {
 							// Validate the date string by attempting to parse it
 							_, stErr := strtotime.StrToTime(dateStr, strtotime.InTZ(getTimezone(ctx)), strtotime.Rel(time.Now().In(getTimezone(ctx))))
 							if stErr != nil {
-								// Check if it's a valid format
-								_, ok := strToTime(dateStr, time.Now().In(getTimezone(ctx)))
-								if !ok {
+								{
 									// Find position and character of the error
 									pos := 0
 									ch := ""
@@ -3766,17 +3745,11 @@ func createDateIntervalFromString(ctx phpv.Context, dateStr string) (*phpv.ZVal,
 	}
 
 	if !parsed && len(trimmed) > 0 {
-		// Try to use strtotime to parse relative expressions
 		_, stErr := strtotime.StrToTime(dateStr, strtotime.InTZ(getTimezone(ctx)), strtotime.Rel(time.Now().In(getTimezone(ctx))))
 		if stErr != nil {
-			// Fall back to custom parser for PHP-specific patterns like "first day of next month"
-			now := time.Now().In(getTimezone(ctx))
-			_, customOk := strToTime(trimmed, now)
-			if !customOk {
-				return nil, phpobj.ThrowError(ctx, DateMalformedIntervalStringException,
-					fmt.Sprintf("Unknown or bad format (%s) at position 0 (%s): The timezone could not be found in the database",
-						dateStr, string(dateStr[0:1])))
-			}
+			return nil, phpobj.ThrowError(ctx, DateMalformedIntervalStringException,
+				fmt.Sprintf("Unknown or bad format (%s) at position 0 (%s): The timezone could not be found in the database",
+					dateStr, string(dateStr[0:1])))
 		}
 	}
 

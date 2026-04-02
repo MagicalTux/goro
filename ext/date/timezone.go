@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/KarpelesLab/gotz"
+	"github.com/KarpelesLab/strtotime"
 	"github.com/MagicalTux/goro/core"
 	"github.com/MagicalTux/goro/core/phperr"
 	"github.com/MagicalTux/goro/core/phpobj"
@@ -819,8 +820,10 @@ func fncDateParse(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 	datetime := string(args[0].AsString(ctx))
 	result := phpv.NewZArray()
-	t, ok := strToTime(datetime, time.Now().UTC())
-	if !ok {
+	loc := getTimezone(ctx)
+	base := time.Now().In(loc)
+	t, stErr := strtotime.StrToTime(datetime, strtotime.InTZ(loc), strtotime.Rel(base))
+	if stErr != nil {
 		result.OffsetSet(ctx, phpv.ZString("year"), phpv.ZBool(false).ZVal())
 		result.OffsetSet(ctx, phpv.ZString("month"), phpv.ZBool(false).ZVal())
 		result.OffsetSet(ctx, phpv.ZString("day"), phpv.ZBool(false).ZVal())
