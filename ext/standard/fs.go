@@ -830,7 +830,7 @@ func fncFileClose(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			}
 			return phpv.ZFalse.ZVal(), nil
 		}
-		// Mark the resource as closed (ResourceUnknown is the sentinel for closed streams)
+		// Mark the resource as closed (type becomes "Unknown")
 		f.ResourceType = phpv.ResourceUnknown
 		return phpv.ZTrue.ZVal(), nil
 	}

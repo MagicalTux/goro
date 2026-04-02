@@ -9,46 +9,18 @@ import (
 
 	"github.com/KarpelesLab/strtotime"
 	"github.com/MagicalTux/goro/core"
-	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
 // getTimezone returns the timezone configured via date.timezone, falling back to UTC.
 func getTimezone(ctx phpv.Context) *time.Location {
-	tzVal := ctx.GetConfig("date.timezone", nil)
-	if tzVal == nil || tzVal.IsNull() || tzVal.String() == "" {
-		emitDateStartupWarning(ctx, "")
-		return time.UTC
-	}
-	tzName := tzVal.String()
+	tzName := ctx.GetConfig("date.timezone", phpv.ZString("UTC").ZVal()).String()
 	loc, err := time.LoadLocation(tzName)
 	if err != nil {
-		emitDateStartupWarning(ctx, tzName)
 		return time.UTC
 	}
 	return loc
-}
-
-// startupWarningLoc is the location used for PHP startup warnings.
-// PHP startup warnings appear as "in Unknown on line 0".
-var startupWarningLoc = &phpv.Loc{Filename: "Unknown", Line: 0}
-
-// emitDateStartupWarning emits the "PHP Startup: Invalid date.timezone" warning once per request.
-// Uses ShownDeprecated to ensure the warning is only emitted once.
-func emitDateStartupWarning(ctx phpv.Context, tzName string) {
-	// Only emit once per request using ShownDeprecated as a "shown once" tracker
-	if !ctx.Global().ShownDeprecated("date.startup_timezone_warned") {
-		return
-	}
-	var msg string
-	if tzName == "" {
-		msg = "PHP Startup: Invalid date.timezone value '', using 'UTC' instead"
-	} else {
-		msg = fmt.Sprintf("PHP Startup: Invalid date.timezone value '%s', using 'UTC' instead", tzName)
-	}
-	// Use "Unknown on line 0" location since this is a startup warning
-	ctx.Warn(msg, logopt.Data{NoFuncName: true, Loc: startupWarningLoc})
 }
 
 // phpDateFormat converts a PHP date format string to a Go time layout and formats the given time.
@@ -298,10 +270,6 @@ func fncDate(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZString(result).ZVal(), nil
 }
 
-// gmtZone is a fixed-zero-offset location named "GMT" for use with gmdate/gmstrftime.
-// PHP's gmdate() always uses "GMT" as the timezone abbreviation, not "UTC".
-var gmtZone = time.FixedZone("GMT", 0)
-
 // > func string gmdate ( string $format [, int $timestamp = time() ] )
 func fncGmdate(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var format phpv.ZString
@@ -313,9 +281,9 @@ func fncGmdate(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	var t time.Time
 	if ts != nil {
-		t = time.Unix(int64(*ts), 0).In(gmtZone)
+		t = time.Unix(int64(*ts), 0).UTC()
 	} else {
-		t = time.Now().In(gmtZone)
+		t = time.Now().UTC()
 	}
 
 	result := phpDateFormat(string(format), t)
@@ -677,27 +645,6 @@ var (
 
 	// Ordinal day: "November 26th" or "26th November 2005" (only when digits precede the suffix)
 	reOrdinal = regexp.MustCompile(`\b(\d{1,2})(?:st|nd|rd|th)\b`)
-
-	// Time-first date: "HH:MM[[:SS]] MonthAbbr DD [TZ] YYYY" e.g. "19:30 Dec 17 2005"
-	// Also supports optional timezone abbreviation before year: "19:30 Dec 17 GMT 2005"
-	reTimeFirstDate = regexp.MustCompile(`(?i)^(\d{1,2}):(\d{2})(?::(\d{2}))?\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{1,2})(?:\s+([A-Za-z]{2,5}))?\s+(\d{4})$`)
-
-	// "Ham/pm MonthName DD [TZ] YYYY" e.g. "1pm Aug 1 GMT 2007"
-	reAmPmFirstDate = regexp.MustCompile(`(?i)^(\d{1,2})\s*(am|pm|a\.m\.|p\.m\.)\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{1,2})(?:\s+([A-Za-z]{2,5}))?\s+(\d{4})$`)
-
-	// HHMMSS: exactly 6 digits forming a valid time
-	reHHMMSS = regexp.MustCompile(`^(\d{2})(\d{2})(\d{2})$`)
-
-	// tHHMM or tHH:MM[:SS]: leading 't' followed by time
-	reTPrefixTime = regexp.MustCompile(`(?i)^t(\d{2}):?(\d{2})(?::?(\d{2}))?$`)
-
-	// HH.MM[.SS[.frac]][TZ]: dot-separated time with optional fraction and TZ abbreviation
-	// e.g. "22.49.12.42GMT" or "8.00.00BST"
-	reDotTimeTZ = regexp.MustCompile(`(?i)^(\d{1,2})\.(\d{2})(?:\.(\d{2})(?:\.\d+)?)?([A-Za-z]{2,5})?$`)
-
-	// YYYYDDD: 7-digit year + day-of-year (no leading zero on DOY)
-	reYearDOY = regexp.MustCompile(`^\d{7}$`)
-
 )
 
 var monthNames = map[string]time.Month{
@@ -854,51 +801,6 @@ func parseISOWeekDate(input string, loc *time.Location) (time.Time, bool) {
 }
 
 // applyRelativeUnit applies a relative time unit to a time value.
-// daysInMonth returns the number of days in a given month of a given year.
-func daysInMonth(year int, month time.Month) int {
-	// Normalize month to valid range first
-	for month > 12 {
-		month -= 12
-		year++
-	}
-	for month < 1 {
-		month += 12
-		year--
-	}
-	// Day 0 of next month = last day of given month
-	return time.Date(year, month+1, 0, 0, 0, 0, 0, time.UTC).Day()
-}
-
-// phpAddCalendarDays adds N calendar days in PHP-compatible way.
-// PHP adds calendar days using wall-clock time, but when the result falls
-// in a "spring-forward" DST gap (non-existent time), PHP moves FORWARD to
-// the post-DST time. Go's AddDate moves BACKWARD, so we correct that.
-//
-// When days == 0, returns t unchanged to avoid Go's AddDate(0,0,0) which
-// decomposes the time and can lose the second occurrence of an ambiguous
-// fall-back time (e.g., 01:30 EST vs 01:30 EDT).
-func phpAddCalendarDays(t time.Time, days int) time.Time {
-	if days == 0 {
-		return t
-	}
-	loc := t.Location()
-	y, mo, d := t.Date()
-	h, min, s := t.Clock()
-	ns := t.Nanosecond()
-	target := time.Date(y, mo, d+days, h, min, s, ns, loc)
-
-	// Detect spring-forward gap: if adding one hour to the target
-	// moves us to a HIGHER UTC offset (more positive = less negative),
-	// the target is in a DST gap, and PHP wants the post-gap time.
-	_, targetOffset := target.Zone()
-	_, futureOffset := target.Add(time.Hour).Zone()
-	if futureOffset > targetOffset {
-		// We're in the spring-forward gap; move forward by the DST diff
-		target = target.Add(time.Duration(futureOffset-targetOffset) * time.Second)
-	}
-	return target
-}
-
 func applyRelativeUnit(t time.Time, amount int, unit string) time.Time {
 	unit = strings.ToLower(unit)
 	switch unit {
@@ -907,9 +809,9 @@ func applyRelativeUnit(t time.Time, amount int, unit string) time.Time {
 	case "month", "months":
 		return t.AddDate(0, amount, 0)
 	case "week", "weeks":
-		return phpAddCalendarDays(t, amount*7)
+		return t.AddDate(0, 0, amount*7)
 	case "day", "days":
-		return phpAddCalendarDays(t, amount)
+		return t.AddDate(0, 0, amount)
 	case "hour", "hours":
 		return t.Add(time.Duration(amount) * time.Hour)
 	case "minute", "minutes", "min", "mins":
@@ -1112,18 +1014,9 @@ func strToTime(input string, base time.Time) (time.Time, bool) {
 		return base.In(tzLoc), true
 	}
 
-	// "N ago" format - handles both standalone "11 days ago" and
-	// compound "DATE 11 days ago" (where DATE is parsed as the new base)
+	// "N ago" format
 	if matches := reAgo.FindStringSubmatch(input); matches != nil {
 		amount, _ := strconv.Atoi(matches[1])
-		// Check if there's content before the "N unit ago" match
-		beforeAgo := strings.TrimSpace(input[:strings.Index(input, matches[0])])
-		if beforeAgo != "" {
-			// Compound: "DATE N unit ago" - parse DATE first, then apply ago relative to it
-			if parsedBase, ok := strToTime(beforeAgo, base); ok {
-				return applyRelativeUnit(parsedBase, -amount, matches[2]), true
-			}
-		}
 		return applyRelativeUnit(base, -amount, matches[2]), true
 	}
 
@@ -1529,151 +1422,9 @@ func strToTime(input string, base time.Time) (time.Time, bool) {
 		}
 	}
 
-	// "HH:MM[:SS] MonthName DD [TZ] YYYY" - time first, then date
-	// e.g., "19:30 Dec 17 2005", "19:30:00 Dec 17 GMT 2005"
-	if matches := reTimeFirstDate.FindStringSubmatch(input); matches != nil {
-		m, ok := parseMonth(matches[4])
-		if ok {
-			hour, _ := strconv.Atoi(matches[1])
-			min, _ := strconv.Atoi(matches[2])
-			sec := 0
-			if matches[3] != "" {
-				sec, _ = strconv.Atoi(matches[3])
-			}
-			d, _ := strconv.Atoi(matches[5])
-			y, _ := strconv.Atoi(matches[7])
-			usedLoc := loc
-			if matches[6] != "" {
-				tzAbbr := strings.ToUpper(matches[6])
-				if offset, ok2 := timezoneAbbreviationOffsets[tzAbbr]; ok2 {
-					usedLoc = time.FixedZone(tzAbbr, offset)
-				} else if tzLoc, err2 := time.LoadLocation(matches[6]); err2 == nil {
-					usedLoc = tzLoc
-				}
-			}
-			return time.Date(y, m, d, hour, min, sec, 0, usedLoc), true
-		}
-	}
-
-	// "Ham/pm MonthName DD [TZ] YYYY" - am/pm time first, then date
-	// e.g., "1pm Aug 1 GMT 2007", "12am Dec 25 2007"
-	if matches := reAmPmFirstDate.FindStringSubmatch(input); matches != nil {
-		mo, ok := parseMonth(matches[3])
-		if ok {
-			hour, _ := strconv.Atoi(matches[1])
-			ampm := strings.ToLower(strings.ReplaceAll(matches[2], ".", ""))
-			if ampm == "pm" && hour < 12 {
-				hour += 12
-			} else if ampm == "am" && hour == 12 {
-				hour = 0
-			}
-			d, _ := strconv.Atoi(matches[4])
-			y, _ := strconv.Atoi(matches[6])
-			usedLoc := loc
-			if matches[5] != "" {
-				tzAbbr := strings.ToUpper(matches[5])
-				if offset, ok2 := timezoneAbbreviationOffsets[tzAbbr]; ok2 {
-					usedLoc = time.FixedZone(tzAbbr, offset)
-				} else if tzLoc, err2 := time.LoadLocation(matches[5]); err2 == nil {
-					usedLoc = tzLoc
-				}
-			}
-			return time.Date(y, mo, d, hour, 0, 0, 0, usedLoc), true
-		}
-	}
-
-	// HHMMSS (6 digits): "022233" -> 02:22:33 on base date
-	if reHHMMSS.MatchString(input) {
-		h, _ := strconv.Atoi(input[0:2])
-		m, _ := strconv.Atoi(input[2:4])
-		s, _ := strconv.Atoi(input[4:6])
-		if h <= 23 && m <= 59 && s <= 59 {
-			y, mo, d := base.Date()
-			return time.Date(y, mo, d, h, m, s, 0, loc), true
-		}
-	}
-
-	// tHHMM or tHH:MM format (leading 't' for time)
-	if reTPrefixTime.MatchString(input) {
-		m := reTPrefixTime.FindStringSubmatch(input)
-		h, _ := strconv.Atoi(m[1])
-		min, _ := strconv.Atoi(m[2])
-		sec := 0
-		if m[3] != "" {
-			sec, _ = strconv.Atoi(m[3])
-		}
-		y, mo, d := base.Date()
-		return time.Date(y, mo, d, h, min, sec, 0, loc), true
-	}
-
-	// HH.MM.SS.frac[TZ] dot-separated time optionally followed by TZ abbreviation
-	if m := reDotTimeTZ.FindStringSubmatch(input); m != nil {
-		validTZ := true
-		h, _ := strconv.Atoi(m[1])
-		min, _ := strconv.Atoi(m[2])
-		sec := 0
-		if m[3] != "" {
-			sec, _ = strconv.Atoi(m[3])
-		}
-		usedLoc := loc
-		if m[4] != "" {
-			tzName := strings.ToUpper(m[4])
-			if offset, ok2 := timezoneAbbreviationOffsets[tzName]; ok2 {
-				usedLoc = time.FixedZone(m[4], offset)
-			} else if tzLoc, err2 := time.LoadLocation(m[4]); err2 == nil {
-				usedLoc = tzLoc
-			} else {
-				validTZ = false
-			}
-		}
-		if validTZ {
-			y, mo, d := base.Date()
-			return time.Date(y, mo, d, h, min, sec, 0, usedLoc), true
-		}
-	}
-
-	// YYYYDDD (7 digits): year + day-of-year, e.g. "2006167" = day 167 of 2006
-	if reYearDOY.MatchString(input) {
-		y, _ := strconv.Atoi(input[0:4])
-		doy, _ := strconv.Atoi(input[4:])
-		// Convert day-of-year to month/day
-		t := time.Date(y, 1, doy, 0, 0, 0, 0, loc)
-		return t, true
-	}
-
-	// Note: bare 4-digit numbers ("2006", "1986") are handled by the strtotime library
-	// fallback to avoid ambiguity with HHMM time format and year interpretation.
-
-	// Handle "datetime TZ_NAME" where the last word is a named timezone or abbreviation.
-	// This handles "2006-05-12 13:00:01 America/New_York", "1pm Aug 1 GMT 2007", etc.
-	// Must be checked BEFORE the generic composite splitter to avoid incorrect splits.
-	words := strings.Fields(input)
-	if len(words) >= 2 {
-		lastWord := words[len(words)-1]
-		rest := strings.Join(words[:len(words)-1], " ")
-		// If the first word is a Unix timestamp (@NNN), timezone suffix is ignored.
-		isUnixTs := len(rest) > 1 && rest[0] == '@'
-		if !isUnixTs {
-			var tzForLast *time.Location
-			// Check if lastWord is a known timezone identifier or abbreviation
-			if tzLoc, err2 := time.LoadLocation(lastWord); err2 == nil && lastWord != "Local" {
-				tzForLast = tzLoc
-			} else if offset, ok2 := timezoneAbbreviationOffsets[strings.ToUpper(lastWord)]; ok2 {
-				tzForLast = time.FixedZone(lastWord, offset)
-			}
-			if tzForLast != nil {
-				// Try to parse the rest (the date-time part) with base location
-				if t1, ok1 := strToTime(rest, base.In(tzForLast)); ok1 {
-					// Re-interpret the parsed time as being in the timezone
-					// (i.e., the wallclock time was meant for that timezone)
-					return time.Date(t1.Year(), t1.Month(), t1.Day(), t1.Hour(), t1.Minute(), t1.Second(), t1.Nanosecond(), tzForLast), true
-				}
-			}
-		}
-	}
-
 	// Handle composite relative expressions like "next Monday +2 hours"
 	// or "tomorrow 14:00" or "+1 day 12:00:00"
+	words := strings.Fields(input)
 	if len(words) >= 2 {
 		// Try splitting and parsing parts
 		// First try the first word(s) as a keyword/relative, then apply rest
@@ -1711,8 +1462,6 @@ func strToTime(input string, base time.Time) (time.Time, bool) {
 //   "20011022T21:20+0215"
 var reDateTimeTZ = regexp.MustCompile(`^(-?\d{4})-(\d{2})-(\d{2})[T ](\d{2}):?(\d{2}):?(\d{2})?\s*([+-]\d{1,4}(?::?\d{2})?)?$`)
 var reDateOnly = regexp.MustCompile(`^(-?\d{4})-(\d{2})-(\d{2})$`)
-// reTimeThenDate matches "HH:MM[:SS] YYYY-MM-DD" - time-first then ISO date
-var reTimeThenDate = regexp.MustCompile(`^(\d{1,2}):(\d{2})(?::(\d{2}))?\s+(-?\d{4})-(\d{2})-(\d{2})$`)
 var reCompactDateTimeTZ = regexp.MustCompile(`^(\d{4})(\d{2})(\d{2})T(\d{2}):?(\d{2}):?(\d{2})?(.*)?$`)
 
 // makeFixedZone creates a fixed zone with a properly formatted name like "+02:00" or "-08:00"
@@ -1769,23 +1518,6 @@ func parseDateTimeWithOffset(input string, loc *time.Location) (time.Time, bool)
 		return t, true
 	}
 
-	// Try time-first then ISO date: "HH:MM[:SS] YYYY-MM-DD"
-	// e.g., "17:00 2004-01-01"
-	if matches := reTimeThenDate.FindStringSubmatch(input); matches != nil {
-		hour, _ := strconv.Atoi(matches[1])
-		min, _ := strconv.Atoi(matches[2])
-		sec := 0
-		if matches[3] != "" {
-			sec, _ = strconv.Atoi(matches[3])
-		}
-		year, _ := strconv.Atoi(matches[4])
-		month, _ := strconv.Atoi(matches[5])
-		day, _ := strconv.Atoi(matches[6])
-		if hour <= 23 && min <= 59 && sec <= 59 && month >= 1 && month <= 12 && day >= 1 {
-			return time.Date(year, time.Month(month), day, hour, min, sec, 0, loc), true
-		}
-	}
-
 	// Try compact date-time: YYYYMMDDTHHMMSS[+-offset]
 	if matches := reCompactDateTimeTZ.FindStringSubmatch(input); matches != nil {
 		year, _ := strconv.Atoi(matches[1])
@@ -1803,17 +1535,6 @@ func parseDateTimeWithOffset(input string, loc *time.Location) (time.Time, bool)
 			if offset, ok := parseTZOffset(tzPart); ok {
 				return time.Date(year, time.Month(month), day, hour, min, sec, 0, makeFixedZone(offset)), true
 			}
-			// Try known timezone abbreviations
-			upper := strings.ToUpper(tzPart)
-			if offset, ok := timezoneAbbreviationOffsets[upper]; ok {
-				return time.Date(year, time.Month(month), day, hour, min, sec, 0, time.FixedZone(tzPart, offset)), true
-			}
-			// Try named timezone
-			if tzLoc, err := time.LoadLocation(tzPart); err == nil {
-				return time.Date(year, time.Month(month), day, hour, min, sec, 0, tzLoc), true
-			}
-			// Unknown timezone suffix - fail (PHP returns false for bogusTZ)
-			return time.Time{}, false
 		}
 		return time.Date(year, time.Month(month), day, hour, min, sec, 0, loc), true
 	}
@@ -1828,14 +1549,6 @@ var reMonthNameTime = regexp.MustCompile(`(?i)^(jan(?:uary)?|feb(?:ruary)?|mar(?
 var reMonthYear = regexp.MustCompile(`(?i)^(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{4})$`)
 var reYearMonth = regexp.MustCompile(`(?i)^(\d{4})\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)$`)
 var reMonthDay = regexp.MustCompile(`(?i)^(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{1,2})$`)
-
-// Compact date formats without separating spaces:
-// "MonDD" like "Oct11", "Nov5" - month abbreviation directly followed by day
-var reMonthCompactDay = regexp.MustCompile(`(?i)^(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)(\d{1,2})(\d{4})?(?:\s+(\d{4}))?$`)
-// "DDMon" like "11Oct", "5Nov" - day directly followed by month abbreviation
-var reDayCompactMonth = regexp.MustCompile(`(?i)^(\d{1,2})(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)(?:\s+(\d{4}))?(\d{4})?$`)
-// "Mon DD TZ YYYY" - month, day, timezone abbreviation, year (e.g. "Aug 1 GMT 2007")
-var reMonthDayTZYear = regexp.MustCompile(`(?i)^(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{1,2})\s+([A-Z]{2,5})\s+(\d{4})$`)
 
 func parseMonthNameDate(input string, base time.Time, loc *time.Location) (time.Time, bool) {
 	// "Mon DD YYYY HH:MM[:SS]"
@@ -1912,66 +1625,6 @@ func parseMonthNameDate(input string, base time.Time, loc *time.Location) (time.
 			// If the date is in the past relative to the base, use next year
 			if candidate.Before(base) {
 				y++
-			}
-			return time.Date(y, m, d, 0, 0, 0, 0, loc), true
-		}
-	}
-
-	// "Mon DD TZ YYYY" - e.g. "Aug 1 GMT 2007"
-	if matches := reMonthDayTZYear.FindStringSubmatch(input); matches != nil {
-		m, ok := parseMonth(matches[1])
-		if ok {
-			d, _ := strconv.Atoi(matches[2])
-			tzAbbr := strings.ToUpper(matches[3])
-			y, _ := strconv.Atoi(matches[4])
-			usedLoc := loc
-			if offset, ok2 := timezoneAbbreviationOffsets[tzAbbr]; ok2 {
-				usedLoc = time.FixedZone(tzAbbr, offset)
-			} else if tzLoc, err := time.LoadLocation(tzAbbr); err == nil {
-				usedLoc = tzLoc
-			}
-			return time.Date(y, m, d, 0, 0, 0, 0, usedLoc), true
-		}
-	}
-
-	// "MonthNameDD[YYYY]" - compact format like "Oct11", "Oct112005"
-	if matches := reMonthCompactDay.FindStringSubmatch(input); matches != nil {
-		m, ok := parseMonth(matches[1])
-		if ok {
-			d, _ := strconv.Atoi(matches[2])
-			y := base.Year()
-			if matches[3] != "" {
-				// matches[3] is 4-digit year concatenated with day (e.g. Oct112005 → day=11, year would be "2005")
-				// Actually, reMonthCompactDay has (\d{1,2})(\d{4})? so matches[3] is 4-digit suffix
-				y, _ = strconv.Atoi(matches[3])
-			} else if matches[4] != "" {
-				y, _ = strconv.Atoi(matches[4])
-			} else {
-				// No year - use base year (adjust to next year if needed)
-				candidate := time.Date(y, m, d, 0, 0, 0, 0, loc)
-				if candidate.Before(base) {
-					y++
-				}
-			}
-			return time.Date(y, m, d, 0, 0, 0, 0, loc), true
-		}
-	}
-
-	// "DDMonthName[ YYYY]" - compact format like "11Oct", "11Oct 2005", "11Oct2005"
-	if matches := reDayCompactMonth.FindStringSubmatch(input); matches != nil {
-		d, _ := strconv.Atoi(matches[1])
-		m, ok := parseMonth(matches[2])
-		if ok {
-			y := base.Year()
-			if matches[3] != "" {
-				y, _ = strconv.Atoi(matches[3])
-			} else if matches[4] != "" {
-				y, _ = strconv.Atoi(matches[4])
-			} else {
-				candidate := time.Date(y, m, d, 0, 0, 0, 0, loc)
-				if candidate.Before(base) {
-					y++
-				}
 			}
 			return time.Date(y, m, d, 0, 0, 0, 0, loc), true
 		}

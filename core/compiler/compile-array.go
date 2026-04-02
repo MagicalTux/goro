@@ -301,10 +301,6 @@ type runArrayAccess struct {
 	// from the read phase so WriteValue doesn't re-evaluate the chain.
 	compoundCache    bool      // set by runOperator to enable caching
 	cachedContainer  *phpv.ZVal // cached result of ac.value.Run(ctx) from Run()
-	// cachedContainerFromByRefGet is set when cachedContainer was obtained from
-	// a &get property hook (via PrepareWrite). When set, WriteValue calls
-	// UnRefIfAlone after the write to clean up the temporary reference.
-	cachedContainerFromByRefGet bool
 
 	// Compound offset caching: for compound ops, cache the offset evaluated
 	// during Read so WriteValue doesn't re-evaluate it (avoiding duplicate warnings).
@@ -733,18 +729,10 @@ func (ac *runArrayAccess) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 	var v *phpv.ZVal
 	var err error
 
-	// Track whether the container came from a &get property hook. When true,
-	// UnRefIfAlone is called on v after the write to clean up the temporary
-	// reference created by runGetHook's MakeRef() call. This mirrors PHP's
-	// refcount-based un-ref after indirect modifications via &get hooks.
-	containerFromByRefGet := false
-
 	// Use cached container from compound assignment read phase if available
 	if ac.cachedContainer != nil {
 		v = ac.cachedContainer
 		ac.cachedContainer = nil
-		containerFromByRefGet = ac.cachedContainerFromByRefGet
-		ac.cachedContainerFromByRefGet = false
 		// If an error handler changed the container to a scalar (e.g. $my_var[0] .= "xyz"
 		// where $my_var was null, auto-vivified to array, then error handler set $my_var = 0),
 		// abort the write silently to match PHP behavior (the write is lost, handler wins).
@@ -791,25 +779,8 @@ func (ac *runArrayAccess) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 			defer func() { inner.writeContext = false }()
 		}
 		if inner, ok := ac.value.(*runObjectVar); ok {
-			// PHP 8.4: For hooked properties with by-value get hooks, do NOT set
-			// writeContext=true before running. The writeContext flag triggers an
-			// eager indirect-modification check in runObjectVar.Run(), but for array
-			// access on object containers (e.g. $obj->prop[] = val where get hook
-			// returns an ArrayAccess object), the check must be deferred until after
-			// we have the actual returned value.
-			var hookedPropForWrite *phpv.ZClassProp
-			var hookedObjForWrite phpv.ZObject
-			hookedPropForWrite, hookedObjForWrite = inner.findHookedProp(ctx)
-			if hookedPropForWrite != nil && hookedPropForWrite.GetHook != nil && !hookedPropForWrite.GetIsByRef {
-				// Skip writeContext for now; check the returned value below
-			} else {
-				inner.writeContext = true
-				defer func() { inner.writeContext = false }()
-				// Track whether the container came from a &get hook for cleanup
-				if hookedPropForWrite != nil && hookedPropForWrite.GetIsByRef {
-					containerFromByRefGet = true
-				}
-			}
+			inner.writeContext = true
+			defer func() { inner.writeContext = false }()
 			// For unset($a->b->c['d']) where $a->b is null, mark the object chain
 			// with unsetChain so that hitting a null/non-object returns NULL silently
 			// instead of throwing "Attempt to modify property".
@@ -817,26 +788,10 @@ func (ac *runArrayAccess) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 				inner.setUnsetChain(true)
 				defer inner.setUnsetChain(false)
 			}
-			v, err = ac.value.Run(ctx)
-			if err != nil {
-				return err
-			}
-			// PHP 8.4: now that we have the container value, check whether indirect
-			// modification is allowed. If the get hook returned an object (e.g. ArrayAccess),
-			// it will handle offsetSet/offsetUnset, so indirect modification is valid.
-			// For any non-object return value, throw "Indirect modification".
-			if hookedPropForWrite != nil && hookedPropForWrite.GetHook != nil && !hookedPropForWrite.GetIsByRef {
-				if v == nil || v.GetType() != phpv.ZtObject {
-					return phpobj.ThrowError(ctx, phpobj.Error,
-						fmt.Sprintf("Indirect modification of %s::$%s is not allowed",
-							hookedObjForWrite.GetClass().GetName(), hookedPropForWrite.VarName))
-				}
-			}
-		} else {
-			v, err = ac.value.Run(ctx)
-			if err != nil {
-				return err
-			}
+		}
+		v, err = ac.value.Run(ctx)
+		if err != nil {
+			return err
 		}
 	}
 
@@ -947,14 +902,6 @@ func (ac *runArrayAccess) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 				ac.cachedOffset = phpv.ZInt(lastKey).ZVal()
 			}
 		}
-		// PHP 8.4 &get hook cleanup: if the container came from a &get hook,
-		// the runGetHook called MakeRef() to allow the indirect modification.
-		// After the write is done, clean up the temporary reference so that
-		// the property's backing store is no longer a reference (mirrors PHP's
-		// refcount-based un-ref when the indirect modification is complete).
-		if containerFromByRefGet {
-			v.UnRefIfAlone()
-		}
 		return nil
 	}
 
@@ -983,13 +930,7 @@ func (ac *runArrayAccess) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 	}
 
 	// OK...
-	writeErr := array.OffsetSet(ctx, offset, value)
-	// PHP 8.4 &get hook cleanup: if the container came from a &get hook,
-	// clean up the temporary reference after the write (same as append case above).
-	if containerFromByRefGet {
-		v.UnRefIfAlone()
-	}
-	return writeErr
+	return array.OffsetSet(ctx, offset, value)
 }
 
 func (ac *runArrayAccess) writeValueToString(ctx phpv.Context, value *phpv.ZVal) error {
@@ -1102,64 +1043,16 @@ func (ac *runArrayAccess) PrepareWrite(ctx phpv.Context) error {
 			inner.writeContext = true
 			defer func() { inner.writeContext = false }()
 		}
-		// PHP 8.4: indirect modification of a hooked property via $obj->prop[] = val
-		// is not allowed unless the get hook returns by reference OR the returned
-		// value is an object (e.g. ArrayAccess) which handles offsetSet itself.
-		// For a property with only a set hook (no get hook), throw immediately.
-		// For a property with a by-value get hook, we evaluate the container first
-		// and allow it only if the returned value is an object.
-		var hookedPropForNilOffset *phpv.ZClassProp
-		var hookedObjForNilOffset phpv.ZObject
-		nilOffsetFromByRefGet := false
-		if ov, ok := ac.value.(*runObjectVar); ok {
-			prop, obj := ov.findHookedProp(ctx)
-			if prop != nil && obj != nil {
-				if prop.GetHook == nil && prop.SetHook != nil {
-					// Set-only hook: can never return anything useful for [], throw immediately
-					return phpobj.ThrowError(ctx, phpobj.Error,
-						fmt.Sprintf("Indirect modification of %s::$%s is not allowed",
-							obj.GetClass().GetName(), prop.VarName))
-				}
-				if prop.GetHook != nil && !prop.GetIsByRef {
-					// By-value get hook: save for post-evaluation check
-					hookedPropForNilOffset = prop
-					hookedObjForNilOffset = obj
-				} else if prop.GetHook != nil && prop.GetIsByRef {
-					// &get hook: the container will be a reference; track for cleanup
-					nilOffsetFromByRefGet = true
-				}
-			}
-		}
 		v, err := ac.value.Run(ctx)
 		if err != nil {
 			return err
 		}
-		// PHP 8.4: if the container is a by-value hooked property whose get hook
-		// returned a non-object value, indirect modification is not allowed.
-		// If it returned an object (e.g. ArrayAccess), allow it.
-		if hookedPropForNilOffset != nil && v != nil && v.GetType() != phpv.ZtObject {
-			return phpobj.ThrowError(ctx, phpobj.Error,
-				fmt.Sprintf("Indirect modification of %s::$%s is not allowed",
-					hookedObjForNilOffset.GetClass().GetName(), hookedPropForNilOffset.VarName))
-		}
-		if v != nil {
-			vt := v.GetType()
-			if vt == phpv.ZtArray {
-				if za, ok := v.Array().(*phpv.ZArray); ok {
-					if za.WouldOverflow() {
-						return phpobj.ThrowError(ctx, phpobj.Error, phpv.ErrNextElementOccupied.Error())
-					}
+		if v != nil && v.GetType() == phpv.ZtArray {
+			if za, ok := v.Array().(*phpv.ZArray); ok {
+				if za.WouldOverflow() {
+					return phpobj.ThrowError(ctx, phpobj.Error, phpv.ErrNextElementOccupied.Error())
 				}
-				// Cache the container (array or object) to avoid re-evaluating it in WriteValue.
-				// For hooked properties with by-value get hooks that return objects, caching is
-				// essential to prevent WriteValue from re-evaluating with writeContext=true
-				// (which would trigger the indirect-modification error check in runObjectVar.Run()).
-				ac.cachedContainer = v
-				// Track whether the cached container came from a &get hook for post-write cleanup.
-				ac.cachedContainerFromByRefGet = nilOffsetFromByRefGet
-			} else if vt == phpv.ZtObject && hookedPropForNilOffset != nil {
-				// Object returned by get hook: cache to prevent WriteValue re-evaluation
-				// with writeContext=true (which would incorrectly throw "Indirect modification").
+				// Cache the container to avoid re-evaluating it in WriteValue
 				ac.cachedContainer = v
 			}
 		}

@@ -185,15 +185,28 @@ func doVarExport(ctx phpv.Context, w io.Writer, z *phpv.ZVal, linePfx string, re
 
 		localPfx := linePfx + "  "
 		if obj, ok := v.(*phpobj.ZObject); ok {
-			// Use VarExportProps to iterate all declared properties including:
-			// - Private properties from all levels of the class hierarchy
-			// - Virtual hooked properties (get hook called to produce value)
-			// - Backed properties with hooks (hook called, not raw backing value)
-			for keyStr, propVal := range obj.VarExportProps(ctx) {
-				fmt.Fprintf(w, "%s %s => ", localPfx, varExportString(keyStr))
+			// Use IterProps to get all properties (including private/protected)
+			for prop := range obj.IterProps(ctx) {
+				fmt.Fprintf(w, "%s %s => ", localPfx, varExportString(prop.VarName.String()))
+
+				// For hooked properties, call the get hook (var_export shows hook result).
+				// For virtual properties (no backing store) and backed properties with hooks,
+				// the hook result is used (similar to get_object_vars behavior).
+				var propVal *phpv.ZVal
+				if prop.HasHooks && prop.GetHook != nil {
+					var hookErr error
+					propVal, hookErr = obj.RunGetHookForExport(ctx, prop.VarName, prop)
+					if hookErr != nil {
+						return hookErr
+					}
+				}
+				if propVal == nil {
+					propVal = obj.GetPropValue(prop)
+				}
 				if propVal == nil {
 					propVal = phpv.ZNULL.ZVal()
 				}
+
 				doVarExport(ctx, w, propVal, localPfx, recurs)
 				fmt.Fprintf(w, ",\n")
 			}

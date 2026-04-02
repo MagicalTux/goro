@@ -5,7 +5,6 @@ import (
 	"iter"
 	"maps"
 	"slices"
-	"strings"
 	"sync/atomic"
 
 	"github.com/MagicalTux/goro/core/logopt"
@@ -33,12 +32,8 @@ type ZObject struct {
 	// Guards for property hook execution to prevent infinite recursion
 	// When a get/set hook accesses $this->propName for the same property,
 	// the guard ensures the backing value is accessed directly.
-	getHookGuard    map[phpv.ZString]bool
-	setHookGuard    map[phpv.ZString]bool
-	// byRefGetContext is set during execution of a &get hook body. When set,
-	// ObjectGet returns the actual hash table ZVal (not a snapshot) for private
-	// properties, so that the &get hook can return a true reference to them.
-	byRefGetContext bool
+	getHookGuard map[phpv.ZString]bool
+	setHookGuard map[phpv.ZString]bool
 
 	// Readonly property tracking - set of properties that have been initialized
 	readonlyInit map[phpv.ZString]bool
@@ -1050,13 +1045,9 @@ func (pi *propIterator) yield(yield func(*phpv.ZClassProp) bool) {
 	ctx := pi.ctx
 	shown := map[string]struct{}{}
 
-	// Build lineage from current class to root.
-	// Use o.Class (the actual class of the object) rather than o.GetClass()
-	// (which may return CurrentClass when called from inside a method).
-	// IterProps should always iterate ALL properties of the actual object,
-	// regardless of the calling context.
+	// Build lineage from current class to root
 	var lineage []*ZClass
-	class := o.Class.(*ZClass)
+	class := o.GetClass().(*ZClass)
 	for class != nil {
 		lineage = append(lineage, class)
 		parent := class.GetParent()
@@ -1176,245 +1167,6 @@ func (pi *propIterator) yield(yield func(*phpv.ZClassProp) bool) {
 			if !yield(p) {
 				break
 			}
-		}
-	}
-}
-
-// GetMangledObjectVars returns an array of all properties with PHP name mangling:
-// - Private properties: "\0ClassName\0propName"
-// - Protected properties: "\0*\0propName"
-// - Public properties: plain "propName"
-// - Dynamic properties: plain "propName"
-// This matches the behavior of PHP's get_mangled_object_vars().
-// All properties from all levels of the class hierarchy are included,
-// with raw backing values (not hook results) for backed properties.
-func (o *ZObject) GetMangledObjectVars(ctx phpv.Context) *phpv.ZArray {
-	result := phpv.NewZArray()
-
-	// For initialized lazy proxies, delegate to the real instance.
-	if o.LazyState == LazyProxyInitialized && o.LazyInstance != nil {
-		target := o.ResolveProxy()
-		return target.GetMangledObjectVars(ctx)
-	}
-
-	// For uninitialized lazy objects, return only the hash table entries with mangled keys.
-	// IterProps would return ALL declared properties, but lazy objects should only
-	// expose properties that have been explicitly set (via setRawValueWithoutLazyInitialization).
-	if o.IsLazy() {
-		if o.h != nil {
-			it := o.h.NewIterator()
-			for it.Valid(ctx) {
-				k, _ := it.Key(ctx)
-				v, _ := it.Current(ctx)
-				if k != nil {
-					ks := k.AsString(ctx)
-					// Convert internal private key format *ClassName:propName to \0ClassName\0propName
-					if len(ks) > 0 && ks[0] == '*' {
-						// Skip \0*\0 protected format (already correct) vs internal *ClassName:propName
-						parts := strings.SplitN(string(ks[1:]), ":", 2)
-						if len(parts) == 2 {
-							mangledKey := phpv.ZString("\x00" + parts[0] + "\x00" + parts[1])
-							result.OffsetSet(ctx, mangledKey, v)
-							it.Next(ctx)
-							continue
-						}
-					}
-					result.OffsetSet(ctx, k, v)
-				}
-				it.Next(ctx)
-			}
-		}
-		return result
-	}
-
-	shown := map[string]struct{}{}
-
-	// Iterate all declared properties using IterProps
-	for prop := range o.IterProps(ctx) {
-		var key phpv.ZString
-		propName := prop.VarName
-		if prop.Modifiers.IsPrivate() {
-			declName := o.GetDeclClassName(prop)
-			key = phpv.ZString("\x00" + string(declName) + "\x00" + string(propName))
-			shown[string(propName)] = struct{}{}
-		} else if prop.Modifiers.IsProtected() {
-			key = phpv.ZString("\x00*\x00" + string(propName))
-			shown[string(propName)] = struct{}{}
-		} else {
-			key = propName
-			shown[string(propName)] = struct{}{}
-		}
-		val := o.GetPropValue(prop)
-		if val == nil {
-			val = phpv.ZNULL.ZVal()
-		}
-		result.OffsetSet(ctx, key, val)
-	}
-
-	// Add dynamic properties (not declared in the class)
-	ht := o.h
-	if ht != nil {
-		it := ht.NewIterator()
-		for it.Valid(ctx) {
-			k, _ := it.Key(ctx)
-			if k != nil {
-				ks := k.AsString(ctx)
-				// Skip internal private key format *ClassName:propName
-				if len(ks) > 0 && ks[0] == '*' {
-					it.Next(ctx)
-					continue
-				}
-				if _, ok := shown[string(ks)]; !ok {
-					v, _ := it.Current(ctx)
-					result.OffsetSet(ctx, k, v)
-				}
-			}
-			it.Next(ctx)
-		}
-	}
-
-	return result
-}
-
-// VarExportProps iterates all properties for var_export output.
-// Unlike IterProps, this includes:
-// - Virtual properties with get hooks (values obtained by calling the hook)
-// - Private properties from all levels of the class hierarchy
-// It calls get hooks for all hooked properties (backed and virtual).
-// Returns an iter.Seq2[string, *phpv.ZVal] yielding (propertyName, value) pairs.
-func (o *ZObject) VarExportProps(ctx phpv.Context) func(yield func(string, *phpv.ZVal) bool) {
-	return func(yield func(string, *phpv.ZVal) bool) {
-		// Build lineage from current class to root
-		var lineage []*ZClass
-		class := o.Class.(*ZClass)
-		for cur := class; cur != nil; cur = cur.Extends {
-			lineage = append(lineage, cur)
-		}
-
-		// Build most-derived map for non-private properties.
-		// Also track hookProvider: the most-derived version with a get hook.
-		mostDerived := map[string]*phpv.ZClassProp{}
-		mostDerivedClass := map[string]*ZClass{}
-		hookProvider := map[string]*phpv.ZClassProp{}
-		for _, cl := range lineage {
-			for _, p := range cl.Props {
-				if p.Modifiers.IsStatic() {
-					continue
-				}
-				if !p.Modifiers.IsPrivate() {
-					if _, ok := mostDerived[p.VarName.String()]; !ok {
-						mostDerived[p.VarName.String()] = p
-						mostDerivedClass[p.VarName.String()] = cl
-					}
-					if _, ok := hookProvider[p.VarName.String()]; !ok && p.HasHooks && p.GetHook != nil {
-						hookProvider[p.VarName.String()] = p
-					}
-				}
-			}
-		}
-
-		shown := map[string]struct{}{}
-
-		// Iterate from root to leaf for correct PHP property ordering
-		for i := len(lineage) - 1; i >= 0; i-- {
-			cl := lineage[i]
-			for _, p := range cl.Props {
-				if p.Modifiers.IsStatic() {
-					continue
-				}
-
-				if !p.Modifiers.IsPrivate() {
-					if _, ok := shown[p.VarName.String()]; ok {
-						continue
-					}
-					shown[p.VarName.String()] = struct{}{}
-
-					// Use the most-derived version of this property
-					if derived, hasDerived := mostDerived[p.VarName.String()]; hasDerived {
-						p = derived
-						cl = mostDerivedClass[p.VarName.String()]
-					}
-
-					// If the most-derived version has no get hook but a parent provides one,
-					// use the parent's hook (inherited behavior).
-					if p.GetHook == nil {
-						if hp, ok := hookProvider[p.VarName.String()]; ok {
-							p = hp
-						}
-					}
-
-					// Skip set-only virtual properties (no get hook, no backing store)
-					if p.IsVirtual() && p.GetHook == nil {
-						continue
-					}
-
-					// Get value: call hook if available, otherwise use backing store
-					var val *phpv.ZVal
-					if p.HasHooks && p.GetHook != nil {
-						var err error
-						val, err = o.runGetHook(ctx, p.VarName, p)
-						if err != nil || val == nil {
-							val = o.GetPropValue(p)
-						}
-					} else {
-						val = o.GetPropValue(p)
-					}
-					if !yield(p.VarName.String(), val) {
-						return
-					}
-				} else {
-					// Private property - always include (var_export shows all private props)
-					propName := getPrivatePropName(cl, p.VarName)
-					propKey := cl.GetName().String() + ":" + p.VarName.String()
-					if _, ok := shown[propKey]; ok {
-						continue
-					}
-					shown[propKey] = struct{}{}
-
-					// Skip set-only virtual properties (no get hook, no backing store)
-					if p.IsVirtual() && p.GetHook == nil {
-						continue
-					}
-
-					// Get value: call hook if available, otherwise use backing store
-					var val *phpv.ZVal
-					if p.HasHooks && p.GetHook != nil {
-						var err error
-						val, err = o.runGetHook(ctx, p.VarName, p)
-						if err != nil || val == nil {
-							val = o.h.GetString(propName)
-						}
-					} else {
-						val = o.h.GetString(propName)
-					}
-					if val == nil {
-						continue // skip unset private properties
-					}
-					if !yield(p.VarName.String(), val) {
-						return
-					}
-				}
-			}
-		}
-
-		// Dynamic properties (in hash table but not declared)
-		htIt := o.h.NewIterator()
-		for htIt.Valid(nil) {
-			k, _ := htIt.Key(nil)
-			if k != nil {
-				key := k.AsString(nil)
-				if len(key) > 0 && key[0] == '*' {
-					htIt.Next(nil)
-					continue
-				}
-				if _, ok := shown[string(key)]; !ok {
-					val := o.h.GetString(key)
-					if !yield(string(key), val) {
-						return
-					}
-				}
-			}
-			htIt.Next(nil)
 		}
 	}
 }
@@ -2114,20 +1866,6 @@ func sharesProtectedPropertyPrototype(callerClass phpv.ZClass, objectClass *ZCla
 	return callerClass.InstanceOf(proto)
 }
 
-// FindPropWithHook is the exported version of findPropWithHook.
-// Used by the compiler for write-context hook detection.
-func (o *ZObject) FindPropWithHook(keyStr phpv.ZString) *phpv.ZClassProp {
-	return o.findPropWithHook(keyStr)
-}
-
-// IsInsideHookForProp returns true if we are currently executing a get or set hook
-// for the given property on this object. Used to allow backing-store writes/reads
-// inside hook bodies that would otherwise be blocked by hook checks.
-func (o *ZObject) IsInsideHookForProp(keyStr phpv.ZString) bool {
-	return (o.getHookGuard != nil && o.getHookGuard[keyStr]) ||
-		(o.setHookGuard != nil && o.setHookGuard[keyStr])
-}
-
 // findPropWithHook looks up a class property by name, walking the class hierarchy.
 // Returns the ZClassProp if found and it has hooks, nil otherwise.
 func (o *ZObject) findPropWithHook(keyStr phpv.ZString) *phpv.ZClassProp {
@@ -2136,21 +1874,6 @@ func (o *ZObject) findPropWithHook(keyStr phpv.ZString) *phpv.ZClassProp {
 		for _, prop := range cur.Props {
 			if prop.VarName == keyStr && prop.HasHooks {
 				return prop
-			}
-		}
-	}
-	return nil
-}
-
-// findDeclClassForProp finds the class in the hierarchy that declares the given property.
-// This is used to set the correct class context when executing hooks, so that
-// private member access within hooks works correctly even when called on subclass objects.
-func (o *ZObject) findDeclClassForProp(prop *phpv.ZClassProp) phpv.ZClass {
-	class := o.Class.(*ZClass)
-	for cur := class; cur != nil; cur = cur.Extends {
-		for _, p := range cur.Props {
-			if p == prop {
-				return cur
 			}
 		}
 	}
@@ -2178,30 +1901,15 @@ func (o *ZObject) runGetHook(ctx phpv.Context, keyStr phpv.ZString, prop *phpv.Z
 	o.getHookGuard[keyStr] = true
 	defer delete(o.getHookGuard, keyStr)
 
-	// For &get hooks, set byRefGetContext so that ObjectGet returns actual
-	// hash table ZVals (not snapshots) for private props, enabling true references.
-	if prop.GetIsByRef {
-		o.byRefGetContext = true
-		defer func() { o.byRefGetContext = false }()
-	}
-
 	// Create a callable wrapper for the hook body so CallZVal creates a
 	// proper FuncContext with $this bound to the object. Wrap in MethodCallable
 	// so the class context is set, allowing access to private/protected members.
-	// Use the declaring class of the property as the class context, not the
-	// runtime class of the object, so that private member access works correctly
-	// when a subclass object has hooks inherited from a parent class.
-	hookClass := o.findDeclClassForProp(prop)
-	if hookClass == nil {
-		hookClass = o.Class
-	}
 	hookCallable := &phpv.MethodCallable{
 		Callable: &phpv.HookCallable{
 			Hook:     hook,
-			HookName: fmt.Sprintf("%s::$%s::get", hookClass.GetName(), keyStr),
-			IsByRef:  prop.GetIsByRef,
+			HookName: fmt.Sprintf("%s::$%s::get", o.Class.GetName(), keyStr),
 		},
-		Class: hookClass,
+		Class: o.Class,
 	}
 
 	result, err := ctx.CallZVal(ctx, hookCallable, nil, o)
@@ -2243,13 +1951,6 @@ func (o *ZObject) runGetHook(ctx phpv.Context, keyStr phpv.ZString, prop *phpv.Z
 				o.Class.GetName(), keyStr, prop.TypeHint.String()))
 	}
 
-	// For &get hooks: ensure the result is a reference so that the caller gets
-	// a true reference (alias) to the backing value rather than a copy.
-	// This enables $prop = &$obj->prop to make $prop an alias.
-	if prop.GetIsByRef && result != nil && !result.IsNull() {
-		result.MakeRef()
-	}
-
 	return result, nil
 }
 
@@ -2274,21 +1975,15 @@ func (o *ZObject) runSetHook(ctx phpv.Context, keyStr phpv.ZString, prop *phpv.Z
 	// The hook body references $value (or custom param name) as a local variable.
 	// Wrap in MethodCallable so CallZVal sets the class context, allowing
 	// the hook to access private/protected properties of the declaring class.
-	// Use the declaring class of the property as context (not the runtime object class)
-	// so that private member access works correctly in subclass objects.
-	setHookClass := o.findDeclClassForProp(prop)
-	if setHookClass == nil {
-		setHookClass = o.Class
-	}
 	hookCallable := &phpv.MethodCallable{
 		Callable: &phpv.HookCallable{
 			Hook:     prop.SetHook,
-			HookName: fmt.Sprintf("%s::$%s::set", setHookClass.GetName(), keyStr),
+			HookName: fmt.Sprintf("%s::$%s::set", o.Class.GetName(), keyStr),
 			Params: []*phpv.FuncArg{
 				{VarName: paramName},
 			},
 		},
-		Class: setHookClass,
+		Class: o.Class,
 	}
 
 	result, err := ctx.CallZVal(ctx, hookCallable, []*phpv.ZVal{value}, o)
@@ -2457,10 +2152,6 @@ func (o *ZObject) ObjectGet(ctx phpv.Context, key phpv.Val) (*phpv.ZVal, error) 
 	// but NOT for virtual properties (get hook only, no backing store) or for
 	// undeclared properties when __get exists and we're NOT already inside __get
 	// for this property (those don't observe lazy state directly).
-	// Track whether we're inside __get for this property. Used to propagate
-	// the getGuard to the real instance after lazy proxy init, preventing double
-	// __get invocation when the __get body does $this->prop (which triggers init).
-	alreadyInGet := o.getGuard != nil && o.getGuard[keyStr]
 	if o.IsLazy() && !o.IsPropertySkippedForLazy(keyStr) {
 		needsInit := true
 		// Check if the property is virtual (has get hook, no backing store) - no init needed
@@ -2471,6 +2162,7 @@ func (o *ZObject) ObjectGet(ctx phpv.Context, key phpv.Val) (*phpv.ZVal, error) 
 			// Only skip init for the FIRST call (not when inside __get via getGuard).
 			// If getGuard is active for this property, we're inside __get and normal
 			// init rules apply (the __get body may access $this properties).
+			alreadyInGet := o.getGuard != nil && o.getGuard[keyStr]
 			if !alreadyInGet {
 				if declProp := o.findDeclaredProp(keyStr); declProp == nil {
 					if zc, ok := o.Class.(*ZClass); ok {
@@ -2485,10 +2177,7 @@ func (o *ZObject) ObjectGet(ctx phpv.Context, key phpv.Val) (*phpv.ZVal, error) 
 			if err := o.TriggerLazyInitForProp(ctx, keyStr); err != nil {
 				return nil, err
 			}
-			// After proxy init, delegate to the real instance.
-			// If we're inside __get for this property (alreadyInGet), propagate the guard
-			// to the real instance so that $this->prop inside __get doesn't re-invoke __get
-			// on the real instance (which would cause double __get invocation).
+			// After proxy init, delegate to the real instance
 			if o.LazyState == LazyProxyInitialized && o.LazyInstance != nil {
 				target := o.ResolveProxy()
 				if target.IsLazy() {
@@ -2496,16 +2185,6 @@ func (o *ZObject) ObjectGet(ctx phpv.Context, key phpv.Val) (*phpv.ZVal, error) 
 						return nil, err
 					}
 					target = target.ResolveProxy()
-				}
-				if alreadyInGet {
-					// Propagate getGuard to real instance to prevent second __get call
-					if target.getGuard == nil {
-						target.getGuard = make(map[phpv.ZString]bool)
-					}
-					target.getGuard[keyStr] = true
-					result, err := target.ObjectGet(ctx, keyStr)
-					delete(target.getGuard, keyStr)
-					return result, err
 				}
 				return target.ObjectGet(ctx, keyStr)
 			}
@@ -2561,40 +2240,18 @@ func (o *ZObject) ObjectGet(ctx phpv.Context, key phpv.Val) (*phpv.ZVal, error) 
 	getInsideHook := (o.getHookGuard != nil && o.getHookGuard[keyStr]) ||
 		(o.setHookGuard != nil && o.setHookGuard[keyStr])
 	if !getInsideHook {
-		// Before looking for a hooked property, check if the caller's class has its own
-		// PRIVATE property with this name. If so, use the caller's own private property
-		// (which may have its own hooks or be hook-less). This handles the case where:
-		// - A has private $prop2 { get; set; }
-		// - B extends A and has public $prop2 { get; set; }
-		// When inside A's method on a B object, $this->prop2 should use A's private hook.
-		if callerClass := ctx.Class(); callerClass != nil {
-			if callerZClass, ok := callerClass.(*ZClass); ok {
-				if prop, ok := getOwnProp(callerZClass, keyStr); ok && prop.Modifiers.IsPrivate() {
-					// Caller has its own private property with this name.
-					// Use it directly (with its own hooks if any).
-					if prop.GetHook != nil {
-						return o.runGetHook(ctx, keyStr, prop)
-					}
-					// No get hook on caller's private prop - fall through to private prop access below
-					goto skipHookDispatch
-				}
+		if prop := o.findPropWithHook(keyStr); prop != nil {
+			if prop.GetHook != nil {
+				return o.runGetHook(ctx, keyStr, prop)
+			}
+			// Set-only virtual property without a backing value: reading throws Error.
+			// Backed properties (IsBacked=true) fall through to normal property lookup
+			// (which may throw "uninitialized typed property" if no value has been set yet).
+			if prop.SetHook != nil && prop.GetHook == nil && !prop.IsBacked && !o.h.HasString(keyStr) {
+				return nil, ThrowError(ctx, Error,
+					fmt.Sprintf("Property %s::$%s is write-only", o.Class.GetName(), keyStr))
 			}
 		}
-		{
-			if prop := o.findPropWithHook(keyStr); prop != nil {
-				if prop.GetHook != nil {
-					return o.runGetHook(ctx, keyStr, prop)
-				}
-				// Set-only virtual property without a backing value: reading throws Error.
-				// Backed properties (IsBacked=true) fall through to normal property lookup
-				// (which may throw "uninitialized typed property" if no value has been set yet).
-				if prop.SetHook != nil && prop.GetHook == nil && !prop.IsBacked && !o.h.HasString(keyStr) {
-					return nil, ThrowError(ctx, Error,
-						fmt.Sprintf("Property %s::$%s is write-only", o.Class.GetName(), keyStr))
-				}
-			}
-		}
-	skipHookDispatch:
 	}
 
 	if _, ok := o.hasPrivate[keyStr]; ok {
@@ -2604,11 +2261,6 @@ func (o *ZObject) ObjectGet(ctx phpv.Context, key phpv.Val) (*phpv.ZVal, error) 
 		propName := getPrivatePropName(resolveClass, keyStr)
 		if o.h.HasString(propName) {
 			v := o.h.GetString(propName)
-			if o.byRefGetContext {
-				// Inside a &get hook body: return the actual hash table ZVal so that
-				// the hook can return a true reference to this private property.
-				return v, nil
-			}
 			// Return a detached snapshot so in-place mutations to the hash
 			// entry don't retroactively change already-read values (PHP semantics).
 			return phpv.NewZVal(v.Value()), nil
@@ -2796,66 +2448,24 @@ func (o *ZObject) ObjectSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) er
 	keyStr := key.(phpv.ZString)
 
 	// Lazy object: trigger initialization on property write (unless skipped),
-	// but NOT for virtual properties, backed properties with set hooks (let the
-	// hook run on the proxy first), or undeclared properties when __set/__unset exists.
-	// Exception: if we are already INSIDE a hook for this property (setHookGuard active),
-	// we must trigger lazy init so the backing store write goes to the real instance.
-	isInsideHookForProp := (o.setHookGuard != nil && o.setHookGuard[keyStr])
-	// Similarly, if we are inside __set magic method for this property (setGuard active),
-	// lazy init must proceed so the write goes to the real instance, not the proxy.
-	isInsideSetMagic := (o.setGuard != nil && o.setGuard[keyStr])
+	// but NOT for virtual properties or undeclared properties when __set/__unset exists.
 	if o.IsLazy() && !o.IsPropertySkippedForLazy(keyStr) {
 		needsInit := true
-		// Properties with set hooks (NOT already inside the hook): let the hook dispatch handle it.
-		// For backed properties with a set hook (e.g. public $prop { set { $this->prop = $value*2; } }),
-		// the hook runs on the proxy. Inside the hook, $this->prop = ... triggers lazy init.
-		// For virtual properties (no backing store), init is likewise not needed.
-		hookedProp := o.findPropWithHook(keyStr)
-		if !isInsideHookForProp && hookedProp != nil && hookedProp.SetHook != nil {
-			// Determine how to handle lazy initialization for this hooked property.
-			// The behavior depends on the kind of set hook:
-			//
-			// 1. Unset (value==nil): skip init so the "Cannot unset hooked property" error
-			//    is thrown by hook dispatch below, without triggering lazy initialization.
-			//
-			// 2. Virtual property (no backing store): skip init; hook handles everything.
-			//
-			// 3. Block set hook (set { $this->prop = expr; }): skip init so the hook runs
-			//    on the proxy first. Inside the hook body, $this->prop = expr triggers lazy
-			//    init via the isInsideHookForProp path, which delegates the backing write to
-			//    the real instance. Output order: "set" before "init".
-			//
-			// 4. Arrow set hook (set => expr): trigger lazy init first. Arrow hooks evaluate
-			//    the expression and call objectSetBacking() on 'o' (the proxy). If we skip
-			//    init, the backing value is stored on the proxy, not the real instance.
-			//    After lazy proxy init, var_dump($c->prop) reads from the real instance (null).
-			_, isBlockHook := hookedProp.SetHook.(phpv.Runnables)
-			if value == nil || hookedProp.IsVirtual() || isBlockHook {
-				needsInit = false
-			}
-		} else if hookedProp == nil {
+		// Virtual property with set hook: don't trigger init (hook handles it)
+		if prop := o.findPropWithHook(keyStr); prop != nil && prop.SetHook != nil && !prop.IsBacked {
+			needsInit = false
+		} else if prop == nil {
 			// Undeclared property: check for __set (write) or __unset (unset/nil value)
 			if declProp := o.findDeclaredProp(keyStr); declProp == nil {
 				if zc, ok := o.Class.(*ZClass); ok {
 					if value == nil {
 						// unset() call
 						if _, hasUnset := zc.Methods["__unset"]; hasUnset {
-							// Only skip init if we're NOT already inside __unset for this property.
-							// If we're inside __unset (unsetGuard active), allow init so the backing
-							// unset goes to the real instance (e.g. lazy proxy with __unset).
-							if o.unsetGuard == nil || !o.unsetGuard[keyStr] {
-								needsInit = false
-							}
+							needsInit = false
 						}
 					} else {
 						if _, hasSet := zc.Methods["__set"]; hasSet {
-							// Only skip init if we're NOT already inside __set for this property.
-							// If we're inside __set (isInsideSetMagic), allow init so the dynamic
-							// property write goes to the real instance (e.g. lazy proxy with __set
-							// that does $this->prop = $value * 2).
-							if !isInsideSetMagic {
-								needsInit = false
-							}
+							needsInit = false
 						}
 					}
 				}
@@ -2865,10 +2475,7 @@ func (o *ZObject) ObjectSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) er
 			if err := o.TriggerLazyInitForProp(ctx, keyStr); err != nil {
 				return err
 			}
-			// After proxy init, delegate to the real instance.
-			// If we triggered init from INSIDE a set hook (isInsideHookForProp=true),
-			// write to the backing store directly on the real instance (no hook dispatch),
-			// because the hook has already run on the proxy.
+			// After proxy init, delegate to the real instance
 			if o.LazyState == LazyProxyInitialized && o.LazyInstance != nil {
 				target := o.ResolveProxy()
 				if target.IsLazy() {
@@ -2876,29 +2483,6 @@ func (o *ZObject) ObjectSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) er
 						return err
 					}
 					target = target.ResolveProxy()
-				}
-				if isInsideHookForProp {
-					// We're already inside the set hook — write backing value directly
-					// on the real instance without re-invoking the hook.
-					if target.setHookGuard == nil {
-						target.setHookGuard = map[phpv.ZString]bool{}
-					}
-					target.setHookGuard[keyStr] = true
-					err := target.ObjectSet(ctx, keyStr, value)
-					target.setHookGuard[keyStr] = false
-					return err
-				}
-				if isInsideSetMagic {
-					// We're already inside __set for this property — write the value
-					// directly to the real instance's hash table without re-invoking __set.
-					// This prevents double invocation of __set (once on proxy, once on real).
-					if target.setGuard == nil {
-						target.setGuard = map[phpv.ZString]bool{}
-					}
-					target.setGuard[keyStr] = true
-					err := target.ObjectSet(ctx, keyStr, value)
-					target.setGuard[keyStr] = false
-					return err
 				}
 				return target.ObjectSet(ctx, keyStr, value)
 			}
@@ -3096,16 +2680,7 @@ func (o *ZObject) ObjectSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) er
 	}
 
 	// Enforce typed property type checking (PHP 8.0+)
-	// Skip type checking if the property has a set hook with an explicit type parameter
-	// (e.g. set(string|array $value) {...}). The hook's parameter type may be wider than
-	// the property type, and the hook is responsible for coercing the value before storing.
-	skipTypeCheck := false
-	if !insideHook {
-		if prop := o.findPropWithHook(keyStr); prop != nil && prop.SetHook != nil && prop.SetParamHasType {
-			skipTypeCheck = true
-		}
-	}
-	if value != nil && !skipTypeCheck {
+	if value != nil {
 		if prop := o.findDeclaredProp(keyStr); prop != nil && prop.TypeHint != nil {
 			if coerced, err := o.enforcePropertyType(ctx, keyStr, prop, value); err != nil {
 				return err
@@ -3149,26 +2724,12 @@ func (o *ZObject) ObjectSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) er
 		}
 	}
 
-	// Check for property set hook (PHP 8.4) - only if not inside ANY hook for this property.
-	// If the caller's class has its own private property with this name, use it directly.
+	// Check for property set hook (PHP 8.4) - only if not inside ANY hook for this property
 	if !insideHook {
-		if callerClass := ctx.Class(); callerClass != nil {
-			if callerZClass, ok := callerClass.(*ZClass); ok {
-				if prop, ok := getOwnProp(callerZClass, keyStr); ok && prop.Modifiers.IsPrivate() {
-					// Caller has its own private property. Use its set hook if any.
-					if prop.SetHook != nil {
-						return o.runSetHook(ctx, keyStr, prop, value)
-					}
-					// No set hook - fall through to private property assignment below
-					goto skipSetHookDispatch
-				}
-			}
-		}
 		if prop := o.findPropWithHook(keyStr); prop != nil && prop.SetHook != nil {
 			return o.runSetHook(ctx, keyStr, prop, value)
 		}
 	}
-skipSetHookDispatch:
 
 	if _, ok := o.hasPrivate[keyStr]; ok {
 		// Private properties are not virtual. If the caller's class declares a private
@@ -3388,11 +2949,9 @@ type hookedObjEntry struct {
 // It pre-computes the list of visible entries on construction so that the
 // iteration order is stable and includes virtual hooked properties.
 type hookedObjectIterator struct {
-	obj        *ZObject
-	entries    []hookedObjEntry
-	pos        int
-	prevRefVal *phpv.ZVal   // the ZVal that was made into a reference by CurrentMakeRef
-	prevRef    phpv.ZString // key of the previous reference made by CurrentMakeRef
+	obj     *ZObject
+	entries []hookedObjEntry
+	pos     int
 }
 
 // newHookedObjectIterator builds the iteration list for an object with hooks.
@@ -3406,14 +2965,9 @@ func newHookedObjectIterator(o *ZObject, scope phpv.ZClass) *hookedObjectIterato
 		lineage = append(lineage, cur)
 	}
 
-	// Build most-derived map for non-private properties.
-	// Also track the most-derived version with hooks separately.
-	// This is needed because a subclass may redeclare $prop = newValue without
-	// hooks, inheriting the parent's hooks. In this case mostDerived has no hooks
-	// but hookProvider does.
+	// Build most-derived map for non-private properties
 	mostDerived := map[string]*phpv.ZClassProp{}
 	mostDerivedClass := map[string]*ZClass{}
-	hookProvider := map[string]*phpv.ZClassProp{} // most-derived version with get hook
 	for _, cl := range lineage {
 		for _, p := range cl.Props {
 			if p.Modifiers.IsStatic() {
@@ -3423,10 +2977,6 @@ func newHookedObjectIterator(o *ZObject, scope phpv.ZClass) *hookedObjectIterato
 				if _, ok := mostDerived[p.VarName.String()]; !ok {
 					mostDerived[p.VarName.String()] = p
 					mostDerivedClass[p.VarName.String()] = cl
-				}
-				// Track most-derived with a get hook
-				if _, ok := hookProvider[p.VarName.String()]; !ok && p.HasHooks && p.GetHook != nil {
-					hookProvider[p.VarName.String()] = p
 				}
 			}
 		}
@@ -3461,16 +3011,6 @@ func newHookedObjectIterator(o *ZObject, scope phpv.ZClass) *hookedObjectIterato
 				if hasDerived {
 					p = derived
 					cl = derivedClass
-				}
-
-				// If the most-derived version has no get hook but a parent provides one,
-				// use the parent's hook (inherited behavior when subclass redeclares
-				// without explicit hooks, e.g. class C extends B { public $prop = 3; }).
-				if p.GetHook == nil {
-					if hp, ok := hookProvider[p.VarName.String()]; ok {
-						// Merge: use the most-derived class position/backing, but parent's hook
-						p = hp
-					}
 				}
 
 				// Check visibility
@@ -3591,7 +3131,10 @@ func (it *hookedObjectIterator) Key(ctx phpv.Context) (*phpv.ZVal, error) {
 
 func (it *hookedObjectIterator) Next(ctx phpv.Context) (*phpv.ZVal, error) {
 	it.pos++
-	return nil, nil
+	if it.pos >= len(it.entries) {
+		return nil, nil
+	}
+	return it.getValue(ctx, it.entries[it.pos])
 }
 
 func (it *hookedObjectIterator) Prev(ctx phpv.Context) (*phpv.ZVal, error) {
@@ -3652,74 +3195,35 @@ func (it *hookedObjectIterator) CurrentMakeRef(ctx phpv.Context) (*phpv.ZVal, er
 	}
 	e := it.entries[it.pos]
 
-	// Collapse previous reference: when $val moves to a new element, the previous
-	// hash table entry's reference wrapper should be removed (PHP refcount semantics).
-	if it.prevRefVal != nil {
-		it.prevRefVal.CollapseRef()
-		it.prevRefVal = nil
-	}
-
 	// Check for readonly property
 	if it.obj.IsReadonlyProperty(e.key) && it.obj.IsReadonlyPropertyInitialized(e.key) {
 		return nil, ThrowError(nil, Error,
 			fmt.Sprintf("Cannot indirectly modify readonly property %s::$%s", it.obj.GetClass().GetName(), e.key))
 	}
 
-	// For hooked properties: check if by-reference iteration is allowed.
-	// - Virtual with &get: call hook and return its reference result
-	// - Virtual with regular get: throw error (cannot create reference)
-	// - Backed with &get: not valid (PHP throws error at compile/runtime)
-	// - Backed with regular get (non-byRef): throw error (indirect modification not allowed)
-	if e.prop != nil && e.prop.HasHooks && e.prop.GetHook != nil {
-		if e.prop.GetIsByRef && e.prop.IsVirtual() && !it.obj.h.HasString(e.key) {
-			// &get virtual hook: call the hook and return its by-reference result.
-			val, err := it.obj.runGetHook(ctx, e.key, e.prop)
-			if err != nil {
-				return nil, err
-			}
-			if val != nil {
-				val.MakeRef()
-				it.prevRefVal = val
-				return phpv.NewZVal(val.RefTarget()), nil
-			}
-			return nil, nil
-		}
-		if !e.prop.GetIsByRef {
-			// Regular get hook (not &get): cannot create reference
-			return nil, ThrowError(ctx, Error,
-				fmt.Sprintf("Cannot create reference to property %s::$%s", it.obj.GetClass().GetName(), e.key))
-		}
+	// For virtual hooked properties, cannot take a reference
+	if e.prop != nil && e.prop.HasHooks && e.prop.GetHook != nil && e.prop.IsVirtual() && !it.obj.h.HasString(e.key) {
+		return nil, ThrowError(ctx, Error,
+			fmt.Sprintf("Cannot create reference to property %s::$%s", it.obj.GetClass().GetName(), e.key))
 	}
 
 	// For private properties, get from mangled name
-	htKey := e.key
 	if e.prop != nil && e.prop.Modifiers.IsPrivate() && e.class != nil {
-		htKey = getPrivatePropName(e.class, e.key)
+		propName := getPrivatePropName(e.class, e.key)
+		if it.obj.h.HasString(propName) {
+			return it.obj.h.GetString(propName), nil
+		}
 	}
 
-	// Regular property: make the hash table entry a reference and share it
-	if it.obj.h.HasString(htKey) {
-		v := it.obj.h.GetString(htKey)
-		if !v.IsRef() {
-			v.MakeRef()
-		}
-		it.prevRefVal = v
-		return phpv.NewZVal(v.RefTarget()), nil
+	// Regular property: return reference from hash table
+	if it.obj.h.HasString(e.key) {
+		return it.obj.h.GetString(e.key), nil
 	}
-	// Property not in hash table: create a new null slot
-	nullVal := phpv.ZNULL.ZVal()
-	nullVal.MakeRef()
-	it.obj.h.SetString(htKey, nullVal)
-	it.prevRefVal = nullVal
-	return phpv.NewZVal(nullVal.RefTarget()), nil
+	return phpv.ZNULL.ZVal(), nil
 }
 
 func (it *hookedObjectIterator) CleanupRef() {
-	// Collapse the last reference when the foreach loop ends
-	if it.prevRefVal != nil {
-		it.prevRefVal.CollapseRef()
-		it.prevRefVal = nil
-	}
+	// No cleanup needed for pre-computed entries
 }
 
 type zobjectIterator struct {

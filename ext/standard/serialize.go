@@ -1469,7 +1469,6 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 					}
 					return nil, offset, &unserializeError{i, len(str)}
 				}
-				valueOffset := i // capture offset before parsing value
 				value, i, err = d.parse(ctx, str, i)
 				if err != nil {
 					// Propagate PhpThrow exceptions directly
@@ -1481,15 +1480,7 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 					}
 					return nil, offset, &unserializeError{i, len(str)}
 				}
-				if !unserializeSetProperty(ctx, obj, key.AsString(ctx), value) {
-					// Virtual property detected: fail unserialize with offset error
-					// pointing to the start of the value (matching PHP behavior).
-					// Release the object ID so the next object reuses this slot
-					// (matching PHP's reference-counted object handle recycling).
-					ctx.Global().ReleaseObjectID(obj.GetObjID())
-					d.currentDepth--
-					return nil, offset, &unserializeError{valueOffset, len(str)}
-				}
+				unserializeSetProperty(ctx, obj, key.AsString(ctx), value)
 				numProps--
 			}
 			if method, ok := obj.GetClass().GetMethod(phpv.ZString("__wakeup")); ok {
@@ -1666,10 +1657,7 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 // Internally, private properties are stored under the key "*ClassName:propName"
 // in the object's hash table. Protected/public properties are stored under
 // their plain name.
-//
-// Returns true if the property was set successfully, false if the property is
-// virtual (cannot be unserialized), in which case a warning was emitted.
-func unserializeSetProperty(ctx phpv.Context, obj phpv.ZObject, key phpv.ZString, value *phpv.ZVal) bool {
+func unserializeSetProperty(ctx phpv.Context, obj phpv.ZObject, key phpv.ZString, value *phpv.ZVal) {
 	keyStr := string(key)
 	zobj, isZObj := obj.(*phpobj.ZObject)
 
@@ -1697,7 +1685,7 @@ func unserializeSetProperty(ctx phpv.Context, obj phpv.ZObject, key phpv.ZString
 	if !isZObj {
 		// Non-ZObject: use normal ObjectSet
 		obj.ObjectSet(ctx, key, value)
-		return true
+		return
 	}
 
 	// If there's an origPrivateClass, first try to find the property declared
@@ -1720,11 +1708,6 @@ func unserializeSetProperty(ctx phpv.Context, obj phpv.ZObject, key phpv.ZString
 				// Found the original declaring class; look for the property here
 				for _, p := range cl.Props {
 					if p.VarName == actualPropName {
-						// Check for virtual property (cannot be unserialized)
-						if p.IsVirtual() {
-							ctx.Warn("unserialize(): Cannot unserialize value for virtual property %s::$%s", obj.GetClass().GetName(), string(actualPropName), logopt.NoFuncName(true))
-							return false
-						}
 						// Use its declared visibility in the original class
 						if p.Modifiers.IsPrivate() {
 							internalKey := phpobj.GetPrivatePropNameExt(cl, actualPropName)
@@ -1732,7 +1715,7 @@ func unserializeSetProperty(ctx phpv.Context, obj phpv.ZObject, key phpv.ZString
 						} else {
 							zobj.HashTable().ForceSetString(actualPropName, value)
 						}
-						return true
+						return
 					}
 				}
 				// Class found but property not there — fall through to regular lookup
@@ -1744,11 +1727,6 @@ func unserializeSetProperty(ctx phpv.Context, obj phpv.ZObject, key phpv.ZString
 	// Look up the property in the current class hierarchy by plain name
 	prop, found := obj.GetClass().GetProp(actualPropName)
 	if found {
-		// Check for virtual property (has hooks but no backing store): cannot be unserialized
-		if prop.IsVirtual() {
-			ctx.Warn("unserialize(): Cannot unserialize value for virtual property %s::$%s", obj.GetClass().GetName(), string(actualPropName), logopt.NoFuncName(true))
-			return false
-		}
 		if prop.Modifiers.IsPrivate() {
 			// Current class has it as private — store under *DeclaredClass:propName
 			declClass := zobj.GetDeclClassName(prop)
@@ -1768,7 +1746,7 @@ func unserializeSetProperty(ctx phpv.Context, obj phpv.ZObject, key phpv.ZString
 			// Protected/public — store under plain name
 			zobj.HashTable().ForceSetString(actualPropName, value)
 		}
-		return true
+		return
 	}
 
 	// Not a declared property: bypass handlers and store directly for __PHP_Incomplete_Class,
@@ -1776,7 +1754,7 @@ func unserializeSetProperty(ctx phpv.Context, obj phpv.ZObject, key phpv.ZString
 	// the deprecation warning for dynamic property creation (PHP 8.1+).
 	if isZObj && obj.GetClass() == phpobj.IncompleteClass {
 		zobj.HashTable().ForceSetString(actualPropName, value)
-		return true
+		return
 	}
 	// If the original key used protected mangling (\0*\0propName) but the class doesn't declare
 	// the property, still store it with protected mangling (so var_dump shows it as protected).
@@ -1798,10 +1776,9 @@ func unserializeSetProperty(ctx phpv.Context, obj phpv.ZObject, key phpv.ZString
 			}
 		}
 		zobj.HashTable().ForceSetString(protectedKey, value)
-		return true
+		return
 	}
 	obj.ObjectSet(ctx, actualPropName, value)
-	return true
 }
 
 // StreamDeserializer provides sequential unserialize operations with shared

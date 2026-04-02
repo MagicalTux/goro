@@ -103,17 +103,6 @@ func (a *ZArray) H() *ZHashTable {
 	return a.h
 }
 
-// CircularIdentity returns a stable identity value for circular reference
-// detection across COW Dup() copies. For non-empty arrays, this is the
-// address of the first hash table node (shared between original and COW
-// copies). For empty arrays, returns 0 (empty arrays cannot form cycles).
-func (a *ZArray) CircularIdentity() uintptr {
-	if a == nil {
-		return 0
-	}
-	return a.h.FirstNodeIdentity()
-}
-
 // DeepCopy creates an immediate independent copy without using COW.
 // The original array's iterators remain stable.
 func (a *ZArray) DeepCopy() *ZArray {

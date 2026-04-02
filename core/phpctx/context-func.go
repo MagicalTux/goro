@@ -55,32 +55,22 @@ func (c *FuncContext) Release() error {
 		it := c.h.NewIterator()
 		for it.Valid(c.Context) {
 			v, err := it.Current(c.Context)
-			if err == nil && v != nil {
-				// When a local variable holds a reference alias (e.g. $ref = &$obj->prop),
-				// ReleaseRef decrements the inner ZVal's refCount so that the referenced
-				// location (e.g. the object property) loses its reference wrapper when
-				// no other aliases remain. This mirrors PHP's refcount-based un-ref on
-				// scope exit.
-				if v.IsRef() {
-					v.ReleaseRef()
-				}
-				if v.GetType() == phpv.ZtObject {
-					if zobj, ok := v.Value().(phpv.ZObject); ok {
-						// Call HandleDecRef if the class defines it (e.g. Closure releasing captured $this)
-						if cls := zobj.GetClass(); cls != nil {
-							if h := cls.Handlers(); h != nil && h.HandleDecRef != nil {
-								h.HandleDecRef(c.Context, zobj)
-							}
+			if err == nil && v != nil && v.GetType() == phpv.ZtObject {
+				if zobj, ok := v.Value().(phpv.ZObject); ok {
+					// Call HandleDecRef if the class defines it (e.g. Closure releasing captured $this)
+					if cls := zobj.GetClass(); cls != nil {
+						if h := cls.Handlers(); h != nil && h.HandleDecRef != nil {
+							h.HandleDecRef(c.Context, zobj)
 						}
 					}
-					if obj, ok := v.Value().(interface {
-						DecRefImplicit(phpv.Context) error
-					}); ok {
-						if derr := obj.DecRefImplicit(c.Context); derr != nil {
-							// Collect the last destructor error; in PHP, nested
-							// destructor exceptions are chained via "previous".
-							releaseErr = derr
-						}
+				}
+				if obj, ok := v.Value().(interface {
+					DecRefImplicit(phpv.Context) error
+				}); ok {
+					if derr := obj.DecRefImplicit(c.Context); derr != nil {
+						// Collect the last destructor error; in PHP, nested
+						// destructor exceptions are chained via "previous".
+						releaseErr = derr
 					}
 				}
 			}
@@ -390,12 +380,6 @@ func (c *FuncContext) OffsetUnset(ctx phpv.Context, name phpv.Val) error {
 	switch nameStr {
 	case "this":
 		return ctx.Errorf("Cannot unset $this")
-	}
-	// Counterpart of RefInner: when this variable was stored as a reference alias
-	// (which incremented the inner ZVal's refCount via RefInner), decrement the
-	// refCount and un-ref the outer ZVal if no other aliases remain.
-	if v, ok := c.h.GetStringB(nameStr); ok {
-		v.ReleaseRef()
 	}
 	return c.h.UnsetString(nameStr)
 }

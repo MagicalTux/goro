@@ -4,7 +4,6 @@ import (
 	"errors"
 	"math"
 	"sync"
-	"unsafe"
 )
 
 // ErrNextElementOccupied is returned by Append when the next integer key
@@ -78,17 +77,6 @@ func (z *ZHashTable) SameData(other *ZHashTable) bool {
 	}
 	// COW copies share the same first node pointer
 	return z.first != nil && z.first == other.first
-}
-
-// FirstNodeIdentity returns the address of the first node in the hash table,
-// which is stable across COW Dup() copies (both original and copy share the
-// same first node pointer until a write triggers copy-on-write separation).
-// Returns 0 for empty hash tables.
-func (z *ZHashTable) FirstNodeIdentity() uintptr {
-	if z == nil || z.first == nil {
-		return 0
-	}
-	return uintptr(unsafe.Pointer(z.first))
 }
 
 func (z *ZHashTable) Dup() *ZHashTable {

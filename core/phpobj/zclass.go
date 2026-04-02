@@ -418,23 +418,8 @@ func (c *ZClass) Compile(ctx phpv.Context) error {
 					childProp.SetHook = parentProp.SetHook
 				}
 				// Recompute IsBacked flag after inheritance
-				if parentProp.IsBacked && !childProp.IsBacked {
+				if parentProp.IsBacked {
 					childProp.IsBacked = true
-					// &get on a backed property that also has a set hook is forbidden
-					if childProp.GetIsByRef && childProp.SetHook != nil {
-						return c.fatalError(ctx, fmt.Sprintf("Get hook of backed property %s::%s with set hook may not return by reference", c.Name, childProp.VarName))
-					}
-				}
-			}
-			// If child adds hooks to a parent plain property (parent has no hooks),
-			// the child inherits the parent's backing store. A plain property is always
-			// backed (it has an actual storage slot). Set IsBacked on the child so that
-			// virtual-property checks don't incorrectly treat it as read-only.
-			if childProp.HasHooks && !parentProp.HasHooks {
-				childProp.IsBacked = true
-				// &get on a backed property that also has a set hook is forbidden
-				if childProp.GetIsByRef && childProp.SetHook != nil {
-					return c.fatalError(ctx, fmt.Sprintf("Get hook of backed property %s::%s with set hook may not return by reference", c.Name, childProp.VarName))
 				}
 			}
 

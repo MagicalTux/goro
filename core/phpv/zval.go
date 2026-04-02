@@ -162,41 +162,6 @@ func (z *ZVal) RefInner() *ZVal {
 	return nil
 }
 
-// RefCount returns the refCount of this ZVal (used for debugging).
-func (z *ZVal) RefCount() int {
-	if z == nil {
-		return 0
-	}
-	return z.refCount
-}
-
-// ReleaseRef decrements the inner ZVal's refCount and unwraps the reference.
-// This is the counterpart of RefInner: when a variable that was storing a
-// reference alias (with RefInner called to increment refCount) is released
-// (e.g. via unset() or scope exit), ReleaseRef decrements the refCount and
-// un-refs the outer ZVal. If the inner's refCount drops to 0 (no remaining
-// external aliases), the inner ZVal is also un-referenced so that the
-// compound writable (e.g., the object property's hash entry) loses its
-// reference wrapper.
-func (z *ZVal) ReleaseRef() {
-	if z == nil {
-		return
-	}
-	if inner, ok := z.v.(*ZVal); ok {
-		if inner.refCount > 0 {
-			inner.refCount--
-		}
-		// If inner now has no external aliases, also unwrap it so that the
-		// backing store (e.g., the object property hash entry ZVal) is no
-		// longer a reference.
-		if inner.refCount == 0 {
-			inner.UnRef()
-		}
-		// Always detach z from the reference.
-		z.v = inner.v
-	}
-}
-
 // UnRef unwraps a reference, replacing the outer ZVal's value with the inner
 // value. This simulates PHP's refcount-based un-ref when refcount drops to 1.
 func (z *ZVal) UnRef() {
@@ -205,18 +170,6 @@ func (z *ZVal) UnRef() {
 	}
 	if inner, ok := z.v.(*ZVal); ok {
 		z.v = inner.v
-	}
-}
-
-// CollapseRef removes the reference wrapper, replacing z.v with the deep value.
-// Unlike UnRef which only removes one level, this follows all reference layers.
-// Used to clean up by-reference foreach loop variables after iteration.
-func (z *ZVal) CollapseRef() {
-	if z == nil {
-		return
-	}
-	if _, ok := z.v.(*ZVal); ok {
-		z.v = z.Value()
 	}
 }
 

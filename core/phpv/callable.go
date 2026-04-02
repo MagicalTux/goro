@@ -160,12 +160,9 @@ type HookCallable struct {
 	Hook     Runnable
 	HookName string // e.g. "MyClass::$prop::get"
 	Params   []*FuncArg
-	IsByRef  bool   // true if this is a &get hook (returns by reference)
 }
 
 func (h *HookCallable) Name() string { return h.HookName }
-
-func (h *HookCallable) ReturnsByRef() bool { return h.IsByRef }
 
 func (h *HookCallable) Call(ctx Context, args []*ZVal) (*ZVal, error) {
 	// Set parameter variables in the local scope (like ZClosure.callBody does)

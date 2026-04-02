@@ -326,6 +326,7 @@ func init() {
 			"min":                        {Func: mathMin, Args: []*phpctx.ExtFunctionArg{}},
 			"mkdir":                      {Func: fncMkdir, Args: []*phpctx.ExtFunctionArg{}},
 			"move_uploaded_file":         {Func: fncMoveUploadedFile, Args: []*phpctx.ExtFunctionArg{}},
+			"mktime":                     {Func: fncMkTime, Args: []*phpctx.ExtFunctionArg{}},
 			"mt_getrandmax":              {Func: mathMtGetRandMax, Args: []*phpctx.ExtFunctionArg{}},
 			"mt_rand":                    {Func: mathMtRand, Args: []*phpctx.ExtFunctionArg{}},
 			"mt_srand":                   {Func: mathMtSRand, Args: []*phpctx.ExtFunctionArg{}},

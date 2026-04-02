@@ -726,133 +726,65 @@ func diffMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*php
 		return nil, err
 	}
 
-	// Calculate the difference.
-	// PHP uses a "greedy" algorithm without swapping from/to.
-	// The sign of the result (invert) reflects whether t2 < t1.
-	// PHP does NOT swap the operands; instead it handles positive and negative
-	// directions separately. This produces asymmetric results (e.g., positive
-	// direction may yield 30 days while negative direction yields 28 days for
-	// the same pair of dates) because the month boundary lands on different
-	// calendar positions depending on the direction of traversal.
-	invert := t2.Before(t1)
+	// Calculate the difference
+	invert := false
 	from := t1
 	to := t2
-
-	// PHP uses different DST handling based on timezone type:
-	// - type3 (named timezone with "/"): uses DST-aware calendar days (variable day length)
-	// - type2 (abbreviation like "EST") or UTC: uses fixed 86400s per calendar day
-	// If either datetime uses a non-named timezone, use fixed-day arithmetic.
-	fromIsNamed := strings.Contains(from.Location().String(), "/")
-	toIsNamed := strings.Contains(to.Location().String(), "/")
-	useDSTAwareDays := fromIsNamed && toIsNamed
-
-	// phpAddCalendarDaysForDiff advances t by 'days' calendar days.
-	// For DST-aware: uses phpAddCalendarDays (variable day length, DST transitions matter).
-	// For fixed-day: uses Unix + days*86400 (fixed 86400s per day).
-	addCalendarDaysForDiff := func(t time.Time, days int) time.Time {
-		if useDSTAwareDays {
-			return phpAddCalendarDays(t, days)
-		}
-		return time.Unix(t.Unix()+int64(days)*86400, 0).In(t.Location())
+	if from.After(to) {
+		from, to = to, from
+		invert = true
 	}
 
-	y1, m1, _ := from.Date()
-	y2, m2, _ := to.Date()
+	// Calculate year/month/day differences matching PHP's behavior.
+	// PHP computes calendar date diff, then derives hours/minutes/seconds
+	// from actual elapsed time minus the calendar portion. This handles
+	// DST transitions correctly.
+	y1, m1, d1 := from.Date()
+	y2, m2, d2 := to.Date()
 
-	totalMonths := (y2-y1)*12 + int(m2-m1)
+	years := y2 - y1
+	months := int(m2) - int(m1)
+	days := d2 - d1
 
-	// candidateFromAddDate computes from.AddDate(0, months, 0) but preserves
-	// the original 'from' time when months==0, avoiding Go's AddDate(0,0,0)
-	// which decomposes to date/clock components and loses the second occurrence
-	// of an ambiguous time during a fall-back DST transition.
-	candidateFromAddDate := func(months int) time.Time {
-		if months == 0 {
-			return from
-		}
-		return from.AddDate(0, months, 0)
+	// Normalize: borrow from months if days < 0
+	if days < 0 {
+		prevMonth := time.Date(y2, m2, 0, 0, 0, 0, 0, to.Location())
+		days += prevMonth.Day()
+		months--
+	}
+	if months < 0 {
+		months += 12
+		years--
 	}
 
-	candidate := candidateFromAddDate(totalMonths)
-	cy, cm, cd := candidate.Date()
-	ty, tm, td := to.Date()
+	// Compute remaining hours/minutes/seconds using actual elapsed time.
+	// Build a reference point: same wall-clock as 'from' but on the
+	// target date, in the 'to' timezone. This ensures DST transitions
+	// are accounted for correctly.
+	h1, min1, s1 := from.Clock()
+	ref := time.Date(y1+years, m1+time.Month(months), d1+days, h1, min1, s1, 0, from.Location())
+	remainSec := int(to.Unix() - ref.Unix())
 
-	var years, months, days, hours, minutes, seconds int
-
-	if !invert {
-		// Positive direction: find the largest totalMonths such that
-		// from+totalMonths does NOT overshoot 'to' (candidate <= to).
-		for cy > ty || (cy == ty && cm > tm) || (cy == ty && cm == tm && cd > td) {
-			totalMonths--
-			if totalMonths < 0 {
-				break
+	// If remainSec is negative, we over-counted by one day
+	if remainSec < 0 {
+		days--
+		if days < 0 {
+			prevMonth := time.Date(y2, m2, 0, 0, 0, 0, 0, to.Location())
+			days += prevMonth.Day()
+			months--
+			if months < 0 {
+				months += 12
+				years--
 			}
-			candidate = candidateFromAddDate(totalMonths)
-			cy, cm, cd = candidate.Date()
 		}
-		years = totalMonths / 12
-		months = totalMonths % 12
-
-		// Count calendar days using pure UTC date arithmetic (avoids DST ambiguity).
-		calA := time.Date(cy, cm, cd, 0, 0, 0, 0, time.UTC)
-		calB := time.Date(ty, tm, td, 0, 0, 0, 0, time.UTC)
-		days = int(calB.Sub(calA) / (24 * time.Hour))
-
-		// Advance candidate by days to compute the time reference point.
-		ref := addCalendarDaysForDiff(candidate, days)
-
-		// Use elapsed Unix seconds for the time component.
-		remainSec := int(to.Unix() - ref.Unix())
-		if remainSec < 0 {
-			days--
-			ref = addCalendarDaysForDiff(candidate, days)
-			remainSec = int(to.Unix() - ref.Unix())
-		}
-		hours = remainSec / 3600
-		remainSec %= 3600
-		minutes = remainSec / 60
-		seconds = remainSec % 60
-	} else {
-		// Negative direction: find the most-negative totalMonths such that
-		// from+totalMonths does NOT go BEFORE 'to' (candidate >= to).
-		for cy < ty || (cy == ty && cm < tm) || (cy == ty && cm == tm && cd < td) {
-			totalMonths++
-			if totalMonths > 0 {
-				break
-			}
-			candidate = candidateFromAddDate(totalMonths)
-			cy, cm, cd = candidate.Date()
-		}
-		absMonths := -totalMonths
-		years = absMonths / 12
-		months = absMonths % 12
-
-		// Count calendar days using pure UTC date arithmetic.
-		calA := time.Date(ty, tm, td, 0, 0, 0, 0, time.UTC)
-		calB := time.Date(cy, cm, cd, 0, 0, 0, 0, time.UTC)
-		days = int(calB.Sub(calA) / (24 * time.Hour))
-
-		// Compute the time reference by advancing 'to' forward by days.
-		// This mirrors the forward direction (which advances candidate/from by days).
-		// The h/m/s is the difference between candidate and ref,
-		// because months have already been applied to get candidate.
-		ref := addCalendarDaysForDiff(to, days)
-
-		// Use elapsed Unix seconds for the time component.
-		remainSec := int(candidate.Unix() - ref.Unix())
-		if remainSec < 0 {
-			days--
-			ref = addCalendarDaysForDiff(to, days)
-			remainSec = int(candidate.Unix() - ref.Unix())
-		}
-		hours = remainSec / 3600
-		remainSec %= 3600
-		minutes = remainSec / 60
-		seconds = remainSec % 60
+		ref = time.Date(y1+years, m1+time.Month(months), d1+days, h1, min1, s1, 0, to.Location())
+		remainSec = int(to.Unix() - ref.Unix())
 	}
 
-	// Suppress unused variable warnings
-	_ = m1
-	_ = y1
+	hours := remainSec / 3600
+	remainSec %= 3600
+	minutes := remainSec / 60
+	seconds := remainSec % 60
 
 	// Check absolute parameter
 	absolute := false
@@ -860,16 +792,11 @@ func diffMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*php
 		absolute = bool(args[1].AsBool(ctx))
 	}
 
-	// Calculate total days for the 'days' property.
+	// Calculate total days for the 'days' property
 	// PHP calculates this as the number of full days between the two dates.
 	// Use Unix timestamps to handle massive date ranges (Duration is limited to ~292 years).
-	// Always compute with the earlier date first (absolute value).
-	earlier, later := t1, t2
-	if invert {
-		earlier, later = t2, t1
-	}
-	fromUTC := time.Date(earlier.Year(), earlier.Month(), earlier.Day(), earlier.Hour(), earlier.Minute(), earlier.Second(), 0, time.UTC)
-	toUTC := time.Date(later.Year(), later.Month(), later.Day(), later.Hour(), later.Minute(), later.Second(), 0, time.UTC)
+	fromUTC := time.Date(from.Year(), from.Month(), from.Day(), from.Hour(), from.Minute(), from.Second(), 0, time.UTC)
+	toUTC := time.Date(to.Year(), to.Month(), to.Day(), to.Hour(), to.Minute(), to.Second(), 0, time.UTC)
 	totalDays := int((toUTC.Unix() - fromUTC.Unix()) / 86400)
 
 	intervalObj.ObjectSet(ctx, phpv.ZString("y"), phpv.ZInt(years).ZVal())
@@ -940,18 +867,8 @@ func addIntervalToTime(ctx phpv.Context, t time.Time, intervalObj *phpobj.ZObjec
 		microseconds = -microseconds
 	}
 
-	// Apply date parts (years, months, days) then time parts.
-	// Go's AddDate overflows months/days which matches PHP behavior
-	// (e.g., Jan 31 + 1 month = Mar 3 in PHP via overflow, not Feb 28).
-	// Only call AddDate when there's something to add; calling AddDate(0,0,0)
-	// on an ambiguous fall-back time reconstructs it as the first occurrence.
-	if years != 0 || months != 0 {
-		t = t.AddDate(years, months, 0)
-	}
-	// Add days as calendar days (PHP-compatible: same time-of-day, DST-aware)
-	if days != 0 {
-		t = phpAddCalendarDays(t, days)
-	}
+	// Apply date part first (years, months, days)
+	t = t.AddDate(years, months, days)
 	// Then apply time part
 	t = t.Add(time.Duration(hours)*time.Hour +
 		time.Duration(minutes)*time.Minute +
@@ -1835,26 +1752,6 @@ func init() {
 		Name:  "DateTimeZone",
 		Props: []*phpv.ZClassProp{},
 		H:     &phpv.ZClassHandlers{HandleCompare: dateTimeZoneCompare},
-		Const: map[phpv.ZString]*phpv.ZClassConst{
-			"AFRICA":      {Value: phpv.ZInt(1)},
-			"AMERICA":     {Value: phpv.ZInt(2)},
-			"ANTARCTICA":  {Value: phpv.ZInt(4)},
-			"ARCTIC":      {Value: phpv.ZInt(8)},
-			"ASIA":        {Value: phpv.ZInt(16)},
-			"ATLANTIC":    {Value: phpv.ZInt(32)},
-			"AUSTRALIA":   {Value: phpv.ZInt(64)},
-			"EUROPE":      {Value: phpv.ZInt(128)},
-			"INDIAN":      {Value: phpv.ZInt(256)},
-			"PACIFIC":     {Value: phpv.ZInt(512)},
-			"UTC":         {Value: phpv.ZInt(1024)},
-			"ALL":         {Value: phpv.ZInt(2047)},
-			"ALL_WITH_BC": {Value: phpv.ZInt(4095)},
-			"PER_COUNTRY": {Value: phpv.ZInt(4096)},
-		},
-		ConstOrder: []phpv.ZString{
-			"AFRICA", "AMERICA", "ANTARCTICA", "ARCTIC", "ASIA", "ATLANTIC",
-			"AUSTRALIA", "EUROPE", "INDIAN", "PACIFIC", "UTC", "ALL", "ALL_WITH_BC", "PER_COUNTRY",
-		},
 		Methods: map[phpv.ZString]*phpv.ZClassMethod{
 			"__construct": {
 				Name:      "__construct",

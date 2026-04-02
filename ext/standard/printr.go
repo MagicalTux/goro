@@ -58,50 +58,32 @@ func doPrintR(ctx phpv.Context, z *phpv.ZVal, linePfx string, recurs map[uintptr
 
 	switch z.GetType() {
 	case phpv.ZtArray:
-		// Track by the first hash table node pointer, which is stable across
-		// COW Dup() copies. When print_r($a) is called, the argument is Dup'd,
-		// creating a new *ZArray whose ZHashTable shares the same first node as
-		// the original. Using this shared pointer as the key ensures that a
-		// reference back to the original $a is detected as a cycle.
-		arrVal, ok := z.Value().(*phpv.ZArray)
-		if !ok || arrVal == nil {
-			// Fallback: track by ZVal pointer
-			arrayPtr := uintptr(unsafe.Pointer(z))
-			if _, n := recurs[arrayPtr]; n {
-				// No trailing \n: the caller's loop provides the newline separator.
-				fmt.Fprintf(ctx, "%sArray\n *RECURSION*", isRef)
-				return nil
-			}
-			recurs[arrayPtr] = true
-		} else {
-			arrayPtr := arrVal.CircularIdentity()
-			if arrayPtr == 0 {
-				// Empty array: use ZArray pointer as fallback (empty arrays can't cycle)
-				arrayPtr = uintptr(unsafe.Pointer(arrVal))
-			}
-			if _, n := recurs[arrayPtr]; n {
-				// No trailing \n: the caller's loop provides the newline separator.
-				fmt.Fprintf(ctx, "%sArray\n *RECURSION*", isRef)
-				return nil
-			}
-			recurs[arrayPtr] = true
+		// Track by underlying ZArray pointer for arrays, not ZVal pointer,
+		// because references create different ZVal wrappers for the same array
+		arrayPtr := uintptr(unsafe.Pointer(z.Value().(*phpv.ZArray)))
+		if _, n := recurs[arrayPtr]; n {
+			// PHP prints: "Array\n *RECURSION*\n"
+			fmt.Fprintf(ctx, "%sArray\n", isRef)
+			fmt.Fprintf(ctx, "%s *RECURSION*\n", linePfx)
+			return nil
 		}
+		recurs[arrayPtr] = true
 	case phpv.ZtObject:
 		// Track by underlying object pointer for objects
 		if obj, ok := z.Value().(*phpobj.ZObject); ok {
 			objPtr := uintptr(unsafe.Pointer(obj))
 			if _, n := recurs[objPtr]; n {
-				// PHP prints: "ClassName Object\n *RECURSION*"
-				// No trailing \n: the caller's loop provides the newline separator.
-				// Note: *RECURSION* always has exactly 1 space prefix in PHP's output.
-				fmt.Fprintf(ctx, "%s Object\n *RECURSION*", obj.Class.GetName())
+				// PHP prints: "ClassName Object\n *RECURSION*\n"
+				fmt.Fprintf(ctx, "%s%s Object\n", isRef, obj.Class.GetName())
+				fmt.Fprintf(ctx, "%s *RECURSION*\n", linePfx)
 				return nil
 			}
 			recurs[objPtr] = true
 		} else {
 			v := uintptr(unsafe.Pointer(z))
 			if _, n := recurs[v]; n {
-				fmt.Fprintf(ctx, "? object(?)\n *RECURSION*")
+				fmt.Fprintf(ctx, "? object(?)\n")
+				fmt.Fprintf(ctx, "%s *RECURSION*\n", linePfx)
 				return nil
 			}
 			recurs[v] = true

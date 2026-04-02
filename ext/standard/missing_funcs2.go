@@ -397,9 +397,6 @@ func fncGetDebugType(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZString("array").ZVal(), nil
 	case phpv.ZtResource:
 		r := z.Value().(phpv.Resource)
-		if r.GetResourceType() == phpv.ResourceUnknown {
-			return phpv.ZString("resource (closed)").ZVal(), nil
-		}
 		return phpv.ZString(fmt.Sprintf("resource (%s)", r.GetResourceType())).ZVal(), nil
 	case phpv.ZtObject:
 		obj, ok := z.Value().(phpv.ZObject)
