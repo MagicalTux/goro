@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/KarpelesLab/gotz"
 	"github.com/KarpelesLab/strtotime"
 	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpobj"
@@ -1731,11 +1732,25 @@ func init() {
 					if err := checkDateTimeZoneInitialized(ctx, this); err != nil {
 						return nil, err
 					}
+					tzName := getTimezoneName(this)
+					zone, err := gotz.Load(tzName)
+					if err != nil {
+						// Fixed-offset timezones have no location
+						return phpv.ZBool(false).ZVal(), nil
+					}
+					meta := zone.Meta()
+					if meta == nil {
+						return phpv.ZBool(false).ZVal(), nil
+					}
 					result := phpv.NewZArray()
-					result.OffsetSet(ctx, phpv.ZString("country_code"), phpv.ZString("??").ZVal())
-					result.OffsetSet(ctx, phpv.ZString("latitude"), phpv.ZFloat(0).ZVal())
-					result.OffsetSet(ctx, phpv.ZString("longitude"), phpv.ZFloat(0).ZVal())
-					result.OffsetSet(ctx, phpv.ZString("comments"), phpv.ZString("").ZVal())
+					cc := "??"
+					if len(meta.Countries) > 0 {
+						cc = meta.Countries[0].Code
+					}
+					result.OffsetSet(ctx, phpv.ZString("country_code"), phpv.ZString(cc).ZVal())
+					result.OffsetSet(ctx, phpv.ZString("latitude"), phpv.ZFloat(meta.Lat).ZVal())
+					result.OffsetSet(ctx, phpv.ZString("longitude"), phpv.ZFloat(meta.Lon).ZVal())
+					result.OffsetSet(ctx, phpv.ZString("comments"), phpv.ZString(meta.Commentary).ZVal())
 					return result.ZVal(), nil
 				}),
 			},
