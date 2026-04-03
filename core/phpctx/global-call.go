@@ -622,6 +622,14 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 						// Emit "must be passed by reference, value given" warning
 						// (e.g. when call_user_func_array passes non-ref to a ref param)
 						funcName := callCtx.GetFuncName()
+						// When called via explicit __invoke method dispatch
+						// (e.g. call_user_func([$closure, '__invoke'], ...)),
+						// PHP uses "Closure::__invoke" instead of the closure name.
+						if callCtx.suppressCalledIn {
+							if _, isZClosure := callCtx.Callable().(phpv.ZClosure); isZClosure {
+								funcName = "Closure::__invoke"
+							}
+						}
 						if warnErr := ctx.Warn("%s(): Argument #%d ($%s) must be passed by reference, value given",
 							funcName, i+1, varNameForArg, logopt.NoFuncName(true)); warnErr != nil {
 							return nil, warnErr

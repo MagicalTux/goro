@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -339,7 +340,7 @@ func fncXMLGetCurrentLineNumber(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal
 
 // xml_set_object - set object to use for handlers (deprecated since PHP 8.4)
 func fncXMLSetObject(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	ctx.Deprecated("Function xml_set_object() is deprecated since 8.4, provide a proper method callable to xml_set_*_handler() functions")
+	ctx.Deprecated("Function xml_set_object() is deprecated since 8.4, provide a proper method callable to xml_set_*_handler() functions", logopt.NoFuncName(true))
 	return phpv.ZTrue.ZVal(), nil
 }
 
