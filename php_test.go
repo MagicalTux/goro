@@ -1055,22 +1055,24 @@ func TestPhp(t *testing.T) {
 	cacheHit := 0
 	testIdx := 0
 	failLimitReached := false
+	// Pre-pass: fix any permission-locked directories from previous test runs
+	// (chmod tests set dirs to 000 which breaks filepath.Walk)
 	filepath.Walk(TestsPath, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			// Fix permission errors from chmod tests that lock directories
-			if os.IsPermission(err) {
+		if err != nil && os.IsPermission(err) {
+			os.Chmod(path, 0755)
+			return nil
+		}
+		if info != nil && info.IsDir() {
+			if info.Mode().Perm()&0500 != 0500 {
 				os.Chmod(path, 0755)
-				// Retry stat after fixing permissions
-				info, err = os.Stat(path)
-				if err != nil {
-					return nil
-				}
-			} else {
-				return nil // skip entries that disappeared
 			}
 		}
-		if info == nil {
-			return nil
+		return nil
+	})
+
+	filepath.Walk(TestsPath, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info == nil {
+			return nil // skip entries that disappeared
 		}
 		if !info.Mode().IsRegular() {
 			return nil
