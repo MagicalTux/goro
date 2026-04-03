@@ -16,6 +16,9 @@ import (
 // getTimezone returns the timezone configured via date.timezone, falling back to UTC.
 func getTimezone(ctx phpv.Context) *time.Location {
 	tzName := ctx.GetConfig("date.timezone", phpv.ZString("UTC").ZVal()).String()
+	if tzName == "" {
+		return time.UTC
+	}
 	loc, err := time.LoadLocation(tzName)
 	if err != nil {
 		return time.UTC
@@ -193,7 +196,18 @@ func phpDateFormat(format string, t time.Time) string {
 			mins := (offset % 3600) / 60
 			buf.WriteString(fmt.Sprintf("%s%02d:%02d", sign, hours, mins))
 		case 'T': // Timezone abbreviation
-			name, _ := t.Zone()
+			name, offset := t.Zone()
+			if name == "" || (len(name) > 0 && (name[0] == '+' || name[0] == '-')) {
+				// Fixed-offset timezone: show as GMT+HHMM
+				sign := "+"
+				if offset < 0 {
+					sign = "-"
+					offset = -offset
+				}
+				h := offset / 3600
+				m := (offset % 3600) / 60
+				name = fmt.Sprintf("GMT%s%02d%02d", sign, h, m)
+			}
 			buf.WriteString(name)
 		case 'Z': // Timezone offset in seconds
 			_, offset := t.Zone()
