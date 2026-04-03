@@ -708,11 +708,12 @@ func diffMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*php
 	}
 
 	// Compute remaining hours/minutes/seconds using actual elapsed time.
-	// Build a reference point: same wall-clock as 'from' but on the
-	// target date, in the 'to' timezone. This ensures DST transitions
-	// are accounted for correctly.
+	// Build a reference point: same wall-clock as 'from' but advanced by
+	// the calendar diff (years/months/days), in the 'to' timezone.
+	// Using to.Location() ensures DST transitions between from and to
+	// are correctly accounted for (e.g., EDT→EST fall-back adds 1 hour).
 	h1, min1, s1 := from.Clock()
-	ref := time.Date(y1+years, m1+time.Month(months), d1+days, h1, min1, s1, 0, from.Location())
+	ref := time.Date(y1+years, m1+time.Month(months), d1+days, h1, min1, s1, 0, to.Location())
 	remainSec := int(to.Unix() - ref.Unix())
 
 	// If remainSec is negative, we over-counted by one day
@@ -727,7 +728,7 @@ func diffMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*php
 				years--
 			}
 		}
-		ref = time.Date(y1+years, m1+time.Month(months), d1+days, h1, min1, s1, 0, to.Location())
+		ref = time.Date(y1+years, time.Month(int(m1)+months), d1+days, h1, min1, s1, 0, to.Location())
 		remainSec = int(to.Unix() - ref.Unix())
 	}
 
