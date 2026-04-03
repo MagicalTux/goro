@@ -118,7 +118,7 @@ func newRoundingModeEnum() *phpobj.ZClass {
 		Modifiers: phpv.ZAttrPublic | phpv.ZAttrStatic,
 		Method: phpobj.NativeStaticMethod(func(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			if len(args) < 1 {
-				return nil, fmt.Errorf("from() expects exactly 1 argument")
+				return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "from() expects exactly 1 argument")
 			}
 			needle := args[0]
 			if needle.GetType() != phpv.ZtInt {
@@ -164,7 +164,7 @@ func newRoundingModeEnum() *phpobj.ZClass {
 		Modifiers: phpv.ZAttrPublic | phpv.ZAttrStatic,
 		Method: phpobj.NativeStaticMethod(func(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			if len(args) < 1 {
-				return nil, fmt.Errorf("tryFrom() expects exactly 1 argument")
+				return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "tryFrom() expects exactly 1 argument")
 			}
 			needle := args[0]
 			if needle.GetType() != phpv.ZtInt {

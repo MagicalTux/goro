@@ -101,7 +101,8 @@ func fncDateDiff(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	obj1, ok := args[0].Value().(phpv.ZObject)
 	if !ok {
-		return nil, ctx.Errorf("date_diff(): Argument #1 must be of type DateTimeInterface, %s given", args[0].GetType())
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("date_diff(): Argument #1 ($baseObject) must be of type DateTimeInterface, %s given", args[0].GetType()))
 	}
 
 	zobj1, ok := obj1.(*phpobj.ZObject)

@@ -1584,7 +1584,7 @@ func fncStrTr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZStr(buf.String()), nil
 	}
 
-	return nil, fmt.Errorf("strtr() expects at least 2 arguments, %d given", nargs)
+	return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, fmt.Sprintf("strtr() expects at least 2 arguments, %d given", nargs))
 }
 
 // > func string strip_tags ( string $string, array|string|null $allowed_tags = null )

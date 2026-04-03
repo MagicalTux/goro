@@ -192,7 +192,7 @@ func fncFsockopen(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 }
 
 func fncSetcookie(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	if len(args) == 0 { return nil, fmt.Errorf("setcookie() expects at least 1 argument") }
+	if len(args) == 0 { return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "setcookie() expects at least 1 argument, 0 given") }
 	name := args[0].String()
 	value, path, domain, samesite := "", "", "", ""
 	expires := 0

@@ -29,7 +29,7 @@ func init() {
 // > func string pack ( string $format [, mixed $... ] )
 func fncPack(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
-		return nil, fmt.Errorf("pack() expects at least 1 argument")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "pack() expects at least 1 argument, 0 given")
 	}
 
 	format := args[0].AsString(ctx)
