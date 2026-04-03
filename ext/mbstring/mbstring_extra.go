@@ -713,7 +713,7 @@ func fncMbDecodeNumericentity(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, 
 			for j < len(str) && ((str[j] >= '0' && str[j] <= '9') || (isHex && ((str[j] >= 'a' && str[j] <= 'f') || (str[j] >= 'A' && str[j] <= 'F')))) {
 				j++
 			}
-			if j > numStart && j < len(str) && str[j] == ';' {
+			if j > numStart {
 				var cp int
 				if isHex {
 					fmt.Sscanf(str[numStart:j], "%x", &cp)
@@ -730,9 +730,15 @@ func fncMbDecodeNumericentity(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, 
 					}
 				}
 				if !decoded {
-					result.WriteString(str[i : j+1])
+					endPos := j
+					if endPos < len(str) && str[endPos] == ';' {
+						endPos++
+					}
+					result.WriteString(str[i:endPos])
+				} else if j < len(str) && str[j] == ';' {
+					j++ // consume trailing semicolon
 				}
-				i = j + 1
+				i = j
 				continue
 			}
 		}
@@ -753,7 +759,7 @@ func fncMbDecodeMimeheader(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, err
 	i := 0
 	for i < len(str) {
 		if i+2 < len(str) && str[i] == '=' && str[i+1] == '?' {
-			end := strings.Index(str[i+2:], "?=")
+			end := strings.LastIndex(str[i+2:], "?=")
 			if end >= 0 {
 				parts := strings.SplitN(str[i+2:i+2+end], "?", 3)
 				if len(parts) == 3 {
