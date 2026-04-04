@@ -191,6 +191,9 @@ type GlobalContext interface {
 
 	SetSkipNextDynPropDeprecation(v bool)
 	TakeSkipNextDynPropDeprecation() bool
+
+	// WriteStartupWarning buffers a warning message emitted during request startup
+	WriteStartupWarning(msg string)
 }
 
 type FuncContext interface {

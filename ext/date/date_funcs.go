@@ -13,11 +13,28 @@ import (
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
+// tzWarnedOnce emits a "PHP Startup: Invalid date.timezone" warning at most once per request.
+func tzWarnedOnce(ctx phpv.Context, tzName string) {
+	if v := ctx.GetConfig("date.timezone_warned", nil); v != nil {
+		if b, ok := v.Value().(phpv.ZBool); ok && bool(b) {
+			return
+		}
+	}
+	ctx.Global().WriteStartupWarning(fmt.Sprintf("Warning: PHP Startup: Invalid date.timezone value '%s', using 'UTC' instead in Unknown on line 0\n", tzName))
+	ctx.Global().SetLocalConfig("date.timezone_warned", phpv.ZBool(true).ZVal())
+}
+
 // getTimezone returns the timezone configured via date.timezone, falling back to UTC.
+// If the timezone is empty or invalid, it emits a startup-style warning once per request.
 func getTimezone(ctx phpv.Context) *time.Location {
-	tzName := ctx.GetConfig("date.timezone", phpv.ZString("UTC").ZVal()).String()
+	tzName := ctx.GetConfig("date.timezone", phpv.ZString("").ZVal()).String()
+	if tzName == "" {
+		tzWarnedOnce(ctx, "")
+		return time.UTC
+	}
 	loc, err := time.LoadLocation(tzName)
 	if err != nil {
+		tzWarnedOnce(ctx, tzName)
 		return time.UTC
 	}
 	return loc
@@ -215,8 +232,8 @@ func phpDateFormat(format string, t time.Time) string {
 			buf.WriteString(fmt.Sprintf("%03d", beats%1000))
 
 		case 'p': // Timezone identifier like P but with Z for UTC
-			_, offset := t.Zone()
-			if offset == 0 {
+			locName := t.Location().String()
+			if locName == "UTC" || locName == "Z" {
 				buf.WriteString("Z")
 			} else {
 				buf.WriteString(phpDateFormat("P", t))

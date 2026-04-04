@@ -3,6 +3,7 @@ package date
 import (
 	"fmt"
 	"math"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -870,6 +871,17 @@ func addImmutableMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVa
 	return newObj.ZVal(), nil
 }
 
+// checkSubInterval checks if a DateInterval can be used with sub(). Intervals created with
+// createFromDateString (from_string=true) cannot be subtracted from dates.
+func checkSubInterval(ctx phpv.Context, intervalObj *phpobj.ZObject, className string) error {
+	fromStrVal := intervalObj.HashTable().GetString("from_string")
+	if fromStrVal != nil && bool(fromStrVal.AsBool(ctx)) {
+		return phpobj.ThrowError(ctx, DateInvalidOperationException,
+			fmt.Sprintf("%s::sub(): Only non-special relative time specifications are supported for subtraction", className))
+	}
+	return nil
+}
+
 // subMethod implements DateTime::sub(DateInterval $interval): DateTime
 func subMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
@@ -885,6 +897,9 @@ func subMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv
 	intervalObj, ok := args[0].Value().(*phpobj.ZObject)
 	if !ok {
 		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "DateTime::sub() expects parameter 1 to be DateInterval")
+	}
+	if err := checkSubInterval(ctx, intervalObj, "DateTime"); err != nil {
+		return nil, err
 	}
 	newT := addIntervalToTime(ctx, t, intervalObj, true)
 	setTimeVal(this, newT)
@@ -906,6 +921,9 @@ func subImmutableMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVa
 	intervalObj, ok := args[0].Value().(*phpobj.ZObject)
 	if !ok {
 		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "DateTimeImmutable::sub() expects parameter 1 to be DateInterval")
+	}
+	if err := checkSubInterval(ctx, intervalObj, "DateTimeImmutable"); err != nil {
+		return nil, err
 	}
 	newT := addIntervalToTime(ctx, t, intervalObj, true)
 	newObj, err := phpobj.NewZObject(ctx, DateTimeImmutable)
@@ -1698,7 +1716,28 @@ func init() {
 	DateTimeZone = &phpobj.ZClass{
 		Name:  "DateTimeZone",
 		Props: []*phpv.ZClassProp{},
-		H:     &phpv.ZClassHandlers{HandleCompare: dateTimeZoneCompare},
+		Const: map[phpv.ZString]*phpv.ZClassConst{
+			"AFRICA":       {Value: phpv.ZInt(1)},
+			"AMERICA":      {Value: phpv.ZInt(2)},
+			"ANTARCTICA":   {Value: phpv.ZInt(4)},
+			"ARCTIC":       {Value: phpv.ZInt(8)},
+			"ASIA":         {Value: phpv.ZInt(16)},
+			"ATLANTIC":     {Value: phpv.ZInt(32)},
+			"AUSTRALIA":    {Value: phpv.ZInt(64)},
+			"EUROPE":       {Value: phpv.ZInt(128)},
+			"INDIAN":       {Value: phpv.ZInt(256)},
+			"PACIFIC":      {Value: phpv.ZInt(512)},
+			"UTC":          {Value: phpv.ZInt(1024)},
+			"ALL":          {Value: phpv.ZInt(2047)},
+			"ALL_WITH_BC":  {Value: phpv.ZInt(4095)},
+			"PER_COUNTRY":  {Value: phpv.ZInt(4096)},
+		},
+		ConstOrder: []phpv.ZString{
+			"AFRICA", "AMERICA", "ANTARCTICA", "ARCTIC", "ASIA", "ATLANTIC",
+			"AUSTRALIA", "EUROPE", "INDIAN", "PACIFIC", "UTC", "ALL",
+			"ALL_WITH_BC", "PER_COUNTRY",
+		},
+		H: &phpv.ZClassHandlers{HandleCompare: dateTimeZoneCompare},
 		Methods: map[phpv.ZString]*phpv.ZClassMethod{
 			"__construct": {
 				Name:      "__construct",
@@ -2022,17 +2061,43 @@ func init() {
 						return nil, nil
 					}
 					arr := args[0].Value().(*phpv.ZArray)
-					// Mark as initialized
-					this.SetOpaque(DateInterval, true)
-					// Check if from_string mode
+					// Check if from_string mode (either from_string=true or date_string present without from_string)
 					fromStr, _ := arr.OffsetGet(ctx, phpv.ZString("from_string").ZVal())
-					if fromStr != nil && bool(fromStr.AsBool(ctx)) {
+					ds, _ := arr.OffsetGet(ctx, phpv.ZString("date_string").ZVal())
+					isFromString := (fromStr != nil && bool(fromStr.AsBool(ctx)))
+					hasDatString := ds != nil && !ds.IsNull()
+
+					// If date_string is present, validate it before modifying the object
+					if hasDatString {
+						dateStr := string(ds.AsString(ctx))
+						_, stErr := strtotime.StrToTime(dateStr, strtotime.InTZ(getTimezone(ctx)), strtotime.Rel(time.Now().In(getTimezone(ctx))))
+						if stErr != nil {
+							ch := ""
+							if len(dateStr) > 0 {
+								ch = string([]rune(dateStr)[0:1])
+							}
+							return nil, phpobj.ThrowError(ctx, phpobj.Error,
+								fmt.Sprintf("Unknown or bad format (%s) at position 0 (%s) while unserializing: The timezone could not be found in the database",
+									dateStr, ch))
+						}
+					}
+
+					// Mark as initialized (only after validation passes)
+					this.SetOpaque(DateInterval, true)
+
+					if isFromString {
 						this.HashTable().SetString("from_string", phpv.ZBool(true).ZVal())
-						ds, _ := arr.OffsetGet(ctx, phpv.ZString("date_string").ZVal())
-						if ds != nil && !ds.IsNull() {
+						if hasDatString {
 							this.HashTable().SetString("date_string", ds)
 						}
 						// Remove non-from_string properties from hash table
+						for _, key := range []string{"y", "m", "d", "h", "i", "s", "f", "invert", "days"} {
+							this.HashTable().UnsetString(phpv.ZString(key))
+						}
+					} else if hasDatString {
+						// date_string present but from_string not explicitly true
+						this.HashTable().SetString("from_string", phpv.ZBool(true).ZVal())
+						this.HashTable().SetString("date_string", ds)
 						for _, key := range []string{"y", "m", "d", "h", "i", "s", "f", "invert", "days"} {
 							this.HashTable().UnsetString(phpv.ZString(key))
 						}
@@ -2638,12 +2703,24 @@ func init() {
 						return nil, err
 					}
 					result := phpv.NewZArray()
+					builtinKeys := map[string]bool{"start": true, "current": true, "end": true, "interval": true, "recurrences": true, "include_start_date": true, "include_end_date": true}
 					for _, key := range []string{"start", "current", "end", "interval", "recurrences", "include_start_date", "include_end_date"} {
 						v, _ := this.ObjectGet(ctx, phpv.ZString(key))
 						if v != nil {
 							result.OffsetSet(ctx, phpv.ZString(key), v)
 						} else {
 							result.OffsetSet(ctx, phpv.ZString(key), phpv.ZNULL.ZVal())
+						}
+					}
+					// Include subclass properties
+					for prop := range this.IterProps(ctx) {
+						pName := string(prop.VarName)
+						if builtinKeys[pName] {
+							continue
+						}
+						v := this.HashTable().GetString(prop.VarName)
+						if v != nil {
+							result.OffsetSet(ctx, phpv.ZString(pName), v)
 						}
 					}
 					return result.ZVal(), nil
@@ -2742,6 +2819,9 @@ var errISOMissingInterval = fmt.Errorf("ISO interval must contain an interval")
 // errISOMissingStartDate is returned when an ISO 8601 period starts with R but has no start date
 var errISOMissingStartDate = fmt.Errorf("ISO interval must contain a start date")
 
+// errISOZeroRecurrences is returned when an ISO 8601 period has start/interval but no recurrence count
+var errISOZeroRecurrences = fmt.Errorf("ISO interval has zero recurrences")
+
 // parseISO8601Period parses ISO 8601 repeating interval strings like "R2/2012-07-01T00:00:00Z/P7D"
 // Returns recurrences, start time, interval duration spec, and end time (if any)
 // Returns a special errISOMissingInterval if the string is missing the interval part.
@@ -2759,13 +2839,23 @@ func parseISO8601Period(ctx phpv.Context, isoStr string) (recurrences int, start
 				return
 			}
 		} else if len(parts) == 2 {
-			// Two parts: R/start format is missing interval
 			rPart2 := parts[0]
 			if len(rPart2) > 0 && (rPart2[0] == 'R' || rPart2[0] == 'r') {
+				// Two parts starting with R: R/start format is missing interval
 				_, parseErr := parseISO8601DateTime(parts[1])
 				if parseErr == nil {
 					err = errISOMissingInterval
 					return
+				}
+			} else {
+				// Two parts not starting with R: could be start/interval (no recurrence)
+				_, dateParseErr := parseISO8601DateTime(parts[0])
+				if dateParseErr == nil {
+					p1 := parts[1]
+					if len(p1) > 0 && (p1[0] == 'P' || p1[0] == 'p') {
+						err = errISOZeroRecurrences
+						return
+					}
 				}
 			}
 		}
@@ -2965,6 +3055,10 @@ func datePeriodInitFromISOCaller(ctx phpv.Context, this *phpobj.ZObject, isoStr 
 			return nil, phpobj.ThrowError(ctx, DateMalformedPeriodStringException,
 				fmt.Sprintf("%s: ISO interval must contain a start date, %q given", callerName, isoStr))
 		}
+		if err == errISOZeroRecurrences {
+			return nil, phpobj.ThrowError(ctx, DateMalformedPeriodStringException,
+				fmt.Sprintf("%s: Recurrence count must be greater or equal to 1 and lower than %d", callerName, int(^uint(0)>>1)))
+		}
 		return nil, phpobj.ThrowError(ctx, DateMalformedPeriodStringException, fmt.Sprintf("Unknown or bad format (%s)", isoStr))
 	}
 
@@ -3056,7 +3150,25 @@ func initDatePeriodIterator() {
 					if d == nil || d.pos < 0 || d.pos >= len(d.dates) {
 						return phpv.ZBool(false).ZVal(), nil
 					}
-					return d.dates[d.pos], nil
+					// Return a fresh clone so mutating the returned object doesn't affect iteration
+					origVal := d.dates[d.pos]
+					if origVal == nil || origVal.GetType() != phpv.ZtObject {
+						return origVal, nil
+					}
+					origObj, ok := origVal.Value().(*phpobj.ZObject)
+					if !ok {
+						return origVal, nil
+					}
+					origTime, ok2 := getTime(origObj)
+					if !ok2 {
+						return origVal, nil
+					}
+					cloned, clErr := phpobj.NewZObject(ctx, origObj.Class)
+					if clErr != nil {
+						return origVal, nil
+					}
+					setTimeVal(cloned, origTime)
+					return cloned.ZVal(), nil
 				}),
 			},
 			"key": {
@@ -3331,7 +3443,10 @@ func datePeriodSetState(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 			return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DatePeriod object")
 		}
 	}
-	// Validate interval: must be null or DateInterval
+	// Validate interval: must be a non-null DateInterval (required)
+	if intervalVal == nil || intervalVal.IsNull() {
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DatePeriod object")
+	}
 	if intervalVal != nil && !intervalVal.IsNull() {
 		obj, ok := intervalVal.Value().(*phpobj.ZObject)
 		if !ok || !obj.Class.InstanceOf(DateInterval) {
@@ -3581,6 +3696,12 @@ func dateIntervalConstruct(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.
 			this.HashTable().SetString("h", phpv.ZInt(n).ZVal())
 		case 'S':
 			this.HashTable().SetString("s", phpv.ZInt(n).ZVal())
+		case 'W':
+			// P1W = 1 week = 7 days
+			this.HashTable().SetString("d", phpv.ZInt(n*7).ZVal())
+		default:
+			// Unknown character in duration string - reject it
+			return nil, phpobj.ThrowError(ctx, DateMalformedIntervalStringException, "Unknown or bad format ("+spec+")")
 		}
 	}
 	return nil, nil
@@ -3672,28 +3793,50 @@ func dateIntervalFormat(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVa
 	return phpv.ZStr(result), nil
 }
 
-// createDateIntervalFromString creates a DateInterval from a relative date string
-// like "2 days", "1 month 3 days", "next thursday", etc.
+// nonRelativePattern detects non-relative elements in a date string.
+var nonRelativePattern = regexp.MustCompile(`(?i)(^\d{4}-\d{2}-\d{2}|\b\d{1,2}:\d{2}(:\d{2})?\b|\bnoon\b|\bmidnight\b|\bam\b|\bpm\b|` +
+	`\b(january|february|march|april|may|june|july|august|september|october|november|december)\b.*\b\d{1,2}\b|` +
+	`\b\d{1,2}\s+(january|february|march|april|may|june|july|august|september|october|november|december)\b|` +
+	`\b(UTC|GMT|EST|CST|MST|PST|EDT|CDT|MDT|PDT|BST|CET|EET|IST|JST|AEST|NZST)\b)`)
+
+// hasNonRelativeElements checks if a relative date string contains non-relative elements.
+func hasNonRelativeElements(dateStr string) bool {
+	return nonRelativePattern.MatchString(dateStr)
+}
+
+// createDateIntervalFromString creates a DateInterval from a relative date string.
+// Throws DateMalformedIntervalStringException on unknown formats or non-relative elements.
 func createDateIntervalFromString(ctx phpv.Context, dateStr string) (*phpv.ZVal, error) {
-	obj, err := phpobj.NewZObject(ctx, DateInterval)
+	result, warnMsg, err := createDateIntervalFromStringMsg(ctx, dateStr, true)
 	if err != nil {
 		return nil, err
+	}
+	if warnMsg != "" {
+		return nil, phpobj.ThrowError(ctx, DateMalformedIntervalStringException, warnMsg)
+	}
+	return result, nil
+}
+
+// createDateIntervalFromStringMsg creates a DateInterval from a relative date string.
+// Returns (result, warnMsg, err).
+func createDateIntervalFromStringMsg(ctx phpv.Context, dateStr string, _ bool) (*phpv.ZVal, string, error) {
+	obj, err := phpobj.NewZObject(ctx, DateInterval)
+	if err != nil {
+		return nil, "", err
 	}
 
 	// Store the from_string flag and original string
 	obj.HashTable().SetString("from_string", phpv.ZBool(true).ZVal())
 	obj.HashTable().SetString("date_string", phpv.ZString(dateStr).ZVal())
 
-	// Parse relative date strings
-	// Parse simple formats like "N unit" (e.g., "2 days", "1 month")
 	trimmed := strings.TrimSpace(strings.ToLower(dateStr))
 	parts := strings.Fields(trimmed)
 
+	// Parse simple formats like "N unit" (e.g., "2 days", "1 month")
 	parsed := false
 	for i := 0; i < len(parts); i++ {
 		num := 0
-		// Try to parse a number
-		if n, err := fmt.Sscanf(parts[i], "%d", &num); err == nil && n == 1 {
+		if n, err2 := fmt.Sscanf(parts[i], "%d", &num); err2 == nil && n == 1 {
 			if i+1 < len(parts) {
 				i++
 				unit := parts[i]
@@ -3724,14 +3867,23 @@ func createDateIntervalFromString(ctx phpv.Context, dateStr string) (*phpv.ZVal,
 		}
 	}
 
-	if !parsed && len(trimmed) > 0 {
-		_, stErr := strtotime.StrToTime(dateStr, strtotime.InTZ(getTimezone(ctx)), strtotime.Rel(time.Now().In(getTimezone(ctx))))
-		if stErr != nil {
-			return nil, phpobj.ThrowError(ctx, DateMalformedIntervalStringException,
-				fmt.Sprintf("Unknown or bad format (%s) at position 0 (%s): The timezone could not be found in the database",
-					dateStr, string(dateStr[0:1])))
+	if len(trimmed) == 0 {
+		return nil, "Unknown or bad format () at position 0 ( ): Empty string", nil
+	}
+
+	_, stErr := strtotime.StrToTime(dateStr, strtotime.InTZ(getTimezone(ctx)), strtotime.Rel(time.Now().In(getTimezone(ctx))))
+	if stErr != nil {
+		if !parsed {
+			firstChar := string([]rune(dateStr)[0:1])
+			return nil, fmt.Sprintf("Unknown or bad format (%s) at position 0 (%s): The timezone could not be found in the database",
+				dateStr, firstChar), nil
+		}
+	} else {
+		// Check for non-relative elements
+		if hasNonRelativeElements(dateStr) {
+			return nil, fmt.Sprintf("String '%s' contains non-relative elements", dateStr), nil
 		}
 	}
 
-	return obj.ZVal(), nil
+	return obj.ZVal(), "", nil
 }

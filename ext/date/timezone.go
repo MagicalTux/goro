@@ -4,8 +4,11 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"regexp"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/KarpelesLab/gotz"
@@ -82,7 +85,13 @@ func fncDateDefaultTimezoneSet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal,
 		return nil, err
 	}
 
-	// Store timezone in global config (stub for now, actual timezone handling TODO)
+	// Validate the timezone identifier
+	_, loadErr := time.LoadLocation(string(tz))
+	if loadErr != nil {
+		ctx.Notice("Timezone ID '%s' is invalid", string(tz))
+		return phpv.ZBool(false).ZVal(), nil
+	}
+
 	ctx.Global().SetLocalConfig("date.timezone", tz.ZVal())
 	return phpv.ZBool(true).ZVal(), nil
 }
@@ -344,87 +353,263 @@ func datetimezoneGetOffset(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.
 	return phpv.ZInt(offset).ZVal(), nil
 }
 
-// Common timezone identifiers for listIdentifiers
-var commonTimezones = []string{
-	"Africa/Abidjan", "Africa/Accra", "Africa/Addis_Ababa", "Africa/Algiers",
-	"Africa/Cairo", "Africa/Casablanca", "Africa/Johannesburg", "Africa/Lagos",
-	"Africa/Nairobi", "Africa/Tunis",
-	"America/Anchorage", "America/Argentina/Buenos_Aires", "America/Bogota",
-	"America/Chicago", "America/Denver", "America/Halifax", "America/Lima",
-	"America/Los_Angeles", "America/Mexico_City", "America/New_York",
-	"America/Phoenix", "America/Santiago", "America/Sao_Paulo", "America/Toronto",
-	"America/Vancouver", "America/Winnipeg",
-	"Asia/Almaty", "Asia/Baghdad", "Asia/Bangkok", "Asia/Colombo",
-	"Asia/Dhaka", "Asia/Dubai", "Asia/Ho_Chi_Minh", "Asia/Hong_Kong",
-	"Asia/Irkutsk", "Asia/Jakarta", "Asia/Jerusalem", "Asia/Karachi",
-	"Asia/Kolkata", "Asia/Krasnoyarsk", "Asia/Kuala_Lumpur", "Asia/Kuwait",
-	"Asia/Manila", "Asia/Novosibirsk", "Asia/Riyadh", "Asia/Seoul",
-	"Asia/Shanghai", "Asia/Singapore", "Asia/Taipei", "Asia/Tehran",
-	"Asia/Tokyo", "Asia/Vladivostok", "Asia/Yakutsk", "Asia/Yekaterinburg",
-	"Atlantic/Azores", "Atlantic/Reykjavik",
-	"Australia/Adelaide", "Australia/Brisbane", "Australia/Darwin",
-	"Australia/Hobart", "Australia/Melbourne", "Australia/Perth", "Australia/Sydney",
-	"Europe/Amsterdam", "Europe/Athens", "Europe/Belgrade", "Europe/Berlin",
-	"Europe/Brussels", "Europe/Bucharest", "Europe/Budapest", "Europe/Copenhagen",
-	"Europe/Dublin", "Europe/Helsinki", "Europe/Istanbul", "Europe/Kiev",
-	"Europe/Lisbon", "Europe/London", "Europe/Madrid", "Europe/Moscow",
-	"Europe/Oslo", "Europe/Paris", "Europe/Prague", "Europe/Rome",
-	"Europe/Stockholm", "Europe/Vienna", "Europe/Vilnius", "Europe/Warsaw",
-	"Europe/Zurich",
-	"Indian/Maldives",
-	"Pacific/Auckland", "Pacific/Fiji", "Pacific/Guam", "Pacific/Honolulu",
-	"UTC",
+// DateTimeZone region constants (mirrors the PHP class constants).
+const (
+	dtzAFRICA     = 1
+	dtzAMERICA    = 2
+	dtzANTARCTICA = 4
+	dtzARCTIC     = 8
+	dtzASIA       = 16
+	dtzATLANTIC   = 32
+	dtzAUSTRALIA  = 64
+	dtzEUROPE     = 128
+	dtzINDIAN     = 256
+	dtzPACIFIC    = 512
+	dtzUTC        = 1024
+	dtzALL        = 2047
+	dtzALL_WITH_BC = 4095
+	dtzPER_COUNTRY = 4096
+)
+
+// tzPrefixForRegion maps a single-bit region constant to its IANA prefix string.
+// A non-empty prefix means the zone name must start with that prefix.
+// An empty prefix with a special marker is used for "UTC" (exact match).
+var tzPrefixForRegion = []struct {
+	bit    int
+	prefix string
+}{
+	{dtzAFRICA, "Africa/"},
+	{dtzAMERICA, "America/"},
+	{dtzANTARCTICA, "Antarctica/"},
+	{dtzARCTIC, "Arctic/"},
+	{dtzASIA, "Asia/"},
+	{dtzATLANTIC, "Atlantic/"},
+	{dtzAUSTRALIA, "Australia/"},
+	{dtzEUROPE, "Europe/"},
+	{dtzINDIAN, "Indian/"},
+	{dtzPACIFIC, "Pacific/"},
+	{dtzUTC, "UTC"},
 }
 
-// datetimezoneListIdentifiers implements DateTimeZone::listIdentifiers(): array
-func datetimezoneListIdentifiers(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	result := phpv.NewZArray()
-	for _, tz := range commonTimezones {
-		result.OffsetSet(ctx, nil, phpv.ZString(tz).ZVal())
+// zoneMatchesRegion reports whether a timezone name belongs to the given region bitmask.
+func zoneMatchesRegion(name string, regionMask int) bool {
+	// UTC exact match
+	if name == "UTC" && (regionMask&dtzUTC) != 0 {
+		return true
 	}
+	for _, r := range tzPrefixForRegion {
+		if r.prefix == "UTC" {
+			continue // handled above
+		}
+		if (regionMask&r.bit) != 0 && strings.HasPrefix(name, r.prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// datetimezoneListIdentifiers implements DateTimeZone::listIdentifiers(int $timezoneGroup, string $countryCode): array
+// $timezoneGroup defaults to DateTimeZone::ALL (2047).
+// $countryCode is only used when $timezoneGroup == DateTimeZone::PER_COUNTRY.
+func datetimezoneListIdentifiers(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	// Parse optional arguments
+	regionMask := dtzALL
+	countryCode := ""
+	if len(args) >= 1 && !args[0].IsNull() {
+		regionMask = int(args[0].AsInt(ctx))
+	}
+	if len(args) >= 2 && !args[1].IsNull() {
+		countryCode = strings.ToUpper(string(args[1].AsString(ctx)))
+	}
+
+	result := phpv.NewZArray()
+
+	if regionMask == dtzPER_COUNTRY && countryCode != "" {
+		// Filter by country code using gotz metadata
+		for _, name := range allIANAZones {
+			zone, err := gotz.Load(name)
+			if err != nil {
+				continue
+			}
+			meta := zone.Meta()
+			if meta == nil {
+				continue
+			}
+			for _, c := range meta.Countries {
+				if strings.ToUpper(c.Code) == countryCode {
+					result.OffsetSet(ctx, nil, phpv.ZString(name).ZVal())
+					break
+				}
+			}
+		}
+		return result.ZVal(), nil
+	}
+
+	for _, name := range allIANAZones {
+		switch {
+		case regionMask == dtzALL_WITH_BC:
+			// ALL_WITH_BC includes everything in allIANAZones
+			result.OffsetSet(ctx, nil, phpv.ZString(name).ZVal())
+		case regionMask == dtzALL:
+			// ALL: only canonical prefixes (Africa/, America/, ..., Pacific/) + UTC
+			if zoneMatchesRegion(name, dtzALL) {
+				result.OffsetSet(ctx, nil, phpv.ZString(name).ZVal())
+			}
+		default:
+			// Specific region bitmask
+			if zoneMatchesRegion(name, regionMask) {
+				result.OffsetSet(ctx, nil, phpv.ZString(name).ZVal())
+			}
+		}
+	}
+
 	return result.ZVal(), nil
 }
 
-// datetimezoneListAbbreviations implements DateTimeZone::listAbbreviations(): array
-func datetimezoneListAbbreviations(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	// Return a simplified version of timezone abbreviations
-	result := phpv.NewZArray()
+// tzAbbrevEntry is a single entry in the timezone abbreviation map.
+type tzAbbrevEntry struct {
+	dst      bool
+	offset   int
+	tzID     string
+}
 
-	abbrevs := map[string][]struct {
+// tzAbbrevMap is a lazy-initialized cache of all timezone abbreviations.
+var (
+	tzAbbrevCache     map[string][]tzAbbrevEntry
+	tzAbbrevCacheOnce sync.Once
+)
+
+// militaryTZAbbrevs maps single-letter NATO/military timezone abbreviations to their
+// UTC offsets in seconds. These are included in PHP's timezone_abbreviations_list().
+// J (Juliet) represents local time with offset 0.
+var militaryTZAbbrevs = map[string]int{
+	"a": 3600,    // Alpha = UTC+1
+	"b": 7200,    // Bravo = UTC+2
+	"c": 10800,   // Charlie = UTC+3
+	"d": 14400,   // Delta = UTC+4
+	"e": 18000,   // Echo = UTC+5
+	"f": 21600,   // Foxtrot = UTC+6
+	"g": 25200,   // Golf = UTC+7
+	"h": 28800,   // Hotel = UTC+8
+	"i": 32400,   // India = UTC+9
+	"j": 0,       // Juliet = local time
+	"k": 36000,   // Kilo = UTC+10
+	"l": 39600,   // Lima = UTC+11
+	"m": 43200,   // Mike = UTC+12
+	"n": -3600,   // November = UTC-1
+	"o": -7200,   // Oscar = UTC-2
+	"p": -10800,  // Papa = UTC-3
+	"q": -14400,  // Quebec = UTC-4
+	"r": -18000,  // Romeo = UTC-5
+	"s": -21600,  // Sierra = UTC-6
+	"t": -25200,  // Tango = UTC-7
+	"u": -28800,  // Uniform = UTC-8
+	"v": -32400,  // Victor = UTC-9
+	"w": -36000,  // Whiskey = UTC-10
+	"x": -39600,  // X-ray = UTC-11
+	"y": -43200,  // Yankee = UTC-12
+	"z": 0,       // Zulu = UTC+0
+}
+
+// buildTZAbbrevMap builds the complete PHP timezone abbreviation map from all IANA zones.
+// For each zone, it uses only the LAST occurrence of each (abbreviation, IsDST) pair,
+// which corresponds to the "current" or most recent offset for that abbreviation.
+// This matches PHP's behavior where only current (non-historical) types are included.
+// It also adds military timezone abbreviations (a-z) to match PHP's 144-entry count.
+// The result is a map from lowercase abbreviation to []tzAbbrevEntry, de-duplicated
+// across all zones by (abbr, offset, tzID).
+func buildTZAbbrevMap() map[string][]tzAbbrevEntry {
+	type globalKey struct {
+		abbr   string
 		offset int
-		tzId   string
-	}{
-		"utc":  {{0, "Etc/Universal"}, {0, "Etc/UTC"}, {0, "Etc/Zulu"}, {0, "UTC"}, {0, "UTC"}},
-		"gmt":  {{0, "UTC"}},
-		"est":  {{-18000, "America/New_York"}},
-		"edt":  {{-14400, "America/New_York"}},
-		"cst":  {{-21600, "America/Chicago"}},
-		"cdt":  {{-18000, "America/Chicago"}},
-		"mst":  {{-25200, "America/Denver"}},
-		"mdt":  {{-21600, "America/Denver"}},
-		"pst":  {{-28800, "America/Los_Angeles"}},
-		"pdt":  {{-25200, "America/Los_Angeles"}},
-		"cet":  {{3600, "Europe/Paris"}},
-		"cest": {{7200, "Europe/Paris"}},
-		"eet":  {{7200, "Europe/Athens"}},
-		"eest": {{10800, "Europe/Athens"}},
-		"jst":  {{32400, "Asia/Tokyo"}},
-		"kst":  {{32400, "Asia/Seoul"}},
-		"ist":  {{19800, "Asia/Kolkata"}},
-		"cst (china)": {{28800, "Asia/Shanghai"}},
-		"aest": {{36000, "Australia/Sydney"}},
-		"aedt": {{39600, "Australia/Sydney"}},
-		"nzst": {{43200, "Pacific/Auckland"}},
-		"nzdt": {{46800, "Pacific/Auckland"}},
+		tzID   string
+	}
+	// globalSeen prevents duplicate (abbr, offset, tzID) entries across all zones.
+	globalSeen := make(map[globalKey]bool)
+	result := make(map[string][]tzAbbrevEntry)
+
+	// Process all IANA zones plus UTC
+	allZones := make([]string, len(allIANAZones)+1)
+	copy(allZones, allIANAZones)
+	allZones[len(allIANAZones)] = "UTC"
+
+	for _, name := range allZones {
+		zone, err := gotz.Load(name)
+		if err != nil {
+			continue
+		}
+		types := zone.Types()
+
+		// For each zone, keep only the LAST occurrence of each (abbr, isDST) pair
+		// to get the current/most-recent offset for that abbreviation.
+		type localKey struct {
+			abbr  string
+			isDST bool
+		}
+		lastType := make(map[localKey]gotz.ZoneType)
+		for _, zt := range types {
+			abbr := strings.ToLower(zt.Abbrev)
+			if abbr == "" || abbr == "zzz" || abbr == "lmt" {
+				continue
+			}
+			// Skip numeric offset-style abbreviations like "+0020", "-0530", etc.
+			if len(abbr) > 0 && (abbr[0] == '+' || abbr[0] == '-') {
+				continue
+			}
+			// Each later type overwrites earlier ones (we want the most recent).
+			lastType[localKey{abbr, zt.IsDST}] = zt
+		}
+
+		// Add each unique (abbr, isDST) type to the global result.
+		for _, zt := range lastType {
+			abbr := strings.ToLower(zt.Abbrev)
+			gk := globalKey{abbr: abbr, offset: zt.Offset, tzID: name}
+			if globalSeen[gk] {
+				continue
+			}
+			globalSeen[gk] = true
+			result[abbr] = append(result[abbr], tzAbbrevEntry{
+				dst:    zt.IsDST,
+				offset: zt.Offset,
+				tzID:   name,
+			})
+		}
 	}
 
-	for abbr, entries := range abbrevs {
+	// Add military timezone abbreviations (a-z). PHP includes these in its
+	// timezone_abbreviations_list() output with empty timezone_id values.
+	for abbr, offset := range militaryTZAbbrevs {
+		if _, exists := result[abbr]; !exists {
+			result[abbr] = []tzAbbrevEntry{{dst: false, offset: offset, tzID: ""}}
+		}
+	}
+
+	return result
+}
+
+// datetimezoneListAbbreviations implements DateTimeZone::listAbbreviations(): array
+// Returns a map of lowercase abbreviation strings to arrays of [dst, offset, timezone_id] arrays.
+func datetimezoneListAbbreviations(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	tzAbbrevCacheOnce.Do(func() {
+		tzAbbrevCache = buildTZAbbrevMap()
+	})
+
+	result := phpv.NewZArray()
+	// Collect and sort abbreviation keys for deterministic output
+	keys := make([]string, 0, len(tzAbbrevCache))
+	for k := range tzAbbrevCache {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	for _, abbr := range keys {
+		entries := tzAbbrevCache[abbr]
 		arr := phpv.NewZArray()
 		for _, e := range entries {
 			entry := phpv.NewZArray()
-			entry.OffsetSet(ctx, phpv.ZString("dst"), phpv.ZBool(false).ZVal())
+			entry.OffsetSet(ctx, phpv.ZString("dst"), phpv.ZBool(e.dst).ZVal())
 			entry.OffsetSet(ctx, phpv.ZString("offset"), phpv.ZInt(e.offset).ZVal())
-			entry.OffsetSet(ctx, phpv.ZString("timezone_id"), phpv.ZString(e.tzId).ZVal())
+			entry.OffsetSet(ctx, phpv.ZString("timezone_id"), phpv.ZString(e.tzID).ZVal())
 			arr.OffsetSet(ctx, nil, entry.ZVal())
 		}
 		result.OffsetSet(ctx, phpv.ZString(abbr), arr.ZVal())
@@ -786,7 +971,28 @@ func fncDateIntervalCreateFromDateString(ctx phpv.Context, args []*phpv.ZVal) (*
 	if len(args) < 1 {
 		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "date_interval_create_from_date_string() expects exactly 1 argument")
 	}
-	return createDateIntervalFromString(ctx, string(args[0].AsString(ctx)))
+	if args[0].IsNull() {
+		if err := ctx.Deprecated("date_interval_create_from_date_string(): Passing null to parameter #1 ($datetime) of type string is deprecated"); err != nil {
+			return nil, err
+		}
+	}
+	dateStr := string(args[0].AsString(ctx))
+	// Procedural version: non-relative elements emit a Warning (not exception) but still return the object.
+	// Unknown format emits Warning and returns false.
+	result, warnMsg, err := createDateIntervalFromStringMsg(ctx, dateStr, false)
+	if err != nil {
+		return nil, err
+	}
+	if warnMsg != "" {
+		if warnErr := ctx.Warn("%s", warnMsg); warnErr != nil {
+			return nil, warnErr
+		}
+		if strings.Contains(warnMsg, "non-relative") {
+			return result, nil
+		}
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	return result, nil
 }
 
 func fncDateIntervalFormat(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
@@ -815,6 +1021,15 @@ func fncDateGetLastErrors(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, erro
 	return phpv.ZBool(false).ZVal(), nil
 }
 
+// dateParseHasDate returns true if the input string contains a date component (year-month-day).
+var reDateParseHasDate = regexp.MustCompile(`\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2}[-/]\d{2,4}`)
+
+// dateParseHasTime returns true if the input string contains a time component (HH:MM).
+var reDateParseHasTime = regexp.MustCompile(`\d{1,2}:\d{2}`)
+
+// dateParseHasFraction returns true if the input has a fractional seconds part (e.g. ":00.5").
+var reDateParseHasFraction = regexp.MustCompile(`:\d{2}\.(\d+)`)
+
 func fncDateParse(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
 		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "date_parse() expects exactly 1 argument, 0 given")
@@ -824,6 +1039,26 @@ func fncDateParse(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	loc := getTimezone(ctx)
 	base := time.Now().In(loc)
 	t, stErr := strtotime.StrToTime(datetime, strtotime.InTZ(loc), strtotime.Rel(base))
+
+	// Determine which components are present in the input string
+	hasDate := reDateParseHasDate.MatchString(datetime)
+	hasTime := reDateParseHasTime.MatchString(datetime)
+
+	// Parse fraction from input
+	var fraction phpv.ZVal
+	if m := reDateParseHasFraction.FindStringSubmatch(datetime); m != nil {
+		f, fErr := strconv.ParseFloat("0."+m[1], 64)
+		if fErr == nil {
+			fraction = *phpv.ZFloat(f).ZVal()
+		} else {
+			fraction = *phpv.ZBool(false).ZVal()
+		}
+	} else if hasTime {
+		fraction = *phpv.ZFloat(0).ZVal()
+	} else {
+		fraction = *phpv.ZBool(false).ZVal()
+	}
+
 	if stErr != nil {
 		result.OffsetSet(ctx, phpv.ZString("year"), phpv.ZBool(false).ZVal())
 		result.OffsetSet(ctx, phpv.ZString("month"), phpv.ZBool(false).ZVal())
@@ -832,14 +1067,26 @@ func fncDateParse(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		result.OffsetSet(ctx, phpv.ZString("minute"), phpv.ZBool(false).ZVal())
 		result.OffsetSet(ctx, phpv.ZString("second"), phpv.ZBool(false).ZVal())
 	} else {
-		result.OffsetSet(ctx, phpv.ZString("year"), phpv.ZInt(t.Year()).ZVal())
-		result.OffsetSet(ctx, phpv.ZString("month"), phpv.ZInt(int(t.Month())).ZVal())
-		result.OffsetSet(ctx, phpv.ZString("day"), phpv.ZInt(t.Day()).ZVal())
-		result.OffsetSet(ctx, phpv.ZString("hour"), phpv.ZInt(t.Hour()).ZVal())
-		result.OffsetSet(ctx, phpv.ZString("minute"), phpv.ZInt(t.Minute()).ZVal())
-		result.OffsetSet(ctx, phpv.ZString("second"), phpv.ZInt(t.Second()).ZVal())
+		if hasDate {
+			result.OffsetSet(ctx, phpv.ZString("year"), phpv.ZInt(t.Year()).ZVal())
+			result.OffsetSet(ctx, phpv.ZString("month"), phpv.ZInt(int(t.Month())).ZVal())
+			result.OffsetSet(ctx, phpv.ZString("day"), phpv.ZInt(t.Day()).ZVal())
+		} else {
+			result.OffsetSet(ctx, phpv.ZString("year"), phpv.ZBool(false).ZVal())
+			result.OffsetSet(ctx, phpv.ZString("month"), phpv.ZBool(false).ZVal())
+			result.OffsetSet(ctx, phpv.ZString("day"), phpv.ZBool(false).ZVal())
+		}
+		if hasTime {
+			result.OffsetSet(ctx, phpv.ZString("hour"), phpv.ZInt(t.Hour()).ZVal())
+			result.OffsetSet(ctx, phpv.ZString("minute"), phpv.ZInt(t.Minute()).ZVal())
+			result.OffsetSet(ctx, phpv.ZString("second"), phpv.ZInt(t.Second()).ZVal())
+		} else {
+			result.OffsetSet(ctx, phpv.ZString("hour"), phpv.ZBool(false).ZVal())
+			result.OffsetSet(ctx, phpv.ZString("minute"), phpv.ZBool(false).ZVal())
+			result.OffsetSet(ctx, phpv.ZString("second"), phpv.ZBool(false).ZVal())
+		}
 	}
-	result.OffsetSet(ctx, phpv.ZString("fraction"), phpv.ZFloat(0).ZVal())
+	result.OffsetSet(ctx, phpv.ZString("fraction"), fraction.ZVal())
 	result.OffsetSet(ctx, phpv.ZString("warning_count"), phpv.ZInt(0).ZVal())
 	result.OffsetSet(ctx, phpv.ZString("warnings"), phpv.NewZArray().ZVal())
 	result.OffsetSet(ctx, phpv.ZString("error_count"), phpv.ZInt(0).ZVal())
