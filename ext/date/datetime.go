@@ -240,7 +240,8 @@ func setTimeVal(this *phpobj.ZObject, t time.Time) {
 		// Empty location name from Go's time.Parse - derive from offset
 		_, offset := t.Zone()
 		if offset == 0 {
-			locName = "UTC"
+			locName = "+00:00"
+			tzType = 1
 		} else {
 			sign := "+"
 			absOffset := offset

@@ -3264,7 +3264,7 @@ func (it *hookedObjectIterator) CurrentMakeRef(ctx phpv.Context) (*phpv.ZVal, er
 	// Check for readonly property
 	if it.obj.IsReadonlyProperty(e.key) && it.obj.IsReadonlyPropertyInitialized(e.key) {
 		return nil, ThrowError(nil, Error,
-			fmt.Sprintf("Cannot indirectly modify readonly property %s::$%s", it.obj.GetClass().GetName(), e.key))
+			fmt.Sprintf("Cannot modify readonly property %s::$%s", it.obj.GetClass().GetName(), e.key))
 	}
 
 	// For virtual hooked properties, cannot take a reference
@@ -3368,7 +3368,7 @@ func (it *zobjectIterator) CurrentMakeRef(ctx phpv.Context) (*phpv.ZVal, error) 
 			}
 			if it.obj.IsReadonlyProperty(keyStr) && it.obj.IsReadonlyPropertyInitialized(keyStr) {
 				return nil, ThrowError(ctx, Error,
-					fmt.Sprintf("Cannot indirectly modify readonly property %s::$%s", it.obj.GetClass().GetName(), keyStr))
+					fmt.Sprintf("Cannot modify readonly property %s::$%s", it.obj.GetClass().GetName(), keyStr))
 			}
 		}
 	}

@@ -13,28 +13,14 @@ import (
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
-// tzWarnedOnce emits a "PHP Startup: Invalid date.timezone" warning at most once per request.
-func tzWarnedOnce(ctx phpv.Context, tzName string) {
-	if v := ctx.GetConfig("date.timezone_warned", nil); v != nil {
-		if b, ok := v.Value().(phpv.ZBool); ok && bool(b) {
-			return
-		}
-	}
-	ctx.Global().WriteStartupWarning(fmt.Sprintf("Warning: PHP Startup: Invalid date.timezone value '%s', using 'UTC' instead in Unknown on line 0\n", tzName))
-	ctx.Global().SetLocalConfig("date.timezone_warned", phpv.ZBool(true).ZVal())
-}
-
 // getTimezone returns the timezone configured via date.timezone, falling back to UTC.
-// If the timezone is empty or invalid, it emits a startup-style warning once per request.
 func getTimezone(ctx phpv.Context) *time.Location {
 	tzName := ctx.GetConfig("date.timezone", phpv.ZString("").ZVal()).String()
 	if tzName == "" {
-		tzWarnedOnce(ctx, "")
 		return time.UTC
 	}
 	loc, err := time.LoadLocation(tzName)
 	if err != nil {
-		tzWarnedOnce(ctx, tzName)
 		return time.UTC
 	}
 	return loc
@@ -210,8 +196,35 @@ func phpDateFormat(format string, t time.Time) string {
 			mins := (offset % 3600) / 60
 			buf.WriteString(fmt.Sprintf("%s%02d:%02d", sign, hours, mins))
 		case 'T': // Timezone abbreviation
-			name, _ := t.Zone()
-			buf.WriteString(name)
+			name, offset := t.Zone()
+			locName := t.Location().String()
+			if locName == "UTC" || name == "UTC" {
+				buf.WriteString("UTC")
+			} else if len(locName) > 0 && (locName[0] == '+' || locName[0] == '-') {
+				// Named fixed-offset timezone: format as GMT+HHMM or GMT-HHMM
+				sign := "+"
+				absOffset := offset
+				if offset < 0 {
+					sign = "-"
+					absOffset = -offset
+				}
+				hours := absOffset / 3600
+				mins := (absOffset % 3600) / 60
+				buf.WriteString(fmt.Sprintf("GMT%s%02d%02d", sign, hours, mins))
+			} else if name == "" || (len(name) > 0 && (name[0] == '+' || name[0] == '-')) {
+				// Empty or numeric zone name (from time.Parse) — use offset to format
+				sign := "+"
+				absOffset := offset
+				if offset < 0 {
+					sign = "-"
+					absOffset = -offset
+				}
+				hours := absOffset / 3600
+				mins := (absOffset % 3600) / 60
+				buf.WriteString(fmt.Sprintf("GMT%s%02d%02d", sign, hours, mins))
+			} else {
+				buf.WriteString(name)
+			}
 		case 'Z': // Timezone offset in seconds
 			_, offset := t.Zone()
 			buf.WriteString(strconv.Itoa(offset))

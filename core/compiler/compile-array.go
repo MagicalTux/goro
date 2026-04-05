@@ -805,7 +805,7 @@ func (ac *runArrayAccess) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 		return ctx.Notice("Indirect modification of overloaded element of %s has no effect", inner.lastContainerClassName, logopt.Data{Loc: ac.l, NoFuncName: true})
 	}
 
-	// PHP 8.1: Cannot indirectly modify readonly property.
+	// PHP 8.1: Cannot modify readonly property.
 	// If the container expression chain resolves through a readonly property
 	// access ($obj->prop[...] = val or $obj->prop[0][...] = val), block it.
 	if err := checkReadonlyIndirectModification(ctx, ac.value); err != nil {
@@ -1443,7 +1443,7 @@ func checkReadonlyIndirectModification(ctx phpv.Context, expr phpv.Runnable) err
 			}
 			if obj.IsReadonlyProperty(propName) {
 				return phpobj.ThrowError(ctx, phpobj.Error,
-					fmt.Sprintf("Cannot indirectly modify readonly property %s::$%s", obj.GetClass().GetName(), propName))
+					fmt.Sprintf("Cannot modify readonly property %s::$%s", obj.GetClass().GetName(), propName))
 			}
 			// Check asymmetric visibility for indirect modification
 			if err := checkAsymmetricVisibilityIndirect(ctx, obj, propName); err != nil {
@@ -1467,7 +1467,7 @@ func checkReadonlyIndirectModification(ctx phpv.Context, expr phpv.Runnable) err
 			propName := nameVal.AsString(ctx)
 			if obj.IsReadonlyProperty(propName) {
 				return phpobj.ThrowError(ctx, phpobj.Error,
-					fmt.Sprintf("Cannot indirectly modify readonly property %s::$%s", obj.GetClass().GetName(), propName))
+					fmt.Sprintf("Cannot modify readonly property %s::$%s", obj.GetClass().GetName(), propName))
 			}
 			// Check asymmetric visibility for indirect modification
 			if err := checkAsymmetricVisibilityIndirect(ctx, obj, propName); err != nil {
