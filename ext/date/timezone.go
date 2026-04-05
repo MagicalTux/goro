@@ -534,6 +534,10 @@ func buildTZAbbrevMap() map[string][]tzAbbrevEntry {
 	allZones[len(allIANAZones)] = "UTC"
 
 	for _, name := range allZones {
+		// Skip Etc/UCT - PHP doesn't include it in timezone_abbreviations_list
+		if name == "Etc/UCT" {
+			continue
+		}
 		zone, err := gotz.Load(name)
 		if err != nil {
 			continue

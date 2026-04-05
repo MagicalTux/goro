@@ -2210,7 +2210,20 @@ func init() {
 										fmt.Sprintf("Unknown or bad format (%s) at position %d (%s) while unserializing: Unexpected character", dateStr, pos, ch))
 								}
 							}
-							return createDateIntervalFromString(ctx, dateStr)
+							// Build DateInterval directly (don't use createDateIntervalFromString
+							// which enforces relative-only - __set_state allows absolute datetimes)
+							obj, objErr := phpobj.NewZObject(ctx, DateInterval)
+							if objErr != nil {
+								return nil, objErr
+							}
+							obj.SetOpaque(DateInterval, true)
+							obj.HashTable().SetString("from_string", phpv.ZBool(true).ZVal())
+							obj.HashTable().SetString("date_string", phpv.ZString(dateStr).ZVal())
+							// Remove non-from_string properties
+							for _, key := range []string{"y", "m", "d", "h", "i", "s", "f", "invert", "days"} {
+								obj.HashTable().UnsetString(phpv.ZString(key))
+							}
+							return obj.ZVal(), nil
 						}
 						return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DateInterval object")
 					}

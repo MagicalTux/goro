@@ -557,4 +557,5 @@ var allIANAZones = []string{
 	"US/Mountain",
 	"US/Pacific",
 	"US/Samoa",
+	"UTC",
 }

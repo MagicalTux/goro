@@ -232,8 +232,8 @@ func phpDateFormat(format string, t time.Time) string {
 			buf.WriteString(fmt.Sprintf("%03d", beats%1000))
 
 		case 'p': // Timezone identifier like P but with Z for UTC
-			locName := t.Location().String()
-			if locName == "UTC" || locName == "Z" {
+			_, offset := t.Zone()
+			if offset == 0 {
 				buf.WriteString("Z")
 			} else {
 				buf.WriteString(phpDateFormat("P", t))
