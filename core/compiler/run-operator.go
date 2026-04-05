@@ -551,13 +551,14 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		if err != nil {
 			return nil, err
 		}
-		// For .= (concat-assign), snapshot the LHS value before evaluating
-		// the RHS. Side effects during RHS evaluation (ob callbacks,
-		// error handlers, __toString) can modify the variable that a points
-		// to, but PHP's concat_function captures the LHS string first.
-		// Use NewZVal to create a lightweight snapshot (shares the Go value
-		// but disconnects from the variable's ZVal pointer).
-		if r.op == tokenizer.T_CONCAT_EQUAL && a != nil {
+		// Snapshot the LHS value before evaluating the RHS. This ensures that
+		// if the RHS modifies the same variable (e.g. $a + ($a = 2)), the LHS
+		// value is the pre-modification value. PHP evaluates LHS to a value
+		// (not a live reference), so we disconnect from the hash-table slot.
+		// This is safe for all operators including compound assignment (+=, .=, etc.)
+		// and postfix ++/--, because write-back uses w.WriteValue() which
+		// independently re-evaluates the write target.
+		if a != nil {
 			a = phpv.NewZVal(a.Value())
 		}
 	}
@@ -952,6 +953,15 @@ doWrite:
 
 		if !res.IsRef() {
 			res = res.ZVal()
+		} else if op.op == nil {
+			// Plain assignment (=, not +=, -=, etc.): check if RHS is an explicit
+			// reference (&$var or &func()). If NOT, PHP copies the value, not the
+			// reference. This implements PHP COW: $a = $refVar copies the value.
+			_, isExplicitRef := r.b.(*runRef)
+			if !isExplicitRef {
+				// Dereference: follow reference chain and create a COW copy.
+				res = res.ZVal()
+			}
 		}
 
 		// Track reference aliases: when storing a reference value (from =&),

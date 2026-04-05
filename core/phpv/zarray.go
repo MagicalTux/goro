@@ -301,6 +301,22 @@ func (a *ZArray) OffsetSet(ctx Context, key Val, value *ZVal) error {
 
 	zi, zs, isint := getArrayKeyValue(key)
 
+	// If the existing slot has type checkers (typed reference), use SetWithCtx
+	// so that type constraints are enforced when the reference value is updated.
+	// This handles the case where an array element is a reference to a typed
+	// object property (e.g. $ary[0] =& $obj->prop where prop is ?string).
+	if value != nil && !value.IsRef() && ctx != nil {
+		var old *ZVal
+		if isint {
+			old = a.h.GetInt(zi)
+		} else {
+			old = a.h.GetString(zs)
+		}
+		if old != nil && old.HasTypeCheckers() {
+			return old.SetWithCtx(ctx, value)
+		}
+	}
+
 	var err error
 	if isint {
 		err = a.h.SetInt(zi, value)

@@ -300,6 +300,12 @@ func (r *runVariableRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			write = true
 		case *runRef:
 			write = true
+		case *runObjectVar:
+			// PHP 8: in write context (e.g. $$varName->prop = x), suppress
+			// "Undefined variable" warning for the variable-variable receiver.
+			if t.writeContext {
+				write = true
+			}
 		case *runnableUnset:
 			write = true
 		case *runGlobal:
@@ -320,6 +326,22 @@ func (r *runVariableRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			nv := phpv.NewZVal(phpv.ZNULL)
 			nv.Name = &name
 			return nv, err
+		}
+	}
+
+	// When in a reference context (parent is runRef), create the variable in the
+	// context so that the reference is linked to the actual variable slot. Without
+	// this, the ref points to an orphaned ZVal and later reads of the variable
+	// (e.g. var_dump($$varName)) would emit "Undefined variable" warnings.
+	if res == nil {
+		if _, isRef := r.Parent.(*runRef); isRef {
+			nullVal := phpv.NewZVal(phpv.ZNULL)
+			_ = ctx.OffsetSet(ctx, name, nullVal)
+			res2, exists2, _ := ctx.OffsetCheck(ctx, name)
+			if exists2 && res2 != nil {
+				res2.Name = &name
+				return res2, nil
+			}
 		}
 	}
 
@@ -396,7 +418,7 @@ type runRef struct {
 
 func (r *runRef) isVariableLike() bool {
 	switch r.v.(type) {
-	case *runVariable, *runArrayAccess, *runObjectVar, *runObjectDynVar, *runClassStaticVarRef:
+	case *runVariable, *runArrayAccess, *runObjectVar, *runObjectDynVar, *runClassStaticVarRef, *runVariableRef:
 		return true
 	}
 	return false

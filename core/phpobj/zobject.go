@@ -2701,23 +2701,56 @@ func (o *ZObject) ObjectSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) er
 					}
 					propName := keyStr
 					hintStr := hint.String()
-					innerRef.AddTypeChecker(func(ctx phpv.Context, val phpv.Val) error {
+					innerRef.AddTypeChecker(func(ctx phpv.Context, val phpv.Val) (phpv.Val, error) {
 						valZVal := phpv.NewZVal(val)
 						if valZVal.IsNull() {
 							if hint.IsNullable() {
-								return nil
+								return nil, nil
 							}
-							return ThrowError(ctx, TypeError,
+							return nil, ThrowError(ctx, TypeError,
 								fmt.Sprintf("Cannot assign null to reference held by property %s::$%s of type %s",
 									declClassName, propName, hintStr))
 						}
-						if !hint.Check(ctx, valZVal) && !hint.CheckStrict(ctx, valZVal) {
-							typeName := phpv.ZValTypeNameDetailed(valZVal)
-							return ThrowError(ctx, TypeError,
-								fmt.Sprintf("Cannot assign %s to reference held by property %s::$%s of type %s",
-									typeName, declClassName, propName, hintStr))
+						// Attempt coercion using weak-mode rules (mirroring enforcePropertyType).
+						isStrict := ctx.Global().GetStrictTypes()
+						if isStrict {
+							if !hint.CheckStrict(ctx, valZVal) {
+								typeName := phpv.ZValTypeNameDetailed(valZVal)
+								return nil, ThrowError(ctx, TypeError,
+									fmt.Sprintf("Cannot assign %s to reference held by property %s::$%s of type %s",
+										typeName, declClassName, propName, hintStr))
+							}
+							// int->float widening in strict mode
+							hintType := hint.Type()
+							if hintType == phpv.ZtFloat && valZVal.GetType() == phpv.ZtInt && len(hint.Union) == 0 && len(hint.Intersection) == 0 {
+								if coerced, err := val.AsVal(ctx, phpv.ZtFloat); err == nil && coerced != nil {
+									return coerced, nil
+								}
+							}
+							return nil, nil
 						}
-						return nil
+						if hint.Check(ctx, valZVal) {
+							// Coerce scalar types to exact type
+							hintType := hint.Type()
+							valType := valZVal.GetType()
+							if hintType != phpv.ZtMixed && hintType != phpv.ZtObject && valType != hintType && len(hint.Union) == 0 && len(hint.Intersection) == 0 {
+								if hintType == phpv.ZtInt && valType == phpv.ZtFloat {
+									v, err := phpv.FloatToIntImplicit(ctx, val.(phpv.ZFloat))
+									if err != nil {
+										return nil, err
+									}
+									return v, nil
+								}
+								if coerced, err := val.AsVal(ctx, hintType); err == nil && coerced != nil {
+									return coerced, nil
+								}
+							}
+							return nil, nil
+						}
+						typeName := phpv.ZValTypeNameDetailed(valZVal)
+						return nil, ThrowError(ctx, TypeError,
+							fmt.Sprintf("Cannot assign %s to reference held by property %s::$%s of type %s",
+								typeName, declClassName, propName, hintStr))
 					})
 				}
 			}
@@ -3557,6 +3590,12 @@ func (o *ZObject) EnforcePropertyType(ctx phpv.Context, keyStr phpv.ZString, pro
 func (o *ZObject) enforcePropertyType(ctx phpv.Context, keyStr phpv.ZString, prop *phpv.ZClassProp, value *phpv.ZVal) (*phpv.ZVal, error) {
 	hint := prop.TypeHint
 	if hint == nil {
+		return nil, nil
+	}
+
+	// Skip type enforcement for reference assignments - the type checker installed
+	// on the inner ZVal will handle future assignments through the reference.
+	if value.IsRef() {
 		return nil, nil
 	}
 

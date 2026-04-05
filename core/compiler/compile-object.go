@@ -1404,7 +1404,18 @@ func (r *runObjectVar) IsCompoundWritable() {}
 // This is called ONLY from =& direct ref assignment context, not from by-ref
 // parameter passing (which passes by value instead).
 func checkOverloadedRefAssign(ctx phpv.Context, r *runObjectVar) error {
+	// Set writeContext on ref chain so that undefined variable-variable receivers
+	// (e.g. $$varName when $var is undefined) suppress "Undefined variable" warnings.
+	prevWriteCtx := r.writeContext
+	r.writeContext = true
+	if wcs, ok := r.ref.(phpv.WriteContextSetter); ok {
+		wcs.SetWriteContext(true)
+	}
 	obj, err := r.ref.Run(ctx)
+	r.writeContext = prevWriteCtx
+	if wcs, ok := r.ref.(phpv.WriteContextSetter); ok {
+		wcs.SetWriteContext(prevWriteCtx)
+	}
 	if err != nil {
 		return nil
 	}
@@ -1450,7 +1461,18 @@ func checkOverloadedRefAssign(ctx phpv.Context, r *runObjectVar) error {
 // CheckReadonlyRef checks if creating a reference to this object property would
 // violate readonly or asymmetric visibility constraints.
 func (r *runObjectVar) CheckReadonlyRef(ctx phpv.Context) error {
+	// Set writeContext on ref chain so that undefined variable-variable receivers
+	// suppress "Undefined variable" warnings during this speculative evaluation.
+	prevWriteCtx := r.writeContext
+	r.writeContext = true
+	if wcs, ok := r.ref.(phpv.WriteContextSetter); ok {
+		wcs.SetWriteContext(true)
+	}
 	obj, err := r.ref.Run(ctx)
+	r.writeContext = prevWriteCtx
+	if wcs, ok := r.ref.(phpv.WriteContextSetter); ok {
+		wcs.SetWriteContext(prevWriteCtx)
+	}
 	if err != nil {
 		return nil // don't block on evaluation errors
 	}
@@ -1528,6 +1550,23 @@ func (r *runObjectVar) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 	}
 
 	objI, ok := obj.Value().(phpv.ZObjectAccess)
+
+	// offset set
+	var offt *phpv.ZVal
+	if r.prepared {
+		offt = r.cachedProp
+		r.prepared = false
+		r.cachedProp = nil
+	} else if r.varName[0] == '$' {
+		// variable property name - resolve before error message
+		offt, err = ctx.OffsetGet(ctx, r.varName[1:].ZVal())
+		if err != nil {
+			return err
+		}
+	} else {
+		offt = r.varName.ZVal()
+	}
+
 	if !ok {
 		// PHP 8: attempting to unset a property on a null/non-object in a chain
 		// (e.g. unset($a->b->c->d) where $a->b is null) is silently ignored.
@@ -1540,24 +1579,12 @@ func (r *runObjectVar) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 		if value.IsRef() {
 			verb = "modify"
 		}
-		return phpobj.ThrowError(ctx, phpobj.Error,
-			fmt.Sprintf("Attempt to %s property \"%s\" on %s", verb, r.varName, typeName))
-	}
-
-	// offset set
-	var offt *phpv.ZVal
-	if r.prepared {
-		offt = r.cachedProp
-		r.prepared = false
-		r.cachedProp = nil
-	} else if r.varName[0] == '$' {
-		// variable
-		offt, err = ctx.OffsetGet(ctx, r.varName[1:].ZVal())
-		if err != nil {
-			return err
+		propName := r.varName
+		if offt != nil {
+			propName = offt.AsString(ctx)
 		}
-	} else {
-		offt = r.varName.ZVal()
+		return phpobj.ThrowError(ctx, phpobj.Error,
+			fmt.Sprintf("Attempt to %s property \"%s\" on %s", verb, propName, typeName))
 	}
 
 	// TODO Check access rights

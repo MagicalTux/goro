@@ -20,12 +20,13 @@ type ZVal struct {
 	// by-ref args: if refCount > 1 after a call, another location still
 	// references it (e.g. $this->prop = &$param), so don't un-ref.
 	refCount int
-	// typeCheckers holds type constraint functions attached to this inner
+	// typeCheckers holds type constraint/coercion functions attached to this inner
 	// reference ZVal. When this ZVal's value is changed through the reference
 	// (e.g. $r = new B where $r is a reference held by typed properties),
-	// all type checkers are evaluated. Only inner ZVals (refCount > 0) should
-	// carry type checkers.
-	typeCheckers []func(Context, Val) error
+	// all type checkers are evaluated. The function may return a coerced Val
+	// (non-nil means "use this value instead") or an error if the type is
+	// incompatible. Only inner ZVals (refCount > 0) should carry type checkers.
+	typeCheckers []func(Context, Val) (Val, error)
 }
 
 func NewZVal(v Val) *ZVal {
@@ -249,9 +250,11 @@ func (z *ZVal) HasTypeCheckers() bool {
 	return false
 }
 
-// AddTypeChecker attaches a type constraint function to this ZVal.
+// AddTypeChecker attaches a type constraint/coercion function to this ZVal.
 // The function is called whenever the ZVal's value is changed via SetWithCtx.
-func (z *ZVal) AddTypeChecker(fn func(Context, Val) error) {
+// If the function returns a non-nil Val, that value is used instead (coercion).
+// If the function returns an error, the assignment is rejected.
+func (z *ZVal) AddTypeChecker(fn func(Context, Val) (Val, error)) {
 	if z == nil || fn == nil {
 		return
 	}
@@ -271,18 +274,46 @@ func (z *ZVal) SetWithCtx(ctx Context, nz *ZVal) error {
 		return nil
 	}
 
-	// Follow the reference chain to find the inner ZVal.
+	// Follow the reference chain to find the inner ZVal, running any type
+	// checkers encountered along the way. Type checkers may be on any ZVal
+	// in the chain (not just the deepest one). This handles the case where
+	// ZVal.Set's self-reference detection creates an extra level of wrapping.
 	if rz, isRef := z.v.(*ZVal); isRef {
+		// If this ZVal has type checkers, run them before following the chain.
+		if len(z.typeCheckers) > 0 {
+			newVal := nz.v
+			for _, check := range z.typeCheckers {
+				coerced, err := check(ctx, newVal)
+				if err != nil {
+					return err
+				}
+				if coerced != nil {
+					newVal = coerced
+				}
+			}
+			// Update nz with the coerced value before following the chain
+			nz.v = newVal
+		}
 		return rz.SetWithCtx(ctx, nz)
 	}
 
 	// z is the inner ZVal. Check type constraints before setting.
+	// Type checkers may also coerce the value (returning a non-nil Val means
+	// "use this coerced value"). The coerced value is written back to nz so
+	// callers (e.g. assignment expressions) can return the coerced value.
 	newVal := nz.v
 	for _, check := range z.typeCheckers {
-		if err := check(ctx, newVal); err != nil {
+		coerced, err := check(ctx, newVal)
+		if err != nil {
 			return err
+		}
+		if coerced != nil {
+			newVal = coerced
 		}
 	}
 	z.v = newVal
+	// Update nz so the caller sees the coerced value (e.g. var_dump($ref = 0)
+	// should show string "0" when $ref is tied to a ?string typed property).
+	nz.v = newVal
 	return nil
 }
