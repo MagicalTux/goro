@@ -61,7 +61,8 @@ type MethodCallable struct {
 	Class       ZClass
 	CalledClass ZClass // for late static binding; nil means same as Class
 	Static      bool
-	AliasName   string // non-empty when the method was called via a trait alias
+	AliasName   string       // non-empty when the method was called via a trait alias
+	Attributes  []*ZAttribute // PHP 8.0 attributes from the ZClassMethod (for native methods)
 }
 
 // Override Val methods so that MethodCallable wraps itself in ZVal properly.
@@ -76,6 +77,18 @@ func (m *MethodCallable) Name() string {
 		return m.AliasName
 	}
 	return m.Callable.Name()
+}
+
+// GetAttributes returns method-level PHP attributes if present, otherwise delegates
+// to the inner callable (e.g. ZClosure implements AttributeGetter for user-defined methods).
+func (m *MethodCallable) GetAttributes() []*ZAttribute {
+	if len(m.Attributes) > 0 {
+		return m.Attributes
+	}
+	if ag, ok := m.Callable.(AttributeGetter); ok {
+		return ag.GetAttributes()
+	}
+	return nil
 }
 
 func Bind(fn Callable, this ZObject, args ...*ZVal) *BoundedCallable {
@@ -97,13 +110,13 @@ func (m *MethodCallable) Loc() *Loc {
 }
 
 func BindClass(fn Callable, class ZClass, static bool) *MethodCallable {
-	return &MethodCallable{fn, class, nil, static, ""}
+	return &MethodCallable{fn, class, nil, static, "", nil}
 }
 
 // BindClassLSB creates a method callable with separate defining and called classes
 // for late static binding support.
 func BindClassLSB(fn Callable, definingClass ZClass, calledClass ZClass, static bool) *MethodCallable {
-	return &MethodCallable{fn, definingClass, calledClass, static, ""}
+	return &MethodCallable{fn, definingClass, calledClass, static, "", nil}
 }
 
 func (m *MethodCallable) GetArgs() []*FuncArg {

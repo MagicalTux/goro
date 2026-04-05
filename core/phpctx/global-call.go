@@ -818,12 +818,12 @@ skipTypeCheck:
 
 // hasNoDiscardAttr checks if a callable has NoDiscard attributes.
 func hasNoDiscardAttr(c phpv.Callable) bool {
-	switch v := c.(type) {
-	case *phpv.BoundedCallable:
-		return hasNoDiscardAttr(v.Callable)
-	case *phpv.MethodCallable:
-		return hasNoDiscardAttr(v.Callable)
+	// For BoundedCallable ($obj->method style), check the inner callable.
+	if bc, ok := c.(*phpv.BoundedCallable); ok {
+		return hasNoDiscardAttr(bc.Callable)
 	}
+	// MethodCallable implements AttributeGetter (checks m.Attributes first, then inner callable).
+	// Other callables (ZClosure, etc.) also implement AttributeGetter directly.
 	if ag, ok := c.(phpv.AttributeGetter); ok {
 		for _, attr := range ag.GetAttributes() {
 			if attr.ClassName == "NoDiscard" || attr.ClassName == "\\NoDiscard" {

@@ -362,6 +362,11 @@ func (r *runNewAnonymousClass) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			ctx.Global().UnregisterClass(r.class.Name)
 			return nil, err
 		}
+		// Validate #[\Override] on properties (same as regular class compilation)
+		if err := validatePropertyOverride(ctx, r.class); err != nil {
+			ctx.Global().UnregisterClass(r.class.Name)
+			return nil, err
+		}
 		r.compiled = true
 	}
 
@@ -1156,6 +1161,7 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		if m.Callable.Name() != calledName {
 			m.AliasName = calledName
 		}
+		m.Attributes = method.Attributes
 		return ctx.Call(ctx, m, r.args, nil)
 	}
 
@@ -1173,6 +1179,7 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		if m.Callable.Name() != calledName {
 			m.AliasName = calledName
 		}
+		m.Attributes = method.Attributes
 		return ctx.Call(ctx, m, r.args, objI)
 	}
 
@@ -1180,6 +1187,7 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	// Use BindClassLSB to preserve the runtime class for late static binding (get_called_class)
 	if method.Modifiers.IsStatic() {
 		m := phpv.BindClassLSB(method.Method, class, runtimeClass, true)
+		m.Attributes = method.Attributes
 		return ctx.Call(ctx, m, r.args, nil)
 	}
 
@@ -1205,6 +1213,13 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		if method.Method.Name() != string(op) {
 			mc.AliasName = string(op)
 		}
+		mc.Attributes = method.Attributes
+		callable = mc
+	} else if len(method.Attributes) > 0 {
+		// Even when not wrapping in MethodCallable for other reasons, wrap for attributes
+		// so hasNoDiscardAttr can find the ZClassMethod attributes on native methods.
+		mc := phpv.BindClass(method.Method, class, false)
+		mc.Attributes = method.Attributes
 		callable = mc
 	}
 

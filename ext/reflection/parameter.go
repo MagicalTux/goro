@@ -18,7 +18,8 @@ type reflectionParameterData struct {
 	arg      *phpv.FuncArg
 	position int
 	funcName phpv.ZString
-	callable phpv.Callable // non-nil when the function is a closure (for getDeclaringFunction())
+	callable phpv.Callable  // non-nil when the function is a closure (for getDeclaringFunction())
+	class    phpv.ZClass    // non-nil when the parameter belongs to a method (for self:: resolution)
 }
 
 func initReflectionParameter() {
@@ -319,6 +320,12 @@ func createReflectionParameterObjects(ctx phpv.Context, funcArgs []*phpv.FuncArg
 // createReflectionParameterObjectsWithCallable creates an array of ReflectionParameter objects,
 // optionally storing the callable (for closures) to support getDeclaringFunction().
 func createReflectionParameterObjectsWithCallable(ctx phpv.Context, funcArgs []*phpv.FuncArg, funcName phpv.ZString, callable phpv.Callable) (*phpv.ZVal, error) {
+	return createReflectionParameterObjectsWithClass(ctx, funcArgs, funcName, callable, nil)
+}
+
+// createReflectionParameterObjectsWithClass creates parameter objects with an optional class context.
+// The class is stored so that "self::" references in attribute arguments can be resolved.
+func createReflectionParameterObjectsWithClass(ctx phpv.Context, funcArgs []*phpv.FuncArg, funcName phpv.ZString, callable phpv.Callable, class phpv.ZClass) (*phpv.ZVal, error) {
 	arr := phpv.NewZArray()
 	for i, arg := range funcArgs {
 		obj, err := phpobj.CreateZObject(ctx, ReflectionParameter)
@@ -330,6 +337,7 @@ func createReflectionParameterObjectsWithCallable(ctx phpv.Context, funcArgs []*
 			position: i,
 			funcName: funcName,
 			callable: callable,
+			class:    class,
 		}
 		obj.HashTable().SetString("name", arg.VarName.ZVal())
 		obj.SetOpaque(ReflectionParameter, data)
@@ -494,5 +502,5 @@ func reflectionParameterGetAttributes(ctx phpv.Context, o *phpobj.ZObject, args 
 		return phpv.NewZArray().ZVal(), nil
 	}
 	name, flags := getAttributesArgs(ctx, args)
-	return filterAttributes(ctx, data.arg.Attributes, phpobj.AttributeTARGET_PARAMETER, name, flags)
+	return filterAttributes(ctx, data.arg.Attributes, phpobj.AttributeTARGET_PARAMETER, name, flags, data.class)
 }

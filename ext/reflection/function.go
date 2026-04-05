@@ -179,7 +179,12 @@ func reflectionFunctionGetParameters(ctx phpv.Context, o *phpobj.ZObject, args [
 	} else if data.callable != nil {
 		callable = data.callable
 	}
-	return createReflectionParameterObjectsWithCallable(ctx, data.args, data.name, callable)
+	// Pass the closure's class so that "self::" in parameter attribute args resolves correctly.
+	var closureClass phpv.ZClass
+	if data.closure != nil {
+		closureClass = data.closure.GetClass()
+	}
+	return createReflectionParameterObjectsWithClass(ctx, data.args, data.name, callable, closureClass)
 }
 
 func reflectionFunctionInvoke(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
@@ -447,5 +452,11 @@ func reflectionFunctionGetAttributes(ctx phpv.Context, o *phpobj.ZObject, args [
 	}
 
 	name, flags := getAttributesArgs(ctx, args)
-	return filterAttributes(ctx, attrs, phpobj.AttributeTARGET_FUNCTION, name, flags)
+	// Pass the closure's class scope so that "self::" references in attribute
+	// arguments resolve correctly to the closure's bound class.
+	var closureClass phpv.ZClass
+	if data.closure != nil {
+		closureClass = data.closure.GetClass()
+	}
+	return filterAttributes(ctx, attrs, phpobj.AttributeTARGET_FUNCTION, name, flags, closureClass)
 }

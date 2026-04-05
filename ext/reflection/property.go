@@ -509,7 +509,7 @@ func reflectionPropertyGetAttributes(ctx phpv.Context, o *phpobj.ZObject, args [
 		return phpv.NewZArray().ZVal(), nil
 	}
 	name, flags := getAttributesArgs(ctx, args)
-	return filterAttributes(ctx, data.prop.Attributes, phpobj.AttributeTARGET_PROPERTY, name, flags)
+	return filterAttributes(ctx, data.prop.Attributes, phpobj.AttributeTARGET_PROPERTY, name, flags, data.class)
 }
 
 // getRawValue bypasses hooks and reads the backing value directly

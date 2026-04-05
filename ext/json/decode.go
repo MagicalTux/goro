@@ -50,18 +50,25 @@ func fncJsonDecode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		o |= ObjectAsArray
 	}
 
-	// Check for invalid UTF-8 in the input (PHP returns JSON_ERROR_UTF8 for this)
-	if !utf8.ValidString(string(json)) {
-		jsonErrCode := ErrUtf8
-		if throwOnError {
-			return nil, throwJsonException(ctx, jsonErrCode)
+	// Check for invalid UTF-8 in the input and handle based on flags.
+	jsonStr := string(json)
+	if !utf8.ValidString(jsonStr) {
+		if rawOpt&InvalidUtf8Ignore != 0 {
+			jsonStr = fixInvalidUtf8(jsonStr, false)
+		} else if rawOpt&InvalidUtf8Substitute != 0 {
+			jsonStr = fixInvalidUtf8(jsonStr, true)
+		} else {
+			jsonErrCode := ErrUtf8
+			if throwOnError {
+				return nil, throwJsonException(ctx, jsonErrCode)
+			}
+			setLastJsonError(ctx, jsonErrCode)
+			return phpv.ZNULL.ZVal(), nil
 		}
-		setLastJsonError(ctx, jsonErrCode)
-		return phpv.ZNULL.ZVal(), nil
 	}
 
 	// PHP's depth semantics: depth=N allows nesting up to N-1 levels.
-	reader := strings.NewReader(string(json))
+	reader := strings.NewReader(jsonStr)
 	result, jsonErr := jsonDecodeAny(ctx, reader, d-1, o)
 	if jsonErr != nil {
 		jsonErrCode := ErrSyntax
@@ -213,14 +220,26 @@ func fncJsonValidate(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	// Validate flags: only JSON_INVALID_UTF8_IGNORE is allowed
-	if flags != nil && int(*flags) != 0 {
-		f := int(*flags)
-		if f != InvalidUtf8Ignore {
-			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "json_validate(): Argument #3 ($flags) must be a valid flag (allowed flags: JSON_INVALID_UTF8_IGNORE)")
+	var flagVal int
+	if flags != nil {
+		flagVal = int(*flags)
+	}
+	if flagVal != 0 && flagVal != InvalidUtf8Ignore {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "json_validate(): Argument #3 ($flags) must be a valid flag (allowed flags: JSON_INVALID_UTF8_IGNORE)")
+	}
+
+	// Check for invalid UTF-8 in the input.
+	jsonStr := string(json)
+	if !utf8.ValidString(jsonStr) {
+		if flagVal == InvalidUtf8Ignore {
+			jsonStr = fixInvalidUtf8(jsonStr, false)
+		} else {
+			setLastJsonError(ctx, ErrUtf8)
+			return phpv.ZBool(false).ZVal(), nil
 		}
 	}
 
-	reader := strings.NewReader(string(json))
+	reader := strings.NewReader(jsonStr)
 	_, jsonErr := jsonDecodeAny(ctx, reader, d-1, 0)
 	if jsonErr != nil {
 		if je, ok := jsonErr.(JsonError); ok {
@@ -555,6 +574,25 @@ func jsonDecodeNumeric(ctx phpv.Context, r *strings.Reader, depth int, opt JsonD
 				p++
 			}
 			buf = append(buf, c)
+			// Reject leading zeros: if we just appended '0' as the first digit
+			// (or after a '-' sign), check if the next character is also a digit.
+			// If so, stop here so the extra digits become trailing garbage.
+			if p == 1 {
+				hasLeadingZero := (len(buf) == 1 && buf[0] == '0') ||
+					(len(buf) == 2 && buf[0] == '-' && buf[1] == '0')
+				if hasLeadingZero {
+					// Peek at the next byte
+					next, peekErr := r.ReadByte()
+					if peekErr == nil {
+						if next >= '0' && next <= '9' {
+							// Leading zero followed by digit: stop, unread the digit.
+							r.UnreadByte()
+							break
+						}
+						r.UnreadByte()
+					}
+				}
+			}
 			continue
 		}
 		if c == '+' || c == '-' {
@@ -619,4 +657,66 @@ func jsonDecodeExpectValue(ctx phpv.Context, r *strings.Reader, expect string, v
 		return nil, ErrSyntax
 	}
 	return value.ZVal(), nil
+}
+
+// fixInvalidUtf8 processes a string that contains invalid UTF-8 sequences.
+// If substitute is true, each invalid byte is replaced with U+FFFD (UTF-8: 0xEF 0xBF 0xBD).
+// If substitute is false, invalid bytes are dropped (ignored).
+// PHP processes each invalid byte individually (one U+FFFD per invalid byte for SUBSTITUTE,
+// each byte dropped separately for IGNORE).
+func fixInvalidUtf8(s string, substitute bool) string {
+	var buf []byte
+	for i := 0; i < len(s); {
+		r, size := utf8.DecodeRuneInString(s[i:])
+		if r != utf8.RuneError || size != 1 {
+			// Valid rune (size >= 1 for ASCII, size >= 2 for multi-byte valid runes).
+			// Also handles actual U+FFFD (size == 3).
+			buf = append(buf, s[i:i+size]...)
+			i += size
+			continue
+		}
+		// Invalid UTF-8 byte: process byte-by-byte.
+		if substitute {
+			buf = append(buf, 0xEF, 0xBF, 0xBD) // U+FFFD
+		}
+		// Drop or substitute one byte at a time (not the whole sequence unit).
+		i++
+	}
+	return string(buf)
+}
+
+// invalidUtf8SeqLen returns the number of bytes in an invalid UTF-8 sequence
+// starting at position i in s. It returns at least 1.
+func invalidUtf8SeqLen(s string, i int) int {
+	if i >= len(s) {
+		return 1
+	}
+	b := s[i]
+	// Determine expected sequence length from the start byte
+	var expectedLen int
+	switch {
+	case b < 0x80:
+		// ASCII byte that failed decoding (shouldn't happen normally)
+		expectedLen = 1
+	case b < 0xC0:
+		// Lone continuation byte
+		expectedLen = 1
+	case b < 0xE0:
+		expectedLen = 2
+	case b < 0xF0:
+		expectedLen = 3
+	default:
+		expectedLen = 4
+	}
+	// Count how many valid continuation bytes (0x80-0xBF) follow
+	n := 1
+	for n < expectedLen && i+n < len(s) {
+		cb := s[i+n]
+		if cb >= 0x80 && cb < 0xC0 {
+			n++
+		} else {
+			break
+		}
+	}
+	return n
 }

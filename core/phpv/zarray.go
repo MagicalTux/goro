@@ -3,6 +3,7 @@ package phpv
 import (
 	"iter"
 	"strconv"
+	"unsafe"
 
 	"github.com/MagicalTux/goro/core/logopt"
 )
@@ -495,6 +496,21 @@ func (a *ZArray) MergeTable(h *ZHashTable) error {
 
 func (a *ZArray) HashTable() *ZHashTable {
 	return a.h
+}
+
+// CycleKey returns a pointer-identity key for use in cycle detection.
+// Two ZArrays that are COW copies of the same underlying data share the same CycleKey,
+// because COW Dup shares the linked-list first node pointer.
+func (a *ZArray) CycleKey() uintptr {
+	if a == nil || a.h == nil {
+		return uintptr(unsafe.Pointer(a))
+	}
+	first := a.h.first
+	if first == nil {
+		// Empty array: fall back to ZArray pointer (no shared data).
+		return uintptr(unsafe.Pointer(a))
+	}
+	return uintptr(unsafe.Pointer(first))
 }
 
 func (a *ZArray) Value() Val {

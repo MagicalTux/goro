@@ -401,6 +401,48 @@ func ThrowErrorAt(ctx phpv.Context, class *ZClass, msg string, loc *phpv.Loc) er
 	return &phperr.PhpThrow{Obj: o, Loc: loc}
 }
 
+// ThrowAttrConstructError throws a TypeError for an attribute constructor argument
+// validation failure. The stack trace is rewritten to show `ClassName->__construct(args)`
+// at the attribute declaration location, matching PHP's behavior where attributes are
+// instantiated lazily on the first call to the decorated function/method.
+func ThrowAttrConstructError(ctx phpv.Context, attrClassName phpv.ZString, attrLoc *phpv.Loc, attrArgs []*phpv.ZVal, msg string) error {
+	o, err := NewZObject(ctx, TypeError, phpv.ZString(msg).ZVal())
+	if err != nil {
+		return ctx.Errorf("%s", msg)
+	}
+
+	// Build a custom trace that shows ClassName->__construct(args) at the attribute location.
+	// PHP shows this frame because attribute instantiation happens via the constructor.
+	var loc *phpv.Loc
+	if attrLoc != nil {
+		loc = attrLoc
+	} else {
+		loc = ctx.Loc()
+	}
+
+	// Create the fake constructor call frame
+	constructEntry := &phpv.StackTraceEntry{
+		FuncName:     string(attrClassName) + "->__construct",
+		BareFuncName: "__construct",
+		Filename:     loc.Filename,
+		ClassName:    string(attrClassName),
+		MethodType:   "->",
+		Line:         loc.Line,
+		Args:         attrArgs,
+	}
+
+	customTrace := []*phpv.StackTraceEntry{constructEntry}
+
+	// Override the trace set by exceptionConstruct
+	o.SetOpaque(Exception, customTrace)
+	o.SetOpaque(o.GetClass(), customTrace)
+	// Update the file/line to point to the attribute declaration
+	o.HashTable().SetString("file", phpv.ZString(loc.Filename).ZVal())
+	o.HashTable().SetString("line", phpv.ZInt(loc.Line).ZVal())
+
+	return &phperr.PhpThrow{Obj: o, Loc: loc}
+}
+
 func ThrowObject(ctx phpv.Context, v *phpv.ZVal) error {
 	if v.GetType() != phpv.ZtObject {
 		return ThrowError(ctx, Error, "Can only throw objects")

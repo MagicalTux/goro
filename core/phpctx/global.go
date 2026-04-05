@@ -139,6 +139,9 @@ type Global struct {
 	// Tick functions for declare(ticks=N)
 	tickFuncs []tickFuncEntry
 
+	// var_dump recursion detection: objects currently being dumped.
+	varDumpObjects map[phpv.ZObject]bool
+
 	// JSON encoding recursion detection across nested json_encode calls
 	jsonEncodingObjects map[phpv.ZObject]bool
 
@@ -1231,10 +1234,13 @@ func logWarning(ctx phpv.Context, format string, a ...any) error {
 		loc = l
 	}
 	// For internal calls (engine-invoked callbacks like exception handlers),
-	// use the internal location (Unknown:0) for deprecation/warning messages.
+	// use the internal location (Unknown:0) for deprecation/warning messages,
+	// and mark the error as internal so the user error handler is called via
+	// CallZValInternal (which shows "[internal function]" in stack traces).
 	if fc, ok := ctx.Func().(*FuncContext); ok && fc != nil {
 		if intLoc := fc.InternalLoc(); intLoc != nil {
 			loc = intLoc
+			option.IsInternal = true
 		}
 	}
 	if option.NoFuncName {
@@ -1617,18 +1623,18 @@ func (g *Global) GetClass(ctx phpv.Context, name phpv.ZString, autoload bool) (p
 		}
 		return cfunc.GetClass(), nil
 	case "parent":
+		// When compilingClass is set (e.g., during attribute argument evaluation),
+		// it takes priority for resolving "parent" relative to that class.
+		if g.compilingClass != nil {
+			parentClass := g.compilingClass.GetParent()
+			if parentClass == nil {
+				return nil, phpobj.ThrowError(ctx, phpobj.Error, `Cannot access "parent" when current class scope has no parent`)
+			}
+			return parentClass, nil
+		}
 		// check for func
 		fc := ctx.Func()
 		if fc == nil {
-			// During class compilation, parent:: refers to the parent of the class being compiled.
-			// Check if there's a compilingClass set on the global context.
-			if g.compilingClass != nil {
-				parentClass := g.compilingClass.GetParent()
-				if parentClass == nil {
-					return nil, phpobj.ThrowError(ctx, phpobj.Error, `Cannot access "parent" when current class scope has no parent`)
-				}
-				return parentClass, nil
-			}
 			return nil, phpobj.ThrowError(ctx, phpobj.Error, `Cannot access "parent" when no class scope is active`)
 		}
 		f, ok := fc.(*FuncContext)
@@ -2077,6 +2083,26 @@ func (g *Global) SetSerializeContext(c interface{}) {
 	g.SerializeContext = c
 }
 
+// MarkVarDumping marks an object as currently being var_dumped.
+// Returns true if the object was already being dumped (recursion detected).
+func (g *Global) MarkVarDumping(obj phpv.ZObject) bool {
+	if g.varDumpObjects == nil {
+		g.varDumpObjects = make(map[phpv.ZObject]bool)
+	}
+	if g.varDumpObjects[obj] {
+		return true
+	}
+	g.varDumpObjects[obj] = true
+	return false
+}
+
+// UnmarkVarDumping removes an object from the var_dump tracking set.
+func (g *Global) UnmarkVarDumping(obj phpv.ZObject) {
+	if g.varDumpObjects != nil {
+		delete(g.varDumpObjects, obj)
+	}
+}
+
 // GetIncludedFiles returns a list of all included/required file paths.
 func (g *Global) GetIncludedFiles() []string {
 	result := make([]string, 0, len(g.included))
@@ -2273,6 +2299,26 @@ func (g *Global) GetStackTrace(ctx phpv.Context) []*phpv.StackTraceEntry {
 					isInternal = true
 				}
 			}
+
+			// If this frame is an internal call (e.g., exception handler), check whether
+			// its parent context is NOT a FuncContext (i.e., it was invoked directly from
+			// the engine like HandleUncaughtException). If so, this is a "root internal"
+			// boundary frame. Stop collecting BEFORE adding this frame to the trace
+			// ONLY IF we've already collected at least one inner frame. This matches
+			// PHP's behavior: exceptions thrown directly in the exception handler include
+			// the handler frame as [internal function], but exceptions thrown in nested
+			// calls within the handler do NOT include the handler frame.
+			if isInternal && len(trace) > 0 {
+				parent := context.Parent(1)
+				if parent != nil {
+					if _, parentIsFuncCtx := parent.(*FuncContext); !parentIsFuncCtx {
+						// The parent is a global/non-func context: this is a root internal frame.
+						// We already have inner frames, so stop here without adding this frame.
+						break
+					}
+				}
+			}
+
 			trace = append(trace, &phpv.StackTraceEntry{
 				FuncName:     fc.GetFuncNameForTrace(),
 				BareFuncName: bareName,

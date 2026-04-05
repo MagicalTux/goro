@@ -360,6 +360,18 @@ func exceptionConstruct(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.
 		o.SetOpaque(o.GetClass(), trace)
 	}
 
+	// Store the trace as a PHP array in the hash table under the mangled private
+	// property key so that var_dump() and json_encode() can see it.
+	// PHP uses the declaring base class name (Exception or Error) for the mangling.
+	traceArray := getExceptionTrace(ctx, trace)
+	// Determine the base class that defines the "trace" property (Exception or Error).
+	traceBaseClass := Exception
+	if o.GetClass() != Exception && !o.GetClass().InstanceOf(Exception) {
+		traceBaseClass = Error
+	}
+	mangledTrace := phpv.ZString(fmt.Sprintf("*%s:trace", traceBaseClass.GetName()))
+	o.HashTable().SetString(mangledTrace, traceArray.ZVal())
+
 	return phpv.ZNULL.ZVal(), nil
 }
 

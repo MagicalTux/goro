@@ -2513,6 +2513,14 @@ func init() {
 				Name:      "setTimestamp",
 				Modifiers: phpv.ZAttrPublic,
 				Method:    phpobj.NativeMethod(setTimestampImmutableMethod),
+				Attributes: []*phpv.ZAttribute{
+					{
+						ClassName: "NoDiscard",
+						Args: []*phpv.ZVal{
+							phpv.ZString("as DateTimeImmutable::setTimestamp() does not modify the object itself").ZVal(),
+						},
+					},
+				},
 			},
 			"createfromformat": {
 				Name:      "createFromFormat",

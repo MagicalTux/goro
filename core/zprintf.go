@@ -435,13 +435,13 @@ func ZFprintf(ctx phpv.Context, w printfWriter, format phpv.ZString, arg ...*php
 			}
 			output = strconv.FormatUint(uint64(v.Value().(phpv.ZInt)), 2)
 		case 'c':
-			// next arg is an int, but will be added as a single char
+			// next arg is an int, but will be added as a single char (raw byte, not UTF-8 encoded rune)
 			v, err = v.As(ctx, phpv.ZtInt)
 			if err != nil {
 				goto Return
 			}
 			b := byte(int(v.Value().(phpv.ZInt)))
-			output = string(b)
+			output = string([]byte{b})
 		case 'd':
 			signed = true
 			// next arg is an int

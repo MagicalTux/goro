@@ -1020,13 +1020,13 @@ func ValidateDeprecatedArgs(ctx phpv.Context, attr *phpv.ZAttribute) error {
 			// In non-strict mode, these coerce to string (OK)
 			// In strict mode, these are rejected
 			if attr.StrictTypes {
-				return phpobj.ThrowError(ctx, phpobj.TypeError,
+				return phpobj.ThrowAttrConstructError(ctx, attr.ClassName, attr.Loc, attr.Args,
 					fmt.Sprintf("Deprecated::__construct(): Argument #%d (%s) must be of type ?string, %s given",
 						paramNum, paramName, attrArgTypeName(arg)))
 			}
 		default:
 			// Array, object, etc. always error
-			return phpobj.ThrowError(ctx, phpobj.TypeError,
+			return phpobj.ThrowAttrConstructError(ctx, attr.ClassName, attr.Loc, attr.Args,
 				fmt.Sprintf("Deprecated::__construct(): Argument #%d (%s) must be of type ?string, %s given",
 					paramNum, paramName, attrArgTypeName(arg)))
 		}
@@ -1048,12 +1048,12 @@ func ValidateNoDiscardArgs(ctx phpv.Context, attr *phpv.ZAttribute) error {
 	switch arg.GetType() {
 	case phpv.ZtInt, phpv.ZtFloat, phpv.ZtBool:
 		if attr.StrictTypes {
-			return phpobj.ThrowError(ctx, phpobj.TypeError,
+			return phpobj.ThrowAttrConstructError(ctx, attr.ClassName, attr.Loc, attr.Args,
 				fmt.Sprintf("NoDiscard::__construct(): Argument #1 ($message) must be of type ?string, %s given",
 					attrArgTypeName(arg)))
 		}
 	default:
-		return phpobj.ThrowError(ctx, phpobj.TypeError,
+		return phpobj.ThrowAttrConstructError(ctx, attr.ClassName, attr.Loc, attr.Args,
 			fmt.Sprintf("NoDiscard::__construct(): Argument #1 ($message) must be of type ?string, %s given",
 				attrArgTypeName(arg)))
 	}

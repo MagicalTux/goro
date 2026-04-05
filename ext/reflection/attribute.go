@@ -70,7 +70,8 @@ func reflectionAttributeGetArguments(ctx phpv.Context, o *phpobj.ZObject, args [
 	}
 
 	// Resolve lazy argument expressions if needed
-	if err := resolveAttrArgs(ctx, data.attr); err != nil {
+	// Pass targetClass so "self::CONST" references resolve in the class's scope.
+	if err := resolveAttrArgs(ctx, data.attr, data.targetClass); err != nil {
 		return nil, err
 	}
 
@@ -138,17 +139,25 @@ func reflectionAttributeNewInstance(ctx phpv.Context, o *phpobj.ZObject, args []
 	if zc != nil {
 		for _, classAttr := range zc.Attributes {
 			if classAttr.ClassName == "Attribute" || classAttr.ClassName == "\\Attribute" {
-				// Resolve lazy args
-				if err := resolveAttrArgs(ctx, classAttr); err != nil {
+				// Resolve lazy args; pass zc as the class scope so "parent::" and "self::" resolve correctly.
+				if err := resolveAttrArgs(ctx, classAttr, zc); err != nil {
 					return nil, err
 				}
 				if len(classAttr.Args) > 0 {
-					// Validate by instantiating the Attribute class
-					_, err := phpobj.NewZObject(ctx, phpobj.AttributeClass, classAttr.Args...)
-					if err != nil {
-						return nil, err
+					// Validate the flags argument inline (without creating a temporary object)
+					// to avoid inflating the object ID counter.
+					arg := classAttr.Args[0]
+					switch arg.GetType() {
+					case phpv.ZtInt, phpv.ZtBool:
+						flags = int64(arg.AsInt(ctx))
+					default:
+						return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+							fmt.Sprintf("Attribute::__construct(): Argument #1 ($flags) must be of type int, %s given", arg.GetType().String()))
 					}
-					flags = int64(classAttr.Args[0].AsInt(ctx))
+					maxValid := int64(phpobj.AttributeTARGET_ALL | phpobj.AttributeIS_REPEATABLE)
+					if flags < 0 || flags > maxValid {
+						return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "Invalid attribute flags specified")
+					}
 				}
 				break
 			}
@@ -193,7 +202,8 @@ func reflectionAttributeNewInstance(ctx phpv.Context, o *phpobj.ZObject, args []
 	}
 
 	// Resolve lazy argument expressions if needed
-	if err := resolveAttrArgs(ctx, data.attr); err != nil {
+	// Pass targetClass so "self::CONST" references resolve in the class's scope.
+	if err := resolveAttrArgs(ctx, data.attr, data.targetClass); err != nil {
 		return nil, err
 	}
 
@@ -306,7 +316,14 @@ func reflectionAttributeNewInstance(ctx phpv.Context, o *phpobj.ZObject, args []
 	}
 
 	// Use global context so constructor visibility check uses "global scope"
-	// instead of "scope ReflectionAttribute"
+	// instead of "scope ReflectionAttribute".
+	// Also set strict_types to match the attribute's declaration site so that
+	// constructor type coercion follows the strict_types of the use-site file.
+	prevStrict := ctx.Global().GetStrictTypes()
+	if data.attr.StrictTypes != prevStrict {
+		ctx.Global().SetStrictTypes(data.attr.StrictTypes)
+		defer ctx.Global().SetStrictTypes(prevStrict)
+	}
 	obj, err := phpobj.NewZObject(ctx.Global(), class, constructArgs...)
 	if err != nil {
 		return nil, err
@@ -430,9 +447,22 @@ func reflectionAttributeDebugInfo(ctx phpv.Context, o *phpobj.ZObject, args []*p
 
 // resolveAttrArgs evaluates any lazy argument expressions on the attribute.
 // This is called at runtime when getArguments() or newInstance() is invoked.
-func resolveAttrArgs(ctx phpv.Context, attr *phpv.ZAttribute) error {
+// If targetClass is non-nil, it is set as the compiling class during evaluation
+// so that "self::CONST" references resolve correctly in the proper class scope.
+//
+// Expressions are re-evaluated on each call (not cached) so that the same
+// attribute can return different values when reflected in different class contexts
+// (e.g., "self::class" in a trait method returns different values when accessed
+// via different using classes).
+func resolveAttrArgs(ctx phpv.Context, attr *phpv.ZAttribute, targetClass ...phpv.ZClass) error {
 	if attr.ArgExprs == nil {
 		return nil
+	}
+	// Set the compiling class so "self::" references resolve correctly.
+	if len(targetClass) > 0 && targetClass[0] != nil {
+		prev := ctx.Global().GetCompilingClass()
+		ctx.Global().SetCompilingClass(targetClass[0])
+		defer ctx.Global().SetCompilingClass(prev)
 	}
 	for i, expr := range attr.ArgExprs {
 		if expr != nil {
@@ -442,7 +472,9 @@ func resolveAttrArgs(ctx phpv.Context, attr *phpv.ZAttribute) error {
 			}
 			if val != nil {
 				attr.Args[i] = val
-				attr.ArgExprs[i] = nil // mark as resolved
+				// Do NOT nil out ArgExprs[i]: keep expressions so they can be
+				// re-evaluated when this attribute is accessed in a different class context
+				// (e.g., trait method attributes accessed via different using classes).
 			}
 		}
 	}

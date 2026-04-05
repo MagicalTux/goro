@@ -32,6 +32,9 @@ func parseAttributes(c compileCtx) ([]*phpv.ZAttribute, error) {
 			// Build fully qualified class name
 			var className phpv.ZString
 
+			// Capture the location of the attribute class name for error reporting
+			attrLoc := i.Loc()
+
 			// Handle leading namespace separator
 			if i.Type == tokenizer.T_NS_SEPARATOR {
 				className = "\\"
@@ -45,6 +48,8 @@ func parseAttributes(c compileCtx) ([]*phpv.ZAttribute, error) {
 				return nil, i.Unexpected()
 			}
 
+			// Use the T_STRING token location as the attribute location
+			attrLoc = i.Loc()
 			className += phpv.ZString(i.Data)
 
 			// Consume additional namespace parts
@@ -72,6 +77,7 @@ func parseAttributes(c compileCtx) ([]*phpv.ZAttribute, error) {
 
 			attr := &phpv.ZAttribute{
 				ClassName: className,
+				Loc:       attrLoc,
 			}
 
 			// Propagate strict_types from the compile context

@@ -595,6 +595,24 @@ func NewZObject(ctx phpv.Context, c phpv.ZClass, args ...*phpv.ZVal) (*ZObject, 
 				var val *phpv.ZVal
 				if i < len(args) {
 					val = args[i]
+					// Apply type coercion in non-strict mode for promoted properties
+					if !arg.Variadic && arg.Hint != nil && val.GetType() != phpv.ZtNull &&
+						len(arg.Hint.Union) == 0 && len(arg.Hint.Intersection) == 0 &&
+						!ctx.Global().GetStrictTypes() {
+						hintType := arg.Hint.Type()
+						if hintType != phpv.ZtMixed && hintType != phpv.ZtObject && val.GetType() != hintType {
+							if hintType == phpv.ZtInt && val.GetType() == phpv.ZtFloat {
+								v, err2 := phpv.FloatToIntImplicit(ctx, val.Value().(phpv.ZFloat))
+								if err2 == nil {
+									val = v.ZVal()
+								}
+							} else {
+								if coerced, err2 := val.As(ctx, hintType); err2 == nil && coerced != nil {
+									val = coerced.ZVal()
+								}
+							}
+						}
+					}
 				} else if arg.DefaultValue != nil {
 					// Resolve default value for promoted property when argument not passed
 					if cd, ok := arg.DefaultValue.(*phpv.CompileDelayed); ok {
@@ -610,6 +628,21 @@ func NewZObject(ctx phpv.Context, c phpv.ZClass, args ...*phpv.ZVal) (*ZObject, 
 				}
 				if val == nil {
 					continue
+				}
+
+				// Apply type coercion in non-strict mode (mirrors closure.go callBody coercion).
+				// The type checking in callZValImpl runs after this pre-setting, but coercion
+				// only happens in the closure body for local variables — not for the promoted
+				// property itself. We coerce here so the stored property has the correct type.
+				if arg.Hint != nil && val.GetType() != phpv.ZtNull && !arg.Variadic &&
+					len(arg.Hint.Union) == 0 && len(arg.Hint.Intersection) == 0 &&
+					!ctx.Global().GetStrictTypes() {
+					hintType := arg.Hint.Type()
+					if hintType != phpv.ZtMixed && hintType != phpv.ZtObject && val.GetType() != hintType {
+						if coerced, err2 := val.As(ctx, hintType); err2 == nil && coerced != nil {
+							val = coerced.ZVal()
+						}
+					}
 				}
 
 				propName := phpv.ZString(arg.VarName)

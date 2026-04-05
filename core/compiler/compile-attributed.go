@@ -331,13 +331,18 @@ func getNoDiscardInfo(c phpv.Callable) ([]*phpv.ZAttribute, string, string) {
 		return nil, "", ""
 	}
 	if mc, ok := c.(*phpv.MethodCallable); ok {
-		innerAttrs, _, _ := getNoDiscardInfo(mc.Callable)
-		if innerAttrs != nil {
+		// MethodCallable implements AttributeGetter: checks mc.Attributes first,
+		// then delegates to inner callable (e.g. ZClosure for user-defined methods).
+		attrs := mc.GetAttributes()
+		if attrs != nil {
 			name := mc.Callable.Name()
+			if mc.AliasName != "" {
+				name = mc.AliasName
+			}
 			if alias != "" && (name == "__call" || name == "__callStatic" || name == "__callstatic") {
 				name = alias
 			}
-			return innerAttrs, string(mc.Class.GetName()) + "::" + name, "method"
+			return attrs, string(mc.Class.GetName()) + "::" + name, "method"
 		}
 		return nil, "", ""
 	}

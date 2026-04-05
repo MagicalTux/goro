@@ -306,11 +306,11 @@ func reflectionMethodGetParameters(ctx phpv.Context, o *phpobj.ZObject, args []*
 	// When reflecting __invoke on a Closure, use the closure's actual args.
 	if data.closureCallable != nil {
 		funcName := phpv.ZString(string(data.class.GetName()) + "::" + string(data.method.Name))
-		return createReflectionParameterObjects(ctx, data.closureCallable.GetArgs(), funcName)
+		return createReflectionParameterObjectsWithClass(ctx, data.closureCallable.GetArgs(), funcName, nil, data.class)
 	}
 	if fga, ok := data.method.Method.(phpv.FuncGetArgs); ok {
 		funcName := phpv.ZString(string(data.class.GetName()) + "::" + string(data.method.Name))
-		return createReflectionParameterObjects(ctx, fga.GetArgs(), funcName)
+		return createReflectionParameterObjectsWithClass(ctx, fga.GetArgs(), funcName, nil, data.class)
 	}
 	return phpv.NewZArray().ZVal(), nil
 }
@@ -534,7 +534,7 @@ func reflectionMethodGetAttributes(ctx phpv.Context, o *phpobj.ZObject, args []*
 	}
 
 	name, flags := getAttributesArgs(ctx, args)
-	return filterAttributes(ctx, data.method.Attributes, phpobj.AttributeTARGET_METHOD, name, flags)
+	return filterAttributes(ctx, data.method.Attributes, phpobj.AttributeTARGET_METHOD, name, flags, data.class)
 }
 
 func reflectionMethodGetPrototype(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {

@@ -34,8 +34,29 @@ func fncJsonEncode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		d = int(*depth)
 	}
 
+	// Isolate serialize state: if json_encode is called from within a serialize callback
+	// (e.g. jsonSerialize calling serialize which calls __serialize which calls json_encode),
+	// we must clear the serialize seen-objects so that nested serialize() calls inside
+	// jsonSerialize() don't falsely detect recursion via the outer serialize's tracking.
+	type serializeTracker interface {
+		GetSerializeSeenObjects() map[phpv.ZObject]bool
+		SetSerializeSeenObjects(map[phpv.ZObject]bool)
+	}
+	var savedSerializeSeen map[phpv.ZObject]bool
+	var serializeTrackerGlobal serializeTracker
+	if g, ok := ctx.Global().(serializeTracker); ok && g.GetSerializeSeenObjects() != nil {
+		serializeTrackerGlobal = g
+		savedSerializeSeen = g.GetSerializeSeenObjects()
+		g.SetSerializeSeenObjects(nil)
+	}
+
 	st := &jsonState{partialOutput: o&PartialOutputOnError != 0}
 	r, jsonErr := appendJsonEncodeState(ctx, r, v, o, d, st)
+
+	// Restore serialize state after json_encode completes.
+	if serializeTrackerGlobal != nil {
+		serializeTrackerGlobal.SetSerializeSeenObjects(savedSerializeSeen)
+	}
 
 	if jsonErr != nil {
 		// PHP exceptions from JsonSerializable::jsonSerialize() must propagate
@@ -44,8 +65,9 @@ func fncJsonEncode(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			return nil, jsonErr
 		}
 		if je, ok := jsonErr.(JsonError); ok {
-			if o&JsonEncOpt(ThrowOnError) != 0 {
-				// JSON_THROW_ON_ERROR: throw exception without modifying global error state
+			if o&JsonEncOpt(ThrowOnError) != 0 && o&PartialOutputOnError == 0 {
+				// JSON_THROW_ON_ERROR without JSON_PARTIAL_OUTPUT_ON_ERROR: throw exception.
+				// When both flags are set, JSON_PARTIAL_OUTPUT_ON_ERROR takes precedence.
 				return nil, throwJsonException(ctx, je)
 			}
 			setLastJsonError(ctx, je)
@@ -500,7 +522,9 @@ func appendJsonString(r []byte, s string, opt JsonEncOpt) ([]byte, error) {
 			} else if opt&InvalidUtf8Ignore == 0 {
 				return r, ErrUtf8
 			}
-			i += size
+			// Consume the entire invalid sequence unit (start byte + continuation bytes),
+			// not just one byte, to match PHP's behavior of one replacement per sequence.
+			i += invalidUtf8SeqLen(s, i)
 			start = i
 			continue
 		}

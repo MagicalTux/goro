@@ -14,6 +14,7 @@ type ZAttribute struct {
 	ArgNames    []ZString  // named argument names parallel to Args (empty string = positional)
 	Resolving   bool       // true while lazy args are being resolved (prevents re-entrant deprecation)
 	StrictTypes bool       // true if declare(strict_types=1) was in effect at the declaration site
+	Loc         *Loc       // source location of the attribute declaration (line of #[ClassName])
 }
 
 type ZClassProp struct {

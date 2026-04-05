@@ -10,6 +10,12 @@ import (
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
+// varDumpTracker is implemented by Global to support global recursion detection for var_dump.
+type varDumpTracker interface {
+	MarkVarDumping(phpv.ZObject) bool
+	UnmarkVarDumping(phpv.ZObject)
+}
+
 // > func void var_dump ( mixed $expression [, mixed $... ] )
 func stdFuncVarDump(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	for _, z := range args {
@@ -53,7 +59,27 @@ func doVarDump(ctx phpv.Context, z *phpv.ZVal, linePfx string, recurs map[uintpt
 	case phpv.ZtObject:
 		if obj, ok := z.Value().(*phpobj.ZObject); ok {
 			objPtr := uintptr(unsafe.Pointer(obj))
-			if _, n := recurs[objPtr]; n {
+			// Check both local recursion map and global tracker (for cross-call-stack detection).
+			// Global tracking enables recursion detection across PHP call boundaries
+			// (e.g. var_dump -> __debugInfo -> json_encode -> jsonSerialize -> var_dump).
+			alreadyInLocal := recurs[objPtr]
+			alreadyInGlobal := false
+			if !alreadyInLocal {
+				if g, ok := ctx.Global().(varDumpTracker); ok {
+					// MarkVarDumping returns true if already marked (recursion detected).
+					// It only marks if not already present.
+					alreadyInGlobal = g.MarkVarDumping(obj)
+					if !alreadyInGlobal {
+						// We just marked it; unmark when done.
+						defer func() {
+							if g2, ok2 := ctx.Global().(varDumpTracker); ok2 {
+								g2.UnmarkVarDumping(obj)
+							}
+						}()
+					}
+				}
+			}
+			if alreadyInLocal || alreadyInGlobal {
 				fmt.Fprintf(ctx, "%s*RECURSION*\n", linePfx)
 				return nil
 			}

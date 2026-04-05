@@ -101,7 +101,7 @@ func lookupClassConst(zc *phpobj.ZClass, name phpv.ZString) (*phpv.ZClassConst, 
 	return v, v != nil
 }
 
-// lookupClassConstWithDeclaringClass looks up a constant in the class and its parents,
+// lookupClassConstWithDeclaringClass looks up a constant in the class and its parents/interfaces,
 // returning the constant value and the class that originally declared it.
 func lookupClassConstWithDeclaringClass(zc *phpobj.ZClass, name phpv.ZString) (*phpv.ZClassConst, *phpobj.ZClass) {
 	for cur := zc; cur != nil; {
@@ -114,6 +114,14 @@ func lookupClassConstWithDeclaringClass(zc *phpobj.ZClass, name phpv.ZString) (*
 					}
 				}
 				return v, cur
+			}
+		}
+		// Check implemented interfaces (for classes that inherit constants from interfaces)
+		for _, intf := range cur.Implementations {
+			if intf.Const != nil {
+				if v, ok := intf.Const[name]; ok {
+					return v, intf
+				}
 			}
 		}
 		parent := cur.GetParent()
@@ -272,7 +280,7 @@ func reflectionClassConstantGetAttributes(ctx phpv.Context, o *phpobj.ZObject, a
 		return phpv.NewZArray().ZVal(), nil
 	}
 	name, flags := getAttributesArgs(ctx, args)
-	return filterAttributes(ctx, data.constVal.Attributes, phpobj.AttributeTARGET_CLASS_CONSTANT, name, flags)
+	return filterAttributes(ctx, data.constVal.Attributes, phpobj.AttributeTARGET_CLASS_CONSTANT, name, flags, data.class)
 }
 
 func reflectionClassConstantToString(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
