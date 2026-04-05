@@ -26,9 +26,15 @@ func fncHashUpdate(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "hash_update(): Argument #1 ($context) must be a valid, non-finalized HashContext")
 	}
 
-	_, err = h.Write([]byte(data))
+	b := []byte(data)
+	_, err = h.Write(b)
 	if err != nil {
 		return nil, err
+	}
+
+	// Buffer written data for serialization support
+	if hcd, ok := opaque.(*hashContextData); ok {
+		hcd.writtenData = append(hcd.writtenData, b...)
 	}
 
 	return phpv.ZBool(true).ZVal(), nil

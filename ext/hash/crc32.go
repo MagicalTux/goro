@@ -101,6 +101,11 @@ func (c *crc32Hash) Sum32() uint32 {
 	return 0xffffffff ^ c.crc
 }
 
+func (c *crc32Hash) CloneHash() hash.Hash {
+	cp := *c
+	return &cp
+}
+
 func (c *crc32Hash) Sum(in []byte) []byte {
 	s := c.Sum32()
 	return append(in, byte(s), byte(s>>8), byte(s>>16), byte(s>>24))

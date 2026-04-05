@@ -1,13 +1,17 @@
 package hash
 
 import (
+	"bytes"
 	"crypto/hmac"
 	"encoding"
+	"errors"
 	gohash "hash"
 	"io"
+	"os"
 	"path/filepath"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
@@ -15,10 +19,72 @@ import (
 // hashContextData wraps a hash.Hash with metadata needed for copy/clone.
 type hashContextData struct {
 	gohash.Hash
-	algo     phpv.ZString
-	isHmac   bool
-	hmacKey  []byte
-	finalized bool
+	algo        phpv.ZString
+	isHmac      bool
+	hmacKey     []byte
+	finalized   bool
+	seed        uint32 // for seeded hashes like murmur3/xxhash
+	seed64      uint64 // for 64-bit seeded hashes
+	secret      []byte // for xxh3 secret
+	writtenData []byte // buffered input for serialization
+}
+
+// Clone implements phpv.Cloneable to allow proper cloning of HashContext.
+// The actual finalized check is done in the __clone method on HashContext class.
+func (hcd *hashContextData) Clone() any {
+	if hcd.finalized {
+		// Return a finalized clone so __clone() can detect and throw the error
+		return &hashContextData{finalized: true, algo: hcd.algo}
+	}
+	cloned, err := cloneHashContext(hcd)
+	if err != nil {
+		// Return self unchanged on error (best effort)
+		return hcd
+	}
+	return cloned
+}
+
+// recreateFromWrittenData creates a new hashContextData by replaying written data.
+// Used for serialization/unserialization where binary state is not available.
+func recreateHashContext(algo phpv.ZString, isHmac bool, hmacKey []byte, seed uint32, seed64 uint64, secret []byte, writtenData []byte) (*hashContextData, error) {
+	algoLower := algo.ToLower()
+
+	var h gohash.Hash
+	if isHmac {
+		an, ok := algos[algoLower]
+		if !ok {
+			return nil, io.ErrUnexpectedEOF
+		}
+		h = hmac.New(an, hmacKey)
+	} else if sa, ok := seededAlgos[algoLower]; ok {
+		h = sa(seed)
+	} else if sa64, ok := seededAlgos64[algoLower]; ok {
+		h = sa64(seed64, secret)
+	} else {
+		an, ok := algos[algoLower]
+		if !ok {
+			return nil, io.ErrUnexpectedEOF
+		}
+		h = an()
+	}
+
+	if len(writtenData) > 0 {
+		h.Write(writtenData)
+	}
+
+	wdCopy := make([]byte, len(writtenData))
+	copy(wdCopy, writtenData)
+
+	return &hashContextData{
+		Hash:        h,
+		algo:        algoLower,
+		isHmac:      isHmac,
+		hmacKey:     hmacKey,
+		seed:        seed,
+		seed64:      seed64,
+		secret:      secret,
+		writtenData: wdCopy,
+	}, nil
 }
 
 // > func HashContext hash_copy ( HashContext $context )
@@ -58,7 +124,100 @@ func fncHashCopy(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return z.ZVal(), nil
 }
 
+// hashCloner is implemented by hash types that can clone themselves.
+type hashCloner interface {
+	CloneHash() gohash.Hash
+}
+
 func cloneHashContext(hcd *hashContextData) (*hashContextData, error) {
+	// Try CloneHash first (most efficient, preferred)
+	if c, ok := hcd.Hash.(hashCloner); ok {
+		wdCopy := make([]byte, len(hcd.writtenData))
+		copy(wdCopy, hcd.writtenData)
+		return &hashContextData{
+			Hash:        c.CloneHash(),
+			algo:        hcd.algo,
+			isHmac:      hcd.isHmac,
+			hmacKey:     hcd.hmacKey,
+			seed:        hcd.seed,
+			seed64:      hcd.seed64,
+			secret:      hcd.secret,
+			writtenData: wdCopy,
+		}, nil
+	}
+
+	// Try BinaryMarshaler
+	if m, ok := hcd.Hash.(encoding.BinaryMarshaler); ok {
+		state, err := m.MarshalBinary()
+		if err == nil {
+			// Create a fresh hash to unmarshal into
+			var newHash gohash.Hash
+			if sa, ok2 := seededAlgos[hcd.algo.ToLower()]; ok2 {
+				newHash = sa(hcd.seed)
+			} else if sa64, ok2 := seededAlgos64[hcd.algo.ToLower()]; ok2 {
+				newHash = sa64(hcd.seed64, hcd.secret)
+			} else if an, ok2 := algos[hcd.algo.ToLower()]; ok2 {
+				if hcd.isHmac {
+					newHash = hmac.New(an, hcd.hmacKey)
+				} else {
+					newHash = an()
+				}
+			}
+			if newHash != nil {
+				if u, ok2 := newHash.(encoding.BinaryUnmarshaler); ok2 {
+					if err := u.UnmarshalBinary(state); err == nil {
+						wdCopy := make([]byte, len(hcd.writtenData))
+						copy(wdCopy, hcd.writtenData)
+						return &hashContextData{
+							Hash:        newHash,
+							algo:        hcd.algo,
+							isHmac:      hcd.isHmac,
+							hmacKey:     hcd.hmacKey,
+							seed:        hcd.seed,
+							seed64:      hcd.seed64,
+							secret:      hcd.secret,
+							writtenData: wdCopy,
+						}, nil
+					}
+				}
+			}
+		}
+	}
+
+	// First, try to clone via seeded constructors (for murmur3, xxhash)
+	if seededAlgo, ok := seededAlgos[hcd.algo.ToLower()]; ok {
+		newHash := seededAlgo(hcd.seed)
+		wdCopy := make([]byte, len(hcd.writtenData))
+		copy(wdCopy, hcd.writtenData)
+		return &hashContextData{
+			Hash:        newHash,
+			algo:        hcd.algo,
+			isHmac:      hcd.isHmac,
+			hmacKey:     hcd.hmacKey,
+			seed:        hcd.seed,
+			seed64:      hcd.seed64,
+			secret:      hcd.secret,
+			writtenData: wdCopy,
+		}, nil
+	}
+
+	// For seeded64 algos (xxh3, xxh128 with secret)
+	if seededAlgo64, ok := seededAlgos64[hcd.algo.ToLower()]; ok {
+		newHash := seededAlgo64(hcd.seed64, hcd.secret)
+		wdCopy := make([]byte, len(hcd.writtenData))
+		copy(wdCopy, hcd.writtenData)
+		return &hashContextData{
+			Hash:        newHash,
+			algo:        hcd.algo,
+			isHmac:      hcd.isHmac,
+			hmacKey:     hcd.hmacKey,
+			seed:        hcd.seed,
+			seed64:      hcd.seed64,
+			secret:      hcd.secret,
+			writtenData: wdCopy,
+		}, nil
+	}
+
 	algN, ok := algos[hcd.algo.ToLower()]
 	if !ok {
 		return nil, io.ErrUnexpectedEOF
@@ -71,29 +230,15 @@ func cloneHashContext(hcd *hashContextData) (*hashContextData, error) {
 		newHash = algN()
 	}
 
-	// Try marshal/unmarshal to clone the internal state
-	if m, ok := hcd.Hash.(encoding.BinaryMarshaler); ok {
-		state, err := m.MarshalBinary()
-		if err == nil {
-			if u, ok := newHash.(encoding.BinaryUnmarshaler); ok {
-				if err := u.UnmarshalBinary(state); err == nil {
-					return &hashContextData{
-						Hash:    newHash,
-						algo:    hcd.algo,
-						isHmac:  hcd.isHmac,
-						hmacKey: hcd.hmacKey,
-					}, nil
-				}
-			}
-		}
-	}
-
+	wdCopy := make([]byte, len(hcd.writtenData))
+	copy(wdCopy, hcd.writtenData)
 	// Fallback: return a fresh hash (state not preserved - better than crashing)
 	return &hashContextData{
-		Hash:    newHash,
-		algo:    hcd.algo,
-		isHmac:  hcd.isHmac,
-		hmacKey: hcd.hmacKey,
+		Hash:        newHash,
+		algo:        hcd.algo,
+		isHmac:      hcd.isHmac,
+		hmacKey:     hcd.hmacKey,
+		writtenData: wdCopy,
 	}, nil
 }
 
@@ -127,12 +272,25 @@ func fncHashUpdateFile(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 
 	f, err := ctx.Global().OpenFile(ctx, fname)
 	if err != nil {
-		return phpv.ZBool(false).ZVal(), nil
+		if errors.Is(err, os.ErrNotExist) {
+			return phpv.ZBool(false).ZVal(), ctx.Warn("hash_update_file(%s): Failed to open stream: No such file or directory", fname, logopt.NoFuncName(true))
+		}
+		return phpv.ZBool(false).ZVal(), ctx.Warn("hash_update_file(%s): Failed to open stream: %s", fname, err, logopt.NoFuncName(true))
 	}
 	defer f.Close()
 
-	if _, err := io.Copy(h, f); err != nil {
-		return phpv.ZBool(false).ZVal(), nil
+	// Buffer written data for serialization support
+	if hcd, ok := opaque.(*hashContextData); ok {
+		var buf bytes.Buffer
+		tr := io.TeeReader(f, &buf)
+		if _, err := io.Copy(h, tr); err != nil {
+			return phpv.ZBool(false).ZVal(), nil
+		}
+		hcd.writtenData = append(hcd.writtenData, buf.Bytes()...)
+	} else {
+		if _, err := io.Copy(h, f); err != nil {
+			return phpv.ZBool(false).ZVal(), nil
+		}
 	}
 
 	return phpv.ZBool(true).ZVal(), nil
@@ -182,10 +340,22 @@ func fncHashUpdateStream(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error
 	}
 
 	var n int64
-	if maxLen >= 0 {
-		n, err = io.CopyN(h, reader, maxLen)
+	// Buffer written data for serialization support
+	if hcd, ok := opaque.(*hashContextData); ok {
+		var buf bytes.Buffer
+		tr := io.TeeReader(reader, &buf)
+		if maxLen >= 0 {
+			n, err = io.CopyN(h, tr, maxLen)
+		} else {
+			n, err = io.Copy(h, tr)
+		}
+		hcd.writtenData = append(hcd.writtenData, buf.Bytes()...)
 	} else {
-		n, err = io.Copy(h, reader)
+		if maxLen >= 0 {
+			n, err = io.CopyN(h, reader, maxLen)
+		} else {
+			n, err = io.Copy(h, reader)
+		}
 	}
 	if err != nil && err != io.EOF {
 		return phpv.ZInt(n).ZVal(), nil
@@ -198,9 +368,10 @@ func fncHashUpdateStream(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error
 func fncHashHmacAlgos(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	a := phpv.NewZArray()
 
-	for n := range algos {
-		if !nonCryptoAlgos[n] {
-			a.OffsetSet(ctx, nil, n.ZVal())
+	for _, n := range phpHashAlgoOrder {
+		zn := phpv.ZString(n)
+		if _, ok := algos[zn]; ok && !nonCryptoAlgos[zn] {
+			a.OffsetSet(ctx, nil, zn.ZVal())
 		}
 	}
 	return a.ZVal(), nil
