@@ -149,6 +149,24 @@ func callbackErrorMessage(ctx phpv.Context, arg *phpv.ZVal) string {
 	}
 }
 
+// > func callable|null get_error_handler()
+func fncGetErrorHandler(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	_, _, originalVal := ctx.Global().GetUserErrorHandler()
+	if originalVal == nil {
+		return phpv.ZNULL.ZVal(), nil
+	}
+	return originalVal, nil
+}
+
+// > func callable|null get_exception_handler()
+func fncGetExceptionHandler(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	originalVal := ctx.Global().GetUserExceptionHandlerOriginalVal()
+	if originalVal == nil {
+		return phpv.ZNULL.ZVal(), nil
+	}
+	return originalVal, nil
+}
+
 // > func bool restore_exception_handler ( void )
 func fncRestoreExceptionHandler(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	ctx.Global().RestoreUserExceptionHandler()

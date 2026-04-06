@@ -106,7 +106,6 @@ type Global struct {
 
 	nextResourceID int
 	nextObjectID   int
-	freeObjectIDs  []int // recycled object IDs (free list)
 
 	// tempObjects tracks potentially-temporary objects for ID recycling at statement boundaries.
 	// Each entry is a pair: (id, isFree func() bool).
@@ -497,18 +496,32 @@ func (g *Global) doGPC() {
 			if g.req != nil {
 				// Web SAPI mode: when register_argc_argv=1, derive argv from query string
 				if registerArgcArgv {
-					// Emit deprecation warning - this is a PHP 8.1+ deprecation for web SAPI
-					g.Deprecated("Deriving $_SERVER['argv'] from the query string is deprecated. Configure register_argc_argv=0 to turn this message off")
-					args := phpv.NewZArray()
-					if g.req.URL.RawQuery != "" {
-						for _, part := range strings.Split(g.req.URL.RawQuery, "+") {
-							args.OffsetSet(g, nil, phpv.ZString(part).ZVal())
+					if len(g.p.Argv) > 0 {
+						// If Argv is set (e.g. test runner), use CLI-like behavior without deprecation
+						args := phpv.NewZArray()
+						for _, elem := range g.p.Argv {
+							args.OffsetSet(g, nil, phpv.ZStr(elem))
 						}
+						argv := args.ZVal()
+						argc := args.Count(g).ZVal()
+						s.OffsetSet(g, phpv.ZString("argv"), argv)
+						s.OffsetSet(g, phpv.ZString("argc"), argc)
+						g.h.SetString("argv", argv)
+						g.h.SetString("argc", argc)
+					} else {
+						// Emit deprecation warning - this is a PHP 8.1+ deprecation for web SAPI
+						g.Deprecated("Deriving $_SERVER['argv'] from the query string is deprecated. Configure register_argc_argv=0 to turn this message off")
+						args := phpv.NewZArray()
+						if g.req.URL.RawQuery != "" {
+							for _, part := range strings.Split(g.req.URL.RawQuery, "+") {
+								args.OffsetSet(g, nil, phpv.ZString(part).ZVal())
+							}
+						}
+						argv := args.ZVal()
+						argc := args.Count(g).ZVal()
+						s.OffsetSet(g, phpv.ZString("argv"), argv)
+						s.OffsetSet(g, phpv.ZString("argc"), argc)
 					}
-					argv := args.ZVal()
-					argc := args.Count(g).ZVal()
-					s.OffsetSet(g, phpv.ZString("argv"), argv)
-					s.OffsetSet(g, phpv.ZString("argc"), argc)
 				}
 				// When register_argc_argv=0, don't populate argv/argc in $_SERVER
 			} else {
@@ -650,6 +663,8 @@ func (g *Global) RunFile(fn string) error {
 				}
 			}
 		}
+		// Clear the list so that Close() does not re-run these functions.
+		g.shutdownFuncs = nil
 	}
 
 	// send headers even if there's no output
@@ -1895,6 +1910,14 @@ func (g *Global) Close() error {
 		g.out.Write(sw)
 	}
 
+	// Run any registered shutdown functions before calling destructors.
+	// This ensures that registered shutdown functions fire before object
+	// destructors (matching PHP's shutdown sequence). When Close() is called
+	// directly (e.g. from the test runner), shutdown functions would otherwise
+	// never run. When called from Execute(), the shutdown list was already
+	// cleared above, so this is a no-op.
+	g.RunShutdownFunctions()
+
 	// Call destructors for any remaining objects before closing
 	g.CallDestructors()
 
@@ -2104,8 +2127,14 @@ func (g *Global) UnmarkVarDumping(obj phpv.ZObject) {
 }
 
 // GetIncludedFiles returns a list of all included/required file paths.
+// PHP includes the main script file as the first element, followed by
+// all included/required files in the order they were included.
 func (g *Global) GetIncludedFiles() []string {
-	result := make([]string, 0, len(g.included))
+	mainScript := g.p.ScriptFilename
+	result := make([]string, 0, len(g.included)+1)
+	if mainScript != "" {
+		result = append(result, mainScript)
+	}
 	for f := range g.included {
 		result = append(result, string(f))
 	}
@@ -2150,6 +2179,13 @@ func (g *Global) GetUserExceptionHandler() phpv.Callable {
 		return nil
 	}
 	return g.userExceptionHandlerStack[len(g.userExceptionHandlerStack)-1].handler
+}
+
+func (g *Global) GetUserExceptionHandlerOriginalVal() *phpv.ZVal {
+	if len(g.userExceptionHandlerStack) == 0 {
+		return nil
+	}
+	return g.userExceptionHandlerStack[len(g.userExceptionHandlerStack)-1].originalVal
 }
 
 // SetUserExceptionHandler sets the exception handler and returns the original
@@ -2397,19 +2433,14 @@ func (g *Global) NextResourceID() int {
 }
 
 func (g *Global) NextObjectID() int {
-	if n := len(g.freeObjectIDs); n > 0 {
-		id := g.freeObjectIDs[n-1]
-		g.freeObjectIDs = g.freeObjectIDs[:n-1]
-		return id
-	}
 	g.nextObjectID++
 	return g.nextObjectID
 }
 
 func (g *Global) ReleaseObjectID(id int) {
-	if id > 0 {
-		g.freeObjectIDs = append(g.freeObjectIDs, id)
-	}
+	// PHP never recycles object IDs within a request. IDs are monotonically
+	// increasing. Not recycling them ensures var_dump shows consistent object
+	// IDs that match PHP's expected output.
 }
 
 // tempObjectEntry is a (id, isFree) pair for temporary object tracking.

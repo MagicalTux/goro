@@ -529,11 +529,21 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		if bool(v.AsBool(ctx)) {
 			return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot use a scalar value as an array")
 		}
-		// false in write context: auto-vivify with deprecation warning
-		v, err = v.As(ctx, phpv.ZtArray)
-		if err != nil {
+		// false in write context: auto-vivify to empty array with deprecation warning.
+		// The deprecation is emitted here in the Run path (not in WriteValue) so that
+		// it fires exactly once for nested access chains like $arr[0][0][0][] = 42.
+		// The empty array is written back to the parent so that the subsequent
+		// WriteValue call (which re-reads the container) sees [] not false, and
+		// therefore won't emit a second deprecation.
+		if err := ctx.Deprecated("Automatic conversion of false to array is deprecated", logopt.NoFuncName(true)); err != nil {
 			return nil, err
 		}
+		v.Set(phpv.NewZArray().ZVal())
+		if wr, ok := ac.value.(phpv.Writable); ok {
+			wr.WriteValue(ctx, v)
+		}
+		// Fall through to offset evaluation so we return the element at the offset
+		// (null for a freshly-created empty array).
 	default:
 		// PHP 8: accessing a scalar with array syntax in write context throws Error
 		isWriteOp := ac.writeContext
@@ -825,6 +835,14 @@ func (ac *runArrayAccess) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 		if v != nil && v.GetType() == phpv.ZtString {
 			return phpobj.ThrowError(ctx, phpobj.Error, "Cannot use string offset as an array")
 		}
+		// PHP 8.1: unset($false[x]) auto-vivifies false to array with deprecation,
+		// then the unset is a no-op (key doesn't exist in the new empty array).
+		if v != nil && v.GetType() == phpv.ZtBool && !bool(v.AsBool(ctx)) {
+			if err := ctx.Deprecated("Automatic conversion of false to array is deprecated", logopt.NoFuncName(true)); err != nil {
+				return err
+			}
+			return nil // key doesn't exist in the new array, unset is no-op
+		}
 		array := v.Array()
 		if array == nil {
 			return nil
@@ -1038,8 +1056,12 @@ func (ac *runArrayAccess) PrepareWrite(ctx phpv.Context) error {
 		// the LHS target before the RHS expression, so the overflow error must
 		// fire before "Only variables should be assigned by reference" notices.
 		// Set writeContext on the inner access to suppress "Undefined array key"
-		// warnings — we're about to write to this location, not read it.
+		// or "Undefined property" warnings — we're about to write to this location.
 		if inner, ok := ac.value.(*runArrayAccess); ok {
+			inner.writeContext = true
+			defer func() { inner.writeContext = false }()
+		}
+		if inner, ok := ac.value.(*runObjectVar); ok {
 			inner.writeContext = true
 			defer func() { inner.writeContext = false }()
 		}

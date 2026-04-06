@@ -311,6 +311,13 @@ func datetimezoneConstruct(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.
 			formattedName := fmt.Sprintf("%s%02d:%02d", sign, hours, mins)
 			loc = time.FixedZone(formattedName, offset)
 		}
+	} else if loc.String() != tzName {
+		// If the loaded location's name differs from the original (e.g. "GMT" loads as "UTC"),
+		// preserve the original name for abbreviation-style timezones.
+		upper := strings.ToUpper(tzName)
+		if offset, ok := timezoneAbbreviationOffsets[upper]; ok {
+			loc = time.FixedZone(tzName, offset)
+		}
 	}
 
 	setTimezoneLoc(this, loc)

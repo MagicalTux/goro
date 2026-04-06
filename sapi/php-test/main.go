@@ -77,12 +77,13 @@ func main() {
 }
 
 type phptest struct {
-	f      *os.File
-	reader *bufio.Reader
-	output *bytes.Buffer
-	name   string
-	path   string
-	req    *http.Request
+	f       *os.File
+	reader  *bufio.Reader
+	output  *bytes.Buffer
+	name    string
+	path    string
+	req     *http.Request
+	skipped bool // set to true when SKIPIF triggers a skip
 
 	p *phpctx.Process
 }
@@ -101,7 +102,7 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		testName := strings.TrimSpace(b.String())
 		p.name += ": " + testName
 		return nil
-	case "CREDITS":
+	case "CREDITS", "DESCRIPTION":
 		// is there something we should do with this?
 		return nil
 	case "GET":
@@ -114,33 +115,104 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		return nil
 	case "FILE":
 		// pass data to the engine
+		// Set the script filename so get_included_files() / $_SERVER['SCRIPT_FILENAME'] work correctly
+		p.p.ScriptFilename = p.path
+		// Set argv/argc for CLI-like behavior (PHP test runner passes the script as argv[0])
+		p.p.Argv = []string{p.path}
+		// Force register_argc_argv=1 so $argc/$argv are available in global scope (CLI behavior)
+		p.p.Options.IniEntries["register_argc_argv"] = "1"
 		g := phpctx.NewGlobalReq(p.req, p.p, ini.New())
 		g.SetOutput(p.output)
 		g.Chdir(phpv.ZString(path.Dir(p.path))) // chdir execution to path
 
 		t := tokenizer.NewLexer(b, p.path)
-		c, err := compiler.Compile(g, t)
-		if err != nil {
-			return err
+		c, compileErr := compiler.Compile(g, t)
+		if compileErr != nil {
+			if phpErr, ok := compileErr.(*phpv.PhpError); ok {
+				loc := phpErr.Loc
+				file, line := p.path, 0
+				if loc != nil {
+					file, line = loc.Filename, loc.Line
+				}
+				switch phpErr.Code {
+				case phpv.E_PARSE:
+					// Handle parse errors (E_PARSE) by writing them to output as PHP would
+					fmt.Fprintf(p.output, "\nParse error: %s in %s on line %d\n", phpErr.Err.Error(), file, line)
+					g.Close()
+					return nil
+				case phpv.E_COMPILE_ERROR:
+					// Handle compile errors (E_COMPILE_ERROR) as "Fatal error: ..."
+					fmt.Fprintf(p.output, "\nFatal error: %s in %s on line %d\n", phpErr.Err.Error(), file, line)
+					g.Close()
+					return nil
+				}
+			}
+			// If the compile returned an exit error (e.g. from LogError + ExitError
+			// for E_COMPILE_ERROR that was already written to output), treat it as success.
+			if phpv.FilterExitError(compileErr) == nil {
+				g.Close()
+				return nil
+			}
+			return compileErr
 		}
-		_, err = c.Run(g)
-		g.Close()
+		_, err := c.Run(g)
 		// Handle uncaught exceptions and fatal errors: in PHP, these produce
-		// "Fatal error: ..." output and terminate the script. For test purposes,
-		// we treat this as a successful run (the fatal error text is in the output).
+		// "Fatal error: ..." output and terminate the script BEFORE shutdown
+		// functions run. Write the fatal error to output first, then Close()
+		// (which runs registered shutdown functions and then destructors).
+		// First, give user-registered exception handlers a chance to handle it.
+		if err != nil {
+			err = g.HandleUncaughtException(err)
+		}
 		if ex, ok := err.(*phperr.PhpThrow); ok {
 			// Write "Fatal error: Uncaught ..." to output (matches PHP CLI behavior)
-			trace, _ := ex.ErrorTrace(g)
+			// For ParseError, PHP uses "Parse error: MESSAGE in FILE on line N" format.
 			thrownFile := ex.ThrownFile()
 			if thrownFile == "" {
 				thrownFile = "Unknown"
 			}
-			fmt.Fprintf(p.output, "\nFatal error: %s in %s on line %d\nStack trace:\n#0 {main}\n  thrown in %s on line %d\n",
-				trace, thrownFile, ex.ThrownLine(), thrownFile, ex.ThrownLine())
+			className := ""
+			if ex.Obj != nil {
+				className = string(ex.Obj.GetClass().GetName())
+			}
+			if className == "ParseError" {
+				// PHP formats ParseError as "Parse error: MESSAGE in FILE on line N"
+				msg := ""
+				if ex.Obj != nil {
+					if m := ex.Obj.HashTable().GetString("message"); m != nil {
+						msg = m.String()
+					}
+				}
+				fmt.Fprintf(p.output, "\nParse error: %s in %s on line %d\n",
+					msg, thrownFile, ex.ThrownLine())
+			} else if className == "CompileError" {
+				// PHP formats CompileError as "Fatal error: MESSAGE in FILE on line N"
+				msg := ""
+				if ex.Obj != nil {
+					if m := ex.Obj.HashTable().GetString("message"); m != nil {
+						msg = m.String()
+					}
+				}
+				fmt.Fprintf(p.output, "\nFatal error: %s in %s on line %d\n",
+					msg, thrownFile, ex.ThrownLine())
+			} else {
+				trace, replacement := ex.ErrorTrace(g)
+				src := ex
+				if replacement != nil {
+					src = replacement
+					thrownFile = src.ThrownFile()
+					if thrownFile == "" {
+						thrownFile = "Unknown"
+					}
+				}
+				fmt.Fprintf(p.output, "\nFatal error: %s\n  thrown in %s on line %d\n",
+					trace, thrownFile, src.ThrownLine())
+			}
+			g.Close()
 			return nil
 		}
-		if phpErr, ok := err.(*phpv.PhpError); ok && phpErr.Code == phpv.E_ERROR {
-			// Fatal PHP errors (E_ERROR) terminate the script and output the error message.
+		if phpErr, ok := err.(*phpv.PhpError); ok && (phpErr.Code == phpv.E_ERROR || phpErr.Code == phpv.E_COMPILE_ERROR) {
+			// Fatal PHP errors (E_ERROR, E_COMPILE_ERROR) terminate the script.
 			// For test purposes, write the error to output and return nil.
 			loc := phpErr.Loc
 			file, line := "[unknown]", 0
@@ -150,11 +222,12 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 				file, line = l.Filename, l.Line
 			}
 			fmt.Fprintf(p.output, "\nFatal error: %s in %s on line %d\n", phpErr.Err.Error(), file, line)
+			g.Close()
 			return nil
 		}
 		// Also handle PhpError wrapped inside a PhpError
 		if outer, ok := err.(*phpv.PhpError); ok {
-			if phpErr, ok := outer.Err.(*phpv.PhpError); ok && phpErr.Code == phpv.E_ERROR {
+			if phpErr, ok := outer.Err.(*phpv.PhpError); ok && (phpErr.Code == phpv.E_ERROR || phpErr.Code == phpv.E_COMPILE_ERROR) {
 				loc := phpErr.Loc
 				file, line := "[unknown]", 0
 				if loc != nil {
@@ -163,9 +236,11 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 					file, line = l.Filename, l.Line
 				}
 				fmt.Fprintf(p.output, "\nFatal error: %s in %s on line %d\n", phpErr.Err.Error(), file, line)
+				g.Close()
 				return nil
 			}
 		}
+		g.Close()
 		return phpv.FilterExitError(err)
 	case "EXPECT":
 		// compare p.output with b
@@ -173,7 +248,12 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		exp := bytes.TrimSpace(b.Bytes())
 
 		if bytes.Compare(out, exp) != 0 {
-			return fmt.Errorf("output not as expected!\n%s", diff.LineDiff(string(exp), string(out)))
+			// Also try with .phpt replaced by .php to handle __FILE__ differences
+			// between goro's test runner (uses .phpt) and PHP's run-tests.php (uses .php)
+			outNormalized := bytes.ReplaceAll(out, []byte(".phpt"), []byte(".php"))
+			if bytes.Compare(outNormalized, exp) != 0 {
+				return fmt.Errorf("output not as expected!\n%s", diff.LineDiff(string(exp), string(out)))
+			}
 		}
 		return nil
 	case "SKIPIF":
@@ -194,11 +274,89 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 			return skipTest
 		}
 		return nil
-	case "INI", "EXPECTF", "EXTENSIONS":
-		// TODO
+	case "INI", "EXTENSIONS":
+		// TODO: these affect test environment setup, skip for now
 		return skipTest
 	case "XFAIL":
 		// TODO but safe to ignore
+		return nil
+	case "CLEAN":
+		// Run cleanup PHP code after the test (ignore errors)
+		g := phpctx.NewGlobal(context.Background(), p.p, ini.New())
+		output := &bytes.Buffer{}
+		g.SetOutput(output)
+		g.Chdir(phpv.ZString(path.Dir(p.path)))
+		t := tokenizer.NewLexer(b, p.path)
+		c, err := compiler.Compile(g, t)
+		if err != nil {
+			return nil // ignore cleanup errors
+		}
+		c.Run(g)
+		g.Close()
+		return nil
+	case "EXPECTF":
+		// Like EXPECT but with %s, %d, %f, %r, %i, %e, %u, %c, %x placeholders
+		out := bytes.TrimSpace(p.output.Bytes())
+		expTemplate := strings.TrimSpace(b.String())
+
+		// Convert EXPECTF template to a regex pattern
+		// Escape the template for regex, then replace placeholders
+		// Pre-process %0 (null byte) BEFORE QuoteMeta so it becomes a literal \x00
+		// that can be matched against output containing null bytes.
+		expTemplate = strings.ReplaceAll(expTemplate, "%0", "\x00")
+		pattern := regexp.QuoteMeta(expTemplate)
+		pattern = strings.ReplaceAll(pattern, `%s`, `[^\r\n]+`)
+		pattern = strings.ReplaceAll(pattern, `%S`, `[^\r\n]*`)
+		pattern = strings.ReplaceAll(pattern, `%i`, `[+-]?[0-9]+`)
+		pattern = strings.ReplaceAll(pattern, `%d`, `[0-9]+`)
+		pattern = strings.ReplaceAll(pattern, `%f`, `[+-]?\.?[0-9]+\.?[0-9]*(E[+-]?[0-9]+)?`)
+		pattern = strings.ReplaceAll(pattern, `%e`, `[+-]?\.?[0-9]+\.?[0-9]*(E[+-]?[0-9]+)?`)
+		pattern = strings.ReplaceAll(pattern, `%x`, `[0-9a-fA-F]+`)
+		pattern = strings.ReplaceAll(pattern, `%u`, `[0-9]+`)
+		pattern = strings.ReplaceAll(pattern, `%c`, `[.]`)
+		pattern = strings.ReplaceAll(pattern, `%A`, `.*`)
+		pattern = strings.ReplaceAll(pattern, `%w`, `[ \t\n\r\v\f]*`)
+		// %r ... %r is a regex literal - handle by extracting and inserting raw regex
+		// This is complex; for now, do a simple pass
+		rReg := regexp.MustCompile(`%r(.+?)%r`)
+		pattern = rReg.ReplaceAllStringFunc(pattern, func(m string) string {
+			sub := rReg.FindStringSubmatch(m)
+			if len(sub) > 1 {
+				return sub[1]
+			}
+			return m
+		})
+		re, err := regexp.Compile(`(?s)^` + pattern + `$`)
+		if err != nil {
+			// If pattern compilation fails, fall back to exact match
+			if !bytes.Equal(out, bytes.TrimSpace([]byte(expTemplate))) {
+				// Try with .phpt → .php normalization
+				outNormalized := bytes.ReplaceAll(out, []byte(".phpt"), []byte(".php"))
+				if !bytes.Equal(outNormalized, bytes.TrimSpace([]byte(expTemplate))) {
+					return fmt.Errorf("output not as expected (EXPECTF)!\n%s", diff.LineDiff(expTemplate, string(out)))
+				}
+			}
+			return nil
+		}
+		if !re.Match(out) {
+			// Also try with .phpt replaced by .php to handle __FILE__ differences
+			outNormalized := bytes.ReplaceAll(out, []byte(".phpt"), []byte(".php"))
+			if !re.Match(outNormalized) {
+				return fmt.Errorf("output not as expected (EXPECTF)!\n%s", diff.LineDiff(expTemplate, string(out)))
+			}
+		}
+		return nil
+	case "EXPECTREGEX":
+		// Expected is a regex
+		out := bytes.TrimSpace(p.output.Bytes())
+		expRegex := strings.TrimSpace(b.String())
+		re, err := regexp.Compile(`(?s)` + expRegex)
+		if err != nil {
+			return fmt.Errorf("EXPECTREGEX compilation error: %v", err)
+		}
+		if !re.Match(out) {
+			return fmt.Errorf("output not as expected (EXPECTREGEX)!\nPattern: %s\nOutput: %s", expRegex, string(out))
+		}
 		return nil
 	default:
 		return fmt.Errorf("unhandled part type %s for test", part)
@@ -207,13 +365,21 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 
 func runTest(fpath string) (p *phptest, err error) {
 	fmt.Println("running file", fpath)
+	// Convert to absolute path so __DIR__ and __FILE__ resolve correctly
+	if abspath, aerr := filepath.Abs(fpath); aerr == nil {
+		fpath = abspath
+	}
 	p = &phptest{output: &bytes.Buffer{}, name: fpath, path: fpath}
 
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("\nfailed to run: %s\n%s", r, debug.Stack())
-		} else {
-			fmt.Println(fpath, "ok")
+		} else if err == nil {
+			if p.skipped {
+				fmt.Println(fpath, "SKIPPED")
+			} else {
+				fmt.Println(fpath, "ok")
+			}
 		}
 	}()
 
@@ -249,7 +415,12 @@ func runTest(fpath string) (p *phptest, err error) {
 				// start of a new thing?
 				if b != nil {
 					err := p.handlePart(part, b)
-					if err != nil && err != skipTest {
+					if err == skipTest {
+						// Test should be skipped - stop processing
+						p.skipped = true
+						return p, nil
+					}
+					if err != nil {
 						return p, err
 					}
 				}
@@ -266,7 +437,11 @@ func runTest(fpath string) (p *phptest, err error) {
 	}
 	if b != nil {
 		err := p.handlePart(part, b)
-		if err != nil && err != skipTest {
+		if err == skipTest {
+			p.skipped = true
+			return p, nil
+		}
+		if err != nil {
 			return p, err
 		}
 	}

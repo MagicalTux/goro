@@ -1325,11 +1325,7 @@ func fncArraySearch(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 // > func mixed key ( array $array )
 func fncArrayKey(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	if len(args) > 0 && args[0] != nil && args[0].GetType() == phpv.ZtObject {
-		ctx.Deprecated("Calling key() on an object is deprecated")
-	}
-	var array *phpv.ZArray
-	_, err := core.Expand(ctx, args, &array)
+	array, err := iapGetArrayReadOnly(ctx, args, "key")
 	if err != nil {
 		return nil, ctx.Error(err)
 	}
@@ -1347,11 +1343,7 @@ func fncArrayKey(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // > func mixed current ( array $array )
 // > alias pos
 func fncArrayCurrent(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	if len(args) > 0 && args[0] != nil && args[0].GetType() == phpv.ZtObject {
-		ctx.Deprecated("Calling current() on an object is deprecated")
-	}
-	var array *phpv.ZArray
-	_, err := core.Expand(ctx, args, &array)
+	array, err := iapGetArrayReadOnly(ctx, args, "current")
 	if err != nil {
 		return nil, ctx.Error(err)
 	}
@@ -1370,17 +1362,12 @@ func fncArrayCurrent(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // > func mixed next ( array &$array )
 func fncArrayNext(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	// PHP 8.5: calling next() on an object is deprecated
-	if len(args) > 0 && args[0] != nil && args[0].GetType() == phpv.ZtObject {
-		ctx.Deprecated("Calling next() on an object is deprecated")
-	}
-
-	var array core.Ref[*phpv.ZArray]
-	_, err := core.Expand(ctx, args, &array)
+	array, err := iapGetArray(ctx, args, "next")
 	if err != nil {
 		return nil, ctx.Error(err)
 	}
 
-	current, err := array.Get().MainIterator().Next(ctx)
+	current, err := array.MainIterator().Next(ctx)
 	if err != nil {
 		return nil, ctx.Error(err)
 	}
@@ -1394,16 +1381,12 @@ func fncArrayNext(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 // > func mixed prev ( array &$array )
 func fncArrayPrev(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	if len(args) > 0 && args[0] != nil && args[0].GetType() == phpv.ZtObject {
-		ctx.Deprecated("Calling prev() on an object is deprecated")
-	}
-	var array core.Ref[*phpv.ZArray]
-	_, err := core.Expand(ctx, args, &array)
+	array, err := iapGetArray(ctx, args, "prev")
 	if err != nil {
 		return nil, ctx.Error(err)
 	}
 
-	current, err := array.Get().MainIterator().Prev(ctx)
+	current, err := array.MainIterator().Prev(ctx)
 	if err != nil {
 		return nil, ctx.Error(err)
 	}
@@ -1414,20 +1397,61 @@ func fncArrayPrev(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 }
 
 // > func mixed reset ( array &$array )
-func fncArrayReset(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+// iapGetArray returns the array for an IAP function, emitting a deprecation if it's an object.
+// For objects, returns a view of the object's properties WITHOUT writing back to the caller's scope.
+// For arrays, uses a Ref so the internal pointer changes are visible in the caller.
+// useRef=true for mutating functions (reset, end, next, prev); false for read-only (key, current).
+func iapGetArray(ctx phpv.Context, args []*phpv.ZVal, funcName string) (*phpv.ZArray, error) {
 	if len(args) > 0 && args[0] != nil && args[0].GetType() == phpv.ZtObject {
-		ctx.Deprecated("Calling reset() on an object is deprecated")
+		if err := ctx.Deprecated("Calling %s() on an object is deprecated", funcName); err != nil {
+			return nil, err
+		}
+		// For objects, get array view without modifying caller's variable
+		arr := args[0].AsArray(ctx)
+		if arr == nil {
+			return phpv.NewZArray(), nil
+		}
+		return arr, nil
 	}
 	var array core.Ref[*phpv.ZArray]
 	_, err := core.Expand(ctx, args, &array)
 	if err != nil {
+		return nil, err
+	}
+	return array.Get(), nil
+}
+
+// iapGetArrayReadOnly is like iapGetArray but for read-only functions (key, current)
+// that don't need Ref semantics for arrays.
+func iapGetArrayReadOnly(ctx phpv.Context, args []*phpv.ZVal, funcName string) (*phpv.ZArray, error) {
+	if len(args) > 0 && args[0] != nil && args[0].GetType() == phpv.ZtObject {
+		if err := ctx.Deprecated("Calling %s() on an object is deprecated", funcName); err != nil {
+			return nil, err
+		}
+		arr := args[0].AsArray(ctx)
+		if arr == nil {
+			return phpv.NewZArray(), nil
+		}
+		return arr, nil
+	}
+	var array *phpv.ZArray
+	_, err := core.Expand(ctx, args, &array)
+	if err != nil {
+		return nil, err
+	}
+	return array, nil
+}
+
+func fncArrayReset(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	array, err := iapGetArray(ctx, args, "reset")
+	if err != nil {
 		return nil, ctx.Error(err)
 	}
-	if array.Get().Count(ctx) == 0 {
+	if array.Count(ctx) == 0 {
 		return phpv.ZFalse.ZVal(), nil
 	}
 
-	current, err := array.Get().MainIterator().Reset(ctx)
+	current, err := array.MainIterator().Reset(ctx)
 	if err != nil {
 		return nil, ctx.Error(err)
 	}
@@ -1439,19 +1463,15 @@ func fncArrayReset(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 // > func mixed end ( array &$array )
 func fncArrayEnd(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	if len(args) > 0 && args[0] != nil && args[0].GetType() == phpv.ZtObject {
-		ctx.Deprecated("Calling end() on an object is deprecated")
-	}
-	var array core.Ref[*phpv.ZArray]
-	_, err := core.Expand(ctx, args, &array)
+	array, err := iapGetArray(ctx, args, "end")
 	if err != nil {
 		return nil, ctx.Error(err)
 	}
-	if array.Get().Count(ctx) == 0 {
+	if array.Count(ctx) == 0 {
 		return phpv.ZFalse.ZVal(), nil
 	}
 
-	current, err := array.Get().MainIterator().End(ctx)
+	current, err := array.MainIterator().End(ctx)
 	if err != nil {
 		return nil, ctx.Error(err)
 	}
@@ -2018,6 +2038,10 @@ func fncArrayMergeRecursive(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 }
 
 func arrayRecursiveMerge(ctx phpv.Context, result, array *phpv.ZArray, depth ...int) error {
+	return arrayRecursiveMergeInt(ctx, result, array, false, depth...)
+}
+
+func arrayRecursiveMergeInt(ctx phpv.Context, result, array *phpv.ZArray, preserveIntKeys bool, depth ...int) error {
 	d := 0
 	if len(depth) > 0 {
 		d = depth[0]
@@ -2029,7 +2053,11 @@ func arrayRecursiveMerge(ctx phpv.Context, result, array *phpv.ZArray, depth ...
 		// Break references - array_merge_recursive does not preserve them
 		v = v.Dup()
 		if k.GetType() == phpv.ZtInt {
-			if err := result.OffsetSet(ctx, nil, v); err != nil {
+			var setKey phpv.Val
+			if preserveIntKeys {
+				setKey = k // preserve original integer key
+			}
+			if err := result.OffsetSet(ctx, setKey, v); err != nil {
 				if err == phpv.ErrNextElementOccupied {
 					return phpobj.ThrowError(ctx, phpobj.Error, err.Error())
 				}
@@ -2042,14 +2070,22 @@ func arrayRecursiveMerge(ctx phpv.Context, result, array *phpv.ZArray, depth ...
 			var array *phpv.ZArray
 			cur, _ := result.OffsetGet(ctx, k)
 			if cur.GetType() != phpv.ZtArray {
+				// First time we see this string key with an array value.
+				// Use preserveIntKeys=true so that integer keys in the source
+				// sub-array are preserved (matching PHP's zend_hash_copy behavior).
+				// This ensures nNextFreeElement tracks the max key (including PHP_INT_MAX),
+				// which causes the expected overflow error when appending from a second array.
 				array = phpv.NewZArray()
 				result.OffsetSet(ctx, k, array.ZVal())
+				if err := arrayRecursiveMergeInt(ctx, array, v.AsArray(ctx), true, d+1); err != nil {
+					return err
+				}
 			} else {
+				// Already have an array for this key - append (renumber int keys).
 				array = cur.AsArray(ctx)
-			}
-
-			if err := arrayRecursiveMerge(ctx, array, v.AsArray(ctx), d+1); err != nil {
-				return err
+				if err := arrayRecursiveMergeInt(ctx, array, v.AsArray(ctx), false, d+1); err != nil {
+					return err
+				}
 			}
 			continue
 		}

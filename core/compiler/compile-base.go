@@ -585,10 +585,24 @@ func (r *runDestroyTemporary) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	if err != nil {
 		return result, err
 	}
-	// If the result is an object with a destructor, destroy it immediately.
+	// If the result is an object with a destructor, destroy it immediately —
+	// but only if nothing else has taken a reference to the object. When the
+	// constructor stores $this externally (e.g. register_shutdown_function),
+	// the stored callable IncRef's the object (refcount > 0) to signal that
+	// it outlives the statement. In that case, defer destruction to end-of-request
+	// so that shutdown functions fire before the destructor (matching PHP order).
 	if result != nil && result.GetType() == phpv.ZtObject {
 		if obj, ok := result.Value().(phpv.ZObject); ok {
 			if _, hasDestructor := obj.GetClass().GetMethod("__destruct"); hasDestructor {
+				// Check whether the constructor increased the refcount. If so,
+				// skip immediate destruction; the object is still alive elsewhere.
+				type refCounter interface {
+					RefCount() int32
+				}
+				if rc, hasRC := obj.(refCounter); hasRC && rc.RefCount() > 0 {
+					// Object has outstanding references — leave destruction to end-of-request.
+					return result, nil
+				}
 				if destructable, ok2 := obj.(interface {
 					CallImplicitDestructor(phpv.Context) error
 				}); ok2 {

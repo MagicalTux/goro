@@ -32,7 +32,9 @@ const (
 func fncStrlen(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	// PHP 8.1+ deprecation: passing null to non-nullable string parameter
 	if len(args) > 0 && args[0] != nil && args[0].GetType() == phpv.ZtNull {
-		ctx.Deprecated("strlen(): Passing null to parameter #1 ($string) of type string is deprecated", logopt.NoFuncName(true))
+		if err := ctx.Deprecated("strlen(): Passing null to parameter #1 ($string) of type string is deprecated", logopt.NoFuncName(true)); err != nil {
+			return nil, err
+		}
 	}
 	var s phpv.ZString
 	_, err := Expand(ctx, args, &s)

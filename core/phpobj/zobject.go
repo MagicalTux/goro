@@ -687,6 +687,11 @@ func NewZObject(ctx phpv.Context, c phpv.ZClass, args ...*phpv.ZVal) (*ZObject, 
 		}
 		_, err := ctx.CallZVal(ctx, ctorCallable, args, n)
 		if err != nil {
+			// PHP behavior: when a constructor throws, run destructors of any
+			// object properties that were assigned before the throw. This mirrors
+			// PHP's reference counting: when the partially-constructed object is
+			// abandoned, its properties' refcounts drop to zero immediately.
+			runConstructorFailureDestructors(ctx, n)
 			return nil, err
 		}
 	}
@@ -697,6 +702,42 @@ func NewZObject(ctx phpv.Context, c phpv.ZClass, args ...*phpv.ZVal) (*ZObject, 
 	}
 
 	return n, nil
+}
+
+// runConstructorFailureDestructors calls __destruct on any object properties
+// of a partially-constructed object whose constructor threw an exception.
+// This matches PHP's behavior where abandoning a partially-constructed object
+// immediately decrements property refcounts, triggering their destructors.
+func runConstructorFailureDestructors(ctx phpv.Context, obj *ZObject) {
+	// Iterate over all properties and find objects with __destruct
+	ht := obj.h
+	if ht == nil {
+		return
+	}
+	arr := ht.Array()
+	for _, v := range arr.Iterate(ctx) {
+		if v == nil {
+			continue
+		}
+		propVal := v
+		if propVal.IsRef() {
+			propVal = propVal.RefTarget()
+		}
+		if propVal == nil || propVal.GetType() != phpv.ZtObject {
+			continue
+		}
+		propObj, ok := propVal.Value().(*ZObject)
+		if !ok {
+			continue
+		}
+		if _, hasDestruct := propObj.Class.GetMethod("__destruct"); hasDestruct {
+			// Deregister from the end-of-request destructor list before calling,
+			// to prevent it from being called again at shutdown.
+			ctx.Global().UnregisterDestructor(propObj)
+			// Call the destructor (ignore errors — PHP does too in this context)
+			propObj.CallMethod(ctx, "__destruct")
+		}
+	}
 }
 
 func (z *ZObject) GetKin(className string) phpv.ZObject {

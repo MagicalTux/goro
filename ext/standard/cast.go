@@ -53,6 +53,19 @@ func fncIntval(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return v.As(ctx, phpv.ZtInt)
 	}
 
+	// For string values with base=10 (default), use AsNumeric to handle scientific notation
+	if v.GetType() == phpv.ZtString && (base == nil || b == 10) {
+		str := phpv.ZString(v.String())
+		num, _ := str.AsNumeric()
+		switch n := num.(type) {
+		case phpv.ZInt:
+			return n.ZVal(), nil
+		case phpv.ZFloat:
+			return phpv.ZInt(phpv.FloatToIntCapped(float64(n))).ZVal(), nil
+		}
+		return phpv.ZInt(0).ZVal(), nil
+	}
+
 	// For non-string values with explicit base, convert to string first
 	s := strings.TrimSpace(v.String())
 	if s == "" {

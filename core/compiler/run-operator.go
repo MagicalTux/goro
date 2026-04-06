@@ -707,6 +707,104 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		_ = skipNumericConversion // used below
 
 		if !skipNumericConversion {
+			// PHP 8: handle non-numeric strings and unsupported operand types in arithmetic.
+			//
+			// PHP's evaluation order varies by operator:
+			//
+			// For * (binary multiply only, not *=):
+			//   1. Check RIGHT for object/resource → TypeError (right-first in message)
+			//   2. Check LEFT for object (HandleDoOperation) → TypeError
+			//   3. Check LEFT string: non-leading-numeric → TypeError
+			//   4. Check LEFT string: semi-numeric → Warning
+			//   5. Check RIGHT for array → TypeError (natural order)
+			//   6. Check RIGHT for resource → TypeError (natural order)
+			//   7. Check RIGHT string
+			//
+			// For +, -, /, **, and compound *= etc.:
+			//   1. Check LEFT string (leading-numeric check, warning for semi-numeric)
+			//   2. Check LEFT/RIGHT for objects (HandleDoOperation)
+			//   3. Check for array
+			//   4. Check for resource
+			//   5. Check RIGHT string
+			//
+			// For %, <<, >> (int conversion needed):
+			//   Same as +/- but if LEFT is float, emit "Implicit conversion" warning first.
+			//
+			// True binary * is special: object/resource on right takes priority and
+			// the error order is reversed (right type first) for cleaner messages.
+			isBinaryMul := r.op == tokenizer.Rune('*')
+			// isFloatIntOp: operators that require int conversion (and emit float→int warning)
+			// This includes %, <<, >>, and compound bitwise assignments (&=, |=, ^=)
+			// which all need the float to be converted to int first.
+			isFloatIntOp := r.op == tokenizer.Rune('%') || r.op == tokenizer.T_MOD_EQUAL ||
+				r.op == tokenizer.T_SL || r.op == tokenizer.T_SL_EQUAL ||
+				r.op == tokenizer.T_SR || r.op == tokenizer.T_SR_EQUAL ||
+				r.op == tokenizer.T_AND_EQUAL || r.op == tokenizer.T_OR_EQUAL || r.op == tokenizer.T_XOR_EQUAL
+
+			// For binary *, check right operand for object/resource FIRST
+			// (these take priority over left-string check for *)
+			if isBinaryMul {
+				if bType == phpv.ZtObject || bType == phpv.ZtResource {
+					// Check for HandleDoOperation on b
+					var handler func(phpv.Context, int, *phpv.ZVal, *phpv.ZVal) (*phpv.ZVal, error)
+					if bType == phpv.ZtObject {
+						if obj, ok := b.Value().(phpv.ZObject); ok {
+							if h := obj.GetClass().Handlers(); h != nil && h.HandleDoOperation != nil {
+								handler = h.HandleDoOperation
+							}
+						}
+					}
+					if handler != nil {
+						handlerRes, handlerErr := handler(ctx, int(r.op), a, b)
+						if handlerErr != nil {
+							return nil, handlerErr
+						}
+						return handlerRes, nil
+					}
+					// Right is object/resource: it goes FIRST in the error message
+					tLeft, tRight := unsupportedTypeNames(true, a, b)
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Unsupported operand types: %s %s %s", tLeft, r.op.OpString(), tRight))
+				}
+			}
+
+			// For %, <<, >>: if LEFT is float, emit the implicit-conversion warning first
+			// (before checking for unsupported types), then use the original type name.
+			origAName := phpTypeName(a)
+			if isFloatIntOp && aType == phpv.ZtFloat {
+				fv := a.Value().(phpv.ZFloat)
+				// Check if b would cause a TypeError: array/object/resource OR non-numeric string.
+				bCausesTypeError := false
+				if bType == phpv.ZtArray || bType == phpv.ZtObject || bType == phpv.ZtResource {
+					bCausesTypeError = true
+				} else if bType == phpv.ZtString {
+					bStr := string(b.Value().(phpv.ZString))
+					if !isLeadingNumeric(bStr) {
+						bCausesTypeError = true
+					}
+				}
+				if bCausesTypeError {
+					// Emit the float→int deprecation first, then throw TypeError
+					if fv != phpv.ZFloat(int64(fv)) {
+						if warnErr := ctx.Deprecated("Implicit conversion from float %s to int loses precision", phpv.FormatFloat(float64(fv)), logopt.Data{Loc: r.l, NoFuncName: true}); warnErr != nil {
+							return nil, warnErr
+						}
+					}
+					// Then throw TypeError with the ORIGINAL float type name
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Unsupported operand types: %s %s %s", origAName, r.op.OpString(), phpTypeName(b)))
+				}
+			}
+
+			if aType == phpv.ZtString {
+				s := string(a.Value().(phpv.ZString))
+				if !isLeadingNumeric(s) {
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Unsupported operand types: %s %s %s", phpTypeName(a), r.op.OpString(), phpTypeName(b)))
+				}
+				if !isNumericString(s) {
+					if err := ctx.Warn("A non-numeric value encountered", logopt.Data{Loc: r.l, NoFuncName: true}); err != nil {
+						return nil, err
+					}
+				}
+			}
 			// Check for objects with HandleDoOperation first (e.g., GMP operator overloading).
 			// This must come before the array check so GMP can provide its own error for "GMP + array".
 			if aType == phpv.ZtObject || bType == phpv.ZtObject {
@@ -739,7 +837,9 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 					}
 					return handlerRes, nil
 				}
-				return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Unsupported operand types: %s %s %s", phpTypeName(a), r.op.OpString(), phpTypeName(b)))
+				// Use unsupportedTypeNames for natural order (no flip for +/-/etc.)
+				tLeft, tRight := unsupportedTypeNames(false, a, b)
+				return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Unsupported operand types: %s %s %s", tLeft, r.op.OpString(), tRight))
 			}
 			// PHP 8: throw TypeError for unsupported operand types in arithmetic
 			if aType == phpv.ZtArray || bType == phpv.ZtArray {
@@ -748,22 +848,7 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			if aType == phpv.ZtResource || bType == phpv.ZtResource {
 				return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Unsupported operand types: %s %s %s", phpTypeName(a), r.op.OpString(), phpTypeName(b)))
 			}
-
-			// PHP 8: handle non-numeric strings in arithmetic
-			// - Completely non-numeric ("hello"): TypeError
-			// - Leading numeric ("123abc"): Warning + use numeric part
-			// - Fully numeric ("123"): no warning
-			if aType == phpv.ZtString {
-				s := string(a.Value().(phpv.ZString))
-				if !isLeadingNumeric(s) {
-					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Unsupported operand types: %s %s %s", phpTypeName(a), r.op.OpString(), phpTypeName(b)))
-				}
-				if !isNumericString(s) {
-					if err := ctx.Warn("A non-numeric value encountered", logopt.Data{Loc: r.l, NoFuncName: true}); err != nil {
-						return nil, err
-					}
-				}
-			}
+			// Check right operand string (only if left was acceptable)
 			if bType == phpv.ZtString {
 				s := string(b.Value().(phpv.ZString))
 				if !isLeadingNumeric(s) {
@@ -978,6 +1063,25 @@ doWrite:
 }
 
 func operatorAppend(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*phpv.ZVal, error) {
+	if op == tokenizer.Rune('.') {
+		// Binary '.' converts BOTH operands to string before throwing any error.
+		// This ensures warnings (e.g. "Array to string conversion") are emitted
+		// for both sides before the first fatal error is thrown.
+		// Example: "new stdClass . []" must emit "Array to string conversion" from
+		// the [] side before throwing "Object of class stdClass could not be converted to string".
+		a, aErr := a.As(ctx, phpv.ZtString)
+		b, bErr := b.As(ctx, phpv.ZtString)
+		if aErr != nil {
+			return nil, aErr
+		}
+		if bErr != nil {
+			return nil, bErr
+		}
+		return (a.AsString(ctx) + b.AsString(ctx)).ZVal(), nil
+	}
+
+	// For .= (T_CONCAT_EQUAL), PHP converts LHS first then RHS (left-to-right),
+	// stopping on the first error. If LHS throws, RHS is never converted.
 	var err error
 	a, err = a.As(ctx, phpv.ZtString)
 	if err != nil {
@@ -987,7 +1091,6 @@ func operatorAppend(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*
 	if err != nil {
 		return nil, err
 	}
-
 	return (a.AsString(ctx) + b.AsString(ctx)).ZVal(), nil
 }
 
@@ -1046,7 +1149,10 @@ func doInc(ctx phpv.Context, v *phpv.ZVal, inc bool) error {
 		}
 
 		if !inc {
-			// strings can only be incremented
+			// PHP 8.5: Decrementing a non-numeric string has no effect and is deprecated
+			if err := ctx.Deprecated("Decrement on non-numeric string has no effect and is deprecated", logopt.NoFuncName(true)); err != nil {
+				return err
+			}
 			return nil
 		}
 
@@ -1099,6 +1205,31 @@ func doInc(ctx phpv.Context, v *phpv.ZVal, inc bool) error {
 			v.Set(("A" + phpv.ZString(n)).ZVal())
 			return nil
 		}
+	case phpv.ZtArray:
+		// PHP 8.3+: Cannot increment/decrement array
+		op := "increment"
+		if !inc {
+			op = "decrement"
+		}
+		return phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Cannot %s array", op))
+	case phpv.ZtObject:
+		// PHP 8.3+: Cannot increment/decrement object (class name in message)
+		op := "increment"
+		if !inc {
+			op = "decrement"
+		}
+		className := "object"
+		if obj, ok := v.Value().(phpv.ZObject); ok {
+			className = string(obj.GetClass().GetName())
+		}
+		return phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Cannot %s %s", op, className))
+	case phpv.ZtResource:
+		// PHP 8.3+: Cannot increment/decrement resource
+		op := "increment"
+		if !inc {
+			op = "decrement"
+		}
+		return phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Cannot %s resource", op))
 	}
 	return ctx.Errorf("unsupported type for increment operator %s", v.GetType())
 }
@@ -1280,18 +1411,116 @@ func operatorMathLogic(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal)
 		}
 	}
 
-	if a == nil {
+	unary := a == nil
+	if unary {
 		a = b
+	}
+
+	// Before type-specific handling, check if the right operand is an object or resource.
+	// PHP 8: for binary &, |, ^ operators (not compound assignments), object/resource
+	// takes priority in the error message (object/resource goes first) and fires BEFORE
+	// any float-to-int conversion warning. Arrays don't get this special treatment —
+	// they fall through to the switch where the float case handles float conversion first.
+	isBinaryBitwise := op == tokenizer.Rune('&') || op == tokenizer.Rune('|') || op == tokenizer.Rune('^')
+	if !unary && b != nil {
+		bType := b.GetType()
+		if bType == phpv.ZtObject || bType == phpv.ZtResource {
+			aType := a.GetType()
+			// For string operators (|, ^, &) where BOTH are strings, handled in ZtString case.
+			if aType == phpv.ZtString && bType == phpv.ZtString {
+				// Fall through to ZtString case
+			} else {
+				// For binary &, |, ^ : object/resource goes first in the error message
+				// (object > resource in priority). For compound assignments: natural order.
+				// For float a in compound ops (&=, |=, ^=): emit float→int warning first.
+				// For binary ops, the object/resource fires before the float conversion (no warning).
+				if !isBinaryBitwise && aType == phpv.ZtFloat {
+					if _, implErr := implicitToInt(ctx, a); implErr != nil {
+						return nil, implErr
+					}
+				}
+				left, right := unsupportedTypeNames(isBinaryBitwise, a, b)
+				return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Unsupported operand types: %s %s %s", left, op.OpString(), right))
+			}
+		}
+		// For arrays with non-bitwise compound ops or % operator: natural order.
+		// For pure binary &, |, ^: array falls through to switch (so float warning can fire first).
+		if bType == phpv.ZtArray && !isBinaryBitwise {
+			aType := a.GetType()
+			if !(aType == phpv.ZtString && bType == phpv.ZtString) {
+				// For float operands in compound ops (e.g., $x &= []), emit float→int warning first.
+				origAName := phpTypeName(a)
+				if aType == phpv.ZtFloat {
+					// Call implicitToInt to emit the deprecation warning; ignore the result.
+					if _, implErr := implicitToInt(ctx, a); implErr != nil {
+						return nil, implErr
+					}
+				}
+				return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Unsupported operand types: %s %s %s", origAName, op.OpString(), phpTypeName(b)))
+			}
+		}
 	}
 
 	switch a.Value().GetType() {
 	case phpv.ZtBool, phpv.ZtNull:
-		// Boolean and null values should be converted to int for bitwise ops
+		// Boolean and null values should be converted to int for bitwise ops.
+		// But first, check if b is an unsupported type (array/object/resource).
+		// PHP converts null/bool to int first but uses the ORIGINAL type name in the error.
+		origAName := phpTypeName(a)
 		a, _ = a.As(ctx, phpv.ZtInt)
-		b, _ = b.As(ctx, phpv.ZtInt)
+		if !unary {
+			bType := b.GetType()
+			if bType == phpv.ZtArray || bType == phpv.ZtObject || bType == phpv.ZtResource {
+				// For binary &, |, ^: object/resource goes first in the error message.
+				// a was null/bool, so b=object or b=resource always wins priority.
+				// Array: natural order (origAName first).
+				if isBinaryBitwise && (bType == phpv.ZtObject || bType == phpv.ZtResource) {
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Unsupported operand types: %s %s %s", phpTypeName(b), op.OpString(), origAName))
+				}
+				return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Unsupported operand types: %s %s %s", origAName, op.OpString(), phpTypeName(b)))
+			}
+			// For non-leading-numeric strings: TypeError (cannot convert to int for bitwise ops)
+			if bType == phpv.ZtString {
+				s := string(b.Value().(phpv.ZString))
+				if !isLeadingNumeric(s) {
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Unsupported operand types: %s %s %s", origAName, op.OpString(), phpTypeName(b)))
+				}
+				if !isNumericString(s) {
+					if err := ctx.Warn("A non-numeric value encountered", logopt.NoFuncName(true)); err != nil {
+						return nil, err
+					}
+				}
+			}
+			b, _ = b.As(ctx, phpv.ZtInt)
+		} else {
+			b = a
+		}
 		return operatorMathLogic(ctx, op, a, b)
 	case phpv.ZtInt:
-		b, _ = b.As(ctx, phpv.ZtInt)
+		if !unary {
+			// Check if b is an unsupported type before converting.
+			bType := b.GetType()
+			if bType == phpv.ZtArray || bType == phpv.ZtObject || bType == phpv.ZtResource {
+				// Use unsupportedTypeNames to normalize: object/resource goes first for binary ops.
+				left, right := unsupportedTypeNames(isBinaryBitwise, a, b)
+				return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Unsupported operand types: %s %s %s", left, op.OpString(), right))
+			}
+			// For non-leading-numeric strings: TypeError (cannot convert to int for bitwise ops)
+			if bType == phpv.ZtString {
+				s := string(b.Value().(phpv.ZString))
+				if !isLeadingNumeric(s) {
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Unsupported operand types: %s %s %s", phpTypeName(a), op.OpString(), phpTypeName(b)))
+				}
+				if !isNumericString(s) {
+					if err := ctx.Warn("A non-numeric value encountered", logopt.NoFuncName(true)); err != nil {
+						return nil, err
+					}
+				}
+			}
+			b, _ = b.As(ctx, phpv.ZtInt)
+		} else {
+			b = a
+		}
 		var res phpv.ZInt
 		switch op {
 		case tokenizer.Rune('|'), tokenizer.T_OR_EQUAL:
@@ -1341,14 +1570,43 @@ func operatorMathLogic(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal)
 		return res.ZVal(), nil
 	case phpv.ZtFloat:
 		// need to convert to int (implicit conversion emits deprecation for precision loss)
+		// Save the original float type name for error messages (PHP reports "float" even after conversion).
+		origAName := phpTypeName(a)
 		var err error
 		a, err = implicitToInt(ctx, a)
 		if err != nil {
 			return nil, err
 		}
-		b, err = implicitToInt(ctx, b)
-		if err != nil {
-			return nil, err
+		if !unary {
+			// After converting a to int, check if b is an unsupported type.
+			// PHP emits the float→int warning first, then TypeError with the ORIGINAL float type name.
+			bType := b.GetType()
+			if bType == phpv.ZtArray || bType == phpv.ZtObject || bType == phpv.ZtResource {
+				// For binary &, |, ^: object/resource goes first in the error message.
+				// For arrays and compound ops: natural order (origAName first).
+				if isBinaryBitwise && (bType == phpv.ZtObject || bType == phpv.ZtResource) {
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Unsupported operand types: %s %s %s", phpTypeName(b), op.OpString(), origAName))
+				}
+				return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Unsupported operand types: %s %s %s", origAName, op.OpString(), phpTypeName(b)))
+			}
+			// For non-leading-numeric strings: TypeError (after emitting float→int warning above)
+			if bType == phpv.ZtString {
+				s := string(b.Value().(phpv.ZString))
+				if !isLeadingNumeric(s) {
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Unsupported operand types: %s %s %s", origAName, op.OpString(), phpTypeName(b)))
+				}
+				if !isNumericString(s) {
+					if err := ctx.Warn("A non-numeric value encountered", logopt.NoFuncName(true)); err != nil {
+						return nil, err
+					}
+				}
+			}
+			b, err = implicitToInt(ctx, b)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			b = a
 		}
 		return operatorMathLogic(ctx, op, a, b)
 	case phpv.ZtString:
@@ -1359,6 +1617,36 @@ func operatorMathLogic(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal)
 		if b.GetType() != phpv.ZtString || op == tokenizer.T_SL || op == tokenizer.T_SL_EQUAL ||
 			op == tokenizer.T_SR || op == tokenizer.T_SR_EQUAL ||
 			op == tokenizer.Rune('%') || op == tokenizer.T_MOD_EQUAL {
+			// When b is not a string (or op requires numeric), both sides must be
+			// converted to int. Check a first (emit warning for semi-numeric strings),
+			// then reject unsupported b types.
+			bType := b.GetType()
+			// Check a-string validity FIRST (before rejecting b type).
+			// PHP emits a non-numeric warning for a before throwing TypeError for b's type.
+			aStr := string(a.Value().(phpv.ZString))
+			if !isLeadingNumeric(aStr) {
+				return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Unsupported operand types: string %s %s", op.OpString(), phpTypeName(b)))
+			}
+			if !isNumericString(aStr) {
+				if err := ctx.Warn("A non-numeric value encountered", logopt.NoFuncName(true)); err != nil {
+					return nil, err
+				}
+			}
+			if bType == phpv.ZtArray || bType == phpv.ZtObject || bType == phpv.ZtResource {
+				return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Unsupported operand types: string %s %s", op.OpString(), phpTypeName(b)))
+			}
+			// For b that is a string (but op requires numeric conversion), check b too
+			if bType == phpv.ZtString {
+				bStr := string(b.Value().(phpv.ZString))
+				if !isLeadingNumeric(bStr) {
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Unsupported operand types: string %s string", op.OpString()))
+				}
+				if !isNumericString(bStr) {
+					if err := ctx.Warn("A non-numeric value encountered", logopt.NoFuncName(true)); err != nil {
+						return nil, err
+					}
+				}
+			}
 			var err error
 			a, err = implicitToInt(ctx, a)
 			if err != nil {
@@ -1410,6 +1698,30 @@ func operatorMathLogic(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal)
 			return nil, ctx.Errorf("todo operator unsupported on strings")
 		}
 		return phpv.ZString(a).ZVal(), nil
+	case phpv.ZtArray:
+		// PHP 8: bitwise ops on arrays throw TypeError (e.g., array ^ array)
+		if unary || op == tokenizer.Rune('~') {
+			// unary ~ on array
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "Cannot perform bitwise not on array")
+		}
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Unsupported operand types: %s %s %s", phpTypeName(a), op.OpString(), phpTypeName(b)))
+	case phpv.ZtObject:
+		// PHP 8: bitwise ops on objects throw TypeError
+		if unary || op == tokenizer.Rune('~') {
+			// PHP uses the class name in the error message
+			className := "object"
+			if obj, ok := a.Value().(phpv.ZObject); ok {
+				className = string(obj.GetClass().GetName())
+			}
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Cannot perform bitwise not on %s", className))
+		}
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Unsupported operand types: %s %s %s", phpTypeName(a), op.OpString(), phpTypeName(b)))
+	case phpv.ZtResource:
+		// PHP 8: bitwise ops on resources throw TypeError
+		if unary || op == tokenizer.Rune('~') {
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Cannot perform bitwise not on resource"))
+		}
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Unsupported operand types: %s %s %s", phpTypeName(a), op.OpString(), phpTypeName(b)))
 	default:
 		return nil, ctx.Errorf("todo operator type unsupported: %s", a.GetType())
 	}
@@ -1448,6 +1760,15 @@ func operatorCompareStrict(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.Z
 	case phpv.ZtArray:
 		// For arrays, === checks same keys and values in same order with strict comparison
 		res = a.AsArray(ctx).StrictEquals(ctx, b.AsArray(ctx))
+	case phpv.ZtResource:
+		// For resources, === checks if they are the same resource (same resource ID)
+		aRes, aOk := a.Value().(phpv.Resource)
+		bRes, bOk := b.Value().(phpv.Resource)
+		if aOk && bOk {
+			res = aRes.GetResourceID() == bRes.GetResourceID()
+		} else {
+			res = false
+		}
 	default:
 		return nil, ctx.Errorf("unsupported compare type %s", a.GetType())
 	}
@@ -2230,6 +2551,29 @@ func phpTypeName(v *phpv.ZVal) string {
 	default:
 		return v.GetType().String()
 	}
+}
+
+// unsupportedTypeNames returns the operand type names for "Unsupported operand types"
+// error messages, normalized so that objects and resources appear first when the operator
+// is a pure binary op (not compound assignment). This matches PHP's behavior for `*`,
+// `&`, `|`, `^` where the "more complex" type (object > resource) goes first regardless
+// of operand position.
+func unsupportedTypeNames(flipObjRes bool, a, b *phpv.ZVal) (string, string) {
+	if !flipObjRes {
+		return phpTypeName(a), phpTypeName(b)
+	}
+	aType := a.GetType()
+	bType := b.GetType()
+	// If b is object and a is not object: put b first
+	if bType == phpv.ZtObject && aType != phpv.ZtObject {
+		return phpTypeName(b), phpTypeName(a)
+	}
+	// If b is resource and a is not object and not resource: put b first
+	if bType == phpv.ZtResource && aType != phpv.ZtObject && aType != phpv.ZtResource {
+		return phpTypeName(b), phpTypeName(a)
+	}
+	// Natural order
+	return phpTypeName(a), phpTypeName(b)
 }
 
 // implicitToInt converts a ZVal to int, emitting a "Deprecated: Implicit conversion

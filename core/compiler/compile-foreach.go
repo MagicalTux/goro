@@ -195,13 +195,24 @@ func (r *runnableForeach) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 		return nil, nil
 	}
 
-	// When foreach iterates a generator (via phpObjectIterator), force-close it
-	// when the loop exits. This ensures finally blocks in the generator run
-	// before any exception from the loop body propagates (PHP behavior:
-	// generator destructor runs during stack unwinding when it goes out of scope).
+	// When foreach iterates a generator (via phpObjectIterator) and exits due to
+	// an actual exception (not break/continue/return), force-close it so generator
+	// finally blocks run before the exception propagates. On normal exit (break/
+	// return/complete), PHP does NOT force-close the generator — it remains
+	// available if other variables hold it.
 	if poi, ok := it.(*phpObjectIterator); ok {
 		if genState := phpobj.GetGeneratorStateFromObject(poi.obj); genState != nil {
 			defer func() {
+				if err == nil {
+					return // normal exit: don't close
+				}
+				// Only force-close on real exceptions (PhpThrow, PhpError), not
+				// on break/continue/return control flow which are not real errors.
+				switch err.(type) {
+				case *phperr.PhpBreak, *phperr.PhpContinue, *phperr.PhpReturn:
+					return // control flow: don't close
+				}
+				// Exception path: force-close so finally blocks run
 				phpobj.GeneratorForceCloseState(ctx, genState)
 			}()
 		}
