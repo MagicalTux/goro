@@ -14,6 +14,7 @@ import (
 	"github.com/KarpelesLab/gotz"
 	"github.com/KarpelesLab/strtotime"
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phperr"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
@@ -79,10 +80,23 @@ func astroGMST0(d float64) float64 {
 	return astroRevolution((180.0 + 356.0470 + 282.9404) + (0.9856002585+4.70935e-5)*d)
 }
 
+// sunRC encodes the return code from calculateSunRiseSetTransit:
+//
+//	0 = normal (sun rises and sets)
+//	-1 = sun never rises (below horizon all day)
+//	+1 = sun never sets (midnight sun)
+type sunRC int
+
+const (
+	sunNormal     sunRC = 0
+	sunNeverRises sunRC = -1
+	sunNeverSets  sunRC = 1
+)
+
 // calculateSunRiseSetTransit computes sunrise, sunset, and transit times
 // as hours from UTC midnight. altit is the altitude in degrees (-0.8333 for standard rise/set).
 // upperLimb: if true, adjusts for the sun's apparent radius.
-func calculateSunRiseSetTransit(utcMidnightTS int64, lat, lon, altit float64, upperLimb bool) (rise, set, transit float64) {
+func calculateSunRiseSetTransit(utcMidnightTS int64, lat, lon, altit float64, upperLimb bool) (rise, set, transit float64, rc sunRC) {
 	d := tsToJ2000(utcMidnightTS) + 2.0 - lon/360.0
 
 	sidtime := astroRevolution(astroGMST0(d) + 180.0 + lon)
@@ -101,32 +115,37 @@ func calculateSunRiseSetTransit(utcMidnightTS int64, lat, lon, altit float64, up
 		// Sun never rises
 		rise = math.NaN()
 		set = math.NaN()
+		rc = sunNeverRises
 		return
 	}
 	if cost <= -1.0 {
 		// Sun never sets (midnight sun)
 		rise = math.NaN()
 		set = math.NaN()
+		rc = sunNeverSets
 		return
 	}
 
 	t := acosd(cost) / 15.0
 	rise = tsouth - t
 	set = tsouth + t
+	rc = sunNormal
 	return
 }
 
 const solarZenithSunrise = 90.5833
 
 // calculateSunTime provides backward compatibility with callers that use the old zenith-based API.
-// It wraps the Schlyter algorithm.
-func calculateSunTime(timestamp int64, latitude, longitude, zenith float64, isSunrise bool) float64 {
-	t := time.Unix(timestamp, 0).UTC()
+// It wraps the Schlyter algorithm. The loc parameter determines the local timezone used to
+// resolve the calendar date from the timestamp (PHP uses the default timezone's date, not UTC).
+func calculateSunTime(timestamp int64, latitude, longitude, zenith float64, isSunrise bool, loc *time.Location) float64 {
+	// Use the local timezone's calendar date (PHP behavior), then create UTC midnight for that date.
+	t := time.Unix(timestamp, 0).In(loc)
 	dayStart := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
 	altit := -(zenith - 90.0)
 	// Use upper limb correction for standard sunrise/sunset zenith values
 	upperLimb := zenith <= 91 && zenith >= 90
-	rise, set, _ := calculateSunRiseSetTransit(dayStart.Unix(), latitude, longitude, altit, upperLimb)
+	rise, set, _, _ := calculateSunRiseSetTransit(dayStart.Unix(), latitude, longitude, altit, upperLimb)
 	if isSunrise {
 		return rise
 	}
@@ -480,6 +499,11 @@ func datetimezoneListIdentifiers(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVa
 
 	result := phpv.NewZArray()
 
+	// When PER_COUNTRY is specified, require a valid 2-letter country code
+	if regionMask == dtzPER_COUNTRY && (countryCode == "" || len(countryCode) != 2) {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "timezone_identifiers_list(): Argument #2 ($countryCode) must be a two-letter ISO 3166-1 compatible country code when argument #1 ($timezoneGroup) is DateTimeZone::PER_COUNTRY")
+	}
+
 	if regionMask == dtzPER_COUNTRY && countryCode != "" {
 		// Filter by country code using gotz metadata
 		for _, name := range allIANAZones {
@@ -731,13 +755,17 @@ func fncTimezoneOffsetGet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, erro
 		className := tzObj.GetClass().GetName()
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("timezone_offset_get(): Argument #1 ($object) must be of type DateTimeZone, %s given", className))
 	}
-	// Check that the datetime argument is a proper DateTimeInterface object too
-	if len(args) > 1 {
-		if dtObj, ok2 := args[1].Value().(*phpobj.ZObject); ok2 {
-			if err := checkDateTimeInitialized(ctx, dtObj); err != nil {
-				return nil, err
-			}
-		}
+	// Validate the datetime argument: must be a DateTimeInterface object
+	dtObj, dtOk := args[1].Value().(*phpobj.ZObject)
+	if !dtOk {
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("timezone_offset_get(): Argument #2 ($datetime) must be of type DateTimeInterface, %s given", args[1].GetType().TypeName()))
+	}
+	if !dtObj.Class.InstanceOf(DateTimeInterface) {
+		className := dtObj.GetClass().GetName()
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("timezone_offset_get(): Argument #2 ($datetime) must be of type DateTimeInterface, %s given", className))
+	}
+	if err := checkDateTimeInitialized(ctx, dtObj); err != nil {
+		return nil, err
 	}
 	return datetimezoneGetOffset(ctx, tzObj, args[1:])
 }
@@ -758,95 +786,65 @@ func fncTimezoneNameFromAbbr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, e
 	}
 
 	abbrStr := string(abbr)
+	abbrLower := strings.ToLower(abbrStr)
 
-	// Common timezone abbreviations mapping
-	commonAbbrs := map[string]string{
-		"CET":  "Europe/Berlin",
-		"CEST": "Europe/Berlin",
-		"EET":  "Europe/Helsinki",
-		"EEST": "Europe/Helsinki",
-		"WET":  "Europe/Lisbon",
-		"WEST": "Europe/Lisbon",
-		"GMT":  "UTC",
-		"UTC":  "UTC",
-		"EST":  "America/New_York",
-		"EDT":  "America/New_York",
-		"CST":  "America/Chicago",
-		"CDT":  "America/Chicago",
-		"MST":  "America/Denver",
-		"MDT":  "America/Denver",
-		"PST":  "America/Los_Angeles",
-		"PDT": "America/Los_Angeles",
-		"HST": "Pacific/Honolulu",
-		"AKST": "America/Anchorage",
-		"AKDT": "America/Anchorage",
-		"AST":  "America/Puerto_Rico",
-		"IST":  "Asia/Kolkata",
-		"JST":  "Asia/Tokyo",
-		"KST":  "Asia/Seoul",
-		"CST6CDT": "America/Chicago",
-		"EST5EDT": "America/New_York",
-		"MST7MDT": "America/Denver",
-		"PST8PDT": "America/Los_Angeles",
-		"AEST": "Australia/Sydney",
-		"AEDT": "Australia/Sydney",
-		"ACST": "Australia/Adelaide",
-		"ACDT": "Australia/Adelaide",
-		"AWST": "Australia/Perth",
-		"NZST": "Pacific/Auckland",
-		"NZDT": "Pacific/Auckland",
-		"BST":  "Europe/London",
-		"MET":  "MET",
-		"MSK":  "Europe/Moscow",
-	}
+	// Build the abbreviation map (cached)
+	tzAbbrevCacheOnce.Do(func() {
+		tzAbbrevCache = buildTZAbbrevMap()
+	})
 
-	// Try direct abbreviation lookup
+	// Step 1: If abbreviation is non-empty, look it up directly
 	if abbrStr != "" {
-		if tz, ok := commonAbbrs[abbrStr]; ok {
-			return phpv.ZString(tz).ZVal(), nil
-		}
-		// Try as a full timezone name
-		if _, err := time.LoadLocation(abbrStr); err == nil {
-			return phpv.ZString(abbrStr).ZVal(), nil
+		if entries, ok := tzAbbrevCache[abbrLower]; ok {
+			// PHP returns the first entry with a non-empty timezone_id
+			for _, e := range entries {
+				if e.tzID != "" {
+					return phpv.ZString(e.tzID).ZVal(), nil
+				}
+			}
 		}
 	}
 
-	// If abbr is empty and isDST is not explicitly provided, return false
-	if abbrStr == "" && !isDST.HasArg() {
-		return phpv.ZBool(false).ZVal(), nil
+	// Step 2: If offset is provided, search by offset (and optionally DST)
+	offset := int64(-1)
+	if utcOffset.HasArg() {
+		offset = int64(utcOffset.Get())
+	}
+	wantDST := int64(-1)
+	if isDST.HasArg() {
+		wantDST = int64(isDST.Get())
 	}
 
-	// If offset is provided and isDST is explicitly specified, search by offset
-	if utcOffset.HasArg() && isDST.HasArg() {
-		offset := int(utcOffset.Get())
-		wantDST := int(isDST.Get()) == 1
-		// Use a reference date in January (non-DST for northern hemisphere)
-		// and July (DST for northern hemisphere) to check offsets
-		refWinter := time.Date(2024, 1, 15, 12, 0, 0, 0, time.UTC)
-		refSummer := time.Date(2024, 7, 15, 12, 0, 0, 0, time.UTC)
-		// Go through known timezones to find one with matching offset and DST preference
-		for _, tzName := range []string{
-			"Europe/Paris", "Europe/London", "Europe/Berlin", "Europe/Helsinki",
-			"Europe/Moscow", "Europe/Lisbon", "Europe/Rome", "Europe/Madrid",
-			"America/New_York", "America/Chicago", "America/Denver",
-			"America/Los_Angeles", "America/Anchorage", "Pacific/Honolulu",
-			"Asia/Tokyo", "Asia/Shanghai", "Asia/Kolkata", "Asia/Seoul",
-			"Australia/Sydney", "Australia/Adelaide", "Australia/Perth",
-			"Pacific/Auckland", "UTC",
-		} {
-			loc, err := time.LoadLocation(tzName)
-			if err != nil {
-				continue
-			}
-			var ref time.Time
-			if wantDST {
-				ref = refSummer
-			} else {
-				ref = refWinter
-			}
-			_, tzOffset := ref.In(loc).Zone()
-			if tzOffset == offset {
-				return phpv.ZString(tzName).ZVal(), nil
+	if offset >= -1 {
+		// Search through the abbreviation database for matching offset
+		// PHP iterates the abbreviation list and returns the first match
+		// with a matching offset and (if isDST is specified) DST flag.
+		// Collect all keys sorted for deterministic behavior.
+		keys := make([]string, 0, len(tzAbbrevCache))
+		for k := range tzAbbrevCache {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+
+		for _, k := range keys {
+			entries := tzAbbrevCache[k]
+			for _, e := range entries {
+				if e.tzID == "" {
+					continue
+				}
+				if offset != -1 && e.offset != int(offset) {
+					continue
+				}
+				if wantDST != -1 {
+					eDST := 0
+					if e.dst {
+						eDST = 1
+					}
+					if int64(eDST) != wantDST {
+						continue
+					}
+				}
+				return phpv.ZString(e.tzID).ZVal(), nil
 			}
 		}
 	}
@@ -1255,11 +1253,34 @@ func fncTimezoneLocationGet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 	if err := checkDateTimeZoneInitialized(ctx, tzObj); err != nil {
 		return nil, err
 	}
+	return getTimezoneLocation(ctx, tzObj)
+}
+
+func getTimezoneLocation(ctx phpv.Context, tzObj *phpobj.ZObject) (*phpv.ZVal, error) {
+	tzName := getTimezoneName(tzObj)
+	zone, err := gotz.Load(tzName)
+	if err != nil {
+		// Fixed-offset or abbreviation timezones return false for getLocation
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	meta := zone.Meta()
+	if meta == nil {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+
 	result := phpv.NewZArray()
-	result.OffsetSet(ctx, phpv.ZString("country_code"), phpv.ZString("??").ZVal())
-	result.OffsetSet(ctx, phpv.ZString("latitude"), phpv.ZFloat(0).ZVal())
-	result.OffsetSet(ctx, phpv.ZString("longitude"), phpv.ZFloat(0).ZVal())
-	result.OffsetSet(ctx, phpv.ZString("comments"), phpv.ZString("").ZVal())
+	countryCode := "??"
+	comments := ""
+	if len(meta.Countries) > 0 {
+		countryCode = meta.Countries[0].Code
+	}
+	if meta.Commentary != "" {
+		comments = meta.Commentary
+	}
+	result.OffsetSet(ctx, phpv.ZString("country_code"), phpv.ZString(countryCode).ZVal())
+	result.OffsetSet(ctx, phpv.ZString("latitude"), phpv.ZFloat(meta.Lat).ZVal())
+	result.OffsetSet(ctx, phpv.ZString("longitude"), phpv.ZFloat(meta.Lon).ZVal())
+	result.OffsetSet(ctx, phpv.ZString("comments"), phpv.ZString(comments).ZVal())
 	return result.ZVal(), nil
 }
 
@@ -1331,6 +1352,10 @@ func fncTimezoneTransitionsGet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal,
 		if tr.Type < 0 || tr.Type >= len(types) {
 			continue
 		}
+		// Skip transitions at or before the initial entry timestamp to avoid duplicates
+		if tr.When <= tsBegin {
+			continue
+		}
 		zt := types[tr.Type]
 		entry := phpv.NewZArray()
 		entry.OffsetSet(ctx, phpv.ZString("ts"), phpv.ZInt(tr.When).ZVal())
@@ -1358,18 +1383,25 @@ func fncDateSunInfo(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	result := phpv.NewZArray()
 
-	// Sunrise/sunset: altit = -50/60 degrees, upperLimb = true
-	rise, set, transit := calculateSunRiseSetTransit(midnightTS, latitude, longitude, -50.0/60.0, true)
-	if math.IsNaN(rise) {
-		result.OffsetSet(ctx, phpv.ZString("sunrise"), phpv.ZBool(false).ZVal())
-	} else {
-		result.OffsetSet(ctx, phpv.ZString("sunrise"), phpv.ZInt(midnightTS+int64(rise*3600)).ZVal())
+	// sunRiseSetVal returns the appropriate ZVal for a sun calculation result:
+	// normal → timestamp, neverRises → false, neverSets → true
+	sunRiseSetVal := func(hours float64, rc sunRC) *phpv.ZVal {
+		switch rc {
+		case sunNeverRises:
+			return phpv.ZBool(false).ZVal()
+		case sunNeverSets:
+			return phpv.ZBool(true).ZVal()
+		default:
+			return phpv.ZInt(midnightTS + int64(hours*3600)).ZVal()
+		}
 	}
-	if math.IsNaN(set) {
-		result.OffsetSet(ctx, phpv.ZString("sunset"), phpv.ZBool(false).ZVal())
-	} else {
-		result.OffsetSet(ctx, phpv.ZString("sunset"), phpv.ZInt(midnightTS+int64(set*3600)).ZVal())
-	}
+
+	// Sunrise/sunset: altit = -35/60 degrees (refraction), upperLimb = true
+	// The upper limb correction subtracts the apparent sun radius (~0.2666/sr),
+	// giving an effective altitude of approximately -50/60 degrees.
+	rise, set, transit, rc := calculateSunRiseSetTransit(midnightTS, latitude, longitude, -35.0/60.0, true)
+	result.OffsetSet(ctx, phpv.ZString("sunrise"), sunRiseSetVal(rise, rc))
+	result.OffsetSet(ctx, phpv.ZString("sunset"), sunRiseSetVal(set, rc))
 	result.OffsetSet(ctx, phpv.ZString("transit"), phpv.ZInt(midnightTS+int64(transit*3600)).ZVal())
 
 	// Twilight calculations with different altitudes, no upper limb correction
@@ -1382,17 +1414,9 @@ func fncDateSunInfo(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		{-12.0, "nautical_twilight_begin", "nautical_twilight_end"},
 		{-18.0, "astronomical_twilight_begin", "astronomical_twilight_end"},
 	} {
-		begin, end, _ := calculateSunRiseSetTransit(midnightTS, latitude, longitude, tw.altit, false)
-		if math.IsNaN(begin) {
-			result.OffsetSet(ctx, phpv.ZString(tw.beginKey), phpv.ZBool(false).ZVal())
-		} else {
-			result.OffsetSet(ctx, phpv.ZString(tw.beginKey), phpv.ZInt(midnightTS+int64(begin*3600)).ZVal())
-		}
-		if math.IsNaN(end) {
-			result.OffsetSet(ctx, phpv.ZString(tw.endKey), phpv.ZBool(false).ZVal())
-		} else {
-			result.OffsetSet(ctx, phpv.ZString(tw.endKey), phpv.ZInt(midnightTS+int64(end*3600)).ZVal())
-		}
+		begin, end, _, twRC := calculateSunRiseSetTransit(midnightTS, latitude, longitude, tw.altit, false)
+		result.OffsetSet(ctx, phpv.ZString(tw.beginKey), sunRiseSetVal(begin, twRC))
+		result.OffsetSet(ctx, phpv.ZString(tw.endKey), sunRiseSetVal(end, twRC))
 	}
 	return result.ZVal(), nil
 }
@@ -1410,7 +1434,9 @@ func dateSunFunc(ctx phpv.Context, args []*phpv.ZVal, isSunrise bool) (*phpv.ZVa
 	if isSunrise {
 		funcName = "date_sunrise"
 	}
-	ctx.Deprecated(fmt.Sprintf("Function %s() is deprecated since 8.1", funcName))
+	if err := ctx.Deprecated(fmt.Sprintf("Function %s() is deprecated since 8.1, use date_sun_info() instead", funcName), logopt.NoFuncName(true)); err != nil {
+		return nil, err
+	}
 	if len(args) < 1 {
 		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, fmt.Sprintf("%s() expects at least 1 argument", funcName))
 	}
@@ -1435,33 +1461,45 @@ func dateSunFunc(ctx phpv.Context, args []*phpv.ZVal, isSunrise bool) (*phpv.ZVa
 	if len(args) > 5 {
 		utcOffset = float64(args[5].AsFloat(ctx))
 	}
-	ut := calculateSunTime(timestamp, latitude, longitude, zenith, isSunrise)
+	// Use the default timezone's calendar date (not UTC) to determine the day
+	loc := getTimezone(ctx)
+	ut := calculateSunTime(timestamp, latitude, longitude, zenith, isSunrise, loc)
 	if math.IsNaN(ut) {
 		return phpv.ZBool(false).ZVal(), nil
 	}
-	if !math.IsNaN(utcOffset) {
-		ut += utcOffset
+
+	// If utcOffset was not provided, derive it from the default timezone
+	if math.IsNaN(utcOffset) {
+		_, offsetSec := time.Unix(timestamp, 0).In(loc).Zone()
+		utcOffset = float64(offsetSec) / 3600.0
 	}
-	// If ut is infinite, NaN, or too extreme for the normalization loops, return false
-	if math.IsInf(ut, 0) || math.IsNaN(ut) || ut > 1e15 || ut < -1e15 {
-		return phpv.ZBool(false).ZVal(), nil
-	}
-	for ut < 0 {
-		ut += 24
-	}
-	for ut >= 24 {
-		ut -= 24
-	}
+
+	// For SUNFUNCS_RET_TIMESTAMP: compute from UTC hours directly (no offset adjustment).
+	// For STRING/DOUBLE: adjust to local time by adding utcOffset.
 	switch returnFormat {
 	case 0:
-		t := time.Unix(timestamp, 0).UTC()
-		dayStart := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
+		// SUNFUNCS_RET_TIMESTAMP: return Unix timestamp = UTC midnight + UTC hours * 3600
+		tLocal := time.Unix(timestamp, 0).In(loc)
+		dayStart := time.Date(tLocal.Year(), tLocal.Month(), tLocal.Day(), 0, 0, 0, 0, time.UTC)
 		return phpv.ZInt(dayStart.Unix() + int64(ut*3600)).ZVal(), nil
-	case 1:
-		hours := int(ut)
-		minutes := int((ut - float64(hours)) * 60)
-		return phpv.ZString(fmt.Sprintf("%02d:%02d", hours, minutes)).ZVal(), nil
-	case 2:
+	case 1, 2:
+		// SUNFUNCS_RET_STRING / SUNFUNCS_RET_DOUBLE: adjust to local time
+		ut += utcOffset
+		// If ut is infinite, NaN, or too extreme for the normalization loops, return false
+		if math.IsInf(ut, 0) || math.IsNaN(ut) || ut > 1e15 || ut < -1e15 {
+			return phpv.ZBool(false).ZVal(), nil
+		}
+		for ut < 0 {
+			ut += 24
+		}
+		for ut >= 24 {
+			ut -= 24
+		}
+		if returnFormat == 1 {
+			hours := int(ut)
+			minutes := int((ut - float64(hours)) * 60)
+			return phpv.ZString(fmt.Sprintf("%02d:%02d", hours, minutes)).ZVal(), nil
+		}
 		return phpv.ZFloat(ut).ZVal(), nil
 	}
 	return phpv.ZBool(false).ZVal(), nil

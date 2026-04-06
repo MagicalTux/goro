@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/KarpelesLab/gotz"
 	"github.com/KarpelesLab/strtotime"
 	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpobj"
@@ -1098,19 +1097,6 @@ func serializeMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) 
 	}
 	arr := phpv.NewZArray()
 
-	// Include custom properties from subclasses first (before date/timezone_type/timezone)
-	builtinProps := map[string]bool{"date": true, "timezone_type": true, "timezone": true}
-	for prop := range this.IterProps(ctx) {
-		pName := string(prop.VarName)
-		if builtinProps[pName] {
-			continue
-		}
-		v := this.HashTable().GetString(prop.VarName)
-		if v != nil {
-			arr.OffsetSet(ctx, phpv.ZString(pName), v)
-		}
-	}
-
 	dateStr := fmt.Sprintf("%04d-%02d-%02d %02d:%02d:%02d.%06d",
 		t.Year(), int(t.Month()), t.Day(),
 		t.Hour(), t.Minute(), t.Second(), t.Nanosecond()/1000)
@@ -1148,6 +1134,9 @@ func serializeMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) 
 	}
 	arr.OffsetSet(ctx, phpv.ZString("timezone_type"), phpv.ZInt(tzType).ZVal())
 	arr.OffsetSet(ctx, phpv.ZString("timezone"), phpv.ZString(locName).ZVal())
+
+	// Include user-defined properties from subclasses (after standard props)
+	appendSubclassProps(ctx, this, arr, map[string]bool{"date": true, "timezone_type": true, "timezone": true})
 
 	return arr.ZVal(), nil
 }
@@ -1234,17 +1223,7 @@ func unserializeMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal
 	setTimeVal(this, parsed)
 
 	// Restore custom properties from subclasses
-	builtinKeys := map[string]bool{"date": true, "timezone_type": true, "timezone": true}
-	it := arr.NewIterator()
-	for it.Valid(ctx) {
-		k, _ := it.Key(ctx)
-		v, _ := it.Current(ctx)
-		ks := k.String()
-		if !builtinKeys[ks] {
-			this.ObjectSet(ctx, phpv.ZString(ks), v)
-		}
-		it.Next(ctx)
-	}
+	restoreSubclassProps(ctx, this, arr, map[string]bool{"date": true, "timezone_type": true, "timezone": true})
 
 	return nil, nil
 }
@@ -1613,20 +1592,28 @@ func dateTimeDebugInfo(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal
 	}
 	arr := phpv.NewZArray()
 
-	// Include user-defined properties from the object's hash table that are NOT
-	// the standard DateTime properties (date, timezone_type, timezone).
-	// These should appear first (in declaration order), before the date fields.
+	// Include user-defined properties using IterProps for correct ordering and
+	// PHP-standard mangling of private/protected property names. Skip the
+	// standard DateTime properties (date, timezone_type, timezone) which are
+	// added below from the opaque time value.
 	standardProps := map[string]bool{"date": true, "timezone_type": true, "timezone": true}
-	ht := this.HashTable()
-	iter := ht.NewIterator()
-	for iter.Valid(ctx) {
-		key, _ := iter.Key(ctx)
-		val, _ := iter.Current(ctx)
-		keyStr := key.String()
-		if !standardProps[keyStr] {
-			arr.OffsetSet(ctx, phpv.ZString(keyStr), val)
+	for prop := range this.IterProps(ctx) {
+		if standardProps[string(prop.VarName)] {
+			continue
 		}
-		iter.Next(ctx)
+		var key phpv.ZString
+		if prop.Modifiers.IsPrivate() {
+			className := string(this.GetDeclClassName(prop))
+			key = phpv.ZString("\x00" + className + "\x00" + string(prop.VarName))
+		} else if prop.Modifiers.IsProtected() {
+			key = phpv.ZString("\x00*\x00" + string(prop.VarName))
+		} else {
+			key = prop.VarName
+		}
+		v := this.GetPropValue(prop)
+		if v != nil {
+			arr.OffsetSet(ctx, key, v)
+		}
 	}
 	// Format: "2006-12-12 00:00:00.000000"
 	dateStr := fmt.Sprintf("%04d-%02d-%02d %02d:%02d:%02d.%06d",
@@ -1669,6 +1656,96 @@ func dateTimeDebugInfo(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal
 	arr.OffsetSet(ctx, phpv.ZString("timezone"), phpv.ZString(locName).ZVal())
 
 	return arr.ZVal(), nil
+}
+
+// restoreSubclassProps restores user-defined (non-standard) properties from a
+// serialized array into an object. It handles conversion from PHP's NUL-byte
+// mangling to internal property storage. This is used by __unserialize methods.
+func restoreSubclassProps(ctx phpv.Context, obj *phpobj.ZObject, arr *phpv.ZArray, standardProps map[string]bool) {
+	it := arr.NewIterator()
+	for it.Valid(ctx) {
+		k, _ := it.Key(ctx)
+		v, _ := it.Current(ctx)
+		ks := string(k.AsString(ctx))
+		if standardProps[ks] {
+			it.Next(ctx)
+			continue
+		}
+		// Parse PHP-mangled property names: \0ClassName\0prop (private), \0*\0prop (protected)
+		if len(ks) > 0 && ks[0] == '\x00' {
+			secondNull := strings.IndexByte(ks[1:], '\x00')
+			if secondNull >= 0 {
+				classOrStar := ks[1 : secondNull+1]
+				propName := phpv.ZString(ks[secondNull+2:])
+				if classOrStar == "*" {
+					// Protected: store under the bare name (or \0*\0name for undeclared)
+					if _, found := obj.GetClass().GetProp(propName); found {
+						obj.HashTable().ForceSetString(propName, v)
+					} else {
+						obj.HashTable().ForceSetString(phpv.ZString(ks), v)
+					}
+				} else {
+					// Private: store under internal mangled name *ClassName:propName
+					// Find the actual declaring class in the hierarchy
+					var internalKey phpv.ZString
+					if zclass, ok := obj.GetClass().(*phpobj.ZClass); ok {
+						found := false
+						for cl := zclass; cl != nil; cl = func() *phpobj.ZClass {
+							if p := cl.GetParent(); p != nil {
+								c, _ := p.(*phpobj.ZClass)
+								return c
+							}
+							return nil
+						}() {
+							if string(cl.GetName()) == classOrStar {
+								internalKey = phpobj.GetPrivatePropNameExt(cl, propName)
+								found = true
+								break
+							}
+						}
+						if !found {
+							// Class not found in hierarchy; use the object's own class
+							internalKey = phpobj.GetPrivatePropNameExt(zclass, propName)
+						}
+					} else {
+						// Fallback: use raw format
+						internalKey = phpv.ZString(fmt.Sprintf("*%s:%s", classOrStar, propName))
+					}
+					obj.HashTable().ForceSetString(internalKey, v)
+				}
+				it.Next(ctx)
+				continue
+			}
+		}
+		// Non-mangled key: regular property
+		obj.ObjectSet(ctx, phpv.ZString(ks), v)
+		it.Next(ctx)
+	}
+}
+
+// appendSubclassProps appends user-defined (non-standard) properties from a date
+// object to the given array using PHP's NUL-byte mangling for private/protected
+// properties. This is used by __serialize methods to include subclass properties
+// in the serialized form.
+func appendSubclassProps(ctx phpv.Context, obj *phpobj.ZObject, arr *phpv.ZArray, standardProps map[string]bool) {
+	for prop := range obj.IterProps(ctx) {
+		if standardProps[string(prop.VarName)] {
+			continue
+		}
+		var key phpv.ZString
+		if prop.Modifiers.IsPrivate() {
+			className := string(obj.GetDeclClassName(prop))
+			key = phpv.ZString("\x00" + className + "\x00" + string(prop.VarName))
+		} else if prop.Modifiers.IsProtected() {
+			key = phpv.ZString("\x00*\x00" + string(prop.VarName))
+		} else {
+			key = prop.VarName
+		}
+		v := obj.GetPropValue(prop)
+		if v != nil {
+			arr.OffsetSet(ctx, key, v)
+		}
+	}
 }
 
 // getTimezoneType returns the PHP timezone type for a location.
@@ -1792,26 +1869,7 @@ func init() {
 					if err := checkDateTimeZoneInitialized(ctx, this); err != nil {
 						return nil, err
 					}
-					tzName := getTimezoneName(this)
-					zone, err := gotz.Load(tzName)
-					if err != nil {
-						// Fixed-offset timezones have no location
-						return phpv.ZBool(false).ZVal(), nil
-					}
-					meta := zone.Meta()
-					if meta == nil {
-						return phpv.ZBool(false).ZVal(), nil
-					}
-					result := phpv.NewZArray()
-					cc := "??"
-					if len(meta.Countries) > 0 {
-						cc = meta.Countries[0].Code
-					}
-					result.OffsetSet(ctx, phpv.ZString("country_code"), phpv.ZString(cc).ZVal())
-					result.OffsetSet(ctx, phpv.ZString("latitude"), phpv.ZFloat(meta.Lat).ZVal())
-					result.OffsetSet(ctx, phpv.ZString("longitude"), phpv.ZFloat(meta.Lon).ZVal())
-					result.OffsetSet(ctx, phpv.ZString("comments"), phpv.ZString(meta.Commentary).ZVal())
-					return result.ZVal(), nil
+					return getTimezoneLocation(ctx, this)
 				}),
 			},
 			"listidentifiers": {
@@ -1834,14 +1892,26 @@ func init() {
 				Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 					arr := phpv.NewZArray()
 					// Include user-defined properties first (for subclasses)
+					// Use IterProps for correct ordering and GetPropValue for
+					// proper private property lookup. Keys use PHP-standard
+					// NUL-byte mangling for private/protected visibility.
 					for prop := range o.IterProps(ctx) {
 						pName := prop.VarName
 						if pName == "timezone_type" || pName == "timezone" {
 							continue
 						}
-						v := o.HashTable().GetString(pName)
+						var key phpv.ZString
+						if prop.Modifiers.IsPrivate() {
+							className := string(o.GetDeclClassName(prop))
+							key = phpv.ZString("\x00" + className + "\x00" + string(pName))
+						} else if prop.Modifiers.IsProtected() {
+							key = phpv.ZString("\x00*\x00" + string(pName))
+						} else {
+							key = pName
+						}
+						v := o.GetPropValue(prop)
 						if v != nil {
-							arr.OffsetSet(ctx, phpv.ZString(pName), v)
+							arr.OffsetSet(ctx, key, v)
 						}
 					}
 					// Then include timezone info from opaque data
@@ -1885,21 +1955,10 @@ func init() {
 						tzType = 2
 					}
 					arr := phpv.NewZArray()
-					// Include user-defined properties from subclasses first
-					standardProps := map[string]bool{"timezone_type": true, "timezone": true}
-					ht := o.HashTable()
-					iter := ht.NewIterator()
-					for iter.Valid(ctx) {
-						key, _ := iter.Key(ctx)
-						val, _ := iter.Current(ctx)
-						keyStr := key.String()
-						if !standardProps[keyStr] {
-							arr.OffsetSet(ctx, phpv.ZString(keyStr), val)
-						}
-						iter.Next(ctx)
-					}
 					arr.OffsetSet(ctx, phpv.ZString("timezone_type"), phpv.ZInt(tzType).ZVal())
 					arr.OffsetSet(ctx, phpv.ZString("timezone"), phpv.ZString(name).ZVal())
+					// Include user-defined properties from subclasses (after standard props)
+					appendSubclassProps(ctx, o, arr, map[string]bool{"timezone_type": true, "timezone": true})
 					return arr.ZVal(), nil
 				}),
 			},
@@ -1943,17 +2002,8 @@ func init() {
 						o.HashTable().SetString("timezone_type", tzTypeVal)
 					}
 					o.HashTable().SetString("timezone", phpv.ZString(tzNameNorm).ZVal())
-					// Also restore any user-defined properties
-					it := arr.NewIterator()
-					for it.Valid(ctx) {
-						k, _ := it.Key(ctx)
-						v, _ := it.Current(ctx)
-						ks := k.String()
-						if ks != "timezone" && ks != "timezone_type" {
-							o.ObjectSet(ctx, phpv.ZString(ks), v)
-						}
-						it.Next(ctx)
-					}
+					// Restore any user-defined subclass properties
+					restoreSubclassProps(ctx, o, arr, map[string]bool{"timezone": true, "timezone_type": true})
 					return nil, nil
 				}),
 			},
@@ -2057,6 +2107,30 @@ func init() {
 				Modifiers: phpv.ZAttrPublic,
 				Method: phpobj.NativeMethod(func(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 					arr := phpv.NewZArray()
+					// Include user-defined properties first (for subclasses)
+					standardProps := map[string]bool{
+						"y": true, "m": true, "d": true, "h": true, "i": true, "s": true,
+						"f": true, "invert": true, "days": true, "from_string": true, "date_string": true,
+					}
+					for prop := range this.IterProps(ctx) {
+						if standardProps[string(prop.VarName)] {
+							continue
+						}
+						var key phpv.ZString
+						if prop.Modifiers.IsPrivate() {
+							className := string(this.GetDeclClassName(prop))
+							key = phpv.ZString("\x00" + className + "\x00" + string(prop.VarName))
+						} else if prop.Modifiers.IsProtected() {
+							key = phpv.ZString("\x00*\x00" + string(prop.VarName))
+						} else {
+							key = prop.VarName
+						}
+						v := this.GetPropValue(prop)
+						if v != nil {
+							arr.OffsetSet(ctx, key, v)
+						}
+					}
+					// Then include standard DateInterval properties
 					fromStr := this.HashTable().GetString("from_string")
 					if fromStr != nil && bool(fromStr.AsBool(ctx)) {
 						arr.OffsetSet(ctx, phpv.ZString("from_string"), phpv.ZBool(true).ZVal())
@@ -2131,20 +2205,11 @@ func init() {
 							}
 						}
 					}
-					// Also handle any extra properties (subclass promoted properties)
-					it := arr.NewIterator()
-					for it.Valid(ctx) {
-						k, _ := it.Key(ctx)
-						v, _ := it.Current(ctx)
-						ks := k.String()
-						switch ks {
-						case "y", "m", "d", "h", "i", "s", "f", "invert", "days", "from_string", "date_string":
-							// Already handled above
-						default:
-							this.ObjectSet(ctx, phpv.ZString(ks), v)
-						}
-						it.Next(ctx)
-					}
+					// Also handle any extra properties (subclass properties)
+					restoreSubclassProps(ctx, this, arr, map[string]bool{
+						"y": true, "m": true, "d": true, "h": true, "i": true, "s": true,
+						"f": true, "invert": true, "days": true, "from_string": true, "date_string": true,
+					})
 					return nil, nil
 				}),
 			},
@@ -2172,18 +2237,11 @@ func init() {
 							}
 						}
 					}
-					// Include custom properties from subclasses
-					builtinKeys := map[string]bool{"y": true, "m": true, "d": true, "h": true, "i": true, "s": true, "f": true, "invert": true, "days": true, "from_string": true, "date_string": true}
-					for prop := range this.IterProps(ctx) {
-						pName := string(prop.VarName)
-						if builtinKeys[pName] {
-							continue
-						}
-						v := this.HashTable().GetString(prop.VarName)
-						if v != nil {
-							result.OffsetSet(ctx, phpv.ZString(pName), v)
-						}
-					}
+					// Include custom properties from subclasses with proper PHP mangling
+					appendSubclassProps(ctx, this, result, map[string]bool{
+						"y": true, "m": true, "d": true, "h": true, "i": true, "s": true,
+						"f": true, "invert": true, "days": true, "from_string": true, "date_string": true,
+					})
 					return result.ZVal(), nil
 				}),
 			},
@@ -2632,14 +2690,28 @@ func init() {
 	DatePeriod = &phpobj.ZClass{
 		Name:            "DatePeriod",
 		Implementations: []*phpobj.ZClass{phpobj.IteratorAggregate},
+		H: &phpv.ZClassHandlers{
+			HandlePropUnset: func(ctx phpv.Context, o phpv.ZObject, key phpv.ZString) (bool, error) {
+				// DatePeriod's built-in properties cannot be unset
+				builtinProps := map[phpv.ZString]bool{
+					"start": true, "current": true, "end": true, "interval": true,
+					"recurrences": true, "include_start_date": true, "include_end_date": true,
+				}
+				if builtinProps[key] {
+					return true, phpobj.ThrowError(ctx, phpobj.Error,
+						fmt.Sprintf("Cannot unset %s::$%s", o.GetClass().GetName(), key))
+				}
+				return false, nil
+			},
+		},
 		Props: []*phpv.ZClassProp{
-			{VarName: "start", Modifiers: phpv.ZAttrPublic | phpv.ZAttrReadonly},
-			{VarName: "current", Modifiers: phpv.ZAttrPublic | phpv.ZAttrReadonly},
-			{VarName: "end", Modifiers: phpv.ZAttrPublic | phpv.ZAttrReadonly},
-			{VarName: "interval", Modifiers: phpv.ZAttrPublic | phpv.ZAttrReadonly},
-			{VarName: "recurrences", Modifiers: phpv.ZAttrPublic | phpv.ZAttrReadonly},
-			{VarName: "include_start_date", Modifiers: phpv.ZAttrPublic | phpv.ZAttrReadonly},
-			{VarName: "include_end_date", Modifiers: phpv.ZAttrPublic | phpv.ZAttrReadonly},
+			{VarName: "start", Modifiers: phpv.ZAttrPublic | phpv.ZAttrReadonly, TypeHint: phpv.ParseTypeHint("?DateTimeInterface")},
+			{VarName: "current", Modifiers: phpv.ZAttrPublic | phpv.ZAttrReadonly, TypeHint: phpv.ParseTypeHint("?DateTimeInterface")},
+			{VarName: "end", Modifiers: phpv.ZAttrPublic | phpv.ZAttrReadonly, TypeHint: phpv.ParseTypeHint("?DateTimeInterface")},
+			{VarName: "interval", Modifiers: phpv.ZAttrPublic | phpv.ZAttrReadonly, TypeHint: phpv.ParseTypeHint("?DateInterval")},
+			{VarName: "recurrences", Modifiers: phpv.ZAttrPublic | phpv.ZAttrReadonly, TypeHint: phpv.ParseTypeHint("int")},
+			{VarName: "include_start_date", Modifiers: phpv.ZAttrPublic | phpv.ZAttrReadonly, TypeHint: phpv.ParseTypeHint("bool")},
+			{VarName: "include_end_date", Modifiers: phpv.ZAttrPublic | phpv.ZAttrReadonly, TypeHint: phpv.ParseTypeHint("bool")},
 		},
 		Const: map[phpv.ZString]*phpv.ZClassConst{
 			"EXCLUDE_START_DATE": {Value: phpv.ZInt(1)},
@@ -2755,17 +2827,8 @@ func init() {
 							result.OffsetSet(ctx, phpv.ZString(key), phpv.ZNULL.ZVal())
 						}
 					}
-					// Include subclass properties
-					for prop := range this.IterProps(ctx) {
-						pName := string(prop.VarName)
-						if builtinKeys[pName] {
-							continue
-						}
-						v := this.HashTable().GetString(prop.VarName)
-						if v != nil {
-							result.OffsetSet(ctx, phpv.ZString(pName), v)
-						}
-					}
+					// Include subclass properties with proper PHP mangling
+					appendSubclassProps(ctx, this, result, builtinKeys)
 					return result.ZVal(), nil
 				}),
 			},
@@ -2832,18 +2895,11 @@ func init() {
 							this.ObjectSet(ctx, phpv.ZString(key), v)
 						}
 					}
-					// Set extra (subclass) properties
-					builtinKeys2 := map[string]bool{"start": true, "current": true, "end": true, "interval": true, "recurrences": true, "include_start_date": true, "include_end_date": true}
-					it := arr.NewIterator()
-					for it.Valid(ctx) {
-						k, _ := it.Key(ctx)
-						v, _ := it.Current(ctx)
-						ks := k.String()
-						if !builtinKeys2[ks] {
-							this.ObjectSet(ctx, phpv.ZString(ks), v)
-						}
-						it.Next(ctx)
-					}
+					// Set extra (subclass) properties with proper mangling
+					restoreSubclassProps(ctx, this, arr, map[string]bool{
+						"start": true, "current": true, "end": true, "interval": true,
+						"recurrences": true, "include_start_date": true, "include_end_date": true,
+					})
 					// Mark as initialized
 					this.SetOpaque(DatePeriod, true)
 					return nil, nil
@@ -3070,9 +3126,17 @@ func datePeriodConstruct(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZV
 	this.ObjectSet(ctx, phpv.ZString("include_start_date"), phpv.ZBool(includeStart).ZVal())
 	this.ObjectSet(ctx, phpv.ZString("include_end_date"), phpv.ZBool(includeEnd).ZVal())
 
+	// Explicitly set uninitialized nullable properties to NULL so they show as
+	// NULL in var_dump rather than uninitialized.
+	if !this.HashTable().HasString("current") {
+		this.HashTable().SetString("current", phpv.ZNULL.ZVal())
+	}
+	if !this.HashTable().HasString("end") {
+		this.HashTable().SetString("end", phpv.ZNULL.ZVal())
+	}
+
 	// Mark all readonly properties as initialized so that external code gets
 	// "Cannot modify readonly property" instead of "protected(set) readonly" errors.
-	// Properties not set above (current, and end in the recurrence form) are null by default.
 	for _, propName := range []phpv.ZString{"start", "current", "end", "interval", "recurrences", "include_start_date", "include_end_date"} {
 		this.MarkReadonlyInit(propName)
 	}
