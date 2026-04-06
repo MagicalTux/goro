@@ -19,62 +19,118 @@ import (
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
-func degreesToRadians(d float64) float64 { return d * math.Pi / 180 }
-func radiansToDegrees(r float64) float64 { return r * 180 / math.Pi }
+// Schlyter (J2000-based) solar calculation algorithm, matching PHP's implementation.
 
-const solarZenithSunrise = 90.833
+const j2000UnixSeconds = int64(946728000) // 2000-01-01 12:00:00 UTC
 
+func tsToJ2000(ts int64) float64 {
+	return float64(ts-j2000UnixSeconds) / 86400.0
+}
+
+func astroRevolution(x float64) float64 {
+	return x - 360.0*math.Floor(x/360.0)
+}
+
+func astroRev180(x float64) float64 {
+	x = astroRevolution(x)
+	if x >= 180 {
+		x -= 360
+	}
+	return x
+}
+
+func sind(deg float64) float64  { return math.Sin(deg * math.Pi / 180.0) }
+func cosd(deg float64) float64  { return math.Cos(deg * math.Pi / 180.0) }
+func tand(deg float64) float64  { return math.Tan(deg * math.Pi / 180.0) }
+func acosd(x float64) float64   { return math.Acos(x) * 180.0 / math.Pi }
+func asind(x float64) float64   { return math.Asin(x) * 180.0 / math.Pi }
+func atan2d(y, x float64) float64 { return math.Atan2(y, x) * 180.0 / math.Pi }
+
+// astroSunpos computes the Sun's ecliptic longitude and distance
+// for a given number of days since J2000.
+func astroSunpos(d float64) (lon, r float64) {
+	M := astroRevolution(356.0470 + 0.9856002585*d)
+	w := 282.9404 + 4.70935e-5*d
+	e := 0.016709 - 1.151e-9*d
+	E := M + (180.0/math.Pi)*e*sind(M)*(1.0+e*cosd(M))
+	x := cosd(E) - e
+	y := math.Sqrt(1.0-e*e) * sind(E)
+	r = math.Sqrt(x*x + y*y)
+	v := atan2d(y, x)
+	lon = astroRevolution(v + w)
+	return
+}
+
+// astroSunRADec computes the Sun's right ascension, declination, and distance.
+func astroSunRADec(d float64) (RA, dec, r float64) {
+	slon, sr := astroSunpos(d)
+	oblEcl := 23.4393 - 3.563e-7*d
+	x := sr * cosd(slon)
+	y := sr * cosd(oblEcl) * sind(slon)
+	z := sr * sind(oblEcl) * sind(slon)
+	RA = atan2d(y, x)
+	dec = atan2d(z, math.Sqrt(x*x+y*y))
+	r = sr
+	return
+}
+
+// astroGMST0 returns the Greenwich Mean Sidereal Time at 0h UT.
+func astroGMST0(d float64) float64 {
+	return astroRevolution((180.0 + 356.0470 + 282.9404) + (0.9856002585+4.70935e-5)*d)
+}
+
+// calculateSunRiseSetTransit computes sunrise, sunset, and transit times
+// as hours from UTC midnight. altit is the altitude in degrees (-0.8333 for standard rise/set).
+// upperLimb: if true, adjusts for the sun's apparent radius.
+func calculateSunRiseSetTransit(utcMidnightTS int64, lat, lon, altit float64, upperLimb bool) (rise, set, transit float64) {
+	d := tsToJ2000(utcMidnightTS) + 2.0 - lon/360.0
+
+	sidtime := astroRevolution(astroGMST0(d) + 180.0 + lon)
+	sRA, sdec, sr := astroSunRADec(d)
+	tsouth := 12.0 - astroRev180(sidtime-sRA)/15.0
+
+	sradius := 0.2666 / sr
+	if upperLimb {
+		altit -= sradius
+	}
+
+	cost := (sind(altit) - sind(lat)*sind(sdec)) / (cosd(lat) * cosd(sdec))
+	transit = tsouth
+
+	if cost >= 1.0 {
+		// Sun never rises
+		rise = math.NaN()
+		set = math.NaN()
+		return
+	}
+	if cost <= -1.0 {
+		// Sun never sets (midnight sun)
+		rise = math.NaN()
+		set = math.NaN()
+		return
+	}
+
+	t := acosd(cost) / 15.0
+	rise = tsouth - t
+	set = tsouth + t
+	return
+}
+
+const solarZenithSunrise = 90.5833
+
+// calculateSunTime provides backward compatibility with callers that use the old zenith-based API.
+// It wraps the Schlyter algorithm.
 func calculateSunTime(timestamp int64, latitude, longitude, zenith float64, isSunrise bool) float64 {
 	t := time.Unix(timestamp, 0).UTC()
-	dayOfYear := float64(t.YearDay())
-	lngHour := longitude / 15.0
-	var tApprox float64
+	dayStart := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
+	altit := -(zenith - 90.0)
+	// Use upper limb correction for standard sunrise/sunset zenith values
+	upperLimb := zenith <= 91 && zenith >= 90
+	rise, set, _ := calculateSunRiseSetTransit(dayStart.Unix(), latitude, longitude, altit, upperLimb)
 	if isSunrise {
-		tApprox = dayOfYear + (6-lngHour)/24
-	} else {
-		tApprox = dayOfYear + (18-lngHour)/24
+		return rise
 	}
-	M := 0.9856*tApprox - 3.289
-	L := M + 1.916*math.Sin(degreesToRadians(M)) + 0.020*math.Sin(degreesToRadians(2*M)) + 282.634
-	for L < 0 {
-		L += 360
-	}
-	for L >= 360 {
-		L -= 360
-	}
-	RA := radiansToDegrees(math.Atan(0.91764 * math.Tan(degreesToRadians(L))))
-	for RA < 0 {
-		RA += 360
-	}
-	for RA >= 360 {
-		RA -= 360
-	}
-	Lquadrant := math.Floor(L/90) * 90
-	RAquadrant := math.Floor(RA/90) * 90
-	RA = RA + (Lquadrant - RAquadrant)
-	RA = RA / 15
-	sinDec := 0.39782 * math.Sin(degreesToRadians(L))
-	cosDec := math.Cos(math.Asin(sinDec))
-	cosH := (math.Cos(degreesToRadians(zenith)) - sinDec*math.Sin(degreesToRadians(latitude))) / (cosDec * math.Cos(degreesToRadians(latitude)))
-	if cosH > 1 || cosH < -1 {
-		return math.NaN()
-	}
-	var H float64
-	if isSunrise {
-		H = 360 - radiansToDegrees(math.Acos(cosH))
-	} else {
-		H = radiansToDegrees(math.Acos(cosH))
-	}
-	H = H / 15
-	T := H + RA - 0.06571*tApprox - 6.622
-	UT := T - lngHour
-	for UT < 0 {
-		UT += 24
-	}
-	for UT >= 24 {
-		UT -= 24
-	}
-	return UT
+	return set
 }
 
 // > func bool date_default_timezone_set ( string $timezoneId )
@@ -1298,41 +1354,44 @@ func fncDateSunInfo(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	longitude := float64(args[2].AsFloat(ctx))
 	t := time.Unix(timestamp, 0).UTC()
 	dayStart := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
+	midnightTS := dayStart.Unix()
+
 	result := phpv.NewZArray()
-	sunriseUT := calculateSunTime(dayStart.Unix(), latitude, longitude, solarZenithSunrise, true)
-	sunsetUT := calculateSunTime(dayStart.Unix(), latitude, longitude, solarZenithSunrise, false)
-	if math.IsNaN(sunriseUT) {
+
+	// Sunrise/sunset: altit = -50/60 degrees, upperLimb = true
+	rise, set, transit := calculateSunRiseSetTransit(midnightTS, latitude, longitude, -50.0/60.0, true)
+	if math.IsNaN(rise) {
 		result.OffsetSet(ctx, phpv.ZString("sunrise"), phpv.ZBool(false).ZVal())
 	} else {
-		result.OffsetSet(ctx, phpv.ZString("sunrise"), phpv.ZInt(dayStart.Unix()+int64(sunriseUT*3600)).ZVal())
+		result.OffsetSet(ctx, phpv.ZString("sunrise"), phpv.ZInt(midnightTS+int64(rise*3600)).ZVal())
 	}
-	if math.IsNaN(sunsetUT) {
+	if math.IsNaN(set) {
 		result.OffsetSet(ctx, phpv.ZString("sunset"), phpv.ZBool(false).ZVal())
 	} else {
-		result.OffsetSet(ctx, phpv.ZString("sunset"), phpv.ZInt(dayStart.Unix()+int64(sunsetUT*3600)).ZVal())
+		result.OffsetSet(ctx, phpv.ZString("sunset"), phpv.ZInt(midnightTS+int64(set*3600)).ZVal())
 	}
-	transit := (sunriseUT + sunsetUT) / 2
-	result.OffsetSet(ctx, phpv.ZString("transit"), phpv.ZInt(dayStart.Unix()+int64(transit*3600)).ZVal())
+	result.OffsetSet(ctx, phpv.ZString("transit"), phpv.ZInt(midnightTS+int64(transit*3600)).ZVal())
+
+	// Twilight calculations with different altitudes, no upper limb correction
 	for _, tw := range []struct {
-		zenith   float64
+		altit    float64
 		beginKey string
 		endKey   string
 	}{
-		{96, "civil_twilight_begin", "civil_twilight_end"},
-		{102, "nautical_twilight_begin", "nautical_twilight_end"},
-		{108, "astronomical_twilight_begin", "astronomical_twilight_end"},
+		{-6.0, "civil_twilight_begin", "civil_twilight_end"},
+		{-12.0, "nautical_twilight_begin", "nautical_twilight_end"},
+		{-18.0, "astronomical_twilight_begin", "astronomical_twilight_end"},
 	} {
-		begin := calculateSunTime(dayStart.Unix(), latitude, longitude, tw.zenith, true)
-		end := calculateSunTime(dayStart.Unix(), latitude, longitude, tw.zenith, false)
+		begin, end, _ := calculateSunRiseSetTransit(midnightTS, latitude, longitude, tw.altit, false)
 		if math.IsNaN(begin) {
 			result.OffsetSet(ctx, phpv.ZString(tw.beginKey), phpv.ZBool(false).ZVal())
 		} else {
-			result.OffsetSet(ctx, phpv.ZString(tw.beginKey), phpv.ZInt(dayStart.Unix()+int64(begin*3600)).ZVal())
+			result.OffsetSet(ctx, phpv.ZString(tw.beginKey), phpv.ZInt(midnightTS+int64(begin*3600)).ZVal())
 		}
 		if math.IsNaN(end) {
 			result.OffsetSet(ctx, phpv.ZString(tw.endKey), phpv.ZBool(false).ZVal())
 		} else {
-			result.OffsetSet(ctx, phpv.ZString(tw.endKey), phpv.ZInt(dayStart.Unix()+int64(end*3600)).ZVal())
+			result.OffsetSet(ctx, phpv.ZString(tw.endKey), phpv.ZInt(midnightTS+int64(end*3600)).ZVal())
 		}
 	}
 	return result.ZVal(), nil

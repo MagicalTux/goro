@@ -309,11 +309,13 @@ func fncGmdate(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
+	// Use GMT (not UTC) so that the 'T' format outputs "GMT" matching PHP behavior
+	gmtLoc := time.FixedZone("GMT", 0)
 	var t time.Time
 	if ts != nil {
-		t = time.Unix(int64(*ts), 0).UTC()
+		t = time.Unix(int64(*ts), 0).In(gmtLoc)
 	} else {
-		t = time.Now().UTC()
+		t = time.Now().In(gmtLoc)
 	}
 
 	result := phpDateFormat(string(format), t)

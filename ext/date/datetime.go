@@ -545,7 +545,22 @@ func getTimezoneMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal
 	if !ok {
 		return phpv.ZBool(false).ZVal(), nil
 	}
-	tzObj, err := phpobj.NewZObject(ctx, DateTimeZone, phpv.ZString(t.Location().String()).ZVal())
+	locStr := t.Location().String()
+	if locStr == "" {
+		// When strtotime parses a numeric offset like "+05:00", Go returns
+		// time.FixedZone("", offset) — the location name is empty.
+		// Reconstruct the offset string from the actual zone offset.
+		_, offset := t.Zone()
+		sign := "+"
+		if offset < 0 {
+			sign = "-"
+			offset = -offset
+		}
+		hours := offset / 3600
+		mins := (offset % 3600) / 60
+		locStr = fmt.Sprintf("%s%02d:%02d", sign, hours, mins)
+	}
+	tzObj, err := phpobj.NewZObject(ctx, DateTimeZone, phpv.ZString(locStr).ZVal())
 	if err != nil {
 		return nil, err
 	}
@@ -711,12 +726,14 @@ func diffMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*php
 	}
 
 	// Compute remaining hours/minutes/seconds using actual elapsed time.
-	// Build a reference point: same wall-clock as 'from' but on the
-	// target date, in the 'to' timezone. This ensures DST transitions
-	// are accounted for correctly.
-	h1, min1, s1 := from.Clock()
-	ref := time.Date(y1+years, m1+time.Month(months), d1+days, h1, min1, s1, 0, from.Location())
-	remainSec := int(to.Unix() - ref.Unix())
+	// Use midnight-based approach to avoid DST fold ambiguity.
+	// During DST fall-back, time.Date() always picks fold=0 for ambiguous
+	// wall-clock times, but 'from' might be in fold=1. Midnight (00:00)
+	// is never in the DST fold, so time.Date at midnight is always unambiguous.
+	midnightFrom := time.Date(y1, time.Month(int(m1)), d1, 0, 0, 0, 0, from.Location()).Unix()
+	midnightTarget := time.Date(y1+years, time.Month(int(m1)+months), d1+days, 0, 0, 0, 0, from.Location()).Unix()
+	refUnix := from.Unix() + (midnightTarget - midnightFrom)
+	remainSec := int(to.Unix() - refUnix)
 
 	// If remainSec is negative, we over-counted by one day
 	if remainSec < 0 {
@@ -730,8 +747,9 @@ func diffMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*php
 				years--
 			}
 		}
-		ref = time.Date(y1+years, m1+time.Month(months), d1+days, h1, min1, s1, 0, to.Location())
-		remainSec = int(to.Unix() - ref.Unix())
+		midnightTarget = time.Date(y1+years, time.Month(int(m1)+months), d1+days, 0, 0, 0, 0, from.Location()).Unix()
+		refUnix = from.Unix() + (midnightTarget - midnightFrom)
+		remainSec = int(to.Unix() - refUnix)
 	}
 
 	hours := remainSec / 3600
@@ -1461,6 +1479,9 @@ func createFromFormatParsed(ctx phpv.Context, format string, datetime string, lo
 			if end > di {
 				tzName := datetime[di:end]
 				if l, err := time.LoadLocation(tzName); err == nil {
+					usedLoc = l
+				} else if l, err := parseTzName(tzName); err == nil {
+					// Fall back to abbreviation lookup (e.g. PST, CET)
 					usedLoc = l
 				}
 				di = end
