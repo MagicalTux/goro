@@ -417,23 +417,7 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 		if obj, ok := f.(*phpv.BoundedCallable); ok {
 			this = obj.This
 			args = append(obj.Args, args...)
-			// If the BoundedCallable wraps a MethodCallable, also set the class
-			// context from the inner callable (so static:: works in static methods
-			// called via e.g. register_shutdown_function(array('ClassName', 'method'))).
-			if m, ok2 := obj.Callable.(*phpv.MethodCallable); ok2 && callCtx.class == nil {
-				callCtx.class = m.Class
-				if m.CalledClass != nil {
-					callCtx.calledClass = m.CalledClass
-				} else {
-					callCtx.calledClass = m.Class
-				}
-				if m.Static {
-					callCtx.methodType = "::"
-					this = nil
-				} else {
-					callCtx.methodType = "->"
-				}
-			}
+
 		}
 	}
 

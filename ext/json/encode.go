@@ -235,7 +235,7 @@ func jsonIndent(level int) []byte {
 type jsonState struct {
 	indent        int
 	seen          map[phpv.ZObject]bool
-	seenArrays    map[uintptr]bool
+	seenArrays    map[*phpv.ZArray]bool
 	partialOutput bool
 	lastError     JsonError
 }
@@ -258,25 +258,19 @@ func (st *jsonState) unmarkObject(obj phpv.ZObject) {
 }
 
 func (st *jsonState) markArray(a *phpv.ZArray) bool {
-	// Use the canonical array identity (based on first entry pointer) so that
-	// COW copies of the same array (which share the same underlying first entry)
-	// are treated as the same array for recursion detection. This correctly handles
-	// cases like $a = []; $a[] = &$a; where json_encode receives a COW copy of $a
-	// but $a[0] references the original $a, which shares the same first entry.
-	id := a.H().ArrayIdentity()
 	if st.seenArrays == nil {
-		st.seenArrays = make(map[uintptr]bool)
+		st.seenArrays = make(map[*phpv.ZArray]bool)
 	}
-	if st.seenArrays[id] {
+	if st.seenArrays[a] {
 		return true
 	}
-	st.seenArrays[id] = true
+	st.seenArrays[a] = true
 	return false
 }
 
 func (st *jsonState) unmarkArray(a *phpv.ZArray) {
 	if st.seenArrays != nil {
-		delete(st.seenArrays, a.H().ArrayIdentity())
+		delete(st.seenArrays, a)
 	}
 }
 

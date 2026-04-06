@@ -1,7 +1,6 @@
 package core
 
 import (
-	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
@@ -25,8 +24,7 @@ func fncGetCalledClass(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 	}
 	class := ctx.Class()
 	if class == nil {
-		// PHP 8.3+: throws Error when called outside a class context
-		return nil, phpobj.ThrowError(ctx, phpobj.Error, "get_called_class() must be called from within a class")
+		return phpv.ZFalse.ZVal(), nil
 	}
 	return class.GetName().ZVal(), nil
 }

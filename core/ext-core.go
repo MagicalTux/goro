@@ -113,8 +113,6 @@ func init() {
 			"print":                     {Func: fncPrint, Args: []*phpctx.ExtFunctionArg{}},
 			"require":                   {Func: fncRequire, Args: []*phpctx.ExtFunctionArg{}},
 			"require_once":              {Func: fncRequireOnce, Args: []*phpctx.ExtFunctionArg{}},
-			"get_error_handler":         {Func: fncGetErrorHandler, Args: []*phpctx.ExtFunctionArg{}},
-			"get_exception_handler":     {Func: fncGetExceptionHandler, Args: []*phpctx.ExtFunctionArg{}},
 			"restore_error_handler":     {Func: fncRestoreErrorHandler, Args: []*phpctx.ExtFunctionArg{}},
 			"restore_exception_handler": {Func: fncRestoreExceptionHandler, Args: []*phpctx.ExtFunctionArg{}},
 			"set_error_handler":         {Func: fncSetErrorHandler, Args: []*phpctx.ExtFunctionArg{}},

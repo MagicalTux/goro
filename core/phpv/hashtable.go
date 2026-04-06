@@ -4,7 +4,6 @@ import (
 	"errors"
 	"math"
 	"sync"
-	"unsafe"
 )
 
 // ErrNextElementOccupied is returned by Append when the next integer key
@@ -78,20 +77,6 @@ func (z *ZHashTable) SameData(other *ZHashTable) bool {
 	}
 	// COW copies share the same first node pointer
 	return z.first != nil && z.first == other.first
-}
-
-// ArrayIdentity returns a canonical identity for this hash table suitable for
-// recursion detection. Two hash tables that are COW copies of the same array
-// (and thus share the same underlying data) will return the same identity.
-// For empty arrays (first == nil), the identity is the hash table pointer itself.
-func (z *ZHashTable) ArrayIdentity() uintptr {
-	if z == nil {
-		return 0
-	}
-	if z.first != nil {
-		return uintptr(unsafe.Pointer(z.first))
-	}
-	return uintptr(unsafe.Pointer(z))
 }
 
 func (z *ZHashTable) Dup() *ZHashTable {

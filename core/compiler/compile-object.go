@@ -1461,8 +1461,7 @@ func checkOverloadedRefAssign(ctx phpv.Context, r *runObjectVar) error {
 		if hasGet {
 			// Actually call __get to let it throw its own exceptions if needed.
 			// If __get throws, propagate that exception.
-			// If __get returns successfully, emit "Indirect modification" notice
-			// then throw "Cannot assign by reference to overloaded object".
+			// If __get returns successfully, throw "Cannot assign by reference to overloaded object".
 			_, getErr := r.Run(ctx)
 			if getErr != nil {
 				// __get threw an exception (or some other error) — propagate it.
@@ -1507,7 +1506,7 @@ func (r *runObjectVar) CheckReadonlyRef(ctx phpv.Context) error {
 
 	if zobj.IsReadonlyProperty(propName) && zobj.IsReadonlyPropertyInitialized(propName) {
 		return phpobj.ThrowError(ctx, phpobj.Error,
-			fmt.Sprintf("Cannot modify readonly property %s::$%s", zobj.GetClass().GetName(), propName))
+			fmt.Sprintf("Cannot indirectly modify readonly property %s::$%s", zobj.GetClass().GetName(), propName))
 	}
 	// Check asymmetric visibility for reference creation.
 	// For object-typed properties, PHP returns a copy of the object handle

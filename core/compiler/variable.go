@@ -488,57 +488,9 @@ func (r *runRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		acc.compoundCache = true
 	}
 
-	// PHP 8.3+: Taking a reference to a non-existent property on a class that does not
-	// allow dynamic properties will emit Deprecated + throw Error. Pre-check the object
-	// BEFORE running (which triggers the Deprecated via ObjectSet and may invoke the
-	// error handler which could change the object variable). We remember if we will need
-	// to throw after running.
-	var dynPropRefError error
-	if ov, ok := r.v.(*runObjectVar); ok {
-		propName := ov.varName
-		if len(propName) > 0 && propName[0] != '$' {
-			// Pre-evaluate the object expression to check if the property is dynamic
-			objVal, objErr := ov.ref.Run(ctx)
-			if objErr == nil && objVal != nil {
-				if zobj, ok2 := objVal.Value().(*phpobj.ZObject); ok2 {
-					if !zobj.AllowsDynamicProperties() {
-						// Check if the property is not declared in the class
-						if zobj.FindDeclaredProp(propName) == nil {
-							// Check no magic __get/__set
-							hasMagic := false
-							if zc, ok3 := zobj.GetClass().(*phpobj.ZClass); ok3 {
-								_, hasGet := zc.Methods["__get"]
-								_, hasSet := zc.Methods["__set"]
-								hasMagic = hasGet || hasSet
-							}
-							if !hasMagic {
-								// Only throw if property doesn't already exist (not yet dynamic)
-								if oq, ok4 := objVal.Value().(interface {
-									ObjectGetQuiet(phpv.Context, phpv.Val) (*phpv.ZVal, bool, error)
-								}); ok4 {
-									_, found, _ := oq.ObjectGetQuiet(ctx, phpv.ZString(propName).ZVal())
-									if !found {
-										dynPropRefError = fmt.Errorf("Cannot create dynamic property %s::$%s",
-											zobj.GetClass().GetName(), propName)
-									}
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-	}
-
 	z, err := r.v.Run(ctx)
 	if err != nil {
 		return nil, err
-	}
-
-	// If we pre-detected a dynamic property reference on a non-allowed class, throw Error.
-	// The Deprecated notice was already emitted by ObjectSet during r.v.Run(ctx) above.
-	if dynPropRefError != nil {
-		return nil, phpobj.ThrowError(ctx, phpobj.Error, dynPropRefError.Error())
 	}
 
 	// For non-variable expressions (e.g. function calls), check if the result

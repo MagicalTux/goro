@@ -479,17 +479,22 @@ func stdGetClass(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	if len(args) == 0 {
-		// PHP 8.3+: throws Error when called without args outside a class context (no deprecated notice)
-		if callerCtx.Class() == nil {
-			return nil, phpobj.ThrowError(ctx, phpobj.Error, "get_class() without arguments must be called from within a class")
+		// PHP 8.0+: calling get_class() without arguments is deprecated
+		callerCtx.Deprecated("Calling get_class() without arguments is deprecated", logopt.NoFuncName(true))
+		if callerCtx.This() != nil {
+			object := callerCtx.This()
+			if zo, ok := object.(*phpobj.ZObject); ok {
+				if zc, ok := zo.Class.(*phpobj.ZClass); ok {
+					return zc.Name.ZVal(), nil
+				}
+				return zo.Class.GetName().ZVal(), nil
+			}
+			return object.GetClass().GetName().ZVal(), nil
 		}
-		// PHP 8.0+: calling get_class() without arguments is deprecated when inside a class
-		if err := callerCtx.Deprecated("Calling get_class() without arguments is deprecated", logopt.NoFuncName(true)); err != nil {
-			return nil, err
+		if callerCtx.Class() != nil {
+			return callerCtx.Class().GetName().ZVal(), nil
 		}
-		// PHP: get_class() without args returns the class where the calling method is defined,
-		// not the runtime class of $this. Use callerCtx.Class() for declaring class.
-		return callerCtx.Class().GetName().ZVal(), nil
+		return phpv.ZFalse.ZVal(), nil
 	}
 
 	// With argument, must be object type
@@ -582,32 +587,19 @@ func stdEnumExists(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 // > func string get_parent_class ([ mixed $object ] )
 func stdGetParentClass(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	var class phpv.ZClass
-	var err error
+	var objectArg *phpv.ZVal
 
-	if len(args) == 0 {
-		// No argument: use current class context (deprecated in PHP 8.4+)
-		callerCtx := ctx.Parent(1)
-		if callerCtx == nil {
-			callerCtx = ctx
-		}
-		if depErr := callerCtx.Deprecated("Calling get_parent_class() without arguments is deprecated", logopt.NoFuncName(true)); depErr != nil {
-			return nil, depErr
-		}
-		class = callerCtx.Class()
-		if class == nil {
-			return phpv.ZFalse.ZVal(), nil
-		}
-		parent := class.GetParent()
-		if parent == nil {
-			return phpv.ZFalse.ZVal(), nil
-		}
-		return parent.GetName().ZVal(), nil
+	_, err := core.Expand(ctx, args, &objectArg)
+	if err != nil {
+		return nil, err
 	}
 
-	objectArg := args[0]
+	var class phpv.ZClass
 
-	if objectArg.GetType() == phpv.ZtString {
+	if objectArg == nil || (len(args) == 0) {
+		// No argument: use current class context
+		class = ctx.Class()
+	} else if objectArg.GetType() == phpv.ZtString {
 		// Class name as string - try to resolve it (with autoload)
 		class, err = ctx.Global().GetClass(ctx, objectArg.AsString(ctx), true)
 		if err != nil {

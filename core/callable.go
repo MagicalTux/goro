@@ -523,13 +523,6 @@ func spawnCallableInternal(ctx phpv.Context, v *phpv.ZVal, paramNo int) (phpv.Ca
 			if member.Modifiers.IsStatic() {
 				return phpv.BindClass(member.Method, class, true), nil
 			}
-			// IncRef the instance so that a temporary `new Foo()` expression is not
-			// destroyed at statement end when the constructor stored $this in a callable
-			// (e.g. register_shutdown_function(array($this, 'method'))). The refcount
-			// signal prevents runDestroyTemporary from calling __destruct immediately.
-			if ir, ok := instance.(interface{ IncRef() }); ok {
-				ir.IncRef()
-			}
 			method := phpv.Bind(member.Method, instance)
 			return method, nil
 		}

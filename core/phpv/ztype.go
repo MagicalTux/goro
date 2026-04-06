@@ -218,27 +218,13 @@ func (z ZFloat) AsVal(ctx Context, t ZType) (Val, error) {
 	case ZtBool:
 		return ZBool(z != 0), nil
 	case ZtInt:
-		if math.IsNaN(f) || math.IsInf(f, 0) || f >= float64(math.MaxInt64) || f < float64(math.MinInt64) {
+		if math.IsNaN(f) || math.IsInf(f, 0) || f > math.MaxInt64 || f < math.MinInt64 {
 			if ctx != nil {
 				if err := ctx.Warn("The float %s is not representable as an int, cast occurred", FormatFloat(f), logopt.NoFuncName(true)); err != nil {
 					return ZInt(0), err
 				}
 			}
-			// Match PHP's behavior: values in [MaxInt64, 2*MaxInt64+2) wrap to MinInt64 (x86-64 CVTTSD2SI),
-			// values >= 2*MaxInt64+2 (or NaN/Inf) return 0. For negative, values < MinInt64 return MinInt64.
-			// Specifically: float64(math.MaxInt64) = 9.223372036854776e18, and values up to but not
-			// including 1.8446744073709552e19 (= 2^64 as float) wrap to MinInt64.
-			// This matches PHP's zend_dval_to_lval behavior on LP64 systems.
-			const maxUint64F = 1.8446744073709552e19 // float64(math.MaxUint64 + 1) = 2^64
-			if f >= maxUint64F || f < float64(math.MinInt64)*2 {
-				return ZInt(0), nil
-			}
-			if f >= 0 {
-				// Values between MaxInt64 and 2^64: C's CVTTSD2SI returns MinInt64 (0x8000000000000000)
-				return ZInt(math.MinInt64), nil
-			}
-			// Negative overflow near MinInt64: also MinInt64
-			return ZInt(math.MinInt64), nil
+			return ZInt(0), nil
 		}
 		return ZInt(z), nil
 	case ZtFloat:
@@ -424,18 +410,13 @@ func (v ZFloat) Value() Val {
 // has a non-zero fractional part.
 func FloatToIntImplicit(ctx Context, f ZFloat) (ZInt, error) {
 	fv := float64(f)
-	if math.IsNaN(fv) || math.IsInf(fv, 0) || fv >= float64(math.MaxInt64) || fv < float64(math.MinInt64) {
+	if math.IsNaN(fv) || math.IsInf(fv, 0) || fv > math.MaxInt64 || fv < math.MinInt64 {
 		if ctx != nil {
 			if err := ctx.Warn("The float %s is not representable as an int, cast occurred", FormatFloat(fv), logopt.NoFuncName(true)); err != nil {
 				return ZInt(0), err
 			}
 		}
-		// Match PHP's behavior: values in [MaxInt64, 2^64) return MinInt64, others return 0
-		const maxUint64F = 1.8446744073709552e19
-		if fv >= maxUint64F || fv < float64(math.MinInt64)*2 {
-			return ZInt(0), nil
-		}
-		return ZInt(math.MinInt64), nil
+		return ZInt(0), nil
 	}
 	// Check if the float has a fractional part
 	if fv != math.Trunc(fv) {

@@ -11,14 +11,9 @@ import (
 	"github.com/MagicalTux/goro/core/logopt"
 )
 
-// FloatToIntCapped converts a float to int, capping at INT64_MAX/MIN for out-of-range values.
+// floatToIntCapped converts a float to int, capping at INT64_MAX/MIN for out-of-range values.
 // This matches PHP's behavior for string-to-int conversion where large float strings
 // are capped rather than returning 0.
-func FloatToIntCapped(f float64) ZInt {
-	return floatToIntCapped(f)
-}
-
-// floatToIntCapped converts a float to int, capping at INT64_MAX/MIN for out-of-range values.
 func floatToIntCapped(f float64) ZInt {
 	if math.IsNaN(f) {
 		return ZInt(0)

@@ -134,7 +134,6 @@ type GlobalContext interface {
 	GetUserErrorHandler() (Callable, PhpErrorType, *ZVal)
 	SetUserErrorHandler(handler Callable, filter PhpErrorType, originalVal *ZVal)
 	RestoreUserErrorHandler()
-	GetUserExceptionHandlerOriginalVal() *ZVal
 	SetUserExceptionHandler(handler Callable, originalVal *ZVal) *ZVal
 	RestoreUserExceptionHandler()
 
