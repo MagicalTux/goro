@@ -591,10 +591,74 @@ var militaryTZAbbrevs = map[string]int{
 	"z": 0,       // Zulu = UTC+0
 }
 
+// canonicalTZForAbbrev maps common timezone abbreviations to their canonical/primary
+// IANA timezone identifier. This matches PHP's static timezonemap.h ordering where
+// specific zones are listed first for each abbreviation.
+// Without this, alphabetical zone ordering puts Africa/* before Europe/* for CET,
+// America/Cancun before America/New_York for EDT, etc.
+var canonicalTZForAbbrev = map[string]string{
+	"acdt":  "Australia/Adelaide",
+	"acst":  "Australia/Darwin",
+	"adt":   "America/Halifax",
+	"aedt":  "Australia/Sydney",
+	"aest":  "Australia/Sydney",
+	"akdt":  "America/Anchorage",
+	"akst":  "America/Anchorage",
+	"ast":   "America/Halifax",
+	"awst":  "Australia/Perth",
+	"brst":  "America/Sao_Paulo",
+	"brt":   "America/Sao_Paulo",
+	"bst":   "Europe/London",
+	"cat":   "Africa/Harare",
+	"cdt":   "America/Chicago",
+	"cest":  "Europe/Paris",
+	"cet":   "Europe/Berlin",
+	"cst":   "America/Chicago",
+	"eat":   "Africa/Nairobi",
+	"edt":   "America/New_York",
+	"eest":  "Europe/Helsinki",
+	"eet":   "Europe/Helsinki",
+	"est":   "America/New_York",
+	"gmt":   "UTC",
+	"hdt":   "America/Adak",
+	"hkt":   "Asia/Hong_Kong",
+	"hst":   "Pacific/Honolulu",
+	"ict":   "Asia/Bangkok",
+	"idt":   "Asia/Jerusalem",
+	"ist":   "Asia/Calcutta",
+	"jst":   "Asia/Tokyo",
+	"kst":   "Asia/Seoul",
+	"mdt":   "America/Denver",
+	"met":   "Europe/Paris",
+	"mest":  "Europe/Paris",
+	"msk":   "Europe/Moscow",
+	"mst":   "America/Denver",
+	"ndt":   "America/St_Johns",
+	"nst":   "America/St_Johns",
+	"nzdt":  "Pacific/Auckland",
+	"nzst":  "Pacific/Auckland",
+	"pdt":   "America/Los_Angeles",
+	"pst":   "America/Los_Angeles",
+	"sgt":   "Asia/Singapore",
+	"utc":   "UTC",
+	"wat":   "Africa/Lagos",
+	"west":  "Europe/Lisbon",
+	"wet":   "Europe/Lisbon",
+}
+
+// tzAbbrevEpoch is the earliest Unix timestamp considered "modern" for timezone
+// abbreviation inclusion. Types only used in pre-epoch transitions are excluded.
+// Using 0 (1970-01-01) excludes purely historical abbreviations like Botswana's
+// SAST (UTC+1:30) which was replaced by CAT (UTC+2) in 1903.
+var tzAbbrevEpoch = time.Unix(0, 0)
+
+// tzAbbrevFuture is used as the "to" time when scanning modern transitions.
+var tzAbbrevFuture = time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC)
+
 // buildTZAbbrevMap builds the complete PHP timezone abbreviation map from all IANA zones.
-// For each zone, it uses only the LAST occurrence of each (abbreviation, IsDST) pair,
-// which corresponds to the "current" or most recent offset for that abbreviation.
-// This matches PHP's behavior where only current (non-historical) types are included.
+// For each zone, it collects only the types that are actively used in post-1970 transitions
+// OR that represent the current/ongoing zone type, excluding purely historical types.
+// This matches PHP's behavior where only current/relevant types are included.
 // It also adds military timezone abbreviations (a-z) to match PHP's 144-entry count.
 // The result is a map from lowercase abbreviation to []tzAbbrevEntry, de-duplicated
 // across all zones by (abbr, offset, tzID).
@@ -607,6 +671,8 @@ func buildTZAbbrevMap() map[string][]tzAbbrevEntry {
 	// globalSeen prevents duplicate (abbr, offset, tzID) entries across all zones.
 	globalSeen := make(map[globalKey]bool)
 	result := make(map[string][]tzAbbrevEntry)
+
+	now := time.Now()
 
 	// Process all IANA zones plus UTC
 	allZones := make([]string, len(allIANAZones)+1)
@@ -624,14 +690,40 @@ func buildTZAbbrevMap() map[string][]tzAbbrevEntry {
 		}
 		types := zone.Types()
 
-		// For each zone, keep only the LAST occurrence of each (abbr, isDST) pair
+		// Determine which type indices are "active": either used by post-epoch
+		// transitions or is the current type. This excludes purely historical
+		// types (e.g. SAST at UTC+1:30 for Africa/Gaborone, last used in 1903).
+		activeTypeIdx := make(map[int]bool)
+
+		// Always include the current type.
+		currentType := zone.Lookup(now)
+		// Find the type index by matching abbr+offset+isDST
+		for i, zt := range types {
+			if zt.Abbrev == currentType.Abbrev && zt.Offset == currentType.Offset && zt.IsDST == currentType.IsDST {
+				activeTypeIdx[i] = true
+				break
+			}
+		}
+
+		// Include types used by post-epoch transitions.
+		transitions := zone.TransitionsForRange(tzAbbrevEpoch, tzAbbrevFuture)
+		for _, tr := range transitions {
+			if tr.Type >= 0 && tr.Type < len(types) {
+				activeTypeIdx[tr.Type] = true
+			}
+		}
+
+		// For each active type, keep only the LAST occurrence of each (abbr, isDST) pair
 		// to get the current/most-recent offset for that abbreviation.
 		type localKey struct {
 			abbr  string
 			isDST bool
 		}
 		lastType := make(map[localKey]gotz.ZoneType)
-		for _, zt := range types {
+		for i, zt := range types {
+			if !activeTypeIdx[i] {
+				continue
+			}
 			abbr := strings.ToLower(zt.Abbrev)
 			if abbr == "" || abbr == "zzz" || abbr == "lmt" {
 				continue
@@ -665,6 +757,55 @@ func buildTZAbbrevMap() map[string][]tzAbbrevEntry {
 	for abbr, offset := range militaryTZAbbrevs {
 		if _, exists := result[abbr]; !exists {
 			result[abbr] = []tzAbbrevEntry{{dst: false, offset: offset, tzID: ""}}
+		}
+	}
+
+	// phpCompatAbbrevs adds PHP-static-map entries for abbreviations that no longer
+	// appear in modern IANA data (because countries like Brazil replaced named DST
+	// abbreviations with numeric offsets like "-02"). PHP's timezonemap.h was built
+	// from an older IANA snapshot and still maps these abbreviations.
+	// Only add if not already present (real IANA data takes precedence).
+	type phpCompatEntry struct {
+		abbr   string
+		dst    bool
+		offset int
+		tzID   string
+	}
+	phpCompatAbbrevs := []phpCompatEntry{
+		// Brazil Summer Time: Brazil abolished DST in 2019; modern IANA uses numeric "-02".
+		{"brst", true, -7200, "America/Sao_Paulo"},
+		{"brt", false, -10800, "America/Sao_Paulo"},
+	}
+	for _, pc := range phpCompatAbbrevs {
+		gk := globalKey{abbr: pc.abbr, offset: pc.offset, tzID: pc.tzID}
+		if !globalSeen[gk] {
+			globalSeen[gk] = true
+			result[pc.abbr] = append(result[pc.abbr], tzAbbrevEntry{
+				dst:    pc.dst,
+				offset: pc.offset,
+				tzID:   pc.tzID,
+			})
+		}
+	}
+
+	// Reorder entries so canonical/primary zones come first, matching PHP's
+	// static timezonemap.h ordering. Without this, Africa/* zones precede
+	// Europe/* and America/* alphabetically, giving wrong first entries for
+	// abbreviations like CET (Africa/Algiers before Europe/Berlin).
+	for abbr, canonical := range canonicalTZForAbbrev {
+		entries := result[abbr]
+		if len(entries) == 0 {
+			continue
+		}
+		// Find the canonical entry and move it to the front.
+		for i, e := range entries {
+			if e.tzID == canonical {
+				if i != 0 {
+					entries[0], entries[i] = entries[i], entries[0]
+					result[abbr] = entries
+				}
+				break
+			}
 		}
 	}
 
@@ -786,6 +927,7 @@ func fncTimezoneNameFromAbbr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, e
 	}
 
 	abbrStr := string(abbr)
+	abbrUpper := strings.ToUpper(abbrStr)
 	abbrLower := strings.ToLower(abbrStr)
 
 	// Build the abbreviation map (cached)
@@ -793,10 +935,15 @@ func fncTimezoneNameFromAbbr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, e
 		tzAbbrevCache = buildTZAbbrevMap()
 	})
 
-	// Step 1: If abbreviation is non-empty, look it up directly
+	// Step 1: If abbreviation is non-empty, look it up directly.
+	// GMT and UTC are special-cased to always return "UTC" (PHP behavior).
 	if abbrStr != "" {
+		if abbrUpper == "GMT" || abbrUpper == "UTC" {
+			return phpv.ZString("UTC").ZVal(), nil
+		}
 		if entries, ok := tzAbbrevCache[abbrLower]; ok {
-			// PHP returns the first entry with a non-empty timezone_id
+			// PHP returns the first entry with a non-empty timezone_id,
+			// regardless of the utcOffset parameter (offset only filters in step 2).
 			for _, e := range entries {
 				if e.tzID != "" {
 					return phpv.ZString(e.tzID).ZVal(), nil
@@ -805,7 +952,8 @@ func fncTimezoneNameFromAbbr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, e
 		}
 	}
 
-	// Step 2: If offset is provided, search by offset (and optionally DST)
+	// Step 2: Search by offset (and optionally DST). Used when abbr is empty
+	// or not found in the abbreviation database.
 	offset := int64(-1)
 	if utcOffset.HasArg() {
 		offset = int64(utcOffset.Get())
@@ -815,11 +963,59 @@ func fncTimezoneNameFromAbbr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, e
 		wantDST = int64(isDST.Get())
 	}
 
-	if offset >= -1 {
+	if offset != -1 || wantDST != -1 {
 		// Search through the abbreviation database for matching offset
 		// PHP iterates the abbreviation list and returns the first match
 		// with a matching offset and (if isDST is specified) DST flag.
-		// Collect all keys sorted for deterministic behavior.
+		// We use a two-pass approach to match PHP's static timezonemap.h ordering:
+		//   Pass 1: Check only the canonical (first) entry for each canonical abbreviation.
+		//           This ensures "edt"/"America/New_York" wins over non-canonical "cdt"
+		//           entries (Cuba's CDT also uses -14400) for offset=-14400 DST=1.
+		//   Pass 2: Check all entries of all remaining (non-canonical) abbreviations.
+
+		entryMatches := func(e tzAbbrevEntry) bool {
+			if e.tzID == "" {
+				return false
+			}
+			if offset != -1 && e.offset != int(offset) {
+				return false
+			}
+			if wantDST != -1 {
+				eDST := 0
+				if e.dst {
+					eDST = 1
+				}
+				if int64(eDST) != wantDST {
+					return false
+				}
+			}
+			return true
+		}
+
+		// First pass: canonical abbreviations, check only the canonical (first) entry.
+		canonicalKeys := make([]string, 0, len(canonicalTZForAbbrev))
+		for k := range canonicalTZForAbbrev {
+			canonicalKeys = append(canonicalKeys, k)
+		}
+		sort.Strings(canonicalKeys)
+
+		for _, k := range canonicalKeys {
+			entries, ok := tzAbbrevCache[k]
+			if !ok || len(entries) == 0 {
+				continue
+			}
+			// Only check the first (canonical) entry in pass 1.
+			if entryMatches(entries[0]) {
+				return phpv.ZString(entries[0].tzID).ZVal(), nil
+			}
+		}
+
+		// Second pass: all abbreviations in alphabetical order (checking all entries).
+		// This catches non-canonical abbreviations and non-canonical entries.
+		canonicalSet := make(map[string]bool, len(canonicalTZForAbbrev))
+		for k := range canonicalTZForAbbrev {
+			canonicalSet[k] = true
+		}
 		keys := make([]string, 0, len(tzAbbrevCache))
 		for k := range tzAbbrevCache {
 			keys = append(keys, k)
@@ -828,23 +1024,15 @@ func fncTimezoneNameFromAbbr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, e
 
 		for _, k := range keys {
 			entries := tzAbbrevCache[k]
-			for _, e := range entries {
-				if e.tzID == "" {
-					continue
+			startIdx := 0
+			// For canonical abbreviations, skip the first entry (already checked in pass 1).
+			if canonicalSet[k] {
+				startIdx = 1
+			}
+			for _, e := range entries[startIdx:] {
+				if entryMatches(e) {
+					return phpv.ZString(e.tzID).ZVal(), nil
 				}
-				if offset != -1 && e.offset != int(offset) {
-					continue
-				}
-				if wantDST != -1 {
-					eDST := 0
-					if e.dst {
-						eDST = 1
-					}
-					if int64(eDST) != wantDST {
-						continue
-					}
-				}
-				return phpv.ZString(e.tzID).ZVal(), nil
 			}
 		}
 	}
