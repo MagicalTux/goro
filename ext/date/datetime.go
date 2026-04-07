@@ -734,15 +734,19 @@ func diffMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*php
 	//   occurs twice.
 	var remainSec int
 	if days > 0 || months > 0 || years > 0 {
-		// Multi-day: wall-clock time-of-day difference, adjusted for UTC offset change.
-		// PHP includes the UTC offset difference between from and to in the time
-		// portion of the diff. This applies whether both times are in the same IANA
-		// timezone (type 3, e.g. EDT→EST) or different fixed-offset zones (type 2).
+		// Multi-day: wall-clock time-of-day difference.
+		// When from and to are in different timezone objects (type 1/2: fixed offsets
+		// like EDT and EST), PHP includes the UTC offset difference in the time calc.
+		// When they share the same IANA timezone (type 3: America/New_York), the
+		// wall-clock time already reflects the DST transition, so no adjustment.
 		fromSod := from.Hour()*3600 + from.Minute()*60 + from.Second()
 		toSod := to.Hour()*3600 + to.Minute()*60 + to.Second()
-		_, fromOff := from.Zone()
-		_, toOff := to.Zone()
-		dstAdj := fromOff - toOff // e.g., EDT(-4) to EST(-5): -14400-(-18000) = +3600
+		dstAdj := 0
+		if from.Location().String() != to.Location().String() {
+			_, fromOff := from.Zone()
+			_, toOff := to.Zone()
+			dstAdj = fromOff - toOff
+		}
 		remainSec = toSod - fromSod + dstAdj
 		if remainSec < 0 {
 			// Borrow one day
