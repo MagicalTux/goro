@@ -247,7 +247,7 @@ func phpDateFormat(format string, t time.Time) string {
 			_, offset := t.Zone()
 			// "Z" only for UTC, fixed +00:00, or other fixed zero-offset timezones.
 			// Named timezones like Europe/London with offset 0 get "+00:00".
-			isFixedZero := offset == 0 && (locName == "UTC" || locName == "+00:00" || locName == "Z" ||
+			isFixedZero := offset == 0 && (locName == "UTC" || locName == "+00:00" || locName == "Z" || locName == "" ||
 				(len(locName) > 0 && (locName[0] == '+' || locName[0] == '-')))
 			if isFixedZero {
 				buf.WriteString("Z")
