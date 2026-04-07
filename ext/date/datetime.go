@@ -470,6 +470,67 @@ func setTimeImmutableMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv
 	return newObj.ZVal(), nil
 }
 
+// getMicrosecondMethod implements DateTime::getMicrosecond(): int
+func getMicrosecondMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if err := checkDateTimeInitialized(ctx, this); err != nil {
+		return nil, err
+	}
+	t, ok := getTime(this)
+	if !ok {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	return phpv.ZInt(t.Nanosecond() / 1000).ZVal(), nil
+}
+
+// setMicrosecondMethod implements DateTime::setMicrosecond(int $microsecond): static
+func setMicrosecondMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) < 1 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "DateTime::setMicrosecond() expects exactly 1 argument")
+	}
+	if err := checkDateTimeInitialized(ctx, this); err != nil {
+		return nil, err
+	}
+	micro := int(args[0].AsInt(ctx))
+	if micro < 0 || micro > 999999 {
+		return nil, phpobj.ThrowError(ctx, DateRangeError, fmt.Sprintf("DateTime::setMicrosecond(): Argument #1 ($microsecond) must be between 0 and 999999, %d given", micro))
+	}
+	t, ok := getTime(this)
+	if !ok {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	y, mo, d := t.Date()
+	newT := time.Date(y, mo, d, t.Hour(), t.Minute(), t.Second(), micro*1000, t.Location())
+	setTimeVal(this, newT)
+	return this.ZVal(), nil
+}
+
+// setMicrosecondImmutableMethod implements DateTimeImmutable::setMicrosecond(int $microsecond): static
+func setMicrosecondImmutableMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	if len(args) < 1 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "DateTimeImmutable::setMicrosecond() expects exactly 1 argument")
+	}
+	if err := checkDateTimeInitialized(ctx, this); err != nil {
+		return nil, err
+	}
+	micro := int(args[0].AsInt(ctx))
+	if micro < 0 || micro > 999999 {
+		return nil, phpobj.ThrowError(ctx, DateRangeError, fmt.Sprintf("DateTimeImmutable::setMicrosecond(): Argument #1 ($microsecond) must be between 0 and 999999, %d given", micro))
+	}
+	t, ok := getTime(this)
+	if !ok {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	y, mo, d := t.Date()
+	newT := time.Date(y, mo, d, t.Hour(), t.Minute(), t.Second(), micro*1000, t.Location())
+	actualClass := this.Class
+	newObj, err := phpobj.NewZObject(ctx, actualClass)
+	if err != nil {
+		return nil, err
+	}
+	setTimeVal(newObj, newT)
+	return newObj.ZVal(), nil
+}
+
 // getOffsetMethod implements DateTime::getOffset(): int
 func getOffsetMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if err := checkDateTimeInitialized(ctx, this); err != nil {
@@ -790,12 +851,31 @@ func diffMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*php
 	toUTC := time.Date(to.Year(), to.Month(), to.Day(), to.Hour(), to.Minute(), to.Second(), 0, time.UTC)
 	totalDays := int((toUTC.Unix() - fromUTC.Unix()) / 86400)
 
+	// Calculate microsecond fraction
+	fromUsec := from.Nanosecond() / 1000
+	toUsec := to.Nanosecond() / 1000
+	usecDiff := toUsec - fromUsec
+	if usecDiff < 0 {
+		usecDiff += 1000000
+		seconds--
+		if seconds < 0 {
+			seconds += 60
+			minutes--
+			if minutes < 0 {
+				minutes += 60
+				hours--
+			}
+		}
+	}
+	fraction := float64(usecDiff) / 1000000.0
+
 	intervalObj.ObjectSet(ctx, phpv.ZString("y"), phpv.ZInt(years).ZVal())
 	intervalObj.ObjectSet(ctx, phpv.ZString("m"), phpv.ZInt(months).ZVal())
 	intervalObj.ObjectSet(ctx, phpv.ZString("d"), phpv.ZInt(days).ZVal())
 	intervalObj.ObjectSet(ctx, phpv.ZString("h"), phpv.ZInt(hours).ZVal())
 	intervalObj.ObjectSet(ctx, phpv.ZString("i"), phpv.ZInt(minutes).ZVal())
 	intervalObj.ObjectSet(ctx, phpv.ZString("s"), phpv.ZInt(seconds).ZVal())
+	intervalObj.ObjectSet(ctx, phpv.ZString("f"), phpv.ZFloat(fraction).ZVal())
 	intervalObj.ObjectSet(ctx, phpv.ZString("days"), phpv.ZInt(totalDays).ZVal())
 	if invert && !absolute {
 		intervalObj.ObjectSet(ctx, phpv.ZString("invert"), phpv.ZInt(1).ZVal())
@@ -1068,21 +1148,26 @@ func createFromTimestampStatic(targetClass *phpobj.ZClass) func(ctx phpv.Context
 		val := args[0]
 
 		var t time.Time
+		// Use a fixed zone "+00:00" (type 1) not Go's UTC (type 3) per PHP behavior
+		utcOffset := time.FixedZone("+00:00", 0)
 		if val.GetType() == phpv.ZtFloat {
 			f := float64(val.AsFloat(ctx))
 			if math.IsNaN(f) || math.IsInf(f, 0) {
 				return nil, phpobj.ThrowError(ctx, phpobj.ValueError, fmt.Sprintf("%s::createFromTimestamp(): Argument #1 ($timestamp) must be a finite number, %s given", targetClass.Name, val.AsString(ctx)))
 			}
-			sec := int64(f)
-			nsec := int64((f - float64(sec)) * 1e9)
-			if nsec < 0 {
+			// PHP rounds to microsecond precision (6 decimal places)
+			usec := math.Round(f * 1e6)
+			sec := int64(usec / 1e6)
+			usecRemainder := int64(usec) - sec*1e6
+			if usecRemainder < 0 {
 				sec--
-				nsec += 1e9
+				usecRemainder += 1e6
 			}
-			t = time.Unix(sec, nsec).UTC()
+			nsec := usecRemainder * 1000
+			t = time.Unix(sec, nsec).In(utcOffset)
 		} else {
 			ts := val.AsInt(ctx)
-			t = time.Unix(int64(ts), 0).UTC()
+			t = time.Unix(int64(ts), 0).In(utcOffset)
 		}
 
 		actualClass := getCalledClassForStatic(ctx, targetClass)
@@ -1528,7 +1613,23 @@ func createFromFormatParsed(ctx phpv.Context, format string, datetime string, lo
 			if end > di {
 				var ts int64
 				fmt.Sscanf(datetime[di:end], "%d", &ts)
-				return time.Unix(ts, 0).In(loc), true
+				// Don't return immediately - continue parsing the remaining format
+				// to handle subsequent format chars like .u (microseconds)
+				tFromU := time.Unix(ts, 0).In(loc)
+				year = tFromU.Year()
+				month = int(tFromU.Month())
+				day = tFromU.Day()
+				hour = tFromU.Hour()
+				minute = tFromU.Minute()
+				second = tFromU.Second()
+				yearSet = true
+				monthSet = true
+				daySet = true
+				hourSet = true
+				minuteSet = true
+				secondSet = true
+				usedLoc = tFromU.Location()
+				di = end
 			}
 		case 'M', 'F': // month name (short or full)
 			end := di
@@ -1706,6 +1807,11 @@ func restoreSubclassProps(ctx phpv.Context, obj *phpobj.ZObject, arr *phpv.ZArra
 	for it.Valid(ctx) {
 		k, _ := it.Key(ctx)
 		v, _ := it.Current(ctx)
+		// Skip integer keys - only string keys are property names
+		if k.GetType() == phpv.ZtInt {
+			it.Next(ctx)
+			continue
+		}
 		ks := string(k.AsString(ctx))
 		if standardProps[ks] {
 			it.Next(ctx)
@@ -2127,6 +2233,25 @@ func init() {
 	// DateInterval class
 	DateInterval = &phpobj.ZClass{
 		Name: "DateInterval",
+		H: &phpv.ZClassHandlers{
+			HandleCompare: func(ctx phpv.Context, a, b phpv.ZObject) (int, error) {
+				ctx.Warn("Cannot compare DateInterval objects")
+				return phpv.CompareUncomparable, nil
+			},
+			HandlePropGet: func(ctx phpv.Context, o phpv.ZObject, key phpv.ZString) (*phpv.ZVal, error) {
+				// In from_string mode, y/m/d/h/i/s/f/invert/days are removed from
+				// the hash table but should still be accessible with their default values.
+				switch key {
+				case "y", "m", "d", "h", "i", "s", "invert":
+					return phpv.ZInt(0).ZVal(), nil
+				case "f":
+					return phpv.ZFloat(0).ZVal(), nil
+				case "days":
+					return phpv.ZBool(false).ZVal(), nil
+				}
+				return nil, nil
+			},
+		},
 		Props: []*phpv.ZClassProp{
 			{VarName: "y", Default: phpv.ZInt(0).ZVal(), Modifiers: phpv.ZAttrPublic},
 			{VarName: "m", Default: phpv.ZInt(0).ZVal(), Modifiers: phpv.ZAttrPublic},
@@ -2459,6 +2584,16 @@ func init() {
 				Modifiers: phpv.ZAttrPublic,
 				Method:    phpobj.NativeMethod(getTimezoneMethod),
 			},
+			"getmicrosecond": {
+				Name:      "getMicrosecond",
+				Modifiers: phpv.ZAttrPublic,
+				Method:    phpobj.NativeMethod(getMicrosecondMethod),
+			},
+			"setmicrosecond": {
+				Name:      "setMicrosecond",
+				Modifiers: phpv.ZAttrPublic,
+				Method:    phpobj.NativeMethod(setMicrosecondMethod),
+			},
 			"settimestamp": {
 				Name:      "setTimestamp",
 				Modifiers: phpv.ZAttrPublic,
@@ -2628,6 +2763,16 @@ func init() {
 				Name:      "getTimezone",
 				Modifiers: phpv.ZAttrPublic,
 				Method:    phpobj.NativeMethod(getTimezoneMethod),
+			},
+			"getmicrosecond": {
+				Name:      "getMicrosecond",
+				Modifiers: phpv.ZAttrPublic,
+				Method:    phpobj.NativeMethod(getMicrosecondMethod),
+			},
+			"setmicrosecond": {
+				Name:      "setMicrosecond",
+				Modifiers: phpv.ZAttrPublic,
+				Method:    phpobj.NativeMethod(setMicrosecondImmutableMethod),
 			},
 			"settimestamp": {
 				Name:      "setTimestamp",
@@ -2940,6 +3085,17 @@ func init() {
 						"start": true, "current": true, "end": true, "interval": true,
 						"recurrences": true, "include_start_date": true, "include_end_date": true,
 					})
+					// Ensure nullable properties are set to NULL if not provided
+					if !this.HashTable().HasString("current") {
+						this.HashTable().SetString("current", phpv.ZNULL.ZVal())
+					}
+					if !this.HashTable().HasString("end") {
+						this.HashTable().SetString("end", phpv.ZNULL.ZVal())
+					}
+					// Mark all readonly properties as initialized
+					for _, propName := range []phpv.ZString{"start", "current", "end", "interval", "recurrences", "include_start_date", "include_end_date"} {
+						this.MarkReadonlyInit(propName)
+					}
 					// Mark as initialized
 					this.SetOpaque(DatePeriod, true)
 					return nil, nil
@@ -3258,6 +3414,15 @@ func datePeriodInitFromISOCaller(ctx phpv.Context, this *phpobj.ZObject, isoStr 
 
 	this.ObjectSet(ctx, phpv.ZString("include_start_date"), phpv.ZBool(includeStart).ZVal())
 	this.ObjectSet(ctx, phpv.ZString("include_end_date"), phpv.ZBool(includeEnd).ZVal())
+
+	// Explicitly set uninitialized nullable properties to NULL so they show as
+	// NULL in var_dump rather than uninitialized.
+	if !this.HashTable().HasString("current") {
+		this.HashTable().SetString("current", phpv.ZNULL.ZVal())
+	}
+	if !this.HashTable().HasString("end") {
+		this.HashTable().SetString("end", phpv.ZNULL.ZVal())
+	}
 
 	// Mark all readonly properties as initialized so external writes give the
 	// correct "Cannot modify readonly property" error.
@@ -3806,18 +3971,18 @@ func dateIntervalConstruct(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.
 		return nil, phpobj.ThrowError(ctx, DateMalformedIntervalStringException, "Unknown or bad format ("+spec+")")
 	}
 	if spec[0] != 'P' {
-		// Not a proper ISO 8601 duration - could be a datetime string
-		return nil, phpobj.ThrowError(ctx, DateMalformedIntervalStringException, "Failed to parse interval ("+spec+")")
+		// Not a proper ISO 8601 duration
+		return nil, phpobj.ThrowError(ctx, DateMalformedIntervalStringException, "Unknown or bad format ("+spec+")")
 	}
 	if len(spec) < 2 {
 		return nil, phpobj.ThrowError(ctx, DateMalformedIntervalStringException, "Unknown or bad format ("+spec+")")
 	}
-	// Simple parser for PnYnMnDTnHnMnS
+	// Simple parser for PnYnMnDTnHnMnS (supports negative values like P0Y3M-1D)
 	inTime := false
 	num := ""
 	for i := 1; i < len(spec); i++ {
 		c := spec[i]
-		if c >= '0' && c <= '9' {
+		if c >= '0' && c <= '9' || (c == '-' && num == "") {
 			num += string(c)
 			continue
 		}

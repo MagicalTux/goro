@@ -343,6 +343,11 @@ func datetimezoneConstruct(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.
 	}
 	tzName := string(args[0].AsString(ctx))
 
+	// Check for null bytes
+	if strings.ContainsRune(tzName, 0) {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "DateTimeZone::__construct(): Argument #1 ($timezone) must not contain any null bytes")
+	}
+
 	// Validate timezone offset ranges - minutes must be < 60
 	if len(tzName) >= 2 && (tzName[0] == '+' || tzName[0] == '-') {
 		cleaned := tzName[1:]
@@ -361,17 +366,17 @@ func datetimezoneConstruct(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.
 		if minsStr != "" {
 			mins, err := strconv.Atoi(minsStr)
 			if err == nil && mins >= 60 {
-				return nil, phpobj.ThrowError(ctx, phpobj.Exception, "DateTimeZone::__construct(): Timezone offset is out of range ("+tzName+")")
+				return nil, phpobj.ThrowError(ctx, DateInvalidTimeZoneException, "DateTimeZone::__construct(): Timezone offset is out of range ("+tzName+")")
 			}
 		}
 	}
 
 	loc, err := parseTzName(tzName)
 	if err != nil {
-		return nil, phpobj.ThrowError(ctx, phpobj.Exception, "DateTimeZone::__construct(): Unknown or bad timezone ("+tzName+")")
+		return nil, phpobj.ThrowError(ctx, DateInvalidTimeZoneException, "DateTimeZone::__construct(): Unknown or bad timezone ("+tzName+")")
 	}
 
-	// Normalize offset timezone names to +HH:MM format
+	// Normalize offset timezone names to +HH:MM or +HH:MM:SS format
 	if len(tzName) >= 2 && (tzName[0] == '+' || tzName[0] == '-') {
 		offset, ok := parseTZOffset(tzName)
 		if ok {
@@ -383,14 +388,40 @@ func datetimezoneConstruct(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.
 			}
 			hours := absOffset / 3600
 			mins := (absOffset % 3600) / 60
-			formattedName := fmt.Sprintf("%s%02d:%02d", sign, hours, mins)
+			secs := absOffset % 60
+			var formattedName string
+			if secs != 0 {
+				formattedName = fmt.Sprintf("%s%02d:%02d:%02d", sign, hours, mins, secs)
+			} else {
+				formattedName = fmt.Sprintf("%s%02d:%02d", sign, hours, mins)
+			}
 			loc = time.FixedZone(formattedName, offset)
 		}
 	}
 
 	setTimezoneLoc(this, loc)
-	// Also store timezone_type and timezone in the hash table so var_export works
-	setTimezoneProps(this, loc)
+	// Store timezone_type and timezone using the ORIGINAL user-supplied name
+	// (not loc.String() which may normalize names like "Universal" -> "UTC")
+	displayName := loc.String()
+	tzType := 3
+	if len(displayName) > 0 && (displayName[0] == '+' || displayName[0] == '-') {
+		tzType = 1
+	}
+	// Determine if the original name was loaded via LoadLocation (type 3)
+	// or via abbreviation lookup (type 2)
+	if tzType != 1 {
+		upperTz := strings.ToUpper(tzName)
+		_, isAbbrev := timezoneAbbreviationOffsets[upperTz]
+		// If it was loaded via time.LoadLocation successfully, it's a named timezone (type 3)
+		// If it fell through to abbreviation lookup, it's type 2
+		if _, loadErr := time.LoadLocation(tzName); loadErr != nil && isAbbrev {
+			tzType = 2
+		}
+		// Use the original user-supplied name for display (preserving casing and name)
+		displayName = tzName
+	}
+	this.HashTable().SetString("timezone_type", phpv.ZInt(tzType).ZVal())
+	this.HashTable().SetString("timezone", phpv.ZString(displayName).ZVal())
 	return nil, nil
 }
 
@@ -824,6 +855,10 @@ func fncTimezoneOpen(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
 		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "timezone_open() expects exactly 1 argument, 0 given")
 	}
+	// Check for null bytes
+	if strings.ContainsRune(string(args[0].AsString(ctx)), 0) {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "timezone_open(): Argument #1 ($timezone) must not contain any null bytes")
+	}
 	obj, err := phpobj.NewZObject(ctx, DateTimeZone, args[0])
 	if err != nil {
 		// timezone_open returns false on failure and emits a warning, unlike the constructor which throws
@@ -1021,9 +1056,12 @@ func fncDateCreate(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	// Pass args to NewZObject so the constructor handles them
 	obj, err := phpobj.NewZObject(ctx, DateTime, args...)
 	if err != nil {
-		// Propagate thrown PHP exceptions (like Error for uninitialized DateTimeZone),
-		// but return false for other failures (like invalid date strings).
-		if _, isThrow := phpv.UnwrapError(err).(*phperr.PhpThrow); isThrow {
+		// Procedural date_create() returns false on parse failure.
+		// Propagate non-date exceptions (TypeError, ArgumentCountError, etc.)
+		if pt, isThrow := phpv.UnwrapError(err).(*phperr.PhpThrow); isThrow {
+			if exObj, ok := pt.Obj.(*phpobj.ZObject); ok && exObj.Class.InstanceOf(DateException) {
+				return phpv.ZBool(false).ZVal(), nil
+			}
 			return nil, err
 		}
 		return phpv.ZBool(false).ZVal(), nil
@@ -1036,7 +1074,12 @@ func fncDateCreateImmutable(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 	// Pass args to NewZObject so the constructor handles them
 	obj, err := phpobj.NewZObject(ctx, DateTimeImmutable, args...)
 	if err != nil {
-		if _, isThrow := phpv.UnwrapError(err).(*phperr.PhpThrow); isThrow {
+		// Procedural date_create_immutable() returns false on parse failure.
+		// Propagate non-date exceptions (TypeError, ArgumentCountError, etc.)
+		if pt, isThrow := phpv.UnwrapError(err).(*phperr.PhpThrow); isThrow {
+			if exObj, ok := pt.Obj.(*phpobj.ZObject); ok && exObj.Class.InstanceOf(DateException) {
+				return phpv.ZBool(false).ZVal(), nil
+			}
 			return nil, err
 		}
 		return phpv.ZBool(false).ZVal(), nil
@@ -1152,6 +1195,12 @@ func fncDateTimestampSet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error
 	if len(args) < 2 {
 		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "date_timestamp_set() expects exactly 2 argument")
 	}
+	// Check for null parameter deprecation
+	if args[1].IsNull() {
+		if err := ctx.Deprecated("Passing null to parameter #2 ($timestamp) of type int is deprecated"); err != nil {
+			return nil, err
+		}
+	}
 	dtObj, ok := args[0].Value().(*phpobj.ZObject)
 	if !ok {
 		return phpv.ZBool(false).ZVal(), nil
@@ -1194,7 +1243,7 @@ func fncDateIntervalCreateFromDateString(ctx phpv.Context, args []*phpv.ZVal) (*
 		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "date_interval_create_from_date_string() expects exactly 1 argument")
 	}
 	if args[0].IsNull() {
-		if err := ctx.Deprecated("date_interval_create_from_date_string(): Passing null to parameter #1 ($datetime) of type string is deprecated"); err != nil {
+		if err := ctx.Deprecated("Passing null to parameter #1 ($datetime) of type string is deprecated"); err != nil {
 			return nil, err
 		}
 	}

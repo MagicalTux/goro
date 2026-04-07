@@ -81,6 +81,16 @@ func (n *namedCallable) AsVal(ctx phpv.Context, t phpv.ZType) (phpv.Val, error) 
 	return n.Callable.AsVal(ctx, t)
 }
 
+// WrapCallableWithName wraps a callable with an explicit name for stack trace
+// display. This is useful when calling native methods via CallZValInternal where
+// the NativeMethod.Name() returns "" and would default to "__construct".
+func WrapCallableWithName(c phpv.Callable, name string) phpv.Callable {
+	if c.Name() != "" {
+		return c // already has a name
+	}
+	return &namedCallable{Callable: c, name: name}
+}
+
 // NativeStaticMethod is like NativeMethod but for static methods.
 // It receives the class from context instead of requiring $this.
 type NativeStaticMethod func(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)

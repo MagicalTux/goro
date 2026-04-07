@@ -243,8 +243,13 @@ func phpDateFormat(format string, t time.Time) string {
 			buf.WriteString(fmt.Sprintf("%03d", beats%1000))
 
 		case 'p': // Timezone identifier like P but with Z for UTC
+			locName := t.Location().String()
 			_, offset := t.Zone()
-			if offset == 0 {
+			// "Z" only for UTC, fixed +00:00, or other fixed zero-offset timezones.
+			// Named timezones like Europe/London with offset 0 get "+00:00".
+			isFixedZero := offset == 0 && (locName == "UTC" || locName == "+00:00" || locName == "Z" ||
+				(len(locName) > 0 && (locName[0] == '+' || locName[0] == '-')))
+			if isFixedZero {
 				buf.WriteString("Z")
 			} else {
 				buf.WriteString(phpDateFormat("P", t))
@@ -754,6 +759,27 @@ func parseTZOffset(s string) (int, bool) {
 		return 0, false
 	}
 
+	// Check for seconds (HH:MM:SS format) first
+	secs := 0
+	parts := strings.Split(s, ":")
+	if len(parts) == 3 {
+		// HH:MM:SS format
+		var err error
+		hours, err := strconv.Atoi(parts[0])
+		if err != nil {
+			return 0, false
+		}
+		mins, err := strconv.Atoi(parts[1])
+		if err != nil {
+			return 0, false
+		}
+		secs, err = strconv.Atoi(parts[2])
+		if err != nil {
+			return 0, false
+		}
+		return sign * (hours*3600 + mins*60 + secs), true
+	}
+
 	// Remove colon if present (e.g. "02:13" -> "0213")
 	s = strings.Replace(s, ":", "", 1)
 
@@ -793,7 +819,7 @@ func parseTZOffset(s string) (int, bool) {
 		return 0, false
 	}
 
-	return sign * (hours*3600 + mins*60), true
+	return sign * (hours*3600 + mins*60 + secs), true
 }
 
 // parseISOWeekDate parses ISO 8601 week date strings like "1997W011", "2004W101T05:00+0"
