@@ -179,6 +179,8 @@ func parseDateTimeWithTz(ctx phpv.Context, args []*phpv.ZVal) (time.Time, error)
 			// the string contained a timezone - keep it.
 			// Otherwise, apply the configured/requested timezone.
 			if parsed.Location().String() != base.Location().String() {
+				// Preserve timezone abbreviations that strtotime normalizes to UTC
+				parsed = preserveInputTimezone(parsed, s)
 				return parsed, nil
 			}
 			return parsed.In(loc), nil
@@ -219,6 +221,50 @@ func parseDateTimeWithTz(ctx phpv.Context, args []*phpv.ZVal) (time.Time, error)
 	}
 	return time.Now().In(loc), nil
 }
+
+// preserveInputTimezone checks if a parsed time uses time.UTC but the original
+// input string contained a timezone abbreviation (like "GMT") or offset (like "+00:00").
+// In PHP, these have different timezone_type values:
+//   - type 1: offset (+00:00, -05:00)
+//   - type 2: abbreviation (GMT, EST, BST)
+//   - type 3: identifier (UTC, Europe/London)
+//
+// Go's strtotime library maps "GMT" and "Z" to time.UTC, losing the distinction.
+// This function restores it by creating an appropriately-named FixedZone.
+func preserveInputTimezone(parsed time.Time, input string) time.Time {
+	locName := parsed.Location().String()
+	if locName != "UTC" {
+		return parsed
+	}
+	// Check if the input string ends with a timezone abbreviation
+	// We need to extract the timezone part from the input
+	upper := strings.ToUpper(strings.TrimSpace(input))
+	// Check for trailing "GMT" (but not "UTC" which is correct as type 3)
+	if strings.HasSuffix(upper, " GMT") || upper == "GMT" {
+		return parsed.In(time.FixedZone("GMT", 0))
+	}
+	// Check for trailing "Z" (but only as standalone timezone, not part of ISO8601 T...Z)
+	// In ISO8601, the Z is at the very end after time digits
+	if strings.HasSuffix(upper, "Z") && len(upper) > 1 {
+		// Check if this is an ISO8601 format with trailing Z (e.g., "2006-01-02T15:04:05Z")
+		// In this case, it should be type 1 with "+00:00"
+		trimmed := strings.TrimSpace(input)
+		if trimmed[len(trimmed)-1] == 'Z' || trimmed[len(trimmed)-1] == 'z' {
+			// ISO8601 Z suffix -> treat as offset +00:00 (type 1)
+			return parsed.In(time.FixedZone("+00:00", 0))
+		}
+	}
+	// Check for explicit +00:00 or -00:00 offset in the input
+	if reInputOffset.MatchString(input) {
+		// The input contains an explicit offset - preserve it
+		m := reInputOffset.FindString(input)
+		return parsed.In(time.FixedZone(m, 0))
+	}
+	return parsed
+}
+
+// reInputOffset matches timezone offsets like +00:00, -00:00, +0000 in input strings
+var reInputOffset = regexp.MustCompile(`[+-]00:?00\s*$`)
 
 func getTime(this *phpobj.ZObject) (time.Time, bool) {
 	if v, ok := this.Opaque[DateTimeInterface]; ok {
@@ -1270,8 +1316,8 @@ func createFromTimestampStatic(targetClass *phpobj.ZClass) func(ctx phpv.Context
 		utcOffset := time.FixedZone("+00:00", 0)
 		if val.GetType() == phpv.ZtFloat {
 			f := float64(val.AsFloat(ctx))
-			if math.IsNaN(f) || math.IsInf(f, 0) {
-				return nil, phpobj.ThrowError(ctx, phpobj.ValueError, fmt.Sprintf("%s::createFromTimestamp(): Argument #1 ($timestamp) must be a finite number, %s given", targetClass.Name, val.AsString(ctx)))
+			if math.IsNaN(f) || math.IsInf(f, 0) || f > float64(math.MaxInt64) || f < float64(math.MinInt64) {
+				return nil, phpobj.ThrowError(ctx, DateRangeError, fmt.Sprintf("%s::createFromTimestamp(): Argument #1 ($timestamp) must be a finite number between %d and %d.999999, %s given", targetClass.Name, math.MinInt64, math.MaxInt64, val.AsString(ctx)))
 			}
 			// PHP rounds to microsecond precision (6 decimal places)
 			usec := math.Round(f * 1e6)
@@ -1350,33 +1396,41 @@ func serializeMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) 
 	}
 	arr.OffsetSet(ctx, phpv.ZString("date"), phpv.ZString(dateStr).ZVal())
 
-	locName := t.Location().String()
-	tzType := 3
-	if locName == "" {
-		_, offset := t.Zone()
-		if offset == 0 {
-			locName = "UTC"
-		} else {
-			sign := "+"
-			absOffset := offset
-			if offset < 0 {
-				sign = "-"
-				absOffset = -offset
+	// Use hash table values set by setTimeVal for timezone_type and timezone
+	tzTypeVal := this.HashTable().GetString("timezone_type")
+	tzVal := this.HashTable().GetString("timezone")
+	if tzTypeVal != nil && tzVal != nil {
+		arr.OffsetSet(ctx, phpv.ZString("timezone_type"), tzTypeVal)
+		arr.OffsetSet(ctx, phpv.ZString("timezone"), tzVal)
+	} else {
+		locName := t.Location().String()
+		tzType := 3
+		if locName == "" {
+			_, offset := t.Zone()
+			if offset == 0 {
+				locName = "UTC"
+			} else {
+				sign := "+"
+				absOffset := offset
+				if offset < 0 {
+					sign = "-"
+					absOffset = -offset
+				}
+				hours := absOffset / 3600
+				mins := (absOffset % 3600) / 60
+				locName = fmt.Sprintf("%s%02d:%02d", sign, hours, mins)
+				tzType = 1
 			}
-			hours := absOffset / 3600
-			mins := (absOffset % 3600) / 60
-			locName = fmt.Sprintf("%s%02d:%02d", sign, hours, mins)
+		} else if locName == "UTC" {
+			tzType = 3
+		} else if len(locName) > 0 && (locName[0] == '+' || locName[0] == '-') {
 			tzType = 1
+		} else if len(locName) <= 6 && !strings.Contains(locName, "/") {
+			tzType = 2
 		}
-	} else if locName == "UTC" {
-		tzType = 3
-	} else if len(locName) > 0 && (locName[0] == '+' || locName[0] == '-') {
-		tzType = 1
-	} else if len(locName) <= 6 && !strings.Contains(locName, "/") {
-		tzType = 2
+		arr.OffsetSet(ctx, phpv.ZString("timezone_type"), phpv.ZInt(tzType).ZVal())
+		arr.OffsetSet(ctx, phpv.ZString("timezone"), phpv.ZString(locName).ZVal())
 	}
-	arr.OffsetSet(ctx, phpv.ZString("timezone_type"), phpv.ZInt(tzType).ZVal())
-	arr.OffsetSet(ctx, phpv.ZString("timezone"), phpv.ZString(locName).ZVal())
 
 	// Include user-defined properties from subclasses (after standard props)
 	appendSubclassProps(ctx, this, arr, map[string]bool{"date": true, "timezone_type": true, "timezone": true})
@@ -1885,34 +1939,43 @@ func dateTimeDebugInfo(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal
 	}
 	arr.OffsetSet(ctx, phpv.ZString("date"), phpv.ZString(dateStr).ZVal())
 
-	// timezone_type: 1=offset, 2=abbreviation, 3=identifier
-	locName := t.Location().String()
-	tzType := 3
-	if locName == "" {
-		_, offset := t.Zone()
-		if offset == 0 {
-			locName = "UTC"
-		} else {
-			sign := "+"
-			absOffset := offset
-			if offset < 0 {
-				sign = "-"
-				absOffset = -offset
+	// timezone_type and timezone: use hash table values set by setTimeVal
+	// which correctly handles all timezone types (offset, abbreviation, identifier)
+	tzTypeVal := this.HashTable().GetString("timezone_type")
+	tzVal := this.HashTable().GetString("timezone")
+	if tzTypeVal != nil && tzVal != nil {
+		arr.OffsetSet(ctx, phpv.ZString("timezone_type"), tzTypeVal)
+		arr.OffsetSet(ctx, phpv.ZString("timezone"), tzVal)
+	} else {
+		// Fallback: compute from the time.Time location
+		locName := t.Location().String()
+		tzType := 3
+		if locName == "" {
+			_, offset := t.Zone()
+			if offset == 0 {
+				locName = "UTC"
+			} else {
+				sign := "+"
+				absOffset := offset
+				if offset < 0 {
+					sign = "-"
+					absOffset = -offset
+				}
+				hours := absOffset / 3600
+				mins := (absOffset % 3600) / 60
+				locName = fmt.Sprintf("%s%02d:%02d", sign, hours, mins)
+				tzType = 1
 			}
-			hours := absOffset / 3600
-			mins := (absOffset % 3600) / 60
-			locName = fmt.Sprintf("%s%02d:%02d", sign, hours, mins)
+		} else if locName == "UTC" {
+			tzType = 3
+		} else if len(locName) > 0 && (locName[0] == '+' || locName[0] == '-') {
 			tzType = 1
+		} else if len(locName) <= 6 && !strings.Contains(locName, "/") {
+			tzType = 2
 		}
-	} else if locName == "UTC" {
-		tzType = 3
-	} else if len(locName) > 0 && (locName[0] == '+' || locName[0] == '-') {
-		tzType = 1
-	} else if len(locName) <= 6 && !strings.Contains(locName, "/") {
-		tzType = 2
+		arr.OffsetSet(ctx, phpv.ZString("timezone_type"), phpv.ZInt(tzType).ZVal())
+		arr.OffsetSet(ctx, phpv.ZString("timezone"), phpv.ZString(locName).ZVal())
 	}
-	arr.OffsetSet(ctx, phpv.ZString("timezone_type"), phpv.ZInt(tzType).ZVal())
-	arr.OffsetSet(ctx, phpv.ZString("timezone"), phpv.ZString(locName).ZVal())
 
 	return arr.ZVal(), nil
 }
@@ -2178,19 +2241,13 @@ func init() {
 							arr.OffsetSet(ctx, key, v)
 						}
 					}
-					// Then include timezone info from opaque data
-					opaque := o.GetOpaque(DateTimeZone)
-					if loc, ok := opaque.(*time.Location); ok && loc != nil {
-						name := loc.String()
-						// Determine timezone_type: 3=identifier, 2=abbreviation, 1=offset
-						tzType := 3
-						if len(name) > 0 && (name[0] == '+' || name[0] == '-') {
-							tzType = 1
-						} else if len(name) <= 5 && name != "Local" && name != "UTC" && !strings.Contains(name, "/") {
-							tzType = 2
-						}
-						arr.OffsetSet(ctx, phpv.ZString("timezone_type"), phpv.ZInt(tzType).ZVal())
-						arr.OffsetSet(ctx, phpv.ZString("timezone"), phpv.ZString(name).ZVal())
+					// Then include timezone info from hash table (set by constructor
+					// which correctly determines timezone_type)
+					tzTypeVal := o.HashTable().GetString("timezone_type")
+					tzVal := o.HashTable().GetString("timezone")
+					if tzTypeVal != nil && tzVal != nil {
+						arr.OffsetSet(ctx, phpv.ZString("timezone_type"), tzTypeVal)
+						arr.OffsetSet(ctx, phpv.ZString("timezone"), tzVal)
 					}
 					return arr.ZVal(), nil
 				}),
@@ -2210,17 +2267,15 @@ func init() {
 						return nil, phpobj.ThrowError(ctx, DateObjectError,
 							fmt.Sprintf("Object of type %s (inheriting %s) has not been correctly initialized by calling parent::__construct() in its constructor", className, baseClass))
 					}
-					loc := o.Opaque[DateTimeZone].(*time.Location)
-					name := loc.String()
-					tzType := 3
-					if len(name) > 0 && (name[0] == '+' || name[0] == '-') {
-						tzType = 1
-					} else if len(name) <= 5 && name != "Local" && name != "UTC" && !strings.Contains(name, "/") {
-						tzType = 2
-					}
 					arr := phpv.NewZArray()
-					arr.OffsetSet(ctx, phpv.ZString("timezone_type"), phpv.ZInt(tzType).ZVal())
-					arr.OffsetSet(ctx, phpv.ZString("timezone"), phpv.ZString(name).ZVal())
+					// Use hash table values set by constructor which correctly
+					// determines timezone_type
+					tzTypeVal := o.HashTable().GetString("timezone_type")
+					tzVal := o.HashTable().GetString("timezone")
+					if tzTypeVal != nil && tzVal != nil {
+						arr.OffsetSet(ctx, phpv.ZString("timezone_type"), tzTypeVal)
+						arr.OffsetSet(ctx, phpv.ZString("timezone"), tzVal)
+					}
 					// Include user-defined properties from subclasses (after standard props)
 					appendSubclassProps(ctx, o, arr, map[string]bool{"timezone_type": true, "timezone": true})
 					return arr.ZVal(), nil

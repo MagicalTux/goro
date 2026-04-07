@@ -407,14 +407,14 @@ func datetimezoneConstruct(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.
 	if len(displayName) > 0 && (displayName[0] == '+' || displayName[0] == '-') {
 		tzType = 1
 	}
-	// Determine if the original name was loaded via LoadLocation (type 3)
-	// or via abbreviation lookup (type 2)
+	// Determine if the name is an abbreviation (type 2) or an IANA identifier (type 3).
+	// PHP treats short timezone abbreviation codes (EST, GMT, BST, etc.) as type 2,
+	// while IANA database names (UTC, Cuba, America/New_York) are type 3.
+	// "UTC" is special - it's always type 3 in PHP.
 	if tzType != 1 {
 		upperTz := strings.ToUpper(tzName)
 		_, isAbbrev := timezoneAbbreviationOffsets[upperTz]
-		// If it was loaded via time.LoadLocation successfully, it's a named timezone (type 3)
-		// If it fell through to abbreviation lookup, it's type 2
-		if _, loadErr := time.LoadLocation(tzName); loadErr != nil && isAbbrev {
+		if isAbbrev && upperTz != "UTC" {
 			tzType = 2
 		}
 		// Use the original user-supplied name for display (preserving casing and name)
@@ -1310,6 +1310,12 @@ var reDateParseHasTime = regexp.MustCompile(`\d{1,2}:\d{2}`)
 // dateParseHasFraction returns true if the input has a fractional seconds part (e.g. ":00.5").
 var reDateParseHasFraction = regexp.MustCompile(`:\d{2}\.(\d+)`)
 
+// reDateParseExtractDate extracts year, month, day from a date pattern
+var reDateParseExtractDate = regexp.MustCompile(`(\d{4})[-/](\d{1,2})[-/](\d{1,2})`)
+
+// reDateParseExtractTime extracts hour, minute, optional second from a time pattern
+var reDateParseExtractTime = regexp.MustCompile(`(\d{1,2}):(\d{2})(?::(\d{2}))?`)
+
 // relativeUnitRe matches patterns like "+3 months", "next year", "last day", etc.
 var relativeUnitRe = regexp.MustCompile(`(?i)([+-]?\d+)\s*(year|month|day|hour|minute|second|week)s?`)
 var relativeNextLastRe = regexp.MustCompile(`(?i)(next|last|previous)\s+(year|month|week|hour|minute|second)`)
@@ -1456,12 +1462,67 @@ func fncDateParse(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	if stErr != nil {
-		result.OffsetSet(ctx, phpv.ZString("year"), phpv.ZBool(false).ZVal())
-		result.OffsetSet(ctx, phpv.ZString("month"), phpv.ZBool(false).ZVal())
-		result.OffsetSet(ctx, phpv.ZString("day"), phpv.ZBool(false).ZVal())
-		result.OffsetSet(ctx, phpv.ZString("hour"), phpv.ZBool(false).ZVal())
-		result.OffsetSet(ctx, phpv.ZString("minute"), phpv.ZBool(false).ZVal())
-		result.OffsetSet(ctx, phpv.ZString("second"), phpv.ZBool(false).ZVal())
+		// Even when strtotime fails, try to extract date/time components via regex
+		if hasDate {
+			// Try to extract year/month/day from the date pattern
+			if m := reDateParseExtractDate.FindStringSubmatch(datetime); m != nil {
+				if y, err := strconv.Atoi(m[1]); err == nil {
+					result.OffsetSet(ctx, phpv.ZString("year"), phpv.ZInt(y).ZVal())
+				} else {
+					result.OffsetSet(ctx, phpv.ZString("year"), phpv.ZBool(false).ZVal())
+				}
+				if mo, err := strconv.Atoi(m[2]); err == nil {
+					result.OffsetSet(ctx, phpv.ZString("month"), phpv.ZInt(mo).ZVal())
+				} else {
+					result.OffsetSet(ctx, phpv.ZString("month"), phpv.ZBool(false).ZVal())
+				}
+				if d, err := strconv.Atoi(m[3]); err == nil {
+					result.OffsetSet(ctx, phpv.ZString("day"), phpv.ZInt(d).ZVal())
+				} else {
+					result.OffsetSet(ctx, phpv.ZString("day"), phpv.ZBool(false).ZVal())
+				}
+			} else {
+				result.OffsetSet(ctx, phpv.ZString("year"), phpv.ZBool(false).ZVal())
+				result.OffsetSet(ctx, phpv.ZString("month"), phpv.ZBool(false).ZVal())
+				result.OffsetSet(ctx, phpv.ZString("day"), phpv.ZBool(false).ZVal())
+			}
+		} else {
+			result.OffsetSet(ctx, phpv.ZString("year"), phpv.ZBool(false).ZVal())
+			result.OffsetSet(ctx, phpv.ZString("month"), phpv.ZBool(false).ZVal())
+			result.OffsetSet(ctx, phpv.ZString("day"), phpv.ZBool(false).ZVal())
+		}
+		if hasTime {
+			// Try to extract hour/minute/second from the time pattern
+			if m := reDateParseExtractTime.FindStringSubmatch(datetime); m != nil {
+				if h, err := strconv.Atoi(m[1]); err == nil {
+					result.OffsetSet(ctx, phpv.ZString("hour"), phpv.ZInt(h).ZVal())
+				} else {
+					result.OffsetSet(ctx, phpv.ZString("hour"), phpv.ZBool(false).ZVal())
+				}
+				if mi, err := strconv.Atoi(m[2]); err == nil {
+					result.OffsetSet(ctx, phpv.ZString("minute"), phpv.ZInt(mi).ZVal())
+				} else {
+					result.OffsetSet(ctx, phpv.ZString("minute"), phpv.ZBool(false).ZVal())
+				}
+				if len(m) > 3 && m[3] != "" {
+					if s, err := strconv.Atoi(m[3]); err == nil {
+						result.OffsetSet(ctx, phpv.ZString("second"), phpv.ZInt(s).ZVal())
+					} else {
+						result.OffsetSet(ctx, phpv.ZString("second"), phpv.ZInt(0).ZVal())
+					}
+				} else {
+					result.OffsetSet(ctx, phpv.ZString("second"), phpv.ZInt(0).ZVal())
+				}
+			} else {
+				result.OffsetSet(ctx, phpv.ZString("hour"), phpv.ZBool(false).ZVal())
+				result.OffsetSet(ctx, phpv.ZString("minute"), phpv.ZBool(false).ZVal())
+				result.OffsetSet(ctx, phpv.ZString("second"), phpv.ZBool(false).ZVal())
+			}
+		} else {
+			result.OffsetSet(ctx, phpv.ZString("hour"), phpv.ZBool(false).ZVal())
+			result.OffsetSet(ctx, phpv.ZString("minute"), phpv.ZBool(false).ZVal())
+			result.OffsetSet(ctx, phpv.ZString("second"), phpv.ZBool(false).ZVal())
+		}
 	} else {
 		if hasDate {
 			result.OffsetSet(ctx, phpv.ZString("year"), phpv.ZInt(t.Year()).ZVal())
@@ -1487,7 +1548,59 @@ func fncDateParse(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	result.OffsetSet(ctx, phpv.ZString("warnings"), phpv.NewZArray().ZVal())
 	result.OffsetSet(ctx, phpv.ZString("error_count"), phpv.ZInt(0).ZVal())
 	result.OffsetSet(ctx, phpv.ZString("errors"), phpv.NewZArray().ZVal())
-	result.OffsetSet(ctx, phpv.ZString("is_localtime"), phpv.ZBool(false).ZVal())
+
+	// Detect timezone info in the input string
+	hasTz := false
+	if stErr == nil {
+		parsedLoc := t.Location().String()
+		baseLoc := base.Location().String()
+		if parsedLoc != baseLoc {
+			hasTz = true
+		}
+	}
+	// Also check for timezone patterns in the input string directly
+	if !hasTz {
+		hasTz = reDateParseHasTimezone.MatchString(datetime)
+	}
+
+	if hasTz && stErr == nil {
+		result.OffsetSet(ctx, phpv.ZString("is_localtime"), phpv.ZBool(true).ZVal())
+		locName := t.Location().String()
+		_, offset := t.Zone()
+
+		if locName == "" || (len(locName) > 0 && (locName[0] == '+' || locName[0] == '-')) {
+			// Type 1: offset
+			result.OffsetSet(ctx, phpv.ZString("zone_type"), phpv.ZInt(1).ZVal())
+			result.OffsetSet(ctx, phpv.ZString("zone"), phpv.ZInt(-offset).ZVal()) // PHP stores zone as negative of UTC offset
+			result.OffsetSet(ctx, phpv.ZString("is_dst"), phpv.ZBool(false).ZVal())
+		} else if locName == "UTC" {
+			// Check if input had a specific abbreviation or offset
+			if reDateParseHasOffset.MatchString(datetime) {
+				result.OffsetSet(ctx, phpv.ZString("zone_type"), phpv.ZInt(1).ZVal())
+				result.OffsetSet(ctx, phpv.ZString("zone"), phpv.ZInt(0).ZVal())
+				result.OffsetSet(ctx, phpv.ZString("is_dst"), phpv.ZBool(false).ZVal())
+			} else {
+				result.OffsetSet(ctx, phpv.ZString("zone_type"), phpv.ZInt(2).ZVal())
+				result.OffsetSet(ctx, phpv.ZString("zone"), phpv.ZInt(0).ZVal())
+				result.OffsetSet(ctx, phpv.ZString("is_dst"), phpv.ZBool(false).ZVal())
+				result.OffsetSet(ctx, phpv.ZString("tz_abbr"), phpv.ZString("GMT").ZVal())
+			}
+		} else if strings.Contains(locName, "/") {
+			// Type 3: identifier
+			result.OffsetSet(ctx, phpv.ZString("zone_type"), phpv.ZInt(3).ZVal())
+			result.OffsetSet(ctx, phpv.ZString("zone"), phpv.ZInt(-offset).ZVal())
+			result.OffsetSet(ctx, phpv.ZString("is_dst"), phpv.ZBool(false).ZVal())
+			result.OffsetSet(ctx, phpv.ZString("tz_id"), phpv.ZString(locName).ZVal())
+		} else {
+			// Type 2: abbreviation
+			result.OffsetSet(ctx, phpv.ZString("zone_type"), phpv.ZInt(2).ZVal())
+			result.OffsetSet(ctx, phpv.ZString("zone"), phpv.ZInt(-offset).ZVal())
+			result.OffsetSet(ctx, phpv.ZString("is_dst"), phpv.ZBool(false).ZVal())
+			result.OffsetSet(ctx, phpv.ZString("tz_abbr"), phpv.ZString(locName).ZVal())
+		}
+	} else {
+		result.OffsetSet(ctx, phpv.ZString("is_localtime"), phpv.ZBool(false).ZVal())
+	}
 
 	// Add "relative" key if the input has relative date components
 	if rel := parseRelativeComponents(ctx, datetime); rel != nil {
@@ -1496,6 +1609,12 @@ func fncDateParse(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	return result.ZVal(), nil
 }
+
+// reDateParseHasTimezone matches timezone abbreviations or offsets in date strings
+var reDateParseHasTimezone = regexp.MustCompile(`(?i)(?:\s+[A-Z]{1,5}\s*$|\s*[+-]\d{2}:?\d{2}\s*$|\s+[A-Z][a-z]+/[A-Z][a-z]+)`)
+
+// reDateParseHasOffset matches explicit numeric offsets like +0000, +00:00
+var reDateParseHasOffset = regexp.MustCompile(`[+-]\d{2}:?\d{2}\s*$`)
 
 func fncDateParseFromFormat(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 2 {
