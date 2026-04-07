@@ -149,17 +149,32 @@ func parseDateTimeWithTz(ctx phpv.Context, args []*phpv.ZVal) (time.Time, error)
 		// Handle @timestamp - PHP always uses UTC (+00:00) for these
 		s := strings.TrimSpace(string(dateStr))
 		if len(s) > 0 && s[0] == '@' {
-			ts, err := fmt.Sscanf(s[1:], "%d", new(int64))
-			if err == nil && ts == 1 {
-				var tsVal int64
-				fmt.Sscanf(s[1:], "%d", &tsVal)
-				return time.Unix(tsVal, 0).In(time.FixedZone("+00:00", 0)), nil
+			// Extract the timestamp part (before any space/timezone suffix)
+			tsStr := s[1:]
+			if spaceIdx := strings.IndexByte(tsStr, ' '); spaceIdx != -1 {
+				tsStr = tsStr[:spaceIdx]
+			}
+			if fv, err := strconv.ParseFloat(tsStr, 64); err == nil {
+				sec := int64(fv)
+				// For negative fractional timestamps, compute fractional part carefully
+				var nsec int64
+				if fv >= 0 {
+					nsec = int64((fv - float64(sec)) * 1e9)
+				} else {
+					if fv != float64(sec) {
+						sec-- // floor towards negative infinity
+						nsec = int64((fv - float64(sec)) * 1e9)
+					}
+				}
+				return time.Unix(sec, nsec).In(time.FixedZone("+00:00", 0)), nil
 			}
 		}
 
 		base := time.Now().In(loc)
+		// Normalize relative date strings that our strtotime library doesn't handle
+		normalizedS := normalizeRelativeDateStr(s)
 		// Use strtotime library for all date/time parsing
-		if parsed, stErr := strtotime.StrToTime(s, strtotime.InTZ(loc), strtotime.Rel(base)); stErr == nil {
+		if parsed, stErr := strtotime.StrToTime(normalizedS, strtotime.InTZ(loc), strtotime.Rel(base)); stErr == nil {
 			// If the parsed time has a different location than the base,
 			// the string contained a timezone - keep it.
 			// Otherwise, apply the configured/requested timezone.
@@ -294,6 +309,39 @@ func getTimestampMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVa
 	return phpv.ZInt(t.Unix()).ZVal(), nil
 }
 
+// reSubSecondPart matches individual sub-second components like "+100 ms", "-500 usec"
+// Alternatives are ordered longest-first to prevent partial matches (e.g., "ms" matching before "msec").
+var reSubSecondPart = regexp.MustCompile(`(?i)([+-]?\d+)\s*(milliseconds?|microseconds?|msecs?|usecs?|µsecs?|ms|µs)`)
+
+// tryModifySubSecond handles sub-second modify strings that strtotime doesn't support.
+// Supports compound expressions like "+8 msec -2 µsec".
+// Returns (newTime, true) if the string contains ONLY sub-second parts.
+func tryModifySubSecond(t time.Time, modifier string) (time.Time, bool) {
+	trimmed := strings.TrimSpace(modifier)
+	matches := reSubSecondPart.FindAllStringSubmatch(trimmed, -1)
+	if len(matches) == 0 {
+		return time.Time{}, false
+	}
+	// Verify that the entire string consists of sub-second parts (no non-sub-second components)
+	remaining := reSubSecondPart.ReplaceAllString(trimmed, "")
+	remaining = strings.TrimSpace(remaining)
+	if remaining != "" {
+		return time.Time{}, false
+	}
+	result := t
+	for _, m := range matches {
+		n, _ := strconv.ParseInt(m[1], 10, 64)
+		unit := strings.ToLower(m[2])
+		switch {
+		case strings.HasPrefix(unit, "ms") || strings.HasPrefix(unit, "millisecond"):
+			result = result.Add(time.Duration(n) * time.Millisecond)
+		case strings.HasPrefix(unit, "microsecond") || strings.HasPrefix(unit, "usec") || unit == "µs" || strings.HasPrefix(unit, "µsec"):
+			result = result.Add(time.Duration(n) * time.Microsecond)
+		}
+	}
+	return result, true
+}
+
 // modifyMethod implements DateTime::modify(string $modifier): DateTime|false
 func modifyMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
@@ -317,7 +365,13 @@ func modifyMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*p
 			return this.ZVal(), nil
 		}
 	}
-	newT, stErr := strtotime.StrToTime(string(modifier), strtotime.InTZ(t.Location()), strtotime.Rel(t))
+	// Handle sub-second modifications that strtotime doesn't support
+	if newT, ok := tryModifySubSecond(t, string(modifier)); ok {
+		setTimeVal(this, newT)
+		return this.ZVal(), nil
+	}
+	normalizedMod := normalizeRelativeDateStr(string(modifier))
+	newT, stErr := strtotime.StrToTime(normalizedMod, strtotime.InTZ(t.Location()), strtotime.Rel(t))
 	if stErr != nil {
 		return nil, phpobj.ThrowError(ctx, DateMalformedStringException, fmt.Sprintf("DateTime::modify(): Failed to parse time string (%s) at position 0 (%s): Unexpected character", modifier, string(modifier[0:1])))
 	}
@@ -352,7 +406,17 @@ func modifyImmutableMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.
 			return newObj.ZVal(), nil
 		}
 	}
-	newT, stErr := strtotime.StrToTime(string(modifier), strtotime.InTZ(t.Location()), strtotime.Rel(t))
+	// Handle sub-second modifications that strtotime doesn't support
+	if subT, ok := tryModifySubSecond(t, string(modifier)); ok {
+		newObj, err := phpobj.NewZObject(ctx, this.Class)
+		if err != nil {
+			return nil, err
+		}
+		setTimeVal(newObj, subT)
+		return newObj.ZVal(), nil
+	}
+	normalizedMod := normalizeRelativeDateStr(string(modifier))
+	newT, stErr := strtotime.StrToTime(normalizedMod, strtotime.InTZ(t.Location()), strtotime.Rel(t))
 	if stErr != nil {
 		return nil, phpobj.ThrowError(ctx, DateMalformedStringException, fmt.Sprintf("DateTimeImmutable::modify(): Failed to parse time string (%s) at position 0 (%s): Unexpected character", modifier, string(modifier[0:1])))
 	}
@@ -886,6 +950,29 @@ func diffMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*php
 	return intervalObj.ZVal(), nil
 }
 
+// normalizeRelativeDateStr fixes known issues in the strtotime library where
+// certain relative date strings (like "next day", "last day", "first day")
+// are treated as no-ops instead of adding/subtracting days.
+// Only handles simple/standalone patterns, not compound ones.
+func normalizeRelativeDateStr(s string) string {
+	lower := strings.ToLower(strings.TrimSpace(s))
+
+	// "next day" → "+1 day"
+	if lower == "next day" {
+		return "+1 day"
+	}
+	// "first day" → "+1 day" (standalone only)
+	if lower == "first day" {
+		return "+1 day"
+	}
+	// "last day" → "-1 day" (standalone only)
+	if lower == "last day" {
+		return "-1 day"
+	}
+
+	return s
+}
+
 // addIntervalToTime adds a DateInterval to a time.Time and returns the result
 func addIntervalToTime(ctx phpv.Context, t time.Time, intervalObj *phpobj.ZObject, subtract bool) time.Time {
 	ht := intervalObj.HashTable()
@@ -896,9 +983,40 @@ func addIntervalToTime(ctx phpv.Context, t time.Time, intervalObj *phpobj.ZObjec
 		dateStrVal := ht.GetString("date_string")
 		if dateStrVal != nil && !dateStrVal.IsNull() {
 			dateStr := string(dateStrVal.AsString(ctx))
-			// Try strtotime library first, then fall back to custom parser
-			newT, stErr := strtotime.StrToTime(dateStr, strtotime.InTZ(t.Location()), strtotime.Rel(t))
+
+			// Normalize date strings that the strtotime library doesn't handle well.
+			// "next day"/"last day" are no-ops in strtotime but should add/subtract 1 day.
+			normalizedDateStr := normalizeRelativeDateStr(dateStr)
+
+			newT, stErr := strtotime.StrToTime(normalizedDateStr, strtotime.InTZ(t.Location()), strtotime.Rel(t))
 			if stErr == nil {
+				// Preserve the original time-of-day when the relative string
+				// doesn't explicitly set time components.
+				origH, origM, origS := t.Clock()
+				origNs := t.Nanosecond()
+				newH, newM, newS := newT.Clock()
+				newNs := newT.Nanosecond()
+				if subtract {
+					// For subtraction, compute delta and invert
+					dy := newT.Year() - t.Year()
+					dm := int(newT.Month()) - int(t.Month())
+					dd := newT.Day() - t.Day()
+					dh := newT.Hour() - t.Hour()
+					di := newT.Minute() - t.Minute()
+					ds := newT.Second() - t.Second()
+					dns := newT.Nanosecond() - t.Nanosecond()
+					newT = t.AddDate(-dy, -dm, -dd)
+					newT = newT.Add(
+						-time.Duration(dh)*time.Hour -
+							time.Duration(di)*time.Minute -
+							time.Duration(ds)*time.Second -
+							time.Duration(dns)*time.Nanosecond)
+				} else if origH != 0 || origM != 0 || origS != 0 || origNs != 0 {
+					if newH == 0 && newM == 0 && newS == 0 && newNs == 0 {
+						newT = time.Date(newT.Year(), newT.Month(), newT.Day(),
+							origH, origM, origS, origNs, newT.Location())
+					}
+				}
 				return newT
 			}
 		}
@@ -3971,8 +4089,12 @@ func dateIntervalConstruct(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.
 		return nil, phpobj.ThrowError(ctx, DateMalformedIntervalStringException, "Unknown or bad format ("+spec+")")
 	}
 	if spec[0] != 'P' {
-		// Not a proper ISO 8601 duration
-		return nil, phpobj.ThrowError(ctx, DateMalformedIntervalStringException, "Failed to parse interval ("+spec+")")
+		// Not a proper ISO 8601 duration - check if it looks like an attempted ISO period
+		// (contains / or T separators) vs garbage input
+		if strings.ContainsAny(spec, "/T") || len(spec) > 10 {
+			return nil, phpobj.ThrowError(ctx, DateMalformedIntervalStringException, "Failed to parse interval ("+spec+")")
+		}
+		return nil, phpobj.ThrowError(ctx, DateMalformedIntervalStringException, "Unknown or bad format ("+spec+")")
 	}
 	if len(spec) < 2 {
 		return nil, phpobj.ThrowError(ctx, DateMalformedIntervalStringException, "Unknown or bad format ("+spec+")")

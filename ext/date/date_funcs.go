@@ -201,7 +201,19 @@ func phpDateFormat(format string, t time.Time) string {
 		case 'T': // Timezone abbreviation
 			name, offset := t.Zone()
 			locName := t.Location().String()
-			if locName == "UTC" || name == "UTC" {
+			// Check if this is a fixed-offset timezone (location name starts with +/-).
+			// Even for +00:00 (where Go might report name="UTC"), PHP uses GMT+0000.
+			if len(locName) > 0 && (locName[0] == '+' || locName[0] == '-') {
+				sign := "+"
+				absOffset := offset
+				if offset < 0 {
+					sign = "-"
+					absOffset = -offset
+				}
+				hours := absOffset / 3600
+				mins := (absOffset % 3600) / 60
+				buf.WriteString(fmt.Sprintf("GMT%s%02d%02d", sign, hours, mins))
+			} else if locName == "UTC" || name == "UTC" {
 				buf.WriteString("UTC")
 			} else if strings.Contains(locName, "/") {
 				// Named IANA timezone (type 3): output the abbreviation as-is.
@@ -1204,7 +1216,8 @@ func fncStrtotime(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	}
 
 	opts := []strtotime.Option{strtotime.InTZ(loc), strtotime.Rel(base)}
-	t, stErr := strtotime.StrToTime(string(datetime), opts...)
+	normalizedDT := normalizeRelativeDateStr(string(datetime))
+	t, stErr := strtotime.StrToTime(normalizedDT, opts...)
 	if stErr != nil {
 		return phpv.ZBool(false).ZVal(), nil
 	}

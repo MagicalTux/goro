@@ -1227,6 +1227,15 @@ func fncDateSub(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if !ok {
 		return phpv.ZBool(false).ZVal(), nil
 	}
+	// Procedural date_sub() emits a Warning for special intervals instead of throwing.
+	intervalObj, ok2 := args[1].Value().(*phpobj.ZObject)
+	if ok2 {
+		fromStrVal := intervalObj.HashTable().GetString("from_string")
+		if fromStrVal != nil && bool(fromStrVal.AsBool(ctx)) {
+			ctx.Warn("Only non-special relative time specifications are supported for subtraction")
+			return dtObj.ZVal(), nil
+		}
+	}
 	return subMethod(ctx, dtObj, args[1:])
 }
 
@@ -1301,6 +1310,122 @@ var reDateParseHasTime = regexp.MustCompile(`\d{1,2}:\d{2}`)
 // dateParseHasFraction returns true if the input has a fractional seconds part (e.g. ":00.5").
 var reDateParseHasFraction = regexp.MustCompile(`:\d{2}\.(\d+)`)
 
+// relativeUnitRe matches patterns like "+3 months", "next year", "last day", etc.
+var relativeUnitRe = regexp.MustCompile(`(?i)([+-]?\d+)\s*(year|month|day|hour|minute|second|week)s?`)
+var relativeNextLastRe = regexp.MustCompile(`(?i)(next|last|previous)\s+(year|month|week|hour|minute|second)`)
+var relativeFirstLastDayOfRe = regexp.MustCompile(`(?i)(first|last)\s+day\s+of`)
+
+// relativeFirstLastDayRe matches "first day" or "last day" NOT followed by " of".
+// This handles standalone "first day" / "last day" and compound "first day next month".
+var relativeFirstLastDayRe = regexp.MustCompile(`(?i)(first|last)\s+day(?:\s+of\b)?`)
+
+// parseRelativeComponents parses relative date components from a string
+// and returns a "relative" array if any are found, or nil if none.
+func parseRelativeComponents(ctx phpv.Context, datetime string) *phpv.ZArray {
+	lower := strings.ToLower(strings.TrimSpace(datetime))
+	relYear, relMonth, relDay, relHour, relMinute, relSecond := 0, 0, 0, 0, 0, 0
+	firstDayOf := false
+	lastDayOf := false
+	hasRelative := false
+
+	// Check for "first day of" / "last day of" qualifiers (sets day to 1st/last of month)
+	if relativeFirstLastDayOfRe.MatchString(lower) {
+		m := relativeFirstLastDayOfRe.FindStringSubmatch(lower)
+		if m[1] == "first" {
+			firstDayOf = true
+		} else {
+			lastDayOf = true
+		}
+		hasRelative = true
+	} else if m := relativeFirstLastDayRe.FindStringSubmatch(lower); m != nil {
+		// "first day" or "last day" without "of" - these are relative day modifiers
+		if m[1] == "first" {
+			relDay += 1
+		} else {
+			relDay -= 1
+		}
+		hasRelative = true
+	}
+
+	// Check for "next/last UNIT" patterns (not "day" - that's handled above)
+	for _, m := range relativeNextLastRe.FindAllStringSubmatch(lower, -1) {
+		dir := 1
+		if m[1] == "last" || m[1] == "previous" {
+			dir = -1
+		}
+		switch m[2] {
+		case "year":
+			relYear += dir
+		case "month":
+			relMonth += dir
+		case "week":
+			relDay += dir * 7
+		case "hour":
+			relHour += dir
+		case "minute":
+			relMinute += dir
+		case "second":
+			relSecond += dir
+		}
+		hasRelative = true
+	}
+
+	// Check for "+N unit" / "-N unit" patterns
+	for _, m := range relativeUnitRe.FindAllStringSubmatch(lower, -1) {
+		n, _ := strconv.Atoi(m[1])
+		switch m[2] {
+		case "year":
+			relYear += n
+		case "month":
+			relMonth += n
+		case "week":
+			relDay += n * 7
+		case "day":
+			relDay += n
+		case "hour":
+			relHour += n
+		case "minute":
+			relMinute += n
+		case "second":
+			relSecond += n
+		}
+		hasRelative = true
+	}
+
+	// Also check for ordinal weekday patterns like "third tuesday of next month"
+	if matched, _ := regexp.MatchString(`(?i)(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|eleventh|twelfth|last)\s+(mon|tue|wed|thu|fri|sat|sun)`, lower); matched {
+		hasRelative = true
+	}
+
+	// Check for "tomorrow" / "yesterday"
+	if strings.Contains(lower, "tomorrow") {
+		relDay++
+		hasRelative = true
+	} else if strings.Contains(lower, "yesterday") {
+		relDay--
+		hasRelative = true
+	}
+
+	if !hasRelative {
+		return nil
+	}
+
+	rel := phpv.NewZArray()
+	rel.OffsetSet(ctx, phpv.ZString("year"), phpv.ZInt(relYear).ZVal())
+	rel.OffsetSet(ctx, phpv.ZString("month"), phpv.ZInt(relMonth).ZVal())
+	rel.OffsetSet(ctx, phpv.ZString("day"), phpv.ZInt(relDay).ZVal())
+	rel.OffsetSet(ctx, phpv.ZString("hour"), phpv.ZInt(relHour).ZVal())
+	rel.OffsetSet(ctx, phpv.ZString("minute"), phpv.ZInt(relMinute).ZVal())
+	rel.OffsetSet(ctx, phpv.ZString("second"), phpv.ZInt(relSecond).ZVal())
+	if firstDayOf {
+		rel.OffsetSet(ctx, phpv.ZString("first_day_of_month"), phpv.ZBool(true).ZVal())
+	}
+	if lastDayOf {
+		rel.OffsetSet(ctx, phpv.ZString("last_day_of_month"), phpv.ZBool(true).ZVal())
+	}
+	return rel
+}
+
 func fncDateParse(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
 		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "date_parse() expects exactly 1 argument, 0 given")
@@ -1363,6 +1488,12 @@ func fncDateParse(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	result.OffsetSet(ctx, phpv.ZString("error_count"), phpv.ZInt(0).ZVal())
 	result.OffsetSet(ctx, phpv.ZString("errors"), phpv.NewZArray().ZVal())
 	result.OffsetSet(ctx, phpv.ZString("is_localtime"), phpv.ZBool(false).ZVal())
+
+	// Add "relative" key if the input has relative date components
+	if rel := parseRelativeComponents(ctx, datetime); rel != nil {
+		result.OffsetSet(ctx, phpv.ZString("relative"), rel.ZVal())
+	}
+
 	return result.ZVal(), nil
 }
 
