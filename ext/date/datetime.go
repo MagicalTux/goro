@@ -724,31 +724,42 @@ func diffMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*php
 		years--
 	}
 
-	// Compute remaining hours/minutes/seconds using actual elapsed time.
-	// Use midnight-based approach to avoid DST fold ambiguity.
-	// During DST fall-back, time.Date() always picks fold=0 for ambiguous
-	// wall-clock times, but 'from' might be in fold=1. Midnight (00:00)
-	// is never in the DST fold, so time.Date at midnight is always unambiguous.
-	midnightFrom := time.Date(y1, time.Month(int(m1)), d1, 0, 0, 0, 0, from.Location()).Unix()
-	midnightTarget := time.Date(y1+years, time.Month(int(m1)+months), d1+days, 0, 0, 0, 0, from.Location()).Unix()
-	refUnix := from.Unix() + (midnightTarget - midnightFrom)
-	remainSec := int(to.Unix() - refUnix)
-
-	// If remainSec is negative, we over-counted by one day
-	if remainSec < 0 {
-		days--
-		if days < 0 {
-			prevMonth := time.Date(y2, m2, 0, 0, 0, 0, 0, to.Location())
-			days += prevMonth.Day()
-			months--
-			if months < 0 {
-				months += 12
-				years--
+	// Compute remaining hours/minutes/seconds.
+	// PHP uses a hybrid approach:
+	// - When there are calendar date differences (days/months/years > 0), use
+	//   wall-clock time-of-day arithmetic. This ensures "1 day" means one
+	//   calendar day regardless of DST transitions.
+	// - When dates are the same (days/months/years == 0), use UTC elapsed time.
+	//   This correctly handles DST fold periods where the same wall-clock time
+	//   occurs twice.
+	var remainSec int
+	if days > 0 || months > 0 || years > 0 {
+		// Multi-day: wall-clock time-of-day difference
+		fromSod := from.Hour()*3600 + from.Minute()*60 + from.Second()
+		toSod := to.Hour()*3600 + to.Minute()*60 + to.Second()
+		remainSec = toSod - fromSod
+		if remainSec < 0 {
+			// Borrow one day
+			remainSec += 86400
+			days--
+			if days < 0 {
+				prevMonth := time.Date(y2, m2, 0, 0, 0, 0, 0, to.Location())
+				days += prevMonth.Day()
+				months--
+				if months < 0 {
+					months += 12
+					years--
+				}
+			}
+			// After borrowing, if all calendar parts are zero, fall back to
+			// UTC elapsed time to handle DST fold correctly
+			if days == 0 && months == 0 && years == 0 {
+				remainSec = int(to.Unix() - from.Unix())
 			}
 		}
-		midnightTarget = time.Date(y1+years, time.Month(int(m1)+months), d1+days, 0, 0, 0, 0, from.Location()).Unix()
-		refUnix = from.Unix() + (midnightTarget - midnightFrom)
-		remainSec = int(to.Unix() - refUnix)
+	} else {
+		// Same calendar date: use UTC elapsed time
+		remainSec = int(to.Unix() - from.Unix())
 	}
 
 	hours := remainSec / 3600
@@ -834,8 +845,27 @@ func addIntervalToTime(ctx phpv.Context, t time.Time, intervalObj *phpobj.ZObjec
 	}
 
 	// Apply date part first (years, months, days)
-	t = t.AddDate(years, months, days)
-	// Then apply time part
+	if years != 0 || months != 0 || days != 0 {
+		origH, origM, origS := t.Clock()
+		t = t.AddDate(years, months, days)
+
+		// Check if AddDate landed in a DST gap (spring forward).
+		// Go normalizes backward to the pre-gap time; PHP normalizes forward.
+		// Detect by checking if the wall-clock time changed unexpectedly.
+		newH, newM, newS := t.Clock()
+		if newH != origH || newM != origM || newS != origS {
+			_, curOff := t.Zone()
+			// Probe a time known to be past any potential gap
+			probe := time.Date(t.Year(), t.Month(), t.Day(), origH+2, 0, 0, 0, t.Location())
+			_, probeOff := probe.Zone()
+			if probeOff != curOff {
+				// DST gap: shift forward by the gap size
+				t = t.Add(time.Duration(probeOff-curOff) * time.Second)
+			}
+		}
+	}
+
+	// Then apply time part (uses real seconds, correctly handles DST)
 	t = t.Add(time.Duration(hours)*time.Hour +
 		time.Duration(minutes)*time.Minute +
 		time.Duration(seconds)*time.Second +

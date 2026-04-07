@@ -165,6 +165,9 @@ func phpDateFormat(format string, t time.Time) string {
 				hours := offset / 3600
 				mins := (offset % 3600) / 60
 				locName = fmt.Sprintf("%s%02d:%02d", sign, hours, mins)
+			} else if locName == "GMT" {
+				// GMT is not a valid IANA identifier; the canonical name is UTC
+				locName = "UTC"
 			}
 			buf.WriteString(locName)
 		case 'I': // Whether daylight saving time (1 if DST, 0 otherwise)
@@ -200,30 +203,25 @@ func phpDateFormat(format string, t time.Time) string {
 			locName := t.Location().String()
 			if locName == "UTC" || name == "UTC" {
 				buf.WriteString("UTC")
-			} else if len(locName) > 0 && (locName[0] == '+' || locName[0] == '-') {
-				// Named fixed-offset timezone: format as GMT+HHMM or GMT-HHMM
-				sign := "+"
-				absOffset := offset
-				if offset < 0 {
-					sign = "-"
-					absOffset = -offset
-				}
-				hours := absOffset / 3600
-				mins := (absOffset % 3600) / 60
-				buf.WriteString(fmt.Sprintf("GMT%s%02d%02d", sign, hours, mins))
-			} else if name == "" || (len(name) > 0 && (name[0] == '+' || name[0] == '-')) {
-				// Empty or numeric zone name (from time.Parse) — use offset to format
-				sign := "+"
-				absOffset := offset
-				if offset < 0 {
-					sign = "-"
-					absOffset = -offset
-				}
-				hours := absOffset / 3600
-				mins := (absOffset % 3600) / 60
-				buf.WriteString(fmt.Sprintf("GMT%s%02d%02d", sign, hours, mins))
-			} else {
+			} else if strings.Contains(locName, "/") {
+				// Named IANA timezone (type 3): output the abbreviation as-is.
+				// The abbreviation may be alphabetic (e.g. "BST", "EST") or a
+				// numeric offset (e.g. "-02", "+0530") -- PHP outputs it directly.
 				buf.WriteString(name)
+			} else if name != "" && name[0] != '+' && name[0] != '-' {
+				// Abbreviation timezone (type 2) like "GMT", "CET"
+				buf.WriteString(name)
+			} else {
+				// Fixed-offset timezone (type 1): format as GMT+HHMM or GMT-HHMM
+				sign := "+"
+				absOffset := offset
+				if offset < 0 {
+					sign = "-"
+					absOffset = -offset
+				}
+				hours := absOffset / 3600
+				mins := (absOffset % 3600) / 60
+				buf.WriteString(fmt.Sprintf("GMT%s%02d%02d", sign, hours, mins))
 			}
 		case 'Z': // Timezone offset in seconds
 			_, offset := t.Zone()
@@ -469,7 +467,14 @@ func fncMktime(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		day = *dayArg
 	}
 	if yearArg != nil {
-		year = *yearArg
+		rawYear := *yearArg
+		year = rawYear
+		// PHP year normalization: 0-69 -> 2000-2069, 70-99 -> 1970-1999
+		if rawYear >= 0 && rawYear <= 69 {
+			year = rawYear + 2000
+		} else if rawYear >= 70 && rawYear <= 99 {
+			year = rawYear + 1900
+		}
 	}
 
 	date := time.Date(year, month, day, hour, min, sec, 0, loc)
@@ -508,7 +513,14 @@ func fncGmmktime(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		day = *dayArg
 	}
 	if yearArg != nil {
-		year = *yearArg
+		rawYear := *yearArg
+		year = rawYear
+		// PHP year normalization: 0-69 -> 2000-2069, 70-99 -> 1970-1999
+		if rawYear >= 0 && rawYear <= 69 {
+			year = rawYear + 2000
+		} else if rawYear >= 70 && rawYear <= 99 {
+			year = rawYear + 1900
+		}
 	}
 
 	date := time.Date(year, month, day, hour, min, sec, 0, time.UTC)
@@ -1135,6 +1147,21 @@ func parseMonthNameDate(input string, base time.Time, loc *time.Location) (time.
 
 // > func int strtotime ( string $datetime [, int $baseTimestamp = time() ] )
 func fncStrtotime(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	// Validate second argument type before expansion - PHP throws TypeError for non-int
+	if len(args) >= 2 && args[1] != nil && !args[1].IsNull() {
+		t := args[1].GetType()
+		if t != phpv.ZtInt && t != phpv.ZtFloat && t != phpv.ZtString && t != phpv.ZtBool && t != phpv.ZtNull {
+			typeName := "unknown"
+			if t == phpv.ZtObject {
+				if obj, ok := args[1].Value().(phpv.ZObject); ok {
+					typeName = string(obj.GetClass().GetName())
+				}
+			} else {
+				typeName = t.TypeName()
+			}
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("strtotime(): Argument #2 ($baseTimestamp) must be of type ?int, %s given", typeName))
+		}
+	}
 	var datetime phpv.ZString
 	var baseTs *phpv.ZInt
 	_, err := core.Expand(ctx, args, &datetime, &baseTs)

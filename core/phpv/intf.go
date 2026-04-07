@@ -105,7 +105,7 @@ type CompoundWritable interface {
 // ReadonlyRefChecker is implemented by Runnable types (like object property
 // access) that can check whether creating a reference would violate readonly
 // constraints. Used by the by-ref parameter passing code to throw
-// "Cannot indirectly modify readonly property" before making a reference.
+// "Cannot modify readonly property" before making a reference.
 type ReadonlyRefChecker interface {
 	CheckReadonlyRef(ctx Context) error
 }

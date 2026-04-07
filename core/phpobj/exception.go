@@ -545,8 +545,12 @@ func getExceptionTrace(ctx phpv.Context, stackTrace phpv.StackTrace) *phpv.ZArra
 			args.OffsetSet(ctx, nil, arg)
 		}
 		item := phpv.NewZArray()
-		item.OffsetSet(ctx, phpv.ZStr("file"), phpv.ZStr(e.Filename))
-		item.OffsetSet(ctx, phpv.ZStr("line"), phpv.ZInt(e.Line).ZVal())
+		// When IsInternal is true, omit the "file" and "line" keys so that
+		// the trace formatter outputs "[internal function]" instead of a path.
+		if !e.IsInternal {
+			item.OffsetSet(ctx, phpv.ZStr("file"), phpv.ZStr(e.Filename))
+			item.OffsetSet(ctx, phpv.ZStr("line"), phpv.ZInt(e.Line).ZVal())
+		}
 		// Use bare function name (without class prefix) for the "function" key
 		funcName := e.BareFuncName
 		if funcName == "" {

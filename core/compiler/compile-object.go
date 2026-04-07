@@ -1506,7 +1506,7 @@ func (r *runObjectVar) CheckReadonlyRef(ctx phpv.Context) error {
 
 	if zobj.IsReadonlyProperty(propName) && zobj.IsReadonlyPropertyInitialized(propName) {
 		return phpobj.ThrowError(ctx, phpobj.Error,
-			fmt.Sprintf("Cannot indirectly modify readonly property %s::$%s", zobj.GetClass().GetName(), propName))
+			fmt.Sprintf("Cannot modify readonly property %s::$%s", zobj.GetClass().GetName(), propName))
 	}
 	// Check asymmetric visibility for reference creation.
 	// For object-typed properties, PHP returns a copy of the object handle

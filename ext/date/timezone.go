@@ -646,19 +646,19 @@ var canonicalTZForAbbrev = map[string]string{
 	"wet":   "Europe/Lisbon",
 }
 
-// tzAbbrevEpoch is the earliest Unix timestamp considered "modern" for timezone
-// abbreviation inclusion. Types only used in pre-epoch transitions are excluded.
-// Using 0 (1970-01-01) excludes purely historical abbreviations like Botswana's
-// SAST (UTC+1:30) which was replaced by CAT (UTC+2) in 1903.
-var tzAbbrevEpoch = time.Unix(0, 0)
-
-// tzAbbrevFuture is used as the "to" time when scanning modern transitions.
+// tzAbbrevFuture is used as the "to" time when scanning transitions for abbreviation lookups.
 var tzAbbrevFuture = time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC)
 
+// excludedAbbrevs lists timezone abbreviations that exist in IANA data but are
+// NOT included in PHP's static timezonemap.h. PHP's map was built from a specific
+// IANA snapshot and excludes certain very obscure historical abbreviations.
+var excludedAbbrevs = map[string]bool{
+	"zmt": true, // Zomba Mean Time - historical Africa/Blantyre, not in PHP
+}
+
 // buildTZAbbrevMap builds the complete PHP timezone abbreviation map from all IANA zones.
-// For each zone, it collects only the types that are actively used in post-1970 transitions
-// OR that represent the current/ongoing zone type, excluding purely historical types.
-// This matches PHP's behavior where only current/relevant types are included.
+// It includes all zone types (including historical ones) to match PHP's behavior,
+// which uses a pre-compiled static map from IANA data.
 // It also adds military timezone abbreviations (a-z) to match PHP's 144-entry count.
 // The result is a map from lowercase abbreviation to []tzAbbrevEntry, de-duplicated
 // across all zones by (abbr, offset, tzID).
@@ -671,8 +671,6 @@ func buildTZAbbrevMap() map[string][]tzAbbrevEntry {
 	// globalSeen prevents duplicate (abbr, offset, tzID) entries across all zones.
 	globalSeen := make(map[globalKey]bool)
 	result := make(map[string][]tzAbbrevEntry)
-
-	now := time.Now()
 
 	// Process all IANA zones plus UTC
 	allZones := make([]string, len(allIANAZones)+1)
@@ -690,46 +688,24 @@ func buildTZAbbrevMap() map[string][]tzAbbrevEntry {
 		}
 		types := zone.Types()
 
-		// Determine which type indices are "active": either used by post-epoch
-		// transitions or is the current type. This excludes purely historical
-		// types (e.g. SAST at UTC+1:30 for Africa/Gaborone, last used in 1903).
-		activeTypeIdx := make(map[int]bool)
-
-		// Always include the current type.
-		currentType := zone.Lookup(now)
-		// Find the type index by matching abbr+offset+isDST
-		for i, zt := range types {
-			if zt.Abbrev == currentType.Abbrev && zt.Offset == currentType.Offset && zt.IsDST == currentType.IsDST {
-				activeTypeIdx[i] = true
-				break
-			}
-		}
-
-		// Include types used by post-epoch transitions.
-		transitions := zone.TransitionsForRange(tzAbbrevEpoch, tzAbbrevFuture)
-		for _, tr := range transitions {
-			if tr.Type >= 0 && tr.Type < len(types) {
-				activeTypeIdx[tr.Type] = true
-			}
-		}
-
-		// For each active type, keep only the LAST occurrence of each (abbr, isDST) pair
-		// to get the current/most-recent offset for that abbreviation.
+		// For each type, keep only the LAST occurrence of each (abbr, isDST) pair
+		// to get the most-recent offset for that abbreviation in this zone.
 		type localKey struct {
 			abbr  string
 			isDST bool
 		}
 		lastType := make(map[localKey]gotz.ZoneType)
-		for i, zt := range types {
-			if !activeTypeIdx[i] {
-				continue
-			}
+		for _, zt := range types {
 			abbr := strings.ToLower(zt.Abbrev)
 			if abbr == "" || abbr == "zzz" || abbr == "lmt" {
 				continue
 			}
 			// Skip numeric offset-style abbreviations like "+0020", "-0530", etc.
 			if len(abbr) > 0 && (abbr[0] == '+' || abbr[0] == '-') {
+				continue
+			}
+			// Skip abbreviations not in PHP's static map
+			if excludedAbbrevs[abbr] {
 				continue
 			}
 			// Each later type overwrites earlier ones (we want the most recent).
@@ -1444,6 +1420,113 @@ func fncTimezoneLocationGet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 	return getTimezoneLocation(ctx, tzObj)
 }
 
+// zoneTabEntry holds per-zone metadata from zone.tab (which includes link zones).
+type zoneTabEntry struct {
+	CountryCode string
+	Lat, Lon    float64
+	Comments    string
+}
+
+var (
+	zoneTabOnce sync.Once
+	zoneTabMap  map[string]*zoneTabEntry
+)
+
+// loadZoneTab parses the system zone.tab file which has entries for all timezones,
+// including link zones. This supplements gotz's zone1970.tab which only has canonical names.
+func loadZoneTab() {
+	zoneTabOnce.Do(func() {
+		zoneTabMap = make(map[string]*zoneTabEntry)
+		paths := []string{
+			"/usr/share/zoneinfo/zone.tab",
+			"/usr/lib/zoneinfo/zone.tab",
+			"/usr/share/lib/zoneinfo/zone.tab",
+			"/etc/zoneinfo/zone.tab",
+		}
+		var data []byte
+		for _, p := range paths {
+			var err error
+			data, err = os.ReadFile(p)
+			if err == nil {
+				break
+			}
+		}
+		if data == nil {
+			return
+		}
+		for _, line := range strings.Split(string(data), "\n") {
+			if line == "" || line[0] == '#' {
+				continue
+			}
+			fields := strings.Split(line, "\t")
+			if len(fields) < 3 {
+				continue
+			}
+			cc := fields[0]
+			name := fields[2]
+			var comments string
+			if len(fields) >= 4 {
+				comments = fields[3]
+			}
+			lat, lon := parseISO6709Coords(fields[1])
+			zoneTabMap[name] = &zoneTabEntry{
+				CountryCode: cc,
+				Lat:         lat,
+				Lon:         lon,
+				Comments:    comments,
+			}
+		}
+	})
+}
+
+// parseISO6709Coords parses ISO 6709 coordinates: ±DDMM±DDDMM or ±DDMMSS±DDDMMSS
+func parseISO6709Coords(s string) (lat, lon float64) {
+	lonStart := -1
+	for i := 1; i < len(s); i++ {
+		if s[i] == '+' || s[i] == '-' {
+			lonStart = i
+			break
+		}
+	}
+	if lonStart < 0 {
+		return 0, 0
+	}
+	lat = parseDMSCoord(s[:lonStart], 2)
+	lon = parseDMSCoord(s[lonStart:], 3)
+	return
+}
+
+// parseDMSCoord parses ±DD[D]MM[SS] into decimal degrees.
+// No rounding is applied to match PHP's precision.
+func parseDMSCoord(s string, degDigits int) float64 {
+	if len(s) < 1+degDigits+2 {
+		return 0
+	}
+	neg := s[0] == '-'
+	s = s[1:]
+	deg := atoiSimple(s[:degDigits])
+	s = s[degDigits:]
+	min := atoiSimple(s[:2])
+	s = s[2:]
+	var sec int
+	if len(s) >= 2 {
+		sec = atoiSimple(s[:2])
+	}
+	v := float64(deg) + float64(min)/60.0 + float64(sec)/3600.0
+	if neg {
+		v = -v
+	}
+	return v
+}
+
+func atoiSimple(s string) int {
+	n := 0
+	for _, c := range s {
+		n = n*10 + int(c-'0')
+	}
+	return n
+}
+
 func getTimezoneLocation(ctx phpv.Context, tzObj *phpobj.ZObject) (*phpv.ZVal, error) {
 	tzName := getTimezoneName(tzObj)
 	zone, err := gotz.Load(tzName)
@@ -1451,23 +1534,37 @@ func getTimezoneLocation(ctx phpv.Context, tzObj *phpobj.ZObject) (*phpv.ZVal, e
 		// Fixed-offset or abbreviation timezones return false for getLocation
 		return phpv.ZBool(false).ZVal(), nil
 	}
+
+	var countryCode, comments string
+	var lat, lon float64
+
 	meta := zone.Meta()
-	if meta == nil {
-		return phpv.ZBool(false).ZVal(), nil
+	if meta != nil {
+		countryCode = "??"
+		if len(meta.Countries) > 0 {
+			countryCode = meta.Countries[0].Code
+		}
+		comments = meta.Commentary
+		lat = meta.Lat
+		lon = meta.Lon
+	} else {
+		// gotz's zone1970.tab may not have this zone (it's a link).
+		// Fall back to system zone.tab which has entries for link zones too.
+		loadZoneTab()
+		if entry, ok := zoneTabMap[tzName]; ok {
+			countryCode = entry.CountryCode
+			lat = entry.Lat
+			lon = entry.Lon
+			comments = entry.Comments
+		} else {
+			return phpv.ZBool(false).ZVal(), nil
+		}
 	}
 
 	result := phpv.NewZArray()
-	countryCode := "??"
-	comments := ""
-	if len(meta.Countries) > 0 {
-		countryCode = meta.Countries[0].Code
-	}
-	if meta.Commentary != "" {
-		comments = meta.Commentary
-	}
 	result.OffsetSet(ctx, phpv.ZString("country_code"), phpv.ZString(countryCode).ZVal())
-	result.OffsetSet(ctx, phpv.ZString("latitude"), phpv.ZFloat(meta.Lat).ZVal())
-	result.OffsetSet(ctx, phpv.ZString("longitude"), phpv.ZFloat(meta.Lon).ZVal())
+	result.OffsetSet(ctx, phpv.ZString("latitude"), phpv.ZFloat(lat).ZVal())
+	result.OffsetSet(ctx, phpv.ZString("longitude"), phpv.ZFloat(lon).ZVal())
 	result.OffsetSet(ctx, phpv.ZString("comments"), phpv.ZString(comments).ZVal())
 	return result.ZVal(), nil
 }

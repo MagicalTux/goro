@@ -820,6 +820,26 @@ func (g *Global) WriteStartupWarning(msg string) {
 	g.startupWarnings = append(g.startupWarnings, []byte(msg)...)
 }
 
+// ValidateDateTimezone checks if the date.timezone INI value is valid and emits
+// a startup warning if it is empty or invalid (matching PHP's startup behavior).
+// When invalid, the timezone is reset to UTC.
+func (g *Global) ValidateDateTimezone() {
+	v := g.IniConfig.Get(phpv.ZString("date.timezone"))
+	if v == nil {
+		return
+	}
+	tzName := strings.TrimSpace(string(v.GetString(g)))
+	if tzName == "" {
+		g.WriteStartupWarning("Warning: PHP Startup: Invalid date.timezone value '', using 'UTC' instead in Unknown on line 0\n")
+		g.IniConfig.SetGlobal(g, phpv.ZString("date.timezone"), phpv.ZString("UTC").ZVal())
+		return
+	}
+	if _, err := time.LoadLocation(tzName); err != nil {
+		g.WriteStartupWarning(fmt.Sprintf("Warning: PHP Startup: Invalid date.timezone value '%s', using 'UTC' instead in Unknown on line 0\n", tzName))
+		g.IniConfig.SetGlobal(g, phpv.ZString("date.timezone"), phpv.ZString("UTC").ZVal())
+	}
+}
+
 func (g *Global) RestoreConfig(name phpv.ZString) {
 	g.IniConfig.RestoreConfig(g, name)
 }

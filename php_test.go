@@ -192,6 +192,9 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 			g.ReinitSuperglobals()
 		}
 
+		// Validate date.timezone: emit startup warning if empty or invalid
+		g.ValidateDateTimezone()
+
 		// Convert to absolute path so __DIR__ and include paths work correctly
 		absPath, _ := filepath.Abs(p.path)
 		g.Chdir(phpv.ZString(filepath.Dir(absPath))) // chdir execution to path

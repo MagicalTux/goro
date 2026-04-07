@@ -2684,6 +2684,16 @@ func (o *ZObject) ObjectSet(ctx phpv.Context, key phpv.Val, value *phpv.ZVal) er
 		return err
 	}
 
+	// For unset operations, check class-level unset handler first (e.g., DatePeriod
+	// uses a custom "Cannot unset" message for its built-in properties).
+	if value == nil {
+		if h := FindPropHandlers(o.Class); h != nil && h.HandlePropUnset != nil {
+			if handled, err := h.HandlePropUnset(ctx, o, keyStr); handled || err != nil {
+				return err
+			}
+		}
+	}
+
 	// Check readonly property enforcement
 	if err := o.checkReadonlyWrite(ctx, keyStr); err != nil {
 		return err

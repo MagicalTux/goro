@@ -1451,7 +1451,7 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 				numProps--
 			}
 			method, _ := obj.GetClass().GetMethod(phpv.ZString("__unserialize"))
-			_, err := ctx.Global().CallZVal(ctx, method.Method, []*phpv.ZVal{arr.ZVal()}, obj)
+			_, err := ctx.Global().CallZValInternal(ctx, method.Method, []*phpv.ZVal{arr.ZVal()}, obj)
 			if err != nil {
 				return nil, offset, err
 			}
@@ -1637,7 +1637,7 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 		// Call the unserialize($data) method on the object (only if it has one)
 		if hasUnserializer && class != phpobj.IncompleteClass {
 			if method, ok := obj.GetClass().GetMethod(phpv.ZString("unserialize")); ok {
-				_, err := ctx.Global().CallZVal(ctx, method.Method, []*phpv.ZVal{phpv.ZStr(data).ZVal()}, obj)
+				_, err := ctx.Global().CallZValInternal(ctx, method.Method, []*phpv.ZVal{phpv.ZStr(data).ZVal()}, obj)
 				if err != nil {
 					return nil, offset, err
 				}
@@ -1728,6 +1728,31 @@ func unserializeSetProperty(ctx phpv.Context, obj phpv.ZObject, key phpv.ZString
 	prop, found := obj.GetClass().GetProp(actualPropName)
 	if found {
 		if prop.Modifiers.IsPrivate() {
+			// If the serialized data came from a different class name (origPrivateClass)
+			// that doesn't exist in the hierarchy, don't overwrite the declared private
+			// property. PHP ignores the value in this case, keeping the default.
+			if origPrivateClass != "" {
+				// Check if origPrivateClass exists in the hierarchy
+				classFound := false
+				if zc, ok := obj.GetClass().(*phpobj.ZClass); ok {
+					for cl := zc; cl != nil; cl = func() *phpobj.ZClass {
+						if p := cl.GetParent(); p != nil {
+							c, _ := p.(*phpobj.ZClass)
+							return c
+						}
+						return nil
+					}() {
+						if string(cl.GetName()) == origPrivateClass {
+							classFound = true
+							break
+						}
+					}
+				}
+				if !classFound {
+					// Class not in hierarchy — skip this property (keep default)
+					return
+				}
+			}
 			// Current class has it as private — store under *DeclaredClass:propName
 			declClass := zobj.GetDeclClassName(prop)
 			var declZClass phpv.ZClass = obj.GetClass()
