@@ -2536,9 +2536,30 @@ func init() {
 							this.HashTable().UnsetString(phpv.ZString(key))
 						}
 					} else {
+						// PHP initializes int properties to -1 before applying unserialized values.
+						// Missing properties remain at -1 (sentinel for "not set").
+						for _, key := range []string{"y", "m", "d", "h", "i", "s", "invert", "days"} {
+							this.HashTable().SetString(phpv.ZString(key), phpv.ZInt(-1).ZVal())
+						}
+						// Coerce values to proper types matching PHP behavior.
+						// For int properties, only apply if the value is a scalar (not object/array/null).
+						// PHP's native unserialize leaves -1 for non-scalar values.
+						intProps := map[string]bool{"y": true, "m": true, "d": true, "h": true, "i": true, "s": true, "invert": true, "days": true}
 						for _, key := range []string{"y", "m", "d", "h", "i", "s", "f", "invert", "days", "from_string", "date_string"} {
 							v, _ := arr.OffsetGet(ctx, phpv.ZString(key).ZVal())
 							if v != nil && !v.IsNull() {
+								if intProps[key] {
+									// Only apply scalar values; objects/arrays leave the -1 default
+									vt := v.GetType()
+									if vt == phpv.ZtObject || vt == phpv.ZtArray {
+										continue
+									}
+									v = phpv.ZInt(v.AsInt(ctx)).ZVal()
+								} else if key == "f" {
+									v = phpv.ZFloat(v.AsFloat(ctx)).ZVal()
+								} else if key == "from_string" {
+									v = phpv.ZBool(v.AsBool(ctx)).ZVal()
+								}
 								this.HashTable().SetString(phpv.ZString(key), v)
 							}
 						}
@@ -4144,8 +4165,83 @@ func dateIntervalConstruct(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.
 		return nil, phpobj.ThrowError(ctx, DateMalformedIntervalStringException, "Unknown or bad format ("+spec+")")
 	}
 	if spec[0] != 'P' {
-		// Not a proper ISO 8601 duration - check if it looks like an attempted ISO period
-		// (contains / or T separators) vs garbage input
+		// Try parsing as "date/date" or "date date" pair (ISO 8601 time interval)
+		var part1, part2 string
+		if idx := strings.Index(spec, "/"); idx >= 0 {
+			part1 = strings.TrimSpace(spec[:idx])
+			part2 = strings.TrimSpace(spec[idx+1:])
+		} else if idx := strings.Index(spec, " "); idx >= 0 {
+			part1 = strings.TrimSpace(spec[:idx])
+			part2 = strings.TrimSpace(spec[idx+1:])
+		}
+		if part1 != "" && part2 != "" {
+			loc := getTimezone(ctx)
+			t1, err1 := strtotime.StrToTime(part1, strtotime.InTZ(loc))
+			t2, err2 := strtotime.StrToTime(part2, strtotime.InTZ(loc))
+			if err1 == nil && err2 == nil {
+				// Compute the interval via diff
+				invert := false
+				from, to := t1, t2
+				if from.After(to) {
+					from, to = to, from
+					invert = true
+				}
+				y1, m1, d1 := from.Date()
+				y2, m2, d2 := to.Date()
+				years := y2 - y1
+				months := int(m2) - int(m1)
+				days := d2 - d1
+				if days < 0 {
+					prevMonth := time.Date(y2, m2, 0, 0, 0, 0, 0, to.Location())
+					days += prevMonth.Day()
+					months--
+				}
+				if months < 0 {
+					months += 12
+					years--
+				}
+				fromSod := from.Hour()*3600 + from.Minute()*60 + from.Second()
+				toSod := to.Hour()*3600 + to.Minute()*60 + to.Second()
+				remainSec := toSod - fromSod
+				if remainSec < 0 {
+					remainSec += 86400
+					days--
+					if days < 0 {
+						prevMonth := time.Date(y2, m2, 0, 0, 0, 0, 0, to.Location())
+						days += prevMonth.Day()
+						months--
+						if months < 0 {
+							months += 12
+							years--
+						}
+					}
+				}
+				hours := remainSec / 3600
+				remainSec %= 3600
+				minutes := remainSec / 60
+				seconds := remainSec % 60
+				fromUTC := time.Date(from.Year(), from.Month(), from.Day(), from.Hour(), from.Minute(), from.Second(), 0, time.UTC)
+				toUTC := time.Date(to.Year(), to.Month(), to.Day(), to.Hour(), to.Minute(), to.Second(), 0, time.UTC)
+				totalDays := int((toUTC.Unix() - fromUTC.Unix()) / 86400)
+				this.HashTable().SetString("y", phpv.ZInt(years).ZVal())
+				this.HashTable().SetString("m", phpv.ZInt(months).ZVal())
+				this.HashTable().SetString("d", phpv.ZInt(days).ZVal())
+				this.HashTable().SetString("h", phpv.ZInt(hours).ZVal())
+				this.HashTable().SetString("i", phpv.ZInt(minutes).ZVal())
+				this.HashTable().SetString("s", phpv.ZInt(seconds).ZVal())
+				this.HashTable().SetString("f", phpv.ZFloat(0).ZVal())
+				this.HashTable().SetString("days", phpv.ZInt(totalDays).ZVal())
+				if invert {
+					this.HashTable().SetString("invert", phpv.ZInt(1).ZVal())
+				}
+				return nil, nil
+			}
+			// If one part is empty or parsing failed
+			if part2 == "" || err2 != nil {
+				return nil, phpobj.ThrowError(ctx, DateMalformedIntervalStringException, "Failed to parse interval ("+spec+")")
+			}
+		}
+		// Not a proper ISO 8601 duration
 		if strings.ContainsAny(spec, "/T") || len(spec) > 10 {
 			return nil, phpobj.ThrowError(ctx, DateMalformedIntervalStringException, "Failed to parse interval ("+spec+")")
 		}

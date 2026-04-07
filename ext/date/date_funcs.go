@@ -7,11 +7,34 @@ import (
 	"strings"
 	"time"
 
+	"github.com/KarpelesLab/gotz"
 	"github.com/KarpelesLab/strtotime"
 	"github.com/MagicalTux/goro/core"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 )
+
+// isDST returns true if the given time is in DST for its timezone.
+// It uses gotz to get the authoritative IsDST flag from IANA data,
+// which correctly handles historical DST rules and Southern Hemisphere timezones.
+func isDST(t time.Time) bool {
+	locName := t.Location().String()
+	if locName == "UTC" || locName == "Local" {
+		return false
+	}
+	// For fixed-offset timezones (e.g. "+05:00"), there is no DST
+	if len(locName) > 0 && (locName[0] == '+' || locName[0] == '-') {
+		return false
+	}
+	zone, err := gotz.Load(locName)
+	if err != nil {
+		// Fallback: compare with January offset
+		_, offset := t.Zone()
+		_, stdOffset := time.Date(t.Year(), time.January, 1, 0, 0, 0, 0, t.Location()).Zone()
+		return offset != stdOffset
+	}
+	return zone.Lookup(t).IsDST
+}
 
 // getTimezone returns the timezone configured via date.timezone, falling back to UTC.
 func getTimezone(ctx phpv.Context) *time.Location {
@@ -171,9 +194,7 @@ func phpDateFormat(format string, t time.Time) string {
 			}
 			buf.WriteString(locName)
 		case 'I': // Whether daylight saving time (1 if DST, 0 otherwise)
-			_, offset := t.Zone()
-			_, stdOffset := time.Date(t.Year(), time.January, 1, 0, 0, 0, 0, t.Location()).Zone()
-			if offset != stdOffset {
+			if isDST(t) {
 				buf.WriteString("1")
 			} else {
 				buf.WriteString("0")
@@ -388,9 +409,7 @@ func fncIdate(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	case 'i':
 		result = t.Minute()
 	case 'I':
-		_, offset := t.Zone()
-		_, stdOffset := time.Date(t.Year(), time.January, 1, 0, 0, 0, 0, t.Location()).Zone()
-		if offset != stdOffset {
+		if isDST(t) {
 			result = 1
 		} else {
 			result = 0

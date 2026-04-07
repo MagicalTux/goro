@@ -777,7 +777,7 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 skipTypeCheck:
 
 	callResult, callErr = phperr.CatchReturn(f.Call(callCtx, callCtx.Args))
-	if hasNoDiscardAttr(f) {
+	if callErr == nil && hasNoDiscardAttr(f) {
 		// Wrap with the runtime object (this) so NoDiscard warnings
 		// report the correct class name (e.g. for trait methods).
 		if this != nil {

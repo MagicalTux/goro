@@ -629,7 +629,7 @@ var militaryTZAbbrevs = map[string]int{
 // America/Cancun before America/New_York for EDT, etc.
 var canonicalTZForAbbrev = map[string]string{
 	"acdt":  "Australia/Adelaide",
-	"acst":  "Australia/Darwin",
+	"acst":  "Australia/Adelaide",
 	"adt":   "America/Halifax",
 	"aedt":  "Australia/Sydney",
 	"aest":  "Australia/Sydney",
@@ -656,7 +656,7 @@ var canonicalTZForAbbrev = map[string]string{
 	"hst":   "Pacific/Honolulu",
 	"ict":   "Asia/Bangkok",
 	"idt":   "Asia/Jerusalem",
-	"ist":   "Asia/Calcutta",
+	"ist":   "Asia/Kolkata",
 	"jst":   "Asia/Tokyo",
 	"kst":   "Asia/Seoul",
 	"mdt":   "America/Denver",
@@ -978,11 +978,6 @@ func fncTimezoneNameFromAbbr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, e
 		// Search through the abbreviation database for matching offset
 		// PHP iterates the abbreviation list and returns the first match
 		// with a matching offset and (if isDST is specified) DST flag.
-		// We use a two-pass approach to match PHP's static timezonemap.h ordering:
-		//   Pass 1: Check only the canonical (first) entry for each canonical abbreviation.
-		//           This ensures "edt"/"America/New_York" wins over non-canonical "cdt"
-		//           entries (Cuba's CDT also uses -14400) for offset=-14400 DST=1.
-		//   Pass 2: Check all entries of all remaining (non-canonical) abbreviations.
 
 		entryMatches := func(e tzAbbrevEntry) bool {
 			if e.tzID == "" {
@@ -1001,6 +996,33 @@ func fncTimezoneNameFromAbbr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, e
 				}
 			}
 			return true
+		}
+
+		// Pass 0: Check preferred zones for specific offsets.
+		// PHP's timezonemap.h has a specific ordering that doesn't match
+		// alphabetical abbreviation order. This map captures the preferred
+		// timezone for each (offset, isDST) combination to match PHP behavior.
+		type offsetKey struct {
+			offset int64
+			isDST  int64
+		}
+		preferredForOffset := map[offsetKey]string{
+			{19800, 0}:  "Asia/Kolkata",
+			{28800, 0}:  "Asia/Shanghai",
+			{-10800, 0}: "America/Sao_Paulo",
+		}
+		if offset != -1 {
+			pk := offsetKey{offset, wantDST}
+			if preferred, ok := preferredForOffset[pk]; ok {
+				// Verify this entry actually exists and matches
+				for _, entries := range tzAbbrevCache {
+					for _, e := range entries {
+						if e.tzID == preferred && entryMatches(e) {
+							return phpv.ZString(preferred).ZVal(), nil
+						}
+					}
+				}
+			}
 		}
 
 		// First pass: canonical abbreviations, check only the canonical (first) entry.
@@ -1569,9 +1591,9 @@ func fncDateParse(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		_, offset := t.Zone()
 
 		if locName == "" || (len(locName) > 0 && (locName[0] == '+' || locName[0] == '-')) {
-			// Type 1: offset
+			// Type 1: offset — zone is UTC offset in seconds
 			result.OffsetSet(ctx, phpv.ZString("zone_type"), phpv.ZInt(1).ZVal())
-			result.OffsetSet(ctx, phpv.ZString("zone"), phpv.ZInt(-offset).ZVal()) // PHP stores zone as negative of UTC offset
+			result.OffsetSet(ctx, phpv.ZString("zone"), phpv.ZInt(offset).ZVal())
 			result.OffsetSet(ctx, phpv.ZString("is_dst"), phpv.ZBool(false).ZVal())
 		} else if locName == "UTC" {
 			// Check if input had a specific abbreviation or offset
@@ -1586,15 +1608,15 @@ func fncDateParse(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				result.OffsetSet(ctx, phpv.ZString("tz_abbr"), phpv.ZString("GMT").ZVal())
 			}
 		} else if strings.Contains(locName, "/") {
-			// Type 3: identifier
+			// Type 3: identifier — zone is UTC offset in seconds
 			result.OffsetSet(ctx, phpv.ZString("zone_type"), phpv.ZInt(3).ZVal())
-			result.OffsetSet(ctx, phpv.ZString("zone"), phpv.ZInt(-offset).ZVal())
+			result.OffsetSet(ctx, phpv.ZString("zone"), phpv.ZInt(offset).ZVal())
 			result.OffsetSet(ctx, phpv.ZString("is_dst"), phpv.ZBool(false).ZVal())
 			result.OffsetSet(ctx, phpv.ZString("tz_id"), phpv.ZString(locName).ZVal())
 		} else {
-			// Type 2: abbreviation
+			// Type 2: abbreviation — zone is UTC offset in seconds (not negated)
 			result.OffsetSet(ctx, phpv.ZString("zone_type"), phpv.ZInt(2).ZVal())
-			result.OffsetSet(ctx, phpv.ZString("zone"), phpv.ZInt(-offset).ZVal())
+			result.OffsetSet(ctx, phpv.ZString("zone"), phpv.ZInt(offset).ZVal())
 			result.OffsetSet(ctx, phpv.ZString("is_dst"), phpv.ZBool(false).ZVal())
 			result.OffsetSet(ctx, phpv.ZString("tz_abbr"), phpv.ZString(locName).ZVal())
 		}

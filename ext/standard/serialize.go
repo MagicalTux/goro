@@ -1451,7 +1451,10 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 				numProps--
 			}
 			method, _ := obj.GetClass().GetMethod(phpv.ZString("__unserialize"))
-			callable := phpobj.WrapCallableWithName(method.Method, "__unserialize")
+			callable := phpv.Callable(&phpv.MethodCallable{
+				Callable: phpobj.WrapCallableWithName(method.Method, "__unserialize"),
+				Class:    method.Class,
+			})
 			_, err := ctx.Global().CallZValInternal(ctx, callable, []*phpv.ZVal{arr.ZVal()}, obj)
 			if err != nil {
 				return nil, offset, err
@@ -1638,7 +1641,10 @@ func (d *deserializer) parse(ctx phpv.Context, str string, offsetArg ...int) (re
 		// Call the unserialize($data) method on the object (only if it has one)
 		if hasUnserializer && class != phpobj.IncompleteClass {
 			if method, ok := obj.GetClass().GetMethod(phpv.ZString("unserialize")); ok {
-				callable := phpobj.WrapCallableWithName(method.Method, "unserialize")
+				callable := phpv.Callable(&phpv.MethodCallable{
+					Callable: phpobj.WrapCallableWithName(method.Method, "unserialize"),
+					Class:    method.Class,
+				})
 				_, err := ctx.Global().CallZValInternal(ctx, callable, []*phpv.ZVal{phpv.ZStr(data).ZVal()}, obj)
 				if err != nil {
 					return nil, offset, err
