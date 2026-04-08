@@ -327,19 +327,37 @@ func jsonDecodeObject(ctx phpv.Context, r *strings.Reader, depth int, opt JsonDe
 	}
 
 	var set func(ctx phpv.Context, k phpv.Val, v *phpv.ZVal) error
-	var final *phpv.ZVal
+	var final func() *phpv.ZVal
 
 	if opt&ObjectAsArray == ObjectAsArray {
 		a := phpv.NewZArray()
 		set = a.OffsetSet
-		final = a.ZVal()
+		final = a.ZVal
 	} else {
-		o, err := phpobj.NewZObject(ctx, nil)
-		if err != nil {
-			return nil, err
+		// Lazily create the stdClass object so that object IDs are not
+		// consumed when parsing fails (e.g. incomplete JSON input).
+		var o *phpobj.ZObject
+		set = func(ctx phpv.Context, k phpv.Val, v *phpv.ZVal) error {
+			if o == nil {
+				var err error
+				o, err = phpobj.NewZObject(ctx, nil)
+				if err != nil {
+					return err
+				}
+			}
+			return o.ObjectSet(ctx, k, v)
 		}
-		set = o.ObjectSet
-		final = o.ZVal()
+		final = func() *phpv.ZVal {
+			if o == nil {
+				// Empty object: create it now
+				var err error
+				o, err = phpobj.NewZObject(ctx, nil)
+				if err != nil {
+					return phpv.ZNULL.ZVal()
+				}
+			}
+			return o.ZVal()
+		}
 	}
 
 	for {
@@ -348,7 +366,7 @@ func jsonDecodeObject(ctx phpv.Context, r *strings.Reader, depth int, opt JsonDe
 			return nil, err
 		}
 		if b == '}' {
-			return final, nil
+			return final(), nil
 		}
 		r.UnreadRune()
 
@@ -397,7 +415,7 @@ func jsonDecodeObject(ctx phpv.Context, r *strings.Reader, depth int, opt JsonDe
 			continue
 		}
 		if b == '}' {
-			return final, nil
+			return final(), nil
 		}
 		return nil, ErrStateMismatch
 	}

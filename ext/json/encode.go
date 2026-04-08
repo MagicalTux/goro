@@ -235,7 +235,7 @@ func jsonIndent(level int) []byte {
 type jsonState struct {
 	indent        int
 	seen          map[phpv.ZObject]bool
-	seenArrays    map[*phpv.ZArray]bool
+	seenArrays    map[uintptr]bool
 	partialOutput bool
 	lastError     JsonError
 }
@@ -258,19 +258,20 @@ func (st *jsonState) unmarkObject(obj phpv.ZObject) {
 }
 
 func (st *jsonState) markArray(a *phpv.ZArray) bool {
+	key := a.CycleKey()
 	if st.seenArrays == nil {
-		st.seenArrays = make(map[*phpv.ZArray]bool)
+		st.seenArrays = make(map[uintptr]bool)
 	}
-	if st.seenArrays[a] {
+	if st.seenArrays[key] {
 		return true
 	}
-	st.seenArrays[a] = true
+	st.seenArrays[key] = true
 	return false
 }
 
 func (st *jsonState) unmarkArray(a *phpv.ZArray) {
 	if st.seenArrays != nil {
-		delete(st.seenArrays, a)
+		delete(st.seenArrays, a.CycleKey())
 	}
 }
 
