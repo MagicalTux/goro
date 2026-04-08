@@ -2554,7 +2554,12 @@ func init() {
 									if vt == phpv.ZtObject || vt == phpv.ZtArray {
 										continue
 									}
-									v = phpv.ZInt(v.AsInt(ctx)).ZVal()
+									// For "days", preserve bool(false) as-is (PHP serializes it as b:0)
+									if key == "days" && vt == phpv.ZtBool && !bool(v.Value().(phpv.ZBool)) {
+										// Keep bool(false) — don't coerce to int(0)
+									} else {
+										v = phpv.ZInt(v.AsInt(ctx)).ZVal()
+									}
 								} else if key == "f" {
 									v = phpv.ZFloat(v.AsFloat(ctx)).ZVal()
 								} else if key == "from_string" {
