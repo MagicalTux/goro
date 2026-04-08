@@ -345,6 +345,29 @@ func (r *runnableForeach) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 			}
 		}
 
+		// For by-reference foreach over arrays: re-check the source variable.
+		// In PHP, if the variable is overwritten (e.g. $a = null) during a
+		// by-ref foreach, the next iteration detects this and emits a warning.
+		if r.ref && z.GetType() == phpv.ZtArray {
+			srcNow, srcErr := r.src.Run(ctx)
+			if srcErr == nil && srcNow != nil {
+				srcType := srcNow.GetType()
+				if srcType != phpv.ZtArray && srcType != phpv.ZtObject {
+					typeName := srcType.TypeName()
+					if srcType == phpv.ZtBool {
+						if srcNow.AsBool(ctx) {
+							typeName = "true"
+						} else {
+							typeName = "false"
+						}
+					}
+					phpErr := r.l.Error(ctx, fmt.Errorf("foreach() argument must be of type array|object, %s given", typeName), phpv.E_WARNING)
+					ctx.LogError(phpErr)
+					break
+				}
+			}
+		}
+
 		it.Next(ctx)
 	}
 

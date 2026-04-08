@@ -133,7 +133,7 @@ func calculateSunRiseSetTransit(utcMidnightTS int64, lat, lon, altit float64, up
 	return
 }
 
-const solarZenithSunrise = 90.5833
+const solarZenithSunrise = 90.833333
 
 // calculateSunTime provides backward compatibility with callers that use the old zenith-based API.
 // It wraps the Schlyter algorithm. The loc parameter determines the local timezone used to
@@ -2182,7 +2182,10 @@ func fncDateSunInfo(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if math.IsNaN(longitude) || math.IsInf(longitude, 0) {
 		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "date_sun_info(): Argument #3 ($longitude) must be finite")
 	}
-	t := time.Unix(timestamp, 0).UTC()
+	// Use the default timezone's local date (not UTC) to determine the day,
+	// matching PHP's timelib_unixtime2local behavior in date_sun_info().
+	loc := getTimezone(ctx)
+	t := time.Unix(timestamp, 0).In(loc)
 	dayStart := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
 	midnightTS := dayStart.Unix()
 

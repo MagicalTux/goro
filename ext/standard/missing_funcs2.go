@@ -243,7 +243,13 @@ func fncGetExtensionFuncs(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, erro
 		return nil, err
 	}
 
-	ext := phpctx.GetExt(string(extName))
+	// PHP has a special case: get_extension_funcs("zend") returns functions
+	// from the Zend core engine. In goro, these are registered under "Core".
+	name := string(extName)
+	if strings.EqualFold(name, "zend") {
+		name = "Core"
+	}
+	ext := phpctx.GetExt(name)
 	if ext == nil {
 		return phpv.ZFalse.ZVal(), nil
 	}

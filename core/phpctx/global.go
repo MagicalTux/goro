@@ -877,6 +877,12 @@ func (g *Global) SetLocalConfig(name phpv.ZString, value *phpv.ZVal) (*phpv.ZVal
 		if bytes <= 0 {
 			g.mem.SetLimit(0) // unlimited
 		} else {
+			// PHP warns when trying to set memory_limit below current usage
+			currentUsage := g.mem.Usage()
+			if currentUsage > bytes {
+				g.Warn("Failed to set memory limit to %d bytes (Current memory usage is %d bytes)", bytes, currentUsage)
+				return nil, false
+			}
 			g.mem.SetLimit(bytes)
 		}
 	}

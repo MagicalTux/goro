@@ -311,6 +311,11 @@ func compileTopLevelConst(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error
 			return nil, err
 		}
 
+		// Check for "Cannot use [] for reading" in constant expression values
+		if err := checkEmptySubscriptRead(val, false); err != nil {
+			return nil, err
+		}
+
 		// Validate closures in constant expressions
 		if zc, ok := val.(*ZClosure); ok {
 			if !zc.isStatic {

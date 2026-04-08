@@ -527,7 +527,7 @@ func init() {
 			"utf8_encode":                {Func: fncUtf8Encode, Args: []*phpctx.ExtFunctionArg{}},
 			"usleep":                     {Func: stdFuncUsleep, Args: []*phpctx.ExtFunctionArg{}},
 			"usort":                      {Func: fncArrayUSort, Args: []*phpctx.ExtFunctionArg{{ArgName: "array", NoticeRef: true}, {ArgName: "callback"}}},
-			"var_dump":                   {Func: stdFuncVarDump, Args: []*phpctx.ExtFunctionArg{}},
+			"var_dump":                   {Func: stdFuncVarDump, MinArgs: 1, MaxArgs: -1, Args: []*phpctx.ExtFunctionArg{{ArgName: "value"}, {ArgName: "values", Optional: true, Variadic: true}}},
 			"version_compare":            {Func: fncVersionCompare, Args: []*phpctx.ExtFunctionArg{}},
 			"var_export":                 {Func: stdFuncVarExport, Args: []*phpctx.ExtFunctionArg{}},
 			"vfprintf":                   {Func: fncVFPrintf, MinArgs: 3, MaxArgs: 3, Args: []*phpctx.ExtFunctionArg{}},
