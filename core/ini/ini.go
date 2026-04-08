@@ -145,14 +145,53 @@ func (c *Config) EvalConfigValue(ctx phpv.Context, expr phpv.ZString) (*phpv.ZVa
 	case "null":
 		return phpv.ZNULL.ZVal(), nil
 	}
+	// Fast path: if the value is a plain number or doesn't contain PHP
+	// operators/constants, return it as a string without eval. This avoids
+	// creating a full tokenizer+compiler for simple INI defaults.
+	s := string(expr)
+	if iniIsPlainValue(s) {
+		return phpv.ZStr(s), nil
+	}
 	ctx = &IniContext{ctx.Global()}
-	result, err := core.Eval(ctx, string(expr))
+	result, err := core.Eval(ctx, s)
 	if err != nil {
 		// If evaluation as PHP fails, treat the value as a raw string.
 		// INI values like paths (/path/to/dir) or URLs are not PHP expressions.
-		return phpv.ZStr(string(expr)), nil
+		return phpv.ZStr(s), nil
 	}
 	return result, nil
+}
+
+// iniIsPlainValue returns true if the value doesn't need PHP evaluation.
+// Returns false for strings containing PHP operators, quotes, or that look
+// like PHP constants (e.g., E_ALL, PHP_INT_MAX).
+func iniIsPlainValue(s string) bool {
+	if len(s) == 0 {
+		return true
+	}
+	hasUpper := false
+	hasUnderscore := false
+	allIdentChar := true
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch c {
+		case '&', '|', '~', '^', '(', ')', '$', '"', '\'':
+			return false
+		}
+		if c >= 'A' && c <= 'Z' {
+			hasUpper = true
+		} else if c == '_' {
+			hasUnderscore = true
+		} else if !((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) {
+			allIdentChar = false
+		}
+	}
+	// If it looks like a PHP constant (uppercase with underscore, e.g., E_ALL),
+	// it needs evaluation to resolve to its numeric value.
+	if allIdentChar && hasUpper && hasUnderscore {
+		return false
+	}
+	return true
 }
 
 func (c *Config) Parse(ctx phpv.Context, r io.Reader) error {
