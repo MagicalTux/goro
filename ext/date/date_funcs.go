@@ -505,10 +505,10 @@ func fncMktime(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if yearArg != nil {
 		rawYear := *yearArg
 		year = rawYear
-		// PHP year normalization: 0-69 -> 2000-2069, 70-99 -> 1970-1999
+		// PHP year normalization: 0-69 -> 2000-2069, 70-100 -> 1970-2000
 		if rawYear >= 0 && rawYear <= 69 {
 			year = rawYear + 2000
-		} else if rawYear >= 70 && rawYear <= 99 {
+		} else if rawYear >= 70 && rawYear <= 100 {
 			year = rawYear + 1900
 		}
 	}
@@ -551,10 +551,10 @@ func fncGmmktime(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if yearArg != nil {
 		rawYear := *yearArg
 		year = rawYear
-		// PHP year normalization: 0-69 -> 2000-2069, 70-99 -> 1970-1999
+		// PHP year normalization: 0-69 -> 2000-2069, 70-100 -> 1970-2000
 		if rawYear >= 0 && rawYear <= 69 {
 			year = rawYear + 2000
-		} else if rawYear >= 70 && rawYear <= 99 {
+		} else if rawYear >= 70 && rawYear <= 100 {
 			year = rawYear + 1900
 		}
 	}
@@ -1043,7 +1043,13 @@ func makeFixedZone(offset int) *time.Location {
 	}
 	hours := absOffset / 3600
 	mins := (absOffset % 3600) / 60
-	name := fmt.Sprintf("%s%02d:%02d", sign, hours, mins)
+	secs := absOffset % 60
+	var name string
+	if secs != 0 {
+		name = fmt.Sprintf("%s%02d:%02d:%02d", sign, hours, mins, secs)
+	} else {
+		name = fmt.Sprintf("%s%02d:%02d", sign, hours, mins)
+	}
 	return time.FixedZone(name, offset)
 }
 

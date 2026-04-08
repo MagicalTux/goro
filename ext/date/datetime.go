@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"math"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/KarpelesLab/strtotime"
@@ -28,6 +30,49 @@ func newDateParseErrors() *dateParseErrors {
 
 func (e *dateParseErrors) addWarning(pos int, msg string) { e.warnings[pos] = msg; e.warningCount++ }
 func (e *dateParseErrors) addError(pos int, msg string) { e.errors[pos] = msg; e.errorCount++ }
+
+func (e *dateParseErrors) toZVal(ctx phpv.Context) *phpv.ZVal {
+	result := phpv.NewZArray()
+	result.OffsetSet(ctx, phpv.ZString("warning_count"), phpv.ZInt(e.warningCount).ZVal())
+	warnings := phpv.NewZArray()
+	keys := make([]int, 0, len(e.warnings))
+	for k := range e.warnings {
+		keys = append(keys, k)
+	}
+	sort.Ints(keys)
+	for _, k := range keys {
+		warnings.OffsetSet(ctx, phpv.ZInt(k), phpv.ZString(e.warnings[k]).ZVal())
+	}
+	result.OffsetSet(ctx, phpv.ZString("warnings"), warnings.ZVal())
+	result.OffsetSet(ctx, phpv.ZString("error_count"), phpv.ZInt(e.errorCount).ZVal())
+	errors := phpv.NewZArray()
+	ekeys := make([]int, 0, len(e.errors))
+	for k := range e.errors {
+		ekeys = append(ekeys, k)
+	}
+	sort.Ints(ekeys)
+	for _, k := range ekeys {
+		errors.OffsetSet(ctx, phpv.ZInt(k), phpv.ZString(e.errors[k]).ZVal())
+	}
+	result.OffsetSet(ctx, phpv.ZString("errors"), errors.ZVal())
+	return result.ZVal()
+}
+
+// lastDateErrorsMap stores per-Global errors from the most recent createFromFormat call
+// for retrieval by DateTime::getLastErrors().
+var lastDateErrorsMap sync.Map // map[*phpctx.Global]*dateParseErrors
+
+func setLastDateErrors(ctx phpv.Context, e *dateParseErrors) {
+	lastDateErrorsMap.Store(ctx.Global(), e)
+}
+
+func getLastDateErrors(ctx phpv.Context) *dateParseErrors {
+	v, ok := lastDateErrorsMap.Load(ctx.Global())
+	if !ok {
+		return nil
+	}
+	return v.(*dateParseErrors)
+}
 
 var DateTimeInterface *phpobj.ZClass
 var DateTime *phpobj.ZClass
@@ -743,7 +788,12 @@ func getTimezoneMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal
 		}
 		hours := offset / 3600
 		mins := (offset % 3600) / 60
-		locStr = fmt.Sprintf("%s%02d:%02d", sign, hours, mins)
+		secs := offset % 60
+		if secs != 0 {
+			locStr = fmt.Sprintf("%s%02d:%02d:%02d", sign, hours, mins, secs)
+		} else {
+			locStr = fmt.Sprintf("%s%02d:%02d", sign, hours, mins)
+		}
 	}
 	tzObj, err := phpobj.NewZObject(ctx, DateTimeZone, phpv.ZString(locStr).ZVal())
 	if err != nil {
@@ -1680,7 +1730,7 @@ func createFromTimestampStatic(targetClass *phpobj.ZClass) func(ctx phpv.Context
 		utcOffset := time.FixedZone("+00:00", 0)
 		if val.GetType() == phpv.ZtFloat {
 			f := float64(val.AsFloat(ctx))
-			if math.IsNaN(f) || math.IsInf(f, 0) || f > float64(math.MaxInt64) || f < float64(math.MinInt64) {
+			if math.IsNaN(f) || math.IsInf(f, 0) || f >= float64(math.MaxInt64) || f < float64(math.MinInt64) {
 				return nil, phpobj.ThrowError(ctx, DateRangeError, fmt.Sprintf("%s::createFromTimestamp(): Argument #1 ($timestamp) must be a finite number between %d and %d.999999, %s given", targetClass.Name, math.MinInt64, math.MaxInt64, val.AsString(ctx)))
 			}
 			// PHP rounds to microsecond precision (6 decimal places)
@@ -1946,7 +1996,11 @@ func wakeupMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*p
 
 // getLastErrorsStatic implements DateTime::getLastErrors(): array|false
 func getLastErrorsStatic(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	return phpv.ZBool(false).ZVal(), nil
+	errs := getLastDateErrors(ctx)
+	if errs == nil {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	return errs.toZVal(ctx), nil
 }
 
 // createFromFormatParsed does the actual format parsing for createFromFormat
@@ -1968,27 +2022,62 @@ func createFromFormatParsed(ctx phpv.Context, format string, datetime string, lo
 	resetTime := false
 	usedLoc := loc
 
+	parseErrors := newDateParseErrors()
+	defer func() { setLastDateErrors(ctx, parseErrors) }()
+
+	// formatSpecName returns a human-readable description for the format character
+	formatSpecName := func(fc byte) string {
+		switch fc {
+		case 'Y':
+			return "A four digit year"
+		case 'y':
+			return "A two digit year"
+		case 'm', 'n':
+			return "A two digit month"
+		case 'd', 'j':
+			return "A two digit day"
+		case 'H', 'G':
+			return "A two digit hour"
+		case 'h', 'g':
+			return "A two digit hour"
+		case 'i':
+			return "A two digit minute"
+		case 's':
+			return "A two digit second"
+		case 'u':
+			return "A six digit microsecond"
+		case 'v':
+			return "A three digit millisecond"
+		default:
+			return "Data"
+		}
+	}
+
 	di := 0 // datetime index
 	for fi := 0; fi < len(format) && di <= len(datetime); fi++ {
 		fc := format[fi]
 		switch fc {
 		case 'Y': // 4-digit year
 			if di+4 > len(datetime) {
+				parseErrors.addError(di, formatSpecName(fc)+" could not be found")
 				return time.Time{}, false
 			}
 			n, err := fmt.Sscanf(datetime[di:di+4], "%d", &year)
 			if err != nil || n != 1 {
+				parseErrors.addError(di, formatSpecName(fc)+" could not be found")
 				return time.Time{}, false
 			}
 			yearSet = true
 			di += 4
 		case 'y': // 2-digit year
 			if di+2 > len(datetime) {
+				parseErrors.addError(di, formatSpecName(fc)+" could not be found")
 				return time.Time{}, false
 			}
 			var y2 int
 			n, err := fmt.Sscanf(datetime[di:di+2], "%d", &y2)
 			if err != nil || n != 1 {
+				parseErrors.addError(di, formatSpecName(fc)+" could not be found")
 				return time.Time{}, false
 			}
 			if y2 >= 70 {
@@ -2004,6 +2093,7 @@ func createFromFormatParsed(ctx phpv.Context, format string, datetime string, lo
 				end++
 			}
 			if end == di {
+				parseErrors.addError(di, formatSpecName(fc)+" could not be found")
 				return time.Time{}, false
 			}
 			fmt.Sscanf(datetime[di:end], "%d", &month)
@@ -2015,6 +2105,7 @@ func createFromFormatParsed(ctx phpv.Context, format string, datetime string, lo
 				end++
 			}
 			if end == di {
+				parseErrors.addError(di, formatSpecName(fc)+" could not be found")
 				return time.Time{}, false
 			}
 			fmt.Sscanf(datetime[di:end], "%d", &day)
@@ -2026,6 +2117,7 @@ func createFromFormatParsed(ctx phpv.Context, format string, datetime string, lo
 				end++
 			}
 			if end == di {
+				parseErrors.addError(di, formatSpecName(fc)+" could not be found")
 				return time.Time{}, false
 			}
 			fmt.Sscanf(datetime[di:end], "%d", &hour)
@@ -2037,6 +2129,7 @@ func createFromFormatParsed(ctx phpv.Context, format string, datetime string, lo
 				end++
 			}
 			if end == di {
+				parseErrors.addError(di, formatSpecName(fc)+" could not be found")
 				return time.Time{}, false
 			}
 			fmt.Sscanf(datetime[di:end], "%d", &hour)
@@ -2044,6 +2137,7 @@ func createFromFormatParsed(ctx phpv.Context, format string, datetime string, lo
 			di = end
 		case 'i': // minutes
 			if di+2 > len(datetime) {
+				parseErrors.addError(di, formatSpecName(fc)+" could not be found")
 				return time.Time{}, false
 			}
 			fmt.Sscanf(datetime[di:di+2], "%d", &minute)
@@ -2051,6 +2145,7 @@ func createFromFormatParsed(ctx phpv.Context, format string, datetime string, lo
 			di += 2
 		case 's': // seconds
 			if di+2 > len(datetime) {
+				parseErrors.addError(di, formatSpecName(fc)+" could not be found")
 				return time.Time{}, false
 			}
 			fmt.Sscanf(datetime[di:di+2], "%d", &second)
@@ -2062,6 +2157,7 @@ func createFromFormatParsed(ctx phpv.Context, format string, datetime string, lo
 				end++
 			}
 			if end == di {
+				parseErrors.addError(di, formatSpecName(fc)+" could not be found")
 				return time.Time{}, false
 			}
 			s := datetime[di:end]
@@ -2076,6 +2172,7 @@ func createFromFormatParsed(ctx phpv.Context, format string, datetime string, lo
 				end++
 			}
 			if end == di {
+				parseErrors.addError(di, formatSpecName(fc)+" could not be found")
 				return time.Time{}, false
 			}
 			s := datetime[di:end]
@@ -2088,6 +2185,7 @@ func createFromFormatParsed(ctx phpv.Context, format string, datetime string, lo
 			di = end
 		case 'A', 'a': // AM/PM
 			if di+2 > len(datetime) {
+				parseErrors.addError(di, "A meridian could not be found")
 				return time.Time{}, false
 			}
 			ampm := strings.ToUpper(datetime[di : di+2])
@@ -2253,6 +2351,12 @@ func createFromFormatParsed(ctx phpv.Context, format string, datetime string, lo
 		if !secondSet {
 			second = 0
 		}
+	}
+
+	// Check for trailing unparsed data
+	if di < len(datetime) {
+		parseErrors.addError(di, "Trailing data")
+		return time.Time{}, false
 	}
 
 	return time.Date(year, time.Month(month), day, hour, minute, second, microsecond*1000, usedLoc), true

@@ -701,6 +701,54 @@ var excludedAbbrevs = map[string]bool{
 	"set":  true, // not in PHP's timezonemap.h
 }
 
+// timezoneFallbackMap mirrors PHP's timelib_timezone_fallbackmap from fallbackmap.h.
+// It is used by timezone_name_from_abbr() when searching by offset/isDST without
+// an abbreviation. The order matches PHP's static data exactly.
+var timezoneFallbackMap = []tzAbbrevEntry{
+	{dst: false, offset: -39600, tzID: "Pacific/Apia"},
+	{dst: false, offset: -36000, tzID: "Pacific/Honolulu"},
+	{dst: false, offset: -32400, tzID: "America/Anchorage"},
+	{dst: true, offset: -28800, tzID: "America/Anchorage"},
+	{dst: false, offset: -28800, tzID: "America/Los_Angeles"},
+	{dst: true, offset: -25200, tzID: "America/Los_Angeles"},
+	{dst: false, offset: -25200, tzID: "America/Denver"},
+	{dst: true, offset: -21600, tzID: "America/Denver"},
+	{dst: false, offset: -21600, tzID: "America/Chicago"},
+	{dst: true, offset: -18000, tzID: "America/Chicago"},
+	{dst: false, offset: -18000, tzID: "America/New_York"},
+	{dst: false, offset: -16200, tzID: "America/Caracas"},
+	{dst: true, offset: -14400, tzID: "America/New_York"},
+	{dst: false, offset: -14400, tzID: "America/Halifax"},
+	{dst: true, offset: -10800, tzID: "America/Halifax"},
+	{dst: false, offset: -10800, tzID: "America/Sao_Paulo"},
+	{dst: true, offset: -7200, tzID: "America/Sao_Paulo"},
+	{dst: false, offset: -3600, tzID: "Atlantic/Azores"},
+	{dst: true, offset: 0, tzID: "Atlantic/Azores"},
+	{dst: false, offset: 0, tzID: "Europe/London"},
+	{dst: true, offset: 3600, tzID: "Europe/London"},
+	{dst: false, offset: 3600, tzID: "Europe/Paris"},
+	{dst: true, offset: 7200, tzID: "Europe/Paris"},
+	{dst: false, offset: 7200, tzID: "Europe/Helsinki"},
+	{dst: true, offset: 10800, tzID: "Europe/Helsinki"},
+	{dst: false, offset: 10800, tzID: "Europe/Moscow"},
+	{dst: true, offset: 14400, tzID: "Europe/Moscow"},
+	{dst: false, offset: 14400, tzID: "Asia/Dubai"},
+	{dst: false, offset: 18000, tzID: "Asia/Karachi"},
+	{dst: false, offset: 19800, tzID: "Asia/Kolkata"},
+	{dst: false, offset: 20700, tzID: "Asia/Katmandu"},
+	{dst: true, offset: 21600, tzID: "Asia/Yekaterinburg"},
+	{dst: true, offset: 25200, tzID: "Asia/Novosibirsk"},
+	{dst: false, offset: 25200, tzID: "Asia/Krasnoyarsk"},
+	{dst: false, offset: 28800, tzID: "Asia/Shanghai"},
+	{dst: true, offset: 28800, tzID: "Asia/Krasnoyarsk"},
+	{dst: false, offset: 32400, tzID: "Asia/Tokyo"},
+	{dst: false, offset: 36000, tzID: "Australia/Melbourne"},
+	{dst: true, offset: 37800, tzID: "Australia/Adelaide"},
+	{dst: true, offset: 39600, tzID: "Australia/Melbourne"},
+	{dst: false, offset: 43200, tzID: "Pacific/Auckland"},
+	{dst: true, offset: 46800, tzID: "Pacific/Auckland"},
+}
+
 // buildTZAbbrevMap builds the complete PHP timezone abbreviation map from all IANA zones.
 // It includes all zone types (including historical ones) to match PHP's behavior,
 // which uses a pre-compiled static map from IANA data.
@@ -995,10 +1043,15 @@ func fncTimezoneNameFromAbbr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, e
 		if abbrUpper == "GMT" || abbrUpper == "UTC" {
 			return phpv.ZString("UTC").ZVal(), nil
 		}
-		if entries, ok := tzAbbrevCache[abbrLower]; ok {
-			// PHP returns the first entry with a non-empty timezone_id,
-			// regardless of the utcOffset parameter (offset only filters in step 2).
-			for _, e := range entries {
+		if _, ok := tzAbbrevCache[abbrLower]; ok {
+			// PHP returns the first entry from its static timezonemap.h.
+			// Use the canonical mapping to ensure deterministic results.
+			if canonical, hasCanonical := canonicalTZForAbbrev[abbrLower]; hasCanonical {
+				return phpv.ZString(canonical).ZVal(), nil
+			}
+			// Fallback for abbreviations not in canonical map:
+			// return the first entry with a non-empty timezone_id.
+			for _, e := range tzAbbrevCache[abbrLower] {
 				if e.tzID != "" {
 					return phpv.ZString(e.tzID).ZVal(), nil
 				}
@@ -1043,51 +1096,17 @@ func fncTimezoneNameFromAbbr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, e
 			return true
 		}
 
-		// Pass 0: Check preferred zones for specific offsets.
-		// PHP's timezonemap.h has a specific ordering that doesn't match
-		// alphabetical abbreviation order. This map captures the preferred
-		// timezone for each (offset, isDST) combination to match PHP behavior.
-		type offsetKey struct {
-			offset int64
-			isDST  int64
-		}
-		preferredForOffset := map[offsetKey]string{
-			{19800, 0}:  "Asia/Kolkata",
-			{28800, 0}:  "Asia/Shanghai",
-			{-10800, 0}: "America/Sao_Paulo",
-			{-7200, 1}:  "America/Sao_Paulo",
-		}
-		if offset != -1 {
-			pk := offsetKey{offset, wantDST}
-			if preferred, ok := preferredForOffset[pk]; ok {
-				return phpv.ZString(preferred).ZVal(), nil
+		// Search the PHP fallback map first (matching PHP's timelib_timezone_fallbackmap).
+		// This is a curated list of well-known timezone mappings by offset+isDST
+		// that PHP uses when no abbreviation match is found.
+		for _, fb := range timezoneFallbackMap {
+			if entryMatches(fb) {
+				return phpv.ZString(fb.tzID).ZVal(), nil
 			}
 		}
 
-		// First pass: canonical abbreviations, check only the canonical (first) entry.
-		canonicalKeys := make([]string, 0, len(canonicalTZForAbbrev))
-		for k := range canonicalTZForAbbrev {
-			canonicalKeys = append(canonicalKeys, k)
-		}
-		sort.Strings(canonicalKeys)
-
-		for _, k := range canonicalKeys {
-			entries, ok := tzAbbrevCache[k]
-			if !ok || len(entries) == 0 {
-				continue
-			}
-			// Only check the first (canonical) entry in pass 1.
-			if entryMatches(entries[0]) {
-				return phpv.ZString(entries[0].tzID).ZVal(), nil
-			}
-		}
-
-		// Second pass: all abbreviations in alphabetical order (checking all entries).
-		// This catches non-canonical abbreviations and non-canonical entries.
-		canonicalSet := make(map[string]bool, len(canonicalTZForAbbrev))
-		for k := range canonicalTZForAbbrev {
-			canonicalSet[k] = true
-		}
+		// If fallback map didn't match, search all abbreviation entries
+		// in alphabetical order.
 		keys := make([]string, 0, len(tzAbbrevCache))
 		for k := range tzAbbrevCache {
 			keys = append(keys, k)
@@ -1095,13 +1114,7 @@ func fncTimezoneNameFromAbbr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, e
 		sort.Strings(keys)
 
 		for _, k := range keys {
-			entries := tzAbbrevCache[k]
-			startIdx := 0
-			// For canonical abbreviations, skip the first entry (already checked in pass 1).
-			if canonicalSet[k] {
-				startIdx = 1
-			}
-			for _, e := range entries[startIdx:] {
+			for _, e := range tzAbbrevCache[k] {
 				if entryMatches(e) {
 					return phpv.ZString(e.tzID).ZVal(), nil
 				}
@@ -1843,11 +1856,19 @@ func fncGettimeofday(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if asFloat != nil && bool(*asFloat) {
 		return phpv.ZFloat(float64(now.UnixNano()) / 1e9).ZVal(), nil
 	}
+	loc := getTimezone(ctx)
+	nowInLoc := now.In(loc)
+	_, offsetSec := nowInLoc.Zone()
+	minuteswest := -offsetSec / 60
+	dsttime := 0
+	if isDST(nowInLoc) {
+		dsttime = 1
+	}
 	result := phpv.NewZArray()
 	result.OffsetSet(ctx, phpv.ZString("sec"), phpv.ZInt(now.Unix()).ZVal())
 	result.OffsetSet(ctx, phpv.ZString("usec"), phpv.ZInt(int64(now.Nanosecond()/1000)).ZVal())
-	result.OffsetSet(ctx, phpv.ZString("minuteswest"), phpv.ZInt(0).ZVal())
-	result.OffsetSet(ctx, phpv.ZString("dsttime"), phpv.ZInt(0).ZVal())
+	result.OffsetSet(ctx, phpv.ZString("minuteswest"), phpv.ZInt(minuteswest).ZVal())
+	result.OffsetSet(ctx, phpv.ZString("dsttime"), phpv.ZInt(dsttime).ZVal())
 	return result.ZVal(), nil
 }
 
@@ -2146,6 +2167,12 @@ func fncDateSunInfo(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	timestamp := int64(args[0].AsInt(ctx))
 	latitude := float64(args[1].AsFloat(ctx))
 	longitude := float64(args[2].AsFloat(ctx))
+	if math.IsNaN(latitude) || math.IsInf(latitude, 0) {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "date_sun_info(): Argument #2 ($latitude) must be finite")
+	}
+	if math.IsNaN(longitude) || math.IsInf(longitude, 0) {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "date_sun_info(): Argument #3 ($longitude) must be finite")
+	}
 	t := time.Unix(timestamp, 0).UTC()
 	dayStart := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
 	midnightTS := dayStart.Unix()
@@ -2230,9 +2257,17 @@ func dateSunFunc(ctx phpv.Context, args []*phpv.ZVal, isSunrise bool) (*phpv.ZVa
 	if len(args) > 4 {
 		zenith = float64(args[4].AsFloat(ctx))
 	}
+	utcOffsetProvided := false
 	if len(args) > 5 {
 		utcOffset = float64(args[5].AsFloat(ctx))
+		utcOffsetProvided = true
 	}
+
+	// If utcOffset was explicitly provided and is non-finite, return false
+	if utcOffsetProvided && (math.IsNaN(utcOffset) || math.IsInf(utcOffset, 0)) {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+
 	// Use the default timezone's calendar date (not UTC) to determine the day
 	loc := getTimezone(ctx)
 	ut := calculateSunTime(timestamp, latitude, longitude, zenith, isSunrise, loc)
@@ -2241,7 +2276,7 @@ func dateSunFunc(ctx phpv.Context, args []*phpv.ZVal, isSunrise bool) (*phpv.ZVa
 	}
 
 	// If utcOffset was not provided, derive it from the default timezone
-	if math.IsNaN(utcOffset) {
+	if !utcOffsetProvided {
 		_, offsetSec := time.Unix(timestamp, 0).In(loc).Zone()
 		utcOffset = float64(offsetSec) / 3600.0
 	}
