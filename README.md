@@ -70,22 +70,22 @@ Goro passes **~11,770 of 12,110 tests** (97.2%) from the PHP 8.5.4 test suite (2
 
 | Extension | Functions | Pass Rate | Notes |
 |-----------|-----------|-----------|-------|
-| standard | 435+ | ~70% | Core functions, arrays, strings, files, math, output buffering, streams |
-| ctype | 11 | 98% | Complete |
-| json | 5 | 63% | json_encode, json_decode, json_validate, error handling |
+| standard | 527+ | ~70% | Core functions, arrays, strings, files, math, output buffering, streams |
+| ctype | 11 | 100% | Complete |
+| json | 5 | 98% | json_encode, json_decode, json_validate, error handling |
 | pcre | 11 | 67% | preg_match, preg_replace, preg_split, preg_grep — **PCRE2 via gopcre2** (backreferences, lookahead) |
-| hash | 11 | 47% | hash, hash_hmac, hash_file, hash_pbkdf2, hash_hkdf, incremental |
-| gmp | 45+ | 92% | Arithmetic, division, modular, bitwise, primes, GCD/LCM, factorial, operator overloading, import/export |
-| mbstring | 40+ | ~50% | strlen, substr, strpos, strtolower/upper, convert_encoding, detect_encoding, check_encoding |
-| date | 34+ | ~89% | date, time, strtotime, mktime, DateTime, DateTimeImmutable, DateInterval, DatePeriod, DateTimeZone, sunrise/sunset |
-| openssl | 12 | — | AES/DES/RSA/ECDSA encryption, signing, key generation via Go crypto |
+| hash | 14 | 94% | hash, hash_hmac, hash_file, hash_pbkdf2, hash_hkdf, incremental |
+| gmp | 49 | 96% | Arithmetic, division, modular, bitwise, primes, GCD/LCM, factorial, operator overloading, import/export |
+| mbstring | 49 | 97% | strlen, substr, strpos, strtolower/upper, convert_encoding, detect_encoding, check_encoding |
+| date | 48 | 89% | date, time, strtotime, mktime, DateTime, DateTimeImmutable, DateInterval, DatePeriod, DateTimeZone, sunrise/sunset |
+| openssl | 16 | — | AES/DES/RSA/ECDSA encryption, signing, key generation via Go crypto |
 | bz2 | 2 | — | Compress (gobzip2) and decompress (Go stdlib) |
-| zlib | 20+ | — | gzcompress/gzencode/gzdeflate, gzip file ops, stream filters, compress.zlib:// |
-| session | 18 | — | session_start/id/destroy, file-based storage, $_SESSION superglobal |
-| xml | 15+ | — | SimpleXMLElement class, xml_parser_create/parse, simplexml_load_string/file |
-| curl | 12 | — | CurlHandle class, curl_init/setopt/exec/getinfo via Go net/http |
-| sockets | 20+ | — | Socket class, socket_create/bind/listen/accept/connect, stream_socket_*, fsockopen |
-| mysqli | 30+ | — | mysqli/mysqli_result/mysqli_stmt classes, prepared statements, transactions via go-sql-driver/mysql |
+| zlib | 22 | — | gzcompress/gzencode/gzdeflate, gzip file ops, stream filters, compress.zlib:// |
+| session | 19 | — | session_start/id/destroy, file-based storage, $_SESSION superglobal |
+| xml | 18 | — | SimpleXMLElement class, xml_parser_create/parse, simplexml_load_string/file |
+| curl | 13 | — | CurlHandle class, curl_init/setopt/exec/getinfo via Go net/http |
+| sockets | 25 | — | Socket class, socket_create/bind/listen/accept/connect, stream_socket_*, fsockopen |
+| mysqli | 25 | — | mysqli/mysqli_result/mysqli_stmt classes, prepared statements, transactions via go-sql-driver/mysql |
 | sqlite3 | 20+ | — | SQLite3/SQLite3Result/SQLite3Stmt classes, prepared statements via glebarez/go-sqlite (pure Go) |
 | spl | 40+ | 82% | ArrayObject, ArrayIterator, SplFileObject, SplFixedArray, SplHeap, SplObjectStorage, iterators |
 | reflection | 8 classes | 75% | ReflectionClass (with __toString), ReflectionMethod, ReflectionProperty, ReflectionFunction, ReflectionParameter, ReflectionAttribute |
