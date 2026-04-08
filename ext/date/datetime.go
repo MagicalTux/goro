@@ -14,6 +14,21 @@ import (
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
+// dateParseErrors tracks warnings and errors during date parsing.
+type dateParseErrors struct {
+	warnings     map[int]string
+	errors       map[int]string
+	warningCount int
+	errorCount   int
+}
+
+func newDateParseErrors() *dateParseErrors {
+	return &dateParseErrors{warnings: make(map[int]string), errors: make(map[int]string)}
+}
+
+func (e *dateParseErrors) addWarning(pos int, msg string) { e.warnings[pos] = msg; e.warningCount++ }
+func (e *dateParseErrors) addError(pos int, msg string) { e.errors[pos] = msg; e.errorCount++ }
+
 var DateTimeInterface *phpobj.ZClass
 var DateTime *phpobj.ZClass
 var DateTimeImmutable *phpobj.ZClass

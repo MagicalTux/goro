@@ -1731,7 +1731,7 @@ func fncDateParseFromFormat(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 	datetime := string(args[1].AsString(ctx))
 	result := phpv.NewZArray()
 	parseErrors := newDateParseErrors()
-	t, ok := createFromFormatParsed(ctx, format, datetime, time.UTC, parseErrors)
+	t, ok := createFromFormatParsed(ctx, format, datetime, time.UTC)
 
 	// Determine which fields were set based on the format
 	hasYear := false
