@@ -2249,7 +2249,10 @@ func createFromFormatParsed(ctx phpv.Context, format string, datetime string, lo
 				fmt.Sscanf(datetime[di:end], "%d", &ts)
 				// Don't return immediately - continue parsing the remaining format
 				// to handle subsequent format chars like .u (microseconds)
-				tFromU := time.Unix(ts, 0).In(loc)
+				// PHP always uses +00:00 (type 1 offset) for Unix timestamps,
+				// not UTC (type 3 identifier).
+				utcOffset := time.FixedZone("+00:00", 0)
+				tFromU := time.Unix(ts, 0).In(utcOffset)
 				year = tFromU.Year()
 				month = int(tFromU.Month())
 				day = tFromU.Day()
@@ -2262,7 +2265,7 @@ func createFromFormatParsed(ctx phpv.Context, format string, datetime string, lo
 				hourSet = true
 				minuteSet = true
 				secondSet = true
-				usedLoc = tFromU.Location()
+				usedLoc = utcOffset
 				di = end
 			}
 		case 'M', 'F': // month name (short or full)

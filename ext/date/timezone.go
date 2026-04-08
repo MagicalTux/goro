@@ -304,9 +304,6 @@ var timezoneAbbreviationOffsets = map[string]int{
 
 // parseTzName handles offset strings like "+05:30" or "-02:00" in addition to named zones
 func parseTzName(tzName string) (*time.Location, error) {
-	if loc, err := time.LoadLocation(tzName); err == nil {
-		return loc, nil
-	}
 	if len(tzName) >= 2 && (tzName[0] == '+' || tzName[0] == '-') {
 		if offset, ok := parseTZOffset(tzName); ok {
 			return time.FixedZone(tzName, offset), nil
@@ -322,13 +319,21 @@ func parseTzName(tzName string) (*time.Location, error) {
 			}
 		}
 	}
-	// Try timezone abbreviations (PHP type 2)
-	if offset, ok := timezoneAbbreviationOffsets[upper]; ok {
-		return time.FixedZone(tzName, offset), nil
+	// Try timezone abbreviations (PHP type 2) BEFORE time.LoadLocation.
+	// Go's time.LoadLocation("CET") returns a full IANA timezone with DST
+	// transitions, but PHP treats "CET" as a fixed-offset abbreviation (3600s).
+	// "UTC" is special: PHP treats it as type 3 (identifier), not type 2.
+	if upper != "UTC" {
+		if offset, ok := timezoneAbbreviationOffsets[upper]; ok {
+			return time.FixedZone(tzName, offset), nil
+		}
+		// Try military timezone abbreviations (single letter, case-insensitive)
+		if offset, ok := militaryTZAbbrevs[strings.ToLower(tzName)]; ok {
+			return time.FixedZone(tzName, offset), nil
+		}
 	}
-	// Try military timezone abbreviations (single letter, case-insensitive)
-	if offset, ok := militaryTZAbbrevs[strings.ToLower(tzName)]; ok {
-		return time.FixedZone(tzName, offset), nil
+	if loc, err := time.LoadLocation(tzName); err == nil {
+		return loc, nil
 	}
 	return nil, fmt.Errorf("unknown timezone: %s", tzName)
 }
