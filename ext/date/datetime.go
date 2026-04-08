@@ -16,6 +16,65 @@ import (
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
+// formatDateTimeStr formats a time.Time as a PHP datetime string.
+// PHP uses a "+" prefix for years > 9999 and "-" for negative years.
+func formatDateTimeStr(t time.Time) string {
+	y := t.Year()
+	if y < 0 {
+		return fmt.Sprintf("-%04d-%02d-%02d %02d:%02d:%02d.%06d",
+			-y, int(t.Month()), t.Day(),
+			t.Hour(), t.Minute(), t.Second(), t.Nanosecond()/1000)
+	}
+	if y > 9999 {
+		return fmt.Sprintf("+%d-%02d-%02d %02d:%02d:%02d.%06d",
+			y, int(t.Month()), t.Day(),
+			t.Hour(), t.Minute(), t.Second(), t.Nanosecond()/1000)
+	}
+	return fmt.Sprintf("%04d-%02d-%02d %02d:%02d:%02d.%06d",
+		y, int(t.Month()), t.Day(),
+		t.Hour(), t.Minute(), t.Second(), t.Nanosecond()/1000)
+}
+
+// parseDateTimeStr parses a PHP date string (as produced by formatDateTimeStr)
+// into a time.Time. Handles extended years (with "+" prefix) and negative years
+// (with "-" prefix) that Go's time.ParseInLocation can't handle natively.
+func parseDateTimeStr(dateStr string, loc *time.Location) (time.Time, error) {
+	// Strip leading "+" from extended years (>9999)
+	s := dateStr
+	if len(s) > 0 && s[0] == '+' {
+		s = s[1:]
+	}
+
+	// Try normal parsing first (works for 4-digit years)
+	parsed, err := time.ParseInLocation("2006-01-02 15:04:05.000000", s, loc)
+	if err == nil {
+		return parsed, nil
+	}
+	// Try without microseconds
+	parsed, err = time.ParseInLocation("2006-01-02 15:04:05", s, loc)
+	if err == nil {
+		return parsed, nil
+	}
+
+	// For extended years (5+ digits), manually parse the components
+	var year, month, day, hour, minute, second, microsecond int
+	n, scanErr := fmt.Sscanf(s, "%d-%02d-%02d %02d:%02d:%02d.%06d",
+		&year, &month, &day, &hour, &minute, &second, &microsecond)
+	if scanErr != nil || n < 6 {
+		// Try without microseconds
+		n, scanErr = fmt.Sscanf(s, "%d-%02d-%02d %02d:%02d:%02d",
+			&year, &month, &day, &hour, &minute, &second)
+		if scanErr != nil || n < 6 {
+			return time.Time{}, fmt.Errorf("cannot parse date string: %s", dateStr)
+		}
+	}
+	// Handle negative year prefix in original string
+	if len(dateStr) > 0 && dateStr[0] == '-' {
+		year = -year
+	}
+	return time.Date(year, time.Month(month), day, hour, minute, second, microsecond*1000, loc), nil
+}
+
 // dateParseErrors tracks warnings and errors during date parsing.
 type dateParseErrors struct {
 	warnings     map[int]string
@@ -344,14 +403,7 @@ func getTimeFromObj(obj phpv.ZObject) (time.Time, bool) {
 func setTimeVal(this *phpobj.ZObject, t time.Time) {
 	this.Opaque[DateTimeInterface] = t
 	// Update hash table properties for var_export/serialization
-	dateStr := fmt.Sprintf("%04d-%02d-%02d %02d:%02d:%02d.%06d",
-		t.Year(), int(t.Month()), t.Day(),
-		t.Hour(), t.Minute(), t.Second(), t.Nanosecond()/1000)
-	if t.Year() < 0 {
-		dateStr = fmt.Sprintf("-%04d-%02d-%02d %02d:%02d:%02d.%06d",
-			-t.Year(), int(t.Month()), t.Day(),
-			t.Hour(), t.Minute(), t.Second(), t.Nanosecond()/1000)
-	}
+	dateStr := formatDateTimeStr(t)
 	this.HashTable().SetString("date", phpv.ZString(dateStr).ZVal())
 
 	locName := t.Location().String()
@@ -1800,14 +1852,7 @@ func serializeMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) 
 	}
 	arr := phpv.NewZArray()
 
-	dateStr := fmt.Sprintf("%04d-%02d-%02d %02d:%02d:%02d.%06d",
-		t.Year(), int(t.Month()), t.Day(),
-		t.Hour(), t.Minute(), t.Second(), t.Nanosecond()/1000)
-	if t.Year() < 0 {
-		dateStr = fmt.Sprintf("-%04d-%02d-%02d %02d:%02d:%02d.%06d",
-			-t.Year(), int(t.Month()), t.Day(),
-			t.Hour(), t.Minute(), t.Second(), t.Nanosecond()/1000)
-	}
+	dateStr := formatDateTimeStr(t)
 	arr.OffsetSet(ctx, phpv.ZString("date"), phpv.ZString(dateStr).ZVal())
 
 	// Use hash table values set by setTimeVal for timezone_type and timezone
@@ -1924,12 +1969,9 @@ func unserializeMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal
 		loc = loaded
 	}
 
-	parsed, err := time.ParseInLocation("2006-01-02 15:04:05.000000", dateStr, loc)
+	parsed, err := parseDateTimeStr(dateStr, loc)
 	if err != nil {
-		parsed, err = time.ParseInLocation("2006-01-02 15:04:05", dateStr, loc)
-		if err != nil {
-			return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DateTime object")
-		}
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DateTime object")
 	}
 	setTimeVal(this, parsed)
 
@@ -1983,12 +2025,9 @@ func wakeupMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*p
 		loc = loaded
 	}
 
-	parsed, err := time.ParseInLocation("2006-01-02 15:04:05.000000", dateStr, loc)
+	parsed, err := parseDateTimeStr(dateStr, loc)
 	if err != nil {
-		parsed, err = time.ParseInLocation("2006-01-02 15:04:05", dateStr, loc)
-		if err != nil {
-			return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DateTime object")
-		}
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DateTime object")
 	}
 	setTimeVal(this, parsed)
 	return nil, nil
@@ -2399,15 +2438,8 @@ func dateTimeDebugInfo(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal
 			arr.OffsetSet(ctx, key, v)
 		}
 	}
-	// Format: "2006-12-12 00:00:00.000000"
-	dateStr := fmt.Sprintf("%04d-%02d-%02d %02d:%02d:%02d.%06d",
-		t.Year(), int(t.Month()), t.Day(),
-		t.Hour(), t.Minute(), t.Second(), t.Nanosecond()/1000)
-	if t.Year() < 0 {
-		dateStr = fmt.Sprintf("-%04d-%02d-%02d %02d:%02d:%02d.%06d",
-			-t.Year(), int(t.Month()), t.Day(),
-			t.Hour(), t.Minute(), t.Second(), t.Nanosecond()/1000)
-	}
+	// Format: "2006-12-12 00:00:00.000000", with "+" prefix for years > 9999
+	dateStr := formatDateTimeStr(t)
 	arr.OffsetSet(ctx, phpv.ZString("date"), phpv.ZString(dateStr).ZVal())
 
 	// timezone_type and timezone: use hash table values set by setTimeVal
@@ -4610,13 +4642,9 @@ func dateTimeSetState(targetClass *phpobj.ZClass) func(ctx phpv.Context, args []
 		}
 
 		// Parse date string - the format from __debugInfo is "2006-01-02 15:04:05.000000"
-		parsed, err := time.ParseInLocation("2006-01-02 15:04:05.000000", dateStr, loc)
+		parsed, err := parseDateTimeStr(dateStr, loc)
 		if err != nil {
-			// Try without microseconds
-			parsed, err = time.ParseInLocation("2006-01-02 15:04:05", dateStr, loc)
-			if err != nil {
-				return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Invalid serialization data for %s object", targetClass.Name))
-			}
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Invalid serialization data for %s object", targetClass.Name))
 		}
 
 		obj, err2 := phpobj.NewZObject(ctx, targetClass)

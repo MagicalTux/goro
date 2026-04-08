@@ -44,6 +44,9 @@ func main() {
 	cfg := ini.New()
 	ctx := phpctx.NewGlobal(context.Background(), p, cfg)
 
+	// Validate date.timezone: emit startup warning if empty or invalid
+	ctx.ValidateDateTimezone()
+
 	if options.RunCode != "" {
 		_, err = ctx.DoString(ctx, phpv.ZString(options.RunCode))
 		if err != nil {
