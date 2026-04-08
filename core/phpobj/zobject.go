@@ -646,6 +646,13 @@ func NewZObject(ctx phpv.Context, c phpv.ZClass, args ...*phpv.ZVal) (*ZObject, 
 				}
 
 				propName := phpv.ZString(arg.VarName)
+				// Dup the value so the promoted property has its own ZVal,
+				// independent of the caller's local variable slot. Without this,
+				// when two by-ref args share the same Name (from same-named
+				// local variables in factory functions), callZValImpl's write-back
+				// via ctx.OffsetSet corrupts the first ref through Set().
+				val = val.Dup()
+				val.Name = nil
 				// If this promoted property has hooks, use ObjectSet to invoke hooks
 				if arg.PromotionHooks != nil && arg.PromotionHooks.HasHooks && arg.PromotionHooks.SetHook != nil {
 					if err := n.ObjectSet(ctx, propName, val); err != nil {
@@ -802,7 +809,7 @@ func (z *ZObject) Clone(ctx phpv.Context) (phpv.ZObject, error) {
 		n := &ZObject{
 			Class:        z.Class,
 			CurrentClass: z.CurrentClass,
-			h:            z.h.Dup(),
+			h:            z.h.DeepCopy(),
 			hasPrivate:   maps.Clone(z.hasPrivate),
 			Opaque:       opaque,
 			ID:           ctx.Global().NextObjectID(),
@@ -821,7 +828,7 @@ func (z *ZObject) Clone(ctx phpv.Context) (phpv.ZObject, error) {
 	n := &ZObject{
 		Class:        z.Class,
 		CurrentClass: z.CurrentClass,
-		h:            z.h.Dup(), // copy on write
+		h:            z.h.DeepCopy(), // real copy so references to clone properties don't alias back to original
 		hasPrivate:   maps.Clone(z.hasPrivate),
 		Opaque:       opaque,
 		ID:           ctx.Global().NextObjectID(),

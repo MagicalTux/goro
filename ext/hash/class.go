@@ -70,24 +70,24 @@ func init() {
 				}
 
 				arr := phpv.NewZArray()
-				// Index 0: algo name
+				// PHP-compatible 5-element format
 				arr.OffsetSet(ctx, phpv.ZInt(0).ZVal(), phpv.ZString(hcd.algo).ZVal())
-				// Index 1: options (0 = normal, 1 = HMAC)
-				options := phpv.ZInt(0)
-				if hcd.isHmac {
-					options = phpv.ZInt(1)
+				arr.OffsetSet(ctx, phpv.ZInt(1).ZVal(), phpv.ZInt(0).ZVal())
+
+				serializer := getAlgoSerializer(hcd.algo)
+				var stateArr *phpv.ZArray
+				if serializer != nil {
+					stateArr, _ = serializer.SerializeState(hcd.Hash)
 				}
-				arr.OffsetSet(ctx, phpv.ZInt(1).ZVal(), options.ZVal())
-				// Index 2: HMAC key (string, empty if not HMAC)
-				arr.OffsetSet(ctx, phpv.ZInt(2).ZVal(), phpv.ZString(hcd.hmacKey).ZVal())
-				// Index 3: written data (raw bytes for replay)
-				arr.OffsetSet(ctx, phpv.ZInt(3).ZVal(), phpv.ZString(hcd.writtenData).ZVal())
-				// Index 4: seed (uint32)
-				arr.OffsetSet(ctx, phpv.ZInt(4).ZVal(), phpv.ZInt(int64(int32(hcd.seed))).ZVal())
-				// Index 5: seed64 (stored as two int32s to preserve value)
-				arr.OffsetSet(ctx, phpv.ZInt(5).ZVal(), phpv.ZInt(int64(hcd.seed64)).ZVal())
-				// Index 6: secret (raw bytes, empty if not used)
-				arr.OffsetSet(ctx, phpv.ZInt(6).ZVal(), phpv.ZString(hcd.secret).ZVal())
+				// Fallback for custom hash implementations: use replay data
+				if stateArr == nil || stateArr.Count(ctx) == 0 {
+					stateArr = phpv.NewZArray()
+					stateArr.OffsetSet(nil, phpv.ZInt(0).ZVal(), phpv.ZString(hcd.writtenData).ZVal())
+					stateArr.OffsetSet(nil, phpv.ZInt(1).ZVal(), phpv.ZInt(int64(len(hcd.writtenData))).ZVal())
+				}
+				arr.OffsetSet(ctx, phpv.ZInt(2).ZVal(), stateArr.ZVal())
+				arr.OffsetSet(ctx, phpv.ZInt(3).ZVal(), phpv.ZInt(phpSerializeMagic).ZVal())
+				arr.OffsetSet(ctx, phpv.ZInt(4).ZVal(), phpv.NewZArray().ZVal())
 
 				return arr.ZVal(), nil
 			}),
@@ -96,67 +96,78 @@ func init() {
 			Name:      "__unserialize",
 			Modifiers: phpv.ZAttrPublic,
 			Method: phpobj.NativeMethod(func(ctx phpv.Context, o *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
-				if len(args) == 0 {
-					return nil, phpobj.ThrowError(ctx, phpobj.Exception, "HashContext unserialization failed")
-				}
-				arr := args[0].AsArray(ctx)
-				if arr == nil {
-					return nil, phpobj.ThrowError(ctx, phpobj.Exception, "HashContext unserialization failed")
-				}
-
-				// Extract fields
-				algoVal, _ := arr.OffsetGet(ctx, phpv.ZInt(0))
-				optionsVal, _ := arr.OffsetGet(ctx, phpv.ZInt(1))
-				keyVal, _ := arr.OffsetGet(ctx, phpv.ZInt(2))
-				writtenDataVal, _ := arr.OffsetGet(ctx, phpv.ZInt(3))
-				seedVal, _ := arr.OffsetGet(ctx, phpv.ZInt(4))
-				seed64Val, _ := arr.OffsetGet(ctx, phpv.ZInt(5))
-				secretVal, _ := arr.OffsetGet(ctx, phpv.ZInt(6))
-
-				if algoVal == nil {
-					return nil, phpobj.ThrowError(ctx, phpobj.Exception, "HashContext unserialization failed")
-				}
-
-				algo := phpv.ZString(algoVal.AsString(ctx))
-
-				isHmac := false
-				if optionsVal != nil {
-					isHmac = optionsVal.AsInt(ctx) == 1
-				}
-
-				var hmacKey []byte
-				if keyVal != nil && keyVal.GetType() == phpv.ZtString {
-					hmacKey = []byte(keyVal.Value().(phpv.ZString))
-				}
-
-				var writtenData []byte
-				if writtenDataVal != nil && writtenDataVal.GetType() == phpv.ZtString {
-					writtenData = []byte(writtenDataVal.Value().(phpv.ZString))
-				}
-
-				var seed uint32
-				if seedVal != nil {
-					seed = uint32(int32(seedVal.AsInt(ctx)))
-				}
-
-				var seed64 uint64
-				if seed64Val != nil {
-					seed64 = uint64(seed64Val.AsInt(ctx))
-				}
-
-				var secret []byte
-				if secretVal != nil && secretVal.GetType() == phpv.ZtString {
-					secret = []byte(secretVal.Value().(phpv.ZString))
-					if len(secret) == 0 {
-						secret = nil
+				existing := o.GetOpaque(HashContext)
+				if existing != nil {
+					if hcd, ok := existing.(*hashContextData); ok && !hcd.finalized {
+						return nil, phpobj.ThrowError(ctx, phpobj.Exception, "HashContext::__unserialize called on initialized object")
 					}
 				}
 
-				hcd, err := recreateHashContext(algo, isHmac, hmacKey, seed, seed64, secret, writtenData)
-				if err != nil {
-					return nil, phpobj.ThrowError(ctx, phpobj.Exception, "HashContext unserialization failed: unknown algorithm")
+				if len(args) == 0 {
+					return nil, phpobj.ThrowError(ctx, phpobj.Exception, "Incomplete or ill-formed serialization data")
+				}
+				arr := args[0].AsArray(ctx)
+				if arr == nil {
+					return nil, phpobj.ThrowError(ctx, phpobj.Exception, "Incomplete or ill-formed serialization data")
 				}
 
+				algoVal, _ := arr.OffsetGet(ctx, phpv.ZInt(0))
+				flagsVal, _ := arr.OffsetGet(ctx, phpv.ZInt(1))
+				stateVal, _ := arr.OffsetGet(ctx, phpv.ZInt(2))
+				magicVal, _ := arr.OffsetGet(ctx, phpv.ZInt(3))
+				hmacVal, _ := arr.OffsetGet(ctx, phpv.ZInt(4))
+
+				if algoVal == nil || flagsVal == nil || stateVal == nil || magicVal == nil || hmacVal == nil {
+					return nil, phpobj.ThrowError(ctx, phpobj.Exception, "Incomplete or ill-formed serialization data")
+				}
+
+				if algoVal.GetType() != phpv.ZtString {
+					return nil, phpobj.ThrowError(ctx, phpobj.Exception, "Incomplete or ill-formed serialization data")
+				}
+				algo := phpv.ZString(algoVal.Value().(phpv.ZString)).ToLower()
+
+				if flagsVal.GetType() != phpv.ZtInt {
+					return nil, phpobj.ThrowError(ctx, phpobj.Exception, "Incomplete or ill-formed serialization data")
+				}
+				flags := flagsVal.Value().(phpv.ZInt)
+
+				if flags == 1 {
+					return nil, phpobj.ThrowError(ctx, phpobj.Exception, "HashContext with HASH_HMAC option cannot be serialized")
+				}
+
+				if stateVal.GetType() != phpv.ZtArray {
+					return nil, phpobj.ThrowError(ctx, phpobj.Exception, fmt.Sprintf("Incomplete or ill-formed serialization data (%q code %d)", string(algo), -1))
+				}
+
+				magic := magicVal.AsInt(ctx)
+
+				algoLower := algo.ToLower()
+				_, algoExists := algos[algoLower]
+				if !algoExists {
+					_, algoExists = seededAlgos[algoLower]
+					if !algoExists {
+						_, algoExists = seededAlgos64[algoLower]
+					}
+				}
+				if !algoExists {
+					return nil, phpobj.ThrowError(ctx, phpobj.Exception, "Unknown hash algorithm")
+				}
+
+				if magic != phpSerializeMagic {
+					return nil, phpobj.ThrowError(ctx, phpobj.Exception, fmt.Sprintf("Incomplete or ill-formed serialization data (%q code %d)", string(algo), -1))
+				}
+
+				stateArr := stateVal.AsArray(ctx)
+				hcd, err := unserializeFromPHPState(ctx, algo, stateArr)
+				if err != nil {
+					code := int64(-1)
+					if err == errSpecMismatch {
+						code = phpHashUnserializeSpecMismatch
+					}
+					return nil, phpobj.ThrowError(ctx, phpobj.Exception, fmt.Sprintf("Incomplete or ill-formed serialization data (%q code %d)", string(algo), code))
+				}
+
+				_ = hmacVal
 				o.SetOpaque(HashContext, hcd)
 				return nil, nil
 			}),
