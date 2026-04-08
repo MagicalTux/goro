@@ -466,9 +466,10 @@ func preserveInputTimezone(parsed time.Time, input string) time.Time {
 // reInputOffset matches timezone offsets like +00:00, -00:00, +0000 in input strings
 var reInputOffset = regexp.MustCompile(`[+-]00:?00\s*$`)
 
-// reTrailingTZAbbrev matches a trailing timezone abbreviation (1-5 alphabetic chars after a space)
-// at the end of a date/time string, e.g., "12 Sep 2007 15:49:12 UT"
-var reTrailingTZAbbrev = regexp.MustCompile(`\s+([a-zA-Z]{1,5})\s*$`)
+// reTrailingTZAbbrev matches a trailing timezone abbreviation (2-5 alphabetic chars)
+// that follows a time component (HH:MM or HH:MM:SS pattern) in a date/time string.
+// e.g., "12 Sep 2007 15:49:12 UT" matches "UT" but "+1 day" does not.
+var reTrailingTZAbbrev = regexp.MustCompile(`\d{2}(?::\d{2}){1,2}(?:\.\d+)?\s+([a-zA-Z]{2,5})\s*$`)
 
 // isKnownTimezoneAbbrev checks if a timezone abbreviation is recognized by PHP's timelib.
 // This is used to reject date strings with unrecognized timezone abbreviations like "UT"

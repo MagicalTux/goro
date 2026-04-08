@@ -631,7 +631,7 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 							}
 						}
 						if warnErr := ctx.Warn("%s(): Argument #%d ($%s) must be passed by reference, value given",
-							funcName, i+1, varNameForArg, logopt.NoFuncName(true)); warnErr != nil {
+							funcName, i+1, varNameForArg, logopt.NoFuncName(true), logopt.IsInternal(true)); warnErr != nil {
 							return nil, warnErr
 						}
 						callCtx.Args[i] = callCtx.Args[i].Dup()
