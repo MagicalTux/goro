@@ -819,6 +819,9 @@ func (r *runClassNameOf) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			}
 			cls := ctx.Class()
 			if cls == nil {
+				if ctx.Func() == nil {
+					return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot use \"self\" in the global scope")
+				}
 				return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot use \"self\" when no class scope is active")
 			}
 			return phpv.ZString(cls.GetName()).ZVal(), nil
