@@ -751,7 +751,9 @@ func (g *Global) handleUncaughtException(err error) error {
 	return result
 }
 
-// formatUncaughtFatal formats an uncaught exception as a PHP Fatal error to stderr.
+// formatUncaughtFatal formats an uncaught exception as a PHP Fatal error.
+// When display_errors is enabled, the output goes to stdout (matching PHP behavior);
+// otherwise it goes to stderr.
 func (g *Global) formatUncaughtFatal(ex *phperr.PhpThrow) {
 	// Set location to "[no active file]:0" before calling ErrorTrace so that
 	// any errors thrown inside __toString() during formatting get that location.
@@ -770,12 +772,30 @@ func (g *Global) formatUncaughtFatal(ex *phperr.PhpThrow) {
 		thrownFile = "Unknown"
 	}
 	thrownLine := src.ThrownLine()
-	g.WriteErr([]byte(fmt.Sprintf("\nFatal error: %s\n  thrown in %s on line %d\n", trace, thrownFile, thrownLine)))
+	fatalMsg := fmt.Sprintf("Fatal error: %s\n  thrown in %s on line %d\n", trace, thrownFile, thrownLine)
+	// Check display_errors setting
+	displayErrors := g.GetConfig("display_errors", phpv.ZBool(true).ZVal())
+	shouldDisplay := true
+	if displayErrors != nil {
+		dv := displayErrors.String()
+		if dv == "0" || dv == "" || dv == "Off" || dv == "off" || dv == "false" {
+			shouldDisplay = false
+		}
+	}
+	if shouldDisplay {
+		// Only prepend "\n" when there has been prior output
+		if g.lastOutChar != 0 {
+			g.Write([]byte("\n"))
+		}
+		g.Write([]byte(fatalMsg))
+	} else {
+		g.WriteErr([]byte("\n" + fatalMsg))
+	}
 	// Update LastError so that error_get_last() in shutdown functions returns this fatal error.
 	// The message is "trace\n  thrown" (truncated at "thrown"), matching PHP's behavior.
-	msg := trace + "\n  thrown"
+	lastErrMsg := trace + "\n  thrown"
 	g.LastError = &phpv.PhpError{
-		Err:  fmt.Errorf("%s", msg),
+		Err:  fmt.Errorf("%s", lastErrMsg),
 		Code: phpv.E_ERROR,
 		Loc:  &phpv.Loc{Filename: thrownFile, Line: thrownLine},
 	}
@@ -1393,7 +1413,12 @@ func (g *Global) LogError(err *phpv.PhpError, optionArg ...logopt.Data) {
 			g.Write(output.Bytes())
 			g.Write([]byte("<br />\n"))
 		} else {
-			g.Write([]byte("\n"))
+			// Only prepend "\n" when there has been prior output,
+			// matching PHP which does not emit a leading blank line
+			// when the error is the very first output.
+			if g.lastOutChar != 0 {
+				g.Write([]byte("\n"))
+			}
 			g.Write(output.Bytes())
 			g.Write([]byte("\n"))
 		}
@@ -1493,7 +1518,10 @@ func (g *Global) RunShutdownFunctions() {
 				if thrownFile == "" {
 					thrownFile = "Unknown"
 				}
-				g.Write([]byte(fmt.Sprintf("\nFatal error: %s\n  thrown in %s on line %d\n", trace, thrownFile, src.ThrownLine())))
+				if g.lastOutChar != 0 {
+					g.Write([]byte("\n"))
+				}
+				g.Write([]byte(fmt.Sprintf("Fatal error: %s\n  thrown in %s on line %d\n", trace, thrownFile, src.ThrownLine())))
 				break
 			}
 		}
