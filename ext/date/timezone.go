@@ -174,6 +174,10 @@ func fncDateDefaultTimezoneSet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal,
 // > func string date_default_timezone_get ( void )
 func fncDateDefaultTimezoneGet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	tz := ctx.GetConfig("date.timezone", phpv.ZString("UTC").ZVal())
+	// If date.timezone is empty, fall back to UTC
+	if s := tz.String(); s == "" {
+		return phpv.ZString("UTC").ZVal(), nil
+	}
 	return tz.As(ctx, phpv.ZtString)
 }
 
