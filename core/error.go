@@ -85,6 +85,16 @@ func fncSetErrorHandler(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	}
 
 	errorType := errorTypeArg.GetOrDefault(E_ALL | E_STRICT)
+
+	// IncRef the closure object so the post-call cleanup in Global.Call
+	// does not release its object ID (the heuristic releases IDs for
+	// objects with refCount <= 0).
+	if args[0].GetType() == phpv.ZtObject {
+		if obj, ok := args[0].Value().(*phpobj.ZObject); ok {
+			obj.IncRef()
+		}
+	}
+
 	ctx.Global().SetUserErrorHandler(handler, phpv.PhpErrorType(errorType), args[0])
 
 	if prevOriginalVal == nil {
@@ -115,6 +125,14 @@ func fncSetExceptionHandler(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
 			fmt.Sprintf("set_exception_handler(): Argument #1 ($callback) must be a valid callback or null, %s",
 				callbackErrorMessage(ctx, args[0])))
+	}
+
+	// IncRef the closure object so the post-call cleanup in Global.Call
+	// does not release its object ID.
+	if args[0].GetType() == phpv.ZtObject {
+		if obj, ok := args[0].Value().(*phpobj.ZObject); ok {
+			obj.IncRef()
+		}
 	}
 
 	// Store the original ZVal so we can return it later (PHP returns

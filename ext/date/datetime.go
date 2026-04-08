@@ -72,7 +72,39 @@ func parseDateTimeStr(dateStr string, loc *time.Location) (time.Time, error) {
 	if len(dateStr) > 0 && dateStr[0] == '-' {
 		year = -year
 	}
-	return time.Date(year, time.Month(month), day, hour, minute, second, microsecond*1000, loc), nil
+	t := time.Date(year, time.Month(month), day, hour, minute, second, microsecond*1000, loc)
+	// PHP adjusts forward for DST gaps (spring-forward), Go adjusts backward.
+	// Detect the gap: if the resulting hour differs from what we requested,
+	// add the difference to jump to post-transition time.
+	t = adjustDSTGap(t, hour, minute, second)
+	return t, nil
+}
+
+// adjustDSTGap fixes Go's backward adjustment for non-existent times during
+// DST spring-forward transitions. Go's time.Date() normalizes by subtracting
+// the offset, but PHP normalizes by adding it (jumping forward).
+func adjustDSTGap(t time.Time, wantHour, wantMin, wantSec int) time.Time {
+	if t.Hour() == wantHour && t.Minute() == wantMin && t.Second() == wantSec {
+		return t // no adjustment needed
+	}
+	// Check if we're in a DST gap by comparing the requested vs actual time components.
+	// Only adjust if the result went BACKWARD (Go behavior) - not for other normalizations
+	// like month overflow.
+	gotSec := t.Hour()*3600 + t.Minute()*60 + t.Second()
+	wantSec2 := wantHour*3600 + wantMin*60 + wantSec
+	if gotSec < wantSec2 {
+		// Go went backward; PHP would go forward by the gap size.
+		// The difference between what we wanted and what we got is the gap.
+		diff := wantSec2 - gotSec
+		adjusted := t.Add(time.Duration(diff) * time.Second)
+		// After adjustment, check if we're now in the post-transition zone.
+		// If the hour still doesn't match, we might not be in a DST gap
+		// (could be month/day overflow instead), so don't adjust.
+		if adjusted.Hour() >= wantHour {
+			return adjusted
+		}
+	}
+	return t
 }
 
 // dateParseErrors tracks warnings and errors during date parsing.
@@ -289,6 +321,13 @@ func parseDateTimeWithTz(ctx phpv.Context, args []*phpv.ZVal) (time.Time, error)
 			}
 		}
 
+		// Pre-validate ISO-style date strings (YYYY-MM-DD...) before handing
+		// off to strtotime, which is too lenient (e.g. accepts day=33).
+		// PHP rejects such values at the parser level.
+		if err := validateISODatePrefix(s); err != nil {
+			return time.Time{}, phpobj.ThrowError(ctx, DateMalformedStringException, err.Error())
+		}
+
 		base := time.Now().In(loc)
 		// Normalize relative date strings that our strtotime library doesn't handle
 		normalizedS := normalizeRelativeDateStr(s)
@@ -339,6 +378,34 @@ func parseDateTimeWithTz(ctx phpv.Context, args []*phpv.ZVal) (time.Time, error)
 		return t, nil
 	}
 	return time.Now().In(loc), nil
+}
+
+// reISODate matches date strings that start with YYYY-MM-DD (4-digit year, 2-digit month, 2-digit day).
+var reISODate = regexp.MustCompile(`^(\d{4,})-(\d{2})-(\d{2})`)
+
+// validateISODatePrefix checks if a string starts with an ISO date (YYYY-MM-DD)
+// and validates that the month and day values are within valid ranges.
+// Returns an error with a PHP-compatible message if invalid, nil otherwise.
+func validateISODatePrefix(s string) error {
+	m := reISODate.FindStringSubmatch(s)
+	if m == nil {
+		return nil
+	}
+	month, _ := strconv.Atoi(m[2])
+	day, _ := strconv.Atoi(m[3])
+	if month < 1 || month > 12 {
+		// Position of the second digit of the month (where PHP detects the error)
+		pos := len(m[1]) + 1 + len(m[2]) - 1
+		ch := string(m[2][len(m[2])-1])
+		return fmt.Errorf("Failed to parse time string (%s) at position %d (%s): Unexpected character", s, pos, ch)
+	}
+	if day < 1 || day > 31 {
+		// Position of the second digit of the day (where PHP detects the error)
+		pos := len(m[1]) + 1 + len(m[2]) + 1 + len(m[3]) - 1
+		ch := string(m[3][len(m[3])-1])
+		return fmt.Errorf("Failed to parse time string (%s) at position %d (%s): Unexpected character", s, pos, ch)
+	}
+	return nil
 }
 
 // preserveInputTimezone checks if a parsed time uses time.UTC but the original
