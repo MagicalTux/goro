@@ -98,8 +98,11 @@ var builtinDeprecatedConstants = map[phpv.ZString]string{
 	"ASSERT_BAIL":      "Constant ASSERT_BAIL is deprecated since 8.3, as assert_options() is deprecated",
 	"ASSERT_EXCEPTION": "Constant ASSERT_EXCEPTION is deprecated since 8.3, as assert_options() is deprecated",
 	"ASSERT_CALLBACK":  "Constant ASSERT_CALLBACK is deprecated since 8.3, as assert_options() is deprecated",
-	"FILE_BINARY":      "Constant FILE_BINARY is deprecated since 8.1, as the constant has no effect",
-	"FILE_TEXT":         "Constant FILE_TEXT is deprecated since 8.1, as the constant has no effect",
+	"FILE_BINARY":           "Constant FILE_BINARY is deprecated since 8.1, as the constant has no effect",
+	"FILE_TEXT":              "Constant FILE_TEXT is deprecated since 8.1, as the constant has no effect",
+	"SUNFUNCS_RET_TIMESTAMP": "Constant SUNFUNCS_RET_TIMESTAMP is deprecated since 8.4, as date_sunrise() and date_sunset() were deprecated in 8.1",
+	"SUNFUNCS_RET_STRING":    "Constant SUNFUNCS_RET_STRING is deprecated since 8.4, as date_sunrise() and date_sunset() were deprecated in 8.1",
+	"SUNFUNCS_RET_DOUBLE":    "Constant SUNFUNCS_RET_DOUBLE is deprecated since 8.4, as date_sunrise() and date_sunset() were deprecated in 8.1",
 }
 
 // checkConstantDeprecated checks if a global constant has #[\Deprecated] and emits a warning.

@@ -825,6 +825,100 @@ func createFromFormatStaticFor(targetClass *phpobj.ZClass) func(ctx phpv.Context
 }
 
 // diffMethod computes the difference between two DateTime-like objects
+// daysInMonthFunc returns the number of days in the given month/year.
+func daysInMonthFunc(year int, month int) int {
+	// month is 1-based
+	if month < 1 {
+		month += 12
+		year--
+	}
+	if month > 12 {
+		month -= 12
+		year++
+	}
+	// Use Go's time to get last day of month
+	return time.Date(year, time.Month(month+1), 0, 0, 0, 0, 0, time.UTC).Day()
+}
+
+// timeCalendarAfter returns true if a is after b by calendar fields (y, m, d, h, i, s, us).
+// This matches PHP's sort_old_to_new for same-TZID comparisons where
+// wall-clock ordering can differ from UTC ordering during DST folds.
+func timeCalendarAfter(a, b time.Time) bool {
+	ay, am, ad := a.Date()
+	by, bm, bd := b.Date()
+	if ay != by {
+		return ay > by
+	}
+	if am != bm {
+		return am > bm
+	}
+	if ad != bd {
+		return ad > bd
+	}
+	if a.Hour() != b.Hour() {
+		return a.Hour() > b.Hour()
+	}
+	if a.Minute() != b.Minute() {
+		return a.Minute() > b.Minute()
+	}
+	if a.Second() != b.Second() {
+		return a.Second() > b.Second()
+	}
+	return a.Nanosecond() > b.Nanosecond()
+}
+
+// epochDays returns the number of days since a reference epoch for the calendar date.
+// This matches timelib_epoch_days_from_time.
+func epochDays(t time.Time) int {
+	y, m, d := t.Date()
+	// Use a simplified Julian Day Number calculation
+	a := (14 - int(m)) / 12
+	yr := y + 4800 - a
+	mo := int(m) + 12*a - 3
+	return d + (153*mo+2)/5 + 365*yr + yr/4 - yr/100 + yr/400 - 32045
+}
+
+// findNextDSTTransition finds the next DST transition near a given time.
+// Returns the Unix timestamp of the transition, the new UTC offset, and whether one was found.
+// It searches within a small window (up to 48 hours from t) to find transitions
+// relevant to the diff calculation.
+func findNextDSTTransition(t time.Time) (int64, int, bool) {
+	loc := t.Location()
+	locName := loc.String()
+	if locName == "UTC" || locName == "Local" {
+		return 0, 0, false
+	}
+	if len(locName) > 0 && (locName[0] == '+' || locName[0] == '-') {
+		return 0, 0, false
+	}
+
+	_, currentOff := t.Zone()
+
+	// Probe hourly from the current time for up to 48 hours
+	for hour := 1; hour <= 48; hour++ {
+		probeTime := t.Add(time.Duration(hour) * time.Hour)
+		_, probeOff := probeTime.Zone()
+		if probeOff != currentOff {
+			// Found a transition. Binary search for exact transition time.
+			lo := probeTime.Add(-time.Hour)
+			hi := probeTime
+			for hi.Sub(lo) > time.Second {
+				mid := lo.Add(hi.Sub(lo) / 2)
+				_, midOff := mid.Zone()
+				if midOff == currentOff {
+					lo = mid
+				} else {
+					hi = mid
+				}
+			}
+			// hi is approximately the transition time
+			_, newOff := hi.Zone()
+			return hi.Unix(), newOff, true
+		}
+	}
+	return 0, 0, false
+}
+
 func diffMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
 		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, "DateTime::diff() expects at least 1 parameter, 0 given")
@@ -864,89 +958,368 @@ func diffMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*php
 		return nil, err
 	}
 
-	// Calculate the difference
+	// Determine timezone types and whether both share the same IANA timezone
+	t1TzType := getTimezoneType(t1.Location())
+	t2TzType := getTimezoneType(t2.Location())
+	sameTzId := t1TzType == 3 && t2TzType == 3 && t1.Location().String() == t2.Location().String()
+
+	// Sort: one = earlier, two = later (matching PHP's sort_old_to_new)
 	invert := false
-	from := t1
-	to := t2
-	if from.After(to) {
-		from, to = to, from
-		invert = true
+	one := t1
+	two := t2
+	if sameTzId {
+		// For same IANA timezone, compare by calendar fields (wall clock)
+		// matching PHP's sort_old_to_new which compares y, m, d, h, i, s, us
+		if timeCalendarAfter(one, two) {
+			one, two = two, one
+			invert = true
+		}
+	} else {
+		// For different timezones, compare by Unix timestamp (SSE)
+		if one.Unix() > two.Unix() || (one.Unix() == two.Unix() && one.Nanosecond() > two.Nanosecond()) {
+			one, two = two, one
+			invert = true
+		}
 	}
 
-	// Calculate year/month/day differences matching PHP's behavior.
-	// PHP computes calendar date diff, then derives hours/minutes/seconds
-	// from actual elapsed time minus the calendar portion. This handles
-	// DST transitions correctly.
-	y1, m1, d1 := from.Date()
-	y2, m2, d2 := to.Date()
+	// Calculate raw component differences: two - one
+	y1, m1, d1 := one.Date()
+	y2, m2, d2 := two.Date()
 
 	years := y2 - y1
 	months := int(m2) - int(m1)
 	days := d2 - d1
 
-	// Normalize: borrow from months if days < 0
-	if days < 0 {
-		prevMonth := time.Date(y2, m2, 0, 0, 0, 0, 0, to.Location())
-		days += prevMonth.Day()
-		months--
-	}
-	if months < 0 {
-		months += 12
-		years--
-	}
+	var hours, minutes, seconds int
+	var usecDiff int
 
-	// Compute remaining hours/minutes/seconds.
-	// PHP uses a hybrid approach:
-	// - When there are calendar date differences (days/months/years > 0), use
-	//   wall-clock time-of-day arithmetic. This ensures "1 day" means one
-	//   calendar day regardless of DST transitions.
-	// - When dates are the same (days/months/years == 0), use UTC elapsed time.
-	//   This correctly handles DST fold periods where the same wall-clock time
-	//   occurs twice.
-	var remainSec int
-	if days > 0 || months > 0 || years > 0 {
-		// Multi-day: wall-clock time-of-day difference.
-		// When from and to are in different timezone objects (type 1/2: fixed offsets
-		// like EDT and EST), PHP includes the UTC offset difference in the time calc.
-		// When they share the same IANA timezone (type 3: America/New_York), the
-		// wall-clock time already reflects the DST transition, so no adjustment.
-		fromSod := from.Hour()*3600 + from.Minute()*60 + from.Second()
-		toSod := to.Hour()*3600 + to.Minute()*60 + to.Second()
-		dstAdj := 0
-		if from.Location().String() != to.Location().String() {
-			_, fromOff := from.Zone()
-			_, toOff := to.Zone()
-			dstAdj = fromOff - toOff
+	if sameTzId {
+		// Type 3 with same TZID: use timelib_diff_with_tzid algorithm
+		_, oneOff := one.Zone()
+		_, twoOff := two.Zone()
+		dstCorr := twoOff - oneOff // two->z - one->z (note: Go offsets are positive east, same as PHP z)
+		dstHCorr := dstCorr / 3600
+		dstMCorr := (dstCorr % 3600) / 60
+
+		hours = two.Hour() - one.Hour()
+		minutes = two.Minute() - one.Minute()
+		seconds = two.Second() - one.Second()
+		usecDiff = two.Nanosecond()/1000 - one.Nanosecond()/1000
+
+		// Determine DST flags
+		oneDst := 0
+		twoDst := 0
+		if isDST(one) {
+			oneDst = 1
 		}
-		remainSec = toSod - fromSod + dstAdj
-		if remainSec < 0 {
-			// Borrow one day
-			remainSec += 86400
-			days--
-			if days < 0 {
-				prevMonth := time.Date(y2, m2, 0, 0, 0, 0, 0, to.Location())
-				days += prevMonth.Day()
+		if isDST(two) {
+			twoDst = 1
+		}
+
+		// Fall Back check: when SSE order disagrees with calendar order
+		// (can happen in DST fold where 1:30 AM EST (later) < 1:59 AM EDT (earlier) by SSE)
+		sseFold := false
+		if two.Unix() < one.Unix() || (two.Unix() == one.Unix() && two.Nanosecond() < one.Nanosecond()) {
+			sseFold = true
+			flipped := int64(minutes*60+seconds) - int64(dstCorr)
+			if flipped < 0 {
+				flipped = -flipped
+			}
+			hours = int(flipped / 3600)
+			minutes = int((flipped - int64(hours)*3600) / 60)
+			seconds = int(flipped % 60)
+			invert = !invert
+		}
+
+		// Normalize: us->s, s->i, i->h, h->d, m->y (TZID path)
+		if usecDiff < 0 {
+			usecDiff += 1000000
+			seconds--
+		}
+		if usecDiff >= 1000000 {
+			seconds += usecDiff / 1000000
+			usecDiff = usecDiff % 1000000
+		}
+		if seconds < 0 {
+			minutes += (seconds - 59) / 60
+			seconds = 60 + (seconds % 60)
+			if seconds == 60 {
+				seconds = 0
+			} else {
+				// already adjusted
+			}
+		}
+		if seconds >= 60 {
+			minutes += seconds / 60
+			seconds = seconds % 60
+		}
+		if minutes < 0 {
+			hours += (minutes - 59) / 60
+			minutes = 60 + (minutes % 60)
+			if minutes == 60 {
+				minutes = 0
+			}
+		}
+		if minutes >= 60 {
+			hours += minutes / 60
+			minutes = minutes % 60
+		}
+		if hours < 0 {
+			days += (hours - 23) / 24
+			hours = 24 + (hours % 24)
+			if hours == 24 {
+				hours = 0
+			}
+		}
+		if hours >= 24 {
+			days += hours / 24
+			hours = hours % 24
+		}
+		if months < 0 {
+			years += (months - 11) / 12
+			months = 12 + (months % 12)
+			if months == 12 {
+				months = 0
+			}
+		}
+		if months >= 12 {
+			years += months / 12
+			months = months % 12
+		}
+
+		// do_range_limit_days_relative: direction-sensitive month borrowing
+		baseY := y2
+		baseM := int(m2)
+		if invert {
+			baseY = y1
+			baseM = int(m1)
+		}
+		// Normalize base month
+		for baseM < 1 {
+			baseM += 12
+			baseY--
+		}
+		for baseM > 12 {
+			baseM -= 12
+			baseY++
+		}
+
+		if !invert {
+			for days < 0 {
+				baseM--
+				if baseM < 1 {
+					baseM += 12
+					baseY--
+				}
+				days += daysInMonthFunc(baseY, baseM)
 				months--
-				if months < 0 {
-					months += 12
-					years--
+			}
+		} else {
+			for days < 0 {
+				days += daysInMonthFunc(baseY, baseM)
+				months--
+				baseM++
+				if baseM > 12 {
+					baseM -= 12
+					baseY++
 				}
 			}
-			// After borrowing, if all calendar parts are zero, fall back to
-			// UTC elapsed time to handle DST fold correctly
-			if days == 0 && months == 0 && years == 0 {
-				remainSec = int(to.Unix() - from.Unix())
+		}
+
+		// Normalize months->years again after day borrowing
+		if months < 0 {
+			years += (months - 11) / 12
+			months = 12 + (months % 12)
+			if months == 12 {
+				months = 0
 			}
 		}
-	} else {
-		// Same calendar date: use UTC elapsed time
-		remainSec = int(to.Unix() - from.Unix())
-	}
+		if months >= 12 {
+			years += months / 12
+			months = months % 12
+		}
 
-	hours := remainSec / 3600
-	remainSec %= 3600
-	minutes := remainSec / 60
-	seconds := remainSec % 60
+		// Calculate total days for type3 same-tz: use epoch days
+		totalDaysCalc := epochDays(two) - epochDays(one)
+		if totalDaysCalc < 0 {
+			totalDaysCalc = -totalDaysCalc
+		}
+		// If the later time has an earlier wall-clock time, subtract 1
+		oneDecTime := float64(one.Hour()) + float64(one.Minute())/60.0 + float64(one.Second())/3600.0 + float64(one.Nanosecond())/3600000000000.0
+		twoDecTime := float64(two.Hour()) + float64(two.Minute())/60.0 + float64(two.Second())/3600.0 + float64(two.Nanosecond())/3600000000000.0
+		// Determine which is the latest by calendar
+		var latestTime, earliestTime float64
+		if epochDays(two) >= epochDays(one) {
+			latestTime = twoDecTime
+			earliestTime = oneDecTime
+		} else {
+			latestTime = oneDecTime
+			earliestTime = twoDecTime
+		}
+		if latestTime < earliestTime && totalDaysCalc > 0 {
+			totalDaysCalc--
+		}
+
+		// DST correction post-normalization (matching PHP's timelib_diff_with_tzid)
+		// Skip DST correction if SSE fold was already handled above.
+		if !sseFold && oneDst == 1 && twoDst == 0 {
+			// Fall Back
+			elapsedSec := two.Unix() - one.Unix() + int64(dstCorr)
+			if elapsedSec < 86400 {
+				hours -= dstHCorr
+				minutes -= dstMCorr
+			}
+		} else if !sseFold && oneDst == 0 && twoDst == 1 {
+			// Spring Forward
+			elapsedSec := two.Unix() - one.Unix() + int64(dstCorr)
+			if elapsedSec < 86400 {
+				hours -= dstHCorr
+				minutes -= dstMCorr
+			}
+		} else if !sseFold && two.Unix()-one.Unix() >= 86400 {
+			// Neither Fall Back nor Spring Forward, but elapsed time >= 1 day.
+			// Check if 'two' is in the period just before a DST transition.
+			// If so, convert P1DT0H to P0DT24H.
+			// This matches PHP's timelib_diff_with_tzid logic.
+			nextTransTime, nextTransOff, hasTransition := findNextDSTTransition(two)
+			if hasTransition {
+				localDstCorr := oneOff - nextTransOff
+				twoSse := two.Unix()
+				if twoSse >= int64(nextTransTime)-int64(localDstCorr) && twoSse < int64(nextTransTime) {
+					days--
+					hours = 24
+				}
+			}
+		}
+
+		intervalObj.ObjectSet(ctx, phpv.ZString("days"), phpv.ZInt(totalDaysCalc).ZVal())
+	} else {
+		// Non-TZID path (type 1/2 or mixed): PHP's standard timelib_diff
+		hours = two.Hour() - one.Hour()
+		minutes = two.Minute() - one.Minute()
+		_, oneOff := one.Zone()
+		_, twoOff := two.Zone()
+		seconds = two.Second() - one.Second() - twoOff + oneOff
+		usecDiff = two.Nanosecond()/1000 - one.Nanosecond()/1000
+
+		// DST flag adjustments for type 1/2
+		oneDst := 0
+		twoDst := 0
+		if t1TzType != 3 && isDST(one) {
+			oneDst = 1
+		}
+		if t2TzType != 3 && isDST(two) {
+			twoDst = 1
+		}
+		if getTimezoneType(one.Location()) != 3 {
+			hours += oneDst
+		}
+		if getTimezoneType(two.Location()) != 3 {
+			hours -= twoDst
+		}
+
+		// Normalize: us->s, s->i, i->h, h->d, m->y
+		if usecDiff < 0 {
+			usecDiff += 1000000
+			seconds--
+		}
+		if usecDiff >= 1000000 {
+			seconds += usecDiff / 1000000
+			usecDiff = usecDiff % 1000000
+		}
+		for seconds < 0 {
+			seconds += 60
+			minutes--
+		}
+		for seconds >= 60 {
+			seconds -= 60
+			minutes++
+		}
+		for minutes < 0 {
+			minutes += 60
+			hours--
+		}
+		for minutes >= 60 {
+			minutes -= 60
+			hours++
+		}
+		for hours < 0 {
+			hours += 24
+			days--
+		}
+		for hours >= 24 {
+			hours -= 24
+			days++
+		}
+		if months < 0 {
+			years += (months - 11) / 12
+			months = 12 + (months % 12)
+			if months == 12 {
+				months = 0
+			}
+		}
+		if months >= 12 {
+			years += months / 12
+			months = months % 12
+		}
+
+		// do_range_limit_days_relative: direction-sensitive month borrowing
+		baseY := y2
+		baseM := int(m2)
+		if invert {
+			baseY = y1
+			baseM = int(m1)
+		}
+		for baseM < 1 {
+			baseM += 12
+			baseY--
+		}
+		for baseM > 12 {
+			baseM -= 12
+			baseY++
+		}
+
+		if !invert {
+			for days < 0 {
+				baseM--
+				if baseM < 1 {
+					baseM += 12
+					baseY--
+				}
+				days += daysInMonthFunc(baseY, baseM)
+				months--
+			}
+		} else {
+			for days < 0 {
+				dim := daysInMonthFunc(baseY, baseM)
+				days += dim
+				months--
+				baseM++
+				if baseM > 12 {
+					baseM -= 12
+					baseY++
+				}
+			}
+		}
+
+		// Normalize months->years again
+		if months < 0 {
+			years += (months - 11) / 12
+			months = 12 + (months % 12)
+			if months == 12 {
+				months = 0
+			}
+		}
+		if months >= 12 {
+			years += months / 12
+			months = months % 12
+		}
+
+		// Calculate total days for non-TZID: floor(abs(sse_diff) / 86400)
+		sseDiff := math.Abs(float64(one.Unix()-two.Unix()) + float64(one.Nanosecond()-two.Nanosecond())/1e9)
+		totalDaysCalc := int(math.Floor(sseDiff / 86400))
+		intervalObj.ObjectSet(ctx, phpv.ZString("days"), phpv.ZInt(totalDaysCalc).ZVal())
+	}
 
 	// Check absolute parameter
 	absolute := false
@@ -954,29 +1327,6 @@ func diffMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*php
 		absolute = bool(args[1].AsBool(ctx))
 	}
 
-	// Calculate total days for the 'days' property
-	// PHP calculates this as the number of full days between the two dates.
-	// Use Unix timestamps to handle massive date ranges (Duration is limited to ~292 years).
-	fromUTC := time.Date(from.Year(), from.Month(), from.Day(), from.Hour(), from.Minute(), from.Second(), 0, time.UTC)
-	toUTC := time.Date(to.Year(), to.Month(), to.Day(), to.Hour(), to.Minute(), to.Second(), 0, time.UTC)
-	totalDays := int((toUTC.Unix() - fromUTC.Unix()) / 86400)
-
-	// Calculate microsecond fraction
-	fromUsec := from.Nanosecond() / 1000
-	toUsec := to.Nanosecond() / 1000
-	usecDiff := toUsec - fromUsec
-	if usecDiff < 0 {
-		usecDiff += 1000000
-		seconds--
-		if seconds < 0 {
-			seconds += 60
-			minutes--
-			if minutes < 0 {
-				minutes += 60
-				hours--
-			}
-		}
-	}
 	fraction := float64(usecDiff) / 1000000.0
 
 	intervalObj.ObjectSet(ctx, phpv.ZString("y"), phpv.ZInt(years).ZVal())
@@ -986,7 +1336,6 @@ func diffMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*php
 	intervalObj.ObjectSet(ctx, phpv.ZString("i"), phpv.ZInt(minutes).ZVal())
 	intervalObj.ObjectSet(ctx, phpv.ZString("s"), phpv.ZInt(seconds).ZVal())
 	intervalObj.ObjectSet(ctx, phpv.ZString("f"), phpv.ZFloat(fraction).ZVal())
-	intervalObj.ObjectSet(ctx, phpv.ZString("days"), phpv.ZInt(totalDays).ZVal())
 	if invert && !absolute {
 		intervalObj.ObjectSet(ctx, phpv.ZString("invert"), phpv.ZInt(1).ZVal())
 	} else {
@@ -2538,9 +2887,11 @@ func init() {
 					} else {
 						// PHP initializes int properties to -1 before applying unserialized values.
 						// Missing properties remain at -1 (sentinel for "not set").
-						for _, key := range []string{"y", "m", "d", "h", "i", "s", "invert", "days"} {
+						// "invert" is special: it defaults to 0, not -1.
+						for _, key := range []string{"y", "m", "d", "h", "i", "s", "days"} {
 							this.HashTable().SetString(phpv.ZString(key), phpv.ZInt(-1).ZVal())
 						}
+						this.HashTable().SetString("invert", phpv.ZInt(0).ZVal())
 						// Coerce values to proper types matching PHP behavior.
 						// For int properties, only apply if the value is a scalar (not object/array/null).
 						// PHP's native unserialize leaves -1 for non-scalar values.
@@ -4242,8 +4593,11 @@ func dateIntervalConstruct(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.
 				return nil, nil
 			}
 			// If one part is empty or parsing failed
-			if part2 == "" || err2 != nil {
+			if part2 == "" {
 				return nil, phpobj.ThrowError(ctx, DateMalformedIntervalStringException, "Failed to parse interval ("+spec+")")
+			}
+			if err2 != nil {
+				return nil, phpobj.ThrowError(ctx, DateMalformedIntervalStringException, "Unknown or bad format ("+spec+")")
 			}
 		}
 		// Not a proper ISO 8601 duration

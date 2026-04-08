@@ -326,6 +326,10 @@ func parseTzName(tzName string) (*time.Location, error) {
 	if offset, ok := timezoneAbbreviationOffsets[upper]; ok {
 		return time.FixedZone(tzName, offset), nil
 	}
+	// Try military timezone abbreviations (single letter, case-insensitive)
+	if offset, ok := militaryTZAbbrevs[strings.ToLower(tzName)]; ok {
+		return time.FixedZone(tzName, offset), nil
+	}
 	return nil, fmt.Errorf("unknown timezone: %s", tzName)
 }
 
@@ -414,11 +418,18 @@ func datetimezoneConstruct(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.
 	if tzType != 1 {
 		upperTz := strings.ToUpper(tzName)
 		_, isAbbrev := timezoneAbbreviationOffsets[upperTz]
+		if !isAbbrev {
+			// Also check military timezone abbreviations
+			_, isAbbrev = militaryTZAbbrevs[strings.ToLower(tzName)]
+		}
 		if isAbbrev && upperTz != "UTC" {
 			tzType = 2
+			// PHP stores abbreviations in uppercase
+			displayName = upperTz
+		} else {
+			// Use the original user-supplied name for display (preserving casing and name)
+			displayName = tzName
 		}
-		// Use the original user-supplied name for display (preserving casing and name)
-		displayName = tzName
 	}
 	this.HashTable().SetString("timezone_type", phpv.ZInt(tzType).ZVal())
 	this.HashTable().SetString("timezone", phpv.ZString(displayName).ZVal())
@@ -603,7 +614,7 @@ var militaryTZAbbrevs = map[string]int{
 	"g": 25200,   // Golf = UTC+7
 	"h": 28800,   // Hotel = UTC+8
 	"i": 32400,   // India = UTC+9
-	"j": 0,       // Juliet = local time
+	// Note: "j" (Juliet) is NOT in PHP's timezonemap.h - it represents local time
 	"k": 36000,   // Kilo = UTC+10
 	"l": 39600,   // Lima = UTC+11
 	"m": 43200,   // Mike = UTC+12
@@ -637,8 +648,6 @@ var canonicalTZForAbbrev = map[string]string{
 	"akst":  "America/Anchorage",
 	"ast":   "America/Halifax",
 	"awst":  "Australia/Perth",
-	"brst":  "America/Sao_Paulo",
-	"brt":   "America/Sao_Paulo",
 	"bst":   "Europe/London",
 	"cat":   "Africa/Harare",
 	"cdt":   "America/Chicago",
@@ -671,7 +680,7 @@ var canonicalTZForAbbrev = map[string]string{
 	"pdt":   "America/Los_Angeles",
 	"pst":   "America/Los_Angeles",
 	"sgt":   "Asia/Singapore",
-	"utc":   "UTC",
+	"utc":   "Etc/Universal",
 	"wat":   "Africa/Lagos",
 	"west":  "Europe/Lisbon",
 	"wet":   "Europe/Lisbon",
@@ -684,7 +693,12 @@ var tzAbbrevFuture = time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC)
 // NOT included in PHP's static timezonemap.h. PHP's map was built from a specific
 // IANA snapshot and excludes certain very obscure historical abbreviations.
 var excludedAbbrevs = map[string]bool{
-	"zmt": true, // Zomba Mean Time - historical Africa/Blantyre, not in PHP
+	"zmt":  true, // Zomba Mean Time - historical Africa/Blantyre, not in PHP
+	"admt": true, // not in PHP's timezonemap.h
+	"east": true, // not in PHP's timezonemap.h
+	"hkwt": true, // not in PHP's timezonemap.h
+	"pmmt": true, // not in PHP's timezonemap.h
+	"set":  true, // not in PHP's timezonemap.h
 }
 
 // buildTZAbbrevMap builds the complete PHP timezone abbreviation map from all IANA zones.
@@ -779,9 +793,38 @@ func buildTZAbbrevMap() map[string][]tzAbbrevEntry {
 		tzID   string
 	}
 	phpCompatAbbrevs := []phpCompatEntry{
-		// Brazil Summer Time: Brazil abolished DST in 2019; modern IANA uses numeric "-02".
-		{"brst", true, -7200, "America/Sao_Paulo"},
-		{"brt", false, -10800, "America/Sao_Paulo"},
+		// Canadian Double Daylight Time: historical, no longer in modern IANA data
+		{"cddt", true, -14400, "America/Rankin_Inlet"},
+		{"cddt", true, -14400, "America/Resolute"},
+		// Eastern Double Daylight Time
+		{"eddt", true, -10800, "America/Iqaluit"},
+		// Mountain Double Daylight Time
+		{"mddt", true, -18000, "America/Cambridge_Bay"},
+		{"mddt", true, -18000, "America/Yellowknife"},
+		// Middle European Summer Time
+		{"mest", true, 7200, "MET"},
+		// Middle European Time
+		{"met", false, 3600, "MET"},
+		// Pacific Double Daylight Time
+		{"pddt", true, -21600, "America/Inuvik"},
+		// UCT alias
+		{"uct", false, 0, "Etc/UCT"},
+	}
+
+	// PHP's timezonemap.h has a duplicate "UTC" entry under "utc" abbreviation.
+	// Add it explicitly since our dedup logic removes it.
+	if entries, ok := result["utc"]; ok {
+		// Check if UTC already appears and add a second one
+		hasUTC := false
+		for _, e := range entries {
+			if e.tzID == "UTC" {
+				hasUTC = true
+				break
+			}
+		}
+		if hasUTC {
+			result["utc"] = append(result["utc"], tzAbbrevEntry{dst: false, offset: 0, tzID: "UTC"})
+		}
 	}
 	for _, pc := range phpCompatAbbrevs {
 		gk := globalKey{abbr: pc.abbr, offset: pc.offset, tzID: pc.tzID}
@@ -965,6 +1008,8 @@ func fncTimezoneNameFromAbbr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, e
 
 	// Step 2: Search by offset (and optionally DST). Used when abbr is empty
 	// or not found in the abbreviation database.
+	// PHP only does this search when isDST is explicitly provided (0 or 1).
+	// When isDST is not provided (defaults to -1), offset-based search is skipped.
 	offset := int64(-1)
 	if utcOffset.HasArg() {
 		offset = int64(utcOffset.Get())
@@ -974,7 +1019,7 @@ func fncTimezoneNameFromAbbr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, e
 		wantDST = int64(isDST.Get())
 	}
 
-	if offset != -1 || wantDST != -1 {
+	if isDST.HasArg() && (offset != -1 || wantDST != -1) {
 		// Search through the abbreviation database for matching offset
 		// PHP iterates the abbreviation list and returns the first match
 		// with a matching offset and (if isDST is specified) DST flag.
@@ -1010,18 +1055,12 @@ func fncTimezoneNameFromAbbr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, e
 			{19800, 0}:  "Asia/Kolkata",
 			{28800, 0}:  "Asia/Shanghai",
 			{-10800, 0}: "America/Sao_Paulo",
+			{-7200, 1}:  "America/Sao_Paulo",
 		}
 		if offset != -1 {
 			pk := offsetKey{offset, wantDST}
 			if preferred, ok := preferredForOffset[pk]; ok {
-				// Verify this entry actually exists and matches
-				for _, entries := range tzAbbrevCache {
-					for _, e := range entries {
-						if e.tzID == preferred && entryMatches(e) {
-							return phpv.ZString(preferred).ZVal(), nil
-						}
-					}
-				}
+				return phpv.ZString(preferred).ZVal(), nil
 			}
 		}
 
@@ -1320,7 +1359,7 @@ func fncDateISODateSet(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 }
 
 func fncDateGetLastErrors(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	return phpv.ZBool(false).ZVal(), nil
+	return getLastErrorsStatic(ctx, args)
 }
 
 // dateParseHasDate returns true if the input string contains a date component (year-month-day).
@@ -1566,10 +1605,56 @@ func fncDateParse(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		}
 	}
 	result.OffsetSet(ctx, phpv.ZString("fraction"), fraction.ZVal())
-	result.OffsetSet(ctx, phpv.ZString("warning_count"), phpv.ZInt(0).ZVal())
-	result.OffsetSet(ctx, phpv.ZString("warnings"), phpv.NewZArray().ZVal())
-	result.OffsetSet(ctx, phpv.ZString("error_count"), phpv.ZInt(0).ZVal())
-	result.OffsetSet(ctx, phpv.ZString("errors"), phpv.NewZArray().ZVal())
+
+	// Build warnings and errors
+	parseErrors := newDateParseErrors()
+
+	if datetime == "" {
+		parseErrors.addError(0, "Empty string")
+	} else if stErr == nil {
+		// Extract raw parsed values for validation (not Go-normalized)
+		// PHP uses position len(datetime)+1 for "invalid date/time" warnings
+		warnPos := len(datetime) + 1
+		if hasDate {
+			if m := reDateParseExtractDate.FindStringSubmatch(datetime); m != nil {
+				rawMonth, _ := strconv.Atoi(m[2])
+				rawDay, _ := strconv.Atoi(m[3])
+				rawYear, _ := strconv.Atoi(m[1])
+				// Check if the date is invalid
+				if rawMonth == 0 || rawDay == 0 || rawYear == 0 ||
+					rawMonth > 12 || rawDay > 31 ||
+					(rawMonth > 0 && rawDay > 0 && rawYear > 0 && time.Date(rawYear, time.Month(rawMonth), rawDay, 0, 0, 0, 0, time.UTC).Day() != rawDay) {
+					parseErrors.addWarning(warnPos, "The parsed date was invalid")
+				}
+			}
+		}
+		if hasTime {
+			if m := reDateParseExtractTime.FindStringSubmatch(datetime); m != nil {
+				rawHour, _ := strconv.Atoi(m[1])
+				rawMinute, _ := strconv.Atoi(m[2])
+				rawSecond := 0
+				if len(m) > 3 && m[3] != "" {
+					rawSecond, _ = strconv.Atoi(m[3])
+				}
+				if rawHour > 23 || rawMinute > 59 || rawSecond > 59 {
+					parseErrors.addWarning(warnPos, "The parsed time was invalid")
+				}
+			}
+		}
+	}
+
+	result.OffsetSet(ctx, phpv.ZString("warning_count"), phpv.ZInt(parseErrors.warningCount).ZVal())
+	warnArr := phpv.NewZArray()
+	for pos, msg := range parseErrors.warnings {
+		warnArr.OffsetSet(ctx, phpv.ZInt(pos), phpv.ZString(msg).ZVal())
+	}
+	result.OffsetSet(ctx, phpv.ZString("warnings"), warnArr.ZVal())
+	result.OffsetSet(ctx, phpv.ZString("error_count"), phpv.ZInt(parseErrors.errorCount).ZVal())
+	errArr := phpv.NewZArray()
+	for pos, msg := range parseErrors.errors {
+		errArr.OffsetSet(ctx, phpv.ZInt(pos), phpv.ZString(msg).ZVal())
+	}
+	result.OffsetSet(ctx, phpv.ZString("errors"), errArr.ZVal())
 
 	// Detect timezone info in the input string
 	hasTz := false
@@ -1645,7 +1730,45 @@ func fncDateParseFromFormat(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 	format := string(args[0].AsString(ctx))
 	datetime := string(args[1].AsString(ctx))
 	result := phpv.NewZArray()
-	t, ok := createFromFormatParsed(ctx, format, datetime, time.UTC)
+	parseErrors := newDateParseErrors()
+	t, ok := createFromFormatParsed(ctx, format, datetime, time.UTC, parseErrors)
+
+	// Determine which fields were set based on the format
+	hasYear := false
+	hasMonth := false
+	hasDay := false
+	hasHour := false
+	hasMinute := false
+	hasSecond := false
+	for i := 0; i < len(format); i++ {
+		switch format[i] {
+		case 'Y', 'y', 'X', 'x':
+			hasYear = true
+		case 'm', 'n', 'M', 'F':
+			hasMonth = true
+		case 'd', 'j', 'D', 'l':
+			hasDay = true
+		case 'z': // day of year sets month and day
+			hasMonth = true
+			hasDay = true
+		case 'H', 'G', 'h', 'g':
+			hasHour = true
+		case 'i':
+			hasMinute = true
+		case 's':
+			hasSecond = true
+		case 'U': // unix timestamp sets everything
+			hasYear = true
+			hasMonth = true
+			hasDay = true
+			hasHour = true
+			hasMinute = true
+			hasSecond = true
+		case '\\':
+			i++ // skip next char
+		}
+	}
+
 	if !ok {
 		result.OffsetSet(ctx, phpv.ZString("year"), phpv.ZBool(false).ZVal())
 		result.OffsetSet(ctx, phpv.ZString("month"), phpv.ZBool(false).ZVal())
@@ -1654,18 +1777,58 @@ func fncDateParseFromFormat(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 		result.OffsetSet(ctx, phpv.ZString("minute"), phpv.ZBool(false).ZVal())
 		result.OffsetSet(ctx, phpv.ZString("second"), phpv.ZBool(false).ZVal())
 	} else {
-		result.OffsetSet(ctx, phpv.ZString("year"), phpv.ZInt(t.Year()).ZVal())
-		result.OffsetSet(ctx, phpv.ZString("month"), phpv.ZInt(int(t.Month())).ZVal())
-		result.OffsetSet(ctx, phpv.ZString("day"), phpv.ZInt(t.Day()).ZVal())
-		result.OffsetSet(ctx, phpv.ZString("hour"), phpv.ZInt(t.Hour()).ZVal())
-		result.OffsetSet(ctx, phpv.ZString("minute"), phpv.ZInt(t.Minute()).ZVal())
-		result.OffsetSet(ctx, phpv.ZString("second"), phpv.ZInt(t.Second()).ZVal())
+		if hasYear {
+			result.OffsetSet(ctx, phpv.ZString("year"), phpv.ZInt(t.Year()).ZVal())
+		} else {
+			result.OffsetSet(ctx, phpv.ZString("year"), phpv.ZBool(false).ZVal())
+		}
+		if hasMonth {
+			result.OffsetSet(ctx, phpv.ZString("month"), phpv.ZInt(int(t.Month())).ZVal())
+		} else {
+			result.OffsetSet(ctx, phpv.ZString("month"), phpv.ZBool(false).ZVal())
+		}
+		if hasDay {
+			result.OffsetSet(ctx, phpv.ZString("day"), phpv.ZInt(t.Day()).ZVal())
+		} else {
+			result.OffsetSet(ctx, phpv.ZString("day"), phpv.ZBool(false).ZVal())
+		}
+		if hasHour {
+			result.OffsetSet(ctx, phpv.ZString("hour"), phpv.ZInt(t.Hour()).ZVal())
+		} else {
+			result.OffsetSet(ctx, phpv.ZString("hour"), phpv.ZBool(false).ZVal())
+		}
+		if hasMinute {
+			result.OffsetSet(ctx, phpv.ZString("minute"), phpv.ZInt(t.Minute()).ZVal())
+		} else {
+			result.OffsetSet(ctx, phpv.ZString("minute"), phpv.ZBool(false).ZVal())
+		}
+		if hasSecond {
+			result.OffsetSet(ctx, phpv.ZString("second"), phpv.ZInt(t.Second()).ZVal())
+		} else {
+			result.OffsetSet(ctx, phpv.ZString("second"), phpv.ZBool(false).ZVal())
+		}
 	}
-	result.OffsetSet(ctx, phpv.ZString("fraction"), phpv.ZFloat(0).ZVal())
-	result.OffsetSet(ctx, phpv.ZString("warning_count"), phpv.ZInt(0).ZVal())
-	result.OffsetSet(ctx, phpv.ZString("warnings"), phpv.NewZArray().ZVal())
-	result.OffsetSet(ctx, phpv.ZString("error_count"), phpv.ZInt(0).ZVal())
-	result.OffsetSet(ctx, phpv.ZString("errors"), phpv.NewZArray().ZVal())
+
+	// Fraction is false when no time fields were in the format
+	if hasHour || hasMinute || hasSecond {
+		result.OffsetSet(ctx, phpv.ZString("fraction"), phpv.ZFloat(0).ZVal())
+	} else {
+		result.OffsetSet(ctx, phpv.ZString("fraction"), phpv.ZBool(false).ZVal())
+	}
+
+	// Add warnings and errors from parsing
+	result.OffsetSet(ctx, phpv.ZString("warning_count"), phpv.ZInt(parseErrors.warningCount).ZVal())
+	warnArr := phpv.NewZArray()
+	for pos, msg := range parseErrors.warnings {
+		warnArr.OffsetSet(ctx, phpv.ZInt(pos), phpv.ZString(msg).ZVal())
+	}
+	result.OffsetSet(ctx, phpv.ZString("warnings"), warnArr.ZVal())
+	result.OffsetSet(ctx, phpv.ZString("error_count"), phpv.ZInt(parseErrors.errorCount).ZVal())
+	errArr := phpv.NewZArray()
+	for pos, msg := range parseErrors.errors {
+		errArr.OffsetSet(ctx, phpv.ZInt(pos), phpv.ZString(msg).ZVal())
+	}
+	result.OffsetSet(ctx, phpv.ZString("errors"), errArr.ZVal())
 	result.OffsetSet(ctx, phpv.ZString("is_localtime"), phpv.ZBool(false).ZVal())
 	return result.ZVal(), nil
 }
@@ -2054,6 +2217,9 @@ func dateSunFunc(ctx phpv.Context, args []*phpv.ZVal, isSunrise bool) (*phpv.ZVa
 	utcOffset := math.NaN()
 	if len(args) > 1 {
 		returnFormat = int(args[1].AsInt(ctx))
+	}
+	if returnFormat < 0 || returnFormat > 2 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, fmt.Sprintf("%s(): Argument #2 ($returnFormat) must be one of SUNFUNCS_RET_TIMESTAMP, SUNFUNCS_RET_STRING, or SUNFUNCS_RET_DOUBLE", funcName))
 	}
 	if len(args) > 2 {
 		latitude = float64(args[2].AsFloat(ctx))
