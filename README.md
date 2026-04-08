@@ -24,7 +24,7 @@ go install github.com/MagicalTux/goro/sapi/php-cli@latest
 
 ## Status
 
-Goro passes **~11,640 of 12,110 tests** (96.1%) from the PHP 8.5.4 test suite (472 failures in CI). PHP memory_limit enforcement (128MB default). Includes PCRE2 via gopcre2, IANA timezones via gotz, and 9 extensions (session, xml, curl, sockets, zlib, mysqli, sqlite3, bz2).
+Goro passes **~11,770 of 12,110 tests** (97.2%) from the PHP 8.5.4 test suite (256 failures in CI). PHP memory_limit enforcement (128MB default). Includes PCRE2 via gopcre2, IANA timezones via gotz, and 9 extensions (session, xml, curl, sockets, zlib, mysqli, sqlite3, bz2).
 
 ### Language Features
 
@@ -77,7 +77,7 @@ Goro passes **~11,640 of 12,110 tests** (96.1%) from the PHP 8.5.4 test suite (4
 | hash | 11 | 47% | hash, hash_hmac, hash_file, hash_pbkdf2, hash_hkdf, incremental |
 | gmp | 45+ | 92% | Arithmetic, division, modular, bitwise, primes, GCD/LCM, factorial, operator overloading, import/export |
 | mbstring | 40+ | ~50% | strlen, substr, strpos, strtolower/upper, convert_encoding, detect_encoding, check_encoding |
-| date | 30+ | 62% | date, time, strtotime, mktime, DateTime, DateTimeImmutable, DateInterval, DatePeriod, DateTimeZone |
+| date | 34+ | ~89% | date, time, strtotime, mktime, DateTime, DateTimeImmutable, DateInterval, DatePeriod, DateTimeZone, sunrise/sunset |
 | openssl | 12 | — | AES/DES/RSA/ECDSA encryption, signing, key generation via Go crypto |
 | bz2 | 2 | — | Compress (gobzip2) and decompress (Go stdlib) |
 | zlib | 20+ | — | gzcompress/gzencode/gzdeflate, gzip file ops, stream filters, compress.zlib:// |
