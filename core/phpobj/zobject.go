@@ -646,13 +646,14 @@ func NewZObject(ctx phpv.Context, c phpv.ZClass, args ...*phpv.ZVal) (*ZObject, 
 				}
 
 				propName := phpv.ZString(arg.VarName)
-				// Dup the value so the promoted property has its own ZVal,
-				// independent of the caller's local variable slot. Without this,
-				// when two by-ref args share the same Name (from same-named
-				// local variables in factory functions), callZValImpl's write-back
-				// via ctx.OffsetSet corrupts the first ref through Set().
-				val = val.Dup()
-				val.Name = nil
+				// For by-value promoted params, Dup the value so the property
+				// has its own ZVal independent of the caller's variable slot.
+				// For by-ref promoted params, keep the original ZVal to preserve
+				// the reference link (e.g., public array &$array).
+				if !arg.Ref {
+					val = val.Dup()
+					val.Name = nil
+				}
 				// If this promoted property has hooks, use ObjectSet to invoke hooks
 				if arg.PromotionHooks != nil && arg.PromotionHooks.HasHooks && arg.PromotionHooks.SetHook != nil {
 					if err := n.ObjectSet(ctx, propName, val); err != nil {
