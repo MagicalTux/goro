@@ -31,7 +31,10 @@ func init() {
 			"mb_ord":                  {Func: fncMbOrd, Args: []*phpctx.ExtFunctionArg{}},
 			"mb_chr":                  {Func: fncMbChr, Args: []*phpctx.ExtFunctionArg{}},
 			"mb_output_handler":       {Func: fncMbOutputHandler, Args: []*phpctx.ExtFunctionArg{}},
-			"mb_parse_str":            {Func: fncMbParseStr, Args: []*phpctx.ExtFunctionArg{}},
+			"mb_parse_str":            {Func: fncMbParseStr, Args: []*phpctx.ExtFunctionArg{
+				{ArgName: "string"},
+				{ArgName: "result", Ref: true},
+			}},
 			"mb_preferred_mime_name":  {Func: fncMbPreferredMimeName, Args: []*phpctx.ExtFunctionArg{}},
 			"mb_scrub":                {Func: fncMbScrub, Args: []*phpctx.ExtFunctionArg{}},
 			"mb_str_pad":              {Func: fncMbStrPad, Args: []*phpctx.ExtFunctionArg{}},

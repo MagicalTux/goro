@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/MagicalTux/goro/core"
 	"github.com/MagicalTux/goro/core/phpv"
@@ -577,7 +578,45 @@ func fncHtmlSpecialChars(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error
 	}
 
 	var buf bytes.Buffer
-	chars := []rune(str)
+
+	// Convert input to runes, properly handling invalid UTF-8 sequences.
+	// When ENT_SUBSTITUTE is set, truncated multi-byte sequences should produce
+	// a single U+FFFD replacement character (not one per byte).
+	substituteMode := (flags & ENT_SUBSTITUTE) != 0
+	var chars []rune
+	raw := []byte(str)
+	for bi := 0; bi < len(raw); {
+		r, size := utf8.DecodeRune(raw[bi:])
+		if r == utf8.RuneError && size <= 1 {
+			if substituteMode {
+				chars = append(chars, '\uFFFD')
+				// Skip the entire truncated sequence
+				b := raw[bi]
+				skip := 1
+				if b >= 0xC0 && b < 0xE0 {
+					for skip < 2 && bi+skip < len(raw) && raw[bi+skip] >= 0x80 && raw[bi+skip] < 0xC0 {
+						skip++
+					}
+				} else if b >= 0xE0 && b < 0xF0 {
+					for skip < 3 && bi+skip < len(raw) && raw[bi+skip] >= 0x80 && raw[bi+skip] < 0xC0 {
+						skip++
+					}
+				} else if b >= 0xF0 && b < 0xF8 {
+					for skip < 4 && bi+skip < len(raw) && raw[bi+skip] >= 0x80 && raw[bi+skip] < 0xC0 {
+						skip++
+					}
+				}
+				bi += skip
+			} else {
+				chars = append(chars, r)
+				bi++
+			}
+		} else {
+			chars = append(chars, r)
+			bi += size
+		}
+	}
+
 	for i := 0; i < len(chars); i++ {
 		c := chars[i]
 
@@ -604,10 +643,8 @@ func fncHtmlSpecialChars(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error
 			}
 			buf.WriteString(repl)
 		} else {
-
 			buf.WriteRune(c)
 		}
-
 	}
 
 	return phpv.ZStr(buf.String()), nil

@@ -360,7 +360,8 @@ func (z ZStringArray) OffsetGet(ctx Context, key Val) (*ZVal, error) {
 	if i < 0 || i >= len(s) {
 		return ZStr(""), ctx.Warn("Uninitialized string offset %v", key.String())
 	}
-	c := ZString(s[i])
+	// PHP strings are byte arrays: $str[$i] returns a 1-byte string
+	c := ZString([]byte{s[i]})
 
 	return c.ZVal(), nil
 }

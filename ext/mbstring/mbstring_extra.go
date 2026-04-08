@@ -928,7 +928,425 @@ func fncMbConvertKana(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if enc != nil && !isValidEncoding(string(*enc)) {
 		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, fmt.Sprintf("mb_convert_kana(): Argument #3 ($encoding) must be a valid encoding, \"%s\" given", string(*enc)))
 	}
-	return s.ZVal(), nil
+
+	optStr := "KV"
+	if option != nil {
+		optStr = string(*option)
+	}
+
+	// Parse option flags
+	var (
+		optAsciiToZenkakuAlpha   bool // 'A' ASCII alpha -> full-width
+		optZenkakuAlphaToAscii   bool // 'a' full-width alpha -> ASCII
+		optAsciiToZenkakuNum     bool // 'N' ASCII digits -> full-width
+		optZenkakuNumToAscii     bool // 'n' full-width digits -> ASCII
+		optAsciiToZenkakuSpace   bool // 'S' ASCII space -> full-width
+		optZenkakuSpaceToAscii   bool // 's' full-width space -> ASCII
+		optHiraganaToKatakana    bool // 'C' hiragana -> katakana
+		optKatakanaToHiragana    bool // 'c' katakana -> hiragana
+		optHankakuKataToZenkaku  bool // 'K' half-width katakana -> full-width katakana
+		optZenkakuKataToHankaku  bool // 'k' full-width katakana -> half-width katakana
+		optHankakuKataToHiragana bool // 'H' half-width katakana -> hiragana
+		optHiraganaToHankakuKata bool // 'h' hiragana -> half-width katakana
+		optCombineDakuten        bool // 'V' combine voiced sound marks (for K and H)
+		optAsciiToZenkakuAlnum   bool // 'R' ASCII alpha+num -> full-width (like A+N)
+		optZenkakuAlnumToAscii   bool // 'r' full-width alpha+num -> ASCII (like a+n)
+	)
+
+	for _, c := range optStr {
+		switch c {
+		case 'A':
+			optAsciiToZenkakuAlpha = true
+		case 'a':
+			optZenkakuAlphaToAscii = true
+		case 'N':
+			optAsciiToZenkakuNum = true
+		case 'n':
+			optZenkakuNumToAscii = true
+		case 'S':
+			optAsciiToZenkakuSpace = true
+		case 's':
+			optZenkakuSpaceToAscii = true
+		case 'C':
+			optHiraganaToKatakana = true
+		case 'c':
+			optKatakanaToHiragana = true
+		case 'K':
+			optHankakuKataToZenkaku = true
+		case 'k':
+			optZenkakuKataToHankaku = true
+		case 'H':
+			optHankakuKataToHiragana = true
+		case 'h':
+			optHiraganaToHankakuKata = true
+		case 'V':
+			optCombineDakuten = true
+		case 'R':
+			optAsciiToZenkakuAlnum = true
+		case 'r':
+			optZenkakuAlnumToAscii = true
+		}
+	}
+
+	_ = optCombineDakuten
+	_ = optHankakuKataToZenkaku
+	_ = optZenkakuKataToHankaku
+	_ = optHankakuKataToHiragana
+	_ = optHiraganaToHankakuKata
+	_ = optAsciiToZenkakuAlnum
+	_ = optZenkakuAlnumToAscii
+
+	runes := []rune(string(s))
+	result := make([]rune, 0, len(runes))
+
+	for i := 0; i < len(runes); i++ {
+		r := runes[i]
+
+		// C: Hiragana -> Katakana
+		// U+3041-U+3096 main hiragana -> U+30A1-U+30F6
+		// U+309D-U+309E iteration marks -> U+30FD-U+30FE
+		if optHiraganaToKatakana {
+			if r >= 0x3041 && r <= 0x3096 {
+				result = append(result, r+0x60)
+				continue
+			}
+			if r == 0x309D || r == 0x309E {
+				result = append(result, r+0x60)
+				continue
+			}
+		}
+
+		// c: Katakana -> Hiragana
+		// U+30A1-U+30F6 main katakana -> U+3041-U+3096
+		// U+30FD-U+30FE iteration marks -> U+309D-U+309E
+		if optKatakanaToHiragana {
+			if r >= 0x30A1 && r <= 0x30F6 {
+				result = append(result, r-0x60)
+				continue
+			}
+			if r == 0x30FD || r == 0x30FE {
+				result = append(result, r-0x60)
+				continue
+			}
+		}
+
+		// A: ASCII alphabetic -> full-width
+		if (optAsciiToZenkakuAlpha || optAsciiToZenkakuAlnum) &&
+			((r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z')) {
+			result = append(result, r-0x20+0xFF00)
+			continue
+		}
+
+		// a: Full-width alphabetic -> ASCII
+		if (optZenkakuAlphaToAscii || optZenkakuAlnumToAscii) &&
+			((r >= 0xFF21 && r <= 0xFF3A) || (r >= 0xFF41 && r <= 0xFF5A)) {
+			result = append(result, r-0xFF00+0x20)
+			continue
+		}
+
+		// N: ASCII digits -> full-width
+		if (optAsciiToZenkakuNum || optAsciiToZenkakuAlnum) && r >= '0' && r <= '9' {
+			result = append(result, r-0x20+0xFF00)
+			continue
+		}
+
+		// n: Full-width digits -> ASCII
+		if (optZenkakuNumToAscii || optZenkakuAlnumToAscii) && r >= 0xFF10 && r <= 0xFF19 {
+			result = append(result, r-0xFF00+0x20)
+			continue
+		}
+
+		// S: ASCII space -> full-width space
+		if optAsciiToZenkakuSpace && r == ' ' {
+			result = append(result, 0x3000)
+			continue
+		}
+
+		// s: Full-width space -> ASCII space
+		if optZenkakuSpaceToAscii && r == 0x3000 {
+			result = append(result, ' ')
+			continue
+		}
+
+		// K: Half-width katakana -> full-width katakana
+		if optHankakuKataToZenkaku && r >= 0xFF65 && r <= 0xFF9F {
+			fullwidth := halfToFullKatakana(r)
+			if optCombineDakuten && i+1 < len(runes) {
+				combined := combineDakuten(fullwidth, runes[i+1])
+				if combined != 0 {
+					result = append(result, combined)
+					i++
+					continue
+				}
+			}
+			result = append(result, fullwidth)
+			continue
+		}
+
+		// H: Half-width katakana -> hiragana
+		if optHankakuKataToHiragana && r >= 0xFF65 && r <= 0xFF9F {
+			fullwidth := halfToFullKatakana(r)
+			// Convert katakana to hiragana
+			if fullwidth >= 0x30A1 && fullwidth <= 0x30F6 {
+				hiragana := fullwidth - 0x60
+				if optCombineDakuten && i+1 < len(runes) {
+					combined := combineDakuten(fullwidth, runes[i+1])
+					if combined != 0 {
+						if combined >= 0x30A1 && combined <= 0x30F6 {
+							result = append(result, combined-0x60)
+						} else {
+							result = append(result, combined)
+						}
+						i++
+						continue
+					}
+				}
+				result = append(result, hiragana)
+			} else {
+				result = append(result, fullwidth)
+			}
+			continue
+		}
+
+		// k: Full-width katakana -> half-width katakana
+		if optZenkakuKataToHankaku && r >= 0x30A1 && r <= 0x30F6 {
+			hw, dakuten := fullToHalfKatakana(r)
+			if hw != 0 {
+				result = append(result, hw)
+				if dakuten != 0 {
+					result = append(result, dakuten)
+				}
+				continue
+			}
+		}
+
+		// h: Hiragana -> half-width katakana
+		if optHiraganaToHankakuKata && r >= 0x3041 && r <= 0x3096 {
+			katakana := r + 0x60
+			hw, dakuten := fullToHalfKatakana(katakana)
+			if hw != 0 {
+				result = append(result, hw)
+				if dakuten != 0 {
+					result = append(result, dakuten)
+				}
+				continue
+			}
+		}
+
+		result = append(result, r)
+	}
+
+	return phpv.ZString(string(result)).ZVal(), nil
+}
+
+// halfToFullKatakana converts a half-width katakana character to full-width.
+func halfToFullKatakana(r rune) rune {
+	// Half-width katakana: U+FF65 - U+FF9F
+	halfToFull := map[rune]rune{
+		0xFF66: 0x30F2, // ヲ
+		0xFF67: 0x30A1, // ァ
+		0xFF68: 0x30A3, // ィ
+		0xFF69: 0x30A5, // ゥ
+		0xFF6A: 0x30A7, // ェ
+		0xFF6B: 0x30A9, // ォ
+		0xFF6C: 0x30E3, // ャ
+		0xFF6D: 0x30E5, // ュ
+		0xFF6E: 0x30E7, // ョ
+		0xFF6F: 0x30C3, // ッ
+		0xFF70: 0x30FC, // ー
+		0xFF71: 0x30A2, // ア
+		0xFF72: 0x30A4, // イ
+		0xFF73: 0x30A6, // ウ
+		0xFF74: 0x30A8, // エ
+		0xFF75: 0x30AA, // オ
+		0xFF76: 0x30AB, // カ
+		0xFF77: 0x30AD, // キ
+		0xFF78: 0x30AF, // ク
+		0xFF79: 0x30B1, // ケ
+		0xFF7A: 0x30B3, // コ
+		0xFF7B: 0x30B5, // サ
+		0xFF7C: 0x30B7, // シ
+		0xFF7D: 0x30B9, // ス
+		0xFF7E: 0x30BB, // セ
+		0xFF7F: 0x30BD, // ソ
+		0xFF80: 0x30BF, // タ
+		0xFF81: 0x30C1, // チ
+		0xFF82: 0x30C4, // ツ
+		0xFF83: 0x30C6, // テ
+		0xFF84: 0x30C8, // ト
+		0xFF85: 0x30CA, // ナ
+		0xFF86: 0x30CB, // ニ
+		0xFF87: 0x30CC, // ヌ
+		0xFF88: 0x30CD, // ネ
+		0xFF89: 0x30CE, // ノ
+		0xFF8A: 0x30CF, // ハ
+		0xFF8B: 0x30D2, // ヒ
+		0xFF8C: 0x30D5, // フ
+		0xFF8D: 0x30D8, // ヘ
+		0xFF8E: 0x30DB, // ホ
+		0xFF8F: 0x30DE, // マ
+		0xFF90: 0x30DF, // ミ
+		0xFF91: 0x30E0, // ム
+		0xFF92: 0x30E1, // メ
+		0xFF93: 0x30E2, // モ
+		0xFF94: 0x30E4, // ヤ
+		0xFF95: 0x30E6, // ユ
+		0xFF96: 0x30E8, // ヨ
+		0xFF97: 0x30E9, // ラ
+		0xFF98: 0x30EA, // リ
+		0xFF99: 0x30EB, // ル
+		0xFF9A: 0x30EC, // レ
+		0xFF9B: 0x30ED, // ロ
+		0xFF9C: 0x30EF, // ワ
+		0xFF9D: 0x30F3, // ン
+		0xFF9E: 0x309B, // ゛ (voiced mark - not really katakana)
+		0xFF9F: 0x309C, // ゜ (semi-voiced mark)
+		0xFF65: 0x30FB, // ・
+	}
+	if full, ok := halfToFull[r]; ok {
+		return full
+	}
+	return r
+}
+
+// combineDakuten tries to combine a katakana character with a following voiced/semi-voiced mark.
+func combineDakuten(base rune, next rune) rune {
+	if next == 0xFF9E || next == 0x309B { // voiced sound mark (half-width or full-width)
+		// Check if base can take dakuten
+		switch base {
+		case 0x30AB: return 0x30AC // カ->ガ
+		case 0x30AD: return 0x30AE // キ->ギ
+		case 0x30AF: return 0x30B0 // ク->グ
+		case 0x30B1: return 0x30B2 // ケ->ゲ
+		case 0x30B3: return 0x30B4 // コ->ゴ
+		case 0x30B5: return 0x30B6 // サ->ザ
+		case 0x30B7: return 0x30B8 // シ->ジ
+		case 0x30B9: return 0x30BA // ス->ズ
+		case 0x30BB: return 0x30BC // セ->ゼ
+		case 0x30BD: return 0x30BE // ソ->ゾ
+		case 0x30BF: return 0x30C0 // タ->ダ
+		case 0x30C1: return 0x30C2 // チ->ヂ
+		case 0x30C4: return 0x30C5 // ツ->ヅ
+		case 0x30C6: return 0x30C7 // テ->デ
+		case 0x30C8: return 0x30C9 // ト->ド
+		case 0x30CF: return 0x30D0 // ハ->バ
+		case 0x30D2: return 0x30D3 // ヒ->ビ
+		case 0x30D5: return 0x30D6 // フ->ブ
+		case 0x30D8: return 0x30D9 // ヘ->ベ
+		case 0x30DB: return 0x30DC // ホ->ボ
+		case 0x30A6: return 0x30F4 // ウ->ヴ
+		}
+	}
+	if next == 0xFF9F || next == 0x309C { // semi-voiced sound mark
+		switch base {
+		case 0x30CF: return 0x30D1 // ハ->パ
+		case 0x30D2: return 0x30D4 // ヒ->ピ
+		case 0x30D5: return 0x30D7 // フ->プ
+		case 0x30D8: return 0x30DA // ヘ->ペ
+		case 0x30DB: return 0x30DD // ホ->ポ
+		}
+	}
+	return 0
+}
+
+// fullToHalfKatakana converts a full-width katakana character to half-width.
+// Returns the half-width character and an optional dakuten/handakuten mark.
+func fullToHalfKatakana(r rune) (rune, rune) {
+	// Check for dakuten characters first
+	switch r {
+	case 0x30AC: return 0xFF76, 0xFF9E // ガ
+	case 0x30AE: return 0xFF77, 0xFF9E // ギ
+	case 0x30B0: return 0xFF78, 0xFF9E // グ
+	case 0x30B2: return 0xFF79, 0xFF9E // ゲ
+	case 0x30B4: return 0xFF7A, 0xFF9E // ゴ
+	case 0x30B6: return 0xFF7B, 0xFF9E // ザ
+	case 0x30B8: return 0xFF7C, 0xFF9E // ジ
+	case 0x30BA: return 0xFF7D, 0xFF9E // ズ
+	case 0x30BC: return 0xFF7E, 0xFF9E // ゼ
+	case 0x30BE: return 0xFF7F, 0xFF9E // ゾ
+	case 0x30C0: return 0xFF80, 0xFF9E // ダ
+	case 0x30C2: return 0xFF81, 0xFF9E // ヂ
+	case 0x30C5: return 0xFF82, 0xFF9E // ヅ
+	case 0x30C7: return 0xFF83, 0xFF9E // デ
+	case 0x30C9: return 0xFF84, 0xFF9E // ド
+	case 0x30D0: return 0xFF8A, 0xFF9E // バ
+	case 0x30D3: return 0xFF8B, 0xFF9E // ビ
+	case 0x30D6: return 0xFF8C, 0xFF9E // ブ
+	case 0x30D9: return 0xFF8D, 0xFF9E // ベ
+	case 0x30DC: return 0xFF8E, 0xFF9E // ボ
+	case 0x30F4: return 0xFF73, 0xFF9E // ヴ
+	// Handakuten
+	case 0x30D1: return 0xFF8A, 0xFF9F // パ
+	case 0x30D4: return 0xFF8B, 0xFF9F // ピ
+	case 0x30D7: return 0xFF8C, 0xFF9F // プ
+	case 0x30DA: return 0xFF8D, 0xFF9F // ペ
+	case 0x30DD: return 0xFF8E, 0xFF9F // ポ
+	}
+
+	// Simple mapping (reverse of halfToFullKatakana)
+	fullToHalf := map[rune]rune{
+		0x30F2: 0xFF66, // ヲ
+		0x30A1: 0xFF67, // ァ
+		0x30A3: 0xFF68, // ィ
+		0x30A5: 0xFF69, // ゥ
+		0x30A7: 0xFF6A, // ェ
+		0x30A9: 0xFF6B, // ォ
+		0x30E3: 0xFF6C, // ャ
+		0x30E5: 0xFF6D, // ュ
+		0x30E7: 0xFF6E, // ョ
+		0x30C3: 0xFF6F, // ッ
+		0x30FC: 0xFF70, // ー
+		0x30A2: 0xFF71, // ア
+		0x30A4: 0xFF72, // イ
+		0x30A6: 0xFF73, // ウ
+		0x30A8: 0xFF74, // エ
+		0x30AA: 0xFF75, // オ
+		0x30AB: 0xFF76, // カ
+		0x30AD: 0xFF77, // キ
+		0x30AF: 0xFF78, // ク
+		0x30B1: 0xFF79, // ケ
+		0x30B3: 0xFF7A, // コ
+		0x30B5: 0xFF7B, // サ
+		0x30B7: 0xFF7C, // シ
+		0x30B9: 0xFF7D, // ス
+		0x30BB: 0xFF7E, // セ
+		0x30BD: 0xFF7F, // ソ
+		0x30BF: 0xFF80, // タ
+		0x30C1: 0xFF81, // チ
+		0x30C4: 0xFF82, // ツ
+		0x30C6: 0xFF83, // テ
+		0x30C8: 0xFF84, // ト
+		0x30CA: 0xFF85, // ナ
+		0x30CB: 0xFF86, // ニ
+		0x30CC: 0xFF87, // ヌ
+		0x30CD: 0xFF88, // ネ
+		0x30CE: 0xFF89, // ノ
+		0x30CF: 0xFF8A, // ハ
+		0x30D2: 0xFF8B, // ヒ
+		0x30D5: 0xFF8C, // フ
+		0x30D8: 0xFF8D, // ヘ
+		0x30DB: 0xFF8E, // ホ
+		0x30DE: 0xFF8F, // マ
+		0x30DF: 0xFF90, // ミ
+		0x30E0: 0xFF91, // ム
+		0x30E1: 0xFF92, // メ
+		0x30E2: 0xFF93, // モ
+		0x30E4: 0xFF94, // ヤ
+		0x30E6: 0xFF95, // ユ
+		0x30E8: 0xFF96, // ヨ
+		0x30E9: 0xFF97, // ラ
+		0x30EA: 0xFF98, // リ
+		0x30EB: 0xFF99, // ル
+		0x30EC: 0xFF9A, // レ
+		0x30ED: 0xFF9B, // ロ
+		0x30EF: 0xFF9C, // ワ
+		0x30F3: 0xFF9D, // ン
+		0x30FB: 0xFF65, // ・
+	}
+	if hw, ok := fullToHalf[r]; ok {
+		return hw, 0
+	}
+	return r, 0
 }
 
 func fncMbRegexSetOptions(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {

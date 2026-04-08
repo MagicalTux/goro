@@ -473,7 +473,16 @@ func mbConvertVariableInPlaceImpl(ctx phpv.Context, z *phpv.ZVal, fromEnc, toEnc
 	return nil
 }
 
-func fncMbHttpInput(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) { return phpv.ZBool(false).ZVal(), nil }
+func fncMbHttpInput(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	// mb_http_input() returns the HTTP input character encoding.
+	// After mb_parse_str() processes input, this returns the detected/used encoding.
+	v := ctx.GetConfig("mbstring._http_input", phpv.ZNULL.ZVal())
+	s := v.String()
+	if s == "" || s == "NULL" {
+		return phpv.ZBool(false).ZVal(), nil
+	}
+	return phpv.ZString(s).ZVal(), nil
+}
 
 func fncMbHttpOutput(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) == 0 { return phpv.ZString("UTF-8").ZVal(), nil }
@@ -628,6 +637,9 @@ func fncMbParseStr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		result.OffsetSet(ctx, phpv.ZString(key).ZVal(), phpv.ZString(val).ZVal())
 	}
 	*args[1] = *result.ZVal()
+	// Set the HTTP input encoding (used by mb_http_input())
+	inputEnc := getMbInternalEncoding(ctx)
+	ctx.Global().SetLocalConfig("mbstring._http_input", phpv.ZString(inputEnc).ZVal())
 	return phpv.ZTrue.ZVal(), nil
 }
 

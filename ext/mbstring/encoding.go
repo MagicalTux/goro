@@ -425,17 +425,40 @@ func convertEncoding(input []byte, fromEnc, toEnc string) ([]byte, int, error) {
 	return result, illegalChars + encIllegal, nil
 }
 
-// fixInvalidUTF8 replaces invalid UTF-8 sequences with the replacement character
+// fixInvalidUTF8 replaces invalid UTF-8 sequences with the replacement character.
+// A truncated multi-byte sequence (e.g. 3 bytes of a 4-byte sequence) is treated
+// as a single error and replaced by one U+FFFD, matching PHP's behavior.
 func fixInvalidUTF8(input []byte) ([]byte, int, error) {
 	var result []byte
 	illegal := 0
 	i := 0
 	for i < len(input) {
 		r, size := utf8.DecodeRune(input[i:])
-		if r == utf8.RuneError && size == 1 {
+		if r == utf8.RuneError && size <= 1 {
 			illegal++
 			result = append(result, 0xEF, 0xBF, 0xBD) // U+FFFD
-			i++
+			// Determine how many bytes to skip for this invalid sequence.
+			// If this is a valid lead byte, skip it plus any continuation bytes that follow.
+			b := input[i]
+			skip := 1
+			if b >= 0xC0 && b < 0xE0 {
+				// 2-byte lead: skip up to 2 bytes
+				for skip < 2 && i+skip < len(input) && input[i+skip] >= 0x80 && input[i+skip] < 0xC0 {
+					skip++
+				}
+			} else if b >= 0xE0 && b < 0xF0 {
+				// 3-byte lead: skip up to 3 bytes
+				for skip < 3 && i+skip < len(input) && input[i+skip] >= 0x80 && input[i+skip] < 0xC0 {
+					skip++
+				}
+			} else if b >= 0xF0 && b < 0xF8 {
+				// 4-byte lead: skip up to 4 bytes
+				for skip < 4 && i+skip < len(input) && input[i+skip] >= 0x80 && input[i+skip] < 0xC0 {
+					skip++
+				}
+			}
+			// else: continuation byte or invalid byte, skip just 1
+			i += skip
 		} else {
 			result = append(result, input[i:i+size]...)
 			i += size

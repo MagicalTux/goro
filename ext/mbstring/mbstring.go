@@ -256,6 +256,46 @@ func fncMbSubstr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	encoding := resolveEncoding(ctx, enc)
+	normalized := normalizeEncodingName(encoding)
+
+	// For fixed-width encodings, operate directly on bytes
+	charSize := fixedCharSize(normalized)
+	if charSize > 0 {
+		raw := []byte(s)
+		charLen := len(raw) / charSize
+		st := int(start)
+		if st < 0 {
+			st = charLen + st
+		}
+		if st < 0 {
+			st = 0
+		}
+		if st > charLen {
+			return phpv.ZString("").ZVal(), nil
+		}
+		var end int
+		if length == nil {
+			end = charLen
+		} else {
+			l := int(*length)
+			if l < 0 {
+				end = charLen + l
+			} else {
+				end = st + l
+			}
+		}
+		if end > charLen {
+			end = charLen
+		}
+		if end < st {
+			return phpv.ZString("").ZVal(), nil
+		}
+		return phpv.ZString(raw[st*charSize : end*charSize]).ZVal(), nil
+	}
+
+	// For variable-width encodings (UTF-8 and others), use rune-based access
 	runes := []rune(string(s))
 	runeLen := len(runes)
 	st := int(start)
@@ -286,6 +326,19 @@ func fncMbSubstr(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZString("").ZVal(), nil
 	}
 	return phpv.ZString(string(runes[st:end])).ZVal(), nil
+}
+
+// fixedCharSize returns the number of bytes per character for fixed-width encodings.
+// Returns 0 for variable-width encodings.
+func fixedCharSize(normalized string) int {
+	switch normalized {
+	case "UTF-32BE", "UTF-32LE", "UTF-32", "UCS-4BE", "UCS-4LE", "UCS-4":
+		return 4
+	case "UTF-16BE", "UTF-16LE", "UCS-2", "UCS-2BE", "UCS-2LE":
+		return 2
+	default:
+		return 0
+	}
 }
 
 func fncMbStrtolower(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
