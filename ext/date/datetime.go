@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/KarpelesLab/gotz"
 	"github.com/KarpelesLab/strtotime"
 	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpobj"
@@ -341,6 +342,19 @@ func parseDateTimeWithTz(ctx phpv.Context, args []*phpv.ZVal) (time.Time, error)
 				parsed = preserveInputTimezone(parsed, s)
 				return parsed, nil
 			}
+
+			// Check for unrecognized timezone abbreviations that strtotime
+			// silently ignored. PHP's timelib rejects strings like "UT" that
+			// look like timezone abbreviations but aren't in the known list.
+			if m := reTrailingTZAbbrev.FindStringSubmatch(s); m != nil {
+				abbr := m[1]
+				if !isKnownTimezoneAbbrev(abbr) {
+					pos := strings.LastIndex(s, abbr)
+					msg := fmt.Sprintf("Failed to parse time string (%s) at position %d (%s): The timezone could not be found in the database", s, pos, abbr)
+					return time.Time{}, phpobj.ThrowError(ctx, DateMalformedStringException, msg)
+				}
+			}
+
 			return parsed.In(loc), nil
 		}
 		// Last resort: try Go's built-in formats
@@ -451,6 +465,47 @@ func preserveInputTimezone(parsed time.Time, input string) time.Time {
 
 // reInputOffset matches timezone offsets like +00:00, -00:00, +0000 in input strings
 var reInputOffset = regexp.MustCompile(`[+-]00:?00\s*$`)
+
+// reTrailingTZAbbrev matches a trailing timezone abbreviation (1-5 alphabetic chars after a space)
+// at the end of a date/time string, e.g., "12 Sep 2007 15:49:12 UT"
+var reTrailingTZAbbrev = regexp.MustCompile(`\s+([a-zA-Z]{1,5})\s*$`)
+
+// isKnownTimezoneAbbrev checks if a timezone abbreviation is recognized by PHP's timelib.
+// This is used to reject date strings with unrecognized timezone abbreviations like "UT"
+// that the strtotime library silently ignores.
+func isKnownTimezoneAbbrev(abbr string) bool {
+	upper := strings.ToUpper(abbr)
+	lower := strings.ToLower(abbr)
+	// PHP-recognized timezone abbreviations (from timelib's lookup table)
+	known := map[string]bool{
+		"A": true, "B": true, "C": true, "D": true, "E": true, "F": true,
+		"G": true, "H": true, "I": true, "K": true, "L": true, "M": true,
+		"N": true, "O": true, "P": true, "Q": true, "R": true, "S": true,
+		"T": true, "U": true, "V": true, "W": true, "X": true, "Y": true,
+		"Z": true,
+		"UTC": true, "GMT": true,
+		"EST": true, "EDT": true, "CST": true, "CDT": true,
+		"MST": true, "MDT": true, "PST": true, "PDT": true,
+		"AKST": true, "AKDT": true, "HST": true,
+		"BST": true, "IST": true, "WET": true, "WEST": true,
+		"CET": true, "CEST": true, "EET": true, "EEST": true,
+		"MSK": true, "MSD": true,
+		"JST": true, "KST": true, "HKT": true, "SGT": true,
+		"AWST": true, "ACST": true, "AEST": true, "AEDT": true, "NZST": true, "NZDT": true,
+		"WAT": true, "CAT": true, "EAT": true, "SAST": true,
+		"AST": true, "NST": true, "NDT": true,
+		"CAST": true, "ADT": true, "HAST": true, "HADT": true,
+		"IDT": true, "WAST": true, "WADT": true,
+	}
+	if known[upper] {
+		return true
+	}
+	// Also check if it's a valid full timezone name via gotz
+	if _, err := gotz.LoadInsensitive(lower); err == nil {
+		return true
+	}
+	return false
+}
 
 func getTime(this *phpobj.ZObject) (time.Time, bool) {
 	if v, ok := this.Opaque[DateTimeInterface]; ok {

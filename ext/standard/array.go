@@ -488,6 +488,94 @@ func fncArrayWalk(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError,
 			fmt.Sprintf("array_walk() expects at most 3 arguments, %d given", len(args)))
 	}
+	if len(args) < 2 {
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError,
+			fmt.Sprintf("array_walk() expects at least 2 arguments, %d given", len(args)))
+	}
+
+	// PHP's array_walk accepts array|object as first parameter.
+	// For objects, convert to array (with PHP-mangled keys) and walk that,
+	// then write modified values back to the object's hash table.
+	firstArg := args[0]
+	if firstArg != nil && firstArg.GetType() == phpv.ZtObject {
+		var callback phpv.Callable
+		var userdata **phpv.ZVal
+		_, err := core.Expand(ctx, args[1:], &callback, &userdata)
+		if err != nil {
+			return nil, err
+		}
+
+		obj := firstArg.Value().(phpv.ZObject)
+		arrZVal, convErr := firstArg.As(ctx, phpv.ZtArray)
+		if convErr != nil {
+			return nil, convErr
+		}
+		walkArr := arrZVal.Value().(*phpv.ZArray)
+
+		callbackArgs := make([]*phpv.ZVal, 2)
+		if userdata != nil {
+			callbackArgs = append(callbackArgs, *userdata)
+		}
+
+		it := walkArr.NewIterator()
+		for it.Valid(ctx) {
+			k, _ := it.Key(ctx)
+			v, _ := it.(interface {
+				CurrentMakeRef(phpv.Context) (*phpv.ZVal, error)
+			}).CurrentMakeRef(ctx)
+			callbackArgs[0] = v
+			callbackArgs[1] = k
+			_, walkErr := ctx.CallZValInternal(ctx, callback, callbackArgs)
+			if walkErr != nil {
+				return nil, walkErr
+			}
+			it.Next(ctx)
+		}
+		if cleaner, ok := it.(interface{ CleanupRef() }); ok {
+			cleaner.CleanupRef()
+		}
+
+		// Write back modified values to the object's hash table.
+		backIt := walkArr.NewIterator()
+		for backIt.Valid(ctx) {
+			k, _ := backIt.Key(ctx)
+			v, _ := backIt.Current(ctx)
+			keyStr := string(k.AsString(ctx))
+			if len(keyStr) >= 3 && keyStr[0] == '\x00' {
+				if keyStr[1] == '*' && keyStr[2] == '\x00' {
+					// Protected: \x00*\x00propName -> internal: propName
+					propName := phpv.ZString(keyStr[3:])
+					obj.HashTable().SetString(propName, v)
+				} else {
+					// Private: \x00ClassName\x00propName -> internal: *ClassName:propName
+					secondNull := -1
+					for i := 1; i < len(keyStr); i++ {
+						if keyStr[i] == '\x00' {
+							secondNull = i
+							break
+						}
+					}
+					if secondNull > 0 {
+						className := keyStr[1:secondNull]
+						propName := keyStr[secondNull+1:]
+						internalKey := phpv.ZString("*" + className + ":" + propName)
+						obj.HashTable().SetString(internalKey, v)
+						// Also update the bare property name for native accessors
+						// that read properties without mangling (e.g. Exception::getPrevious).
+						obj.HashTable().SetString(phpv.ZString(propName), v)
+					}
+				}
+			} else {
+				// Public property
+				obj.HashTable().SetString(phpv.ZString(keyStr), v)
+			}
+			backIt.Next(ctx)
+		}
+
+		_ = obj // suppress unused
+		return phpv.ZTrue.ZVal(), nil
+	}
+
 	var array core.Ref[*phpv.ZArray]
 	var callback phpv.Callable
 	var userdata **phpv.ZVal
