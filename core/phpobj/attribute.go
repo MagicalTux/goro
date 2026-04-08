@@ -67,6 +67,10 @@ var DelayedTargetValidationClass *ZClass
 // SensitiveParameterClass is the built-in #[\SensitiveParameter] attribute class (PHP 8.2+)
 var SensitiveParameterClass *ZClass
 
+// SensitiveParameterValueClass is the built-in SensitiveParameterValue class (PHP 8.2+)
+// used to mask sensitive values in stack traces.
+var SensitiveParameterValueClass *ZClass
+
 // ReturnTypeWillChangeClass is the built-in #[\ReturnTypeWillChange] attribute class (PHP 8.1+)
 var ReturnTypeWillChangeClass *ZClass
 
@@ -255,6 +259,28 @@ func init() {
 		Methods: map[phpv.ZString]*phpv.ZClassMethod{
 			"__construct": {Name: "__construct", Method: NativeMethod(func(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 				return nil, nil
+			})},
+		},
+	}
+
+	SensitiveParameterValueClass = &ZClass{
+		Name: "SensitiveParameterValue",
+		Methods: map[phpv.ZString]*phpv.ZClassMethod{
+			"__construct": {Name: "__construct", Method: NativeMethod(func(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				if len(args) > 0 {
+					o.SetOpaque(SensitiveParameterValueClass, args[0])
+				}
+				return nil, nil
+			})},
+			"getvalue": {Name: "getValue", Modifiers: phpv.ZAttrPublic, Method: NativeMethod(func(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				v := o.GetOpaque(SensitiveParameterValueClass)
+				if v == nil {
+					return phpv.ZNull{}.ZVal(), nil
+				}
+				return v.(*phpv.ZVal), nil
+			})},
+			"__debuginfo": {Name: "__debugInfo", Modifiers: phpv.ZAttrPublic, Method: NativeMethod(func(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+				return phpv.NewZArray().ZVal(), nil
 			})},
 		},
 	}

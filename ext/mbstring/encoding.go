@@ -761,12 +761,153 @@ func utf8ToUTF32(input []byte, encName string) ([]byte, int, error) {
 	return result, illegal, nil
 }
 
-// htmlEntitiesToUTF8 converts HTML entities to UTF-8
+// htmlEntitiesToUTF8 converts HTML entities to UTF-8.
+// This implements PHP's mbstring HTML-ENTITIES decoding behavior:
+// - &#xNN; and &#XNN; are hex numeric entities (case-insensitive x)
+// - &#NNN; are decimal numeric entities
+// - Values > 0x10FFFF are left as literal text
+// - Invalid entities (like &#x;, &#x/;, &#xG;) are left as literal text
+// - &#0; correctly produces a null byte
+// - Named entities like &amp; are also supported
 func htmlEntitiesToUTF8(input []byte) ([]byte, int, error) {
+	var result []byte
 	s := string(input)
-	// Use Go's html.UnescapeString which handles named and numeric entities
-	result := html.UnescapeString(s)
-	return []byte(result), 0, nil
+	i := 0
+	for i < len(s) {
+		if s[i] != '&' {
+			result = append(result, s[i])
+			i++
+			continue
+		}
+		// Try to parse an entity starting at i
+		entityStart := i
+		i++ // skip '&'
+		if i >= len(s) {
+			result = append(result, '&')
+			continue
+		}
+		if s[i] == '#' {
+			i++ // skip '#'
+			if i >= len(s) {
+				result = append(result, s[entityStart:i]...)
+				continue
+			}
+			// Hex entity: &#xNN; or &#XNN;
+			if i < len(s) && (s[i] == 'x' || s[i] == 'X') {
+				xChar := s[i]
+				i++ // skip 'x'/'X'
+				// Parse hex digits
+				hexStart := i
+				for i < len(s) && isHexDigit(s[i]) {
+					i++
+				}
+				if i == hexStart || i >= len(s) || s[i] != ';' {
+					// No hex digits found, or no semicolon -> literal text
+					result = append(result, s[entityStart:i]...)
+					if i < len(s) && s[i] == ';' {
+						result = append(result, ';')
+						i++
+					}
+					continue
+				}
+				// Parse the hex value
+				hexStr := s[hexStart:i]
+				i++ // skip ';'
+				codepoint := parseHex(hexStr)
+				if codepoint > 0x10FFFF {
+					// Out of Unicode range, output as literal
+					result = append(result, []byte(fmt.Sprintf("&#%c%s;", xChar, hexStr))...)
+					continue
+				}
+				r := rune(codepoint)
+				buf := make([]byte, utf8.UTFMax)
+				if codepoint == 0 {
+					result = append(result, 0)
+				} else {
+					n := utf8.EncodeRune(buf, r)
+					result = append(result, buf[:n]...)
+				}
+			} else {
+				// Decimal entity: &#NNN;
+				decStart := i
+				for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+					i++
+				}
+				if i == decStart || i >= len(s) || s[i] != ';' {
+					// No digits found, or no semicolon -> literal text
+					result = append(result, s[entityStart:i]...)
+					if i < len(s) && s[i] == ';' {
+						result = append(result, ';')
+						i++
+					}
+					continue
+				}
+				decStr := s[decStart:i]
+				i++ // skip ';'
+				codepoint := parseDec(decStr)
+				if codepoint > 0x10FFFF {
+					// Out of Unicode range, output as literal
+					result = append(result, []byte(fmt.Sprintf("&#%s;", decStr))...)
+					continue
+				}
+				r := rune(codepoint)
+				if codepoint == 0 {
+					result = append(result, 0)
+				} else {
+					buf := make([]byte, utf8.UTFMax)
+					n := utf8.EncodeRune(buf, r)
+					result = append(result, buf[:n]...)
+				}
+			}
+		} else {
+			// Named entity: &name;
+			nameStart := i
+			for i < len(s) && s[i] != ';' && s[i] != '&' && s[i] != ' ' {
+				i++
+			}
+			if i < len(s) && s[i] == ';' {
+				entityText := "&" + s[nameStart:i] + ";"
+				i++ // skip ';'
+				// Use Go's html.UnescapeString for named entities
+				unescaped := html.UnescapeString(entityText)
+				if unescaped != entityText {
+					result = append(result, []byte(unescaped)...)
+				} else {
+					result = append(result, []byte(entityText)...)
+				}
+			} else {
+				result = append(result, s[entityStart:i]...)
+			}
+		}
+	}
+	return result, 0, nil
+}
+
+func isHexDigit(c byte) bool {
+	return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
+}
+
+func parseHex(s string) int64 {
+	var result int64
+	for _, c := range s {
+		result <<= 4
+		if c >= '0' && c <= '9' {
+			result |= int64(c - '0')
+		} else if c >= 'a' && c <= 'f' {
+			result |= int64(c - 'a' + 10)
+		} else if c >= 'A' && c <= 'F' {
+			result |= int64(c - 'A' + 10)
+		}
+	}
+	return result
+}
+
+func parseDec(s string) int64 {
+	var result int64
+	for _, c := range s {
+		result = result*10 + int64(c-'0')
+	}
+	return result
 }
 
 // utf8ToHTMLEntities converts UTF-8 to HTML numeric entities for non-ASCII chars
@@ -1273,6 +1414,119 @@ func getCanonicalEncodingName(name string) string {
 }
 
 // isCheckEncodingValid checks if a string is valid for the given encoding.
+// isStrictEncodingValid checks if a string is strictly valid in the given encoding.
+// In strict mode, the string must be completely valid -- no invalid byte sequences allowed.
+// This is used by mb_detect_encoding() with strict=true.
+func isStrictEncodingValid(s string, encName string) bool {
+	normalized := normalizeEncodingName(encName)
+
+	switch normalized {
+	case "UTF-8", "UTF8":
+		return utf8.ValidString(s)
+	case "ASCII":
+		for i := 0; i < len(s); i++ {
+			if s[i] > 127 {
+				return false
+			}
+		}
+		return true
+	case "SJIS", "SHIFT_JIS", "SHIFT-JIS", "CP932", "SJIS-WIN":
+		return isStrictSJISValid(s)
+	case "EUC-JP", "EUCJP":
+		return isStrictEUCJPValid(s)
+	default:
+		// For other encodings, fall back to the normal check with the Go decoder
+		// which should catch most errors
+		enc, ok := getEncoding(normalized)
+		if !ok {
+			return false
+		}
+		if enc == nil {
+			if strings.HasPrefix(normalized, "UTF-32") || strings.HasPrefix(normalized, "UCS-4") {
+				return len(s)%4 == 0
+			}
+			return false
+		}
+		decoder := enc.NewDecoder()
+		_, err := decoder.Bytes([]byte(s))
+		return err == nil
+	}
+}
+
+// isStrictSJISValid checks if a string is strictly valid Shift_JIS.
+func isStrictSJISValid(s string) bool {
+	b := []byte(s)
+	for i := 0; i < len(b); {
+		c := b[i]
+		if c <= 0x7F {
+			// ASCII range (including 0x5C backslash and 0x7E tilde which map differently)
+			i++
+		} else if c >= 0xA1 && c <= 0xDF {
+			// Half-width katakana
+			i++
+		} else if (c >= 0x81 && c <= 0x9F) || (c >= 0xE0 && c <= 0xEF) {
+			// Lead byte of double-byte character
+			if i+1 >= len(b) {
+				return false // truncated
+			}
+			trail := b[i+1]
+			if (trail >= 0x40 && trail <= 0x7E) || (trail >= 0x80 && trail <= 0xFC) {
+				i += 2
+			} else {
+				return false // invalid trail byte
+			}
+		} else {
+			return false // invalid byte
+		}
+	}
+	return true
+}
+
+// isStrictEUCJPValid checks if a string is strictly valid EUC-JP.
+func isStrictEUCJPValid(s string) bool {
+	b := []byte(s)
+	for i := 0; i < len(b); {
+		c := b[i]
+		if c <= 0x7F {
+			i++
+		} else if c >= 0xA1 && c <= 0xFE {
+			if i+1 >= len(b) {
+				return false
+			}
+			trail := b[i+1]
+			if trail >= 0xA1 && trail <= 0xFE {
+				i += 2
+			} else {
+				return false
+			}
+		} else if c == 0x8E {
+			// Half-width katakana
+			if i+1 >= len(b) {
+				return false
+			}
+			trail := b[i+1]
+			if trail >= 0xA1 && trail <= 0xDF {
+				i += 2
+			} else {
+				return false
+			}
+		} else if c == 0x8F {
+			// JIS X 0212 three-byte sequence
+			if i+2 >= len(b) {
+				return false
+			}
+			if b[i+1] >= 0xA1 && b[i+1] <= 0xFE && b[i+2] >= 0xA1 && b[i+2] <= 0xFE {
+				i += 3
+			} else {
+				return false
+			}
+		} else {
+			return false
+		}
+	}
+	return true
+}
+
 func isCheckEncodingValid(s string, encName string) bool {
 	normalized := normalizeEncodingName(encName)
 

@@ -75,6 +75,7 @@ type ExtFunctionArg struct {
 	NoticeRef bool      // emits Notice for non-variable (ZEND_SEND_BY_REF) — like array_pop(), sort()
 	Optional  bool      // is this argument optional?
 	Variadic  bool      // is this a variadic parameter? (applies to all remaining args)
+	Sensitive bool      // if true, this parameter is marked #[\SensitiveParameter] and masked in stack traces
 }
 
 // GetArgs implements phpv.FuncGetArgs, returning cached parameter metadata.
@@ -99,6 +100,7 @@ func (e *ExtFunction) buildFuncArgs() {
 			PreferRef: a.PreferRef,
 			NoticeRef: a.NoticeRef,
 			Variadic:  a.Variadic,
+			Sensitive: a.Sensitive,
 		}
 	}
 }

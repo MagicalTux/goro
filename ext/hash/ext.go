@@ -26,11 +26,18 @@ func init() {
 			}},
 			"hash_algos":      {Func: fncHashAlgos, Args: []*phpctx.ExtFunctionArg{}},
 			"hash_copy":       {Func: fncHashCopy, Args: []*phpctx.ExtFunctionArg{}},
-			"hash_equals":     {Func: fncHashEquals, Args: []*phpctx.ExtFunctionArg{}},
+			"hash_equals": {Func: fncHashEquals, Args: []*phpctx.ExtFunctionArg{
+				{ArgName: "known_string", Sensitive: true},
+				{ArgName: "user_string", Sensitive: true},
+			}},
 			"hash_file":       {Func: fncHashFile, Args: []*phpctx.ExtFunctionArg{}},
 			"hash_final":      {Func: fncHashFinal, Args: []*phpctx.ExtFunctionArg{}},
 			"hash_hkdf":       {Func: fncHashHkdf, Args: []*phpctx.ExtFunctionArg{}},
-			"hash_hmac":       {Func: fncHashHmac, Args: []*phpctx.ExtFunctionArg{}},
+			"hash_hmac": {Func: fncHashHmac, Args: []*phpctx.ExtFunctionArg{
+				{ArgName: "algo"},
+				{ArgName: "data"},
+				{ArgName: "key", Sensitive: true},
+			}},
 			"hash_hmac_algos": {Func: fncHashHmacAlgos, Args: []*phpctx.ExtFunctionArg{}},
 			"hash_hmac_file":  {Func: fncHashHmacFile, Args: []*phpctx.ExtFunctionArg{}},
 			"hash_init": {Func: fncHashInit, Args: []*phpctx.ExtFunctionArg{

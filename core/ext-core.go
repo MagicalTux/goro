@@ -55,6 +55,7 @@ func init() {
 			phpobj.RangeException,
 			phpobj.RuntimeException,
 			phpobj.SensitiveParameterClass,
+			phpobj.SensitiveParameterValueClass,
 			phpobj.Serializable,
 			phpobj.StdClass,
 			phpobj.Stringable,

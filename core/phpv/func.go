@@ -19,6 +19,7 @@ type FuncArg struct {
 
 	// Property hooks for promoted properties (PHP 8.4)
 	PromotionHooks *ZClassProp // non-nil if promoted property has hooks
+	Sensitive      bool        // #[\SensitiveParameter] — masked in stack traces (PHP 8.2+)
 }
 
 type FuncUse struct {

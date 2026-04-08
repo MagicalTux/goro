@@ -342,6 +342,8 @@ func fncMbDetectEncoding(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error
 	if err != nil {
 		return nil, err
 	}
+
+	// Parse encodings from arg[1]
 	var encodings []string
 	if len(args) > 1 && args[1] != nil && args[1].GetType() != phpv.ZtNull {
 		arg := args[1]
@@ -355,7 +357,8 @@ func fncMbDetectEncoding(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error
 				encodings = append(encodings, getCanonicalEncodingName(encName))
 			}
 		} else if arg.GetType() == phpv.ZtBool {
-			// strict mode
+			// arg[1] is a bool, which means no encoding list provided
+			// (PHP allows calling with just string + strict)
 		} else {
 			encStr := arg.String()
 			if encStr != "auto" && encStr != "AUTO" {
@@ -375,9 +378,17 @@ func fncMbDetectEncoding(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error
 			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "mb_detect_encoding(): Argument #2 ($encodings) must specify at least one encoding")
 		}
 	}
+
+	// Parse strict mode from arg[2]
+	strict := false
+	if len(args) > 2 && args[2] != nil {
+		strict = bool(args[2].AsBool(ctx))
+	}
+
 	if len(encodings) == 0 {
 		encodings = getDetectOrder(ctx)
 	}
+
 	str := string(s)
 	for _, encName := range encodings {
 		normalized := normalizeEncodingName(encName)
@@ -394,7 +405,12 @@ func fncMbDetectEncoding(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error
 				return phpv.ZString("ASCII").ZVal(), nil
 			}
 		case "UTF-8", "UTF8":
-			if utf8.ValidString(str) {
+			if strict {
+				if utf8.ValidString(str) {
+					return phpv.ZString("UTF-8").ZVal(), nil
+				}
+			} else {
+				// In non-strict mode, UTF-8 matches any string
 				return phpv.ZString("UTF-8").ZVal(), nil
 			}
 		case "7BIT":
@@ -404,8 +420,16 @@ func fncMbDetectEncoding(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error
 			// HTML-ENTITIES is not a real encoding for detection
 			continue
 		default:
-			if isCheckEncodingValid(str, normalized) {
-				return phpv.ZString(getCanonicalEncodingName(encName)).ZVal(), nil
+			if strict {
+				// In strict mode, use strict validation
+				if isStrictEncodingValid(str, normalized) {
+					return phpv.ZString(getCanonicalEncodingName(encName)).ZVal(), nil
+				}
+			} else {
+				// In non-strict mode, use lenient validation
+				if isCheckEncodingValid(str, normalized) {
+					return phpv.ZString(getCanonicalEncodingName(encName)).ZVal(), nil
+				}
 			}
 		}
 	}
@@ -468,10 +492,8 @@ func fncMbConvertEncoding(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, erro
 	}
 	// Check for deprecation on the to_encoding
 	toNorm := normalizeEncodingName(toEnc)
-	deprecationEmitted := false
 	if isDeprecatedEncoding(toNorm) {
 		ctx.Deprecated("%s", deprecationMessage(toNorm))
-		deprecationEmitted = true
 	}
 
 	var fromEncodings []string
@@ -511,16 +533,7 @@ func fncMbConvertEncoding(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, erro
 	if len(fromEncodings) == 0 {
 		fromEncodings = []string{getMbInternalEncoding(ctx)}
 	}
-	// Check for deprecation on from encodings (only emit if we haven't already)
-	if !deprecationEmitted {
-		for _, fe := range fromEncodings {
-			feNorm := normalizeEncodingName(fe)
-			if isDeprecatedEncoding(feNorm) {
-				ctx.Deprecated("%s", deprecationMessage(feNorm))
-				break
-			}
-		}
-	}
+	// Note: PHP only emits deprecation warnings for the to_encoding, not from_encoding
 	if args[0].GetType() == phpv.ZtArray {
 		return mbConvertEncodingArray(ctx, args[0], toEnc, fromEncodings)
 	}

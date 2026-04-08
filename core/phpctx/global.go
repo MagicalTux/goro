@@ -2297,6 +2297,45 @@ func (g *Global) SetAutoloadExtensions(exts string) {
 	g.autoloadExts = exts
 }
 
+// maskSensitiveArgs replaces args marked #[\SensitiveParameter] with
+// SensitiveParameterValue objects for stack trace display.
+func maskSensitiveArgs(callable phpv.Callable, args []*phpv.ZVal) []*phpv.ZVal {
+	if callable == nil || len(args) == 0 {
+		return args
+	}
+	fga, ok := callable.(phpv.FuncGetArgs)
+	if !ok {
+		return args
+	}
+	funcArgs := fga.GetArgs()
+	if funcArgs == nil {
+		return args
+	}
+	hasSensitive := false
+	for _, fa := range funcArgs {
+		if fa.Sensitive {
+			hasSensitive = true
+			break
+		}
+	}
+	if !hasSensitive {
+		return args
+	}
+	masked := make([]*phpv.ZVal, len(args))
+	copy(masked, args)
+	for i := range masked {
+		if i < len(funcArgs) && funcArgs[i].Sensitive {
+			// Create a SensitiveParameterValue object to mask the value in traces
+			obj := &phpobj.ZObject{Class: phpobj.SensitiveParameterValueClass}
+			if masked[i] != nil {
+				obj.SetOpaque(phpobj.SensitiveParameterValueClass, masked[i])
+			}
+			masked[i] = obj.ZVal()
+		}
+	}
+	return masked
+}
+
 func (g *Global) GetStackTrace(ctx phpv.Context) []*phpv.StackTraceEntry {
 	var context phpv.Context = ctx
 	var trace []*phpv.StackTraceEntry
@@ -2339,6 +2378,7 @@ func (g *Global) GetStackTrace(ctx phpv.Context) []*phpv.StackTraceEntry {
 				}
 			}
 
+			traceArgs := maskSensitiveArgs(fc.c, fc.Args)
 			trace = append(trace, &phpv.StackTraceEntry{
 				FuncName:     fc.GetFuncNameForTrace(),
 				BareFuncName: bareName,
@@ -2346,7 +2386,7 @@ func (g *Global) GetStackTrace(ctx phpv.Context) []*phpv.StackTraceEntry {
 				ClassName:    className,
 				MethodType:   fc.methodType,
 				Line:         fc.loc.Line,
-				Args:         fc.Args,
+				Args:         traceArgs,
 				Object:       fc.this,
 				IsInternal:   isInternal,
 			})

@@ -22,7 +22,10 @@ func init() {
 			"openssl_get_cipher_methods":  {Func: fncOpensslGetCipherMethods, Args: []*phpctx.ExtFunctionArg{}},
 			"openssl_digest":              {Func: fncOpensslDigest, Args: []*phpctx.ExtFunctionArg{}},
 			"openssl_get_md_methods":      {Func: fncOpensslGetMdMethods, Args: []*phpctx.ExtFunctionArg{}},
-			"openssl_random_pseudo_bytes": {Func: fncOpensslRandomPseudoBytes, Args: []*phpctx.ExtFunctionArg{}},
+			"openssl_random_pseudo_bytes": {Func: fncOpensslRandomPseudoBytes, Args: []*phpctx.ExtFunctionArg{
+					{ArgName: "length"},
+					{ArgName: "crypto_strong", Ref: true, Optional: true},
+				}},
 			"openssl_sign":                {Func: fncOpensslSign, Args: []*phpctx.ExtFunctionArg{}},
 			"openssl_verify":              {Func: fncOpensslVerify, Args: []*phpctx.ExtFunctionArg{}},
 			"openssl_pkey_new":            {Func: fncOpensslPkeyNew, Args: []*phpctx.ExtFunctionArg{}},
