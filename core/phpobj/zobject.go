@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"iter"
 	"maps"
+	"runtime"
 	"slices"
 	"sync/atomic"
 
@@ -869,7 +870,8 @@ func NewZObjectOpaque(ctx phpv.Context, c phpv.ZClass, v interface{}) (*ZObject,
 	// Track memory allocation for opaque objects (e.g. Closure).
 	// This must happen before init() so that memory-limit errors are raised during
 	// object construction, matching PHP behaviour.
-	if mt := ctx.Global().MemMgrTracker(); mt != nil {
+	mt := ctx.Global().MemMgrTracker()
+	if mt != nil {
 		if err := mt.MemAlloc(256); err != nil {
 			return nil, err
 		}
@@ -890,6 +892,14 @@ func NewZObjectOpaque(ctx phpv.Context, c phpv.ZClass, v interface{}) (*ZObject,
 	// Register for destructor call at shutdown if __destruct exists
 	if _, ok := c.GetMethod("__destruct"); ok {
 		ctx.Global().RegisterDestructor(n)
+	}
+
+	// Set a finalizer to free tracked memory when the object is garbage collected.
+	// This ensures PHP's memory_get_usage() accurately reflects live objects.
+	if mt != nil {
+		runtime.SetFinalizer(n, func(_ *ZObject) {
+			mt.MemFree(256)
+		})
 	}
 
 	return n, nil

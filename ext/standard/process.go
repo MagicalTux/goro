@@ -33,6 +33,12 @@ func fncMemoryGetUsage(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 		return phpv.ZInt(m.HeapSys).ZVal(), nil
 	}
 
+	// Force a GC cycle to run finalizers that free tracked PHP memory.
+	// PHP uses reference counting which frees memory immediately when objects
+	// are no longer referenced. Go uses tracing GC with deferred finalizers,
+	// so we need to trigger GC here to get an accurate reading.
+	runtime.GC()
+
 	// Return PHP-level tracked memory usage
 	if g, ok := ctx.Global().(*phpctx.Global); ok {
 		return phpv.ZInt(g.MemUsage()).ZVal(), nil
