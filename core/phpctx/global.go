@@ -2498,7 +2498,17 @@ func (g *Global) NextResourceID() int {
 
 func (g *Global) NextObjectID() int {
 	if n := len(g.freeObjectIDs); n > 0 {
-		id := g.freeObjectIDs[n-1]
+		// PHP always reuses the lowest available object ID.
+		// Find the minimum in the free list and remove it.
+		minIdx := 0
+		for i := 1; i < n; i++ {
+			if g.freeObjectIDs[i] < g.freeObjectIDs[minIdx] {
+				minIdx = i
+			}
+		}
+		id := g.freeObjectIDs[minIdx]
+		// Remove the min element by swapping with the last and truncating
+		g.freeObjectIDs[minIdx] = g.freeObjectIDs[n-1]
 		g.freeObjectIDs = g.freeObjectIDs[:n-1]
 		return id
 	}

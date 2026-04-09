@@ -2668,8 +2668,11 @@ func restoreSubclassProps(ctx phpv.Context, obj *phpobj.ZObject, arr *phpv.ZArra
 							}
 						}
 						if !found {
-							// Class not found in hierarchy; use the object's own class
-							internalKey = phpobj.GetPrivatePropNameExt(zclass, propName)
+							// Class not found in hierarchy — skip this property.
+							// Private properties from unknown classes should not
+							// overwrite the declared property's default value.
+							it.Next(ctx)
+							continue
 						}
 					} else {
 						// Fallback: use raw format
