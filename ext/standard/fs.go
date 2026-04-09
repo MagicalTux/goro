@@ -1455,6 +1455,11 @@ func fncChmod(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
+	if string(filename) == "" {
+		ctx.Warn("chmod(): Path must not be empty")
+		return phpv.ZFalse.ZVal(), nil
+	}
+
 	if err := ctx.Global().CheckOpenBasedir(ctx, string(filename), "chmod"); err != nil {
 		return phpv.ZFalse.ZVal(), nil
 	}

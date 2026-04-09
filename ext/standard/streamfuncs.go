@@ -1,7 +1,7 @@
 package standard
 
 import (
-	"errors"
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -218,7 +218,7 @@ func fncStreamGetMetaData(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, erro
 
 func fncStreamIsLocal(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
-		return nil, errors.New("stream_is_local() expects exactly 1 argument")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, fmt.Sprintf("stream_is_local() expects exactly 1 argument, %d given", len(args)))
 	}
 	z := args[0]
 	if z.GetType() == phpv.ZtString {
@@ -673,7 +673,7 @@ func fncStreamBucketNew(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 // > func void stream_bucket_append ( resource $brigade , object $bucket )
 func fncStreamBucketAppend(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 2 {
-		return nil, ctx.FuncErrorf("expects exactly 2 arguments")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, fmt.Sprintf("stream_bucket_append() expects exactly 2 arguments, %d given", len(args)))
 	}
 
 	brigade := args[0].Value()
@@ -693,7 +693,7 @@ func fncStreamBucketAppend(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, err
 // > func void stream_bucket_prepend ( resource $brigade , object $bucket )
 func fncStreamBucketPrepend(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 2 {
-		return nil, ctx.FuncErrorf("expects exactly 2 arguments")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, fmt.Sprintf("stream_bucket_prepend() expects exactly 2 arguments, %d given", len(args)))
 	}
 
 	brigade := args[0].Value()
@@ -713,7 +713,7 @@ func fncStreamBucketPrepend(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 // > func object stream_bucket_make_writeable ( resource $brigade )
 func fncStreamBucketMakeWriteable(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
-		return nil, ctx.FuncErrorf("expects exactly 1 argument")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, fmt.Sprintf("stream_bucket_make_writeable() expects exactly 1 argument, %d given", len(args)))
 	}
 
 	brigade := args[0].Value()

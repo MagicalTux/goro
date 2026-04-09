@@ -534,9 +534,12 @@ func fncGetHtmlTranslationTable(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal
 	table := tableArg.GetOrDefault(HTML_SPECIALCHARS)
 	flags := flagsArgs.GetOrDefault(ENT_COMPAT | ENT_HTML401)
 
-	if encodingArgs.HasArg() && strings.ToUpper(string(encodingArgs.Get())) != "UTF-8" {
-		// TODO: encoding := encodingArgs.GetOrDefault("UTF-8")
-		return nil, ctx.FuncErrorf("only UTF-8 encoding is supported for now")
+	if encodingArgs.HasArg() {
+		enc := strings.ToUpper(string(encodingArgs.Get()))
+		if enc != "" && enc != "UTF-8" {
+			ctx.Warn("get_html_translation_table(): only UTF-8 encoding is supported for now")
+			return phpv.NewZArray().ZVal(), nil
+		}
 	}
 
 	entries := getHtmlTranslationTable(table, flags)

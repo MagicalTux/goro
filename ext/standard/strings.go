@@ -6,7 +6,6 @@ import (
 	"crypto/sha1"
 	"fmt"
 	"io"
-	"log"
 	"math"
 	"math/rand/v2"
 	"os"
@@ -17,6 +16,7 @@ import (
 	"unicode"
 
 	"github.com/MagicalTux/goro/core"
+	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpctx"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
@@ -503,13 +503,15 @@ func fncStrMd5File(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	f, err := os.Open(string(filename))
 	if err != nil {
-		return phpv.ZBool(false).ZVal(), err
+		ctx.Warn("md5_file(%s): Failed to open stream: %s", string(filename), err.Error(), logopt.NoFuncName(true))
+		return phpv.ZBool(false).ZVal(), nil
 	}
 	defer f.Close()
 
 	h := md5.New()
 	if _, err := io.Copy(h, f); err != nil {
-		log.Fatal(err)
+		ctx.Warn("md5_file(%s): %s", string(filename), err.Error(), logopt.NoFuncName(true))
+		return phpv.ZBool(false).ZVal(), nil
 	}
 
 	sum := h.Sum(nil)
@@ -795,13 +797,15 @@ func fncStrSha1File(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	f, err := os.Open(string(filename))
 	if err != nil {
-		return phpv.ZBool(false).ZVal(), err
+		ctx.Warn("sha1_file(%s): Failed to open stream: %s", string(filename), err.Error(), logopt.NoFuncName(true))
+		return phpv.ZBool(false).ZVal(), nil
 	}
 	defer f.Close()
 
 	h := sha1.New()
 	if _, err := io.Copy(h, f); err != nil {
-		log.Fatal(err)
+		ctx.Warn("sha1_file(%s): %s", string(filename), err.Error(), logopt.NoFuncName(true))
+		return phpv.ZBool(false).ZVal(), nil
 	}
 
 	sum := h.Sum(nil)

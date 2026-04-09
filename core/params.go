@@ -299,6 +299,10 @@ func zvalStore(ctx phpv.Context, i int, args []*phpv.ZVal, out interface{}) (php
 }
 
 func ExpandAt(ctx phpv.Context, args []*phpv.ZVal, i int, out interface{}) error {
+	// nil placeholder means this parameter is handled externally (e.g., by-ref)
+	if out == nil {
+		return nil
+	}
 	isRef := false
 	switch r := out.(type) {
 	case optionalReferable:
@@ -422,6 +426,10 @@ func Expand(ctx phpv.Context, args []*phpv.ZVal, out ...interface{}) (int, error
 	}
 	requiredCount := 0
 	for _, o := range out {
+		if o == nil {
+			// nil placeholder for by-ref params handled externally
+			continue
+		}
 		switch o.(type) {
 		case optionalReferable, optionable:
 			// optional

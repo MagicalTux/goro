@@ -169,6 +169,9 @@ func writeSession(ctx phpv.Context, st *sessionState) error {
 	if err != nil {
 		return err
 	}
+	if st.savePath == "" {
+		return nil // no save_path configured, silently skip
+	}
 	if err := os.MkdirAll(st.savePath, 0755); err != nil {
 		return fmt.Errorf("session: cannot create save_path %q: %w", st.savePath, err)
 	}

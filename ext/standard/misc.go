@@ -2,7 +2,6 @@ package standard
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -111,7 +110,7 @@ func constant(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 // > func mixed eval ( string $code )
 func stdFuncEval(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) != 1 {
-		return nil, errors.New("eval() requires 1 argument")
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError, fmt.Sprintf("eval() expects exactly 1 argument, %d given", len(args)))
 	}
 
 	// parse code in args[0]
