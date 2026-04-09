@@ -587,9 +587,9 @@ func (c *Global) callZValImpl(ctx phpv.Context, f phpv.Callable, args []*phpv.ZV
 			isRef := false
 			isPreferRefArg := false
 			varNameForArg := phpv.ZString("")
-			if i < len(func_args) && func_args[i].Ref {
+			if i < len(func_args) && (func_args[i].Ref || func_args[i].NoticeRef) {
 				isRef = true
-				isPreferRefArg = func_args[i].PreferRef || func_args[i].NoticeRef
+				isPreferRefArg = func_args[i].PreferRef
 				varNameForArg = func_args[i].VarName
 			} else if i >= len(func_args) && len(func_args) > 0 {
 				// Check if the last parameter is variadic and by-ref
