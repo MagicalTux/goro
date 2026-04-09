@@ -1415,18 +1415,24 @@ func (g *Global) LogError(err *phpv.PhpError, optionArg ...logopt.Data) {
 
 	if shouldDisplay {
 		if htmlErrors {
-			g.Write([]byte("<br />\n"))
-			g.Write(output.Bytes())
-			g.Write([]byte("<br />\n"))
+			// Write the entire error message as a single Write call to avoid
+			// triggering multiple output buffer flushes (chunk_size=1).
+			var full []byte
+			full = append(full, "<br />\n"...)
+			full = append(full, output.Bytes()...)
+			full = append(full, "<br />\n"...)
+			g.Write(full)
 		} else {
-			// Only prepend "\n" when there has been prior output,
-			// matching PHP which does not emit a leading blank line
-			// when the error is the very first output.
+			// Write the entire error message (including newlines) as a single
+			// Write call to avoid triggering multiple output buffer flushes
+			// when chunk_size is small.
+			var full []byte
 			if g.lastOutChar != 0 {
-				g.Write([]byte("\n"))
+				full = append(full, '\n')
 			}
-			g.Write(output.Bytes())
-			g.Write([]byte("\n"))
+			full = append(full, output.Bytes()...)
+			full = append(full, '\n')
+			g.Write(full)
 		}
 	}
 }

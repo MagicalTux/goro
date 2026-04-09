@@ -407,13 +407,13 @@ func validateISODatePrefix(s string) error {
 	}
 	month, _ := strconv.Atoi(m[2])
 	day, _ := strconv.Atoi(m[3])
-	if month < 1 || month > 12 {
+	if month > 12 {
 		// Position of the second digit of the month (where PHP detects the error)
 		pos := len(m[1]) + 1 + len(m[2]) - 1
 		ch := string(m[2][len(m[2])-1])
 		return fmt.Errorf("Failed to parse time string (%s) at position %d (%s): Unexpected character", s, pos, ch)
 	}
-	if day < 1 || day > 31 {
+	if day > 31 {
 		// Position of the second digit of the day (where PHP detects the error)
 		pos := len(m[1]) + 1 + len(m[2]) + 1 + len(m[3]) - 1
 		ch := string(m[3][len(m[3])-1])
