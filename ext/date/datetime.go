@@ -1906,7 +1906,18 @@ func createFromTimestampStatic(targetClass *phpobj.ZClass) func(ctx phpv.Context
 		if val.GetType() == phpv.ZtFloat {
 			f := float64(val.AsFloat(ctx))
 			if math.IsNaN(f) || math.IsInf(f, 0) || f >= float64(math.MaxInt64) || f < float64(math.MinInt64) {
-				return nil, phpobj.ThrowError(ctx, DateRangeError, fmt.Sprintf("%s::createFromTimestamp(): Argument #1 ($timestamp) must be a finite number between %d and %d.999999, %s given", targetClass.Name, math.MinInt64, math.MaxInt64, val.AsString(ctx)))
+				// Format the float for the error message without triggering NAN/INF coercion warnings
+				var valStr string
+				if math.IsNaN(f) {
+					valStr = "NAN"
+				} else if math.IsInf(f, 1) {
+					valStr = "INF"
+				} else if math.IsInf(f, -1) {
+					valStr = "-INF"
+				} else {
+					valStr = string(val.AsString(ctx))
+				}
+				return nil, phpobj.ThrowError(ctx, DateRangeError, fmt.Sprintf("%s::createFromTimestamp(): Argument #1 ($timestamp) must be a finite number between %d and %d.999999, %s given", targetClass.Name, math.MinInt64, math.MaxInt64, valStr))
 			}
 			// PHP rounds to microsecond precision (6 decimal places)
 			usec := math.Round(f * 1e6)
