@@ -616,7 +616,31 @@ func gmpHandleDoOperation(ctx phpv.Context, op int, a, b *phpv.ZVal) (*phpv.ZVal
 		}
 	}
 
-	r := new(big.Int)
+	// For compound assignment operators (+=, -=, <<=, etc.), modify the
+	// original GMP object's big.Int in place to avoid creating a new object.
+	// This prevents memory exhaustion when doing e.g. $gmp <<= 1 in a loop,
+	// since Go's GC doesn't notify the PHP-level memory tracker when objects
+	// are collected.
+	isCompound := false
+	switch itemOp {
+	case tokenizer.T_PLUS_EQUAL, tokenizer.T_MINUS_EQUAL, tokenizer.T_MUL_EQUAL,
+		tokenizer.T_DIV_EQUAL, tokenizer.T_MOD_EQUAL, tokenizer.T_POW_EQUAL,
+		tokenizer.T_OR_EQUAL, tokenizer.T_AND_EQUAL, tokenizer.T_XOR_EQUAL,
+		tokenizer.T_SL_EQUAL, tokenizer.T_SR_EQUAL:
+		if a != nil && a.GetType() == phpv.ZtObject {
+			if obj, ok := a.Value().(*phpobj.ZObject); ok && obj.Class == GMP {
+				isCompound = true
+			}
+		}
+	}
+
+	var r *big.Int
+	if isCompound {
+		// Reuse ia directly (it's the *big.Int from the GMP object's opaque data)
+		r = ia
+	} else {
+		r = new(big.Int)
+	}
 
 	switch itemOp {
 	case tokenizer.Rune('+'), tokenizer.T_PLUS_EQUAL:
@@ -685,5 +709,11 @@ func gmpHandleDoOperation(ctx phpv.Context, op int, a, b *phpv.ZVal) (*phpv.ZVal
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Unsupported operand types: GMP %s GMP", itemOp.OpString()))
 	}
 
+	// For compound assignment, the big.Int was modified in place on the
+	// existing GMP object. Return the original ZVal so no new object is
+	// allocated and no extra memory is tracked.
+	if isCompound {
+		return a, nil
+	}
 	return returnInt(ctx, r)
 }
