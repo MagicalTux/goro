@@ -4697,11 +4697,12 @@ func datePeriodSetState(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	includeStartVal, _ := arr.OffsetGet(ctx, phpv.ZString("include_start_date").ZVal())
 	includeEndVal, _ := arr.OffsetGet(ctx, phpv.ZString("include_end_date").ZVal())
 
-	// Validate start: must be null or DateTimeInterface
-	if startVal != nil && !startVal.IsNull() {
-		if _, ok := startVal.Value().(*phpobj.ZObject); !ok {
-			return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DatePeriod object")
-		}
+	// Validate start: must be a DateTimeInterface object (not null)
+	if startVal == nil || startVal.IsNull() {
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DatePeriod object")
+	}
+	if _, ok := startVal.Value().(*phpobj.ZObject); !ok {
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DatePeriod object")
 	}
 	// Validate end: must be null or DateTimeInterface
 	if endVal != nil && !endVal.IsNull() {
