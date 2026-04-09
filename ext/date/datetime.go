@@ -2376,6 +2376,8 @@ func createFromFormatParsed(ctx phpv.Context, format string, datetime string, lo
 	secondSet := false
 	resetTime := false
 	usedLoc := loc
+	weekday := time.Weekday(-1) // parsed weekday from D/l format
+	dayOfYear := -1             // parsed day-of-year from z format
 
 	parseErrors := newDateParseErrors()
 	defer func() { setLastDateErrors(ctx, parseErrors) }()
@@ -2538,6 +2540,23 @@ func createFromFormatParsed(ctx phpv.Context, format string, datetime string, lo
 			fmt.Sscanf(s, "%d", &ms)
 			microsecond = ms * 1000
 			di = end
+		case 'z': // day of year (0-365)
+			if !yearSet {
+				parseErrors.addError(di, "A 'day of year' can only come after a year has been found")
+				return time.Time{}, false
+			}
+			end := di
+			for end < len(datetime) && end < di+3 && datetime[end] >= '0' && datetime[end] <= '9' {
+				end++
+			}
+			if end == di {
+				parseErrors.addError(di, "Day of year could not be found")
+				return time.Time{}, false
+			}
+			var doy int
+			fmt.Sscanf(datetime[di:end], "%d", &doy)
+			dayOfYear = doy
+			di = end
 		case 'A', 'a': // AM/PM
 			if di+2 > len(datetime) {
 				parseErrors.addError(di, "A meridian could not be found")
@@ -2647,10 +2666,25 @@ func createFromFormatParsed(ctx phpv.Context, format string, datetime string, lo
 				}
 				di = end
 			}
-		case 'D', 'l': // day name (skip)
+		case 'D', 'l': // day name - parse weekday and adjust date
 			end := di
 			for end < len(datetime) && ((datetime[end] >= 'A' && datetime[end] <= 'Z') || (datetime[end] >= 'a' && datetime[end] <= 'z')) {
 				end++
+			}
+			if end > di {
+				dayName := strings.ToLower(datetime[di:end])
+				weekdayNames := map[string]time.Weekday{
+					"sun": time.Sunday, "sunday": time.Sunday,
+					"mon": time.Monday, "monday": time.Monday,
+					"tue": time.Tuesday, "tuesday": time.Tuesday,
+					"wed": time.Wednesday, "wednesday": time.Wednesday,
+					"thu": time.Thursday, "thursday": time.Thursday,
+					"fri": time.Friday, "friday": time.Friday,
+					"sat": time.Saturday, "saturday": time.Saturday,
+				}
+				if wd, ok := weekdayNames[dayName]; ok {
+					weekday = wd
+				}
 			}
 			di = end
 		case '\\': // literal next char
@@ -2726,6 +2760,34 @@ func createFromFormatParsed(ctx phpv.Context, format string, datetime string, lo
 	if di < len(datetime) {
 		parseErrors.addError(di, "Trailing data")
 		return time.Time{}, false
+	}
+
+	// Handle day-of-year (z format): convert to month and day
+	if dayOfYear >= 0 {
+		// dayOfYear is 0-indexed (0 = Jan 1), so add 1 to get the actual ordinal day
+		t := time.Date(year, 1, 1, 0, 0, 0, 0, usedLoc).AddDate(0, 0, dayOfYear)
+		month = int(t.Month())
+		day = t.Day()
+		monthSet = true
+		daySet = true
+	}
+
+	// Handle weekday adjustment (D/l format): find the next occurrence of the
+	// specified weekday from the current date
+	if weekday >= 0 {
+		t := time.Date(year, time.Month(month), day, hour, minute, second, microsecond*1000, usedLoc)
+		currentWeekday := t.Weekday()
+		if currentWeekday != weekday {
+			// Calculate days until the target weekday
+			diff := int(weekday) - int(currentWeekday)
+			if diff <= 0 {
+				diff += 7
+			}
+			t = t.AddDate(0, 0, diff)
+			year = t.Year()
+			month = int(t.Month())
+			day = t.Day()
+		}
 	}
 
 	return time.Date(year, time.Month(month), day, hour, minute, second, microsecond*1000, usedLoc), true
@@ -4062,6 +4124,14 @@ func init() {
 					// Must have at least a start key (even if null)
 					if arr.Count(ctx) == 0 {
 						return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DatePeriod object")
+					}
+					// Validate all required keys are present
+					requiredKeys := []string{"start", "end", "interval", "recurrences", "include_start_date", "include_end_date"}
+					ht := arr.HashTable()
+					for _, key := range requiredKeys {
+						if !ht.HasString(phpv.ZString(key)) {
+							return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DatePeriod object")
+						}
 					}
 					// Validate start
 					startV, _ := arr.OffsetGet(ctx, phpv.ZString("start").ZVal())
