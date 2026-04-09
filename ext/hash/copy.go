@@ -3,13 +3,13 @@ package hash
 import (
 	"bytes"
 	"crypto/hmac"
-	"encoding"
 	"errors"
 	gohash "hash"
 	"io"
 	"os"
 	"path/filepath"
 
+	"github.com/KarpelesLab/anyhash"
 	"github.com/MagicalTux/goro/core"
 	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpobj"
@@ -130,116 +130,37 @@ type hashCloner interface {
 }
 
 func cloneHashContext(hcd *hashContextData) (*hashContextData, error) {
-	// Try CloneHash first (most efficient, preferred)
-	if c, ok := hcd.Hash.(hashCloner); ok {
-		wdCopy := make([]byte, len(hcd.writtenData))
-		copy(wdCopy, hcd.writtenData)
-		return &hashContextData{
-			Hash:        c.CloneHash(),
-			algo:        hcd.algo,
-			isHmac:      hcd.isHmac,
-			hmacKey:     hcd.hmacKey,
-			seed:        hcd.seed,
-			seed64:      hcd.seed64,
-			secret:      hcd.secret,
-			writtenData: wdCopy,
-		}, nil
-	}
-
-	// Try BinaryMarshaler
-	if m, ok := hcd.Hash.(encoding.BinaryMarshaler); ok {
-		state, err := m.MarshalBinary()
-		if err == nil {
-			// Create a fresh hash to unmarshal into
-			var newHash gohash.Hash
-			if sa, ok2 := seededAlgos[hcd.algo.ToLower()]; ok2 {
-				newHash = sa(hcd.seed)
-			} else if sa64, ok2 := seededAlgos64[hcd.algo.ToLower()]; ok2 {
-				newHash = sa64(hcd.seed64, hcd.secret)
-			} else if an, ok2 := algos[hcd.algo.ToLower()]; ok2 {
-				if hcd.isHmac {
-					newHash = hmac.New(an, hcd.hmacKey)
-				} else {
-					newHash = an()
-				}
-			}
-			if newHash != nil {
-				if u, ok2 := newHash.(encoding.BinaryUnmarshaler); ok2 {
-					if err := u.UnmarshalBinary(state); err == nil {
-						wdCopy := make([]byte, len(hcd.writtenData))
-						copy(wdCopy, hcd.writtenData)
-						return &hashContextData{
-							Hash:        newHash,
-							algo:        hcd.algo,
-							isHmac:      hcd.isHmac,
-							hmacKey:     hcd.hmacKey,
-							seed:        hcd.seed,
-							seed64:      hcd.seed64,
-							secret:      hcd.secret,
-							writtenData: wdCopy,
-						}, nil
-					}
-				}
-			}
-		}
-	}
-
-	// First, try to clone via seeded constructors (for murmur3, xxhash)
-	if seededAlgo, ok := seededAlgos[hcd.algo.ToLower()]; ok {
-		newHash := seededAlgo(hcd.seed)
-		wdCopy := make([]byte, len(hcd.writtenData))
-		copy(wdCopy, hcd.writtenData)
-		return &hashContextData{
-			Hash:        newHash,
-			algo:        hcd.algo,
-			isHmac:      hcd.isHmac,
-			hmacKey:     hcd.hmacKey,
-			seed:        hcd.seed,
-			seed64:      hcd.seed64,
-			secret:      hcd.secret,
-			writtenData: wdCopy,
-		}, nil
-	}
-
-	// For seeded64 algos (xxh3, xxh128 with secret)
-	if seededAlgo64, ok := seededAlgos64[hcd.algo.ToLower()]; ok {
-		newHash := seededAlgo64(hcd.seed64, hcd.secret)
-		wdCopy := make([]byte, len(hcd.writtenData))
-		copy(wdCopy, hcd.writtenData)
-		return &hashContextData{
-			Hash:        newHash,
-			algo:        hcd.algo,
-			isHmac:      hcd.isHmac,
-			hmacKey:     hcd.hmacKey,
-			seed:        hcd.seed,
-			seed64:      hcd.seed64,
-			secret:      hcd.secret,
-			writtenData: wdCopy,
-		}, nil
-	}
-
-	algN, ok := algos[hcd.algo.ToLower()]
-	if !ok {
-		return nil, io.ErrUnexpectedEOF
-	}
-
-	var newHash gohash.Hash
-	if hcd.isHmac {
-		newHash = hmac.New(algN, hcd.hmacKey)
-	} else {
-		newHash = algN()
-	}
-
 	wdCopy := make([]byte, len(hcd.writtenData))
 	copy(wdCopy, hcd.writtenData)
-	// Fallback: return a fresh hash (state not preserved - better than crashing)
-	return &hashContextData{
-		Hash:        newHash,
+
+	base := hashContextData{
 		algo:        hcd.algo,
 		isHmac:      hcd.isHmac,
 		hmacKey:     hcd.hmacKey,
+		seed:        hcd.seed,
+		seed64:      hcd.seed64,
+		secret:      hcd.secret,
 		writtenData: wdCopy,
-	}, nil
+	}
+
+	// Try anyhash Clone() first (handles most algorithms)
+	if c, ok := hcd.Hash.(interface{ Clone() anyhash.Hash }); ok {
+		base.Hash = c.Clone()
+		return &base, nil
+	}
+
+	// Try CloneHash (murmur3/xxhash custom impls)
+	if c, ok := hcd.Hash.(hashCloner); ok {
+		base.Hash = c.CloneHash()
+		return &base, nil
+	}
+
+	// Fallback: replay written data on a fresh hash
+	fresh, err := recreateHashContext(hcd.algo, hcd.isHmac, hcd.hmacKey, hcd.seed, hcd.seed64, hcd.secret, hcd.writtenData)
+	if err != nil {
+		return nil, err
+	}
+	return fresh, nil
 }
 
 // > func bool hash_update_file ( HashContext $context, string $filename [, resource $stream_context ] )
