@@ -329,6 +329,14 @@ func parseDateTimeWithTz(ctx phpv.Context, args []*phpv.ZVal) (time.Time, error)
 			return time.Time{}, phpobj.ThrowError(ctx, DateMalformedStringException, err.Error())
 		}
 
+		// Handle ISO 8601 ordinal date formats: YYYY.DDD or YYYYDDD
+		// where DDD is the day of the year (001-366).
+		// "2017.042" → 2017, day 42 → Feb 11
+		// "2017043" → 2017, day 43 → Feb 12
+		if parsed, ok := parseOrdinalDate(s, loc); ok {
+			return parsed, nil
+		}
+
 		base := time.Now().In(loc)
 		// Normalize relative date strings that our strtotime library doesn't handle
 		normalizedS := normalizeRelativeDateStr(s)
@@ -392,6 +400,41 @@ func parseDateTimeWithTz(ctx phpv.Context, args []*phpv.ZVal) (time.Time, error)
 		return t, nil
 	}
 	return time.Now().In(loc), nil
+}
+
+// reOrdinalDateDot matches ISO 8601 ordinal date format with dot separator: YYYY.DDD
+var reOrdinalDateDot = regexp.MustCompile(`^(\d{4})\.(\d{3})$`)
+
+// reOrdinalDateCompact matches ISO 8601 ordinal date format without separator: YYYYDDD
+var reOrdinalDateCompact = regexp.MustCompile(`^(\d{4})(\d{3})$`)
+
+// parseOrdinalDate parses ISO 8601 ordinal date formats: YYYY.DDD or YYYYDDD
+// where DDD is the day of the year (001-366). Returns the parsed time and true
+// if successful, or the zero time and false if the input doesn't match.
+func parseOrdinalDate(s string, loc *time.Location) (time.Time, bool) {
+	var yearStr, dayStr string
+	if m := reOrdinalDateDot.FindStringSubmatch(s); m != nil {
+		yearStr, dayStr = m[1], m[2]
+	} else if m := reOrdinalDateCompact.FindStringSubmatch(s); m != nil {
+		yearStr, dayStr = m[1], m[2]
+	} else {
+		return time.Time{}, false
+	}
+	year, err := strconv.Atoi(yearStr)
+	if err != nil {
+		return time.Time{}, false
+	}
+	dayOfYear, err := strconv.Atoi(dayStr)
+	if err != nil || dayOfYear < 1 || dayOfYear > 366 {
+		return time.Time{}, false
+	}
+	// Start from January 1 and add (dayOfYear-1) days
+	t := time.Date(year, 1, 1, 0, 0, 0, 0, loc).AddDate(0, 0, dayOfYear-1)
+	// Validate: if the result year changed, the day was out of range
+	if t.Year() != year {
+		return time.Time{}, false
+	}
+	return t, true
 }
 
 // reISODate matches date strings that start with YYYY-MM-DD (4-digit year, 2-digit month, 2-digit day).
@@ -1711,6 +1754,37 @@ func normalizeRelativeDateStr(s string) string {
 	// "last day" → "-1 day" (standalone only)
 	if lower == "last day" {
 		return "-1 day"
+	}
+
+	// Handle ordinal weekday references that the strtotime library doesn't support.
+	// "second Monday" → "next Monday +1 week"
+	// "third Monday"  → "next Monday +2 weeks"
+	// "fourth Monday" → "next Monday +3 weeks"
+	// "fifth Monday"  → "next Monday +4 weeks"
+	ordinals := map[string]int{
+		"second":   1,
+		"third":    2,
+		"fourth":   3,
+		"fifth":    4,
+		"sixth":    5,
+		"seventh":  6,
+		"eighth":   7,
+		"ninth":    8,
+		"tenth":    9,
+		"eleventh": 10,
+		"twelfth":  11,
+	}
+	weekdays := map[string]bool{
+		"monday": true, "tuesday": true, "wednesday": true, "thursday": true,
+		"friday": true, "saturday": true, "sunday": true,
+	}
+	parts := strings.Fields(lower)
+	if len(parts) == 2 {
+		if weeks, ok := ordinals[parts[0]]; ok {
+			if weekdays[parts[1]] {
+				return fmt.Sprintf("next %s +%d weeks", parts[1], weeks)
+			}
+		}
 	}
 
 	return s
