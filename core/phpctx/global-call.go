@@ -179,7 +179,10 @@ func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, o
 							logopt.NoFuncName(true))
 					}
 					val = val.Dup()
-					val.Name = nil
+					// Mark as already warned so callZValImpl doesn't emit a
+					// duplicate "must be passed by reference" warning.
+					alreadyWarned := phpv.ZString("\x00ref_warned")
+					val.Name = &alreadyWarned
 				} else if _, isPreEval := arg.(phpv.PreEvaluatedArg); isPreEval {
 					// Pre-evaluated argument (from call_user_func): pass by value,
 					// warning is deferred to callZValImpl which emits the proper
