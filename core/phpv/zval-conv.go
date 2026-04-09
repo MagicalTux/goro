@@ -10,7 +10,13 @@ func (z *ZVal) CastTo(ctx Context, t ZType) error {
 	if err != nil {
 		return err
 	}
-	z.v = z2.v
+	// If this is a reference (z.v is *ZVal), modify through the reference
+	// so the change is visible to the original storage (e.g. hash table entry).
+	if inner, ok := z.v.(*ZVal); ok {
+		inner.v = z2.v
+	} else {
+		z.v = z2.v
+	}
 	return nil
 }
 

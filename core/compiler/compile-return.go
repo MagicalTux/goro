@@ -147,6 +147,10 @@ func (r *runReturn) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			ov.writeContext = true
 			defer func() { ov.writeContext = false }()
 		}
+		if aa, ok := r.v.(*runArrayAccess); ok {
+			aa.writeContext = true
+			defer func() { aa.writeContext = false }()
+		}
 		// Check if returning a reference to a readonly property
 		if rc, ok := r.v.(phpv.ReadonlyRefChecker); ok {
 			if err := rc.CheckReadonlyRef(ctx); err != nil {

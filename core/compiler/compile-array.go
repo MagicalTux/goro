@@ -312,6 +312,19 @@ type runArrayAccess struct {
 	// If the error handler then creates the key, the write-back is skipped
 	// to match PHP behavior where the error handler's value wins.
 	readKeyWasUndefined bool
+
+	// returnedLiveRef is set by Run() when the returned value is a "live reference" —
+	// a ZVal pointer that directly references storage in a hash table. When true,
+	// modifications through CastTo/Set on the returned ZVal are visible to the
+	// original container, so WriteValue can skip write-back after auto-vivification.
+	// This is set when: (1) offsetGet returns a by-ref value from ArrayAccess, or
+	// (2) an array append in write context returns a reference to the new element.
+	returnedLiveRef bool
+
+	// cachedAppendRef caches the result of offsetGet(null) for ArrayAccess objects
+	// with offset==nil in write context. This prevents double offsetGet calls when
+	// WriteValue re-runs the inner expression during write-back.
+	cachedAppendRef *phpv.ZVal
 }
 
 func (r *runArrayAccess) isNullSafeChain() bool { return r.nullChain }
@@ -364,6 +377,7 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	ac.lastContainerIsOverloaded = false
 	ac.lastContainerClassName = ""
 	ac.lastContainerOffsetGetReturnsRef = false
+	ac.returnedLiveRef = false
 
 	// Propagate writeContext down the chain to suppress warnings during auto-vivification
 	if ac.writeContext {
@@ -379,6 +393,11 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	v, err := ac.value.Run(ctx)
 	if err != nil {
 		return nil, err
+	}
+
+	// Propagate live reference tracking from inner expression
+	if inner, ok := ac.value.(*runArrayAccess); ok && inner.returnedLiveRef {
+		ac.returnedLiveRef = true
 	}
 
 	// Nullsafe chain propagation: if the value is null and we're in a chain, return null
@@ -505,6 +524,17 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			return phpv.ZNULL.ZVal(), nil
 		}
 		if !isCompoundWrite {
+			// If v is a non-nil live reference in write context (e.g., from inner
+			// ArrayAccess offsetGet or array append), auto-vivify it in place.
+			// CastTo modifies through the Go pointer, so the original hash table
+			// entry is updated. Then fall through to the offset handling below.
+			if v != nil && ac.returnedLiveRef && ac.offset == nil {
+				err = v.CastTo(ctx, phpv.ZtArray)
+				if err != nil {
+					return nil, err
+				}
+				break // continue to offset==nil handling below
+			}
 			return phpv.ZNULL.ZVal(), nil
 		}
 	case phpv.ZtBool:
@@ -556,11 +586,9 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 
 	if ac.offset == nil {
 		write := ac.writeContext // writeContext from caller (e.g. by-ref function arg)
-		isCompound := false
 		switch t := ac.Parent.(type) {
 		case *runOperator:
 			write = t.opD.write
-			isCompound = t.opD.write && t.opD.op != nil // compound op like +=, .=
 		case *runArrayAccess, *runnableForeach, *runDestructure:
 			write = true
 		}
@@ -588,13 +616,58 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		if v.GetType() == phpv.ZtString {
 			return nil, phpobj.ThrowError(ctx, phpobj.Error, "[] operator not supported for strings")
 		}
-		// For compound assignments ($arr[] += 5) on ArrayAccess objects,
-		// we need to call offsetGet(NULL) to read the current value.
-		// Only pure write (=) treats [] as append-only.
-		if isCompound && v.GetType() == phpv.ZtObject {
+		// For ArrayAccess objects in write context, call offsetGet(NULL) to get
+		// a reference to the append position. This is needed for:
+		// - compound assignments ($arr[] += 5) to read the current value
+		// - multi-dimension writes ($arr[][0] = 2) to get the intermediate container
+		// Cache the result to prevent double calls when WriteValue re-evaluates.
+		if v.GetType() == phpv.ZtObject {
 			array := v.Array()
 			if array != nil {
-				return array.OffsetGet(ctx, phpv.ZNULL.ZVal())
+				if ac.cachedAppendRef != nil {
+					ref := ac.cachedAppendRef
+					ac.cachedAppendRef = nil
+					ac.returnedLiveRef = true
+					return ref, nil
+				}
+				ref, err := array.OffsetGet(ctx, phpv.ZNULL.ZVal())
+				if err != nil {
+					return nil, err
+				}
+				ac.cachedAppendRef = ref
+				ac.returnedLiveRef = true
+				return ref, nil
+			}
+		}
+		// For arrays in write context, append a new null element and return a
+		// reference to it. Modifications through this reference are visible to
+		// the original array (same Go pointer), so outer dimensions can write
+		// through it without write-back. This handles return-by-ref ($arr[])
+		// and intermediate dimensions in multi-dim writes ($arr[][0] = 2).
+		// Cache the result to prevent double appends when PrepareWrite and
+		// WriteValue both trigger Run().
+		if v.GetType() == phpv.ZtArray {
+			if ac.cachedAppendRef != nil {
+				ref := ac.cachedAppendRef
+				ac.cachedAppendRef = nil
+				ac.returnedLiveRef = true
+				return ref, nil
+			}
+			za, ok := v.Array().(*phpv.ZArray)
+			if ok {
+				newVal := phpv.ZNULL.ZVal()
+				if err := za.OffsetSet(ctx, nil, newVal); err != nil {
+					return nil, err
+				}
+				if lastKey, ok2 := za.H().LastIntKey(); ok2 {
+					ref, err := za.OffsetGet(ctx, phpv.ZInt(lastKey).ZVal())
+					if err != nil {
+						return nil, err
+					}
+					ac.cachedAppendRef = ref
+					ac.returnedLiveRef = true
+					return ref, nil
+				}
 			}
 		}
 		// If we already appended (from a by-ref WriteValue), use the cached key
@@ -869,8 +942,18 @@ func (ac *runArrayAccess) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 		if err != nil {
 			return err
 		}
-		if wr, ok := ac.value.(phpv.Writable); ok {
-			wr.WriteValue(ctx, v)
+		// Skip write-back when the value is a live reference from an inner
+		// ArrayAccess offsetGet or array append. CastTo already modified the
+		// storage through the Go pointer, so write-back would cause duplicate
+		// entries (e.g., double offsetSet calls or double array appends).
+		innerHasLiveRef := false
+		if innerAA, ok := ac.value.(*runArrayAccess); ok && innerAA.returnedLiveRef {
+			innerHasLiveRef = true
+		}
+		if !innerHasLiveRef {
+			if wr, ok := ac.value.(phpv.Writable); ok {
+				wr.WriteValue(ctx, v)
+			}
 		}
 	case phpv.ZtBool:
 		if !bool(v.AsBool(ctx)) {

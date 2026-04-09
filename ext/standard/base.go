@@ -1,7 +1,6 @@
 package standard
 
 import (
-	"errors"
 	"fmt"
 	"net"
 	"strings"
@@ -32,7 +31,8 @@ func isClassNotFoundError(err error) bool {
 
 // > func bool dl ( string $library )
 func stdFuncDl(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	return nil, errors.New("Dynamically loaded extensions aren't enabled")
+	ctx.Warn("dl(): Dynamically loaded extensions aren't enabled")
+	return phpv.ZFalse.ZVal(), nil
 }
 
 // > func bool extension_loaded ( string $name )

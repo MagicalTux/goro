@@ -31,6 +31,13 @@ func fncTriggerError(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, fmt.Sprintf("trigger_error(): Argument #2 ($error_level) must be one of E_USER_ERROR, E_USER_WARNING, E_USER_NOTICE, or E_USER_DEPRECATED"))
 	}
 
+	// PHP 8.4: Passing E_USER_ERROR to trigger_error() is deprecated
+	if phpv.PhpErrorType(errorType) == phpv.E_USER_ERROR {
+		if err := ctx.Deprecated("Passing E_USER_ERROR to trigger_error() is deprecated since 8.4, throw an exception or call exit with a string message instead", logopt.NoFuncName(true)); err != nil {
+			return nil, err
+		}
+	}
+
 	phpErr := &phpv.PhpError{
 		Err:  errors.New(message.String()),
 		Code: phpv.PhpErrorType(errorType),
@@ -41,7 +48,10 @@ func fncTriggerError(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZBool(true).ZVal(), nil
 	}
 	if err != nil {
-		return nil, err
+		ctx.LogError(phpErr)
+		// Terminate with exit-like error so the script stops but
+		// FilterExitError suppresses further output at the top level.
+		return nil, phpv.ExitError(255)
 	}
 
 	ctx.LogError(phpErr)
