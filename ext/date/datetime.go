@@ -2357,18 +2357,29 @@ func createFromFormatParsed(ctx phpv.Context, format string, datetime string, lo
 				hour = 0
 			}
 			di += 2
-		case 'P', 'p', 'O': // timezone offset +02:00 or +0200 or Z
+		case 'P', 'p', 'O': // timezone offset +02:00 or +0200 or Z or GMT+0200
 			if di < len(datetime) && datetime[di] == 'Z' {
 				usedLoc = time.UTC
 				di++
-			} else if di < len(datetime) && (datetime[di] == '+' || datetime[di] == '-') {
-				end := di + 1
-				for end < len(datetime) && (datetime[end] >= '0' && datetime[end] <= '9' || datetime[end] == ':') {
-					end++
+			} else {
+				// Skip optional GMT/UTC prefix before +/- offset
+				startDi := di
+				if di+3 <= len(datetime) && (datetime[di:di+3] == "GMT" || datetime[di:di+3] == "UTC") {
+					di += 3
 				}
-				if offset, ok := parseTZOffset(datetime[di:end]); ok {
-					usedLoc = makeFixedZone(offset)
-					di = end
+				if di < len(datetime) && (datetime[di] == '+' || datetime[di] == '-') {
+					end := di + 1
+					for end < len(datetime) && (datetime[end] >= '0' && datetime[end] <= '9' || datetime[end] == ':') {
+						end++
+					}
+					if offset, ok := parseTZOffset(datetime[di:end]); ok {
+						usedLoc = makeFixedZone(offset)
+						di = end
+					} else {
+						di = startDi // reset if parse failed
+					}
+				} else {
+					di = startDi // reset if no +/- after GMT
 				}
 			}
 		case 'T': // timezone abbreviation
