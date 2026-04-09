@@ -1384,8 +1384,8 @@ func fncDateGetLastErrors(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, erro
 	return getLastErrorsStatic(ctx, args)
 }
 
-// dateParseHasDate returns true if the input string contains a date component (year-month-day).
-var reDateParseHasDate = regexp.MustCompile(`\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2}[-/]\d{2,4}`)
+// dateParseHasDate returns true if the input string contains a date component (year-month-day or day.month.year).
+var reDateParseHasDate = regexp.MustCompile(`\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}`)
 
 // dateParseHasTime returns true if the input string contains a time component (HH:MM).
 var reDateParseHasTime = regexp.MustCompile(`\d{1,2}:\d{2}`)
@@ -1393,8 +1393,20 @@ var reDateParseHasTime = regexp.MustCompile(`\d{1,2}:\d{2}`)
 // dateParseHasFraction returns true if the input has a fractional seconds part (e.g. ":00.5").
 var reDateParseHasFraction = regexp.MustCompile(`:\d{2}\.(\d+)`)
 
-// reDateParseExtractDate extracts year, month, day from a date pattern
-var reDateParseExtractDate = regexp.MustCompile(`(\d{4})[-/](\d{1,2})[-/](\d{1,2})`)
+// reDateParseExtractDate extracts year, month, day from a date pattern.
+// Supports yyyy-mm-dd, yyyy/mm/dd, and dd.mm.yyyy formats.
+var reDateParseExtractDate = regexp.MustCompile(`(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})|(\d{1,2})\.(\d{1,2})\.(\d{4})`)
+
+// extractDateYMD extracts year, month, day strings from a reDateParseExtractDate match.
+// The regex has two alternatives: groups 1-3 for yyyy-mm-dd, groups 4-6 for dd.mm.yyyy.
+func extractDateYMD(m []string) (year, month, day string) {
+	if m[1] != "" {
+		// yyyy-mm-dd format
+		return m[1], m[2], m[3]
+	}
+	// dd.mm.yyyy format
+	return m[6], m[5], m[4]
+}
 
 // reDateParseExtractTime extracts hour, minute, optional second from a time pattern
 var reDateParseExtractTime = regexp.MustCompile(`(\d{1,2}):(\d{2})(?::(\d{2}))?`)
@@ -1549,17 +1561,18 @@ func fncDateParse(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		if hasDate {
 			// Try to extract year/month/day from the date pattern
 			if m := reDateParseExtractDate.FindStringSubmatch(datetime); m != nil {
-				if y, err := strconv.Atoi(m[1]); err == nil {
+				ys, mos, ds := extractDateYMD(m)
+				if y, err := strconv.Atoi(ys); err == nil {
 					result.OffsetSet(ctx, phpv.ZString("year"), phpv.ZInt(y).ZVal())
 				} else {
 					result.OffsetSet(ctx, phpv.ZString("year"), phpv.ZBool(false).ZVal())
 				}
-				if mo, err := strconv.Atoi(m[2]); err == nil {
+				if mo, err := strconv.Atoi(mos); err == nil {
 					result.OffsetSet(ctx, phpv.ZString("month"), phpv.ZInt(mo).ZVal())
 				} else {
 					result.OffsetSet(ctx, phpv.ZString("month"), phpv.ZBool(false).ZVal())
 				}
-				if d, err := strconv.Atoi(m[3]); err == nil {
+				if d, err := strconv.Atoi(ds); err == nil {
 					result.OffsetSet(ctx, phpv.ZString("day"), phpv.ZInt(d).ZVal())
 				} else {
 					result.OffsetSet(ctx, phpv.ZString("day"), phpv.ZBool(false).ZVal())
@@ -1608,9 +1621,31 @@ func fncDateParse(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		}
 	} else {
 		if hasDate {
-			result.OffsetSet(ctx, phpv.ZString("year"), phpv.ZInt(t.Year()).ZVal())
-			result.OffsetSet(ctx, phpv.ZString("month"), phpv.ZInt(int(t.Month())).ZVal())
-			result.OffsetSet(ctx, phpv.ZString("day"), phpv.ZInt(t.Day()).ZVal())
+			// Use regex-extracted raw values when available, as strtotime may
+			// normalize them (e.g. treating day=0 as the last day of previous month).
+			// PHP's date_parse reports the raw parsed values, not normalized ones.
+			if m := reDateParseExtractDate.FindStringSubmatch(datetime); m != nil {
+				ys, mos, ds := extractDateYMD(m)
+				if y, err := strconv.Atoi(ys); err == nil {
+					result.OffsetSet(ctx, phpv.ZString("year"), phpv.ZInt(y).ZVal())
+				} else {
+					result.OffsetSet(ctx, phpv.ZString("year"), phpv.ZInt(t.Year()).ZVal())
+				}
+				if mo, err := strconv.Atoi(mos); err == nil {
+					result.OffsetSet(ctx, phpv.ZString("month"), phpv.ZInt(mo).ZVal())
+				} else {
+					result.OffsetSet(ctx, phpv.ZString("month"), phpv.ZInt(int(t.Month())).ZVal())
+				}
+				if d, err := strconv.Atoi(ds); err == nil {
+					result.OffsetSet(ctx, phpv.ZString("day"), phpv.ZInt(d).ZVal())
+				} else {
+					result.OffsetSet(ctx, phpv.ZString("day"), phpv.ZInt(t.Day()).ZVal())
+				}
+			} else {
+				result.OffsetSet(ctx, phpv.ZString("year"), phpv.ZInt(t.Year()).ZVal())
+				result.OffsetSet(ctx, phpv.ZString("month"), phpv.ZInt(int(t.Month())).ZVal())
+				result.OffsetSet(ctx, phpv.ZString("day"), phpv.ZInt(t.Day()).ZVal())
+			}
 		} else {
 			result.OffsetSet(ctx, phpv.ZString("year"), phpv.ZBool(false).ZVal())
 			result.OffsetSet(ctx, phpv.ZString("month"), phpv.ZBool(false).ZVal())
@@ -1634,14 +1669,31 @@ func fncDateParse(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if datetime == "" {
 		parseErrors.addError(0, "Empty string")
 	} else if stErr == nil {
+		// Check for unexpected characters between date and time parts.
+		// When both date and time patterns are present, the text between them
+		// should be whitespace or 'T'. Characters like '-' are "unexpected".
+		if hasDate && hasTime {
+			dateLoc := reDateParseHasDate.FindStringIndex(datetime)
+			timeLoc := reDateParseHasTime.FindStringIndex(datetime)
+			if dateLoc != nil && timeLoc != nil && dateLoc[1] <= timeLoc[0] {
+				between := datetime[dateLoc[1]:timeLoc[0]]
+				for i, ch := range between {
+					if ch != ' ' && ch != '\t' && ch != 'T' && ch != 't' {
+						parseErrors.addError(dateLoc[1]+i, "Unexpected character")
+						break
+					}
+				}
+			}
+		}
 		// Extract raw parsed values for validation (not Go-normalized)
 		// PHP uses position len(datetime)+1 for "invalid date/time" warnings
 		warnPos := len(datetime) + 1
 		if hasDate {
 			if m := reDateParseExtractDate.FindStringSubmatch(datetime); m != nil {
-				rawMonth, _ := strconv.Atoi(m[2])
-				rawDay, _ := strconv.Atoi(m[3])
-				rawYear, _ := strconv.Atoi(m[1])
+				ys, mos, ds := extractDateYMD(m)
+				rawMonth, _ := strconv.Atoi(mos)
+				rawDay, _ := strconv.Atoi(ds)
+				rawYear, _ := strconv.Atoi(ys)
 				// Check if the date is invalid
 				if rawMonth == 0 || rawDay == 0 || rawYear == 0 ||
 					rawMonth > 12 || rawDay > 31 ||

@@ -681,6 +681,17 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Cannot use object of type %s as array", v.GetType()))
 	}
 
+	// In write context (e.g. $b[0][0] = $b), force COW separation on the container
+	// array before reading elements. This prevents cycles when the assigned value
+	// is a COW copy of the same array: without separation, the inner element
+	// is shared between the original and the copy, so writing to it creates a cycle.
+	// PHP C handles this via refcount-based separation (SEPARATE_ZVAL_IF_NOT_REF).
+	if ac.writeContext {
+		if za, ok := array.(*phpv.ZArray); ok {
+			za.SeparateCow()
+		}
+	}
+
 	// Use OffsetGetWarn for ZArray to produce "Undefined array key" warnings
 	// but not when this access is part of a write chain (auto-vivification)
 	if !ac.writeContext {

@@ -1358,6 +1358,12 @@ func fncArraySlice(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			break
 		}
 
+		// array_slice strips references: the returned array contains
+		// copies of the values, not the original references.
+		if val.IsRef() {
+			val = val.Nude().ZVal()
+		}
+
 		switch key.GetType() {
 		case phpv.ZtInt:
 			if preserveKeys {
