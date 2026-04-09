@@ -670,6 +670,11 @@ func fncClone(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		arr := args[1].AsArray(ctx)
 		for k, val := range arr.Iterate(ctx) {
 			keyStr := k.AsString(ctx)
+			// For clone-with, unmark readonly properties so they can be
+			// overridden even if __clone() already initialized them.
+			if zo, ok := cloned.(*phpobj.ZObject); ok {
+				zo.UnmarkReadonlyInit(keyStr)
+			}
 			err = cloned.ObjectSet(ctx, keyStr, val.ZVal())
 			if err != nil {
 				return nil, err

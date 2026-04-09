@@ -580,6 +580,11 @@ func (closure *ZClosure) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 func (c *ZClosure) Compile(ctx phpv.Context) error {
 	for _, a := range c.args {
 		if r, ok := a.DefaultValue.(*phpv.CompileDelayed); ok {
+			// Expressions containing `new` must NOT be evaluated at compile
+			// time — they create fresh objects on every call (PHP 8.1+).
+			if r.HasNew {
+				continue
+			}
 			z, err := r.Run(ctx)
 			if err != nil {
 				// If the default value can't be resolved at compile time
@@ -1205,15 +1210,24 @@ func (z *ZClosure) callBody(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 					// need to append to args
 					args = append(args, nil)
 				}
-				// Resolve CompileDelayed defaults lazily at call time
+				// Resolve CompileDelayed defaults lazily at call time.
+				// For expressions containing `new`, re-evaluate each call
+				// to create fresh objects (PHP does not cache object defaults).
+				// For scalar/constant expressions, cache the result.
 				if cd, ok := a.DefaultValue.(*phpv.CompileDelayed); ok {
 					z, err := cd.Run(ctx)
 					if err != nil {
 						return nil, err
 					}
-					a.DefaultValue = z.Value()
+					if z.GetType() != phpv.ZtObject {
+						// Cache scalar/array results so constant expressions
+						// (class constants, __CLASS__, etc.) are not re-evaluated.
+						a.DefaultValue = z.Value()
+					}
+					args[i] = z.ZVal()
+				} else {
+					args[i] = a.DefaultValue.ZVal()
 				}
-				args[i] = a.DefaultValue.ZVal()
 				// Coerce int default to float when the type hint is float (applies even in strict mode)
 				if a.Hint != nil && a.Hint.Type() == phpv.ZtFloat && len(a.Hint.Union) == 0 && len(a.Hint.Intersection) == 0 && args[i].GetType() == phpv.ZtInt {
 					if coerced, err2 := args[i].As(ctx, phpv.ZtFloat); err2 == nil && coerced != nil {

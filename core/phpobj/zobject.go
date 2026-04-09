@@ -620,7 +620,10 @@ func NewZObject(ctx phpv.Context, c phpv.ZClass, args ...*phpv.ZVal) (*ZObject, 
 						if err != nil {
 							return nil, err
 						}
-						arg.DefaultValue = resolved.Value()
+						// Don't cache object results (from `new` in defaults)
+						if resolved.GetType() != phpv.ZtObject {
+							arg.DefaultValue = resolved.Value()
+						}
 						val = resolved
 					} else {
 						val = arg.DefaultValue.ZVal()
@@ -661,9 +664,9 @@ func NewZObject(ctx phpv.Context, c phpv.ZClass, args ...*phpv.ZVal) (*ZObject, 
 					}
 				} else if arg.Promotion.IsPrivate() {
 					mangledName := getPrivatePropName(c, propName)
-					n.h.SetString(mangledName, val)
+					n.setPropRefTracked(mangledName, val)
 				} else {
-					n.h.SetString(propName, val)
+					n.setPropRefTracked(propName, val)
 				}
 				// Mark readonly properties as initialized
 				isReadonly := arg.Promotion.IsReadonly()
@@ -1774,6 +1777,15 @@ func (o *ZObject) MarkReadonlyInitialized(keyStr phpv.ZString) {
 		o.readonlyInit = make(map[phpv.ZString]bool)
 	}
 	o.readonlyInit[keyStr] = true
+}
+
+// UnmarkReadonlyInit resets the "initialized" flag for a readonly property,
+// allowing it to be written again. Used by clone-with to override properties
+// that were set by __clone().
+func (o *ZObject) UnmarkReadonlyInit(keyStr phpv.ZString) {
+	if o.readonlyInit != nil {
+		delete(o.readonlyInit, keyStr)
+	}
 }
 
 // checkReadonlyWrite checks if a property is readonly and already initialized.

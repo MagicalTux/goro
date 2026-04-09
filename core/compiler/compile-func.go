@@ -1521,7 +1521,7 @@ func compileFunctionArgs(c compileCtx) (res []*phpv.FuncArg, err error) {
 				}
 			}
 
-			arg.DefaultValue = &phpv.CompileDelayed{V: r}
+			arg.DefaultValue = &phpv.CompileDelayed{V: r, HasNew: containsNewExpr(r)}
 			arg.Required = false
 			// Capture the PHP source representation of the default expression for reflection.
 			// This must be done before Compile() evaluates and replaces the CompileDelayed.
@@ -2945,3 +2945,4 @@ func compileFuncPassedArgs(c compileCtx) (res phpv.Runnables, err error) {
 		return nil, i.Unexpected()
 	}
 }
+

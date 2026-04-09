@@ -187,6 +187,13 @@ func runCloneWithValues(ctx phpv.Context, v *phpv.ZVal, withProps *phpv.ZVal) (*
 		}
 		for k, v := range arr.Iterate(ctx) {
 			keyStr := k.AsString(ctx)
+			// For clone-with, unmark readonly properties so they can be
+			// overridden even if __clone() already initialized them.
+			// PHP 8.5 allows clone-with to override any property that is
+			// writable from the current scope, regardless of readonly state.
+			if zo, ok := obj.(*phpobj.ZObject); ok {
+				zo.UnmarkReadonlyInit(keyStr)
+			}
 			err = obj.ObjectSet(ctx, keyStr, v.ZVal())
 			if err != nil {
 				return nil, err

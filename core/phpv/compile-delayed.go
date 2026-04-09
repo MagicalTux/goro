@@ -5,7 +5,8 @@ type Compilable interface {
 }
 
 type CompileDelayed struct {
-	V Runnable
+	V      Runnable
+	HasNew bool // true if expression contains `new`, preventing compile-time caching
 }
 
 func (c *CompileDelayed) GetType() ZType {
