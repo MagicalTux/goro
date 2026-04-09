@@ -2399,7 +2399,7 @@ func createFromFormatParsed(ctx phpv.Context, format string, datetime string, lo
 			}
 		case 'e': // timezone identifier
 			end := di
-			for end < len(datetime) && datetime[end] != ' ' && datetime[end] != '\t' {
+			for end < len(datetime) && datetime[end] != ' ' && datetime[end] != '\t' && datetime[end] != ']' {
 				end++
 			}
 			if end > di {
