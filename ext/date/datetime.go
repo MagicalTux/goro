@@ -623,6 +623,80 @@ func tryModifySubSecond(t time.Time, modifier string) (time.Time, bool) {
 	return result, true
 }
 
+// reRelativePart matches individual relative time components like "+1 second", "3 hours".
+var reRelativePart = regexp.MustCompile(`(?i)([+-]?\s*\d+)\s*(seconds?|secs?|minutes?|mins?|hours?|days?|weeks?|fortnights?)`)
+
+// parseRelativeDuration tries to parse a purely relative time modifier into a time.Duration.
+// It only handles modifiers that consist entirely of relative time components (no dates, months, years).
+// Returns (duration, true) if successful, (0, false) otherwise.
+func parseRelativeDuration(modifier string) (time.Duration, bool) {
+	trimmed := strings.TrimSpace(modifier)
+	matches := reRelativePart.FindAllStringSubmatch(trimmed, -1)
+	if len(matches) == 0 {
+		return 0, false
+	}
+	// Verify the entire string consists of relative parts
+	remaining := reRelativePart.ReplaceAllString(trimmed, "")
+	remaining = strings.TrimSpace(remaining)
+	if remaining != "" {
+		return 0, false
+	}
+	var total time.Duration
+	for _, m := range matches {
+		nStr := strings.ReplaceAll(m[1], " ", "")
+		n, err := strconv.ParseInt(nStr, 10, 64)
+		if err != nil {
+			return 0, false
+		}
+		unit := strings.ToLower(m[2])
+		switch {
+		case strings.HasPrefix(unit, "sec"):
+			total += time.Duration(n) * time.Second
+		case strings.HasPrefix(unit, "min"):
+			total += time.Duration(n) * time.Minute
+		case strings.HasPrefix(unit, "hour"):
+			total += time.Duration(n) * time.Hour
+		case strings.HasPrefix(unit, "day"):
+			total += time.Duration(n) * 24 * time.Hour
+		case strings.HasPrefix(unit, "week"):
+			total += time.Duration(n) * 7 * 24 * time.Hour
+		case strings.HasPrefix(unit, "fortnight"):
+			total += time.Duration(n) * 14 * 24 * time.Hour
+		default:
+			return 0, false
+		}
+	}
+	return total, true
+}
+
+// verifyRelativeModify checks if strtotime gave a correct result for a relative
+// modification. The strtotime library can give wrong results near timezone
+// transitions (e.g., Kwajalein dateline change where +1 second goes backward).
+// If the modifier is purely relative and strtotime's result goes in the wrong
+// direction, fall back to time.Add which handles transitions correctly.
+func verifyRelativeModify(base, result time.Time, modifier string) time.Time {
+	dur, ok := parseRelativeDuration(modifier)
+	if !ok {
+		return result // not a simple relative modifier, trust strtotime
+	}
+	// Check if the result direction matches the modifier direction.
+	// strtotime does wall-clock arithmetic which can differ from actual elapsed
+	// time near DST transitions - that's correct PHP behavior.
+	// Only override when the direction is clearly wrong (e.g., going backward
+	// when modifier is positive, or the delta is off by more than a day).
+	actualDelta := result.Unix() - base.Unix()
+	expectedDelta := int64(dur / time.Second)
+	if expectedDelta > 0 && actualDelta < 0 {
+		// Positive modifier but time went backward - strtotime bug
+		return base.Add(dur)
+	}
+	if expectedDelta < 0 && actualDelta > 0 {
+		// Negative modifier but time went forward - strtotime bug
+		return base.Add(dur)
+	}
+	return result
+}
+
 // modifyMethod implements DateTime::modify(string $modifier): DateTime|false
 func modifyMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if len(args) < 1 {
@@ -656,6 +730,11 @@ func modifyMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*p
 	if stErr != nil {
 		return nil, phpobj.ThrowError(ctx, DateMalformedStringException, fmt.Sprintf("DateTime::modify(): Failed to parse time string (%s) at position 0 (%s): Unexpected character", modifier, string(modifier[0:1])))
 	}
+	// Verify strtotime result for purely relative modifications near timezone
+	// transitions. strtotime can give wrong results when the timezone offset
+	// changes (e.g., Kwajalein dateline change). If the result looks wrong,
+	// recompute using time.Add which handles transitions correctly.
+	newT = verifyRelativeModify(t, newT, normalizedMod)
 	setTimeVal(this, newT)
 	return this.ZVal(), nil
 }
@@ -701,6 +780,8 @@ func modifyImmutableMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.
 	if stErr != nil {
 		return nil, phpobj.ThrowError(ctx, DateMalformedStringException, fmt.Sprintf("DateTimeImmutable::modify(): Failed to parse time string (%s) at position 0 (%s): Unexpected character", modifier, string(modifier[0:1])))
 	}
+	// Verify strtotime result for purely relative modifications near timezone transitions.
+	newT = verifyRelativeModify(t, newT, normalizedMod)
 	newObj, err := phpobj.NewZObject(ctx, DateTimeImmutable)
 	if err != nil {
 		return nil, err
@@ -1118,6 +1199,17 @@ func epochDays(t time.Time) int {
 	return d + (153*mo+2)/5 + 365*yr + yr/4 - yr/100 + yr/400 - 32045
 }
 
+// dstGapAdjustment returns the number of hours that Go's time.Date added
+// to a time at midnight on the given date due to a DST spring-forward gap.
+// If midnight exists normally, returns 0.
+// For example, if midnight springs forward to 1:00 AM, returns 1.
+func dstGapAdjustment(t time.Time) int {
+	y, m, d := t.Date()
+	loc := t.Location()
+	chk := time.Date(y, m, d, 0, 0, 0, 0, loc)
+	return chk.Hour()
+}
+
 // findNextDSTTransition finds the next DST transition near a given time.
 // Returns the Unix timestamp of the transition, the new UTC offset, and whether one was found.
 // It searches within a small window (up to 48 hours from t) to find transitions
@@ -1241,7 +1333,23 @@ func diffMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*php
 		dstHCorr := dstCorr / 3600
 		dstMCorr := (dstCorr % 3600) / 60
 
-		hours = two.Hour() - one.Hour()
+		// Correct for Go's time.Date DST spring-forward adjustment.
+		// When a wall-clock time doesn't exist due to DST (e.g., midnight spring-forward
+		// in Asia/Amman), Go pushes the hour forward. PHP's timelib keeps the requested
+		// wall-clock time. Detect when a time was likely adjusted from midnight.
+		oneHour := one.Hour()
+		twoHour := two.Hour()
+		// If the stored hour matches the DST gap adjustment (e.g., hour=1 on a day
+		// where midnight was pushed to 1:00), and minute/second are both 0 (suggesting
+		// the time was originally midnight), correct back to hour 0.
+		if oneGap := dstGapAdjustment(one); oneGap > 0 && oneHour == oneGap && one.Minute() == 0 && one.Second() == 0 && one.Nanosecond() == 0 {
+			oneHour = 0
+		}
+		if twoGap := dstGapAdjustment(two); twoGap > 0 && twoHour == twoGap && two.Minute() == 0 && two.Second() == 0 && two.Nanosecond() == 0 {
+			twoHour = 0
+		}
+
+		hours = twoHour - oneHour
 		minutes = two.Minute() - one.Minute()
 		seconds = two.Second() - one.Second()
 		usecDiff = two.Nanosecond()/1000 - one.Nanosecond()/1000
