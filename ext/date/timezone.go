@@ -1652,9 +1652,34 @@ func fncDateParse(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			result.OffsetSet(ctx, phpv.ZString("day"), phpv.ZBool(false).ZVal())
 		}
 		if hasTime {
-			result.OffsetSet(ctx, phpv.ZString("hour"), phpv.ZInt(t.Hour()).ZVal())
-			result.OffsetSet(ctx, phpv.ZString("minute"), phpv.ZInt(t.Minute()).ZVal())
-			result.OffsetSet(ctx, phpv.ZString("second"), phpv.ZInt(t.Second()).ZVal())
+			// Use regex-extracted raw values like we do for date components.
+			// strtotime may normalize values (e.g. hour 24 becomes 0),
+			// but PHP's date_parse reports the raw parsed values.
+			if m := reDateParseExtractTime.FindStringSubmatch(datetime); m != nil {
+				if h, err := strconv.Atoi(m[1]); err == nil {
+					result.OffsetSet(ctx, phpv.ZString("hour"), phpv.ZInt(h).ZVal())
+				} else {
+					result.OffsetSet(ctx, phpv.ZString("hour"), phpv.ZInt(t.Hour()).ZVal())
+				}
+				if mi, err := strconv.Atoi(m[2]); err == nil {
+					result.OffsetSet(ctx, phpv.ZString("minute"), phpv.ZInt(mi).ZVal())
+				} else {
+					result.OffsetSet(ctx, phpv.ZString("minute"), phpv.ZInt(t.Minute()).ZVal())
+				}
+				if len(m) > 3 && m[3] != "" {
+					if s, err := strconv.Atoi(m[3]); err == nil {
+						result.OffsetSet(ctx, phpv.ZString("second"), phpv.ZInt(s).ZVal())
+					} else {
+						result.OffsetSet(ctx, phpv.ZString("second"), phpv.ZInt(t.Second()).ZVal())
+					}
+				} else {
+					result.OffsetSet(ctx, phpv.ZString("second"), phpv.ZInt(t.Second()).ZVal())
+				}
+			} else {
+				result.OffsetSet(ctx, phpv.ZString("hour"), phpv.ZInt(t.Hour()).ZVal())
+				result.OffsetSet(ctx, phpv.ZString("minute"), phpv.ZInt(t.Minute()).ZVal())
+				result.OffsetSet(ctx, phpv.ZString("second"), phpv.ZInt(t.Second()).ZVal())
+			}
 		} else {
 			result.OffsetSet(ctx, phpv.ZString("hour"), phpv.ZBool(false).ZVal())
 			result.OffsetSet(ctx, phpv.ZString("minute"), phpv.ZBool(false).ZVal())
