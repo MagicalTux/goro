@@ -5,6 +5,7 @@ import (
 	"fmt"
 	gohash "hash"
 
+	"github.com/KarpelesLab/anyhash"
 	"github.com/MagicalTux/goro/core"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
@@ -37,14 +38,8 @@ func fncHashInit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 
 	algoLower := algo.ToLower()
 
-	algN, ok := algos[algoLower]
-	if !ok {
-		// Check if it's a seeded algo
-		if _, ok2 := seededAlgos[algoLower]; !ok2 {
-			if _, ok3 := seededAlgos64[algoLower]; !ok3 {
-				return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "hash_init(): Argument #1 ($algo) must be a valid hashing algorithm")
-			}
-		}
+	if _, ok := algos[algoLower]; !ok {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "hash_init(): Argument #1 ($algo) must be a valid hashing algorithm")
 	}
 
 	var h gohash.Hash
@@ -60,30 +55,25 @@ func fncHashInit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		if options != nil && options.GetType() == phpv.ZtArray {
 			arr := options.AsArray(ctx)
 
-			// Handle "seed" option
 			seedVal, hasSeed, _ := arr.OffsetCheck(ctx, phpv.ZString("seed"))
 			secretVal, hasSecret, _ := arr.OffsetCheck(ctx, phpv.ZString("secret"))
 
 			if hasSeed && seedVal != nil {
-				// Check if it's a seeded algo
-				isSeeded32 := seededAlgos[algoLower] != nil
-				isSeeded64 := seededAlgos64[algoLower] != nil
+				isSeeded32 := isSeededAlgo(algoLower)
+				isSeeded64 := isSeeded64Algo(algoLower)
 
 				if isSeeded32 || isSeeded64 {
 					if seedVal.GetType() != phpv.ZtInt {
 						// Deprecation warning for non-int seed
 						if isSeeded64 {
-							// xxh3/xxh128: "ignored"
 							if err := ctx.Deprecated("Passing a seed of a type other than int is deprecated because it is ignored"); err != nil {
 								return nil, err
 							}
 						} else {
-							// murmur3 / xxh32 / xxh64: "same as setting the seed to 0"
 							if err := ctx.Deprecated("Passing a seed of a type other than int is deprecated because it is the same as setting the seed to 0"); err != nil {
 								return nil, err
 							}
 						}
-						// Use 0 as seed
 					} else {
 						seedInt := int64(seedVal.Value().(phpv.ZInt))
 						if isSeeded64 {
@@ -96,19 +86,16 @@ func fncHashInit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			}
 
 			if hasSecret && secretVal != nil {
-				if seededAlgos64[algoLower] != nil {
-					// xxh3/xxh128 support "secret"
+				if isSeeded64Algo(algoLower) {
 					if hasSeed && seedVal != nil {
 						return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
 							fmt.Sprintf("%s: Only one of seed or secret is to be passed for initialization", string(algo)))
 					}
 					if secretVal.GetType() != phpv.ZtString {
-						// Deprecation warning
 						if err := ctx.Deprecated("Passing a secret of a type other than string is deprecated because it implicitly converts to a string, potentially hiding bugs"); err != nil {
 							return nil, err
 						}
 					}
-					// Convert to string (this may panic/error on non-stringable)
 					secretStr, err := secretVal.AsVal(ctx, phpv.ZtString)
 					if err != nil {
 						return nil, err
@@ -133,24 +120,25 @@ func fncHashInit(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "hash_init(): Argument #3 ($key) must not be empty when HMAC is requested")
 		}
 		hmacKey = []byte(*key)
-		algN, ok = algos[algoLower]
-		if !ok {
-			return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "hash_init(): Argument #1 ($algo) must be a valid hashing algorithm")
-		}
+		algN := algos[algoLower]
 		h = hmac.New(algN, hmacKey)
 		isHmac = true
 	} else {
-		// Use seeded constructor if seed was provided
-		if seededAlgo, ok := seededAlgos[algoLower]; ok {
-			h = seededAlgo(seed)
-		} else if seededAlgo64, ok := seededAlgos64[algoLower]; ok {
-			h = seededAlgo64(seed64, secret)
-		} else {
-			algN, ok = algos[algoLower]
-			if !ok {
+		// Use anyhash.New with Options for seeded/secret algorithms
+		if isSeededAlgo(algoLower) || isSeeded64Algo(algoLower) {
+			var opts anyhash.Options
+			if isSeeded64Algo(algoLower) {
+				opts.Seed = seed64
+				opts.Secret = secret
+			} else {
+				opts.Seed = uint64(seed)
+			}
+			h, err = anyhash.New(anyhashName(algoLower), opts)
+			if err != nil {
 				return nil, phpobj.ThrowError(ctx, phpobj.ValueError, "hash_init(): Argument #1 ($algo) must be a valid hashing algorithm")
 			}
-			h = algN()
+		} else {
+			h = algos[algoLower]()
 		}
 	}
 

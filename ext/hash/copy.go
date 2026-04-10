@@ -56,10 +56,19 @@ func recreateHashContext(algo phpv.ZString, isHmac bool, hmacKey []byte, seed ui
 			return nil, io.ErrUnexpectedEOF
 		}
 		h = hmac.New(an, hmacKey)
-	} else if sa, ok := seededAlgos[algoLower]; ok {
-		h = sa(seed)
-	} else if sa64, ok := seededAlgos64[algoLower]; ok {
-		h = sa64(seed64, secret)
+	} else if isSeededAlgo(algoLower) || isSeeded64Algo(algoLower) {
+		var opts anyhash.Options
+		if isSeeded64Algo(algoLower) {
+			opts.Seed = seed64
+			opts.Secret = secret
+		} else {
+			opts.Seed = uint64(seed)
+		}
+		var err error
+		h, err = anyhash.New(anyhashName(algoLower), opts)
+		if err != nil {
+			return nil, io.ErrUnexpectedEOF
+		}
 	} else {
 		an, ok := algos[algoLower]
 		if !ok {

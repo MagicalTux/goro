@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/KarpelesLab/anyhash"
 	"github.com/MagicalTux/goro/core"
 	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpobj"
@@ -52,7 +53,7 @@ func fncHash(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			seedVal, hasSeed, _ := arr.OffsetCheck(ctx, phpv.ZString("seed"))
 			secretVal, hasSecret, _ := arr.OffsetCheck(ctx, phpv.ZString("secret"))
 
-			if hasSecret && secretVal != nil && seededAlgos64[algoLower] != nil {
+			if hasSecret && secretVal != nil && isSeeded64Algo(algoLower) {
 				if hasSeed && seedVal != nil {
 					return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
 						fmt.Sprintf("%s: Only one of seed or secret is to be passed for initialization", string(algo)))
@@ -71,21 +72,17 @@ func fncHash(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 					return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
 						fmt.Sprintf("%s: Secret length must be >= 136 bytes, %d bytes passed", string(algo), len(secretBytes)))
 				}
-				a = seededAlgos64[algoLower](0, secretBytes)
-			} else if hasSeed && seedVal != nil {
-				if seededAlgo, ok := seededAlgos[algoLower]; ok {
-					var seed uint32
-					if seedVal.GetType() == phpv.ZtInt {
-						seed = uint32(int32(seedVal.Value().(phpv.ZInt)))
-					}
-					a = seededAlgo(seed)
-				} else if seededAlgo64, ok := seededAlgos64[algoLower]; ok {
-					var seed64 uint64
-					if seedVal.GetType() == phpv.ZtInt {
+				a, _ = anyhash.New(anyhashName(algoLower), anyhash.Options{Secret: secretBytes})
+			} else if hasSeed && seedVal != nil && (isSeededAlgo(algoLower) || isSeeded64Algo(algoLower)) {
+				var seed64 uint64
+				if seedVal.GetType() == phpv.ZtInt {
+					if isSeeded64Algo(algoLower) {
 						seed64 = uint64(int64(seedVal.Value().(phpv.ZInt)))
+					} else {
+						seed64 = uint64(uint32(int32(seedVal.Value().(phpv.ZInt))))
 					}
-					a = seededAlgo64(seed64, nil)
 				}
+				a, _ = anyhash.New(anyhashName(algoLower), anyhash.Options{Seed: seed64})
 			}
 		}
 	}
@@ -137,7 +134,7 @@ func fncHashFile(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			seedVal, hasSeed, _ := arr.OffsetCheck(ctx, phpv.ZString("seed"))
 			secretVal, hasSecret, _ := arr.OffsetCheck(ctx, phpv.ZString("secret"))
 
-			if hasSecret && secretVal != nil && seededAlgos64[algoLower] != nil {
+			if hasSecret && secretVal != nil && isSeeded64Algo(algoLower) {
 				secretStr, serr := secretVal.AsVal(ctx, phpv.ZtString)
 				if serr != nil {
 					return nil, serr
@@ -147,21 +144,17 @@ func fncHashFile(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 					return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
 						fmt.Sprintf("%s: Secret length must be >= 136 bytes, %d bytes passed", string(algo), len(secretBytes)))
 				}
-				a = seededAlgos64[algoLower](0, secretBytes)
-			} else if hasSeed && seedVal != nil {
-				if seededAlgo, ok := seededAlgos[algoLower]; ok {
-					var seed uint32
-					if seedVal.GetType() == phpv.ZtInt {
-						seed = uint32(int32(seedVal.Value().(phpv.ZInt)))
-					}
-					a = seededAlgo(seed)
-				} else if seededAlgo64, ok := seededAlgos64[algoLower]; ok {
-					var seed64 uint64
-					if seedVal.GetType() == phpv.ZtInt {
+				a, _ = anyhash.New(anyhashName(algoLower), anyhash.Options{Secret: secretBytes})
+			} else if hasSeed && seedVal != nil && (isSeededAlgo(algoLower) || isSeeded64Algo(algoLower)) {
+				var seed64 uint64
+				if seedVal.GetType() == phpv.ZtInt {
+					if isSeeded64Algo(algoLower) {
 						seed64 = uint64(int64(seedVal.Value().(phpv.ZInt)))
+					} else {
+						seed64 = uint64(uint32(int32(seedVal.Value().(phpv.ZInt))))
 					}
-					a = seededAlgo64(seed64, nil)
 				}
+				a, _ = anyhash.New(anyhashName(algoLower), anyhash.Options{Seed: seed64})
 			}
 		}
 	}

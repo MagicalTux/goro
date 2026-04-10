@@ -74,7 +74,7 @@ func init() {
 				arr.OffsetSet(ctx, phpv.ZInt(0).ZVal(), phpv.ZString(hcd.algo).ZVal())
 				arr.OffsetSet(ctx, phpv.ZInt(1).ZVal(), phpv.ZInt(0).ZVal())
 
-				stateArr, _ := serializeHashState(hcd.Hash)
+				stateArr, _ := serializeHashState(hcd.Hash, hcd.algo)
 				// Fallback for custom hash implementations: use replay data
 				if stateArr == nil || stateArr.Count(ctx) == 0 {
 					stateArr = phpv.NewZArray()
@@ -138,14 +138,7 @@ func init() {
 				magic := magicVal.AsInt(ctx)
 
 				algoLower := algo.ToLower()
-				_, algoExists := algos[algoLower]
-				if !algoExists {
-					_, algoExists = seededAlgos[algoLower]
-					if !algoExists {
-						_, algoExists = seededAlgos64[algoLower]
-					}
-				}
-				if !algoExists {
+				if _, ok := algos[algoLower]; !ok {
 					return nil, phpobj.ThrowError(ctx, phpobj.Exception, "Unknown hash algorithm")
 				}
 
@@ -157,8 +150,11 @@ func init() {
 				hcd, err := unserializeFromPHPState(ctx, algo, stateArr)
 				if err != nil {
 					code := int64(-1)
-					if err == errSpecMismatch {
+					switch err {
+					case errSpecMismatch:
 						code = phpHashUnserializeSpecMismatch
+					case errInvalidSize:
+						code = phpHashUnserializeInvalidSize
 					}
 					return nil, phpobj.ThrowError(ctx, phpobj.Exception, fmt.Sprintf("Incomplete or ill-formed serialization data (%q code %d)", string(algo), code))
 				}

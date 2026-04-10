@@ -42,21 +42,33 @@ func init() {
 	algos["fnv1a128"] = func() gohash.Hash { return fnv.New128a() }
 }
 
-// seededAlgos maps algo name → constructor that takes a uint32 seed.
-// Used by murmur3 and xxh32/xxh64.
-var seededAlgos = map[phpv.ZString]func(seed uint32) gohash.Hash{
-	"murmur3a": newMurmur3A,
-	"murmur3c": newMurmur3C,
-	"murmur3f": newMurmur3F,
-	"xxh32":    newXXH32,
-	"xxh64":    func(seed uint32) gohash.Hash { return newXXH64(uint64(seed)) },
+// anyhashName returns the anyhash-compatible name for a PHP algorithm name,
+// resolving aliases from phpNameMap.
+func anyhashName(algo phpv.ZString) string {
+	if n, ok := phpNameMap[string(algo)]; ok {
+		return n
+	}
+	return string(algo)
 }
 
-// seededAlgos64 maps algo name → constructor that takes a uint64 seed + secret.
-// Used by xxh3 and xxh128.
-var seededAlgos64 = map[phpv.ZString]func(seed uint64, secret []byte) gohash.Hash{
-	"xxh3":   newXXH3WithSeedOrSecret,
-	"xxh128": newXXH128WithSeedOrSecret,
+// isSeededAlgo reports whether an algorithm supports custom seeds (uint32).
+// These are murmur3 variants and xxh32/xxh64.
+func isSeededAlgo(algo phpv.ZString) bool {
+	switch algo {
+	case "murmur3a", "murmur3c", "murmur3f", "xxh32", "xxh64":
+		return true
+	}
+	return false
+}
+
+// isSeeded64Algo reports whether an algorithm supports custom uint64 seeds
+// and/or secrets. These are xxh3 and xxh128.
+func isSeeded64Algo(algo phpv.ZString) bool {
+	switch algo {
+	case "xxh3", "xxh128":
+		return true
+	}
+	return false
 }
 
 // nonCryptoAlgos lists the hash algorithms that are NOT suitable for cryptographic use.
