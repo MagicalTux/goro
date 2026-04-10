@@ -57,9 +57,9 @@ func main() {
 
 	if p.ScriptFilename != "" {
 		if err := ctx.RunFile(p.ScriptFilename); err != nil {
-			// PhpExit is used for die()/exit() and after LogError-handled fatal errors
-			if _, ok := err.(*phpv.PhpExit); ok {
-				os.Exit(1)
+			// PhpExit is used for die()/exit() — use the actual exit code.
+			if exitErr, ok := err.(*phpv.PhpExit); ok {
+				os.Exit(exitErr.Code())
 			}
 
 			displayErrors := ctx.GetConfig("display_errors", phpv.ZFalse.ZVal()).AsBool(ctx)

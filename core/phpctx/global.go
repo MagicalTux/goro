@@ -564,7 +564,16 @@ func (g *Global) RunFile(fn string) error {
 		}
 	}
 	_, err := g.requireMain(phpv.ZString(fn))
-	err = phpv.FilterExitError(err)
+
+	// Preserve the PhpExit error so we can return it to the SAPI at the
+	// end (after shutdown functions and destructors have run). Library
+	// users can type-assert the returned error to *phpv.PhpExit to get
+	// the exit code passed to exit()/die().
+	var exitErr *phpv.PhpExit
+	if pe, ok := phpv.UnwrapError(err).(*phpv.PhpExit); ok {
+		exitErr = pe
+		err = nil
+	}
 
 	// deferredErr holds fatal PHP errors that should be logged after
 	// shutdown functions and destructors have run (matching PHP behavior
@@ -603,7 +612,6 @@ func (g *Global) RunFile(fn string) error {
 	}
 
 	switch innerErr := phpv.UnwrapError(err).(type) {
-	case *phpv.PhpExit:
 	case *phperr.PhpTimeout:
 		g.WriteErr([]byte("\n"))
 		if g.GetConfig("display_errors", phpv.ZFalse.ZVal()).AsBool(g) {
@@ -664,7 +672,16 @@ func (g *Global) RunFile(fn string) error {
 		g.LogError(deferredErr)
 	}
 
-	return closeErr
+	// If the script called exit()/die(), return the PhpExit so the SAPI
+	// can propagate the exit code. Prefer closeErr if it surfaced another
+	// error during Close (shutdown functions, output buffer callbacks).
+	if closeErr != nil {
+		return closeErr
+	}
+	if exitErr != nil {
+		return exitErr
+	}
+	return nil
 }
 
 // HandleUncaughtException handles an uncaught exception by calling the user
