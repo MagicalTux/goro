@@ -7,10 +7,10 @@ import (
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
-// Lazy object option flags (as defined in PHP 8.4)
+// Lazy object option flags — aliases for phpobj constants
 const (
-	LazyObjectSkipInitOnSerialize = 8
-	LazyObjectSkipDestructor      = 16
+	LazyObjectSkipInitOnSerialize = phpobj.LazySkipInitOnSerialize
+	LazyObjectSkipDestructor      = phpobj.LazySkipDestructor
 )
 
 // Valid option masks
@@ -196,7 +196,7 @@ func reflectionClassNewLazyGhost(ctx phpv.Context, o *phpobj.ZObject, args []*ph
 	}
 
 	// Set up as lazy ghost
-	obj.MakeLazyGhost(args[0])
+	obj.MakeLazyGhost(args[0], int(options))
 
 	return obj.ZVal(), nil
 }
@@ -236,7 +236,7 @@ func reflectionClassNewLazyProxy(ctx phpv.Context, o *phpobj.ZObject, args []*ph
 	}
 
 	// Set up as lazy proxy
-	obj.MakeLazyProxy(args[0])
+	obj.MakeLazyProxy(args[0], int(options))
 
 	return obj.ZVal(), nil
 }
@@ -372,7 +372,7 @@ func reflectionClassResetAsLazyGhost(ctx phpv.Context, o *phpobj.ZObject, args [
 	obj.SetDestructed(false)
 
 	// Reset as lazy ghost
-	obj.MakeLazyGhost(args[1])
+	obj.MakeLazyGhost(args[1], int(options))
 
 	return nil, nil
 }
@@ -431,7 +431,7 @@ func reflectionClassResetAsLazyProxy(ctx phpv.Context, o *phpobj.ZObject, args [
 	obj.SetDestructed(false)
 
 	// Reset as lazy proxy
-	obj.MakeLazyProxy(args[1])
+	obj.MakeLazyProxy(args[1], int(options))
 
 	return nil, nil
 }

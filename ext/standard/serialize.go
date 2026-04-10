@@ -432,8 +432,8 @@ func serializeWithDepth(ctx phpv.Context, value *phpv.ZVal, depth int, seen *ser
 	case phpv.ZtObject:
 		obj := value.AsObject(ctx)
 
-		// Lazy objects: serialize triggers initialization
-		if zo, ok := obj.(*phpobj.ZObject); ok && zo.IsLazy() {
+		// Lazy objects: serialize triggers initialization unless SKIP_INITIALIZATION_ON_SERIALIZE
+		if zo, ok := obj.(*phpobj.ZObject); ok && zo.IsLazy() && !zo.SkipsInitOnSerialize() {
 			if err := zo.TriggerLazyInit(ctx); err != nil {
 				return "", err
 			}

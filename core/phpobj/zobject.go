@@ -79,6 +79,10 @@ type ZObject struct {
 	// ReflectionProperty::skipLazyInitialization() - accessing these does not trigger init.
 	LazySkippedProps map[phpv.ZString]bool
 
+	// LazyOptions stores flags passed when the lazy object was created
+	// (LazySkipInitOnSerialize, LazySkipDestructor).
+	LazyOptions int
+
 	// LazyInitializing is true while the initializer/factory is being called,
 	// to prevent recursive initialization.
 	LazyInitializing bool

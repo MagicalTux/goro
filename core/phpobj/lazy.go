@@ -9,12 +9,24 @@ import (
 
 // Lazy object state constants
 const (
-	LazyNone             = 0 // Not a lazy object
+	LazyNone               = 0 // Not a lazy object
 	LazyGhostUninitialized = 1 // Lazy ghost, not yet initialized
 	LazyProxyUninitialized = 2 // Lazy proxy, not yet initialized
 	LazyGhostInitialized   = 3 // Lazy ghost, initialized
 	LazyProxyInitialized   = 4 // Lazy proxy, initialized
 )
+
+// Lazy object option flags (matching PHP 8.4 ReflectionClass constants)
+const (
+	LazySkipInitOnSerialize = 8  // Skip initialization during serialize()
+	LazySkipDestructor      = 16 // Skip __destruct when resetting to lazy
+)
+
+// SkipsInitOnSerialize returns true if this lazy object should not be
+// initialized when serialized (SKIP_INITIALIZATION_ON_SERIALIZE flag).
+func (o *ZObject) SkipsInitOnSerialize() bool {
+	return o.IsLazy() && o.LazyOptions&LazySkipInitOnSerialize != 0
+}
 
 // IsLazy returns true if the object is a lazy object (ghost or proxy) that has
 // not yet been initialized.
@@ -41,12 +53,13 @@ func (o *ZObject) IsLazyInitialized() bool {
 // MakeLazyGhost sets up this object as a lazy ghost with the given initializer.
 // The object's non-skipped properties are cleared (typed properties become
 // uninitialized, untyped properties are removed).
-func (o *ZObject) MakeLazyGhost(initializer *phpv.ZVal) {
+func (o *ZObject) MakeLazyGhost(initializer *phpv.ZVal, options int) {
 	o.LazyState = LazyGhostUninitialized
 	o.LazyInitializer = initializer
 	o.LazyInstance = nil
 	o.LazySkippedProps = nil
 	o.LazyInitializing = false
+	o.LazyOptions = options
 
 	// Clear all property values - lazy objects start with no properties
 	o.h = phpv.NewHashTable()
@@ -59,12 +72,13 @@ func (o *ZObject) MakeLazyGhost(initializer *phpv.ZVal) {
 }
 
 // MakeLazyProxy sets up this object as a lazy proxy with the given factory.
-func (o *ZObject) MakeLazyProxy(factory *phpv.ZVal) {
+func (o *ZObject) MakeLazyProxy(factory *phpv.ZVal, options int) {
 	o.LazyState = LazyProxyUninitialized
 	o.LazyInitializer = factory
 	o.LazyInstance = nil
 	o.LazySkippedProps = nil
 	o.LazyInitializing = false
+	o.LazyOptions = options
 
 	// Clear all property values
 	o.h = phpv.NewHashTable()

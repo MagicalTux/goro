@@ -132,8 +132,8 @@ func doVarExport(ctx phpv.Context, w io.Writer, z *phpv.ZVal, linePfx string, re
 		}
 		fmt.Fprintf(w, "%s)", linePfx)
 	case phpv.ZtObject:
-		// Lazy objects: var_export triggers initialization
-		if obj, ok := z.Value().(*phpobj.ZObject); ok && obj.IsLazy() {
+		// Lazy objects: var_export triggers initialization unless SKIP_INITIALIZATION_ON_SERIALIZE
+		if obj, ok := z.Value().(*phpobj.ZObject); ok && obj.IsLazy() && !obj.SkipsInitOnSerialize() {
 			if err := obj.TriggerLazyInit(ctx); err != nil {
 				return err
 			}
