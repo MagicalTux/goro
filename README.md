@@ -47,36 +47,6 @@ Goro passes **~11,815 of 12,110 tests** (~97.6%) from the PHP 8.5.4 test suite (
 | dereference, concat, backtrace | 3 each | Various edge cases |
 | Other | ~56 | Scattered across ~40 areas (≤3 failures each) |
 
-### Language Features
-
-| Feature | Status |
-|---------|--------|
-| Variables, constants, type juggling | Done |
-| Control flow (if/else/switch/match/for/foreach/while) | Done |
-| Functions, closures, arrow functions (`fn`) | Done |
-| Classes, interfaces, traits, abstract classes | Done |
-| Enums (PHP 8.1) | Done |
-| Namespaces | Done |
-| Exceptions (try/catch/finally/throw) | Done |
-| Error hierarchy (Error, TypeError, ValueError, etc) | Done |
-| Null coalescing (`??`, `??=`) | Done |
-| Spaceship operator (`<=>`) | Done |
-| Spread operator (`...`) | Done |
-| Named arguments (PHP 8.0) | Done |
-| Match expression (PHP 8.0) | Done |
-| Nullsafe operator (`?->`, PHP 8.0) | Done |
-| Readonly properties (PHP 8.1) | Done |
-| Fibers (PHP 8.1) | Done |
-| Union/intersection types | Done |
-| DNF types (`(A&B)\|C`, PHP 8.2) | Done |
-| Generators (`yield`, `yield from`) | Done |
-| First-class callables (`strlen(...)`) | Done |
-| Property hooks (PHP 8.4) | Done |
-| Asymmetric visibility (PHP 8.4) | Done |
-| Lazy objects (PHP 8.4) | Done |
-| `clone ... with` (PHP 8.5) | Done |
-| Attributes (`#[Deprecated]`, `#[Override]`, `#[SensitiveParameter]`, etc.) | Done |
-
 ### SAPIs
 
 | SAPI | Status |
