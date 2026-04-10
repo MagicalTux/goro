@@ -74,7 +74,7 @@ func init() {
 				arr.OffsetSet(ctx, phpv.ZInt(0).ZVal(), phpv.ZString(hcd.algo).ZVal())
 				arr.OffsetSet(ctx, phpv.ZInt(1).ZVal(), phpv.ZInt(0).ZVal())
 
-				stateArr, _ := serializeHashState(hcd.Hash, hcd.algo)
+				stateArr, _ := serializeHashState(hcd.Hash)
 				// Fallback for custom hash implementations: use replay data
 				if stateArr == nil || stateArr.Count(ctx) == 0 {
 					stateArr = phpv.NewZArray()

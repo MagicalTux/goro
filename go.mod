@@ -14,7 +14,7 @@ require (
 
 require (
 	filippo.io/edwards25519 v1.1.1 // indirect
-	github.com/KarpelesLab/anyhash v0.1.4 // indirect
+	github.com/KarpelesLab/anyhash v0.1.5 // indirect
 	github.com/KarpelesLab/gobzip2 v0.0.0-20260330172500-4c38ea919286 // indirect
 	github.com/KarpelesLab/gotz v0.1.2 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect

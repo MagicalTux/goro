@@ -10,6 +10,8 @@ github.com/KarpelesLab/anyhash v0.1.3 h1:vGa1t7n6/+sZVSe+3nUR29fOLXiN09BsvvHguwd
 github.com/KarpelesLab/anyhash v0.1.3/go.mod h1:IvBYny3trvcUSxz6kckTgGZFBTSkYFuRFK28igymUsk=
 github.com/KarpelesLab/anyhash v0.1.4 h1:QIZ8ewwyp+qvFNlKBcTWli0ASvCU5VOeNSgHEWia4PA=
 github.com/KarpelesLab/anyhash v0.1.4/go.mod h1:IvBYny3trvcUSxz6kckTgGZFBTSkYFuRFK28igymUsk=
+github.com/KarpelesLab/anyhash v0.1.5 h1:nXiUMv6O7a2HoayaKc9ZAOypWHVccFMkU80RPl39f6E=
+github.com/KarpelesLab/anyhash v0.1.5/go.mod h1:IvBYny3trvcUSxz6kckTgGZFBTSkYFuRFK28igymUsk=
 github.com/KarpelesLab/gobzip2 v0.0.0-20260330172500-4c38ea919286 h1:3RCQ/dyIuGPQEWbVYvuW+pCMofs3yxr0+B408Ez55Oc=
 github.com/KarpelesLab/gobzip2 v0.0.0-20260330172500-4c38ea919286/go.mod h1:5v5i0AelH26iGSMNde1j+gqLh48Bljx6gEwLMUNIWWo=
 github.com/KarpelesLab/gopcre2 v0.1.0 h1:ksv0iCXdL/Pu4Eyzv9X5Z6guoyzXtDucNrGs02LPhYE=
