@@ -24,7 +24,28 @@ go install github.com/MagicalTux/goro/sapi/php-cli@latest
 
 ## Status
 
-Goro passes **~11,770 of 12,110 tests** (97.2%) from the PHP 8.5.4 test suite (256 failures in CI). PHP memory_limit enforcement (128MB default). Includes PCRE2 via gopcre2, IANA timezones via gotz, and 9 extensions (session, xml, curl, sockets, zlib, mysqli, sqlite3, bz2).
+Goro passes **~11,815 of 12,110 tests** (~97.6%) from the PHP 8.5.4 test suite (209 failures, 86 skipped in CI). PHP memory_limit enforcement (128MB default). Includes PCRE2 via gopcre2, IANA timezones via gotz, and 9 extensions (session, xml, curl, sockets, zlib, mysqli, sqlite3, bz2).
+
+### Remaining test failures by area
+
+| Area | Failures | Notes |
+|------|----------|-------|
+| ext/date | 56 | Date/time parsing edge cases, DatePeriod serialization, timezone transitions |
+| attributes | 20 | AST printer, custom attribute validation, autoloading scenarios |
+| exceptions | 9 | Variance autoload, stream wrappers, stat-during-include |
+| closures | 9 | Binding edge cases, closure-over-static |
+| ext/date (other) | — | Included above |
+| clone | 6 | AST printing, edge cases around clone-with |
+| exit | 5 | `exit()` string coercion in buffer output |
+| constexpr | 5 | Constant expression edge cases (new in defaults, array unpack) |
+| asymmetric_visibility | 5 | Static props, nested variations, read-only enforcement |
+| assert | 5 | assert() callback exceptions, AST pretty-printer |
+| ext/mbstring | 4 | max_input_vars interaction with encoding translation |
+| constants | 4 | Constant evaluation edge cases |
+| ext/hash | 3 | File-based tests requiring --CLEAN-- support in the runner |
+| ext/gmp | 3 | GMP unserialize with references |
+| dereference, concat, backtrace | 3 each | Various edge cases |
+| Other | ~56 | Scattered across ~40 areas (≤3 failures each) |
 
 ### Language Features
 
