@@ -17,6 +17,26 @@ import (
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
+// reExplicitTime matches an explicit HH:MM:SS time component in a datetime string.
+var reExplicitTime = regexp.MustCompile(`(?:\s|T)(\d{1,2}):(\d{2})(?::(\d{2}))?`)
+
+// applyDSTGapFromString applies DST gap adjustment when the input string contains
+// an explicit time. This is needed because Go's time normalization goes backward
+// for times in DST gaps, but PHP goes forward.
+func applyDSTGapFromString(t time.Time, input string) time.Time {
+	m := reExplicitTime.FindStringSubmatch(input)
+	if m == nil {
+		return t
+	}
+	h, _ := strconv.Atoi(m[1])
+	mi, _ := strconv.Atoi(m[2])
+	s := 0
+	if m[3] != "" {
+		s, _ = strconv.Atoi(m[3])
+	}
+	return adjustDSTGap(t, h, mi, s)
+}
+
 // formatDateTimeStr formats a time.Time as a PHP datetime string.
 // PHP uses a "+" prefix for years > 9999 and "-" for negative years.
 func formatDateTimeStr(t time.Time) string {
@@ -46,15 +66,20 @@ func parseDateTimeStr(dateStr string, loc *time.Location) (time.Time, error) {
 		s = s[1:]
 	}
 
+	// Extract requested time components for DST gap adjustment.
+	// We need the original values because Go's ParseInLocation normalizes backward.
+	var wantH, wantM, wantS int
+	fmt.Sscanf(s[len(s)-8:], "%02d:%02d:%02d", &wantH, &wantM, &wantS)
+
 	// Try normal parsing first (works for 4-digit years)
 	parsed, err := time.ParseInLocation("2006-01-02 15:04:05.000000", s, loc)
 	if err == nil {
-		return parsed, nil
+		return adjustDSTGap(parsed, wantH, wantM, wantS), nil
 	}
 	// Try without microseconds
 	parsed, err = time.ParseInLocation("2006-01-02 15:04:05", s, loc)
 	if err == nil {
-		return parsed, nil
+		return adjustDSTGap(parsed, wantH, wantM, wantS), nil
 	}
 
 	// For extended years (5+ digits), manually parse the components
@@ -363,7 +388,7 @@ func parseDateTimeWithTz(ctx phpv.Context, args []*phpv.ZVal) (time.Time, error)
 				}
 			}
 
-			return parsed.In(loc), nil
+			return applyDSTGapFromString(parsed.In(loc), s), nil
 		}
 		// Last resort: try Go's built-in formats
 		for _, layout := range []string{
@@ -903,6 +928,7 @@ func setTimeMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*
 	}
 	y, mo, d := t.Date()
 	newT := time.Date(y, mo, d, int(hour), int(minute), int(sec), int(micro)*1000, t.Location())
+	newT = adjustDSTGap(newT, int(hour), int(minute), int(sec))
 	setTimeVal(this, newT)
 	return this.ZVal(), nil
 }
@@ -931,6 +957,7 @@ func setTimeImmutableMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv
 	}
 	y, mo, d := t.Date()
 	newT := time.Date(y, mo, d, int(hour), int(minute), int(sec), int(micro)*1000, t.Location())
+	newT = adjustDSTGap(newT, int(hour), int(minute), int(sec))
 	newObj, err := phpobj.NewZObject(ctx, DateTimeImmutable)
 	if err != nil {
 		return nil, err
