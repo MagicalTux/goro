@@ -83,6 +83,7 @@ type phptest struct {
 	name   string
 	path   string
 	req    *http.Request
+	ini    map[string]string // INI settings from --INI-- section
 
 	p *phpctx.Process
 }
@@ -115,6 +116,10 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 	case "FILE":
 		// pass data to the engine
 		g := phpctx.NewGlobalReq(p.req, p.p, ini.New())
+		// Apply --INI-- settings after Global init (which calls LoadDefaults)
+		for k, v := range p.ini {
+			g.IniConfig.SetGlobal(g, phpv.ZString(k), phpv.ZString(v).ZVal())
+		}
 		g.SetOutput(p.output)
 		g.Chdir(phpv.ZString(path.Dir(p.path))) // chdir execution to path
 
@@ -194,7 +199,27 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 			return skipTest
 		}
 		return nil
-	case "INI", "EXPECTF", "EXTENSIONS":
+	case "INI":
+		// Parse INI settings (key=value lines, with {PWD} substitution)
+		dir := filepath.Dir(p.path)
+		if absDir, err := filepath.Abs(dir); err == nil {
+			dir = absDir
+		}
+		p.ini = make(map[string]string)
+		for _, line := range strings.Split(b.String(), "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" || line[0] == ';' {
+				continue
+			}
+			if idx := strings.IndexByte(line, '='); idx >= 0 {
+				key := strings.TrimSpace(line[:idx])
+				val := strings.TrimSpace(line[idx+1:])
+				val = strings.ReplaceAll(val, "{PWD}", dir)
+				p.ini[key] = val
+			}
+		}
+		return nil
+	case "EXPECTF", "EXTENSIONS":
 		// TODO
 		return skipTest
 	case "XFAIL":

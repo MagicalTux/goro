@@ -64,6 +64,8 @@ func New() phpv.IniConfig {
 	return c
 }
 
+
+
 func (c *Config) LoadDefaults(ctx phpv.Context) {
 	for varName, entry := range Defaults {
 		value, err := c.EvalConfigValue(ctx, phpv.ZString(entry.RawDefault))
