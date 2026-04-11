@@ -121,6 +121,8 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		for k, v := range p.ini {
 			g.IniConfig.SetGlobal(g, phpv.ZString(k), phpv.ZString(v).ZVal())
 		}
+		// Re-sync memory_limit to MemMgr if --INI-- changed it
+		g.ApplyMaxMemoryLimit()
 		g.SetOutput(p.output)
 		g.Chdir(phpv.ZString(path.Dir(p.path))) // chdir execution to path
 
