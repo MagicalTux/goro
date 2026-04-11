@@ -124,7 +124,11 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		g.SetOutput(p.output)
 		g.Chdir(phpv.ZString(path.Dir(p.path))) // chdir execution to path
 
-		t := tokenizer.NewLexer(b, p.path)
+		// PHP's run-tests.php writes the FILE section to a temporary .php
+		// file. We use the .phpt path with .php extension as the "script
+		// name" so error messages match the expected format.
+		scriptName := strings.TrimSuffix(p.path, ".phpt") + ".php"
+		t := tokenizer.NewLexer(b, scriptName)
 		c, err := compiler.Compile(g, t)
 		if err != nil {
 			return err
