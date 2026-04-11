@@ -141,14 +141,16 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		// "Fatal error: ..." output and terminate the script. For test purposes,
 		// we treat this as a successful run (the fatal error text is in the output).
 		if ex, ok := err.(*phperr.PhpThrow); ok {
-			// Write "Fatal error: Uncaught ..." to output (matches PHP CLI behavior)
-			trace, _ := ex.ErrorTrace(g)
-			thrownFile := ex.ThrownFile()
-			if thrownFile == "" {
-				thrownFile = "Unknown"
+			// Match php-cli's format: the trace already contains the full
+			// "Uncaught ...: <msg> in <file>:<line>\nStack trace:\n..." text
+			// ending at "#N {main}". Just append the "thrown in" footer.
+			trace, replacement := ex.ErrorTrace(g)
+			displayEx := ex
+			if replacement != nil {
+				displayEx = replacement
 			}
-			fmt.Fprintf(p.output, "\nFatal error: %s in %s on line %d\nStack trace:\n#0 {main}\n  thrown in %s on line %d\n",
-				trace, thrownFile, ex.ThrownLine(), thrownFile, ex.ThrownLine())
+			fmt.Fprintf(p.output, "\nFatal error: %s\n  thrown in %s on line %d\n",
+				trace, displayEx.ThrownFile(), displayEx.ThrownLine())
 			return nil
 		}
 		if phpErr, ok := err.(*phpv.PhpError); ok && phpErr.Code == phpv.E_ERROR {
