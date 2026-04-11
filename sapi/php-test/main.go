@@ -29,6 +29,7 @@ import (
 	_ "github.com/MagicalTux/goro/ext/gmp"
 	_ "github.com/MagicalTux/goro/ext/hash"
 	_ "github.com/MagicalTux/goro/ext/json"
+	_ "github.com/MagicalTux/goro/ext/mbstring"
 	_ "github.com/MagicalTux/goro/ext/mysqli"
 	_ "github.com/MagicalTux/goro/ext/sqlite3"
 	_ "github.com/MagicalTux/goro/ext/openssl"
@@ -181,6 +182,32 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 			return fmt.Errorf("output not as expected!\n%s", diff.LineDiff(string(exp), string(out)))
 		}
 		return nil
+	case "EXPECTF":
+		// compare p.output with b using PHP format specifiers
+		out := bytes.TrimSpace(p.output.Bytes())
+		exp := bytes.TrimSpace(b.Bytes())
+
+		re, err := expectfToRegex(string(exp))
+		if err != nil {
+			return fmt.Errorf("bad EXPECTF pattern: %w", err)
+		}
+		if !re.Match(out) {
+			return fmt.Errorf("output not as expected!\n%s", diff.LineDiff(string(exp), string(out)))
+		}
+		return nil
+	case "EXPECTREGEX":
+		// compare p.output with b using a raw regex
+		out := bytes.TrimSpace(p.output.Bytes())
+		exp := bytes.TrimSpace(b.Bytes())
+
+		re, err := regexp.Compile("(?s)\\A" + string(exp) + "\\z")
+		if err != nil {
+			return fmt.Errorf("bad EXPECTREGEX pattern: %w", err)
+		}
+		if !re.Match(out) {
+			return fmt.Errorf("output not as expected!\n%s", diff.LineDiff(string(exp), string(out)))
+		}
+		return nil
 	case "SKIPIF":
 		t := tokenizer.NewLexer(b, p.path)
 		g := phpctx.NewGlobal(context.Background(), p.p, ini.New())
@@ -219,7 +246,7 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 			}
 		}
 		return nil
-	case "EXPECTF", "EXTENSIONS":
+	case "EXTENSIONS":
 		// TODO
 		return skipTest
 	case "XFAIL":
@@ -228,6 +255,67 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 	default:
 		return fmt.Errorf("unhandled part type %s for test", part)
 	}
+}
+
+// expectfToRegex converts PHP's EXPECTF format into a Go regexp.
+// See https://qa.php.net/write-test.php for the format spec.
+//
+// Supported specifiers:
+//   %e    directory separator
+//   %s    one or more characters, except newline
+//   %S    zero or more characters, except newline
+//   %a    one or more characters, including newlines
+//   %A    zero or more characters, including newlines
+//   %w    zero or more whitespace characters
+//   %i    signed integer
+//   %d    unsigned integer
+//   %x    one or more hex digits
+//   %f    floating point
+//   %c    single character
+//   %%    literal %
+func expectfToRegex(pattern string) (*regexp.Regexp, error) {
+	var buf bytes.Buffer
+	buf.WriteString("(?s)\\A")
+	i := 0
+	for i < len(pattern) {
+		ch := pattern[i]
+		if ch == '%' && i+1 < len(pattern) {
+			switch pattern[i+1] {
+			case 'e':
+				buf.WriteString(regexp.QuoteMeta(string(os.PathSeparator)))
+			case 's':
+				buf.WriteString("[^\\r\\n]+")
+			case 'S':
+				buf.WriteString("[^\\r\\n]*")
+			case 'a':
+				buf.WriteString(".+")
+			case 'A':
+				buf.WriteString(".*")
+			case 'w':
+				buf.WriteString("\\s*")
+			case 'i':
+				buf.WriteString("[+-]?\\d+")
+			case 'd':
+				buf.WriteString("\\d+")
+			case 'x':
+				buf.WriteString("[0-9a-fA-F]+")
+			case 'f':
+				buf.WriteString("[+-]?\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?")
+			case 'c':
+				buf.WriteString(".")
+			case '%':
+				buf.WriteString("%")
+			default:
+				buf.WriteString(regexp.QuoteMeta(pattern[i : i+2]))
+			}
+			i += 2
+			continue
+		}
+		buf.WriteString(regexp.QuoteMeta(string(ch)))
+		i++
+	}
+	buf.WriteString("\\z")
+	return regexp.Compile(buf.String())
 }
 
 func runTest(fpath string) (p *phptest, err error) {
