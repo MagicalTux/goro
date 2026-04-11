@@ -130,8 +130,12 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 
 		// PHP's run-tests.php writes the FILE section to a temporary .php
 		// file. We use the .phpt path with .php extension as the "script
-		// name" so error messages match the expected format.
+		// name" so error messages match the expected format. The path
+		// must be absolute so __DIR__ and __FILE__ work correctly.
 		scriptName := strings.TrimSuffix(p.path, ".phpt") + ".php"
+		if abs, err := filepath.Abs(scriptName); err == nil {
+			scriptName = abs
+		}
 		t := tokenizer.NewLexer(b, scriptName)
 		c, err := compiler.Compile(g, t)
 		if err != nil {
