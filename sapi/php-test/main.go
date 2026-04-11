@@ -123,6 +123,8 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		}
 		// Re-sync memory_limit to MemMgr if --INI-- changed it
 		g.ApplyMaxMemoryLimit()
+		// Emit the "PHP Startup: Invalid date.timezone" warning if needed
+		g.ValidateDateTimezone()
 		g.SetOutput(p.output)
 		g.Chdir(phpv.ZString(path.Dir(p.path))) // chdir execution to path
 
@@ -269,18 +271,19 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 // See https://qa.php.net/write-test.php for the format spec.
 //
 // Supported specifiers:
-//   %e    directory separator
-//   %s    one or more characters, except newline
-//   %S    zero or more characters, except newline
-//   %a    one or more characters, including newlines
-//   %A    zero or more characters, including newlines
-//   %w    zero or more whitespace characters
-//   %i    signed integer
-//   %d    unsigned integer
-//   %x    one or more hex digits
-//   %f    floating point
-//   %c    single character
-//   %%    literal %
+//   %e        directory separator
+//   %s        one or more characters, except newline
+//   %S        zero or more characters, except newline
+//   %a        one or more characters, including newlines
+//   %A        zero or more characters, including newlines
+//   %w        zero or more whitespace characters
+//   %i        signed integer
+//   %d        unsigned integer
+//   %x        one or more hex digits
+//   %f        floating point
+//   %c        single character
+//   %%        literal %
+//   %r<re>%r  inline regex pattern
 func expectfToRegex(pattern string) (*regexp.Regexp, error) {
 	var buf bytes.Buffer
 	buf.WriteString("(?s)\\A")
@@ -288,6 +291,17 @@ func expectfToRegex(pattern string) (*regexp.Regexp, error) {
 	for i < len(pattern) {
 		ch := pattern[i]
 		if ch == '%' && i+1 < len(pattern) {
+			// Inline regex: %r...%r
+			if pattern[i+1] == 'r' {
+				end := strings.Index(pattern[i+2:], "%r")
+				if end >= 0 {
+					buf.WriteString("(?:")
+					buf.WriteString(pattern[i+2 : i+2+end])
+					buf.WriteString(")")
+					i += 2 + end + 2
+					continue
+				}
+			}
 			switch pattern[i+1] {
 			case 'e':
 				buf.WriteString(regexp.QuoteMeta(string(os.PathSeparator)))
