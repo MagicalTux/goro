@@ -2310,6 +2310,11 @@ func unserializeMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal
 		loc = loaded
 	}
 
+	// Validate date string format: PHP rejects dates where the year doesn't
+	// have exactly 4 digits (unless prefixed with + or -) in serialized DateTime.
+	if len(dateStr) < 19 || (dateStr[4] != '-' && dateStr[0] != '-' && dateStr[0] != '+') {
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DateTime object")
+	}
 	parsed, err := parseDateTimeStr(dateStr, loc)
 	if err != nil {
 		return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DateTime object")
