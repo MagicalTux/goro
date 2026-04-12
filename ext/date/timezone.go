@@ -1828,6 +1828,11 @@ func fncDateParseFromFormat(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 	}
 	format := string(args[0].AsString(ctx))
 	datetime := string(args[1].AsString(ctx))
+	// Reject null bytes (PHP 8.3+: ValueError)
+	if strings.ContainsRune(datetime, 0) {
+		return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+			"date_parse_from_format(): Argument #2 ($datetime) must not contain any null bytes")
+	}
 	result := phpv.NewZArray()
 	parseErrors := newDateParseErrors()
 	t, ok := createFromFormatParsed(ctx, format, datetime, time.UTC)

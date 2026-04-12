@@ -1178,16 +1178,14 @@ func createFromFormatStaticFor(targetClass *phpobj.ZClass) func(ctx phpv.Context
 		format := string(args[0].AsString(ctx))
 		datetime := string(args[1].AsString(ctx))
 
-		// Reject null bytes in format or datetime (PHP behavior)
-		for _, c := range format {
-			if c == 0 {
-				return phpv.ZBool(false).ZVal(), nil
-			}
+		// Reject null bytes in format or datetime (PHP 8.3+: ValueError)
+		if strings.ContainsRune(format, 0) {
+			return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+				fmt.Sprintf("%s::createFromFormat(): Argument #1 ($format) must not contain any null bytes", targetClass.Name))
 		}
-		for _, c := range datetime {
-			if c == 0 {
-				return phpv.ZBool(false).ZVal(), nil
-			}
+		if strings.ContainsRune(datetime, 0) {
+			return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
+				fmt.Sprintf("%s::createFromFormat(): Argument #2 ($datetime) must not contain any null bytes", targetClass.Name))
 		}
 
 		// Determine timezone
@@ -3913,7 +3911,6 @@ func init() {
 			"createfromformat": {
 				Name:      "createFromFormat",
 				Modifiers: phpv.ZAttrPublic | phpv.ZAttrStatic,
-				Method:    phpobj.NativeStaticMethod(createFromFormatStaticFor(DateTimeImmutable)),
 			},
 			"createfromtimestamp": {
 				Name:      "createFromTimestamp",
@@ -3959,6 +3956,7 @@ func init() {
 		},
 	}
 	// Wire up methods that reference DateTimeImmutable itself
+	DateTimeImmutable.Methods["createfromformat"].Method = phpobj.NativeStaticMethod(createFromFormatStaticFor(DateTimeImmutable))
 	DateTimeImmutable.Methods["__set_state"].Method = phpobj.NativeStaticMethod(dateTimeSetState(DateTimeImmutable))
 	DateTimeImmutable.Methods["createfromtimestamp"].Method = phpobj.NativeStaticMethod(createFromTimestampStatic(DateTimeImmutable))
 	DateTimeImmutable.Methods["createfrominterface"].Method = phpobj.NativeStaticMethod(createFromInterfaceStatic(DateTimeImmutable))
