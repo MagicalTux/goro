@@ -1,6 +1,8 @@
 #!/bin/bash
 # Extract failing test names and diffs from the latest CI run
 # Usage: ./tools/ci-failures.sh [run_id] [limit]
+#
+# If the run is still in progress, waits for the test job to complete.
 
 set -e
 
@@ -9,17 +11,50 @@ LIMIT="${2:-50}"
 
 echo "=== CI Run: $RUN_ID ==="
 
-# Find the coverage job (it runs all 2000 tests)
-JOB_ID=$(gh api "repos/MagicalTux/goro/actions/runs/$RUN_ID/jobs" -q '.jobs[] | select(.name == "coverage") | .id')
+# Check run status
+STATUS=$(gh api "repos/MagicalTux/goro/actions/runs/$RUN_ID" -q '.status')
+CONCLUSION=$(gh api "repos/MagicalTux/goro/actions/runs/$RUN_ID" -q '.conclusion // empty')
 
-if [ -z "$JOB_ID" ]; then
-    # Try test job instead
-    JOB_ID=$(gh api "repos/MagicalTux/goro/actions/runs/$RUN_ID/jobs" -q '.jobs[] | select(.name | startswith("test")) | .id' | head -1)
+# Find the test job (coverage or test-*)
+find_job() {
+    local jid
+    jid=$(gh api "repos/MagicalTux/goro/actions/runs/$RUN_ID/jobs" -q '.jobs[] | select(.name == "coverage") | .id' 2>/dev/null)
+    if [ -z "$jid" ]; then
+        jid=$(gh api "repos/MagicalTux/goro/actions/runs/$RUN_ID/jobs" -q '.jobs[] | select(.name | startswith("test")) | .id' 2>/dev/null | head -1)
+    fi
+    echo "$jid"
+}
+
+JOB_ID=$(find_job)
+
+if [ -z "$JOB_ID" ] && [ "$STATUS" != "completed" ]; then
+    echo "Run is $STATUS, waiting for test job to appear..."
+    while [ -z "$JOB_ID" ]; do
+        sleep 10
+        JOB_ID=$(find_job)
+        STATUS=$(gh api "repos/MagicalTux/goro/actions/runs/$RUN_ID" -q '.status')
+        if [ "$STATUS" = "completed" ] && [ -z "$JOB_ID" ]; then
+            echo "Run completed but no test job found"
+            exit 1
+        fi
+    done
 fi
 
 if [ -z "$JOB_ID" ]; then
     echo "No test job found in run $RUN_ID"
     exit 1
+fi
+
+# Wait for the job to finish if still running
+JOB_STATUS=$(gh api "repos/MagicalTux/goro/actions/jobs/$JOB_ID" -q '.status')
+if [ "$JOB_STATUS" != "completed" ]; then
+    echo "Job $JOB_ID is $JOB_STATUS, waiting..."
+    while [ "$JOB_STATUS" != "completed" ]; do
+        sleep 15
+        JOB_STATUS=$(gh api "repos/MagicalTux/goro/actions/jobs/$JOB_ID" -q '.status')
+        echo -n "."
+    done
+    echo " done"
 fi
 
 echo "Job ID: $JOB_ID"
