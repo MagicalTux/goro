@@ -439,7 +439,10 @@ func runTest(fpath string) (p *phptest, err error) {
 				// start of a new thing?
 				if b != nil {
 					err := p.handlePart(part, b)
-					if err != nil && err != skipTest {
+					if err == skipTest {
+						return p, nil // test skipped
+					}
+					if err != nil {
 						return p, err
 					}
 				}
@@ -456,7 +459,10 @@ func runTest(fpath string) (p *phptest, err error) {
 	}
 	if b != nil {
 		err := p.handlePart(part, b)
-		if err != nil && err != skipTest {
+		if err == skipTest {
+			return p, nil
+		}
+		if err != nil {
 			return p, err
 		}
 	}
