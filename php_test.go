@@ -18,6 +18,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/MagicalTux/goro/core/compiler"
 	"github.com/MagicalTux/goro/core/ini"
@@ -851,8 +852,10 @@ func expectfToRegex(pattern string) string {
 			}
 			i += 2
 		} else {
-			result.WriteString(regexp.QuoteMeta(sanitizeForRegex(pattern[i : i+1])))
-			i++
+			// Decode full UTF-8 rune to avoid splitting multi-byte characters
+			_, size := utf8.DecodeRuneInString(pattern[i:])
+			result.WriteString(regexp.QuoteMeta(sanitizeForRegex(pattern[i : i+size])))
+			i += size
 		}
 	}
 	return result.String()

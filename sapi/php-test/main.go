@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"runtime/debug"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/MagicalTux/goro/core/compiler"
 	"github.com/MagicalTux/goro/core/ini"
@@ -388,8 +389,10 @@ func expectfToRegex(pattern string) (*regexp.Regexp, error) {
 			i += 2
 			continue
 		}
-		buf.WriteString(regexp.QuoteMeta(string(ch)))
-		i++
+		// Decode full UTF-8 rune to avoid splitting multi-byte characters
+		r, size := utf8.DecodeRuneInString(pattern[i:])
+		buf.WriteString(regexp.QuoteMeta(string(r)))
+		i += size
 	}
 	buf.WriteString("\\z")
 	return regexp.Compile(buf.String())
