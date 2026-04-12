@@ -20,6 +20,7 @@ import (
 	"github.com/MagicalTux/goro/core/ini"
 	"github.com/MagicalTux/goro/core/phperr"
 	"github.com/MagicalTux/goro/core/phpctx"
+	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
 	_ "github.com/MagicalTux/goro/ext/bz2"
@@ -123,6 +124,8 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		}
 		// Re-sync memory_limit to MemMgr if --INI-- changed it
 		g.ApplyMaxMemoryLimit()
+		// Re-process disable_functions if set by --INI--
+		g.ReinitSuperglobals()
 		// Emit the "PHP Startup: Invalid date.timezone" warning if needed
 		g.ValidateDateTimezone()
 		g.SetOutput(p.output)
@@ -137,11 +140,37 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 			scriptName = abs
 		}
 		t := tokenizer.NewLexer(b, scriptName)
-		c, err := compiler.Compile(g, t)
-		if err != nil {
-			return err
+		c, compileErr := compiler.Compile(g, t)
+		if compileErr != nil {
+			// Handle parse/compile errors: write them to output like PHP does
+			compileErr = phpv.FilterExitError(compileErr)
+			if compileErr != nil {
+				if ex, ok := compileErr.(*phperr.PhpThrow); ok {
+					// CompileError/ParseError thrown as exception
+					if ex.Obj.GetClass().InstanceOf(phpobj.ParseError) {
+						msg := ex.Obj.HashTable().GetString("message").String()
+						file := ex.ThrownFile()
+						line := ex.ThrownLine()
+						fmt.Fprintf(p.output, "\nParse error: %s in %s on line %d\n", msg, file, line)
+					} else {
+						trace, replacement := ex.ErrorTrace(g)
+						displayEx := ex
+						if replacement != nil {
+							displayEx = replacement
+						}
+						fmt.Fprintf(p.output, "\nFatal error: %s\n  thrown in %s on line %d\n",
+							trace, displayEx.ThrownFile(), displayEx.ThrownLine())
+					}
+				} else if phpErr, ok := compileErr.(*phpv.PhpError); ok {
+					g.LogError(phpErr)
+				} else {
+					fmt.Fprintf(p.output, "\nFatal error: %s\n", compileErr.Error())
+				}
+			}
+			g.Close()
+			return nil
 		}
-		_, err = c.Run(g)
+		_, err := c.Run(g)
 		g.Close()
 		// Handle uncaught exceptions and fatal errors: in PHP, these produce
 		// "Fatal error: ..." output and terminate the script. For test purposes,
