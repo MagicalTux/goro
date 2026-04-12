@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"iter"
-	"strings"
 
 	"github.com/MagicalTux/goro/core/phperr"
 	"github.com/MagicalTux/goro/core/phpobj"
@@ -300,13 +299,10 @@ func (r *runnableForeach) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 			return nil, errors.New("foreach value must be writable")
 		} else {
 			if r.ref {
-				// Check if creating a reference would violate readonly constraints.
-				// Foreach-by-ref uses "Cannot indirectly modify" (not "Cannot modify").
+				// Check if creating a reference would violate readonly constraints
 				if rc, ok := r.v.(phpv.ReadonlyRefChecker); ok {
 					if err := rc.CheckReadonlyRef(ctx); err != nil {
-						msg := err.Error()
-						msg = strings.Replace(msg, "Cannot modify readonly", "Cannot indirectly modify readonly", 1)
-						return nil, phpobj.ThrowError(ctx, phpobj.Error, msg)
+						return nil, err
 					}
 				}
 				// v is already a reference from CurrentMakeRef
