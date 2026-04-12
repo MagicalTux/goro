@@ -255,6 +255,13 @@ func (c *Config) Parse(ctx phpv.Context, r io.Reader) error {
 		k := strings.TrimSpace(l[:pos])
 		l = strings.TrimSpace(l[pos+1:])
 
+		// Strip inline comments: ; starts a comment unless inside quotes
+		if !strings.HasPrefix(l, "\"") && !strings.HasPrefix(l, "'") {
+			if semi := strings.IndexByte(l, ';'); semi != -1 {
+				l = strings.TrimSpace(l[:semi])
+			}
+		}
+
 		expr, err := c.EvalConfigValue(ctx, phpv.ZString(l))
 		if err != nil {
 			return err

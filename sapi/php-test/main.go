@@ -284,6 +284,12 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 			if idx := strings.IndexByte(line, '='); idx >= 0 {
 				key := strings.TrimSpace(line[:idx])
 				val := strings.TrimSpace(line[idx+1:])
+				// Strip inline comments (;) unless value is quoted
+				if !strings.HasPrefix(val, "\"") && !strings.HasPrefix(val, "'") {
+					if semi := strings.IndexByte(val, ';'); semi != -1 {
+						val = strings.TrimSpace(val[:semi])
+					}
+				}
 				val = strings.ReplaceAll(val, "{PWD}", dir)
 				p.ini[key] = val
 			}
