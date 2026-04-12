@@ -2514,13 +2514,20 @@ func (g *Global) NextResourceID() int {
 }
 
 func (g *Global) NextObjectID() int {
+	if n := len(g.freeObjectIDs); n > 0 {
+		// PHP reuses object handles LIFO (most recently freed first).
+		id := g.freeObjectIDs[n-1]
+		g.freeObjectIDs = g.freeObjectIDs[:n-1]
+		return id
+	}
 	g.nextObjectID++
 	return g.nextObjectID
 }
 
 func (g *Global) ReleaseObjectID(id int) {
-	// PHP does not reuse object IDs within a request. The ID is monotonically
-	// increasing. Callers may still call ReleaseObjectID but it's a no-op.
+	if id > 0 {
+		g.freeObjectIDs = append(g.freeObjectIDs, id)
+	}
 }
 
 // tempObjectEntry is a (id, isFree) pair for temporary object tracking.
