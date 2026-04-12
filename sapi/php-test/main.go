@@ -290,8 +290,24 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		}
 		return nil
 	case "EXTENSIONS":
-		// TODO
-		return skipTest
+		// Check that all required extensions are loaded.
+		// Each line is an extension name.
+		for _, line := range strings.Split(b.String(), "\n") {
+			ext := strings.TrimSpace(line)
+			if ext == "" {
+				continue
+			}
+			if !phpctx.HasExt(ext) {
+				return skipTest
+			}
+		}
+		return nil
+	case "CLEAN", "DESCRIPTION", "WHITESPACE_SENSITIVE", "ENV":
+		// CLEAN: cleanup code (temp files) — not needed, we don't create them
+		// DESCRIPTION: descriptive text — informational only
+		// WHITESPACE_SENSITIVE: marker — we already do exact matching
+		// ENV: set environment variables — TODO but safe to ignore for now
+		return nil
 	case "XFAIL":
 		// TODO but safe to ignore
 		return nil
