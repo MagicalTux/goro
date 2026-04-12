@@ -217,18 +217,18 @@ func (p *phptest) handlePart(part string, b *bytes.Buffer) error {
 		}
 		return phpv.FilterExitError(err)
 	case "EXPECT":
-		// compare p.output with b
-		out := bytes.TrimSpace(p.output.Bytes())
-		exp := bytes.TrimSpace(b.Bytes())
+		// compare p.output with b (normalize \r\n → \n)
+		out := bytes.ReplaceAll(bytes.TrimSpace(p.output.Bytes()), []byte("\r\n"), []byte("\n"))
+		exp := bytes.ReplaceAll(bytes.TrimSpace(b.Bytes()), []byte("\r\n"), []byte("\n"))
 
-		if bytes.Compare(out, exp) != 0 {
+		if !bytes.Equal(out, exp) {
 			return fmt.Errorf("output not as expected!\n%s", diff.LineDiff(string(exp), string(out)))
 		}
 		return nil
 	case "EXPECTF":
-		// compare p.output with b using PHP format specifiers
-		out := bytes.TrimSpace(p.output.Bytes())
-		exp := bytes.TrimSpace(b.Bytes())
+		// compare p.output with b using PHP format specifiers (normalize \r\n → \n)
+		out := bytes.ReplaceAll(bytes.TrimSpace(p.output.Bytes()), []byte("\r\n"), []byte("\n"))
+		exp := bytes.ReplaceAll(bytes.TrimSpace(b.Bytes()), []byte("\r\n"), []byte("\n"))
 
 		re, err := expectfToRegex(string(exp))
 		if err != nil {
