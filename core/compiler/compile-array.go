@@ -665,6 +665,7 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 						return nil, err
 					}
 					ac.cachedAppendRef = ref
+					ac.cachedOffset = phpv.ZInt(lastKey).ZVal()
 					ac.returnedLiveRef = true
 					return ref, nil
 				}
@@ -981,6 +982,12 @@ func (ac *runArrayAccess) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 	}
 
 	if ac.offset == nil {
+		// For compound assignments ($arr[] .= "x"), Run() already appended a
+		// null element and cached its key. Write to that element instead of
+		// appending another one.
+		if ac.cachedOffset != nil {
+			return array.OffsetSet(ctx, ac.cachedOffset, value)
+		}
 		// append
 		if err := array.OffsetSet(ctx, nil, value); err != nil {
 			if err == phpv.ErrNextElementOccupied {
