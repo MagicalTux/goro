@@ -4,12 +4,16 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync/atomic"
 
 	"github.com/MagicalTux/goro/core/logopt"
 	"github.com/MagicalTux/goro/core/phpobj"
 	"github.com/MagicalTux/goro/core/phpv"
 	"github.com/MagicalTux/goro/core/tokenizer"
 )
+
+// anonClassCounter provides unique IDs for anonymous class names.
+var anonClassCounter uint64
 
 // nullSafeChainProducer is implemented by compiled nodes that may produce null
 // via the ?-> short-circuit mechanism. When such a node is the ref of a
@@ -534,7 +538,8 @@ func compileNew(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		} else if len(class.ImplementsStr) > 0 {
 			prefix = string(class.ImplementsStr[0])
 		}
-		class.Name = phpv.ZString(fmt.Sprintf("%s@anonymous\x00%s:%d$0", prefix, n.l.Filename, n.l.Line))
+		anonID := atomic.AddUint64(&anonClassCounter, 1) - 1
+		class.Name = phpv.ZString(fmt.Sprintf("%s@anonymous\x00%s:%d$%x", prefix, n.l.Filename, n.l.Line, anonID))
 		class.Attr |= phpv.ZClassAnon
 
 		return &runNewAnonymousClass{
