@@ -429,6 +429,10 @@ func (z *ZObject) toArray(ctx phpv.Context) *phpv.ZArray {
 			key = prop.VarName
 		}
 		v := z.GetPropValue(prop)
+		// Dereference values: (array) cast breaks reference links
+		if v != nil && v.IsRef() {
+			v = v.Dup()
+		}
 		arr.OffsetSet(ctx, key, v)
 	}
 	return arr
