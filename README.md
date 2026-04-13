@@ -24,7 +24,7 @@ go install github.com/MagicalTux/goro/sapi/php-cli@latest
 
 ## Status
 
-Goro passes **~11,826 of 12,110 tests** (~97.6%) from the PHP 8.5.4 test suite (~198 failures, 86 skipped in CI). PHP memory_limit enforcement (128MB default). Includes PCRE2 via gopcre2, IANA timezones via gotz, and 10 extensions (session, xml, curl, gd, sockets, zlib, mysqli, sqlite3, bz2).
+Goro passes **~11,834 of 12,110 tests** (~97.7%) from the PHP 8.5.4 test suite (~190 failures, 86 skipped in CI). PHP memory_limit enforcement (128MB default). Includes PCRE2 via gopcre2, IANA timezones via gotz, and 10 extensions (session, xml, curl, gd, sockets, zlib, mysqli, sqlite3, bz2).
 
 ### Remaining test failures by area
 
