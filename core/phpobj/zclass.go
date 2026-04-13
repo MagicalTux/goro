@@ -2421,7 +2421,7 @@ func (c *ZClass) warnNonPublicMagicMethods(ctx phpv.Context) {
 		}
 		// Only warn if explicitly declared private or protected in this class (not inherited)
 		if (m.Modifiers.Has(phpv.ZAttrPrivate) || m.Modifiers.Has(phpv.ZAttrProtected)) && (m.Class == nil || m.Class == c) {
-			ctx.Warn("The magic method %s::%s() must have public visibility", c.Name, m.Name, logopt.NoFuncName(true))
+			ctx.Warn("The magic method %s::%s() must have public visibility", c.Name, m.Name, logopt.NoFuncName(true), c.L)
 		}
 	}
 }

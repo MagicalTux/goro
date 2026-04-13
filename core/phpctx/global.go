@@ -1273,6 +1273,8 @@ func getLogArgs(args []any) (logopt.Data, []any) {
 			option.IsInternal = bool(t)
 		case logopt.LocNewLine:
 			option.LocNewLine = bool(t)
+		case *phpv.Loc:
+			option.Loc = t
 		case logopt.Data:
 			option.ErrType = t.ErrType
 			option.NoFuncName = t.NoFuncName
