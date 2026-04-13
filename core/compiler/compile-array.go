@@ -1139,8 +1139,12 @@ func (ac *runArrayAccess) PrepareWrite(ctx phpv.Context) error {
 		// the LHS target before the RHS expression, so the overflow error must
 		// fire before "Only variables should be assigned by reference" notices.
 		// Set writeContext on the inner access to suppress "Undefined array key"
-		// warnings — we're about to write to this location, not read it.
+		// and "Undefined property" warnings — we're about to write to this location, not read it.
 		if inner, ok := ac.value.(*runArrayAccess); ok {
+			inner.writeContext = true
+			defer func() { inner.writeContext = false }()
+		}
+		if inner, ok := ac.value.(*runObjectVar); ok {
 			inner.writeContext = true
 			defer func() { inner.writeContext = false }()
 		}
