@@ -44,6 +44,17 @@ func (e *PhpThrow) ThrownLine() int {
 	return 0
 }
 
+// SetLocation overrides the exception's file and line (both on the Loc
+// and on the exception object's properties). Used when an error originates
+// from an internal context like __toString() conversion.
+func (e *PhpThrow) SetLocation(file string, line int) {
+	e.Loc = &phpv.Loc{Filename: file, Line: line}
+	if e.Obj != nil {
+		e.Obj.HashTable().SetString("file", phpv.ZString(file).ZVal())
+		e.Obj.HashTable().SetString("line", phpv.ZInt(line).ZVal())
+	}
+}
+
 // ErrorTrace formats the exception for uncaught-exception output.
 // It calls __toString() on the exception object, which handles the full
 // $previous chain. If __toString() itself throws (e.g. because the
@@ -83,6 +94,9 @@ func (e *PhpThrow) ErrorTrace(ctx phpv.Context) (string, *PhpThrow) {
 		// __toString() threw an error. PHP displays the conversion
 		// error as the fatal error, with location "[no active file]:0".
 		if inner, ok := phpv.UnwrapError(err).(*PhpThrow); ok {
+			// Override location to [no active file]:0 since the error
+			// originated from an internal __toString() conversion.
+			inner.SetLocation("[no active file]", 0)
 			// Format the inner exception the normal way (recursive).
 			s, replacement := inner.ErrorTrace(ctx)
 			if replacement != nil {

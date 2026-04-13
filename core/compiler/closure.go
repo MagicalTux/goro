@@ -1887,10 +1887,17 @@ func closureFromCallable(ctx phpv.Context, arg *phpv.ZVal) (*phpv.ZVal, error) {
 					fmt.Sprintf("Closure::fromCallable(): Argument #1 ($callback) must be a valid callback, class \"%s\" does not have a method \"%s\"", class.GetName(), methodName))
 			}
 
-			// Check visibility for self::/parent:: callables
+			// Find the declaring class for correct error messages.
+			// Walk up the hierarchy to find where the method is first defined.
 			declaringClass := class
 			if member.Class != nil {
 				declaringClass = member.Class
+			} else {
+				for p := class.GetParent(); p != nil; p = p.GetParent() {
+					if _, ok2 := p.GetMethods()[phpv.ZString(member.Name).ToLower()]; ok2 {
+						declaringClass = p
+					}
+				}
 			}
 			if member.Modifiers.IsPrivate() {
 				if callerCls == nil || callerCls.GetName() != declaringClass.GetName() {
@@ -1915,7 +1922,7 @@ func closureFromCallable(ctx phpv.Context, arg *phpv.ZVal) (*phpv.ZVal, error) {
 
 			w := &wrappedClosure{
 				inner:      callable,
-				name:       phpv.ZString(string(class.GetName()) + "::" + string(member.Name)),
+				name:       phpv.ZString(string(declaringClass.GetName()) + "::" + string(member.Name)),
 				class:      class,
 				fromMethod: true,
 				isStaticW:  member.Modifiers.IsStatic(),
@@ -2081,10 +2088,18 @@ func closureFromCallable(ctx phpv.Context, arg *phpv.ZVal) (*phpv.ZVal, error) {
 		}
 
 		// Use the declaring class for the closure's name (e.g., SplDoublyLinkedList::count)
-		// but keep the called class for the scope (for late static binding)
+		// but keep the called class for the scope (for late static binding).
+		// Walk up the hierarchy to find where the method is first defined.
 		displayClass := class
 		if member.Class != nil && member.Class != class {
 			displayClass = member.Class
+		} else {
+			// Walk up to find the topmost parent that declares this method.
+			for p := class.GetParent(); p != nil; p = p.GetParent() {
+				if _, ok2 := p.GetMethods()[methodName.ToLower()]; ok2 {
+					displayClass = p
+				}
+			}
 		}
 		w := &wrappedClosure{
 			inner:      callable,
