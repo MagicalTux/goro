@@ -597,9 +597,9 @@ func (r *runDestroyTemporary) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 				if destructable, ok2 := obj.(interface {
 					CallImplicitDestructor(phpv.Context) error
 				}); ok2 {
-					if derr := destructable.CallImplicitDestructor(ctx); derr != nil {
-						return nil, derr
-					}
+					// Suppress exceptions from destructors during implicit cleanup.
+				// PHP converts these to fatal errors but doesn't propagate them.
+				_ = destructable.CallImplicitDestructor(ctx)
 				}
 			}
 		}
