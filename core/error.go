@@ -48,6 +48,14 @@ func fncTriggerError(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZBool(true).ZVal(), nil
 	}
 	if err != nil {
+		// If the error handler threw an exception, propagate it so it can
+		// be caught by try/catch (not treated as a fatal error).
+		if _, isThrow := err.(*phperr.PhpThrow); isThrow {
+			return nil, err
+		}
+		if _, isThrow := phpv.UnwrapError(err).(*phperr.PhpThrow); isThrow {
+			return nil, err
+		}
 		ctx.LogError(phpErr)
 		// Terminate with exit-like error so the script stops but
 		// FilterExitError suppresses further output at the top level.
