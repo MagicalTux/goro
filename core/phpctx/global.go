@@ -2624,9 +2624,8 @@ func (g *Global) CallDestructors() {
 			}
 			_, derr := g.CallZVal(g, m.Method, nil, obj)
 			if derr != nil {
-				// Exceptions from destructors during shutdown are suppressed
-				// in PHP 8+. They are NOT displayed as fatal errors.
-				_ = derr
+				// Try to handle via the exception handler (GH-10695)
+				g.handleUncaughtException(derr)
 			}
 		}
 	}
