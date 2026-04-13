@@ -13,6 +13,7 @@ import (
 	_ "github.com/MagicalTux/goro/ext/curl"
 	_ "github.com/MagicalTux/goro/ext/ctype"
 	_ "github.com/MagicalTux/goro/ext/date"
+	_ "github.com/MagicalTux/goro/ext/gd"
 	_ "github.com/MagicalTux/goro/ext/gmp"
 	_ "github.com/MagicalTux/goro/ext/hash"
 	_ "github.com/MagicalTux/goro/ext/json"
