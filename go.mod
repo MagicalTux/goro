@@ -5,7 +5,7 @@ go 1.25.3
 require (
 	github.com/KarpelesLab/gopcre2 v0.1.0
 	github.com/KarpelesLab/strftime v1.0.1
-	github.com/KarpelesLab/strtotime v0.1.12
+	github.com/KarpelesLab/strtotime v0.1.13
 	github.com/andreyvit/diff v0.0.0-20170406064948-c7f18ee00883
 	github.com/goark/mt v1.0.0
 	golang.org/x/crypto v0.46.0
