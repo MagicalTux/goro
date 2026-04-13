@@ -78,6 +78,7 @@ Goro passes **~11,825 of 12,110 tests** (~97.6%) from the PHP 8.5.4 test suite (
 | sqlite3 | 20+ | — | SQLite3/SQLite3Result/SQLite3Stmt classes, prepared statements via glebarez/go-sqlite (pure Go) |
 | spl | 40+ | 82% | ArrayObject, ArrayIterator, SplFileObject, SplFixedArray, SplHeap, SplObjectStorage, iterators |
 | reflection | 8 classes | 75% | ReflectionClass (with __toString), ReflectionMethod, ReflectionProperty, ReflectionFunction, ReflectionParameter, ReflectionAttribute |
+| gd | 60+ | — | GdImage class, imagecreate/truecolor, drawing (lines, rectangles, ellipses, polygons, arcs, fill), text (TTF, built-in fonts), PNG/JPEG/GIF/BMP I/O, copy/resize/resample/rotate/crop/flip/scale, filters, convolution — **pure Go via gogd** |
 | getimagesize | — | 100% | 16 image formats (JPEG, PNG, GIF, BMP, WebP, AVIF, HEIF, TIFF, PSD, etc.) |
 
 ### Not yet implemented
@@ -86,7 +87,6 @@ Goro passes **~11,825 of 12,110 tests** (~97.6%) from the PHP 8.5.4 test suite (
 |-----------|-------|
 | PDO | Planned via database/sql (MySQL + SQLite drivers already available) |
 | iconv | Planned via `golang.org/x/text/transform` |
-| gd | Image processing |
 | intl | Internationalization (ICU) |
 | Phar | PHP archive format |
 
