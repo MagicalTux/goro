@@ -2226,10 +2226,19 @@ func closureDebugInfo(ctx phpv.Context, o *phpobj.ZObject) (*phpv.ZVal, error) {
 		arr.OffsetSet(ctx, phpv.ZString("function"), phpv.ZString(w.name).ZVal())
 		if len(w.args) > 0 {
 			paramArr := phpv.NewZArray()
-			for _, a := range w.args {
+			// PHP 8: optional parameters before required ones are implicitly required.
+			// Find the last required parameter index.
+			lastRequired := -1
+			for i := len(w.args) - 1; i >= 0; i-- {
+				if w.args[i].Required {
+					lastRequired = i
+					break
+				}
+			}
+			for i, a := range w.args {
 				paramKey := "$" + string(a.VarName)
 				var paramVal string
-				if a.Required {
+				if a.Required || (i < lastRequired && !a.Variadic) {
 					paramVal = "<required>"
 				} else {
 					paramVal = "<optional>"
@@ -2295,10 +2304,18 @@ func closureDebugInfo(ctx phpv.Context, o *phpobj.ZObject) (*phpv.ZVal, error) {
 	// "parameter" key: function parameters (must come before static/this to match PHP order)
 	if len(z.args) > 0 {
 		paramArr := phpv.NewZArray()
-		for _, a := range z.args {
+		// PHP 8: optional parameters before required ones are implicitly required.
+		lastRequired := -1
+		for i := len(z.args) - 1; i >= 0; i-- {
+			if z.args[i].Required {
+				lastRequired = i
+				break
+			}
+		}
+		for i, a := range z.args {
 			paramKey := "$" + string(a.VarName)
 			var paramVal string
-			if a.Required {
+			if a.Required || (i < lastRequired && !a.Variadic) {
 				paramVal = "<required>"
 			} else {
 				paramVal = "<optional>"
