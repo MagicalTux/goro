@@ -2163,6 +2163,50 @@ func validatePropertyOverride(ctx phpv.Context, class *phpobj.ZClass) error {
 		}
 	}
 
+	// Check property hooks for #[\Override]
+	for _, p := range class.Props {
+		if !p.HasHooks {
+			continue
+		}
+		for _, hookInfo := range []struct {
+			attrs []*phpv.ZAttribute
+			name  string
+		}{
+			{p.GetHookAttrs, "get"},
+			{p.SetHookAttrs, "set"},
+		} {
+			hasOverride := false
+			for _, attr := range hookInfo.attrs {
+				if attr.ClassName == "Override" || attr.ClassName == "\\Override" {
+					hasOverride = true
+					break
+				}
+			}
+			if !hasOverride {
+				continue
+			}
+			// Check if parent class has a matching property with hooks
+			found := false
+			if class.Extends != nil {
+				if parentProp, ok := class.Extends.GetProp(p.VarName); ok {
+					if !parentProp.Modifiers.IsPrivate() {
+						found = true
+					}
+				}
+			}
+			if !found {
+				displayName := string(class.GetName())
+				phpErr := &phpv.PhpError{
+					Err:  fmt.Errorf("%s::$%s::%s() has #[\\Override] attribute, but no matching parent method exists", displayName, p.VarName, hookInfo.name),
+					Code: phpv.E_ERROR,
+					Loc:  class.L,
+				}
+				ctx.Global().LogError(phpErr)
+				return phpv.ExitError(255)
+			}
+		}
+	}
+
 	return nil
 }
 

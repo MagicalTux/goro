@@ -125,9 +125,23 @@ func (r *runOperator) Dump(w io.Writer) error {
 		return err
 	}
 	if r.b != nil {
+		// Wrap lower-precedence expressions (assignments) in parentheses
+		// when they appear inside higher-precedence operators like && or ||.
+		needsParens := false
+		if inner, ok := r.b.(*runOperator); ok && inner.opD != nil && r.opD != nil {
+			if inner.opD.write && !r.opD.write {
+				needsParens = true
+			}
+		}
+		if needsParens {
+			w.Write([]byte("("))
+		}
 		err = r.b.Dump(w)
 		if err != nil {
 			return err
+		}
+		if needsParens {
+			w.Write([]byte(")"))
 		}
 	}
 	return nil
