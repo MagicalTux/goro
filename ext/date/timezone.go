@@ -1575,9 +1575,11 @@ func parsedDateToZArray(ctx phpv.Context, pd *strtotime.ParsedDate) (*phpv.ZVal,
 		result.OffsetSet(ctx, phpv.ZString("second"), phpv.ZBool(false).ZVal())
 	}
 
-	// Fraction
+	// Fraction: float(0) when time components are present, false when no time parsed
 	if pd.Fraction.Set {
 		result.OffsetSet(ctx, phpv.ZString("fraction"), phpv.ZFloat(pd.Fraction.V).ZVal())
+	} else if pd.Hour.Set || pd.Minute.Set || pd.Second.Set {
+		result.OffsetSet(ctx, phpv.ZString("fraction"), phpv.ZFloat(0).ZVal())
 	} else {
 		result.OffsetSet(ctx, phpv.ZString("fraction"), phpv.ZBool(false).ZVal())
 	}
