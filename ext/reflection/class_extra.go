@@ -891,40 +891,6 @@ func formatReflectionClass(ctx phpv.Context, zc *phpobj.ZClass, isObject bool, d
 		enumCaseSet[caseName] = true
 	}
 
-	// For enum classes, output "Enum cases" section before "Constants"
-	if zc.Type.Has(phpv.ZClassTypeEnum) {
-		sb.WriteString(fmt.Sprintf("  - Enum cases [%d] {\n", len(zc.EnumCases)))
-		for _, caseName := range zc.EnumCases {
-			c := zc.Const[caseName]
-			if c == nil {
-				sb.WriteString(fmt.Sprintf("    Case %s\n", caseName))
-				continue
-			}
-			// For backed enums, resolve the backing value from the enum object
-			var backingStr string
-			if zc.EnumBackingType != 0 && c.Value != nil {
-				var resolvedObj *phpv.ZVal
-				if cd, ok := c.Value.(*phpv.CompileDelayed); ok {
-					resolved, err := cd.Run(ctx)
-					if err == nil && resolved != nil {
-						resolvedObj = resolved
-					}
-				} else {
-					resolvedObj = c.Value.ZVal()
-				}
-				if resolvedObj != nil && resolvedObj.GetType() == phpv.ZtObject {
-					obj := resolvedObj.AsObject(ctx)
-					backingVal := obj.HashTable().GetString("value")
-					if backingVal != nil {
-						backingStr = " = " + formatConstantValue(ctx, backingVal)
-					}
-				}
-			}
-			sb.WriteString(fmt.Sprintf("    Case %s%s\n", caseName, backingStr))
-		}
-		sb.WriteString("  }\n\n")
-	}
-
 	// Count non-enum-case constants
 	constCount := 0
 	if zc.Const != nil {

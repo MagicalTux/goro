@@ -710,8 +710,12 @@ func createHookReflectionMethod(ctx phpv.Context, data *reflectionPropertyData, 
 	var method *phpv.ZClassMethod
 	if hookType == "get" {
 		method = &phpv.ZClassMethod{
-			Name:  hookName,
-			Class: data.class,
+			Name:       hookName,
+			Loc:        data.prop.GetHookLoc,
+			LocEnd:     data.prop.GetHookLocEnd,
+			Class:      data.class,
+			ReturnType: data.prop.TypeHint,
+			Attributes: data.prop.GetHookAttrs,
 			Method: &phpv.HookCallable{
 				Hook:     hook,
 				HookName: string(data.class.GetName()) + "::$" + string(data.prop.VarName) + "::get",
@@ -723,8 +727,11 @@ func createHookReflectionMethod(ctx phpv.Context, data *reflectionPropertyData, 
 			paramName = "value"
 		}
 		method = &phpv.ZClassMethod{
-			Name:  hookName,
-			Class: data.class,
+			Name:       hookName,
+			Loc:        data.prop.SetHookLoc,
+			LocEnd:     data.prop.SetHookLocEnd,
+			Class:      data.class,
+			Attributes: data.prop.SetHookAttrs,
 			Method: &phpv.HookCallable{
 				Hook:     hook,
 				HookName: string(data.class.GetName()) + "::$" + string(data.prop.VarName) + "::set",

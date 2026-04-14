@@ -837,15 +837,13 @@ writeModifiers:
 
 	if fga, ok := m.Method.(phpv.FuncGetArgs); ok {
 		funcArgs := fga.GetArgs()
-		if len(funcArgs) > 0 || isInternal {
-			sb.WriteString(fmt.Sprintf("\n  - Parameters [%d] {\n", len(funcArgs)))
-			for i, arg := range funcArgs {
-				sb.WriteString(rcFormatParameter(ctx, i, arg, "    "))
-			}
-			sb.WriteString("  }\n")
+		sb.WriteString(fmt.Sprintf("\n  - Parameters [%d] {\n", len(funcArgs)))
+		for i, arg := range funcArgs {
+			sb.WriteString(rcFormatParameter(ctx, i, arg, "    "))
 		}
-	} else if isInternal {
-		// Internal methods without FuncGetArgs
+		sb.WriteString("  }\n")
+	} else {
+		// Methods without FuncGetArgs (internal or hook methods)
 		sb.WriteString("\n  - Parameters [0] {\n")
 		sb.WriteString("  }\n")
 	}

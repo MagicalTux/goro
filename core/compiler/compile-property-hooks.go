@@ -358,6 +358,7 @@ func compilePropertyHooks(prop *phpv.ZClassProp, class *phpobj.ZClass, c compile
 			}
 			hasGet = true
 			prop.HasGetDeclared = true
+			prop.GetHookLoc = i.Loc()
 			prop.GetIsByRef = hookIsByRef
 			prop.GetHookAttrs = hookAttrs
 			if hookIsFinal {
@@ -421,6 +422,7 @@ func compilePropertyHooks(prop *phpv.ZClassProp, class *phpobj.ZClass, c compile
 			}
 			hasSet = true
 			prop.HasSetDeclared = true
+			prop.SetHookLoc = i.Loc()
 			prop.SetHookAttrs = hookAttrs
 			if hookIsFinal {
 				prop.SetIsFinal = true
