@@ -3025,6 +3025,50 @@ func (c *ZClass) Dump(w io.Writer) error {
 		}
 	}
 
+	// Output properties (skip for enums — their properties are auto-generated)
+	if !isEnum {
+	for _, p := range c.Props {
+		// Output attributes for this property
+		for _, attr := range p.Attributes {
+			if _, err := fmt.Fprintf(iw, "#[%s]\n", attr.ClassName); err != nil {
+				return err
+			}
+		}
+		var parts []string
+		if p.Modifiers.IsPublic() {
+			parts = append(parts, "public")
+		} else if p.Modifiers.IsProtected() {
+			parts = append(parts, "protected")
+		} else if p.Modifiers.IsPrivate() {
+			parts = append(parts, "private")
+		}
+		// Asymmetric visibility: private(set) / protected(set)
+		if p.SetModifiers != 0 {
+			if p.SetModifiers.IsPrivate() {
+				parts = append(parts, "private(set)")
+			} else if p.SetModifiers.IsProtected() {
+				parts = append(parts, "protected(set)")
+			}
+		}
+		if p.Modifiers.IsStatic() {
+			parts = append(parts, "static")
+		}
+		if p.Modifiers.Has(phpv.ZAttrReadonly) {
+			parts = append(parts, "readonly")
+		}
+		if p.TypeHint != nil {
+			parts = append(parts, p.TypeHint.String())
+		}
+		prefix := strings.Join(parts, " ")
+		if prefix != "" {
+			prefix += " "
+		}
+		if _, err := fmt.Fprintf(iw, "%s$%s;\n", prefix, p.VarName); err != nil {
+			return err
+		}
+	}
+	}
+
 	// Output methods (for both enums and classes)
 	type methodDumper interface {
 		Dump(io.Writer) error
