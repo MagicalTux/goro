@@ -491,6 +491,15 @@ func (closure *ZClosure) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 		return nil, ctx.Global().RegisterFunction(closure.name, closure)
 	}
 	c := closure.dup()
+	// For closures in property initializers (const expressions) and attribute
+	// arguments, the compiling class is explicitly set to the declaring class.
+	// Check this FIRST because ctx.Class() may return the class of the caller
+	// (e.g., ReflectionAttribute) rather than the intended scope.
+	if c.class == nil {
+		if compilingClass := ctx.Global().GetCompilingClass(); compilingClass != nil {
+			c.class = compilingClass
+		}
+	}
 	// Capture $this from the enclosing method (non-static closures only)
 	if !c.isStatic && c.this == nil && ctx.This() != nil {
 		c.this = ctx.This()
@@ -505,14 +514,6 @@ func (closure *ZClosure) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 	// capture the class scope so self:: and static:: resolve correctly.
 	if !c.isStatic && c.class == nil && ctx.Class() != nil {
 		c.class = ctx.Class()
-	}
-	// For closures in property initializers (const expressions), capture the
-	// compiling class scope. This allows closures defined as property defaults
-	// to access private members of their defining class.
-	if c.class == nil {
-		if compilingClass := ctx.Global().GetCompilingClass(); compilingClass != nil {
-			c.class = compilingClass
-		}
 	}
 	// Capture the called class for late static binding (static::class).
 	// For instance method contexts, the called class is the actual runtime class
@@ -2238,7 +2239,9 @@ func closureDebugInfo(ctx phpv.Context, o *phpobj.ZObject) (*phpv.ZVal, error) {
 			for i, a := range w.args {
 				paramKey := "$" + string(a.VarName)
 				var paramVal string
-				if a.Required || (i < lastRequired && !a.Variadic) {
+				if a.Variadic {
+					paramVal = "<optional>"
+				} else if a.Required || (i < lastRequired) {
 					paramVal = "<required>"
 				} else {
 					paramVal = "<optional>"
@@ -2315,7 +2318,9 @@ func closureDebugInfo(ctx phpv.Context, o *phpobj.ZObject) (*phpv.ZVal, error) {
 		for i, a := range z.args {
 			paramKey := "$" + string(a.VarName)
 			var paramVal string
-			if a.Required || (i < lastRequired && !a.Variadic) {
+			if a.Variadic {
+				paramVal = "<optional>"
+			} else if a.Required || (i < lastRequired) {
 				paramVal = "<required>"
 			} else {
 				paramVal = "<optional>"

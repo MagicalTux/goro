@@ -986,7 +986,10 @@ func (ac *runArrayAccess) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 		// null element and cached its key. Write to that element instead of
 		// appending another one.
 		if ac.cachedOffset != nil {
-			return array.OffsetSet(ctx, ac.cachedOffset, value)
+			offset := ac.cachedOffset
+			ac.cachedOffset = nil
+			ac.prepared = false
+			return array.OffsetSet(ctx, offset, value)
 		}
 		// append
 		if err := array.OffsetSet(ctx, nil, value); err != nil {
@@ -994,14 +997,6 @@ func (ac *runArrayAccess) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 				return phpobj.ThrowError(ctx, phpobj.Error, err.Error())
 			}
 			return err
-		}
-		// Cache the key of the newly appended element so a subsequent Run()
-		// call (e.g. for by-ref parameter binding) can find the new element.
-		if za, ok := array.(*phpv.ZArray); ok {
-			if lastKey, ok2 := za.H().LastIntKey(); ok2 {
-				ac.prepared = true
-				ac.cachedOffset = phpv.ZInt(lastKey).ZVal()
-			}
 		}
 		return nil
 	}

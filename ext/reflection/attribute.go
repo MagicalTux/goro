@@ -399,7 +399,13 @@ func reflectionAttributeToString(ctx phpv.Context, o *phpobj.ZObject, args []*ph
 
 		// Use unevaluated expression source text if available
 		if attr.ArgExprs != nil && i < len(attr.ArgExprs) && attr.ArgExprs[i] != nil {
-			sb.WriteString(phpv.DebugDump(attr.ArgExprs[i]))
+			// For closure expressions, display as Closure({closure-name})
+			// instead of dumping the full source code.
+			if zc, ok := attr.ArgExprs[i].(phpv.ZClosure); ok {
+				sb.WriteString("Closure(" + zc.Name() + ")")
+			} else {
+				sb.WriteString(phpv.DebugDump(attr.ArgExprs[i]))
+			}
 		} else if i < len(attr.Args) && attr.Args[i] != nil {
 			sb.WriteString(formatAttrArgValue(ctx, attr.Args[i]))
 		}
