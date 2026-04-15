@@ -4513,9 +4513,9 @@ func datePeriodConstruct(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZV
 	// Third arg could be end DateTime or recurrence count
 	if args[2].GetType() == phpv.ZtInt {
 		recCount := int(args[2].AsInt(ctx))
-		if recCount < 1 {
-			return nil, phpobj.ThrowError(ctx, DateException,
-				fmt.Sprintf("DatePeriod::__construct(): Recurrence count must be greater or equal to 1 and lower than %d", int(^uint(0)>>1)))
+		if recCount < 1 || recCount >= math.MaxInt32 {
+			return nil, phpobj.ThrowError(ctx, DateMalformedPeriodStringException,
+				fmt.Sprintf("DatePeriod::__construct(): Recurrence count must be greater or equal to 1 and lower than %d", math.MaxInt32))
 		}
 		// Store recurrences: PHP stores recurrences + (1 if includeStart) + (1 if includeEnd)
 		storedRec := recCount
@@ -4524,6 +4524,11 @@ func datePeriodConstruct(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZV
 		}
 		if includeEnd {
 			storedRec++
+		}
+		// Check stored recurrences (including options adjustment) against limit
+		if storedRec >= math.MaxInt32 {
+			return nil, phpobj.ThrowError(ctx, DateMalformedStringException,
+				fmt.Sprintf("DatePeriod::__construct(): Recurrence count must be greater or equal to 1 and lower than %d (including options)", math.MaxInt32))
 		}
 		this.ObjectSet(ctx, phpv.ZString("recurrences"), phpv.ZInt(storedRec).ZVal())
 		// Opaque true = recurrences were explicitly given
