@@ -620,6 +620,19 @@ func getTimeFromObj(obj phpv.ZObject) (time.Time, bool) {
 	return time.Time{}, false
 }
 
+// dateTimePropGetHandler intercepts property access on DateTime/DateTimeImmutable objects.
+// In PHP, date/timezone_type/timezone are internal properties visible in var_dump/__debugInfo
+// but not accessible as regular properties. Direct access like $dt->date triggers
+// "Undefined property" warning and returns null.
+func dateTimePropGetHandler(ctx phpv.Context, o phpv.ZObject, key phpv.ZString) (*phpv.ZVal, error) {
+	switch key {
+	case "date", "timezone_type", "timezone":
+		ctx.Warn("Undefined property: %s::$%s", o.GetClass().GetName(), key)
+		return phpv.ZNULL.ZVal(), nil
+	}
+	return nil, nil // fall through to normal handling
+}
+
 func setTimeVal(this *phpobj.ZObject, t time.Time) {
 	this.Opaque[DateTimeInterface] = t
 	// Update hash table properties for var_export/serialization
@@ -3681,7 +3694,14 @@ func init() {
 		Implementations: []*phpobj.ZClass{DateTimeInterface},
 		Props:           []*phpv.ZClassProp{},
 		Const:           map[phpv.ZString]*phpv.ZClassConst{},
-		H:               &phpv.ZClassHandlers{HandleCompare: dateTimeCompare},
+		H: &phpv.ZClassHandlers{
+			HandleCompare: dateTimeCompare,
+			// DateTime's date/timezone_type/timezone are internal properties used for
+			// serialization and __debugInfo, but direct property access ($dt->date)
+			// should trigger "Undefined property" warning matching PHP behavior.
+			HandlePropGetEager: true,
+			HandlePropGet: dateTimePropGetHandler,
+		},
 		Methods: map[phpv.ZString]*phpv.ZClassMethod{
 			"__construct": {
 				Name:      "__construct",
@@ -3861,7 +3881,11 @@ func init() {
 		Name:            "DateTimeImmutable",
 		Implementations: []*phpobj.ZClass{DateTimeInterface},
 		Props:           []*phpv.ZClassProp{},
-		H:               &phpv.ZClassHandlers{HandleCompare: dateTimeCompare},
+		H: &phpv.ZClassHandlers{
+			HandleCompare:      dateTimeCompare,
+			HandlePropGetEager: true,
+			HandlePropGet:      dateTimePropGetHandler,
+		},
 		Methods: map[phpv.ZString]*phpv.ZClassMethod{
 			"__construct": {
 				Name:      "__construct",
