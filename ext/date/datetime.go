@@ -4321,6 +4321,11 @@ func init() {
 							return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DatePeriod object")
 						}
 					}
+					// Reset readonly flags so properties can be overwritten
+					// (PHP's __unserialize bypasses readonly enforcement)
+					for _, propName := range []phpv.ZString{"start", "current", "end", "interval", "recurrences", "include_start_date", "include_end_date"} {
+						this.UnmarkReadonlyInit(propName)
+					}
 					// Set properties
 					for _, key := range []string{"start", "current", "end", "interval", "recurrences", "include_start_date", "include_end_date"} {
 						v, _ := arr.OffsetGet(ctx, phpv.ZString(key).ZVal())
