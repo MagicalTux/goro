@@ -257,6 +257,30 @@ func checkDateIntervalInitialized(ctx phpv.Context, obj *phpobj.ZObject) error {
 		fmt.Sprintf("Object of type %s (inheriting DateInterval) has not been correctly initialized by calling parent::__construct() in its constructor", className))
 }
 
+// reorderDatePeriodProps reorders the hash table so that subclass properties
+// appear before the standard DatePeriod properties. This matches PHP's internal
+// get_properties_for() behavior where DatePeriod's built-in properties are
+// appended after user-defined subclass properties.
+func reorderDatePeriodProps(ctx phpv.Context, obj *phpobj.ZObject) {
+	standardKeys := []phpv.ZString{"start", "current", "end", "interval", "recurrences", "include_start_date", "include_end_date"}
+	ht := obj.HashTable()
+	// Save values and remove standard props from hash table
+	saved := make(map[phpv.ZString]*phpv.ZVal)
+	for _, key := range standardKeys {
+		v := ht.GetString(key)
+		if v != nil {
+			saved[key] = v
+			ht.UnsetString(key)
+		}
+	}
+	// Re-add them at the end (after subclass properties)
+	for _, key := range standardKeys {
+		if v, ok := saved[key]; ok {
+			ht.SetString(key, v)
+		}
+	}
+}
+
 // checkDatePeriodInitialized throws DateObjectError if the DatePeriod object is not initialized.
 func checkDatePeriodInitialized(ctx phpv.Context, obj *phpobj.ZObject) error {
 	if _, ok := obj.Opaque[DatePeriod]; ok {
@@ -4121,6 +4145,48 @@ func init() {
 				Modifiers: phpv.ZAttrPublic,
 				Method:    phpobj.NativeMethod(datePeriodGetIterator),
 			},
+			"__debuginfo": {
+				Name:      "__debugInfo",
+				Modifiers: phpv.ZAttrPublic,
+				Method: phpobj.NativeMethod(func(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) (*phpv.ZVal, error) {
+					arr := phpv.NewZArray()
+					// PHP shows subclass properties FIRST, then standard DatePeriod properties.
+					// This matches PHP's get_properties_for(ZEND_PROP_PURPOSE_DEBUG) behavior.
+					builtinProps := map[string]bool{
+						"start": true, "current": true, "end": true, "interval": true,
+						"recurrences": true, "include_start_date": true, "include_end_date": true,
+					}
+					// Subclass properties first (with NUL-byte mangling)
+					for prop := range this.IterProps(ctx) {
+						if builtinProps[string(prop.VarName)] {
+							continue
+						}
+						var key phpv.ZString
+						if prop.Modifiers.IsPrivate() {
+							className := string(this.GetDeclClassName(prop))
+							key = phpv.ZString("\x00" + className + "\x00" + string(prop.VarName))
+						} else if prop.Modifiers.IsProtected() {
+							key = phpv.ZString("\x00*\x00" + string(prop.VarName))
+						} else {
+							key = prop.VarName
+						}
+						v := this.GetPropValue(prop)
+						if v != nil {
+							arr.OffsetSet(ctx, key, v)
+						}
+					}
+					// Standard DatePeriod properties in canonical order
+					for _, key := range []string{"start", "current", "end", "interval", "recurrences", "include_start_date", "include_end_date"} {
+						v, _ := this.ObjectGet(ctx, phpv.ZString(key))
+						if v != nil {
+							arr.OffsetSet(ctx, phpv.ZString(key), v)
+						} else {
+							arr.OffsetSet(ctx, phpv.ZString(key), phpv.ZNULL.ZVal())
+						}
+					}
+					return arr.ZVal(), nil
+				}),
+			},
 			"__serialize": {
 				Name:      "__serialize",
 				Modifiers: phpv.ZAttrPublic,
@@ -4232,6 +4298,8 @@ func init() {
 					}
 					// Mark as initialized
 					this.SetOpaque(DatePeriod, true)
+					// Reorder hash table so subclass properties appear before standard DatePeriod properties
+					reorderDatePeriodProps(ctx, this)
 					return nil, nil
 				}),
 			},
@@ -4471,6 +4539,9 @@ func datePeriodConstruct(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZV
 		this.MarkReadonlyInit(propName)
 	}
 
+	// Reorder hash table so subclass properties appear before standard DatePeriod properties
+	reorderDatePeriodProps(ctx, this)
+
 	return nil, nil
 }
 
@@ -4563,6 +4634,9 @@ func datePeriodInitFromISOCaller(ctx phpv.Context, this *phpobj.ZObject, isoStr 
 	for _, propName := range []phpv.ZString{"start", "current", "end", "interval", "recurrences", "include_start_date", "include_end_date"} {
 		this.MarkReadonlyInit(propName)
 	}
+
+	// Reorder hash table so subclass properties appear before standard DatePeriod properties
+	reorderDatePeriodProps(ctx, this)
 
 	return nil, nil
 }
@@ -4871,22 +4945,24 @@ func datePeriodSetState(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	includeStartVal, _ := arr.OffsetGet(ctx, phpv.ZString("include_start_date").ZVal())
 	includeEndVal, _ := arr.OffsetGet(ctx, phpv.ZString("include_end_date").ZVal())
 
-	// Validate start: must be a DateTimeInterface object (not null)
-	if startVal == nil || startVal.IsNull() {
-		return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DatePeriod object")
-	}
-	if _, ok := startVal.Value().(*phpobj.ZObject); !ok {
-		return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DatePeriod object")
+	// Validate start: must be null or a DateTimeInterface object
+	if startVal != nil && !startVal.IsNull() {
+		startObj, ok := startVal.Value().(*phpobj.ZObject)
+		if !ok || !startObj.Class.InstanceOf(DateTimeInterface) {
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DatePeriod object")
+		}
 	}
 	// Validate end: must be null or DateTimeInterface
 	if endVal != nil && !endVal.IsNull() {
-		if _, ok := endVal.Value().(*phpobj.ZObject); !ok {
+		endObj, ok := endVal.Value().(*phpobj.ZObject)
+		if !ok || !endObj.Class.InstanceOf(DateTimeInterface) {
 			return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DatePeriod object")
 		}
 	}
 	// Validate current: must be null or DateTimeInterface
 	if currentVal != nil && !currentVal.IsNull() {
-		if _, ok := currentVal.Value().(*phpobj.ZObject); !ok {
+		curObj, ok := currentVal.Value().(*phpobj.ZObject)
+		if !ok || !curObj.Class.InstanceOf(DateTimeInterface) {
 			return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DatePeriod object")
 		}
 	}
@@ -4894,7 +4970,7 @@ func datePeriodSetState(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	if intervalVal == nil || intervalVal.IsNull() {
 		return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DatePeriod object")
 	}
-	if intervalVal != nil && !intervalVal.IsNull() {
+	{
 		obj, ok := intervalVal.Value().(*phpobj.ZObject)
 		if !ok || !obj.Class.InstanceOf(DateInterval) {
 			return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DatePeriod object")
@@ -4969,6 +5045,9 @@ func datePeriodSetState(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 		}
 		it.Next(ctx)
 	}
+
+	// Reorder hash table so subclass properties appear before standard DatePeriod properties
+	reorderDatePeriodProps(ctx, obj)
 
 	return obj.ZVal(), nil
 }
