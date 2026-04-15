@@ -1832,6 +1832,20 @@ func NewStreamDeserializer() *StreamDeserializer {
 	}
 }
 
+// NewStreamDeserializerWithRefs creates a StreamDeserializer pre-seeded with
+// existing references. This is needed when a Serializable::unserialize() callback
+// must resolve R:/r: references that point to objects registered by the parent
+// deserializer (e.g. the object being unserialized itself).
+func NewStreamDeserializerWithRefs(refs ...*phpv.ZVal) *StreamDeserializer {
+	return &StreamDeserializer{
+		d: &deserializer{
+			allowAllClasses: true,
+			allowedClasses:  map[phpv.ZString]struct{}{},
+			refs:            refs,
+		},
+	}
+}
+
 // ParseAt unserializes a single PHP value starting at the given offset in str.
 // It returns the parsed value and the offset immediately after the consumed data.
 // Reference tracking is shared across all calls on the same StreamDeserializer.

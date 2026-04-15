@@ -14,8 +14,9 @@ import (
 
 // > class GMP
 var GMP = &phpobj.ZClass{
-	Name: "GMP",
-	Attr: phpv.ZClassFinal,
+	Name:       "GMP",
+	Attr:       phpv.ZClassFinal,
+	Attributes: []*phpv.ZAttribute{{ClassName: "AllowDynamicProperties"}},
 }
 
 // namedMethod wraps a NativeMethod with a proper name for stack traces.
@@ -371,7 +372,7 @@ func init() {
 				inner := rest[2+braceIdx+2 : len(rest)-1]
 				if len(inner) > 0 {
 					// Use the standard PHP deserializer to parse the inner content as pairs
-					d := standard.NewStreamDeserializer()
+					d := standard.NewStreamDeserializerWithRefs(o.ZVal())
 					pos := 0
 					for pos < len(inner) {
 						// Parse key
@@ -386,10 +387,8 @@ func init() {
 							break
 						}
 						pos = nextPos2
-						// Set as dynamic property
-						if kv.GetType() == phpv.ZtString {
-							o.ObjectSet(ctx, kv.Value(), vv)
-						}
+						// Set as dynamic property (keys can be string or int)
+						o.ObjectSet(ctx, kv.Value(), vv)
 					}
 				}
 				return nil, nil
