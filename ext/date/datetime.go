@@ -355,6 +355,11 @@ func parseDateTimeWithTz(ctx phpv.Context, args []*phpv.ZVal) (time.Time, error)
 			if spaceIdx := strings.IndexByte(tsStr, ' '); spaceIdx != -1 {
 				tsStr = tsStr[:spaceIdx]
 			}
+			// Try parsing as int64 first for full precision (float64 loses precision for large values)
+			if iv, err := strconv.ParseInt(tsStr, 10, 64); err == nil {
+				return time.Unix(iv, 0).In(time.FixedZone("+00:00", 0)), nil
+			}
+			// Fall back to float64 for fractional timestamps
 			if fv, err := strconv.ParseFloat(tsStr, 64); err == nil {
 				sec := int64(fv)
 				// For negative fractional timestamps, compute fractional part carefully
@@ -1288,7 +1293,19 @@ func epochDays(t time.Time) int {
 	a := (14 - int(m)) / 12
 	yr := y + 4800 - a
 	mo := int(m) + 12*a - 3
-	return d + (153*mo+2)/5 + 365*yr + yr/4 - yr/100 + yr/400 - 32045
+	// Use floor division for leap year terms (Go truncates towards zero,
+	// but the Julian Day formula requires floor division for negative years)
+	return d + (153*mo+2)/5 + 365*yr + floorDiv(yr, 4) - floorDiv(yr, 100) + floorDiv(yr, 400) - 32045
+}
+
+// floorDiv returns the floor of a/b (division that truncates towards negative infinity).
+// Go's integer division truncates towards zero, which differs for negative operands.
+func floorDiv(a, b int) int {
+	d := a / b
+	if (a^b) < 0 && d*b != a {
+		d--
+	}
+	return d
 }
 
 // dstGapAdjustment returns the number of hours that Go's time.Date added
@@ -3266,9 +3283,14 @@ func init() {
 					o.Opaque[DateTimeZone] = loc
 					// Set hash table props for var_dump/var_export
 					tzTypeVal, _ := arr.OffsetGet(ctx, phpv.ZString("timezone_type").ZVal())
-					if tzTypeVal != nil && !tzTypeVal.IsNull() {
-						o.HashTable().SetString("timezone_type", tzTypeVal)
+					if tzTypeVal == nil || tzTypeVal.GetType() != phpv.ZtInt {
+						return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DateTimeZone object")
 					}
+					tzType := int(tzTypeVal.AsInt(ctx))
+					if tzType < 1 || tzType > 3 {
+						return nil, phpobj.ThrowError(ctx, phpobj.Error, "Invalid serialization data for DateTimeZone object")
+					}
+					o.HashTable().SetString("timezone_type", tzTypeVal)
 					o.HashTable().SetString("timezone", phpv.ZString(tzNameNorm).ZVal())
 					// Restore any user-defined subclass properties
 					restoreSubclassProps(ctx, o, arr, map[string]bool{"timezone": true, "timezone_type": true})
