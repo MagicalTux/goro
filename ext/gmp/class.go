@@ -14,9 +14,8 @@ import (
 
 // > class GMP
 var GMP = &phpobj.ZClass{
-	Name:       "GMP",
-	Attr:       phpv.ZClassFinal,
-	Attributes: []*phpv.ZAttribute{{ClassName: "AllowDynamicProperties"}},
+	Name: "GMP",
+	Attr: phpv.ZClassFinal,
 }
 
 // namedMethod wraps a NativeMethod with a proper name for stack traces.
@@ -387,8 +386,10 @@ func init() {
 							break
 						}
 						pos = nextPos2
-						// Set as dynamic property (keys can be string or int)
-						o.ObjectSet(ctx, kv.Value(), vv)
+						// Set as dynamic property directly (bypass deprecation
+						// check since PHP's GMP unserialize allows dynamic props)
+						keyStr, _ := kv.Value().AsVal(ctx, phpv.ZtString)
+						o.HashTable().SetString(keyStr.(phpv.ZString), vv)
 					}
 				}
 				return nil, nil
