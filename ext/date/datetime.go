@@ -1293,19 +1293,21 @@ func epochDays(t time.Time) int {
 	a := (14 - int(m)) / 12
 	yr := y + 4800 - a
 	mo := int(m) + 12*a - 3
-	// Use floor division for leap year terms (Go truncates towards zero,
-	// but the Julian Day formula requires floor division for negative years)
-	return d + (153*mo+2)/5 + 365*yr + floorDiv(yr, 4) - floorDiv(yr, 100) + floorDiv(yr, 400) - 32045
-}
-
-// floorDiv returns the floor of a/b (division that truncates towards negative infinity).
-// Go's integer division truncates towards zero, which differs for negative operands.
-func floorDiv(a, b int) int {
-	d := a / b
-	if (a^b) < 0 && d*b != a {
-		d--
+	jdn := d + (153*mo+2)/5 + 365*yr + yr/4 - yr/100 + yr/400 - 32045
+	// Correct for Go's truncation toward zero vs floor division for negative yr.
+	// For yr >= 0, Go's division matches floor division so no correction needed.
+	if yr < 0 {
+		if yr%4 != 0 {
+			jdn--
+		}
+		if yr%100 != 0 {
+			jdn++
+		}
+		if yr%400 != 0 {
+			jdn--
+		}
 	}
-	return d
+	return jdn
 }
 
 // dstGapAdjustment returns the number of hours that Go's time.Date added
