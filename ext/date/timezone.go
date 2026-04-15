@@ -1660,6 +1660,7 @@ func fncDateParseFromFormat(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 	hasHour := false
 	hasMinute := false
 	hasSecond := false
+	hasFraction := false
 	for i := 0; i < len(format); i++ {
 		switch format[i] {
 		case 'Y', 'y', 'X', 'x':
@@ -1677,7 +1678,16 @@ func fncDateParseFromFormat(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 			hasMinute = true
 		case 's':
 			hasSecond = true
+		case 'u', 'v': // microseconds/milliseconds
+			hasFraction = true
 		case 'U': // unix timestamp sets everything
+			hasYear = true
+			hasMonth = true
+			hasDay = true
+			hasHour = true
+			hasMinute = true
+			hasSecond = true
+		case '!', '|': // reset all fields to Unix epoch defaults
 			hasYear = true
 			hasMonth = true
 			hasDay = true
@@ -1688,6 +1698,7 @@ func fncDateParseFromFormat(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 			i++ // skip next char
 		}
 	}
+	_ = hasFraction
 
 	if !ok {
 		result.OffsetSet(ctx, phpv.ZString("year"), phpv.ZBool(false).ZVal())
@@ -1730,7 +1741,7 @@ func fncDateParseFromFormat(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 	}
 
 	// Fraction is false when no time fields were in the format
-	if hasHour || hasMinute || hasSecond {
+	if hasHour || hasMinute || hasSecond || hasFraction {
 		result.OffsetSet(ctx, phpv.ZString("fraction"), phpv.ZFloat(0).ZVal())
 	} else {
 		result.OffsetSet(ctx, phpv.ZString("fraction"), phpv.ZBool(false).ZVal())
