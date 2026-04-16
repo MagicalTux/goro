@@ -3,7 +3,6 @@ package phpv
 import (
 	"errors"
 	"math"
-	"sync"
 )
 
 // ErrNextElementOccupied is returned by Append when the next integer key
@@ -31,7 +30,6 @@ type hashTableVal struct {
 
 type ZHashTable struct {
 	first, last *hashTableVal
-	lock        sync.RWMutex
 	inc         ZInt
 	count       ZInt
 	cow         bool
@@ -80,8 +78,6 @@ func (z *ZHashTable) SameData(other *ZHashTable) bool {
 }
 
 func (z *ZHashTable) Dup() *ZHashTable {
-	z.lock.Lock()
-	defer z.lock.Unlock()
 
 	// setting z.cow prevents *all* writes on this array
 	z.cow = true
@@ -109,8 +105,6 @@ func (z *ZHashTable) Dup() *ZHashTable {
 // This is used by ArrayIterator and similar structures that need an independent
 // copy while keeping their iterators pointing at the correct entries.
 func (z *ZHashTable) DeepCopy() *ZHashTable {
-	z.lock.RLock()
-	defer z.lock.RUnlock()
 
 	n := &ZHashTable{
 		inc:        z.inc,
@@ -157,8 +151,6 @@ func (z *ZHashTable) DeepCopy() *ZHashTable {
 }
 
 func (z *ZHashTable) Clear() {
-	z.lock.Lock()
-	defer z.lock.Unlock()
 
 	if z.cow {
 		z.doCopy()
@@ -189,8 +181,6 @@ func (z *ZHashTable) Clear() {
 
 // Similar to Clear, but doesn't set the deleted flag
 func (z *ZHashTable) Empty() {
-	z.lock.Lock()
-	defer z.lock.Unlock()
 
 	if z.cow {
 		z.doCopy()
@@ -271,8 +261,6 @@ func (z *ZHashTable) NewIterator() ZIterator {
 // LastIntKey returns the integer key of the last element in the hash table.
 // Used by WriteValue after appending with [] to find the newly created element.
 func (z *ZHashTable) LastIntKey() (ZInt, bool) {
-	z.lock.RLock()
-	defer z.lock.RUnlock()
 	if z.last == nil {
 		return 0, false
 	}
@@ -287,16 +275,12 @@ func (z *ZHashTable) LastIntKey() (ZInt, bool) {
 // on the same hash table (e.g., foreach by-reference), so the iterator points
 // to the post-copy entries rather than pre-copy entries that get orphaned.
 func (z *ZHashTable) SeparateCow() {
-	z.lock.Lock()
-	defer z.lock.Unlock()
 	if z.cow {
 		z.doCopy()
 	}
 }
 
 func (z *ZHashTable) GetString(k ZString) *ZVal {
-	z.lock.RLock()
-	defer z.lock.RUnlock()
 
 	t, ok := z._idx_s[k]
 	if !ok {
@@ -306,8 +290,6 @@ func (z *ZHashTable) GetString(k ZString) *ZVal {
 }
 
 func (z *ZHashTable) GetStringB(k ZString) (*ZVal, bool) {
-	z.lock.RLock()
-	defer z.lock.RUnlock()
 
 	t, ok := z._idx_s[k]
 	if !ok {
@@ -317,8 +299,6 @@ func (z *ZHashTable) GetStringB(k ZString) (*ZVal, bool) {
 }
 
 func (z *ZHashTable) HasString(k ZString) bool {
-	z.lock.RLock()
-	defer z.lock.RUnlock()
 
 	_, ok := z._idx_s[k]
 	return ok
@@ -329,8 +309,6 @@ func (z *ZHashTable) SetString(k ZString, v *ZVal) error {
 		return z.UnsetString(k)
 	}
 
-	z.lock.Lock()
-	defer z.lock.Unlock()
 
 	if z.cow {
 		z.doCopy()
@@ -377,8 +355,6 @@ func (z *ZHashTable) ForceSetString(k ZString, v *ZVal) error {
 		return z.UnsetString(k)
 	}
 
-	z.lock.Lock()
-	defer z.lock.Unlock()
 
 	if z.cow {
 		z.doCopy()
@@ -415,8 +391,6 @@ func (z *ZHashTable) ForceSetString(k ZString, v *ZVal) error {
 }
 
 func (z *ZHashTable) UnsetString(k ZString) error {
-	z.lock.Lock()
-	defer z.lock.Unlock()
 
 	if z.cow {
 		z.doCopy()
@@ -451,8 +425,6 @@ func (z *ZHashTable) UnsetString(k ZString) error {
 }
 
 func (z *ZHashTable) GetInt(k ZInt) *ZVal {
-	z.lock.RLock()
-	defer z.lock.RUnlock()
 
 	t, ok := z._idx_i[k]
 	if !ok {
@@ -466,8 +438,6 @@ func (z *ZHashTable) SetInt(k ZInt, v *ZVal) error {
 		return z.UnsetInt(k)
 	}
 
-	z.lock.Lock()
-	defer z.lock.Unlock()
 
 	if z.cow {
 		z.doCopy()
@@ -521,8 +491,6 @@ func (z *ZHashTable) SetInt(k ZInt, v *ZVal) error {
 }
 
 func (z *ZHashTable) UnsetInt(k ZInt) error {
-	z.lock.Lock()
-	defer z.lock.Unlock()
 
 	if z.cow {
 		z.doCopy()
@@ -557,8 +525,6 @@ func (z *ZHashTable) UnsetInt(k ZInt) error {
 }
 
 func (z *ZHashTable) HasInt(k ZInt) bool {
-	z.lock.RLock()
-	defer z.lock.RUnlock()
 
 	_, ok := z._idx_i[k]
 	return ok
@@ -568,8 +534,6 @@ func (z *ZHashTable) HasInt(k ZInt) bool {
 // the current maximum integer key in the hash table. This is needed after
 // operations like array_pop() that remove elements from the end.
 func (z *ZHashTable) RecalcNextIntKey() {
-	z.lock.Lock()
-	defer z.lock.Unlock()
 
 	if len(z._idx_i) == 0 {
 		z.inc = 0
@@ -596,8 +560,6 @@ func (z *ZHashTable) RecalcNextIntKey() {
 // equals nNextFreeElement - 1, nNextFreeElement is decremented to match
 // the popped key, preserving negative index behavior.
 func (z *ZHashTable) AdjustNextIntKeyAfterPop(poppedKey ZInt) {
-	z.lock.Lock()
-	defer z.lock.Unlock()
 
 	if poppedKey+1 == z.inc {
 		z.inc = poppedKey
@@ -608,8 +570,6 @@ func (z *ZHashTable) AdjustNextIntKeyAfterPop(poppedKey ZInt) {
 // ErrNextElementOccupied. Used to pre-check overflow before evaluating
 // the RHS of an assignment.
 func (z *ZHashTable) WouldOverflow() bool {
-	z.lock.RLock()
-	defer z.lock.RUnlock()
 	inc := z.inc
 	for {
 		if _, ok := z._idx_i[inc]; ok {
@@ -624,8 +584,6 @@ func (z *ZHashTable) WouldOverflow() bool {
 }
 
 func (z *ZHashTable) Append(v *ZVal) error {
-	z.lock.Lock()
-	defer z.lock.Unlock()
 
 	if z.cow {
 		z.doCopy()
@@ -676,11 +634,6 @@ func (z *ZHashTable) Append(v *ZVal) error {
 
 func (z *ZHashTable) MergeTable(b *ZHashTable) error {
 	// merge values from b into z
-	b.lock.RLock()
-	defer b.lock.RUnlock()
-	z.lock.Lock()
-	defer z.lock.Unlock()
-
 	if z.cow {
 		z.doCopy()
 	}
@@ -742,8 +695,6 @@ func (z *ZHashTable) Count() ZInt {
 
 // modifies all int indices such that the first one starts with zero
 func (z *ZHashTable) ResetIntKeys() {
-	z.lock.Lock()
-	defer z.lock.Unlock()
 
 	// Rebuild the integer index map
 	for k := range z._idx_i {
@@ -768,8 +719,6 @@ func (z *ZHashTable) ResetIntKeys() {
 // keys starting from 0. Returns the removed value, or nil if empty.
 // This modifies the hash table in-place so iterators remain connected.
 func (z *ZHashTable) Shift() *ZVal {
-	z.lock.Lock()
-	defer z.lock.Unlock()
 
 	if z.cow {
 		z.doCopy()
@@ -843,8 +792,6 @@ func (z *ZHashTable) Shift() *ZVal {
 // Unshift prepends values to the beginning of the hash table and re-indexes
 // integer keys. This modifies the hash table in-place so iterators stay connected.
 func (z *ZHashTable) Unshift(values []*ZVal) {
-	z.lock.Lock()
-	defer z.lock.Unlock()
 
 	if z.cow {
 		z.doCopy()
