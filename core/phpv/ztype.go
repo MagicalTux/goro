@@ -41,6 +41,25 @@ var (
 	zTrueZVal  = &ZVal{v: ZBool(true)}
 )
 
+// Cached ZVal wrappers for small integer values commonly used in PHP code
+// (0, 1, -1, loop counters, array indices). Returned by ZInt.ZVal() for
+// values in the range [smallIntMin, smallIntMax]. Same mutation safety rules
+// as above.
+const (
+	smallIntMin = -1
+	smallIntMax = 256
+	smallIntLen = smallIntMax - smallIntMin + 1
+)
+
+var smallIntZVals [smallIntLen]*ZVal
+
+func init() {
+	for i := 0; i < smallIntLen; i++ {
+		v := ZInt(smallIntMin + i)
+		smallIntZVals[i] = &ZVal{v: v}
+	}
+}
+
 // scalar stuff
 type ZNull struct{}
 type ZBool bool
@@ -158,7 +177,10 @@ func (z ZInt) GetType() ZType {
 }
 
 func (z ZInt) ZVal() *ZVal {
-	return NewZVal(z)
+	if z >= smallIntMin && z <= smallIntMax {
+		return smallIntZVals[z-smallIntMin]
+	}
+	return &ZVal{v: z}
 }
 
 func (z ZInt) AsVal(ctx Context, t ZType) (Val, error) {
