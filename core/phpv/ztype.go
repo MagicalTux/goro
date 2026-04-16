@@ -31,6 +31,16 @@ var ZNULL = ZNull{}
 var ZFalse = ZBool(false)
 var ZTrue = ZBool(true)
 
+// Cached ZVal wrappers for ZBool true/false values. These are returned by
+// ZBool.ZVal() to avoid allocating a new wrapper on every comparison result.
+// Callers MUST NOT mutate these (Name, refCount, typeCheckers); *ZVal.ZVal()
+// never returns these (it allocates fresh) so normal copy/assignment paths
+// are safe.
+var (
+	zFalseZVal = &ZVal{v: ZBool(false)}
+	zTrueZVal  = &ZVal{v: ZBool(true)}
+)
+
 // scalar stuff
 type ZNull struct{}
 type ZBool bool
@@ -125,7 +135,10 @@ func (z ZBool) AsVal(ctx Context, t ZType) (Val, error) {
 }
 
 func (z ZBool) ZVal() *ZVal {
-	return NewZVal(z)
+	if z {
+		return zTrueZVal
+	}
+	return zFalseZVal
 }
 
 func (z ZBool) String() string {

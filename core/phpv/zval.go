@@ -97,7 +97,10 @@ func (z *ZVal) ZVal() *ZVal {
 		// special case
 		res = a.Dup().ZVal()
 	default:
-		res = a.ZVal()
+		// Always allocate a fresh ZVal wrapper here (never a cached one)
+		// because we will mutate res.Name below. Primitive .ZVal() methods
+		// may return cached/pooled instances that we must not mutate.
+		res = &ZVal{v: a}
 	}
 	res.Name = z.Name
 	return res
