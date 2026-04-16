@@ -735,7 +735,7 @@ func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		// variable method name
 		varName := op[1:]
 		// Check if the variable is defined - trigger "Undefined variable" warning if not
-		opz, varFound, checkErr := ctx.OffsetCheck(ctx, varName.ZVal())
+		opz, varFound, checkErr := ctx.OffsetCheck(ctx, varName)
 		if checkErr != nil {
 			return nil, checkErr
 		}
@@ -1304,7 +1304,7 @@ func (r *runObjectVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		// Don't consume the cache - it may be needed by WriteValue later
 	} else if r.varName[0] == '$' {
 		// variable
-		offt, err = ctx.OffsetGet(ctx, r.varName[1:].ZVal())
+		offt, err = ctx.OffsetGet(ctx, r.varName[1:])
 		if err != nil {
 			return nil, err
 		}
@@ -1579,7 +1579,7 @@ func (r *runObjectVar) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 		r.cachedProp = nil
 	} else if r.varName[0] == '$' {
 		// variable property name - resolve before error message
-		offt, err = ctx.OffsetGet(ctx, r.varName[1:].ZVal())
+		offt, err = ctx.OffsetGet(ctx, r.varName[1:])
 		if err != nil {
 			return err
 		}

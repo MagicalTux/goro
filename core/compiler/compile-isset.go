@@ -272,7 +272,7 @@ func checkEmpty(ctx phpv.Context, v phpv.Runnable) (bool, error) {
 		// Resolve variable property name (e.g. $this->$name)
 		propName := t.varName
 		if len(propName) > 0 && propName[0] == '$' {
-			propVal, err := ctx.OffsetGet(ctx, propName[1:].ZVal())
+			propVal, err := ctx.OffsetGet(ctx, propName[1:])
 			if err != nil {
 				return true, nil
 			}
@@ -336,7 +336,7 @@ func checkExistence(ctx phpv.Context, v phpv.Runnable, subExpr bool) (bool, erro
 			return false, err
 		}
 		// isset() returns false for NULL values
-		val, err := ctx.OffsetGet(ctx, t.v.ZVal())
+		val, err := ctx.OffsetGet(ctx, t.v)
 		if err != nil {
 			return false, err
 		}
@@ -352,11 +352,11 @@ func checkExistence(ctx phpv.Context, v phpv.Runnable, subExpr bool) (bool, erro
 			return false, err
 		}
 		name := sv.Value().(phpv.ZString)
-		exists, err := ctx.OffsetExists(ctx, name.ZVal())
+		exists, err := ctx.OffsetExists(ctx, name)
 		if !exists || err != nil {
 			return false, err
 		}
-		val, err := ctx.OffsetGet(ctx, name.ZVal())
+		val, err := ctx.OffsetGet(ctx, name)
 		if err != nil {
 			return false, err
 		}
@@ -514,7 +514,7 @@ func checkExistence(ctx phpv.Context, v phpv.Runnable, subExpr bool) (bool, erro
 		// Resolve variable property name (e.g. $this->$name)
 		propName := t.varName
 		if len(propName) > 0 && propName[0] == '$' {
-			propVal, err := ctx.OffsetGet(ctx, propName[1:].ZVal())
+			propVal, err := ctx.OffsetGet(ctx, propName[1:])
 			if err != nil {
 				return false, nil
 			}
@@ -619,7 +619,7 @@ func checkExistenceAndGet(ctx phpv.Context, v phpv.Runnable, subExpr bool) (bool
 		if !exists || err != nil {
 			return false, nil, err
 		}
-		val, err := ctx.OffsetGet(ctx, t.v.ZVal())
+		val, err := ctx.OffsetGet(ctx, t.v)
 		if err != nil {
 			return false, nil, err
 		}
@@ -638,11 +638,11 @@ func checkExistenceAndGet(ctx phpv.Context, v phpv.Runnable, subExpr bool) (bool
 			return false, nil, err
 		}
 		name := svv.Value().(phpv.ZString)
-		exists, err := ctx.OffsetExists(ctx, name.ZVal())
+		exists, err := ctx.OffsetExists(ctx, name)
 		if !exists || err != nil {
 			return false, nil, err
 		}
-		val, err := ctx.OffsetGet(ctx, name.ZVal())
+		val, err := ctx.OffsetGet(ctx, name)
 		if err != nil {
 			return false, nil, err
 		}
