@@ -13,8 +13,14 @@ import (
 
 type runVariable struct {
 	runnableChild
-	v phpv.ZString
-	l *phpv.Loc
+	v    phpv.ZString
+	vVal phpv.Val // cached Val interface for v to avoid per-call boxing
+	l    *phpv.Loc
+}
+
+// newRunVariable constructs a runVariable with the cached Val pre-boxed.
+func newRunVariable(name phpv.ZString, l *phpv.Loc) *runVariable {
+	return &runVariable{v: name, vVal: name, l: l}
 }
 
 type runVariableRef struct {
@@ -81,12 +87,18 @@ func (r *runVariable) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
+	// Cache the boxed Val interface on first use to avoid re-boxing ZString
+	// on every call (which allocates because strings > word size).
+	if r.vVal == nil {
+		r.vVal = r.v
+	}
+
 	varName := r.v.String()
 	if varName == "this" && ctx.This() == nil {
 		return nil, phpobj.ThrowError(ctx, phpobj.Error, "Using $this when not in object context")
 	}
 
-	res, exists, err := ctx.OffsetCheck(ctx, r.v)
+	res, exists, err := ctx.OffsetCheck(ctx, r.vVal)
 	if err != nil {
 		return nil, err
 	}
@@ -190,8 +202,8 @@ func (r *runVariable) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		// later assignment to the variable ($arr = ...) doesn't update through it.
 		if _, isRef := r.Parent.(*runRef); isRef {
 			nullVal := phpv.NewZVal(phpv.ZNULL)
-			_ = ctx.OffsetSet(ctx, r.v, nullVal)
-			res2, exists2, _ := ctx.OffsetCheck(ctx, r.v)
+			_ = ctx.OffsetSet(ctx, r.vVal, nullVal)
+			res2, exists2, _ := ctx.OffsetCheck(ctx, r.vVal)
 			if exists2 && res2 != nil {
 				res2.Name = &r.v
 				return res2, nil
@@ -208,11 +220,14 @@ func (r *runVariable) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 }
 
 func (r *runVariable) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
+	if r.vVal == nil {
+		r.vVal = r.v
+	}
 	var err error
 	if value == nil {
-		err = ctx.OffsetUnset(ctx, r.v)
+		err = ctx.OffsetUnset(ctx, r.vVal)
 	} else {
-		err = ctx.OffsetSet(ctx, r.v, value)
+		err = ctx.OffsetSet(ctx, r.vVal, value)
 	}
 	if err != nil {
 		// Don't wrap PhpThrow errors - they need to propagate as-is
