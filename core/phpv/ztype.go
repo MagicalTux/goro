@@ -53,6 +53,13 @@ const (
 
 var smallIntZVals [smallIntLen]*ZVal
 
+// zEmptyStringZVal is a cached ZVal for empty string. Same mutation rules
+// as other cached ZVals.
+var zEmptyStringZVal = &ZVal{v: ZString("")}
+
+// zFloatZeroZVal is a cached ZVal for float(0).
+var zFloatZeroZVal = &ZVal{v: ZFloat(0)}
+
 func init() {
 	for i := 0; i < smallIntLen; i++ {
 		v := ZInt(smallIntMin + i)
@@ -217,7 +224,10 @@ func (z ZFloat) GetType() ZType {
 }
 
 func (z ZFloat) ZVal() *ZVal {
-	return NewZVal(z)
+	if z == 0 {
+		return zFloatZeroZVal
+	}
+	return &ZVal{v: z}
 }
 
 func (z ZFloat) AsVal(ctx Context, t ZType) (Val, error) {

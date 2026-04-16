@@ -32,7 +32,10 @@ func (z ZString) GetType() ZType {
 }
 
 func (z ZString) ZVal() *ZVal {
-	return NewZVal(z)
+	if z == "" {
+		return zEmptyStringZVal
+	}
+	return &ZVal{v: z}
 }
 
 func (z ZString) AsVal(ctx Context, t ZType) (Val, error) {
