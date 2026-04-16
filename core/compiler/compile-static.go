@@ -80,8 +80,8 @@ func (r *runStaticVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 				}
 				v.perClosure.Store(closureKey, z)
 			}
-			ctx.OffsetUnset(ctx, v.varName.ZVal())
-			ctx.OffsetSet(ctx, v.varName.ZVal(), z)
+			ctx.OffsetUnset(ctx, v.varName)
+			ctx.OffsetSet(ctx, v.varName, z)
 			continue
 		}
 
@@ -125,8 +125,8 @@ func (r *runStaticVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			z = v.z
 		}
 
-		ctx.OffsetUnset(ctx, v.varName.ZVal())
-		ctx.OffsetSet(ctx, v.varName.ZVal(), z)
+		ctx.OffsetUnset(ctx, v.varName)
+		ctx.OffsetSet(ctx, v.varName, z)
 	}
 	return nil, nil
 }

@@ -549,7 +549,7 @@ func (closure *ZClosure) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 				ctx.Warn("Undefined variable $%s", s.VarName, logopt.NoFuncName(true))
 			}
 		}
-		z, err := ctx.OffsetGet(ctx, s.VarName.ZVal())
+		z, err := ctx.OffsetGet(ctx, s.VarName)
 		if err != nil {
 			return nil, err
 		}
@@ -557,7 +557,7 @@ func (closure *ZClosure) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 			// reference capture: share the same ZVal between outer scope and closure
 			if !z.IsRef() {
 				ref := z.Ref()
-				ctx.OffsetSet(ctx, s.VarName.ZVal(), ref)
+				ctx.OffsetSet(ctx, s.VarName, ref)
 				s.Value = ref
 			} else {
 				s.Value = z
@@ -1164,11 +1164,11 @@ func (z *ZClosure) callBody(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 	for _, u := range z.use {
 		if u.Ref {
 			// Reference capture: share the same ZVal between closure and outer scope
-			ctx.OffsetSet(ctx, u.VarName.ZVal(), u.Value)
+			ctx.OffsetSet(ctx, u.VarName, u.Value)
 		} else {
 			// Value capture: duplicate so modifications in the closure
 			// body don't persist across invocations
-			ctx.OffsetSet(ctx, u.VarName.ZVal(), u.Value.Dup())
+			ctx.OffsetSet(ctx, u.VarName, u.Value.Dup())
 		}
 	}
 
@@ -1240,7 +1240,7 @@ func (z *ZClosure) callBody(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 			}
 		}
 		if args[i].IsRef() {
-			ctx.OffsetSet(ctx, a.VarName.ZVal(), args[i].Ref())
+			ctx.OffsetSet(ctx, a.VarName, args[i].Ref())
 		} else {
 			argVal := args[i].Nude().Dup()
 			// Coerce value to match type hint (PHP non-strict mode only)
@@ -1268,7 +1268,7 @@ func (z *ZClosure) callBody(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, er
 					}
 				}
 			}
-			ctx.OffsetSet(ctx, a.VarName.ZVal(), argVal)
+			ctx.OffsetSet(ctx, a.VarName, argVal)
 		}
 	}
 

@@ -181,7 +181,7 @@ func (h *HookCallable) Call(ctx Context, args []*ZVal) (*ZVal, error) {
 	// Set parameter variables in the local scope (like ZClosure.callBody does)
 	for i, p := range h.Params {
 		if i < len(args) && args[i] != nil {
-			ctx.OffsetSet(ctx, p.VarName.ZVal(), args[i])
+			ctx.OffsetSet(ctx, p.VarName, args[i])
 		}
 	}
 	return h.Hook.Run(ctx)

@@ -40,18 +40,18 @@ func (g *runGlobal) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			k = gv.static
 		}
 
-		if ok, _ := glob.OffsetExists(ctx, k.ZVal()); !ok {
+		if ok, _ := glob.OffsetExists(ctx, k); !ok {
 			// need to create it
 			v = phpv.ZNull{}.ZVal()
-			glob.OffsetSet(ctx, k.ZVal(), v)
+			glob.OffsetSet(ctx, k, v)
 		} else {
-			v, err = glob.OffsetGet(ctx, k.ZVal())
+			v, err = glob.OffsetGet(ctx, k)
 			if err != nil {
 				return nil, err
 			}
 		}
 
-		err = ctx.OffsetSet(ctx, k.ZVal(), v)
+		err = ctx.OffsetSet(ctx, k, v)
 		if err != nil {
 			return nil, err
 		}
