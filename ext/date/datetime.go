@@ -635,14 +635,20 @@ func dateTimePropGetHandler(ctx phpv.Context, o phpv.ZObject, key phpv.ZString) 
 
 func setTimeVal(this *phpobj.ZObject, t time.Time) {
 	this.Opaque[DateTimeInterface] = t
-	// Update hash table properties for var_export/serialization
-	dateStr := formatDateTimeStr(t)
-	this.HashTable().SetString("date", phpv.ZString(dateStr).ZVal())
+	// Remove any previously stored date/timezone properties from hash table.
+	// These are internal properties only visible via __debugInfo and __serialize,
+	// not as regular $obj->date property access (which triggers Undefined property warning).
+	this.HashTable().UnsetString("date")
+	this.HashTable().UnsetString("timezone_type")
+	this.HashTable().UnsetString("timezone")
+}
 
+// getTimezoneMeta returns the timezone_type (int) and timezone name (string)
+// for a DateTime's time.Time value. Used by __debugInfo, __serialize, etc.
+func getTimezoneMeta(t time.Time) (int, string) {
 	locName := t.Location().String()
 	tzType := 3
 	if locName == "" {
-		// Empty location name from Go's time.Parse - derive from offset
 		_, offset := t.Zone()
 		if offset == 0 {
 			locName = "+00:00"
@@ -662,13 +668,11 @@ func setTimeVal(this *phpobj.ZObject, t time.Time) {
 	} else if locName == "UTC" {
 		// UTC is type 3 identifier
 	} else if len(locName) > 0 && (locName[0] == '+' || locName[0] == '-') {
-		// Fixed offset timezone like "+05:00"
 		tzType = 1
 	} else if len(locName) <= 6 && !strings.Contains(locName, "/") {
 		tzType = 2
 	}
-	this.HashTable().SetString("timezone_type", phpv.ZInt(tzType).ZVal())
-	this.HashTable().SetString("timezone", phpv.ZString(locName).ZVal())
+	return tzType, locName
 }
 
 // formatMethod implements DateTime::format(string $format): string
@@ -2252,41 +2256,9 @@ func serializeMethod(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal) 
 	dateStr := formatDateTimeStr(t)
 	arr.OffsetSet(ctx, phpv.ZString("date"), phpv.ZString(dateStr).ZVal())
 
-	// Use hash table values set by setTimeVal for timezone_type and timezone
-	tzTypeVal := this.HashTable().GetString("timezone_type")
-	tzVal := this.HashTable().GetString("timezone")
-	if tzTypeVal != nil && tzVal != nil {
-		arr.OffsetSet(ctx, phpv.ZString("timezone_type"), tzTypeVal)
-		arr.OffsetSet(ctx, phpv.ZString("timezone"), tzVal)
-	} else {
-		locName := t.Location().String()
-		tzType := 3
-		if locName == "" {
-			_, offset := t.Zone()
-			if offset == 0 {
-				locName = "UTC"
-			} else {
-				sign := "+"
-				absOffset := offset
-				if offset < 0 {
-					sign = "-"
-					absOffset = -offset
-				}
-				hours := absOffset / 3600
-				mins := (absOffset % 3600) / 60
-				locName = fmt.Sprintf("%s%02d:%02d", sign, hours, mins)
-				tzType = 1
-			}
-		} else if locName == "UTC" {
-			tzType = 3
-		} else if len(locName) > 0 && (locName[0] == '+' || locName[0] == '-') {
-			tzType = 1
-		} else if len(locName) <= 6 && !strings.Contains(locName, "/") {
-			tzType = 2
-		}
-		arr.OffsetSet(ctx, phpv.ZString("timezone_type"), phpv.ZInt(tzType).ZVal())
-		arr.OffsetSet(ctx, phpv.ZString("timezone"), phpv.ZString(locName).ZVal())
-	}
+	tzType, locName := getTimezoneMeta(t)
+	arr.OffsetSet(ctx, phpv.ZString("timezone_type"), phpv.ZInt(tzType).ZVal())
+	arr.OffsetSet(ctx, phpv.ZString("timezone"), phpv.ZString(locName).ZVal())
 
 	// Include user-defined properties from subclasses (after standard props)
 	appendSubclassProps(ctx, this, arr, map[string]bool{"date": true, "timezone_type": true, "timezone": true})
@@ -2917,40 +2889,9 @@ func dateTimeDebugInfo(ctx phpv.Context, this *phpobj.ZObject, args []*phpv.ZVal
 	dateStr := formatDateTimeStr(t)
 	arr.OffsetSet(ctx, phpv.ZString("date"), phpv.ZString(dateStr).ZVal())
 
-	// timezone_type and timezone: use hash table values set by setTimeVal
-	// which correctly handles all timezone types (offset, abbreviation, identifier)
-	tzTypeVal := this.HashTable().GetString("timezone_type")
-	tzVal := this.HashTable().GetString("timezone")
-	if tzTypeVal != nil && tzVal != nil {
-		arr.OffsetSet(ctx, phpv.ZString("timezone_type"), tzTypeVal)
-		arr.OffsetSet(ctx, phpv.ZString("timezone"), tzVal)
-	} else {
-		// Fallback: compute from the time.Time location
-		locName := t.Location().String()
-		tzType := 3
-		if locName == "" {
-			_, offset := t.Zone()
-			if offset == 0 {
-				locName = "UTC"
-			} else {
-				sign := "+"
-				absOffset := offset
-				if offset < 0 {
-					sign = "-"
-					absOffset = -offset
-				}
-				hours := absOffset / 3600
-				mins := (absOffset % 3600) / 60
-				locName = fmt.Sprintf("%s%02d:%02d", sign, hours, mins)
-				tzType = 1
-			}
-		} else if locName == "UTC" {
-			tzType = 3
-		} else if len(locName) > 0 && (locName[0] == '+' || locName[0] == '-') {
-			tzType = 1
-		} else if len(locName) <= 6 && !strings.Contains(locName, "/") {
-			tzType = 2
-		}
+	// timezone_type and timezone: compute from the time.Time location
+	{
+		tzType, locName := getTimezoneMeta(t)
 		arr.OffsetSet(ctx, phpv.ZString("timezone_type"), phpv.ZInt(tzType).ZVal())
 		arr.OffsetSet(ctx, phpv.ZString("timezone"), phpv.ZString(locName).ZVal())
 	}
@@ -3696,10 +3637,8 @@ func init() {
 		Const:           map[phpv.ZString]*phpv.ZClassConst{},
 		H: &phpv.ZClassHandlers{
 			HandleCompare: dateTimeCompare,
-			// DateTime's date/timezone_type/timezone are internal properties used for
-			// serialization and __debugInfo, but direct property access ($dt->date)
-			// should trigger "Undefined property" warning matching PHP behavior.
-			HandlePropGetEager: true,
+			// DateTime's date/timezone_type/timezone are NOT stored in the hash table,
+			// so non-eager HandlePropGet fires when they're accessed as $dt->date.
 			HandlePropGet: dateTimePropGetHandler,
 		},
 		Methods: map[phpv.ZString]*phpv.ZClassMethod{
@@ -3882,9 +3821,8 @@ func init() {
 		Implementations: []*phpobj.ZClass{DateTimeInterface},
 		Props:           []*phpv.ZClassProp{},
 		H: &phpv.ZClassHandlers{
-			HandleCompare:      dateTimeCompare,
-			HandlePropGetEager: true,
-			HandlePropGet:      dateTimePropGetHandler,
+			HandleCompare: dateTimeCompare,
+			HandlePropGet: dateTimePropGetHandler,
 		},
 		Methods: map[phpv.ZString]*phpv.ZClassMethod{
 			"__construct": {
