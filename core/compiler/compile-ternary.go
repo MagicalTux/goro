@@ -22,7 +22,7 @@ func compileTernaryOp(v phpv.Runnable, c compileCtx) (phpv.Runnable, error) {
 	} else if i.IsSingle('?') {
 		yes = v
 		isShort = true
-		v, _ = spawnOperator(c, tokenizer.T_IS_NOT_IDENTICAL, v, &runZVal{nil, l}, l)
+		v, _ = spawnOperator(c, tokenizer.T_IS_NOT_IDENTICAL, v, &runZVal{v: nil, l: l}, l)
 	} else {
 		yes, err = compileExpr(i, c)
 		if err != nil {

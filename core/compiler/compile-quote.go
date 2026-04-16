@@ -47,7 +47,7 @@ func compileQuoteConstant(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error
 		}
 	}
 
-	return &runZVal{phpv.ZString(b.String()), loc}, nil
+	return &runZVal{v: phpv.ZString(b.String()), l: loc}, nil
 }
 
 func compileQuoteHeredoc(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
@@ -64,7 +64,7 @@ func compileQuoteHeredoc(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error)
 		_ = res
 		switch i.Type {
 		case tokenizer.T_ENCAPSED_AND_WHITESPACE:
-			res = append(res, &runZVal{unescapePhpQuotedString(i.Data), i.Loc()})
+			res = append(res, &runZVal{v: unescapePhpQuotedString(i.Data), l: i.Loc()})
 		case tokenizer.T_VARIABLE:
 			var v phpv.Runnable = &runVariable{v: phpv.ZString(i.Data[1:]), l: i.Loc()}
 
@@ -116,7 +116,7 @@ func compileQuoteEncapsed(i *tokenizer.Item, c compileCtx, q rune) (phpv.Runnabl
 
 		switch i.Type {
 		case tokenizer.T_ENCAPSED_AND_WHITESPACE:
-			res = append(res, &runZVal{unescapePhpQuotedString(i.Data), i.Loc()})
+			res = append(res, &runZVal{v: unescapePhpQuotedString(i.Data), l: i.Loc()})
 		case tokenizer.T_VARIABLE:
 			var v phpv.Runnable = &runVariable{v: phpv.ZString(i.Data[1:]), l: i.Loc()}
 
@@ -187,7 +187,7 @@ func compileQuoteEncapsed(i *tokenizer.Item, c compileCtx, q rune) (phpv.Runnabl
 				}
 			default:
 				// just add $ if it's not followed by a valid PHP label
-				res = append(res, &runZVal{phpv.ZString(i.Data), i.Loc()})
+				res = append(res, &runZVal{v: phpv.ZString(i.Data), l: i.Loc()})
 			}
 		case tokenizer.Rune(q):
 			// end of quote

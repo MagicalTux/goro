@@ -1501,13 +1501,13 @@ func compileFunctionArgs(c compileCtx) (res []*phpv.FuncArg, err error) {
 						switch s.ToLower() {
 						case "self":
 							if cls := c.getClass(); cls != nil {
-								r = &runZVal{cls.GetName(), cn.l}
+								r = &runZVal{v: cls.GetName(), l: cn.l}
 							}
 						case "parent":
 							if cls := c.getClass(); cls != nil {
 								if cls.ExtendsStr != "" {
 									// Resolve through namespace
-									r = &runZVal{cls.ExtendsStr, cn.l}
+									r = &runZVal{v: cls.ExtendsStr, l: cn.l}
 								} else {
 									return nil, &phpv.PhpError{
 										Err:  fmt.Errorf("Cannot use \"parent\" when current class scope has no parent"),

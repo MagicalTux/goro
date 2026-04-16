@@ -32,9 +32,6 @@ func (z ZString) GetType() ZType {
 }
 
 func (z ZString) ZVal() *ZVal {
-	if z == "" {
-		return zEmptyStringZVal
-	}
 	return &ZVal{v: z}
 }
 

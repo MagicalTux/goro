@@ -99,7 +99,7 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		}
 		c.backup()
 		if next.Type == tokenizer.T_PAAMAYIM_NEKUDOTAYIM {
-			return &runZVal{phpv.ZString("static"), l}, nil
+			return &runZVal{v: phpv.ZString("static"), l: l}, nil
 		}
 		// Not followed by :: — fall through to default handler (e.g. static $var, static function)
 		h, ok := itemTypeHandler[i.Type]
@@ -114,7 +114,7 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	case tokenizer.T_LNUMBER:
 		v, err := strconv.ParseInt(i.Data, 0, 64)
 		if err == nil {
-			return &runZVal{phpv.ZInt(v), l}, nil
+			return &runZVal{v: phpv.ZInt(v), l: l}, nil
 		}
 		// if ParseInt failed, try to parse as float (value too large?)
 		// For binary/hex/octal with prefix, ParseFloat doesn't work, so use ParseUint then convert
@@ -126,22 +126,22 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 				// PHP treats values > INT64_MAX as float, not as two's complement int.
 				// Only values that fit in signed int64 remain int.
 				if uv <= math.MaxInt64 {
-					return &runZVal{phpv.ZInt(int64(uv)), l}, nil
+					return &runZVal{v: phpv.ZInt(int64(uv)), l: l}, nil
 				}
-				return &runZVal{phpv.ZFloat(float64(uv)), l}, nil
+				return &runZVal{v: phpv.ZFloat(float64(uv)), l: l}, nil
 			}
 			// truly huge: parse manually for float approximation
 			f := parseBigLiteral(i.Data)
-			return &runZVal{phpv.ZFloat(phpv.ZFloat(f)), l}, nil
+			return &runZVal{v: phpv.ZFloat(phpv.ZFloat(f)), l: l}, nil
 		}
 		// Try octal overflow (0...)
 		if len(i.Data) > 1 && i.Data[0] == '0' && i.Data[1] >= '0' && i.Data[1] <= '7' {
 			uv, uerr := strconv.ParseUint(i.Data, 0, 64)
 			if uerr == nil {
-				return &runZVal{phpv.ZFloat(float64(uv)), l}, nil
+				return &runZVal{v: phpv.ZFloat(float64(uv)), l: l}, nil
 			}
 			f := parseBigLiteral(i.Data)
-			return &runZVal{phpv.ZFloat(phpv.ZFloat(f)), l}, nil
+			return &runZVal{v: phpv.ZFloat(phpv.ZFloat(f)), l: l}, nil
 		}
 		fallthrough
 	case tokenizer.T_DNUMBER:
@@ -150,11 +150,11 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 			errv := err.(*strconv.NumError)
 			if errv.Err == strconv.ErrRange {
 				// v is inf
-				return &runZVal{phpv.ZFloat(v), l}, nil
+				return &runZVal{v: phpv.ZFloat(v), l: l}, nil
 			}
 			return nil, err
 		}
-		return &runZVal{phpv.ZFloat(v), l}, nil
+		return &runZVal{v: phpv.ZFloat(v), l: l}, nil
 	case tokenizer.T_NAMESPACE:
 		// namespace\Name — relative to the current namespace.
 		next, err := c.NextItem()
@@ -204,7 +204,7 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		}
 		c.backup()
 		if next.Type == tokenizer.T_PAAMAYIM_NEKUDOTAYIM {
-			return &runZVal{phpv.ZString(name), l}, nil
+			return &runZVal{v: phpv.ZString(name), l: l}, nil
 		}
 		// namespace\ prefix means explicitly qualified — no global fallback
 		return &runConstant{c: name, l: l, noFallback: true}, nil
@@ -251,7 +251,7 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		}
 		c.backup()
 		if next.Type == tokenizer.T_PAAMAYIM_NEKUDOTAYIM {
-			return &runZVal{phpv.ZString(name), l}, nil
+			return &runZVal{v: phpv.ZString(name), l: l}, nil
 		}
 		// Fully qualified name — no global fallback
 		return &runConstant{c: name, l: l, noFallback: true}, nil
@@ -317,7 +317,7 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		c.backup()
 		if next.Type == tokenizer.T_PAAMAYIM_NEKUDOTAYIM {
 			resolved := c.resolveClassName(phpv.ZString(name))
-			return &runZVal{resolved, l}, nil
+			return &runZVal{v: resolved, l: l}, nil
 		}
 		if next.IsSingle('(') {
 			// Will be resolved as function name in compilePostExpr
@@ -343,49 +343,49 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	case tokenizer.T_INCLUDE, tokenizer.T_REQUIRE, tokenizer.T_INCLUDE_ONCE, tokenizer.T_REQUIRE_ONCE:
 		return compileSpecialFuncCall(i, c)
 	case tokenizer.T_FILE:
-		return &runZVal{phpv.ZString(l.Filename), l}, nil
+		return &runZVal{v: phpv.ZString(l.Filename), l: l}, nil
 	case tokenizer.T_LINE:
-		return &runZVal{phpv.ZInt(l.Line), l}, nil
+		return &runZVal{v: phpv.ZInt(l.Line), l: l}, nil
 	case tokenizer.T_DIR:
-		return &runZVal{phpv.ZString(path.Dir(l.Filename)), l}, nil
+		return &runZVal{v: phpv.ZString(path.Dir(l.Filename)), l: l}, nil
 	case tokenizer.T_CLASS_C:
 		class := c.getClass()
 		if class == nil {
-			return &runZVal{phpv.ZString(""), l}, nil
+			return &runZVal{v: phpv.ZString(""), l: l}, nil
 		}
 		// In a trait, __CLASS__ must resolve at runtime to the using class name
 		if class.Type == phpv.ZClassTypeTrait {
 			return &runClassConstant{l: l}, nil
 		}
-		return &runZVal{class.Name, l}, nil
+		return &runZVal{v: class.Name, l: l}, nil
 	case tokenizer.T_FUNC_C:
 		f := c.getFunc()
 		if f == nil {
-			return &runZVal{phpv.ZString(""), l}, nil
+			return &runZVal{v: phpv.ZString(""), l: l}, nil
 		}
 		name := f.name
 		if name == "" {
 			// Anonymous closure: PHP 8 uses {closure:file:line}
 			name = phpv.ZString(fmt.Sprintf("{closure:%s:%d}", l.Filename, l.Line))
 		}
-		return &runZVal{phpv.ZString(name), l}, nil
+		return &runZVal{v: phpv.ZString(name), l: l}, nil
 	case tokenizer.T_NS_C:
-		return &runZVal{c.getNamespace(), l}, nil
+		return &runZVal{v: c.getNamespace(), l: l}, nil
 	case tokenizer.T_METHOD_C:
 		class := c.getClass()
 		f := c.getFunc()
 		if f == nil {
-			return &runZVal{phpv.ZString(""), l}, nil
+			return &runZVal{v: phpv.ZString(""), l: l}, nil
 		}
 		funcName := f.name
 		if funcName == "" {
 			// Anonymous closure: __METHOD__ returns just the closure name
 			// without class prefix (even when defined inside a class method)
 			funcName = phpv.ZString(fmt.Sprintf("{closure:%s:%d}", l.Filename, l.Line))
-			return &runZVal{phpv.ZString(funcName), l}, nil
+			return &runZVal{v: phpv.ZString(funcName), l: l}, nil
 		}
 		if class == nil {
-			return &runZVal{phpv.ZString(funcName), l}, nil
+			return &runZVal{v: phpv.ZString(funcName), l: l}, nil
 		}
 		// __METHOD__ should only return "Class::method" when we're inside a method
 		// of the class. If we're at the class level (e.g., class constant), __METHOD__
@@ -395,15 +395,15 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		if _, isClassCtx := c.(*zclassCompileCtx); isClassCtx {
 			// We're directly inside a class context (not inside a method body)
 			// This means __METHOD__ is being used in a class constant or property default
-			return &runZVal{phpv.ZString(""), l}, nil
+			return &runZVal{v: phpv.ZString(""), l: l}, nil
 		}
-		return &runZVal{phpv.ZString(fmt.Sprintf("%s::%s", class.Name, funcName)), l}, nil
+		return &runZVal{v: phpv.ZString(fmt.Sprintf("%s::%s", class.Name, funcName)), l: l}, nil
 	case tokenizer.T_TRAIT_C:
 		class := c.getClass()
 		if class != nil && class.Type == phpv.ZClassTypeTrait {
-			return &runZVal{class.Name, l}, nil
+			return &runZVal{v: class.Name, l: l}, nil
 		}
-		return &runZVal{phpv.ZString(""), l}, nil
+		return &runZVal{v: phpv.ZString(""), l: l}, nil
 	case tokenizer.T_PROPERTY_C:
 		// __PROPERTY__ returns the property name when inside a property hook, "" otherwise.
 		// The hook function name format is "$propName::get" or "$propName::set".
@@ -411,10 +411,10 @@ func compileOneExpr(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		if f != nil && len(f.name) > 0 && f.name[0] == '$' {
 			parts := strings.SplitN(string(f.name), "::", 2)
 			if len(parts) >= 2 {
-				return &runZVal{phpv.ZString(parts[0][1:]), l}, nil // strip leading $
+				return &runZVal{v: phpv.ZString(parts[0][1:]), l: l}, nil // strip leading $
 			}
 		}
-		return &runZVal{phpv.ZString(""), l}, nil
+		return &runZVal{v: phpv.ZString(""), l: l}, nil
 	case tokenizer.T_UNSET_CAST:
 		phpErr := &phpv.PhpError{
 			Err:  fmt.Errorf("The (unset) cast is no longer supported"),
@@ -672,7 +672,7 @@ func compilePostExpr(v phpv.Runnable, i *tokenizer.Item, c compileCtx) (phpv.Run
 				if err := args[0].Dump(&buf); err == nil {
 					buf.WriteString(")")
 					desc := buf.String()
-					args = append(args, &runZVal{phpv.ZString(desc), l})
+					args = append(args, &runZVal{v: phpv.ZString(desc), l: l})
 				}
 			}
 			return &runnableFunctionCall{name: funcName, args: args, l: l}, nil

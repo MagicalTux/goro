@@ -31,41 +31,6 @@ var ZNULL = ZNull{}
 var ZFalse = ZBool(false)
 var ZTrue = ZBool(true)
 
-// Cached ZVal wrappers for ZBool true/false values. These are returned by
-// ZBool.ZVal() to avoid allocating a new wrapper on every comparison result.
-// Callers MUST NOT mutate these (Name, refCount, typeCheckers); *ZVal.ZVal()
-// never returns these (it allocates fresh) so normal copy/assignment paths
-// are safe.
-var (
-	zFalseZVal = &ZVal{v: ZBool(false)}
-	zTrueZVal  = &ZVal{v: ZBool(true)}
-)
-
-// Cached ZVal wrappers for small integer values commonly used in PHP code
-// (0, 1, -1, loop counters, array indices). Returned by ZInt.ZVal() for
-// values in the range [smallIntMin, smallIntMax]. Same mutation safety rules
-// as above.
-const (
-	smallIntMin = -1
-	smallIntMax = 256
-	smallIntLen = smallIntMax - smallIntMin + 1
-)
-
-var smallIntZVals [smallIntLen]*ZVal
-
-// zEmptyStringZVal is a cached ZVal for empty string. Same mutation rules
-// as other cached ZVals.
-var zEmptyStringZVal = &ZVal{v: ZString("")}
-
-// zFloatZeroZVal is a cached ZVal for float(0).
-var zFloatZeroZVal = &ZVal{v: ZFloat(0)}
-
-func init() {
-	for i := 0; i < smallIntLen; i++ {
-		v := ZInt(smallIntMin + i)
-		smallIntZVals[i] = &ZVal{v: v}
-	}
-}
 
 // scalar stuff
 type ZNull struct{}
@@ -161,10 +126,7 @@ func (z ZBool) AsVal(ctx Context, t ZType) (Val, error) {
 }
 
 func (z ZBool) ZVal() *ZVal {
-	if z {
-		return zTrueZVal
-	}
-	return zFalseZVal
+	return &ZVal{v: z}
 }
 
 func (z ZBool) String() string {
@@ -184,9 +146,6 @@ func (z ZInt) GetType() ZType {
 }
 
 func (z ZInt) ZVal() *ZVal {
-	if z >= smallIntMin && z <= smallIntMax {
-		return smallIntZVals[z-smallIntMin]
-	}
 	return &ZVal{v: z}
 }
 
@@ -224,9 +183,6 @@ func (z ZFloat) GetType() ZType {
 }
 
 func (z ZFloat) ZVal() *ZVal {
-	if z == 0 {
-		return zFloatZeroZVal
-	}
 	return &ZVal{v: z}
 }
 
