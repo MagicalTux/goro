@@ -573,7 +573,10 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		// and postfix ++/--, because write-back uses w.WriteValue() which
 		// independently re-evaluates the write target.
 		if a != nil {
-			a = phpv.NewZVal(a.Value())
+			// Snapshot is only used within this function call, never stored.
+			// Use a pooled ZVal to avoid the heap allocation.
+			a = phpv.NewTempZVal(a.Value())
+			defer phpv.PutTempZVal(a)
 		}
 	}
 

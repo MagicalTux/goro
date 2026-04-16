@@ -1,5 +1,7 @@
 package phpv
 
+import "sync"
+
 // Val is a basic value of any PHP kind: null, bool, int, float, string, array, resource or object.
 type Val interface {
 	GetType() ZType                          // GetType returns the type of the value
@@ -31,6 +33,39 @@ type ZVal struct {
 
 func NewZVal(v Val) *ZVal {
 	return &ZVal{v: v}
+}
+
+// zvalPool holds short-lived ZVals that are safe to reuse when the caller
+// explicitly returns them via PutTempZVal. Used for operator snapshots and
+// other temporary wrappers whose lifetime is tightly bounded.
+var zvalPool = sync.Pool{
+	New: func() any { return &ZVal{} },
+}
+
+// NewTempZVal returns a ZVal from the pool wrapping v. The caller MUST call
+// PutTempZVal on the returned pointer before its lifetime ends. The ZVal must
+// not be stored (in a hash table, outlive the current function, etc.) - only
+// used for short-lived intermediate values.
+func NewTempZVal(v Val) *ZVal {
+	z := zvalPool.Get().(*ZVal)
+	z.v = v
+	z.Name = nil
+	z.refCount = 0
+	z.typeCheckers = nil
+	return z
+}
+
+// PutTempZVal returns a ZVal obtained via NewTempZVal to the pool. Safe to
+// call with nil.
+func PutTempZVal(z *ZVal) {
+	if z == nil {
+		return
+	}
+	z.v = nil
+	z.Name = nil
+	z.refCount = 0
+	z.typeCheckers = nil
+	zvalPool.Put(z)
 }
 
 func (z *ZVal) GetType() ZType {
