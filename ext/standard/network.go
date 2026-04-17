@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/syslog"
 	"net"
+	"strconv"
 	"strings"
 	"time"
 
@@ -144,7 +145,7 @@ func fncPfsockopen(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if port.HasArg() {
 		p = int(port.Get())
 	}
-	addr := fmt.Sprintf("%s:%d", host, p)
+	addr := net.JoinHostPort(host, strconv.Itoa(p))
 	key := proto + "://" + addr
 
 	// Check if we have an existing persistent connection that is still open
@@ -180,7 +181,7 @@ func fncFsockopen(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if strings.HasPrefix(host, "tcp://") { host = host[6:] } else if strings.HasPrefix(host, "udp://") { proto = "udp"; host = host[6:] }
 	p := 0
 	if port.HasArg() { p = int(port.Get()) }
-	addr := fmt.Sprintf("%s:%d", host, p)
+	addr := net.JoinHostPort(host, strconv.Itoa(p))
 	conn, de := net.DialTimeout(proto, addr, 60*time.Second)
 	if de != nil {
 		return phpv.ZFalse.ZVal(), ctx.Warn("fsockopen(): Unable to connect to %s (%s)", addr, de.Error())

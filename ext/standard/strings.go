@@ -2135,22 +2135,6 @@ func fncStrRev(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZStr(string(data)), nil
 }
 
-const (
-	STRTOK_ARG phpv.ZInt = iota
-	STRTOK_LAST_INDEX
-)
-
-type strTokStateType struct {
-	lastString *phpv.ZString
-	lastIndex  int
-}
-
-// TODO: move to a context state instead of global state
-var strTokTempState = strTokStateType{
-	lastString: nil,
-	lastIndex:  -1,
-}
-
 // > func string|false strtok ( string $string, string $token )
 func fncStrtok(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var strArg phpv.ZString
@@ -2160,6 +2144,8 @@ func fncStrtok(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZBool(false).ZVal(), err
 	}
 
+	state := ctx.Global().Strtok()
+
 	index := 0
 	startIndex := 0
 	var str []byte
@@ -2167,15 +2153,15 @@ func fncStrtok(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if tokenArg != nil {
 		str = []byte(strArg)
 		token = []byte(*tokenArg)
-		strTokTempState.lastString = &strArg
+		state.LastString = &strArg
 	} else {
 		token = []byte(strArg)
-		if strTokTempState.lastString == nil {
+		if state.LastString == nil {
 			ctx.Warn("Both arguments must be provided when starting tokenization")
 			return phpv.ZBool(false).ZVal(), nil
 		}
-		str = []byte(*strTokTempState.lastString)
-		startIndex = max(strTokTempState.lastIndex, 0)
+		str = []byte(*state.LastString)
+		startIndex = max(state.LastIndex, 0)
 	}
 
 	// skip token delimeters
@@ -2195,7 +2181,7 @@ func fncStrtok(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	startIndex = min(startIndex, index)
 	result := string(str[startIndex:index])
 
-	strTokTempState.lastIndex = index + 1
+	state.LastIndex = index + 1
 	if index >= len(str) && result == "" {
 		return phpv.ZBool(false).ZVal(), nil
 	}
@@ -3231,7 +3217,7 @@ func stripSlashes(str string, cStyle bool) string {
 				continue
 			}
 			j := i + 1
-			if isHex(rune(str[j])) {
+			if isHex(rune(core.StrIdx(str, j))) {
 				j++
 			}
 
@@ -3241,11 +3227,12 @@ func stripSlashes(str string, cStyle bool) string {
 				buf.WriteByte(byte(n))
 			}
 			i = j - 1
-		} else if unicode.IsNumber(rune(str[i])) {
-			// octal escape sequence
+		} else if c := str[i]; c >= '0' && c <= '7' {
+			// octal escape sequence (PHP accepts 1-3 digits in range 0-7)
 			j := i + 1
-			for n := 0; n < 3; n++ {
-				if !isHex(rune(core.StrIdx(str, j))) {
+			for n := 0; n < 2; n++ {
+				d := core.StrIdx(str, j)
+				if d < '0' || d > '7' {
 					break
 				}
 				j++

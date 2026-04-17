@@ -91,7 +91,8 @@ type Global struct {
 	lastOutChar   byte
 	ImplicitFlush bool
 
-	rand *random.State
+	rand   *random.State
+	strtok phpv.StrtokState
 
 	shownDeprecated map[string]struct{}
 
@@ -2203,6 +2204,10 @@ func (g *Global) GetLoadedExtensions() []string {
 
 func (g *Global) Random() *random.State {
 	return g.rand
+}
+
+func (g *Global) Strtok() *phpv.StrtokState {
+	return &g.strtok
 }
 
 func (g *Global) GetUserErrorHandler() (phpv.Callable, phpv.PhpErrorType, *phpv.ZVal) {

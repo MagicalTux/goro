@@ -3,9 +3,7 @@ package standard
 import (
 	"fmt"
 	"math"
-	"math/rand/v2"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -2515,26 +2513,37 @@ func fncArrayRand(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 			"array_rand(): Argument #1 ($array) must not be empty")
 	}
 
-	// TODO: use Mersenne Twister RNG for maximum compatibility
-
 	num := core.Deref(numArg, 1)
+	count := int(array.Count(ctx))
 
-	if num < 1 || num > phpv.ZInt(array.Count(ctx)) {
+	if num < 1 || num > phpv.ZInt(count) {
 		return nil, phpobj.ThrowError(ctx, phpobj.ValueError,
 			"array_rand(): Argument #2 ($num) must be between 1 and the number of elements in argument #1 ($array)")
 	}
 
+	r := ctx.Global().Random().Mt
+
 	if num == 1 {
-		i := rand.IntN(int(array.Count(ctx)))
+		i := int(r.Int64N(int64(count)))
 		return array.OffsetKeyAt(ctx, i)
 	}
 
-	result := phpv.NewZArray()
-	indices := rand.Perm(int(array.Count(ctx)))[:int(num)]
+	// Partial Fisher-Yates: shuffle the first `num` slots of [0..count)
+	// using the Mersenne Twister for PHP compatibility.
+	indices := make([]int, count)
+	for i := range indices {
+		indices[i] = i
+	}
+	for i := 0; i < int(num); i++ {
+		j := i + int(r.Int64N(int64(count-i)))
+		indices[i], indices[j] = indices[j], indices[i]
+	}
+	picked := indices[:int(num)]
 
+	result := phpv.NewZArray()
 	i := 0
 	for k := range array.Iterate(ctx) {
-		if slices.Contains(indices, i) {
+		if slices.Contains(picked, i) {
 			result.OffsetSet(ctx, nil, k)
 		}
 		i++
@@ -2800,9 +2809,13 @@ func fncArrayShuffle(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	for _, v := range array.Get().Iterate(ctx) {
 		values = append(values, v)
 	}
-	sort.Slice(values, func(_, _ int) bool {
-		return rand.IntN(2) == 1
-	})
+	// Fisher-Yates shuffle using the Mersenne Twister (PHP's RNG).
+	// Using sort with a random comparator is not a uniform shuffle.
+	r := ctx.Global().Random().Mt
+	for i := len(values) - 1; i > 0; i-- {
+		j := int(r.Int64N(int64(i + 1)))
+		values[i], values[j] = values[j], values[i]
+	}
 
 	array.Get().Clear(ctx)
 	for _, v := range values {

@@ -9,6 +9,14 @@ import (
 	"github.com/MagicalTux/goro/core/random"
 )
 
+// StrtokState holds the between-call state for PHP's strtok() built-in.
+// It lives on the Global context so it isn't shared across concurrent
+// script executions.
+type StrtokState struct {
+	LastString *ZString
+	LastIndex  int
+}
+
 type Context interface {
 	context.Context
 	ZArrayAccess
@@ -130,6 +138,7 @@ type GlobalContext interface {
 	GetLoadedExtensions() []string
 
 	Random() *random.State
+	Strtok() *StrtokState
 
 	GetUserErrorHandler() (Callable, PhpErrorType, *ZVal)
 	SetUserErrorHandler(handler Callable, filter PhpErrorType, originalVal *ZVal)

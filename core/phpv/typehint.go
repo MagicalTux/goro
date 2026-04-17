@@ -229,14 +229,32 @@ func (h *TypeHint) Check(ctx Context, val *ZVal) bool {
 		if h.s == "" {
 			return true // any object
 		}
-		if strings.ToLower(string(h.s)) == "self" {
-			return true // TODO: proper check
-		}
-		// Check instanceof by class name
 		obj := val.AsObject(ctx)
 		if obj == nil {
 			return false
 		}
+		switch strings.ToLower(string(h.s)) {
+		case "self":
+			// "self" = instance of the class that declared this type hint.
+			// ctx.Class() returns the declaring class of the currently-running
+			// method, which is what we need (not late-static-binding).
+			selfClass := ctx.Class()
+			if IsNilClass(selfClass) {
+				return false
+			}
+			return obj.GetClass().InstanceOf(selfClass)
+		case "parent":
+			selfClass := ctx.Class()
+			if IsNilClass(selfClass) {
+				return false
+			}
+			parent := selfClass.GetParent()
+			if IsNilClass(parent) {
+				return false
+			}
+			return obj.GetClass().InstanceOf(parent)
+		}
+		// Check instanceof by class name
 		return ClassNameMatch(obj.GetClass(), h.s, ctx)
 	}
 

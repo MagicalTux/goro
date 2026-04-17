@@ -1,4 +1,13 @@
 /goro
+/goro_test
+/goro_test_*
+/main.test
+/test_runner
+/php-cli
+/php-cgi
+/php-fpm
+/php-httpd
+/php-test
 /sapi/php-cli/php-cli
 /sapi/php-fpm/php-fpm
 /sapi/php-cgi/php-cgi

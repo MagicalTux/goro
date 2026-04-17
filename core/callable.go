@@ -601,7 +601,7 @@ func (d *deferredErrorCallable) Call(ctx phpv.Context, args []*phpv.ZVal) (*phpv
 		if d.maxArgs != 1 {
 			s = "s"
 		}
-		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+		return nil, phpobj.ThrowError(ctx, phpobj.ArgumentCountError,
 			fmt.Sprintf("%s() expects exactly %d argument%s, %d given", d.funcName, d.maxArgs, s, len(args)))
 	}
 	return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Cannot call %s() dynamically", d.funcName))

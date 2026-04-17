@@ -85,7 +85,9 @@ func fncSetErrorHandler(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error)
 	if args[0].IsNull() {
 		var errorTypeArg Optional[phpv.ZInt]
 		if len(args) > 1 {
-			Expand(ctx, args[1:], &errorTypeArg)
+			if _, err := Expand(ctx, args[1:], &errorTypeArg); err != nil {
+				return nil, err
+			}
 		}
 		errorType := errorTypeArg.GetOrDefault(E_ALL | E_STRICT)
 		ctx.Global().SetUserErrorHandler(nil, phpv.PhpErrorType(errorType), nil)
