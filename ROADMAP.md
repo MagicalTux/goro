@@ -160,7 +160,7 @@ The remaining ~200 failures are individual bugs spread across many PHP features.
 
 ## Full Test Suite (12,110 tests)
 
-The full PHP 8.5.4 test suite imported into goro has 12,110 tests. Major areas by test count:
+The full PHP 8.5.5 test suite imported into goro has 12,110 tests. Major areas by test count:
 
 | Area | Tests | Status |
 |------|-------|--------|

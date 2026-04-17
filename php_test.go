@@ -937,84 +937,84 @@ func TestPhp(t *testing.T) {
 	// Known-hanging tests that cause OOM/infinite loops in the engine.
 	// These are skipped until the underlying bugs are fixed.
 	hangingTests := map[string]bool{
-		"test/php-8.5.4/ext/date/bug73460-002.phpt":                                                   true, // DateTime::sub DST infinite loop
-		"test/php-8.5.4/func_arg_fetch_optimization.phpt":                                             true, // $x[][$y] recursion causes OOM before call depth limit
-		"test/php-8.5.4/ext/mbstring/utf_encodings.phpt":                                              true, // Slow torture test (needs SKIP_SLOW_TESTS)
-		"test/php-8.5.4/ext/standard/file/file_get_contents_file_put_contents_5gb.phpt":               true, // 5GB allocation, memory_limit=-1
-		"test/php-8.5.4/ext/standard/strings/gh15613.phpt":                                            true, // memory_limit=-1, huge unpack
-		"test/php-8.5.4/ext/mbstring/euc_tw_encoding.phpt":                                            true, // Slow mbstring encoding conversion test
-		"test/php-8.5.4/ext/mbstring/gb18030_encoding.phpt":                                           true, // Slow mbstring encoding conversion test
-		"test/php-8.5.4/fibers/get-return-after-bailout.phpt":                                         true, // Fiber + str_repeat(PHP_INT_MAX) hang
-		"test/php-8.5.4/fibers/backtrace-object.phpt":                                                 true, // Nil pointer in fiber backtrace
-		"test/php-8.5.4/fibers/backtrace-nested.phpt":                                                 true, // Nil pointer in fiber backtrace nested
-		"test/php-8.5.4/ext/standard/strings/gh15552.phpt":                                            true, // sscanf huge arg index causes OOM
-		"test/php-8.5.4/ext/date/DateTimeImmutable_inherited_serialization.phpt":                       true, // Nil pointer in inherited serialization
-		"test/php-8.5.4/ext/date/DateTimePeriod_inherited_serialization.phpt":                          true, // Nil pointer in inherited serialization
-		"test/php-8.5.4/ext/date/DateTime_inherited_serialization.phpt":                                true, // Nil pointer in inherited serialization
-		"test/php-8.5.4/ext/date/bug60302-002.phpt":                                                   true, // Nil pointer in createFromFormat
-		"test/php-8.5.4/ext/date/bug65502.phpt":                                                       true, // Nil pointer in createFromFormat
-		"test/php-8.5.4/ext/date/bug68669.phpt":                                                       true, // Nil pointer in createFromFormat
-		"test/php-8.5.4/ext/date/bug72963.phpt":                                                       true, // Nil pointer in createFromFormat
-		"test/php-8.5.4/ext/date/bug80057.phpt":                                                       true, // Nil pointer in createFromFormat
-		"test/php-8.5.4/ext/date/gh10152.phpt":                                                        true, // Nil pointer in serialization
-		"test/php-8.5.4/ext/date/gh11455.phpt":                                                        true, // Nil pointer in carbon-style usage
-		"test/php-8.5.4/ext/standard/strings/sprintf_error.phpt":                                      true, // Index out of range in sprintf
-		"test/php-8.5.4/ext/mbstring/cp850_encoding.phpt":                                             true, // Exhaustive encoding test hangs
-		"test/php-8.5.4/ext/mbstring/cp866_encoding.phpt":                                             true, // Exhaustive encoding test hangs
-		"test/php-8.5.4/ext/mbstring/cp932_encoding.phpt":                                             true, // Exhaustive encoding test hangs
-		"test/php-8.5.4/ext/mbstring/cp936_encoding.phpt":                                             true, // Exhaustive encoding test hangs
-		"test/php-8.5.4/ext/mbstring/cp950_encoding.phpt":                                             true, // Exhaustive encoding test hangs
-		"test/php-8.5.4/ext/hash/hash_serialize_001.phpt":                                             true, // Nil pointer in hash serialize
-		"test/php-8.5.4/ext/hash/xxhash_unserialize_memsize.phpt":                                     true, // Nil pointer in hash unserialize
-		"test/php-8.5.4/ext/spl/iterator_021.phpt":                                                    true, // Nil pointer in RecursiveIteratorIterator
-		"test/php-8.5.4/ext/spl/iterator_022.phpt":                                                    true, // Nil pointer in RecursiveIteratorIterator
-		"test/php-8.5.4/ext/spl/iterator_033.phpt":                                                    true, // Nil pointer in RecursiveIteratorIterator
-		"test/php-8.5.4/ext/spl/iterator_034.phpt":                                                    true, // Nil pointer in RecursiveIteratorIterator
-		"test/php-8.5.4/ext/spl/iterator_040.phpt":                                                    true, // Nil pointer in RecursiveIteratorIterator
-		"test/php-8.5.4/ext/standard/file/bug38450.phpt":                                              true, // Nil pointer in stream wrapper
-		"test/php-8.5.4/ext/standard/file/bug38450_1.phpt":                                            true, // Nil pointer in stream wrapper
-		"test/php-8.5.4/ext/standard/file/userstreams_006.phpt":                                       true, // Nil pointer in user streams
-		"test/php-8.5.4/ext/standard/streams/bug60455_02.phpt":                                        true, // Nil pointer in stream
-		"test/php-8.5.4/ext/standard/streams/bug60455_03.phpt":                                        true, // Nil pointer in stream
-		"test/php-8.5.4/ext/standard/streams/bug60817.phpt":                                           true, // Nil pointer in stream
-		"test/php-8.5.4/ext/standard/streams/bug67626.phpt":                                           true, // Nil pointer in stream
-		"test/php-8.5.4/ext/standard/streams/bug78662.phpt":                                           true, // Nil pointer in stream
-		"test/php-8.5.4/ext/standard/streams/gh14506.phpt":                                            true, // Nil pointer in stream
-		"test/php-8.5.4/ext/standard/streams/gh15908.phpt":                                            true, // Nil pointer in stream
-		"test/php-8.5.4/ext/standard/streams/set_file_buffer.phpt":                                    true, // Nil pointer in stream
-		"test/php-8.5.4/ext/standard/streams/stream_get_line_NUL_delimiter.phpt":                      true, // Nil pointer in stream
-		"test/php-8.5.4/ext/standard/streams/stream_set_chunk_size.phpt":                              true, // Nil pointer in stream
-		"test/php-8.5.4/offsets/appending_containers_in_fetch.phpt":                                   true, // Nil pointer in offset
-		"test/php-8.5.4/type_declarations/typed_properties_093.phpt":                                  true, // Interface conversion panic
-		"test/php-8.5.4/fibers/destructors_002.phpt":                                                  true, // Stack overflow in fiber destructor
-		"test/php-8.5.4/fibers/destructors_003.phpt":                                                  true, // Stack overflow in fiber destructor
-		"test/php-8.5.4/fibers/destructors_004.phpt":                                                  true, // Stack overflow in fiber destructor
-		"test/php-8.5.4/fibers/destructors_005.phpt":                                                  true, // Stack overflow in fiber destructor
-		"test/php-8.5.4/fibers/destructors_006.phpt":                                                  true, // Stack overflow in fiber destructor
-		"test/php-8.5.4/fibers/destructors_007.phpt":                                                  true, // Stack overflow in fiber destructor
-		"test/php-8.5.4/fibers/destructors_008.phpt":                                                  true, // Stack overflow in fiber destructor
-		"test/php-8.5.4/fibers/destructors_009.phpt":                                                  true, // Stack overflow in fiber destructor
-		"test/php-8.5.4/fibers/destructors_010.phpt":                                                  true, // Stack overflow in fiber destructor
-		"test/php-8.5.4/fibers/destructors_011.phpt":                                                  true, // Stack overflow in fiber destructor
-		"test/php-8.5.4/gh13569.phpt":                                                                 true, // Stack overflow with 30k WeakMap entries
-		"test/php-8.5.4/gh13670_001.phpt":                                                             true, // Stack overflow with GC cycle destructors
-		"test/php-8.5.4/gh13670_002.phpt":                                                             true, // Stack overflow with GC cycle destructors
-		"test/php-8.5.4/gh13670_003.phpt":                                                             true, // Stack overflow with GC cycle destructors
-		"test/php-8.5.4/ext/spl/recursive_tree_iterator_007.phpt":                                     true, // Stack overflow in RecursiveTreeIterator with stdClass
-		"test/php-8.5.4/ext/spl/bug69970.phpt":                                                        true, // Stack overflow in recursive endChildren/rewind
-		"test/php-8.5.4/ext/spl/iterator_023.phpt":                                                    true, // Stack overflow in recursive callGetChildren
-		"test/php-8.5.4/ext/pcre/bug61780.phpt":                                                       true, // gopcre2 infinite loop on negative lookbehind with multi-byte UTF-8
-		"test/php-8.5.4/ext/pcre/bug61780_1.phpt":                                                     true, // gopcre2 infinite loop on negative lookbehind with multi-byte UTF-8
-		"test/php-8.5.4/ext/pcre/bug61780_2.phpt":                                                     true, // gopcre2 infinite loop on negative lookbehind with multi-byte UTF-8
-		"test/php-8.5.4/ext/pcre/bug63055.phpt":                                                       true, // gopcre2 infinite loop on negative lookbehind with multi-byte UTF-8
-		"test/php-8.5.4/ext/pcre/bug66121.phpt":                                                       true, // gopcre2 infinite loop on negative lookbehind with multi-byte UTF-8
-		"test/php-8.5.4/ext/standard/streams/bug51056.phpt":                                            true, // requires ext/openssl/tests/ServerClientTestCase.inc not in test tree
-		"test/php-8.5.4/ext/gmp/gmp_setbit_long.phpt":                                                  true, // requires 8GB+ contiguous memory allocation (Go math/big limitation)
-		"test/php-8.5.4/ext/gmp/gmp_div_qr.phpt":                                                       true, // object ID timing: Go function arg temp lifetime differs from PHP
-		"test/php-8.5.4/ext/gmp/gmp_pown.phpt":                                                         true, // object ID timing: Go function arg temp lifetime differs from PHP
-		"test/php-8.5.4/ext/gmp/overloading.phpt":                                                       true, // object ID timing: Go function arg temp lifetime differs from PHP
-		"test/php-8.5.4/ext/gmp/gmp_random_seed.phpt":                                                   true, // Go math/big uses different PRNG than PHP's GMP
-		"test/php-8.5.4/enum/unserialize-refcount.phpt":                                                  true, // Go GC: no refcount display support
+		"test/php-8.5.5/ext/date/bug73460-002.phpt":                                                   true, // DateTime::sub DST infinite loop
+		"test/php-8.5.5/func_arg_fetch_optimization.phpt":                                             true, // $x[][$y] recursion causes OOM before call depth limit
+		"test/php-8.5.5/ext/mbstring/utf_encodings.phpt":                                              true, // Slow torture test (needs SKIP_SLOW_TESTS)
+		"test/php-8.5.5/ext/standard/file/file_get_contents_file_put_contents_5gb.phpt":               true, // 5GB allocation, memory_limit=-1
+		"test/php-8.5.5/ext/standard/strings/gh15613.phpt":                                            true, // memory_limit=-1, huge unpack
+		"test/php-8.5.5/ext/mbstring/euc_tw_encoding.phpt":                                            true, // Slow mbstring encoding conversion test
+		"test/php-8.5.5/ext/mbstring/gb18030_encoding.phpt":                                           true, // Slow mbstring encoding conversion test
+		"test/php-8.5.5/fibers/get-return-after-bailout.phpt":                                         true, // Fiber + str_repeat(PHP_INT_MAX) hang
+		"test/php-8.5.5/fibers/backtrace-object.phpt":                                                 true, // Nil pointer in fiber backtrace
+		"test/php-8.5.5/fibers/backtrace-nested.phpt":                                                 true, // Nil pointer in fiber backtrace nested
+		"test/php-8.5.5/ext/standard/strings/gh15552.phpt":                                            true, // sscanf huge arg index causes OOM
+		"test/php-8.5.5/ext/date/DateTimeImmutable_inherited_serialization.phpt":                       true, // Nil pointer in inherited serialization
+		"test/php-8.5.5/ext/date/DateTimePeriod_inherited_serialization.phpt":                          true, // Nil pointer in inherited serialization
+		"test/php-8.5.5/ext/date/DateTime_inherited_serialization.phpt":                                true, // Nil pointer in inherited serialization
+		"test/php-8.5.5/ext/date/bug60302-002.phpt":                                                   true, // Nil pointer in createFromFormat
+		"test/php-8.5.5/ext/date/bug65502.phpt":                                                       true, // Nil pointer in createFromFormat
+		"test/php-8.5.5/ext/date/bug68669.phpt":                                                       true, // Nil pointer in createFromFormat
+		"test/php-8.5.5/ext/date/bug72963.phpt":                                                       true, // Nil pointer in createFromFormat
+		"test/php-8.5.5/ext/date/bug80057.phpt":                                                       true, // Nil pointer in createFromFormat
+		"test/php-8.5.5/ext/date/gh10152.phpt":                                                        true, // Nil pointer in serialization
+		"test/php-8.5.5/ext/date/gh11455.phpt":                                                        true, // Nil pointer in carbon-style usage
+		"test/php-8.5.5/ext/standard/strings/sprintf_error.phpt":                                      true, // Index out of range in sprintf
+		"test/php-8.5.5/ext/mbstring/cp850_encoding.phpt":                                             true, // Exhaustive encoding test hangs
+		"test/php-8.5.5/ext/mbstring/cp866_encoding.phpt":                                             true, // Exhaustive encoding test hangs
+		"test/php-8.5.5/ext/mbstring/cp932_encoding.phpt":                                             true, // Exhaustive encoding test hangs
+		"test/php-8.5.5/ext/mbstring/cp936_encoding.phpt":                                             true, // Exhaustive encoding test hangs
+		"test/php-8.5.5/ext/mbstring/cp950_encoding.phpt":                                             true, // Exhaustive encoding test hangs
+		"test/php-8.5.5/ext/hash/hash_serialize_001.phpt":                                             true, // Nil pointer in hash serialize
+		"test/php-8.5.5/ext/hash/xxhash_unserialize_memsize.phpt":                                     true, // Nil pointer in hash unserialize
+		"test/php-8.5.5/ext/spl/iterator_021.phpt":                                                    true, // Nil pointer in RecursiveIteratorIterator
+		"test/php-8.5.5/ext/spl/iterator_022.phpt":                                                    true, // Nil pointer in RecursiveIteratorIterator
+		"test/php-8.5.5/ext/spl/iterator_033.phpt":                                                    true, // Nil pointer in RecursiveIteratorIterator
+		"test/php-8.5.5/ext/spl/iterator_034.phpt":                                                    true, // Nil pointer in RecursiveIteratorIterator
+		"test/php-8.5.5/ext/spl/iterator_040.phpt":                                                    true, // Nil pointer in RecursiveIteratorIterator
+		"test/php-8.5.5/ext/standard/file/bug38450.phpt":                                              true, // Nil pointer in stream wrapper
+		"test/php-8.5.5/ext/standard/file/bug38450_1.phpt":                                            true, // Nil pointer in stream wrapper
+		"test/php-8.5.5/ext/standard/file/userstreams_006.phpt":                                       true, // Nil pointer in user streams
+		"test/php-8.5.5/ext/standard/streams/bug60455_02.phpt":                                        true, // Nil pointer in stream
+		"test/php-8.5.5/ext/standard/streams/bug60455_03.phpt":                                        true, // Nil pointer in stream
+		"test/php-8.5.5/ext/standard/streams/bug60817.phpt":                                           true, // Nil pointer in stream
+		"test/php-8.5.5/ext/standard/streams/bug67626.phpt":                                           true, // Nil pointer in stream
+		"test/php-8.5.5/ext/standard/streams/bug78662.phpt":                                           true, // Nil pointer in stream
+		"test/php-8.5.5/ext/standard/streams/gh14506.phpt":                                            true, // Nil pointer in stream
+		"test/php-8.5.5/ext/standard/streams/gh15908.phpt":                                            true, // Nil pointer in stream
+		"test/php-8.5.5/ext/standard/streams/set_file_buffer.phpt":                                    true, // Nil pointer in stream
+		"test/php-8.5.5/ext/standard/streams/stream_get_line_NUL_delimiter.phpt":                      true, // Nil pointer in stream
+		"test/php-8.5.5/ext/standard/streams/stream_set_chunk_size.phpt":                              true, // Nil pointer in stream
+		"test/php-8.5.5/offsets/appending_containers_in_fetch.phpt":                                   true, // Nil pointer in offset
+		"test/php-8.5.5/type_declarations/typed_properties_093.phpt":                                  true, // Interface conversion panic
+		"test/php-8.5.5/fibers/destructors_002.phpt":                                                  true, // Stack overflow in fiber destructor
+		"test/php-8.5.5/fibers/destructors_003.phpt":                                                  true, // Stack overflow in fiber destructor
+		"test/php-8.5.5/fibers/destructors_004.phpt":                                                  true, // Stack overflow in fiber destructor
+		"test/php-8.5.5/fibers/destructors_005.phpt":                                                  true, // Stack overflow in fiber destructor
+		"test/php-8.5.5/fibers/destructors_006.phpt":                                                  true, // Stack overflow in fiber destructor
+		"test/php-8.5.5/fibers/destructors_007.phpt":                                                  true, // Stack overflow in fiber destructor
+		"test/php-8.5.5/fibers/destructors_008.phpt":                                                  true, // Stack overflow in fiber destructor
+		"test/php-8.5.5/fibers/destructors_009.phpt":                                                  true, // Stack overflow in fiber destructor
+		"test/php-8.5.5/fibers/destructors_010.phpt":                                                  true, // Stack overflow in fiber destructor
+		"test/php-8.5.5/fibers/destructors_011.phpt":                                                  true, // Stack overflow in fiber destructor
+		"test/php-8.5.5/gh13569.phpt":                                                                 true, // Stack overflow with 30k WeakMap entries
+		"test/php-8.5.5/gh13670_001.phpt":                                                             true, // Stack overflow with GC cycle destructors
+		"test/php-8.5.5/gh13670_002.phpt":                                                             true, // Stack overflow with GC cycle destructors
+		"test/php-8.5.5/gh13670_003.phpt":                                                             true, // Stack overflow with GC cycle destructors
+		"test/php-8.5.5/ext/spl/recursive_tree_iterator_007.phpt":                                     true, // Stack overflow in RecursiveTreeIterator with stdClass
+		"test/php-8.5.5/ext/spl/bug69970.phpt":                                                        true, // Stack overflow in recursive endChildren/rewind
+		"test/php-8.5.5/ext/spl/iterator_023.phpt":                                                    true, // Stack overflow in recursive callGetChildren
+		"test/php-8.5.5/ext/pcre/bug61780.phpt":                                                       true, // gopcre2 infinite loop on negative lookbehind with multi-byte UTF-8
+		"test/php-8.5.5/ext/pcre/bug61780_1.phpt":                                                     true, // gopcre2 infinite loop on negative lookbehind with multi-byte UTF-8
+		"test/php-8.5.5/ext/pcre/bug61780_2.phpt":                                                     true, // gopcre2 infinite loop on negative lookbehind with multi-byte UTF-8
+		"test/php-8.5.5/ext/pcre/bug63055.phpt":                                                       true, // gopcre2 infinite loop on negative lookbehind with multi-byte UTF-8
+		"test/php-8.5.5/ext/pcre/bug66121.phpt":                                                       true, // gopcre2 infinite loop on negative lookbehind with multi-byte UTF-8
+		"test/php-8.5.5/ext/standard/streams/bug51056.phpt":                                            true, // requires ext/openssl/tests/ServerClientTestCase.inc not in test tree
+		"test/php-8.5.5/ext/gmp/gmp_setbit_long.phpt":                                                  true, // requires 8GB+ contiguous memory allocation (Go math/big limitation)
+		"test/php-8.5.5/ext/gmp/gmp_div_qr.phpt":                                                       true, // object ID timing: Go function arg temp lifetime differs from PHP
+		"test/php-8.5.5/ext/gmp/gmp_pown.phpt":                                                         true, // object ID timing: Go function arg temp lifetime differs from PHP
+		"test/php-8.5.5/ext/gmp/overloading.phpt":                                                       true, // object ID timing: Go function arg temp lifetime differs from PHP
+		"test/php-8.5.5/ext/gmp/gmp_random_seed.phpt":                                                   true, // Go math/big uses different PRNG than PHP's GMP
+		"test/php-8.5.5/enum/unserialize-refcount.phpt":                                                  true, // Go GC: no refcount display support
 	}
 
 	// Directories containing tests that require external resources (network, etc.)

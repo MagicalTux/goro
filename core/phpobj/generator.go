@@ -1183,7 +1183,7 @@ func generatorGetReturn(ctx phpv.Context, o *ZObject, args []*phpv.ZVal) (*phpv.
 
 	if state.status != GeneratorClosed {
 		// PHP 8.x throws \Error, but test files use catch(Exception $e).
-		// The test suite from PHP 8.5.4 expects the message to be caught by
+		// The test suite from PHP 8.5.5 expects the message to be caught by
 		// catch(Exception $e), so we throw Exception to match that behavior.
 		return nil, ThrowError(ctx, Exception, "Cannot get return value of a generator that hasn't returned")
 	}
