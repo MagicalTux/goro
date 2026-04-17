@@ -1,77 +1,67 @@
+// Pure-Go implementation of PHP's crypt() function. Replaces the previous
+// cgo-backed wrapper around libc's crypt_r(). Each supported algorithm lives
+// in its own file (crypt_bcrypt.go, crypt_md5.go, crypt_sha.go,
+// crypt_des.go); this file is just the dispatcher and the PHP entry point.
 package standard
 
-/*
-#cgo CFLAGS: -D_GNU_SOURCE
-#cgo LDFLAGS: -lcrypt
-#include <crypt.h>
-#include <stdlib.h>
-#include <string.h>
-
-static char* do_crypt(const char *key, const char *salt) {
-    struct crypt_data data;
-    memset(&data, 0, sizeof(data));
-    return crypt_r(key, salt, &data);
-}
-*/
-import "C"
 import (
 	"strings"
-	"unsafe"
 
 	"github.com/MagicalTux/goro/core"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
-// cryptDES performs DES-based crypt using the system library
-func cryptDES(password, salt string) string {
-	cKey := C.CString(password)
-	defer C.free(unsafe.Pointer(cKey))
-	cSalt := C.CString(salt)
-	defer C.free(unsafe.Pointer(cSalt))
+// cryptFailure is the sentinel string PHP returns when crypt() cannot compute
+// a hash (invalid salt format, unsupported algorithm, etc.).
+const cryptFailure = "*0"
 
-	result := C.do_crypt(cKey, cSalt)
-	if result == nil {
-		return "*0"
-	}
-	return C.GoString(result)
+// cryptDES is kept as a thin wrapper so password.go's DES verification path
+// reads naturally. It returns cryptFailure when DES-style input is malformed.
+func cryptDES(password, salt string) string {
+	return cryptTraditionalDES(password, salt)
 }
 
 // > func string|false crypt ( string $string , string $salt )
 func fncCryptImpl(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	var str phpv.ZString
-	var salt phpv.ZString
-	_, err := core.Expand(ctx, args, &str, &salt)
-	if err != nil {
+	var password, salt phpv.ZString
+	if _, err := core.Expand(ctx, args, &password, &salt); err != nil {
 		return nil, err
 	}
+	return phpv.ZStr(cryptDispatch(string(password), string(salt))), nil
+}
 
-	saltStr := string(salt)
-	strStr := string(str)
-
-	// Validate salt is not empty
-	if len(saltStr) == 0 {
-		return phpv.ZStr("*0").ZVal(), nil
+// cryptDispatch chooses an algorithm based on the salt prefix, following the
+// conventions documented at crypt(5) on Linux.
+func cryptDispatch(password, salt string) string {
+	if salt == "" {
+		return cryptFailure
 	}
 
-	// Use system crypt
-	cKey := C.CString(strStr)
-	defer C.free(unsafe.Pointer(cKey))
-	cSalt := C.CString(saltStr)
-	defer C.free(unsafe.Pointer(cSalt))
-
-	result := C.do_crypt(cKey, cSalt)
-	if result == nil {
-		return phpv.ZStr("*0").ZVal(), nil
-	}
-
-	resultStr := C.GoString(result)
-	// PHP returns "*1" on failure if salt was "*0", otherwise "*0"
-	if strings.HasPrefix(resultStr, "*") {
-		if saltStr == "*0" || saltStr == "*1" {
-			return phpv.ZStr("*1").ZVal(), nil
+	// Bcrypt: $2a$, $2b$, $2x$, $2y$ (two-char prefix after the $).
+	if len(salt) >= 4 && salt[0] == '$' && salt[1] == '2' && salt[3] == '$' {
+		switch salt[2] {
+		case 'a', 'b', 'x', 'y':
+			return cryptBcrypt(password, salt)
+		default:
+			return cryptFailure
 		}
-		return phpv.ZStr("*0").ZVal(), nil
 	}
 
-	return phpv.ZStr(resultStr), nil
+	switch {
+	case strings.HasPrefix(salt, "$1$"):
+		return cryptMD5(password, salt)
+	case strings.HasPrefix(salt, "$5$"):
+		return cryptSHA256(password, salt)
+	case strings.HasPrefix(salt, "$6$"):
+		return cryptSHA512(password, salt)
+	case strings.HasPrefix(salt, "$"):
+		// Unknown $-prefixed algorithm.
+		return cryptFailure
+	case strings.HasPrefix(salt, "_"):
+		// Extended DES (BSDi) is not implemented.
+		return cryptFailure
+	}
+
+	// Traditional DES when no recognised prefix is present.
+	return cryptTraditionalDES(password, salt)
 }

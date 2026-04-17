@@ -1,16 +1,17 @@
 package standard
 
 import (
-	"os"
-
 	"github.com/MagicalTux/goro/core"
 	"github.com/MagicalTux/goro/core/locale"
 	"github.com/MagicalTux/goro/core/phpv"
 )
 
+// Longest locale name PHP accepts (matches ext/standard/string.c in upstream
+// PHP, which rejects anything longer with a warning).
+const maxLocaleNameLen = 255
+
 // > func string setlocale ( int $category , string $locale [, string $... ] )
 func fncSetLocale(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
-	// TODO: add a global per-process mutex to this functions
 	var category phpv.ZInt
 	var localeArg *phpv.ZVal
 	_, err := core.Expand(ctx, args, &category, &localeArg)
@@ -18,93 +19,74 @@ func fncSetLocale(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	// PHP: setlocale(LC_ALL, 0) queries the current locale.
-	// The second arg can be int 0, a string "0", null, an array, or an object with __toString.
-	if localeArg.GetType() == phpv.ZtInt && localeArg.Value().(phpv.ZInt) == 0 {
-		// Query current locale
-		res, _ := locale.SetLocale(category, "")
+	// PHP: setlocale($cat, 0) or setlocale($cat, "0") queries the current
+	// locale without changing it.
+	if isLocaleQuery(localeArg) {
+		res := locale.GetLocale(category)
 		if res == "" {
 			return phpv.ZFalse.ZVal(), nil
 		}
 		return res.ZVal(), nil
 	}
 
-	var locales []phpv.ZString
+	// Collect candidate names, in order. PHP tries each in turn and keeps
+	// the first that resolves. Accepts a single string, an array of
+	// strings, or positional var-args after the first one.
+	var candidates []phpv.ZString
 	switch localeArg.GetType() {
 	case phpv.ZtArray:
 		for _, elem := range localeArg.AsArray(ctx).Iterate(ctx) {
-			locales = append(locales, elem.AsString(ctx))
+			candidates = append(candidates, elem.AsString(ctx))
 		}
-	case phpv.ZtString:
-		s := localeArg.AsString(ctx)
-		if s == "0" {
-			// "0" is same as int 0 - query
-			res, _ := locale.SetLocale(category, "")
-			if res == "" {
-				return phpv.ZFalse.ZVal(), nil
-			}
-			return res.ZVal(), nil
-		}
-		locales = append(locales, s)
 	case phpv.ZtNull:
-		// null means reset to default (empty string)
-		locales = append(locales, "")
+		candidates = append(candidates, "")
 	default:
-		// Objects with __toString, ints, etc. are converted to string
-		locales = append(locales, localeArg.AsString(ctx))
+		candidates = append(candidates, localeArg.AsString(ctx))
 	}
 
 	for i := 2; i < len(args); i++ {
 		var v *phpv.ZVal
-		err := core.ExpandAt(ctx, args, i, &v)
-		if err != nil {
+		if err := core.ExpandAt(ctx, args, i, &v); err != nil {
 			return nil, err
 		}
-
 		switch v.GetType() {
-		case phpv.ZtString:
-			locales = append(locales, v.AsString(ctx))
 		case phpv.ZtArray:
 			for _, elem := range v.AsArray(ctx).Iterate(ctx) {
-				locales = append(locales, elem.AsString(ctx))
+				candidates = append(candidates, elem.AsString(ctx))
 			}
 		case phpv.ZtNull:
-			// null is treated as empty string (query or reset)
-			locales = append(locales, "")
+			candidates = append(candidates, "")
 		default:
-			// int and other types are converted to string
-			locales = append(locales, v.AsString(ctx))
+			candidates = append(candidates, v.AsString(ctx))
 		}
 	}
 
-	for _, lc := range locales {
-		if lc == "" {
-			var envName string
-			switch category {
-			case locale.LC_CTYPE:
-				envName = "LC_CTYPE"
-			case locale.LC_NUMERIC:
-				envName = "LC_NUMERIC"
-			case locale.LC_TIME:
-				envName = "LC_TIME"
-			case locale.LC_COLLATE:
-				envName = "LC_COLLATE"
-			case locale.LC_MONETARY:
-				envName = "LC_MONETARY"
-			case locale.LC_MESSAGES:
-				envName = "LC_MESSAGES"
-			case locale.LC_ALL:
-				envName = "LC_ALL"
-			}
-			lc = phpv.ZString(os.Getenv(envName))
+	for _, lc := range candidates {
+		if len(lc) > maxLocaleNameLen {
+			ctx.Warn("setlocale(): Specified locale name is too long")
+			continue
 		}
-		res, ok := locale.SetLocale(category, lc)
-		if ok {
+		if res, ok := locale.SetLocale(category, lc); ok {
 			return res.ZVal(), nil
 		}
 	}
 
 	return phpv.ZFalse.ZVal(), nil
+}
+
+// isLocaleQuery reports whether the argument is PHP's sentinel for "query
+// the current locale": integer 0 or the literal string "0".
+func isLocaleQuery(v *phpv.ZVal) bool {
+	if v == nil {
+		return false
+	}
+	switch v.GetType() {
+	case phpv.ZtInt:
+		return v.Value().(phpv.ZInt) == 0
+	case phpv.ZtString:
+		return v.Value().(phpv.ZString) == "0"
+	}
+	return false
 }
 
 // > func array localeconv ()
