@@ -31,6 +31,28 @@ var ZNULL = ZNull{}
 var ZFalse = ZBool(false)
 var ZTrue = ZBool(true)
 
+// Cached ZVal wrappers for frequently-used values. Hash table SetString/SetInt
+// now uses pointer replacement (COW) for non-reference entries, so these cached
+// instances are never mutated through Set().
+var (
+	zFalseZVal = &ZVal{v: ZBool(false), cached: true}
+	zTrueZVal  = &ZVal{v: ZBool(true), cached: true}
+)
+
+const (
+	smallIntMin = -1
+	smallIntMax = 256
+	smallIntLen = smallIntMax - smallIntMin + 1
+)
+
+var smallIntZVals [smallIntLen]*ZVal
+
+func init() {
+	for i := 0; i < smallIntLen; i++ {
+		smallIntZVals[i] = &ZVal{v: ZInt(smallIntMin + i), cached: true}
+	}
+}
+
 
 // scalar stuff
 type ZNull struct{}
@@ -126,7 +148,10 @@ func (z ZBool) AsVal(ctx Context, t ZType) (Val, error) {
 }
 
 func (z ZBool) ZVal() *ZVal {
-	return &ZVal{v: z}
+	if z {
+		return zTrueZVal
+	}
+	return zFalseZVal
 }
 
 func (z ZBool) String() string {
@@ -146,6 +171,9 @@ func (z ZInt) GetType() ZType {
 }
 
 func (z ZInt) ZVal() *ZVal {
+	if z >= smallIntMin && z <= smallIntMax {
+		return smallIntZVals[z-smallIntMin]
+	}
 	return &ZVal{v: z}
 }
 

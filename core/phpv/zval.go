@@ -29,10 +29,16 @@ type ZVal struct {
 	// (non-nil means "use this value instead") or an error if the type is
 	// incompatible. Only inner ZVals (refCount > 0) should carry type checkers.
 	typeCheckers []func(Context, Val) (Val, error)
+	cached       bool // true for pre-allocated cached ZVals (must not be mutated)
 }
 
 func NewZVal(v Val) *ZVal {
 	return &ZVal{v: v}
+}
+
+// isCached returns true if z is one of the pre-allocated cached ZVals.
+func (z *ZVal) isCached() bool {
+	return z != nil && z.cached
 }
 
 // zvalPool holds short-lived ZVals that are safe to reuse when the caller
@@ -168,6 +174,9 @@ func (z *ZVal) MakeRef() {
 	if z == nil {
 		return
 	}
+	if z.isCached() {
+		panic("MakeRef() called on cached ZVal")
+	}
 	if _, isRef := z.v.(*ZVal); isRef {
 		return // already a ref
 	}
@@ -252,6 +261,10 @@ func (z *ZVal) GetName() ZString {
 func (z *ZVal) Set(nz *ZVal) {
 	if z == nil || nz == nil {
 		return
+	}
+	// Debug: catch mutation of cached ZVals
+	if z.isCached() {
+		panic("Set() called on cached ZVal")
 	}
 	if _, isRef := nz.v.(*ZVal); isRef {
 		// simple set, keep reference alive

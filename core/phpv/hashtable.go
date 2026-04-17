@@ -316,8 +316,24 @@ func (z *ZHashTable) SetString(k ZString, v *ZVal) error {
 
 	t, ok := z._idx_s[k]
 	if ok {
-		t.v.Set(v)
+		if t.v.IsRef() {
+			// Reference: must propagate through Set() so aliases see the change
+			t.v.Set(v)
+		} else {
+			// Non-reference: replace pointer directly (COW-safe, avoids
+			// mutating cached/pooled ZVals that may be shared).
+			if v.isCached() {
+				t.v = &ZVal{v: v.v}
+			} else {
+				t.v = v
+			}
+		}
 		return nil
+	}
+	// For new entries, also copy cached ZVals so the hash table always holds
+	// private instances that can be safely mutated by doInc, Set, etc.
+	if v.isCached() {
+		v = &ZVal{v: v.v}
 	}
 
 	// Track new element allocation
@@ -445,8 +461,19 @@ func (z *ZHashTable) SetInt(k ZInt, v *ZVal) error {
 
 	t, ok := z._idx_i[k]
 	if ok {
-		t.v.Set(v)
+		if t.v.IsRef() {
+			t.v.Set(v)
+		} else {
+			if v.isCached() {
+				t.v = &ZVal{v: v.v}
+			} else {
+				t.v = v
+			}
+		}
 		return nil
+	}
+	if v.isCached() {
+		v = &ZVal{v: v.v}
 	}
 
 	// Track new element allocation
