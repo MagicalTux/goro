@@ -1469,6 +1469,18 @@ func compileFunctionArgs(c compileCtx) (res []*phpv.FuncArg, err error) {
 				c.Global().LogError(phpErr)
 				return nil, phpv.ExitError(255)
 			}
+
+			// PHP 8.2+: #[\SensitiveParameter] marks an argument for redaction
+			// in stack traces. The masking is done in maskSensitiveArgs()
+			// (core/phpctx/global.go); all that's required here is to set
+			// the flag so GetStackTrace knows to swap the value for a
+			// SensitiveParameterValue wrapper.
+			for _, a := range arg.Attributes {
+				if a.ClassName == "SensitiveParameter" || a.ClassName == "\\SensitiveParameter" {
+					arg.Sensitive = true
+					break
+				}
+			}
 		}
 
 		res = append(res, arg)
