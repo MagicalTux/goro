@@ -6,12 +6,10 @@ import (
 	"fmt"
 	"math"
 	"math/big"
-	mrand "math/rand"
 
 	"github.com/KarpelesLab/goro/core"
 	"github.com/KarpelesLab/goro/core/phpobj"
 	"github.com/KarpelesLab/goro/core/phpv"
-	"github.com/goark/mt/mt19937"
 )
 
 // > func bool gmp_perfect_power ( GMP $num )
@@ -357,10 +355,10 @@ func gmpRandomBits(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	max := new(big.Int).Lsh(big.NewInt(1), uint(bits))
 
 	var r *big.Int
-	if gmpRandSource != nil {
-		// Use seeded deterministic source
+	if src := ctx.Global().Random().Gmp; src != nil {
+		// Seeded deterministic source set by gmp_random_seed().
 		r = new(big.Int)
-		r.Rand(gmpRandSource, max)
+		r.Rand(src, max)
 	} else {
 		var err2 error
 		r, err2 = rand.Int(rand.Reader, max)
@@ -400,9 +398,9 @@ func gmpRandomRange(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	rangeVal.Add(rangeVal, big.NewInt(1))
 
 	var r *big.Int
-	if gmpRandSource != nil {
+	if src := ctx.Global().Random().Gmp; src != nil {
 		r = new(big.Int)
-		r.Rand(gmpRandSource, rangeVal)
+		r.Rand(src, rangeVal)
 	} else {
 		var err2 error
 		r, err2 = rand.Int(rand.Reader, rangeVal)
@@ -446,19 +444,19 @@ func gmpRandomSeed(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		seedVal = -seedVal
 	}
 
-	// Use MT19937 so the seeded stream is consistent with mt_rand/rand
-	// (which also use github.com/goark/mt/mt19937 via core/random).
-	// Note: this still doesn't byte-match PHP's libgmp, because libgmp's
+	// Seed the per-request GMP state on Global. This is a separate MT19937
+	// instance from the one mt_rand uses, so gmp_random_seed() does not
+	// disturb mt_rand()'s sequence (and vice versa). Lives on Global so
+	// it is scoped to a single script execution rather than leaking
+	// between concurrent requests.
+	//
+	// This still doesn't byte-match PHP's libgmp, because libgmp's
 	// random_seed initializes its own MT state differently from the
 	// reference algorithm.
-	gmpRandSource = mrand.New(mt19937.New(seedVal))
+	ctx.Global().Random().GmpSeed(seedVal)
 
 	return nil, nil
 }
-
-// gmpRandSource is the seeded random source for GMP random functions.
-// When nil, crypto/rand is used (non-deterministic).
-var gmpRandSource *mrand.Rand
 
 // > func int gmp_scan0 ( GMP $num , int $start )
 func gmpScan0(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
