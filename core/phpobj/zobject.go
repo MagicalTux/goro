@@ -931,8 +931,13 @@ func (o *ZObject) init(ctx phpv.Context) error {
 
 	// Resolve any pending CompileDelayed constants when the class is first used.
 	// This ensures forward-referenced constants throw errors at instantiation time
-	// if the referenced class/constant doesn't exist.
+	// if the referenced class/constant doesn't exist. Exceptions thrown from a
+	// class-constant expression get a synthetic "[constant expression]" frame
+	// at the call site (matches PHP: see gh7771_*.phpt).
 	if err := o.GetClass().(*ZClass).ResolveConstants(ctx); err != nil {
+		if ex, ok := err.(*phperr.PhpThrow); ok {
+			AddConstantExpressionFrameAt(ex, callerLoc)
+		}
 		return err
 	}
 
