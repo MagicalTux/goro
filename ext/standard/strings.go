@@ -2135,6 +2135,25 @@ func fncStrRev(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	return phpv.ZStr(string(data)), nil
 }
 
+// strtokState is the between-call tokenization state kept on the per-request
+// Global. The pointer identity of strtokKey is what looks it up.
+type strtokState struct {
+	LastString *phpv.ZString
+	LastIndex  int
+}
+
+var strtokKey = phpv.NewStateKey("standard.strtok")
+
+func strtokGet(ctx phpv.Context) *strtokState {
+	g := ctx.Global()
+	if v := g.State(strtokKey); v != nil {
+		return v.(*strtokState)
+	}
+	s := &strtokState{}
+	g.SetState(strtokKey, s)
+	return s
+}
+
 // > func string|false strtok ( string $string, string $token )
 func fncStrtok(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	var strArg phpv.ZString
@@ -2144,7 +2163,7 @@ func fncStrtok(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return phpv.ZBool(false).ZVal(), err
 	}
 
-	state := ctx.Global().Strtok()
+	state := strtokGet(ctx)
 
 	index := 0
 	startIndex := 0

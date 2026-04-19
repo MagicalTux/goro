@@ -9,12 +9,30 @@ import (
 	"github.com/KarpelesLab/goro/core/random"
 )
 
-// StrtokState holds the between-call state for PHP's strtok() built-in.
-// It lives on the Global context so it isn't shared across concurrent
-// script executions.
-type StrtokState struct {
-	LastString *ZString
-	LastIndex  int
+// StateKey is an opaque handle for a per-request state slot on the Global
+// context. Extensions allocate one key per state item they need (typically a
+// package-level var set via NewStateKey) and access the stored value through
+// GlobalContext.State / SetState. Keys are compared by pointer identity, so
+// two NewStateKey calls with the same name still produce distinct keys.
+//
+// This lets core/phpv stay ignorant of extension-specific types: the state
+// store holds any values, and the extension package owns the typed wrapper
+// that casts the stored any back to its own struct.
+type StateKey struct {
+	name string // purely for debug / stringer output
+}
+
+// NewStateKey returns a fresh state key. name is not semantically significant;
+// it shows up in String() to aid debugging.
+func NewStateKey(name string) *StateKey {
+	return &StateKey{name: name}
+}
+
+func (k *StateKey) String() string {
+	if k == nil {
+		return "<nil StateKey>"
+	}
+	return k.name
 }
 
 type Context interface {
@@ -138,7 +156,12 @@ type GlobalContext interface {
 	GetLoadedExtensions() []string
 
 	Random() *random.State
-	Strtok() *StrtokState
+
+	// State returns the value previously stored under key, or nil if none.
+	// Extensions allocate the key once (NewStateKey) and use State / SetState
+	// to stash per-request data without teaching core about their types.
+	State(key *StateKey) any
+	SetState(key *StateKey, value any)
 
 	GetUserErrorHandler() (Callable, PhpErrorType, *ZVal)
 	SetUserErrorHandler(handler Callable, filter PhpErrorType, originalVal *ZVal)

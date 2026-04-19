@@ -6,11 +6,25 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	mathrand "math/rand"
 
 	"github.com/KarpelesLab/goro/core"
 	"github.com/KarpelesLab/goro/core/phpobj"
 	"github.com/KarpelesLab/goro/core/phpv"
+	"github.com/goark/mt/mt19937"
 )
+
+// gmpRandKey identifies the per-request seeded MT19937 source used by
+// gmp_random_bits / gmp_random_range. The value is a *mathrand.Rand (nil
+// means "no seed set yet, use crypto/rand").
+var gmpRandKey = phpv.NewStateKey("gmp.rand")
+
+func gmpRand(ctx phpv.Context) *mathrand.Rand {
+	if v := ctx.Global().State(gmpRandKey); v != nil {
+		return v.(*mathrand.Rand)
+	}
+	return nil
+}
 
 // > func bool gmp_perfect_power ( GMP $num )
 func gmpPerfectPower(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
@@ -355,7 +369,7 @@ func gmpRandomBits(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	max := new(big.Int).Lsh(big.NewInt(1), uint(bits))
 
 	var r *big.Int
-	if src := ctx.Global().Random().Gmp; src != nil {
+	if src := gmpRand(ctx); src != nil {
 		// Seeded deterministic source set by gmp_random_seed().
 		r = new(big.Int)
 		r.Rand(src, max)
@@ -398,7 +412,7 @@ func gmpRandomRange(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	rangeVal.Add(rangeVal, big.NewInt(1))
 
 	var r *big.Int
-	if src := ctx.Global().Random().Gmp; src != nil {
+	if src := gmpRand(ctx); src != nil {
 		r = new(big.Int)
 		r.Rand(src, rangeVal)
 	} else {
@@ -444,16 +458,14 @@ func gmpRandomSeed(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		seedVal = -seedVal
 	}
 
-	// Seed the per-request GMP state on Global. This is a separate MT19937
-	// instance from the one mt_rand uses, so gmp_random_seed() does not
-	// disturb mt_rand()'s sequence (and vice versa). Lives on Global so
-	// it is scoped to a single script execution rather than leaking
-	// between concurrent requests.
+	// Seed a dedicated MT19937 instance for this request's gmp_random_*
+	// calls. Independent of Mt (mt_rand) so the two don't disturb each
+	// other, and scoped to the Global so it can't leak across requests.
 	//
-	// This still doesn't byte-match PHP's libgmp, because libgmp's
-	// random_seed initializes its own MT state differently from the
-	// reference algorithm.
-	ctx.Global().Random().GmpSeed(seedVal)
+	// Note: still doesn't byte-match PHP's libgmp, because libgmp
+	// initializes its own MT state differently from the reference
+	// algorithm. That's tracked in php_test.go's skip list.
+	ctx.Global().SetState(gmpRandKey, mathrand.New(mt19937.New(seedVal)))
 
 	return nil, nil
 }

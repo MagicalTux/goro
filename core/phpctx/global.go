@@ -91,8 +91,12 @@ type Global struct {
 	lastOutChar   byte
 	ImplicitFlush bool
 
-	rand   *random.State
-	strtok phpv.StrtokState
+	rand *random.State
+
+	// extState is the generic per-request state bag for extensions. Keys
+	// are *phpv.StateKey allocated at package init by each extension that
+	// needs to stash request-scoped data (see phpv.NewStateKey).
+	extState map[*phpv.StateKey]any
 
 	shownDeprecated map[string]struct{}
 
@@ -2206,8 +2210,15 @@ func (g *Global) Random() *random.State {
 	return g.rand
 }
 
-func (g *Global) Strtok() *phpv.StrtokState {
-	return &g.strtok
+func (g *Global) State(key *phpv.StateKey) any {
+	return g.extState[key]
+}
+
+func (g *Global) SetState(key *phpv.StateKey, value any) {
+	if g.extState == nil {
+		g.extState = make(map[*phpv.StateKey]any)
+	}
+	g.extState[key] = value
 }
 
 func (g *Global) GetUserErrorHandler() (phpv.Callable, phpv.PhpErrorType, *phpv.ZVal) {
