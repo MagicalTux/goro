@@ -3,7 +3,7 @@ package locale
 import (
 	"testing"
 
-	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core/phpv"
 )
 
 func reset(t *testing.T) {

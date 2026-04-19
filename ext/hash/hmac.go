@@ -4,9 +4,9 @@ import (
 	"crypto/hmac"
 	"encoding/hex"
 
-	"github.com/MagicalTux/goro/core"
-	"github.com/MagicalTux/goro/core/phpobj"
-	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core"
+	"github.com/KarpelesLab/goro/core/phpobj"
+	"github.com/KarpelesLab/goro/core/phpv"
 )
 
 // > func string hash_hmac ( string $algo , string $data , string $key [, bool $raw_output = FALSE ] )

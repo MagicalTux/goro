@@ -7,9 +7,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/KarpelesLab/gopcre2"
-	"github.com/MagicalTux/goro/core"
-	"github.com/MagicalTux/goro/core/phpobj"
-	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core"
+	"github.com/KarpelesLab/goro/core/phpobj"
+	"github.com/KarpelesLab/goro/core/phpv"
 )
 
 // > func mixed preg_replace ( mixed $pattern , mixed $replacement , mixed $subject [, int $limit = -1 [, int &$count ]] )

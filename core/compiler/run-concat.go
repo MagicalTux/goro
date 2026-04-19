@@ -3,7 +3,7 @@ package compiler
 import (
 	"io"
 
-	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core/phpv"
 )
 
 type runConcat []phpv.Runnable

@@ -3,7 +3,7 @@ package core
 import (
 	"math"
 
-	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core/phpv"
 )
 
 // > const

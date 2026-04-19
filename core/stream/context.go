@@ -3,7 +3,7 @@ package stream
 import (
 	"fmt"
 
-	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core/phpv"
 )
 
 type ContextOptions map[phpv.ZString]*phpv.ZVal

@@ -1,7 +1,7 @@
 package phperr
 
 import (
-	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core/phpv"
 )
 
 type PhpThrow struct {

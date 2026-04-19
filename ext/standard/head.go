@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/MagicalTux/goro/core"
-	"github.com/MagicalTux/goro/core/logopt"
-	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core"
+	"github.com/KarpelesLab/goro/core/logopt"
+	"github.com/KarpelesLab/goro/core/phpv"
 )
 
 // > func void header ( string $header [, bool $replace = TRUE [, int $http_response_code ]] )

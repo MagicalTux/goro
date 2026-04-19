@@ -1,9 +1,9 @@
 package ctype
 
 import (
-	"github.com/MagicalTux/goro/core"
-	"github.com/MagicalTux/goro/core/phpv"
-	"github.com/MagicalTux/goro/core/util"
+	"github.com/KarpelesLab/goro/core"
+	"github.com/KarpelesLab/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core/util"
 )
 
 // simple implementation of ctype methods

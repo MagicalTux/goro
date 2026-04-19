@@ -4,10 +4,10 @@ import (
 	"bytes"
 	"strings"
 
-	"github.com/MagicalTux/goro/core/compiler"
-	"github.com/MagicalTux/goro/core/phperr"
-	"github.com/MagicalTux/goro/core/phpv"
-	"github.com/MagicalTux/goro/core/tokenizer"
+	"github.com/KarpelesLab/goro/core/compiler"
+	"github.com/KarpelesLab/goro/core/phperr"
+	"github.com/KarpelesLab/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core/tokenizer"
 )
 
 func Eval(ctx phpv.Context, expr string) (*phpv.ZVal, error) {

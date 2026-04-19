@@ -3,9 +3,9 @@ package compiler
 import (
 	"fmt"
 
-	"github.com/MagicalTux/goro/core/phperr"
-	"github.com/MagicalTux/goro/core/phpobj"
-	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core/phperr"
+	"github.com/KarpelesLab/goro/core/phpobj"
+	"github.com/KarpelesLab/goro/core/phpv"
 )
 
 // validateBreakContinue walks the AST to find break/continue statements that are

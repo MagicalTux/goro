@@ -3,9 +3,9 @@ package core
 import (
 	"strings"
 
-	"github.com/MagicalTux/goro/core/logopt"
-	"github.com/MagicalTux/goro/core/phpobj"
-	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core/logopt"
+	"github.com/KarpelesLab/goro/core/phpobj"
+	"github.com/KarpelesLab/goro/core/phpv"
 )
 
 // > func void spl_autoload ( string $class_name [, string $file_extensions = ".php,.inc" ] )

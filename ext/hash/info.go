@@ -1,7 +1,7 @@
 package hash
 
 import (
-	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core/phpv"
 )
 
 // phpHashAlgoOrder matches the order PHP registers hash algorithms (as returned by hash_algos()).

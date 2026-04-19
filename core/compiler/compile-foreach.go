@@ -6,10 +6,10 @@ import (
 	"io"
 	"iter"
 
-	"github.com/MagicalTux/goro/core/phperr"
-	"github.com/MagicalTux/goro/core/phpobj"
-	"github.com/MagicalTux/goro/core/phpv"
-	"github.com/MagicalTux/goro/core/tokenizer"
+	"github.com/KarpelesLab/goro/core/phperr"
+	"github.com/KarpelesLab/goro/core/phpobj"
+	"github.com/KarpelesLab/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core/tokenizer"
 )
 
 func (r *runnableForeach) IsCompoundDump() {}

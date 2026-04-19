@@ -4,10 +4,10 @@ import (
 	"context"
 	"testing"
 
-	"github.com/MagicalTux/goro/core/ini"
-	"github.com/MagicalTux/goro/core/phpctx"
-	"github.com/MagicalTux/goro/core/phpv"
-	_ "github.com/MagicalTux/goro/ext/standard"
+	"github.com/KarpelesLab/goro/core/ini"
+	"github.com/KarpelesLab/goro/core/phpctx"
+	"github.com/KarpelesLab/goro/core/phpv"
+	_ "github.com/KarpelesLab/goro/ext/standard"
 )
 
 func benchPHP(b *testing.B, code string) {

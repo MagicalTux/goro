@@ -2,8 +2,8 @@ package gd
 
 import (
 	"github.com/KarpelesLab/gogd"
-	"github.com/MagicalTux/goro/core"
-	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core"
+	"github.com/KarpelesLab/goro/core/phpv"
 )
 
 func fncGDInfo(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {

@@ -5,8 +5,8 @@ import (
 	"net/url"
 	"os"
 
-	"github.com/MagicalTux/goro/core/phpobj"
-	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core/phpobj"
+	"github.com/KarpelesLab/goro/core/phpv"
 )
 
 // UserStreamHandler implements stream.Handler for PHP user-space stream wrappers

@@ -1,7 +1,7 @@
 package openssl
 
 import (
-	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core/phpv"
 )
 
 // > func string openssl_error_string ( void )

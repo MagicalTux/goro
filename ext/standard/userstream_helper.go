@@ -3,9 +3,9 @@ package standard
 import (
 	"strings"
 
-	"github.com/MagicalTux/goro/core/phpctx"
-	"github.com/MagicalTux/goro/core/phpv"
-	"github.com/MagicalTux/goro/core/stream"
+	"github.com/KarpelesLab/goro/core/phpctx"
+	"github.com/KarpelesLab/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core/stream"
 )
 
 // getUserStreamHandler checks if a path uses a registered user stream wrapper.

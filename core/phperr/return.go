@@ -1,6 +1,6 @@
 package phperr
 
-import "github.com/MagicalTux/goro/core/phpv"
+import "github.com/KarpelesLab/goro/core/phpv"
 
 type PhpReturn struct {
 	L *phpv.Loc

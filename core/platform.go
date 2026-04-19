@@ -3,7 +3,7 @@ package core
 import (
 	"runtime"
 
-	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core/phpv"
 )
 
 // TODO improve these

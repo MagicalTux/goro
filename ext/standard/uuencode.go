@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"math"
 
-	"github.com/MagicalTux/goro/core"
-	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core"
+	"github.com/KarpelesLab/goro/core/phpv"
 )
 
 // > func string convert_uuencode ( string $data )

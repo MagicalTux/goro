@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/MagicalTux/goro/core/phpobj"
-	"github.com/MagicalTux/goro/core/phpv"
-	"github.com/MagicalTux/goro/core/tokenizer"
+	"github.com/KarpelesLab/goro/core/phpobj"
+	"github.com/KarpelesLab/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core/tokenizer"
 )
 
 type runnableClone struct {

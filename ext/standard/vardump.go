@@ -5,9 +5,9 @@ import (
 	"strings"
 	"unsafe"
 
-	"github.com/MagicalTux/goro/core/logopt"
-	"github.com/MagicalTux/goro/core/phpobj"
-	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core/logopt"
+	"github.com/KarpelesLab/goro/core/phpobj"
+	"github.com/KarpelesLab/goro/core/phpv"
 )
 
 // varDumpTracker is implemented by Global to support global recursion detection for var_dump.

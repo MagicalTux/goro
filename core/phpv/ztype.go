@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/MagicalTux/goro/core/logopt"
+	"github.com/KarpelesLab/goro/core/logopt"
 )
 
 type ZType int

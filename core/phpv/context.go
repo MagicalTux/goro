@@ -5,8 +5,8 @@ import (
 	"io"
 	"iter"
 
-	"github.com/MagicalTux/goro/core/logopt"
-	"github.com/MagicalTux/goro/core/random"
+	"github.com/KarpelesLab/goro/core/logopt"
+	"github.com/KarpelesLab/goro/core/random"
 )
 
 // StrtokState holds the between-call state for PHP's strtok() built-in.

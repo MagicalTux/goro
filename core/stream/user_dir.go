@@ -3,8 +3,8 @@ package stream
 import (
 	"fmt"
 
-	"github.com/MagicalTux/goro/core/phpobj"
-	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core/phpobj"
+	"github.com/KarpelesLab/goro/core/phpv"
 )
 
 // UserDirHandle is a directory handle for user stream wrappers.

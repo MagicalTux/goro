@@ -5,7 +5,7 @@ import (
 	"math"
 	"strings"
 
-	"github.com/MagicalTux/goro/core/logopt"
+	"github.com/KarpelesLab/goro/core/logopt"
 )
 
 // ErrComparisonDepth is returned when object comparison exceeds the maximum

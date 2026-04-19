@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"unsafe"
 
-	"github.com/MagicalTux/goro/core/logopt"
+	"github.com/KarpelesLab/goro/core/logopt"
 )
 
 // php arrays work with two kind of keys

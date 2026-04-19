@@ -1,6 +1,6 @@
 package phpctx
 
-import "github.com/MagicalTux/goro/core/phpv"
+import "github.com/KarpelesLab/goro/core/phpv"
 
 func (g *Global) Getenv(key string) (string, bool) {
 	// locate env

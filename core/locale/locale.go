@@ -15,7 +15,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core/phpv"
 )
 
 // Category codes passed to setlocale(). These are the PHP-visible values and

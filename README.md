@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/KarpelesLab/goro/actions/workflows/ci.yml/badge.svg)](https://github.com/KarpelesLab/goro/actions/workflows/ci.yml)
 [![Coverage Status](https://coveralls.io/repos/github/KarpelesLab/goro/badge.svg?branch=master)](https://coveralls.io/github/KarpelesLab/goro?branch=master)
-[![Go Reference](https://pkg.go.dev/badge/github.com/MagicalTux/goro.svg)](https://pkg.go.dev/github.com/MagicalTux/goro)
+[![Go Reference](https://pkg.go.dev/badge/github.com/KarpelesLab/goro.svg)](https://pkg.go.dev/github.com/KarpelesLab/goro)
 
 PHP engine implemented in pure Go. Feature-complete for PHP 8.5 language features.
 
@@ -19,7 +19,7 @@ PHP is a nice language but is having trouble keeping up with modern languages. T
 ## Install
 
 ```bash
-go install github.com/MagicalTux/goro/sapi/php-cli@latest
+go install github.com/KarpelesLab/goro/sapi/php-cli@latest
 ```
 
 ## Status

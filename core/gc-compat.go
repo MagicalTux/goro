@@ -1,6 +1,6 @@
 package core
 
-import "github.com/MagicalTux/goro/core/phpv"
+import "github.com/KarpelesLab/goro/core/phpv"
 
 // > func int gc_collect_cycles ( void )
 func stdFuncGcCollectCycles(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {

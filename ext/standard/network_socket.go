@@ -6,10 +6,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/MagicalTux/goro/core"
-	"github.com/MagicalTux/goro/core/logopt"
-	"github.com/MagicalTux/goro/core/phpv"
-	"github.com/MagicalTux/goro/core/stream"
+	"github.com/KarpelesLab/goro/core"
+	"github.com/KarpelesLab/goro/core/logopt"
+	"github.com/KarpelesLab/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core/stream"
 )
 
 // parseStreamSocketAddr parses "tcp://host:port", "unix:///path", etc. into (network, address).

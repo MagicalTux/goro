@@ -1,6 +1,6 @@
 package core
 
-import "github.com/MagicalTux/goro/core/phpv"
+import "github.com/KarpelesLab/goro/core/phpv"
 
 // > func mixed include (string filename)
 func fncInclude(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {

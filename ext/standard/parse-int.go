@@ -5,7 +5,7 @@ import (
 	"math"
 	"strconv"
 
-	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core/phpv"
 )
 
 func baseError(fn, str string, base int) *strconv.NumError {

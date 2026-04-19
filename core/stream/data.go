@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core/phpv"
 )
 
 // dataHandler implements the "data:" stream wrapper.

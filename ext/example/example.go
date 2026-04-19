@@ -3,8 +3,8 @@ package example
 import (
 	"strings"
 
-	"github.com/MagicalTux/goro/core"
-	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core"
+	"github.com/KarpelesLab/goro/core/phpv"
 )
 
 // The comments // > func is required so that it will be

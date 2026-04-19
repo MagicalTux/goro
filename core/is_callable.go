@@ -3,8 +3,8 @@ package core
 import (
 	"strings"
 
-	"github.com/MagicalTux/goro/core/compiler"
-	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core/compiler"
+	"github.com/KarpelesLab/goro/core/phpv"
 )
 
 // > func bool is_callable ( mixed $value [, bool $syntax_only = false [, string &$callable_name = null ]] )

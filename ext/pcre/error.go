@@ -7,7 +7,7 @@ import (
 	"sync"
 
 	"github.com/KarpelesLab/gopcre2"
-	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core/phpv"
 )
 
 type pcreErrKind int

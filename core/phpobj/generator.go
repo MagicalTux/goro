@@ -6,8 +6,8 @@ import (
 	"iter"
 	"time"
 
-	"github.com/MagicalTux/goro/core/phperr"
-	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core/phperr"
+	"github.com/KarpelesLab/goro/core/phpv"
 )
 
 // generatorCloseErr is a sentinel error that force-closes a generator,

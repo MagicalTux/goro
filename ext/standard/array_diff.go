@@ -3,9 +3,9 @@ package standard
 import (
 	"fmt"
 
-	"github.com/MagicalTux/goro/core"
-	"github.com/MagicalTux/goro/core/phpobj"
-	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core"
+	"github.com/KarpelesLab/goro/core/phpobj"
+	"github.com/KarpelesLab/goro/core/phpv"
 )
 
 type arrayDiffFn func(k1, v1, k2, v2 *phpv.ZVal) (bool, error)

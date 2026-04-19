@@ -5,8 +5,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/MagicalTux/goro/core/phpobj"
-	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core/phpobj"
+	"github.com/KarpelesLab/goro/core/phpv"
 )
 
 // Seek implements io.Seeker for user stream wrappers.

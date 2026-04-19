@@ -3,7 +3,7 @@ package phpobj
 import (
 	"fmt"
 
-	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core/phpv"
 )
 
 // PHP 8.5 Attribute class constants

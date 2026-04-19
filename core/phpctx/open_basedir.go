@@ -4,8 +4,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/MagicalTux/goro/core/logopt"
-	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core/logopt"
+	"github.com/KarpelesLab/goro/core/phpv"
 )
 
 // CheckOpenBasedir checks if the given path is within the open_basedir restriction.

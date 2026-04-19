@@ -1,7 +1,7 @@
 package standard
 
 import (
-	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core/phpv"
 )
 
 // > func bool get_magic_quotes_gpc ( void )

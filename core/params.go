@@ -5,9 +5,9 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/MagicalTux/goro/core/phperr"
-	"github.com/MagicalTux/goro/core/phpobj"
-	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core/phperr"
+	"github.com/KarpelesLab/goro/core/phpobj"
+	"github.com/KarpelesLab/goro/core/phpv"
 )
 
 var ErrNotEnoughArguments = errors.New("Too few arguments")

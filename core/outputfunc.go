@@ -1,8 +1,8 @@
 package core
 
 import (
-	"github.com/MagicalTux/goro/core/phperr"
-	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core/phperr"
+	"github.com/KarpelesLab/goro/core/phpv"
 )
 
 // > func void echo ( string $arg1 [, string $... ] )

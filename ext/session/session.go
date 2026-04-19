@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/MagicalTux/goro/core"
-	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core"
+	"github.com/KarpelesLab/goro/core/phpv"
 )
 
 // Session status constants

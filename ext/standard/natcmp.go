@@ -3,7 +3,7 @@ package standard
 import (
 	"unicode"
 
-	"github.com/MagicalTux/goro/core"
+	"github.com/KarpelesLab/goro/core"
 )
 
 // translated from sourcefrog's strnatcmp.c

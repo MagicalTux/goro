@@ -4,9 +4,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/MagicalTux/goro/core"
-	"github.com/MagicalTux/goro/core/logopt"
-	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core"
+	"github.com/KarpelesLab/goro/core/logopt"
+	"github.com/KarpelesLab/goro/core/phpv"
 )
 
 // > func bool sort ( array &$array [, int $sort_flags = SORT_REGULAR ] )

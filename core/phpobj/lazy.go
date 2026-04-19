@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"iter"
 
-	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core/phpv"
 )
 
 // Lazy object state constants

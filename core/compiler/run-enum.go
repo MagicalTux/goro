@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/MagicalTux/goro/core/phpobj"
-	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core/phpobj"
+	"github.com/KarpelesLab/goro/core/phpv"
 )
 
 // runEnumCaseInit initializes an enum case constant. It creates the singleton

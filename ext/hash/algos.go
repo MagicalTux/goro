@@ -5,7 +5,7 @@ import (
 	"hash/fnv"
 
 	"github.com/KarpelesLab/anyhash"
-	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core/phpv"
 )
 
 // algos maps algorithm names to constructors. Populated from anyhash.List() at init.

@@ -9,9 +9,9 @@ import (
 
 	"github.com/KarpelesLab/gotz"
 	"github.com/KarpelesLab/strtotime"
-	"github.com/MagicalTux/goro/core"
-	"github.com/MagicalTux/goro/core/phpobj"
-	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core"
+	"github.com/KarpelesLab/goro/core/phpobj"
+	"github.com/KarpelesLab/goro/core/phpv"
 )
 
 // isDST returns true if the given time is in DST for its timezone.

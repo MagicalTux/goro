@@ -7,8 +7,8 @@ package standard
 import (
 	"strings"
 
-	"github.com/MagicalTux/goro/core"
-	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core"
+	"github.com/KarpelesLab/goro/core/phpv"
 )
 
 // cryptFailure is the sentinel string PHP returns when crypt() cannot compute

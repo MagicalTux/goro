@@ -1,7 +1,7 @@
 package phpobj
 
 import (
-	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core/phpv"
 )
 
 type callCatcher struct {

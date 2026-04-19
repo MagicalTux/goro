@@ -3,8 +3,8 @@ package openssl
 import (
 	"crypto/rand"
 
-	"github.com/MagicalTux/goro/core"
-	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core"
+	"github.com/KarpelesLab/goro/core/phpv"
 )
 
 // > func string openssl_random_pseudo_bytes ( int $length [, bool &$crypto_strong ] )

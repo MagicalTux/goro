@@ -1,4 +1,4 @@
-module github.com/MagicalTux/goro
+module github.com/KarpelesLab/goro
 
 go 1.25.3
 

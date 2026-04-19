@@ -1,7 +1,7 @@
 package core
 
 import (
-	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core/phpv"
 )
 
 // > func string|false get_called_class ( void )

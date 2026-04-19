@@ -1,9 +1,9 @@
 package standard
 
 import (
-	"github.com/MagicalTux/goro/core"
-	"github.com/MagicalTux/goro/core/locale"
-	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core"
+	"github.com/KarpelesLab/goro/core/locale"
+	"github.com/KarpelesLab/goro/core/phpv"
 )
 
 // Longest locale name PHP accepts (matches ext/standard/string.c in upstream

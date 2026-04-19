@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/MagicalTux/goro/core/phpv"
-	"github.com/MagicalTux/goro/core/stream"
+	"github.com/KarpelesLab/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core/stream"
 )
 
 // getIncludePath reads the include_path INI setting and returns it as a slice of directories.

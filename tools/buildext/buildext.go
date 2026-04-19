@@ -111,14 +111,14 @@ func init() {
 	extName := pkg
 	version := "VERSION"
 	importSet := map[string]struct{}{
-		// "github.com/MagicalTux/goro/core":        {},
-		"github.com/MagicalTux/goro/core/phpctx": {},
-		"github.com/MagicalTux/goro/core/phpobj": {},
-		"github.com/MagicalTux/goro/core/phpv":   {},
+		// "github.com/KarpelesLab/goro/core":        {},
+		"github.com/KarpelesLab/goro/core/phpctx": {},
+		"github.com/KarpelesLab/goro/core/phpobj": {},
+		"github.com/KarpelesLab/goro/core/phpv":   {},
 	}
 
 	if ext.Dirname != "core" {
-		importSet["github.com/MagicalTux/goro/core"] = struct{}{}
+		importSet["github.com/KarpelesLab/goro/core"] = struct{}{}
 		version = "core.VERSION"
 	} else {
 		extName = "Core"
@@ -142,7 +142,7 @@ func init() {
 	for _, phpIdent := range funcNames {
 		decl := ext.Functions[phpIdent]
 		if decl.Package != ext.Dirname {
-			pkg := "github.com/MagicalTux/goro/" + decl.Package
+			pkg := "github.com/KarpelesLab/goro/" + decl.Package
 			importSet[pkg] = struct{}{}
 		}
 
@@ -171,7 +171,7 @@ func init() {
 	for _, phpIdent := range classes {
 		decl := ext.Classes[phpIdent]
 		if decl.Package != ext.Dirname {
-			pkg := "github.com/MagicalTux/goro/" + decl.Package
+			pkg := "github.com/KarpelesLab/goro/" + decl.Package
 			importSet[pkg] = struct{}{}
 		}
 
@@ -199,7 +199,7 @@ func init() {
 	for _, constant := range constants {
 		decl := ext.Constants[constant]
 		if decl.Package != ext.Dirname {
-			pkg := "github.com/MagicalTux/goro/" + decl.Package
+			pkg := "github.com/KarpelesLab/goro/" + decl.Package
 			importSet[pkg] = struct{}{}
 		}
 

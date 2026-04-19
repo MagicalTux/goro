@@ -5,9 +5,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/KarpelesLab/gopcre2"
-	"github.com/MagicalTux/goro/core"
-	"github.com/MagicalTux/goro/core/phpobj"
-	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core"
+	"github.com/KarpelesLab/goro/core/phpobj"
+	"github.com/KarpelesLab/goro/core/phpv"
 )
 
 // validMatchFlags are the valid flags for preg_match/preg_match_all

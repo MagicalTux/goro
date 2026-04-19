@@ -10,8 +10,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/MagicalTux/goro/core"
-	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core"
+	"github.com/KarpelesLab/goro/core/phpv"
 	"golang.org/x/crypto/md4"
 	"golang.org/x/crypto/sha3"
 )

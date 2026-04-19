@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/KarpelesLab/anyhash"
-	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core/phpv"
 )
 
 // phpSerializeMagic is the magic number PHP uses to validate serialized hash data.

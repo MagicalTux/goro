@@ -51,8 +51,8 @@ Then open and edit the `ext/my_ext/funcs.go` file to add the following:
 package my_ext
 
 import (
-	"github.com/MagicalTux/goro/core"
-	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core"
+	"github.com/KarpelesLab/goro/core/phpv"
 )
 
 
@@ -79,7 +79,7 @@ Finally, to make the extension available to the CLI, in the file sapi/php-cli/ma
 add the following inside the import list:
 ```
     // ... other imports here
-	_ "github.com/MagicalTux/goro/ext/my_ext"
+	_ "github.com/KarpelesLab/goro/ext/my_ext"
 ```
 
 Run `make cli` to make sure there are no errors.

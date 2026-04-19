@@ -1,7 +1,7 @@
 package spl
 
-import "github.com/MagicalTux/goro/core/phpobj"
-import "github.com/MagicalTux/goro/core/phpv"
+import "github.com/KarpelesLab/goro/core/phpobj"
+import "github.com/KarpelesLab/goro/core/phpv"
 
 // Countable interface - objects that can be counted with count()
 var Countable = &phpobj.ZClass{

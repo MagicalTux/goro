@@ -3,10 +3,10 @@ package spl
 import (
 	"fmt"
 
-	"github.com/MagicalTux/goro/core/logopt"
-	"github.com/MagicalTux/goro/core/phpobj"
-	"github.com/MagicalTux/goro/core/phpv"
-	extjson "github.com/MagicalTux/goro/ext/json"
+	"github.com/KarpelesLab/goro/core/logopt"
+	"github.com/KarpelesLab/goro/core/phpobj"
+	"github.com/KarpelesLab/goro/core/phpv"
+	extjson "github.com/KarpelesLab/goro/ext/json"
 )
 
 // callImplicitDestructorOnZVal triggers an immediate implicit destructor call

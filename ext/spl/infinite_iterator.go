@@ -1,8 +1,8 @@
 package spl
 
 import (
-	"github.com/MagicalTux/goro/core/phpobj"
-	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core/phpobj"
+	"github.com/KarpelesLab/goro/core/phpv"
 )
 
 // infiniteIteratorData holds the internal state for an InfiniteIterator instance.

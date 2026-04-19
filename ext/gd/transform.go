@@ -4,8 +4,8 @@ import (
 	"image"
 
 	"github.com/KarpelesLab/gogd"
-	"github.com/MagicalTux/goro/core"
-	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core"
+	"github.com/KarpelesLab/goro/core/phpv"
 )
 
 func fncImageCopy(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {

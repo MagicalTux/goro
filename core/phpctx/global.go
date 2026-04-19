@@ -17,13 +17,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/MagicalTux/goro/core/locale"
-	"github.com/MagicalTux/goro/core/logopt"
-	"github.com/MagicalTux/goro/core/phperr"
-	"github.com/MagicalTux/goro/core/phpobj"
-	"github.com/MagicalTux/goro/core/phpv"
-	"github.com/MagicalTux/goro/core/random"
-	"github.com/MagicalTux/goro/core/stream"
+	"github.com/KarpelesLab/goro/core/locale"
+	"github.com/KarpelesLab/goro/core/logopt"
+	"github.com/KarpelesLab/goro/core/phperr"
+	"github.com/KarpelesLab/goro/core/phpobj"
+	"github.com/KarpelesLab/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core/random"
+	"github.com/KarpelesLab/goro/core/stream"
 )
 
 type globalLazyOffset struct {

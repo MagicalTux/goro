@@ -3,7 +3,7 @@ package phperr
 import (
 	"errors"
 
-	"github.com/MagicalTux/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core/phpv"
 )
 
 // ErrHandledByUser is returned when a user error handler has handled the error.

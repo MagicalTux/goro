@@ -8,7 +8,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/MagicalTux/goro/core/logopt"
+	"github.com/KarpelesLab/goro/core/logopt"
 )
 
 // floatToIntCapped converts a float to int, capping at INT64_MAX/MIN for out-of-range values.

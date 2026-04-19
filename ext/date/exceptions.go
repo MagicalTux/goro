@@ -1,7 +1,7 @@
 package date
 
 import (
-	"github.com/MagicalTux/goro/core/phpobj"
+	"github.com/KarpelesLab/goro/core/phpobj"
 )
 
 // Date exception hierarchy (PHP 8.3+)
