@@ -1,212 +1,118 @@
 # Goro Roadmap
 
-**Current state (March 2026):** ~8,850 / 12,110 tests passing (73.1%). First 2,000: 1,762/2,000 (90.2%). PCRE2 via gopcre2, IANA timezones via gotz.
+**Current state (April 2026):** 11,838 / 12,121 PHP 8.5.5 tests passing
+(97.7%). 196 failures, 87 skipped in CI. All 20 vendored extensions
+implemented in pure Go; `CGO_ENABLED=0 go build ./...` succeeds.
 
-### Near-Complete Areas
-- enum: 141/151 (99.3%) — 1 failure: refcount display (Go GC limitation)
-- ext/ctype: 48/49 (98%) — 1 failure: locale support needed
-- closures: 126/135 (93%) — remaining: destructor timing, const expr attributes
-- ext/gmp: 90/99 (92%) — remaining: object ID recycling, random seed, ECC
-- exceptions: 86/94 (92%) — remaining: goto, stream wrappers in include_path
-
-### Major Improvements This Session
-- ext/gmp: 23→90 (92%) — complete math/big implementation
-- ext/reflection: 229→364 (77%) — ReflectionClass::__toString() overhaul
-- generators: 96→141 (77%) — yield from, finally, throw
-- ext/date: 367→435 (65%) — gotz integration, strtotime v0.1.1, DatePeriod
-- ext/json: 55→73 (84%) — encode/decode improvements
-- ext/standard/serialize: 66→121 (75%) — reference tracking overhaul
-- New extensions: session, xml, curl, sockets, zlib, mysqli, sqlite3, bz2
-- Library integrations: gopcre2, gotz, gobzip2, go-sql-driver/mysql, go-sqlite
-
-### Fundamental Limitations (cannot fix without engine redesign)
-- Object ID recycling: Go GC doesn't deterministically free objects (~30 tests)
-- Destructor timing: Go tracing GC vs PHP refcounting (~20 tests)
-- goto statement: not implemented (~5 tests)
-- PCRE2 random seed: different PRNG than PHP's GMP
-
-This document tracks the major work areas needed to reach full PHP 8.5 compatibility, organized by impact (number of test fixes) and estimated effort.
+With the high-level features in place, remaining work is mostly a long
+tail of targeted fixes: error-message format parity, a handful of
+reflection/attribute edge cases, DST/DatePeriod subtleties, and a few
+tests gated on language features we haven't implemented (`goto`, full
+`exec()` subprocess support).
 
 ---
 
-## Tier 1: High Impact (50+ tests each)
+## Remaining failures by area
 
-### Attributes & Reflection (~110 tests failing)
-Attribute parsing and storage is complete. Reflection classes exist with `getAttributes()` on all major types. Failures are likely in attribute argument evaluation, `newInstance()`, `isRepeated()`, `getTarget()`, and edge cases around namespace resolution and built-in attributes like `#[\Deprecated]`, `#[\Override]`, `#[\SensitiveParameter]`.
+From the last CI run (commit `852b33af`). The Other category is the
+long tail — ~40 distinct areas, at most three failures each.
 
-**Key work:**
-- Audit `ReflectionAttribute::newInstance()` — must instantiate the attribute class with evaluated arguments
-- Ensure `Attribute::TARGET_*` and `Attribute::IS_REPEATABLE` flags are enforced
-- Validate attribute placement rules (e.g., `#[\Attribute]` on non-attribute class)
-- Fix namespace/use-alias resolution in attribute class names
+| Area | Failures | Notes |
+|------|----------|-------|
+| ext/date | 51 | DatePeriod serialization format, date_parse edge cases, DST fallback transitions |
+| attributes | 20 | Reflection __toString formatting, delayed target validation, AST printing |
+| exceptions | 9 | __toString error location, variance autoload, stream wrappers |
+| closures | 9 | Closure const expressions, binding edge cases |
+| clone | 6 | AST printing, clone-with edge cases |
+| exit | 5 | Tests rely on `exec()` subprocess spawning, disabling exit |
+| constexpr | 5 | New-in-defaults, array unpack in const, stack trace format |
+| asymmetric_visibility | 5 | Static props, nested variations, indirect modification |
+| assert | 5 | Callback exceptions, `??=` in assert, AST pretty-printer |
+| ext/mbstring | 4 | Encoding conversion edge cases |
+| constants | 4 | Constant evaluation edge cases |
+| ext/hash | 3 | PHP serialization format edge cases |
+| ext/gmp | 3 | GMP unserialize with references |
+| **Other** | ~67 | Scattered across ~40 areas |
 
-### Date Extension (~57 tests failing)
-Core date functions (`date`, `strtotime`, `mktime`, DateTime classes) are implemented. Failures are in edge cases: unusual format strings, timezone handling, DST transitions, relative date parsing (`"next Thursday"`, `"+1 month"` on Jan 31), and `DateInterval` formatting.
+### Fundamental limitations (would need engine-level work)
 
-**Key work:**
-- Fix `strtotime()` edge cases (relative dates, timezone abbreviations)
-- Complete `DateInterval::format()` with all format specifiers
-- Fix DST transition handling in timezone conversions
-- Implement missing `DatePeriod` iteration
-
-### Closures (~60 tests failing)
-Closure creation, binding, and invocation work. Failures are in debug output format (var_dump/array cast of closures), scope binding edge cases (`bindTo(null, null)`, static closure + `$this`), and closure name format in stack traces.
-
-**Key work:**
-- Fix closure name format: PHP 8.4+ uses `{closure:filename:line}` consistently
-- Fix `(array)$closure` cast — should produce same keys as `__debugInfo`
-- Fix scope preservation when rebinding with `bindTo(null)` / `bind(null)`
-- Implement `#[\AllowDynamicProperties]` enforcement on Closure (prohibit `$closure->x = 1`)
-
----
-
-## Tier 2: Medium Impact (20-50 tests each)
-
-### Exceptions & Stack Traces (~49 tests failing)
-Exception throwing/catching works. Failures are in stack trace format (missing constructor frame, wrong `args` format), exception context after partial construction, and error message format matching.
-
-**Key work:**
-- Add constructor frame to `getTrace()` when exception is thrown inside `__construct`
-- Fix `getTraceAsString()` argument truncation format
-- Ensure partially-constructed objects remain accessible after exception in constructor
-- Fix error message format for TypeError/ArgumentCountError to match PHP exactly
-
-### Constants & Const Expressions (~71 tests combined)
-Basic constants work. Failures are in const expressions (operators like `>>`, `~`, complex ternary), magic constants in const context (`__LINE__`), `define()` error handling, and warning generation during const evaluation.
-
-**Key work:**
-- Support all operators in constant expressions (bitwise, shift, ternary)
-- Emit warnings during const evaluation (e.g., "Trying to access array offset on null")
-- Fix `define()` error messages and type validation to match PHP 8
-- Fix `constant()` lookup for class constants and error handling
-
-### Enum (~36 tests failing)
-Basic enum functionality works (cases, backed enums, `from()`/`tryFrom()`). Failures are in magic method restrictions, reflection, `cases()` method, and `__CLASS__`/`__FUNCTION__` resolution inside enum methods.
-
-**Key work:**
-- Enforce magic method restrictions (prohibit `__construct`, `__destruct`, `__clone`, `__sleep`, `__wakeup`, `__set_state`, `__debugInfo`)
-- Fix `__CLASS__` to resolve to enum name inside enum methods
-- Complete `ReflectionEnum` and `ReflectionEnumBackedCase` / `ReflectionEnumUnitCase`
-- Implement `UnitEnum::cases()` and `BackedEnum::from()`/`tryFrom()` error messages
-
-### Exit/Die (~26 tests failing)
-`exit`/`die` work as language constructs and are registered as functions. `exit(...)`/`die(...)` first-class callable syntax works. Most failures require `exec()` support (running sub-processes) or AST printing (`die` should print as `\exit()` in assertion messages).
-
-**Key work:**
-- Implement AST printing for assertions — `die` should render as `\exit()`, `exit(42)` as `\exit(42)`
-- Fix exit code propagation through `exec()`/`shell_exec()`
-- Support `exit` as function in `define()` context (parse error expected)
-
-### Asymmetric Visibility (~22 tests failing)
-Parsing and storage of `private(set)`/`protected(set)` is implemented. Failures are likely in enforcement: preventing writes from wrong scope, interaction with `__set`/`__get` magic, inheritance rules, and readonly + asymmetric combinations.
-
-**Key work:**
-- Enforce set-visibility on property writes from outside allowed scope
-- Handle `__set` fallback when property is asymmetric and unset
-- Validate inheritance: child class cannot widen set-visibility
-- Fix error message format: "Cannot modify private(set) property X::$y from scope Z"
-
-### Dynamic Calls & call_user_func (~36 tests combined)
-Basic `call_user_func`/`call_user_func_array` work. Failures are in method visibility enforcement (private/protected access through callbacks), error message formatting, and `$this->$method()` dynamic dispatch.
-
-**Key work:**
-- Enforce visibility rules in `call_user_func` matching the caller's scope
-- Fix error messages: "Call to private method X::y() from scope Z"
-- Handle `self::`/`parent::` in callback strings with proper deprecation warnings
+- **Object ID recycling** — Go's tracing GC doesn't deterministically
+  free objects the way PHP's refcount-based engine does, so some tests
+  that assume a specific object-id sequence drift. (~30 tests.)
+- **Destructor timing** — related; deterministic destructors at scope
+  exit require refcount tracking. (~20 tests.)
+- **`goto`** — not implemented. (~5 tests.)
+- **PCRE2 / GMP RNGs** — we use different PRNGs than PHP, so tests
+  asserting exact random output under a fixed seed don't match.
+- **`SensitiveParameter` backtrace redaction** — not implemented.
 
 ---
 
-## Tier 3: Lower Impact (10-20 tests each)
+## Test suite coverage
 
-### Error Messages (~16 tests)
-Various error/warning messages don't match PHP's exact format. Common patterns: "Interface not found" vs "Class not found", stack trace format in fatal errors, HTML error formatting.
+The vendored PHP 8.5.5 test set is 12,121 tests. Ten extensions have
+their tests imported (`ctype, date, gmp, hash, json, mbstring, pcre,
+reflection, spl, standard`), alongside `Zend/tests` (core language)
+and `tests/` (general).
 
-### Constructor Promotion (~16 tests)
-Promoted properties exist but type validation on assignment may be incomplete. Fix: enforce type hints on promoted properties and match error messages.
+| Area | Tests | Pass rate |
+|------|-------|-----------|
+| ext/standard | 3,808 | high |
+| ext/spl | 781 | ~82% |
+| ext/date | 688 | ~93% |
+| ext/reflection | 493 | ~75% |
+| ext/mbstring | 416 | ~97% |
+| ext/pcre | 163 | 67% (PCRE2 via gopcre2) |
+| ext/gmp | 99 | 97% |
+| ext/json | 88 | 98% |
+| ext/hash | 80 | 94% |
+| ext/ctype | 49 | 100% |
 
-### Class Alias (~16 tests)
-`class_alias()` is implemented. Failures likely in edge cases: aliasing to existing class, aliasing interfaces/traits, and autoload interaction.
-
-### CType Extension (~15 tests)
-All 11 functions are implemented with PHP 8.1+ string-only behavior. Failures need investigation — likely edge cases with empty strings, multibyte, or locale-dependent behavior.
-
-### Clone (~12 tests)
-`clone` and `clone($obj, [...])` (PHP 8.5) are implemented. Failures likely in `__clone` method interaction, readonly property cloning, and error messages.
-
-### Assert (~12 tests)
-`assert_options()` exists but `assert()` as a language construct is not implemented. Need to add `assert()` with expression evaluation and configurable behavior (warning, exception, callback).
-
-### Backtrace (~11 tests)
-`debug_backtrace()` works but may be missing `args` key or have wrong format for some frame types.
-
-### Class Name (~10 tests)
-`::class` constant resolution may have edge cases in namespace contexts or with string expressions.
-
-### Declare (~8 tests)
-`declare(strict_types=1)` works. Failures likely in `declare(encoding=...)` validation and `declare(ticks=...)` handler.
+Not yet vendored: `ext/{bz2, curl, gd, mbstring (some subdirs),
+mysqli, openssl, session, sockets, sqlite3, xml, zlib}` tests. The
+extensions themselves are implemented (see README), but the upstream
+test suites aren't imported into the repo yet.
 
 ---
 
-## Tier 4: Individual Bug Fixes (~200 tests)
+## Planned work
 
-The remaining ~200 failures are individual bugs spread across many PHP features. Common themes:
-- **Reference handling** — by-ref assignment to overloaded properties, reference counting edge cases
-- **Array operations** — `array_splice` with iterator, `array_unshift` COW, indirect modification warnings
-- **Type coercion** — compound assignment with type conversion, implicit float-to-int
-- **Error handling** — specific error/warning messages not matching PHP format
-- **Object operations** — dynamic property deprecation, property hooks, readonly enforcement
+### Short-term (individual test fixes)
 
----
+- **ext/date, attributes, exceptions, closures** — these four buckets
+  account for ~50% of remaining failures. Each is a grab-bag of small
+  fixes (error-message format, reflection output, AST printing).
+- **AST pretty-printer** — multiple test areas (`assert`, `clone`,
+  `attributes`, `constexpr`) depend on it matching PHP's exact format.
+  A focused pass on the printer would clear a dozen tests.
+- **Reflection `__toString`** — the remaining attribute/reflection
+  failures largely come from slight format differences.
 
-## Full Test Suite (12,110 tests)
+### Medium-term (features)
 
-The full PHP 8.5.5 test suite imported into goro has 12,110 tests. Major areas by test count:
+- **PDO** — via `database/sql`; the MySQL and SQLite drivers are
+  already in the tree (`go-sql-driver/mysql`, `glebarez/go-sqlite`).
+- **`iconv`** — maps cleanly onto `golang.org/x/text/transform`.
+- **`exec()` subprocess support** — would unlock the `exit/` tests.
 
-| Area | Tests | Status |
-|------|-------|--------|
-| ext/standard | 3,808 | ~40% — arrays, strings, files, math |
-| ext/spl | 781 | ~48% — iterators, data structures |
-| ext/date | 688 | ~30% — DateTime, DateInterval, DatePeriod |
-| ext/reflection | 493 | ~15% — ReflectionClass, Method, Function |
-| ext/mbstring | 416 | ~55% — multibyte string functions |
-| type_declarations | 496 | Partial — union/intersection/DNF types |
-| traits | 216 | ~80% — trait method resolution |
-| lazy_objects | 213 | Not started |
-| property_hooks | 211 | Not started (PHP 8.4) |
-| attributes | 204 | ~50% — parsing done, reflection partial |
-| generators | 184 | ~70% — yield, yield from |
-| magic_methods | 157 | ~60% — __get/__set/__call etc |
-| enum | 151 | ~60% — cases, backed enums |
-| ext/pcre | 163 | ~70% — preg_match, preg_replace |
-| ext/gmp | 99 | ~45% — arithmetic operations |
-| ext/json | 88 | ~90% — encode/decode |
-| ext/hash | 80 | ~80% — hash functions |
-| ext/ctype | 49 | ~80% — character type functions |
+### Longer-term / won't-do
 
-### Not Implemented Extensions
-- **Sessions** — Not implemented
-- **Streams** — Partial (file streams work, network streams not implemented)
-- **XML/DOM** — Not implemented
-- **GD (image processing)** — Not implemented
-- **MySQLi/PDO** — Not implemented
-- **OpenSSL** — Not implemented
-- **Sockets** — Not implemented
-- **Phar** — Not implemented
-- **Intl** — Not implemented
-- **Zlib/Bzip2** — Partial (decompression only)
-- **CURL** — Not implemented (could map to `net/http`)
+- **intl** — full ICU is substantial; leave unless a concrete user
+  needs it.
+- **Phar** — PHP archive format; rarely needed outside legacy code.
+- **Deterministic object-id / destructor semantics** — would require
+  moving off Go's GC onto refcounting throughout the value system.
+  Test impact is ~50 scattered failures; not worth the cost.
 
 ---
 
-## Milestone Targets
+## Recent milestones
 
-| Milestone | Tests Passing | Key Deliverables |
-|-----------|--------------|-------------------|
-| Current | 7,300 / 12,110 | Core language + openssl + getimagesize + lazy objects (87% first 2k, 60% full suite!) |
-| M1 (55%) | ~1100 | Closure debug info, exception stack traces, const expressions |
-| M2 (60%) | ~1200 | Attribute reflection, enum validation, error message fixes |
-| M3 (65%) | ~1300 | Date extension fixes, asymmetric visibility enforcement, assert() |
-| M4 (70%) | ~1400 | Dynamic call visibility, class alias edge cases, reference handling |
-| M5 (75%) | ~1500 | Exit AST printing, backtrace args, misc bug fixes |
-| M6 (80%) | ~1600 | Remaining individual bug fixes |
-| Full suite | ~18000 | Sessions, XML, GD, MySQLi, OpenSSL, etc. |
+- **April 2026** — PHP test suite refreshed to 8.5.5 (12,110 → 12,121
+  tests). All cgo removed; pure-Go bcrypt/SHA-crypt/MD5-crypt and a
+  POSIX "C" locale emulation replaced the libc wrappers.
+- **March 2026** — 20th extension (gd, pure Go via gogd) added; pass
+  rate crossed 97% on the full PHP suite.
+- **Earlier 2026** — New extensions (session, xml, curl, sockets,
+  zlib, mysqli, sqlite3, bz2); library integrations (gopcre2, gotz,
+  gobzip2, go-sql-driver/mysql, glebarez/go-sqlite).
