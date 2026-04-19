@@ -258,6 +258,30 @@ func (z *ZVal) GetName() ZString {
 	return ""
 }
 
+// SetName safely assigns the Name field, Dup'ing z first if it is a cached
+// shared ZVal (e.g. the singleton wrappers for small integers or
+// true/false). Cached ZVals must never be mutated — otherwise a later
+// reader sees the leftover name and the variadic packer turns the literal
+// into a named-keyed entry like `["count"]=>int(1)`.
+//
+// Callers should assign the returned ZVal back to their local:
+//
+//	val = val.SetName(&nameStr)
+//
+// When z is not cached, SetName mutates in place and returns z unchanged.
+func (z *ZVal) SetName(name *ZString) *ZVal {
+	if z == nil {
+		return nil
+	}
+	if z.cached {
+		d := z.Dup()
+		d.Name = name
+		return d
+	}
+	z.Name = name
+	return z
+}
+
 func (z *ZVal) Set(nz *ZVal) {
 	if z == nil || nz == nil {
 		return

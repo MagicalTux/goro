@@ -183,8 +183,7 @@ func fncOpensslPkeyExport(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, erro
 	// Set &$output
 	if len(args) > 1 && args[1] != nil {
 		name := args[1].GetName()
-		outVal := phpv.ZString(pemBytes).ZVal()
-		outVal.Name = &name
+		outVal := phpv.ZString(pemBytes).ZVal().SetName(&name)
 		ctx.Parent(1).OffsetSet(ctx, name, outVal)
 	}
 

@@ -403,8 +403,10 @@ func ExpandAt(ctx phpv.Context, args []*phpv.ZVal, i int, out interface{}) error
 		// handle case foo($bar) where $bar is undefined
 		// and foo takes a reference
 		name := args[i].GetName()
-		outZVal := dest.ZVal()
-		outZVal.Name = &name
+		// Use SetName so a cached small-int/bool ZVal isn't mutated in
+		// place. The returned ZVal is stored in outZVal for the follow-up
+		// OffsetSet below.
+		outZVal := dest.ZVal().SetName(&name)
 		if name != "GLOBALS" && name != "" {
 			// check if varname is not GLOBALS to avoid infinite loop
 			// and skip empty-string name (non-variable argument, e.g. literal)

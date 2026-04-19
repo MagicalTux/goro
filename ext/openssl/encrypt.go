@@ -202,8 +202,7 @@ func fncOpensslEncrypt(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) 
 		if len(args) > 5 && args[5] != nil {
 			tagStr := phpv.ZString(tag)
 			name := args[5].GetName()
-			tagZVal := tagStr.ZVal()
-			tagZVal.Name = &name
+			tagZVal := tagStr.ZVal().SetName(&name)
 			ctx.Parent(1).OffsetSet(ctx, name, tagZVal)
 		}
 

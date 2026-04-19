@@ -134,14 +134,12 @@ func fncStreamSocketServer(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, err
 func setStreamErrArgs(ctx phpv.Context, args []*phpv.ZVal, code int, msg string) {
 	if len(args) > 1 && args[1] != nil && args[1].GetName() != "" {
 		name := args[1].GetName()
-		v := phpv.ZInt(code).ZVal()
-		v.Name = &name
+		v := phpv.ZInt(code).ZVal().SetName(&name)
 		ctx.Parent(1).OffsetSet(ctx, name, v)
 	}
 	if len(args) > 2 && args[2] != nil && args[2].GetName() != "" {
 		name := args[2].GetName()
-		v := phpv.ZString(msg).ZVal()
-		v.Name = &name
+		v := phpv.ZString(msg).ZVal().SetName(&name)
 		ctx.Parent(1).OffsetSet(ctx, name, v)
 	}
 }
@@ -212,8 +210,7 @@ func fncStreamSocketAccept(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, err
 	// Set &$peer_name (arg index 2)
 	if len(args) > 2 && args[2] != nil {
 		name := args[2].GetName()
-		v := phpv.ZString(peerAddr).ZVal()
-		v.Name = &name
+		v := phpv.ZString(peerAddr).ZVal().SetName(&name)
 		ctx.Parent(1).OffsetSet(ctx, name, v)
 	}
 

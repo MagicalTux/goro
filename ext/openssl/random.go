@@ -27,8 +27,7 @@ func fncOpensslRandomPseudoBytes(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVa
 		// Set &$crypto_strong to false if provided
 		if len(args) > 1 && args[1] != nil {
 			name := args[1].GetName()
-			falseVal := phpv.ZBool(false).ZVal()
-			falseVal.Name = &name
+			falseVal := phpv.ZBool(false).ZVal().SetName(&name)
 			ctx.Parent(1).OffsetSet(ctx, name, falseVal)
 		}
 		return phpv.ZBool(false).ZVal(), nil
@@ -37,8 +36,7 @@ func fncOpensslRandomPseudoBytes(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVa
 	// Set &$crypto_strong to true if provided
 	if len(args) > 1 && args[1] != nil {
 		name := args[1].GetName()
-		trueVal := phpv.ZBool(true).ZVal()
-		trueVal.Name = &name
+		trueVal := phpv.ZBool(true).ZVal().SetName(&name)
 		ctx.Parent(1).OffsetSet(ctx, name, trueVal)
 	}
 

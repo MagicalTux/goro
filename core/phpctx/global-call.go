@@ -309,9 +309,11 @@ func (c *Global) Call(ctx phpv.Context, f phpv.Callable, args []phpv.Runnable, o
 		}
 
 		// Tag variadic named args with their key name so the packing code
-		// can use it as the array key instead of a numeric index.
+		// can use it as the array key instead of a numeric index. Use
+		// SetName() so a cached small-int/bool ZVal isn't mutated in
+		// place (which would leak the name to every subsequent reader).
 		if namedArgKey != "" {
-			val.Name = &namedArgKey
+			val = val.SetName(&namedArgKey)
 		}
 
 		zArgs = append(zArgs, val)
