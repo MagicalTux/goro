@@ -54,8 +54,14 @@ That said, a few engine-level mismatches still bite:
 - **`debug_zval_dump` refcount display** — PHP prints the exact
   refcount; some of ours are off by one because we don't reliably
   decrement for short-lived intermediates. (~handful of tests.)
-- **PCRE2 / GMP RNGs** — different PRNGs than PHP's, so tests that
-  assert exact random output under a fixed seed don't match.
+- **`gmp_random_*` seeding** — `mt_rand`/`rand` use real MT19937 via
+  `github.com/goark/mt/mt19937` and produce byte-identical output to
+  PHP for a given seed. But `ext/gmp/misc.go` seeds Go's legacy
+  `math/rand` (LCG-style) for its random helpers, which disagrees
+  with libgmp's own MT state. One skipped test
+  (`gmp_random_seed.phpt`). Switching gmp over to the same MT source
+  would at least make it internally consistent, but still wouldn't
+  byte-match PHP's libgmp.
 - **`SensitiveParameter` backtrace redaction** — not implemented.
 
 ---
