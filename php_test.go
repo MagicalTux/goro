@@ -1013,7 +1013,6 @@ func TestPhp(t *testing.T) {
 		"test/php-8.5.5/ext/gmp/gmp_div_qr.phpt":                                                       true, // object ID timing: Go function arg temp lifetime differs from PHP
 		"test/php-8.5.5/ext/gmp/gmp_pown.phpt":                                                         true, // object ID timing: Go function arg temp lifetime differs from PHP
 		"test/php-8.5.5/ext/gmp/overloading.phpt":                                                       true, // object ID timing: Go function arg temp lifetime differs from PHP
-		"test/php-8.5.5/ext/gmp/gmp_random_seed.phpt":                                                   true, // Go math/big uses different PRNG than PHP's GMP
 		"test/php-8.5.5/enum/unserialize-refcount.phpt":                                                  true, // Go GC: no refcount display support
 	}
 

@@ -11,6 +11,7 @@ import (
 	"github.com/KarpelesLab/goro/core"
 	"github.com/KarpelesLab/goro/core/phpobj"
 	"github.com/KarpelesLab/goro/core/phpv"
+	"github.com/goark/mt/mt19937"
 )
 
 // > func bool gmp_perfect_power ( GMP $num )
@@ -429,9 +430,9 @@ func gmpRandomSeed(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	// Use the seed to seed Go's math/rand
-	// GMP random_seed affects subsequent gmp_random_bits and gmp_random_range calls
-	// We seed Go's global random with the provided seed
+	// Derive a 64-bit seed from the GMP bignum. GMP seeds are arbitrary-
+	// precision but MT19937 takes a single int64, so we fold the big end
+	// of the value down and preserve the sign.
 	seedBytes := iseed.Bytes()
 	var seedVal int64
 	if len(seedBytes) >= 8 {
@@ -445,8 +446,12 @@ func gmpRandomSeed(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		seedVal = -seedVal
 	}
 
-	// Store seeded source for deterministic random generation
-	gmpRandSource = mrand.New(mrand.NewSource(seedVal))
+	// Use MT19937 so the seeded stream is consistent with mt_rand/rand
+	// (which also use github.com/goark/mt/mt19937 via core/random).
+	// Note: this still doesn't byte-match PHP's libgmp, because libgmp's
+	// random_seed initializes its own MT state differently from the
+	// reference algorithm.
+	gmpRandSource = mrand.New(mt19937.New(seedVal))
 
 	return nil, nil
 }
