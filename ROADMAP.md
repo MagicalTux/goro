@@ -34,16 +34,28 @@ long tail — ~40 distinct areas, at most three failures each.
 | ext/gmp | 3 | GMP unserialize with references |
 | **Other** | ~67 | Scattered across ~40 areas |
 
-### Fundamental limitations (would need engine-level work)
+### Known hard corners
 
-- **Object ID recycling** — Go's tracing GC doesn't deterministically
-  free objects the way PHP's refcount-based engine does, so some tests
-  that assume a specific object-id sequence drift. (~30 tests.)
-- **Destructor timing** — related; deterministic destructors at scope
-  exit require refcount tracking. (~20 tests.)
+Goro mirrors PHP's reference-counted object model: every `ZObject`
+carries an `int32` refcount (see `core/phpobj/zobject.go`,
+`IncRef`/`DecRef`), object IDs are recycled via a free list in
+`core/phpctx/global.go` (`NextObjectID`/`ReleaseObjectID`), and
+destructors fire synchronously when refcount hits zero. We do NOT
+rely on Go's tracing GC for observable PHP semantics.
+
+That said, a few engine-level mismatches still bite:
+
+- **Function-argument lifetime differs** — Go temporaries holding a
+  callee's arguments stay alive until the enclosing Go statement
+  finishes, which shifts object IDs by one step in tests that
+  interleave `new` with function calls. (~3 ext/gmp tests and a
+  scattering elsewhere — search the skip list for "object ID timing".)
 - **`goto`** — not implemented. (~5 tests.)
-- **PCRE2 / GMP RNGs** — we use different PRNGs than PHP, so tests
-  asserting exact random output under a fixed seed don't match.
+- **`debug_zval_dump` refcount display** — PHP prints the exact
+  refcount; some of ours are off by one because we don't reliably
+  decrement for short-lived intermediates. (~handful of tests.)
+- **PCRE2 / GMP RNGs** — different PRNGs than PHP's, so tests that
+  assert exact random output under a fixed seed don't match.
 - **`SensitiveParameter` backtrace redaction** — not implemented.
 
 ---
