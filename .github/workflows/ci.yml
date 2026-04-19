@@ -45,9 +45,14 @@ jobs:
           go-version: '1.26'
 
       - name: Test with coverage
+        # Don't mark the job failed on test failures — the `test` job already
+        # surfaces those, and we still want the coverage.out file that go test
+        # writes incrementally to reach Coveralls.
+        continue-on-error: true
         run: go test -v -count=1 -covermode=count -coverpkg=./... -coverprofile=coverage.out ./...
 
       - name: Upload coverage to Coveralls
+        if: always() && hashFiles('coverage.out') != ''
         uses: coverallsapp/github-action@v2
         with:
           file: coverage.out
