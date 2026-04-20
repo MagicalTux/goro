@@ -119,7 +119,16 @@ func (z *ZHashTable) DeepCopy() *ZHashTable {
 			continue
 		}
 		val := c.v
-		if !c.v.IsRef() {
+		if c.v.IsRef() {
+			// PHP auto-unref's reference entries whose other alias has been
+			// dropped (e.g. after `unset($ref)` on a two-way reference, the
+			// surviving hash entry should deep-copy into an independent
+			// value). Only keep the reference in the copy when it is
+			// actually observed by more than one alias.
+			if inner := c.v.RefTarget(); inner == nil || inner.AliasCount() <= 1 {
+				val = &ZVal{v: c.v.Value()}
+			}
+		} else {
 			val = c.v.ZVal()
 		}
 		nc := &hashTableVal{
