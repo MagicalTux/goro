@@ -471,6 +471,14 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 				// (literals, function calls, etc.). For ??, evaluate directly
 				// and check for null. For ??=, generate a write-context error.
 				if r.op == tokenizer.T_COALESCE_EQUAL {
+					// If the LHS is a proper write target (variable, array
+					// access, object prop, …) then a non-nil checkErr is NOT
+					// the "unsupported LHS" signal but a real runtime error
+					// surfaced through the check (e.g. a destructor fired
+					// during key evaluation and threw). Propagate it.
+					if _, isWritable := r.a.(phpv.Writable); isWritable {
+						return nil, checkErr
+					}
 					// Provide a meaningful PHP error message for ??= on non-writable
 					what := "expression"
 					switch r.a.(type) {
