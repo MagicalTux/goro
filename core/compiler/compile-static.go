@@ -120,24 +120,35 @@ func (r *runStaticVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 }
 
 // runStaticInitial evaluates the default expression for a static var and
-// returns a ZVal we own — i.e. guaranteed not to be one of the cached
-// shared instances (small ints, bools). Sharing a cached ZVal would break
-// static variable persistence because the hash table inserts a fresh copy
-// of any cached ZVal, so mutations via the hash entry (like $n++) never
-// propagate back to the stored static value.
+// returns a ZVal we own — a non-cached, fresh ZVal wrapped as a reference.
+//
+// Why a reference? `$n++` inside the function snapshots the LHS value into
+// a pooled temp, mutates the temp, and then writes back via WriteValue
+// (which calls OffsetSet). OffsetSet only mutates the hash-table entry
+// in place when the entry is already a reference — otherwise it replaces
+// the pointer. If we stored a plain ZVal, the replacement would disconnect
+// our stored static value from the new hash-entry value, so the next call
+// would see the original initializer again. Storing a reference means the
+// hash entry's value propagates straight into the inner ZVal that we keep
+// on the closure/class/function state, so the mutation sticks.
 func runStaticInitial(ctx phpv.Context, def phpv.Runnable) (*phpv.ZVal, error) {
+	var z *phpv.ZVal
 	if def == nil {
-		return phpv.ZNull{}.ZVal(), nil
+		z = phpv.ZNull{}.ZVal()
+	} else {
+		v, err := def.Run(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if v == nil {
+			z = phpv.ZNull{}.ZVal()
+		} else {
+			// Dup returns a fresh, non-cached ZVal so MakeRef below is safe.
+			z = v.Dup()
+		}
 	}
-	z, err := def.Run(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if z == nil {
-		return phpv.ZNull{}.ZVal(), nil
-	}
-	// Dup returns a fresh, non-cached ZVal wrapping the same value.
-	return z.Dup(), nil
+	z.MakeRef()
+	return z, nil
 }
 
 func compileStaticVar(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
