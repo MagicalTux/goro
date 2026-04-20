@@ -120,17 +120,22 @@ func (r *runStaticVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 }
 
 // runStaticInitial evaluates the default expression for a static var and
-// returns a ZVal we own — a non-cached, fresh ZVal wrapped as a reference.
+// returns a ZVal we own — a fresh, non-cached ZVal. For scalar values we
+// additionally wrap it as a reference so writes via the hash table
+// propagate into the stored cell.
 //
-// Why a reference? `$n++` inside the function snapshots the LHS value into
-// a pooled temp, mutates the temp, and then writes back via WriteValue
-// (which calls OffsetSet). OffsetSet only mutates the hash-table entry
-// in place when the entry is already a reference — otherwise it replaces
-// the pointer. If we stored a plain ZVal, the replacement would disconnect
-// our stored static value from the new hash-entry value, so the next call
-// would see the original initializer again. Storing a reference means the
-// hash entry's value propagates straight into the inner ZVal that we keep
-// on the closure/class/function state, so the mutation sticks.
+// Why a reference for scalars? `$n++` snapshots the LHS value into a pooled
+// temp, mutates the temp, and then writes back via WriteValue (which calls
+// OffsetSet). OffsetSet mutates a hash-table entry in place only when the
+// entry is already a reference — otherwise it replaces the pointer, which
+// would disconnect our stored static value from the new hash-entry value
+// and reset the initializer every call.
+//
+// For ZObject values we skip MakeRef: objects are always shared by handle
+// in PHP, so `static $o = new Foo()` is already observed correctly without
+// a reference wrapper, and wrapping adds a layer that confuses code which
+// reads the ZVal directly (var_dump's object ID sequence, Nude-on-read
+// helpers, etc.).
 func runStaticInitial(ctx phpv.Context, def phpv.Runnable) (*phpv.ZVal, error) {
 	var z *phpv.ZVal
 	if def == nil {
@@ -147,7 +152,9 @@ func runStaticInitial(ctx phpv.Context, def phpv.Runnable) (*phpv.ZVal, error) {
 			z = v.Dup()
 		}
 	}
-	z.MakeRef()
+	if z.GetType() != phpv.ZtObject {
+		z.MakeRef()
+	}
 	return z, nil
 }
 

@@ -2355,9 +2355,18 @@ func closureDebugInfo(ctx phpv.Context, o *phpobj.ZObject) (*phpv.ZVal, error) {
 			// First check per-closure storage (used when closureKey != 0, i.e. always for ZClosure)
 			if existing, loaded := sv.perClosure.Load(closureKey); loaded {
 				val = existing.(*phpv.ZVal)
+				// Static vars are stored as references (see
+				// compile-static.go:runStaticInitial) so writes via the
+				// hash table propagate. For the debug dump, surface the
+				// inner value so var_dump doesn't show them as refs.
+				if val != nil {
+					val = val.Nude()
+				}
 			} else if sv.z != nil {
-				// Fall back to global static storage (used when called without closure key)
 				val = sv.z
+				if val != nil {
+					val = val.Nude()
+				}
 			} else {
 				// Not yet initialized — evaluate the default expression to show the
 				// initial value (PHP shows the default, not NULL, before first call).
