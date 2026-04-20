@@ -185,13 +185,33 @@ func runCloneWithValues(ctx phpv.Context, v *phpv.ZVal, withProps *phpv.ZVal) (*
 				it.Next(ctx)
 			}
 		}
+		// Snapshot which readonly properties were already initialized
+		// before we started applying the with-array. clone-with may
+		// override readonly properties that were initialized by __clone()
+		// or copied from the original, but must NOT override readonly
+		// properties that become initialized *during* clone-with (for
+		// example, via a set-hook on another property in the same array —
+		// see clone_with_012.phpt).
+		var preInitialized map[phpv.ZString]bool
+		if zo, ok := obj.(*phpobj.ZObject); ok {
+			preInitialized = make(map[phpv.ZString]bool)
+			for k, v := range arr.Iterate(ctx) {
+				_ = v
+				keyStr := k.AsString(ctx)
+				if zo.IsReadonlyPropertyInitialized(keyStr) {
+					preInitialized[keyStr] = true
+				}
+			}
+		}
+
 		for k, v := range arr.Iterate(ctx) {
 			keyStr := k.AsString(ctx)
-			// For clone-with, unmark readonly properties so they can be
-			// overridden even if __clone() already initialized them.
-			// PHP 8.5 allows clone-with to override any property that is
-			// writable from the current scope, regardless of readonly state.
-			if zo, ok := obj.(*phpobj.ZObject); ok {
+			// Only unmark the readonly-init flag for properties that were
+			// already initialized when clone-with started. That preserves
+			// the old behavior for __clone()-initialized properties while
+			// still catching "second set" from a hook firing earlier in
+			// this same clone-with pass.
+			if zo, ok := obj.(*phpobj.ZObject); ok && preInitialized[keyStr] {
 				zo.UnmarkReadonlyInit(keyStr)
 			}
 			err = obj.ObjectSet(ctx, keyStr, v.ZVal())
