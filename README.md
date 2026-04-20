@@ -24,7 +24,7 @@ go install github.com/KarpelesLab/goro/sapi/php-cli@latest
 
 ## Status
 
-Goro passes **~11,849 of 12,121 tests** (~97.8%) from the PHP 8.5.5 test suite (~185 failures, 87 skipped in CI). PHP memory_limit enforcement (128MB default). Includes PCRE2 via gopcre2, IANA timezones via gotz, and 10 extensions (session, xml, curl, gd, sockets, zlib, mysqli, sqlite3, bz2).
+Goro passes **~11,864 of 12,121 tests** (~97.9%) from the PHP 8.5.5 test suite (~170 failures, 87 skipped in CI). PHP memory_limit enforcement (128MB default). Includes PCRE2 via gopcre2, IANA timezones via gotz, and 10 extensions (session, xml, curl, gd, sockets, zlib, mysqli, sqlite3, bz2).
 
 ### Remaining test failures by area
 
