@@ -529,22 +529,30 @@ func (r *runClassStaticObjRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		cc.Resolving = false
 		if err != nil {
 			// Add a synthetic [constant expression] frame to match PHP
-			// behavior for any exception that escaped constant-expression
-			// evaluation (see gh7771_* and bug41633_2.phpt — including
-			// "Undefined constant self::..." errors, which PHP does wrap
-			// with this frame despite an earlier misconception).
+			// behavior. PHP wraps *class*-scope const lookup failures
+			// (self::X, ClassName::Y) but leaves bare-name "Undefined
+			// constant \"NAME\"" failures alone — so only decorate when
+			// the error text mentions a :: qualifier (bug41633_2 vs
+			// enum/update-class-constant-failure).
 			if ex, ok := err.(*phperr.PhpThrow); ok {
-				hasFrame := false
-				if trace, ok2 := ex.Obj.GetOpaque(ex.Obj.GetClass()).([]*phpv.StackTraceEntry); ok2 {
-					for _, e := range trace {
-						if e.FuncName == "[constant expression]" {
-							hasFrame = true
-							break
+				msg := ""
+				if msgVal := ex.Obj.HashTable().GetString("message"); msgVal != nil {
+					msg = msgVal.String()
+				}
+				wrap := !strings.HasPrefix(msg, "Undefined constant") || strings.Contains(msg, "::")
+				if wrap {
+					hasFrame := false
+					if trace, ok2 := ex.Obj.GetOpaque(ex.Obj.GetClass()).([]*phpv.StackTraceEntry); ok2 {
+						for _, e := range trace {
+							if e.FuncName == "[constant expression]" {
+								hasFrame = true
+								break
+							}
 						}
 					}
-				}
-				if !hasFrame {
-					phpobj.AddConstantExpressionFrame(ex, ctx)
+					if !hasFrame {
+						phpobj.AddConstantExpressionFrame(ex, ctx)
+					}
 				}
 			}
 			return nil, err
@@ -757,21 +765,29 @@ func (r *runClassDynConst) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		ctx.Global().SetCompilingClass(prevCompiling)
 		cc.Resolving = false
 		if err != nil {
-			// Add a synthetic [constant expression] frame for any exception
-			// that escapes constant-expression evaluation (mirrors the
-			// matching handler in runClassStaticObjRef.Run).
+			// Mirror the [constant expression] decoration from
+			// runClassStaticObjRef.Run: wrap every const-eval error except
+			// the bare-name "Undefined constant \"NAME\"" kind, which PHP
+			// doesn't wrap.
 			if ex, ok := err.(*phperr.PhpThrow); ok {
-				hasFrame := false
-				if trace, ok2 := ex.Obj.GetOpaque(ex.Obj.GetClass()).([]*phpv.StackTraceEntry); ok2 {
-					for _, e := range trace {
-						if e.FuncName == "[constant expression]" {
-							hasFrame = true
-							break
+				msg := ""
+				if msgVal := ex.Obj.HashTable().GetString("message"); msgVal != nil {
+					msg = msgVal.String()
+				}
+				wrap := !strings.HasPrefix(msg, "Undefined constant") || strings.Contains(msg, "::")
+				if wrap {
+					hasFrame := false
+					if trace, ok2 := ex.Obj.GetOpaque(ex.Obj.GetClass()).([]*phpv.StackTraceEntry); ok2 {
+						for _, e := range trace {
+							if e.FuncName == "[constant expression]" {
+								hasFrame = true
+								break
+							}
 						}
 					}
-				}
-				if !hasFrame {
-					phpobj.AddConstantExpressionFrame(ex, ctx)
+					if !hasFrame {
+						phpobj.AddConstantExpressionFrame(ex, ctx)
+					}
 				}
 			}
 			return nil, err
