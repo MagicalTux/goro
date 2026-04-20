@@ -137,6 +137,14 @@ func (w *wrappedClosure) Spawn(ctx phpv.Context) (*phpv.ZVal, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Hold a reference to the bound $this so the object survives as long
+	// as the Closure object does. Balanced by the HandleDecRef hook in
+	// Closure.H (registered in this package's init()).
+	if w.this != nil {
+		if thisObj, ok := w.this.(*phpobj.ZObject); ok {
+			thisObj.IncRef()
+		}
+	}
 	return o.ZVal(), nil
 }
 
@@ -175,6 +183,29 @@ func init() {
 		}
 		// For closures without $this, don't pass anything as $this
 		return ctx.Call(ctx, callable, args, nil)
+	}
+
+	// Closure destruction handler: releases the IncRef taken on the bound
+	// $this at Spawn time so the captured object's refcount correctly
+	// drops when the Closure goes out of scope.
+	Closure.H.HandleDecRef = func(ctx phpv.Context, o phpv.ZObject) {
+		opaque := o.GetOpaque(Closure)
+		var this phpv.ZObject
+		switch v := opaque.(type) {
+		case *ZClosure:
+			this = v.this
+		case *generatorClosure:
+			if v.ZClosure != nil {
+				this = v.this
+			}
+		case *wrappedClosure:
+			this = v.this
+		}
+		if this != nil {
+			if thisObj, ok := this.(*phpobj.ZObject); ok {
+				_ = thisObj.DecRefImplicit(ctx)
+			}
+		}
 	}
 
 	// Closure comparison handler: two Closure objects are equal only if they
@@ -451,6 +482,13 @@ func (z *ZClosure) Spawn(ctx phpv.Context) (*phpv.ZVal, error) {
 	o, err := phpobj.NewZObjectOpaque(ctx, Closure, z)
 	if err != nil {
 		return nil, err
+	}
+	// Hold a reference to the bound $this; released via Closure's
+	// HandleDecRef when this Closure object goes out of scope.
+	if z.this != nil {
+		if thisObj, ok := z.this.(*phpobj.ZObject); ok {
+			thisObj.IncRef()
+		}
 	}
 	return o.ZVal(), nil
 }
