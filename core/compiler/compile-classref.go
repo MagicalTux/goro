@@ -528,27 +528,23 @@ func (r *runClassStaticObjRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		ctx.Global().SetCompilingClass(prevCompiling)
 		cc.Resolving = false
 		if err != nil {
-			// Add a synthetic [constant expression] frame to match PHP behavior,
-			// but only for errors that are truly "in constant expression" context
-			// (not for simple "Undefined constant" errors which PHP does not wrap).
+			// Add a synthetic [constant expression] frame to match PHP
+			// behavior for any exception that escaped constant-expression
+			// evaluation (see gh7771_* and bug41633_2.phpt — including
+			// "Undefined constant self::..." errors, which PHP does wrap
+			// with this frame despite an earlier misconception).
 			if ex, ok := err.(*phperr.PhpThrow); ok {
-				msg := ""
-				if msgVal := ex.Obj.HashTable().GetString("message"); msgVal != nil {
-					msg = msgVal.String()
-				}
-				if !strings.HasPrefix(msg, "Undefined constant") {
-					hasFrame := false
-					if trace, ok2 := ex.Obj.GetOpaque(ex.Obj.GetClass()).([]*phpv.StackTraceEntry); ok2 {
-						for _, e := range trace {
-							if e.FuncName == "[constant expression]" {
-								hasFrame = true
-								break
-							}
+				hasFrame := false
+				if trace, ok2 := ex.Obj.GetOpaque(ex.Obj.GetClass()).([]*phpv.StackTraceEntry); ok2 {
+					for _, e := range trace {
+						if e.FuncName == "[constant expression]" {
+							hasFrame = true
+							break
 						}
 					}
-					if !hasFrame {
-						phpobj.AddConstantExpressionFrame(ex, ctx)
-					}
+				}
+				if !hasFrame {
+					phpobj.AddConstantExpressionFrame(ex, ctx)
 				}
 			}
 			return nil, err
@@ -761,6 +757,23 @@ func (r *runClassDynConst) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		ctx.Global().SetCompilingClass(prevCompiling)
 		cc.Resolving = false
 		if err != nil {
+			// Add a synthetic [constant expression] frame for any exception
+			// that escapes constant-expression evaluation (mirrors the
+			// matching handler in runClassStaticObjRef.Run).
+			if ex, ok := err.(*phperr.PhpThrow); ok {
+				hasFrame := false
+				if trace, ok2 := ex.Obj.GetOpaque(ex.Obj.GetClass()).([]*phpv.StackTraceEntry); ok2 {
+					for _, e := range trace {
+						if e.FuncName == "[constant expression]" {
+							hasFrame = true
+							break
+						}
+					}
+				}
+				if !hasFrame {
+					phpobj.AddConstantExpressionFrame(ex, ctx)
+				}
+			}
 			return nil, err
 		}
 		cc.Value = resolved.Value()
