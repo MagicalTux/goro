@@ -69,14 +69,10 @@ func (r *runStaticVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			if loaded {
 				z = existing.(*phpv.ZVal)
 			} else {
-				if v.def == nil {
-					z = phpv.ZNull{}.ZVal()
-				} else {
-					var err error
-					z, err = v.def.Run(ctx)
-					if err != nil {
-						return nil, err
-					}
+				var err error
+				z, err = runStaticInitial(ctx, v.def)
+				if err != nil {
+					return nil, err
 				}
 				v.perClosure.Store(closureKey, z)
 			}
@@ -99,27 +95,19 @@ func (r *runStaticVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			if existing, ok := v.perClass[classKey]; ok {
 				z = existing
 			} else {
-				if v.def == nil {
-					z = phpv.ZNull{}.ZVal()
-				} else {
-					var err error
-					z, err = v.def.Run(ctx)
-					if err != nil {
-						return nil, err
-					}
+				var err error
+				z, err = runStaticInitial(ctx, v.def)
+				if err != nil {
+					return nil, err
 				}
 				v.perClass[classKey] = z
 			}
 		} else {
 			if v.z == nil {
-				if v.def == nil {
-					v.z = phpv.ZNull{}.ZVal()
-				} else {
-					var err error
-					v.z, err = v.def.Run(ctx)
-					if err != nil {
-						return nil, err
-					}
+				var err error
+				v.z, err = runStaticInitial(ctx, v.def)
+				if err != nil {
+					return nil, err
 				}
 			}
 			z = v.z
@@ -129,6 +117,27 @@ func (r *runStaticVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		ctx.OffsetSet(ctx, v.varName, z)
 	}
 	return nil, nil
+}
+
+// runStaticInitial evaluates the default expression for a static var and
+// returns a ZVal we own — i.e. guaranteed not to be one of the cached
+// shared instances (small ints, bools). Sharing a cached ZVal would break
+// static variable persistence because the hash table inserts a fresh copy
+// of any cached ZVal, so mutations via the hash entry (like $n++) never
+// propagate back to the stored static value.
+func runStaticInitial(ctx phpv.Context, def phpv.Runnable) (*phpv.ZVal, error) {
+	if def == nil {
+		return phpv.ZNull{}.ZVal(), nil
+	}
+	z, err := def.Run(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if z == nil {
+		return phpv.ZNull{}.ZVal(), nil
+	}
+	// Dup returns a fresh, non-cached ZVal wrapping the same value.
+	return z.Dup(), nil
 }
 
 func compileStaticVar(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
