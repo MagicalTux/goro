@@ -221,6 +221,26 @@ func (z *ZVal) UnRef() {
 	}
 }
 
+// AliasCount returns how many outer ZVals currently share this ZVal when it
+// is used as the inner of a reference. For a non-reference (or a
+// reference-inner with no recorded aliases) this is 1 — meaning "only the
+// caller has a handle on it".
+//
+// Typical use: after `unset($alias)` on a two-way reference, the surviving
+// reference-typed hash entry still carries the IS_REFERENCE flag but its
+// inner's refCount drops back to 1. Code that wants to distinguish a "live"
+// multi-alias reference from a phantom-ref-of-one should compare
+// AliasCount() > 1.
+func (z *ZVal) AliasCount() int {
+	if z == nil {
+		return 0
+	}
+	if z.refCount < 1 {
+		return 1
+	}
+	return z.refCount
+}
+
 // UnRefIfAlone unwraps a reference only if the inner ZVal's refCount is <= 1,
 // meaning no other location holds a reference to the same inner value.
 // Used after function calls for compound writable by-ref args.

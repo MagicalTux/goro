@@ -179,8 +179,17 @@ func runCloneWithValues(ctx phpv.Context, v *phpv.ZVal, withProps *phpv.ZVal) (*
 		if ri, ok := it.(refIterator); ok {
 			for it.Valid(ctx) {
 				rv, _ := ri.CurrentRef(ctx)
+				// A reference-typed entry only qualifies as an error if it
+				// actually has multiple observable aliases. When the other
+				// side has been unset and only this entry still points at
+				// the inner ZVal, the entry behaves like a plain value and
+				// clone-with should accept it (see clone_with_013.phpt
+				// after the unset).
 				if rv != nil && rv.IsRef() {
-					return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot assign by reference when cloning with updated properties")
+					inner := rv.RefTarget()
+					if inner == nil || inner.AliasCount() > 1 {
+						return nil, phpobj.ThrowError(ctx, phpobj.Error, "Cannot assign by reference when cloning with updated properties")
+					}
 				}
 				it.Next(ctx)
 			}
