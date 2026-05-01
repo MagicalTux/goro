@@ -330,6 +330,24 @@ func (z *ZVal) Set(nz *ZVal) {
 	z.v = nz.v
 }
 
+// SetVal is a wrapper-free fast path for Set when the new value is
+// already a phpv.Val rather than a *ZVal. Equivalent to z.Set(v.ZVal())
+// without allocating the intermediate ZVal — heavily exercised by
+// doInc, where v is a freshly-incremented phpv.ZInt or phpv.ZFloat.
+func (z *ZVal) SetVal(v Val) {
+	if z == nil {
+		return
+	}
+	if z.isCached() {
+		panic("SetVal() called on cached ZVal")
+	}
+	if rz, isRef := z.v.(*ZVal); isRef {
+		rz.SetVal(v)
+		return
+	}
+	z.v = v
+}
+
 // HasTypeCheckers returns true if this ZVal or its referenced inner ZVal has
 // any type constraint checkers registered.
 func (z *ZVal) HasTypeCheckers() bool {

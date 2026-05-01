@@ -1064,7 +1064,7 @@ func doInc(ctx phpv.Context, v *phpv.ZVal, inc bool) error {
 	switch v.GetType() {
 	case phpv.ZtNull:
 		if inc {
-			v.Set(phpv.ZInt(1).ZVal())
+			v.SetVal(phpv.ZInt(1))
 		}
 		return nil
 	case phpv.ZtBool:
@@ -1073,18 +1073,18 @@ func doInc(ctx phpv.Context, v *phpv.ZVal, inc bool) error {
 		n := v.Value().(phpv.ZInt)
 		if inc {
 			if n == math.MaxInt64 {
-				v.Set((phpv.ZFloat(n) + 1).ZVal())
+				v.SetVal(phpv.ZFloat(n) + 1)
 				return nil
 			}
 			n++
 		} else {
 			if n == math.MinInt64 {
-				v.Set((phpv.ZFloat(n) - 1).ZVal())
+				v.SetVal(phpv.ZFloat(n) - 1)
 				return nil
 			}
 			n--
 		}
-		v.Set(n.ZVal())
+		v.SetVal(n)
 		return nil
 	case phpv.ZtFloat:
 		n := v.Value().(phpv.ZFloat)
@@ -1093,7 +1093,7 @@ func doInc(ctx phpv.Context, v *phpv.ZVal, inc bool) error {
 		} else {
 			n--
 		}
-		v.Set(n.ZVal())
+		v.SetVal(n)
 		return nil
 	case phpv.ZtString:
 		s := v.Value().(phpv.ZString)
