@@ -36,6 +36,15 @@ func NewZVal(v Val) *ZVal {
 	return &ZVal{v: v}
 }
 
+// MakeCachedZVal returns a cached, immutable *ZVal wrapping v. Used by the
+// compiler to pre-build *ZVal wrappers for literals that are evaluated many
+// times (e.g. the bound `100000` in `for ($i = 0; $i < 100000; $i++)`).
+// The returned ZVal has the cached flag set; any mutation via Set/SetVal
+// panics. Name mutations go through SetName which Dup's instead.
+func MakeCachedZVal(v Val) *ZVal {
+	return &ZVal{v: v, cached: true}
+}
+
 // isCached returns true if z is one of the pre-allocated cached ZVals.
 func (z *ZVal) isCached() bool {
 	return z != nil && z.cached

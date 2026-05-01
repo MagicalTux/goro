@@ -11,11 +11,22 @@ import (
 )
 
 type runZVal struct {
-	v phpv.Val
-	l *phpv.Loc
+	v      phpv.Val
+	l      *phpv.Loc
+	cached *phpv.ZVal // pre-built cached *ZVal for scalar literals; built on first call
 }
 
 func (z *runZVal) Run(ctx phpv.Context) (*phpv.ZVal, error) {
+	if z.cached != nil {
+		return z.cached, nil
+	}
+	// Cache scalar literals (string/int/float/bool/null). Arrays and other
+	// types must not be cached because their .ZVal() may dup state.
+	switch z.v.(type) {
+	case phpv.ZInt, phpv.ZFloat, phpv.ZString, phpv.ZBool, phpv.ZNull:
+		z.cached = phpv.MakeCachedZVal(z.v)
+		return z.cached, nil
+	}
 	return z.v.ZVal(), nil
 }
 
