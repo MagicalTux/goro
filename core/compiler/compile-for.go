@@ -147,9 +147,20 @@ func (r *runnableFor) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 		}
 
 		// execute each
-		_, err = r.each.Run(ctx)
-		if err != nil {
-			return nil, err
+		// The third clause's results are always discarded, so prefer
+		// VoidRunnable.RunVoid when available — that lets postfix
+		// ++/-- skip the orig.Dup() that only feeds the discarded
+		// return value.
+		for _, e := range r.each {
+			if vr, ok := e.(phpv.VoidRunnable); ok {
+				if err := vr.RunVoid(ctx); err != nil {
+					return nil, err
+				}
+			} else {
+				if _, err := e.Run(ctx); err != nil {
+					return nil, err
+				}
+			}
 		}
 	}
 	return nil, nil

@@ -381,6 +381,41 @@ func spawnOperator(ctx phpv.Context, op tokenizer.ItemType, a, b phpv.Runnable, 
 	return final, nil
 }
 
+// RunVoid is the discard-result fast path for runOperator. It currently
+// only optimizes postfix ++/--: the snapshot Dup that would normally
+// produce the pre-increment value is skipped when the result is
+// ignored anyway (statement-context, for-loop step clause, etc.).
+//
+// Implements phpv.VoidRunnable. For everything else we fall back to Run
+// and discard the returned value — same semantics, no extra alloc.
+func (r *runOperator) RunVoid(ctx phpv.Context) error {
+	if (r.op == tokenizer.T_INC || r.op == tokenizer.T_DEC) && r.a != nil {
+		// Mirror the post-mode side effects of operatorIncDec but without
+		// allocating an `orig := a.Dup()` whose only consumer would be
+		// the throw-away return value. We can only take this path for
+		// simple Writable targets (variables, array elements, object
+		// properties); ArrayAccess overloads and compound rewrites still
+		// need the full Run code path.
+		if w, isWritable := r.a.(phpv.Writable); isWritable {
+			if _, isAA := r.a.(*runArrayAccess); !isAA {
+				val, err := r.a.Run(ctx)
+				if err != nil {
+					return err
+				}
+				if val == nil {
+					val = phpv.ZNULL.ZVal()
+				}
+				if err := doInc(ctx, val, r.op == tokenizer.T_INC); err != nil {
+					return err
+				}
+				return w.WriteValue(ctx, val)
+			}
+		}
+	}
+	_, err := r.Run(ctx)
+	return err
+}
+
 func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	var a, b, res *phpv.ZVal
 	var err error
@@ -1144,97 +1179,87 @@ func operatorIncDec(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*
 func operatorMath(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*phpv.ZVal, error) {
 	switch a.Value().GetType() {
 	case phpv.ZtInt:
-		var res phpv.Val
-		a := a.Value().(phpv.ZInt)
-		b := b.Value().(phpv.ZInt)
+		// Two return paths (ZInt result vs ZFloat overflow result) are
+		// emitted directly to avoid going through a phpv.Val interface
+		// intermediate, which boxed every integer onto the heap.
+		ai := a.Value().(phpv.ZInt)
+		bi := b.Value().(phpv.ZInt)
 
 		switch op {
 		case tokenizer.T_PLUS_EQUAL, tokenizer.Rune('+'):
-			c := a + b
-			if (c > a) == (b > 0) {
-				res = c
-			} else {
-				// overflow
-				res = phpv.ZFloat(a) + phpv.ZFloat(b)
+			c := ai + bi
+			if (c > ai) == (bi > 0) {
+				return phpv.ZInt(c).ZVal(), nil
 			}
+			return (phpv.ZFloat(ai) + phpv.ZFloat(bi)).ZVal(), nil
 		case tokenizer.T_MINUS_EQUAL, tokenizer.Rune('-'):
-			c := a - b
-			if (c < a) == (b > 0) {
-				res = c
-			} else {
-				// overflow
-				res = phpv.ZFloat(a) - phpv.ZFloat(b)
+			c := ai - bi
+			if (c < ai) == (bi > 0) {
+				return phpv.ZInt(c).ZVal(), nil
 			}
+			return (phpv.ZFloat(ai) - phpv.ZFloat(bi)).ZVal(), nil
 		case tokenizer.T_DIV_EQUAL, tokenizer.Rune('/'):
-			if b == 0 {
+			if bi == 0 {
 				return nil, phpobj.ThrowError(ctx, phpobj.DivisionByZeroError, "Division by zero")
 			}
-			if a == math.MinInt64 && b == -1 {
+			if ai == math.MinInt64 && bi == -1 {
 				// INT64_MIN / -1 overflows, return as float
-				res = phpv.ZFloat(a) / phpv.ZFloat(b)
-			} else if a%b != 0 {
-				// this is not going to be an int result
-				res = phpv.ZFloat(a) / phpv.ZFloat(b)
-			} else {
-				res = a / b
+				return (phpv.ZFloat(ai) / phpv.ZFloat(bi)).ZVal(), nil
 			}
+			if ai%bi != 0 {
+				return (phpv.ZFloat(ai) / phpv.ZFloat(bi)).ZVal(), nil
+			}
+			return phpv.ZInt(ai / bi).ZVal(), nil
 		case tokenizer.T_MUL_EQUAL, tokenizer.Rune('*'):
-			if a == 0 || b == 0 {
-				res = phpv.ZInt(0)
-				break
+			if ai == 0 || bi == 0 {
+				return phpv.ZInt(0).ZVal(), nil
 			}
-			c := a * b
+			c := ai * bi
 			// do overflow check (golang has no good way to perform this, so checking if c/b=a will have to do)
-			if ((c < 0) == ((a < 0) != (b < 0))) && (c/b == a) {
-				res = c
-			} else {
-				// do this as float
-				res = phpv.ZFloat(a) * phpv.ZFloat(b)
+			if ((c < 0) == ((ai < 0) != (bi < 0))) && (c/bi == ai) {
+				return phpv.ZInt(c).ZVal(), nil
 			}
+			return (phpv.ZFloat(ai) * phpv.ZFloat(bi)).ZVal(), nil
 		case tokenizer.T_POW, tokenizer.T_POW_EQUAL:
 			// PHP 8.4: 0 ** negative is deprecated
-			if a == 0 && b < 0 {
+			if ai == 0 && bi < 0 {
 				ctx.Deprecated("Power of base 0 and negative exponent is deprecated", logopt.NoFuncName(true))
 			}
-			if b >= 0 {
+			if bi >= 0 {
 				// Try to compute as integer first
-				result := phpv.ZFloat(math.Pow(float64(a), float64(b)))
+				result := phpv.ZFloat(math.Pow(float64(ai), float64(bi)))
 				intResult := phpv.ZInt(result)
 				if phpv.ZFloat(intResult) == result && result >= math.MinInt64 && result <= math.MaxInt64 {
-					res = intResult
-				} else {
-					res = result
+					return intResult.ZVal(), nil
 				}
-			} else {
-				res = phpv.ZFloat(math.Pow(float64(a), float64(b)))
+				return result.ZVal(), nil
 			}
+			return phpv.ZFloat(math.Pow(float64(ai), float64(bi))).ZVal(), nil
 		}
-		return res.ZVal(), nil
+		return nil, ctx.Errorf("unsupported integer math operator %s", op)
 	case phpv.ZtFloat:
-		var res phpv.ZFloat
+		af := a.Value().(phpv.ZFloat)
+		bf := b.Value().(phpv.ZFloat)
 		switch op {
 		case tokenizer.T_PLUS_EQUAL, tokenizer.Rune('+'):
-			res = a.Value().(phpv.ZFloat) + b.Value().(phpv.ZFloat)
+			return (af + bf).ZVal(), nil
 		case tokenizer.T_MINUS_EQUAL, tokenizer.Rune('-'):
-			res = a.Value().(phpv.ZFloat) - b.Value().(phpv.ZFloat)
+			return (af - bf).ZVal(), nil
 		case tokenizer.T_DIV_EQUAL, tokenizer.Rune('/'):
-			bv := b.Value().(phpv.ZFloat)
-			if bv == 0 {
+			if bf == 0 {
 				return nil, phpobj.ThrowError(ctx, phpobj.DivisionByZeroError, "Division by zero")
 			}
-			res = a.Value().(phpv.ZFloat) / bv
+			return (af / bf).ZVal(), nil
 		case tokenizer.T_MUL_EQUAL, tokenizer.Rune('*'):
-			res = a.Value().(phpv.ZFloat) * b.Value().(phpv.ZFloat)
+			return (af * bf).ZVal(), nil
 		case tokenizer.T_POW, tokenizer.T_POW_EQUAL:
-			af := a.Value().(phpv.ZFloat)
-			bf := b.Value().(phpv.ZFloat)
 			// PHP 8.4: 0 ** negative is deprecated
 			if af == 0 && bf < 0 {
 				ctx.Deprecated("Power of base 0 and negative exponent is deprecated", logopt.NoFuncName(true))
 			}
-			res = phpv.ZFloat(math.Pow(float64(af), float64(bf)))
+			return phpv.ZFloat(math.Pow(float64(af), float64(bf))).ZVal(), nil
 		}
-		return res.ZVal(), nil
+		return nil, ctx.Errorf("unsupported float math operator %s", op)
 	default:
 		return nil, ctx.Errorf("todo operator type unsupported %s", a.GetType())
 	}

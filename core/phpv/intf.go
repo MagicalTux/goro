@@ -39,6 +39,21 @@ type Runnable interface {
 	Dump(io.Writer) error
 }
 
+// VoidRunnable is an optional optimization an expression Runnable may
+// implement when its caller explicitly discards the result. The receiver
+// can skip work whose only purpose is producing a return value (for
+// example, the `orig := a.Dup()` snapshot in postfix ++/--, when the
+// post-increment expression is the third clause of a `for` statement).
+//
+// Callers that already throw the result away (statement-context
+// expressions, for-loop init / step lists, expression statements, …)
+// should prefer VoidRunnable.RunVoid over Runnable.Run when available.
+// Anything that implements VoidRunnable must produce identical
+// observable side-effects to a Run call whose return value is ignored.
+type VoidRunnable interface {
+	RunVoid(Context) error
+}
+
 type RunnableChild interface {
 	Runnable
 	GetParentNode() Runnable
