@@ -34,50 +34,50 @@ var ternaryPri = 22
 // ?: pri=24
 var operatorList = map[tokenizer.ItemType]*operatorInternalDetails{
 	tokenizer.Rune('='):             &operatorInternalDetails{write: true, skipA: true, pri: 25},
-	tokenizer.T_CONCAT_EQUAL:        &operatorInternalDetails{write: true, op: operatorAppend, pri: 25},
-	tokenizer.T_DIV_EQUAL:           &operatorInternalDetails{write: true, skipA: true, numeric: true, op: operatorMath, pri: 25},
-	tokenizer.T_MUL_EQUAL:           &operatorInternalDetails{write: true, skipA: true, numeric: true, op: operatorMath, pri: 25},
-	tokenizer.T_POW_EQUAL:           &operatorInternalDetails{write: true, skipA: true, numeric: true, op: operatorMath, pri: 25},
-	tokenizer.T_MINUS_EQUAL:         &operatorInternalDetails{write: true, skipA: true, numeric: true, op: operatorMath, pri: 25},
-	tokenizer.T_PLUS_EQUAL:          &operatorInternalDetails{write: true, skipA: true, numeric: true, op: operatorMath, pri: 25},
-	tokenizer.Rune('.'):             &operatorInternalDetails{op: operatorAppend, pri: 14},
-	tokenizer.Rune('+'):             &operatorInternalDetails{numeric: true, op: operatorMath, pri: 14},
-	tokenizer.Rune('-'):             &operatorInternalDetails{numeric: true, op: operatorMath, pri: 14},
-	tokenizer.Rune('/'):             &operatorInternalDetails{numeric: true, op: operatorMath, pri: 13},
-	tokenizer.Rune('*'):             &operatorInternalDetails{numeric: true, op: operatorMath, pri: 13},
-	tokenizer.T_POW:                 &operatorInternalDetails{numeric: true, skipA: true, op: operatorMath, pri: 10},
-	tokenizer.T_OR_EQUAL:            &operatorInternalDetails{write: true, skipA: true, numeric: true, op: operatorMathLogic, pri: 25},
-	tokenizer.T_XOR_EQUAL:           &operatorInternalDetails{write: true, skipA: true, numeric: true, op: operatorMathLogic, pri: 25},
-	tokenizer.T_AND_EQUAL:           &operatorInternalDetails{write: true, skipA: true, numeric: true, op: operatorMathLogic, pri: 25},
-	tokenizer.T_MOD_EQUAL:           &operatorInternalDetails{write: true, skipA: true, numeric: true, op: operatorMathLogic, pri: 25},
-	tokenizer.Rune('|'):             &operatorInternalDetails{op: operatorMathLogic, pri: 20},
-	tokenizer.Rune('^'):             &operatorInternalDetails{op: operatorMathLogic, pri: 19},
-	tokenizer.Rune('&'):             &operatorInternalDetails{op: operatorMathLogic, pri: 18},
-	tokenizer.Rune('%'):             &operatorInternalDetails{numeric: true, op: operatorMathLogic, pri: 13},
-	tokenizer.Rune('~'):             &operatorInternalDetails{op: operatorMathLogic, pri: 11},
-	tokenizer.T_SL:                  &operatorInternalDetails{numeric: true, op: operatorMathLogic, pri: 15},
-	tokenizer.T_SR:                  &operatorInternalDetails{numeric: true, op: operatorMathLogic, pri: 15},
-	tokenizer.T_LOGICAL_AND:         &operatorInternalDetails{op: operatorBoolLogic, pri: 26},
+	tokenizer.T_CONCAT_EQUAL:        &operatorInternalDetails{write: true, op: OperatorAppend, pri: 25},
+	tokenizer.T_DIV_EQUAL:           &operatorInternalDetails{write: true, skipA: true, numeric: true, op: OperatorMath, pri: 25},
+	tokenizer.T_MUL_EQUAL:           &operatorInternalDetails{write: true, skipA: true, numeric: true, op: OperatorMath, pri: 25},
+	tokenizer.T_POW_EQUAL:           &operatorInternalDetails{write: true, skipA: true, numeric: true, op: OperatorMath, pri: 25},
+	tokenizer.T_MINUS_EQUAL:         &operatorInternalDetails{write: true, skipA: true, numeric: true, op: OperatorMath, pri: 25},
+	tokenizer.T_PLUS_EQUAL:          &operatorInternalDetails{write: true, skipA: true, numeric: true, op: OperatorMath, pri: 25},
+	tokenizer.Rune('.'):             &operatorInternalDetails{op: OperatorAppend, pri: 14},
+	tokenizer.Rune('+'):             &operatorInternalDetails{numeric: true, op: OperatorMath, pri: 14},
+	tokenizer.Rune('-'):             &operatorInternalDetails{numeric: true, op: OperatorMath, pri: 14},
+	tokenizer.Rune('/'):             &operatorInternalDetails{numeric: true, op: OperatorMath, pri: 13},
+	tokenizer.Rune('*'):             &operatorInternalDetails{numeric: true, op: OperatorMath, pri: 13},
+	tokenizer.T_POW:                 &operatorInternalDetails{numeric: true, skipA: true, op: OperatorMath, pri: 10},
+	tokenizer.T_OR_EQUAL:            &operatorInternalDetails{write: true, skipA: true, numeric: true, op: OperatorMathLogic, pri: 25},
+	tokenizer.T_XOR_EQUAL:           &operatorInternalDetails{write: true, skipA: true, numeric: true, op: OperatorMathLogic, pri: 25},
+	tokenizer.T_AND_EQUAL:           &operatorInternalDetails{write: true, skipA: true, numeric: true, op: OperatorMathLogic, pri: 25},
+	tokenizer.T_MOD_EQUAL:           &operatorInternalDetails{write: true, skipA: true, numeric: true, op: OperatorMathLogic, pri: 25},
+	tokenizer.Rune('|'):             &operatorInternalDetails{op: OperatorMathLogic, pri: 20},
+	tokenizer.Rune('^'):             &operatorInternalDetails{op: OperatorMathLogic, pri: 19},
+	tokenizer.Rune('&'):             &operatorInternalDetails{op: OperatorMathLogic, pri: 18},
+	tokenizer.Rune('%'):             &operatorInternalDetails{numeric: true, op: OperatorMathLogic, pri: 13},
+	tokenizer.Rune('~'):             &operatorInternalDetails{op: OperatorMathLogic, pri: 11},
+	tokenizer.T_SL:                  &operatorInternalDetails{numeric: true, op: OperatorMathLogic, pri: 15},
+	tokenizer.T_SR:                  &operatorInternalDetails{numeric: true, op: OperatorMathLogic, pri: 15},
+	tokenizer.T_LOGICAL_AND:         &operatorInternalDetails{op: OperatorBoolLogic, pri: 26},
 	tokenizer.T_LOGICAL_XOR:         &operatorInternalDetails{op: operatorLogicalXor, pri: 27},
-	tokenizer.T_LOGICAL_OR:          &operatorInternalDetails{op: operatorBoolLogic, pri: 28},
-	tokenizer.T_SL_EQUAL:            &operatorInternalDetails{write: true, skipA: true, numeric: true, op: operatorMathLogic, pri: 25},
-	tokenizer.T_SR_EQUAL:            &operatorInternalDetails{write: true, skipA: true, numeric: true, op: operatorMathLogic, pri: 25},
-	tokenizer.Rune('<'):             &operatorInternalDetails{op: operatorCompare, pri: 16},
-	tokenizer.Rune('>'):             &operatorInternalDetails{op: operatorCompare, pri: 16},
-	tokenizer.T_IS_SMALLER_OR_EQUAL: &operatorInternalDetails{op: operatorCompare, pri: 16},
-	tokenizer.T_IS_GREATER_OR_EQUAL: &operatorInternalDetails{op: operatorCompare, pri: 16},
-	tokenizer.T_IS_EQUAL:            &operatorInternalDetails{op: operatorCompare, pri: 17},
-	tokenizer.T_IS_IDENTICAL:        &operatorInternalDetails{op: operatorCompareStrict, pri: 17},
-	tokenizer.T_IS_NOT_EQUAL:        &operatorInternalDetails{op: operatorCompare, pri: 17},
-	tokenizer.T_SPACESHIP:           &operatorInternalDetails{op: operatorCompare, pri: 17},
-	tokenizer.T_IS_NOT_IDENTICAL:    &operatorInternalDetails{op: operatorCompareStrict, pri: 17},
-	tokenizer.Rune('!'):             &operatorInternalDetails{op: operatorNot, pri: 12},
-	tokenizer.T_BOOLEAN_AND:         &operatorInternalDetails{op: operatorBoolLogic, pri: 21},
-	tokenizer.T_BOOLEAN_OR:          &operatorInternalDetails{op: operatorBoolLogic, pri: 22},
+	tokenizer.T_LOGICAL_OR:          &operatorInternalDetails{op: OperatorBoolLogic, pri: 28},
+	tokenizer.T_SL_EQUAL:            &operatorInternalDetails{write: true, skipA: true, numeric: true, op: OperatorMathLogic, pri: 25},
+	tokenizer.T_SR_EQUAL:            &operatorInternalDetails{write: true, skipA: true, numeric: true, op: OperatorMathLogic, pri: 25},
+	tokenizer.Rune('<'):             &operatorInternalDetails{op: OperatorCompare, pri: 16},
+	tokenizer.Rune('>'):             &operatorInternalDetails{op: OperatorCompare, pri: 16},
+	tokenizer.T_IS_SMALLER_OR_EQUAL: &operatorInternalDetails{op: OperatorCompare, pri: 16},
+	tokenizer.T_IS_GREATER_OR_EQUAL: &operatorInternalDetails{op: OperatorCompare, pri: 16},
+	tokenizer.T_IS_EQUAL:            &operatorInternalDetails{op: OperatorCompare, pri: 17},
+	tokenizer.T_IS_IDENTICAL:        &operatorInternalDetails{op: OperatorCompareStrict, pri: 17},
+	tokenizer.T_IS_NOT_EQUAL:        &operatorInternalDetails{op: OperatorCompare, pri: 17},
+	tokenizer.T_SPACESHIP:           &operatorInternalDetails{op: OperatorCompare, pri: 17},
+	tokenizer.T_IS_NOT_IDENTICAL:    &operatorInternalDetails{op: OperatorCompareStrict, pri: 17},
+	tokenizer.Rune('!'):             &operatorInternalDetails{op: OperatorNot, pri: 12},
+	tokenizer.T_BOOLEAN_AND:         &operatorInternalDetails{op: OperatorBoolLogic, pri: 21},
+	tokenizer.T_BOOLEAN_OR:          &operatorInternalDetails{op: OperatorBoolLogic, pri: 22},
 	tokenizer.T_COALESCE:            &operatorInternalDetails{pri: 23, skipA: true, op: operatorCoalesce},
 	tokenizer.T_COALESCE_EQUAL:      &operatorInternalDetails{write: true, skipA: true, pri: 25, op: operatorCoalesceAssign},
-	tokenizer.T_INC:                 &operatorInternalDetails{op: operatorIncDec, pri: 11},
-	tokenizer.T_DEC:                 &operatorInternalDetails{op: operatorIncDec, pri: 11},
+	tokenizer.T_INC:                 &operatorInternalDetails{op: OperatorIncDec, pri: 11},
+	tokenizer.T_DEC:                 &operatorInternalDetails{op: OperatorIncDec, pri: 11},
 	tokenizer.T_PIPE:                &operatorInternalDetails{op: operatorPipe, pri: 24},
 	tokenizer.Rune('@'):             &operatorInternalDetails{pri: 11, op: operatorSilence},
 
@@ -390,7 +390,7 @@ func spawnOperator(ctx phpv.Context, op tokenizer.ItemType, a, b phpv.Runnable, 
 // and discard the returned value — same semantics, no extra alloc.
 func (r *runOperator) RunVoid(ctx phpv.Context) error {
 	if (r.op == tokenizer.T_INC || r.op == tokenizer.T_DEC) && r.a != nil {
-		// Mirror the post-mode side effects of operatorIncDec but without
+		// Mirror the post-mode side effects of OperatorIncDec but without
 		// allocating an `orig := a.Dup()` whose only consumer would be
 		// the throw-away return value. We can only take this path for
 		// simple Writable targets (variables, array elements, object
@@ -405,7 +405,7 @@ func (r *runOperator) RunVoid(ctx phpv.Context) error {
 				if val == nil {
 					val = phpv.ZNULL.ZVal()
 				}
-				if err := doInc(ctx, val, r.op == tokenizer.T_INC); err != nil {
+				if err := DoInc(ctx, val, r.op == tokenizer.T_INC); err != nil {
 					return err
 				}
 				return w.WriteValue(ctx, val)
@@ -757,7 +757,7 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 
 		// Bitwise operators on strings: PHP operates on the raw bytes directly
 		// (no numeric conversion). Skip the numeric conversion below and let
-		// operatorMathLogic handle string operands. Don't return early so that
+		// OperatorMathLogic handle string operands. Don't return early so that
 		// compound assignment write-back (op.write) still runs.
 		isBitwiseOp := r.op == tokenizer.Rune('|') || r.op == tokenizer.Rune('^') ||
 			r.op == tokenizer.Rune('&') || r.op == tokenizer.Rune('~') ||
@@ -865,8 +865,8 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	}
 
 	// For ++/-- on overloaded ArrayAccess (without &offsetGet), dup the value
-	// before operatorIncDec so doInc doesn't modify the original value
-	// returned by offsetGet. If &offsetGet returns by reference, doInc should
+	// before OperatorIncDec so DoInc doesn't modify the original value
+	// returned by offsetGet. If &offsetGet returns by reference, DoInc should
 	// modify in-place through the reference.
 	// Note: ObjectGet/static prop Read already return detached copies, so no dup needed.
 	if r.op == tokenizer.T_INC || r.op == tokenizer.T_DEC {
@@ -924,7 +924,7 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	}
 
 	// For ++/-- operators, write back the modified value.
-	// doInc modifies the ZVal in-place, but for magic properties (__get/__set)
+	// DoInc modifies the ZVal in-place, but for magic properties (__get/__set)
 	// the returned ZVal is detached, so we need to call WriteValue to trigger __set.
 	if r.op == tokenizer.T_INC || r.op == tokenizer.T_DEC {
 		if r.a != nil {
@@ -1037,7 +1037,7 @@ doWrite:
 	return res, nil
 }
 
-func operatorAppend(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*phpv.ZVal, error) {
+func OperatorAppend(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*phpv.ZVal, error) {
 	var err error
 	a, err = a.As(ctx, phpv.ZtString)
 	if err != nil {
@@ -1051,13 +1051,13 @@ func operatorAppend(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*
 	return (a.AsString(ctx) + b.AsString(ctx)).ZVal(), nil
 }
 
-func operatorNot(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*phpv.ZVal, error) {
+func OperatorNot(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*phpv.ZVal, error) {
 	b, _ = b.As(ctx, phpv.ZtBool)
 
 	return (!b.Value().(phpv.ZBool)).ZVal(), nil
 }
 
-func doInc(ctx phpv.Context, v *phpv.ZVal, inc bool) error {
+func DoInc(ctx phpv.Context, v *phpv.ZVal, inc bool) error {
 	if v == nil {
 		return nil
 	}
@@ -1101,7 +1101,7 @@ func doInc(ctx phpv.Context, v *phpv.ZVal, inc bool) error {
 		if s.IsNumeric() {
 			if x, err := s.AsNumeric(); err == nil {
 				v.Set(x.ZVal())
-				return doInc(ctx, v, inc)
+				return DoInc(ctx, v, inc)
 			}
 		}
 
@@ -1163,20 +1163,20 @@ func doInc(ctx phpv.Context, v *phpv.ZVal, inc bool) error {
 	return ctx.Errorf("unsupported type for increment operator %s", v.GetType())
 }
 
-func operatorIncDec(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*phpv.ZVal, error) {
+func OperatorIncDec(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*phpv.ZVal, error) {
 	inc := op == tokenizer.T_INC
 
 	if a != nil {
 		// post mode
 		orig := a.Dup()
-		return orig, doInc(ctx, a, inc)
+		return orig, DoInc(ctx, a, inc)
 	} else {
 		// pre mode
-		return b, doInc(ctx, b, inc)
+		return b, DoInc(ctx, b, inc)
 	}
 }
 
-func operatorMath(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*phpv.ZVal, error) {
+func OperatorMath(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*phpv.ZVal, error) {
 	switch a.Value().GetType() {
 	case phpv.ZtInt:
 		// Two return paths (ZInt result vs ZFloat overflow result) are
@@ -1265,7 +1265,7 @@ func operatorMath(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*ph
 	}
 }
 
-func operatorBoolLogic(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*phpv.ZVal, error) {
+func OperatorBoolLogic(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*phpv.ZVal, error) {
 	switch op {
 	case tokenizer.T_BOOLEAN_AND, tokenizer.T_LOGICAL_AND:
 		return (a.AsBool(ctx) && b.AsBool(ctx)).ZVal(), nil
@@ -1300,7 +1300,7 @@ func operatorLogicalXor(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal
 	return phpv.ZBool(ab != bb).ZVal(), nil
 }
 
-func operatorMathLogic(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*phpv.ZVal, error) {
+func OperatorMathLogic(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*phpv.ZVal, error) {
 	// Check for unary ~ on objects with HandleDoOperation (e.g., GMP)
 	if a == nil && b != nil && b.GetType() == phpv.ZtObject {
 		if obj, ok := b.Value().(phpv.ZObject); ok {
@@ -1339,7 +1339,7 @@ func operatorMathLogic(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal)
 		// Boolean and null values should be converted to int for bitwise ops
 		a, _ = a.As(ctx, phpv.ZtInt)
 		b, _ = b.As(ctx, phpv.ZtInt)
-		return operatorMathLogic(ctx, op, a, b)
+		return OperatorMathLogic(ctx, op, a, b)
 	case phpv.ZtInt:
 		b, _ = b.As(ctx, phpv.ZtInt)
 		var res phpv.ZInt
@@ -1400,7 +1400,7 @@ func operatorMathLogic(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal)
 		if err != nil {
 			return nil, err
 		}
-		return operatorMathLogic(ctx, op, a, b)
+		return OperatorMathLogic(ctx, op, a, b)
 	case phpv.ZtString:
 		// In PHP, bitwise ops on two strings do character-by-character operations.
 		// But if the other operand is not a string (int/float/bool/null), both
@@ -1418,7 +1418,7 @@ func operatorMathLogic(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal)
 			if err != nil {
 				return nil, err
 			}
-			return operatorMathLogic(ctx, op, a, b)
+			return OperatorMathLogic(ctx, op, a, b)
 		}
 		b, _ = b.As(ctx, phpv.ZtString) // force b to be string
 		a := []byte(a.Value().(phpv.ZString))
@@ -1465,7 +1465,7 @@ func operatorMathLogic(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal)
 	}
 }
 
-func operatorCompareStrict(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*phpv.ZVal, error) {
+func OperatorCompareStrict(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*phpv.ZVal, error) {
 	if a.GetType() != b.GetType() {
 		// not same type → false
 		return phpv.ZBool(op != tokenizer.T_IS_IDENTICAL).ZVal(), nil
@@ -1550,7 +1550,7 @@ func operatorPipe(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*ph
 // PipeResolveCallable is set from the core package to avoid circular imports.
 var PipeResolveCallable func(ctx phpv.Context, v *phpv.ZVal) (phpv.Callable, error)
 
-func operatorCompare(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*phpv.ZVal, error) {
+func OperatorCompare(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*phpv.ZVal, error) {
 	// If one operand is an object with HandleDoOperation (e.g. GMP), delegate to it BEFORE
 	// the generic array-comparison path, so GMP can throw proper type errors for invalid operands.
 	if a.GetType() == phpv.ZtObject {
@@ -1743,7 +1743,7 @@ func operatorCompare(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (
 	// PHP 8: when either operand is bool or null, always use bool comparison
 	// (even if the other operand is numeric). This must come before numeric comparison.
 	if a.GetType() == phpv.ZtBool || b.GetType() == phpv.ZtBool || a.GetType() == phpv.ZtNull || b.GetType() == phpv.ZtNull {
-		return operatorCompareBool(ctx, op, a, b)
+		return OperatorCompareBool(ctx, op, a, b)
 	}
 
 	if ia != nil || ib != nil {
@@ -1954,7 +1954,7 @@ ObjectScalarCompare:
 				// Use the Compare function which handles HandleCast
 				cmp, err := phpv.Compare(ctx, a, b)
 				if err == nil {
-					return operatorCompareResult(op, cmp)
+					return OperatorCompareResult(op, cmp)
 				}
 			}
 		}
@@ -1992,7 +1992,7 @@ ObjectScalarCompare:
 			} else if h.HandleCompare != nil {
 				cmp, err := phpv.Compare(ctx, a, b)
 				if err == nil {
-					return operatorCompareResult(op, cmp)
+					return OperatorCompareResult(op, cmp)
 				}
 			}
 		}
@@ -2196,10 +2196,10 @@ CompareArrays:
 	return phpv.ZBool(res).ZVal(), nil
 }
 
-// operatorCompareBool performs a bool comparison between two values.
+// OperatorCompareBool performs a bool comparison between two values.
 // In PHP 8, when either operand is bool or null, comparison is always done
 // by casting both to bool.
-func operatorCompareBool(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*phpv.ZVal, error) {
+func OperatorCompareBool(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal) (*phpv.ZVal, error) {
 	a, _ = a.As(ctx, phpv.ZtBool)
 	b, _ = b.As(ctx, phpv.ZtBool)
 	var ab, bb int
@@ -2235,8 +2235,8 @@ func operatorCompareBool(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVa
 	}
 }
 
-// operatorCompareResult converts a comparison result (cmp) to a ZVal based on the operator.
-func operatorCompareResult(op tokenizer.ItemType, cmp int) (*phpv.ZVal, error) {
+// OperatorCompareResult converts a comparison result (cmp) to a ZVal based on the operator.
+func OperatorCompareResult(op tokenizer.ItemType, cmp int) (*phpv.ZVal, error) {
 	switch op {
 	case tokenizer.Rune('<'):
 		return phpv.ZBool(cmp < 0).ZVal(), nil

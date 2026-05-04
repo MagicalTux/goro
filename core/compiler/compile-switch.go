@@ -90,7 +90,7 @@ func (r *runSwitch) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		if err != nil {
 			return nil, err
 		}
-		v, err := operatorCompare(ctx, tokenizer.T_IS_EQUAL, cond, z)
+		v, err := OperatorCompare(ctx, tokenizer.T_IS_EQUAL, cond, z)
 		if err != nil {
 			return nil, err
 		}

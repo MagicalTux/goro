@@ -50,7 +50,7 @@ func (r *runMatch) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 				return nil, err
 			}
 			// match uses strict comparison (===)
-			res, err := operatorCompareStrict(ctx, tokenizer.T_IS_IDENTICAL, cond, v)
+			res, err := OperatorCompareStrict(ctx, tokenizer.T_IS_IDENTICAL, cond, v)
 			if err != nil {
 				return nil, err
 			}
