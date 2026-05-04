@@ -68,6 +68,58 @@ func IsVMCompiled(c phpv.Callable) bool {
 // adds zero runtime cost when unused (Go inlines + the AST executor
 // continues to read fields directly).
 
+// --- runNewObject -----------------------------------------------------
+
+// NewObjectClassName returns the static class name when the
+// `new ClassName(…)` form is used. Empty string means dynamic
+// (`new $cls(…)`) — VM emitter falls back for that.
+func (r *runNewObject) NewObjectClassName() phpv.ZString { return r.obj }
+
+// NewObjectArgs returns the constructor argument expressions.
+func (r *runNewObject) NewObjectArgs() phpv.Runnables { return r.newArg }
+
+// NewObjectIsAnonymous reports whether this is `new class { … }`.
+// Out of scope for the VM emitter.
+func (r *runNewObject) NewObjectIsAnonymous() bool { return r.cl != nil }
+
+// NewObjectLoc returns the source location.
+func (r *runNewObject) NewObjectLoc() *phpv.Loc { return r.l }
+
+// --- runObjectVar / runObjectFunc -------------------------------------
+
+// objectVarReceiver returns the receiver expression of `$ref->name`.
+func (r *runObjectVar) ObjectVarReceiver() phpv.Runnable { return r.ref }
+
+// ObjectVarName returns the static property name.
+func (r *runObjectVar) ObjectVarName() phpv.ZString { return r.varName }
+
+// ObjectVarLoc returns the source location of the access.
+func (r *runObjectVar) ObjectVarLoc() *phpv.Loc { return r.l }
+
+// ObjectVarIsNullSafe reports whether this is a nullsafe chain
+// (`$ref?->name`). Out of scope for the VM emitter for now.
+func (r *runObjectVar) ObjectVarIsNullSafe() bool { return r.nullsafe || r.nullChain }
+
+// ObjectFuncReceiver returns the receiver expression of
+// `$ref->name(args...)`.
+func (r *runObjectFunc) ObjectFuncReceiver() phpv.Runnable { return r.ref }
+
+// ObjectFuncName returns the method name.
+func (r *runObjectFunc) ObjectFuncName() phpv.ZString { return r.op }
+
+// ObjectFuncArgs returns the call argument expressions.
+func (r *runObjectFunc) ObjectFuncArgs() phpv.Runnables { return r.args }
+
+// ObjectFuncLoc returns the source location of the call.
+func (r *runObjectFunc) ObjectFuncLoc() *phpv.Loc { return r.l }
+
+// ObjectFuncIsStatic reports whether this is a static-style call
+// (`Foo::bar()` parsed via the property-call AST). Out of scope.
+func (r *runObjectFunc) ObjectFuncIsStatic() bool { return r.static }
+
+// ObjectFuncIsNullSafe reports nullsafe chain status.
+func (r *runObjectFunc) ObjectFuncIsNullSafe() bool { return r.nullsafe || r.nullChain }
+
 // --- runnableFunctionCall ---------------------------------------------
 
 // FuncCallName returns the function name as written (or its global-

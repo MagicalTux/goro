@@ -7,6 +7,7 @@ import (
 	"github.com/KarpelesLab/goro/core/compiler"
 	"github.com/KarpelesLab/goro/core/logopt"
 	"github.com/KarpelesLab/goro/core/phperr"
+	"github.com/KarpelesLab/goro/core/phpobj"
 	"github.com/KarpelesLab/goro/core/phpv"
 	"github.com/KarpelesLab/goro/core/tokenizer"
 )
@@ -370,6 +371,62 @@ func (f *Frame) exec(ctx phpv.Context) (res *phpv.ZVal, err error) {
 			if err := arraySetLocal(ctx, f, ins.A(), nil, val); err != nil {
 				return nil, err
 			}
+
+		// --- objects -------------------------------------------------
+		case OpNewObject:
+			argc := int(ins.B())
+			args := make([]*phpv.ZVal, argc)
+			for i := argc - 1; i >= 0; i-- {
+				args[i] = f.pop()
+			}
+			name, ok := f.fn.Consts[ins.A()].(phpv.ZString)
+			if !ok {
+				return nil, fmt.Errorf("vm: OP_NEW_OBJECT name const is %T not ZString", f.fn.Consts[ins.A()])
+			}
+			class, err := ctx.Global().GetClass(ctx, name, true)
+			if err != nil {
+				return nil, err
+			}
+			obj, err := phpobj.NewZObject(ctx, class, args...)
+			if err != nil {
+				return nil, err
+			}
+			f.push(obj.ZVal())
+
+		case OpObjectGet:
+			receiver := f.pop()
+			name, ok := f.fn.Consts[ins.A()].(phpv.ZString)
+			if !ok {
+				return nil, fmt.Errorf("vm: OP_OBJECT_GET name const is %T not ZString", f.fn.Consts[ins.A()])
+			}
+			res, err := objectGet(ctx, receiver, name)
+			if err != nil {
+				return nil, err
+			}
+			if res == nil {
+				res = phpv.ZNULL.ZVal()
+			}
+			f.push(res)
+
+		case OpObjectCall:
+			argc := int(ins.B())
+			args := make([]*phpv.ZVal, argc)
+			for i := argc - 1; i >= 0; i-- {
+				args[i] = f.pop()
+			}
+			receiver := f.pop()
+			name, ok := f.fn.Consts[ins.A()].(phpv.ZString)
+			if !ok {
+				return nil, fmt.Errorf("vm: OP_OBJECT_CALL name const is %T not ZString", f.fn.Consts[ins.A()])
+			}
+			res, err := objectCall(ctx, receiver, name, args)
+			if err != nil {
+				return nil, err
+			}
+			if res == nil {
+				res = phpv.ZNULL.ZVal()
+			}
+			f.push(res)
 
 		// --- foreach -------------------------------------------------
 		case OpForeachInit:

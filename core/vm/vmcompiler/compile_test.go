@@ -243,6 +243,31 @@ func TestShortCircuit(t *testing.T) {
 	}
 }
 
+func TestObjectAccess(t *testing.T) {
+	classDecl := `
+		class Pt {
+			public $x;
+			public $y;
+			function __construct($x, $y) { $this->x = $x; $this->y = $y; }
+			function dist2() { return $this->x * $this->x + $this->y * $this->y; }
+			function add($other) { return new Pt($this->x + $other->x, $this->y + $other->y); }
+		}
+	`
+	cases := []string{
+		// Property read
+		"$p = new Pt(3, 4); return $p->x + $p->y;",
+		// Method call
+		"$p = new Pt(3, 4); return $p->dist2();",
+		// Method returning an object → chained property read
+		"$a = new Pt(1, 2); $b = new Pt(10, 20); return $a->add($b)->x + $a->add($b)->y;",
+		// Method-call result used in arithmetic
+		"$p = new Pt(3, 4); $a = new Pt(1, 1); return $p->dist2() + $a->dist2();",
+	}
+	for _, c := range cases {
+		t.Run(c, func(t *testing.T) { compareReturns(t, c, classDecl) })
+	}
+}
+
 func TestForeach(t *testing.T) {
 	cases := []string{
 		// value form

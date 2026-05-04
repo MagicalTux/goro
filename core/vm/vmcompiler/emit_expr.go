@@ -61,6 +61,12 @@ func (e *emitter) emitExpr(node phpv.Runnable) error {
 		return e.emitArrayLiteral(n)
 	case arrayAccessNode:
 		return e.emitArrayAccessRead(n)
+	case newObjectNode:
+		return e.emitNewObject(n)
+	case objectVarNode:
+		return e.emitObjectVarRead(n)
+	case objectFuncNode:
+		return e.emitObjectFuncCall(n)
 	}
 
 	// Runnables (slice of statements) appears as an expression rarely
