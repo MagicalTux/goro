@@ -75,6 +75,37 @@ func TestClosureBodyHookFallsBack(t *testing.T) {
 	}
 }
 
+// TestThrowFromVM verifies the OP_THROW opcode propagates the
+// exception out of a VM-compiled function so an AST try/catch
+// wrapper at the script level catches it.
+func TestThrowFromVM(t *testing.T) {
+	prev := vmcompiler.Enabled()
+	vmcompiler.SetEnabled(true)
+	t.Cleanup(func() { vmcompiler.SetEnabled(prev) })
+
+	g := newGlobal(t)
+	r := compileSnippet(t, g, `
+		function vm_thrower() { throw new Exception('hello'); }
+		try {
+			vm_thrower();
+			return 'no exception';
+		} catch (Exception $e) {
+			return $e->getMessage();
+		}
+	`)
+	res, err := phperr.CatchReturn(r.Run(g))
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.String() != "hello" {
+		t.Fatalf("got %q, want 'hello'", res.String())
+	}
+	fn, _ := g.GetFunction(g, phpv.ZString("vm_thrower"))
+	if !compiler.IsVMCompiled(fn) {
+		t.Fatalf("vm_thrower should be VM-compiled")
+	}
+}
+
 // TestRecursiveVM checks that a recursive function compiled to bytecode
 // continues to work — recursion goes through CallZVal which dispatches
 // to ZClosure.Call which invokes the VM body.

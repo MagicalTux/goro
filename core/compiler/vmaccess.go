@@ -68,6 +68,21 @@ func IsVMCompiled(c phpv.Callable) bool {
 // adds zero runtime cost when unused (Go inlines + the AST executor
 // continues to read fields directly).
 
+// --- runNoDiscardStatement --------------------------------------------
+
+// NoDiscardInner returns the wrapped statement. The VM emitter
+// unwraps this, foregoing the NoDiscard warning for VM-compiled
+// statements — a small loss until we wire up the warning natively.
+func (r *runNoDiscardStatement) NoDiscardInner() phpv.Runnable { return r.inner }
+
+// --- runnableThrow ----------------------------------------------------
+
+// ThrowValue returns the value expression being thrown.
+func (r *runnableThrow) ThrowValue() phpv.Runnable { return r.v }
+
+// ThrowLoc returns the source location.
+func (r *runnableThrow) ThrowLoc() *phpv.Loc { return r.l }
+
 // --- runNewObject -----------------------------------------------------
 
 // NewObjectClassName returns the static class name when the

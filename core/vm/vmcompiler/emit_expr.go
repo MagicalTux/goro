@@ -258,6 +258,14 @@ func (e *emitter) emitAssign(n operatorNode) error {
 		stmtCtx := e.stmtCtx
 		return e.emitArrayAssignToLocal(aa, n.OperatorB(), stmtCtx)
 	}
+	// `$obj->prop = v` is technically supported via OP_OBJECT_SET, but
+	// some subtleties (typed properties, backtrace stacking, hooks)
+	// don't yet match the AST runObjectVar.WriteValue exactly. Emit
+	// only for narrow safe cases — always fall back for now until we
+	// extract a public helper that mirrors WriteValue.
+	if _, ok := n.OperatorA().(objectVarNode); ok {
+		return unsupportedf("property assign (deferred to AST until WriteValue extract)")
+	}
 	return unsupportedf("plain `=` to non-variable target %T", n.OperatorA())
 }
 

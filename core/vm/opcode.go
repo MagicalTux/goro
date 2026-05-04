@@ -108,6 +108,10 @@ const (
 	// only — no result on the stack.
 	OpArrayAppendLocal
 
+	// --- exceptions ------------------------------------------------------
+	// OP_THROW pops the value and throws it via phpobj.ThrowObject.
+	OpThrow
+
 	// --- objects ---------------------------------------------------------
 	// OP_NEW_OBJECT pops B args, looks up class by Consts[A] (a ZString),
 	// instantiates via phpobj.NewZObject (which handles abstract/interface/
@@ -118,6 +122,9 @@ const (
 	// uses ObjectGet (which handles __get and visibility), null/bool
 	// receivers warn + return null, scalars produce the standard error.
 	OpObjectGet
+	// OP_OBJECT_SET pops the value, then the receiver. Sets
+	// receiver->name = value. Name is Consts[A] (a ZString).
+	OpObjectSet
 	// OP_OBJECT_CALL pops B args and the receiver. Pushes the result
 	// of receiver->name(args). Name is Consts[A] (a ZString).
 	OpObjectCall
@@ -216,8 +223,10 @@ var opNames = [...]string{
 	OpArrayGet:         "ARRAY_GET",
 	OpArraySetLocal:    "ARRAY_SET_LOCAL",
 	OpArrayAppendLocal: "ARRAY_APPEND_LOCAL",
+	OpThrow:            "THROW",
 	OpNewObject:        "NEW_OBJECT",
 	OpObjectGet:        "OBJECT_GET",
+	OpObjectSet:        "OBJECT_SET",
 	OpObjectCall:       "OBJECT_CALL",
 	OpForeachInit:      "FOREACH_INIT",
 	OpForeachStep:      "FOREACH_STEP",

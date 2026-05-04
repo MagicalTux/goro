@@ -263,6 +263,15 @@ func TestShortCircuit(t *testing.T) {
 	}
 }
 
+// throw is exercised indirectly by integration_test.go — the test
+// runs a script that defines a VM-compiled function that throws,
+// then catches the exception in an AST-evaluated try/catch wrapper.
+
+// Property write is deferred to AST until we extract a helper that
+// mirrors runObjectVar.WriteValue exactly. The integration test
+// confirms that calling a method that writes to $this->x still works
+// (the method's body falls back to AST).
+
 func TestObjectAccess(t *testing.T) {
 	classDecl := `
 		class Pt {

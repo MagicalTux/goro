@@ -377,6 +377,11 @@ func (f *Frame) exec(ctx phpv.Context) (res *phpv.ZVal, err error) {
 				return nil, err
 			}
 
+		// --- throw ---------------------------------------------------
+		case OpThrow:
+			v := f.pop()
+			return nil, phpobj.ThrowObject(ctx, v)
+
 		// --- objects -------------------------------------------------
 		case OpNewObject:
 			argc := int(ins.B())
@@ -412,6 +417,17 @@ func (f *Frame) exec(ctx phpv.Context) (res *phpv.ZVal, err error) {
 				res = phpv.ZNULL.ZVal()
 			}
 			f.push(res)
+
+		case OpObjectSet:
+			val := f.pop()
+			receiver := f.pop()
+			name, ok := f.fn.Consts[ins.A()].(phpv.ZString)
+			if !ok {
+				return nil, fmt.Errorf("vm: OP_OBJECT_SET name const is %T not ZString", f.fn.Consts[ins.A()])
+			}
+			if err := objectSet(ctx, receiver, name, val); err != nil {
+				return nil, err
+			}
 
 		case OpObjectCall:
 			argc := int(ins.B())

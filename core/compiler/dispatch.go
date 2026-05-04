@@ -9,6 +9,129 @@ import (
 	"github.com/KarpelesLab/goro/core/tokenizer"
 )
 
+// CallInstanceMethod invokes obj->name(args...) with full PHP
+// dispatch semantics: abstract-method check, private/protected
+// visibility against the calling class, __call fallback when
+// inaccessible, late static binding. Used by the VM's OP_OBJECT_CALL
+// so behaviour matches the AST runObjectFunc path byte-for-byte.
+//
+// The receiver must be a ZtObject ZVal; the caller is responsible
+// for the upstream "method on null/scalar" diagnostic.
+func CallInstanceMethod(ctx phpv.Context, obj *phpv.ZVal, name phpv.ZString, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	zobj, ok := obj.Value().(*phpobj.ZObject)
+	if !ok {
+		// Fall through to the interface form (rare, e.g. some internal
+		// proxy types). It can't do full visibility checks, but at
+		// least keeps the simple cases working.
+		if zo, ok := obj.Value().(phpv.ZObject); ok {
+			m, mok := zo.GetClass().GetMethod(name)
+			if !mok {
+				return nil, phpobj.ThrowError(ctx, phpobj.Error,
+					fmt.Sprintf("Call to undefined method %s::%s()", zo.GetClass().GetName(), name))
+			}
+			return ctx.CallZVal(ctx, m.Method, args, zo)
+		}
+		return nil, fmt.Errorf("CallInstanceMethod: receiver is not a ZObject")
+	}
+
+	class := zobj.GetClass()
+	method, ok := class.GetMethod(name)
+	if !ok {
+		// __call magic
+		if cm, hasCall := class.GetMethod("__call"); hasCall {
+			a := phpv.NewZArray()
+			for _, sub := range args {
+				a.OffsetSet(ctx, nil, sub.Dup())
+			}
+			return ctx.CallZVal(ctx, cm.Method, []*phpv.ZVal{name.ZVal(), a.ZVal()}, zobj)
+		}
+		return nil, phpobj.ThrowError(ctx, phpobj.Error,
+			fmt.Sprintf("Call to undefined method %s::%s()", class.GetName(), name))
+	}
+
+	// Abstract method cannot be called directly.
+	if method.Modifiers.Has(phpv.ZAttrAbstract) || (method.Empty && method.Class != nil && method.Class.GetType() != phpv.ZClassTypeInterface) {
+		return nil, phpobj.ThrowError(ctx, phpobj.Error,
+			fmt.Sprintf("Cannot call abstract method %s::%s()", method.Class.GetName(), method.Name))
+	}
+
+	// Visibility check.
+	methodNotVisible := false
+	var visErrMsg string
+	if method.Modifiers.Has(phpv.ZAttrPrivate) {
+		callerClass := ctx.Class()
+		methodClass := method.Class
+		if callerClass == nil || methodClass == nil || callerClass.GetName() != methodClass.GetName() {
+			methodClassName := class.GetName()
+			if methodClass != nil {
+				methodClassName = methodClass.GetName()
+			}
+			scope := "global scope"
+			if callerClass != nil {
+				scope = "scope " + string(callerClass.GetName())
+			}
+			methodNotVisible = true
+			visErrMsg = fmt.Sprintf("Call to private method %s::%s() from %s", methodClassName, method.Name, scope)
+		}
+	} else if method.Modifiers.Has(phpv.ZAttrProtected) {
+		callerClass := ctx.Class()
+		if callerClass == nil {
+			methodNotVisible = true
+			visErrMsg = fmt.Sprintf("Call to protected method %s::%s() from global scope", class.GetName(), method.Name)
+		} else if !callerClass.InstanceOf(method.Class) && !method.Class.InstanceOf(callerClass) && !callerClass.InstanceOf(class) && !class.InstanceOf(callerClass) {
+			// Sibling-class case: walk up to find common protected ancestor.
+			protectedVisible := false
+			if method.Class != nil {
+				rootClass := method.Class
+				for rootClass.GetParent() != nil {
+					if pm, ok := rootClass.GetParent().GetMethod(method.Name); ok && pm.Modifiers.Has(phpv.ZAttrProtected) {
+						rootClass = rootClass.GetParent()
+					} else {
+						break
+					}
+				}
+				if callerClass.InstanceOf(rootClass) {
+					protectedVisible = true
+				}
+			}
+			if !protectedVisible {
+				methodNotVisible = true
+				visErrMsg = fmt.Sprintf("Call to protected method %s::%s() from scope %s", class.GetName(), method.Name, callerClass.GetName())
+			}
+		}
+	}
+	if methodNotVisible {
+		// __call fallback
+		if cm, hasCall := class.GetMethod("__call"); hasCall {
+			a := phpv.NewZArray()
+			for _, sub := range args {
+				a.OffsetSet(ctx, nil, sub.Dup())
+			}
+			return ctx.CallZVal(ctx, cm.Method, []*phpv.ZVal{name.ZVal(), a.ZVal()}, zobj)
+		}
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, visErrMsg)
+	}
+
+	// For static methods, $this is not passed; bind for late-static.
+	if method.Modifiers.IsStatic() {
+		m := phpv.BindClassLSB(method.Method, class, class, true)
+		m.Attributes = method.Attributes
+		return ctx.CallZVal(ctx, m, args, nil)
+	}
+
+	// Non-static instance methods: narrow $this to the defining class
+	// for parent::-style dispatch, then invoke directly. Keep the
+	// callable un-wrapped to preserve object identity (the AST does
+	// the same for the simple case).
+	var objBound phpv.ZObject = zobj
+	if method.Class != nil {
+		if kin := zobj.GetKin(string(method.Class.GetName())); kin != nil {
+			objBound = kin
+		}
+	}
+	return ctx.CallZVal(ctx, method.Method, args, objBound)
+}
+
 // EvalBinop computes the result of a binary operator with full PHP
 // semantics. The VM uses this so its arithmetic / bitwise / compare /
 // concat opcodes match the AST runOperator path byte-for-byte.

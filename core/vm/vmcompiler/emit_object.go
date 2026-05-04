@@ -67,6 +67,29 @@ func (e *emitter) emitNewObject(n newObjectNode) error {
 	return nil
 }
 
+func (e *emitter) emitObjectVarAssign(lhs objectVarNode, rhs phpv.Runnable, stmtCtx bool) error {
+	if !stmtCtx {
+		return unsupportedf("property assign in non-statement context")
+	}
+	if lhs.ObjectVarIsNullSafe() {
+		return unsupportedf("nullsafe property assign")
+	}
+	name := lhs.ObjectVarName()
+	if len(name) > 0 && name[0] == '$' {
+		return unsupportedf("dynamic property name in assign")
+	}
+	if err := e.withSubexpr(func() error { return e.emitExpr(lhs.ObjectVarReceiver()) }); err != nil {
+		return err
+	}
+	if err := e.withSubexpr(func() error { return e.emitExpr(rhs) }); err != nil {
+		return err
+	}
+	idx := e.constIndex(name)
+	e.emit(vm.OpObjectSet, idx, 0, 0)
+	e.popStack(2) // pop receiver + value, no push
+	return nil
+}
+
 func (e *emitter) emitObjectVarRead(n objectVarNode) error {
 	if n.ObjectVarIsNullSafe() {
 		return unsupportedf("nullsafe property access")

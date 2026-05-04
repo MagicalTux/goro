@@ -46,11 +46,24 @@ type returnNode interface {
 	ReturnHasTypeHint() bool
 }
 
+type throwNode interface {
+	ThrowValue() phpv.Runnable
+	ThrowLoc() *phpv.Loc
+}
+
 // emitStmt emits bytecode for a statement-level node. Statements never
 // leave a value on the stack on completion.
 func (e *emitter) emitStmt(node phpv.Runnable) error {
 	if node == nil {
 		return nil
+	}
+
+	// Unwrap NoDiscard wrapper. Means the NoDiscard warning won't
+	// fire from VM-compiled call sites — acceptable for now.
+	if u, ok := node.(interface {
+		NoDiscardInner() phpv.Runnable
+	}); ok {
+		node = u.NoDiscardInner()
 	}
 
 	// Runnables (slice of statements): emit each.
@@ -76,6 +89,8 @@ func (e *emitter) emitStmt(node phpv.Runnable) error {
 		return e.emitForeach(n)
 	case returnNode:
 		return e.emitReturn(n)
+	case throwNode:
+		return e.emitThrow(n)
 	case *phperr.PhpBreak:
 		return e.emitBreak(n)
 	case *phperr.PhpContinue:
@@ -343,6 +358,15 @@ func (e *emitter) emitReturn(n returnNode) error {
 	return nil
 }
 
+func (e *emitter) emitThrow(n throwNode) error {
+	if err := e.withSubexpr(func() error { return e.emitExpr(n.ThrowValue()) }); err != nil {
+		return err
+	}
+	e.emit(vm.OpThrow, 0, 0, 0)
+	e.popStack(1)
+	return nil
+}
+
 func (e *emitter) emitBreak(n *phperr.PhpBreak) error {
 	if n.Initial > 1 {
 		return unsupportedf("multi-level break (break %d)", n.Initial)
@@ -388,6 +412,8 @@ func stmtLoc(node phpv.Runnable) *phpv.Loc {
 		return n.WhileLoc()
 	case returnNode:
 		return n.ReturnLoc()
+	case throwNode:
+		return n.ThrowLoc()
 	case operatorNode:
 		return n.OperatorLoc()
 	case literalNode:

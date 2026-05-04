@@ -3,6 +3,7 @@ package vm
 import (
 	"fmt"
 
+	"github.com/KarpelesLab/goro/core/compiler"
 	"github.com/KarpelesLab/goro/core/phpobj"
 	"github.com/KarpelesLab/goro/core/phpv"
 )
@@ -69,13 +70,37 @@ func objectGet(ctx phpv.Context, receiver *phpv.ZVal, name phpv.ZString) (*phpv.
 	}
 }
 
+// objectSet implements OP_OBJECT_SET: writes receiver->name = value.
+// Routes through ZObject.ObjectSet which handles __set, typed
+// properties, asymmetric visibility, etc.
+func objectSet(ctx phpv.Context, receiver *phpv.ZVal, name phpv.ZString, value *phpv.ZVal) error {
+	switch receiver.GetType() {
+	case phpv.ZtObject:
+		obj, ok := receiver.Value().(*phpobj.ZObject)
+		if !ok {
+			if zo, ok := receiver.Value().(phpv.ZObject); ok {
+				return zo.ObjectSet(ctx, name, value)
+			}
+			return fmt.Errorf("vm: receiver is not a ZObject")
+		}
+		return obj.ObjectSet(ctx, name, value)
+	case phpv.ZtNull:
+		return phpobj.ThrowError(ctx, phpobj.Error,
+			fmt.Sprintf("Attempt to assign property \"%s\" on null", string(name)))
+	default:
+		return phpobj.ThrowError(ctx, phpobj.Error,
+			fmt.Sprintf("Attempt to assign property \"%s\" on %s", string(name), receiver.GetType().TypeName()))
+	}
+}
+
 // objectCall implements OP_OBJECT_CALL: invokes receiver->name(args).
-// Routes through ZObject.GetMethod + ctx.CallZVal so visibility,
-// __call, returns-by-ref, and stack-trace bookkeeping are all
-// handled by the same code paths the AST uses.
-//
-// A null receiver throws Error (as in PHP); other scalar receivers
-// likewise throw — same semantics as runObjectFunc.Run.
+// Routes through compiler.CallInstanceMethod which mirrors the AST's
+// runObjectFunc visibility and dispatch logic (private/protected
+// checks, abstract rejection, __call fallback). It still uses
+// pre-evaluated ZVal args so by-ref parameters won't propagate
+// mutations back to the caller's locals — for now those callers
+// fall back to AST naturally because their bodies use other
+// unsupported features.
 func objectCall(ctx phpv.Context, receiver *phpv.ZVal, name phpv.ZString, args []*phpv.ZVal) (*phpv.ZVal, error) {
 	if receiver == nil || receiver.GetType() != phpv.ZtObject {
 		typeName := "null"
@@ -85,19 +110,5 @@ func objectCall(ctx phpv.Context, receiver *phpv.ZVal, name phpv.ZString, args [
 		return nil, phpobj.ThrowError(ctx, phpobj.Error,
 			fmt.Sprintf("Call to a member function %s() on %s", string(name), typeName))
 	}
-	obj, ok := receiver.Value().(*phpobj.ZObject)
-	if !ok {
-		if zo, ok := receiver.Value().(phpv.ZObject); ok {
-			// The interface form lacks GetMethod; fall back to a runtime
-			// error so the caller can choose to skip this opcode for
-			// unusual ZObject implementations.
-			_ = zo
-		}
-		return nil, fmt.Errorf("vm: receiver is not a *ZObject")
-	}
-	m, err := obj.GetMethod(name, ctx)
-	if err != nil {
-		return nil, err
-	}
-	return ctx.CallZVal(ctx, m, args, obj)
+	return compiler.CallInstanceMethod(ctx, receiver, name, args)
 }
