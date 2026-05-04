@@ -77,6 +77,36 @@ const (
 	OpRet        // pop, exit frame with value
 	OpRetNull    // exit frame with null
 
+	// --- arrays ----------------------------------------------------------
+	// OP_NEW_ARRAY pushes a new, empty *ZArray.ZVal() onto the stack.
+	// Used as the start of building an array literal and for auto-viv
+	// (the latter is currently in OP_ARRAY_*_LOCAL handlers).
+	OpNewArray
+	// OP_ARRAY_INIT_APPEND pops the value from the stack and appends it
+	// to the *ZArray sitting one slot below — the array stays on top so
+	// the next entry can be added without re-loading it. Used for the
+	// un-keyed entries of a literal: `[1, 2, 3]`.
+	OpArrayInitAppend
+	// OP_ARRAY_INIT_KEYED pops value, then key. The *ZArray below is
+	// mutated in place. Used for keyed entries in a literal:
+	// `[k => v, ...]`.
+	OpArrayInitKeyed
+	// OP_ARRAY_GET pops offset, then container. Pushes container[offset].
+	// Mirrors the AST runArrayAccess.Run on read (warns on undefined
+	// keys, throws on string-as-array-of-letters edge cases). Containers
+	// other than ZtArray fall back via the dispatcher's special-case
+	// handling (string offsets, ArrayAccess interface — TODO).
+	OpArrayGet
+	// OP_ARRAY_SET_LOCAL pops the value, then the offset. The local at
+	// index A is read; if it's null/uninitialized, a fresh *ZArray is
+	// created and stored back. The offset is then assigned the value.
+	// No result is left on the stack — used in statement context only.
+	OpArraySetLocal
+	// OP_ARRAY_APPEND_LOCAL pops the value. Local A is auto-vivified to
+	// *ZArray if null; then the value is appended. Statement context
+	// only — no result on the stack.
+	OpArrayAppendLocal
+
 	// --- diagnostics -----------------------------------------------------
 	OpTick // call ctx.Tick(ctx, LocAt(pc-1)) and DrainTempObjects
 
@@ -143,7 +173,13 @@ var opNames = [...]string{
 	OpJmpIfTruePeek:   "JMP_IF_TRUE_PEEK",
 	OpCallUser:        "CALL_USER",
 	OpCallDirect:      "CALL_DIRECT",
-	OpRet:             "RET",
-	OpRetNull:         "RET_NULL",
-	OpTick:            "TICK",
+	OpRet:              "RET",
+	OpRetNull:          "RET_NULL",
+	OpNewArray:         "NEW_ARRAY",
+	OpArrayInitAppend:  "ARRAY_INIT_APPEND",
+	OpArrayInitKeyed:   "ARRAY_INIT_KEYED",
+	OpArrayGet:         "ARRAY_GET",
+	OpArraySetLocal:    "ARRAY_SET_LOCAL",
+	OpArrayAppendLocal: "ARRAY_APPEND_LOCAL",
+	OpTick:             "TICK",
 }

@@ -322,6 +322,51 @@ func (f *Frame) exec(ctx phpv.Context) (res *phpv.ZVal, err error) {
 		case OpRetNull:
 			return phpv.ZNULL.ZVal(), nil
 
+		// --- arrays --------------------------------------------------
+		case OpNewArray:
+			arr := phpv.NewZArrayTracked(ctx.Global().MemMgrTracker())
+			f.push(arr.ZVal())
+
+		case OpArrayInitAppend:
+			val := f.pop()
+			arr := f.peek().AsArray(ctx)
+			if err := arr.OffsetSet(ctx, nil, val); err != nil {
+				return nil, err
+			}
+
+		case OpArrayInitKeyed:
+			val := f.pop()
+			key := f.pop()
+			arr := f.peek().AsArray(ctx)
+			if err := arr.OffsetSet(ctx, key.Value(), val); err != nil {
+				return nil, err
+			}
+
+		case OpArrayGet:
+			offset := f.pop()
+			container := f.pop()
+			res, err := arrayGet(ctx, container, offset)
+			if err != nil {
+				return nil, err
+			}
+			if res == nil {
+				res = phpv.ZNULL.ZVal()
+			}
+			f.push(res)
+
+		case OpArraySetLocal:
+			val := f.pop()
+			offset := f.pop()
+			if err := arraySetLocal(ctx, f.fn.Locals[ins.A()], offset, val); err != nil {
+				return nil, err
+			}
+
+		case OpArrayAppendLocal:
+			val := f.pop()
+			if err := arraySetLocal(ctx, f.fn.Locals[ins.A()], nil, val); err != nil {
+				return nil, err
+			}
+
 		// --- diagnostics --------------------------------------------
 		case OpTick:
 			if err := ctx.Tick(ctx, f.fn.LocAt(f.pc-1)); err != nil {

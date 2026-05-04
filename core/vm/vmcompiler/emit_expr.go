@@ -57,6 +57,10 @@ func (e *emitter) emitExpr(node phpv.Runnable) error {
 		return e.emitOperator(n)
 	case funcCallNode:
 		return e.emitFunctionCall(n)
+	case arrayLiteralNode:
+		return e.emitArrayLiteral(n)
+	case arrayAccessNode:
+		return e.emitArrayAccessRead(n)
 	}
 
 	// Runnables (slice of statements) appears as an expression rarely
@@ -226,26 +230,27 @@ func (e *emitter) emitUnary(b phpv.Runnable, op tokenizer.ItemType) error {
 }
 
 func (e *emitter) emitAssign(n operatorNode) error {
-	// LHS must be a simple variable for the MVP. Anything else
-	// (array element, object property, list destructure) falls back.
-	lhs, ok := n.OperatorA().(variableNode)
-	if !ok {
-		return unsupportedf("plain `=` to non-variable target %T", n.OperatorA())
+	// Plain `=` to a simple local variable.
+	if v, ok := n.OperatorA().(variableNode); ok {
+		stmtCtx := e.stmtCtx
+		if err := e.withSubexpr(func() error { return e.emitExpr(n.OperatorB()) }); err != nil {
+			return err
+		}
+		idx := e.localIndex(v.VariableName())
+		if stmtCtx {
+			e.emit(vm.OpStoreLocal, idx, 0, 0)
+			e.popStack(1)
+		} else {
+			e.emit(vm.OpStoreLocalKeep, idx, 0, 0)
+		}
+		return nil
 	}
-	// RHS is a sub-expression — its result is consumed by the store.
-	stmtCtx := e.stmtCtx
-	if err := e.withSubexpr(func() error { return e.emitExpr(n.OperatorB()) }); err != nil {
-		return err
+	// `$local[k] = v` and `$local[] = v` (statement context only).
+	if aa, ok := n.OperatorA().(arrayAccessNode); ok {
+		stmtCtx := e.stmtCtx
+		return e.emitArrayAssignToLocal(aa, n.OperatorB(), stmtCtx)
 	}
-	idx := e.localIndex(lhs.VariableName())
-	if stmtCtx {
-		e.emit(vm.OpStoreLocal, idx, 0, 0)
-		e.popStack(1)
-	} else {
-		e.emit(vm.OpStoreLocalKeep, idx, 0, 0)
-		// Stack stays at +1 (kept the value on top).
-	}
-	return nil
+	return unsupportedf("plain `=` to non-variable target %T", n.OperatorA())
 }
 
 func (e *emitter) emitCompoundAssign(n operatorNode, op tokenizer.ItemType) error {

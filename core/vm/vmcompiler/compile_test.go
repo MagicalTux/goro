@@ -243,10 +243,34 @@ func TestShortCircuit(t *testing.T) {
 	}
 }
 
+func TestArrays(t *testing.T) {
+	cases := []string{
+		// literals
+		"$a = []; return count($a);",
+		"$a = [1,2,3]; return $a[0] + $a[1] + $a[2];",
+		"$a = ['x' => 7, 'y' => 35]; return $a['x'] + $a['y'];",
+		"$a = [10, 'k' => 20, 30]; return $a[0] + $a['k'] + $a[1];",
+		// append
+		"$a = []; $a[] = 1; $a[] = 2; $a[] = 3; return $a[0] + $a[1] + $a[2];",
+		// indexed write
+		"$a = []; $a[0] = 'foo'; $a[1] = 'bar'; return $a[0] . $a[1];",
+		// auto-vivification from null
+		"$a[] = 7; $a[] = 35; return $a[0] + $a[1];",
+		// chained read (container is itself an array access)
+		"$a = [[1,2],[3,4]]; return $a[1][0];",
+		// mixed: literal in for-loop
+		"$a = []; for ($i = 0; $i < 5; $i++) { $a[] = $i * 2; } return $a[0] + $a[2] + $a[4];",
+	}
+	for _, c := range cases {
+		t.Run(c, func(t *testing.T) { compareReturns(t, c) })
+	}
+}
+
 func TestUnsupportedNodeFallsBack(t *testing.T) {
-	// Arrays aren't supported yet — the emitter should report that.
+	// Spread in array literal isn't supported — the emitter should
+	// report that and the function-level fallback restores the AST.
 	g := newGlobal(t)
-	r := compileSnippet(t, g, "$a = [1,2,3]; return $a[0];")
+	r := compileSnippet(t, g, "$src = [1,2,3]; $a = [0, ...$src]; return $a[3];")
 	_, err := vmcompiler.Compile("<test>", &phpv.Loc{Filename: "<test>"}, r)
 	if err == nil {
 		t.Fatalf("expected ErrUnsupported, got nil")

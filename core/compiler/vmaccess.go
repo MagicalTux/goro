@@ -86,6 +86,56 @@ func (r *runnableFunctionCall) FuncCallArgs() []phpv.Runnable { return r.args }
 // FuncCallLoc returns the source location of the call.
 func (r *runnableFunctionCall) FuncCallLoc() *phpv.Loc { return r.l }
 
+// --- runArray / arrayEntry --------------------------------------------
+
+// ArrayEntryNode exposes a single literal-array entry to out-of-package
+// consumers (the bytecode emitter). spread entries (`...$expr`) and
+// keyed entries (`k => v`) are distinguished via IsSpread / Key.
+type ArrayEntryNode interface {
+	EntryKey() phpv.Runnable   // nil for un-keyed entry
+	EntryValue() phpv.Runnable // never nil
+	EntrySpread() bool
+}
+
+// EntryKey returns the key expression (nil for un-keyed entries).
+func (e *arrayEntry) EntryKey() phpv.Runnable { return e.k }
+
+// EntryValue returns the value expression.
+func (e *arrayEntry) EntryValue() phpv.Runnable { return e.v }
+
+// EntrySpread reports whether this entry is `...$expr` (PHP 7.4+).
+func (e *arrayEntry) EntrySpread() bool { return e.spread }
+
+// ArrayEntries returns the literal-array entries as accessor nodes.
+func (r *runArray) ArrayEntries() []ArrayEntryNode {
+	out := make([]ArrayEntryNode, len(r.e))
+	for i, e := range r.e {
+		out[i] = e
+	}
+	return out
+}
+
+// ArrayLoc returns the source location of the array literal.
+func (r *runArray) ArrayLoc() *phpv.Loc { return r.l }
+
+// --- runArrayAccess ----------------------------------------------------
+
+// ArrayAccessContainer returns the container expression (left side of [).
+// Never nil for parsed source.
+func (r *runArrayAccess) ArrayAccessContainer() phpv.Runnable { return r.value }
+
+// ArrayAccessOffset returns the offset expression. nil for `$a[]`
+// (the append form, only valid in write context).
+func (r *runArrayAccess) ArrayAccessOffset() phpv.Runnable { return r.offset }
+
+// ArrayAccessLoc returns the source location of the [...] access.
+func (r *runArrayAccess) ArrayAccessLoc() *phpv.Loc { return r.l }
+
+// ArrayAccessIsNullSafe reports whether this access is part of a
+// nullsafe chain (`$obj?->arr[$k]`). Out of scope for the VM; emitter
+// falls back to AST when true.
+func (r *runArrayAccess) ArrayAccessIsNullSafe() bool { return r.nullChain }
+
 // --- runConstant -------------------------------------------------------
 
 // ConstantName returns the constant identifier as written in source.
