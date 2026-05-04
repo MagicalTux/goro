@@ -302,6 +302,18 @@ func (f *Frame) exec(ctx phpv.Context) (res *phpv.ZVal, err error) {
 				f.pc = uint32(int32(f.pc) + ins.C())
 			}
 
+		// --- call ----------------------------------------------------
+		case OpCallUser:
+			name, ok := f.fn.Consts[ins.A()].(phpv.ZString)
+			if !ok {
+				return nil, fmt.Errorf("vm: OP_CALL_USER name const is %T not ZString", f.fn.Consts[ins.A()])
+			}
+			argc := int(ins.B())
+			if err := f.callUser(ctx, name, argc); err != nil {
+				return nil, err
+			}
+			// callUser pops argc and pushes 1 result.
+
 		// --- return --------------------------------------------------
 		case OpRet:
 			return f.pop(), nil

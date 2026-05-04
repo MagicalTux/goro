@@ -22,8 +22,10 @@ import (
 // produce the same return value. This is the differential contract
 // that holds the VM honest.
 
-// compileSnippet returns the AST root for `<?php <code>`.
-func compileSnippet(t *testing.T, code string) phpv.Runnable {
+// compileSnippet returns the AST root for `<?php <code>`. The provided
+// Global is used as the parent context (so any registered functions
+// from prior compiles are visible).
+func compileSnippet(t *testing.T, g *phpctx.Global, code string) phpv.Runnable {
 	t.Helper()
 	f, err := os.CreateTemp("", "vmcompiler*.php")
 	if err != nil {
@@ -41,10 +43,6 @@ func compileSnippet(t *testing.T, code string) phpv.Runnable {
 	lex := tokenizer.NewLexer(f, f.Name())
 	defer lex.Close()
 
-	p := phpctx.NewProcess("cli")
-	cfg := ini.New()
-	g := phpctx.NewGlobal(context.Background(), p, cfg)
-
 	r, err := compiler.Compile(g, lex)
 	if err != nil {
 		t.Fatalf("compiler.Compile: %v", err)
@@ -52,11 +50,16 @@ func compileSnippet(t *testing.T, code string) phpv.Runnable {
 	return r
 }
 
-func runAST(t *testing.T, r phpv.Runnable) *phpv.ZVal {
+// newGlobal creates a fresh Global suitable for a single test.
+func newGlobal(t *testing.T) *phpctx.Global {
 	t.Helper()
 	p := phpctx.NewProcess("cli")
 	cfg := ini.New()
-	g := phpctx.NewGlobal(context.Background(), p, cfg)
+	return phpctx.NewGlobal(context.Background(), p, cfg)
+}
+
+func runAST(t *testing.T, g *phpctx.Global, r phpv.Runnable) *phpv.ZVal {
+	t.Helper()
 	res, err := phperr.CatchReturn(r.Run(g))
 	if err != nil {
 		t.Fatalf("AST Run: %v", err)
@@ -64,11 +67,8 @@ func runAST(t *testing.T, r phpv.Runnable) *phpv.ZVal {
 	return res
 }
 
-func runVM(t *testing.T, fn *vm.Function) *phpv.ZVal {
+func runVM(t *testing.T, g *phpctx.Global, fn *vm.Function) *phpv.ZVal {
 	t.Helper()
-	p := phpctx.NewProcess("cli")
-	cfg := ini.New()
-	g := phpctx.NewGlobal(context.Background(), p, cfg)
 	res, err := vm.Run(g, fn)
 	if err != nil {
 		t.Fatalf("VM Run: %v", err)
@@ -76,16 +76,35 @@ func runVM(t *testing.T, fn *vm.Function) *phpv.ZVal {
 	return res
 }
 
-func compareReturns(t *testing.T, code string) {
+// compareReturns runs `code` under both backends and asserts the
+// results match. setup, if non-empty, is run via the AST on each
+// backend's Global before the test code (used to declare functions).
+func compareReturns(t *testing.T, code string, setup ...string) {
 	t.Helper()
-	r := compileSnippet(t, code)
-	fn, err := vmcompiler.Compile("<test>", &phpv.Loc{Filename: "<test>"}, r)
+
+	gAST := newGlobal(t)
+	for _, s := range setup {
+		r := compileSnippet(t, gAST, s)
+		if _, err := r.Run(gAST); err != nil {
+			t.Fatalf("setup AST run: %v", err)
+		}
+	}
+	r := compileSnippet(t, gAST, code)
+	ast := runAST(t, gAST, r)
+
+	gVM := newGlobal(t)
+	for _, s := range setup {
+		sr := compileSnippet(t, gVM, s)
+		if _, err := sr.Run(gVM); err != nil {
+			t.Fatalf("setup VM run: %v", err)
+		}
+	}
+	r2 := compileSnippet(t, gVM, code)
+	fn, err := vmcompiler.Compile("<test>", &phpv.Loc{Filename: "<test>"}, r2)
 	if err != nil {
 		t.Fatalf("vmcompiler.Compile: %v", err)
 	}
-
-	ast := runAST(t, r)
-	vmRes := runVM(t, fn)
+	vmRes := runVM(t, gVM, fn)
 
 	astStr := astString(ast)
 	vmStr := astString(vmRes)
@@ -226,7 +245,8 @@ func TestShortCircuit(t *testing.T) {
 
 func TestUnsupportedNodeFallsBack(t *testing.T) {
 	// Arrays aren't supported yet — the emitter should report that.
-	r := compileSnippet(t, "$a = [1,2,3]; return $a[0];")
+	g := newGlobal(t)
+	r := compileSnippet(t, g, "$a = [1,2,3]; return $a[0];")
 	_, err := vmcompiler.Compile("<test>", &phpv.Loc{Filename: "<test>"}, r)
 	if err == nil {
 		t.Fatalf("expected ErrUnsupported, got nil")
@@ -234,6 +254,31 @@ func TestUnsupportedNodeFallsBack(t *testing.T) {
 	if !errorsIsUnsupported(err) {
 		t.Fatalf("expected ErrUnsupported, got %v", err)
 	}
+}
+
+func TestFunctionCall(t *testing.T) {
+	// Define a function in setup, call it via VM-compiled bytecode.
+	addDecl := "function vm_test_add($a, $b) { return $a + $b; }"
+	cases := []string{
+		"return vm_test_add(1, 2);",
+		"$s = 0; for ($i = 0; $i < 10; $i++) { $s = vm_test_add($s, $i); } return $s;",
+	}
+	for _, c := range cases {
+		t.Run(c, func(t *testing.T) {
+			compareReturns(t, c, addDecl)
+		})
+	}
+
+	// Built-in: strlen, no setup needed.
+	t.Run("builtin_strlen", func(t *testing.T) {
+		compareReturns(t, "return strlen('hello');")
+	})
+
+	// Recursive user function.
+	fibDecl := "function vm_test_fib($n) { if ($n <= 1) return $n; return vm_test_fib($n - 1) + vm_test_fib($n - 2); }"
+	t.Run("recursive_fib", func(t *testing.T) {
+		compareReturns(t, "return vm_test_fib(10);", fibDecl)
+	})
 }
 
 func errorsIsUnsupported(err error) bool {

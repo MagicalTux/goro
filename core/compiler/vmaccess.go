@@ -16,6 +16,24 @@ import (
 // adds zero runtime cost when unused (Go inlines + the AST executor
 // continues to read fields directly).
 
+// --- runnableFunctionCall ---------------------------------------------
+
+// FuncCallName returns the function name as written (or its global-
+// fallback form). Empty if the call uses a dynamic name (variable
+// function call), in which case the VM should fall back to AST.
+func (r *runnableFunctionCall) FuncCallName() phpv.ZString { return r.name }
+
+// FuncCallNsName returns the namespace-resolved fallback name for the
+// callee (used by GetFunction when the local namespace doesn't define
+// the function). May be empty.
+func (r *runnableFunctionCall) FuncCallNsName() phpv.ZString { return r.nsName }
+
+// FuncCallArgs returns the positional argument expressions.
+func (r *runnableFunctionCall) FuncCallArgs() []phpv.Runnable { return r.args }
+
+// FuncCallLoc returns the source location of the call.
+func (r *runnableFunctionCall) FuncCallLoc() *phpv.Loc { return r.l }
+
 // --- runConstant -------------------------------------------------------
 
 // ConstantName returns the constant identifier as written in source.

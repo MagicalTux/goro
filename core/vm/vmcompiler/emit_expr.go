@@ -54,6 +54,8 @@ func (e *emitter) emitExpr(node phpv.Runnable) error {
 		return e.emitConstant(n)
 	case operatorNode:
 		return e.emitOperator(n)
+	case funcCallNode:
+		return e.emitFunctionCall(n)
 	}
 
 	// Runnables (slice of statements) appears as an expression rarely
