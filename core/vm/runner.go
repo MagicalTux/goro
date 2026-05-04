@@ -25,6 +25,11 @@ func Wrap(fn *Function, fallback phpv.Runnable) *Runnable {
 	return &Runnable{Fn: fn, Fallback: fallback}
 }
 
+// Inner returns the AST tree the wrapper was built from. Lets
+// compiler-internal walks (Dump, GetChildren, validate-break, …)
+// continue to operate on the original structure.
+func (r *Runnable) Inner() phpv.Runnable { return r.Fallback }
+
 // Run executes the wrapped function via the VM dispatcher.
 func (r *Runnable) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	return Run(ctx, r.Fn)

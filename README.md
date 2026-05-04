@@ -90,6 +90,34 @@ Goro passes **~11,864 of 12,121 tests** (~97.9%) from the PHP 8.5.5 test suite (
 | intl | Internationalization (ICU) |
 | Phar | PHP archive format |
 
+## Bytecode VM (experimental)
+
+A stack-based bytecode VM runs in parallel to the AST tree-walking
+executor. It's opt-in and falls back to the AST per-function on any
+unsupported construct.
+
+Enable it with the `GORO_VM=1` environment variable:
+
+```bash
+GORO_VM=1 php-cli script.php
+```
+
+The VM emitter currently handles: scalar literals, `true`/`false`/`null`,
+variable read/write, arithmetic / bitwise / comparison / concat / shift,
+unary `-` / `~` / `!`, plain and compound assignment, `++`/`--`,
+short-circuit `&&` / `||`, `if`/`elseif`/`else`, `while`, `for`,
+`break` / `continue` (single level), `return`, and function calls
+(builtin + user-defined).
+
+Out of scope (falls back to AST): arrays / `foreach`, objects,
+references, `try`/`catch`, generators, multi-level `break N` /
+`continue N`, type-hinted return, by-ref returns, user-defined
+constants, list destructure.
+
+Bench wins so far: ~20% on Fibonacci and Arithmetic. Larger gains
+require either an unboxed value type or register-based opcodes; the
+64-bit instruction format already has room for both.
+
 ## Architecture
 
 ### Process

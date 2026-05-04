@@ -23,6 +23,21 @@ var TryBuildVMClosureBody func(name phpv.ZString, src *phpv.Loc, body phpv.Runna
 // gets the full Runnables and may return a wrapping VM runner.
 var TryBuildVMScript func(src *phpv.Loc, body phpv.Runnable) phpv.Runnable
 
+// unwrapVMBody peels off any VM-runtime wrapping installed by the
+// vmcompiler so introspection paths (Dump, validate-break, yield
+// collection) keep operating on the original AST. The wrapper exposes
+// Inner() returning the AST it was built from. Returns r unchanged
+// when r is not a VM wrapper.
+func unwrapVMBody(r phpv.Runnable) phpv.Runnable {
+	if r == nil {
+		return nil
+	}
+	if inner, ok := r.(interface{ Inner() phpv.Runnable }); ok {
+		return inner.Inner()
+	}
+	return r
+}
+
 // IsVMCompiled reports whether a callable's body has been replaced by
 // a VM-backed runner. Returns false for AST-only callables, anything
 // non-ZClosure, or when the callable isn't a function (e.g. internal

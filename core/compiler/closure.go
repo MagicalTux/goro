@@ -723,10 +723,11 @@ func (c *ZClosure) Dump(w io.Writer) error {
 			return err
 		}
 		// For arrow functions, code is a runArrowReturn wrapping the expression
-		if ar, ok := c.code.(*runArrowReturn); ok {
+		body := unwrapVMBody(c.code)
+		if ar, ok := body.(*runArrowReturn); ok {
 			return ar.expr.Dump(w)
 		}
-		return c.code.Dump(w)
+		return body.Dump(w)
 	}
 
 	// Regular closure: [#[Attr(...)]] [static] function[(name)](args) [use(...)] [: type] { body }
@@ -826,10 +827,11 @@ func (c *ZClosure) Dump(w io.Writer) error {
 
 	// Indent the closure body by 4 spaces (matches PHP's AST dump format)
 	iw := &indentWriter{w: w, prefix: []byte("    "), atLineStart: true}
-	if rs, ok := c.code.(phpv.Runnables); ok {
+	body := unwrapVMBody(c.code)
+	if rs, ok := body.(phpv.Runnables); ok {
 		err = rs.DumpStatements(iw)
 	} else {
-		err = c.code.Dump(iw)
+		err = body.Dump(iw)
 	}
 	if err != nil {
 		return err
@@ -859,10 +861,11 @@ func (c *ZClosure) DumpArgsAndBody(w io.Writer) error {
 	}
 	iw := &indentWriter{w: w, prefix: []byte("    "), atLineStart: true}
 	var err error
-	if rs, ok := c.code.(phpv.Runnables); ok {
+	body := unwrapVMBody(c.code)
+	if rs, ok := body.(phpv.Runnables); ok {
 		err = rs.DumpStatements(iw)
 	} else {
-		err = c.code.Dump(iw)
+		err = body.Dump(iw)
 	}
 	if err != nil {
 		return err

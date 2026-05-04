@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/KarpelesLab/goro/core/compiler"
+	"github.com/KarpelesLab/goro/core/logopt"
 	"github.com/KarpelesLab/goro/core/phperr"
 	"github.com/KarpelesLab/goro/core/phpv"
 	"github.com/KarpelesLab/goro/core/tokenizer"
@@ -101,7 +102,7 @@ func (f *Frame) exec(ctx phpv.Context) (res *phpv.ZVal, err error) {
 				return nil, err
 			}
 			if !exists {
-				if err := ctx.Warn("Undefined variable $%s", string(name)); err != nil {
+				if err := ctx.Warn("Undefined variable $%s", string(name), logopt.NoFuncName(true)); err != nil {
 					return nil, err
 				}
 				v = phpv.ZNULL.ZVal()

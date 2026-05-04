@@ -522,6 +522,12 @@ func ConnectParentNodes(r phpv.Runnable) {
 // TODO: probably better to go-generate instead
 func GetChildren(r phpv.Runnable) []phpv.Runnable {
 	type rt []phpv.Runnable
+	// VM-backed bodies expose Inner() which returns the original AST.
+	// Walks (validation, parent-node wiring, yield collection, …) must
+	// see the AST, never the bytecode wrapper.
+	if inner, ok := r.(interface{ Inner() phpv.Runnable }); ok {
+		return rt{inner.Inner()}
+	}
 	switch t := r.(type) {
 	case *runRef:
 		return rt{t.v}

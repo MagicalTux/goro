@@ -874,11 +874,13 @@ func compileFunctionWithName(name phpv.ZString, c compileCtx, l *phpv.Loc, rref 
 	}
 
 	// Try VM compilation: skip generators (they spawn a Generator
-	// object — must run through callBody as-is) and skip declared
-	// return types (the AST coerces / type-checks the return). Both
-	// cases also surface as ErrUnsupported in the emitter, but
+	// object — must run through callBody as-is), skip declared return
+	// types (the AST coerces / type-checks the return), and skip
+	// by-ref returns (the AST emits notices about non-variable return
+	// expressions which the VM emitter doesn't replicate). All these
+	// cases would also surface as ErrUnsupported eventually, but
 	// short-circuiting here saves a useless compile pass.
-	if TryBuildVMClosureBody != nil && !zc.isGenerator && zc.returnType == nil {
+	if TryBuildVMClosureBody != nil && !zc.isGenerator && zc.returnType == nil && !zc.rref {
 		if vmBody := TryBuildVMClosureBody(zc.name, zc.start, zc.code); vmBody != nil {
 			zc.code = vmBody
 		}

@@ -13,6 +13,13 @@ import (
 // of the unit being compiled (e.g. the start of the script or the
 // `function ...(...)` keyword).
 func Compile(name phpv.ZString, source *phpv.Loc, body phpv.Runnable) (*vm.Function, error) {
+	// Unwrap any pre-existing VM wrapper. This happens when tests or
+	// callers pass a Runnable that already went through a script-level
+	// VM wrap from compiler.Compile (when GORO_VM is on).
+	if inner, ok := body.(interface{ Inner() phpv.Runnable }); ok {
+		body = inner.Inner()
+	}
+
 	e := newEmitter(source)
 
 	// Treat the body as a list of statements. If it's already a

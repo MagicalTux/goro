@@ -48,13 +48,43 @@ func opConcat(ctx phpv.Context, a, b *phpv.ZVal) (*phpv.ZVal, error) {
 	return compiler.OperatorAppend(ctx, tokenizer.Rune('.'), a, b)
 }
 
-// opNeg implements unary `-`. PHP evaluates `-$x` as `0 - $x`, which
-// matches what OperatorMath does for a left operand of int(0). This
-// preserves the existing edge cases (string coercion, GMP, INF, etc.).
-func opNeg(ctx phpv.Context, a *phpv.ZVal) (*phpv.ZVal, error) {
+// opNeg implements unary `-`. Mirrors the dedicated unary-minus path
+// in runOperator.Run (run-operator.go:705-732): direct negation for
+// numeric types (preserves -0.0 semantics), GMP overload via
+// HandleDoOperation, fallback to OperatorMath for other types.
+func opNeg(ctx phpv.Context, b *phpv.ZVal) (*phpv.ZVal, error) {
+	bType := b.GetType()
+	if bType == phpv.ZtObject {
+		if obj, ok := b.Value().(phpv.ZObject); ok {
+			if h := obj.GetClass().Handlers(); h != nil && h.HandleDoOperation != nil {
+				return h.HandleDoOperation(ctx, int(tokenizer.Rune('-')), nil, b)
+			}
+		}
+	}
+	if bType == phpv.ZtInt || bType == phpv.ZtFloat {
+		switch v := b.Value().(type) {
+		case phpv.ZInt:
+			if v == 0 {
+				return phpv.ZInt(0).ZVal(), nil
+			}
+			// math.MinInt64 negation overflows to a float — mirror AST.
+			if v == minInt64 {
+				return phpv.ZFloat(-float64(v)).ZVal(), nil
+			}
+			return (-v).ZVal(), nil
+		case phpv.ZFloat:
+			return (-v).ZVal(), nil
+		}
+	}
+	// String/bool/null/etc.: route through OperatorMath with int(0)
+	// LHS so numeric conversion runs and produces the same warnings.
 	zero := phpv.ZInt(0).ZVal()
-	return compiler.OperatorMath(ctx, tokenizer.Rune('-'), zero, a)
+	return compiler.OperatorMath(ctx, tokenizer.Rune('-'), zero, b)
 }
+
+// minInt64 mirrors math.MinInt64 without the math import (avoids a
+// stdlib import for one constant). This is a compile-time constant.
+const minInt64 = -1 << 63
 
 // opBitNot implements unary `~`. The AST routes ~ via OperatorMathLogic
 // with a left operand of 0; mirror that here.
