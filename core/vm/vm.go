@@ -24,8 +24,19 @@ var ErrUnknownOp = errors.New("vm: unknown opcode")
 // touch arguments.
 func Run(ctx phpv.Context, fn *Function) (*phpv.ZVal, error) {
 	f := &Frame{
-		fn:    fn,
-		stack: make([]Slot, fn.MaxStack),
+		fn:     fn,
+		stack:  make([]Slot, fn.MaxStack),
+		locals: make([]*phpv.ZVal, len(fn.Locals)),
+	}
+	// Pre-load any locals that already exist in the FuncContext (most
+	// commonly: parameters bound by ZClosure.callBody before us).
+	// Use OffsetCheck to distinguish "exists" from "missing" — plain
+	// OffsetGet returns a fresh ZNULL.ZVal() for missing keys, which
+	// would defeat the OP_LOAD_LOCAL_OR_WARN nil-check.
+	for i, name := range fn.Locals {
+		if v, exists, _ := ctx.OffsetCheck(ctx, name); exists && v != nil {
+			f.locals[i] = v
+		}
 	}
 	return f.exec(ctx)
 }
@@ -85,43 +96,40 @@ func (f *Frame) exec(ctx phpv.Context) (res *phpv.ZVal, err error) {
 			f.push(phpv.ZFalse.ZVal())
 
 		case OpLoadLocal:
-			name := f.fn.Locals[ins.A()]
-			v, err := ctx.OffsetGet(ctx, name)
-			if err != nil {
-				return nil, err
-			}
+			v := f.locals[ins.A()]
 			if v == nil {
 				v = phpv.ZNULL.ZVal()
 			}
 			f.push(v)
 
 		case OpLoadLocalOrWarn:
-			name := f.fn.Locals[ins.A()]
-			v, exists, err := ctx.OffsetCheck(ctx, name)
-			if err != nil {
-				return nil, err
-			}
-			if !exists {
+			v := f.locals[ins.A()]
+			if v == nil {
+				name := f.fn.Locals[ins.A()]
 				if err := ctx.Warn("Undefined variable $%s", string(name), logopt.NoFuncName(true)); err != nil {
 					return nil, err
 				}
-				v = phpv.ZNULL.ZVal()
-			} else if v == nil {
 				v = phpv.ZNULL.ZVal()
 			}
 			f.push(v)
 
 		case OpStoreLocal:
 			v := f.pop()
-			name := f.fn.Locals[ins.A()]
-			if err := ctx.OffsetSet(ctx, name, v); err != nil {
+			if err := f.storeLocal(ctx, ins.A(), v); err != nil {
 				return nil, err
 			}
 
 		case OpStoreLocalKeep:
 			v := f.peek()
-			name := f.fn.Locals[ins.A()]
-			if err := ctx.OffsetSet(ctx, name, v); err != nil {
+			if v != nil && v.IsCached() {
+				// The peek'd value is also what's on top of the stack;
+				// replace top with the duplicated copy so the consumer
+				// sees the same canonical pointer that's now in the slot.
+				dup := phpv.NewZVal(v.Value())
+				f.replaceTop(dup)
+				v = dup
+			}
+			if err := f.storeLocal(ctx, ins.A(), v); err != nil {
 				return nil, err
 			}
 
@@ -261,11 +269,7 @@ func (f *Frame) exec(ctx phpv.Context) (res *phpv.ZVal, err error) {
 				return nil, fmt.Errorf("vm: unknown compound op %d", ins.B())
 			}
 			rhs := f.pop()
-			name := f.fn.Locals[ins.A()]
-			cur, err := ctx.OffsetGet(ctx, name)
-			if err != nil {
-				return nil, err
-			}
+			cur := f.locals[ins.A()]
 			if cur == nil {
 				cur = phpv.ZNULL.ZVal()
 			}
@@ -273,7 +277,7 @@ func (f *Frame) exec(ctx phpv.Context) (res *phpv.ZVal, err error) {
 			if err != nil {
 				return nil, err
 			}
-			if err := ctx.OffsetSet(ctx, name, res); err != nil {
+			if err := f.storeLocal(ctx, ins.A(), res); err != nil {
 				return nil, err
 			}
 
@@ -357,13 +361,13 @@ func (f *Frame) exec(ctx phpv.Context) (res *phpv.ZVal, err error) {
 		case OpArraySetLocal:
 			val := f.pop()
 			offset := f.pop()
-			if err := arraySetLocal(ctx, f.fn.Locals[ins.A()], offset, val); err != nil {
+			if err := arraySetLocal(ctx, f, ins.A(), offset, val); err != nil {
 				return nil, err
 			}
 
 		case OpArrayAppendLocal:
 			val := f.pop()
-			if err := arraySetLocal(ctx, f.fn.Locals[ins.A()], nil, val); err != nil {
+			if err := arraySetLocal(ctx, f, ins.A(), nil, val); err != nil {
 				return nil, err
 			}
 
@@ -398,6 +402,7 @@ func (f *Frame) exec(ctx phpv.Context) (res *phpv.ZVal, err error) {
 			if err != nil {
 				return nil, err
 			}
+			f.locals[ins.A()] = cur
 			valLocal := f.fn.Locals[ins.A()]
 			if err := ctx.OffsetSet(ctx, valLocal, cur); err != nil {
 				return nil, err
@@ -407,6 +412,7 @@ func (f *Frame) exec(ctx phpv.Context) (res *phpv.ZVal, err error) {
 				if err != nil {
 					return nil, err
 				}
+				f.locals[ins.B()] = key
 				keyLocal := f.fn.Locals[ins.B()]
 				if err := ctx.OffsetSet(ctx, keyLocal, key); err != nil {
 					return nil, err
@@ -465,15 +471,17 @@ func (f *Frame) unop(ctx phpv.Context, fn func(phpv.Context, *phpv.ZVal) (*phpv.
 // incDecLocal applies ++/-- to the local at index, optionally pushing
 // the pre-mutation value (post=true) or the post-mutation value
 // (post=false). Mirrors the AST's runOperator behaviour for ++/-- on a
-// simple variable target.
+// simple variable target. Reads/writes go through the slot cache.
 func (f *Frame) incDecLocal(ctx phpv.Context, idx uint16, inc bool, post bool) error {
-	name := f.fn.Locals[idx]
-	v, err := ctx.OffsetGet(ctx, name)
-	if err != nil {
-		return err
-	}
+	v := f.locals[idx]
 	if v == nil {
 		v = phpv.ZNULL.ZVal()
+	}
+	// DoInc mutates v in-place; cached singletons must not be mutated,
+	// so dup first. (After this dup, the slot points to the fresh
+	// non-cached ZVal once we storeLocal below.)
+	if v.IsCached() {
+		v = phpv.NewZVal(v.Value())
 	}
 	var pre *phpv.ZVal
 	if post {
@@ -482,7 +490,7 @@ func (f *Frame) incDecLocal(ctx phpv.Context, idx uint16, inc bool, post bool) e
 	if err := compiler.DoInc(ctx, v, inc); err != nil {
 		return err
 	}
-	if err := ctx.OffsetSet(ctx, name, v); err != nil {
+	if err := f.storeLocal(ctx, idx, v); err != nil {
 		return err
 	}
 	if post {

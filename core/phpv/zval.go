@@ -50,6 +50,14 @@ func (z *ZVal) isCached() bool {
 	return z != nil && z.cached
 }
 
+// IsCached is the exported form of isCached. The VM uses this to
+// decide whether to Dup a value before storing it in a slot — the
+// hashtable already does the same when SetString receives a cached
+// pointer.
+func (z *ZVal) IsCached() bool {
+	return z != nil && z.cached
+}
+
 // zvalPool holds short-lived ZVals that are safe to reuse when the caller
 // explicitly returns them via PutTempZVal. Used for operator snapshots and
 // other temporary wrappers whose lifetime is tightly bounded.

@@ -23,6 +23,35 @@ type Frame struct {
 	// and popped by OP_FOREACH_UNWIND (or OP_FOREACH_STEP when the
 	// iterator is exhausted). Nested foreaches stack here.
 	iters []phpv.ZIterator
+
+	// locals is a fixed-size slot array indexed by Function.Locals
+	// position. It mirrors the FuncContext hashtable for the VM's
+	// fast path: reads come straight from the slot (no map lookup);
+	// writes update the slot AND the hashtable so external callers
+	// (extract/compact/builtins reading the FuncContext) still see
+	// fresh values.
+	//
+	// A nil slot means "variable is undefined" (just like an absent
+	// hashtable entry). The dispatcher's OP_LOAD_LOCAL_OR_WARN treats
+	// it as such.
+	locals []*phpv.ZVal
+}
+
+// storeLocal writes v into both the slot cache and the FuncContext
+// hashtable. Cached singleton ZVals (small ints, true/false, …) are
+// duplicated first — same policy as ZHashTable.SetString — so any
+// later in-place mutation (e.g. DoInc) lands in a fresh ZVal rather
+// than panicking on the cached one.
+func (f *Frame) storeLocal(ctx phpv.Context, idx uint16, v *phpv.ZVal) error {
+	if v == nil {
+		f.locals[idx] = nil
+		return ctx.OffsetSet(ctx, f.fn.Locals[idx], nil)
+	}
+	if v.IsCached() {
+		v = phpv.NewZVal(v.Value())
+	}
+	f.locals[idx] = v
+	return ctx.OffsetSet(ctx, f.fn.Locals[idx], v)
 }
 
 // push grows the stack by one and stores v at the new top.

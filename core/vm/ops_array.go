@@ -61,11 +61,12 @@ func arrayGet(ctx phpv.Context, container, offset *phpv.ZVal) (*phpv.ZVal, error
 // container type at the local: array, null/false (auto-vivify),
 // string (string-offset write with the same warnings as the AST),
 // object (ArrayAccess interface), other (Error).
-func arraySetLocal(ctx phpv.Context, name phpv.ZString, offset, value *phpv.ZVal) error {
-	cur, err := ctx.OffsetGet(ctx, name)
-	if err != nil {
-		return err
-	}
+//
+// Takes the frame so it can update both f.locals[idx] (for the slot
+// cache) and the FuncContext hashtable in lock-step.
+func arraySetLocal(ctx phpv.Context, f *Frame, idx uint16, offset, value *phpv.ZVal) error {
+	name := f.fn.Locals[idx]
+	cur := f.locals[idx]
 	if cur == nil {
 		cur = phpv.ZNULL.ZVal()
 	}
@@ -93,6 +94,7 @@ func arraySetLocal(ctx phpv.Context, name phpv.ZString, offset, value *phpv.ZVal
 		if err := newArr.OffsetSet(ctx, k, value); err != nil {
 			return err
 		}
+		f.locals[idx] = cur
 		return ctx.OffsetSet(ctx, name, cur)
 
 	case phpv.ZtBool:
@@ -110,6 +112,7 @@ func arraySetLocal(ctx phpv.Context, name phpv.ZString, offset, value *phpv.ZVal
 			if err := newArr.OffsetSet(ctx, k, value); err != nil {
 				return err
 			}
+			f.locals[idx] = cur
 			return ctx.OffsetSet(ctx, name, cur)
 		}
 		return phpobj.ThrowError(ctx, phpobj.Error, "Cannot use a scalar value as an array")
@@ -135,6 +138,7 @@ func arraySetLocal(ctx phpv.Context, name phpv.ZString, offset, value *phpv.ZVal
 		}
 		// Update local with the (possibly modified) string.
 		cur.SetVal(sa.String())
+		f.locals[idx] = cur
 		return ctx.OffsetSet(ctx, name, cur)
 
 	case phpv.ZtObject:
