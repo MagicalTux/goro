@@ -1,6 +1,7 @@
 package vmcompiler
 
 import (
+	"github.com/KarpelesLab/goro/core/compiler"
 	"github.com/KarpelesLab/goro/core/phperr"
 	"github.com/KarpelesLab/goro/core/phpv"
 	"github.com/KarpelesLab/goro/core/vm"
@@ -91,6 +92,8 @@ func (e *emitter) emitStmt(node phpv.Runnable) error {
 		return e.emitReturn(n)
 	case throwNode:
 		return e.emitThrow(n)
+	case compiler.TryNode:
+		return e.emitTry(n)
 	case *phperr.PhpBreak:
 		return e.emitBreak(n)
 	case *phperr.PhpContinue:

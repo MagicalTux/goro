@@ -75,6 +75,51 @@ func IsVMCompiled(c phpv.Callable) bool {
 // statements — a small loss until we wire up the warning natively.
 func (r *runNoDiscardStatement) NoDiscardInner() phpv.Runnable { return r.inner }
 
+// --- runnableTry / runnableCatch --------------------------------------
+
+// TryNode exposes a try statement to the bytecode emitter.
+type TryNode interface {
+	TryBody() phpv.Runnable
+	TryCatches() []TryCatchEntry
+	TryFinally() phpv.Runnable
+}
+
+// TryCatchEntry exposes a single catch clause.
+type TryCatchEntry interface {
+	CatchTypes() []phpv.ZString
+	CatchVarName() phpv.ZString
+	CatchBody() phpv.Runnable
+	CatchLoc() *phpv.Loc
+}
+
+// TryBody returns the try block.
+func (r *runnableTry) TryBody() phpv.Runnable { return r.try }
+
+// TryCatches returns the catch clauses.
+func (r *runnableTry) TryCatches() []TryCatchEntry {
+	out := make([]TryCatchEntry, len(r.catches))
+	for i, c := range r.catches {
+		out[i] = c
+	}
+	return out
+}
+
+// TryFinally returns the finally clause, or nil.
+func (r *runnableTry) TryFinally() phpv.Runnable { return r.finally }
+
+// CatchTypes returns the type-name list (the union in `catch (A | B $e)`).
+func (r *runnableCatch) CatchTypes() []phpv.ZString { return r.typeNames }
+
+// CatchVarName returns the bound variable name (without leading $).
+// Empty when the catch has no variable: `catch (Exception)`.
+func (r *runnableCatch) CatchVarName() phpv.ZString { return r.varname }
+
+// CatchBody returns the catch block body.
+func (r *runnableCatch) CatchBody() phpv.Runnable { return r.body }
+
+// CatchLoc returns the source location of the catch.
+func (r *runnableCatch) CatchLoc() *phpv.Loc { return r.l }
+
 // --- runnableThrow ----------------------------------------------------
 
 // ThrowValue returns the value expression being thrown.

@@ -45,11 +45,14 @@ func Run(ctx phpv.Context, fn *Function) (*phpv.ZVal, error) {
 // exec is the dispatch loop. Returns whatever value OpRet popped, or
 // nil if execution falls off the end without a return (top-level
 // scripts).
+//
+// Internally, each opcode-step that produces an error returns it via
+// the inner runUntilError loop. The outer wrapper here checks for
+// PhpThrow and looks up a matching try-handler. On a match it sets pc
+// to the catch body and continues the inner loop; otherwise the error
+// propagates out (after the deferred loc-wrap).
 func (f *Frame) exec(ctx phpv.Context) (res *phpv.ZVal, err error) {
 	defer func() {
-		// Wrap non-PhpThrow errors with the active loc, mirroring AST
-		// behaviour (r.l.Error(ctx, err)). PhpThrow propagates as-is so
-		// try/catch sees the original exception object.
 		if err == nil {
 			return
 		}
@@ -65,9 +68,6 @@ func (f *Frame) exec(ctx phpv.Context) (res *phpv.ZVal, err error) {
 		if _, isContinue := err.(*phperr.PhpContinue); isContinue {
 			return
 		}
-		// Find the active loc for the offending PC. f.pc has already
-		// been incremented past the failing instruction, so look up at
-		// pc-1 when possible.
 		pc := f.pc
 		if pc > 0 {
 			pc--
@@ -77,6 +77,29 @@ func (f *Frame) exec(ctx phpv.Context) (res *phpv.ZVal, err error) {
 		}
 	}()
 
+	for {
+		retVal, finished, ierr := f.runUntilError(ctx)
+		if ierr != nil {
+			if t, ok := ierr.(*phperr.PhpThrow); ok {
+				if f.dispatchTryHandler(ctx, t) {
+					continue
+				}
+			}
+			return nil, ierr
+		}
+		if finished {
+			return retVal, nil
+		}
+		// runUntilError currently never falls through without
+		// finished=true or an error; this is just for safety.
+		return retVal, nil
+	}
+}
+
+// runUntilError runs the dispatch loop until either an opcode raises
+// an error (returns finished=false, err≠nil) or OP_RET / OP_RET_NULL
+// terminates the function (returns retVal, finished=true, err=nil).
+func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished bool, err error) {
 	code := f.fn.Code
 	for {
 		ins := code[f.pc]
@@ -108,7 +131,7 @@ func (f *Frame) exec(ctx phpv.Context) (res *phpv.ZVal, err error) {
 			if v == nil {
 				name := f.fn.Locals[ins.A()]
 				if err := ctx.Warn("Undefined variable $%s", string(name), logopt.NoFuncName(true)); err != nil {
-					return nil, err
+					return nil, false, err
 				}
 				v = phpv.ZNULL.ZVal()
 			}
@@ -117,7 +140,7 @@ func (f *Frame) exec(ctx phpv.Context) (res *phpv.ZVal, err error) {
 		case OpStoreLocal:
 			v := f.pop()
 			if err := f.storeLocal(ctx, ins.A(), v); err != nil {
-				return nil, err
+				return nil, false, err
 			}
 
 		case OpStoreLocalKeep:
@@ -131,7 +154,7 @@ func (f *Frame) exec(ctx phpv.Context) (res *phpv.ZVal, err error) {
 				v = dup
 			}
 			if err := f.storeLocal(ctx, ins.A(), v); err != nil {
-				return nil, err
+				return nil, false, err
 			}
 
 		case OpDup:
@@ -143,102 +166,102 @@ func (f *Frame) exec(ctx phpv.Context) (res *phpv.ZVal, err error) {
 		// --- arithmetic / bitwise -----------------------------------
 		case OpAdd:
 			if err := f.binop(ctx, opAdd); err != nil {
-				return nil, err
+				return nil, false, err
 			}
 		case OpSub:
 			if err := f.binop(ctx, opSub); err != nil {
-				return nil, err
+				return nil, false, err
 			}
 		case OpMul:
 			if err := f.binop(ctx, opMul); err != nil {
-				return nil, err
+				return nil, false, err
 			}
 		case OpDiv:
 			if err := f.binop(ctx, opDiv); err != nil {
-				return nil, err
+				return nil, false, err
 			}
 		case OpMod:
 			if err := f.binop(ctx, opMod); err != nil {
-				return nil, err
+				return nil, false, err
 			}
 		case OpPow:
 			if err := f.binop(ctx, opPow); err != nil {
-				return nil, err
+				return nil, false, err
 			}
 		case OpBitAnd:
 			if err := f.binop(ctx, opBitAnd); err != nil {
-				return nil, err
+				return nil, false, err
 			}
 		case OpBitOr:
 			if err := f.binop(ctx, opBitOr); err != nil {
-				return nil, err
+				return nil, false, err
 			}
 		case OpBitXor:
 			if err := f.binop(ctx, opBitXor); err != nil {
-				return nil, err
+				return nil, false, err
 			}
 		case OpShl:
 			if err := f.binop(ctx, opShl); err != nil {
-				return nil, err
+				return nil, false, err
 			}
 		case OpShr:
 			if err := f.binop(ctx, opShr); err != nil {
-				return nil, err
+				return nil, false, err
 			}
 		case OpConcat:
 			if err := f.binop(ctx, opConcat); err != nil {
-				return nil, err
+				return nil, false, err
 			}
 
 		case OpNeg:
 			if err := f.unop(ctx, opNeg); err != nil {
-				return nil, err
+				return nil, false, err
 			}
 		case OpBitNot:
 			if err := f.unop(ctx, opBitNot); err != nil {
-				return nil, err
+				return nil, false, err
 			}
 		case OpNot:
 			if err := f.unop(ctx, opNot); err != nil {
-				return nil, err
+				return nil, false, err
 			}
 
 		// --- compare -------------------------------------------------
 		case OpCmpEq:
 			if err := f.binop(ctx, opCmpEq); err != nil {
-				return nil, err
+				return nil, false, err
 			}
 		case OpCmpNe:
 			if err := f.binop(ctx, opCmpNe); err != nil {
-				return nil, err
+				return nil, false, err
 			}
 		case OpCmpId:
 			if err := f.binop(ctx, opCmpId); err != nil {
-				return nil, err
+				return nil, false, err
 			}
 		case OpCmpNid:
 			if err := f.binop(ctx, opCmpNid); err != nil {
-				return nil, err
+				return nil, false, err
 			}
 		case OpCmpLt:
 			if err := f.binop(ctx, opCmpLt); err != nil {
-				return nil, err
+				return nil, false, err
 			}
 		case OpCmpLe:
 			if err := f.binop(ctx, opCmpLe); err != nil {
-				return nil, err
+				return nil, false, err
 			}
 		case OpCmpGt:
 			if err := f.binop(ctx, opCmpGt); err != nil {
-				return nil, err
+				return nil, false, err
 			}
 		case OpCmpGe:
 			if err := f.binop(ctx, opCmpGe); err != nil {
-				return nil, err
+				return nil, false, err
 			}
 		case OpCmpSpaceship:
 			if err := f.binop(ctx, opCmpSpaceship); err != nil {
-				return nil, err
+				return nil, false, err
 			}
 
 		case OpBool:
@@ -248,26 +271,26 @@ func (f *Frame) exec(ctx phpv.Context) (res *phpv.ZVal, err error) {
 		// --- inc/dec on locals --------------------------------------
 		case OpIncLocal:
 			if err := f.incDecLocal(ctx, ins.A(), true, false); err != nil {
-				return nil, err
+				return nil, false, err
 			}
 		case OpDecLocal:
 			if err := f.incDecLocal(ctx, ins.A(), false, false); err != nil {
-				return nil, err
+				return nil, false, err
 			}
 		case OpPostIncLocal:
 			if err := f.incDecLocal(ctx, ins.A(), true, true); err != nil {
-				return nil, err
+				return nil, false, err
 			}
 		case OpPostDecLocal:
 			if err := f.incDecLocal(ctx, ins.A(), false, true); err != nil {
-				return nil, err
+				return nil, false, err
 			}
 
 		// --- compound assign on locals ------------------------------
 		case OpOpAssignLocal:
 			fn := compoundOp(tokenizer.ItemType(ins.B()))
 			if fn == nil {
-				return nil, fmt.Errorf("vm: unknown compound op %d", ins.B())
+				return nil, false, fmt.Errorf("vm: unknown compound op %d", ins.B())
 			}
 			rhs := f.pop()
 			cur := f.locals[ins.A()]
@@ -276,10 +299,10 @@ func (f *Frame) exec(ctx phpv.Context) (res *phpv.ZVal, err error) {
 			}
 			res, err := fn(ctx, cur, rhs)
 			if err != nil {
-				return nil, err
+				return nil, false, err
 			}
 			if err := f.storeLocal(ctx, ins.A(), res); err != nil {
-				return nil, err
+				return nil, false, err
 			}
 
 		// --- control flow -------------------------------------------
@@ -317,20 +340,20 @@ func (f *Frame) exec(ctx phpv.Context) (res *phpv.ZVal, err error) {
 		case OpCallUser:
 			name, ok := f.fn.Consts[ins.A()].(phpv.ZString)
 			if !ok {
-				return nil, fmt.Errorf("vm: OP_CALL_USER name const is %T not ZString", f.fn.Consts[ins.A()])
+				return nil, false, fmt.Errorf("vm: OP_CALL_USER name const is %T not ZString", f.fn.Consts[ins.A()])
 			}
 			argc := int(ins.B())
 			if err := f.callUser(ctx, name, argc); err != nil {
-				return nil, err
+				return nil, false, err
 			}
 			// callUser pops argc and pushes 1 result.
 
 		// --- return --------------------------------------------------
 		case OpRet:
-			return f.pop(), nil
+			return f.pop(), true, nil
 
 		case OpRetNull:
-			return phpv.ZNULL.ZVal(), nil
+			return phpv.ZNULL.ZVal(), true, nil
 
 		// --- arrays --------------------------------------------------
 		case OpNewArray:
@@ -341,7 +364,7 @@ func (f *Frame) exec(ctx phpv.Context) (res *phpv.ZVal, err error) {
 			val := f.pop()
 			arr := f.peek().AsArray(ctx)
 			if err := arr.OffsetSet(ctx, nil, val); err != nil {
-				return nil, err
+				return nil, false, err
 			}
 
 		case OpArrayInitKeyed:
@@ -349,7 +372,7 @@ func (f *Frame) exec(ctx phpv.Context) (res *phpv.ZVal, err error) {
 			key := f.pop()
 			arr := f.peek().AsArray(ctx)
 			if err := arr.OffsetSet(ctx, key.Value(), val); err != nil {
-				return nil, err
+				return nil, false, err
 			}
 
 		case OpArrayGet:
@@ -357,7 +380,7 @@ func (f *Frame) exec(ctx phpv.Context) (res *phpv.ZVal, err error) {
 			container := f.pop()
 			res, err := arrayGet(ctx, container, offset)
 			if err != nil {
-				return nil, err
+				return nil, false, err
 			}
 			if res == nil {
 				res = phpv.ZNULL.ZVal()
@@ -368,19 +391,19 @@ func (f *Frame) exec(ctx phpv.Context) (res *phpv.ZVal, err error) {
 			val := f.pop()
 			offset := f.pop()
 			if err := arraySetLocal(ctx, f, ins.A(), offset, val); err != nil {
-				return nil, err
+				return nil, false, err
 			}
 
 		case OpArrayAppendLocal:
 			val := f.pop()
 			if err := arraySetLocal(ctx, f, ins.A(), nil, val); err != nil {
-				return nil, err
+				return nil, false, err
 			}
 
 		// --- throw ---------------------------------------------------
 		case OpThrow:
 			v := f.pop()
-			return nil, phpobj.ThrowObject(ctx, v)
+			return nil, false, phpobj.ThrowObject(ctx, v)
 
 		// --- objects -------------------------------------------------
 		case OpNewObject:
@@ -391,15 +414,15 @@ func (f *Frame) exec(ctx phpv.Context) (res *phpv.ZVal, err error) {
 			}
 			name, ok := f.fn.Consts[ins.A()].(phpv.ZString)
 			if !ok {
-				return nil, fmt.Errorf("vm: OP_NEW_OBJECT name const is %T not ZString", f.fn.Consts[ins.A()])
+				return nil, false, fmt.Errorf("vm: OP_NEW_OBJECT name const is %T not ZString", f.fn.Consts[ins.A()])
 			}
 			class, err := ctx.Global().GetClass(ctx, name, true)
 			if err != nil {
-				return nil, err
+				return nil, false, err
 			}
 			obj, err := phpobj.NewZObject(ctx, class, args...)
 			if err != nil {
-				return nil, err
+				return nil, false, err
 			}
 			f.push(obj.ZVal())
 
@@ -407,11 +430,11 @@ func (f *Frame) exec(ctx phpv.Context) (res *phpv.ZVal, err error) {
 			receiver := f.pop()
 			name, ok := f.fn.Consts[ins.A()].(phpv.ZString)
 			if !ok {
-				return nil, fmt.Errorf("vm: OP_OBJECT_GET name const is %T not ZString", f.fn.Consts[ins.A()])
+				return nil, false, fmt.Errorf("vm: OP_OBJECT_GET name const is %T not ZString", f.fn.Consts[ins.A()])
 			}
 			res, err := objectGet(ctx, receiver, name)
 			if err != nil {
-				return nil, err
+				return nil, false, err
 			}
 			if res == nil {
 				res = phpv.ZNULL.ZVal()
@@ -423,10 +446,10 @@ func (f *Frame) exec(ctx phpv.Context) (res *phpv.ZVal, err error) {
 			receiver := f.pop()
 			name, ok := f.fn.Consts[ins.A()].(phpv.ZString)
 			if !ok {
-				return nil, fmt.Errorf("vm: OP_OBJECT_SET name const is %T not ZString", f.fn.Consts[ins.A()])
+				return nil, false, fmt.Errorf("vm: OP_OBJECT_SET name const is %T not ZString", f.fn.Consts[ins.A()])
 			}
 			if err := objectSet(ctx, receiver, name, val); err != nil {
-				return nil, err
+				return nil, false, err
 			}
 
 		case OpObjectCall:
@@ -438,11 +461,11 @@ func (f *Frame) exec(ctx phpv.Context) (res *phpv.ZVal, err error) {
 			receiver := f.pop()
 			name, ok := f.fn.Consts[ins.A()].(phpv.ZString)
 			if !ok {
-				return nil, fmt.Errorf("vm: OP_OBJECT_CALL name const is %T not ZString", f.fn.Consts[ins.A()])
+				return nil, false, fmt.Errorf("vm: OP_OBJECT_CALL name const is %T not ZString", f.fn.Consts[ins.A()])
 			}
 			res, err := objectCall(ctx, receiver, name, args)
 			if err != nil {
-				return nil, err
+				return nil, false, err
 			}
 			if res == nil {
 				res = phpv.ZNULL.ZVal()
@@ -454,12 +477,12 @@ func (f *Frame) exec(ctx phpv.Context) (res *phpv.ZVal, err error) {
 			src := f.pop()
 			it, err := foreachInit(ctx, src)
 			if err != nil {
-				return nil, err
+				return nil, false, err
 			}
 			if it == nil {
 				// Not iterable: emit warning and jump past the loop.
 				if err := foreachWarnInvalid(ctx, src, f.fn.LocAt(f.pc-1)); err != nil {
-					return nil, err
+					return nil, false, err
 				}
 				f.pc = uint32(int32(f.pc) + ins.C())
 				break
@@ -478,29 +501,29 @@ func (f *Frame) exec(ctx phpv.Context) (res *phpv.ZVal, err error) {
 			}
 			cur, err := it.Current(ctx)
 			if err != nil {
-				return nil, err
+				return nil, false, err
 			}
 			f.locals[ins.A()] = cur
 			valLocal := f.fn.Locals[ins.A()]
 			if err := ctx.OffsetSet(ctx, valLocal, cur); err != nil {
-				return nil, err
+				return nil, false, err
 			}
 			if ins.B() != 0xFFFF {
 				key, err := it.Key(ctx)
 				if err != nil {
-					return nil, err
+					return nil, false, err
 				}
 				f.locals[ins.B()] = key
 				keyLocal := f.fn.Locals[ins.B()]
 				if err := ctx.OffsetSet(ctx, keyLocal, key); err != nil {
-					return nil, err
+					return nil, false, err
 				}
 			}
 
 		case OpForeachAdvance:
 			it := f.iters[len(f.iters)-1]
 			if _, err := it.Next(ctx); err != nil {
-				return nil, err
+				return nil, false, err
 			}
 
 		case OpForeachUnwind:
@@ -513,12 +536,12 @@ func (f *Frame) exec(ctx phpv.Context) (res *phpv.ZVal, err error) {
 		// --- diagnostics --------------------------------------------
 		case OpTick:
 			if err := ctx.Tick(ctx, f.fn.LocAt(f.pc-1)); err != nil {
-				return nil, err
+				return nil, false, err
 			}
 			ctx.Global().DrainTempObjects()
 
 		default:
-			return nil, fmt.Errorf("%w: %d at pc=%d", ErrUnknownOp, ins.Op(), f.pc-1)
+			return nil, false, fmt.Errorf("%w: %d at pc=%d", ErrUnknownOp, ins.Op(), f.pc-1)
 		}
 	}
 }

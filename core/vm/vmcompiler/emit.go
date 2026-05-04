@@ -15,7 +15,8 @@ type emitter struct {
 	locals   []phpv.ZString
 	localMap map[phpv.ZString]uint16
 
-	subFns []*vm.Function
+	subFns      []*vm.Function
+	tryHandlers []vm.TryHandler
 
 	locs []vm.LocEntry
 
@@ -140,16 +141,17 @@ func (e *emitter) finish(name phpv.ZString, numParams int) *vm.Function {
 		src = &phpv.Loc{Filename: "<vm>"}
 	}
 	return &vm.Function{
-		Code:       e.code,
-		Consts:     e.consts,
-		CachedZ:    cached,
-		Locals:     e.locals,
-		SubFns:     e.subFns,
-		LocsSparse: e.locs,
-		NumParams:  numParams,
-		MaxStack:   maxStack,
-		Source:     src,
-		Name:       name,
+		Code:        e.code,
+		Consts:      e.consts,
+		CachedZ:     cached,
+		Locals:      e.locals,
+		SubFns:      e.subFns,
+		LocsSparse:  e.locs,
+		TryHandlers: e.tryHandlers,
+		NumParams:   numParams,
+		MaxStack:    maxStack,
+		Source:      src,
+		Name:        name,
 	}
 }
 

@@ -17,17 +17,40 @@ type LocEntry struct {
 // Function is a single VM-compiled unit (top-level script body or a
 // user-defined function). It is immutable after construction.
 type Function struct {
-	Code       []Instruction
-	Consts     []phpv.Val   // const-pool — literals + interned ZString names
-	CachedZ    []*phpv.ZVal // pre-built MakeCachedZVal(Consts[i]) for OP_LOAD_CONST
-	Locals     []phpv.ZString
-	SubFns     []*Function // direct-call targets (resolved at emit time)
-	LocsSparse []LocEntry  // sorted by PC
-	NumParams  int
-	MaxStack   int
-	Source     *phpv.Loc
-	Name       phpv.ZString
+	Code        []Instruction
+	Consts      []phpv.Val   // const-pool — literals + interned ZString names
+	CachedZ     []*phpv.ZVal // pre-built MakeCachedZVal(Consts[i]) for OP_LOAD_CONST
+	Locals      []phpv.ZString
+	SubFns      []*Function // direct-call targets (resolved at emit time)
+	LocsSparse  []LocEntry  // sorted by PC
+	TryHandlers []TryHandler
+	NumParams   int
+	MaxStack    int
+	Source      *phpv.Loc
+	Name        phpv.ZString
 }
+
+// TryHandler describes a `try { … } catch …` region. The dispatcher
+// scans handlers on PhpThrow: the innermost (last-registered) handler
+// whose [Start, End) range contains the failing PC wins. There is no
+// per-instruction encoding — handlers are static metadata.
+type TryHandler struct {
+	Start, End uint32 // PC range of the try body (exclusive End)
+	Catches    []CatchClause
+}
+
+// CatchClause is a single `catch (TypeA | TypeB $e)` block.
+type CatchClause struct {
+	// Types are the type names declared in the catch. Empty types means
+	// `catch (Throwable)` — i.e. matches every exception.
+	Types []phpv.ZString
+	// VarIdx is the local index for the bound exception. 0xFFFF means
+	// the catch has no variable: `catch (Exception)`.
+	VarIdx uint16
+	// PC is the start of the catch body.
+	PC uint32
+}
+
 
 // LocAt returns the active source location for the instruction at pc.
 // If no entry covers pc it returns Source (the function's declaration

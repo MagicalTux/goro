@@ -267,6 +267,30 @@ func TestShortCircuit(t *testing.T) {
 // runs a script that defines a VM-compiled function that throws,
 // then catches the exception in an AST-evaluated try/catch wrapper.
 
+func TestTryCatch(t *testing.T) {
+	cases := []string{
+		// no exception thrown
+		"$x = 0; try { $x = 1; } catch (Exception $e) { $x = 2; } return $x;",
+		// caught
+		"try { throw new Exception('boom'); } catch (Exception $e) { return $e->getMessage(); }",
+		// type mismatch — not caught (use a class that doesn't match)
+		"try { try { throw new RuntimeException('x'); } catch (LogicException $e) { return 'wrong'; } } catch (RuntimeException $e) { return 'right'; }",
+		// nested try/catch
+		"try { try { throw new Exception('inner'); } catch (Error $e) { return 'wrong-inner'; } } catch (Exception $e) { return $e->getMessage(); }",
+		// catch without var
+		"try { throw new Exception('x'); } catch (Exception) { return 'caught'; }",
+		// exception in catch body propagates to outer
+		"try { try { throw new Exception('a'); } catch (Exception $e) { throw new Exception('b'); } } catch (Exception $e) { return $e->getMessage(); }",
+		// multiple catches, second one matches
+		"try { throw new RuntimeException('rt'); } catch (LogicException $e) { return 'logic'; } catch (RuntimeException $e) { return 'runtime'; }",
+		// union type catch
+		"try { throw new RuntimeException('rt'); } catch (LogicException | RuntimeException $e) { return get_class($e); }",
+	}
+	for _, c := range cases {
+		t.Run(c, func(t *testing.T) { compareReturns(t, c) })
+	}
+}
+
 // Property write is deferred to AST until we extract a helper that
 // mirrors runObjectVar.WriteValue exactly. The integration test
 // confirms that calling a method that writes to $this->x still works
