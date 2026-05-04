@@ -107,7 +107,10 @@ The VM emitter currently handles:
 - Scalar literals (`int`, `float`, `string`, `bool`, `null`) — including
   the case-insensitive constants `true`/`false`/`null`.
 - Variable read/write, with a per-frame slot cache so reads skip the
-  FuncContext hashtable entirely.
+  FuncContext hashtable entirely. Functions with no
+  `extract`/`compact`/`$$x`/`global`/`static`/`$GLOBALS` use further
+  perform slot-only writes (skip the hashtable mirror) for a sizeable
+  perf win on write-heavy loops.
 - Arithmetic / bitwise / shift / comparison / concat / unary
   (`-`, `~`, `!`); plain and compound assignment (`=`, `+=`, …);
   pre/post `++`/`--`.
@@ -115,21 +118,27 @@ The VM emitter currently handles:
   LHS only).
 - `if` / `elseif` / `else`, `while`, `for`, `foreach` (value form,
   array + object iteration), `break` / `continue` (single level),
-  `return`, `throw`.
+  `return`, `throw`, `try` / `catch` (multi-type union, multi-clause,
+  destructor-during-catch-bind chained correctly). `finally` falls
+  back.
+- String interpolation (`"hello $name"`, `"v={$x}"`) lowered to a
+  chain of `OP_CONCAT`.
 - Array literals (`[…]`, including keyed `k => v`); `$a[$k]` read;
   `$a[$k] = v` and `$a[] = v` writes (with auto-vivification from
   null/false and string-offset semantics).
 - Object instantiation (`new Cls(args…)`), property read
   (`$obj->prop`), method call (`$obj->m(args…)`) with full PHP
   visibility checks (private/protected) and `__call` fallback.
-- Builtin and user-defined function calls (positional args).
+  `$this` outside object context throws the correct Error.
+- Builtin and user-defined function calls (positional args). Calls to
+  by-ref builtins (`end`, `sort`, `array_walk`, `array_push`, …)
+  fall back to AST so the by-ref binding works.
 
 Out of scope (falls back to AST per-function via ErrUnsupported):
 
+- `finally` blocks (try/catch alone work natively).
 - By-ref returns and by-ref parameters (the VM passes pre-evaluated
   ZVals; the AST passes Runnables and binds `Writable`s).
-- `try` / `catch` / `finally` (throw is supported, exceptions
-  propagate to AST callers/wrappers).
 - Generators (`yield`).
 - `$obj->prop = v` (deferred until a public WriteValue helper exists).
 - Static-property and class-constant access (`Foo::$bar`, `Foo::CONST`).
@@ -141,8 +150,8 @@ Out of scope (falls back to AST per-function via ErrUnsupported):
 - Type-hinted return values (the AST coerces; the VM doesn't yet).
 - User-defined constants (PHP_INT_MAX, MYAPP_FOO, …).
 - List destructure, anonymous classes, `extract`/`compact`/`$$x` and
-  similar locals-introspecting builtins (those force the slot cache
-  to fall back; currently we just compile-time bail).
+  similar locals-introspecting builtins (those force slot-only off;
+  currently we just compile-time bail when the body uses them).
 
 Functions matching any of the above run as AST as before — the engine
 silently picks the right backend per-function, with no behaviour
@@ -152,11 +161,11 @@ Bench wins (vs. AST baseline, per-iter):
 
 | Benchmark | AST | VM | Δ |
 |---|---|---|---|
-| Arithmetic | 61M ns | 37M ns | **-40%** |
-| Fibonacci | 25M ns | 20M ns | -18% |
-| ArrayOps | 11.3M ns | 10.2M ns | -10% |
-| StringConcat | 11.5M ns | 11.1M ns | -3% |
-| FunctionCalls | 19.4M ns | 20.3M ns | +5% |
+| Arithmetic | 54M ns | 28M ns | **-48%** |
+| StringConcat | 14M ns | 11M ns | -22% |
+| Fibonacci | 26M ns | 21M ns | -20% |
+| ArrayOps | 11M ns | 10M ns | -12% |
+| FunctionCalls | 18M ns | 19M ns | +6% |
 
 Larger gains require either an unboxed value type, slot-only writes
 (skipping the hashtable mirror) for slot-safe functions, or
