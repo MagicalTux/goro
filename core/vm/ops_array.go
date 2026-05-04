@@ -95,6 +95,9 @@ func arraySetLocal(ctx phpv.Context, f *Frame, idx uint16, offset, value *phpv.Z
 			return err
 		}
 		f.locals[idx] = cur
+		if f.fn.SlotOnly {
+			return nil
+		}
 		return ctx.OffsetSet(ctx, name, cur)
 
 	case phpv.ZtBool:
@@ -139,6 +142,9 @@ func arraySetLocal(ctx phpv.Context, f *Frame, idx uint16, offset, value *phpv.Z
 		// Update local with the (possibly modified) string.
 		cur.SetVal(sa.String())
 		f.locals[idx] = cur
+		if f.fn.SlotOnly {
+			return nil
+		}
 		return ctx.OffsetSet(ctx, name, cur)
 
 	case phpv.ZtObject:

@@ -875,12 +875,29 @@ func compileFunctionWithName(name phpv.ZString, c compileCtx, l *phpv.Loc, rref 
 
 	// Try VM compilation: skip generators (they spawn a Generator
 	// object — must run through callBody as-is), skip declared return
-	// types (the AST coerces / type-checks the return), and skip
-	// by-ref returns (the AST emits notices about non-variable return
-	// expressions which the VM emitter doesn't replicate). All these
-	// cases would also surface as ErrUnsupported eventually, but
-	// short-circuiting here saves a useless compile pass.
-	if TryBuildVMClosureBody != nil && !zc.isGenerator && zc.returnType == nil && !zc.rref {
+	// types (the AST coerces / type-checks the return), skip by-ref
+	// returns (the AST emits notices about non-variable return
+	// expressions which the VM emitter doesn't replicate), and skip
+	// any function with by-ref params or by-ref `use` captures
+	// (the VM passes pre-evaluated ZVals so by-ref propagation
+	// would be silently lost — and the slot-only optimization makes
+	// this even more visible by skipping the hashtable mirror).
+	hasByRef := false
+	for _, a := range zc.args {
+		if a.Ref {
+			hasByRef = true
+			break
+		}
+	}
+	if !hasByRef {
+		for _, u := range zc.use {
+			if u.Ref {
+				hasByRef = true
+				break
+			}
+		}
+	}
+	if TryBuildVMClosureBody != nil && !zc.isGenerator && zc.returnType == nil && !zc.rref && !hasByRef {
 		if vmBody := TryBuildVMClosureBody(zc.name, zc.start, zc.code); vmBody != nil {
 			zc.code = vmBody
 		}

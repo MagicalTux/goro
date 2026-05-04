@@ -9,6 +9,63 @@ import (
 	"github.com/KarpelesLab/goro/core/tokenizer"
 )
 
+// IsSlotSafe reports whether the function body in r is safe for the
+// VM's slot-only optimization — i.e. local writes can skip mirroring
+// to the FuncContext hashtable.
+//
+// A body is unsafe when it (transitively) does any of:
+//   - Calls a builtin that reads or writes locals through the
+//     FuncContext (extract, compact, get_defined_vars, parse_str,
+//     mb_parse_str, func_get_args, func_num_args, func_get_arg).
+//   - Uses a variable-variable expression ($$x, runVariableRef).
+//   - References $GLOBALS (the array-of-globals magic; reads / writes
+//     go through the hashtable).
+//   - Declares a `global $x` or `static $x = …` (both bind locals to
+//     storage that lives outside the slot array).
+//   - Declares a function (`function foo() { … }`) — that function's
+//     body may use `global $x` to bind to a top-level local.
+func IsSlotSafe(r phpv.Runnable) bool {
+	if r == nil {
+		return true
+	}
+	switch n := r.(type) {
+	case *runVariableRef:
+		return false
+	case *runVariable:
+		if n.v == "GLOBALS" {
+			return false
+		}
+	case *runnableFunctionCall:
+		if slotUnsafeFuncs[n.name.ToLower()] {
+			return false
+		}
+	case *runStaticVar:
+		return false
+	case *runGlobal:
+		return false
+	case *ZClosure:
+		// Top-level function/method declaration.
+		return false
+	}
+	for _, c := range GetChildren(r) {
+		if !IsSlotSafe(c) {
+			return false
+		}
+	}
+	return true
+}
+
+var slotUnsafeFuncs = map[phpv.ZString]bool{
+	"extract":          true,
+	"compact":          true,
+	"get_defined_vars": true,
+	"func_get_args":    true,
+	"func_num_args":    true,
+	"func_get_arg":     true,
+	"parse_str":        true, // can write callee locals when called with no second arg
+	"mb_parse_str":     true,
+}
+
 // CallInstanceMethod invokes obj->name(args...) with full PHP
 // dispatch semantics: abstract-method check, private/protected
 // visibility against the calling class, __call fallback when

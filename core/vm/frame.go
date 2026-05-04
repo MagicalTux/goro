@@ -38,19 +38,32 @@ type Frame struct {
 }
 
 // storeLocal writes v into both the slot cache and the FuncContext
-// hashtable. Cached singleton ZVals (small ints, true/false, …) are
-// duplicated first — same policy as ZHashTable.SetString — so any
-// later in-place mutation (e.g. DoInc) lands in a fresh ZVal rather
-// than panicking on the cached one.
+// hashtable (the latter is skipped when fn.SlotOnly is set).
+//
+// Cached singleton ZVals (small ints, true/false, …) are duplicated
+// first — same policy as ZHashTable.SetString — so any later in-place
+// mutation (e.g. DoInc) lands in a fresh ZVal rather than panicking
+// on the cached one.
+//
+// SlotOnly skips OffsetSet: a sizeable perf win on write-heavy loops.
+// The emitter only sets it for functions whose bodies are statically
+// confirmed not to depend on the FuncContext hashtable
+// (no extract/compact/$$x/etc.).
 func (f *Frame) storeLocal(ctx phpv.Context, idx uint16, v *phpv.ZVal) error {
 	if v == nil {
 		f.locals[idx] = nil
+		if f.fn.SlotOnly {
+			return nil
+		}
 		return ctx.OffsetSet(ctx, f.fn.Locals[idx], nil)
 	}
 	if v.IsCached() {
 		v = phpv.NewZVal(v.Value())
 	}
 	f.locals[idx] = v
+	if f.fn.SlotOnly {
+		return nil
+	}
 	return ctx.OffsetSet(ctx, f.fn.Locals[idx], v)
 }
 

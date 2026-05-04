@@ -28,6 +28,13 @@ type Function struct {
 	MaxStack    int
 	Source      *phpv.Loc
 	Name        phpv.ZString
+	// SlotOnly enables the slot-only-write optimization: local writes
+	// skip the FuncContext hashtable mirror. Set by the emitter when
+	// the function body has no extract/compact/get_defined_vars/$$x.
+	// External callers (call_user_func_array, debug_backtrace arg
+	// lists, etc.) may still see stale parameter values when this is
+	// on, so the emitter is conservative.
+	SlotOnly bool
 }
 
 // TryHandler describes a `try { … } catch …` region. The dispatcher

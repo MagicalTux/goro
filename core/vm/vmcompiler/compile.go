@@ -1,6 +1,7 @@
 package vmcompiler
 
 import (
+	"github.com/KarpelesLab/goro/core/compiler"
 	"github.com/KarpelesLab/goro/core/phpv"
 	"github.com/KarpelesLab/goro/core/vm"
 )
@@ -38,5 +39,10 @@ func Compile(name phpv.ZString, source *phpv.Loc, body phpv.Runnable) (*vm.Funct
 	// (matches PHP's "function with no explicit return" behaviour).
 	e.emit(vm.OpRetNull, 0, 0, 0)
 
-	return e.finish(name, 0), nil
+	fn := e.finish(name, 0)
+	// Slot-only writes when the body has no extract/compact/$$x/etc.
+	// This is a perf win — local writes skip the FuncContext hashtable
+	// mirror.
+	fn.SlotOnly = compiler.IsSlotSafe(body)
+	return fn, nil
 }

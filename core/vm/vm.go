@@ -503,9 +503,7 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 			if err != nil {
 				return nil, false, err
 			}
-			f.locals[ins.A()] = cur
-			valLocal := f.fn.Locals[ins.A()]
-			if err := ctx.OffsetSet(ctx, valLocal, cur); err != nil {
+			if err := f.storeLocal(ctx, ins.A(), cur); err != nil {
 				return nil, false, err
 			}
 			if ins.B() != 0xFFFF {
@@ -513,9 +511,7 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 				if err != nil {
 					return nil, false, err
 				}
-				f.locals[ins.B()] = key
-				keyLocal := f.fn.Locals[ins.B()]
-				if err := ctx.OffsetSet(ctx, keyLocal, key); err != nil {
+				if err := f.storeLocal(ctx, ins.B(), key); err != nil {
 					return nil, false, err
 				}
 			}
