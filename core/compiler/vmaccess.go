@@ -5,6 +5,43 @@ import (
 	"github.com/KarpelesLab/goro/core/tokenizer"
 )
 
+// TryBuildVMClosureBody is an optional hook installed by the
+// core/vm/vmcompiler package at init time. When set, the compiler
+// invokes it after building each closure body (`function foo() { ... }`,
+// closures, arrow fns) and, if it returns a non-nil Runnable, replaces
+// the AST body with the VM-backed runner.
+//
+// Returning nil means "VM compilation failed or was declined; keep the
+// AST body". Implementations must be safe to call concurrently and
+// must not mutate the input Runnable.
+//
+// Set to nil (the zero value) when the vmcompiler is not linked or has
+// disabled itself via env var. Compiler treats nil as "VM disabled".
+var TryBuildVMClosureBody func(name phpv.ZString, src *phpv.Loc, body phpv.Runnable) phpv.Runnable
+
+// TryBuildVMScript is the equivalent hook for top-level scripts. It
+// gets the full Runnables and may return a wrapping VM runner.
+var TryBuildVMScript func(src *phpv.Loc, body phpv.Runnable) phpv.Runnable
+
+// IsVMCompiled reports whether a callable's body has been replaced by
+// a VM-backed runner. Returns false for AST-only callables, anything
+// non-ZClosure, or when the callable isn't a function (e.g. internal
+// builtins). Used by tests and tooling to confirm the VM gate took
+// effect for a given function.
+func IsVMCompiled(c phpv.Callable) bool {
+	zc, ok := c.(*ZClosure)
+	if !ok || zc == nil || zc.code == nil {
+		return false
+	}
+	if _, ok := zc.code.(interface {
+		Inner() phpv.Runnable
+	}); ok {
+		// ClosureBody and any future wrapper expose Inner().
+		return true
+	}
+	return false
+}
+
 // This file exposes a small set of accessor methods on the unexported
 // AST node types so that out-of-package consumers (notably
 // core/vm/vmcompiler) can pattern-match against them and read the

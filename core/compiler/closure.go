@@ -2439,6 +2439,14 @@ func collectStaticVars(r phpv.Runnable) []*staticVarInfo {
 	if r == nil {
 		return nil
 	}
+	// Unwrap a VM-backed body so static-var collection still sees the
+	// original AST. The vmcompiler returns ErrUnsupported on functions
+	// containing runStaticVar, so the AST under the wrapper never
+	// actually has static vars in practice — but keeping this hatch
+	// in place defends against future emitter widening.
+	if inner, ok := r.(interface{ Inner() phpv.Runnable }); ok {
+		return collectStaticVars(inner.Inner())
+	}
 	switch v := r.(type) {
 	case *runStaticVar:
 		return v.vars

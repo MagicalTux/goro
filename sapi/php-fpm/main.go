@@ -26,6 +26,8 @@ import (
 	_ "github.com/KarpelesLab/goro/ext/standard"
 	_ "github.com/KarpelesLab/goro/ext/xml"
 	_ "github.com/KarpelesLab/goro/ext/zlib"
+
+	_ "github.com/KarpelesLab/goro/core/vm/vmcompiler"
 )
 
 func main() {
