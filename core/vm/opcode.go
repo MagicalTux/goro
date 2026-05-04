@@ -67,6 +67,7 @@ const (
 	OpJmpIfTrue       // pop; if v.AsBool() pc += C
 	OpJmpIfFalsePeek  // peek; if !v.AsBool() pc += C  (used by ||)
 	OpJmpIfTruePeek   // peek; if v.AsBool() pc += C   (used by &&)
+	OpJmpIfNotNullPeek // peek; if v.GetType() != ZtNull pc += C  (used by ??)
 
 	// --- call / return ---------------------------------------------------
 	// (CALL opcodes are reserved here so emitter constants don't shift
@@ -202,8 +203,9 @@ var opNames = [...]string{
 	OpJmp:             "JMP",
 	OpJmpIfFalse:      "JMP_IF_FALSE",
 	OpJmpIfTrue:       "JMP_IF_TRUE",
-	OpJmpIfFalsePeek:  "JMP_IF_FALSE_PEEK",
-	OpJmpIfTruePeek:   "JMP_IF_TRUE_PEEK",
+	OpJmpIfFalsePeek:   "JMP_IF_FALSE_PEEK",
+	OpJmpIfTruePeek:    "JMP_IF_TRUE_PEEK",
+	OpJmpIfNotNullPeek: "JMP_IF_NOT_NULL_PEEK",
 	OpCallUser:        "CALL_USER",
 	OpCallDirect:      "CALL_DIRECT",
 	OpRet:              "RET",

@@ -179,6 +179,8 @@ func (e *emitter) emitOperator(n operatorNode) error {
 		return e.emitShortCircuit(n, false)
 	case tokenizer.T_BOOLEAN_OR, tokenizer.T_LOGICAL_OR:
 		return e.emitShortCircuit(n, true)
+	case tokenizer.T_COALESCE:
+		return e.emitCoalesce(n)
 	}
 
 	// Unary ops where a == nil and only b is the operand.
@@ -315,6 +317,50 @@ func (e *emitter) emitIncDec(n operatorNode, inc bool) error {
 		e.emit(vm.OpPop, 0, 0, 0)
 		e.popStack(1)
 	}
+	return nil
+}
+
+// emitCoalesce emits `a ?? b` with PHP's "set and non-null" semantics:
+// undefined variables on the LHS don't warn; if the LHS evaluates to
+// non-null, RHS is skipped.
+//
+// To suppress the "Undefined variable" warning on a simple variable
+// LHS, we emit OP_LOAD_LOCAL (the no-warn form) directly when the LHS
+// is a variableNode. For other LHS expressions we fall back to AST
+// since the AST runArrayAccess / runObjectVar have writeContext-style
+// suppression that's hard to replicate here.
+func (e *emitter) emitCoalesce(n operatorNode) error {
+	a := n.OperatorA()
+	b := n.OperatorB()
+	if a == nil || b == nil {
+		return unsupportedf("coalesce missing operand")
+	}
+
+	// LHS evaluation — for a simple variable, use the silent load.
+	if v, ok := a.(variableNode); ok {
+		idx := e.localIndex(v.VariableName())
+		e.emit(vm.OpLoadLocal, idx, 0, 0)
+		e.pushStack(1)
+	} else {
+		// For now only the variable form is supported. Other LHS
+		// shapes (array elements, object props) require write-context
+		// suppression that the AST handles internally.
+		return unsupportedf("coalesce LHS %T (only $local supported)", a)
+	}
+
+	// If LHS is non-null, jump past the RHS — the LHS value stays on
+	// the stack as the result.
+	jpc := e.emit(vm.OpJmpIfNotNullPeek, 0, 0, 0)
+
+	// Else: drop the null LHS, evaluate RHS, fall through.
+	e.emit(vm.OpPop, 0, 0, 0)
+	e.popStack(1)
+	if err := e.withSubexpr(func() error { return e.emitExpr(b) }); err != nil {
+		return err
+	}
+
+	// End label.
+	e.patchJump(jpc, uint32(len(e.code)))
 	return nil
 }
 

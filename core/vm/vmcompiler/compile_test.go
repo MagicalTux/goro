@@ -230,6 +230,26 @@ func TestBreakContinue(t *testing.T) {
 	}
 }
 
+func TestCoalesce(t *testing.T) {
+	cases := []string{
+		// Defined non-null
+		"$x = 'val'; return $x ?? 'default';",
+		// Undefined → fallback (no warning)
+		"return $undef ?? 'default';",
+		// Null → fallback
+		"$x = null; return $x ?? 'default';",
+		// Zero is set and non-null → keep it
+		"$x = 0; return $x ?? 'default';",
+		// Empty string is set and non-null → keep it
+		"$x = ''; return $x ?? 'default';",
+		// Chain
+		"return $a ?? $b ?? 'last';",
+	}
+	for _, c := range cases {
+		t.Run(c, func(t *testing.T) { compareReturns(t, c) })
+	}
+}
+
 func TestShortCircuit(t *testing.T) {
 	cases := []string{
 		"return true && true;",
