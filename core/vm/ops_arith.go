@@ -6,43 +6,44 @@ import (
 	"github.com/KarpelesLab/goro/core/tokenizer"
 )
 
-// Each helper here is a thin wrapper around the AST's exported operator
-// functions in core/compiler. Routing through them keeps the VM's
-// semantics identical to the AST — type juggling, GMP overload, GMP-
-// specific deprecation warnings, divide-by-zero behaviour, etc.
+// Each helper here is a thin wrapper around compiler.EvalBinop, which
+// implements the same semantic dispatch as runOperator.Run (array
+// union, GMP overload, type-error checking, numeric coercion, …).
+// Routing through one helper keeps the VM identical in behaviour to
+// the AST and centralises any future PHP-version updates.
 
 func opAdd(ctx phpv.Context, a, b *phpv.ZVal) (*phpv.ZVal, error) {
-	return compiler.OperatorMath(ctx, tokenizer.Rune('+'), a, b)
+	return compiler.EvalBinop(ctx, tokenizer.Rune('+'), a, b, nil)
 }
 func opSub(ctx phpv.Context, a, b *phpv.ZVal) (*phpv.ZVal, error) {
-	return compiler.OperatorMath(ctx, tokenizer.Rune('-'), a, b)
+	return compiler.EvalBinop(ctx, tokenizer.Rune('-'), a, b, nil)
 }
 func opMul(ctx phpv.Context, a, b *phpv.ZVal) (*phpv.ZVal, error) {
-	return compiler.OperatorMath(ctx, tokenizer.Rune('*'), a, b)
+	return compiler.EvalBinop(ctx, tokenizer.Rune('*'), a, b, nil)
 }
 func opDiv(ctx phpv.Context, a, b *phpv.ZVal) (*phpv.ZVal, error) {
-	return compiler.OperatorMath(ctx, tokenizer.Rune('/'), a, b)
+	return compiler.EvalBinop(ctx, tokenizer.Rune('/'), a, b, nil)
 }
 func opPow(ctx phpv.Context, a, b *phpv.ZVal) (*phpv.ZVal, error) {
-	return compiler.OperatorMath(ctx, tokenizer.T_POW, a, b)
+	return compiler.EvalBinop(ctx, tokenizer.T_POW, a, b, nil)
 }
 func opMod(ctx phpv.Context, a, b *phpv.ZVal) (*phpv.ZVal, error) {
-	return compiler.OperatorMathLogic(ctx, tokenizer.Rune('%'), a, b)
+	return compiler.EvalBinop(ctx, tokenizer.Rune('%'), a, b, nil)
 }
 func opBitAnd(ctx phpv.Context, a, b *phpv.ZVal) (*phpv.ZVal, error) {
-	return compiler.OperatorMathLogic(ctx, tokenizer.Rune('&'), a, b)
+	return compiler.EvalBinop(ctx, tokenizer.Rune('&'), a, b, nil)
 }
 func opBitOr(ctx phpv.Context, a, b *phpv.ZVal) (*phpv.ZVal, error) {
-	return compiler.OperatorMathLogic(ctx, tokenizer.Rune('|'), a, b)
+	return compiler.EvalBinop(ctx, tokenizer.Rune('|'), a, b, nil)
 }
 func opBitXor(ctx phpv.Context, a, b *phpv.ZVal) (*phpv.ZVal, error) {
-	return compiler.OperatorMathLogic(ctx, tokenizer.Rune('^'), a, b)
+	return compiler.EvalBinop(ctx, tokenizer.Rune('^'), a, b, nil)
 }
 func opShl(ctx phpv.Context, a, b *phpv.ZVal) (*phpv.ZVal, error) {
-	return compiler.OperatorMathLogic(ctx, tokenizer.T_SL, a, b)
+	return compiler.EvalBinop(ctx, tokenizer.T_SL, a, b, nil)
 }
 func opShr(ctx phpv.Context, a, b *phpv.ZVal) (*phpv.ZVal, error) {
-	return compiler.OperatorMathLogic(ctx, tokenizer.T_SR, a, b)
+	return compiler.EvalBinop(ctx, tokenizer.T_SR, a, b, nil)
 }
 func opConcat(ctx phpv.Context, a, b *phpv.ZVal) (*phpv.ZVal, error) {
 	return compiler.OperatorAppend(ctx, tokenizer.Rune('.'), a, b)
@@ -76,10 +77,10 @@ func opNeg(ctx phpv.Context, b *phpv.ZVal) (*phpv.ZVal, error) {
 			return (-v).ZVal(), nil
 		}
 	}
-	// String/bool/null/etc.: route through OperatorMath with int(0)
-	// LHS so numeric conversion runs and produces the same warnings.
+	// String/bool/null/etc.: route through EvalBinop with int(0)
+	// LHS so the same numeric-conversion warnings fire.
 	zero := phpv.ZInt(0).ZVal()
-	return compiler.OperatorMath(ctx, tokenizer.Rune('-'), zero, b)
+	return compiler.EvalBinop(ctx, tokenizer.Rune('-'), zero, b, nil)
 }
 
 // minInt64 mirrors math.MinInt64 without the math import (avoids a
@@ -100,8 +101,7 @@ func opNot(ctx phpv.Context, a *phpv.ZVal) (*phpv.ZVal, error) {
 }
 
 // compoundOp resolves an OP_OP_ASSIGN_LOCAL B-field (a tokenizer
-// ItemType) to the corresponding (a, b) -> result helper. Returns nil
-// if the op isn't a compound-assignment we support.
+// ItemType) to the corresponding (a, b) -> result helper.
 func compoundOp(op tokenizer.ItemType) func(phpv.Context, *phpv.ZVal, *phpv.ZVal) (*phpv.ZVal, error) {
 	switch op {
 	case tokenizer.T_PLUS_EQUAL:

@@ -35,8 +35,9 @@ type operatorNode interface {
 // --- expression emission ----------------------------------------------
 
 // emitExpr emits bytecode that pushes the value of node onto the VM
-// stack. Returns ErrUnsupported for any node type the emitter doesn't
-// understand. The caller must already have set e.stmtCtx as needed.
+// stack. Returns ErrUnsupported (wrapped) for any node type the
+// emitter doesn't lower natively — the caller (Compile) propagates
+// this so the surrounding function body falls back to the AST.
 func (e *emitter) emitExpr(node phpv.Runnable) error {
 	if node == nil {
 		// `return;` lowers to `return null;`. Emit a literal null.

@@ -21,8 +21,8 @@ type Function struct {
 	Consts     []phpv.Val   // const-pool — literals + interned ZString names
 	CachedZ    []*phpv.ZVal // pre-built MakeCachedZVal(Consts[i]) for OP_LOAD_CONST
 	Locals     []phpv.ZString
-	SubFns     []*Function   // direct-call targets (resolved at emit time)
-	LocsSparse []LocEntry    // sorted by PC
+	SubFns     []*Function // direct-call targets (resolved at emit time)
+	LocsSparse []LocEntry  // sorted by PC
 	NumParams  int
 	MaxStack   int
 	Source     *phpv.Loc
