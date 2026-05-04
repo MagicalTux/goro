@@ -102,21 +102,66 @@ Enable it with the `GORO_VM=1` environment variable:
 GORO_VM=1 php-cli script.php
 ```
 
-The VM emitter currently handles: scalar literals, `true`/`false`/`null`,
-variable read/write, arithmetic / bitwise / comparison / concat / shift,
-unary `-` / `~` / `!`, plain and compound assignment, `++`/`--`,
-short-circuit `&&` / `||`, `if`/`elseif`/`else`, `while`, `for`,
-`break` / `continue` (single level), `return`, and function calls
-(builtin + user-defined).
+The VM emitter currently handles:
 
-Out of scope (falls back to AST): arrays / `foreach`, objects,
-references, `try`/`catch`, generators, multi-level `break N` /
-`continue N`, type-hinted return, by-ref returns, user-defined
-constants, list destructure.
+- Scalar literals (`int`, `float`, `string`, `bool`, `null`) — including
+  the case-insensitive constants `true`/`false`/`null`.
+- Variable read/write, with a per-frame slot cache so reads skip the
+  FuncContext hashtable entirely.
+- Arithmetic / bitwise / shift / comparison / concat / unary
+  (`-`, `~`, `!`); plain and compound assignment (`=`, `+=`, …);
+  pre/post `++`/`--`.
+- Short-circuit `&&` / `||` and `??` (null coalesce, simple-variable
+  LHS only).
+- `if` / `elseif` / `else`, `while`, `for`, `foreach` (value form,
+  array + object iteration), `break` / `continue` (single level),
+  `return`, `throw`.
+- Array literals (`[…]`, including keyed `k => v`); `$a[$k]` read;
+  `$a[$k] = v` and `$a[] = v` writes (with auto-vivification from
+  null/false and string-offset semantics).
+- Object instantiation (`new Cls(args…)`), property read
+  (`$obj->prop`), method call (`$obj->m(args…)`) with full PHP
+  visibility checks (private/protected) and `__call` fallback.
+- Builtin and user-defined function calls (positional args).
 
-Bench wins so far: ~20% on Fibonacci and Arithmetic. Larger gains
-require either an unboxed value type or register-based opcodes; the
-64-bit instruction format already has room for both.
+Out of scope (falls back to AST per-function via ErrUnsupported):
+
+- By-ref returns and by-ref parameters (the VM passes pre-evaluated
+  ZVals; the AST passes Runnables and binds `Writable`s).
+- `try` / `catch` / `finally` (throw is supported, exceptions
+  propagate to AST callers/wrappers).
+- Generators (`yield`).
+- `$obj->prop = v` (deferred until a public WriteValue helper exists).
+- Static-property and class-constant access (`Foo::$bar`, `Foo::CONST`).
+- Nullsafe chains (`$obj?->...`).
+- Spread (`...$arr`) and named arguments.
+- Dynamic names (`$$x`, `$obj->{$x}`, `$f()` with $f a variable,
+  `new $cls()`).
+- Multi-level `break N` / `continue N`.
+- Type-hinted return values (the AST coerces; the VM doesn't yet).
+- User-defined constants (PHP_INT_MAX, MYAPP_FOO, …).
+- List destructure, anonymous classes, `extract`/`compact`/`$$x` and
+  similar locals-introspecting builtins (those force the slot cache
+  to fall back; currently we just compile-time bail).
+
+Functions matching any of the above run as AST as before — the engine
+silently picks the right backend per-function, with no behaviour
+change.
+
+Bench wins (vs. AST baseline, per-iter):
+
+| Benchmark | AST | VM | Δ |
+|---|---|---|---|
+| Arithmetic | 61M ns | 37M ns | **-40%** |
+| Fibonacci | 25M ns | 20M ns | -18% |
+| ArrayOps | 11.3M ns | 10.2M ns | -10% |
+| StringConcat | 11.5M ns | 11.1M ns | -3% |
+| FunctionCalls | 19.4M ns | 20.3M ns | +5% |
+
+Larger gains require either an unboxed value type, slot-only writes
+(skipping the hashtable mirror) for slot-safe functions, or
+register-based opcodes. The 64-bit instruction format already has room
+for the last one.
 
 ## Architecture
 
