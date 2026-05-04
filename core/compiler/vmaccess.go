@@ -227,6 +227,28 @@ func (r *runnableFor) ForCode() phpv.Runnable { return r.code }
 // ForLoc returns the source location of the for statement.
 func (r *runnableFor) ForLoc() *phpv.Loc { return r.l }
 
+// --- runnableForeach ---------------------------------------------------
+
+// ForeachSrc returns the source expression (the thing being iterated).
+func (r *runnableForeach) ForeachSrc() phpv.Runnable { return r.src }
+
+// ForeachKey returns the key target expression. nil when no `=> $k`.
+// For supported (variable target) cases, this is a *runVariable.
+func (r *runnableForeach) ForeachKey() phpv.Runnable { return r.k }
+
+// ForeachValue returns the value target expression. Always non-nil.
+func (r *runnableForeach) ForeachValue() phpv.Runnable { return r.v }
+
+// ForeachCode returns the loop body.
+func (r *runnableForeach) ForeachCode() phpv.Runnable { return r.code }
+
+// ForeachIsRef reports whether the loop variable is by-reference
+// (`foreach (... as &$v)`). The VM emitter falls back to AST when true.
+func (r *runnableForeach) ForeachIsRef() bool { return r.ref }
+
+// ForeachLoc returns the source location of the foreach statement.
+func (r *runnableForeach) ForeachLoc() *phpv.Loc { return r.l }
+
 // --- runnableWhile -----------------------------------------------------
 
 // WhileCond returns the condition expression.

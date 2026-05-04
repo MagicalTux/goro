@@ -42,7 +42,7 @@ func TestClosureBodyHookWiring(t *testing.T) {
 }
 
 // TestClosureBodyHookFallsBack verifies that when the body uses an
-// unsupported construct (here, foreach which isn't VM-compiled yet),
+// unsupported construct (here, by-ref foreach which still falls back),
 // the AST body is kept (no VM wrapper) and the function still runs.
 func TestClosureBodyHookFallsBack(t *testing.T) {
 	prev := vmcompiler.Enabled()
@@ -51,26 +51,27 @@ func TestClosureBodyHookFallsBack(t *testing.T) {
 
 	g := newGlobal(t)
 	r := compileSnippet(t, g, `
-		function vm_with_foreach() {
-			$s = 0;
-			foreach ([1, 2, 3] as $v) { $s += $v; }
-			return $s;
+		function vm_with_byref() {
+			$a = [1, 2, 3];
+			foreach ($a as &$v) { $v *= 2; }
+			unset($v);
+			return $a[0] + $a[1] + $a[2];
 		}
-		return vm_with_foreach();
+		return vm_with_byref();
 	`)
 	res, err := phperr.CatchReturn(r.Run(g))
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if res.String() != "6" {
-		t.Fatalf("got %q, want 6", res.String())
+	if res.String() != "12" {
+		t.Fatalf("got %q, want 12", res.String())
 	}
-	fn, err := g.GetFunction(g, phpv.ZString("vm_with_foreach"))
+	fn, err := g.GetFunction(g, phpv.ZString("vm_with_byref"))
 	if err != nil {
 		t.Fatalf("GetFunction: %v", err)
 	}
 	if compiler.IsVMCompiled(fn) {
-		t.Fatalf("vm_with_foreach should have fallen back to AST")
+		t.Fatalf("vm_with_byref should have fallen back to AST")
 	}
 }
 

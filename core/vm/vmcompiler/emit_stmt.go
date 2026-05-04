@@ -31,6 +31,15 @@ type whileNode interface {
 	WhileLoc() *phpv.Loc
 }
 
+type foreachNode interface {
+	ForeachSrc() phpv.Runnable
+	ForeachKey() phpv.Runnable
+	ForeachValue() phpv.Runnable
+	ForeachCode() phpv.Runnable
+	ForeachIsRef() bool
+	ForeachLoc() *phpv.Loc
+}
+
 type returnNode interface {
 	ReturnValue() phpv.Runnable
 	ReturnLoc() *phpv.Loc
@@ -63,6 +72,8 @@ func (e *emitter) emitStmt(node phpv.Runnable) error {
 		return e.emitWhile(n)
 	case forNode:
 		return e.emitFor(n)
+	case foreachNode:
+		return e.emitForeach(n)
 	case returnNode:
 		return e.emitReturn(n)
 	case *phperr.PhpBreak:
@@ -247,6 +258,71 @@ func (e *emitter) emitFor(n forNode) error {
 	for _, pc := range loop.breakPCs {
 		e.patchJump(pc, exit)
 	}
+	e.popLoop()
+	return nil
+}
+
+func (e *emitter) emitForeach(n foreachNode) error {
+	if n.ForeachIsRef() {
+		return unsupportedf("foreach by reference (&$v)")
+	}
+	// Loop variable must be a simple local. Anything else (array
+	// element, object property, list destructure) falls back.
+	valNode, ok := n.ForeachValue().(variableNode)
+	if !ok {
+		return unsupportedf("foreach value target %T (only $local supported)", n.ForeachValue())
+	}
+	valIdx := e.localIndex(valNode.VariableName())
+
+	keyIdx := uint16(0xFFFF)
+	if k := n.ForeachKey(); k != nil {
+		kn, ok := k.(variableNode)
+		if !ok {
+			return unsupportedf("foreach key target %T (only $local supported)", k)
+		}
+		keyIdx = e.localIndex(kn.VariableName())
+	}
+
+	// Eval src and emit the init op. C is patched to point past the
+	// loop in case src isn't iterable (warning + skip).
+	if err := e.withSubexpr(func() error { return e.emitExpr(n.ForeachSrc()) }); err != nil {
+		return err
+	}
+	initPC := e.emit(vm.OpForeachInit, 0, 0, 0)
+	e.popStack(1) // pops src
+
+	loop := e.pushLoop()
+	loopHead := uint32(len(e.code))
+
+	// Step: jumps to unwind on iterator exhaustion.
+	stepPC := e.emit(vm.OpForeachStep, valIdx, keyIdx, 0)
+
+	// Body
+	if err := e.emitStmt(n.ForeachCode()); err != nil {
+		return err
+	}
+
+	// continue → advance + jump to step
+	contStart := uint32(len(e.code))
+	for _, pc := range loop.continuePCs {
+		e.patchJump(pc, contStart)
+	}
+	e.emit(vm.OpForeachAdvance, 0, 0, 0)
+	jmpBack := e.emit(vm.OpJmp, 0, 0, 0)
+	e.patchJump(jmpBack, loopHead)
+
+	// Unwind target — break and natural-end land here.
+	unwindStart := uint32(len(e.code))
+	e.patchJump(stepPC, unwindStart)
+	for _, pc := range loop.breakPCs {
+		e.patchJump(pc, unwindStart)
+	}
+	e.emit(vm.OpForeachUnwind, 0, 0, 0)
+
+	// End — init's "not iterable" jump lands here.
+	end := uint32(len(e.code))
+	e.patchJump(initPC, end)
+
 	e.popLoop()
 	return nil
 }

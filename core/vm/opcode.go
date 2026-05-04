@@ -107,6 +107,25 @@ const (
 	// only — no result on the stack.
 	OpArrayAppendLocal
 
+	// --- foreach ---------------------------------------------------------
+	// OP_FOREACH_INIT pops the src container, builds an iterator, and
+	// pushes it onto the frame's iter stack. If src isn't iterable it
+	// emits the PHP "argument must be of type array|object" warning
+	// and jumps by C (skipping the entire loop body and unwind).
+	// Otherwise it falls through.
+	OpForeachInit
+	// OP_FOREACH_STEP checks the current iterator. If exhausted, it
+	// pops the iterator and jumps by C. Otherwise it stores the
+	// current value into local A; if B != 0xFFFF it also stores the
+	// current key into local B. Does NOT advance — that's
+	// OP_FOREACH_ADVANCE.
+	OpForeachStep
+	// OP_FOREACH_ADVANCE calls Next() on the top iterator.
+	OpForeachAdvance
+	// OP_FOREACH_UNWIND pops the top iterator (used at the loop's
+	// natural exit and as a `break` target).
+	OpForeachUnwind
+
 	// --- diagnostics -----------------------------------------------------
 	OpTick // call ctx.Tick(ctx, LocAt(pc-1)) and DrainTempObjects
 
@@ -181,5 +200,9 @@ var opNames = [...]string{
 	OpArrayGet:         "ARRAY_GET",
 	OpArraySetLocal:    "ARRAY_SET_LOCAL",
 	OpArrayAppendLocal: "ARRAY_APPEND_LOCAL",
+	OpForeachInit:      "FOREACH_INIT",
+	OpForeachStep:      "FOREACH_STEP",
+	OpForeachAdvance:   "FOREACH_ADVANCE",
+	OpForeachUnwind:    "FOREACH_UNWIND",
 	OpTick:             "TICK",
 }

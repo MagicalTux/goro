@@ -18,6 +18,11 @@ type Frame struct {
 	pc    uint32
 	stack []Slot
 	sp    int // points one past the topmost valid slot
+
+	// iters holds active foreach iterators, pushed by OP_FOREACH_INIT
+	// and popped by OP_FOREACH_UNWIND (or OP_FOREACH_STEP when the
+	// iterator is exhausted). Nested foreaches stack here.
+	iters []phpv.ZIterator
 }
 
 // push grows the stack by one and stores v at the new top.

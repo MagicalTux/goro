@@ -243,6 +243,30 @@ func TestShortCircuit(t *testing.T) {
 	}
 }
 
+func TestForeach(t *testing.T) {
+	cases := []string{
+		// value form
+		"$s = 0; foreach ([1,2,3] as $v) { $s += $v; } return $s;",
+		// key + value
+		"$s = ''; foreach (['a'=>1,'b'=>2,'c'=>3] as $k => $v) { $s .= $k . $v; } return $s;",
+		// over a local var
+		"$a = [10, 20, 30]; $s = 0; foreach ($a as $v) { $s += $v; } return $s;",
+		// break inside
+		"$s = 0; foreach ([1,2,3,4,5] as $v) { if ($v > 3) break; $s += $v; } return $s;",
+		// continue inside
+		"$s = 0; foreach ([1,2,3,4,5] as $v) { if ($v % 2 === 0) continue; $s += $v; } return $s;",
+		// nested foreach
+		"$s = 0; foreach ([[1,2],[3,4]] as $row) { foreach ($row as $v) { $s += $v; } } return $s;",
+		// over null (foreach() argument warning)
+		"$x = null; $s = 0; foreach ($x as $v) { $s++; } return $s;",
+		// non-iterable type — emits warning, no iteration
+		"$x = 5; foreach ($x as $v) {} return 'ok';",
+	}
+	for _, c := range cases {
+		t.Run(c, func(t *testing.T) { compareReturns(t, c) })
+	}
+}
+
 func TestArrays(t *testing.T) {
 	cases := []string{
 		// literals

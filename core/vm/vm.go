@@ -367,6 +367,65 @@ func (f *Frame) exec(ctx phpv.Context) (res *phpv.ZVal, err error) {
 				return nil, err
 			}
 
+		// --- foreach -------------------------------------------------
+		case OpForeachInit:
+			src := f.pop()
+			it, err := foreachInit(ctx, src)
+			if err != nil {
+				return nil, err
+			}
+			if it == nil {
+				// Not iterable: emit warning and jump past the loop.
+				if err := foreachWarnInvalid(ctx, src, f.fn.LocAt(f.pc-1)); err != nil {
+					return nil, err
+				}
+				f.pc = uint32(int32(f.pc) + ins.C())
+				break
+			}
+			f.iters = append(f.iters, it)
+
+		case OpForeachStep:
+			it := f.iters[len(f.iters)-1]
+			if !it.Valid(ctx) {
+				// Iterator exhausted — jump to the unwind target,
+				// which pops the iterator. We don't pop here so that
+				// OpForeachUnwind sees the same iterator regardless
+				// of whether we got there via natural end or `break`.
+				f.pc = uint32(int32(f.pc) + ins.C())
+				break
+			}
+			cur, err := it.Current(ctx)
+			if err != nil {
+				return nil, err
+			}
+			valLocal := f.fn.Locals[ins.A()]
+			if err := ctx.OffsetSet(ctx, valLocal, cur); err != nil {
+				return nil, err
+			}
+			if ins.B() != 0xFFFF {
+				key, err := it.Key(ctx)
+				if err != nil {
+					return nil, err
+				}
+				keyLocal := f.fn.Locals[ins.B()]
+				if err := ctx.OffsetSet(ctx, keyLocal, key); err != nil {
+					return nil, err
+				}
+			}
+
+		case OpForeachAdvance:
+			it := f.iters[len(f.iters)-1]
+			if _, err := it.Next(ctx); err != nil {
+				return nil, err
+			}
+
+		case OpForeachUnwind:
+			it := f.iters[len(f.iters)-1]
+			if c, ok := it.(interface{ Cleanup() }); ok {
+				c.Cleanup()
+			}
+			f.iters = f.iters[:len(f.iters)-1]
+
 		// --- diagnostics --------------------------------------------
 		case OpTick:
 			if err := ctx.Tick(ctx, f.fn.LocAt(f.pc-1)); err != nil {
