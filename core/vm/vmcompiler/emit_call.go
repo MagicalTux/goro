@@ -1,6 +1,7 @@
 package vmcompiler
 
 import (
+	"github.com/KarpelesLab/goro/core/compiler"
 	"github.com/KarpelesLab/goro/core/phpv"
 	"github.com/KarpelesLab/goro/core/vm"
 )
@@ -18,6 +19,12 @@ func (e *emitter) emitFunctionCall(n funcCallNode) error {
 		// Dynamic call ($f()) — handled by runnableFunctionCallRef in the
 		// AST. Falls back for now.
 		return unsupportedf("dynamic function call (variable name)")
+	}
+	// Builtins that take by-ref args can't be called via the VM's
+	// value-passing protocol (CallZVal). Fall back to AST so they
+	// still mutate the caller's variables.
+	if compiler.ByRefBuiltins[name.ToLower()] {
+		return unsupportedf("call to by-ref builtin %s", name)
 	}
 
 	args := n.FuncCallArgs()

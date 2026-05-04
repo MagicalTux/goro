@@ -56,9 +56,12 @@ func tryBuildClosureBody(name phpv.ZString, src *phpv.Loc, body phpv.Runnable) p
 	return vm.WrapClosureBody(fn, body)
 }
 
+
 // tryBuildScript wraps a top-level script's Runnables. Same gating
 // logic; the wrapper goes through vm.Wrap because top-level scripts
-// don't use the closure return-via-error convention.
+// don't use the closure return-via-error convention. SlotOnly is set
+// based on the body's IsSlotSafe analysis (which already rejects
+// scripts that declare functions or use $GLOBALS / global / static).
 func tryBuildScript(src *phpv.Loc, body phpv.Runnable) phpv.Runnable {
 	if !enabled {
 		return nil

@@ -72,11 +72,14 @@ func (e *emitter) emitStmt(node phpv.Runnable) error {
 		return e.emitStmts(rs)
 	}
 
-	// Tick before each statement (matches Runnables.Run).
+	// Tick before each statement (matches Runnables.Run). Always emit
+	// OP_TICK so the runtime updates ctx.Loc() (which exception
+	// constructors and backtrace builders read) — when the node
+	// doesn't expose a Loc(), the dispatcher falls back to fn.Source.
 	if loc := stmtLoc(node); loc != nil {
 		e.recordLoc(loc)
-		e.emit(vm.OpTick, 0, 0, 0)
 	}
+	e.emit(vm.OpTick, 0, 0, 0)
 
 	// Statement-specific dispatch.
 	switch n := node.(type) {
@@ -423,6 +426,8 @@ func stmtLoc(node phpv.Runnable) *phpv.Loc {
 		return n.LiteralLoc()
 	case variableNode:
 		return n.VariableLoc()
+	case funcCallNode:
+		return n.FuncCallLoc()
 	}
 	return nil
 }

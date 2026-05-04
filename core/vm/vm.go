@@ -80,18 +80,33 @@ func (f *Frame) exec(ctx phpv.Context) (res *phpv.ZVal, err error) {
 	for {
 		retVal, finished, ierr := f.runUntilError(ctx)
 		if ierr != nil {
-			if t, ok := ierr.(*phperr.PhpThrow); ok {
-				if f.dispatchTryHandler(ctx, t) {
+			// Loop here so a destructor exception during catch-var
+			// binding (PHP bug 53511 semantics) re-enters the search
+			// for an outer handler.
+			for {
+				t, ok := ierr.(*phperr.PhpThrow)
+				if !ok {
+					break
+				}
+				handled, newErr := f.dispatchTryHandler(ctx, t)
+				if newErr != nil {
+					ierr = newErr
 					continue
 				}
+				if handled {
+					ierr = nil
+					break
+				}
+				break
 			}
-			return nil, ierr
+			if ierr != nil {
+				return nil, ierr
+			}
+			continue
 		}
 		if finished {
 			return retVal, nil
 		}
-		// runUntilError currently never falls through without
-		// finished=true or an error; this is just for safety.
 		return retVal, nil
 	}
 }
@@ -122,7 +137,17 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 		case OpLoadLocal:
 			v := f.locals[ins.A()]
 			if v == nil {
-				v = phpv.ZNULL.ZVal()
+				name := f.fn.Locals[ins.A()]
+				// $this is special: throw an Error when accessed
+				// outside an object context.
+				if name == "this" {
+					if ctx.This() == nil {
+						return nil, false, phpobj.ThrowError(ctx, phpobj.Error, "Using $this when not in object context")
+					}
+					v = ctx.This().ZVal()
+				} else {
+					v = phpv.ZNULL.ZVal()
+				}
 			}
 			f.push(v)
 
@@ -130,10 +155,17 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 			v := f.locals[ins.A()]
 			if v == nil {
 				name := f.fn.Locals[ins.A()]
-				if err := ctx.Warn("Undefined variable $%s", string(name), logopt.NoFuncName(true)); err != nil {
-					return nil, false, err
+				if name == "this" {
+					if ctx.This() == nil {
+						return nil, false, phpobj.ThrowError(ctx, phpobj.Error, "Using $this when not in object context")
+					}
+					v = ctx.This().ZVal()
+				} else {
+					if err := ctx.Warn("Undefined variable $%s", string(name), logopt.NoFuncName(true)); err != nil {
+						return nil, false, err
+					}
+					v = phpv.ZNULL.ZVal()
 				}
-				v = phpv.ZNULL.ZVal()
 			}
 			f.push(v)
 

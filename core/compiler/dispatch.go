@@ -55,6 +55,51 @@ func IsSlotSafe(r phpv.Runnable) bool {
 	return true
 }
 
+// FunctionTakesByRef reports whether the named function (in the
+// current global scope) declares any by-reference parameter. Used by
+// the VM emitter to fall back to AST for calls that need by-ref
+// binding (which the VM's value-passing call protocol can't provide).
+//
+// Returns false when the function isn't registered yet — pessimistic
+// users should still fall back, but that policy is up to the caller.
+func FunctionTakesByRef(g phpv.GlobalContext, name phpv.ZString) bool {
+	f, err := g.GetFunction(g, name)
+	if err != nil || f == nil {
+		return false
+	}
+	if fga, ok := f.(phpv.FuncGetArgs); ok {
+		for _, a := range fga.GetArgs() {
+			if a.Ref {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// ByRefBuiltins lists builtin functions that take at least one
+// argument by reference. The VM emitter falls back to AST for calls
+// to any of these because the VM's value-passing call protocol
+// can't bind a Writable argument.
+var ByRefBuiltins = map[phpv.ZString]bool{
+	// Array internal-pointer mutators
+	"end": true, "reset": true, "next": true, "prev": true,
+	"current": true, "key": true, "each": true,
+	// Array sort / shuffle (mutate in place)
+	"sort": true, "rsort": true, "asort": true, "arsort": true,
+	"ksort": true, "krsort": true, "usort": true, "uasort": true, "uksort": true,
+	"natsort": true, "natcasesort": true, "shuffle": true,
+	// Array structural ops
+	"array_walk": true, "array_walk_recursive": true,
+	"array_push": true, "array_pop": true,
+	"array_shift": true, "array_unshift": true,
+	"array_splice": true, "array_multisort": true,
+	// Misc
+	"settype": true, "parse_str": true, "mb_parse_str": true,
+	// preg_match / sscanf write capture-groups via &$matches / args
+	"preg_match": true, "preg_match_all": true, "sscanf": true,
+}
+
 var slotUnsafeFuncs = map[phpv.ZString]bool{
 	"extract":          true,
 	"compact":          true,

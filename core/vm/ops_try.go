@@ -10,46 +10,44 @@ import (
 // handler whose [Start, End) range contains the failing PC. If found,
 // each catch clause is checked against the exception's class; the
 // first matching clause has its variable bound and execution jumps to
-// its body. Returns true if a catch matched and pc was redirected;
-// false otherwise (caller should propagate the throw).
-func (f *Frame) dispatchTryHandler(ctx phpv.Context, throwErr *phperr.PhpThrow) bool {
+// its body.
+//
+// Returns:
+//   - handled=true, newErr=nil: a catch matched, pc redirected.
+//   - handled=false, newErr=nil: no handler matched; caller should
+//     propagate the original throw.
+//   - handled=false, newErr=…: binding the exception variable
+//     triggered a destructor that threw a NEW exception (PHP behaves
+//     this way: bug53511). Caller should swap to newErr and
+//     re-attempt dispatch.
+func (f *Frame) dispatchTryHandler(ctx phpv.Context, throwErr *phperr.PhpThrow) (bool, error) {
 	if len(f.fn.TryHandlers) == 0 || throwErr == nil || throwErr.Obj == nil {
-		return false
+		return false, nil
 	}
-	// f.pc has already been incremented past the failing instruction.
 	failPC := f.pc - 1
 
-	// Inner handlers are registered BEFORE their enclosing outer
-	// handler (registration happens at the end of emitTry, and
-	// nested emitTry calls run during the outer's body emit). So
-	// forward iteration hits the innermost handler first.
 	exClass := throwErr.Obj.GetClass()
 	for i := 0; i < len(f.fn.TryHandlers); i++ {
 		h := f.fn.TryHandlers[i]
 		if failPC < h.Start || failPC >= h.End {
 			continue
 		}
-		// Found an active handler. Try each catch clause.
 		for _, clause := range h.Catches {
 			if matchCatchTypes(ctx, exClass, clause.Types) {
-				// Bind the exception variable.
 				if clause.VarIdx != 0xFFFF {
 					exVal := throwErr.Obj.ZVal()
 					name := f.fn.Locals[clause.VarIdx]
 					f.locals[clause.VarIdx] = exVal
 					if err := ctx.OffsetSet(ctx, name, exVal); err != nil {
-						// If binding fails, surface the error normally.
-						return false
+						return false, err
 					}
 				}
 				f.pc = clause.PC
-				return true
+				return true, nil
 			}
 		}
-		// No matching catch in this handler. Continue scanning outer
-		// handlers (the throw escapes to the next try level).
 	}
-	return false
+	return false, nil
 }
 
 // matchCatchTypes returns true if exClass matches any of the catch's

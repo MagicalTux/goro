@@ -75,6 +75,13 @@ func IsVMCompiled(c phpv.Callable) bool {
 // statements — a small loss until we wire up the warning natively.
 func (r *runNoDiscardStatement) NoDiscardInner() phpv.Runnable { return r.inner }
 
+// --- runConcat (string interpolation) ---------------------------------
+
+// ConcatParts returns the list of expressions concatenated to form
+// the result of `"foo $bar baz"` and similar interpolated strings.
+// The emitter casts each part to string and emits N-1 OpConcat ops.
+func (r runConcat) ConcatParts() []phpv.Runnable { return r }
+
 // --- runnableTry / runnableCatch --------------------------------------
 
 // TryNode exposes a try statement to the bytecode emitter.

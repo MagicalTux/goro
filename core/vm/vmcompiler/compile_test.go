@@ -230,6 +230,24 @@ func TestBreakContinue(t *testing.T) {
 	}
 }
 
+func TestStringInterpolation(t *testing.T) {
+	cases := []string{
+		// simple variable interpolation
+		`$name = 'world'; return "hello $name";`,
+		// brace form
+		`$x = 7; return "value: {$x}";`,
+		// multiple variables
+		`$a = 1; $b = 2; return "a=$a b=$b";`,
+		// numeric coercion
+		`$n = 42; return "answer is $n!";`,
+		// nested concat
+		`$a = 'hi'; $b = 'world'; return "first: $a, second: $b!";`,
+	}
+	for _, c := range cases {
+		t.Run(c, func(t *testing.T) { compareReturns(t, c) })
+	}
+}
+
 func TestCoalesce(t *testing.T) {
 	cases := []string{
 		// Defined non-null

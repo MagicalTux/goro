@@ -23,6 +23,11 @@ type constantNode interface {
 	ConstantLoc() *phpv.Loc
 }
 
+// concatNode matches compiler.runConcat — string interpolation.
+type concatNode interface {
+	ConcatParts() []phpv.Runnable
+}
+
 type operatorNode interface {
 	OperatorOp() tokenizer.ItemType
 	OperatorA() phpv.Runnable
@@ -61,6 +66,8 @@ func (e *emitter) emitExpr(node phpv.Runnable) error {
 		return e.emitArrayLiteral(n)
 	case arrayAccessNode:
 		return e.emitArrayAccessRead(n)
+	case concatNode:
+		return e.emitConcat(n)
 	case newObjectNode:
 		return e.emitNewObject(n)
 	case objectVarNode:
@@ -101,6 +108,29 @@ func (e *emitter) emitLiteral(n literalNode) error {
 		return nil
 	}
 	return unsupportedf("emitLiteral: %T", v)
+}
+
+// emitConcat lowers `"foo $bar baz"`-style interpolation to N-1
+// OP_CONCAT chains. The empty case produces an empty string.
+func (e *emitter) emitConcat(n concatNode) error {
+	parts := n.ConcatParts()
+	if len(parts) == 0 {
+		idx := e.constIndex(phpv.ZString(""))
+		e.emit(vm.OpLoadConst, idx, 0, 0)
+		e.pushStack(1)
+		return nil
+	}
+	if err := e.withSubexpr(func() error { return e.emitExpr(parts[0]) }); err != nil {
+		return err
+	}
+	for _, p := range parts[1:] {
+		if err := e.withSubexpr(func() error { return e.emitExpr(p) }); err != nil {
+			return err
+		}
+		e.emit(vm.OpConcat, 0, 0, 0)
+		e.popStack(1) // 2 pop, 1 push
+	}
+	return nil
 }
 
 func (e *emitter) emitConstant(n constantNode) error {
