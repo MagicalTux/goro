@@ -44,7 +44,12 @@ type Function struct {
 // per-instruction encoding — handlers are static metadata.
 type TryHandler struct {
 	Start, End uint32 // PC range of the try body (exclusive End)
-	Catches    []CatchClause
+	// StackBase is the simulated stack depth at try entry. The
+	// dispatcher resets sp to this value when unwinding to a catch
+	// body so partially-pushed arguments from the failing expression
+	// are dropped.
+	StackBase int
+	Catches   []CatchClause
 }
 
 // CatchClause is a single `catch (TypeA | TypeB $e)` block.

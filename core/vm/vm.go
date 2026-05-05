@@ -387,11 +387,16 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 				args[i] = f.pop()
 			}
 			callable := f.pop()
-			c, err := compiler.ResolveCallable(ctx, callable)
+			c, this, err := compiler.ResolveCallable(ctx, callable)
 			if err != nil {
 				return nil, false, err
 			}
-			res, err := ctx.CallZVal(ctx, c, args, nil)
+			var res *phpv.ZVal
+			if this != nil {
+				res, err = ctx.CallZVal(ctx, c, args, this)
+			} else {
+				res, err = ctx.CallZVal(ctx, c, args, nil)
+			}
 			if err != nil {
 				return nil, false, err
 			}

@@ -34,6 +34,13 @@ func (f *Frame) dispatchTryHandler(ctx phpv.Context, throwErr *phperr.PhpThrow) 
 		}
 		for _, clause := range h.Catches {
 			if matchCatchTypes(ctx, exClass, clause.Types) {
+				// Drop any partially-pushed values from the failing
+				// expression so the catch body starts at the same
+				// stack depth as the try body.
+				for f.sp > h.StackBase {
+					f.sp--
+					f.stack[f.sp] = nil
+				}
 				if clause.VarIdx != 0xFFFF {
 					exVal := throwErr.Obj.ZVal()
 					name := f.fn.Locals[clause.VarIdx]

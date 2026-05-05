@@ -37,6 +37,7 @@ func (e *emitter) emitTry(n compiler.TryNode) error {
 	}
 
 	tryStart := uint32(len(e.code))
+	stackBase := e.curStack
 	if err := e.emitStmt(n.TryBody()); err != nil {
 		return err
 	}
@@ -68,9 +69,10 @@ func (e *emitter) emitTry(n compiler.TryNode) error {
 	}
 
 	e.tryHandlers = append(e.tryHandlers, vm.TryHandler{
-		Start:   tryStart,
-		End:     tryEnd,
-		Catches: clauses,
+		Start:     tryStart,
+		End:       tryEnd,
+		StackBase: stackBase,
+		Catches:   clauses,
 	})
 	return nil
 }

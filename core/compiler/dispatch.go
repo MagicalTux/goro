@@ -15,72 +15,82 @@ import (
 //   - ZString (function name)
 //   - ZArray of [object, method] or [class, method]
 //
+// The second return value is the implicit `$this` (z.this for
+// closures, the array's [0] for object-method array callables, nil
+// otherwise) — pass it as the optionalThis argument to CallZVal so
+// the callee's body sees the right binding.
+//
 // Returns nil + error otherwise.
-func ResolveCallable(ctx phpv.Context, v *phpv.ZVal) (phpv.Callable, error) {
+func ResolveCallable(ctx phpv.Context, v *phpv.ZVal) (phpv.Callable, phpv.ZObject, error) {
 	switch v.GetType() {
 	case phpv.ZtObject:
 		obj, ok := v.Value().(*phpobj.ZObject)
 		if !ok {
-			return nil, fmt.Errorf("ResolveCallable: object is not a *ZObject")
+			return nil, nil, fmt.Errorf("ResolveCallable: object is not a *ZObject")
 		}
 		if h := obj.GetClass().Handlers(); h != nil && h.HandleInvoke != nil {
 			// Closure / invokable: extract the underlying ZClosure.
 			if op := obj.GetOpaque(Closure); op != nil {
 				if zc, ok := op.(phpv.Callable); ok {
-					return zc, nil
+					// Closures carry their bound $this; expose it
+					// through GetThis if available.
+					if g, ok := zc.(interface{ GetThis() phpv.ZObject }); ok {
+						return zc, g.GetThis(), nil
+					}
+					return zc, nil, nil
 				}
 			}
 		}
 		// Fallback: treat as object with __invoke method.
 		if m, ok := obj.GetClass().GetMethod("__invoke"); ok {
-			return m.Method, nil
+			return m.Method, obj, nil
 		}
-		return nil, phpobj.ThrowError(ctx, phpobj.Error,
+		return nil, nil, phpobj.ThrowError(ctx, phpobj.Error,
 			fmt.Sprintf("Object of type %s is not callable", obj.GetClass().GetName()))
 	case phpv.ZtString:
 		name := v.Value().(phpv.ZString)
 		f, err := ctx.Global().GetFunction(ctx, name)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		return f, nil
+		return f, nil, nil
 	case phpv.ZtArray:
 		// [object|className, methodName]
 		arr := v.AsArray(ctx)
 		recv, _ := arr.OffsetGet(ctx, phpv.ZInt(0))
 		methodVal, _ := arr.OffsetGet(ctx, phpv.ZInt(1))
 		if recv == nil || methodVal == nil {
-			return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "Array callable expects [object|class, method]")
+			return nil, nil, phpobj.ThrowError(ctx, phpobj.TypeError, "Array callable expects [object|class, method]")
 		}
 		methodName := methodVal.AsString(ctx)
 		switch recv.GetType() {
 		case phpv.ZtObject:
 			obj, ok := recv.Value().(*phpobj.ZObject)
 			if !ok {
-				return nil, fmt.Errorf("ResolveCallable: array receiver is not *ZObject")
+				return nil, nil, fmt.Errorf("ResolveCallable: array receiver is not *ZObject")
 			}
 			m, ok := obj.GetClass().GetMethod(methodName)
 			if !ok {
-				return nil, phpobj.ThrowError(ctx, phpobj.Error,
+				return nil, nil, phpobj.ThrowError(ctx, phpobj.Error,
 					fmt.Sprintf("Call to undefined method %s::%s()", obj.GetClass().GetName(), methodName))
 			}
-			return m.Method, nil
+			return m.Method, obj, nil
 		case phpv.ZtString:
 			className := recv.AsString(ctx)
 			class, err := ctx.Global().GetClass(ctx, className, false)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			m, ok := class.GetMethod(methodName)
 			if !ok {
-				return nil, phpobj.ThrowError(ctx, phpobj.Error,
+				return nil, nil, phpobj.ThrowError(ctx, phpobj.Error,
 					fmt.Sprintf("Call to undefined method %s::%s()", className, methodName))
 			}
-			return m.Method, nil
+			return m.Method, nil, nil
 		}
-		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "Array callable receiver must be object or class name")
+		return nil, nil, phpobj.ThrowError(ctx, phpobj.TypeError, "Array callable receiver must be object or class name")
 	default:
-		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+		return nil, nil, phpobj.ThrowError(ctx, phpobj.TypeError,
 			fmt.Sprintf("Value of type %s is not callable", v.GetType().TypeName()))
 	}
 }
