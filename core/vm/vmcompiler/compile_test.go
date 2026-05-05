@@ -230,6 +230,26 @@ func TestBreakContinue(t *testing.T) {
 	}
 }
 
+func TestInlineClosures(t *testing.T) {
+	cases := []string{
+		// Anonymous closure called immediately
+		`$f = function() { return 42; }; return $f();`,
+		// Closure with arg
+		`$f = function($x) { return $x * 2; }; return $f(21);`,
+		// Closure captures by value
+		`$x = 7; $f = function() use ($x) { return $x + 1; }; $x = 100; return $f();`,
+		// Arrow function (auto-capture by value)
+		`$x = 5; $f = fn($y) => $x + $y; return $f(10);`,
+		// Closure passed to array_map
+		`$arr = [1, 2, 3]; $sq = array_map(function($v) { return $v * $v; }, $arr); return $sq[0] + $sq[1] + $sq[2];`,
+		// Nested closure
+		`$outer = function($x) { return function($y) use ($x) { return $x + $y; }; }; $f = $outer(10); return $f(5);`,
+	}
+	for _, c := range cases {
+		t.Run(c, func(t *testing.T) { compareReturns(t, c) })
+	}
+}
+
 func TestStringInterpolation(t *testing.T) {
 	cases := []string{
 		// simple variable interpolation

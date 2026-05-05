@@ -380,6 +380,26 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 			}
 			// callUser pops argc and pushes 1 result.
 
+		case OpCallIndirect:
+			argc := int(ins.B())
+			args := make([]*phpv.ZVal, argc)
+			for i := argc - 1; i >= 0; i-- {
+				args[i] = f.pop()
+			}
+			callable := f.pop()
+			c, err := compiler.ResolveCallable(ctx, callable)
+			if err != nil {
+				return nil, false, err
+			}
+			res, err := ctx.CallZVal(ctx, c, args, nil)
+			if err != nil {
+				return nil, false, err
+			}
+			if res == nil {
+				res = phpv.ZNULL.ZVal()
+			}
+			f.push(res)
+
 		// --- return --------------------------------------------------
 		case OpRet:
 			return f.pop(), true, nil
@@ -436,6 +456,18 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 		case OpThrow:
 			v := f.pop()
 			return nil, false, phpobj.ThrowObject(ctx, v)
+
+		// --- closures ------------------------------------------------
+		case OpMakeClosure:
+			r := f.fn.SubClosures[ins.A()]
+			res, err := r.Run(ctx)
+			if err != nil {
+				return nil, false, err
+			}
+			if res == nil {
+				res = phpv.ZNULL.ZVal()
+			}
+			f.push(res)
 
 		// --- objects -------------------------------------------------
 		case OpNewObject:

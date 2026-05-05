@@ -75,6 +75,18 @@ func IsVMCompiled(c phpv.Callable) bool {
 // statements — a small loss until we wire up the warning natively.
 func (r *runNoDiscardStatement) NoDiscardInner() phpv.Runnable { return r.inner }
 
+// --- ZClosure as expression -------------------------------------------
+
+// IsClosureNode reports whether r is a *ZClosure (an inline closure
+// or named-function-declaration AST node). When the VM emitter sees
+// this it emits an OpMakeClosure that runs ZClosure.Run — that handles
+// both registration of named functions AND `dup + capture + Spawn`
+// for anonymous closures.
+func IsClosureNode(r phpv.Runnable) bool {
+	_, ok := r.(*ZClosure)
+	return ok
+}
+
 // --- runConcat (string interpolation) ---------------------------------
 
 // ConcatParts returns the list of expressions concatenated to form
@@ -186,6 +198,18 @@ func (r *runObjectFunc) ObjectFuncIsStatic() bool { return r.static }
 
 // ObjectFuncIsNullSafe reports nullsafe chain status.
 func (r *runObjectFunc) ObjectFuncIsNullSafe() bool { return r.nullsafe || r.nullChain }
+
+// --- runnableFunctionCallRef ($f(...) where $f is a variable) --------
+
+// FuncCallRefExpr returns the expression evaluated to obtain the
+// callable. Common case: a runVariable.
+func (r *runnableFunctionCallRef) FuncCallRefExpr() phpv.Runnable { return r.name }
+
+// FuncCallRefArgs returns the argument expressions.
+func (r *runnableFunctionCallRef) FuncCallRefArgs() []phpv.Runnable { return r.args }
+
+// FuncCallRefLoc returns the source location.
+func (r *runnableFunctionCallRef) FuncCallRefLoc() *phpv.Loc { return r.l }
 
 // --- runnableFunctionCall ---------------------------------------------
 

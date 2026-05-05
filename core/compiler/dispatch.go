@@ -9,6 +9,82 @@ import (
 	"github.com/KarpelesLab/goro/core/tokenizer"
 )
 
+// ResolveCallable converts a runtime value to a phpv.Callable suitable
+// for ctx.CallZVal. Handles:
+//   - ZObject with __invoke handler (closures, invokable classes)
+//   - ZString (function name)
+//   - ZArray of [object, method] or [class, method]
+//
+// Returns nil + error otherwise.
+func ResolveCallable(ctx phpv.Context, v *phpv.ZVal) (phpv.Callable, error) {
+	switch v.GetType() {
+	case phpv.ZtObject:
+		obj, ok := v.Value().(*phpobj.ZObject)
+		if !ok {
+			return nil, fmt.Errorf("ResolveCallable: object is not a *ZObject")
+		}
+		if h := obj.GetClass().Handlers(); h != nil && h.HandleInvoke != nil {
+			// Closure / invokable: extract the underlying ZClosure.
+			if op := obj.GetOpaque(Closure); op != nil {
+				if zc, ok := op.(phpv.Callable); ok {
+					return zc, nil
+				}
+			}
+		}
+		// Fallback: treat as object with __invoke method.
+		if m, ok := obj.GetClass().GetMethod("__invoke"); ok {
+			return m.Method, nil
+		}
+		return nil, phpobj.ThrowError(ctx, phpobj.Error,
+			fmt.Sprintf("Object of type %s is not callable", obj.GetClass().GetName()))
+	case phpv.ZtString:
+		name := v.Value().(phpv.ZString)
+		f, err := ctx.Global().GetFunction(ctx, name)
+		if err != nil {
+			return nil, err
+		}
+		return f, nil
+	case phpv.ZtArray:
+		// [object|className, methodName]
+		arr := v.AsArray(ctx)
+		recv, _ := arr.OffsetGet(ctx, phpv.ZInt(0))
+		methodVal, _ := arr.OffsetGet(ctx, phpv.ZInt(1))
+		if recv == nil || methodVal == nil {
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "Array callable expects [object|class, method]")
+		}
+		methodName := methodVal.AsString(ctx)
+		switch recv.GetType() {
+		case phpv.ZtObject:
+			obj, ok := recv.Value().(*phpobj.ZObject)
+			if !ok {
+				return nil, fmt.Errorf("ResolveCallable: array receiver is not *ZObject")
+			}
+			m, ok := obj.GetClass().GetMethod(methodName)
+			if !ok {
+				return nil, phpobj.ThrowError(ctx, phpobj.Error,
+					fmt.Sprintf("Call to undefined method %s::%s()", obj.GetClass().GetName(), methodName))
+			}
+			return m.Method, nil
+		case phpv.ZtString:
+			className := recv.AsString(ctx)
+			class, err := ctx.Global().GetClass(ctx, className, false)
+			if err != nil {
+				return nil, err
+			}
+			m, ok := class.GetMethod(methodName)
+			if !ok {
+				return nil, phpobj.ThrowError(ctx, phpobj.Error,
+					fmt.Sprintf("Call to undefined method %s::%s()", className, methodName))
+			}
+			return m.Method, nil
+		}
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "Array callable receiver must be object or class name")
+	default:
+		return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+			fmt.Sprintf("Value of type %s is not callable", v.GetType().TypeName()))
+	}
+}
+
 // IsSlotSafe reports whether the function body in r is safe for the
 // VM's slot-only optimization — i.e. local writes can skip mirroring
 // to the FuncContext hashtable.
@@ -44,8 +120,30 @@ func IsSlotSafe(r phpv.Runnable) bool {
 	case *runGlobal:
 		return false
 	case *ZClosure:
-		// Top-level function/method declaration.
-		return false
+		// A *named* ZClosure at expression level is a function
+		// declaration that registers a global symbol; functions
+		// declared like that may use `global $x` to bind to the
+		// surrounding scope's locals, so the surrounding scope can't
+		// be slot-only. Anonymous closures (name == "") only produce
+		// a value and don't expose the surrounding locals to other
+		// callers, so they're safe.
+		if n.name != "" {
+			return false
+		}
+		// For anonymous closures, any `use` capture means the
+		// surrounding function's locals must be visible via the
+		// FuncContext hashtable at closure-creation time (the AST
+		// uses ctx.OffsetCheck / ctx.OffsetGet to fetch them).
+		// SlotOnly skips the hashtable mirror, so the captures
+		// would silently be null. Mark the surrounding scope unsafe
+		// when the closure has any use captures (by-ref or by-value).
+		if len(n.use) > 0 {
+			return false
+		}
+		// Body is checked separately when the closure itself is VM-
+		// compiled. From the surrounding function's perspective, the
+		// closure body is an opaque value. Stop recursing.
+		return true
 	}
 	for _, c := range GetChildren(r) {
 		if !IsSlotSafe(c) {

@@ -73,8 +73,9 @@ const (
 	// (CALL opcodes are reserved here so emitter constants don't shift
 	// when they're implemented; the dispatcher returns ErrUnknownOp until
 	// then so accidental emission fails loudly.)
-	OpCallUser   // A = const-pool ZString name, B = argc
-	OpCallDirect // A = SubFns[A], B = argc
+	OpCallUser     // A = const-pool ZString name, B = argc
+	OpCallDirect   // A = SubFns[A], B = argc
+	OpCallIndirect // B = argc; pops argc args + callable from stack
 	OpRet        // pop, exit frame with value
 	OpRetNull    // exit frame with null
 
@@ -111,6 +112,14 @@ const (
 	// --- exceptions ------------------------------------------------------
 	// OP_THROW pops the value and throws it via phpobj.ThrowObject.
 	OpThrow
+
+	// --- closures --------------------------------------------------------
+	// OP_MAKE_CLOSURE runs the *ZClosure template at SubClosures[A] via
+	// its AST Run() method (which handles dup + capture + Spawn for
+	// inline closures, and RegisterFunction for named declarations) and
+	// pushes the result onto the stack. Statement-context emitters
+	// follow with an OP_POP to discard the value.
+	OpMakeClosure
 
 	// --- objects ---------------------------------------------------------
 	// OP_NEW_OBJECT pops B args, looks up class by Consts[A] (a ZString),
@@ -215,6 +224,7 @@ var opNames = [...]string{
 	OpJmpIfNotNullPeek: "JMP_IF_NOT_NULL_PEEK",
 	OpCallUser:        "CALL_USER",
 	OpCallDirect:      "CALL_DIRECT",
+	OpCallIndirect:    "CALL_INDIRECT",
 	OpRet:              "RET",
 	OpRetNull:          "RET_NULL",
 	OpNewArray:         "NEW_ARRAY",
@@ -224,6 +234,7 @@ var opNames = [...]string{
 	OpArraySetLocal:    "ARRAY_SET_LOCAL",
 	OpArrayAppendLocal: "ARRAY_APPEND_LOCAL",
 	OpThrow:            "THROW",
+	OpMakeClosure:      "MAKE_CLOSURE",
 	OpNewObject:        "NEW_OBJECT",
 	OpObjectGet:        "OBJECT_GET",
 	OpObjectSet:        "OBJECT_SET",

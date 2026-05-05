@@ -16,6 +16,7 @@ type emitter struct {
 	localMap map[phpv.ZString]uint16
 
 	subFns      []*vm.Function
+	subClosures []phpv.Runnable
 	tryHandlers []vm.TryHandler
 
 	locs []vm.LocEntry
@@ -85,6 +86,15 @@ func (e *emitter) constIndex(v phpv.Val) uint16 {
 	return idx
 }
 
+// closureIndex registers a *ZClosure-shaped Runnable in the SubClosures
+// table and returns its index. No deduplication — each call site gets
+// its own slot so we don't mix per-invocation captures.
+func (e *emitter) closureIndex(r phpv.Runnable) uint16 {
+	idx := uint16(len(e.subClosures))
+	e.subClosures = append(e.subClosures, r)
+	return idx
+}
+
 // localIndex returns the local-table index for the named variable,
 // adding it on first use.
 func (e *emitter) localIndex(name phpv.ZString) uint16 {
@@ -146,6 +156,7 @@ func (e *emitter) finish(name phpv.ZString, numParams int) *vm.Function {
 		CachedZ:     cached,
 		Locals:      e.locals,
 		SubFns:      e.subFns,
+		SubClosures: e.subClosures,
 		LocsSparse:  e.locs,
 		TryHandlers: e.tryHandlers,
 		NumParams:   numParams,

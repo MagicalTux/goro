@@ -13,6 +13,15 @@ type funcCallNode interface {
 	FuncCallLoc() *phpv.Loc
 }
 
+// funcCallRefNode matches *compiler.runnableFunctionCallRef — calls
+// where the callable comes from an expression ($f() with $f a
+// variable, or $obj->method() chained from a result).
+type funcCallRefNode interface {
+	FuncCallRefExpr() phpv.Runnable
+	FuncCallRefArgs() []phpv.Runnable
+	FuncCallRefLoc() *phpv.Loc
+}
+
 func (e *emitter) emitFunctionCall(n funcCallNode) error {
 	name := n.FuncCallName()
 	if name == "" {
@@ -64,6 +73,45 @@ func (e *emitter) emitFunctionCall(n funcCallNode) error {
 	}
 
 	// In statement context the result isn't used; drop it.
+	if e.stmtCtx {
+		e.emit(vm.OpPop, 0, 0, 0)
+		e.popStack(1)
+	}
+	return nil
+}
+
+// emitFunctionCallRef lowers `$expr(args…)` calls. The expression is
+// evaluated and the resulting value is resolved as a callable at
+// runtime via compiler.ResolveCallable.
+func (e *emitter) emitFunctionCallRef(n funcCallRefNode) error {
+	args := n.FuncCallRefArgs()
+	if len(args) > 0xFFFF {
+		return unsupportedf("indirect call with too many args")
+	}
+	for _, a := range args {
+		if _, ok := a.(phpv.NamedArgument); ok {
+			return unsupportedf("named argument in indirect call")
+		}
+		if _, ok := a.(phpv.SpreadArgument); ok {
+			return unsupportedf("spread argument in indirect call")
+		}
+	}
+
+	// Push callable, then args.
+	if err := e.withSubexpr(func() error { return e.emitExpr(n.FuncCallRefExpr()) }); err != nil {
+		return err
+	}
+	for _, a := range args {
+		if err := e.withSubexpr(func() error { return e.emitExpr(a) }); err != nil {
+			return err
+		}
+	}
+	e.emit(vm.OpCallIndirect, 0, uint16(len(args)), 0)
+	// Pops 1 callable + argc args; pushes 1 result. Net delta: -argc.
+	if len(args) > 0 {
+		e.popStack(len(args))
+	}
+
 	if e.stmtCtx {
 		e.emit(vm.OpPop, 0, 0, 0)
 		e.popStack(1)

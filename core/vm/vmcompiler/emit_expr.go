@@ -1,6 +1,7 @@
 package vmcompiler
 
 import (
+	"github.com/KarpelesLab/goro/core/compiler"
 	"github.com/KarpelesLab/goro/core/phpv"
 	"github.com/KarpelesLab/goro/core/tokenizer"
 	"github.com/KarpelesLab/goro/core/vm"
@@ -51,6 +52,16 @@ func (e *emitter) emitExpr(node phpv.Runnable) error {
 		return nil
 	}
 
+	if compiler.IsClosureNode(node) {
+		// *ZClosure as expression: emit OP_MAKE_CLOSURE which runs
+		// the AST node's Run method (it does dup + capture + Spawn
+		// for inline closures, RegisterFunction for named ones).
+		idx := e.closureIndex(node)
+		e.emit(vm.OpMakeClosure, idx, 0, 0)
+		e.pushStack(1)
+		return nil
+	}
+
 	switch n := node.(type) {
 	case literalNode:
 		return e.emitLiteral(n)
@@ -62,6 +73,8 @@ func (e *emitter) emitExpr(node phpv.Runnable) error {
 		return e.emitOperator(n)
 	case funcCallNode:
 		return e.emitFunctionCall(n)
+	case funcCallRefNode:
+		return e.emitFunctionCallRef(n)
 	case arrayLiteralNode:
 		return e.emitArrayLiteral(n)
 	case arrayAccessNode:
