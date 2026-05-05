@@ -17,6 +17,7 @@ type emitter struct {
 
 	subFns      []*vm.Function
 	subClosures []phpv.Runnable
+	subASTs     []phpv.Runnable
 	tryHandlers []vm.TryHandler
 
 	locs []vm.LocEntry
@@ -95,6 +96,15 @@ func (e *emitter) closureIndex(r phpv.Runnable) uint16 {
 	return idx
 }
 
+// astIndex registers an arbitrary AST Runnable in the SubASTs table.
+// Used by opcodes that delegate evaluation to the AST runner for
+// nodes too intricate to lower piecewise (class const, …).
+func (e *emitter) astIndex(r phpv.Runnable) uint16 {
+	idx := uint16(len(e.subASTs))
+	e.subASTs = append(e.subASTs, r)
+	return idx
+}
+
 // localIndex returns the local-table index for the named variable,
 // adding it on first use.
 func (e *emitter) localIndex(name phpv.ZString) uint16 {
@@ -157,6 +167,7 @@ func (e *emitter) finish(name phpv.ZString, numParams int) *vm.Function {
 		Locals:      e.locals,
 		SubFns:      e.subFns,
 		SubClosures: e.subClosures,
+		SubASTs:     e.subASTs,
 		LocsSparse:  e.locs,
 		TryHandlers: e.tryHandlers,
 		NumParams:   numParams,

@@ -121,6 +121,14 @@ const (
 	// follow with an OP_POP to discard the value.
 	OpMakeClosure
 
+	// OP_CLASS_CONST runs the embedded *runClassDynConst at SubASTs[A]
+	// and pushes the resolved class constant value. We delegate to the
+	// AST runner because constant resolution involves CompileDelayed
+	// expressions, visibility checks, interface/parent walking, and
+	// late-static-binding nuances that are intricate to lower
+	// piecewise.
+	OpClassConst
+
 	// --- objects ---------------------------------------------------------
 	// OP_NEW_OBJECT pops B args, looks up class by Consts[A] (a ZString),
 	// instantiates via phpobj.NewZObject (which handles abstract/interface/
@@ -235,6 +243,7 @@ var opNames = [...]string{
 	OpArrayAppendLocal: "ARRAY_APPEND_LOCAL",
 	OpThrow:            "THROW",
 	OpMakeClosure:      "MAKE_CLOSURE",
+	OpClassConst:       "CLASS_CONST",
 	OpNewObject:        "NEW_OBJECT",
 	OpObjectGet:        "OBJECT_GET",
 	OpObjectSet:        "OBJECT_SET",

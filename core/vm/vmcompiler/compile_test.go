@@ -230,6 +230,28 @@ func TestBreakContinue(t *testing.T) {
 	}
 }
 
+func TestClassConst(t *testing.T) {
+	classDecl := `
+		class Color {
+			const RED = '#f00';
+			const GREEN = '#0f0';
+			const BLUE = '#00f';
+			const ALL = [self::RED, self::GREEN, self::BLUE];
+		}
+	`
+	cases := []string{
+		`return Color::RED;`,
+		`return Color::RED . '/' . Color::GREEN;`,
+		// self-referential const (CompileDelayed)
+		`$arr = Color::ALL; return $arr[0] . $arr[1] . $arr[2];`,
+		// ::class
+		`return Color::class;`,
+	}
+	for _, c := range cases {
+		t.Run(c, func(t *testing.T) { compareReturns(t, c, classDecl) })
+	}
+}
+
 func TestInlineClosures(t *testing.T) {
 	cases := []string{
 		// Anonymous closure called immediately

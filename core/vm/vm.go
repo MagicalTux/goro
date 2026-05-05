@@ -474,6 +474,17 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 			}
 			f.push(res)
 
+		case OpClassConst:
+			r := f.fn.SubASTs[ins.A()]
+			res, err := r.Run(ctx)
+			if err != nil {
+				return nil, false, err
+			}
+			if res == nil {
+				res = phpv.ZNULL.ZVal()
+			}
+			f.push(res)
+
 		// --- objects -------------------------------------------------
 		case OpNewObject:
 			argc := int(ins.B())

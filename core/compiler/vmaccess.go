@@ -75,6 +75,28 @@ func IsVMCompiled(c phpv.Callable) bool {
 // statements — a small loss until we wire up the warning natively.
 func (r *runNoDiscardStatement) NoDiscardInner() phpv.Runnable { return r.inner }
 
+// --- runClassDynConst / runClassStaticObjRef / runClassStaticVarRef --
+
+// IsClassConstNode reports whether r is one of the AST nodes for
+// class-level constant / static-property / static-method-name access:
+// `Foo::CONST`, `Foo::{$expr}`, `Foo::$bar`, `self::method`, etc.
+// Visibility, interface/parent walking, CompileDelayed resolution and
+// late-static-binding all live in the AST runners; the VM delegates
+// via OP_CLASS_CONST.
+func IsClassConstNode(r phpv.Runnable) bool {
+	switch r.(type) {
+	case *runClassDynConst:
+		return true
+	case *runClassStaticObjRef:
+		return true
+	case *runClassStaticVarRef:
+		return true
+	case *runClassNameOf:
+		return true
+	}
+	return false
+}
+
 // --- ZClosure as expression -------------------------------------------
 
 // IsClosureNode reports whether r is a *ZClosure (an inline closure

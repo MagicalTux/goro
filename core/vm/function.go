@@ -23,6 +23,7 @@ type Function struct {
 	Locals      []phpv.ZString
 	SubFns      []*Function     // direct-call targets (resolved at emit time)
 	SubClosures []phpv.Runnable // *ZClosure templates referenced by OP_MAKE_CLOSURE
+	SubASTs     []phpv.Runnable // delegated AST nodes (class const, static, …)
 	LocsSparse  []LocEntry      // sorted by PC
 	TryHandlers []TryHandler
 	NumParams   int

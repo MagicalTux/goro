@@ -61,6 +61,14 @@ func (e *emitter) emitExpr(node phpv.Runnable) error {
 		e.pushStack(1)
 		return nil
 	}
+	if compiler.IsClassConstNode(node) {
+		// Foo::CONST, Foo::$bar, Foo::class, self::… — delegate to
+		// the AST runner.
+		idx := e.astIndex(node)
+		e.emit(vm.OpClassConst, idx, 0, 0)
+		e.pushStack(1)
+		return nil
+	}
 
 	switch n := node.(type) {
 	case literalNode:
