@@ -119,8 +119,8 @@ The VM emitter currently handles:
 - `if` / `elseif` / `else`, `while`, `for`, `foreach` (value form,
   array + object iteration), `break` / `continue` (single level),
   `return`, `throw`, `try` / `catch` (multi-type union, multi-clause,
-  destructor-during-catch-bind chained correctly). `finally` falls
-  back.
+  destructor-during-catch-bind chained correctly), `try`/`finally`
+  (delegated to the AST runner so finally runs on every exit path).
 - String interpolation (`"hello $name"`, `"v={$x}"`) lowered to a
   chain of `OP_CONCAT`.
 - Array literals (`[…]`, including keyed `k => v`); `$a[$k]` read;
@@ -129,23 +129,29 @@ The VM emitter currently handles:
 - Object instantiation (`new Cls(args…)`), property read
   (`$obj->prop`), method call (`$obj->m(args…)`) with full PHP
   visibility checks (private/protected) and `__call` fallback.
-  `$this` outside object context throws the correct Error.
+  `$this` outside object context throws the correct Error. Class
+  const / static prop / `Foo::class` (`Foo::CONST`, `self::method`,
+  `Foo::$bar`, `Foo::class`) are AST-delegated for full
+  CompileDelayed / visibility / LSB semantics.
 - Builtin and user-defined function calls (positional args). Calls to
   by-ref builtins (`end`, `sort`, `array_walk`, `array_push`, …)
   fall back to AST so the by-ref binding works.
+- Inline closures (`function() { … }`, `fn() => …`) with use captures,
+  `$this` binding, and arrow auto-capture. Indirect calls (`$f()`,
+  `[$obj, 'method']()`) resolve the callable at runtime via
+  `compiler.ResolveCallable` and forward the implicit `$this`.
 
 Out of scope (falls back to AST per-function via ErrUnsupported):
 
-- `finally` blocks (try/catch alone work natively).
-- By-ref returns and by-ref parameters (the VM passes pre-evaluated
-  ZVals; the AST passes Runnables and binds `Writable`s).
+- By-ref returns and by-ref parameters on user-defined functions
+  (the VM passes pre-evaluated ZVals; the AST passes Runnables and
+  binds `Writable`s).
 - Generators (`yield`).
-- `$obj->prop = v` (deferred until a public WriteValue helper exists).
-- Static-property and class-constant access (`Foo::$bar`, `Foo::CONST`).
+- `$obj->prop = v` and other property writes (deferred until a public
+  WriteValue helper exists).
 - Nullsafe chains (`$obj?->...`).
 - Spread (`...$arr`) and named arguments.
-- Dynamic names (`$$x`, `$obj->{$x}`, `$f()` with $f a variable,
-  `new $cls()`).
+- Dynamic names (`$$x`, `$obj->{$x}`, `new $cls()`).
 - Multi-level `break N` / `continue N`.
 - Type-hinted return values (the AST coerces; the VM doesn't yet).
 - User-defined constants (PHP_INT_MAX, MYAPP_FOO, …).
@@ -161,11 +167,11 @@ Bench wins (vs. AST baseline, per-iter):
 
 | Benchmark | AST | VM | Δ |
 |---|---|---|---|
-| Arithmetic | 54M ns | 28M ns | **-48%** |
-| StringConcat | 14M ns | 11M ns | -22% |
-| Fibonacci | 26M ns | 21M ns | -20% |
-| ArrayOps | 11M ns | 10M ns | -12% |
-| FunctionCalls | 18M ns | 19M ns | +6% |
+| Arithmetic | 58M ns | 27M ns | **-54%** |
+| ArrayOps | 11M ns | 8M ns | -27% |
+| Fibonacci | 26M ns | 21M ns | -19% |
+| StringConcat | 13M ns | 11M ns | -18% |
+| FunctionCalls | 18M ns | 15M ns | -14% |
 
 Larger gains require either an unboxed value type, slot-only writes
 (skipping the hashtable mirror) for slot-safe functions, or
