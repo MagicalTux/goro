@@ -327,6 +327,20 @@ func TestShortCircuit(t *testing.T) {
 // runs a script that defines a VM-compiled function that throws,
 // then catches the exception in an AST-evaluated try/catch wrapper.
 
+func TestTryFinally(t *testing.T) {
+	cases := []string{
+		// finally runs after normal completion
+		"$s = ''; try { $s .= 'try'; } finally { $s .= '/fin'; } return $s;",
+		// finally runs after caught exception
+		"$s = ''; try { throw new Exception('e'); } catch (Exception $e) { $s .= 'caught'; } finally { $s .= '/fin'; } return $s;",
+		// finally runs after return
+		"function vm_tf_a() { try { return 'try'; } finally { /* runs */ } } return vm_tf_a();",
+	}
+	for _, c := range cases {
+		t.Run(c, func(t *testing.T) { compareReturns(t, c) })
+	}
+}
+
 func TestTryCatch(t *testing.T) {
 	cases := []string{
 		// no exception thrown

@@ -129,6 +129,13 @@ func IsSlotSafe(r phpv.Runnable) bool {
 		return false
 	case *runGlobal:
 		return false
+	case *runnableTry:
+		// try with finally is AST-delegated by the emitter; the
+		// delegation does ctx.OffsetGet / OffsetSet for locals, which
+		// would silently see stale state under slot-only.
+		if n.finally != nil {
+			return false
+		}
 	case *ZClosure:
 		// A *named* ZClosure at expression level is a function
 		// declaration that registers a global symbol; functions

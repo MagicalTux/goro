@@ -37,6 +37,20 @@ type Frame struct {
 	locals []*phpv.ZVal
 }
 
+// refreshSlots re-reads each local from the FuncContext hashtable
+// into the slot cache. Called after AST delegation (e.g. OP_TRY_FINALLY,
+// OP_CLASS_CONST when CompileDelayed runs) so any locals the AST
+// modified via ctx.OffsetSet are picked up by subsequent slot reads.
+func (f *Frame) refreshSlots(ctx phpv.Context) {
+	for i, name := range f.fn.Locals {
+		if v, exists, _ := ctx.OffsetCheck(ctx, name); exists && v != nil {
+			f.locals[i] = v
+		} else {
+			f.locals[i] = nil
+		}
+	}
+}
+
 // storeLocal writes v into both the slot cache and the FuncContext
 // hashtable (the latter is skipped when fn.SlotOnly is set).
 //

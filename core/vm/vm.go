@@ -485,6 +485,16 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 			}
 			f.push(res)
 
+		case OpTryFinally:
+			r := f.fn.SubASTs[ins.A()]
+			if _, err := r.Run(ctx); err != nil {
+				return nil, false, err
+			}
+			// AST delegation may have written locals through the
+			// FuncContext hashtable. Resync the slot cache so
+			// subsequent OP_LOAD_LOCAL reads see the new values.
+			f.refreshSlots(ctx)
+
 		// --- objects -------------------------------------------------
 		case OpNewObject:
 			argc := int(ins.B())

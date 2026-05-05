@@ -128,6 +128,12 @@ const (
 	// late-static-binding nuances that are intricate to lower
 	// piecewise.
 	OpClassConst
+	// OP_TRY_FINALLY runs the embedded *runnableTry at SubASTs[A] and
+	// pops/discards its (always-null) return value. Delegating the
+	// whole try lets the AST orchestrate finally on every exit path
+	// (normal completion, caught exception, uncaught exception,
+	// return/break/continue inside the try body).
+	OpTryFinally
 
 	// --- objects ---------------------------------------------------------
 	// OP_NEW_OBJECT pops B args, looks up class by Consts[A] (a ZString),
@@ -244,6 +250,7 @@ var opNames = [...]string{
 	OpThrow:            "THROW",
 	OpMakeClosure:      "MAKE_CLOSURE",
 	OpClassConst:       "CLASS_CONST",
+	OpTryFinally:       "TRY_FINALLY",
 	OpNewObject:        "NEW_OBJECT",
 	OpObjectGet:        "OBJECT_GET",
 	OpObjectSet:        "OBJECT_SET",

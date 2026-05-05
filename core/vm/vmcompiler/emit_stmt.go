@@ -96,6 +96,17 @@ func (e *emitter) emitStmt(node phpv.Runnable) error {
 	case throwNode:
 		return e.emitThrow(n)
 	case compiler.TryNode:
+		// try with finally is delegated wholesale to the AST runner —
+		// the AST handles the intricate dance of running finally on
+		// every exit path (normal completion, caught exception,
+		// uncaught exception, return/break/continue out of the try).
+		// Replicating that bytecode-natively would be a large amount
+		// of code for a niche feature.
+		if n.TryFinally() != nil {
+			idx := e.astIndex(node)
+			e.emit(vm.OpTryFinally, idx, 0, 0)
+			return nil
+		}
 		return e.emitTry(n)
 	case *phperr.PhpBreak:
 		return e.emitBreak(n)
