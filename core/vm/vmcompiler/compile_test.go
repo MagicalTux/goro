@@ -411,6 +411,27 @@ func TestPropertyWrite(t *testing.T) {
 	}
 }
 
+func TestForeachByRef(t *testing.T) {
+	classDecl := `
+		class Bag {
+			public $cur = 0;
+		}
+	`
+	cases := []string{
+		// foreach by reference mutates source
+		"$a = [1,2,3]; foreach ($a as &$v) { $v *= 10; } return array_sum($a);",
+		// foreach by ref with key
+		"$a = ['x'=>1,'y'=>2]; foreach ($a as $k => &$v) { $v += 100; } return $a['x'] + $a['y'];",
+		// non-local value target: object property
+		"$b = new Bag(); $sum = 0; foreach ([10,20,30] as $b->cur) { $sum += $b->cur; } return $sum;",
+		// non-local key target: object property as key
+		"$b = new Bag(); $vs = 0; foreach (['a','b','c'] as $b->cur => $v) { $vs += $b->cur; } return $vs;",
+	}
+	for _, c := range cases {
+		t.Run(c, func(t *testing.T) { compareReturns(t, c, classDecl) })
+	}
+}
+
 func TestMultiLevelBreakContinue(t *testing.T) {
 	cases := []string{
 		// break 2 exits both loops
@@ -534,11 +555,10 @@ func TestArrays(t *testing.T) {
 }
 
 func TestUnsupportedNodeFallsBack(t *testing.T) {
-	// Foreach by reference isn't lowered piecewise — the emitter
-	// should report ErrUnsupported so the function-level fallback
-	// restores the AST.
+	// unset() isn't lowered piecewise — the emitter should report
+	// ErrUnsupported so the function-level fallback restores the AST.
 	g := newGlobal(t)
-	r := compileSnippet(t, g, "$a = [1,2,3]; foreach ($a as &$v) { $v *= 2; } return array_sum($a);")
+	r := compileSnippet(t, g, "$a = 1; unset($a); return isset($a) ? 1 : 0;")
 	_, err := vmcompiler.Compile("<test>", &phpv.Loc{Filename: "<test>"}, r, g)
 	if err == nil {
 		t.Fatalf("expected ErrUnsupported, got nil")

@@ -294,24 +294,35 @@ func (e *emitter) emitFor(n forNode) error {
 	return nil
 }
 
+// isSimpleLocal returns true when r is a bare local variable node
+// (the only foreach target shape the native foreach opcodes handle).
+func isSimpleLocal(r phpv.Runnable) bool {
+	_, ok := r.(variableNode)
+	return ok
+}
+
 func (e *emitter) emitForeach(n foreachNode) error {
-	if n.ForeachIsRef() {
-		return unsupportedf("foreach by reference (&$v)")
+	// foreach-by-ref (`foreach($arr as &$v)`) and non-local targets
+	// (`foreach($arr as $obj->prop => $val)`, list destructure, etc.)
+	// are AST-delegated — the surrounding scope's body is flagged
+	// slot-unsafe by IsSlotSafe so the hashtable stays authoritative
+	// while the AST runs the loop.
+	if n.ForeachIsRef() || !isSimpleLocal(n.ForeachValue()) || (n.ForeachKey() != nil && !isSimpleLocal(n.ForeachKey())) {
+		raw, ok := any(n).(phpv.Runnable)
+		if !ok {
+			return unsupportedf("foreach delegation: cannot retrieve raw Runnable")
+		}
+		idx := e.astIndex(raw)
+		e.emit(vm.OpTryFinally, idx, 0, 0)
+		e.emit(vm.OpRefreshSlots, 0, 0, 0)
+		return nil
 	}
-	// Loop variable must be a simple local. Anything else (array
-	// element, object property, list destructure) falls back.
-	valNode, ok := n.ForeachValue().(variableNode)
-	if !ok {
-		return unsupportedf("foreach value target %T (only $local supported)", n.ForeachValue())
-	}
+	valNode := n.ForeachValue().(variableNode)
 	valIdx := e.localIndex(valNode.VariableName())
 
 	keyIdx := uint16(0xFFFF)
 	if k := n.ForeachKey(); k != nil {
-		kn, ok := k.(variableNode)
-		if !ok {
-			return unsupportedf("foreach key target %T (only $local supported)", k)
-		}
+		kn := k.(variableNode)
 		keyIdx = e.localIndex(kn.VariableName())
 	}
 

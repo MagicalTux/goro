@@ -171,6 +171,21 @@ func IsSlotSafe(r phpv.Runnable) bool {
 				return false
 			}
 		}
+	case *runnableForeach:
+		// foreach-by-ref or with non-simple-local key/value targets
+		// is AST-delegated; the loop body reads caller locals via
+		// the hashtable.
+		if n.ref {
+			return false
+		}
+		if _, ok := n.v.(*runVariable); !ok {
+			return false
+		}
+		if n.k != nil {
+			if _, ok := n.k.(*runVariable); !ok {
+				return false
+			}
+		}
 	case *ZClosure:
 		// A *named* ZClosure at expression level is a function
 		// declaration that registers a global symbol; functions
