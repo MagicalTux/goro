@@ -20,13 +20,23 @@ type arrayAccessNode interface {
 	ArrayAccessIsNullSafe() bool
 }
 
-// emitArrayLiteral lowers `[…]`. Spread entries (…$expr) are not yet
-// supported and trigger ErrUnsupported so the surrounding function
-// falls back to the AST.
+// emitArrayLiteral lowers `[…]`. Spread entries (…$expr) are routed
+// through the AST runner — they need iterator semantics with key
+// coercion and Traversable support that's involved enough we'd
+// rather reuse the AST implementation than re-derive in bytecode.
 func (e *emitter) emitArrayLiteral(n arrayLiteralNode) error {
 	for _, entry := range n.ArrayEntries() {
 		if entry.EntrySpread() {
-			return unsupportedf("spread in array literal")
+			raw, ok := any(n).(phpv.Runnable)
+			if !ok {
+				return unsupportedf("spread in array literal: cannot retrieve raw Runnable")
+			}
+			idx := e.astIndex(raw)
+			e.emit(vm.OpClassConst, idx, 0, 0)
+			e.pushStack(1)
+			// No OP_REFRESH_SLOTS: array literal evaluation reads
+			// locals but doesn't write them.
+			return nil
 		}
 	}
 

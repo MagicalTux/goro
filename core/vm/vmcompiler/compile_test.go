@@ -411,6 +411,17 @@ func TestPropertyWrite(t *testing.T) {
 	}
 }
 
+func TestArraySpread(t *testing.T) {
+	cases := []string{
+		"$a = [1, 2, 3]; $b = [0, ...$a, 4]; return array_sum($b);",
+		"$a = ['x' => 1, 'y' => 2]; $b = [...$a, 'z' => 3]; return $b['x'] + $b['y'] + $b['z'];",
+		"$a = [10, 20]; $b = [...$a, ...$a]; return count($b);",
+	}
+	for _, c := range cases {
+		t.Run(c, func(t *testing.T) { compareReturns(t, c) })
+	}
+}
+
 func TestNestedArrayWrite(t *testing.T) {
 	classDecl := `
 		class Bag {
@@ -507,10 +518,11 @@ func TestArrays(t *testing.T) {
 }
 
 func TestUnsupportedNodeFallsBack(t *testing.T) {
-	// Spread in array literal isn't supported — the emitter should
-	// report that and the function-level fallback restores the AST.
+	// Multi-level break (`break 2`) isn't lowered piecewise — the
+	// emitter should report ErrUnsupported so the function-level
+	// fallback restores the AST.
 	g := newGlobal(t)
-	r := compileSnippet(t, g, "$src = [1,2,3]; $a = [0, ...$src]; return $a[3];")
+	r := compileSnippet(t, g, "for ($i=0;$i<3;$i++) { for ($j=0;$j<3;$j++) { break 2; } } return $i;")
 	_, err := vmcompiler.Compile("<test>", &phpv.Loc{Filename: "<test>"}, r, g)
 	if err == nil {
 		t.Fatalf("expected ErrUnsupported, got nil")

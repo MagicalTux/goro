@@ -162,6 +162,15 @@ func IsSlotSafe(r phpv.Runnable) bool {
 		if n.static {
 			return false
 		}
+	case *runArray:
+		// An array literal with spread entries (…$expr) is AST-
+		// delegated; the AST reads the source iterables from the
+		// hashtable.
+		for _, ent := range n.e {
+			if ent.spread {
+				return false
+			}
+		}
 	case *ZClosure:
 		// A *named* ZClosure at expression level is a function
 		// declaration that registers a global symbol; functions
