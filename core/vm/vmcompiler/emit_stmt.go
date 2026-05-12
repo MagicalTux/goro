@@ -91,6 +91,16 @@ func (e *emitter) emitStmt(node phpv.Runnable) error {
 		return nil
 	}
 
+	// `global $x;` / `static $y = …;` declarations bind a local to
+	// outer storage. Delegate to the AST then resync the slot cache
+	// so subsequent OP_LOAD_LOCAL reads see the bound value.
+	if compiler.IsGlobalOrStaticDecl(node) {
+		idx := e.astIndex(node)
+		e.emit(vm.OpTryFinally, idx, 0, 0)
+		e.emit(vm.OpRefreshSlots, 0, 0, 0)
+		return nil
+	}
+
 	// Statement-specific dispatch.
 	switch n := node.(type) {
 	case ifNode:

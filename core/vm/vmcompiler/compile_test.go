@@ -411,6 +411,31 @@ func TestPropertyWrite(t *testing.T) {
 	}
 }
 
+func TestGlobalStaticDecl(t *testing.T) {
+	setup := `
+		$g_counter = 100;
+		function vm_use_global() {
+			global $g_counter;
+			$g_counter += 5;
+			return $g_counter;
+		}
+		function vm_use_static() {
+			static $n = 0;
+			$n++;
+			return $n;
+		}
+	`
+	cases := []string{
+		// global reads/writes outer
+		"return vm_use_global();",
+		// static persists across calls
+		"vm_use_static(); vm_use_static(); return vm_use_static();",
+	}
+	for _, c := range cases {
+		t.Run(c, func(t *testing.T) { compareReturns(t, c, setup) })
+	}
+}
+
 func TestMatchExpression(t *testing.T) {
 	cases := []string{
 		"$x = 2; return match ($x) { 1 => 'one', 2 => 'two', 3 => 'three' };",

@@ -152,6 +152,18 @@ func IsSwitchNode(r phpv.Runnable) bool {
 	return ok
 }
 
+// IsGlobalOrStaticDecl reports whether r is a `global $x;` or
+// `static $y = 1;` declaration. The VM AST-delegates these so the
+// FuncContext bindings happen via the AST; OP_REFRESH_SLOTS afterwards
+// makes the declared locals visible in the slot cache.
+func IsGlobalOrStaticDecl(r phpv.Runnable) bool {
+	switch r.(type) {
+	case *runGlobal, *runStaticVar:
+		return true
+	}
+	return false
+}
+
 // UnwrapParens peels a `(expr)` wrapper from r. Returns r unchanged
 // when r isn't a parenthesised expression. Used by the VM emitter so
 // the surrounding context dispatches on the wrapped node directly.
