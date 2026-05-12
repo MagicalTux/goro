@@ -385,26 +385,34 @@ func (e *emitter) emitThrow(n throwNode) error {
 }
 
 func (e *emitter) emitBreak(n *phperr.PhpBreak) error {
-	if n.Initial > 1 {
-		return unsupportedf("multi-level break (break %d)", n.Initial)
+	depth := int(n.Initial)
+	if depth < 1 {
+		depth = 1
 	}
-	loop := e.curLoop()
-	if loop == nil {
-		return unsupportedf("break outside loop (top-level fall-through?)")
+	if len(e.loops) < depth {
+		if depth == 1 {
+			return unsupportedf("break outside loop (top-level fall-through?)")
+		}
+		return unsupportedf("break %d with only %d enclosing loops", depth, len(e.loops))
 	}
+	loop := e.loops[len(e.loops)-depth]
 	pc := e.emit(vm.OpJmp, 0, 0, 0)
 	loop.breakPCs = append(loop.breakPCs, pc)
 	return nil
 }
 
 func (e *emitter) emitContinue(n *phperr.PhpContinue) error {
-	if n.Initial > 1 {
-		return unsupportedf("multi-level continue (continue %d)", n.Initial)
+	depth := int(n.Initial)
+	if depth < 1 {
+		depth = 1
 	}
-	loop := e.curLoop()
-	if loop == nil {
-		return unsupportedf("continue outside loop")
+	if len(e.loops) < depth {
+		if depth == 1 {
+			return unsupportedf("continue outside loop")
+		}
+		return unsupportedf("continue %d with only %d enclosing loops", depth, len(e.loops))
 	}
+	loop := e.loops[len(e.loops)-depth]
 	pc := e.emit(vm.OpJmp, 0, 0, 0)
 	loop.continuePCs = append(loop.continuePCs, pc)
 	return nil

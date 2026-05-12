@@ -411,6 +411,22 @@ func TestPropertyWrite(t *testing.T) {
 	}
 }
 
+func TestMultiLevelBreakContinue(t *testing.T) {
+	cases := []string{
+		// break 2 exits both loops
+		"$hit = 0; for ($i=0;$i<3;$i++) { for ($j=0;$j<3;$j++) { $hit++; if ($j==1) break 2; } } return $hit;",
+		// continue 2 skips to outer step
+		"$s = 0; for ($i=0;$i<3;$i++) { for ($j=0;$j<3;$j++) { if ($j==1) continue 2; $s++; } } return $s;",
+		// break N with N == loop count exits all
+		"$ok = 0; for ($i=0;$i<2;$i++) { for ($j=0;$j<2;$j++) { for ($k=0;$k<2;$k++) { $ok++; break 3; } } } return $ok;",
+		// continue 2 then break 2 — combined
+		"$s = 0; for ($i=0;$i<3;$i++) { for ($j=0;$j<3;$j++) { if ($i==1 && $j==1) break 2; $s++; } } return $s;",
+	}
+	for _, c := range cases {
+		t.Run(c, func(t *testing.T) { compareReturns(t, c) })
+	}
+}
+
 func TestArraySpread(t *testing.T) {
 	cases := []string{
 		"$a = [1, 2, 3]; $b = [0, ...$a, 4]; return array_sum($b);",
@@ -518,11 +534,11 @@ func TestArrays(t *testing.T) {
 }
 
 func TestUnsupportedNodeFallsBack(t *testing.T) {
-	// Multi-level break (`break 2`) isn't lowered piecewise — the
-	// emitter should report ErrUnsupported so the function-level
-	// fallback restores the AST.
+	// Foreach by reference isn't lowered piecewise — the emitter
+	// should report ErrUnsupported so the function-level fallback
+	// restores the AST.
 	g := newGlobal(t)
-	r := compileSnippet(t, g, "for ($i=0;$i<3;$i++) { for ($j=0;$j<3;$j++) { break 2; } } return $i;")
+	r := compileSnippet(t, g, "$a = [1,2,3]; foreach ($a as &$v) { $v *= 2; } return array_sum($a);")
 	_, err := vmcompiler.Compile("<test>", &phpv.Loc{Filename: "<test>"}, r, g)
 	if err == nil {
 		t.Fatalf("expected ErrUnsupported, got nil")
