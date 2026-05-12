@@ -472,10 +472,17 @@ func (e *emitter) emitCoalesce(n operatorNode) error {
 		e.emit(vm.OpLoadLocal, idx, 0, 0)
 		e.pushStack(1)
 	} else {
-		// For now only the variable form is supported. Other LHS
-		// shapes (array elements, object props) require write-context
-		// suppression that the AST handles internally.
-		return unsupportedf("coalesce LHS %T (only $local supported)", a)
+		// LHS shapes that need write-context suppression (array
+		// elements, object props, nullsafe chains) — delegate the
+		// entire `LHS ?? RHS` expression to the AST runner.
+		raw, ok := n.(phpv.Runnable)
+		if !ok {
+			return unsupportedf("coalesce AST delegation: cannot retrieve raw Runnable")
+		}
+		idx := e.astIndex(raw)
+		e.emit(vm.OpClassConst, idx, 0, 0)
+		e.pushStack(1)
+		return nil
 	}
 
 	// If LHS is non-null, jump past the RHS — the LHS value stays on

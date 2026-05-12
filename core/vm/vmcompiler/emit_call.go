@@ -22,6 +22,23 @@ type funcCallRefNode interface {
 	FuncCallRefLoc() *phpv.Loc
 }
 
+// emitCallViaAST AST-delegates a function/method call when its shape
+// (named/spread args, by-ref params, dynamic name, nullsafe) isn't
+// lowered piecewise. The whole AST node runs as one opaque step
+// pushing the result. Body must be flagged slot-unsafe by IsSlotSafe.
+func (e *emitter) emitCallViaAST(raw phpv.Runnable) error {
+	stmtCtx := e.stmtCtx
+	idx := e.astIndex(raw)
+	if stmtCtx {
+		e.emit(vm.OpTryFinally, idx, 0, 0)
+	} else {
+		e.emit(vm.OpClassConst, idx, 0, 0)
+		e.pushStack(1)
+	}
+	e.emit(vm.OpRefreshSlots, 0, 0, 0)
+	return nil
+}
+
 func (e *emitter) emitFunctionCall(n funcCallNode) error {
 	name := n.FuncCallName()
 	if name == "" {
@@ -29,37 +46,27 @@ func (e *emitter) emitFunctionCall(n funcCallNode) error {
 		// AST. Falls back for now.
 		return unsupportedf("dynamic function call (variable name)")
 	}
-	// Builtins that take by-ref args can't be called via the VM's
-	// value-passing protocol (CallZVal). Fall back to AST so they
-	// still mutate the caller's variables.
-	if compiler.ByRefBuiltins[name.ToLower()] {
-		return unsupportedf("call to by-ref builtin %s", name)
-	}
-	// User-defined functions with by-ref params: same problem.
-	// We can query the global function table when the emitter has
-	// a Context available (set when the closure-body hook is
-	// invoked with the compile context).
+	args := n.FuncCallArgs()
+
+	// AST-delegate calls whose shape we don't lower piecewise:
+	// named/spread args, or a callee that takes by-ref params.
+	byRefBuiltin := compiler.ByRefBuiltins[name.ToLower()]
+	byRefUser := false
 	if e.ctx != nil {
-		if g := e.ctx.Global(); g != nil && compiler.FunctionTakesByRef(g, name) {
-			return unsupportedf("call to by-ref user function %s", name)
+		if g := e.ctx.Global(); g != nil {
+			byRefUser = compiler.FunctionTakesByRef(g, name)
 		}
 	}
+	if byRefBuiltin || byRefUser || compiler.CallHasSpecialArgs(args) {
+		raw, ok := n.(phpv.Runnable)
+		if !ok {
+			return unsupportedf("call AST delegation: cannot retrieve raw Runnable")
+		}
+		return e.emitCallViaAST(raw)
+	}
 
-	args := n.FuncCallArgs()
 	if len(args) > 0xFFFF {
 		return unsupportedf("function call with too many args (>=65536)")
-	}
-
-	// Reject named-argument and spread-argument wrappers — those are
-	// distinct AST node types implementing phpv.NamedArgument /
-	// SpreadArgument. Detect via interface assertion.
-	for _, a := range args {
-		if _, ok := a.(phpv.NamedArgument); ok {
-			return unsupportedf("named argument in call")
-		}
-		if _, ok := a.(phpv.SpreadArgument); ok {
-			return unsupportedf("spread argument in call")
-		}
 	}
 
 	// Evaluate args left-to-right and push them onto the VM stack.
@@ -94,16 +101,15 @@ func (e *emitter) emitFunctionCall(n funcCallNode) error {
 // runtime via compiler.ResolveCallable.
 func (e *emitter) emitFunctionCallRef(n funcCallRefNode) error {
 	args := n.FuncCallRefArgs()
+	if compiler.CallHasSpecialArgs(args) {
+		raw, ok := n.(phpv.Runnable)
+		if !ok {
+			return unsupportedf("indirect call AST delegation: cannot retrieve raw Runnable")
+		}
+		return e.emitCallViaAST(raw)
+	}
 	if len(args) > 0xFFFF {
 		return unsupportedf("indirect call with too many args")
-	}
-	for _, a := range args {
-		if _, ok := a.(phpv.NamedArgument); ok {
-			return unsupportedf("named argument in indirect call")
-		}
-		if _, ok := a.(phpv.SpreadArgument); ok {
-			return unsupportedf("spread argument in indirect call")
-		}
 	}
 
 	// Push callable, then args.

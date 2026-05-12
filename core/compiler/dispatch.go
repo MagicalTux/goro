@@ -125,6 +125,19 @@ func IsSlotSafe(r phpv.Runnable) bool {
 		if slotUnsafeFuncs[n.name.ToLower()] {
 			return false
 		}
+		// Calls with named/spread arguments, by-ref builtins, or
+		// by-ref user-function targets are AST-delegated; the AST
+		// runner reads args from the hashtable.
+		if CallHasSpecialArgs(n.args) {
+			return false
+		}
+		if ByRefBuiltins[n.name.ToLower()] {
+			return false
+		}
+	case *runnableFunctionCallRef:
+		if CallHasSpecialArgs(n.args) {
+			return false
+		}
 	case *runStaticVar:
 		return false
 	case *runGlobal:
@@ -155,11 +168,40 @@ func IsSlotSafe(r phpv.Runnable) bool {
 				}
 			}
 		}
+		// Coalesce (??) with a non-local LHS is AST-delegated; the
+		// AST suppresses undefined-index/property warnings during
+		// the LHS read.
+		if n.op == tokenizer.T_COALESCE && n.a != nil {
+			if _, ok := n.a.(*runVariable); !ok {
+				return false
+			}
+		}
 	case *runObjectFunc:
 		// Static-style calls (Foo::method, parent::, self::) are
 		// AST-delegated; their arg evaluation reads caller locals
 		// via the hashtable.
 		if n.static {
+			return false
+		}
+		// Nullsafe/dynamic-name/special-args method calls are also
+		// AST-delegated; same hashtable requirement.
+		if n.nullsafe || n.nullChain {
+			return false
+		}
+		if len(n.op) > 0 && n.op[0] == '$' {
+			return false
+		}
+		if CallHasSpecialArgs(n.args) {
+			return false
+		}
+	case *runObjectVar:
+		// Nullsafe / dynamic-name property reads are AST-delegated.
+		// `writeContext` paths are already caught by the runOperator
+		// case above (LHS *runObjectVar in a write op).
+		if n.nullsafe || n.nullChain {
+			return false
+		}
+		if len(n.varName) > 0 && n.varName[0] == '$' {
 			return false
 		}
 	case *runArray:

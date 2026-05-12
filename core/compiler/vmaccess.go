@@ -141,6 +141,22 @@ func UnwrapParens(r phpv.Runnable) phpv.Runnable {
 	return r
 }
 
+// CallHasSpecialArgs reports whether any of `args` is a named or
+// spread argument — patterns the VM doesn't lower piecewise. Used
+// by both the emitter (to AST-delegate the call) and IsSlotSafe
+// (to mark the surrounding body unsafe).
+func CallHasSpecialArgs(args []phpv.Runnable) bool {
+	for _, a := range args {
+		if _, ok := a.(phpv.NamedArgument); ok {
+			return true
+		}
+		if _, ok := a.(phpv.SpreadArgument); ok {
+			return true
+		}
+	}
+	return false
+}
+
 // IsIssetOrEmptyNode reports whether r is `isset(…)` or `empty(…)`.
 // The VM emitter routes these through OpClassConst (push result).
 // These don't write locals, so no slot refresh is needed.

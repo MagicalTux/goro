@@ -42,7 +42,7 @@ func TestClosureBodyHookWiring(t *testing.T) {
 }
 
 // TestClosureBodyHookFallsBack verifies that when the body uses an
-// unsupported construct (here, a spread-argument function call which
+// unsupported construct (here, an anonymous class instantiation which
 // still falls back), the AST body is kept (no VM wrapper) and the
 // function still runs.
 func TestClosureBodyHookFallsBack(t *testing.T) {
@@ -52,25 +52,25 @@ func TestClosureBodyHookFallsBack(t *testing.T) {
 
 	g := newGlobal(t)
 	r := compileSnippet(t, g, `
-		function vm_spread_sum() {
-			$xs = [1, 2, 3];
-			return max(...$xs);
+		function vm_anon_class() {
+			$o = new class { public $val = 7; };
+			return $o->val;
 		}
-		return vm_spread_sum();
+		return vm_anon_class();
 	`)
 	res, err := phperr.CatchReturn(r.Run(g))
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if res.String() != "3" {
-		t.Fatalf("got %q, want 3", res.String())
+	if res.String() != "7" {
+		t.Fatalf("got %q, want 7", res.String())
 	}
-	fn, err := g.GetFunction(g, phpv.ZString("vm_spread_sum"))
+	fn, err := g.GetFunction(g, phpv.ZString("vm_anon_class"))
 	if err != nil {
 		t.Fatalf("GetFunction: %v", err)
 	}
 	if compiler.IsVMCompiled(fn) {
-		t.Fatalf("vm_spread_sum should have fallen back to AST")
+		t.Fatalf("vm_anon_class should have fallen back to AST")
 	}
 }
 

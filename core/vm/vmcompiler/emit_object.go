@@ -1,6 +1,7 @@
 package vmcompiler
 
 import (
+	"github.com/KarpelesLab/goro/core/compiler"
 	"github.com/KarpelesLab/goro/core/phpv"
 	"github.com/KarpelesLab/goro/core/vm"
 )
@@ -91,15 +92,19 @@ func (e *emitter) emitObjectVarAssign(lhs objectVarNode, rhs phpv.Runnable, stmt
 }
 
 func (e *emitter) emitObjectVarRead(n objectVarNode) error {
-	if n.ObjectVarIsNullSafe() {
-		return unsupportedf("nullsafe property access")
-	}
 	name := n.ObjectVarName()
-	// runObjectVar uses a "$"-prefixed varName to encode dynamic
-	// access (`$this->$x`). We don't lower that natively yet — it
-	// requires evaluating the name expression at runtime.
-	if len(name) > 0 && name[0] == '$' {
-		return unsupportedf("dynamic property name")
+	// Nullsafe or dynamic-name property reads route through the AST
+	// runner. Both shapes need branchy chain semantics that we don't
+	// lower piecewise.
+	if n.ObjectVarIsNullSafe() || (len(name) > 0 && name[0] == '$') {
+		raw, ok := n.(phpv.Runnable)
+		if !ok {
+			return unsupportedf("property-read AST delegation: cannot retrieve raw Runnable")
+		}
+		idx := e.astIndex(raw)
+		e.emit(vm.OpClassConst, idx, 0, 0)
+		e.pushStack(1)
+		return nil
 	}
 	if err := e.withSubexpr(func() error { return e.emitExpr(n.ObjectVarReceiver()) }); err != nil {
 		return err
@@ -131,24 +136,19 @@ func (e *emitter) emitObjectFuncCall(n objectFuncNode) error {
 		e.emit(vm.OpRefreshSlots, 0, 0, 0)
 		return nil
 	}
-	if n.ObjectFuncIsNullSafe() {
-		return unsupportedf("nullsafe method call")
-	}
 	name := n.ObjectFuncName()
-	if len(name) > 0 && name[0] == '$' {
-		return unsupportedf("dynamic method name")
-	}
 	args := n.ObjectFuncArgs()
+	// AST-delegate nullsafe, dynamic-name, or special-args method
+	// calls. The dispatch + receiver evaluation lives in the AST.
+	if n.ObjectFuncIsNullSafe() || (len(name) > 0 && name[0] == '$') || compiler.CallHasSpecialArgs(args) {
+		raw, ok := n.(phpv.Runnable)
+		if !ok {
+			return unsupportedf("method-call AST delegation: cannot retrieve raw Runnable")
+		}
+		return e.emitCallViaAST(raw)
+	}
 	if len(args) > 0xFFFF {
 		return unsupportedf("method call with too many args (>=65536)")
-	}
-	for _, a := range args {
-		if _, ok := a.(phpv.NamedArgument); ok {
-			return unsupportedf("named argument in method call")
-		}
-		if _, ok := a.(phpv.SpreadArgument); ok {
-			return unsupportedf("spread argument in method call")
-		}
 	}
 	// Push receiver, then args.
 	if err := e.withSubexpr(func() error { return e.emitExpr(n.ObjectFuncReceiver()) }); err != nil {

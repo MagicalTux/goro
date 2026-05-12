@@ -411,6 +411,58 @@ func TestPropertyWrite(t *testing.T) {
 	}
 }
 
+func TestSpecialArgs(t *testing.T) {
+	addDecl := `
+		function vm_spread_add($a, $b, $c) { return $a + $b + $c; }
+		function vm_named_div($n, $d) { return $n / $d; }
+		class Calc {
+			public function sum(...$xs) { return array_sum($xs); }
+			public function div($num, $den) { return $num / $den; }
+		}
+	`
+	cases := []string{
+		// Spread into user function
+		"$xs = [1, 2, 3]; return vm_spread_add(...$xs);",
+		// Spread builtin
+		"$xs = [10, 20, 5]; return max(...$xs);",
+		// Named arg
+		"return vm_named_div(d: 4, n: 20);",
+		// Spread into method
+		"$c = new Calc(); return $c->sum(1, 2, 3, 4);",
+		"$c = new Calc(); $xs = [10, 20]; return $c->sum(...$xs);",
+		// Named arg in method
+		"$c = new Calc(); return $c->div(den: 5, num: 30);",
+	}
+	for _, c := range cases {
+		t.Run(c, func(t *testing.T) { compareReturns(t, c, addDecl) })
+	}
+}
+
+func TestNullsafe(t *testing.T) {
+	classDecl := `
+		class Inner {
+			public $val = 42;
+			public function ping() { return 'pong'; }
+		}
+		class Outer {
+			public ?Inner $inner = null;
+		}
+	`
+	cases := []string{
+		// Nullsafe property on null
+		"$o = new Outer(); return $o->inner?->val ?? -1;",
+		// Nullsafe property on set
+		"$o = new Outer(); $o->inner = new Inner(); return $o->inner?->val;",
+		// Nullsafe method on null
+		"$o = new Outer(); return $o->inner?->ping() ?? 'gone';",
+		// Nullsafe method on set
+		"$o = new Outer(); $o->inner = new Inner(); return $o->inner?->ping();",
+	}
+	for _, c := range cases {
+		t.Run(c, func(t *testing.T) { compareReturns(t, c, classDecl) })
+	}
+}
+
 func TestTernary(t *testing.T) {
 	cases := []string{
 		// Plain ternary
@@ -607,11 +659,11 @@ func TestArrays(t *testing.T) {
 }
 
 func TestUnsupportedNodeFallsBack(t *testing.T) {
-	// Spread argument in a function call isn't lowered piecewise —
-	// the emitter should report ErrUnsupported so the function-level
-	// fallback restores the AST.
+	// Anonymous classes aren't lowered piecewise — the emitter
+	// should report ErrUnsupported so the function-level fallback
+	// restores the AST.
 	g := newGlobal(t)
-	r := compileSnippet(t, g, "$xs = [1,2,3]; return max(...$xs);")
+	r := compileSnippet(t, g, "$o = new class { public $x = 7; }; return $o->x;")
 	_, err := vmcompiler.Compile("<test>", &phpv.Loc{Filename: "<test>"}, r, g)
 	if err == nil {
 		t.Fatalf("expected ErrUnsupported, got nil")
