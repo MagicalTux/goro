@@ -137,13 +137,22 @@ func IsSlotSafe(r phpv.Runnable) bool {
 			return false
 		}
 	case *runOperator:
-		// Assignment / compound-assign to a property or static prop
-		// is AST-delegated; the AST reads/writes locals through
-		// ctx.OffsetSet, so the hashtable must be authoritative.
+		// Assignment / compound-assign to a property, static prop,
+		// or array element (when the LHS isn't a simple-local
+		// container) is AST-delegated; the AST reads/writes locals
+		// through ctx.OffsetSet, so the hashtable must be
+		// authoritative.
 		if n.opD != nil && n.opD.write && n.a != nil {
-			switch n.a.(type) {
+			switch a := n.a.(type) {
 			case *runObjectVar, *runClassStaticVarRef, *runClassStaticDynVarRef:
 				return false
+			case *runArrayAccess:
+				// Native fast path handles only `$local[k] = v`
+				// (statement context). Any other shape goes
+				// through AST.
+				if _, ok := a.value.(*runVariable); !ok {
+					return false
+				}
 			}
 		}
 	case *runObjectFunc:

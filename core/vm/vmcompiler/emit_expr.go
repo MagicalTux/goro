@@ -307,7 +307,16 @@ func (e *emitter) emitAssign(n operatorNode) error {
 	// `$local[k] = v` and `$local[] = v` (statement context only).
 	if aa, ok := n.OperatorA().(arrayAccessNode); ok {
 		stmtCtx := e.stmtCtx
-		return e.emitArrayAssignToLocal(aa, n.OperatorB(), stmtCtx)
+		// Fast path when the container is a simple local variable —
+		// native OP_ARRAY_SET_LOCAL / OP_ARRAY_APPEND_LOCAL.
+		if _, ok := aa.ArrayAccessContainer().(variableNode); ok && stmtCtx && !aa.ArrayAccessIsNullSafe() {
+			return e.emitArrayAssignToLocal(aa, n.OperatorB(), stmtCtx)
+		}
+		// Anything else (`$obj->arr[i] = v`, `$a[i][j] = v`,
+		// `Foo::$bar[i] = v`, append in expression context, etc.)
+		// goes through the AST runner. IsSlotSafe flags these bodies
+		// so the hashtable stays authoritative.
+		return e.emitAssignViaAST(n)
 	}
 	// `$obj->prop = v` and `Foo::$bar = v`: typed properties, hooks,
 	// asymmetric visibility, indirect-modification notices, and
@@ -348,9 +357,10 @@ func (e *emitter) emitAssignViaAST(n operatorNode) error {
 func (e *emitter) emitCompoundAssign(n operatorNode, op tokenizer.ItemType) error {
 	lhs, ok := n.OperatorA().(variableNode)
 	if !ok {
-		// Delegate property / static-prop compound writes to the AST.
+		// Delegate property / static-prop / array-element compound
+		// writes to the AST.
 		switch n.OperatorA().(type) {
-		case objectVarNode:
+		case objectVarNode, arrayAccessNode:
 			return e.emitAssignViaAST(n)
 		}
 		if compiler.IsStaticPropertyTarget(n.OperatorA()) {

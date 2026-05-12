@@ -411,6 +411,29 @@ func TestPropertyWrite(t *testing.T) {
 	}
 }
 
+func TestNestedArrayWrite(t *testing.T) {
+	classDecl := `
+		class Bag {
+			public $items = [];
+		}
+	`
+	cases := []string{
+		// Nested local array writes (two-level)
+		"$a = []; $a['x']['y'] = 42; return $a['x']['y'];",
+		// Three-level
+		"$a = []; $a[0][1][2] = 7; return $a[0][1][2];",
+		// Object property containing an array
+		"$b = new Bag(); $b->items['hello'] = 'world'; return $b->items['hello'];",
+		// Compound write on nested array
+		"$a = ['k' => ['v' => 1]]; $a['k']['v'] += 9; return $a['k']['v'];",
+		// Append to property array
+		"$b = new Bag(); $b->items[] = 1; $b->items[] = 2; $b->items[] = 3; return $b->items[2];",
+	}
+	for _, c := range cases {
+		t.Run(c, func(t *testing.T) { compareReturns(t, c, classDecl) })
+	}
+}
+
 func TestObjectAccess(t *testing.T) {
 	classDecl := `
 		class Pt {
