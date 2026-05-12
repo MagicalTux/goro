@@ -131,6 +131,13 @@ func IsUnsetNode(r phpv.Runnable) bool {
 	return ok
 }
 
+// IsAnonymousClassNode reports whether r is a `new class { … }`
+// instantiation. The VM AST-delegates these wholesale via OpClassConst.
+func IsAnonymousClassNode(r phpv.Runnable) bool {
+	_, ok := r.(*runNewAnonymousClass)
+	return ok
+}
+
 // UnwrapParens peels a `(expr)` wrapper from r. Returns r unchanged
 // when r isn't a parenthesised expression. Used by the VM emitter so
 // the surrounding context dispatches on the wrapped node directly.

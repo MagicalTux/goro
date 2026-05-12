@@ -79,6 +79,14 @@ func (e *emitter) emitExpr(node phpv.Runnable) error {
 		e.pushStack(1)
 		return nil
 	}
+	if compiler.IsAnonymousClassNode(node) {
+		// `new class { … }` — AST runs the class registration +
+		// instantiation; push the resulting object.
+		idx := e.astIndex(node)
+		e.emit(vm.OpClassConst, idx, 0, 0)
+		e.pushStack(1)
+		return nil
+	}
 	if compiler.IsUnsetNode(node) {
 		// unset(…) — void; statement context emits OpTryFinally and
 		// refreshes slots so any unset-of-local nulls the cache.

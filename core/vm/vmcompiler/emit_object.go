@@ -33,24 +33,23 @@ type objectFuncNode interface {
 }
 
 func (e *emitter) emitNewObject(n newObjectNode) error {
-	if n.NewObjectIsAnonymous() {
-		return unsupportedf("new class { … } (anonymous class)")
-	}
 	className := n.NewObjectClassName()
-	if className == "" {
-		return unsupportedf("new with dynamic class name")
-	}
 	args := n.NewObjectArgs()
+	// AST-delegate the `new` expression when the class is anonymous,
+	// the name is dynamic, or the args list has named/spread
+	// wrappers. The AST runner pushes the resulting object.
+	if n.NewObjectIsAnonymous() || className == "" || compiler.CallHasSpecialArgs(args) {
+		raw, ok := n.(phpv.Runnable)
+		if !ok {
+			return unsupportedf("new AST delegation: cannot retrieve raw Runnable")
+		}
+		idx := e.astIndex(raw)
+		e.emit(vm.OpClassConst, idx, 0, 0)
+		e.pushStack(1)
+		return nil
+	}
 	if len(args) > 0xFFFF {
 		return unsupportedf("new with too many args")
-	}
-	for _, a := range args {
-		if _, ok := a.(phpv.NamedArgument); ok {
-			return unsupportedf("named argument in new")
-		}
-		if _, ok := a.(phpv.SpreadArgument); ok {
-			return unsupportedf("spread argument in new")
-		}
 	}
 	for _, a := range args {
 		if err := e.withSubexpr(func() error { return e.emitExpr(a) }); err != nil {

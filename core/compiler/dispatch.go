@@ -204,6 +204,16 @@ func IsSlotSafe(r phpv.Runnable) bool {
 		if len(n.varName) > 0 && n.varName[0] == '$' {
 			return false
 		}
+	case *runNewObject:
+		// AST-delegated when the class is anonymous, the name is
+		// dynamic, or the args list has named/spread wrappers.
+		if n.cl != nil || n.obj == "" || CallHasSpecialArgs(n.newArg) {
+			return false
+		}
+	case *runNewAnonymousClass:
+		// `new class { … }` registers the class and constructs an
+		// instance; constructor args read locals via the hashtable.
+		return false
 	case *runArray:
 		// An array literal with spread entries (…$expr) is AST-
 		// delegated; the AST reads the source iterables from the

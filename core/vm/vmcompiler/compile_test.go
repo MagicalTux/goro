@@ -411,6 +411,30 @@ func TestPropertyWrite(t *testing.T) {
 	}
 }
 
+func TestNewObjectShapes(t *testing.T) {
+	classDecl := `
+		class Pair {
+			public $a;
+			public $b;
+			public function __construct($a, $b) { $this->a = $a; $this->b = $b; }
+			public function sum() { return $this->a + $this->b; }
+		}
+	`
+	cases := []string{
+		// Spread into constructor
+		"$args = [3, 4]; $p = new Pair(...$args); return $p->sum();",
+		// Named args in constructor
+		"$p = new Pair(b: 10, a: 5); return $p->sum();",
+		// Anonymous class
+		"$o = new class { public $x = 17; public function get() { return $this->x; } }; return $o->get();",
+		// Dynamic class name
+		"$cls = 'Pair'; $p = new $cls(1, 2); return $p->sum();",
+	}
+	for _, c := range cases {
+		t.Run(c, func(t *testing.T) { compareReturns(t, c, classDecl) })
+	}
+}
+
 func TestSpecialArgs(t *testing.T) {
 	addDecl := `
 		function vm_spread_add($a, $b, $c) { return $a + $b + $c; }
@@ -659,11 +683,11 @@ func TestArrays(t *testing.T) {
 }
 
 func TestUnsupportedNodeFallsBack(t *testing.T) {
-	// Anonymous classes aren't lowered piecewise — the emitter
-	// should report ErrUnsupported so the function-level fallback
-	// restores the AST.
+	// Variable variables (\$\$x) aren't lowered piecewise — the
+	// emitter should report ErrUnsupported so the function-level
+	// fallback restores the AST.
 	g := newGlobal(t)
-	r := compileSnippet(t, g, "$o = new class { public $x = 7; }; return $o->x;")
+	r := compileSnippet(t, g, "$name = 'x'; $$name = 42; return $x;")
 	_, err := vmcompiler.Compile("<test>", &phpv.Loc{Filename: "<test>"}, r, g)
 	if err == nil {
 		t.Fatalf("expected ErrUnsupported, got nil")
