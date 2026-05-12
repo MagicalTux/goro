@@ -411,6 +411,58 @@ func TestPropertyWrite(t *testing.T) {
 	}
 }
 
+func TestTernary(t *testing.T) {
+	cases := []string{
+		// Plain ternary
+		"$x = 5; return $x > 0 ? 'pos' : 'neg';",
+		"return 1 == 1 ? 100 : 200;",
+		// Short ternary `?:` — reuses cond when truthy
+		"$x = 'hi'; return $x ?: 'default';",
+		"$x = 0; return $x ?: 99;",
+		"$x = null; return $x ?: 'fallback';",
+		// Nested ternary
+		"$a = 2; return $a == 1 ? 'one' : ($a == 2 ? 'two' : 'other');",
+		// Ternary returning array index
+		"$arr = ['a','b']; $i = 1; return $arr[$i > 0 ? 1 : 0];",
+		// Ternary in arithmetic
+		"$x = 5; return ($x > 0 ? $x : -$x) + 1;",
+	}
+	for _, c := range cases {
+		t.Run(c, func(t *testing.T) { compareReturns(t, c) })
+	}
+}
+
+func TestUnsetIssetEmpty(t *testing.T) {
+	classDecl := `
+		class Bag {
+			public $cur = 0;
+			public $list = [];
+		}
+	`
+	cases := []string{
+		// isset of a local
+		"$a = 1; return isset($a) ? 1 : 0;",
+		// isset of undeclared
+		"return isset($undeclared) ? 1 : 0;",
+		// empty
+		"$a = ''; return empty($a) ? 1 : 0;",
+		"$a = 'x'; return empty($a) ? 1 : 0;",
+		// unset removes the variable
+		"$a = 1; unset($a); return isset($a) ? 1 : 0;",
+		// unset of multiple
+		"$a = 1; $b = 2; $c = 3; unset($a, $c); return isset($a) + isset($b) + isset($c);",
+		// unset of array element
+		"$a = [1,2,3]; unset($a[1]); return count($a);",
+		// unset of object property
+		"$b = new Bag(); $b->cur = 5; unset($b->cur); return isset($b->cur) ? 1 : 0;",
+		// isset of array element with missing key
+		"$a = ['x' => 1]; return isset($a['y']) ? 1 : 0;",
+	}
+	for _, c := range cases {
+		t.Run(c, func(t *testing.T) { compareReturns(t, c, classDecl) })
+	}
+}
+
 func TestForeachByRef(t *testing.T) {
 	classDecl := `
 		class Bag {
@@ -555,10 +607,11 @@ func TestArrays(t *testing.T) {
 }
 
 func TestUnsupportedNodeFallsBack(t *testing.T) {
-	// unset() isn't lowered piecewise — the emitter should report
-	// ErrUnsupported so the function-level fallback restores the AST.
+	// Spread argument in a function call isn't lowered piecewise —
+	// the emitter should report ErrUnsupported so the function-level
+	// fallback restores the AST.
 	g := newGlobal(t)
-	r := compileSnippet(t, g, "$a = 1; unset($a); return isset($a) ? 1 : 0;")
+	r := compileSnippet(t, g, "$xs = [1,2,3]; return max(...$xs);")
 	_, err := vmcompiler.Compile("<test>", &phpv.Loc{Filename: "<test>"}, r, g)
 	if err == nil {
 		t.Fatalf("expected ErrUnsupported, got nil")

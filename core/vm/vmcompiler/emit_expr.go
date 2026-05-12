@@ -51,6 +51,9 @@ func (e *emitter) emitExpr(node phpv.Runnable) error {
 		e.pushStack(1)
 		return nil
 	}
+	// Strip `(expr)` wrappers — they affect by-ref param Notices
+	// only, which the VM doesn't lower piecewise anyway.
+	node = compiler.UnwrapParens(node)
 
 	if compiler.IsClosureNode(node) {
 		// *ZClosure as expression: emit OP_MAKE_CLOSURE which runs
@@ -69,8 +72,33 @@ func (e *emitter) emitExpr(node phpv.Runnable) error {
 		e.pushStack(1)
 		return nil
 	}
+	if compiler.IsIssetOrEmptyNode(node) {
+		// isset(…) / empty(…) — pure read, push result.
+		idx := e.astIndex(node)
+		e.emit(vm.OpClassConst, idx, 0, 0)
+		e.pushStack(1)
+		return nil
+	}
+	if compiler.IsUnsetNode(node) {
+		// unset(…) — void; statement context emits OpTryFinally and
+		// refreshes slots so any unset-of-local nulls the cache.
+		stmtCtx := e.stmtCtx
+		idx := e.astIndex(node)
+		if stmtCtx {
+			e.emit(vm.OpTryFinally, idx, 0, 0)
+		} else {
+			e.emit(vm.OpClassConst, idx, 0, 0)
+			e.pushStack(1)
+		}
+		e.emit(vm.OpRefreshSlots, 0, 0, 0)
+		return nil
+	}
 
 	switch n := node.(type) {
+	case ifNode:
+		// Ternary `cond ? a : b` as a value-producing expression
+		// (the statement-level form is handled in emitStmt).
+		return e.emitTernary(n)
 	case literalNode:
 		return e.emitLiteral(n)
 	case variableNode:
@@ -548,6 +576,52 @@ func binaryOpcode(op tokenizer.ItemType) (vm.Op, bool) {
 		return vm.OpCmpSpaceship, true
 	}
 	return 0, false
+}
+
+// emitTernary lowers `cond ? a : b` (and `cond ?: alt`) as a value-
+// producing expression. Each branch leaves exactly one value on the
+// stack; the simulated stack tracker counts that as a single net
+// push (branches are mutually exclusive at runtime).
+func (e *emitter) emitTernary(n ifNode) error {
+	if n.IfIsShortTernary() {
+		// `cond ?: alt` — evaluate cond once; if truthy, leave it
+		// on the stack; otherwise drop it and evaluate alt.
+		if err := e.withSubexpr(func() error { return e.emitExpr(n.IfCond()) }); err != nil {
+			return err
+		}
+		// JMP_IF_FALSE_PEEK keeps the value on the stack for the
+		// true side, pops it on the false side.
+		jmpFalse := e.emit(vm.OpJmpIfFalsePeek, 0, 0, 0)
+		// True branch: value is already on the stack — jump to end.
+		jmpEnd := e.emit(vm.OpJmp, 0, 0, 0)
+		// False branch: PEEK popped the value, eval alt to push 1.
+		e.patchJump(jmpFalse, uint32(len(e.code)))
+		e.popStack(1)
+		if err := e.withSubexpr(func() error { return e.emitExpr(n.IfNo()) }); err != nil {
+			return err
+		}
+		e.patchJump(jmpEnd, uint32(len(e.code)))
+		return nil
+	}
+	// Full ternary.
+	if err := e.withSubexpr(func() error { return e.emitExpr(n.IfCond()) }); err != nil {
+		return err
+	}
+	jmpFalse := e.emit(vm.OpJmpIfFalse, 0, 0, 0)
+	e.popStack(1)
+	// True branch.
+	if err := e.withSubexpr(func() error { return e.emitExpr(n.IfYes()) }); err != nil {
+		return err
+	}
+	jmpEnd := e.emit(vm.OpJmp, 0, 0, 0)
+	// False branch.
+	e.patchJump(jmpFalse, uint32(len(e.code)))
+	e.popStack(1) // simulator: discount the true branch's push so the false branch's emitExpr starts at the same depth
+	if err := e.withSubexpr(func() error { return e.emitExpr(n.IfNo()) }); err != nil {
+		return err
+	}
+	e.patchJump(jmpEnd, uint32(len(e.code)))
+	return nil
 }
 
 func unaryOpcode(op tokenizer.ItemType) (vm.Op, bool) {

@@ -186,6 +186,14 @@ func IsSlotSafe(r phpv.Runnable) bool {
 				return false
 			}
 		}
+	case *runnableUnset:
+		// unset() is AST-delegated; OffsetUnset writes the hashtable
+		// and OP_REFRESH_SLOTS picks up the deletion, so the
+		// hashtable must be the source of truth.
+		return false
+	case *runnableIsset, *runnableEmpty:
+		// isset()/empty() read through the hashtable.
+		return false
 	case *ZClosure:
 		// A *named* ZClosure at expression level is a function
 		// declaration that registers a global symbol; functions

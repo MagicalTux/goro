@@ -124,6 +124,34 @@ func IsClosureNode(r phpv.Runnable) bool {
 	return ok
 }
 
+// IsUnsetNode reports whether r is an `unset(…)` statement. The VM
+// emitter routes these through OpTryFinally (void) + OP_REFRESH_SLOTS.
+func IsUnsetNode(r phpv.Runnable) bool {
+	_, ok := r.(*runnableUnset)
+	return ok
+}
+
+// UnwrapParens peels a `(expr)` wrapper from r. Returns r unchanged
+// when r isn't a parenthesised expression. Used by the VM emitter so
+// the surrounding context dispatches on the wrapped node directly.
+func UnwrapParens(r phpv.Runnable) phpv.Runnable {
+	if p, ok := r.(*runParentheses); ok {
+		return p.r
+	}
+	return r
+}
+
+// IsIssetOrEmptyNode reports whether r is `isset(…)` or `empty(…)`.
+// The VM emitter routes these through OpClassConst (push result).
+// These don't write locals, so no slot refresh is needed.
+func IsIssetOrEmptyNode(r phpv.Runnable) bool {
+	switch r.(type) {
+	case *runnableIsset, *runnableEmpty:
+		return true
+	}
+	return false
+}
+
 // --- runConcat (string interpolation) ---------------------------------
 
 // ConcatParts returns the list of expressions concatenated to form
