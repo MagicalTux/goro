@@ -309,36 +309,53 @@ func (e *emitter) emitAssign(n operatorNode) error {
 		stmtCtx := e.stmtCtx
 		return e.emitArrayAssignToLocal(aa, n.OperatorB(), stmtCtx)
 	}
-	// `$obj->prop = v`: typed properties, hooks, asymmetric
-	// visibility, and indirect-modification notices are all baked
-	// into runObjectVar.WriteValue. Rather than reimplementing those
-	// 200+ lines, delegate the whole runOperator (LHS + RHS + write)
-	// to the AST runner via OP_EVAL_AST. IsSlotSafe already rejects
-	// such bodies, so the hashtable is in sync when the AST reads
-	// locals during evaluation.
+	// `$obj->prop = v` and `Foo::$bar = v`: typed properties, hooks,
+	// asymmetric visibility, indirect-modification notices, and
+	// LSB-class resolution all live in runObjectVar.WriteValue /
+	// runClassStaticVarRef.WriteValue. Rather than reimplementing
+	// those, delegate the whole runOperator (LHS + RHS + write) to
+	// the AST runner. IsSlotSafe rejects bodies with these writes,
+	// so the hashtable is in sync when the AST reads locals.
 	if _, ok := n.OperatorA().(objectVarNode); ok {
-		raw, ok := n.(phpv.Runnable)
-		if !ok {
-			return unsupportedf("property assign: cannot retrieve raw Runnable")
-		}
-		stmtCtx := e.stmtCtx
-		idx := e.astIndex(raw)
-		if stmtCtx {
-			e.emit(vm.OpTryFinally, idx, 0, 0) // delegate, discard result
-		} else {
-			e.emit(vm.OpClassConst, idx, 0, 0) // delegate, push result
-			e.pushStack(1)
-		}
-		// AST delegation may have mutated locals through ctx.OffsetSet.
-		e.emit(vm.OpRefreshSlots, 0, 0, 0)
-		return nil
+		return e.emitAssignViaAST(n)
+	}
+	if compiler.IsStaticPropertyTarget(n.OperatorA()) {
+		return e.emitAssignViaAST(n)
 	}
 	return unsupportedf("plain `=` to non-variable target %T", n.OperatorA())
+}
+
+// emitAssignViaAST delegates a write assignment to the AST runner
+// when the LHS shape is one we don't yet lower piecewise (property,
+// static property, etc.).
+func (e *emitter) emitAssignViaAST(n operatorNode) error {
+	raw, ok := n.(phpv.Runnable)
+	if !ok {
+		return unsupportedf("AST-delegated assign: cannot retrieve raw Runnable")
+	}
+	stmtCtx := e.stmtCtx
+	idx := e.astIndex(raw)
+	if stmtCtx {
+		e.emit(vm.OpTryFinally, idx, 0, 0) // delegate, discard result
+	} else {
+		e.emit(vm.OpClassConst, idx, 0, 0) // delegate, push result
+		e.pushStack(1)
+	}
+	e.emit(vm.OpRefreshSlots, 0, 0, 0)
+	return nil
 }
 
 func (e *emitter) emitCompoundAssign(n operatorNode, op tokenizer.ItemType) error {
 	lhs, ok := n.OperatorA().(variableNode)
 	if !ok {
+		// Delegate property / static-prop compound writes to the AST.
+		switch n.OperatorA().(type) {
+		case objectVarNode:
+			return e.emitAssignViaAST(n)
+		}
+		if compiler.IsStaticPropertyTarget(n.OperatorA()) {
+			return e.emitAssignViaAST(n)
+		}
 		return unsupportedf("compound assign to non-variable target %T", n.OperatorA())
 	}
 	stmtCtx := e.stmtCtx

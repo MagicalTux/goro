@@ -17,11 +17,11 @@ import (
 //
 // Set to nil (the zero value) when the vmcompiler is not linked or has
 // disabled itself via env var. Compiler treats nil as "VM disabled".
-var TryBuildVMClosureBody func(name phpv.ZString, src *phpv.Loc, body phpv.Runnable) phpv.Runnable
+var TryBuildVMClosureBody func(ctx phpv.Context, name phpv.ZString, src *phpv.Loc, body phpv.Runnable) phpv.Runnable
 
 // TryBuildVMScript is the equivalent hook for top-level scripts. It
 // gets the full Runnables and may return a wrapping VM runner.
-var TryBuildVMScript func(src *phpv.Loc, body phpv.Runnable) phpv.Runnable
+var TryBuildVMScript func(ctx phpv.Context, src *phpv.Loc, body phpv.Runnable) phpv.Runnable
 
 // unwrapVMBody peels off any VM-runtime wrapping installed by the
 // vmcompiler so introspection paths (Dump, validate-break, yield
@@ -91,7 +91,22 @@ func IsClassConstNode(r phpv.Runnable) bool {
 		return true
 	case *runClassStaticVarRef:
 		return true
+	case *runClassStaticDynVarRef:
+		return true
 	case *runClassNameOf:
+		return true
+	}
+	return false
+}
+
+// IsStaticPropertyTarget reports whether r is a static-property
+// reference (`Foo::$bar` or `Foo::{$expr}`) — i.e. a valid LHS for an
+// assignment that we delegate to the AST.
+func IsStaticPropertyTarget(r phpv.Runnable) bool {
+	switch r.(type) {
+	case *runClassStaticVarRef:
+		return true
+	case *runClassStaticDynVarRef:
 		return true
 	}
 	return false

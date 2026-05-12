@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/KarpelesLab/goro/core/compiler"
+	"github.com/KarpelesLab/goro/core/phpctx"
 	"github.com/KarpelesLab/goro/core/phpv"
 	"github.com/KarpelesLab/goro/core/vm"
 )
@@ -34,16 +35,27 @@ func init() {
 	// hook bodies so SetEnabled takes effect immediately.
 	compiler.TryBuildVMClosureBody = tryBuildClosureBody
 	compiler.TryBuildVMScript = tryBuildScript
+
+	// Lazy-aware by-ref probe: lets the VM emitter check whether a
+	// user function (including not-yet-registered lazy entries) takes
+	// any by-reference parameters, without triggering the lazy
+	// registration side effect.
+	compiler.LookupLazyByRef = func(g phpv.GlobalContext, name phpv.ZString) (bool, bool) {
+		if gg, ok := g.(*phpctx.Global); ok {
+			return gg.LookupByRef(name)
+		}
+		return false, false
+	}
 }
 
 // tryBuildClosureBody attempts to bytecode-compile a closure body.
 // Returns nil if the gate is off or the body uses unsupported
 // constructs. The compiler keeps the AST body in either case.
-func tryBuildClosureBody(name phpv.ZString, src *phpv.Loc, body phpv.Runnable) phpv.Runnable {
+func tryBuildClosureBody(ctx phpv.Context, name phpv.ZString, src *phpv.Loc, body phpv.Runnable) phpv.Runnable {
 	if !enabled {
 		return nil
 	}
-	fn, err := Compile(name, src, body)
+	fn, err := Compile(name, src, body, ctx)
 	if err != nil {
 		if errors.Is(err, ErrUnsupported) {
 			return nil
@@ -62,11 +74,11 @@ func tryBuildClosureBody(name phpv.ZString, src *phpv.Loc, body phpv.Runnable) p
 // don't use the closure return-via-error convention. SlotOnly is set
 // based on the body's IsSlotSafe analysis (which already rejects
 // scripts that declare functions or use $GLOBALS / global / static).
-func tryBuildScript(src *phpv.Loc, body phpv.Runnable) phpv.Runnable {
+func tryBuildScript(ctx phpv.Context, src *phpv.Loc, body phpv.Runnable) phpv.Runnable {
 	if !enabled {
 		return nil
 	}
-	fn, err := Compile("<main>", src, body)
+	fn, err := Compile("<main>", src, body, ctx)
 	if err != nil {
 		if errors.Is(err, ErrUnsupported) {
 			return nil

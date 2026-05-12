@@ -2084,6 +2084,46 @@ func (g *Global) RegisterLazyFunc(name phpv.ZString, r phpv.Runnables, p int) {
 	g.globalLazyFunc[name.ToLower()] = &globalLazyOffset{r, p}
 }
 
+// LookupByRef returns (hit, byRef) for the named function without
+// triggering lazy resolution. Used by the VM emitter to detect user
+// functions with by-ref params at compile time so calls fall back
+// to the AST path (which can bind Writable args).
+func (g *Global) LookupByRef(name phpv.ZString) (hit, byRef bool) {
+	lc := name.ToLower()
+	if f, ok := g.globalUserFuncs[lc]; ok {
+		return true, callableHasByRef(f)
+	}
+	if f, ok := g.globalInternalFuncs[lc]; ok {
+		return true, callableHasByRef(f)
+	}
+	if le, ok := g.globalLazyFunc[lc]; ok {
+		// Peek at the lazy runnable without running it.
+		if le != nil && le.p < len(le.r) {
+			if c, ok := le.r[le.p].(phpv.FuncGetArgs); ok {
+				for _, a := range c.GetArgs() {
+					if a.Ref {
+						return true, true
+					}
+				}
+				return true, false
+			}
+		}
+	}
+	return false, false
+}
+
+// callableHasByRef returns true if the callable declares any by-ref param.
+func callableHasByRef(c phpv.Callable) bool {
+	if fga, ok := c.(phpv.FuncGetArgs); ok {
+		for _, a := range fga.GetArgs() {
+			if a.Ref {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (g *Global) RegisterLazyClass(name phpv.ZString, r phpv.Runnables, p int) {
 	g.globalLazyClass[name.ToLower()] = &globalLazyOffset{r, p}
 }

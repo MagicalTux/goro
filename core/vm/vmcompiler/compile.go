@@ -12,8 +12,10 @@ import (
 //
 // name is used for stack traces / disassembly. source is the location
 // of the unit being compiled (e.g. the start of the script or the
-// `function ...(...)` keyword).
-func Compile(name phpv.ZString, source *phpv.Loc, body phpv.Runnable) (*vm.Function, error) {
+// `function ...(...)` keyword). ctx is an optional Context used by
+// emitter checks that need GlobalContext (currently: detecting
+// user-defined functions with by-ref params at function-call sites).
+func Compile(name phpv.ZString, source *phpv.Loc, body phpv.Runnable, ctx phpv.Context) (*vm.Function, error) {
 	// Unwrap any pre-existing VM wrapper. This happens when tests or
 	// callers pass a Runnable that already went through a script-level
 	// VM wrap from compiler.Compile (when GORO_VM is on).
@@ -22,6 +24,7 @@ func Compile(name phpv.ZString, source *phpv.Loc, body phpv.Runnable) (*vm.Funct
 	}
 
 	e := newEmitter(source)
+	e.ctx = ctx
 
 	// Treat the body as a list of statements. If it's already a
 	// Runnables we walk it directly; otherwise wrap it.

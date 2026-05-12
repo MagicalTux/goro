@@ -496,7 +496,7 @@ func compileInner(parent phpv.Context, t *tokenizer.Lexer) (phpv.Runnable, error
 				src = l.Loc()
 			}
 		}
-		if vmR := TryBuildVMScript(src, r); vmR != nil {
+		if vmR := TryBuildVMScript(parent, src, r); vmR != nil {
 			return vmR, nil
 		}
 	}

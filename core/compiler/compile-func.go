@@ -898,7 +898,7 @@ func compileFunctionWithName(name phpv.ZString, c compileCtx, l *phpv.Loc, rref 
 		}
 	}
 	if TryBuildVMClosureBody != nil && !zc.isGenerator && zc.returnType == nil && !zc.rref && !hasByRef {
-		if vmBody := TryBuildVMClosureBody(zc.name, zc.start, zc.code); vmBody != nil {
+		if vmBody := TryBuildVMClosureBody(c, zc.name, zc.start, zc.code); vmBody != nil {
 			zc.code = vmBody
 		}
 	}

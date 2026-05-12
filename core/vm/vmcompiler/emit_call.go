@@ -35,6 +35,15 @@ func (e *emitter) emitFunctionCall(n funcCallNode) error {
 	if compiler.ByRefBuiltins[name.ToLower()] {
 		return unsupportedf("call to by-ref builtin %s", name)
 	}
+	// User-defined functions with by-ref params: same problem.
+	// We can query the global function table when the emitter has
+	// a Context available (set when the closure-body hook is
+	// invoked with the compile context).
+	if e.ctx != nil {
+		if g := e.ctx.Global(); g != nil && compiler.FunctionTakesByRef(g, name) {
+			return unsupportedf("call to by-ref user function %s", name)
+		}
+	}
 
 	args := n.FuncCallArgs()
 	if len(args) > 0xFFFF {

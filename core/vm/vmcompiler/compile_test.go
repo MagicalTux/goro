@@ -100,7 +100,7 @@ func compareReturns(t *testing.T, code string, setup ...string) {
 		}
 	}
 	r2 := compileSnippet(t, gVM, code)
-	fn, err := vmcompiler.Compile("<test>", &phpv.Loc{Filename: "<test>"}, r2)
+	fn, err := vmcompiler.Compile("<test>", &phpv.Loc{Filename: "<test>"}, r2, gVM)
 	if err != nil {
 		t.Fatalf("vmcompiler.Compile: %v", err)
 	}
@@ -365,6 +365,23 @@ func TestTryCatch(t *testing.T) {
 	}
 }
 
+func TestStaticPropertyWrite(t *testing.T) {
+	classDecl := `
+		class Counter {
+			public static $count = 0;
+			public static function inc() { self::$count++; }
+		}
+	`
+	cases := []string{
+		"Counter::$count = 5; return Counter::$count;",
+		"Counter::$count = 0; Counter::inc(); Counter::inc(); return Counter::$count;",
+		"Counter::$count = 1; Counter::$count += 10; return Counter::$count;",
+	}
+	for _, c := range cases {
+		t.Run(c, func(t *testing.T) { compareReturns(t, c, classDecl) })
+	}
+}
+
 func TestPropertyWrite(t *testing.T) {
 	classDecl := `
 		class Box {
@@ -471,7 +488,7 @@ func TestUnsupportedNodeFallsBack(t *testing.T) {
 	// report that and the function-level fallback restores the AST.
 	g := newGlobal(t)
 	r := compileSnippet(t, g, "$src = [1,2,3]; $a = [0, ...$src]; return $a[3];")
-	_, err := vmcompiler.Compile("<test>", &phpv.Loc{Filename: "<test>"}, r)
+	_, err := vmcompiler.Compile("<test>", &phpv.Loc{Filename: "<test>"}, r, g)
 	if err == nil {
 		t.Fatalf("expected ErrUnsupported, got nil")
 	}

@@ -137,13 +137,21 @@ func IsSlotSafe(r phpv.Runnable) bool {
 			return false
 		}
 	case *runOperator:
-		// Assignment / compound-assign to a property is AST-delegated;
-		// the AST reads/writes locals through ctx.OffsetSet, so the
-		// hashtable must be authoritative.
+		// Assignment / compound-assign to a property or static prop
+		// is AST-delegated; the AST reads/writes locals through
+		// ctx.OffsetSet, so the hashtable must be authoritative.
 		if n.opD != nil && n.opD.write && n.a != nil {
-			if _, ok := n.a.(*runObjectVar); ok {
+			switch n.a.(type) {
+			case *runObjectVar, *runClassStaticVarRef, *runClassStaticDynVarRef:
 				return false
 			}
+		}
+	case *runObjectFunc:
+		// Static-style calls (Foo::method, parent::, self::) are
+		// AST-delegated; their arg evaluation reads caller locals
+		// via the hashtable.
+		if n.static {
+			return false
 		}
 	case *ZClosure:
 		// A *named* ZClosure at expression level is a function
@@ -184,22 +192,32 @@ func IsSlotSafe(r phpv.Runnable) bool {
 // the VM emitter to fall back to AST for calls that need by-ref
 // binding (which the VM's value-passing call protocol can't provide).
 //
-// Returns false when the function isn't registered yet — pessimistic
-// users should still fall back, but that policy is up to the caller.
+// This intentionally does NOT trigger lazy-function resolution: that
+// would Run() the registration Runnable as a side effect of an
+// emit-time query, which conflicts with the VM later emitting an
+// OP_MAKE_CLOSURE for the same declaration. Instead we inspect
+// (a) already-registered user/internal functions, and
+// (b) lazy entries via a separate LookupLazyByRef hook installed by
+//     core/phpctx.
+//
+// Returns false when the function isn't registered or known yet —
+// pessimistic users should fall back conservatively.
 func FunctionTakesByRef(g phpv.GlobalContext, name phpv.ZString) bool {
-	f, err := g.GetFunction(g, name)
-	if err != nil || f == nil {
-		return false
-	}
-	if fga, ok := f.(phpv.FuncGetArgs); ok {
-		for _, a := range fga.GetArgs() {
-			if a.Ref {
-				return true
-			}
+	// Try the lazy-aware probe first (set by core/phpctx).
+	if LookupLazyByRef != nil {
+		if hit, byRef := LookupLazyByRef(g, name); hit {
+			return byRef
 		}
 	}
 	return false
 }
+
+// LookupLazyByRef is an optional hook installed by core/phpctx that
+// looks up a function (including the lazy table) and reports whether
+// any of its parameters are by-reference. hit=true means "I know about
+// this function"; byRef=true means "yes, it has by-ref params". The
+// hook never triggers a registration side effect.
+var LookupLazyByRef func(g phpv.GlobalContext, name phpv.ZString) (hit, byRef bool)
 
 // ByRefBuiltins lists builtin functions that take at least one
 // argument by reference. The VM emitter falls back to AST for calls

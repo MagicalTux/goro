@@ -8,6 +8,7 @@ import (
 // emitter accumulates state while walking the AST. It is created per
 // Compile invocation and discarded after. Not safe for concurrent use.
 type emitter struct {
+	ctx      phpv.Context // optional — used for callable-introspection lookups
 	code     []vm.Instruction
 	consts   []phpv.Val
 	constMap map[phpv.Val]uint16

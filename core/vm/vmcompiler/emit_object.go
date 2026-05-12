@@ -112,7 +112,24 @@ func (e *emitter) emitObjectVarRead(n objectVarNode) error {
 
 func (e *emitter) emitObjectFuncCall(n objectFuncNode) error {
 	if n.ObjectFuncIsStatic() {
-		return unsupportedf("static-style call via -> AST")
+		// Static-style call: Foo::method(args), parent::method(args),
+		// etc. The AST runObjectFunc.Run handles LSB binding, static
+		// vs instance dispatch, and the "Non-static method called
+		// statically" diagnostic. Delegate.
+		raw, ok := n.(phpv.Runnable)
+		if !ok {
+			return unsupportedf("static call: cannot retrieve raw Runnable")
+		}
+		stmtCtx := e.stmtCtx
+		idx := e.astIndex(raw)
+		if stmtCtx {
+			e.emit(vm.OpTryFinally, idx, 0, 0)
+		} else {
+			e.emit(vm.OpClassConst, idx, 0, 0)
+			e.pushStack(1)
+		}
+		e.emit(vm.OpRefreshSlots, 0, 0, 0)
+		return nil
 	}
 	if n.ObjectFuncIsNullSafe() {
 		return unsupportedf("nullsafe method call")
