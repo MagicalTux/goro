@@ -81,6 +81,16 @@ func (e *emitter) emitStmt(node phpv.Runnable) error {
 	}
 	e.emit(vm.OpTick, 0, 0, 0)
 
+	// Switch is AST-delegated wholesale — break/continue inside the
+	// switch are caught by the AST, while a return propagates out
+	// via the PhpReturn error channel that OpTryFinally re-raises.
+	if compiler.IsSwitchNode(node) {
+		idx := e.astIndex(node)
+		e.emit(vm.OpTryFinally, idx, 0, 0)
+		e.emit(vm.OpRefreshSlots, 0, 0, 0)
+		return nil
+	}
+
 	// Statement-specific dispatch.
 	switch n := node.(type) {
 	case ifNode:

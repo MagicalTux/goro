@@ -214,6 +214,13 @@ func IsSlotSafe(r phpv.Runnable) bool {
 		// `new class { … }` registers the class and constructs an
 		// instance; constructor args read locals via the hashtable.
 		return false
+	case *runMatch:
+		// match (…) { … } is AST-delegated; the cond + arm bodies
+		// read caller locals through the hashtable.
+		return false
+	case *runSwitch:
+		// switch (…) { … } is AST-delegated; same reason.
+		return false
 	case *runArray:
 		// An array literal with spread entries (…$expr) is AST-
 		// delegated; the AST reads the source iterables from the

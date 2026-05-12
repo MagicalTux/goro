@@ -138,6 +138,20 @@ func IsAnonymousClassNode(r phpv.Runnable) bool {
 	return ok
 }
 
+// IsMatchNode reports whether r is a `match (…) { … }` expression.
+// The VM AST-delegates these via OpClassConst (push result).
+func IsMatchNode(r phpv.Runnable) bool {
+	_, ok := r.(*runMatch)
+	return ok
+}
+
+// IsSwitchNode reports whether r is a `switch (…) { … }` statement.
+// The VM AST-delegates via OpTryFinally (void) + OP_REFRESH_SLOTS.
+func IsSwitchNode(r phpv.Runnable) bool {
+	_, ok := r.(*runSwitch)
+	return ok
+}
+
 // UnwrapParens peels a `(expr)` wrapper from r. Returns r unchanged
 // when r isn't a parenthesised expression. Used by the VM emitter so
 // the surrounding context dispatches on the wrapped node directly.

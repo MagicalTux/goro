@@ -411,6 +411,34 @@ func TestPropertyWrite(t *testing.T) {
 	}
 }
 
+func TestMatchExpression(t *testing.T) {
+	cases := []string{
+		"$x = 2; return match ($x) { 1 => 'one', 2 => 'two', 3 => 'three' };",
+		"$x = 4; return match ($x) { 1, 2 => 'low', 3, 4 => 'mid', default => 'high' };",
+		"$x = 'go'; return match (true) { $x === 'go' => 'going', $x === 'stop' => 'stopped' };",
+		"$y = 0; foreach ([1,2,3] as $v) { $y += match ($v) { 1 => 10, 2 => 20, 3 => 30 }; } return $y;",
+	}
+	for _, c := range cases {
+		t.Run(c, func(t *testing.T) { compareReturns(t, c) })
+	}
+}
+
+func TestSwitchStatement(t *testing.T) {
+	cases := []string{
+		// Plain switch
+		"$x = 'b'; $r = ''; switch ($x) { case 'a': $r = 'A'; break; case 'b': $r = 'B'; break; default: $r = 'X'; } return $r;",
+		// Fall-through
+		"$x = 1; $r = 0; switch ($x) { case 1: case 2: $r = 12; break; case 3: $r = 3; } return $r;",
+		// switch with return inside (propagates out)
+		"function vm_sw_ret($x) { switch ($x) { case 1: return 'one'; case 2: return 'two'; } return 'other'; } return vm_sw_ret(2);",
+		// nested switch with break exiting inner only
+		"$x = 1; $y = 'a'; $r = ''; switch ($x) { case 1: switch ($y) { case 'a': $r = 'A1'; break; } $r .= '!'; break; case 2: $r = 'two'; } return $r;",
+	}
+	for _, c := range cases {
+		t.Run(c, func(t *testing.T) { compareReturns(t, c) })
+	}
+}
+
 func TestNewObjectShapes(t *testing.T) {
 	classDecl := `
 		class Pair {
