@@ -136,6 +136,15 @@ func IsSlotSafe(r phpv.Runnable) bool {
 		if n.finally != nil {
 			return false
 		}
+	case *runOperator:
+		// Assignment / compound-assign to a property is AST-delegated;
+		// the AST reads/writes locals through ctx.OffsetSet, so the
+		// hashtable must be authoritative.
+		if n.opD != nil && n.opD.write && n.a != nil {
+			if _, ok := n.a.(*runObjectVar); ok {
+				return false
+			}
+		}
 	case *ZClosure:
 		// A *named* ZClosure at expression level is a function
 		// declaration that registers a global symbol; functions

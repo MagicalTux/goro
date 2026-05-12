@@ -365,10 +365,34 @@ func TestTryCatch(t *testing.T) {
 	}
 }
 
-// Property write is deferred to AST until we extract a helper that
-// mirrors runObjectVar.WriteValue exactly. The integration test
-// confirms that calling a method that writes to $this->x still works
-// (the method's body falls back to AST).
+func TestPropertyWrite(t *testing.T) {
+	classDecl := `
+		class Box {
+			public $x = 0;
+			public $y = 0;
+			function set($v) { $this->x = $v; }
+			function bump() { $this->x += 10; }
+			function chain() { $this->x = $this->y = 7; }
+		}
+	`
+	cases := []string{
+		// Direct property write
+		"$b = new Box(); $b->x = 42; return $b->x;",
+		// Method that writes $this->prop
+		"$b = new Box(); $b->set(99); return $b->x;",
+		// Compound assignment on property
+		"$b = new Box(); $b->x = 5; $b->bump(); return $b->x;",
+		// Chained property writes ($a = $b = v)
+		"$b = new Box(); $b->chain(); return $b->x + $b->y;",
+		// Write then read in same expression
+		"$b = new Box(); $b->x = 10; return $b->x + 5;",
+		// Multiple writes
+		"$b = new Box(); $b->x = 3; $b->y = 4; return $b->x * $b->x + $b->y * $b->y;",
+	}
+	for _, c := range cases {
+		t.Run(c, func(t *testing.T) { compareReturns(t, c, classDecl) })
+	}
+}
 
 func TestObjectAccess(t *testing.T) {
 	classDecl := `

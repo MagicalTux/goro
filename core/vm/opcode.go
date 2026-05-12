@@ -134,6 +134,12 @@ const (
 	// (normal completion, caught exception, uncaught exception,
 	// return/break/continue inside the try body).
 	OpTryFinally
+	// OP_REFRESH_SLOTS re-reads every local from the FuncContext
+	// hashtable into the slot cache. Emit it after any AST-delegated
+	// opcode whose Run() may have written locals via ctx.OffsetSet
+	// (property writes, etc.) — otherwise subsequent slot reads see
+	// the stale pre-delegation values.
+	OpRefreshSlots
 
 	// --- objects ---------------------------------------------------------
 	// OP_NEW_OBJECT pops B args, looks up class by Consts[A] (a ZString),
@@ -251,6 +257,7 @@ var opNames = [...]string{
 	OpMakeClosure:      "MAKE_CLOSURE",
 	OpClassConst:       "CLASS_CONST",
 	OpTryFinally:       "TRY_FINALLY",
+	OpRefreshSlots:     "REFRESH_SLOTS",
 	OpNewObject:        "NEW_OBJECT",
 	OpObjectGet:        "OBJECT_GET",
 	OpObjectSet:        "OBJECT_SET",

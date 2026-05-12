@@ -309,13 +309,29 @@ func (e *emitter) emitAssign(n operatorNode) error {
 		stmtCtx := e.stmtCtx
 		return e.emitArrayAssignToLocal(aa, n.OperatorB(), stmtCtx)
 	}
-	// `$obj->prop = v` is technically supported via OP_OBJECT_SET, but
-	// some subtleties (typed properties, backtrace stacking, hooks)
-	// don't yet match the AST runObjectVar.WriteValue exactly. Emit
-	// only for narrow safe cases — always fall back for now until we
-	// extract a public helper that mirrors WriteValue.
+	// `$obj->prop = v`: typed properties, hooks, asymmetric
+	// visibility, and indirect-modification notices are all baked
+	// into runObjectVar.WriteValue. Rather than reimplementing those
+	// 200+ lines, delegate the whole runOperator (LHS + RHS + write)
+	// to the AST runner via OP_EVAL_AST. IsSlotSafe already rejects
+	// such bodies, so the hashtable is in sync when the AST reads
+	// locals during evaluation.
 	if _, ok := n.OperatorA().(objectVarNode); ok {
-		return unsupportedf("property assign (deferred to AST until WriteValue extract)")
+		raw, ok := n.(phpv.Runnable)
+		if !ok {
+			return unsupportedf("property assign: cannot retrieve raw Runnable")
+		}
+		stmtCtx := e.stmtCtx
+		idx := e.astIndex(raw)
+		if stmtCtx {
+			e.emit(vm.OpTryFinally, idx, 0, 0) // delegate, discard result
+		} else {
+			e.emit(vm.OpClassConst, idx, 0, 0) // delegate, push result
+			e.pushStack(1)
+		}
+		// AST delegation may have mutated locals through ctx.OffsetSet.
+		e.emit(vm.OpRefreshSlots, 0, 0, 0)
+		return nil
 	}
 	return unsupportedf("plain `=` to non-variable target %T", n.OperatorA())
 }

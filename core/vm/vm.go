@@ -495,6 +495,9 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 			// subsequent OP_LOAD_LOCAL reads see the new values.
 			f.refreshSlots(ctx)
 
+		case OpRefreshSlots:
+			f.refreshSlots(ctx)
+
 		// --- objects -------------------------------------------------
 		case OpNewObject:
 			argc := int(ins.B())
