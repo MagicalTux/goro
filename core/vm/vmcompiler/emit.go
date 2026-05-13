@@ -47,6 +47,9 @@ type loopCtx struct {
 	// pcs of OP_JMP placeholders that should jump to the loop's
 	// step/condition (i.e. the natural continue target).
 	continuePCs []uint32
+	// isForeach marks foreach loops so multi-level break/continue
+	// can emit OP_FOREACH_UNWIND for each foreach being skipped over.
+	isForeach bool
 }
 
 func newEmitter(source *phpv.Loc) *emitter {

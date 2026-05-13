@@ -364,6 +364,7 @@ func (e *emitter) emitForeach(n foreachNode) error {
 	e.popStack(1) // pops src
 
 	loop := e.pushLoop()
+	loop.isForeach = true
 	loopHead := uint32(len(e.code))
 
 	// Step: jumps to unwind on iterator exhaustion.
@@ -447,6 +448,10 @@ func (e *emitter) emitBreak(n *phperr.PhpBreak) error {
 		}
 		return unsupportedf("break %d with only %d enclosing loops", depth, len(e.loops))
 	}
+	// Unwind any foreach iterators that sit between the current
+	// position and the target loop. Each OP_FOREACH_UNWIND pops one
+	// entry from the iters stack — required for nested foreach.
+	e.unwindForeachesAbove(depth - 1)
 	loop := e.loops[len(e.loops)-depth]
 	pc := e.emit(vm.OpJmp, 0, 0, 0)
 	loop.breakPCs = append(loop.breakPCs, pc)
@@ -464,10 +469,26 @@ func (e *emitter) emitContinue(n *phperr.PhpContinue) error {
 		}
 		return unsupportedf("continue %d with only %d enclosing loops", depth, len(e.loops))
 	}
+	// Same unwinding: drop foreach iterators for loops we're
+	// skipping over (the inner foreach hasn't naturally completed,
+	// so its iterator is still on the iters stack).
+	e.unwindForeachesAbove(depth - 1)
 	loop := e.loops[len(e.loops)-depth]
 	pc := e.emit(vm.OpJmp, 0, 0, 0)
 	loop.continuePCs = append(loop.continuePCs, pc)
 	return nil
+}
+
+// unwindForeachesAbove emits an OP_FOREACH_UNWIND for each foreach
+// loop in the top `skip` entries of e.loops. Used by multi-level
+// break/continue to clean up the iters stack before jumping out.
+func (e *emitter) unwindForeachesAbove(skip int) {
+	n := len(e.loops)
+	for i := 0; i < skip; i++ {
+		if e.loops[n-1-i].isForeach {
+			e.emit(vm.OpForeachUnwind, 0, 0, 0)
+		}
+	}
 }
 
 // stmtLoc returns the most appropriate source location for a statement
