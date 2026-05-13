@@ -136,13 +136,17 @@ func IsSlotSafe(g phpv.GlobalContext, r phpv.Runnable) bool {
 		}
 		// User-function calls whose callee has by-ref params:
 		// AST-delegated at the call site, reads args from hashtable.
-		if g != nil && LookupLazyByRef != nil {
-			if hit, byRef := LookupLazyByRef(g, n.name); hit && byRef {
-				return false
-			}
+		// Unknown callees with writable args are also AST-delegated
+		// (conservative — see emitFunctionCall in emit_call.go).
+		hit, byRef := LookupLazyByRefSafe(g, n.name)
+		if hit && byRef {
+			return false
+		}
+		if !hit && CallHasWritableArg(n.args) {
+			return false
 		}
 	case *runnableFunctionCallRef:
-		if CallHasSpecialArgs(n.args) {
+		if CallHasSpecialArgs(n.args) || CallHasWritableArg(n.args) {
 			return false
 		}
 	case *runStaticVar:
@@ -372,6 +376,16 @@ func FunctionTakesByRef(g phpv.GlobalContext, name phpv.ZString) bool {
 // this function"; byRef=true means "yes, it has by-ref params". The
 // hook never triggers a registration side effect.
 var LookupLazyByRef func(g phpv.GlobalContext, name phpv.ZString) (hit, byRef bool)
+
+// LookupLazyByRefSafe wraps LookupLazyByRef so callers don't have to
+// check for nil and missing globals. Returns (false, false) when the
+// hook is unset or the global isn't a *phpctx.Global.
+func LookupLazyByRefSafe(g phpv.GlobalContext, name phpv.ZString) (hit, byRef bool) {
+	if LookupLazyByRef == nil || g == nil {
+		return false, false
+	}
+	return LookupLazyByRef(g, name)
+}
 
 // ByRefBuiltins lists builtin functions that take at least one
 // argument by reference. The VM emitter falls back to AST for calls

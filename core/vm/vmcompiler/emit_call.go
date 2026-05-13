@@ -50,14 +50,22 @@ func (e *emitter) emitFunctionCall(n funcCallNode) error {
 
 	// AST-delegate calls whose shape we don't lower piecewise:
 	// named/spread args, or a callee that takes by-ref params.
+	// When the function isn't statically known yet (compiled inside
+	// an outer scope before the lazy-function pre-pass runs) AND any
+	// arg is a writable lvalue, conservatively AST-delegate so a
+	// possible by-ref signature still binds correctly.
 	byRefBuiltin := compiler.ByRefBuiltins[name.ToLower()]
 	byRefUser := false
+	unknownCallable := true
 	if e.ctx != nil {
 		if g := e.ctx.Global(); g != nil {
-			byRefUser = compiler.FunctionTakesByRef(g, name)
+			if hit, br := compiler.LookupLazyByRefSafe(g, name); hit {
+				unknownCallable = false
+				byRefUser = br
+			}
 		}
 	}
-	if byRefBuiltin || byRefUser || compiler.CallHasSpecialArgs(args) {
+	if byRefBuiltin || byRefUser || compiler.CallHasSpecialArgs(args) || (unknownCallable && compiler.CallHasWritableArg(args)) {
 		raw, ok := n.(phpv.Runnable)
 		if !ok {
 			return unsupportedf("call AST delegation: cannot retrieve raw Runnable")
@@ -101,7 +109,11 @@ func (e *emitter) emitFunctionCall(n funcCallNode) error {
 // runtime via compiler.ResolveCallable.
 func (e *emitter) emitFunctionCallRef(n funcCallRefNode) error {
 	args := n.FuncCallRefArgs()
-	if compiler.CallHasSpecialArgs(args) {
+	// Indirect calls go through a runtime-resolved callable, so we
+	// can't query its by-ref signature at compile time. Conservatively
+	// AST-delegate any indirect call whose args include a writable
+	// lvalue (so a possible by-ref param binds correctly).
+	if compiler.CallHasSpecialArgs(args) || compiler.CallHasWritableArg(args) {
 		raw, ok := n.(phpv.Runnable)
 		if !ok {
 			return unsupportedf("indirect call AST delegation: cannot retrieve raw Runnable")
