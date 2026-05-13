@@ -39,6 +39,23 @@ func (e *emitter) emitCallViaAST(raw phpv.Runnable) error {
 	return nil
 }
 
+// emitCallViaASTWithSyncedLocals AST-delegates a call after writing
+// each variable-arg local to the FuncContext hashtable. Used when the
+// callable's by-ref signature isn't known at compile time and the
+// surrounding body is slot-only — the AST runner needs to read
+// up-to-date local values for those specific args to handle by-ref
+// binding correctly. Targeted form: only the named locals are synced
+// (not the bulk OP_SYNC_SLOTS approach which had broader side effects).
+func (e *emitter) emitCallViaASTWithSyncedLocals(raw phpv.Runnable, args []phpv.Runnable) error {
+	for _, a := range args {
+		if v, ok := a.(variableNode); ok {
+			idx := e.localIndex(v.VariableName())
+			e.emit(vm.OpSyncLocal, idx, 0, 0)
+		}
+	}
+	return e.emitCallViaAST(raw)
+}
+
 func (e *emitter) emitFunctionCall(n funcCallNode) error {
 	name := n.FuncCallName()
 	if name == "" {
@@ -50,14 +67,15 @@ func (e *emitter) emitFunctionCall(n funcCallNode) error {
 
 	// AST-delegate calls whose shape we don't lower piecewise:
 	// named/spread args, or a callee that takes by-ref params.
-	// Note: unknown-callee-with-writable-arg was tried as a
-	// conservative gate, but the IsSlotSafe override it required
-	// broke too many independent tests; keep the narrower check.
 	byRefBuiltin := compiler.ByRefBuiltins[name.ToLower()]
 	byRefUser := false
+	unknownCallable := true
 	if e.ctx != nil {
 		if g := e.ctx.Global(); g != nil {
-			byRefUser = compiler.FunctionTakesByRef(g, name)
+			if hit, br := compiler.LookupLazyByRefSafe(g, name); hit {
+				unknownCallable = false
+				byRefUser = br
+			}
 		}
 	}
 	if byRefBuiltin || byRefUser || compiler.CallHasSpecialArgs(args) {
@@ -66,6 +84,18 @@ func (e *emitter) emitFunctionCall(n funcCallNode) error {
 			return unsupportedf("call AST delegation: cannot retrieve raw Runnable")
 		}
 		return e.emitCallViaAST(raw)
+	}
+	// Unknown-callable + variable-arg: emit OP_SYNC_LOCAL for each
+	// variable arg so the AST runner can read its value from the
+	// hashtable (the slot-only optimization normally skips the
+	// mirror). Then AST-delegate. The targeted sync avoids the
+	// FuncContext side effects of a bulk OP_SYNC_SLOTS.
+	if unknownCallable && compiler.CallHasWritableArg(args) {
+		raw, ok := n.(phpv.Runnable)
+		if !ok {
+			return unsupportedf("call AST delegation: cannot retrieve raw Runnable")
+		}
+		return e.emitCallViaASTWithSyncedLocals(raw, args)
 	}
 
 	if len(args) > 0xFFFF {

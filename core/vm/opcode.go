@@ -140,6 +140,13 @@ const (
 	// (property writes, etc.) — otherwise subsequent slot reads see
 	// the stale pre-delegation values.
 	OpRefreshSlots
+	// OP_SYNC_LOCAL writes a single slot (Locals[A]) into the
+	// FuncContext hashtable. Emit before an AST-delegated call that
+	// reads a specific local (e.g. a writable arg to a function whose
+	// signature we can't resolve at compile time). Targeted variant
+	// of OP_SYNC_SLOTS: avoids the bulk write that caused subtle
+	// FuncContext refcounting / type-checker interactions.
+	OpSyncLocal
 
 	// --- objects ---------------------------------------------------------
 	// OP_NEW_OBJECT pops B args, looks up class by Consts[A] (a ZString),
@@ -258,6 +265,7 @@ var opNames = [...]string{
 	OpClassConst:       "CLASS_CONST",
 	OpTryFinally:       "TRY_FINALLY",
 	OpRefreshSlots:     "REFRESH_SLOTS",
+	OpSyncLocal:        "SYNC_LOCAL",
 	OpNewObject:        "NEW_OBJECT",
 	OpObjectGet:        "OBJECT_GET",
 	OpObjectSet:        "OBJECT_SET",
