@@ -596,6 +596,14 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 			if cur == nil {
 				cur = phpv.ZNULL.ZVal()
 			}
+			// Snapshot LHS before the operator runs: `.=` triggers
+			// array→string coercion which may fire __toString or a
+			// user-installed error_handler that mutates the same slot
+			// (bug81705). With a ref-captured slot, the handler would
+			// otherwise mutate `cur` in-place and the operator would
+			// read the post-handler value instead of the pre-handler
+			// one PHP requires.
+			cur = cur.Dup()
 			res, err := fn(ctx, cur, rhs)
 			if err != nil {
 				return nil, false, err
