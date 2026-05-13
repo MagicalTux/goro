@@ -467,22 +467,6 @@ func compileInner(parent phpv.Context, t *tokenizer.Lexer) (phpv.Runnable, error
 				}
 			}
 		}
-		// Now that all top-level functions are lazy-registered,
-		// finish the deferred VM compiles for named top-level
-		// closures. Calls inside these bodies can now resolve sibling
-		// by-ref signatures via FunctionTakesByRef.
-		if TryBuildVMClosureBody != nil {
-			for _, elem := range list {
-				zc, ok := elem.(*ZClosure)
-				if !ok || !zc.wantVMCompile {
-					continue
-				}
-				zc.wantVMCompile = false
-				if vmBody := TryBuildVMClosureBody(c, zc.name, zc.start, zc.code, zc.pendingVMHasByRef); vmBody != nil {
-					zc.code = vmBody
-				}
-			}
-		}
 	}
 
 	// Validate break/continue at the top-level scope (outside loops).

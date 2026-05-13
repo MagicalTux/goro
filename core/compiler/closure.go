@@ -32,16 +32,6 @@ type ZClosure struct {
 	usesThis      bool // true if the closure body references $this
 	attributes    []*phpv.ZAttribute // PHP 8.0 attributes on this function
 	returnType    *phpv.TypeHint     // return type declaration (nil if none)
-
-	// VM-compile pending: set by compileFunctionWithName for named
-	// top-level functions when the VM hook is installed and the
-	// closure is otherwise eligible. The actual call into
-	// TryBuildVMClosureBody is deferred until compileInner's
-	// post-parse pass so that calls to sibling top-level functions
-	// can look up their by-ref signatures at emit time. Anonymous
-	// closures and class methods compile inline (no deferral).
-	wantVMCompile    bool
-	pendingVMHasByRef bool
 }
 
 // > class Closure

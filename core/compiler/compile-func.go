@@ -904,20 +904,9 @@ func compileFunctionWithName(name phpv.ZString, c compileCtx, l *phpv.Loc, rref 
 	// By-ref params are also fine: the AST callBody binds the refs
 	// into the FuncContext hashtable before the VM body runs, and
 	// the emitter passes hasByRef so the body avoids SlotOnly.
-	//
-	// For NAMED top-level functions, defer the compile until after
-	// the top-level RegisterLazyFunc pre-pass runs (see compileInner
-	// in compile.go) — that way calls inside this body to other
-	// top-level functions can query their by-ref signatures at emit
-	// time without waiting for them to be lazy-resolved at runtime.
 	if TryBuildVMClosureBody != nil && !zc.isGenerator && !zc.rref {
-		if zc.name != "" {
-			zc.pendingVMHasByRef = hasByRef
-			zc.wantVMCompile = true
-		} else {
-			if vmBody := TryBuildVMClosureBody(c, zc.name, zc.start, zc.code, hasByRef); vmBody != nil {
-				zc.code = vmBody
-			}
+		if vmBody := TryBuildVMClosureBody(c, zc.name, zc.start, zc.code, hasByRef); vmBody != nil {
+			zc.code = vmBody
 		}
 	}
 
