@@ -648,6 +648,33 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 		case OpArrayInitKeyed:
 			val := f.pop()
 			key := f.pop()
+			// Mirror runArray.Run key-type validation: forbid
+			// object/array keys, deprecate null keys, emit float-
+			// precision deprecation, and cast resource keys to int.
+			switch key.GetType() {
+			case phpv.ZtObject:
+				return nil, false, phpobj.ThrowError(ctx, phpobj.TypeError,
+					"Cannot access offset of type object on array")
+			case phpv.ZtArray:
+				return nil, false, phpobj.ThrowError(ctx, phpobj.TypeError,
+					"Cannot access offset of type array on array")
+			case phpv.ZtFloat:
+				if _, err := phpv.FloatToIntImplicit(ctx, key.Value().(phpv.ZFloat)); err != nil {
+					return nil, false, err
+				}
+			case phpv.ZtNull:
+				if err := ctx.Deprecated("Using null as an array offset is deprecated, use an empty string instead", logopt.NoFuncName(true)); err != nil {
+					return nil, false, err
+				}
+			case phpv.ZtResource:
+				if r, ok := key.Value().(phpv.Resource); ok {
+					id := r.GetResourceID()
+					if err := ctx.Warn("Resource ID#%d used as offset, casting to integer (%d)", id, id); err != nil {
+						return nil, false, err
+					}
+					key = phpv.ZInt(id).ZVal()
+				}
+			}
 			arr := f.peek().AsArray(ctx)
 			if err := arr.OffsetSet(ctx, key.Value(), val); err != nil {
 				if err == phpv.ErrNextElementOccupied {
