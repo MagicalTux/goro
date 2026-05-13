@@ -3,6 +3,7 @@ package vm
 import (
 	"errors"
 	"fmt"
+	"math"
 	"sync"
 
 	"github.com/KarpelesLab/goro/core/compiler"
@@ -407,19 +408,82 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 			f.replaceTop(phpv.ZBool(v.AsBool(ctx)).ZVal())
 
 		// --- inc/dec on locals --------------------------------------
+		// Int fast paths inline a slot-int + add + store without
+		// going through DoInc's full type switch. Mixed types fall
+		// through to the generic path.
 		case OpIncLocal:
+			cur := f.locals[ins.A()]
+			if cur != nil && cur.GetType() == phpv.ZtInt {
+				ci := int64(cur.Value().(phpv.ZInt))
+				if ci != math.MaxInt64 {
+					newV := phpv.ZInt(ci + 1).ZVal()
+					f.locals[ins.A()] = newV
+					if !f.fn.SlotOnly {
+						if err := ctx.OffsetSet(ctx, f.fn.Locals[ins.A()], newV); err != nil {
+							return nil, false, err
+						}
+					}
+					f.push(newV)
+					break
+				}
+			}
 			if err := f.incDecLocal(ctx, ins.A(), true, false); err != nil {
 				return nil, false, err
 			}
 		case OpDecLocal:
+			cur := f.locals[ins.A()]
+			if cur != nil && cur.GetType() == phpv.ZtInt {
+				ci := int64(cur.Value().(phpv.ZInt))
+				if ci != math.MinInt64 {
+					newV := phpv.ZInt(ci - 1).ZVal()
+					f.locals[ins.A()] = newV
+					if !f.fn.SlotOnly {
+						if err := ctx.OffsetSet(ctx, f.fn.Locals[ins.A()], newV); err != nil {
+							return nil, false, err
+						}
+					}
+					f.push(newV)
+					break
+				}
+			}
 			if err := f.incDecLocal(ctx, ins.A(), false, false); err != nil {
 				return nil, false, err
 			}
 		case OpPostIncLocal:
+			cur := f.locals[ins.A()]
+			if cur != nil && cur.GetType() == phpv.ZtInt {
+				ci := int64(cur.Value().(phpv.ZInt))
+				if ci != math.MaxInt64 {
+					newV := phpv.ZInt(ci + 1).ZVal()
+					f.locals[ins.A()] = newV
+					if !f.fn.SlotOnly {
+						if err := ctx.OffsetSet(ctx, f.fn.Locals[ins.A()], newV); err != nil {
+							return nil, false, err
+						}
+					}
+					f.push(cur)
+					break
+				}
+			}
 			if err := f.incDecLocal(ctx, ins.A(), true, true); err != nil {
 				return nil, false, err
 			}
 		case OpPostDecLocal:
+			cur := f.locals[ins.A()]
+			if cur != nil && cur.GetType() == phpv.ZtInt {
+				ci := int64(cur.Value().(phpv.ZInt))
+				if ci != math.MinInt64 {
+					newV := phpv.ZInt(ci - 1).ZVal()
+					f.locals[ins.A()] = newV
+					if !f.fn.SlotOnly {
+						if err := ctx.OffsetSet(ctx, f.fn.Locals[ins.A()], newV); err != nil {
+							return nil, false, err
+						}
+					}
+					f.push(cur)
+					break
+				}
+			}
 			if err := f.incDecLocal(ctx, ins.A(), false, true); err != nil {
 				return nil, false, err
 			}
