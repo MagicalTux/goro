@@ -196,15 +196,48 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 			f.pop()
 
 		// --- arithmetic / bitwise -----------------------------------
+		// Int-int fast paths: when both operands are ZtInt we
+		// compute inline and (on overflow) fall through to the
+		// generic OperatorMath path which produces a float result.
 		case OpAdd:
+			if ai, bi, ok := f.intIntFast(); ok {
+				c := int64(ai) + int64(bi)
+				if (c > int64(ai)) == (bi > 0) {
+					f.stack[f.sp-2] = phpv.ZInt(c).ZVal()
+					f.sp--
+					break
+				}
+			}
 			if err := f.binop(ctx, opAdd); err != nil {
 				return nil, false, err
 			}
 		case OpSub:
+			if ai, bi, ok := f.intIntFast(); ok {
+				c := int64(ai) - int64(bi)
+				if (c < int64(ai)) == (bi > 0) {
+					f.stack[f.sp-2] = phpv.ZInt(c).ZVal()
+					f.sp--
+					break
+				}
+			}
 			if err := f.binop(ctx, opSub); err != nil {
 				return nil, false, err
 			}
 		case OpMul:
+			if ai, bi, ok := f.intIntFast(); ok {
+				if ai == 0 || bi == 0 {
+					f.stack[f.sp-2] = phpv.ZInt(0).ZVal()
+					f.sp--
+					break
+				}
+				c := int64(ai) * int64(bi)
+				// Overflow check: c/b should equal a.
+				if ((c < 0) == ((ai < 0) != (bi < 0))) && c/int64(bi) == int64(ai) {
+					f.stack[f.sp-2] = phpv.ZInt(c).ZVal()
+					f.sp--
+					break
+				}
+			}
 			if err := f.binop(ctx, opMul); err != nil {
 				return nil, false, err
 			}
@@ -259,35 +292,69 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 			}
 
 		// --- compare -------------------------------------------------
+		// Int-int fast paths inline the comparison; the generic
+		// path (OperatorCompare) only fires for mixed-type operands.
 		case OpCmpEq:
+			if ai, bi, ok := f.intIntFast(); ok {
+				f.pushBoolReplace2(ai == bi)
+				break
+			}
 			if err := f.binop(ctx, opCmpEq); err != nil {
 				return nil, false, err
 			}
 		case OpCmpNe:
+			if ai, bi, ok := f.intIntFast(); ok {
+				f.pushBoolReplace2(ai != bi)
+				break
+			}
 			if err := f.binop(ctx, opCmpNe); err != nil {
 				return nil, false, err
 			}
 		case OpCmpId:
+			if ai, bi, ok := f.intIntFast(); ok {
+				f.pushBoolReplace2(ai == bi)
+				break
+			}
 			if err := f.binop(ctx, opCmpId); err != nil {
 				return nil, false, err
 			}
 		case OpCmpNid:
+			if ai, bi, ok := f.intIntFast(); ok {
+				f.pushBoolReplace2(ai != bi)
+				break
+			}
 			if err := f.binop(ctx, opCmpNid); err != nil {
 				return nil, false, err
 			}
 		case OpCmpLt:
+			if ai, bi, ok := f.intIntFast(); ok {
+				f.pushBoolReplace2(ai < bi)
+				break
+			}
 			if err := f.binop(ctx, opCmpLt); err != nil {
 				return nil, false, err
 			}
 		case OpCmpLe:
+			if ai, bi, ok := f.intIntFast(); ok {
+				f.pushBoolReplace2(ai <= bi)
+				break
+			}
 			if err := f.binop(ctx, opCmpLe); err != nil {
 				return nil, false, err
 			}
 		case OpCmpGt:
+			if ai, bi, ok := f.intIntFast(); ok {
+				f.pushBoolReplace2(ai > bi)
+				break
+			}
 			if err := f.binop(ctx, opCmpGt); err != nil {
 				return nil, false, err
 			}
 		case OpCmpGe:
+			if ai, bi, ok := f.intIntFast(); ok {
+				f.pushBoolReplace2(ai >= bi)
+				break
+			}
 			if err := f.binop(ctx, opCmpGe); err != nil {
 				return nil, false, err
 			}
@@ -656,6 +723,30 @@ func (f *Frame) unop(ctx phpv.Context, fn func(phpv.Context, *phpv.ZVal) (*phpv.
 	}
 	f.push(res)
 	return nil
+}
+
+// intIntFast returns (ai, bi, true) when both stack top operands are
+// ZtInt; the dispatch loop can then compute the result inline. Returns
+// (_, _, false) otherwise — the caller falls through to the generic
+// binop path.
+func (f *Frame) intIntFast() (ai, bi phpv.ZInt, ok bool) {
+	b := f.stack[f.sp-1]
+	a := f.stack[f.sp-2]
+	if a.GetType() != phpv.ZtInt || b.GetType() != phpv.ZtInt {
+		return 0, 0, false
+	}
+	return a.Value().(phpv.ZInt), b.Value().(phpv.ZInt), true
+}
+
+// pushBoolReplace2 replaces the top two stack slots with a single bool
+// — the common shape of an int-int compare fast path.
+func (f *Frame) pushBoolReplace2(v bool) {
+	if v {
+		f.stack[f.sp-2] = phpv.ZTrue.ZVal()
+	} else {
+		f.stack[f.sp-2] = phpv.ZFalse.ZVal()
+	}
+	f.sp--
 }
 
 // incDecLocal applies ++/-- to the local at index, optionally pushing
