@@ -149,6 +149,13 @@ func arraySetLocal(ctx phpv.Context, f *Frame, idx uint16, offset, value *phpv.Z
 			k = offset.Value()
 		}
 		if err := sa.OffsetSet(ctx, k, value); err != nil {
+			// ZStringArray returns plain errors.New for the
+			// "Cannot assign an empty string …" case (and similar).
+			// Wrap as a throwable Error so catch() can handle it
+			// the way the AST does.
+			if _, isPhpErr := err.(*phpv.PhpError); !isPhpErr {
+				return phpobj.ThrowError(ctx, phpobj.Error, err.Error())
+			}
 			return err
 		}
 		// Update local with the (possibly modified) string.
