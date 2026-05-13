@@ -527,6 +527,9 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 			val := f.pop()
 			arr := f.peek().AsArray(ctx)
 			if err := arr.OffsetSet(ctx, nil, val); err != nil {
+				if err == phpv.ErrNextElementOccupied {
+					return nil, false, phpobj.ThrowError(ctx, phpobj.Error, err.Error())
+				}
 				return nil, false, err
 			}
 
@@ -535,6 +538,9 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 			key := f.pop()
 			arr := f.peek().AsArray(ctx)
 			if err := arr.OffsetSet(ctx, key.Value(), val); err != nil {
+				if err == phpv.ErrNextElementOccupied {
+					return nil, false, phpobj.ThrowError(ctx, phpobj.Error, err.Error())
+				}
 				return nil, false, err
 			}
 
