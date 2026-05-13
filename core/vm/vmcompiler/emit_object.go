@@ -138,8 +138,11 @@ func (e *emitter) emitObjectFuncCall(n objectFuncNode) error {
 	name := n.ObjectFuncName()
 	args := n.ObjectFuncArgs()
 	// AST-delegate nullsafe, dynamic-name, or special-args method
-	// calls. The dispatch + receiver evaluation lives in the AST.
-	if n.ObjectFuncIsNullSafe() || (len(name) > 0 && name[0] == '$') || compiler.CallHasSpecialArgs(args) {
+	// calls. Also AST-delegate when any arg is a writable lvalue —
+	// we can't statically know if the resolved method declares a
+	// by-reference parameter (polymorphism), and the VM's value-
+	// passing call protocol can't bind references after the fact.
+	if n.ObjectFuncIsNullSafe() || (len(name) > 0 && name[0] == '$') || compiler.CallHasSpecialArgs(args) || compiler.CallHasWritableArg(args) {
 		raw, ok := n.(phpv.Runnable)
 		if !ok {
 			return unsupportedf("method-call AST delegation: cannot retrieve raw Runnable")

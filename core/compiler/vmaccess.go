@@ -263,6 +263,24 @@ func CallHasSpecialArgs(args []phpv.Runnable) bool {
 	return false
 }
 
+// CallHasWritableArg reports whether any of `args` is a writable
+// lvalue (variable, array element, object property, etc.). Used by
+// the VM emitter to AST-delegate method calls whose receiver might
+// declare a by-reference parameter — we can't statically resolve
+// the method without polymorphism analysis, so when any arg could
+// possibly need ref binding we route through the AST.
+func CallHasWritableArg(args []phpv.Runnable) bool {
+	for _, a := range args {
+		switch a.(type) {
+		case *runVariable, *runArrayAccess, *runObjectVar,
+			*runClassStaticVarRef, *runClassStaticDynVarRef,
+			*runVariableRef:
+			return true
+		}
+	}
+	return false
+}
+
 // IsIssetOrEmptyNode reports whether r is `isset(…)` or `empty(…)`.
 // The VM emitter routes these through OpClassConst (push result).
 // These don't write locals, so no slot refresh is needed.
