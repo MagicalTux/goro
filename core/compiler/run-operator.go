@@ -1328,6 +1328,19 @@ func OperatorMathLogic(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal)
 				}
 			}
 		}
+		// Objects without HandleDoOperation in a bitwise op: PHP throws
+		// "Unsupported operand types: A op B". Without this, the default
+		// branch below returns a non-throwable Errorf and the script
+		// dies even though the caller has a try/catch.
+		if a.GetType() == phpv.ZtObject || (b != nil && b.GetType() == phpv.ZtObject) {
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+				fmt.Sprintf("Unsupported operand types: %s %s %s", phpTypeName(a), op.OpString(), phpTypeName(b)))
+		}
+		// Arrays in bitwise ops: same TypeError as arithmetic.
+		if a.GetType() == phpv.ZtArray || (b != nil && b.GetType() == phpv.ZtArray) {
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+				fmt.Sprintf("Unsupported operand types: %s %s %s", phpTypeName(a), op.OpString(), phpTypeName(b)))
+		}
 	}
 
 	if a == nil {
