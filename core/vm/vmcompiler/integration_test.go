@@ -6,18 +6,13 @@ import (
 	"github.com/KarpelesLab/goro/core/compiler"
 	"github.com/KarpelesLab/goro/core/phperr"
 	"github.com/KarpelesLab/goro/core/phpv"
-	"github.com/KarpelesLab/goro/core/vm/vmcompiler"
 	_ "github.com/KarpelesLab/goro/ext/standard"
 )
 
 // TestClosureBodyHookWiring verifies the compiler correctly hands off
-// each compiled function body to vmcompiler when the VM gate is on,
-// and the resulting *ZClosure.code is a *vm.ClosureBody.
+// each compiled function body to vmcompiler and the resulting
+// *ZClosure.code is a *vm.ClosureBody.
 func TestClosureBodyHookWiring(t *testing.T) {
-	prev := vmcompiler.Enabled()
-	vmcompiler.SetEnabled(true)
-	t.Cleanup(func() { vmcompiler.SetEnabled(prev) })
-
 	g := newGlobal(t)
 	r := compileSnippet(t, g, `
 		function vm_wired_add($a, $b) { return $a + $b; }
@@ -46,10 +41,6 @@ func TestClosureBodyHookWiring(t *testing.T) {
 // still falls back), the AST body is kept (no VM wrapper) and the
 // function still runs.
 func TestClosureBodyHookFallsBack(t *testing.T) {
-	prev := vmcompiler.Enabled()
-	vmcompiler.SetEnabled(true)
-	t.Cleanup(func() { vmcompiler.SetEnabled(prev) })
-
 	// Return-by-reference (function &…() { return …; }) still forces
 	// AST fallback — the VM doesn't preserve the ref through OP_RET.
 	g := newGlobal(t)
@@ -83,10 +74,6 @@ func TestClosureBodyHookFallsBack(t *testing.T) {
 // exception out of a VM-compiled function so an AST try/catch
 // wrapper at the script level catches it.
 func TestThrowFromVM(t *testing.T) {
-	prev := vmcompiler.Enabled()
-	vmcompiler.SetEnabled(true)
-	t.Cleanup(func() { vmcompiler.SetEnabled(prev) })
-
 	g := newGlobal(t)
 	r := compileSnippet(t, g, `
 		function vm_thrower() { throw new Exception('hello'); }
@@ -114,10 +101,6 @@ func TestThrowFromVM(t *testing.T) {
 // continues to work — recursion goes through CallZVal which dispatches
 // to ZClosure.Call which invokes the VM body.
 func TestRecursiveVM(t *testing.T) {
-	prev := vmcompiler.Enabled()
-	vmcompiler.SetEnabled(true)
-	t.Cleanup(func() { vmcompiler.SetEnabled(prev) })
-
 	g := newGlobal(t)
 	r := compileSnippet(t, g, `
 		function vm_fib($n) { if ($n <= 1) return $n; return vm_fib($n-1) + vm_fib($n-2); }
@@ -132,16 +115,11 @@ func TestRecursiveVM(t *testing.T) {
 	}
 }
 
-// TestDisabledByDefault confirms the gate defaults to off when the env
-// var is unset and SetEnabled was never called.
-func TestDisabledByDefault(t *testing.T) {
-	// Force off, simulating a production process with GORO_VM unset.
-	prev := vmcompiler.Enabled()
-	vmcompiler.SetEnabled(false)
-	t.Cleanup(func() { vmcompiler.SetEnabled(prev) })
-
+// TestEnabledByDefault confirms the VM is the only runtime — closures
+// always VM-compile when the body is supported.
+func TestEnabledByDefault(t *testing.T) {
 	g := newGlobal(t)
-	r := compileSnippet(t, g, `function vm_off($x) { return $x + 1; } return vm_off(5);`)
+	r := compileSnippet(t, g, `function vm_default($x) { return $x + 1; } return vm_default(5);`)
 	res, err := phperr.CatchReturn(r.Run(g))
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -149,6 +127,11 @@ func TestDisabledByDefault(t *testing.T) {
 	if res.String() != "6" {
 		t.Fatalf("got %q, want 6", res.String())
 	}
-	// Don't bother inspecting closure.code — by being off, the AST
-	// path runs and produces the correct result.
+	fn, err := g.GetFunction(g, phpv.ZString("vm_default"))
+	if err != nil {
+		t.Fatalf("GetFunction: %v", err)
+	}
+	if !compiler.IsVMCompiled(fn) {
+		t.Fatalf("vm_default should be VM-compiled by default")
+	}
 }

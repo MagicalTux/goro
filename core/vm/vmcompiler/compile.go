@@ -18,7 +18,7 @@ import (
 func Compile(name phpv.ZString, source *phpv.Loc, body phpv.Runnable, ctx phpv.Context) (*vm.Function, error) {
 	// Unwrap any pre-existing VM wrapper. This happens when tests or
 	// callers pass a Runnable that already went through a script-level
-	// VM wrap from compiler.Compile (when GORO_VM is on).
+	// VM wrap from compiler.Compile.
 	if inner, ok := body.(interface{ Inner() phpv.Runnable }); ok {
 		body = inner.Inner()
 	}

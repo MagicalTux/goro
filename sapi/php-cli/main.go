@@ -30,8 +30,8 @@ import (
 	_ "github.com/KarpelesLab/goro/ext/xml"
 	_ "github.com/KarpelesLab/goro/ext/zlib"
 
-	// Bytecode VM. Self-installs a hook into core/compiler at init
-	// time. The hook is a no-op unless GORO_VM=1 is set in the env.
+	// Bytecode VM. Self-installs the compile hooks into
+	// core/compiler at init time. The VM is the only runtime.
 	_ "github.com/KarpelesLab/goro/core/vm/vmcompiler"
 )
 

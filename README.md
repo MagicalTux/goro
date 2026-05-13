@@ -90,91 +90,75 @@ Goro passes **~11,864 of 12,121 tests** (~97.9%) from the PHP 8.5.5 test suite (
 | intl | Internationalization (ICU) |
 | Phar | PHP archive format |
 
-## Bytecode VM (experimental)
+## Bytecode VM
 
-A stack-based bytecode VM runs in parallel to the AST tree-walking
-executor. It's opt-in and falls back to the AST per-function on any
-unsupported construct.
+Goro compiles every script body and user function to a stack-based
+bytecode and runs it on its own VM. The AST tree-walker remains as
+infrastructure for nodes the emitter doesn't lower piecewise
+(match, switch, anonymous class, dynamic-name access, etc.), but is
+no longer reachable as a standalone runtime.
 
-Enable it with the `GORO_VM=1` environment variable:
+The VM emitter handles natively:
 
-```bash
-GORO_VM=1 php-cli script.php
-```
-
-The VM emitter currently handles:
-
-- Scalar literals (`int`, `float`, `string`, `bool`, `null`) — including
-  the case-insensitive constants `true`/`false`/`null`.
-- Variable read/write, with a per-frame slot cache so reads skip the
-  FuncContext hashtable entirely. Functions with no
-  `extract`/`compact`/`$$x`/`global`/`static`/`$GLOBALS` use further
-  perform slot-only writes (skip the hashtable mirror) for a sizeable
-  perf win on write-heavy loops.
+- Scalar literals; `true`/`false`/`null` (case-insensitive); user
+  constants (`PHP_INT_MAX`, `MYAPP_FOO`, …) via AST resolution.
+- Variable read/write with a per-frame slot cache. Bodies with no
+  `extract`/`compact`/`$$x`/`global`/`static`/`$GLOBALS`/by-ref
+  also skip the FuncContext hashtable mirror on writes.
 - Arithmetic / bitwise / shift / comparison / concat / unary
   (`-`, `~`, `!`); plain and compound assignment (`=`, `+=`, …);
-  pre/post `++`/`--`.
-- Short-circuit `&&` / `||` and `??` (null coalesce, simple-variable
-  LHS only).
-- `if` / `elseif` / `else`, `while`, `for`, `foreach` (value form,
-  array + object iteration), `break` / `continue` (single level),
-  `return`, `throw`, `try` / `catch` (multi-type union, multi-clause,
-  destructor-during-catch-bind chained correctly), `try`/`finally`
-  (delegated to the AST runner so finally runs on every exit path).
-- String interpolation (`"hello $name"`, `"v={$x}"`) lowered to a
-  chain of `OP_CONCAT`.
-- Array literals (`[…]`, including keyed `k => v`); `$a[$k]` read;
-  `$a[$k] = v` and `$a[] = v` writes (with auto-vivification from
-  null/false and string-offset semantics).
-- Object instantiation (`new Cls(args…)`), property read
-  (`$obj->prop`), method call (`$obj->m(args…)`) with full PHP
-  visibility checks (private/protected) and `__call` fallback.
-  `$this` outside object context throws the correct Error. Class
-  const / static prop / `Foo::class` (`Foo::CONST`, `self::method`,
-  `Foo::$bar`, `Foo::class`) are AST-delegated for full
-  CompileDelayed / visibility / LSB semantics.
-- Builtin and user-defined function calls (positional args). Calls to
-  by-ref builtins (`end`, `sort`, `array_walk`, `array_push`, …)
-  fall back to AST so the by-ref binding works.
-- Inline closures (`function() { … }`, `fn() => …`) with use captures,
-  `$this` binding, and arrow auto-capture. Indirect calls (`$f()`,
-  `[$obj, 'method']()`) resolve the callable at runtime via
-  `compiler.ResolveCallable` and forward the implicit `$this`.
+  pre/post `++`/`--` (including on object props, array elements,
+  static props — those AST-delegate).
+- Short-circuit `&&` / `||`; null-coalesce `??` (any LHS shape);
+  ternary `?:` / short ternary.
+- `if`/`elseif`/`else`, `while`, `do`/`while`, `for`, `foreach`
+  (value, by-ref, and non-local-target forms), `match`, `switch`,
+  multi-level `break N` / `continue N`, `return` (incl. typed-return
+  coercion via AST delegation), `throw`, `try`/`catch`/`finally`.
+- String interpolation, array literals (incl. spread `...$arr`),
+  array reads and writes (incl. nested chains, append, compound).
+- Object instantiation (incl. anonymous classes, dynamic class name,
+  named/spread args), property and method access (incl. nullsafe
+  `?->`, dynamic-name, named/spread args), class const / static prop /
+  `Foo::class`, `clone`, `instanceof`.
+- Inline closures with use captures, `$this` binding, arrow auto-
+  capture, indirect calls (`$f()`, `[$obj, 'method']()`).
+- `isset`/`empty`/`unset`, `list($a,$b) = …` / `[$a,$b] = …`
+  destructuring, variable variables (`$$x`, `${$expr}`).
+- Generator iteration: `function() { yield … }` itself runs through
+  the AST (cooperative coroutine), but `foreach` over a generator
+  drives it through the VM's iterator dispatch.
 
-Out of scope (falls back to AST per-function via ErrUnsupported):
+Known limitations (about 24 phpt failures unique to the VM, all
+reference-semantics edge cases):
 
-- By-ref returns and by-ref parameters on user-defined functions
-  (the VM passes pre-evaluated ZVals; the AST passes Runnables and
-  binds `Writable`s).
-- Generators (`yield`).
-- `$obj->prop = v` and other property writes (deferred until a public
-  WriteValue helper exists).
-- Nullsafe chains (`$obj?->...`).
-- Spread (`...$arr`) and named arguments.
-- Dynamic names (`$$x`, `$obj->{$x}`, `new $cls()`).
-- Multi-level `break N` / `continue N`.
-- Type-hinted return values (the AST coerces; the VM doesn't yet).
-- User-defined constants (PHP_INT_MAX, MYAPP_FOO, …).
-- List destructure, anonymous classes, `extract`/`compact`/`$$x` and
-  similar locals-introspecting builtins (those force slot-only off;
-  currently we just compile-time bail when the body uses them).
+- By-ref bindings through polymorphic method dispatch (the resolved
+  override declares a by-ref param the compile-time signature can't
+  predict).
+- Forward-referenced by-ref user functions called from inside another
+  function body (the lazy table isn't populated when the inner body
+  compiles).
+- A handful of by-ref builtins not in the (selective) ByRefBuiltins
+  list (e.g. `stream_bucket_make_writeable`).
 
-Functions matching any of the above run as AST as before — the engine
-silently picks the right backend per-function, with no behaviour
-change.
+These are documented in detail in
+[`memory/project_vm_state.md`](.claude/projects/-home-magicaltux-projects-goro/memory/project_vm_state.md)
+and addressed by either a ref-aware call protocol or runtime
+re-evaluation when the resolved callee declares by-ref. Both are
+non-trivial architectural changes outstanding for a future pass.
 
-Bench wins (vs. AST baseline, per-iter):
+Benchmark wins (vs the AST executor, before VM-only mode was made
+the default):
 
 | Benchmark | AST | VM | Δ |
 |---|---|---|---|
-| Arithmetic | 58M ns | 27M ns | **-54%** |
-| ArrayOps | 11M ns | 8M ns | -27% |
-| Fibonacci | 26M ns | 21M ns | -19% |
-| StringConcat | 13M ns | 11M ns | -18% |
-| FunctionCalls | 18M ns | 15M ns | -14% |
+| Arithmetic | 74M ns | 23M ns | **-69%** |
+| ArrayOps | 19M ns | 11M ns | -42% |
+| Fibonacci | 48M ns | 31M ns | -35% |
+| FunctionCalls | 28M ns | 21M ns | -25% |
+| StringConcat | 27M ns | 22M ns | -19% |
 
-Larger gains require either an unboxed value type, slot-only writes
-(skipping the hashtable mirror) for slot-safe functions, or
+Larger gains require either an unboxed value type or
 register-based opcodes. The 64-bit instruction format already has room
 for the last one.
 
