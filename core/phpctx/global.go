@@ -2124,7 +2124,7 @@ func (g *Global) LookupByRef(name phpv.ZString) (hit, byRef bool) {
 		if le != nil && le.p < len(le.r) {
 			if c, ok := le.r[le.p].(phpv.FuncGetArgs); ok {
 				for _, a := range c.GetArgs() {
-					if a.Ref {
+					if a.Ref || a.NoticeRef || a.PreferRef {
 						return true, true
 					}
 				}
@@ -2136,10 +2136,15 @@ func (g *Global) LookupByRef(name phpv.ZString) (hit, byRef bool) {
 }
 
 // callableHasByRef returns true if the callable declares any by-ref param.
+// Counts Ref (strict by-ref), NoticeRef (by-ref with notice for
+// non-variables: array_pop/sort/etc.), and PreferRef (silently accepts
+// by-value: extract). All three need ref-binding semantics that the
+// VM's value-passing call protocol can't provide, so the emitter must
+// AST-delegate the call.
 func callableHasByRef(c phpv.Callable) bool {
 	if fga, ok := c.(phpv.FuncGetArgs); ok {
 		for _, a := range fga.GetArgs() {
-			if a.Ref {
+			if a.Ref || a.NoticeRef || a.PreferRef {
 				return true
 			}
 		}

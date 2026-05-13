@@ -399,6 +399,15 @@ func LookupLazyByRefSafe(g phpv.GlobalContext, name phpv.ZString) (hit, byRef bo
 // argument by reference. The VM emitter falls back to AST for calls
 // to any of these because the VM's value-passing call protocol
 // can't bind a Writable argument.
+//
+// This static list is a fallback for emit-time queries that don't have
+// a *phpctx.Global available (some test fixtures, early compile-time
+// hooks). With a Global, `LookupByRef` introspects each callable's
+// ExtFunctionArg metadata directly and catches every by-ref signature
+// without needing this list. Keep entries in sync as new by-ref
+// builtins are added; missing entries don't break runtime behaviour
+// (the dynamic probe covers them) but degrade gracefully when no
+// Global is wired in.
 var ByRefBuiltins = map[phpv.ZString]bool{
 	// Array internal-pointer mutators
 	"end": true, "reset": true, "next": true, "prev": true,
@@ -412,10 +421,25 @@ var ByRefBuiltins = map[phpv.ZString]bool{
 	"array_push": true, "array_pop": true,
 	"array_shift": true, "array_unshift": true,
 	"array_splice": true, "array_multisort": true,
-	// Misc
+	// Misc / IO / process
 	"settype": true, "parse_str": true, "mb_parse_str": true,
+	"mb_convert_variables": true,
+	"extract":               true,
+	"exec":                  true, "passthru": true, "system": true,
+	"flock":   true,
+	"fscanf":  true,
+	"sscanf":  true,
+	"is_callable":            true,
+	"getimagesize":           true, "getimagesizefromstring": true,
+	"similar_text":           true,
+	"str_replace":            true, "str_ireplace": true,
+	"openssl_random_pseudo_bytes": true,
 	// preg_match / sscanf write capture-groups via &$matches / args
-	"preg_match": true, "preg_match_all": true, "sscanf": true,
+	"preg_match":                  true,
+	"preg_match_all":              true,
+	"preg_replace":                true,
+	"preg_replace_callback":       true,
+	"preg_replace_callback_array": true,
 }
 
 var slotUnsafeFuncs = map[phpv.ZString]bool{
