@@ -77,10 +77,16 @@ func (f *Frame) storeLocal(ctx phpv.Context, idx uint16, v *phpv.ZVal) error {
 	// Array values get a COW Dup on assignment so subsequent
 	// mutations through one variable don't surprise the other
 	// (PHP value semantics for arrays). Matches the AST's
-	// ZVal.ZVal() path in runOperator's `=` branch. Pre-existing
-	// refs propagate, so skip the dup when v is a reference.
-	if !v.IsRef() && v.GetType() == phpv.ZtArray {
-		v = v.Dup()
+	// ZVal.ZVal() path in runOperator's `=` branch. If the source
+	// is a reference to an array (a by-ref param or foreach &\$v),
+	// dereference first then Dup — plain assign should detach.
+	if v.GetType() == phpv.ZtArray {
+		if v.IsRef() {
+			// Follow the ref chain to the underlying ZVal, then Dup.
+			v = v.Nude().Dup()
+		} else {
+			v = v.Dup()
+		}
 	}
 	f.locals[idx] = v
 	if f.fn.SlotOnly {
