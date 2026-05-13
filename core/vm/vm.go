@@ -409,11 +409,12 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 
 		// --- inc/dec on locals --------------------------------------
 		// Int fast paths inline a slot-int + add + store without
-		// going through DoInc's full type switch. Mixed types fall
-		// through to the generic path.
+		// going through DoInc's full type switch. Mixed types or
+		// ref-bound slots fall through to the generic path so the
+		// ref propagation in DoInc/storeLocal does its job.
 		case OpIncLocal:
 			cur := f.locals[ins.A()]
-			if cur != nil && cur.GetType() == phpv.ZtInt {
+			if cur != nil && !cur.IsRef() && cur.GetType() == phpv.ZtInt {
 				ci := int64(cur.Value().(phpv.ZInt))
 				if ci != math.MaxInt64 {
 					newV := phpv.ZInt(ci + 1).ZVal()
@@ -432,7 +433,7 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 			}
 		case OpDecLocal:
 			cur := f.locals[ins.A()]
-			if cur != nil && cur.GetType() == phpv.ZtInt {
+			if cur != nil && !cur.IsRef() && cur.GetType() == phpv.ZtInt {
 				ci := int64(cur.Value().(phpv.ZInt))
 				if ci != math.MinInt64 {
 					newV := phpv.ZInt(ci - 1).ZVal()
@@ -451,7 +452,7 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 			}
 		case OpPostIncLocal:
 			cur := f.locals[ins.A()]
-			if cur != nil && cur.GetType() == phpv.ZtInt {
+			if cur != nil && !cur.IsRef() && cur.GetType() == phpv.ZtInt {
 				ci := int64(cur.Value().(phpv.ZInt))
 				if ci != math.MaxInt64 {
 					newV := phpv.ZInt(ci + 1).ZVal()
@@ -470,7 +471,7 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 			}
 		case OpPostDecLocal:
 			cur := f.locals[ins.A()]
-			if cur != nil && cur.GetType() == phpv.ZtInt {
+			if cur != nil && !cur.IsRef() && cur.GetType() == phpv.ZtInt {
 				ci := int64(cur.Value().(phpv.ZInt))
 				if ci != math.MinInt64 {
 					newV := phpv.ZInt(ci - 1).ZVal()
