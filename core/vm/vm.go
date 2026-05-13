@@ -3,6 +3,7 @@ package vm
 import (
 	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/KarpelesLab/goro/core/compiler"
 	"github.com/KarpelesLab/goro/core/logopt"
@@ -24,11 +25,8 @@ var ErrUnknownOp = errors.New("vm: unknown opcode")
 // pre-bound into the surrounding context; this entry point doesn't
 // touch arguments.
 func Run(ctx phpv.Context, fn *Function) (*phpv.ZVal, error) {
-	f := &Frame{
-		fn:     fn,
-		stack:  make([]Slot, fn.MaxStack),
-		locals: make([]*phpv.ZVal, len(fn.Locals)),
-	}
+	f := acquireFrame(fn)
+	defer releaseFrame(f)
 	// Pre-load any locals that already exist in the FuncContext (most
 	// commonly: parameters bound by ZClosure.callBody before us).
 	// Use OffsetCheck to distinguish "exists" from "missing" — plain
@@ -40,6 +38,47 @@ func Run(ctx phpv.Context, fn *Function) (*phpv.ZVal, error) {
 		}
 	}
 	return f.exec(ctx)
+}
+
+// framePool reuses Frame structs and their backing slices across calls.
+// The stack and locals slices are reused when their lengths match the
+// next caller's needs (the common case for recursive calls into the
+// same function).
+var framePool = sync.Pool{
+	New: func() any { return &Frame{} },
+}
+
+func acquireFrame(fn *Function) *Frame {
+	f := framePool.Get().(*Frame)
+	f.fn = fn
+	f.pc = 0
+	f.sp = 0
+	if cap(f.stack) >= fn.MaxStack {
+		f.stack = f.stack[:fn.MaxStack]
+	} else {
+		f.stack = make([]Slot, fn.MaxStack)
+	}
+	if cap(f.locals) >= len(fn.Locals) {
+		f.locals = f.locals[:len(fn.Locals)]
+		for i := range f.locals {
+			f.locals[i] = nil
+		}
+	} else {
+		f.locals = make([]*phpv.ZVal, len(fn.Locals))
+	}
+	return f
+}
+
+func releaseFrame(f *Frame) {
+	// Clear references so the GC can reclaim ZVals/iterators that
+	// were sitting in the slots. Keep the backing arrays so the next
+	// caller can reuse them.
+	for i := range f.stack[:f.sp] {
+		f.stack[i] = nil
+	}
+	f.iters = f.iters[:0]
+	f.fn = nil
+	framePool.Put(f)
 }
 
 // exec is the dispatch loop. Returns whatever value OpRet popped, or
