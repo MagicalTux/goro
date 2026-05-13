@@ -19,8 +19,23 @@ func splObjectHash(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
 		return nil, err
 	}
 
-	hash := fmt.Sprintf("%032x", obj.ID)
-	return phpv.ZString(hash).ZVal(), nil
+	// Manual 32-char zero-padded hex of obj.ID — much cheaper than
+	// fmt.Sprintf in tight loops (bug60598 creates 10k objects, each
+	// calling this from __construct/__destruct).
+	const hexDigits = "0123456789abcdef"
+	var buf [32]byte
+	n := obj.ID
+	for i := 31; i >= 0; i-- {
+		buf[i] = hexDigits[n&0xF]
+		n >>= 4
+		if n == 0 {
+			for j := i - 1; j >= 0; j-- {
+				buf[j] = '0'
+			}
+			break
+		}
+	}
+	return phpv.ZString(buf[:]).ZVal(), nil
 }
 
 // > func int spl_object_id ( object $object )
