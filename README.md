@@ -129,38 +129,43 @@ The VM emitter handles natively:
   the AST (cooperative coroutine), but `foreach` over a generator
   drives it through the VM's iterator dispatch.
 
-Known limitations (about 24 phpt failures unique to the VM, all
-reference-semantics edge cases):
+Known limitations (about 20 phpt failures unique to the VM, all
+reference-semantics or error-handler edge cases):
 
-- By-ref bindings through polymorphic method dispatch (the resolved
-  override declares a by-ref param the compile-time signature can't
-  predict).
-- Forward-referenced by-ref user functions called from inside another
-  function body (the lazy table isn't populated when the inner body
-  compiles).
-- A handful of by-ref builtins not in the (selective) ByRefBuiltins
-  list (e.g. `stream_bucket_make_writeable`).
+- ArrayAccess overloaded containers (`$obj[$k]` where `$obj`
+  implements `ArrayAccess`) with by-ref propagation.
+- Deep ref-cycle reshape patterns (`bug72543*`).
+- A few error-handler/backtrace tests that depend on specific
+  call-frame metadata that the VM doesn't replicate exactly.
+- One isset string-offset edge case (`bug31098`).
 
-These are documented in detail in
-[`memory/project_vm_state.md`](.claude/projects/-home-magicaltux-projects-goro/memory/project_vm_state.md)
-and addressed by either a ref-aware call protocol or runtime
-re-evaluation when the resolved callee declares by-ref. Both are
+These need either a ref-aware call protocol (pass `Writable` args
+through the VM stack) or a runtime fall-back that re-evaluates args
+from AST nodes when the resolved callee declares by-ref. Both are
 non-trivial architectural changes outstanding for a future pass.
 
-Benchmark wins (vs the AST executor, before VM-only mode was made
-the default):
+Benchmark numbers (per iter, on the same machine before / after
+flipping the VM gate on permanently):
 
-| Benchmark | AST | VM | Δ |
+| Benchmark   | AST baseline | VM | Δ |
 |---|---|---|---|
-| Arithmetic | 74M ns | 23M ns | **-69%** |
-| ArrayOps | 19M ns | 11M ns | -42% |
-| Fibonacci | 48M ns | 31M ns | -35% |
-| FunctionCalls | 28M ns | 21M ns | -25% |
-| StringConcat | 27M ns | 22M ns | -19% |
+| Arithmetic    | 58 ms | 15 ms | **-74%** |
+| ArrayOps      | 17 ms |  6 ms | -65% |
+| Fibonacci     | 33 ms | 16 ms | -52% |
+| FunctionCalls | 22 ms | 12 ms | -45% |
+| StringConcat  | 21 ms | 12 ms | -43% |
 
 Larger gains require either an unboxed value type or
-register-based opcodes. The 64-bit instruction format already has room
-for the last one.
+register-based opcodes. The 64-bit instruction format already has
+room for the latter.
+
+### Importing the VM
+
+Any binary or test that uses `core/compiler` must blank-import
+`core/vm/vmcompiler` so the package's `init()` installs the
+`TryBuildVMScript` / `TryBuildVMClosureBody` hooks. `compiler.Compile`
+panics with a clear message if those hooks are missing. All built-in
+SAPIs and the in-tree test files already have the import.
 
 ## Architecture
 
