@@ -610,18 +610,35 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 
 		case OpJmpIfFalse:
 			v := f.pop()
-			if !bool(v.AsBool(ctx)) {
+			// Bool fast path — comparison ops always produce ZBool,
+			// so the common case (loop condition `$i < N`, if
+			// expressions, etc.) never goes through the generic
+			// AsBool → As → interface conversion chain.
+			if zb, ok := v.Value().(phpv.ZBool); ok {
+				if !bool(zb) {
+					f.pc = uint32(int32(f.pc) + ins.C())
+				}
+			} else if !bool(v.AsBool(ctx)) {
 				f.pc = uint32(int32(f.pc) + ins.C())
 			}
 
 		case OpJmpIfTrue:
 			v := f.pop()
-			if bool(v.AsBool(ctx)) {
+			if zb, ok := v.Value().(phpv.ZBool); ok {
+				if bool(zb) {
+					f.pc = uint32(int32(f.pc) + ins.C())
+				}
+			} else if bool(v.AsBool(ctx)) {
 				f.pc = uint32(int32(f.pc) + ins.C())
 			}
 
 		case OpJmpIfFalsePeek:
-			if !bool(f.peek().AsBool(ctx)) {
+			v := f.peek()
+			if zb, ok := v.Value().(phpv.ZBool); ok {
+				if !bool(zb) {
+					f.pc = uint32(int32(f.pc) + ins.C())
+				}
+			} else if !bool(v.AsBool(ctx)) {
 				f.pc = uint32(int32(f.pc) + ins.C())
 			}
 
