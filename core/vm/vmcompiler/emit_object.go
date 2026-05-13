@@ -138,16 +138,25 @@ func (e *emitter) emitObjectFuncCall(n objectFuncNode) error {
 	name := n.ObjectFuncName()
 	args := n.ObjectFuncArgs()
 	// AST-delegate nullsafe, dynamic-name, or special-args method
-	// calls. Also AST-delegate when any arg is a writable lvalue —
-	// we can't statically know if the resolved method declares a
-	// by-reference parameter (polymorphism), and the VM's value-
-	// passing call protocol can't bind references after the fact.
-	if n.ObjectFuncIsNullSafe() || (len(name) > 0 && name[0] == '$') || compiler.CallHasSpecialArgs(args) || compiler.CallHasWritableArg(args) {
+	// calls. The shape itself isn't lowered piecewise.
+	if n.ObjectFuncIsNullSafe() || (len(name) > 0 && name[0] == '$') || compiler.CallHasSpecialArgs(args) {
 		raw, ok := n.(phpv.Runnable)
 		if !ok {
 			return unsupportedf("method-call AST delegation: cannot retrieve raw Runnable")
 		}
 		return e.emitCallViaAST(raw)
+	}
+	// Method-call writable-arg case: we can't statically know if
+	// the resolved method declares a by-ref param (polymorphism).
+	// AST-delegate with OP_SYNC_SLOTS so the AST sees fresh locals
+	// in slot-only bodies, then refresh after. Avoids marking the
+	// surrounding body slot-unsafe.
+	if compiler.CallHasWritableArg(args) {
+		raw, ok := n.(phpv.Runnable)
+		if !ok {
+			return unsupportedf("method-call AST delegation: cannot retrieve raw Runnable")
+		}
+		return e.emitCallViaASTSync(raw)
 	}
 	if len(args) > 0xFFFF {
 		return unsupportedf("method call with too many args (>=65536)")

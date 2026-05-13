@@ -221,12 +221,9 @@ func IsSlotSafe(g phpv.GlobalContext, r phpv.Runnable) bool {
 		if CallHasSpecialArgs(n.args) {
 			return false
 		}
-		// Writable-arg method calls are conservatively AST-delegated
-		// so the resolved method's by-ref params (if any) bind
-		// through the AST's CallZVal path.
-		if CallHasWritableArg(n.args) {
-			return false
-		}
+		// Writable-arg method calls are AST-delegated at the
+		// emit-site with OP_SYNC_SLOTS / OP_REFRESH_SLOTS wrapping,
+		// so the surrounding body can stay slot-only.
 	case *runObjectVar:
 		// Nullsafe / dynamic-name property reads are AST-delegated.
 		// `writeContext` paths are already caught by the runOperator
