@@ -51,6 +51,25 @@ func (f *Frame) refreshSlots(ctx phpv.Context) {
 	}
 }
 
+// syncSlots pushes every non-nil slot into the FuncContext hashtable.
+// Called before AST delegation in slot-only bodies so the AST can read
+// fresh local values (the slot-only optimization normally skips the
+// hashtable mirror on writes). Pair with refreshSlots after the AST run.
+//
+// Skipping nil slots: a nil slot means the local is "undefined" — we
+// don't want to OffsetSet ZNULL which would create a defined entry.
+func (f *Frame) syncSlots(ctx phpv.Context) error {
+	for i, v := range f.locals {
+		if v == nil {
+			continue
+		}
+		if err := ctx.OffsetSet(ctx, f.fn.Locals[i], v); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // storeLocal writes v into both the slot cache and the FuncContext
 // hashtable (the latter is skipped when fn.SlotOnly is set).
 //

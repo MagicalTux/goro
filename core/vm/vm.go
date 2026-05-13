@@ -722,6 +722,11 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 		case OpRefreshSlots:
 			f.refreshSlots(ctx)
 
+		case OpSyncSlots:
+			if err := f.syncSlots(ctx); err != nil {
+				return nil, false, err
+			}
+
 		// --- objects -------------------------------------------------
 		case OpNewObject:
 			argc := int(ins.B())
