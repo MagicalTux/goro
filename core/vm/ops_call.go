@@ -15,14 +15,33 @@ import (
 // locals — for the MVP scope this is acceptable (none of the
 // supported call sites use by-ref). The bytecode emitter falls back to
 // AST when it detects a callable's signature requires by-ref.
-func (f *Frame) callUser(ctx phpv.Context, name phpv.ZString, argc int) error {
+func (f *Frame) callUser(ctx phpv.Context, name phpv.ZString, argc int, nameIdx uint16) error {
 	args := make([]*phpv.ZVal, argc)
 	for i := argc - 1; i >= 0; i-- {
 		args[i] = f.pop()
 	}
-	callable, err := ctx.Global().GetFunction(ctx, name)
-	if err != nil {
-		return err
+	// Cached callable lookup: avoid the per-call hashtable lookup
+	// for the common case of a stable target. The cache is invalidated
+	// when GetFunction returns a different pointer (function redeclared
+	// or replaced).
+	var callable phpv.Callable
+	if int(nameIdx) < len(f.fn.CallableCache) {
+		callable = f.fn.CallableCache[nameIdx]
+	}
+	if callable == nil {
+		c, err := ctx.Global().GetFunction(ctx, name)
+		if err != nil {
+			return err
+		}
+		callable = c
+		// Lazy-allocate the cache; size matches Consts so any name
+		// idx is reachable.
+		if f.fn.CallableCache == nil {
+			f.fn.CallableCache = make([]phpv.Callable, len(f.fn.Consts))
+		}
+		if int(nameIdx) < len(f.fn.CallableCache) {
+			f.fn.CallableCache[nameIdx] = callable
+		}
 	}
 	res, err := ctx.CallZVal(ctx, callable, args, nil)
 	if err != nil {

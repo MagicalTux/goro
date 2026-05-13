@@ -37,6 +37,13 @@ type Function struct {
 	// lists, etc.) may still see stale parameter values when this is
 	// on, so the emitter is conservative.
 	SlotOnly bool
+
+	// CallableCache is a parallel slice to Consts: when index i holds
+	// a name used by OP_CALL_USER, the resolved callable is cached at
+	// CallableCache[i] after the first call. Cleared back to nil if a
+	// later call sees a different callable (function redeclared).
+	// Lazy-allocated on first cache write.
+	CallableCache []phpv.Callable
 }
 
 // TryHandler describes a `try { … } catch …` region. The dispatcher

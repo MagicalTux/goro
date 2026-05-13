@@ -375,7 +375,7 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 				return nil, false, fmt.Errorf("vm: OP_CALL_USER name const is %T not ZString", f.fn.Consts[ins.A()])
 			}
 			argc := int(ins.B())
-			if err := f.callUser(ctx, name, argc); err != nil {
+			if err := f.callUser(ctx, name, argc, ins.A()); err != nil {
 				return nil, false, err
 			}
 			// callUser pops argc and pushes 1 result.
