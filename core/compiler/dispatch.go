@@ -136,17 +136,16 @@ func IsSlotSafe(g phpv.GlobalContext, r phpv.Runnable) bool {
 		}
 		// User-function calls whose callee has by-ref params:
 		// AST-delegated at the call site, reads args from hashtable.
-		// Unknown callees with writable args are also AST-delegated
-		// (conservative — see emitFunctionCall in emit_call.go).
+		// Note: unknown callees aren't flagged here even when args
+		// are writable; the emit-side falls back via the same gate,
+		// and forcing slot-unsafety on every function-call body
+		// regressed many independent tests.
 		hit, byRef := LookupLazyByRefSafe(g, n.name)
 		if hit && byRef {
 			return false
 		}
-		if !hit && CallHasWritableArg(n.args) {
-			return false
-		}
 	case *runnableFunctionCallRef:
-		if CallHasSpecialArgs(n.args) || CallHasWritableArg(n.args) {
+		if CallHasSpecialArgs(n.args) {
 			return false
 		}
 	case *runStaticVar:
