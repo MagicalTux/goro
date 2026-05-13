@@ -997,6 +997,15 @@ func (f *Frame) pushBoolReplace2(v bool) {
 func (f *Frame) incDecLocal(ctx phpv.Context, idx uint16, inc bool, post bool) error {
 	v := f.locals[idx]
 	if v == nil {
+		// Undefined-variable warning matches the AST runVariable.Run
+		// behaviour for an unwritten ++ / -- target. ZNULL.ZVal() →
+		// DoInc → ZInt(1) / ZInt(-1) per PHP semantics.
+		name := f.fn.Locals[idx]
+		if name != "this" {
+			if err := ctx.Warn("Undefined variable $%s", string(name), logopt.NoFuncName(true)); err != nil {
+				return err
+			}
+		}
 		v = phpv.ZNULL.ZVal()
 	}
 	// DoInc mutates v in-place; cached singletons must not be mutated,
