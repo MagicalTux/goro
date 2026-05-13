@@ -103,6 +103,14 @@ func (e *emitter) emitExpr(node phpv.Runnable) error {
 		e.pushStack(1)
 		return nil
 	}
+	if compiler.IsValueExprAstDelegated(node) {
+		// Common value-expression types we delegate wholesale
+		// (clone, instanceof, void-cast, first-class callables, …).
+		idx := e.astIndex(node)
+		e.emit(vm.OpClassConst, idx, 0, 0)
+		e.pushStack(1)
+		return nil
+	}
 	if compiler.IsUnsetNode(node) {
 		// unset(…) — void; statement context emits OpTryFinally and
 		// refreshes slots so any unset-of-local nulls the cache.

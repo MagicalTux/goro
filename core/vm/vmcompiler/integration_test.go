@@ -52,28 +52,25 @@ func TestClosureBodyHookFallsBack(t *testing.T) {
 
 	g := newGlobal(t)
 	r := compileSnippet(t, g, `
-		class CloneBox { public $v = 7; }
-		function vm_with_clone() {
-			$a = new CloneBox();
-			$b = clone $a;
-			$b->v = 99;
-			return $a->v + $b->v;
-		}
-		return vm_with_clone();
+		function vm_byref_inc(&$x) { $x++; }
+		$a = 5;
+		vm_byref_inc($a);
+		vm_byref_inc($a);
+		return $a;
 	`)
 	res, err := phperr.CatchReturn(r.Run(g))
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if res.String() != "106" {
-		t.Fatalf("got %q, want 106", res.String())
+	if res.String() != "7" {
+		t.Fatalf("got %q, want 7", res.String())
 	}
-	fn, err := g.GetFunction(g, phpv.ZString("vm_with_clone"))
+	fn, err := g.GetFunction(g, phpv.ZString("vm_byref_inc"))
 	if err != nil {
 		t.Fatalf("GetFunction: %v", err)
 	}
 	if compiler.IsVMCompiled(fn) {
-		t.Fatalf("vm_with_clone should have fallen back to AST")
+		t.Fatalf("vm_byref_inc should have fallen back to AST (by-ref param)")
 	}
 }
 

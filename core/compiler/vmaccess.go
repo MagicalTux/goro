@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"github.com/KarpelesLab/goro/core/phpobj"
 	"github.com/KarpelesLab/goro/core/phpv"
 	"github.com/KarpelesLab/goro/core/tokenizer"
 )
@@ -176,6 +177,58 @@ func IsDestructureTarget(r phpv.Runnable) bool {
 func IsVariableRef(r phpv.Runnable) bool {
 	_, ok := r.(*runVariableRef)
 	return ok
+}
+
+// IsValueExprAstDelegated reports whether r is a value-producing
+// expression the VM AST-delegates wholesale via OpClassConst. The
+// AST runner reads its operands from the FuncContext hashtable.
+// IsSlotSafe rejects bodies containing any of these so the hashtable
+// stays authoritative.
+func IsValueExprAstDelegated(r phpv.Runnable) bool {
+	switch r.(type) {
+	case *runnableClone,
+		*runInstanceOf,
+		*runVoidCast,
+		*runFirstClassCallable,
+		*runFirstClassCloneCallable,
+		*runFirstClassMethodCallable,
+		*runFirstClassDynMethodCallable,
+		*runObjectDynVar,
+		*runObjectDynFunc,
+		*runRef:
+		return true
+	}
+	return false
+}
+
+// NewObjectMethodIterator returns a ZIterator that drives an
+// object implementing the Iterator interface via its rewind/valid/
+// current/key/next methods. This is what the AST's runnableForeach
+// uses for objects (including Generators); the VM mirrors it.
+//
+// Returns nil if obj is nil. Caller is responsible for calling
+// Reset() before iteration.
+func NewObjectMethodIterator(ctx phpv.Context, obj any) phpv.ZIterator {
+	zo, ok := obj.(*phpobj.ZObject)
+	if !ok || zo == nil {
+		return nil
+	}
+	return &phpObjectIterator{ctx: ctx, obj: zo, started: false}
+}
+
+// IsStmtAstDelegated reports whether r is a statement-shaped node
+// the VM AST-delegates wholesale via OpTryFinally + OP_REFRESH_SLOTS.
+func IsStmtAstDelegated(r phpv.Runnable) bool {
+	switch r.(type) {
+	case *runnableDoWhile,
+		*runInlineHtml,
+		*runnableDeclareStrictTypes,
+		*runnableDeclareTicks,
+		*runTopLevelConst,
+		*runEnumRegister:
+		return true
+	}
+	return false
 }
 
 // UnwrapParens peels a `(expr)` wrapper from r. Returns r unchanged

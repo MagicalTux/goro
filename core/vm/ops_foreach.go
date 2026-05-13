@@ -3,6 +3,7 @@ package vm
 import (
 	"fmt"
 
+	"github.com/KarpelesLab/goro/core/compiler"
 	"github.com/KarpelesLab/goro/core/phpobj"
 	"github.com/KarpelesLab/goro/core/phpv"
 )
@@ -44,11 +45,12 @@ func foreachInit(ctx phpv.Context, src *phpv.ZVal) (phpv.ZIterator, error) {
 		return it, nil
 	case phpv.ZtObject:
 		// Object iteration mirrors runnableForeach.Run:
-		//  - IteratorAggregate: call getIterator() and use that.
+		//  - IteratorAggregate: call getIterator() and recurse.
+		//  - Iterator (incl. Generator): drive via rewind/valid/
+		//    current/key/next methods through the AST's
+		//    phpObjectIterator (exposed by compiler).
 		//  - Otherwise: NewIteratorInScope using the calling class
-		//    so property visibility is honored. (For special internal
-		//    classes, this is the path that surfaces "not initialized"
-		//    errors, e.g. uninitialised DatePeriod.)
+		//    so property visibility is honored.
 		var it phpv.ZIterator
 		if obj, ok := src.Value().(*phpobj.ZObject); ok {
 			if obj.GetClass().Implements(phpobj.IteratorAggregate) {
@@ -58,9 +60,13 @@ func foreachInit(ctx phpv.Context, src *phpv.ZVal) (phpv.ZIterator, error) {
 				}
 				if iterResult != nil && iterResult.GetType() == phpv.ZtObject {
 					if iterObj, ok := iterResult.Value().(*phpobj.ZObject); ok && iterObj.GetClass().Implements(phpobj.Iterator) {
-						it = iterObj.NewIteratorInScope(nil)
+						it = compiler.NewObjectMethodIterator(ctx, iterObj)
 					}
 				}
+			} else if obj.GetClass().Implements(phpobj.Iterator) {
+				// Generators and any class implementing Iterator
+				// directly — drive via methods.
+				it = compiler.NewObjectMethodIterator(ctx, obj)
 			}
 			if it == nil {
 				if obj.IsLazy() {

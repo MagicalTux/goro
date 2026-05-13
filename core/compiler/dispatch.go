@@ -237,6 +237,25 @@ func IsSlotSafe(r phpv.Runnable) bool {
 		// targets through ctx.OffsetSet; the hashtable must be
 		// authoritative.
 		return false
+	case *runnableClone,
+		*runInstanceOf,
+		*runVoidCast,
+		*runFirstClassCallable,
+		*runFirstClassCloneCallable,
+		*runFirstClassMethodCallable,
+		*runFirstClassDynMethodCallable,
+		*runObjectDynVar,
+		*runObjectDynFunc,
+		*runRef,
+		*runnableDoWhile,
+		*runInlineHtml,
+		*runnableDeclareStrictTypes,
+		*runnableDeclareTicks,
+		*runTopLevelConst,
+		*runEnumRegister:
+		// All AST-delegated — operands evaluated by AST through
+		// the FuncContext hashtable.
+		return false
 	case *runArray:
 		// An array literal with spread entries (…$expr) is AST-
 		// delegated; the AST reads the source iterables from the

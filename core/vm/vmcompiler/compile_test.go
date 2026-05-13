@@ -411,6 +411,52 @@ func TestPropertyWrite(t *testing.T) {
 	}
 }
 
+func TestGeneratorIteration(t *testing.T) {
+	setup := `
+		function vm_gen() {
+			yield 1;
+			yield 2;
+			yield 3;
+		}
+		function vm_keyed_gen() {
+			yield 'a' => 10;
+			yield 'b' => 20;
+		}
+	`
+	cases := []string{
+		// Iterate generator via foreach
+		"$sum = 0; foreach (vm_gen() as $v) { $sum += $v; } return $sum;",
+		// Iterate with key
+		"$out = ''; foreach (vm_keyed_gen() as $k => $v) { $out .= $k . '=' . $v . ';'; } return $out;",
+		// Break out of generator iteration
+		"$first = null; foreach (vm_gen() as $v) { $first = $v; break; } return $first;",
+	}
+	for _, c := range cases {
+		t.Run(c, func(t *testing.T) { compareReturns(t, c, setup) })
+	}
+}
+
+func TestCloneInstanceofDoWhile(t *testing.T) {
+	classDecl := `
+		class Box { public $v = 0; }
+		class Animal {}
+		class Dog extends Animal {}
+	`
+	cases := []string{
+		// clone produces independent object
+		"$a = new Box(); $a->v = 7; $b = clone $a; $b->v = 99; return $a->v + $b->v;",
+		// instanceof check
+		"$d = new Dog(); return $d instanceof Animal ? 1 : 0;",
+		"$d = new Dog(); return $d instanceof Box ? 1 : 0;",
+		// do-while loop runs at least once
+		"$x = 0; do { $x++; } while ($x < 5); return $x;",
+		"$x = 10; do { $x++; } while ($x < 5); return $x;",
+	}
+	for _, c := range cases {
+		t.Run(c, func(t *testing.T) { compareReturns(t, c, classDecl) })
+	}
+}
+
 func TestIncDecNonLocal(t *testing.T) {
 	classDecl := `
 		class Counter {
@@ -838,20 +884,13 @@ func TestArrays(t *testing.T) {
 	}
 }
 
-func TestUnsupportedNodeFallsBack(t *testing.T) {
-	// `clone $x` isn't lowered piecewise — the emitter should
-	// report ErrUnsupported so the function-level fallback
-	// restores the AST.
-	g := newGlobal(t)
-	r := compileSnippet(t, g, "class B { public $v = 1; } $a = new B(); $b = clone $a; $b->v = 9; return $a->v + $b->v;")
-	_, err := vmcompiler.Compile("<test>", &phpv.Loc{Filename: "<test>"}, r, g)
-	if err == nil {
-		t.Fatalf("expected ErrUnsupported, got nil")
-	}
-	if !errorsIsUnsupported(err) {
-		t.Fatalf("expected ErrUnsupported, got %v", err)
-	}
-}
+// TestUnsupportedNodeFallsBack used to verify that nodes the emitter
+// doesn't handle return ErrUnsupported, so the function-level
+// fallback restores the AST. The catch-all is no longer reachable
+// from any valid script — coverage is wide enough that every
+// node either compiles natively or AST-delegates. Fallback for
+// closures (generators, by-ref params, by-ref return) is verified
+// by integration_test.go::TestClosureBodyHookFallsBack.
 
 func TestFunctionCall(t *testing.T) {
 	// Define a function in setup, call it via VM-compiled bytecode.

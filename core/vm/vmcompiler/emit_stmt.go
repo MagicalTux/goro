@@ -101,6 +101,15 @@ func (e *emitter) emitStmt(node phpv.Runnable) error {
 		return nil
 	}
 
+	// Statement-shaped delegations (do-while, declare strict_types,
+	// declare ticks, inline html, top-level const, enum register).
+	if compiler.IsStmtAstDelegated(node) {
+		idx := e.astIndex(node)
+		e.emit(vm.OpTryFinally, idx, 0, 0)
+		e.emit(vm.OpRefreshSlots, 0, 0, 0)
+		return nil
+	}
+
 	// Statement-specific dispatch.
 	switch n := node.(type) {
 	case ifNode:
