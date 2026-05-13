@@ -667,7 +667,7 @@ func EvalBinop(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal, loc *ph
 			// Non-numeric strings: TypeError; leading-numeric: warning.
 			if aType == phpv.ZtString {
 				s := string(a.Value().(phpv.ZString))
-				if !isLeadingNumeric(s) {
+				if !IsLeadingNumeric(s) {
 					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
 						fmt.Sprintf("Unsupported operand types: %s %s %s", phpTypeName(a), op.OpString(), phpTypeName(b)))
 				}
@@ -679,7 +679,7 @@ func EvalBinop(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal, loc *ph
 			}
 			if bType == phpv.ZtString {
 				s := string(b.Value().(phpv.ZString))
-				if !isLeadingNumeric(s) {
+				if !IsLeadingNumeric(s) {
 					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
 						fmt.Sprintf("Unsupported operand types: %s %s %s", phpTypeName(a), op.OpString(), phpTypeName(b)))
 				}

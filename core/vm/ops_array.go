@@ -2,10 +2,31 @@ package vm
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/KarpelesLab/goro/core/phpobj"
 	"github.com/KarpelesLab/goro/core/phpv"
 )
+
+// isLeadingNumericString returns true if s (after trimming whitespace)
+// starts with an optional sign followed by a digit or decimal point.
+// Mirrors core/compiler.IsLeadingNumeric. Used by string-offset
+// type validation to distinguish "01foo" (warning) from "abc"
+// (TypeError on string container).
+func isLeadingNumericString(s string) bool {
+	s = strings.TrimSpace(s)
+	if len(s) == 0 {
+		return false
+	}
+	i := 0
+	if s[i] == '+' || s[i] == '-' {
+		i++
+	}
+	if i >= len(s) {
+		return false
+	}
+	return (s[i] >= '0' && s[i] <= '9') || s[i] == '.'
+}
 
 // arrayGet implements OP_ARRAY_GET. Mirrors the AST runArrayAccess.Run
 // on the read side, dispatching on the runtime container type:
@@ -19,7 +40,8 @@ func arrayGet(ctx phpv.Context, container, offset *phpv.ZVal) (*phpv.ZVal, error
 	// PHP 8+: validate offset type on array/string containers. Objects
 	// and arrays as keys are TypeErrors (except on objects implementing
 	// ArrayAccess — those dispatch through the ZtObject branch below
-	// which accepts any key).
+	// which accepts any key). For string containers a non-numeric
+	// string offset is also a TypeError.
 	if offset != nil && container.GetType() != phpv.ZtObject {
 		switch offset.GetType() {
 		case phpv.ZtObject:
@@ -37,6 +59,14 @@ func arrayGet(ctx phpv.Context, container, offset *phpv.ZVal) (*phpv.ZVal, error
 			}
 			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
 				fmt.Sprintf("Cannot access offset of type array on %s", containerName))
+		case phpv.ZtString:
+			if container.GetType() == phpv.ZtString {
+				s := string(offset.Value().(phpv.ZString))
+				if len(strings.TrimSpace(s)) > 0 && !isLeadingNumericString(s) {
+					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+						"Cannot access offset of type string on string")
+				}
+			}
 		}
 	}
 
@@ -106,7 +136,8 @@ func arraySetLocal(ctx phpv.Context, f *Frame, idx uint16, offset, value *phpv.Z
 
 	// PHP 8+: validate offset type on array/string/null containers.
 	// Objects and arrays as keys are TypeErrors (except on objects
-	// implementing ArrayAccess, where any key type is allowed).
+	// implementing ArrayAccess, where any key type is allowed). For
+	// string containers a non-numeric string offset is also a TypeError.
 	if offset != nil && cur.GetType() != phpv.ZtObject {
 		switch offset.GetType() {
 		case phpv.ZtObject:
@@ -124,6 +155,14 @@ func arraySetLocal(ctx phpv.Context, f *Frame, idx uint16, offset, value *phpv.Z
 			}
 			return phpobj.ThrowError(ctx, phpobj.TypeError,
 				fmt.Sprintf("Cannot access offset of type array on %s", containerName))
+		case phpv.ZtString:
+			if cur.GetType() == phpv.ZtString {
+				s := string(offset.Value().(phpv.ZString))
+				if len(strings.TrimSpace(s)) > 0 && !isLeadingNumericString(s) {
+					return phpobj.ThrowError(ctx, phpobj.TypeError,
+						"Cannot access offset of type string on string")
+				}
+			}
 		}
 	}
 

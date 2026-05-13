@@ -12,10 +12,10 @@ import (
 	"github.com/KarpelesLab/goro/core/tokenizer"
 )
 
-// isLeadingNumeric checks if a string starts with a digit, decimal point, or +-digit/+-dot.
+// IsLeadingNumeric checks if a string starts with a digit, decimal point, or +-digit/+-dot.
 // Used to distinguish "foo" (TypeError) from "0foo" or ".5foo" (warning) for string offsets
 // and arithmetic operations. PHP considers strings like ".1", "-.1" as leading numeric.
-func isLeadingNumeric(s string) bool {
+func IsLeadingNumeric(s string) bool {
 	s = strings.TrimSpace(s)
 	if len(s) == 0 {
 		return false
@@ -727,7 +727,7 @@ func (ac *runArrayAccess) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		// Strings with leading digits (like "0foo") produce a warning instead.
 		if offset.GetType() == phpv.ZtString {
 			s := strings.TrimSpace(string(offset.AsString(ctx)))
-			if len(s) > 0 && !isLeadingNumeric(s) {
+			if len(s) > 0 && !IsLeadingNumeric(s) {
 				return nil, phpobj.ThrowError(ctx, phpobj.TypeError, "Cannot access offset of type string on string")
 			}
 			// Convert numeric string to int to avoid "Illegal string offset" warning
@@ -1056,7 +1056,7 @@ func (ac *runArrayAccess) writeValueToString(ctx phpv.Context, value *phpv.ZVal)
 	// PHP 8: completely non-numeric string offsets on strings throw TypeError
 	if offset.GetType() == phpv.ZtString {
 		s := strings.TrimSpace(string(offset.AsString(ctx)))
-		if len(s) > 0 && !isLeadingNumeric(s) {
+		if len(s) > 0 && !IsLeadingNumeric(s) {
 			return phpobj.ThrowError(ctx, phpobj.TypeError, "Cannot access offset of type string on string")
 		}
 	}

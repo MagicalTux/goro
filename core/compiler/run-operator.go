@@ -815,7 +815,7 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			// - Fully numeric ("123"): no warning
 			if aType == phpv.ZtString {
 				s := string(a.Value().(phpv.ZString))
-				if !isLeadingNumeric(s) {
+				if !IsLeadingNumeric(s) {
 					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Unsupported operand types: %s %s %s", phpTypeName(a), r.op.OpString(), phpTypeName(b)))
 				}
 				if !isNumericString(s) {
@@ -826,7 +826,7 @@ func (r *runOperator) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			}
 			if bType == phpv.ZtString {
 				s := string(b.Value().(phpv.ZString))
-				if !isLeadingNumeric(s) {
+				if !IsLeadingNumeric(s) {
 					return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Unsupported operand types: %s %s %s", phpTypeName(a), r.op.OpString(), phpTypeName(b)))
 				}
 				if !isNumericString(s) {
@@ -2294,7 +2294,7 @@ func implicitToInt(ctx phpv.Context, z *phpv.ZVal) (*phpv.ZVal, error) {
 	return r, err
 }
 
-// isLeadingNumeric is defined in compile-array.go
+// IsLeadingNumeric is defined in compile-array.go
 
 // isFatalPhpError returns true if the error is a PHP fatal error (E_ERROR
 // or E_COMPILE_ERROR) that should not be silently swallowed by operators
