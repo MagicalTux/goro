@@ -39,18 +39,6 @@ func (e *emitter) emitCallViaAST(raw phpv.Runnable) error {
 	return nil
 }
 
-// emitCallViaASTSync wraps emitCallViaAST with OP_SYNC_SLOTS first.
-// Used when the surrounding body is slot-only but a specific call
-// must AST-delegate (e.g. an unknown-callable + writable-arg shape
-// where the resolved function might take a by-ref param). Flushes
-// slot state to the hashtable so the AST runner reads fresh values;
-// the trailing OP_REFRESH_SLOTS already in emitCallViaAST pulls back
-// any modifications.
-func (e *emitter) emitCallViaASTSync(raw phpv.Runnable) error {
-	e.emit(vm.OpSyncSlots, 0, 0, 0)
-	return e.emitCallViaAST(raw)
-}
-
 func (e *emitter) emitFunctionCall(n funcCallNode) error {
 	name := n.FuncCallName()
 	if name == "" {
@@ -62,15 +50,14 @@ func (e *emitter) emitFunctionCall(n funcCallNode) error {
 
 	// AST-delegate calls whose shape we don't lower piecewise:
 	// named/spread args, or a callee that takes by-ref params.
+	// Note: unknown-callee-with-writable-arg was tried as a
+	// conservative gate, but the IsSlotSafe override it required
+	// broke too many independent tests; keep the narrower check.
 	byRefBuiltin := compiler.ByRefBuiltins[name.ToLower()]
 	byRefUser := false
-	unknownCallable := true
 	if e.ctx != nil {
 		if g := e.ctx.Global(); g != nil {
-			if hit, br := compiler.LookupLazyByRefSafe(g, name); hit {
-				unknownCallable = false
-				byRefUser = br
-			}
+			byRefUser = compiler.FunctionTakesByRef(g, name)
 		}
 	}
 	if byRefBuiltin || byRefUser || compiler.CallHasSpecialArgs(args) {
@@ -79,17 +66,6 @@ func (e *emitter) emitFunctionCall(n funcCallNode) error {
 			return unsupportedf("call AST delegation: cannot retrieve raw Runnable")
 		}
 		return e.emitCallViaAST(raw)
-	}
-	// Unknown-callable + writable arg: at compile time we can't
-	// know if the callee declares a by-ref parameter, so route
-	// through the AST. OP_SYNC_SLOTS first so the AST sees up-to-
-	// date locals even in slot-only bodies.
-	if unknownCallable && compiler.CallHasWritableArg(args) {
-		raw, ok := n.(phpv.Runnable)
-		if !ok {
-			return unsupportedf("call AST delegation: cannot retrieve raw Runnable")
-		}
-		return e.emitCallViaASTSync(raw)
 	}
 
 	if len(args) > 0xFFFF {
@@ -134,18 +110,6 @@ func (e *emitter) emitFunctionCallRef(n funcCallRefNode) error {
 			return unsupportedf("indirect call AST delegation: cannot retrieve raw Runnable")
 		}
 		return e.emitCallViaAST(raw)
-	}
-	// Indirect calls go through a runtime-resolved callable, so we
-	// can't know the by-ref signature at compile time. If any arg
-	// is a writable lvalue, conservatively AST-delegate with slot
-	// sync so a possible by-ref param binds correctly even in a
-	// slot-only surrounding body.
-	if compiler.CallHasWritableArg(args) {
-		raw, ok := n.(phpv.Runnable)
-		if !ok {
-			return unsupportedf("indirect call AST delegation: cannot retrieve raw Runnable")
-		}
-		return e.emitCallViaASTSync(raw)
 	}
 	if len(args) > 0xFFFF {
 		return unsupportedf("indirect call with too many args")

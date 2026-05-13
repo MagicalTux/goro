@@ -140,12 +140,6 @@ const (
 	// (property writes, etc.) — otherwise subsequent slot reads see
 	// the stale pre-delegation values.
 	OpRefreshSlots
-	// OP_SYNC_SLOTS is the converse of OP_REFRESH_SLOTS: it pushes
-	// every non-nil slot into the FuncContext hashtable. Emitted
-	// before an AST-delegated call site in a slot-only body so the
-	// AST can read fresh local values. Pair with OP_REFRESH_SLOTS
-	// after the AST run.
-	OpSyncSlots
 
 	// --- objects ---------------------------------------------------------
 	// OP_NEW_OBJECT pops B args, looks up class by Consts[A] (a ZString),
@@ -264,7 +258,6 @@ var opNames = [...]string{
 	OpClassConst:       "CLASS_CONST",
 	OpTryFinally:       "TRY_FINALLY",
 	OpRefreshSlots:     "REFRESH_SLOTS",
-	OpSyncSlots:        "SYNC_SLOTS",
 	OpNewObject:        "NEW_OBJECT",
 	OpObjectGet:        "OBJECT_GET",
 	OpObjectSet:        "OBJECT_SET",
