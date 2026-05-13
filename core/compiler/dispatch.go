@@ -145,7 +145,11 @@ func IsSlotSafe(g phpv.GlobalContext, r phpv.Runnable) bool {
 			return false
 		}
 	case *runnableFunctionCallRef:
-		if CallHasSpecialArgs(n.args) {
+		// Indirect calls AST-delegate when args include named/spread
+		// or a writable lvalue (in case the resolved callable takes
+		// the writable by ref). Body must be slot-unsafe so the
+		// AST reads local args from the hashtable.
+		if CallHasSpecialArgs(n.args) || CallHasWritableArg(n.args) {
 			return false
 		}
 	case *runStaticVar:

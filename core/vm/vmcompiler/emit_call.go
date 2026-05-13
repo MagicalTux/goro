@@ -104,7 +104,11 @@ func (e *emitter) emitFunctionCall(n funcCallNode) error {
 // runtime via compiler.ResolveCallable.
 func (e *emitter) emitFunctionCallRef(n funcCallRefNode) error {
 	args := n.FuncCallRefArgs()
-	if compiler.CallHasSpecialArgs(args) {
+	// Indirect calls go through ResolveCallable at runtime, so we
+	// don't know whether the callable expects by-ref args. AST-
+	// delegate when any arg is a writable lvalue so a possible
+	// by-ref param binds correctly.
+	if compiler.CallHasSpecialArgs(args) || compiler.CallHasWritableArg(args) {
 		raw, ok := n.(phpv.Runnable)
 		if !ok {
 			return unsupportedf("indirect call AST delegation: cannot retrieve raw Runnable")
