@@ -265,6 +265,11 @@ func IsSlotSafe(g phpv.GlobalContext, r phpv.Runnable) bool {
 		// targets through ctx.OffsetSet; the hashtable must be
 		// authoritative.
 		return false
+	case *runNoDiscardStatement:
+		// NoDiscard-wrapped statements are AST-delegated so the
+		// warning fires; the AST reads any local-arg operands
+		// from the hashtable.
+		return false
 	case *runnableClone,
 		*runInstanceOf,
 		*runVoidCast,

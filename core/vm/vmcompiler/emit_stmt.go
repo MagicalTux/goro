@@ -59,12 +59,16 @@ func (e *emitter) emitStmt(node phpv.Runnable) error {
 		return nil
 	}
 
-	// Unwrap NoDiscard wrapper. Means the NoDiscard warning won't
-	// fire from VM-compiled call sites — acceptable for now.
-	if u, ok := node.(interface {
+	// NoDiscard-wrapped statement: AST-delegate so the warning
+	// fires when the wrapped call's return value is discarded.
+	if _, ok := node.(interface {
 		NoDiscardInner() phpv.Runnable
 	}); ok {
-		node = u.NoDiscardInner()
+		raw, _ := node.(phpv.Runnable)
+		idx := e.astIndex(raw)
+		e.emit(vm.OpTryFinally, idx, 0, 0)
+		e.emit(vm.OpRefreshSlots, 0, 0, 0)
+		return nil
 	}
 
 	// Runnables (slice of statements): emit each.
