@@ -44,9 +44,39 @@ func (f *Frame) dispatchTryHandler(ctx phpv.Context, throwErr *phperr.PhpThrow) 
 				if clause.VarIdx != 0xFFFF {
 					exVal := throwErr.Obj.ZVal()
 					name := f.fn.Locals[clause.VarIdx]
+					// Capture the previous slot value so we can release
+					// any object it held — PHP destructs on refcount-0,
+					// and overwriting \$e here drops its last reference
+					// to whatever object was bound before (bug53511).
+					old := f.locals[clause.VarIdx]
 					f.locals[clause.VarIdx] = exVal
 					if err := ctx.OffsetSet(ctx, name, exVal); err != nil {
 						return false, err
+					}
+					if old != nil && old.GetType() == phpv.ZtObject && !old.IsRef() {
+						if obj, ok := old.Value().(interface {
+							DecRef(phpv.Context) error
+						}); ok {
+							// Tick the catch-keyword loc so the
+							// destructor's stack-trace caller line
+							// resolves to the catch keyword (PHP
+							// attributes the destructor call there).
+							if clause.Loc != nil {
+								_ = ctx.Tick(ctx, clause.Loc)
+							}
+							if derr := obj.DecRef(ctx); derr != nil {
+								// PHP semantics (bug53511): a throw
+								// from a destructor that fires while
+								// binding the catch variable replaces
+								// the in-flight exception and propagates
+								// out of the try — the catch body does
+								// not run. Jump past every catch body
+								// so the retry doesn't match this try
+								// again.
+								f.pc = h.AfterCatch + 1
+								return false, derr
+							}
+						}
 					}
 				}
 				f.pc = clause.PC

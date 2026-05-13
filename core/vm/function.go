@@ -52,6 +52,13 @@ type Function struct {
 // per-instruction encoding — handlers are static metadata.
 type TryHandler struct {
 	Start, End uint32 // PC range of the try body (exclusive End)
+	// AfterCatch is the PC immediately after the last catch body —
+	// i.e. where execution resumes when a catch body either runs to
+	// completion or a destructor that fired while binding the catch
+	// variable throws and overrides the in-flight exception (bug53511).
+	// Setting f.pc to AfterCatch before propagating the destructor's
+	// throw stops dispatchTryHandler from re-matching the same try.
+	AfterCatch uint32
 	// StackBase is the simulated stack depth at try entry. The
 	// dispatcher resets sp to this value when unwinding to a catch
 	// body so partially-pushed arguments from the failing expression
@@ -70,6 +77,10 @@ type CatchClause struct {
 	VarIdx uint16
 	// PC is the start of the catch body.
 	PC uint32
+	// Loc is the source location of the `catch` keyword. PHP attributes
+	// destructor stack frames to this line when a destructor fires
+	// while binding the catch variable (bug53511).
+	Loc *phpv.Loc
 }
 
 

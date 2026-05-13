@@ -50,6 +50,7 @@ func (e *emitter) emitTry(n compiler.TryNode) error {
 	for i, c := range catches {
 		clauses[i].PC = uint32(len(e.code))
 		clauses[i].Types = c.CatchTypes()
+		clauses[i].Loc = c.CatchLoc()
 		if name := c.CatchVarName(); name != "" {
 			clauses[i].VarIdx = e.localIndex(name)
 		} else {
@@ -69,10 +70,11 @@ func (e *emitter) emitTry(n compiler.TryNode) error {
 	}
 
 	e.tryHandlers = append(e.tryHandlers, vm.TryHandler{
-		Start:     tryStart,
-		End:       tryEnd,
-		StackBase: stackBase,
-		Catches:   clauses,
+		Start:      tryStart,
+		End:        tryEnd,
+		AfterCatch: afterCatch,
+		StackBase:  stackBase,
+		Catches:    clauses,
 	})
 	return nil
 }
