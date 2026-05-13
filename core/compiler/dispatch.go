@@ -164,6 +164,11 @@ func IsSlotSafe(g phpv.GlobalContext, r phpv.Runnable) bool {
 		// hashtable must be authoritative.
 		isWrite := n.opD != nil && n.opD.write
 		isIncDec := n.op == tokenizer.T_INC || n.op == tokenizer.T_DEC
+		// Compound assign (anything that's a write op + has an
+		// underlying op, e.g. +=, .=) is AST-delegated by the
+		// emitter when the LHS is a non-variable; for array-element
+		// LHS it's always AST-delegated regardless of container.
+		isCompound := isWrite && n.opD.op != nil
 		if isWrite || isIncDec {
 			target := n.a
 			if target == nil {
@@ -173,14 +178,15 @@ func IsSlotSafe(g phpv.GlobalContext, r phpv.Runnable) bool {
 			case *runObjectVar, *runClassStaticVarRef, *runClassStaticDynVarRef, *runDestructure, *runVariableRef:
 				return false
 			case *runArrayAccess:
-				if isIncDec {
-					// $arr[k]++ goes through AST regardless of
-					// container shape — no native fast path.
+				if isIncDec || isCompound {
+					// $arr[k]++, $arr[k]+=v, $arr[k].=v: AST-delegated
+					// regardless of container shape — no native
+					// fast path.
 					return false
 				}
-				// For plain/compound assignment the native fast
-				// path handles only `$local[k] = v` (statement
-				// context). Any other shape goes through AST.
+				// Plain `=` to an array element: native fast path
+				// handles only `$local[k] = v` (statement context).
+				// Any other shape goes through AST.
 				if _, ok := t.value.(*runVariable); !ok {
 					return false
 				}
