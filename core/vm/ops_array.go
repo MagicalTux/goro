@@ -71,6 +71,15 @@ func arraySetLocal(ctx phpv.Context, f *Frame, idx uint16, offset, value *phpv.Z
 		cur = phpv.ZNULL.ZVal()
 	}
 
+	// Value semantics: if the stored value is itself an array, Dup
+	// it so the container holds an independent COW copy (matches the
+	// AST's runOperator `=` path, which calls res.ZVal() that does
+	// a.Dup() for ZtArray). Without this, \`$a[0] = $a\` would
+	// create a self-recursion instead of snapshotting.
+	if value != nil && value.GetType() == phpv.ZtArray && !value.IsRef() {
+		value = value.Dup()
+	}
+
 	switch cur.GetType() {
 	case phpv.ZtArray:
 		arr := cur.AsArray(ctx)

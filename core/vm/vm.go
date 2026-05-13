@@ -637,6 +637,11 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 
 		case OpArrayInitAppend:
 			val := f.pop()
+			// Snapshot array values into the literal — PHP array
+			// literals copy by value.
+			if val != nil && val.GetType() == phpv.ZtArray && !val.IsRef() {
+				val = val.Dup()
+			}
 			arr := f.peek().AsArray(ctx)
 			if err := arr.OffsetSet(ctx, nil, val); err != nil {
 				if err == phpv.ErrNextElementOccupied {
@@ -648,6 +653,9 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 		case OpArrayInitKeyed:
 			val := f.pop()
 			key := f.pop()
+			if val != nil && val.GetType() == phpv.ZtArray && !val.IsRef() {
+				val = val.Dup()
+			}
 			// Mirror runArray.Run key-type validation: forbid
 			// object/array keys, deprecate null keys, emit float-
 			// precision deprecation, and cast resource keys to int.
