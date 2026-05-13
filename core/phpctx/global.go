@@ -1486,7 +1486,16 @@ func (g *Global) Class() phpv.ZClass {
 
 func (g *Global) RegisterFunction(name phpv.ZString, f phpv.Callable) error {
 	lcName := name.ToLower()
-	if _, exists := g.globalUserFuncs[lcName]; exists {
+	if existing, exists := g.globalUserFuncs[lcName]; exists {
+		// Re-registering the same closure pointer is a no-op (happens
+		// when the VM-compiled script body executes the same
+		// OpMakeClosure that was already resolved via the lazy-function
+		// table on an earlier call site). The AST avoids this via
+		// RunNull replacement of the post-lazy slot, but the VM holds
+		// a direct reference and can't be swapped at runtime.
+		if existing == f {
+			return nil
+		}
 		// Build PHP-compatible error: "Cannot redeclare function foo() (previously declared in file:line)"
 		canonName := g.globalUserFuncNames[lcName]
 		if canonName == "" {
