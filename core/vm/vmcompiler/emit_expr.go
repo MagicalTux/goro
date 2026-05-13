@@ -358,6 +358,12 @@ func (e *emitter) emitUnary(b phpv.Runnable, op tokenizer.ItemType) error {
 }
 
 func (e *emitter) emitAssign(n operatorNode) error {
+	// Reference assignment (`$b = &$a`): AST handles the ref-share
+	// semantics. The VM's OpStoreLocal Dups arrays, detaching any
+	// inbound ref — wrong for `=&`.
+	if compiler.IsRefExpr(n.OperatorB()) {
+		return e.emitAssignViaAST(n)
+	}
 	// Plain `=` to a simple local variable.
 	if v, ok := n.OperatorA().(variableNode); ok {
 		stmtCtx := e.stmtCtx

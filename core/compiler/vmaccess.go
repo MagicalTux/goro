@@ -207,6 +207,15 @@ func IsValueExprAstDelegated(r phpv.Runnable) bool {
 	return false
 }
 
+// IsRefExpr reports whether r is a `&$expr` reference-producing wrapper.
+// The VM emitter uses this to detect reference assignment (`$b = &$a`)
+// so the whole assignment AST-delegates: storeLocal would otherwise
+// `Nude().Dup()` the array, detaching the ref the caller expects.
+func IsRefExpr(r phpv.Runnable) bool {
+	_, ok := r.(*runRef)
+	return ok
+}
+
 // NewObjectMethodIterator returns a ZIterator that drives an
 // object implementing the Iterator interface via its rewind/valid/
 // current/key/next methods. This is what the AST's runnableForeach
