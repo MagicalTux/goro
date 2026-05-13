@@ -411,6 +411,109 @@ func TestPropertyWrite(t *testing.T) {
 	}
 }
 
+func TestIncDecNonLocal(t *testing.T) {
+	classDecl := `
+		class Counter {
+			public $n = 0;
+			public static $shared = 0;
+		}
+	`
+	cases := []string{
+		// postfix on property
+		"$c = new Counter(); $a = $c->n++; return $a + $c->n;",
+		// prefix on property
+		"$c = new Counter(); $a = ++$c->n; return $a + $c->n;",
+		// postfix on array element
+		"$a = [10]; $b = $a[0]++; return $a[0] + $b;",
+		// postfix on static property
+		"Counter::$shared = 0; $a = Counter::$shared++; return $a + Counter::$shared;",
+	}
+	for _, c := range cases {
+		t.Run(c, func(t *testing.T) { compareReturns(t, c, classDecl) })
+	}
+}
+
+func TestCompoundAssignAsExpr(t *testing.T) {
+	cases := []string{
+		"$x = 1; $y = ($x += 5); return $x + $y;",       // both 6
+		"$x = 10; $y = ($x -= 3) * 2; return $y;",       // 14
+		"$x = 'a'; $y = ($x .= 'b'); return $x . $y;",   // 'abab'
+		"$a = 4; $b = ($a *= 2) + ($a += 1); return $b;", // (8) + (8+1) = 17
+	}
+	for _, c := range cases {
+		t.Run(c, func(t *testing.T) { compareReturns(t, c) })
+	}
+}
+
+func TestDestructure(t *testing.T) {
+	cases := []string{
+		// short-list with positional
+		"[$a, $b] = [10, 20]; return $a + $b;",
+		// list() keyword form
+		"list($a, $b) = [3, 4]; return $a * $b;",
+		// keyed destructure
+		"['x' => $x, 'y' => $y] = ['x' => 1, 'y' => 2]; return $x + $y;",
+		// nested
+		"[$a, [$b, $c]] = [1, [2, 3]]; return $a + $b + $c;",
+	}
+	for _, c := range cases {
+		t.Run(c, func(t *testing.T) { compareReturns(t, c) })
+	}
+}
+
+func TestVariableVariables(t *testing.T) {
+	cases := []string{
+		// $$ read
+		"$name = 'x'; $x = 7; return $$name;",
+		// $$ write
+		"$name = 'y'; $$name = 42; return $y;",
+		// ${$expr} read
+		"$name = 'foo'; $foo = 100; return ${$name};",
+		// ${$expr} write
+		"$key = 'count'; ${$key} = 5; return $count;",
+	}
+	for _, c := range cases {
+		t.Run(c, func(t *testing.T) { compareReturns(t, c) })
+	}
+}
+
+func TestTypedReturn(t *testing.T) {
+	setup := `
+		function vm_int_id(int $x): int { return $x; }
+		function vm_str_cast(int $x): string { return $x; }
+		function vm_nullable(?int $x): ?int { return $x; }
+		function vm_void_ret(): void { return; }
+	`
+	cases := []string{
+		"return vm_int_id(7);",
+		"return vm_str_cast(123);",
+		"return vm_nullable(null) ?? -1;",
+		"return vm_nullable(42);",
+		"vm_void_ret(); return 'ok';",
+	}
+	for _, c := range cases {
+		t.Run(c, func(t *testing.T) { compareReturns(t, c, setup) })
+	}
+}
+
+func TestUserConstants(t *testing.T) {
+	setup := `
+		const MY_INT = 42;
+		const MY_STR = 'hello';
+		define('MY_RT', 99);
+	`
+	cases := []string{
+		"return MY_INT;",
+		"return MY_STR;",
+		"return MY_RT + 1;",
+		"return PHP_INT_MAX;",
+		"return PHP_INT_SIZE;",
+	}
+	for _, c := range cases {
+		t.Run(c, func(t *testing.T) { compareReturns(t, c, setup) })
+	}
+}
+
 func TestGlobalStaticDecl(t *testing.T) {
 	setup := `
 		$g_counter = 100;
@@ -736,11 +839,11 @@ func TestArrays(t *testing.T) {
 }
 
 func TestUnsupportedNodeFallsBack(t *testing.T) {
-	// Variable variables (\$\$x) aren't lowered piecewise — the
-	// emitter should report ErrUnsupported so the function-level
-	// fallback restores the AST.
+	// `clone $x` isn't lowered piecewise — the emitter should
+	// report ErrUnsupported so the function-level fallback
+	// restores the AST.
 	g := newGlobal(t)
-	r := compileSnippet(t, g, "$name = 'x'; $$name = 42; return $x;")
+	r := compileSnippet(t, g, "class B { public $v = 1; } $a = new B(); $b = clone $a; $b->v = 9; return $a->v + $b->v;")
 	_, err := vmcompiler.Compile("<test>", &phpv.Loc{Filename: "<test>"}, r, g)
 	if err == nil {
 		t.Fatalf("expected ErrUnsupported, got nil")

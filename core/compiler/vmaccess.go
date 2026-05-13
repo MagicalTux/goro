@@ -164,6 +164,20 @@ func IsGlobalOrStaticDecl(r phpv.Runnable) bool {
 	return false
 }
 
+// IsDestructureTarget reports whether r is a `list(…)` or `[…]`
+// destructuring LHS. The VM AST-delegates these writes.
+func IsDestructureTarget(r phpv.Runnable) bool {
+	_, ok := r.(*runDestructure)
+	return ok
+}
+
+// IsVariableRef reports whether r is a `$$name` / `${$expr}` variable-
+// variable reference. The VM AST-delegates these reads/writes.
+func IsVariableRef(r phpv.Runnable) bool {
+	_, ok := r.(*runVariableRef)
+	return ok
+}
+
 // UnwrapParens peels a `(expr)` wrapper from r. Returns r unchanged
 // when r isn't a parenthesised expression. Used by the VM emitter so
 // the surrounding context dispatches on the wrapped node directly.

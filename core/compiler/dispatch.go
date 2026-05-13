@@ -150,20 +150,31 @@ func IsSlotSafe(r phpv.Runnable) bool {
 			return false
 		}
 	case *runOperator:
-		// Assignment / compound-assign to a property, static prop,
-		// or array element (when the LHS isn't a simple-local
-		// container) is AST-delegated; the AST reads/writes locals
-		// through ctx.OffsetSet, so the hashtable must be
-		// authoritative.
-		if n.opD != nil && n.opD.write && n.a != nil {
-			switch a := n.a.(type) {
-			case *runObjectVar, *runClassStaticVarRef, *runClassStaticDynVarRef:
+		// Assignment / compound-assign / inc-dec to a property,
+		// static prop, or array element (when the LHS isn't a
+		// simple-local container) is AST-delegated; the AST
+		// reads/writes locals through ctx.OffsetSet, so the
+		// hashtable must be authoritative.
+		isWrite := n.opD != nil && n.opD.write
+		isIncDec := n.op == tokenizer.T_INC || n.op == tokenizer.T_DEC
+		if isWrite || isIncDec {
+			target := n.a
+			if target == nil {
+				target = n.b // prefix ++/-- carries the target on b
+			}
+			switch t := target.(type) {
+			case *runObjectVar, *runClassStaticVarRef, *runClassStaticDynVarRef, *runDestructure, *runVariableRef:
 				return false
 			case *runArrayAccess:
-				// Native fast path handles only `$local[k] = v`
-				// (statement context). Any other shape goes
-				// through AST.
-				if _, ok := a.value.(*runVariable); !ok {
+				if isIncDec {
+					// $arr[k]++ goes through AST regardless of
+					// container shape — no native fast path.
+					return false
+				}
+				// For plain/compound assignment the native fast
+				// path handles only `$local[k] = v` (statement
+				// context). Any other shape goes through AST.
+				if _, ok := t.value.(*runVariable); !ok {
 					return false
 				}
 			}
@@ -220,6 +231,11 @@ func IsSlotSafe(r phpv.Runnable) bool {
 		return false
 	case *runSwitch:
 		// switch (…) { … } is AST-delegated; same reason.
+		return false
+	case *runDestructure:
+		// `[$a, $b] = $arr` and `list(...)` write to multiple
+		// targets through ctx.OffsetSet; the hashtable must be
+		// authoritative.
 		return false
 	case *runArray:
 		// An array literal with spread entries (…$expr) is AST-

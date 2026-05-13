@@ -392,7 +392,19 @@ func (e *emitter) emitForeach(n foreachNode) error {
 
 func (e *emitter) emitReturn(n returnNode) error {
 	if n.ReturnHasTypeHint() {
-		return unsupportedf("return with type hint requires AST coercion")
+		// Coercion lives in runReturn.Run. AST-delegate the whole
+		// statement — the PhpReturn it throws is caught by the VM
+		// run loop's deferred wrapper just like OpRet.
+		raw, ok := any(n).(phpv.Runnable)
+		if !ok {
+			return unsupportedf("typed return AST delegation: cannot retrieve raw Runnable")
+		}
+		idx := e.astIndex(raw)
+		e.emit(vm.OpTryFinally, idx, 0, 0)
+		// Unreachable on success (the AST throws PhpReturn), but the
+		// emitter expects every path to terminate. Add a safety RET.
+		e.emit(vm.OpRetNull, 0, 0, 0)
+		return nil
 	}
 	if v := n.ReturnValue(); v != nil {
 		if err := e.withSubexpr(func() error { return e.emitExpr(v) }); err != nil {

@@ -95,6 +95,14 @@ func (e *emitter) emitExpr(node phpv.Runnable) error {
 		e.pushStack(1)
 		return nil
 	}
+	if compiler.IsVariableRef(node) {
+		// `$$name` / `${$expr}` read — AST resolves the dynamic
+		// local name through the FuncContext hashtable.
+		idx := e.astIndex(node)
+		e.emit(vm.OpClassConst, idx, 0, 0)
+		e.pushStack(1)
+		return nil
+	}
 	if compiler.IsUnsetNode(node) {
 		// unset(…) — void; statement context emits OpTryFinally and
 		// refreshes slots so any unset-of-local nulls the cache.
@@ -199,9 +207,7 @@ func (e *emitter) emitConcat(n concatNode) error {
 }
 
 func (e *emitter) emitConstant(n constantNode) error {
-	// Only the three case-insensitive literal constants are handled
-	// directly. Everything else (PHP_INT_MAX, MYAPP_FOO, …) requires
-	// runtime ConstantGet which we'll add later.
+	// Fast path: case-insensitive literal constants null/true/false.
 	switch lower := lowerASCII(n.ConstantName()); lower {
 	case "null":
 		e.emit(vm.OpLoadNull, 0, 0, 0)
@@ -216,7 +222,18 @@ func (e *emitter) emitConstant(n constantNode) error {
 		e.pushStack(1)
 		return nil
 	}
-	return unsupportedf("user-defined constant %q", n.ConstantName())
+	// All other constants (PHP_INT_MAX, namespaced consts, user-defined,
+	// …) go through the AST runner via OpClassConst. Resolution involves
+	// case-sensitivity tables, namespace fallback, and deprecation
+	// notices — not worth re-deriving piecewise.
+	raw, ok := any(n).(phpv.Runnable)
+	if !ok {
+		return unsupportedf("user-defined constant %q: cannot retrieve raw Runnable", n.ConstantName())
+	}
+	idx := e.astIndex(raw)
+	e.emit(vm.OpClassConst, idx, 0, 0)
+	e.pushStack(1)
+	return nil
 }
 
 // lowerASCII lowercases an ASCII identifier without allocating for
@@ -375,6 +392,16 @@ func (e *emitter) emitAssign(n operatorNode) error {
 	if compiler.IsStaticPropertyTarget(n.OperatorA()) {
 		return e.emitAssignViaAST(n)
 	}
+	if compiler.IsDestructureTarget(n.OperatorA()) {
+		// `[$a, $b] = $arr` / `list($a, $b) = $arr`: AST handles
+		// the recursive destructure including nested lists and
+		// keyed entries.
+		return e.emitAssignViaAST(n)
+	}
+	if compiler.IsVariableRef(n.OperatorA()) {
+		// `$$name = …` — AST handles the dynamic name resolution.
+		return e.emitAssignViaAST(n)
+	}
 	return unsupportedf("plain `=` to non-variable target %T", n.OperatorA())
 }
 
@@ -417,16 +444,14 @@ func (e *emitter) emitCompoundAssign(n operatorNode, op tokenizer.ItemType) erro
 		return err
 	}
 	idx := e.localIndex(lhs.VariableName())
-	// The MVP version of OP_OP_ASSIGN_LOCAL doesn't push a result;
-	// the consumer is the statement-context for-step or expression
-	// statement. If a non-statement context (e.g. `($x += 1) * 2`)
-	// hits this path we fall back to AST since we'd need to push the
-	// post-modification value too.
-	if !stmtCtx {
-		return unsupportedf("compound assign as expression (non-statement context)")
-	}
 	e.emit(vm.OpOpAssignLocal, idx, uint16(op), 0)
 	e.popStack(1)
+	// Expression context (`$y = ($x += 1) * 2`): leave the post-
+	// modification value on the stack.
+	if !stmtCtx {
+		e.emit(vm.OpLoadLocal, idx, 0, 0)
+		e.pushStack(1)
+	}
 	return nil
 }
 
@@ -442,7 +467,9 @@ func (e *emitter) emitIncDec(n operatorNode, inc bool) error {
 	}
 	tv, ok := target.(variableNode)
 	if !ok {
-		return unsupportedf("++/-- on non-variable target %T", target)
+		// ++/-- on $obj->prop, $arr[$k], Foo::$bar, etc. — route
+		// through the AST. The whole runOperator is a write op.
+		return e.emitAssignViaAST(n)
 	}
 	idx := e.localIndex(tv.VariableName())
 
