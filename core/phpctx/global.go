@@ -1859,6 +1859,15 @@ func (e *ErrClassRedeclare) RedeclarePrevLoc() string {
 func (g *Global) RegisterClass(name phpv.ZString, c phpv.ZClass) error {
 	lowerName := name.ToLower()
 	if existing, ok := g.globalClasses[lowerName]; ok {
+		// Re-registering the same class pointer is a no-op (the VM-
+		// compiled script body re-runs OpMakeClosure-style class
+		// instantiation for a class that already resolved via the
+		// lazy-class table on an earlier dispatch). The AST replaces
+		// resolved lazy entries with RunNull; the VM holds direct
+		// references and can't be patched.
+		if zc, ok := c.(*phpobj.ZClass); ok && existing == zc {
+			return nil
+		}
 		prevLoc := ""
 		if existing.L != nil {
 			prevLoc = fmt.Sprintf(" (previously declared in %s:%d)", existing.L.Filename, existing.L.Line)
