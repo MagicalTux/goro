@@ -37,6 +37,7 @@ var ZTrue = ZBool(true)
 var (
 	zFalseZVal = &ZVal{v: ZBool(false), cached: true}
 	zTrueZVal  = &ZVal{v: ZBool(true), cached: true}
+	zNullZVal  = &ZVal{v: ZNull{}, cached: true}
 )
 
 const (
@@ -66,7 +67,12 @@ func (z ZNull) GetType() ZType {
 }
 
 func (z ZNull) ZVal() *ZVal {
-	return NewZVal(ZNull{})
+	// Return a cached wrapper to avoid per-call allocation. Hot loops
+	// that pass NULL through arrays (bug60598) churn the GC heavily
+	// without this. Callers that need a mutable wrapper either
+	// IsCached-check and re-wrap (matches the int/bool cached path)
+	// or use NewZVal(ZNull{}) directly.
+	return zNullZVal
 }
 
 func (z ZNull) AsVal(ctx Context, t ZType) (Val, error) {
