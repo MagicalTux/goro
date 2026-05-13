@@ -442,6 +442,20 @@ func compileFunction(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 		if err != nil {
 			return nil, err
 		}
+		// If this is a top-level named function declaration, register
+		// it in the lazy table immediately so the rest of this
+		// compilation pass — including class methods compiled later —
+		// can resolve forward references (e.g. emit-time by-ref
+		// signature checks). Wrap as a single-element Runnables so the
+		// regular GetFunction lazy-resolve path works. The main script
+		// body's later linear scan over its own runnables will hit the
+		// same ZClosure pointer; same-closure RegisterFunction is a
+		// no-op (phpctx).
+		if c.isTopLevel() {
+			if zc, ok := f.(*ZClosure); ok && zc.name != "" {
+				c.Global().RegisterLazyFunc(zc.name, phpv.Runnables{f}, 0)
+			}
+		}
 		return f, nil
 	case tokenizer.Rune('('):
 		// function with no name is lambda
