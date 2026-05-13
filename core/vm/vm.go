@@ -282,10 +282,22 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 				return nil, false, err
 			}
 		case OpDiv:
+			if ai, bi, ok := f.intIntFast(); ok && bi != 0 {
+				if !(ai == math.MinInt64 && bi == -1) && int64(ai)%int64(bi) == 0 {
+					f.stack[f.sp-2] = phpv.ZInt(int64(ai) / int64(bi)).ZVal()
+					f.sp--
+					break
+				}
+			}
 			if err := f.binop(ctx, opDiv); err != nil {
 				return nil, false, err
 			}
 		case OpMod:
+			if ai, bi, ok := f.intIntFast(); ok && bi != 0 && !(ai == math.MinInt64 && bi == -1) {
+				f.stack[f.sp-2] = phpv.ZInt(int64(ai) % int64(bi)).ZVal()
+				f.sp--
+				break
+			}
 			if err := f.binop(ctx, opMod); err != nil {
 				return nil, false, err
 			}
@@ -294,22 +306,59 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 				return nil, false, err
 			}
 		case OpBitAnd:
+			if ai, bi, ok := f.intIntFast(); ok {
+				f.stack[f.sp-2] = phpv.ZInt(int64(ai) & int64(bi)).ZVal()
+				f.sp--
+				break
+			}
 			if err := f.binop(ctx, opBitAnd); err != nil {
 				return nil, false, err
 			}
 		case OpBitOr:
+			if ai, bi, ok := f.intIntFast(); ok {
+				f.stack[f.sp-2] = phpv.ZInt(int64(ai) | int64(bi)).ZVal()
+				f.sp--
+				break
+			}
 			if err := f.binop(ctx, opBitOr); err != nil {
 				return nil, false, err
 			}
 		case OpBitXor:
+			if ai, bi, ok := f.intIntFast(); ok {
+				f.stack[f.sp-2] = phpv.ZInt(int64(ai) ^ int64(bi)).ZVal()
+				f.sp--
+				break
+			}
 			if err := f.binop(ctx, opBitXor); err != nil {
 				return nil, false, err
 			}
 		case OpShl:
+			if ai, bi, ok := f.intIntFast(); ok && bi >= 0 {
+				if bi >= 64 {
+					f.stack[f.sp-2] = phpv.ZInt(0).ZVal()
+				} else {
+					f.stack[f.sp-2] = phpv.ZInt(int64(ai) << uint(bi)).ZVal()
+				}
+				f.sp--
+				break
+			}
 			if err := f.binop(ctx, opShl); err != nil {
 				return nil, false, err
 			}
 		case OpShr:
+			if ai, bi, ok := f.intIntFast(); ok && bi >= 0 {
+				if bi >= 64 {
+					if ai < 0 {
+						f.stack[f.sp-2] = phpv.ZInt(-1).ZVal()
+					} else {
+						f.stack[f.sp-2] = phpv.ZInt(0).ZVal()
+					}
+				} else {
+					f.stack[f.sp-2] = phpv.ZInt(int64(ai) >> uint(bi)).ZVal()
+				}
+				f.sp--
+				break
+			}
 			if err := f.binop(ctx, opShr); err != nil {
 				return nil, false, err
 			}
