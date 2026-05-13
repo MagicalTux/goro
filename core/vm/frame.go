@@ -87,6 +87,15 @@ func (f *Frame) storeLocal(ctx phpv.Context, idx uint16, v *phpv.ZVal) error {
 		} else {
 			v = v.Dup()
 		}
+	} else if !v.IsRef() {
+		// Object/string/scalar slots: allocate a fresh ZVal wrapper
+		// so the new slot doesn't share the ZVal pointer with its
+		// CoW siblings. Without this, a by-ref builtin (e.g.
+		// mb_convert_variables) that calls z.Set on \$b mutates the
+		// shared wrapper and \$a sees the change too (bug26639).
+		// Strings/ints stay byte-identical because we only allocate
+		// a new wrapper around the same underlying Val.
+		v = v.ZVal()
 	}
 	f.locals[idx] = v
 	if f.fn.SlotOnly {
