@@ -129,6 +129,18 @@ func arraySetLocal(ctx phpv.Context, f *Frame, idx uint16, offset, value *phpv.Z
 	name := f.fn.Locals[idx]
 	cur := f.locals[idx]
 	if cur == nil {
+		// Slot cache says the local was never initialized. If the body
+		// isn't slot-only, an error handler / shutdown function /
+		// destructor that ran during offset or value evaluation could
+		// have populated the hashtable behind our back. Mirror PHP's
+		// bug79784 semantics: if the slot only became non-nil via such
+		// external mutation, treat the assignment as a no-op so the
+		// handler's final value of the local stays visible.
+		if !f.fn.SlotOnly {
+			if v, found, _ := ctx.OffsetCheck(ctx, name); found && v != nil {
+				return nil
+			}
+		}
 		cur = phpv.ZNULL.ZVal()
 	}
 
