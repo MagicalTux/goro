@@ -74,6 +74,14 @@ func (f *Frame) storeLocal(ctx phpv.Context, idx uint16, v *phpv.ZVal) error {
 	if v.IsCached() {
 		v = phpv.NewZVal(v.Value())
 	}
+	// Array values get a COW Dup on assignment so subsequent
+	// mutations through one variable don't surprise the other
+	// (PHP value semantics for arrays). Matches the AST's
+	// ZVal.ZVal() path in runOperator's `=` branch. Pre-existing
+	// refs propagate, so skip the dup when v is a reference.
+	if !v.IsRef() && v.GetType() == phpv.ZtArray {
+		v = v.Dup()
+	}
 	f.locals[idx] = v
 	if f.fn.SlotOnly {
 		return nil
