@@ -53,7 +53,15 @@ func (f *Frame) dispatchTryHandler(ctx phpv.Context, throwErr *phperr.PhpThrow) 
 					if err := ctx.OffsetSet(ctx, name, exVal); err != nil {
 						return false, err
 					}
-					if old != nil && old.GetType() == phpv.ZtObject && !old.IsRef() {
+					// For slot-only bodies, ctx.OffsetSet doesn't see
+					// the old slot value (storeLocal skipped the
+					// hashtable mirror) and so doesn't DecRef it.
+					// Trigger the destructor explicitly. For non-slot-
+					// only bodies, OffsetSet already did the DecRef
+					// for us — skip to avoid double-decrementing the
+					// object's refcount (which causes ID-release races
+					// observable as object-ID drift in EXPECT tests).
+					if f.fn.SlotOnly && old != nil && old.GetType() == phpv.ZtObject && !old.IsRef() {
 						if obj, ok := old.Value().(interface {
 							DecRef(phpv.Context) error
 						}); ok {
