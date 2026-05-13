@@ -722,14 +722,6 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 		case OpRefreshSlots:
 			f.refreshSlots(ctx)
 
-		case OpSyncLocal:
-			idx := ins.A()
-			if v := f.locals[idx]; v != nil {
-				if err := ctx.OffsetSet(ctx, f.fn.Locals[idx], v); err != nil {
-					return nil, false, err
-				}
-			}
-
 		// --- objects -------------------------------------------------
 		case OpNewObject:
 			argc := int(ins.B())
