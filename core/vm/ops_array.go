@@ -79,6 +79,9 @@ func arraySetLocal(ctx phpv.Context, f *Frame, idx uint16, offset, value *phpv.Z
 			k = offset.Value()
 		}
 		if err := arr.OffsetSet(ctx, k, value); err != nil {
+			if err == phpv.ErrNextElementOccupied {
+				return phpobj.ThrowError(ctx, phpobj.Error, err.Error())
+			}
 			return err
 		}
 		return nil
