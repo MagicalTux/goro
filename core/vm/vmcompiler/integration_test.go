@@ -50,27 +50,32 @@ func TestClosureBodyHookFallsBack(t *testing.T) {
 	vmcompiler.SetEnabled(true)
 	t.Cleanup(func() { vmcompiler.SetEnabled(prev) })
 
+	// Return-by-reference (function &…() { return …; }) still forces
+	// AST fallback — the VM doesn't preserve the ref through OP_RET.
 	g := newGlobal(t)
 	r := compileSnippet(t, g, `
-		function vm_byref_inc(&$x) { $x++; }
-		$a = 5;
-		vm_byref_inc($a);
-		vm_byref_inc($a);
-		return $a;
+		$storage = ['val' => 1];
+		function &vm_get_ref() {
+			global $storage;
+			return $storage['val'];
+		}
+		$ref = &vm_get_ref();
+		$ref = 99;
+		return $storage['val'];
 	`)
 	res, err := phperr.CatchReturn(r.Run(g))
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if res.String() != "7" {
-		t.Fatalf("got %q, want 7", res.String())
+	if res.String() != "99" {
+		t.Fatalf("got %q, want 99", res.String())
 	}
-	fn, err := g.GetFunction(g, phpv.ZString("vm_byref_inc"))
+	fn, err := g.GetFunction(g, phpv.ZString("vm_get_ref"))
 	if err != nil {
 		t.Fatalf("GetFunction: %v", err)
 	}
 	if compiler.IsVMCompiled(fn) {
-		t.Fatalf("vm_byref_inc should have fallen back to AST (by-ref param)")
+		t.Fatalf("vm_get_ref should have fallen back to AST (return-by-ref)")
 	}
 }
 

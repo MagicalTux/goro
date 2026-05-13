@@ -110,7 +110,7 @@ func ResolveCallable(ctx phpv.Context, v *phpv.ZVal) (phpv.Callable, phpv.ZObjec
 //     storage that lives outside the slot array).
 //   - Declares a function (`function foo() { … }`) — that function's
 //     body may use `global $x` to bind to a top-level local.
-func IsSlotSafe(r phpv.Runnable) bool {
+func IsSlotSafe(g phpv.GlobalContext, r phpv.Runnable) bool {
 	if r == nil {
 		return true
 	}
@@ -133,6 +133,13 @@ func IsSlotSafe(r phpv.Runnable) bool {
 		}
 		if ByRefBuiltins[n.name.ToLower()] {
 			return false
+		}
+		// User-function calls whose callee has by-ref params:
+		// AST-delegated at the call site, reads args from hashtable.
+		if g != nil && LookupLazyByRef != nil {
+			if hit, byRef := LookupLazyByRef(g, n.name); hit && byRef {
+				return false
+			}
 		}
 	case *runnableFunctionCallRef:
 		if CallHasSpecialArgs(n.args) {
@@ -315,7 +322,7 @@ func IsSlotSafe(r phpv.Runnable) bool {
 		return true
 	}
 	for _, c := range GetChildren(r) {
-		if !IsSlotSafe(c) {
+		if !IsSlotSafe(g, c) {
 			return false
 		}
 	}

@@ -411,6 +411,22 @@ func TestPropertyWrite(t *testing.T) {
 	}
 }
 
+func TestByRefParam(t *testing.T) {
+	setup := `
+		function vm_swap(&$a, &$b) { $tmp = $a; $a = $b; $b = $tmp; }
+		function vm_incr(&$x, $by) { $x += $by; return $x; }
+		function vm_push(&$arr, $v) { $arr[] = $v; }
+	`
+	cases := []string{
+		"$x = 1; $y = 2; vm_swap($x, $y); return $x * 10 + $y;",      // 21
+		"$x = 5; $r = vm_incr($x, 3); return $x * 10 + $r;",           // 88
+		"$a = [1,2]; vm_push($a, 3); vm_push($a, 4); return array_sum($a);", // 10
+	}
+	for _, c := range cases {
+		t.Run(c, func(t *testing.T) { compareReturns(t, c, setup) })
+	}
+}
+
 func TestGeneratorIteration(t *testing.T) {
 	setup := `
 		function vm_gen() {

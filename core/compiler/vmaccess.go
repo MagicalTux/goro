@@ -12,13 +12,19 @@ import (
 // closures, arrow fns) and, if it returns a non-nil Runnable, replaces
 // the AST body with the VM-backed runner.
 //
+// hasByRef tells the VM emitter whether any parameter (or `use`
+// capture) is by-reference. The VM passes values, but the AST
+// callBody binds by-ref args into the FuncContext hashtable before
+// the VM body runs; when hasByRef is true the body must avoid
+// SlotOnly so writes propagate through the ref via OffsetSet.
+//
 // Returning nil means "VM compilation failed or was declined; keep the
 // AST body". Implementations must be safe to call concurrently and
 // must not mutate the input Runnable.
 //
 // Set to nil (the zero value) when the vmcompiler is not linked or has
 // disabled itself via env var. Compiler treats nil as "VM disabled".
-var TryBuildVMClosureBody func(ctx phpv.Context, name phpv.ZString, src *phpv.Loc, body phpv.Runnable) phpv.Runnable
+var TryBuildVMClosureBody func(ctx phpv.Context, name phpv.ZString, src *phpv.Loc, body phpv.Runnable, hasByRef bool) phpv.Runnable
 
 // TryBuildVMScript is the equivalent hook for top-level scripts. It
 // gets the full Runnables and may return a wrapping VM runner.

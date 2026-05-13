@@ -51,7 +51,7 @@ func init() {
 // tryBuildClosureBody attempts to bytecode-compile a closure body.
 // Returns nil if the gate is off or the body uses unsupported
 // constructs. The compiler keeps the AST body in either case.
-func tryBuildClosureBody(ctx phpv.Context, name phpv.ZString, src *phpv.Loc, body phpv.Runnable) phpv.Runnable {
+func tryBuildClosureBody(ctx phpv.Context, name phpv.ZString, src *phpv.Loc, body phpv.Runnable, hasByRef bool) phpv.Runnable {
 	if !enabled {
 		return nil
 	}
@@ -64,6 +64,12 @@ func tryBuildClosureBody(ctx phpv.Context, name phpv.ZString, src *phpv.Loc, bod
 		// Surface a debug print? For now stay silent — the AST path
 		// will run the same code.
 		return nil
+	}
+	if hasByRef {
+		// By-ref params/captures need OffsetSet to propagate through
+		// the ref wrapper; skipping the hashtable mirror would
+		// silently drop the propagation.
+		fn.SlotOnly = false
 	}
 	return vm.WrapClosureBody(fn, body)
 }

@@ -45,7 +45,13 @@ func Compile(name phpv.ZString, source *phpv.Loc, body phpv.Runnable, ctx phpv.C
 	fn := e.finish(name, 0)
 	// Slot-only writes when the body has no extract/compact/$$x/etc.
 	// This is a perf win — local writes skip the FuncContext hashtable
-	// mirror.
-	fn.SlotOnly = compiler.IsSlotSafe(body)
+	// mirror. The Global lets IsSlotSafe peek at the lazy-function
+	// table so calls to user functions with by-ref params force the
+	// hashtable mirror (the AST runner reads call args from it).
+	var g phpv.GlobalContext
+	if ctx != nil {
+		g = ctx.Global()
+	}
+	fn.SlotOnly = compiler.IsSlotSafe(g, body)
 	return fn, nil
 }

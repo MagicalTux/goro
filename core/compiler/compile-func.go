@@ -898,13 +898,14 @@ func compileFunctionWithName(name phpv.ZString, c compileCtx, l *phpv.Loc, rref 
 		}
 	}
 	// VM compile is attempted unless the closure is a generator
-	// (yield needs a coroutine spawn the AST handles), declares a
-	// return-by-reference, or has by-ref parameters (the value-passing
-	// call protocol can't bind references). A return type hint is
-	// fine — the emitter AST-delegates the return statement so the
-	// AST handles coercion.
-	if TryBuildVMClosureBody != nil && !zc.isGenerator && !zc.rref && !hasByRef {
-		if vmBody := TryBuildVMClosureBody(c, zc.name, zc.start, zc.code); vmBody != nil {
+	// (yield needs a coroutine spawn the AST handles) or declares a
+	// return-by-reference. A return type hint is fine — the emitter
+	// AST-delegates the return statement so the AST handles coercion.
+	// By-ref params are also fine: the AST callBody binds the refs
+	// into the FuncContext hashtable before the VM body runs, and
+	// the emitter passes hasByRef so the body avoids SlotOnly.
+	if TryBuildVMClosureBody != nil && !zc.isGenerator && !zc.rref {
+		if vmBody := TryBuildVMClosureBody(c, zc.name, zc.start, zc.code, hasByRef); vmBody != nil {
 			zc.code = vmBody
 		}
 	}
