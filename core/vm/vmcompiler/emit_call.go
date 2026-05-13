@@ -141,6 +141,16 @@ func (e *emitter) emitFunctionCallRef(n funcCallRefNode) error {
 		}
 		return e.emitCallViaAST(raw)
 	}
+	// Indirect calls go through a runtime-resolved callable, so the
+	// by-ref signature is unknowable. Sync any variable-arg locals
+	// and AST-delegate when writable args are present.
+	if compiler.CallHasWritableArg(args) {
+		raw, ok := n.(phpv.Runnable)
+		if !ok {
+			return unsupportedf("indirect call AST delegation: cannot retrieve raw Runnable")
+		}
+		return e.emitCallViaASTWithSyncedLocals(raw, args)
+	}
 	if len(args) > 0xFFFF {
 		return unsupportedf("indirect call with too many args")
 	}
