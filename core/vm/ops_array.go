@@ -16,6 +16,30 @@ import (
 //   - ZtBool true / ZtInt / ZtFloat: "Cannot use a scalar value as an
 //     array" Error.
 func arrayGet(ctx phpv.Context, container, offset *phpv.ZVal) (*phpv.ZVal, error) {
+	// PHP 8+: validate offset type on array/string containers. Objects
+	// and arrays as keys are TypeErrors (except on objects implementing
+	// ArrayAccess — those dispatch through the ZtObject branch below
+	// which accepts any key).
+	if offset != nil && container.GetType() != phpv.ZtObject {
+		switch offset.GetType() {
+		case phpv.ZtObject:
+			containerName := "array"
+			if container.GetType() == phpv.ZtString {
+				containerName = "string"
+			}
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+				fmt.Sprintf("Cannot access offset of type %s on %s",
+					offset.Value().(phpv.ZObject).GetClass().GetName(), containerName))
+		case phpv.ZtArray:
+			containerName := "array"
+			if container.GetType() == phpv.ZtString {
+				containerName = "string"
+			}
+			return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
+				fmt.Sprintf("Cannot access offset of type array on %s", containerName))
+		}
+	}
+
 	switch container.GetType() {
 	case phpv.ZtArray:
 		arr := container.AsArray(ctx)
@@ -78,6 +102,29 @@ func arraySetLocal(ctx phpv.Context, f *Frame, idx uint16, offset, value *phpv.Z
 	// create a self-recursion instead of snapshotting.
 	if value != nil && value.GetType() == phpv.ZtArray && !value.IsRef() {
 		value = value.Dup()
+	}
+
+	// PHP 8+: validate offset type on array/string/null containers.
+	// Objects and arrays as keys are TypeErrors (except on objects
+	// implementing ArrayAccess, where any key type is allowed).
+	if offset != nil && cur.GetType() != phpv.ZtObject {
+		switch offset.GetType() {
+		case phpv.ZtObject:
+			containerName := "array"
+			if cur.GetType() == phpv.ZtString {
+				containerName = "string"
+			}
+			return phpobj.ThrowError(ctx, phpobj.TypeError,
+				fmt.Sprintf("Cannot access offset of type %s on %s",
+					offset.Value().(phpv.ZObject).GetClass().GetName(), containerName))
+		case phpv.ZtArray:
+			containerName := "array"
+			if cur.GetType() == phpv.ZtString {
+				containerName = "string"
+			}
+			return phpobj.ThrowError(ctx, phpobj.TypeError,
+				fmt.Sprintf("Cannot access offset of type array on %s", containerName))
+		}
 	}
 
 	switch cur.GetType() {
