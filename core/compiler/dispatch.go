@@ -268,6 +268,15 @@ func IsSlotSafe(g phpv.GlobalContext, r phpv.Runnable) bool {
 		// warning fires; the AST reads any local-arg operands
 		// from the hashtable.
 		return false
+	case *runReturn:
+		// `return $expr` is AST-delegated when the surrounding
+		// function declares a return type hint (the AST does the
+		// type coercion). The delegated AST reads `$expr` from
+		// the FuncContext hashtable, so the body must be slot-
+		// unsafe to keep the hashtable mirrored.
+		if n.returnType != nil {
+			return false
+		}
 	case *runnableClone,
 		*runInstanceOf,
 		*runVoidCast,
