@@ -50,22 +50,17 @@ func (e *emitter) emitFunctionCall(n funcCallNode) error {
 
 	// AST-delegate calls whose shape we don't lower piecewise:
 	// named/spread args, or a callee that takes by-ref params.
-	// When the callee isn't statically known (lazy table miss) AND
-	// any arg is a writable lvalue, conservatively AST-delegate too
-	// — the resolved function might take the writable by ref.
+	// Note: unknown-callee-with-writable-arg was tried as a
+	// conservative gate, but the IsSlotSafe override it required
+	// broke too many independent tests; keep the narrower check.
 	byRefBuiltin := compiler.ByRefBuiltins[name.ToLower()]
 	byRefUser := false
-	unknownCallable := true
 	if e.ctx != nil {
 		if g := e.ctx.Global(); g != nil {
-			if hit, br := compiler.LookupLazyByRefSafe(g, name); hit {
-				unknownCallable = false
-				byRefUser = br
-			}
+			byRefUser = compiler.FunctionTakesByRef(g, name)
 		}
 	}
-	if byRefBuiltin || byRefUser || compiler.CallHasSpecialArgs(args) ||
-		(unknownCallable && compiler.CallHasWritableArg(args)) {
+	if byRefBuiltin || byRefUser || compiler.CallHasSpecialArgs(args) {
 		raw, ok := n.(phpv.Runnable)
 		if !ok {
 			return unsupportedf("call AST delegation: cannot retrieve raw Runnable")
