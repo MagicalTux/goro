@@ -460,6 +460,15 @@ var slotUnsafeFuncs = map[phpv.ZString]bool{
 	"func_get_arg":     true,
 	"parse_str":        true, // can write callee locals when called with no second arg
 	"mb_parse_str":     true,
+	// include/require/eval all execute code in the caller's scope and
+	// reach for caller locals through the FuncContext hashtable. Mark
+	// the surrounding body slot-unsafe so writes mirror to the hashtable
+	// before the include/eval runs.
+	"include":      true,
+	"include_once": true,
+	"require":      true,
+	"require_once": true,
+	"eval":         true,
 }
 
 // CallInstanceMethod invokes obj->name(args...) with full PHP
