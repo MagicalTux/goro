@@ -314,6 +314,17 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 				return nil, false, err
 			}
 		case OpConcat:
+			// String+string fast path: avoid OperatorAppend's full
+			// type coercion + GMP overload check.
+			b := f.stack[f.sp-1]
+			a := f.stack[f.sp-2]
+			if a.GetType() == phpv.ZtString && b.GetType() == phpv.ZtString {
+				as := a.Value().(phpv.ZString)
+				bs := b.Value().(phpv.ZString)
+				f.stack[f.sp-2] = (as + bs).ZVal()
+				f.sp--
+				break
+			}
 			if err := f.binop(ctx, opConcat); err != nil {
 				return nil, false, err
 			}
@@ -491,12 +502,48 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 
 		// --- compound assign on locals ------------------------------
 		case OpOpAssignLocal:
-			fn := compoundOp(tokenizer.ItemType(ins.B()))
+			op := tokenizer.ItemType(ins.B())
+			rhs := f.stack[f.sp-1]
+			cur := f.locals[ins.A()]
+			// Int += int fast path — common in arithmetic loops.
+			if op == tokenizer.T_PLUS_EQUAL &&
+				cur != nil && !cur.IsRef() && cur.GetType() == phpv.ZtInt && rhs.GetType() == phpv.ZtInt {
+				ai := int64(cur.Value().(phpv.ZInt))
+				bi := int64(rhs.Value().(phpv.ZInt))
+				c := ai + bi
+				if (c > ai) == (bi > 0) {
+					newV := phpv.ZInt(c).ZVal()
+					f.locals[ins.A()] = newV
+					if !f.fn.SlotOnly {
+						if err := ctx.OffsetSet(ctx, f.fn.Locals[ins.A()], newV); err != nil {
+							return nil, false, err
+						}
+					}
+					f.sp--
+					break
+				}
+			}
+			// String .= string fast path — common in string-build
+			// loops.
+			if op == tokenizer.T_CONCAT_EQUAL &&
+				cur != nil && !cur.IsRef() && cur.GetType() == phpv.ZtString && rhs.GetType() == phpv.ZtString {
+				as := cur.Value().(phpv.ZString)
+				bs := rhs.Value().(phpv.ZString)
+				newV := (as + bs).ZVal()
+				f.locals[ins.A()] = newV
+				if !f.fn.SlotOnly {
+					if err := ctx.OffsetSet(ctx, f.fn.Locals[ins.A()], newV); err != nil {
+						return nil, false, err
+					}
+				}
+				f.sp--
+				break
+			}
+			f.sp-- // pop rhs (was peek)
+			fn := compoundOp(op)
 			if fn == nil {
 				return nil, false, fmt.Errorf("vm: unknown compound op %d", ins.B())
 			}
-			rhs := f.pop()
-			cur := f.locals[ins.A()]
 			if cur == nil {
 				cur = phpv.ZNULL.ZVal()
 			}
