@@ -61,10 +61,17 @@ func arrayGet(ctx phpv.Context, container, offset *phpv.ZVal) (*phpv.ZVal, error
 				fmt.Sprintf("Cannot access offset of type array on %s", containerName))
 		case phpv.ZtString:
 			if container.GetType() == phpv.ZtString {
-				s := string(offset.Value().(phpv.ZString))
+				zs := offset.Value().(phpv.ZString)
+				s := string(zs)
 				if len(strings.TrimSpace(s)) > 0 && !isLeadingNumericString(s) {
 					return nil, phpobj.ThrowError(ctx, phpobj.TypeError,
 						"Cannot access offset of type string on string")
+				}
+				// Fully numeric string: convert to int so the
+				// string-offset path doesn't emit the "Illegal
+				// string offset" warning. Mirrors AST behaviour.
+				if zs.IsNumeric() {
+					offset = offset.AsInt(ctx).ZVal()
 				}
 			}
 		}
@@ -157,10 +164,14 @@ func arraySetLocal(ctx phpv.Context, f *Frame, idx uint16, offset, value *phpv.Z
 				fmt.Sprintf("Cannot access offset of type array on %s", containerName))
 		case phpv.ZtString:
 			if cur.GetType() == phpv.ZtString {
-				s := string(offset.Value().(phpv.ZString))
+				zs := offset.Value().(phpv.ZString)
+				s := string(zs)
 				if len(strings.TrimSpace(s)) > 0 && !isLeadingNumericString(s) {
 					return phpobj.ThrowError(ctx, phpobj.TypeError,
 						"Cannot access offset of type string on string")
+				}
+				if zs.IsNumeric() {
+					offset = offset.AsInt(ctx).ZVal()
 				}
 			}
 		}
