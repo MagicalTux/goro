@@ -894,6 +894,10 @@ func TestArrays(t *testing.T) {
 		"$a = [[1,2],[3,4]]; return $a[1][0];",
 		// mixed: literal in for-loop
 		"$a = []; for ($i = 0; $i < 5; $i++) { $a[] = $i * 2; } return $a[0] + $a[2] + $a[4];",
+		// COW: $b = $a; modifying $b via sort doesn't affect $a
+		"$a = [3, 1, 2]; $b = $a; sort($b); return $a[0] * 100 + $b[0];", // 3*100 + 1 = 301
+		// COW: $b = $a; modifying $b via [] doesn't affect $a
+		"$a = [1, 2]; $b = $a; $b[] = 99; return count($a) + count($b);", // 2 + 3 = 5
 	}
 	for _, c := range cases {
 		t.Run(c, func(t *testing.T) { compareReturns(t, c) })
