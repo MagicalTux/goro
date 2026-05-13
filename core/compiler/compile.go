@@ -483,22 +483,21 @@ func compileInner(parent phpv.Context, t *tokenizer.Lexer) (phpv.Runnable, error
 	// are parsed from left to right.
 	ConnectParentNodes(r)
 
-	// Optional: wrap the top-level script in a VM runner. Closures
-	// inside the script get their bodies VM-compiled separately via
-	// the TryBuildVMClosureBody hook (called from compileFunctionWithName).
-	// Most scripts contain function declarations or other statements
-	// the emitter doesn't yet support, so this hook usually returns
-	// nil and we keep the AST.
-	if TryBuildVMScript != nil {
-		var src *phpv.Loc
-		if rs, ok := r.(phpv.Runnables); ok && len(rs) > 0 {
-			if l, ok := rs[0].(interface{ Loc() *phpv.Loc }); ok {
-				src = l.Loc()
-			}
+	// Wrap the top-level script in a VM runner. The VM is the only
+	// runtime — if the hook isn't installed, something imported the
+	// compiler without also importing core/vm/vmcompiler, and the
+	// resulting AST execution would mask the bug indefinitely.
+	if TryBuildVMScript == nil {
+		panic("compiler.Compile: VM hooks not installed — import core/vm/vmcompiler from the binary's main package")
+	}
+	var src *phpv.Loc
+	if rs, ok := r.(phpv.Runnables); ok && len(rs) > 0 {
+		if l, ok := rs[0].(interface{ Loc() *phpv.Loc }); ok {
+			src = l.Loc()
 		}
-		if vmR := TryBuildVMScript(parent, src, r); vmR != nil {
-			return vmR, nil
-		}
+	}
+	if vmR := TryBuildVMScript(parent, src, r); vmR != nil {
+		return vmR, nil
 	}
 
 	return r, nil
