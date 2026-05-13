@@ -27,6 +27,7 @@ import (
 	"github.com/KarpelesLab/goro/core/phpobj"
 	"github.com/KarpelesLab/goro/core/phpv"
 	"github.com/KarpelesLab/goro/core/tokenizer"
+	_ "github.com/KarpelesLab/goro/core/vm/vmcompiler"
 	"github.com/andreyvit/diff"
 )
 

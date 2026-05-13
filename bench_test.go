@@ -7,6 +7,7 @@ import (
 	"github.com/KarpelesLab/goro/core/ini"
 	"github.com/KarpelesLab/goro/core/phpctx"
 	"github.com/KarpelesLab/goro/core/phpv"
+	_ "github.com/KarpelesLab/goro/core/vm/vmcompiler"
 	_ "github.com/KarpelesLab/goro/ext/standard"
 )
 
