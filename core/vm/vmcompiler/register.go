@@ -2,7 +2,6 @@ package vmcompiler
 
 import (
 	"errors"
-	"os"
 
 	"github.com/KarpelesLab/goro/core/compiler"
 	"github.com/KarpelesLab/goro/core/phpctx"
@@ -10,29 +9,19 @@ import (
 	"github.com/KarpelesLab/goro/core/vm"
 )
 
-// Enabled reports whether the VM is enabled for the current process.
-// Read once at init from the GORO_VM environment variable; "1", "true",
-// or "yes" enable it. Anything else (including unset) leaves the AST
-// runner as the only backend.
-//
-// Tests can override the gate with SetEnabled.
-var enabled bool
+// Enabled reports whether the VM is enabled. The VM is now the only
+// runtime; this always returns true. Kept for backwards-compatible
+// callers in tests / external code.
+func Enabled() bool { return true }
 
-// Enabled returns the current gate state.
-func Enabled() bool { return enabled }
-
-// SetEnabled toggles the VM compile hooks at runtime. Used by tests
-// and benchmarks; production code should rely on the env var.
-func SetEnabled(v bool) { enabled = v }
+// SetEnabled is a no-op kept for backwards-compatible callers. The VM
+// can't be disabled — the AST tree-walker is no longer reachable as a
+// standalone runtime. (AST node Run() methods still exist as
+// infrastructure that the VM delegates to for nodes it doesn't lower
+// piecewise.)
+func SetEnabled(bool) {}
 
 func init() {
-	switch os.Getenv("GORO_VM") {
-	case "1", "true", "yes", "on":
-		enabled = true
-	}
-
-	// Install hooks unconditionally — the gate logic lives in the
-	// hook bodies so SetEnabled takes effect immediately.
 	compiler.TryBuildVMClosureBody = tryBuildClosureBody
 	compiler.TryBuildVMScript = tryBuildScript
 
@@ -48,21 +37,18 @@ func init() {
 	}
 }
 
-// tryBuildClosureBody attempts to bytecode-compile a closure body.
-// Returns nil if the gate is off or the body uses unsupported
-// constructs. The compiler keeps the AST body in either case.
+// tryBuildClosureBody bytecode-compiles a closure body. Returns nil
+// only when the emitter can't lower the body (ErrUnsupported); in
+// that case the compiler keeps the AST body — note this is an
+// internal fall-back for genuinely unsupported constructs, not a
+// user-facing runtime selection.
 func tryBuildClosureBody(ctx phpv.Context, name phpv.ZString, src *phpv.Loc, body phpv.Runnable, hasByRef bool) phpv.Runnable {
-	if !enabled {
-		return nil
-	}
 	fn, err := Compile(name, src, body, ctx)
 	if err != nil {
 		if errors.Is(err, ErrUnsupported) {
 			return nil
 		}
 		// Any other error: don't crash the compile, just decline.
-		// Surface a debug print? For now stay silent — the AST path
-		// will run the same code.
 		return nil
 	}
 	if hasByRef {
@@ -75,15 +61,10 @@ func tryBuildClosureBody(ctx phpv.Context, name phpv.ZString, src *phpv.Loc, bod
 }
 
 
-// tryBuildScript wraps a top-level script's Runnables. Same gating
-// logic; the wrapper goes through vm.Wrap because top-level scripts
-// don't use the closure return-via-error convention. SlotOnly is set
-// based on the body's IsSlotSafe analysis (which already rejects
-// scripts that declare functions or use $GLOBALS / global / static).
+// tryBuildScript wraps a top-level script's Runnables in a VM runner.
+// Returns nil only for genuinely unsupported constructs (same
+// fall-back semantics as tryBuildClosureBody).
 func tryBuildScript(ctx phpv.Context, src *phpv.Loc, body phpv.Runnable) phpv.Runnable {
-	if !enabled {
-		return nil
-	}
 	fn, err := Compile("<main>", src, body, ctx)
 	if err != nil {
 		if errors.Is(err, ErrUnsupported) {

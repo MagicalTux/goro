@@ -13,9 +13,6 @@ jobs:
       fail-fast: false
       matrix:
         go-version: ['1.25', '1.26']
-        goro_vm: ['', '1']
-    env:
-      GORO_VM: ${{ matrix.goro_vm }}
     steps:
       - uses: actions/checkout@v6
 
