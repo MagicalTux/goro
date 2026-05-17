@@ -220,6 +220,15 @@ func (e *emitter) emitStmt(node phpv.Runnable) error {
 		return e.emitContinue(n)
 	}
 
+	// Bare-variable statement (`$x;`): PHP's compiler drops this — no
+	// FETCH_R is emitted, so no "Undefined variable" warning fires.
+	// The AST runner's runVariable.Run replicates that via a write=true
+	// short-circuit when Parent is a Runnables. The VM has no parent
+	// concept, so detect and skip it here directly.
+	if _, ok := node.(variableNode); ok {
+		return nil
+	}
+
 	// Anything else: treat as expression statement (result discarded).
 	prev := e.stmtCtx
 	e.stmtCtx = true
