@@ -253,6 +253,11 @@ const (
 	// Used by `declare(ticks=N)` bodies, inserted by the emitter after
 	// every N statements within the body.
 	OpCallTickFunctions
+	// OP_DEFINE_CONST pops the evaluated value of a top-level
+	// `const NAME = expr;` definition and registers it in the global
+	// constant table. The name / attributes / source location come from
+	// SubASTs[A] (the *runTopLevelConst node).
+	OpDefineConst
 
 	// Sentinel — keep last.
 	opLast
@@ -357,4 +362,5 @@ var opNames = [...]string{
 	OpClassStaticObjRef:   "CLASS_STATIC_OBJREF",
 	OpClassStaticDynGet:   "CLASS_STATIC_DYN_GET",
 	OpCallTickFunctions:   "CALL_TICK_FUNCTIONS",
+	OpDefineConst:         "DEFINE_CONST",
 }

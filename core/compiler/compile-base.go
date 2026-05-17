@@ -405,43 +405,42 @@ type runTopLevelConst struct {
 }
 
 func (r *runTopLevelConst) Run(ctx phpv.Context) (*phpv.ZVal, error) {
-	// Validate internal attributes on the constant before defining it
-	if len(r.attrs) > 0 {
-		if msg := phpobj.ValidateInternalAttributeList(ctx, r.attrs, phpobj.AttributeTARGET_CONSTANT); msg != "" {
-			phpErr := &phpv.PhpError{
-				Err:  fmt.Errorf("%s", msg),
-				Code: phpv.E_ERROR,
-				Loc:  r.l,
-			}
-			ctx.Global().LogError(phpErr)
-			return nil, phpv.ExitError(255)
-		}
-	}
-
 	v, err := r.val.Run(ctx)
 	if err != nil {
 		return nil, err
 	}
-	// Normalize the namespace part to lowercase for storage (PHP namespaces are case-insensitive,
-	// but constant names are case-sensitive). This ensures A\FOO and a\FOO refer to the same constant.
-	storeName := r.name
+	return nil, DefineTopLevelConst(ctx, r.name, v, r.attrs, r.l)
+}
+
+// DefineTopLevelConst stores a top-level constant in the global table
+// with PHP's namespace-case-insensitive / name-case-sensitive
+// normalisation, validating any attached attributes first. Both AST
+// and VM call this after evaluating the value expression.
+func DefineTopLevelConst(ctx phpv.Context, name phpv.ZString, v *phpv.ZVal, attrs []*phpv.ZAttribute, l *phpv.Loc) error {
+	if len(attrs) > 0 {
+		if msg := phpobj.ValidateInternalAttributeList(ctx, attrs, phpobj.AttributeTARGET_CONSTANT); msg != "" {
+			phpErr := &phpv.PhpError{
+				Err:  fmt.Errorf("%s", msg),
+				Code: phpv.E_ERROR,
+				Loc:  l,
+			}
+			ctx.Global().LogError(phpErr)
+			return phpv.ExitError(255)
+		}
+	}
+	storeName := name
 	if idx := strings.LastIndex(string(storeName), "\\"); idx >= 0 {
 		storeName = phpv.ZString(strings.ToLower(string(storeName[:idx]))) + storeName[idx:]
 	}
 	ok := ctx.Global().ConstantSet(storeName, v.Value())
 	if !ok {
-		// Constant already defined - emit a warning (will become an error in PHP 9)
-		if err := ctx.Warn("Constant %s already defined, this will be an error in PHP 9", r.name, logopt.Data{NoFuncName: true, Loc: r.l}); err != nil {
-			return nil, err
+		if err := ctx.Warn("Constant %s already defined, this will be an error in PHP 9", name, logopt.Data{NoFuncName: true, Loc: l}); err != nil {
+			return err
 		}
-		// Do NOT update attributes - the original constant's attributes are preserved
-	} else {
-		// Store attributes for reflection access (only on first definition)
-		if len(r.attrs) > 0 {
-			ctx.Global().ConstantSetAttributes(storeName, r.attrs)
-		}
+	} else if len(attrs) > 0 {
+		ctx.Global().ConstantSetAttributes(storeName, attrs)
 	}
-	return nil, nil
+	return nil
 }
 
 func (r *runTopLevelConst) Dump(w io.Writer) error {

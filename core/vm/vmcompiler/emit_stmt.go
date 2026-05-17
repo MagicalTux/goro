@@ -176,8 +176,21 @@ func (e *emitter) emitStmt(node phpv.Runnable) error {
 		return nil
 	}
 
-	// Statement-shaped delegations (declare ticks, top-level const,
-	// enum register).
+	// `const NAME = expr;` top-level definition: emit the value expr
+	// natively, then a single OP_DEFINE_CONST that reads the static
+	// metadata (name / attrs / loc) from the AST node slot.
+	if compiler.IsTopLevelConst(node) {
+		_, val, _, _ := compiler.TopLevelConstParts(node)
+		if err := e.withSubexpr(func() error { return e.emitExpr(val) }); err != nil {
+			return err
+		}
+		idx := e.astIndex(node)
+		e.emit(vm.OpDefineConst, idx, 0, 0)
+		e.popStack(1)
+		return nil
+	}
+
+	// Statement-shaped delegations (enum register).
 	if compiler.IsStmtAstDelegated(node) {
 		idx := e.astIndex(node)
 		e.emit(vm.OpTryFinally, idx, 0, 0)

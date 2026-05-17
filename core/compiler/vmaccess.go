@@ -75,6 +75,24 @@ func IsVMCompiled(c phpv.Callable) bool {
 // adds zero runtime cost when unused (Go inlines + the AST executor
 // continues to read fields directly).
 
+// --- runTopLevelConst -------------------------------------------------
+
+// IsTopLevelConst reports whether r is a `const FOO = expr;` definition
+// at file scope. The VM emits its value expression natively and a
+// single OP_DEFINE_CONST that calls DefineTopLevelConst.
+func IsTopLevelConst(r phpv.Runnable) bool {
+	_, ok := r.(*runTopLevelConst)
+	return ok
+}
+
+// TopLevelConstParts returns the const's static metadata so the VM can
+// keep them in the const-pool / SubASTs slot. The value expression is
+// returned separately because the VM emits it as native bytecode.
+func TopLevelConstParts(r phpv.Runnable) (name phpv.ZString, val phpv.Runnable, attrs []*phpv.ZAttribute, loc *phpv.Loc) {
+	t := r.(*runTopLevelConst)
+	return t.name, t.val, t.attrs, t.l
+}
+
 // --- runNoDiscardStatement --------------------------------------------
 
 // NoDiscardInner returns the wrapped statement. The VM emitter
@@ -488,8 +506,7 @@ func NewObjectMethodIterator(ctx phpv.Context, obj any) phpv.ZIterator {
 // the VM AST-delegates wholesale via OpTryFinally + OP_REFRESH_SLOTS.
 func IsStmtAstDelegated(r phpv.Runnable) bool {
 	switch r.(type) {
-	case *runTopLevelConst,
-		*runEnumRegister:
+	case *runEnumRegister:
 		return true
 	}
 	return false

@@ -1123,6 +1123,15 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 				return nil, false, err
 			}
 
+		// --- top-level `const NAME = expr;` definition --------------
+		case OpDefineConst:
+			value := f.pop()
+			node := f.fn.SubASTs[ins.A()]
+			name, _, attrs, loc := compiler.TopLevelConstParts(node)
+			if err := compiler.DefineTopLevelConst(ctx, name, value, attrs, loc); err != nil {
+				return nil, false, err
+			}
+
 		default:
 			return nil, false, fmt.Errorf("%w: %d at pc=%d", ErrUnknownOp, ins.Op(), f.pc-1)
 		}

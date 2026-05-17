@@ -274,38 +274,72 @@ type runNoDiscardStatement struct {
 	inner phpv.Runnable
 }
 func (r *runNoDiscardStatement) Run(ctx phpv.Context) (*phpv.ZVal, error) {
-	ctx.Global().ClearLastCallable()
-	noDiscardAlreadyEmitted = false
-	prevInCtx := inNoDiscardContext
-	inNoDiscardContext = true
+	prev := NoDiscardEnter()
 	result, err := r.inner.Run(ctx)
-	inNoDiscardContext = prevInCtx
-	if err != nil { return result, err }
-	// If the NoDiscard warning was already emitted before the call (e.g., for __call/__callStatic),
-	// don't emit it again.
+	if err != nil {
+		NoDiscardRestore(prev)
+		return result, err
+	}
+	return result, NoDiscardExit(ctx, prev)
+}
+
+// NoDiscardEnter clears LastCallable and enables the inNoDiscardContext
+// flag. Returns the previous flag state for NoDiscardRestore to use.
+// Both AST and VM call this before evaluating a NoDiscard-wrapped
+// statement.
+func NoDiscardEnter() bool {
+	noDiscardAlreadyEmitted = false
+	prev := inNoDiscardContext
+	inNoDiscardContext = true
+	return prev
+}
+
+// NoDiscardRestore restores the previous inNoDiscardContext flag.
+// Used by both AST and VM on error paths to roll back the enter.
+func NoDiscardRestore(prev bool) {
+	inNoDiscardContext = prev
+}
+
+// NoDiscardExit checks whether the last callable carried a NoDiscard
+// attribute and emits the warning if so. Restores the previous
+// in-context flag. Both AST and VM call this after a successful
+// inner evaluation.
+func NoDiscardExit(ctx phpv.Context, prev bool) error {
+	inNoDiscardContext = prev
 	if noDiscardAlreadyEmitted {
 		noDiscardAlreadyEmitted = false
-		return result, nil
+		return nil
 	}
 	callable := ctx.Global().LastCallable()
-	if callable == nil { return result, nil }
+	if callable == nil {
+		return nil
+	}
 	attrs, funcName, label := getNoDiscardInfo(callable)
-	if attrs == nil { return result, nil }
+	if attrs == nil {
+		return nil
+	}
 	for _, attr := range attrs {
 		if attr.ClassName == "NoDiscard" || attr.ClassName == "\\NoDiscard" {
-			if err := ResolveAttrArgs(ctx, attr); err != nil { return nil, err }
-			// Validate NoDiscard constructor arg types
-			if err := ValidateNoDiscardArgs(ctx, attr); err != nil { return nil, err }
+			if err := ResolveAttrArgs(ctx, attr); err != nil {
+				return err
+			}
+			if err := ValidateNoDiscardArgs(ctx, attr); err != nil {
+				return err
+			}
 			msg := fmt.Sprintf("The return value of %s %s() should either be used or intentionally ignored by casting it as (void)", label, funcName)
 			if len(attr.Args) > 0 && attr.Args[0] != nil && attr.Args[0].GetType() != phpv.ZtNull {
 				customMsg := attr.Args[0].String()
-				if customMsg != "" { msg += ", " + customMsg }
+				if customMsg != "" {
+					msg += ", " + customMsg
+				}
 			}
-			if warnErr := ctx.Warn("%s", msg, logopt.NoFuncName(true), logopt.ErrType(phpv.E_USER_WARNING)); warnErr != nil { return nil, warnErr }
+			if err := ctx.Warn("%s", msg, logopt.NoFuncName(true), logopt.ErrType(phpv.E_USER_WARNING)); err != nil {
+				return err
+			}
 			break
 		}
 	}
-	return result, nil
+	return nil
 }
 func (r *runNoDiscardStatement) Dump(w io.Writer) error { return r.inner.Dump(w) }
 func getNoDiscardInfo(c phpv.Callable) ([]*phpv.ZAttribute, string, string) {
