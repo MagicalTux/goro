@@ -90,84 +90,12 @@ func (a runArray) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 
 	for _, e := range a.e {
 		if e.spread {
-			// ...$expr - unpack iterable into the array
 			v, err := e.v.Run(ctx)
 			if err != nil {
 				return nil, err
 			}
-			if v.GetType() == phpv.ZtArray {
-				src := v.AsArray(ctx)
-				for k, v := range src.Iterate(ctx) {
-					// PHP 8.1+: string keys are preserved; int keys are re-indexed
-					if k.GetType() == phpv.ZtString {
-						array.OffsetSet(ctx, k, v.Dup())
-					} else {
-						err := array.OffsetSet(ctx, nil, v.Dup())
-						if err != nil {
-							return nil, phpobj.ThrowError(ctx, phpobj.Error, err.Error())
-						}
-					}
-				}
-			} else if v.GetType() == phpv.ZtObject {
-				// Handle Traversable objects (Iterator, IteratorAggregate, Generator)
-				obj, ok := v.Value().(*phpobj.ZObject)
-				if !ok {
-					typeName := "object"
-					return nil, phpobj.ThrowError(ctx, phpobj.Error,
-						fmt.Sprintf("Only arrays and Traversables can be unpacked, %s given", typeName))
-				}
-				if obj.GetClass().Implements(phpobj.IteratorAggregate) {
-					iterResult, iterErr := obj.CallMethod(ctx, "getIterator")
-					if iterErr == nil && iterResult != nil && iterResult.GetType() == phpv.ZtObject {
-						if iterObj, ok := iterResult.Value().(*phpobj.ZObject); ok && iterObj.GetClass().Implements(phpobj.Iterator) {
-							obj = iterObj
-						}
-					}
-				}
-				if obj.GetClass().Implements(phpobj.Iterator) {
-					obj.CallMethod(ctx, "rewind")
-					for {
-						valid, verr := obj.CallMethod(ctx, "valid")
-						if verr != nil || !valid.AsBool(ctx) {
-							break
-						}
-						key, kerr := obj.CallMethod(ctx, "key")
-						if kerr != nil {
-							break
-						}
-						// Validate key type: must be int or string
-						if key.GetType() != phpv.ZtInt && key.GetType() != phpv.ZtString {
-							return nil, phpobj.ThrowError(ctx, phpobj.Error,
-								"Keys must be of type int|string during array unpacking")
-						}
-						value, verr := obj.CallMethod(ctx, "current")
-						if verr != nil {
-							break
-						}
-						// PHP 8.1+: string keys are preserved; numeric string keys
-						// that look like integers are converted to integers and re-indexed
-						if key.GetType() == phpv.ZtString {
-							keyStr := string(key.AsString(ctx))
-							if isNumericString(keyStr) {
-								// Numeric string key from iterator → re-index as integer
-								array.OffsetSet(ctx, nil, value.Dup())
-							} else {
-								array.OffsetSet(ctx, key, value.Dup())
-							}
-						} else {
-							array.OffsetSet(ctx, nil, value.Dup())
-						}
-						obj.CallMethod(ctx, "next")
-					}
-				} else {
-					typeName := string(obj.GetClass().GetName())
-					return nil, phpobj.ThrowError(ctx, phpobj.Error,
-						fmt.Sprintf("Only arrays and Traversables can be unpacked, %s given", typeName))
-				}
-			} else {
-				typeName := v.GetType().TypeName()
-				return nil, phpobj.ThrowError(ctx, phpobj.Error,
-					fmt.Sprintf("Only arrays and Traversables can be unpacked, %s given", typeName))
+			if err := SpreadIntoArray(ctx, array, v); err != nil {
+				return nil, err
 			}
 			continue
 		}
@@ -236,6 +164,81 @@ func (a runArray) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	}
 
 	return array.ZVal(), nil
+}
+
+// SpreadIntoArray appends the spread source `v` into the in-progress
+// array `array`, matching PHP 8.1+ semantics: string keys preserved
+// (numeric-string keys re-indexed), int keys re-indexed, Traversable
+// objects iterated through Iterator/IteratorAggregate. Used by both
+// AST runArray and the VM's OP_ARRAY_SPREAD_APPEND.
+func SpreadIntoArray(ctx phpv.Context, array *phpv.ZArray, v *phpv.ZVal) error {
+	switch v.GetType() {
+	case phpv.ZtArray:
+		src := v.AsArray(ctx)
+		for k, val := range src.Iterate(ctx) {
+			if k.GetType() == phpv.ZtString {
+				array.OffsetSet(ctx, k, val.Dup())
+			} else {
+				if err := array.OffsetSet(ctx, nil, val.Dup()); err != nil {
+					return phpobj.ThrowError(ctx, phpobj.Error, err.Error())
+				}
+			}
+		}
+		return nil
+	case phpv.ZtObject:
+		obj, ok := v.Value().(*phpobj.ZObject)
+		if !ok {
+			return phpobj.ThrowError(ctx, phpobj.Error,
+				fmt.Sprintf("Only arrays and Traversables can be unpacked, %s given", "object"))
+		}
+		if obj.GetClass().Implements(phpobj.IteratorAggregate) {
+			iterResult, iterErr := obj.CallMethod(ctx, "getIterator")
+			if iterErr == nil && iterResult != nil && iterResult.GetType() == phpv.ZtObject {
+				if iterObj, ok := iterResult.Value().(*phpobj.ZObject); ok && iterObj.GetClass().Implements(phpobj.Iterator) {
+					obj = iterObj
+				}
+			}
+		}
+		if !obj.GetClass().Implements(phpobj.Iterator) {
+			typeName := string(obj.GetClass().GetName())
+			return phpobj.ThrowError(ctx, phpobj.Error,
+				fmt.Sprintf("Only arrays and Traversables can be unpacked, %s given", typeName))
+		}
+		obj.CallMethod(ctx, "rewind")
+		for {
+			valid, verr := obj.CallMethod(ctx, "valid")
+			if verr != nil || !valid.AsBool(ctx) {
+				break
+			}
+			key, kerr := obj.CallMethod(ctx, "key")
+			if kerr != nil {
+				break
+			}
+			if key.GetType() != phpv.ZtInt && key.GetType() != phpv.ZtString {
+				return phpobj.ThrowError(ctx, phpobj.Error,
+					"Keys must be of type int|string during array unpacking")
+			}
+			value, verr := obj.CallMethod(ctx, "current")
+			if verr != nil {
+				break
+			}
+			if key.GetType() == phpv.ZtString {
+				keyStr := string(key.AsString(ctx))
+				if isNumericString(keyStr) {
+					array.OffsetSet(ctx, nil, value.Dup())
+				} else {
+					array.OffsetSet(ctx, key, value.Dup())
+				}
+			} else {
+				array.OffsetSet(ctx, nil, value.Dup())
+			}
+			obj.CallMethod(ctx, "next")
+		}
+		return nil
+	default:
+		return phpobj.ThrowError(ctx, phpobj.Error,
+			fmt.Sprintf("Only arrays and Traversables can be unpacked, %s given", v.GetType().TypeName()))
+	}
 }
 
 func (a *runArray) Loc() *phpv.Loc {

@@ -20,30 +20,22 @@ type arrayAccessNode interface {
 	ArrayAccessIsNullSafe() bool
 }
 
-// emitArrayLiteral lowers `[…]`. Spread entries (…$expr) are routed
-// through the AST runner — they need iterator semantics with key
-// coercion and Traversable support that's involved enough we'd
-// rather reuse the AST implementation than re-derive in bytecode.
+// emitArrayLiteral lowers `[…]` including `...$expr` spread entries.
+// Spread entries emit their source expression then OP_ARRAY_SPREAD_APPEND,
+// which unpacks via compiler.SpreadIntoArray into the in-progress array.
 func (e *emitter) emitArrayLiteral(n arrayLiteralNode) error {
-	for _, entry := range n.ArrayEntries() {
-		if entry.EntrySpread() {
-			raw, ok := any(n).(phpv.Runnable)
-			if !ok {
-				return unsupportedf("spread in array literal: cannot retrieve raw Runnable")
-			}
-			idx := e.astIndex(raw)
-			e.emit(vm.OpClassConst, idx, 0, 0)
-			e.pushStack(1)
-			// No OP_REFRESH_SLOTS: array literal evaluation reads
-			// locals but doesn't write them.
-			return nil
-		}
-	}
-
 	e.emit(vm.OpNewArray, 0, 0, 0)
 	e.pushStack(1)
 
 	for _, entry := range n.ArrayEntries() {
+		if entry.EntrySpread() {
+			if err := e.withSubexpr(func() error { return e.emitExpr(entry.EntryValue()) }); err != nil {
+				return err
+			}
+			e.emit(vm.OpArraySpreadAppend, 0, 0, 0)
+			e.popStack(1) // pops v, leaves array on top
+			continue
+		}
 		if entry.EntryKey() != nil {
 			if err := e.withSubexpr(func() error { return e.emitExpr(entry.EntryKey()) }); err != nil {
 				return err

@@ -258,6 +258,10 @@ const (
 	// constant table. The name / attributes / source location come from
 	// SubASTs[A] (the *runTopLevelConst node).
 	OpDefineConst
+	// OP_ARRAY_SPREAD_APPEND pops the spread source value and appends
+	// its contents into the in-progress array on top of stack via
+	// compiler.SpreadIntoArray. Used by `[…, ...$expr, …]` literals.
+	OpArraySpreadAppend
 
 	// Sentinel — keep last.
 	opLast
@@ -363,4 +367,5 @@ var opNames = [...]string{
 	OpClassStaticDynGet:   "CLASS_STATIC_DYN_GET",
 	OpCallTickFunctions:   "CALL_TICK_FUNCTIONS",
 	OpDefineConst:         "DEFINE_CONST",
+	OpArraySpreadAppend:   "ARRAY_SPREAD_APPEND",
 }

@@ -1123,6 +1123,14 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 				return nil, false, err
 			}
 
+		// --- array spread entry: `[…, ...$expr, …]` -----------------
+		case OpArraySpreadAppend:
+			v := f.pop()
+			arr := f.peek().AsArray(ctx)
+			if err := compiler.SpreadIntoArray(ctx, arr, v); err != nil {
+				return nil, false, err
+			}
+
 		// --- top-level `const NAME = expr;` definition --------------
 		case OpDefineConst:
 			value := f.pop()
