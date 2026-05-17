@@ -138,6 +138,9 @@ func (e *emitter) emitExpr(node phpv.Runnable) error {
 	if compiler.IsClassStaticVarReadNode(node) {
 		return e.emitClassStaticGet(node)
 	}
+	if compiler.IsClassStaticObjRefNode(node) {
+		return e.emitClassStaticObjRef(node)
+	}
 	if compiler.IsValueExprAstDelegated(node) {
 		// Common value-expression types we delegate wholesale
 		// (clone, instanceof, void-cast, first-class callables, …).
@@ -458,6 +461,27 @@ type classDynConstNode interface {
 type classStaticVarReadNode interface {
 	ClassStaticVarReadClassExpr() phpv.Runnable
 	ClassStaticVarReadName() phpv.ZString
+}
+
+// classStaticObjRefNode is implemented by *compiler.runClassStaticObjRef
+// for `Cls::IDENT` literal-name class const / enum case fetches.
+type classStaticObjRefNode interface {
+	ClassStaticObjRefClassExpr() phpv.Runnable
+	ClassStaticObjRefName() phpv.ZString
+}
+
+func (e *emitter) emitClassStaticObjRef(node phpv.Runnable) error {
+	n, ok := node.(classStaticObjRefNode)
+	if !ok {
+		return unsupportedf("class-static-objref: node %T doesn't expose accessors", node)
+	}
+	if err := e.withSubexpr(func() error { return e.emitExpr(n.ClassStaticObjRefClassExpr()) }); err != nil {
+		return err
+	}
+	idx := e.constIndex(n.ClassStaticObjRefName())
+	e.emit(vm.OpClassStaticObjRef, idx, 0, 0)
+	// net: pops 1, pushes 1 → 0
+	return nil
 }
 
 func (e *emitter) emitClassStaticGet(node phpv.Runnable) error {

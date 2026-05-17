@@ -239,6 +239,12 @@ const (
 	// value of the static property at Consts[A] (a ZString). Read-only
 	// path; writes are handled by emitAssignViaAST.
 	OpClassStaticGet
+	// OP_CLASS_STATIC_OBJREF pops the class-source value and pushes
+	// the resolved class constant / enum case at Consts[A] (a ZString).
+	// Handles trait blocking, visibility, attribute deprecation,
+	// CompileDelayed + [constant expression] frame decoration, enum
+	// errors, and typed-const coercion via compiler.EvalClassStaticObjRef.
+	OpClassStaticObjRef
 
 	// Sentinel — keep last.
 	opLast
@@ -340,4 +346,5 @@ var opNames = [...]string{
 	OpGlobalBind:          "GLOBAL_BIND",
 	OpClassDynConst:       "CLASS_DYN_CONST",
 	OpClassStaticGet:      "CLASS_STATIC_GET",
+	OpClassStaticObjRef:   "CLASS_STATIC_OBJREF",
 }

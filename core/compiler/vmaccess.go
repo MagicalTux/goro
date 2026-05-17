@@ -92,8 +92,6 @@ func (r *runNoDiscardStatement) NoDiscardInner() phpv.Runnable { return r.inner 
 // via OP_CLASS_CONST.
 func IsClassConstNode(r phpv.Runnable) bool {
 	switch r.(type) {
-	case *runClassStaticObjRef:
-		return true
 	case *runClassStaticDynVarRef:
 		return true
 	}
@@ -413,6 +411,22 @@ func (r *runClassStaticVarRef) ClassStaticVarReadName() phpv.ZString { return r.
 
 // ClassStaticVarReadLoc returns the source location.
 func (r *runClassStaticVarRef) ClassStaticVarReadLoc() *phpv.Loc { return r.l }
+
+// IsClassStaticObjRefNode reports whether r is `Cls::IDENT` (literal
+// const-name class const fetch). Lowered to OP_CLASS_STATIC_OBJ_REF.
+func IsClassStaticObjRefNode(r phpv.Runnable) bool {
+	_, ok := r.(*runClassStaticObjRef)
+	return ok
+}
+
+// ClassStaticObjRefClassExpr returns the class-source expression.
+func (r *runClassStaticObjRef) ClassStaticObjRefClassExpr() phpv.Runnable { return r.className }
+
+// ClassStaticObjRefName returns the literal identifier name.
+func (r *runClassStaticObjRef) ClassStaticObjRefName() phpv.ZString { return r.objName }
+
+// ClassStaticObjRefLoc returns the source location.
+func (r *runClassStaticObjRef) ClassStaticObjRefLoc() *phpv.Loc { return r.l }
 
 // IsRefExpr reports whether r is a `&$expr` reference-producing wrapper.
 // The VM emitter uses this to detect reference assignment (`$b = &$a`)

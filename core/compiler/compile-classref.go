@@ -348,10 +348,18 @@ func (r *runClassStaticObjRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	if err != nil {
 		return nil, err
 	}
+	return EvalClassStaticObjRef(ctx, className, r.objName, r.l)
+}
 
-	// Preserve the original class reference string for error messages
-	// (e.g., "self" should stay "self" in "Undefined constant self::B")
+// EvalClassStaticObjRef implements `Cls::IDENT` literal class-const /
+// enum-case fetch with pre-evaluated class source. Includes the full
+// machinery from runClassStaticObjRef.Run: trait const blocking,
+// visibility, interface/parent walking, attribute deprecation,
+// CompileDelayed resolution with [constant expression] frame
+// decoration, enum errors, and typed class-const coercion.
+func EvalClassStaticObjRef(ctx phpv.Context, className *phpv.ZVal, objName phpv.ZString, l *phpv.Loc) (*phpv.ZVal, error) {
 	origClassName := className.AsString(ctx)
+	var err error
 
 	var class phpv.ZClass
 
@@ -364,7 +372,7 @@ func (r *runClassStaticObjRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		phpErr := &phpv.PhpError{
 			Err:  fmt.Errorf("Illegal class name"),
 			Code: phpv.E_ERROR,
-			Loc:  r.l,
+			Loc:  l,
 		}
 		ctx.Global().LogError(phpErr)
 		return nil, phpv.ExitError(255)
@@ -372,17 +380,17 @@ func (r *runClassStaticObjRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 
 	if err != nil {
 		// If the error is a thrown exception (e.g. "Class not found") and we
-		// have a compile-time location (r.l), update the exception's file/line
+		// have a compile-time location (l), update the exception's file/line
 		// to point to where the class reference appears in source code,
 		// not where the constant expression is being evaluated from (GH-7771).
-		if r.l != nil {
+		if l != nil {
 			if ex, ok := err.(*phperr.PhpThrow); ok {
-				if ex.Loc == nil || (ex.Loc.Filename != r.l.Filename || ex.Loc.Line != r.l.Line) {
-					ex.Loc = r.l
+				if ex.Loc == nil || (ex.Loc.Filename != l.Filename || ex.Loc.Line != l.Line) {
+					ex.Loc = l
 					// Also update the exception object's file/line properties
 					if ex.Obj != nil {
-						ex.Obj.HashTable().SetString("file", phpv.ZString(r.l.Filename).ZVal())
-						ex.Obj.HashTable().SetString("line", phpv.ZInt(r.l.Line).ZVal())
+						ex.Obj.HashTable().SetString("file", phpv.ZString(l.Filename).ZVal())
+						ex.Obj.HashTable().SetString("line", phpv.ZInt(l.Line).ZVal())
 					}
 				}
 			}
@@ -403,17 +411,17 @@ func (r *runClassStaticObjRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	if zclass.Type == phpv.ZClassTypeTrait {
 		// Only block if accessed via the trait name directly (not via a using class)
 		if origClassName.ToLower() == zclass.Name.ToLower() {
-			return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Cannot access trait constant %s::%s directly", zclass.Name, r.objName))
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Cannot access trait constant %s::%s directly", zclass.Name, objName))
 		}
 	}
 
-	cc, ok := zclass.Const[r.objName]
+	cc, ok := zclass.Const[objName]
 	// Track the class that actually declares this constant for deprecation messages.
 	deprecClassName := class.GetName()
 	if !ok {
 		// Check implemented interfaces (for internal classes that don't inherit at registration time)
 		for _, intf := range zclass.Implementations {
-			if c, found := intf.Const[r.objName]; found {
+			if c, found := intf.Const[objName]; found {
 				cc = c
 				ok = true
 				deprecClassName = intf.GetName()
@@ -422,7 +430,7 @@ func (r *runClassStaticObjRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		}
 		// Check parent class
 		if !ok && zclass.Extends != nil {
-			if c, found := zclass.Extends.Const[r.objName]; found {
+			if c, found := zclass.Extends.Const[objName]; found {
 				cc = c
 				ok = true
 				deprecClassName = zclass.Extends.GetName()
@@ -430,7 +438,7 @@ func (r *runClassStaticObjRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		}
 	}
 	if !ok {
-		return nil, phpobj.ThrowErrorAt(ctx, phpobj.Error, fmt.Sprintf("Undefined constant %s::%s", errorClassName, r.objName), r.l)
+		return nil, phpobj.ThrowErrorAt(ctx, phpobj.Error, fmt.Sprintf("Undefined constant %s::%s", errorClassName, objName), l)
 	}
 
 	// Check visibility. compilingClass takes priority (used during attribute
@@ -441,7 +449,7 @@ func (r *runClassStaticObjRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			callerClass = cc
 		}
 		if callerClass == nil || callerClass.GetName() != class.GetName() {
-			return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Cannot access private constant %s::%s", class.GetName(), r.objName))
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Cannot access private constant %s::%s", class.GetName(), objName))
 		}
 	} else if cc.Modifiers.IsProtected() {
 		callerClass := ctx.Class()
@@ -449,7 +457,7 @@ func (r *runClassStaticObjRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			callerClass = compilingCls
 		}
 		if callerClass == nil || !callerClass.InstanceOf(class) && !class.InstanceOf(callerClass) {
-			return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Cannot access protected constant %s::%s", class.GetName(), r.objName))
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Cannot access protected constant %s::%s", class.GetName(), objName))
 		}
 	}
 
@@ -476,13 +484,13 @@ func (r *runClassStaticObjRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			if zc, ok := class.(*phpobj.ZClass); ok && zc.Type == phpv.ZClassTypeEnum {
 				// Check if this is an enum case (present in EnumCases list)
 				for _, caseName := range zc.EnumCases {
-					if caseName == r.objName {
+					if caseName == objName {
 						label = "Enum case"
 						break
 					}
 				}
 			}
-			name := string(deprecClassName) + "::" + string(r.objName)
+			name := string(deprecClassName) + "::" + string(objName)
 			msg := FormatDeprecatedMsg(label, name, attr)
 			if err := ctx.UserDeprecated("%s", msg, logopt.NoFuncName(true)); err != nil {
 				return nil, err
@@ -503,10 +511,10 @@ func (r *runClassStaticObjRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			// and depends (directly or indirectly) on itself. Find it by scanning
 			// all resolving constants - the last-started one (not the one we're
 			// looking up) is the self-referencing one.
-			selfRefName := r.objName
+			selfRefName := objName
 			zc := class.(*phpobj.ZClass)
 			for _, name := range zc.ConstOrder {
-				if c := zc.Const[name]; c != nil && c.Resolving && name != r.objName {
+				if c := zc.Const[name]; c != nil && c.Resolving && name != objName {
 					selfRefName = name
 				}
 			}
@@ -562,7 +570,7 @@ func (r *runClassStaticObjRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 				typeName := phpv.ZValTypeName(resolved)
 				return nil, phpobj.ThrowError(ctx, phpobj.Error,
 					fmt.Sprintf("Cannot assign %s to class constant %s::%s of type %s",
-						typeName, errorClassName, r.objName, cc.TypeHint.String()))
+						typeName, errorClassName, objName, cc.TypeHint.String()))
 			}
 			resolved = coerced
 		}
@@ -575,7 +583,7 @@ func (r *runClassStaticObjRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	if zc, ok := class.(*phpobj.ZClass); ok && zc.EnumError != nil {
 		// Only throw for enum case constants, not regular constants
 		for _, caseName := range zc.EnumCases {
-			if caseName == r.objName {
+			if caseName == objName {
 				return nil, zc.EnumError
 			}
 		}
@@ -589,7 +597,7 @@ func (r *runClassStaticObjRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			typeName := phpv.ZValTypeName(result)
 			return nil, phpobj.ThrowError(ctx, phpobj.Error,
 				fmt.Sprintf("Cannot assign %s to class constant %s::%s of type %s",
-					typeName, errorClassName, r.objName, cc.TypeHint.String()))
+					typeName, errorClassName, objName, cc.TypeHint.String()))
 		}
 		result = coerced
 	}

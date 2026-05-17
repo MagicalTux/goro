@@ -1093,6 +1093,19 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 			}
 			f.push(res)
 
+		// --- Cls::IDENT class const / enum case fetch ---------------
+		case OpClassStaticObjRef:
+			classV := f.pop()
+			objName, ok := f.fn.Consts[ins.A()].(phpv.ZString)
+			if !ok {
+				return nil, false, fmt.Errorf("vm: OP_CLASS_STATIC_OBJREF name const is %T not ZString", f.fn.Consts[ins.A()])
+			}
+			res, err := compiler.EvalClassStaticObjRef(ctx, classV, objName, f.fn.LocAt(f.pc-1))
+			if err != nil {
+				return nil, false, err
+			}
+			f.push(res)
+
 		default:
 			return nil, false, fmt.Errorf("%w: %d at pc=%d", ErrUnknownOp, ins.Op(), f.pc-1)
 		}
