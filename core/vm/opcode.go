@@ -245,6 +245,10 @@ const (
 	// CompileDelayed + [constant expression] frame decoration, enum
 	// errors, and typed-const coercion via compiler.EvalClassStaticObjRef.
 	OpClassStaticObjRef
+	// OP_CLASS_STATIC_DYN_GET pops the name value and the class-source
+	// value, then pushes the value of the dynamically-named static
+	// property. No visibility check (matching original AST semantics).
+	OpClassStaticDynGet
 
 	// Sentinel — keep last.
 	opLast
@@ -347,4 +351,5 @@ var opNames = [...]string{
 	OpClassDynConst:       "CLASS_DYN_CONST",
 	OpClassStaticGet:      "CLASS_STATIC_GET",
 	OpClassStaticObjRef:   "CLASS_STATIC_OBJREF",
+	OpClassStaticDynGet:   "CLASS_STATIC_DYN_GET",
 }

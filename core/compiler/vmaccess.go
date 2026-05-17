@@ -91,10 +91,11 @@ func (r *runNoDiscardStatement) NoDiscardInner() phpv.Runnable { return r.inner 
 // late-static-binding all live in the AST runners; the VM delegates
 // via OP_CLASS_CONST.
 func IsClassConstNode(r phpv.Runnable) bool {
-	switch r.(type) {
-	case *runClassStaticDynVarRef:
-		return true
-	}
+	// All concrete forms — `Cls::CONST`, `Cls::{$expr}`, `Cls::$prop`,
+	// `Cls::${$expr}`, `Cls::class`, `Cls::IDENT` — are now lowered
+	// natively via their dedicated IsXxxNode predicates. Returning
+	// false here means no expression falls through to OpClassConst's
+	// AST delegation anymore for the class-const family.
 	return false
 }
 
@@ -427,6 +428,23 @@ func (r *runClassStaticObjRef) ClassStaticObjRefName() phpv.ZString { return r.o
 
 // ClassStaticObjRefLoc returns the source location.
 func (r *runClassStaticObjRef) ClassStaticObjRefLoc() *phpv.Loc { return r.l }
+
+// IsClassStaticDynVarReadNode reports whether r is a `Cls::${$name}`
+// dyn-name static-prop read. The VM lowers to OP_CLASS_STATIC_DYN_GET.
+func IsClassStaticDynVarReadNode(r phpv.Runnable) bool {
+	_, ok := r.(*runClassStaticDynVarRef)
+	return ok
+}
+
+// ClassStaticDynVarReadClassExpr returns the class-source expression.
+func (r *runClassStaticDynVarRef) ClassStaticDynVarReadClassExpr() phpv.Runnable {
+	return r.className
+}
+
+// ClassStaticDynVarReadNameExpr returns the name expression.
+func (r *runClassStaticDynVarRef) ClassStaticDynVarReadNameExpr() phpv.Runnable {
+	return r.nameExpr
+}
 
 // IsRefExpr reports whether r is a `&$expr` reference-producing wrapper.
 // The VM emitter uses this to detect reference assignment (`$b = &$a`)

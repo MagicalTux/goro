@@ -204,8 +204,26 @@ func (r *runClassStaticDynVarRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Use cached name from PrepareWrite if available (e.g. ??= memoization)
+	var varName phpv.ZString
+	if r.prepared && r.cachedName != "" {
+		varName = r.cachedName
+	} else {
+		nameVal, err := r.nameExpr.Run(ctx)
+		if err != nil {
+			return nil, err
+		}
+		varName = phpv.ZString(nameVal.String())
+	}
+	return EvalClassStaticDynVarRead(ctx, className, varName, r.l)
+}
 
+// EvalClassStaticDynVarRead implements `Cls::${$name}` reads. No
+// visibility check (the dyn-name form bypasses it; matches the
+// original runClassStaticDynVarRef.Run).
+func EvalClassStaticDynVarRead(ctx phpv.Context, className *phpv.ZVal, varName phpv.ZString, l *phpv.Loc) (*phpv.ZVal, error) {
 	var class phpv.ZClass
+	var err error
 	switch className.GetType() {
 	case phpv.ZtObject:
 		class = className.AsObject(ctx).GetClass()
@@ -215,7 +233,7 @@ func (r *runClassStaticDynVarRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		phpErr := &phpv.PhpError{
 			Err:  fmt.Errorf("Illegal class name"),
 			Code: phpv.E_ERROR,
-			Loc:  r.l,
+			Loc:  l,
 		}
 		ctx.Global().LogError(phpErr)
 		return nil, phpv.ExitError(255)
@@ -223,20 +241,6 @@ func (r *runClassStaticDynVarRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	// Use cached name from PrepareWrite if available (e.g. ??= memoization)
-	var varName phpv.ZString
-	if r.prepared && r.cachedName != "" {
-		varName = r.cachedName
-		// Don't consume the cache - it may be needed by WriteValue later
-	} else {
-		nameVal, err := r.nameExpr.Run(ctx)
-		if err != nil {
-			return nil, err
-		}
-		varName = phpv.ZString(nameVal.String())
-	}
-
 	zc := class.(*phpobj.ZClass)
 	p, found, err := zc.FindStaticProp(ctx, varName)
 	if err != nil {
@@ -245,7 +249,6 @@ func (r *runClassStaticDynVarRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	if !found {
 		return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Access to undeclared static property %s::$%s", class.GetName(), varName))
 	}
-
 	v := p.GetString(varName)
 	return phpv.NewZVal(v.Value()), nil
 }

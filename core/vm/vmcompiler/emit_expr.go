@@ -141,6 +141,9 @@ func (e *emitter) emitExpr(node phpv.Runnable) error {
 	if compiler.IsClassStaticObjRefNode(node) {
 		return e.emitClassStaticObjRef(node)
 	}
+	if compiler.IsClassStaticDynVarReadNode(node) {
+		return e.emitClassStaticDynGet(node)
+	}
 	if compiler.IsValueExprAstDelegated(node) {
 		// Common value-expression types we delegate wholesale
 		// (clone, instanceof, void-cast, first-class callables, …).
@@ -468,6 +471,29 @@ type classStaticVarReadNode interface {
 type classStaticObjRefNode interface {
 	ClassStaticObjRefClassExpr() phpv.Runnable
 	ClassStaticObjRefName() phpv.ZString
+}
+
+// classStaticDynVarReadNode is implemented by *compiler.runClassStaticDynVarRef
+// for `Cls::${$name}` dyn-name static prop reads.
+type classStaticDynVarReadNode interface {
+	ClassStaticDynVarReadClassExpr() phpv.Runnable
+	ClassStaticDynVarReadNameExpr() phpv.Runnable
+}
+
+func (e *emitter) emitClassStaticDynGet(node phpv.Runnable) error {
+	n, ok := node.(classStaticDynVarReadNode)
+	if !ok {
+		return unsupportedf("class-static-dyn-get: node %T doesn't expose accessors", node)
+	}
+	if err := e.withSubexpr(func() error { return e.emitExpr(n.ClassStaticDynVarReadClassExpr()) }); err != nil {
+		return err
+	}
+	if err := e.withSubexpr(func() error { return e.emitExpr(n.ClassStaticDynVarReadNameExpr()) }); err != nil {
+		return err
+	}
+	e.emit(vm.OpClassStaticDynGet, 0, 0, 0)
+	e.popStack(1) // pops 2, pushes 1
+	return nil
 }
 
 func (e *emitter) emitClassStaticObjRef(node phpv.Runnable) error {

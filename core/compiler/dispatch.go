@@ -268,8 +268,7 @@ func IsSlotSafe(g phpv.GlobalContext, r phpv.Runnable) bool {
 		// warning fires; the AST reads any local-arg operands
 		// from the hashtable.
 		return false
-	case *runClassStaticVarRef,
-		*runClassStaticDynVarRef:
+	case *runClassStaticVarRef:
 		// Class-level constant / static-prop / static-name access
 		// (`Foo::{$x}`, `$obj::CONST`, `Foo::$bar`, etc.) is
 		// AST-delegated via OpClassConst. The AST runner reads any

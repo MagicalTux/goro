@@ -1106,6 +1106,17 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 			}
 			f.push(res)
 
+		// --- Cls::${$name} dyn-name static-prop read ---------------
+		case OpClassStaticDynGet:
+			nameV := f.pop()
+			classV := f.pop()
+			varName := phpv.ZString(nameV.String())
+			res, err := compiler.EvalClassStaticDynVarRead(ctx, classV, varName, f.fn.LocAt(f.pc-1))
+			if err != nil {
+				return nil, false, err
+			}
+			f.push(res)
+
 		default:
 			return nil, false, fmt.Errorf("%w: %d at pc=%d", ErrUnknownOp, ins.Op(), f.pc-1)
 		}
