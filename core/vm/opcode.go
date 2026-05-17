@@ -199,6 +199,9 @@ const (
 	// which affects the error message when the value isn't usable as
 	// a class name.
 	OpClassNameOf
+	// OP_INLINE_HTML writes the string at Consts[A] directly to the
+	// output stream. Replaces the AST runInlineHtml.Run path.
+	OpInlineHtml
 
 	// Sentinel — keep last.
 	opLast
@@ -290,4 +293,5 @@ var opNames = [...]string{
 	OpInstanceOf:       "INSTANCEOF",
 	OpClone:            "CLONE",
 	OpClassNameOf:      "CLASS_NAMEOF",
+	OpInlineHtml:       "INLINE_HTML",
 }

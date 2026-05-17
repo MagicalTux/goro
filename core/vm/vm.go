@@ -997,6 +997,16 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 			}
 			f.push(res)
 
+		// --- inline HTML --------------------------------------------
+		case OpInlineHtml:
+			s, ok := f.fn.Consts[ins.A()].(phpv.ZString)
+			if !ok {
+				return nil, false, fmt.Errorf("vm: OP_INLINE_HTML const is %T not ZString", f.fn.Consts[ins.A()])
+			}
+			if _, err := ctx.Write([]byte(s)); err != nil {
+				return nil, false, err
+			}
+
 		default:
 			return nil, false, fmt.Errorf("%w: %d at pc=%d", ErrUnknownOp, ins.Op(), f.pc-1)
 		}

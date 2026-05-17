@@ -111,8 +111,15 @@ func (e *emitter) emitStmt(node phpv.Runnable) error {
 		return nil
 	}
 
-	// Statement-shaped delegations (do-while, declare strict_types,
-	// declare ticks, inline html, top-level const, enum register).
+	// Inline HTML (the text between `?>` and `<?php`): emit directly.
+	if s, ok := compiler.InlineHtmlText(node); ok {
+		idx := e.constIndex(s)
+		e.emit(vm.OpInlineHtml, idx, 0, 0)
+		return nil
+	}
+
+	// Statement-shaped delegations (declare strict_types,
+	// declare ticks, top-level const, enum register).
 	if compiler.IsStmtAstDelegated(node) {
 		idx := e.astIndex(node)
 		e.emit(vm.OpTryFinally, idx, 0, 0)

@@ -266,6 +266,22 @@ func IsVoidCastNode(r phpv.Runnable) bool {
 // VoidCastExpr returns the inner expression of `(void) expr`.
 func (r *runVoidCast) VoidCastExpr() phpv.Runnable { return r.expr }
 
+// IsInlineHtmlNode reports whether r is a literal inline-HTML chunk
+// (the text between `?>` and `<?php`). The VM lowers these to
+// OP_INLINE_HTML which writes the bytes directly.
+func IsInlineHtmlNode(r phpv.Runnable) bool {
+	_, ok := r.(runInlineHtml)
+	return ok
+}
+
+// InlineHtmlText returns the literal text of an inline-HTML chunk.
+func InlineHtmlText(r phpv.Runnable) (phpv.ZString, bool) {
+	if s, ok := r.(runInlineHtml); ok {
+		return phpv.ZString(s), true
+	}
+	return "", false
+}
+
 // IsRefExpr reports whether r is a `&$expr` reference-producing wrapper.
 // The VM emitter uses this to detect reference assignment (`$b = &$a`)
 // so the whole assignment AST-delegates: storeLocal would otherwise
@@ -294,8 +310,7 @@ func NewObjectMethodIterator(ctx phpv.Context, obj any) phpv.ZIterator {
 // the VM AST-delegates wholesale via OpTryFinally + OP_REFRESH_SLOTS.
 func IsStmtAstDelegated(r phpv.Runnable) bool {
 	switch r.(type) {
-	case *runInlineHtml,
-		*runnableDeclareStrictTypes,
+	case *runnableDeclareStrictTypes,
 		*runnableDeclareTicks,
 		*runTopLevelConst,
 		*runEnumRegister:
