@@ -125,6 +125,15 @@ func (r *runnableClone) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 	return runCloneWithValues(ctx, v, withProps)
 }
 
+// EvalClone implements the basic `clone $v` operation. Shared runtime
+// helper so the VM emits a single point of entry. For the PHP 8.5+
+// `clone($obj, $with)` / `clone(...$arr)` forms the AST still owns
+// argument evaluation (named args, spread); callers route those to
+// runnableClone.Run.
+func EvalClone(ctx phpv.Context, v *phpv.ZVal) (*phpv.ZVal, error) {
+	return runCloneWithValues(ctx, v, nil)
+}
+
 func runCloneWithValues(ctx phpv.Context, v *phpv.ZVal, withProps *phpv.ZVal) (*phpv.ZVal, error) {
 	if v.GetType() != phpv.ZtObject {
 		return nil, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("clone(): Argument #1 ($object) must be of type object, %s given", v.GetType().TypeName()))

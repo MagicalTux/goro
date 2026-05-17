@@ -978,6 +978,15 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 			}
 			f.push(res)
 
+		// --- clone --------------------------------------------------
+		case OpClone:
+			v := f.pop()
+			res, err := compiler.EvalClone(ctx, v)
+			if err != nil {
+				return nil, false, err
+			}
+			f.push(res)
+
 		default:
 			return nil, false, fmt.Errorf("%w: %d at pc=%d", ErrUnknownOp, ins.Op(), f.pc-1)
 		}

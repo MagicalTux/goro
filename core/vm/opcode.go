@@ -187,6 +187,11 @@ const (
 	// resolution before this op (either OP_LOAD_CONST for a literal name
 	// or an expression that produces the class name).
 	OpInstanceOf
+	// OP_CLONE pops the value and pushes a cloned copy via
+	// compiler.EvalClone (basic form only — `clone $x`). The PHP 8.5+
+	// extended forms (`clone($x, $with)`, `clone(...$arr)`, named args)
+	// remain AST-delegated.
+	OpClone
 
 	// Sentinel — keep last.
 	opLast
@@ -276,4 +281,5 @@ var opNames = [...]string{
 	OpForeachUnwind:    "FOREACH_UNWIND",
 	OpTick:             "TICK",
 	OpInstanceOf:       "INSTANCEOF",
+	OpClone:            "CLONE",
 }

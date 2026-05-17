@@ -191,9 +191,15 @@ func IsVariableRef(r phpv.Runnable) bool {
 // IsSlotSafe rejects bodies containing any of these so the hashtable
 // stays authoritative.
 func IsValueExprAstDelegated(r phpv.Runnable) bool {
+	switch n := r.(type) {
+	case *runnableClone:
+		// Basic `clone $x` is now native; only the extended PHP 8.5+
+		// forms (clone with withProperties, clone(...$arr), named args)
+		// still AST-delegate.
+		return !n.CloneIsBasic()
+	}
 	switch r.(type) {
-	case *runnableClone,
-		*runVoidCast,
+	case *runVoidCast,
 		*runFirstClassCallable,
 		*runFirstClassCloneCallable,
 		*runFirstClassMethodCallable,
@@ -211,6 +217,14 @@ func IsValueExprAstDelegated(r phpv.Runnable) bool {
 func IsInstanceOfNode(r phpv.Runnable) bool {
 	_, ok := r.(*runInstanceOf)
 	return ok
+}
+
+// IsBasicCloneNode reports whether r is a basic `clone $x` (no
+// withProperties, no spread, no named args). The VM lowers these
+// to OpClone. The extended PHP 8.5+ forms keep AST-delegating.
+func IsBasicCloneNode(r phpv.Runnable) bool {
+	c, ok := r.(*runnableClone)
+	return ok && c.CloneIsBasic()
 }
 
 // IsRefExpr reports whether r is a `&$expr` reference-producing wrapper.
@@ -638,6 +652,17 @@ func (r *runInstanceOf) InstanceOfStaticClass() phpv.ZString { return r.c }
 // InstanceOfClassVar returns the dynamic class-name expression (a
 // `$var instanceof $cls` form), or nil for static class names.
 func (r *runInstanceOf) InstanceOfClassVar() phpv.Runnable { return r.classVar }
+
+// CloneIsBasic reports whether r is a basic `clone $arg` (no
+// withProperties, no spread). The VM lowers those natively; the
+// extended PHP 8.5+ forms (`clone($x, $with)`, `clone(...$arr)`,
+// named args) stay AST-delegated for now.
+func (r *runnableClone) CloneIsBasic() bool {
+	return r.with == nil && r.spread == nil && r.argNames[0] == "" && r.argNames[1] == "" && len(r.extra) == 0
+}
+
+// CloneArg returns the value being cloned (basic form only).
+func (r *runnableClone) CloneArg() phpv.Runnable { return r.arg }
 
 // WhileLoc returns the source location of the while statement.
 func (r *runnableWhile) WhileLoc() *phpv.Loc { return r.l }

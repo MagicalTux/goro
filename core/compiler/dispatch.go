@@ -287,8 +287,14 @@ func IsSlotSafe(g phpv.GlobalContext, r phpv.Runnable) bool {
 		if n.returnType != nil {
 			return false
 		}
-	case *runnableClone,
-		*runVoidCast,
+	case *runnableClone:
+		// Basic `clone $x` is native and slot-safe by itself; only
+		// the extended forms (clone with withProperties, spread, named
+		// args) still AST-delegate and need the hashtable mirrored.
+		if !n.CloneIsBasic() {
+			return false
+		}
+	case *runVoidCast,
 		*runFirstClassCallable,
 		*runFirstClassCloneCallable,
 		*runFirstClassMethodCallable,
