@@ -92,8 +92,6 @@ func (r *runNoDiscardStatement) NoDiscardInner() phpv.Runnable { return r.inner 
 // via OP_CLASS_CONST.
 func IsClassConstNode(r phpv.Runnable) bool {
 	switch r.(type) {
-	case *runClassDynConst:
-		return true
 	case *runClassStaticObjRef:
 		return true
 	case *runClassStaticVarRef:
@@ -385,6 +383,21 @@ func (v *globalVar) GlobalStatic() phpv.ZString { return v.static }
 func (v *globalVar) GlobalDynamic() phpv.Runnable {
 	return v.dynamic
 }
+
+// IsClassDynConstNode reports whether r is `Cls::CONST` /
+// `$obj::CONST` / `Cls::{$name}`. The VM lowers to OP_CLASS_DYN_CONST.
+func IsClassDynConstNode(r phpv.Runnable) bool {
+	_, ok := r.(*runClassDynConst)
+	return ok
+}
+
+// ClassDynConstClassExpr returns the class-source expression
+// (`Cls` literal, `$obj`, `self`, `parent`, `static`, …).
+func (r *runClassDynConst) ClassDynConstClassExpr() phpv.Runnable { return r.className }
+
+// ClassDynConstNameExpr returns the const-name expression (constant
+// for `::CONST`, full expression for `::{$expr}`).
+func (r *runClassDynConst) ClassDynConstNameExpr() phpv.Runnable { return r.nameExpr }
 
 // IsRefExpr reports whether r is a `&$expr` reference-producing wrapper.
 // The VM emitter uses this to detect reference assignment (`$b = &$a`)

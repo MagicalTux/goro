@@ -229,6 +229,12 @@ const (
 	// OP_GLOBAL_BIND pops the name value and binds the local of that
 	// name to the global slot via compiler.EvalGlobalBinding.
 	OpGlobalBind
+	// OP_CLASS_DYN_CONST pops the const-name value and the class-source
+	// value (class-name string, object instance, or `self`/`parent`/
+	// `static` magic string) and pushes the resolved class constant.
+	// Delegates to compiler.EvalClassDynConst. Implements `Cls::CONST`,
+	// `$obj::CONST`, `Cls::{$name}`, and `$obj::class`-as-const-name.
+	OpClassDynConst
 
 	// Sentinel — keep last.
 	opLast
@@ -328,4 +334,5 @@ var opNames = [...]string{
 	OpDynMethodFirstClass: "DYN_METHOD_FIRSTCLASS",
 	OpObjectDynGet:        "OBJECT_DYN_GET",
 	OpGlobalBind:          "GLOBAL_BIND",
+	OpClassDynConst:       "CLASS_DYN_CONST",
 }

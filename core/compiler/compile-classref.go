@@ -667,19 +667,24 @@ func (r *runClassDynConst) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	nameVal, err := r.nameExpr.Run(ctx)
 	if err != nil {
 		return nil, err
 	}
+	return EvalClassDynConst(ctx, classVal, nameVal)
+}
 
-	// The constant name must be a string
+// EvalClassDynConst implements `Cls::CONST` / `$obj::CONST` / `Cls::{$name}`.
+// Both AST runner and VM's OP_CLASS_DYN_CONST share this. Visibility,
+// interface/parent walking, CompileDelayed resolution and `::class`
+// special-casing all live here.
+func EvalClassDynConst(ctx phpv.Context, classVal, nameVal *phpv.ZVal) (*phpv.ZVal, error) {
 	if nameVal.GetType() != phpv.ZtString {
 		return nil, phpobj.ThrowError(ctx, phpobj.Error,
 			fmt.Sprintf("Cannot use value of type %s as class constant name", phpv.ZValTypeName(nameVal)))
 	}
-
 	constName := nameVal.AsString(ctx)
+	var err error
 
 	var class phpv.ZClass
 	switch classVal.GetType() {

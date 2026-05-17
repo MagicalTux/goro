@@ -132,6 +132,9 @@ func (e *emitter) emitExpr(node phpv.Runnable) error {
 	if compiler.IsObjectDynVarReadNode(node) {
 		return e.emitObjectDynGet(node)
 	}
+	if compiler.IsClassDynConstNode(node) {
+		return e.emitClassDynConst(node)
+	}
 	if compiler.IsValueExprAstDelegated(node) {
 		// Common value-expression types we delegate wholesale
 		// (clone, instanceof, void-cast, first-class callables, …).
@@ -438,6 +441,29 @@ type dynMethodFirstClassNode interface {
 type objectDynVarReadNode interface {
 	ObjectDynVarReceiver() phpv.Runnable
 	ObjectDynVarNameExpr() phpv.Runnable
+}
+
+// classDynConstNode is implemented by *compiler.runClassDynConst for
+// `Cls::CONST`, `$obj::CONST`, `Cls::{$name}`.
+type classDynConstNode interface {
+	ClassDynConstClassExpr() phpv.Runnable
+	ClassDynConstNameExpr() phpv.Runnable
+}
+
+func (e *emitter) emitClassDynConst(node phpv.Runnable) error {
+	n, ok := node.(classDynConstNode)
+	if !ok {
+		return unsupportedf("class-dyn-const: node %T doesn't expose accessors", node)
+	}
+	if err := e.withSubexpr(func() error { return e.emitExpr(n.ClassDynConstClassExpr()) }); err != nil {
+		return err
+	}
+	if err := e.withSubexpr(func() error { return e.emitExpr(n.ClassDynConstNameExpr()) }); err != nil {
+		return err
+	}
+	e.emit(vm.OpClassDynConst, 0, 0, 0)
+	e.popStack(1) // pops 2, pushes 1 → net -1
+	return nil
 }
 
 func (e *emitter) emitObjectDynGet(node phpv.Runnable) error {

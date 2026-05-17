@@ -1070,6 +1070,16 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 				return nil, false, err
 			}
 
+		// --- class const fetch -------------------------------------
+		case OpClassDynConst:
+			nameV := f.pop()
+			classV := f.pop()
+			res, err := compiler.EvalClassDynConst(ctx, classV, nameV)
+			if err != nil {
+				return nil, false, err
+			}
+			f.push(res)
+
 		default:
 			return nil, false, fmt.Errorf("%w: %d at pc=%d", ErrUnknownOp, ins.Op(), f.pc-1)
 		}
