@@ -197,8 +197,7 @@ func IsValueExprAstDelegated(r phpv.Runnable) bool {
 		return !n.CloneIsBasic()
 	}
 	switch r.(type) {
-	case *runVoidCast,
-		*runFirstClassCallable,
+	case *runFirstClassCallable,
 		*runFirstClassCloneCallable,
 		*runFirstClassMethodCallable,
 		*runFirstClassDynMethodCallable,
@@ -255,6 +254,17 @@ func (r *runClassNameOf) ClassNameOfIsLiteral() bool {
 
 // ClassNameOfLoc returns the source loc of the `::class` operator.
 func (r *runClassNameOf) ClassNameOfLoc() *phpv.Loc { return r.l }
+
+// IsVoidCastNode reports whether r is a `(void) $expr` cast. The VM
+// lowers it natively: eval the expression, discard the value, push
+// NULL.
+func IsVoidCastNode(r phpv.Runnable) bool {
+	_, ok := r.(*runVoidCast)
+	return ok
+}
+
+// VoidCastExpr returns the inner expression of `(void) expr`.
+func (r *runVoidCast) VoidCastExpr() phpv.Runnable { return r.expr }
 
 // IsRefExpr reports whether r is a `&$expr` reference-producing wrapper.
 // The VM emitter uses this to detect reference assignment (`$b = &$a`)

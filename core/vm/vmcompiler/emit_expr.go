@@ -112,6 +112,9 @@ func (e *emitter) emitExpr(node phpv.Runnable) error {
 	if compiler.IsClassNameOfNode(node) {
 		return e.emitClassNameOf(node)
 	}
+	if compiler.IsVoidCastNode(node) {
+		return e.emitVoidCast(node)
+	}
 	if compiler.IsValueExprAstDelegated(node) {
 		// Common value-expression types we delegate wholesale
 		// (clone, instanceof, void-cast, first-class callables, …).
@@ -384,6 +387,38 @@ type cloneNode interface {
 type classNameOfNode interface {
 	ClassNameOfSource() phpv.Runnable
 	ClassNameOfIsLiteral() bool
+}
+
+// voidCastNode is implemented by *compiler.runVoidCast for `(void) $x`.
+type voidCastNode interface {
+	VoidCastExpr() phpv.Runnable
+}
+
+func (e *emitter) emitVoidCast(node phpv.Runnable) error {
+	n, ok := node.(voidCastNode)
+	if !ok {
+		return unsupportedf("void-cast: node %T doesn't expose accessors", node)
+	}
+	// Evaluate the inner expression in statement context (discard
+	// result) when our outer ctx is also statement context; otherwise
+	// evaluate as expression and pop. Always end by pushing NULL when
+	// we're producing a value.
+	stmtCtx := e.stmtCtx
+	if stmtCtx {
+		if err := e.emitStmt(n.VoidCastExpr()); err != nil {
+			return err
+		}
+		// statement (void) cast: nothing on the stack, done.
+		return nil
+	}
+	if err := e.withSubexpr(func() error { return e.emitExpr(n.VoidCastExpr()) }); err != nil {
+		return err
+	}
+	e.emit(vm.OpPop, 0, 0, 0)
+	e.popStack(1)
+	e.emit(vm.OpLoadNull, 0, 0, 0)
+	e.pushStack(1)
+	return nil
 }
 
 func (e *emitter) emitClassNameOf(node phpv.Runnable) error {
