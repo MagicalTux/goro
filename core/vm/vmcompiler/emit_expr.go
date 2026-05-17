@@ -126,6 +126,9 @@ func (e *emitter) emitExpr(node phpv.Runnable) error {
 	if compiler.IsFirstClassMethodCallableNode(node) {
 		return e.emitMethodFirstClass(node)
 	}
+	if compiler.IsFirstClassDynMethodCallableNode(node) {
+		return e.emitDynMethodFirstClass(node)
+	}
 	if compiler.IsValueExprAstDelegated(node) {
 		// Common value-expression types we delegate wholesale
 		// (clone, instanceof, void-cast, first-class callables, …).
@@ -418,6 +421,29 @@ type methodFirstClassNode interface {
 	MethodFirstClassName() phpv.ZString
 	MethodFirstClassIsStatic() bool
 	MethodFirstClassIsNullsafe() bool
+}
+
+// dynMethodFirstClassNode is implemented by
+// *compiler.runFirstClassDynMethodCallable for `$obj->{expr}(...)`.
+type dynMethodFirstClassNode interface {
+	DynMethodFirstClassReceiver() phpv.Runnable
+	DynMethodFirstClassNameExpr() phpv.Runnable
+}
+
+func (e *emitter) emitDynMethodFirstClass(node phpv.Runnable) error {
+	n, ok := node.(dynMethodFirstClassNode)
+	if !ok {
+		return unsupportedf("dyn-method first-class: node %T doesn't expose accessors", node)
+	}
+	if err := e.withSubexpr(func() error { return e.emitExpr(n.DynMethodFirstClassReceiver()) }); err != nil {
+		return err
+	}
+	if err := e.withSubexpr(func() error { return e.emitExpr(n.DynMethodFirstClassNameExpr()) }); err != nil {
+		return err
+	}
+	e.emit(vm.OpDynMethodFirstClass, 0, 0, 0)
+	e.popStack(1) // pops 2, pushes 1 → net -1
+	return nil
 }
 
 func (e *emitter) emitMethodFirstClass(node phpv.Runnable) error {

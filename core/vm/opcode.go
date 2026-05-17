@@ -218,6 +218,10 @@ const (
 	// (`Cls::method(...)`), bit1 = nullsafe (`$x?->method(...)`).
 	// The method name is at Consts[B] (a ZString).
 	OpMethodFirstClass
+	// OP_DYN_METHOD_FIRSTCLASS pops the method-name value and the
+	// receiver, then pushes the Closure. Used by the
+	// `$obj->{expr}(...)` dynamic-name method first-class form.
+	OpDynMethodFirstClass
 
 	// Sentinel — keep last.
 	opLast
@@ -314,4 +318,5 @@ var opNames = [...]string{
 	OpFirstClassCallable:  "FIRSTCLASS_CALLABLE",
 	OpFirstClassClone:     "FIRSTCLASS_CLONE",
 	OpMethodFirstClass:    "METHOD_FIRSTCLASS",
+	OpDynMethodFirstClass: "DYN_METHOD_FIRSTCLASS",
 }

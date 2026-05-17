@@ -1043,6 +1043,16 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 			}
 			f.push(res)
 
+		// --- dyn-method first-class ($obj->{expr}(...)) -------------
+		case OpDynMethodFirstClass:
+			nameV := f.pop()
+			recv := f.pop()
+			res, err := compiler.EvalDynMethodFirstClassCallable(ctx, recv, nameV)
+			if err != nil {
+				return nil, false, err
+			}
+			f.push(res)
+
 		default:
 			return nil, false, fmt.Errorf("%w: %d at pc=%d", ErrUnknownOp, ins.Op(), f.pc-1)
 		}

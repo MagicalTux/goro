@@ -293,8 +293,7 @@ func IsSlotSafe(g phpv.GlobalContext, r phpv.Runnable) bool {
 		if !n.CloneIsBasic() {
 			return false
 		}
-	case *runFirstClassDynMethodCallable,
-		*runObjectDynVar,
+	case *runObjectDynVar,
 		*runObjectDynFunc,
 		*runRef,
 		*runnableDeclareTicks,

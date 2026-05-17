@@ -197,8 +197,7 @@ func IsValueExprAstDelegated(r phpv.Runnable) bool {
 		return !n.CloneIsBasic()
 	}
 	switch r.(type) {
-	case *runFirstClassDynMethodCallable,
-		*runObjectDynVar,
+	case *runObjectDynVar,
 		*runObjectDynFunc,
 		*runRef:
 		return true
@@ -324,6 +323,20 @@ func (r *runFirstClassMethodCallable) MethodFirstClassIsStatic() bool { return r
 
 // MethodFirstClassIsNullsafe reports the `$x?->m(...)` form.
 func (r *runFirstClassMethodCallable) MethodFirstClassIsNullsafe() bool { return r.nullsafe }
+
+// IsFirstClassDynMethodCallableNode reports whether r is the
+// dynamic-name form: `$obj->{expr}(...)`. Lowered to
+// OP_DYN_METHOD_FIRSTCLASS.
+func IsFirstClassDynMethodCallableNode(r phpv.Runnable) bool {
+	_, ok := r.(*runFirstClassDynMethodCallable)
+	return ok
+}
+
+// DynMethodFirstClassReceiver returns the receiver expression.
+func (r *runFirstClassDynMethodCallable) DynMethodFirstClassReceiver() phpv.Runnable { return r.ref }
+
+// DynMethodFirstClassNameExpr returns the method-name expression.
+func (r *runFirstClassDynMethodCallable) DynMethodFirstClassNameExpr() phpv.Runnable { return r.nameExpr }
 
 // IsRefExpr reports whether r is a `&$expr` reference-producing wrapper.
 // The VM emitter uses this to detect reference assignment (`$b = &$a`)

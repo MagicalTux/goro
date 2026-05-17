@@ -2388,25 +2388,26 @@ func (r *runFirstClassDynMethodCallable) Run(ctx phpv.Context) (*phpv.ZVal, erro
 	if err := ctx.Tick(ctx, r.l); err != nil {
 		return nil, err
 	}
-
 	refVal, err := r.ref.Run(ctx)
 	if err != nil {
 		return nil, err
 	}
-
 	nameVal, err := r.nameExpr.Run(ctx)
 	if err != nil {
 		return nil, err
 	}
+	return EvalDynMethodFirstClassCallable(ctx, refVal, nameVal)
+}
 
+// EvalDynMethodFirstClassCallable implements `$obj->{expr}(...)` —
+// dynamic-name method first-class callable. Shared between AST runner
+// and VM's OP_DYN_METHOD_FIRSTCLASS.
+func EvalDynMethodFirstClassCallable(ctx phpv.Context, refVal, nameVal *phpv.ZVal) (*phpv.ZVal, error) {
 	obj := refVal.AsObject(ctx)
 	if obj == nil {
 		return nil, phpobj.ThrowError(ctx, phpobj.Error, "Call to a member function on non-object")
 	}
-
 	methodName := nameVal.AsString(ctx)
-
-	// Build a Closure via closureFromCallable
 	arr := phpv.NewZArray()
 	arr.OffsetSet(ctx, phpv.ZInt(0), obj.ZVal())
 	arr.OffsetSet(ctx, phpv.ZInt(1), methodName.ZVal())
