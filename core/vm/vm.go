@@ -1117,6 +1117,12 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 			}
 			f.push(res)
 
+		// --- declare(ticks=N) tick callout --------------------------
+		case OpCallTickFunctions:
+			if err := ctx.Global().CallTickFunctions(ctx); err != nil {
+				return nil, false, err
+			}
+
 		default:
 			return nil, false, fmt.Errorf("%w: %d at pc=%d", ErrUnknownOp, ins.Op(), f.pc-1)
 		}

@@ -446,6 +446,20 @@ func (r *runClassStaticDynVarRef) ClassStaticDynVarReadNameExpr() phpv.Runnable 
 	return r.nameExpr
 }
 
+// IsDeclareTicksNode reports whether r is `declare(ticks=N) { … }`.
+// The VM emits the body normally and inserts OP_CALL_TICK_FUNCTIONS
+// after every N statements.
+func IsDeclareTicksNode(r phpv.Runnable) bool {
+	_, ok := r.(*runnableDeclareTicks)
+	return ok
+}
+
+// DeclareTicksBody returns the wrapped body.
+func (r *runnableDeclareTicks) DeclareTicksBody() phpv.Runnable { return r.body }
+
+// DeclareTicksN returns the tick period.
+func (r *runnableDeclareTicks) DeclareTicksN() int64 { return r.ticks }
+
 // IsRefExpr reports whether r is a `&$expr` reference-producing wrapper.
 // The VM emitter uses this to detect reference assignment (`$b = &$a`)
 // so the whole assignment AST-delegates: storeLocal would otherwise
@@ -474,8 +488,7 @@ func NewObjectMethodIterator(ctx phpv.Context, obj any) phpv.ZIterator {
 // the VM AST-delegates wholesale via OpTryFinally + OP_REFRESH_SLOTS.
 func IsStmtAstDelegated(r phpv.Runnable) bool {
 	switch r.(type) {
-	case *runnableDeclareTicks,
-		*runTopLevelConst,
+	case *runTopLevelConst,
 		*runEnumRegister:
 		return true
 	}

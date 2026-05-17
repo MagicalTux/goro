@@ -293,7 +293,6 @@ func IsSlotSafe(g phpv.GlobalContext, r phpv.Runnable) bool {
 	case *runObjectDynVar,
 		*runObjectDynFunc,
 		*runRef,
-		*runnableDeclareTicks,
 		*runTopLevelConst,
 		*runEnumRegister:
 		// All AST-delegated — operands evaluated by AST through

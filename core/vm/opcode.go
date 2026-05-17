@@ -249,6 +249,10 @@ const (
 	// value, then pushes the value of the dynamically-named static
 	// property. No visibility check (matching original AST semantics).
 	OpClassStaticDynGet
+	// OP_CALL_TICK_FUNCTIONS calls ctx.Global().CallTickFunctions(ctx).
+	// Used by `declare(ticks=N)` bodies, inserted by the emitter after
+	// every N statements within the body.
+	OpCallTickFunctions
 
 	// Sentinel — keep last.
 	opLast
@@ -352,4 +356,5 @@ var opNames = [...]string{
 	OpClassStaticGet:      "CLASS_STATIC_GET",
 	OpClassStaticObjRef:   "CLASS_STATIC_OBJREF",
 	OpClassStaticDynGet:   "CLASS_STATIC_DYN_GET",
+	OpCallTickFunctions:   "CALL_TICK_FUNCTIONS",
 }

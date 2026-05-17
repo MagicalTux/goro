@@ -141,6 +141,41 @@ func (e *emitter) emitStmt(node phpv.Runnable) error {
 		return nil
 	}
 
+	// declare(ticks=N) { body }: emit body, OP_CALL_TICK_FUNCTIONS every N stmts.
+	if dt, ok := node.(interface {
+		DeclareTicksBody() phpv.Runnable
+		DeclareTicksN() int64
+	}); ok {
+		body := dt.DeclareTicksBody()
+		if body == nil {
+			return nil
+		}
+		n := dt.DeclareTicksN()
+		if n < 1 {
+			n = 1
+		}
+		// If body is a Runnables, intersperse tick calls.
+		if stmts, ok := body.(phpv.Runnables); ok {
+			var count int64
+			for _, s := range stmts {
+				if err := e.emitStmt(s); err != nil {
+					return err
+				}
+				count++
+				if count%n == 0 {
+					e.emit(vm.OpCallTickFunctions, 0, 0, 0)
+				}
+			}
+			return nil
+		}
+		// Single-statement body.
+		if err := e.emitStmt(body); err != nil {
+			return err
+		}
+		e.emit(vm.OpCallTickFunctions, 0, 0, 0)
+		return nil
+	}
+
 	// Statement-shaped delegations (declare ticks, top-level const,
 	// enum register).
 	if compiler.IsStmtAstDelegated(node) {
