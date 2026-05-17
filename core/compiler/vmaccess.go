@@ -352,6 +352,40 @@ func (r *runObjectDynVar) ObjectDynVarReceiver() phpv.Runnable { return r.ref }
 // ObjectDynVarNameExpr returns the dynamic-name expression.
 func (r *runObjectDynVar) ObjectDynVarNameExpr() phpv.Runnable { return r.nameExpr }
 
+// GlobalVarEntry exposes one variable in a `global` declaration.
+// Static returns the variable name (without leading $) when known
+// statically; Dynamic returns the name expression for `global $$x`.
+type GlobalVarEntry interface {
+	GlobalStatic() phpv.ZString
+	GlobalDynamic() phpv.Runnable
+}
+
+// IsGlobalDecl reports whether r is a `global $x, …` declaration. The
+// VM lowers each entry to OP_GLOBAL_BIND (static-name) or eval+bind
+// (dynamic). `static $y` declarations stay AST.
+func IsGlobalDecl(r phpv.Runnable) bool {
+	_, ok := r.(*runGlobal)
+	return ok
+}
+
+// GlobalEntries returns the list of variables declared in `global`.
+func GlobalEntries(r phpv.Runnable) []GlobalVarEntry {
+	g, ok := r.(*runGlobal)
+	if !ok {
+		return nil
+	}
+	out := make([]GlobalVarEntry, len(g.vars))
+	for i := range g.vars {
+		out[i] = &g.vars[i]
+	}
+	return out
+}
+
+func (v *globalVar) GlobalStatic() phpv.ZString { return v.static }
+func (v *globalVar) GlobalDynamic() phpv.Runnable {
+	return v.dynamic
+}
+
 // IsRefExpr reports whether r is a `&$expr` reference-producing wrapper.
 // The VM emitter uses this to detect reference assignment (`$b = &$a`)
 // so the whole assignment AST-delegates: storeLocal would otherwise

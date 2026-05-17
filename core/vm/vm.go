@@ -1063,6 +1063,13 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 			}
 			f.push(res)
 
+		// --- global $x ---------------------------------------------
+		case OpGlobalBind:
+			nameV := f.pop()
+			if err := compiler.EvalGlobalBinding(ctx, nameV.AsString(ctx)); err != nil {
+				return nil, false, err
+			}
+
 		default:
 			return nil, false, fmt.Errorf("%w: %d at pc=%d", ErrUnknownOp, ins.Op(), f.pc-1)
 		}

@@ -226,6 +226,9 @@ const (
 	// pushes the result of `$obj->{$name}`. Plain (non-nullsafe) form
 	// only; nullsafe and nullChain variants AST-delegate.
 	OpObjectDynGet
+	// OP_GLOBAL_BIND pops the name value and binds the local of that
+	// name to the global slot via compiler.EvalGlobalBinding.
+	OpGlobalBind
 
 	// Sentinel — keep last.
 	opLast
@@ -324,4 +327,5 @@ var opNames = [...]string{
 	OpMethodFirstClass:    "METHOD_FIRSTCLASS",
 	OpDynMethodFirstClass: "DYN_METHOD_FIRSTCLASS",
 	OpObjectDynGet:        "OBJECT_DYN_GET",
+	OpGlobalBind:          "GLOBAL_BIND",
 }

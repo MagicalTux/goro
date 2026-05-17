@@ -101,9 +101,26 @@ func (e *emitter) emitStmt(node phpv.Runnable) error {
 		return nil
 	}
 
-	// `global $x;` / `static $y = …;` declarations bind a local to
-	// outer storage. Delegate to the AST then resync the slot cache
-	// so subsequent OP_LOAD_LOCAL reads see the bound value.
+	// `global $x;` declaration: native lowering per-entry.
+	if compiler.IsGlobalDecl(node) {
+		for _, ent := range compiler.GlobalEntries(node) {
+			if dyn := ent.GlobalDynamic(); dyn != nil {
+				if err := e.withSubexpr(func() error { return e.emitExpr(dyn) }); err != nil {
+					return err
+				}
+			} else {
+				idx := e.constIndex(ent.GlobalStatic())
+				e.emit(vm.OpLoadConst, idx, 0, 0)
+				e.pushStack(1)
+			}
+			e.emit(vm.OpGlobalBind, 0, 0, 0)
+			e.popStack(1)
+		}
+		e.emit(vm.OpRefreshSlots, 0, 0, 0)
+		return nil
+	}
+
+	// `static $y = …;` declaration: still AST-delegated.
 	if compiler.IsGlobalOrStaticDecl(node) {
 		idx := e.astIndex(node)
 		e.emit(vm.OpTryFinally, idx, 0, 0)

@@ -19,15 +19,9 @@ type runGlobal struct {
 }
 
 func (g *runGlobal) Run(ctx phpv.Context) (*phpv.ZVal, error) {
-	var err error
-	var v *phpv.ZVal
-
-	err = ctx.Tick(ctx, g.l)
-	if err != nil {
+	if err := ctx.Tick(ctx, g.l); err != nil {
 		return nil, err
 	}
-
-	glob := ctx.Global()
 	for _, gv := range g.vars {
 		var k phpv.ZString
 		if gv.dynamic != nil {
@@ -39,24 +33,33 @@ func (g *runGlobal) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		} else {
 			k = gv.static
 		}
-
-		if ok, _ := glob.OffsetExists(ctx, k); !ok {
-			// need to create it
-			v = phpv.ZNull{}.ZVal()
-			glob.OffsetSet(ctx, k, v)
-		} else {
-			v, err = glob.OffsetGet(ctx, k)
-			if err != nil {
-				return nil, err
-			}
-		}
-
-		err = ctx.OffsetSet(ctx, k, v)
-		if err != nil {
+		if err := EvalGlobalBinding(ctx, k); err != nil {
 			return nil, err
 		}
 	}
 	return nil, nil
+}
+
+// EvalGlobalBinding implements one `global $name` binding: link the
+// local FuncContext entry for $name to the corresponding global slot,
+// auto-creating it as NULL if the global hasn't been set yet. Shared
+// between AST and VM (OP_GLOBAL_BIND).
+func EvalGlobalBinding(ctx phpv.Context, name phpv.ZString) error {
+	glob := ctx.Global()
+	var v *phpv.ZVal
+	if ok, _ := glob.OffsetExists(ctx, name); !ok {
+		v = phpv.ZNull{}.ZVal()
+		if err := glob.OffsetSet(ctx, name, v); err != nil {
+			return err
+		}
+	} else {
+		var err error
+		v, err = glob.OffsetGet(ctx, name)
+		if err != nil {
+			return err
+		}
+	}
+	return ctx.OffsetSet(ctx, name, v)
 }
 
 func (g *runGlobal) Dump(w io.Writer) error {
