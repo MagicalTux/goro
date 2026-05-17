@@ -118,8 +118,14 @@ func (e *emitter) emitStmt(node phpv.Runnable) error {
 		return nil
 	}
 
-	// Statement-shaped delegations (declare strict_types,
-	// declare ticks, top-level const, enum register).
+	// declare(strict_types=1): just call ctx.Global().SetStrictTypes(true).
+	if compiler.IsDeclareStrictTypesNode(node) {
+		e.emit(vm.OpSetStrictTypes, 0, 0, 0)
+		return nil
+	}
+
+	// Statement-shaped delegations (declare ticks, top-level const,
+	// enum register).
 	if compiler.IsStmtAstDelegated(node) {
 		idx := e.astIndex(node)
 		e.emit(vm.OpTryFinally, idx, 0, 0)

@@ -1007,6 +1007,10 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 				return nil, false, err
 			}
 
+		// --- declare(strict_types=1) --------------------------------
+		case OpSetStrictTypes:
+			ctx.Global().SetStrictTypes(true)
+
 		default:
 			return nil, false, fmt.Errorf("%w: %d at pc=%d", ErrUnknownOp, ins.Op(), f.pc-1)
 		}

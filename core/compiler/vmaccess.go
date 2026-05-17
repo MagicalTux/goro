@@ -282,6 +282,12 @@ func InlineHtmlText(r phpv.Runnable) (phpv.ZString, bool) {
 	return "", false
 }
 
+// IsDeclareStrictTypesNode reports whether r is `declare(strict_types=1)`.
+func IsDeclareStrictTypesNode(r phpv.Runnable) bool {
+	_, ok := r.(*runnableDeclareStrictTypes)
+	return ok
+}
+
 // IsRefExpr reports whether r is a `&$expr` reference-producing wrapper.
 // The VM emitter uses this to detect reference assignment (`$b = &$a`)
 // so the whole assignment AST-delegates: storeLocal would otherwise
@@ -310,8 +316,7 @@ func NewObjectMethodIterator(ctx phpv.Context, obj any) phpv.ZIterator {
 // the VM AST-delegates wholesale via OpTryFinally + OP_REFRESH_SLOTS.
 func IsStmtAstDelegated(r phpv.Runnable) bool {
 	switch r.(type) {
-	case *runnableDeclareStrictTypes,
-		*runnableDeclareTicks,
+	case *runnableDeclareTicks,
 		*runTopLevelConst,
 		*runEnumRegister:
 		return true

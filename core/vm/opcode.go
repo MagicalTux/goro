@@ -202,6 +202,9 @@ const (
 	// OP_INLINE_HTML writes the string at Consts[A] directly to the
 	// output stream. Replaces the AST runInlineHtml.Run path.
 	OpInlineHtml
+	// OP_SET_STRICT_TYPES calls ctx.Global().SetStrictTypes(true).
+	// Replaces the AST runnableDeclareStrictTypes.Run path.
+	OpSetStrictTypes
 
 	// Sentinel — keep last.
 	opLast
@@ -294,4 +297,5 @@ var opNames = [...]string{
 	OpClone:            "CLONE",
 	OpClassNameOf:      "CLASS_NAMEOF",
 	OpInlineHtml:       "INLINE_HTML",
+	OpSetStrictTypes:   "SET_STRICT_TYPES",
 }

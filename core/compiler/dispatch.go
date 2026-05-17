@@ -300,7 +300,6 @@ func IsSlotSafe(g phpv.GlobalContext, r phpv.Runnable) bool {
 		*runObjectDynVar,
 		*runObjectDynFunc,
 		*runRef,
-		*runnableDeclareStrictTypes,
 		*runnableDeclareTicks,
 		*runTopLevelConst,
 		*runEnumRegister:
