@@ -987,6 +987,16 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 			}
 			f.push(res)
 
+		// --- class-name-of (Cls::class / $obj::class) ---------------
+		case OpClassNameOf:
+			v := f.pop()
+			isLiteral := ins.A() != 0
+			res, err := compiler.EvalClassNameOf(ctx, v, isLiteral, f.fn.LocAt(f.pc-1))
+			if err != nil {
+				return nil, false, err
+			}
+			f.push(res)
+
 		default:
 			return nil, false, fmt.Errorf("%w: %d at pc=%d", ErrUnknownOp, ins.Op(), f.pc-1)
 		}

@@ -100,8 +100,6 @@ func IsClassConstNode(r phpv.Runnable) bool {
 		return true
 	case *runClassStaticDynVarRef:
 		return true
-	case *runClassNameOf:
-		return true
 	}
 	return false
 }
@@ -226,6 +224,37 @@ func IsBasicCloneNode(r phpv.Runnable) bool {
 	c, ok := r.(*runnableClone)
 	return ok && c.CloneIsBasic()
 }
+
+// IsClassNameOfNode reports whether r is a `Cls::class` / `$obj::class`
+// expression. The VM lowers it to OpClassNameOf.
+func IsClassNameOfNode(r phpv.Runnable) bool {
+	_, ok := r.(*runClassNameOf)
+	return ok
+}
+
+// ClassNameOfSource returns the class-source expression (a class name
+// literal, `self`/`parent`/`static`, or an object expression). Caller
+// also needs ClassNameOfIsLiteral to disambiguate error messages.
+func (r *runClassNameOf) ClassNameOfSource() phpv.Runnable { return r.className }
+
+// ClassNameOfIsLiteral reports whether the class-source expression was
+// a compile-time literal — affects which error message is used when
+// the runtime value isn't a string/object.
+func (r *runClassNameOf) ClassNameOfIsLiteral() bool {
+	switch cn := r.className.(type) {
+	case *runZVal:
+		_ = cn
+		return true
+	case *runParentheses:
+		if _, ok := cn.r.(*runZVal); ok {
+			return true
+		}
+	}
+	return false
+}
+
+// ClassNameOfLoc returns the source loc of the `::class` operator.
+func (r *runClassNameOf) ClassNameOfLoc() *phpv.Loc { return r.l }
 
 // IsRefExpr reports whether r is a `&$expr` reference-producing wrapper.
 // The VM emitter uses this to detect reference assignment (`$b = &$a`)

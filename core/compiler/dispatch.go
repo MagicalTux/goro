@@ -271,8 +271,7 @@ func IsSlotSafe(g phpv.GlobalContext, r phpv.Runnable) bool {
 	case *runClassDynConst,
 		*runClassStaticObjRef,
 		*runClassStaticVarRef,
-		*runClassStaticDynVarRef,
-		*runClassNameOf:
+		*runClassStaticDynVarRef:
 		// Class-level constant / static-prop / static-name access
 		// (`Foo::{$x}`, `$obj::CONST`, `Foo::$bar`, etc.) is
 		// AST-delegated via OpClassConst. The AST runner reads any

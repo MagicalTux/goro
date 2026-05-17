@@ -827,7 +827,26 @@ func (r *runClassNameOf) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	if err != nil {
 		return nil, err
 	}
+	isLiteral := false
+	switch cn := r.className.(type) {
+	case *runZVal:
+		_ = cn
+		isLiteral = true
+	case *runParentheses:
+		if _, ok := cn.r.(*runZVal); ok {
+			isLiteral = true
+		}
+	}
+	return EvalClassNameOf(ctx, v, isLiteral, r.l)
+}
 
+// EvalClassNameOf implements the `Cls::class` operator with the
+// pre-evaluated class-source value in v. isLiteral indicates whether
+// the class-source expression was a compile-time literal — used only
+// to pick between two error messages ("Illegal class name" vs
+// "Cannot use \"::class\" on …"). Both AST runner and VM share this
+// helper.
+func EvalClassNameOf(ctx phpv.Context, v *phpv.ZVal, isLiteral bool, l *phpv.Loc) (*phpv.ZVal, error) {
 	switch v.GetType() {
 	case phpv.ZtObject:
 		// For anonymous classes, return the full internal name (including null byte),
@@ -908,15 +927,6 @@ func (r *runClassNameOf) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		// Other non-object/non-string types produce a fatal error.
 		// If the expression is a literal (compile-time constant), use "Illegal class name"
 		// as PHP does at compile time. Otherwise, use the runtime error format.
-		isLiteral := false
-		switch cn := r.className.(type) {
-		case *runZVal:
-			isLiteral = true
-		case *runParentheses:
-			if _, ok := cn.r.(*runZVal); ok {
-				isLiteral = true
-			}
-		}
 		var errMsg string
 		if isLiteral {
 			errMsg = "Illegal class name"
@@ -926,7 +936,7 @@ func (r *runClassNameOf) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		phpErr := &phpv.PhpError{
 			Err:  fmt.Errorf("%s", errMsg),
 			Code: phpv.E_ERROR,
-			Loc:  r.l,
+			Loc:  l,
 		}
 		ctx.Global().LogError(phpErr)
 		return nil, phpv.ExitError(255)

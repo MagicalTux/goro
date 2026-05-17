@@ -192,6 +192,13 @@ const (
 	// extended forms (`clone($x, $with)`, `clone(...$arr)`, named args)
 	// remain AST-delegated.
 	OpClone
+	// OP_CLASS_NAMEOF pops the class-source value and pushes the
+	// resolved class name (a ZString) via compiler.EvalClassNameOf.
+	// Implements both `Foo::class` and `$obj::class`. A non-zero A flag
+	// signals that the source expression was a compile-time literal,
+	// which affects the error message when the value isn't usable as
+	// a class name.
+	OpClassNameOf
 
 	// Sentinel — keep last.
 	opLast
@@ -282,4 +289,5 @@ var opNames = [...]string{
 	OpTick:             "TICK",
 	OpInstanceOf:       "INSTANCEOF",
 	OpClone:            "CLONE",
+	OpClassNameOf:      "CLASS_NAMEOF",
 }

@@ -109,6 +109,9 @@ func (e *emitter) emitExpr(node phpv.Runnable) error {
 	if compiler.IsBasicCloneNode(node) {
 		return e.emitClone(node)
 	}
+	if compiler.IsClassNameOfNode(node) {
+		return e.emitClassNameOf(node)
+	}
 	if compiler.IsValueExprAstDelegated(node) {
 		// Common value-expression types we delegate wholesale
 		// (clone, instanceof, void-cast, first-class callables, …).
@@ -374,6 +377,30 @@ func (e *emitter) emitInstanceOf(node phpv.Runnable) error {
 // `clone $x` form. The extended PHP 8.5+ forms still AST-delegate.
 type cloneNode interface {
 	CloneArg() phpv.Runnable
+}
+
+// classNameOfNode is implemented by *compiler.runClassNameOf and
+// represents `Cls::class` / `$obj::class`.
+type classNameOfNode interface {
+	ClassNameOfSource() phpv.Runnable
+	ClassNameOfIsLiteral() bool
+}
+
+func (e *emitter) emitClassNameOf(node phpv.Runnable) error {
+	n, ok := node.(classNameOfNode)
+	if !ok {
+		return unsupportedf("class-nameof: node %T doesn't expose accessors", node)
+	}
+	if err := e.withSubexpr(func() error { return e.emitExpr(n.ClassNameOfSource()) }); err != nil {
+		return err
+	}
+	var lit uint16
+	if n.ClassNameOfIsLiteral() {
+		lit = 1
+	}
+	e.emit(vm.OpClassNameOf, lit, 0, 0)
+	// net stack: 0 (pop 1, push 1)
+	return nil
 }
 
 func (e *emitter) emitClone(node phpv.Runnable) error {
