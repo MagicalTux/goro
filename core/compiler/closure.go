@@ -1853,6 +1853,13 @@ func callerClass(ctx phpv.Context) phpv.ZClass {
 	return ctx.Class()
 }
 
+// ClosureFromCallable is the exported variant used by the VM's
+// first-class-callable opcodes. Identical to the internal
+// closureFromCallable.
+func ClosureFromCallable(ctx phpv.Context, arg *phpv.ZVal) (*phpv.ZVal, error) {
+	return closureFromCallable(ctx, arg)
+}
+
 // closureFromCallable implements Closure::fromCallable($callable).
 // It converts any callable to a Closure object.
 func closureFromCallable(ctx phpv.Context, arg *phpv.ZVal) (*phpv.ZVal, error) {

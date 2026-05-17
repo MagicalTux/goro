@@ -1011,6 +1011,15 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 		case OpSetStrictTypes:
 			ctx.Global().SetStrictTypes(true)
 
+		// --- first-class callable (func(...)) -----------------------
+		case OpFirstClassCallable:
+			v := f.pop()
+			res, err := compiler.ClosureFromCallable(ctx, v)
+			if err != nil {
+				return nil, false, err
+			}
+			f.push(res)
+
 		default:
 			return nil, false, fmt.Errorf("%w: %d at pc=%d", ErrUnknownOp, ins.Op(), f.pc-1)
 		}

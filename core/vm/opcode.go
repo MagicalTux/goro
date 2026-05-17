@@ -205,6 +205,10 @@ const (
 	// OP_SET_STRICT_TYPES calls ctx.Global().SetStrictTypes(true).
 	// Replaces the AST runnableDeclareStrictTypes.Run path.
 	OpSetStrictTypes
+	// OP_FIRSTCLASS_CALLABLE pops a value and pushes a Closure
+	// produced by compiler.ClosureFromCallable. Used by the PHP 8.1
+	// `func(...)` first-class callable syntax for free functions.
+	OpFirstClassCallable
 
 	// Sentinel — keep last.
 	opLast
@@ -297,5 +301,6 @@ var opNames = [...]string{
 	OpClone:            "CLONE",
 	OpClassNameOf:      "CLASS_NAMEOF",
 	OpInlineHtml:       "INLINE_HTML",
-	OpSetStrictTypes:   "SET_STRICT_TYPES",
+	OpSetStrictTypes:      "SET_STRICT_TYPES",
+	OpFirstClassCallable:  "FIRSTCLASS_CALLABLE",
 }

@@ -197,8 +197,7 @@ func IsValueExprAstDelegated(r phpv.Runnable) bool {
 		return !n.CloneIsBasic()
 	}
 	switch r.(type) {
-	case *runFirstClassCallable,
-		*runFirstClassCloneCallable,
+	case *runFirstClassCloneCallable,
 		*runFirstClassMethodCallable,
 		*runFirstClassDynMethodCallable,
 		*runObjectDynVar,
@@ -287,6 +286,18 @@ func IsDeclareStrictTypesNode(r phpv.Runnable) bool {
 	_, ok := r.(*runnableDeclareStrictTypes)
 	return ok
 }
+
+// IsFirstClassCallableNode reports whether r is `func(...)` syntax — the
+// PHP 8.1 first-class callable for a free-function reference. Method
+// and Closure variants keep AST-delegating.
+func IsFirstClassCallableNode(r phpv.Runnable) bool {
+	_, ok := r.(*runFirstClassCallable)
+	return ok
+}
+
+// FirstClassCallableTarget returns the target expression (the function
+// name, either a runConstant or a value expression).
+func (r *runFirstClassCallable) FirstClassCallableTarget() phpv.Runnable { return r.target }
 
 // IsRefExpr reports whether r is a `&$expr` reference-producing wrapper.
 // The VM emitter uses this to detect reference assignment (`$b = &$a`)

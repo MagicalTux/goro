@@ -115,6 +115,9 @@ func (e *emitter) emitExpr(node phpv.Runnable) error {
 	if compiler.IsVoidCastNode(node) {
 		return e.emitVoidCast(node)
 	}
+	if compiler.IsFirstClassCallableNode(node) {
+		return e.emitFirstClassCallable(node)
+	}
 	if compiler.IsValueExprAstDelegated(node) {
 		// Common value-expression types we delegate wholesale
 		// (clone, instanceof, void-cast, first-class callables, …).
@@ -392,6 +395,34 @@ type classNameOfNode interface {
 // voidCastNode is implemented by *compiler.runVoidCast for `(void) $x`.
 type voidCastNode interface {
 	VoidCastExpr() phpv.Runnable
+}
+
+// firstClassCallableNode is implemented by *compiler.runFirstClassCallable
+// for the PHP 8.1 `func(...)` syntax (free-function form only).
+type firstClassCallableNode interface {
+	FirstClassCallableTarget() phpv.Runnable
+}
+
+func (e *emitter) emitFirstClassCallable(node phpv.Runnable) error {
+	n, ok := node.(firstClassCallableNode)
+	if !ok {
+		return unsupportedf("first-class callable: node %T doesn't expose accessors", node)
+	}
+	target := n.FirstClassCallableTarget()
+	// If the target is a bare constant (function name), push its name
+	// as a string literal — the AST's fast path. Otherwise eval normally.
+	if cn, ok := target.(constantNode); ok {
+		idx := e.constIndex(phpv.ZString(cn.ConstantName()))
+		e.emit(vm.OpLoadConst, idx, 0, 0)
+		e.pushStack(1)
+	} else {
+		if err := e.withSubexpr(func() error { return e.emitExpr(target) }); err != nil {
+			return err
+		}
+	}
+	e.emit(vm.OpFirstClassCallable, 0, 0, 0)
+	// net stack: 0 (pop 1, push 1)
+	return nil
 }
 
 func (e *emitter) emitVoidCast(node phpv.Runnable) error {
