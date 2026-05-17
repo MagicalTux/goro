@@ -193,7 +193,6 @@ func IsVariableRef(r phpv.Runnable) bool {
 func IsValueExprAstDelegated(r phpv.Runnable) bool {
 	switch r.(type) {
 	case *runnableClone,
-		*runInstanceOf,
 		*runVoidCast,
 		*runFirstClassCallable,
 		*runFirstClassCloneCallable,
@@ -205,6 +204,13 @@ func IsValueExprAstDelegated(r phpv.Runnable) bool {
 		return true
 	}
 	return false
+}
+
+// IsInstanceOfNode reports whether r is a `$v instanceof Cls` expression.
+// The VM lowers it to OpInstanceOf.
+func IsInstanceOfNode(r phpv.Runnable) bool {
+	_, ok := r.(*runInstanceOf)
+	return ok
 }
 
 // IsRefExpr reports whether r is a `&$expr` reference-producing wrapper.
@@ -621,6 +627,17 @@ func (r *runnableDoWhile) DoWhileCode() phpv.Runnable { return r.code }
 
 // DoWhileLoc returns the source location of the do-while statement.
 func (r *runnableDoWhile) DoWhileLoc() *phpv.Loc { return r.l }
+
+// InstanceOfValue returns the LHS expression (the value being tested).
+func (r *runInstanceOf) InstanceOfValue() phpv.Runnable { return r.v }
+
+// InstanceOfStaticClass returns the static class name, or "" when the
+// RHS is a dynamic-class expression accessed via InstanceOfClassVar.
+func (r *runInstanceOf) InstanceOfStaticClass() phpv.ZString { return r.c }
+
+// InstanceOfClassVar returns the dynamic class-name expression (a
+// `$var instanceof $cls` form), or nil for static class names.
+func (r *runInstanceOf) InstanceOfClassVar() phpv.Runnable { return r.classVar }
 
 // WhileLoc returns the source location of the while statement.
 func (r *runnableWhile) WhileLoc() *phpv.Loc { return r.l }

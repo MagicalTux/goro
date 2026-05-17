@@ -288,7 +288,6 @@ func IsSlotSafe(g phpv.GlobalContext, r phpv.Runnable) bool {
 			return false
 		}
 	case *runnableClone,
-		*runInstanceOf,
 		*runVoidCast,
 		*runFirstClassCallable,
 		*runFirstClassCloneCallable,

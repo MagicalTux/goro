@@ -962,6 +962,22 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 			}
 			ctx.Global().DrainTempObjects()
 
+		// --- instanceof ---------------------------------------------
+		case OpInstanceOf:
+			clsVal := f.pop()
+			v := f.pop()
+			var className phpv.ZString
+			if clsVal.GetType() == phpv.ZtObject {
+				className = clsVal.Value().(phpv.ZObject).GetClass().GetName()
+			} else {
+				className = clsVal.AsString(ctx)
+			}
+			res, err := compiler.EvalInstanceOf(ctx, v, className)
+			if err != nil {
+				return nil, false, err
+			}
+			f.push(res)
+
 		default:
 			return nil, false, fmt.Errorf("%w: %d at pc=%d", ErrUnknownOp, ins.Op(), f.pc-1)
 		}

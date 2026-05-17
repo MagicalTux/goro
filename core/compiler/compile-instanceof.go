@@ -76,7 +76,18 @@ func (r *runInstanceOf) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		className = r.c
 	}
 
-	// first, check class in parameter
+	v, err := r.v.Run(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return EvalInstanceOf(ctx, v, className)
+}
+
+// EvalInstanceOf implements `$v instanceof className`. Shared runtime
+// helper so both the AST runner and the VM emit a single point of
+// entry. `className` should already be resolved (static name from
+// compile time, or extracted from a dynamic variable).
+func EvalInstanceOf(ctx phpv.Context, v *phpv.ZVal, className phpv.ZString) (*phpv.ZVal, error) {
 	c, err := ctx.Global().GetClass(ctx, className, false)
 	if err != nil {
 		// For self/parent/static outside class scope, propagate the Error exception
@@ -87,11 +98,6 @@ func (r *runInstanceOf) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		return phpv.ZBool(false).ZVal(), nil
 	}
 
-	// now check value
-	v, err := r.v.Run(ctx)
-	if err != nil {
-		return nil, err
-	}
 	if v.GetType() != phpv.ZtObject {
 		return phpv.ZBool(false).ZVal(), nil
 	}
@@ -102,7 +108,5 @@ func (r *runInstanceOf) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	if zo, ok := o.(*phpobj.ZObject); ok {
 		objClass = zo.Class
 	}
-	final := objClass.InstanceOf(c)
-
-	return phpv.ZBool(final).ZVal(), nil
+	return phpv.ZBool(objClass.InstanceOf(c)).ZVal(), nil
 }

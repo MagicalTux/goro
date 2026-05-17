@@ -180,6 +180,14 @@ const (
 	// --- diagnostics -----------------------------------------------------
 	OpTick // call ctx.Tick(ctx, LocAt(pc-1)) and DrainTempObjects
 
+	// --- type / class introspection -------------------------------------
+	// OP_INSTANCEOF pops the value and a class name (ZString) and pushes
+	// the boolean result of `$v instanceof $cls`. Both static and dynamic
+	// class names share the same opcode; the emitter handles the cls
+	// resolution before this op (either OP_LOAD_CONST for a literal name
+	// or an expression that produces the class name).
+	OpInstanceOf
+
 	// Sentinel — keep last.
 	opLast
 )
@@ -267,4 +275,5 @@ var opNames = [...]string{
 	OpForeachAdvance:   "FOREACH_ADVANCE",
 	OpForeachUnwind:    "FOREACH_UNWIND",
 	OpTick:             "TICK",
+	OpInstanceOf:       "INSTANCEOF",
 }

@@ -103,6 +103,9 @@ func (e *emitter) emitExpr(node phpv.Runnable) error {
 		e.pushStack(1)
 		return nil
 	}
+	if compiler.IsInstanceOfNode(node) {
+		return e.emitInstanceOf(node)
+	}
 	if compiler.IsValueExprAstDelegated(node) {
 		// Common value-expression types we delegate wholesale
 		// (clone, instanceof, void-cast, first-class callables, …).
@@ -326,6 +329,42 @@ func (e *emitter) withSubexpr(fn func() error) error {
 	e.stmtCtx = false
 	defer func() { e.stmtCtx = prev }()
 	return fn()
+}
+
+// instanceofNode is implemented by *compiler.runInstanceOf and exposes
+// the LHS value and either a static class name or a dynamic-class
+// expression on the RHS.
+type instanceofNode interface {
+	InstanceOfValue() phpv.Runnable
+	InstanceOfStaticClass() phpv.ZString
+	InstanceOfClassVar() phpv.Runnable
+}
+
+func (e *emitter) emitInstanceOf(node phpv.Runnable) error {
+	n, ok := node.(instanceofNode)
+	if !ok {
+		return unsupportedf("instanceof: node %T doesn't expose accessors", node)
+	}
+	// Push the value (LHS).
+	if err := e.withSubexpr(func() error { return e.emitExpr(n.InstanceOfValue()) }); err != nil {
+		return err
+	}
+	// Push the class name (RHS). For static names, OpLoadConst the
+	// literal; for dynamic, evaluate the expression — OP_INSTANCEOF
+	// accepts either a ZString or a ZObject (it pulls the class name
+	// off an object value at runtime).
+	if cv := n.InstanceOfClassVar(); cv != nil {
+		if err := e.withSubexpr(func() error { return e.emitExpr(cv) }); err != nil {
+			return err
+		}
+	} else {
+		idx := e.constIndex(n.InstanceOfStaticClass())
+		e.emit(vm.OpLoadConst, idx, 0, 0)
+		e.pushStack(1)
+	}
+	e.emit(vm.OpInstanceOf, 0, 0, 0)
+	e.popStack(1) // pops 2, pushes 1 — net -1
+	return nil
 }
 
 func (e *emitter) emitBinary(a, b phpv.Runnable, op tokenizer.ItemType) error {
