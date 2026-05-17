@@ -274,7 +274,7 @@ type runNoDiscardStatement struct {
 	inner phpv.Runnable
 }
 func (r *runNoDiscardStatement) Run(ctx phpv.Context) (*phpv.ZVal, error) {
-	prev := NoDiscardEnter()
+	prev := NoDiscardEnter(ctx)
 	result, err := r.inner.Run(ctx)
 	if err != nil {
 		NoDiscardRestore(prev)
@@ -287,7 +287,8 @@ func (r *runNoDiscardStatement) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 // flag. Returns the previous flag state for NoDiscardRestore to use.
 // Both AST and VM call this before evaluating a NoDiscard-wrapped
 // statement.
-func NoDiscardEnter() bool {
+func NoDiscardEnter(ctx phpv.Context) bool {
+	ctx.Global().ClearLastCallable()
 	noDiscardAlreadyEmitted = false
 	prev := inNoDiscardContext
 	inNoDiscardContext = true
