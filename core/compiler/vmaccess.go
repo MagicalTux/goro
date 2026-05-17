@@ -94,8 +94,6 @@ func IsClassConstNode(r phpv.Runnable) bool {
 	switch r.(type) {
 	case *runClassStaticObjRef:
 		return true
-	case *runClassStaticVarRef:
-		return true
 	case *runClassStaticDynVarRef:
 		return true
 	}
@@ -398,6 +396,23 @@ func (r *runClassDynConst) ClassDynConstClassExpr() phpv.Runnable { return r.cla
 // ClassDynConstNameExpr returns the const-name expression (constant
 // for `::CONST`, full expression for `::{$expr}`).
 func (r *runClassDynConst) ClassDynConstNameExpr() phpv.Runnable { return r.nameExpr }
+
+// IsClassStaticVarReadNode reports whether r is a `Cls::$prop` read
+// with a statically-known property name. The VM lowers it to
+// OP_CLASS_STATIC_GET.
+func IsClassStaticVarReadNode(r phpv.Runnable) bool {
+	_, ok := r.(*runClassStaticVarRef)
+	return ok
+}
+
+// ClassStaticVarReadClassExpr returns the class-source expression.
+func (r *runClassStaticVarRef) ClassStaticVarReadClassExpr() phpv.Runnable { return r.className }
+
+// ClassStaticVarReadName returns the static property name.
+func (r *runClassStaticVarRef) ClassStaticVarReadName() phpv.ZString { return r.varName }
+
+// ClassStaticVarReadLoc returns the source location.
+func (r *runClassStaticVarRef) ClassStaticVarReadLoc() *phpv.Loc { return r.l }
 
 // IsRefExpr reports whether r is a `&$expr` reference-producing wrapper.
 // The VM emitter uses this to detect reference assignment (`$b = &$a`)

@@ -235,6 +235,10 @@ const (
 	// Delegates to compiler.EvalClassDynConst. Implements `Cls::CONST`,
 	// `$obj::CONST`, `Cls::{$name}`, and `$obj::class`-as-const-name.
 	OpClassDynConst
+	// OP_CLASS_STATIC_GET pops the class-source value and pushes the
+	// value of the static property at Consts[A] (a ZString). Read-only
+	// path; writes are handled by emitAssignViaAST.
+	OpClassStaticGet
 
 	// Sentinel — keep last.
 	opLast
@@ -335,4 +339,5 @@ var opNames = [...]string{
 	OpObjectDynGet:        "OBJECT_DYN_GET",
 	OpGlobalBind:          "GLOBAL_BIND",
 	OpClassDynConst:       "CLASS_DYN_CONST",
+	OpClassStaticGet:      "CLASS_STATIC_GET",
 }

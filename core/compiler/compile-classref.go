@@ -23,9 +23,16 @@ func (r *runClassStaticVarRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	if err != nil {
 		return nil, err
 	}
+	return EvalClassStaticVarRead(ctx, className, r.varName, r.l)
+}
 
+// EvalClassStaticVarRead implements `Cls::$prop` reads with the
+// pre-evaluated class source. Both AST runner and VM's
+// OP_CLASS_STATIC_GET share this. Visibility, hierarchy walk, and the
+// "detached snapshot" return live here.
+func EvalClassStaticVarRead(ctx phpv.Context, className *phpv.ZVal, varName phpv.ZString, l *phpv.Loc) (*phpv.ZVal, error) {
 	var class phpv.ZClass
-
+	var err error
 	switch className.GetType() {
 	case phpv.ZtObject:
 		class = className.AsObject(ctx).GetClass()
@@ -35,35 +42,26 @@ func (r *runClassStaticVarRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		phpErr := &phpv.PhpError{
 			Err:  fmt.Errorf("Illegal class name"),
 			Code: phpv.E_ERROR,
-			Loc:  r.l,
+			Loc:  l,
 		}
 		ctx.Global().LogError(phpErr)
 		return nil, phpv.ExitError(255)
 	}
-
 	if err != nil {
 		return nil, err
 	}
-
-	// Walk the class hierarchy to find the static property (handles inheritance)
 	zc := class.(*phpobj.ZClass)
-
-	// Check visibility before looking up the property value
-	if visErr := phpobj.CheckStaticPropVisibility(ctx, zc, r.varName); visErr != "" {
+	if visErr := phpobj.CheckStaticPropVisibility(ctx, zc, varName); visErr != "" {
 		return nil, phpobj.ThrowError(ctx, phpobj.Error, visErr)
 	}
-
-	p, found, err := zc.FindStaticProp(ctx, r.varName)
+	p, found, err := zc.FindStaticProp(ctx, varName)
 	if err != nil {
 		return nil, err
 	}
 	if !found {
-		return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Access to undeclared static property %s::$%s", class.GetName(), r.varName))
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Access to undeclared static property %s::$%s", class.GetName(), varName))
 	}
-
-	v := p.GetString(r.varName)
-	// Return a detached snapshot so in-place mutations to the hash
-	// entry don't retroactively change already-read values (PHP semantics).
+	v := p.GetString(varName)
 	return phpv.NewZVal(v.Value()), nil
 }
 
