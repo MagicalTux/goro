@@ -1651,24 +1651,6 @@ func (r *runObjectDynVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	if (r.nullsafe || r.nullChain) && obj.GetType() == phpv.ZtNull {
 		return phpv.ZNULL.ZVal(), nil
 	}
-	objI, ok := obj.Value().(phpv.ZObjectAccess)
-	if !ok {
-		// Evaluate the name expression first so we can include it in the warning
-		var name *phpv.ZVal
-		var nameErr error
-		if r.prepared && r.cachedName != nil {
-			name = r.cachedName
-		} else {
-			name, nameErr = r.nameExpr.Run(ctx)
-		}
-		typeName := phpValueTypeName(obj)
-		if nameErr == nil && name != nil {
-			ctx.Warn("Attempt to read property \"%s\" on %s", name.String(), typeName, logopt.NoFuncName(true))
-		} else {
-			ctx.Warn("Attempt to read property on %s", typeName, logopt.NoFuncName(true))
-		}
-		return phpv.ZNULL.ZVal(), nil
-	}
 	// Use cached name from PrepareWrite if available (e.g. ??= memoization)
 	var name *phpv.ZVal
 	if r.prepared && r.cachedName != nil {
@@ -1679,6 +1661,24 @@ func (r *runObjectDynVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		if err != nil {
 			return nil, err
 		}
+	}
+	return EvalObjectDynVarRead(ctx, obj, name)
+}
+
+// EvalObjectDynVarRead implements `$obj->{$name}` value read with the
+// pre-evaluated receiver and name. Used by both the AST runner and the
+// VM's OP_OBJECT_DYN_GET. Caller is responsible for the nullsafe
+// `obj == null` short-circuit (the VM emits it as a conditional jump).
+func EvalObjectDynVarRead(ctx phpv.Context, obj, name *phpv.ZVal) (*phpv.ZVal, error) {
+	objI, ok := obj.Value().(phpv.ZObjectAccess)
+	if !ok {
+		typeName := phpValueTypeName(obj)
+		if name != nil {
+			ctx.Warn("Attempt to read property \"%s\" on %s", name.String(), typeName, logopt.NoFuncName(true))
+		} else {
+			ctx.Warn("Attempt to read property on %s", typeName, logopt.NoFuncName(true))
+		}
+		return phpv.ZNULL.ZVal(), nil
 	}
 	return objI.ObjectGet(ctx, name)
 }

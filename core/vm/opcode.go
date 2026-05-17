@@ -222,6 +222,10 @@ const (
 	// receiver, then pushes the Closure. Used by the
 	// `$obj->{expr}(...)` dynamic-name method first-class form.
 	OpDynMethodFirstClass
+	// OP_OBJECT_DYN_GET pops the name value and the receiver, then
+	// pushes the result of `$obj->{$name}`. Plain (non-nullsafe) form
+	// only; nullsafe and nullChain variants AST-delegate.
+	OpObjectDynGet
 
 	// Sentinel — keep last.
 	opLast
@@ -319,4 +323,5 @@ var opNames = [...]string{
 	OpFirstClassClone:     "FIRSTCLASS_CLONE",
 	OpMethodFirstClass:    "METHOD_FIRSTCLASS",
 	OpDynMethodFirstClass: "DYN_METHOD_FIRSTCLASS",
+	OpObjectDynGet:        "OBJECT_DYN_GET",
 }

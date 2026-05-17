@@ -129,6 +129,9 @@ func (e *emitter) emitExpr(node phpv.Runnable) error {
 	if compiler.IsFirstClassDynMethodCallableNode(node) {
 		return e.emitDynMethodFirstClass(node)
 	}
+	if compiler.IsObjectDynVarReadNode(node) {
+		return e.emitObjectDynGet(node)
+	}
 	if compiler.IsValueExprAstDelegated(node) {
 		// Common value-expression types we delegate wholesale
 		// (clone, instanceof, void-cast, first-class callables, …).
@@ -428,6 +431,29 @@ type methodFirstClassNode interface {
 type dynMethodFirstClassNode interface {
 	DynMethodFirstClassReceiver() phpv.Runnable
 	DynMethodFirstClassNameExpr() phpv.Runnable
+}
+
+// objectDynVarReadNode is implemented by *compiler.runObjectDynVar for
+// non-nullsafe `$obj->{$name}` reads.
+type objectDynVarReadNode interface {
+	ObjectDynVarReceiver() phpv.Runnable
+	ObjectDynVarNameExpr() phpv.Runnable
+}
+
+func (e *emitter) emitObjectDynGet(node phpv.Runnable) error {
+	n, ok := node.(objectDynVarReadNode)
+	if !ok {
+		return unsupportedf("dyn-obj-get: node %T doesn't expose accessors", node)
+	}
+	if err := e.withSubexpr(func() error { return e.emitExpr(n.ObjectDynVarReceiver()) }); err != nil {
+		return err
+	}
+	if err := e.withSubexpr(func() error { return e.emitExpr(n.ObjectDynVarNameExpr()) }); err != nil {
+		return err
+	}
+	e.emit(vm.OpObjectDynGet, 0, 0, 0)
+	e.popStack(1) // pops 2, pushes 1 → net -1
+	return nil
 }
 
 func (e *emitter) emitDynMethodFirstClass(node phpv.Runnable) error {

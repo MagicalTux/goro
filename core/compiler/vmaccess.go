@@ -338,6 +338,20 @@ func (r *runFirstClassDynMethodCallable) DynMethodFirstClassReceiver() phpv.Runn
 // DynMethodFirstClassNameExpr returns the method-name expression.
 func (r *runFirstClassDynMethodCallable) DynMethodFirstClassNameExpr() phpv.Runnable { return r.nameExpr }
 
+// IsObjectDynVarReadNode reports whether r is a plain (non-nullsafe)
+// `$obj->{$name}` value read. The VM lowers these to OP_OBJECT_DYN_GET.
+// Nullsafe / nullChain forms still AST-delegate.
+func IsObjectDynVarReadNode(r phpv.Runnable) bool {
+	n, ok := r.(*runObjectDynVar)
+	return ok && !n.nullsafe && !n.nullChain
+}
+
+// ObjectDynVarReceiver returns the receiver expression.
+func (r *runObjectDynVar) ObjectDynVarReceiver() phpv.Runnable { return r.ref }
+
+// ObjectDynVarNameExpr returns the dynamic-name expression.
+func (r *runObjectDynVar) ObjectDynVarNameExpr() phpv.Runnable { return r.nameExpr }
+
 // IsRefExpr reports whether r is a `&$expr` reference-producing wrapper.
 // The VM emitter uses this to detect reference assignment (`$b = &$a`)
 // so the whole assignment AST-delegates: storeLocal would otherwise
