@@ -32,6 +32,12 @@ type whileNode interface {
 	WhileLoc() *phpv.Loc
 }
 
+type doWhileNode interface {
+	DoWhileCond() phpv.Runnable
+	DoWhileCode() phpv.Runnable
+	DoWhileLoc() *phpv.Loc
+}
+
 type foreachNode interface {
 	ForeachSrc() phpv.Runnable
 	ForeachKey() phpv.Runnable
@@ -120,6 +126,8 @@ func (e *emitter) emitStmt(node phpv.Runnable) error {
 		return e.emitIf(n)
 	case whileNode:
 		return e.emitWhile(n)
+	case doWhileNode:
+		return e.emitDoWhile(n)
 	case forNode:
 		return e.emitFor(n)
 	case foreachNode:
@@ -210,6 +218,39 @@ func (e *emitter) emitIf(n ifNode) error {
 	}
 	// patch jmpEnd → here
 	e.patchJump(jmpEnd, uint32(len(e.code)))
+	return nil
+}
+
+// emitDoWhile lowers `do { … } while (cond)` natively. Body runs at
+// least once; continue lands on the cond check; break jumps past it.
+func (e *emitter) emitDoWhile(n doWhileNode) error {
+	loop := e.pushLoop()
+	bodyStart := uint32(len(e.code))
+
+	if err := e.emitStmt(n.DoWhileCode()); err != nil {
+		return err
+	}
+
+	// continue target = cond check
+	condStart := uint32(len(e.code))
+	for _, pc := range loop.continuePCs {
+		e.patchJump(pc, condStart)
+	}
+
+	if err := e.withSubexpr(func() error { return e.emitExpr(n.DoWhileCond()) }); err != nil {
+		return err
+	}
+	// Jump back to body start if cond is true.
+	jmpBack := e.emit(vm.OpJmpIfTrue, 0, 0, 0)
+	e.popStack(1)
+	e.patchJump(jmpBack, bodyStart)
+
+	// Exit (cond false / break)
+	exit := uint32(len(e.code))
+	for _, pc := range loop.breakPCs {
+		e.patchJump(pc, exit)
+	}
+	e.popLoop()
 	return nil
 }
 

@@ -235,8 +235,7 @@ func NewObjectMethodIterator(ctx phpv.Context, obj any) phpv.ZIterator {
 // the VM AST-delegates wholesale via OpTryFinally + OP_REFRESH_SLOTS.
 func IsStmtAstDelegated(r phpv.Runnable) bool {
 	switch r.(type) {
-	case *runnableDoWhile,
-		*runInlineHtml,
+	case *runInlineHtml,
 		*runnableDeclareStrictTypes,
 		*runnableDeclareTicks,
 		*runTopLevelConst,
@@ -613,6 +612,15 @@ func (r *runnableWhile) WhileCond() phpv.Runnable { return r.cond }
 
 // WhileCode returns the loop body.
 func (r *runnableWhile) WhileCode() phpv.Runnable { return r.code }
+
+// DoWhileCond returns the post-condition expression.
+func (r *runnableDoWhile) DoWhileCond() phpv.Runnable { return r.cond }
+
+// DoWhileCode returns the loop body.
+func (r *runnableDoWhile) DoWhileCode() phpv.Runnable { return r.code }
+
+// DoWhileLoc returns the source location of the do-while statement.
+func (r *runnableDoWhile) DoWhileLoc() *phpv.Loc { return r.l }
 
 // WhileLoc returns the source location of the while statement.
 func (r *runnableWhile) WhileLoc() *phpv.Loc { return r.l }
