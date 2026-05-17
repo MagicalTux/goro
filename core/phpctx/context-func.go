@@ -52,10 +52,15 @@ func (c *FuncContext) Release() error {
 		if c.loc != nil && !c.isInternal {
 			c.Context.Tick(c.Context, c.loc)
 		}
-		it := c.h.NewIterator()
-		for it.Valid(c.Context) {
-			v, err := it.Current(c.Context)
-			if err == nil && v != nil && v.GetType() == phpv.ZtObject {
+		// Iterate raw — we only inspect to DecRef, never mutate or
+		// share. ZIterator.Current() Dups the value, and Dup on an
+		// array Dups the underlying ZHashTable (every subsequent
+		// SetString on it then doCopy's). Skipping that pays back
+		// massively when the FuncContext holds a `global $array`
+		// (e.g. bug60598 — 10k __destruct frames each Dup'd the
+		// shared $containers ZHashTable, dominating runtime).
+		for _, v := range c.h.NewIterator().IterateRaw(c.Context) {
+			if v != nil && v.GetType() == phpv.ZtObject {
 				if zobj, ok := v.Value().(phpv.ZObject); ok {
 					// Call HandleDecRef if the class defines it (e.g. Closure releasing captured $this)
 					if cls := zobj.GetClass(); cls != nil {
@@ -74,7 +79,6 @@ func (c *FuncContext) Release() error {
 					}
 				}
 			}
-			it.Next(c.Context)
 		}
 	}
 
