@@ -1028,6 +1028,21 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 			}
 			f.push(res)
 
+		// --- method first-class ($obj->m(...) / Cls::m(...)) -------
+		case OpMethodFirstClass:
+			recv := f.pop()
+			method, ok := f.fn.Consts[ins.B()].(phpv.ZString)
+			if !ok {
+				return nil, false, fmt.Errorf("vm: OP_METHOD_FIRSTCLASS name const is %T not ZString", f.fn.Consts[ins.B()])
+			}
+			static := ins.A()&1 != 0
+			nullsafe := ins.A()&2 != 0
+			res, err := compiler.EvalMethodFirstClassCallable(ctx, recv, method, static, nullsafe)
+			if err != nil {
+				return nil, false, err
+			}
+			f.push(res)
+
 		default:
 			return nil, false, fmt.Errorf("%w: %d at pc=%d", ErrUnknownOp, ins.Op(), f.pc-1)
 		}

@@ -2302,61 +2302,64 @@ func (r *runFirstClassMethodCallable) Run(ctx phpv.Context) (*phpv.ZVal, error) 
 	if err := ctx.Tick(ctx, r.l); err != nil {
 		return nil, err
 	}
+	refVal, err := r.ref.Run(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return EvalMethodFirstClassCallable(ctx, refVal, r.method, r.static, r.nullsafe)
+}
 
-	if r.static {
-		// Static method: ClassName::method(...)
-		classNameVal, err := r.ref.Run(ctx)
+// EvalMethodFirstClassCallable implements the runtime side of
+// `$obj->method(...)` / `Cls::method(...)` / `$obj?->method(...)`.
+// refVal is the already-evaluated receiver (object instance or
+// class-name string for static). method is the method name. static
+// and nullsafe carry the syntactic flags.
+//
+// Shared between the AST runner and the VM's OP_METHOD_FIRSTCLASS.
+func EvalMethodFirstClassCallable(ctx phpv.Context, refVal *phpv.ZVal, method phpv.ZString, static, nullsafe bool) (*phpv.ZVal, error) {
+	if static {
+		class, err := ctx.Global().GetClass(ctx, refVal.AsString(ctx), false)
 		if err != nil {
 			return nil, err
 		}
-		class, err := ctx.Global().GetClass(ctx, classNameVal.AsString(ctx), false)
-		if err != nil {
-			return nil, err
-		}
-		member, ok := class.GetMethod(r.method.ToLower())
+		member, ok := class.GetMethod(method.ToLower())
 		if !ok {
-			return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Call to undefined method %s::%s()", class.GetName(), r.method))
+			return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Call to undefined method %s::%s()", class.GetName(), method))
 		}
 		callable := phpv.BindClass(member.Method, class, true)
 		return phpv.NewZVal(callable), nil
 	}
 
-	// Instance method: $obj->method(...)
-	refVal, err := r.ref.Run(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	if r.nullsafe && refVal.IsNull() {
+	if nullsafe && refVal.IsNull() {
 		return phpv.ZNULL.ZVal(), nil
 	}
 
 	obj := refVal.AsObject(ctx)
 	if obj == nil {
-		return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Call to a member function %s() on null", r.method))
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Call to a member function %s() on null", method))
 	}
 
 	class := obj.GetClass()
-	_, ok := class.GetMethod(r.method.ToLower())
+	_, ok := class.GetMethod(method.ToLower())
 	if !ok {
 		// Check for __call magic method
 		if callMethod, hasCall := class.GetMethod("__call"); hasCall {
 			w := &wrappedClosure{
-				inner: &magicCallClosure{callMethod: callMethod.Method, methodName: r.method, instance: obj},
+				inner: &magicCallClosure{callMethod: callMethod.Method, methodName: method, instance: obj},
 				name:  phpv.ZString(string(class.GetName()) + "::__call"),
 				this:  obj,
 				class: class,
 			}
 			return w.Spawn(ctx)
 		}
-		return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Call to undefined method %s::%s()", class.GetName(), r.method))
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Call to undefined method %s::%s()", class.GetName(), method))
 	}
 
 	// Build a proper Closure object via closureFromCallable so that
 	// ->bindTo() and other Closure methods work correctly.
 	arr := phpv.NewZArray()
 	arr.OffsetSet(ctx, phpv.ZInt(0), obj.ZVal())
-	arr.OffsetSet(ctx, phpv.ZInt(1), r.method.ZVal())
+	arr.OffsetSet(ctx, phpv.ZInt(1), method.ZVal())
 	return closureFromCallable(ctx, arr.ZVal())
 }
 

@@ -123,6 +123,9 @@ func (e *emitter) emitExpr(node phpv.Runnable) error {
 		e.pushStack(1)
 		return nil
 	}
+	if compiler.IsFirstClassMethodCallableNode(node) {
+		return e.emitMethodFirstClass(node)
+	}
 	if compiler.IsValueExprAstDelegated(node) {
 		// Common value-expression types we delegate wholesale
 		// (clone, instanceof, void-cast, first-class callables, …).
@@ -406,6 +409,36 @@ type voidCastNode interface {
 // for the PHP 8.1 `func(...)` syntax (free-function form only).
 type firstClassCallableNode interface {
 	FirstClassCallableTarget() phpv.Runnable
+}
+
+// methodFirstClassNode is implemented by *compiler.runFirstClassMethodCallable
+// for `$obj->m(...)` / `Cls::m(...)` / `$obj?->m(...)` syntax.
+type methodFirstClassNode interface {
+	MethodFirstClassReceiver() phpv.Runnable
+	MethodFirstClassName() phpv.ZString
+	MethodFirstClassIsStatic() bool
+	MethodFirstClassIsNullsafe() bool
+}
+
+func (e *emitter) emitMethodFirstClass(node phpv.Runnable) error {
+	n, ok := node.(methodFirstClassNode)
+	if !ok {
+		return unsupportedf("method first-class: node %T doesn't expose accessors", node)
+	}
+	if err := e.withSubexpr(func() error { return e.emitExpr(n.MethodFirstClassReceiver()) }); err != nil {
+		return err
+	}
+	var flags uint16
+	if n.MethodFirstClassIsStatic() {
+		flags |= 1
+	}
+	if n.MethodFirstClassIsNullsafe() {
+		flags |= 2
+	}
+	idx := e.constIndex(n.MethodFirstClassName())
+	e.emit(vm.OpMethodFirstClass, flags, idx, 0)
+	// net stack: 0 (pop 1 recv, push 1 closure)
+	return nil
 }
 
 func (e *emitter) emitFirstClassCallable(node phpv.Runnable) error {

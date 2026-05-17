@@ -213,6 +213,11 @@ const (
 	// built-in. Used by the PHP 8.5+ `clone(...)` first-class
 	// callable syntax. Takes no operand.
 	OpFirstClassClone
+	// OP_METHOD_FIRSTCLASS pops the receiver and pushes a Closure for
+	// the method first-class callable form. A's bits: bit0 = static
+	// (`Cls::method(...)`), bit1 = nullsafe (`$x?->method(...)`).
+	// The method name is at Consts[B] (a ZString).
+	OpMethodFirstClass
 
 	// Sentinel — keep last.
 	opLast
@@ -308,4 +313,5 @@ var opNames = [...]string{
 	OpSetStrictTypes:      "SET_STRICT_TYPES",
 	OpFirstClassCallable:  "FIRSTCLASS_CALLABLE",
 	OpFirstClassClone:     "FIRSTCLASS_CLONE",
+	OpMethodFirstClass:    "METHOD_FIRSTCLASS",
 }

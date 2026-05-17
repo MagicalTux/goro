@@ -197,8 +197,7 @@ func IsValueExprAstDelegated(r phpv.Runnable) bool {
 		return !n.CloneIsBasic()
 	}
 	switch r.(type) {
-	case *runFirstClassMethodCallable,
-		*runFirstClassDynMethodCallable,
+	case *runFirstClassDynMethodCallable,
 		*runObjectDynVar,
 		*runObjectDynFunc,
 		*runRef:
@@ -304,6 +303,27 @@ func IsFirstClassCloneCallableNode(r phpv.Runnable) bool {
 	_, ok := r.(*runFirstClassCloneCallable)
 	return ok
 }
+
+// IsFirstClassMethodCallableNode reports whether r is a method
+// first-class callable: `$obj->method(...)`, `Cls::method(...)`, or
+// `$obj?->method(...)`. Lowered to OP_METHOD_FIRSTCLASS.
+func IsFirstClassMethodCallableNode(r phpv.Runnable) bool {
+	_, ok := r.(*runFirstClassMethodCallable)
+	return ok
+}
+
+// MethodFirstClassReceiver returns the receiver expression (object
+// instance, or class name for the static form).
+func (r *runFirstClassMethodCallable) MethodFirstClassReceiver() phpv.Runnable { return r.ref }
+
+// MethodFirstClassName returns the method name.
+func (r *runFirstClassMethodCallable) MethodFirstClassName() phpv.ZString { return r.method }
+
+// MethodFirstClassIsStatic reports the `Cls::m(...)` static form.
+func (r *runFirstClassMethodCallable) MethodFirstClassIsStatic() bool { return r.static }
+
+// MethodFirstClassIsNullsafe reports the `$x?->m(...)` form.
+func (r *runFirstClassMethodCallable) MethodFirstClassIsNullsafe() bool { return r.nullsafe }
 
 // IsRefExpr reports whether r is a `&$expr` reference-producing wrapper.
 // The VM emitter uses this to detect reference assignment (`$b = &$a`)
