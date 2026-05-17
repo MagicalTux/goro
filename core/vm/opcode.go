@@ -209,6 +209,10 @@ const (
 	// produced by compiler.ClosureFromCallable. Used by the PHP 8.1
 	// `func(...)` first-class callable syntax for free functions.
 	OpFirstClassCallable
+	// OP_FIRSTCLASS_CLONE pushes a Closure that wraps the clone
+	// built-in. Used by the PHP 8.5+ `clone(...)` first-class
+	// callable syntax. Takes no operand.
+	OpFirstClassClone
 
 	// Sentinel — keep last.
 	opLast
@@ -303,4 +307,5 @@ var opNames = [...]string{
 	OpInlineHtml:       "INLINE_HTML",
 	OpSetStrictTypes:      "SET_STRICT_TYPES",
 	OpFirstClassCallable:  "FIRSTCLASS_CALLABLE",
+	OpFirstClassClone:     "FIRSTCLASS_CLONE",
 }

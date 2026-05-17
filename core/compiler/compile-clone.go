@@ -441,7 +441,13 @@ type runFirstClassCloneCallable struct {
 }
 
 func (r *runFirstClassCloneCallable) Run(ctx phpv.Context) (*phpv.ZVal, error) {
-	// Look up the clone function (registered as a built-in)
+	return EvalFirstClassCloneCallable(ctx)
+}
+
+// EvalFirstClassCloneCallable returns a Closure wrapping the
+// clone built-in (PHP 8.5+ `clone(...)` syntax). Shared between the
+// AST runner and the VM's OP_FIRSTCLASS_CLONE.
+func EvalFirstClassCloneCallable(ctx phpv.Context) (*phpv.ZVal, error) {
 	f, err := ctx.Global().GetFunction(ctx, "clone")
 	if err != nil {
 		return nil, err

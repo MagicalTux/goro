@@ -197,8 +197,7 @@ func IsValueExprAstDelegated(r phpv.Runnable) bool {
 		return !n.CloneIsBasic()
 	}
 	switch r.(type) {
-	case *runFirstClassCloneCallable,
-		*runFirstClassMethodCallable,
+	case *runFirstClassMethodCallable,
 		*runFirstClassDynMethodCallable,
 		*runObjectDynVar,
 		*runObjectDynFunc,
@@ -298,6 +297,13 @@ func IsFirstClassCallableNode(r phpv.Runnable) bool {
 // FirstClassCallableTarget returns the target expression (the function
 // name, either a runConstant or a value expression).
 func (r *runFirstClassCallable) FirstClassCallableTarget() phpv.Runnable { return r.target }
+
+// IsFirstClassCloneCallableNode reports whether r is the `clone(...)`
+// first-class callable (PHP 8.5+). Lowered to OP_FIRSTCLASS_CLONE.
+func IsFirstClassCloneCallableNode(r phpv.Runnable) bool {
+	_, ok := r.(*runFirstClassCloneCallable)
+	return ok
+}
 
 // IsRefExpr reports whether r is a `&$expr` reference-producing wrapper.
 // The VM emitter uses this to detect reference assignment (`$b = &$a`)

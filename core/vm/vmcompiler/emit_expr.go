@@ -118,6 +118,11 @@ func (e *emitter) emitExpr(node phpv.Runnable) error {
 	if compiler.IsFirstClassCallableNode(node) {
 		return e.emitFirstClassCallable(node)
 	}
+	if compiler.IsFirstClassCloneCallableNode(node) {
+		e.emit(vm.OpFirstClassClone, 0, 0, 0)
+		e.pushStack(1)
+		return nil
+	}
 	if compiler.IsValueExprAstDelegated(node) {
 		// Common value-expression types we delegate wholesale
 		// (clone, instanceof, void-cast, first-class callables, …).
