@@ -175,12 +175,29 @@ func (c *FuncContext) This() phpv.ZObject {
 	return c.this
 }
 
-// Loc returns the current source-code location.
-// It always delegates to the parent context which tracks the current
-// execution position via Tick(). The isInternal flag only affects stack
-// trace formatting (showing "[internal function]"), not Loc().
+// Loc returns the current source-code location. It walks up the
+// parent-context chain (which bottoms out at the Global, whose Loc
+// tracks the live execution position via Tick).
+//
+// The walk is iterative with a depth cap: a cap-exceeding chain means
+// the parent pointers form a cycle (a FuncContext-pool aliasing bug).
+// Rather than overflowing the goroutine stack, Loc bails to this
+// frame's own call-site loc. The cap is well above PHP's 4096-frame
+// nesting limit so legitimate deep recursion is unaffected.
 func (c *FuncContext) Loc() *phpv.Loc {
-	return c.Context.Loc()
+	var cur phpv.Context = c
+	for i := 0; i < 1<<16; i++ {
+		fc, ok := cur.(*FuncContext)
+		if !ok {
+			return cur.Loc()
+		}
+		if fc.Context == nil {
+			return fc.loc
+		}
+		cur = fc.Context
+	}
+	// Cycle in the context chain — bail with this frame's call-site loc.
+	return c.loc
 }
 
 // CallSiteLoc returns the frozen location (file/line) from which this function
