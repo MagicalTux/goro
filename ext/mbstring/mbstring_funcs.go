@@ -413,6 +413,10 @@ func fncMbConvertVariables(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, err
 
 // findFirstString recursively finds the first string value in a ZVal (string or array)
 func findFirstString(ctx phpv.Context, z *phpv.ZVal) string {
+	return findFirstStringVisited(ctx, z, nil)
+}
+
+func findFirstStringVisited(ctx phpv.Context, z *phpv.ZVal, visited map[*phpv.ZArray]bool) string {
 	if z == nil {
 		return ""
 	}
@@ -421,8 +425,15 @@ func findFirstString(ctx phpv.Context, z *phpv.ZVal) string {
 	case phpv.ZString:
 		return string(val)
 	case *phpv.ZArray:
+		if visited[val] {
+			return ""
+		}
+		if visited == nil {
+			visited = make(map[*phpv.ZArray]bool)
+		}
+		visited[val] = true
 		for _, elem := range val.Iterate(ctx) {
-			if s := findFirstString(ctx, elem); s != "" {
+			if s := findFirstStringVisited(ctx, elem, visited); s != "" {
 				return s
 			}
 		}
