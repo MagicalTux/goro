@@ -401,10 +401,19 @@ func fncMbConvertVariables(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, err
 		}
 	}
 
-	// Convert all variable arguments in-place
+	// Convert all variable arguments in-place. A self-referential
+	// array can't be converted — PHP emits a warning and returns
+	// false (bug66964).
 	for i := 2; i < len(args); i++ {
-		if err := mbConvertVariableInPlace(ctx, args[i], detectedEnc, toEnc); err != nil {
+		recursed, err := mbConvertVariableInPlace(ctx, args[i], detectedEnc, toEnc)
+		if err != nil {
 			return nil, err
+		}
+		if recursed {
+			if werr := ctx.Warn("Cannot handle recursive references"); werr != nil {
+				return nil, werr
+			}
+			return phpv.ZBool(false).ZVal(), nil
 		}
 	}
 
@@ -444,20 +453,17 @@ func findFirstStringVisited(ctx phpv.Context, z *phpv.ZVal, visited map[*phpv.ZA
 	return ""
 }
 
-// mbConvertVariableInPlace converts encoding of a variable in-place
-func mbConvertVariableInPlace(ctx phpv.Context, z *phpv.ZVal, fromEnc, toEnc string) error {
-	visited := make(map[*phpv.ZVal]bool)
+// mbConvertVariableInPlace converts encoding of a variable in-place.
+// Returns recursed=true when the variable contains a cyclic array
+// reference — the caller emits a warning and returns false.
+func mbConvertVariableInPlace(ctx phpv.Context, z *phpv.ZVal, fromEnc, toEnc string) (recursed bool, err error) {
+	visited := make(map[*phpv.ZArray]bool)
 	return mbConvertVariableInPlaceImpl(ctx, z, fromEnc, toEnc, visited, 0)
 }
 
-func mbConvertVariableInPlaceImpl(ctx phpv.Context, z *phpv.ZVal, fromEnc, toEnc string, visited map[*phpv.ZVal]bool, depth int) error {
+func mbConvertVariableInPlaceImpl(ctx phpv.Context, z *phpv.ZVal, fromEnc, toEnc string, visited map[*phpv.ZArray]bool, depth int) (bool, error) {
 	if z == nil || depth > 100 {
-		return nil
-	}
-
-	// Check for recursive references
-	if visited[z] {
-		return nil
+		return false, nil
 	}
 
 	v := z.Value()
@@ -469,19 +475,34 @@ func mbConvertVariableInPlaceImpl(ctx phpv.Context, z *phpv.ZVal, fromEnc, toEnc
 		}
 		z.Set(phpv.ZString(converted).ZVal())
 	case *phpv.ZArray:
-		visited[z] = true
-		// Convert each element in the array
+		// Cyclic reference: signal the caller to warn + return false.
+		if visited[val] {
+			return true, nil
+		}
+		visited[val] = true
 		newArr := phpv.NewZArray()
 		for k, elem := range val.Iterate(ctx) {
+			// Detect a cycle on the *original* element before Dup'ing
+			// (Dup of a ref-to-array clones the array, defeating the
+			// pointer-identity check).
+			if elem != nil {
+				if sub, ok := elem.Value().(*phpv.ZArray); ok && visited[sub] {
+					return true, nil
+				}
+			}
 			elemCopy := elem.Dup()
-			if err := mbConvertVariableInPlaceImpl(ctx, elemCopy, fromEnc, toEnc, visited, depth+1); err != nil {
-				return err
+			recursed, err := mbConvertVariableInPlaceImpl(ctx, elemCopy, fromEnc, toEnc, visited, depth+1)
+			if err != nil {
+				return false, err
+			}
+			if recursed {
+				return true, nil
 			}
 			newArr.OffsetSet(ctx, k, elemCopy)
 		}
 		z.Set(newArr.ZVal())
 	}
-	return nil
+	return false, nil
 }
 
 func fncMbHttpInput(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, error) {
