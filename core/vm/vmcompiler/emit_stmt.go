@@ -122,10 +122,12 @@ func (e *emitter) emitStmt(node phpv.Runnable) error {
 		return nil
 	}
 
-	// `static $y = …;` declaration: still AST-delegated.
-	if compiler.IsGlobalOrStaticDecl(node) {
+	// `static $y = …;` declaration: native binding via OP_STATIC_VAR_BIND,
+	// which calls the shared compiler.BindStaticVars helper to handle
+	// per-closure / per-class / global storage.
+	if compiler.IsStaticVarDecl(node) {
 		idx := e.astIndex(node)
-		e.emit(vm.OpTryFinally, idx, 0, 0)
+		e.emit(vm.OpStaticVarBind, idx, 0, 0)
 		e.emit(vm.OpRefreshSlots, 0, 0, 0)
 		return nil
 	}

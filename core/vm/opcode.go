@@ -310,6 +310,12 @@ const (
 	// (idempotent), and pushes the resulting object. Used only for
 	// constructor-arg shapes that don't need by-ref auto-vivification.
 	OpNewAnonClass
+	// OP_STATIC_VAR_BIND runs `static $x = init; …` for the
+	// *runStaticVar at SubASTs[A]: evaluates each entry's initializer
+	// the first time per scope key (closure-instance, class, or
+	// global), stashes the cell on the AST node, and installs the
+	// cell as the current scope's local for $x.
+	OpStaticVarBind
 
 	// Sentinel — keep last.
 	opLast
@@ -426,4 +432,5 @@ var opNames = [...]string{
 	OpLoadConstantByName:  "LOAD_CONSTANT_BY_NAME",
 	OpVarVarRead:          "VAR_VAR_READ",
 	OpNewAnonClass:        "NEW_ANON_CLASS",
+	OpStaticVarBind:       "STATIC_VAR_BIND",
 }

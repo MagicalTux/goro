@@ -1163,6 +1163,13 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 				return nil, false, err
 			}
 
+		// --- `static $x = init; …` declaration --------------------
+		case OpStaticVarBind:
+			node := f.fn.SubASTs[ins.A()]
+			if err := compiler.BindStaticVars(ctx, node); err != nil {
+				return nil, false, err
+			}
+
 		// --- `new class { … }(args)` anonymous class instantiation --
 		case OpNewAnonClass:
 			node := f.fn.SubASTs[ins.A()]

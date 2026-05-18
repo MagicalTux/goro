@@ -53,16 +53,20 @@ func (r *runStaticVar) Dump(w io.Writer) error {
 }
 
 func (r *runStaticVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {
-	// Check if we're running inside a specific closure instance.
-	// If so, use per-closure static variable storage so that different
-	// closure instances have independent static variables.
+	return nil, r.bindAll(ctx)
+}
+
+// bindAll performs the per-call static-variable binding work shared
+// by the AST runner and the VM's OP_STATIC_VAR_BIND: per-closure /
+// per-class / global storage of each entry's value cell, and an
+// OffsetSet to install it in the current scope.
+func (r *runStaticVar) bindAll(ctx phpv.Context) error {
 	var closureKey uintptr
 	if cvkp, ok := ctx.(phpv.ClosureStaticVarKeyProvider); ok {
 		closureKey = cvkp.ClosureStaticVarKey()
 	}
 
 	for _, v := range r.vars {
-		// Use per-closure storage when inside a closure instance (for closure isolation)
 		if closureKey != 0 {
 			existing, loaded := v.perClosure.Load(closureKey)
 			var z *phpv.ZVal
@@ -72,7 +76,7 @@ func (r *runStaticVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 				var err error
 				z, err = runStaticInitial(ctx, v.def)
 				if err != nil {
-					return nil, err
+					return err
 				}
 				v.perClosure.Store(closureKey, z)
 			}
@@ -81,7 +85,6 @@ func (r *runStaticVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 			continue
 		}
 
-		// Use per-class storage when inside a class method (for trait isolation)
 		var classKey phpv.ZString
 		if cls := ctx.Class(); cls != nil {
 			classKey = cls.GetName()
@@ -98,7 +101,7 @@ func (r *runStaticVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 				var err error
 				z, err = runStaticInitial(ctx, v.def)
 				if err != nil {
-					return nil, err
+					return err
 				}
 				v.perClass[classKey] = z
 			}
@@ -107,7 +110,7 @@ func (r *runStaticVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 				var err error
 				v.z, err = runStaticInitial(ctx, v.def)
 				if err != nil {
-					return nil, err
+					return err
 				}
 			}
 			z = v.z
@@ -116,7 +119,19 @@ func (r *runStaticVar) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		ctx.OffsetUnset(ctx, v.varName)
 		ctx.OffsetSet(ctx, v.varName, z)
 	}
-	return nil, nil
+	return nil
+}
+
+// BindStaticVars runs the per-call static-variable binding pipeline
+// on a *runStaticVar AST node. Used by the VM's OP_STATIC_VAR_BIND.
+func BindStaticVars(ctx phpv.Context, r phpv.Runnable) error {
+	return r.(*runStaticVar).bindAll(ctx)
+}
+
+// IsStaticVarDecl reports whether r is a `static $x = …;` declaration.
+func IsStaticVarDecl(r phpv.Runnable) bool {
+	_, ok := r.(*runStaticVar)
+	return ok
 }
 
 // runStaticInitial evaluates the default expression for a static var and
