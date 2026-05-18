@@ -76,10 +76,25 @@ func (e *emitter) emitExpr(node phpv.Runnable) error {
 		return nil
 	}
 	if compiler.IsAnonymousClassNode(node) {
-		// `new class { … }` — AST runs the class registration +
-		// instantiation; push the resulting object.
+		// `new class { … }(args)` — for the simple-arg case (no
+		// CompoundWritable args) lower natively via OP_NEW_ANON_CLASS;
+		// otherwise fall back to AST so the by-ref auto-vivification
+		// dance in evalConstructorArgs still runs.
+		if compiler.AnonClassHasWritableArg(node) {
+			idx := e.astIndex(node)
+			e.emit(vm.OpClassConst, idx, 0, 0)
+			e.pushStack(1)
+			return nil
+		}
+		args := compiler.AnonymousClassArgs(node)
+		for _, a := range args {
+			if err := e.withSubexpr(func() error { return e.emitExpr(a) }); err != nil {
+				return err
+			}
+		}
 		idx := e.astIndex(node)
-		e.emit(vm.OpClassConst, idx, 0, 0)
+		e.emit(vm.OpNewAnonClass, idx, uint16(len(args)), 0)
+		e.popStack(len(args)) // pops argc args, pushes 1 obj → net -argc+1
 		e.pushStack(1)
 		return nil
 	}

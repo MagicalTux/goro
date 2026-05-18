@@ -201,10 +201,48 @@ func UnsetAllSimple(r phpv.Runnable) bool {
 }
 
 // IsAnonymousClassNode reports whether r is a `new class { … }`
-// instantiation. The VM AST-delegates these wholesale via OpClassConst.
+// instantiation. The VM lowers value-context anon-class instantiations
+// natively via OP_NEW_ANON_CLASS when all constructor args are pure
+// value expressions; otherwise it AST-delegates so the by-ref param
+// dance still works.
 func IsAnonymousClassNode(r phpv.Runnable) bool {
 	_, ok := r.(*runNewAnonymousClass)
 	return ok
+}
+
+// AnonymousClassArgs returns the constructor argument expressions of
+// a `new class { … }` instantiation, so the VM emitter can compile
+// each natively.
+func AnonymousClassArgs(r phpv.Runnable) []phpv.Runnable {
+	return r.(*runNewAnonymousClass).constructorArgs
+}
+
+// AnonClassHasWritableArg reports whether any constructor arg is a
+// CompoundWritable (array access, object prop, dyn name). Those
+// expressions need the AST runner's by-ref auto-vivification dance;
+// the VM keeps the AST path for them.
+func AnonClassHasWritableArg(r phpv.Runnable) bool {
+	t := r.(*runNewAnonymousClass)
+	for _, a := range t.constructorArgs {
+		if _, ok := a.(phpv.CompoundWritable); ok {
+			return true
+		}
+	}
+	return false
+}
+
+// EnsureAnonClassCompiled runs the per-AST-node class registration
+// guard. Idempotent — safe to call on every instantiation.
+func EnsureAnonClassCompiled(ctx phpv.Context, r phpv.Runnable) error {
+	return r.(*runNewAnonymousClass).ensureCompiled(ctx)
+}
+
+// InstantiateAnonClass instantiates an already-compiled anonymous
+// class with pre-evaluated value-context args. Used by the VM's
+// OP_NEW_ANON_CLASS path.
+func InstantiateAnonClass(ctx phpv.Context, r phpv.Runnable, args []*phpv.ZVal) (*phpv.ZVal, error) {
+	t := r.(*runNewAnonymousClass)
+	return InstantiateRegisteredAnonClass(ctx, t.class, args, nil, t.l)
 }
 
 // IsMatchNode reports whether r is a `match (…) { … }` expression.

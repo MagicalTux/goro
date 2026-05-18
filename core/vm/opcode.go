@@ -304,6 +304,12 @@ const (
 	// position) to emit the "Undefined variable" notice when the name
 	// resolves to nothing.
 	OpVarVarRead
+	// OP_NEW_ANON_CLASS instantiates the `new class { … }` whose AST
+	// node lives at SubASTs[A]. Pops B constructor arguments off the
+	// stack (in order), ensures the class is registered + compiled
+	// (idempotent), and pushes the resulting object. Used only for
+	// constructor-arg shapes that don't need by-ref auto-vivification.
+	OpNewAnonClass
 
 	// Sentinel — keep last.
 	opLast
@@ -419,4 +425,5 @@ var opNames = [...]string{
 	OpNoDiscardExit:       "NODISCARD_EXIT",
 	OpLoadConstantByName:  "LOAD_CONSTANT_BY_NAME",
 	OpVarVarRead:          "VAR_VAR_READ",
+	OpNewAnonClass:        "NEW_ANON_CLASS",
 }

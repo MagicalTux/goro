@@ -1163,6 +1163,23 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 				return nil, false, err
 			}
 
+		// --- `new class { … }(args)` anonymous class instantiation --
+		case OpNewAnonClass:
+			node := f.fn.SubASTs[ins.A()]
+			argc := int(ins.B())
+			args := make([]*phpv.ZVal, argc)
+			for i := argc - 1; i >= 0; i-- {
+				args[i] = f.pop()
+			}
+			if err := compiler.EnsureAnonClassCompiled(ctx, node); err != nil {
+				return nil, false, err
+			}
+			res, err := compiler.InstantiateAnonClass(ctx, node, args)
+			if err != nil {
+				return nil, false, err
+			}
+			f.push(res)
+
 		// --- `$$name` / `${expr}` variable-variable read ------------
 		case OpVarVarRead:
 			nameV := f.pop()
