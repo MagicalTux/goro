@@ -283,15 +283,19 @@ func (e *emitter) emitConstant(n constantNode) error {
 		return nil
 	}
 	// All other constants (PHP_INT_MAX, namespaced consts, user-defined,
-	// …) go through the AST runner via OpClassConst. Resolution involves
-	// case-sensitivity tables, namespace fallback, and deprecation
-	// notices — not worth re-deriving piecewise.
+	// …) go through OP_LOAD_CONSTANT_BY_NAME, which calls the shared
+	// compiler.LookupConstant helper.
 	raw, ok := any(n).(phpv.Runnable)
 	if !ok {
 		return unsupportedf("user-defined constant %q: cannot retrieve raw Runnable", n.ConstantName())
 	}
-	idx := e.astIndex(raw)
-	e.emit(vm.OpClassConst, idx, 0, 0)
+	cName, noFallback, _ := compiler.ConstantNameAndFlags(raw)
+	idx := e.constIndex(phpv.ZString(cName))
+	var bFlags uint16
+	if noFallback {
+		bFlags |= 1
+	}
+	e.emit(vm.OpLoadConstantByName, idx, bFlags, 0)
 	e.pushStack(1)
 	return nil
 }

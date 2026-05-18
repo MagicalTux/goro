@@ -30,10 +30,19 @@ func shortName(name string) string {
 }
 
 func (r *runConstant) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
-	short := shortName(r.c)
-	isQualified := short != r.c
+	return LookupConstant(ctx, r.c, r.noFallback, r.l)
+}
 
-	// For unqualified names, check special constants immediately
+// LookupConstant resolves a PHP constant by name, applying the same
+// rules runConstant.Run did: case-insensitive null/true/false/self/
+// parent, namespace-case-insensitive global lookup, qualified-name
+// fallback to the global table, deprecation warnings via
+// checkConstantDeprecated. Both the AST runner and the VM's
+// OP_LOAD_CONSTANT_BY_NAME share this code path.
+func LookupConstant(ctx phpv.Context, name string, noFallback bool, l *phpv.Loc) (*phpv.ZVal, error) {
+	short := shortName(name)
+	isQualified := short != name
+
 	if !isQualified {
 		switch strings.ToLower(short) {
 		case "null":
@@ -49,34 +58,26 @@ func (r *runConstant) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 		}
 	}
 
-	// Try the full (possibly namespaced) name first
-	// Normalize namespace part to lowercase (PHP namespace resolution is case-insensitive)
-	normalizedName := r.c
+	normalizedName := name
 	if idx := strings.LastIndex(normalizedName, "\\"); idx >= 0 {
 		normalizedName = strings.ToLower(normalizedName[:idx]) + normalizedName[idx:]
 	}
 	constName := phpv.ZString(normalizedName)
-	z, ok := ctx.Global().ConstantGet(constName)
-	if ok {
-		// Check #[\Deprecated] on the constant
-		if err := checkConstantDeprecated(ctx, constName, r.l); err != nil {
+	if z, ok := ctx.Global().ConstantGet(constName); ok {
+		if err := checkConstantDeprecated(ctx, constName, l); err != nil {
 			return nil, err
 		}
 		return z.ZVal(), nil
 	}
 
-	// Namespace fallback: if Foo\BAR is not found, try BAR (global)
-	// Skip fallback for explicitly qualified names (namespace\FOO or \Foo\BAR)
-	if isQualified && !r.noFallback {
-		shortName := phpv.ZString(short)
-		z, ok = ctx.Global().ConstantGet(shortName)
-		if ok {
-			if err := checkConstantDeprecated(ctx, shortName, r.l); err != nil {
+	if isQualified && !noFallback {
+		shortZ := phpv.ZString(short)
+		if z, ok := ctx.Global().ConstantGet(shortZ); ok {
+			if err := checkConstantDeprecated(ctx, shortZ, l); err != nil {
 				return nil, err
 			}
 			return z.ZVal(), nil
 		}
-		// For qualified names, fall back to built-in constants after lookup
 		switch strings.ToLower(short) {
 		case "null":
 			return phpv.ZNull{}.ZVal(), nil
@@ -87,8 +88,7 @@ func (r *runConstant) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 		}
 	}
 
-	// PHP 8: using an undefined constant is a fatal Error
-	return nil, phpobj.ThrowErrorAt(ctx, phpobj.Error, fmt.Sprintf("Undefined constant \"%s\"", r.c), r.l)
+	return nil, phpobj.ThrowErrorAt(ctx, phpobj.Error, fmt.Sprintf("Undefined constant \"%s\"", name), l)
 }
 
 // builtinDeprecatedConstants maps constant names to their deprecation message.

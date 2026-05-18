@@ -1163,6 +1163,19 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 				return nil, false, err
 			}
 
+		// --- runConstant — user / namespaced / built-in constant ----
+		case OpLoadConstantByName:
+			name, ok := f.fn.Consts[ins.A()].(phpv.ZString)
+			if !ok {
+				return nil, false, fmt.Errorf("vm: OP_LOAD_CONSTANT_BY_NAME name const is %T not ZString", f.fn.Consts[ins.A()])
+			}
+			noFallback := ins.B()&1 != 0
+			res, err := compiler.LookupConstant(ctx, string(name), noFallback, f.fn.LocAt(f.pc-1))
+			if err != nil {
+				return nil, false, err
+			}
+			f.push(res)
+
 		// --- `unset($localVar)` ------------------------------------
 		case OpUnsetLocal:
 			idx := ins.A()

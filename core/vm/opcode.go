@@ -292,6 +292,12 @@ const (
 	// inspects LastCallable for a NoDiscard attribute, emits the
 	// warning if appropriate, and restores inNoDiscardContext.
 	OpNoDiscardExit
+	// OP_LOAD_CONSTANT_BY_NAME resolves a user/namespaced/built-in
+	// constant via compiler.LookupConstant and pushes its value.
+	// Consts[A] holds the literal name (ZString); bit 0 of B is the
+	// noFallback flag (set when the name starts with `\` or was
+	// matched via use-const aliases).
+	OpLoadConstantByName
 
 	// Sentinel — keep last.
 	opLast
@@ -405,4 +411,5 @@ var opNames = [...]string{
 	OpRegisterEnum:        "REGISTER_ENUM",
 	OpNoDiscardEnter:      "NODISCARD_ENTER",
 	OpNoDiscardExit:       "NODISCARD_EXIT",
+	OpLoadConstantByName:  "LOAD_CONSTANT_BY_NAME",
 }

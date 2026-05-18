@@ -75,6 +75,22 @@ func IsVMCompiled(c phpv.Callable) bool {
 // adds zero runtime cost when unused (Go inlines + the AST executor
 // continues to read fields directly).
 
+// --- runConstant (user / namespaced constant reference) --------------
+
+// ConstantNameAndFlags returns (name, noFallback, loc) so the VM can
+// emit OP_LOAD_CONSTANT_BY_NAME without re-deriving them.
+func ConstantNameAndFlags(r phpv.Runnable) (string, bool, *phpv.Loc) {
+	t := r.(*runConstant)
+	return t.c, t.noFallback, t.l
+}
+
+// IsRunConstantNode reports whether r is a *runConstant (user-defined
+// or built-in constant reference); the VM emits OP_LOAD_CONSTANT_BY_NAME.
+func IsRunConstantNode(r phpv.Runnable) bool {
+	_, ok := r.(*runConstant)
+	return ok
+}
+
 // --- runTopLevelConst -------------------------------------------------
 
 // IsTopLevelConst reports whether r is a `const FOO = expr;` definition
