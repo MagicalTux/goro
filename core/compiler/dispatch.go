@@ -259,10 +259,13 @@ func IsSlotSafe(g phpv.GlobalContext, r phpv.Runnable) bool {
 		// targets through ctx.OffsetSet; the hashtable must be
 		// authoritative.
 		return false
-	// `#[NoDiscard]`-wrapped statements lower natively (the inner
-	// statement emits as usual, bracketed by OP_NODISCARD_ENTER /
-	// OP_NODISCARD_EXIT). The body's slot-safety follows from the
-	// inner statement's own analysis.
+	case *runNoDiscardStatement:
+		// NoDiscard-wrapped statements are AST-delegated again (the
+		// native bracket emit caused FuncContext.Loc recursion after
+		// the bug73156 + bug21478 panic-recovery path in CI). The
+		// helpers in compile-attributed.go stay available for when
+		// the error-path issue is resolved.
+		return false
 	case *runClassStaticVarRef:
 		// Class-level constant / static-prop / static-name access
 		// (`Foo::{$x}`, `$obj::CONST`, `Foo::$bar`, etc.) is
