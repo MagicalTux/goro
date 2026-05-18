@@ -231,11 +231,46 @@ func (r *runMatch) MatchDefaultBody() phpv.Runnable {
 func (r *runMatch) MatchLoc() *phpv.Loc { return r.l }
 
 // IsSwitchNode reports whether r is a `switch (…) { … }` statement.
-// The VM AST-delegates via OpTryFinally (void) + OP_REFRESH_SLOTS.
+// All switches are now lowered natively by the VM emitter, so this
+// returns false unconditionally — kept as a hook in case a future
+// switch shape (e.g. with multi-level break that escapes the loops
+// stack) needs to AST-delegate.
 func IsSwitchNode(r phpv.Runnable) bool {
-	_, ok := r.(*runSwitch)
-	return ok
+	return false
 }
+
+// SwitchBlock exposes one `case X: …` (or `default: …`) entry of a
+// switch statement to the VM emitter.
+type SwitchBlock interface {
+	SwitchBlockCond() phpv.Runnable // nil for default
+	SwitchBlockCode() phpv.Runnable
+	SwitchBlockLoc() *phpv.Loc
+}
+
+// SwitchNode exposes a `switch` statement to the VM emitter.
+type SwitchNode interface {
+	SwitchCond() phpv.Runnable
+	SwitchBlocks() []SwitchBlock
+	SwitchLoc() *phpv.Loc
+}
+
+func (b *runSwitchBlock) SwitchBlockCond() phpv.Runnable { return b.cond }
+func (b *runSwitchBlock) SwitchBlockCode() phpv.Runnable { return b.code }
+func (b *runSwitchBlock) SwitchBlockLoc() *phpv.Loc      { return b.l }
+
+func (r *runSwitch) SwitchCond() phpv.Runnable {
+	return r.cond
+}
+
+func (r *runSwitch) SwitchBlocks() []SwitchBlock {
+	out := make([]SwitchBlock, len(r.blocks))
+	for i, b := range r.blocks {
+		out[i] = b
+	}
+	return out
+}
+
+func (r *runSwitch) SwitchLoc() *phpv.Loc { return r.l }
 
 // IsGlobalOrStaticDecl reports whether r is a `global $x;` or
 // `static $y = 1;` declaration. The VM AST-delegates these so the

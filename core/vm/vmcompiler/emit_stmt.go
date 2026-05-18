@@ -1,6 +1,8 @@
 package vmcompiler
 
 import (
+	"fmt"
+
 	"github.com/KarpelesLab/goro/core/compiler"
 	"github.com/KarpelesLab/goro/core/phperr"
 	"github.com/KarpelesLab/goro/core/phpv"
@@ -91,14 +93,8 @@ func (e *emitter) emitStmt(node phpv.Runnable) error {
 	}
 	e.emit(vm.OpTick, 0, 0, 0)
 
-	// Switch is AST-delegated wholesale — break/continue inside the
-	// switch are caught by the AST, while a return propagates out
-	// via the PhpReturn error channel that OpTryFinally re-raises.
-	if compiler.IsSwitchNode(node) {
-		idx := e.astIndex(node)
-		e.emit(vm.OpTryFinally, idx, 0, 0)
-		e.emit(vm.OpRefreshSlots, 0, 0, 0)
-		return nil
+	if sn, ok := node.(compiler.SwitchNode); ok {
+		return e.emitSwitch(sn)
 	}
 
 	// `global $x;` declaration: native lowering per-entry.
@@ -460,6 +456,98 @@ func (e *emitter) emitFor(n forNode) error {
 func isSimpleLocal(r phpv.Runnable) bool {
 	_, ok := r.(variableNode)
 	return ok
+}
+
+// emitSwitch lowers `switch (cond) { case X: …; default: …; … }`.
+//
+// Layout:
+//
+//	emit cond → push
+//	STORE_LOCAL __switch_cond_N      # save cond once
+//	# Dispatch phase — for each non-default block:
+//	LOAD_LOCAL __switch_cond_N
+//	emit case_i                       # may evaluate side-effects per
+//	CMP_EQ                            # PHP's "stop at first match" order
+//	JMP_IF_TRUE L_body[i]
+//	# (next case checked similarly; falls through naturally)
+//	JMP L_default_or_break            # no match
+//	# Bodies in source order (allows fall-through):
+//	L_body[0]: emit blocks[0].code
+//	L_body[1]: emit blocks[1].code
+//	…
+//	L_break: (== loop break/continue target)
+//
+// Break and continue with depth 1 inside the switch jump to L_break.
+// Multi-level break/continue propagates to the enclosing loop via
+// the loops stack (switch counts as one level there).
+func (e *emitter) emitSwitch(n compiler.SwitchNode) error {
+	if err := e.withSubexpr(func() error { return e.emitExpr(n.SwitchCond()) }); err != nil {
+		return err
+	}
+	condName := phpv.ZString(fmt.Sprintf("__switch_cond_%d", e.nextSynthID()))
+	condIdx := e.localIndex(condName)
+	e.emit(vm.OpStoreLocal, condIdx, 0, 0)
+	e.popStack(1)
+
+	loop := e.pushLoop()
+	defer e.popLoop()
+
+	blocks := n.SwitchBlocks()
+	matchJumpPCs := make([]uint32, len(blocks))
+	defaultIdx := -1
+	for i, bl := range blocks {
+		if bl.SwitchBlockCond() == nil {
+			defaultIdx = i
+			matchJumpPCs[i] = 0xFFFFFFFF
+			continue
+		}
+		e.emit(vm.OpLoadLocal, condIdx, 0, 0)
+		e.pushStack(1)
+		if err := e.withSubexpr(func() error { return e.emitExpr(bl.SwitchBlockCond()) }); err != nil {
+			return err
+		}
+		e.emit(vm.OpCmpEq, 0, 0, 0)
+		e.popStack(1) // pops 2, pushes 1
+		matchJumpPCs[i] = e.emit(vm.OpJmpIfTrue, 0, 0, 0)
+		e.popStack(1) // bool consumed
+	}
+
+	// No-match jump: either to default body or to break target.
+	noMatchJmp := e.emit(vm.OpJmp, 0, 0, 0)
+	if defaultIdx == -1 {
+		loop.breakPCs = append(loop.breakPCs, noMatchJmp)
+	}
+
+	// Bodies in source order — fall-through is natural.
+	bodyStartPCs := make([]uint32, len(blocks))
+	for i, bl := range blocks {
+		bodyStartPCs[i] = uint32(len(e.code))
+		if err := e.emitStmt(bl.SwitchBlockCode()); err != nil {
+			return err
+		}
+	}
+
+	// Patch dispatch jumps to their respective body PCs.
+	for i, pc := range matchJumpPCs {
+		if pc == 0xFFFFFFFF {
+			continue
+		}
+		e.patchJump(pc, bodyStartPCs[i])
+	}
+	if defaultIdx >= 0 {
+		e.patchJump(noMatchJmp, bodyStartPCs[defaultIdx])
+	}
+
+	// L_break == current PC.
+	brk := uint32(len(e.code))
+	for _, pc := range loop.breakPCs {
+		e.patchJump(pc, brk)
+	}
+	// PHP: `continue` with depth 1 inside switch acts as break.
+	for _, pc := range loop.continuePCs {
+		e.patchJump(pc, brk)
+	}
+	return nil
 }
 
 func (e *emitter) emitForeach(n foreachNode) error {

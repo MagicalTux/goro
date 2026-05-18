@@ -39,6 +39,19 @@ type emitter struct {
 	// update it.
 	curStack int
 	maxStack int
+
+	// synthSeq mints unique sequence numbers for synthetic local
+	// names (e.g. __switch_cond_N) so nested switches don't share
+	// a slot.
+	synthSeq int
+}
+
+// nextSynthID returns a fresh integer for synthesising unique local
+// names in nested constructs.
+func (e *emitter) nextSynthID() int {
+	id := e.synthSeq
+	e.synthSeq++
+	return id
 }
 
 type loopCtx struct {

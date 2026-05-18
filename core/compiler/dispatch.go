@@ -251,13 +251,9 @@ func IsSlotSafe(g phpv.GlobalContext, r phpv.Runnable) bool {
 		// `new class { … }` registers the class and constructs an
 		// instance; constructor args read locals via the hashtable.
 		return false
-	case *runMatch:
-		// match (…) { … } is AST-delegated; the cond + arm bodies
-		// read caller locals through the hashtable.
-		return false
-	case *runSwitch:
-		// switch (…) { … } is AST-delegated; same reason.
-		return false
+	// match (…) { … } and switch (…) { … } are now lowered natively
+	// (`e0f1951a` and the follow-on switch lowering) so they no longer
+	// force slot-unsafe.
 	case *runDestructure:
 		// `[$a, $b] = $arr` and `list(...)` write to multiple
 		// targets through ctx.OffsetSet; the hashtable must be
