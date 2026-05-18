@@ -1166,6 +1166,17 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 				return nil, false, err
 			}
 
+		// --- `[…, …] = $rhs` / `list(…) = $rhs` destructure --------
+		case OpDestructureAssign:
+			rhs := f.pop()
+			lhs := f.fn.SubASTs[ins.A()]
+			if err := compiler.AssignDestructure(ctx, lhs, rhs); err != nil {
+				return nil, false, err
+			}
+			if ins.B()&1 != 0 {
+				f.push(rhs)
+			}
+
 		// --- `static $x = init; …` declaration --------------------
 		case OpStaticVarBind:
 			node := f.fn.SubASTs[ins.A()]

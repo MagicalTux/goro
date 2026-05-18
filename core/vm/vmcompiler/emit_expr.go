@@ -780,10 +780,34 @@ func (e *emitter) emitAssign(n operatorNode) error {
 		return e.emitAssignViaAST(n)
 	}
 	if compiler.IsDestructureTarget(n.OperatorA()) {
-		// `[$a, $b] = $arr` / `list($a, $b) = $arr`: AST handles
-		// the recursive destructure including nested lists and
-		// keyed entries.
-		return e.emitAssignViaAST(n)
+		// `[$a, $b] = $arr` / `list($a, $b) = $arr`: emit the RHS
+		// natively, then OP_DESTRUCTURE_ASSIGN runs the shared
+		// AssignDestructure helper (which fans out via the AST node's
+		// WriteValue — recursive, keyed, ArrayAccess-aware).
+		stmtCtx := e.stmtCtx
+		if err := e.withSubexpr(func() error { return e.emitExpr(n.OperatorB()) }); err != nil {
+			return err
+		}
+		lhs, ok := n.OperatorA().(phpv.Runnable)
+		if !ok {
+			return unsupportedf("destructure LHS not a Runnable: %T", n.OperatorA())
+		}
+		idx := e.astIndex(lhs)
+		// In stmt context, drop the value after the assign; in expr
+		// context, keep the value (the assignment expression evaluates
+		// to the assigned RHS).
+		var flags uint16
+		if !stmtCtx {
+			flags |= 1
+		}
+		e.emit(vm.OpDestructureAssign, idx, flags, 0)
+		if stmtCtx {
+			e.popStack(1) // RHS consumed, nothing pushed
+		}
+		// AST WriteValue may write through ctx.OffsetSet for each target;
+		// refresh slots so subsequent slot reads see the new locals.
+		e.emit(vm.OpRefreshSlots, 0, 0, 0)
+		return nil
 	}
 	if compiler.IsVariableRef(n.OperatorA()) {
 		// `$$name = …` — AST handles the dynamic name resolution.
