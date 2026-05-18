@@ -186,11 +186,12 @@ func (e *emitter) emitStmt(node phpv.Runnable) error {
 		return nil
 	}
 
-	// Statement-shaped delegations (enum register).
-	if compiler.IsStmtAstDelegated(node) {
+	// `enum Foo { … }` declaration: native dispatch via OP_REGISTER_ENUM.
+	// The shared compiler.RegisterEnum helper handles class registration,
+	// pre/post-compile validation, and Compile() in one go.
+	if compiler.IsEnumRegisterNode(node) {
 		idx := e.astIndex(node)
-		e.emit(vm.OpTryFinally, idx, 0, 0)
-		e.emit(vm.OpRefreshSlots, 0, 0, 0)
+		e.emit(vm.OpRegisterEnum, idx, 0, 0)
 		return nil
 	}
 

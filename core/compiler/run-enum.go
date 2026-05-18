@@ -99,36 +99,30 @@ func (r *runEnumRegister) Dump(w io.Writer) error {
 func (r *runEnumRegister) IsCompoundDump() {}
 
 func (r *runEnumRegister) Run(ctx phpv.Context) (*phpv.ZVal, error) {
+	return nil, r.register(ctx)
+}
+
+// register performs the enum-specific class registration + Compile +
+// validation pipeline shared by the AST runner and the VM's
+// OP_REGISTER_ENUM dispatch.
+func (r *runEnumRegister) register(ctx phpv.Context) error {
 	c := r.class
-
-	// Register the class first
-	err := ctx.Global().RegisterClass(c.Name, c)
-	if err != nil {
-		return nil, r.enumFatalError(ctx, err.Error())
+	if err := ctx.Global().RegisterClass(c.Name, c); err != nil {
+		return r.enumFatalError(ctx, err.Error())
 	}
-
-	// Do enum-specific pre-validation before Compile runs.
-	// This ensures enum-specific error messages are emitted instead of generic
-	// "Class X ..." messages from zclass.go's Compile method.
 	if err := r.preCompileValidation(ctx); err != nil {
 		ctx.Global().UnregisterClass(c.Name)
-		return nil, err
+		return err
 	}
-
-	// Run the standard Compile
-	err = c.Compile(ctx)
-	if err != nil {
+	if err := c.Compile(ctx); err != nil {
 		ctx.Global().UnregisterClass(c.Name)
-		return nil, err
+		return err
 	}
-
-	// Post-compile validation for enum-specific rules that need resolved interfaces
 	if err := r.postCompileValidation(ctx); err != nil {
 		ctx.Global().UnregisterClass(c.Name)
-		return nil, err
+		return err
 	}
-
-	return nil, nil
+	return nil
 }
 
 // preCompileValidation performs enum-specific checks before the generic Compile.

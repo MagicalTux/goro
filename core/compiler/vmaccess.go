@@ -606,12 +606,27 @@ func NewObjectMethodIterator(ctx phpv.Context, obj any) phpv.ZIterator {
 
 // IsStmtAstDelegated reports whether r is a statement-shaped node
 // the VM AST-delegates wholesale via OpTryFinally + OP_REFRESH_SLOTS.
+// All statement-shaped delegations are now lowered natively; this
+// returns false unconditionally.
 func IsStmtAstDelegated(r phpv.Runnable) bool {
-	switch r.(type) {
-	case *runEnumRegister:
-		return true
-	}
 	return false
+}
+
+// IsEnumRegisterNode reports whether r is a `runEnumRegister`
+// (enum declaration). The VM emits a single OP_REGISTER_ENUM which
+// invokes the AST node's full registration + validation flow via
+// the shared RegisterEnum helper.
+func IsEnumRegisterNode(r phpv.Runnable) bool {
+	_, ok := r.(*runEnumRegister)
+	return ok
+}
+
+// RegisterEnum runs the enum-specific registration + Compile +
+// post-validation dance for a *runEnumRegister AST node. Both the
+// AST runner and the VM (OP_REGISTER_ENUM) call this.
+func RegisterEnum(ctx phpv.Context, r phpv.Runnable) error {
+	t := r.(*runEnumRegister)
+	return t.register(ctx)
 }
 
 // UnwrapParens peels a `(expr)` wrapper from r. Returns r unchanged

@@ -278,6 +278,11 @@ const (
 	// throws an UnhandledMatchError formatted with the value. Used at
 	// the no-default fall-through of a native `match (…)` lowering.
 	OpThrowUnhandledMatch
+	// OP_REGISTER_ENUM runs the enum-specific registration + Compile
+	// + validation flow on SubASTs[A] (the *runEnumRegister node) via
+	// compiler.RegisterEnum. Used by the native `enum Foo { … }`
+	// statement emit.
+	OpRegisterEnum
 
 	// Sentinel — keep last.
 	opLast
@@ -388,4 +393,5 @@ var opNames = [...]string{
 	OpEmptyLocal:          "EMPTY_LOCAL",
 	OpUnsetLocal:          "UNSET_LOCAL",
 	OpThrowUnhandledMatch: "THROW_UNHANDLED_MATCH",
+	OpRegisterEnum:        "REGISTER_ENUM",
 }

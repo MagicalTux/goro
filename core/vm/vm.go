@@ -1140,6 +1140,13 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 			cond := f.pop()
 			return nil, false, compiler.ThrowUnhandledMatch(ctx, cond)
 
+		// --- enum declaration registration --------------------------
+		case OpRegisterEnum:
+			node := f.fn.SubASTs[ins.A()]
+			if err := compiler.RegisterEnum(ctx, node); err != nil {
+				return nil, false, err
+			}
+
 		// --- `unset($localVar)` ------------------------------------
 		case OpUnsetLocal:
 			idx := ins.A()
