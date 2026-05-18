@@ -1350,11 +1350,19 @@ func OperatorMathLogic(ctx phpv.Context, op tokenizer.ItemType, a, b *phpv.ZVal)
 	switch a.Value().GetType() {
 	case phpv.ZtBool, phpv.ZtNull:
 		// Boolean and null values should be converted to int for bitwise ops
-		a, _ = a.As(ctx, phpv.ZtInt)
-		b, _ = b.As(ctx, phpv.ZtInt)
+		var err error
+		if a, err = a.As(ctx, phpv.ZtInt); err != nil {
+			return nil, err
+		}
+		if b, err = b.As(ctx, phpv.ZtInt); err != nil {
+			return nil, err
+		}
 		return OperatorMathLogic(ctx, op, a, b)
 	case phpv.ZtInt:
-		b, _ = b.As(ctx, phpv.ZtInt)
+		var err error
+		if b, err = b.As(ctx, phpv.ZtInt); err != nil {
+			return nil, err
+		}
 		var res phpv.ZInt
 		switch op {
 		case tokenizer.Rune('|'), tokenizer.T_OR_EQUAL:
