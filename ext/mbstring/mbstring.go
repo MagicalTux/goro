@@ -603,10 +603,22 @@ func fncMbConvertEncoding(ctx phpv.Context, args []*phpv.ZVal) (*phpv.ZVal, erro
 }
 
 func mbConvertEncodingArray(ctx phpv.Context, arr *phpv.ZVal, toEnc string, fromEncodings []string) (*phpv.ZVal, error) {
+	return mbConvertEncodingArrayVisited(ctx, arr, toEnc, fromEncodings, nil)
+}
+
+func mbConvertEncodingArrayVisited(ctx phpv.Context, arr *phpv.ZVal, toEnc string, fromEncodings []string, visited map[*phpv.ZArray]bool) (*phpv.ZVal, error) {
 	a, ok := arr.Value().(*phpv.ZArray)
 	if !ok {
 		return phpv.ZBool(false).ZVal(), nil
 	}
+	if visited[a] {
+		// Cyclic array — return it as-is to break the recursion.
+		return arr, nil
+	}
+	if visited == nil {
+		visited = make(map[*phpv.ZArray]bool)
+	}
+	visited[a] = true
 	result := phpv.NewZArray()
 	for k, v := range a.Iterate(ctx) {
 		if v.GetType() == phpv.ZtString {
@@ -620,7 +632,7 @@ func mbConvertEncodingArray(ctx phpv.Context, arr *phpv.ZVal, toEnc string, from
 			}
 			result.OffsetSet(ctx, k, phpv.ZString(converted).ZVal())
 		} else if v.GetType() == phpv.ZtArray {
-			sub, err := mbConvertEncodingArray(ctx, v, toEnc, fromEncodings)
+			sub, err := mbConvertEncodingArrayVisited(ctx, v, toEnc, fromEncodings, visited)
 			if err != nil {
 				return nil, err
 			}

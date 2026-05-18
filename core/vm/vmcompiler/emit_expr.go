@@ -303,11 +303,16 @@ func (e *emitter) emitConstant(n constantNode) error {
 	if !ok {
 		return unsupportedf("user-defined constant %q: cannot retrieve raw Runnable", n.ConstantName())
 	}
-	cName, noFallback, _ := compiler.ConstantNameAndFlags(raw)
+	cName, noFallback, cLoc := compiler.ConstantNameAndFlags(raw)
 	idx := e.constIndex(phpv.ZString(cName))
 	var bFlags uint16
 	if noFallback {
 		bFlags |= 1
+	}
+	// Record the constant's own source location so an "Undefined
+	// constant" Error reports the exact line (LocAt(pc) reads this).
+	if cLoc != nil {
+		e.recordLoc(cLoc)
 	}
 	e.emit(vm.OpLoadConstantByName, idx, bFlags, 0)
 	e.pushStack(1)

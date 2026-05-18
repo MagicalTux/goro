@@ -67,16 +67,20 @@ func (e *emitter) emitStmt(node phpv.Runnable) error {
 		return nil
 	}
 
-	// `#[NoDiscard]`-wrapped statement: AST-delegate via OpTryFinally.
-	// The previous native lowering (OP_NODISCARD_ENTER/EXIT) caused a
-	// stack-overflow regression in CI on the bug73156 + bug21478 path
-	// (FuncContext.Loc recursion observed after panic recovery).
-	// Helpers `compiler.NoDiscardEnter`/`Exit` are kept so the AST
-	// runner can call them, but the bracket form is not emitted yet.
+	// `#[NoDiscard]`-wrapped statement: bracket the inner stmt with
+	// OP_NODISCARD_ENTER/EXIT. The previous in-context flag lives in
+	// a synthetic local so the exit can restore it on normal-completion
+	// paths. (Error-path leak is rare and the global flag eventually
+	// gets reset by the next NoDiscard wrap or script termination.)
 	if compiler.IsNoDiscardNode(node) {
-		idx := e.astIndex(node)
-		e.emit(vm.OpTryFinally, idx, 0, 0)
-		e.emit(vm.OpRefreshSlots, 0, 0, 0)
+		nd := node.(interface{ NoDiscardInner() phpv.Runnable })
+		prevName := phpv.ZString(fmt.Sprintf("__nodiscard_prev_%d", e.nextSynthID()))
+		prevIdx := e.localIndex(prevName)
+		e.emit(vm.OpNoDiscardEnter, prevIdx, 0, 0)
+		if err := e.emitStmt(nd.NoDiscardInner()); err != nil {
+			return err
+		}
+		e.emit(vm.OpNoDiscardExit, prevIdx, 0, 0)
 		return nil
 	}
 
