@@ -52,8 +52,9 @@ func (f *UserFilter) Process(data []byte, closing bool) ([]byte, error) {
 	outBrigade := NewBucketBrigade()
 	outBrigade.SetCtx(ctx)
 
-	// Create consumed reference
-	consumed := phpv.ZInt(0).ZVal()
+	// Create consumed reference — use NewZVal so we get a fresh, non-
+	// cached ZVal wrapper (ZInt(0).ZVal() returns a singleton).
+	consumed := phpv.NewZVal(phpv.ZInt(0))
 	consumed.MakeRef()
 
 	// Set the stream property on the filter object (if the property exists and is appropriate)

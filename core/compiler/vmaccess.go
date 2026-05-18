@@ -348,10 +348,20 @@ func IsGlobalOrStaticDecl(r phpv.Runnable) bool {
 }
 
 // IsDestructureTarget reports whether r is a `list(…)` or `[…]`
-// destructuring LHS. The VM AST-delegates these writes.
+// destructuring LHS. The VM emits OP_DESTRUCTURE_ASSIGN natively for
+// these writes — the AST's runDestructure.WriteValue is reused as a
+// helper to handle the recursive nested-list / keyed-entry dance.
 func IsDestructureTarget(r phpv.Runnable) bool {
 	_, ok := r.(*runDestructure)
 	return ok
+}
+
+// AssignDestructure writes a value into a `list(…)` / `[…]` LHS,
+// running the recursive nested-entry expansion that
+// runDestructure.WriteValue implements. Shared by the AST runner
+// and the VM's OP_DESTRUCTURE_ASSIGN.
+func AssignDestructure(ctx phpv.Context, lhs phpv.Runnable, value *phpv.ZVal) error {
+	return lhs.(*runDestructure).WriteValue(ctx, value)
 }
 
 // IsVariableRef reports whether r is a `$$name` / `${$expr}` variable-

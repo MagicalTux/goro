@@ -1148,12 +1148,15 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 			}
 
 		// --- `#[NoDiscard]`-wrapped statement bracket ---------------
+		// The prev flag lives only in the slot — never mirrored to the
+		// FuncContext hashtable since the synthetic local name
+		// `__nodiscard_prev_N` shouldn't be visible to user code (and
+		// the hashtable mirror was contributing to a Tick/Loc recursion
+		// observed when the panic-recovery path on bug21478 left a
+		// FuncContext in a partially-released state).
 		case OpNoDiscardEnter:
 			prev := compiler.NoDiscardEnter(ctx)
 			f.locals[ins.A()] = phpv.ZBool(prev).ZVal()
-			if !f.fn.SlotOnly {
-				ctx.OffsetSet(ctx, f.fn.Locals[ins.A()], f.locals[ins.A()])
-			}
 		case OpNoDiscardExit:
 			prev := false
 			if v := f.locals[ins.A()]; v != nil {

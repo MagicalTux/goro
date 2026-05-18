@@ -316,6 +316,13 @@ const (
 	// global), stashes the cell on the AST node, and installs the
 	// cell as the current scope's local for $x.
 	OpStaticVarBind
+	// OP_DESTRUCTURE_ASSIGN pops the RHS value and writes it into the
+	// `list(…)` / `[…]` LHS at SubASTs[A] via compiler.AssignDestructure,
+	// which handles nested destructure entries, keyed entries, and
+	// ArrayAccess-object sources. The RHS value is also pushed back
+	// (so the assignment expression can produce a value in non-stmt
+	// context) when B's bit 0 is set.
+	OpDestructureAssign
 
 	// Sentinel — keep last.
 	opLast
