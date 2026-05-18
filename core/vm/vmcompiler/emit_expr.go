@@ -91,13 +91,8 @@ func (e *emitter) emitExpr(node phpv.Runnable) error {
 		e.pushStack(1)
 		return nil
 	}
-	if compiler.IsMatchNode(node) {
-		// `match (…) { … }` — AST evaluates the strict comparisons
-		// and runs the matched arm; push its result.
-		idx := e.astIndex(node)
-		e.emit(vm.OpClassConst, idx, 0, 0)
-		e.pushStack(1)
-		return nil
+	if mn, ok := node.(compiler.MatchNode); ok {
+		return e.emitMatch(mn)
 	}
 	if compiler.IsVariableRef(node) {
 		// `$$name` / `${$expr}` read — AST resolves the dynamic
@@ -1041,6 +1036,102 @@ func binaryOpcode(op tokenizer.ItemType) (vm.Op, bool) {
 		return vm.OpCmpSpaceship, true
 	}
 	return 0, false
+}
+
+// emitMatch lowers `match (…) { … }` as a value-producing expression.
+//
+// Layout:
+//
+//	push cond                # [cond]
+//	for each arm:
+//	  for each case:
+//	    DUP                  # [cond, cond]
+//	    push case            # [cond, cond, c]
+//	    CMP_ID               # [cond, bool]
+//	    JMP_IF_TRUE arm_body # consumes bool → [cond]
+//	# no arm matched:
+//	if default:
+//	  POP cond               # []
+//	  emit default body      # [result]
+//	  JMP end
+//	else:
+//	  OP_THROW_UNHANDLED_MATCH # pops cond, throws
+//	# (each arm body)
+//	arm_body_i:
+//	  POP cond               # []
+//	  emit body              # [result]
+//	  JMP end
+//	end:
+//
+// Branches are mutually exclusive at runtime — each leaves a single
+// value on the stack.
+func (e *emitter) emitMatch(n compiler.MatchNode) error {
+	if err := e.withSubexpr(func() error { return e.emitExpr(n.MatchCond()) }); err != nil {
+		return err
+	}
+	// cond sits on top of stack throughout the dispatch chain.
+
+	arms := n.MatchArms()
+	armBodyJumps := make([]uint32, len(arms))
+	for i := range armBodyJumps {
+		armBodyJumps[i] = 0xFFFFFFFF // patched as we discover the body PC
+	}
+	armPatchTargets := make([][]uint32, len(arms))
+
+	for i, arm := range arms {
+		for _, c := range arm.MatchArmConditions() {
+			e.emit(vm.OpDup, 0, 0, 0)
+			e.pushStack(1)
+			if err := e.withSubexpr(func() error { return e.emitExpr(c) }); err != nil {
+				return err
+			}
+			e.emit(vm.OpCmpId, 0, 0, 0)
+			e.popStack(1) // pops 2 (cond_dup + c), pushes 1 (bool)
+			j := e.emit(vm.OpJmpIfTrue, 0, 0, 0)
+			e.popStack(1) // consumes bool
+			armPatchTargets[i] = append(armPatchTargets[i], j)
+		}
+	}
+
+	// All arms exhausted; stack still has [cond].
+	endJumps := []uint32{}
+	if def := n.MatchDefaultBody(); def != nil {
+		e.emit(vm.OpPop, 0, 0, 0)
+		e.popStack(1)
+		if err := e.withSubexpr(func() error { return e.emitExpr(def) }); err != nil {
+			return err
+		}
+		endJumps = append(endJumps, e.emit(vm.OpJmp, 0, 0, 0))
+		e.popStack(1) // remove the default-body result from the simulated stack so arm bodies start clean
+	} else {
+		e.emit(vm.OpThrowUnhandledMatch, 0, 0, 0)
+		e.popStack(1) // throw consumes cond
+	}
+
+	// Each arm body: jump targets patched to here.
+	for i, arm := range arms {
+		armPC := uint32(len(e.code))
+		for _, p := range armPatchTargets[i] {
+			e.patchJump(p, armPC)
+		}
+		// Stack at entry: [cond].
+		e.pushStack(1) // restore simulated stack for arm body entry
+		e.emit(vm.OpPop, 0, 0, 0)
+		e.popStack(1)
+		if err := e.withSubexpr(func() error { return e.emitExpr(arm.MatchArmBody()) }); err != nil {
+			return err
+		}
+		endJumps = append(endJumps, e.emit(vm.OpJmp, 0, 0, 0))
+		e.popStack(1) // remove arm result so next iteration starts clean
+	}
+
+	end := uint32(len(e.code))
+	for _, j := range endJumps {
+		e.patchJump(j, end)
+	}
+	// One value lands on the stack at runtime, regardless of branch.
+	e.pushStack(1)
+	return nil
 }
 
 // emitTernary lowers `cond ? a : b` (and `cond ?: alt`) as a value-

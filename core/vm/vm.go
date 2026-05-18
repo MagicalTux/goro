@@ -1135,6 +1135,11 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 			empty := compiler.IsValueEmpty(ctx, v)
 			f.push(phpv.ZBool(empty).ZVal())
 
+		// --- `match` no-arm-matched fall-through --------------------
+		case OpThrowUnhandledMatch:
+			cond := f.pop()
+			return nil, false, compiler.ThrowUnhandledMatch(ctx, cond)
+
 		// --- `unset($localVar)` ------------------------------------
 		case OpUnsetLocal:
 			idx := ins.A()

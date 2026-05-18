@@ -183,11 +183,52 @@ func IsAnonymousClassNode(r phpv.Runnable) bool {
 }
 
 // IsMatchNode reports whether r is a `match (…) { … }` expression.
-// The VM AST-delegates these via OpClassConst (push result).
+// All matches are now lowered natively by the VM emitter, so this
+// returns false unconditionally — kept as a hook in case a future
+// match shape (e.g. exhaustive match on enum) needs to AST-delegate.
 func IsMatchNode(r phpv.Runnable) bool {
-	_, ok := r.(*runMatch)
-	return ok
+	return false
 }
+
+// MatchArm exposes one arm of a `match (…) { … }` expression to the
+// VM emitter: a list of strict-compare candidate values and the body
+// expression to evaluate on a match.
+type MatchArm interface {
+	MatchArmConditions() []phpv.Runnable
+	MatchArmBody() phpv.Runnable
+}
+
+// MatchNode exposes a `match` expression to the VM emitter.
+type MatchNode interface {
+	MatchCond() phpv.Runnable
+	MatchArms() []MatchArm
+	MatchDefaultBody() phpv.Runnable // nil if no default arm
+	MatchLoc() *phpv.Loc
+}
+
+func (m *matchArm) MatchArmConditions() []phpv.Runnable { return m.conditions }
+func (m *matchArm) MatchArmBody() phpv.Runnable         { return m.body }
+
+func (r *runMatch) MatchCond() phpv.Runnable {
+	return r.cond
+}
+
+func (r *runMatch) MatchArms() []MatchArm {
+	out := make([]MatchArm, len(r.arms))
+	for i, a := range r.arms {
+		out[i] = a
+	}
+	return out
+}
+
+func (r *runMatch) MatchDefaultBody() phpv.Runnable {
+	if r.def == nil {
+		return nil
+	}
+	return r.def.body
+}
+
+func (r *runMatch) MatchLoc() *phpv.Loc { return r.l }
 
 // IsSwitchNode reports whether r is a `switch (…) { … }` statement.
 // The VM AST-delegates via OpTryFinally (void) + OP_REFRESH_SLOTS.

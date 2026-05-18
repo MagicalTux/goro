@@ -274,6 +274,10 @@ const (
 	// so external observers see the removal. Used by the simple form
 	// of `unset($x)`.
 	OpUnsetLocal
+	// OP_THROW_UNHANDLED_MATCH pops the match condition value and
+	// throws an UnhandledMatchError formatted with the value. Used at
+	// the no-default fall-through of a native `match (…)` lowering.
+	OpThrowUnhandledMatch
 
 	// Sentinel — keep last.
 	opLast
@@ -383,4 +387,5 @@ var opNames = [...]string{
 	OpIssetLocal:          "ISSET_LOCAL",
 	OpEmptyLocal:          "EMPTY_LOCAL",
 	OpUnsetLocal:          "UNSET_LOCAL",
+	OpThrowUnhandledMatch: "THROW_UNHANDLED_MATCH",
 }

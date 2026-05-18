@@ -66,9 +66,15 @@ func (r *runMatch) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	}
 
 	// No match and no default → UnhandledMatchError
-	condStr := formatUnhandledMatchValue(ctx, cond)
-	return nil, phpobj.ThrowError(ctx, phpobj.UnhandledMatchError,
-		fmt.Sprintf("Unhandled match case %s", condStr))
+	return nil, ThrowUnhandledMatch(ctx, cond)
+}
+
+// ThrowUnhandledMatch builds and returns the UnhandledMatchError for
+// a match expression with no matching arm and no default. Used by
+// both the AST runner and the VM's OP_THROW_UNHANDLED_MATCH.
+func ThrowUnhandledMatch(ctx phpv.Context, cond *phpv.ZVal) error {
+	return phpobj.ThrowError(ctx, phpobj.UnhandledMatchError,
+		fmt.Sprintf("Unhandled match case %s", formatUnhandledMatchValue(ctx, cond)))
 }
 
 // formatUnhandledMatchValue formats a value for the UnhandledMatchError message,
