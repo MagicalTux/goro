@@ -567,6 +567,59 @@ func IsIssetOrEmptyNode(r phpv.Runnable) bool {
 	return false
 }
 
+// IssetArgs returns the argument expressions of `isset(…)`. The VM
+// uses this to decide between native emit (all args are simple
+// variables) and AST delegation.
+func IssetArgs(r phpv.Runnable) []phpv.Runnable {
+	t, ok := r.(*runnableIsset)
+	if !ok {
+		return nil
+	}
+	return []phpv.Runnable(t.args)
+}
+
+// EmptyArg returns the single argument expression of `empty(…)`.
+func EmptyArg(r phpv.Runnable) phpv.Runnable {
+	t, ok := r.(*runnableEmpty)
+	if !ok {
+		return nil
+	}
+	return t.arg
+}
+
+// IsSimpleVariable reports whether r is a plain `$name` reference
+// (no array access, no object dereference, no var-var). The VM uses
+// this to decide whether an isset/empty argument can be lowered to a
+// slot read.
+func IsSimpleVariable(r phpv.Runnable) bool {
+	_, ok := r.(*runVariable)
+	return ok
+}
+
+// IssetEmptyAllSimple reports whether the given isset/empty node has
+// only simple-variable arguments — the form the VM lowers natively
+// via OP_ISSET_LOCAL / OP_EMPTY_LOCAL.
+func IssetEmptyAllSimple(r phpv.Runnable) bool {
+	switch t := r.(type) {
+	case *runnableIsset:
+		for _, a := range t.args {
+			if !IsSimpleVariable(a) {
+				return false
+			}
+		}
+		return true
+	case *runnableEmpty:
+		return IsSimpleVariable(t.arg)
+	}
+	return false
+}
+
+// SimpleVariableName returns the name of a plain `$name` reference.
+// Caller must verify the runnable is a simple variable first.
+func SimpleVariableName(r phpv.Runnable) phpv.ZString {
+	return r.(*runVariable).v
+}
+
 // --- runConcat (string interpolation) ---------------------------------
 
 // ConcatParts returns the list of expressions concatenated to form

@@ -73,7 +73,11 @@ func (e *emitter) emitExpr(node phpv.Runnable) error {
 		return nil
 	}
 	if compiler.IsIssetOrEmptyNode(node) {
-		// isset(…) / empty(…) — pure read, push result.
+		// All-simple-local isset/empty lowers natively. Complex forms
+		// (array access, object prop, dyn names, …) keep the AST path.
+		if compiler.IssetEmptyAllSimple(node) {
+			return e.emitIssetEmptySimple(node)
+		}
 		idx := e.astIndex(node)
 		e.emit(vm.OpClassConst, idx, 0, 0)
 		e.pushStack(1)
@@ -899,6 +903,47 @@ func (e *emitter) emitCoalesce(n operatorNode) error {
 
 	// End label.
 	e.patchJump(jpc, uint32(len(e.code)))
+	return nil
+}
+
+// emitIssetEmptySimple emits the all-simple-local form of isset(…)
+// or empty(…). For empty(), there's exactly one arg → one
+// OP_EMPTY_LOCAL. For isset(), each arg becomes an OP_ISSET_LOCAL
+// joined by short-circuit jumps: the first false short-circuits to
+// the end with `false` on the stack.
+func (e *emitter) emitIssetEmptySimple(node phpv.Runnable) error {
+	if arg := compiler.EmptyArg(node); arg != nil {
+		idx := e.localIndex(compiler.SimpleVariableName(arg))
+		e.emit(vm.OpEmptyLocal, idx, 0, 0)
+		e.pushStack(1)
+		return nil
+	}
+	args := compiler.IssetArgs(node)
+	// `isset()` with no args is a parse error in PHP — defensive: push true.
+	if len(args) == 0 {
+		e.emit(vm.OpLoadTrue, 0, 0, 0)
+		e.pushStack(1)
+		return nil
+	}
+	// Emit each arg's OP_ISSET_LOCAL; short-circuit on first false.
+	jumps := make([]uint32, 0, len(args)-1)
+	for i, a := range args {
+		idx := e.localIndex(compiler.SimpleVariableName(a))
+		e.emit(vm.OpIssetLocal, idx, 0, 0)
+		e.pushStack(1)
+		if i == len(args)-1 {
+			break
+		}
+		// Peek-jump: keep false on stack and jump to end.
+		jumps = append(jumps, e.emit(vm.OpJmpIfFalsePeek, 0, 0, 0))
+		// Otherwise drop the true and continue with next arg.
+		e.emit(vm.OpPop, 0, 0, 0)
+		e.popStack(1)
+	}
+	end := uint32(len(e.code))
+	for _, j := range jumps {
+		e.patchJump(j, end)
+	}
 	return nil
 }
 

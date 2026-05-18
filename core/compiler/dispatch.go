@@ -318,8 +318,13 @@ func IsSlotSafe(g phpv.GlobalContext, r phpv.Runnable) bool {
 		// hashtable must be the source of truth.
 		return false
 	case *runnableIsset, *runnableEmpty:
-		// isset()/empty() read through the hashtable.
-		return false
+		// All-simple-local isset/empty is now lowered natively
+		// (OP_ISSET_LOCAL / OP_EMPTY_LOCAL). Only the complex forms
+		// (array-access, object-prop, dyn-name, etc.) still
+		// AST-delegate and need the hashtable populated.
+		if !IssetEmptyAllSimple(r) {
+			return false
+		}
 	case *ZClosure:
 		// A *named* ZClosure at expression level is a function
 		// declaration that registers a global symbol; functions

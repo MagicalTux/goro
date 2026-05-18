@@ -262,6 +262,13 @@ const (
 	// its contents into the in-progress array on top of stack via
 	// compiler.SpreadIntoArray. Used by `[…, ...$expr, …]` literals.
 	OpArraySpreadAppend
+	// OP_ISSET_LOCAL pushes a bool: the local at slot A is set (non-nil
+	// and non-null). The simple `isset($x)` form; multi-arg isset is
+	// emitted as a short-circuit chain of these opcodes.
+	OpIssetLocal
+	// OP_EMPTY_LOCAL pushes a bool: the local at slot A is empty per
+	// PHP's `empty(…)` rules (unset, null, false, 0, "", "0", []).
+	OpEmptyLocal
 
 	// Sentinel — keep last.
 	opLast
@@ -368,4 +375,6 @@ var opNames = [...]string{
 	OpCallTickFunctions:   "CALL_TICK_FUNCTIONS",
 	OpDefineConst:         "DEFINE_CONST",
 	OpArraySpreadAppend:   "ARRAY_SPREAD_APPEND",
+	OpIssetLocal:          "ISSET_LOCAL",
+	OpEmptyLocal:          "EMPTY_LOCAL",
 }

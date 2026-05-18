@@ -84,7 +84,7 @@ func compileEmpty(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	return &runnableEmpty{arg: args[0], l: i.Loc()}, nil
 }
 
-func isValueEmpty(ctx phpv.Context, v *phpv.ZVal) bool {
+func IsValueEmpty(ctx phpv.Context, v *phpv.ZVal) bool {
 	if v == nil {
 		return true
 	}
@@ -119,7 +119,7 @@ func checkEmpty(ctx phpv.Context, v phpv.Runnable) (bool, error) {
 		if err != nil {
 			return true, nil
 		}
-		return isValueEmpty(ctx, val), nil
+		return IsValueEmpty(ctx, val), nil
 
 	case *runArrayAccess:
 		// Check if the container exists first (suppress warnings for undefined props)
@@ -164,7 +164,7 @@ func checkEmpty(ctx phpv.Context, v phpv.Runnable) (bool, error) {
 						if err != nil {
 							return true, nil
 						}
-						return isValueEmpty(ctx, val), nil
+						return IsValueEmpty(ctx, val), nil
 					}
 				}
 				exists, err := obj.OffsetExists(ctx, key)
@@ -178,7 +178,7 @@ func checkEmpty(ctx phpv.Context, v phpv.Runnable) (bool, error) {
 				if err != nil {
 					return true, nil
 				}
-				return isValueEmpty(ctx, val), nil
+				return IsValueEmpty(ctx, val), nil
 			}
 		}
 
@@ -257,7 +257,7 @@ func checkEmpty(ctx phpv.Context, v phpv.Runnable) (bool, error) {
 		if err != nil {
 			return true, nil
 		}
-		return isValueEmpty(ctx, val), nil
+		return IsValueEmpty(ctx, val), nil
 
 	case *runObjectVar:
 		// For object property access
@@ -286,7 +286,7 @@ func checkEmpty(ctx phpv.Context, v phpv.Runnable) (bool, error) {
 		if err != nil {
 			return true, nil
 		}
-		return isValueEmpty(ctx, val), nil
+		return IsValueEmpty(ctx, val), nil
 
 	case *runObjectDynVar:
 		// For dynamic object property access: $obj->{expr}
@@ -311,7 +311,7 @@ func checkEmpty(ctx phpv.Context, v phpv.Runnable) (bool, error) {
 		if err != nil {
 			return true, nil
 		}
-		return isValueEmpty(ctx, val), nil
+		return IsValueEmpty(ctx, val), nil
 
 	default:
 		// For any other expression, just evaluate and check
@@ -319,7 +319,7 @@ func checkEmpty(ctx phpv.Context, v phpv.Runnable) (bool, error) {
 		if err != nil {
 			return true, nil
 		}
-		return isValueEmpty(ctx, val), nil
+		return IsValueEmpty(ctx, val), nil
 	}
 }
 

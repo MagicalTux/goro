@@ -1123,6 +1123,18 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 				return nil, false, err
 			}
 
+		// --- `isset($localVar)` ------------------------------------
+		case OpIssetLocal:
+			v := f.locals[ins.A()]
+			set := v != nil && !phpv.IsNull(v)
+			f.push(phpv.ZBool(set).ZVal())
+
+		// --- `empty($localVar)` ------------------------------------
+		case OpEmptyLocal:
+			v := f.locals[ins.A()]
+			empty := compiler.IsValueEmpty(ctx, v)
+			f.push(phpv.ZBool(empty).ZVal())
+
 		// --- array spread entry: `[…, ...$expr, …]` -----------------
 		case OpArraySpreadAppend:
 			v := f.pop()
