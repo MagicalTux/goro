@@ -149,6 +149,32 @@ func IsUnsetNode(r phpv.Runnable) bool {
 	return ok
 }
 
+// UnsetArgs returns the argument expressions of `unset(…)`. The VM
+// uses this to decide between native emit (all args are simple
+// variables) and AST delegation.
+func UnsetArgs(r phpv.Runnable) []phpv.Runnable {
+	t, ok := r.(*runnableUnset)
+	if !ok {
+		return nil
+	}
+	return []phpv.Runnable(t.args)
+}
+
+// UnsetAllSimple reports whether all args of an `unset(…)` are plain
+// `$name` references — the form the VM lowers natively via OP_UNSET_LOCAL.
+func UnsetAllSimple(r phpv.Runnable) bool {
+	t, ok := r.(*runnableUnset)
+	if !ok {
+		return false
+	}
+	for _, a := range t.args {
+		if !IsSimpleVariable(a) {
+			return false
+		}
+	}
+	return true
+}
+
 // IsAnonymousClassNode reports whether r is a `new class { … }`
 // instantiation. The VM AST-delegates these wholesale via OpClassConst.
 func IsAnonymousClassNode(r phpv.Runnable) bool {

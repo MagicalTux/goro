@@ -269,6 +269,11 @@ const (
 	// OP_EMPTY_LOCAL pushes a bool: the local at slot A is empty per
 	// PHP's `empty(…)` rules (unset, null, false, 0, "", "0", []).
 	OpEmptyLocal
+	// OP_UNSET_LOCAL clears the local at slot A: fires the destructor
+	// for any object value, nils out the slot, and calls OffsetUnset
+	// so external observers see the removal. Used by the simple form
+	// of `unset($x)`.
+	OpUnsetLocal
 
 	// Sentinel — keep last.
 	opLast
@@ -377,4 +382,5 @@ var opNames = [...]string{
 	OpArraySpreadAppend:   "ARRAY_SPREAD_APPEND",
 	OpIssetLocal:          "ISSET_LOCAL",
 	OpEmptyLocal:          "EMPTY_LOCAL",
+	OpUnsetLocal:          "UNSET_LOCAL",
 }

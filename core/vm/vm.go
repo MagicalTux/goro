@@ -1135,6 +1135,22 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 			empty := compiler.IsValueEmpty(ctx, v)
 			f.push(phpv.ZBool(empty).ZVal())
 
+		// --- `unset($localVar)` ------------------------------------
+		case OpUnsetLocal:
+			idx := ins.A()
+			v := f.locals[idx]
+			f.locals[idx] = nil
+			if v != nil {
+				if err := compiler.CallDestructorIfNeeded(ctx, v); err != nil {
+					return nil, false, err
+				}
+			}
+			if !f.fn.SlotOnly {
+				if err := ctx.OffsetUnset(ctx, f.fn.Locals[idx]); err != nil {
+					return nil, false, err
+				}
+			}
+
 		// --- array spread entry: `[…, ...$expr, …]` -----------------
 		case OpArraySpreadAppend:
 			v := f.pop()

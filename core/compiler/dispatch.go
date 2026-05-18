@@ -313,10 +313,13 @@ func IsSlotSafe(g phpv.GlobalContext, r phpv.Runnable) bool {
 			}
 		}
 	case *runnableUnset:
-		// unset() is AST-delegated; OffsetUnset writes the hashtable
-		// and OP_REFRESH_SLOTS picks up the deletion, so the
-		// hashtable must be the source of truth.
-		return false
+		// All-simple-local unset is now lowered natively (clears the
+		// slot directly + ctx.OffsetUnset). Only the per-target-shape
+		// forms (array access, object prop, static prop, …) still
+		// AST-delegate and need the hashtable.
+		if !UnsetAllSimple(r) {
+			return false
+		}
 	case *runnableIsset, *runnableEmpty:
 		// All-simple-local isset/empty is now lowered natively
 		// (OP_ISSET_LOCAL / OP_EMPTY_LOCAL). Only the complex forms

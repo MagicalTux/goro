@@ -47,7 +47,7 @@ func (r *runnableUnset) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 				if runErr != nil {
 					return nil, runErr
 				}
-				if err := callDestructorIfNeeded(ctx, zv); err != nil {
+				if err := CallDestructorIfNeeded(ctx, zv); err != nil {
 					return nil, err
 				}
 			}
@@ -61,16 +61,16 @@ func (r *runnableUnset) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 	return nil, nil
 }
 
-// callDestructorIfNeeded checks if a ZVal holds an object with __destruct,
+// CallDestructorIfNeeded checks if a ZVal holds an object with __destruct,
 // and if so, decrements the reference count and calls the destructor if
 // the count reaches zero. For arrays, it calls destructors for all object
 // elements that are exclusively owned by this array (not shared references).
 // Circular references in arrays are handled by a visited set.
-func callDestructorIfNeeded(ctx phpv.Context, zv *phpv.ZVal) error {
-	return callDestructorIfNeededVisited(ctx, zv, nil)
+func CallDestructorIfNeeded(ctx phpv.Context, zv *phpv.ZVal) error {
+	return CallDestructorIfNeededVisited(ctx, zv, nil)
 }
 
-func callDestructorIfNeededVisited(ctx phpv.Context, zv *phpv.ZVal, visited map[*phpv.ZArray]bool) error {
+func CallDestructorIfNeededVisited(ctx phpv.Context, zv *phpv.ZVal, visited map[*phpv.ZArray]bool) error {
 	if zv == nil {
 		return nil
 	}
@@ -105,7 +105,7 @@ func callDestructorIfNeededVisited(ctx phpv.Context, zv *phpv.ZVal, visited map[
 		visited[arr] = true
 		var pendingErr error
 		for _, elem := range arr.Iterate(ctx) {
-			err := callDestructorIfNeededVisited(ctx, elem, visited)
+			err := CallDestructorIfNeededVisited(ctx, elem, visited)
 			if err != nil {
 				if pendingErr != nil {
 					// Chain: new error becomes outer, pending becomes its previous.

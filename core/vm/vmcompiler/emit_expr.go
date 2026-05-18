@@ -157,9 +157,21 @@ func (e *emitter) emitExpr(node phpv.Runnable) error {
 		return nil
 	}
 	if compiler.IsUnsetNode(node) {
-		// unset(…) — void; statement context emits OpTryFinally and
-		// refreshes slots so any unset-of-local nulls the cache.
+		// All-simple-local unset lowers natively; complex forms keep
+		// the AST path. unset() returns nothing, so non-statement use
+		// of the AST form needs a trailing null push.
 		stmtCtx := e.stmtCtx
+		if compiler.UnsetAllSimple(node) {
+			for _, a := range compiler.UnsetArgs(node) {
+				idx := e.localIndex(compiler.SimpleVariableName(a))
+				e.emit(vm.OpUnsetLocal, idx, 0, 0)
+			}
+			if !stmtCtx {
+				e.emit(vm.OpLoadNull, 0, 0, 0)
+				e.pushStack(1)
+			}
+			return nil
+		}
 		idx := e.astIndex(node)
 		if stmtCtx {
 			e.emit(vm.OpTryFinally, idx, 0, 0)
