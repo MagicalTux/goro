@@ -283,6 +283,15 @@ const (
 	// compiler.RegisterEnum. Used by the native `enum Foo { … }`
 	// statement emit.
 	OpRegisterEnum
+	// OP_NODISCARD_ENTER clears LastCallable, sets inNoDiscardContext
+	// to true, and stores the previous value as a bool in local slot A
+	// so OP_NODISCARD_EXIT can restore it. Used by the native lowering
+	// of `#[NoDiscard]`-wrapped statements.
+	OpNoDiscardEnter
+	// OP_NODISCARD_EXIT reads the previous flag from local slot A,
+	// inspects LastCallable for a NoDiscard attribute, emits the
+	// warning if appropriate, and restores inNoDiscardContext.
+	OpNoDiscardExit
 
 	// Sentinel — keep last.
 	opLast
@@ -394,4 +403,6 @@ var opNames = [...]string{
 	OpUnsetLocal:          "UNSET_LOCAL",
 	OpThrowUnhandledMatch: "THROW_UNHANDLED_MATCH",
 	OpRegisterEnum:        "REGISTER_ENUM",
+	OpNoDiscardEnter:      "NODISCARD_ENTER",
+	OpNoDiscardExit:       "NODISCARD_EXIT",
 }

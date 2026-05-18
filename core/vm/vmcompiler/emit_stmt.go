@@ -67,15 +67,21 @@ func (e *emitter) emitStmt(node phpv.Runnable) error {
 		return nil
 	}
 
-	// NoDiscard-wrapped statement: AST-delegate so the warning
-	// fires when the wrapped call's return value is discarded.
-	if _, ok := node.(interface {
-		NoDiscardInner() phpv.Runnable
-	}); ok {
-		raw, _ := node.(phpv.Runnable)
-		idx := e.astIndex(raw)
-		e.emit(vm.OpTryFinally, idx, 0, 0)
-		e.emit(vm.OpRefreshSlots, 0, 0, 0)
+	// `#[NoDiscard]`-wrapped statement: bracket the inner stmt with
+	// NoDiscardEnter/Exit. The previous in-context flag lives in a
+	// synthetic local so OP_NODISCARD_EXIT can restore it even on
+	// the normal completion path. (On the error path the global
+	// stays at "true"; very rare in practice and the script usually
+	// terminates anyway.)
+	if compiler.IsNoDiscardNode(node) {
+		nd := node.(interface{ NoDiscardInner() phpv.Runnable })
+		prevName := phpv.ZString(fmt.Sprintf("__nodiscard_prev_%d", e.nextSynthID()))
+		prevIdx := e.localIndex(prevName)
+		e.emit(vm.OpNoDiscardEnter, prevIdx, 0, 0)
+		if err := e.emitStmt(nd.NoDiscardInner()); err != nil {
+			return err
+		}
+		e.emit(vm.OpNoDiscardExit, prevIdx, 0, 0)
 		return nil
 	}
 

@@ -95,10 +95,19 @@ func TopLevelConstParts(r phpv.Runnable) (name phpv.ZString, val phpv.Runnable, 
 
 // --- runNoDiscardStatement --------------------------------------------
 
-// NoDiscardInner returns the wrapped statement. The VM emitter
-// unwraps this, foregoing the NoDiscard warning for VM-compiled
-// statements — a small loss until we wire up the warning natively.
+// NoDiscardInner returns the wrapped statement. Used by the VM
+// emitter to bracket the inner statement with OP_NODISCARD_ENTER /
+// OP_NODISCARD_EXIT.
 func (r *runNoDiscardStatement) NoDiscardInner() phpv.Runnable { return r.inner }
+
+// IsNoDiscardNode reports whether r is a `#[NoDiscard]`-wrapped
+// statement. The VM emitter brackets the inner with NoDiscardEnter /
+// NoDiscardExit calls (via dedicated opcodes) so the call's
+// LastCallable is checked at the right time.
+func IsNoDiscardNode(r phpv.Runnable) bool {
+	_, ok := r.(*runNoDiscardStatement)
+	return ok
+}
 
 // --- runClassDynConst / runClassStaticObjRef / runClassStaticVarRef --
 

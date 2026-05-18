@@ -1147,6 +1147,22 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 				return nil, false, err
 			}
 
+		// --- `#[NoDiscard]`-wrapped statement bracket ---------------
+		case OpNoDiscardEnter:
+			prev := compiler.NoDiscardEnter(ctx)
+			f.locals[ins.A()] = phpv.ZBool(prev).ZVal()
+			if !f.fn.SlotOnly {
+				ctx.OffsetSet(ctx, f.fn.Locals[ins.A()], f.locals[ins.A()])
+			}
+		case OpNoDiscardExit:
+			prev := false
+			if v := f.locals[ins.A()]; v != nil {
+				prev = bool(v.AsBool(ctx))
+			}
+			if err := compiler.NoDiscardExit(ctx, prev); err != nil {
+				return nil, false, err
+			}
+
 		// --- `unset($localVar)` ------------------------------------
 		case OpUnsetLocal:
 			idx := ins.A()
