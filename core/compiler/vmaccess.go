@@ -317,10 +317,50 @@ func IsDestructureTarget(r phpv.Runnable) bool {
 }
 
 // IsVariableRef reports whether r is a `$$name` / `${$expr}` variable-
-// variable reference. The VM AST-delegates these reads/writes.
+// variable reference. The VM emits OP_VAR_VAR_READ natively for value
+// reads; the write side still AST-delegates via runOperator's emit.
 func IsVariableRef(r phpv.Runnable) bool {
 	_, ok := r.(*runVariableRef)
 	return ok
+}
+
+// VarVarNameExpr returns the name-producing sub-expression of `$$expr`
+// / `${expr}`. The VM emits this to compute the variable name, then
+// uses OP_VAR_VAR_READ to look up the actual variable.
+func VarVarNameExpr(r phpv.Runnable) phpv.Runnable {
+	return r.(*runVariableRef).v
+}
+
+// VarVarReadIsWriteParent reports whether r's Parent makes this `$$x`
+// reference a write context (no "Undefined variable" warning even when
+// the variable is missing). Used at emit time so the VM decides
+// between warn vs no-warn OP_VAR_VAR_READ flags without re-implementing
+// the AST runner's Parent-type switch.
+func VarVarReadIsWriteParent(r phpv.Runnable) bool {
+	v := r.(*runVariableRef)
+	if v.Parent == nil {
+		return true
+	}
+	switch t := v.Parent.(type) {
+	case *runOperator:
+		if t.opD.write {
+			if t.opD.op != nil && t.a == v && t.op != tokenizer.T_CONCAT_EQUAL {
+				return false
+			}
+			if (t.op == tokenizer.T_COALESCE_EQUAL || t.op == tokenizer.T_COALESCE) && t.b == v {
+				return false
+			}
+			return true
+		}
+		return false
+	case *runArrayAccess, *runDestructure, *runRef, *runnableUnset, *runGlobal:
+		return true
+	case *runObjectVar:
+		return t.writeContext
+	case phpv.Runnables:
+		return true
+	}
+	return false
 }
 
 // IsValueExprAstDelegated reports whether r is a value-producing

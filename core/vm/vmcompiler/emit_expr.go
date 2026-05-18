@@ -95,11 +95,18 @@ func (e *emitter) emitExpr(node phpv.Runnable) error {
 		return e.emitMatch(mn)
 	}
 	if compiler.IsVariableRef(node) {
-		// `$$name` / `${$expr}` read — AST resolves the dynamic
-		// local name through the FuncContext hashtable.
-		idx := e.astIndex(node)
-		e.emit(vm.OpClassConst, idx, 0, 0)
-		e.pushStack(1)
+		// `$$name` / `${$expr}` read — emit name expr, then
+		// OP_VAR_VAR_READ with the parent-context-aware warn flag.
+		writeCtx := compiler.VarVarReadIsWriteParent(node)
+		if err := e.withSubexpr(func() error { return e.emitExpr(compiler.VarVarNameExpr(node)) }); err != nil {
+			return err
+		}
+		var aFlags uint16
+		if !writeCtx {
+			aFlags |= 1 // warn flag
+		}
+		e.emit(vm.OpVarVarRead, aFlags, 0, 0)
+		// pop name + push result → net 0
 		return nil
 	}
 	if compiler.IsInstanceOfNode(node) {

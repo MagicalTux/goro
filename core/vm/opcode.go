@@ -298,6 +298,12 @@ const (
 	// noFallback flag (set when the name starts with `\` or was
 	// matched via use-const aliases).
 	OpLoadConstantByName
+	// OP_VAR_VAR_READ pops the name expression's value, coerces it to
+	// string, and pushes the value of the variable with that name.
+	// Bit 0 of A is the warn flag — set in read contexts (subexpression
+	// position) to emit the "Undefined variable" notice when the name
+	// resolves to nothing.
+	OpVarVarRead
 
 	// Sentinel — keep last.
 	opLast
@@ -412,4 +418,5 @@ var opNames = [...]string{
 	OpNoDiscardEnter:      "NODISCARD_ENTER",
 	OpNoDiscardExit:       "NODISCARD_EXIT",
 	OpLoadConstantByName:  "LOAD_CONSTANT_BY_NAME",
+	OpVarVarRead:          "VAR_VAR_READ",
 }

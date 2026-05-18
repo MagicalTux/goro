@@ -1163,6 +1163,21 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 				return nil, false, err
 			}
 
+		// --- `$$name` / `${expr}` variable-variable read ------------
+		case OpVarVarRead:
+			nameV := f.pop()
+			sv, err := nameV.As(ctx, phpv.ZtString)
+			if err != nil {
+				return nil, false, err
+			}
+			name := sv.Value().(phpv.ZString)
+			warn := ins.A()&1 != 0
+			res, err := compiler.LookupVarVar(ctx, name, warn)
+			if err != nil {
+				return nil, false, err
+			}
+			f.push(res)
+
 		// --- runConstant — user / namespaced / built-in constant ----
 		case OpLoadConstantByName:
 			name, ok := f.fn.Consts[ins.A()].(phpv.ZString)

@@ -261,35 +261,62 @@ func (r *runVariableRef) Dump(w io.Writer) error {
 	return err
 }
 
-func (r *runVariableRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
-	var name phpv.ZString
+// resolveName returns the variable name for this `$$expr` reference.
+// Uses the cached key if PrepareWrite stashed one, otherwise evaluates
+// r.v and coerces to string. Sets reReadKey for compound-assignment LHS
+// so run-operator.go can re-read post-RHS.
+func (r *runVariableRef) resolveName(ctx phpv.Context) (phpv.ZString, error) {
 	if r.prepared {
-		// Use cached key (set by PrepareWrite for container array access, or by a
-		// previous Run() call for compound assignment operators). This ensures that
-		// if $n was captured early (e.g., PrepareWrite captured 'a' before ++$n ran),
-		// both Run() and WriteValue() use the same captured key.
-		name = r.cachedKey.(phpv.ZString)
-	} else {
-		v, err := r.v.Run(ctx)
-		if err != nil {
-			return nil, err
+		return r.cachedKey.(phpv.ZString), nil
+	}
+	v, err := r.v.Run(ctx)
+	if err != nil {
+		return "", err
+	}
+	sv, err := v.As(ctx, phpv.ZtString)
+	if err != nil {
+		return "", err
+	}
+	name := sv.Value().(phpv.ZString)
+	if op, ok := r.Parent.(*runOperator); ok {
+		if op.opD != nil && op.opD.write && op.opD.op != nil && op.a == r {
+			r.reReadKey = name
+			r.hasReReadKey = true
 		}
-		sv, err := v.As(ctx, phpv.ZtString)
-		if err != nil {
-			return nil, err
-		}
-		name = sv.Value().(phpv.ZString)
+	}
+	return name, nil
+}
 
-		// Store the pre-RHS key for compound write LHS ($$n .= rhs) so that
-		// run-operator.go can re-read the current value of $$n after the RHS.
-		// We use a SEPARATE field (reReadKey) to avoid interfering with WriteValue,
-		// which should use the POST-RHS value of $n (so writes go to the current $$n).
-		if op, ok := r.Parent.(*runOperator); ok {
-			if op.opD != nil && op.opD.write && op.opD.op != nil && op.a == r {
-				r.reReadKey = name
-				r.hasReReadKey = true
-			}
+// LookupVarVar reads the variable named by `name` from ctx, applying
+// the "Undefined variable" warning rule when warn==true (i.e. read
+// context — the AST runVariableRef's parent-context dance picks this).
+// Both the AST runner and the VM's OP_VAR_VAR_READ call this.
+func LookupVarVar(ctx phpv.Context, name phpv.ZString, warn bool) (*phpv.ZVal, error) {
+	res, exists, err := ctx.OffsetCheck(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	if !exists && warn {
+		if err := ctx.Warn("Undefined variable $%s", name, logopt.NoFuncName(true)); err != nil {
+			nv := phpv.NewZVal(phpv.ZNULL)
+			nv.Name = &name
+			return nv, err
 		}
+	}
+	if res != nil {
+		nv := res.Nude()
+		nv.Name = &name
+		return nv, nil
+	}
+	nv := phpv.NewZVal(phpv.ZNULL)
+	nv.Name = &name
+	return nv, nil
+}
+
+func (r *runVariableRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
+	name, err := r.resolveName(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	// Check if this variable-variable is in a write context (like runVariable does)
