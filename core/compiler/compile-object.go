@@ -353,48 +353,64 @@ func (r *runNewAnonymousClass) Dump(w io.Writer) error {
 }
 
 func (r *runNewAnonymousClass) Run(ctx phpv.Context) (*phpv.ZVal, error) {
-	ctx.Tick(ctx, r.l)
-
-	// Register and compile the anonymous class only once (it may be in a loop)
-	if !r.compiled {
-		err := ctx.Global().RegisterClass(r.class.Name, r.class)
-		if err != nil {
-			return nil, err
-		}
-		err = r.class.Compile(ctx)
-		if err != nil {
-			ctx.Global().UnregisterClass(r.class.Name)
-			return nil, err
-		}
-		// Validate #[\Override] on properties (same as regular class compilation)
-		if err := validatePropertyOverride(ctx, r.class); err != nil {
-			ctx.Global().UnregisterClass(r.class.Name)
-			return nil, err
-		}
-		r.compiled = true
+	if err := r.ensureCompiled(ctx); err != nil {
+		return nil, err
 	}
+	// Evaluate the constructor arg expressions (handling by-ref params)
+	// then instantiate.
+	args, byRefCleanups, err := r.evalConstructorArgs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	res, err := InstantiateRegisteredAnonClass(ctx, r.class, args, byRefCleanups, r.l)
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
+}
 
-	// Determine constructor parameter info for by-ref handling
+// ensureCompiled runs the per-AST-node "register + compile + validate"
+// guard the first time this anonymous class is used (the node carries
+// `compiled` state so a loop body only pays the cost once). Exported
+// via vmaccess for the VM's OP_NEW_ANON_CLASS to call up front.
+func (r *runNewAnonymousClass) ensureCompiled(ctx phpv.Context) error {
+	ctx.Tick(ctx, r.l)
+	if r.compiled {
+		return nil
+	}
+	if err := ctx.Global().RegisterClass(r.class.Name, r.class); err != nil {
+		return err
+	}
+	if err := r.class.Compile(ctx); err != nil {
+		ctx.Global().UnregisterClass(r.class.Name)
+		return err
+	}
+	if err := validatePropertyOverride(ctx, r.class); err != nil {
+		ctx.Global().UnregisterClass(r.class.Name)
+		return err
+	}
+	r.compiled = true
+	return nil
+}
+
+// evalConstructorArgs is the AST runner's by-ref-aware arg evaluation.
+// The VM emits each arg natively and bypasses this helper.
+func (r *runNewAnonymousClass) evalConstructorArgs(ctx phpv.Context) ([]*phpv.ZVal, []*phpv.ZVal, error) {
 	var funcArgs []*phpv.FuncArg
 	if constructor := getConstructor(r.class); constructor != nil {
 		if fga, ok := constructor.(phpv.FuncGetArgs); ok {
 			funcArgs = fga.GetArgs()
 		}
 	}
-
-	// Evaluate constructor arguments, handling by-reference params
 	var args []*phpv.ZVal
 	var byRefCleanups []*phpv.ZVal
 	for i, a := range r.constructorArgs {
 		isRefParam := funcArgs != nil && i < len(funcArgs) && funcArgs[i].Ref
-
-		// For by-ref params, enable write context for auto-vivification
 		if isRefParam {
 			if wcs, ok := a.(phpv.WriteContextSetter); ok {
 				wcs.SetWriteContext(true)
 			}
 		}
-
 		v, err := a.Run(ctx)
 		if err != nil {
 			if isRefParam {
@@ -402,16 +418,12 @@ func (r *runNewAnonymousClass) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 					wcs.SetWriteContext(false)
 				}
 			}
-			return nil, err
+			return nil, nil, err
 		}
-
 		if isRefParam {
 			if cw, isCW := a.(phpv.CompoundWritable); isCW && !v.IsRef() {
-				// Ensure the element exists (auto-vivification for $undef[0])
 				cw.WriteValue(ctx, v.Dup())
-				// Re-read to get the actual hash table entry
 				v, _ = a.Run(ctx)
-				// Make the hash table entry into a reference in-place
 				v.MakeRef()
 				byRefCleanups = append(byRefCleanups, v)
 			}
@@ -419,18 +431,19 @@ func (r *runNewAnonymousClass) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 				wcs.SetWriteContext(false)
 			}
 		}
-
 		args = append(args, v)
 	}
+	return args, byRefCleanups, nil
+}
 
-	// Create instance
-	obj, err := phpobj.NewZObject(ctx, r.class, args...)
-
-	// Unwrap by-ref hash table entries after constructor returns
+// InstantiateRegisteredAnonClass creates an instance of a freshly-
+// registered anonymous class. Used by the VM's OP_NEW_ANON_CLASS
+// after evaluating constructor args natively.
+func InstantiateRegisteredAnonClass(ctx phpv.Context, class *phpobj.ZClass, args []*phpv.ZVal, byRefCleanups []*phpv.ZVal, _ *phpv.Loc) (*phpv.ZVal, error) {
+	obj, err := phpobj.NewZObject(ctx, class, args...)
 	for _, ref := range byRefCleanups {
 		ref.UnRefIfAlone()
 	}
-
 	if err != nil {
 		return nil, err
 	}
