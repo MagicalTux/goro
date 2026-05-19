@@ -200,6 +200,42 @@ func UnsetAllSimple(r phpv.Runnable) bool {
 	return true
 }
 
+// IsUnsetSupportedArg reports whether an unset() argument shape has
+// a native VM emit:
+//   - simple variable ($x) → OP_UNSET_LOCAL
+//   - array access on a simple-local container ($x[$k]) → OP_UNSET_DIM
+func IsUnsetSupportedArg(r phpv.Runnable) bool {
+	if IsSimpleVariable(r) {
+		return true
+	}
+	a, ok := r.(*runArrayAccess)
+	if !ok || a.nullChain {
+		return false
+	}
+	if a.offset == nil {
+		return false
+	}
+	// Container must be a simple variable. Nested unsets like
+	// unset($a[$k1][$k2]) still AST-delegate — the AST WriteValue
+	// pipeline handles cached compound state we don't reproduce.
+	return IsSimpleVariable(a.value)
+}
+
+// UnsetAllSupported reports whether all args of an `unset(…)` have a
+// native-emittable shape.
+func UnsetAllSupported(r phpv.Runnable) bool {
+	t, ok := r.(*runnableUnset)
+	if !ok {
+		return false
+	}
+	for _, a := range t.args {
+		if !IsUnsetSupportedArg(a) {
+			return false
+		}
+	}
+	return true
+}
+
 // IsAnonymousClassNode reports whether r is a `new class { … }`
 // instantiation. The VM lowers value-context anon-class instantiations
 // natively via OP_NEW_ANON_CLASS when all constructor args are pure

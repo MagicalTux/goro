@@ -327,6 +327,12 @@ const (
 	// compiler.EvalEmptyDim — mirrors `empty($c[$k])` for the same
 	// container shapes.
 	OpEmptyDim
+	// OP_UNSET_DIM pops key, then container; removes container[key]
+	// in place via compiler.UnsetArrayDim. Used by the native form of
+	// `unset($a[$k])` where the container is a simple variable; nested
+	// shapes (`$a[$k1][$k2]`) and non-local containers still AST-
+	// delegate via the AST WriteValue.
+	OpUnsetDim
 	// OP_STATIC_VAR_BIND runs `static $x = init; …` for the
 	// *runStaticVar at SubASTs[A]: evaluates each entry's initializer
 	// the first time per scope key (closure-instance, class, or
@@ -459,5 +465,6 @@ var opNames = [...]string{
 	OpArrayGetSafe:        "ARRAY_GET_SAFE",
 	OpIssetDim:            "ISSET_DIM",
 	OpEmptyDim:            "EMPTY_DIM",
+	OpUnsetDim:            "UNSET_DIM",
 	OpStaticVarBind:       "STATIC_VAR_BIND",
 }

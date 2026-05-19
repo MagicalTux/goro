@@ -309,11 +309,10 @@ func IsSlotSafe(g phpv.GlobalContext, r phpv.Runnable) bool {
 			}
 		}
 	case *runnableUnset:
-		// All-simple-local unset is now lowered natively (clears the
-		// slot directly + ctx.OffsetUnset). Only the per-target-shape
-		// forms (array access, object prop, static prop, …) still
-		// AST-delegate and need the hashtable.
-		if !UnsetAllSimple(r) {
+		// Simple-local and array-access-on-simple-local unsets lower
+		// natively. Other target shapes (object prop, static prop,
+		// nested array access) still AST-delegate.
+		if !UnsetAllSupported(r) {
 			return false
 		}
 	case *runnableIsset, *runnableEmpty:

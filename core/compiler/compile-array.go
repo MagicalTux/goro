@@ -1163,6 +1163,59 @@ func (ac *runArrayAccess) PrepareWrite(ctx phpv.Context) error {
 	return nil
 }
 
+// NormalizeArrayOffset coerces an array offset value to the form
+// that's safe to pass to ZArray.OffsetUnset / OffsetSet — int for
+// resource/float/bool, string/int passthrough, deprecation warning
+// for null (which becomes ""), and TypeError for object/array keys.
+// Shared by the AST runArrayAccess.getArrayOffset and the VM's
+// native unset/set dim path.
+func NormalizeArrayOffset(ctx phpv.Context, offset *phpv.ZVal) (*phpv.ZVal, error) {
+	if offset == nil {
+		return offset, nil
+	}
+	switch offset.GetType() {
+	case phpv.ZtResource:
+		if r, ok := offset.Value().(phpv.Resource); ok {
+			id := r.GetResourceID()
+			if err := ctx.Warn("Resource ID#%d used as offset, casting to integer (%d)", id, id); err != nil {
+				return nil, err
+			}
+		}
+		return offset.As(ctx, phpv.ZtInt)
+	case phpv.ZtFloat:
+		return offset.As(ctx, phpv.ZtInt)
+	case phpv.ZtBool:
+		return offset.As(ctx, phpv.ZtInt)
+	case phpv.ZtString, phpv.ZtInt, phpv.ZtNull:
+		return offset, nil
+	}
+	return offset, nil
+}
+
+// UnsetArrayDim removes container[key] in place. Mirrors the
+// `value == nil` branch of runArrayAccess.WriteValue: refuses string
+// containers (`Cannot use string offset as an array`), no-ops on nil
+// containers, and otherwise delegates to ZArray.OffsetUnset which
+// fires destructors for object elements. Used by the VM's
+// OP_UNSET_DIM.
+func UnsetArrayDim(ctx phpv.Context, container, key *phpv.ZVal) error {
+	if container != nil && container.GetType() == phpv.ZtString {
+		return phpobj.ThrowError(ctx, phpobj.Error, "Cannot use string offset as an array")
+	}
+	if container == nil {
+		return nil
+	}
+	array := container.Array()
+	if array == nil {
+		return nil
+	}
+	off, err := NormalizeArrayOffset(ctx, key)
+	if err != nil {
+		return err
+	}
+	return array.OffsetUnset(ctx, off.Value())
+}
+
 func (ac *runArrayAccess) getArrayOffset(ctx phpv.Context) (*phpv.ZVal, error) {
 	var offset *phpv.ZVal
 	var err error

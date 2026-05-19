@@ -166,14 +166,28 @@ func (e *emitter) emitExpr(node phpv.Runnable) error {
 		return nil
 	}
 	if compiler.IsUnsetNode(node) {
-		// All-simple-local unset lowers natively; complex forms keep
-		// the AST path. unset() returns nothing, so non-statement use
-		// of the AST form needs a trailing null push.
+		// Native emit for the simple shapes: simple-variable args and
+		// array-access on a simple-local container. Other shapes
+		// (object prop, static prop, dyn names, nested array access)
+		// still AST-delegate via the AST WriteValue pipeline.
 		stmtCtx := e.stmtCtx
-		if compiler.UnsetAllSimple(node) {
+		if compiler.UnsetAllSupported(node) {
 			for _, a := range compiler.UnsetArgs(node) {
-				idx := e.localIndex(compiler.SimpleVariableName(a))
-				e.emit(vm.OpUnsetLocal, idx, 0, 0)
+				if compiler.IsSimpleVariable(a) {
+					idx := e.localIndex(compiler.SimpleVariableName(a))
+					e.emit(vm.OpUnsetLocal, idx, 0, 0)
+					continue
+				}
+				// Array access on a simple-local container.
+				cont, off := compiler.ArrayAccessParts(a)
+				if err := e.withSubexpr(func() error { return e.emitExpr(cont) }); err != nil {
+					return err
+				}
+				if err := e.withSubexpr(func() error { return e.emitExpr(off) }); err != nil {
+					return err
+				}
+				e.emit(vm.OpUnsetDim, 0, 0, 0)
+				e.popStack(2)
 			}
 			if !stmtCtx {
 				e.emit(vm.OpLoadNull, 0, 0, 0)

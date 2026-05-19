@@ -1227,6 +1227,14 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 			}
 			f.push(phpv.ZBool(res).ZVal())
 
+		// --- `unset($container[$key])` ------------------------------
+		case OpUnsetDim:
+			key := f.pop()
+			cont := f.pop()
+			if err := compiler.UnsetArrayDim(ctx, cont, key); err != nil {
+				return nil, false, err
+			}
+
 		// --- `new class { … }(args)` anonymous class instantiation --
 		case OpNewAnonClass:
 			node := f.fn.SubASTs[ins.A()]
