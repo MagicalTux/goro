@@ -625,22 +625,36 @@ func (e *emitter) emitForeach(n foreachNode) error {
 }
 
 func (e *emitter) emitReturn(n returnNode) error {
+	v := n.ReturnValue()
 	if n.ReturnHasTypeHint() {
-		// Coercion lives in runReturn.Run. AST-delegate the whole
-		// statement — the PhpReturn it throws is caught by the VM
-		// run loop's deferred wrapper just like OpRet.
-		raw, ok := any(n).(phpv.Runnable)
-		if !ok {
-			return unsupportedf("typed return AST delegation: cannot retrieve raw Runnable")
+		// Native typed-return is safe when the return value isn't a
+		// property/array-access/static-prop — those shapes trigger
+		// writeContext setup in runReturn.Run when the enclosing
+		// function returns by reference, which the native emit can't
+		// reproduce without knowing the by-ref flag at emit time.
+		raw, _ := any(n).(phpv.Runnable)
+		if v == nil || compiler.ReturnValueIsRefTarget(v) {
+			if raw == nil {
+				return unsupportedf("typed return AST delegation: cannot retrieve raw Runnable")
+			}
+			idx := e.astIndex(raw)
+			e.emit(vm.OpTryFinally, idx, 0, 0)
+			e.emit(vm.OpRetNull, 0, 0, 0)
+			return nil
 		}
-		idx := e.astIndex(raw)
-		e.emit(vm.OpTryFinally, idx, 0, 0)
-		// Unreachable on success (the AST throws PhpReturn), but the
-		// emitter expects every path to terminate. Add a safety RET.
-		e.emit(vm.OpRetNull, 0, 0, 0)
+		// Safe shape: emit value natively, coerce, then OP_RET.
+		if err := e.withSubexpr(func() error { return e.emitExpr(v) }); err != nil {
+			return err
+		}
+		if raw != nil {
+			idx := e.astIndex(raw)
+			e.emit(vm.OpCoerceReturn, idx, 0, 0)
+		}
+		e.emit(vm.OpRet, 0, 0, 0)
+		e.popStack(1)
 		return nil
 	}
-	if v := n.ReturnValue(); v != nil {
+	if v != nil {
 		if err := e.withSubexpr(func() error { return e.emitExpr(v) }); err != nil {
 			return err
 		}

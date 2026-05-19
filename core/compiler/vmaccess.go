@@ -1301,6 +1301,34 @@ func (r *runReturn) ReturnValue() phpv.Runnable { return r.v }
 // ReturnLoc returns the source location of the return statement.
 func (r *runReturn) ReturnLoc() *phpv.Loc { return r.l }
 
+// ReturnTypeHint returns the function's return type hint for the
+// surrounding function. nil when none was declared. Used by the VM
+// emitter's typed-return lowering.
+func (r *runReturn) ReturnTypeHint() *phpv.TypeHint { return r.returnType }
+
+// ReturnTypeOfNode extracts the return type from a *runReturn AST
+// node. Used by the VM's OP_COERCE_RETURN dispatch.
+func ReturnTypeOfNode(r phpv.Runnable) *phpv.TypeHint {
+	t, ok := r.(*runReturn)
+	if !ok {
+		return nil
+	}
+	return t.returnType
+}
+
+// ReturnValueIsRefTarget reports whether the return value expression
+// is a shape (object property, array access, static-prop) that needs
+// the AST runner's writeContext setup when the surrounding function
+// returns by reference. Used by the VM emitter to decide whether the
+// native typed-return path is safe.
+func ReturnValueIsRefTarget(r phpv.Runnable) bool {
+	switch r.(type) {
+	case *runObjectVar, *runObjectDynVar, *runArrayAccess, *runClassStaticVarRef:
+		return true
+	}
+	return false
+}
+
 // ReturnHasTypeHint reports whether the surrounding function declared
 // a return type hint that may need coercion at the return site.
 // VM-compiled returns must fall back to the AST when this is true,

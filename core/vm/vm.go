@@ -1235,6 +1235,14 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 				return nil, false, err
 			}
 
+		// --- typed-return non-strict coercion -----------------------
+		case OpCoerceReturn:
+			ret := f.pop()
+			node := f.fn.SubASTs[ins.A()]
+			rt := compiler.ReturnTypeOfNode(node)
+			ret = compiler.CoerceReturnValue(ctx, ret, rt)
+			f.push(ret)
+
 		// --- `new class { … }(args)` anonymous class instantiation --
 		case OpNewAnonClass:
 			node := f.fn.SubASTs[ins.A()]

@@ -333,6 +333,14 @@ const (
 	// shapes (`$a[$k1][$k2]`) and non-local containers still AST-
 	// delegate via the AST WriteValue.
 	OpUnsetDim
+	// OP_COERCE_RETURN pops the return value, applies non-strict
+	// early type coercion against the function's return type hint
+	// (stored in SubASTs[A] as the *runReturn node), and pushes the
+	// coerced value. Used in the native typed-return lowering ahead
+	// of OP_RET so a `function foo(): int { return 1.5; }` emits the
+	// "Implicit conversion from float to int" deprecation at the
+	// return statement (before any finally runs).
+	OpCoerceReturn
 	// OP_STATIC_VAR_BIND runs `static $x = init; …` for the
 	// *runStaticVar at SubASTs[A]: evaluates each entry's initializer
 	// the first time per scope key (closure-instance, class, or
@@ -466,5 +474,6 @@ var opNames = [...]string{
 	OpIssetDim:            "ISSET_DIM",
 	OpEmptyDim:            "EMPTY_DIM",
 	OpUnsetDim:            "UNSET_DIM",
+	OpCoerceReturn:        "COERCE_RETURN",
 	OpStaticVarBind:       "STATIC_VAR_BIND",
 }

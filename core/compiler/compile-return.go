@@ -183,25 +183,42 @@ func (r *runReturn) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	// Early return type coercion: coerce the return value BEFORE the finally block
 	// runs (PHP behavior per bug #72347). This ensures deprecation warnings like
 	// "Implicit conversion from float to int" fire at the return statement.
-	if r.returnType != nil && ret != nil && !ret.IsNull() && !ctx.Global().GetStrictTypes() {
-		rt := r.returnType
-		if rt.Type() != phpv.ZtVoid && rt.Type() != phpv.ZtNever && rt.Type() != phpv.ZtMixed &&
-			len(rt.Union) == 0 && len(rt.Intersection) == 0 && rt.Type() != phpv.ZtObject {
-			hintType := rt.Type()
-			if hintType != 0 && ret.GetType() != hintType {
-				if hintType == phpv.ZtInt && ret.GetType() == phpv.ZtFloat {
-					v, _ := phpv.FloatToIntImplicit(ctx, ret.Value().(phpv.ZFloat))
-					ret = v.ZVal()
-				} else if hintType == phpv.ZtInt || hintType == phpv.ZtFloat || hintType == phpv.ZtString || hintType == phpv.ZtBool {
-					if coerced, err := ret.As(ctx, hintType); err == nil && coerced != nil {
-						ret = coerced
-					}
-				}
-			}
+	ret = CoerceReturnValue(ctx, ret, r.returnType)
+	return nil, &phperr.PhpReturn{L: r.l, V: ret}
+}
+
+// CoerceReturnValue applies non-strict early return-type coercion to
+// `ret` against the function's return type hint. Mirrors the AST's
+// runReturn.Run post-Run coercion — only fires when strict_types is
+// off, the value is non-null, and the hint is a single concrete
+// scalar (int/float/string/bool); float→int gets the deprecation
+// warning via FloatToIntImplicit. Used by both the AST runner and the
+// VM emitter's typed-return path.
+func CoerceReturnValue(ctx phpv.Context, ret *phpv.ZVal, rt *phpv.TypeHint) *phpv.ZVal {
+	if rt == nil || ret == nil || ret.IsNull() {
+		return ret
+	}
+	if ctx.Global().GetStrictTypes() {
+		return ret
+	}
+	if rt.Type() == phpv.ZtVoid || rt.Type() == phpv.ZtNever || rt.Type() == phpv.ZtMixed ||
+		len(rt.Union) > 0 || len(rt.Intersection) > 0 || rt.Type() == phpv.ZtObject {
+		return ret
+	}
+	hintType := rt.Type()
+	if hintType == 0 || ret.GetType() == hintType {
+		return ret
+	}
+	if hintType == phpv.ZtInt && ret.GetType() == phpv.ZtFloat {
+		v, _ := phpv.FloatToIntImplicit(ctx, ret.Value().(phpv.ZFloat))
+		return v.ZVal()
+	}
+	if hintType == phpv.ZtInt || hintType == phpv.ZtFloat || hintType == phpv.ZtString || hintType == phpv.ZtBool {
+		if coerced, err := ret.As(ctx, hintType); err == nil && coerced != nil {
+			return coerced
 		}
 	}
-
-	return nil, &phperr.PhpReturn{L: r.l, V: ret}
+	return ret
 }
 
 func (r *runReturn) Dump(w io.Writer) error {
