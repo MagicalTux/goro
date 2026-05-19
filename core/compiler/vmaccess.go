@@ -844,6 +844,59 @@ func IssetEmptyAllSimple(r phpv.Runnable) bool {
 	return false
 }
 
+// IsIssetSupportedArg reports whether an isset/empty argument shape
+// has a native VM emit. Currently:
+//   - simple variable ($x)
+//   - array-access with a non-nullsafe simple-shape container
+//     ($x[$k], $x[k], also nested $x[$k1][$k2])
+func IsIssetSupportedArg(r phpv.Runnable) bool {
+	if IsSimpleVariable(r) {
+		return true
+	}
+	a, ok := r.(*runArrayAccess)
+	if !ok || a.nullChain {
+		return false
+	}
+	if a.offset == nil {
+		// `$x[]` — invalid in read context.
+		return false
+	}
+	// Recurse: the container itself must be a supported shape.
+	return IsIssetSupportedArg(a.value)
+}
+
+// IssetEmptyAllSupported reports whether all args of an isset/empty
+// have a native-emittable shape (IsIssetSupportedArg).
+func IssetEmptyAllSupported(r phpv.Runnable) bool {
+	switch t := r.(type) {
+	case *runnableIsset:
+		for _, a := range t.args {
+			if !IsIssetSupportedArg(a) {
+				return false
+			}
+		}
+		return true
+	case *runnableEmpty:
+		return IsIssetSupportedArg(t.arg)
+	}
+	return false
+}
+
+// IsArrayAccessNode reports whether r is a `$container[$offset]`
+// array access (non-nullsafe). The VM emitter uses this in the
+// isset/empty per-arg dispatch.
+func IsArrayAccessNode(r phpv.Runnable) bool {
+	a, ok := r.(*runArrayAccess)
+	return ok && !a.nullChain
+}
+
+// ArrayAccessParts returns the container/offset of an array-access
+// node. Caller must verify with IsArrayAccessNode first.
+func ArrayAccessParts(r phpv.Runnable) (container, offset phpv.Runnable) {
+	a := r.(*runArrayAccess)
+	return a.value, a.offset
+}
+
 // SimpleVariableName returns the name of a plain `$name` reference.
 // Caller must verify the runnable is a simple variable first.
 func SimpleVariableName(r phpv.Runnable) phpv.ZString {

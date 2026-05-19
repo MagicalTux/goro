@@ -67,8 +67,8 @@ func (e *emitter) emitExpr(node phpv.Runnable) error {
 	if compiler.IsIssetOrEmptyNode(node) {
 		// All-simple-local isset/empty lowers natively. Complex forms
 		// (array access, object prop, dyn names, …) keep the AST path.
-		if compiler.IssetEmptyAllSimple(node) {
-			return e.emitIssetEmptySimple(node)
+		if compiler.IssetEmptyAllSupported(node) {
+			return e.emitIssetEmptySupported(node)
 		}
 		idx := e.astIndex(node)
 		e.emit(vm.OpClassConst, idx, 0, 0)
@@ -960,37 +960,30 @@ func (e *emitter) emitCoalesce(n operatorNode) error {
 	return nil
 }
 
-// emitIssetEmptySimple emits the all-simple-local form of isset(…)
-// or empty(…). For empty(), there's exactly one arg → one
-// OP_EMPTY_LOCAL. For isset(), each arg becomes an OP_ISSET_LOCAL
-// joined by short-circuit jumps: the first false short-circuits to
-// the end with `false` on the stack.
-func (e *emitter) emitIssetEmptySimple(node phpv.Runnable) error {
+// emitIssetEmptySupported emits the natively-handled form of
+// isset(…) / empty(…). For empty() the single arg's shape determines
+// the opcode (LOCAL or DIM). For isset() each arg emits its own
+// bool, joined by short-circuit jumps so the first false short-
+// circuits to the end with `false` on the stack.
+func (e *emitter) emitIssetEmptySupported(node phpv.Runnable) error {
 	if arg := compiler.EmptyArg(node); arg != nil {
-		idx := e.localIndex(compiler.SimpleVariableName(arg))
-		e.emit(vm.OpEmptyLocal, idx, 0, 0)
-		e.pushStack(1)
-		return nil
+		return e.emitEmptyArg(arg)
 	}
 	args := compiler.IssetArgs(node)
-	// `isset()` with no args is a parse error in PHP — defensive: push true.
 	if len(args) == 0 {
 		e.emit(vm.OpLoadTrue, 0, 0, 0)
 		e.pushStack(1)
 		return nil
 	}
-	// Emit each arg's OP_ISSET_LOCAL; short-circuit on first false.
 	jumps := make([]uint32, 0, len(args)-1)
 	for i, a := range args {
-		idx := e.localIndex(compiler.SimpleVariableName(a))
-		e.emit(vm.OpIssetLocal, idx, 0, 0)
-		e.pushStack(1)
+		if err := e.emitIssetArg(a); err != nil {
+			return err
+		}
 		if i == len(args)-1 {
 			break
 		}
-		// Peek-jump: keep false on stack and jump to end.
 		jumps = append(jumps, e.emit(vm.OpJmpIfFalsePeek, 0, 0, 0))
-		// Otherwise drop the true and continue with next arg.
 		e.emit(vm.OpPop, 0, 0, 0)
 		e.popStack(1)
 	}
@@ -999,6 +992,83 @@ func (e *emitter) emitIssetEmptySimple(node phpv.Runnable) error {
 		e.patchJump(j, end)
 	}
 	return nil
+}
+
+// emitIssetArg emits a single isset argument; pushes one bool.
+func (e *emitter) emitIssetArg(a phpv.Runnable) error {
+	if compiler.IsSimpleVariable(a) {
+		idx := e.localIndex(compiler.SimpleVariableName(a))
+		e.emit(vm.OpIssetLocal, idx, 0, 0)
+		e.pushStack(1)
+		return nil
+	}
+	if compiler.IsArrayAccessNode(a) {
+		cont, off := compiler.ArrayAccessParts(a)
+		if err := e.withSubexpr(func() error { return e.emitIssetContainerRead(cont) }); err != nil {
+			return err
+		}
+		if err := e.withSubexpr(func() error { return e.emitExpr(off) }); err != nil {
+			return err
+		}
+		e.emit(vm.OpIssetDim, 0, 0, 0)
+		e.popStack(1) // 2 in, 1 out
+		return nil
+	}
+	return unsupportedf("emitIssetArg: unsupported shape %T", a)
+}
+
+// emitEmptyArg emits the single empty(…) argument; pushes one bool.
+func (e *emitter) emitEmptyArg(a phpv.Runnable) error {
+	if compiler.IsSimpleVariable(a) {
+		idx := e.localIndex(compiler.SimpleVariableName(a))
+		e.emit(vm.OpEmptyLocal, idx, 0, 0)
+		e.pushStack(1)
+		return nil
+	}
+	if compiler.IsArrayAccessNode(a) {
+		cont, off := compiler.ArrayAccessParts(a)
+		if err := e.withSubexpr(func() error { return e.emitIssetContainerRead(cont) }); err != nil {
+			return err
+		}
+		if err := e.withSubexpr(func() error { return e.emitExpr(off) }); err != nil {
+			return err
+		}
+		e.emit(vm.OpEmptyDim, 0, 0, 0)
+		e.popStack(1)
+		return nil
+	}
+	return unsupportedf("emitEmptyArg: unsupported shape %T", a)
+}
+
+// emitIssetContainerRead emits a read of an isset/empty container.
+// For a simple variable, uses OP_LOAD_LOCAL (no "Undefined variable"
+// warning — isset reads should not warn on missing names). For a
+// nested array-access, recurses.
+func (e *emitter) emitIssetContainerRead(c phpv.Runnable) error {
+	if compiler.IsSimpleVariable(c) {
+		idx := e.localIndex(compiler.SimpleVariableName(c))
+		e.emit(vm.OpLoadLocal, idx, 0, 0)
+		e.pushStack(1)
+		return nil
+	}
+	if compiler.IsArrayAccessNode(c) {
+		// Nested: $a[$k1][$k2]. Recurse on the inner container, then
+		// fetch via OP_ARRAY_GET; this preserves isset's no-warn
+		// semantics for missing inner keys (OP_ARRAY_GET returns null
+		// without warning when the read is in a context where the
+		// caller checks isset).
+		cont, off := compiler.ArrayAccessParts(c)
+		if err := e.emitIssetContainerRead(cont); err != nil {
+			return err
+		}
+		if err := e.withSubexpr(func() error { return e.emitExpr(off) }); err != nil {
+			return err
+		}
+		e.emit(vm.OpArrayGet, 0, 0, 0)
+		e.popStack(1)
+		return nil
+	}
+	return unsupportedf("emitIssetContainerRead: unsupported shape %T", c)
 }
 
 // emitShortCircuit emits `a && b` (orMode=false) or `a || b`

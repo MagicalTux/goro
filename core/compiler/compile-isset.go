@@ -84,6 +84,187 @@ func compileEmpty(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	return &runnableEmpty{arg: args[0], l: i.Loc()}, nil
 }
 
+// EvalIssetDim performs the "exists & not-null" check on
+// container[key] after both have been evaluated. Mirrors the
+// post-container-resolution portion of checkExistence's
+// runArrayAccess branch: null-key deprecation, array/object-key
+// TypeErrors, string-offset rules, ArrayAccess dispatch, and the
+// regular array existence-plus-not-null check.
+func EvalIssetDim(ctx phpv.Context, value, key *phpv.ZVal) (bool, error) {
+	if value == nil {
+		return false, nil
+	}
+	if key.GetType() == phpv.ZtNull {
+		if err := ctx.Deprecated("Using null as an array offset is deprecated, use an empty string instead", logopt.NoFuncName(true)); err != nil {
+			return false, err
+		}
+		key = phpv.ZString("").ZVal()
+	}
+	if value.GetType() != phpv.ZtObject {
+		switch key.GetType() {
+		case phpv.ZtArray:
+			return false, phpobj.ThrowError(ctx, phpobj.TypeError, "Cannot access offset of type array in isset or empty")
+		case phpv.ZtObject:
+			typeName := "object"
+			if obj, ok := key.Value().(phpv.ZObject); ok {
+				typeName = string(obj.GetClass().GetName())
+			}
+			return false, phpobj.ThrowError(ctx, phpobj.TypeError, fmt.Sprintf("Cannot access offset of type %s in isset or empty", typeName))
+		}
+	}
+	var arr phpv.ZArrayAccess
+	if value.GetType() == phpv.ZtString {
+		switch key.GetType() {
+		case phpv.ZtInt:
+		case phpv.ZtString:
+			s := key.AsString(ctx)
+			if !s.IsNumeric() {
+				return false, nil
+			}
+			for _, c := range string(s) {
+				if c == '.' || c == 'e' || c == 'E' {
+					return false, nil
+				}
+			}
+			key = key.AsInt(ctx).ZVal()
+		case phpv.ZtBool:
+			if key.Value().(phpv.ZBool) {
+				key = phpv.ZInt(1).ZVal()
+			} else {
+				key = phpv.ZInt(0).ZVal()
+			}
+		case phpv.ZtFloat:
+			key = key.AsInt(ctx).ZVal()
+		case phpv.ZtNull:
+			key = phpv.ZInt(0).ZVal()
+		default:
+			return false, nil
+		}
+		str := value.AsString(ctx)
+		arr = phpv.ZStringArray{ZString: &str}
+	} else {
+		var ok bool
+		arr, ok = value.Value().(phpv.ZArrayAccess)
+		if !ok {
+			return false, nil
+		}
+	}
+	if value.GetType() == phpv.ZtObject {
+		if obj, ok := value.Value().(*phpobj.ZObject); ok {
+			if h := phpobj.FindIssetDimHandler(obj.GetClass()); h != nil {
+				return h(ctx, obj, key)
+			}
+			return obj.OffsetExists(ctx, key)
+		}
+	}
+	exists, existsErr := arr.OffsetExists(ctx, key)
+	if !exists || existsErr != nil {
+		return false, existsErr
+	}
+	val, valErr := arr.OffsetGet(ctx, key)
+	if valErr != nil {
+		return false, nil
+	}
+	return val != nil && !phpv.IsNull(val), nil
+}
+
+// EvalEmptyDim performs the "empty" check on container[key] after
+// both have been evaluated. Mirrors checkEmpty's runArrayAccess
+// branch — same shape as EvalIssetDim, but returns true when the
+// element is missing or empty.
+func EvalEmptyDim(ctx phpv.Context, value, key *phpv.ZVal) (bool, error) {
+	if value == nil {
+		return true, nil
+	}
+	if value.GetType() == phpv.ZtObject {
+		obj, ok := value.Value().(*phpobj.ZObject)
+		if ok && obj.GetClass().Implements(phpobj.ArrayAccess) {
+			if h := phpobj.FindIssetDimHandler(obj.GetClass()); h != nil {
+				if rh := phpobj.FindReadDimHandler(obj.GetClass()); rh != nil {
+					result, err := h(ctx, obj, key)
+					if err != nil || !result {
+						return true, nil
+					}
+					val, err := rh(ctx, obj, key)
+					if err != nil {
+						return true, nil
+					}
+					return IsValueEmpty(ctx, val), nil
+				}
+			}
+			exists, err := obj.OffsetExists(ctx, key)
+			if err != nil || !exists {
+				return true, nil
+			}
+			val, err := obj.OffsetGet(ctx, key)
+			if err != nil {
+				return true, nil
+			}
+			return IsValueEmpty(ctx, val), nil
+		}
+	}
+	var arr phpv.ZArrayAccess
+	if value.GetType() == phpv.ZtString {
+		var idx int
+		switch key.GetType() {
+		case phpv.ZtInt:
+			idx = int(key.Value().(phpv.ZInt))
+		case phpv.ZtBool:
+			if key.Value().(phpv.ZBool) {
+				idx = 1
+			} else {
+				idx = 0
+			}
+		case phpv.ZtNull:
+			idx = 0
+		case phpv.ZtFloat:
+			fval := float64(key.Value().(phpv.ZFloat))
+			if err := ctx.Deprecated("Implicit conversion from float %v to int loses precision", fval, logopt.NoFuncName(true)); err != nil {
+				return false, err
+			}
+			idx = int(key.AsInt(ctx))
+		case phpv.ZtString:
+			s := key.AsString(ctx)
+			if !s.IsNumeric() {
+				return true, nil
+			}
+			sStr := string(s)
+			for _, ch := range sStr {
+				if ch == '.' || ch == 'e' || ch == 'E' {
+					return true, nil
+				}
+			}
+			idx = int(key.AsInt(ctx))
+		default:
+			return true, nil
+		}
+		str := value.AsString(ctx)
+		strLen := len(str)
+		if idx < 0 {
+			idx = strLen + idx
+		}
+		if idx < 0 || idx >= strLen {
+			return true, nil
+		}
+		ch := phpv.ZString(string(str[idx]))
+		return ch == "" || ch == "0", nil
+	}
+	var ok bool
+	arr, ok = value.Value().(phpv.ZArrayAccess)
+	if !ok {
+		return true, nil
+	}
+	exists, err := arr.OffsetExists(ctx, key)
+	if err != nil || !exists {
+		return true, nil
+	}
+	val, err := arr.OffsetGet(ctx, key)
+	if err != nil {
+		return true, nil
+	}
+	return IsValueEmpty(ctx, val), nil
+}
+
 func IsValueEmpty(ctx phpv.Context, v *phpv.ZVal) bool {
 	if v == nil {
 		return true

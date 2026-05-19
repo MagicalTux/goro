@@ -1184,6 +1184,26 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 				return nil, false, err
 			}
 
+		// --- `isset($container[$key])` -----------------------------
+		case OpIssetDim:
+			key := f.pop()
+			cont := f.pop()
+			res, err := compiler.EvalIssetDim(ctx, cont, key)
+			if err != nil {
+				return nil, false, err
+			}
+			f.push(phpv.ZBool(res).ZVal())
+
+		// --- `empty($container[$key])` ------------------------------
+		case OpEmptyDim:
+			key := f.pop()
+			cont := f.pop()
+			res, err := compiler.EvalEmptyDim(ctx, cont, key)
+			if err != nil {
+				return nil, false, err
+			}
+			f.push(phpv.ZBool(res).ZVal())
+
 		// --- `new class { … }(args)` anonymous class instantiation --
 		case OpNewAnonClass:
 			node := f.fn.SubASTs[ins.A()]

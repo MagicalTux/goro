@@ -317,11 +317,11 @@ func IsSlotSafe(g phpv.GlobalContext, r phpv.Runnable) bool {
 			return false
 		}
 	case *runnableIsset, *runnableEmpty:
-		// All-simple-local isset/empty is now lowered natively
-		// (OP_ISSET_LOCAL / OP_EMPTY_LOCAL). Only the complex forms
-		// (array-access, object-prop, dyn-name, etc.) still
-		// AST-delegate and need the hashtable populated.
-		if !IssetEmptyAllSimple(r) {
+		// All-simple-local AND array-access-on-simple-local isset/empty
+		// are now lowered natively. Only the complex shapes (object-
+		// prop, dyn-name, class-static, etc.) still AST-delegate and
+		// need the hashtable populated.
+		if !IssetEmptyAllSupported(r) {
 			return false
 		}
 	case *ZClosure:
