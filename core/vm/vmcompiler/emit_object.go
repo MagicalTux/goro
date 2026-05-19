@@ -92,10 +92,10 @@ func (e *emitter) emitObjectVarAssign(lhs objectVarNode, rhs phpv.Runnable, stmt
 
 func (e *emitter) emitObjectVarRead(n objectVarNode) error {
 	name := n.ObjectVarName()
-	// Nullsafe or dynamic-name property reads route through the AST
-	// runner. Both shapes need branchy chain semantics that we don't
-	// lower piecewise.
-	if n.ObjectVarIsNullSafe() || (len(name) > 0 && name[0] == '$') {
+	// Dynamic-name property reads still route through the AST (the
+	// branchy nullChain semantics aren't lowered piecewise). Nullsafe
+	// is encoded via OP_OBJECT_GET's B flag.
+	if len(name) > 0 && name[0] == '$' {
 		raw, ok := n.(phpv.Runnable)
 		if !ok {
 			return unsupportedf("property-read AST delegation: cannot retrieve raw Runnable")
@@ -109,7 +109,11 @@ func (e *emitter) emitObjectVarRead(n objectVarNode) error {
 		return err
 	}
 	idx := e.constIndex(name)
-	e.emit(vm.OpObjectGet, idx, 0, 0)
+	var bFlag uint16
+	if n.ObjectVarIsNullSafe() {
+		bFlag = 1
+	}
+	e.emit(vm.OpObjectGet, idx, bFlag, 0)
 	// pop receiver, push value → net stack delta zero
 	return nil
 }

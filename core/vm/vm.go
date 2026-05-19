@@ -854,6 +854,12 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 
 		case OpObjectGet:
 			receiver := f.pop()
+			// B != 0 marks a nullsafe read (`$obj?->prop`): short-
+			// circuit to null when the receiver itself is null.
+			if ins.B() != 0 && (receiver == nil || phpv.IsNull(receiver)) {
+				f.push(phpv.ZNULL.ZVal())
+				break
+			}
 			name, ok := f.fn.Consts[ins.A()].(phpv.ZString)
 			if !ok {
 				return nil, false, fmt.Errorf("vm: OP_OBJECT_GET name const is %T not ZString", f.fn.Consts[ins.A()])
