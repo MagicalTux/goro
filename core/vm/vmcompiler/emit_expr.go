@@ -927,6 +927,21 @@ func (e *emitter) emitIncDec(n operatorNode, inc bool) error {
 	return nil
 }
 
+// isCoalesceableArrayChain reports whether r is a non-nullsafe
+// array-access chain whose container is a simple variable (possibly
+// through nested array-access). Matches the shapes
+// emitIssetContainerRead handles.
+func isCoalesceableArrayChain(r phpv.Runnable) bool {
+	if !compiler.IsArrayAccessNode(r) {
+		return false
+	}
+	cont, _ := compiler.ArrayAccessParts(r)
+	if compiler.IsSimpleVariable(cont) {
+		return true
+	}
+	return isCoalesceableArrayChain(cont)
+}
+
 // emitCoalesce emits `a ?? b` with PHP's "set and non-null" semantics:
 // undefined variables on the LHS don't warn; if the LHS evaluates to
 // non-null, RHS is skipped.
@@ -948,10 +963,18 @@ func (e *emitter) emitCoalesce(n operatorNode) error {
 		idx := e.localIndex(v.VariableName())
 		e.emit(vm.OpLoadLocal, idx, 0, 0)
 		e.pushStack(1)
+	} else if compiler.IsArrayAccessNode(a) && isCoalesceableArrayChain(a) {
+		// `$container[$key1][$key2]? ?? default` — use the same
+		// permissive chain reads as nested isset (no warnings on
+		// missing intermediate / final keys, no string-on-string
+		// TypeError). The chain leaves the value or null on top.
+		if err := e.emitIssetContainerRead(a); err != nil {
+			return err
+		}
 	} else {
-		// LHS shapes that need write-context suppression (array
-		// elements, object props, nullsafe chains) — delegate the
-		// entire `LHS ?? RHS` expression to the AST runner.
+		// LHS shapes that need write-context suppression (object
+		// props, nullsafe chains) — delegate the entire `LHS ?? RHS`
+		// expression to the AST runner.
 		raw, ok := n.(phpv.Runnable)
 		if !ok {
 			return unsupportedf("coalesce AST delegation: cannot retrieve raw Runnable")
