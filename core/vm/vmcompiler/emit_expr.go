@@ -1053,10 +1053,9 @@ func (e *emitter) emitIssetContainerRead(c phpv.Runnable) error {
 	}
 	if compiler.IsArrayAccessNode(c) {
 		// Nested: $a[$k1][$k2]. Recurse on the inner container, then
-		// fetch via OP_ARRAY_GET; this preserves isset's no-warn
-		// semantics for missing inner keys (OP_ARRAY_GET returns null
-		// without warning when the read is in a context where the
-		// caller checks isset).
+		// fetch via OP_ARRAY_GET_SAFE — isset's permissive semantics
+		// silently return null on missing intermediate keys or
+		// TypeError-shaped accesses (e.g. string-on-string offsets).
 		cont, off := compiler.ArrayAccessParts(c)
 		if err := e.emitIssetContainerRead(cont); err != nil {
 			return err
@@ -1064,7 +1063,7 @@ func (e *emitter) emitIssetContainerRead(c phpv.Runnable) error {
 		if err := e.withSubexpr(func() error { return e.emitExpr(off) }); err != nil {
 			return err
 		}
-		e.emit(vm.OpArrayGet, 0, 0, 0)
+		e.emit(vm.OpArrayGetSafe, 0, 0, 0)
 		e.popStack(1)
 		return nil
 	}

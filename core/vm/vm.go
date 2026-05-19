@@ -1184,6 +1184,16 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 				return nil, false, err
 			}
 
+		// --- isset-permissive nested chain read ---------------------
+		case OpArrayGetSafe:
+			key := f.pop()
+			cont := f.pop()
+			res := compiler.IssetChainElement(ctx, cont, key)
+			if res == nil {
+				res = phpv.ZNULL.ZVal()
+			}
+			f.push(res)
+
 		// --- `isset($container[$key])` -----------------------------
 		case OpIssetDim:
 			key := f.pop()

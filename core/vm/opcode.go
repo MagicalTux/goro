@@ -310,6 +310,13 @@ const (
 	// (idempotent), and pushes the resulting object. Used only for
 	// constructor-arg shapes that don't need by-ref auto-vivification.
 	OpNewAnonClass
+	// OP_ARRAY_GET_SAFE pops key, then container; pushes
+	// compiler.IssetChainElement(ctx, container, key) — the value if
+	// accessible per isset's permissive read semantics, or null if
+	// missing / non-accessible / null-resulting. Used for the
+	// intermediate steps of nested `isset($a[k1][k2][k3])` so a missing
+	// intermediate doesn't throw TypeError on the next-level read.
+	OpArrayGetSafe
 	// OP_ISSET_DIM pops key, then container; pushes a bool from
 	// compiler.EvalIssetDim — "exists & not null" for arrays/strings/
 	// ArrayAccess containers with the same edge cases the AST runner
@@ -449,6 +456,7 @@ var opNames = [...]string{
 	OpLoadConstantByName:  "LOAD_CONSTANT_BY_NAME",
 	OpVarVarRead:          "VAR_VAR_READ",
 	OpNewAnonClass:        "NEW_ANON_CLASS",
+	OpArrayGetSafe:        "ARRAY_GET_SAFE",
 	OpIssetDim:            "ISSET_DIM",
 	OpEmptyDim:            "EMPTY_DIM",
 	OpStaticVarBind:       "STATIC_VAR_BIND",

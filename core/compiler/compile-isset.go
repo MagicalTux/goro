@@ -84,6 +84,129 @@ func compileEmpty(i *tokenizer.Item, c compileCtx) (phpv.Runnable, error) {
 	return &runnableEmpty{arg: args[0], l: i.Loc()}, nil
 }
 
+// IssetChainElement returns container[key] using isset's
+// permissive read semantics — returns nil (not an error) when the
+// element is missing, the container isn't accessible (null,
+// non-array/string/ArrayAccess), or the key has a TypeError-trigger
+// shape (array/object key on a non-object container). Used by the
+// VM's OP_ARRAY_GET_SAFE for the intermediate steps of a nested
+// `isset($a[k1][k2][k3])` chain.
+func IssetChainElement(ctx phpv.Context, value, key *phpv.ZVal) *phpv.ZVal {
+	if value == nil {
+		return nil
+	}
+	switch value.GetType() {
+	case phpv.ZtNull, phpv.ZtBool, phpv.ZtInt, phpv.ZtFloat:
+		return nil
+	}
+	if key.GetType() == phpv.ZtNull {
+		key = phpv.ZString("").ZVal()
+	}
+	if value.GetType() != phpv.ZtObject {
+		// array/object key on non-object container → silently miss
+		// (isset suppresses the TypeError on intermediate steps).
+		if key.GetType() == phpv.ZtArray || key.GetType() == phpv.ZtObject {
+			return nil
+		}
+	}
+	if value.GetType() == phpv.ZtString {
+		var idx int
+		switch key.GetType() {
+		case phpv.ZtInt:
+			idx = int(key.Value().(phpv.ZInt))
+		case phpv.ZtString:
+			s := key.AsString(ctx)
+			if !s.IsNumeric() {
+				return nil
+			}
+			for _, c := range string(s) {
+				if c == '.' || c == 'e' || c == 'E' {
+					return nil
+				}
+			}
+			idx = int(key.AsInt(ctx))
+		case phpv.ZtBool:
+			if key.Value().(phpv.ZBool) {
+				idx = 1
+			} else {
+				idx = 0
+			}
+		case phpv.ZtFloat:
+			idx = int(key.AsInt(ctx))
+		case phpv.ZtNull:
+			idx = 0
+		default:
+			return nil
+		}
+		str := value.AsString(ctx)
+		strLen := len(str)
+		if idx < 0 {
+			idx = strLen + idx
+		}
+		if idx < 0 || idx >= strLen {
+			return nil
+		}
+		return phpv.ZString(string(str[idx])).ZVal()
+	}
+	if value.GetType() == phpv.ZtObject {
+		if obj, ok := value.Value().(*phpobj.ZObject); ok {
+			if h := phpobj.FindIssetDimHandler(obj.GetClass()); h != nil {
+				existsVal, hErr := h(ctx, obj, key)
+				if hErr != nil || !existsVal {
+					return nil
+				}
+				if rh := phpobj.FindReadDimHandler(obj.GetClass()); rh != nil {
+					val, rErr := rh(ctx, obj, key)
+					if rErr != nil {
+						return nil
+					}
+					if val != nil && !phpv.IsNull(val) {
+						return val
+					}
+					return nil
+				}
+				val, oErr := obj.OffsetGet(ctx, key)
+				if oErr != nil {
+					return nil
+				}
+				if val != nil && !phpv.IsNull(val) {
+					return val
+				}
+				return nil
+			}
+			existsVal, eErr := obj.OffsetExists(ctx, key)
+			if eErr != nil || !existsVal {
+				return nil
+			}
+			val, oErr := obj.OffsetGet(ctx, key)
+			if oErr != nil {
+				return nil
+			}
+			if val != nil && !phpv.IsNull(val) {
+				return val
+			}
+			return nil
+		}
+		return nil
+	}
+	arr, ok := value.Value().(phpv.ZArrayAccess)
+	if !ok {
+		return nil
+	}
+	exists, existsErr := arr.OffsetExists(ctx, key)
+	if !exists || existsErr != nil {
+		return nil
+	}
+	val, valErr := arr.OffsetGet(ctx, key)
+	if valErr != nil {
+		return nil
+	}
+	if val == nil || phpv.IsNull(val) {
+		return nil
+	}
+	return val
+}
+
 // EvalIssetDim performs the "exists & not-null" check on
 // container[key] after both have been evaluated. Mirrors the
 // post-container-resolution portion of checkExistence's
