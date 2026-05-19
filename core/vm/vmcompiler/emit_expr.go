@@ -585,7 +585,11 @@ func (e *emitter) emitObjectDynGet(node phpv.Runnable) error {
 	if err := e.withSubexpr(func() error { return e.emitExpr(n.ObjectDynVarNameExpr()) }); err != nil {
 		return err
 	}
-	e.emit(vm.OpObjectDynGet, 0, 0, 0)
+	var aFlags uint16
+	if compiler.ObjectDynVarIsNullSafe(node) {
+		aFlags |= 1
+	}
+	e.emit(vm.OpObjectDynGet, aFlags, 0, 0)
 	e.popStack(1) // pops 2, pushes 1 → net -1
 	return nil
 }

@@ -1053,15 +1053,21 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 			}
 			f.push(res)
 
-		// --- $obj->{$name} read -------------------------------------
+		// --- $obj->{$name} / $obj?->{$name} read --------------------
 		case OpObjectDynGet:
 			nameV := f.pop()
 			recv := f.pop()
-			res, err := compiler.EvalObjectDynVarRead(ctx, recv, nameV)
-			if err != nil {
-				return nil, false, err
+			// Bit 0 of A is the nullsafe flag: short-circuit to null
+			// when the receiver itself is null.
+			if ins.A()&1 != 0 && (recv == nil || phpv.IsNull(recv)) {
+				f.push(phpv.ZNULL.ZVal())
+			} else {
+				res, err := compiler.EvalObjectDynVarRead(ctx, recv, nameV)
+				if err != nil {
+					return nil, false, err
+				}
+				f.push(res)
 			}
-			f.push(res)
 
 		// --- global $x ---------------------------------------------
 		case OpGlobalBind:

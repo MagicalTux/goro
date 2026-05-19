@@ -566,12 +566,19 @@ func (r *runFirstClassDynMethodCallable) DynMethodFirstClassReceiver() phpv.Runn
 // DynMethodFirstClassNameExpr returns the method-name expression.
 func (r *runFirstClassDynMethodCallable) DynMethodFirstClassNameExpr() phpv.Runnable { return r.nameExpr }
 
-// IsObjectDynVarReadNode reports whether r is a plain (non-nullsafe)
-// `$obj->{$name}` value read. The VM lowers these to OP_OBJECT_DYN_GET.
-// Nullsafe / nullChain forms still AST-delegate.
+// IsObjectDynVarReadNode reports whether r is a `$obj->{$name}` or
+// `$obj?->{$name}` value read. The VM lowers both to OP_OBJECT_DYN_GET
+// (nullsafe is signalled via the opcode's A flag).
 func IsObjectDynVarReadNode(r phpv.Runnable) bool {
 	n, ok := r.(*runObjectDynVar)
-	return ok && !n.nullsafe && !n.nullChain
+	return ok && !n.nullChain
+}
+
+// ObjectDynVarIsNullSafe reports whether the dyn-var access is the
+// `$obj?->{$name}` nullsafe form (short-circuits to null when the
+// receiver is null).
+func ObjectDynVarIsNullSafe(r phpv.Runnable) bool {
+	return r.(*runObjectDynVar).nullsafe
 }
 
 // ObjectDynVarReceiver returns the receiver expression.
