@@ -885,6 +885,13 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 				args[i] = f.pop()
 			}
 			receiver := f.pop()
+			// C != 0 marks a nullsafe call (`$obj?->m(...)`): short-
+			// circuit to null when the receiver itself is null,
+			// without evaluating the method dispatch.
+			if ins.C() != 0 && (receiver == nil || phpv.IsNull(receiver)) {
+				f.push(phpv.ZNULL.ZVal())
+				break
+			}
 			name, ok := f.fn.Consts[ins.A()].(phpv.ZString)
 			if !ok {
 				return nil, false, fmt.Errorf("vm: OP_OBJECT_CALL name const is %T not ZString", f.fn.Consts[ins.A()])

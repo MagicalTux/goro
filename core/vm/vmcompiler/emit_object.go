@@ -137,12 +137,11 @@ func (e *emitter) emitObjectFuncCall(n objectFuncNode) error {
 	}
 	name := n.ObjectFuncName()
 	args := n.ObjectFuncArgs()
-	// AST-delegate nullsafe, dynamic-name, or special-args method
-	// calls. Also AST-delegate when any arg is a writable lvalue —
-	// we can't statically know if the resolved method declares a
-	// by-reference parameter (polymorphism), and the VM's value-
-	// passing call protocol can't bind references after the fact.
-	if n.ObjectFuncIsNullSafe() || (len(name) > 0 && name[0] == '$') || compiler.CallHasSpecialArgs(args) || compiler.CallHasWritableArg(args) {
+	// AST-delegate dynamic-name or special-args method calls, and
+	// writable-lvalue args (polymorphism precludes static by-ref
+	// param detection). Nullsafe is encoded via OP_OBJECT_CALL's
+	// C flag now, so it's no longer a delegation reason.
+	if (len(name) > 0 && name[0] == '$') || compiler.CallHasSpecialArgs(args) || compiler.CallHasWritableArg(args) {
 		raw, ok := n.(phpv.Runnable)
 		if !ok {
 			return unsupportedf("method-call AST delegation: cannot retrieve raw Runnable")
@@ -162,7 +161,11 @@ func (e *emitter) emitObjectFuncCall(n objectFuncNode) error {
 		}
 	}
 	nameIdx := e.constIndex(n.ObjectFuncName())
-	e.emit(vm.OpObjectCall, nameIdx, uint16(len(args)), 0)
+	var cFlag int32
+	if n.ObjectFuncIsNullSafe() {
+		cFlag = 1
+	}
+	e.emit(vm.OpObjectCall, nameIdx, uint16(len(args)), cFlag)
 	// Pops receiver + argc args, pushes 1 result. Net delta: -(1 + argc) + 1 = -argc.
 	if len(args) > 0 {
 		e.popStack(len(args))
