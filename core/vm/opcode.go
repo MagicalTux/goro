@@ -347,6 +347,11 @@ const (
 	// LSB-aware class resolution, asymmetric visibility, typed-prop
 	// enforcement (strict + weak coercion), and IncRef/DecRef.
 	OpStaticPropSet
+	// OP_CREATE_REF pushes a reference to the target at SubASTs[A]
+	// (a *runRef). The opcode dispatches through compiler.EvalCreateRef
+	// which handles per-shape semantics (variable / array-access /
+	// object-prop / static-prop / non-variable expression).
+	OpCreateRef
 	// OP_STATIC_VAR_BIND runs `static $x = init; …` for the
 	// *runStaticVar at SubASTs[A]: evaluates each entry's initializer
 	// the first time per scope key (closure-instance, class, or
@@ -482,5 +487,6 @@ var opNames = [...]string{
 	OpUnsetDim:            "UNSET_DIM",
 	OpCoerceReturn:        "COERCE_RETURN",
 	OpStaticPropSet:       "STATIC_PROP_SET",
+	OpCreateRef:           "CREATE_REF",
 	OpStaticVarBind:       "STATIC_VAR_BIND",
 }

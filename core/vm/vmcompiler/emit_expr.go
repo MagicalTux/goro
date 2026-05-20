@@ -157,6 +157,15 @@ func (e *emitter) emitExpr(node phpv.Runnable) error {
 	if compiler.IsClassStaticDynVarReadNode(node) {
 		return e.emitClassStaticDynGet(node)
 	}
+	if compiler.IsRefNode(node) {
+		// `&$expr` reference creation — dedicated OP_CREATE_REF that
+		// calls compiler.EvalCreateRef (which handles per-target-shape
+		// semantics). No generic OpClassConst delegation.
+		idx := e.astIndex(node)
+		e.emit(vm.OpCreateRef, idx, 0, 0)
+		e.pushStack(1)
+		return nil
+	}
 	if compiler.IsValueExprAstDelegated(node) {
 		// Common value-expression types we delegate wholesale
 		// (clone, instanceof, void-cast, first-class callables, …).

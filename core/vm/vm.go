@@ -1241,6 +1241,15 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 				return nil, false, err
 			}
 
+		// --- `&$expr` reference creation ----------------------------
+		case OpCreateRef:
+			node := f.fn.SubASTs[ins.A()]
+			res, err := compiler.EvalCreateRef(ctx, node)
+			if err != nil {
+				return nil, false, err
+			}
+			f.push(res)
+
 		// --- `Foo::$bar = v` static property write ------------------
 		case OpStaticPropSet:
 			val := f.pop()

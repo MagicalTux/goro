@@ -466,6 +466,20 @@ func (r *runRef) isVariableLike() bool {
 	return false
 }
 
+// EvalCreateRef runs the reference-creation logic for a `&$expr`
+// AST node. Shared by the AST runner and the VM's OP_CREATE_REF
+// dispatch — replaces the generic OpClassConst delegation with a
+// dedicated opcode + helper.
+func EvalCreateRef(ctx phpv.Context, node phpv.Runnable) (*phpv.ZVal, error) {
+	return node.(*runRef).Run(ctx)
+}
+
+// IsRefNode reports whether r is a `&$expr` reference-creation node.
+func IsRefNode(r phpv.Runnable) bool {
+	_, ok := r.(*runRef)
+	return ok
+}
+
 func (r *runRef) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	// Check if the inner access is a string offset — not allowed for references.
 	// But first, we must let Run() proceed so that "Illegal string offset" warnings
