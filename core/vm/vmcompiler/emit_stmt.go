@@ -67,16 +67,21 @@ func (e *emitter) emitStmt(node phpv.Runnable) error {
 		return nil
 	}
 
-	// `#[NoDiscard]`-wrapped statement: AST-delegate via OpTryFinally.
-	// A native OP_NODISCARD_ENTER/EXIT bracket was tried but regressed
-	// native-method NoDiscard detection (DateTimeImmutable::setTimestamp
-	// etc.) — the warning fires off the AST runner's call bookkeeping
-	// which the native emit doesn't reproduce. Keep AST delegation;
-	// the compiler.NoDiscard* helpers stay for the AST runner.
+	// `#[NoDiscard]`-wrapped statement: bracket the inner stmt with
+	// OP_NODISCARD_ENTER/EXIT. The prev in-context flag lives in a
+	// synthetic local so the exit restores it on normal completion.
+	// Re-enabled with B7 — the VM's OP_OBJECT_CALL path routes through
+	// CallInstanceMethod → ctx.CallZVal → callZValImpl which sets
+	// lastCallable for NoDiscard attributes the same way the AST does.
 	if compiler.IsNoDiscardNode(node) {
-		idx := e.astIndex(node)
-		e.emit(vm.OpTryFinally, idx, 0, 0)
-		e.emit(vm.OpRefreshSlots, 0, 0, 0)
+		nd := node.(interface{ NoDiscardInner() phpv.Runnable })
+		prevName := phpv.ZString(fmt.Sprintf("__nodiscard_prev_%d", e.nextSynthID()))
+		prevIdx := e.localIndex(prevName)
+		e.emit(vm.OpNoDiscardEnter, prevIdx, 0, 0)
+		if err := e.emitStmt(nd.NoDiscardInner()); err != nil {
+			return err
+		}
+		e.emit(vm.OpNoDiscardExit, prevIdx, 0, 0)
 		return nil
 	}
 

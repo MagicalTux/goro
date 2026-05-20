@@ -273,11 +273,9 @@ func IsSlotSafe(g phpv.GlobalContext, r phpv.Runnable) bool {
 		// targets through ctx.OffsetSet; the hashtable must be
 		// authoritative.
 		return false
-	case *runNoDiscardStatement:
-		// NoDiscard-wrapped statements AST-delegate (native emit
-		// regressed native-method detection). Operands read via the
-		// hashtable, so the body is slot-unsafe.
-		return false
+	// `#[NoDiscard]` wraps are native-emitted (OP_NODISCARD_ENTER/EXIT
+	// bracket); the body's slot-safety follows from the inner stmt's
+	// own analysis.
 	case *runClassStaticVarRef:
 		// Class-level constant / static-prop / static-name access
 		// (`Foo::{$x}`, `$obj::CONST`, `Foo::$bar`, etc.) is
@@ -591,14 +589,29 @@ func CallInstanceMethod(ctx phpv.Context, obj *phpv.ZVal, name phpv.ZString, arg
 	}
 
 	// Non-static instance methods: narrow $this to the defining class
-	// for parent::-style dispatch, then invoke directly. Keep the
-	// callable un-wrapped to preserve object identity (the AST does
-	// the same for the simple case).
+	// for parent::-style dispatch, then invoke directly.
 	var objBound phpv.ZObject = zobj
 	if method.Class != nil {
 		if kin := zobj.GetKin(string(method.Class.GetName())); kin != nil {
 			objBound = kin
 		}
+	}
+	// Wrap native methods that carry attributes (e.g. NoDiscard on
+	// DateTimeImmutable::setTimestamp) in MethodCallable so the call
+	// dispatch can find them via AttributeGetter. User-defined
+	// methods are already AttributeGetters via their underlying
+	// ZClosure, so this only matters for builtin methods.
+	if len(method.Attributes) > 0 {
+		// AliasName carries the method name into NoDiscard messages
+		// (NativeMethod.Name() is empty; the .Name field on the
+		// ZClassMethod record holds the actual name).
+		wrapped := &phpv.MethodCallable{
+			Callable:   method.Method,
+			Class:      class,
+			Attributes: method.Attributes,
+			AliasName:  string(method.Name),
+		}
+		return ctx.CallZVal(ctx, wrapped, args, objBound)
 	}
 	return ctx.CallZVal(ctx, method.Method, args, objBound)
 }
