@@ -724,6 +724,23 @@ func (r *runObjectVar) Dump(w io.Writer) error {
 	return err
 }
 
+// IsStaticMethodCallNode reports whether r is a `Foo::method()` /
+// `self::` / `parent::` / `static::` style static method call. The
+// VM emitter routes these to OP_STATIC_METHOD_CALL.
+func IsStaticMethodCallNode(r phpv.Runnable) bool {
+	if of, ok := r.(*runObjectFunc); ok {
+		return of.static
+	}
+	return false
+}
+
+// EvalStaticMethodCall dispatches a static-style method call via the
+// AST runner. Used by the VM's OP_STATIC_METHOD_CALL — replaces the
+// generic OpClassConst delegation with a dedicated opcode + helper.
+func EvalStaticMethodCall(ctx phpv.Context, node phpv.Runnable) (*phpv.ZVal, error) {
+	return node.(*runObjectFunc).Run(ctx)
+}
+
 func (r *runObjectFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	ctx.Tick(ctx, r.l)
 

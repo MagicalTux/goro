@@ -359,6 +359,12 @@ const (
 	// `clone $x` form uses OP_CLONE; this is the rare-extended-form
 	// dedicated dispatch.
 	OpCloneExt
+	// OP_STATIC_METHOD_CALL dispatches a `Foo::method(args)` static
+	// method call (also `self::`, `parent::`, `static::`). The
+	// *runObjectFunc node at SubASTs[A] carries the class-source
+	// expression, method name, and arg list. compiler.EvalStaticMethodCall
+	// does class resolution, LSB binding, and dispatch.
+	OpStaticMethodCall
 	// OP_STATIC_VAR_BIND runs `static $x = init; …` for the
 	// *runStaticVar at SubASTs[A]: evaluates each entry's initializer
 	// the first time per scope key (closure-instance, class, or
@@ -496,5 +502,6 @@ var opNames = [...]string{
 	OpStaticPropSet:       "STATIC_PROP_SET",
 	OpCreateRef:           "CREATE_REF",
 	OpCloneExt:            "CLONE_EXT",
+	OpStaticMethodCall:    "STATIC_METHOD_CALL",
 	OpStaticVarBind:       "STATIC_VAR_BIND",
 }

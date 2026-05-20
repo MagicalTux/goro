@@ -1241,6 +1241,18 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 				return nil, false, err
 			}
 
+		// --- `Foo::method(args)` static-style method call -----------
+		case OpStaticMethodCall:
+			node := f.fn.SubASTs[ins.A()]
+			res, err := compiler.EvalStaticMethodCall(ctx, node)
+			if err != nil {
+				return nil, false, err
+			}
+			if res == nil {
+				res = phpv.ZNULL.ZVal()
+			}
+			f.push(res)
+
 		// --- extended `clone(…)` PHP 8.5+ forms ---------------------
 		case OpCloneExt:
 			node := f.fn.SubASTs[ins.A()]
