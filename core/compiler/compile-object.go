@@ -2661,6 +2661,11 @@ func reorderNewNamedArgs(ctx phpv.Context, funcArgs []*phpv.FuncArg, args phpv.R
 
 // phpValueTypeName returns the PHP 8 type name for a value in error messages.
 // PHP 8 shows actual values for scalars: "true", "false", "null", "int", "string", "float", "array"
+// PhpValueTypeName is the exported alias used by the VM's object/
+// property opcodes so their error messages match PHP's
+// value-specific naming ("true"/"false"/"null" instead of "bool"/"null").
+func PhpValueTypeName(v *phpv.ZVal) string { return phpValueTypeName(v) }
+
 func phpValueTypeName(v *phpv.ZVal) string {
 	switch v.GetType() {
 	case phpv.ZtNull:

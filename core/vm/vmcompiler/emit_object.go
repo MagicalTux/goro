@@ -78,8 +78,20 @@ func (e *emitter) emitObjectVarAssign(lhs objectVarNode, rhs phpv.Runnable, stmt
 	if len(name) > 0 && name[0] == '$' {
 		return unsupportedf("dynamic property name in assign")
 	}
-	if err := e.withSubexpr(func() error { return e.emitExpr(lhs.ObjectVarReceiver()) }); err != nil {
-		return err
+	// PHP's write-context for `$x->prop = v`: an undefined `$x` does
+	// NOT emit "Undefined variable" — the AST's runVariable.Run sees
+	// Parent=runOperator(write) and short-circuits the warning. For
+	// the simple-variable receiver, emit the silent OP_LOAD_LOCAL
+	// instead of OP_LOAD_LOCAL_OR_WARN.
+	recv := lhs.ObjectVarReceiver()
+	if v, ok := recv.(variableNode); ok {
+		idx := e.localIndex(v.VariableName())
+		e.emit(vm.OpLoadLocal, idx, 0, 0)
+		e.pushStack(1)
+	} else {
+		if err := e.withSubexpr(func() error { return e.emitExpr(recv) }); err != nil {
+			return err
+		}
 	}
 	if err := e.withSubexpr(func() error { return e.emitExpr(rhs) }); err != nil {
 		return err

@@ -84,12 +84,12 @@ func objectSet(ctx phpv.Context, receiver *phpv.ZVal, name phpv.ZString, value *
 			return fmt.Errorf("vm: receiver is not a ZObject")
 		}
 		return obj.ObjectSet(ctx, name, value)
-	case phpv.ZtNull:
-		return phpobj.ThrowError(ctx, phpobj.Error,
-			fmt.Sprintf("Attempt to assign property \"%s\" on null", string(name)))
 	default:
+		// PHP's value-specific naming: "true"/"false"/"null" rather
+		// than the generic type names. Matches the AST runner via
+		// compiler.PhpValueTypeName.
 		return phpobj.ThrowError(ctx, phpobj.Error,
-			fmt.Sprintf("Attempt to assign property \"%s\" on %s", string(name), receiver.GetType().TypeName()))
+			fmt.Sprintf("Attempt to assign property \"%s\" on %s", string(name), compiler.PhpValueTypeName(receiver)))
 	}
 }
 
