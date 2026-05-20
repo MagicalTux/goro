@@ -341,6 +341,12 @@ const (
 	// "Implicit conversion from float to int" deprecation at the
 	// return statement (before any finally runs).
 	OpCoerceReturn
+	// OP_STATIC_PROP_SET pops the value, pops the class-source value,
+	// and writes the static property named Consts[A] on the resolved
+	// class via compiler.AssignClassStaticProp. The helper handles
+	// LSB-aware class resolution, asymmetric visibility, typed-prop
+	// enforcement (strict + weak coercion), and IncRef/DecRef.
+	OpStaticPropSet
 	// OP_STATIC_VAR_BIND runs `static $x = init; …` for the
 	// *runStaticVar at SubASTs[A]: evaluates each entry's initializer
 	// the first time per scope key (closure-instance, class, or
@@ -475,5 +481,6 @@ var opNames = [...]string{
 	OpEmptyDim:            "EMPTY_DIM",
 	OpUnsetDim:            "UNSET_DIM",
 	OpCoerceReturn:        "COERCE_RETURN",
+	OpStaticPropSet:       "STATIC_PROP_SET",
 	OpStaticVarBind:       "STATIC_VAR_BIND",
 }

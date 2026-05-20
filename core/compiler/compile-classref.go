@@ -70,44 +70,54 @@ func (r *runClassStaticVarRef) WriteValue(ctx phpv.Context, value *phpv.ZVal) er
 	if err != nil {
 		return err
 	}
+	return AssignClassStaticProp(ctx, className, r.varName, value)
+}
 
+// AssignClassStaticProp writes `value` into the static property
+// named `varName` on the class identified by `className` (a resolved
+// class-source value: a string, "self", "parent", "static", etc.).
+// Mirrors runClassStaticVarRef.WriteValue: LSB-aware class resolution
+// via ctx.Global().GetClass, both read-side and write-side
+// (PHP 8.4 asymmetric) visibility checks, typed-property enforcement
+// (strict + weak coercion), and IncRef/DecRef bookkeeping for object
+// values. Used by both the AST runner and the VM's
+// OP_STATIC_PROP_SET.
+func AssignClassStaticProp(ctx phpv.Context, className *phpv.ZVal, varName phpv.ZString, value *phpv.ZVal) error {
 	class, err := ctx.Global().GetClass(ctx, className.AsString(ctx), true)
 	if err != nil {
 		return err
 	}
-
-	// Walk the class hierarchy to find the static property (handles inheritance)
 	zc := class.(*phpobj.ZClass)
 
 	// PHP: unset() on static properties is always an error, even if the
 	// property doesn't exist. Check for unset before visibility/existence.
 	if value == nil {
-		return phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Attempt to unset static property %s::$%s", class.GetName(), r.varName))
+		return phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Attempt to unset static property %s::$%s", class.GetName(), varName))
 	}
 
 	// Check visibility before writing
-	if visErr := phpobj.CheckStaticPropVisibility(ctx, zc, r.varName); visErr != "" {
+	if visErr := phpobj.CheckStaticPropVisibility(ctx, zc, varName); visErr != "" {
 		return phpobj.ThrowError(ctx, phpobj.Error, visErr)
 	}
 
 	// Check asymmetric set visibility for static properties (PHP 8.4)
-	if visErr := phpobj.CheckStaticPropSetVisibility(ctx, zc, r.varName); visErr != "" {
+	if visErr := phpobj.CheckStaticPropSetVisibility(ctx, zc, varName); visErr != "" {
 		return phpobj.ThrowError(ctx, phpobj.Error, visErr)
 	}
 
-	p, found, err := zc.FindStaticProp(ctx, r.varName)
+	p, found, err := zc.FindStaticProp(ctx, varName)
 	if err != nil {
 		return err
 	}
 	if !found {
-		return phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Access to undeclared static property %s::$%s", class.GetName(), r.varName))
+		return phpobj.ThrowError(ctx, phpobj.Error, fmt.Sprintf("Access to undeclared static property %s::$%s", class.GetName(), varName))
 	}
 
 	// Track object references for static properties
 	var oldObj interface {
 		DecRef(phpv.Context) error
 	}
-	if old := p.GetString(r.varName); old != nil && old.GetType() == phpv.ZtObject {
+	if old := p.GetString(varName); old != nil && old.GetType() == phpv.ZtObject {
 		if obj, ok := old.Value().(interface {
 			DecRef(phpv.Context) error
 		}); ok {
@@ -121,13 +131,13 @@ func (r *runClassStaticVarRef) WriteValue(ctx phpv.Context, value *phpv.ZVal) er
 	}
 
 	// Enforce typed property type checking for static properties
-	if prop := zc.FindDeclaredProp(r.varName); prop != nil && prop.TypeHint != nil {
+	if prop := zc.FindDeclaredProp(varName); prop != nil && prop.TypeHint != nil {
 		hint := prop.TypeHint
 		if value.IsNull() {
 			if !hint.IsNullable() {
 				return phpobj.ThrowError(ctx, phpobj.TypeError,
 					fmt.Sprintf("Cannot assign null to property %s::$%s of type %s",
-						class.GetName(), r.varName, hint.String()))
+						class.GetName(), varName, hint.String()))
 			}
 		} else {
 			isStrict := ctx.Global().GetStrictTypes()
@@ -136,7 +146,7 @@ func (r *runClassStaticVarRef) WriteValue(ctx phpv.Context, value *phpv.ZVal) er
 					typeName := phpv.ZValTypeNameDetailed(value)
 					return phpobj.ThrowError(ctx, phpobj.TypeError,
 						fmt.Sprintf("Cannot assign %s to property %s::$%s of type %s",
-							typeName, class.GetName(), r.varName, hint.String()))
+							typeName, class.GetName(), varName, hint.String()))
 				}
 				// int->float widening in strict mode
 				if hint.Type() == phpv.ZtFloat && value.GetType() == phpv.ZtInt && len(hint.Union) == 0 && len(hint.Intersection) == 0 {
@@ -149,7 +159,7 @@ func (r *runClassStaticVarRef) WriteValue(ctx phpv.Context, value *phpv.ZVal) er
 					typeName := phpv.ZValTypeNameDetailed(value)
 					return phpobj.ThrowError(ctx, phpobj.TypeError,
 						fmt.Sprintf("Cannot assign %s to property %s::$%s of type %s",
-							typeName, class.GetName(), r.varName, hint.String()))
+							typeName, class.GetName(), varName, hint.String()))
 				}
 				// Coerce scalar types in weak mode
 				hintType := hint.Type()
@@ -169,7 +179,7 @@ func (r *runClassStaticVarRef) WriteValue(ctx phpv.Context, value *phpv.ZVal) er
 		}
 	}
 
-	err = p.SetString(r.varName, value)
+	err = p.SetString(varName, value)
 	if err != nil {
 		return err
 	}

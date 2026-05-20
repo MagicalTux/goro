@@ -809,6 +809,24 @@ func (e *emitter) emitAssign(n operatorNode) error {
 		return e.emitAssignViaAST(n)
 	}
 	if compiler.IsStaticPropertyTarget(n.OperatorA()) {
+		// `Foo::$bar = v`: emit natively in stmt context when the LHS
+		// is the static-name form (`*runClassStaticVarRef`).
+		// AssignClassStaticProp handles LSB resolution, asymmetric
+		// visibility, typed-prop enforcement.
+		if e.stmtCtx && compiler.IsClassStaticVarReadNode(n.OperatorA()) {
+			classExpr := n.OperatorA().(interface{ ClassStaticVarReadClassExpr() phpv.Runnable }).ClassStaticVarReadClassExpr()
+			varName := n.OperatorA().(interface{ ClassStaticVarReadName() phpv.ZString }).ClassStaticVarReadName()
+			if err := e.withSubexpr(func() error { return e.emitExpr(classExpr) }); err != nil {
+				return err
+			}
+			if err := e.withSubexpr(func() error { return e.emitExpr(n.OperatorB()) }); err != nil {
+				return err
+			}
+			nameIdx := e.constIndex(varName)
+			e.emit(vm.OpStaticPropSet, nameIdx, 0, 0)
+			e.popStack(2)
+			return nil
+		}
 		return e.emitAssignViaAST(n)
 	}
 	if compiler.IsDestructureTarget(n.OperatorA()) {

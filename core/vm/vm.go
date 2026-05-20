@@ -1241,6 +1241,18 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 				return nil, false, err
 			}
 
+		// --- `Foo::$bar = v` static property write ------------------
+		case OpStaticPropSet:
+			val := f.pop()
+			classV := f.pop()
+			varName, ok := f.fn.Consts[ins.A()].(phpv.ZString)
+			if !ok {
+				return nil, false, fmt.Errorf("vm: OP_STATIC_PROP_SET name const is %T not ZString", f.fn.Consts[ins.A()])
+			}
+			if err := compiler.AssignClassStaticProp(ctx, classV, varName, val); err != nil {
+				return nil, false, err
+			}
+
 		// --- typed-return non-strict coercion -----------------------
 		case OpCoerceReturn:
 			ret := f.pop()
