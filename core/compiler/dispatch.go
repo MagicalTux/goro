@@ -182,7 +182,21 @@ func IsSlotSafe(g phpv.GlobalContext, r phpv.Runnable) bool {
 				target = n.b // prefix ++/-- carries the target on b
 			}
 			switch t := target.(type) {
-			case *runObjectVar, *runClassStaticVarRef, *runClassStaticDynVarRef, *runDestructure, *runVariableRef:
+			case *runObjectVar:
+				// Plain `=` to a non-nullsafe, static-name object
+				// property now emits natively via OP_OBJECT_SET — the
+				// op handler doesn't touch caller locals, so the body
+				// can stay slot-safe. Compound (+=, .=) and inc/dec
+				// still AST-delegate via emitCompoundAssign.
+				if isCompound || isIncDec {
+					return false
+				}
+				if t.nullsafe || (len(t.varName) > 0 && t.varName[0] == '$') {
+					return false
+				}
+				// Plain simple `=` is native — fall through, no slot-
+				// unsafe contribution from this node.
+			case *runClassStaticVarRef, *runClassStaticDynVarRef, *runDestructure, *runVariableRef:
 				return false
 			case *runArrayAccess:
 				if isIncDec || isCompound {

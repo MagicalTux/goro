@@ -796,7 +796,16 @@ func (e *emitter) emitAssign(n operatorNode) error {
 	// those, delegate the whole runOperator (LHS + RHS + write) to
 	// the AST runner. IsSlotSafe rejects bodies with these writes,
 	// so the hashtable is in sync when the AST reads locals.
-	if _, ok := n.OperatorA().(objectVarNode); ok {
+	if ov, ok := n.OperatorA().(objectVarNode); ok {
+		// `$obj->prop = v`: emit natively when stmt-context, static-name,
+		// non-nullsafe. OP_OBJECT_SET dispatches via ZObject's ObjectSet
+		// which already handles typed properties, hooks, and asymmetric
+		// visibility. Expr-context still AST-delegates (the assignment
+		// result needs the value on the stack and we lack a SWAP opcode).
+		name := ov.ObjectVarName()
+		if e.stmtCtx && !ov.ObjectVarIsNullSafe() && !(len(name) > 0 && name[0] == '$') {
+			return e.emitObjectVarAssign(ov, n.OperatorB(), true)
+		}
 		return e.emitAssignViaAST(n)
 	}
 	if compiler.IsStaticPropertyTarget(n.OperatorA()) {
