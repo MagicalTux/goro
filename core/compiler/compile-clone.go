@@ -84,6 +84,22 @@ func (r *runnableClone) Dump(w io.Writer) error {
 	return err
 }
 
+// EvalCloneExt runs the extended-form `clone($x, $with)` / `clone(...$arr)`
+// / named-args clone, calling into runnableClone.Run's body. Used by
+// the VM's OP_CLONE_EXT so the generic OpClassConst delegation is
+// replaced by a dedicated opcode + helper.
+func EvalCloneExt(ctx phpv.Context, node phpv.Runnable) (*phpv.ZVal, error) {
+	return node.(*runnableClone).Run(ctx)
+}
+
+// IsCloneExtNode reports whether r is a non-basic `clone(…)` (extended
+// PHP 8.5+ form). Basic `clone $x` uses OP_CLONE; this routes the
+// extended form through OP_CLONE_EXT.
+func IsCloneExtNode(r phpv.Runnable) bool {
+	c, ok := r.(*runnableClone)
+	return ok && !c.CloneIsBasic()
+}
+
 func (r *runnableClone) Run(ctx phpv.Context) (l *phpv.ZVal, err error) {
 	// Handle spread form: clone(...$arr)
 	if r.spread != nil {

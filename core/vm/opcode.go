@@ -352,6 +352,13 @@ const (
 	// which handles per-shape semantics (variable / array-access /
 	// object-prop / static-prop / non-variable expression).
 	OpCreateRef
+	// OP_CLONE_EXT pushes the result of an extended PHP 8.5+ clone
+	// expression — `clone($x, $with)`, `clone(...$arr)`, or
+	// clone with named args. The *runnableClone node lives at
+	// SubASTs[A]; compiler.EvalCloneExt does the work. The basic
+	// `clone $x` form uses OP_CLONE; this is the rare-extended-form
+	// dedicated dispatch.
+	OpCloneExt
 	// OP_STATIC_VAR_BIND runs `static $x = init; …` for the
 	// *runStaticVar at SubASTs[A]: evaluates each entry's initializer
 	// the first time per scope key (closure-instance, class, or
@@ -488,5 +495,6 @@ var opNames = [...]string{
 	OpCoerceReturn:        "COERCE_RETURN",
 	OpStaticPropSet:       "STATIC_PROP_SET",
 	OpCreateRef:           "CREATE_REF",
+	OpCloneExt:            "CLONE_EXT",
 	OpStaticVarBind:       "STATIC_VAR_BIND",
 }

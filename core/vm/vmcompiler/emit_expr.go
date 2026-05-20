@@ -166,6 +166,14 @@ func (e *emitter) emitExpr(node phpv.Runnable) error {
 		e.pushStack(1)
 		return nil
 	}
+	if compiler.IsCloneExtNode(node) {
+		// Extended `clone($x, $with)` / `clone(...$arr)` (PHP 8.5+)
+		// — dedicated OP_CLONE_EXT calls compiler.EvalCloneExt.
+		idx := e.astIndex(node)
+		e.emit(vm.OpCloneExt, idx, 0, 0)
+		e.pushStack(1)
+		return nil
+	}
 	if compiler.IsValueExprAstDelegated(node) {
 		// Common value-expression types we delegate wholesale
 		// (clone, instanceof, void-cast, first-class callables, …).
