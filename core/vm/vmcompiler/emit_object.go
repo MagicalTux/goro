@@ -104,10 +104,22 @@ func (e *emitter) emitObjectVarAssign(lhs objectVarNode, rhs phpv.Runnable, stmt
 
 func (e *emitter) emitObjectVarRead(n objectVarNode) error {
 	name := n.ObjectVarName()
-	// Dynamic-name property reads ($obj->{$x}) parse to runObjectDynVar,
-	// which IsObjectDynVarReadNode intercepts before this function is
-	// reached. objectVarNode is only ever *runObjectVar, whose varName
-	// is always a literal identifier — no $-prefix fallback needed.
+	// `$obj->$x` (no curly braces) parses to runObjectVar with the
+	// literal dollar-prefixed token as the name (e.g. "$x"). That form
+	// needs runtime variable lookup, which the simple OP_OBJECT_GET
+	// path doesn't do — AST-delegate via OpClassConst. Curly-brace
+	// form `$obj->{$x}` parses to runObjectDynVar and is intercepted
+	// by IsObjectDynVarReadNode earlier.
+	if len(name) > 0 && name[0] == '$' {
+		raw, ok := n.(phpv.Runnable)
+		if !ok {
+			return unsupportedf("property-read AST delegation: cannot retrieve raw Runnable")
+		}
+		idx := e.astIndex(raw)
+		e.emit(vm.OpClassConst, idx, 0, 0)
+		e.pushStack(1)
+		return nil
+	}
 	if err := e.withSubexpr(func() error { return e.emitExpr(n.ObjectVarReceiver()) }); err != nil {
 		return err
 	}
@@ -146,9 +158,28 @@ func (e *emitter) emitObjectFuncCall(n objectFuncNode) error {
 	}
 	name := n.ObjectFuncName()
 	args := n.ObjectFuncArgs()
-	// Dynamic-name calls ($obj->{$x}(...)) parse to runObjectDynFunc and
-	// are intercepted by IsObjectDynFuncNode before this function runs.
-	// objectFuncNode is only ever *runObjectFunc with a literal name.
+	// `$obj->$x(...)` (no curly braces) parses to runObjectFunc with
+	// the literal dollar-prefixed token as the method name. That form
+	// needs runtime variable lookup, which the native call path doesn't
+	// do — AST-delegate via OpClassConst / OpTryFinally. Curly-brace
+	// form `$obj->{$x}(...)` parses to runObjectDynFunc and is
+	// intercepted by IsObjectDynFuncNode earlier.
+	if len(name) > 0 && name[0] == '$' {
+		raw, ok := n.(phpv.Runnable)
+		if !ok {
+			return unsupportedf("method-call AST delegation: cannot retrieve raw Runnable")
+		}
+		stmtCtx := e.stmtCtx
+		idx := e.astIndex(raw)
+		if stmtCtx {
+			e.emit(vm.OpTryFinally, idx, 0, 0)
+		} else {
+			e.emit(vm.OpClassConst, idx, 0, 0)
+			e.pushStack(1)
+		}
+		e.emit(vm.OpRefreshSlots, 0, 0, 0)
+		return nil
+	}
 	// Special-args / writable-arg calls route through the by-exprs
 	// opcode so ctx.Call sees raw arg expressions and binds by-ref
 	// params correctly. Nullsafe is encoded via the C flag.
