@@ -394,6 +394,24 @@ const (
 	// crossing an enclosing finally.
 	OpFinallyEnd
 
+	// OP_FOREACH_STEP_PUSH is the stack-pushing variant of OP_FOREACH_STEP,
+	// used for foreach value/key targets that aren't a bare local (e.g.
+	// `foreach ($arr as [$a, $b])` or `as $obj->prop => $val`). If the
+	// iterator is exhausted it jumps by C as OP_FOREACH_STEP does;
+	// otherwise it pushes the current value onto the stack (always
+	// Dup()'d to match the AST runner's snapshot semantics). When A != 0
+	// the current key is pushed FIRST (below the value), so the emitter
+	// can pop+assign value then pop+assign key — matching the AST's
+	// "key write before value write" order.
+	OpForeachStepPush
+
+	// OP_ASSIGN_WRITABLE pops a value off the stack and writes it to
+	// the AST Writable node at SubASTs[A] via WriteValue. Used for
+	// foreach targets whose shape isn't a bare local (destructure,
+	// object prop, array element, …) so we can drive the loop natively
+	// while delegating only the per-iteration write.
+	OpAssignWritable
+
 	// Sentinel — keep last.
 	opLast
 )
@@ -521,4 +539,6 @@ var opNames = [...]string{
 	OpStaticVarBind:       "STATIC_VAR_BIND",
 	OpDestructureAssign:   "DESTRUCTURE_ASSIGN",
 	OpFinallyEnd:          "FINALLY_END",
+	OpForeachStepPush:     "FOREACH_STEP_PUSH",
+	OpAssignWritable:      "ASSIGN_WRITABLE",
 }

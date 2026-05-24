@@ -549,28 +549,37 @@ func (e *emitter) emitSwitch(n compiler.SwitchNode) error {
 }
 
 func (e *emitter) emitForeach(n foreachNode) error {
-	// foreach-by-ref (`foreach($arr as &$v)`) and non-local targets
-	// (`foreach($arr as $obj->prop => $val)`, list destructure, etc.)
-	// are AST-delegated — the surrounding scope's body is flagged
-	// slot-unsafe by IsSlotSafe so the hashtable stays authoritative
-	// while the AST runs the loop.
-	if n.ForeachIsRef() || !isSimpleLocal(n.ForeachValue()) || (n.ForeachKey() != nil && !isSimpleLocal(n.ForeachKey())) {
+	// foreach-by-ref (`foreach($arr as &$v)`) still AST-delegates — the
+	// iterator needs to yield refs and the helper that snapshots arrays
+	// uses different CoW semantics. The slot-unsafe flag on the
+	// enclosing function (set by IsSlotSafe) keeps the hashtable
+	// authoritative for the AST loop. Non-simple-local targets WITHOUT
+	// by-ref take the native path below.
+	if n.ForeachIsRef() {
 		raw, ok := any(n).(phpv.Runnable)
 		if !ok {
-			return unsupportedf("foreach delegation: cannot retrieve raw Runnable")
+			return unsupportedf("foreach by-ref delegation: cannot retrieve raw Runnable")
 		}
 		idx := e.astIndex(raw)
 		e.emit(vm.OpTryFinally, idx, 0, 0)
 		e.emit(vm.OpRefreshSlots, 0, 0, 0)
 		return nil
 	}
-	valNode := n.ForeachValue().(variableNode)
-	valIdx := e.localIndex(valNode.VariableName())
 
-	keyIdx := uint16(0xFFFF)
-	if k := n.ForeachKey(); k != nil {
-		kn := k.(variableNode)
-		keyIdx = e.localIndex(kn.VariableName())
+	valIsLocal := isSimpleLocal(n.ForeachValue())
+	keyExpr := n.ForeachKey()
+	keyIsLocal := keyExpr == nil || isSimpleLocal(keyExpr)
+
+	// Compute the operand for OP_FOREACH_STEP / OP_FOREACH_STEP_PUSH.
+	// When both targets are bare locals, the in-place store path (OP_FOREACH_STEP)
+	// avoids the stack push/pop entirely.
+	valLocalIdx := uint16(0xFFFF)
+	keyLocalIdx := uint16(0xFFFF)
+	if valIsLocal {
+		valLocalIdx = e.localIndex(n.ForeachValue().(variableNode).VariableName())
+	}
+	if keyExpr != nil && keyIsLocal {
+		keyLocalIdx = e.localIndex(keyExpr.(variableNode).VariableName())
 	}
 
 	// Eval src and emit the init op. C is patched to point past the
@@ -586,7 +595,33 @@ func (e *emitter) emitForeach(n foreachNode) error {
 	loopHead := uint32(len(e.code))
 
 	// Step: jumps to unwind on iterator exhaustion.
-	stepPC := e.emit(vm.OpForeachStep, valIdx, keyIdx, 0)
+	useNative := valIsLocal && keyIsLocal
+	var stepPC uint32
+	if useNative {
+		stepPC = e.emit(vm.OpForeachStep, valLocalIdx, keyLocalIdx, 0)
+	} else {
+		// Push key (if present) and value onto stack.
+		keyFlag := uint16(0)
+		if keyExpr != nil {
+			keyFlag = 1
+		}
+		stepPC = e.emit(vm.OpForeachStepPush, keyFlag, 0, 0)
+		if keyExpr != nil {
+			e.pushStack(1) // key
+		}
+		e.pushStack(1) // value
+
+		// Pop value off the stack first, write to value target.
+		if err := e.emitForeachTargetWrite(n.ForeachValue()); err != nil {
+			return err
+		}
+		// Then pop key (if present) and write to key target.
+		if keyExpr != nil {
+			if err := e.emitForeachTargetWrite(keyExpr); err != nil {
+				return err
+			}
+		}
+	}
 
 	// Body
 	if err := e.emitStmt(n.ForeachCode()); err != nil {
@@ -615,6 +650,42 @@ func (e *emitter) emitForeach(n foreachNode) error {
 	e.patchJump(initPC, end)
 
 	e.popLoop()
+	return nil
+}
+
+// emitForeachTargetWrite pops a value off the stack and writes it to
+// the foreach target node `target`. Used when the value/key isn't a
+// bare local — the runtime push the value, this code consumes it.
+//
+//   - destructure (`[$a, $b]`) → OP_DESTRUCTURE_ASSIGN
+//   - any other Writable shape → OP_ASSIGN_WRITABLE delegating to the
+//     AST node's WriteValue (handles obj prop, array element, static
+//     prop, dynamic-name variable, etc.)
+//   - simple local → OP_STORE_LOCAL (only happens when this is called
+//     for the key side and the value side forced the push path)
+func (e *emitter) emitForeachTargetWrite(target phpv.Runnable) error {
+	if isSimpleLocal(target) {
+		idx := e.localIndex(target.(variableNode).VariableName())
+		e.emit(vm.OpStoreLocal, idx, 0, 0)
+		e.popStack(1)
+		return nil
+	}
+	if compiler.IsDestructureTarget(target) {
+		idx := e.astIndex(target)
+		// flags = 0 → stmt-context (drop the value, don't push it back).
+		e.emit(vm.OpDestructureAssign, idx, 0, 0)
+		e.popStack(1)
+		// Locals may have changed via destructure's WriteValue.
+		e.emit(vm.OpRefreshSlots, 0, 0, 0)
+		return nil
+	}
+	// Generic Writable (object prop, array access, static prop, …).
+	idx := e.astIndex(target)
+	e.emit(vm.OpAssignWritable, idx, 0, 0)
+	e.popStack(1)
+	// Conservatively refresh — the WriteValue may have set a local
+	// through OffsetSet that the slot cache doesn't see.
+	e.emit(vm.OpRefreshSlots, 0, 0, 0)
 	return nil
 }
 

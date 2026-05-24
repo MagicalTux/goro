@@ -1019,6 +1019,40 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 				return nil, false, err
 			}
 
+		case OpForeachStepPush:
+			it := f.iters[len(f.iters)-1]
+			if !it.Valid(ctx) {
+				f.pc = uint32(int32(f.pc) + ins.C())
+				break
+			}
+			cur, err := it.Current(ctx)
+			if err != nil {
+				return nil, false, err
+			}
+			// Match AST runner's "key written before value" order:
+			// push key first (deeper in stack), then value (on top).
+			// Consumers pop value first, assign value; then pop key,
+			// assign key — which yields key-write-then-value-write at
+			// the WriteValue level.
+			if ins.A() != 0 {
+				key, err := it.Key(ctx)
+				if err != nil {
+					return nil, false, err
+				}
+				f.push(key.Dup())
+			}
+			f.push(cur.Dup())
+
+		case OpAssignWritable:
+			val := f.pop()
+			lhs, ok := f.fn.SubASTs[ins.A()].(phpv.Writable)
+			if !ok {
+				return nil, false, fmt.Errorf("OP_ASSIGN_WRITABLE: SubASTs[%d] is not Writable (%T)", ins.A(), f.fn.SubASTs[ins.A()])
+			}
+			if err := lhs.WriteValue(ctx, val); err != nil {
+				return nil, false, err
+			}
+
 		case OpForeachUnwind:
 			it := f.iters[len(f.iters)-1]
 			if c, ok := it.(interface{ Cleanup() }); ok {
