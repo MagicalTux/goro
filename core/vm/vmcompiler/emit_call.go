@@ -61,11 +61,12 @@ func (e *emitter) emitFunctionCall(n funcCallNode) error {
 		}
 	}
 	if byRefBuiltin || byRefUser || compiler.CallHasSpecialArgs(args) {
-		raw, ok := n.(phpv.Runnable)
-		if !ok {
-			return unsupportedf("call AST delegation: cannot retrieve raw Runnable")
-		}
-		return e.emitCallViaAST(raw)
+		// Route the call through a dedicated by-exprs opcode so
+		// ctx.Call sees the raw argument expressions and applies its
+		// by-ref / named / spread binding pipeline. Net effect: no
+		// generic AST.Run() delegation, but the binding behaviour
+		// matches the AST path byte-for-byte.
+		return e.emitCallByExprs(name, args)
 	}
 
 	if len(args) > 0xFFFF {
@@ -109,11 +110,7 @@ func (e *emitter) emitFunctionCallRef(n funcCallRefNode) error {
 	// delegate when any arg is a writable lvalue so a possible
 	// by-ref param binds correctly.
 	if compiler.CallHasSpecialArgs(args) || compiler.CallHasWritableArg(args) {
-		raw, ok := n.(phpv.Runnable)
-		if !ok {
-			return unsupportedf("indirect call AST delegation: cannot retrieve raw Runnable")
-		}
-		return e.emitCallViaAST(raw)
+		return e.emitCallIndirectByExprs(n.FuncCallRefExpr(), args)
 	}
 	if len(args) > 0xFFFF {
 		return unsupportedf("indirect call with too many args")
@@ -134,6 +131,57 @@ func (e *emitter) emitFunctionCallRef(n funcCallRefNode) error {
 		e.popStack(len(args))
 	}
 
+	if e.stmtCtx {
+		e.emit(vm.OpPop, 0, 0, 0)
+		e.popStack(1)
+	}
+	return nil
+}
+
+// emitCallByExprs lowers a named function call whose argument shape
+// requires the full ctx.Call binding pipeline (by-ref params, named
+// arguments, spread). Args are NOT evaluated by the emitter — they're
+// stashed in fn.SubArgs and handed to ctx.Call at runtime.
+//
+// Stmt-context: drop the result with OP_POP after the call. This
+// matches the AST runner which always pushes a return value and
+// expression-statement evaluation discards it.
+func (e *emitter) emitCallByExprs(name phpv.ZString, args []phpv.Runnable) error {
+	if len(args) > 0xFFFF {
+		return unsupportedf("by-exprs call with too many args (>=65536)")
+	}
+	nameIdx := e.constIndex(name)
+	argsIdx := e.subArgsIndex(args)
+	e.emit(vm.OpCallUserByExprs, nameIdx, argsIdx, 0)
+	// Pushes 1 result; no other stack effect (args weren't evaluated
+	// to the stack — they live in SubArgs).
+	e.pushStack(1)
+	// Call may invalidate slot cache (e.g. by-ref param mutated caller
+	// local), so refresh.
+	e.emit(vm.OpRefreshSlots, 0, 0, 0)
+	if e.stmtCtx {
+		e.emit(vm.OpPop, 0, 0, 0)
+		e.popStack(1)
+	}
+	return nil
+}
+
+// emitCallIndirectByExprs is the by-exprs variant of OpCallIndirect.
+// The callable expression is evaluated to a value on the stack; the
+// runtime pops it, resolves it via ResolveCallable, then dispatches
+// via ctx.Call with the AST argument expressions so by-ref / named /
+// spread args bind correctly.
+func (e *emitter) emitCallIndirectByExprs(callableExpr phpv.Runnable, args []phpv.Runnable) error {
+	if len(args) > 0xFFFF {
+		return unsupportedf("by-exprs indirect call with too many args (>=65536)")
+	}
+	if err := e.withSubexpr(func() error { return e.emitExpr(callableExpr) }); err != nil {
+		return err
+	}
+	argsIdx := e.subArgsIndex(args)
+	e.emit(vm.OpCallIndirectByExprs, argsIdx, 0, 0)
+	// Pops 1 callable, pushes 1 result. Net stack delta: 0.
+	e.emit(vm.OpRefreshSlots, 0, 0, 0)
 	if e.stmtCtx {
 		e.emit(vm.OpPop, 0, 0, 0)
 		e.popStack(1)

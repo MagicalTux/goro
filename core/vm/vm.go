@@ -709,6 +709,76 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 			}
 			f.push(res)
 
+		case OpCallUserByExprs:
+			// By-ref / named / spread variant. A = const-pool name idx,
+			// B = SubArgs index of the argument-expression list. The
+			// callable is resolved at runtime (with CallableCache reuse)
+			// then handed to ctx.Call which evaluates each expression
+			// with full binding semantics.
+			name, ok := f.fn.Consts[ins.A()].(phpv.ZString)
+			if !ok {
+				return nil, false, fmt.Errorf("vm: OP_CALL_USER_BY_EXPRS name const is %T not ZString", f.fn.Consts[ins.A()])
+			}
+			nameIdx := ins.A()
+			var callable phpv.Callable
+			if int(nameIdx) < len(f.fn.CallableCache) {
+				callable = f.fn.CallableCache[nameIdx]
+			}
+			if callable == nil {
+				c, err := ctx.Global().GetFunction(ctx, name)
+				if err != nil {
+					return nil, false, err
+				}
+				callable = c
+				if f.fn.CallableCache == nil {
+					f.fn.CallableCache = make([]phpv.Callable, len(f.fn.Consts))
+				}
+				if int(nameIdx) < len(f.fn.CallableCache) {
+					f.fn.CallableCache[nameIdx] = callable
+				}
+			}
+			argsIdx := int(ins.B())
+			if argsIdx >= len(f.fn.SubArgs) {
+				return nil, false, fmt.Errorf("vm: OP_CALL_USER_BY_EXPRS SubArgs index %d out of range", argsIdx)
+			}
+			res, err := ctx.Call(ctx, callable, f.fn.SubArgs[argsIdx], nil)
+			if err != nil {
+				return nil, false, err
+			}
+			if res == nil {
+				res = phpv.ZNULL.ZVal()
+			}
+			f.push(res)
+
+		case OpCallIndirectByExprs:
+			// A = SubArgs index. Callable expression already on top of
+			// stack. Pop it, resolve via ResolveCallable, then dispatch
+			// via ctx.Call so by-ref / named / spread args bind through
+			// the standard call-binding pipeline.
+			callable := f.pop()
+			c, this, err := compiler.ResolveCallable(ctx, callable)
+			if err != nil {
+				return nil, false, err
+			}
+			argsIdx := int(ins.A())
+			if argsIdx >= len(f.fn.SubArgs) {
+				return nil, false, fmt.Errorf("vm: OP_CALL_INDIRECT_BY_EXPRS SubArgs index %d out of range", argsIdx)
+			}
+			exprs := f.fn.SubArgs[argsIdx]
+			var res *phpv.ZVal
+			if this != nil {
+				res, err = ctx.Call(ctx, c, exprs, this)
+			} else {
+				res, err = ctx.Call(ctx, c, exprs, nil)
+			}
+			if err != nil {
+				return nil, false, err
+			}
+			if res == nil {
+				res = phpv.ZNULL.ZVal()
+			}
+			f.push(res)
+
 		// --- return --------------------------------------------------
 		case OpRet:
 			v := f.pop()
@@ -961,6 +1031,44 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 				return nil, false, fmt.Errorf("vm: OP_OBJECT_CALL name const is %T not ZString", f.fn.Consts[ins.A()])
 			}
 			res, err := objectCall(ctx, receiver, name, args)
+			if err != nil {
+				return nil, false, err
+			}
+			if res == nil {
+				res = phpv.ZNULL.ZVal()
+			}
+			f.push(res)
+
+		case OpObjectCallByExprs:
+			// By-ref / named / spread variant. A = const-pool method
+			// name idx, B = SubArgs index, C != 0 marks nullsafe. The
+			// receiver is on top of stack; the call dispatch goes
+			// through CallInstanceMethodByExprs which mirrors
+			// CallInstanceMethod but uses ctx.Call so by-ref params
+			// bind correctly.
+			receiver := f.pop()
+			if ins.C() != 0 && (receiver == nil || phpv.IsNull(receiver)) {
+				f.push(phpv.ZNULL.ZVal())
+				break
+			}
+			if receiver == nil || receiver.GetType() != phpv.ZtObject {
+				typeName := "null"
+				if receiver != nil {
+					typeName = receiver.GetType().TypeName()
+				}
+				name, _ := f.fn.Consts[ins.A()].(phpv.ZString)
+				return nil, false, phpobj.ThrowError(ctx, phpobj.Error,
+					fmt.Sprintf("Call to a member function %s() on %s", string(name), typeName))
+			}
+			name, ok := f.fn.Consts[ins.A()].(phpv.ZString)
+			if !ok {
+				return nil, false, fmt.Errorf("vm: OP_OBJECT_CALL_BY_EXPRS name const is %T not ZString", f.fn.Consts[ins.A()])
+			}
+			argsIdx := int(ins.B())
+			if argsIdx >= len(f.fn.SubArgs) {
+				return nil, false, fmt.Errorf("vm: OP_OBJECT_CALL_BY_EXPRS SubArgs index %d out of range", argsIdx)
+			}
+			res, err := compiler.CallInstanceMethodByExprs(ctx, receiver, name, f.fn.SubArgs[argsIdx])
 			if err != nil {
 				return nil, false, err
 			}

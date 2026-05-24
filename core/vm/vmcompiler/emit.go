@@ -19,6 +19,7 @@ type emitter struct {
 	subFns      []*vm.Function
 	subClosures []phpv.Runnable
 	subASTs     []phpv.Runnable
+	subArgs     [][]phpv.Runnable
 	tryHandlers []vm.TryHandler
 
 	locs []vm.LocEntry
@@ -131,6 +132,17 @@ func (e *emitter) astIndex(r phpv.Runnable) uint16 {
 	return idx
 }
 
+// subArgsIndex registers a call-site argument expression list in the
+// SubArgs table. Used by the "ByExprs" call opcodes which hand the raw
+// AST argument expressions to ctx.Call so the binding layer can apply
+// by-ref / named / spread semantics. No dedup — each call site gets
+// its own slot.
+func (e *emitter) subArgsIndex(args []phpv.Runnable) uint16 {
+	idx := uint16(len(e.subArgs))
+	e.subArgs = append(e.subArgs, args)
+	return idx
+}
+
 // localIndex returns the local-table index for the named variable,
 // adding it on first use.
 func (e *emitter) localIndex(name phpv.ZString) uint16 {
@@ -194,6 +206,7 @@ func (e *emitter) finish(name phpv.ZString, numParams int) *vm.Function {
 		SubFns:      e.subFns,
 		SubClosures: e.subClosures,
 		SubASTs:     e.subASTs,
+		SubArgs:     e.subArgs,
 		LocsSparse:  e.locs,
 		TryHandlers: e.tryHandlers,
 		NumParams:   numParams,

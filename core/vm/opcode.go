@@ -412,6 +412,30 @@ const (
 	// while delegating only the per-iteration write.
 	OpAssignWritable
 
+	// OP_CALL_USER_BY_EXPRS is the by-ref / named / spread variant of
+	// OP_CALL_USER. A = const-pool ZString function name (with the same
+	// CallableCache hookup OP_CALL_USER uses); B = SubArgs index of the
+	// arg-expression list. The handler resolves the callable then calls
+	// ctx.Call(ctx, callable, exprs, nil), which evaluates each arg
+	// expression with by-ref binding, named-arg reordering, and spread
+	// expansion. Pushes the result on top of the stack. No args are
+	// pushed beforehand — the expressions live in fn.SubArgs.
+	OpCallUserByExprs
+
+	// OP_CALL_INDIRECT_BY_EXPRS is the by-ref / named / spread variant
+	// of OP_CALL_INDIRECT. A = SubArgs index of the arg-expression list.
+	// The callable is at the top of the stack (already emitted as a
+	// native expression); the handler pops it, resolves it via
+	// ResolveCallable, then calls ctx.Call. Pushes the result.
+	OpCallIndirectByExprs
+
+	// OP_OBJECT_CALL_BY_EXPRS is the by-ref / named / spread variant of
+	// instance method calls. A = const-pool ZString method name; B =
+	// SubArgs index of the arg-expression list. The receiver is at the
+	// top of the stack; the handler pops it, resolves the method, then
+	// calls ctx.Call with the receiver as $this. Pushes the result.
+	OpObjectCallByExprs
+
 	// Sentinel — keep last.
 	opLast
 )
@@ -541,4 +565,7 @@ var opNames = [...]string{
 	OpFinallyEnd:          "FINALLY_END",
 	OpForeachStepPush:     "FOREACH_STEP_PUSH",
 	OpAssignWritable:      "ASSIGN_WRITABLE",
+	OpCallUserByExprs:     "CALL_USER_BY_EXPRS",
+	OpCallIndirectByExprs: "CALL_INDIRECT_BY_EXPRS",
+	OpObjectCallByExprs:   "OBJECT_CALL_BY_EXPRS",
 }

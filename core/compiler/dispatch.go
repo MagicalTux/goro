@@ -614,6 +614,153 @@ func CallInstanceMethod(ctx phpv.Context, obj *phpv.ZVal, name phpv.ZString, arg
 	return ctx.CallZVal(ctx, method.Method, args, objBound)
 }
 
+// CallInstanceMethodByExprs is the by-AST-expression variant of
+// CallInstanceMethod. Used by OP_OBJECT_CALL_BY_EXPRS for method calls
+// whose argument shape needs the full ctx.Call binding pipeline
+// (by-ref parameters, named arguments, spread). The dispatch logic
+// mirrors CallInstanceMethod byte-for-byte; only the terminal call
+// switches from ctx.CallZVal to ctx.Call so the binding layer sees the
+// raw argument expressions.
+//
+// The __call magic-method fallback still needs ZVal args (it builds
+// a magic array), so this evaluates exprs up-front for that branch
+// only — by-ref binding doesn't apply through __call anyway, since
+// the user wrote `__call($name, $args)` with the args array.
+func CallInstanceMethodByExprs(ctx phpv.Context, obj *phpv.ZVal, name phpv.ZString, exprs []phpv.Runnable) (*phpv.ZVal, error) {
+	zobj, ok := obj.Value().(*phpobj.ZObject)
+	if !ok {
+		if zo, ok := obj.Value().(phpv.ZObject); ok {
+			m, mok := zo.GetClass().GetMethod(name)
+			if !mok {
+				return nil, phpobj.ThrowError(ctx, phpobj.Error,
+					fmt.Sprintf("Call to undefined method %s::%s()", zo.GetClass().GetName(), name))
+			}
+			return ctx.Call(ctx, m.Method, exprs, zo)
+		}
+		return nil, fmt.Errorf("CallInstanceMethodByExprs: receiver is not a ZObject")
+	}
+
+	class := zobj.GetClass()
+	method, ok := class.GetMethod(name)
+	if !ok {
+		if cm, hasCall := class.GetMethod("__call"); hasCall {
+			args, err := evalExprArgs(ctx, exprs)
+			if err != nil {
+				return nil, err
+			}
+			a := phpv.NewZArray()
+			for _, sub := range args {
+				a.OffsetSet(ctx, nil, sub.Dup())
+			}
+			return ctx.CallZVal(ctx, cm.Method, []*phpv.ZVal{name.ZVal(), a.ZVal()}, zobj)
+		}
+		return nil, phpobj.ThrowError(ctx, phpobj.Error,
+			fmt.Sprintf("Call to undefined method %s::%s()", class.GetName(), name))
+	}
+
+	if method.Modifiers.Has(phpv.ZAttrAbstract) || (method.Empty && method.Class != nil && method.Class.GetType() != phpv.ZClassTypeInterface) {
+		return nil, phpobj.ThrowError(ctx, phpobj.Error,
+			fmt.Sprintf("Cannot call abstract method %s::%s()", method.Class.GetName(), method.Name))
+	}
+
+	methodNotVisible := false
+	var visErrMsg string
+	if method.Modifiers.Has(phpv.ZAttrPrivate) {
+		callerClass := ctx.Class()
+		methodClass := method.Class
+		if callerClass == nil || methodClass == nil || callerClass.GetName() != methodClass.GetName() {
+			methodClassName := class.GetName()
+			if methodClass != nil {
+				methodClassName = methodClass.GetName()
+			}
+			scope := "global scope"
+			if callerClass != nil {
+				scope = "scope " + string(callerClass.GetName())
+			}
+			methodNotVisible = true
+			visErrMsg = fmt.Sprintf("Call to private method %s::%s() from %s", methodClassName, method.Name, scope)
+		}
+	} else if method.Modifiers.Has(phpv.ZAttrProtected) {
+		callerClass := ctx.Class()
+		if callerClass == nil {
+			methodNotVisible = true
+			visErrMsg = fmt.Sprintf("Call to protected method %s::%s() from global scope", class.GetName(), method.Name)
+		} else if !callerClass.InstanceOf(method.Class) && !method.Class.InstanceOf(callerClass) && !callerClass.InstanceOf(class) && !class.InstanceOf(callerClass) {
+			protectedVisible := false
+			if method.Class != nil {
+				rootClass := method.Class
+				for rootClass.GetParent() != nil {
+					if pm, ok := rootClass.GetParent().GetMethod(method.Name); ok && pm.Modifiers.Has(phpv.ZAttrProtected) {
+						rootClass = rootClass.GetParent()
+					} else {
+						break
+					}
+				}
+				if callerClass.InstanceOf(rootClass) {
+					protectedVisible = true
+				}
+			}
+			if !protectedVisible {
+				methodNotVisible = true
+				visErrMsg = fmt.Sprintf("Call to protected method %s::%s() from scope %s", class.GetName(), method.Name, callerClass.GetName())
+			}
+		}
+	}
+	if methodNotVisible {
+		if cm, hasCall := class.GetMethod("__call"); hasCall {
+			args, err := evalExprArgs(ctx, exprs)
+			if err != nil {
+				return nil, err
+			}
+			a := phpv.NewZArray()
+			for _, sub := range args {
+				a.OffsetSet(ctx, nil, sub.Dup())
+			}
+			return ctx.CallZVal(ctx, cm.Method, []*phpv.ZVal{name.ZVal(), a.ZVal()}, zobj)
+		}
+		return nil, phpobj.ThrowError(ctx, phpobj.Error, visErrMsg)
+	}
+
+	if method.Modifiers.IsStatic() {
+		m := phpv.BindClassLSB(method.Method, class, class, true)
+		m.Attributes = method.Attributes
+		return ctx.Call(ctx, m, exprs, nil)
+	}
+
+	var objBound phpv.ZObject = zobj
+	if method.Class != nil {
+		if kin := zobj.GetKin(string(method.Class.GetName())); kin != nil {
+			objBound = kin
+		}
+	}
+	if len(method.Attributes) > 0 {
+		wrapped := &phpv.MethodCallable{
+			Callable:   method.Method,
+			Class:      class,
+			Attributes: method.Attributes,
+			AliasName:  string(method.Name),
+		}
+		return ctx.Call(ctx, wrapped, exprs, objBound)
+	}
+	return ctx.Call(ctx, method.Method, exprs, objBound)
+}
+
+// evalExprArgs evaluates each AST argument expression to a ZVal,
+// stopping at the first error. Used only by the __call magic-method
+// fallback paths in CallInstanceMethodByExprs, which need ZVal args
+// to build the magic array.
+func evalExprArgs(ctx phpv.Context, exprs []phpv.Runnable) ([]*phpv.ZVal, error) {
+	out := make([]*phpv.ZVal, 0, len(exprs))
+	for _, e := range exprs {
+		v, err := e.Run(ctx)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, nil
+}
+
 // EvalBinop computes the result of a binary operator with full PHP
 // semantics. The VM uses this so its arithmetic / bitwise / compare /
 // concat opcodes match the AST runOperator path byte-for-byte.

@@ -24,6 +24,13 @@ type Function struct {
 	SubFns      []*Function     // direct-call targets (resolved at emit time)
 	SubClosures []phpv.Runnable // *ZClosure templates referenced by OP_MAKE_CLOSURE
 	SubASTs     []phpv.Runnable // delegated AST nodes (class const, static, …)
+	// SubArgs holds per-call-site argument expression lists for the
+	// "ByExprs" call opcodes (OP_CALL_USER_BY_EXPRS, OP_CALL_INDIRECT_BY_EXPRS,
+	// OP_OBJECT_CALL_BY_EXPRS). The runtime passes args[idx] to ctx.Call,
+	// which evaluates each expression in caller scope with full by-ref /
+	// named / spread support — the path the AST runner's
+	// runnableFunctionCall.Run takes. Indexed by the opcode's B field.
+	SubArgs [][]phpv.Runnable
 	LocsSparse  []LocEntry      // sorted by PC
 	TryHandlers []TryHandler
 	NumParams   int

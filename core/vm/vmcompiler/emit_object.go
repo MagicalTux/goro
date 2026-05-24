@@ -155,16 +155,20 @@ func (e *emitter) emitObjectFuncCall(n objectFuncNode) error {
 	}
 	name := n.ObjectFuncName()
 	args := n.ObjectFuncArgs()
-	// AST-delegate dynamic-name or special-args method calls, and
-	// writable-lvalue args (polymorphism precludes static by-ref
-	// param detection). Nullsafe is encoded via OP_OBJECT_CALL's
-	// C flag now, so it's no longer a delegation reason.
-	if (len(name) > 0 && name[0] == '$') || compiler.CallHasSpecialArgs(args) || compiler.CallHasWritableArg(args) {
+	// Dynamic-name calls ($obj->{$x}(...)) still need AST because the
+	// method name is computed; the rest go via dedicated opcodes.
+	if len(name) > 0 && name[0] == '$' {
 		raw, ok := n.(phpv.Runnable)
 		if !ok {
 			return unsupportedf("method-call AST delegation: cannot retrieve raw Runnable")
 		}
 		return e.emitCallViaAST(raw)
+	}
+	// Special-args / writable-arg calls route through the by-exprs
+	// opcode so ctx.Call sees raw arg expressions and binds by-ref
+	// params correctly. Nullsafe is encoded via the C flag.
+	if compiler.CallHasSpecialArgs(args) || compiler.CallHasWritableArg(args) {
+		return e.emitObjectCallByExprs(n.ObjectFuncReceiver(), name, args, n.ObjectFuncIsNullSafe())
 	}
 	if len(args) > 0xFFFF {
 		return unsupportedf("method call with too many args (>=65536)")
@@ -190,6 +194,33 @@ func (e *emitter) emitObjectFuncCall(n objectFuncNode) error {
 	}
 
 	// In statement context discard the result.
+	if e.stmtCtx {
+		e.emit(vm.OpPop, 0, 0, 0)
+		e.popStack(1)
+	}
+	return nil
+}
+
+// emitObjectCallByExprs lowers $obj->method(args…) when the args need
+// the full ctx.Call binding pipeline (by-ref params, named arguments,
+// spread). Receiver is evaluated to the stack; method name and arg-
+// expression list are stashed in fn.Consts / fn.SubArgs respectively.
+func (e *emitter) emitObjectCallByExprs(recvExpr phpv.Runnable, name phpv.ZString, args []phpv.Runnable, nullsafe bool) error {
+	if len(args) > 0xFFFF {
+		return unsupportedf("by-exprs method call with too many args (>=65536)")
+	}
+	if err := e.withSubexpr(func() error { return e.emitExpr(recvExpr) }); err != nil {
+		return err
+	}
+	nameIdx := e.constIndex(name)
+	argsIdx := e.subArgsIndex(args)
+	var cFlag int32
+	if nullsafe {
+		cFlag = 1
+	}
+	e.emit(vm.OpObjectCallByExprs, nameIdx, argsIdx, cFlag)
+	// Pops 1 receiver, pushes 1 result. Net stack delta: 0.
+	e.emit(vm.OpRefreshSlots, 0, 0, 0)
 	if e.stmtCtx {
 		e.emit(vm.OpPop, 0, 0, 0)
 		e.popStack(1)
