@@ -115,10 +115,16 @@ func (e *emitter) emitTry(n compiler.TryNode) error {
 		if err := e.emitStmt(finally); err != nil {
 			return err
 		}
-		// OP_FINALLY_END inspects f.pending and either falls through,
-		// re-attempts the deferred return (chaining to outer finally
-		// if needed), or re-raises the deferred throw.
-		finallyEndPC := e.emit(vm.OpFinallyEnd, 0, 0, 0)
+		// OP_FINALLY_END's A field is this handler's index in
+		// Function.TryHandlers (assigned just below) — the runtime
+		// reads f.handlerPending[A] to recover this finally's parked
+		// action and clears the slot. We append the handler after
+		// emitting, so the index is the current length.
+		hidx := len(e.tryHandlers)
+		if hidx > 0xFFFF {
+			return unsupportedf("more than 65535 try handlers in one function")
+		}
+		finallyEndPC := e.emit(vm.OpFinallyEnd, uint16(hidx), 0, 0)
 		handler.FinallyEnd = finallyEndPC
 	}
 

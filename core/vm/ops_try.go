@@ -1,6 +1,7 @@
 package vm
 
 import (
+	"github.com/KarpelesLab/goro/core/compiler"
 	"github.com/KarpelesLab/goro/core/phperr"
 	"github.com/KarpelesLab/goro/core/phpobj"
 	"github.com/KarpelesLab/goro/core/phpv"
@@ -104,7 +105,7 @@ func (f *Frame) dispatchTryHandler(ctx phpv.Context, throwErr *phperr.PhpThrow) 
 								// again.
 								if h.HasFinally {
 									if pt, ok := derr.(*phperr.PhpThrow); ok {
-										f.pending = pendingControl{kind: pendingThrow, err: pt}
+										f.handlerPending[i] = pendingControl{kind: pendingThrow, err: pt}
 										f.pc = h.FinallyPC
 										return true, nil
 									}
@@ -115,11 +116,12 @@ func (f *Frame) dispatchTryHandler(ctx phpv.Context, throwErr *phperr.PhpThrow) 
 						}
 					}
 				}
-				// Clear any stale pending action from a prior transit:
-				// the catch handles the throw, so a subsequent finally
-				// (if any) should run with pending=none and fall through
-				// rather than re-raising state from before.
-				f.pending = pendingControl{}
+				// The catch handles this throw; this handler's pending
+				// slot (if any) is untouched — only the outer-finally
+				// route can target it, and that's a different code
+				// path. Per-handler pending means a throw inside an
+				// outer finally that's caught by an inner try-catch
+				// here does NOT clobber the outer's pending (bug65784).
 				f.pc = clause.PC
 				return true, nil
 			}
@@ -134,12 +136,36 @@ func (f *Frame) dispatchTryHandler(ctx phpv.Context, throwErr *phperr.PhpThrow) 
 				f.sp--
 				f.stack[f.sp] = nil
 			}
-			f.pending = pendingControl{kind: pendingThrow, err: throwErr}
+			f.handlerPending[i] = pendingControl{kind: pendingThrow, err: throwErr}
 			f.pc = h.FinallyPC
 			return true, nil
 		}
 		// Plain try-catch with no match: continue searching outer
 		// handlers (caller propagates if none remain).
+	}
+
+	// No handler caught the throw — it's going to propagate out of
+	// this frame. If it originated inside (or escaped into) one or
+	// more active finally bodies, each of those finalies' pending
+	// actions is abandoned: the new throw supersedes them (PHP
+	// "finally overrides" semantics). When an abandoned pending was
+	// itself a throw, link it as the new throw's $previous so the
+	// exception chain is preserved (bug65784). Inner finalies (deeper
+	// in the handler list) are chained first so the outermost
+	// pending ends up at the tail of the $previous chain.
+	for i := range f.fn.TryHandlers {
+		h := &f.fn.TryHandlers[i]
+		if !h.HasFinally {
+			continue
+		}
+		if failPC < h.FinallyPC || failPC >= h.FinallyEnd {
+			continue
+		}
+		p := f.handlerPending[i]
+		f.handlerPending[i] = pendingControl{}
+		if p.kind == pendingThrow && p.err != nil && p.err.Obj != nil {
+			compiler.ChainExceptionPrevious(ctx, throwErr.Obj, p.err.Obj)
+		}
 	}
 	return false, nil
 }

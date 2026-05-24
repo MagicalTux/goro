@@ -67,7 +67,18 @@ func acquireFrame(fn *Function) *Frame {
 	} else {
 		f.locals = make([]*phpv.ZVal, len(fn.Locals))
 	}
-	f.pending = pendingControl{}
+	if n := len(fn.TryHandlers); n > 0 {
+		if cap(f.handlerPending) >= n {
+			f.handlerPending = f.handlerPending[:n]
+			for i := range f.handlerPending {
+				f.handlerPending[i] = pendingControl{}
+			}
+		} else {
+			f.handlerPending = make([]pendingControl, n)
+		}
+	} else {
+		f.handlerPending = f.handlerPending[:0]
+	}
 	return f
 }
 
@@ -702,29 +713,34 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 		case OpRet:
 			v := f.pop()
 			// If an enclosing try-with-finally protects this PC, defer
-			// the return: hand pending.val to the finally body and jump
-			// to it. OP_FINALLY_END will either chain to an outer
-			// finally or perform the actual return.
-			if tgt, h, ok := f.findEnclosingFinally(f.pc - 1); ok {
-				f.pending = pendingControl{kind: pendingReturn, val: v}
+			// the return: park the value in that handler's pending slot
+			// and jump to its finally body. OP_FINALLY_END for that
+			// handler will either chain to an outer finally or perform
+			// the actual return.
+			if hidx, h, ok := f.findEnclosingFinally(f.pc - 1); ok {
+				f.handlerPending[hidx] = pendingControl{kind: pendingReturn, val: v}
 				f.resetStackTo(h.StackBase)
-				f.pc = tgt
+				f.pc = h.FinallyPC
 				continue
 			}
 			return v, true, nil
 
 		case OpRetNull:
-			if tgt, h, ok := f.findEnclosingFinally(f.pc - 1); ok {
-				f.pending = pendingControl{kind: pendingReturn, val: phpv.ZNULL.ZVal()}
+			if hidx, h, ok := f.findEnclosingFinally(f.pc - 1); ok {
+				f.handlerPending[hidx] = pendingControl{kind: pendingReturn, val: phpv.ZNULL.ZVal()}
 				f.resetStackTo(h.StackBase)
-				f.pc = tgt
+				f.pc = h.FinallyPC
 				continue
 			}
 			return phpv.ZNULL.ZVal(), true, nil
 
 		case OpFinallyEnd:
-			p := f.pending
-			f.pending = pendingControl{}
+			// A=handler index. Read this finally body's pending slot,
+			// then clear it so a re-entry (e.g. via a loop containing
+			// the try) starts fresh.
+			hidx := int(ins.A())
+			p := f.handlerPending[hidx]
+			f.handlerPending[hidx] = pendingControl{}
 			switch p.kind {
 			case pendingNone:
 				// Normal completion of try (or try+catch). Fall through
@@ -732,10 +748,10 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 			case pendingReturn:
 				// Chain into an outer finally if one covers the
 				// post-finally PC; otherwise perform the actual return.
-				if tgt, h, ok := f.findEnclosingFinally(f.pc - 1); ok {
-					f.pending = pendingControl{kind: pendingReturn, val: p.val}
-					f.resetStackTo(h.StackBase)
-					f.pc = tgt
+				if oidx, oh, ok := f.findEnclosingFinally(f.pc - 1); ok {
+					f.handlerPending[oidx] = pendingControl{kind: pendingReturn, val: p.val}
+					f.resetStackTo(oh.StackBase)
+					f.pc = oh.FinallyPC
 					continue
 				}
 				return p.val, true, nil

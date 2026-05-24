@@ -198,6 +198,15 @@ func (rt *runnableTry) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	return nil, nil
 }
 
+// ChainExceptionPrevious sets pendingObj as the $previous of finallyObj,
+// but only if it wouldn't create a cycle in the exception chain. The
+// VM's native finally lowering calls this when a throw escapes a
+// finally body that had a pending throw (bug65784: chained exceptions
+// when finally raises while an outer throw is in flight).
+func ChainExceptionPrevious(ctx phpv.Context, finallyObj phpv.ZObject, pendingObj phpv.ZObject) {
+	chainExceptionPrevious(ctx, finallyObj, pendingObj)
+}
+
 // chainExceptionPrevious sets pendingObj as the $previous of finallyObj,
 // but only if it wouldn't create a cycle in the exception chain.
 func chainExceptionPrevious(ctx phpv.Context, finallyObj phpv.ZObject, pendingObj phpv.ZObject) {

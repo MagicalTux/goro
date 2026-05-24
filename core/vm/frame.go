@@ -21,12 +21,17 @@ const (
 	pendingThrow
 )
 
-// pendingControl is a single-slot register carrying a deferred control
-// action across a finally body. A new throw inside the finally (caught
-// or uncaught) supersedes the pending action — dispatchTryHandler
-// clears it on a fresh catch routing, and an OP_RET inside the finally
-// performs the new return (the original pending is abandoned, matching
-// PHP's "finally overrides" semantics).
+// pendingControl is one finally body's deferred control action. Each
+// TryHandler with HasFinally gets its own slot in Frame.handlerPending,
+// indexed by the handler's position in Function.TryHandlers — so a
+// throw caught by a try-catch nested inside an outer finally body
+// doesn't disturb the outer's pending entry (bug65784). The slot is
+// set when control is routed INTO this handler's finally (via OpRet,
+// OpRetNull, or dispatchTryHandler's uncaught-throw route) and
+// read+cleared at OP_FINALLY_END for that same handler. A throw that
+// escapes a finally body without reaching its OP_FINALLY_END leaves
+// the slot stale; the frame is reset on acquire so it can't leak into
+// later invocations.
 type pendingControl struct {
 	kind pendingKind
 	val  *phpv.ZVal
@@ -67,22 +72,21 @@ type Frame struct {
 	// it as such.
 	locals []*phpv.ZVal
 
-	// pending carries a deferred control action across a finally body
-	// (see pendingControl). Read and cleared by OP_FINALLY_END; set by
-	// OP_RET / OP_RET_NULL when they detect an enclosing finally, and
-	// by dispatchTryHandler when routing an uncaught throw to a
-	// finally body.
-	pending pendingControl
+	// handlerPending is a per-TryHandler slot for a finally body's
+	// deferred control action (see pendingControl). Sized to match
+	// len(fn.TryHandlers) at acquire time so handler index is a direct
+	// lookup. A handler without HasFinally never has its slot read.
+	handlerPending []pendingControl
 }
 
-// findEnclosingFinally returns the FinallyPC and the owning TryHandler
-// for the innermost finally that protects PC `pc` — i.e. the handler
-// with HasFinally set whose [Start, FinallyPC) region contains pc.
-// Used by OP_RET / OP_RET_NULL and by OP_FINALLY_END's chain-to-outer
-// logic to decide whether a return must route through a finally first.
+// findEnclosingFinally returns the handler index and pointer for the
+// innermost finally that protects PC `pc` — i.e. the handler with
+// HasFinally set whose [Start, FinallyPC) region contains pc. Used by
+// OP_RET / OP_RET_NULL and by OP_FINALLY_END's chain-to-outer logic to
+// decide whether a return must route through a finally first.
 //
-// Returns (0, nil, false) when no enclosing finally covers pc.
-func (f *Frame) findEnclosingFinally(pc uint32) (uint32, *TryHandler, bool) {
+// Returns (-1, nil, false) when no enclosing finally covers pc.
+func (f *Frame) findEnclosingFinally(pc uint32) (int, *TryHandler, bool) {
 	handlers := f.fn.TryHandlers
 	// Innermost-first: handlers are appended in emit order, and a
 	// nested try's handler is appended before its outer's (the inner
@@ -94,10 +98,10 @@ func (f *Frame) findEnclosingFinally(pc uint32) (uint32, *TryHandler, bool) {
 			continue
 		}
 		if pc >= h.Start && pc < h.FinallyPC {
-			return h.FinallyPC, h, true
+			return i, h, true
 		}
 	}
-	return 0, nil, false
+	return -1, nil, false
 }
 
 // resetStackTo trims the value stack down to depth `n`, niling out the
