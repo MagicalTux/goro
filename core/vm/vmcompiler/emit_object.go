@@ -104,19 +104,10 @@ func (e *emitter) emitObjectVarAssign(lhs objectVarNode, rhs phpv.Runnable, stmt
 
 func (e *emitter) emitObjectVarRead(n objectVarNode) error {
 	name := n.ObjectVarName()
-	// Dynamic-name property reads still route through the AST (the
-	// branchy nullChain semantics aren't lowered piecewise). Nullsafe
-	// is encoded via OP_OBJECT_GET's B flag.
-	if len(name) > 0 && name[0] == '$' {
-		raw, ok := n.(phpv.Runnable)
-		if !ok {
-			return unsupportedf("property-read AST delegation: cannot retrieve raw Runnable")
-		}
-		idx := e.astIndex(raw)
-		e.emit(vm.OpClassConst, idx, 0, 0)
-		e.pushStack(1)
-		return nil
-	}
+	// Dynamic-name property reads ($obj->{$x}) parse to runObjectDynVar,
+	// which IsObjectDynVarReadNode intercepts before this function is
+	// reached. objectVarNode is only ever *runObjectVar, whose varName
+	// is always a literal identifier — no $-prefix fallback needed.
 	if err := e.withSubexpr(func() error { return e.emitExpr(n.ObjectVarReceiver()) }); err != nil {
 		return err
 	}
@@ -155,15 +146,9 @@ func (e *emitter) emitObjectFuncCall(n objectFuncNode) error {
 	}
 	name := n.ObjectFuncName()
 	args := n.ObjectFuncArgs()
-	// Dynamic-name calls ($obj->{$x}(...)) still need AST because the
-	// method name is computed; the rest go via dedicated opcodes.
-	if len(name) > 0 && name[0] == '$' {
-		raw, ok := n.(phpv.Runnable)
-		if !ok {
-			return unsupportedf("method-call AST delegation: cannot retrieve raw Runnable")
-		}
-		return e.emitCallViaAST(raw)
-	}
+	// Dynamic-name calls ($obj->{$x}(...)) parse to runObjectDynFunc and
+	// are intercepted by IsObjectDynFuncNode before this function runs.
+	// objectFuncNode is only ever *runObjectFunc with a literal name.
 	// Special-args / writable-arg calls route through the by-exprs
 	// opcode so ctx.Call sees raw arg expressions and binds by-ref
 	// params correctly. Nullsafe is encoded via the C flag.

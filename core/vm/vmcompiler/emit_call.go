@@ -22,23 +22,6 @@ type funcCallRefNode interface {
 	FuncCallRefLoc() *phpv.Loc
 }
 
-// emitCallViaAST AST-delegates a function/method call when its shape
-// (named/spread args, by-ref params, dynamic name, nullsafe) isn't
-// lowered piecewise. The whole AST node runs as one opaque step
-// pushing the result. Body must be flagged slot-unsafe by IsSlotSafe.
-func (e *emitter) emitCallViaAST(raw phpv.Runnable) error {
-	stmtCtx := e.stmtCtx
-	idx := e.astIndex(raw)
-	if stmtCtx {
-		e.emit(vm.OpTryFinally, idx, 0, 0)
-	} else {
-		e.emit(vm.OpClassConst, idx, 0, 0)
-		e.pushStack(1)
-	}
-	e.emit(vm.OpRefreshSlots, 0, 0, 0)
-	return nil
-}
-
 func (e *emitter) emitFunctionCall(n funcCallNode) error {
 	name := n.FuncCallName()
 	if name == "" {
