@@ -760,16 +760,31 @@ func CallInstanceMethodByExprs(ctx phpv.Context, obj *phpv.ZVal, name phpv.ZStri
 			objBound = kin
 		}
 	}
-	if len(method.Attributes) > 0 {
-		wrapped := &phpv.MethodCallable{
-			Callable:   method.Method,
-			Class:      class,
-			Attributes: method.Attributes,
-			AliasName:  string(method.Name),
-		}
-		return ctx.Call(ctx, wrapped, exprs, objBound)
+	// Wrap in MethodCallable when the underlying callable would lose
+	// the original called name (trait alias) or its declaring-class
+	// identity (trait body). Mirrors the AST's runObjectFunc.Run
+	// (compile-object.go ~1245): callers expect the stack trace to
+	// show e.g. "Model::__t_get" rather than the trait method's
+	// raw "T::__get". Also wrap when the method carries attributes
+	// so NoDiscard etc. see them via AttributeGetter.
+	callable := phpv.Callable(method.Method)
+	declClass := class
+	if method.Class != nil {
+		declClass = method.Class
 	}
-	return ctx.Call(ctx, method.Method, exprs, objBound)
+	if method.FromTrait != nil || method.Method.Name() != string(name) {
+		mc := phpv.BindClass(method.Method, declClass, false)
+		if method.Method.Name() != string(name) {
+			mc.AliasName = string(name)
+		}
+		mc.Attributes = method.Attributes
+		callable = mc
+	} else if len(method.Attributes) > 0 {
+		mc := phpv.BindClass(method.Method, declClass, false)
+		mc.Attributes = method.Attributes
+		callable = mc
+	}
+	return ctx.Call(ctx, callable, exprs, objBound)
 }
 
 // evalExprArgs evaluates each AST argument expression to a ZVal,
