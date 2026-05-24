@@ -627,7 +627,7 @@ func CallInstanceMethod(ctx phpv.Context, obj *phpv.ZVal, name phpv.ZString, arg
 // only — by-ref binding doesn't apply through __call anyway, since
 // the user wrote `__call($name, $args)` with the args array.
 func CallInstanceMethodByExprs(ctx phpv.Context, obj *phpv.ZVal, name phpv.ZString, exprs []phpv.Runnable) (*phpv.ZVal, error) {
-	zobj, ok := obj.Value().(*phpobj.ZObject)
+	rawZobj, ok := obj.Value().(*phpobj.ZObject)
 	if !ok {
 		if zo, ok := obj.Value().(phpv.ZObject); ok {
 			m, mok := zo.GetClass().GetMethod(name)
@@ -640,8 +640,35 @@ func CallInstanceMethodByExprs(ctx phpv.Context, obj *phpv.ZVal, name phpv.ZStri
 		return nil, fmt.Errorf("CallInstanceMethodByExprs: receiver is not a ZObject")
 	}
 
+	// Unwrap any kin marker so method lookup sees the actual class of
+	// the object — not the narrowed parent class that a $this kin would
+	// expose. This mirrors runObjectFunc.Run's `obj.Value().Unwrap()`
+	// behaviour and ensures `$this->childMethod()` from a parent method
+	// resolves through the child class's vtable.
+	zobjI := rawZobj.Unwrap()
+	zobj, ok := zobjI.(*phpobj.ZObject)
+	if !ok {
+		// Unwrap returned a non-*ZObject (rare); fall back to the raw
+		// pointer so we still attempt a lookup.
+		zobj = rawZobj
+	}
 	class := zobj.GetClass()
 	method, ok := class.GetMethod(name)
+
+	// PHP resolves private methods from the caller's class scope, not
+	// the runtime class — private methods are not virtual. When calling
+	// $this->method() from within a class that defines a private method
+	// with that name, use the caller's private method regardless of
+	// what the runtime class hierarchy provides. Mirrors the AST's
+	// runObjectFunc.Run (compile-object.go ~912).
+	callerClass := ctx.Class()
+	if callerClass != nil {
+		if callerMethod, callerOk := callerClass.GetMethod(name); callerOk && callerMethod.Modifiers.Has(phpv.ZAttrPrivate) && callerMethod.Class != nil && callerMethod.Class.GetName() == callerClass.GetName() {
+			method = callerMethod
+			ok = true
+		}
+	}
+
 	if !ok {
 		if cm, hasCall := class.GetMethod("__call"); hasCall {
 			args, err := evalExprArgs(ctx, exprs)
