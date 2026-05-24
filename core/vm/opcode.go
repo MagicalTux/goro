@@ -436,6 +436,17 @@ const (
 	// calls ctx.Call with the receiver as $this. Pushes the result.
 	OpObjectCallByExprs
 
+	// OP_OBJECT_DYN_CALL dispatches a `$obj->{$expr}(args)` (or
+	// `Foo::{$expr}(args)`) dynamic-method-name call. SubASTs[A] holds
+	// the *runObjectDynFunc node carrying the receiver / name-expr /
+	// arg-expr list plus the static / nullsafe / nullChain flags;
+	// compiler.EvalObjectDynFunc runs the node's body verbatim
+	// (receiver evaluation, name evaluation, dispatch via ctx.Call
+	// with by-ref/named/spread binding). Pushes the result. Replaces
+	// the generic OpClassConst delegation for this AST node so the
+	// emit-side path is dedicated.
+	OpObjectDynCall
+
 	// Sentinel — keep last.
 	opLast
 )
@@ -568,4 +579,5 @@ var opNames = [...]string{
 	OpCallUserByExprs:     "CALL_USER_BY_EXPRS",
 	OpCallIndirectByExprs: "CALL_INDIRECT_BY_EXPRS",
 	OpObjectCallByExprs:   "OBJECT_CALL_BY_EXPRS",
+	OpObjectDynCall:       "OBJECT_DYN_CALL",
 }

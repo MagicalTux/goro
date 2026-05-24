@@ -1780,6 +1780,16 @@ func (r *runObjectDynFunc) Dump(w io.Writer) error {
 	return err
 }
 
+// EvalObjectDynFunc runs the dynamic-method-name call `$obj->{$expr}(args)`
+// (or the static form `Foo::{$expr}(args)`) for the given *runObjectDynFunc.
+// Used by both the AST runner and the VM's OP_OBJECT_DYN_CALL so the
+// generic OpClassConst delegation can be replaced by a dedicated opcode
+// + helper. The body is the runObjectDynFunc.Run body verbatim — see
+// the method just below.
+func EvalObjectDynFunc(ctx phpv.Context, node phpv.Runnable) (*phpv.ZVal, error) {
+	return node.(*runObjectDynFunc).Run(ctx)
+}
+
 func (r *runObjectDynFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 	obj, err := r.ref.Run(ctx)
 	if err != nil {

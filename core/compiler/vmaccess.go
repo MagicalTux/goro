@@ -452,21 +452,27 @@ func VarVarReadIsWriteParent(r phpv.Runnable) bool {
 // AST runner reads its operands from the FuncContext hashtable.
 // IsSlotSafe rejects bodies containing any of these so the hashtable
 // stays authoritative.
+//
+// Every previously-listed type now routes through a dedicated opcode:
+//   - runnableClone (non-basic) → OP_CLONE_EXT via IsCloneExtNode
+//   - runObjectDynVar (incl. nullChain) → OP_OBJECT_DYN_GET via
+//     IsObjectDynVarReadNode
+//   - runObjectDynFunc → OP_OBJECT_DYN_CALL via IsObjectDynFuncNode
+//   - runRef → OP_CREATE_REF via IsRefNode
+//
+// IsValueExprAstDelegated now always returns false. It's retained as
+// a single hook in case a future node type needs a generic-delegation
+// fallback again.
 func IsValueExprAstDelegated(r phpv.Runnable) bool {
-	switch n := r.(type) {
-	case *runnableClone:
-		// Basic `clone $x` is now native; only the extended PHP 8.5+
-		// forms (clone with withProperties, clone(...$arr), named args)
-		// still AST-delegate.
-		return !n.CloneIsBasic()
-	}
-	switch r.(type) {
-	case *runObjectDynVar,
-		*runObjectDynFunc,
-		*runRef:
-		return true
-	}
 	return false
+}
+
+// IsObjectDynFuncNode reports whether r is a dynamic-method-name call
+// (`$obj->{$expr}(args)` or `Foo::{$expr}(args)`). The VM lowers it
+// to OP_OBJECT_DYN_CALL which calls EvalObjectDynFunc.
+func IsObjectDynFuncNode(r phpv.Runnable) bool {
+	_, ok := r.(*runObjectDynFunc)
+	return ok
 }
 
 // IsInstanceOfNode reports whether r is a `$v instanceof Cls` expression.
@@ -603,18 +609,23 @@ func (r *runFirstClassDynMethodCallable) DynMethodFirstClassReceiver() phpv.Runn
 func (r *runFirstClassDynMethodCallable) DynMethodFirstClassNameExpr() phpv.Runnable { return r.nameExpr }
 
 // IsObjectDynVarReadNode reports whether r is a `$obj->{$name}` or
-// `$obj?->{$name}` value read. The VM lowers both to OP_OBJECT_DYN_GET
-// (nullsafe is signalled via the opcode's A flag).
+// `$obj?->{$name}` value read (including the nullChain form, where an
+// outer nullsafe operator has already poisoned the chain). The VM
+// lowers all three to OP_OBJECT_DYN_GET with the nullsafe flag set
+// when either nullsafe or nullChain is true — both want the same
+// "obj == null → short-circuit to null" semantics.
 func IsObjectDynVarReadNode(r phpv.Runnable) bool {
-	n, ok := r.(*runObjectDynVar)
-	return ok && !n.nullChain
+	_, ok := r.(*runObjectDynVar)
+	return ok
 }
 
-// ObjectDynVarIsNullSafe reports whether the dyn-var access is the
-// `$obj?->{$name}` nullsafe form (short-circuits to null when the
-// receiver is null).
+// ObjectDynVarIsNullSafe reports whether the dyn-var access needs
+// the null-short-circuit semantics — either the explicit `?->`
+// nullsafe operator (`$obj?->{$name}`), or a propagated nullChain
+// from an outer nullsafe element in the same chain.
 func ObjectDynVarIsNullSafe(r phpv.Runnable) bool {
-	return r.(*runObjectDynVar).nullsafe
+	n := r.(*runObjectDynVar)
+	return n.nullsafe || n.nullChain
 }
 
 // ObjectDynVarReceiver returns the receiver expression.

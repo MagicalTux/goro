@@ -1471,6 +1471,15 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 			}
 			f.push(res)
 
+		// --- `$obj->{$expr}(args)` dyn-method-name call ------------
+		case OpObjectDynCall:
+			node := f.fn.SubASTs[ins.A()]
+			res, err := compiler.EvalObjectDynFunc(ctx, node)
+			if err != nil {
+				return nil, false, err
+			}
+			f.push(res)
+
 		// --- `Foo::$bar = v` static property write ------------------
 		case OpStaticPropSet:
 			val := f.pop()

@@ -174,6 +174,24 @@ func (e *emitter) emitExpr(node phpv.Runnable) error {
 		e.pushStack(1)
 		return nil
 	}
+	if compiler.IsObjectDynFuncNode(node) {
+		// `$obj->{$expr}(args)` / `Foo::{$expr}(args)` dyn-method-name
+		// call — dedicated OP_OBJECT_DYN_CALL routes through
+		// compiler.EvalObjectDynFunc (which handles receiver eval,
+		// nullsafe / nullChain short-circuit, name eval, ctx.Call
+		// dispatch with by-ref/named/spread binding). Replaces what
+		// used to be a generic OpClassConst delegation.
+		stmtCtx := e.stmtCtx
+		idx := e.astIndex(node)
+		e.emit(vm.OpObjectDynCall, idx, 0, 0)
+		e.pushStack(1)
+		if stmtCtx {
+			e.emit(vm.OpPop, 0, 0, 0)
+			e.popStack(1)
+		}
+		e.emit(vm.OpRefreshSlots, 0, 0, 0)
+		return nil
+	}
 	if compiler.IsValueExprAstDelegated(node) {
 		// Common value-expression types we delegate wholesale
 		// (clone, instanceof, void-cast, first-class callables, …).
