@@ -65,6 +65,14 @@ type TryHandler struct {
 	// are dropped.
 	StackBase int
 	Catches   []CatchClause
+	// HasFinally is true when this try clause has a finally body.
+	// When set, FinallyPC is the PC of the finally body's first
+	// instruction and FinallyEnd is the PC of its OP_FINALLY_END
+	// marker. The finally-protected region for the purposes of
+	// return / break / throw routing is [Start, FinallyPC).
+	HasFinally bool
+	FinallyPC  uint32
+	FinallyEnd uint32
 }
 
 // CatchClause is a single `catch (TypeA | TypeB $e)` block.

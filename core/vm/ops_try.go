@@ -28,12 +28,27 @@ func (f *Frame) dispatchTryHandler(ctx phpv.Context, throwErr *phperr.PhpThrow) 
 
 	exClass := throwErr.Obj.GetClass()
 	for i := 0; i < len(f.fn.TryHandlers); i++ {
-		h := f.fn.TryHandlers[i]
-		if failPC < h.Start || failPC >= h.End {
+		h := &f.fn.TryHandlers[i]
+		// A try-with-finally protects [Start, FinallyPC), which covers
+		// both the try body (failPC < End) and the catch bodies
+		// (End <= failPC < FinallyPC). A plain try-catch protects
+		// [Start, End) — catch bodies are not re-matched by the same
+		// try. A throw inside the finally body itself (failPC >=
+		// FinallyPC) is intentionally outside both ranges so it
+		// propagates to an outer handler and cannot self-loop.
+		protectedEnd := h.End
+		if h.HasFinally {
+			protectedEnd = h.FinallyPC
+		}
+		if failPC < h.Start || failPC >= protectedEnd {
 			continue
 		}
-		for _, clause := range h.Catches {
-			if matchCatchTypes(ctx, exClass, clause.Types) {
+		// In the try body proper: try each catch clause.
+		if failPC < h.End {
+			for _, clause := range h.Catches {
+				if !matchCatchTypes(ctx, exClass, clause.Types) {
+					continue
+				}
 				// Drop any partially-pushed values from the failing
 				// expression so the catch body starts at the same
 				// stack depth as the try body.
@@ -78,19 +93,53 @@ func (f *Frame) dispatchTryHandler(ctx phpv.Context, throwErr *phperr.PhpThrow) 
 								// binding the catch variable replaces
 								// the in-flight exception and propagates
 								// out of the try — the catch body does
-								// not run. Jump past every catch body
+								// not run.
+								//
+								// If this try has a finally, the
+								// destructor's throw must route through
+								// the finally before propagating (a
+								// finally always runs on any exit path).
+								// Otherwise jump past every catch body
 								// so the retry doesn't match this try
 								// again.
+								if h.HasFinally {
+									if pt, ok := derr.(*phperr.PhpThrow); ok {
+										f.pending = pendingControl{kind: pendingThrow, err: pt}
+										f.pc = h.FinallyPC
+										return true, nil
+									}
+								}
 								f.pc = h.AfterCatch + 1
 								return false, derr
 							}
 						}
 					}
 				}
+				// Clear any stale pending action from a prior transit:
+				// the catch handles the throw, so a subsequent finally
+				// (if any) should run with pending=none and fall through
+				// rather than re-raising state from before.
+				f.pending = pendingControl{}
 				f.pc = clause.PC
 				return true, nil
 			}
 		}
+		// Either no catch matched (in try body) or the throw originated
+		// inside a catch body. If this try has a finally, route the
+		// throw through it; OP_FINALLY_END will re-raise once the
+		// finally body completes (unless the finally itself
+		// returns/throws, which supersedes the pending action).
+		if h.HasFinally {
+			for f.sp > h.StackBase {
+				f.sp--
+				f.stack[f.sp] = nil
+			}
+			f.pending = pendingControl{kind: pendingThrow, err: throwErr}
+			f.pc = h.FinallyPC
+			return true, nil
+		}
+		// Plain try-catch with no match: continue searching outer
+		// handlers (caller propagates if none remain).
 	}
 	return false, nil
 }

@@ -220,17 +220,6 @@ func (e *emitter) emitStmt(node phpv.Runnable) error {
 	case throwNode:
 		return e.emitThrow(n)
 	case compiler.TryNode:
-		// try with finally is delegated wholesale to the AST runner —
-		// the AST handles the intricate dance of running finally on
-		// every exit path (normal completion, caught exception,
-		// uncaught exception, return/break/continue out of the try).
-		// Replicating that bytecode-natively would be a large amount
-		// of code for a niche feature.
-		if n.TryFinally() != nil {
-			idx := e.astIndex(node)
-			e.emit(vm.OpTryFinally, idx, 0, 0)
-			return nil
-		}
 		return e.emitTry(n)
 	case *phperr.PhpBreak:
 		return e.emitBreak(n)
@@ -691,6 +680,16 @@ func (e *emitter) emitBreak(n *phperr.PhpBreak) error {
 		}
 		return unsupportedf("break %d with only %d enclosing loops", depth, len(e.loops))
 	}
+	// Cross-finally break: target loop sits below the innermost active
+	// finally body. The native lowering parks pending control via
+	// OpRet/OpFinallyEnd; break doesn't route through that machinery
+	// yet, so fall back to the AST runner for the whole function.
+	if n := len(e.finallyLoopDepths); n > 0 {
+		targetIdx := len(e.loops) - depth
+		if targetIdx < e.finallyLoopDepths[n-1] {
+			return unsupportedf("break across try-finally")
+		}
+	}
 	// Unwind any foreach iterators that sit between the current
 	// position and the target loop. Each OP_FOREACH_UNWIND pops one
 	// entry from the iters stack — required for nested foreach.
@@ -711,6 +710,12 @@ func (e *emitter) emitContinue(n *phperr.PhpContinue) error {
 			return unsupportedf("continue outside loop")
 		}
 		return unsupportedf("continue %d with only %d enclosing loops", depth, len(e.loops))
+	}
+	if n := len(e.finallyLoopDepths); n > 0 {
+		targetIdx := len(e.loops) - depth
+		if targetIdx < e.finallyLoopDepths[n-1] {
+			return unsupportedf("continue across try-finally")
+		}
 	}
 	// Same unwinding: drop foreach iterators for loops we're
 	// skipping over (the inner foreach hasn't naturally completed,

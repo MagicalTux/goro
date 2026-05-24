@@ -67,6 +67,7 @@ func acquireFrame(fn *Function) *Frame {
 	} else {
 		f.locals = make([]*phpv.ZVal, len(fn.Locals))
 	}
+	f.pending = pendingControl{}
 	return f
 }
 
@@ -699,10 +700,51 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 
 		// --- return --------------------------------------------------
 		case OpRet:
-			return f.pop(), true, nil
+			v := f.pop()
+			// If an enclosing try-with-finally protects this PC, defer
+			// the return: hand pending.val to the finally body and jump
+			// to it. OP_FINALLY_END will either chain to an outer
+			// finally or perform the actual return.
+			if tgt, h, ok := f.findEnclosingFinally(f.pc - 1); ok {
+				f.pending = pendingControl{kind: pendingReturn, val: v}
+				f.resetStackTo(h.StackBase)
+				f.pc = tgt
+				continue
+			}
+			return v, true, nil
 
 		case OpRetNull:
+			if tgt, h, ok := f.findEnclosingFinally(f.pc - 1); ok {
+				f.pending = pendingControl{kind: pendingReturn, val: phpv.ZNULL.ZVal()}
+				f.resetStackTo(h.StackBase)
+				f.pc = tgt
+				continue
+			}
 			return phpv.ZNULL.ZVal(), true, nil
+
+		case OpFinallyEnd:
+			p := f.pending
+			f.pending = pendingControl{}
+			switch p.kind {
+			case pendingNone:
+				// Normal completion of try (or try+catch). Fall through
+				// to whatever comes after the finally body.
+			case pendingReturn:
+				// Chain into an outer finally if one covers the
+				// post-finally PC; otherwise perform the actual return.
+				if tgt, h, ok := f.findEnclosingFinally(f.pc - 1); ok {
+					f.pending = pendingControl{kind: pendingReturn, val: p.val}
+					f.resetStackTo(h.StackBase)
+					f.pc = tgt
+					continue
+				}
+				return p.val, true, nil
+			case pendingThrow:
+				// Re-raise the held throw. exec's dispatch loop will
+				// re-enter dispatchTryHandler with failPC=current pc,
+				// finding an outer catch / outer finally as appropriate.
+				return nil, false, p.err
+			}
 
 		// --- arrays --------------------------------------------------
 		case OpNewArray:

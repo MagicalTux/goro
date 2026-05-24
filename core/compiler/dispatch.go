@@ -157,12 +157,10 @@ func IsSlotSafe(g phpv.GlobalContext, r phpv.Runnable) bool {
 	case *runGlobal:
 		return false
 	case *runnableTry:
-		// try with finally is AST-delegated by the emitter; the
-		// delegation does ctx.OffsetGet / OffsetSet for locals, which
-		// would silently see stale state under slot-only.
-		if n.finally != nil {
-			return false
-		}
+		// try / try+catch / try+finally are lowered natively by the
+		// emitter. The recursive walk over GetChildren still picks up
+		// any slot-unsafe construct inside the try body, catches, or
+		// finally body, so no extra gate is needed here.
 	case *runOperator:
 		// Assignment / compound-assign / inc-dec to a property,
 		// static prop, or array element (when the LHS isn't a

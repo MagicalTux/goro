@@ -379,6 +379,21 @@ const (
 	// context) when B's bit 0 is set.
 	OpDestructureAssign
 
+	// OP_FINALLY_END marks the end of a finally body in the native
+	// try-with-finally lowering. At runtime it inspects the frame's
+	// pending-control register and either:
+	//   - pending=none: falls through to the next instruction (normal
+	//     completion of try + finally, or catch + finally).
+	//   - pending=return: re-attempts the return — chains into an outer
+	//     finally (Start <= pc < FinallyPC of an outer TryHandler) if
+	//     one covers this PC, else exits the frame returning pending.val.
+	//   - pending=throw: re-raises the held *phperr.PhpThrow so the
+	//     outer dispatch can route it to a catch or an outer finally.
+	// The opcode encodes no operands; the pending register is set by
+	// OP_RET / OP_RET_NULL / dispatchTryHandler when they detect they're
+	// crossing an enclosing finally.
+	OpFinallyEnd
+
 	// Sentinel — keep last.
 	opLast
 )
@@ -504,4 +519,6 @@ var opNames = [...]string{
 	OpCloneExt:            "CLONE_EXT",
 	OpStaticMethodCall:    "STATIC_METHOD_CALL",
 	OpStaticVarBind:       "STATIC_VAR_BIND",
+	OpDestructureAssign:   "DESTRUCTURE_ASSIGN",
+	OpFinallyEnd:          "FINALLY_END",
 }

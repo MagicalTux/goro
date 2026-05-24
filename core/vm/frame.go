@@ -1,6 +1,37 @@
 package vm
 
-import "github.com/KarpelesLab/goro/core/phpv"
+import (
+	"github.com/KarpelesLab/goro/core/phperr"
+	"github.com/KarpelesLab/goro/core/phpv"
+)
+
+// pendingKind tags the action being deferred while a finally body runs.
+type pendingKind uint8
+
+const (
+	pendingNone pendingKind = iota
+	// pendingReturn: the original OP_RET / OP_RET_NULL was intercepted
+	// by an enclosing finally. pending.val holds the return value; the
+	// finally runs first, then OP_FINALLY_END either chains into an
+	// outer finally or performs the actual return.
+	pendingReturn
+	// pendingThrow: a throw with no matching catch (or thrown inside a
+	// catch body) was intercepted by an enclosing finally. pending.err
+	// holds the *phperr.PhpThrow; OP_FINALLY_END re-raises it.
+	pendingThrow
+)
+
+// pendingControl is a single-slot register carrying a deferred control
+// action across a finally body. A new throw inside the finally (caught
+// or uncaught) supersedes the pending action — dispatchTryHandler
+// clears it on a fresh catch routing, and an OP_RET inside the finally
+// performs the new return (the original pending is abandoned, matching
+// PHP's "finally overrides" semantics).
+type pendingControl struct {
+	kind pendingKind
+	val  *phpv.ZVal
+	err  *phperr.PhpThrow
+}
 
 // Slot is the type of a single VM stack cell.
 //
@@ -35,6 +66,48 @@ type Frame struct {
 	// hashtable entry). The dispatcher's OP_LOAD_LOCAL_OR_WARN treats
 	// it as such.
 	locals []*phpv.ZVal
+
+	// pending carries a deferred control action across a finally body
+	// (see pendingControl). Read and cleared by OP_FINALLY_END; set by
+	// OP_RET / OP_RET_NULL when they detect an enclosing finally, and
+	// by dispatchTryHandler when routing an uncaught throw to a
+	// finally body.
+	pending pendingControl
+}
+
+// findEnclosingFinally returns the FinallyPC and the owning TryHandler
+// for the innermost finally that protects PC `pc` — i.e. the handler
+// with HasFinally set whose [Start, FinallyPC) region contains pc.
+// Used by OP_RET / OP_RET_NULL and by OP_FINALLY_END's chain-to-outer
+// logic to decide whether a return must route through a finally first.
+//
+// Returns (0, nil, false) when no enclosing finally covers pc.
+func (f *Frame) findEnclosingFinally(pc uint32) (uint32, *TryHandler, bool) {
+	handlers := f.fn.TryHandlers
+	// Innermost-first: handlers are appended in emit order, and a
+	// nested try's handler is appended before its outer's (the inner
+	// emitTry completes during the outer's body emission). So a
+	// forward scan returns the innermost match first.
+	for i := range handlers {
+		h := &handlers[i]
+		if !h.HasFinally {
+			continue
+		}
+		if pc >= h.Start && pc < h.FinallyPC {
+			return h.FinallyPC, h, true
+		}
+	}
+	return 0, nil, false
+}
+
+// resetStackTo trims the value stack down to depth `n`, niling out the
+// dropped slots so the GC can reclaim them. Used when unwinding into a
+// catch or finally body.
+func (f *Frame) resetStackTo(n int) {
+	for f.sp > n {
+		f.sp--
+		f.stack[f.sp] = nil
+	}
 }
 
 // refreshSlots re-reads each local from the FuncContext hashtable

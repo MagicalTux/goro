@@ -5,10 +5,10 @@ import (
 	"github.com/KarpelesLab/goro/core/vm"
 )
 
-// emitTry lowers a `try { … } catch (T1|T2 $e) { … } …` to bytecode.
-// finally clauses currently fall back via ErrUnsupported.
+// emitTry lowers a `try { … } catch (T1|T2 $e) { … } [finally { … }]`
+// to bytecode.
 //
-// Layout:
+// Layout WITHOUT finally:
 //
 //	tryStart:
 //	   <try body>
@@ -21,16 +21,33 @@ import (
 //	   ...
 //	afterCatch:
 //
-// A TryHandler with Start=tryStart, End=tryEnd, and one CatchClause
-// per catch is registered on the function. The dispatcher catches
-// PhpThrow within [tryStart, tryEnd) and redirects pc to the first
-// matching catch.PC.
+// Layout WITH finally:
+//
+//	tryStart:
+//	   <try body>
+//	   JMP finallyPC           // normal completion: pending=none, fall through finally
+//	tryEnd:
+//	catch_1:
+//	   <body>
+//	   JMP finallyPC
+//	catch_2:
+//	   ...
+//	finallyPC:                 // == afterCatch
+//	   <finally body>
+//	   OP_FINALLY_END          // inspects f.pending: re-raise / re-return / fall through
+//	finallyEnd:                // (post-finally code)
+//
+// A TryHandler with Start=tryStart, End=tryEnd, and (when present)
+// HasFinally + FinallyPC + FinallyEnd is registered on the function.
+// The dispatcher routes PhpThrow through the catches when failPC is in
+// the try body; if no catch matches (or the throw originates inside a
+// catch body) and HasFinally, the throw is parked in f.pending and
+// execution jumps to FinallyPC. OpRet / OpRetNull do the same for
+// returns whose PC is enclosed by a finally region.
 func (e *emitter) emitTry(n compiler.TryNode) error {
-	if n.TryFinally() != nil {
-		return unsupportedf("try with finally")
-	}
+	finally := n.TryFinally()
 	catches := n.TryCatches()
-	if len(catches) == 0 {
+	if len(catches) == 0 && finally == nil {
 		// Bare try with no catch and no finally is a parse error in
 		// PHP, but be defensive.
 		return unsupportedf("try without catch or finally")
@@ -38,10 +55,19 @@ func (e *emitter) emitTry(n compiler.TryNode) error {
 
 	tryStart := uint32(len(e.code))
 	stackBase := e.curStack
+
+	// Track this finally's emit-time loop depth so cross-finally
+	// break/continue can be rejected at emit time (the JMPs they'd
+	// emit don't route through pending+finally yet).
+	if finally != nil {
+		e.finallyLoopDepths = append(e.finallyLoopDepths, len(e.loops))
+	}
 	if err := e.emitStmt(n.TryBody()); err != nil {
 		return err
 	}
-	// Skip catches on normal completion.
+	// Normal-completion JMP: lands at finallyPC if there's a finally,
+	// otherwise at afterCatch. Either way it's the same PC because we
+	// arrange the finally body to start exactly at afterCatch.
 	skipCatches := e.emit(vm.OpJmp, 0, 0, 0)
 	tryEnd := uint32(len(e.code))
 
@@ -59,22 +85,43 @@ func (e *emitter) emitTry(n compiler.TryNode) error {
 		if err := e.emitStmt(c.CatchBody()); err != nil {
 			return err
 		}
-		// Skip remaining catches.
 		endPatches = append(endPatches, e.emit(vm.OpJmp, 0, 0, 0))
 	}
 
+	// All catches done: this PC is afterCatch — and, when there's a
+	// finally, also finallyPC (the finally body begins here so a
+	// natural fall-through from try / catch lands directly in it).
 	afterCatch := uint32(len(e.code))
 	e.patchJump(skipCatches, afterCatch)
 	for _, pc := range endPatches {
 		e.patchJump(pc, afterCatch)
 	}
 
-	e.tryHandlers = append(e.tryHandlers, vm.TryHandler{
+	handler := vm.TryHandler{
 		Start:      tryStart,
 		End:        tryEnd,
 		AfterCatch: afterCatch,
 		StackBase:  stackBase,
 		Catches:    clauses,
-	})
+	}
+
+	if finally != nil {
+		// Pop the finally tracking now: the finally body itself runs
+		// at the normal loop depth, so a break inside finally that
+		// targets a loop entered inside the finally body is fine.
+		e.finallyLoopDepths = e.finallyLoopDepths[:len(e.finallyLoopDepths)-1]
+		handler.HasFinally = true
+		handler.FinallyPC = afterCatch
+		if err := e.emitStmt(finally); err != nil {
+			return err
+		}
+		// OP_FINALLY_END inspects f.pending and either falls through,
+		// re-attempts the deferred return (chaining to outer finally
+		// if needed), or re-raises the deferred throw.
+		finallyEndPC := e.emit(vm.OpFinallyEnd, 0, 0, 0)
+		handler.FinallyEnd = finallyEndPC
+	}
+
+	e.tryHandlers = append(e.tryHandlers, handler)
 	return nil
 }

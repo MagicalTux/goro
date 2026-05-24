@@ -26,6 +26,15 @@ type emitter struct {
 	// Loop context for break/continue patches.
 	loops []*loopCtx
 
+	// finallyLoopDepths records len(e.loops) at the moment each
+	// active try-with-finally body started emitting. emitBreak /
+	// emitContinue check the innermost entry: if the loop being
+	// targeted sits below that depth, the jump would skip a finally,
+	// which the native lowering doesn't support yet — the emitter
+	// falls back via unsupportedf so the whole function routes
+	// through the AST.
+	finallyLoopDepths []int
+
 	// Source location of the unit currently being compiled.
 	source *phpv.Loc
 
