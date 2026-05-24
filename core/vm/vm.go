@@ -1473,8 +1473,13 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 
 		// --- `$obj->{$expr}(args)` dyn-method-name call ------------
 		case OpObjectDynCall:
+			// Stack: [..., receiver, method-name]. Args are looked up
+			// from the AST node (SubASTs[A]); ctx.Call in the helper
+			// applies by-ref / named / spread binding.
 			node := f.fn.SubASTs[ins.A()]
-			res, err := compiler.EvalObjectDynFunc(ctx, node)
+			name := f.pop()
+			recv := f.pop()
+			res, err := compiler.EvalObjectDynFuncWithEvaluated(ctx, node, recv, name)
 			if err != nil {
 				return nil, false, err
 			}

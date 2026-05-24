@@ -1782,12 +1782,35 @@ func (r *runObjectDynFunc) Dump(w io.Writer) error {
 
 // EvalObjectDynFunc runs the dynamic-method-name call `$obj->{$expr}(args)`
 // (or the static form `Foo::{$expr}(args)`) for the given *runObjectDynFunc.
-// Used by both the AST runner and the VM's OP_OBJECT_DYN_CALL so the
-// generic OpClassConst delegation can be replaced by a dedicated opcode
-// + helper. The body is the runObjectDynFunc.Run body verbatim — see
-// the method just below.
+// Used by the AST runner (via runObjectDynFunc.Run) as a back-compat
+// entry point. The VM uses EvalObjectDynFuncWithEvaluated which takes
+// pre-evaluated receiver and method-name ZVals so the VM doesn't need
+// to call .Run() on those sub-expressions.
 func EvalObjectDynFunc(ctx phpv.Context, node phpv.Runnable) (*phpv.ZVal, error) {
 	return node.(*runObjectDynFunc).Run(ctx)
+}
+
+// EvalObjectDynFuncWithEvaluated dispatches a dynamic-method-name call
+// given a pre-evaluated receiver (`obj`) and method-name (`name`). The
+// VM's OP_OBJECT_DYN_CALL emits the receiver and the name-producing
+// expression natively to the stack, then calls this helper so the args
+// are looked up from the AST node and bound through ctx.Call. The
+// helper IS the body of runObjectDynFunc.Run after the first two
+// .Run() calls; both code paths share it.
+func EvalObjectDynFuncWithEvaluated(ctx phpv.Context, node phpv.Runnable, obj *phpv.ZVal, name *phpv.ZVal) (*phpv.ZVal, error) {
+	r := node.(*runObjectDynFunc)
+	if (r.nullsafe || r.nullChain) && obj.GetType() == phpv.ZtNull {
+		return phpv.ZNULL.ZVal(), nil
+	}
+	if name.GetType() != phpv.ZtString {
+		return nil, &phpv.PhpError{
+			Err:  fmt.Errorf("Method name must be a string"),
+			Code: phpv.E_ERROR,
+			Loc:  r.l,
+		}
+	}
+	methodName := phpv.ZString(name.String())
+	return runObjectDynFuncDispatch(ctx, r, obj, methodName)
 }
 
 func (r *runObjectDynFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
@@ -1810,6 +1833,15 @@ func (r *runObjectDynFunc) Run(ctx phpv.Context) (*phpv.ZVal, error) {
 		}
 	}
 	methodName := phpv.ZString(name.String())
+	return runObjectDynFuncDispatch(ctx, r, obj, methodName)
+}
+
+// runObjectDynFuncDispatch is the post-evaluation dispatch shared by
+// runObjectDynFunc.Run and EvalObjectDynFuncWithEvaluated. It does the
+// static / instance / __call / __callStatic routing using the
+// already-evaluated receiver value and method name.
+func runObjectDynFuncDispatch(ctx phpv.Context, r *runObjectDynFunc, obj *phpv.ZVal, methodName phpv.ZString) (*phpv.ZVal, error) {
+	var err error
 
 	if r.static && obj.GetType() == phpv.ZtString {
 		// Static call: Class::{'method'}()

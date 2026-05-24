@@ -475,6 +475,19 @@ func IsObjectDynFuncNode(r phpv.Runnable) bool {
 	return ok
 }
 
+// ObjectDynFuncReceiver returns the receiver expression of a
+// dynamic-method-name call (`$obj->{$expr}(...)`). The VM emits this
+// natively before OP_OBJECT_DYN_CALL.
+func ObjectDynFuncReceiver(r phpv.Runnable) phpv.Runnable {
+	return r.(*runObjectDynFunc).ObjectDynFuncReceiver()
+}
+
+// ObjectDynFuncNameExpr returns the expression that produces the
+// method name. The VM emits this natively before OP_OBJECT_DYN_CALL.
+func ObjectDynFuncNameExpr(r phpv.Runnable) phpv.Runnable {
+	return r.(*runObjectDynFunc).ObjectDynFuncNameExpr()
+}
+
 // IsInstanceOfNode reports whether r is a `$v instanceof Cls` expression.
 // The VM lowers it to OpInstanceOf.
 func IsInstanceOfNode(r phpv.Runnable) bool {
@@ -1068,6 +1081,14 @@ func (r *runObjectFunc) ObjectFuncIsStatic() bool { return r.static }
 
 // ObjectFuncIsNullSafe reports nullsafe chain status.
 func (r *runObjectFunc) ObjectFuncIsNullSafe() bool { return r.nullsafe || r.nullChain }
+
+// --- runObjectDynFunc ($obj->{$expr}(args)) ---------------------------
+
+// ObjectDynFuncReceiver returns the receiver expression.
+func (r *runObjectDynFunc) ObjectDynFuncReceiver() phpv.Runnable { return r.ref }
+
+// ObjectDynFuncNameExpr returns the expression that produces the method name.
+func (r *runObjectDynFunc) ObjectDynFuncNameExpr() phpv.Runnable { return r.nameExpr }
 
 // --- runnableFunctionCallRef ($f(...) where $f is a variable) --------
 

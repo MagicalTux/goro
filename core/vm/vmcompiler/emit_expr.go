@@ -176,15 +176,24 @@ func (e *emitter) emitExpr(node phpv.Runnable) error {
 	}
 	if compiler.IsObjectDynFuncNode(node) {
 		// `$obj->{$expr}(args)` / `Foo::{$expr}(args)` dyn-method-name
-		// call — dedicated OP_OBJECT_DYN_CALL routes through
-		// compiler.EvalObjectDynFunc (which handles receiver eval,
-		// nullsafe / nullChain short-circuit, name eval, ctx.Call
-		// dispatch with by-ref/named/spread binding). Replaces what
-		// used to be a generic OpClassConst delegation.
+		// call. Stage 2 lowering: emit receiver + name-producing
+		// expression natively to the stack; OP_OBJECT_DYN_CALL pops
+		// both and calls EvalObjectDynFuncWithEvaluated, which then
+		// dispatches static / instance / __call / __callStatic and
+		// runs ctx.Call to bind by-ref / named / spread args.
 		stmtCtx := e.stmtCtx
+		recv := compiler.ObjectDynFuncReceiver(node)
+		name := compiler.ObjectDynFuncNameExpr(node)
+		if err := e.withSubexpr(func() error { return e.emitExpr(recv) }); err != nil {
+			return err
+		}
+		if err := e.withSubexpr(func() error { return e.emitExpr(name) }); err != nil {
+			return err
+		}
 		idx := e.astIndex(node)
 		e.emit(vm.OpObjectDynCall, idx, 0, 0)
-		e.pushStack(1)
+		// Pops 2 (recv + name), pushes 1 result. Net delta: -1.
+		e.popStack(1)
 		if stmtCtx {
 			e.emit(vm.OpPop, 0, 0, 0)
 			e.popStack(1)
