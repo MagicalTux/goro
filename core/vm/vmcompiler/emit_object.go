@@ -105,19 +105,24 @@ func (e *emitter) emitObjectVarAssign(lhs objectVarNode, rhs phpv.Runnable, stmt
 func (e *emitter) emitObjectVarRead(n objectVarNode) error {
 	name := n.ObjectVarName()
 	// `$obj->$x` (no curly braces) parses to runObjectVar with the
-	// literal dollar-prefixed token as the name (e.g. "$x"). That form
-	// needs runtime variable lookup, which the simple OP_OBJECT_GET
-	// path doesn't do — AST-delegate via OpClassConst. Curly-brace
-	// form `$obj->{$x}` parses to runObjectDynVar and is intercepted
-	// by IsObjectDynVarReadNode earlier.
+	// literal dollar-prefixed token as the name (e.g. "$x"). Strip the
+	// `$` and route through the existing OP_OBJECT_DYN_GET pipeline:
+	// receiver + local-read of the name variable on the stack. This is
+	// semantically identical to the curly-brace form `$obj->{$x}` once
+	// the local has been evaluated. Same nullsafe encoding via A bit 0.
 	if len(name) > 0 && name[0] == '$' {
-		raw, ok := n.(phpv.Runnable)
-		if !ok {
-			return unsupportedf("property-read AST delegation: cannot retrieve raw Runnable")
+		if err := e.withSubexpr(func() error { return e.emitExpr(n.ObjectVarReceiver()) }); err != nil {
+			return err
 		}
-		idx := e.astIndex(raw)
-		e.emit(vm.OpClassConst, idx, 0, 0)
+		localIdx := e.localIndex(name[1:])
+		e.emit(vm.OpLoadLocal, localIdx, 0, 0)
 		e.pushStack(1)
+		var aFlags uint16
+		if n.ObjectVarIsNullSafe() {
+			aFlags |= 1
+		}
+		e.emit(vm.OpObjectDynGet, aFlags, 0, 0)
+		e.popStack(1) // pops 2, pushes 1 → net -1
 		return nil
 	}
 	if err := e.withSubexpr(func() error { return e.emitExpr(n.ObjectVarReceiver()) }); err != nil {
