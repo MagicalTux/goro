@@ -1252,6 +1252,18 @@ func (e *emitter) emitIssetArg(a phpv.Runnable) error {
 		// pop receiver, push bool → net stack delta zero.
 		return nil
 	}
+	if compiler.IsClassStaticVarReadNode(a) {
+		// `isset(Foo::$bar)` — emit class-source then OP_ISSET_STATIC_PROP.
+		classExpr := a.(interface{ ClassStaticVarReadClassExpr() phpv.Runnable }).ClassStaticVarReadClassExpr()
+		varName := a.(interface{ ClassStaticVarReadName() phpv.ZString }).ClassStaticVarReadName()
+		if err := e.withSubexpr(func() error { return e.emitExpr(classExpr) }); err != nil {
+			return err
+		}
+		idx := e.constIndex(varName)
+		e.emit(vm.OpIssetStaticProp, idx, 0, 0)
+		// pop class-source, push bool → net stack delta zero.
+		return nil
+	}
 	return unsupportedf("emitIssetArg: unsupported shape %T", a)
 }
 
@@ -1285,6 +1297,21 @@ func (e *emitter) emitEmptyArg(a phpv.Runnable) error {
 		idx := e.constIndex(ov.ObjectVarName())
 		e.emit(vm.OpEmptyObjProp, idx, 0, 0)
 		// pop receiver, push bool → net stack delta zero.
+		return nil
+	}
+	if compiler.IsClassStaticVarReadNode(a) {
+		// `empty(Foo::$bar)` — emit class-source then
+		// OP_EMPTY_STATIC_PROP. Missing-class or undeclared-prop
+		// returns true (empty) without warning, matching PHP's
+		// "any error → empty" behaviour from checkEmpty's default.
+		classExpr := a.(interface{ ClassStaticVarReadClassExpr() phpv.Runnable }).ClassStaticVarReadClassExpr()
+		varName := a.(interface{ ClassStaticVarReadName() phpv.ZString }).ClassStaticVarReadName()
+		if err := e.withSubexpr(func() error { return e.emitExpr(classExpr) }); err != nil {
+			return err
+		}
+		idx := e.constIndex(varName)
+		e.emit(vm.OpEmptyStaticProp, idx, 0, 0)
+		// pop class-source, push bool → net stack delta zero.
 		return nil
 	}
 	return unsupportedf("emitEmptyArg: unsupported shape %T", a)

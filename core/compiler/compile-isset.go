@@ -427,6 +427,50 @@ func EvalEmptyObjProp(ctx phpv.Context, receiver *phpv.ZVal, propName phpv.ZStri
 	return IsValueEmpty(ctx, val), nil
 }
 
+// EvalIssetStaticProp performs `isset(Cls::$prop)` after the class
+// source has been evaluated. Mirrors checkExistence's
+// *runClassStaticVarRef branch: returns false when the class lookup
+// fails, when the property is hidden by visibility, when the property
+// is undeclared, or when its current value is NULL. Errors are
+// swallowed (isset never propagates them).
+func EvalIssetStaticProp(ctx phpv.Context, classV *phpv.ZVal, varName phpv.ZString) (bool, error) {
+	if classV == nil {
+		return false, nil
+	}
+	class, err := ctx.Global().GetClass(ctx, classV.AsString(ctx), true)
+	if err != nil {
+		return false, nil
+	}
+	zc, ok := class.(*phpobj.ZClass)
+	if !ok {
+		return false, nil
+	}
+	if !phpobj.IsStaticPropAccessible(ctx, zc, varName) {
+		return false, nil
+	}
+	p, found, err := zc.FindStaticProp(ctx, varName)
+	if err != nil || !found {
+		return false, nil
+	}
+	val := p.GetString(varName)
+	return val != nil && !phpv.IsNull(val), nil
+}
+
+// EvalEmptyStaticProp performs `empty(Cls::$prop)` after the class
+// source has been evaluated. Mirrors checkEmpty's default branch for
+// runClassStaticVarRef: reads the value via EvalClassStaticVarRead;
+// any error or missing-prop result is treated as empty.
+func EvalEmptyStaticProp(ctx phpv.Context, classV *phpv.ZVal, varName phpv.ZString, l *phpv.Loc) (bool, error) {
+	if classV == nil {
+		return true, nil
+	}
+	val, err := EvalClassStaticVarRead(ctx, classV, varName, l)
+	if err != nil {
+		return true, nil
+	}
+	return IsValueEmpty(ctx, val), nil
+}
+
 func IsValueEmpty(ctx phpv.Context, v *phpv.ZVal) bool {
 	if v == nil {
 		return true

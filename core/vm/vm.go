@@ -1596,6 +1596,31 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 				f.push(val)
 			}
 
+		// --- `isset(Cls::$prop)` / `empty(Cls::$prop)` ----------------
+		case OpIssetStaticProp:
+			classV := f.pop()
+			varName, ok := f.fn.Consts[ins.A()].(phpv.ZString)
+			if !ok {
+				return nil, false, fmt.Errorf("vm: OP_ISSET_STATIC_PROP name const is %T not ZString", f.fn.Consts[ins.A()])
+			}
+			exists, err := compiler.EvalIssetStaticProp(ctx, classV, varName)
+			if err != nil {
+				return nil, false, err
+			}
+			f.push(phpv.ZBool(exists).ZVal())
+
+		case OpEmptyStaticProp:
+			classV := f.pop()
+			varName, ok := f.fn.Consts[ins.A()].(phpv.ZString)
+			if !ok {
+				return nil, false, fmt.Errorf("vm: OP_EMPTY_STATIC_PROP name const is %T not ZString", f.fn.Consts[ins.A()])
+			}
+			isEmpty, err := compiler.EvalEmptyStaticProp(ctx, classV, varName, f.fn.LocAt(f.pc-1))
+			if err != nil {
+				return nil, false, err
+			}
+			f.push(phpv.ZBool(isEmpty).ZVal())
+
 		// --- `$obj->prop++` / `++$obj->prop` / `--` variants ----------
 		case OpIncDecObjProp:
 			receiver := f.pop()
@@ -1606,6 +1631,19 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 			inc := ins.B()&1 != 0
 			post := ins.B()&2 != 0
 			keep := ins.C()&1 != 0
+			// PHP 8: ++/-- on a property of a non-object throws
+			// "Attempt to increment/decrement property" — distinct
+			// from the "Attempt to assign property" thrown by plain
+			// property write. Mirrors the r.incDecCtx branch in
+			// runObjectVar.Run (compile-object.go:1316).
+			if receiver == nil || receiver.Value() == nil {
+				return nil, false, phpobj.ThrowError(ctx, phpobj.Error,
+					fmt.Sprintf("Attempt to increment/decrement property \"%s\" on null", name))
+			}
+			if _, isObj := receiver.Value().(phpv.ZObjectAccess); !isObj {
+				return nil, false, phpobj.ThrowError(ctx, phpobj.Error,
+					fmt.Sprintf("Attempt to increment/decrement property \"%s\" on %s", name, compiler.PhpValueTypeName(receiver)))
+			}
 			cur, err := objectGet(ctx, receiver, name)
 			if err != nil {
 				return nil, false, err

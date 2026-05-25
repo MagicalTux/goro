@@ -515,6 +515,14 @@ const (
 	// AssignClassStaticProp.
 	OpIncDecStaticProp
 
+	// `isset(Foo::$bar)` / `empty(Foo::$bar)` for static-name access.
+	// Encoding: A = const-pool name index. Pops class-source, pushes
+	// bool. Dispatches to compiler.EvalIssetStaticProp /
+	// EvalEmptyStaticProp which mirror checkExistence /
+	// checkEmpty's *runClassStaticVarRef branches.
+	OpIssetStaticProp
+	OpEmptyStaticProp
+
 	// Sentinel — keep last.
 	opLast
 )
@@ -656,4 +664,6 @@ var opNames = [...]string{
 	OpStaticPropCompoundAssign: "STATIC_PROP_COMPOUND_ASSIGN",
 	OpIncDecObjProp:            "INC_DEC_OBJ_PROP",
 	OpIncDecStaticProp:         "INC_DEC_STATIC_PROP",
+	OpIssetStaticProp:          "ISSET_STATIC_PROP",
+	OpEmptyStaticProp:          "EMPTY_STATIC_PROP",
 }

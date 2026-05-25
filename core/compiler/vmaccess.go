@@ -959,6 +959,12 @@ func IsIssetSupportedArg(r phpv.Runnable) bool {
 		// emitIssetContainerRead can recurse without falling back.
 		return IsIssetSupportedArg(o.ref)
 	}
+	if _, ok := r.(*runClassStaticVarRef); ok {
+		// `Foo::$bar` — class source is evaluated by emitExpr;
+		// EvalIssetStaticProp / EvalEmptyStaticProp handle the
+		// downstream visibility/declared/non-null checks.
+		return true
+	}
 	a, ok := r.(*runArrayAccess)
 	if !ok || a.nullChain {
 		return false
