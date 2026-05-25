@@ -852,14 +852,14 @@ func (e *emitter) emitAssign(n operatorNode) error {
 	// the AST runner. IsSlotSafe rejects bodies with these writes,
 	// so the hashtable is in sync when the AST reads locals.
 	if ov, ok := n.OperatorA().(objectVarNode); ok {
-		// `$obj->prop = v`: emit natively when stmt-context, static-name,
-		// non-nullsafe. OP_OBJECT_SET dispatches via ZObject's ObjectSet
-		// which already handles typed properties, hooks, and asymmetric
-		// visibility. Expr-context still AST-delegates (the assignment
-		// result needs the value on the stack and we lack a SWAP opcode).
+		// `$obj->prop = v`: emit natively for static-name, non-nullsafe.
+		// OP_OBJECT_SET dispatches via ZObject's ObjectSet which already
+		// handles typed properties, hooks, and asymmetric visibility.
+		// Expr-context uses the B=1 keep-value flag so the assignment
+		// result lands on the stack.
 		name := ov.ObjectVarName()
-		if e.stmtCtx && !ov.ObjectVarIsNullSafe() && !(len(name) > 0 && name[0] == '$') {
-			return e.emitObjectVarAssign(ov, n.OperatorB(), true)
+		if !ov.ObjectVarIsNullSafe() && !(len(name) > 0 && name[0] == '$') {
+			return e.emitObjectVarAssign(ov, n.OperatorB(), e.stmtCtx)
 		}
 		return e.emitAssignViaAST(n)
 	}

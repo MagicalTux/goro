@@ -1011,6 +1011,10 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 			if err := objectSet(ctx, receiver, name, val); err != nil {
 				return nil, false, err
 			}
+			// B != 0: expression-context, leave value on stack.
+			if ins.B() != 0 {
+				f.push(val)
+			}
 
 		case OpObjectGetSafe:
 			// Permissive read for coalesce LHS: silences "Undefined

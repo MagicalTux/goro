@@ -153,6 +153,8 @@ const (
 	OpObjectGet
 	// OP_OBJECT_SET pops the value, then the receiver. Sets
 	// receiver->name = value. Name is Consts[A] (a ZString).
+	// If B != 0, the value is pushed back on the stack after the set
+	// (for expression-context `$x = ($obj->prop = v)` semantics).
 	OpObjectSet
 	// OP_OBJECT_CALL pops B args and the receiver. Pushes the result
 	// of receiver->name(args). Name is Consts[A] (a ZString).

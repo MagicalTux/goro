@@ -68,9 +68,6 @@ func (e *emitter) emitNewObject(n newObjectNode) error {
 }
 
 func (e *emitter) emitObjectVarAssign(lhs objectVarNode, rhs phpv.Runnable, stmtCtx bool) error {
-	if !stmtCtx {
-		return unsupportedf("property assign in non-statement context")
-	}
 	if lhs.ObjectVarIsNullSafe() {
 		return unsupportedf("nullsafe property assign")
 	}
@@ -97,8 +94,15 @@ func (e *emitter) emitObjectVarAssign(lhs objectVarNode, rhs phpv.Runnable, stmt
 		return err
 	}
 	idx := e.constIndex(name)
-	e.emit(vm.OpObjectSet, idx, 0, 0)
-	e.popStack(2) // pop receiver + value, no push
+	if stmtCtx {
+		e.emit(vm.OpObjectSet, idx, 0, 0)
+		e.popStack(2) // pop receiver + value, no push
+	} else {
+		// Expr context: OpObjectSet B=1 leaves the value on the stack
+		// after the write — semantics of `$x = ($obj->prop = v)`.
+		e.emit(vm.OpObjectSet, idx, 1, 0)
+		e.popStack(1) // pop receiver+value, push value back → net -1
+	}
 	return nil
 }
 
