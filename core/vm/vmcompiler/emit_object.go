@@ -150,6 +150,49 @@ func (e *emitter) emitObjectVarCompoundAssign(lhs objectVarNode, rhs phpv.Runnab
 	return nil
 }
 
+// emitObjectVarIncDec emits `$obj->prop++` / `++$obj->prop` and dec
+// variants for static-name, non-nullsafe property access. Evaluates the
+// receiver once, then OP_INC_DEC_OBJ_PROP handles the read-mutate-write
+// cycle. The pre/post-mutation value lands on the stack only in
+// expression context.
+func (e *emitter) emitObjectVarIncDec(lhs objectVarNode, inc bool, post bool, stmtCtx bool) error {
+	if lhs.ObjectVarIsNullSafe() {
+		return unsupportedf("nullsafe property inc/dec")
+	}
+	name := lhs.ObjectVarName()
+	if len(name) > 0 && name[0] == '$' {
+		return unsupportedf("dynamic property name in inc/dec")
+	}
+	recv := lhs.ObjectVarReceiver()
+	if v, ok := recv.(variableNode); ok {
+		idx := e.localIndex(v.VariableName())
+		e.emit(vm.OpLoadLocal, idx, 0, 0)
+		e.pushStack(1)
+	} else {
+		if err := e.withSubexpr(func() error { return e.emitExpr(recv) }); err != nil {
+			return err
+		}
+	}
+	nameIdx := e.constIndex(name)
+	var b uint16
+	if inc {
+		b |= 1
+	}
+	if post {
+		b |= 2
+	}
+	var c int32
+	if !stmtCtx {
+		c = 1
+	}
+	e.emit(vm.OpIncDecObjProp, nameIdx, b, c)
+	if stmtCtx {
+		e.popStack(1) // receiver consumed, nothing pushed
+	}
+	// expr-context: receiver consumed, pre/post value pushed → net 0
+	return nil
+}
+
 func (e *emitter) emitObjectVarRead(n objectVarNode) error {
 	name := n.ObjectVarName()
 	// `$obj->$x` (no curly braces) parses to runObjectVar with the

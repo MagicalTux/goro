@@ -627,6 +627,38 @@ func (e *emitter) emitClassStaticGet(node phpv.Runnable) error {
 	return nil
 }
 
+// emitStaticPropIncDec emits `Foo::$bar++` / `++Foo::$bar` and dec
+// variants for the static-name (*runClassStaticVarRef) shape. The class
+// source is evaluated once; OP_INC_DEC_STATIC_PROP dispatches read +
+// DoInc + write through EvalClassStaticVarRead / AssignClassStaticProp.
+func (e *emitter) emitStaticPropIncDec(target phpv.Runnable, inc bool, post bool, stmtCtx bool) error {
+	n, ok := target.(classStaticVarReadNode)
+	if !ok {
+		return unsupportedf("static-prop inc/dec: node %T doesn't expose accessors", target)
+	}
+	if err := e.withSubexpr(func() error { return e.emitExpr(n.ClassStaticVarReadClassExpr()) }); err != nil {
+		return err
+	}
+	nameIdx := e.constIndex(n.ClassStaticVarReadName())
+	var b uint16
+	if inc {
+		b |= 1
+	}
+	if post {
+		b |= 2
+	}
+	var c int32
+	if !stmtCtx {
+		c = 1
+	}
+	e.emit(vm.OpIncDecStaticProp, nameIdx, b, c)
+	if stmtCtx {
+		e.popStack(1) // class-source consumed, nothing pushed
+	}
+	// expr-ctx: class-source consumed, pre/post pushed → net 0
+	return nil
+}
+
 func (e *emitter) emitClassDynConst(node phpv.Runnable) error {
 	n, ok := node.(classDynConstNode)
 	if !ok {
@@ -1025,8 +1057,21 @@ func (e *emitter) emitIncDec(n operatorNode, inc bool) error {
 	}
 	tv, ok := target.(variableNode)
 	if !ok {
-		// ++/-- on $obj->prop, $arr[$k], Foo::$bar, etc. — route
-		// through the AST. The whole runOperator is a write op.
+		// `$obj->prop++` / `++$obj->prop` / `--`: emit natively for
+		// static-name, non-nullsafe property access.
+		if ov, ok := target.(objectVarNode); ok {
+			name := ov.ObjectVarName()
+			if !ov.ObjectVarIsNullSafe() && !(len(name) > 0 && name[0] == '$') {
+				return e.emitObjectVarIncDec(ov, inc, post, e.stmtCtx)
+			}
+			return e.emitAssignViaAST(n)
+		}
+		// `Foo::$bar++` / `++Foo::$bar` / `--`: emit natively for the
+		// static-name form (*runClassStaticVarRef).
+		if compiler.IsStaticPropertyTarget(target) && compiler.IsClassStaticVarReadNode(target) {
+			return e.emitStaticPropIncDec(target, inc, post, e.stmtCtx)
+		}
+		// ++/-- on $arr[$k] etc. — still route through the AST.
 		return e.emitAssignViaAST(n)
 	}
 	idx := e.localIndex(tv.VariableName())

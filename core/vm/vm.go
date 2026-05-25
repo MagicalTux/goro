@@ -1596,6 +1596,79 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 				f.push(val)
 			}
 
+		// --- `$obj->prop++` / `++$obj->prop` / `--` variants ----------
+		case OpIncDecObjProp:
+			receiver := f.pop()
+			name, ok := f.fn.Consts[ins.A()].(phpv.ZString)
+			if !ok {
+				return nil, false, fmt.Errorf("vm: OP_INC_DEC_OBJ_PROP name const is %T not ZString", f.fn.Consts[ins.A()])
+			}
+			inc := ins.B()&1 != 0
+			post := ins.B()&2 != 0
+			keep := ins.C()&1 != 0
+			cur, err := objectGet(ctx, receiver, name)
+			if err != nil {
+				return nil, false, err
+			}
+			if cur == nil {
+				cur = phpv.ZNULL.ZVal()
+			}
+			// DoInc mutates in-place — work on a fresh copy.
+			cur = cur.Dup()
+			var pre *phpv.ZVal
+			if post {
+				pre = cur.Dup()
+			}
+			if err := compiler.DoInc(ctx, cur, inc); err != nil {
+				return nil, false, err
+			}
+			if err := objectSet(ctx, receiver, name, cur); err != nil {
+				return nil, false, err
+			}
+			if keep {
+				if post {
+					f.push(pre)
+				} else {
+					f.push(cur)
+				}
+			}
+
+		// --- `Foo::$bar++` / `++Foo::$bar` / `--` variants ------------
+		case OpIncDecStaticProp:
+			classV := f.pop()
+			name, ok := f.fn.Consts[ins.A()].(phpv.ZString)
+			if !ok {
+				return nil, false, fmt.Errorf("vm: OP_INC_DEC_STATIC_PROP name const is %T not ZString", f.fn.Consts[ins.A()])
+			}
+			inc := ins.B()&1 != 0
+			post := ins.B()&2 != 0
+			keep := ins.C()&1 != 0
+			cur, err := compiler.EvalClassStaticVarRead(ctx, classV, name, f.fn.LocAt(f.pc-1))
+			if err != nil {
+				return nil, false, err
+			}
+			if cur == nil {
+				cur = phpv.ZNULL.ZVal()
+			}
+			cur = cur.Dup()
+			var pre *phpv.ZVal
+			if post {
+				pre = cur.Dup()
+			}
+			if err := compiler.DoInc(ctx, cur, inc); err != nil {
+				return nil, false, err
+			}
+			if err := compiler.AssignClassStaticProp(ctx, classV, name, cur); err != nil {
+				return nil, false, err
+			}
+			if keep {
+				if post {
+					f.push(pre)
+				} else {
+					f.push(cur)
+				}
+			}
+
 		// --- `Foo::$bar OP= rhs` static-prop compound assign --------
 		case OpStaticPropCompoundAssign:
 			rhs := f.pop()

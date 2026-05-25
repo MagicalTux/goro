@@ -498,6 +498,23 @@ const (
 	// class resolution, visibility checks, and typed-prop coercion.
 	OpStaticPropCompoundAssign
 
+	// `$obj->prop++` / `++$obj->prop` / `--` variants. Encoding:
+	//   A = const-pool name index (ZString prop name)
+	//   B bit 0 = inc (1) vs dec (0)
+	//   B bit 1 = post (1) vs pre (0)
+	//   C bit 0 = keep-value-on-stack (pre/post-mut value)
+	// Stack: pops receiver. Reads cur via objectGet, applies
+	// compiler.DoInc (which handles the string-increment "a"->"b",
+	// NULL->1 cases), writes back via objectSet. Pushes the value
+	// requested by C+post.
+	OpIncDecObjProp
+
+	// `Foo::$bar++` / `++Foo::$bar` / `--` variants. Same encoding
+	// as OP_INC_DEC_OBJ_PROP but the stack pops a class-source. The
+	// read/write go through EvalClassStaticVarRead and
+	// AssignClassStaticProp.
+	OpIncDecStaticProp
+
 	// Sentinel — keep last.
 	opLast
 )
@@ -637,4 +654,6 @@ var opNames = [...]string{
 	OpUnsetObjProp:        "UNSET_OBJ_PROP",
 	OpObjectCompoundAssign: "OBJECT_COMPOUND_ASSIGN",
 	OpStaticPropCompoundAssign: "STATIC_PROP_COMPOUND_ASSIGN",
+	OpIncDecObjProp:            "INC_DEC_OBJ_PROP",
+	OpIncDecStaticProp:         "INC_DEC_STATIC_PROP",
 }
