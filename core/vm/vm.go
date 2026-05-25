@@ -1596,6 +1596,38 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 				f.push(val)
 			}
 
+		// --- `Foo::$bar OP= rhs` static-prop compound assign --------
+		case OpStaticPropCompoundAssign:
+			rhs := f.pop()
+			classV := f.pop()
+			varName, ok := f.fn.Consts[ins.A()].(phpv.ZString)
+			if !ok {
+				return nil, false, fmt.Errorf("vm: OP_STATIC_PROP_COMPOUND_ASSIGN name const is %T not ZString", f.fn.Consts[ins.A()])
+			}
+			op := tokenizer.ItemType(ins.B())
+			fn := compoundOp(op)
+			if fn == nil {
+				return nil, false, fmt.Errorf("vm: OP_STATIC_PROP_COMPOUND_ASSIGN unknown op %d", ins.B())
+			}
+			cur, err := compiler.EvalClassStaticVarRead(ctx, classV, varName, f.fn.LocAt(f.pc-1))
+			if err != nil {
+				return nil, false, err
+			}
+			if cur == nil {
+				cur = phpv.ZNULL.ZVal()
+			}
+			cur = cur.Dup()
+			res, err := fn(ctx, cur, rhs)
+			if err != nil {
+				return nil, false, err
+			}
+			if err := compiler.AssignClassStaticProp(ctx, classV, varName, res); err != nil {
+				return nil, false, err
+			}
+			if ins.C()&1 != 0 {
+				f.push(res)
+			}
+
 		// --- typed-return non-strict coercion -----------------------
 		case OpCoerceReturn:
 			ret := f.pop()

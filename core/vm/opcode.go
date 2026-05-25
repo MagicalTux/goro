@@ -487,6 +487,17 @@ const (
 	// Pushes the post-op value back when keep-flag is set.
 	OpObjectCompoundAssign
 
+	// `Foo::$bar OP= rhs` static-property compound assign. Encoding
+	// mirrors OP_OBJECT_COMPOUND_ASSIGN:
+	//   A = const-pool name index (ZString varName, w/o leading $)
+	//   B = tokenizer ItemType
+	//   C bit 0 = keep-value-on-stack flag
+	// Stack: pops rhs, pops class-source. Reads via
+	// EvalClassStaticVarRead, applies compoundOp, writes back via
+	// AssignClassStaticProp. The two helpers carry the LSB-aware
+	// class resolution, visibility checks, and typed-prop coercion.
+	OpStaticPropCompoundAssign
+
 	// Sentinel — keep last.
 	opLast
 )
@@ -625,4 +636,5 @@ var opNames = [...]string{
 	OpEmptyObjProp:        "EMPTY_OBJ_PROP",
 	OpUnsetObjProp:        "UNSET_OBJ_PROP",
 	OpObjectCompoundAssign: "OBJECT_COMPOUND_ASSIGN",
+	OpStaticPropCompoundAssign: "STATIC_PROP_COMPOUND_ASSIGN",
 }

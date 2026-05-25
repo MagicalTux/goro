@@ -966,6 +966,33 @@ func (e *emitter) emitCompoundAssign(n operatorNode, op tokenizer.ItemType) erro
 			return e.emitAssignViaAST(n)
 		}
 		if compiler.IsStaticPropertyTarget(n.OperatorA()) {
+			// `Foo::$bar OP= rhs`: emit natively when the LHS is the
+			// static-name form. The handler dispatches read +
+			// compoundOp + write via the existing AssignClassStaticProp
+			// + EvalClassStaticVarRead helpers.
+			if compiler.IsClassStaticVarReadNode(n.OperatorA()) {
+				classExpr := n.OperatorA().(interface{ ClassStaticVarReadClassExpr() phpv.Runnable }).ClassStaticVarReadClassExpr()
+				varName := n.OperatorA().(interface{ ClassStaticVarReadName() phpv.ZString }).ClassStaticVarReadName()
+				stmtCtx := e.stmtCtx
+				if err := e.withSubexpr(func() error { return e.emitExpr(classExpr) }); err != nil {
+					return err
+				}
+				if err := e.withSubexpr(func() error { return e.emitExpr(n.OperatorB()) }); err != nil {
+					return err
+				}
+				nameIdx := e.constIndex(varName)
+				var c int32
+				if !stmtCtx {
+					c = 1
+				}
+				e.emit(vm.OpStaticPropCompoundAssign, nameIdx, uint16(op), c)
+				if stmtCtx {
+					e.popStack(2)
+				} else {
+					e.popStack(1)
+				}
+				return nil
+			}
 			return e.emitAssignViaAST(n)
 		}
 		return unsupportedf("compound assign to non-variable target %T", n.OperatorA())
