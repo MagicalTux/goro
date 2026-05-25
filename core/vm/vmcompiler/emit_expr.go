@@ -884,24 +884,24 @@ func (e *emitter) emitAssign(n operatorNode) error {
 	// the AST runner. IsSlotSafe rejects bodies with these writes,
 	// so the hashtable is in sync when the AST reads locals.
 	if ov, ok := n.OperatorA().(objectVarNode); ok {
-		// `$obj->prop = v` / `$obj->$x = v`: emit natively for
-		// non-nullsafe access. emitObjectVarAssign routes the static-name
-		// form through OP_OBJECT_SET and the dyn-name ($-prefixed) form
-		// through OP_OBJECT_DYN_SET — both dispatch via ZObject.ObjectSet
+		// `$obj->prop = v` / `$obj->$x = v`: emit natively.
+		// emitObjectVarAssign routes the static-name form through
+		// OP_OBJECT_SET and the dyn-name ($-prefixed) form through
+		// OP_OBJECT_DYN_SET — both dispatch via ZObject.ObjectSet
 		// (typed properties, hooks, asymmetric visibility). Expr-context
 		// uses the keep-value flag so the assignment result lands on the
-		// stack.
-		if !ov.ObjectVarIsNullSafe() {
-			return e.emitObjectVarAssign(ov, n.OperatorB(), e.stmtCtx)
-		}
-		return e.emitAssignViaAST(n)
+		// stack. Nullsafe write (`$obj?->prop = v`) is parse-rejected
+		// ("Can't use nullsafe operator in write context") so we never
+		// reach here with ov.ObjectVarIsNullSafe() == true.
+		return e.emitObjectVarAssign(ov, n.OperatorB(), e.stmtCtx)
 	}
-	if compiler.IsObjectDynVarReadNode(n.OperatorA()) && !compiler.ObjectDynVarIsNullSafe(n.OperatorA()) {
+	if compiler.IsObjectDynVarReadNode(n.OperatorA()) {
 		// `$obj->{$x} = v`: dyn-name property write via OP_OBJECT_DYN_SET.
+		// Nullsafe variant is parse-rejected (see objectVarNode branch).
 		if dv, ok := n.OperatorA().(objectDynVarReadNode); ok {
 			return e.emitObjectDynVarAssign(dv, n.OperatorB(), e.stmtCtx)
 		}
-		return e.emitAssignViaAST(n)
+		return unsupportedf("object-dyn-var LHS shape: %T", n.OperatorA())
 	}
 	if compiler.IsStaticPropertyTarget(n.OperatorA()) {
 		// `Foo::$bar = v`: emit natively when the LHS is the static-name
@@ -954,7 +954,10 @@ func (e *emitter) emitAssign(n operatorNode) error {
 			}
 			return nil
 		}
-		return e.emitAssignViaAST(n)
+		// IsStaticPropertyTarget only returns true for runClassStaticVarRef
+		// and runClassStaticDynVarRef — both branches above. Any other
+		// shape would be a static-property predicate bug.
+		return unsupportedf("static-prop LHS shape: %T", n.OperatorA())
 	}
 	if compiler.IsDestructureTarget(n.OperatorA()) {
 		// `[$a, $b] = $arr` / `list($a, $b) = $arr`: emit the RHS
