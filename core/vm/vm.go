@@ -1834,6 +1834,40 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 				f.push(val)
 			}
 
+		// --- `Cls::${$x}++` / `++Cls::${$x}` dyn-name static-prop inc/dec ---
+		case OpIncDecStaticPropDyn:
+			nameV := f.pop()
+			classV := f.pop()
+			name := phpv.ZString(nameV.AsString(ctx))
+			inc := ins.B()&1 != 0
+			post := ins.B()&2 != 0
+			keep := ins.C()&1 != 0
+			cur, err := compiler.EvalClassStaticDynVarRead(ctx, classV, name, f.fn.LocAt(f.pc-1))
+			if err != nil {
+				return nil, false, err
+			}
+			if cur == nil {
+				cur = phpv.ZNULL.ZVal()
+			}
+			cur = cur.Dup()
+			var pre *phpv.ZVal
+			if post {
+				pre = cur.Dup()
+			}
+			if err := compiler.DoInc(ctx, cur, inc); err != nil {
+				return nil, false, err
+			}
+			if err := compiler.AssignClassStaticDynProp(ctx, classV, name, cur); err != nil {
+				return nil, false, err
+			}
+			if keep {
+				if post {
+					f.push(pre)
+				} else {
+					f.push(cur)
+				}
+			}
+
 		// --- `Cls::${$x} OP= rhs` dyn-name static-prop compound assign --
 		case OpStaticPropDynCompoundAssign:
 			rhs := f.pop()

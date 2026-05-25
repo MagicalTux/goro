@@ -569,6 +569,22 @@ const (
 	// that's a pre-existing gap of the dyn-name path).
 	OpStaticPropDynCompoundAssign
 
+	// OP_INC_DEC_STATIC_PROP_DYN handles `Cls::${$x}++` / `++Cls::${$x}`
+	// (and the dec variants) for dynamic-name static properties.
+	//
+	// Encoding:
+	//   B bit 0 = increment (1) vs decrement (0)
+	//   B bit 1 = postfix (1) vs prefix (0)
+	//   C bit 0 = keep value on stack (expression context)
+	//
+	// Stack effect (stmt): pops class-source, name
+	// Stack effect (expr): pops class-source, name; pushes pre/post value
+	//
+	// Reads via EvalClassStaticDynVarRead, applies DoInc, writes via
+	// AssignClassStaticDynProp. Mirrors OP_INC_DEC_STATIC_PROP for the
+	// dyn-name form.
+	OpIncDecStaticPropDyn
+
 	// Sentinel — keep last.
 	opLast
 )
@@ -716,4 +732,5 @@ var opNames = [...]string{
 	OpStaticPropDynSet:         "STATIC_PROP_DYN_SET",
 	OpVarVarSet:                "VAR_VAR_SET",
 	OpStaticPropDynCompoundAssign: "STATIC_PROP_DYN_COMPOUND_ASSIGN",
+	OpIncDecStaticPropDyn:         "INC_DEC_STATIC_PROP_DYN",
 }

@@ -659,6 +659,42 @@ func (e *emitter) emitStaticPropIncDec(target phpv.Runnable, inc bool, post bool
 	return nil
 }
 
+// emitStaticPropDynIncDec emits `Cls::${$x}++` / `++Cls::${$x}` and dec
+// variants for the dyn-name (*runClassStaticDynVarRef) shape. Both the
+// class source and the name expression are evaluated to the stack;
+// OP_INC_DEC_STATIC_PROP_DYN reads via EvalClassStaticDynVarRead,
+// applies DoInc, and writes via AssignClassStaticDynProp.
+func (e *emitter) emitStaticPropDynIncDec(target phpv.Runnable, inc bool, post bool, stmtCtx bool) error {
+	n, ok := target.(classStaticDynVarReadNode)
+	if !ok {
+		return unsupportedf("static-prop dyn inc/dec: node %T doesn't expose accessors", target)
+	}
+	if err := e.withSubexpr(func() error { return e.emitExpr(n.ClassStaticDynVarReadClassExpr()) }); err != nil {
+		return err
+	}
+	if err := e.withSubexpr(func() error { return e.emitExpr(n.ClassStaticDynVarReadNameExpr()) }); err != nil {
+		return err
+	}
+	var b uint16
+	if inc {
+		b |= 1
+	}
+	if post {
+		b |= 2
+	}
+	var c int32
+	if !stmtCtx {
+		c = 1
+	}
+	e.emit(vm.OpIncDecStaticPropDyn, 0, b, c)
+	if stmtCtx {
+		e.popStack(2) // class-source + name consumed, nothing pushed
+	} else {
+		e.popStack(1) // class+name consumed, pre/post pushed → net -1
+	}
+	return nil
+}
+
 func (e *emitter) emitClassDynConst(node phpv.Runnable) error {
 	n, ok := node.(classDynConstNode)
 	if !ok {
@@ -1161,6 +1197,10 @@ func (e *emitter) emitIncDec(n operatorNode, inc bool) error {
 		// static-name form (*runClassStaticVarRef).
 		if compiler.IsStaticPropertyTarget(target) && compiler.IsClassStaticVarReadNode(target) {
 			return e.emitStaticPropIncDec(target, inc, post, e.stmtCtx)
+		}
+		// `Cls::${$x}++` / `++Cls::${$x}` / dec dyn-name static-prop.
+		if compiler.IsClassStaticDynVarReadNode(target) {
+			return e.emitStaticPropDynIncDec(target, inc, post, e.stmtCtx)
 		}
 		// ++/-- on $arr[$k] etc. — still route through the AST.
 		return e.emitAssignViaAST(n)
