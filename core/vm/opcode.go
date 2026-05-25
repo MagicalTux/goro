@@ -553,6 +553,22 @@ const (
 	// runVariableRef.WriteValue body.
 	OpVarVarSet
 
+	// OP_STATIC_PROP_DYN_COMPOUND_ASSIGN handles
+	// `Cls::${$x} OP= rhs` dynamic-name static-prop compound assigns.
+	//
+	// Encoding:
+	//   B = compound op kind (token, e.g. T_PLUS_EQUAL)
+	//   C bit 0 = keep value on stack (expression context)
+	//
+	// Stack effect (stmt): pops class-source, name, rhs
+	// Stack effect (expr): pops class-source, name, rhs; pushes result
+	//
+	// Reads via compiler.EvalClassStaticDynVarRead, applies compoundOp,
+	// writes back via compiler.AssignClassStaticDynProp. Matches the AST
+	// dyn-name path (no asymmetric-visibility / typed-prop check —
+	// that's a pre-existing gap of the dyn-name path).
+	OpStaticPropDynCompoundAssign
+
 	// Sentinel — keep last.
 	opLast
 )
@@ -699,4 +715,5 @@ var opNames = [...]string{
 	OpObjectDynSet:             "OBJECT_DYN_SET",
 	OpStaticPropDynSet:         "STATIC_PROP_DYN_SET",
 	OpVarVarSet:                "VAR_VAR_SET",
+	OpStaticPropDynCompoundAssign: "STATIC_PROP_DYN_COMPOUND_ASSIGN",
 }

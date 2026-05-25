@@ -1834,6 +1834,36 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 				f.push(val)
 			}
 
+		// --- `Cls::${$x} OP= rhs` dyn-name static-prop compound assign --
+		case OpStaticPropDynCompoundAssign:
+			rhs := f.pop()
+			nameV := f.pop()
+			classV := f.pop()
+			varName := phpv.ZString(nameV.AsString(ctx))
+			op := tokenizer.ItemType(ins.B())
+			fn := compoundOp(op)
+			if fn == nil {
+				return nil, false, fmt.Errorf("vm: OP_STATIC_PROP_DYN_COMPOUND_ASSIGN unknown op %d", ins.B())
+			}
+			cur, err := compiler.EvalClassStaticDynVarRead(ctx, classV, varName, f.fn.LocAt(f.pc-1))
+			if err != nil {
+				return nil, false, err
+			}
+			if cur == nil {
+				cur = phpv.ZNULL.ZVal()
+			}
+			cur = cur.Dup()
+			res, err := fn(ctx, cur, rhs)
+			if err != nil {
+				return nil, false, err
+			}
+			if err := compiler.AssignClassStaticDynProp(ctx, classV, varName, res); err != nil {
+				return nil, false, err
+			}
+			if ins.C()&1 != 0 {
+				f.push(res)
+			}
+
 		// --- runConstant — user / namespaced / built-in constant ----
 		case OpLoadConstantByName:
 			name, ok := f.fn.Consts[ins.A()].(phpv.ZString)

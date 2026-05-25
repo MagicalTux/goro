@@ -1086,7 +1086,37 @@ func (e *emitter) emitCompoundAssign(n operatorNode, op tokenizer.ItemType) erro
 				}
 				return nil
 			}
-			return e.emitAssignViaAST(n)
+			if compiler.IsClassStaticDynVarReadNode(n.OperatorA()) {
+				// `Cls::${$x} OP= rhs`: dyn-name compound assign.
+				// OP_STATIC_PROP_DYN_COMPOUND_ASSIGN pops class+name+rhs,
+				// reads via EvalClassStaticDynVarRead, applies compoundOp,
+				// writes via AssignClassStaticDynProp.
+				n2 := n.OperatorA().(classStaticDynVarReadNode)
+				stmtCtx := e.stmtCtx
+				if err := e.withSubexpr(func() error { return e.emitExpr(n2.ClassStaticDynVarReadClassExpr()) }); err != nil {
+					return err
+				}
+				if err := e.withSubexpr(func() error { return e.emitExpr(n2.ClassStaticDynVarReadNameExpr()) }); err != nil {
+					return err
+				}
+				if err := e.withSubexpr(func() error { return e.emitExpr(n.OperatorB()) }); err != nil {
+					return err
+				}
+				var c int32
+				if !stmtCtx {
+					c = 1
+				}
+				e.emit(vm.OpStaticPropDynCompoundAssign, 0, uint16(op), c)
+				if stmtCtx {
+					e.popStack(3)
+				} else {
+					e.popStack(2) // pop class+name+rhs, push result → net -2
+				}
+				return nil
+			}
+			// IsStaticPropertyTarget only returns true for the two
+			// shapes above; any other would be a predicate bug.
+			return unsupportedf("static-prop compound LHS shape: %T", n.OperatorA())
 		}
 		return unsupportedf("compound assign to non-variable target %T", n.OperatorA())
 	}
