@@ -1898,6 +1898,81 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 				f.push(res)
 			}
 
+		// --- `$obj->$x OP= rhs` / `$obj->{$x} OP= rhs` dyn-name prop ---
+		case OpObjectDynCompoundAssign:
+			rhs := f.pop()
+			nameV := f.pop()
+			receiver := f.pop()
+			name := phpv.ZString(nameV.AsString(ctx))
+			op := tokenizer.ItemType(ins.B())
+			fn := compoundOp(op)
+			if fn == nil {
+				return nil, false, fmt.Errorf("vm: OP_OBJECT_DYN_COMPOUND_ASSIGN unknown op %d", ins.B())
+			}
+			cur, err := objectGet(ctx, receiver, name)
+			if err != nil {
+				return nil, false, err
+			}
+			if cur == nil {
+				cur = phpv.ZNULL.ZVal()
+			}
+			cur = cur.Dup()
+			res, err := fn(ctx, cur, rhs)
+			if err != nil {
+				return nil, false, err
+			}
+			if err := objectSet(ctx, receiver, name, res); err != nil {
+				return nil, false, err
+			}
+			if ins.C()&1 != 0 {
+				f.push(res)
+			}
+
+		// --- `$obj->$x++` / `++$obj->{$x}` dyn-name prop inc/dec -----
+		case OpIncDecObjDynProp:
+			nameV := f.pop()
+			receiver := f.pop()
+			name := phpv.ZString(nameV.AsString(ctx))
+			inc := ins.B()&1 != 0
+			post := ins.B()&2 != 0
+			keep := ins.C()&1 != 0
+			// PHP 8: ++/-- on a property of a non-object throws
+			// "Attempt to increment/decrement property" — mirrors the
+			// static-name OP_INC_DEC_OBJ_PROP receiver check above.
+			if receiver == nil || receiver.Value() == nil {
+				return nil, false, phpobj.ThrowError(ctx, phpobj.Error,
+					fmt.Sprintf("Attempt to increment/decrement property \"%s\" on null", name))
+			}
+			if _, isObj := receiver.Value().(phpv.ZObjectAccess); !isObj {
+				return nil, false, phpobj.ThrowError(ctx, phpobj.Error,
+					fmt.Sprintf("Attempt to increment/decrement property \"%s\" on %s", name, compiler.PhpValueTypeName(receiver)))
+			}
+			cur, err := objectGet(ctx, receiver, name)
+			if err != nil {
+				return nil, false, err
+			}
+			if cur == nil {
+				cur = phpv.ZNULL.ZVal()
+			}
+			cur = cur.Dup()
+			var pre *phpv.ZVal
+			if post {
+				pre = cur.Dup()
+			}
+			if err := compiler.DoInc(ctx, cur, inc); err != nil {
+				return nil, false, err
+			}
+			if err := objectSet(ctx, receiver, name, cur); err != nil {
+				return nil, false, err
+			}
+			if keep {
+				if post {
+					f.push(pre)
+				} else {
+					f.push(cur)
+				}
+			}
+
 		// --- runConstant — user / namespaced / built-in constant ----
 		case OpLoadConstantByName:
 			name, ok := f.fn.Consts[ins.A()].(phpv.ZString)

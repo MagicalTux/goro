@@ -585,6 +585,36 @@ const (
 	// dyn-name form.
 	OpIncDecStaticPropDyn
 
+	// OP_OBJECT_DYN_COMPOUND_ASSIGN handles `$obj->$x OP= rhs` and
+	// `$obj->{$x} OP= rhs` dynamic-name property compound assigns.
+	//
+	// Encoding:
+	//   B = compound op kind (token, e.g. T_PLUS_EQUAL)
+	//   C bit 0 = keep value on stack (expression context)
+	//
+	// Stack effect (stmt): pops receiver, name, rhs
+	// Stack effect (expr): pops receiver, name, rhs; pushes result
+	//
+	// Reads via objectGet, applies compoundOp, writes via objectSet
+	// (both internal VM helpers that dispatch through ZObject's typed/
+	// hook/asymmetric machinery).
+	OpObjectDynCompoundAssign
+
+	// OP_INC_DEC_OBJ_DYN_PROP handles `$obj->$x++` / `++$obj->$x` and
+	// `$obj->{$x}++` / `++$obj->{$x}` plus the dec variants for
+	// dynamic-name properties.
+	//
+	// Encoding:
+	//   B bit 0 = increment (1) vs decrement (0)
+	//   B bit 1 = postfix (1) vs prefix (0)
+	//   C bit 0 = keep value on stack (expression context)
+	//
+	// Stack effect (stmt): pops receiver, name
+	// Stack effect (expr): pops receiver, name; pushes pre/post value
+	//
+	// Reads via objectGet, applies DoInc, writes via objectSet.
+	OpIncDecObjDynProp
+
 	// Sentinel — keep last.
 	opLast
 )
@@ -733,4 +763,6 @@ var opNames = [...]string{
 	OpVarVarSet:                "VAR_VAR_SET",
 	OpStaticPropDynCompoundAssign: "STATIC_PROP_DYN_COMPOUND_ASSIGN",
 	OpIncDecStaticPropDyn:         "INC_DEC_STATIC_PROP_DYN",
+	OpObjectDynCompoundAssign:     "OBJECT_DYN_COMPOUND_ASSIGN",
+	OpIncDecObjDynProp:            "INC_DEC_OBJ_DYN_PROP",
 }

@@ -1088,7 +1088,30 @@ func (e *emitter) emitCompoundAssign(n operatorNode, op tokenizer.ItemType) erro
 			if !ov.ObjectVarIsNullSafe() && !(len(name) > 0 && name[0] == '$') {
 				return e.emitObjectVarCompoundAssign(ov, n.OperatorB(), op, e.stmtCtx)
 			}
+			// `$obj->$x OP= rhs`: dyn-name compound assign. Name is the
+			// local variable referenced after the `$` prefix. Receiver
+			// write-context suppresses the undef-var warning — pass
+			// recvSilent=true to mirror runObjectVar.WriteValue.
+			if !ov.ObjectVarIsNullSafe() && len(name) > 0 && name[0] == '$' {
+				localIdx := e.localIndex(name[1:])
+				pushName := func() error {
+					e.emit(vm.OpLoadLocal, localIdx, 0, 0)
+					e.pushStack(1)
+					return nil
+				}
+				return e.emitObjectDynVarCompoundAssign(ov.ObjectVarReceiver(), pushName, n.OperatorB(), op, true, e.stmtCtx)
+			}
 			return e.emitAssignViaAST(n)
+		}
+		// `$obj->{$x} OP= rhs` (curly-brace dyn-name). runObjectDynVar
+		// does NOT suppress the receiver warning — recvSilent=false.
+		if compiler.IsObjectDynVarReadNode(n.OperatorA()) {
+			if dv, ok := n.OperatorA().(objectDynVarReadNode); ok {
+				nameExpr := dv.ObjectDynVarNameExpr()
+				pushName := func() error { return e.emitExpr(nameExpr) }
+				return e.emitObjectDynVarCompoundAssign(dv.ObjectDynVarReceiver(), pushName, n.OperatorB(), op, false, e.stmtCtx)
+			}
+			return unsupportedf("object-dyn-var compound LHS shape: %T", n.OperatorA())
 		}
 		// Array compound assigns still need a dedicated path.
 		if _, ok := n.OperatorA().(arrayAccessNode); ok {
@@ -1191,7 +1214,28 @@ func (e *emitter) emitIncDec(n operatorNode, inc bool) error {
 			if !ov.ObjectVarIsNullSafe() && !(len(name) > 0 && name[0] == '$') {
 				return e.emitObjectVarIncDec(ov, inc, post, e.stmtCtx)
 			}
+			// `$obj->$x++` dyn-name inc/dec. Mirrors compound-assign
+			// dollar-prefix branch: silent receiver, name comes from
+			// local var after the `$` prefix.
+			if !ov.ObjectVarIsNullSafe() && len(name) > 0 && name[0] == '$' {
+				localIdx := e.localIndex(name[1:])
+				pushName := func() error {
+					e.emit(vm.OpLoadLocal, localIdx, 0, 0)
+					e.pushStack(1)
+					return nil
+				}
+				return e.emitObjectDynVarIncDec(ov.ObjectVarReceiver(), pushName, inc, post, true, e.stmtCtx)
+			}
 			return e.emitAssignViaAST(n)
+		}
+		// `$obj->{$x}++` curly-brace dyn-name inc/dec.
+		if compiler.IsObjectDynVarReadNode(target) {
+			if dv, ok := target.(objectDynVarReadNode); ok {
+				nameExpr := dv.ObjectDynVarNameExpr()
+				pushName := func() error { return e.emitExpr(nameExpr) }
+				return e.emitObjectDynVarIncDec(dv.ObjectDynVarReceiver(), pushName, inc, post, false, e.stmtCtx)
+			}
+			return unsupportedf("object-dyn-var inc/dec shape: %T", target)
 		}
 		// `Foo::$bar++` / `++Foo::$bar` / `--`: emit natively for the
 		// static-name form (*runClassStaticVarRef).

@@ -245,6 +245,93 @@ func (e *emitter) emitObjectVarIncDec(lhs objectVarNode, inc bool, post bool, st
 	return nil
 }
 
+// emitObjectDynVarCompoundAssign emits `$obj->$x OP= rhs` and
+// `$obj->{$x} OP= rhs` for dynamic-name property access. Receiver and
+// name are evaluated and pushed; OP_OBJECT_DYN_COMPOUND_ASSIGN reads
+// the current value via objectGet, applies the compound op, and writes
+// back via objectSet (typed props, hooks, asymmetric visibility).
+//
+// `recvSilent` mirrors the dollar-prefix shape semantics: an undefined
+// simple-variable receiver does not warn (write-context). The curly-
+// brace form (`*runObjectDynVar`) does NOT suppress the warning, so it
+// uses the default emitExpr path.
+func (e *emitter) emitObjectDynVarCompoundAssign(recv phpv.Runnable, pushName func() error, rhs phpv.Runnable, op tokenizer.ItemType, recvSilent bool, stmtCtx bool) error {
+	if recvSilent {
+		if v, ok := recv.(variableNode); ok {
+			idx := e.localIndex(v.VariableName())
+			e.emit(vm.OpLoadLocal, idx, 0, 0)
+			e.pushStack(1)
+		} else {
+			if err := e.withSubexpr(func() error { return e.emitExpr(recv) }); err != nil {
+				return err
+			}
+		}
+	} else {
+		if err := e.withSubexpr(func() error { return e.emitExpr(recv) }); err != nil {
+			return err
+		}
+	}
+	if err := e.withSubexpr(pushName); err != nil {
+		return err
+	}
+	if err := e.withSubexpr(func() error { return e.emitExpr(rhs) }); err != nil {
+		return err
+	}
+	var c int32
+	if !stmtCtx {
+		c = 1
+	}
+	e.emit(vm.OpObjectDynCompoundAssign, 0, uint16(op), c)
+	if stmtCtx {
+		e.popStack(3) // pop receiver+name+rhs
+	} else {
+		e.popStack(2) // pop receiver+name+rhs, push result → net -2
+	}
+	return nil
+}
+
+// emitObjectDynVarIncDec emits `$obj->$x++` / `++$obj->{$x}` and dec
+// variants. Receiver and name are evaluated and pushed; OP_INC_DEC_OBJ_DYN_PROP
+// performs read-mutate-write through objectGet/objectSet.
+func (e *emitter) emitObjectDynVarIncDec(recv phpv.Runnable, pushName func() error, inc bool, post bool, recvSilent bool, stmtCtx bool) error {
+	if recvSilent {
+		if v, ok := recv.(variableNode); ok {
+			idx := e.localIndex(v.VariableName())
+			e.emit(vm.OpLoadLocal, idx, 0, 0)
+			e.pushStack(1)
+		} else {
+			if err := e.withSubexpr(func() error { return e.emitExpr(recv) }); err != nil {
+				return err
+			}
+		}
+	} else {
+		if err := e.withSubexpr(func() error { return e.emitExpr(recv) }); err != nil {
+			return err
+		}
+	}
+	if err := e.withSubexpr(pushName); err != nil {
+		return err
+	}
+	var b uint16
+	if inc {
+		b |= 1
+	}
+	if post {
+		b |= 2
+	}
+	var c int32
+	if !stmtCtx {
+		c = 1
+	}
+	e.emit(vm.OpIncDecObjDynProp, 0, b, c)
+	if stmtCtx {
+		e.popStack(2) // receiver+name consumed, nothing pushed
+	} else {
+		e.popStack(1) // receiver+name consumed, pre/post pushed → net -1
+	}
+	return nil
+}
+
 func (e *emitter) emitObjectVarRead(n objectVarNode) error {
 	name := n.ObjectVarName()
 	// `$obj->$x` (no curly braces) parses to runObjectVar with the
