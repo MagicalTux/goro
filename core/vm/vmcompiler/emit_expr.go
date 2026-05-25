@@ -949,10 +949,20 @@ func (e *emitter) emitAssignViaAST(n operatorNode) error {
 func (e *emitter) emitCompoundAssign(n operatorNode, op tokenizer.ItemType) error {
 	lhs, ok := n.OperatorA().(variableNode)
 	if !ok {
-		// Delegate property / static-prop / array-element compound
-		// writes to the AST.
-		switch n.OperatorA().(type) {
-		case objectVarNode, arrayAccessNode:
+		// `$obj->prop OP= rhs`: emit natively for static-name,
+		// non-nullsafe property access. OP_OBJECT_COMPOUND_ASSIGN
+		// dispatches via objectGet/objectSet (which reach into the
+		// AST's ZObject layer for typed props, hooks, etc.) and
+		// applies the resolved compoundOp inside the handler.
+		if ov, ok := n.OperatorA().(objectVarNode); ok {
+			name := ov.ObjectVarName()
+			if !ov.ObjectVarIsNullSafe() && !(len(name) > 0 && name[0] == '$') {
+				return e.emitObjectVarCompoundAssign(ov, n.OperatorB(), op, e.stmtCtx)
+			}
+			return e.emitAssignViaAST(n)
+		}
+		// Array compound assigns still need a dedicated path.
+		if _, ok := n.OperatorA().(arrayAccessNode); ok {
 			return e.emitAssignViaAST(n)
 		}
 		if compiler.IsStaticPropertyTarget(n.OperatorA()) {

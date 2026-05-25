@@ -1073,6 +1073,40 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 				return nil, false, err
 			}
 
+		case OpObjectCompoundAssign:
+			rhs := f.pop()
+			receiver := f.pop()
+			name, ok := f.fn.Consts[ins.A()].(phpv.ZString)
+			if !ok {
+				return nil, false, fmt.Errorf("vm: OP_OBJECT_COMPOUND_ASSIGN name const is %T not ZString", f.fn.Consts[ins.A()])
+			}
+			op := tokenizer.ItemType(ins.B())
+			fn := compoundOp(op)
+			if fn == nil {
+				return nil, false, fmt.Errorf("vm: OP_OBJECT_COMPOUND_ASSIGN unknown op %d", ins.B())
+			}
+			cur, err := objectGet(ctx, receiver, name)
+			if err != nil {
+				return nil, false, err
+			}
+			if cur == nil {
+				cur = phpv.ZNULL.ZVal()
+			}
+			// Snapshot cur — mirrors OpOpAssignLocal's defense
+			// against handlers that mutate the slot in-place during
+			// `.=` coercion (bug81705 family).
+			cur = cur.Dup()
+			res, err := fn(ctx, cur, rhs)
+			if err != nil {
+				return nil, false, err
+			}
+			if err := objectSet(ctx, receiver, name, res); err != nil {
+				return nil, false, err
+			}
+			if ins.C()&1 != 0 {
+				f.push(res)
+			}
+
 		case OpObjectCall:
 			argc := int(ins.B())
 			args := make([]*phpv.ZVal, argc)

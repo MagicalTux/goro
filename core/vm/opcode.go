@@ -476,6 +476,17 @@ const (
 	// dispatch to ObjectSet(name, nil).
 	OpUnsetObjProp
 
+	// `$obj->prop OP= rhs` compound assign for static-name, non-
+	// nullsafe property access. Encoding:
+	//   A = const-pool name index (ZString prop name)
+	//   B = tokenizer ItemType (compound op token, e.g.
+	//       T_PLUS_EQUAL, T_CONCAT_EQUAL)
+	//   C bit 0 = "keep value on stack" (expr-context vs stmt-ctx)
+	// Stack: pops rhs, pops receiver. Reads cur via objectGet,
+	// applies compoundOp(op)(cur, rhs), writes back via objectSet.
+	// Pushes the post-op value back when keep-flag is set.
+	OpObjectCompoundAssign
+
 	// Sentinel — keep last.
 	opLast
 )
@@ -613,4 +624,5 @@ var opNames = [...]string{
 	OpIssetObjProp:        "ISSET_OBJ_PROP",
 	OpEmptyObjProp:        "EMPTY_OBJ_PROP",
 	OpUnsetObjProp:        "UNSET_OBJ_PROP",
+	OpObjectCompoundAssign: "OBJECT_COMPOUND_ASSIGN",
 }

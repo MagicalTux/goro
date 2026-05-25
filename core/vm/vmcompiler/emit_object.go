@@ -3,6 +3,7 @@ package vmcompiler
 import (
 	"github.com/KarpelesLab/goro/core/compiler"
 	"github.com/KarpelesLab/goro/core/phpv"
+	"github.com/KarpelesLab/goro/core/tokenizer"
 	"github.com/KarpelesLab/goro/core/vm"
 )
 
@@ -102,6 +103,49 @@ func (e *emitter) emitObjectVarAssign(lhs objectVarNode, rhs phpv.Runnable, stmt
 		// after the write — semantics of `$x = ($obj->prop = v)`.
 		e.emit(vm.OpObjectSet, idx, 1, 0)
 		e.popStack(1) // pop receiver+value, push value back → net -1
+	}
+	return nil
+}
+
+// emitObjectVarCompoundAssign emits `$obj->prop OP= rhs` for static-name,
+// non-nullsafe property access. The receiver is evaluated once; the
+// resulting value handle is reused for both objectGet (read current) and
+// objectSet (write back). The PHP semantics-level dance — typed prop
+// coercion, hook dispatch, asymmetric visibility — happens inside
+// ZObject.ObjectSet, same as for plain `=`.
+func (e *emitter) emitObjectVarCompoundAssign(lhs objectVarNode, rhs phpv.Runnable, op tokenizer.ItemType, stmtCtx bool) error {
+	if lhs.ObjectVarIsNullSafe() {
+		return unsupportedf("nullsafe property compound assign")
+	}
+	name := lhs.ObjectVarName()
+	if len(name) > 0 && name[0] == '$' {
+		return unsupportedf("dynamic property name in compound assign")
+	}
+	recv := lhs.ObjectVarReceiver()
+	// Receiver write-context: an undefined simple-variable receiver
+	// must not warn. Mirror emitObjectVarAssign's silent load path.
+	if v, ok := recv.(variableNode); ok {
+		idx := e.localIndex(v.VariableName())
+		e.emit(vm.OpLoadLocal, idx, 0, 0)
+		e.pushStack(1)
+	} else {
+		if err := e.withSubexpr(func() error { return e.emitExpr(recv) }); err != nil {
+			return err
+		}
+	}
+	if err := e.withSubexpr(func() error { return e.emitExpr(rhs) }); err != nil {
+		return err
+	}
+	nameIdx := e.constIndex(name)
+	var c int32
+	if !stmtCtx {
+		c = 1 // keep post-op value on stack
+	}
+	e.emit(vm.OpObjectCompoundAssign, nameIdx, uint16(op), c)
+	if stmtCtx {
+		e.popStack(2) // pop receiver + rhs, nothing pushed
+	} else {
+		e.popStack(1) // pop receiver+rhs, push result → net -1
 	}
 	return nil
 }
