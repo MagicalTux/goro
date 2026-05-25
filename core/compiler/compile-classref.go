@@ -278,12 +278,6 @@ func (r *runClassStaticDynVarRef) WriteValue(ctx phpv.Context, value *phpv.ZVal)
 	if err != nil {
 		return err
 	}
-
-	class, err := ctx.Global().GetClass(ctx, className.AsString(ctx), true)
-	if err != nil {
-		return err
-	}
-
 	var varName phpv.ZString
 	if r.prepared {
 		varName = r.cachedName
@@ -295,7 +289,21 @@ func (r *runClassStaticDynVarRef) WriteValue(ctx phpv.Context, value *phpv.ZVal)
 		}
 		varName = phpv.ZString(nameVal.String())
 	}
+	return AssignClassStaticDynProp(ctx, className, varName, value)
+}
 
+// AssignClassStaticDynProp writes `value` to `Cls::${$varName}` with
+// the pre-evaluated class source. Used by both the AST runner (via
+// runClassStaticDynVarRef.WriteValue) and the VM's OP_STATIC_PROP_DYN_SET.
+//
+// Unlike AssignClassStaticProp, the dyn-name form skips visibility,
+// asymmetric-visibility, and type-hint checks — matching the original
+// AST runClassStaticDynVarRef.WriteValue semantics.
+func AssignClassStaticDynProp(ctx phpv.Context, className *phpv.ZVal, varName phpv.ZString, value *phpv.ZVal) error {
+	class, err := ctx.Global().GetClass(ctx, className.AsString(ctx), true)
+	if err != nil {
+		return err
+	}
 	zc := class.(*phpobj.ZClass)
 	p, found, err := zc.FindStaticProp(ctx, varName)
 	if err != nil {
@@ -322,8 +330,7 @@ func (r *runClassStaticDynVarRef) WriteValue(ctx phpv.Context, value *phpv.ZVal)
 		}
 	}
 
-	err = p.SetString(varName, value)
-	if err != nil {
+	if err := p.SetString(varName, value); err != nil {
 		return err
 	}
 	if oldObj != nil {

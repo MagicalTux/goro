@@ -533,6 +533,14 @@ const (
 	// hooks, asymmetric visibility, etc.
 	OpObjectDynSet
 
+	// OP_STATIC_PROP_DYN_SET handles `Cls::${$x} = v` and `Cls::$$x = v`.
+	// Stack pops value, name, class-source (in that order). Encoding:
+	//   A bit 0 = keep-value-on-stack (expr context)
+	// Dispatches to compiler.AssignClassStaticDynProp which resolves
+	// the class and writes the property (no visibility / asymmetric /
+	// type-hint check — matches AST semantics).
+	OpStaticPropDynSet
+
 	// Sentinel — keep last.
 	opLast
 )
@@ -677,4 +685,5 @@ var opNames = [...]string{
 	OpIssetStaticProp:          "ISSET_STATIC_PROP",
 	OpEmptyStaticProp:          "EMPTY_STATIC_PROP",
 	OpObjectDynSet:             "OBJECT_DYN_SET",
+	OpStaticPropDynSet:         "STATIC_PROP_DYN_SET",
 }

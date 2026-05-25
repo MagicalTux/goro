@@ -927,6 +927,33 @@ func (e *emitter) emitAssign(n operatorNode) error {
 			}
 			return nil
 		}
+		if compiler.IsClassStaticDynVarReadNode(n.OperatorA()) {
+			// `Cls::${$x} = v`: dyn-name static-prop write via
+			// OP_STATIC_PROP_DYN_SET. Helper resolves the class,
+			// finds the static slot, IncRef/DecRef-tracks the
+			// stored object, and writes through SetString.
+			n2 := n.OperatorA().(classStaticDynVarReadNode)
+			if err := e.withSubexpr(func() error { return e.emitExpr(n2.ClassStaticDynVarReadClassExpr()) }); err != nil {
+				return err
+			}
+			if err := e.withSubexpr(func() error { return e.emitExpr(n2.ClassStaticDynVarReadNameExpr()) }); err != nil {
+				return err
+			}
+			if err := e.withSubexpr(func() error { return e.emitExpr(n.OperatorB()) }); err != nil {
+				return err
+			}
+			var a uint16
+			if !e.stmtCtx {
+				a |= 1
+			}
+			e.emit(vm.OpStaticPropDynSet, a, 0, 0)
+			if e.stmtCtx {
+				e.popStack(3)
+			} else {
+				e.popStack(2) // pop class+name+val, push val back → net -2
+			}
+			return nil
+		}
 		return e.emitAssignViaAST(n)
 	}
 	if compiler.IsDestructureTarget(n.OperatorA()) {

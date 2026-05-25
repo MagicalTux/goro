@@ -1377,6 +1377,19 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 				f.push(res)
 			}
 
+		// --- Cls::${$x} = v / Cls::$$x = v static-prop dyn write -----
+		case OpStaticPropDynSet:
+			val := f.pop()
+			nameV := f.pop()
+			classV := f.pop()
+			varName := phpv.ZString(nameV.AsString(ctx))
+			if err := compiler.AssignClassStaticDynProp(ctx, classV, varName, val); err != nil {
+				return nil, false, err
+			}
+			if ins.A()&1 != 0 {
+				f.push(val)
+			}
+
 		// --- $obj->$x = v / $obj->{$x} = v dyn-name write ------------
 		case OpObjectDynSet:
 			val := f.pop()
