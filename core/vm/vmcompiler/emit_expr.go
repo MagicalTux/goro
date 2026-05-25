@@ -879,8 +879,29 @@ func (e *emitter) emitUnary(b phpv.Runnable, op tokenizer.ItemType) error {
 func (e *emitter) emitAssign(n operatorNode) error {
 	// Reference assignment (`$b = &$a`): AST handles the ref-share
 	// semantics. The VM's OpStoreLocal Dups arrays, detaching any
-	// inbound ref — wrong for `=&`.
+	// inbound ref — wrong for `=&`. For the simple-variable LHS,
+	// use OP_STORE_LOCAL_REF which writes the ref ZVal directly.
+	// Complex LHS (object prop, array elem, static prop) still
+	// AST-delegates — those write paths each have their own ref
+	// semantics that we don't yet replicate natively.
 	if compiler.IsRefExpr(n.OperatorB()) {
+		if v, ok := n.OperatorA().(variableNode); ok {
+			stmtCtx := e.stmtCtx
+			if err := e.withSubexpr(func() error { return e.emitExpr(n.OperatorB()) }); err != nil {
+				return err
+			}
+			idx := e.localIndex(v.VariableName())
+			var b uint16
+			if !stmtCtx {
+				b |= 1
+			}
+			e.emit(vm.OpStoreLocalRef, idx, b, 0)
+			if stmtCtx {
+				e.popStack(1)
+			}
+			// expr-context: pop+push of same value → net zero.
+			return nil
+		}
 		return e.emitAssignViaAST(n)
 	}
 	// Plain `=` to a simple local variable.

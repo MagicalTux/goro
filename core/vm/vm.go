@@ -1898,6 +1898,30 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 				f.push(res)
 			}
 
+		// --- `$b = &$a` ref-assign to simple-local LHS ----------------
+		case OpStoreLocalRef:
+			v := f.pop()
+			idx := ins.A()
+			keep := ins.B()&1 != 0
+			if v == nil {
+				v = phpv.ZNULL.ZVal()
+			}
+			if v.IsRef() {
+				v.RefInner()
+			}
+			// Write the ref ZVal directly — no Dup, no Nude unwrap.
+			// This is the path that storeLocal explicitly avoids
+			// (frame.go:160-166 dereferences ref arrays via Nude+Dup).
+			f.locals[idx] = v
+			if !f.fn.SlotOnly {
+				if err := ctx.OffsetSet(ctx, f.fn.Locals[idx], v); err != nil {
+					return nil, false, err
+				}
+			}
+			if keep {
+				f.push(v)
+			}
+
 		// --- `$obj->$x OP= rhs` / `$obj->{$x} OP= rhs` dyn-name prop ---
 		case OpObjectDynCompoundAssign:
 			rhs := f.pop()

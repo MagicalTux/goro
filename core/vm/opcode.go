@@ -615,6 +615,25 @@ const (
 	// Reads via objectGet, applies DoInc, writes via objectSet.
 	OpIncDecObjDynProp
 
+	// OP_STORE_LOCAL_REF stores a reference-typed ZVal into a local
+	// slot without dereferencing or COW-Dup'ing. Used for `$b = &$a`
+	// reference assignments where the RHS is `&$expr` (a runRef
+	// expression — produces a ref-typed ZVal via OP_CREATE_REF).
+	//
+	// Encoding:
+	//   A = local slot index
+	//   B bit 0 = keep value on stack (expression context, e.g.
+	//             `$x = ($b = &$a)` — the result of `$b = &$a` is
+	//             the ref ZVal which then gets dereferenced by the
+	//             outer `=`'s value semantics in OpStoreLocal)
+	//
+	// Differs from OP_STORE_LOCAL: that handler Dup's ZtArray values
+	// even when the source is a ref (frame.go:160-166), which detaches
+	// the ref. This handler writes the ref ZVal directly and calls
+	// RefInner() to track the alias count — matches the AST's
+	// `res.IsRef() && r.b is *runRef` branch in run-operator.go.
+	OpStoreLocalRef
+
 	// Sentinel — keep last.
 	opLast
 )
@@ -765,4 +784,5 @@ var opNames = [...]string{
 	OpIncDecStaticPropDyn:         "INC_DEC_STATIC_PROP_DYN",
 	OpObjectDynCompoundAssign:     "OBJECT_DYN_COMPOUND_ASSIGN",
 	OpIncDecObjDynProp:            "INC_DEC_OBJ_DYN_PROP",
+	OpStoreLocalRef:               "STORE_LOCAL_REF",
 }
