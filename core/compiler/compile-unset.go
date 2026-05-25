@@ -132,6 +132,24 @@ func chainDestructorErrors(newErr, pendingErr error) error {
 	return newErr
 }
 
+// EvalUnsetObjProp performs `unset($receiver->propName)` after the
+// receiver has been evaluated to a value. Mirrors runObjectVar.WriteValue
+// when value == nil (top-level unset path): non-ZObjectAccess receivers
+// are silently ignored (PHP 8 unset-on-null behavior); ZObjectAccess
+// receivers dispatch to ObjectSet with a nil value, which the downstream
+// ZObject handles as "unset this property" (including __unset magic).
+func EvalUnsetObjProp(ctx phpv.Context, receiver *phpv.ZVal, propName phpv.ZString) error {
+	if receiver == nil {
+		return nil
+	}
+	objI, ok := receiver.Value().(phpv.ZObjectAccess)
+	if !ok {
+		// PHP: unset on a non-object receiver is silently ignored.
+		return nil
+	}
+	return objI.ObjectSet(ctx, propName.ZVal(), nil)
+}
+
 // isTemporaryExpr checks if an expression produces a temporary value that
 // cannot be used in a write context (e.g., class constants, function calls).
 func isTemporaryExpr(r phpv.Runnable) bool {

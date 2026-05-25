@@ -1059,6 +1059,16 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 			}
 			f.push(phpv.ZBool(isEmpty).ZVal())
 
+		case OpUnsetObjProp:
+			receiver := f.pop()
+			name, ok := f.fn.Consts[ins.A()].(phpv.ZString)
+			if !ok {
+				return nil, false, fmt.Errorf("vm: OP_UNSET_OBJ_PROP name const is %T not ZString", f.fn.Consts[ins.A()])
+			}
+			if err := compiler.EvalUnsetObjProp(ctx, receiver, name); err != nil {
+				return nil, false, err
+			}
+
 		case OpObjectCall:
 			argc := int(ins.B())
 			args := make([]*phpv.ZVal, argc)

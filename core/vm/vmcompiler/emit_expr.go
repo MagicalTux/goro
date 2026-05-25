@@ -222,6 +222,17 @@ func (e *emitter) emitExpr(node phpv.Runnable) error {
 					e.emit(vm.OpUnsetLocal, idx, 0, 0)
 					continue
 				}
+				if ov, ok := a.(objectVarNode); ok {
+					// $obj->prop unset: emit receiver, then OP_UNSET_OBJ_PROP
+					// with the property name in the const pool.
+					if err := e.withSubexpr(func() error { return e.emitExpr(ov.ObjectVarReceiver()) }); err != nil {
+						return err
+					}
+					idx := e.constIndex(ov.ObjectVarName())
+					e.emit(vm.OpUnsetObjProp, idx, 0, 0)
+					e.popStack(1)
+					continue
+				}
 				// Array access on a simple-local container.
 				cont, off := compiler.ArrayAccessParts(a)
 				if err := e.withSubexpr(func() error { return e.emitExpr(cont) }); err != nil {

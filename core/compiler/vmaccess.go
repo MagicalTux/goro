@@ -204,8 +204,31 @@ func UnsetAllSimple(r phpv.Runnable) bool {
 // a native VM emit:
 //   - simple variable ($x) → OP_UNSET_LOCAL
 //   - array access on a simple-local container ($x[$k]) → OP_UNSET_DIM
+//   - object property with a static (non-dollar-prefix) name and no
+//     nullsafe marker ($obj->prop) → OP_UNSET_OBJ_PROP
 func IsUnsetSupportedArg(r phpv.Runnable) bool {
 	if IsSimpleVariable(r) {
+		return true
+	}
+	if o, ok := r.(*runObjectVar); ok {
+		// Reject dollar-prefix dyn-name and nullsafe forms — those
+		// need separate opcodes or extra short-circuit logic. (Note:
+		// compileUnset already rejects nullsafe outright, but we
+		// double-check here for safety in case the parse path changes.)
+		if o.nullsafe || o.nullChain {
+			return false
+		}
+		if len(o.varName) > 0 && o.varName[0] == '$' {
+			return false
+		}
+		// Receiver can be any emittable expression; we just need the
+		// AST WriteValue pipeline's "unsetChain" semantics not to
+		// matter, which holds for a single-level unset($obj->prop).
+		// For nested $a->b->c, the inner runObjectVar.WriteValue
+		// would set unsetChain on r.ref — we leave those to AST.
+		if _, nested := o.ref.(*runObjectVar); nested {
+			return false
+		}
 		return true
 	}
 	a, ok := r.(*runArrayAccess)

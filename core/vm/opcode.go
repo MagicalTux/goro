@@ -464,6 +464,14 @@ const (
 	OpIssetObjProp
 	OpEmptyObjProp
 
+	// `unset($obj->prop)` for static-name, non-nullsafe property
+	// access. Encoding: A = const-pool name index. Pops receiver,
+	// pushes nothing. Dispatches to compiler.EvalUnsetObjProp which
+	// mirrors the value==nil branch of runObjectVar.WriteValue —
+	// non-object receivers are silently ignored, object receivers
+	// dispatch to ObjectSet(name, nil).
+	OpUnsetObjProp
+
 	// Sentinel — keep last.
 	opLast
 )
@@ -600,4 +608,5 @@ var opNames = [...]string{
 	OpObjectGetSafe:       "OBJECT_GET_SAFE",
 	OpIssetObjProp:        "ISSET_OBJ_PROP",
 	OpEmptyObjProp:        "EMPTY_OBJ_PROP",
+	OpUnsetObjProp:        "UNSET_OBJ_PROP",
 }
