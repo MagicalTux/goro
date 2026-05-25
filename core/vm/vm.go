@@ -1012,6 +1012,29 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 				return nil, false, err
 			}
 
+		case OpObjectGetSafe:
+			// Permissive read for coalesce LHS: silences "Undefined
+			// property" warnings on object receivers. Non-object
+			// receiver warnings (Attempt to read property on null, etc.)
+			// still fire — matches PHP's `??` semantics.
+			receiver := f.pop()
+			if ins.B() != 0 && (receiver == nil || phpv.IsNull(receiver)) {
+				f.push(phpv.ZNULL.ZVal())
+				break
+			}
+			name, ok := f.fn.Consts[ins.A()].(phpv.ZString)
+			if !ok {
+				return nil, false, fmt.Errorf("vm: OP_OBJECT_GET_SAFE name const is %T not ZString", f.fn.Consts[ins.A()])
+			}
+			res, err := objectGetSafe(ctx, receiver, name)
+			if err != nil {
+				return nil, false, err
+			}
+			if res == nil {
+				res = phpv.ZNULL.ZVal()
+			}
+			f.push(res)
+
 		case OpObjectCall:
 			argc := int(ins.B())
 			args := make([]*phpv.ZVal, argc)

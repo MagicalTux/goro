@@ -447,6 +447,15 @@ const (
 	// emit-side path is dedicated.
 	OpObjectDynCall
 
+	// OP_OBJECT_GET_SAFE is the permissive variant of OP_OBJECT_GET used
+	// as the LHS of `$obj->prop ?? default`. Same operand encoding as
+	// OP_OBJECT_GET (A = const-pool name index, B = nullsafe flag), but
+	// suppresses the "Undefined property" warning on ZtObject receivers
+	// — missing properties just yield null. Non-object receivers still
+	// emit "Attempt to read property on int/bool/..." warnings since
+	// PHP's `??` only silences property-existence, not receiver-type.
+	OpObjectGetSafe
+
 	// Sentinel — keep last.
 	opLast
 )
@@ -580,4 +589,5 @@ var opNames = [...]string{
 	OpCallIndirectByExprs: "CALL_INDIRECT_BY_EXPRS",
 	OpObjectCallByExprs:   "OBJECT_CALL_BY_EXPRS",
 	OpObjectDynCall:       "OBJECT_DYN_CALL",
+	OpObjectGetSafe:       "OBJECT_GET_SAFE",
 }

@@ -70,6 +70,38 @@ func objectGet(ctx phpv.Context, receiver *phpv.ZVal, name phpv.ZString) (*phpv.
 	}
 }
 
+// objectGetSafe implements OP_OBJECT_GET_SAFE: like objectGet but
+// silences the "Undefined property" warning when the property is
+// missing on a ZtObject receiver. Used as the LHS read for coalesce
+// (`$obj->prop ?? default`) and similar permissive read sites. The
+// non-object receiver warnings ("Attempt to read property on null/int/
+// bool/...") still fire — PHP only treats the property-existence side
+// permissively under `??`, not the receiver-type side.
+func objectGetSafe(ctx phpv.Context, receiver *phpv.ZVal, name phpv.ZString) (*phpv.ZVal, error) {
+	switch receiver.GetType() {
+	case phpv.ZtObject:
+		obj, ok := receiver.Value().(*phpobj.ZObject)
+		if !ok {
+			// Non-internal objects: fall back to the loud path; rare.
+			if zo, ok := receiver.Value().(phpv.ZObject); ok {
+				return zo.ObjectGet(ctx, name)
+			}
+			return nil, fmt.Errorf("vm: receiver is not a ZObject")
+		}
+		v, _, err := obj.ObjectGetQuiet(ctx, name)
+		if err != nil {
+			return nil, err
+		}
+		if v == nil {
+			return phpv.ZNULL.ZVal(), nil
+		}
+		return v, nil
+	default:
+		// Non-object receivers behave the same as the loud path.
+		return objectGet(ctx, receiver, name)
+	}
+}
+
 // objectSet implements OP_OBJECT_SET: writes receiver->name = value.
 // Routes through ZObject.ObjectSet which handles __set, typed
 // properties, asymmetric visibility, etc.

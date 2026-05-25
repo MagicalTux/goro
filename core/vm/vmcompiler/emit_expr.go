@@ -1042,6 +1042,21 @@ func (e *emitter) emitCoalesce(n operatorNode) error {
 		if err := e.emitIssetContainerRead(a); err != nil {
 			return err
 		}
+	} else if ov, ok := a.(objectVarNode); ok && len(ov.ObjectVarName()) > 0 && ov.ObjectVarName()[0] != '$' {
+		// `$obj->prop ?? default` — emit OP_OBJECT_GET_SAFE which
+		// silences "Undefined property" warnings on object receivers
+		// (matches PHP's `??` semantics). Skip the dollar-prefix
+		// (runtime var-var) form — falls through to AST delegation.
+		if err := e.withSubexpr(func() error { return e.emitExpr(ov.ObjectVarReceiver()) }); err != nil {
+			return err
+		}
+		idx := e.constIndex(ov.ObjectVarName())
+		var bFlag uint16
+		if ov.ObjectVarIsNullSafe() {
+			bFlag = 1
+		}
+		e.emit(vm.OpObjectGetSafe, idx, bFlag, 0)
+		// pop receiver, push value → net stack delta zero.
 	} else {
 		// LHS shapes that need write-context suppression (object
 		// props, nullsafe chains) — delegate the entire `LHS ?? RHS`
