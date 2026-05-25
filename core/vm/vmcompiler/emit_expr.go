@@ -987,8 +987,31 @@ func (e *emitter) emitAssign(n operatorNode) error {
 		return nil
 	}
 	if compiler.IsVariableRef(n.OperatorA()) {
-		// `$$name = …` — AST handles the dynamic name resolution.
-		return e.emitAssignViaAST(n)
+		// `$$name = v` / `${$expr} = v`: emit the name-producing
+		// expression and the RHS to the stack; OP_VAR_VAR_SET pops
+		// both and routes through compiler.AssignVariableVariable
+		// which coerces the name to string and calls ctx.OffsetSet.
+		nameExpr := compiler.VarVarNameExpr(n.OperatorA())
+		if err := e.withSubexpr(func() error { return e.emitExpr(nameExpr) }); err != nil {
+			return err
+		}
+		if err := e.withSubexpr(func() error { return e.emitExpr(n.OperatorB()) }); err != nil {
+			return err
+		}
+		var a uint16
+		if !e.stmtCtx {
+			a |= 1
+		}
+		e.emit(vm.OpVarVarSet, a, 0, 0)
+		if e.stmtCtx {
+			e.popStack(2)
+		} else {
+			e.popStack(1) // pop name+val, push val back → net -1
+		}
+		// The write goes through ctx.OffsetSet; refresh slots so
+		// subsequent slot reads see the new value.
+		e.emit(vm.OpRefreshSlots, 0, 0, 0)
+		return nil
 	}
 	return unsupportedf("plain `=` to non-variable target %T", n.OperatorA())
 }

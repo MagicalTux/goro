@@ -541,6 +541,18 @@ const (
 	// type-hint check — matches AST semantics).
 	OpStaticPropDynSet
 
+	// OP_VAR_VAR_SET handles `$$name = v` / `${$expr} = v`.
+	//
+	// Encoding: A bit 0 = keep value on stack (expression context).
+	//
+	// Stack effect (stmt context):  pops name, value
+	// Stack effect (expr context):  pops name, value, pushes value
+	//
+	// Dispatches to compiler.AssignVariableVariable which coerces the
+	// name to string and writes via ctx.OffsetSet. Mirrors the AST
+	// runVariableRef.WriteValue body.
+	OpVarVarSet
+
 	// Sentinel — keep last.
 	opLast
 )
@@ -686,4 +698,5 @@ var opNames = [...]string{
 	OpEmptyStaticProp:          "EMPTY_STATIC_PROP",
 	OpObjectDynSet:             "OBJECT_DYN_SET",
 	OpStaticPropDynSet:         "STATIC_PROP_DYN_SET",
+	OpVarVarSet:                "VAR_VAR_SET",
 }

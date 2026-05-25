@@ -435,7 +435,23 @@ func (r *runVariableRef) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 		}
 		key = v
 	}
+	return assignOrUnsetVariableVariable(ctx, key, value, r.l)
+}
 
+// AssignVariableVariable writes `value` to the variable whose name is
+// the string representation of `nameV`. Shared between the AST runner
+// (runVariableRef.WriteValue) and the VM's OP_VAR_VAR_SET. Mirrors the
+// AST WriteValue body: routes ctx.OffsetSet for non-nil values and
+// ctx.OffsetUnset for nil (the unset path is unused by OP_VAR_VAR_SET
+// but kept for symmetry with the shared helper).
+//
+// `loc` is the source location used to wrap non-PhpThrow errors so the
+// caller's filename/line are surfaced.
+func AssignVariableVariable(ctx phpv.Context, nameV *phpv.ZVal, value *phpv.ZVal, loc *phpv.Loc) error {
+	return assignOrUnsetVariableVariable(ctx, nameV, value, loc)
+}
+
+func assignOrUnsetVariableVariable(ctx phpv.Context, key phpv.Val, value *phpv.ZVal, loc *phpv.Loc) error {
 	var err error
 	if value == nil {
 		err = ctx.OffsetUnset(ctx, key)
@@ -447,7 +463,10 @@ func (r *runVariableRef) WriteValue(ctx phpv.Context, value *phpv.ZVal) error {
 		if _, ok := err.(*phperr.PhpThrow); ok {
 			return err
 		}
-		return r.l.Error(ctx, err)
+		if loc != nil {
+			return loc.Error(ctx, err)
+		}
+		return err
 	}
 	return nil
 }

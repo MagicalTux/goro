@@ -1823,6 +1823,17 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 			}
 			f.push(res)
 
+		// --- `$$name = v` / `${$expr} = v` variable-variable write ---
+		case OpVarVarSet:
+			val := f.pop()
+			nameV := f.pop()
+			if err := compiler.AssignVariableVariable(ctx, nameV, val, f.fn.LocAt(f.pc-1)); err != nil {
+				return nil, false, err
+			}
+			if ins.A()&1 != 0 {
+				f.push(val)
+			}
+
 		// --- runConstant — user / namespaced / built-in constant ----
 		case OpLoadConstantByName:
 			name, ok := f.fn.Consts[ins.A()].(phpv.ZString)
