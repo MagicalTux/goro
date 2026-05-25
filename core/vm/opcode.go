@@ -456,6 +456,14 @@ const (
 	// PHP's `??` only silences property-existence, not receiver-type.
 	OpObjectGetSafe
 
+	// OP_ISSET_OBJ_PROP / OP_EMPTY_OBJ_PROP — native `isset($obj->prop)` /
+	// `empty($obj->prop)` for static-name, non-nullsafe property access.
+	// Encoding: A = const-pool name index. Pops receiver, pushes bool.
+	// Dispatches to compiler.EvalIssetObjProp / EvalEmptyObjProp which
+	// mirror checkExistence / checkEmpty's runObjectVar branches.
+	OpIssetObjProp
+	OpEmptyObjProp
+
 	// Sentinel — keep last.
 	opLast
 )
@@ -590,4 +598,6 @@ var opNames = [...]string{
 	OpObjectCallByExprs:   "OBJECT_CALL_BY_EXPRS",
 	OpObjectDynCall:       "OBJECT_DYN_CALL",
 	OpObjectGetSafe:       "OBJECT_GET_SAFE",
+	OpIssetObjProp:        "ISSET_OBJ_PROP",
+	OpEmptyObjProp:        "EMPTY_OBJ_PROP",
 }

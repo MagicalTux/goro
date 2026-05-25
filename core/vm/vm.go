@@ -1035,6 +1035,30 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 			}
 			f.push(res)
 
+		case OpIssetObjProp:
+			receiver := f.pop()
+			name, ok := f.fn.Consts[ins.A()].(phpv.ZString)
+			if !ok {
+				return nil, false, fmt.Errorf("vm: OP_ISSET_OBJ_PROP name const is %T not ZString", f.fn.Consts[ins.A()])
+			}
+			exists, err := compiler.EvalIssetObjProp(ctx, receiver, name)
+			if err != nil {
+				return nil, false, err
+			}
+			f.push(phpv.ZBool(exists).ZVal())
+
+		case OpEmptyObjProp:
+			receiver := f.pop()
+			name, ok := f.fn.Consts[ins.A()].(phpv.ZString)
+			if !ok {
+				return nil, false, fmt.Errorf("vm: OP_EMPTY_OBJ_PROP name const is %T not ZString", f.fn.Consts[ins.A()])
+			}
+			isEmpty, err := compiler.EvalEmptyObjProp(ctx, receiver, name)
+			if err != nil {
+				return nil, false, err
+			}
+			f.push(phpv.ZBool(isEmpty).ZVal())
+
 		case OpObjectCall:
 			argc := int(ins.B())
 			args := make([]*phpv.ZVal, argc)

@@ -916,9 +916,25 @@ func IssetEmptyAllSimple(r phpv.Runnable) bool {
 //   - simple variable ($x)
 //   - array-access with a non-nullsafe simple-shape container
 //     ($x[$k], $x[k], also nested $x[$k1][$k2])
+//   - object property with a static (non-dollar-prefix) name and no
+//     nullsafe marker ($obj->prop). Receiver itself can be any
+//     emittable expression.
 func IsIssetSupportedArg(r phpv.Runnable) bool {
 	if IsSimpleVariable(r) {
 		return true
+	}
+	if o, ok := r.(*runObjectVar); ok {
+		// Reject dollar-prefix dyn-name and nullsafe forms — those
+		// need separate opcodes or extra short-circuit logic.
+		if o.nullsafe || o.nullChain {
+			return false
+		}
+		if len(o.varName) > 0 && o.varName[0] == '$' {
+			return false
+		}
+		// Receiver chain must also be a supported isset shape so
+		// emitIssetContainerRead can recurse without falling back.
+		return IsIssetSupportedArg(o.ref)
 	}
 	a, ok := r.(*runArrayAccess)
 	if !ok || a.nullChain {

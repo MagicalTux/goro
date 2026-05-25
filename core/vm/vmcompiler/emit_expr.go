@@ -1141,6 +1141,19 @@ func (e *emitter) emitIssetArg(a phpv.Runnable) error {
 		e.popStack(1) // 2 in, 1 out
 		return nil
 	}
+	if ov, ok := a.(objectVarNode); ok {
+		// `isset($obj->prop)` — emit receiver as a permissive read so
+		// undefined-variable warnings on the receiver are suppressed,
+		// then OP_ISSET_OBJ_PROP pops receiver + reads name from the
+		// const pool to dispatch to EvalIssetObjProp.
+		if err := e.withSubexpr(func() error { return e.emitIssetContainerRead(ov.ObjectVarReceiver()) }); err != nil {
+			return err
+		}
+		idx := e.constIndex(ov.ObjectVarName())
+		e.emit(vm.OpIssetObjProp, idx, 0, 0)
+		// pop receiver, push bool → net stack delta zero.
+		return nil
+	}
 	return unsupportedf("emitIssetArg: unsupported shape %T", a)
 }
 
@@ -1162,6 +1175,18 @@ func (e *emitter) emitEmptyArg(a phpv.Runnable) error {
 		}
 		e.emit(vm.OpEmptyDim, 0, 0, 0)
 		e.popStack(1)
+		return nil
+	}
+	if ov, ok := a.(objectVarNode); ok {
+		// `empty($obj->prop)` — emit receiver permissively then
+		// OP_EMPTY_OBJ_PROP. The dispatch returns true for non-object
+		// receivers and missing properties (matches PHP semantics).
+		if err := e.withSubexpr(func() error { return e.emitIssetContainerRead(ov.ObjectVarReceiver()) }); err != nil {
+			return err
+		}
+		idx := e.constIndex(ov.ObjectVarName())
+		e.emit(vm.OpEmptyObjProp, idx, 0, 0)
+		// pop receiver, push bool → net stack delta zero.
 		return nil
 	}
 	return unsupportedf("emitEmptyArg: unsupported shape %T", a)
@@ -1193,6 +1218,22 @@ func (e *emitter) emitIssetContainerRead(c phpv.Runnable) error {
 		e.emit(vm.OpArrayGetSafe, 0, 0, 0)
 		e.popStack(1)
 		return nil
+	}
+	if ov, ok := c.(objectVarNode); ok {
+		// Nested `$outer->inner->...` — recurse for the receiver, then
+		// permissive object read so a missing intermediate property
+		// just produces null without warning.
+		name := ov.ObjectVarName()
+		if !ov.ObjectVarIsNullSafe() && len(name) > 0 && name[0] != '$' {
+			if err := e.emitIssetContainerRead(ov.ObjectVarReceiver()); err != nil {
+				return err
+			}
+			idx := e.constIndex(name)
+			e.emit(vm.OpObjectGetSafe, idx, 0, 0)
+			return nil
+		}
+		// Fall through to unsupported for nullsafe/dyn-name nested
+		// containers — those keep AST delegation.
 	}
 	return unsupportedf("emitIssetContainerRead: unsupported shape %T", c)
 }

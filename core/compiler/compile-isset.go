@@ -388,6 +388,45 @@ func EvalEmptyDim(ctx phpv.Context, value, key *phpv.ZVal) (bool, error) {
 	return IsValueEmpty(ctx, val), nil
 }
 
+// EvalIssetObjProp performs the existence-and-not-null check on
+// `$obj->propName`. Mirrors checkExistence's runObjectVar branch for
+// the post-receiver-evaluation portion: non-object receivers return
+// false (no warn), object receivers dispatch to HasProp (which itself
+// handles __isset and visibility).
+func EvalIssetObjProp(ctx phpv.Context, receiver *phpv.ZVal, propName phpv.ZString) (bool, error) {
+	if receiver == nil || receiver.GetType() != phpv.ZtObject {
+		return false, nil
+	}
+	obj, ok := receiver.Value().(*phpobj.ZObject)
+	if !ok {
+		return false, nil
+	}
+	return obj.HasProp(ctx, propName)
+}
+
+// EvalEmptyObjProp performs the "empty" check on `$obj->propName`.
+// Mirrors checkEmpty's runObjectVar branch: non-object receivers and
+// missing properties return true (empty); otherwise reads and applies
+// IsValueEmpty.
+func EvalEmptyObjProp(ctx phpv.Context, receiver *phpv.ZVal, propName phpv.ZString) (bool, error) {
+	if receiver == nil || receiver.GetType() != phpv.ZtObject {
+		return true, nil
+	}
+	obj, ok := receiver.Value().(*phpobj.ZObject)
+	if !ok {
+		return true, nil
+	}
+	exists, err := obj.HasProp(ctx, propName)
+	if err != nil || !exists {
+		return true, nil
+	}
+	val, err := obj.ObjectGet(ctx, propName)
+	if err != nil {
+		return true, nil
+	}
+	return IsValueEmpty(ctx, val), nil
+}
+
 func IsValueEmpty(ctx phpv.Context, v *phpv.ZVal) bool {
 	if v == nil {
 		return true
