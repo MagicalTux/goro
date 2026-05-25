@@ -1557,6 +1557,10 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 			if err := compiler.AssignClassStaticProp(ctx, classV, varName, val); err != nil {
 				return nil, false, err
 			}
+			// B != 0: expression-context, leave value on stack.
+			if ins.B() != 0 {
+				f.push(val)
+			}
 
 		// --- typed-return non-strict coercion -----------------------
 		case OpCoerceReturn:

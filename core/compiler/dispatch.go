@@ -194,7 +194,17 @@ func IsSlotSafe(g phpv.GlobalContext, r phpv.Runnable) bool {
 				}
 				// Plain simple `=` is native — fall through, no slot-
 				// unsafe contribution from this node.
-			case *runClassStaticVarRef, *runClassStaticDynVarRef, *runDestructure, *runVariableRef:
+			case *runClassStaticVarRef:
+				// Plain `=` to a static property emits natively via
+				// OP_STATIC_PROP_SET; the dispatch path goes through
+				// AssignClassStaticProp which doesn't touch caller
+				// locals. Compound (+=, .=) and inc/dec still
+				// AST-delegate via emitCompoundAssign.
+				if isCompound || isIncDec {
+					return false
+				}
+				// Fall through — native emit, no slot-unsafe.
+			case *runClassStaticDynVarRef, *runDestructure, *runVariableRef:
 				return false
 			case *runArrayAccess:
 				if isIncDec || isCompound {

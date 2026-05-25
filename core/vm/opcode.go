@@ -348,6 +348,8 @@ const (
 	// class via compiler.AssignClassStaticProp. The helper handles
 	// LSB-aware class resolution, asymmetric visibility, typed-prop
 	// enforcement (strict + weak coercion), and IncRef/DecRef.
+	// If B != 0, the value is pushed back on the stack after the set
+	// (for expression-context `$x = (Foo::$bar = v)` semantics).
 	OpStaticPropSet
 	// OP_CREATE_REF pushes a reference to the target at SubASTs[A]
 	// (a *runRef). The opcode dispatches through compiler.EvalCreateRef
