@@ -73,9 +73,6 @@ func (e *emitter) emitObjectVarAssign(lhs objectVarNode, rhs phpv.Runnable, stmt
 		return unsupportedf("nullsafe property assign")
 	}
 	name := lhs.ObjectVarName()
-	if len(name) > 0 && name[0] == '$' {
-		return unsupportedf("dynamic property name in assign")
-	}
 	// PHP's write-context for `$x->prop = v`: an undefined `$x` does
 	// NOT emit "Undefined variable" — the AST's runVariable.Run sees
 	// Parent=runOperator(write) and short-circuits the warning. For
@@ -91,6 +88,27 @@ func (e *emitter) emitObjectVarAssign(lhs objectVarNode, rhs phpv.Runnable, stmt
 			return err
 		}
 	}
+	// `$obj->$x = v` has varName prefixed with `$`. Push the local
+	// holding the dyn name on the stack and use OP_OBJECT_DYN_SET.
+	if len(name) > 0 && name[0] == '$' {
+		localIdx := e.localIndex(name[1:])
+		e.emit(vm.OpLoadLocal, localIdx, 0, 0)
+		e.pushStack(1)
+		if err := e.withSubexpr(func() error { return e.emitExpr(rhs) }); err != nil {
+			return err
+		}
+		var a uint16
+		if !stmtCtx {
+			a |= 1 // keep value on stack
+		}
+		e.emit(vm.OpObjectDynSet, a, 0, 0)
+		if stmtCtx {
+			e.popStack(3) // pop receiver+name+value, push nothing
+		} else {
+			e.popStack(2) // pop receiver+name+value, push value back → net -2
+		}
+		return nil
+	}
 	if err := e.withSubexpr(func() error { return e.emitExpr(rhs) }); err != nil {
 		return err
 	}
@@ -103,6 +121,40 @@ func (e *emitter) emitObjectVarAssign(lhs objectVarNode, rhs phpv.Runnable, stmt
 		// after the write — semantics of `$x = ($obj->prop = v)`.
 		e.emit(vm.OpObjectSet, idx, 1, 0)
 		e.popStack(1) // pop receiver+value, push value back → net -1
+	}
+	return nil
+}
+
+// emitObjectDynVarAssign emits `$obj->{$x} = v` natively. Receiver and
+// name are evaluated and pushed; OP_OBJECT_DYN_SET dispatches to
+// ZObject.ObjectSet (typed props, hooks, asymmetric visibility).
+//
+// Note: unlike runObjectVar.WriteValue, the runObjectDynVar AST runner
+// does NOT call SetWriteContext on its receiver. An undefined simple-
+// variable receiver still emits the "Undefined variable" warning. Use
+// OP_LOAD_LOCAL_OR_WARN here to match AST semantics — the dyn form
+// behaves like a value read on the receiver, then a write on the
+// resolved property.
+func (e *emitter) emitObjectDynVarAssign(lhs objectDynVarReadNode, rhs phpv.Runnable, stmtCtx bool) error {
+	recv := lhs.ObjectDynVarReceiver()
+	if err := e.withSubexpr(func() error { return e.emitExpr(recv) }); err != nil {
+		return err
+	}
+	if err := e.withSubexpr(func() error { return e.emitExpr(lhs.ObjectDynVarNameExpr()) }); err != nil {
+		return err
+	}
+	if err := e.withSubexpr(func() error { return e.emitExpr(rhs) }); err != nil {
+		return err
+	}
+	var a uint16
+	if !stmtCtx {
+		a |= 1
+	}
+	e.emit(vm.OpObjectDynSet, a, 0, 0)
+	if stmtCtx {
+		e.popStack(3)
+	} else {
+		e.popStack(2)
 	}
 	return nil
 }

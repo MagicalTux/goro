@@ -1377,6 +1377,37 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 				f.push(res)
 			}
 
+		// --- $obj->$x = v / $obj->{$x} = v dyn-name write ------------
+		case OpObjectDynSet:
+			val := f.pop()
+			nameV := f.pop()
+			recv := f.pop()
+			if recv == nil || recv.Value() == nil {
+				propName := ""
+				if nameV != nil {
+					propName = string(nameV.AsString(ctx))
+				}
+				return nil, false, phpobj.ThrowError(ctx, phpobj.Error,
+					fmt.Sprintf("Attempt to assign property \"%s\" on null", propName))
+			}
+			objI, ok := recv.Value().(phpv.ZObjectAccess)
+			if !ok {
+				typeName := compiler.PhpValueTypeName(recv)
+				propName := ""
+				if nameV != nil {
+					propName = string(nameV.AsString(ctx))
+				}
+				return nil, false, phpobj.ThrowError(ctx, phpobj.Error,
+					fmt.Sprintf("Attempt to assign property \"%s\" on %s", propName, typeName))
+			}
+			if err := objI.ObjectSet(ctx, nameV, val); err != nil {
+				return nil, false, err
+			}
+			// A bit 0: keep value on stack (expr context).
+			if ins.A()&1 != 0 {
+				f.push(val)
+			}
+
 		// --- global $x ---------------------------------------------
 		case OpGlobalBind:
 			nameV := f.pop()

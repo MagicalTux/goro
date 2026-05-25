@@ -884,14 +884,22 @@ func (e *emitter) emitAssign(n operatorNode) error {
 	// the AST runner. IsSlotSafe rejects bodies with these writes,
 	// so the hashtable is in sync when the AST reads locals.
 	if ov, ok := n.OperatorA().(objectVarNode); ok {
-		// `$obj->prop = v`: emit natively for static-name, non-nullsafe.
-		// OP_OBJECT_SET dispatches via ZObject's ObjectSet which already
-		// handles typed properties, hooks, and asymmetric visibility.
-		// Expr-context uses the B=1 keep-value flag so the assignment
-		// result lands on the stack.
-		name := ov.ObjectVarName()
-		if !ov.ObjectVarIsNullSafe() && !(len(name) > 0 && name[0] == '$') {
+		// `$obj->prop = v` / `$obj->$x = v`: emit natively for
+		// non-nullsafe access. emitObjectVarAssign routes the static-name
+		// form through OP_OBJECT_SET and the dyn-name ($-prefixed) form
+		// through OP_OBJECT_DYN_SET — both dispatch via ZObject.ObjectSet
+		// (typed properties, hooks, asymmetric visibility). Expr-context
+		// uses the keep-value flag so the assignment result lands on the
+		// stack.
+		if !ov.ObjectVarIsNullSafe() {
 			return e.emitObjectVarAssign(ov, n.OperatorB(), e.stmtCtx)
+		}
+		return e.emitAssignViaAST(n)
+	}
+	if compiler.IsObjectDynVarReadNode(n.OperatorA()) && !compiler.ObjectDynVarIsNullSafe(n.OperatorA()) {
+		// `$obj->{$x} = v`: dyn-name property write via OP_OBJECT_DYN_SET.
+		if dv, ok := n.OperatorA().(objectDynVarReadNode); ok {
+			return e.emitObjectDynVarAssign(dv, n.OperatorB(), e.stmtCtx)
 		}
 		return e.emitAssignViaAST(n)
 	}

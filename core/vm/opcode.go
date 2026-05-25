@@ -523,6 +523,16 @@ const (
 	OpIssetStaticProp
 	OpEmptyStaticProp
 
+	// OP_OBJECT_DYN_SET handles both `$obj->$x = v` (runObjectVar with
+	// $-prefixed name) and `$obj->{$x} = v` (runObjectDynVar). Stack
+	// pops value, name, receiver (in that order). Encoding:
+	//   A bit 0 = keep-value-on-stack (expr context)
+	// Handler checks receiver is a ZObjectAccess (throws
+	// "Attempt to assign property \"NAME\" on TYPE" otherwise) and
+	// dispatches to objI.ObjectSet which handles typed properties,
+	// hooks, asymmetric visibility, etc.
+	OpObjectDynSet
+
 	// Sentinel — keep last.
 	opLast
 )
@@ -666,4 +676,5 @@ var opNames = [...]string{
 	OpIncDecStaticProp:         "INC_DEC_STATIC_PROP",
 	OpIssetStaticProp:          "ISSET_STATIC_PROP",
 	OpEmptyStaticProp:          "EMPTY_STATIC_PROP",
+	OpObjectDynSet:             "OBJECT_DYN_SET",
 }
