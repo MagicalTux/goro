@@ -918,10 +918,58 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 				return nil, false, err
 			}
 
+		case OpArrayPreCheckLocal:
+			// `$local[expr] OP= …` / `$local[expr]++` pre-check, runs
+			// BEFORE the offset is evaluated so warnings about the
+			// container fire in the right order relative to the offset's
+			// own evaluation warnings.
+			//
+			// Mirrors the AST's compound-write-context handling in
+			// runArrayAccess.Run (compile-array.go:486-528): undefined
+			// variables warn and auto-vivify, ZtNull auto-vivifies, and
+			// string containers reject compound ops with the same
+			// "Cannot use assign-op operators with string offsets" Error
+			// the AST throws before touching the offset (bug53432).
+			{
+				name := f.fn.Locals[ins.A()]
+				container := f.locals[ins.A()]
+				wasUndefined := container == nil
+				if container == nil && !f.fn.SlotOnly {
+					if v, found, _ := ctx.OffsetCheck(ctx, name); found && v != nil {
+						container = v
+						wasUndefined = false
+					}
+				}
+				if container != nil && container.GetType() == phpv.ZtString {
+					return nil, false, phpobj.ThrowError(ctx, phpobj.Error,
+						"Cannot use assign-op operators with string offsets")
+				}
+				if container == nil || container.GetType() == phpv.ZtNull {
+					if wasUndefined {
+						if err := ctx.Warn("Undefined variable $%s", string(name), logopt.NoFuncName(true)); err != nil {
+							return nil, false, err
+						}
+					}
+					newArr := phpv.NewZArrayTracked(ctx.Global().MemMgrTracker())
+					container = newArr.ZVal()
+					f.locals[ins.A()] = container
+					if !f.fn.SlotOnly {
+						if err := ctx.OffsetSet(ctx, name, container); err != nil {
+							return nil, false, err
+						}
+					}
+				}
+			}
+
 		case OpArrayCompoundAssignLocal:
 			// `$local[offset] OP= rhs` on a simple-local container.
 			// Mirrors OpObjectCompoundAssign's read+snapshot+op+write
 			// flow but with the array element as the LHS slot.
+			//
+			// The container is assumed to already be array-shaped (or a
+			// scalar that arrayGet/arraySetLocal know how to reject) —
+			// OP_ARRAY_PRE_CHECK_LOCAL emitted earlier has vivified null
+			// containers and rejected string ones.
 			rhs := f.pop()
 			offset := f.pop()
 			op := tokenizer.ItemType(ins.B())
@@ -932,6 +980,28 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 			container := f.locals[ins.A()]
 			if container == nil {
 				container = phpv.ZNULL.ZVal()
+			}
+			// PHP 8.1: deprecate null-as-offset in the read phase for
+			// array/string/object containers, matching the AST
+			// (compile-array.go:712-717). arraySetLocal does NOT also
+			// emit this on the write phase (would double-warn).
+			if offset != nil && offset.GetType() == phpv.ZtNull {
+				ct := container.GetType()
+				if ct == phpv.ZtArray || ct == phpv.ZtString || ct == phpv.ZtObject {
+					if err := ctx.Deprecated("Using null as an array offset is deprecated, use an empty string instead", logopt.NoFuncName(true)); err != nil {
+						return nil, false, err
+					}
+				}
+			}
+			// bug70662: track whether the key existed BEFORE arrayGet.
+			// If arrayGet's "Undefined array key" warning triggers a
+			// user error handler that creates the key, PHP's compound
+			// op suppresses the write (the handler's value wins).
+			var keyWasMissing bool
+			if container.GetType() == phpv.ZtArray && offset != nil {
+				zarr := container.AsArray(ctx)
+				_, exists, _ := zarr.OffsetCheck(ctx, offset.Value())
+				keyWasMissing = !exists
 			}
 			cur, err := arrayGet(ctx, container, offset)
 			if err != nil {
@@ -949,6 +1019,33 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 			if err != nil {
 				return nil, false, err
 			}
+			// Re-fetch container — an error handler triggered during
+			// arrayGet (undef-key) or fn (__toString) could have
+			// replaced the slot with something incompatible.
+			postContainer := f.locals[ins.A()]
+			if postContainer == nil || (postContainer.GetType() != phpv.ZtArray &&
+				postContainer.GetType() != phpv.ZtObject &&
+				postContainer.GetType() != phpv.ZtString &&
+				postContainer.GetType() != phpv.ZtNull) {
+				// Container was replaced by a scalar — abort write to
+				// match AST's WriteValue behavior (compile-array.go:826-832).
+				if ins.C()&1 != 0 {
+					f.push(res)
+				}
+				break
+			}
+			// bug70662: if the key was missing during the read phase but
+			// now exists in the container, an error handler created it.
+			// Suppress the write so the handler's value remains visible.
+			if keyWasMissing && offset != nil && postContainer.GetType() == phpv.ZtArray {
+				zarr := postContainer.AsArray(ctx)
+				if _, exists, _ := zarr.OffsetCheck(ctx, offset.Value()); exists {
+					if ins.C()&1 != 0 {
+						f.push(res)
+					}
+					break
+				}
+			}
 			if err := arraySetLocal(ctx, f, ins.A(), offset, res); err != nil {
 				return nil, false, err
 			}
@@ -962,6 +1059,9 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 			// warns on undefined keys, matching the AST), Dup's so
 			// DoInc's in-place mutation doesn't escape, applies DoInc,
 			// writes back via arraySetLocal.
+			//
+			// OP_ARRAY_PRE_CHECK_LOCAL emitted earlier vivifies null
+			// containers and rejects string ones.
 			offset := f.pop()
 			inc := ins.B()&1 != 0
 			post := ins.B()&2 != 0
@@ -969,6 +1069,21 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 			container := f.locals[ins.A()]
 			if container == nil {
 				container = phpv.ZNULL.ZVal()
+			}
+			// PHP 8.1 null-offset deprecation (same as compound path).
+			if offset != nil && offset.GetType() == phpv.ZtNull {
+				ct := container.GetType()
+				if ct == phpv.ZtArray || ct == phpv.ZtString || ct == phpv.ZtObject {
+					if err := ctx.Deprecated("Using null as an array offset is deprecated, use an empty string instead", logopt.NoFuncName(true)); err != nil {
+						return nil, false, err
+					}
+				}
+			}
+			var keyWasMissing bool
+			if container.GetType() == phpv.ZtArray && offset != nil {
+				zarr := container.AsArray(ctx)
+				_, exists, _ := zarr.OffsetCheck(ctx, offset.Value())
+				keyWasMissing = !exists
 			}
 			cur, err := arrayGet(ctx, container, offset)
 			if err != nil {
@@ -984,6 +1099,33 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 			}
 			if err := compiler.DoInc(ctx, cur, inc); err != nil {
 				return nil, false, err
+			}
+			postContainer := f.locals[ins.A()]
+			if postContainer == nil || (postContainer.GetType() != phpv.ZtArray &&
+				postContainer.GetType() != phpv.ZtObject &&
+				postContainer.GetType() != phpv.ZtString &&
+				postContainer.GetType() != phpv.ZtNull) {
+				if keep {
+					if post {
+						f.push(pre)
+					} else {
+						f.push(cur)
+					}
+				}
+				break
+			}
+			if keyWasMissing && offset != nil && postContainer.GetType() == phpv.ZtArray {
+				zarr := postContainer.AsArray(ctx)
+				if _, exists, _ := zarr.OffsetCheck(ctx, offset.Value()); exists {
+					if keep {
+						if post {
+							f.push(pre)
+						} else {
+							f.push(cur)
+						}
+					}
+					break
+				}
 			}
 			if err := arraySetLocal(ctx, f, ins.A(), offset, cur); err != nil {
 				return nil, false, err

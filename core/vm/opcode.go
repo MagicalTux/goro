@@ -665,6 +665,27 @@ const (
 	//   C bit 0 = keep result on stack
 	OpArrayIncDecLocal
 
+	// OP_ARRAY_PRE_CHECK_LOCAL runs BEFORE the offset is evaluated in
+	// a `$local[offset] OP= rhs` or `$local[offset]++` operation. It
+	// mirrors the AST's compound-write-context handling of the container
+	// in runArrayAccess.Run so that warnings about an undefined container
+	// fire BEFORE warnings emitted by offset evaluation. Specifically:
+	//   - Slot is nil (undefined): warn "Undefined variable $X" and
+	//     vivify the slot to an empty array.
+	//   - Slot holds ZtNull: vivify to empty array (no warning — explicit
+	//     null assignment, like the AST's auto-vivify path).
+	//   - Slot holds ZtString: throw "Cannot use assign-op operators with
+	//     string offsets" before the offset is touched (bug53432).
+	// Other container types (array, object, bool true, scalar) are left
+	// untouched and any error/auto-vivify is handled downstream by
+	// arrayGet/arraySetLocal.
+	//
+	// Stack: no changes (no operands popped or pushed).
+	//
+	// Encoding:
+	//   A = local slot index
+	OpArrayPreCheckLocal
+
 	// Sentinel — keep last.
 	opLast
 )
@@ -818,4 +839,5 @@ var opNames = [...]string{
 	OpStoreLocalRef:               "STORE_LOCAL_REF",
 	OpArrayCompoundAssignLocal:    "ARRAY_COMPOUND_ASSIGN_LOCAL",
 	OpArrayIncDecLocal:            "ARRAY_INC_DEC_LOCAL",
+	OpArrayPreCheckLocal:          "ARRAY_PRE_CHECK_LOCAL",
 }

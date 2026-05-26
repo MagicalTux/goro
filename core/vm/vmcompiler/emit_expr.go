@@ -1142,13 +1142,19 @@ func (e *emitter) emitCompoundAssign(n operatorNode, op tokenizer.ItemType) erro
 			if v, ok := aa.ArrayAccessContainer().(variableNode); ok &&
 				!aa.ArrayAccessIsNullSafe() && aa.ArrayAccessOffset() != nil {
 				stmtCtx := e.stmtCtx
+				idx := e.localIndex(v.VariableName())
+				// Pre-check the container BEFORE evaluating the offset so
+				// undefined-variable / null-vivify warnings fire in the
+				// right order relative to offset-evaluation warnings, and
+				// so string containers reject the compound op before any
+				// offset side effects (bug53432, assign_dim_op_undef).
+				e.emit(vm.OpArrayPreCheckLocal, idx, 0, 0)
 				if err := e.withSubexpr(func() error { return e.emitExpr(aa.ArrayAccessOffset()) }); err != nil {
 					return err
 				}
 				if err := e.withSubexpr(func() error { return e.emitExpr(n.OperatorB()) }); err != nil {
 					return err
 				}
-				idx := e.localIndex(v.VariableName())
 				var c int32
 				if !stmtCtx {
 					c = 1
@@ -1299,10 +1305,12 @@ func (e *emitter) emitIncDec(n operatorNode, inc bool) error {
 			if v, ok := aa.ArrayAccessContainer().(variableNode); ok &&
 				!aa.ArrayAccessIsNullSafe() && aa.ArrayAccessOffset() != nil {
 				stmtCtx := e.stmtCtx
+				idx := e.localIndex(v.VariableName())
+				// Same pre-check as compound assign (see comment there).
+				e.emit(vm.OpArrayPreCheckLocal, idx, 0, 0)
 				if err := e.withSubexpr(func() error { return e.emitExpr(aa.ArrayAccessOffset()) }); err != nil {
 					return err
 				}
-				idx := e.localIndex(v.VariableName())
 				var b uint16
 				if inc {
 					b |= 1
