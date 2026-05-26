@@ -634,6 +634,37 @@ const (
 	// `res.IsRef() && r.b is *runRef` branch in run-operator.go.
 	OpStoreLocalRef
 
+	// OP_ARRAY_COMPOUND_ASSIGN_LOCAL handles `$local[offset] OP= rhs`
+	// where the LHS container is a simple local variable. Reads the
+	// current element via arrayGet, snapshots it (defending against
+	// handlers that mutate the slot during `.=` array→string coercion,
+	// bug81705-family), applies the resolved compoundOp, then writes
+	// back via arraySetLocal.
+	//
+	// Stack on entry (top-down): rhs, offset.
+	// Pops rhs, offset; in expr context (C bit 0) pushes the result.
+	//
+	// Encoding:
+	//   A = local slot index
+	//   B = compound op token (T_PLUS_EQUAL, T_CONCAT_EQUAL, …)
+	//   C bit 0 = keep result on stack
+	OpArrayCompoundAssignLocal
+	// OP_ARRAY_INC_DEC_LOCAL handles `$local[offset]++`, `++$local[offset]`
+	// and dec variants on a simple-local array container. Reads the
+	// current element via arrayGet, Dup's it (DoInc mutates in place),
+	// applies DoInc, writes back via arraySetLocal. In expr context,
+	// pushes the original value for postfix or the new value for prefix.
+	//
+	// Stack on entry: offset (one operand).
+	// Pops offset; in expr context (C bit 0) pushes the result.
+	//
+	// Encoding:
+	//   A = local slot index
+	//   B bit 0 = inc (1) / dec (0)
+	//   B bit 1 = post (1) / pre (0)
+	//   C bit 0 = keep result on stack
+	OpArrayIncDecLocal
+
 	// Sentinel — keep last.
 	opLast
 )
@@ -785,4 +816,6 @@ var opNames = [...]string{
 	OpObjectDynCompoundAssign:     "OBJECT_DYN_COMPOUND_ASSIGN",
 	OpIncDecObjDynProp:            "INC_DEC_OBJ_DYN_PROP",
 	OpStoreLocalRef:               "STORE_LOCAL_REF",
+	OpArrayCompoundAssignLocal:    "ARRAY_COMPOUND_ASSIGN_LOCAL",
+	OpArrayIncDecLocal:            "ARRAY_INC_DEC_LOCAL",
 }

@@ -1134,8 +1134,33 @@ func (e *emitter) emitCompoundAssign(n operatorNode, op tokenizer.ItemType) erro
 			}
 			return unsupportedf("object-dyn-var compound LHS shape: %T", n.OperatorA())
 		}
-		// Array compound assigns still need a dedicated path.
-		if _, ok := n.OperatorA().(arrayAccessNode); ok {
+		// `$local[k] OP= rhs` on simple-local container: native via
+		// OP_ARRAY_COMPOUND_ASSIGN_LOCAL. Reads via arrayGet, snapshots,
+		// applies compoundOp, writes back via arraySetLocal. Nested
+		// containers (`$obj->arr[i]`, `$a[i][j]`, …) still AST-delegate.
+		if aa, ok := n.OperatorA().(arrayAccessNode); ok {
+			if v, ok := aa.ArrayAccessContainer().(variableNode); ok &&
+				!aa.ArrayAccessIsNullSafe() && aa.ArrayAccessOffset() != nil {
+				stmtCtx := e.stmtCtx
+				if err := e.withSubexpr(func() error { return e.emitExpr(aa.ArrayAccessOffset()) }); err != nil {
+					return err
+				}
+				if err := e.withSubexpr(func() error { return e.emitExpr(n.OperatorB()) }); err != nil {
+					return err
+				}
+				idx := e.localIndex(v.VariableName())
+				var c int32
+				if !stmtCtx {
+					c = 1
+				}
+				e.emit(vm.OpArrayCompoundAssignLocal, idx, uint16(op), c)
+				if stmtCtx {
+					e.popStack(2)
+				} else {
+					e.popStack(1) // pops offset+rhs, pushes res → net -1
+				}
+				return nil
+			}
 			return e.emitAssignViaAST(n)
 		}
 		if compiler.IsStaticPropertyTarget(n.OperatorA()) {
@@ -1267,7 +1292,38 @@ func (e *emitter) emitIncDec(n operatorNode, inc bool) error {
 		if compiler.IsClassStaticDynVarReadNode(target) {
 			return e.emitStaticPropDynIncDec(target, inc, post, e.stmtCtx)
 		}
-		// ++/-- on $arr[$k] etc. — still route through the AST.
+		// `$local[k]++` / `++$local[k]` / dec on a simple-local
+		// container: native via OP_ARRAY_INC_DEC_LOCAL. Nested
+		// containers (`$obj->arr[i]`, `$a[i][j]`, …) still AST-delegate.
+		if aa, ok := target.(arrayAccessNode); ok {
+			if v, ok := aa.ArrayAccessContainer().(variableNode); ok &&
+				!aa.ArrayAccessIsNullSafe() && aa.ArrayAccessOffset() != nil {
+				stmtCtx := e.stmtCtx
+				if err := e.withSubexpr(func() error { return e.emitExpr(aa.ArrayAccessOffset()) }); err != nil {
+					return err
+				}
+				idx := e.localIndex(v.VariableName())
+				var b uint16
+				if inc {
+					b |= 1
+				}
+				if post {
+					b |= 2
+				}
+				var c int32
+				if !stmtCtx {
+					c = 1
+				}
+				e.emit(vm.OpArrayIncDecLocal, idx, b, c)
+				if stmtCtx {
+					e.popStack(1)
+				}
+				// expr-context: pops offset, pushes res → net 0.
+				return nil
+			}
+		}
+		// Other cases (`$obj->arr[i]++`, `$a[i][j]++`, …) still
+		// AST-delegate.
 		return e.emitAssignViaAST(n)
 	}
 	idx := e.localIndex(tv.VariableName())

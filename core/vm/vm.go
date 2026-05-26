@@ -918,6 +918,84 @@ func (f *Frame) runUntilError(ctx phpv.Context) (retVal *phpv.ZVal, finished boo
 				return nil, false, err
 			}
 
+		case OpArrayCompoundAssignLocal:
+			// `$local[offset] OP= rhs` on a simple-local container.
+			// Mirrors OpObjectCompoundAssign's read+snapshot+op+write
+			// flow but with the array element as the LHS slot.
+			rhs := f.pop()
+			offset := f.pop()
+			op := tokenizer.ItemType(ins.B())
+			fn := compoundOp(op)
+			if fn == nil {
+				return nil, false, fmt.Errorf("vm: OP_ARRAY_COMPOUND_ASSIGN_LOCAL unknown op %d", ins.B())
+			}
+			container := f.locals[ins.A()]
+			if container == nil {
+				container = phpv.ZNULL.ZVal()
+			}
+			cur, err := arrayGet(ctx, container, offset)
+			if err != nil {
+				return nil, false, err
+			}
+			if cur == nil {
+				cur = phpv.ZNULL.ZVal()
+			}
+			// Snapshot cur — `.=` on an array element can trigger
+			// __toString / error_handler side effects that mutate the
+			// underlying slot mid-op (bug81705-family). Without the
+			// Dup, the operator would read the post-handler value.
+			cur = cur.Dup()
+			res, err := fn(ctx, cur, rhs)
+			if err != nil {
+				return nil, false, err
+			}
+			if err := arraySetLocal(ctx, f, ins.A(), offset, res); err != nil {
+				return nil, false, err
+			}
+			if ins.C()&1 != 0 {
+				f.push(res)
+			}
+
+		case OpArrayIncDecLocal:
+			// `$local[offset]++`, `++$local[offset]` and dec variants
+			// on a simple-local container. Reads via arrayGet (which
+			// warns on undefined keys, matching the AST), Dup's so
+			// DoInc's in-place mutation doesn't escape, applies DoInc,
+			// writes back via arraySetLocal.
+			offset := f.pop()
+			inc := ins.B()&1 != 0
+			post := ins.B()&2 != 0
+			keep := ins.C()&1 != 0
+			container := f.locals[ins.A()]
+			if container == nil {
+				container = phpv.ZNULL.ZVal()
+			}
+			cur, err := arrayGet(ctx, container, offset)
+			if err != nil {
+				return nil, false, err
+			}
+			if cur == nil {
+				cur = phpv.ZNULL.ZVal()
+			}
+			cur = cur.Dup()
+			var pre *phpv.ZVal
+			if post {
+				pre = cur.Dup()
+			}
+			if err := compiler.DoInc(ctx, cur, inc); err != nil {
+				return nil, false, err
+			}
+			if err := arraySetLocal(ctx, f, ins.A(), offset, cur); err != nil {
+				return nil, false, err
+			}
+			if keep {
+				if post {
+					f.push(pre)
+				} else {
+					f.push(cur)
+				}
+			}
+
 		// --- throw ---------------------------------------------------
 		case OpThrow:
 			v := f.pop()
