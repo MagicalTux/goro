@@ -181,42 +181,43 @@ func IsSlotSafe(g phpv.GlobalContext, r phpv.Runnable) bool {
 			}
 			switch t := target.(type) {
 			case *runObjectVar:
-				// Plain `=` to a non-nullsafe, static-name object
-				// property now emits natively via OP_OBJECT_SET — the
-				// op handler doesn't touch caller locals, so the body
-				// can stay slot-safe. Compound (+=, .=) and inc/dec
-				// still AST-delegate via emitCompoundAssign.
-				if isCompound || isIncDec {
+				// Plain `=`, compound (+=, .=), and inc/dec on a
+				// non-nullsafe object property now all emit natively
+				// (OP_OBJECT_SET / OP_OBJECT_COMPOUND_ASSIGN /
+				// OP_INC_DEC_OBJ_PROP, with dyn-name variants too).
+				// Nullsafe in write context is parse-rejected, so any
+				// nullsafe LHS here would already have failed earlier.
+				if t.nullsafe {
 					return false
 				}
-				if t.nullsafe || (len(t.varName) > 0 && t.varName[0] == '$') {
-					return false
-				}
-				// Plain simple `=` is native — fall through, no slot-
-				// unsafe contribution from this node.
+				// Fall through — native emit covers static-name and
+				// dollar-prefix dyn-name shapes (OP_OBJECT_DYN_SET /
+				// OP_OBJECT_DYN_COMPOUND_ASSIGN / OP_INC_DEC_OBJ_DYN_PROP).
 			case *runClassStaticVarRef:
-				// Plain `=` to a static property emits natively via
-				// OP_STATIC_PROP_SET; the dispatch path goes through
-				// AssignClassStaticProp which doesn't touch caller
-				// locals. Compound (+=, .=) and inc/dec still
-				// AST-delegate via emitCompoundAssign.
-				if isCompound || isIncDec {
-					return false
-				}
-				// Fall through — native emit, no slot-unsafe.
-			case *runClassStaticDynVarRef, *runDestructure, *runVariableRef:
+				// Plain `=`, compound, and inc/dec all emit natively via
+				// OP_STATIC_PROP_SET / OP_STATIC_PROP_COMPOUND_ASSIGN /
+				// OP_INC_DEC_STATIC_PROP. None touch caller locals.
+				_ = t
+			case *runClassStaticDynVarRef:
+				// Dyn-name static prop write/compound/incdec all emit
+				// natively (OP_STATIC_PROP_DYN_SET /
+				// OP_STATIC_PROP_DYN_COMPOUND_ASSIGN /
+				// OP_INC_DEC_STATIC_PROP_DYN). None touch caller locals.
+			case *runDestructure, *runVariableRef:
 				return false
 			case *runArrayAccess:
-				if isIncDec || isCompound {
-					// $arr[k]++, $arr[k]+=v, $arr[k].=v: AST-delegated
-					// regardless of container shape — no native
-					// fast path.
+				// $local[k] OP= rhs and $local[k]++/-- now emit natively
+				// via OP_ARRAY_COMPOUND_ASSIGN_LOCAL /
+				// OP_ARRAY_INC_DEC_LOCAL when the container is a simple
+				// variable. Nested-container shapes (`$obj->arr[i] += v`,
+				// `$a[i][j]++`, …) still AST-delegate.
+				if _, ok := t.value.(*runVariable); !ok {
 					return false
 				}
-				// Plain `=` to an array element: native fast path
-				// handles only `$local[k] = v` (statement context).
-				// Any other shape goes through AST.
-				if _, ok := t.value.(*runVariable); !ok {
+				// Append form `$local[] OP= v` is invalid syntax (parse
+				// rejects). Plain `$local[] = v` allowed by emit when
+				// offset == nil; compound never has nil offset.
+				if (isCompound || isIncDec) && t.offset == nil {
 					return false
 				}
 			}
